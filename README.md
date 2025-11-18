@@ -15,7 +15,8 @@ git clone https://gitee.com/mo-wuming/zhutianxiuxian1.0.git ./plugins/zhutianxiu
 ```           
 > [插件已适配频道和TRSS,推荐使用TRSS时雨崽搭配gocq插件以及频道插件使用](https://gitee.com/TimeRainStarSky/Yunzai)
 ## 转移存档            
-![转移存档](pic/photo4.jpg)(pic/photo5.jpg)   
+![转移存档](pic/photo4.jpg)
+![转移存档2](pic/photo5.jpg)   
 存档位置  
 ```
 \(Miao-Yunzai/Yunzai-Bot)\plugins\zhutianxiuxian1.0\resources\data
