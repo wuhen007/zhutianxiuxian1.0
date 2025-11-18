@@ -1,0 +1,9 @@
+{
+  "type": "module",
+  "devDependencies": {
+    "prettier": "2.8.7"
+  },
+  "dependencies": {
+    "node-schedule": "^2.1.1"
+  }
+}
