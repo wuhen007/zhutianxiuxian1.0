@@ -1,37 +1,51 @@
-# xiuxian
+<div align="center">
+<br>
+<h1>诸天万界修仙V1.0「遮天三部曲」
+<img src='https://gitee.com/hutao222/DDZS-XIUXIAN-V1.3.0/badge/star.svg?theme=dark'  alt='star'></img>
+</h1>
+</br>
+</div> 
+       
+## 安装      
 
-#### 介绍
-遮天三部曲修仙
+> Miao-Yunzai/Yunzai-Bot/目录下执行  
+```
+git clone https://gitee.com/mo-wuming/zhutianxiuxian1.0.git ./plugins/zhutianxiuxian1.0/
 
-#### 软件架构
-软件架构说明
+```           
+> [插件已适配频道和TRSS,推荐使用TRSS时雨崽搭配gocq插件以及频道插件使用](https://gitee.com/TimeRainStarSky/Yunzai)
+## 转移存档            
+![转移存档](pic/photo4.jpg)(pic/photo5.jpg)   
+存档位置  
+```
+\(Miao-Yunzai/Yunzai-Bot)\plugins\zhutianxiuxian1.0\resources\data
+\(Miao-Yunzai/Yunzai-Bot)\plugins\zhutianxiuxian1.0\resources\data\item
+```      
+若要转移存档，将上面画框的文件保存，将修仙插件删除，执行上面安装命令，将上面画框的文件替换到对应文件,然后执行【#一键同步】 
 
-
-#### 安装教程
-
-1.  xxxx
-2.  xxxx
-3.  xxxx
-
-#### 使用说明
-
-1.  xxxx
-2.  xxxx
-3.  xxxx
-
-#### 参与贡献
-
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
-
-
-#### 特技
-
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+## PS:该版本不稳定存在一定bug(绝对路径等)，如需更新请一定要备份好整个原版本
+## 更新完后一定要发【#一键同步】，不要偷懒直接保存data文件夹
+## 魔改内容  
+近期重大更新 (2025年10月)
+系统完善：彻底完善元神、内景地、灵根进阶系统；新增仙古今世法、生命本源、道伤逻辑。
+内容扩展：新增九天十地、下界八域位面及大量副本；更新仙古秘境（大型多人副本）废案。
+玩法优化：优化道法赐福、位面传送阵；完善绝灵时代惩罚（物品消散、寿元压制）。
+功能新增：新增成就、天骄、剧情人物系统；新增寻宝地图与泰拉瑞亚道具。
+界面与自定义：新增多项图鉴系统；允许玩家上传并预览自定义练气皮肤。
+重要功能更新 (2025年7月 - 2025年9月)
+战斗与成长：重写战斗系统，加入分身、控制等效果；增加圣体、命运神道体等成长路线。
+世界与位面：增加位面系统、仙域与成仙路；完善破王成帝、仙帝权能及代价。
+新玩法：增加小世界、证道成帝、自创功法帝经、传授功法、势力商店、垂钓众生等。
+便捷优化：增加一键服用神药、突破、破体功能；优化副本沉迷逻辑，并且可以查看副本掉落物。
+遮天元素深度融合：增加遮天位面副本、人体秘境体系、黑暗动乱事件及大量相关灵根功法。 
+## 常见问题
+>如出现msgTask报错mark错误则是因为一些未知原因无法发送zhutianxiuxian1.0\resources\data\temp\temp.json的消息卡死，将该文件清空打入一个[]即可
+## 交流/直接游玩      
+- 官群：421901145      
+## 配置与存档   
+> zhutianxiuxian1.0/ config / xiuxian / xiuxian.yaml       
+> zhutianxiuxian1.0/ resources / data          
+>可根据需求自行修改     
+## 免责声明       
+1. 功能仅限内部交流与小范围使用       
+2. 请勿用于任何以盈利为目的的场景      
