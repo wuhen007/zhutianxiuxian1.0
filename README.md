@@ -21,7 +21,21 @@ git clone https://gitee.com/mo-wuming/zhutianxiuxian1.0.git ./plugins/zhutianxiu
 pnpm i
 pnpm add axios
 pnpm add icqq       
-```     
+```
+## 小问题
+如在运行该修仙插件时遇到以下报错不必惊慌，是我写的时候一个失误，不过此类报错不影响插件正常运行，如果有强迫症可以到云崽根目录的lib/plugins/loader.js中改动定时任务（大概在490行的样子）
+![解决报错](pic/photo6.jpg)
+```
+  /** 收集定时任务 */
+  collectTask(task, name) {
+    if (!task) return // 如果 task 是 undefined 或 null，直接返回
+    for (const i of Array.isArray(task) ? task : [task])
+      if (i && i.cron && i.fnc) { // 添加对 i 的检查
+        i.name ??= name
+        this.task.push(i)
+      }
+  }
+```
 > [插件已适配频道和TRSS,推荐使用TRSS时雨崽搭配gocq插件以及频道插件使用](https://gitee.com/TimeRainStarSky/Yunzai)
 ## 转移存档            
 ![转移存档](pic/photo4.jpg)
@@ -33,7 +47,7 @@ pnpm add icqq
 ```      
 若要转移存档，将上面画框的文件保存，将修仙插件删除，执行上面安装命令，将上面画框的文件替换到对应文件,然后执行【#一键同步】 
 
-## PS:该版本可移植原版的绝云间修仙插件，但不稳定存在一定bug(绝对路径等)，如需更新请一定要备份好整个原版本
+## PS:该版本不稳定存在一定bug(绝对路径等)，如需更新请一定要备份好整个原版本，目测可移植原版的修仙插件，但是不保证
 ## 更新完后一定要发【#一键同步】，不要偷懒直接保存data文件夹
 ## 以下为基于原版修仙的魔改内容  
 近期重大更新 (2025年10月)
