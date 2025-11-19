@@ -47,7 +47,7 @@ export class SecretPlaceTask extends plugin {
         fnc: () => this.checkTravelTasks(),
       },
        {
-            cron: '0 */10 * * * ?', // 每10分钟执行一次
+            cron: '0 */30 * * * ?', // 每10分钟执行一次
             name: 'DaoshangCheckTask',
             fnc: () => this.checkDaoshangPunishment(),
         }

@@ -64,7 +64,7 @@
     - icon: help-icon_39
       title: '#狩猎N分钟 #结束狩猎'
       desc: '进行N分钟的狩猎,获取食材'
-- group: 源师/源地师/源天师
+- group: 源师/源地师/源天师（源师转职凭证在遮天位面刷本有极低概率掉落）
   list:        
     - icon: help-icon_8
       title: '#寻源N分钟 #结束寻源'
@@ -75,7 +75,7 @@
     - icon: help-icon_8
       title: '#寻脉定源N分钟 #结束寻脉定源'
       desc: '进行N分钟的寻脉定源,获取大量高级源石和高级神药，小概率出龙脉精华|源天师'
-- group: 侠客
+- group: 侠客（转职为侠客后天道赐福可以获得侠客令）
   list:                         
     - icon: help-icon_69
       title: '#查看恶人'
@@ -83,7 +83,7 @@
     - icon: help-icon_69
       title: '#消灭恶人'
       desc: '仅限侠客，需侠客令'
-- group: 唤魔者
+- group: 唤魔者（转职为唤魔者后天道赐福可以获得唤魔令）
   list:       
     - icon: help-icon_26
       title: '#村庄列表'

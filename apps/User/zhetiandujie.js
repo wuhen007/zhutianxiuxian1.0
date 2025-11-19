@@ -536,6 +536,7 @@ async duzhendaoLeijie(e) {
         player.防御 = Math.floor(player.防御 * 1.3);
         player.血量上限 = Math.floor(player.血量上限 * 1.3);
         player.当前血量 = player.血量上限;
+        player.道伤=0;
         await Add_寿元(usr_qq, 500);
         
         // // 帝兵进阶
@@ -553,6 +554,7 @@ async duzhendaoLeijie(e) {
         player.修为 *= 0.6;
         player.血气 *= 0.6;
         player.道伤 = (player.道伤 || 0) + 2;
+        battleLog.push(`当前道伤：${player.道伤}！`);
     }
 
     // ==== 保存数据 ====
@@ -765,6 +767,7 @@ for (let stageIndex = 0; stageIndex < stages.length; stageIndex++) {
     // ==== 渡劫结果判定 ====
     if (player.当前血量 > 1) {
       player.mijinglevel_id = 12;
+      player.道伤=0;
       battleLog.push(`【劫尽成圣】`);
       battleLog.push(`雷劫散去，${player.名号}沐浴仙光重生！`);
       battleLog.push(`破碎的躯体重组，每一滴血都蕴含圣道法则，`);
@@ -792,6 +795,7 @@ const 淬体增益 = actual_need_exp * 0.3;
       battleLog.push(`圣道符文黯淡，需寻不死神药修复伤体，`);
       battleLog.push(`再积累${bigNumberTransform(actual_need_exp * 2)}修为方可重渡此劫！`);
       player.道伤 = (player.道伤 || 0) + 1;
+      battleLog.push(`当前道伤：${player.道伤}！`);
       player.修为 *= 0.7;
       player.血气 *= 0.7;
     }
@@ -1136,7 +1140,7 @@ async shengrenwangleijie(e) {
       battleLog.push(`肉身经过万道锤炼，已近不灭，圣王道果圆满，`);
       battleLog.push(`一念间可穿梭星域，徒手撕裂星辰！`);
       battleLog.push(`「这一世，我为圣王！」道音传遍宇宙边荒！`);
-      
+      player.道伤=0;
       // 本命帝兵淬炼
       if (equipment.帝兵 &&!equipment.帝兵.圣人王&&equipment.帝兵.author_name === player.id) {
         const 淬体增益 = actual_need_exp * 0.3;
@@ -1161,6 +1165,7 @@ async shengrenwangleijie(e) {
       battleLog.push(`圣王符文黯淡，需寻不死神药修复伤体，`);
       battleLog.push(`再积累${bigNumberTransform(actual_need_exp * 3)}修为方可重渡此劫！`);
       player.道伤 = (player.道伤 || 0) + 1;
+      battleLog.push(`当前道伤：${player.道伤}！`);
       player.修为 *= 0.6; // 惩罚更重
       player.血气 *= 0.6;
     }
@@ -3102,7 +3107,9 @@ await this.broadcastToAll(player,startMsg);
         player.修为 -= actual_need_exp;
         player.血气 -= actual_need_exp;
         player.mijinglevel_id = 16;
-        
+        player.道伤=0;
+
+        player.无法证道=false;
         // 生成帝号
         const titleComponents = emperors.map(e => e.name.charAt(0)).join('');
         const divineAppellation = getDivineAppellation();
@@ -3149,7 +3156,7 @@ await this.broadcastToAll(player,startMsg);
         await e.reply([
             `【证道失败】`,
             `${player.名号}被大帝意志击败，证道之路断绝！`,
-            `道基受损，需寻不死神药修复伤体，`,
+            `道基受损，需寻不死神药修复伤体，目前道伤：${player.道伤}`,
             `再积累${bigNumberTransform(actual_need_exp * 5)}修为方可重证此道！`
         ].join('\n'));
     }

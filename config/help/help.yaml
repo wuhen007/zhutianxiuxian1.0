@@ -42,7 +42,10 @@
       desc: '查看额外境界'
     - icon: help-icon_13
       title: '#仙古今世法'
-      desc: '查看额外境界'      
+      desc: '查看额外境界'
+    - icon: help-icon_13
+      title: '#查看时代'
+      desc: '查看当下所处的修仙时代【划重点！】'            
 
 - group: 信息列表
   list:
@@ -154,6 +157,9 @@
       title: '#抽+天地卡池/灵界卡池/凡界卡池'
       desc: '抽取仙宠'
     - icon: help-icon_11
+      title: '#去'
+      desc: '快捷去上一次的副本'      
+    - icon: help-icon_11
       title: '#秘境结算'
       desc: '时间到后收获奖励'
     - icon: help-icon_11
@@ -168,10 +174,13 @@
       desc: '查看仙人镇守之地'
     - icon: help-icon_11
       title: '#镇守仙境+地点名'
-      desc: '获得修为与稀有物品'
+      desc: '获得修为与稀有物品'      
     - icon: help-icon_11
       title: '#秘境结算'
       desc: '时间到后收获奖励'
+    - icon: help-icon_11
+      title: '#副本掉落 xxx'
+      desc: '查看副本具体掉落物'       
 
 - group: 遨游万界
   list:
@@ -202,6 +211,9 @@
     - icon: help-icon_11
       title: '#秘境结算'
       desc: '时间到后收获奖励'
+    - icon: help-icon_11
+      title: '#副本掉落 xxx'
+      desc: '查看副本具体掉落物'       
 
 - group: 帮助扩展
   list:

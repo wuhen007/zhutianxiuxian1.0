@@ -73,13 +73,7 @@ export class motou extends plugin {
       }
       await Add_najie_thing(usr_qq, '魔石', '道具', -20);
       if (random < 0.9) {
-        player.灵根 = {
-          id: 100992,
-          name: '二重魔功',
-          type: '魔头',
-          eff: 0.42,
-          法球倍率: 0.27,
-        };
+        player.灵根 = {"id":100992,"name":"二重魔功","type":"魔头","eff":0.42,"法球倍率":0.27,"攻击":0,"防御":0,"生命":0,"生命本源":0};
         await Write_player(usr_qq, player);
         e.reply('恭喜你,灵根突破成功,当前灵根二重魔功!');
         return false;
@@ -94,13 +88,7 @@ export class motou extends plugin {
       }
       await Add_najie_thing(usr_qq, '魔石', '道具', -30);
       if (random < 0.7) {
-        player.灵根 = {
-          id: 100993,
-          name: '三重魔功',
-          type: '魔头',
-          eff: 0.48,
-          法球倍率: 0.31,
-        };
+        player.灵根 = {"id":100993,"name":"三重魔功","type":"魔头","eff":0.48,"法球倍率":0.31,"攻击":0,"防御":0,"生命":0,"生命本源":0};
         await Write_player(usr_qq, player);
         e.reply('恭喜你,灵根突破成功,当前灵根三重魔功!');
         return false;
@@ -115,13 +103,7 @@ export class motou extends plugin {
       }
       await Add_najie_thing(usr_qq, '魔石', '道具', -30);
       if (random < 0.6) {
-        player.灵根 = {
-          id: 100994,
-          name: '四重魔功',
-          type: '魔头',
-          eff: 0.54,
-          法球倍率: 0.36,
-        };
+        player.灵根 = {"id":100994,"name":"四重魔功","type":"魔头","eff":0.54,"法球倍率":0.36,"攻击":0,"防御":0,"生命":0,"生命本源":0};
         await Write_player(usr_qq, player);
         e.reply('恭喜你,灵根突破成功,当前灵根四重魔功!');
         return false;
@@ -136,13 +118,7 @@ export class motou extends plugin {
       }
       await Add_najie_thing(usr_qq, '魔石', '道具', -40);
       if (random < 0.5) {
-        player.灵根 = {
-          id: 100995,
-          name: '五重魔功',
-          type: '魔头',
-          eff: 0.6,
-          法球倍率: 0.4,
-        };
+        player.灵根 = {"id":100995,"name":"五重魔功","type":"魔头","eff":0.6,"法球倍率":0.4,"攻击":0,"防御":0,"生命":0,"生命本源":0};
         await Write_player(usr_qq, player);
         e.reply('恭喜你,灵根突破成功,当前灵根五重魔功!');
         return false;
@@ -157,13 +133,7 @@ export class motou extends plugin {
       }
       await Add_najie_thing(usr_qq, '魔石', '道具', -40);
       if (random < 0.4) {
-        player.灵根 = {
-          id: 100996,
-          name: '六重魔功',
-          type: '魔头',
-          eff: 0.66,
-          法球倍率: 0.43,
-        };
+        player.灵根 = {"id":100996,"name":"六重魔功","type":"魔头","eff":0.66,"法球倍率":0.43,"攻击":0,"防御":0,"生命":0,"生命本源":0};
         await Write_player(usr_qq, player);
         e.reply('恭喜你,灵根突破成功,当前灵根六重魔功!');
         return false;
@@ -178,13 +148,7 @@ export class motou extends plugin {
       }
       await Add_najie_thing(usr_qq, '魔石', '道具', -40);
       if (random < 0.3) {
-        player.灵根 = {
-          id: 100997,
-          name: '七重魔功',
-          type: '魔头',
-          eff: 0.72,
-          法球倍率: 0.47,
-        };
+        player.灵根 = {"id":100997,"name":"七重魔功","type":"魔头","eff":0.72,"法球倍率":0.47,"攻击":0,"防御":0,"生命":0,"生命本源":0};
         await Write_player(usr_qq, player);
         e.reply('恭喜你,灵根突破成功,当前灵根七重魔功!');
         return false;
@@ -199,13 +163,7 @@ export class motou extends plugin {
       }
       await Add_najie_thing(usr_qq, '魔石', '道具', -50);
       if (random < 0.25) {
-        player.灵根 = {
-          id: 100998,
-          name: '八重魔功',
-          type: '魔头',
-          eff: 0.78,
-          法球倍率: 0.5,
-        };
+        player.灵根 = {"id":100998,"name":"八重魔功","type":"魔头","eff":0.78,"法球倍率":0.5,"攻击":0,"防御":0,"生命":0,"生命本源":0};
         await Write_player(usr_qq, player);
         e.reply('恭喜你,灵根突破成功,当前灵根八重魔功!');
         return false;
@@ -220,13 +178,7 @@ export class motou extends plugin {
       }
       await Add_najie_thing(usr_qq, '魔石', '道具', -50);
       if (random < 0.2) {
-        player.灵根 = {
-          id: 100999,
-          name: '九重魔功',
-          type: '魔头',
-          eff: 1.2,
-          法球倍率: 1.2,
-        };
+        player.灵根 = {"id":100999,"name":"九重魔功","type":"魔头","eff":1.2,"法球倍率":1.2,"攻击":0,"防御":0,"生命":0,"生命本源":0};
         await Write_player(usr_qq, player);
         e.reply('恭喜你,灵根突破成功,当前灵根九重魔功!');
         return false;
@@ -261,13 +213,7 @@ export class motou extends plugin {
         return false;
       }
       await Add_najie_thing(usr_qq, '魔石', '道具', -10);
-      player.灵根 = {
-        id: 100991,
-        name: '一重魔功',
-        type: '魔头',
-        eff: 0.36,
-        法球倍率: 0.23,
-      };
+      player.灵根 = {"id":100991,"name":"一重魔功","type":"魔头","eff":0.36,"法球倍率":0.23,"攻击":0,"防御":0,"生命":0,"生命本源":0};
       await Write_player(usr_qq, player);
       e.reply('恭喜你,转世魔头成功!');
       /** 结束上下文 */

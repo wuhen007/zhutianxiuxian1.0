@@ -8342,62 +8342,156 @@ export async function synchronization(e) {
     let player = await data.getData('player', usr_qq);
     let najie = await Read_najie(usr_qq);
     let equipment = await Read_equipment(usr_qq);
+    
+    // ========== 灵根数据同步 ==========
+    // 检查玩家灵根数据是否需要更新
+    if (player.灵根 && isNotNull(player.灵根)) {
+      // 查找新版本的灵根数据
+      let newTalent = data.talent_list.find(t => 
+        t.id === player.灵根.id || t.name === player.灵根.name
+      );
+      
+      if (newTalent) {
+        // 合并新旧灵根数据，保留玩家已有的自定义属性
+        player.灵根 = {
+          ...newTalent,           // 新版本的属性
+          ...player.灵根          // 保留玩家已有的属性（如果有自定义的话）
+        };
+        
+        console.log(`玩家 ${usr_qq} 灵根已更新: ${player.灵根.name}`);
+      }
+    }
+    // ========== 灵根同步结束 ==========
+    
+    // 扩展字段数组，添加新版本字段
     let ziduan = [
-      '镇妖塔层数',
-      '神魄段数',
-      '魔道值',
-      '饱食度',
-      '热量',
-      '师徒任务阶段',
-      '师徒积分',
-      'favorability',
-      '血气',
-      'lunhuiBH',
-      'lunhui',
-      '攻击加成',
-      '防御加成',
-      '生命加成',
-      '幸运',
-      '练气皮肤',
-      '装备皮肤',
-      'islucky',
-      'sex',
-      'addluckyNo',
-      '神石',
+      '镇妖塔层数', '神魄段数', '魔道值', '饱食度', '热量', '师徒任务阶段', 
+      '师徒积分', 'favorability', '血气', 'lunhuiBH', 'lunhui', '攻击加成', 
+      '防御加成', '生命加成', '幸运', '练气皮肤', '装备皮肤', 'islucky', 'sex', 
+      'addluckyNo', '神石', '源石', '生命本源', '寿元', '道法赐福天数', 
+      'daofaxianshu', 'daofaxianshu_endtime', '抽奖次数', '出金率', '出金次数', 
+      '仙宠寻宝状态', '仙宠寻宝开始时间', '五色祭坛'
     ];
+    
     let ziduan2 = [
-      'Physique_id',
-      'mijinglevel_id',
-      'linggenshow',
-      'power_place',
-      'occupation_level',
-      '血量上限',
-      '当前血量',
-      '攻击',
-      '防御',
+      'Physique_id', 'mijinglevel_id', 'xiangulevel_id', 'linggenshow', 
+      'power_place', 'occupation_level', '血量上限', '当前血量', '攻击', '防御'
     ];
-    let ziduan3 = ['linggen', 'occupation', '仙宠'];
-    let ziduan4 = ['材料', '草药', '仙宠', '仙宠口粮','宝石','食材','盒子'];
+    
+    let ziduan3 = ['linggen', 'occupation', '仙宠', '势力', '护道人', '庇护人'];
+    let ziduan4 = ['材料', '草药', '仙宠', '仙宠口粮', '宝石', '食材', '盒子'];
+    
+    // 初始化数值字段为0
     for (let k of ziduan) {
       if (!isNotNull(player[k])) {
         player[k] = 0;
       }
     }
+    
+    // 初始化数值字段为1
     for (let k of ziduan2) {
       if (!isNotNull(player[k])) {
         player[k] = 1;
       }
     }
+    
+    // 初始化数组字段
     for (let k of ziduan3) {
       if (!isNotNull(player[k])) {
         player[k] = [];
       }
     }
+    
+    // 初始化纳戒数组字段
     for (let k of ziduan4) {
       if (!isNotNull(najie[k])) {
         najie[k] = [];
       }
     }
+    
+    // ========== 元神和元神上限特殊处理 ==========
+    // 获取玩家当前境界ID
+    let level_id = player.level_id || 1;
+    
+    // 计算基于境界的元神值（境界ID * 500000）
+    let base_spirit = level_id * 500000;
+    
+    // 如果元神字段不存在或为0，设置基于境界的初始值
+    if (!isNotNull(player.元神) || player.元神 === 0) {
+      player.元神 = base_spirit;
+    }
+    
+    // 如果元神上限字段不存在或为0，设置基于境界的初始值
+    if (!isNotNull(player.元神上限) || player.元神上限 === 0) {
+      player.元神上限 = base_spirit;
+    }
+    
+    // 如果神识字段不存在或为0，也设置基于境界的初始值
+    if (!isNotNull(player.神识) || player.神识 === 0) {
+      player.神识 = base_spirit * 0.1; // 神识是元神的10%
+    }
+    // ========== 元神处理结束 ==========
+    
+    // ========== 寿元特殊处理 ==========
+    // 根据境界ID计算基础寿元（境界ID * 500）
+    let base_lifespan = level_id * 500;
+    
+    // 如果寿元字段不存在或为0，设置基于境界的初始值
+    if (!isNotNull(player.寿元) || player.寿元 === 0) {
+      player.寿元 = base_lifespan;
+    }
+    // ========== 寿元处理结束 ==========
+    
+    // ========== 生命本源特殊处理 ==========
+    // 根据灵根的生命本源属性计算基础生命本源
+    let base_life_essence = 100; // 基础值
+    if (player.灵根 && player.灵根.生命本源) {
+      base_life_essence += player.灵根.生命本源;
+    }
+    
+    // 如果生命本源字段不存在或为0，设置基于灵根的初始值
+    if (!isNotNull(player.生命本源) || player.生命本源 === 0) {
+      player.生命本源 = base_life_essence;
+    }
+    // ========== 生命本源处理结束 ==========
+    
+    // 初始化字符串字段
+    if (!isNotNull(player.daofa)) {
+      player.daofa = '未开启';
+    }
+    if (!isNotNull(player.仙宠寻宝)) {
+      player.仙宠寻宝 = "";
+    }
+    if (!isNotNull(player.势力)) {
+      player.势力 = "无";
+    }
+    if (!isNotNull(player.势力职位)) {
+      player.势力职位 = "";
+    }
+    if (!isNotNull(player.护道人)) {
+      player.护道人 = "无";
+    }
+    if (!isNotNull(player.庇护人)) {
+      player.庇护人 = "";
+    }
+    
+    // 初始化布尔字段
+    if (!isNotNull(player.attempting_level_7)) {
+      player.attempting_level_7 = false;
+    }
+    if (!isNotNull(player.guardian)) {
+      player.guardian = null;
+    }
+    
+    // 初始化天资系统（新增关键字段）
+    if (!isNotNull(player.天资等级)) {
+      player.天资等级 = "天纵之资"; // 默认天资等级
+    }
+    if (!isNotNull(player.天资评价)) {
+      player.天资评价 = "天赋异禀，媲美上古大教的天才"; // 默认天资评价
+    }
+    
+    // 原有逻辑保持不变
     if (!isNotNull(player.breakthrough)) {
       player.breakthrough = false;
     }
@@ -8408,6 +8502,7 @@ export async function synchronization(e) {
       player.轮回点 = 10 - player.lunhui;
     }
     
+    // 初始化丹药数据
     try {
       await Read_danyao(usr_qq);
     } catch {
@@ -8427,18 +8522,19 @@ export async function synchronization(e) {
       await Write_danyao(usr_qq, arr);
     }
 
+    // 初始化装备的帝兵字段（新增）
+    if (!isNotNull(equipment.帝兵)) {
+      equipment.帝兵 = data.dibing_list.find(item => item.name == '废铁') || {
+        name: '废铁',
+        type: '帝兵',
+        attack: 0,
+        defense: 0
+      };
+    }
+
     let suoding = [
-      '装备',
-      '丹药',
-      '道具',
-      '功法',
-      '草药',
-      '材料',
-      '仙宠',
-      '仙宠口粮',
-      '宝石',
-       '食材',
-      '盒子',
+      '装备', '丹药', '道具', '功法', '草药', '材料', '仙宠', 
+      '仙宠口粮', '宝石', '食材', '盒子'
     ];
     for (let j of suoding) {
       najie[j].forEach(item => {
@@ -8447,20 +8543,25 @@ export async function synchronization(e) {
         }
       });
     }
-    //仙宠调整
+    
+    // 仙宠调整（保持不变）
     if (player.仙宠.id > 2930 && player.仙宠.id < 2936) {
       player.仙宠.初始加成 = 0.002;
       player.仙宠.每级增加 = 0.002;
       player.仙宠.加成 = player.仙宠.每级增加 * player.仙宠.等级;
       player.幸运 = player.addluckyNo + player.仙宠.加成;
-    } else player.幸运 = player.addluckyNo;
+    } else {
+      player.幸运 = player.addluckyNo;
+    }
+    
     for (let j of najie.仙宠) {
       if (j.id > 2930 && player.仙宠.id < 2936) {
         j.初始加成 = 0.002;
         j.每级增加 = 0.002;
       }
     }
-    //装备调整
+    
+    // 装备调整（保持不变）
     let wuqi = ['雾切之回光', '护摩之杖', '磐岩结绿', '三圣器·朗基努斯之枪'];
     let wuqi2 = ['紫云剑', '炼血竹枪', '少阴玉剑', '纯阴金枪'];
     for (let j of najie.装备) {
@@ -8472,19 +8573,30 @@ export async function synchronization(e) {
         if (equipment.法宝.name == wuqi[k]) equipment.法宝.name = wuqi2[k];
       }
     }
-    //口粮调整
+    
+    // 口粮调整（保持不变）
     for (let j of najie.仙宠口粮) {
       j.class = '仙宠口粮';
     }
+    
+    // 灵根数据同步（使用新版本的灵根列表）
     let linggeng = data.talent_list.find(item => item.name == player.灵根.name);
-    if (linggeng) player.灵根 = linggeng;
+    if (linggeng) {
+      // 合并灵根数据，保留玩家可能存在的自定义属性
+      player.灵根 = {
+        ...linggeng,
+        ...player.灵根
+      };
+    }
 
-    //隐藏灵根
-    if (player.隐藏灵根)
+    // 隐藏灵根（保持不变）
+    if (player.隐藏灵根) {
       player.隐藏灵根 = data.yincang.find(
         item => item.name == player.隐藏灵根.name
       );
-    //重新根据id去重置仙门
+    }
+    
+    // 重新根据id去重置仙门（保持不变）
     let now_level_id = await data.Level_list.find(
       item => item.level_id == player.level_id
     ).level_id;
@@ -8492,31 +8604,15 @@ export async function synchronization(e) {
       player.power_place = 0;
     }
    
-    await cheakbaoshi(e,usr_qq)
+    
     await Write_najie(usr_qq, najie);
     await Write_player(usr_qq, player);
     await Write_equipment(usr_qq, equipment);
+    
+    // 记录同步信息（可选，用于调试）
+    console.log(`玩家 ${usr_qq} 同步完成：境界${level_id} 元神${player.元神} 生命本源${player.生命本源} 寿元${player.寿元}`);
   }
   e.reply('存档同步结束');
-
-  // NOTE: 魔术师同步，开发者专用，要使用请删除注释
-  /*
-    const thingType = ''; // 填写欲抹除物品类型
-    const thingName = ''; // 填写欲抹除物品名称
-  
-    const objArr = await clearNajieThing(thingType, thingName);
-    e.reply('物品自动抹除结束');
-  
-    const newThingType = '';
-    const newThingName = ''; // 填写新物品
-    const N = 1; // 填写
-  
-    objArr.map(uid_tnum => {
-      const usrId = Object.entries(uid_tnum)[0][0];
-      Add_najie_thing(usrId, newThingName, newThingType, uid_tnum.usrId * N);
-    });
-    e.reply('物品自动替换结束');
-  */
   return;
 }
 

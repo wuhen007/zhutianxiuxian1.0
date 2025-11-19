@@ -38,6 +38,10 @@ export class SecretPlace extends plugin {
       priority: 600,
       rule: [
         {
+  reg: '^#去$',
+  fnc: 'quickReplay',
+},
+        {
           reg: '^#修仙状态|#状态$',
           fnc: 'Xiuxianstate',
         },
@@ -1066,7 +1070,9 @@ async Gojiehaiplace(e) {
         allMsgs.push("你破王成帝的桎梏正在松动");
         await Write_player(usr_qq, player);
     }
-    
+    player.lastDungeonType = '界海';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
     return true;
@@ -1274,7 +1280,9 @@ async Gosecretplace(e) {
     }
     
     await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
-    
+        player.lastDungeonType = '秘境';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
     return true;
@@ -1401,7 +1409,9 @@ async Goxiajie(e) {
     }
     
     await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
-    
+        player.lastDungeonType = '下界八域';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
     return true;
@@ -1523,7 +1533,9 @@ async Gojiutianshidi(e) {
     }
     
     await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
-    
+        player.lastDungeonType = '九天十地';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
     return true;
@@ -1838,7 +1850,9 @@ async Gozhetian(e) {
     
     // ==== 最终消息 ====
     allMsgs.push(`开始前往${didian}，${time}分钟后归来！`);
-    
+        player.lastDungeonType = '遮天位面';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
     // ==== 发送所有消息 ====
     return e.reply(allMsgs.join('\n\n'));
 }
@@ -2121,7 +2135,9 @@ async Goforbiddenarea(e) {
     
     // 添加主要行动信息
     allMsgs.push(`开始探索${didian}，${time}分钟后归来！`);
-    
+        player.lastDungeonType = '禁地';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
     return true;
@@ -2361,7 +2377,9 @@ async GoTimeplace(e) {
             time +
             '分钟后归来!';
     }
-    
+        player.lastDungeonType = '仙府';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
     e.reply(replyMsg);
     return false;
 }
@@ -2740,7 +2758,9 @@ async Gofairyrealm(e) {
     
     // 添加主要行动信息
     allMsgs.push(`开始镇守${didian}，${time}分钟后归来！`);
-    
+        player.lastDungeonType = '仙境';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
     return true;
@@ -2795,11 +2815,9 @@ if (action != null) {
         `此刻，唯有前行！`,
         `待探索完成（${remaining_minutes}分${remaining_seconds}秒后），方有归途！`,
         ``,
-        `▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂`,
         `界海凶险，万古皆寂！`,
         `准仙帝踏入亦九死一生，仙王骸骨铺就前路！`,
         `既已踏足，唯有血战到底！`,
-        `▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂`
     ].join('\n'));
     return false;}
     // 处理传送任务（位面传送）的取消
@@ -2878,6 +2896,47 @@ if (action != null) {
 }
     return false;
   }
+  async quickReplay(e) {
+  if (!verc({ e })) return false;
+
+  const usr_qq = e.user_id.toString().replace('qg_', '');
+  const player_qq = await channel(usr_qq);
+  const player = await Read_player(player_qq);
+
+  // 读玩家自身记录的快捷副本
+  const { lastDungeonType: type, lastDungeonName: place } = player;
+  if (!type || !place) {
+    return e.reply('你还没有下过任何副本，请先使用完整指令（如#降临秘境灵墟洞天）');
+  }
+
+  // 拼出完整指令
+  const cmdMap = {
+    秘境:     `#降临秘境${place}`,
+    禁地:     `#前往禁地${place}`,
+    遮天位面: `#前往遮天位面${place}`,
+    下界八域: `#前往下界八域${place}`,
+    九天十地: `#前往九天十地${place}`,
+    仙境:     `#镇守仙境${place}`,
+    界海:     `#探索界海${place}`,
+    仙府:     `#探索仙府`,      // 仙府本身不带地名
+  };
+  const fullCmd = cmdMap[type];
+  if (!fullCmd) return e.reply('记录的副本类型异常，请重新使用完整指令');
+
+  // 直接复用原逻辑
+  e.msg = fullCmd;
+
+  // 重新分发
+  if (type === '秘境')     return this.Gosecretplace(e);
+  if (type === '禁地')     return this.Goforbiddenarea(e);
+  if (type === '遮天位面') return this.Gozhetian(e);
+  if (type === '下界八域') return this.Goxiajie(e);
+  if (type === '九天十地') return this.Gojiutianshidi(e);
+  if (type === '仙境')     return this.Gofairyrealm(e);
+  if (type === '界海')     return this.Gojiehaiplace(e);
+  if (type === '仙府')     return this.GoTimeplace(e);
+}
+
 // 副本掉落指令处理
 async handleDungeonDrop(e) {
     // 1. 解析指令（提取地点名）

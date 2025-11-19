@@ -153,13 +153,7 @@ export class lunhui extends plugin {
       }
     }
     if (player.lunhui == 9) {
-      player.灵根 = {
-        id: 700999,
-        name: '九转轮回体',
-        type: '转生',
-        eff: 1,
-        法球倍率: 1,
-      };
+      player.灵根 = {"id":700999,"name":"九转轮回体","type":"转生","eff":1.0,"法球倍率":1.0,"攻击":0,"防御":0,"生命":0,"生命本源":0};
       let thing_name = '九转轮回';
       let thing_class = '功法';
       let n = 1;
@@ -186,13 +180,7 @@ export class lunhui extends plugin {
       return false;
     }
     if (player.lunhui == 8) {
-      player.灵根 = {
-        id: 700998,
-        name: '八转轮回体',
-        type: '转生',
-        eff: 0.65,
-        法球倍率: 0.42,
-      };
+      player.灵根 = {"id":700998,"name":"八转轮回体","type":"转生","eff":0.65,"法球倍率":0.42,"攻击":0,"防御":0,"生命":0,"生命本源":0};
       let thing_name = '八转轮回';
       let thing_class = '功法';
       let n = 1;
@@ -219,13 +207,7 @@ export class lunhui extends plugin {
       return false;
     }
     if (player.lunhui == 7) {
-      player.灵根 = {
-        id: 700997,
-        name: '七转轮回体',
-        type: '转生',
-        eff: 0.6,
-        法球倍率: 0.39,
-      };
+      player.灵根 = {"id":700997,"name":"七转轮回体","type":"转生","eff":0.6,"法球倍率":0.39,"攻击":0,"防御":0,"生命":0,"生命本源":0};
       let thing_name = '七转轮回';
       let thing_class = '功法';
       let n = 1;
@@ -252,13 +234,7 @@ export class lunhui extends plugin {
       return false;
     }
     if (player.lunhui == 6) {
-      player.灵根 = {
-        id: 700996,
-        name: '六转轮回体',
-        type: '转生',
-        eff: 0.55,
-        法球倍率: 0.36,
-      };
+      player.灵根 = {"id":700996,"name":"六转轮回体","type":"转生","eff":0.55,"法球倍率":0.36,"攻击":0,"防御":0,"生命":0,"生命本源":0};
       let thing_name = '六转轮回';
       let thing_class = '功法';
       let n = 1;
@@ -285,13 +261,7 @@ export class lunhui extends plugin {
       return false;
     }
     if (player.lunhui == 5) {
-      player.灵根 = {
-        id: 700995,
-        name: '五转轮回体',
-        type: '转生',
-        eff: 0.5,
-        法球倍率: 0.33,
-      };
+      player.灵根 = {"id":700995,"name":"五转轮回体","type":"转生","eff":0.5,"法球倍率":0.33,"攻击":0,"防御":0,"生命":0,"生命本源":0};
       let thing_name = '五转轮回';
       let thing_class = '功法';
       let n = 1;
@@ -318,13 +288,7 @@ export class lunhui extends plugin {
       return false;
     }
     if (player.lunhui == 4) {
-      player.灵根 = {
-        id: 700994,
-        name: '四转轮回体',
-        type: '转生',
-        eff: 0.45,
-        法球倍率: 0.3,
-      };
+      player.灵根 = {"id":700994,"name":"四转轮回体","type":"转生","eff":0.45,"法球倍率":0.3,"攻击":0,"防御":0,"生命":0,"生命本源":0};
       let thing_name = '四转轮回';
       let thing_class = '功法';
       let n = 1;
@@ -351,13 +315,7 @@ export class lunhui extends plugin {
       return false;
     }
     if (player.lunhui == 3) {
-      player.灵根 = {
-        id: 700993,
-        name: '三转轮回体',
-        type: '转生',
-        eff: 0.4,
-        法球倍率: 0.26,
-      };
+      player.灵根 = {"id":700993,"name":"三转轮回体","type":"转生","eff":0.4,"法球倍率":0.26,"攻击":0,"防御":0,"生命":0,"生命本源":0};
       let thing_name = '三转轮回';
       let thing_class = '功法';
       let n = 1;
@@ -384,13 +342,7 @@ export class lunhui extends plugin {
       return false;
     }
     if (player.lunhui == 2) {
-      player.灵根 = {
-        id: 700992,
-        name: '二转轮回体',
-        type: '转生',
-        eff: 0.35,
-        法球倍率: 0.23,
-      };
+      player.灵根 = {"id":700992,"name":"二转轮回体","type":"转生","eff":0.35,"法球倍率":0.23,"攻击":0,"防御":0,"生命":0,"生命本源":0};
       let thing_name = '二转轮回';
       let thing_class = '功法';
       let n = 1;
@@ -417,13 +369,7 @@ export class lunhui extends plugin {
       return false;
     }
     if (player.lunhui == 1) {
-      player.灵根 = {
-        id: 700991,
-        name: '一转轮回体',
-        type: '转生',
-        eff: 0.3,
-        法球倍率: 0.2,
-      };
+      player.灵根 = {"id":700991,"name":"一转轮回体","type":"转生","eff":0.3,"法球倍率":0.2,"攻击":0,"防御":0,"生命":0,"生命本源":0};
       let thing_name = '一转轮回';
       let thing_class = '功法';
       let n = 1;
