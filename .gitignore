@@ -10,8 +10,6 @@
 #
 node_modules/
 #
-config/
-#
 defSet/
 
 # Mobile Tools for Java (J2ME)
