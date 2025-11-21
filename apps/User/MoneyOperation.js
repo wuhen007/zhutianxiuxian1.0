@@ -127,7 +127,10 @@ export class MoneyOperation extends plugin {
   }
   async wup(e) {
     if (!verc({ e })) return false;
-    if (!e.isMaster) return false;
+        // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
+    }
     //对方
     let isat = e.message.some(item => item.type === 'at');
     if (!isat) return false;
@@ -202,7 +205,10 @@ export class MoneyOperation extends plugin {
 
   async wup_all(e) {
     if (!verc({ e })) return false;
-    if (!e.isMaster) return false;
+            // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
+    }
     //所有玩家
     let File = fs.readdirSync(__PATH.player_path);
     File = File.filter(file => file.endsWith('.json'));

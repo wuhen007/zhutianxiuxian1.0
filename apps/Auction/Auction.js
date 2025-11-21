@@ -102,9 +102,13 @@ export class Auction extends plugin {
   }
 
   async openAction(e) {
-    if (!e.isMaster) {
-      return e.reply('只有只因器人主人可以开启');
+            // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
     }
+    // if (!e.isMaster) {
+    //   return e.reply('只有只因器人主人可以开启');
+    // }
 
     // 如果星阁已经开了，将本群加入Redis
     // INFO: 缺省判断是否在进行，GroupList判断哪些群开启了星阁体系
@@ -155,9 +159,13 @@ export class Auction extends plugin {
   }
 
   async cancalAction(e) {
-    if (!e.isMaster) {
-      return e.reply('只有只因器人主人可以取消');
+            // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
     }
+    // if (!e.isMaster) {
+    //   return e.reply('只有只因器人主人可以取消');
+    // }
 
     const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
     if (!redis.sIsMember(redisGlKey, String(e.group_id))) {
@@ -169,9 +177,13 @@ export class Auction extends plugin {
   }
 
   async offAction(e) {
-    if (!e.isMaster) {
-      return e.reply('只有只因器人主人可以关闭');
+            // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
     }
+    // if (!e.isMaster) {
+    //   return e.reply('只有只因器人主人可以关闭');
+    // }
 
     const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
     await redis.del('xiuxian:AuctionofficialTask');

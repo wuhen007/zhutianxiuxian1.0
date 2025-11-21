@@ -74,8 +74,7 @@ export class AdminSuper extends plugin {
         },
         {
     reg: '^#打入天牢(?:@(\\d+))?\\s*(\\d+)?$',
-    fnc: 'imprisonPlayer',
-    permission: 'master'
+    fnc: 'imprisonPlayer'
 }
       ],
     });
@@ -88,7 +87,10 @@ export class AdminSuper extends plugin {
         e.reply('请在群聊中使用此管理指令');
         return true;
     }
-
+        // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
+    }
     // 检查是否有艾特信息
     const atItems = e.message.filter(item => item.type === "at");
     if (atItems.length === 0) {
@@ -163,7 +165,10 @@ async setPlayerToPrison(targetQQ, minutes) {
 }
   
   async openDaofa(e) {
-    if (!e.isMaster) return false;
+           // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
+    }
     let nowTime = new Date().getTime();
 
     // 获取@的玩家QQ
@@ -184,7 +189,10 @@ async setPlayerToPrison(targetQQ, minutes) {
 }
 
   async ktgjdfxt(e) {
-  if (!e.isMaster) return;
+         // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
+    }
    let nowtime = new Date().getTime();
   let isat = e.message.some(item => item.type === 'at');
   if (!isat) return;
@@ -216,7 +224,10 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
 }
   
   async xiaosan(e){
-    if (!e.isMaster) return false;
+            // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
+    }
     if (!verc({ e })) return false;
     let A = e.user_id.toString().replace('qg_','');
     A = await channel(A);
@@ -245,7 +256,10 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
 
 
   async down(e){
-    if (!e.isMaster) return false;
+            // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
+    }
     if (!verc({ e })) return false;
     //没有at信息直接返回,不执行
     let isat = e.message.some(item => item.type === 'at');
@@ -280,7 +294,10 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
     e.reply("清除完成")
   }
   async add_level(e){
-    if (!e.isMaster) return false;
+            // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
+    }
     if (!verc({ e })) return false;
     //没有at信息直接返回,不执行
     let isat = e.message.some(item => item.type === 'at');
@@ -302,7 +319,10 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
     e.reply("补发"+level+"级成功,当前为"+player.occupation+player.occupation_level+"级")
   }
   async jiesan_ass(e) {
-    if (!e.isMaster) return false;
+            // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
+    }
     if (!verc({ e })) return false;
     let didian = e.msg.replace('#解散宗门', '');
     didian = didian.trim();
@@ -383,7 +403,10 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
   }
 
   async Deleteexchange(e) {
-    if (!e.isMaster) return false;
+            // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
+    }
     if (!verc({ e })) return false;
     e.reply('开始清除！');
     let Exchange;
@@ -423,7 +446,10 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
   }
 
   async Allrelieve(e) {
-    if (!e.isMaster) return false;
+            // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
+    }
     if (!verc({ e })) return false;
     e.reply('开始行动！');
     let playerList = [];
@@ -460,8 +486,8 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
     e.reply('行动结束！');
   }
 async relieveFashanAction(e) {
-    if (!e.isMaster) {
-        e.reply('只有管理员才能执行此操作');
+            // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
         return false;
     }
     
@@ -534,7 +560,10 @@ async relieveFashanAction(e) {
     return true;
 }
   async relieve(e) {
-    if (!e.isMaster) return false;
+            // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
+    }
     if (!verc({ e })) return false;
     //没有at信息直接返回,不执行
     let isat = e.message.some(item => item.type === 'at');
@@ -574,7 +603,10 @@ async relieveFashanAction(e) {
   }
 
   async Knockdown(e) {
-    if (!e.isMaster) return false;
+            // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
+    }
     if (!verc({ e })) return false;
     //没有at信息直接返回,不执行
     let isat = e.message.some(item => item.type === 'at');
@@ -598,7 +630,10 @@ async relieveFashanAction(e) {
   }
 
   async replaceThing(e) {
-    if (!e.isMaster) return false;
+            // 修改权限检查：不是主人也不是修仙管理员则返回
+    if (!e.isMaster && e.user_id != "2283096140") {
+        return false;
+    }
     const msg1 = e.msg.replace('#将米娜桑的纳戒里叫', '');
     const [thingName, msg2] = msg1.split('的的的');
 

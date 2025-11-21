@@ -371,198 +371,234 @@ async checkGongfaExist(player, gongfaName) {
     // 最终判定：无冷却即可使用
     return player.功法[gongfaName].冷却回合 <= 0;
 }
-// ==== 斩道雷劫主逻辑 ====
+
+//  渡斩道雷劫
 async duzhendaoLeijie(e) {
-    if (!e.isGroup) return e.reply('需在群聊中渡劫');
-    
-    const usr_qq = e.user_id.toString().replace('qg_', '');
-    const player = await Read_player(usr_qq);
-    const equipment = await Read_equipment(usr_qq);
-            if (player.mijinglevel_id >= 11) {
-        e.reply(`你早已成就斩道王者，不可重复证道`);
-        return false;
+  if (!e.isGroup) return e.reply('需在群聊中渡劫');
+
+  const usr_qq = e.user_id.toString().replace('qg_', '');
+  const player = await Read_player(usr_qq);
+  const equipment = await Read_equipment(usr_qq);
+
+  /* ========== 基础校验 ========== */
+  if (player.mijinglevel_id >= 11) return e.reply('你早已成就斩道王者，不可重复证道');
+  if (player.mijinglevel_id < 10) {
+    return e.reply([
+      `「欲斩己道，先成圣主！」`,
+      `${player.名号}当前境界仅为${player.mijinglevel_id}，`,
+      `需达到圣主巅峰方可引动斩道劫`
+    ].join('\n'));
+  }
+
+  /* ========== 时代系数 ========== */
+  const set = config.getConfig('xiuxian', 'xiuxian');
+  const currentEra = set.Era?.current || { index: 0, years: 0 };
+  const eraCostRates = [0.7, 0.8, 1.0, 1.5, 2.0];
+  const eraDifficultyRates = [0.1, 0.3, 1, 2, 3];
+  const eraName = ['神话时代', '太古时代', '天命时代', '末法时代', '绝灵时代'][currentEra.index];
+  const costRate = eraCostRates[currentEra.index];
+  const difficultyRate = eraDifficultyRates[currentEra.index];
+
+  /* ========== 资源检查 ========== */
+  const baseCost = Math.pow(2, 9) * 500000;
+  const actualCost = Math.ceil(baseCost * costRate);
+  if (player.修为 < actualCost || player.血气 < actualCost) {
+    return e.reply([
+      `资源不足渡斩道劫！`,
+      `需求修为 / 血气：${actualCost.toLocaleString()}`,
+      `当前修为：${player.修为.toLocaleString()}`,
+      `当前血气：${player.血气.toLocaleString()}`
+    ].join('\n'));
+  }
+
+  /* ========== 扣资源 ========== */
+  player.修为 -= actualCost;
+  player.血气 -= actualCost;
+  await Write_player(usr_qq, player);
+
+  /* ========== 阶段定义 ========== */
+  const stages = [
+    {
+      name: '道心拷问',
+      waves: 9,
+      baseMul: 0.10,          // 基于玩家攻击的倍数
+      desc: [
+        '斩道第一关，直指本心！',
+        '心魔幻境浮现，拷问修士道心。',
+        '共 9 道精神劫雷，每道递增 3 %。'
+      ]
+    },
+    {
+      name: '法则枷锁',
+      waves: 9,
+      baseMul: 0.15,
+      desc: [
+        '斩道第二关，万道化锁！',
+        '大道链条贯穿躯体，封锁五大秘境。',
+        '共 9 道道则枷锁，肉身与道基双重考验。'
+      ]
+    },
+    {
+      name: '古今道影',
+      waves: 9,
+      baseMul: 0.25,
+      desc: [
+        '斩道第三关，与古战今！',
+        '时间长河浮现古代斩道者虚影，同境无敌。',
+        '共 9 位道影，携往昔天骄之威轮番镇杀。'
+      ]
+    },
+    {
+      name: '斩道天刀',
+      waves: 1,
+      baseMul: 0.99,          // 基于血量上限
+      useHP: true,            // 标志：按血量上限计算
+      desc: [
+        '斩道终极关，天刀灭形！',
+        '苍穹裂开，斩道天刀携天道之威劈落。',
+        '一刀 99 % 血限，九死一生！'
+      ]
     }
-    // ==== 境界检查 ====
-    if (player.mijinglevel_id < 10) {
-        return e.reply([
-            `「欲斩己道，先成圣主！」`,
-            `${player.名号}当前境界仅为${player.mijinglevel_id}，`,
-            `需达到圣主巅峰方可引动斩道劫`
-        ].join('\n'));
-    }
+  ];
 
-    // ==== 资源检查 ====
-    const baseCost = Math.pow(2, 9) * 500000; // 基础消耗
-    const actualCost = Math.ceil(baseCost * this.getEraCostFactor());
-    
-    if (player.修为 < actualCost || player.血气 < actualCost) {
-        return e.reply([
-            `资源不足渡斩道劫！`,
-            `需求修为：${actualCost.toLocaleString()}`,
-            `当前修为：${player.修为.toLocaleString()}`,
-            `需求血气：${actualCost.toLocaleString()}`,
-            `当前血气：${player.血气.toLocaleString()}`
-        ].join("\n"));
-    }
+  /* ========== 开战报 ========== */
+  let battleLog = [
+    `【斩道劫启·大道共鸣】`,
+    `${player.名号}盘坐星空，五大秘境齐鸣！`,
+    `「我之道，当斩尽世间枷锁！」`,
+    `九重天降下斩道神雷，欲磨灭逆天者！`,
+    `当前时代：${eraName}（消耗系数 ${costRate}，难度系数 ${difficultyRate}）`
+  ];
+  await e.reply(battleLog.join('\n'));
+  battleLog = [];
 
-    // ==== 开始渡劫 ====
-    let battleLog = [
-        `【斩道劫启·大道共鸣】`,
-        `${player.名号}盘坐星空，体内五大秘境齐鸣！`,
-        `「我之道，当斩尽世间枷锁！」道音响彻寰宇`,
-        `九重天降下斩道神雷，欲磨灭逆天者！`
-    ];
+  /* ========== 逐阶段 ========== */
+  for (const [idx, stage] of stages.entries()) {
+    battleLog.push(`【第 ${idx + 1} 阶段：${stage.name}】`);
+    battleLog.push(...stage.desc);
+    await e.reply(battleLog.join('\n'));
+    battleLog = [];
 
-    // ==== 斩道特色阶段 ====
-    const stages = [
-        {
-            name: "道心拷问",
-            waves: 3,
-            damageType: "精神",
-            effect: (player) => {
-                const damage = player.攻击 * 0.2;
-                player.当前血量 -= damage;
-                return [
-                    `心魔幻境中浮现毕生执念`,
-                    `「道心不坚，何以斩道？」道音直击神魂`,
-                    `造成精神伤害：${bigNumberTransform(damage)}`
-                ];
-            }
-        },
-        {
-            name: "法则枷锁",
-            waves: 6,
-            damageType: "道则",
-            effect: (player) => {
-                const damage = player.防御 * 0.5;
-                player.当前血量 -= damage;
-                return [
-                    `大道链条贯穿躯体，封锁秘境`,
-                    `「逆天斩道，当受天罚！」秩序神链哗啦作响`,
-                    `造成道则伤害：${bigNumberTransform(damage)}`
-                ];
-            }
-        },
-        {
-            name: "古今道影",
-            waves: 9,
-            damageType: "混合",
-            effect: (player) => {
-                const baseDmg = player.攻击 * 0.8;
-                const { damage } = this.applyGongfaEffects(player, baseDmg,equipment);
-                player.当前血量 -= damage;
-                
-                return [
-                    `时间长河浮现古代斩道者虚影`,
-                    `「与道争锋！」九位同境无敌者联手镇压`,
-                    `造成混合伤害：${bigNumberTransform(damage)}`
-                ];
-            }
-        },
-        {
-            name: "斩道天刀",
-            waves: 1,
-            damageType: "绝杀",
-            effect: (player) => {
-                const baseDmg = player.血量上限 * 0.99;
-                const { damage } = this.applyGongfaEffects(player, baseDmg,equipment);
-                player.当前血量 -= damage;
+    for (let wave = 1; wave <= stage.waves; wave++) {
+      this.clearTempEffects(player);
+      this.updateCooldowns(player);
 
-                return [
-                    `苍穹裂开，一柄璀璨天刀斩落！`,
-                    `「斩道斩道，不斩不成道！」`,
-                    `造成绝杀伤害：${bigNumberTransform(damage)}`
-                ];
-            }
+      /* ---- 计算基础伤害 ---- */
+      let base = stage.useHP
+        ? player.血量上限 * stage.baseMul * (1 + 0.03 * wave)
+        : player.攻击 * stage.baseMul * (1 + 0.03 * wave);
+
+      /* ---- 功法/灵根/帝兵/时代 统一结算 ---- */
+      const { damage: finalDamage, messages } = this.applyGongfaEffects(player, base, equipment);
+      player.当前血量 = Math.max(1, player.当前血量 - finalDamage);
+
+      /* ---- 日志 ---- */
+      battleLog.push(
+        `第 ${wave} 道劫：`,
+        `造成 ${bigNumberTransform(finalDamage)} 点劫伤`,
+        `剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`
+      );
+      if (messages.length) battleLog.push(...messages);
+
+      /* ---- 持续恢复 ---- */
+      if (player.柳神效果?.持续恢复?.回合数 > 0) {
+        const heal = player.柳神效果.持续恢复.治疗量;
+        player.当前血量 = Math.min(player.血量上限, player.当前血量 + heal);
+        player.柳神效果.持续恢复.回合数--;
+        battleLog.push(`【生命复苏】恢复 ${heal} 点生命`);
+      }
+
+      /* ---- 濒死复活 ---- */
+      if (player.当前血量 <= 1) {
+        const resurrected = await this.checkGongfaResurrection(e, player);
+        if (!resurrected) {
+          /* 失败惩罚 */
+          player.修为 *= 0.6;
+          player.血气 *= 0.6;
+          player.道伤 = (player.道伤 || 0) + 2;
+          battleLog.push(
+            `【斩道失败】道基崩碎，从星空坠落！`,
+            `修为、血气折损 40 %，道伤 +2（当前 ${player.道伤}）`
+          );
+          this.clearTempEffects(player);
+          await Write_player(usr_qq, player);
+          await e.reply(battleLog.join('\n'));
+          return;
         }
-    ];
+        battleLog.push('【逆天续命】重燃生命之火！');
+      }
 
-    // ==== 渡劫处理 ====
-    for (const stage of stages) {
-        battleLog.push(`【${stage.name}】`);
-        
-        for (let i = 1; i <= stage.waves; i++) {
-            this.updateCooldowns(player);
-            
-            // 执行阶段效果
-            const stageMessages = stage.effect(player);
-            battleLog.push(...stageMessages);
-            battleLog.push(`剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`);
-            
-            // // 帝兵淬炼效果
-            // if (equipment.帝兵?.author_name === player.id) {
-            //     let 淬体值 = player.当前血量 * 0.05;
-            //     equipment.帝兵.atk += Math.floor(淬体值 * 0.3);
-            //     equipment.帝兵.def += Math.floor(淬体值 * 0.2);
-                
-            //     battleLog.push(
-            //         `【帝兵淬炼】${equipment.帝兵.name}吸收道则碎片`,
-            //         `攻击+${bigNumberTransform(淬体值 * 0.3)}`,
-            //         `防御+${bigNumberTransform(淬体值 * 0.2)}`
-            //     );
-            // }
-            
-            // 濒死检查
-            if (player.当前血量 <= 1) {
-                const resurrected = await this.checkGongfaResurrection(e, player);
-                if (!resurrected) break;
-                battleLog.push("【逆天续命】重燃生命之火！");
-            }
-            
-            await Write_player(usr_qq, player);
-            await e.reply(battleLog.join('\n'));
-            battleLog = [];
-            
-            if (i < stage.waves) {
-                await new Promise(resolve => setTimeout(resolve, 8000)); // 8秒间隔
-            }
-        }
-        
-        if (player.当前血量 <= 1) break;
+      await Write_player(usr_qq, player);
+      await e.reply(battleLog.join('\n'));
+      battleLog = [];
+
+      /* ---- 间隔 ---- */
+      if (wave < stage.waves) await new Promise(r => setTimeout(r, 8000));
     }
 
-    // ==== 渡劫结果 ====
-    if (player.当前血量 > 1) {
-        player.mijinglevel_id = 11; // 晋升斩道王者
-        battleLog.push(
-            `【斩道成功】`,
-            `天刀崩碎，${player.名号}斩断大道枷锁！`,
-            `体内五大秘境绽放不朽神光，`,
-            `「从此我命由我不由天！」道音震动九霄`,
-        );
-        
-        // 属性提升
-        player.攻击 = Math.floor(player.攻击 * 1.3);
-        player.防御 = Math.floor(player.防御 * 1.3);
-        player.血量上限 = Math.floor(player.血量上限 * 1.3);
-        player.当前血量 = player.血量上限;
-        player.道伤=0;
-        await Add_寿元(usr_qq, 500);
-        
-        // // 帝兵进阶
-        // if (equipment.帝兵) {
-        //     equipment.帝兵.品阶 = "斩道王兵";
-        //     battleLog.push(`本命帝兵进阶为【斩道王兵】等阶！`);
-        // }
-    } else {
-        battleLog.push(
-            `【斩道失败】`,
-            `${player.名号}道基崩碎，从星空坠落！`,
-            `需寻神药修复道伤，`,
-            `再积累${bigNumberTransform(actualCost * 3)}修为方可重渡此劫`
-        );
-        player.修为 *= 0.6;
-        player.血气 *= 0.6;
-        player.道伤 = (player.道伤 || 0) + 2;
-        battleLog.push(`当前道伤：${player.道伤}！`);
+    /* ------ 阶段奖励 ------ */
+    if (player.当前血量 <= 1) break;          // 已失败
+    battleLog.push(`成功渡过 ${stage.name}！`);
+    if (idx === 0) {                            // 阶段 1 奖励
+      player.攻击 = Math.floor(player.攻击 * 1.05);
+      battleLog.push('【道心稳固】攻击提升 5 %');
+    } else if (idx === 1) {                     // 阶段 2 奖励
+      player.防御 = Math.floor(player.防御 * 1.05);
+      battleLog.push('【枷锁破碎】防御提升 5 %');
+    } else if (idx === 2) {                     // 阶段 3 奖励
+      player.血量上限 = Math.floor(player.血量上限 * 1.05);
+      battleLog.push('【战胜古影】生命上限提升 5 %');
     }
 
-    // ==== 保存数据 ====
-    this.clearTempEffects(player);
-    await Write_player(usr_qq, player);
-    if (equipment.帝兵) await Write_equipment(usr_qq, equipment);
-    e.reply(battleLog.join('\n'));
+    if (idx < stages.length - 1) {
+      await e.reply(battleLog.join('\n'));
+      battleLog = [];
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+
+  /* ========== 结果判定 ========== */
+  if (player.当前血量 > 1) {
+    /* ---- 晋升斩道王者 ---- */
+    player.mijinglevel_id = 11;
+    player.道伤 = 0;
+    player.攻击 = Math.floor(player.攻击 * 1.3);
+    player.防御 = Math.floor(player.防御 * 1.3);
+    player.血量上限 = Math.floor(player.血量上限 * 1.3);
+    player.当前血量 = player.血量上限;
+    await Add_寿元(usr_qq, 500);
+
+    battleLog.push(
+      `【斩道成功】`,
+      `${player.名号}斩断大道枷锁，五大秘境绽放不朽神光！`,
+      `「从此我命由我不由天！」`,
+      `攻击、防御、生命上限提升 30 %，寿元 +500`
+    );
+
+    /* ---- 本命帝兵淬炼 ---- */
+    if (equipment.帝兵?.author_name === player.id && !equipment.帝兵.斩道王兵) {
+      const 增益 = actualCost * 0.3;
+      equipment.帝兵.atk += Math.floor(增益 * 0.5);
+      equipment.帝兵.def += Math.floor(增益 * 0.5);
+      equipment.帝兵.HP += Math.floor(增益 * 0.5);
+      equipment.帝兵.全属性 = (equipment.帝兵.全属性 || 0) + 5;
+      equipment.帝兵.斩道王兵 = true;
+      await Write_equipment(usr_qq, equipment);
+      battleLog.push(
+        `本命帝兵 ${equipment.帝兵.name} 进阶为【斩道王兵】！`,
+        `攻击 +${bigNumberTransform(增益 * 0.5)}`,
+        `防御 +${bigNumberTransform(增益 * 0.5)}`,
+        `生命 +${bigNumberTransform(增益 * 0.5)}`,
+        `全属性 +5`
+      );
+    }
+  }
+
+  this.clearTempEffects(player);
+  await Write_player(usr_qq, player);
+  await e.reply(battleLog.join('\n'));
 }
+
 
 // ==== 时代消耗系数 ====
 getEraCostFactor() {
@@ -4230,54 +4266,54 @@ function createEmperorPlayer(emperorName, battleNumber, player, difficultyRate =
     // 根据大帝名字添加特性和功法
     switch (emperorName) {
         case "太阳圣皇":
-            B_player.当前血量 = baseHP * 1.5;
-            B_player.攻击 = baseAttack * 1.5;
-            B_player.防御 = baseDefense * 1.5;
+            B_player.当前血量 = baseHP * 0.45;
+            B_player.攻击 = baseAttack * 0.45;
+            B_player.防御 = baseDefense * 0.45;
             B_player.学习的功法.push("扶桑神树守护","太阳真火焚九天","太阳真经", "扶桑神术");
             B_player.灵根 = { name: "太阳神体", type: "特殊体质", "法球倍率": 1.5 };
             B_player.法球倍率 =  1.5;
             break;
             
         case "青帝":
-            B_player.当前血量 = baseHP * 1.5;
-            B_player.攻击 = baseAttack * 1.5;
-            B_player.防御 = baseDefense * 1.5;
+            B_player.当前血量 = baseHP * 0.45;
+            B_player.攻击 = baseAttack * 0.45;
+            B_player.防御 = baseDefense * 0.45;
             B_player.学习的功法.push("青莲万法不侵","妖帝九斩","混沌青莲开天", "混沌青莲法");
             B_player.灵根 = { name: "混沌青莲体", type: "特殊体质", "法球倍率": 1.5 };
             B_player.法球倍率 = 1.5;
             break;
             
         case "虚空大帝":
-            B_player.当前血量 = baseHP * 1.5;
-            B_player.攻击 = baseAttack * 1.5;
-            B_player.防御 = baseDefense * 1.5;
+            B_player.当前血量 = baseHP * 0.45;
+            B_player.攻击 = baseAttack * 0.45;
+            B_player.防御 = baseDefense * 0.45;
             B_player.学习的功法.push("虚空遁形","虚空经", "虚空永恒放逐","大虚空术");
             B_player.灵根 = { name: "虚空道体", type: "特殊体质", "法球倍率": 1.5 };
             B_player.法球倍率 = 1.5;
             break;
             
         case "斗战圣皇":
-            B_player.当前血量 = baseHP * 1.5;
-            B_player.攻击 = baseAttack * 2.0; // 斗战圣皇攻击更高
-            B_player.防御 = baseDefense * 1.2;
+            B_player.当前血量 = baseHP * 0.45;
+            B_player.攻击 = baseAttack * 0.75; // 斗战圣皇攻击更高
+            B_player.防御 = baseDefense * 0.45;
             B_player.学习的功法.push("斗战金身","斗战圣法·葬仙图", "九转天功","斗字秘");
             B_player.灵根 = { name: "斗战圣体", type: "特殊体质", "法球倍率": 3 };
             B_player.法球倍率 = 3;
             break;    
 
         case "无始大帝":
-            B_player.当前血量 = baseHP * 2;
-            B_player.攻击 = baseAttack * 3;
-            B_player.防御 = baseDefense * 2;
+            B_player.当前血量 = baseHP * 0.45;
+            B_player.攻击 = baseAttack * 1;
+            B_player.防御 = baseDefense * 0.45;
             B_player.学习的功法.push("无始钟护体","无始无终","无始经", "时光逆转","斗字秘","临字秘","前字秘","者字秘","皆字秘");
             B_player.灵根 = { name: "先天圣体道胎", type: "特殊体质", "法球倍率": 2 };
             B_player.法球倍率 = 2;
             break;
             
         case "狠人大帝":
-            B_player.当前血量 = baseHP * 2;
-            B_player.攻击 = baseAttack * 3;
-            B_player.防御 = baseDefense * 2;
+            B_player.当前血量 = baseHP * 0.45;
+            B_player.攻击 = baseAttack * 1;
+            B_player.防御 = baseDefense * 0.45;
             B_player.学习的功法.push("不灭天功", "万化圣诀", "飞仙","一念花开，君临天下","凰劫再生术","吞天魔功","斩天道");
             B_player.灵根 = { name: "魔胎仙体", type: "特殊体质", "法球倍率": 2 };
             B_player.法球倍率 = 2;
@@ -4285,7 +4321,7 @@ function createEmperorPlayer(emperorName, battleNumber, player, difficultyRate =
     }
     
     // 根据战斗次数增强
-    const multiplier = 1 + (battleNumber - 1) * 0.2 * difficultyRate;
+    const multiplier = 1 + (battleNumber - 1) * 0.1 * difficultyRate;
     B_player.当前血量 = B_player.当前血量 * multiplier;
     B_player.攻击 = B_player.攻击 * multiplier;
     B_player.防御 = B_player.防御 * multiplier;
