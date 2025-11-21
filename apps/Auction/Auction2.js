@@ -147,8 +147,7 @@ export class Auction2 extends plugin {
 
   async openAction2(e) {
 
-        // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+    if (!e.isMaster) {
         return false;
     }
 
@@ -201,8 +200,7 @@ export class Auction2 extends plugin {
   }
 
   async cancalAction2(e) {
-        // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+    if (!e.isMaster) {
         return false;
     }
 
@@ -216,8 +214,7 @@ export class Auction2 extends plugin {
   }
 
   async offAction2(e) {
-        // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+    if (!e.isMaster) {
         return false;
     }
     const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList2';

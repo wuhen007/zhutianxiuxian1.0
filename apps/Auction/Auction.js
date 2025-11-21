@@ -102,8 +102,7 @@ export class Auction extends plugin {
   }
 
   async openAction(e) {
-            // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+        if (!e.isMaster) {
         return false;
     }
     // if (!e.isMaster) {
@@ -159,8 +158,7 @@ export class Auction extends plugin {
   }
 
   async cancalAction(e) {
-            // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+        if (!e.isMaster) {
         return false;
     }
     // if (!e.isMaster) {
@@ -177,8 +175,7 @@ export class Auction extends plugin {
   }
 
   async offAction(e) {
-            // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+        if (!e.isMaster) {
         return false;
     }
     // if (!e.isMaster) {

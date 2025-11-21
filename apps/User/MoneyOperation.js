@@ -127,8 +127,7 @@ export class MoneyOperation extends plugin {
   }
   async wup(e) {
     if (!verc({ e })) return false;
-        // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+    if (!e.isMaster) {
         return false;
     }
     //对方
@@ -205,8 +204,8 @@ export class MoneyOperation extends plugin {
 
   async wup_all(e) {
     if (!verc({ e })) return false;
-            // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+           
+    if (!e.isMaster ) {
         return false;
     }
     //所有玩家

@@ -87,8 +87,7 @@ export class AdminSuper extends plugin {
         e.reply('请在群聊中使用此管理指令');
         return true;
     }
-        // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+    if (!e.isMaster) {
         return false;
     }
     // 检查是否有艾特信息
@@ -165,8 +164,7 @@ async setPlayerToPrison(targetQQ, minutes) {
 }
   
   async openDaofa(e) {
-           // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+       if (!e.isMaster) {
         return false;
     }
     let nowTime = new Date().getTime();
@@ -189,8 +187,7 @@ async setPlayerToPrison(targetQQ, minutes) {
 }
 
   async ktgjdfxt(e) {
-         // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+     if (!e.isMaster) {
         return false;
     }
    let nowtime = new Date().getTime();
@@ -224,8 +221,7 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
 }
   
   async xiaosan(e){
-            // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+        if (!e.isMaster) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -256,8 +252,7 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
 
 
   async down(e){
-            // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+        if (!e.isMaster) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -294,8 +289,7 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
     e.reply("清除完成")
   }
   async add_level(e){
-            // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+        if (!e.isMaster) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -319,8 +313,7 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
     e.reply("补发"+level+"级成功,当前为"+player.occupation+player.occupation_level+"级")
   }
   async jiesan_ass(e) {
-            // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+        if (!e.isMaster) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -403,8 +396,7 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
   }
 
   async Deleteexchange(e) {
-            // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+        if (!e.isMaster) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -446,8 +438,7 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
   }
 
   async Allrelieve(e) {
-            // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+        if (!e.isMaster) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -486,8 +477,7 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
     e.reply('行动结束！');
   }
 async relieveFashanAction(e) {
-            // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+        if (!e.isMaster) {
         return false;
     }
     
@@ -560,8 +550,7 @@ async relieveFashanAction(e) {
     return true;
 }
   async relieve(e) {
-            // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+        if (!e.isMaster) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -603,8 +592,7 @@ async relieveFashanAction(e) {
   }
 
   async Knockdown(e) {
-            // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+        if (!e.isMaster) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -630,8 +618,7 @@ async relieveFashanAction(e) {
   }
 
   async replaceThing(e) {
-            // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+        if (!e.isMaster) {
         return false;
     }
     const msg1 = e.msg.replace('#将米娜桑的纳戒里叫', '');
