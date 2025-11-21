@@ -76,7 +76,7 @@ pnpm add icqq
 ## 常见问题
 >如出现msgTask报错mark错误则是因为一些未知原因无法发送zhutianxiuxian1.0\resources\data\temp\temp.json的消息卡死，将该文件清空打入一个[]即可
 ## 交流/直接游玩      
-- 官群：421901145      
+- 官群：[QQ群链接跳转](https://qm.qq.com/q/nCqYx36uvC)     
 ## 配置与存档   
 > zhutianxiuxian1.0/ config / xiuxian / xiuxian.yaml       
 > zhutianxiuxian1.0/ resources / data          
