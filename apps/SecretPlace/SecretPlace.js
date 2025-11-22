@@ -269,7 +269,7 @@ async goToLocation(e) {
                     ``,
                     `你忆起古籍记载：`,
                     `- 五色祭坛乃上古先民所筑，可接引九龙拉棺`,
-                    `- 九龙拉棺乃横渡星域之无上法器`,
+                    `- 九龙拉棺乃横渡星域之无上法器（听闻凡间秘境荧惑古星可以寻到五色祭坛的踪迹）`,
                     `- 唯此方可抵达那荒古禁地所在的北斗星域`,
                     ``,
                     `你当前：`,
@@ -1716,6 +1716,10 @@ async Gozhetian(e) {
                 
                 adjustMsg = "你为大成圣体，气吞山河君临天下，万邪不侵！";
                 break;
+            case "大成霸体":
+                weizhiExperience = 0;   
+                adjustMsg = "你为大成霸体，气吞山河君临天下，万邪不侵！";
+                break;    
             case "小成圣体":
                 weizhiExperience = Math.ceil(weizhiExperience / 2);
                 adjustMsg = "你为小成圣体，血气如龙，堪比古之圣人！";
@@ -1732,15 +1736,21 @@ async Gozhetian(e) {
             case "圣体道胎":
                 weizhiExperience = 0;
                
-                adjustMsg = "混沌初开，万道共鸣！圣体道胎先天立于不败之地！";
+                adjustMsg = "万道共鸣！圣体道胎先天立于不败之地！";
                 break;
+            case "混沌圣体道胎":
+                weizhiExperience = 0;
+               
+                adjustMsg = "混沌初开，万道共鸣！圣体道胎先天立于不败之地！";
+                break;    
             case "大道体":
                 weizhiExperience = Math.ceil(weizhiExperience * 0.3);
                 adjustMsg = "身与道合，言出法随！大道体血脉中流淌着大道印记！";
                 break;
             default:
-                adjustMsg = "作为普通修士，你需以修为血气为代价！";
+                adjustMsg = "作为普通体质，你需以修为血气为代价！";
         }
+        
         
         allMsgs.push(adjustMsg);
         

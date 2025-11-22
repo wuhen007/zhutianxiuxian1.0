@@ -650,38 +650,45 @@ async Gozhetian(e) {
     if (weizhi.Grade === "生命禁区") {
         let adjustMsg = "";
         
-        // 根据灵根类型调整消耗
-        switch (player.灵根.type) {
-            case "大成圣体":
-                actualExperience = 0;
-
-                adjustMsg = "你为大成圣体，气吞山河君临天下，万邪不侵！";
-                break;
-            case "小成圣体":
-                actualExperience = Math.ceil(actualExperience / 2);
-                adjustMsg = "你为小成圣体，血气如龙，堪比古之圣人！";
-                break;
-            case "圣体":
-                actualExperience = Math.ceil(actualExperience * 0.77);
-                adjustMsg = "你为圣体，拥有超越常人的体魄！";
-                break;
-            case "命运":
-            case "天魔":
-                actualExperience = 0;
-                adjustMsg = "你为超脱者，三界六道皆在掌控！";
-                break;
-            case "圣体道胎":
-                actualExperience = 0;
-
-                adjustMsg = "混沌初开，万道共鸣！圣体道胎先天立于不败之地！";
-                break;
-            case "大道体":
-                actualExperience = Math.ceil(actualExperience * 0.3);
-                adjustMsg = "身与道合，言出法随！大道体血脉中流淌着大道印记！";
-                break;
-            default:
-                adjustMsg = "作为普通修士，你需以修为血气为代价！";
-        }
+    // 使用 actualExperience 而不是新建变量
+    switch (player.灵根.type) {
+        case "大成圣体":
+            actualExperience = 0;
+            adjustMsg = "你为大成圣体，气吞山河君临天下，万邪不侵！";
+            break;
+        case "大成霸体":
+            actualExperience = 0;
+            adjustMsg = "你为大成霸体，气吞山河君临天下，万邪不侵！";
+            break;    
+        case "小成圣体":
+            actualExperience = Math.ceil(actualExperience / 2);
+            adjustMsg = "你为小成圣体，血气如龙，堪比古之圣人！";
+            break;
+        case "圣体":
+            actualExperience = Math.ceil(actualExperience * 0.77);
+            adjustMsg = "你为人族圣体，拥有超越常人的体魄！";
+            break;
+        case "命运":
+        case "天魔":
+            actualExperience = 0;
+            adjustMsg = "你为超脱者，三界六道皆在掌控！";
+            break;
+        case "圣体道胎":
+            actualExperience = 0;
+            adjustMsg = "万道共鸣！圣体道胎先天立于不败之地！";
+            break;
+        case "混沌圣体道胎":
+            actualExperience = 0;
+            adjustMsg = "混沌初开，万道共鸣！圣体道胎先天立于不败之地！";
+            break;    
+        case "大道体":
+            actualExperience = Math.ceil(actualExperience * 0.3);
+            adjustMsg = "身与道合，言出法随！大道体血脉中流淌着大道印记！";
+            break;
+        default:
+            adjustMsg = "作为普通体质，你需以修为血气为代价！";
+    }
+    
         
         if (adjustMsg) {
             allMsgs.push(adjustMsg);
