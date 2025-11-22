@@ -456,32 +456,47 @@ async handleDarkSuppression(usr_qq, action) {
   // 发送遭遇消息  // 修改后的发送遭遇消息方法
 
 async sendEncounterMessage(usr_qq, action, message) {
-  const fullMessage = Array.isArray(message) ? message.join('\n') : message;
-  
-  // 构建消息数组
-  const msgArray = [
-    segment.at(usr_qq),
-    '【时间长河遭遇】',
-    fullMessage
-  ];
-  
-  if (action.group_id) {
-    // 使用原生合并转发
-    const forwardMsg = [{
-      type: 'node',
-      data: {
-        name: '时间长河系统',
-        uin: Bot.uin,
-        content: msgArray
-      }
-    }];
+  try {
+    const fullMessage = Array.isArray(message) ? message.join('\n') : message;
     
-    await Bot.pickGroup(action.group_id).sendForwardMsg(forwardMsg);
-  } else {
-    await common.relpyPrivate(usr_qq, fullMessage);
+    // 构建消息数组
+    const msgArray = [
+      segment.at(usr_qq),
+      '【时间长河遭遇】',
+      fullMessage
+    ];
+    
+    // 创建模拟事件对象
+    const mockEvent = {
+      reply: async (content) => {
+        if (action.group_id) {
+          await Bot.pickGroup(action.group_id).sendMsg(content);
+        } else {
+          await Bot.sendPrivateMsg(usr_qq, content);
+        }
+      },
+      group_id: action.group_id,
+      user_id: usr_qq
+    };
+    
+    // 使用 ForwardMsg 发送图片
+    await ForwardMsg(mockEvent, msgArray);
+    
+    // 等待3秒再继续战斗
+    await new Promise(resolve => setTimeout(resolve, 3000));
+  } catch (error) {
+    console.error('发送遭遇消息失败:', error);
+    
+    // 备用方案：私聊发送文本
+    const fallbackMessage = [
+      '【时间长河遭遇】',
+      Array.isArray(message) ? message.join('\n') : message
+    ].join('\n');
+    
+    await Bot.sendPrivateMsg(usr_qq, fallbackMessage);
+    
+    await new Promise(resolve => setTimeout(resolve, 3000));
   }
-
-  await new Promise(resolve => setTimeout(resolve, 3000));
 }
   calculateScaleFactor(playerLevel) {
     // 基础缩放因子
@@ -668,26 +683,40 @@ if (battleResult.specialEvents.pastBodyExposed && battleResult.penalties.pastBod
 
   // 修改后的发送结果消息方法
 async sendResultMessage(usr_qq, action, resultMessage) {
-  // 构建消息数组
-  const msgArray = [
-    segment.at(usr_qq),
-    '【时间长河探索结果】',
-    resultMessage
-  ];
-  
-  if (action.group_id) {
-    // 使用原生合并转发
-    const forwardMsg = [{
-      type: 'node',
-      data: {
-        name: '时间长河系统',
-        uin: Bot.uin,
-        content: msgArray
-      }
-    }];
+  try {
+    // 构建消息数组
+    const msgArray = [
+      segment.at(usr_qq),
+      '【时间长河探索结果】',
+      resultMessage
+    ];
     
-    await Bot.pickGroup(action.group_id).sendForwardMsg(forwardMsg);
-  } else {
-    await common.relpyPrivate(usr_qq, resultMessage);
+    // 创建模拟事件对象
+    const mockEvent = {
+      reply: async (content) => {
+        if (action.group_id) {
+          await Bot.pickGroup(action.group_id).sendMsg(content);
+        } else {
+          await Bot.sendPrivateMsg(usr_qq, content);
+        }
+      },
+      group_id: action.group_id,
+      user_id: usr_qq
+    };
+    
+    // 使用 ForwardMsg 发送图片
+    await ForwardMsg(mockEvent, msgArray);
+  } catch (error) {
+    console.error('发送结果消息失败:', error);
+    
+    // 备用方案：私聊发送文本
+    const fallbackMessage = [
+      '【时间长河探索结果】',
+      resultMessage
+    ].join('\n');
+    
+    await Bot.sendPrivateMsg(usr_qq, fallbackMessage);
   }
-}}
+}
+
+}
