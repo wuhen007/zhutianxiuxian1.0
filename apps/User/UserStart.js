@@ -22,6 +22,7 @@ import {
   get_player_img,
   get_xiuxianqiandao_img,
   get_log_img,
+  
   ForwardMsg,
   channel
 } from '../../model/xiuxian.js';
@@ -59,10 +60,10 @@ export class UserStart extends plugin {
           fnc: 'Show_player',
         },
         
-        {
-          reg: '^#设置性别.*$',
-          fnc: 'Set_sex',
-        },
+{
+    reg: '^#(设置性别|修改性别|改性别|更替性别|变更性别|调整性别).*$',
+    fnc: 'Set_sex',
+},
         {
           reg: '^#(改名.*)|(设置道宣.*)$',
           fnc: 'Change_player_name',
@@ -872,28 +873,53 @@ async daily_lottery(e) {
   }
   
 
-  async Set_sex(e) {
+async Set_sex(e) {
     if (!verc({ e })) return false;
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);
-    //有无存档
+    
+    // 有无存档
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) return false;
+    
     let player = await Read_player(usr_qq);
     if (player.sex != 0) {
       e.reply('每个存档仅可设置一次性别！');
       return false;
     }
-    //命令判断
-    let msg = e.msg.replace('#设置性别', '');
-    if (msg != '男' && msg != '女') {
-      e.reply('请发送#设置性别男 或 #设置性别女');
-      return false;
+    
+    // 支持多种指令前缀和宽松匹配
+    let msg = e.msg
+        .replace(/^#(设置性别|修改性别|改性别|更替性别|变更性别|调整性别)/, '') // 支持多种前缀
+        .trim(); // 移除前后空格
+    
+    // 提取性别关键词（支持更多表达方式）
+    let gender = null;
+    
+    // 匹配性别关键词
+    if (msg.includes('男') || msg.includes('男性') || msg.includes('男修') || msg.includes('爷们') || msg.includes('汉子')) {
+        gender = '男';
+    } else if (msg.includes('女') || msg.includes('女性') || msg.includes('女修') || msg.includes('妹子') || msg.includes('姑娘')) {
+        gender = '女';
     }
-    player.sex = msg == '男' ? 2 : 1;
-    await data.setData('player', usr_qq, player);
-    e.reply(`${player.名号}的性别已成功设置为 ${msg}。`);
-  }
+    
+    if (!gender) {
+        e.reply([
+            '格式错误，请使用以下任意一种格式：',
+            '#设置性别 男',
+            '#修改性别 女',
+            '#改性别男',
+            '#更替性别女',
+            '支持的关键词：男/男性/男修/爷们/汉子 或 女/女性/女修/妹子/姑娘'
+        ].join('\n'));
+        return false;
+    }
+    
+    player.sex = gender == '男' ? 2 : 1;
+    await Write_player(usr_qq, player);
+    e.reply(`${player.名号}的性别已成功设置为 ${gender}。`);
+    return true;
+}
 
   //改名
   async Change_player_name(e) {
@@ -1065,7 +1091,7 @@ async daily_gift(e) {
     
     let ticketCount = cf.Sign.ticket * baseMultiplier;
     await Add_najie_thing(usr_qq, '秘境之匙', '道具', ticketCount);
-    
+    await Add_najie_thing(usr_qq, '喇叭', '道具', ticketCount);
     let yuanshi = player.连续签到天数 * 300 * baseMultiplier *加成;
     
     // 保存玩家数据
