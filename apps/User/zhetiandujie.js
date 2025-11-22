@@ -3345,7 +3345,7 @@ applyGongfaEffects(player, originalDamage,equipment) {
       special: "圣体异象"
     },
     "大成·荒古圣体": { 
-      reduction: 0.50, 
+      reduction: 0.60, 
       desc: "九转金身不灭，可叫板大帝",
       special: "圣体异象"
     },
@@ -3512,6 +3512,16 @@ applyGongfaEffects(player, originalDamage,equipment) {
     reduction: 0.20,
     desc: "魔法少女契约签订",
     special: "祈愿之力"
+  },
+   "许愿者·圆": {
+    reduction: 0.35,
+    desc: "愿望之力初显，粉色光芒绽放",
+    special: "愿望实现"
+  },
+  "希望之光·圆": {
+    reduction: 0.60,
+    desc: "希望之光闪耀，因果律初显",
+    special: "希望化身"
   },
   "圆神": {
     reduction: 0.85,
