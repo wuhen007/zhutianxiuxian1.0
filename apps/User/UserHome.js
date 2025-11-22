@@ -1006,6 +1006,7 @@ if (isLucky || player.灵根.type === "圆环之理") {
         
         if (player.id != '2468511249'&&player.id != '2283096140') {
             customReply = '你并非能够成为圆神的那个人!';
+            return false;
         } else {
             customReply = '我会永远记得你，直到魂归苍茫!';
         }
