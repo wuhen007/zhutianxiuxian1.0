@@ -83,5 +83,5 @@ pnpm i
 1. 功能仅限内部交流与小范围使用       
 2. 请勿用于任何以盈利为目的的场景      
 ## 原作者信息
-原插件：[@ningmengchongshui](https://gitee.com/ningmengchongshui)  
-原作者：[@DDZS](https://gitee.com/hutao222)
+原插件：[绝云间修仙V1.3.0](https://gitee.com/hutao222/DDZS-XIUXIAN-V1.3.0)  
+原作者：[@DD斩首](https://gitee.com/hutao222)
