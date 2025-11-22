@@ -570,7 +570,7 @@ export class InnerWorld extends plugin {
                     try {
                         // 从纳戒移除（考虑品级）
                         if (category === '装备' || category === '仙宠') {
-                            await Add_najie_thing(usr_qq, item.name, category, -item.count, item.pinji);
+                            await Add_najie_thing(usr_qq, item.name, category, -item.count);
                         } else {
                             await Add_najie_thing(usr_qq, item.name, category, -item.count);
                         }
@@ -812,7 +812,7 @@ export class InnerWorld extends plugin {
                 for (const item of categoryItems) {
                     // 添加到纳戒（考虑品级）
                     if (category === '装备' || category === '仙宠') {
-                        await Add_najie_thing(usr_qq, item.name, category, item.数量, item.pinji);
+                        await Add_najie_thing(usr_qq, item.name, category, item.数量);
                     } else {
                         await Add_najie_thing(usr_qq, item.name, category, item.数量);
                     }
