@@ -11,6 +11,7 @@ import {
   Add_HP,
   Write_player,
   Read_equipment,
+  ForwardMsg,
   Write_equipment,
   Add_寿元,
   Read_danyao,
@@ -452,23 +453,36 @@ async handleDarkSuppression(usr_qq, action) {
     ];
   }
   
-  // 发送遭遇消息
-  async sendEncounterMessage(usr_qq, action, message) {
-    const fullMessage = Array.isArray(message) ? message.join('\n') : message;
-    
-    if (action.group_id) {
-      await Bot.pickGroup(action.group_id).sendMsg([
-        segment.at(usr_qq),
-        fullMessage
-      ]);
-    } else {
-      await common.relpyPrivate(usr_qq, fullMessage);
-    }
-    
-    // 等待3秒再继续战斗
-    await new Promise(resolve => setTimeout(resolve, 3000));
-  }
+  // 发送遭遇消息  // 修改后的发送遭遇消息方法
+
+async sendEncounterMessage(usr_qq, action, message) {
+  const fullMessage = Array.isArray(message) ? message.join('\n') : message;
   
+  // 构建消息数组
+  const msgArray = [
+    segment.at(usr_qq),
+    '【时间长河遭遇】',
+    fullMessage
+  ];
+  
+  if (action.group_id) {
+    // 使用原生合并转发
+    const forwardMsg = [{
+      type: 'node',
+      data: {
+        name: '时间长河系统',
+        uin: Bot.uin,
+        content: msgArray
+      }
+    }];
+    
+    await Bot.pickGroup(action.group_id).sendForwardMsg(forwardMsg);
+  } else {
+    await common.relpyPrivate(usr_qq, fullMessage);
+  }
+
+  await new Promise(resolve => setTimeout(resolve, 3000));
+}
   calculateScaleFactor(playerLevel) {
     // 基础缩放因子
     let factor = 1.0;
@@ -652,19 +666,28 @@ if (battleResult.specialEvents.pastBodyExposed && battleResult.penalties.pastBod
   }
   
 
+  // 修改后的发送结果消息方法
+async sendResultMessage(usr_qq, action, resultMessage) {
+  // 构建消息数组
+  const msgArray = [
+    segment.at(usr_qq),
+    '【时间长河探索结果】',
+    resultMessage
+  ];
   
-  async sendResultMessage(usr_qq, action, resultMessage) {
-    let message = [
-      resultMessage,
-    ].join('\n');
-
-    if (action.group_id) {
-        await Bot.pickGroup(action.group_id).sendMsg([
-            segment.at(usr_qq),
-            message
-        ]);
-    } else {
-        await common.relpyPrivate(usr_qq, message);
-    }
-}
-}
+  if (action.group_id) {
+    // 使用原生合并转发
+    const forwardMsg = [{
+      type: 'node',
+      data: {
+        name: '时间长河系统',
+        uin: Bot.uin,
+        content: msgArray
+      }
+    }];
+    
+    await Bot.pickGroup(action.group_id).sendForwardMsg(forwardMsg);
+  } else {
+    await common.relpyPrivate(usr_qq, resultMessage);
+  }
+}}
