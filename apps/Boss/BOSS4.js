@@ -574,13 +574,18 @@ async distributeContributionRewards(e, tianjiaoName, tianjiaoData, killerQQ) {
     const contributor = contributors[i];
     let rewardCount = 1; // 默认1样物品
     
+    // 根据排名调整奖励数量
     if (i === 0) {
-      // 第一名：3样物品
-      rewardCount = 3;
+      // 第一名：3-5样物品
+      rewardCount = 3 + Math.floor(Math.random() * 3);
     } else if (i >= 1 && i <= 4) {
-      // 第二到第五名：2样物品
-      rewardCount = 2;
+      // 第二到第五名：2-4样物品
+      rewardCount = 2 + Math.floor(Math.random() * 3);
+    } else if (i <= 9) {
+      // 第六到第十名：1-3样物品
+      rewardCount = 1 + Math.floor(Math.random() * 3);
     }
+    // 十名以后保持1样物品
     
     // 发放奖励
     const rewards = await this.giveRandomItems(contributor.qq, tianjiaoData, rewardCount);
@@ -589,15 +594,16 @@ async distributeContributionRewards(e, tianjiaoName, tianjiaoData, killerQQ) {
     rewardMessages.push(`${i + 1}. ${contributor.name} - 伤害: ${bigNumberTransform(contributor.damage)}`);
     
     if (rewards.length > 0) {
-      rewardMessages.push(`   获得: ${rewards.join('、')}`);
+      rewardMessages.push(`   获得 ${rewards.length} 样物品: ${rewards.join('、')}`);
     } else {
-      rewardMessages.push(`   未获得物品`);
+      // 理论上不会走到这里，因为有保底机制
+      rewardMessages.push(`   获得基础奖励`);
     }
   }
   
-  // 发放击杀者额外奖励（30%概率获得1-2样物品）
-  if (Math.random() < 0.3) { // 30%概率
-    const extraRewardCount = Math.floor(Math.random() * 2) + 1; // 1-2样物品
+  // 发放击杀者额外奖励（50%概率获得1-3样物品）
+  if (Math.random() < 0.5) {
+    const extraRewardCount = 1 + Math.floor(Math.random() * 3); // 1-3样物品
     const extraRewards = await this.giveRandomItems(killerQQ, tianjiaoData, extraRewardCount);
     
     if (extraRewards.length > 0) {
@@ -615,6 +621,7 @@ async distributeContributionRewards(e, tianjiaoName, tianjiaoData, killerQQ) {
   await redis.del(damageKey);
 }
 
+
 // 发放随机物品
 async giveRandomItems(qq, tianjiaoData, count) {
   const rewards = [];
@@ -623,16 +630,43 @@ async giveRandomItems(qq, tianjiaoData, count) {
     return rewards;
   }
   
+  // 将物品按概率分类：基础物品（概率≥0.5）和稀有物品（概率<0.5）
+  const baseItems = tianjiaoData.掉落物.filter(item => item.概率 >= 0.5);
+  const rareItems = tianjiaoData.掉落物.filter(item => item.概率 < 0.5);
+  
+  // 确保至少有一个基础物品作为保底
+  let hasDropped = false;
+  
   for (let i = 0; i < count; i++) {
-    // 随机选择一件掉落物
-    const randomIndex = Math.floor(Math.random() * tianjiaoData.掉落物.length);
-    const item = tianjiaoData.掉落物[randomIndex];
+    // 优先尝试掉落稀有物品（70%概率尝试稀有，30%概率尝试基础）
+    let itemPool = Math.random() < 0.7 ? rareItems : baseItems;
     
-    // 检查概率
-    if (Math.random() < item.概率) {
+    // 如果稀有物品池为空，则使用基础物品池
+    if (itemPool.length === 0) {
+      itemPool = baseItems;
+    }
+    
+    // 随机选择一件物品
+    const randomIndex = Math.floor(Math.random() * itemPool.length);
+    const item = itemPool[randomIndex];
+    
+    // 对于基础物品（概率≥0.5），实际掉落概率为100%
+    // 对于稀有物品，使用原概率
+    const actualProbability = item.概率 >= 0.5 ? 1.0 : item.概率;
+    
+    if (Math.random() < actualProbability) {
       await Add_najie_thing(qq, item.name, item.class, item.数量);
       rewards.push(`${item.name}x${item.数量}`);
+      hasDropped = true;
     }
+  }
+  
+  // 保底机制：如果没有任何物品掉落，强制掉落一个基础物品
+  if (!hasDropped && baseItems.length > 0) {
+    const fallbackIndex = Math.floor(Math.random() * baseItems.length);
+    const fallbackItem = baseItems[fallbackIndex];
+    await Add_najie_thing(qq, fallbackItem.name, fallbackItem.class, fallbackItem.数量);
+    rewards.push(`${fallbackItem.name}x${fallbackItem.数量}（保底奖励）`);
   }
   
   return rewards;
@@ -648,28 +682,7 @@ async giveRandomItems(qq, tianjiaoData, count) {
     }
   }
   
-  // 发放随机物品
-  async giveRandomItems(qq, tianjiaoData, count) {
-    const rewards = [];
-    
-    if (!tianjiaoData.掉落物 || tianjiaoData.掉落物.length === 0) {
-      return rewards;
-    }
-    
-    for (let i = 0; i < count; i++) {
-      // 随机选择一件掉落物
-      const randomIndex = Math.floor(Math.random() * tianjiaoData.掉落物.length);
-      const item = tianjiaoData.掉落物[randomIndex];
-      
-      // 检查概率
-      if (Math.random() < item.概率) {
-        await Add_najie_thing(qq, item.name, item.class, item.数量);
-        rewards.push(`${item.name}x${item.数量}`);
-      }
-    }
-    
-    return rewards;
-  }
+
 
   // 天骄伤害贡献榜
   async ShowDamageList2(e) {
