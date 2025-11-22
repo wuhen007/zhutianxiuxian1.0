@@ -3493,6 +3493,21 @@ applyGongfaEffects(player, originalDamage,equipment) {
     special: "彼岸金桥"
   },
     // ==== 诸天万界体质 ====
+    "爱莉希雅（无瑕之人）": {
+  reduction: 0.35,
+  desc: "真我初显，无瑕之光绽放",
+  special: "真我刻印"
+},
+"爱莉希雅（真我·人之律者）": {
+  reduction: 0.60,
+  desc: "人之律者，为世上所有美好而战",
+  special: "始源领域"
+},
+"爱莉希雅（始源之律者）": {
+  reduction: 0.85,
+  desc: "始源之律，超越因果的终点与起点",
+  special: "始源之理"
+},
   "木之本樱": {
     reduction: 0.10,
     desc: "魔卡少女初现，封印解除",
