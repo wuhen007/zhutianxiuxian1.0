@@ -462,7 +462,7 @@ async  releaseForbiddenSeal(e) {
 }
 
 
-  async  nurtureEmperorWeapon(e) {
+async nurtureEmperorWeapon(e) {
     if (!e.isGroup) return;
     
     const usr_qq = e.user_id;
@@ -483,13 +483,15 @@ async  releaseForbiddenSeal(e) {
     
     const weapon = equipment.帝兵;
     
-
+    //
+    const hasBingziMi = player.学习的功法?.includes("兵字秘");
+    const currentNurtureLimit = hasBingziMi ? 25 : 5;
     
-    // 检查是否已蕴养过
-    if (weapon.蕴养 && weapon.蕴养 >= weapon.蕴养上限) {
+    // 修改检查逻辑：使用实时计算的上限值
+    if (weapon.蕴养 && weapon.蕴养 >= currentNurtureLimit) {
         return e.reply([
             `帝兵蕴养已达上限！`,
-            `当前蕴养次数：${weapon.蕴养}/${weapon.蕴养上限}`,
+            `当前蕴养次数：${weapon.蕴养}/${currentNurtureLimit}`,
             `无法继续蕴养`
         ].join("\n"));
     }
@@ -537,18 +539,15 @@ async  releaseForbiddenSeal(e) {
     if (!weapon.蕴养) weapon.蕴养 = 0;
     weapon.蕴养++;
     
+    // 🛠️ 【核心修改点】更新帝兵的蕴养上限为当前实时计算的值
+    weapon.蕴养上限 = currentNurtureLimit;
+    
     // 提升帝兵属性
     const baseBoost = 5000000000; // 5e
     weapon.atk += baseBoost;
     weapon.def += baseBoost;
     weapon.HP += baseBoost;
     weapon.全属性 += 1;
-    
-    // 检查是否学习兵字秘
-    const hasBingziMi = player.学习的功法?.includes("兵字秘");
-    
-    // 设置蕴养上限
-    weapon.蕴养上限 = hasBingziMi ? 25 : 5;
     
     // 特殊效果：达到上限时额外加成
     if (weapon.蕴养 === weapon.蕴养上限) {
