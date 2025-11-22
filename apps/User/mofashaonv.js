@@ -26,11 +26,7 @@ export class mofashaonv extends plugin {
           fnc: 'jiushu'
         },
         {
-<<<<<<< HEAD
-          reg: '^#魔法少女进阶|#魔法少女觉醒|#希望觉醒$',
-=======
-          reg: '^#魔法少女进阶$',
->>>>>>> 573e5818cd3d7a4b52256eea7288a6e8b82a859c
+          reg: '^#魔法少女进阶|#魔法少女觉醒|#魔法觉醒$',
           fnc: 'mofashaonvjinjie'
         }
       ],
@@ -139,11 +135,7 @@ async jiushu(e) {
     }
     
     // 执行救赎
-<<<<<<< HEAD
     return await this.executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf, casterQQ);
-=======
-    return await this.executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf);
->>>>>>> 573e5818cd3d7a4b52256eea7288a6e8b82a859c
 }
 
 /** 构建无需救赎的提示消息 */
@@ -190,11 +182,7 @@ calculateRescueCost(caster, canRescue) {
 }
 
 /** 执行救赎 */
-<<<<<<< HEAD
 async executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf, casterQQ) {
-=======
-async executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf) {
->>>>>>> 573e5818cd3d7a4b52256eea7288a6e8b82a859c
     // 消耗希望碎片
     caster.希望系统.希望碎片 -= cost;
     
@@ -296,7 +284,6 @@ async rescueYongji(targetQQ) {
     
     const target = await Read_player(targetQQ);
     target.当前血量 = target.血量上限;
-    target.永寂标记 = 0;
     target.道伤 = 0;
     target.生命本源 = 100 + (target.灵根?.生命本源 || 0);
     
@@ -487,14 +474,6 @@ buildRescueSuccessMessage(caster, target, canRescue, results, cost, isSelf) {
     
     // 魔法少女 → 许愿者·圆
     if (player.灵根.type === "魔法少女" && player.mijinglevel_id > 6) {
-<<<<<<< HEAD
-      const 检查条件 = {
-        希望碎片: player.希望系统.希望碎片 >= 100,
-        拯救人数: player.希望系统.拯救人数 >= 10,
-        助人次数: player.希望系统.助人次数 >= 10,
-        生命本源: player.生命本源 >= 150
-      };
-=======
        // 安全访问检查
     const 希望系统 = player.希望系统 || {};
     const 希望碎片 = 希望系统.希望碎片 || 0;
@@ -505,9 +484,8 @@ buildRescueSuccessMessage(caster, target, canRescue, results, cost, isSelf) {
         希望碎片: 希望碎片 >= 100,
         拯救人数: 拯救人数 >= 10,
         助人次数: 助人次数 >= 10,
-        生命本源: player.生命本源 >= 150
+        生命本源: player.生命本源 >= 100
     };
->>>>>>> 573e5818cd3d7a4b52256eea7288a6e8b82a859c
       
       if (检查条件.希望碎片 && 检查条件.拯救人数 && 检查条件.助人次数 && 检查条件.生命本源) {
         player.希望系统.希望碎片 -= 100;
@@ -560,7 +538,7 @@ buildRescueSuccessMessage(caster, target, canRescue, results, cost, isSelf) {
         希望碎片: player.希望系统.希望碎片 >= 500,
         净化绝望: player.希望系统.净化绝望值 >= 1000,
         因果律: player.希望系统.因果律领悟 >= 10,
-        生命本源: player.生命本源 >= 300
+        生命本源: player.生命本源 >= 250
       };
       
       if (检查条件.希望碎片 && 检查条件.净化绝望 && 检查条件.因果律 && 检查条件.生命本源) {
@@ -614,7 +592,7 @@ buildRescueSuccessMessage(caster, target, canRescue, results, cost, isSelf) {
         希望碎片: player.希望系统.希望碎片 >= 1000,
         时间线干涉: player.希望系统.时间线干涉 >= 5,
         圆环理解: player.希望系统.因果律领悟 >= 50,
-        生命本源: player.生命本源 >= 1100
+        生命本源: player.生命本源 >= 300
       };
       
       if (检查条件.希望碎片 && 检查条件.时间线干涉 && 检查条件.圆环理解 && 检查条件.生命本源) {
