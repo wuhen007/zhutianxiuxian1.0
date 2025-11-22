@@ -450,13 +450,13 @@ export async function mortal_tribulation(e, player) {
       return { success: false };
     }
     
-    // 全局渡劫锁定检查
-    if (dj > 0) {
-      e.reply('已经有人在渡劫了，建议打死他');
-      return { success: false };
-    }
+    // // 全局渡劫锁定检查
+    // if (dj > 0) {
+    //   e.reply('已经有人在渡劫了，建议打死他');
+    //   return { success: false };
+    // }
     
-    dj++;
+    // dj++;
     
     // 渡劫成功率计算
     let l = (x - n) / (p + y * 0.1) * 100;

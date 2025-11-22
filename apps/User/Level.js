@@ -23,7 +23,9 @@ import {
   LevelTask,
   get_log_img,
   channel,
-  ForwardMsg
+  ForwardMsg,
+  dj,
+  dj_players
 } from '../../model/xiuxian.js';
 import { clearInterval } from 'timers';
 export class Level extends plugin {
@@ -3480,8 +3482,7 @@ async command_dasan(e) {
   // 移除渡劫记录
   delete dj_players[usr_qq];
   
-  // 重置全局渡劫标志
-  dj = 0;
+
   
  e.reply([
     `≡≡≡ 雷云崩散 ≡≡≡`,
@@ -3581,19 +3582,6 @@ async  fate_up(e) {
       ].join("\n"));
       
       return true;
-    } else {
-      // 元神劫失败处理
-      player.元神劫上次失败时间 = Date.now(); // 记录失败时间
-      await Write_player(usr_qq, player);
-      
-      e.reply([
-        `≡≡≡ 元神化真中断 ≡≡≡`,
-        `${player.名号}元神未能完全化真！`,
-        `虚实转化率受损：${(spiritResult.damage * 100).toFixed(1)}%`,
-        `境界停滞，需重修元神`,
-        `肉身劫成果保留，下次只需重渡元神劫！`
-      ].join("\n"));
-      return false;
     }
   }
   
