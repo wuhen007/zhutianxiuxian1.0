@@ -104,7 +104,7 @@ Era:
   notifyGroups:
     - 421901145
   current:
-    index: 0
-    years: 1000
+    index: 1
+    years: 9000
     epoch: 4
   yearlyAdvance: 1000

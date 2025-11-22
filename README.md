@@ -18,9 +18,7 @@ git clone https://gitee.com/mo-wuming/zhutianxiuxian1.0.git ./plugins/zhutianxiu
 
 > Miao-Yunzai/Yunzai-Bot/目录下执行  
 ```
-pnpm i
-pnpm add axios
-pnpm add icqq       
+pnpm i    
 ```
 ## 小问题
 如在运行该修仙插件时遇到以下报错不必惊慌，是我写的时候一个失误，不过此类报错不影响插件正常运行，如果有强迫症可以到云崽根目录的lib/plugins/loader.js中改动定时任务（大概在490行的样子）
@@ -76,7 +74,7 @@ pnpm add icqq
 ## 常见问题
 >如出现msgTask报错mark错误则是因为一些未知原因无法发送zhutianxiuxian1.0\resources\data\temp\temp.json的消息卡死，将该文件清空打入一个[]即可
 ## 交流/直接游玩      
-- 官群：421901145      
+- 官群：[QQ群链接跳转](https://qm.qq.com/q/nCqYx36uvC)     
 ## 配置与存档   
 > zhutianxiuxian1.0/ config / xiuxian / xiuxian.yaml       
 > zhutianxiuxian1.0/ resources / data          
@@ -85,5 +83,5 @@ pnpm add icqq
 1. 功能仅限内部交流与小范围使用       
 2. 请勿用于任何以盈利为目的的场景      
 ## 原作者信息
-原插件：[@ningmengchongshui](https://gitee.com/ningmengchongshui)  
-原作者：[@DDZS](https://gitee.com/hutao222)
+原插件：[绝云间修仙V1.3.0](https://gitee.com/hutao222/DDZS-XIUXIAN-V1.3.0)  
+原作者：[@DD斩首](https://gitee.com/hutao222)

@@ -26,7 +26,11 @@ export class mofashaonv extends plugin {
           fnc: 'jiushu'
         },
         {
+<<<<<<< HEAD
           reg: '^#魔法少女进阶|#魔法少女觉醒|#希望觉醒$',
+=======
+          reg: '^#魔法少女进阶$',
+>>>>>>> 573e5818cd3d7a4b52256eea7288a6e8b82a859c
           fnc: 'mofashaonvjinjie'
         }
       ],
@@ -135,7 +139,11 @@ async jiushu(e) {
     }
     
     // 执行救赎
+<<<<<<< HEAD
     return await this.executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf, casterQQ);
+=======
+    return await this.executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf);
+>>>>>>> 573e5818cd3d7a4b52256eea7288a6e8b82a859c
 }
 
 /** 构建无需救赎的提示消息 */
@@ -182,7 +190,11 @@ calculateRescueCost(caster, canRescue) {
 }
 
 /** 执行救赎 */
+<<<<<<< HEAD
 async executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf, casterQQ) {
+=======
+async executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf) {
+>>>>>>> 573e5818cd3d7a4b52256eea7288a6e8b82a859c
     // 消耗希望碎片
     caster.希望系统.希望碎片 -= cost;
     
@@ -475,12 +487,27 @@ buildRescueSuccessMessage(caster, target, canRescue, results, cost, isSelf) {
     
     // 魔法少女 → 许愿者·圆
     if (player.灵根.type === "魔法少女" && player.mijinglevel_id > 6) {
+<<<<<<< HEAD
       const 检查条件 = {
         希望碎片: player.希望系统.希望碎片 >= 100,
         拯救人数: player.希望系统.拯救人数 >= 10,
         助人次数: player.希望系统.助人次数 >= 10,
         生命本源: player.生命本源 >= 150
       };
+=======
+       // 安全访问检查
+    const 希望系统 = player.希望系统 || {};
+    const 希望碎片 = 希望系统.希望碎片 || 0;
+    const 拯救人数 = 希望系统.拯救人数 || 0;
+    const 助人次数 = 希望系统.助人次数 || 0;
+    
+    const 检查条件 = {
+        希望碎片: 希望碎片 >= 100,
+        拯救人数: 拯救人数 >= 10,
+        助人次数: 助人次数 >= 10,
+        生命本源: player.生命本源 >= 150
+    };
+>>>>>>> 573e5818cd3d7a4b52256eea7288a6e8b82a859c
       
       if (检查条件.希望碎片 && 检查条件.拯救人数 && 检查条件.助人次数 && 检查条件.生命本源) {
         player.希望系统.希望碎片 -= 100;

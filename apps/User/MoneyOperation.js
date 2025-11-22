@@ -127,7 +127,9 @@ export class MoneyOperation extends plugin {
   }
   async wup(e) {
     if (!verc({ e })) return false;
-    if (!e.isMaster) return false;
+    if (!e.isMaster) {
+        return false;
+    }
     //对方
     let isat = e.message.some(item => item.type === 'at');
     if (!isat) return false;
@@ -202,7 +204,10 @@ export class MoneyOperation extends plugin {
 
   async wup_all(e) {
     if (!verc({ e })) return false;
-    if (!e.isMaster) return false;
+           
+    if (!e.isMaster ) {
+        return false;
+    }
     //所有玩家
     let File = fs.readdirSync(__PATH.player_path);
     File = File.filter(file => file.endsWith('.json'));

@@ -707,10 +707,7 @@ export class InnerWorld extends plugin {
                 ]));
             }
             
-            // 扣除元神并开辟
-            player.元神 -= 5000000;
-            player.内景地开辟 = 1;
-            await Write_player(usr_qq, player);
+
             
             // 初始化内景地数据（完全匹配您的分类结构）
             const initialData = {
@@ -732,7 +729,10 @@ export class InnerWorld extends plugin {
                 最后更新时间: Date.now()
             };
             await Write_inner_world(usr_qq, initialData);
-            
+                        // 扣除元神并开辟
+            player.元神 -= 5000000;
+            player.内景地开辟 = 1;
+            await Write_player(usr_qq, player);
             return e.reply(await get_log_img([
                 ' 内景地开辟成功',
                 '泥丸宫中轰然震动！',

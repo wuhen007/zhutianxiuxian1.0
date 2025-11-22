@@ -7,7 +7,6 @@ import {
   Add_najie_thing,
   exist_najie_thing
 } from '../../model/xiuxian.js';
-import { segment } from "icqq";
 import { channel } from '../../model/xiuxian.js';
 
 export class qunfa extends plugin {
@@ -37,7 +36,11 @@ export class qunfa extends plugin {
     });
     
     // 公告群组配置
+<<<<<<< HEAD
     this.announceGroups = [421901145]; // 默认群组
+=======
+    this.announceGroups = [1056477978, 955798247]; // 默认群组
+>>>>>>> 573e5818cd3d7a4b52256eea7288a6e8b82a859c
     this.loadAnnounceGroups();
   }
 
@@ -51,7 +54,11 @@ export class qunfa extends plugin {
       }
     } catch (err) {
       console.error('加载公告群组配置失败:', err);
+<<<<<<< HEAD
       this.announceGroups = [421901145]; // 默认值
+=======
+      this.announceGroups = [1056477978, 955798247]; // 默认值
+>>>>>>> 573e5818cd3d7a4b52256eea7288a6e8b82a859c
     }
   }
 
@@ -109,7 +116,11 @@ async globalAnnouncement(e) {
     // 构建公告消息（不要使用 segment.text）
     let player = await Read_player(usr_qq);
     let announcementMsg = [
+<<<<<<< HEAD
         `${player.名号}${player.id}发送了全服公告：\n`,
+=======
+        `【${player.名号}】${player.id}发送了全服公告：\n`,
+>>>>>>> 573e5818cd3d7a4b52256eea7288a6e8b82a859c
         ...msg
     ];
 
@@ -134,6 +145,10 @@ async globalAnnouncement(e) {
 
   // 添加公告群组（保留管理员权限）
   async addAnnounceGroup(e) {
+<<<<<<< HEAD
+=======
+
+>>>>>>> 573e5818cd3d7a4b52256eea7288a6e8b82a859c
     if (!e.isMaster) {
       return e.reply('【权限不足】只有管理员可以管理公告群组');
     }
@@ -159,6 +174,10 @@ async globalAnnouncement(e) {
 
   // 移除公告群组（保留管理员权限）
   async removeAnnounceGroup(e) {
+<<<<<<< HEAD
+=======
+
+>>>>>>> 573e5818cd3d7a4b52256eea7288a6e8b82a859c
     if (!e.isMaster) {
       return e.reply('【权限不足】只有管理员可以管理公告群组');
     }

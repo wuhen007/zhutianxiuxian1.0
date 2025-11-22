@@ -826,7 +826,7 @@ if (isLucky || player.灵根.type === "圆环之理") {
     e.reply('修仙攻略\nhttps://docs.qq.com/doc/DTHhuVnRLWlhjclhC');
     return false;
   }
-  async world(e) {
+async world(e) {
     if (!verc({ e })) return false;
     let playerList = [];
     let files = fs
@@ -836,46 +836,45 @@ if (isLucky || player.灵根.type === "圆环之理") {
       file = file.replace('.json', '');
       playerList.push(file);
     }
+    
     let num = [0, 0, 0, 0, 0, 0, 0, 0];
+    let totalPlayers = playerList.length; // 总人数（不重复）
+    
     for (let player_id of playerList) {
       let usr_qq = player_id;
       let player = await data.getData('player', usr_qq);
-    if (player.灵根.type == "魔头") num[3]++;
-    else if (player.灵根.type == "转生")
-    num[2]++;
-    else if (player.灵根.type == "命运")
-    num[4]++;
-    else if (player.灵根.type == "天魔")
-    num[5]++;
-    else if (player.mijinglevel_id > 1) num[6]++;
-    else if (player.xiangulevel_id > 1) num[7]++;
-    else if (player.level_id > 41) num[1]++;
-    else num[0]++;
+      
+      // 独立判断，一个玩家可以属于多个分类
+      if (player.灵根.type == "魔头") num[3]++;
+      if (player.灵根.type == "转生") num[2]++;
+      if (player.灵根.type == "命运") num[4]++;
+      if (player.灵根.type == "天魔") num[5]++;
+      if (player.mijinglevel_id > 1) num[6]++;
+      if (player.xiangulevel_id > 1) num[7]++;
+      if (player.level_id > 41) num[1]++;
+      
+      // 凡人判断：没有任何修行体系的玩家
+      if (player.level_id <= 41 && player.mijinglevel_id <= 1 && player.xiangulevel_id <= 1) {
+          num[0]++;
+      }
     }
-    const n = num[0] + num[1] + num[2];
+    
     let msg =
       '___[修仙世界]___' +
-      '\n人数：' +
-      n +
-     '\n凡人：' +
-      num[0]+
-      '\n仙人：' +
-      num[1] +
-      '\n轮回者：' +
-      num[2]  +
-      '\n魔头：' +
-      num[3]+
-      '\n命运神道体：' +
-      num[4]+
-      '\n极道天魔：' +
-      num[5]+
-      '\n秘境体系修行者：' +
-      num[6]+
-      '\n仙古今世法修行者：' +
-      num[7];
+      '\n总人数：' + totalPlayers +
+      '\n凡人：' + num[0] +
+      '\n仙人：' + num[1] +
+      '\n轮回者：' + num[2] +
+      '\n魔头：' + num[3] +
+      '\n命运神道体：' + num[4] +
+      '\n极道天魔：' + num[5] +
+      '\n秘境体系修行者：' + num[6] +
+      '\n仙古今世法修行者：' + num[7] +
+      '\n\n注：一个玩家可同时属于多个分类';
+    
     e.reply(msg);
     return false;
-  }
+}
 
   async refining(e) {
     if (!verc({ e })) return false;
@@ -1565,11 +1564,7 @@ if (func == "打开") {
         ...rewardSummary
     ];
     
-    // 如果打开数量超过100个，添加详细奖励
-    if (openCount > 100) {
-        message.push(`\n详细奖励（前100个）：`);
-        message.push(...rewardDetails);
-    }
+   
     
     e.reply(message.join('\n'));
     return;

@@ -1693,7 +1693,7 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
               }
               last_msg += `${m},不巧撞见[${
                 B_player.名号
-              }],${msgg},获得修为${xiuwei},气血${qixue},剩余血量${
+              }],经过一番战斗，击败对手,获得修为${xiuwei},气血${qixue},剩余血量${
                 A_player.当前血量 + Data_battle.A_xue
               }`;
               let random = Math.random();
@@ -2020,7 +2020,7 @@ ${aptitudeEvaluations[newAptitude]}
         }
         
         xiuwei = 800;
-        last_msg = `${m},不巧撞见[${B_player.名号}],${msgg},经过一番战斗，败下阵来，还好跑得快,只获得了修为${xiuwei}`;
+        last_msg = `${m},不巧撞见[${B_player.名号}],经过一番战斗，败下阵来，还好跑得快,只获得了修为${xiuwei}`;
       }
       
 
@@ -2030,12 +2030,12 @@ ${aptitudeEvaluations[newAptitude]}
       console.error(`读取庇护人存档失败: ${protectorQQ}`, err);
       msg.push(` ${player.名号}呼唤庇护人相助，但庇护人似乎已不在世间...`);
       xiuwei = 800;
-      last_msg = `${m},不巧撞见[${B_player.名号}],${msgg},经过一番战斗，败下阵来，还好跑得快,只获得了修为${xiuwei}`;
+      last_msg = `${m},不巧撞见[${B_player.名号}]，经过一番战斗，败下阵来，还好跑得快,只获得了修为${xiuwei}`;
     }
   } else {
     // 没有庇护的正常战败逻辑
     xiuwei = 800;
-    last_msg = `${m},不巧撞见[${B_player.名号}],${msgg},经过一番战斗，败下阵来，还好跑得快,只获得了修为${xiuwei}`;
+    last_msg = `${m},不巧撞见[${B_player.名号}],经过一番战斗，败下阵来，还好跑得快,只获得了修为${xiuwei}`;
       player.当前血量 = 0;
           await Write_player(player_id, player);
   }
