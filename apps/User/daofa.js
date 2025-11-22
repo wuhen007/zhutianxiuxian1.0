@@ -601,7 +601,7 @@ async  createOwnWay(e) {
         if (learnedCount < 6) {
             return e.reply([
                 `「未掌握足够顶级功法！」`,
-                `开创自身之道需至少掌握五种顶级功法`,
+                `开创自身之道需至少掌握六种顶级功法`,
                 `你当前掌握顶级功法：${learnedCount}种`,
                 `已掌握功法：${learnedTopGongfa.join('、') || '无'}`,
                 `顶级功法列表：${topGongfaList.join('、')}`,
