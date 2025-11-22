@@ -701,7 +701,7 @@ buildRescueSuccessMessage(caster, target, canRescue, results, cost, isSelf) {
           `你分享了自己的战斗经验，并赠送了少量希望碎片帮助她净化灵魂宝石。`
         ];
 
-        const additionalStats = { 助人次数: 1 };
+        const additionalStats = { 拯救人数: 1,助人次数: 1 };
         if (hasTemporaryProtection) {
           messages.push(`✨ 获得了该魔法少女的「临时庇护」，下次战斗获得小幅增益。`);
           additionalStats.临时庇护 = 1;
