@@ -215,12 +215,12 @@ let A_player = {
                 }
              await Write_player(usr_qq, player);
           }
-             if (player.灵根.type === "魔法少女" ) {
+            if (player.灵根.type === "魔法少女" ) {
             random1 = Math.max(0.1, random1 - 0.15);
             z += 0.5;
             last_msg += '你是魔法少女，晓美焰不断轮回重启世界线叠加的因果使你能够在秘境中出金率提升 ';
           }
-                      if (player.灵根.type === "圆环之理" ) {
+            if (player.灵根.type === "圆环之理" ) {
             y+=0.5
             last_msg += '你是超越宇宙法则的存在，圆环之理的秩序力量能使你看透秘境 ';
           }
@@ -336,21 +336,27 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
               t1 = 0.5 + Math.random() * 0.5;
               t2 = 0.5 + Math.random() * 0.5;
             }
-           // 特殊处理：圆环之理灵根获得三种奖励各五个
-  if (player.灵根.type === "圆环之理") {
-    // 获取三种品质的奖励各一个
+    if (player.灵根.type === "许愿者·圆") {
+    const oneReward = weizhi.one[Math.floor(Math.random() * weizhi.one.length)];
+    await Add_najie_thing(player_id, oneReward.name, oneReward.class, 3);
+    last_msg += `额外获得[${oneReward.name}]x3`;
+  } 
+    if (player.灵根.type === "希望之光·圆") {
+    const oneReward = weizhi.one[Math.floor(Math.random() * weizhi.one.length)];
+    const twoReward = weizhi.two[Math.floor(Math.random() * weizhi.two.length)];
+    
+    await Add_najie_thing(player_id, oneReward.name, oneReward.class, 6);
+    await Add_najie_thing(player_id, twoReward.name, twoReward.class, 6);
+    last_msg += `额外获得[${oneReward.name}][${twoReward.name}]x6`;
+  }            
+    if (player.灵根.type === "圆环之理") {
     const oneReward = weizhi.one[Math.floor(Math.random() * weizhi.one.length)];
     const twoReward = weizhi.two[Math.floor(Math.random() * weizhi.two.length)];
     const threeReward = weizhi.three[Math.floor(Math.random() * weizhi.three.length)];
-    
-    // 添加三种奖励各五个
-    await Add_najie_thing(player_id, oneReward.name, oneReward.class, 15);
-    await Add_najie_thing(player_id, twoReward.name, twoReward.class, 15);
-    await Add_najie_thing(player_id, threeReward.name, threeReward.class, 15);
-    
-    // 更新消息
-  
-     last_msg += `额外获得[${oneReward.name}][${twoReward.name}][${threeReward.name}]x15`;
+    await Add_najie_thing(player_id, oneReward.name, oneReward.class, 9);
+    await Add_najie_thing(player_id, twoReward.name, twoReward.class, 9);
+    await Add_najie_thing(player_id, threeReward.name, threeReward.class, 9);
+    last_msg += `额外获得[${oneReward.name}][${twoReward.name}][${threeReward.name}]x9`;
   }
 
 
