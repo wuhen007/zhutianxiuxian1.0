@@ -629,7 +629,10 @@ async Gozhetian(e) {
     if (weizhi.Grade === "星域" && player.mijinglevel_id < 12) {
         return e.reply(`你的秘境体系尚未达到圣人境，不具备星海遨游之力！`);
     }
-    
+        // ==== 星域境界检查 ====
+    if (weizhi.Grade === "生命禁区" && player.mijinglevel_id < 12) {
+        return e.reply(`你的秘境体系尚未达到圣人境，若是沉迷遮天位面的生命禁区将会是凶多吉少，念及此处你放弃了前往！`);
+    }
     // ==== 秘境之匙检查 ====
     const keyCount = await exist_najie_thing(player_qq, "秘境之匙", "道具");
     if (!keyCount || keyCount < i) {

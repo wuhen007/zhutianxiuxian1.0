@@ -286,6 +286,9 @@ async quickSettleDungeon(e) {
             action.interval = interval;
             action.next_settle_time = now_time + interval;
         }
+        
+        // 添加惩罚计数器，用于统计结算时的惩罚次数
+        action.penalty_count = 0;
     } else {
         // 普通副本：直接减少结束时间
         action.end_time -= totalReduce;
@@ -332,6 +335,20 @@ async quickSettleDungeon(e) {
         msg += `\n\n 仙力流转！副本探索进程稳步推进！`;
     } else {
         msg += `\n\n 时空涟漪荡漾，秘境探索加速进行`;
+    }
+    
+    // 如果完全结算完成，显示惩罚次数并清除计数器
+    if (totalReduce >= remainingTime && action.penalty_count !== undefined) {
+        const penaltyCount = action.penalty_count;
+        delete action.penalty_count;
+        await redis.set('xiuxian:player:' + processed_qq + ':action', JSON.stringify(action));
+        
+        // 如果有惩罚次数，添加到消息中
+        if (penaltyCount > 0) {
+            msg += `
+
+ ⚠️ 结算期间触发古地府惩罚 ${penaltyCount} 次`;
+        }
     }
     
     e.reply(msg);
