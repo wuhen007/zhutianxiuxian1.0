@@ -32,6 +32,10 @@ export class EraStatusPlugin extends plugin {
          {
           reg: '^#重塑古今未来\\s*(\\d+)\\s*(\\d+)\\s*(\\d+)$',
           fnc: 'reshapeEra',
+        },
+        {
+          reg: '^#重塑天地大道\\s*(\\d+(?:\\.\\d+)?)\\s*(\\d+(?:\\.\\d+)?)\\s*(\\d+(?:\\.\\d+)?)$',
+          fnc: 'reshapeSecretPlace',
         }
       ]
     });
@@ -354,5 +358,81 @@ export class EraStatusPlugin extends plugin {
     const empty = width - filled;
     
     return `${'█'.repeat(filled)}${'░'.repeat(empty)}`;
+  }
+
+  /** 重塑天地大道 - 准仙帝级指令 */
+  async reshapeSecretPlace(e) {
+    // 检查玩家境界
+    const usr_qq = e.user_id;
+    const player = await Read_player(usr_qq);
+    
+    // 只有准仙帝级玩家才能使用
+    if (player.mijinglevel_id <= 19) {
+      return e.reply("你尚未达到准仙帝境界，无法重塑天地大道！");
+    }
+    
+    // 解析参数
+    const match = e.msg.match(/^#重塑天地大道\s*(\d+(?:\.\d+)?)\s*(\d+(?:\.\d+)?)\s*(\d+(?:\.\d+)?)$/);
+    if (!match) {
+      return e.reply("指令格式错误！正确格式：#重塑天地大道 [低级概率] [中级概率] [高级概率]");
+    }
+    
+    const lowRate = parseFloat(match[1]);
+    const midRate = parseFloat(match[2]);
+    const highRate = parseFloat(match[3]);
+    
+    // 验证参数范围
+    if (isNaN(lowRate) || lowRate < 0 || lowRate > 1) {
+      return e.reply("低级概率无效！有效范围：0-1");
+    }
+    
+    if (isNaN(midRate) || midRate < 0 || midRate > 1) {
+      return e.reply("中级概率无效！有效范围：0-1");
+    }
+    
+    if (isNaN(highRate) || highRate < 0 || highRate > 1) {
+      return e.reply("高级概率无效！有效范围：0-1");
+    }
+    
+    // 获取当前配置
+    const set = config.getConfig('xiuxian', 'xiuxian');
+    
+    // 记录旧的概率设置
+    const oldOne = set.SecretPlace?.one || 0.99;
+    const oldTwo = set.SecretPlace?.two || 0.5;
+    const oldThree = set.SecretPlace?.three || 0.25;
+    
+    // 更新秘境概率配置
+    if (!set.SecretPlace) {
+      set.SecretPlace = {};
+    }
+    set.SecretPlace.one = lowRate;
+    set.SecretPlace.two = midRate;
+    set.SecretPlace.three = highRate;
+    
+    // 保存配置
+    config.setConfig('xiuxian', 'xiuxian', set);
+    
+    // 构建回复消息
+    const message = [
+      `【准仙帝伟力·重塑天地大道】`,
+      `${player.名号}施展准仙帝伟力，重塑天地大道法则！`,
+      ``,
+      `【秘境概率重塑】`,
+      `低级秘境概率：${oldOne} → ${lowRate}`,
+      `中级秘境概率：${oldTwo} → ${midRate}`,
+      `高级秘境概率：${oldThree} → ${highRate}`,
+      ``,
+      `天地大道已重塑，秘境出金法则发生剧变！`,
+      `所有秘境的奖励概率已按你的意志重新设定！`,
+      ``,
+      `【准仙帝威能】`,
+      `你以准仙帝之力强行改变天地法则，`,
+      `此等伟力足以让万古诸天为之震颤！`,
+      ``,
+      `注：概率设置已保存，立即生效`
+    ].join("\n");
+    
+    return e.reply(message);
   }
 }

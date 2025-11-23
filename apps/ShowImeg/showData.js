@@ -52,7 +52,7 @@ export class showData extends plugin {
           fnc: "show_association",
         },
         {
-          reg: "^#修仙设置$",
+          reg: "^#修仙设置|#诸天设置|#天地本质$",
           fnc: "show_adminset",
         },
       ],
