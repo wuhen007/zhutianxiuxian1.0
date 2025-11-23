@@ -243,20 +243,20 @@ async nihuojiushi(e) {
         return;
     }
     
-    // 时间间隔限制（一万年冷却）
+    // 时间间隔限制（五千年冷却）
     // 计算当前总年份：(纪元数 - 1) * 50000 + (时代索引 * 10000) + 当前年份
     const currentTotalYears = (currentEra.epoch - 1) * 50000 + (currentEra.index * 10000) + currentEra.years;
     const lastNihuoTime = player.last_nihuo_time || 0;
     const yearsPassed = currentTotalYears - lastNihuoTime;
     
-    if (yearsPassed < 10000) {
-        const remainingYears = 10000 - yearsPassed;
+    if (yearsPassed < 5000) {
+        const remainingYears = 5000 - yearsPassed;
         e.reply([
             `【岁月积淀不足】`,
-            `逆活九世需沉淀万年道基！`,
+            `逆活九世需沉淀五千年道基！`,
             `距上次逆活仅过去 ${yearsPassed} 年`,
             `还需等待 ${remainingYears} 年方可再次尝试`,
-            `「万年积淀，方得一世新生」`
+            `「五千年积淀，方得一世新生」`
         ].join("\n"));
         return;
     }
@@ -418,7 +418,7 @@ async nihuojiushi(e) {
             `  生命 +${bigNumberTransform(powerGain)}`,
             `距红尘仙还需：${9 - currentLife}世轮回`,
             `当前仙基：${currentLife}/9`,
-            `下次逆活需等待：10000年后`
+            `下次逆活需等待：5000年后`
         ].join("\n"));
     }
     
