@@ -135,11 +135,19 @@ class InnerWorldManager {
             if (isStoreAll) {
                 const najie = await Read_najie(usr_qq);
                 // 对于装备，需要找到具体的品级
-                if (category === '装备' || category === '仙宠') {
+                if (category === '装备') {
                     const najieItems = najie[category]?.filter(i => i.name === name);
                     if (najieItems && najieItems.length > 0) {
                         // 默认取第一个找到的装备的品级
                         itemPinji = najieItems[0].pinji || 0;
+                        storeQty = najieItems.reduce((sum, i) => sum + i.数量, 0);
+                    } else {
+                        storeQty = 0;
+                    }
+                } else if (category === '仙宠') {
+                    // 仙宠没有品级，直接累加数量
+                    const najieItems = najie[category]?.filter(i => i.name === name);
+                    if (najieItems && najieItems.length > 0) {
                         storeQty = najieItems.reduce((sum, i) => sum + i.数量, 0);
                     } else {
                         storeQty = 0;
@@ -151,8 +159,8 @@ class InnerWorldManager {
             } else {
                 storeQty = parseInt(quantity);
                 
-                // 对于装备和仙宠，需要确定品级
-                if (category === '装备' || category === '仙宠') {
+                // 对于装备，需要确定品级
+                if (category === '装备') {
                     const najie = await Read_najie(usr_qq);
                     const najieItems = najie[category]?.filter(i => i.name === name);
                     if (najieItems && najieItems.length > 0) {
@@ -208,17 +216,18 @@ class InnerWorldManager {
 
             // ==== 6. 执行存入操作 ====
             // 从纳戒扣除（考虑品级）
-            if (category === '装备' || category === '仙宠') {
+            if (category === '装备') {
                 await Add_najie_thing(usr_qq, name, category, -storeQty, itemPinji);
             } else {
+                // 仙宠和其他物品不需要品级
                 await Add_najie_thing(usr_qq, name, category, -storeQty);
             }
             
             // 添加到内景地
             if (!innerWorld[category]) innerWorld[category] = [];
             
-            // 对于装备和仙宠，需要按品级分开存储
-            if (category === '装备' || category === '仙宠') {
+            // 对于装备，需要按品级分开存储
+            if (category === '装备') {
                 const existing = innerWorld[category].find(i => 
                     i.name === name && 
                     i.pinji === itemPinji
@@ -230,6 +239,19 @@ class InnerWorldManager {
                     innerWorld[category].push({
                         ...item,
                         pinji: itemPinji,
+                        数量: storeQty,
+                        存入时间: Date.now()
+                    });
+                }
+            } else if (category === '仙宠') {
+                // 仙宠没有品级，按名称存储
+                const existing = innerWorld[category].find(i => i.name === name);
+                
+                if (existing) {
+                    existing.数量 += storeQty;
+                } else {
+                    innerWorld[category].push({
+                        ...item,
                         数量: storeQty,
                         存入时间: Date.now()
                     });
@@ -254,17 +276,20 @@ class InnerWorldManager {
 
             // ==== 7. 返回操作结果 ====
             const nowCount = innerWorld[category].reduce((sum, i) => {
-                if (category === '装备' || category === '仙宠') {
+                if (category === '装备') {
                     return i.name === name && i.pinji === itemPinji ? sum + i.数量 : sum;
+                } else if (category === '仙宠') {
+                    return i.name === name ? sum + i.数量 : sum;
                 } else {
                     return i.name === name ? sum + i.数量 : sum;
                 }
             }, 0);
             
             let pinjiText = '';
-            if (category === '装备' || category === '仙宠') {
+            if (category === '装备') {
                 pinjiText = `品级: ${this.PINJI_MAP[itemPinji] || itemPinji}`;
             }
+            // 仙宠没有品级，不显示品级信息
             
             return this.showSuccess(e, [
                 ` 成功存入 ${storeQty}个${name}`,
@@ -371,8 +396,8 @@ class InnerWorldManager {
                 remaining -= takeFromThis;
                 releasedSpace += this.getItemSize({...item, 数量: takeFromThis}, targetCategory);
 
-                // 对于装备和仙宠，需要传递品级信息
-                if (targetCategory === '装备' || targetCategory === '仙宠') {
+                // 对于装备，需要传递品级信息
+                if (targetCategory === '装备' ) {
                     await Add_najie_thing(usr_qq, item.name, targetCategory, takeFromThis, item.pinji);
                 } else {
                     await Add_najie_thing(usr_qq, item.name, targetCategory, takeFromThis);
@@ -569,8 +594,8 @@ export class InnerWorld extends plugin {
                 for (const item of storePlan.items[category]) {
                     try {
                         // 从纳戒移除（考虑品级）
-                        if (category === '装备' || category === '仙宠') {
-                            await Add_najie_thing(usr_qq, item.name, category, -item.count);
+                        if (category === '装备' ) {
+                            await Add_najie_thing(usr_qq, item.name, category, item.pinji,-item.count);
                         } else {
                             await Add_najie_thing(usr_qq, item.name, category, -item.count);
                         }
@@ -578,7 +603,7 @@ export class InnerWorld extends plugin {
                         // 添加到内景地
                         const existing = innerWorld[category]?.find(i => 
                             i.name === item.name && 
-                            (category !== '装备' && category !== '仙宠' || i.pinji === item.pinji)
+                            (category === '装备' ? i.pinji === item.pinji : true)
                         );
                         
                         if (existing) {
@@ -594,9 +619,10 @@ export class InnerWorld extends plugin {
                                     存入时间: Date.now()
                                 };
                                 
-                                if (category === '装备' || category === '仙宠') {
+                                if (category === '装备') {
                                     newItem.pinji = item.pinji;
                                 }
+                                // 仙宠没有品级，不设置pinji
                                 
                                 innerWorld[category].push(newItem);
                             }
@@ -811,11 +837,9 @@ export class InnerWorld extends plugin {
 
                 for (const item of categoryItems) {
                     // 添加到纳戒（考虑品级）
-                    if (category === '装备' || category === '仙宠') {
+
                         await Add_najie_thing(usr_qq, item.name, category, item.数量);
-                    } else {
-                        await Add_najie_thing(usr_qq, item.name, category, item.数量);
-                    }
+
                     
                     categoryTaken += item.数量;
                     categorySpace += this.getItemSize(item, category);

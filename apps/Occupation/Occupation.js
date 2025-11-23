@@ -340,7 +340,6 @@ if (targetAction) {
         xijie: '1', // 禁止仙界行动
         plant: '1', // 禁止种植
         mine: '1', // 禁止采矿
-        yongji: '0', // 非永寂状态
         jieyin: '1' // 特殊标记：神源封印
     };
     

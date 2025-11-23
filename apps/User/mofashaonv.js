@@ -98,14 +98,16 @@ async jiushu(e) {
         isYongji: parsedAction?.yongji, // 永寂状态
         isTianlao: parsedAction?.action === '天牢', // 天牢状态
         isHeianlaolong: parsedAction?.heianlaolong, // 黑暗牢笼状态
+        isJinbi: parsedAction?.action === '禁闭', // 禁闭状态
         hasDaoshang: target.道伤 > 0, // 有道伤
         hasShengmingbenyuan: target.生命本源 < (100 + (target.灵根?.生命本源 || 0)) // 生命本源受损
     };
     
     // 根据施法者境界判断可救赎的状态
     const canRescue = {
-        // 魔法少女：只能解放天牢
+        // 魔法少女：只能解放天牢和禁闭
         tianlao: caster.灵根.type === "魔法少女" && status.isTianlao,
+        jinbi: caster.灵根.type === "魔法少女" && status.isJinbi,
         
         // 愿望化身：解放天牢+黑暗牢笼+修复生命本源
         heianlaolong: ["愿望化身", "希望化身", "圆环之理"].includes(caster.灵根.type) && status.isHeianlaolong,
@@ -120,7 +122,7 @@ async jiushu(e) {
     
     // 检查是否有可救赎的状态
     const hasRescuableStatus = Object.values(canRescue).some(v => v) || 
-                              (!status.isYongji && !status.isTianlao && !status.isHeianlaolong);
+                              (!status.isYongji && !status.isTianlao && !status.isHeianlaolong && !status.isJinbi);
     
     if (!hasRescuableStatus) {
         e.reply(this.buildNoRescueNeededMessage(caster, target, isSelf, status));
@@ -151,6 +153,9 @@ buildNoRescueNeededMessage(caster, target, isSelf, status) {
     } else if (status.hasDaoshang && !["希望化身", "圆环之理"].includes(caster.灵根.type)) {
         messages.push(` 检测到道伤痕迹...但${caster.名号}对因果律的理解不足，无法修复大道之伤。`);
         messages.push(` 需达到「希望化身」及以上境界方能治愈道伤！`);
+    } else if (status.isJinbi && !["魔法少女", "愿望化身", "希望化身", "圆环之理"].includes(caster.灵根.type)) {
+        messages.push(` 检测到禁闭状态...但${caster.名号}的血脉之力不足，无法破开禁闭之门。`);
+        messages.push(` 需达到「魔法少女」及以上境界方能解救禁闭！`);
     } else {
         messages.push(` ${isSelf ? '您' : target.名号}当前状态良好，无需救赎。`);
         messages.push(` 真正的救赎，在于守护现有的希望与幸福。`);
@@ -165,6 +170,7 @@ calculateRescueCost(caster, canRescue) {
     
     // 基础救赎消耗
     if (canRescue.tianlao) cost += 50;
+    if (canRescue.jinbi) cost += 40;
     if (canRescue.heianlaolong) cost += 100;
     if (canRescue.shengmingbenyuan) cost += 30;
     if (canRescue.daoshang) cost += 80;
@@ -189,6 +195,7 @@ async executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf, caster
     // 执行各类救赎
     const results = {
         tianlao: canRescue.tianlao ? await this.rescueTianlao(targetQQ) : false,
+        jinbi: canRescue.jinbi ? await this.rescueJinbi(targetQQ) : false,
         heianlaolong: canRescue.heianlaolong ? await this.rescueHeianlaolong(targetQQ) : false,
         shengmingbenyuan: canRescue.shengmingbenyuan ? await this.healShengmingbenyuan(targetQQ) : false,
         daoshang: canRescue.daoshang ? await this.healDaoshang(targetQQ) : false,
@@ -221,6 +228,25 @@ async rescueTianlao(targetQQ) {
     target.救赎记录 = target.救赎记录 || [];
     target.救赎记录.push({
         类型: '天牢解放',
+        时间: new Date().toLocaleString()
+    });
+    
+    await Write_player(targetQQ, target);
+    return true;
+}
+
+/** 解救禁闭 */
+async rescueJinbi(targetQQ) {
+    await redis.del(`xiuxian:player:${targetQQ}:action`);
+    
+    const target = await Read_player(targetQQ);
+    target.当前血量 = target.血量上限;
+    target.修为 = Math.floor(target.修为 * 0.95); // 保留95%修为
+    
+    // 添加解救记录
+    target.救赎记录 = target.救赎记录 || [];
+    target.救赎记录.push({
+        类型: '禁闭解救',
         时间: new Date().toLocaleString()
     });
     
@@ -340,6 +366,15 @@ buildRescueSuccessMessage(caster, target, canRescue, results, cost, isSelf) {
             `"以愿望之力，逐散永恒黑暗！"`,
             `仙帝伟力化作无量神光，贯穿永恒黑暗！`,
             `冰冷的秩序神链寸寸断裂，${targetName}重获自由！`
+        );
+    } else if (canRescue.jinbi && results.jinbi) {
+        messages.push(
+            `🌟【魔法少女·破禁解围】`,
+            `${caster.名号}施展魔法少女之力，温柔地照耀着冰冷的禁闭室！`,
+            `希望之力化作钥匙，轻易打开了沉重的牢门，`,
+            `束缚的锁链在光芒中寸寸断裂，化作点点星光消散！`,
+            ``,
+            `${targetName}从禁闭中被解救，重获自由！`
         );
     } else if (canRescue.tianlao && results.tianlao) {
         messages.push(
