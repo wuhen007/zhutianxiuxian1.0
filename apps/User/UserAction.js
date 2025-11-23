@@ -925,8 +925,7 @@ const usr_qq = (await channel(e.user_id.toString().replace('qg_',''))).toString(
         ].join('\n'));
     }
     
-    // 消耗令牌
-    await Add_najie_thing(usr_qq, '剑云海令牌', '道具', -1);
+
     
     // 构建回复消息
     const encounterText = [
@@ -945,6 +944,8 @@ const usr_qq = (await channel(e.user_id.toString().replace('qg_',''))).toString(
     ].join('\n');
 
   player.剑云海选择中 = true;
+      // 消耗令牌
+    await Add_najie_thing(usr_qq, '剑云海令牌', '道具', -1);
     await Write_player(usr_qq, player);
     
     return e.reply(encounterText);
@@ -956,25 +957,24 @@ async jianyunhaiChoice(e) {
     
     const player = await Read_player(usr_qq);
     
-   // 检查是否在剑云海选择状态
+    // 检查是否在剑云海选择状态
     if (!player.剑云海选择中) {
         return e.reply('请先使用【#剑云海】进入剑云海');
     }
     
-    
     // 获取选择
     const choice = e.msg.replace('#剑云海选择', '').trim();
-    
-    // 清除选择状态并标记已完成
-    player.剑云海选择中 = false;
-    player.剑云海已选择 = true; // 新增标记，表示已完成选择
-    await Write_player(usr_qq, player);
     
     // 处理选择
     switch(choice) {
         case '1': // 修炼资源
             await Add_灵石(usr_qq, 150000000); // 1亿5千万灵石
             await Add_najie_thing(usr_qq, '剑云海圣药', '丹药', 3);
+            
+            // 标记为已完成选择
+            player.剑云海选择中 = false;
+            player.剑云海已选择 = true;
+            await Write_player(usr_qq, player);
             
             return e.reply([
                 `【修炼资源】`,
@@ -990,6 +990,11 @@ async jianyunhaiChoice(e) {
             // 检查服务器中是否已有剑云海传人
             const hasChuanren = await this.checkJianyunhaiChuanren();
             if (hasChuanren) {
+                // 如果已有传人，返还令牌并重置选择状态
+                await Add_najie_thing(usr_qq, '剑云海令牌', '道具', 1);
+                player.剑云海选择中 = false; // 重置选择状态，允许玩家重新选择
+                await Write_player(usr_qq, player);
+                
                 return e.reply([
                     `【传人已定】`,
                     `剑魔帝主摇头：`,
@@ -997,13 +1002,21 @@ async jianyunhaiChoice(e) {
                     `提示：`,
                     `- 剑云海传人具有唯一性`,
                     `- 当前世界线已有传人存在`,
-                    `- 请选择其他奖励`
+                    `- 你的令牌已返还，请重新选择其他奖励`,
+                    `- 使用 #剑云海 重新进入选择`
                 ].join('\n'));
             }
+            
+            // 如果没有传人，则继续执行
             player.学习的功法.push('永恒终极剑道');
             player.势力 = "剑云海";
             player.势力职位 = "传人";
+            
+            // 标记为已完成选择
+            player.剑云海选择中 = false;
+            player.剑云海已选择 = true;
             await Write_player(usr_qq, player);
+            
             return e.reply([
                 `【剑云海传人】`,
                 `白衣青年眸光如电：`,
@@ -1021,7 +1034,12 @@ async jianyunhaiChoice(e) {
                 黑暗牢笼: 5, // 免受黑暗牢笼5次
                 副本奖励: 5  // 副本5倍奖励5次
             };
+            
+            // 标记为已完成选择
+            player.剑云海选择中 = false;
+            player.剑云海已选择 = true;
             await Write_player(usr_qq, player);
+            
             return e.reply([
                 `【帝主庇护】`,
                 `剑魔帝主取出一枚剑符：`,
@@ -1034,6 +1052,29 @@ async jianyunhaiChoice(e) {
             
         default:
             return e.reply('请选择有效选项：1、2或3');
+    }
+}
+
+// 检查剑云海是否已有传人
+async checkJianyunhaiChuanren() {
+    try {
+        // 获取所有玩家文件
+        const playerFiles = fs.readdirSync('./plugins/zhutianxiuxian1.0/resources/data/xiuxian_player')
+            .filter(file => file.endsWith('.json'));
+        
+        for (let file of playerFiles) {
+            const playerId = file.replace('.json', '');
+            const playerData = await Read_player(playerId);
+            
+            // 检查是否是剑云海传人
+            if (playerData.势力 === "剑云海" && playerData.势力职位 === "传人") {
+                return true; // 已存在传人
+            }
+        }
+        return false; // 没有传人
+    } catch (error) {
+        console.error('检查剑云海传人时出错:', error);
+        return false; // 出错时默认没有传人
     }
 }
 // 传音功能实现

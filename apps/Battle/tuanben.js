@@ -236,7 +236,7 @@ async resetAllPlayerCD(e) {
  // 创建帝尊挑战队伍
 async createEmperorTeam(e) {
   const usr_qq = await this.getUserId(e);
-  
+   let player = await Read_player(usr_qq);
   // 检查帝尊感知标记 - 修正：添加括号调用函数
   const isEmperorAware = await checkEmperorAwareness();
   
@@ -271,12 +271,23 @@ async createEmperorTeam(e) {
   await this.saveTeam(teamId, newTeam);
   await this.linkPlayer(usr_qq, teamId);
   
-  e.reply([
-    `成功创建【帝尊挑战】队伍！`,
+ e.reply([
+    `🌠【帝尊讨伐令·诸天震动】🌠`,
+    `「${player.名号}」仰天长啸，声震九霄！`,
+    `一道金光冲天而起，贯穿时间长河，直指帝尊所在！`,
+    `成功创建【帝尊讨伐】队伍！`,
     `队伍ID: ${teamId}`,
-    `当前成员: 1/5`,
-    `其他成员使用: #加入迎战帝尊 ${teamId}`,
-    `注意：此挑战无奖励，不计CD，只为证明实力！`
+    `当前成员: 1/5人`,
+    `队长: ${player.名号}`,
+    ``,
+    `招募指令: #加入迎战帝尊 ${teamId}`,
+    ``,
+    `挑战须知:`,
+    `• 此战只为证道,不计奖励,不占CD`,
+    `• 帝尊实力滔天，九死一生！`,
+    `• 胜则名垂青史，败则身死道消！`,
+    ``,
+    `「今日，吾等当逆天伐帝，证我辈修士不屈之志！」`
   ].join('\n'));
   return true;
 }
@@ -459,10 +470,10 @@ if (battleResult.result === "玩家胜利") {
         const resultSummary = [
             ` 帝尊挑战结果 `,
             battleResult.result === "玩家胜利" 
-                ? `恭喜队伍成功击败帝尊！证明了自己的实力！` 
+                ? `恭喜队伍成功击败帝尊！守护了遮天宇宙！` 
                 : `很遗憾，队伍未能击败帝尊...`,
             `战斗时长: ${((Date.now() - team.battleStartTime) / 1000).toFixed(1)}秒`,
-            `此挑战不计CD，无奖励，只为证明实力`
+            `此战只为证道，不计奖励，不占CD`
         ].join('\n');
         
         e.reply(resultSummary);
