@@ -74,6 +74,10 @@ export class ExamplePlugin extends plugin {
         {
           reg: '^#(张五爷请教|交流|张五爷论源)',
           fnc: 'zhangWuYeInteraction'
+        },
+        {
+          reg: '^#柳神奖励补发$',
+          fnc: 'issueLiuShenRewards'
         }
       ],
     });
@@ -314,10 +318,13 @@ export class ExamplePlugin extends plugin {
       if (newRelationLevel === 2) {
         replyMsg += "\n\n柳神赠你一块原始宝骨，上面刻有神秘符文！";
         replyMsg += "\n你发现这块宝骨记载着原始真解神引篇，蕴含无上大道奥秘！";
+        player.神引篇 = true;
         // 添加到玩家物品
         await Add_najie_thing(usr_qq, "原始宝骨", "道具", 1);
       } else if (newRelationLevel === 3) {
         replyMsg += "\n\n柳神赠你一缕本命柳枝与本命本源，蕴含无上生命法则！";
+        player.柳神本命枝 = true;
+        player.柳神本源 = true;
         // 添加到玩家物品
         await Add_najie_thing(usr_qq, "柳神本命枝", "道具", 1);
         await Add_najie_thing(usr_qq, "柳神本源", "道具", 1);
@@ -340,7 +347,116 @@ export class ExamplePlugin extends plugin {
     return true;
   }
 
-async zhangWuYeInteraction(e) {
+  /**
+   * 补发柳神奖励函数
+   * 用于处理玩家好感度达到要求但未正确标记奖励的情况
+   * @param {number} usr_qq - 用户QQ号
+   * @returns {string} 补发奖励的提示信息
+   */
+  async checkAndIssueLiuShenRewards(usr_qq) {
+    try {
+      // 读取玩家数据
+      const player = await Read_player(usr_qq);
+      if (!player) {
+        return "未找到玩家数据，请确认玩家存在";
+      }
+
+      // 检查是否已解锁柳神
+      let liuShenData = null;
+      if (player.剧情人物 && Array.isArray(player.剧情人物)) {
+        liuShenData = player.剧情人物.find(np => np.柳神);
+      }
+
+      if (!liuShenData) {
+        return "该玩家尚未解锁柳神，无法补发奖励";
+      }
+
+      // 计算当前关系等级
+      const currentRelationLevel = Math.min(4, Math.floor(liuShenData.好感度 / 120) + 1);
+      let rewardMessages = [];
+      let hasNewRewards = false;
+
+      // 检查2级关系奖励（原始宝骨和神引篇）
+      if (currentRelationLevel >= 2) {
+        const hasOriginalBone = await exist_najie_thing(usr_qq, "原始宝骨", "道具");
+        const hasShenYinPian = player.神引篇;
+
+        if (!hasOriginalBone || !hasShenYinPian) {
+          hasNewRewards = true;
+          rewardMessages.push("【2级关系奖励补发】");
+          
+          if (!hasOriginalBone) {
+            await Add_najie_thing(usr_qq, "原始宝骨", "道具", 1);
+            rewardMessages.push("✓ 补发原始宝骨 x1");
+          }
+          
+          if (!hasShenYinPian) {
+            player.神引篇 = true;
+            rewardMessages.push("✓ 解锁原始真解神引篇");
+          }
+          
+          rewardMessages.push("原始宝骨记载着原始真解神引篇，蕴含无上大道奥秘！");
+        }
+      }
+
+      // 检查3级关系奖励（柳神本命枝和柳神本源）
+      if (currentRelationLevel >= 3) {
+        const hasLiuShenBranch = await exist_najie_thing(usr_qq, "柳神本命枝", "道具");
+        const hasLiuShenSource = await exist_najie_thing(usr_qq, "柳神本源", "道具");
+        const hasBranchMark = player.柳神本命枝;
+        const hasSourceMark = player.柳神本源;
+
+        if (!hasLiuShenBranch || !hasLiuShenSource || !hasBranchMark || !hasSourceMark) {
+          hasNewRewards = true;
+          rewardMessages.push("【3级关系奖励补发】");
+          
+          if (!hasLiuShenBranch || !hasBranchMark) {
+            await Add_najie_thing(usr_qq, "柳神本命枝", "道具", 1);
+            player.柳神本命枝 = true;
+            rewardMessages.push("✓ 补发柳神本命枝 x1");
+          }
+          
+          if (!hasLiuShenSource || !hasSourceMark) {
+            await Add_najie_thing(usr_qq, "柳神本源", "道具", 1);
+            player.柳神本源 = true;
+            rewardMessages.push("✓ 补发柳神本源 x1");
+          }
+          
+          rewardMessages.push("柳神本命枝与本源蕴含无上生命法则！");
+        }
+      }
+
+      // 保存玩家数据（如果有更新）
+      if (hasNewRewards) {
+        await Write_player(usr_qq, player);
+        
+        const finalMessage = [
+          `【柳神奖励补发完成】`,
+          `玩家：${player.name || usr_qq}`,
+          `当前关系等级：${LIUSHEN_RELATIONSHIPS[currentRelationLevel].name} (Lv.${currentRelationLevel})`,
+          `好感度：${liuShenData.好感度}`,
+          ...rewardMessages,
+          `补发操作已完成，请检查道具栏和角色状态。`
+        ].join("\n");
+        
+        return finalMessage;
+      } else {
+        return [
+          `【柳神奖励检查】`,
+          `玩家：${player.name || usr_qq}`,
+          `当前关系等级：${LIUSHEN_RELATIONSHIPS[currentRelationLevel].name} (Lv.${currentRelationLevel})`,
+          `好感度：${liuShenData.好感度}`,
+          `✓ 所有应得奖励均已正确发放，无需补发。`
+        ].join("\n");
+      }
+
+    } catch (error) {
+      console.error('补发柳神奖励时发生错误:', error);
+      return `补发奖励时发生错误：${error.message}`;
+    }
+  }
+
+  async zhangWuYeInteraction(e) {
     if (!e.isGroup) return;
     
     const usr_qq = e.user_id;
@@ -524,5 +640,30 @@ async zhangWuYeInteraction(e) {
       4: "传承"
     };
     return relations[level] || "未知";
+  }
+
+  /**
+   * 处理柳神奖励补发指令
+   * @param {Object} e - 消息事件对象
+   * @returns {boolean} 处理结果
+   */
+  async issueLiuShenRewards(e) {
+    if (!e.isGroup) return;
+    
+    const usr_qq = e.user_id;
+    
+    try {
+      // 调用补发奖励函数
+      const result = await this.checkAndIssueLiuShenRewards(usr_qq);
+      
+      // 发送结果消息
+      e.reply(result);
+      
+    } catch (error) {
+      console.error('处理柳神奖励补发指令时发生错误:', error);
+      e.reply(`补发奖励时发生错误：${error.message}`);
+    }
+    
+    return true;
   }
 }
