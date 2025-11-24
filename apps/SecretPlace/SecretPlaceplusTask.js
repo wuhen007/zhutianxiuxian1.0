@@ -1996,9 +1996,48 @@ ${aptitudeEvaluations[newAptitude]}
   // 结算后更新动作状态
 action.settled_count++;
 
+  // ==== 更新沉迷历史记录 ====
+  const addictionHistory = await redis.get('xiuxian:player:' + player_id + ':addiction_history');
+  if (addictionHistory) {
+    const history = JSON.parse(addictionHistory);
+    history.settled_count = action.settled_count;
+    history.xiuwei_gained += xiuwei;
+    history.xueqi_gained += qixue;
+    
+    // 记录获得的道具
+    if (thing_name && thing_class) {
+      const existingItem = history.items_gained.find(item => item.name === thing_name);
+      if (existingItem) {
+        existingItem.count += n;
+      } else {
+        history.items_gained.push({
+          name: thing_name,
+          class: thing_class,
+          count: n
+        });
+      }
+    }
+    
+    // 记录死亡（如果战斗失败）
+    if (Data_battle && Data_battle.B_win) {
+      history.death_count++;
+    }
+    
+    await redis.set('xiuxian:player:' + player_id + ':addiction_history', JSON.stringify(history));
+  }
+
 if (action.settled_count >= action.total_count) {
     // 所有结算完成，结束动作
     action.Place_actionplus = '1';
+    
+    // ==== 完成沉迷历史记录 ====
+    const addictionHistory = await redis.get('xiuxian:player:' + player_id + ':addiction_history');
+    if (addictionHistory) {
+      const history = JSON.parse(addictionHistory);
+      history.status = 'completed';
+      history.end_time = new Date().getTime();
+      await redis.set('xiuxian:player:' + player_id + ':addiction_history', JSON.stringify(history));
+    }
     
     // 关闭其他状态
     action.shutup = 1; // 闭关状态

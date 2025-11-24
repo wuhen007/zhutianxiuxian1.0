@@ -844,15 +844,18 @@ function saveWeimianData(data) {
       let epochIncreased = false;
       
       if (eraPass > 0) {
-        // 更新时代索引（循环）
-        index = (index + eraPass) % totalEras;
-        eraChanged = true;
-        newEraName = this.eras[index].name;
+        // 计算新的总时代索引
+        const totalIndex = index + eraPass;
         
-        // 计算纪元增加（完成完整循环）
-        const fullCycles = Math.floor(eraPass / totalEras);
+        // 计算完整循环数（纪元增加）
+        const fullCycles = Math.floor(totalIndex / totalEras);
         epoch += fullCycles;
         epochIncreased = fullCycles > 0;
+        
+        // 计算新时代索引（循环）
+        index = totalIndex % totalEras;
+        eraChanged = true;
+        newEraName = this.eras[index].name;
       }
       
       // 更新配置

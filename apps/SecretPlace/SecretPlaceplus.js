@@ -47,6 +47,14 @@ export class SecretPlaceplus extends plugin {
           reg: '^#沉迷九天十地.*$',
           fnc: 'Gojiutianshidi',
         },
+        {
+          reg: '^#沉迷收获$',
+          fnc: 'CheckAddictionHarvest',
+        },
+        {
+          reg: '^#清除沉迷记录$',
+          fnc: 'ClearAddictionHistory',
+        },
       ],
     });
   }
@@ -246,6 +254,24 @@ async Gosecretplace(e) {
     
     await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
     
+    // ==== 记录沉迷历史数据 ====
+    const addictionHistory = {
+        start_time: new Date().getTime(),
+        location: weizhi.name,
+        location_type: '秘境',
+        total_count: 10*i,
+        settled_count: 0,
+        death_count: 0,
+        xiuwei_gained: 0,
+        xueqi_gained: 0,
+        items_gained: [],
+        status: 'in_progress', // in_progress, completed
+        end_time: null
+    };
+    
+    // 保存到redis，用于后续查询
+    await redis.set('xiuxian:player:' + player_qq + ':addiction_history', JSON.stringify(addictionHistory));
+    
     // ==== 修改点结束 ====
     
     // 添加主要行动信息
@@ -401,6 +427,24 @@ async Goxiajie(e) {
     
     await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
     
+    // ==== 记录沉迷历史数据 ====
+    const addictionHistory = {
+        start_time: new Date().getTime(),
+        location: weizhi.name,
+        location_type: '下界八域',
+        total_count: 10*i,
+        settled_count: 0,
+        death_count: 0,
+        xiuwei_gained: 0,
+        xueqi_gained: 0,
+        items_gained: [],
+        status: 'in_progress', // in_progress, completed
+        end_time: null
+    };
+    
+    // 保存到redis，用于后续查询
+    await redis.set('xiuxian:player:' + player_qq + ':addiction_history', JSON.stringify(addictionHistory));
+    
     // ==== 修改点结束 ====
     
     // 添加主要行动信息
@@ -552,6 +596,24 @@ async Gojiutianshidi(e) {
     }
     
     await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
+    
+    // ==== 记录沉迷历史数据 ====
+    const addictionHistory = {
+        start_time: new Date().getTime(),
+        location: weizhi.name,
+        location_type: '九天十地',
+        total_count: 10*i,
+        settled_count: 0,
+        death_count: 0,
+        xiuwei_gained: 0,
+        xueqi_gained: 0,
+        items_gained: [],
+        status: 'in_progress', // in_progress, completed
+        end_time: null
+    };
+    
+    // 保存到redis，用于后续查询
+    await redis.set('xiuxian:player:' + player_qq + ':addiction_history', JSON.stringify(addictionHistory));
     
     // ==== 修改点结束 ====
     
@@ -793,6 +855,24 @@ let time = baseTime - timeReduction;
     
     await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
     
+    // ==== 记录沉迷历史数据 ====
+    const addictionHistory = {
+        start_time: new Date().getTime(),
+        location: weizhi.name,
+        location_type: '遮天位面',
+        total_count: 10*i,
+        settled_count: 0,
+        death_count: 0,
+        xiuwei_gained: 0,
+        xueqi_gained: 0,
+        items_gained: [],
+        status: 'in_progress', // in_progress, completed
+        end_time: null
+    };
+    
+    // 保存到redis，用于后续查询
+    await redis.set('xiuxian:player:' + player_qq + ':addiction_history', JSON.stringify(addictionHistory));
+    
     // ==== 修改点结束 ====
     
     // 添加主要行动信息
@@ -932,6 +1012,24 @@ async Goforbiddenarea(e) {
     }
     
     await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
+    
+    // ==== 记录沉迷历史数据 ====
+    const addictionHistory = {
+        start_time: new Date().getTime(),
+        location: weizhi.name,
+        location_type: '禁地',
+        total_count: 10*i,
+        settled_count: 0,
+        death_count: 0,
+        xiuwei_gained: 0,
+        xueqi_gained: 0,
+        items_gained: [],
+        status: 'in_progress', // in_progress, completed
+        end_time: null
+    };
+    
+    // 保存到redis，用于后续查询
+    await redis.set('xiuxian:player:' + player_qq + ':addiction_history', JSON.stringify(addictionHistory));
     
     // ==== 修改点结束 ====
     
@@ -1084,7 +1182,7 @@ async Gofairyrealm(e) {
         }
         await Add_najie_thing(usr_qq, "神域令牌", "道具", -requiredTokens);
         specialMsg = `${player.名号}消耗了${requiredTokens}个神域令牌，神魂受到神域主宰感召指引，脱离万界遨游混沌海前往神域星宫`;
-        specialCost = `，${requiredTokens}个神域令牌`;
+        specialCost = `,${requiredTokens}个神域令牌`;
     }
     
     // 瑞泽云海
@@ -1161,6 +1259,26 @@ async Gofairyrealm(e) {
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
+    // ==== 记录沉迷历史数据 ====
+    const addictionHistory = {
+        start_time: new Date().getTime(),
+        location: weizhi.name,
+        location_type: '仙境',
+        total_count: 10*i,
+        settled_count: 0,
+        death_count: 0,
+        xiuwei_gained: 0,
+        xueqi_gained: 0,
+        items_gained: [],
+        status: 'in_progress', // in_progress, completed
+        end_time: null
+    };
+    
+    // 保存到redis，用于后续查询
+    await redis.set('xiuxian:player:' + usr_qq + ':addiction_history', JSON.stringify(addictionHistory));
+    
+    // ==== 修改点结束 ====
+    
     // 添加时间减少信息
     let timeMsg = "";
     if (timeReduction > 0) {
@@ -1194,7 +1312,114 @@ async Gofairyrealm(e) {
     
     e.reply(messages.join("\n"));
     return true;
-}}
+  }
+
+  // 沉迷收获功能
+  async CheckAddictionHarvest(e) {
+    if (!verc({ e })) return false;
+    
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const player_qq = await channel(usr_qq);
+    
+    // 获取沉迷历史数据
+    const addictionHistory = await redis.get('xiuxian:player:' + player_qq + ':addiction_history');
+    
+    if (!addictionHistory) {
+      return e.reply('暂无沉迷记录，请先进行沉迷活动');
+    }
+    
+    const history = JSON.parse(addictionHistory);
+    
+    // 格式化时间
+    const formatTime = (timestamp) => {
+      const date = new Date(timestamp);
+      return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    };
+    
+    // 构建收获信息
+    let harvestMsg = [
+      `【沉迷收获详情】`,
+      `沉迷地点：${history.location}`,
+      `地点类型：${history.location_type}`,
+      `沉迷次数：${history.settled_count}/${history.total_count}`,
+      `死亡次数：${history.death_count}`,
+      `获得修为：${history.xiuwei_gained.toLocaleString()}`,
+      `获得血气：${history.xueqi_gained.toLocaleString()}`,
+      `开始时间：${formatTime(history.start_time)}`,
+    ];
+    
+    // 添加结束时间
+    if (history.end_time) {
+      harvestMsg.push(`结束时间：${formatTime(history.end_time)}`);
+      
+      // 计算持续时间
+      const duration = history.end_time - history.start_time;
+      const hours = Math.floor(duration / (1000 * 60 * 60));
+      const minutes = Math.floor((duration % (1000 * 60 * 60)) / (1000 * 60));
+      harvestMsg.push(`持续时间：${hours}小时${minutes}分钟`);
+    } else {
+      harvestMsg.push(`结束时间：进行中...`);
+    }
+    
+    // 添加状态
+    const statusText = history.status === 'completed' ? '已完成' : '进行中';
+    harvestMsg.push(`状态：${statusText}`);
+    
+    // 添加获得的道具
+    if (history.items_gained && history.items_gained.length > 0) {
+      harvestMsg.push(`获得物品：`);
+      history.items_gained.forEach((item, index) => {
+        harvestMsg.push(`   ${index + 1}. [${item.name}] x${item.count}`);
+      });
+    } else {
+      harvestMsg.push(`获得道具：暂无记录`);
+    }
+    
+    
+    // 如果沉迷已完成，提供删除选项
+    if (history.status === 'completed') {
+      harvestMsg.push(`提示：可以发送"#清除沉迷记录"来清除本次记录`);
+    }
+    
+    e.reply(harvestMsg.join('\n'));
+    return false;
+  }
+
+  // 清除沉迷记录功能
+  async ClearAddictionHistory(e) {
+    if (!verc({ e })) return false;
+    
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const player_qq = await channel(usr_qq);
+    
+    // 获取沉迷历史数据
+    const addictionHistory = await redis.get('xiuxian:player:' + player_qq + ':addiction_history');
+    
+    if (!addictionHistory) {
+      return e.reply('暂无沉迷记录可清除');
+    }
+    
+    const history = JSON.parse(addictionHistory);
+    
+    // 只有已完成的沉迷才能清除
+    if (history.status !== 'completed') {
+      return e.reply('沉迷活动尚未完成，无法清除记录');
+    }
+    
+    // 清除记录
+    await redis.del('xiuxian:player:' + player_qq + ':addiction_history');
+    
+    e.reply(`已清除沉迷记录：${history.location}（${history.location_type}）`);
+    return false;
+  }
+}
 /**
  * 统一计算时间缩减效果
  * @param {Object} player 玩家对象
