@@ -9,6 +9,7 @@ import {
   existplayer,
   Write_player,
   Write_najie,
+  ForwardMsg,
    Read_najie
 } from '../../model/xiuxian.js';
 
@@ -528,7 +529,7 @@ async handleJuelingEraLoss() {
       
       // 检查玩家是否存在
       if (!await existplayer(usr_qq)) {
-          e.reply("请先创建修仙角色");
+          e.reply(`请先创建修仙角色`);
           return true;
       }
       
@@ -538,7 +539,7 @@ async handleJuelingEraLoss() {
           const lossData = await redis.get(redisKey);
           
           if (!lossData) {
-              e.reply("【绝灵时代损失记录】\n暂无物品损失记录。");
+              await ForwardMsg(e, "【绝灵时代损失记录】\n暂无物品损失记录。");
               return true;
           }
           
@@ -591,12 +592,12 @@ async handleJuelingEraLoss() {
           msg.push(`总计损失记录: ${losses.length}次 (真实:${realLosses.length}, 模拟:${simulatedLosses.length})`);
           msg.push(`总计损失物品: ${totalItemsLost}件`);
           
-          e.reply(msg.join("\n"));
+          await ForwardMsg(e, msg.join("\n"));
           return true;
           
       } catch (error) {
           console.error("查看损失记录失败:", error);
-          e.reply("查看损失记录时发生错误，请稍后再试。");
+          e.reply(`查看损失记录时发生错误，请稍后再试。`);
           return true;
       }
   }
