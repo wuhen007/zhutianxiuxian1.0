@@ -920,9 +920,10 @@ async upgradeEmperorWeapon(e) {
                 `请使用 #以[仙金名称]融合帝兵 完成祭炼`
             ].join("\n"));
         } else {
-            // 满足条件，标记祭炼完成
-            weapon.祭炼 = true;
-            msg.push(`「${weapon.name}」已融合全部九种仙金，开始终极一跃！`);
+        weapon.祭炼 = true;
+        equipment.帝兵 = weapon;
+        await Write_equipment(usr_qq, equipment);
+        e.reply(`「${weapon.name}」已融合全部九种仙金，开始终极一跃！`);
         }
     }
 // 辅助函数：检查是否融合了全部九种仙金

@@ -751,7 +751,10 @@ async joinBossTeam(e) {
     if (team.members.length < 1) {
       return e.reply('队伍人数不足，至少需要1人');
     }
-    
+    // 检查是否是帝尊挑战队伍
+if (team.isEmperorChallenge) {
+    return e.reply('帝尊挑战队伍请使用 #迎战帝尊 命令，此挑战无奖励');
+}
     // 获取BOSS数据
     const bossData = await this.getBossData(team.boss);
     const bossCopy = {
