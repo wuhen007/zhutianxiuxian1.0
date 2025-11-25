@@ -205,15 +205,15 @@ async rumeng(e) {
   // 处理求取道法
   async handleRequestTechnique(e, usr_qq) {
     const daofaList = [
-        {name: '如梦令', type: '道与法', desc: '可编织梦境，化虚为实'},
-        {name: '大梦千秋', type: '道与法', desc: '一梦千年，感悟大道真谛'},
-        {name: '浮生若梦', type: '道与法', desc: '虚实转换，幻化万千'},
+        {name: '如梦令',class: '功法',  type: '道与法', desc: '可编织梦境，化虚为实'},
+        {name: '大梦千秋',class: '功法', type: '道与法', desc: '一梦千年，感悟大道真谛'},
+        {name: '浮生若梦',class: '功法', type: '道与法', desc: '虚实转换，幻化万千'},
     ];
     
     const randomIndex = Math.floor(Math.random() * daofaList.length);
     const technique = daofaList[randomIndex];
     
-    await Add_najie_thing(usr_qq, technique.name, technique.type, 1);
+    await Add_najie_thing(usr_qq, technique.name, technique.class, 1);
     
     return e.reply([
         `【道法传承】`,
