@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { plugin, puppeteer, verc, data, Show } from '../../api/api.js';
+import { plugin, puppeteer, verc, data, Show, config } from '../../api/api.js';
 import { AppName } from '../../app.config.js';
 import XiuxianData from '../../model/XiuxianData.js';
 import {
@@ -75,12 +75,170 @@ export class AdminSuper extends plugin {
         {
     reg: '^#打入天牢(?:@(\\d+))?\\s*(\\d+)?$',
     fnc: 'imprisonPlayer'
+},
+{
+    reg: '^#全局推送消息(\\d+)$',
+    fnc: 'globalPushMessage'
+},
+{
+    reg: '^#删除全局推送(\\d+)$',
+    fnc: 'removeGlobalPush'
+},
+{
+    reg: '^#查看全局推送$',
+    fnc: 'viewGlobalPush'
 }
       ],
     });
         this.xiuxianData =  XiuxianData; // 移至 super 之后
   }
-      
+      async globalPushMessage(e) {
+    // 只有管理员可以使用
+    if (!e.isMaster) {
+        return false;
+    }
+    
+    // 解析群号
+    const match = e.msg.match(/^#全局推送消息(\d+)$/);
+    if (!match) {
+        e.reply('格式错误，请使用：#全局推送消息群号');
+        return true;
+    }
+    
+    const groupId = match[1];
+    
+    try {
+        // 读取配置文件
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        
+        // 检查Era配置是否存在
+        if (!xiuxianConfig.Era) {
+            xiuxianConfig.Era = {};
+        }
+        
+        // 检查notifyGroups是否存在
+        if (!xiuxianConfig.Era.notifyGroups) {
+            xiuxianConfig.Era.notifyGroups = [];
+        }
+        
+        // 检查群号是否已存在
+        if (xiuxianConfig.Era.notifyGroups.includes(groupId)) {
+            e.reply(`群号 ${groupId} 已在全局推送列表中`);
+            return true;
+        }
+        
+        // 添加群号到notifyGroups
+        xiuxianConfig.Era.notifyGroups.push(groupId);
+        
+        // 保存配置
+        config.setConfig('xiuxian', 'xiuxian', xiuxianConfig);
+        
+        e.reply(`✅ 成功添加群号 ${groupId} 到全局推送列表
+当前推送群组：
+${xiuxianConfig.Era.notifyGroups.join('\n')}`);
+        
+        return true;
+        
+    } catch (error) {
+        console.error('配置全局推送消息失败:', error);
+        e.reply('配置失败，请检查日志');
+        return true;
+    }
+}
+
+async removeGlobalPush(e) {
+    // 只有管理员可以使用
+    if (!e.isMaster) {
+        return false;
+    }
+    
+    // 解析群号
+    const match = e.msg.match(/^#删除全局推送(\d+)$/);
+    if (!match) {
+        e.reply('格式错误，请使用：#删除全局推送群号');
+        return true;
+    }
+    
+    const groupId = match[1];
+    
+    try {
+        // 读取配置文件
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        
+        // 检查Era配置和notifyGroups是否存在
+        if (!xiuxianConfig.Era || !xiuxianConfig.Era.notifyGroups) {
+            e.reply('当前没有配置任何全局推送群组');
+            return true;
+        }
+        
+        // 检查群号是否存在
+        const index = xiuxianConfig.Era.notifyGroups.indexOf(groupId);
+        if (index === -1) {
+            e.reply(`群号 ${groupId} 不在全局推送列表中`);
+            return true;
+        }
+        
+        // 从数组中移除群号
+        xiuxianConfig.Era.notifyGroups.splice(index, 1);
+        
+        // 保存配置
+        config.setConfig('xiuxian', 'xiuxian', xiuxianConfig);
+        
+        e.reply(`✅ 成功从全局推送列表中移除群号 ${groupId}
+当前推送群组：
+${xiuxianConfig.Era.notifyGroups.length > 0 ? xiuxianConfig.Era.notifyGroups.join('\n') : '暂无群组'}`);
+        
+        return true;
+        
+    } catch (error) {
+        console.error('删除全局推送消息失败:', error);
+        e.reply('删除失败，请检查日志');
+        return true;
+    }
+}
+
+async viewGlobalPush(e) {
+    // 只有管理员可以使用
+    if (!e.isMaster) {
+        return false;
+    }
+    
+    try {
+        // 读取配置文件
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        
+        // 检查Era配置和notifyGroups是否存在
+        if (!xiuxianConfig.Era || !xiuxianConfig.Era.notifyGroups) {
+            e.reply('当前没有配置任何全局推送群组');
+            return true;
+        }
+        
+        const notifyGroups = xiuxianConfig.Era.notifyGroups;
+        
+        if (notifyGroups.length === 0) {
+            e.reply('📋 全局推送群组列表：暂无群组使用 #全局推送消息群号 来添加群组');
+            return true;
+        }
+        
+        let message = '📋 全局推送群组列表：';
+        notifyGroups.forEach((groupId, index) => {
+            message += `${index + 1}. 群号: ${groupId}`;
+        });
+        
+        message += `共 ${notifyGroups.length} 个群组`;
+        message += `使用指令：`;
+        message += `• #全局推送消息群号 - 添加群组`;
+        message += `• #删除全局推送群号 - 删除群组`;
+        
+        e.reply(message);
+        return true;
+        
+    } catch (error) {
+        console.error('查看全局推送消息失败:', error);
+        e.reply('查看失败，请检查日志');
+        return true;
+    }
+}
     async imprisonPlayer(e) {
     // 群聊限定
     if (!e.isGroup) {
@@ -696,3 +854,5 @@ async function clearNajieThing(thingType, thingName) {
     })
     .filter(usrObj => usrObj);
 }
+
+

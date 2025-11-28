@@ -18,7 +18,9 @@ GamesTask: 0 */5 * * * ?
 
 # 赛季结算（每周一0点，保持原样）
 saiji: 0 0 0 ? * 1
-
+# Cron表达式（每天0点，保持原样）
+resetCron: 0 0 0 ? * 1
+enable: true
 # 商店刷新（每天中午12点，保持原样）
 shop: 0 0 12 ? * 1,2,3,4,5,6,7
 
@@ -36,9 +38,7 @@ BossTask: 0 0 21 * * ?
 BossTask2: 0 0 20 * * ?
 BossTask3: 0 0 20 * * ?
 
-# Cron表达式（每天0点，保持原样）
-resetCron: "0 0 0 * * ?"
-enable: true
+
 
 # 寿元流逝定时任务（每2小时，保持原样）
 ReduceShouyuanTask: "0 0 */2 * * ?"

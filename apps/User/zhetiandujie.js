@@ -3280,23 +3280,38 @@ updateCooldowns(player) {
     }
 }
 async broadcastToAll(player,startMsg) {
-
     try {
-        // 获取玩家最后活动的群ID（如果有）
-        const lastGroupId = 421901145;
+        // 获取配置中的群组列表
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        const notifyGroups = xiuxianConfig?.Era?.notifyGroups || [];
         
-        if (lastGroupId) {
-            // 发送到群聊
-            await Bot.pickGroup(lastGroupId).sendMsg([
-                startMsg
-            ]);
+        if (notifyGroups.length > 0) {
+            // 广播到所有配置的群组
+            for (const groupId of notifyGroups) {
+                try {
+                    await Bot.pickGroup(groupId).sendMsg([
+                        startMsg
+                    ]);
+                    console.log(`[全服通知] 群 ${groupId}: ${startMsg}`);
+                } catch (groupErr) {
+                    console.error(`发送全服通知到群 ${groupId} 失败[${player.id}]:`, groupErr);
+                }
+            }
         } else {
-            // 发送私聊
+            // 如果没有配置群组，回退到私聊
             await common.relpyPrivate(player.id, startMsg);
+            console.log(`[全服通知] 私聊 ${player.id}: ${startMsg}`);
         }
     } catch (err) {
         console.error(`发送全服通知失败[${player.id}]:`, err);
         
+        // 最终回退到私聊发送
+        try {
+            await common.relpyPrivate(player.id, startMsg);
+            console.log(`[全服通知] 私聊回退 ${player.id}: ${startMsg}`);
+        } catch (fallbackErr) {
+            console.error(`私聊发送全服通知失败[${player.id}]:`, fallbackErr);
+        }
     }
 }
 // ==== 合并后的体质效果 ====

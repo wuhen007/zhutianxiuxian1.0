@@ -4187,13 +4187,13 @@ export async function Add_血气(usr_qq, 血气 = 0) {
 
 export async function Add_热量(usr_qq, 热量 = 0) {
     let player = await Read_player(usr_qq);
-	if (!isNotNull(player.热量)) {
-		player.热量 = Math.trunc(热量);
-		await Write_player(usr_qq, player);
-		return;
-	}
-	if (isNotNull(player.热量)) {
-		player.热量 += Math.trunc(热量);
+  if (!isNotNull(player.热量)) {
+    player.热量 = Math.trunc(热量);
+    await Write_player(usr_qq, player);
+    return;
+  }
+  if (isNotNull(player.热量)) {
+    player.热量 += Math.trunc(热量);
         await Write_player(usr_qq, player);
         return;
     }
@@ -4201,13 +4201,13 @@ export async function Add_热量(usr_qq, 热量 = 0) {
 
 export async function Add_饱食度(usr_qq, 饱食度 = 0) {
     let player = await Read_player(usr_qq);
-	if (!isNotNull(player.饱食度)) {
-		player.饱食度 = Math.trunc(饱食度);
-		await Write_player(usr_qq, player);
-		return;
-	}
-	if (isNotNull(player.饱食度)) {
-		player.饱食度 += Math.trunc(饱食度);
+  if (!isNotNull(player.饱食度)) {
+    player.饱食度 = Math.trunc(饱食度);
+    await Write_player(usr_qq, player);
+    return;
+  }
+  if (isNotNull(player.饱食度)) {
+    player.饱食度 += Math.trunc(饱食度);
         await Write_player(usr_qq, player);
         return;
     }
@@ -4408,8 +4408,8 @@ export async function exist_najie_thing(
       '材料',
       '仙宠',
       '仙宠口粮',
-	    '食材',
-	    '盒子'
+      '食材',
+      '盒子'
     ];
 
     
@@ -4577,11 +4577,11 @@ export async function Add_najie_thing(usr_qq, name, thing_class, x, pinji) {
       'duanzhaocailiao',
       'kamian',
       'kamian3',
-	   'hecheng_list',
+     'hecheng_list',
      'dijingList',
      'fuhua_list',
     
-	   'shicai_list',
+     'shicai_list',
       'jiagong_list',
      'cailiao_list',
       'hezi_list',
@@ -8444,8 +8444,7 @@ export async function synchronization(e) {
       'Physique_id', 'mijinglevel_id', 'xiangulevel_id', 'linggenshow', 
       'power_place', 'occupation_level', '血量上限', '当前血量', '攻击', '防御'
     ];
-    
-    let ziduan3 = ['linggen', 'occupation', '仙宠', '势力', '护道人', '庇护人'];
+    let ziduan3 = ['linggen', 'occupation', '仙宠'];
     let ziduan4 = ['材料', '草药', '仙宠', '仙宠口粮', '宝石', '食材', '盒子'];
     
     // 初始化数值字段为0
@@ -8541,7 +8540,15 @@ export async function synchronization(e) {
     if (!isNotNull(player.庇护人)) {
       player.庇护人 = "";
     }
-    
+    if (Array.isArray(player.护道人) && player.护道人.length === 0) {
+    player.护道人 = "无";
+}
+if (Array.isArray(player.势力) && player.势力.length === 0) {
+    player.势力 = "无";
+}
+if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
+    player.势力职位 = "";
+}
     // 初始化布尔字段
     if (!isNotNull(player.attempting_level_7)) {
       player.attempting_level_7 = false;
@@ -8740,10 +8747,10 @@ export async function foundthing(thing_name) {
     'kamian',
     'kamian3',
    'namegive',
-	  'hecheng_list',
+    'hecheng_list',
      'fuhua_list',
      'jiagong_list',
-	   'shicai_list',
+     'shicai_list',
      'cailiao_list',
      'duanzhaohuju',
       'hezi_list',

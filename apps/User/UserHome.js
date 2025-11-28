@@ -1,4 +1,4 @@
-import { plugin,  verc, data } from '../../api/api.js';
+import { plugin,  verc, data, config } from '../../api/api.js';
 import path from 'path';
 import xiuxianData from '../../model/XiuxianData.js';
 import fs from 'fs';
@@ -1364,23 +1364,38 @@ async world(e) {
   }
 
 async broadcastToAll(player,message) {
-
     try {
-        // 获取玩家最后活动的群ID（如果有）
-        const lastGroupId = 421901145;
+        // 获取配置中的群组列表
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        const notifyGroups = xiuxianConfig?.Era?.notifyGroups || [];
         
-        if (lastGroupId) {
-            // 发送到群聊
-            await Bot.pickGroup(lastGroupId).sendMsg([
-               message
-            ]);
+        if (notifyGroups.length > 0) {
+            // 广播到所有配置的群组
+            for (const groupId of notifyGroups) {
+                try {
+                    await Bot.pickGroup(groupId).sendMsg([
+                        message
+                    ]);
+                    console.log(`[全服通知] 群 ${groupId}: ${message}`);
+                } catch (groupErr) {
+                    console.error(`发送全服通知到群 ${groupId} 失败[${player.id}]:`, groupErr);
+                }
+            }
         } else {
-            // 发送私聊
+            // 如果没有配置群组，回退到私聊
             await common.relpyPrivate(player.id, message);
+            console.log(`[全服通知] 私聊 ${player.id}: ${message}`);
         }
     } catch (err) {
         console.error(`发送全服通知失败[${player.id}]:`, err);
         
+        // 最终回退到私聊发送
+        try {
+            await common.relpyPrivate(player.id, message);
+            console.log(`[全服通知] 私聊回退 ${player.id}: ${message}`);
+        } catch (fallbackErr) {
+            console.error(`私聊发送全服通知失败[${player.id}]:`, fallbackErr);
+        }
     }
 }
   //#(装备|服用|消耗)物品*数量
@@ -5349,7 +5364,7 @@ if (thing_name == "先天混沌圣体道胎本源") {
         `超脱之路的终极角逐，自此拉开序幕……`
     ].join('\n');
 
-    await this.broadcastToAll(message);
+    await this.broadcastToAll(player,message);
     } catch (error) {
         console.error('体质转化失败:', error);
         e.reply('体质转化过程中发生未知错误，请稍后再试');

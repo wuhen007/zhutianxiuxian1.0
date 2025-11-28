@@ -199,9 +199,11 @@ async resetChallengeAndReward() {
     // 8. 保存更新
     await Write_tiandibang(tiandibang);
     
-    // 9. 发送系统公告（固定推送到指定群421901145）
+    // 9. 发送系统公告到所有配置的群组
     try {
-        const targetGroup = 421901145; // 指定目标群号
+        // 获取配置中的群组列表
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        const targetGroup = xiuxianConfig?.Era?.notifyGroups || [];
         await Bot.pickGroup(targetGroup).sendMsg(announcement.join('\n'));
         logger.mark(`天地榜结算公告已发送至群 ${targetGroup}`);
     } catch (err) {

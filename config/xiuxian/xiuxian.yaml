@@ -102,7 +102,6 @@ Era:
   task: 0 0 */2 * * *
   pushNotice: true
   notifyGroups:
-    - 421901145
   current:
     index: 1
     years: 9000
