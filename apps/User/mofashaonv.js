@@ -668,8 +668,8 @@ async mofashaonvjinjie(e) {
     }
     // 希望之光·圆 → 圆神
     else if (player.灵根.type === "希望化身") {
-        const requiredRealm = 18;
-        const realmName = "仙道领域仙王巨头";
+        const requiredRealm = 19;
+        const realmName = "仙道领域准仙帝";
         
         // 检查境界条件
         if (player.mijinglevel_id <= requiredRealm) {

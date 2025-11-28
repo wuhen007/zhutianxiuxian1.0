@@ -256,6 +256,7 @@ async shengmingbenyuan(e) {
 async repairDaoshang(e) {
     if (!verc({ e })) return false;
     let usr_qq = e.user_id.toString().replace('qg_','');
+    
     // 检查玩家是否存在
     if (!await existplayer(usr_qq)) {
         e.reply("请先创建修仙角色");
@@ -274,16 +275,16 @@ async repairDaoshang(e) {
     // 检查玩家学习的功法
     const learnedSkills = player.学习的功法 || [];
     
-    // 定义修复道伤所需的功法及其修复能力
+    // 定义修复道伤所需的功法及其修复效率
     const daoshangSkills = {
         "柳神法": 1.0,      // 最强修复能力
         "不灭经": 1.0,      // 最强修复能力
         "真凰宝术": 1.0,    // 最强修复能力
         "补天术": 0.7,      // 中等修复能力
         "者字秘": 0.7,      // 中等修复能力
-        "万化圣诀": 0.45,    // 中等修复能力
-        "涅槃经": 0.3 ,    // 最弱修复能力
-        "凰劫再生术": 0.3 // 最弱修复能力
+        "万化圣诀": 0.45,   // 中等修复能力
+        "涅槃经": 0.3,     // 最弱修复能力
+        "凰劫再生术": 0.3  // 最弱修复能力
     };
     
     // 检查是否学习过至少一种修复道伤的功法
@@ -307,119 +308,106 @@ async repairDaoshang(e) {
     );
     const repairEfficiency = daoshangSkills[strongestSkill];
     
-    // 计算修复消耗（道伤越重，消耗越大）
-    let reward = 15000000;
-    let daoshangMultiplier = 1 + (player.道伤 * 0.5); // 道伤每增加1级，消耗增加50%
+    // 使用您提供的公式计算修复消耗
+    let reward = 15000000; // 基础消耗常量
+    let daoshangMultiplier = 1 + (player.道伤 * 0.5); // 道伤越重，消耗越大
     let zuizhong = (player.mijinglevel_id + player.xiangulevel_id) * reward * daoshangMultiplier;
-    
-    // 根据修复效率调整消耗
-    zuizhong = Math.ceil(zuizhong * (1 / repairEfficiency));
+    zuizhong = Math.ceil(zuizhong * (1 / repairEfficiency)); // 功法效率越低，总消耗越高
     
     // 检查修为和血气是否足够
     if (player.修为 < zuizhong || player.血气 < zuizhong) {
         e.reply([
             "「道基亏损，难以为继」",
-            "修复道伤需消耗海量修为与血气：",
+            "彻底修复道伤需消耗海量修为与血气：",
             `需修为: ${zuizhong.toLocaleString()}`,
             `需血气: ${zuizhong.toLocaleString()}`,
             `当前修为: ${player.修为.toLocaleString()}`,
             `当前血气: ${player.血气.toLocaleString()}`,
-            "修为血气不足，无法修复道伤。"
+            "修为血气不足，无法完成道伤修复。"
         ].join("\n"));
         return true;
     }
     
     // 根据功法组合生成不同的修复文案
     let repairMsg = "";
-    let repairEffect = 0;
     
     if (availableSkills.includes("柳神法") && availableSkills.includes("者字秘")) {
         repairMsg = [
-            "「柳神涅槃，者字回天」",
-            "你盘坐于虚空，身后一株通天柳树显现，万千枝条缭绕混沌气，垂落生命精华。",
-            "同时运转者字秘，肉身发光，血液如雷鸣，道则碎片重组。",
-            "柳神法助你涅槃重生，者字秘修复精气神，两者合一，大道伤痕迅速愈合。",
-            "道基被一点点修补，紫府中崩裂的大道根基重新凝聚。"
+            "「柳神涅槃，者字回天·道伤尽愈」",
+            "你盘坐于虚空，身后通天柳树显现，万千枝条缭绕混沌气，垂落生命精华。",
+            "同时运转者字秘，肉身发光，血液如雷鸣，道则碎片彻底重组。",
+            "柳神法助你涅槃重生，者字秘修复精气神，两者合一，大道伤痕瞬间愈合。",
+            "道基被完美修补，紫府中崩裂的大道根基重新凝聚，道伤尽去！"
         ].join("\n");
-        repairEffect = 0.9; // 高效修复
     } 
     else if (availableSkills.includes("真凰宝术") && availableSkills.includes("凰劫再生术")) {
         repairMsg = [
-            "「真凰涅槃，劫后再生」",
+            "「真凰涅槃，劫后再生·道痕尽消」",
             "你周身燃起真凰火焰，羽毛状的符文环绕，如凤凰浴火重生。",
             "凰劫再生术运转，引动天地精华，褪去旧躯，再生新我。",
-            "道伤被真凰火焰灼烧，化为灰烬，新的道基在灰烬中重生。",
-            "凤凰涅槃，焚尽道伤，再现完美无瑕的道基。"
+            "道伤被真凰火焰彻底灼烧净化，新的完美道基在灰烬中重生。",
+            "凤凰涅槃，焚尽道伤，再现完美无瑕的道基！"
         ].join("\n");
-        repairEffect = 0.9; // 高效修复
     }
     else if (availableSkills.includes("万化圣诀") && availableSkills.includes("不灭经")) {
         repairMsg = [
-            "「万化归元，不灭铸基」",
+            "「万化归元，不灭铸基·大道圆满」",
             "你运转万化圣诀，化尽道伤中的顽固法则，将其分解为最本源的能量。",
             "再以不灭经重铸道基，肉身不坏，元神不朽。",
-            "道伤被万化圣诀化去，又以不灭经重塑，完成一次破而后立。",
-            "万化化尽万千法，不灭铸就永恒基，大道伤痕逐渐平复。"
+            "道伤被万化圣诀彻底化去，又以不灭经重塑完美道基，完成终极的破而后立！"
         ].join("\n");
-        repairEffect = 0.8; // 中高效修复
     }
     else if (availableSkills.includes("补天术")) {
         repairMsg = [
-            "「补天之道，修复天道伤痕」",
-            "你施展补天术，引动天地精华，如女娲补天般修补自身道基。",
-            "大道符文浮现，填补道伤裂痕，重塑完美无瑕的道果。",
-            "补天术不愧为修复道伤的无上秘法，道伤渐渐愈合，大道根基得以稳固。"
+            "「补天之道，修复天道伤痕·完美如初」",
+            "你施展补天术，引动天地精华，如女娲补天般彻底修补自身道基。",
+            "大道符文浮现，完全填补道伤裂痕，重塑完美无瑕的道果。",
+            "补天术不愧为修复道伤的无上秘法，大道伤痕彻底愈合！"
         ].join("\n");
-        repairEffect = 0.7; // 中等修复
     }
     else {
         // 使用最强功法单独修复
         repairMsg = [
-            `「${strongestSkill}·修复道伤」`,
-            `你运转${strongestSkill}，尝试修复大道伤痕。`,
-            `道则流转，符文闪烁，道伤在${strongestSkill}的作用下缓缓愈合。`,
-            `虽不及多种秘法配合的效果，但道伤仍得到了一定程度的修复。`
+            `「${strongestSkill}·道伤尽复」`,
+            `你运转${strongestSkill}，全力修复大道伤痕。`,
+            `道则流转，符文闪烁，在${strongestSkill}的作用下，道伤被彻底治愈。`,
+            `大道伤痕完全愈合，道基完美如初！`
         ].join("\n");
-        repairEffect = repairEfficiency; // 根据功法效率决定修复效果
     }
+    
+    // 记录原始道伤值
+    const originalDaoshang = player.道伤;
     
     // 扣除消耗
     player.修为 -= zuizhong;
     player.血气 -= zuizhong;
     
-    // 修复道伤（根据修复效果决定修复程度）
-    const originalDaoshang = player.道伤;
-    const repairedAmount = originalDaoshang * repairEffect;
-    player.道伤 = Math.max(0, originalDaoshang - repairedAmount);
+    // 一次性完全修复道伤
+    player.道伤 = 0;
     
-    // 添加阈值判断（当道伤小于0.01时视为完全修复）
-    if (player.道伤 < 0.01) {
-        player.道伤 = 0;
-        // 清除道伤修复度（如果存在）
-        if (player.道伤修复度) {
-            delete player.道伤修复度;
-        }
+    // 清除道伤修复度（如果存在）
+    if (player.道伤修复度) {
+        delete player.道伤修复度;
     }
     
     // 保存玩家数据
     await Write_player(usr_qq, player);
     
-    // 判断是否完全修复
-    const isFullyRepaired = player.道伤 === 0;
-    
     // 构建回复消息
     const msg = [
         repairMsg,
         "",
-        "【修复结果】",
-        `道伤: ${originalDaoshang.toFixed(1)} → ${isFullyRepaired ? "0 (完全修复)" : player.道伤.toFixed(1)}`,
-        `修复效率: ${(repairEffect * 100).toFixed(0)}%`,
-        `消耗修为: ${zuizhong.toLocaleString()}`,
-        `消耗血气: ${zuizhong.toLocaleString()}`,
+        "【道伤已愈】",
+        `大道伤痕已从 ${originalDaoshang.toFixed(1)} 完全修复至 0！`,
+        `修复功法：${strongestSkill}`,
+        `修复效率：${(repairEfficiency * 100).toFixed(0)}%`,
+        `消耗修为：${zuizhong.toLocaleString()}`,
+        `消耗血气：${zuizhong.toLocaleString()}`,
+        `当前修为：${player.修为.toLocaleString()}`,
+        `当前血气：${player.血气.toLocaleString()}`,
         "",
-        isFullyRepaired ? 
-            "「大道伤痕已愈，仙路再续，道基完美无瑕」" : 
-            "「道伤未愈，仙路仍有阻碍，需继续修复」"
+        "「大道伤痕已愈，仙路再续，道基完美无瑕！」",
+        "从此仙路畅通，再无道伤阻碍！"
     ].join("\n");
     
     e.reply(msg);
