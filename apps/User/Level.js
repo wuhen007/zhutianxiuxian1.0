@@ -385,9 +385,9 @@ async nihuojiushi(e) {
     player.nihuo_count = currentLife + 1;
     
     // 属性增强
-    const powerGain = Math.round(30 * difficulty * Math.sqrt(currentLife)*player.攻击 * 0.01);
-    const powerGain2 = Math.round(30 * difficulty * Math.sqrt(currentLife)*player.防御 * 0.01);
-    const powerGain3 = Math.round(30 * difficulty * Math.sqrt(currentLife)*player.血量上限 * 0.01);
+    const powerGain = Math.round(30 * difficulty * Math.sqrt(currentLife)*500000000);
+    const powerGain2 = Math.round(30 * difficulty * Math.sqrt(currentLife)*500000000);
+    const powerGain3 = Math.round(30 * difficulty * Math.sqrt(currentLife)*500000000);
     player.攻击加成 += powerGain;
     player.防御加成 += powerGain2;
     player.生命加成 += powerGain3;

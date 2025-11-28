@@ -1880,7 +1880,7 @@ if (equipment.帝兵.name == "终古剑之主") {
         return false;
       }
       if (thing_exist.type == '修为') {
-          if (player.mijinglevel_id > 19 && player.xiangulevel_id > 19) {
+          if (player.mijinglevel_id > 19 || player.xiangulevel_id > 19) {
         e.reply(`「自荒古岁月至今...」
 「本座早已不需要这等外物了」`);
         return false;
@@ -2021,7 +2021,7 @@ if (equipment.帝兵.name == "终古剑之主") {
             return false;
           }
       if (thing_exist.type == '血气') {
-          if (player.mijinglevel_id > 19 && player.xiangulevel_id > 19) {
+          if (player.mijinglevel_id > 19 || player.xiangulevel_id > 19) {
         e.reply(`「自荒古岁月至今...」
 「本座早已不需要这等外物了」`);
         return false;
@@ -2036,7 +2036,7 @@ if (thing_exist.type == '神药') {
     const player = await Read_player(usr_qq);
     
     // 检查玩家境界是否过高
-    if (player.mijinglevel_id > 19 && player.xiangulevel_id > 19) {
+    if (player.mijinglevel_id > 19 || player.xiangulevel_id > 19) {
         e.reply(`「自荒古岁月至今...」
 「本座早已不需要这等外物了」`);
         return false;
