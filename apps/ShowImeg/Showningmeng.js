@@ -111,6 +111,7 @@ export class Showningmeng extends plugin {
     e.reply(img);
     return false;
   }
+  
   //柠檬堂
   async show_ningmenghome(e) {
     if (!verc({ e })) return false;

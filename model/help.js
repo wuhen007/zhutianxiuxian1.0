@@ -41,7 +41,10 @@ export default class Help extends base {
     let html = new Help(e);
     return await html.getData_zhounian();
   }
-
+  static async get_xinghai(e) {
+    let html = new Help(e);
+    return await html.getData_xinghai();
+  }
   static async setup(e) {
     let html = new Help(e);
     return await html.Getset();
@@ -146,6 +149,17 @@ async  get_zhutianhelp() {
       helpData,
     };
   }
+    async getData_xinghai() {
+    let helpData = xiuxianCfg.getConfig('help', 'xinghai');
+    this.model = 'xinghai';
+    return {
+      ...this.screenData,
+      saveId: 'xinghai',
+      version: this.versionData.version,
+      helpData,
+    };
+    
+  }
   async getData_zhounian() {
     let helpData = xiuxianCfg.getConfig('help', 'zhounianqing');
     this.model = 'zhounianqing';
@@ -155,5 +169,6 @@ async  get_zhutianhelp() {
       version: this.versionData.version,
       helpData,
     };
+    
   }
 }

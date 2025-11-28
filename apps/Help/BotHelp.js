@@ -63,11 +63,21 @@ export class BotHelp extends plugin {
           reg: '^#周年庆帮助$',
           fnc: 'znq',
         },
+        {
+          reg: '^#星海之缘活动$',
+          fnc: 'xinghai',
+        },
       ],
     });
   }
   async znq(e) {
     let data = await Help.get_zhounian(e);
+
+    let img = await this.cache(data);
+    await e.reply(img);
+  }
+  async xinghai(e) {
+    let data = await Help.get_xinghai(e);
 
     let img = await this.cache(data);
     await e.reply(img);

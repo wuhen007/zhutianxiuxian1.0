@@ -444,7 +444,9 @@ export async function mortal_tribulation(e, player) {
     
     if (x <= n) {
       player.当前血量 = 0;
-      player.修为 -= parseInt(player.level.exp / 4);
+      const currentLevel = data.Level_list.find(item => item.level_id == player.level_id);
+      const levelExp = currentLevel ? currentLevel.exp : 1000; // 默认值防止找不到
+      player.修为 -= parseInt(levelExp / 4);
       await Write_player(usr_qq, player);
       e.reply('天空一声巨响，未降下雷劫，就被天道的气势震死了。');
       return { success: false };

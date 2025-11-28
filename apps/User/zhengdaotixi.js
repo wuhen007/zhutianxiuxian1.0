@@ -2670,6 +2670,10 @@ async createEverything(e) {
 
     // 检查物品是否存在
     const itemExist = await foundthing(itemName);
+        if (itemExist.不可创造) {
+        e.reply(`此等物品涉及的力量哪怕是仙帝也无法造化！`);
+        return true;
+    }
     if (!itemExist) {
         e.reply(`诸天万界中并无【${itemName}】此物，仙帝亦不可无中生有！`);
         return true;
@@ -3914,7 +3918,8 @@ async reshapeLinggen(e) {
      "终焉神魔体", 
      "无演无尽者", 
      "圆神", 
-     "先天混沌圣体道胎"
+     "先天混沌圣体道胎", 
+     "如梦本尊"
    ];
    
    if (forbiddenLinggens.includes(linggenName)&&invoker.mijinglevel_id <23) {

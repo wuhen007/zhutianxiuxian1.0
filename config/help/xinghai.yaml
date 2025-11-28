@@ -1,0 +1,11 @@
+- group: 星海之缘活动 (11.28-12.20)
+  list:
+    - icon: help-icon_35
+      title: '#星海之缘签到'
+      desc: '活动签到'
+    - icon: help-icon_20
+      title: '#召唤爱莉希雅'
+      desc: '运气之子'
+    - icon: help-icon_20
+      title: '#十连抽星轨专票'
+      desc: '运气之子'

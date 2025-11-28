@@ -101,7 +101,9 @@ export class AutoDailyTask extends plugin {
                 sign: 0,
                 salary: 0,
                 tiandao: 0,
-                daofa: 0
+                daofa: 0,
+                vein: 0,
+                beast: 0
             };
 
             for (const qq of playerQQs) {
@@ -113,6 +115,8 @@ export class AutoDailyTask extends plugin {
                         taskStats.salary += stats.salary || 0;
                         taskStats.tiandao += stats.tiandao || 0;
                         taskStats.daofa += stats.daofa || 0;
+                        taskStats.vein += stats.vein || 0;
+                        taskStats.beast += stats.beast || 0;
                     }
                 } catch (error) {
                     console.error(`处理玩家 ${qq} 时出错:`, error);
@@ -121,7 +125,7 @@ export class AutoDailyTask extends plugin {
             }
 
             console.log(`自动任务完成 - 成功: ${successCount}, 失败: ${failCount}`);
-            console.log(`任务统计 - 签到: ${taskStats.sign}, 俸禄: ${taskStats.salary}, 天道赐福: ${taskStats.tiandao}, 道法赐福: ${taskStats.daofa}`);
+            console.log(`任务统计 - 签到: ${taskStats.sign}, 俸禄: ${taskStats.salary}, 天道赐福: ${taskStats.tiandao}, 道法赐福: ${taskStats.daofa}, 开采灵脉: ${taskStats.vein}, 神兽赐福: ${taskStats.beast}`);
 
             // 发送群消息推送
             await this.sendTaskNotification(successCount, taskStats);
@@ -167,10 +171,12 @@ async processPlayer(qq) {
         sign: 0,
         salary: 0,
         tiandao: 0,
-        daofa: 0
+        daofa: 0,
+        vein: 0,
+        beast: 0
     };
 
-    // 修复：统一使用正确的自动任务状态检查
+    // 检查是否开启自动任务
     const autoTaskEnabled = await this.isAutoTaskEnabled(usr_qq);
     
     if (!autoTaskEnabled) {
@@ -195,6 +201,14 @@ async processPlayer(qq) {
         // 4. 自动道法赐福
         const daofaResult = await this.autoDaofaCifu(usr_qq, player);
         if (daofaResult) stats.daofa = 1;
+        
+        // 5. 自动开采宗门灵脉
+        const veinResult = await this.autoExploitVein(usr_qq, player);
+        if (veinResult) stats.vein = 1;
+        
+        // 6. 自动神兽赐福
+        const beastResult = await this.autoBeastBonus(usr_qq, player);
+        if (beastResult) stats.beast = 1;
 
         console.log(`玩家 ${player.名号 || usr_qq} 自动任务执行完成`);
         return stats;
@@ -203,6 +217,7 @@ async processPlayer(qq) {
         return stats; // 返回已执行的任务统计
     }
 }
+
 /**
  * 检查玩家是否开启了自动任务
  */
@@ -228,6 +243,7 @@ async isAutoSignEnabled(usr_qq) {
         return true; // 默认开启
     }
 }
+
     /**
      * 自动签到
      */
@@ -617,7 +633,7 @@ async isAutoSignEnabled(usr_qq) {
                 }
             } else {
                 player.道法赐福天数 = 1;
-            }
+    }
 
             // 连续7天重置奖励
             if (player.道法赐福天数 >= 7) {
@@ -676,6 +692,246 @@ async isAutoSignEnabled(usr_qq) {
     }
 
     /**
+     * 自动开采宗门灵脉
+     */
+    async autoExploitVein(usr_qq, player) {
+        try {
+            // 检查玩家是否有宗门
+            if (!player.宗门) {
+                console.log(`玩家 ${usr_qq} 未加入宗门，跳过开采灵脉`);
+                return false;
+            }
+
+            // 获取宗门信息
+            const { data } = await import('../../api/api.js');
+            const ass = data.getAssociation(player.宗门.宗门名称);
+            
+            // 检查宗门是否有驻地
+            if (!ass.宗门驻地) {
+                console.log(`玩家 ${usr_qq} 的宗门没有驻地，跳过开采灵脉`);
+                return false;
+            }
+
+            // 检查今日是否已开采
+            const now = new Date();
+            const todayStr = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
+            
+            const lastExploitTime = await redis.get(`xiuxian:player:${usr_qq}:getLastsign_Explor`);
+            if (lastExploitTime) {
+                const lastExploitDate = new Date(parseInt(lastExploitTime));
+                const lastExploitStr = `${lastExploitDate.getFullYear()}-${lastExploitDate.getMonth()+1}-${lastExploitDate.getDate()}`;
+                
+                if (lastExploitStr === todayStr) {
+                    console.log(`玩家 ${usr_qq} 今日已开采灵脉，跳过`);
+                    return false;
+                }
+            }
+
+            // 执行开采逻辑
+            const 宗门灵石池上限 = [
+                2000000, 5000000, 8000000, 11000000, 15000000, 20000000,
+            ];
+            
+            // 获取洞天福地信息
+            const dongTan = await data.bless_list.find(item => item.name == ass.宗门驻地) || 
+                           await data.bless_list.find(item => item.name == '昆仑山');
+            
+            // 计算奖励
+            let gift_lingshi = 0;
+            if (ass.宗门神兽 == '麒麟') {
+                gift_lingshi = (1200 * (dongTan.level + 1) * player.level_id) / 2;
+            } else {
+                gift_lingshi = (1200 * dongTan.level * player.level_id) / 2;
+            }
+            gift_lingshi *= 2;
+            
+            let xf = 1;
+            if (ass.power == 1) {
+                xf = 10;
+            }
+            
+            let num = Math.trunc(gift_lingshi);
+            if (ass.灵石池 + num > 宗门灵石池上限[ass.宗门等级 - 1] * xf) {
+                ass.灵石池 = 宗门灵石池上限[ass.宗门等级 - 1] * xf;
+            } else {
+                ass.灵石池 += num;
+            }
+            
+            // 发放奖励
+            await Add_灵石(usr_qq, num);
+            await data.setAssociation(ass.宗门名称, ass);
+            
+            // 记录开采时间
+            await redis.set(`xiuxian:player:${usr_qq}:getLastsign_Explor`, now.getTime());
+            
+            // 记录开采消息
+            const veinMsg = `自动开采灵脉成功：\n` +
+                `本次开采灵脉获得${gift_lingshi * 2}灵石，上交一半给宗门，最后获得${num}灵石`;
+            await redis.set(`xiuxian:player:${usr_qq}:vein_msg:${todayStr}`, veinMsg);
+
+            console.log(`玩家 ${usr_qq} 自动开采灵脉完成`);
+            return true;
+        } catch (error) {
+            console.error(`玩家 ${usr_qq} 自动开采灵脉失败:`, error);
+            return false;
+        }
+    }
+
+    /**
+     * 自动神兽赐福
+     */
+    async autoBeastBonus(usr_qq, player) {
+        try {
+            // 检查玩家是否有宗门
+            if (!player.宗门) {
+                console.log(`玩家 ${usr_qq} 未加入宗门，跳过神兽赐福`);
+                return false;
+            }
+
+            // 获取宗门信息
+            const { data } = await import('../../api/api.js');
+            const ass = data.getAssociation(player.宗门.宗门名称);
+            
+            // 检查宗门是否有神兽
+            if (!ass.宗门神兽) {
+                console.log(`玩家 ${usr_qq} 的宗门没有神兽，跳过神兽赐福`);
+                return false;
+            }
+
+            // 检查今日是否已赐福
+            const now = new Date();
+            const todayStr = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
+            
+            const lastBonusTime = await redis.get(`xiuxian:player:${usr_qq}:getLastsign_Bonus`);
+            if (lastBonusTime) {
+                const lastBonusDate = new Date(parseInt(lastBonusTime));
+                const lastBonusStr = `${lastBonusDate.getFullYear()}-${lastBonusDate.getMonth()+1}-${lastBonusDate.getDate()}`;
+                
+                if (lastBonusStr === todayStr) {
+                    console.log(`玩家 ${usr_qq} 今日已接受神兽赐福，跳过`);
+                    return false;
+                }
+            }
+
+            // 执行赐福逻辑
+            let random = Math.random();
+            let flag = 0.5;
+            
+            // 根据好感度获取概率
+            const { Read_danyao, Write_danyao } = await import('../../model/xiuxian.js');
+            let dy = await Read_danyao(usr_qq);
+            if (dy.beiyong2 > 0) {
+                dy.beiyong2--;
+            }
+            random += dy.beiyong3;
+            if (dy.beiyong2 == 0) {
+                dy.beiyong3 = 0;
+            }
+            await Write_danyao(usr_qq, dy);
+            
+            if (random > 0.7) {
+                let location;
+                let item_name;
+                let item_class;
+                
+                // 获得奖励
+                let randomB = Math.random();
+                if (ass.宗门神兽 == '麒麟') {
+                    if (randomB > 0.9) {
+                        location = Math.floor(Math.random() * data.qilin.length);
+                        item_name = data.qilin[location].name;
+                        item_class = data.qilin[location].class;
+                    } else {
+                        location = Math.floor(Math.random() * data.danyao_list.length);
+                        item_name = data.danyao_list[location].name;
+                        item_class = data.danyao_list[location].class;
+                    }
+                    await Add_najie_thing(usr_qq, item_name, item_class, 1);
+                } else if (ass.宗门神兽 == '青龙') {
+                    // 给功法，赐福加修为
+                    if (randomB > 0.9) {
+                        location = Math.floor(Math.random() * data.qinlong.length);
+                        item_name = data.qinlong[location].name;
+                        item_class = data.qinlong[location].class;
+                    } else {
+                        location = Math.floor(Math.random() * data.gongfa_list.length);
+                        item_name = data.gongfa_list[location].name;
+                        item_class = data.gongfa_list[location].class;
+                    }
+                    await Add_najie_thing(usr_qq, item_name, item_class, 1);
+                } else if (ass.宗门神兽 == '玄武') {
+                    // 给护具，赐福加气血
+                    if (randomB > 0.9) {
+                        location = Math.floor(Math.random() * data.xuanwu.length);
+                        item_name = data.xuanwu[location].name;
+                        item_class = data.xuanwu[location].class;
+                    } else {
+                        location = Math.floor(Math.random() * data.equipment_list.length);
+                        item_name = data.equipment_list[location].name;
+                        item_class = data.equipment_list[location].class;
+                    }
+                    await Add_najie_thing(usr_qq, item_name, item_class, 1);
+                } else if (ass.宗门神兽 == '朱雀') {
+                    // 给法宝，赐福加修
+                    if (randomB > 0.9) {
+                        location = Math.floor(Math.random() * data.xuanwu.length);
+                        item_name = data.xuanwu[location].name;
+                        item_class = data.xuanwu[location].class;
+                    } else {
+                        location = Math.floor(Math.random() * data.equipment_list.length);
+                        item_name = data.equipment_list[location].name;
+                        item_class = data.equipment_list[location].class;
+                    }
+                    await Add_najie_thing(usr_qq, item_name, item_class, 1);
+                } else {
+                    // 白虎给武器 赐福加气血
+                    if (randomB > 0.9) {
+                        location = Math.floor(Math.random() * data.xuanwu.length);
+                        item_name = data.xuanwu[location].name;
+                        item_class = data.xuanwu[location].class;
+                    } else {
+                        location = Math.floor(Math.random() * data.equipment_list.length);
+                        item_name = data.equipment_list[location].name;
+                        item_class = data.equipment_list[location].class;
+                    }
+                    await Add_najie_thing(usr_qq, item_name, item_class, 1);
+                }
+                
+                // 记录赐福时间
+                await redis.set(`xiuxian:player:${usr_qq}:getLastsign_Bonus`, now.getTime());
+                
+                // 记录赐福消息
+                let beastMsg;
+                if (randomB > 0.9) {
+                    beastMsg = `自动神兽赐福成功：\n` +
+                        `看见你来了,${ass.宗门神兽}很高兴，仔细挑选了${item_name}给你`;
+                } else {
+                    beastMsg = `自动神兽赐福成功：\n` +
+                        `${ass.宗门神兽}今天心情不错，随手丢给了你${item_name}`;
+                }
+                await redis.set(`xiuxian:player:${usr_qq}:beast_msg:${todayStr}`, beastMsg);
+                
+                console.log(`玩家 ${usr_qq} 自动神兽赐福完成，获得${item_name}`);
+                return true;
+            } else {
+                // 记录赐福时间（即使未获得奖励也要记录，防止重复尝试）
+                await redis.set(`xiuxian:player:${usr_qq}:getLastsign_Bonus`, now.getTime());
+                
+                // 记录赐福消息
+                const beastMsg = `自动神兽赐福：\n` +
+                    `${ass.宗门神兽}闭上了眼睛，表示今天不想理你`;
+                await redis.set(`xiuxian:player:${usr_qq}:beast_msg:${todayStr}`, beastMsg);
+                
+                console.log(`玩家 ${usr_qq} 自动神兽赐福未获得奖励`);
+                return true;
+            }
+        } catch (error) {
+            console.error(`玩家 ${usr_qq} 自动神兽赐福失败:`, error);
+            return false;
+        }
+    }
+
+    /**
      * 测试自动任务（仅管理员可用）
      */
     async testAutoTask(e) {
@@ -704,6 +960,8 @@ async isAutoSignEnabled(usr_qq) {
                 `  领取势力俸禄：${taskStats.salary}位\n` +
                 `  天道赐福：${taskStats.tiandao}位\n` +
                 `  道法赐福：${taskStats.daofa}位\n` +
+                `  开采灵脉：${taskStats.vein}位\n` +
+                `  神兽赐福：${taskStats.beast}位\n` +
                 `\n详细请发#查看领取记录`;
 
             await this.broadcastMessage(message);
@@ -752,7 +1010,9 @@ async isAutoSignEnabled(usr_qq) {
                 sign: 0,
                 salary: 0,
                 tiandao: 0,
-                daofa: 0
+                daofa: 0,
+                vein: 0,
+                beast: 0
             };
 
             // 遍历所有玩家，重置各种记录
@@ -777,6 +1037,14 @@ async isAutoSignEnabled(usr_qq) {
                     await this.resetPlayerDaofaRecords(usr_qq);
                     resetDetails.daofa++;
                     
+                    // 5. 重置开采灵脉记录
+                    await this.resetPlayerVeinRecords(usr_qq);
+                    resetDetails.vein++;
+                    
+                    // 6. 重置神兽赐福记录
+                    await this.resetPlayerBeastRecords(usr_qq);
+                    resetDetails.beast++;
+                    
                     resetCount++;
                     console.log(`已重置玩家 ${usr_qq} 的所有记录`);
                 } catch (error) {
@@ -786,7 +1054,7 @@ async isAutoSignEnabled(usr_qq) {
                 }
             }
 
-            const message = `全体记录重置完成！\n成功重置: ${resetCount}人\n失败: ${errorCount}人\n\n重置详情:\n 修仙签到: ${resetDetails.sign}人\n 势力俸禄: ${resetDetails.salary}人\n 天道赐福: ${resetDetails.tiandao}人\n 道法赐福: ${resetDetails.daofa}人`;
+            const message = `全体记录重置完成！\n成功重置: ${resetCount}人\n失败: ${errorCount}人\n\n重置详情:\n 修仙签到: ${resetDetails.sign}人\n 势力俸禄: ${resetDetails.salary}人\n 天道赐福: ${resetDetails.tiandao}人\n 道法赐福: ${resetDetails.daofa}人\n 开采灵脉: ${resetDetails.vein}人\n 神兽赐福: ${resetDetails.beast}人`;
             await this.broadcastMessage(message);
             console.log(`[重置记录] ${message}`);
             
@@ -883,6 +1151,40 @@ async isAutoSignEnabled(usr_qq) {
             await redis.del(`xiuxian:player:${usr_qq}:daofa_msg:${today}`);
         } catch (error) {
             console.error(`重置玩家 ${usr_qq} 道法赐福记录失败:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * 重置单个玩家的开采灵脉记录
+     */
+    async resetPlayerVeinRecords(usr_qq) {
+        try {
+            // 删除开采灵脉时间记录
+            await redis.del(`xiuxian:player:${usr_qq}:getLastsign_Explor`);
+            
+            // 删除开采灵脉奖励记录
+            const today = new Date().toISOString().split('T')[0];
+            await redis.del(`xiuxian:player:${usr_qq}:vein_msg:${today}`);
+        } catch (error) {
+            console.error(`重置玩家 ${usr_qq} 开采灵脉记录失败:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * 重置单个玩家的神兽赐福记录
+     */
+    async resetPlayerBeastRecords(usr_qq) {
+        try {
+            // 删除神兽赐福时间记录
+            await redis.del(`xiuxian:player:${usr_qq}:getLastsign_Bonus`);
+            
+            // 删除神兽赐福奖励记录
+            const today = new Date().toISOString().split('T')[0];
+            await redis.del(`xiuxian:player:${usr_qq}:beast_msg:${today}`);
+        } catch (error) {
+            console.error(`重置玩家 ${usr_qq} 神兽赐福记录失败:`, error);
             throw error;
         }
     }
@@ -1035,6 +1337,36 @@ async isAutoSignEnabled(usr_qq) {
                     }
                 }
             }
+            
+            // 5. 检查开采灵脉记录
+            const lastVeinTime = await redis.get(`xiuxian:player:${usr_qq}:getLastsign_Explor`);
+            if (lastVeinTime) {
+                const veinDate = new Date(parseInt(lastVeinTime));
+                const veinDateStr = `${veinDate.getFullYear()}-${(veinDate.getMonth() + 1).toString().padStart(2, '0')}-${veinDate.getDate().toString().padStart(2, '0')}`;
+                
+                if (veinDateStr === dateStr) {
+                    // 获取开采灵脉消息
+                    const veinMsg = await redis.get(`xiuxian:player:${usr_qq}:vein_msg:${dateStr}`);
+                    if (veinMsg) {
+                        messages.push(`${dateStr}\n${veinMsg}`);
+                    }
+                }
+            }
+            
+            // 6. 检查神兽赐福记录
+            const lastBeastTime = await redis.get(`xiuxian:player:${usr_qq}:getLastsign_Bonus`);
+            if (lastBeastTime) {
+                const beastDate = new Date(parseInt(lastBeastTime));
+                const beastDateStr = `${beastDate.getFullYear()}-${(beastDate.getMonth() + 1).toString().padStart(2, '0')}-${beastDate.getDate().toString().padStart(2, '0')}`;
+                
+                if (beastDateStr === dateStr) {
+                    // 获取神兽赐福消息
+                    const beastMsg = await redis.get(`xiuxian:player:${usr_qq}:beast_msg:${dateStr}`);
+                    if (beastMsg) {
+                        messages.push(`${dateStr}\n${beastMsg}`);
+                    }
+                }
+            }
 
         } catch (error) {
             console.error(`获取${dateStr}领取消息失败:`, error);
@@ -1086,7 +1418,7 @@ async enableAutoTask(e) {
             return false;
         }
 
-        // 修复：使用正确的键名 auto_task_enabled
+        // 设置自动任务开启状态
         await redis.set(`xiuxian:player:${usr_qq}:auto_task_enabled`, 'true');
         
         e.reply([
@@ -1097,6 +1429,8 @@ async enableAutoTask(e) {
             '• 自动领取势力俸禄', 
             '• 自动天道赐福',
             '• 自动道法赐福',
+            '• 自动开采宗门灵脉',
+            '• 自动神兽赐福',
             '',
             '您可以通过 #关闭自动任务 来关闭此功能',
             '通过 #自动任务状态 查看当前设置'
@@ -1134,7 +1468,7 @@ async disableAutoTask(e) {
             return false;
         }
 
-        // 修复：删除正确的键名
+        // 删除自动任务开启状态
         await redis.del(`xiuxian:player:${usr_qq}:auto_task_enabled`);
         
         e.reply([
@@ -1145,6 +1479,8 @@ async disableAutoTask(e) {
             '• 自动领取势力俸禄',
             '• 自动天道赐福', 
             '• 自动道法赐福',
+            '• 自动开采宗门灵脉',
+            '• 自动神兽赐福',
             '',
             '您可以通过 #开启自动任务 来重新开启此功能',
             '通过 #自动任务状态 查看当前设置'
