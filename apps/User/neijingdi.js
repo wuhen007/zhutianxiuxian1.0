@@ -508,6 +508,10 @@ export class InnerWorld extends plugin {
                     fnc: 'takeAllFromInnerWorld',
                 },
                 {
+                    reg: '^#一键取出(装备|丹药|道具|功法|草药|食材|盒子|材料|仙宠|仙宠口粮|宝石)$',
+                    fnc: 'takeCategoryFromInnerWorld'
+                },
+                {
                     reg: '^#一键存入内景地$',
                     fnc: 'storeAllToInnerWorld'
                 },
@@ -704,7 +708,99 @@ export class InnerWorld extends plugin {
         
         return plan;
     }
+// 添加按类别取出的方法
+async takeCategoryFromInnerWorld(e) {
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    
+    // 提取类别名称
+    const categoryMatch = e.msg.match(/^#一键取出(装备|丹药|道具|功法|草药|食材|盒子|材料|仙宠|仙宠口粮|宝石)$/);
+    if (!categoryMatch) return false;
+    
+    const category = categoryMatch[1];
+    
+    try {
+        // === 1. 验证玩家状态 ===
+        const player = await Read_player(usr_qq);
+        if (player.内景地开辟 !== 1) {
+            return e.reply([
+                '❌ 操作失败',
+                '你尚未开辟内景地空间',
+                '使用 #开辟内景地空间 开启空间'
+            ].join('\n'));
+        }
 
+        // === 2. 读取内景地数据 ===
+        const innerWorld = await Read_inner_world(usr_qq);
+        
+        // 检查该类别是否有物品
+        if (!innerWorld[category] || innerWorld[category].length === 0) {
+            return e.reply([
+                ` ${category}区为空`,
+                `内景地的${category}区域没有物品`,
+                '提示: 使用 #查看内景地 查看详情'
+            ].join('\n'));
+        }
+
+        // === 3. 执行取出操作 ===
+        const categoryItems = innerWorld[category];
+        let totalTaken = 0;
+        let releasedSpace = 0;
+        const results = [];
+
+        for (const item of categoryItems) {
+            try {
+                // 计算物品占用空间
+                const itemSize = this.getItemSize(item, category);
+                
+                // 添加到纳戒（考虑品级）
+                if (category === '装备') {
+                    await Add_najie_thing(usr_qq, item.name, category, item.数量, item.pinji);
+                } else {
+                    await Add_najie_thing(usr_qq, item.name, category, item.数量);
+                }
+                
+                totalTaken += item.数量;
+                releasedSpace += itemSize;
+                results.push(`✔ ${item.name} ×${item.数量}`);
+            } catch (err) {
+                results.push(`✘ ${item.name} (失败: ${err.message})`);
+            }
+        }
+
+        // === 4. 更新内景地数据 ===
+        innerWorld[category] = []; // 清空该类别
+        innerWorld.当前容量 -= releasedSpace;
+        innerWorld.最后更新时间 = Date.now();
+        await Write_inner_world(usr_qq, innerWorld);
+
+        // === 5. 返回操作结果 ===
+        const remainingSpace = innerWorld.最大容量 - innerWorld.当前容量;
+        const report = [
+            `【${category}区一键取出】`,
+            `◇ 取出物品: ${totalTaken}件`,
+            `◇ 释放空间: ${releasedSpace}格`,
+            `◇ 剩余容量: ${remainingSpace}格`,
+            '【操作详情】',
+            ...results.slice(0, 10), // 最多显示10条
+            results.length > 10 ? `...共${results.length}件物品` : '',
+            '提示: 物品已存入纳戒，使用 #查看纳戒 确认'
+        ];
+
+        return e.reply(report.join('\n'));
+
+    } catch (err) {
+        console.error('按类别取出错误:', err);
+        return e.reply([
+            ' 取出失败',
+            `类别: ${category}`,
+            `错误: ${err.message}`,
+            '建议操作:',
+            '1. 检查内景地状态 (#查看内景地)',
+            '2. 检查纳戒空间',
+            '3. 联系管理员'
+        ].join('\n'));
+    }
+}
     // 开辟内景地
     async openInnerWorld(e) {
         const usr_qq = e.user_id.toString().replace('qg_','');

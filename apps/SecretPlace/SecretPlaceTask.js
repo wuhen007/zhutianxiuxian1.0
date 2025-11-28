@@ -1659,7 +1659,7 @@ if (player.灵根.type === "魔卡少女·完全") {
             }
             // 条件：玩家境界>42，炼体>42，秘境<21，仙古<21，33%概率
 if (player.level_id > 42 && player.Physique_id > 42 && 
-    player.mijinglevel_id < 21 && player.xiangulevel_id < 21 && 
+    player.mijinglevel_id < 14 && player.xiangulevel_id < 14 && 
     Math.random() < 0.33) {
     
     // 计算被夺走的数量（向下取整，确保是整数）

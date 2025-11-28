@@ -592,7 +592,7 @@ async handleJuelingEraLoss() {
           msg.push(`总计损失记录: ${losses.length}次 (真实:${realLosses.length}, 模拟:${simulatedLosses.length})`);
           msg.push(`总计损失物品: ${totalItemsLost}件`);
           
-          await ForwardMsg(e, msg.join("\n"));
+          await ForwardMsg(e, msg);
           return true;
           
       } catch (error) {
