@@ -3550,6 +3550,55 @@ export async function get_yaochi_img(e, thing_type) {
   return img;
 }
 /**
+ * 返回摇光宝库
+ * @return image
+ */
+export async function get_yaoguang_img(e, thing_type) {
+  let usr_qq = e.user_id.toString().replace('qg_','');
+    usr_qq = await channel(usr_qq);
+  let ifexistplay = data.existData('player', usr_qq);
+  if (!ifexistplay) {
+    return;
+  }
+  let yaoguangshangdian = data.yaoguangshangdian;
+  if (thing_type != '') {
+    if (
+      thing_type == '装备' ||
+      thing_type == '丹药' ||
+      thing_type == '功法' ||
+      thing_type == '道具' ||
+      thing_type == '草药'||
+      thing_type == '材料'
+    ) {
+      yaoguangshangdian = yaoguangshangdian.filter(
+        item => item.class == thing_type
+      );
+    } else if (
+      thing_type == '武器' ||
+      thing_type == '护具' ||
+      thing_type == '法宝' ||
+      thing_type == '帝兵' ||
+      thing_type == '修为' ||
+      thing_type == '血量' ||
+      thing_type == '血气' ||
+      thing_type == '天赋'
+    ) {
+      yaoguangshangdian = yaoguangshangdian.filter(
+        item => item.type == thing_type
+      );
+    }
+  }
+  let yaochi_data = {
+    user_id: usr_qq,
+    yaoguangshangdian: yaoguangshangdian,
+  };
+  const data1 = await new Show(e).get_yaoguangData(yaoguang_data);
+  let img = await puppeteer.screenshot('yaoguang', {
+    ...data1,
+  });
+  return img;
+}
+/**
  * 返回瑶池仙楼
  * @return image
  */

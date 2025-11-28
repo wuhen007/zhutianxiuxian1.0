@@ -86,6 +86,10 @@ export class UserHome extends plugin {
           reg: '^#瑶池兑换((.*)|(.*)*(.*))$',
           fnc: 'Buy_yaochi',
         },
+                {
+          reg: '^#摇光兑换((.*)|(.*)*(.*))$',
+          fnc: 'Buy_yaoguang',
+        },
          {
           reg: '^#剑云海兑换((.*)|(.*)*(.*))$',
           fnc: 'Buy_jianyunhai',
@@ -5945,6 +5949,180 @@ async Buy_yaochi(e) {
       `"已扣除${yaochishangdian_price.toLocaleString()}源石"`,
       `"剩余源石：${updatedPlayer.源石.toLocaleString()}"`,
       `"可在【#我的纳戒】中查看"`
+    ].join("\n");
+  }
+  
+  return e.reply(successMessage);
+}
+async Buy_yaoguang(e) {
+  if (!verc({ e })) return false;
+  const usr_qq = await channel(e.user_id.toString().replace('qg_',''));
+  
+  // 检查玩家是否存在
+  if (!await existplayer(usr_qq)) {
+    return e.reply("摇光圣殿执事：阁下似乎尚未踏入修行之路，请先创建角色");
+  }
+  
+  // 检查玩家状态
+  const player = await Read_player(usr_qq);
+  
+  // 检查是否在遮天位面
+  if (player.power_place != 2) {
+    return e.reply([
+      "摇光圣殿执事：",
+      "此乃东荒摇光圣殿，你身处凡尘俗世，如何寻得？",
+      "需先进入遮天位面方可感应圣殿气息"
+    ].join("\n"));
+  }
+  
+  // 解析商品名称和数量
+  const thing = e.msg.replace('#摇光兑换', '').trim();
+  const code = thing.split('*');
+  const thing_name = code[0];
+  const quantity = await convert2integer(code[1]) || 1;
+  
+  // 查找商品
+  const ifexist = data.yaoguangshangdian.find(item => item.name == thing_name);
+  if (!ifexist) {
+    return e.reply([
+      `摇光圣殿执事：`,
+      `"${thing_name}"？此物不在我摇光圣殿名录之中`,
+      `阁下可查阅【#摇光圣殿】查看可兑换之物`
+    ].join("\n"));
+  }
+  
+  // 摇光圣地职位层级定义
+  const positionLevel = {
+    "记名弟子": 1,
+    "外门弟子": 2,
+    "内门弟子": 3,
+    "核心弟子": 4,
+    "真传弟子": 5,
+    "圣子": 6,
+    "圣女": 6
+  };
+  
+  // 检查职位要求（圣子/圣女无视所有要求）
+  if (ifexist.要求) {
+    let hasPermission = false;
+    
+    // 处理要求字段（可能是字符串或数组）
+    if (Array.isArray(ifexist.要求)) {
+      // 如果是数组，检查当前职位是否在要求数组中
+      hasPermission = ifexist.要求.includes(player.势力职位);
+    } else {
+      // 如果是字符串，使用层级比较
+      const currentLevel = positionLevel[player.势力职位] || 0;
+      const requiredLevel = positionLevel[ifexist.要求] || 0;
+      hasPermission = currentLevel >= requiredLevel;
+    }
+    
+    if (!hasPermission) {
+      // 特殊处理圣子/圣女权限
+      if (player.势力职位 !== "圣子" && player.势力职位 !== "圣女") {
+        let requirementText = Array.isArray(ifexist.要求) ? 
+          ifexist.要求.join("或") : ifexist.要求;
+        
+        return e.reply([
+          `摇光圣殿执事：`,
+          `"${thing_name}"乃摇光珍品，唯有${requirementText}方可兑换`,
+          `阁下当前仅为${player.势力职位}，尚需努力修行，提升职位`
+        ].join("\n"));
+      }
+    }
+  }
+  
+  // 计算价格
+  const yaoguangshangdian_price = Math.trunc(ifexist.出售价 * quantity);
+  
+  // 检查源石是否足够
+  if (player.源石 < yaoguangshangdian_price) {
+    const shortage = yaoguangshangdian_price - player.源石;
+    
+    // 根据职位定制不同文案
+    let message = "";
+    if (player.势力职位 === "圣子" || player.势力职位 === "圣女") {
+      message = [
+        `摇光圣殿执事恭敬行礼：`,
+        `圣子/圣女殿下，此物需${yaoguangshangdian_price}源石`,
+        `您纳戒中仅有${player.源石}源石，尚缺${shortage}源石`,
+        `待您集齐源石，属下定当亲自奉上`
+      ].join("\n");
+    } else if (player.势力职位 === "真传弟子") {
+      message = [
+        `摇光圣殿执事微微欠身：`,
+        `真传师兄/师姐，此物需${yaoguangshangdian_price}源石`,
+        `您纳戒中仅有${player.源石}源石，尚缺${shortage}源石`,
+        `还请师兄/师姐稍作筹备`
+      ].join("\n");
+    } else if (player.势力职位 === "核心弟子") {
+      message = [
+        `摇光圣殿执事：`,
+        `核心师弟/师妹，此物需${yaoguangshangdian_price}源石`,
+        `你仅有${player.源石}源石，尚缺${shortage}源石`,
+        `可多做宗门任务积累源石`
+      ].join("\n");
+    } else {
+      message = [
+        `摇光圣殿执事：`,
+        `此物需${yaoguangshangdian_price}源石`,
+        `你仅有${player.源石}源石，尚缺${shortage}源石`,
+        `待源石充足再来吧`
+      ].join("\n");
+    }
+    
+    return e.reply(message);
+  }
+  
+  // 兑换商品
+  await Add_najie_thing(usr_qq, thing_name, ifexist.class, quantity);
+  await Add_源石(usr_qq, -yaoguangshangdian_price);
+  
+  // 更新玩家数据
+  const updatedPlayer = await Read_player(usr_qq);
+  
+  // 根据职位定制购买成功文案
+  let successMessage = "";
+  if (player.势力职位 === "圣子" || player.势力职位 === "圣女") {
+    const title = player.势力职位 === "圣子" ? "圣子殿下" : "圣女殿下";
+    successMessage = [
+      `摇光圣殿执事恭敬奉上玉盒：`,
+      `"${title}，这是您要的${thing_name}×${quantity}"`,
+      `"已从您的圣子/圣女令中扣除${yaoguangshangdian_price.toLocaleString()}源石"`,
+      `"您令中尚有${updatedPlayer.源石.toLocaleString()}源石"`,
+      `"殿下若有其他需求，龙纹黑金鼎随时为您服务"`
+    ].join("\n");
+  } else if (player.势力职位 === "真传弟子") {
+    successMessage = [
+      `摇光圣殿执事微笑呈上：`,
+      `"真传师兄/师姐，这是您兑换的${thing_name}×${quantity}"`,
+      `"已扣除${yaoguangshangdian_price.toLocaleString()}源石"`,
+      `"您纳戒中尚有${updatedPlayer.源石.toLocaleString()}源石"`,
+      `"师兄/师姐慢走，圣光永伴"`
+    ].join("\n");
+  } else if (player.势力职位 === "核心弟子") {
+    successMessage = [
+      `摇光圣殿执事：`,
+      `"核心师弟/师妹，这是你要的${thing_name}×${quantity}"`,
+      `"已扣除${yaoguangshangdian_price.toLocaleString()}源石"`,
+      `"剩余源石：${updatedPlayer.源石.toLocaleString()}"`,
+      `"可去圣光塔修炼提升修为"`
+    ].join("\n");
+  } else if (player.势力职位 === "内门弟子") {
+    successMessage = [
+      `摇光圣殿执事：`,
+      `"内门师弟/师妹，这是你的${thing_name}×${quantity}"`,
+      `"已扣除${yaoguangshangdian_price.toLocaleString()}源石"`,
+      `"剩余源石：${updatedPlayer.源石.toLocaleString()}"`,
+      `"勤修混元圣光术，早日晋升核心弟子"`
+    ].join("\n");
+  } else {
+    successMessage = [
+      `摇光圣殿执事：`,
+      `"这是你的${thing_name}×${quantity}"`,
+      `"已扣除${yaoguangshangdian_price.toLocaleString()}源石"`,
+      `"剩余源石：${updatedPlayer.源石.toLocaleString()}"`,
+      `"可在【#我的纳戒】中查看，努力修行吧"`
     ].join("\n");
   }
   

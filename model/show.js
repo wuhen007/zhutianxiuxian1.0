@@ -517,6 +517,15 @@ async get_jindi_placeData(myData) {
       ...myData,
     };
   }
+    //摇光
+  async get_yaoguangData(myData) {
+    this.model = 'yaoguang';
+    return {
+      ...this.screenData,
+      saveId: 'yaoguang',
+      ...myData,
+    };
+  }
     //剑云海
   async get_jianyunhaiData(myData) {
     this.model = 'jianyunhai';

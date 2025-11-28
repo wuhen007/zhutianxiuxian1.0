@@ -83,6 +83,10 @@ export class Showningmeng extends plugin {
           reg: '^#瑶池仙楼$',
           fnc: 'show_yaochi',
         },
+                 {
+          reg: '^#摇光宝库$',
+          fnc: 'show_yaoguang',
+        },
          {
           reg: '^#剑云海剑阁$',
           fnc: 'show_jianyunhai',
@@ -122,7 +126,14 @@ export class Showningmeng extends plugin {
     e.reply(img);
     return false;
   }
-     //瑶池仙楼
+   //摇光宝库
+  async show_yaoguang(e) {
+    if (!verc({ e })) return false;
+    let thing_type = e.msg.replace('#摇光宝库', '');
+    let img = await get_yaoguang_img(e, thing_type);
+    e.reply(img);
+    return false;
+  }
   async show_jianyunhai(e) {
     if (!verc({ e })) return false;
     let thing_type = e.msg.replace('#剑云海剑阁', '');
