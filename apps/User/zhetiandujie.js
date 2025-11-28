@@ -585,7 +585,7 @@ async duzhendaoLeijie(e) {
       equipment.帝兵.斩道王兵 = true;
       await Write_equipment(usr_qq, equipment);
       battleLog.push(
-        `本命帝兵 ${equipment.帝兵.name} 进阶为【斩道王兵】！`,
+        `${player.名号}的本命帝兵${equipment.帝兵.name}经历斩道劫淬炼`,
         `攻击 +${bigNumberTransform(增益 * 0.5)}`,
         `防御 +${bigNumberTransform(增益 * 0.5)}`,
         `生命 +${bigNumberTransform(增益 * 0.5)}`,

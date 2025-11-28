@@ -40,6 +40,9 @@ class XiuxianData {
     
     // 初始化道法仙术定时任务
     this.initDaofaTask();
+    
+    // 初始化自动每日任务
+    this.initAutoDailyTask();
   }
   
   // 确保所有数据目录存在
@@ -538,6 +541,43 @@ this.gongfa_list = JSON.parse(
     this.setData('player', qq, player);
     
     return true;
+  }
+
+  /**
+   * 初始化自动每日任务
+   */
+  initAutoDailyTask() {
+    // 避免重复初始化
+    if (this.autoTaskInitialized) return;
+    
+    // 每天00:05执行自动每日任务（避免与道法仙术扣减任务冲突）
+    schedule.scheduleJob('0 5 0 * * *', async () => {
+      console.log('开始执行自动每日任务');
+      try {
+        // 获取所有道法仙术玩家
+        const list = this.getDaofaList();
+        const playerQQs = Object.keys(list);
+        
+        if (playerQQs.length === 0) {
+          console.log('当前无道法仙术玩家，跳过自动任务');
+          return;
+        }
+
+        console.log(`发现${playerQQs.length}位道法仙术玩家，开始执行自动任务`);
+        
+        // 动态导入AutoDailyTask模块
+        const { AutoDailyTask } = await import('../apps/tasks/AutoDailyTask.js');
+        const autoTask = new AutoDailyTask();
+        await autoTask.executeAutoTask();
+        
+        console.log('自动每日任务执行完成');
+      } catch (error) {
+        console.error('执行自动每日任务时发生错误:', error);
+      }
+    });
+    
+    this.autoTaskInitialized = true;
+    console.log('自动每日任务定时器已设置 - 每天00:05执行');
   }
 
   /**

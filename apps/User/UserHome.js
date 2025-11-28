@@ -5474,7 +5474,7 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
         const year = now.getFullYear();
         const month = now.getMonth() + 1; 
         const daysInMonth = new Date(year, month, 0).getDate();
-        addDays = daysInMonth; // 动态匹配当月天数[10](@ref)
+        addDays = daysInMonth; // 动态匹配当月天数
     }
 
     const addMilliseconds = addDays * 86400000;
@@ -5489,7 +5489,7 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
         player.daofaxianshu_endtime += addMilliseconds;
     }
 
-    // 精确剩余时间计算（含小数）[6](@ref)
+    // 精确剩余时间计算（含小数）
     const remainingMs = player.daofaxianshu_endtime - nowTime;
     const remainingDays = Math.round((remainingMs / 86400000) * 10) / 10;
     
