@@ -521,86 +521,133 @@ async handleJuelingEraLoss() {
     }
 }
 
- /** 查看损失信息指令 */
-  async checkJuelingLoss(e) {
-      if (!e.isGroup) return;
-      
-      let usr_qq = e.user_id.toString().replace('qg_','');
-      
-      // 检查玩家是否存在
-      if (!await existplayer(usr_qq)) {
-          e.reply(`请先创建修仙角色`);
-          return true;
-      }
-      
-      try {
-          // 从Redis获取损失记录
-          const redisKey = `jueling_loss:${usr_qq}`;
-          const lossData = await redis.get(redisKey);
-          
-          if (!lossData) {
-              await ForwardMsg(e, "【绝灵时代损失记录】\n暂无物品损失记录。");
-              return true;
-          }
-          
-          const losses = JSON.parse(lossData);
-          
-          // 按时间倒序排列
-          losses.sort((a, b) => b.timestamp - a.timestamp);
-          
-          // 构建回复消息
-          const player = await Read_player(usr_qq);
-          let msg = [
-              `【${player.名号}的绝灵时代损失记录】`,
-              "注：达到仙王境界可免疫绝灵时代的影响",
-              ""
-          ];
-          
-          // 显示最近5次损失记录
-          const recentLosses = losses.slice(0, 5);
-          
-          for (const loss of recentLosses) {
-              const date = new Date(loss.timestamp);
-              const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
-              
-              // 标记是否为模拟损失
-              const lossType = loss.isSimulated ? "[模拟]" : "[真实]";
-              
-              msg.push(`[${dateStr}] ${lossType} 绝灵${loss.eraYears}年时损失:`);
-              
-              // 按类别分组显示
-              const itemsByCategory = {};
-              loss.items.forEach(item => {
-                  if (!itemsByCategory[item.category]) {
-                      itemsByCategory[item.category] = [];
-                  }
-                  itemsByCategory[item.category].push(`${item.name}x${item.amount}`);
-              });
-              
-              for (const category in itemsByCategory) {
-                  msg.push(`  ${category}: ${itemsByCategory[category].join(', ')}`);
-              }
-              
-              msg.push(""); // 空行分隔
-          }
-          
-          // 添加统计信息
-          const totalItemsLost = losses.reduce((total, loss) => total + loss.items.length, 0);
-          const realLosses = losses.filter(l => !l.isSimulated);
-          const simulatedLosses = losses.filter(l => l.isSimulated);
-          
-          msg.push(`总计损失记录: ${losses.length}次 (真实:${realLosses.length}, 模拟:${simulatedLosses.length})`);
-          msg.push(`总计损失物品: ${totalItemsLost}件`);
-          
-          await ForwardMsg(e, msg);
-          return true;
-          
-      } catch (error) {
-          console.error("查看损失记录失败:", error);
-          e.reply(`查看损失记录时发生错误，请稍后再试。`);
-          return true;
-      }
-  }
+/** 查看损失信息指令 */
+async checkJuelingLoss(e) {
+    
+    let usr_qq = e.user_id.toString().replace('qg_','');
+    
+    // 检查玩家是否存在
+    if (!await existplayer(usr_qq)) {
+        e.reply(`请先创建修仙角色`);
+        return true;
+    }
+    
+    try {
+        // 从Redis获取损失记录
+        const redisKey = `jueling_loss:${usr_qq}`;
+        const lossData = await redis.get(redisKey);
+        
+        if (!lossData) {
+            await ForwardMsg(e, "【绝灵时代损失记录】\n暂无物品损失记录。");
+            return true;
+        }
+        
+        const losses = JSON.parse(lossData);
+        
+        // 按时间倒序排列
+        losses.sort((a, b) => b.timestamp - a.timestamp);
+        
+        // 构建回复消息
+        const player = await Read_player(usr_qq);
+        let msg = [
+            `【${player.名号}的绝灵时代损失记录】`,
+            "注：达到仙王境界可免疫绝灵时代的影响",
+            ""
+        ];
+        
+        // 显示最近5次损失记录
+        const recentLosses = losses.slice(0, 5);
+        
+        for (const loss of recentLosses) {
+            const date = new Date(loss.timestamp);
+            const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+            
+            // 标记是否为模拟损失
+            const lossType = loss.isSimulated ? "[模拟]" : "[真实]";
+            
+            msg.push(`[${dateStr}] ${lossType} 绝灵${loss.eraYears}年时损失:`);
+            
+            // 修复：按类别和名称分组，合并相同物品的数量
+            const itemsMerged = {};
+            
+            // 首先合并相同物品的数量
+            loss.items.forEach(item => {
+                const key = `${item.category}-${item.name}`;
+                if (!itemsMerged[key]) {
+                    itemsMerged[key] = {
+                        category: item.category,
+                        name: item.name,
+                        totalAmount: 0
+                    };
+                }
+                itemsMerged[key].totalAmount += item.amount;
+            });
+            
+            // 然后按类别分组
+            const itemsByCategory = {};
+            Object.values(itemsMerged).forEach(item => {
+                if (!itemsByCategory[item.category]) {
+                    itemsByCategory[item.category] = [];
+                }
+                itemsByCategory[item.category].push(`${item.name}x${item.totalAmount}`);
+            });
+            
+            // 按固定顺序显示类别，确保显示一致
+            const categoryOrder = ["草药", "食材", "材料", "道具", "盒子", "仙宠"];
+            let hasContent = false;
+            
+            categoryOrder.forEach(category => {
+                if (itemsByCategory[category] && itemsByCategory[category].length > 0) {
+                    msg.push(`  ${category}：${itemsByCategory[category].join('，')}`);
+                    hasContent = true;
+                }
+            });
+            
+            // 处理未在预设类别中的物品
+            const otherCategories = Object.keys(itemsByCategory).filter(cat => 
+                !categoryOrder.includes(cat)
+            );
+            
+            otherCategories.forEach(category => {
+                if (itemsByCategory[category] && itemsByCategory[category].length > 0) {
+                    msg.push(`  ${category}：${itemsByCategory[category].join('，')}`);
+                    hasContent = true;
+                }
+            });
+            
+            if (!hasContent) {
+                msg.push("  无物品损失");
+            }
+            
+            msg.push(""); // 空行分隔
+        }
+        
+        // 添加统计信息
+        const totalItemsLost = losses.reduce((total, loss) => {
+            // 计算不重复的物品种类数量
+            const uniqueItems = {};
+            loss.items.forEach(item => {
+                const key = `${item.category}-${item.name}`;
+                uniqueItems[key] = (uniqueItems[key] || 0) + item.amount;
+            });
+            return total + Object.keys(uniqueItems).length;
+        }, 0);
+        
+        const realLosses = losses.filter(l => !l.isSimulated);
+        const simulatedLosses = losses.filter(l => l.isSimulated);
+        
+        msg.push(`总计损失记录：${losses.length}次（真实：${realLosses.length}，模拟：${simulatedLosses.length}）`);
+        msg.push(`总计损失物品：${totalItemsLost}件`);
+        
+        await ForwardMsg(e, msg);
+        return true;
+        
+    } catch (error) {
+        console.error("查看损失记录失败:", error);
+        e.reply(`查看损失记录时发生错误，请稍后再试。`);
+        return true;
+    }
+}
 
 
 // 在指令处理部分添加这个指令

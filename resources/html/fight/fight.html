@@ -382,7 +382,7 @@ function getAllMessages() {
             // 保留换行符，替换其他特殊字符
             return msg
                 .replace(/[\[\]]/g, "") // 移除 [ ] 字符
-                .replace(/\s+/g, ' ')    // 压缩多个空格
+                .replace(/[ \t]+/g, ' ')  // 只压缩空格和制表符，保留换行
                 .replace(/\\n/g, '<br>')   // 将 \n 转换为实际的换行符
                 .trim();                 // 去除首尾空格
         });
