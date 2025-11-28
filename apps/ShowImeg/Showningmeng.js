@@ -5,6 +5,7 @@ import {
   get_danyao_img,
   get_wuqi_img,
   get_daoju_img,
+   get_yaoguang_img,
   get_XianChong_img,
   get_valuables_img,
   get_ningmenghome_img,

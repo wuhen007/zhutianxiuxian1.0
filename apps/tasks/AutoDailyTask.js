@@ -8,6 +8,7 @@ import {
     Add_源石,
     Add_修为,
     Add_血气,
+    ForwardMsg,
     Add_najie_thing,
     channel
 } from '../../model/xiuxian.js';
@@ -29,6 +30,10 @@ export class AutoDailyTask extends plugin {
                     reg: '^#测试自动任务$',
                     fnc: 'testAutoTask',
                     permission: 'master'
+                },
+                {
+                    reg: '^#查看领取记录$',
+                    fnc: 'viewClaimRecords'
                 }
             ]
         });
@@ -138,12 +143,10 @@ export class AutoDailyTask extends plugin {
     async autoSign(usr_qq, player) {
         try {
             // 检查今日是否已签到
-            const today = new Date();
+            let today = new Date();
             const todayStr = `${today.getFullYear()}-${today.getMonth()+1}-${today.getDate()}`;
             
-            // 这里需要根据实际的签到存储方式调整
-            // 假设使用Redis存储签到时间
-            const redis = require('../../model/Redis.js').redis;
+
             const lastSignTime = await redis.get(`xiuxian:player:${usr_qq}:lastsign_time`);
             
             if (lastSignTime) {
@@ -190,6 +193,17 @@ export class AutoDailyTask extends plugin {
             await Add_修为(usr_qq, gift_xiuwei);
             await Add_血气(usr_qq, gift_xiuwei);
 
+            // 记录签到奖励详情
+             today = new Date().toISOString().split('T')[0];
+            await redis.set(`xiuxian:player:${usr_qq}:sign_reward:${today}`, JSON.stringify({
+                修为: gift_xiuwei,
+                源石: yuanshi,
+                灵石: yuanshi,
+                秘境之匙: ticketCount,
+                喇叭: ticketCount,
+                连续天数: player.连续签到天数
+            }));
+
             // 保存数据
             await Write_player(usr_qq, player);
             await redis.set(`xiuxian:player:${usr_qq}:lastsign_time`, new Date().getTime());
@@ -210,7 +224,6 @@ export class AutoDailyTask extends plugin {
                 return;
             }
 
-            const redis = require('../../model/Redis.js').redis;
             const today = new Date().toISOString().split('T')[0];
             
             // 检查今日是否已领取
@@ -284,7 +297,6 @@ export class AutoDailyTask extends plugin {
                 return;
             }
 
-            const redis = require('../../model/Redis.js').redis;
             const today = new Date();
             const todayStr = `${today.getFullYear()}-${today.getMonth()+1}-${today.getDate()}`;
 
@@ -345,7 +357,6 @@ export class AutoDailyTask extends plugin {
      */
     async autoDaofaCifu(usr_qq, player) {
         try {
-            const redis = require('../../model/Redis.js').redis;
             const today = new Date();
             const todayStr = `${today.getFullYear()}-${today.getMonth()+1}-${today.getDate()}`;
 
@@ -423,5 +434,210 @@ export class AutoDailyTask extends plugin {
         await this.executeAutoTask();
         e.reply('自动任务测试完成，请查看控制台日志');
         return true;
+    }
+
+    /**
+     * 查看领取记录
+     */
+    async viewClaimRecords(e) {
+        try {
+            // 转换QQ号格式
+            const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
+            
+            // 检查玩家是否存在
+            if (!await existplayer(usr_qq)) {
+                e.reply('您还未开始修仙，请先#开始修仙');
+                return false;
+            }
+
+            // 读取玩家数据
+            const player = await Read_player(usr_qq);
+            
+            // 检查是否为道法仙术玩家
+            if (player.daofaxianshu !== 2) {
+                e.reply('您还不是道法仙术玩家，无法查看领取记录');
+                return false;
+            }
+
+            const now = new Date();
+            const records = [];
+            
+            // 获取最近三天的日期
+            for (let i = 0; i < 3; i++) {
+                const date = new Date(now);
+                date.setDate(date.getDate() - i);
+                const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+                
+                const dayRecords = await this.getDayClaimRecords(usr_qq, dateStr, i);
+                if (dayRecords.length > 0) {
+                    records.push(...dayRecords);
+                }
+            }
+
+            if (records.length === 0) {
+                e.reply('最近三天暂无领取记录');
+                return false;
+            }
+
+            // 构建消息内容
+            const msg = [
+                `【${player.名号 || usr_qq}的领取记录】`,
+                `最近三天领取情况：`,
+                ''
+            ];
+
+            // 按日期分组显示
+            const groupedRecords = {};
+            records.forEach(record => {
+                if (!groupedRecords[record.date]) {
+                    groupedRecords[record.date] = [];
+                }
+                groupedRecords[record.date].push(record);
+            });
+
+            // 按日期顺序显示
+            Object.keys(groupedRecords).sort().forEach(date => {
+                msg.push(`📅 ${date}`);
+                groupedRecords[date].forEach(record => {
+                    msg.push(`  ${record.icon} ${record.type} - ${record.description}`);
+                    if (record.rewards && record.rewards.length > 0) {
+                        record.rewards.forEach(reward => {
+                            msg.push(`    + ${reward}`);
+                        });
+                    }
+                });
+                msg.push('');
+            });
+
+            // 使用ForwardMsg发送消息
+            await ForwardMsg(e, msg);
+            return true;
+
+        } catch (error) {
+            console.error('查看领取记录失败:', error);
+            e.reply('查看领取记录失败，请稍后再试');
+            return false;
+        }
+    }
+
+    /**
+     * 获取指定日期的领取记录
+     */
+    async getDayClaimRecords(usr_qq, dateStr, dayOffset) {
+        const records = [];
+        const timestamp = new Date().getTime();
+        
+        try {
+            // 1. 检查签到记录
+            const lastSignTime = await redis.get(`xiuxian:player:${usr_qq}:lastsign_time`);
+            if (lastSignTime) {
+                const signDate = new Date(parseInt(lastSignTime));
+                const signDateStr = `${signDate.getFullYear()}-${(signDate.getMonth() + 1).toString().padStart(2, '0')}-${signDate.getDate().toString().padStart(2, '0')}`;
+                
+                if (signDateStr === dateStr) {
+                    // 获取具体奖励数据
+                    const rewardData = await redis.get(`xiuxian:player:${usr_qq}:sign_reward:${dateStr}`);
+                    let rewards = [];
+                    
+                    if (rewardData) {
+                        try {
+                            const reward = JSON.parse(rewardData);
+                            rewards = [
+                                `修为+${this.formatNumber(reward.修为)}`,
+                                `源石+${this.formatNumber(reward.源石)}`,
+                                `灵石+${this.formatNumber(reward.灵石)}`,
+                                `秘境之匙+${reward.秘境之匙}`,
+                                `喇叭+${reward.喇叭}`
+                            ];
+                        } catch (e) {
+                            rewards = ['修为+?', '源石+?', '灵石+?', '秘境之匙+?', '喇叭+?'];
+                        }
+                    } else {
+                        rewards = ['修为+?', '源石+?', '灵石+?', '秘境之匙+?', '喇叭+?'];
+                    }
+                    
+                    records.push({
+                        date: dateStr,
+                        type: '每日签到',
+                        icon: '🎯',
+                        description: '自动签到成功',
+                        rewards: rewards
+                    });
+                }
+            }
+
+            // 2. 检查势力俸禄记录
+            const salaryKeys = [
+                `xiuxian:player:${usr_qq}:yaochi_salary_date`,
+                `xiuxian:player:${usr_qq}:yaoguang_salary_date`
+            ];
+            
+            for (const key of salaryKeys) {
+                const lastClaimDate = await redis.get(key);
+                if (lastClaimDate === dateStr) {
+                    const shiliName = key.includes('yaochi') ? '瑶池' : '摇光圣地';
+                    records.push({
+                        date: dateStr,
+                        type: '势力俸禄',
+                        icon: '💰',
+                        description: `自动领取${shiliName}俸禄`,
+                        rewards: ['灵石+?']
+                    });
+                    break; // 每天只能领取一次俸禄
+                }
+            }
+
+            // 3. 检查天道赐福记录
+            const lastTiandaoTime = await redis.get(`xiuxian:player:${usr_qq}:lastTiandaoCifuTime`);
+            if (lastTiandaoTime) {
+                const cifuDate = new Date(parseInt(lastTiandaoTime));
+                const cifuDateStr = `${cifuDate.getFullYear()}-${(cifuDate.getMonth() + 1).toString().padStart(2, '0')}-${cifuDate.getDate().toString().padStart(2, '0')}`;
+                
+                if (cifuDateStr === dateStr) {
+                    records.push({
+                        date: dateStr,
+                        type: '天道赐福',
+                        icon: '🌟',
+                        description: '自动天道赐福',
+                        rewards: ['修为+?', '灵石+?']
+                    });
+                }
+            }
+
+            // 4. 检查道法赐福记录
+            const lastDaofaTime = await redis.get(`xiuxian:player:${usr_qq}:lastDaofaCifuTime`);
+            if (lastDaofaTime) {
+                const daofaDate = new Date(parseInt(lastDaofaTime));
+                const daofaDateStr = `${daofaDate.getFullYear()}-${(daofaDate.getMonth() + 1).toString().padStart(2, '0')}-${daofaDate.getDate().toString().padStart(2, '0')}`;
+                
+                if (daofaDateStr === dateStr) {
+                    records.push({
+                        date: dateStr,
+                        type: '道法赐福',
+                        icon: '✨',
+                        description: '自动道法赐福',
+                        rewards: ['修为+?', '血气+?']
+                    });
+                }
+            }
+
+        } catch (error) {
+            console.error(`获取${dateStr}领取记录失败:`, error);
+        }
+
+        return records;
+    }
+
+    /**
+     * 格式化数字显示
+     */
+    formatNumber(num) {
+        if (num >= 100000000) {
+            return (num / 100000000).toFixed(1) + '亿';
+        } else if (num >= 10000) {
+            return (num / 10000).toFixed(1) + '万';
+        } else {
+            return num.toString();
+        }
     }
 }

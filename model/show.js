@@ -312,6 +312,15 @@ async get_jindi_placeData(myData) {
       ...myData,
     };
   }
+  
+  async get_najie_category_Data(myData) {
+    this.model = 'najie-category';
+    return {
+      ...this.screenData,
+      saveId: 'najie-category',
+      ...myData,
+    };
+  }
   async get_najie_chouchou_Data(myData) {
     this.model = 'najie_copy';
     return {

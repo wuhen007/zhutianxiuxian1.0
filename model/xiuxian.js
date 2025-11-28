@@ -2918,7 +2918,12 @@ export async function get_najie_category_img(e, category) {
   let player_data = {
     user_id: usr_qq,
     player: player,
-    najie: najie,
+    // 添加纳戒基本信息供模板使用
+    najie: {
+      等级: najie.等级,
+      灵石: lingshi,
+      灵石上限: lingshi2
+    },
     mdz: player.魔道值,
     nickname: player.名号,
     najie_lv: najie.等级,
@@ -2929,26 +2934,39 @@ export async function get_najie_category_img(e, category) {
     strand_hp: strand_hp,
     strand_lingshi: strand_lingshi,
     pifu: player.纳戒皮肤,
-    
-    // 只包含指定类别的物品
-    [`najie_${category}`]: categoryItems,
-    
-    // 其他类别设为空
-    najie_equipment: {},
-    najie_danyao: {},
-    najie_daoju: {},
-    najie_gongfa: {},
-    najie_caoyao: {},
-    najie_cailiao: {},
-    najie_shicai: {},
-    najie_hezi: {},
+    current_category: category,
   };
+  
+  // 根据类别设置对应的属性
+  const categoryMap = {
+    '装备': 'najie_装备',
+    '丹药': 'najie_丹药', 
+    '道具': 'najie_道具',
+    '功法': 'najie_功法',
+    '草药': 'najie_草药',
+    '材料': 'najie_材料',
+    '食材': 'najie_食材',
+    '盒子': 'najie_盒子'
+  };
+  
+  // 设置当前类别的物品数据
+  const dataKey = categoryMap[category];
+  if (dataKey) {
+    player_data[dataKey] = categoryItems;
+  }
+  
+  // 其他类别设为空数组
+  Object.values(categoryMap).forEach(key => {
+    if (player_data[key] === undefined) {
+      player_data[key] = [];
+    }
+  });
   
   // 设置当前查看的类别
   player_data.current_category = category;
   
   // 生成并返回纳戒图片
-  const data1 = await new Show(e).get_najieData(player_data);
+  const data1 = await new Show(e).get_najie_category_Data(player_data);
   return await puppeteer.screenshot('najie-category', {
     ...data1,
   });
@@ -3588,7 +3606,7 @@ export async function get_yaoguang_img(e, thing_type) {
       );
     }
   }
-  let yaochi_data = {
+  let yaoguang_data = {
     user_id: usr_qq,
     yaoguangshangdian: yaoguangshangdian,
   };

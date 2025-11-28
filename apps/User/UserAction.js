@@ -442,7 +442,7 @@ target.神识 = target.神识 || 0;
     const items = najie[category];
     
     // 如果没有物品
-    if (!items || Object.keys(items).length === 0) {
+    if (!items || items.length === 0) {
       e.reply(`纳戒${category}类别下没有物品`);
       return true;
     }
