@@ -933,9 +933,11 @@ async takeCategoryFromInnerWorld(e) {
 
                 for (const item of categoryItems) {
                     // 添加到纳戒（考虑品级）
-
+                    if (category === '装备') {
+                        await Add_najie_thing(usr_qq, item.name, category, item.数量, item.pinji);
+                    } else {
                         await Add_najie_thing(usr_qq, item.name, category, item.数量);
-
+                    }
                     
                     categoryTaken += item.数量;
                     categorySpace += this.getItemSize(item, category);

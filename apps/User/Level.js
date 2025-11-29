@@ -3449,7 +3449,10 @@ async command_dasan(e) {
     e.reply('你的力量不足以打散雷云！');
     return false;
   }
-
+  if (player.power ==1) {
+    e.reply('你早已经将肉身劫打散了！');
+    return false;
+  }
   // 检查是否正在渡劫
   if (!dj_players[usr_qq]) {
     e.reply('当前没有雷劫，无需打散！');
@@ -3459,7 +3462,7 @@ async command_dasan(e) {
   // 清除定时器
   clearInterval(dj_players[usr_qq].timer);
   
-  // 标记渡劫成功
+  // 标记渡肉身劫成功
   player.power = 1;
   
   // 计算属性加成（根据雷劫道数）
