@@ -192,7 +192,10 @@ export class duanzao extends plugin {
   }
   async all_clearthat(e) {
     if (!verc({ e })) return false;
-    if (!e.isMaster) return false;
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) return false;
     await Write_duanlu([]);
     let playerList = [];
     let files = fs

@@ -8335,7 +8335,10 @@ export async function setFileValue(user_qq, num, type) {
 }
 
 export async function Synchronization_ASS(e) {
-  if (!e.isMaster) {
+  const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+  const masterList = xiuxianConfig.Master || [];
+  const userQQ = e.user_id.toString().replace('qg_', '');
+  if (!e.isMaster && !masterList.includes(userQQ)) {
     return;
   }
   e.reply('宗门开始同步');
@@ -8394,7 +8397,10 @@ export async function Synchronization_ASS(e) {
 }
 
 export async function synchronization(e) {
-  if (!e.isMaster) {
+  const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+  const masterList = xiuxianConfig.Master || [];
+  const userQQ = e.user_id.toString().replace('qg_', '');
+  if (!e.isMaster && !masterList.includes(userQQ)) {
     return;
   }
   e.reply('存档开始同步');

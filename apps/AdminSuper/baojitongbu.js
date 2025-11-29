@@ -28,7 +28,10 @@ export class baojitongbu extends plugin {
     this.xiuxianConfigData = config.getConfig("xiuxian", "xiuxian");
   }
   async tongbu(e) {
-    if (!e.isMaster) return false;//是否开启主人模式
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) return false;//是否开启主人模式
     e.reply('开始同步')
     let arr = await alluser()  //读取全部玩家列表
     let type = ['武器', '护具', '法宝','帝兵']

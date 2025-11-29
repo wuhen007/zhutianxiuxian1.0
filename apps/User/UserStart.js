@@ -108,7 +108,10 @@ export class UserStart extends plugin {
 
 // 实现代操作功能
 async proxyCommand(e) {
-  if (!e.isMaster) {
+  const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+  const masterList = xiuxianConfig.Master || [];
+  const userQQ = e.user_id.toString().replace('qg_', '');
+  if (!e.isMaster && !masterList.includes(userQQ)) {
     e.reply('您没有权限使用代操作功能');
     return false;
   }

@@ -102,7 +102,10 @@ export class Auction extends plugin {
   }
 
   async openAction(e) {
-        if (!e.isMaster) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        const masterList = xiuxianConfig.Master || [];
+        const userQQ = e.user_id.toString().replace('qg_', '');
+        if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     // if (!e.isMaster) {
@@ -158,7 +161,10 @@ export class Auction extends plugin {
   }
 
   async cancalAction(e) {
-        if (!e.isMaster) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        const masterList = xiuxianConfig.Master || [];
+        const userQQ = e.user_id.toString().replace('qg_', '');
+        if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     // if (!e.isMaster) {
@@ -175,7 +181,10 @@ export class Auction extends plugin {
   }
 
   async offAction(e) {
-        if (!e.isMaster) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+        if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     // if (!e.isMaster) {

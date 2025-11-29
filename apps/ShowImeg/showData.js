@@ -1,4 +1,4 @@
-import { plugin,verc } from "../../api/api.js";
+import { plugin,verc, config } from "../../api/api.js";
 import {
   __PATH,
   get_equipment_img,
@@ -62,7 +62,10 @@ export class showData extends plugin {
 
   //修仙设置
   async show_adminset(e) {
-    if (!e.isMaster) return  false;
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) return  false;
 if (!verc({ e })) return  false ;
     let img = await get_adminset_img(e);
     e.reply(img);

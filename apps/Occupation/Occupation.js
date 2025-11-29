@@ -2558,7 +2558,10 @@ async shoulie_back(e) {
 
   async qingchushangjinbang(e) {
     if (!verc({ e })) return false;
-    if (!e.isMaster) return false;
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) return false;
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);
     let ifexistplay = await existplayer(usr_qq);

@@ -69,7 +69,10 @@ this.task2 = {
     };
   }
 async settle_rewards(e) {
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         e.reply('只有主人可以执行此操作');
         return false;
     }
@@ -870,7 +873,10 @@ tiandibang[m].血量上限 = player.血量上限;   // 新增：更新血量上�
 
   async bd_jiesuan(e) {
     if (!verc({ e })) return false;
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
       e.reply('只有主人可以执行操作');
       return false;
     }

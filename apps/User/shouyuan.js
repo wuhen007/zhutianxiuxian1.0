@@ -24,7 +24,10 @@ export class ManualShouyuanTask extends plugin {
   }
 
   async manualReduceShouyuan(e) {
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
       e.reply('只有主人可以执行此操作');
       return false;
     }
@@ -36,7 +39,10 @@ export class ManualShouyuanTask extends plugin {
   }
 
   async manualReduceShouyuanWithAmount(e) {
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
       e.reply('只有主人可以执行此操作');
       return false;
     }

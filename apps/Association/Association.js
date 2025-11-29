@@ -63,7 +63,10 @@ export class Association extends plugin {
 
 
   async cha(e) {
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
       return e.reply('只有只因器人主人可以开启');
     }
     let x = e.group_id;

@@ -147,7 +147,10 @@ export class Auction2 extends plugin {
 
   async openAction2(e) {
 
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
 
@@ -200,7 +203,10 @@ export class Auction2 extends plugin {
   }
 
   async cancalAction2(e) {
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
 
@@ -214,7 +220,10 @@ export class Auction2 extends plugin {
   }
 
   async offAction2(e) {
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList2';

@@ -1,4 +1,4 @@
-import { plugin, verc } from '../../api/api.js';
+import { plugin, verc, config } from '../../api/api.js';
 import { AppName } from '../../app.config.js';
 import { exec } from 'child_process';
 export class admin extends plugin {
@@ -17,7 +17,10 @@ export class admin extends plugin {
     });
   }
   async checkout(e) {
-    if (!e.isMaster) return false;
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) return false;
     if (!verc({ e })) return false;
     const isForce = this.e.msg.includes('强制');
     let command = 'git  pull';

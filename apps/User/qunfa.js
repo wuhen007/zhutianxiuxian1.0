@@ -134,12 +134,12 @@ async globalAnnouncement(e) {
   // 添加公告群组（保留管理员权限）
   async addAnnounceGroup(e) {
             // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
-    // if (!e.isMaster) {
-    //   return e.reply('【权限不足】只有管理员可以管理公告群组');
-    // }
     
     const groupId = e.msg.replace('#设置公告群', '').trim();
     
@@ -163,13 +163,12 @@ async globalAnnouncement(e) {
   // 移除公告群组（保留管理员权限）
   async removeAnnounceGroup(e) {
             // 修改权限检查：不是主人也不是修仙管理员则返回
-    if (!e.isMaster && e.user_id != "2283096140") {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
-    // if (!e.isMaster) {
-    //   return e.reply('【权限不足】只有管理员可以管理公告群组');
-    // }
-    
     const groupId = e.msg.replace('#移除公告群', '').trim();
     
     if (!groupId || !/^\d+$/.test(groupId)) {

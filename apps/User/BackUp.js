@@ -166,7 +166,10 @@ export class BackUp extends plugin {
   }
 
   async checkBackUp(e) {
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
       e.reply('只有主人可以执行操作');
       return false;
     }
@@ -199,7 +202,10 @@ export class BackUp extends plugin {
   }
 
   async loadBackUp(e) {
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
       e.reply('只有主人可以执行操作');
       return false;
     }

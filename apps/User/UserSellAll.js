@@ -816,7 +816,10 @@ async all_shenyao(e) {
         }
     }
   async ul(e){
-    if (!e.isMaster) return false;
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) return false;
     let player=await alluser()
     for(let i=0;i<player.length;i++){
       let player2=await Read_player(player[i])

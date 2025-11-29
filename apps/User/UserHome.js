@@ -1057,7 +1057,10 @@ async world(e) {
 }
   async check_player(e) {
     if (!verc({ e })) return false;
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
       e.reply('只有主人可以执行操作');
       return false;
     }

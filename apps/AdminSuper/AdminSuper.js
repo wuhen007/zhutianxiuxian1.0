@@ -87,14 +87,102 @@ export class AdminSuper extends plugin {
 {
     reg: '^#查看全局推送$',
     fnc: 'viewGlobalPush'
+},
+{
+    reg: '^#设置修仙管理员.*$',
+    fnc: 'setMaster'
 }
       ],
     });
         this.xiuxianData =  XiuxianData; // 移至 super 之后
   }
+  // 设置修仙管理员功能
+async setMaster(e) {
+  // 权限检查：只有机器人管理员或现有修仙管理员可以设置新的管理员
+  const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+  const masterList = xiuxianConfig.Master || [];
+  const userQQ = e.user_id.toString().replace('qg_', '');
+  if (!e.isMaster && !masterList.includes(userQQ)) {
+    return e.reply('你没有权限设置修仙管理员');
+  }
+
+  // 解析消息，获取目标用户QQ
+  let targetQQ = '';
+
+  // 方法1：优先从消息数组中查找at类型
+  if (e.message && Array.isArray(e.message)) {
+    const atMsg = e.message.find(item => item.type === 'at');
+    if (atMsg && atMsg.qq) {
+      targetQQ = atMsg.qq.toString();
+    }
+  }
+
+  // 方法2：从e.msg中匹配CQ码格式的@用户 
+  if (!targetQQ && e.msg) {
+    const cqAtMatch = e.msg.match(/\[CQ:at,qq=(\d+)\]/);
+    if (cqAtMatch) {
+      targetQQ = cqAtMatch[1];
+    }
+  }
+  
+  // 方法3：从e.msg中匹配普通@用户格式
+  if (!targetQQ && e.msg && e.msg.includes('@')) {
+    const atMatch = e.msg.match(/@(\d+)/);
+    if (atMatch) {
+      targetQQ = atMatch[1];
+    }
+  }
+
+  // 方法4：从消息中提取QQ号
+  if (!targetQQ && e.msg) {
+    const qqMatch = e.msg.match(/(\d{5,})/);
+    if (qqMatch) {
+      targetQQ = qqMatch[1];
+    }
+  }
+
+  // 调试信息
+  console.log('调试 - e.msg:', e.msg);
+  console.log('调试 - e.message:', e.message);
+  console.log('调试 - 解析出的targetQQ:', targetQQ);
+
+  if (!targetQQ) {
+    return e.reply('请指定要设置为管理员的用户格式：#设置修仙管理员@用户 或 #设置修仙管理员 QQ号');
+  }
+
+  // 检查目标用户是否已经是管理员
+  if (masterList.includes(targetQQ)) {
+    return e.reply(`用户 ${targetQQ} 已经是修仙管理员了`);
+  }
+
+  try {
+    // 使用现有的config对象读取配置
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    
+    // 确保Master数组存在
+    if (!xiuxianConfig.Master) {
+      xiuxianConfig.Master = [];
+    }
+    
+    // 添加新的管理员
+    xiuxianConfig.Master.push(targetQQ);
+    
+    // 使用config对象保存配置
+    config.setConfig('xiuxian', 'xiuxian', xiuxianConfig);
+    
+    e.reply(`成功设置用户 ${targetQQ} 为修仙管理员`);
+    
+  } catch (error) {
+    console.error('设置修仙管理员失败:', error);
+    e.reply('设置修仙管理员失败，请检查配置文件权限');
+  }
+}
       async globalPushMessage(e) {
     // 只有管理员可以使用
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     
@@ -148,7 +236,10 @@ ${xiuxianConfig.Era.notifyGroups.join('\n')}`);
 
 async removeGlobalPush(e) {
     // 只有管理员可以使用
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     
@@ -199,7 +290,10 @@ ${xiuxianConfig.Era.notifyGroups.length > 0 ? xiuxianConfig.Era.notifyGroups.joi
 
 async viewGlobalPush(e) {
     // 只有管理员可以使用
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     
@@ -245,7 +339,10 @@ async viewGlobalPush(e) {
         e.reply('请在群聊中使用此管理指令');
         return true;
     }
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     // 检查是否有艾特信息
@@ -322,7 +419,10 @@ async setPlayerToPrison(targetQQ, minutes) {
 }
   
   async openDaofa(e) {
-       if (!e.isMaster) {
+       const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     let nowTime = new Date().getTime();
@@ -345,7 +445,10 @@ async setPlayerToPrison(targetQQ, minutes) {
 }
 
   async ktgjdfxt(e) {
-     if (!e.isMaster) {
+     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
    let nowtime = new Date().getTime();
@@ -379,7 +482,10 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
 }
   
   async xiaosan(e){
-        if (!e.isMaster) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -410,7 +516,10 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
 
 
   async down(e){
-        if (!e.isMaster) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -447,7 +556,10 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
     e.reply("清除完成")
   }
   async add_level(e){
-        if (!e.isMaster) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -471,7 +583,10 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
     e.reply("补发"+level+"级成功,当前为"+player.occupation+player.occupation_level+"级")
   }
   async jiesan_ass(e) {
-        if (!e.isMaster) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -554,7 +669,10 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
   }
 
   async Deleteexchange(e) {
-        if (!e.isMaster) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -596,7 +714,10 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
   }
 
   async Allrelieve(e) {
-        if (!e.isMaster) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -635,7 +756,10 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
     e.reply('行动结束！');
   }
 async relieveFashanAction(e) {
-        if (!e.isMaster) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     
@@ -708,7 +832,10 @@ async relieveFashanAction(e) {
     return true;
 }
   async relieve(e) {
-        if (!e.isMaster) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -750,7 +877,10 @@ async relieveFashanAction(e) {
   }
 
   async Knockdown(e) {
-        if (!e.isMaster) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     if (!verc({ e })) return false;
@@ -776,7 +906,10 @@ async relieveFashanAction(e) {
   }
 
   async replaceThing(e) {
-        if (!e.isMaster) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     const msg1 = e.msg.replace('#将米娜桑的纳戒里叫', '');
@@ -854,5 +987,7 @@ async function clearNajieThing(thingType, thingName) {
     })
     .filter(usrObj => usrObj);
 }
+
+
 
 

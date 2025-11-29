@@ -102,6 +102,7 @@ Era:
   task: 0 0 */2 * * *
   pushNotice: true
   notifyGroups:
+  Master:
   current:
     index: 1
     years: 9000

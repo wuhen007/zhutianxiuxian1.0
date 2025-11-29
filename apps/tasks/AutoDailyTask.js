@@ -935,7 +935,10 @@ async isAutoSignEnabled(usr_qq) {
      * 测试自动任务（仅管理员可用）
      */
     async testAutoTask(e) {
-        if (!e.isMaster) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        const masterList = xiuxianConfig.Master || [];
+        const userQQ = e.user_id.toString().replace('qg_', '');
+        if (!e.isMaster && !masterList.includes(userQQ)) {
             return false;
         }
 
@@ -990,7 +993,10 @@ async isAutoSignEnabled(usr_qq) {
      * 重置内容包括：修仙签到、天道赐福、领取势力俸禄、道法赐福
      */
     async resetAllSignRecords(e) {
-        if (!e.isMaster) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        const masterList = xiuxianConfig.Master || [];
+        const userQQ = e.user_id.toString().replace('qg_', '');
+        if (!e.isMaster && !masterList.includes(userQQ)) {
             return false;
         }
 

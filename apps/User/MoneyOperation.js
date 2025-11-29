@@ -127,7 +127,10 @@ export class MoneyOperation extends plugin {
   }
   async wup(e) {
     if (!verc({ e })) return false;
-    if (!e.isMaster) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     //对方
@@ -204,8 +207,10 @@ export class MoneyOperation extends plugin {
 
   async wup_all(e) {
     if (!verc({ e })) return false;
-           
-    if (!e.isMaster ) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
         return false;
     }
     //所有玩家
