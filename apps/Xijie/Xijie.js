@@ -1,4 +1,4 @@
-import { plugin, puppeteer, verc, data, Show } from '../../api/api.js';
+import { plugin, puppeteer, verc, data, config,Show } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
 import {
   existplayer,

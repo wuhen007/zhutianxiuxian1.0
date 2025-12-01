@@ -1507,13 +1507,17 @@ async yuanshen(e) {
     }
     
     let player = await Read_player(usr_qq);
-      if (player.yuanshenlevel_id === undefined) {
+       if (player.内景地 == 1 ) {
+    e.reply(`你的内景地已然开启`);
+    return;
+}
+    if (player.yuanshenlevel_id === undefined) {
    return e.reply(`你连元神都没有凝练是无法开启内景地的`);
   }
-    let 要求 = 5000000 * (player.mijinglevel_id+player.xiangulevel_id)
+    let 要求 = 15000000 * (player.mijinglevel_id+player.xiangulevel_id)
     let 相差 = 要求-player.元神
    if (player.元神 <= 要求) {
-    e.reply(`你的元神并不足以开启内景地，开启内景地需要${要求}，你只有${player.元神}，还差${相差}`);
+    e.reply(`你的元神并不足以开启内景地，开启内景地需要${bigNumberTransform(要求)}，你只有${bigNumberTransform(player.元神)}，还差${bigNumberTransform(相差)}`);
     return;
 }
 
