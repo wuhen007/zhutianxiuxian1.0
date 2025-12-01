@@ -3,6 +3,7 @@
     - icon: help-icon_35
       title: '活动介绍'
       desc: '增加新的仙境本和团本boss,天机阁宝物以及爱莉希雅灵根'
+- group: 活动指令      
   list:
     - icon: help-icon_35
       title: '#星海之缘签到'
