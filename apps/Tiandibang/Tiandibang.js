@@ -328,64 +328,63 @@ async sendRewardNotifications(tiandibang) {
     return false;
   }
 
-  async duihuan(e) {
-    if (!verc({ e })) return false;
-    let date = new Date();
-    let n = date.getDay();
-    if (n != 0) {
-      e.reply(`物品筹备中，等到周日再来兑换吧`);
-      return false;
-    }
+async duihuan(e) {
+  if (!verc({ e })) return false;
 
-    let usr_qq = e.user_id.toString().replace('qg_','');
-    usr_qq = await channel(usr_qq);
-    //查看存档
-    let ifexistplay = await existplayer(usr_qq);
-    if (!ifexistplay) return false;
-    var reg = new RegExp(/积分兑换/);
-    let msg = e.msg.replace(reg, '');
-    msg = msg.replace('#', '');
-    let thing_name = msg.replace('积分兑换', '');
-    let ifexist = data.tianditang.find(item => item.name == thing_name);
-    if (!ifexist) {
-      e.reply(`天地堂还没有这样的东西:${thing_name}`);
-      return false;
-    }
-    let tiandibang;
-    tiandibang = await Read_tiandibang();
-    let m = tiandibang.length;
-    let i;
-    for (m = 0; m < tiandibang.length; m++) {
-      if (tiandibang[m].qq == usr_qq) {
-        break;
-      }
-    }
-    if (m == tiandibang.length) {
-      e.reply('请先报名!');
-      return false;
-    }
-    for (i = 0; i < data.tianditang.length; i++) {
-      if (thing_name == data.tianditang[i].name) {
-        break;
-      }
-    }
-    if (tiandibang[m].积分 < data.tianditang[i].积分) {
-      e.reply(
-        `积分不足,还需${
-          data.tianditang[i].积分 - tiandibang[m].积分
-        }积分兑换${thing_name}`
-      );
-      return false;
-    }
-    tiandibang[m].积分 -= data.tianditang[i].积分;
-    await Add_najie_thing(usr_qq, thing_name, data.tianditang[i].class, 1);
-    await Write_tiandibang(tiandibang);
-    e.reply([
-      `兑换成功!  获得[${thing_name}],剩余[${tiandibang[m].积分}]积分  `,
-      '\n可以在【我的纳戒】中查看',
-    ]);
+  const date = new Date();
+  if (date.getDay() !== 0) {
+    e.reply(`物品筹备中，等到周日再来兑换吧`);
     return false;
   }
+
+  let usr_qq = e.user_id.toString().replace('qg_', '');
+  usr_qq = await channel(usr_qq);
+
+  // 检查存档
+  if (!await existplayer(usr_qq)) return false;
+
+  /* ===== 1. 解析商品名与数量 ===== */
+  const raw = e.msg.replace(/#?积分兑换/, '').trim(); // 去掉前缀
+  const [namePart, qtyPart] = raw.split('*');
+  const thing_name = namePart.trim();
+  const quantity = Math.max(1, parseInt(qtyPart) || 1); // 默认1
+
+  /* ===== 2. 查找商品 ===== */
+  const ifexist = data.tianditang.find(item => item.name === thing_name);
+  if (!ifexist) {
+    e.reply(`天地堂还没有这样的东西:${thing_name}`);
+    return false;
+  }
+
+  /* ===== 3. 检查报名 ===== */
+  const tiandibang = await Read_tiandibang();
+  const userIndex = tiandibang.findIndex(item => item.qq == usr_qq);
+  if (userIndex === -1) {
+    e.reply('请先报名!');
+    return false;
+  }
+
+  /* ===== 4. 检查积分 ===== */
+  const needScore = ifexist.积分 * quantity; // 支持批量
+  if (tiandibang[userIndex].积分 < needScore) {
+    e.reply(
+      `积分不足,还需${needScore - tiandibang[userIndex].积分}积分兑换${thing_name}*${quantity}`
+    );
+    return false;
+  }
+
+  /* ===== 5. 扣积分、发物品 ===== */
+  tiandibang[userIndex].积分 -= needScore;
+  await Add_najie_thing(usr_qq, thing_name, ifexist.class, quantity); // 直接给数量
+  await Write_tiandibang(tiandibang);
+
+  e.reply([
+    `兑换成功! 获得[${thing_name}]*${quantity},剩余[${tiandibang[userIndex].积分}]积分`,
+    '\n可以在【#我的纳戒】中查看',
+  ]);
+  return false;
+}
+
 
   async tianditang(e) {
     if (!verc({ e })) return false;

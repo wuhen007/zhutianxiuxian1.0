@@ -1510,9 +1510,10 @@ async yuanshen(e) {
       if (player.yuanshenlevel_id === undefined) {
    return e.reply(`你连元神都没有凝练是无法开启内景地的`);
   }
-    let 要求 = 15000000 * (player.mijinglevel_id+player.xiangulevel_id)
+    let 要求 = 5000000 * (player.mijinglevel_id+player.xiangulevel_id)
+    let 相差 = 要求-player.元神
    if (player.元神 <= 要求) {
-    e.reply('你的元神并不足以开启内景地');
+    e.reply(`你的元神并不足以开启内景地，开启内景地需要${要求}，你只有${player.元神}，还差${相差}`);
     return;
 }
 
@@ -1521,7 +1522,7 @@ const baseProbability = 0.1;
 const successProbability = baseProbability + player.yuanshenlevel_id * 0.1; 
 let 开启概率 = successProbability * 100 ;
 let 元神加成 = (player.yuanshenlevel_id * 0.1) * 100 ;
-// 生成随机数决定成败[1,4](@ref)
+// 生成随机数决定成败
 const random = Math.random();
 const isSuccess = random <= successProbability;
 
