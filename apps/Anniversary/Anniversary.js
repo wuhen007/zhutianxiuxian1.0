@@ -229,7 +229,7 @@ async zhaohuanailixiya(e) {
     if (!ifexistplay) {
         return;
     }
-
+    let player = await data.getData("player", usr_qq);
     // 初始化召唤次数检查
     if (!player.爱莉希雅召唤次数 || player.爱莉希雅召唤次数 <= 0) {
         e.reply("您没有爱莉希雅小姐的召唤次数了，无法进行召唤。");
