@@ -132,6 +132,14 @@ export class SecretPlace extends plugin {
        {
   reg: '^#穿梭(凡间|仙界|下界八域|仙域|遮天位面|九天十地|界海|时间长河|永恒未知之地)$',
   fnc: 'goToLocation'
+},
+{
+  reg: '^#接引',
+  fnc: 'jieyinPlayer'
+},
+{
+  reg: '^#送往',
+  fnc: 'sendPlayerToLocation'
 }
       ],
     });
@@ -2966,6 +2974,217 @@ if (action != null) {
   if (type === '界海')     return this.Gojiehaiplace(e);
   if (type === '仙府')     return this.GoTimeplace(e);
 }
+// 接引玩家功能
+async jieyinPlayer(e) {
+  // 群聊限定
+  if (!e.isGroup) {
+    e.reply('修仙游戏请在群聊中游玩');
+    return;
+  }
+  
+  // 获取操作者信息
+  const usr_qq = e.user_id;
+  const player = await Read_player(usr_qq);
+  
+  // 检查操作者境界
+  if (player.mijinglevel_id < 18) {
+    return e.reply([
+      `【接引失败·境界不足】`,
+      `唯有仙王级强者方可施展接引神通！`,
+      `你当前秘境等级：${player.mijinglevel_id}级`,
+      `需达到18级（仙王）方可接引其他道友。`
+    ].join('\n'));
+  }
+  
+  // 检查是否有艾特信息
+  const atItems = e.message.filter(item => item.type === "at");
+  if (atItems.length === 0) {
+    return e.reply("请艾特需要接引的玩家");
+  }
+  
+  // 获取目标玩家QQ
+  const targetQQ = atItems[0].qq;
+  
+  // 验证目标玩家
+  if (!await existplayer(targetQQ)) {
+    return e.reply("目标玩家不存在，请先创建角色");
+  }
+  
+  const targetPlayer = await Read_player(targetQQ);
+  
+  
+  // 地点映射表
+  const LOCATION_MAP = {
+    '凡间': 0,
+    '仙界': 1, 
+    '下界八域': 1.5,
+    '遮天位面': 2,
+    '九天十地': 2.5,
+    '界海': 3,
+    '时间长河': 4,
+    '永恒未知之地': 5,
+    '仙域': 6
+  };
+  
+  // 接引到接引者当前位面
+  const currentLocation = Object.keys(LOCATION_MAP).find(key => LOCATION_MAP[key] === player.power_place) || '未知位面';
+  
+  // 执行接引
+  targetPlayer.power_place = player.power_place;
+  await Write_player(targetQQ, targetPlayer);
+  
+  // 构建回复消息
+  const message = [
+    `【仙王神通·接引道友】`,
+    `${player.名号}施展仙王级接引神通，`,
+    `将道友${targetPlayer.名号 || targetQQ}接引至${currentLocation}！`,
+    ``,
+    `【接引效果】`,
+    `- 目标位面：${currentLocation}`,
+    `- 被接引者：${targetPlayer.名号 || targetQQ}`,
+    `- 接引者：${player.名号 || usr_qq}`,
+    ``,
+    `仙王神通，横渡虚空，不过弹指之间！`
+  ].join("\n");
+  
+  return e.reply(message);
+}
+
+
+
+// 送往玩家功能
+async sendPlayerToLocation(e) {
+  // 群聊限定
+  if (!e.isGroup) {
+    e.reply('修仙游戏请在群聊中游玩');
+    return;
+  }
+  
+  // 获取操作者信息
+  const usr_qq = e.user_id;
+  const player = await Read_player(usr_qq);
+  
+  // 检查操作者境界
+  if (player.mijinglevel_id < 18) {
+    return e.reply([
+      `【传送失败·境界不足】`,
+      `唯有仙王级强者方可施展传送神通！`,
+      `你当前秘境等级：${player.mijinglevel_id}级`,
+      `需达到18级（仙王）方可传送其他道友。`
+    ].join('\n'));
+  }
+  
+  // 检查是否有艾特信息
+  const atItems = e.message.filter(item => item.type === "at");
+  if (atItems.length === 0) {
+    return e.reply("请艾特需要传送的玩家");
+  }
+  
+  // 获取目标玩家QQ
+  const targetQQ = atItems[0].qq;
+  
+  // 处理消息内容：去掉指令前缀和所有艾特
+  let content = e.msg.replace(/^#送往\s*/, '');
+  content = content.replace(/\[CQ:at,qq=\d+\]\s*/g, '');
+  const location = content.trim();
+  
+  // 如果没有提取到地点名称，提示用户输入
+  if (!location) {
+    return e.reply("请指定要传送的目标地点，例如：#送往 @QQ号 凡间");
+  }
+  
+  // 地点映射表
+  const LOCATION_MAP = {
+    '凡间': 0,
+    '仙界': 1, 
+    '下界八域': 1.5,
+    '遮天位面': 2,
+    '九天十地': 2.5,
+    '界海': 3,
+    '时间长河': 4,
+    '永恒未知之地': 5,
+    '仙域': 6
+  };
+  
+  // 检查是否有效地点
+  if (!LOCATION_MAP.hasOwnProperty(location)) {
+    return e.reply(`无效地点：${location}\n可用地点：凡间、仙界、下界八域、遮天位面、九天十地、仙域、界海、时间长河、永恒未知之地`);
+  }
+  
+  // 验证目标玩家
+  if (!await existplayer(targetQQ)) {
+    return e.reply("目标玩家不存在，请先创建角色");
+  }
+  
+  const targetPlayer = await Read_player(targetQQ);
+  
+  
+  // 特殊地点的境界要求检查
+  if (location === '时间长河') {
+    // 检查发送者境界
+    if (player.mijinglevel_id < 20 && player.xiangulevel_id < 20) {
+      return e.reply([
+        `【时间长河·境界不足】`,
+        `时间长河乃万古岁月汇聚之地，`,
+        `唯有准仙帝级强者方可传送他人前往！`,
+        `你当前境界不足，无法施展此等神通。`
+      ].join('\n'));
+    }
+    
+    // 检查被传送者境界
+    if (targetPlayer.mijinglevel_id < 20 && targetPlayer.xiangulevel_id < 20) {
+      return e.reply([
+        `【时间长河·因果反噬】`,
+        `该道友境界不足，无法承受时间长河的因果！`,
+        `强行传送可能导致其道基崩溃，`,
+        `需准仙帝级强者方可踏足时间长河。`
+      ].join('\n'));
+    }
+  }
+  
+  if (location === '永恒未知之地') {
+    // 检查发送者境界
+    if (player.mijinglevel_id < 21 && player.xiangulevel_id < 21) {
+      return e.reply([
+        `【永恒未知之地·境界不足】`,
+        `永恒未知之地乃超脱诸天之外的存在，`,
+        `唯有仙帝级强者方可传送他人前往！`,
+        `你当前境界不足，无法施展此等神通。`
+      ].join('\n'));
+    }
+    
+    // 检查被传送者境界
+    if (targetPlayer.mijinglevel_id < 21 && targetPlayer.xiangulevel_id < 21) {
+      return e.reply([
+        `【永恒未知之地·因果反噬】`,
+        `该道友境界不足，无法承受永恒未知之地的因果！`,
+        `强行传送可能导致其形神俱灭，`,
+        `需仙帝级强者方可踏足永恒未知之地。`
+      ].join('\n'));
+    }
+  }
+  
+  // 执行传送
+  const targetLocation = LOCATION_MAP[location];
+  targetPlayer.power_place = targetLocation;
+  await Write_player(targetQQ, targetPlayer);
+  
+  // 构建回复消息
+  const message = [
+    `【仙王神通·传送道友】`,
+    `${player.名号}施展仙王级传送神通，`,
+    `将道友${targetPlayer.名号 || targetQQ}送往${location}！`,
+    ``,
+    `【传送效果】`,
+    `- 目标地点：${location}`,
+    `- 被传送者：${targetPlayer.名号 || targetQQ}`,
+    `- 传送者：${player.名号 || usr_qq}`,
+    ``,
+    `仙王神通，跨越位面，不过弹指之间！`
+  ].join("\n");
+  
+  return e.reply(message);
+}
 
 // 副本掉落指令处理
 async handleDungeonDrop(e) {
@@ -3345,3 +3564,4 @@ function formatTime(ms) {
     const seconds = Math.floor((ms % (1000 * 60)) / 1000);
     return `${minutes}分${seconds}秒`;
 }
+
