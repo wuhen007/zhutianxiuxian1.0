@@ -156,6 +156,10 @@ fnc: 'tianyi_yidao'
 {
   reg: '^#轰击成仙路$',
   fnc: 'hongjiChengxianlu'
+},
+{
+  reg: '^#推演天机(.*)$',
+  fnc: 'tuiyanTianji'
 }
       ],
     });
@@ -3997,6 +4001,99 @@ const message = [
    
    return e.reply(message);
 }
+
+// 推演天机功能
+async tuiyanTianji(e) {
+  if (!e.isGroup) {
+    e.reply('修仙游戏请在群聊中游玩');
+    return;
+  }
+  
+  let usr_qq = e.user_id.toString().replace('qg_', '');
+  let ifexistplay = await existplayer(usr_qq);
+  if (!ifexistplay) {
+    e.reply('玩家不存在，请先创建角色');
+    return;
+  }
+  
+  let player = await Read_player(usr_qq);
+    // 权限检查：只有机器人管理员或修仙管理员可以使用
+  const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+  const masterList = xiuxianConfig.Master || [];
+  const userQQ = e.user_id.toString().replace('qg_', '');
+  // 检查玩家境界是否足够推演天机
+  if (!e.isMaster && !masterList.includes(userQQ)&&player.mijinglevel_id < 15) {
+    e.reply('你境界不足，无法推演天机！');
+    return;
+  }
+  
+  // 解析功法名称
+  const match = e.msg.match(/^#推演天机(.*)$/);
+  if (!match || !match[1] || match[1].trim() === '') {
+    e.reply('请指定要推演的功法名称！格式：#推演天机 功法名');
+    return;
+  }
+  
+  const targetGongfa = match[1].trim();
+  
+  // 遍历所有玩家存档
+  let File = fs.readdirSync(__PATH.player_path);
+  File = File.filter(file => file.endsWith(".json"));
+  
+  let foundPlayers = [];
+  let processed = 0;
+  
+  for (let i = 0; i < File.length; i++) {
+    let this_qq = File[i].replace(".json", '');
+    let playerData = await Read_player(this_qq);
+    
+    // 检查玩家是否有这个功法
+    if (playerData.学习的功法 && playerData.学习的功法.includes(targetGongfa)) {
+      foundPlayers.push({
+        qq: this_qq,
+        name: playerData.名号 || '未知修士',
+        realm: playerData.mijinglevel_id || 0
+      });
+    }
+    
+    processed++;
+    
+    // 每处理50个玩家显示进度
+    if (processed % 50 === 0) {
+      e.reply(`已推演 ${processed}/${File.length} 名修士的天机...`);
+    }
+  }
+  
+  // 构建回复消息
+  if (foundPlayers.length === 0) {
+    e.reply(`经过天机推演，发现诸天万界并无修士修炼【${targetGongfa}】此功法！`);
+  } else {
+    let message = [
+      `【天机推演·功法溯源】`,
+      `经过推演诸天万界，发现【${targetGongfa}】的修炼者信息：`,
+      ``,
+      `共计发现 ${foundPlayers.length} 名修士修炼此功法：`,
+      ``
+    ];
+    
+    // 如果玩家数量超过10个，只显示前10个
+    let displayPlayers = foundPlayers.slice(0, 10);
+    
+    displayPlayers.forEach((p, index) => {
+      message.push(`${index + 1}. ${p.name} (ID: ${p.qq}) - 境界: ${p.realm}`);
+    });
+    
+    if (foundPlayers.length > 10) {
+      message.push(``);
+      message.push(`...还有 ${foundPlayers.length - 10} 名修士的信息被天机所遮蔽`);
+    }
+    
+    message.push(``);
+    message.push(`推演完成！共检查了 ${File.length} 名修士的修行记录。`);
+    
+    e.reply(message.join('\n'));
+  }
+}
     async  tianyi_yidao(e) {
           if (!e.isGroup) {
               e.reply('修仙游戏请在群聊中游玩');
@@ -4675,3 +4772,4 @@ async function handleBattleDamage(player, damage) {
   
   return player;
 }
+
