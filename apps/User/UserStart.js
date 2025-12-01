@@ -64,10 +64,10 @@ export class UserStart extends plugin {
     reg: '^#(设置性别|修改性别|改性别|更替性别|变更性别|调整性别).*$',
     fnc: 'Set_sex',
 },
-        {
-          reg: '^#(改名.*)|(设置道宣.*)$',
-          fnc: 'Change_player_name',
-        },
+{
+  reg: '^(#(改名|更名|设置姓名|改道号)\\s+|#(设置道宣)\\s+)',
+  fnc: 'Change_player_name'
+},
         {
           reg: '^#修仙签到$',
           fnc: 'daily_gift',
@@ -920,110 +920,86 @@ async Set_sex(e) {
     return true;
 }
 
-  //改名
-  async Change_player_name(e) {
-    if (!verc({ e })) return false;
-    let usr_qq = e.user_id.toString().replace('qg_','');
-    usr_qq = await channel(usr_qq);
-    //有无存档
-    let ifexistplay = await existplayer(usr_qq);
-    if (!ifexistplay) return false;
-    //检索方法
-    var reg = new RegExp(/改名|设置道宣/);
-    let func = reg.exec(e.msg);
-    //
-    if (func == '改名') {
-      let new_name = e.msg.replace('#改名', '');
-      new_name = new_name.replace(' ', '');
-      new_name = new_name.replace('+', '');
-      if (new_name.length == 0) {
-        e.reply('改名格式为:【#改名张三】请输入正确名字');
-        return false;
-      } else if (new_name.length > 8) {
-        e.reply('玩家名字最多八字');
-        return false;
-      }
-      let player = {};
-      let now = new Date();
-      let nowTime = now.getTime(); //获取当前日期的时间戳
-      //let Yesterday = await shijianc(nowTime - 24 * 60 * 60 * 1000);//获得昨天日期
-      let Today = await shijianc(nowTime);
-      let lastsetname_time = await redis.get(
-        'xiuxian:player:' + usr_qq + ':last_setname_time'
-      ); //获得上次改名日期,
-      lastsetname_time = parseInt(lastsetname_time);
-      lastsetname_time = await shijianc(lastsetname_time);
-      if (
-        Today.Y == lastsetname_time.Y &&
-        Today.M == lastsetname_time.M &&
-        Today.D == lastsetname_time.D
-      ) {
-        e.reply('每日只能改名一次');
-        return false;
-      }
-      player = await Read_player(usr_qq);
-      if (player.灵石 < 1000) {
-        e.reply('改名需要1000灵石');
-        return false;
-      }      
-      
-      let arr=await alluser()
-      for(let z=0;z<arr.length;z++){
-        let B=await Read_player(arr[z])
-        if(new_name==B.名号){
-          e.reply("这世间已存在该名字的人:"+arr[z])
-          return
-        }
-      }
-      
-      player.名号 = new_name;
-      redis.set('xiuxian:player:' + usr_qq + ':last_setname_time', nowTime); //redis设置本次改名时间戳
-      player.灵石 -= 1000;
-      await Write_player(usr_qq, player);
-      //Add_灵石(usr_qq, -100);
-      this.Show_player(e);
-      return false;
-    }
-    //设置道宣
-    else if (func == '设置道宣') {
-      let new_msg = e.msg.replace('#设置道宣', '');
-      new_msg = new_msg.replace(' ', '');
-      new_msg = new_msg.replace('+', '');
-      if (new_msg.length == 0) {
-        return false;
-      } else if (new_msg.length > 50) {
-        e.reply('道宣最多50字符');
-        return false;
-      }
-      let player = {};
-      let now = new Date();
-      let nowTime = now.getTime(); //获取当前日期的时间戳
-      //let Yesterday = await shijianc(nowTime - 24 * 60 * 60 * 1000);//获得昨天日期
-      //
-      let Today = await shijianc(nowTime);
-      let lastsetxuanyan_time = await redis.get(
-        'xiuxian:player:' + usr_qq + ':last_setxuanyan_time'
-      );
-      //获得上次改道宣日期,
-      lastsetxuanyan_time = parseInt(lastsetxuanyan_time);
-      lastsetxuanyan_time = await shijianc(lastsetxuanyan_time);
-      if (
-        Today.Y == lastsetxuanyan_time.Y &&
-        Today.M == lastsetxuanyan_time.M &&
-        Today.D == lastsetxuanyan_time.D
-      ) {
-        e.reply('每日仅可更改一次');
-        return false;
-      }
-      //这里有问题，写不进去
-      player = await Read_player(usr_qq);
-      player.宣言 = new_msg; //
-      redis.set('xiuxian:player:' + usr_qq + ':last_setxuanyan_time', nowTime); //redis设置本次设道置宣时间戳
-      await Write_player(usr_qq, player);
-      this.Show_player(e);
-      return false;
-    }
+// 2. 函数入口把别名一并识别
+async Change_player_name(e) {
+  if (!verc({ e })) return false;
+  const usr_qq = e.user_id.toString().replace('qg_', '');
+  if (!await existplayer(usr_qq)) return false;
+
+  // 统一转成小写方便判断
+  const raw = e.msg.trim().toLowerCase();
+
+  // 改名分支
+  if (/#(改名|更名|设置姓名|改道号)\s*/i.test(raw)) {
+    return await this.changeTrueName(e, usr_qq);
   }
+  // 道宣分支
+  if (/#设置道宣\s*/i.test(raw)) {
+    return await this.changeXuanyan(e, usr_qq);
+  }
+  return false;
+}
+
+// 3. 原名提取+校验（改名逻辑抽出来）
+async changeTrueName(e, usr_qq) {
+  const new_name = e.msg
+    .replace(/#(改名|更名|设置姓名|改道号)\s*/i, '')
+    .replace(/\s|\+/g, '');
+
+  if (!new_name) return e.reply('格式：#改名/更名/设置姓名/改道号+新名字');
+  if (new_name.length > 8) return e.reply('玩家名字最多八字');
+
+  // 每日一次检测
+  const nowTime = Date.now();
+  const last = parseInt(await redis.get(`xiuxian:player:${usr_qq}:last_setname_time`));
+  const today = await shijianc(nowTime);
+  const lastDay = last ? await shijianc(last) : null;
+  if (lastDay && today.Y === lastDay.Y && today.M === lastDay.M && today.D === lastDay.D)
+    return e.reply('每日只能改名一次');
+
+  const player = await Read_player(usr_qq);
+  if (player.灵石 < 1000) return e.reply('改名需要 1000 灵石');
+
+  // 重名检测
+  const allQQ = await alluser();
+  for (const q of allQQ) {
+    if (new_name === (await Read_player(q)).名号)
+      return e.reply(`这世间已存在该名字的人：${q}`);
+  }
+
+  // 真正改名
+  player.名号 = new_name;
+  player.灵石 -= 1000;
+  await redis.set(`xiuxian:player:${usr_qq}:last_setname_time`, nowTime);
+  await Write_player(usr_qq, player);
+  this.Show_player(e);
+  return false;
+}
+
+// 4. 道宣同理
+async changeXuanyan(e, usr_qq) {
+  const new_msg = e.msg
+    .replace(/#设置道宣\s*/i, '')
+    .replace(/\s|\+/g, '');
+
+  if (!new_msg) return e.reply('格式：#设置道宣+内容');
+  if (new_msg.length > 50) return e.reply('道宣最多 50 字符');
+
+  const nowTime = Date.now();
+  const last = parseInt(await redis.get(`xiuxian:player:${usr_qq}:last_setxuanyan_time`));
+  const today = await shijianc(nowTime);
+  const lastDay = last ? await shijianc(last) : null;
+  if (lastDay && today.Y === lastDay.Y && today.M === lastDay.M && today.D === lastDay.D)
+    return e.reply('每日仅可更改一次道宣');
+
+  const player = await Read_player(usr_qq);
+  player.宣言 = new_msg;
+  await redis.set(`xiuxian:player:${usr_qq}:last_setxuanyan_time`, nowTime);
+  await Write_player(usr_qq, player);
+  this.Show_player(e);
+  return false;
+}
+
 //签到
 async daily_gift(e) {
     if (!verc({ e })) return false;
