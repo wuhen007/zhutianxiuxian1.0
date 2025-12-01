@@ -36,11 +36,6 @@ export class linggenjuexing extends plugin {
             fnc: 'zouxiangwangshi' 
             },
             { 
-            reg: '^1|2$', 
-            fnc: 'wangshiChoice', 
-            context: 'wangshiChoice' 
-            },
-            { 
             reg: '^#真我觉醒$',
             fnc: 'zhenwojuexing' 
             },
@@ -57,98 +52,114 @@ export class linggenjuexing extends plugin {
             fnc: 'yaotijuexing'
             },
       ],
+      
     }); 
-  }
+  }  /* ---------- 第一步：弹出选项 ---------- */
   async zouxiangwangshi(e) {
-  const usr_qq = e.user_id.toString().replace('qg_', '');
-  const player = await Read_player(usr_qq);
-  const hasChapter = await exist_najie_thing(usr_qq, '往世乐土之章', '道具');
-  if (!hasChapter || hasChapter < 1) {
-    return e.reply('【往世乐土】\n你尚未获得“往世乐土之章”，无法开启仪式。');
+    if (!verc({ e })) return false;
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const has = await exist_najie_thing(usr_qq, '往世乐土之章', '道具');
+    if (!has) return e.reply('【往世乐土】你尚未获得“往世乐土之章”，无法开启仪式。');
+
+    const broadcast = [
+      `诸天万界忽而响起水晶轻鸣，一座被岁月尘封的「往世乐土」在星空中绽放。`,
+      `十三道刻印环绕成环，终末的英桀之座于花海中显形。`,
+      `无瑕的少女踏花而来，微笑询问：`,
+      `「嗨，想和我一起，让这个世界……变成你喜欢的样子吗？」`,
+      ``,
+      `【往世乐土】已激活！`,
+      `回复 1 化作无瑕之人（需材料）`,
+      `回复 2 增加召唤次数`,
+      `（30 秒内回复 1 或 2）`
+    ].join('\n');
+    await e.reply(broadcast);
+
+    // 设定上下文，等待纯数字
+    this.setContext('wangshiChoice');
+    return false;
   }
-  // 世界广播
-  const broadcast = [
-    `诸天万界忽而响起水晶轻鸣，一座被岁月尘封的「往世乐土」在星空中绽放。`,
-    `十三道刻印环绕成环，终末的英桀之座于花海中显形。`,
-    `无瑕的少女踏花而来，微笑询问：`,
-    `「嗨，想和我一起，让这个世界……变成你喜欢的样子吗？」`,
-    ``,
-    `【#奏响往世乐土之章】已激活！`,
-    `请选择你的回应——`,
-    `1. 「我愿意献此身灵根，化作无瑕之人。」（覆盖灵根）`,
-    `2. 「我愿与你并肩，而非取代。」（召唤次数+1 ）`,
-    `（回复 1 或 2 即可，倒计时 30 秒）`
-  ].join('\n');
-  e.reply(broadcast);
 
-  // 设置一次性上下文
-  this.setContext('wangshiChoice', 30, { player, usr_qq, needChapter: 1 });
-  return false;
-}
+  /* ---------- 第二步：处理选择（框架把 1/2 喂进来） ---------- */
+  async wangshiChoice(e) {
+    if (!verc({ e })) return false;
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const player = await Read_player(usr_qq);
+    const needChapter = 1;
 
-// 上下文回调
-async wangshiChoice(e) {
-  const { player, usr_qq } = e.context;
-  const choice = e.msg.trim();
-
-    if (choice === '1') {
-    // --- 新增材料检查 ---
-    const 水晶花 = await exist_najie_thing(usr_qq, '无瑕水晶花', '道具') || 0;
-    const 誓约证 = await exist_najie_thing(usr_qq, '誓约之证', '道具') || 0;
-    if (水晶花 < 4 || 誓约证 < 4) {
-      e.reply('【无瑕之人】\n材料不足，无法承载真我刻印。\n' +
-              `需要：无瑕水晶花×4（${水晶花}/4） 誓约之证×4（${誓约证}/4）`);
-      return;
+    // 从上下文消息中获取用户回复
+    let new_msg = '';
+    if (this.e?.message && this.e.message[0]?.type === 'text') {
+      new_msg = this.e.message[0].text.trim();
+    } else if (e.msg) {
+      new_msg = e.msg.trim();
     }
-    // --- 扣除材料 ---
-     await Add_najie_thing(usr_qq, '往世乐土之章', '道具', -needChapter);
-    await Add_najie_thing(usr_qq, '无瑕水晶花', '道具', -4);
-    await Add_najie_thing(usr_qq, '誓约之证', '道具', -4);
+    
+    if (new_msg === "1") {
+      const 水晶花 = (await exist_najie_thing(usr_qq, '无瑕水晶花', '道具')) || 0;
+      const 誓约证 = (await exist_najie_thing(usr_qq, '誓约之证', '道具')) || 0;
+      if (水晶花 < 4 || 誓约证 < 4) {
+        await e.reply(
+          `【无瑕之人】材料不足！\n` +
+          `无瑕水晶花×4（${水晶花}/4）\n` +
+          `誓约之证×4（${誓约证}/4）`
+        );
+        this.finish('wangshiChoice');
+        return;
+      }
+      // 扣材料
+      await Add_najie_thing(usr_qq, '往世乐土之章', '道具', -needChapter);
+      await Add_najie_thing(usr_qq, '无瑕水晶花', '道具', -4);
+      await Add_najie_thing(usr_qq, '誓约之证', '道具', -4);
+      // 换灵根
+      player.灵根 = {
+        id: 7010020,
+        name: '爱莉希雅',
+        type: '无瑕之人',
+        归类: '诸天万界',
+        eff: 1.2,
+        法球倍率: 1.5,
+        攻击: 0.8,
+        防御: 0.7,
+        生命: 0.9,
+        生命本源: 50,
+        特殊效果: ['水晶花种', '真我刻印']
+      };
+      player.生命本源 = 100 + player.灵根.生命本源;
+      await Write_player(usr_qq, player);
 
-    // 原覆盖逻辑
-    player.灵根 = {
-      "id": 7010020,
-      "name": "爱莉希雅",
-      "type": "无瑕之人",
-      "归类": "诸天万界",
-      "eff": 1.2,
-      "法球倍率": 1.5,
-      "攻击": 0.8,
-      "防御": 0.7,
-      "生命": 0.9,
-      "生命本源": 50,
-      "特殊效果": ["水晶花种", "真我刻印"]
-    };
-    player.生命本源 = 100 + player.灵根.生命本源;
-    await Write_player(usr_qq, player);
-
-    const txt1 = [
-      `你献上无瑕水晶花与誓约之证，花海倒卷，刻印降临。`,
+      await e.reply([
+         `你献上无瑕水晶花与誓约之证，花海倒卷，刻印降临。`,
       `五行化作粉金色的花瓣，雷火凝成晶莹的露珠。`,
       `【系统】灵根已变更为：无瑕之人·爱莉希雅`,
       `天际响起她的轻笑：「从今往后，你的每一次心跳，都将开出最美的花哦～」`
-    ].join('\n');
-    e.reply(txt1);
-  }
- else if (choice === '2') {
+      ].join('\n'));
+      this.finish('wangshiChoice');
+      return;
+    }
 
-    player.爱莉希雅召唤次数 = (player.爱莉希雅召唤次数 || 0) + 1;
-    await Write_player(usr_qq, player);
-   await Add_najie_thing(usr_qq, '往世乐土之章', '道具', -needChapter);
-    const txt2 = [
-      `你后退半步，却伸手接过飘落的晶瓣。`,
-      `爱莉希雅眨了眨眼，将一滴闪耀金芒的霸血放入你掌心：`,
-      `「那就说定啦，下次召唤我时……要带更多好玩的故事来！」`,
-      `【系统】爱莉希雅召唤次数 +1`
-    ].join('\n');
-    e.reply(txt2);
+    /* ---------- 分支 2：召唤+1 ---------- */
+    if (new_msg === "2") {
+      await Add_najie_thing(usr_qq, '往世乐土之章', '道具', -needChapter);
+      player.爱莉希雅召唤次数 = (player.爱莉希雅召唤次数 || 0) + 1;
+      await Write_player(usr_qq, player);
 
-  } else {
-    e.reply('选择无效，已超时。乐土之门悄然闭合……');
+      await e.reply([
+        `你后退半步，却伸手接过飘落的晶瓣。`,
+        `爱莉希雅眨了眨眼，将一滴闪耀金芒的霸血放入你掌心：`,
+        `「那就说定啦，下次召唤我时……要带更多好玩的故事来！」`,
+        `【系统】爱莉希雅召唤次数 +1`
+      ].join('\n'));
+      this.finish('wangshiChoice');
+      return;
+    }
+
+    /* ---------- 超时或非法 ---------- */
+    await e.reply('选择无效，已超时。乐土之门悄然闭合……');
+    this.finish('wangshiChoice');
   }
-  this.finish('wangshiChoice');
-  return false;
-}
+
+
+
 /** 真我觉醒：人之律者 / 始源律者 二段觉醒 */
 async zhenwojuexing(e) {
     if (!e.isGroup) { e.reply('请在群聊中完成真我仪式'); return; }
@@ -655,4 +666,5 @@ async yaotijuexing(e) {
         e.reply(` 觉醒条件不足！需达到更高境界。`);
     }
 }
+
 }
