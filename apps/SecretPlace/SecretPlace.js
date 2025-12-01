@@ -1777,6 +1777,8 @@ async Gozhetian(e) {
         await Add_血气(player_qq, -weizhiExperience);
     } else {
         await Add_灵石(player_qq, -weizhiPrice);
+        await Add_修为(player_qq, -weizhiExperience);
+        await Add_血气(player_qq, -weizhiExperience);
     }
     
 

@@ -796,12 +796,8 @@ let time = baseTime - timeReduction;
     await Add_najie_thing(player_qq, "秘境之匙", "道具", -i);
     await Add_寿元(player_qq, -actualShouyuan);
     await Add_灵石(player_qq, -actualPrice);
-    
-    // 生命禁区需要额外扣除修为和血气
-    if (weizhi.Grade === "生命禁区") {
-        await Add_修为(player_qq, -actualExperience);
-        await Add_血气(player_qq, -actualExperience);
-    }
+    await Add_修为(player_qq, -actualExperience);
+    await Add_血气(player_qq, -actualExperience);
     
     // 收集消耗信息
     let costInfo = `消耗：${actualShouyuan}寿元`;
