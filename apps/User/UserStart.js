@@ -72,10 +72,6 @@ export class UserStart extends plugin {
           reg: '^#修仙签到$',
           fnc: 'daily_gift',
         },
-        {
-    reg: '^#签到日历$',
-    fnc: 'viewSignCalendar'
-},
          {
           reg: '^#道法赐福$',
           fnc: 'daofa_gift',

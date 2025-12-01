@@ -2488,7 +2488,25 @@ async Gofairyrealm(e) {
     }
     
     // 特殊仙境处理
-    let specialMsg = "";
+let specialMsg = "";
+if (didian === "往世星海") {
+    const shenyu = await exist_najie_thing(player_qq, "群星秘钥", "道具");
+    if (!shenyu || shenyu < 1) {
+        return e.reply("群星秘钥缺失，星海之门拒绝开启。");
+    }
+    if (player.level_id <= 54) {
+        return e.reply("万界道祖方可踏入星海，当前境界不足。");
+    }
+    await Add_najie_thing(player_qq, "群星秘钥", "道具", -1);
+    specialMsg = [
+        `【星海归航】`,
+        `你以群星秘钥叩响天穹，亿万星辉垂落，`,
+        `混沌海分开一条璀璨光道，直指星海核心。`,
+        `刹那之间，神魂超脱万界，抵达往世星海！`
+    ].join('\n');
+    allMsgs.push(specialMsg);
+}
+
     if (didian === "神域星宫") {
         const shenyu = await exist_najie_thing(player_qq, "神域令牌", "道具");
         if (!shenyu || shenyu < 1) {

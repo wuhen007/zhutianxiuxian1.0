@@ -4,7 +4,7 @@ import config from "../../model/Config.js"
 import axios from 'axios';
 import fs from "fs"
 import path from 'path';
-import { Read_player, existplayer,sleep,exist_najie_thing, Add_血气, getLastsign2 } from '../../model/xiuxian.js'
+import { Read_player, existplayer,sleep,exist_najie_thing, Add_修为,Add_血气, getLastsign2 } from '../../model/xiuxian.js'
 import {  Write_player,  } from '../../model/xiuxian.js'
 import { shijianc,  isNotNull,ForwardMsg } from '../../model/xiuxian.js'
 import { Add_灵石,  Add_najie_thing,channel} from '../../model/xiuxian.js'
@@ -50,10 +50,10 @@ export class Anniversary extends plugin {
                 //     reg: '^#酿酒配方$',
                 //     fnc: 'C'
                 // },
-                   {
-        reg: '^#百遣(虎|龙)$',
-        fnc: 'skhundred'
-    },
+                {
+                    reg: '^#百遣(虎|龙)$',
+                    fnc: 'skhundred'
+                },
                 {
                     reg: '^#集齐四符,龙腾虎跃！$',
                     fnc: 'D'
@@ -61,6 +61,14 @@ export class Anniversary extends plugin {
                 {
                     reg: '^#周年签到$',
                     fnc: 'daily_gift2'
+                },
+                {
+                    reg: '^#星海之缘签到$',
+                    fnc: 'daily_gift3'
+                },
+                {
+                    reg: '^#召唤爱莉希雅$',
+                    fnc: 'zhaohuanailixiya'
                 },
                 {
                     reg: '^#遣(虎|龙)$',
@@ -139,6 +147,206 @@ async preview_pifu(e) {
     }
     
     return true;
+}
+        //星海之缘签到
+        async daily_gift3(e) {
+            //不开放私聊功能
+            if (!e.isGroup) {
+                return;
+            }
+            let usr_qq = e.user_id.toString().replace('qg_','');
+            usr_qq = await channel(usr_qq);
+            //有无账号
+            let ifexistplay = await existplayer(usr_qq);
+            if (!ifexistplay) {
+                return;
+            }
+            let now = new Date();
+            let nowTime = now.getTime(); //获取当前日期的时间戳
+            let Yesterday = await shijianc(nowTime - 24 * 60 * 60 * 1000);//获得昨天日期
+            let Today = await shijianc(nowTime);
+            let lastsign_time = await getLastsign2(usr_qq);//获得上次签到日期
+            if (Today.Y == lastsign_time.Y && Today.M == lastsign_time.M && Today.D == lastsign_time.D) {
+                e.reply(`今日已经签到过了`);
+                return;
+            }
+            let Sign_Yesterday;        //昨日日是否签到
+            if (Yesterday.Y == lastsign_time.Y && Yesterday.M == lastsign_time.M && Yesterday.D == lastsign_time.D) {
+                Sign_Yesterday = true;
+            }
+            else {
+                Sign_Yesterday = false;
+            }
+            await redis.set("xiuxian:player:" + usr_qq + ":xinghailastsign_time", nowTime);//redis设置签到时间
+            let player = await data.getData("player", usr_qq);
+            if(!isNotNull(player.星海之缘签到天数)){
+                player.周年签到天数=0
+            }
+            if(player.周年签到天数==999){
+                e.reply("您已领取过四周目礼包了,不能再领取了")
+                return
+            }
+            if(!Sign_Yesterday){//昨天没有签到,连续签到天数清零
+                player.星海之缘签到天数=0
+            }
+            player.星海之缘签到天数 += 1;
+            data.setData("player", usr_qq, player);
+            if (player.星海之缘签到天数 == 7) {
+                await Add_灵石(usr_qq,200000)
+                await Add_najie_thing(usr_qq, "秘境之匙", "道具", 5);
+                await Add_najie_thing(usr_qq,"真我宝盒","盒子",1);
+                await Add_najie_thing(usr_qq, "魔君讨伐令", "道具", 3);
+                await Add_najie_thing(usr_qq, "群星秘钥", "道具", 5);
+                player.星海之缘签到天数 = 999;
+                e.reply("您已连续签到七天,成功领取四周目福利礼包("+thing_name+"灵石x20w,群星秘钥x5,秘境之匙x5,魔君讨伐令x3,真我宝盒x1)")
+                return
+            }
+
+            //给奖励
+            let gift_xiuwei = player.星海之缘签到天数 * 100000;
+            await Add_najie_thing(usr_qq, "秘境之匙", "道具", this.xiuxianConfigData.Sign.ticket);
+            await Add_najie_thing(usr_qq, "群星秘钥", "道具", 1);
+            await Add_修为(usr_qq, gift_xiuwei);
+            await Add_血气(usr_qq, gift_xiuwei);
+            player.爱莉希雅召唤次数 = (player.爱莉希雅召唤次数 || 0) + 1;
+            data.setData("player", usr_qq, player);
+            let msg = [
+                segment.at(usr_qq),
+                `星海之缘签到成功,已经连续签到${player.星海之缘签到天数}天了，获得了${gift_xiuwei}修为与血气,群星秘钥x1,秘境之匙x${this.xiuxianConfigData.Sign.ticket}，爱莉希雅召唤次数剩余${player.爱莉希雅召唤次数}次`
+            ]
+            await Write_player(usr_qq,player)
+            e.reply(msg);
+            return;
+        }
+async zhaohuanailixiya(e) {
+    if (!e.isGroup) {
+        return;
+    }
+    let usr_qq = e.user_id.toString().replace('qg_','');
+    usr_qq = await channel(usr_qq);
+    // 有无账号
+    let ifexistplay = await existplayer(usr_qq);
+    if (!ifexistplay) {
+        return;
+    }
+
+    // 初始化召唤次数检查
+    if (!player.爱莉希雅召唤次数 || player.爱莉希雅召唤次数 <= 0) {
+        e.reply("您没有爱莉希雅小姐的召唤次数了，无法进行召唤。");
+        return;
+    }
+
+    // 消耗召唤次数
+    player.爱莉希雅召唤次数 -= 1;
+
+    // 天资等级序列与评价
+    const aptitudeSequence = [
+        '天弃之人', '先天不足', '平庸之资', '超凡资质', 
+        '天纵之资', '旷世奇才', '绝世天骄', '万古无双', '无演无尽'
+    ];
+    const aptitudeDescriptions = {
+        '无演无尽': '亘古绝今从未有，演尽诸天万界，此等天资已超脱天道束缚',
+        '万古无双': '横推古今未来无对手，为修道而生，为应劫而至，永恒无敌',
+        '绝世天骄': '惊才绝艳，具备帝姿，注定为一个时代的天地主角',
+        '旷世奇才': '万年难遇，此等资质放眼九天十地也是难寻',
+        '天纵之资': '天赋异禀，媲美上古大教的天才',
+        '超凡资质': '资质超凡，注定异于常人',
+        '平庸之资': '资质平平，勉勉强强',
+        '先天不足': '先天有缺，修炼事倍功半',
+        '天弃之人': '被天道抛弃，修炼必遭反噬'
+    };
+
+    let random = Math.random();
+    let replyMessage = []; // 用于存储回复消息的数组
+
+
+    if (random > 0.2) {
+        const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级);
+        let oldAptitude = player.天资等级;
+        let oldDescription = player.天资评价;
+        let newAptitude = oldAptitude;
+        let newDescription = oldDescription;
+        let aptitudeBoost = false;
+
+        if (Math.random() < 0.1 && currentAptitudeIndex < 7) {
+            const newAptitudeIndex = Math.min(currentAptitudeIndex + 1, 7); // 上限为万古无双（索引7）
+            newAptitude = aptitudeSequence[newAptitudeIndex];
+            newDescription = aptitudeDescriptions[newAptitude];
+            player.天资等级 = newAptitude;
+            player.天资评价 = newDescription;
+            aptitudeBoost = true;
+        }
+
+        // --- 道具奖励概率系统 ---
+        let rewardRandom = Math.random();
+        let obtainedItems = []; // 记录获得的道具
+
+        if (rewardRandom < 0.2) {
+            // 20%概率：1个真我宝盒 + 随机2个无瑕水晶花或誓约之证
+            await Add_najie_thing(usr_qq, "真我宝盒", "盒子", 1);
+            obtainedItems.push("真我宝盒×1");
+
+            let materialOptions = ["无瑕水晶花", "誓约之证"];
+            for (let i = 0; i < 2; i++) {
+                let material = materialOptions[Math.floor(Math.random() * materialOptions.length)];
+                await Add_najie_thing(usr_qq, material, "道具", 1);
+                obtainedItems.push(material);
+            }
+        } else if (rewardRandom < 0.5) {
+            // 30%概率：10个遣龙令或遣虎令
+            let tokenOptions = ["遣龙令", "遣虎令"];
+            let token = tokenOptions[Math.floor(Math.random() * tokenOptions.length)];
+            await Add_najie_thing(usr_qq, token, "道具", 10);
+            obtainedItems.push(`${token}×10`);
+        } else {
+            // 50%概率：1个众生仙钓 + 5个仙品秘境结算卡 + 2000万修为血气
+            await Add_najie_thing(usr_qq, "众生仙钓", "道具", 1);
+            await Add_najie_thing(usr_qq, "仙品秘境结算卡", "道具", 5);
+            await Add_修为(usr_qq, 20000000);
+            await Add_血气(usr_qq, 20000000);
+            obtainedItems.push("众生仙钓×1", "仙品秘境结算卡×5", "修为+2000万", "血气+2000万");
+        }
+
+        // --- 构建成功召唤的回复消息 ---
+        replyMessage.push(
+            ` 你虔诚地念动咒文，粉色的水晶花在身边绽放：「嗨♪想我了吗？」`,
+            ` 爱莉希雅的身影随光华显现，如飞花般美丽轻盈！`
+        );
+
+        if (aptitudeBoost) {
+            replyMessage.push(
+                ` 她轻笑一声，指尖轻点你的额头：「要好好记住我现在的样子哦？」`,
+                ` 真我的光芒融入你的灵魂，天资获得洗礼！`,
+                ` 天资提升：${oldAptitude} → **${newAptitude}**`,
+                ` 天资评价：${newDescription}`
+            );
+        } else {
+            replyMessage.push(
+                ` 爱莉希雅的身影轻轻环绕，但天资并未突破。`
+            );
+        }
+
+        replyMessage.push(
+            ` 爱莉希雅送你一份礼物：${obtainedItems.join('、')}`,
+            ` 「要带着我的祝福，继续为美好而战哦~♪」`
+        );
+
+    } else {
+
+        replyMessage.push(
+            ` 你尝试召唤那位如飞花般的少女...`,
+            ` 粉色的光芒闪烁了几下，却渐渐消散。`,
+            ` 耳边仿佛传来俏皮的低语：「哎呀，可爱的访客♪今天似乎不是最好的见面时机呢～」`,
+            ` 天资等级未发生改变。`,
+            `「下次，再一起来玩吧♪」`
+        );
+    }
+
+    // 保存玩家数据
+    await Write_player(usr_qq, player);
+
+    // 发送回复
+    e.reply(replyMessage.join('\n'));
 }
         //新年签到
         async daily_gift2(e) {

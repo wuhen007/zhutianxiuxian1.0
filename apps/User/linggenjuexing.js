@@ -31,6 +31,19 @@ export class linggenjuexing extends plugin {
       event: 'message',
       priority: 600,
       rule: [
+            { 
+            reg: '^#奏响往世乐土之章$', 
+            fnc: 'zouxiangwangshi' 
+            },
+            { 
+            reg: '^1|2$', 
+            fnc: 'wangshiChoice', 
+            context: 'wangshiChoice' 
+            },
+            { 
+            reg: '^#真我觉醒$',
+            fnc: 'zhenwojuexing' 
+            },
             {
             reg: '^#圣体觉醒$',
             fnc: 'shengtijuexing'
@@ -39,13 +52,200 @@ export class linggenjuexing extends plugin {
             reg: '^#霸体觉醒$',
             fnc: 'batijuexing'
             },
-                        {
+            {
             reg: '^#妖体觉醒$',
             fnc: 'yaotijuexing'
             },
       ],
     }); 
   }
+  async zouxiangwangshi(e) {
+  const usr_qq = e.user_id.toString().replace('qg_', '');
+  const player = await Read_player(usr_qq);
+  const hasChapter = await exist_najie_thing(usr_qq, '往世乐土之章', '道具');
+  if (!hasChapter || hasChapter < 1) {
+    return e.reply('【往世乐土】\n你尚未获得“往世乐土之章”，无法开启仪式。');
+  }
+  // 世界广播
+  const broadcast = [
+    `诸天万界忽而响起水晶轻鸣，一座被岁月尘封的「往世乐土」在星空中绽放。`,
+    `十三道刻印环绕成环，终末的英桀之座于花海中显形。`,
+    `无瑕的少女踏花而来，微笑询问：`,
+    `「嗨，想和我一起，让这个世界……变成你喜欢的样子吗？」`,
+    ``,
+    `【#奏响往世乐土之章】已激活！`,
+    `请选择你的回应——`,
+    `1. 「我愿意献此身灵根，化作无瑕之人。」（覆盖灵根）`,
+    `2. 「我愿与你并肩，而非取代。」（召唤次数+1 ）`,
+    `（回复 1 或 2 即可，倒计时 30 秒）`
+  ].join('\n');
+  e.reply(broadcast);
+
+  // 设置一次性上下文
+  this.setContext('wangshiChoice', 30, { player, usr_qq, needChapter: 1 });
+  return false;
+}
+
+// 上下文回调
+async wangshiChoice(e) {
+  const { player, usr_qq } = e.context;
+  const choice = e.msg.trim();
+
+    if (choice === '1') {
+    // --- 新增材料检查 ---
+    const 水晶花 = await exist_najie_thing(usr_qq, '无瑕水晶花', '道具') || 0;
+    const 誓约证 = await exist_najie_thing(usr_qq, '誓约之证', '道具') || 0;
+    if (水晶花 < 4 || 誓约证 < 4) {
+      e.reply('【无瑕之人】\n材料不足，无法承载真我刻印。\n' +
+              `需要：无瑕水晶花×4（${水晶花}/4） 誓约之证×4（${誓约证}/4）`);
+      return;
+    }
+    // --- 扣除材料 ---
+     await Add_najie_thing(usr_qq, '往世乐土之章', '道具', -needChapter);
+    await Add_najie_thing(usr_qq, '无瑕水晶花', '道具', -4);
+    await Add_najie_thing(usr_qq, '誓约之证', '道具', -4);
+
+    // 原覆盖逻辑
+    player.灵根 = {
+      "id": 7010020,
+      "name": "爱莉希雅",
+      "type": "无瑕之人",
+      "归类": "诸天万界",
+      "eff": 1.2,
+      "法球倍率": 1.5,
+      "攻击": 0.8,
+      "防御": 0.7,
+      "生命": 0.9,
+      "生命本源": 50,
+      "特殊效果": ["水晶花种", "真我刻印"]
+    };
+    player.生命本源 = 100 + player.灵根.生命本源;
+    await Write_player(usr_qq, player);
+
+    const txt1 = [
+      `你献上无瑕水晶花与誓约之证，花海倒卷，刻印降临。`,
+      `五行化作粉金色的花瓣，雷火凝成晶莹的露珠。`,
+      `【系统】灵根已变更为：无瑕之人·爱莉希雅`,
+      `天际响起她的轻笑：「从今往后，你的每一次心跳，都将开出最美的花哦～」`
+    ].join('\n');
+    e.reply(txt1);
+  }
+ else if (choice === '2') {
+
+    player.爱莉希雅召唤次数 = (player.爱莉希雅召唤次数 || 0) + 1;
+    await Write_player(usr_qq, player);
+   await Add_najie_thing(usr_qq, '往世乐土之章', '道具', -needChapter);
+    const txt2 = [
+      `你后退半步，却伸手接过飘落的晶瓣。`,
+      `爱莉希雅眨了眨眼，将一滴闪耀金芒的霸血放入你掌心：`,
+      `「那就说定啦，下次召唤我时……要带更多好玩的故事来！」`,
+      `【系统】爱莉希雅召唤次数 +1`
+    ].join('\n');
+    e.reply(txt2);
+
+  } else {
+    e.reply('选择无效，已超时。乐土之门悄然闭合……');
+  }
+  this.finish('wangshiChoice');
+  return false;
+}
+/** 真我觉醒：人之律者 / 始源律者 二段觉醒 */
+async zhenwojuexing(e) {
+    if (!e.isGroup) { e.reply('请在群聊中完成真我仪式'); return; }
+
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    if (!await existplayer(usr_qq)) { e.reply('玩家不存在'); return; }
+
+    const player = await Read_player(usr_qq);
+    if ( player.灵根.name !== '爱莉希雅'&& player.灵根.name !== '人之律者·爱莉希雅') {
+        e.reply('只有无瑕之人·爱莉希雅才能开启真我觉醒'); return;
+    }
+    if (player.生命本源 !== 100 + player.灵根.生命本源) {
+        e.reply('生命本源亏空，无法承载真我权柄'); return;
+    }
+
+    /* ---------- 阶段判定 ---------- */
+    const isRen = player.灵根.type === '无瑕之人';
+    const isShiYuan = player.灵根.type === '真我·人之律者';
+    if (!isRen && !isShiYuan) { e.reply('当前状态无法觉醒'); return; }
+
+    /* ---------- 材料检查 ---------- */
+    const need = isRen
+        ? { 往世乐土的记忆结晶: 5, 永恒的乐园之息: 5, 秘境最低: 15 /*准帝*/ }
+        : { 无瑕之证: 5, 终焉的启示: 5, 秘境最低: 19 /*仙王巨头*/ };
+
+    for (const [name, num] of Object.entries(need).filter(([k]) => k !== '秘境最低')) {
+        const has = await exist_najie_thing(usr_qq, name, '道具') || 0;
+        if (has < num) return e.reply(`真我觉醒需要 ${num} 个【${name}】，当前 ${has}`);
+    }
+
+    /* ---------- 境界检查 ---------- */
+    if (player.mijinglevel_id < need.秘境最低) {
+        return e.reply(isRen ? '需秘境体系达到准帝方可承载人之律者权柄'
+                            : '需秘境体系达到仙王巨头方可承载始源律者权柄');
+    }
+
+    /* ---------- 扣除材料 ---------- */
+    for (const [name, num] of Object.entries(need).filter(([k]) => k !== '秘境最低')) {
+        await Add_najie_thing(usr_qq, name, '道具', -num);
+    }
+
+    /* ---------- 觉醒晋升 ---------- */
+    if (isRen) {
+        player.灵根 = {
+            id: 7010020,
+            name: '人之律者·爱莉希雅',
+            type: '真我·人之律者',
+            归类: '诸天万界',
+            eff: 2.8,
+            法球倍率: 3.0,
+            攻击: 2,
+            防御: 1.8,
+            生命: 2.2,
+            生命本源: 150,
+            特殊效果: ['人之权柄', '始源领域']
+        };
+        player.生命本源 = 100 + player.灵根.生命本源;
+        await Write_player(usr_qq, player);
+
+        const txt = [
+            ` 水晶花雨洒落，无瑕之光映照诸天！`,
+            `你将「往世乐土的记忆结晶」与「永恒的乐园之息」融入血脉，`,
+            `真我权柄苏醒，踏入「人之律者」命途！`,
+            ``,
+            `【人之律者·爱莉希雅】`,
+            `一念花开，一念众生；始源加身，诸天无瑕！`
+        ].join('\n');
+        e.reply(txt);
+    } else {
+        player.灵根 = {
+            id: 7010020,
+            name: '始源之律者·爱莉希雅',
+            type: '始源律者',
+            归类: '诸天万界',
+            eff: 5,
+            法球倍率: 6,
+            攻击: 4.5,
+            防御: 4,
+            生命: 5,
+            生命本源: 300,
+            特殊效果: ['因果干涉', '概念显现']
+        };
+        player.生命本源 = 100 + player.灵根.生命本源;
+        await Write_player(usr_qq, player);
+
+        const txt = [
+            ` 终焉启示降临，始源之海沸腾！`,
+            `你以「无瑕之证」承载「终焉的启示」，`,
+            `踏过人之律者极限，登临「始源律者」王座！`,
+            ``,
+            `【始源律者·爱莉希雅】`,
+            `一念改因果，一念化诸天；始源既现，万界无瑕！`
+        ].join('\n');
+        e.reply(txt);
+    }
+}
+
 async shengtijuexing(e) {
     if (!e.isGroup) {
         e.reply('修仙游戏请在群聊中游玩');

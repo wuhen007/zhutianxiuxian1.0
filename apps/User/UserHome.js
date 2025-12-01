@@ -966,7 +966,7 @@ async world(e) {
     e.reply(`回收成功,获得${lingshi}灵石`);
     return false;
   }
- async huodong(e) {
+async huodong(e) {
     if (!verc({ e })) return false;
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);
@@ -974,35 +974,30 @@ async world(e) {
     const player = await Read_player(usr_qq);
     if (!ifexistplay) return false;
     
+    // 检查是否在全局推送群中
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    if (xiuxianConfig.Era && xiuxianConfig.Era.notifyGroups && e.group_id) {
+        if (!xiuxianConfig.Era.notifyGroups.includes(e.group_id.toString())) {
+            e.reply('兑换码必须在全局推送群中使用！');
+            return false;
+        }
+    } else if (!e.group_id) {
+        // 如果不是群聊（私聊），也提示需要去全局推送群
+        e.reply('兑换码必须在全局推送群中使用！');
+        return false;
+    }
+    
     // 新增：统一回复通道控制变量
     let isPrivateExchange = false;
     let customReply = null;
     
     var name = e.msg.replace('#活动兑换', '').trim();
-        // ==== 圆神兑换专属逻辑 ====
     if (name === "一眼一纪，一梦星灭") {
         if (player.mijinglevel_id<16&&player.xiangulevel_id<14) {
             e.reply('若想用此兑换码必须先达到人道领域绝巅！');
             return false;
         }
     }
-    // ==== 圆神兑换专属逻辑 ====
-    if (name === "圆神") {
-        if (e.message_type !== 'private') {
-            // 群聊中立即终止并提示
-            e.reply('【圆神】兑换码必须在私聊中使用！');
-            return false;
-        }
-        isPrivateExchange = true; // 标记为私聊兑换
-        
-        if (player.id != '2468511249'&&player.id != '2283096140') {
-            customReply = '你并非能够成为圆神的那个人!';
-            return false;
-        } else {
-            customReply = '我会永远记得你，直到魂归苍茫!';
-        }
-    }
-    // ==== 其他兑换码逻辑（保持原样） ====
     else if (name == "诸天万界二周目" && player.level_id <42) {
         e.reply('未成仙用不了此兑换码!');
         return false;
@@ -1055,6 +1050,7 @@ async world(e) {
     
     return false;
 }
+
   async check_player(e) {
     if (!verc({ e })) return false;
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
@@ -4446,6 +4442,200 @@ const aptitudeDescriptions = {
                 `血气增加 +5000万！`
             );
         }
+    }
+    
+    // 保存玩家数据
+    await Write_player(usr_qq, player);
+    
+    // 发送回复
+    return e.reply(replyMessage.join('\n'));
+}
+if (thing_name === "神秘花粉") {
+    // 定义天资等级序列和对应描述
+    const aptitudeSequence = [
+        '天弃之人',
+        '先天不足',
+        '平庸之资',
+        '超凡资质',
+        '天纵之资',
+        '旷世奇才',
+        '绝世天骄',
+        '万古无双',
+        '无演无尽'
+    ];
+
+    const aptitudeDescriptions = {
+        '无演无尽': '亘古绝今从未有，演尽诸天万界，此等天资已超脱天道束缚',
+        '万古无双': '横推古今未来无对手，为修道而生，为应劫而至，永恒无敌',
+        '绝世天骄': '惊才绝艳，具备帝姿，注定为一个时代的天地主角',
+        '旷世奇才': '万年难遇，此等资质放眼九天十地也是难寻',
+        '天纵之资': '天赋异禀，媲美上古大教的天才',
+        '超凡资质': '资质超凡，注定异于常人',
+        '平庸之资': '资质平平，勉勉强强',
+        '先天不足': '先天有缺，修炼事倍功半',
+        '天弃之人': '被天道抛弃，修炼必遭反噬'
+    };
+    await Add_najie_thing(usr_qq, "神秘花粉", "道具", -1);
+    
+    // 获取玩家当前天资等级索引
+    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级);
+    
+    // 检查是否已经提升过天资
+    const hasAptitudeBoost = player.神秘花粉提升标记 || false;
+    
+    // 固定提升修为和血气
+    const fixedBoost = 50000000; // 5000万
+    await Add_修为(usr_qq, fixedBoost);
+    await Add_血气(usr_qq, fixedBoost);
+    
+    let replyMessage = [];
+    let newAptitude = player.天资等级;
+    let newDescription = player.天资评价;
+    
+    // 天资提升逻辑
+    if (!hasAptitudeBoost && currentAptitudeIndex < aptitudeSequence.indexOf("万古无双")) {
+        // 提升一级天资
+        const newAptitudeIndex = Math.min(currentAptitudeIndex + 1, aptitudeSequence.length - 1);
+        newAptitude = aptitudeSequence[newAptitudeIndex];
+        newDescription = aptitudeDescriptions[newAptitude];
+        
+        player.天资等级 = newAptitude;
+        player.天资评价 = newDescription;
+        player.神秘花粉提升标记 = true; // 标记已提升过天资
+        
+        replyMessage.push(
+            `你吸入神秘花粉，漫天灵粒子如萤火飞舞！`,
+            `花粉融入血脉，呼吸法自动运转，进化路开启！`,
+            `灵性粒子滋养神魂，道基重塑，生命层次跃迁！`,
+            `天资蜕变：${player.天资等级} → ${newAptitude}`,
+            `评价变化：${player.天资评价} → ${newDescription}`,
+            `修为暴涨 +5000万！`,
+            `血气狂涌 +5000万！`,
+            `花粉进化路显现，脱胎换骨！`
+        );
+    } else {
+        if (hasAptitudeBoost) {
+            replyMessage.push(
+                `你再次吸入神秘花粉`,
+                `灵粒子滋养肉身，但进化路已至当前极限`,
+                `当前天资：${player.天资等级}（${player.天资评价}）`,
+                `修为增加 +5000万！`,
+                `血气增加 +5000万！`,
+                `（花粉对天资的提升效果仅限一次）`
+            );
+        } else {
+            replyMessage.push(
+                `你吸入神秘花粉`,
+                `灵粒子环绕周身，呼吸法共鸣`,
+                `但天资已达当前进化路极限，无法突破`,
+                `当前天资：${player.天资等级}（${player.天资评价}）`,
+                `修为增加 +5000万！`,
+                `血气增加 +5000万！`
+            );
+        }
+    }
+    
+    // 保存玩家数据
+    await Write_player(usr_qq, player);
+    
+    // 发送回复
+    return e.reply(replyMessage.join('\n'));
+}
+if (thing_name === "爱莉希雅的赐福") {
+    const blessingSequence = [
+        '无瑕的祝福',
+        '真我之启示', 
+        '始源之律迹',
+        '爱愿之妖精',
+        '无瑕之誓'
+    ];
+
+    const blessingDescriptions = {
+        '无瑕之誓': '「请让我，成为你的力量吧♪」——与爱莉希雅的羁绊化为永恒誓言，获得其部分真我权能',
+        '爱愿之妖精': '「只要怀抱爱意，每个人都是自己的爱神使者♪」——爱愿之花绽放，生命层次跃迁',
+        '始源之律迹': '「这就是我的『始源』权能哦，厉害吧？」——人之律者的力量痕迹悄然显现',
+        '真我之启示': '「要好好记住我现在的样子哦？」——真我之光启迪灵魂本源',
+        '无瑕的祝福': '「嗨，感觉如何？」——获得爱莉希雅初步的认可与加持'
+    };
+    
+    await Add_najie_thing(usr_qq, "爱莉希雅的赐福", "道具", -1);
+    
+    // 获取玩家当前赐福等级索引
+    const currentBlessingIndex = blessingSequence.indexOf(player.爱莉希雅赐福等级 || '无');
+    const hasBlessingBoost = player.爱莉希雅赐福标记 || false;
+    
+    // 固定提升修为和血气
+    const fixedBoost = 75000000; 
+    await Add_修为(usr_qq, fixedBoost);
+    await Add_血气(usr_qq, fixedBoost);
+    
+    let replyMessage = [];
+    let newBlessing = player.爱莉希雅赐福等级 || '无';
+    let newDescription = player.爱莉希雅赐福评价 || '尚未获得祝福';
+    
+    // 赐福提升逻辑
+    if (!hasBlessingBoost && currentBlessingIndex < blessingSequence.length - 1) {
+        // 提升一级赐福
+        const newBlessingIndex = Math.min(currentBlessingIndex + 1, blessingSequence.length - 1);
+        newBlessing = blessingSequence[newBlessingIndex];
+        newDescription = blessingDescriptions[newBlessing];
+        
+        player.爱莉希雅赐福等级 = newBlessing;
+        player.爱莉希雅赐福评价 = newDescription;
+        player.爱莉希雅赐福标记 = true;
+
+        // 根据赐福等级附加特殊效果
+        if (newBlessing === '无瑕的祝福') {
+            player.攻击加成 = (player.攻击加成 || 0) + 1000000;
+        } else if (newBlessing === '真我之启示') {
+            player.防御加成 = (player.防御加成 || 0) + 800000;
+            await Add_najie_thing(usr_qq, "真我宝盒", "盒子", 1);
+        } else if (newBlessing === '始源之律迹') {
+            player.生命加成 = (player.生命加成 || 0) + 1500000;
+            player.血量上限 = (player.血量上限 || 0) + 1500000; // 生命上限提升10%
+            await Add_najie_thing(usr_qq, "真我宝盒", "盒子", 3);
+        } else if (newBlessing === '爱愿之妖精') {
+            player.攻击加成 = (player.攻击加成 || 0) + 2000000;
+            player.防御加成 = (player.防御加成 || 0) + 1500000;
+            player.生命加成 = (player.生命加成 || 0) + 2500000;
+            await Add_najie_thing(usr_qq, "真我宝盒", "盒子", 3);
+        } else if (newBlessing === '无瑕之誓') {
+            player.攻击加成 = (player.攻击加成 || 0) + 3000000;
+            player.防御加成 = (player.防御加成 || 0) + 2000000;
+            player.生命加成 = (player.生命加成 || 0) + 4000000;
+            await Add_najie_thing(usr_qq, "真我宝盒", "盒子", 5);
+        }
+        
+ // 赐福提升情况
+    replyMessage = [
+        `「呀~是你在呼唤我吗？♪」——熟悉的声音随粉色光华流淌，爱莉希雅的身影如水晶花般浮现`,
+        `绚烂的始源水晶簇绽放，温暖光芒如旋律般融入你的生命本源：「要记住我现在的样子哦？」`,
+        `爱莉希雅赐福等级提升：${player.爱莉希雅赐福等级 || '无'} → **${newBlessing}**`,
+        `赐福启示：「${newDescription}」`,
+        `修为澎湃增长 +7500万！`,
+        `血气充盈提升 +7500万！`,
+        `❤️ **${newBlessing}** 权能激活！${newBlessing === '无瑕之誓' ? '真我宝盒+5' : newBlessing.includes('始源') ? '真我宝盒+3' : newBlessing === '真我之启示' ? '真我宝盒+1' : '属性加成强化'}`,
+        `「要带着我的祝福，继续为美好而战哦~♪」`
+    ];
+} else if (hasBlessingBoost) {
+    replyMessage = [
+        `你轻轻触动赐福，粉色光晕如涟漪荡漾~`,
+        `「这么想见我呀？真开心呢♪」——爱莉希雅的声音仿佛耳语`,
+        `当前赐福等级：**${player.爱莉希雅赐福等级}**（${player.爱莉希雅赐福评价}）`,
+        `修为增加 +7500万！`,
+        `血气增加 +7500万！`,
+        `（虽无法再次升华，但乐园的星光会永远照亮你的旅途✦）`
+    ];
+} else {
+    replyMessage = [
+        `赐福光芒轻柔环绕，如永恒乐园的叹息~`,
+        `「哎呀，看来这就是目前的极限啦~」——爱莉希雅指尖轻点水晶花，「但我们的故事才刚刚开始哦？」`,
+        `当前赐福等级：**${player.爱莉希雅赐福等级}**（${player.爱莉希雅赐福评价}）`,
+        `修为增加 +7500万！`,
+        `血气增加 +7500万！`,
+        `「记住呀，真我的种子已在心中发芽，终将开出无尽花海♪」`
+    ];
+
     }
     
     // 保存玩家数据

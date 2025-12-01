@@ -1166,7 +1166,22 @@ async Gofairyrealm(e) {
     // 特殊仙境检查
     let specialMsg = "";
     let specialCost = "";
-    // 神域星宫
+
+if (didian === "往世星海") {
+    const requiredKeys = i * 1;           // 每次消耗 1 枚，可随 i 叠加
+    const keyCount = await exist_najie_thing(usr_qq, "群星秘钥", "道具");
+    if (!keyCount || keyCount < requiredKeys) {
+        return e.reply(`你需要${requiredKeys}个群星秘钥才能前往往世星海`);
+    }
+    if (player.level_id <= 54) {
+        return e.reply("只有万界道祖级强者才能踏入星海");
+    }
+    await Add_najie_thing(usr_qq, "群星秘钥", "道具", -requiredKeys);
+    specialMsg = `${player.名号}消耗了${requiredKeys}个群星秘钥，神魂受到无瑕之刻印指引，脱离万界遨游混沌海前往往世星海`;
+    specialCost = `，${requiredKeys}个群星秘钥`;
+}
+
+
     if (didian === "神域星宫") {
         const requiredTokens = i * 10;
         let shenyuCount = await exist_najie_thing(usr_qq, "神域令牌", "道具");

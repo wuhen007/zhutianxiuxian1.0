@@ -23,18 +23,19 @@ export class EraChangeTask extends plugin {
       rule: [
         {
           reg: '^#?设置时代(进度)?',
-          fnc: 'setEraProgress',
-          permission: 'master'
+          fnc: 'setEraProgress'
         },
         {
+  reg: '^#解除绝灵压制$',
+  fnc: 'releaseJuelingSuppression',
+},
+        {
           reg: '^#?下一千年$',
-          fnc: 'advanceOneThousandYears',
-          permission: 'master'
+          fnc: 'advanceOneThousandYears'
         },
         {
           reg: '^#?下一个时代$',
-          fnc: 'advanceToNextEra',
-          permission: 'master'
+          fnc: 'advanceToNextEra'
         },
         {
           reg: '^#?(当前)?纪元$',
@@ -116,7 +117,36 @@ export class EraChangeTask extends plugin {
       console.error("设置时代定时任务失败:", e);
     }
   }
-  
+  async releaseJuelingSuppression(e) {
+  // 权限检查：只有机器人管理员或修仙管理员可以使用
+  const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+  const masterList = xiuxianConfig.Master || [];
+  const userQQ = e.user_id.toString().replace('qg_', '');
+  if (!e.isMaster && !masterList.includes(userQQ)) {
+    return e.reply('你没有权限使用此命令');
+  }
+
+  try {
+    /* 1. 直接执行寿元归还逻辑（内部会判断是否存在压制记录） */
+    const restoredCount = await this.restoreLifespan();
+
+    /* 2. 广播结果 */
+    const msg = [
+      `【绝灵压制·已解除】`,
+      `管理员手动归还寿元枷锁！`,
+      `所有曾被压制的修士寿元已立即恢复`,
+      `恢复修士数量：${restoredCount}人`,
+      `「枷锁虽断，大道重归」`
+    ].join('\n');
+
+    await e.reply(msg);
+    return true;
+  } catch (err) {
+    console.error('[解除绝灵压制] 错误：', err);
+    e.reply('解除过程中发生异常，请查看日志。');
+    return false;
+  }
+}
   /** 进入绝灵时代时压制玩家寿元 */
   async suppressLifespan() {
     try {
@@ -1103,6 +1133,14 @@ function saveWeimianData(data) {
   
   /** 设置时代进度（管理员命令） */
   async setEraProgress(e) {
+    // 权限检查：只有机器人管理员或修仙管理员可以使用
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
+      return e.reply('你没有权限使用此命令');
+    }
+
     const params = e.msg.replace(/^#?设置时代(进度)?\s*/, '').trim();
     
     if (!params) {
@@ -1184,6 +1222,14 @@ function saveWeimianData(data) {
   
  /** 推进一千年 */
   async advanceOneThousandYears(e) {
+    // 权限检查：只有机器人管理员或修仙管理员可以使用
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
+      return e.reply('你没有权限使用此命令');
+    }
+
     try {
       this.loadEraConfig();
       
@@ -1391,6 +1437,14 @@ function saveWeimianData(data) {
   }
   
   async advanceToNextEra(e) {
+    // 权限检查：只有机器人管理员或修仙管理员可以使用
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
+      return e.reply('你没有权限使用此命令');
+    }
+
     try {
       // 重新加载最新配置
       this.loadEraConfig();

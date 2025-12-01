@@ -1,4 +1,8 @@
-- group: 星海之缘活动 (11.28-12.20)
+- group: 星海之缘活动 (12.1-12.28)
+  list:
+    - icon: help-icon_35
+      title: '活动介绍'
+      desc: '增加新的仙境本和团本boss,天机阁宝物以及爱莉希雅灵根'
   list:
     - icon: help-icon_35
       title: '#星海之缘签到'
@@ -7,5 +11,9 @@
       title: '#召唤爱莉希雅'
       desc: '运气之子'
     - icon: help-icon_20
-      title: '#十连抽星轨专票'
-      desc: '运气之子'
+      title: '#奏响往世乐土之章'
+      desc: '奏响往世'
+    - icon: help-icon_20
+      title: '#真我觉醒'
+      desc: '爱莉希雅进阶'
+

@@ -1283,7 +1283,7 @@ async all_shenyao(e) {
     await Synchronization_ASS(e);
     return false;
   }
-  //一键出售
+//一键出售
 async Sell_all_comodities(e) {
     if (!verc({ e })) return false;
     let usr_qq = e.user_id.toString().replace('qg_','');
@@ -1296,164 +1296,124 @@ async Sell_all_comodities(e) {
     let commodities_price = 0;
     let najie = await data.getData('najie', usr_qq);
     let wupin = [
-        '装备',
-        '丹药',
-        '道具',
-        '功法',
-        '草药',
-        '食材',
-        '材料',
-        '仙宠',
-        '盒子',
-        '仙宠口粮',
+        '装备','丹药','道具','功法','草药',
+        '食材','材料','仙宠','盒子','仙宠口粮'
     ];
     
     let wupin1 = [];
     let protectedWeapons = []; // 存储被保护的帝兵信息
     
+    /* ======== 指定类别出售 ======== */
     if (e.msg != '#一键出售') {
         let thing = e.msg.replace('#一键出售', '').trim();
         
         // 验证类别
-        for (var i of wupin) {
-            if (thing == i) {
-                wupin1.push(i);
-            }
+        for (let i of wupin) {
+            if (thing == i) { wupin1.push(i); break; }
         }
-        
         if (wupin1.length === 0) {
             return e.reply(`无效的物品类别: ${thing}`);
         }
-        
         wupin = wupin1;
         
         for (let category of wupin) {
+            if (!Array.isArray(najie[category])) continue;
             for (let item of najie[category]) {
-                if (item && item.islockd == 0) {
-                    // 检查是否是帝兵且属于玩家
-                    if (category === '装备' && item.type === '帝兵' && item.author_name) {
-                        protectedWeapons.push(item.name);
-                        continue;
-                    }
-                    
-                    let quantity = item.数量;
-                    if (item.name != "秘境之匙") {
-                        await Add_najie_thing(usr_qq, item.name, item.class, -quantity, item.pinji); // 减少物品数量
-                        commodities_price += item.出售价 * quantity;
-                    } else {
-                        await Add_najie_thing(usr_qq, item.name, item.class, -quantity, item.pinji);
-                        commodities_price += 2000000 * quantity;
-                    }
+                if (!item || item.islockd != 0) continue;
+                
+                // 帝兵保护
+                if (category === '装备' && item.type === '帝兵' && item.author_name) {
+                    protectedWeapons.push(item.name);
+                    continue;
                 }
+                let quantity = item.数量;
+                /* ****** 删掉 200W 特殊价 ****** */
+                await Add_najie_thing(usr_qq, item.name, item.class, -quantity, item.pinji);
+                commodities_price += item.出售价 * quantity;
             }
         }
         
         await Add_灵石(usr_qq, commodities_price);
-        
         let replyMsg = `出售成功! 获得${commodities_price}灵石`;
         if (protectedWeapons.length > 0) {
             replyMsg += `\n【帝兵保护】以下本命帝兵未出售：${protectedWeapons.join('、')}`;
         }
-        
         e.reply(await get_log_img(replyMsg));
         return false;
     }
-
     
+    /* ======== 全品类预览 ======== */
     let goodsNum = 0;
-    let goods = [];
-    
-    // 构建物品清单表格数据
     let tableData = [];
     let totalValue = 0;
     
     for (let category of wupin) {
-      for (let item of najie[category]) {
-        if (item && item.islockd == 0) {
-          // 新增：检查是否是帝兵且属于玩家
-          if (category === '装备' && item.type === '帝兵' && item.author_name) {
-            continue; // 跳过显示
-          }
-          
-          let quantity = item.数量;
-          let itemValue = item.name === "秘境之匙" ? 2000000 * quantity : item.出售价 * quantity;
-          totalValue += itemValue;
-          
-          tableData.push({
-            名称: item.name,
-            数量: quantity,
-            单价: item.name === "秘境之匙" ? "200万" : item.出售价,
-            总价: itemValue,
-            类别: category
-          });
-          
-          goodsNum++;
+        if (!Array.isArray(najie[category])) continue;
+        for (let item of najie[category]) {
+            if (!item || item.islockd != 0) continue;
+            
+            // 帝兵保护
+            if (category === '装备' && item.type === '帝兵' && item.author_name) continue;
+            
+            let quantity   = item.数量;
+            let itemValue  = item.出售价 * quantity;   /* ****** 删掉 200W 特殊价 ****** */
+            totalValue    += itemValue;
+            
+            tableData.push({
+                名称: item.name,
+                数量: quantity,
+                单价: item.出售价,
+                总价: itemValue,
+                类别: category
+            });
+            goodsNum++;
         }
-      }
     }
     
     if (goodsNum == 0) {
         e.reply('没有东西可以出售', false, { at: true });
         return false;
     }
-
-    // 将tableData按类别分组
+    
+    // 按类别分组
     let categories = {};
     tableData.forEach(item => {
-        if (!categories[item.类别]) {
-            categories[item.类别] = [];
-        }
+        if (!categories[item.类别]) categories[item.类别] = [];
         categories[item.类别].push(item);
     });
-
-    // 构建格式化的出售清单
+    
+    // 构造预览文本
     let formattedMsg = [
         `【诸天万界·一键出售清单】`,
-        `共计 ${goodsNum} 件物品，预估总价值: ${this.formatNumber(totalValue)} 灵石`,
+        `共计 ${goodsNum} 件物品，预估总价值: ${this.formatNumber(totalValue)} 灵石`
     ];
-
-    // 按类别分组并格式化显示
-    for (let category in categories) {
-        formattedMsg.push(`\n【${category}】`);
+    
+    for (let cate in categories) {
+        formattedMsg.push(`\n【${cate}】`);
         formattedMsg.push('─'.repeat(40));
-        
-        categories[category].forEach(item => {
-            // 格式化数字显示
-            const formattedPrice = this.formatNumber(item.单价);
-            const formattedTotal = this.formatNumber(item.总价);
-            
-            // 对齐显示，每个字段单独一行
+        categories[cate].forEach(it => {
             formattedMsg.push(
-                `${this.padRight(item.名称, 16)}`
+                `${this.padRight(it.名称,16)}`,
+                `数量: ${this.padLeft(it.数量,4)}`,
+                `单价: ${this.padLeft(this.formatNumber(it.单价),12)}`,
+                `总价: ${this.padLeft(this.formatNumber(it.总价),15)}`,
+                '─'.repeat(40)
             );
-            formattedMsg.push(
-                `数量: ${this.padLeft(item.数量, 4)}`
-            );
-            formattedMsg.push(
-                `单价: ${this.padLeft(formattedPrice, 12)}`
-            );
-            formattedMsg.push(
-                `总价: ${this.padLeft(formattedTotal, 15)}`
-            );
-            formattedMsg.push('─'.repeat(40)); // 每个物品后加分隔线
         });
-        
-        // 计算类别小计
-        const categoryTotal = categories[category].reduce((sum, item) => sum + item.总价, 0);
-        formattedMsg.push(`小计: ${this.formatNumber(categoryTotal)} 灵石`);
+        const sub = categories[cate].reduce((s, v) => s + v.总价, 0);
+        formattedMsg.push(`小计: ${this.formatNumber(sub)} 灵石`);
     }
-
+    
     formattedMsg.push(`总价值: ${this.formatNumber(totalValue)} 灵石`);
     formattedMsg.push(`回复[1]确认出售，回复[0]取消`);
-
-    // 使用get_log_img打印格式化后的清单
+    
     e.reply(await get_log_img(formattedMsg.join('\n')));
     
-    /** 设置上下文 */
+    // 设置上下文等待确认
     this.setContext('noticeSellAllGoods');
-    
     return false;
 }
+
 
 // 数字格式化
 formatNumber(num) {

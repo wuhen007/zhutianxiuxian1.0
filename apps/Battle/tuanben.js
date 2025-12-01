@@ -426,32 +426,6 @@ async createEmperorTeam(e) {
     try {
       // 执行战斗
       const battleResult = await this.tb_battle(playersData, bossData, e);
-      
-     // 在团本战斗系统的胜利处理部分
-if (battleResult.result === "玩家胜利") {
-  // 清除帝尊感知标记
-  await clearEmperorAwareness();
-  
-  // 帝尊陨落绚烂文案
-  battleResult.msg.push(
-    `【帝尊陨落·万古成空】`,
-    `帝尊帝躯寸寸崩裂，万道法则如琉璃破碎，`,
-    `帝血洒落星空，染红诸天万界！`,
-    `「吾为帝尊，布局万古，欲炼化此界成就无上仙位...」`,
-    `「竟...竟败于尔等之手...」`,
-    `帝尊眸光黯淡，眼中倒映万古岁月流转，`,
-    `从神话时代到如今，一幕幕辉煌与落寞在眸中沉浮。`,
-    `帝冠碎裂，帝袍焚毁，九秘道痕逐一黯淡，`,
-    `「可叹...可悲...吾道...成空！」`,
-    `帝尊最后一声长叹，带着无尽遗憾与不甘，`,
-    `帝躯化作亿万光雨，消散于时间长河之上。`,
-    `帝血洒落，滋养万界，帝骨成灰，反哺天地。`,
-    `曾经天上地下无敌，布局万古的帝尊，终究陨落！`,
-    `时间长河奔涌不息，埋葬了万古多少帝与皇的故事，`,
-    `帝尊的传说，至此画上句号。`,
-    `此战之后，世间再无帝尊，唯有传说流传...`,
-  );
-}
 
         // 更新队伍状态
         team.status = battleResult.result === "玩家胜利" ? 'victory' : 'defeated';
@@ -462,7 +436,10 @@ if (battleResult.result === "玩家胜利") {
             members: team.members
         });
         await this.saveTeam(teamId, team);
-        
+if (battleResult.result === "玩家胜利") {
+  // 清除帝尊感知标记
+  await clearEmperorAwareness();
+}
         // 发送战报
         await ForwardMsg(e, battleResult.msg);
         
@@ -476,7 +453,30 @@ if (battleResult.result === "玩家胜利") {
             `此战只为证道，不计奖励，不占CD`
         ].join('\n');
         
-        e.reply(resultSummary);
+        if (battleResult.result === "玩家胜利") {
+      const 帝尊陨落 = [
+        ``,
+        `【帝尊陨落·万古成空】`,
+        `帝尊帝躯寸寸崩裂，万道法则如琉璃破碎，帝血洒落星空，染红诸天万界！`,
+        `「吾为帝尊，布局万古，欲炼化此界成就无上仙位...」`,
+        `「竟...竟败于尔等之手...」`,
+        `帝尊眸光黯淡，眼中倒映万古岁月流转，`,
+        `从神话时代到如今，一幕幕辉煌与落寞在眸中沉浮。`,
+        `帝冠碎裂，帝袍焚毁，九秘道痕逐一黯淡，`,
+        `「可叹...可悲...吾道...成空！」`,
+        `帝尊最后一声长叹，带着无尽遗憾与不甘，`,
+        `帝躯化作亿万光雨，消散于时间长河之上。`,
+        `帝血洒落，滋养万界，帝骨成灰，反哺天地。`,
+        `曾经天上地下无敌，布局万古的帝尊，终究陨落！`,
+        `时间长河奔涌不息，埋葬了万古多少帝与皇的故事，`,
+        `帝尊的传说，至此画上句号。`,
+        `此战之后，世间再无帝尊，唯有传说流传...`
+    ].join('\n');
+
+    e.reply(resultSummary + 帝尊陨落);
+} else {
+    e.reply(resultSummary);
+}
 
     } catch (err) {
         console.error('战斗异常:', err);
@@ -571,11 +571,21 @@ if (battleResult.result === "玩家胜利") {
     if (await this.getPlayerTeamId(usr_qq)) {
       return e.reply('您已在其他队伍中');
     }
-    
+   let mojun = await exist_najie_thing (usr_qq, "魔君讨伐令", "道具", 1);
     // 验证BOSS存在
     const bossData = await this.getBossData(bossName);
     if (!bossData) return e.reply(`未知BOSS: ${bossName}`);
-    
+     // 魔君特殊消耗
+  if (bossData.名号 === '九幽魔君') {
+    const hasToken = await exist_najie_thing(usr_qq, '魔君讨伐令', '道具');
+    if (!hasToken || hasToken < 1) {
+      return e.reply('讨伐九幽魔君需要消耗 1 枚【魔君讨伐令】，请先获取后再来。');
+    }
+    await Add_najie_thing(usr_qq, '魔君讨伐令', '道具', -1);
+  }
+    if (bossData && bossData.名号 === "帝尊" ) {
+  return e.reply(`帝尊无法创建讨伐队伍`);
+}
     // 创建队伍
     const teamId = this.generateTeamId();
     const newTeam = {
@@ -863,22 +873,87 @@ async settleTeamRewards(e) {
     team.members.map(async id => await Read_player(id))
   );
   
-  // 分发奖励
-  const rewardMsg = await this.distributeRewards(e, team, playersData, bossData);
-  
-  // 为所有队员设置CD
-  for (const playerId of team.members) {
-    await this.setPlayerCD(playerId);
+  // 如果BOSS是帝尊，则无法结算奖励
+  if (team.boss == '帝尊') {
+    return e.reply('帝尊只可杀死，不可结算团本奖励');
   }
-
-  // 发送奖励信息
-  e.reply(rewardMsg);
+  
+  // 如果BOSS是魔君，则发放特殊奖励
+  if (team.boss === '九幽魔君') {
+    // 定义可抽取的丹药数组
+    const firstGroup = ["遣龙令", "遣虎令", "玄品秘境结算卡", "残卷", "仙舟", "秘境之匙", "仙品秘境结算卡"];
+    const secondGroup = ["九阶淬体丹", "九阶玄元丹", "天药", "天命轮回丹", "琴笙的加持", "七星玄元丹", "神魔炼体丹"];
+    
+    let rewardMsg = '恭喜队伍成功击败魔君！获得以下奖励：\n';
+    
+    // 为每位队员发放奖励
+    for (let i = 0; i < team.members.length; i++) {
+      const playerId = team.members[i];
+      const player = playersData[i];
+      
+      // 发放1000w源石和灵石
+      if (!player.源石) player.源石 = 0;
+      if (!player.灵石) player.灵石 = 0;
+      
+      player.源石 += 10000000;
+      player.灵石 += 10000000;
+      
+      // 保存玩家数据（源石和灵石）
+      await Write_player(playerId, player);
+      
+      // 从第一组随机抽三组丹药，并随机数量1-5
+      const randomFirstGroup = [];
+      for (let j = 0; j < 3; j++) {
+        const randomIndex = Math.floor(Math.random() * firstGroup.length);
+        const randomCount = Math.floor(Math.random() * 5) + 1; // 1-5的随机数
+        randomFirstGroup.push(`${firstGroup[randomIndex]} x${randomCount}`);
+        
+        // 使用Add_najie_thing添加到玩家背包
+        await Add_najie_thing(playerId, firstGroup[randomIndex], "道具", randomCount);
+      }
+      
+      // 从第二组随机抽两组丹药，并随机数量1-5
+      const randomSecondGroup = [];
+      for (let j = 0; j < 2; j++) {
+        const randomIndex = Math.floor(Math.random() * secondGroup.length);
+        const randomCount = Math.floor(Math.random() * 5) + 1; // 1-5的随机数
+        randomSecondGroup.push(`${secondGroup[randomIndex]} x${randomCount}`);
+        
+        // 使用Add_najie_thing添加到玩家背包
+        await Add_najie_thing(playerId, secondGroup[randomIndex], "丹药", randomCount);
+      }
+      
+      // 添加到奖励信息
+      rewardMsg += `\n玩家${player.名号 || playerId}获得：\n`;
+      rewardMsg += `源石 x1000万，灵石 x1000万\n`;
+      rewardMsg += `道具：${randomFirstGroup.join('、')}\n`;
+      rewardMsg += `丹药：${randomSecondGroup.join('、')}`;
+    }
+    
+    // 发送奖励信息
+    e.reply(rewardMsg);
+  }
+  // 如果BOSS不是魔君，则分发奖励和设置CD
+  else {
+    // 分发奖励
+    const rewardMsg = await this.distributeRewards(e, team, playersData, bossData);
+    
+    // 为所有队员设置CD
+    for (const playerId of team.members) {
+      await this.setPlayerCD(playerId);
+    }
+    
+    // 发送奖励信息
+    e.reply(rewardMsg);
+  }
   
   // 解散队伍
   await this.disbandTeamInternal(teamId, team);
   
   return true;
 }
+
+
 
 
 async distributeRewards(e, team, playersData, bossData) {
@@ -899,7 +974,7 @@ async distributeRewards(e, team, playersData, bossData) {
       console.error(`无法读取玩家数据: ${playerId}`);
       continue;
     }
-    
+  
     // 确保玩家名号存在
     if (!player.名号) {
       player.名号 = `无名修士${playerId.slice(-4)}`;
@@ -1160,7 +1235,7 @@ async disbandTeamInternal(teamId, team) {
     
     // 从数据库加载（模拟数据）
     const bossDatabase = {
-          '尸骸仙帝': {
+        '尸骸仙帝': {
         名号: '尸骸仙帝',
         级别: '仙帝',
         攻击: 150000 * Math.floor(Math.random() * 800000000000),
@@ -1182,7 +1257,18 @@ async disbandTeamInternal(teamId, team) {
         灵根: "魔胎仙体",
         学习的功法: ["不灭天功", "万化圣诀", "吞天魔功","飞仙","飞仙诀","一念花开，君临天下"]
       },
-   '帝尊': {
+      '九幽魔君': {
+        名号: '九幽魔君',
+         级别: '魔君',
+        攻击: 500 * Math.floor(Math.random() * 8000000000),
+        防御: 300 * Math.floor(Math.random() * 1000000000),
+        当前血量: 200 * Math.floor(Math.random() * 50000000000),
+        血量上限:  200 * Math.floor(Math.random() * 50000000000),
+        暴击率: 1,
+        灵根: "九幽魔体",
+        学习的功法: ["八品·太皇经","八品·八荒剑法","八品·太素","八品·天星","八品·鬼帝功","伪八品·影杀","八品·心禅不灭诀","万魔焚仙诀", "伪九品·魔帝功"]
+      },
+      '帝尊': {
         名号: '帝尊',
          级别: '红尘仙',
         攻击: 500 * Math.floor(Math.random() * 180000000000),
