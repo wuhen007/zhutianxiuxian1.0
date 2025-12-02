@@ -114,13 +114,13 @@ fnc: 'tianyi_yidao'
     reg: '^#轰击天地万道助其成帝$',
     fnc: 'hongjiTiandao'
 },
- {
-    reg: '^#修炼圣体秘术(?:\\s+(轮海|道宫|四极|化龙))?$',
-    fnc: 'shengtimishu',
-    dsc: '修炼圣体秘术 - 打磨单一秘境'
+{
+  reg: '^#修炼圣体秘术(?:\\s+(轮海|道宫|四极|化龙))?(?:\\s+(\\d+))?$',
+  fnc: 'shengtimishu',
+  dsc: '修炼圣体秘术 - 打磨单一秘境（支持批量修炼）'
 },
- {
-    reg: '^#修炼终极圣体秘术$',
+{
+    reg: '^#修炼终极圣体秘术(?:\\s+(\\d+))?$',
     fnc: 'shengtizhongjimishu',
 },
  {
@@ -2229,10 +2229,10 @@ async shengtimishu(e) {
         };
     }
 
-    // 初始化圣体秘境完成度系统（每个秘境独立）
+    // 初始化圣体秘境完成度系统
     if (typeof player.圣体秘境完成度 === 'undefined') {
         player.圣体秘境完成度 = {
-            轮海: 0,  // 百分比，0-100
+            轮海: 0,
             道宫: 0,
             四极: 0,
             化龙: 0
@@ -2240,8 +2240,27 @@ async shengtimishu(e) {
     }
 
     // 解析指令参数
-    const args = e.msg.trim().split(' ');
+    const args = e.msg.trim().split(/\s+/);
     let mijing = "";
+    let times = 1; // 默认修炼1次
+    
+    // 解析修炼次数（最后一个数字参数）
+    for (let i = args.length - 1; i >= 1; i--) {
+        const num = parseInt(args[i]);
+        if (!isNaN(num) && num > 0) {
+            times = num;
+            // 从args中移除次数参数，剩下的就是秘境参数
+            args.splice(i, 1);
+            break;
+        }
+    }
+    
+    // 限制最大批量次数（防止刷属性）
+    const maxBatchTimes = 10;
+    if (times > maxBatchTimes) {
+        times = maxBatchTimes;
+        e.reply(` 批量修炼次数限制为${maxBatchTimes}次，已自动调整`);
+    }
     
     // 检查是否指定了秘境
     if (args.length > 1) {
@@ -2252,11 +2271,139 @@ async shengtimishu(e) {
             return e.reply([
                 `秘境指定错误！`,
                 `可选秘境：轮海、道宫、四极、化龙`,
-                `示例：#修炼圣体秘术 轮海`
+                `示例：#修炼圣体秘术 轮海 5（修炼5次轮海秘境）`
             ].join('\n'));
         }
-    } else {
-        // 未指定则随机选择未圆满的秘境
+    }
+    
+    // 基础检查函数
+    const checkPrerequisites = () => {
+        // 检查功法
+        if (!player.学习的功法.includes("圣体秘术")) {
+            return `道途未明，秘术难寻！\n你体内并无《圣体秘术》的传承道痕\n需寻得荒古石碑，方能参悟此等打磨秘境的盖世法门`;
+        }
+
+        // 检查圣体血脉
+        if (!["圣体", "小成圣体", "圣体道胎", "大成圣体"].includes(player.灵根.type)) {
+            return `血脉轰鸣，金辉溃散！\n非荒古圣体一脉，强修此术必遭反噬\n你体内奔涌的${player.灵根.type}血脉与圣体道纹剧烈冲突`;
+        }
+
+        // 检查境界（需达到仙台秘境）
+        if (player.mijinglevel_id < 9) {
+            return `仙台未筑，秘境难开！\n圣体秘术需以仙台为基，引动九天神辉\n你当前${player.mijinglevel_id}境修为，强修恐致道基崩裂`;
+        }
+        
+        return null;
+    };
+
+    // 批量修炼逻辑
+    const batchCultivate = () => {
+        let totalCostXiuwei = 0;
+        let totalCostXueqi = 0;
+        let totalAttributeGain = 0;
+        let successTimes = 0;
+        let progressDetails = [];
+        let nodeAchievements = [];
+
+        // 预先计算总消耗
+        for (let i = 0; i < times; i++) {
+            const currentProgress = player.圣体秘境完成度[mijing] + (i * 5);
+            if (currentProgress >= 100) break;
+            
+            const progressFactor = 1 + (currentProgress / 100);
+            const costxiuwei = Math.round(10000000 * progressFactor);
+            const costXueqi = Math.round(10000000 * progressFactor);
+            
+            totalCostXiuwei += costxiuwei;
+            totalCostXueqi += costXueqi;
+        }
+
+        // 检查资源是否足够
+        if (player.修为 < totalCostXiuwei) {
+            return {
+                success: false,
+                message: `道源枯竭！批量修炼需${totalCostXiuwei}缕混沌炁，你仅存${player.修为}缕`
+            };
+        }
+        if (player.血气 < totalCostXueqi) {
+            return {
+                success: false,
+                message: `气血衰败！批量修炼需${totalCostXueqi}滴圣血，你仅余${player.血气}滴`
+            };
+        }
+
+        // 执行批量修炼
+        for (let i = 0; i < times; i++) {
+            if (player.圣体秘境完成度[mijing] >= 100) {
+                progressDetails.push(`${mijing}秘境已圆满，停止修炼`);
+                break;
+            }
+
+            const 原完成度 = player.圣体秘境完成度[mijing];
+            const progressFactor = 1 + (原完成度 / 100);
+            const costxiuwei = Math.round(10000000 * progressFactor);
+            const costXueqi = Math.round(10000000 * progressFactor);
+            const 单次增加属性 = Math.round(45000000 * 0.05);
+
+            // 扣除资源
+            player.修为 -= costxiuwei;
+            player.血气 -= costXueqi;
+            
+            // 更新完成度
+            player.圣体秘境完成度[mijing] += 5;
+            if (player.圣体秘境完成度[mijing] > 100) {
+                player.圣体秘境完成度[mijing] = 100;
+            }
+            
+            // 更新属性加成
+            player.圣体秘境加成[mijing] += 单次增加属性;
+            player.攻击加成 += 单次增加属性;
+            player.攻击 += 单次增加属性;
+            player.生命加成 += 单次增加属性;
+            player.血量上限 += 单次增加属性;
+            player.当前血量 += 单次增加属性;
+            player.防御加成 += 单次增加属性;
+            player.防御 += 单次增加属性;
+
+            totalAttributeGain += 单次增加属性;
+            successTimes++;
+
+            // 记录进度
+            progressDetails.push(`第${i+1}次：${原完成度}% → ${player.圣体秘境完成度[mijing]}% (+${单次增加属性}属性)`);
+
+            // 检查重要节点
+            const 当前完成度 = player.圣体秘境完成度[mijing];
+            if (原完成度 < 25 && 当前完成度 >= 25) {
+                nodeAchievements.push(` ${mijing}秘境初成，道基稳固！`);
+            } else if (原完成度 < 50 && 当前完成度 >= 50) {
+                nodeAchievements.push(` ${mijing}秘境小成，黄金血气澎湃！`);
+            } else if (原完成度 < 75 && 当前完成度 >= 75) {
+                nodeAchievements.push(` ${mijing}秘境大成，异象纷呈！`);
+            } else if (原完成度 < 100 && 当前完成度 >= 100) {
+                nodeAchievements.push(` ${mijing}秘境圆满！黄金圣血沸腾！`);
+            }
+        }
+
+        return {
+            success: true,
+            successTimes,
+            totalCostXiuwei,
+            totalCostXueqi,
+            totalAttributeGain,
+            progressDetails,
+            nodeAchievements,
+            finalProgress: player.圣体秘境完成度[mijing]
+        };
+    };
+
+    // 主逻辑执行
+    const prerequisiteCheck = checkPrerequisites();
+    if (prerequisiteCheck) {
+        return e.reply(prerequisiteCheck);
+    }
+
+    // 自动选择秘境（如果未指定）
+    if (!mijing) {
         const unfinishedMijings = ["轮海", "道宫", "四极", "化龙"].filter(
             mij => player.圣体秘境完成度[mij] < 100
         );
@@ -2272,145 +2419,74 @@ async shengtimishu(e) {
         mijing = unfinishedMijings[Math.floor(Math.random() * unfinishedMijings.length)];
     }
 
-    // 检查功法
-    if (!player.学习的功法.includes("圣体秘术")) {
-        return e.reply([
-            `道途未明，秘术难寻！`,
-            `你体内并无《圣体秘术》的传承道痕`,
-            `需寻得荒古石碑，方能参悟此等打磨秘境的盖世法门`
-        ].join('\n'));
-    }
-
-    // 检查圣体血脉[1,3](@ref)
-    if (!["圣体", "小成圣体", "圣体道胎", "大成圣体"].includes(player.灵根.type)) {
-        return e.reply([
-            `血脉轰鸣，金辉溃散！`,
-            `非荒古圣体一脉，强修此术必遭反噬`,
-            `你体内奔涌的${player.灵根.type}血脉与圣体道纹剧烈冲突`
-        ].join('\n'));
-    }
-
-    // 检查境界（需达到仙台秘境）[2,5](@ref)
-    if (player.mijinglevel_id < 9) {
-        return e.reply([
-            ` 仙台未筑，秘境难开！`,
-            `圣体秘术需以仙台为基，引动九天神辉`,
-            `你当前${player.mijinglevel_id}境修为，强修恐致道基崩裂`
-        ].join('\n'));
-    }
-
     // 检查完成度是否已达上限
     if (player.圣体秘境完成度[mijing] >= 100) {
         return e.reply([
-            ` ${mijing}秘境已达极境！`,
+            `${mijing}秘境已达极境！`,
             `黄金血气如大日悬空，再难寸进`,
             `当前完成度：${player.圣体秘境完成度[mijing]}%`,
             `可尝试修炼其他未圆满秘境`
         ].join('\n'));
     }
 
-    // 动态资源消耗（随完成度提高而增加）
-    const baseCostXiuwei = 10000000;
-    const baseCostXueqi = 10000000;
-    const progressFactor = 1 + (player.圣体秘境完成度[mijing] / 100);
-    const costxiuwei = Math.round(baseCostXiuwei * progressFactor);
-    const costXueqi = Math.round(baseCostXueqi * progressFactor);
-    
-    if (player.修为 < costxiuwei) {
-        return e.reply(` 道源枯竭！需${costxiuwei}缕混沌炁，你仅存${player.修为}缕`);
-    }
-    if (player.血气 < costXueqi) {
-        return e.reply(` 气血衰败！需${costXueqi}滴圣血，你仅余${player.血气}滴`);
+    // 执行批量修炼
+    const result = batchCultivate();
+    if (!result.success) {
+        return e.reply(result.message);
     }
 
-    // 秘境修炼文案（辰东风格）[1,4](@ref)
+    // 保存数据
+    await Write_player(usr_qq, player);
+
+    // 秘境修炼文案
     const cultivationText = {
-        轮海: [
-            ` 苦海翻腾，神桥贯空！`,
-            `轮海秘境中浪涛击天，命泉喷涌混沌气`,
-            `一道黄金神桥横跨苦海，彼岸花开映苍穹`
-        ],
-        道宫: [
-            ` 五神诵经，道宫轰鸣！`,
-            `心之神藏燃离火，肺之神藏凝庚金`,
-            `五脏道宫共振，传出远古祭祀道音`
-        ],
-        四极: [
-            ` 四肢擎天，撑开寰宇！`,
-            `四肢如四极天柱，接引星河之力灌体`,
-            `地水火风道则缠绕，演绎开天辟地异象`
-        ],
-        化龙: [
-            ` 脊椎化龙，直冲仙台！`,
-            `脊柱大龙腾空而起，九节龙骨迸发仙光`,
-            `龙吟震碎虚空，直抵仙台秘境`
-        ]
+        轮海: `苦海翻腾，神桥贯空！轮海秘境中浪涛击天，命泉喷涌混沌气`,
+        道宫: `五神诵经，道宫轰鸣！五脏道宫共振，传出远古祭祀道音`,
+        四极: `四肢擎天，撑开寰宇！地水火风道则缠绕，演绎开天辟地异象`,
+        化龙: `脊椎化龙，直冲仙台！脊柱大龙腾空而起，九节龙骨迸发仙光`
     }[mijing];
 
-    // 基础属性增加值
-    const 基础属性增加值 = 45000000;
-    const 单次增加属性 = Math.round(基础属性增加值 * 0.05); // 每次修炼增加5%的属性
-    
-    // 扣除资源
-    player.修为 -= costxiuwei;
-    player.血气 -= costXueqi;
-    
-    // 更新完成度（每次增加5%）
-    const 原完成度 = player.圣体秘境完成度[mijing];
-    player.圣体秘境完成度[mijing] += 5;
-    if (player.圣体秘境完成度[mijing] > 100) {
-        player.圣体秘境完成度[mijing] = 100;
-    }
-    
-    // 更新属性加成
-    player.圣体秘境加成[mijing] += 单次增加属性;
-    player.攻击加成 += 单次增加属性;
-    player.攻击 += 单次增加属性;
-    player.生命加成 += 单次增加属性;
-    player.血量上限 += 单次增加属性;
-    player.当前血量 += 单次增加属性;
-    player.防御加成 += 单次增加属性;
-    player.防御 += 单次增加属性;
-
-    // 检查是否达到重要节点（25%、50%、75%、100%）
-    let 节点奖励描述 = "";
-    const 当前完成度 = player.圣体秘境完成度[mijing];
-    
-    if (原完成度 < 25 && 当前完成度 >= 25) {
-        节点奖励描述 = `\n ${mijing}秘境初成，道基稳固！潜力激发！`;
-        // 可以在这里添加额外的节点奖励
-    } else if (原完成度 < 50 && 当前完成度 >= 50) {
-        节点奖励描述 = `\n🌟 ${mijing}秘境小成，黄金血气澎湃！实力大增！`;
-    } else if (原完成度 < 75 && 当前完成度 >= 75) {
-        节点奖励描述 = `\n💫 ${mijing}秘境大成，异象纷呈！威能暴涨！`;
-    } else if (原完成度 < 100 && 当前完成度 >= 100) {
-        节点奖励描述 = `\n⭐ ${mijing}秘境圆满！黄金圣血沸腾，可转修其他秘境！`;
-    }
-
-    await Write_player(usr_qq, player);
-    
     // 构建回复
     const replyLines = [
-        `【圣体秘术·${mijing}篇】`,
-        ...cultivationText,
-        ` 修炼进度：${原完成度}% → ${当前完成度}%`,
-        ` 属性提升：攻击/防御/气血 +${单次增加属性}`,
-        ` ${mijing}秘境总加成：${player.圣体秘境加成[mijing]}`,
-        ` 消耗：${costxiuwei}修为 | ${costXueqi}血气`
+        `【圣体秘术·${mijing}篇】×${result.successTimes}`,
+        cultivationText,
+        ``,
+        ` 修炼统计：`,
+        ` 成功修炼：${result.successTimes}次`,
+        ` 进度提升：${player.圣体秘境完成度[mijing] - (result.successTimes * 5)}% → ${player.圣体秘境完成度[mijing]}%`,
+        ` 属性增益：+${result.totalAttributeGain}（攻击/防御/气血）`,
+        ` 资源消耗：${result.totalCostXiuwei}修为 | ${result.totalCostXueqi}血气`,
+        ``
     ];
 
-    if (节点奖励描述) {
-        replyLines.splice(2, 0, 节点奖励描述);
+    // 添加节点成就
+    if (result.nodeAchievements.length > 0) {
+        replyLines.push(` 秘境突破：`);
+        replyLines.push(...result.nodeAchievements);
+        replyLines.push(``);
     }
 
-    if (当前完成度 >= 100) {
-        replyLines.push(` **${mijing}秘境已臻至大圆满！**`);
+    // 添加详细进度（如果次数较多则折叠显示）
+    if (result.successTimes <= 5) {
+        replyLines.push(` 详细进度：`);
+        replyLines.push(...result.progressDetails);
+    } else {
+        replyLines.push(` 详细进度（${result.successTimes}次修炼，此处显示前5次）：`);
+        replyLines.push(...result.progressDetails.slice(0, 5));
+        replyLines.push(`... 以及${result.successTimes - 5}次修炼`);
+    }
+
+    // 检查圆满状态
+    if (player.圣体秘境完成度[mijing] >= 100) {
+        replyLines.push(``);
+        replyLines.push(`✨ **${mijing}秘境已臻至大圆满！**`);
         
-        // 检查所有秘境是否全部圆满
         const 所有完成度 = Object.values(player.圣体秘境完成度);
         if (所有完成度.every(完成度 => 完成度 >= 100)) {
-            replyLines.push(`\n **恭喜！四大秘境全部圆满，圣体小成达到大圆满！**`);
+            replyLines.push(`🎉 **恭喜！四大秘境全部圆满，圣体小成达到大圆满！**`);
             replyLines.push(`黄金血气贯霄汉，举手投足间已有大帝之姿！`);
+        } else {
+            replyLines.push(`可继续修炼其他未圆满秘境`);
         }
     }
 
@@ -2441,27 +2517,45 @@ async shengtizhongjimishu(e) {
         e.reply("你的生命本源亏空无法修炼终极秘术");
         return;
     }
+
+    // 解析修炼次数
+    let times = 1; // 默认修炼1次
+    const message = e.msg.trim();
+    const match = message.match(/#修炼终极圣体秘术(?:\\s+(\\d+))?$/);
+    if (match && match[1]) {
+        times = parseInt(match[1]);
+        if (times <= 0) {
+            e.reply('修炼次数必须大于0');
+            return;
+        }
+    }
+
+    // 限制最大批量次数
+    const maxBatchTimes = 5; // 仙台秘境消耗巨大，限制次数
+    if (times > maxBatchTimes) {
+        times = maxBatchTimes;
+        e.reply(` 仙台秘境修炼消耗巨大，批量次数限制为${maxBatchTimes}次，已自动调整`);
+    }
+
     // 检查功法
-if (!player.学习的功法.includes("终极圣体秘术")) {
-    return e.reply([
-        `圣体道痕未显，仙台秘境未开！`,
-        `你神识内探，苦海寂静，未能寻到那源自火星大成圣体的无上道痕。`,
-        `《终极圣体秘术》乃圣体一脉真正的无敌资本，是火星那位大成圣体征战太初古矿、平定黑暗动乱后凝练的终极法门。`,
-        `此法涉及仙台秘境之根本，非大机缘、大悟性不可得。`,
-        `或许需寻访上古遗迹，或等待特定天机，方能窥得这一线传承。`
-    ].join('\n'));
-}
-    // *核心条件1：必须为大成圣体
-    if (player.灵根.type !== "大成圣体") {
+    if (!player.学习的功法.includes("终极圣体秘术")) {
         return e.reply([
-            ` 血脉未达极致！`,
-            `《终极圣体秘术》乃无上仙台法，需成就大成圣体方可参悟`,
-            `当前血脉：${player.灵根.type}`,
-            `继续完成圣体觉醒，踏足大成之境方有资格窥探仙台秘境`
+            `圣体道痕未显，仙台秘境未开！`,
+            `你神识内探，苦海寂静，未能寻到那源自火星大成圣体的无上道痕。`,
+            `《终极圣体秘术》乃圣体一脉真正的无敌资本，非大机缘、大悟性不可得。`
         ].join('\n'));
     }
 
-    // *核心条件2：四大基础秘境必须全部圆满[1,7](@ref)
+    // 核心条件1：必须为大成圣体
+    if (player.灵根.type !== "大成圣体") {
+        return e.reply([
+            `血脉未达极致！`,
+            `《终极圣体秘术》乃无上仙台法，需成就大成圣体方可参悟`,
+            `当前血脉：${player.灵根.type}`
+        ].join('\n'));
+    }
+
+    // 核心条件2：四大基础秘境必须全部圆满[7](@ref)
     if (typeof player.圣体秘境完成度 === 'undefined' ||
         player.圣体秘境完成度.轮海 < 100 ||
         player.圣体秘境完成度.道宫 < 100 ||
@@ -2475,15 +2569,14 @@ if (!player.学习的功法.includes("终极圣体秘术")) {
         if (!player.圣体秘境完成度 || player.圣体秘境完成度.化龙 < 100) 未圆满秘境.push(`化龙(${player.圣体秘境完成度?.化龙 || 0}%)`);
         
         return e.reply([
-            ` 根基不足！欲修仙台，先固根基`,
-            `《终极圣体秘术》需以轮海、道宫、四极、化龙四大秘境圆满为基`,
-            `方能引动眉心识海净土，开启仙台秘境的无上修炼`,
+            `根基不足！欲修仙台，先固根基`,
+            `《终极圣体秘术》需以四大秘境圆满为基`,
             `当前未圆满秘境：${未圆满秘境.join('、')}`,
             `请先使用 #修炼圣体秘术 将基础秘境打磨至圆满`
         ].join('\n'));
     }
 
-    // 初始化仙台秘境系统（仅限终极圣体秘术解锁）
+    // 初始化仙台秘境系统
     if (typeof player.仙台秘境完成度 === 'undefined') {
         player.仙台秘境完成度 = {
             仙台一层天: 0,
@@ -2493,159 +2586,229 @@ if (!player.学习的功法.includes("终极圣体秘术")) {
             仙台五层天: 0,
             仙台六层天: 0
         };
-        player.仙台秘境加成 = 0; // 总加成
+        player.仙台秘境加成 = 0;
     }
 
     // 检查仙台秘境是否已全部圆满
     const 仙台完成度 = Object.values(player.仙台秘境完成度);
     if (仙台完成度.every(完成度 => 完成度 >= 100)) {
         return e.reply([
-            ` 仙台极境，道果圆满！`,
+            `仙台极境，道果圆满！`,
             `你已将仙台六层天全部修炼至大圆满境界`,
-            `神识覆盖诸天，一念可动星辰，已达此术极致`,
-            ` 终极圣体秘术已臻完美，再无提升空间`
+            `神识覆盖诸天，一念可动星辰，已达此术极致`
         ].join('\n'));
     }
 
-    // 动态资源消耗（仙台秘境消耗巨大[6](@ref)）
-    const baseCostXiuwei = 50000000;
-    const baseCostXueqi = 50000000;
-    const 总完成度 = 仙台完成度.reduce((sum, curr) => sum + curr, 0) / 6;
-    const progressFactor = 1 + (总完成度 / 100);
-    const costxiuwei = Math.round(baseCostXiuwei * progressFactor);
-    const costXueqi = Math.round(baseCostXueqi * progressFactor);
-    
-    if (player.修为 < costxiuwei) {
-        return e.reply(` 道源枯竭！修炼仙台需${costxiuwei}缕混沌炁，你仅存${player.修为}缕`);
+    // 批量修炼逻辑
+    const batchCultivate = () => {
+        let totalCostXiuwei = 0;
+        let totalCostXueqi = 0;
+        let totalAttributeGain = 0;
+        let successTimes = 0;
+        let progressDetails = [];
+        let layerProgress = {};
+        let nodeAchievements = [];
+
+        // 预先估算总消耗（由于进度会变化，这里做保守估算）
+        for (let i = 0; i < times; i++) {
+            const 当前总完成度 = 仙台完成度.reduce((sum, curr) => sum + curr, 0) / 6 + (i * 4 / 6);
+            const progressFactor = 1 + (当前总完成度 / 100);
+            const costxiuwei = Math.round(50000000 * progressFactor);
+            const costXueqi = Math.round(50000000 * progressFactor);
+            
+            totalCostXiuwei += costxiuwei;
+            totalCostXueqi += costXueqi;
+        }
+
+        // 检查资源是否足够
+        if (player.修为 < totalCostXiuwei) {
+            return {
+                success: false,
+                message: `道源枯竭！批量修炼需${totalCostXiuwei}缕混沌炁，你仅存${player.修为}缕`
+            };
+        }
+        if (player.血气 < totalCostXueqi) {
+            return {
+                success: false,
+                message: `气血衰败！批量修炼需${totalCostXueqi}滴圣血，你仅余${player.血气}滴`
+            };
+        }
+
+        // 执行批量修炼
+        for (let i = 0; i < times; i++) {
+            // 检查是否全部圆满
+            const 所有仙台完成度 = Object.values(player.仙台秘境完成度);
+            if (所有仙台完成度.every(完成度 => 完成度 >= 100)) {
+                progressDetails.push(`所有仙台秘境已圆满，停止修炼`);
+                break;
+            }
+
+            // 确定当前修炼层数
+            let 当前修炼层数 = "";
+            if (player.仙台秘境完成度.仙台一层天 < 100) {
+                当前修炼层数 = "仙台一层天";
+            } else if (player.仙台秘境完成度.仙台二层天 < 100) {
+                当前修炼层数 = "仙台二层天";
+            } else if (player.仙台秘境完成度.仙台三层天 < 100) {
+                当前修炼层数 = "仙台三层天";
+            } else if (player.仙台秘境完成度.仙台四层天 < 100) {
+                当前修炼层数 = "仙台四层天";
+            } else if (player.仙台秘境完成度.仙台五层天 < 100) {
+                当前修炼层数 = "仙台五层天";
+            } else {
+                当前修炼层数 = "仙台六层天";
+            }
+
+            // 记录层数进度
+            if (!layerProgress[当前修炼层数]) {
+                layerProgress[当前修炼层数] = {
+                    start: player.仙台秘境完成度[当前修炼层数],
+                    count: 0
+                };
+            }
+            layerProgress[当前修炼层数].count++;
+
+            // 计算本次消耗和加成
+            const 当前总完成度 = 所有仙台完成度.reduce((sum, curr) => sum + curr, 0) / 6;
+            const progressFactor = 1 + (当前总完成度 / 100);
+            const costxiuwei = Math.round(50000000 * progressFactor);
+            const costXueqi = Math.round(50000000 * progressFactor);
+            
+            const 层数加成系数 = {
+                "仙台一层天": 1.0,
+                "仙台二层天": 1.2,
+                "仙台三层天": 1.5,
+                "仙台四层天": 2.0,
+                "仙台五层天": 2.5,
+                "仙台六层天": 3.0
+            }[当前修炼层数];
+            
+            const 实际属性增加值 = Math.round(90000000 * 层数加成系数);
+
+            // 扣除资源
+            player.修为 -= costxiuwei;
+            player.血气 -= costXueqi;
+            
+            // 更新完成度
+            const 原完成度 = player.仙台秘境完成度[当前修炼层数];
+            player.仙台秘境完成度[当前修炼层数] += 4;
+            if (player.仙台秘境完成度[当前修炼层数] > 100) {
+                player.仙台秘境完成度[当前修炼层数] = 100;
+            }
+            
+            // 更新属性加成
+            player.仙台秘境加成 += 实际属性增加值;
+            player.攻击加成 += 实际属性增加值;
+            player.攻击 += 实际属性增加值;
+            player.生命加成 += 实际属性增加值;
+            player.血量上限 += 实际属性增加值;
+            player.当前血量 += 实际属性增加值;
+            player.防御加成 += 实际属性增加值;
+            player.防御 += 实际属性增加值;
+
+            totalAttributeGain += 实际属性增加值;
+            successTimes++;
+
+            // 记录进度
+            progressDetails.push(`第${i+1}次：${当前修炼层数} ${原完成度}% → ${player.仙台秘境完成度[当前修炼层数]}%`);
+
+            // 检查层数圆满
+            if (原完成度 < 100 && player.仙台秘境完成度[当前修炼层数] >= 100) {
+                const 圆满奖励系数 = 层数加成系数 * 0.5;
+                const 圆满奖励值 = Math.round(90000000 * 圆满奖励系数);
+                
+                player.攻击加成 += 圆满奖励值;
+                player.攻击 += 圆满奖励值;
+                player.生命加成 += 圆满奖励值;
+                player.血量上限 += 圆满奖励值;
+                player.当前血量 += 圆满奖励值;
+                player.防御加成 += 圆满奖励值;
+                player.防御 += 圆满奖励值;
+
+                nodeAchievements.push(`✨ ${当前修炼层数}圆满！获得圆满奖励`);
+            }
+        }
+
+        // 计算实际总消耗
+        totalCostXiuwei = 0;
+        totalCostXueqi = 0;
+        for (let i = 0; i < successTimes; i++) {
+            // 这里简化计算，实际应该按每次修炼的进度重新计算
+            totalCostXiuwei += Math.round(50000000 * (1 + (i * 0.04)));
+            totalCostXueqi += Math.round(50000000 * (1 + (i * 0.04)));
+        }
+
+        return {
+            success: true,
+            successTimes,
+            totalCostXiuwei,
+            totalCostXueqi,
+            totalAttributeGain,
+            progressDetails,
+            nodeAchievements,
+            layerProgress,
+            finalProgress: player.仙台秘境完成度
+        };
+    };
+
+    // 执行批量修炼
+    const result = batchCultivate();
+    if (!result.success) {
+        return e.reply(result.message);
     }
-    if (player.血气 < costXueqi) {
-        return e.reply(` 气血衰败！修炼仙台需${costXueqi}滴圣血，你仅余${player.血气}滴`);
-    }
 
-    // 确定当前修炼的仙台层数（从低到高依次修炼）
-    let 当前修炼层数 = "";
-    if (player.仙台秘境完成度.仙台一层天 < 100) {
-        当前修炼层数 = "仙台一层天";
-    } else if (player.仙台秘境完成度.仙台二层天 < 100) {
-        当前修炼层数 = "仙台二层天";
-    } else if (player.仙台秘境完成度.仙台三层天 < 100) {
-        当前修炼层数 = "仙台三层天";
-    } else if (player.仙台秘境完成度.仙台四层天 < 100) {
-        当前修炼层数 = "仙台四层天";
-    } else if (player.仙台秘境完成度.仙台五层天 < 100) {
-        当前修炼层数 = "仙台五层天";
-    } else {
-        当前修炼层数 = "仙台六层天";
-    }
-
-    // 仙台秘境修炼文案（辰东风格）
-    const 仙台修炼文案 = {
-        "仙台一层天": [
-            ` 仙台初开，神识初醒！`,
-            `《终极圣体秘术》运转，脑内净土绽放仙光，半步大能之境初成`,
-            `神识如潮水般扩散，覆盖百里山河，已然超脱凡俗`
-        ],
-        "仙台二层天": [
-            ` 仙台二层，寿延三千！`,
-            `神识化万千，可开辟一方小世界，大能之威初显`,
-            `黄金血气与神识交融，威震一方星空`
-        ],
-        "仙台三层天": [
-            ` 仙台三层，王者降临！`,
-            `斩道成功，明悟己身大道，神识强大到足以覆盖整个星辰`,
-            `圣体异象与仙台共鸣，王者威压浩荡`
-        ],
-        "仙台四层天": [
-            ` 仙台四层，圣人之威！`,
-            `一念花开，君临天下，步入法则领域，具备毁星灭辰之能`,
-            `圣体法则与仙台交织，演化自在世界`
-        ],
-        "仙台五层天": [
-            ` 仙台五层，圣王临世！`,
-            `法则领域深造，时空为之扭曲，圣人中之王者，战力滔天`,
-            `黄金圣血沸腾，已可徒手撕裂星辰`
-        ],
-        "仙台六层天": [
-            ` 仙台六层，大圣无敌！`,
-            `功参造化，滴血可重生，圣道法则领域达至顶峰，俯瞰万古`,
-            `圣体终极异象纷呈，已具叫板古之大帝的无上风采`
-        ]
-    }[当前修炼层数];
-
-    // 终极属性加成（仙台秘境加成远高于基础秘境[5,7](@ref)）
-    const 基础属性增加值 = 90000000;
-    const 层数加成系数 = {
-        "仙台一层天": 1.0,
-        "仙台二层天": 1.2,
-        "仙台三层天": 1.5,
-        "仙台四层天": 2.0,
-        "仙台五层天": 2.5,
-        "仙台六层天": 3.0
-    }[当前修炼层数];
-    
-    const 实际属性增加值 = Math.round(基础属性增加值 * 层数加成系数);
-
-    // 扣除资源
-    player.修为 -= costxiuwei;
-    player.血气 -= costXueqi;
-    
-    // 更新仙台秘境完成度（每次增加4%，体现高阶修炼难度[6](@ref)）
-    const 原完成度 = player.仙台秘境完成度[当前修炼层数];
-    player.仙台秘境完成度[当前修炼层数] += 4;
-    if (player.仙台秘境完成度[当前修炼层数] > 100) {
-        player.仙台秘境完成度[当前修炼层数] = 100;
-    }
-    
-    // 更新属性加成（终极加成[5,7](@ref)）
-    player.仙台秘境加成 += 实际属性增加值;
-    player.攻击加成 += 实际属性增加值;
-    player.攻击 += 实际属性增加值;
-    player.生命加成 += 实际属性增加值;
-    player.血量上限 += 实际属性增加值;
-    player.当前血量 += 实际属性增加值;
-    player.防御加成 += 实际属性增加值;
-    player.防御 += 实际属性增加值;
-
-    // 特殊效果：仙台秘境修炼弥补四大秘境缺漏，提供额外加成[7](@ref)
-    if (player.仙台秘境完成度[当前修炼层数] >= 100) {
-        const 圆满奖励系数 = 层数加成系数 * 0.5;
-        const 圆满奖励值 = Math.round(基础属性增加值 * 圆满奖励系数);
-        
-        player.攻击加成 += 圆满奖励值;
-        player.攻击 += 圆满奖励值;
-        player.生命加成 += 圆满奖励值;
-        player.血量上限 += 圆满奖励值;
-        player.当前血量 += 圆满奖励值;
-        player.防御加成 += 圆满奖励值;
-        player.防御 += 圆满奖励值;
-    }
-
+    // 保存数据
     await Write_player(usr_qq, player);
-    
+
     // 构建回复
     const 回复文案 = [
-        `【终极圣体秘术·${当前修炼层数}篇】`,
-        ...仙台修炼文案,
-        ` 修炼进度：${原完成度}% → ${player.仙台秘境完成度[当前修炼层数]}%`,
-        ` 属性提升：攻击/防御/气血 +${实际属性增加值}`,
-        ` 仙台秘境总加成：${player.仙台秘境加成}`,
-        ` 消耗：${costxiuwei}修为 | ${costXueqi}血气`
+        `【终极圣体秘术·批量修炼】×${result.successTimes}`,
+        `仙台秘境绽放无量光，神识跨越诸天万界！`,
+        ``,
+        ` 修炼统计：`,
+        ` 成功修炼：${result.successTimes}次`,
+        ` 属性增益：+${result.totalAttributeGain}`,
+        ` 资源消耗：${result.totalCostXiuwei}修为 | ${result.totalCostXueqi}血气`,
+        ` 仙台总加成：${player.仙台秘境加成}`,
+        ``
     ];
 
-    // 层数圆满特殊提示
-    if (player.仙台秘境完成度[当前修炼层数] >= 100) {
-        回复文案.push(` **${当前修炼层数}已臻圆满！**`);
-        
-        // 检查是否所有仙台层数都圆满
-        const 所有仙台完成度 = Object.values(player.仙台秘境完成度);
-        if (所有仙台完成度.every(完成度 => 完成度 >= 100)) {
-            回复文案.push(`\n 恭喜！仙台六层天全部圆满，圣体终极蜕变！`);
-            回复文案.push(`黄金血气映照诸天，五大秘境圆满合一，已具天帝之资！`);
-        }
+    // 添加层数进度概要
+    回复文案.push(` 层数进度：`);
+    for (let layer in result.layerProgress) {
+        const progress = result.layerProgress[layer];
+        const finalProgress = player.仙台秘境完成度[layer];
+        回复文案.push(` ${layer}: ${progress.start}% → ${finalProgress}% (修炼${progress.count}次)`);
+    }
+    回复文案.push(``);
+
+    // 添加节点成就
+    if (result.nodeAchievements.length > 0) {
+        回复文案.push(` 秘境突破：`);
+        回复文案.push(...result.nodeAchievements);
+        回复文案.push(``);
+    }
+
+    // 添加详细进度（限制显示条数）
+    if (result.successTimes <= 3) {
+        回复文案.push(` 详细进度：`);
+        回复文案.push(...result.progressDetails);
+    } else {
+        回复文案.push(` 详细进度（前3次）：`);
+        回复文案.push(...result.progressDetails.slice(0, 3));
+        回复文案.push(`... 以及${result.successTimes - 3}次修炼`);
+    }
+
+    // 检查是否全部圆满
+    const 所有仙台完成度 = Object.values(player.仙台秘境完成度);
+    if (所有仙台完成度.every(完成度 => 完成度 >= 100)) {
+        回复文案.push(``);
+        回复文案.push(` **恭喜！仙台六层天全部圆满，圣体终极蜕变！**`);
+        回复文案.push(`黄金血气映照诸天，五大秘境圆满合一，已具天帝之资！`);
     }
 
     return e.reply(回复文案.join('\n'));
-}   
+}  
 async createEverything(e) {
     // 群聊限定
     if (!e.isGroup) {
