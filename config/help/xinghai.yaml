@@ -17,4 +17,24 @@
     - icon: help-icon_20
       title: '#真我觉醒'
       desc: '爱莉希雅进阶'
+- group: 团本系统      
+  list:
+    - icon: help-icon_20
+      title: '#创建讨伐队伍 [boss名称]'
+      desc: '目前可供讨伐目标：九幽魔君、狠人大帝、尸骸仙帝'
+    - icon: help-icon_20
+      title: '#发起讨伐'
+      desc: '与队友讨伐团本目标'
+    - icon: help-icon_20
+      title: '#结算团本奖励'
+      desc: '结算队伍中所有人的奖励'              
+    - icon: help-icon_20
+      title: '#加入讨伐队伍 xxx'
+      desc: '加入其他玩家的讨伐队伍'
+    - icon: help-icon_20
+      title: '#离开队伍'
+      desc: '离开队伍'
+    - icon: help-icon_20
+      title: '#解散队伍'
+      desc: '解散队伍'      
 
