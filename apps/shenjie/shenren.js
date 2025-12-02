@@ -26,11 +26,11 @@ export class shenren extends plugin {
           fnc: 'shenjie',
         },
         {
-          reg: '^#参悟神石$',
+          reg: '^#参悟神石(\\*(\\d+))?$',
           fnc: 'canwu',
         },
         {
-          reg: '^#敲开闪闪发光的石头$',
+          reg: '^#敲开闪闪发光的石头(\\*(\\d+))?$',
           fnc: 'open_shitou',
         },
       ],
@@ -68,21 +68,58 @@ export class shenren extends plugin {
     //查看存档
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) return false;
+    
+    // 解析敲开次数
+    let times = 1; // 默认敲开1次
+    const message = e.raw_message;
+    const match = message.match(/#敲开闪闪发光的石头\*(\d+)/);
+    if (match && match[1]) {
+      times = parseInt(match[1]);
+      if (times <= 0) {
+        e.reply('敲开次数必须大于0');
+        return false;
+      }
+    }
+    
     let x = await exist_najie_thing(usr_qq, '闪闪发光的石头', '道具');
     if (!x) {
       e.reply('你没有闪闪发光的石头');
       return false;
     }
-    await Add_najie_thing(usr_qq, '闪闪发光的石头', '道具', -1);
-    let random = Math.random();
-    let thing;
-    if (random < 0.5) {
-      thing = '神石';
-    } else {
-      thing = '魔石';
+    
+    if (x < times) {
+      e.reply(`闪闪发光的石头不足，需要${times}个，当前只有${x}个`);
+      return false;
     }
-    e.reply('你打开了石头,获得了' + thing + 'x2');
-    await Add_najie_thing(usr_qq, thing, '道具', 2);
+    
+    await Add_najie_thing(usr_qq, '闪闪发光的石头', '道具', -times);
+    
+    // 批量获取物品
+    let rewards = {};
+    for (let i = 0; i < times; i++) {
+      let random = Math.random();
+      let thing;
+      if (random < 0.5) {
+        thing = '神石';
+      } else {
+        thing = '魔石';
+      }
+      
+      if (!rewards[thing]) {
+        rewards[thing] = { count: 0 };
+      }
+      rewards[thing].count += 2; // 每次获得2个
+    }
+    
+    // 添加所有奖励到背包
+    let rewardText = [];
+    for (let itemName in rewards) {
+      let reward = rewards[itemName];
+      await Add_najie_thing(usr_qq, itemName, '道具', reward.count);
+      rewardText.push(`${itemName}×${reward.count}`);
+    }
+    
+    e.reply(`敲开完成！消耗闪闪发光的石头${times}个，获得：${rewardText.join('，')}`);
     return false;
   }
 
@@ -196,50 +233,114 @@ export class shenren extends plugin {
     return false;
   }
 
-  async canwu(e) {
-    if (!verc({ e })) return false;
-    let usr_qq = e.user_id.toString().replace('qg_','');
-    usr_qq = await channel(usr_qq);
-    //查看存档
-    let ifexistplay = await existplayer(usr_qq);
-    if (!ifexistplay) return false;
-    let player = await Read_player(usr_qq);
-    if ( player.灵根.type == "神慧者") {
-  e.reply("你眉心的神慧之光绽放，以凌驾整片维度的力量改变了某种规则与概念！");
-    await Add_najie_thing(usr_qq, '神石', '道具', -1);
-    let wuping_length;
-    let wuping_index;
-    let wuping;
-    wuping_length = data.timedanyao_list.length;
-    wuping_index = Math.trunc(Math.random() * wuping_length);
-    wuping = data.timedanyao_list[wuping_index];
-    e.reply('获得了' + wuping.name);
-    await Add_najie_thing(usr_qq, wuping.name, wuping.class, 1);
-  return;
-}else if(player.魔道值 > 0 && (player.灵根.type !== "转生" && player.灵根.type !== "命运")) {
-      e.reply("你身上带着罪孽亦或者并非轮回者，所以无法供奉神石");
-      return;
+async canwu(e) {
+  if (!verc({ e })) return false;
+  let usr_qq = e.user_id.toString().replace('qg_','');
+  usr_qq = await channel(usr_qq);
+  
+  // 查看存档
+  let ifexistplay = await existplayer(usr_qq);
+  if (!ifexistplay) return false;
+  
+  let player = await Read_player(usr_qq);
+  
+  // 解析参悟次数
+  let times = 1; // 默认参悟1次
+  const message = e.raw_message;
+  const match = message.match(/#参悟神石\*(\d+)/);
+  if (match && match[1]) {
+    times = parseInt(match[1]);
+    if (times <= 0) {
+      e.reply('参悟次数必须大于0');
+      return false;
     }
+  }
+  
+  // 神慧者特殊逻辑
+  if (player.灵根.type == "神慧者") {
+    e.reply("你眉心的神慧之光绽放，以凌驾整片维度的力量改变了某种规则与概念！");
+    
+    let totalCost = times; // 神慧者每次消耗1个神石
     let x = await exist_najie_thing(usr_qq, '神石', '道具');
-    if (!x) {
-      e.reply('你没有神石');
+    if (!x || x < totalCost) {
+      e.reply(`神石不足，需要${totalCost}个，当前只有${x || 0}个`);
       return false;
     }
-    if (x < 8) {
-      e.reply('神石不足8个,当前神石数量' + x + '个');
-      return false;
+    
+    await Add_najie_thing(usr_qq, '神石', '道具', -totalCost);
+    
+    // 批量获取物品
+    let rewards = {};
+    for (let i = 0; i < times; i++) {
+      let wuping_length = data.timedanyao_list.length;
+      let wuping_index = Math.trunc(Math.random() * wuping_length);
+      let wuping = data.timedanyao_list[wuping_index];
+      
+      if (!rewards[wuping.name]) {
+        rewards[wuping.name] = { item: wuping, count: 0 };
+      }
+      rewards[wuping.name].count++;
     }
-    await Add_najie_thing(usr_qq, '神石', '道具', -8);
-    let wuping_length;
-    let wuping_index;
-    let wuping;
-    wuping_length = data.timedanyao_list.length;
-    wuping_index = Math.trunc(Math.random() * wuping_length);
-    wuping = data.timedanyao_list[wuping_index];
-    e.reply('获得了' + wuping.name);
-    await Add_najie_thing(usr_qq, wuping.name, wuping.class, 1);
+    
+    // 添加所有奖励到背包
+    let rewardText = [];
+    for (let itemName in rewards) {
+      let reward = rewards[itemName];
+      await Add_najie_thing(usr_qq, reward.item.name, reward.item.class, reward.count);
+      rewardText.push(`${reward.item.name}×${reward.count}`);
+    }
+    
+    e.reply(`参悟完成！获得：${rewardText.join('，')}`);
     return false;
   }
+  
+  // 魔道值检查
+  if (player.魔道值 > 0 && (player.灵根.type !== "转生" && player.灵根.type !== "命运")) {
+    e.reply("你身上带着罪孽亦或者并非轮回者，所以无法参悟神石");
+    return false;
+  }
+  
+  // 普通玩家逻辑
+  const costPerTime = 8; // 每次参悟需要8个神石
+  let totalCost = times * costPerTime;
+  
+  let x = await exist_najie_thing(usr_qq, '神石', '道具');
+  if (!x) {
+    e.reply('你没有神石');
+    return false;
+  }
+  
+  if (x < totalCost) {
+    e.reply(`神石不足，需要${totalCost}个（${times}次×8个/次），当前只有${x}个`);
+    return false;
+  }
+  
+  await Add_najie_thing(usr_qq, '神石', '道具', -totalCost);
+  
+  // 批量获取物品
+  let rewards = {};
+  for (let i = 0; i < times; i++) {
+    let wuping_length = data.timedanyao_list.length;
+    let wuping_index = Math.trunc(Math.random() * wuping_length);
+    let wuping = data.timedanyao_list[wuping_index];
+    
+    if (!rewards[wuping.name]) {
+      rewards[wuping.name] = { item: wuping, count: 0 };
+    }
+    rewards[wuping.name].count++;
+  }
+  
+  // 添加所有奖励到背包
+  let rewardText = [];
+  for (let itemName in rewards) {
+    let reward = rewards[itemName];
+    await Add_najie_thing(usr_qq, reward.item.name, reward.item.class, reward.count);
+    rewardText.push(`${reward.item.name}×${reward.count}`);
+  }
+  
+  e.reply(`参悟完成！消耗神石${totalCost}个，获得：${rewardText.join('，')}`);
+  return false;
+}
 }
 
 async function getLastdagong(usr_qq) {

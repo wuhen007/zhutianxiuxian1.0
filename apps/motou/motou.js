@@ -25,7 +25,7 @@ export class motou extends plugin {
           fnc: 'mojie',
         },
         {
-          reg: '^#献祭魔石$',
+          reg: '^#献祭魔石(\\*(\\d+))?$',
           fnc: 'xianji',
         },
           {
@@ -296,44 +296,97 @@ export class motou extends plugin {
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) return false;
     let player = await Read_player(usr_qq);
-     if ( player.灵根.type == "神慧者") {
-  e.reply("你眉心的神慧之光绽放，以凌驾整片维度的力量改变了某种规则与概念！");
     
-    let wuping_length;
-    let wuping_index;
-    let wuping;
-    wuping_length = data.xingge.length;
-    console.log(wuping_length)
-    wuping_index = Math.trunc(Math.random() * wuping_length);
-    wuping = data.xingge[wuping_index];
-    await Add_najie_thing(usr_qq, '魔石', '道具', -1);
-    e.reply('获得了' + wuping.name);
-    await Add_najie_thing(usr_qq, wuping.name, wuping.class, 1);
+    // 解析献祭次数
+    let times = 1; // 默认献祭1次
+    const message = e.raw_message;
+    const match = message.match(/#献祭魔石\*(\d+)/);
+    if (match && match[1]) {
+      times = parseInt(match[1]);
+      if (times <= 0) {
+        e.reply('献祭次数必须大于0');
+        return false;
+      }
+    }
+    
+     if ( player.灵根.type == "神慧者") {
+    e.reply("你眉心的神慧之光绽放，以凌驾整片维度的力量改变了某种规则与概念！");
+    
+    let totalCost = times; // 神慧者每次消耗1个魔石
+    let x = await exist_najie_thing(usr_qq, '魔石', '道具');
+    if (!x || x < totalCost) {
+      e.reply(`魔石不足，需要${totalCost}个，当前只有${x || 0}个`);
+      return false;
+    }
+    
+    await Add_najie_thing(usr_qq, '魔石', '道具', -totalCost);
+    
+    // 批量获取物品
+    let rewards = {};
+    for (let i = 0; i < times; i++) {
+      let wuping_length = data.xingge.length;
+      let wuping_index = Math.trunc(Math.random() * wuping_length);
+      let wuping = data.xingge[wuping_index];
+      
+      if (!rewards[wuping.name]) {
+        rewards[wuping.name] = { item: wuping, count: 0 };
+      }
+      rewards[wuping.name].count++;
+    }
+    
+    // 添加所有奖励到背包
+    let rewardText = [];
+    for (let itemName in rewards) {
+      let reward = rewards[itemName];
+      await Add_najie_thing(usr_qq, reward.item.name, reward.item.class, reward.count);
+      rewardText.push(`${reward.item.name}×${reward.count}`);
+    }
+    
+    e.reply(`献祭完成！获得：${rewardText.join('，')}`);
     return false;
 } else if (player.魔道值 < 100 && (player.灵根.type !== "魔头" && player.灵根.type !== "天魔")) {
             e.reply("你并非真正的魔");
             return;
         }
+        
+    const costPerTime = 8; // 每次献祭需要8个魔石
+    let totalCost = times * costPerTime;
+    
     let x = await exist_najie_thing(usr_qq, '魔石', '道具');
     if (!x) {
       e.reply('你没有魔石');
       return false;
     }
-    if (x < 8) {
-      e.reply('魔石不足8个,当前魔石数量' + x + '个');
+    
+    if (x < totalCost) {
+      e.reply(`魔石不足，需要${totalCost}个（${times}次×8个/次），当前只有${x}个`);
       return false;
     }
     
-    let wuping_length;
-    let wuping_index;
-    let wuping;
-    wuping_length = data.xingge.length;
-    console.log(wuping_length)
-    wuping_index = Math.trunc(Math.random() * wuping_length);
-    wuping = data.xingge[wuping_index];
-    await Add_najie_thing(usr_qq, '魔石', '道具', -8);
-    e.reply('获得了' + wuping.name);
-    await Add_najie_thing(usr_qq, wuping.name, wuping.class, 1);
+    await Add_najie_thing(usr_qq, '魔石', '道具', -totalCost);
+    
+    // 批量获取物品
+    let rewards = {};
+    for (let i = 0; i < times; i++) {
+      let wuping_length = data.xingge.length;
+      let wuping_index = Math.trunc(Math.random() * wuping_length);
+      let wuping = data.xingge[wuping_index];
+      
+      if (!rewards[wuping.name]) {
+        rewards[wuping.name] = { item: wuping, count: 0 };
+      }
+      rewards[wuping.name].count++;
+    }
+    
+    // 添加所有奖励到背包
+    let rewardText = [];
+    for (let itemName in rewards) {
+      let reward = rewards[itemName];
+      await Add_najie_thing(usr_qq, reward.item.name, reward.item.class, reward.count);
+      rewardText.push(`${reward.item.name}×${reward.count}`);
+    }
+    
+    e.reply(`献祭完成！消耗魔石${totalCost}个，获得：${rewardText.join('，')}`);
     return false;
   }
   async xiulianmogong(e) {

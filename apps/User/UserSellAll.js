@@ -1903,12 +1903,12 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
               t1 = 0.5 + Math.random() * 0.5;
               t2 = 0.5 + Math.random() * 0.5;
             }
-    if (player.灵根.type === "许愿者·圆") {
+    if (player.灵根.type === "许愿化身") {
     const oneReward = weizhi.one[Math.floor(Math.random() * weizhi.one.length)];
     await Add_najie_thing(player_id, oneReward.name, oneReward.class, 3);
     last_msg += `额外获得[${oneReward.name}]x3`;
   } 
-    if (player.灵根.type === "希望之光·圆") {
+    if (player.灵根.type === "希望化身") {
     const oneReward = weizhi.one[Math.floor(Math.random() * weizhi.one.length)];
     const twoReward = weizhi.two[Math.floor(Math.random() * weizhi.two.length)];
     
@@ -3854,12 +3854,12 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
               t1 = 0.5 + Math.random() * 0.5;
               t2 = 0.5 + Math.random() * 0.5;
             }
-    if (player.灵根.type === "许愿者·圆") {
+    if (player.灵根.type === "愿望化身") {
     const oneReward = weizhi.one[Math.floor(Math.random() * weizhi.one.length)];
     await Add_najie_thing(player_id, oneReward.name, oneReward.class, 3);
     last_msg += `额外获得[${oneReward.name}]x3`;
   } 
-    if (player.灵根.type === "希望之光·圆") {
+    if (player.灵根.type === "希望化身") {
     const oneReward = weizhi.one[Math.floor(Math.random() * weizhi.one.length)];
     const twoReward = weizhi.two[Math.floor(Math.random() * weizhi.two.length)];
     
