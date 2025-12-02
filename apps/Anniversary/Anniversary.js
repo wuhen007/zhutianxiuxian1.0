@@ -4,7 +4,7 @@ import config from "../../model/Config.js"
 import axios from 'axios';
 import fs from "fs"
 import path from 'path';
-import { Read_player, existplayer,sleep,exist_najie_thing, Add_修为,Add_血气, getLastsign2 } from '../../model/xiuxian.js'
+import { Read_player, existplayer,sleep,exist_najie_thing, Add_修为,Add_血气, getxinghailastsign_time,getLastsign2 } from '../../model/xiuxian.js'
 import {  Write_player,  } from '../../model/xiuxian.js'
 import { shijianc,  isNotNull,ForwardMsg } from '../../model/xiuxian.js'
 import { Add_灵石,  Add_najie_thing,channel} from '../../model/xiuxian.js'
@@ -165,7 +165,7 @@ async preview_pifu(e) {
             let nowTime = now.getTime(); //获取当前日期的时间戳
             let Yesterday = await shijianc(nowTime - 24 * 60 * 60 * 1000);//获得昨天日期
             let Today = await shijianc(nowTime);
-            let lastsign_time = await getLastsign2(usr_qq);//获得上次签到日期
+            let lastsign_time = await getxinghailastsign_time(usr_qq);//获得上次签到日期
             if (Today.Y == lastsign_time.Y && Today.M == lastsign_time.M && Today.D == lastsign_time.D) {
                 e.reply(`今日已经签到过了`);
                 return;

@@ -5037,6 +5037,16 @@ export async function getLastsign2(usr_qq) {
   }
   return false;
 }
+//获取上次周年庆签到时间
+export async function getxinghailastsign_time(usr_qq) {
+  //查询redis中的人物动作
+  let time = await redis.get('xiuxian:player:' + usr_qq + ':xinghailastsign_time');
+  if (time != null) {
+    let data = await shijianc(parseInt(time));
+    return data;
+  }
+  return false;
+}
 //获取上次道法仙术签到时间
 export async function getLastsign3(usr_qq) {
   //查询redis中的人物动作
