@@ -87,14 +87,12 @@ export class Pokemon extends plugin {
         e.reply("需要800W灵石才能派仙宠寻宝！");
         return;
     }
-    await Add_灵石(usr_qq, -8000000);
-    await Write_player(usr_qq, player); //写入
+    player.灵石-=8000000;
     // 开启寻宝状态
     player.仙宠寻宝状态 = 1;
     player.仙宠寻宝 = player.仙宠.name;
     player.仙宠寻宝开始时间 = Date.now();
-    
-    await data.setData('player', usr_qq, player);
+    await Write_player(usr_qq, player); //写入
     
     const treasureNames = ["葬仙古域", "龙血秘境", "天渊海眼", "虚神界外域"];
     const randomName = treasureNames[Math.floor(Math.random() * treasureNames.length)];

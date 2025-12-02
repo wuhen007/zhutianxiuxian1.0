@@ -116,6 +116,9 @@ export class UserSellAll extends plugin {
                  {   reg: '^#一键服用食材$',
                     fnc: 'all_food'
                 },
+                {   reg: '^#一键服用寿命丹$',
+                    fnc: 'all_shouyuan'
+                },
              {   reg: '^#一键回血$',
                     fnc: 'all_huixue'
                 },
@@ -497,6 +500,52 @@ async quickSettleDungeon(e) {
     }
     await Add_血气(usr_qq, xueqi);
     e.reply(`服用成功,血气增加${xueqi}`);
+    return false;
+  }
+
+  async all_shouyuan(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_','');
+    usr_qq = await channel(usr_qq);
+    //有无存档
+    let ifexistplay = await existplayer(usr_qq);
+    if (!ifexistplay) return false;
+    let player = await Read_player(usr_qq);
+    
+    //检索方法
+    let najie = await data.getData('najie', usr_qq);
+    let totalShouyuan = 0;
+    let consumedItems = [];
+    
+    // 遍历所有寿命类丹药
+    for (var l of najie.丹药) {
+      if (l.type == '寿命') {
+        //纳戒中的数量
+        let quantity = await exist_najie_thing(usr_qq, l.name, l.class);
+        if (quantity > 0) {
+          await Add_najie_thing(usr_qq, l.name, l.class, -quantity);
+          let addedShouyuan = (l.shouyuan || 0) * quantity;
+          totalShouyuan += addedShouyuan;
+          consumedItems.push(`${l.name}×${quantity} (增加${addedShouyuan}年)`);
+        }
+      }
+    }
+    
+    if (totalShouyuan === 0) {
+      e.reply("纳戒中没有可服用的寿命丹");
+      return false;
+    }
+    
+    // 增加寿元
+    await Add_寿元(usr_qq, totalShouyuan);
+    
+    // 构建回复消息
+    let msg = "【一键服用寿命丹】";
+    msg += " 你服用了以下寿命丹：";
+    msg += consumedItems.join("\n") + "\n";
+    msg += `寿元总共增加：${totalShouyuan}年`;
+    
+    e.reply(msg);
     return false;
   }
    async all_huixue(e) {

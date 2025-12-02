@@ -4283,30 +4283,79 @@ if (thing_name == "如梦道祖随手丢的垃圾匣") {
                 }
             }
 if (thing_name == "炼气士留下的药液") {
-    let math = Math.random();
-    if (math > 0.95) {
-        // 极小概率：各增加90~200w
-        let randomIncrease = Math.floor(Math.random() * (200 - 90 + 1)) + 90;
-        await Add_修为(usr_qq, randomIncrease * 10000);
-        await Add_血气(usr_qq, randomIncrease * 10000);
-        await Add_najie_thing(usr_qq, "炼气士留下的药液", "道具", -1);
-        e.reply([`你小心翼翼地服下药液，顿时感觉浑身经脉如沐春风，一股磅礴的灵力在体内奔涌！修为血气暴涨${randomIncrease}万点！这难道是传说中的一劫金丹液？`]);
-        return
-    } else if (math > 0.1) {
-        // 大概率：各增加100w
-        await Add_修为(usr_qq, 1000000);
-        await Add_血气(usr_qq, 1000000);
-        await Add_najie_thing(usr_qq, "炼气士留下的药液", "道具", -1);
-        e.reply(["你服下药液，只觉得一股暖流从丹田升起，通体舒泰，灵力运转速度明显加快！修为和血气各增加了100万点。"]);
-        return
-    } else {
-        // 小概率：各减少50w
-        await Add_修为(usr_qq, -500000);
-        await Add_血气(usr_qq, -500000);
-        await Add_najie_thing(usr_qq, "炼气士留下的药液", "道具", -1);
-        e.reply(["哎呀！这瓶药液似乎存放太久已经变质了...你刚喝下去就感觉肚子一阵绞痛，修为学期不增反减！看来修仙界的药品也有保质期啊！"]);
-        return
+    // 确保数量为数字，默认为1
+    let useCount = quantity || 1;
+    if (isNaN(useCount) || useCount < 1) {
+        useCount = 1;
     }
+    
+    // 检查是否有足够的药液
+    let currentCount = await exist_najie_thing(usr_qq, "炼气士留下的药液", "道具");
+    if (!currentCount || currentCount < useCount) {
+        e.reply(`炼气士留下的药液不足，需要${useCount}个，当前只有${currentCount || 0}个`);
+        return;
+    }
+    
+    // 统计结果
+    let totalXiuwei = 0;
+    let totalXueqi = 0;
+    let results = {
+        jackpot: 0,    // 极小概率
+        normal: 0,     // 大概率
+        bad: 0         // 小概率
+    };
+    
+    // 批量处理
+    for (let i = 0; i < useCount; i++) {
+        let math = Math.random();
+        if (math > 0.95) {
+            // 极小概率：各增加90~200w
+            let randomIncrease = Math.floor(Math.random() * (200 - 90 + 1)) + 90;
+            totalXiuwei += randomIncrease * 10000;
+            totalXueqi += randomIncrease * 10000;
+            results.jackpot++;
+        } else if (math > 0.1) {
+            // 大概率：各增加100w
+            totalXiuwei += 1000000;
+            totalXueqi += 1000000;
+            results.normal++;
+        } else {
+            // 小概率：各减少50w
+            totalXiuwei -= 500000;
+            totalXueqi -= 500000;
+            results.bad++;
+        }
+    }
+    
+    // 扣除药液
+    await Add_najie_thing(usr_qq, "炼气士留下的药液", "道具", -useCount);
+    
+    // 应用效果
+    await Add_修为(usr_qq, totalXiuwei);
+    await Add_血气(usr_qq, totalXueqi);
+    
+    // 构建回复消息
+    let messages = [];
+    if (results.jackpot > 0) {
+        messages.push(`其中有${results.jackpot}瓶药液效果超群，你感觉浑身经脉如沐春风，一股磅礴的灵力在体内奔涌！`);
+    }
+    if (results.normal > 0) {
+        messages.push(`其中${results.normal}瓶药液效果正常，你服下后只觉得一股暖流从丹田升起，通体舒泰！`);
+    }
+    if (results.bad > 0) {
+        messages.push(`可惜其中${results.bad}瓶药液似乎存放太久已经变质了...你刚喝下去就感觉肚子一阵绞痛！`);
+    }
+    
+    // 最终总结
+    let finalMessage = `你服用了${useCount}瓶炼气士留下的药液，`;
+    if (totalXiuwei >= 0) {
+        finalMessage += `修为血气总共增加了${Math.floor(totalXiuwei/10000)}万点！`;
+    } else {
+        finalMessage += `修为血气总共减少了${Math.floor(Math.abs(totalXiuwei)/10000)}万点...看来修仙界的药品也有保质期啊！`;
+    }
+    
+    e.reply([messages.join('\n'), finalMessage]);
+    return;
 }
 if (thing_name == "星峰传承令") {
     let math = player.星峰传承;
