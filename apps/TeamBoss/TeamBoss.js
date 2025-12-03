@@ -873,14 +873,14 @@ export class TeamBoss extends plugin {
       }
       if (msg.find(item => item == A_win)) {
         TotalDamage = Math.trunc(
-            WorldBossStatus.Healthmax * 0.05 +
+            WorldBossStatus.Healthmax * 0.25 +
             Harm(player.攻击 * 0.85, Boss.防御) * 6
         );
         WorldBossStatus.Health -= TotalDamage;
         msg.push(`${player.名号}击败了[${Boss.名号}],重创[若陀龙王${Boss_player.Boss_id}号],造成伤害${TotalDamage}`);
       } else if (msg.find(item => item == B_win)) {
         TotalDamage = Math.trunc(
-            WorldBossStatus.Healthmax * 0.03 +
+            WorldBossStatus.Healthmax * 0.05 +
             Harm(player.攻击 * 0.85, Boss.防御) * 4
         );
         WorldBossStatus.Health -= TotalDamage;
