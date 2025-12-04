@@ -2003,11 +2003,13 @@ if (equipment.帝兵.name == "终古剑之主") {
     return true;
 }
        if (thing_exist.type == '出金率') {
+        if(player.出金率 > 0){return e.reply('目前尚有金光丹药效在发挥')}
              await Add_najie_thing(usr_qq, thing_name, '丹药', -quantity);
             player.出金率 = thing_exist.chujin;
-            player.出金次数 += 10
+            player.出金次数 += 10*quantity;
+            let 冒险出金次数 = 10*quantity;
             await Write_player(usr_qq, player);
-            e.reply(`服用成功,下10次冒险出金率增加${player.出金率}%，目前剩余出金次数${player.出金次数}`);
+            e.reply(`服用成功,下${冒险出金次数}次冒险出金率增加${player.出金率}%，目前剩余出金次数${player.出金次数}`);
             return false;
           }
        if (thing_exist.type == '寿命') {

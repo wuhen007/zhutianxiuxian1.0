@@ -136,6 +136,10 @@ fnc: 'tianyi_yidao'
                     fnc: 'jinruneijing'
                 },
                 {
+    reg: '^#内景地修炼(\\*(\\d+))?$',
+    fnc: 'neijingBatch'
+},
+                {
                     reg: '^#凝练元神$',
                     fnc: 'ninglianyuanshen'
                 }, 
@@ -1702,6 +1706,80 @@ if (isSuccess) {
         `神识蜕变 +${zuizhong}`,
         `「内景一瞬，外界千年」道音回荡`
     ].join('\n'));
+}
+async neijingBatch(e) {
+    if (!e.isGroup) return e.reply('修仙游戏请在群聊中游玩');
+
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    if (!await existplayer(usr_qq)) return e.reply('玩家不存在，请先创建角色');
+
+    const player = await Read_player(usr_qq);
+    if (player.yuanshenlevel_id === undefined)
+        return e.reply('你连元神都未凝练，谈何内景地？');
+
+    // 解析次数
+    const match = e.msg.match(/^#内景地修炼(?:\*(\d+))?$/);
+    let times = 1;
+    if (match && match[1]) times = Math.min(parseInt(match[1], 10), 50); // 单次上限50
+    if (times <= 0) return e.reply('次数必须≥1');
+
+    let successCnt = 0, failCnt = 0, totalCost = 0;
+    const msgs = [];
+
+    for (let i = 0; i < times; i++) {
+        // 每次重新读档，防止中途被别的指令改数据
+        await Write_player(usr_qq, player);
+        const 要求 = 15000000 * (player.mijinglevel_id + player.xiangulevel_id);
+        if (player.元神 < 要求) {
+            msgs.push(`【中止】第${i + 1}次：元神不足（需${bigNumberTransform(要求)}，仅剩${bigNumberTransform(player.元神)}）`);
+            msgs.push(`剩余未执行：${times - i} 次`);
+            break;
+        }
+
+        // 概率同原版
+        const prob = 0.1 + player.yuanshenlevel_id * 0.1;
+        const isWin = Math.random() <= prob;
+
+        player.元神 -= 要求;
+        totalCost += 要求;
+
+        if (isWin) {
+            successCnt++;
+            player.内景地 = 1;               // 标记已开启
+            await Write_player(usr_qq, player);
+
+            // ===== 立即“进入”领奖励 =====
+            const reward = 500000;
+            const zuizhong = (player.mijinglevel_id + player.xiangulevel_id) * player.level_id * player.Physique_id * reward;
+            player.修为 += zuizhong;
+            player.血气 += zuizhong;
+            player.神识 += zuizhong;
+            const zuizhong2 = 0.1 * (player.mijinglevel_id + player.xiangulevel_id);
+            player.道伤 = Math.max(0, player.道伤 - zuizhong2);
+            player.内景地 = 0;               // 进入后关闭
+            msgs.push(`第${i + 1}次：开启成功，已进入内景地，获得修为/血气/神识 +${bigNumberTransform(zuizhong)}，道伤 -${zuizhong2.toFixed(1)}`);
+        } else {
+            failCnt++;
+            msgs.push(`第${i + 1}次：开启失败，损失元神 ${bigNumberTransform(要求)}`);
+        }
+    }
+
+    // 最终存档
+    await Write_player(usr_qq, player);
+
+    // 汇总
+    const summary = [
+        `内景地批量修炼完成！`,
+        `计划次数：${times} 次`,
+        `实际执行：${successCnt + failCnt} 次`,
+        `成功开启：${successCnt} 次`,
+        `失败次数：${failCnt} 次`,
+        `累计消耗元神：${bigNumberTransform(totalCost)}`,
+        `剩余元神：${bigNumberTransform(player.元神)}`
+    ].join('\n');
+
+    e.reply(summary);
+    if (msgs.length) await ForwardMsg(e, msgs); // 太长可转合并转发
 }
  async jidao(e) {
     if (!e.isGroup) {
