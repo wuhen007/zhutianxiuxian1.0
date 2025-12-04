@@ -2003,6 +2003,7 @@ if (equipment.帝兵.name == "终古剑之主") {
 
     return true;
 }
+
        if (thing_exist.type == '出金率') {
         if(player.出金率 > 0){return e.reply('目前尚有金光丹药效在发挥')}
              await Add_najie_thing(usr_qq, thing_name, '丹药', -quantity);
@@ -3861,7 +3862,14 @@ if (thing_name == "堕魔骨") {
     }
     return;
 
-}            
+}    
+       if (thing_name == '一大袋洗根水') {
+             await Add_najie_thing(usr_qq, thing_name, '道具', -quantity);
+             let 一大袋 = quantity * 200;
+            await Add_najie_thing(usr_qq, '洗根水', '道具', 一大袋);
+            e.reply(`你拆开了${quantity}大袋包装，获得了${一大袋}瓶洗根水`);
+            return false;
+          }        
 // 处理轮回道果道具
 if (thing_name == "轮回道果") {
 
