@@ -7,6 +7,7 @@ import {
   isNotNull,
   player_efficiency,
   get_random_fromARR,
+  getWeimianLevel,
   Read_player,
   Read_equipment,
   Add_HP,
@@ -68,26 +69,8 @@ export class Level extends plugin {
           reg: '^#自动突破$',
           fnc: 'auto_up',
         },
-    {
-        reg: '^#一键突破$',
-        fnc: 'OneKeyLevelUp',
-        args: { luck: false }
-    },
-    {
-        reg: '^#一键幸运突破$',
-        fnc: 'OneKeyLevelUp',
-        args: { luck: true }
-    },
-    {
-        reg: '^#一键破体$',
-        fnc: 'OneKeyMaxUp',
-        args: { luck: false }
-    },
-    {
-        reg: '^#一键幸运破体$',
-        fnc: 'OneKeyMaxUp',
-        args: { luck: true }
-    },
+{ reg: '^#一键(幸运)?突破$', fnc: 'OneKeyLevelUp' },
+{ reg: '^#一键(幸运)?破体$', fnc: 'OneKeyMaxUp' },
          {
                     reg: '^#证道$',
                     fnc: 'zhengdao'
@@ -1850,42 +1833,26 @@ async noticeJijinShenghua(e) {
     
     return { message: petMsg, name: petName };
   }
-// 一键破体函数
-async  OneKeyMaxUp(e, luck = false) {
-    if (!e.isGroup) {
-        e.reply('修仙游戏请在群聊中游玩');
-        return;
-    }
-    
-    let usr_qq = e.user_id.toString().replace('qg_', '');
-    usr_qq = await channel(usr_qq);
-    
-    let ifexistplay = await existplayer(usr_qq);
-    if (!ifexistplay) {
-        e.reply('玩家不存在，请先创建角色');
-        return;
-    }
-    
-    let game_action = await redis.get("xiuxian:player:" + usr_qq + ":game_action");
-    if (game_action == 0) {
-        e.reply("修仙：游戏进行中...");
-        return;
-    }
-    
-    // 如果是幸运破体，检查是否有幸运草
+// =================== 一键幸运破体 / 普通破体 ===================
+async OneKeyMaxUp(e) {
+    if (!e.isGroup) return e.reply('修仙游戏请在群聊中游玩');
+
+    const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
+    if (!await existplayer(usr_qq)) return e.reply('玩家不存在，请先创建角色');
+
+    if (await redis.get("xiuxian:player:" + usr_qq + ":game_action") == 0)
+        return e.reply("修仙：游戏进行中...");
+    const luck = e.msg.includes('幸运');
+    /* ---------- 1. 幸运草预检 ---------- */
     let luckGrassCount = 0;
     if (luck) {
-        luckGrassCount = await get_najie_thing_count(usr_qq, '幸运草', '道具');
-        if (luckGrassCount <= 0) {
-            e.reply('背包中没有幸运草，无法进行幸运破体！');
-            return;
-        }
+        luckGrassCount = await exist_najie_thing(usr_qq, '幸运草', '道具');
+        if (luckGrassCount <= 0) return e.reply('背包中没有幸运草，无法进行幸运破体！');
     }
-    
-    /** ========== 获取当前时代信息 ========== */
+
+    /** ========== 时代/体质/位面数据 ========== */
     const set = config.getConfig('xiuxian', 'xiuxian');
     const currentEra = set.Era?.current || { index: 0, years: 0 };
-    
     const eras = [
         { name: "神话时代", breakthrough: { bodySuccessRate: 25, bodyCostFactor: 0.4 }},
         { name: "太古时代", breakthrough: { bodySuccessRate: 10, bodyCostFactor: 0.6 }},
@@ -1893,295 +1860,139 @@ async  OneKeyMaxUp(e, luck = false) {
         { name: "末法时代", breakthrough: { bodySuccessRate: -10, bodyCostFactor: 1.8 }},
         { name: "绝灵时代", breakthrough: { bodySuccessRate: -30, bodyCostFactor: 3.0 }}
     ];
-    
-    const currentEraData = eras[currentEra.index];
-    const eraRateMessage = currentEraData.breakthrough.bodyCostFactor !== 1.0 
-        ? `(×${currentEraData.breakthrough.bodyCostFactor})` 
-        : "";
-    /** ========== 时代信息获取结束 ========== */
-    
-    let player = await Read_player(usr_qq);
-    
-    // 创建消息数组
-    let msg = [luck ? "开启一键幸运破体..." : "开启一键破体..."];
-    msg.push(`当前时代：${currentEraData.name}`);
-    msg.push(`- 时代特性: 突破成功率 ${currentEraData.breakthrough.bodySuccessRate}%，消耗系数 ${currentEraData.breakthrough.bodyCostFactor}`);
-    
-    let allResults = [];
-    let petsObtained = [];
-    let totalDeductedExp = 0;
-    let failCount = 0;
-    let totalAddShouyuan = 0;
-    let luckGrassUsed = 0; // 记录使用的幸运草数量
+    const era = eras[currentEra.index];
 
-    // 获取当前境界信息
-    const startLevelId = player.Physique_id;
-    let startLevelInfo = data.LevelMax_list.find(item => item.level_id == startLevelId);
-    let startLevelName = startLevelInfo ? startLevelInfo.level : "未知境界";
-    
-    // 读取位面数据
-    let weimianData = {};
-    try {
-        const weimianPath = data.filePathMap.weimianList;
-        if (fs.existsSync(weimianPath)) {
-            const rawData = fs.readFileSync(weimianPath, 'utf8');
-            weimianData = JSON.parse(rawData);
-        } else {
-            e.reply('位面数据文件不存在，无法进行祭道');
-            return;
-        }
-    } catch (err) {
-        console.error('读取位面数据失败:', err);
-        e.reply('读取位面数据失败，无法进行祭道');
-        return;
-    }
-    
-    let weimianyazhi = 10;
-    const weimianLevel = weimianData["诸天位面"] || 10;
-    weimianyazhi = 10 - weimianLevel;
-    
-    // 检查最高境界
-    if (player.Physique_id >= 63 - weimianyazhi) {
-        e.reply(`诸天万界破碎，天地大道残缺，已经难以诞生至高强者，你的境界再难有所寸进`);
-        return false;
-    }
-
-    // 获取体质突破信息
-    const talentInfo = await this.getTalentBreakthroughInfo(player);
-    const costReduction = talentInfo.costReduction;
-    const probBonus = talentInfo.probBonus;
-    const effectDesc = talentInfo.effectDesc;
-
-    // 如果有体质加成消息，则加入消息列表
-    if (talentInfo.talentDesc) {
-        msg.push(talentInfo.talentDesc);
-    }
+    const player = await Read_player(usr_qq);
+    const talent = this.getTalentBreakthroughInfo(player);
+    const maxLv = 63 - (10 - (await getWeimianLevel()));   // 位面压制
+    const msg = [
+        luck ? "开启一键幸运破体..." : "开启一键破体...",
+        `当前时代：${era.name}`,
+        `- 时代特性: 突破成功率 ${era.breakthrough.bodySuccessRate}%，消耗系数 ${era.breakthrough.bodyCostFactor}`
+    ];
+    let totalCost = 0, fail = 0, addShou = 0, pets = [];
 
     e.reply(luck ? "一键幸运破体开始，正在积蓄气血..." : "一键破体开始，正在积蓄气血...");
 
-    // 最高境界设置为63
-    const maxLevelId = 63;
-
-    // 记录突破的初始境界
     const initialLevel = player.Physique_id;
-    const hasSpecialTalent = talentInfo.costReduction !== 1.0; // 是否有特殊体质
+    const hasSpecialTalent = talent.costReduction !== 1.0;
 
-    // 循环突破直到无法继续
-    while (player.Physique_id < maxLevelId) {
-        let now_level_info = data.LevelMax_list.find(item => item.level_id == player.Physique_id);
-        if (!now_level_info) {
-            msg.push("境界数据异常");
+    /* =================== 主循环 =================== */
+    while (player.Physique_id < maxLv) {
+        /* 每轮先查幸运草库存 —— 用完立即停 */
+        if (luck && luckGrassCount <= 0) {
+            msg.push('幸运草已用完，停止破体');
             break;
         }
-  
-        // 确定下一境界信息
-        let nextLevelId = player.Physique_id + 1;
-        let next_level_info = data.LevelMax_list.find(item => item.level_id == nextLevelId);
-        
-        // 检查最高境界
-        if (nextLevelId > 63 - weimianyazhi) {
-            msg.push(`诸天万界破碎，天地大道残缺，已经难以诞生至高强者，你的境界再难有所寸进`);
+
+        const nowInfo = data.LevelMax_list.find(i => i.level_id === player.Physique_id);
+        const nextInfo = data.LevelMax_list.find(i => i.level_id === player.Physique_id + 1);
+        if (!nextInfo) break;
+
+        /* 消耗 & 概率 */
+        const base = parseInt(nowInfo.exp);
+        const afterTalent = Math.round(base * talent.costReduction);
+        const cost = Math.ceil(afterTalent * era.breakthrough.bodyCostFactor);
+        if (player.血气 < cost) {
+            msg.push(`气血不足！需 ${cost}，当前 ${player.血气}`);
             break;
         }
-        
-        if (!next_level_info) {
-            msg.push(`${now_level_info.level} → 已达最高境界`);
-            break;
-        }
-        
-        // ========== 应用体质消耗减少 ==========
-        let base_need_exp = parseInt(now_level_info.exp);
-        let talentReducedExp = Math.round(base_need_exp * costReduction);
-        
-        // ========== 应用时代消耗系数 ==========
-        let actual_need_exp = Math.ceil(talentReducedExp * currentEraData.breakthrough.bodyCostFactor);
-        
-        // 加入境界信息到消息列表
-        msg.push(`突破：${now_level_info.level} → ${next_level_info.level}`);
-        msg.push(`基础消耗: ${base_need_exp} → 体质后: ${talentReducedExp} → 时代后: ${actual_need_exp} ${eraRateMessage}`);
-        
-        if (player.血气 < actual_need_exp) {
-            msg.push(` 气血不足！需要 ${actual_need_exp}，当前 ${player.血气}`);
-            break;
-        }
-        
-        // ========== 应用时代成功率和体质加成 ==========
-        // 计算基础成功率（基于当前境界）
+
         const baseProb = Math.max(0.01, 1 - player.Physique_id / 60);
-        
-        // 计算突破概率（时代基础成功率 + 体质加成）
-        const eraBaseProb = currentEraData.breakthrough.bodySuccessRate / 100;
-        let prob = baseProb + eraBaseProb + probBonus;
-        
-        if (prob < 0.01) prob = 0.01; // 下限1%
-        
-        msg.push(`突破成功率: ${Math.round(prob * 100)}%（基础境界成功率：${Math.round(baseProb * 100)}% + 时代基础:${Math.round(eraBaseProb * 100)}% + 体质加成:${Math.round(probBonus * 100)}%）`);
-        
-        // 应用幸运草效果（如果有可用）
-        let usedThisTime = false;
-        if (luck && luckGrassCount > 0) {
-            let originalProb = prob;
-            prob = prob + (1 - prob) * 0.5; // 幸运草效果：提高失败部分的50%成功率
-            await Add_najie_thing(usr_qq, "幸运草", "道具", -1);
+        let prob = baseProb + era.breakthrough.bodySuccessRate / 100 + talent.probBonus;
+        if (prob < 0.01) prob = 0.01;
+
+        msg.push(`突破：${nowInfo.level} → ${nextInfo.level}`);
+        msg.push(`基础消耗: ${base} → 体质后: ${afterTalent} → 时代后: ${cost} (×${era.breakthrough.bodyCostFactor})`);
+        msg.push(`突破成功率: ${Math.round(prob * 100)}%（基础:${Math.round(baseProb * 100)}% +时代:${Math.round(era.breakthrough.bodySuccessRate)}% +体质:${Math.round(talent.probBonus * 100)}%）`);
+
+        /* 使用幸运草 */
+        if (luck) {
+            const originalProb = prob;
+            prob = prob + (1 - prob) * 0.5;
+            await Add_najie_thing(usr_qq, '幸运草', '道具', -1);
             luckGrassCount--;
-            luckGrassUsed++;
-            usedThisTime = true;
             msg.push(`使用幸运草：成功率从${Math.round(originalProb * 100)}%提升至${Math.round(prob * 100)}%`);
         }
-        // 如果没有幸运草了，停止突破
-        else if (luck && luckGrassCount <= 0) {
-            msg.push(`幸运草已用完，停止突破`);
-            break;
+
+        /* 特殊体质特效 */
+        if (hasSpecialTalent && (nextInfo.level_id % 10 === 0 || nextInfo.level_id - initialLevel >= 5) && talent.effectDesc) {
+            msg.push(talent.effectDesc);
         }
-        
-        // 特殊体质突破特效 - 只在突破重要大境界时触发（每5级或大境界）
-        if (hasSpecialTalent && (nextLevelId % 10 === 0 || nextLevelId - initialLevel >= 5)) {
-            if (effectDesc) {
-                msg.push(effectDesc);
-            }
-        }
-        
-        // 破体判定（使用综合成功率）
-        if (Math.random() > prob) {
-            // 突破失败
-            const bad_time = Math.random();
-            let lostExp = 0;
-            
-            if (bad_time > 0.9) lostExp = actual_need_exp * 0.4;
-            else if (bad_time > 0.8) lostExp = actual_need_exp * 0.2;
-            else if (bad_time > 0.7) lostExp = actual_need_exp * 0.1;
-            else lostExp = 0;
-            
-            player.血气 -= lostExp;
-            totalDeductedExp += lostExp;
-            failCount++;
-            
-            if (player.血气 < 0) {
-                player.血气 = 0;
-                msg.push(` 气血耗尽！突破终止`);
-                break;
-            }
-            
-            // 加入失败信息到消息列表
-            if (lostExp > 0) {
-                msg.push(` 突破失败！损失${lostExp}点气血`);
-            } else {
-                msg.push(` 突破失败！`);
-            }
-            
-            await Write_player(usr_qq, player);
-        } else {
-            // 突破成功
-            player.Physique_id = nextLevelId;
-            player.血气 -= actual_need_exp;
-            totalDeductedExp += actual_need_exp;
-            
-            // 计算理论寿元增加量
-            const theoryShouyuan = calculateShouyuan(player.Physique_id);
-            
-            // ==== 寿元压制处理 ====
-            let actualShouyuanAdd = theoryShouyuan; // 实际增加的寿元
-            let suppressMsg = ""; // 压制提示信息
-            
-            // 检查是否处于绝灵时代且境界低于仙王
+
+        /* 成败判定 */
+        if (Math.random() > prob) { // 失败
+            const lost = cost * [0.4, 0.2, 0.1, 0.05, 0][Math.floor(Math.random() * 5)];
+            player.血气 -= lost;
+            totalCost += lost;
+            fail++;
+            msg.push(`突破失败！损失气血 ${lost}`);
+        } else { // 成功
+            player.Physique_id++;
+            player.血气 -= cost;
+            totalCost += cost;
+            const sy = calculateShouyuan(player.Physique_id);
+            let actualShouyuanAdd = sy, suppressMsg = "";
             if (currentEra.index === 4 && player.mijinglevel_id < 18) {
-                // 计算当前寿元
-                const currentShouyuan = player.寿元;
-                
-                // 计算增加后的寿元
-                const potentialShouyuan = currentShouyuan + theoryShouyuan;
-                
-                // 如果超过9999，只增加到9999
-                if (potentialShouyuan > 9999) {
-                    actualShouyuanAdd = 9999 - currentShouyuan;
-                    suppressMsg = `【寿元压制】由于处于绝灵时代，寿元被压制至9999年，实际增加${actualShouyuanAdd}年`;
+                const current = player.寿元;
+                const potential = current + sy;
+                if (potential > 9999) {
+                    actualShouyuanAdd = 9999 - current;
+                    suppressMsg = `【寿元压制】处于绝灵时代，寿元被压制至9999年，实际增加${actualShouyuanAdd}年`;
                 } else {
                     suppressMsg = `【寿元压制】处于绝灵时代，但增加后未超过9999年`;
                 }
-                
-                // 更新压制寿元（原始寿元记录）
-                if (!player.压制寿元) {
-                    player.压制寿元 = currentShouyuan;
-                }
+                if (!player.压制寿元) player.压制寿元 = current;
                 player.压制寿元 += actualShouyuanAdd;
             }
-            
-            // 增加寿元
             player.寿元 += actualShouyuanAdd;
-            totalAddShouyuan += actualShouyuanAdd;
-            
-            // 加入成功信息到消息列表
-            msg.push(` ${next_level_info.level} → 突破成功！`);
-            msg.push(`寿元增加: ${actualShouyuanAdd}年`);
-            if (suppressMsg) {
-                msg.push(suppressMsg);
-            }
-            allResults.push(`${now_level_info.level} → ${next_level_info.level}`);
+            addShou += actualShouyuanAdd;
+            msg.push(`${nowInfo.level} → ${nextInfo.level} 成功！寿元 +${actualShouyuanAdd}年`);
+            if (suppressMsg) msg.push(suppressMsg);
 
-            // 尝试获得仙宠
-            let petResult = await this.tryAddPet(e, usr_qq, player.Physique_id);
-            if (petResult.message) {
-                msg.push(`✨ ${petResult.message}`);
-                petsObtained.push(petResult.name);
+            /* 仙宠 */
+            if (Math.random() < (player.Physique_id < 42 ? 0.1 : 0.5) * player.Physique_id / 60) {
+                const pet = data.tupoxianchon[Math.floor(Math.random() * data.tupoxianchon.length)];
+                await Add_najie_thing(usr_qq, pet.name, '仙宠', 1);
+                pets.push(pet.name);
+                msg.push(`获得仙宠：${pet.name}`);
             }
-            
-            // 更新玩家数据
-            await Write_player(usr_qq, player);
-            let equipment = await Read_equipment(usr_qq);
-            await Write_equipment(usr_qq, equipment);
-            await Add_HP(usr_qq, 99999999);
         }
-        
-        // 更新玩家数据
         await Write_player(usr_qq, player);
         let equipment = await Read_equipment(usr_qq);
         await Write_equipment(usr_qq, equipment);
         await Add_HP(usr_qq, 99999999);
     }
-    
-    // 整个突破结束后设置CD
+
+    /* =================== 收尾 =================== */
     await redis.set("xiuxian:player:" + usr_qq + ":last_Levelup_time", Date.now());
-    
-    // 获取最终境界信息
-    let finalLevelInfo = data.LevelMax_list.find(item => item.level_id == player.Physique_id);
-    let finalLevel = finalLevelInfo ? finalLevelInfo.level : "未知境界";
-    
-    // 构建结果消息
+    const finalLevel = data.LevelMax_list.find(i => i.level_id === player.Physique_id).level;
     let resultMsg = [
         `破体结果：`,
         `破体类型：${luck ? "幸运破体" : "普通破体"}`,
-        `初始境界：${startLevelName}`,
+        `初始境界：${startLevelInfo.level}`,
         `最终境界：${finalLevel}`,
-        `时代影响：${currentEraData.name}`,
-        `- 成功率：${currentEraData.breakthrough.bodySuccessRate}%`,
-        `- 消耗系数：${currentEraData.breakthrough.bodyCostFactor}`,
-        `失败次数：${failCount}`,
-        `总消耗气血：${bigNumberTransform(totalDeductedExp)}`,
-        `总增加寿元：${bigNumberTransform(totalAddShouyuan)}年`,
-    ].join("\n");
-    
-    // 如果有获得仙宠
-    if (petsObtained.length > 0) {
-        resultMsg += `\n获得仙宠：${petsObtained.join('、')}`;
-    }
-    
-    // 如果使用了幸运草
-    if (luckGrassUsed > 0) {
-        resultMsg += `\n使用幸运草：${luckGrassUsed}个`;
-    }
-    
-    // 特殊结果：时代不利时的额外消息
-    if (currentEra.index >= 3) { // 末法/绝灵时代
-        resultMsg += `\n在${currentEraData.name}破体极为艰难，请耐心沉淀`;
-    } else if (currentEra.index === 0) { // 神话时代
-        resultMsg += `\n神话时代加持，大道与你共鸣！`;
-    }
+        `时代影响：${era.name}`,
+        `- 成功率：${era.breakthrough.bodySuccessRate}%`,
+        `- 消耗系数：${era.breakthrough.bodyCostFactor}`,
+        `失败次数：${fail}`,
+        `总消耗气血：${bigNumberTransform(totalCost)}`,
+        `总增加寿元：${bigNumberTransform(addShou)}年`,
+    ].join('\n');
+    if (pets.length) resultMsg += `\n获得仙宠：${pets.join('、')}`;
+    resultMsg += luck ? `\n使用幸运草：${luckGrassCount === 0 ? '全部' : '部分'}` : '';
+    if (currentEra.index >= 3) resultMsg += `\n在${era.name}破体极为艰难，请耐心沉淀`;
+    else if (currentEra.index === 0) resultMsg += `\n神话时代加持，大道与你共鸣！`;
 
     e.reply(resultMsg);
     await ForwardMsg(e, msg);
 }
 
-async  OneKeyLevelUp(e, luck = false) {
+
+
+
+// =================== 一键幸运突破 / 普通突破 ===================
+async OneKeyLevelUp(e) {
     if (!e.isGroup) {
         e.reply('修仙游戏请在群聊中游玩');
         return;
@@ -2201,11 +2012,11 @@ async  OneKeyLevelUp(e, luck = false) {
         e.reply("修仙：游戏进行中...");
         return;
     }
-
-    // 如果是幸运突破，检查是否有幸运草
+const luck = e.msg.includes('幸运');
+    /* ---------- 1. 幸运草预检 ---------- */
     let luckGrassCount = 0;
     if (luck) {
-        luckGrassCount = await get_najie_thing_count(usr_qq, '幸运草', '道具');
+        luckGrassCount = await exist_najie_thing(usr_qq, '幸运草', '道具');
         if (luckGrassCount <= 0) {
             e.reply('背包中没有幸运草，无法进行幸运突破！');
             return;
@@ -2215,7 +2026,7 @@ async  OneKeyLevelUp(e, luck = false) {
     /** ========== 获取当前时代信息 ========== */
     const set = config.getConfig('xiuxian', 'xiuxian');
     const currentEra = set.Era?.current || { index: 0, years: 0 };
-    
+
     const eras = [
         { name: "神话时代", breakthrough: { qiSuccessRate: 25, qiCostFactor: 0.4 }},
         { name: "太古时代", breakthrough: { qiSuccessRate: 10, qiCostFactor: 0.6 }},
@@ -2223,7 +2034,7 @@ async  OneKeyLevelUp(e, luck = false) {
         { name: "末法时代", breakthrough: { qiSuccessRate: -10, qiCostFactor: 1.8 }},
         { name: "绝灵时代", breakthrough: { qiSuccessRate: -30, qiCostFactor: 3.0 }}
     ];
-    
+
     const currentEraData = eras[currentEra.index];
     const eraRateMessage = currentEraData.breakthrough.qiCostFactor !== 1.0 
         ? `(×${currentEraData.breakthrough.qiCostFactor})` 
@@ -2236,7 +2047,7 @@ async  OneKeyLevelUp(e, luck = false) {
     let msg = [luck ? "开启一键幸运突破..." : "开启一键突破..."];
     msg.push(`当前时代：${currentEraData.name}`);
     msg.push(`- 时代特性: 突破成功率 ${currentEraData.breakthrough.qiSuccessRate}%，消耗系数 ${currentEraData.breakthrough.qiCostFactor}`);
-    
+
     let allResults = [];
     let petsObtained = [];
     let totalDeductedExp = 0;
@@ -2248,7 +2059,7 @@ async  OneKeyLevelUp(e, luck = false) {
     const startLevelId = player.level_id;
     let startLevelInfo = data.Level_list.find(item => item.level_id == startLevelId);
     let startLevelName = startLevelInfo ? startLevelInfo.level : "未知境界";
-    
+
     // 读取位面数据
     let weimianData = {};
     try {
@@ -2265,11 +2076,11 @@ async  OneKeyLevelUp(e, luck = false) {
         e.reply('读取位面数据失败，无法进行祭道');
         return;
     }
-    
+
     let weimianyazhi = 10;
     const weimianLevel = weimianData["诸天位面"] || 10;
     weimianyazhi = 10 - weimianLevel;
-    
+
     // 检查最高境界
     if (player.level_id >= 64 - weimianyazhi) {
         e.reply(`诸天万界破碎，天地大道残缺，已经难以诞生至高强者，你的境界再难有所寸进`);
@@ -2282,206 +2093,127 @@ async  OneKeyLevelUp(e, luck = false) {
     const probBonus = talentInfo.probBonus;
     const effectDesc = talentInfo.effectDesc;
 
-    // 如果有体质加成消息，则加入消息列表
-    if (talentInfo.talentDesc) {
-        msg.push(talentInfo.talentDesc);
-    }
+    if (talentInfo.talentDesc) msg.push(talentInfo.talentDesc);
 
     e.reply(luck ? "一键幸运突破开始，正在积蓄真元..." : "一键突破开始，正在积蓄真元...");
 
-    // 最高境界设置为64
     const maxLevelId = 64;
-
-    // 记录突破的初始境界
     const initialLevel = player.level_id;
-    const hasSpecialTalent = talentInfo.costReduction !== 1.0; // 是否有特殊体质
+    const hasSpecialTalent = talentInfo.costReduction !== 1.0;
 
-    // 循环突破直到无法继续
+    /* =================== 主循环 =================== */
     while (player.level_id < maxLevelId) {
+        /* 每轮先查幸运草库存 —— 用完立即停 */
+        if (luck && luckGrassCount <= 0) {
+            msg.push('幸运草已用完，停止突破');
+            break;
+        }
+
         let now_level_info = data.Level_list.find(item => item.level_id == player.level_id);
         if (!now_level_info) {
             msg.push("境界数据异常");
             break;
         }
-  
-        // 确定下一境界信息
+
         let nextLevelId = player.level_id + 1;
         let next_level_info = data.Level_list.find(item => item.level_id == nextLevelId);
-        
-        // 检查最高境界
-        if (nextLevelId > 64 - weimianyazhi) {
-            msg.push(`诸天万界破碎，天地大道残缺，已经难以诞生至高强者，你的境界再难有所寸进`);
-            break;
-        }
-        
         if (!next_level_info) {
             msg.push(`${now_level_info.level} → 已达最高境界`);
             break;
         }
-        
-        // 特殊处理：渡劫期（41级）需要先渡劫
         if (nextLevelId == 42) {
             msg.push(`已达渡劫期，需要先渡劫才能继续突破`);
             break;
         }
 
-        /** ========== 应用时代消耗系数 ========== */
-        let base_exp = parseInt(now_level_info.exp);
-        
-        // 第一步：应用体质消耗减少
-        let talentReducedExp = Math.round(base_exp * costReduction);
-        
-        // 第二步：应用时代消耗系数
-        let actual_need_exp = Math.ceil(talentReducedExp * currentEraData.breakthrough.qiCostFactor);
-        
-        // 加入境界信息到消息列表
-        msg.push(`突破目标：${now_level_info.level} → ${next_level_info.level}`);
-        msg.push(`基础消耗: ${base_exp} → 体质后: ${talentReducedExp} → 时代后: ${actual_need_exp} ${eraRateMessage}`);
-        /** ========== 消耗计算结束 ========== */
+        /* 消耗计算 */
+        const base_exp = parseInt(now_level_info.exp);
+        const talentReducedExp = Math.round(base_exp * costReduction);
+        const actual_need_exp = Math.ceil(talentReducedExp * currentEraData.breakthrough.qiCostFactor);
 
-        // 检查修为是否足够
         if (player.修为 < actual_need_exp) {
             msg.push(`修为不足！需要 ${actual_need_exp}，当前 ${player.修为}`);
             break;
         }
-        
-        let now_level_id = data.Level_list.find(
-            item => item.level_id == player.level_id
-        ).level_id;
-        
-        // 计算基础成功率（基于当前境界）
-        const baseProb = Math.max(0.01, 1 - now_level_id / 60);
-        
-        /** ========== 应用时代成功率和体质加成 ========== */
-        // 计算突破概率（时代基础成功率 + 体质加成）
+
+        const baseProb = Math.max(0.01, 1 - player.level_id / 60);
         const eraBaseProb = currentEraData.breakthrough.qiSuccessRate / 100;
         let prob = baseProb + eraBaseProb + probBonus;
-        
-        if (prob < 0.01) prob = 0.01; // 下限1%
-        
-        msg.push(`☆ 突破成功率: ${Math.round(prob * 100)}%（基础境界成功率：${Math.round(baseProb * 100)}% +时代基础:${Math.round(eraBaseProb * 100)}% + 体质加成:${Math.round(probBonus * 100)}%）`);
-        /** ========== 概率计算结束 ========== */
+        if (prob < 0.01) prob = 0.01;
 
-        // 应用幸运草效果（如果有可用）
-        let usedThisTime = false;
-        if (luck && luckGrassCount > 0) {
-            let originalProb = prob;
-            prob = prob + (1 - prob) * 0.5; // 幸运草效果：提高失败部分的50%成功率
+        msg.push(`突破目标：${now_level_info.level} → ${next_level_info.level}`);
+        msg.push(`基础消耗: ${base_exp} → 体质后: ${talentReducedExp} → 时代后: ${actual_need_exp} ${eraRateMessage}`);
+        msg.push(`☆ 突破成功率: ${Math.round(prob * 100)}%（基础:${Math.round(baseProb * 100)}% +时代:${Math.round(eraBaseProb * 100)}% +体质:${Math.round(probBonus * 100)}%）`);
+
+        /* 使用幸运草 */
+        if (luck) {
+            const originalProb = prob;
+            prob = prob + (1 - prob) * 0.5;
             await Add_najie_thing(usr_qq, "幸运草", "道具", -1);
             luckGrassCount--;
             luckGrassUsed++;
-            usedThisTime = true;
             msg.push(`使用幸运草：成功率从${Math.round(originalProb * 100)}%提升至${Math.round(prob * 100)}%`);
         }
-        // 如果没有幸运草了，停止突破
-        else if (luck && luckGrassCount <= 0) {
-            msg.push(`幸运草已用完，停止突破`);
-            break;
+
+        /* 特殊体质特效 */
+        if (hasSpecialTalent && (nextLevelId % 10 === 0 || nextLevelId - initialLevel >= 5) && effectDesc) {
+            msg.push(effectDesc);
         }
 
-        // 特殊体质突破特效 - 只在突破重要大境界时触发（每5级或大境界）
-        if (hasSpecialTalent && (nextLevelId % 10 === 0 || nextLevelId - initialLevel >= 5)) {
-            if (effectDesc) {
-                msg.push(effectDesc);
-            }
-        }
-
-        // 突破判定
-        if (Math.random() > prob) {
-            // 突破失败
-            const bad_time = Math.random();
-            let lostExp = 0;
-
-            if (bad_time > 0.9) lostExp = actual_need_exp * 0.4;
-            else if (bad_time > 0.8) lostExp = actual_need_exp * 0.2;
-            else if (bad_time > 0.7) lostExp = actual_need_exp * 0.1;
-            else lostExp = 0;
-
-            player.修为 -= lostExp;
-            totalDeductedExp += actual_need_exp + lostExp;
+        /* 成败判定 */
+        if (Math.random() > prob) { // 失败
+            const lost = actual_need_exp * [0.4, 0.2, 0.1, 0.05, 0][Math.floor(Math.random() * 5)];
+            player.修为 -= lost;
+            totalDeductedExp += actual_need_exp + lost;
             failCount++;
-
-            // 加入失败信息到消息列表
-            if (lostExp > 0) {
-                msg.push(`突破失败！损失修为 ${actual_need_exp} + ${lostExp}`);
-            } else {
-                msg.push(`突破失败！损失修为 ${actual_need_exp}`);
-            }
-
+            msg.push(`突破失败！损失修为 ${actual_need_exp + lost}`);
             await Write_player(usr_qq, player);
-            continue; // 失败后继续尝试下一个境界
-
-        } else {
-            // 突破成功
-            player.level_id = nextLevelId;
-            player.修为 -= actual_need_exp;
-            totalDeductedExp += actual_need_exp;
-            
-            // 计算并添加寿元
-            const addShouyuan = calculateShouyuan(player.level_id, currentEra.index, player.mijinglevel_id);
-            
-            // ==== 新增：寿元压制逻辑 ====
-            let actualShouyuanAdd = addShouyuan; // 实际增加的寿元
-            let suppressMsg = ""; // 压制提示信息
-            
-            // 检查是否处于绝灵时代且境界低于仙王
-            if (currentEra.index === 4 && player.mijinglevel_id < 18) {
-                // 计算当前寿元
-                const currentShouyuan = player.寿元;
-                
-                // 计算增加后的寿元
-                const potentialShouyuan = currentShouyuan + addShouyuan;
-                
-                // 如果超过9999，只增加到9999
-                if (potentialShouyuan > 9999) {
-                    actualShouyuanAdd = 9999 - currentShouyuan;
-                    suppressMsg = `【寿元压制】由于处于绝灵时代，寿元被压制至9999年，实际增加${actualShouyuanAdd}年`;
-                } else {
-                    suppressMsg = `【寿元压制】处于绝灵时代，但增加后未超过9999年`;
-                }
-                
-                // 更新压制寿元（原始寿元记录）
-                if (!player.压制寿元) {
-                    player.压制寿元 = currentShouyuan;
-                }
-                player.压制寿元 += actualShouyuanAdd;
-            }
-            
-            // 增加寿元
-            player.寿元 += actualShouyuanAdd;
-            totalAddShouyuan += actualShouyuanAdd;
-            
-            // 加入成功信息
-            msg.push(` ${next_level_info.level} → 突破成功！`);
-            msg.push(`寿元增加: ${actualShouyuanAdd}年`);
-            if (suppressMsg) {
-                msg.push(suppressMsg);
-            }
-            allResults.push(`${now_level_info.level} → ${next_level_info.level}`);
-            
-            // 尝试获得仙宠
-            let petResult = await this.tryAddPet(e, usr_qq, player.level_id);
-            if (petResult.message) {
-                msg.push(` ${petResult.message}`);
-                petsObtained.push(petResult.name);
-            }
-
-            // 更新玩家数据
-            await Write_player(usr_qq, player);
-            let equipment = await Read_equipment(usr_qq);
-            await Write_equipment(usr_qq, equipment);
-            await Add_HP(usr_qq, 99999999);
+            continue;
         }
+
+        /* 成功 */
+        player.level_id = nextLevelId;
+        player.修为 -= actual_need_exp;
+        totalDeductedExp += actual_need_exp;
+
+        const addShouyuan = calculateShouyuan(player.level_id, currentEra.index, player.mijinglevel_id);
+        let actualShouyuanAdd = addShouyuan, suppressMsg = "";
+        if (currentEra.index === 4 && player.mijinglevel_id < 18) {
+            const currentShouyuan = player.寿元;
+            const potential = currentShouyuan + addShouyuan;
+            if (potential > 9999) {
+                actualShouyuanAdd = 9999 - currentShouyuan;
+                suppressMsg = `【寿元压制】处于绝灵时代，寿元被压制至9999年，实际增加${actualShouyuanAdd}年`;
+            } else {
+                suppressMsg = `【寿元压制】处于绝灵时代，但增加后未超过9999年`;
+            }
+            if (!player.压制寿元) player.压制寿元 = currentShouyuan;
+            player.压制寿元 += actualShouyuanAdd;
+        }
+        player.寿元 += actualShouyuanAdd;
+        totalAddShouyuan += actualShouyuanAdd;
+
+        msg.push(`${now_level_info.level} → ${next_level_info.level} 成功！寿元 +${actualShouyuanAdd}年`);
+        if (suppressMsg) msg.push(suppressMsg);
+        allResults.push(`${now_level_info.level} → ${next_level_info.level}`);
+
+        /* 仙宠 */
+        if (Math.random() < (player.level_id < 42 ? 0.1 : 0.5) * player.level_id / 60) {
+            const pet = data.tupoxianchon[Math.floor(Math.random() * data.tupoxianchon.length)];
+            await Add_najie_thing(usr_qq, pet.name, '仙宠', 1);
+            petsObtained.push(pet.name);
+            msg.push(`获得仙宠：${pet.name}`);
+        }
+
+        await Write_player(usr_qq, player);
+        let equipment = await Read_equipment(usr_qq);
+        await Write_equipment(usr_qq, equipment);
+        await Add_HP(usr_qq, 99999999);
     }
 
-    // 整个突破结束后设置CD
+    /* =================== 收尾 =================== */
     await redis.set("xiuxian:player:" + usr_qq + ":last_Levelup_time", Date.now());
-
-    // 获取最终境界信息
-    let finalLevelInfo = data.Level_list.find(item => item.level_id == player.level_id);
-    let finalLevel = finalLevelInfo ? finalLevelInfo.level : "未知境界";
-
-    // 组装结果消息
+    const finalLevel = data.Level_list.find(item => item.level_id == player.level_id).level;
     let resultMsg = [
         `突破结果：`,
         `突破类型：${luck ? "幸运突破" : "普通突破"}`,
@@ -2494,27 +2226,15 @@ async  OneKeyLevelUp(e, luck = false) {
         `总消耗修为：${bigNumberTransform(totalDeductedExp)}`,
         `总增加寿元：${bigNumberTransform(totalAddShouyuan)}年`,
     ].join("\n");
-    
-    // 如果有获得仙宠
-    if (petsObtained.length > 0) {
-        resultMsg += `\n获得仙宠：${petsObtained.join('、')}`;
-    }
-    
-    // 如果使用了幸运草
-    if (luckGrassUsed > 0) {
-        resultMsg += `\n使用幸运草：${luckGrassUsed}个`;
-    }
-    
-    // 特殊结果：时代不利时的额外消息
-    if (currentEra.index >= 3) { // 末法/绝灵时代
-        resultMsg += `\n在${currentEraData.name}突破极为艰难，请耐心沉淀`;
-    } else if (currentEra.index === 0) { // 神话时代
-        resultMsg += `\n神话时代加持，大道与你共鸣！`;
-    }
+    if (petsObtained.length) resultMsg += `\n获得仙宠：${petsObtained.join('、')}`;
+    if (luckGrassUsed) resultMsg += `\n使用幸运草：${luckGrassUsed}个`;
+    if (currentEra.index >= 3) resultMsg += `\n在${currentEraData.name}突破极为艰难，请耐心沉淀`;
+    else if (currentEra.index === 0) resultMsg += `\n神话时代加持，大道与你共鸣！`;
 
     await e.reply(resultMsg);
     await ForwardMsg(e, msg);
 }
+
 
 /**
  * 获取特殊体质的突破加成和特效信息
