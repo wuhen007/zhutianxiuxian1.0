@@ -1575,6 +1575,46 @@ if (func == "打开") {
     e.reply(message.join('\n'));
     return;
 }
+        if (func == "加工") {
+            let wupin = data.jiagong_list.find(item => item.name == thing_name);
+            if (!isNotNull(wupin)) {
+                e.reply(`加工物品暂时未添加，请持续关注`);
+                return;
+            }
+            //看物品是否够
+            for (let i = 0; i < wupin.inputs.length; i++) {
+                const input = wupin.inputs[i];
+                let x = await exist_najie_thing(usr_qq, input.name, input.class);
+                if (x == false) {
+                    x = 0;
+                }
+                if (x < input.amount * quantity + input.const_amount) {
+                    e.reply(`纳戒中拥有${input.name}${x}份，加工需要${input.amount * quantity + input.const_amount}份`);
+                    return;
+                }
+            }
+            //看热量是否够
+            if (player.热量 < wupin.热量 * quantity) {
+                e.reply(`加工需要热量${wupin.热量 * quantity}，现在不足！`);
+                return;
+            }
+            //减去加工消耗的热量
+            await Add_热量(usr_qq, -(wupin.热量 * quantity));
+            //纳戒中减去对应输入物品
+            for (let i = 0; i < wupin.inputs.length; i++) {
+                const input = wupin.inputs[i];
+                await Add_najie_thing(usr_qq, input.name, input.class, -(input.amount * quantity + input.const_amount));
+            }
+            //纳戒中加上对应输出物品
+            let msg = [];
+            for (let i = 0; i < wupin.outputs.length; i++) {
+                const output = wupin.outputs[i];
+                await Add_najie_thing(usr_qq, output.name, output.class, (output.amount * quantity + output.const_amount));
+                msg.push(`获得${output.name}${output.amount * quantity + output.const_amount}个`);
+            }
+            e.reply(`加工成功，${msg}`);
+            return;
+        }
     //装备优化
     if (func == '装备' && code[0] && code[0] > 100) {
       try {
@@ -1601,10 +1641,10 @@ if (func == "打开") {
     if (thing_name === "楼") {
       return false;
     }
-    // if (!x) {
-    //   e.reply(`你没有【${thing_name}】这样的【${thing_exist.class}】`);
-    //   return false;
-    // }
+    if (!x) {
+      e.reply(`你没有【${thing_name}】这样的【${thing_exist.class}】`);
+      return false;
+    }
       if (thing_name === "终古剑之主") {
             // 检查是否学习永恒终极剑道
             const hasEternalSwordDao = player.学习的功法.includes("永恒终极剑道");
@@ -1828,46 +1868,7 @@ if (equipment.帝兵.name == "终古剑之主") {
             e.reply(`孵化成功，获得${wupin.name}${wupin.amount * quantity}个`);
             return;
         }
-        if (func == "加工") {
-            let wupin = data.jiagong_list.find(item => item.name == thing_name);
-            if (!isNotNull(wupin)) {
-                e.reply(`加工物品暂时未添加，请持续关注`);
-                return;
-            }
-            //看物品是否够
-            for (let i = 0; i < wupin.inputs.length; i++) {
-                const input = wupin.inputs[i];
-                let x = await exist_najie_thing(usr_qq, input.name, input.class);
-                if (x == false) {
-                    x = 0;
-                }
-                if (x < input.amount * quantity + input.const_amount) {
-                    e.reply(`纳戒中拥有${input.name}${x}份，加工需要${input.amount * quantity + input.const_amount}份`);
-                    return;
-                }
-            }
-            //看热量是否够
-            if (player.热量 < wupin.热量 * quantity) {
-                e.reply(`加工需要热量${wupin.热量 * quantity}，现在不足！`);
-                return;
-            }
-            //减去加工消耗的热量
-            await Add_热量(usr_qq, -(wupin.热量 * quantity));
-            //纳戒中减去对应输入物品
-            for (let i = 0; i < wupin.inputs.length; i++) {
-                const input = wupin.inputs[i];
-                await Add_najie_thing(usr_qq, input.name, input.class, -(input.amount * quantity + input.const_amount));
-            }
-            //纳戒中加上对应输出物品
-            let msg = [];
-            for (let i = 0; i < wupin.outputs.length; i++) {
-                const output = wupin.outputs[i];
-                await Add_najie_thing(usr_qq, output.name, output.class, (output.amount * quantity + output.const_amount));
-                msg.push(`获得${output.name}${output.amount * quantity + output.const_amount}个`);
-            }
-            e.reply(`加工成功，${msg}`);
-            return;
-        }
+
     if (func == '服用') {
       let dy = await Read_danyao(usr_qq);
       if (thing_exist.class != '丹药' && thing_exist.class != "食材") return false;
