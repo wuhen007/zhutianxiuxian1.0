@@ -675,6 +675,11 @@ if (daoshang > 0) {
     const formattedDaoshang = parseFloat(daoshang).toFixed(1);
     replyMsg.push(`身披道伤：${formattedDaoshang}`);
 }
+// ----- 五色祭坛 -----
+replyMsg.push(
+    `五色祭坛：${player.五色祭坛 === 1 ? '已寻得' : '未寻得'}`,
+    `激活状态：${player.五色祭坛激活 === 1 ? '已激活' : '未激活'}`
+);
     // 查询当前行动 - 真身行动
     let trueBodyAction = await redis.get('xiuxian:player:' + player_qq + ':action');
     if (trueBodyAction) {
