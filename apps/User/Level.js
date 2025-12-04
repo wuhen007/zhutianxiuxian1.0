@@ -3287,27 +3287,7 @@ async  fate_up(e) {
     // 直接进入元神劫
     e.reply(`≡≡≡ 再渡元神劫 ≡≡≡\n${player.名号}重聚元神，再战真劫！`);
      // 执行元神劫
-    const spiritResult = await spirit_tribulation(e, player);
-        // 元神劫成功处理
-    if (spiritResult.success) {
-      // 双重劫难皆过
-      player.power = 2; // 标记完全渡劫成功
-      player.真实掌握度 = 1.0; // 完全掌握真实法则
-    
-      
-      await Write_player(usr_qq, player);
-      
-      // 添加登仙提示
-      e.reply([
-        `≡≡≡ 阴阳同济·永恒证真 ≡≡≡`,
-        `≡ ${player.名号}成功渡过双重无妄真劫，超脱人世间`,
-        `≡ 元神强度：${player.元神.toFixed(0)}`,
-        `≡ 真实掌握度：100%`,
-        `≡ 请即刻#登仙进入仙界！`
-      ].join("\n"));
-      
-      return true;
-    }
+    return await spirit_tribulation(e, player);
   }
   
   
@@ -3351,58 +3331,8 @@ async  fate_up(e) {
   e.reply(`≡≡≡ 无妄真劫启 ≡≡≡\n${player.名号}即将面对双重劫难：天雷淬体！元神化真！`);
     player.dj =1;
     await Write_player(usr_qq, player);
-  // 第一阶段：肉身雷劫
-  const mortalResult = await mortal_tribulation(e, player);
-  
-  if (!mortalResult.success) {
-    // 肉身劫失败处理
-    await Write_player(usr_qq, player);
-    return false;
-  }
-  
-  // 短暂等待3秒（游戏时间三息）
-  await new Promise(resolve => setTimeout(resolve, 3000));
-  
-  // 第二阶段：元神化真劫
-  const spiritResult = await spirit_tribulation(e, player);
-  
-  if (!spiritResult.success) {
-    // 元神劫失败处理
-    player.power = 1; // 标记已过肉身劫
-    player.元神劫上次失败时间 = Date.now(); // 记录失败时间
-    await Write_player(usr_qq, player);
-    
-    e.reply([
-      `≡≡≡ 元神化真中断 ≡≡≡`,
-      `${player.名号}元神未能完全化真！`,
-      `虚实转化率受损：${(spiritResult.damage * 100).toFixed(1)}%`,
-      `境界停滞，需重修元神`,
-      `肉身劫成果保留，下次只需重渡元神劫！`
-    ].join("\n"));
-    return false;
-  }
-  
-  // 双重劫难皆过
-  player.power = 2; // 标记完全渡劫成功
-  player.真实掌握度 = 1.0; // 完全掌握真实法则
-  
-  // 境界升级属性提升
-  const nextLevel = data.Level_list.find(item => item.level_id === 42);
-  if (nextLevel) {
-    player.元神 = player.元神 * 5; // 元神大幅增强
-  }
-  
-  await Write_player(usr_qq, player);
-  
-  e.reply([
-    `≡≡≡ 阴阳同济·永恒证真 ≡≡≡`,
-    `≡ ${player.名号}成功渡过双重无妄真劫，超脱人世间`,
-    `≡ 元神强度：${player.元神.toFixed(0)}`,
-    `≡ 真实掌握度：100%`,
-    `≡ 请即刻#登仙进入仙界！`
-  ].join("\n"));
-  
-  return true;
+  // 进入雷劫函数
+ await mortal_tribulation(e, player);
 }
   //#羽化登仙
   //专门为渡劫期设计的指令
