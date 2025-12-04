@@ -313,9 +313,9 @@ async repairDaoshang(e) {
     const repairEfficiency = daoshangSkills[strongestSkill];
     
     // 使用您提供的公式计算修复消耗
-    let reward = 15000000; // 基础消耗常量
+    let reward = 5000000; // 基础消耗常量
     let daoshangMultiplier = 1 + (player.道伤 * 0.5); // 道伤越重，消耗越大
-    let zuizhong = (player.mijinglevel_id + player.xiangulevel_id) * reward * daoshangMultiplier;
+    let zuizhong = (player.level_id+player.Physique_id+player.mijinglevel_id + player.xiangulevel_id) * reward * daoshangMultiplier;
     zuizhong = Math.ceil(zuizhong * (1 / repairEfficiency)); // 功法效率越低，总消耗越高
     
     // 检查修为和血气是否足够
