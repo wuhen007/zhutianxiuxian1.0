@@ -49,21 +49,14 @@ export class channels extends plugin {
           {
             reg:"请私信发我一条消息",
             fnc:'cs',
-          },
-          {
-            reg:"cs",
-            fnc:'cs2',
-          },
+          }
         ],
       });
     }
     async cs(e){
       await common.relpyPrivate(e.user_id.toString(), '你干嘛');
     }
-    async cs2(e){
-      console.log(e)
-      e.reply(e.user_id.toString().replace('qg_',''))
-    }
+
 
     async send(e){
       if (e.isGroup) {
