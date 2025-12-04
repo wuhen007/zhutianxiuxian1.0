@@ -1863,7 +1863,9 @@ async OneKeyMaxUp(e) {
     const era = eras[currentEra.index];
 
     const player = await Read_player(usr_qq);
+    const startLevelInfo = data.LevelMax_list.find(i => i.level_id === player.Physique_id); // ←补上
     const talent = this.getTalentBreakthroughInfo(player);
+
     const maxLv = 63 - (10 - (await getWeimianLevel()));   // 位面压制
     const msg = [
         luck ? "开启一键幸运破体..." : "开启一键破体...",
