@@ -1601,10 +1601,10 @@ if (func == "打开") {
     if (thing_name === "楼") {
       return false;
     }
-    if (!x) {
-      e.reply(`你没有【${thing_name}】这样的【${thing_exist.class}】`);
-      return false;
-    }
+    // if (!x) {
+    //   e.reply(`你没有【${thing_name}】这样的【${thing_exist.class}】`);
+    //   return false;
+    // }
       if (thing_name === "终古剑之主") {
             // 检查是否学习永恒终极剑道
             const hasEternalSwordDao = player.学习的功法.includes("永恒终极剑道");
