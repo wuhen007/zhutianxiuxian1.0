@@ -9448,3 +9448,13 @@ export async function checkStorageSpace(usr_qq, itemSize) {
   const innerWorld = await Read_inner_world(usr_qq);
   return innerWorld.当前容量 + itemSize <= innerWorld.最大容量;
 }
+/* ---------- 辅助：读位面等级 ---------- */
+export async function getWeimianLevel() {
+  try {
+    const path = data.filePathMap.weimianList;
+    if (!fs.existsSync(path)) return 10;
+    return JSON.parse(fs.readFileSync(path, 'utf8'))['诸天位面'] || 10;
+  } catch {
+    return 10;
+  }
+}
