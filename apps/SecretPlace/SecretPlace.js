@@ -147,9 +147,9 @@ export class SecretPlace extends plugin {
 async goToLocation(e) {
     if (!verc({ e })) return false;
     
-    const usr_qq = e.user_id.toString().replace('qg_', '');
-    const player_qq = await channel(usr_qq);
-    const player = await Read_player(player_qq);
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+     usr_qq = await channel(usr_qq);
+    const player = await Read_player(usr_qq);
     
     // 解析目标地点
     const location = e.msg.match(/^#穿梭(凡间|仙界|下界八域|九天十地|遮天位面|界海|时间长河|永恒未知之地|仙域)$/)[1];
@@ -220,7 +220,7 @@ async goToLocation(e) {
         // 扣除传送次数
         player.位面传送次数 -= 1;
         player.power_place = targetLocation;
-        await Write_player(player_qq, player);
+        await Write_player(usr_qq, player);
         return e.reply(teleportMsg);
     }
     
@@ -548,7 +548,7 @@ async goToLocation(e) {
     player.修为 -= xiuweiCost;
     player.血气 -= qixueCost;
     player.寿元 -= shouyuanCost;
-    await Write_player(player_qq, player);
+    await Write_player(usr_qq, player);
     
     // 设置传送行动
     const travelAction = {
@@ -565,14 +565,14 @@ async goToLocation(e) {
         shouyuan_cost: shouyuanCost,
         travel_msg: travelMsg,
         player_name: player.名号,
-        player_qq: player_qq,
+        usr_qq: usr_qq,
         group_id: e.isGroup ? e.group_id : null,
         used_token: false // 标记未使用传送次数
     };
     
     // 保存到Redis
-    await redis.set(`xiuxian:travel_task:${player_qq}`, JSON.stringify(travelAction));
-    await redis.set(`xiuxian:player:${player_qq}:action`, JSON.stringify(travelAction));
+    await redis.set(`xiuxian:travel_task:${usr_qq}`, JSON.stringify(travelAction));
+    await redis.set(`xiuxian:player:${usr_qq}:action`, JSON.stringify(travelAction));
     
     // 发送开始传送消息
     e.reply([
@@ -634,9 +634,9 @@ if (player.五色祭坛激活 !== 1) {
 
 async Xiuxianstate(e) {
     if (!verc({ e })) return false;
-    const usr_qq = e.user_id.toString().replace('qg_', '');
-    const player_qq = await channel(usr_qq);
-    const player = await Read_player(player_qq);
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    const player = await Read_player(usr_qq);
     
     // 定义位置状态映射
     const PLACE_STATES = {
@@ -681,7 +681,7 @@ replyMsg.push(
     `激活状态：${player.五色祭坛激活 === 1 ? '已激活' : '未激活'}`
 );
     // 查询当前行动 - 真身行动
-    let trueBodyAction = await redis.get('xiuxian:player:' + player_qq + ':action');
+    let trueBodyAction = await redis.get('xiuxian:player:' + usr_qq + ':action');
     if (trueBodyAction) {
         trueBodyAction = JSON.parse(trueBodyAction);
         const now_time = new Date().getTime();
@@ -725,7 +725,7 @@ replyMsg.push(
     }
     
     // 查询当前行动 - 法身行动
-    let fashanAction = await redis.get('xiuxian:player:' + player_qq + ':action:fashan');
+    let fashanAction = await redis.get('xiuxian:player:' + usr_qq + ':action:fashan');
     if (fashanAction) {
         fashanAction = JSON.parse(fashanAction);
         const now_time = new Date().getTime();
@@ -903,7 +903,15 @@ async Gojiehaiplace(e) {
         e.reply(`没有灵石寸步难行，请道友攒到${Price}灵石才够哦~`);
         return false;
     }
-    
+        // 添加破王成帝消息（如果有）
+    if (player.破王成帝) {
+        player.破王成帝 -= 1;
+        allMsgs.push("你破王成帝的桎梏正在松动");
+        await Write_player(usr_qq, player);
+    }
+    player.lastDungeonType = '界海';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
     // 扣除灵石
     await Add_灵石(usr_qq, -Price);
     
@@ -911,9 +919,6 @@ async Gojiehaiplace(e) {
     let time = 30; // 基础时间（分钟）
 
     const allMsgs = []; // 收集所有消息
-    
-
-    await Write_player(usr_qq, player);
     // 添加前往界海消息
     allMsgs.push(`你沿着帝落时代的无名准仙帝在堤坝留下的脚印前往界海，目标：${didian}`);
      // 调用统一方法计算时间缩减
@@ -1077,15 +1082,7 @@ async Gojiehaiplace(e) {
     // 添加主文案
     allMsgs.push(finalMsg);
     
-    // 添加破王成帝消息（如果有）
-    if (player.破王成帝) {
-        player.破王成帝 -= 1;
-        allMsgs.push("你破王成帝的桎梏正在松动");
-        await Write_player(usr_qq, player);
-    }
-    player.lastDungeonType = '界海';
-    player.lastDungeonName = didian;
-    await Write_player(usr_qq, player);
+
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
     return true;
@@ -1093,9 +1090,9 @@ async Gojiehaiplace(e) {
 
 async Gosecretplace(e) {
     if (!verc({ e })) return false;
-    const usr_qq = e.user_id.toString().replace('qg_', '');
-    const player_qq = await channel(usr_qq);
-     const player = await Read_player(player_qq);
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+     const player = await Read_player(usr_qq);
     // 检查是否可以前往
     const flag = await Go(e);
     if (!flag) {
@@ -1142,17 +1139,17 @@ async Gosecretplace(e) {
     
     // 桃花岛特殊检查
     if (didian === '桃花岛') {
-        const exist_B = await exist_hunyin(player_qq);
+        const exist_B = await exist_hunyin(usr_qq);
         if (!exist_B) {
             e.reply(`还请少侠找到道侣之后再来探索吧`);
             return false;
         }
-        const qinmidu = await find_qinmidu(player_qq, exist_B);
+        const qinmidu = await find_qinmidu(usr_qq, exist_B);
         if (qinmidu < 550) {
             e.reply('少侠还是先和道侣再联络联络感情吧');
             return false;
         }
-        await add_qinmidu(player_qq, exist_B, -50);
+        await add_qinmidu(usr_qq, exist_B, -50);
     }
     
     // 更新任务记录
@@ -1163,10 +1160,12 @@ async Gosecretplace(e) {
         renwu[i].jilu3 += 1;
         await Write_renwu(renwu);
     }
-    
+            player.lastDungeonType = '秘境';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
     // 扣除资源
-    await Add_寿元(player_qq, -weizhi.shouyuan);
-    await Add_灵石(player_qq, -weizhi.Price);
+    await Add_寿元(usr_qq, -weizhi.shouyuan);
+    await Add_灵石(usr_qq, -weizhi.Price);
     
     // 获取基础时间
     const cf = config.getConfig('xiuxian', 'xiuxian');
@@ -1197,7 +1196,7 @@ async Gosecretplace(e) {
             player.法身位置 = 1; // 秘境位置编号
             player.法身行动 = `探索${didian}`;
             player.法身状态 = `行动中`;
-            await Write_player(player_qq, player);
+            await Write_player(usr_qq, player);
             
             // 构建法身消息
             const fashanMsg = [
@@ -1231,14 +1230,14 @@ async Gosecretplace(e) {
                 arr.group_id = e.group_id;
             }
             
-            await redis.set('xiuxian:player:' + player_qq + ':action:fashan', JSON.stringify(arr));
+            await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
             
             // 发送消息
             e.reply(allMsgs.join('\n\n'));
             return true;
         } else {
             // 法身忙碌，显示状态
-            const currentAction = await redis.get('xiuxian:player:' + player_qq + ':action:fashan');
+            const currentAction = await redis.get('xiuxian:player:' + usr_qq + ':action:fashan');
             if (currentAction) {
                 const parsedAction = JSON.parse(currentAction);
                 if (parsedAction.isFashan && parsedAction.end_time > new Date().getTime()) {
@@ -1292,19 +1291,17 @@ async Gosecretplace(e) {
         arr.group_id = e.group_id;
     }
     
-    await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
-        player.lastDungeonType = '秘境';
-    player.lastDungeonName = didian;
-    await Write_player(usr_qq, player);
+    await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
+
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
     return true;
 }
 async Goxiajie(e) {
     if (!verc({ e })) return false;
-    const usr_qq = e.user_id.toString().replace('qg_', '');
-    const player_qq = await channel(usr_qq);
-     const player = await Read_player(player_qq);
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+     const player = await Read_player(usr_qq);
     // 检查是否可以前往
     const flag = await Go(e);
     if (!flag) {
@@ -1361,12 +1358,14 @@ async Goxiajie(e) {
         renwu[i].jilu3 += 1;
         await Write_renwu(renwu);
     }
-    
+            player.lastDungeonType = '下界八域';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
     // 扣除资源
-    await Add_寿元(player_qq, -weizhi.shouyuan);
-    await Add_灵石(player_qq, -weizhi.Price);
-    await Add_修为(player_qq, -weizhi.experience);
-    await Add_血气(player_qq, -weizhi.experience);
+    await Add_寿元(usr_qq, -weizhi.shouyuan);
+    await Add_灵石(usr_qq, -weizhi.Price);
+    await Add_修为(usr_qq, -weizhi.experience);
+    await Add_血气(usr_qq, -weizhi.experience);
     // 获取基础时间
     const cf = config.getConfig('xiuxian', 'xiuxian');
     let baseTime = cf.CD.xiajie; // 基础时间（分钟）
@@ -1421,19 +1420,17 @@ async Goxiajie(e) {
         arr.group_id = e.group_id;
     }
     
-    await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
-        player.lastDungeonType = '下界八域';
-    player.lastDungeonName = didian;
-    await Write_player(usr_qq, player);
+    await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
+
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
     return true;
 }
 async Gojiutianshidi(e) {
     if (!verc({ e })) return false;
-    const usr_qq = e.user_id.toString().replace('qg_', '');
-    const player_qq = await channel(usr_qq);
-     const player = await Read_player(player_qq);
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+     const player = await Read_player(usr_qq);
     // 检查是否可以前往
     const flag = await Go(e);
     if (!flag) {
@@ -1485,12 +1482,14 @@ async Gojiutianshidi(e) {
         renwu[i].jilu3 += 1;
         await Write_renwu(renwu);
     }
-    
+            player.lastDungeonType = '九天十地';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
     // 扣除资源
-    await Add_寿元(player_qq, -weizhi.shouyuan);
-    await Add_灵石(player_qq, -weizhi.Price);
-    await Add_修为(player_qq, -weizhi.experience);
-    await Add_血气(player_qq, -weizhi.experience);
+    await Add_寿元(usr_qq, -weizhi.shouyuan);
+    await Add_灵石(usr_qq, -weizhi.Price);
+    await Add_修为(usr_qq, -weizhi.experience);
+    await Add_血气(usr_qq, -weizhi.experience);
     // 获取基础时间
     const cf = config.getConfig('xiuxian', 'xiuxian');
     let baseTime = cf.CD.xiajie; // 基础时间（分钟）
@@ -1545,10 +1544,8 @@ async Gojiutianshidi(e) {
         arr.group_id = e.group_id;
     }
     
-    await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
-        player.lastDungeonType = '九天十地';
-    player.lastDungeonName = didian;
-    await Write_player(usr_qq, player);
+    await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
+
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
     return true;
@@ -1556,9 +1553,9 @@ async Gojiutianshidi(e) {
 async Gozhetian(e) {
     // ==== 初始化部分 ====
     if (!verc({ e })) return false;
-    const usr_qq = e.user_id.toString().replace('qg_','');
-    const player_qq = await channel(usr_qq);
-    const player = await Read_player(player_qq);
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    const player = await Read_player(usr_qq);
     const allMsgs = []; // 消息收集器（修复点：提前初始化）
 
     // ==== 基础检查 ====
@@ -1581,7 +1578,7 @@ async Gozhetian(e) {
         } else {
             // 检查法身行动状态
             let isFashanBusy = false;
-            const fashanAction = await redis.get('xiuxian:player:' + player_qq + ':action:fashan');
+            const fashanAction = await redis.get('xiuxian:player:' + usr_qq + ':action:fashan');
             
             if (fashanAction) {
                 const parsedAction = JSON.parse(fashanAction);
@@ -1591,7 +1588,7 @@ async Gozhetian(e) {
                     const s = parseInt((parsedAction.end_time - nowTime - m * 60 * 1000) / 1000);
                     allMsgs.push(`法身正在${parsedAction.action}中，剩余时间：${m}分${s}秒`);
                 } else {
-                    await redis.del('xiuxian:player:' + player_qq + ':action:fashan');
+                    await redis.del('xiuxian:player:' + usr_qq + ':action:fashan');
                 }
             }
             
@@ -1631,7 +1628,7 @@ async Gozhetian(e) {
                 player.法身位置 = 2;
                 player.法身行动 = `探索遮天·${didian}`;
                 player.法身状态 = `行动中`;
-                await Write_player(player_qq, player);
+                await Write_player(usr_qq, player);
                 
                 // ==== 构建法身消息 ====
                 const fashanMsg = [
@@ -1665,7 +1662,7 @@ async Gozhetian(e) {
                     arr.group_id = e.group_id;
                 }
                 
-                await redis.set('xiuxian:player:' + player_qq + ':action:fashan', JSON.stringify(arr));
+                await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
                 return e.reply(allMsgs.join('\n\n'));
             }
         }
@@ -1768,10 +1765,10 @@ async Gozhetian(e) {
         allMsgs.push(adjustMsg);
         
         // 不死神泉效果
-        if (await exist_najie_thing(player_qq, "不死神泉", "道具")) {
+        if (await exist_najie_thing(usr_qq, "不死神泉", "道具")) {
             weizhiExperience = Math.ceil(weizhiExperience * 0.8);
             allMsgs.push("饮下不死神泉，生命禁区的诅咒与道则压制大幅减弱！");
-            await Add_najie_thing(player_qq, "不死神泉", "道具", -1);
+            await Add_najie_thing(usr_qq, "不死神泉", "道具", -1);
         }
         
         // 检查修为和血气
@@ -1783,15 +1780,20 @@ async Gozhetian(e) {
             allMsgs.push(`你需要积累${weizhiExperience}血气，才能抵抗生命禁区！`);
             return e.reply(allMsgs.join('\n'));
         }
-        
+    player.lastDungeonType = '遮天位面';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
         // 扣除资源
-        await Add_灵石(player_qq, -weizhiPrice);
-        await Add_修为(player_qq, -weizhiExperience);
-        await Add_血气(player_qq, -weizhiExperience);
+        await Add_灵石(usr_qq, -weizhiPrice);
+        await Add_修为(usr_qq, -weizhiExperience);
+        await Add_血气(usr_qq, -weizhiExperience);
     } else {
-        await Add_灵石(player_qq, -weizhiPrice);
-        await Add_修为(player_qq, -weizhiExperience);
-        await Add_血气(player_qq, -weizhiExperience);
+            player.lastDungeonType = '遮天位面';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
+        await Add_灵石(usr_qq, -weizhiPrice);
+        await Add_修为(usr_qq, -weizhiExperience);
+        await Add_血气(usr_qq, -weizhiExperience);
     }
     
 
@@ -1808,9 +1810,7 @@ async Gozhetian(e) {
         ].join('\n'));
     }
     
-    // ==== 更新玩家状态 ====
-    player.power_place = 2;
-    await Write_player(player_qq, player);
+
     
     // ==== 地点描述 ====
     let locationDesc = "";
@@ -1847,7 +1847,7 @@ async Gozhetian(e) {
     }
     
     // ==== 扣除寿元 ====
-    await Add_寿元(player_qq, -weizhi.shouyuan);
+    await Add_寿元(usr_qq, -weizhi.shouyuan);
     
     // ==== 设置行动状态 ====
     const action_time = 60000 * time;
@@ -1871,21 +1871,19 @@ async Gozhetian(e) {
         arr.group_id = e.group_id;
     }
     
-    await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
+    await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
     // ==== 最终消息 ====
     allMsgs.push(`开始前往${didian}，${time}分钟后归来！`);
-        player.lastDungeonType = '遮天位面';
-    player.lastDungeonName = didian;
-    await Write_player(usr_qq, player);
+
     // ==== 发送所有消息 ====
     return e.reply(allMsgs.join('\n\n'));
 }
 async Goforbiddenarea(e) {
     if (!verc({ e })) return false;
     
-    const usr_qq = e.user_id.toString().replace('qg_', '');
-    const player_qq = await channel(usr_qq);
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
     
     // 检查是否可以前往
     const flag = await Go(e);
@@ -1893,7 +1891,7 @@ async Goforbiddenarea(e) {
         return false;
     }
     
-    const player = await Read_player(player_qq);
+    const player = await Read_player(usr_qq);
     
     // ==== 法身系统检查 ====
     if (player.法身 === 1) {
@@ -1909,7 +1907,7 @@ async Goforbiddenarea(e) {
         let isFashanBusy = false;
         let parsedAction = null;
         
-        const fashanAction = await redis.get('xiuxian:player:' + player_qq + ':action:fashan');
+        const fashanAction = await redis.get('xiuxian:player:' + usr_qq + ':action:fashan');
         if (fashanAction) {
             parsedAction = JSON.parse(fashanAction);
             if (parsedAction.end_time > nowTime) {
@@ -1919,7 +1917,7 @@ async Goforbiddenarea(e) {
                 e.reply(`法身正在${parsedAction.action}中，剩余时间：${m}分${s}秒`);
             } else {
                 // 法身行动已结束但未清除
-                await redis.del('xiuxian:player:' + player_qq + ':action:fashan');
+                await redis.del('xiuxian:player:' + usr_qq + ':action:fashan');
             }
         }
         
@@ -1948,7 +1946,7 @@ async Goforbiddenarea(e) {
             player.法身状态 = `行动中`;
             
             // 保存玩家数据
-            await Write_player(player_qq, player);
+            await Write_player(usr_qq, player);
             
             // 构建法身消息
             const fashanMsg = [
@@ -1982,7 +1980,7 @@ async Goforbiddenarea(e) {
             }
             
             // 使用专用键存储法身行动
-            await redis.set('xiuxian:player:' + player_qq + ':action:fashan', JSON.stringify(arr));
+            await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
             
             e.reply(fashanMsg);
             return true;
@@ -2019,7 +2017,7 @@ async Goforbiddenarea(e) {
 
     
     // 特殊玩家处理
-    const isSpecialPlayer = player_qq == '4909071520328015562';
+    const isSpecialPlayer = usr_qq == '4909071520328015562';
     if (isSpecialPlayer) {
         allMsgs.push([
             `【无上存在·巡视禁地】`,
@@ -2045,12 +2043,14 @@ async Goforbiddenarea(e) {
     // 调用统一方法计算时间缩减
     const { timeReduction, msgs } = await calculateTimeReduction(player);
     allMsgs.push(...msgs);
-    
+            player.lastDungeonType = '禁地';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
     // 扣除资源
-    await Add_寿元(player_qq, -weizhi.shouyuan);
+    await Add_寿元(usr_qq, -weizhi.shouyuan);
     if (!isSpecialPlayer) {
-        await Add_灵石(player_qq, -weizhi.Price);
-        await Add_修为(player_qq, -weizhi.experience);
+        await Add_灵石(usr_qq, -weizhi.Price);
+        await Add_修为(usr_qq, -weizhi.experience); 
     }
     
     // 添加消耗信息
@@ -2101,7 +2101,7 @@ async Goforbiddenarea(e) {
     }
     
     // 使用原键名存储真身行动
-    await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
+    await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
     // 根据禁地类型添加特殊描述
     let locationDesc = "";
@@ -2160,9 +2160,7 @@ async Goforbiddenarea(e) {
     
     // 添加主要行动信息
     allMsgs.push(`开始探索${didian}，${time}分钟后归来！`);
-        player.lastDungeonType = '禁地';
-    player.lastDungeonName = didian;
-    await Write_player(usr_qq, player);
+
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
     return true;
@@ -2345,6 +2343,9 @@ async GoTimeplace(e) {
     }
     
     const Price = weizhi.Price * dazhe;
+            player.lastDungeonType = '仙府';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
     await Add_灵石(usr_qq, -Price);
     await Add_修为(usr_qq, -100000);
     
@@ -2402,9 +2403,7 @@ async GoTimeplace(e) {
             time +
             '分钟后归来!';
     }
-        player.lastDungeonType = '仙府';
-    player.lastDungeonName = didian;
-    await Write_player(usr_qq, player);
+
     e.reply(replyMsg);
     return false;
 }
@@ -2412,9 +2411,9 @@ async GoTimeplace(e) {
 async Gofairyrealm(e) {
     if (!verc({ e })) return false;
     
-    const usr_qq = e.user_id.toString().replace('qg_', '');
-    const player_qq = await channel(usr_qq);
-    const player = await Read_player(player_qq);
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    const player = await Read_player(usr_qq);
     // 检查是否可以前往
     const flag = await Go(e);
     if (!flag) {
@@ -2503,14 +2502,14 @@ async Gofairyrealm(e) {
     // 特殊仙境处理
 let specialMsg = "";
 if (didian === "往世星海") {
-    const shenyu = await exist_najie_thing(player_qq, "群星秘钥", "道具");
+    const shenyu = await exist_najie_thing(usr_qq, "群星秘钥", "道具");
     if (!shenyu || shenyu < 1) {
         return e.reply("群星秘钥缺失，星海之门拒绝开启。");
     }
     if (player.level_id <= 54) {
         return e.reply("万界道祖方可踏入星海，当前境界不足。");
     }
-    await Add_najie_thing(player_qq, "群星秘钥", "道具", -1);
+    await Add_najie_thing(usr_qq, "群星秘钥", "道具", -1);
     specialMsg = [
         `【星海归航】`,
         `你以群星秘钥叩响天穹，亿万星辉垂落，`,
@@ -2521,14 +2520,14 @@ if (didian === "往世星海") {
 }
 
     if (didian === "神域星宫") {
-        const shenyu = await exist_najie_thing(player_qq, "神域令牌", "道具");
+        const shenyu = await exist_najie_thing(usr_qq, "神域令牌", "道具");
         if (!shenyu || shenyu < 1) {
             return e.reply("你需要神域令牌才能前往神域星宫");
         }
         if (player.level_id <= 54) {
             return e.reply("只有万界道祖级强者才能前往天外天");
         }
-        await Add_najie_thing(player_qq, "神域令牌", "道具", -1);
+        await Add_najie_thing(usr_qq, "神域令牌", "道具", -1);
         specialMsg = [
             `【神域感召】`,
             `${player.名号}消耗了1个神域令牌，`,
@@ -2539,11 +2538,11 @@ if (didian === "往世星海") {
     }
     
     if (didian === "瑞泽云海") {
-        const xianzhou = await exist_najie_thing(player_qq, "仙舟", "道具");
+        const xianzhou = await exist_najie_thing(usr_qq, "仙舟", "道具");
         if (!xianzhou || xianzhou < 1) {
             return e.reply("你需要仙舟才能前往瑞泽云海");
         }
-        await Add_najie_thing(player_qq, "仙舟", "道具", -1);
+        await Add_najie_thing(usr_qq, "仙舟", "道具", -1);
         specialMsg = [
             `【仙舟渡海】`,
             `${player.名号}乘坐仙舟，`,
@@ -2557,7 +2556,7 @@ if (didian === "往世星海") {
     let discountMsg = "";
     
     if (didian === '杀神崖') {
-        if (await exist_najie_thing(player_qq, '杀神崖通行证', '道具') && 
+        if (await exist_najie_thing(usr_qq, '杀神崖通行证', '道具') && 
             player.魔道值 < 1 && 
             (player.灵根.type == '转生' || player.level_id > 41)) {
             dazhe = 0;
@@ -2566,10 +2565,10 @@ if (didian === "往世星海") {
                 `${player.名号}使用了杀神崖通行证，`,
                 `本次镇守免费！`,
             ].join('\n');
-            await Add_najie_thing(player_qq, '杀神崖通行证', '道具', -1);
+            await Add_najie_thing(usr_qq, '杀神崖通行证', '道具', -1);
         }
     } else {
-        if (await exist_najie_thing(player_qq, '仙境优惠券', '道具') && 
+        if (await exist_najie_thing(usr_qq, '仙境优惠券', '道具') && 
             player.魔道值 < 1 && 
             (player.灵根.type == '转生' || player.level_id > 41)) {
             dazhe = 0.5;
@@ -2578,7 +2577,7 @@ if (didian === "往世星海") {
                 `${player.名号}使用了仙境优惠券，`,
                 `本次消耗减少50%！`,
             ].join('\n');
-            await Add_najie_thing(player_qq, '仙境优惠券', '道具', -1);
+            await Add_najie_thing(usr_qq, '仙境优惠券', '道具', -1);
         }
     }
     
@@ -2593,10 +2592,12 @@ if (didian === "往世星海") {
     // 计算实际消耗
     let Price = Math.floor(weizhi.Price * dazhe);
     let shouyuan = weizhi.shouyuan;
-    
+            player.lastDungeonType = '仙境';
+    player.lastDungeonName = didian;
+    await Write_player(usr_qq, player);
     // 扣除资源
-    await Add_灵石(player_qq, -Price);
-    await Add_寿元(player_qq, -shouyuan);
+    await Add_灵石(usr_qq, -Price);
+    await Add_寿元(usr_qq, -shouyuan);
     
     // 收集消耗信息
     let costInfo = `消耗：${shouyuan}寿元`;
@@ -2632,7 +2633,7 @@ if (didian === "往世星海") {
             let isFashanBusy = false;
             let parsedAction = null;
             
-            const fashanAction = await redis.get('xiuxian:player:' + player_qq + ':action:fashan');
+            const fashanAction = await redis.get('xiuxian:player:' + usr_qq + ':action:fashan');
             if (fashanAction) {
                 parsedAction = JSON.parse(fashanAction);
                 if (parsedAction.end_time > nowTime) {
@@ -2642,7 +2643,7 @@ if (didian === "往世星海") {
                     e.reply(`法身正在${parsedAction.action}中，剩余时间：${m}分${s}秒`);
                 } else {
                     // 法身行动已结束但未清除
-                    await redis.del('xiuxian:player:' + player_qq + ':action:fashan');
+                    await redis.del('xiuxian:player:' + usr_qq + ':action:fashan');
                 }
             }
             
@@ -2657,7 +2658,7 @@ if (didian === "往世星海") {
                 player.法身状态 = `行动中`;
                 
                 // 保存玩家数据
-                await Write_player(player_qq, player);
+                await Write_player(usr_qq, player);
                 
                 // 构建法身消息
                 const fashanMsg = [
@@ -2691,7 +2692,7 @@ if (didian === "往世星海") {
                     arr.group_id = e.group_id;
                 }
                 
-                await redis.set('xiuxian:player:' + player_qq + ':action:fashan', JSON.stringify(arr));
+                await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
                 
                 // 发送消息
                 e.reply(allMsgs.join('\n\n'));
@@ -2737,7 +2738,7 @@ if (didian === "往世星海") {
     }
     
     // 使用原键名存储真身行动
-    await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
+    await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
     // 根据仙境类型添加特殊描述
     let locationDesc = "";
@@ -2801,9 +2802,7 @@ if (didian === "往世星海") {
     
     // 添加主要行动信息
     allMsgs.push(`开始镇守${didian}，${time}分钟后归来！`);
-        player.lastDungeonType = '仙境';
-    player.lastDungeonName = didian;
-    await Write_player(usr_qq, player);
+
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
     return true;
@@ -2942,9 +2941,9 @@ if (action != null) {
   async quickReplay(e) {
   if (!verc({ e })) return false;
 
-  const usr_qq = e.user_id.toString().replace('qg_', '');
-  const player_qq = await channel(usr_qq);
-  const player = await Read_player(player_qq);
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+  const player = await Read_player(usr_qq);
 
   // 读玩家自身记录的快捷副本
   const { lastDungeonType: type, lastDungeonName: place } = player;

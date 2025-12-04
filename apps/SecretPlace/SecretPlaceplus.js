@@ -102,9 +102,8 @@ export class SecretPlaceplus extends plugin {
 async Gosecretplace(e) {
     if (!verc({ e })) return false;
     
-    const usr_qq = e.user_id.toString().replace('qg_', '');
-    const player_qq = await channel(usr_qq);
-    
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+     usr_qq = await channel(usr_qq);
     // 解析指令
     let didian = e.msg.replace('#沉迷秘境', '').trim();
     let code = didian.split('*');
@@ -129,7 +128,7 @@ async Gosecretplace(e) {
     }
     
     // 获取玩家数据
-    const player = await Read_player(player_qq);
+    const player = await Read_player(usr_qq);
          // 检查是否已在目标地点
     if (player.power_place != 0) {
         return e.reply(`你不在凡间`);
@@ -164,7 +163,7 @@ async Gosecretplace(e) {
     }
     
     // 检查秘境之匙
-    const keyCount = await exist_najie_thing(player_qq, '秘境之匙', '道具');
+    const keyCount = await exist_najie_thing(usr_qq, '秘境之匙', '道具');
     if (!keyCount || keyCount < i) {
         return e.reply(`你需要${i}个秘境之匙才能沉迷此秘境`);
     }
@@ -176,18 +175,18 @@ async Gosecretplace(e) {
     
     // 特殊秘境处理
     if (didian == "小千世界" || didian == "中千世界" || didian == "大千世界") {
-        const dagongCount = await exist_najie_thing(player_qq, "打工券", "道具");
+        const dagongCount = await exist_najie_thing(usr_qq, "打工券", "道具");
         if (!dagongCount || dagongCount < i) {
             return e.reply(`没有足够打工券的话打工本不支持沉迷哦`);
         }
-        await Add_najie_thing(player_qq, "打工券", "道具", -i);
+        await Add_najie_thing(usr_qq, "打工券", "道具", -i);
         allMsgs.push(`${player.名号}消耗了${i}张打工券，开始前往苦逼打工`);
     }
     
     // 扣除资源
-    await Add_najie_thing(player_qq, '秘境之匙', '道具', -i);
-    await Add_寿元(player_qq, -baseShouyuan);
-    await Add_灵石(player_qq, -basePrice);
+    await Add_najie_thing(usr_qq, '秘境之匙', '道具', -i);
+    await Add_寿元(usr_qq, -baseShouyuan);
+    await Add_灵石(usr_qq, -basePrice);
     
     // 收集消耗信息
     let costInfo = `消耗：${baseShouyuan}寿元，${basePrice}灵石，${i}个秘境之匙`;
@@ -252,7 +251,7 @@ async Gosecretplace(e) {
         arr.group_id = e.group_id;
     }
     
-    await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
+    await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
     // ==== 记录沉迷历史数据 ====
     const addictionHistory = {
@@ -270,7 +269,7 @@ async Gosecretplace(e) {
     };
     
     // 保存到redis，用于后续查询
-    await redis.set('xiuxian:player:' + player_qq + ':addiction_history', JSON.stringify(addictionHistory));
+    await redis.set('xiuxian:player:' + usr_qq + ':addiction_history', JSON.stringify(addictionHistory));
     
     // ==== 修改点结束 ====
     
@@ -284,8 +283,8 @@ async Gosecretplace(e) {
 async Goxiajie(e) {
     if (!verc({ e })) return false;
     
-    const usr_qq = e.user_id.toString().replace('qg_', '');
-    const player_qq = await channel(usr_qq);
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+     usr_qq = await channel(usr_qq);
     
     // 解析指令
     let didian = e.msg.replace('#沉迷下界八域', '').trim();
@@ -311,7 +310,7 @@ async Goxiajie(e) {
     }
     
     // 获取玩家数据
-    const player = await Read_player(player_qq);
+    const player = await Read_player(usr_qq);
          // 检查是否已在目标地点
     if (player.power_place != 1.5) {
         return e.reply(`你不在下界八域`);
@@ -346,7 +345,7 @@ async Goxiajie(e) {
         return false;
     }
     // 检查秘境之匙
-    const keyCount = await exist_najie_thing(player_qq, '秘境之匙', '道具');
+    const keyCount = await exist_najie_thing(usr_qq, '秘境之匙', '道具');
     if (!keyCount || keyCount < i) {
         return e.reply(`你需要${i}个秘境之匙才能沉迷此秘境`);
     }
@@ -357,11 +356,11 @@ async Goxiajie(e) {
 
     
     // 扣除资源
-    await Add_najie_thing(player_qq, '秘境之匙', '道具', -i);
-    await Add_寿元(player_qq, -baseShouyuan);
-    await Add_灵石(player_qq, -basePrice);
-    await Add_修为(player_qq, -baseexperience);
-    await Add_血气(player_qq, -baseexperience);
+    await Add_najie_thing(usr_qq, '秘境之匙', '道具', -i);
+    await Add_寿元(usr_qq, -baseShouyuan);
+    await Add_灵石(usr_qq, -basePrice);
+    await Add_修为(usr_qq, -baseexperience);
+    await Add_血气(usr_qq, -baseexperience);
     
     // 收集消耗信息
     let costInfo = `消耗：${baseShouyuan}寿元，${basePrice}灵石，${baseexperience}修为与血气，${i}个秘境之匙`;
@@ -425,7 +424,7 @@ async Goxiajie(e) {
         arr.group_id = e.group_id;
     }
     
-    await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
+    await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
     // ==== 记录沉迷历史数据 ====
     const addictionHistory = {
@@ -443,7 +442,7 @@ async Goxiajie(e) {
     };
     
     // 保存到redis，用于后续查询
-    await redis.set('xiuxian:player:' + player_qq + ':addiction_history', JSON.stringify(addictionHistory));
+    await redis.set('xiuxian:player:' + usr_qq + ':addiction_history', JSON.stringify(addictionHistory));
     
     // ==== 修改点结束 ====
     
@@ -457,8 +456,8 @@ async Goxiajie(e) {
 async Gojiutianshidi(e) {
     if (!verc({ e })) return false;
     
-    const usr_qq = e.user_id.toString().replace('qg_', '');
-    const player_qq = await channel(usr_qq);
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+     usr_qq = await channel(usr_qq);
     
     // 解析指令
     let didian = e.msg.replace('#沉迷九天十地', '').trim();
@@ -484,7 +483,7 @@ async Gojiutianshidi(e) {
     }
     
     // 获取玩家数据
-    const player = await Read_player(player_qq);
+    const player = await Read_player(usr_qq);
          // 检查是否已在目标地点
     if (player.power_place != 2.5) {
         return e.reply(`你不在九天十地`);
@@ -516,7 +515,7 @@ async Gojiutianshidi(e) {
         return false;
     }
     // 检查秘境之匙
-    const keyCount = await exist_najie_thing(player_qq, '秘境之匙', '道具');
+    const keyCount = await exist_najie_thing(usr_qq, '秘境之匙', '道具');
     if (!keyCount || keyCount < i) {
         return e.reply(`你需要${i}个秘境之匙才能沉迷此秘境`);
     }
@@ -527,11 +526,11 @@ async Gojiutianshidi(e) {
 
     
     // 扣除资源
-    await Add_najie_thing(player_qq, '秘境之匙', '道具', -i);
-    await Add_寿元(player_qq, -baseShouyuan);
-    await Add_灵石(player_qq, -basePrice);
-    await Add_修为(player_qq, -baseexperience);
-    await Add_血气(player_qq, -baseexperience);
+    await Add_najie_thing(usr_qq, '秘境之匙', '道具', -i);
+    await Add_寿元(usr_qq, -baseShouyuan);
+    await Add_灵石(usr_qq, -basePrice);
+    await Add_修为(usr_qq, -baseexperience);
+    await Add_血气(usr_qq, -baseexperience);
     
     // 收集消耗信息
     let costInfo = `消耗：${baseShouyuan}寿元，${basePrice}灵石，${baseexperience}修为与血气，${i}个秘境之匙`;
@@ -595,7 +594,7 @@ async Gojiutianshidi(e) {
         arr.group_id = e.group_id;
     }
     
-    await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
+    await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
     // ==== 记录沉迷历史数据 ====
     const addictionHistory = {
@@ -613,7 +612,7 @@ async Gojiutianshidi(e) {
     };
     
     // 保存到redis，用于后续查询
-    await redis.set('xiuxian:player:' + player_qq + ':addiction_history', JSON.stringify(addictionHistory));
+    await redis.set('xiuxian:player:' + usr_qq + ':addiction_history', JSON.stringify(addictionHistory));
     
     // ==== 修改点结束 ====
     
@@ -627,8 +626,8 @@ async Gojiutianshidi(e) {
 async Gozhetian(e) {
     if (!verc({ e })) return false;
     
-    const usr_qq = e.user_id.toString().replace('qg_','');
-    const player_qq = await channel(usr_qq);
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+     usr_qq = await channel(usr_qq);
     
     // 检查是否可以前往
     const flag = await Go(e);
@@ -636,7 +635,7 @@ async Gozhetian(e) {
         return false;
     }
     
-    const player = await Read_player(player_qq);
+    const player = await Read_player(usr_qq);
     let didian = e.msg.replace('#沉迷遮天位面', '').trim();
     let code = didian.split('*');
     didian = code[0].trim();
@@ -676,13 +675,13 @@ async Gozhetian(e) {
     }
     
     // ==== 灵石检查 ====
-    const basePrice = weizhi.Price * 10 * i;
+    let basePrice = weizhi.Price * 10 * i;
     if (player.灵石 < basePrice) {
         return e.reply(`没有灵石寸步难行，攒到${basePrice}灵石才够哦~`);
     }
     
     // ==== 寿元检查 ====
-    const baseShouyuan = weizhi.shouyuan * 10 * i;
+    let baseShouyuan = weizhi.shouyuan * 10 * i;
     if (player.寿元 < baseShouyuan) {
         return e.reply('道友这点寿元就不要去了吧，免得原地坐化了');
     }
@@ -696,7 +695,7 @@ async Gozhetian(e) {
         return e.reply(`你的秘境体系尚未达到圣人境，若是沉迷遮天位面的生命禁区将会是凶多吉少，念及此处你放弃了前往！`);
     }
     // ==== 秘境之匙检查 ====
-    const keyCount = await exist_najie_thing(player_qq, "秘境之匙", "道具");
+    const keyCount = await exist_najie_thing(usr_qq, "秘境之匙", "道具");
     if (!keyCount || keyCount < i) {
         return e.reply(`你需要${i}个秘境之匙才能沉迷此秘境`);
     }
@@ -709,7 +708,7 @@ async Gozhetian(e) {
     // 实际消耗
     let actualPrice = basePrice;
     let actualExperience = baseExperience;
-    const actualShouyuan = baseShouyuan;
+    let actualShouyuan = baseShouyuan;
     
     // 生命禁区特殊处理
     if (weizhi.Grade === "生命禁区") {
@@ -760,10 +759,10 @@ async Gozhetian(e) {
         }
         
         // 不死神泉效果
-        if (await exist_najie_thing(player_qq, "不死神泉", "道具")) {
+        if (await exist_najie_thing(usr_qq, "不死神泉", "道具")) {
             actualExperience = Math.ceil(actualExperience * 0.8);
             allMsgs.push("饮下不死神泉，生命禁区的诅咒与道则压制大幅减弱！");
-            await Add_najie_thing(player_qq, "不死神泉", "道具", -1);
+            await Add_najie_thing(usr_qq, "不死神泉", "道具", -1);
         }
         
         // 检查修为和血气是否足够
@@ -793,11 +792,11 @@ let time = baseTime - timeReduction;
     }
     
     // 扣除资源
-    await Add_najie_thing(player_qq, "秘境之匙", "道具", -i);
-    await Add_寿元(player_qq, -actualShouyuan);
-    await Add_灵石(player_qq, -actualPrice);
-    await Add_修为(player_qq, -actualExperience);
-    await Add_血气(player_qq, -actualExperience);
+    await Add_najie_thing(usr_qq, "秘境之匙", "道具", -i);
+    await Add_寿元(usr_qq, -actualShouyuan);
+    await Add_灵石(usr_qq, -actualPrice);
+    await Add_修为(usr_qq, -actualExperience);
+    await Add_血气(usr_qq, -actualExperience);
     
     // 收集消耗信息
     let costInfo = `消耗：${actualShouyuan}寿元`;
@@ -811,9 +810,7 @@ let time = baseTime - timeReduction;
     
     allMsgs.push(`${player.名号}${costInfo}`);
     
-    // 更新位置状态
-    player.power_place = 2;
-    await Write_player(player_qq, player);
+
     
     // ==== 修改点：使用新的沉迷状态定义 ====
     
@@ -849,7 +846,7 @@ let time = baseTime - timeReduction;
         arr.group_id = e.group_id;
     }
     
-    await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
+    await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
     // ==== 记录沉迷历史数据 ====
     const addictionHistory = {
@@ -867,7 +864,7 @@ let time = baseTime - timeReduction;
     };
     
     // 保存到redis，用于后续查询
-    await redis.set('xiuxian:player:' + player_qq + ':addiction_history', JSON.stringify(addictionHistory));
+    await redis.set('xiuxian:player:' + usr_qq + ':addiction_history', JSON.stringify(addictionHistory));
     
     // ==== 修改点结束 ====
     
@@ -881,8 +878,8 @@ let time = baseTime - timeReduction;
 async Goforbiddenarea(e) {
     if (!verc({ e })) return false;
     
-    const usr_qq = e.user_id.toString().replace('qg_', '');
-    const player_qq = await channel(usr_qq);
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+     usr_qq = await channel(usr_qq);
     
     // 检查是否可以前往
     const flag = await Go(e);
@@ -890,7 +887,7 @@ async Goforbiddenarea(e) {
         return false;
     }
     
-    const player = await Read_player(player_qq);
+    const player = await Read_player(usr_qq);
     const msg = e.msg.replace('#沉迷禁地', '').trim();
     const parts = msg.split('*');
     const didian = parts[0].trim();
@@ -927,9 +924,9 @@ async Goforbiddenarea(e) {
 
     
     // 计算基础资源消耗
-    const basePrice = weizhi.Price * 10 * i;
-    const baseShouyuan = weizhi.shouyuan * 10 * i;
-    const baseExperience = weizhi.experience * 10 * i;
+    let basePrice = weizhi.Price * 10 * i;
+    let baseShouyuan = weizhi.shouyuan * 10 * i;
+    let baseExperience = weizhi.experience * 10 * i;
     
     // 检查资源是否足够
     if (player.灵石 < basePrice) {
@@ -943,7 +940,7 @@ async Goforbiddenarea(e) {
     }
     
     // 检查秘境之匙
-    const keyCount = await exist_najie_thing(player_qq, '秘境之匙', '道具');
+    const keyCount = await exist_najie_thing(usr_qq, '秘境之匙', '道具');
     if (!keyCount || keyCount < i) {
         return e.reply(`你需要${i}个秘境之匙才能沉迷此禁地`);
     }
@@ -964,10 +961,10 @@ async Goforbiddenarea(e) {
     }
     
     // 扣除资源
-    await Add_najie_thing(player_qq, '秘境之匙', '道具', -i);
-    await Add_寿元(player_qq, -baseShouyuan);
-    await Add_灵石(player_qq, -basePrice);
-    await Add_修为(player_qq, -baseExperience);
+    await Add_najie_thing(usr_qq, '秘境之匙', '道具', -i);
+    await Add_寿元(usr_qq, -baseShouyuan);
+    await Add_灵石(usr_qq, -basePrice);
+    await Add_修为(usr_qq, -baseExperience);
     
     // 收集消耗信息
     const costInfo = `消耗：${baseShouyuan}寿元，${basePrice}灵石，${baseExperience}修为，${i}个秘境之匙`;
@@ -1007,7 +1004,7 @@ async Goforbiddenarea(e) {
         arr.group_id = e.group_id;
     }
     
-    await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(arr));
+    await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
     // ==== 记录沉迷历史数据 ====
     const addictionHistory = {
@@ -1025,7 +1022,7 @@ async Goforbiddenarea(e) {
     };
     
     // 保存到redis，用于后续查询
-    await redis.set('xiuxian:player:' + player_qq + ':addiction_history', JSON.stringify(addictionHistory));
+    await redis.set('xiuxian:player:' + usr_qq + ':addiction_history', JSON.stringify(addictionHistory));
     
     // ==== 修改点结束 ====
     
@@ -1329,11 +1326,11 @@ if (didian === "往世星海") {
   async CheckAddictionHarvest(e) {
     if (!verc({ e })) return false;
     
-    const usr_qq = e.user_id.toString().replace('qg_', '');
-    const player_qq = await channel(usr_qq);
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+     usr_qq = await channel(usr_qq);
     
     // 获取沉迷历史数据
-    const addictionHistory = await redis.get('xiuxian:player:' + player_qq + ':addiction_history');
+    const addictionHistory = await redis.get('xiuxian:player:' + usr_qq + ':addiction_history');
     
     if (!addictionHistory) {
       return e.reply('暂无沉迷记录，请先进行沉迷活动');
@@ -1407,11 +1404,11 @@ if (didian === "往世星海") {
   async ClearAddictionHistory(e) {
     if (!verc({ e })) return false;
     
-    const usr_qq = e.user_id.toString().replace('qg_', '');
-    const player_qq = await channel(usr_qq);
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+     usr_qq = await channel(usr_qq);
     
     // 获取沉迷历史数据
-    const addictionHistory = await redis.get('xiuxian:player:' + player_qq + ':addiction_history');
+    const addictionHistory = await redis.get('xiuxian:player:' + usr_qq + ':addiction_history');
     
     if (!addictionHistory) {
       return e.reply('暂无沉迷记录可清除');
@@ -1425,7 +1422,7 @@ if (didian === "往世星海") {
     }
     
     // 清除记录
-    await redis.del('xiuxian:player:' + player_qq + ':addiction_history');
+    await redis.del('xiuxian:player:' + usr_qq + ':addiction_history');
     
     e.reply(`已清除沉迷记录：${history.location}（${history.location_type}）`);
     return false;
