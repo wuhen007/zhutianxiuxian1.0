@@ -565,7 +565,7 @@ async goToLocation(e) {
         shouyuan_cost: shouyuanCost,
         travel_msg: travelMsg,
         player_name: player.名号,
-        usr_qq: usr_qq,
+        player_qq: usr_qq,
         group_id: e.isGroup ? e.group_id : null,
         used_token: false // 标记未使用传送次数
     };
