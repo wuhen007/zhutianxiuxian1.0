@@ -4637,23 +4637,23 @@ if (thing_name === "爱莉希雅的赐福") {
 
         // 根据赐福等级附加特殊效果
         if (newBlessing === '无瑕的祝福') {
-            player.攻击加成 = (player.攻击加成 || 0) + 1000000;
+            player.攻击加成 += (player.攻击加成 || 0) + 1000000;
         } else if (newBlessing === '真我之启示') {
-            player.防御加成 = (player.防御加成 || 0) + 800000;
+            player.防御加成 += (player.防御加成 || 0) + 800000;
             await Add_najie_thing(usr_qq, "真我宝盒", "盒子", 1);
         } else if (newBlessing === '始源之律迹') {
-            player.生命加成 = (player.生命加成 || 0) + 1500000;
-            player.血量上限 = (player.血量上限 || 0) + 1500000; // 生命上限提升10%
+            player.生命加成 += (player.生命加成 || 0) + 1500000;
+            player.血量上限 += (player.血量上限 || 0) + 1500000; // 生命上限提升10%
             await Add_najie_thing(usr_qq, "真我宝盒", "盒子", 3);
         } else if (newBlessing === '爱愿之妖精') {
-            player.攻击加成 = (player.攻击加成 || 0) + 2000000;
-            player.防御加成 = (player.防御加成 || 0) + 1500000;
-            player.生命加成 = (player.生命加成 || 0) + 2500000;
+            player.攻击加成 += (player.攻击加成 || 0) + 2000000;
+            player.防御加成 += (player.防御加成 || 0) + 1500000;
+            player.生命加成 += (player.生命加成 || 0) + 2500000;
             await Add_najie_thing(usr_qq, "真我宝盒", "盒子", 3);
         } else if (newBlessing === '无瑕之誓') {
-            player.攻击加成 = (player.攻击加成 || 0) + 3000000;
-            player.防御加成 = (player.防御加成 || 0) + 2000000;
-            player.生命加成 = (player.生命加成 || 0) + 4000000;
+            player.攻击加成 += (player.攻击加成 || 0) + 3000000;
+            player.防御加成 += (player.防御加成 || 0) + 2000000;
+            player.生命加成 += (player.生命加成 || 0) + 4000000;
             await Add_najie_thing(usr_qq, "真我宝盒", "盒子", 5);
         }
         
