@@ -1041,18 +1041,37 @@ async batchSettleDevilMonarch(e) {
   // 9. 扣除讨伐令
   await Add_najie_thing(usr_qq, '魔君讨伐令', '道具', -batch);
 
-  // 10. 打印结果
-  const buildLine = (obj) => [
-    `修为 x${(obj.修为/10000).toFixed(0)}万，血气 x${(obj.血气/10000).toFixed(0)}万`,
-    `源石 x${(obj.源石/10000).toFixed(0)}万，灵石 x${(obj.灵石/10000).toFixed(0)}万`,
-    `道具：${Object.entries(obj.first).map(([k,v])=>`${k} x${v}`).join('、')}`||'道具：无',
-    `丹药：${Object.entries(obj.second).map(([k,v])=>`${k} x${v}`).join('、')}`||'丹药：无'
-  ].join('\n');
+// 10. 打印结果 - 优化文案格式
+const buildLine = (obj) => {
+  const lines = [];
+  lines.push(`  修为 x${(obj.修为/10000000).toFixed(0)}千万，血气 x${(obj.血气/10000000).toFixed(0)}千万`);
+  lines.push(`  源石 x${(obj.源石/10000000).toFixed(0)}千万，灵石 x${(obj.灵石/10000000).toFixed(0)}千万`);
+  
+  const firstItems = Object.entries(obj.first).map(([k, v]) => `${k} x${v}`).join('、');
+  const secondItems = Object.entries(obj.second).map(([k, v]) => `${k} x${v}`).join('、');
+  
+  if (firstItems) lines.push(`  道具：${firstItems}`);
+  if (secondItems) lines.push(`  丹药：${secondItems}`);
+  
+  return lines.join('\n');
+};
 
-  let reply = `批量结算完成！共消耗【魔君讨伐令】×${batch}\n`;
-  reply += `【队长】${await get_player_name(usr_qq)} 获得：\n${buildLine(leaderDrop)}\n`;
-  reply += `【队员】合计获得：\n${buildLine(memberDrop)}`;
-  e.reply(reply);
+// 获取队长名号
+const leaderName = playersData.find(p => p.qq === usr_qq)?.名号 || '队长';
+
+let reply = [
+  `===== 九幽魔君批量结算完成 =====`,
+  `结算次数：${batch}次`,
+  `消耗道具：【魔君讨伐令】×${batch}`,
+  ``,
+  `【队长】${leaderName} 获得：`,
+  `${buildLine(leaderDrop)}`,
+  ``,
+  `【队员】合计获得：`,
+  `${buildLine(memberDrop)}`,
+].join('\n');
+
+e.reply(reply);
 
   return true;
 }

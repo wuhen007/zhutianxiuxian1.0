@@ -198,7 +198,9 @@ async shengmingbenyuan(e) {
     
     // 5. 计算缺失的生命本源
     const missingLife = maxLifeBase - player.生命本源;
-    const maxTiers = Math.ceil(missingLife / 50); // 最大可修复阶数
+    // 最大可修复点数（50的倍数），确保阶数为整数
+    const maxRepairPoints = Math.floor(missingLife / 50) * 50;
+    const maxTiers = maxRepairPoints / 50;  // 最大可修复阶数
     
     // 6. 如果没有指定阶数或指定为0，则修复全部
     if (repairTiers <= 0) {
@@ -208,16 +210,20 @@ async shengmingbenyuan(e) {
         repairTiers = maxTiers;
     }
     
-    // 7. 计算实际修复的生命本源点数
-    const repairPoints = Math.min(repairTiers * 50, missingLife);
+    // 7. 计算实际修复的生命本源点数（50的倍数）
+    const repairPoints = Math.min(repairTiers * 50, maxRepairPoints);
+    const actualTiers = repairPoints / 50;  // 实际修复的阶数
     
-    // 8. 阶梯式计算总消耗
+    // 8. 阶梯式计算总消耗（基于绝对阶数索引）
     const baseCost = 1500000000;
     let totalCost = 0;
     
-    // 计算指定阶数的消耗
-    for (let i = 1; i <= repairTiers; i++) {
-        totalCost += baseCost * i; // 每阶成本递增
+    // 计算当前生命本源所在的阶数索引（阶数从1开始）
+    const currentTierIndex = Math.floor(player.生命本源 / 50) + 1;
+    
+    // 成本 = 从当前阶数开始，连续修复N阶的成本之和
+    for (let i = 0; i < actualTiers; i++) {
+        totalCost += baseCost * (currentTierIndex + i);
     }
     
     // 9. 境界加成系数
@@ -228,7 +234,7 @@ async shengmingbenyuan(e) {
     if (player.修为 < totalCost || player.血气 < totalCost) {
         return e.reply([
             `「生命本源亏损，难以为继」`,
-            `修复${repairTiers}阶需消耗：`,
+            `修复${actualTiers}阶需消耗：`,
             `修为：${totalCost.toLocaleString()}`,
             `血气：${totalCost.toLocaleString()}`,
             `当前不足：`,
@@ -248,13 +254,13 @@ async shengmingbenyuan(e) {
     // 13. 结果反馈
     return e.reply([
         `【生命本源修复完成】`,
-        `修复阶数：${repairTiers}阶`,
+        `修复阶数：${actualTiers}阶`,
         `修复点数：${repairPoints}点`,
         `当前状态：${player.生命本源}/${maxLifeBase}`,
         `消耗修为：${totalCost.toLocaleString()}`,
         `消耗血气：${totalCost.toLocaleString()}`,
         `「本源修复，道基渐固」`,
-        repairTiers < maxTiers ? `可继续修复剩余${maxTiers - repairTiers}阶` : `本源已完全恢复`
+        actualTiers < maxTiers ? `可继续修复剩余${maxTiers - actualTiers}阶` : `本源已完全恢复`
     ].join("\n"));
 }
 async repairDaoshang(e) {
