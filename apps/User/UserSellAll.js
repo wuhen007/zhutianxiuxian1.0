@@ -1626,14 +1626,14 @@ const gongfaHierarchy = {
   "十凶宝术": 6,
   "帝经": 5,
   "九秘": 5,
-  "盖世杀术": 5,
-  "道与法": 4,
-  "宝术": 4,
-  "天赋": 2,
+  "盖世杀术": 4,
+  "道与法": 3,
+  "宝术": 3,
+  "天魔法": 2,
+  "命运法": 2,
   "修炼功法": 1,
   "炼器": 1,
-  "推演": 1,
-  "技能": 1,
+  "炼丹": 1,
   "武学": 1
 };
 
@@ -1682,12 +1682,12 @@ const playerAptitudeLevel = aptitudeLevels[aptitudeLevel] || 0; // 默认为天�
       continue;
     }
     // 特殊功法检查（神慧者）
-    if (l.name == '无始经' && player.灵根.name != "先天圣体道胎") {
+    if (l.name == '无始经' && (player.灵根.name != "先天圣体道胎"&& player.灵根.name != "混沌圣体道胎")) {
       failedGongfa.push(`${l.name}(需要先天圣体道胎灵根)`);
       continue;
     }
     // 特殊功法检查（神慧者）
-    if (l.name == '西皇经' && (player.灵根.type != "道胎"&&player.灵根.type != "圣体道胎")) {
+    if (l.name == '西皇经' && (player.灵根.type != "道胎"&&player.灵根.type != "圣体道胎"&& player.灵根.name != "混沌圣体道胎")) {
       failedGongfa.push(`${l.name}(需要拥有先天道胎)`);
       continue;
     }

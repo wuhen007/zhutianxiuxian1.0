@@ -3645,22 +3645,22 @@ if (thing_exist.type == '神药') {
                     if (player.位面传送次数 == undefined) {
                     player.位面传送次数 = 0;
                 }
-                    player.位面传送次数 += 1;
+                    player.位面传送次数 += quantity;
                     await Write_player(usr_qq, player);
-                    await Add_najie_thing(usr_qq, "位面传送阵","道具", -1);
-                    e.reply(`使用成功，位面传送次数增加一次`);
+                    await Add_najie_thing(usr_qq, "位面传送阵","道具", -quantity);
+                    e.reply(`使用成功，位面传送次数增加${quantity}次`);
                     return;
-            }
-                         if (thing_name == "大位面传送阵") {
+                }
+                if (thing_name == "大位面传送阵") {
                     if (player.位面传送次数 == undefined) {
                     player.位面传送次数 = 0;
                 }
-                    player.位面传送次数 += 3;
+                    player.位面传送次数 += 3* quantity;
                     await Write_player(usr_qq, player);
-                    await Add_najie_thing(usr_qq, "大位面传送阵","道具", -1);
-                    e.reply(`使用成功，位面传送次数增加三次`);
+                    await Add_najie_thing(usr_qq, "大位面传送阵","道具", -quantity);
+                    e.reply(`使用成功，位面传送次数增加${3*quantity}次`);
                     return;
-            }
+                }
                 if (thing_name == "符道修士的感悟") {
                 if (player.occupation != "符师") {
                     e.reply("你并非符师，无法从中获得领悟");
@@ -5636,107 +5636,71 @@ if (thing_name == "先天混沌圣体道胎本源") {
                           return;
                  
                   }
-if (thing_name == "光阴水") {
-    if (player.灵根.type != "天魔" && player.灵根.type != "命运" && player.灵根.type !== "神魔体") {
-        e.reply(`你并非来自此界的超脱者!`);
-        return;
-    }
-    
-    // 初始化光阴加成属性
-    if (!player.光阴加成) player.光阴加成 = { 攻: 0, 防: 0, 生: 0 };
-    
-    if (player.生命加成 < 900000000) {
-        await Add_najie_thing(usr_qq, thing_name, "道具", -1);
-        
+if (thing_name === '光阴水' || thing_name === '光阴火' || thing_name === '光阴石') {
+  // 1. 资格校验
+  const ALLOW_TYPES = ['天魔', '命运', '神魔体'];
+  if (!ALLOW_TYPES.includes(player.灵根.type)) {
+    e.reply(`你并非来自此界的超脱者!`);
+    return;
+  }
 
-        player.血量上限 += 90000000;
-        player.当前血量 += 90000000;
-        
-        // 光阴系列额外加成
-        player.光阴加成.生 += 90000000;
-        
-        await Write_player(usr_qq, player);
-        e.reply(`超脱者，你获得了光阴的洗礼，生命+90000000\n光阴生加成: +90000000`);
-        return;
-    }
-    
-    if (player.光阴加成.生 >= 900000000) {
-        e.reply(`你的光阴生命加成已达到最高`);
-        return;
-    }
-}
+  // 2. 初始化光阴加成对象
+  if (!player.光阴加成) player.光阴加成 = { 攻: 0, 防: 0, 生: 0 };
 
-if (thing_name == "光阴火") {
-    if (player.灵根.type != "天魔" && player.灵根.type != "命运" && player.灵根.type !== "神魔体") {
-        e.reply(`你并非来自此界的超脱者!`);
-        return;
-    }
-    
-    // 初始化光阴加成属性
-    if (!player.光阴加成) player.光阴加成 = { 攻: 0, 防: 0, 生: 0 };
-    
-    if (player.攻击加成 < 900000000) {
-        await Add_najie_thing(usr_qq, thing_name, "道具", -1);
-        
+  // 3. 区分属性键、上限值、单份增量
+  const CONFIG = {
+    光阴水: { key: '生', base: 90000000, max: 900000000, desc: '生命' },
+    光阴火: { key: '攻', base: 90000000, max: 900000000, desc: '攻击' },
+    光阴石: { key: '防', base: 90000000, max: 900000000, desc: '防御' },
+  };
+  const { key, base, max, desc } = CONFIG[thing_name];
 
-        player.攻击 += 90000000;
-        
-        // 光阴系列额外加成
-        player.光阴加成.攻 += 90000000;
-        
-        await Write_player(usr_qq, player);
-        e.reply(`超脱者，你获得了光阴的加持，攻击+90000000\n光阴攻加成: +90000000`);
-        return;
-    }
-    
-    if (player.光阴加成.攻 >= 900000000) {
-        e.reply(`你的光阴攻击加成已达到最高`);
-        return;
-    }
-}
+  // 4. 计算“最多还能吃几个”
+  const current = player.光阴加成[key];
+  const canUse = Math.floor((max - current) / base);
+  if (canUse <= 0) {
+    e.reply(`你的光阴${desc}加成已达到最高`);
+    return;
+  }
+  if (quantity > canUse) {
+    e.reply(`本次使用数量不能大于 ${canUse} 个，否则将超出光阴上限`);
+    return;
+  }
 
-if (thing_name == "光阴石") {
-    if (player.灵根.type != "天魔" && player.灵根.type != "命运" && player.灵根.type !== "神魔体") {
-        e.reply(`你并非来自此界的超脱者!`);
-        return;
-    }
-    
-    // 初始化光阴加成属性
-    if (!player.光阴加成) player.光阴加成 = { 攻: 0, 防: 0, 生: 0 };
-    
-    if (player.防御加成 < 900000000) {
-        await Add_najie_thing(usr_qq, thing_name, "道具", -1);
+  // 5. 真正消耗与加成
+  await Add_najie_thing(usr_qq, thing_name, '道具', -quantity);
+  const total = base * quantity;
+  player.光阴加成[key] += total;
 
-        player.防御 += 90000000;
-        
-        // 光阴系列额外加成
-        player.光阴加成.防 += 90000000;
-        
-        await Write_player(usr_qq, player);
-        e.reply(`超脱者，你获得了光阴的加护，防御+90000000\n光阴防加成: +90000000`);
-        return;
-    }
-    
-    if (player.光阴加成.防 >= 900000000) {
-        e.reply(`你的光阴防御加成已达到最高`);
-        return;
-    }
+  // 6. 写入主属性
+  if (thing_name === '光阴水') {
+    player.血量上限 += total;
+    player.当前血量 += total;
+  } else if (thing_name === '光阴火') {
+    player.攻击 += total;
+  } else if (thing_name === '光阴石') {
+    player.防御 += total;
+  }
+
+  await Write_player(usr_qq, player);
+  e.reply(`超脱者，你获得了光阴的洗礼！\n${desc}+${total}\n光阴${desc}加成: +${player.光阴加成[key]}`);
+  return;
 }
 // 道法仙术卡统一处理逻辑
 if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡' || thing_name == '道法仙术周卡' || thing_name == '道法仙术月卡') {
-    await Add_najie_thing(usr_qq, thing_name, '道具', -1);
+    await Add_najie_thing(usr_qq, thing_name, '道具', -quantity);
     
     const now = new Date();
     const nowTime = now.getTime();
     let addDays = 0;
     
     if (thing_name == '道法仙术一日卡') {
-        addDays = 1;
+        addDays = 1*quantity;
     }
     else if (thing_name == '道法仙术三日卡') {
-        addDays = 3;
+        addDays = 3*quantity;
     } else if (thing_name == '道法仙术周卡') {
-        addDays = 7;
+        addDays = 7*quantity;
     } else if (thing_name == '道法仙术月卡') {
         // 自然月计算：获取当前月份的总天数
         const year = now.getFullYear();
@@ -5859,11 +5823,11 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
     "盖世杀术": 5,
     "道与法": 6,
     "宝术": 6,
-    "天赋": 7,
+    "天魔法": 7,
+    "命运法": 7,
     "修炼功法": 8,
     "炼器": 8,
-    "推演": 8,
-    "技能": 8,
+    "炼丹": 8,
     "武学": 8
   };
 
@@ -5893,8 +5857,8 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
   }
   
   // 特殊功法检查（无始经）
-  if (thing_name == '无始经' && player.灵根.name != "先天圣体道胎"&& 
-      player.灵根.type != "混沌圣体道胎") {
+  if (thing_name == '无始经' && (player.灵根.name != "先天圣体道胎"&& 
+      player.灵根.type != "混沌圣体道胎")) {
     e.reply([
       `【帝经拒斥】`,
       `你欲参悟《无始经》，却遭无始钟虚影镇压！`,
