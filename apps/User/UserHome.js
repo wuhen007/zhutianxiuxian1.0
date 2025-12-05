@@ -2578,10 +2578,12 @@ if (thing_exist.type == '神药') {
             
             let now_level_id = player.level_id;
             let now_physique_id = player.Physique_id;
+            let now_mijinglevel_id = player.mijinglevel_id;
+            let now_xiangulevel_id = player.xiangulevel_id;
             let t1 = 2 + Math.random();
             let t2 = 2 + Math.random();
-            let xiuwei = Math.trunc(2000 + (100 * now_level_id * now_level_id * t1 * 0.1) / 5);
-            let xueqi = Math.trunc(2000 + 100 * now_physique_id * now_physique_id * t2 * 0.1);
+            let xiuwei = Math.trunc(2000 + (10000 * now_level_id * now_level_id* now_mijinglevel_id * now_xiangulevel_id * t1));
+            let xueqi = Math.trunc(2000 + (10000 * now_physique_id * now_physique_id* now_mijinglevel_id * now_xiangulevel_id * t2));
             if (Number(player.daofaxianshu_endtime) > now_Time) {
                 last_msg += '【道法仙术】助您寻宝！本次寻宝时间缩短4分钟\n'
             }
