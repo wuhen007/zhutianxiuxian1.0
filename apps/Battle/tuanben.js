@@ -70,6 +70,10 @@ export class tuanben extends plugin {
     reg: '^#结算团本奖励$',
     fnc: 'settleTeamRewards'
   },
+{
+  reg: /^#?结算魔君奖励\*(\d+)$/,
+  fnc: 'batchSettleDevilMonarch'
+},
         {
           reg: '^#离开队伍$',
           fnc: 'leaveTeam',
@@ -551,10 +555,11 @@ if (battleResult.result === "玩家胜利") {
 
  
     const usr_qq = await this.getUserId(e);
-     
+         // 验证BOSS存在
+    const bossData = await this.getBossData(bossName);
   // 检查玩家CD
   const hasCD = await this.checkPlayerCD(usr_qq);
-  if (hasCD) {
+  if (hasCD&&!bossData.名号 === '九幽魔君') {
     const cdTime = await redis.get(`Xiuxian:Battle:PlayerCD:${usr_qq}`);
     const remaining = this.CD_DURATION - (Date.now() - parseInt(cdTime));
     const hours = Math.floor(remaining / 3600000);
@@ -572,16 +577,14 @@ if (battleResult.result === "玩家胜利") {
       return e.reply('您已在其他队伍中');
     }
    let mojun = await exist_najie_thing (usr_qq, "魔君讨伐令", "道具", 1);
-    // 验证BOSS存在
-    const bossData = await this.getBossData(bossName);
+
     if (!bossData) return e.reply(`未知BOSS: ${bossName}`);
      // 魔君特殊消耗
   if (bossData.名号 === '九幽魔君') {
     const hasToken = await exist_najie_thing(usr_qq, '魔君讨伐令', '道具');
     if (!hasToken || hasToken < 1) {
-      return e.reply('讨伐九幽魔君需要消耗 1 枚【魔君讨伐令】，请先获取后再来。');
+      return e.reply('讨伐九幽魔君需要身上有【魔君讨伐令】，请先获取后再来。');
     }
-    await Add_najie_thing(usr_qq, '魔君讨伐令', '道具', -1);
   }
     if (bossData && bossData.名号 === "帝尊" ) {
   return e.reply(`帝尊无法创建讨伐队伍`);
@@ -880,58 +883,58 @@ async settleTeamRewards(e) {
   
   // 如果BOSS是魔君，则发放特殊奖励
   if (team.boss === '九幽魔君') {
-    // 定义可抽取的丹药数组
-    const firstGroup = ["遣龙令", "遣虎令", "玄品秘境结算卡", "残卷", "仙舟", "秘境之匙", "仙品秘境结算卡"];
-    const secondGroup = ["九阶淬体丹", "九阶玄元丹", "天药", "天命轮回丹", "琴笙的加持", "七星玄元丹", "神魔炼体丹"];
+    // // 定义可抽取的丹药数组
+    // const firstGroup = ["遣龙令", "遣虎令", "玄品秘境结算卡", "残卷", "仙舟", "秘境之匙", "仙品秘境结算卡"];
+    // const secondGroup = ["九阶淬体丹", "九阶玄元丹", "天药", "天命轮回丹", "琴笙的加持", "七星玄元丹", "神魔炼体丹"];
     
-    let rewardMsg = '恭喜队伍成功击败魔君！获得以下奖励：\n';
+    // let rewardMsg = '恭喜队伍成功击败魔君！获得以下奖励：\n';
     
-    // 为每位队员发放奖励
-    for (let i = 0; i < team.members.length; i++) {
-      const playerId = team.members[i];
-      const player = playersData[i];
+    // // 为每位队员发放奖励
+    // for (let i = 0; i < team.members.length; i++) {
+    //   const playerId = team.members[i];
+    //   const player = playersData[i];
       
-      // 发放1000w源石和灵石
-      if (!player.源石) player.源石 = 0;
-      if (!player.灵石) player.灵石 = 0;
+    //   // 发放1000w源石和灵石
+    //   if (!player.源石) player.源石 = 0;
+    //   if (!player.灵石) player.灵石 = 0;
       
-      player.源石 += 10000000;
-      player.灵石 += 10000000;
+    //   player.源石 += 10000000;
+    //   player.灵石 += 10000000;
       
-      // 保存玩家数据（源石和灵石）
-      await Write_player(playerId, player);
+    //   // 保存玩家数据（源石和灵石）
+    //   await Write_player(playerId, player);
       
-      // 从第一组随机抽三组丹药，并随机数量1-5
-      const randomFirstGroup = [];
-      for (let j = 0; j < 3; j++) {
-        const randomIndex = Math.floor(Math.random() * firstGroup.length);
-        const randomCount = Math.floor(Math.random() * 5) + 1; // 1-5的随机数
-        randomFirstGroup.push(`${firstGroup[randomIndex]} x${randomCount}`);
+    //   // 从第一组随机抽三组丹药，并随机数量1-5
+    //   const randomFirstGroup = [];
+    //   for (let j = 0; j < 3; j++) {
+    //     const randomIndex = Math.floor(Math.random() * firstGroup.length);
+    //     const randomCount = Math.floor(Math.random() * 5) + 1; // 1-5的随机数
+    //     randomFirstGroup.push(`${firstGroup[randomIndex]} x${randomCount}`);
         
-        // 使用Add_najie_thing添加到玩家背包
-        await Add_najie_thing(playerId, firstGroup[randomIndex], "道具", randomCount);
-      }
+    //     // 使用Add_najie_thing添加到玩家背包
+    //     await Add_najie_thing(playerId, firstGroup[randomIndex], "道具", randomCount);
+    //   }
       
-      // 从第二组随机抽两组丹药，并随机数量1-5
-      const randomSecondGroup = [];
-      for (let j = 0; j < 2; j++) {
-        const randomIndex = Math.floor(Math.random() * secondGroup.length);
-        const randomCount = Math.floor(Math.random() * 5) + 1; // 1-5的随机数
-        randomSecondGroup.push(`${secondGroup[randomIndex]} x${randomCount}`);
+    //   // 从第二组随机抽两组丹药，并随机数量1-5
+    //   const randomSecondGroup = [];
+    //   for (let j = 0; j < 2; j++) {
+    //     const randomIndex = Math.floor(Math.random() * secondGroup.length);
+    //     const randomCount = Math.floor(Math.random() * 5) + 1; // 1-5的随机数
+    //     randomSecondGroup.push(`${secondGroup[randomIndex]} x${randomCount}`);
         
-        // 使用Add_najie_thing添加到玩家背包
-        await Add_najie_thing(playerId, secondGroup[randomIndex], "丹药", randomCount);
-      }
+    //     // 使用Add_najie_thing添加到玩家背包
+    //     await Add_najie_thing(playerId, secondGroup[randomIndex], "丹药", randomCount);
+    //   }
       
-      // 添加到奖励信息
-      rewardMsg += `\n玩家${player.名号 || playerId}获得：\n`;
-      rewardMsg += `源石 x1000万，灵石 x1000万\n`;
-      rewardMsg += `道具：${randomFirstGroup.join('、')}\n`;
-      rewardMsg += `丹药：${randomSecondGroup.join('、')}`;
-    }
+    //   // 添加到奖励信息
+    //   rewardMsg += `\n玩家${player.名号 || playerId}获得：\n`;
+    //   rewardMsg += `源石 x1000万，灵石 x1000万\n`;
+    //   rewardMsg += `道具：${randomFirstGroup.join('、')}\n`;
+    //   rewardMsg += `丹药：${randomSecondGroup.join('、')}`;
+    // }
     
     // 发送奖励信息
-    e.reply(rewardMsg);
+   return e.reply(`请使用结算魔君奖励指令来领取奖励`);
   }
   // 如果BOSS不是魔君，则分发奖励和设置CD
   else {
@@ -950,6 +953,107 @@ async settleTeamRewards(e) {
   // 解散队伍
   await this.disbandTeamInternal(teamId, team);
   
+  return true;
+}
+/**
+ * 批量结算魔君奖励
+ * e.batch = 想要结算的次数（已转 Number）
+ */
+async batchSettleDevilMonarch(e) {
+  // 1. 基础检查
+  if (!await this.checkBasic(e)) return true;
+  const usr_qq = await this.getUserId(e);
+
+  // 2. 解析次数
+  const match = e.msg.match(/^#?结算魔君奖励\*(\d+)$/);
+  const batch = Number(match[1]);
+  if (!batch || batch <= 0) return e.reply('次数格式错误，示例：结算魔君奖励*10');
+  if (batch > 999) return e.reply('一次最多 999 次，防止爆仓。');
+
+  // 3. 拿队伍
+  const teamId = await this.getPlayerTeamId(usr_qq);
+  if (!teamId) return e.reply('您不在任何队伍中，无法结算奖励。');
+  const team = await this.getTeam(teamId);
+  if (!team) return e.reply('队伍数据异常，结算失败。');
+  if (team.leader !== usr_qq) return e.reply('只有队长可以批量结算奖励。');
+  if (team.status !== 'victory' || team.boss !== '九幽魔君') {
+    return e.reply('队伍尚未击败九幽魔君，无法结算。');
+  }
+
+  // 4. 检查队长讨伐令
+  const hasToken = await exist_najie_thing(usr_qq, '魔君讨伐令', '道具');
+  if (!hasToken || hasToken < batch) {
+    return e.reply(`您的【魔君讨伐令】不足，当前拥有 ${hasToken || 0} 枚，需要 ${batch} 枚。`);
+  }
+
+  // 5. 准备玩家数据
+  const playersData = await Promise.all(
+    team.members.map(id => Read_player(id))
+  );
+  const bossData = await this.getBossData(team.boss);
+  if (!bossData) return e.reply(`BOSS数据加载失败: ${team.boss}`);
+
+  // 6. 奖励定义
+  const firstGroup = ["遣龙令","遣虎令","玄品秘境结算卡","灵品秘境结算卡","仙舟","神域令牌","秘境之匙","仙品秘境结算卡","圣品秘境结算卡"];
+  const secondGroup= ["天药","九转天药","天命轮回丹","琴笙的加持","圣品福源丹","七星玄元丹","神魔炼体丹","纪元道果"];
+
+  // 7. 队长/队员分开汇总
+  const leaderDrop = { 修为:0,血气:0,源石:0, 灵石:0, first:{}, second:{} };
+  const memberDrop = { 修为:0,血气:0,源石:0, 灵石:0, first:{}, second:{} };
+
+  // 8. 真正结算 N 次
+  for (let round = 0; round < batch; round++) {
+    for (let i = 0; i < team.members.length; i++) {
+      const playerId = team.members[i];
+      const isLeader = playerId === usr_qq;
+      const target = isLeader ? leaderDrop : memberDrop;
+
+      // 固定资源
+      playersData[i].修为 = (playersData[i].修为 || 0) + 10000000;
+      playersData[i].血气 = (playersData[i].血气 || 0) + 10000000;
+      playersData[i].源石 = (playersData[i].源石 || 0) + 10000000;
+      playersData[i].灵石 = (playersData[i].灵石 || 0) + 10000000;
+      target.修为 += 10000000;
+      target.血气 += 10000000;
+      target.源石 += 10000000;
+      target.灵石 += 10000000;
+
+      // 随机道具*3
+      for (let j = 0; j < 3; j++) {
+        const idx  = Math.floor(Math.random() * firstGroup.length);
+        const cnt  = Math.floor(Math.random() * 5) + 1;
+        const name = firstGroup[idx];
+        target.first[name] = (target.first[name] || 0) + cnt;
+        await Add_najie_thing(playerId, name, "道具", cnt);
+      }
+
+      // 随机丹药*2
+      for (let j = 0; j < 2; j++) {
+        const idx  = Math.floor(Math.random() * secondGroup.length);
+        const cnt  = Math.floor(Math.random() * 5) + 1;
+        const name = secondGroup[idx];
+        target.second[name] = (target.second[name] || 0) + cnt;
+        await Add_najie_thing(playerId, name, "丹药", cnt);
+      }
+    }
+  }
+
+  // 9. 扣除讨伐令
+  await Add_najie_thing(usr_qq, '魔君讨伐令', '道具', -batch);
+
+  // 10. 打印结果
+  const buildLine = (obj) => [
+    `修为 x${(obj.修为/10000).toFixed(0)}万，血气 x${(obj.血气/10000).toFixed(0)}万`,
+    `源石 x${(obj.源石/10000).toFixed(0)}万，灵石 x${(obj.灵石/10000).toFixed(0)}万`,
+    `道具：${Object.entries(obj.first).map(([k,v])=>`${k} x${v}`).join('、')}`||'道具：无',
+    `丹药：${Object.entries(obj.second).map(([k,v])=>`${k} x${v}`).join('、')}`||'丹药：无'
+  ].join('\n');
+
+  let reply = `批量结算完成！共消耗【魔君讨伐令】×${batch}\n`;
+  reply += `【队长】${await get_player_name(usr_qq)} 获得：\n${buildLine(leaderDrop)}\n`;
+  reply += `【队员】合计获得：\n${buildLine(memberDrop)}`;
+  e.reply(reply);
+
   return true;
 }
 

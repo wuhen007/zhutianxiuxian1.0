@@ -71,6 +71,10 @@ export class Anniversary extends plugin {
                     fnc: 'zhaohuanailixiya'
                 },
                 {
+                    reg: '^#疯狂召唤爱莉希雅$',
+                    fnc: 'yijianzhaohuan'
+                },
+                {
                     reg: '^#遣(虎|龙)$',
                     fnc: 'sk'
                 },
@@ -346,6 +350,179 @@ async zhaohuanailixiya(e) {
     await Write_player(usr_qq, player);
 
     // 发送回复
+    e.reply(replyMessage.join('\n'));
+}
+async yijianzhaohuan(e) {
+    if (!e.isGroup) {
+        return;
+    }
+    
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    
+    // 检查是否有账号
+    let ifexistplay = await existplayer(usr_qq);
+    if (!ifexistplay) {
+        e.reply("您尚未创建角色，无法进行召唤。");
+        return;
+    }
+    
+    let player = await data.getData("player", usr_qq);
+    
+    // 检查召唤次数
+    if (!player.爱莉希雅召唤次数 || player.爱莉希雅召唤次数 <= 0) {
+        e.reply("您当前没有爱莉希雅小姐的召唤次数，无法进行召唤哦～♪");
+        return;
+    }
+    
+    const totalSummons = player.爱莉希雅召唤次数;
+    let replyMessage = [`【一键召唤·往世乐土】`];
+    
+    // 天资等级序列与评价
+    const aptitudeSequence = [
+        '天弃之人', '先天不足', '平庸之资', '超凡资质', 
+        '天纵之资', '旷世奇才', '绝世天骄', '万古无双', '无演无尽'
+    ];
+    const aptitudeDescriptions = {
+        '无演无尽': '亘古绝今从未有，演尽诸天万界，此等天资已超脱天道束缚',
+        '万古无双': '横推古今未来无对手，为修道而生，为应劫而至，永恒无敌',
+        '绝世天骄': '惊才绝艳，具备帝姿，注定为一个时代的天地主角',
+        '旷世奇才': '万年难遇，此等资质放眼九天十地也是难寻',
+        '天纵之资': '天赋异禀，媲美上古大教的天才',
+        '超凡资质': '资质超凡，注定异于常人',
+        '平庸之资': '资质平平，勉勉强强',
+        '先天不足': '先天有缺，修炼事倍功半',
+        '天弃之人': '被天道抛弃，修炼必遭反噬'
+    };
+    
+    // 统计变量
+    let originalAptitude = player.天资等级;
+    let currentAptitudeIndex = aptitudeSequence.indexOf(originalAptitude);
+    let aptitudeUpgrades = 0;
+    let highestAptitudeReached = originalAptitude;
+    let itemsObtained = {
+        "真我宝盒": 0,
+        "无瑕水晶花": 0,
+        "誓约之证": 0,
+        "遣龙令": 0,
+        "遣虎令": 0,
+        "众生仙钓": 0,
+        "仙品秘境结算卡": 0,
+        "修为": 0,
+        "血气": 0
+    };
+    let successfulSummons = 0;
+    let failedSummons = 0;
+    
+    replyMessage.push(`开始进行${totalSummons}次连续召唤，水晶花园为您绽放～♪`);
+    
+    // 执行连续召唤
+    for (let i = 1; i <= totalSummons; i++) {
+        let random = Math.random();
+        let currentAptitude = player.天资等级;
+        let currentIndex = aptitudeSequence.indexOf(currentAptitude);
+        
+        if (random > 0.2) { // 80%成功率
+            successfulSummons++;
+            
+            // 天资提升判定（10%概率提升）
+            if (Math.random() < 0.1 && currentIndex < 7) {
+                const newAptitudeIndex = Math.min(currentIndex + 1, 7);
+                const newAptitude = aptitudeSequence[newAptitudeIndex];
+                player.天资等级 = newAptitude;
+                player.天资评价 = aptitudeDescriptions[newAptitude];
+                aptitudeUpgrades++;
+                currentAptitudeIndex = newAptitudeIndex;
+                
+                if (aptitudeSequence.indexOf(newAptitude) > aptitudeSequence.indexOf(highestAptitudeReached)) {
+                    highestAptitudeReached = newAptitude;
+                }
+            }
+            
+            // 道具奖励判定
+            let rewardRandom = Math.random();
+            if (rewardRandom < 0.2) {
+                // 20%概率：真我宝盒 + 随机材料
+                await Add_najie_thing(usr_qq, "真我宝盒", "盒子", 1);
+                itemsObtained["真我宝盒"]++;
+                
+                let materialOptions = ["无瑕水晶花", "誓约之证"];
+                for (let j = 0; j < 2; j++) {
+                    let material = materialOptions[Math.floor(Math.random() * materialOptions.length)];
+                    await Add_najie_thing(usr_qq, material, "道具", 1);
+                    itemsObtained[material]++;
+                }
+            } else if (rewardRandom < 0.5) {
+                // 30%概率：10个遣龙令或遣虎令
+                let tokenOptions = ["遣龙令", "遣虎令"];
+                let token = tokenOptions[Math.floor(Math.random() * tokenOptions.length)];
+                await Add_najie_thing(usr_qq, token, "道具", 10);
+                itemsObtained[token] += 10;
+            } else {
+                // 50%概率：众生仙钓 + 仙品秘境结算卡 + 修为血气
+                await Add_najie_thing(usr_qq, "众生仙钓", "道具", 1);
+                await Add_najie_thing(usr_qq, "仙品秘境结算卡", "道具", 5);
+                await Add_修为(usr_qq, 20000000);
+                await Add_血气(usr_qq, 20000000);
+                itemsObtained["众生仙钓"]++;
+                itemsObtained["仙品秘境结算卡"] += 5;
+                itemsObtained["修为"] += 20000000;
+                itemsObtained["血气"] += 20000000;
+            }
+        } else {
+            failedSummons++;
+        }
+        
+        // 消耗召唤次数
+        player.爱莉希雅召唤次数--;
+    }
+    
+    // 构建详细结果报告
+    replyMessage.push("", "✨召唤结果汇总✨");
+    replyMessage.push(`成功召唤：${successfulSummons}次`);
+    replyMessage.push(`召唤失败：${failedSummons}次`);
+    replyMessage.push(`天资提升：${aptitudeUpgrades}次`);
+    
+    if (originalAptitude !== highestAptitudeReached) {
+        replyMessage.push(`天资变化：${originalAptitude} → ${highestAptitudeReached}`);
+    } else {
+        replyMessage.push(`天资等级：${highestAptitudeReached}（未发生变化）`);
+    }
+    
+    // 道具获得详情
+    replyMessage.push("", "获得道具：");
+    let itemDetails = [];
+    if (itemsObtained["真我宝盒"] > 0) itemDetails.push(`真我宝盒×${itemsObtained["真我宝盒"]}`);
+    if (itemsObtained["无瑕水晶花"] > 0) itemDetails.push(`无瑕水晶花×${itemsObtained["无瑕水晶花"]}`);
+    if (itemsObtained["誓约之证"] > 0) itemDetails.push(`誓约之证×${itemsObtained["誓约之证"]}`);
+    if (itemsObtained["遣龙令"] > 0) itemDetails.push(`遣龙令×${itemsObtained["遣龙令"]}`);
+    if (itemsObtained["遣虎令"] > 0) itemDetails.push(`遣虎令×${itemsObtained["遣虎令"]}`);
+    if (itemsObtained["众生仙钓"] > 0) itemDetails.push(`众生仙钓×${itemsObtained["众生仙钓"]}`);
+    if (itemsObtained["仙品秘境结算卡"] > 0) itemDetails.push(`仙品秘境结算卡×${itemsObtained["仙品秘境结算卡"]}`);
+    if (itemsObtained["修为"] > 0) itemDetails.push(`修为+${itemsObtained["修为"].toLocaleString()}`);
+    if (itemsObtained["血气"] > 0) itemDetails.push(`血气+${itemsObtained["血气"].toLocaleString()}`);
+    
+    if (itemDetails.length > 0) {
+        replyMessage.push(itemDetails.join('、'));
+    } else {
+        replyMessage.push("本次未获得道具");
+    }
+    
+    // 爱莉希雅风格的结束语
+    const endingMessages = [
+        "「哎呀～这么喜欢和我见面吗？要好好珍惜这份缘分哦♪」",
+        "「每一次心跳都是新的开始，要带着我的祝福继续前进呀～♪」",
+        "「飞花绽放的时刻虽然短暂，但美好的回忆会永远留在心中呢♪」",
+        "「要记住哦～无论何时何地，爱莉希雅都会回应你的期待♪」"
+    ];
+    
+    const randomEnding = endingMessages[Math.floor(Math.random() * endingMessages.length)];
+    replyMessage.push("", randomEnding);
+    
+    // 保存玩家数据
+    await Write_player(usr_qq, player);
+    
+    // 发送结果
     e.reply(replyMessage.join('\n'));
 }
         //新年签到

@@ -55,11 +55,11 @@ export class linggenjuexing extends plugin {
       
     }); 
   }  /* ---------- 第一步：弹出选项 ---------- */
-  async zouxiangwangshi(e) {
+async zouxiangwangshi(e) {
     if (!verc({ e })) return false;
     const usr_qq = e.user_id.toString().replace('qg_', '');
     const has = await exist_najie_thing(usr_qq, '往世乐土之章', '道具');
-    if (!has) return e.reply('【往世乐土】你尚未获得“往世乐土之章”，无法开启仪式。');
+    if (!has) return e.reply('【往世乐土】你尚未获得"往世乐土之章"，无法开启仪式。');
 
     const broadcast = [
       `诸天万界忽而响起水晶轻鸣，一座被岁月尘封的「往世乐土」在星空中绽放。`,
@@ -68,9 +68,9 @@ export class linggenjuexing extends plugin {
       `「嗨，想和我一起，让这个世界……变成你喜欢的样子吗？」`,
       ``,
       `【往世乐土】已激活！`,
-     `请选择你的回应——`,
-    `1. 「我愿意献此身灵根，化作无瑕之人。」（覆盖灵根）`,
-    `2. 「我愿与你并肩，而非取代。」（召唤次数+1）`,
+      `请选择你的回应——`,
+      `1. 「我愿意献此身灵根，化作无瑕之人。」（覆盖灵根）`,
+      `2. 「我愿与你并肩，而非取代。」（消耗往世乐土之章，召唤次数+1/个）`,
       `（30 秒内回复 1 或 2）`
     ].join('\n');
     await e.reply(broadcast);
@@ -79,13 +79,14 @@ export class linggenjuexing extends plugin {
     this.setContext('wangshiChoice');
     return false;
   }
-
   /* ---------- 第二步：处理选择（框架把 1/2 喂进来） ---------- */
   async wangshiChoice(e) {
     if (!verc({ e })) return false;
     const usr_qq = e.user_id.toString().replace('qg_', '');
     const player = await Read_player(usr_qq);
-    const needChapter = 1;
+    
+    // 获取用户拥有的往世乐土之章数量
+    const chapterCount = await exist_najie_thing(usr_qq, '往世乐土之章', '道具');
 
     // 从上下文消息中获取用户回复
     let new_msg = '';
@@ -108,7 +109,7 @@ export class linggenjuexing extends plugin {
         return;
       }
       // 扣材料
-      await Add_najie_thing(usr_qq, '往世乐土之章', '道具', -needChapter);
+      await Add_najie_thing(usr_qq, '往世乐土之章', '道具', -1);
       await Add_najie_thing(usr_qq, '无瑕水晶花', '道具', -4);
       await Add_najie_thing(usr_qq, '誓约之证', '道具', -4);
       // 换灵根
@@ -138,25 +139,85 @@ export class linggenjuexing extends plugin {
       return;
     }
 
-    /* ---------- 分支 2：召唤+1 ---------- */
+    /* ---------- 分支 2：询问消耗数量 ---------- */
     if (new_msg === "2") {
-      await Add_najie_thing(usr_qq, '往世乐土之章', '道具', -needChapter);
-      player.爱莉希雅召唤次数 = (player.爱莉希雅召唤次数 || 0) + 1;
-      await Write_player(usr_qq, player);
-
-      await e.reply([
-        `你后退半步，却伸手接过飘落的晶瓣。`,
-        `爱莉希雅眨了眨眼，将一滴闪耀金芒的霸血放入你掌心：`,
-        `「那就说定啦，下次召唤我时……要带更多好玩的故事来！」`,
-        `【系统】爱莉希雅召唤次数 +1`
-      ].join('\n'));
-      this.finish('wangshiChoice');
-      return;
+      if (chapterCount <= 0) {
+        await e.reply('【往世乐土】你没有可消耗的"往世乐土之章"。');
+        this.finish('wangshiChoice');
+        return;
+      }
+      
+      await e.reply(
+        `你选择与爱莉希雅并肩作战。\n` +
+        `你当前拥有往世乐土之章×${chapterCount}。\n` +
+        `请输入要消耗的数量（1~${chapterCount}）：\n` +
+        `（每个可增加1次召唤次数，30秒内回复数字）`
+      );
+      
+      // 设置新的上下文，等待输入数量
+      this.setContext('wangshiChoiceCount');
+      return false;
     }
 
     /* ---------- 超时或非法 ---------- */
     await e.reply('选择无效，已超时。乐土之门悄然闭合……');
     this.finish('wangshiChoice');
+  }
+
+  /* ---------- 第三步：处理选择数量 ---------- */
+  async wangshiChoiceCount(e) {
+    if (!verc({ e })) return false;
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const player = await Read_player(usr_qq);
+    
+    // 重新获取用户拥有的往世乐土之章数量
+    const chapterCount = await exist_najie_thing(usr_qq, '往世乐土之章', '道具');
+
+    // 从上下文消息中获取用户回复
+    let new_msg = '';
+    if (this.e?.message && this.e.message[0]?.type === 'text') {
+      new_msg = this.e.message[0].text.trim();
+    } else if (e.msg) {
+      new_msg = e.msg.trim();
+    }
+    
+    // 解析输入的数量
+    const count = parseInt(new_msg);
+    if (isNaN(count) || count < 1 || count > chapterCount) {
+      await e.reply(`输入无效，请输入1~${chapterCount}之间的整数。`);
+      // 不结束上下文，让用户重新输入
+      return false;
+    }
+    
+    // 扣除相应数量的往世乐土之章
+    await Add_najie_thing(usr_qq, '往世乐土之章', '道具', -count);
+    
+    // 增加召唤次数
+    const currentSummonCount = player.爱莉希雅召唤次数 || 0;
+    player.爱莉希雅召唤次数 = currentSummonCount + count;
+    await Write_player(usr_qq, player);
+
+    // 根据消耗数量生成不同的回复
+    let replyText = '';
+    if (count === 1) {
+      replyText = [
+        `你后退半步，却伸手接过飘落的晶瓣。`,
+        `爱莉希雅眨了眨眼，将一滴闪耀金芒的霸血放入你掌心：`,
+        `「那就说定啦，下次召唤我时……要带更多好玩的故事来！」`,
+        `【系统】消耗往世乐土之章×1，爱莉希雅召唤次数 +1`
+      ].join('\n');
+    } else {
+      replyText = [
+        `你取出${count}枚往世乐土之章，水晶的光芒在花海中交织。`,
+        `爱莉希雅轻笑着接过，将${count}滴闪耀金芒的霸血放入你掌心：`,
+        `「哎呀，这么期待见到我吗？那就约定好了，要和我创造${count}次美好的回忆哦～」`,
+        `【系统】消耗往世乐土之章×${count}，爱莉希雅召唤次数 +${count}`
+      ].join('\n');
+    }
+    
+    await e.reply(replyText);
+    this.finish('wangshiChoiceCount');
+    return;
   }
 
 

@@ -638,7 +638,7 @@ async nurtureEmperorWeapon(e) {
             `帝兵品阶不足！`,
             `当前品阶：${weapon.品阶}`,
             `需要品阶：圣兵`,
-            `请先使用 #雷劫洗礼帝兵 将帝兵提升至圣兵品阶`
+            `请先使用 #以雷劫洗礼帝兵 将帝兵提升至圣兵品阶`
         ].join('\n'));
     }
     
@@ -1464,7 +1464,7 @@ async fuseEmperorWeapon(e) {
         weapon.潜力 < MAX_POTENTIAL ? 
             `可继续融合仙金提升潜力上限` : 
             `潜力已达上限，无法再提升`,
-        `使用 #雷劫洗礼帝兵 提升帝兵品阶`
+        `使用 #以雷劫洗礼帝兵 提升帝兵品阶`
     ].join("\n");
     
     e.reply(successMsg);
