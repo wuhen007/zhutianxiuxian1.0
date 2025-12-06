@@ -281,7 +281,6 @@ async proxyDailyGift(e, targetPlayerId) {
     };
 
     //初始化装备
-     //初始化装备
     let new_equipment = {
       武器: data.equipment_list.find(item => item.name == '烂铁匕首'),
       护具: data.equipment_list.find(item => item.name == '破铜护具'),
@@ -305,6 +304,7 @@ async proxyDailyGift(e, targetPlayerId) {
       仙宠口粮: [],
       宝石:[],
     };
+    await Write_player(B_qq, new_player);
     await Write_equipment(B_qq, new_equipment);
     await Write_najie(B_qq, new_najie);
     await Add_HP(B_qq, 999999);
@@ -322,7 +322,15 @@ async proxyDailyGift(e, targetPlayerId) {
       beiyong5: 0,
     };
     await Write_danyao(B_qq, new_player);
-    await this.Show_player(e);
+    
+    // 显示被帮助者的面板
+    const fakeEvent = {
+      ...e,
+      user_id: B_qq,
+      reply: e.reply.bind(e)
+    };
+    await this.Show_player(fakeEvent);
+    
     let senderName = senderData.名号;
     let targetName = new_player.名号;
     e.reply([
