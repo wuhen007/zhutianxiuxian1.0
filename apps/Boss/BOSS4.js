@@ -472,7 +472,13 @@ export class BOSS4 extends plugin {
     // 进行战斗
     const result = await zd_battle(A_player, B_player);
     let msg = result.msg;
-    await ForwardMsg(e, msg);
+      if (msg.length <= 30) await ForwardMsg(e, msg);
+      else {
+        let msgg = JSON.parse(JSON.stringify(msg));
+        msgg.length = 30;
+        await ForwardMsg(e, msgg);
+        e.reply('战斗过长，仅展示部分内容');
+      }
 
     // 判断战斗结果 - 使用明确的胜利标志
     const playerWinStr = `${A_player.名号}击败了${B_player.名号}`;

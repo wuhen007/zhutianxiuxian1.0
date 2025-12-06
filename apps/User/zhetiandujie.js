@@ -3069,7 +3069,14 @@ await this.broadcastToAll(player,startMsg);
         // 更新玩家血量
         player.当前血量 = battleResult.A_hp;
         await Write_player(usr_qq, player);
-        await ForwardMsg(e, battleResult.msg);
+         let msg = battleResult.msg;
+      if (msg.length <= 30) await ForwardMsg(e, msg);
+      else {
+        let msgg = JSON.parse(JSON.stringify(msg));
+        msgg.length = 30;
+        await ForwardMsg(e, msgg);
+        e.reply('战斗过长，仅展示部分内容');
+      }
         
         // 结果解释调整
         if (battleResult.A_hp <= 0) {
