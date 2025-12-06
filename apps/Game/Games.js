@@ -887,317 +887,233 @@ async StoneRecord(e) {
     e.reply(img);
   }
 
-  // 双修
+// ==========  双修  ==========
 async Couple(e) {
     if (!verc({ e })) return false;
     const cf = config.getConfig('xiuxian', 'xiuxian');
-    // 双修开关
     let gameswitch = cf.switch.couple;
-    if (gameswitch != true) {
-        return false;
-    }
-    
-    let A = e.user_id.toString().replace('qg_','');
+    if (gameswitch != true) return false;
+
+    let A = e.user_id.toString().replace('qg_', '');
     A = await channel(A);
-    
-    // 全局状态判断
-    // B
+
     let isat = e.message.some(item => item.type === 'at');
     if (!isat) return false;
     let atItem = e.message.filter(item => item.type === 'at');
-    // 对方QQ
-    let B = atItem[0].qq.toString().replace('qg_','');
+    let B = atItem[0].qq.toString().replace('qg_', '');
     B = await channel(B);
-    
     if (A == B) {
         e.reply('你咋这么爱撸自己呢?');
         return false;
     }
-    
-    var Time = cf.CD.couple; // 6个小时
+
+    const FUSION_GUARANTEE = 20;               // ★保底次数
+    async function getFailCnt(qq) {            // 工具：读失败次数
+        return parseInt(await redis.get(`xiuxian:player:${qq}:fusion_fail`) || 0);
+    }
+    async function setFailCnt(qq, val) {       // 工具：写失败次数
+        await redis.set(`xiuxian:player:${qq}:fusion_fail`, val);
+    }
+
+    var Time = cf.CD.couple;
     let shuangxiuTimeout = parseInt(60000 * Time);
-    
-    // 自己的cd
-    let now_Time = new Date().getTime(); // 获取当前时间戳
-    let last_timeA = await redis.get('xiuxian:player:' + A + ':last_shuangxiu_time');
-    last_timeA = parseInt(last_timeA);
+    let now_Time = new Date().getTime();
+
+    let last_timeA = parseInt(await redis.get('xiuxian:player:' + A + ':last_shuangxiu_time') || 0);
     if (now_Time < last_timeA + shuangxiuTimeout) {
         let Couple_m = Math.trunc((last_timeA + shuangxiuTimeout - now_Time) / 60 / 1000);
         let Couple_s = Math.trunc(((last_timeA + shuangxiuTimeout - now_Time) % 60000) / 1000);
         e.reply(`双修冷却: ${Couple_m}分 ${Couple_s}秒`);
         return false;
     }
-    
-    let last_timeB = await redis.get('xiuxian:player:' + B + ':last_shuangxiu_time');
-    last_timeB = parseInt(last_timeB);
+    let last_timeB = parseInt(await redis.get('xiuxian:player:' + B + ':last_shuangxiu_time') || 0);
     if (now_Time < last_timeB + shuangxiuTimeout) {
         let Couple_m = Math.trunc((last_timeB + shuangxiuTimeout - now_Time) / 60 / 1000);
         let Couple_s = Math.trunc(((last_timeB + shuangxiuTimeout - now_Time) % 60000) / 1000);
         e.reply(`对方双修冷却: ${Couple_m}分 ${Couple_s}秒`);
         return false;
     }
-    
-    // 对方存档
+
     let ifexistplay_B = await existplayer(B);
     if (!ifexistplay_B) {
         e.reply('修仙者不可对凡人出手!');
         return false;
     }
-    
-    // 拒绝
     let couple = await redis.get('xiuxian:player:' + B + ':couple');
     if (couple != 0) {
         e.reply('哎哟，你干嘛...');
         return false;
     }
-    
+
     let pd = await find_qinmidu(A, B);
-    let hunyin_B = await exist_hunyin(A);
-    let hunyin_A = await exist_hunyin(B);
-    
-    // 双方有一人已婚
-    if (hunyin_B != false || hunyin_A != false) {
-        // 不是对方
-        if (hunyin_A != A || hunyin_B != B) {
-            e.reply(`力争纯爱！禁止贴贴！！`);
-            return false;
-        }
-    } else if (pd == false) {
-        // 没有存档
-        await fstadd_qinmidu(A, B);
+    let marryA = await exist_hunyin(A), marryB = await exist_hunyin(B);
+    if ((marryA && marryA !== B) || (marryB && marryB !== A)) {
+        e.reply(`力争纯爱！禁止贴贴！！`);
+        return false;
     }
-    
-    // 获取玩家数据
+    if (pd == false) await fstadd_qinmidu(A, B);
+
     let playerA = await Read_player(A);
     let playerB = await Read_player(B);
-    
-    // ==== 神魔融合检测 ====
+
+    // ========  融合检测变量  ========
     let isShenDao = playerA.灵根.name === "命运神道体";
     let isJiDao = playerB.灵根.name === "极道天魔";
     let isShenDaoB = playerB.灵根.name === "命运神道体";
     let isJiDaoA = playerA.灵根.name === "极道天魔";
-       // ==== 混沌体融合检测 ====
     let istaiyang = playerA.灵根.name === "太阳之体";
     let istaiyin = playerB.灵根.name === "太阴之体";
     let istaiyangB = playerB.灵根.name === "太阳之体";
     let istaiyinA = playerA.灵根.name === "太阴之体";
-    // ==== 圣体道胎融合检测 ====
-let isShengti = playerA.灵根.name === "大成·荒古圣体";
-let isDaotai = playerB.灵根.name === "先天道胎";
-let isShengtiB = playerB.灵根.name === "大成·荒古圣体";
-let isDaotaiA = playerA.灵根.name === "先天道胎";
+    let isShengti = playerA.灵根.name === "大成·荒古圣体";
+    let isDaotai = playerB.灵根.name === "先天道胎";
+    let isShengtiB = playerB.灵根.name === "大成·荒古圣体";
+    let isDaotaiA = playerA.灵根.name === "先天道胎";
+    let isHundunA = playerA.灵根.name === "混沌体";
+    let isxiantianShengtiB = playerB.灵根.name === "先天圣体道胎";
+    let isHundunB = playerB.灵根.name === "混沌体";
+    let isxiantianShengtiA = playerA.灵根.name === "先天圣体道胎";
 
-// 检查是否满足融合条件
-if ((isShengti && isDaotai) || (isShengtiB && isDaotaiA)) {
-    // 极小概率触发融合
-    if (Math.random() < 0.01) { // 5%概率
-        // 创建先天圣体道胎灵根
-        const shengtiDaotaiLinggen = {"id":7010014,"name":"先天圣体道胎","type":"圣体道胎","归类":"遮天位面","eff":300,"法球倍率":2.1,"攻击":10,"防御":10,"生命":10,"生命本源":500};
-        
-        // 更新双方灵根
-        playerA.灵根 = shengtiDaotaiLinggen;
-        playerB.灵根 = shengtiDaotaiLinggen;
-              await Write_linggen(A, playerA);
-        await Write_linggen(B, playerB);
-        // 保存玩家数据
-        await Write_player(A, playerA);
-        await Write_player(B, playerB);
-        
-        // 霸气文案
-        let fusionMsg = [
-            `【圣体道胎交融】`,
-            `荒古圣体与先天道胎相遇，引动万古异象！`,
-            `${playerA.名号}的圣体金血与${playerB.名号}的道胎本源相互交融`,
-            `黄金气血如星河倒卷，先天道纹如天网交织！`,
-            `虚空震颤，九天神雷劈落，却难撼圣体道胎之威！`,
-            `万道法则臣服，天地灵气如潮涌来！`,
-            `「先天圣体道胎」诞生！`,
-            `圣体不灭，道胎永恒，万古无双！`,
-        ];
-        
-        e.reply(fusionMsg.join("\n"));
-        
-        // 更新双修时间
-        await redis.set('xiuxian:player:' + A + ':last_shuangxiu_time', now_Time);
-        await redis.set('xiuxian:player:' + B + ':last_shuangxiu_time', now_Time);
-        
-        return false;
-    }
-}
-    // 检查是否满足融合条件
-    if ((isShenDao && isJiDao) || (isShenDaoB && isJiDaoA)) {
-        // 极小概率触发融合
-        if (Math.random() < 0.01) { // 1%概率
-            // 创建终焉神魔体灵根
-            const shenmoLinggen =  {"id":7010015,"name":"终焉神魔体","type":"神魔体","归类":"神魔","eff":300,"法球倍率":3,"攻击":7,"防御":6,"生命":5,"生命本源":100};
-            
-            // 更新双方灵根
-            playerA.灵根 = shenmoLinggen;
-            playerB.灵根 = shenmoLinggen;
-                  await Write_linggen(A, playerA);
-        await Write_linggen(B, playerB);
-            // 保存玩家数据
-            await Write_player(A, playerA);
-            await Write_player(B, playerB);
-            
-            // 霸气文案
-            let fusionMsg = [
-                `【命运与天魔交融】`,
-                `时空长河倒卷，混沌重开！`,
-                `${playerA.名号}的命运神链与${playerB.名号}的天魔血焰交织缠绕`,
-                `神性与魔性在极致碰撞中孕育出新的本源`,
-                `诸天法则崩解重组，万古宿命为之改写！`,
-                `「终焉神魔体」诞生！`,
-                `神魔同体，再造混沌！`
-            ];
-            
-            e.reply(fusionMsg.join("\n"));
-            
-            // 更新双修时间
-            await redis.set('xiuxian:player:' + A + ':last_shuangxiu_time', now_Time);
-            await redis.set('xiuxian:player:' + B + ':last_shuangxiu_time', now_Time);
-            
-            return false;
+    let fusionHit = false;   // 是否已触发融合
+
+    // ==========  随机融合  ==========
+    if ((isShengti && isDaotai) || (isShengtiB && isDaotaiA)) {
+        if (Math.random() < 0.05) {                       // 5%
+            const lg = {"id": 7010014, "name": "先天圣体道胎", "type": "圣体道胎", "归类": "遮天位面", "eff": 300, "法球倍率": 2.1, "攻击": 10, "防御": 10, "生命": 10, "生命本源": 500};
+            playerA.灵根 = playerB.灵根 = lg; fusionHit = true;
+            await Write_linggen(A, playerA); await Write_linggen(B, playerB);
+            await Write_player(A, playerA); await Write_player(B, playerB);
+            e.reply([`【圣体道胎交融】`, `荒古圣体与先天道胎相遇，引动万古异象！`, `「先天圣体道胎」诞生！`, `圣体不灭，道胎永恒，万古无双！`].join("\n"));
+        }
+    } else if ((isShenDao && isJiDao) || (isShenDaoB && isJiDaoA)) {
+        if (Math.random() < 0.01) {                       // 1%
+            const lg = {"id": 7010015, "name": "终焉神魔体", "type": "神魔体", "归类": "神魔", "eff": 300, "法球倍率": 3, "攻击": 7, "防御": 6, "生命": 5, "生命本源": 100};
+            playerA.灵根 = playerB.灵根 = lg; fusionHit = true;
+            await Write_linggen(A, playerA); await Write_linggen(B, playerB);
+            await Write_player(A, playerA); await Write_player(B, playerB);
+            e.reply([`【命运与天魔交融】`, `时空长河倒卷，混沌重开！`, `「终焉神魔体」诞生！`, `神魔同体，再造混沌！`].join("\n"));
+        }
+    } else if ((istaiyang && istaiyin) || (istaiyinA && istaiyangB)) {
+        if (Math.random() < 0.01) {
+            const lg = {"id": 70051, "name": "混沌体", "type": "混沌体", "归类": "遮天位面", "eff": 72, "法球倍率": 1.45, "攻击": 5, "防御": 5, "生命": 5, "生命本源": 200};
+            playerA.灵根 = playerB.灵根 = lg; fusionHit = true;
+            await Write_linggen(A, playerA); await Write_linggen(B, playerB);
+            await Write_player(A, playerA); await Write_player(B, playerB);
+            e.reply([`【太阴太阳交融】`, `阴阳二气交织，混沌初开！`, `「混沌体」诞生！`, `阴阳合一，混沌初成！`].join("\n"));
+        }
+    } else if ((isHundunA && isxiantianShengtiB) || (isHundunB && isxiantianShengtiA)) {
+        if (Math.random() < 0.01) {
+            const lg = {"id": 70051, "name": "先天混沌圣体道胎", "type": "混沌圣体道胎", "归类": "遮天位面", "eff": 572, "法球倍率": 4, "攻击": 15, "防御": 15, "生命": 15, "生命本源": 800};
+            playerA.灵根 = playerB.灵根 = lg; fusionHit = true;
+            await Write_linggen(A, playerA); await Write_linggen(B, playerB);
+            await Write_player(A, playerA); await Write_player(B, playerB);
+            e.reply([`【混沌与圣体道胎交融】`, `天地初开，混沌重演！`, `「先天混沌圣体道胎」诞生！`, `混沌圣体，道胎天成！`].join("\n"));
         }
     }
-    // ==== 太阴太阳融合检测 ====
-if ((istaiyang && istaiyin) || (istaiyinA && istaiyangB)) {
-    // 极小概率触发融合
-    if (Math.random() < 0.01) { // 1%概率
-        // 创建混沌体灵根
-        const hundunLinggen = {"id":70051,"name":"混沌体","type":"混沌体","归类":"遮天位面","eff":72,"法球倍率":1.45,"攻击":5,"防御":5,"生命":5,"生命本源":200};
-        
-        // 更新双方灵根
-        playerA.灵根 = hundunLinggen;
-        playerB.灵根 = hundunLinggen;
-              await Write_linggen(A, playerA);
-        await Write_linggen(B, playerB);
-        // 保存玩家数据
-        await Write_player(A, playerA);
-        await Write_player(B, playerB);
-        
-        // 霸气文案
-        let fusionMsg = [
-            `【太阴太阳交融】`,
-            `阴阳二气交织，混沌初开！`,
-            `${playerA.名号}的太阳真火与${playerB.名号}的太阴玄冰相互交融`,
-            `阴阳之力在极致碰撞中孕育出新的本源`,
-            `天地法则崩解重组，万古宿命为之改写！`,
-            `「混沌体」诞生！`,
-            `阴阳合一，混沌初成！`
-        ];
-        
-        e.reply(fusionMsg.join("\n"));
-        
-        // 更新双修时间
-        await redis.set('xiuxian:player:' + A + ':last_shuangxiu_time', now_Time);
-        await redis.set('xiuxian:player:' + B + ':last_shuangxiu_time', now_Time);
-        
-        return false;
-    }
-}
-// ==== 混沌体与圣体道胎融合检测 ====
-let isHundunA = playerA.灵根.name === "混沌体";
-let isxiantianShengtiB = playerB.灵根.name === "先天圣体道胎";
-let isHundunB = playerB.灵根.name === "混沌体";
-let isxiantianShengtiA = playerA.灵根.name === "先天圣体道胎";
 
-// 检查是否满足混沌体与圣体道胎融合条件
-if ((isHundunA && isxiantianShengtiB) || (isHundunB && isxiantianShengtiA)) {
-    // 极小概率触发融合
-    if (Math.random() < 0.01) { // 1%概率
-        // 创建先天混沌圣体道胎灵根
-        const chaosShengtiLinggen = {"id":70051,"name":"先天混沌圣体道胎","type":"混沌圣体道胎","归类":"遮天位面","eff":572,"法球倍率":4,"攻击":15,"防御":15,"生命":15,"生命本源":800};
-        
-        // 更新双方灵根
-        playerA.灵根 = chaosShengtiLinggen;
-        playerB.灵根 = chaosShengtiLinggen;
-       await Write_linggen(A, playerA);
-        await Write_linggen(B, playerB);
-        // 保存玩家数据
-        await Write_player(A, playerA);
-        await Write_player(B, playerB);
-        
-        // 霸气文案
-        let fusionMsg = [
-            `【混沌与圣体道胎交融】`,
-            `天地初开，混沌重演！`,
-            `${playerA.名号}的混沌本源与${playerB.名号}的圣体道胎神光相互交融`,
-            `混沌之力与圣体道胎在极致碰撞中孕育出新的本源`,
-            `宇宙法则崩解重组，万古纪元为之改写！`,
-            `「先天混沌圣体道胎」诞生！`,
-            `混沌圣体，道胎天成！`
-        ];
-        
-        e.reply(fusionMsg.join("\n"));
-        
-        // 更新双修时间
-        await redis.set('xiuxian:player:' + A + ':last_shuangxiu_time', now_Time);
-        await redis.set('xiuxian:player:' + B + ':last_shuangxiu_time', now_Time);
-        
-        return false;
+    let failA = await getFailCnt(A), failB = await getFailCnt(B);
+    let maxFail = Math.max(failA, failB);
+
+    // ==========  保底融合  ==========
+    if (!fusionHit && maxFail >= FUSION_GUARANTEE) {
+        let guaLg = null, guaMsg = null;
+        if ((isShengti && isDaotai) || (isShengtiB && isDaotaiA)) {
+            guaLg = {"id": 7010014, "name": "先天圣体道胎", "type": "圣体道胎", "归类": "遮天位面", "eff": 300, "法球倍率": 2.1, "攻击": 10, "防御": 10, "生命": 10, "生命本源": 500};
+            guaMsg = [`【圣体道胎·保底融合】`, `荒古圣体与先天道胎历经千锤百炼，终得天地认可！`, `「先天圣体道胎」保底诞生！`, `圣体不灭，道胎永恒，万古无双！`];
+        } else if ((isShenDao && isJiDao) || (isShenDaoB && isJiDaoA)) {
+            guaLg = {"id": 7010015, "name": "终焉神魔体", "type": "神魔体", "归类": "神魔", "eff": 300, "法球倍率": 3, "攻击": 7, "防御": 6, "生命": 5, "生命本源": 100};
+            guaMsg = [`【终焉神魔体·保底融合】`, `命运与天魔在无数次擦肩后终将交汇！`, `「终焉神魔体」保底诞生！`, `神魔同体，再造混沌！`];
+        } else if ((istaiyang && istaiyin) || (istaiyinA && istaiyangB)) {
+            guaLg = {"id": 70051, "name": "混沌体", "type": "混沌体", "归类": "遮天位面", "eff": 72, "法球倍率": 1.45, "攻击": 5, "防御": 5, "生命": 5, "生命本源": 200};
+            guaMsg = [`【混沌体·保底融合】`, `太阴太阳在二十次轮回后终得阴阳合一！`, `「混沌体」保底诞生！`, `阴阳合一，混沌初成！`];
+        } else if ((isHundunA && isxiantianShengtiB) || (isHundunB && isxiantianShengtiA)) {
+            guaLg = {"id": 70051, "name": "先天混沌圣体道胎", "type": "混沌圣体道胎", "归类": "遮天位面", "eff": 572, "法球倍率": 4, "攻击": 15, "防御": 15, "生命": 15, "生命本源": 800};
+            guaMsg = [`【先天混沌圣体道胎·保底融合】`, `混沌与圣体道胎历经二十次磨合，终得宇宙认可！`, `「先天混沌圣体道胎」保底诞生！`, `混沌圣体，道胎天成！`];
+        }
+        if (guaLg) {
+            playerA.灵根 = playerB.灵根 = guaLg; fusionHit = true;
+            await Write_linggen(A, playerA); await Write_linggen(B, playerB);
+            await Write_player(A, playerA); await Write_player(B, playerB);
+            e.reply(guaMsg.join("\n"));
+            await setFailCnt(A, 0); await setFailCnt(B, 0);
+        }else {e.reply(`两种凡体历经二十次磨合，仍无缘蜕变，大道难成……\n【${'▱'.repeat(width)}】20/20（无契合路线）`);
+  }
     }
+
+// ==========  融合失败则累加计数 + 专属文案 ==========
+if (!fusionHit) {
+    await setFailCnt(A, failA + 1);
+    await setFailCnt(B, failB + 1);
+
+    const next = Math.min(failA + 1, FUSION_GUARANTEE);   //  当前失败次数
+    const width = 10;                      // 进度条总长
+    const filled = Math.min(Math.floor((next / FUSION_GUARANTEE) * width), width);
+    const empty  = width - filled;
+    const bar    = '▰'.repeat(filled) + '▱'.repeat(empty);
+
+    /* ——————  各组合专属失败文案 —————— */
+    let failText = '';
+
+    // ① 先天道胎 ⇄ 荒古圣体
+    if ((isShengti && isDaotai) || (isShengtiB && isDaotaiA)) {
+        failText = `圣体与道胎擦肩而过，未能共鸣……\n` +
+                   `荒古血气与先天道光微微触碰，便又归于寂静。\n` +
+                   `进度 [${bar}] ${next}/20（圣体·道胎交融）`;
+    }
+    // ② 命运神道体 ⇄ 极道天魔
+    else if ((isShenDao && isJiDao) || (isShenDaoB && isJiDaoA)) {
+        failText = `神性与魔息彼此吞噬，却终究泾渭分明……\n` +
+                   `命运长河与万魔渊壑短暂重叠，随后各自退去。\n` +
+                   `进度 [${bar}] ${next}/20（神魔同体）`;
+    }
+    // ③ 太阳 ⇄ 太阴
+    else if ((istaiyang && istaiyin) || (istaiyinA && istaiyangB)) {
+        failText = `太阴与太阳交汇一线，却未能真正合一……\n` +
+                   `日辉月华交错即逝，混沌未开。\n` +
+                   `进度 [${bar}] ${next}/20（阴阳合一）`;
+    }
+    // ④ 混沌体 ⇄ 先天圣体道胎
+    else if ((isHundunA && isxiantianShengtiB) || (isHundunB && isxiantianShengtiA)) {
+        failText = `混沌雾霭与圣体道光微微交融，又被天道法则强行抚平……\n` +
+                   `进度 [${bar}] ${next}/20（混沌·圣体道胎）`;
+    }
+    // ⑤ 其余未列出的稀有组合（预留）
+    else {
+        failText = `两种无上体质互相吸引，却终究欠缺一丝契机……\n` +
+                   `进度 [${bar}] ${next}/20（未知交融）`;
+    }
+
+    e.reply(failText);
 }
-    // 前戏做完了!
+
+
+
+    if (fusionHit) return false;                // 已融合直接结束
+    // ==========  双修时间 & 普通修为增长  ==========
     await redis.set('xiuxian:player:' + A + ':last_shuangxiu_time', now_Time);
     await redis.set('xiuxian:player:' + B + ':last_shuangxiu_time', now_Time);
-    
-    if (A != B) {
-        let option = Math.random();
-        let xiuwei = Math.random();
-        let x = 0;
-        let y = 0;
-        
-        if (option > 0 && option <= 0.5) {
-            x = 28000;
-            y = Math.trunc(xiuwei * x);
-            await Add_修为(A, parseInt(y));
-            await Add_修为(B, parseInt(y));
-            await add_qinmidu(A, B, 30);
-            e.reply(
-                '你们双方情意相通，缠绵一晚，都增加了' +
-                parseInt(y) +
-                '修为,亲密度增加了30点'
-            );
-            return false;
-        } else if (option > 0.5 && option <= 0.6) {
-            x = 21000;
-            y = Math.trunc(xiuwei * x);
-            await Add_修为(A, parseInt(y));
-            await Add_修为(B, parseInt(y));
-            await add_qinmidu(A, B, 20);
-            e.reply(
-                '你们双方交心交神，努力修炼，都增加了' +
-                parseInt(y) +
-                '修为,亲密度增加了20点'
-            );
-        } else if (option > 0.6 && option <= 0.7) {
-            x = 14000;
-            y = Math.trunc(xiuwei * x);
-            await Add_修为(A, parseInt(y));
-            await Add_修为(B, parseInt(y));
-            await add_qinmidu(A, B, 15);
-            e.reply(
-                '你们双方共同修炼，过程平稳，都增加了' +
-                parseInt(y) +
-                '修为,亲密度增加了15点'
-            );
-        } else if (option > 0.7 && option <= 0.9) {
-            x = 520;
-            y = Math.trunc(1 * x);
-            await Add_修为(A, parseInt(y));
-            await Add_修为(B, parseInt(y));
-            await add_qinmidu(A, B, 10);
-            e.reply(
-                '你们双方努力修炼，但是并进不了状态，都增加了' +
-                parseInt(y) +
-                '修为,亲密度增加了10点'
-            );
-        } else {
-            e.reply('你们双修时心神合一，但是不知道哪来的小孩，惊断了状态');
-        }
-        return false;
+    // ----------  以下为原普通双修  ----------
+    let option = Math.random(), xiuwei = Math.random(), x = 0, y = 0;
+    if (option > 0 && option <= 0.5) {
+        x = 28000; y = Math.trunc(xiuwei * x);
+        await Add_修为(A, y); await Add_修为(B, y); await add_qinmidu(A, B, 30);
+        e.reply(`你们双方情意相通，缠绵一晚，都增加了${y}修为，亲密度+30`);
+    } else if (option > 0.5 && option <= 0.6) {
+        x = 21000; y = Math.trunc(xiuwei * x);
+        await Add_修为(A, y); await Add_修为(B, y); await add_qinmidu(A, B, 20);
+        e.reply(`你们双方交心交神，努力修炼，都增加了${y}修为，亲密度+20`);
+    } else if (option > 0.6 && option <= 0.7) {
+        x = 14000; y = Math.trunc(xiuwei * x);
+        await Add_修为(A, y); await Add_修为(B, y); await add_qinmidu(A, B, 15);
+        e.reply(`你们双方共同修炼，过程平稳，都增加了${y}修为，亲密度+15`);
+    } else if (option > 0.7 && option <= 0.9) {
+        x = 520; y = Math.trunc(xiuwei * x);
+        await Add_修为(A, y); await Add_修为(B, y); await add_qinmidu(A, B, 10);
+        e.reply(`你们双方努力修炼，但是并进不了状态，都增加了${y}修为，亲密度+10`);
+    } else {
+        e.reply('你们双修时心神合一，但是不知道哪来的小孩，惊断了状态');
     }
+    return false;
 }
 }
 async function cutStone(stone, player, usr_qq) {  // 添加 usr_qq 参数
