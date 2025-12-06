@@ -20,10 +20,10 @@ const YUANSHEN_SKILLS = {
   // 以后继续加
 };
 
-export class zhengdaotixi extends plugin {
+export class yuanshentixi extends plugin {
   constructor() {
     super({
-      name: 'Yunzai_Bot_zhengdaotixi',
+      name: 'Yunzai_Bot_yuanshentixi',
       dsc:  '元神体系模块',
       event: 'message',
       priority: 600,
