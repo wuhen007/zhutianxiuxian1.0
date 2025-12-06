@@ -761,7 +761,7 @@ if (weizhi.name === "紫薇星域") {
               await Add_najie_thing(player_id, '源天书', '道具', 1);
             }
     
-    if (adjustedProbability < 0.001) {
+    if (adjustedProbability < 0.05) {
         // 检查全服是否已有人习得斗字秘
         const isLearned = await checkGongfaInServer('斗字秘');
         

@@ -647,7 +647,7 @@ if (weizhi.name === "万龙巢") {
               last_msg += ' 你无意间在紫山内部触发禁制，被传送到了一处神秘质地，在那里找到了源天师一脉最为重要的传承源天书，这本书早已在世上遗失多年，今日却被你机缘巧合下所得。';
               await Add_najie_thing(player_id, '源天书', '道具', 1);
             }
-         if (adjustedProbability < 0.001) {
+         if (adjustedProbability < 0.05) {
                 // 检查全服是否已有人习得斗字秘
                 const isLearned = await checkGongfaInServer('斗字秘');
                 
