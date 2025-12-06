@@ -675,6 +675,9 @@ if (daoshang > 0) {
     const formattedDaoshang = parseFloat(daoshang).toFixed(1);
     replyMsg.push(`身披道伤：${formattedDaoshang}`);
 }
+if (player.火星圣体道痕) {
+    replyMsg.push(`身负火星圣体道痕`);
+}
 // ----- 五色祭坛 -----
 replyMsg.push(
     `五色祭坛：${player.五色祭坛 === 1 ? '已寻得' : '未寻得'}`,
