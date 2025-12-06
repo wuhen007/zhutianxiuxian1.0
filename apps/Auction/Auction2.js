@@ -97,7 +97,7 @@ export class Auction2 extends plugin {
     }
     player.星阁内场 =1;
     await Write_player(usr_qq, player);
-    await Add_源石(player, -5000000);
+    await Add_源石(usr_qq, -5000000);
    return e.reply('你花费了五百万源石获得了星阁内场贵宾身份');
 
   }
