@@ -709,7 +709,10 @@ async Gozhetian(e) {
     let actualPrice = basePrice;
     let actualExperience = baseExperience;
     let actualShouyuan = baseShouyuan;
-    
+        // 统一计算时间缩减效果
+    let { timeReduction, msgs } = await calculateTimeReductionForAddiction(player, i);
+           
+    allMsgs.push(...msgs);
     // 生命禁区特殊处理
     if (weizhi.Grade === "生命禁区") {
         let adjustMsg = "";
@@ -718,10 +721,12 @@ async Gozhetian(e) {
     switch (player.灵根.type) {
         case "大成圣体":
             actualExperience = 0;
+            timeReduction+=2*10*i;
             adjustMsg = "你为大成圣体，气吞山河君临天下，万邪不侵！";
             break;
         case "大成霸体":
             actualExperience = 0;
+             timeReduction+=2*10*i;
             adjustMsg = "你为大成霸体，气吞山河君临天下，万邪不侵！";
             break;    
         case "小成圣体":
@@ -739,21 +744,24 @@ async Gozhetian(e) {
             break;
         case "圣体道胎":
             actualExperience = 0;
+             timeReduction+=3*10*i;
             adjustMsg = "万道共鸣！圣体道胎先天立于不败之地！";
             break;
         case "混沌圣体道胎":
             actualExperience = 0;
+            timeReduction+=4*10*i;
             adjustMsg = "混沌初开，万道共鸣！圣体道胎先天立于不败之地！";
             break;    
         case "大道体":
             actualExperience = Math.ceil(actualExperience * 0.3);
+             timeReduction+=1*10*i;
             adjustMsg = "身与道合，言出法随！大道体血脉中流淌着大道印记！";
             break;
         default:
             adjustMsg = "作为普通体质，你需以修为血气为代价！";
     }
     
-        
+
         if (adjustMsg) {
             allMsgs.push(adjustMsg);
         }
@@ -774,14 +782,11 @@ async Gozhetian(e) {
         }
     }
     
-    // 统一计算时间缩减效果
-    const { timeReduction, msgs } = await calculateTimeReductionForAddiction(player, i);
-let time = baseTime - timeReduction;
-    allMsgs.push(...msgs);
+
     
     // 应用时间减少
     
-    
+     let time = baseTime - timeReduction;
     // 添加时间减少汇总
     if (timeReduction > 0) {
         allMsgs.push([

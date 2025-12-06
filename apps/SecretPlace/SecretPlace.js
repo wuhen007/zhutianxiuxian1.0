@@ -1712,7 +1712,7 @@ async Gozhetian(e) {
 
     let weizhiExperience = 0;
     // 调用统一方法计算时间缩减
-    const { timeReduction, msgs } = await calculateTimeReduction(player);
+    let { timeReduction, msgs } = await calculateTimeReduction(player);
     allMsgs.push(...msgs);
     
     // ==== 生命禁区特殊处理 ====
@@ -1723,11 +1723,12 @@ async Gozhetian(e) {
         switch (player.灵根.type) {
             case "大成圣体":
                 weizhiExperience = 0;
-                
+                timeReduction+=2;
                 adjustMsg = "你为大成圣体，气吞山河君临天下，万邪不侵！";
                 break;
             case "大成霸体":
-                weizhiExperience = 0;   
+                weizhiExperience = 0;  
+                timeReduction+=2; 
                 adjustMsg = "你为大成霸体，气吞山河君临天下，万邪不侵！";
                 break;    
             case "小成圣体":
@@ -1745,16 +1746,17 @@ async Gozhetian(e) {
                 break;
             case "圣体道胎":
                 weizhiExperience = 0;
-               
+                timeReduction+=3;
                 adjustMsg = "万道共鸣！圣体道胎先天立于不败之地！";
                 break;
             case "混沌圣体道胎":
                 weizhiExperience = 0;
-               
+                timeReduction+=4;
                 adjustMsg = "混沌初开，万道共鸣！圣体道胎先天立于不败之地！";
                 break;    
             case "大道体":
                 weizhiExperience = Math.ceil(weizhiExperience * 0.3);
+                timeReduction+=1;
                 adjustMsg = "身与道合，言出法随！大道体血脉中流淌着大道印记！";
                 break;
             default:
