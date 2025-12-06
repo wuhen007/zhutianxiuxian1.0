@@ -294,7 +294,7 @@ async goToLocation(e) {
     
     // 在特殊地点检查部分添加仙域条件
     if (location === '仙域') {
-        if (player.mijinglevel_id < 17 && player.xiangulevel_id < 16) {
+        if (player.mijinglevel_id < 18 && player.xiangulevel_id < 16) {
             return e.reply([
                 `【仙域壁垒·境界不足】`,
                 `仙域乃诸天至高净土，非仙王者不可入！`,

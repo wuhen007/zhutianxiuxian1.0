@@ -56,11 +56,11 @@ export class AutoDailyTask extends plugin {
             ]
         });
         
-        // 初始化定时任务
-        this.initAutoTask();
-        
         // 读取配置
         this.set = config.getConfig('xiuxian', 'xiuxian');
+        
+        // 初始化定时任务
+        this.initAutoTask();
     }
 
     /**
@@ -944,7 +944,11 @@ async isAutoSignEnabled(usr_qq) {
 
         // 广播消息到所有配置的群组
         await this.broadcastMessage('开始测试自动任务...');
+        
+        console.log('测试模式：开始执行自动任务');
         await this.executeAutoTask();
+        console.log('测试模式：自动任务执行完成');
+        
         await this.broadcastMessage('自动任务测试完成，请查看控制台日志');
         return true;
     }
