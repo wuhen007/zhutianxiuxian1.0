@@ -909,7 +909,7 @@ async Gojiehaiplace(e) {
         // 添加破王成帝消息（如果有）
     if (player.破王成帝) {
         player.破王成帝 -= 1;
-        allMsgs.push("你破王成帝的桎梏正在松动");
+        e.reply("你破王成帝的桎梏正在松动");
         await Write_player(usr_qq, player);
     }
     player.lastDungeonType = '界海';

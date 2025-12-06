@@ -1,7 +1,7 @@
 /* ==========================================
  * zhengdaotixi.js  —— 元神体系（完整版）
  * ========================================== */
-import { plugin } from '../../api/api.js';
+import { plugin, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'path';
 import {
