@@ -301,7 +301,7 @@ if (isSuccess) {
     
     let player = await Read_player(usr_qq);
     // ==== 高境界拦截 ====
-    if (player.mijinglevel_id > 19&&player.xiangulevel_id> 19) {
+    if (player.mijinglevel_id > 19||player.xiangulevel_id> 19) {
         const eraNames = ["神话时代", "乱古纪元", "仙古纪元", "末法时代"];
         const randomEra = eraNames[Math.floor(Math.random() * eraNames.length)];
         
@@ -365,7 +365,7 @@ async neijingBatch(e) {
     let successCnt = 0, failCnt = 0, totalCost = 0;
     const msgs = [];
     // ==== 高境界拦截 ====
-    if (player.mijinglevel_id > 19&&player.xiangulevel_id> 19) {
+    if (player.mijinglevel_id > 19||player.xiangulevel_id> 19) {
         const eraNames = ["神话时代", "乱古纪元", "仙古纪元", "末法时代"];
         const randomEra = eraNames[Math.floor(Math.random() * eraNames.length)];
         
