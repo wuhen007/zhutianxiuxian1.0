@@ -74,7 +74,7 @@ export class zhetiandujie extends plugin {
       },
       "真凰宝术": { 
         resurrectTimes: 2, 
-        cooldown: 3,  
+        cooldown: 5,  
         desc: "十凶宝术之一，凤凰涅槃，浴火重生，每滴血都是不死源泉"
       },
       "凰劫再生术": { 
@@ -84,7 +84,7 @@ export class zhetiandujie extends plugin {
       },
       "雷帝宝术": { 
         resurrectTimes: 1,
-         cooldown: 4,  
+         cooldown: 5,  
         desc: "十凶宝术之一，执掌天劫，汲取雷劫中的生命物质"
       },
       "柳神法": { 
@@ -94,17 +94,17 @@ export class zhetiandujie extends plugin {
       },
           "补天术": {
         resurrectTimes: 1,
-        cooldown: 6,
+        cooldown: 9,
         desc: "补天教镇教秘术，可补天地残缺，逆转生死"
     },
     "不灭经": {
         resurrectTimes: 3,
-        cooldown: 2,
+        cooldown: 4,
         desc: "天地至高经文，肉身不灭，元神不朽"
     },
     "万化圣诀": {
         resurrectTimes: 1,
-        cooldown: 8,
+        cooldown: 9,
         desc: "狠人大帝所创秘术，化尽世间一切惊世奇术"
     },
     "涅槃仙功": {
@@ -3224,8 +3224,8 @@ async poWangChengDi(e) {
   const equipment = await Read_equipment(usr_qq);
 
   /* ====== 基础校验 ====== */
-  if (player.mijinglevel_id !== 15)
-    return e.reply('仅准帝九重天可破王成帝');
+  if (player.mijinglevel_id !== 19)
+    return e.reply('仅仙道领域——仙王巨头可破王成帝');
   if (player.破王成帝 && Date.now() / 1000 < player.破王成帝)
     return e.reply('你道基未愈，暂不可再次冲击帝位');
   player.生命本源 = player.生命本源 ?? 100;
@@ -3512,38 +3512,33 @@ isEffectActive(player, effectName) {
         "不灭经": "不灭经效果",
         "补天术": "补天术效果",
         "万化圣诀": "万化圣诀效果",
-        "涅槃仙功": "涅槃仙功效果",
+        "真凰宝术": "真凰效果",
         "凰劫再生术": "凰劫效果",
-        "真凰宝术": "真凰效果" // 添加真凰宝术
+        "涅槃仙功": "涅槃仙功效果"
     };
     
     const effectKey = effectMap[effectName];
     if (!effectKey || !player[effectKey]) return false;
     
-    // 各功法的激活条件判断
-    switch(effectName) {
+    // 根据不同功法的效果类型判断是否激活
+    switch (effectName) {
         case "者字秘":
+        case "雷帝宝术":
+        case "不灭经":
+        case "涅槃仙功":
             return player[effectKey].剩余次数 > 0;
         case "柳神法":
             return player[effectKey].庇护层数 > 0 || 
                   (player[effectKey].持续恢复 && player[effectKey].持续恢复.回合数 > 0);
-        case "雷帝宝术":
-            return player[effectKey].剩余次数 > 0;
-        case "凰劫再生术":
-            return player[effectKey].阶段减伤 > 0;
-        case "不灭经":
-            return player[effectKey].剩余次数 > 0 || 
-                  player[effectKey].剩余复活次数 > 0;
-        case "补天术":
-            return player[effectKey].持续时间 > 0;
-        case "万化圣诀":
-            return player[effectKey].剩余次数 > 0 || 
-                  player[effectKey].免死;
-        case "涅槃仙功":
-            return player[effectKey].剩余次数 > 0;
         case "真凰宝术":
             return player[effectKey].免死 || 
                   player[effectKey].阶段减伤 > 0;
+        case "凰劫再生术":
+            return player[effectKey].阶段减伤 > 0;
+        case "补天术":
+        case "万化圣诀":
+            return player[effectKey]?.剩余次数 > 0 || 
+                   player[effectKey]?.免死;
         default:
             return false;
     }
@@ -3595,9 +3590,8 @@ async broadcastToAll(player,startMsg) {
     }
 }
 
-// ==== 合并后的体质效果 ====
-applyGongfaEffects(player, originalDamage,equipment) {
-
+// ==== 功法特效应用函数 ====
+applyGongfaEffects(player, originalDamage, equipment = {}) {
   if (!player || typeof originalDamage !== 'number') {
     console.error('Invalid parameters', {player, originalDamage});
     return { damage: originalDamage, messages: [] };
@@ -4429,10 +4423,10 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
       `剩余减伤次数：${player.神王效果.剩余次数}`
     );
   }
-    if (this.isEffectActive(player, "者字秘")) {
-      const 减伤值 = originalDamage * player.者字秘效果.减伤比例 * eraFactor;
+    if (this.isEffectActive(player, "者字秘") && player.者字秘效果) {
+      const 减伤值 = originalDamage * (player.者字秘效果.减伤比例 || 0.25) * eraFactor;
       finalDamage -= 减伤值;
-      const 恢复量 = Math.floor(player.血量上限 * player.者字秘效果.恢复比例);
+      const 恢复量 = Math.floor(player.血量上限 * (player.者字秘效果.恢复比例 || 0.05));
       player.当前血量 = Math.min(player.血量上限, player.当前血量 + 恢复量);
       
       effectMessages.push(
@@ -4441,8 +4435,8 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
       );
     }
 
-    if (this.isEffectActive(player, "柳神法")) {
-      const 减伤值 = originalDamage * player.柳神效果.减伤比例;
+    if (this.isEffectActive(player, "柳神法") && player.柳神效果) {
+      const 减伤值 = originalDamage * (player.柳神效果.减伤比例 || 0.2);
       finalDamage -= 减伤值;
       
       effectMessages.push(
@@ -4451,23 +4445,23 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
       );
       
       if (player.柳神效果.持续恢复) {
-        player.当前血量 += player.柳神效果.持续恢复.治疗量;
+        player.当前血量 += player.柳神效果.持续恢复.治疗量 || 0;
         player.柳神效果.持续恢复.回合数--;
       }
     }
 
-    if (this.isEffectActive(player, "雷帝宝术")) {
-      const 吸收量 = originalDamage * player.雷帝效果.转化比例;
+    if (this.isEffectActive(player, "雷帝宝术") && player.雷帝效果) {
+      const 吸收量 = originalDamage * (player.雷帝效果.转化比例 || 0.6);
       const 治疗量 = Math.min(吸收量, player.血量上限 - player.当前血量);
       
       player.当前血量 += 治疗量;
       player.雷帝效果.当前抗性 = Math.min(0.9, 
-        player.雷帝效果.当前抗性 + player.雷帝效果.抗性提升
+        (player.雷帝效果.当前抗性 || 0) + (player.雷帝效果.抗性提升 || 0.1)
       );
       
       effectMessages.push(
         `【雷劫转化】吸收${bigNumberTransform(治疗量)}伤害治疗`,
-        `雷抗提升至：${(player.雷帝效果.当前抗性*100).toFixed(0)}%`,
+        `雷抗提升至：${((player.雷帝效果.当前抗性 || 0)*100).toFixed(0)}%`,
         `剩余转化次数：${--player.雷帝效果.剩余次数}`
       );
     }
@@ -4490,10 +4484,10 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
       );
     }
    // ==== 不灭经效果 ====
-    if (this.isEffectActive(player, "不灭经")) {
-        const 减伤值 = originalDamage * player.不灭经效果.减伤比例;
+    if (this.isEffectActive(player, "不灭经") && player.不灭经效果) {
+        const 减伤值 = originalDamage * (player.不灭经效果.减伤比例 || 0.4);
         finalDamage -= 减伤值;
-        const 恢复量 = Math.floor(player.血量上限 * player.不灭经效果.恢复比例);
+        const 恢复量 = Math.floor(player.血量上限 * (player.不灭经效果.恢复比例 || 0.3));
         player.当前血量 = Math.min(player.血量上限, player.当前血量 + 恢复量);
         
         effectMessages.push(
@@ -4525,8 +4519,8 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
     }
 
     // ==== 涅槃仙功效果 ====
-    if (this.isEffectActive(player, "涅槃仙功")) {
-        const 减伤值 = originalDamage * player.涅槃仙功效果.减伤比例;
+    if (this.isEffectActive(player, "涅槃仙功") && player.涅槃仙功效果) {
+        const 减伤值 = originalDamage * (player.涅槃仙功效果.减伤比例 || 0.2);
         finalDamage -= 减伤值;
         
         effectMessages.push(
@@ -4558,12 +4552,23 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
   }
 
 clearTempEffects(player) {
-     [
-        '者字秘效果', '真凰效果', '雷帝效果', 
-        '柳神效果', '凰劫效果', '不灭经效果',
-        '补天术效果', '万化圣诀效果', '涅槃仙功效果'
-    ].forEach(effect => {
-        if (player[effect]) delete player[effect];
+    // 只清理已失效的效果，保留仍然有效的持续效果
+    const effects = [
+        { key: '者字秘效果', check: (effect) => effect?.剩余次数 <= 0 },
+        { key: '真凰效果', check: (effect) => !effect?.免死 && (!effect?.阶段减伤 || effect?.阶段减伤 <= 0) },
+        { key: '雷帝效果', check: (effect) => effect?.剩余次数 <= 0 },
+        { key: '柳神效果', check: (effect) => effect?.庇护层数 <= 0 && (!effect?.持续恢复 || effect?.持续恢复.回合数 <= 0) },
+        { key: '凰劫效果', check: (effect) => effect?.阶段减伤 <= 0 },
+        { key: '不灭经效果', check: (effect) => effect?.剩余次数 <= 0 },
+        { key: '补天术效果', check: (effect) => effect?.持续时间 <= 0 },
+        { key: '万化圣诀效果', check: (effect) => effect?.剩余次数 <= 0 },
+        { key: '涅槃仙功效果', check: (effect) => effect?.剩余次数 <= 0 }
+    ];
+    
+    effects.forEach(({ key, check }) => {
+        if (player[key] && check(player[key])) {
+            delete player[key];
+        }
     });
 }
 
@@ -4674,3 +4679,7 @@ function getDivineAppellation() {
     const appellations = ["玄", "昊", "寰", "太初", "道衍", "星穹", "混元", "混沌"];
     return appellations[Math.floor(Math.random() * appellations.length)];
 }
+
+
+
+
