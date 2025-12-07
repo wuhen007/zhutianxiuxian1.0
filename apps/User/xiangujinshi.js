@@ -1068,7 +1068,7 @@ async breakthroughZunzheRealm(e, usr_qq, player) {
     }
 
     // 突破过程（炼制小涅槃丹）
-    const danChengRate = Math.random(); // 炼丹成功率随机因素
+    let danChengRate = Math.random(); // 炼丹成功率随机因素
    if (player.occupation == '炼丹师') {
        let  加成 =  player.occupation_level*0.01;
         danChengRate +=  player.occupation_level*0.01;
