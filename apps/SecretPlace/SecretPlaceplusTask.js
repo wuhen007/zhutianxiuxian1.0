@@ -273,12 +273,14 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
             } else {
               m = '走在路上看见了一只蚂蚁！蚂蚁大仙送了你[起死回生丹';
               await Add_najie_thing(player_id, '起死回生丹', '丹药', 1);
+              await recordItemToHistory(player_id, '起死回生丹', '丹药', 1);
               t1 = 0.5 + Math.random() * 0.5;
               t2 = 0.5 + Math.random() * 0.5;
             }
     if (player.灵根.type === "愿望化身") {
     const oneReward = weizhi.one[Math.floor(Math.random() * weizhi.one.length)];
     await Add_najie_thing(player_id, oneReward.name, oneReward.class, 3);
+    await recordItemToHistory(player_id, oneReward.name, oneReward.class, 3);
     last_msg += `额外获得[${oneReward.name}]x3`;
   } 
     if (player.灵根.type === "希望化身") {
@@ -287,6 +289,8 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
     
     await Add_najie_thing(player_id, oneReward.name, oneReward.class, 6);
     await Add_najie_thing(player_id, twoReward.name, twoReward.class, 6);
+    await recordItemToHistory(player_id, oneReward.name, oneReward.class, 6);
+    await recordItemToHistory(player_id, twoReward.name, twoReward.class, 6);
     last_msg += `额外获得[${oneReward.name}][${twoReward.name}]x6`;
   }          
     if (player.灵根.type === "圆环之理") {
@@ -296,6 +300,9 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
     await Add_najie_thing(player_id, oneReward.name, oneReward.class, 9);
     await Add_najie_thing(player_id, twoReward.name, twoReward.class, 9);
     await Add_najie_thing(player_id, threeReward.name, threeReward.class, 9);
+    await recordItemToHistory(player_id, oneReward.name, oneReward.class, 9);
+    await recordItemToHistory(player_id, twoReward.name, twoReward.class, 9);
+    await recordItemToHistory(player_id, threeReward.name, threeReward.class, 9);
     last_msg += `额外获得[${oneReward.name}][${twoReward.name}][${threeReward.name}]x9`;
   }
 
@@ -320,6 +327,7 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
                                 last_msg += '菩提子于掌心绽放清辉，引动拙峰沉寂万古的道痕。刹那间，九秘真义如星河倒灌，皆字秘奥义烙印神魂——战天斗地，十倍战力！';
                                              player.学习的功法 = player.学习的功法 || [];
                         player.学习的功法.push('皆字秘');
+                        await recordItemToHistory(player_id, '皆字秘', '功法', 1);
                         await Write_player(usr_qq, player);
                             }
                         } else {
@@ -346,6 +354,7 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
                                 last_msg += '菩提子绽混沌清辉，引动仙池古壁嗡鸣！刹那间，道宫五神藏显化虚空：心之神藏燃离火，肺之神藏凝庚金...西皇经真义如天河倒卷，尽归汝身！';                   
                         player.学习的功法 = player.学习的功法 || [];
                         player.学习的功法.push('西皇经·道宫卷');
+                        await recordItemToHistory(player_id, '西皇经·道宫卷', '功法', 1);
                         await Write_player(usr_qq, player);
                             }
                         } else {
@@ -370,6 +379,7 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
                                     last_msg += '七彩火晶迸发神光，引动混沌火共鸣！石壁浮现恒宇大帝虚影，四极道图铺展天地：左臂青龙啸，右臂白虎踞...帝经真义如熔岩贯体！';
                                     player.学习的功法 = player.学习的功法 || [];
                         player.学习的功法.push('恒宇经·四极卷');
+                        await recordItemToHistory(player_id, '恒宇经·四极卷', '功法', 1);
                         await Write_player(usr_qq, player);
                                 }
                                 // 消耗七彩火晶
@@ -398,6 +408,7 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
                                     last_msg += '龙纹黑金与祖庙共鸣，太皇剑影破壁而出！脊柱大龙应声长吟：尾闾起，仙台落，九节龙骨绽放皇道龙气！';
                         player.学习的功法 = player.学习的功法 || [];
                         player.学习的功法.push('太皇经·化龙卷');
+                        await recordItemToHistory(player_id, '太皇经·化龙卷', '功法', 1);
                         await Write_player(usr_qq, player);
                                 }
                                 // 消耗龙纹黑金
@@ -426,7 +437,7 @@ if (weizhi.name === "紫薇星域") {
   - 殿前石碑刻「道可道，非常道」，道韵如天河倒悬
 
 老子道痕显化虚空：
-  “玄都非俗地，八景自洞天。非持经悟道者，不入此门！”
+  "玄都非俗地，八景自洞天。非持经悟道者，不入此门！"
 `;
 
         // 有残页但未触发传承的分支
@@ -435,7 +446,7 @@ if (weizhi.name === "紫薇星域") {
 道德经残页引动宫门阵纹，八景宫门裂开一线！
 骤变突生：
   - 炼丹炉阴阳二气化太极图，镇断时空长河
-  - 老子道音如雷：“道不可轻传，法不授二主！”
+  - 老子道音如雷："道不可轻传，法不授二主！"
   - 逆转之力将你推出玄都洞天，宫门闭合刹那...
     炉壁「一气化三清」五字道文如星湮灭
 `;
@@ -448,7 +459,7 @@ if (weizhi.name === "紫薇星域") {
   - 紫气氤氲中，老子炼丹炉道纹黯淡
   - 炉壁「一气化三清」刻痕正化为飞灰
   - 虚空传来叹息：
-    “后来者...此术已择主，大道唯一，不可复刻矣！”
+    "后来者...此术已择主，大道唯一，不可复刻矣！"
 `;
 
         // 成功获取功法的剧情[3,4](@ref)
@@ -461,7 +472,7 @@ if (weizhi.name === "紫薇星域") {
     上清持经卷，阐述宇宙生灭至理
     太清握古剑，斩断时空命运长河
   ■ 三道身影结印长吟：
-    “道生一，一生二，二生三，三生万物！”
+    "道生一，一生二，二生三，三生万物！"
 
 清气贯入你紫府道基，周天星辰为之共鸣...
 ▶ 无上秘术【一气化三清】已烙印神魂！
@@ -478,6 +489,7 @@ if (weizhi.name === "紫薇星域") {
                 eventMsg.push(successMsg);
                 // 添加功法并公告
                 player.学习的功法.push('一气化三清');
+                await recordItemToHistory(player_id, '一气化三清', '功法', 1);
                 await e.reply(`【紫气浩荡·道衍诸天】${player.name}于八景宫得老子传承，周天星辰共贺！`);
             } else {
                 eventMsg.push(failedEntryMsg);
@@ -520,6 +532,7 @@ if (weizhi.name === "紫薇星域") {
                         player.学习的功法 = player.学习的功法 || [];
                         if (!player.学习的功法.includes('万龙古经')) {
                             player.学习的功法.push('万龙古经');
+                            await recordItemToHistory(player_id, '万龙古经', '功法', 1);
                             await Write_player(usr_qq, player);
                         }
                     }
@@ -530,6 +543,7 @@ if (weizhi.name === "紫薇星域") {
                     player.学习的功法 = player.学习的功法 || [];
                     if (!player.学习的功法.includes('龙皇印')) {
                         player.学习的功法.push('龙皇印');
+                        await recordItemToHistory(player_id, '龙皇印', '功法', 1);
                         await Write_player(usr_qq, player);
                     }
                 } else {
@@ -545,6 +559,7 @@ if (weizhi.name === "紫薇星域") {
                     // 30%概率获得真龙精血
                     if (Math.random() < 0.3) {
                         await Add_najie_thing(player_id, '真龙精血', '神药', 1);
+                        await recordItemToHistory(player_id, '真龙精血', '神药', 1);
                     }
                 }
             } else {
@@ -691,6 +706,7 @@ if (weizhi.name === "紫薇星域") {
             
             // 给予源师转职凭证
             await Add_najie_thing(usr_qq, "源师转职凭证", "道具", 1);
+            await recordItemToHistory(player_id, "源师转职凭证", "道具", 1);
             eventMsg.push('张五爷赠你「源师转职凭证」："持此凭证可前往源术世家转职为源师。"');
             
             // 初始化张五爷关系
@@ -734,22 +750,27 @@ if (weizhi.name === "紫薇星域") {
                 last_msg += ' 你在五色祭坛处发现了九条散发着恐怖气息的真龙遗骸拖着一副巨大的铜棺，你艰难的将它们身上的龙血取了出来，并拿走了铜棺。';
                 await Add_najie_thing(player_id, '三世铜棺', '道具', 1);
                 await Add_najie_thing(player_id, '真龙之血', '丹药', 1);
+                await recordItemToHistory(player_id, '三世铜棺', '道具', 1);
+                await recordItemToHistory(player_id, '真龙之血', '丹药', 1);
               }
                 // 不死神泉的概率判断
                if (adjustedProbability < 0.015) {
                 last_msg += ' 你偶然发现了一株悟道古茶树幼苗，它成熟后的茶叶能够帮助修士悟道。';
                 await Add_najie_thing(player_id, '悟道古茶树幼苗', '草药', 1);
+                await recordItemToHistory(player_id, '悟道古茶树幼苗', '草药', 1);
               }
               // 悟道古茶树的概率判断
               if (adjustedProbability < 0.025 && adjustedProbability >= 0.02) {
                 last_msg += ' 在一片神秘的圣山之中，你摘得了一枚圣山神果，它蕴含着强大的力量，似乎服用后能令人脱胎换骨。';
                 await Add_najie_thing(player_id, '圣山神果', '丹药', 1);
+                await recordItemToHistory(player_id, '圣山神果', '丹药', 1);
               }
           
               // 圣山神果的概率判断
               if (adjustedProbability < 0.035 && adjustedProbability >= 0.03) {
                 last_msg += ' 在荒古禁地的深处，你发现了传说中的不死神泉，它赋予了你无尽的生机，能够生死人肉白骨，甚至可以些微抵抗生命禁区的岁月侵蚀。';
                 await Add_najie_thing(player_id, '不死神泉', '道具', 1);
+                await recordItemToHistory(player_id, '不死神泉', '道具', 1);
               }
           }
           if ((player.灵根.type === "圆环之理" ||player.灵根.type === "圣体道胎" ||player.灵根.type === "圣体" || player.灵根.type === "小成圣体" || player.灵根.type === "大成圣体"||player.灵根.type === "神慧者") && weizhi.name === "北斗星紫山") {
@@ -759,6 +780,7 @@ if (weizhi.name === "紫薇星域") {
             if (adjustedProbability < 0.05) {
               last_msg += ' 你无意间在紫山内部触发禁制，被传送到了一处神秘质地，在那里找到了源天师一脉最为重要的传承源天书，这本书早已在世上遗失多年，今日却被你机缘巧合下所得。';
               await Add_najie_thing(player_id, '源天书', '道具', 1);
+              await recordItemToHistory(player_id, '源天书', '道具', 1);
             }
     
     if (adjustedProbability < 0.05) {
@@ -768,9 +790,10 @@ if (weizhi.name === "紫薇星域") {
         if (isLearned) {
             last_msg += ' 你在紫山深处找到了几千年前被困在此地快要油尽灯枯的神王姜太虚。他感知到斗字秘真谛已被他人参透，长叹一声："九秘归源，唯此一道..."';
         } else {
-            last_msg += ' 你在紫山深处找到了几千年前被困在此地快要油尽灯枯的神王姜太虚，奈何此处的禁制太过可怕，你有心想救出这位神王却也无奈，他不忍心斗字秘在自己手上失传，于是化出神念传授于你。';
+                                last_msg += ' 你在紫山深处找到了几千年前被困在此地快要油尽灯枯的神王姜太虚，奈何此处的禁制太过可怕，你有心想救出这位神王却也无奈，他不忍心斗字秘在自己手上失传，于是化出神念传授于你。';
             player.学习的功法 = player.学习的功法 || [];
                         player.学习的功法.push('斗字秘');
+                        await recordItemToHistory(player_id, '斗字秘', '功法', 1);
                         await Write_player(usr_qq, player);
         }
     }
@@ -833,6 +856,7 @@ if (weizhi.name === "紫薇星域") {
                                 last_msg += ' 「天璇步法」——脱胎自行字秘的无上极速残篇，踏光阴、缩山河，一步踏出星月倒转！';
                                 last_msg += ' 待你回神，老人已化流光遁入宇宙，唯留残缺行字秘之道韵在神魂中流转不息。';
                                 player.学习的功法.push('天璇步法');
+                                await recordItemToHistory(player_id, '天璇步法', '功法', 1);
                                 await Write_player(usr_qq, player);
                             }
                         }
@@ -847,6 +871,7 @@ if (weizhi.name === "紫薇星域") {
 if (weizhi.name == '荧惑古星' && Math.random()< 0.1 && player.火星圣体道痕 !== 1) {
     player.火星圣体道痕 = 1;
     await Write_player(usr_qq, player);
+    await recordItemToHistory(player_id, '火星圣体道痕', '道痕', 1);
     last_msg += ' 你在荧惑古星的残骸深处，踏足一座尘封的五色祭坛。祭坛斑驳，铭刻着太古的星图，中央一道微弱的火星圣体道痕苏醒，没入你的苦海，低语着圣体一脉的宿命与终极法门的召唤。';
 }
 if (weizhi.name === "霸体祖星") {
@@ -920,9 +945,11 @@ if (weizhi.name === "霸体祖星") {
         // 解锁霸体专属能力
         if (!player.学习的功法.includes("苍穹霸印")) {
             player.学习的功法.push("苍穹霸印");
+            await recordItemToHistory(player_id, "苍穹霸印", "功法", 1);
         }
         if (!player.学习的功法.includes("霸血焚天诀")) {
             player.学习的功法.push("霸血焚天诀");
+            await recordItemToHistory(player_id, "霸血焚天诀", "功法", 1);
         }
         
         // 保存玩家数据
@@ -970,6 +997,7 @@ if (weizhi.name === "霸体祖星") {
                 shengtimsg += `无数奥义如星河倒卷，冲刷你的神识。待你回神，那道悲凉身影已一步迈出，径直朝着生命禁区而去，继续未尽的征战...`;
                             // 学习功法
                             player.学习的功法.push('终极圣体秘术');
+                            await recordItemToHistory(player_id, '终极圣体秘术', '功法', 1);
                             await Write_player(usr_qq, player);
                                        // ==== 消息推送 ====
             if (action.group_id) {
@@ -991,7 +1019,7 @@ if (weizhi.name === "霸体祖星") {
                         } else if (!hasPutiSeed) {
                             last_msg += ` 圣血轰鸣，道痕隐现，然仙台混沌，灵光难明。（需「菩提子」助你悟道，沟通火星圣体道痕）`;
                         } else if (isUltimateTechniqueLearned) {
-                            last_msg += ` 你触及圣崖奥秘的瞬间，一道威严的道音震响：“大道唯一，此法已择主，后来者止步！” 终极圣体秘术的传承已被人捷足先登。`;
+                            last_msg += ` 你触及圣崖奥秘的瞬间，一道威严的道音震响："大道唯一，此法已择主，后来者止步！" 终极圣体秘术的传承已被人捷足先登。`;
                         }
                     }
                 }}
@@ -1039,6 +1067,7 @@ if (weizhi.name === "霸体祖星") {
                  // 功法学习（唯一性）
                   await Reduse_player_学习功法(player_id, '天璇步法');
                                                 player.学习的功法.push('行字秘');
+                                await recordItemToHistory(player_id, '行字秘', '功法', 1);
                                 await Write_player(usr_qq, player);
              }
          } else {
@@ -2149,6 +2178,51 @@ if (action.settled_count >= action.total_count) {
                     }
                 }
                 return false; // 功法未被习得
+            }
+
+            /**
+             * 记录物品到沉迷历史中
+             * @param {string} player_id 玩家ID
+             * @param {string} itemName 物品名称
+             * @param {string} itemClass 物品类别
+             * @param {number} count 数量
+             */
+            async function recordItemToHistory(player_id, itemName, itemClass, count = 1) {
+                try {
+                    const addictionHistory = await redis.get('xiuxian:player:' + player_id + ':addiction_history');
+                    if (addictionHistory) {
+                        const history = JSON.parse(addictionHistory);
+                        if (!history.items_gained) {
+                            history.items_gained = [];
+                        }
+                        
+                        const existingItem = history.items_gained.find(item => item.name === itemName);
+                        if (existingItem) {
+                            existingItem.count += count;
+                        } else {
+                            history.items_gained.push({
+                                name: itemName,
+                                class: itemClass || '道具',
+                                count: count
+                            });
+                        }
+                        
+                        await redis.set('xiuxian:player:' + player_id + ':addiction_history', JSON.stringify(history));
+                    }
+                } catch (err) {
+                    console.error('记录物品到沉迷历史失败:', err);
+                }
+            }
+
+            /**
+             * 记录特殊奖励到沉迷历史中
+             * @param {string} player_id 玩家ID
+             * @param {Array} rewards 奖励列表 [{name, class, count}]
+             */
+            async function recordSpecialRewards(player_id, rewards) {
+                for (const reward of rewards) {
+                    await recordItemToHistory(player_id, reward.name, reward.class, reward.count);
+                }
             }
             // 辅助函数：获取属性名称
 function getPropertyName(prop) {
