@@ -1170,7 +1170,7 @@ async Gofairyrealm(e) {
     let specialCost = "";
 
 if (didian === "往世星海") {
-    const requiredKeys = i * 1;           // 每次消耗 1 枚，可随 i 叠加
+    const requiredKeys = i * 5;           // 每次消耗 5 枚，可随 i 叠加
     const keyCount = await exist_najie_thing(usr_qq, "群星秘钥", "道具");
     if (!keyCount || keyCount < requiredKeys) {
         return e.reply(`你需要${requiredKeys}个群星秘钥才能前往往世星海`);
