@@ -3594,8 +3594,10 @@ async broadcastToAll(player,startMsg) {
         }
     }
 }
+
 // ==== 合并后的体质效果 ====
 applyGongfaEffects(player, originalDamage,equipment) {
+
   if (!player || typeof originalDamage !== 'number') {
     console.error('Invalid parameters', {player, originalDamage});
     return { damage: originalDamage, messages: [] };
@@ -3605,6 +3607,19 @@ applyGongfaEffects(player, originalDamage,equipment) {
   let effectMessages = [];
   const eraFactor = this.getEraDifficultyFactor();
 
+  if (player.护法玩家) {
+    const share = Math.floor(finalDamage * 0.4); // 护法吃40%
+    player.护法玩家.当前血量 -= share;
+    finalDamage -= share;
+
+    effectMessages.push(`【护法承伤】${player.护法玩家.名字}挡下 ${share.toLocaleString()} 点！`);
+
+    // 护法力竭
+    if (player.护法玩家.当前血量 <= 0) {
+      effectMessages.push(`【护法消散】${player.护法玩家.名字}已力竭！`);
+      delete player.护法玩家;
+    }
+  }
   // ==== 合并圣体和神王体效果 ====
    const bodyEffects = {
      // ==== 九天十地体质 ====
@@ -3788,17 +3803,17 @@ applyGongfaEffects(player, originalDamage,equipment) {
     special: "彼岸金桥"
   },
     // ==== 诸天万界体质 ====
-    "爱莉希雅（无瑕之人）": {
+    "爱莉希雅": {
   reduction: 0.35,
   desc: "真我初显，无瑕之光绽放",
   special: "真我刻印"
 },
-"爱莉希雅（真我·人之律者）": {
+"人之律者·爱莉希雅": {
   reduction: 0.60,
   desc: "人之律者，为世上所有美好而战",
   special: "始源领域"
 },
-"爱莉希雅（始源之律者）": {
+"始源之律者·爱莉希雅": {
   reduction: 0.85,
   desc: "始源之律，超越因果的终点与起点",
   special: "始源之理"

@@ -4093,41 +4093,5 @@ async function pushInfo(id, is_group, msg) {
     await common.relpyPrivate(id, msg);
   }
 }
-// 在战斗伤害计算中应用护法效果
-async function applyProtectEffect(player, originalDamage) {
-  if (!player.护法玩家) {
-    return originalDamage; // 无护法者，承受全额伤害
-  }
 
-  const sharedDamage = originalDamage * 0.4; // 护法者分担40%伤害
-  const remainingDamage = originalDamage - sharedDamage;
-  
-  // 护法者承受伤害
-  player.护法玩家.当前血量 -= sharedDamage;
-  
-  // 检查护法者是否耗尽
-  if (player.护法玩家.当前血量 <= 0) {
-    const protectorName = player.护法玩家.名字;
-    player.护法玩家 = null; // 移除护法者
-    return {
-      damage: remainingDamage,
-      message: `⚠️护法者${protectorName}已耗尽全部力量！`
-    };
-  }
-  
-  return {
-    damage: remainingDamage,
-    message: `护法者${player.护法玩家.名字}承担了${sharedDamage.toLocaleString()}点伤害`
-  };
-}
-
-// 在破王成帝战斗中使用示例
-async function handleBattleDamage(player, damage) {
-  const result = await applyProtectEffect(player, damage);
-  
-  player.当前血量 -= result.damage;
-  console.log(result.message); // 输出护法信息
-  
-  return player;
-}
 
