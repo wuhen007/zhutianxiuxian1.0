@@ -39,6 +39,10 @@ export class linggenjuexing extends plugin {
             reg: '^#真我觉醒$',
             fnc: 'zhenwojuexing' 
             },
+            { 
+            reg: '^#流萤觉醒$',
+            fnc: 'liuyingjuexing' 
+            },
             {
             reg: '^#圣体觉醒$',
             fnc: 'shengtijuexing'
@@ -319,6 +323,65 @@ async zhenwojuexing(e) {
     }
 }
 
+async liuyingjuexing(e) {
+    if (!e.isGroup) { e.reply('请在群聊中完成流萤觉醒'); return; }
+
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    if (!await existplayer(usr_qq)) { e.reply('玩家不存在'); return; }
+
+    const player = await Read_player(usr_qq);
+    if ( player.灵根.name !== '少女流萤') {
+        e.reply('只有少女流萤灵根才能开启流萤觉醒'); return;
+    }
+    if (player.生命本源 !== 100 + player.灵根.生命本源) {
+        e.reply('生命本源亏空，无法承受觉醒仪式'); return;
+    }
+
+    /* ---------- 阶段判定 ---------- */
+    const isRen = player.灵根.type === '星铁';
+    if (!isRen && !isShiYuan) { e.reply('当前状态无法觉醒'); return; }
+
+    /* ---------- 材料检查（修改点1：材料更改为星核与命途碎片） ---------- */
+    const need = isRen
+        ? { 星核: 10, 命途碎片: 10, 秘境最低: 15 /*准帝*/ } // 将原有材料替换为星核和命途碎片
+        : { 星核: 10, 命途碎片: 10, 秘境最低: 19 /*仙王巨头*/ }; // 将原有材料替换为星核和命途碎片
+
+    for (const [name, num] of Object.entries(need).filter(([k]) => k !== '秘境最低')) {
+        const has = await exist_najie_thing(usr_qq, name, '道具') || 0;
+        if (has < num) return e.reply(`流萤觉醒需要 ${num} 个【${name}】，当前仅有 ${has} 个`);
+    }
+
+    /* ---------- 境界检查 ---------- */
+    if (player.mijinglevel_id < need.秘境最低) {
+        return e.reply(isRen ? '需秘境体系达到准帝方可承载「萨姆」机甲'
+                            : '需秘境体系达到仙王巨头方可完全解放「星核」之力');
+    }
+
+    /* ---------- 扣除材料（修改点2：扣除新的材料） ---------- */
+    for (const [name, num] of Object.entries(need).filter(([k]) => k !== '秘境最低')) {
+        await Add_najie_thing(usr_qq, name, '道具', -num);
+    }
+
+    /* ---------- 觉醒晋升 ---------- */
+    if (isRen) {
+        // 灵根更新为机甲形态
+        player.灵根 = {"id":7010015,"name":"流萤·萨姆机甲","type":"星核猎手","归类":"诸天万界","eff":3,"法球倍率":3,"攻击":3,"防御":3,"生命":3,"生命本源":150};
+        player.生命本源 = 100 + player.灵根.生命本源;
+        await Write_player(usr_qq, player);
+
+        // 修改点3：觉醒文案重写，贴合星穹铁道设定
+        const txt = [
+            `🔥 炽烈的星核之光划破长空，命途的碎片在掌心汇聚！`,
+            `你将十枚【星核】与十枚【命途碎片】嵌入「萨姆」机甲的核心炉心。`,
+            `庞大的能量瞬间激活了沉睡的装甲，流萤在光芒中完成同步，化身为人形天灾——`,
+            `「指令确认，流萤Ⅳ型，完全燃烧！」`,
+            ``,
+            `【星核猎手·流萤（萨姆）】`,
+            `于此展现，比星辰更耀眼的光芒！`
+        ].join('\n');
+        e.reply(txt);
+    }
+}
 async shengtijuexing(e) {
     if (!e.isGroup) {
         e.reply('修仙游戏请在群聊中游玩');

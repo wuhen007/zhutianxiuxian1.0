@@ -3297,13 +3297,16 @@ await Write_player(usr_qq, player);
       player.神明枷锁--;
 
       log.push(
-        `【第 ${broken} 道枷锁】`,
+        `【第 ${broken} 道枷锁崩断！】`,
+        `- 几大秘境剧烈摇颤，天地大道哀鸣！`,
+        `- 体魄龟裂，满身伤痕，几乎要炸开了，王血染红虚空！`,
+        `- 头顶神明小人光芒大盛，大道符文流转不息！`,
         `造成 ${bigNumberTransform(dmg)} 点道伤 剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`
       );
       if (messages.length) log.push(...messages);
 
       /* 每 10 层神明下降一尺 */
-      if (broken % 10 === 0) log.push(`【神明降临】头顶小人下降 ${broken / 10} 尺！`);
+      if (broken % 10 === 0) log.push(`【神明降临】头顶小人下降 ${broken / 10} 尺！神威浩荡，整片宇宙都在颤栗！！`);
 
       /* 15 道触发不朽之王 or 莫晓羽庇护 */
       if (broken === 15) log.push(...(await this.attackBySupremes(player, diffRate, e)));
@@ -3346,7 +3349,7 @@ await Write_player(usr_qq, player);
   const checkDone = setInterval(async () => {
     if (broken >= totalShackles && player.当前血量 > 1) {
       clearInterval(checkDone);
-      player.mijinglevel_id = 16;        // 准仙帝
+      player.mijinglevel_id = 20;        // 准仙帝
       player.神明枷锁 = 0;
       player.神明之光 = 3;
       player.破王成帝 = 0;               // 清除标记
