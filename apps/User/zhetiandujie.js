@@ -49,16 +49,20 @@ export class zhetiandujie extends plugin {
         },
         {
           reg: '^#渡大圣雷劫',
-          fnc: 'dashengleijie'  // 新增的大圣劫
+          fnc: 'dashengleijie'  
         },
         {
           reg: '^#渡准帝雷劫',
-          fnc: 'zhundileijie'  // 新增的准帝劫
+          fnc: 'zhundileijie'  
         },
         {
           reg:'^#证道成帝$',
           fnc:'command_zhengdao'
         },
+        { 
+          reg: '^#破王成帝$', 
+          fnc: 'poWangChengDi' 
+        }
       ],
     });
 
@@ -3206,6 +3210,275 @@ await this.broadcastToAll(player,startMsg);
     
     return true;
 }
+/**
+ * 破王成帝（生命本源版）
+ * 死亡标准：生命本源 ≤ 0
+ * 挑战门槛：生命本源 ≥ 50
+ * 失败惩罚：−50 本源 + 24 h CD + 修为/血气 7 折
+ */
+async poWangChengDi(e) {
+  if (!e.isGroup) return e.reply('修仙游戏请在群聊中游玩');
+
+  const usr_qq = e.user_id.toString().replace('qg_', '');
+  let player = await Read_player(usr_qq);
+  const equipment = await Read_equipment(usr_qq);
+
+  /* ====== 基础校验 ====== */
+  if (player.mijinglevel_id !== 15)
+    return e.reply('仅准帝九重天可破王成帝');
+  if (player.破王成帝 && Date.now() / 1000 < player.破王成帝)
+    return e.reply('你道基未愈，暂不可再次冲击帝位');
+  player.生命本源 = player.生命本源 ?? 100;
+  if (player.生命本源 < 50)
+    return e.reply(`生命本源不足（当前 ${player.生命本源}，需 ≥ 50）`);
+
+  /* ====== 时代系数 ====== */
+  const set = config.getConfig('xiuxian', 'xiuxian');
+  const currentEra = set.Era?.current || { index: 2 };
+  const costRates = [0.75, 0.8, 1.0, 2.0, 3.0];
+  const diffRates = [0.8, 0.9, 1.0, 1.2, 1.5];
+  const costRate = costRates[currentEra.index];
+  const diffRate = diffRates[currentEra.index];
+
+  /* ====== 资源检查 ====== */
+  const baseNeed = Math.pow(2, 15) * 250000;
+  const realNeed = Math.ceil(baseNeed * costRate);
+  if (player.修为 < realNeed || player.血气 < realNeed)
+    return e.reply([
+      `资源不足以破王成帝！`,
+      `需修为 / 血气：${realNeed.toLocaleString()}`,
+      `当前修为：${player.修为.toLocaleString()}`,
+      `当前血气：${player.血气.toLocaleString()}`
+    ].join('\n'));
+
+/* ====== 扣资源 & 初始化 ====== */
+player.修为 -= realNeed;
+player.血气 -= realNeed;
+player.生命本源 = player.生命本源 ?? 100;
+const totalShackles = 30;
+player.神明枷锁 = totalShackles;
+player.神明之光 = 0;
+player.破王成帝 = 0;          // 0 表示进行中
+
+/* ------ 新增：护法血量实时快照 ------ */
+if (player.护法玩家) {
+  player.护法玩家.当前血量 = Math.floor(player.护法玩家.当前血量 * 3);
+  player.护法玩家.血量上限 = player.护法玩家.当前血量;
+}
+
+await Write_player(usr_qq, player);
+
+  let log = [
+    `【破王成帝·帝劫启】`,
+    `${player.名号}欲破王称帝，引动诸天震荡！`,
+    `融合第六秘境「举头三尺有神明」，头顶小人浮现，其周身缠绕${totalShackles}道大道枷锁！`,
+    `消耗修为：${realNeed.toLocaleString()} 消耗血气：${realNeed.toLocaleString()}`
+  ];
+  await e.reply(log.join('\n'));
+  log = [];
+
+  /* ====== 枷锁循环（30 道，30 s 一道） ====== */
+  let broken = 0;
+  const lockInterval = setInterval(async () => {
+    try {
+          /* ------ 新增：护法血量同步（防止护法者中途回血/受伤） ------ */
+    if (player.护法玩家) {
+      const prot = await Read_player(player.护法玩家.名字); // 用名号反查 QQ
+      player.护法玩家.当前血量 = Math.floor(prot.当前血量 * 3);
+      player.护法玩家.血量上限 = player.护法玩家.当前血量;
+    }
+      if (broken >= totalShackles) { clearInterval(lockInterval); return; }
+
+      /* 每道扣 55 % 当前血量的“道伤” */
+      let raw = player.当前血量 * 0.55;
+      const { damage: dmg, messages } = this.applyGongfaEffects(player, raw, equipment);
+      player.当前血量 = Math.max(1, player.当前血量 - dmg);
+      broken++;
+      player.神明枷锁--;
+
+      log.push(
+        `【第 ${broken} 道枷锁】`,
+        `造成 ${bigNumberTransform(dmg)} 点道伤 剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`
+      );
+      if (messages.length) log.push(...messages);
+
+      /* 每 10 层神明下降一尺 */
+      if (broken % 10 === 0) log.push(`【神明降临】头顶小人下降 ${broken / 10} 尺！`);
+
+      /* 15 道触发不朽之王 or 莫晓羽庇护 */
+      if (broken === 15) log.push(...(await this.attackBySupremes(player, diffRate, e)));
+
+      await Write_player(usr_qq, player);
+      await e.reply(log.join('\n'));
+      log = [];
+
+      /* ====== 死亡判定：生命本源 ≤ 0 ====== */
+      if (player.当前血量 <= 1) {
+        const resurrected = await this.checkGongfaResurrection(e, player);
+        if (!resurrected) {
+          clearInterval(lockInterval);
+          /* 失败惩罚 */
+          player.生命本源 -= 50;
+          player.修为 *= 0.7;
+          player.血气 *= 0.7;
+          player.破王成帝 = Math.floor(Date.now() / 1000) + 86400; // 24 h CD
+          player.当前血量 = 1;
+          /* ------ 新增：解除双方护法关系 ------ */
+          await this.clearProtectorRelation(player);
+          await Write_player(usr_qq, player);
+          await e.reply([
+            `【帝路崩断·道基受损】`,
+            `${player.名号}终究未能打破桎梏，帝路崩断！`,
+            `生命本源 −50（剩余 ${player.生命本源}）`,
+            `需修养 24 时辰，以无上神物修复道基方能再战帝路！`
+          ].join('\n'));
+        } else {
+          log.push(`【向死而生】重燃生命之火，继续迎战枷锁！`);
+        }
+      }
+    } catch (err) {
+      clearInterval(lockInterval);
+      console.error('枷锁阶段出错：', err);
+    }
+  }, 30000);
+
+  /* ====== 突破完成检查 ====== */
+  const checkDone = setInterval(async () => {
+    if (broken >= totalShackles && player.当前血量 > 1) {
+      clearInterval(checkDone);
+      player.mijinglevel_id = 16;        // 准仙帝
+      player.神明枷锁 = 0;
+      player.神明之光 = 3;
+      player.破王成帝 = 0;               // 清除标记
+      player.当前血量 = player.血量上限;
+      /* ------ 新增：解除双方护法关系 ------ */
+      await this.clearProtectorRelation(player);
+      await Write_player(usr_qq, player);
+      await e.reply([
+        `【帝境突破】`,
+        `${player.名号}长啸震九天：「我身为炉，万道为火，今日熔炼古今法，重开帝者路！」`,
+        `破碎王境，登临准仙帝！`
+      ].join('\n'));
+    }
+  }, 1000);
+}
+// 解除护法双向绑定
+async clearProtectorRelation(player) {
+  if (!player.护法玩家) return;
+  // 清被护者
+  delete player.护法玩家;
+  // 清护法者
+  const allFiles = fs.readdirSync(__PATH.player_path);
+  for (const f of allFiles) {
+    const prot = await Read_player(f.replace('.json', ''));
+    if (prot.正在护法 === player.名号) {
+      delete prot.正在护法;
+      await Write_player(f.replace('.json', ''), prot);
+      break;
+    }
+  }
+}
+/* ====== 不朽之王围攻（含莫晓羽庇护） ====== */
+async attackBySupremes(player, diffRate, e) {
+  const msgs = [];
+  msgs.push(
+    `【诸王阻道】`,
+    `几大不朽之王感应到帝者气息，跨界而来！`
+  );
+
+  /* ====== 莫晓羽庇护判定 ====== */
+  if (player.莫晓羽庇护 === 1) {
+    player.莫晓羽庇护 = 0;                 // 一次性消耗
+    player.莫晓羽CD = Math.floor(Date.now() / 1000) + 86400; // 24 h 内不可再得
+
+    /* 星指维宇崩全文 */
+    msgs.push(
+      `时间长河上游，一道英姿伟岸的身影踏破万古而来！`,
+      `他黑发如瀑，眸若冷电，周身环绕无穷维度泡影！`,
+      `「区区不朽之王，也敢阻我庇护之人破王成帝？」`,
+      `声如开天辟地之雷，震得整片古史都在颤抖！`,
+      ``,
+      `【星指维宇崩】`,
+      `云海极不可思议的景象在发生！`,
+      `无数维度时空的泡影浮现，一颗颗庞大的维宙围绕着莫晓羽转动！`,
+      `万万劫时空古史为之明亮，上至太宇之前，下至无尽未来！`,
+      ``,
+      `只见莫晓羽缓缓抬手，无尽维宙被其攥握手中！`,
+      `「星指维宇崩！」`,
+      `虚妄中洪亮的声音响彻诸天万界，在混沌海中炸响回荡！`,
+      ``,
+      `一道汇聚着至高维度极尽锋芒的巨指浮现！`,
+      `占据一切时空概念变量，向着五大不朽之王点指而去！`,
+      `这一指，无量指光普照一切，刹那光华，直达永恒，直达终结！`,
+      ``,
+      `五大不朽之王身躯寸寸崩解！`,
+      `他们的存在被从古史中彻底抹去：`,
+      `- 昆谛的炼仙壶化为虚无，连传说都消散！`,
+      `- 安澜的不朽盾崩为尘埃，赤锋矛断为星屑！`,
+      `- 蒲魔王的噬神之种归于寂灭，再无重生可能！`,
+      `- 无殇的万法不侵之躯被永恒洞穿，法则根基尽毁！`,
+      `- 俞陀的万古不朽身化为光雨，真灵永寂！`,
+      `- 赤王的时间长河被彻底蒸干，再无岁月痕迹！`,
+      ``,
+      `过去无人记得他们曾存在`,
+      `现在无人知晓他们曾降临`,
+      `未来无人能寻他们之踪迹`,
+      `就连诸天万界的史书典籍中，关于他们的记载也瞬间化为空白！`,
+      ``,
+      `莫晓羽转身望向${player.名号}，眸光转缓：`,
+      `「帝路漫漫，此劫已过，前路珍重...」`,
+      `伟岸身影渐淡，唯有一道符咒虚影守护在${player.名号}头顶`,
+      `流转着镇压万古轮回的无上伟力！`
+    );
+
+    await Write_player(e.user_id, player);
+    return msgs;                             // 跳过 20 次攻击
+  }
+
+  /* ====== 无庇护 → 原 20 次轮流攻击 ====== */
+  const attackers = [
+    { name: '昆谛', quote: '炼仙壶下，万道成灰！', mult: 1.0 },
+    { name: '安澜', quote: '赤锋矛破九天，不朽盾镇轮回！', mult: 0.9 },
+    { name: '蒲魔王', quote: '噬神之种，葬尔道果！', mult: 1.1 },
+    { name: '无殇', quote: '万法不侵，帝路断魂！', mult: 1.3 },
+    { name: '俞陀', quote: '万古成空，唯我不朽！', mult: 1.2 },
+    { name: "瞿忡", quote: "葬灭古今，唯我永恒！", mult: 1.4},
+    { name: "刀王", quote: "一刀断万古！", mult: 1.5 },
+    { name: '赤王', quote: '时间长河，葬汝真灵！', mult: 0.8 }
+  ];
+
+  for (let i = 0; i < 20; i++) {
+    /* ---- 每 5 次普攻后插入一次「八大联手一击」 ---- */
+    if (i > 0 && i % 5 === 0) {
+      msgs.push(
+        ``,
+        `【八大不朽之王·联手一击】`,
+        `「诸王合力，断你帝路！」`
+      );
+      // 8 人同时出手，基础倍率 1.5
+      let jointBase = player.攻击 * 0.3 * 8 * 1.5 * diffRate;
+      const { damage: jointDmg } = this.applyGongfaEffects(player, jointBase, {});
+      player.当前血量 = Math.max(1, player.当前血量 - jointDmg);
+      msgs.push(
+      `八王合击，打出 ${bigNumberTransform(jointDmg)} 点道伤！`,
+      `剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`
+      );
+      if (player.当前血量 <= 1) break;
+    }
+
+    /* ---- 常规轮流单挑 ---- */
+    const atk = attackers[i % attackers.length];
+    let base = player.攻击 * 0.3 * atk.mult * diffRate;
+    const { damage: dmg } = this.applyGongfaEffects(player, base, {});
+    player.当前血量 = Math.max(1, player.当前血量 - dmg);
+    msgs.push(`${atk.name}破空而至，阻道帝路：「${atk.quote}」`);
+    msgs.push(`打出恐怖一击，造成${bigNumberTransform(dmg)}点道伤！`);
+    if (player.当前血量 <= 1) break;
+  }
+
+  return msgs;
+}
+
 
 // 新增：检查天心印记的方法
 async  checkHeavenHeartMark(currentQQ) {

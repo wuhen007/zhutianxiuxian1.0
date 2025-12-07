@@ -252,7 +252,7 @@ async nihuojiushi(e) {
     const currentLife = player.nihuo_count || 1;
     
     // 计算消耗资源
-    const baseExpCost = 5000000 * Math.pow(2, currentLife-1);
+    const baseExpCost = 1500000000 * Math.pow(2, currentLife-1);
     const actualExpCost = Math.ceil(baseExpCost * difficulty);
     
     // 资源检查

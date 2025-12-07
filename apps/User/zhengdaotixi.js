@@ -76,14 +76,10 @@ fnc: 'tianyi_yidao'
           reg: '^#护法$',
           fnc: 'addProtector'
         },
- {
-  reg: '^#破王成帝',
-  fnc: 'breakKingToEmperor'
-},
- {
-  reg: '^#为其护法',
-  fnc: 'protectBreakthrough'
-},
+        { 
+            reg: '^#解除护法$',   
+            fnc: 'removeProtector' }
+            ,
  {
         reg: '^#传授功法(?:@(\\d+))?\\s*(.*)$',
         fnc: 'teachGongfa',
@@ -148,21 +144,6 @@ fnc: 'tianyi_yidao'
 }
       ],
     });
- // 功法配置（符合原著设定）
-this.gongfa = {
-    "者字秘": { 
-        resurrectTimes: 1,
-        desc: "九秘之者，生命极致，向死而生，可逆转生死"
-    },
-    "真凰宝术": { 
-        resurrectTimes: 2, 
-        desc: "十凶宝术之一，凤凰涅槃，浴火重生，每滴血都是不死源泉"
-    },
-    "凰劫再生术": { 
-        resurrectTimes: 1,
-        desc: "不死神凰族至高秘术，历万劫而不灭，度千难而再生"
-    }
-};
  // 仙宠基础配置
     this.xianchonTypes = {
       "战斗": { atk: 5, def: 5, HP: 5 },
@@ -171,608 +152,90 @@ this.gongfa = {
       "幸运": { atk: 4, def: 4, HP: 4 },
       "修炼": { atk: 2, def: 2, HP: 2 }
     };
-
   }
+// 添加护法者（增强版）
+async addProtector(e) {
+  if (!e.isGroup) return e.reply('请在群聊中使用护法指令');
 
+  const at = e.message.find(m => m.type === 'at');
+  if (!at) return e.reply('请@需要护法的玩家');
 
+  const protectorId = e.user_id.toString().replace('qg_', '');
+  const targetId   = at.qq.toString().replace('qg_', '');
 
-    // ==== 核心功法方法 ====
-  getDefaultResurrectTimes(gongfaName) {
-    return this.gongfa[gongfaName]?.resurrectTimes || 0;
-  }
-       // 添加护法者
-  async addProtector(e) {
-    if (!e.isGroup) return e.reply("请在群聊中使用护法指令");
-    
-    // 检查是否有@人
-    const atTarget = e.message.find(m => m.type === "at");
-    if (!atTarget) return e.reply("请@需要护法的玩家");
-    
-    const protectorId = e.user_id;
-    const targetId = atTarget.qq;
-    
-    // 读取双方数据
-    const protector = await Read_player(protectorId);
-    const targetPlayer = await Read_player(targetId);
-    
-    // 检查条件
-    if (!targetPlayer) return e.reply("目标玩家不存在");
-    if (targetPlayer.护法玩家) return e.reply("该玩家已有护法者");
-    if (protector.mijinglevel_id < targetPlayer.mijinglevel_id - 2) {
-      return e.reply("你的境界不足以为该玩家护法");
-    }
-    
-    // 设置护法关系
-    targetPlayer.护法玩家 = {
-      名字: protector.名号,
-      境界: protector.mijinglevel_id,
-      血量上限: protector.当前血量 * 1,  // 护法血量是护法者的3倍
-      当前血量: protector.当前血量 * 1
-    };
-    
-    await Write_player(targetId, targetPlayer);
-    return e.reply([
-      `【护法结成】`,
-      
-      `${protector.名号} 将为 ${targetPlayer.名号} 护法！`,
-      `护法者可分担40%伤害（血量:${targetPlayer.护法玩家.当前血量.toLocaleString()})`,
-    ].join("\n"));
-  }
+  const protector = await Read_player(protectorId);
+  const target    = await Read_player(targetId);
 
-// ==== 遮天风格功法复活逻辑 ====
-async checkGongfaResurrection(e, player) {
-       if (await this.checkGongfaExist(player, "者字秘")) {
-        player.功法["者字秘"].复活次数--;
-        player.当前血量 = player.血量上限*0.7;
-        
-        await e.reply([
-            `【者字秘·向死而生】`,
-            `虚空裂开，九道仙光交织成璀璨"者"字，镇压诸天万道！`,
-            `那"者"字真言绽放不朽光辉，${player.名号}破碎的帝躯瞬间重组！`,
-            `「生命极尽，向死而生！」道音响彻星空，气血如龙直冲霄汉！`,
-            `剩余复活次数：${player.功法["者字秘"].复活次数}`,
-        ].join("\n"));
-        return true;
-    }
+  if (!target) return e.reply('目标玩家不存在');
+  if (target.护法玩家) return e.reply('该玩家已有护法者');
+  if (target.破王成帝 === undefined || target.破王成帝 !== 0)
+    return e.reply('目标当前并未处于破王成帝/渡劫阶段，无需护法');
 
-    // 检查真凰宝术（十凶宝术）
-    if (await this.checkGongfaExist(player, "真凰宝术")) {
-        player.功法["真凰宝术"].复活次数--;
-        player.当前血量 = player.血量上限;
-        
-        await e.reply([
-            `【真凰涅槃·浴火重生】`,
-            `七色神火焚尽苍穹，${player.名号}化作凤凰神卵，卵壳铭刻仙道符文！`,
-            `随着一声震动古今的凤鸣，新生的帝躯踏破神火而出！`,
-            `「真凰不灭，历劫永存！」每一滴血液都流淌着涅槃真义！`,
-            `剩余复活次数：${player.功法["真凰宝术"].复活次数}`,
-        ].join("\n"));
-        return true;
-    }
+  // 护法者境界检查
+  if (protector.mijinglevel_id < target.mijinglevel_id - 1)
+    return e.reply('你的境界不足以为该玩家护法（需 ≥ 目标境界 −1）');
 
-   // ==== 凰劫再生术·万劫不灭 ====
-if (await this.checkGongfaExist(player, "凰劫再生术")) {
-    // 减少复活次数
-    player.功法["凰劫再生术"].复活次数--;
-    
-    // 复活效果：恢复50%血量
-    player.当前血量 = Math.floor(player.血量上限 * 0.5);
-    
-    await e.reply([
-        `【凰劫再生术·万劫不灭】`,
-        `时间长河突然暴动，无尽劫光跨越古今而来！`,
-        `${player.名号}的帝躯在万劫中崩解，又在毁灭中重组！`,
-        `「轰！」虚空炸开，${player.名号}踏着岁月长河走出，`,
-        `旧躯化道，新体孕育着更强大的生机！`,
-        `当前血量：${player.当前血量}/${player.血量上限} (90%)`,
-        `剩余复活次数：${player.功法["凰劫再生术"].复活次数}`,
-    ].join("\n"));
-    
+  // 一人只能同时给一个人护法
+  if (protector.正在护法)
+    return e.reply(`你正在为 ${protector.正在护法} 护法，请先 #解除护法`);
 
-    return true;
+  // 快照护法血量（×3 倍，一次性）
+  const protectorSnap = {
+    名字: protector.名号,
+    境界: protector.mijinglevel_id,
+    当前血量: Math.floor(protector.当前血量 * 3),
+    血量上限: Math.floor(protector.当前血量 * 3)
+  };
+
+  target.护法玩家   = protectorSnap;
+  protector.正在护法 = target.名号;
+
+  await Write_player(targetId, target);
+  await Write_player(protectorId, protector);
+
+  return e.reply([
+    `【护法结成】`,
+    `${protector.名号} 愿为 ${target.名号} 护道！`,
+    `护法血量：${protectorSnap.当前血量.toLocaleString()}`,
+    `可分担 40 % 雷劫伤害，直至本次破王成帝结束`
+  ].join('\n'));
 }
 
-    // 没有可用复活 - 帝路崩断
-    await e.reply([
-        `【帝路崩断·道基受损】`,
-        `${player.名号}终究未能打破生死桎梏，帝路在这一刻崩断！`,
-        `周身大道符文黯淡，几大秘境出现裂痕，王血染红星空！`,
-        `「成帝路上多尸骨，这一世...终究是败了...」`,
-        `需修养${Math.floor(24 / 5)}时辰，以无上神物修复道基方能再战帝路！`,
-    ].join("\n"));
-    return false;
+// 解除护法（可选指令）
+async removeProtector(e) {
+  if (!e.isGroup) return e.reply('请在群聊中使用');
+  const pid = e.user_id.toString().replace('qg_', '');
+  const me  = await Read_player(pid);
+
+  if (!me.正在护法)
+    return e.reply('你当前并未担任任何玩家的护法');
+
+  const targetQQ = me.正在护法;          // 存的是名号，需反向查 QQ
+  const allFiles = fs.readdirSync(__PATH.player_path);
+  let targetId = null;
+  for (const f of allFiles) {
+    const tmp = await Read_player(f.replace('.json', ''));
+    if (tmp.名号 === targetQQ) { targetId = f.replace('.json', ''); break; }
+  }
+  if (!targetId) return e.reply('目标数据异常，解除失败');
+
+  const target = await Read_player(targetId);
+  delete target.护法玩家;
+  delete me.正在护法;
+
+  await Write_player(targetId, target);
+  await Write_player(pid, me);
+  return e.reply(`【护法解除】${me.名号} 已退出护法状态`);
 }
-// ==== 修复的功法检查方法 ====
-async checkGongfaExist(player, gongfaName) {
-    // 确保功法系统初始化
-    player.功法 = player.功法 || {};
-    
-    // 检查功法是否存在且次数充足
-    if (player.学习的功法.includes(gongfaName)) {
-        player.功法[gongfaName] = player.功法[gongfaName] || { 
-            复活次数: this.getDefaultResurrectTimes(gongfaName) 
-        };
-        return player.功法[gongfaName].复活次数 > 0;
-    }
-    return false;
-}
+
+
   // 辅助方法
   hasGongfa(player, gongfa) {
     return player.功法 && player.功法[gongfa];
   }
 
 
-async breakKingToEmperor(e) {
-    if (!e.isGroup) {
-        e.reply('修仙游戏请在群聊中游玩');
-        return;
-    }
-    
-    let usr_qq = e.user_id.toString().replace('qg_', '');
-    let ifexistplay = await existplayer(usr_qq);
-    if (!ifexistplay) {
-        e.reply('玩家不存在，请先创建角色');
-        return;
-    }
-    
-    let player = await Read_player(usr_qq);
-    
-    // 检查玩家是否已经达到仙王巨头境界
-    if (player.mijinglevel_id != 19) {
-        e.reply('只有仙王巨头才能破王称帝');
-        return;
-    }
-     if (typeof player.破王成帝 === 'undefined') {
-        player.破王成帝 = 10; // 初始化为10个步骤
-        await Write_player(usr_qq, player);  // 保存玩家数据
-    }
-    
-    // 检查玩家是否已经尝试过破王成帝
-    if (player.破王成帝 && player.破王成帝 > 0) {
-        e.reply('你似乎还未打破桎梏，不能再次尝试破王成帝');
-        return;
-    }
 
-    // 获取时代信息
-    const set = config.getConfig('xiuxian', 'xiuxian');
-    const currentEra = set.Era?.current || { index: 0, years: 0 };
-    
-    // 时代系统配置
-    const eraCostRates = [0.75, 0.8, 1.0, 2.0, 3.0];
-    const eraDifficultyRates = [0.8, 0.9, 1.0, 1.2, 1.5];
-    const eraNames = ["神话时代", "太古时代", "天命时代", "末法时代", "绝灵时代"];
-    
-    const difficultyRate = eraDifficultyRates[currentEra.index];
-    const costRate = eraCostRates[currentEra.index];
-    const eraName = eraNames[currentEra.index];
-    const costModifier = costRate !== 1.0 ? `(×${costRate})` : "";
-    
-    // 计算实际需求
-    const base_need_exp = Math.pow(2, 19) * 250000;
-    const actual_need_exp = Math.ceil(base_need_exp * costRate);
-    const exp2 = Math.max(0, actual_need_exp - player.修为);
-    const exp3 = Math.max(0, actual_need_exp - player.血气);
-    
-    // 资源检查
-    if (player.修为 < actual_need_exp) {
-        e.reply([
-            `修为不足以破王成帝！`,
-            
-            `当前时代: ${eraName} ${costRate !== 1.0 ? `(消耗${costRate > 1 ? '增加' : '减少'}${Math.abs(100 - costRate*100)}%)` : ''}`,
-            `基础需求: ${base_need_exp.toLocaleString()}`,
-            `实际需求: ${actual_need_exp.toLocaleString()} ${costModifier}`,
-            `还需修为: ${exp2.toLocaleString()}`
-        ].join("\n"));
-        return false;
-    }
-    if (player.血气 < actual_need_exp) {
-        e.reply([
-            `血气不足以破王成帝！`,
-            
-            `当前时代: ${eraName} ${costRate !== 1.0 ? `(消耗${costRate > 1 ? '增加' : '减少'}${Math.abs(100 - costRate*100)}%)` : ''}`,
-            `基础需求: ${base_need_exp.toLocaleString()}`,
-            `实际需求: ${actual_need_exp.toLocaleString()} ${costModifier}`,
-            `还需血气: ${exp3.toLocaleString()}`
-        ].join("\n"));
-        return false;
-    }
-
-    // ==== 扣除修为和血气 ====
-    player.修为 -= actual_need_exp;
-    player.血气 -= actual_need_exp;
-    
-    // 初始化枷锁数量
-    const totalShackles = 30;
-
-    player.神明枷锁 = player.神明枷锁 || totalShackles;
-    player.神明之光 = player.神明之光 || 0;
-    
-    // 开始突破过程
-    let battleLog = [`${player.名号}欲破王成帝，引动诸天震荡！`];
-    battleLog.push(`融合第六秘境「举头三尺有神明」，头顶小人浮现，其周身缠绕30道大道枷锁！`);
-    battleLog.push(`消耗修为：${actual_need_exp.toLocaleString()}`);
-    battleLog.push(`消耗血气：${actual_need_exp.toLocaleString()}`);
-    
-    // 发送初始消息
-    await e.reply(battleLog.join("\n"));
-    
-    // 检查莫晓羽庇护
-    const hasMoxiaoyuProtection = player.莫晓羽庇护 === 1;
-    if (hasMoxiaoyuProtection) {
-
-        battleLog.push("一道混沌符咒悬于顶，流淌无上伟力！");
-        battleLog.push("莫晓羽的庇护：诸天轮回之力环绕周身，似有万古帝者护道！");
-        await e.reply(battleLog.join("\n"));
-    }
-    
-    // ====检查护法玩家 ====
-    const hasProtector = player.护法玩家 && player.护法玩家.当前血量 > 0;
-    if (hasProtector) {
-
-        battleLog.push(`${player.护法玩家.名字}立于时间长河之上，为你护法！`);
-        battleLog.push(`其周身环绕不朽神光，可为你分担40%伤害`);
-        battleLog.push(`当前护法血量：${player.护法玩家.当前血量.toLocaleString()}`);
-        await e.reply(battleLog.join("\n"));
-    }
-    
-    // 记录已打破的枷锁数量
-    let brokenShackles = 0;
-    
-    // 枷锁打破定时器
-    const shackleInterval = setInterval(async () => {
-        try {
-            // 检查是否打破所有枷锁
-            if (brokenShackles >= totalShackles) {
-                clearInterval(shackleInterval);
-                return;
-            }
-            
-            // 每次打破枷锁需要消耗大量血量
-            const shackleCost = player.当前血量 * 0.55;
-            
-            // 检查是否足够打破枷锁
-            if (player.当前血量 <= shackleCost) {
-                battleLog.push(`${player.名号}血气枯竭，无法继续打破枷锁！`);
-                await e.reply(battleLog.join("\n"));
-                clearInterval(shackleInterval);
-                return;
-            }
-            
-            // 打破下一道枷锁
-            brokenShackles++;
-            player.神明枷锁--;
-            
-            // 扣除血气
-            player.当前血量 -= shackleCost;
-            
-            // 更新日志
-            battleLog = [];
-            battleLog.push(`【第${brokenShackles}道枷锁】`);
-            battleLog.push();
-            battleLog.push(`枷锁崩断！`);
-            battleLog.push(`- 几大秘境剧烈摇颤，天地大道哀鸣！`);
-            battleLog.push(`- 体魄龟裂，满身伤痕，几乎要炸开了，王血染红虚空！`);
-            battleLog.push(`- 头顶神明小人光芒大盛，大道符文流转不息！`);
-            battleLog.push(`当前血量：${player.当前血量.toLocaleString()}`);
-            
-            // 每打破10道枷锁，神明小人下降一尺
-            if (brokenShackles % 10 === 0) {
-                const inchesDown = brokenShackles / 10;
-                battleLog.push();
-                battleLog.push(`【神明降临】`);
-                battleLog.push(`头顶神明小人下降${inchesDown}尺！`);
-                battleLog.push(`神威浩荡，整片宇宙都在颤栗！`);
-            }
-            
-          // 在打破15道枷锁时，触发不朽之王围攻
-    if (brokenShackles === 15) {
-        battleLog.push();
-        battleLog.push(`【诸王阻道】`);
-        battleLog.push(`几大不朽之王感应到帝者气息，跨界而来阻止你成帝！`);
-        
-        const attackers = [
-            { name: "昆谛", quote: "炼仙壶下，万道成灰！", damageMultiplier: 1.0 },
-            { name: "安澜", quote: "赤锋矛破九天，不朽盾镇轮回！", damageMultiplier: 0.9 },
-            { name: "蒲魔王", quote: "噬神之种，葬尔道果！", damageMultiplier: 1.1 },
-           { name: "无殇", quote: "万法不侵，帝路断魂！", damageMultiplier: 1.3 }, // 提高伤害系数体现其强大、
-              { name: "俞陀", quote: "万古成空，唯我不朽！", damageMultiplier: 1.2, special: "攻击会额外降低玩家5%防御" },
-    { name: "瞿忡", quote: "葬灭古今，唯我永恒！", damageMultiplier: 1.4, special: "攻击附带持续伤害效果" },
-    { name: "刀王", quote: "一刀断万古！", damageMultiplier: 1.5, special: "暴击率提高30%" },
-            { name: "赤王", quote: "时间长河，葬汝真灵！", damageMultiplier: 0.8 }
-        ];
-        
-        // 随机决定攻击顺序
-        const shuffledAttackers = [...attackers].sort(() => Math.random() - 0.5);
-        let currentAttackerIndex = 0;
-        let attackCount = 0;
-        const totalAttacks = 20; // 总共15次攻击
-        
-        // 启动阻道攻击定时器
-        const attackInterval = setInterval(async () => {
-            try {
-                if (attackCount >= totalAttacks) {
-                    clearInterval(attackInterval);
-                    battleLog.push();
-                    battleLog.push(`仙王阻道结束！`);
-                    await e.reply(battleLog.join("\n"));
-                    return;
-                }
-                
-                // ==== 莫晓羽庇护处理 ====
-                if (hasMoxiaoyuProtection && player.莫晓羽庇护 === 1) {
-                    battleLog = [];
-                    battleLog.push(`五大不朽之王同时跨界而来！`);
-                    battleLog.push(`时间长河上游，一道英姿伟岸的身影踏破万古而来！`);
-                    battleLog.push(`他黑发如瀑，眸若冷电，周身环绕无穷维度泡影！`);
-                    battleLog.push(`「区区不朽之王，也敢阻我庇护之人破王成帝？」`);
-                    battleLog.push(`声如开天辟地之雷，震得整片古史都在颤抖！`);
-                    
-                    battleLog.push();
-                    battleLog.push(`【星指维宇崩】`);
-                    battleLog.push(`云海极不可思议的景象在发生！`);
-                    battleLog.push(`无数维度时空的泡影浮现，一颗颗庞大的维宙围绕着莫晓羽转动！`);
-                    battleLog.push(`万万劫时空古史为之明亮，上至太宇之前，下至无尽未来！`);
-                    
-                    battleLog.push(`只见莫晓羽缓缓抬手，无尽维宙被其攥握手中！`);
-                    battleLog.push(`「星指维宇崩！」`);
-                    battleLog.push(`虚妄中洪亮的声音响彻诸天万界，在混沌海中炸响回荡！`);
-                    
-                    battleLog.push();
-                    battleLog.push(`一道汇聚着至高维度极尽锋芒的巨指浮现！`);
-                    battleLog.push(`占据一切时空概念变量，向着五大不朽之王点指而去！`);
-                    battleLog.push(`这一指，无量指光普照一切，刹那光华，直达永恒，直达终结！`);
-                    
-                    battleLog.push();
-                    battleLog.push(`五大不朽之王身躯寸寸崩解！`);
-                    battleLog.push(`他们的存在被从古史中彻底抹去：`);
-                    battleLog.push(`- 昆谛的炼仙壶化为虚无，连传说都消散！`);
-                    battleLog.push(`- 安澜的不朽盾崩为尘埃，赤锋矛断为星屑！`);
-                    battleLog.push(`- 蒲魔王的噬神之种归于寂灭，再无重生可能！`);
-                    battleLog.push(`- 熬晟的雷罚天劫被永恒熄灭，法则根基尽毁！`);
-                    battleLog.push(`- 赤王的时间长河被彻底蒸干，再无岁月痕迹！`);
-                    battleLog.push(`- 过去无人记得他们曾存在`);
-                    battleLog.push(`- 现在无人知晓他们曾降临`);
-                    battleLog.push(`- 未来无人能寻他们之踪迹`);
-                    battleLog.push(`就连诸天万界的史书典籍中，关于他们的记载也瞬间化为空白！`);
-                    
-                    battleLog.push();
-                    battleLog.push(`他转身望向${player.名号}，眸光转缓：`);
-                    battleLog.push(`「帝路漫漫，此劫已过，前路珍重...」`);
-                    battleLog.push(`伟岸身影渐淡，唯有一道符咒虚影守护在${player.名号}头顶`);
-                    battleLog.push(`流转着镇压万古轮回的无上伟力！`);
-                    
-                    await e.reply(battleLog.join("\n"));
-                    clearInterval(attackInterval);
-                    return;
-                }
-                
-                // 每5次攻击后有可能触发联手一击
-                if (attackCount > 0 && attackCount % 5 === 0 && Math.random() < 0.7) {
-                    // 触发五大不朽之王联手一击
-                    battleLog = [];
-                    battleLog.push();
-                    battleLog.push(`【八大不朽之王联手一击】`);
-                    battleLog.push(`「诸王合力，断你帝路！」`);
-                    
-                    // 每个不朽之王都念出自己的台词
-                    attackers.forEach(attacker => {
-                        battleLog.push(`${attacker.name}：「${attacker.quote}」`);
-                    });
-                    
-                    // 计算总伤害（是普通攻击的3倍）
-                    const baseDamage = player.攻击 * 0.3 * 8;
-                    let actualDamage = baseDamage;
-                    let protectionMsg = "";
-                    
-                    if (hasProtector) {
-                        const sharedDamage = baseDamage * 0.4;
-                        player.护法玩家.当前血量 -= sharedDamage;
-                        actualDamage = baseDamage * 0.6;
-                        
-                        protectionMsg = [
-                            `护法者 ${player.护法玩家.名字} 承担 ${sharedDamage.toLocaleString()} 伤害`,
-                            `剩余护法血量: ${player.护法玩家.当前血量.toLocaleString()}`
-                        ].join("\n");
-                        
-                        if (player.护法玩家.当前血量 <= 0) {
-                            protectionMsg += `\n⚠️护法者 ${player.护法玩家.名字} 力竭退出！`;
-                            player.护法玩家 = null;
-                        }
-                    }
-                    
-                    // 玩家承受剩余伤害
-                    player.当前血量 = Math.max(1, player.当前血量 - actualDamage);
-                    
-                    battleLog.push(`八大不朽之王联手一击，造成${actualDamage.toLocaleString()}点道伤！`);
-                    if (protectionMsg) battleLog.push(protectionMsg);
-                    battleLog.push(`当前血量：${player.当前血量.toLocaleString()}`);
-                    
-                    await Write_player(usr_qq, player);
-                    await e.reply(battleLog.join("\n"));
-                    
-                    attackCount++;
-                    
-                    // 死亡检查
-                    if (player.当前血量 <= 1) {
-                        const resurrected = await this.checkGongfaResurrection(e, player);
-                        if (!resurrected) {
-                            clearInterval(attackInterval);
-                            battleLog.push();
-                            battleLog.push(`${player.名号}帝路崩断，道基受损！`);
-                            battleLog.push(`需修养${Math.floor(24 / 5)}时辰方能再战`);
-                            
-                            player.当前血量 = 1;
-                            player.修为 *= 0.7;
-                            player.血气 *= 0.7;
-                            player.破王成帝 = (player.破王成帝 || 0) + 1;
-                            player.护法玩家 = null;
-                            
-                            await Write_player(usr_qq, player);
-                            await e.reply(battleLog.join("\n"));
-                            return;
-                        }
-                    }
-                    return;
-                }
-                
-                // 正常轮流攻击
-                const attacker = shuffledAttackers[currentAttackerIndex];
-                currentAttackerIndex = (currentAttackerIndex + 1) % shuffledAttackers.length;
-                
-                // 计算伤害（考虑每个不朽之王不同的伤害系数）
-                const damage = player.攻击 * 0.3 * attacker.damageMultiplier;
-                let actualDamage = damage;
-                let protectionMsg = "";
-                
-                if (hasProtector) {
-                    const sharedDamage = damage * 0.4;
-                    player.护法玩家.当前血量 -= sharedDamage;
-                    actualDamage = damage * 0.6;
-                    
-                    protectionMsg = [
-                        `护法者 ${player.护法玩家.名字} 承担 ${sharedDamage.toLocaleString()} 伤害`,
-                        `剩余护法血量: ${player.护法玩家.当前血量.toLocaleString()}`
-                    ].join("\n");
-                    
-                    if (player.护法玩家.当前血量 <= 0) {
-                        protectionMsg += `\n⚠️护法者 ${player.护法玩家.名字} 力竭退出！`;
-                        player.护法玩家 = null;
-                    }
-                }
-                
-                // 玩家承受剩余伤害
-                player.当前血量 = Math.max(1, player.当前血量 - actualDamage);
-                
-                // 构建战斗消息
-                battleLog = [];
-                battleLog.push();
-                battleLog.push(`${attacker.name}破空而至，阻道帝路：「${attacker.quote}」`);
-                battleLog.push(`打出恐怖一击，造成${actualDamage.toLocaleString()}点道伤！`);
-                if (protectionMsg) battleLog.push(protectionMsg);
-                battleLog.push(`当前血量：${player.当前血量.toLocaleString()}`);
-                
-                await Write_player(usr_qq, player);
-                await e.reply(battleLog.join("\n"));
-                
-                attackCount++;
-                
-                // 死亡检查逻辑
-                if (player.当前血量 <= 1) {
-                    const resurrected = await this.checkGongfaResurrection(e, player);
-                    
-                    if (!resurrected) {
-                        clearInterval(attackInterval);
-                        battleLog.push();
-                        battleLog.push(`${player.名号}帝路崩断，道基受损！`);
-                        battleLog.push(`需修养${Math.floor(24 / 5)}时辰方能再战`);
-                        
-                        // 重伤惩罚
-                        player.当前血量 = 1;
-                        player.修为 *= 0.7;
-                        player.血气 *= 0.7;
-                        player.破王成帝 = (player.破王成帝 || 0) + 1;
-                        player.护法玩家 = null;
-                        
-                        await Write_player(usr_qq, player);
-                        await e.reply(battleLog.join("\n"));
-                        return;
-                    } else {
-                        battleLog.push();
-                        battleLog.push(`${player.名号}逆转生死，继续迎战诸王阻道！`);
-                        await e.reply(battleLog.join("\n"));
-                    }
-                }
-            } catch (error) {
-                console.error('阻道攻击过程中出错：', error);
-                clearInterval(attackInterval);
-            }
-        }, 15000); // 每15秒一次攻击
-    }
-            // 保存玩家状态
-            await Write_player(usr_qq, player);
-            await e.reply(battleLog.join("\n"));
-            
-    // ==== 修正后的死亡检查逻辑 ====
-            if (player.当前血量 <= 1) {
-                const resurrected = await this.checkGongfaResurrection(e, player);
-                
-                if (!resurrected) {
-                    clearInterval(shackleInterval);
-                    battleLog.push();
-                    
-                    if (hasMoxiaoyuProtection) {
-                        battleLog.push(`虽受莫晓羽庇护，但${player.名号}终究未能打破桎梏`);
-                    } else {
-                        battleLog.push(`${player.名号}帝路崩断，道基受损！`);
-                    }
-                    
-                    battleLog.push(`需修养${Math.floor(24 / 5)}时辰方能再战`);
-                    
-                    // 重伤惩罚
-                    player.当前血量 = 1;
-                    player.修为 *= 0.7;
-                    player.血气 *= 0.7;
-                    player.破王成帝 = (player.破王成帝 || 0) + 1;
-                    player.护法玩家 = null;
-                    
-                    await Write_player(usr_qq, player);
-                    await e.reply(battleLog.join("\n"));
-                    return;
-                }
-            }
-        } catch (error) {
-            console.error('枷锁打破过程中出错：', error);
-            clearInterval(shackleInterval);
-        }
-    }, 30000); // 每30秒打破一道枷锁
-    
-    // 突破成功判定（在枷锁全部打破后）
-    const checkCompletion = setInterval(async () => {
-        try {
-            if (brokenShackles >= totalShackles) {
-                clearInterval(checkCompletion);
-                
-                battleLog = [];
-                battleLog.push();
-                battleLog.push(`【帝境突破】`);
-                battleLog.push(`六大秘境共鸣，${player.名号}长啸震九天：`);
-                battleLog.push(`「我身为炉，万道为火，今日熔炼古今法，重开帝者路！」`);
-                battleLog.push(`破碎王境，登临准仙帝！`);
-                
-                // 境界突破
-                player.mijinglevel_id = 20; // 准仙帝境界
-                player.神明枷锁 = 0; // 重置枷锁
-                player.神明之光 = 3; // 神明之光圆满
-                player.纪元积累 = 0;
-                player.修为 = 0;
-                player.血气 = 0;
-                // 清除庇护状态
-                if (player.莫晓羽庇护 === 1) {
-                    battleLog.push();
-                    battleLog.push(`混沌符咒永恒不灭，轮回之力生生不息！`);
-                    battleLog.push(`耳畔似有轻语：「这一世，护你周全...」`);
-                }
-                
-                // 护法者奖励
-                if (player.护法玩家) {
-                    battleLog.push();
-                    battleLog.push(`${player.护法玩家.名字}护道有功，获得修为灌顶！`);
-                    battleLog.push(`一缕帝道本源馈赠，助其突破瓶颈！`);
-                    player.护法玩家 = null;
-                }
-                
-                player.当前血量 = player.血量上限;
-
-                
-                await Write_player(usr_qq, player);
-                await e.reply(battleLog.join("\n"));
-            }
-        } catch (error) {
-            console.error('突破完成检查过程中出错：', error);
-            clearInterval(checkCompletion);
-        }
-    }, 1000); // 每秒检查一次
-}
   // ==== 创造仙宠指令 ====
   async createXianchong(e) {
     const usr_qq = e.user_id.toString().replace('qg_', '');
@@ -1458,7 +921,7 @@ async hongjiChengxianlu(e) {
     }
     
     // 祭道成功率与失败处理
-    const successRate = 0.2; // 40%成功率
+    const successRate = 0.5; // 50%成功率
     const randomValue = Math.random();
     
     if (randomValue > successRate) {
@@ -1575,7 +1038,6 @@ async hongjiChengxianlu(e) {
         player.mijinglevel_id = 22;
         player.level_id = 1;
         player.Physique_id = 1;
-        
         await Add_HP(usr_qq, 9999999999);
         await Write_player(usr_qq, player);
         
