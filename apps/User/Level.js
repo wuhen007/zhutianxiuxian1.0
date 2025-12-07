@@ -774,13 +774,13 @@ if (player.mijinglevel_id + 1 === 20) {
     ].join('\n'));
     return;
 }
-if (player.mijinglevel_id === 20 && player.纪元积累 < 100) {
+if (player.mijinglevel_id+ 1 == 21 ) {
     // 初始化纪元积累
     if (typeof player.纪元积累 === 'undefined') {
         player.纪元积累 = 0;
         await Write_player(usr_qq, player);
     }
-    
+       if (player.纪元积累 < 100) {
     // 计算剩余纪元
     const remainingEpochs = 100 - player.纪元积累;
     
@@ -816,7 +816,7 @@ const message = [
     
     e.reply(message);
     return;
-}
+}}
     // 检查是否正在尝试突破ID22境界
     if (player.mijinglevel_id + 1 === 22) {
         e.reply('仙帝已然超越诸天极限，一证永证，万道成空，自身胜道，超脱无尽诸天与古史，随意颠覆古今未来，天地万物也难以磨灭其本质，即使自身陨落了只要有人念想，就会化作道标接引再次归来，若想更进一步，须焚烧至高大道，祭掉所有一切，极尽升华，博一线可能！');

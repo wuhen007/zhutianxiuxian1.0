@@ -364,7 +364,19 @@ async neijingBatch(e) {
 
     let successCnt = 0, failCnt = 0, totalCost = 0;
     const msgs = [];
-
+    // ==== 高境界拦截 ====
+    if (player.mijinglevel_id > 19&&player.xiangulevel_id> 19) {
+        const eraNames = ["神话时代", "乱古纪元", "仙古纪元", "末法时代"];
+        const randomEra = eraNames[Math.floor(Math.random() * eraNames.length)];
+        
+        return e.reply([
+            `${player.名号}眼眸开阖间有星河幻灭：`,
+            `「自${randomEra}至今...」`,
+            `「本座的道躯早已自成宇宙」`,
+            `内景地飘落的道源粒子触体即散`,
+            `化作点点星辉融入周天星辰`
+        ].join('\n'));
+    }
     for (let i = 0; i < times; i++) {
         // 每次重新读档，防止中途被别的指令改数据
         await Write_player(usr_qq, player);

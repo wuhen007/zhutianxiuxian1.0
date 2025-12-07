@@ -42,19 +42,23 @@
     "level_id": 9
 },
 {
-    "level": "准仙帝级元神",
+    "level": "仙王巨头级元神",
     "level_id": 10
 },
 {
-    "level": "仙帝级元神",
+    "level": "准仙帝级元神",
     "level_id": 11
 },
 {
-    "level": "祭道级元神",
+    "level": "仙帝级元神",
     "level_id": 12
 },
 {
-    "level": "超脱级元神",
+    "level": "祭道级元神",
     "level_id": 13
+},
+{
+    "level": "超脱级元神",
+    "level_id": 14
 }
 ]
