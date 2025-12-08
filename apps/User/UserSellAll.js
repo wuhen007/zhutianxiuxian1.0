@@ -1376,9 +1376,12 @@ async Sell_all_comodities(e) {
                     continue;
                 }
                 let quantity = item.数量;
+                // 设置默认价格：如果没有出售价字段，默认12000灵石[1,2](@ref)
+                let unitPrice = item.出售价 ?? 12000;
+                
                 /* ****** 删掉 200W 特殊价 ****** */
                 await Add_najie_thing(usr_qq, item.name, item.class, -quantity, item.pinji);
-                commodities_price += item.出售价 * quantity;
+                commodities_price += unitPrice * quantity;
             }
         }
         
@@ -1405,13 +1408,15 @@ async Sell_all_comodities(e) {
             if (category === '装备' && item.type === '帝兵' && item.author_name) continue;
             
             let quantity   = item.数量;
-            let itemValue  = item.出售价 * quantity;   /* ****** 删掉 200W 特殊价 ****** */
+            // 设置默认价格：如果没有出售价字段，默认12000灵石[1,2](@ref)
+            let unitPrice = item.出售价 ?? 12000;
+            let itemValue  = unitPrice * quantity;   /* ****** 删掉 200W 特殊价 ****** */
             totalValue    += itemValue;
             
             tableData.push({
                 名称: item.name,
                 数量: quantity,
-                单价: item.出售价,
+                单价: unitPrice,
                 总价: itemValue,
                 类别: category
             });
