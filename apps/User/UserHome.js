@@ -6456,14 +6456,16 @@ async Buy_jianyunhai(e) {
     
     return e.reply(successMessage);
 }
-  //出售商品
-  async Sell_comodities(e) {
+//出售商品
+async Sell_comodities(e) {
     if (!verc({ e })) return false;
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);
+    
     //有无存档
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) return false;
+    
     //命令判断
     let thing = e.msg.replace('#', '');
     thing = thing.replace('出售', '');
@@ -6472,104 +6474,115 @@ async Buy_jianyunhai(e) {
     code[0] = parseInt(code[0]);
     let thing_amount = code[1]; //数量
     let thing_piji;
+    
     //判断列表中是否存在，不存在不能卖,并定位是什么物品
     let najie = await Read_najie(usr_qq);
     if (code[0]) {
-      if (code[0] > 1000) {
-        try {
-          thing_name = najie.仙宠[code[0] - 1001].name;
-        } catch {
-          e.reply('仙宠代号输入有误!');
-          return false;
+        if (code[0] > 1000) {
+            try {
+                thing_name = najie.仙宠[code[0] - 1001].name;
+            } catch {
+                e.reply('仙宠代号输入有误!');
+                return false;
+            }
+        } else if (code[0] > 100) {
+            try {
+                thing_name = najie.装备[code[0] - 101].name;
+                code[1] = najie.装备[code[0] - 101].pinji;
+            } catch {
+                e.reply('装备代号输入有误!');
+                return false;
+            }
         }
-      } else if (code[0] > 100) {
-        try {
-          thing_name = najie.装备[code[0] - 101].name;
-          code[1] = najie.装备[code[0] - 101].pinji;
-        } catch {
-          e.reply('装备代号输入有误!');
-          return false;
-        }
-      }
     }
+    
     let thing_exist = await foundthing(thing_name);
     if (!thing_exist) {
-      e.reply(`这方世界没有[${thing_name}]`);
-      return false;
+        e.reply(`这方世界没有[${thing_name}]`);
+        return false;
     }
+    
     let pj = {
-      劣: 0,
-      普: 1,
-      优: 2,
-      精: 3,
-      极: 4,
-      绝: 5,
-      顶: 6,
+        劣: 0,
+        普: 1,
+        优: 2,
+        精: 3,
+        极: 4,
+        绝: 5,
+        顶: 6,
     };
     thing_piji = pj[code[1]];
+    
     if (thing_exist.class == '装备') {
-      if (thing_piji) {
-        thing_amount = code[2];
-      } else {
-        let equ = najie.装备.find(item => item.name == thing_name);
-        if (!equ) {
-          e.reply(`你没有[${thing_name}]这样的${thing_exist.class}`);
-          return false;
+        if (thing_piji) {
+            thing_amount = code[2];
+        } else {
+            let equ = najie.装备.find(item => item.name == thing_name);
+            if (!equ) {
+                e.reply(`你没有[${thing_name}]这样的${thing_exist.class}`);
+                return false;
+            }
+            for (var i of najie.装备) {
+                //遍历列表有没有比那把强的
+                if (i.name == thing_name && i.pinji < equ.pinji) {
+                    equ = i;
+                }
+            }
+            thing_piji = equ.pinji;
         }
-        for (var i of najie.装备) {
-          //遍历列表有没有比那把强的
-          if (i.name == thing_name && i.pinji < equ.pinji) {
-            equ = i;
-          }
-        }
-        thing_piji = equ.pinji;
-      }
     }
+    
     thing_amount = await convert2integer(thing_amount);
     let x = await exist_najie_thing(
-      usr_qq,
-      thing_name,
-      thing_exist.class,
-      thing_piji
+        usr_qq,
+        thing_name,
+        thing_exist.class,
+        thing_piji
     );
+    
     //判断戒指中是否存在
     if (!x) {
-      //没有
-      e.reply(`你没有[${thing_name}]这样的${thing_exist.class}`);
-      return false;
+        //没有
+        e.reply(`你没有[${thing_name}]这样的${thing_exist.class}`);
+        return false;
     }
+    
     //判断戒指中的数量
     if (x < thing_amount) {
-      //不够
-      e.reply(`你目前只有[${thing_name}]*${x}`);
-      return false;
+        //不够
+        e.reply(`你目前只有[${thing_name}]*${x}`);
+        return false;
     }
+    
     //数量够,数量减少,灵石增加
     await Add_najie_thing(
-      usr_qq,
-      thing_name,
-      thing_exist.class,
-      -thing_amount,
-      thing_piji
+        usr_qq,
+        thing_name,
+        thing_exist.class,
+        -thing_amount,
+        thing_piji
     );
+    
     let commodities_price;
-    commodities_price = thing_exist.出售价 * thing_amount;
-    if (
-      data.zalei.find(item => item.name == thing_name.replace(/[0-9]+/g, ''))
-    ) {
-      let sell = najie.装备.find(
-        item => item.name == thing_name && thing_piji == item.pinji
-      );
-      commodities_price = sell.出售价 * thing_amount;
+    // 设置默认价格：如果没有出售价字段，默认12000灵石
+    let unitPrice = thing_exist.出售价 ?? 12000;
+    commodities_price = unitPrice * thing_amount;
+    
+    if (data.zalei.find(item => item.name == thing_name.replace(/[0-9]+/g, ''))) {
+        let sell = najie.装备.find(
+            item => item.name == thing_name && thing_piji == item.pinji
+        );
+        // 设置默认价格：如果装备没有出售价字段，默认12000灵石
+        let equipPrice = sell.出售价 ?? 12000;
+        commodities_price = equipPrice * thing_amount;
     }
+    
     await Add_灵石(usr_qq, commodities_price);
     e.reply(
-      `出售成功!  获得${commodities_price}灵石,还剩余${thing_name}*${x - thing_amount
-      } `
+        `出售成功!  获得${commodities_price}灵石,还剩余${thing_name}*${x - thing_amount} `
     );
     return false;
-  }
-}
+}}
 function getDaysUntilNextGift(currentGiftType,daysRounded) {
   switch (currentGiftType) {
     case "7天":
