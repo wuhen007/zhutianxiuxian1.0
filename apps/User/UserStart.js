@@ -59,13 +59,16 @@ export class UserStart extends plugin {
           reg: '^#我的练气|#我$',
           fnc: 'Show_player',
         },
-        
+                {
+          reg: '^#强制再入仙途$',
+          fnc: 'force_reCreate_player',
+        },
 {
     reg: '^#(设置性别|修改性别|改性别|更替性别|变更性别|调整性别).*$',
     fnc: 'Set_sex',
 },
 {
-  reg: '^(#(改名|更名|设置姓名|改道号)\\s+|#(设置道宣)\\s+)',
+  reg: '^(#(改名|更名|设置姓名|改道号)\\s*|#(设置道宣)\\s*)',
   fnc: 'Change_player_name'
 },
         {
@@ -706,7 +709,195 @@ async daily_lottery(e) {
     await this.Show_player(e);
     return false;
   }
-
+// 强制重开指令 - 包含所有CD检查，但跳过确认直接重开
+async force_reCreate_player(e) {
+  if (!verc({ e })) return false;
+  
+  // 获取用户QQ
+  let usr_qq = e.user_id.toString().replace('qg_', '');
+  usr_qq = await channel(usr_qq);
+  
+  // 检查存档是否存在
+  let ifexistplay = await existplayer(usr_qq);
+  if (!ifexistplay) {
+    e.reply('没有存档，无法强制重开！');
+    return false;
+  } else {
+    // 确保初始化重生次数
+    await redis.set('xiuxian:player:' + usr_qq + ':reCreate_acount', 1);
+  }
+  
+  // 获取重生次数
+  let acount = await redis.get('xiuxian:player:' + usr_qq + ':reCreate_acount');
+  
+  // 正确处理NaN和无效值
+  if (acount == undefined || acount == null || isNaN(Number(acount)) || acount <= 0) {
+    await redis.set('xiuxian:player:' + usr_qq + ':reCreate_acount', 1);
+    acount = 1;
+  }
+  
+  // 获取玩家数据
+  let player = await data.getData('player', usr_qq);
+  if (!player) {
+    e.reply('无法读取玩家数据！');
+    return false;
+  }
+  
+  // ********** 所有CD检查开始 **********
+  
+  // 1. 检查灵石负债（必须保留）
+  if (player.灵石 <= 0) {
+    e.reply(`负债无法再入仙途`);
+    return false;
+  }
+  
+  // 2. 检查Go函数限制（必须保留）
+  let flag = await Go(e);
+  if (!flag) {
+    return false;
+  }
+  
+  // 3. 检查冷却时间CD（必须保留）
+  let now = new Date();
+  let nowTime = now.getTime();
+  let lastrestart_time = await redis.get('xiuxian:player:' + usr_qq + ':last_reCreate_time');
+  lastrestart_time = parseInt(lastrestart_time) || 0;
+  
+  const cf = config.getConfig('xiuxian', 'xiuxian');
+  const time = cf.CD.reborn || 30; // 假设默认30分钟
+  let rebornTime = parseInt(60000 * time);
+  
+  if (nowTime < lastrestart_time + rebornTime) {
+    let waittime_m = Math.trunc((lastrestart_time + rebornTime - nowTime) / 60 / 1000);
+    let waittime_s = Math.trunc(((lastrestart_time + rebornTime - nowTime) % 60000) / 1000);
+    
+    e.reply(
+      `每${rebornTime / 60 / 1000}分钟只能转世一次\n` +
+      `剩余CD: ${waittime_m}分 ${waittime_s}秒`
+    );
+    return false;
+  }
+  
+  // 4. 检查重生次数上限（15次限制）
+  acount = Number(acount);
+  if (acount >= 15) {
+    e.reply('灵魂虚弱，已不可转世！');
+    return false;
+  }
+  
+  // ********** 所有CD检查结束 **********
+  
+  // 开始强制重开流程
+  e.reply([segment.at(usr_qq), '正在执行强制重开（已通过所有CD检查）...']);
+  
+  // 增加重生次数
+  acount++;
+  
+  // 处理宗门关系（完全复用原有逻辑）
+  if (isNotNull(player.宗门)) {
+    if (player.宗门.职位 != '宗主') {
+      // 不是宗主
+      let ass = data.getAssociation(player.宗门.宗门名称);
+      if (ass) {
+        ass[player.宗门.职位] = ass[player.宗门.职位].filter(item => item != usr_qq);
+        ass['所有成员'] = ass['所有成员'].filter(item => item != usr_qq);
+        await data.setAssociation(ass.宗门名称, ass);
+      }
+      delete player.宗门;
+      await data.setData('player', usr_qq, player);
+    } else {
+      // 是宗主
+      let ass = data.getAssociation(player.宗门.宗门名称);
+      if (ass) {
+        if (ass.所有成员.length < 2) {
+          // 宗门只有自己一人，删除整个宗门
+          try {
+            fs.rmSync(`${data.filePathMap.association}/${player.宗门.宗门名称}.json`);
+          } catch (error) {
+            console.warn('删除宗门文件失败（可能已被删除）:', error);
+          }
+        } else {
+          // 随机选择新宗主
+          ass['所有成员'] = ass['所有成员'].filter(item => item != usr_qq);
+          
+          let randmember_qq;
+          if (ass.长老.length > 0) {
+            randmember_qq = await get_random_fromARR(ass.长老);
+          } else if (ass.内门弟子.length > 0) {
+            randmember_qq = await get_random_fromARR(ass.内门弟子);
+          } else {
+            randmember_qq = await get_random_fromARR(ass.所有成员);
+          }
+          
+          let randmember = await data.getData('player', randmember_qq);
+          if (randmember && randmember.宗门) {
+            ass[randmember.宗门.职位] = ass[randmember.宗门.职位].filter(
+              item => item != randmember_qq
+            );
+            ass['宗主'] = randmember_qq;
+            randmember.宗门.职位 = '宗主';
+            await data.setData('player', randmember_qq, randmember);
+            await data.setAssociation(ass.宗门名称, ass);
+          }
+        }
+      }
+    }
+  }
+  
+  // 删除所有存档文件（带安全检查）
+  try {
+    const playerFile = `${__PATH.player_path}/${usr_qq}.json`;
+    const equipFile = `${__PATH.equipment_path}/${usr_qq}.json`;
+    const najieFile = `${__PATH.najie_path}/${usr_qq}.json`;
+    
+    if (fs.existsSync(playerFile)) {
+      fs.rmSync(playerFile);
+      console.log(`已删除玩家存档: ${playerFile}`);
+    }
+    
+    if (fs.existsSync(equipFile)) {
+      fs.rmSync(equipFile);
+      console.log(`已删除装备存档: ${equipFile}`);
+    }
+    
+    if (fs.existsSync(najieFile)) {
+      fs.rmSync(najieFile);
+      console.log(`已删除纳戒存档: ${najieFile}`);
+    }
+    
+  } catch (error) {
+    console.error('删除存档文件时出错:', error);
+    e.reply('删除存档文件时出现错误，请检查文件权限！');
+    return false;
+  }
+  
+  // 发送重开提示
+  e.reply('斩断过往，涅槃重生！一切因果皆已了断...');
+  
+  // 调用创建新玩家的方法
+  try {
+    await this.Create_player(e);
+  } catch (error) {
+    console.error('创建新玩家时出错:', error);
+    e.reply('创建新玩家时出现错误，请联系管理员！');
+    return false;
+  }
+  
+  // 更新Redis记录
+  await redis.set('xiuxian:player:' + usr_qq + ':last_reCreate_time', nowTime);
+  await redis.set('xiuxian:player:' + usr_qq + ':reCreate_acount', acount);
+  
+  // 重开完成提示
+  e.reply([
+    segment.at(usr_qq),
+    '强制重开已完成！\n' +
+    '转世次数: ' + acount + '\n' +
+    '下次可转世时间: ' + new Date(nowTime + rebornTime).toLocaleString() + '\n' +
+    '注意：本次重开跳过了确认步骤，但已通过所有CD检查！'
+  ]);
+  
+  return true;
+}
   //重新修仙
   async reCreate_player(e) {
     if (!verc({ e })) return false;
@@ -934,18 +1125,20 @@ async Change_player_name(e) {
   const usr_qq = e.user_id.toString().replace('qg_', '');
   if (!await existplayer(usr_qq)) return false;
 
-  // 统一转成小写方便判断
   const raw = e.msg.trim().toLowerCase();
-
-  // 改名分支
-  if (/#(改名|更名|设置姓名|改道号)\s*/i.test(raw)) {
-    return await this.changeTrueName(e, usr_qq);
+  
+  // 提取指令和参数
+  const match = raw.match(/^#(改名|更名|设置姓名|改道号|设置道宣)\s*(.*)$/);
+  if (!match) return false;
+  
+  const cmd = match[1];  // 指令类型
+  const param = match[2].trim(); // 参数（可能为空）
+  
+  if (cmd === '设置道宣') {
+    return await this.changeXuanyan(e, usr_qq, param);
+  } else {
+    return await this.changeTrueName(e, usr_qq, param);
   }
-  // 道宣分支
-  if (/#设置道宣\s*/i.test(raw)) {
-    return await this.changeXuanyan(e, usr_qq);
-  }
-  return false;
 }
 
 // 3. 原名提取+校验（改名逻辑抽出来）
