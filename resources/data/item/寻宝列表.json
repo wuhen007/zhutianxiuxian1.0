@@ -1128,7 +1128,7 @@
             "items": [
               {
                 "name": "铁锭",
-                "class": "道具",
+                "class": "材料",
                 "amount": 9
               }
             ]
@@ -1138,7 +1138,7 @@
             "items": [
               {
                 "name": "金锭",
-                "class": "道具",
+                "class": "材料",
                 "amount": 6
               }
             ]
@@ -1148,7 +1148,7 @@
             "items": [
               {
                 "name": "铂金锭",
-                "class": "道具",
+                "class": "材料",
                 "amount": 3
               }
             ]
