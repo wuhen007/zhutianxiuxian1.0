@@ -5890,7 +5890,7 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
   
   // 特殊功法检查（妖帝古经）
   if ((thing_name == '妖帝古经' || thing_name == '万龙古经') && 
-      player.灵根.type != "妖体") {
+      (player.灵根.type != "妖体"&&player.灵根.type != "小成妖体"&&player.灵根.type != "大成妖体")) {
     e.reply([
       `【妖血沸腾】`,
       `你欲参悟《${thing_name}》，却引万妖虚影暴动！`,
@@ -5898,7 +5898,7 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
     ].join('\n'));
     return false;
   }
-  
+
   // 特殊功法检查 - 自然大道
   if (thing_name == '自然大道') {
     // 允许学习的资质类型

@@ -1686,23 +1686,23 @@ const playerAptitudeLevel = aptitudeLevels[aptitudeLevel] || 0; // 默认为天�
       failedGongfa.push(`${l.name}(需要神慧者灵根)`);
       continue;
     }
-    // 特殊功法检查（神慧者）
+    // 特殊功法检查（先天圣体道胎）
     if (l.name == '无始经' && (player.灵根.name != "先天圣体道胎"&& player.灵根.name != "混沌圣体道胎")) {
       failedGongfa.push(`${l.name}(需要先天圣体道胎灵根)`);
       continue;
     }
-    // 特殊功法检查（神慧者）
+    // 特殊功法检查（道胎）
     if (l.name == '西皇经' && (player.灵根.type != "道胎"&&player.灵根.type != "圣体道胎"&& player.灵根.name != "混沌圣体道胎")) {
       failedGongfa.push(`${l.name}(需要拥有先天道胎)`);
       continue;
     }
-     // 特殊功法检查（神慧者）
-    if (l.name == '妖帝古经' && player.灵根.type != "妖体") {
+     // 特殊功法检查（妖体）
+    if (l.name == '妖帝古经' && (player.灵根.type != "妖体"&& player.灵根.name != "小成妖体"&& player.灵根.name != "大成妖体")) {
       failedGongfa.push(`${l.name}(妖族古皇的帝经非妖体不可学)`);
       continue;
     }
-      // 特殊功法检查（神慧者）
-    if (l.name == '万龙古经' && player.灵根.type != "妖体") {
+      // 特殊功法检查（妖体）
+    if (l.name == '万龙古经' && (player.灵根.type != "妖体"&& player.灵根.name != "小成妖体"&& player.灵根.name != "大成妖体")) {
       failedGongfa.push(`${l.name}(妖族古皇的帝经非妖体不可学)`);
       continue;
     }
