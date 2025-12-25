@@ -86,4 +86,5 @@ pnpm i
 原插件：[绝云间修仙V1.3.0](https://gitee.com/hutao222/DDZS-XIUXIAN-V1.3.0)  
 原作者：[@DD斩首](https://gitee.com/hutao222)
 
-赞助：![赞助](resources/Image_1766636397579_136.jpg)
+赞助：
+![赞助](resources/Image_1766636397579_136.jpg)
