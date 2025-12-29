@@ -650,8 +650,8 @@ export class duanzao extends plugin {
   }
   async mytript(e) {
     if (!verc({ e })) return false;
-    let user_qq = e.user_id.toString().replace('qg_','');
-    user_qq=await channel(user_qq)
+    let user_qq = e.user_id.toString().replace('qg_', '');
+    user_qq = await channel(user_qq);
     if (!(await existplayer(user_qq))) return false;
     const A = await looktripod(user_qq);
     if (A != 1) {
@@ -661,14 +661,37 @@ export class duanzao extends plugin {
 
     let a = await Read_mytripod(user_qq);
 
-    if (a.材料 == []) {
+    if (a.材料.length === 0) {
       e.reply(`锻炉里空空如也,没什么好看的`);
       return false;
     }
+
+    // 计算总属性
+    let jiuwei = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+    for (let i in a.材料) {
+      const cailiao = await readthat(a.材料[i], '锻造材料');
+      jiuwei[0] += cailiao.攻 * a.数量[i];
+      jiuwei[1] += cailiao.防 * a.数量[i];
+      jiuwei[2] += cailiao.血 * a.数量[i];
+    }
+
+    const num = jiuwei[0] + jiuwei[1] + jiuwei[2];
+    const bestTimeMin = 80 * num + 10; // 理论最佳分钟数
+    const bestStartMin = bestTimeMin - 2;
+    const bestEndMin = bestTimeMin + 2;
+
+    const now = Date.now();
+    const bestStartTime = new Date(now + bestStartMin * 60 * 1000);
+    const bestEndTime = new Date(now + bestEndMin * 60 * 1000);
+
+    const bestStartStr = bestStartTime.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    const bestEndStr = bestEndTime.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+    // 汇总材料显示
     let shuju = [];
     let shuju2 = [];
     let xuanze = 0;
-    let b = '您的锻炉里,拥有\n';
+    let b = `您的锻炉里拥有：\n`;
     for (let item in a.材料) {
       for (let item1 in shuju) {
         if (shuju[item1] == a.材料[item]) {
@@ -682,11 +705,13 @@ export class duanzao extends plugin {
       } else {
         xuanze = 0;
       }
-      //不要问我为啥不在前面优化，问就是懒，虽然确实前面优化会加快机器人反应速度
     }
     for (let item2 in shuju) {
-      b += shuju[item2] + shuju2[item2] + '个\n';
+      b += `· ${shuju[item2]} ×${shuju2[item2]}\n`;
     }
+
+    b += `\n 最佳开炉时间：${bestStartStr} ~ ${bestEndStr}（${bestTimeMin}分钟±2分钟）`;
+
     e.reply(b);
     return false;
   }
