@@ -13,6 +13,7 @@ foundthing,
   Read_equipment,
   Add_HP,
    zd_battle,
+   Read_najie,
   exist_najie_thing,
   Add_修为,
   Add_player_学习功法,
@@ -120,9 +121,9 @@ fnc: 'tianyi_yidao'
     fnc: 'shengtizhongjimishu',
 },
  {
-                    reg: '^#祭道$',
-                    fnc: 'jidao'
-                },
+reg: '^#祭道$',
+fnc: 'jidao'
+},
 
                       {
                     reg: '^#修复位面$',
@@ -141,6 +142,11 @@ fnc: 'tianyi_yidao'
 {
   reg: '^#推演天机(.*)$',
   fnc: 'tuiyanTianji'
+},
+{
+  reg: '^#搜魂$',
+  fnc: 'soulSearch',
+  dsc: '搜魂大法-强行夺取他人功法记忆'
 }
       ],
     });
@@ -3603,6 +3609,252 @@ async ciyujingjie(e) {
         realmDescriptions[isLevelUp ?  'level' : 'Physique'][newLevel] || ''
     ].join('\n'));
 }
+/**
+ * 搜魂大法 - 强行搜索并学习他人功法
+ * 玄幻仙侠风格实现：霸道、凶险、有违天和
+ */
+async soulSearch(e) {
+  if (!e.isGroup) {
+    e.reply('搜魂大法需在群仙汇聚之所施展，方可借天地之势镇压反噬！');
+    return false;
+  }
+
+  // 检查是否艾特目标
+  const atTarget = e.message.find(item => item.type === "at");
+  if (!atTarget) {
+    e.reply('搜魂大法需指定目标！\n用法：#搜魂@目标玩家 或 #搜魂并艾特目标');
+    return false;
+  }
+
+  const executorQQ = e.user_id.toString().replace('qg_', '');
+  const targetQQ = atTarget.qq.toString().replace('qg_', '');
+  
+  // 检查执行者
+  const executor = await Read_player(executorQQ);
+  if (!executor) {
+    e.reply('你尚未踏入修仙之路，无法施展搜魂这等逆天秘术！');
+    return false;
+  }
+
+  // 检查目标
+  const target = await Read_player(targetQQ);
+  if (!target) {
+    e.reply('目标修士不存在，或已陨落在某个时空节点...');
+    return false;
+  }
+
+  // 境界检查：搜魂大法至少需要斩道王者境界（秘境体系ID>=10）
+  if (executor.mijinglevel_id < 10) {
+    e.reply([
+      `【境界不足·道则反噬】`,
+      ``,
+      `${executor.名号}欲施展搜魂大法，`,
+      `刚欲凝聚神识，便感仙台欲裂！`,
+      ``,
+      `「搜魂之术，逆天而行！」`,
+      `需斩道王者以上方可承受因果反噬`,
+      `你当前境界：${executor.mijinglevel_id}（需≥10）`,
+      ``,
+      `强行施展必遭大道反噬，神魂俱灭！`
+    ].join('\n'));
+    return false;
+  }
+
+  // 检查目标是否在黑暗牢笼中（无法被搜魂）
+  const targetAction = await redis.get(`xiuxian:player:${targetQQ}:action`);
+  if (targetAction) {
+    const actionObj = JSON.parse(targetAction);
+    if (actionObj.heianlaolong === '1') {
+      e.reply([
+        `【搜魂失败·目标迷失】`,
+        ``,
+        `${target.名号}的元神被囚禁在接引古殿的黑暗牢笼中，`,
+        `其神魂被永恒的黑暗物质侵蚀，`,
+        `搜魂之术无法穿透那万古不变的黑暗！`,
+        ``,
+        `需等待其从黑暗牢笼中归来，方可施展搜魂。`
+      ].join('\n'));
+      return false;
+    }
+  }
+
+  // 检查冷却时间（搜魂大法有伤天和，需间隔24小时）
+  const lastSoulSearch = await redis.get(`xiuxian:player:${executorQQ}:last_soul_search`);
+  const cooldown = 24 * 60 * 60 * 1000; // 24小时
+  const now = Date.now();
+  
+  if (lastSoulSearch && (now - parseInt(lastSoulSearch)) < cooldown) {
+    const remainingHours = Math.ceil((cooldown - (now - parseInt(lastSoulSearch))) / (1000 * 60 * 60));
+    e.reply([
+      `【搜魂冷却·天道限制】`,
+      ``,
+      `搜魂大法有伤天和，天地规则降下限制！`,
+      `你上次搜魂的因果业力尚未消散，`,
+      `需等待 ${remainingHours} 时辰后方可再次施展。`,
+      ``,
+      `「逆天之术，不可轻用」`
+    ].join('\n'));
+    return false;
+  }
+
+  // 检查目标是否有功法
+  if (!target.学习的功法 || target.学习的功法.length === 0) {
+    e.reply([
+      `【搜魂无果·神魂空洞】`,
+      ``,
+      `${executor.名号}施展搜魂大法，`,
+      `神识如刀，强行撕裂${target.名号}的元神防御！`,
+      ``,
+      `然而，在其神魂深处，`,
+      `你只看到一片虚无...`,
+      ``,
+      `此人竟未学习任何功法，`,
+      `神魂空洞如枯井，搜魂一无所获！`
+    ].join('\n'));
+    return false;
+  }
+
+  // 检查执行者是否已有目标的所有功法
+  const targetGongfa = [...target.学习的功法];
+  const executorGongfa = executor.学习的功法 || [];
+  const missingGongfa = targetGongfa.filter(gongfa => !executorGongfa.includes(gongfa));
+  
+  if (missingGongfa.length === 0) {
+    e.reply([
+      `【搜魂重复·已得真传】`,
+      ``,
+      `${target.名号}元神中的所有功法，`,
+      `你早已融会贯通！`,
+      ``,
+      `再施展搜魂，只是徒增因果业力罢了。`
+    ].join('\n'));
+    return false;
+  }
+
+  // 施展搜魂大法
+  e.reply([
+    `【搜魂大法·元神撕裂】`,
+    ``,
+    `${executor.名号}眸光一冷，杀机毕露！`,
+    `虚空震荡，一股阴冷至极的神识波动席卷而出！`,
+    ``,
+    `"搜魂——！！"`,
+    ``,
+    `阴风呼啸，鬼哭神嚎！`,
+    `这是被天地所不容的禁术！`,
+    `神识化作万千利刃，强行撕开${target.名号}的元神防御！`,
+    ``,
+    `${target.名号}发出凄厉惨叫，七窍流血！`,
+    `元神被撕裂的痛苦，比万箭穿心更甚百倍！`,
+    ``,
+    `天道规则震怒，降下业力反噬...`
+  ].join('\n'));
+
+  // 等待3秒增加氛围
+  await new Promise(resolve => setTimeout(resolve, 3000));
+
+  // 搜魂成功率判定（基础80%，境界差距修正）
+  const baseSuccessRate = 0.8;
+  const levelDiff = Math.max(0, executor.mijinglevel_id - target.mijinglevel_id) * 0.05;
+  const finalSuccessRate = Math.min(0.95, baseSuccessRate + levelDiff);
+  
+  const searchSuccess = Math.random() < finalSuccessRate;
+  
+  if (!searchSuccess) {
+    // 搜魂失败，遭受反噬
+    const backlashDamage = executor.当前血量 * 0.3;
+    executor.当前血量 -= backlashDamage;
+    
+    // 业力缠绕
+    executor.业力值 = (executor.业力值 || 0) + 100;
+    
+    await Write_player(executorQQ, executor);
+    
+    e.reply([
+      `【搜魂失败·业力反噬】`,
+      ``,
+      `${target.名号}元神中竟有禁制守护！`,
+      `或是高人设下，或是天地自动生成...`,
+      ``,
+      `搜魂之术被强行弹开！`,
+      `业力反噬，你损失了${Math.floor(backlashDamage)}点气血！`,
+      ``,
+      `业力值+100，日后渡劫时将承受更恐怖的天罚！`
+    ].join('\n'));
+    
+    // 记录搜魂时间（即使失败也算使用）
+    await redis.set(`xiuxian:player:${executorQQ}:last_soul_search`, now.toString());
+    
+    return false;
+  }
+
+  // 搜魂成功
+  const learnedGongfa = [];
+  const failedGongfa = [];
+  
+  // 逐个尝试学习功法
+  for (const gongfa of missingGongfa) {
+    // 每个功法有独立的领悟成功率
+    const gongfaSuccessRate = 0.85; // 单个功法学习成功率
+    
+    if (Math.random() < gongfaSuccessRate) {
+      // 成功学习
+      executor.学习的功法.push(gongfa);
+      learnedGongfa.push(gongfa);
+    } else {
+      // 领悟失败
+      failedGongfa.push(gongfa);
+    }
+  }
+
+  // 业力惩罚（搜魂有伤天和）
+  executor.业力值 = (executor.业力值 || 0) + 50;
+  
+  // 目标遭受元神创伤
+  target.元神 = Math.max(100000, (target.元神 || 500000) * 0.7);
+  target.道心值 = Math.max(1, (target.道心值 || 100) - 20);
+  
+  await Write_player(executorQQ, executor);
+  await Write_player(targetQQ, target);
+  
+  // 记录搜魂时间
+  await redis.set(`xiuxian:player:${executorQQ}:last_soul_search`, now.toString());
+
+  // 构建结果消息
+  const resultLines = [
+    `【搜魂成功·记忆掠夺】`,
+    ``,
+    `${executor.名号}成功撕裂${target.名号}的元神！`,
+    `在其破碎的记忆长河中，你看到了无数功法烙印...`,
+    ``
+  ];
+
+  if (learnedGongfa.length > 0) {
+    resultLines.push(`✅ 成功领悟 ${learnedGongfa.length} 门功法：`);
+    learnedGongfa.forEach(gongfa => {
+      resultLines.push(`  · ${gongfa} - 功法烙印已刻入你的元神`);
+    });
+    resultLines.push(``);
+  }
+
+  if (failedGongfa.length > 0) {
+    resultLines.push(`❌ 领悟失败 ${failedGongfa.length} 门功法：`);
+    failedGongfa.forEach(gongfa => {
+      resultLines.push(`  · ${gongfa} - 记忆碎片过于残缺，无法参悟`);
+    });
+    resultLines.push(``);
+  }
+
+  resultLines.push(`💀 业力惩罚：业力值+50`);
+  resultLines.push(`💀 目标创伤：${target.名号}元神受损，道心蒙尘`);
+  resultLines.push(``);
+  resultLines.push(`「搜魂之术，虽能速成，却有伤天和」`);
+  resultLines.push(`「业力缠身，他日渡劫，必遭天谴！」`);
+
+  e.reply(resultLines.join('\n'));
+
+  return true;
+}
 async guanding(e) {
     // ==== 基础校验 ====
     if (!e.isGroup) return e.reply('需在群聊中使用');
@@ -4076,6 +4328,8 @@ function getAptitudeNameByLevel(level) {
     };
     return aptitudeLevels[level] || "未知天资";
 }
+
+
 /**
  * 推送消息，群消息推送群，或者推送私人
  * @param id
