@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>修仙位面图鉴</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
+            background: linear-gradient(135deg, #0a0a1a 0%, #1a1a2e 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(10, 10, 30, 0.9);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 0 50px rgba(77, 150, 255, 0.2);
+            border: 2px solid rgba(100, 100, 255, 0.3);
+        }
+        
+        /* 头部样式 */
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(90deg, 
+                rgba(42, 67, 101, 0.9) 0%, 
+                rgba(28, 40, 51, 0.9) 50%,
+                rgba(15, 23, 42, 0.9) 100%);
+            border-radius: 15px;
+            border: 2px solid rgba(100, 149, 237, 0.3);
+        }
+        
+        .title {
+            font-size: 40px;
+            font-weight: bold;
+            background: linear-gradient(90deg, #ff6b6b, #ffd93d, #6bcf7f, #4d96ff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            text-shadow: 0 0 30px rgba(77, 150, 255, 0.4);
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+        }
+        
+        .subtitle {
+            font-size: 18px;
+            color: #8a8aff;
+            opacity: 0.9;
+        }
+        
+        /* 玩家信息栏 */
+        .player-info {
+            display: flex;
+            justify-content: space-around;
+            background: rgba(20, 20, 40, 0.7);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 25px;
+            border: 1px solid rgba(100, 100, 255, 0.2);
+        }
+        
+        .info-item {
+            text-align: center;
+        }
+        
+        .info-label {
+            font-size: 12px;
+            color: #8a8aff;
+            margin-bottom: 5px;
+        }
+        
+        .info-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #ffd93d;
+        }
+        
+        /* 位面网格 */
+        .realms-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+        
+        /* 位面卡片 */
+        .realm-card {
+            background: linear-gradient(145deg, rgba(20, 20, 40, 0.9), rgba(10, 10, 30, 0.9));
+            border-radius: 15px;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            border: 2px solid rgba(100, 100, 255, 0.2);
+            min-height: 400px;
+        }
+        
+        /* 位面徽章 */
+        .realm-badge {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 50%;
+            z-index: 1;
+        }
+        
+        /* 位面名称区域 */
+        .card-header {
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .realm-name {
+            font-size: 22px;
+            font-weight: bold;
+            color: #ffd93d;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        /* 位面图标 */
+        .realm-icon {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.3);
+        }
+        
+        .realm-status {
+            position: absolute;
+            top: 20px;
+            right: 90px;
+            font-size: 12px;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: bold;
+        }
+        
+        .status-current {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+            box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+        }
+        
+        .status-unlocked {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+        }
+        
+        .status-locked {
+            background: linear-gradient(135deg, #6b7280, #4b5563);
+            color: #e5e7eb;
+        }
+        
+        /* 位面描述 */
+        .realm-desc {
+            font-size: 13px;
+            line-height: 1.5;
+            color: #cbd5e0;
+            margin-bottom: 15px;
+            min-height: 60px;
+        }
+        
+        /* 位面信息 */
+        .realm-info {
+            margin-bottom: 15px;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .info-label-small {
+            color: #8a8aff;
+            font-size: 12px;
+        }
+        
+        .info-value-small {
+            font-size: 13px;
+            font-weight: bold;
+        }
+        
+        /* 条件要求 */
+        .requirements {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+        }
+        
+        .req-title {
+            color: #ff6b6b;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+        
+        .req-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        
+        .req-label {
+            color: #8a8aff;
+            font-size: 12px;
+        }
+        
+        .req-value {
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .req-met {
+            color: #6bcf7f;
+        }
+        
+        .req-not-met {
+            color: #ff6b6b;
+        }
+        
+        /* 消耗信息 */
+        .cost-section {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+            padding: 12px;
+        }
+        
+        .cost-title {
+            color: #ffd93d;
+            font-size: 12px;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+        
+        .cost-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        
+        .cost-item {
+            text-align: center;
+        }
+        
+        .cost-label {
+            color: #8a8aff;
+            font-size: 10px;
+            margin-bottom: 2px;
+        }
+        
+        .cost-value {
+            font-size: 12px;
+            font-weight: bold;
+            color: #ffd93d;
+        }
+        
+        /* 特殊位面标记 */
+        .special-mark {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+            color: white;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        
+        /* 危险等级颜色 */
+        .danger-low { color: #6bcf7f; }
+        .danger-medium { color: #fbbf24; }
+        .danger-high { color: #f97316; }
+        .danger-extreme { color: #ef4444; }
+        .danger-god { color: #dc2626; }
+        
+        /* 底部 */
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            color: #8a8aff;
+            font-size: 12px;
+        }
+        
+        /* 位面特定样式 */
+        /* 凡间 */
+        .realm-0 {
+            border: 2px solid rgba(59, 130, 246, 0.5);
+        }
+        
+        .realm-0 .realm-badge {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            color: white;
+        }
+        
+        .realm-0 .realm-icon {
+            background: rgba(59, 130, 246, 0.3);
+        }
+        
+        /* 仙界 */
+        .realm-1 {
+            border: 2px solid rgba(139, 92, 246, 0.5);
+        }
+        
+        .realm-1 .realm-badge {
+            background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+            color: white;
+        }
+        
+        .realm-1 .realm-icon {
+            background: rgba(139, 92, 246, 0.3);
+        }
+        
+        /* 下界八域 */
+        .realm-1_5 {
+            border: 2px solid rgba(16, 185, 129, 0.5);
+        }
+        
+        .realm-1_5 .realm-badge {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+        }
+        
+        .realm-1_5 .realm-icon {
+            background: rgba(16, 185, 129, 0.3);
+        }
+        
+        /* 遮天位面 */
+        .realm-2 {
+            border: 2px solid rgba(245, 158, 11, 0.5);
+        }
+        
+        .realm-2 .realm-badge {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+        }
+        
+        .realm-2 .realm-icon {
+            background: rgba(245, 158, 11, 0.3);
+        }
+        
+        /* 九天十地 */
+        .realm-2_5 {
+            border: 2px solid rgba(236, 72, 153, 0.5);
+        }
+        
+        .realm-2_5 .realm-badge {
+            background: linear-gradient(135deg, #ec4899, #be185d);
+            color: white;
+        }
+        
+        .realm-2_5 .realm-icon {
+            background: rgba(236, 72, 153, 0.3);
+        }
+        
+        /* 界海 */
+        .realm-3 {
+            border: 2px solid rgba(239, 68, 68, 0.5);
+        }
+        
+        .realm-3 .realm-badge {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+        }
+        
+        .realm-3 .realm-icon {
+            background: rgba(239, 68, 68, 0.3);
+        }
+        
+        /* 时间长河 */
+        .realm-4 {
+            border: 2px solid rgba(6, 182, 212, 0.5);
+        }
+        
+        .realm-4 .realm-badge {
+            background: linear-gradient(135deg, #06b6d4, #0891b2);
+            color: white;
+        }
+        
+        .realm-4 .realm-icon {
+            background: rgba(6, 182, 212, 0.3);
+        }
+        
+        /* 永恒未知之地 */
+        .realm-5 {
+            border: 2px solid rgba(168, 85, 247, 0.5);
+        }
+        
+        .realm-5 .realm-badge {
+            background: linear-gradient(135deg, #a855f7, #9333ea);
+            color: white;
+        }
+        
+        .realm-5 .realm-icon {
+            background: rgba(168, 85, 247, 0.3);
+        }
+        
+        /* 仙域 */
+        .realm-6 {
+            border: 2px solid rgba(251, 191, 36, 0.5);
+        }
+        
+        .realm-6 .realm-badge {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            color: white;
+        }
+        
+        .realm-6 .realm-icon {
+            background: rgba(251, 191, 36, 0.3);
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 1000px) {
+            .realms-container {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        @media (max-width: 700px) {
+            .realms-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .title {
+                font-size: 32px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 头部信息 -->
+        <div class="header">
+            <div class="title">✦ 修仙位面图鉴 ✦</div>
+            <div class="subtitle">诸天万界，位面穿梭，成就无上大道</div>
+        </div>
+
+        <!-- 玩家信息栏 -->
+        <div class="player-info">
+            <div class="info-item">
+                <div class="info-label">当前位面</div>
+                <div class="info-value">凡间</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">已解锁位面</div>
+                <div class="info-value" id="unlocked-count">4/9</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">秘境等级</div>
+                <div class="info-value" id="mijing-level">15</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">仙古等级</div>
+                <div class="info-value" id="xiangu-level">14</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">肉身境界</div>
+                <div class="info-value" id="physique-level">地仙</div>
+            </div>
+        </div>
+
+        <!-- 位面容器 -->
+        <div class="realms-container" id="realms-container">
+            <!-- 位面卡片将通过JavaScript生成 -->
+        </div>
+
+        <div class="footer">
+            生成时间：<span id="gen-time"></span> | 位面穿梭系统 v2.0
+        </div>
+    </div>
+
+    <script>
+        // 位面数据 - 基于你提供的代码
+        const realmsData = [
+            {
+                id: 0,
+                name: "凡间",
+                icon: "🌍",
+                level: 0,
+                description: "凡尘俗世，修仙之路的起点。天地灵气稀薄但安全稳定，是初入仙途修士的打基础之地。",
+                status: "current",
+                location: 0,
+                danger: "极低",
+                powerLevel: 0,
+                features: "凡人世界，江湖恩怨，王朝更替",
+                
+                // 传送条件
+                requirements: {
+                    mijin: 0,
+                    xiangu: 0,
+                    physique: 0,
+                    level_id: 0,
+                    special: ""
+                },
+                
+                // 传送消耗
+                costs: {
+                    修为: 0,
+                    血气: 0,
+                    寿元: 0,
+                    time: 0
+                },
+                
+                // 特殊条件
+                specialCondition: null,
+                isSpecial: false
+            },
+            {
+                id: 1,
+                name: "仙界",
+                icon: "🌌",
+                level: 1,
+                description: "仙灵之气充盈之地，仙人聚集之所。这里有大教圣地、仙宫神殿，是成仙后的主要舞台。",
+                status: "unlocked",
+                location: 1,
+                danger: "中等",
+                powerLevel: 1,
+                features: "仙气浓郁，大教林立，仙人聚集",
+                
+                requirements: {
+                    mijin: 12,
+                    xiangu: 10,
+                    physique: 42,
+                    level_id: 42,
+                    special: "需轮回或地仙境"
+                },
+                
+                costs: {
+                    修为: 10000000,
+                    血气: 15000000,
+                    寿元: 10000,
+                    time: 5
+                },
+                
+                specialCondition: null,
+                isSpecial: false
+            },
+            {
+                id: 1.5,
+                name: "下界八域",
+                icon: "🏔️",
+                level: 1.5,
+                description: "囚禁之地，法则残缺，但蕴含大机缘。这里有诸多古教传承，是成就天神的重要跳板。",
+                status: "unlocked",
+                location: 1.5,
+                danger: "高",
+                powerLevel: 1.5,
+                features: "法则残缺，古教传承，天骄战场",
+                
+                requirements: {
+                    mijin: 6,
+                    xiangu: 8,
+                    physique: 30,
+                    level_id: 30,
+                    special: ""
+                },
+                
+                costs: {
+                    修为: 15000000,
+                    血气: 20000000,
+                    寿元: 15000,
+                    time: 8
+                },
+                
+                specialCondition: null,
+                isSpecial: false
+            },
+            {
+                id: 2,
+                name: "遮天位面",
+                icon: "🌟",
+                level: 2,
+                description: "北斗星域，荒古禁地。这里有七大生命禁区，是成就大帝、红尘仙的试炼场，非圣人/天神不可踏足。",
+                status: "unlocked",
+                location: 2,
+                danger: "极高",
+                powerLevel: 2,
+                features: "生命禁区，帝路争锋，黑暗动乱",
+                
+                requirements: {
+                    mijin: 12,
+                    xiangu: 10,
+                    physique: 40,
+                    level_id: 40,
+                    special: "需激活五色祭坛"
+                },
+                
+                costs: {
+                    修为: 20000000,
+                    血气: 25000000,
+                    寿元: 20000,
+                    time: 10
+                },
+                
+                specialCondition: "需五色祭坛激活",
+                isSpecial: false
+            },
+            {
+                id: 2.5,
+                name: "九天十地",
+                icon: "🏛️",
+                level: 2.5,
+                description: "乱古时代的战场，仙古纪元遗迹。这里有仙王传承，是通向界海的必经之路，也是异域入侵的前线。",
+                status: "locked",
+                location: 2.5,
+                danger: "极高",
+                powerLevel: 2.5,
+                features: "仙王传承，乱古战场，异域前线",
+                
+                requirements: {
+                    mijin: 14,
+                    xiangu: 12,
+                    physique: 45,
+                    level_id: 45,
+                    special: ""
+                },
+                
+                costs: {
+                    修为: 30000000,
+                    血气: 40000000,
+                    寿元: 30000,
+                    time: 15
+                },
+                
+                specialCondition: null,
+                isSpecial: false
+            },
+            {
+                id: 3,
+                name: "界海",
+                icon: "🌊",
+                level: 3,
+                description: "诸天万界汇聚之地，浪花中沉浮无数残破古界。这里是准仙帝的战场，黑暗动乱的源头，非大能者不可踏足。",
+                status: "locked",
+                location: 3,
+                danger: "致命",
+                powerLevel: 3,
+                features: "万界沉浮，准仙帝战场，黑暗源头",
+                
+                requirements: {
+                    mijin: 18,
+                    xiangu: 16,
+                    physique: 50,
+                    level_id: 50,
+                    special: ""
+                },
+                
+                costs: {
+                    修为: 50000000,
+                    血气: 75000000,
+                    寿元: 50000,
+                    time: 20
+                },
+                
+                specialCondition: null,
+                isSpecial: false
+            },
+            {
+                id: 4,
+                name: "时间长河",
+                icon: "⏳",
+                level: 4,
+                description: "贯穿古今未来的时间长河，见证万古兴衰。这里是超脱者的领域，可逆流而上改变历史，也可顺流而下窥探未来。",
+                status: "locked",
+                location: 4,
+                danger: "未知",
+                powerLevel: 4,
+                features: "时间领域，历史长河，未来窥探",
+                
+                requirements: {
+                    mijin: 20,
+                    xiangu: 20,
+                    physique: 60,
+                    level_id: 60,
+                    special: "需准仙帝实力"
+                },
+                
+                costs: {
+                    修为: 100000000,
+                    血气: 150000000,
+                    寿元: 100000,
+                    time: 30
+                },
+                
+                specialCondition: "需准仙帝实力",
+                isSpecial: true
+            },
+            {
+                id: 5,
+                name: "永恒未知之地",
+                icon: "♾️",
+                level: 5,
+                description: "超脱诸天之外，万法不存，万道不显。这里是仙帝也无法完全掌握的领域，蕴含着宇宙最深的秘密。",
+                status: "locked",
+                location: 5,
+                danger: "不可知",
+                powerLevel: 5,
+                features: "万法不存，诸天之外，终极秘密",
+                
+                requirements: {
+                    mijin: 21,
+                    xiangu: 21,
+                    physique: 70,
+                    level_id: 70,
+                    special: "需仙帝实力"
+                },
+                
+                costs: {
+                    修为: 200000000,
+                    血气: 300000000,
+                    寿元: 200000,
+                    time: 60
+                },
+                
+                specialCondition: "需仙帝实力",
+                isSpecial: true
+            },
+            {
+                id: 6,
+                name: "仙域",
+                icon: "✨",
+                level: 6,
+                description: "完美世界的至高净土，真正的仙之故乡。这里有仙王巨头坐镇，是诸天万界的核心，也是无数修士追求的终极目标。",
+                status: "locked",
+                location: 6,
+                danger: "仙王级",
+                powerLevel: 6,
+                features: "仙王坐镇，至高净土，万界核心",
+                
+                requirements: {
+                    mijin: 18,
+                    xiangu: 16,
+                    physique: 55,
+                    level_id: 55,
+                    special: "需仙王实力"
+                },
+                
+                costs: {
+                    修为: 150000000,
+                    血气: 225000000,
+                    寿元: 150000,
+                    time: 25
+                },
+                
+                specialCondition: "需仙王实力",
+                isSpecial: true
+            }
+        ];
+
+        // 玩家数据
+        const playerData = {
+            mijinLevel: 15,
+            xianguLevel: 14,
+            physiqueLevel: 45,
+            levelId: 15,
+            learnedSkills: ['鲲鹏宝术', '真龙宝术']
+        };
+
+        // 格式化数字
+        function formatNumber(num) {
+            if (num >= 100000000) {
+                return (num / 100000000).toFixed(1) + '亿';
+            } else if (num >= 10000) {
+                return (num / 10000).toFixed(1) + '万';
+            }
+            return num.toString();
+        }
+
+        // 计算实际旅行时间
+        function calculateTravelTime(baseTime) {
+            let time = baseTime;
+            if (playerData.learnedSkills.includes('鲲鹏宝术')) {
+                time = Math.max(1, time - 3);
+                if (playerData.mijinLevel >= 15 || playerData.xianguLevel >= 13) {
+                    time = Math.max(1, time - 1);
+                }
+                if (playerData.mijinLevel >= 18 || playerData.xianguLevel >= 16) {
+                    time = Math.max(1, time - 1);
+                }
+            }
+            return time;
+        }
+
+        // 检查条件是否满足
+        function checkRequirements(req) {
+            return (
+                playerData.mijinLevel >= req.mijin &&
+                playerData.xianguLevel >= req.xiangu &&
+                playerData.physiqueLevel >= req.physique &&
+                playerData.levelId >= req.level_id
+            );
+        }
+
+        // 获取危险等级类
+        function getDangerClass(danger) {
+            const map = {
+                '极低': 'danger-low',
+                '中等': 'danger-medium',
+                '高': 'danger-high',
+                '极高': 'danger-extreme',
+                '致命': 'danger-extreme',
+                '未知': 'danger-extreme',
+                '不可知': 'danger-god',
+                '仙王级': 'danger-god'
+            };
+            return map[danger] || 'danger-medium';
+        }
+
+        // 获取位面徽章文字
+        function getBadgeText(level) {
+            const map = {
+                0: '凡',
+                1: '仙',
+                1.5: '下',
+                2: '遮',
+                2.5: '九',
+                3: '界',
+                4: '时',
+                5: '永',
+                6: '域'
+            };
+            return map[level] || '?';
+        }
+
+        // 创建位面卡片
+        function createRealmCard(realm) {
+            const meetsReq = checkRequirements(realm.requirements);
+            const travelTime = calculateTravelTime(realm.costs.time);
+            const realmClass = `realm-${realm.id.toString().replace('.', '_')}`;
+            const badgeText = getBadgeText(realm.level);
+            
+            return `
+                <div class="realm-card ${realmClass}">
+                    ${realm.isSpecial ? `<div class="special-mark">特殊位面</div>` : ''}
+                    
+                    <div class="realm-badge">${badgeText}</div>
+                    
+                    <div class="card-header">
+                        <div class="realm-name">
+                            <div class="realm-icon">${realm.icon}</div>
+                            ${realm.name}
+                        </div>
+                        <div class="realm-status ${realm.status}">
+                            ${realm.status === 'current' ? '当前位置' : 
+                              realm.status === 'unlocked' ? '可穿梭' : '未解锁'}
+                        </div>
+                    </div>
+                    
+                    <div class="realm-desc">${realm.description}</div>
+                    
+                    <div class="realm-info">
+                        <div class="info-row">
+                            <span class="info-label-small">位面层级</span>
+                            <span class="info-value-small">${realm.level}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label-small">危险等级</span>
+                            <span class="info-value-small ${getDangerClass(realm.danger)}">${realm.danger}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label-small">坐标值</span>
+                            <span class="info-value-small">${realm.location}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label-small">位面特征</span>
+                            <span class="info-value-small">${realm.features}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="requirements">
+                        <div class="req-title">传送条件</div>
+                        <div class="req-item">
+                            <span class="req-label">秘境等级</span>
+                            <span class="req-value ${playerData.mijinLevel >= realm.requirements.mijin ? 'req-met' : 'req-not-met'}">
+                                ${playerData.mijinLevel}/${realm.requirements.mijin}
+                            </span>
+                        </div>
+                        <div class="req-item">
+                            <span class="req-label">仙古等级</span>
+                            <span class="req-value ${playerData.xianguLevel >= realm.requirements.xiangu ? 'req-met' : 'req-not-met'}">
+                                ${playerData.xianguLevel}/${realm.requirements.xiangu}
+                            </span>
+                        </div>
+                        <div class="req-item">
+                            <span class="req-label">肉身境界</span>
+                            <span class="req-value ${playerData.physiqueLevel >= realm.requirements.physique ? 'req-met' : 'req-not-met'}">
+                                ${playerData.physiqueLevel >= 42 ? '地仙' : '凡体'}/${realm.requirements.physique}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="cost-section">
+                        <div class="cost-title">穿梭消耗</div>
+                        <div class="cost-grid">
+                            <div class="cost-item">
+                                <div class="cost-label">修为</div>
+                                <div class="cost-value">${formatNumber(realm.costs.修为)}</div>
+                            </div>
+                            <div class="cost-item">
+                                <div class="cost-label">血气</div>
+                                <div class="cost-value">${formatNumber(realm.costs.血气)}</div>
+                            </div>
+                            <div class="cost-item">
+                                <div class="cost-label">寿元</div>
+                                <div class="cost-value">${formatNumber(realm.costs.寿元)}</div>
+                            </div>
+                        </div>
+                        <div style="text-align: center; margin-top: 8px; color: #8a8aff; font-size: 11px;">
+                            时间: ${travelTime}分钟 ${playerData.learnedSkills.includes('鲲鹏宝术') ? '(鲲鹏加速)' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 渲染位面
+        function renderRealms() {
+            const container = document.getElementById('realms-container');
+            container.innerHTML = realmsData.map(createRealmCard).join('');
+            
+            // 更新统计数据
+            const unlockedCount = realmsData.filter(r => r.status === 'unlocked' || r.status === 'current').length;
+            document.getElementById('unlocked-count').textContent = `${unlockedCount}/${realmsData.length}`;
+            document.getElementById('mijing-level').textContent = playerData.mijinLevel;
+            document.getElementById('xiangu-level').textContent = playerData.xianguLevel;
+            document.getElementById('physique-level').textContent = playerData.physiqueLevel >= 42 ? '地仙' : '凡体';
+        }
+
+        // 设置生成时间
+        function setGenerateTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            }).replace(/\//g, '年').replace(/\//g, '月').replace(' ', '日 ');
+            
+            document.getElementById('gen-time').textContent = timeStr;
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            setGenerateTime();
+            renderRealms();
+        });
+    </script>
+</body>
+</html>

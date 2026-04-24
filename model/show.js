@@ -125,6 +125,14 @@ async get_shangjie_placeData(myData) {
     ...myData,
   };
 }
+async get_weimianData(myData) {
+  this.model = 'weimian';
+  return {
+    ...this.screenData,
+    saveId: 'get_weimian',
+    ...myData,
+  };
+}
 async get_lqpfData(myData) {
   this.model = 'lqpf';
   return {

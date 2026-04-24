@@ -1110,6 +1110,17 @@ export async function get_log2_img(e){
     ...data1,
   });
 }
+export async function get_weimian_img(e){
+  let log2=e
+  let log={
+    log:log2
+  }
+
+  const data1 = await new Show(e).get_weimianData(log);
+  return await puppeteer.screenshot('weimian', {
+    ...data1,
+  });
+}
 /**
  * 返回该图片
  * @return image

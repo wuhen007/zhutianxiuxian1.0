@@ -96,10 +96,10 @@ export class UserStart extends plugin {
   fnc: 'proxyCommand',
   permission: 'master' // 只有管理员才能使用
 },
-        {
-          reg: '^#每日抽奖$',
-          fnc: 'daily_lottery',
-        }
+       {
+  reg: '^#每日抽奖(\\*(\\d+))?$',
+  fnc: 'daily_lottery',
+}
       ],
     });
   }
@@ -347,34 +347,53 @@ async proxyDailyGift(e, targetPlayerId) {
     return;
 }
 async daily_lottery(e) {
-    // 不开放私聊功能
+    // 不开放私聊
     if (!e.isGroup) {
         e.reply('修仙游戏请在群聊中游玩');
         return;
     }
+
     let usr_qq = e.user_id.toString().replace('qg_', '');
-    // 有无账号
+
+    // 是否存在玩家
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) {
         return;
     }
 
-    // 获取玩家数据
     let player = await data.getData("player", usr_qq);
-     // 新增：如果玩家没有定义抽奖次数，初始化为0
+
+    // 初始化抽奖次数
     if (player.抽奖次数 === undefined) {
         player.抽奖次数 = 0;
-        // 立即保存初始化后的玩家数据
         await Write_player(usr_qq, player);
     }
-    
-    // 检查抽奖次数
-    if (player.抽奖次数 < 1) {
-        e.reply(`你已经没有抽奖次数了`);
+
+    // ===== 解析 #每日抽奖 或 #每日抽奖*10 =====
+    let match = e.msg.match(/^#每日抽奖(\*(\d+))?$/);
+    if (!match) {
         return;
     }
-    
-    // 完整奖励池 (使用你提供的数组)
+    let requestCount = match[2] ? parseInt(match[2]) : 1;
+
+    // 防刷上限
+    const MAX_LOTTERY = 50;
+    if (requestCount > MAX_LOTTERY) {
+        e.reply(`单次最多只能抽奖 ${MAX_LOTTERY} 次`);
+        return;
+    }
+
+    // 次数不足
+    if (player.抽奖次数 < requestCount) {
+        e.reply(`抽奖次数不足，你当前只有 ${player.抽奖次数} 次`);
+        return;
+    }
+
+    // 扣次数
+    player.抽奖次数 -= requestCount;
+    await Write_player(usr_qq, player);
+
+       // 完整奖励池 (使用你提供的数组)
     const rewardPool = [
         // 你提供的完整奖励数组（已压缩长度）
         { id: 20000053, name: "秘境之匙", class: "道具", 数量: 3 },
@@ -417,43 +436,45 @@ async daily_lottery(e) {
         { id: 20014, name: "琴笙的加持", class: "丹药", 数量: 1 },
         { id: 20014, name: "天命轮回丹", class: "丹药", 数量: 1 },
     ];
-    
-    // 减少抽奖次数
-    player.抽奖次数 -= 1;
-    await Write_player(usr_qq, player);
-    
-    let lotteryCount = player.daofaxianshu == 2 ? 2 : 1;
-    let lotteryResults = [];
 
-    // 开始抽奖
-    for (let i = 0; i < lotteryCount; i++) {
-        let wuping_index = Math.trunc(Math.random() * rewardPool.length);
-        let reward = rewardPool[wuping_index];
-        
-        // 添加物品到纳戒
+    // 抽奖结果统计
+    let resultMap = new Map();
+
+    // 道法仙术玩家一次抽 2 个
+    let perLotteryCount = player.daofaxianshu == 2 ? 2 : 1;
+    let totalDraws = requestCount * perLotteryCount;
+
+    for (let i = 0; i < totalDraws; i++) {
+        let reward = rewardPool[Math.trunc(Math.random() * rewardPool.length)];
+
         await Add_najie_thing(
-            usr_qq, 
-            reward.name, 
-            reward.class, 
+            usr_qq,
+            reward.name,
+            reward.class,
             reward.数量
         );
-        
-        // 记录结果
-        lotteryResults.push({
-            name: reward.name,
-            amount: reward.数量,
-            class: reward.class
-        });
+
+        let key = reward.name;
+        if (!resultMap.has(key)) {
+            resultMap.set(key, {
+                name: reward.name,
+                class: reward.class,
+                amount: 0
+            });
+        }
+        resultMap.get(key).amount += reward.数量;
     }
 
-    // 构造回复消息
+    // 构造回复
     let playerType = player.daofaxianshu == 2 ? '尊贵的道法仙术玩家' : '普通玩家';
-    let msg = `消耗1次抽奖次数，剩余次数：${player.抽奖次数}\n`;
-    msg += `${playerType}今日获得：\n`;
-    
-    lotteryResults.forEach((res, idx) => {
-        msg += `${idx + 1}. ${res.name} * ${res.amount}\n`;
-    });
+    let msg = `消耗 ${requestCount} 次抽奖次数，剩余次数：${player.抽奖次数}\n`;
+    msg += `${playerType} 抽奖结果：\n`;
+
+    let index = 1;
+    for (let item of resultMap.values()) {
+        msg += `${index}. ${item.name} × ${item.amount}\n`;
+        index++;
+    }
 
     await ForwardMsg(e, msg);
 }

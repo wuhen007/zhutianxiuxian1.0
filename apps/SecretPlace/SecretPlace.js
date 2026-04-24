@@ -173,15 +173,35 @@ async goToLocation(e) {
     }
     
     const targetLocation = LOCATION_MAP[location];
+    
+    // // ========== 【新增】坐标记忆检查 ==========
+    // // 凡间是默认已知的，无需记忆
+    // const DEFAULT_KNOWN_LOCATIONS = ['凡间'];
+    
+    // // 如果玩家没有记忆坐标属性，初始化一个空数组
+    // if (!player.记忆坐标) {
+    //     player.记忆坐标 = [];
+    //     await Write_player(usr_qq, player);
+    // }
+    
+    // // 玩家已知的坐标 = 默认已知的 + 已经记忆的
+    // const knownLocations = DEFAULT_KNOWN_LOCATIONS.concat(player.记忆坐标 || []);
+    
+    // // 检查玩家是否知道这个坐标
+    // const hasLocationInMemory = knownLocations.includes(location);
+    
+    // // 如果没有记忆坐标，则拦截
+    // if (!hasLocationInMemory) {
+    //     return e.reply(`【坐标未知】你并不知道${location}的坐标在哪里，无法进行穿梭。\n※ 当前记忆坐标：${player.记忆坐标.length > 0 ? player.记忆坐标.join('、') : '无'}`);
+    // }
+    
     if (player.level_id < 42||player.Physique_id < 42) {
-        // 辰东风格文案
-        const messages = [
-            `你必须成就地仙，肉身成圣后才能承受住穿梭空间的能量风暴`,
-        ];
+        const messages = [`你必须成就地仙，肉身成圣后才能承受住穿梭空间的能量风暴`,];
         
          e.reply(messages);
         return;
     }
+
     // 检查是否已在目标地点
     if (player.power_place === targetLocation) {
         return e.reply(`你已经在${location}了`);
@@ -548,6 +568,7 @@ async goToLocation(e) {
     player.修为 -= xiuweiCost;
     player.血气 -= qixueCost;
     player.寿元 -= shouyuanCost;
+    player.power_place = targetLocation;
     await Write_player(usr_qq, player);
     
     // 设置传送行动

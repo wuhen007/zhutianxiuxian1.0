@@ -18,6 +18,7 @@ import {
   get_lqpf_img,
   get_linggen_img,
   get_jianyunhai_img,
+  get_weimian_img,
   get_yaochi_img
 } from '../../model/xiuxian.js';
 export class Showningmeng extends plugin {
@@ -63,6 +64,10 @@ export class Showningmeng extends plugin {
           {
           reg: '^#成就图鉴$',
           fnc: 'Show_chengjiu',
+        },
+                  {
+          reg: '^#位面图鉴$',
+          fnc: 'Show_weimian',
         },
                   {
           reg: '^#练气皮肤图鉴$',
@@ -215,7 +220,14 @@ export class Showningmeng extends plugin {
     e.reply(img);
     return false;
   }
-//练气皮肤图鉴
+    //位面图鉴
+  async Show_weimian(e) {
+    if (!verc({ e })) return false;
+    let img = await get_weimian_img(e);
+    e.reply(img);
+    return false;
+  }
+  //练气皮肤图鉴
     async Show_lianqipifu(e) {
     if (!verc({ e })) return false;
     let img = await get_lqpf_img(e);

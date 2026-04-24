@@ -102,9 +102,10 @@ Era:
   task: 0 0 */2 * * *
   pushNotice: true
   notifyGroups:
-  Master:
+    - "801033919"
+  Master: null
   current:
-    index: 1
-    years: 9000
+    index: 3
+    years: 2000
     epoch: 4
   yearlyAdvance: 1000
