@@ -29,6 +29,10 @@ export class AdminSuper extends plugin {
           fnc: 'relieve',
         },
         {
+  reg: '^#送入轮回(?:@(\\d+))?$',
+  fnc: 'sendToRebirth',
+},
+        {
           reg: '^#解除所有$',
           fnc: 'Allrelieve',
         },
@@ -175,6 +179,134 @@ async setMaster(e) {
   } catch (error) {
     console.error('设置修仙管理员失败:', error);
     e.reply('设置修仙管理员失败，请检查配置文件权限');
+  }
+}
+async sendToRebirth(e) {
+  // 权限检查：只有管理员或修仙管理员可以使用
+  const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+  const masterList = xiuxianConfig.Master || [];
+  const userQQ = e.user_id.toString().replace('qg_', '');
+  if (!e.isMaster && !masterList.includes(userQQ)) {
+    return false;
+  }
+  
+  // 检查是否有艾特信息
+  const atItems = e.message.filter(item => item.type === "at");
+  if (atItems.length === 0) {
+    e.reply('请指定要送入轮回的目标（@某人）');
+    return true;
+  }
+
+  // 获取目标玩家QQ
+  const targetQQ = atItems[0].qq.toString().replace('qg_', '');
+  
+  // 检查目标玩家是否存在
+  if (!await existplayer(targetQQ)) {
+    e.reply('目标玩家不存在于诸天万界中');
+    return true;
+  }
+
+  // 读取目标玩家信息
+  const player = await Read_player(targetQQ);
+  const player_name = player.名号;
+  const group_id = e.group_id || null;
+  const admin_name = e.sender.nickname;
+  const admin_qq = userQQ;
+  
+  try {
+    // 检查是否已有转世任务
+    const existingTask = await redis.get(`xiuxian:zhuanshi_task:${targetQQ}`);
+    if (existingTask) {
+      const task = JSON.parse(existingTask);
+      const remainingTime = task.end_time - Date.now();
+      const minutes = Math.floor((remainingTime % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((remainingTime % (1000 * 60)) / 1000);
+      
+      e.reply([
+        segment.at(Number(targetQQ)),
+        `\n该玩家已在轮回路上！`,
+        `剩余时间: ${minutes}分${seconds}秒`
+      ].join(''));
+      return true;
+    }
+    
+    // 检查重生次数
+    let reincarnation_count = await redis.get(`xiuxian:player:${targetQQ}:reCreate_acount`);
+    reincarnation_count = parseInt(reincarnation_count) || 0;
+    
+    if (reincarnation_count >= 15) {
+      e.reply([
+        segment.at(Number(targetQQ)),
+        `\n该玩家灵魂已极度虚弱，无法再次转世！`
+      ].join(''));
+      return true;
+    }
+    
+    // 创建轮回转世任务（1分钟） - 不包含e对象
+    const task = {
+      player_qq: targetQQ,
+      player_id: targetQQ,
+      player_name: player_name,
+      player_data: player,
+      group_id: group_id,
+      // 不要存储e对象，只存储需要的数据
+      admin_info: {
+        qq: admin_qq,
+        name: admin_name,
+        time: new Date().toLocaleString()
+      },
+      start_time: Date.now(),
+      end_time: Date.now() + (1 * 60 * 1000), // 1分钟
+      acount: reincarnation_count,
+      status: '轮回中',
+      type: '管理员送入',
+      admin: admin_qq
+    };
+    
+    // 存储到Redis，设置2分钟过期以防万一
+    await redis.set(`xiuxian:zhuanshi_task:${targetQQ}`, JSON.stringify(task));
+    await redis.expire(`xiuxian:zhuanshi_task:${targetQQ}`, 2 * 60);
+    
+    // 设置行动状态
+    await redis.set(`xiuxian:player:${targetQQ}:action`, JSON.stringify({
+      type: 'zhuanshi',
+      start_time: task.start_time,
+      end_time: task.end_time,
+      description: '踏上轮回路（管理员送入）',
+      status: '轮回中',
+      admin: admin_qq
+    }));
+    
+    // 构建消息
+    const messages = [
+      `【管理员·送入轮回】`,
+      `管理员 ${admin_name} 施展天道伟力，`,
+      `将 ${player_name} 打入古地府轮回路！`,
+      `轮回倒计时：1分钟`,
+      `轮回规则：`,
+      `- 踏上轮回路，前往古地府`,
+      `- 经历阴阳大磨盘考验`,
+      `- 30%概率灵魂磨损，变得痴傻`,
+      `- 70%概率熬过考验，天资降低一级`,
+      `- 斩道王者（秘境11级）或真神境以上可硬扛阴阳大磨盘`,
+      `- 强制再入仙途`,
+      `"轮回之门已开启，前尘往事尽成空..."`
+    ];
+    
+    e.reply([
+      segment.at(Number(targetQQ)),
+      `\n${messages.join('\n')}`
+    ]);
+    
+    // 记录管理员操作日志
+    console.log(`【管理员送入轮回】管理员 ${admin_qq} 将玩家 ${targetQQ} 送入轮回`);
+    
+    return true;
+    
+  } catch (err) {
+    console.error(`送入轮回指令执行失败:`, err);
+    e.reply(`送入轮回失败：${err.message}`);
+    return true;
   }
 }
       async globalPushMessage(e) {

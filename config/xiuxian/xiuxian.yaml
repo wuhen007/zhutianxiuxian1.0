@@ -106,6 +106,6 @@ Era:
   Master: null
   current:
     index: 3
-    years: 2000
+    years: 3000
     epoch: 4
   yearlyAdvance: 1000

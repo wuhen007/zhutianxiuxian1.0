@@ -7,7 +7,6 @@
     <style>
         /* ==== 颜色变量定义 ==== */
         :root {
-            /* 基础颜色 */
             --gold: #ffd700;
             --red: #ff3860;
             --green: #00ff00;
@@ -22,7 +21,6 @@
             --light-gray: #b0b0b0;
             --dark-gray: #4a4a8a;
             
-            /* RGB值 */
             --gold-rgb: 255, 215, 0;
             --red-rgb: 255, 56, 96;
             --green-rgb: 0, 255, 0;
@@ -34,44 +32,39 @@
             --dark-red-rgb: 231, 76, 60;
             --dark-gold-rgb: 184, 134, 11;
             
-            /* 背景颜色 */
-            --bg-dark: rgba(10, 10, 26, 0.7);
-            --bg-header: linear-gradient(to right, rgba(44, 14, 55, 0.7) 0%, rgba(26, 26, 46, 0.7) 100%);
-            --bg-body: rgba(8, 8, 20, 0.5);
-            --bg-message: rgba(30, 30, 50, 0.4);
-            --bg-message-hover: rgba(40, 40, 60, 0.5);
-            --bg-round-marker: rgba(60, 60, 100, 0.3);
-            --bg-footer: rgba(15, 15, 35, 0.7);
+            --bg-dark: rgba(10, 10, 26, 0.9);
+            --bg-header: linear-gradient(to right, rgba(44, 14, 55, 0.95) 0%, rgba(26, 26, 46, 0.95) 100%);
+            --bg-body: rgba(8, 8, 20, 0.7);
+            --bg-message: rgba(30, 30, 50, 0.5);
+            --bg-message-hover: rgba(40, 40, 60, 0.6);
+            --bg-chapter: rgba(20, 20, 40, 0.8);
             
-            /* 边框颜色 */
-            --border-container: rgba(42, 42, 74, 0.7);
-            --border-header: rgba(255, 215, 0, 0.4);
-            --border-message: rgba(74, 74, 138, 0.3);
-            --border-round-marker: rgba(74, 74, 138, 0.7);
-            --border-footer: rgba(255, 215, 0, 0.2);
+            --border-container: rgba(42, 42, 74, 0.8);
+            --border-header: rgba(255, 215, 0, 0.5);
+            --border-message: rgba(74, 74, 138, 0.4);
+            --border-chapter: rgba(255, 215, 0, 0.4);
             
-            /* 特殊效果 */
             --time-river-gradient: linear-gradient(to right, 
                 #ff0000, #ff8000, #ffff00, 
                 #80ff00, #00ff80, #00ffff, 
                 #0080ff, #0000ff, #8000ff);
         }
-        /* ==== 基础样式 ==== */
+
         * {
             margin: 0; 
             padding: 0;
             box-sizing: border-box;
-            font-family: "AlimamaDongFangDaKai-Regular", sans-serif;
+            font-family: "AlimamaDongFangDaKai-Regular", "Microsoft YaHei", "SimHei", sans-serif;
         }
         
         body {
-            background: linear-gradient(135deg, rgba(12, 12, 37, 0.7) 0%, rgba(8, 8, 21, 0.7) 100%);
+            background: linear-gradient(135deg, rgba(12, 12, 37, 0.9) 0%, rgba(8, 8, 21, 0.9) 100%);
             color: #e0e0e0;
             min-height: 100vh;
             padding: 20px;
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start;
             width: 100%;
             text-align: center;
             background-image: url('{{pluResPath}}/img/najie/2.jpg');
@@ -87,51 +80,141 @@
             background: var(--bg-dark);
             border-radius: 16px;
             overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6),
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7),
                         0 0 0 1px var(--border-header),
-                        0 0 20px rgba(255, 215, 0, 0.1) inset;
+                        0 0 30px rgba(255, 215, 0, 0.15) inset;
             border: 1px solid var(--border-container);
-            backdrop-filter: blur(5px);
+            backdrop-filter: blur(10px);
         }
         
         .fight-header {
             background: var(--bg-header);
-            padding: 25px;
+            padding: 35px;
             text-align: center;
             border-bottom: 2px solid var(--border-header);
+            position: relative;
+        }
+        
+        .fight-header::after {
+            content: "❖";
+            position: absolute;
+            bottom: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: var(--gold);
+            font-size: 24px;
+            text-shadow: 0 0 15px rgba(var(--gold-rgb), 0.6);
         }
         
         .fight-title {
-            font-size: 36px;
+            font-size: 48px;
             font-weight: bold;
             color: var(--gold);
-            text-shadow: 0 0 15px rgba(var(--gold-rgb), 0.1),
-                         0 0 20px rgba(var(--gold-rgb), 0.4);
-            letter-spacing: 2px;
-            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(var(--gold-rgb), 0.4),
+                         0 0 40px rgba(var(--gold-rgb), 0.2);
+            letter-spacing: 6px;
+            margin-bottom: 12px;
         }
         
         .fight-subtitle {
-            font-size: 18px;
+            font-size: 20px;
             color: var(--light-gray);
+            letter-spacing: 3px;
         }
         
         .fight-body {
-            padding: 25px;
+            padding: 0;
             background: var(--bg-body);
         }
         
+        /* ==== 章节样式 - 默认全部展开 ==== */
+        .chapter {
+            margin: 0;
+            border-bottom: 1px solid rgba(255, 215, 0, 0.15);
+        }
+        
+        .chapter:last-child {
+            border-bottom: none;
+        }
+        
+        .chapter-header {
+            background: linear-gradient(to right, 
+                rgba(255, 215, 0, 0.15) 0%, 
+                rgba(255, 215, 0, 0.08) 50%,
+                rgba(255, 215, 0, 0.15) 100%);
+            padding: 18px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 5px solid var(--gold);
+            position: relative;
+        }
+        
+        .chapter-title {
+            font-size: 22px;
+            color: var(--gold);
+            font-weight: bold;
+            text-shadow: 0 0 8px rgba(var(--gold-rgb), 0.4);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .chapter-icon {
+            font-size: 28px;
+            filter: drop-shadow(0 0 5px rgba(var(--gold-rgb), 0.5));
+        }
+        
+        .chapter-count {
+            color: var(--gray);
+            font-size: 14px;
+            font-weight: normal;
+        }
+        
+        .chapter-toggle {
+            color: var(--gold);
+            font-size: 18px;
+            opacity: 0.6;
+            transition: transform 0.3s ease;
+        }
+        
+        /* 默认展开状态 - 不需要旋转 */
+        .chapter .chapter-toggle {
+            transform: rotate(0deg);
+        }
+        
+        /* 折叠状态 - 旋转箭头 */
+        .chapter.collapsed .chapter-toggle {
+            transform: rotate(-90deg);
+        }
+        
+        .chapter-content {
+            max-height: 5000px; /* 足够大的高度确保展开 */
+            overflow: hidden;
+            transition: max-height 0.5s ease, padding 0.3s ease;
+            padding: 20px 25px;
+        }
+        
+        /* 折叠时的高度 */
+        .chapter.collapsed .chapter-content {
+            max-height: 0;
+            padding: 0 25px;
+        }
+        
+        /* ==== 消息样式 ==== */
         .fight-message {
-            padding: 18px 20px;
-            margin-bottom: 15px;
+            padding: 16px 20px;
+            margin-bottom: 14px;
             border-radius: 10px;
             font-size: 22px;
             background: var(--bg-message);
-            border-left: 5px solid var(--border-message);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            border-left: 4px solid var(--border-message);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
             transition: all 0.3s ease;
             position: relative;
             overflow: hidden;
+            text-align: left;
+            line-height: 1.7;
         }
 
         .fight-message:last-child {
@@ -141,112 +224,95 @@
         .fight-message:hover {
             background: var(--bg-message-hover);
             transform: translateX(5px);
-        }
-        
-        .fight-message::before {
-            content: "";
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-              white-space: pre-wrap; /* 保留换行符 */
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
-            transform: translateX(-100%);
-            transition: transform 0.6s ease;
-        }
-        
-        .fight-message:hover::before {
-            transform: translateX(100%);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
         }
         
         /* ==== 消息类型样式 ==== */
         .critical-hit {
-            border-left-color: rgba(var(--red-rgb), 0.7);
-            background: linear-gradient(to right, rgba(var(--red-rgb), 0.15), var(--bg-message));
+            border-left-color: rgba(var(--red-rgb), 0.8);
+            background: linear-gradient(to right, rgba(var(--red-rgb), 0.12), var(--bg-message));
         }
         
         .heal-message {
-            border-left-color: rgba(var(--green-rgb), 0.7);
-            background: linear-gradient(to right, rgba(var(--green-rgb), 0.15), var(--bg-message));
+            border-left-color: rgba(var(--green-rgb), 0.8);
+            background: linear-gradient(to right, rgba(var(--green-rgb), 0.12), var(--bg-message));
         }
         
         .damage-message {
-            border-left-color: rgba(var(--orange-rgb), 0.7);
-            background: linear-gradient(to right, rgba(var(--orange-rgb), 0.15), var(--bg-message));
+            border-left-color: rgba(var(--orange-rgb), 0.8);
+            background: linear-gradient(to right, rgba(var(--orange-rgb), 0.12), var(--bg-message));
         }
         
         .deprive-message {
-            border-left-color: rgba(var(--purple-rgb), 0.7);
-            background: linear-gradient(to right, rgba(var(--purple-rgb), 0.2), var(--bg-message));
+            border-left-color: rgba(var(--purple-rgb), 0.8);
+            background: linear-gradient(to right, rgba(var(--purple-rgb), 0.18), var(--bg-message));
         }
         
         .daoshen-message {
-            border-left-color: rgba(var(--dark-gold-rgb), 0.7);
-            background: linear-gradient(to right, rgba(var(--dark-gold-rgb), 0.2), var(--bg-message));
+            border-left-color: rgba(var(--dark-gold-rgb), 0.8);
+            background: linear-gradient(to right, rgba(var(--dark-gold-rgb), 0.18), var(--bg-message));
         }
         
         .huazizai-message {
-            border-left-color: rgba(var(--cyan-rgb), 0.7);
-            background: linear-gradient(to right, rgba(var(--cyan-rgb), 0.2), var(--bg-message));
+            border-left-color: rgba(var(--cyan-rgb), 0.8);
+            background: linear-gradient(to right, rgba(var(--cyan-rgb), 0.18), var(--bg-message));
         }
         
         .disaster-message {
-            border-left-color: rgba(50, 50, 50, 0.8);
+            border-left-color: rgba(50, 50, 50, 0.9);
             background: linear-gradient(to right, rgba(30, 30, 30, 0.6), var(--bg-message));
             color: #e0e0e0;
         }
         
         .buff-message {
-            border-left-color: rgba(var(--green-rgb), 0.7);
-            background: linear-gradient(to right, rgba(var(--green-rgb), 0.15), var(--bg-message));
+            border-left-color: rgba(var(--green-rgb), 0.8);
+            background: linear-gradient(to right, rgba(var(--green-rgb), 0.12), var(--bg-message));
         }
         
         .debuff-message {
-            border-left-color: rgba(var(--red-rgb), 0.7);
-            background: linear-gradient(to right, rgba(var(--red-rgb), 0.15), var(--bg-message));
+            border-left-color: rgba(var(--red-rgb), 0.8);
+            background: linear-gradient(to right, rgba(var(--red-rgb), 0.12), var(--bg-message));
         }
         
         .resurrection-message {
-            border-left-color: rgba(var(--gold-rgb), 0.7);
+            border-left-color: rgba(var(--gold-rgb), 0.8);
             background: linear-gradient(to right, rgba(var(--gold-rgb), 0.15), var(--bg-message));
         }
         
         .system-message {
-            border-left-color: rgba(var(--blue-rgb), 0.7);
-            background: linear-gradient(to right, rgba(var(--blue-rgb), 0.15), var(--bg-message));
+            border-left-color: rgba(var(--blue-rgb), 0.8);
+            background: linear-gradient(to right, rgba(var(--blue-rgb), 0.12), var(--bg-message));
         }
         
         .status-message {
-            border-left-color: rgba(var(--purple-rgb), 0.7);
-            background: linear-gradient(to right, rgba(var(--purple-rgb), 0.15), var(--bg-message));
+            border-left-color: rgba(var(--purple-rgb), 0.8);
+            background: linear-gradient(to right, rgba(var(--purple-rgb), 0.12), var(--bg-message));
         }
         
-        .disaster-message .highlight {
-            color: #a0a0a0;
-            text-shadow: 0 0 5px rgba(160, 160, 160, 0.5);
-        }
-        
-        .disaster-message .damage-value {
-            color: var(--red);
+        .action-bar-message {
+            border-left-color: rgba(var(--cyan-rgb), 0.8);
+            background: linear-gradient(to right, rgba(var(--cyan-rgb), 0.12), var(--bg-message));
+            font-style: italic;
+            color: var(--cyan);
         }
         
         /* ==== 关键词样式 ==== */
         .highlight {
             color: var(--gold);
             font-weight: bold;
-            text-shadow: 0 0 5px rgba(var(--gold-rgb), 0.5);
+            text-shadow: 0 0 8px rgba(var(--gold-rgb), 0.4);
         }
         
         .damage-value {
             color: var(--red);
             font-weight: bold;
+            text-shadow: 0 0 5px rgba(var(--red-rgb), 0.3);
         }
         
         .heal-value {
             color: var(--green);
             font-weight: bold;
-            text-shadow: 0 0 5px rgba(var(--green-rgb), 0.5);
+            text-shadow: 0 0 8px rgba(var(--green-rgb), 0.4);
         }
         
         .time-river {
@@ -255,104 +321,96 @@
             background-clip: text;
             color: transparent;
             font-weight: bold;
-            text-shadow: none;
         }
         
         .daoshen-color {
             color: var(--dark-gold);
             font-weight: bold;
-            text-shadow: 0 0 5px rgba(var(--dark-gold-rgb), 0.7);
+            text-shadow: 0 0 8px rgba(var(--dark-gold-rgb), 0.6);
         }
         
-        /* ==== 关键词分类样式 ==== */
         .skill-name {
             color: var(--gold);
             font-weight: bold;
-            text-shadow: 0 0 5px rgba(var(--gold-rgb), 0.5);
+            text-shadow: 0 0 8px rgba(var(--gold-rgb), 0.4);
         }
         
         .attack-keyword {
             color: var(--red);
             font-weight: bold;
-            text-shadow: 0 0 5px rgba(var(--red-rgb), 0.5);
+            text-shadow: 0 0 5px rgba(var(--red-rgb), 0.3);
         }
         
         .defense-keyword {
             color: var(--blue);
             font-weight: bold;
-            text-shadow: 0 0 5px rgba(var(--blue-rgb), 0.5);
+            text-shadow: 0 0 5px rgba(var(--blue-rgb), 0.3);
         }
         
         .control-keyword {
             color: var(--purple);
             font-weight: bold;
-            text-shadow: 0 0 5px rgba(var(--purple-rgb), 0.5);
+            text-shadow: 0 0 5px rgba(var(--purple-rgb), 0.3);
         }
         
         .element-keyword {
             color: var(--orange);
             font-weight: bold;
-            text-shadow: 0 0 5px rgba(var(--orange-rgb), 0.5);
+            text-shadow: 0 0 5px rgba(var(--orange-rgb), 0.3);
         }
         
         .cosmic-keyword {
             color: var(--cyan);
             font-weight: bold;
-            text-shadow: 0 0 5px rgba(var(--cyan-rgb), 0.5);
+            text-shadow: 0 0 5px rgba(var(--cyan-rgb), 0.3);
         }
         
         .reincarnation-keyword {
             color: var(--dark-purple);
             font-weight: bold;
-            text-shadow: 0 0 5px rgba(var(--dark-purple-rgb), 0.5);
+            text-shadow: 0 0 5px rgba(var(--dark-purple-rgb), 0.3);
         }
         
         .imperial-keyword {
             color: var(--dark-red);
             font-weight: bold;
-            text-shadow: 0 0 5px rgba(var(--dark-red-rgb), 0.5);
+            text-shadow: 0 0 5px rgba(var(--dark-red-rgb), 0.3);
         }
         
         /* ==== 回合标记样式 ==== */
         .round-marker {
             text-align: center;
             padding: 12px;
-            margin: 20px 0;
-            background: var(--bg-round-marker);
+            margin: 18px 0;
+            background: rgba(60, 60, 100, 0.25);
             border-radius: 20px;
             font-weight: bold;
-            font-size: 22px;
+            font-size: 20px;
             color: var(--gray);
-            border: 1px dashed var(--border-round-marker);
+            border: 1px dashed rgba(74, 74, 138, 0.6);
             position: relative;
-        }
-        
-        .round-marker::before,
-        .round-marker::after {
-            content: "";
-            position: absolute;
-            top: 50%;
-            width: 30%;
-            height: 1px;
-            background: linear-gradient(to right, transparent, var(--border-round-marker), transparent);
-        }
-        
-        .round-marker::before {
-            left: 0;
-        }
-        
-        .round-marker::after {
-            right: 0;
+            letter-spacing: 2px;
         }
         
         /* ==== 页脚样式 ==== */
         .fight-footer {
-            padding: 15px;
+            padding: 20px;
             text-align: center;
-            background: var(--bg-footer);
-            border-top: 1px solid var(--border-footer);
+            background: rgba(15, 15, 35, 0.9);
+            border-top: 1px solid rgba(255, 215, 0, 0.3);
             color: var(--gray);
-            font-size: 14px;
+            font-size: 16px;
+            letter-spacing: 3px;
+        }
+        
+        /* ==== 分隔线 ==== */
+        .divider {
+            height: 1px;
+            background: linear-gradient(to right, 
+                transparent, 
+                rgba(255, 215, 0, 0.4), 
+                transparent);
+            margin: 15px 0;
         }
     </style>
 </head>
@@ -373,25 +431,82 @@
     </div>
 
     <script>
-// 从页面标题获取所有消息
-function getAllMessages() {
-    const title = document.title;
-    if (title) {
-        // 分割消息并清理特殊字符
-        return title.split(',').map(msg => {
-            // 保留换行符，替换其他特殊字符
-            return msg
-                .replace(/[\[\]]/g, "") // 移除 [ ] 字符
-                .replace(/[ \t]+/g, ' ')  // 只压缩空格和制表符，保留换行
-                .replace(/\\n/g, '<br>')   // 将 \n 转换为实际的换行符
-                .trim();                 // 去除首尾空格
-        });
-    }
-    return [];
-}
+        // 从页面标题获取所有消息
+        function getAllMessages() {
+            const title = document.title;
+            if (title) {
+                return title.split(',').map(msg => {
+                    return msg
+                        .replace(/[\[\]]/g, "")
+                        .replace(/[ \t]+/g, ' ')
+                        .replace(/\\n/g, '<br>')
+                        .trim();
+                });
+            }
+            return [];
+        }
         
-        // 渲染所有消息
-        function renderAllMessages() {
+        // 检测消息类型
+        function detectMessageType(message) {
+            if (message.includes("暴击")) return "critical-hit";
+            if (message.includes("治疗") || message.includes("恢复") || message.includes("回复")) return "heal-message";
+            if (message.includes("伤害") || message.includes("损失") || message.includes("扣除")) return "damage-message";
+            if (message.includes("剥夺")) return "deprive-message";
+            if (message.includes("道身")) return "daoshen-message";
+            if (message.includes("他化自在")) return "huazizai-message";
+            if (message.includes("三灾六劫天人五衰")) return "disaster-message";
+            if (message.includes("增益") || message.includes("提升") || message.includes("增加")) return "buff-message";
+            if (message.includes("减益") || message.includes("降低") || message.includes("减少")) return "debuff-message";
+            if (message.includes("复活") || message.includes("重生")) return "resurrection-message";
+            if (message.includes("系统") || message.includes("法则") || message.includes("天道")) return "system-message";
+            if (message.includes("状态") || message.includes("效果")) return "status-message";
+            if (message.includes("元气") || message.includes("行动条") || message.includes("先机")) return "action-bar-message";
+            return "";
+        }
+        
+        // 高亮处理
+        function highlightMessage(message) {
+            let text = message;
+            
+            // 数字高亮
+            text = text.replace(/(\d+(,\d+)*)/g, '<span class="damage-value">$1</span>');
+            
+            // 恢复类高亮
+            text = text.replace(/(恢复|治疗|回复|愈合|复活|重生|苏生|回春|疗伤|治愈)(了)?\s*<span class="damage-value">(\d+(,\d+)*)<\/span>/g, 
+                '$1$2 <span class="heal-value">$3</span>');
+            
+            // 技能名高亮
+            const skills = /(鬼剑|影杀|八荒剑法|斩八荒|六道轮回拳|霸拳|天动万象|太素|心禅不灭诀|万剑归宗|无始无终|太阳真火|混沌青莲|虚空永恒|斗战圣法|葬仙图|太皇经|无量仙功|皇极斩|梦之㱬|梦轮|轮回诸天拳|命运神道体|极道天魔|仙神灭绝功|邪神梵天印|第一魔功|噬天|托天魔功|天生至尊|上苍劫光|涅槃至尊|轮回宝术|终极涅槃至尊|第三至尊术|重瞳|毁灭本源|轮回道体|灭道杀神体|杀破神|鸿蒙道体|鸿蒙法则|九重魔功|九重猪王|猪王拳|经天纬地|维宙星灭诀|不灭天功|一念花开|君临天下|大成荒古圣体|天帝拳|木之本樱|斗字秘|虚空经|妖帝古经|恒宇经|太阳真经|太阴真经|无始经|草字剑诀|平乱诀|六道轮回天功|真龙宝术|鲲鹏宝术|雷帝宝术|柳神法|原始真解|混沌体|先天圣体道胎|飞仙诀|吞天魔功|永恒终极剑道|苍天霸体|鹿目圆|圆环之理|圆神|斩天道|星耀天地|十方皆杀|鹏羽剑诀|天鹏搏龙术|乱古帝经|大帝之姿|武道天眼|小成苍天霸体|霸血焚天诀|龙拳|十世轮回经|真龙困天术|黑龙断苍宇|世界树法则|仙王九封|天子印|无双战诀|弑仙术|鹤舞九天|仙劫剑诀|破界杀术|掌中世界|阴阳逆乱诀|苍穹霸印|混沌莲步|太阴一转十万年|紫气东来术|霸体祖经|兵字秘|黄金战车诀|乱古战斧法|大帝印|永恒的放逐|万灵化道|乱古圣诀|金鹏撕天爪|大荒戟法|鹏王啸)/g;
+            text = text.replace(skills, '<span class="skill-name">$1</span>');
+            
+            // 关键词高亮
+            text = text.replace(/(拳|剑|刀|戟|斧|印|诀|经|法|术|功|宝术|九秘|图|轮|阵|领域|界|天帝|天地|宇宙|星辰|虚空|时空|混沌|阴阳|轮回|因果|大道|法则|劫|灾|衰)/g, 
+                '<span class="cosmic-keyword">$1</span>');
+            
+            text = text.replace(/(攻击|防御|生命|血量|属性|伤害|重创|击伤|破碎|崩灭|撕裂|斩|劈|轰|砸|刺|穿|灭|破|碎|崩|裂|震|爆|焚|灼|冻|冰|火|风|雷|电|光|暗)/g, 
+                '<span class="attack-keyword">$1</span>');
+            
+            text = text.replace(/(禁锢|冻结|震慑|压制|定身|封锁|镇压|困|缚|绑|锁|封|镇|慑|控|制|支配|操纵)/g, 
+                '<span class="control-keyword">$1</span>');
+            
+            text = text.replace(/(恢复|治疗|回复|愈合|复活|再生|苏生|回春|疗伤|治愈|滋补|养)/g, 
+                '<span class="heal-value">$1</span>');
+            
+            text = text.replace(/(帝|皇|王|圣|神|仙|魔|妖|鬼|佛|尊|主|君|霸|开天辟地|尊|祖|宗|师|圣体|道胎|灵根|血脉)/g, 
+                '<span class="imperial-keyword">$1</span>');
+            
+            text = text.replace(/(火|水|风|雷|土|木|金|光|暗|阴|阳|元素|五行|八卦|太极|两仪|四象)/g, 
+                '<span class="element-keyword">$1</span>');
+            
+            // 特殊关键词
+            text = text.replace(/(时间长河|六道轮回)/g, '<span class="time-river">$1</span>');
+            text = text.replace(/(道身)/g, '<span class="daoshen-color">$1</span>');
+            
+            return text;
+        }
+        
+        // 渲染章节
+        function renderChapters() {
             const messages = getAllMessages();
             const container = document.getElementById('fight');
             container.innerHTML = '';
@@ -401,120 +516,131 @@ function getAllMessages() {
                 return;
             }
             
+            // 定义章节规则
+            const chapterRules = [
+                {
+                    name: "战前准备",
+                    icon: "⚔",
+                    test: (msg) => msg.includes("天地元气") || msg.includes("天道法则") || msg.includes("遁光速度") || msg.includes("大战一触即发")
+                },
+                {
+                    name: "抢占先机",
+                    icon: "☯",
+                    test: (msg) => msg.includes("元气充盈") || msg.includes("抢占先机") || msg.includes("行动条")
+                },
+                {
+                    name: "神通对决",
+                    icon: "🔥",
+                    test: (msg) => msg.includes("施展") || msg.includes("催动") || msg.includes("演化") || msg.includes("发动") || msg.includes("触发")
+                },
+
+                {
+                    name: "战斗结算",
+                    icon: "🏆",
+                    test: (msg) => msg.includes("击败") || msg.includes("胜负") || msg.includes("统计") || msg.includes("行动次数")
+                }
+            ];
+            
+            // 将消息分类到章节
+            const chapters = [];
+            let currentChapter = null;
             let roundCount = 0;
-            const fragment = document.createDocumentFragment();
             
             messages.forEach((message, index) => {
-                let messageClass = "fight-message";
-                let messageText = message;
-                let isBattleMessage = false;
-                
-                // 检测消息类型
-                if (message.includes("暴击")) {
-                    messageClass += " critical-hit";
-                    isBattleMessage = true;
-                } else if (message.includes("治疗") || message.includes("恢复")) {
-                    messageClass += " heal-message";
-                    isBattleMessage = true;
-                } else if (message.includes("伤害")) {
-                    messageClass += " damage-message";
-                    isBattleMessage = true;
-                } else if (message.includes("剥夺")) {
-                    messageClass += " deprive-message";
-                    isBattleMessage = true;
-                } else if (message.includes("道身")) {
-                    messageClass += " daoshen-message";
-                    isBattleMessage = true;
-                } else if (message.includes("他化自在")) {
-                    messageClass += " huazizai-message";
-                    isBattleMessage = true;
-                } else if (message.includes("三灾六劫天人五衰")) {
-                    messageClass += " disaster-message";
-                    isBattleMessage = true;
-                } else if (message.includes("增益")) {
-                    messageClass += " buff-message";
-                } else if (message.includes("减益")) {
-                    messageClass += " debuff-message";
-                } else if (message.includes("复活")) {
-                    messageClass += " resurrection-message";
-                } else if (message.includes("系统")) {
-                    messageClass += " system-message";
-                } else if (message.includes("状态")) {
-                    messageClass += " status-message";
+                // 检测回合
+                if (message.includes("回合")) {
+                    const roundMatch = message.match(/第(\d+)回合/);
+                    if (roundMatch) {
+                        roundCount = parseInt(roundMatch[1]);
+                    }
                 }
                 
-               // 检测回合开始
-if (message.includes("回合")) {
-    // 使用正则表达式提取回合数
-    const roundMatch = message.match(/第(\d+)回合/);
-    if (roundMatch) {
-        roundCount = parseInt(roundMatch[1]);
-    }
-    
-    const roundDiv = document.createElement('div');
-    roundDiv.className = 'round-marker';
-    roundDiv.textContent = `第 ${roundCount} 回合`;
-    fragment.appendChild(roundDiv);
-}
+                // 检测章节类型
+                let matchedRule = null;
+                for (const rule of chapterRules) {
+                    if (rule.test(message)) {
+                        matchedRule = rule;
+                        break;
+                    }
+                }
                 
-                // 高亮处理（所有消息）
-                messageText = messageText.replace(/(\d+(,\d+)?)/g, '<span class="damage-value">$1</span>');
-                messageText = messageText.replace(/(恢复|治疗|回复)(了)?\s*<span class="damage-value">(\d+(,\d+)?)<\/span>/g, 
-                    '$1$2 <span class="heal-value">$3</span>');
+                // 创建新章节或添加到当前章节
+                if (matchedRule && (!currentChapter || currentChapter.name !== matchedRule.name)) {
+                    currentChapter = {
+                        name: matchedRule.name,
+                        icon: matchedRule.icon,
+                        messages: [],
+                        round: roundCount
+                    };
+                    chapters.push(currentChapter);
+                }
                 
-                // 关键词高亮处理
-                const highlightRules = [
-                    { pattern: /(鬼剑|影杀|八荒剑法|斩八荒|六道轮回拳|霸拳|天动万象|太素|心禅不灭诀|万剑归宗|无始无终|太阳真火|混沌青莲|虚空永恒|斗战圣法|葬仙图|太皇经|无量仙功|皇极斩|梦之㱬|梦轮|轮回诸天拳|命运神道体|极道天魔|仙神灭绝功|邪神梵天印|第一魔功|噬天|托天魔功|天生至尊|上苍劫光|涅槃至尊|轮回宝术|终极涅槃至尊|第三至尊术|重瞳|毁灭本源|轮回道体|灭道杀神体|杀破神|鸿蒙道体|鸿蒙法则|九重魔功|九重猪王|猪王拳|经天纬地|维宙星灭诀|不灭天功|一念花开|君临天下|大成荒古圣体|天帝拳|木之本樱|斗字秘|虚空经|妖帝古经|恒宇经|太阳真经|太阴真经|无始经|草字剑诀|平乱诀|六道轮回天功|真龙宝术|鲲鹏宝术|雷帝宝术|柳神法|原始真解|混沌体|先天圣体道胎|飞仙诀|吞天魔功|永恒终极剑道|苍天霸体|鹿目圆|圆环之理|圆神|斩天道|星耀天地|十方皆杀|鹏羽剑诀|天鹏搏龙术|乱古帝经|大帝之姿|武道天眼|小成苍天霸体|霸血焚天诀|龙拳|十世轮回经|真龙困天术|黑龙断苍宇|世界树法则|仙王九封|天子印|无双战诀|弑仙术|鹤舞九天|仙劫剑诀|破界杀术|掌中世界|君临天下|阴阳逆乱诀|苍穹霸印|混沌莲步|太阴一转十万年|紫气东来术|霸体祖经|兵字秘|黄金战车诀|乱古战斧法|大帝印|永恒的放逐|万灵化道|乱古圣诀|金鹏撕天爪|大荒戟法|鹏王啸)/g, 
-                    replace: '<span class="skill-name">$1</span>'},
-                    
-                    { pattern: /(拳|剑|刀|戟|斧|印|诀|经|法|术|功|宝术|九秘|图|轮|阵|领域|界|天帝|天地|宇宙|星辰|虚空|时空|混沌|阴阳|轮回|因果|大道|法则|劫|灾|衰)/g, 
-                    replace: '<span class="cosmic-keyword">$1</span>'},
-                    
-                    { pattern: /(攻击|防御|生命|血量|属性|伤害|重创|击伤|破碎|崩灭|撕裂|斩|劈|轰|砸|刺|穿|灭|破|碎|崩|裂|震|爆|焚|灼|冻|冰|火|风|雷|电|光|暗)/g, 
-                    replace: '<span class="attack-keyword">$1</span>'},
-                    
-                    { pattern: /(禁锢|冻结|震慑|压制|定身|封锁|镇压|困|缚|绑|锁|封|镇|慑|控|制|支配|操纵)/g, 
-                    replace: '<span class="control-keyword">$1</span>'},
-                    
-                    { pattern: /(恢复|治疗|回复|愈合|复活|再生|苏生|回春|疗伤|治愈|滋补|养)/g, 
-                    replace: '<span class="heal-value">$1</span>'},
-                    
-                    { pattern: /(帝|皇|王|圣|神|仙|魔|妖|鬼|佛|尊|主|君|霸|开天辟地|尊|祖|宗|师|圣体|道胎|灵根|血脉)/g, 
-                    replace: '<span class="imperial-keyword">$1</span>'},
-                    
-                    { pattern: /(火|水|风|雷|土|木|金|光|暗|阴|阳|元素|五行|八卦|太极|两仪|四象)/g, 
-                    replace: '<span class="element-keyword">$1</span>'},
-                    
-                    { pattern: /(暴击|恢复|治疗|回复|伤害|损失|扣除|冻结|禁锢|震慑|压制|提升|增加|暴涨|降低|减少|削弱|剥夺|复活|帝兵|仙器|触发|道身|他化自在|时间长河|六道轮回)/g, 
-                    replace: (match) => {
-                        if (match === "时间长河" || match === "六道轮回") {
-                            return '<span class="time-river">' + match + '</span>';
-                        } else if (match === "道身") {
-                            return '<span class="daoshen-color">' + match + '</span>';
-                        } else {
-                            return '<span class="highlight">' + match + '</span>';
-                        }
-                    }}
-                ];
-                
-                // 应用高亮规则
-                highlightRules.forEach(rule => {
-                    messageText = messageText.replace(rule.pattern, rule.replace);
-                });
-                
-                // 创建消息元素
-                const messageDiv = document.createElement('div');
-                messageDiv.className = messageClass;
-                messageDiv.innerHTML = messageText;
-                fragment.appendChild(messageDiv);
+                if (currentChapter) {
+                    currentChapter.messages.push({
+                        text: message,
+                        round: roundCount,
+                        index: index
+                    });
+                } else {
+                    // 默认章节
+                    if (chapters.length === 0) {
+                        chapters.push({
+                            name: "战斗开始",
+                            icon: "🌟",
+                            messages: [],
+                            round: 0
+                        });
+                    }
+                    chapters[0].messages.push({
+                        text: message,
+                        round: roundCount,
+                        index: index
+                    });
+                }
             });
             
-            // 一次性添加到容器
-            container.appendChild(fragment);
+            // 渲染章节 - 默认全部展开
+            chapters.forEach((chapter, chapterIndex) => {
+                const chapterDiv = document.createElement('div');
+                chapterDiv.className = 'chapter'; // 默认不添加 collapsed 类
+                
+                // 章节头部
+                const header = document.createElement('div');
+                header.className = 'chapter-header';
+                header.innerHTML = `
+                    <div class="chapter-title">
+                        <span class="chapter-icon">${chapter.icon}</span>
+                        <span>${chapter.name}</span>
+                        <span class="chapter-count">(${chapter.messages.length}条)</span>
+                    </div>
+                    <div class="chapter-toggle">▼</div>
+                `;
+                
+                // 点击折叠/展开（可选功能）
+                header.addEventListener('click', () => {
+                    chapterDiv.classList.toggle('collapsed');
+                });
+                
+                // 章节内容
+                const content = document.createElement('div');
+                content.className = 'chapter-content';
+                
+                chapter.messages.forEach(msg => {
+                    const msgType = detectMessageType(msg.text);
+                    const msgDiv = document.createElement('div');
+                    msgDiv.className = `fight-message ${msgType}`;
+                    msgDiv.innerHTML = highlightMessage(msg.text);
+                    content.appendChild(msgDiv);
+                });
+                
+                chapterDiv.appendChild(header);
+                chapterDiv.appendChild(content);
+                container.appendChild(chapterDiv);
+            });
         }
         
-        // 页面加载完成后渲染所有消息
-        document.addEventListener('DOMContentLoaded', renderAllMessages);
+        // 页面加载完成后渲染
+        document.addEventListener('DOMContentLoaded', renderChapters);
     </script>
 </body>
 </html>
