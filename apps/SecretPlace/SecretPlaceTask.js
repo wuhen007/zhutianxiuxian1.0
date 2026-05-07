@@ -11,6 +11,8 @@ import {
   Reduse_player_学习功法,
   Add_player_学习功法,
   Add_HP,
+  Add_灵石,
+  Add_源石,
   Write_player,
     Read_equipment,
     Write_equipment,
@@ -41,17 +43,20 @@ export class SecretPlaceTask extends plugin {
         name: 'SecretPlaceTask',
         fnc: () => this.Secretplacetask(),
       },
-      {
-        cron: this.set.travel_task, // 使用配置中的传送任务时间
-        name: 'TravelTask',
-        fnc: () => this.checkTravelTasks(),
-      },
+
        {
             cron: '0 */30 * * * ?', // 每10分钟执行一次
             name: 'DaoshangCheckTask',
             fnc: () => this.checkDaoshangPunishment(),
         }
     ];
+
+
+
+
+
+
+
   }
   async Secretplacetask() {
     //获取缓存中人物列表
@@ -833,7 +838,6 @@ if (player.power_place == 2 && Math.random() < 0.01) {
         await common.reply(e, "源气紊乱，天机不显！事件处理失败");
     }
 }
-           // 在荒古禁地探索事件中添加行字秘唯一性检查和天资要求
                 if (player.power_place == 2) {
                     let random = Math.random();
                     // 根据玩家的幸运值调整概率
@@ -841,6 +845,8 @@ if (player.power_place == 2 && Math.random() < 0.01) {
                     
                     // 定义天资等级序列
                     const aptitudeSequence = [
+                        '无化如是',
+                        '生而愚痴',
                         '天弃之人',
                         '先天不足',
                         '平庸之资',
@@ -854,8 +860,8 @@ if (player.power_place == 2 && Math.random() < 0.01) {
                     
                     // 获取玩家当前天资等级索引
                     const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级);
-                    // 最低要求天资等级索引（天纵之资，索引4）
-                    const minAptitudeIndex = 4;
+                    // 最低要求天资等级索引（天纵之资，索引6）
+                    const minAptitudeIndex = 6;
                      const tianxuanbufa = await checkGongfaInServer('天璇步法');
                              // 只有天资达到天纵之资及以上才可能触发
                     if (currentAptitudeIndex >= minAptitudeIndex&&!tianxuanbufa) {
@@ -874,12 +880,10 @@ if (player.power_place == 2 && Math.random() < 0.01) {
                                 last_msg += ' 言罢，他身形一晃，化作一道流光消失在宇宙深处，只留下你独自怅然。';
                             } else {
                                 last_msg += ' 你在荒古禁地深处遇见一位疯疯癫癫的老人，他步履蹒跚却一步踏出便横跨万里。';
-                                
-                                // 根据天资等级显示不同文案
-                                if (currentAptitudeIndex >= 7) { // 万古无双及以上
+                                if (currentAptitudeIndex >= 9) { // 万古无双及以上
                                     last_msg += ' 老疯子浑浊的眸子突然清明："万古岁月，竟有如此天资！此秘术当传于你！"';
                                     last_msg += ' 他一步踏出，时空扭曲，直接出现在你面前，一指轻点你的眉心。';
-                                } else if (currentAptitudeIndex >= 5) { // 旷世奇才及以上
+                                } else if (currentAptitudeIndex >= 7) { // 旷世奇才及以上
                                     last_msg += ' 老疯子停下脚步，眼中闪过一丝惊讶："如此天资，倒也有资格承我衣钵..."';
                                     last_msg += ' 他隔空一指，一道神光没入你的识海。';
                                 } else { // 天纵之资
@@ -890,12 +894,12 @@ if (player.power_place == 2 && Math.random() < 0.01) {
                                 last_msg += ' 刹那间，残缺的九秘真谛涌入识海！';
                                 last_msg += ' 「天璇步法」——脱胎自行字秘的无上极速残篇，踏光阴、缩山河，一步踏出星月倒转！';
                                 last_msg += ' 待你回神，老人已化流光遁入宇宙，唯留残缺行字秘之道韵在神魂中流转不息。';
-                                await Add_player_学习功法(player_id, '天璇步法');
-                                 await Write_player(usr_qq, player);
+                                player.学习的功法.push('天璇步法');
+                                await recordItemToHistory(player_id, '天璇步法', '功法', 1);
+                                await Write_player(usr_qq, player);
                             }
                         }
                     } else {
-                        // 天资不足的提示 - 当索引小于4时显示
                         if (adjustedProbability < 0.01) { // 较低概率提示
                          last_msg += ' 你感知到一缕涉及时空的残缺道韵，似为某位存在遗留的步法痕迹...';
                          last_msg += ' 然其玄奥远超你当前境界，天资不足难以参透。（需「天纵之资」以上方可领悟天璇步法）';
@@ -1767,33 +1771,68 @@ const hasSpecialLinggen = specialLinggenTypes.includes(player.灵根.name);
                   await Add_najie_thing(player_id, Get_lianqi.name, '道具', 1);
                 }
               }
-   if (random < 0.0001) {
-    // 天资等级序列（与洗炼相同）
+if (random < 0.0001) {
+    // 完整的天资等级序列（包含所有等级）
     const aptitudeSequence = [
-        '天弃之人',
-        '先天不足',
-        '平庸之资',
-        '超凡资质',
-        '天纵之资',
-        '旷世奇才',
-        '绝世天骄',
-        '万古无双',
-        '无演无尽'
+        '无化如是',      // 索引0 - 新增
+        '生而痴傻',      // 索引1 - 新增
+        '天弃之人',      // 索引2
+        '先天不足',      // 索引3
+        '平庸之资',      // 索引4
+        '超凡资质',      // 索引5
+        '天纵之资',      // 索引6
+        '旷世奇才',      // 索引7
+        '绝世天骄',      // 索引8
+        '万古无双',      // 索引9
+        '无演无尽'       // 索引10
     ];
     
     // 获取当前天资位置
     const currentIndex = aptitudeSequence.indexOf(player.天资等级);
     
-    // 最高提升到万古无双（限制在索引7）
-    let newIndex = Math.min(currentIndex + 1, 7);
-    
-    // 如果已经是万古无双或更高，则不再提升
-    if (currentIndex >= 7) {
-        last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。他目光如渊，仿佛能洞穿万古时空："小友资质已臻至境，老朽亦无可指点。"话音未落，身影已如梦幻泡影般消散。`;
+    // 如果玩家天资不在序列中（可能是旧数据），默认为最低
+    if (currentIndex === -1) {
+        player.天资等级 = '无化如是';
+        player.天资评价 = '无用之人，命中注定难有所作为，任何外力都无法改变';
+        await Write_player(usr_qq, player);
+        last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。他掐指一算，神色惊变："无化如是！天命所定，老朽亦不可违！"遂化作清风而去。`;
         return;
     }
     
-    let newAptitude = aptitudeSequence[newIndex];
+    // 特殊处理：无化如是无法提升
+    if (player.天资等级 === '无化如是') {
+        last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。\n他凝视你片刻，长叹一声："无化如是，无用之人，此乃天道所封。老朽虽为地仙，亦不敢逆天而行。"\n语罢，老者身影逐渐淡去，唯留一声叹息："天命如此，好自为之..."`;
+        return;
+    }
+    
+    // 特殊处理：生而痴傻最多提升到天弃之人
+    if (player.天资等级 === '生而痴傻') {
+        if (Math.random() < 0.3) { // 30%概率可突破
+            let newAptitude = '天弃之人';
+            const aptitudeEvaluations = {
+                '天弃之人': '被天道抛弃，修炼必遭反噬',
+                '生而痴傻': '天生愚笨，修炼难如登天'
+            };
+            
+            last_msg += `
+${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。
+老者眉头微皱："生而痴傻，本无仙缘...但念你心诚，老夫便以毕生修为，为你强行开窍！"
+老者双指并剑，点在泥丸宫上，顿时天雷滚滚，乌云压顶。
+"开！"老者一声暴喝，口吐鲜血，却见一道金光冲破你天灵盖。
+片刻后，天雷散去，老者面色苍白："老夫强行逆天为你开智，损了百年修为。你已从痴傻突破至天弃之人，好自为之..."
+天资蜕变：
+原资质：『生而痴傻』→ 新资质：『天弃之人』
+${aptitudeEvaluations['天弃之人']}
+`;
+            
+            player.天资等级 = '天弃之人';
+            player.天资评价 = aptitudeEvaluations['天弃之人'];
+            await Write_player(usr_qq, player);
+        } else {
+            last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。\n老者探查你资质后，摇头叹息："生而痴傻，愚昧如石，纵是仙丹妙药亦难回天。"\n说完化作青烟散去。`;
+        }
+        return;
+    }
     
     // 天资评价库
     const aptitudeEvaluations = {
@@ -1805,20 +1844,50 @@ const hasSpecialLinggen = specialLinggenTypes.includes(player.灵根.name);
         '超凡资质': '资质超凡，注定异于常人',
         '平庸之资': '资质平平，勉勉强强',
         '先天不足': '先天有缺，修炼事倍功半',
-        '天弃之人': '被天道抛弃，修炼必遭反噬'
+        '天弃之人': '被天道抛弃，修炼必遭反噬，但仍有希望',
+        '生而痴傻': '天生愚笨，修炼难如登天',
+        '无化如是': '无用之人，命中注定难有所作为，任何外力都无法改变'
     };
     
- 
-last_msg += `
+    // 不同天资对应的提升描述
+    const upgradeDescriptions = {
+        '天弃之人': '老者挥袖间，一道混沌之气注入你体内，洗去了部分天道诅咒。',
+        '先天不足': '老者取出一枚七窍玲珑丹喂你服下，先天缺损逐渐愈合。',
+        '平庸之资': '老者以无上法力为你易经伐髓，剔除体内杂质。',
+        '超凡资质': '老者引动星辰之力，为你开启灵台方寸，顿悟大道。',
+        '天纵之资': '老者展现三千大道虚影，任你观摩领悟，境界飞升。',
+        '旷世奇才': '时空倒转，老者带你神游太古，观天地初开之景。',
+        '绝世天骄': '老者召唤出上古帝影，为你烙印下大帝道纹。',
+        '万古无双': '老者撕裂时间长河，引来未来身与你共鸣，万古唯一。',
+        '无演无尽': '天地共鸣，万道臣服，超越时间与空间的界限。'
+    };
+    
+    // 最高提升到万古无双（索引9），无演无尽不可通过此途径获得
+    let newIndex = Math.min(currentIndex + 1, 9);
+    
+    // 如果已经是万古无双，不再提升
+    if (currentIndex >= 9) {
+        last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。他目光如渊，仿佛能洞穿万古时空："小友资质已臻至境，老朽亦无可指点。"话音未落，身影已如梦幻泡影般消散。`;
+        return;
+    }
+    
+    let newAptitude = aptitudeSequence[newIndex];
+    let description = upgradeDescriptions[player.天资等级] || '老者施展无上神通，为你重铸道基。';
+    
+    // 构建提升消息
+    last_msg += `
 ${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。
 他目光如渊，仿佛能洞穿万古时空："小友根骨尚可，却未脱樊笼。老朽观你与道有缘，便助你一臂之力。"
+${description}
 只见老者袖袍轻拂，九天星河倒悬，鸿蒙紫气自虚空裂缝奔涌而出，将你笼罩其中。
 你感到浑身经脉如被重塑，识海中浮现无尽道韵，仿佛经历了万世轮回。
 待光华散尽，老者身影已如梦幻泡影般消散，只余一缕道音回荡：
 "万古弹指间，大梦几千秋。他日若得道，莫忘此日缘..."
+
 天资蜕变：
 原资质：『${player.天资等级}』→ 新资质：『${newAptitude}』
 ${aptitudeEvaluations[newAptitude]}
+
 获得【如梦道痕】*1
 `;
     
@@ -1829,7 +1898,7 @@ ${aptitudeEvaluations[newAptitude]}
     
     // 添加特殊道具
     await Add_najie_thing(player_id, '如梦道痕', '道具', 1);
-   
+  
 }
               if (random > 0.1 && random < 0.1002) {
                 last_msg +=
@@ -2084,78 +2153,12 @@ ${aptitudeEvaluations[newAptitude]}
       }
     }
   }
-async checkTravelTasks() {
-    // 获取所有传送任务
-    const keys = await redis.keys('xiuxian:travel_task:*');
-    
-    for (const key of keys) {
-      const taskData = await redis.get(key);
-      if (!taskData) continue;
-      
-      const task = JSON.parse(taskData);
-      const now = Date.now();
-      
-      // 检查是否已完成
-      if (now >= task.end_time) {
-        await this.completeTravelTask(task);
-        await redis.del(key); // 删除任务
-      }
-    }
-  }
-  
- async completeTravelTask(task) {
-    const { player_qq, to_location, to_name, travel_msg, player_name, group_id } = task;
-    
-    try {
-        // 1. 更新玩家位置
-        const player = await Read_player(player_qq);
-        player.power_place = to_location;
-        await Write_player(player_qq, player);
-        
-        // 2. 清除行动状态
-        await redis.del(`xiuxian:player:${player_qq}:action`);
-        await redis.del(`xiuxian:travel_task:${player_qq}`);
-        
-        // 3. 构建抵达消息
-        const arriveMsg = [
-            `【位面穿梭·完成】`,
-            `${player_name}已成功抵达${to_name}!`,
-            ...travel_msg,
-            `位面穿梭完成，你现已身处${to_name}`
-        ].join('\n');
-        
-        // 4. 发送消息
-        if (group_id) {
-            await Bot.pickGroup(group_id).sendMsg([
-                segment.at(Number(player_qq)),
-                arriveMsg
-            ]);
-        } else {
-            await common.relpyPrivate(player_qq, arriveMsg);
-        }
-        
-        return true;
-    } catch (err) {
-        console.error(`完成传送任务出错（玩家QQ：${player_qq}）：`, err);
-        
-        // 错误处理：尝试发送错误通知
-        try {
-            const errorMsg = `【穿梭失败】\n位面穿梭过程中发生意外，请联系管理员！`;
-            if (group_id) {
-                await Bot.pickGroup(group_id).sendMsg([
-                    segment.at(Number(player_qq)),
-                    errorMsg
-                ]);
-            } else {
-                await common.relpyPrivate(player_qq, errorMsg);
-            }
-        } catch (secondaryErr) {
-            console.error('发送错误消息失败：', secondaryErr);
-        }
-        
-        return false;
-    }
-}
+
+
+
+
+
+
 async checkDaoshangPunishment() {
     try {
         console.log('【道伤检查】开始执行道伤惩罚检查...');

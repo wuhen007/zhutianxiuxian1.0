@@ -245,7 +245,7 @@ async zhaohuanailixiya(e) {
 
     // 天资等级序列与评价
     const aptitudeSequence = [
-        '天弃之人', '先天不足', '平庸之资', '超凡资质', 
+        '无化如是' ,'生而痴傻','天弃之人', '先天不足', '平庸之资', '超凡资质', 
         '天纵之资', '旷世奇才', '绝世天骄', '万古无双', '无演无尽'
     ];
     const aptitudeDescriptions = {
@@ -257,7 +257,9 @@ async zhaohuanailixiya(e) {
         '超凡资质': '资质超凡，注定异于常人',
         '平庸之资': '资质平平，勉勉强强',
         '先天不足': '先天有缺，修炼事倍功半',
-        '天弃之人': '被天道抛弃，修炼必遭反噬'
+        '天弃之人': '被天道抛弃，修炼必遭反噬，但仍有希望',
+        '生而痴傻': '天生愚笨，修炼难如登天',
+        '无化如是': '无用之人，命中注定难有所作为，任何外力都无法改变'
     };
 
     let random = Math.random();
@@ -271,9 +273,14 @@ async zhaohuanailixiya(e) {
         let newAptitude = oldAptitude;
         let newDescription = oldDescription;
         let aptitudeBoost = false;
-
-        if (Math.random() < 0.1 && currentAptitudeIndex < 7) {
-            const newAptitudeIndex = Math.min(currentAptitudeIndex + 1, 7); // 上限为万古无双（索引7）
+    if (player.天资等级 === '无化如是') {
+    // 直接跳过提升逻辑，并记录提示信息
+    
+    replyMessage.push(' 爱莉希雅轻轻叹息：「哎呀，你的资质是『无化如是』呢～」');
+    replyMessage.push(' 「这是连我也无法改变的命运枷锁哦，真是遗憾♪」');
+    } 
+       else  if (Math.random() < 0.1 && currentAptitudeIndex < 8) {
+            const newAptitudeIndex = Math.min(currentAptitudeIndex + 1, 8); // 上限为万古无双（索引7）
             newAptitude = aptitudeSequence[newAptitudeIndex];
             newDescription = aptitudeDescriptions[newAptitude];
             player.天资等级 = newAptitude;
@@ -380,7 +387,7 @@ async yijianzhaohuan(e) {
     
     // 天资等级序列与评价
     const aptitudeSequence = [
-        '天弃之人', '先天不足', '平庸之资', '超凡资质', 
+        '无化如是' ,'生而痴傻','天弃之人', '先天不足', '平庸之资', '超凡资质', 
         '天纵之资', '旷世奇才', '绝世天骄', '万古无双', '无演无尽'
     ];
     const aptitudeDescriptions = {
@@ -392,7 +399,9 @@ async yijianzhaohuan(e) {
         '超凡资质': '资质超凡，注定异于常人',
         '平庸之资': '资质平平，勉勉强强',
         '先天不足': '先天有缺，修炼事倍功半',
-        '天弃之人': '被天道抛弃，修炼必遭反噬'
+        '天弃之人': '被天道抛弃，修炼必遭反噬，但仍有希望',
+        '生而痴傻': '天生愚笨，修炼难如登天',
+        '无化如是': '无用之人，命中注定难有所作为，任何外力都无法改变'
     };
     
     // 统计变量
@@ -424,10 +433,15 @@ async yijianzhaohuan(e) {
         
         if (random > 0.2) { // 80%成功率
             successfulSummons++;
-            
+            if (player.天资等级 === '无化如是') {
+    // 直接跳过提升逻辑，并记录提示信息
+    
+    replyMessage.push(' 爱莉希雅轻轻叹息：「哎呀，你的资质是『无化如是』呢～」');
+    replyMessage.push(' 「这是连我也无法改变的命运枷锁哦，真是遗憾♪」');
+    }     
             // 天资提升判定（10%概率提升）
-            if (Math.random() < 0.1 && currentIndex < 7) {
-                const newAptitudeIndex = Math.min(currentIndex + 1, 7);
+           else  if (Math.random() < 0.1 && currentIndex < 8) {
+                const newAptitudeIndex = Math.min(currentIndex + 1, 8);
                 const newAptitude = aptitudeSequence[newAptitudeIndex];
                 player.天资等级 = newAptitude;
                 player.天资评价 = aptitudeDescriptions[newAptitude];

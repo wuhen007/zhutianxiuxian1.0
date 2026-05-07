@@ -127,7 +127,28 @@
             background: var(--bg-body);
         }
         
-        /* ==== 章节样式 - 默认全部展开 ==== */
+        /* ==== 非战斗消息样式 ==== */
+        .simple-messages {
+            padding: 25px;
+        }
+        
+        .simple-message {
+            padding: 16px 20px;
+            margin-bottom: 14px;
+            border-radius: 10px;
+            font-size: 20px;
+            background: var(--bg-message);
+            border-left: 4px solid var(--border-message);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+            text-align: left;
+            line-height: 1.6;
+        }
+        
+        .simple-message:last-child {
+            margin-bottom: 0;
+        }
+        
+        /* ==== 战斗章节样式 ==== */
         .chapter {
             margin: 0;
             border-bottom: 1px solid rgba(255, 215, 0, 0.15);
@@ -201,7 +222,7 @@
             padding: 0 25px;
         }
         
-        /* ==== 消息样式 ==== */
+        /* ==== 战斗消息样式 ==== */
         .fight-message {
             padding: 16px 20px;
             margin-bottom: 14px;
@@ -422,7 +443,7 @@
         </div>
         
         <div class="fight-body" id="fight">
-            <!-- 战斗消息将在这里动态生成 -->
+            <!-- 消息将在这里动态生成 -->
         </div>
         
         <div class="fight-footer">
@@ -505,16 +526,35 @@
             return text;
         }
         
-        // 渲染章节
-        function renderChapters() {
-            const messages = getAllMessages();
-            const container = document.getElementById('fight');
-            container.innerHTML = '';
-            
-            if (!messages || messages.length === 0) {
-                container.innerHTML = '<div class="fight-message">暂无数据</div>';
-                return;
+        // 检查是否是战斗消息（包含"回合"关键词）
+        function isBattleMessage(messages) {
+            for (let msg of messages) {
+                if (msg.includes("回合")) {
+                    return true;
+                }
             }
+            return false;
+        }
+        
+        // 渲染简单消息（非战斗）
+        function renderSimpleMessages(messages) {
+            const container = document.getElementById('fight');
+            const simpleDiv = document.createElement('div');
+            simpleDiv.className = 'simple-messages';
+            
+            messages.forEach(msg => {
+                const msgDiv = document.createElement('div');
+                msgDiv.className = 'simple-message';
+                msgDiv.innerHTML = highlightMessage(msg);
+                simpleDiv.appendChild(msgDiv);
+            });
+            
+            container.appendChild(simpleDiv);
+        }
+        
+        // 渲染战斗章节
+        function renderBattleChapters(messages) {
+            const container = document.getElementById('fight');
             
             // 定义章节规则
             const chapterRules = [
@@ -533,7 +573,6 @@
                     icon: "🔥",
                     test: (msg) => msg.includes("施展") || msg.includes("催动") || msg.includes("演化") || msg.includes("发动") || msg.includes("触发")
                 },
-
                 {
                     name: "战斗结算",
                     icon: "🏆",
@@ -639,8 +678,29 @@
             });
         }
         
+        // 主渲染函数
+        function renderMessages() {
+            const messages = getAllMessages();
+            const container = document.getElementById('fight');
+            container.innerHTML = '';
+            
+            if (!messages || messages.length === 0) {
+                // 如果没有消息，只显示框架
+                return;
+            }
+            
+            // 判断是否是战斗消息
+            if (isBattleMessage(messages)) {
+                // 战斗消息：显示章节
+                renderBattleChapters(messages);
+            } else {
+                // 非战斗消息：简单显示
+                renderSimpleMessages(messages);
+            }
+        }
+        
         // 页面加载完成后渲染
-        document.addEventListener('DOMContentLoaded', renderChapters);
+        document.addEventListener('DOMContentLoaded', renderMessages);
     </script>
 </body>
 </html>

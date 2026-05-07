@@ -4732,6 +4732,85 @@ export async function Get_xiuwei(usr_qq) {
   sum_exp += player.修为;
   return sum_exp;
 }
+/**
+ * 获取玩家的天资相关数据
+ * @param {string} player 玩家对象
+ * @returns {object} 包含天资信息和索引的对象
+ */
+export async function getPlayerAptitudeData(player) {
+    // 完整的天资等级序列（从低到高）
+    const aptitudeSequence = [
+        '无化如是',
+        '生而愚痴',
+        '天弃之人', 
+        '先天不足',
+        '平庸之资',
+        '超凡资质',
+        '天纵之资',
+        '旷世奇才',
+        '绝世天骄',
+        '万古无双',
+        '无演无尽'
+    ];
+    
+    // 天资等级描述
+    const aptitudeDescriptions = {
+        '无化如是': '无用之人，命中注定难有所作为，任何外力都无法改变',
+        '生而愚痴': '天生愚笨，修炼难如登天',
+        '天弃之人': '被天道抛弃，修炼必遭反噬',
+        '先天不足': '先天有缺，修炼事倍功半',
+        '平庸之资': '资质平平，勉勉强强',
+        '超凡资质': '资质超凡，注定异于常人',
+        '天纵之资': '天赋异禀，媲美上古大教的天才',
+        '旷世奇才': '万年难遇，此等资质放眼九天十地也是难寻',
+        '绝世天骄': '惊才绝艳，具备帝姿，注定为一个时代的天地主角',
+        '万古无双': '横推古今未来无对手，为修道而生，为应劫而至，永恒无敌',
+        '无演无尽': '亘古绝今从未有，演尽诸天万界，此等天资已超脱天道束缚'
+    };
+    
+    const currentAptitude = player.天资等级 || '无化如是';
+    const currentIndex = aptitudeSequence.indexOf(currentAptitude);
+    const description = aptitudeDescriptions[currentAptitude] || '未知天资';
+    
+    return {
+        // 天资等级
+        grade: currentAptitude,
+        
+        // 天资描述
+        description: description,
+        
+        // 在序列中的索引位置
+        index: currentIndex >= 0 ? currentIndex : 0,
+        
+        // 天资序列（完整）
+        sequence: aptitudeSequence,
+        
+        // 判断是否为特殊天资
+        isSpecialGrade: currentAptitude === '无化如是' || currentAptitude === '生而愚痴',
+        
+        // 判断是否达到指定资质
+        isAtLeast: function(minGrade) {
+            const minIndex = aptitudeSequence.indexOf(minGrade);
+            return this.index >= minIndex;
+        },
+        
+        // 获取下一等级
+        getNextGrade: function() {
+            if (this.index >= aptitudeSequence.length - 1) {
+                return null; // 已经是最高等级
+            }
+            return aptitudeSequence[this.index + 1];
+        },
+        
+        // 获取上一等级
+        getPrevGrade: function() {
+            if (this.index <= 0) {
+                return null; // 已经是最低等级
+            }
+            return aptitudeSequence[this.index - 1];
+        }
+    };
+}
 // 获取随机天资等级
 async function get_random_aptitude() {
   // 定义天资等级及其概率
@@ -6925,7 +7004,7 @@ export async function zd_battle(AA_player, BB_player) {
     let Random = Math.random();
     let 不可防御 = false;
     let 不可复活 = false;
-    
+    let 攻击方技能 = null; // 在if语句块外定义变量
     for (var i = 0; i < jineng1.length; i++) {
       if (context === "fenshen" && fenshen.includes(jineng1[i].name)) {
         continue;
@@ -6941,7 +7020,7 @@ export async function zd_battle(AA_player, BB_player) {
       if ((jineng1[i].class == '常驻' && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
           (attacker.学习的功法 && jineng1[i].class == '功法' && attacker.学习的功法.indexOf(jineng1[i].name) > -1 && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
           (attacker.灵根 && jineng1[i].class == '灵根' && attacker.灵根.name == jineng1[i].name && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr)) {
-        
+         攻击方技能 = jineng1[i]; // 在这里赋值
         let processedMsg1 = jineng1[i].msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
         let processedMsg2 = jineng1[i].msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
         
@@ -6993,7 +7072,118 @@ export async function zd_battle(AA_player, BB_player) {
         if (count == 3) break;
       }
     }
-
+// ==================== 对轰判断 ====================
+  // 调试日志
+  console.log(`[对轰调试] 攻击方技能: ${攻击方技能?.name || '无'}, 不可防御: ${不可防御}, count: ${count}, 回合cnt2: ${cnt2}`);
+  console.log(`[对轰调试] 攻击方速度: ${attacker.速度}, 防御方速度: ${defender.速度}`);
+  
+  // 只有当攻击方触发了技能，且不是控制类技能时，才可能触发对轰
+  if (攻击方技能 && 攻击方技能.控制 !== 1 && !不可防御) {
+    // 速度影响对轰触发概率：防御方速度越快，越容易及时反击
+    const 速度比值 = defender.速度 / (attacker.速度 + defender.速度);
+    const 基础触发概率 = 1; // 基础30%触发概率
+    const 速度加成 = 速度比值 * 0.3; // 速度优势最多加30%
+    const 最终触发概率 = Math.min(1, 基础触发概率 + 速度加成);
+    
+    if (Math.random() < 最终触发概率) {
+      // 防御方尝试用自己的攻击技能对轰
+      let 防御方反击技能 = null;
+      let 反击技能伤害 = 0;
+      
+      // 筛选防御方可以用于反击的攻击技能
+      const 可用反击技能 = jineng1.filter(skill => {
+        // 必须是攻击类技能
+        if (skill.控制 === 1) return false;
+        if (skill.负面效果) return false;
+        
+        // 检查防御方是否满足触发条件
+        if (skill.class === '功法' && defender.学习的功法 && defender.学习的功法.includes(skill.name)) {
+          return true;
+        }
+        if (skill.class === '灵根' && defender.灵根 && defender.灵根.name === skill.name) {
+          return true;
+        }
+        if (skill.class === '常驻') {
+          return true;
+        }
+        return false;
+      });
+      
+      if (可用反击技能.length > 0 && Math.random() < 1) { // 60%概率找到合适反击技能
+        防御方反击技能 = 可用反击技能[Math.floor(Math.random() * 可用反击技能.length)];
+        
+        // 计算反击伤害
+        let 反击基础伤害 = Harm(defender.攻击 * 0.7, attacker.防御); // 反击伤害较低
+        let 反击暴击 = baojishanghai(defender.暴击率);
+        let 反击最终伤害 = Math.trunc(反击基础伤害 * 反击暴击 * 防御方反击技能.beilv + 防御方反击技能.other);
+        
+        msg.push(`「嗯？」${defender.名号}见对方来势汹汹，不闪不避，同样施展神通对轰！`);
+        msg.push(`${defender.名号}施展${防御方反击技能.name}，一道神光迎向对方的攻击！`);
+        
+        // 判断对轰结果：比较双方技能威力
+        const 攻击方威力 = 攻击方技能.beilv || 1;
+        const 防御方威力 = 防御方反击技能.beilv || 1;
+        
+        if (防御方威力 >= 攻击方威力 * 0.8) {
+          // 防御方成功抵消大部分伤害
+          const 抵消比例 = 防御方威力 / (攻击方威力 + 防御方威力);
+          const 抵消伤害 = Math.trunc(伤害 * 抵消比例);
+          伤害 = Math.trunc(伤害 * (1 - 抵消比例));
+          
+          msg.push(`两股神通在半空中剧烈碰撞，爆发出耀眼的光芒！`);
+          msg.push(`${defender.名号}的神通抵消了${bigNumberTransform(抵消伤害)}点伤害！`);
+          
+          // 反击造成部分伤害
+          if (反击最终伤害 > 0) {
+            attacker.当前血量 = Math.max(attacker.当前血量 - 反击最终伤害, 0);
+            msg.push(`对轰的余波震伤了${attacker.名号}，造成${bigNumberTransform(反击最终伤害)}点伤害！`);
+            msg.push(`${attacker.名号}剩余血量：${bigNumberTransform(attacker.当前血量)}`);
+          }
+          
+          // 双方都被推条
+          const 对轰推条 = 100;
+          const attackerBar = attacker === A_player ? 'A' : 'B';
+          const defenderBar = defender === A_player ? 'A' : 'B';
+          pushBackActionBar(attackerBar, 对轰推条);
+          pushBackActionBar(defenderBar, 对轰推条);
+          msg.push(`神通对轰的冲击让双方都后退数步，行动条各减少${对轰推条}点！`);
+          
+        } else {
+          // 防御方对轰失败
+          msg.push(`${defender.名号}的神通不敌对方，被一击击溃！`);
+          msg.push(`${attacker.名号}的攻势虽被削弱，但依旧向前轰去！`);
+          
+          // 攻击伤害削弱
+          伤害 = Math.trunc(伤害 * 0.7);
+          
+          // 反击失败，防御方额外受伤
+          const 反噬伤害 = Math.trunc(反击最终伤害 * 0.3);
+          if (反噬伤害 > 0) {
+            defender.当前血量 = Math.max(defender.当前血量 - 反噬伤害, 0);
+            msg.push(`${defender.名号}神通被破，受到反噬，损失${bigNumberTransform(反噬伤害)}点生命！`);
+          }
+          
+          // 攻击方获得拉条奖励
+          const 对轰胜利拉条 = 150;
+          const attackerBar = attacker === A_player ? 'A' : 'B';
+          boostActionBar(attackerBar, 对轰胜利拉条);
+          msg.push(`${attacker.名号}在对轰中占据上风，气势大涨，行动条增加${对轰胜利拉条}点！`);
+        }
+        
+        // 对轰后跳过后续防御技能判定
+        不可防御 = true;
+        
+      } else {
+        // 防御方来不及或找不到合适技能反击
+        const 速度优势 = defender.速度 > attacker.速度;
+        if (速度优势) {
+          msg.push(`${defender.名号}速度虽快，但仓促间来不及施展强力神通反击！`);
+        } else {
+          msg.push(`${defender.名号}速度稍慢，来不及施展神通对轰！`);
+        }
+      }
+    }
+  }
     if (!不可防御) {
       let 反弹伤害 = 0;
       let random = Math.random();
@@ -7268,10 +7458,11 @@ export async function zd_battle(AA_player, BB_player) {
   }
 
   // ==================== 主战斗循环（仅修改行动条文案） ====================
-  msg.push(`天地元气涌动，二人周身气势攀升，大战一触即发！`);
-  msg.push(`【天道法则】行动条满千点方可出手，速度决定先机`);
-  msg.push(`${A_player.名号} 遁光速度：${A_speed}`);
-  msg.push(`${B_player.名号} 遁光速度：${B_speed}`);
+msg.push(`天地元气涌动，二人周身气势攀升，大战一触即发！`);
+msg.push(`【天道法则】行动条满千点方可出手，速度决定先机`);
+msg.push(`【神通对轰】高速度可抢先出手，更有机会施展神通与对方对轰，占据主动！`);
+msg.push(`${A_player.名号} 遁光速度：${A_speed}`);
+msg.push(`${B_player.名号} 遁光速度：${B_speed}`);
 
 
   while (A_player.当前血量 > 0 && B_player.当前血量 > 0) {

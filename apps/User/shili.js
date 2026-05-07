@@ -16,6 +16,7 @@ import {
   get_najie_img,
   get_najie_category_img,
   get_najie_chouchou_img,
+  getPlayerAptitudeData,
   channel
 } from '../../model/xiuxian.js';
 export class shilitixi extends plugin {
@@ -331,13 +332,13 @@ async yaochi(e) {
     
     // 定义天资等级序列
     const aptitudeSequence = [
-        '天弃之人', '先天不足', '平庸之资', '超凡资质', 
+        '无化如是', '生而愚痴','天弃之人', '先天不足', '平庸之资', '超凡资质', 
         '天纵之资', '旷世奇才', '绝世天骄', '万古无双', '无演无尽'
     ];
     const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级);
     
     // 瑶池入门基础资质要求：至少平庸之资
-    if (currentAptitudeIndex < 2) {
+    if (currentAptitudeIndex < 4) {
         return e.reply([
             `【仙缘未至】`,
             `瑶池圣地乃西皇母所创无上道统，收徒标准甚严。`,
@@ -374,11 +375,11 @@ async yaochi(e) {
     
     // 根据资质和境界给予差异化入门奖励 (瑶池会根据弟子潜力给予不同资源
     let extraReward = "";
-    if (currentAptitudeIndex >= 5) { // 旷世奇才以上
+    if (currentAptitudeIndex >= 7) { // 旷世奇才以上
         await Add_najie_thing(usr_qq, '太阴缚灵诀', '功法', 1);
         await Add_najie_thing(usr_qq, '百草液', '道具', 10);
         extraReward = "因你资质出众，赐下瑶池无上功法《太阴缚灵诀》与百草液十瓶。";
-    } else if (currentAptitudeIndex >= 3) { // 超凡资质以上
+    } else if (currentAptitudeIndex >= 5) { // 超凡资质以上
         await Add_najie_thing(usr_qq, '瑶池筑基丹', '丹药', 3);
         await Add_najie_thing(usr_qq, '百草液', '道具', 5);
         extraReward = "赐予瑶池筑基丹三枚与百草液五瓶，助你巩固道基。";
@@ -433,42 +434,38 @@ async yaoguang(e) {
         );
     }
     
-    // 定义天资等级序列
-    const aptitudeSequence = [
-        '天弃之人',
-        '先天不足',
-        '平庸之资',
-        '超凡资质',
-        '天纵之资',
-        '旷世奇才',
-        '绝世天骄',
-        '万古无双',
-        '无演无尽'
-    ];
+   const aptitude = await getPlayerAptitudeData(player);
     
-    // 获取玩家当前天资等级索引
-    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级);
+    // 摇光圣地入门资质要求：至少超凡资质
+    if (aptitude.grade === '无化如是') {
+        return e.reply([
+            `【天资被废】`,
+            `摇光圣地的化龙镜对你毫无反应！`,
+            `执事长老摇头叹息："无化如是，无用之人，我摇光不收！"`,
+            `你当前资质：${aptitude.grade}（${aptitude.description}）`,
+            `提示：此天资已注定，任何势力都无法接纳`
+        ].join('\n'));
+    }
     
-    // 摇光圣地入门资质要求：至少超凡资质（根据原著设定，摇光重视弟子天赋）
-    if (currentAptitudeIndex < 3) {
+    if (aptitude.grade === '生而愚痴') {
+        return e.reply([
+            `【资质过低】`,
+            `执事长老探查后眉头紧皱："生而愚痴，不堪造就！"`,
+            `你当前资质：${aptitude.grade}（${aptitude.description}）`,
+            `提示：需先提升至天弃之人以上资质`
+        ].join('\n'));
+    }
+    
+    if (!aptitude.isAtLeast('超凡资质')) {  // 使用函数判断
         return e.reply([
             `【资质不足】`,
             `摇光圣地乃东荒顶级势力，收徒标准严苛！`,
             `需至少「超凡资质」方可参加入门测试。`,
-            `你当前资质：${player.天资等级}`,
+            `你当前资质：${aptitude.grade}（${aptitude.description}）`,
             `提示：可通过奇遇或服用圣药提升资质`
         ].join('\n'));
     }
     
-    // 检查境界（摇光圣地偏好有潜力的低境界弟子）
-    if (player.mijinglevel_id && player.mijinglevel_id > 5) {
-        return e.reply([
-            `【境界过高】`,
-            `摇光圣地更倾向培养轮海秘境弟子！`,
-            `你当前境界过高，建议寻找更适合的势力。`,
-            `提示：摇光圣地注重基础培养和潜力挖掘`
-        ].join('\n'));
-    }
     
     // 加入摇光圣地
     player.势力 = "摇光圣地";
@@ -479,23 +476,23 @@ async yaoguang(e) {
     await Add_najie_thing(usr_qq, '下品源石', '道具', 100); 
     let baseRewardDesc = `- 《摇光经·轮海卷》x1\n- 下品源石 x100`;
     
-    // --- 根据天资等级给予差异化额外奖励 ---
+// --- 根据天资等级给予差异化额外奖励 ---
     let extraRewardDesc = "";
- if (currentAptitudeIndex >= 5) { // 旷世奇才
+    let rewardTitle = "";
+    
+   if (aptitude.grade === '旷世奇才') {
         await Add_najie_thing(usr_qq, '中品源石', '道具', 50);
         await Add_najie_thing(usr_qq, '百草液', '道具', 5);
-        extraRewardDesc = `因你资质不凡，圣地重点栽培：
-- 百草液 x5（固本培元）        
-- 中品源石 x50（更精纯的修炼资源）`;
-
-    } else if (currentAptitudeIndex >= 4) { // 天纵之资
-        await Add_najie_thing(usr_qq, '百草液', '道具', 3); // 数量提升至10
-        extraRewardDesc = `因你资质优异，赐下：
-- 百草液 x3（固本培元）`;
-    } else if (currentAptitudeIndex >= 3) { // 超凡资质
-        await Add_najie_thing(usr_qq, '百草液', '药剂', 1);
-        extraRewardDesc = `赐予入门资源：
-- 百草液 x1（固本培元）`;
+        rewardTitle = "【重点栽培】";
+        extraRewardDesc = `因你资质不凡，圣地重点栽培：- 百草液 x5（固本培元） - 中品源石 x50（更精纯的修炼资源）`;
+    } else if (aptitude.grade === '天纵之资') {
+        await Add_najie_thing(usr_qq, '百草液', '道具', 3);
+        rewardTitle = "【优秀弟子】";
+        extraRewardDesc = `因你资质优异，赐下额外资源：- 百草液 x3（固本培元）`;
+    } else if (aptitude.grade === '超凡资质') {
+        await Add_najie_thing(usr_qq, '百草液', '道具', 1);
+        rewardTitle = "【普通弟子】";
+        extraRewardDesc = `资质达标，赐予入门资源：- 百草液 x1（固本培元）`;
     }
     
     await Write_player(usr_qq, player);

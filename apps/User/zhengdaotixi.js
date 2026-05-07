@@ -772,136 +772,280 @@ async hongjiChengxianlu(e) {
     return false;
   }
 }
-    /** 逆天改命功能 */
-  async changeAptitude(e) {
-    // 群聊限定
-    if (!e.isGroup) {
-      e.reply('修仙之路当在群仙汇聚之所印证');
-      return false;
-    }
-    
-    // 解析命令
-    const aptitudeName = e.msg.match(/#为其逆天改命\s+(.+?)(?:\s|$)/);
-    if (!aptitudeName || !aptitudeName[1]) {
-      e.reply('指令格式：#为其逆天改命 新天资名称 [@目标玩家]');
-      return false;
-    }
-    
-    // 确定目标玩家QQ
-    let targetQQ = e.user_id;
-    if (e.message.some(item => item.type === "at")) {
-      const atItem = e.message.find(item => item.type === "at");
-      targetQQ = atItem.qq;
-    }
-    
-    // 检查施法者境界
-    const invokerQQ = e.user_id;
-    const invoker = await Read_player(invokerQQ);
-    if (invoker.mijinglevel_id < 21) {
-      e.reply(`你当前境界不足，唯有仙帝方可掌控命运！`);
-      return false;
-    }
-    
-    // 获取目标玩家
-    const targetPlayer = await Read_player(targetQQ);
-    if (!targetPlayer) {
-      e.reply('目标修士尚未踏入仙途');
-      return false;
-    }
-    
-    // 天资序列
-    const aptitudeSequence = [
-      '天弃之人', '先天不足', '平庸之资', 
-      '超凡资质', '天纵之资', '旷世奇才',
-      '绝世天骄', '万古无双', '无演无尽'
-    ];
-    
-    // 检查新的天资是否有效
-    const newAptitude = aptitudeName[1];
-    if (!aptitudeSequence.includes(newAptitude)) {
-      const validList = aptitudeSequence.join('、');
-      e.reply(`"${newAptitude}"非有效天资！可用天资：${validList}`);
-      return false;
-    }
-    
-       // 构建天资评价 - 辰东风格
-    const aptitudeEvaluations = {
-        '无演无尽': '万古未有，超脱诸天之上！此人天资已凌驾于天道束缚之外，演尽诸天万界法则，便是纪元更迭亦难掩其辉',
-        '万古无双': '横推古今未来敌！此等天资乃为修道而生，为应劫而至，纵使时间长河倒灌亦难磨灭其永恒帝光',
-        '绝世天骄': '惊才绝艳，帝姿天成！注定要成为纪元主角的存在，眸光开阖间便有真龙盘绕，气血奔腾似星海翻涌',
-        '旷世奇才': '九天上界难觅！这般资质便是放在仙古纪元也是无上仙苗，一滴血便可压塌虚空',
-        '天纵之资': '天碑刻名！足以媲美长生世家传人的天资，吞吐间有混沌气缭绕',
-        '超凡资质': '超越凡俗！已然初现非凡气象，道基之上显化异象',
-        '平庸之资': '平凡无奇！在芸芸修士中毫不起眼',
-        '先天不足': '道基残缺！如同漏鼎难承天地灵气',
-        '天弃之人': '大道弃子！每一步修行都将遭遇天罚拷问'
-    };
-    
-    // 获取原天资
-    const oldAptitude = targetPlayer.天资等级 || '平庸之资';
-    
-    // 构建仙帝威势消息
-    let emperorRealmDesc = "";
-    if (invoker.mijinglevel_id === 23) {
-        emperorRealmDesc = `（${invoker.名号}周身缭绕不灭道光，祭道之力席卷八荒，诸世在他面前颤抖）`;
-    } else if (invoker.mijinglevel_id === 22) {
-        emperorRealmDesc = `（${invoker.名号}帝威浩荡，眸中映照万界生灭，一念间诸天星辰皆成尘埃）`;
-    } else {
-        emperorRealmDesc = `（${invoker.名号}仙帝气机震动时间长河，掌指间流淌着毁灭万物的能量）`;
-    }
-    
-    // 构建特效消息 - 辰东风
-    let effectMsg = [
-        `〖逆天改命·篡夺造化〗`,
-        `混沌炸裂！时空震颤！`,
-        `${emperorRealmDesc}`,
-        `${invoker.名号}一步踏出，诸天规则哀鸣！`,
-        `时间长河被截断，命运长河激起万丈波澜！`,
-        `帝掌覆盖无量宇宙，因果轨迹在其掌心重铸！`
-    ];
-    
-    // 天资蜕变特效 - 辰东风
-    let changeProcess = [
-        `▼ 命运长河倒灌 ▼`,
-        `▷ 原始天资【${oldAptitude}】被强行剥离：`,
-        `  天地间回荡着命运规则的崩裂声，万道枷锁寸寸断裂`,
-        `▷ 创世仙光重塑本源：`,
-        `  九色神虹贯穿诸天，三千大道符文烙印进血脉深处`,
-        `▷ 万古无双道果孕育：`,
-        `  混沌气弥漫中，【${newAptitude}】真命正在复苏`
-    ];
-    
-    // 结果消息 - 辰东风
-    let resultMsg = [
-        `≡≡≡ 宿命终章 ≡≡≡`,
-        `一缕眸光击穿时间长河，帝掌缓缓收回：`,
-        `  万界重归平静，唯留命运长河上荡漾的涟漪`,
-        `≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡`,
-        `  目标修士：${targetPlayer.名号}`,
-        `  原始天资：【${oldAptitude}】 ➠ 重塑天资：【${newAptitude}】`,
-        `  命格批语：${aptitudeEvaluations[newAptitude]}`,
-        `≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡`,
-        `${invoker.名号}收拢周身道则，漠然低语：`,
-        `  "修道一途，逆天而行！今日本帝篡尔天命，望汝不负此造化"`
-    ];
-    
-    // 更新玩家数据
-    targetPlayer.天资等级 = newAptitude;
-    targetPlayer.天资评价 = aptitudeEvaluations[newAptitude];
-    await Write_player(targetQQ, targetPlayer);
-    
-    // 发送分段消息（带特效延迟）
-    await e.reply(` ${invoker.名号}〖帝威初现〗`);
-    await sleep(1500);
-    await e.reply(effectMsg.join('\n'));
-    await sleep(2500);
-    await e.reply(changeProcess.join('\n'));
-    await sleep(3000);
-    await e.reply(resultMsg.join('\n'));
-    
-    return true;
-}
+/** 逆天改命功能 */
+async changeAptitude(e) {
+  // 群聊限定
+  if (!e.isGroup) {
+    e.reply('修仙之路当在群仙汇聚之所印证');
+    return false;
+  }
+  
+  // 解析命令
+  const aptitudeName = e.msg.match(/#为其逆天改命\s+(.+?)(?:\s|$)/);
+  if (!aptitudeName || !aptitudeName[1]) {
+    e.reply('指令格式：#为其逆天改命 新天资名称 [@目标玩家]');
+    e.reply('可用天资：无化如是、生而愚痴、天弃之人、先天不足、平庸之资、超凡资质、天纵之资、旷世奇才、绝世天骄、万古无双、无演无尽');
+    return false;
+  }
+  
+  // 确定目标玩家QQ
+  let targetQQ = e.user_id;
+  if (e.message.some(item => item.type === "at")) {
+    const atItem = e.message.find(item => item.type === "at");
+    targetQQ = atItem.qq;
+  }
+  
+  // 检查施法者是否存在
+  const invokerQQ = e.user_id;
+  if (!await existplayer(invokerQQ)) {
+    e.reply('你尚未踏入仙途，无法施展逆天改命之术');
+    return false;
+  }
+  
+  // 检查施法者境界
+  const invoker = await Read_player(invokerQQ);
+  if (invoker.mijinglevel_id < 21) {
+    e.reply(`你当前境界不足，唯有仙帝方可掌控命运！`);
+    return false;
+  }
+  
+  // 获取目标玩家
+  if (!await existplayer(targetQQ)) {
+    e.reply('目标修士尚未踏入仙途');
+    return false;
+  }
+  const targetPlayer = await Read_player(targetQQ);
+  
+  // === 使用外部的天资数据函数 ===
+  const targetAptitudeData = await getPlayerAptitudeData(targetPlayer);
+  const invokerAptitudeData = await getPlayerAptitudeData(invoker);
+  
+  // 完整的天资序列
+  const aptitudeSequence = [
+    '无化如是',      // 索引0
+    '生而愚痴',      // 索引1
+    '天弃之人',      // 索引2
+    '先天不足',      // 索引3
+    '平庸之资',      // 索引4
+    '超凡资质',      // 索引5
+    '天纵之资',      // 索引6
+    '旷世奇才',      // 索引7
+    '绝世天骄',      // 索引8
+    '万古无双',      // 索引9
+    '无演无尽'       // 索引10
+  ];
+  
+  // 检查新的天资是否有效
+  const newAptitude = aptitudeName[1];
+  if (!aptitudeSequence.includes(newAptitude)) {
+    const validList = aptitudeSequence.join('、');
+    e.reply([
+      `〖天资无效〗`,
+      `"${newAptitude}"并非有效的天资名称！`,
+      ``,
+      `可用天资列表：`,
+      `无化如是、生而愚痴、天弃之人、先天不足、平庸之资`,
+      `超凡资质、天纵之资、旷世奇才、绝世天骄`,
+      `万古无双、无演无尽`
+    ].join('\n'));
+    return false;
+  }
+  
+  // === 获取原天资 ===
+  const oldAptitude = targetPlayer.天资等级 || '平庸之资';
 
+  
+  // === 特殊情况2：无演无尽无法被降低 ===
+  if (oldAptitude === '无演无尽' && newAptitude !== '无演无尽') {
+    e.reply([
+      `〖天道反制〗`,
+      `${invoker.名号}试图削弱${targetPlayer.名号}的天资！`,
+      `然无演无尽道果自动反击，万法不侵！`,
+      `〖无演无尽道果显化〗`,
+      `"无演无尽，万法源头，岂是尔等可染指？"`,
+      `"欲降吾道果，需先破诸天万界！"`,
+      `〖结果〗`,
+      `${invoker.名号}被道果反震！`,
+      `无演无尽不可被降低，维持原状！`
+    ].join('\n'));
+    return false;
+  }
+  
+  // === 特殊情况3：施法者天资不够 ===
+  // 只有无演无尽才能将他人提升到无演无尽
+  if (newAptitude === '无演无尽' && invokerAptitudeData.grade !== '无演无尽') {
+    e.reply([
+      `〖权限不足〗`,
+      `你欲将${targetPlayer.名号}提升至【无演无尽】！`,
+      `然无演无尽乃无穷之终点，唯有自身已达此境者，`,
+      `方能为他人开启无演无尽之路！`,
+      `〖境界要求〗`,
+      `施法者天资：${invokerAptitudeData.grade}`,
+      `所需天资：无演无尽`,
+      `提示：你需先将自己提升至无演无尽`
+    ].join('\n'));
+    return false;
+  }
+  
+   
+  // 构建天资评价
+  const aptitudeEvaluations = {
+    '无演无尽': '亘古绝今从未有，演尽诸天万界，此等天资已超脱天道束缚，万法源头，众生终点',
+    '万古无双': '横推古今未来无对手，为修道而生，为应劫而至，永恒无敌，帝光耀世',
+    '绝世天骄': '惊才绝艳，具备帝姿，注定为一个时代的天地主角，眸光开阖间便有真龙盘绕',
+    '旷世奇才': '万年难遇，此等资质放眼九天十地也是难寻，一滴血便可压塌虚空',
+    '天纵之资': '天赋异禀，媲美上古大教的天才，吞吐间有混沌气缭绕',
+    '超凡资质': '资质超凡，注定异于常人，道基之上显化异象',
+    '平庸之资': '资质平平，勉勉强强，在芸芸修士中毫不起眼',
+    '先天不足': '先天有缺，修炼事倍功半，如同漏鼎难承天地灵气',
+    '天弃之人': '被天道抛弃，修炼必遭反噬，每一步修行都将遭遇天罚拷问',
+    '生而愚痴': '天生愚笨，修炼难如登天，识海混沌，思维迟滞',
+    '无化如是': '无用之人，命中注定难有所作为，任何外力都无法改变，天道枷锁'
+  };
+  
+  // 构建仙帝威势消息
+  let emperorRealmDesc = "";
+  if (invoker.mijinglevel_id === 23) {
+    emperorRealmDesc = `〖祭道之上〗${invoker.名号}周身缭绕不灭道光，祭道之力席卷八荒，诸世在他面前颤抖，时空概念为之扭曲`;
+  } else if (invoker.mijinglevel_id === 22) {
+    emperorRealmDesc = `〖祭道〗${invoker.名号}帝威浩荡，眸中映照万界生灭，一念间诸天星辰皆成尘埃，时间长河在脚下臣服`;
+  } else {
+    emperorRealmDesc = `〖仙帝〗${invoker.名号}仙帝气机震动时间长河，掌指间流淌着毁灭万物的能量，天道法则为之让路`;
+  }
+  
+  // === 构建特效消息 ===
+  let effectMsg = [
+    `〖逆天改命·篡夺造化〗`,
+    `混沌炸裂！时空震颤！`,
+    `${emperorRealmDesc}`,
+    `${invoker.名号}一步踏出，诸天规则哀鸣！`,
+    `时间长河被截断，命运长河激起万丈波澜！`,
+    `帝掌覆盖无量宇宙，因果轨迹在其掌心重铸！`
+  ];
+  
+  // === 特殊天资改动有额外特效 ===
+  if (oldAptitude === '生而愚痴') {
+    effectMsg.push(`愚痴枷锁浮现，与天道法则激烈对抗！`);
+  }
+  if (newAptitude === '无演无尽') {
+    effectMsg.push(`诸天万界同时共鸣，迎接新的无演无尽诞生！`);
+  }
+  if (newAptitude === '生而愚痴') {
+    effectMsg.push(`天道降下愚痴枷锁，封印灵智！`);
+  }
+  
+  // 天资蜕变特效
+  let changeProcess = [
+    `▼ 命运长河倒灌 ▼`,
+    `▷ 原始天资【${oldAptitude}】被强行剥离：`,
+    `  天地间回荡着命运规则的崩裂声，万道枷锁寸寸断裂`,
+    `▷ 创世仙光重塑本源：`,
+    `  九色神虹贯穿诸天，三千大道符文烙印进血脉深处`
+  ];
+  
+  // 特殊蜕变效果
+  if (oldAptitude === '生而愚痴') {
+    changeProcess.push(`▷ 愚痴枷锁破碎：`,
+      `  识海混沌消散，灵智初开，智慧之光闪耀！`);
+  } else if (newAptitude === '生而愚痴') {
+    changeProcess.push(`▷ 天道封印降临：`,
+      `  愚痴枷锁加身，灵智蒙尘，智慧之光逐渐黯淡！`);
+  }
+  
+  if (newAptitude === '无演无尽') {
+    changeProcess.push(`▷ 无演无尽道果孕育：`,
+      `  混沌气弥漫中，【无演无尽】真命正在复苏，`,
+      `  万法臣服，诸道共鸣！`);
+  } else {
+    changeProcess.push(`▷ 【${newAptitude}】道果孕育：`,
+      `  混沌气弥漫中，【${newAptitude}】真命正在复苏`);
+  }
+  
+  // 结果消息
+  let resultMsg = [
+    `≡≡≡ 宿命终章 ≡≡≡`,
+    `一缕眸光击穿时间长河，帝掌缓缓收回：`,
+    `  万界重归平静，唯留命运长河上荡漾的涟漪`,
+    `  施法仙帝：${invoker.名号}`,
+    `  目标修士：${targetPlayer.名号}`,
+    `  原始天资：【${oldAptitude}】`,
+    `  重塑天资：【${newAptitude}】`,
+    `  天资跃迁：${targetAptitudeData.index} → ${newAptitudeIndex}`,
+  ];
+  
+  // 天资评价
+  resultMsg.push(`  命格批语：${aptitudeEvaluations[newAptitude]}`);
+  
+  // 施法者留言
+  const emperorMessages = [
+    `"修道一途，逆天而行！今日本帝篡尔天命，望汝不负此造化"`,
+    `"天命已改，道途重铸，望汝能登临绝巅"`,
+    `"本帝今日种下因果，他日望能结出无上道果"`,
+    `"命运长河已为你改道，前路如何，全在汝一念之间"`,
+    `"天道枷锁已破，从今往后，你的命运由自己书写"`
+  ];
+  
+  const randomMessage = emperorMessages[Math.floor(Math.random() * emperorMessages.length)];
+  resultMsg.push(`${invoker.名号}收拢周身道则，漠然低语：`);
+  resultMsg.push(`  ${randomMessage}`);
+  
+  // 特殊天资的额外警告
+  if (newAptitude === '无化如是') {
+    resultMsg.push(``);
+    resultMsg.push(`〖天道警告〗`);
+    resultMsg.push(`无化如是乃天道诅咒，一旦获得，永世不可更改！`);
+    resultMsg.push(`目标修士将永远无法学习功法、提升境界！`);
+  } else if (newAptitude === '生而愚痴') {
+    resultMsg.push(``);
+    resultMsg.push(`〖愚痴警告〗`);
+    resultMsg.push(`生而愚痴将蒙蔽灵智，学习功法极其困难！`);
+    resultMsg.push(`建议尽快寻找开智之法！`);
+  }
+  
+  // 更新玩家数据
+  targetPlayer.天资等级 = newAptitude;
+  targetPlayer.天资评价 = aptitudeEvaluations[newAptitude];
+  await Write_player(targetQQ, targetPlayer);
+  
+  // 记录逆天改命日志
+  if (!targetPlayer.逆天改命记录) {
+    targetPlayer.逆天改命记录 = [];
+  }
+  targetPlayer.逆天改命记录.push({
+    时间: new Date().toISOString(),
+    施法者: invoker.名号,
+    原天资: oldAptitude,
+    新天资: newAptitude
+  });
+  await Write_player(targetQQ, targetPlayer);
+  
+  // 发送分段消息（带特效延迟）
+  await e.reply(`〖逆天改命·序幕〗${invoker.名号}帝威初现，欲为${targetPlayer.名号}篡改天命！`);
+  await sleep(1500);
+  await e.reply(effectMsg.join('\n'));
+  await sleep(2500);
+  await e.reply(changeProcess.join('\n'));
+  await sleep(3000);
+  await e.reply(resultMsg.join('\n'));
+  
+  // 如果是无化如是，发送额外警告
+  if (newAptitude === '无化如是') {
+    await sleep(2000);
+    await e.reply([
+      `〖终极警告〗`,
+      `目标${targetPlayer.名号}已被赋予【无化如是】天资！`,
+      `从此刻起：`,
+      `1. 无法学习任何功法、技能`,
+      `2. 无法加入任何势力`,
+      `3. 无法提升境界`,
+      `4. 任何提升资质的道具对其无效`,
+      `5. 永久不可更改`,
+      `此为天道最严厉的诅咒，慎之！慎之！`
+    ].join('\n'));
+  }
+  
+  return true;
+}
 
 
 
@@ -2425,17 +2569,21 @@ async handleTeach(e, isAll = false) {
     const casterQQ = e.user_id.toString().replace('qg_', '');
     const caster = await Read_player(casterQQ);
     
-    // 检查施法者是否拥有功法
+    // === 检查施法者 ===
     if (!caster.学习的功法 || caster.学习的功法.length === 0) {
         e.reply('你尚未习得任何功法，无法传授');
         return true;
     }
-    // 检查施法者是否拥有功法
-    if (caster.mijinglevel_id<12&& caster.xiangulevel_id<12) {
+    
+    if (caster.mijinglevel_id < 12 && caster.xiangulevel_id < 12) {
         e.reply('你的道行不够，还没有传道授业为别人指点修行的能力');
         return true;
     }
-    // 获取目标玩家
+    
+    // === 使用外部的天资数据函数 ===
+    const casterAptitude = await getPlayerAptitudeData(caster);
+    
+    // === 获取目标玩家 ===
     const atItems = e.message.filter(item => item.type === "at");
     if (atItems.length === 0) {
         e.reply('请指定传授目标（@某人）');
@@ -2457,42 +2605,87 @@ async handleTeach(e, isAll = false) {
     }
 
     const target = await Read_player(targetQQ);
+    const targetAptitude = await getPlayerAptitudeData(target);
+    
+    // === 特殊天资：无化如是 ===
+    if (targetAptitude.grade === '无化如是') {
+        e.reply([
+            `〖天道封禁·传授失败〗`,
+            `你试图向${target.名号}传授功法，`,
+            `然功法在接触其识海的瞬间崩碎！`,
+            ``,
+            `〖天道之音〗`,
+            `"无化如是，天道弃子，不配承载任何道法！"`,
+            `"纵是仙帝亲传，亦无法烙印进其识海！"`,
+            ``,
+            `目标天资【无化如是】已被天道永久封印，`,
+            `任何功法都无法被其学习。`
+        ].join('\n'));
+        return true;
+    }
+    
+    // === 特殊天资：生而愚痴 ===
+    if (targetAptitude.grade === '生而愚痴') {
+        e.reply([
+            `〖愚痴之脑·传授困难〗`,
+            `你试图向${target.名号}传授功法，`,
+            `然其识海混沌，灵智蒙尘，`,
+            `功法真谛在其脑中如雾里看花。`,
+            ``,
+            `〖愚痴限制〗`,
+            `生而愚痴者灵智未开，`,
+            `学习功法成功率极低。`,
+            `建议先为其寻找开智之法。`
+        ].join('\n'));
+        
+        // 询问是否继续
+        if (Math.random() < 0.3) { // 30%概率继续
+            e.reply(`但今日你运气不错，或许能强行传授...`);
+        } else {
+            return true;
+        }
+    }
+    
+    // === 定义功法层级映射 ===
     const gongfaHierarchy = {
-  "神慧者": 8,
-  "仙帝法": 7,
-  "仙王法": 6,
-  "十凶宝术": 6,
-  "帝经": 5,
-  "九秘": 5,
-  "盖世杀术": 5,
-  "道与法": 4,
-  "宝术": 4,
-  "天赋": 2,
-  "修炼功法": 1,
-  "炼器": 1,
-  "推演": 1,
-  "技能": 1,
-  "武学": 1
-};
-
-// 定义天资等级映射（数字越大表示天资越高）
-const aptitudeLevels = {
-  "无演无尽": 8,
-  "万古无双": 7,
-  "绝世天骄": 6,
-  "旷世奇才": 5,
-  "天纵之资": 4,
-  "超凡资质": 3,
-  "平庸之资": 2,
-  "先天不足": 1,
-  "天弃之人": 0
-};
-  
+        "神慧者": 0,      // 最高级
+        "仙帝法": 1,
+        "仙王法": 2,
+        "十凶宝术": 3,
+        "帝经": 4,
+        "九秘": 5,
+        "盖世杀术": 5,
+        "道与法": 6,
+        "宝术": 6,
+        "天赋": 7,
+        "天魔法": 7,
+        "命运法": 7,
+        "修炼功法": 8,
+        "炼器": 8,
+        "推演": 8,
+        "技能": 8,
+        "武学": 8
+    };
     
-    // 获取目标玩家的天资等级
-    const targetAptitudeLevel = aptitudeLevels[target.天资等级] || 0;
+    // 天资等级对应的最高可学习层级
+    const aptitudeLevels = {
+        "无演无尽": 0,     // 可学神慧者
+        "万古无双": 1,     // 可学仙帝法
+        "绝世天骄": 2,     // 可学仙王法
+        "旷世奇才": 3,     // 可学十凶宝术
+        "天纵之资": 4,     // 可学帝经
+        "超凡资质": 5,     // 可学九秘/盖世杀术
+        "平庸之资": 6,     // 可学道与法/宝术
+        "先天不足": 7,     // 可学天赋/天魔法等
+        "天弃之人": 8,     // 可学修炼功法等基础
+        "生而愚痴": 9,     // 只能学最基础，有失败率
+        "无化如是": 10     // 无法学习任何功法
+    };
     
-    // 传授指定功法
+    // 获取目标玩家最高可学层级
+    const targetMaxLevel = aptitudeLevels[targetAptitude.grade] || 8;
+    
+    // === 传授指定功法 ===
     if (!isAll) {
         const gongfaName = e.msg.replace(/^#传授功法(?:\s+|@\d+\s*)?/, '').trim();
         
@@ -2513,8 +2706,8 @@ const aptitudeLevels = {
             return true;
         }
         
-        // 获取功法类型（从数据中查找）
-        let gongfaType = "修炼功法"; // 默认类型
+        // 获取功法类型
+        let gongfaType = "修炼功法";
         for (const category in data) {
             if (Array.isArray(data[category])) {
                 const found = data[category].find(item => item.name === gongfaName);
@@ -2528,51 +2721,123 @@ const aptitudeLevels = {
         // 获取功法层级
         const gongfaLevel = gongfaHierarchy[gongfaType] || 8;
         
-        // 检查天资条件
-        if (targetAptitudeLevel < gongfaLevel) {
+        // === 检查天资条件 ===
+        if (targetMaxLevel < gongfaLevel) {
             e.reply([
-                `【天资不足】`,
-                `${target.名号}的天资【${target.天资等级}】不足以领悟【${gongfaName}】！`,
-                `需要天资至少达到：${getAptitudeNameByLevel(gongfaLevel)}`,
-                `当前天资：${target.天资等级}`,
-                `请先提升目标的天资等级`
+                `〖天资不足〗`,
+                `${target.名号}的天资【${targetAptitude.grade}】过低，`,
+                `无法领悟【${gongfaName}】！`,
+                ``,
+                `〖学习要求〗`,
+                `所需天资：至少${getAptitudeNameByLevel(gongfaLevel)}`,
+                `当前天资：${targetAptitude.grade}`,
+                `评价：${targetAptitude.description}`,
+                ``,
+                `建议：先提升目标的天资等级`
             ].join('\n'));
             return true;
         }
         
-        // 特殊功法检查
+        // === 特殊功法检查 ===
         if (gongfaName === '自然大道') {
-            // 允许学习的资质类型
-            const allowedAptitudes = ["平庸之资", "先天不足", "天弃之人"];
+            const allowedAptitudes = ["平庸之资", "先天不足", "天弃之人", "生而愚痴"];
             
-            if (!allowedAptitudes.includes(target.天资等级)) {
+            if (!allowedAptitudes.includes(targetAptitude.grade)) {
                 e.reply([
-                    `【大道拒斥】`,
-                    `${target.名号}的天资【${target.天资等级}】过于聪慧，`,
+                    `〖大道拒斥〗`,
+                    `${target.名号}的天资【${targetAptitude.grade}】过于聪慧，`,
                     `无法领悟【自然大道】的真谛！`,
-                    `自然大道只适合天资平庸者修炼`,
-                    `当前天资：${target.天资等级}`
+                    ``,
+                    `〖自然大道真意〗`,
+                    `"道法自然，无为而化，唯愚者可悟！"`,
+                    `当前天资：${targetAptitude.grade}`,
+                    `适合天资：平庸之资、先天不足、天弃之人、生而愚痴`
                 ].join('\n'));
                 return true;
             }
         }
         
-        if (gongfaName === '无始经' && target.灵根.name !== "先天圣体道胎") {
-            e.reply(`【灵根不符】目标需要先天圣体道胎灵根才能学习【无始经】`);
+        
+        if (gongfaName === '无始经') {
+            const allowedRoots = ["先天圣体道胎", "混沌圣体道胎"];
+            if (!allowedRoots.includes(target.灵根.name) && 
+                !allowedRoots.includes(target.灵根.type)) {
+                e.reply([
+                    `〖帝经拒斥〗`,
+                    `你欲传授《无始经》，却遭无始钟虚影镇压！`,
+                    ``,
+                    `〖无始要求〗`,
+                    `"非先天圣体道胎，不配执掌无始法！"`,
+                    `目标灵根：${target.灵根.name}（${target.灵根.type}）`,
+                    `要求灵根：先天圣体道胎或混沌圣体道胎`
+                ].join('\n'));
+                return true;
+            }
+        }
+        
+        if (gongfaName === '西皇经') {
+            const allowedRoots = ["道胎", "圣体道胎", "混沌圣体道胎"];
+            if (!allowedRoots.includes(target.灵根.type)) {
+                e.reply([
+                    `〖道胎本源〗`,
+                    `你欲传授《西皇经》，却引动道则反噬！`,
+                    ``,
+                    `〖西皇要求〗`,
+                    `"非先天道胎血脉，不可承西皇道统！"`,
+                    `目标灵根类型：${target.灵根.type}`,
+                    `要求灵根：道胎、圣体道胎、混沌圣体道胎`
+                ].join('\n'));
+                return true;
+            }
+        }
+        
+        if (["妖帝古经", "万龙古经"].includes(gongfaName)) {
+            const allowedRoots = ["妖体", "小成妖体", "大成妖体"];
+            if (!allowedRoots.includes(target.灵根.type)) {
+                e.reply([
+                    `〖妖血沸腾〗`,
+                    `你欲传授《${gongfaName}》，却引万妖虚影暴动！`,
+                    ``,
+                    `〖妖经要求〗`,
+                    `"非纯正妖体血脉，岂敢觊觎妖族帝经！"`,
+                    `目标灵根类型：${target.灵根.type}`,
+                    `要求灵根：妖体、小成妖体、大成妖体`
+                ].join('\n'));
+                return true;
+            }
+        }
+        
+        // === 学习失败概率 ===
+        let successRate = 1.0;
+        let failureReason = "";
+        
+        if (targetAptitude.grade === '生而愚痴') {
+            successRate = 0.3; // 生而愚痴只有30%成功率
+            failureReason = "生而愚痴，灵智未开";
+        } else if (gongfaLevel <= 3) { // 十凶宝术及以上
+            successRate = 0.7;
+            failureReason = "功法太过玄奥";
+        } else if (gongfaLevel <= 5) { // 帝经/九秘
+            successRate = 0.8;
+            failureReason = "境界不足，领悟困难";
+        }
+        
+        if (Math.random() > successRate) {
+            e.reply([
+                `〖传授失败〗`,
+                `你向${target.名号}传授【${gongfaName}】，`,
+                `然其苦思冥想，始终无法领悟其中真谛！`,
+                ``,
+                `〖失败原因〗`,
+                `${failureReason}`,
+                `成功率：${(successRate * 100).toFixed(0)}%`,
+                ``,
+                `提示：可稍后再次尝试传授`
+            ].join('\n'));
             return true;
         }
         
-        if (gongfaName === '西皇经' && !["道胎", "圣体道胎"].includes(target.灵根.type)) {
-            e.reply(`【灵根不符】目标需要拥有先天道胎才能学习【西皇经】`);
-            return true;
-        }
-        
-        if (["妖帝古经", "万龙古经"].includes(gongfaName) && target.灵根.type !== "妖体") {
-            e.reply(`【灵根不符】目标需要妖体才能学习【${gongfaName}】`);
-            return true;
-        }
-
-        // 使用Add_player_学习功法方法
+        // === 传授成功 ===
         await Add_player_学习功法(targetQQ, gongfaName);
         await player_efficiency(targetQQ);
         
@@ -2581,24 +2846,40 @@ const aptitudeLevels = {
         caster.传授记录.push({
             时间: new Date().toLocaleString(),
             目标: target.名号,
-            功法: gongfaName
+            功法: gongfaName,
+            成功率: `${(successRate * 100).toFixed(0)}%`,
+            结果: "成功"
         });
         await Write_player(casterQQ, caster);
         
-        e.reply([
-            `【功法传授】`,
+        // 构建成功消息
+        let successMsg = [
+            `〖功法传授〗`,
             `${caster.名号}将毕生所学【${gongfaName}】倾囊相授`,
-            `${target.名号}顿觉灵台清明，`,
-            `功法真谛如醍醐灌顶，尽数领悟！`,
-        ].join('\n'));
+            `${target.名号}灵台清明，如获新生！`
+        ];
+        
+        if (targetAptitude.grade === '生而愚痴') {
+            successMsg.push(`〖奇迹发生〗生而愚痴者竟能领悟此功法，实乃天意！`);
+        } else if (gongfaLevel <= 3) {
+            successMsg.push(`〖天地共鸣〗${gongfaName}引发天地异象，道音轰鸣！`);
+        } else if (gongfaLevel <= 5) {
+            successMsg.push(`〖道法天成〗功法真谛如醍醐灌顶，尽数领悟！`);
+        } else {
+            successMsg.push(`功法真谛融入心田，修为大进！`);
+        }
+        
+        e.reply(successMsg.join('\n'));
         return true;
     }
     
-    // 传授全部功法
+    // === 传授全部功法 ===
     const teachableGongfa = [];
     const alreadyKnown = [];
     const failedByAptitude = [];
     const failedBySpecial = [];
+    const failedByLuck = [];
+    const specialSuccess = [];
     
     for (const gongfaName of caster.学习的功法) {
         // 检查目标是否已学习
@@ -2623,59 +2904,112 @@ const aptitudeLevels = {
         const gongfaLevel = gongfaHierarchy[gongfaType] || 8;
         
         // 检查天资条件
-        if (targetAptitudeLevel < gongfaLevel) {
-            failedByAptitude.push(`${gongfaName}(需要${getAptitudeNameByLevel(gongfaLevel)})`);
+        if (targetMaxLevel < gongfaLevel) {
+            failedByAptitude.push(`${gongfaName}(需${getAptitudeNameByLevel(gongfaLevel)})`);
             continue;
         }
         
         // 特殊功法检查
         if (gongfaName === '自然大道') {
-            const allowedAptitudes = ["平庸之资", "先天不足", "天弃之人"];
-            if (!allowedAptitudes.includes(target.天资等级)) {
+            const allowedAptitudes = ["平庸之资", "先天不足", "天弃之人", "生而愚痴"];
+            if (!allowedAptitudes.includes(targetAptitude.grade)) {
                 failedBySpecial.push(`${gongfaName}(天资过高)`);
                 continue;
             }
         }
         
-        if (gongfaName === '无始经' && target.灵根.name !== "先天圣体道胎") {
-            failedBySpecial.push(`${gongfaName}(需要先天圣体道胎)`);
-            continue;
+        if (gongfaName === '愚钝真经') {
+            if (targetAptitude.grade !== '生而愚痴') {
+                failedBySpecial.push(`${gongfaName}(不够愚钝)`);
+                continue;
+            }
         }
         
-        if (gongfaName === '西皇经' && !["道胎", "圣体道胎"].includes(target.灵根.type)) {
-            failedBySpecial.push(`${gongfaName}(需要道胎)`);
-            continue;
+        if (gongfaName === '混沌道经') {
+            if (!target.灵根.type.includes("混沌")) {
+                failedBySpecial.push(`${gongfaName}(非混沌血脉)`);
+                continue;
+            }
         }
         
-        if (["妖帝古经", "万龙古经"].includes(gongfaName) && target.灵根.type !== "妖体") {
-            failedBySpecial.push(`${gongfaName}(需要妖体)`);
+        if (gongfaName === '无始经') {
+            const allowedRoots = ["先天圣体道胎", "混沌圣体道胎"];
+            if (!allowedRoots.includes(target.灵根.name) && 
+                !allowedRoots.includes(target.灵根.type)) {
+                failedBySpecial.push(`${gongfaName}(需先天圣体道胎)`);
+                continue;
+            }
+        }
+        
+        if (gongfaName === '西皇经') {
+            const allowedRoots = ["道胎", "圣体道胎", "混沌圣体道胎"];
+            if (!allowedRoots.includes(target.灵根.type)) {
+                failedBySpecial.push(`${gongfaName}(需道胎)`);
+                continue;
+            }
+        }
+        
+        if (["妖帝古经", "万龙古经"].includes(gongfaName)) {
+            if (!["妖体", "小成妖体", "大成妖体"].includes(target.灵根.type)) {
+                failedBySpecial.push(`${gongfaName}(需妖体)`);
+                continue;
+            }
+        }
+        
+        // === 学习失败概率 ===
+        let successRate = 1.0;
+        
+        if (targetAptitude.grade === '生而愚痴') {
+            successRate = 0.3; // 生而愚痴只有30%成功率
+        } else if (gongfaLevel <= 3) { // 十凶宝术及以上
+            successRate = 0.7;
+        } else if (gongfaLevel <= 5) { // 帝经/九秘
+            successRate = 0.8;
+        }
+        
+        if (Math.random() > successRate) {
+            failedByLuck.push(`${gongfaName}(${(successRate * 100).toFixed(0)}%失败)`);
             continue;
         }
         
         // 可以传授
         teachableGongfa.push(gongfaName);
+        
+        // 特殊功法标记
+        if (gongfaName === '自然大道' || gongfaName === '愚钝真经' || 
+            gongfaName === '混沌道经' || gongfaLevel <= 3) {
+            specialSuccess.push(gongfaName);
+        }
     }
     
     if (teachableGongfa.length === 0) {
-        let message = ['无法传授任何功法'];
+        const message = [
+            `〖传授失败〗`,
+            `无法向${target.名号}传授任何功法！`,
+            ``
+        ];
         
         if (alreadyKnown.length > 0) {
-            message.push(`目标已掌握：${alreadyKnown.length}门功法`);
+            message.push(`目标已掌握：${alreadyKnown.length}门`);
         }
         
         if (failedByAptitude.length > 0) {
-            message.push(`天资不足：${failedByAptitude.length}门功法`);
+            message.push(`天资不足：${failedByAptitude.length}门`);
         }
         
         if (failedBySpecial.length > 0) {
-            message.push(`条件不符：${failedBySpecial.length}门功法`);
+            message.push(`条件不符：${failedBySpecial.length}门`);
+        }
+        
+        if (failedByLuck.length > 0) {
+            message.push(`传授失败：${failedByLuck.length}门`);
         }
         
         e.reply(message.join('\n'));
         return true;
     }
     
-    // 使用Add_player_学习功法批量传授
+    // === 批量传授 ===
     for (const gongfaName of teachableGongfa) {
         await Add_player_学习功法(targetQQ, gongfaName);
     }
@@ -2686,18 +3020,50 @@ const aptitudeLevels = {
     caster.传授记录.push({
         时间: new Date().toLocaleString(),
         目标: target.名号,
-        功法: '全部功法',
-        传授数量: teachableGongfa.length
+        功法: '批量传授',
+        传授数量: teachableGongfa.length,
+        成功率: `${((teachableGongfa.length / (teachableGongfa.length + failedByLuck.length)) * 100).toFixed(0)}%`
     });
     await Write_player(casterQQ, caster);
     
+    // === 构建结果消息 ===
     const message = [
-        `【醍醐灌顶·倾囊相授】`,
+        `〖醍醐灌顶·倾囊相授〗`,
         `${caster.名号}将毕生所学尽数传授给${target.名号}`,
-        `成功传授功法：${teachableGongfa.length}门`,
-        `传授列表：${teachableGongfa.join('、')}`,
-        `目标已掌握功法：${alreadyKnown.length}门`,
+        ``
     ];
+    
+    // 特殊功法成功展示
+    if (specialSuccess.length > 0) {
+        message.push(`〖天地异象〗`);
+        for (const gongfa of specialSuccess) {
+            if (gongfa === '自然大道') {
+                message.push(`《自然大道》融入心田："道法自然，无为而化..."`);
+            } else if (gongfa === '愚钝真经') {
+                message.push(`《愚钝真经》燃烧成灰："大智若愚，大道无形！"`);
+            } else if (gongfa === '混沌道经') {
+                message.push(`《混沌道经》引发混沌共鸣！`);
+            } else {
+                message.push(`${gongfa}引发天地异象，道音轰鸣！`);
+            }
+        }
+        message.push(``);
+    }
+    
+    message.push(`〖传授结果〗`);
+    message.push(`成功传授：${teachableGongfa.length}门功法`);
+    
+    if (teachableGongfa.length <= 5) {
+        message.push(`传授列表：${teachableGongfa.join('、')}`);
+    } else {
+        message.push(`前5门：${teachableGongfa.slice(0, 5).join('、')}...等`);
+    }
+    
+    message.push(``);
+    
+    if (alreadyKnown.length > 0) {
+        message.push(`已掌握：${alreadyKnown.length}门`);
+    }
     
     if (failedByAptitude.length > 0) {
         message.push(`天资不足：${failedByAptitude.length}门`);
@@ -2707,13 +3073,23 @@ const aptitudeLevels = {
         message.push(`条件不符：${failedBySpecial.length}门`);
     }
     
-    message.push(
-        `${target.名号}灵台清明，如获新生！`,
-    );
+    if (failedByLuck.length > 0) {
+        message.push(`传授失败：${failedByLuck.length}门`);
+    }
+    
+    message.push(``);
+    message.push(`${target.名号}灵台清明，如获新生！`);
+    
+    // 特殊天资的成功消息
+    if (targetAptitude.grade === '生而愚痴' && teachableGongfa.length > 0) {
+        message.push(`〖奇迹降临〗生而愚痴者竟能学会功法，实乃万古未闻！`);
+    }
     
     e.reply(message.join('\n'));
     return true;
 }
+
+
 
 
 
@@ -2732,11 +3108,9 @@ const aptitudeLevels = {
     // 检查施法者境界（仙帝及以上）
     if (caster.mijinglevel_id < 21) {
         e.reply([
-            `▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂`,
             `【境界不足】`,
             `镇压诸天、令万灵永寂乃仙帝伟力！`,
             `道友当前境界不足，无法施展此无上神通！`,
-            `▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂`
         ].join('\n'));
         return true;
     }
@@ -4314,7 +4688,7 @@ function getDivineAppellation() {
     return appellations[Math.floor(Math.random() * appellations.length)];
 }
 // 辅助函数：根据层级获取天资名称
-function getAptitudeNameByLevel(level) {
+async function getAptitudeNameByLevel(level) {
     const aptitudeLevels = {
         8: "无演无尽",
         7: "万古无双",

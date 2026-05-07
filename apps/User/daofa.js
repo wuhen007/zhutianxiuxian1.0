@@ -69,27 +69,31 @@ const GONGFA_HIERARCHY = {
     "天帝经": 3.5
 };
 const aptitudeMap = {
-'天弃之人': 0,
-'先天不足': 1,
-'平庸之资': 2,
-'超凡资质': 3,
-'天纵之资': 4,
-'旷世奇才': 5,
-'绝世天骄': 6,
-'万古无双': 7,
-'无演无尽': 8
+'无化如是': 0,
+'生而愚痴': 1,
+'天弃之人': 2,
+'先天不足': 3,
+'平庸之资': 4,
+'超凡资质': 5,
+'天纵之资': 6,
+'旷世奇才': 7,
+'绝世天骄': 8,
+'万古无双': 9,
+'无演无尽': 10
 };
 // 天资等级序列
 const aptitudeSequence = [
-    '天弃之人',      // 0
-    '先天不足',      // 1
-    '平庸之资',      // 2
-    '超凡资质',      // 3
-    '天纵之资',      // 4
-    '旷世奇才',      // 5
-    '绝世天骄',      // 6
-    '万古无双',      // 7
-    '无演无尽'       // 8
+    '无化如是',      
+    '生而痴傻',     
+    '天弃之人',      
+    '先天不足',      
+    '平庸之资',      
+    '超凡资质',      
+    '天纵之资',     
+    '旷世奇才',      
+    '绝世天骄',      
+    '万古无双',     
+    '无演无尽'      
 ];
 export class daofa extends plugin {
   constructor() {
@@ -689,7 +693,7 @@ async  createOwnWay(e) {
         
   // === 天资成功率计算 ===
     // 获取天资等级字符串
-    const aptitudeStr = player.天资等级 || "天弃之人";
+    const aptitudeStr = player.天资等级 || "无化如是";
     
     // 使用映射表转换为数字等级
     let aptitudeLevel = aptitudeMap[aptitudeStr];
@@ -710,7 +714,7 @@ async  createOwnWay(e) {
     const aptitudeName = aptitudeSequence[aptitudeLevel] || '未知';
         
         // 基础成功率
-        let baseSuccessRate = 0.3; // 30%
+        let baseSuccessRate = 0.1; // 10%
         
         // 天资加成
         const aptitudeBonus = aptitudeLevel * 0.1; // 每级天资增加10%成功率

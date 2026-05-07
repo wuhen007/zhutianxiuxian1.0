@@ -1624,36 +1624,39 @@ padLeft(str, length) {
   let najie = await data.getData('najie', usr_qq);
   let player = await Read_player(usr_qq);
   
-const gongfaHierarchy = {
-  "神慧者": 8,
-  "仙帝法": 7,
-  "仙王法": 6,
-  "十凶宝术": 6,
-  "帝经": 5,
-  "九秘": 5,
-  "盖世杀术": 4,
-  "道与法": 3,
-  "宝术": 3,
-  "天魔法": 2,
-  "命运法": 2,
-  "修炼功法": 1,
-  "炼器": 1,
-  "炼丹": 1,
-  "武学": 1
-};
+  // 定义功法层级映射（数字越小越高级，与之前保持一致）
+  const gongfaHierarchy = {
+    "神慧者": 0,      // 最高级
+    "仙帝法": 1,
+    "仙王法": 2,
+    "十凶宝术": 3,
+    "帝经": 4,
+    "九秘": 5,
+    "盖世杀术": 5,
+    "道与法": 6,
+    "宝术": 6,
+    "天魔法": 7,
+    "命运法": 7,
+    "修炼功法": 8,
+    "炼器": 8,
+    "炼丹": 8,
+    "武学": 8
+  };
 
-// 定义天资等级映射（数字越大表示天资越高）
-const aptitudeLevels = {
-  "无演无尽": 8,
-  "万古无双": 7,
-  "绝世天骄": 6,
-  "旷世奇才": 5,
-  "天纵之资": 4,
-  "超凡资质": 3,
-  "平庸之资": 2,
-  "先天不足": 1,
-  "天弃之人": 0
-};
+  // 天资等级对应的最高可学习层级（数字越小可学的功法层级越小）
+  const aptitudeLevels = {
+    "无演无尽": 0,     // 可学神慧者
+    "万古无双": 1,     // 可学仙帝法
+    "绝世天骄": 2,     // 可学仙王法
+    "旷世奇才": 3,     // 可学十凶宝术
+    "天纵之资": 4,     // 可学帝经
+    "超凡资质": 5,     // 可学九秘/盖世杀术
+    "平庸之资": 6,     // 可学道与法/宝术
+    "先天不足": 7,     // 可学天魔法/命运法
+    "天弃之人": 8,     // 可学修炼功法等基础
+    "生而愚痴": 9,     // 特殊处理
+    "无化如是": 10     // 无法学习任何功法
+  };
   
  // 获取玩家的天资等级
 const aptitudeLevel = player.天资等级;
@@ -1664,13 +1667,33 @@ const playerAptitudeLevel = aptitudeLevels[aptitudeLevel] || 0; // 默认为天�
   let learnedGongfa = []; // 成功学习的功法
   let skippedGongfa = []; // 因条件不符跳过的功法
   let failedGongfa = [];  // 因特殊条件失败的功法
-  
+   // === 特殊天资：无化如是 ===
+  if (aptitudeLevel === '无化如是') {
+    e.reply([
+      `【天道封印·批量学习失败】`,
+      `你试图学习所有功法，但所有功法典籍同时炸裂！`,
+      `天道之音响彻识海：`,
+      `"无化如是，无用之人，不配承载任何道法传承！"`,
+      `所有功法在接触你识海的瞬间化为飞灰。`,
+      `你的天资已被天道永久封印。`,
+    ].join('\n'));
+    return false;
+  }
   for (var l of najie.功法) {
     // 检查是否已学习
     if (player.学习的功法.includes(l.name)) {
       skippedGongfa.push(`${l.name}(已学习)`);
       continue;
     }
+       // === 特殊天资：生而愚痴的特殊处理 ===
+    if (aptitudeLevel === '生而愚痴') {
+      // 生而愚痴只能学习最基础的功法
+      const allowedTypes = ["修炼功法", "武学"];
+      if (!allowedTypes.includes(l.type)) {
+        failedGongfa.push(`${l.name}(愚痴之脑无法理解)`);
+        failCount++;
+        continue;
+      }}
        // 特殊功法检查 - 自然大道
     if (l.name == '自然大道') {
         // 允许学习的资质类型
@@ -2460,6 +2483,8 @@ if (weizhi.name === "紫薇星域") {
                     
                     // 定义天资等级序列
                     const aptitudeSequence = [
+                        '无化如是',
+                        '生而愚痴',
                         '天弃之人',
                         '先天不足',
                         '平庸之资',
@@ -2473,8 +2498,8 @@ if (weizhi.name === "紫薇星域") {
                     
                     // 获取玩家当前天资等级索引
                     const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级);
-                    // 最低要求天资等级索引（天纵之资，索引4）
-                    const minAptitudeIndex = 4;
+                    // 最低要求天资等级索引（天纵之资，索引6）
+                    const minAptitudeIndex = 6;
                      const tianxuanbufa = await checkGongfaInServer('天璇步法');
                              // 只有天资达到天纵之资及以上才可能触发
                     if (currentAptitudeIndex >= minAptitudeIndex&&!tianxuanbufa) {
@@ -2495,10 +2520,10 @@ if (weizhi.name === "紫薇星域") {
                                 last_msg += ' 你在荒古禁地深处遇见一位疯疯癫癫的老人，他步履蹒跚却一步踏出便横跨万里。';
                                 
                                 // 根据天资等级显示不同文案
-                                if (currentAptitudeIndex >= 7) { // 万古无双及以上
+                                if (currentAptitudeIndex >= 9) { // 万古无双及以上
                                     last_msg += ' 老疯子浑浊的眸子突然清明："万古岁月，竟有如此天资！此秘术当传于你！"';
                                     last_msg += ' 他一步踏出，时空扭曲，直接出现在你面前，一指轻点你的眉心。';
-                                } else if (currentAptitudeIndex >= 5) { // 旷世奇才及以上
+                                } else if (currentAptitudeIndex >= 7) { // 旷世奇才及以上
                                     last_msg += ' 老疯子停下脚步，眼中闪过一丝惊讶："如此天资，倒也有资格承我衣钵..."';
                                     last_msg += ' 他隔空一指，一道神光没入你的识海。';
                                 } else { // 天纵之资
@@ -2509,12 +2534,12 @@ if (weizhi.name === "紫薇星域") {
                                 last_msg += ' 刹那间，残缺的九秘真谛涌入识海！';
                                 last_msg += ' 「天璇步法」——脱胎自行字秘的无上极速残篇，踏光阴、缩山河，一步踏出星月倒转！';
                                 last_msg += ' 待你回神，老人已化流光遁入宇宙，唯留残缺行字秘之道韵在神魂中流转不息。';
-                               player.学习的功法.push('天璇步法');
+                                player.学习的功法.push('天璇步法');
+                                await recordItemToHistory(player_id, '天璇步法', '功法', 1);
                                 await Write_player(usr_qq, player);
                             }
                         }
                     } else {
-                        // 天资不足的提示 - 当索引小于4时显示
                         if (adjustedProbability < 0.01) { // 较低概率提示
                          last_msg += ' 你感知到一缕涉及时空的残缺道韵，似为某位存在遗留的步法痕迹...';
                          last_msg += ' 然其玄奥远超你当前境界，天资不足难以参透。（需「天纵之资」以上方可领悟天璇步法）';
@@ -3386,33 +3411,68 @@ const hasSpecialLinggen = specialLinggenTypes.includes(player.灵根.type);
                   await Add_najie_thing(player_id, Get_lianqi.name, '道具', 1);
                 }
               }
-                if (random < 0.001) {
-    // 天资等级序列（与洗炼相同）
+if (random < 0.0001) {
+    // 完整的天资等级序列（包含所有等级）
     const aptitudeSequence = [
-        '天弃之人',
-        '先天不足',
-        '平庸之资',
-        '超凡资质',
-        '天纵之资',
-        '旷世奇才',
-        '绝世天骄',
-        '万古无双',
-        '无演无尽'
+        '无化如是',      // 索引0 - 新增
+        '生而痴傻',      // 索引1 - 新增
+        '天弃之人',      // 索引2
+        '先天不足',      // 索引3
+        '平庸之资',      // 索引4
+        '超凡资质',      // 索引5
+        '天纵之资',      // 索引6
+        '旷世奇才',      // 索引7
+        '绝世天骄',      // 索引8
+        '万古无双',      // 索引9
+        '无演无尽'       // 索引10
     ];
     
     // 获取当前天资位置
     const currentIndex = aptitudeSequence.indexOf(player.天资等级);
     
-    // 最高提升到万古无双（限制在索引7）
-    let newIndex = Math.min(currentIndex + 1, 7);
-    
-    // 如果已经是万古无双或更高，则不再提升
-    if (currentIndex >= 7) {
-        last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。他目光如渊，仿佛能洞穿万古时空："小友资质已臻至境，老朽亦无可指点。"话音未落，身影已如梦幻泡影般消散。`;
+    // 如果玩家天资不在序列中（可能是旧数据），默认为最低
+    if (currentIndex === -1) {
+        player.天资等级 = '无化如是';
+        player.天资评价 = '无用之人，命中注定难有所作为，任何外力都无法改变';
+        await Write_player(usr_qq, player);
+        last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。他掐指一算，神色惊变："无化如是！天命所定，老朽亦不可违！"遂化作清风而去。`;
         return;
     }
     
-    let newAptitude = aptitudeSequence[newIndex];
+    // 特殊处理：无化如是无法提升
+    if (player.天资等级 === '无化如是') {
+        last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。\n他凝视你片刻，长叹一声："无化如是，无用之人，此乃天道所封。老朽虽为地仙，亦不敢逆天而行。"\n语罢，老者身影逐渐淡去，唯留一声叹息："天命如此，好自为之..."`;
+        return;
+    }
+    
+    // 特殊处理：生而痴傻最多提升到天弃之人
+    if (player.天资等级 === '生而痴傻') {
+        if (Math.random() < 0.3) { // 30%概率可突破
+            let newAptitude = '天弃之人';
+            const aptitudeEvaluations = {
+                '天弃之人': '被天道抛弃，修炼必遭反噬',
+                '生而痴傻': '天生愚笨，修炼难如登天'
+            };
+            
+            last_msg += `
+${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。
+老者眉头微皱："生而痴傻，本无仙缘...但念你心诚，老夫便以毕生修为，为你强行开窍！"
+老者双指并剑，点在泥丸宫上，顿时天雷滚滚，乌云压顶。
+"开！"老者一声暴喝，口吐鲜血，却见一道金光冲破你天灵盖。
+片刻后，天雷散去，老者面色苍白："老夫强行逆天为你开智，损了百年修为。你已从痴傻突破至天弃之人，好自为之..."
+天资蜕变：
+原资质：『生而痴傻』→ 新资质：『天弃之人』
+${aptitudeEvaluations['天弃之人']}
+`;
+            
+            player.天资等级 = '天弃之人';
+            player.天资评价 = aptitudeEvaluations['天弃之人'];
+            await Write_player(usr_qq, player);
+        } else {
+            last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。\n老者探查你资质后，摇头叹息："生而痴傻，愚昧如石，纵是仙丹妙药亦难回天。"\n说完化作青烟散去。`;
+        }
+        return;
+    }
     
     // 天资评价库
     const aptitudeEvaluations = {
@@ -3424,20 +3484,50 @@ const hasSpecialLinggen = specialLinggenTypes.includes(player.灵根.type);
         '超凡资质': '资质超凡，注定异于常人',
         '平庸之资': '资质平平，勉勉强强',
         '先天不足': '先天有缺，修炼事倍功半',
-        '天弃之人': '被天道抛弃，修炼必遭反噬'
+        '天弃之人': '被天道抛弃，修炼必遭反噬，但仍有希望',
+        '生而痴傻': '天生愚笨，修炼难如登天',
+        '无化如是': '无用之人，命中注定难有所作为，任何外力都无法改变'
     };
     
- 
-last_msg += `
+    // 不同天资对应的提升描述
+    const upgradeDescriptions = {
+        '天弃之人': '老者挥袖间，一道混沌之气注入你体内，洗去了部分天道诅咒。',
+        '先天不足': '老者取出一枚七窍玲珑丹喂你服下，先天缺损逐渐愈合。',
+        '平庸之资': '老者以无上法力为你易经伐髓，剔除体内杂质。',
+        '超凡资质': '老者引动星辰之力，为你开启灵台方寸，顿悟大道。',
+        '天纵之资': '老者展现三千大道虚影，任你观摩领悟，境界飞升。',
+        '旷世奇才': '时空倒转，老者带你神游太古，观天地初开之景。',
+        '绝世天骄': '老者召唤出上古帝影，为你烙印下大帝道纹。',
+        '万古无双': '老者撕裂时间长河，引来未来身与你共鸣，万古唯一。',
+        '无演无尽': '天地共鸣，万道臣服，超越时间与空间的界限。'
+    };
+    
+    // 最高提升到万古无双（索引9），无演无尽不可通过此途径获得
+    let newIndex = Math.min(currentIndex + 1, 9);
+    
+    // 如果已经是万古无双，不再提升
+    if (currentIndex >= 9) {
+        last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。他目光如渊，仿佛能洞穿万古时空："小友资质已臻至境，老朽亦无可指点。"话音未落，身影已如梦幻泡影般消散。`;
+        return;
+    }
+    
+    let newAptitude = aptitudeSequence[newIndex];
+    let description = upgradeDescriptions[player.天资等级] || '老者施展无上神通，为你重铸道基。';
+    
+    // 构建提升消息
+    last_msg += `
 ${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。
 他目光如渊，仿佛能洞穿万古时空："小友根骨尚可，却未脱樊笼。老朽观你与道有缘，便助你一臂之力。"
+${description}
 只见老者袖袍轻拂，九天星河倒悬，鸿蒙紫气自虚空裂缝奔涌而出，将你笼罩其中。
 你感到浑身经脉如被重塑，识海中浮现无尽道韵，仿佛经历了万世轮回。
 待光华散尽，老者身影已如梦幻泡影般消散，只余一缕道音回荡：
 "万古弹指间，大梦几千秋。他日若得道，莫忘此日缘..."
+
 天资蜕变：
 原资质：『${player.天资等级}』→ 新资质：『${newAptitude}』
 ${aptitudeEvaluations[newAptitude]}
+
 获得【如梦道痕】*1
 `;
     
@@ -3448,7 +3538,7 @@ ${aptitudeEvaluations[newAptitude]}
     
     // 添加特殊道具
     await Add_najie_thing(player_id, '如梦道痕', '道具', 1);
-   
+  
 }
               if (random > 0.1 && random < 0.1002) {
                 last_msg +=
@@ -4457,75 +4547,77 @@ if (weizhi.name === "紫薇星域") {
                         }
                     }
                 }
-                // 在荒古禁地探索事件中添加行字秘唯一性检查和天资要求
-                     if (player.power_place == 2) {
-                         let random = Math.random();
-                         // 根据玩家的幸运值调整概率
-                         let adjustedProbability = random ;
-                         
-                         // 定义天资等级序列
-                         const aptitudeSequence = [
-                             '天弃之人',
-                             '先天不足',
-                             '平庸之资',
-                             '超凡资质',
-                             '天纵之资',
-                             '旷世奇才',
-                             '绝世天骄',
-                             '万古无双',
-                             '无演无尽'
-                         ];
-                         
-                         // 获取玩家当前天资等级索引
-                         const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级);
-                         // 最低要求天资等级索引（天纵之资，索引4）
-                    const minAptitudeIndex = 4;
+           // 在荒古禁地探索事件中添加行字秘唯一性检查和天资要求
+                if (player.power_place == 2) {
+                    let random = Math.random();
+                    // 根据玩家的幸运值调整概率
+                    let adjustedProbability = random ;
+                    
+                    // 定义天资等级序列
+                    const aptitudeSequence = [
+                        '无化如是',
+                        '生而愚痴',
+                        '天弃之人',
+                        '先天不足',
+                        '平庸之资',
+                        '超凡资质',
+                        '天纵之资',
+                        '旷世奇才',
+                        '绝世天骄',
+                        '万古无双',
+                        '无演无尽'
+                    ];
+                    
+                    // 获取玩家当前天资等级索引
+                    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级);
+                    // 最低要求天资等级索引（天纵之资，索引6）
+                    const minAptitudeIndex = 6;
                      const tianxuanbufa = await checkGongfaInServer('天璇步法');
                              // 只有天资达到天纵之资及以上才可能触发
                     if (currentAptitudeIndex >= minAptitudeIndex&&!tianxuanbufa) {
-                             // 概率调整：天资越高，概率越大
-                             const aptitudeBonus = (currentAptitudeIndex - 3) * 0.025;
-                             const finalProbability = 0.002 + aptitudeBonus; // 基础概率0.001 + 天资加成
-                             
-                             if (adjustedProbability < finalProbability) {
-                                 // 检查全服是否已有人习得行字秘
-                                 const isLearned = await checkGongfaInServer('天璇步法');
+                        // 概率调整：天资越高，概率越大
+                        const aptitudeBonus = (currentAptitudeIndex - 3) * 0.025;
+                        const finalProbability = 0.002 + aptitudeBonus; // 基础概率0.001 + 天资加成
+                        
+                        if (adjustedProbability < finalProbability) {
+                            // 检查全服是否已有人习得行字秘
+                            const isLearned = await checkGongfaInServer('天璇步法');
+                           
+ 
+                            if (isLearned) {
+                                last_msg += ' 你在荒古禁地深处遇见一位疯疯癫癫的老人，他步履蹒跚却一步踏出便横跨万里。';
+                                last_msg += ' 你欲上前请教，他却摇头叹息："天璇步法已传他人，此道残缺，九秘归一..."';
+                                last_msg += ' 言罢，他身形一晃，化作一道流光消失在宇宙深处，只留下你独自怅然。';
+                            } else {
+                                last_msg += ' 你在荒古禁地深处遇见一位疯疯癫癫的老人，他步履蹒跚却一步踏出便横跨万里。';
                                 
-      
-                                 if (isLearned) {
-                                     last_msg += ' 你在荒古禁地深处遇见一位疯疯癫癫的老人，他步履蹒跚却一步踏出便横跨万里。';
-                                     last_msg += ' 你欲上前请教，他却摇头叹息："天璇步法已传他人，此道残缺，九秘归一..."';
-                                     last_msg += ' 言罢，他身形一晃，化作一道流光消失在宇宙深处，只留下你独自怅然。';
-                                 } else {
-                                     last_msg += ' 你在荒古禁地深处遇见一位疯疯癫癫的老人，他步履蹒跚却一步踏出便横跨万里。';
-                                     
-                                     // 根据天资等级显示不同文案
-                                     if (currentAptitudeIndex >= 7) { // 万古无双及以上
-                                         last_msg += ' 老疯子浑浊的眸子突然清明："万古岁月，竟有如此天资！此秘术当传于你！"';
-                                         last_msg += ' 他一步踏出，时空扭曲，直接出现在你面前，一指轻点你的眉心。';
-                                     } else if (currentAptitudeIndex >= 5) { // 旷世奇才及以上
-                                         last_msg += ' 老疯子停下脚步，眼中闪过一丝惊讶："如此天资，倒也有资格承我衣钵..."';
-                                         last_msg += ' 他隔空一指，一道神光没入你的识海。';
-                                     } else { // 天纵之资
-                                         last_msg += ' 老疯子突然停下脚步，浑浊的眸子中闪过一丝清明："岁月悠悠，大道独行...此秘术当传于有缘人！"';
-                                         last_msg += ' 他伸出一指，点向你的眉心。';
-                                     }
-                                     
-                                     last_msg += ' 刹那间，残缺的九秘真谛涌入识海！';
-                                     last_msg += ' 「天璇步法」——脱胎自行字秘的无上极速残篇，踏光阴、缩山河，一步踏出星月倒转！';
-                                     last_msg += ' 待你回神，老人已化流光遁入宇宙，唯留残缺行字秘之道韵在神魂中流转不息。';
-                                            player.学习的功法.push('天璇步法');
+                                // 根据天资等级显示不同文案
+                                if (currentAptitudeIndex >= 9) { // 万古无双及以上
+                                    last_msg += ' 老疯子浑浊的眸子突然清明："万古岁月，竟有如此天资！此秘术当传于你！"';
+                                    last_msg += ' 他一步踏出，时空扭曲，直接出现在你面前，一指轻点你的眉心。';
+                                } else if (currentAptitudeIndex >= 7) { // 旷世奇才及以上
+                                    last_msg += ' 老疯子停下脚步，眼中闪过一丝惊讶："如此天资，倒也有资格承我衣钵..."';
+                                    last_msg += ' 他隔空一指，一道神光没入你的识海。';
+                                } else { // 天纵之资
+                                    last_msg += ' 老疯子突然停下脚步，浑浊的眸子中闪过一丝清明："岁月悠悠，大道独行...此秘术当传于有缘人！"';
+                                    last_msg += ' 他伸出一指，点向你的眉心。';
+                                }
+                                
+                                last_msg += ' 刹那间，残缺的九秘真谛涌入识海！';
+                                last_msg += ' 「天璇步法」——脱胎自行字秘的无上极速残篇，踏光阴、缩山河，一步踏出星月倒转！';
+                                last_msg += ' 待你回神，老人已化流光遁入宇宙，唯留残缺行字秘之道韵在神魂中流转不息。';
+                                player.学习的功法.push('天璇步法');
+                                await recordItemToHistory(player_id, '天璇步法', '功法', 1);
                                 await Write_player(usr_qq, player);
-                                 }
-                             }
-                         } else {
-                             // 天资不足的提示 - 当索引小于4时显示
-                             if (adjustedProbability < 0.01) { // 较低概率提示
-                              last_msg += ' 你感知到一缕涉及时空的残缺道韵，似为某位存在遗留的步法痕迹...';
-                              last_msg += ' 然其玄奥远超你当前境界，天资不足难以参透。（需「天纵之资」以上方可领悟天璇步法）';
-                             }
-                         }
-                     }
+                            }
+                        }
+                    } else {
+                        if (adjustedProbability < 0.01) { // 较低概率提示
+                         last_msg += ' 你感知到一缕涉及时空的残缺道韵，似为某位存在遗留的步法痕迹...';
+                         last_msg += ' 然其玄奥远超你当前境界，天资不足难以参透。（需「天纵之资」以上方可领悟天璇步法）';
+                        }
+                    }
+                }
                      // 圣崖探索事件 - 菩提子感悟行字秘
       if (weizhi.name === "圣崖") {
           let putizi = await exist_najie_thing(usr_qq, "菩提子", "道具");
@@ -5348,33 +5440,68 @@ const hasSpecialLinggen = specialLinggenTypes.includes(player.灵根.type);
                   await Add_najie_thing(player_id, Get_lianqi.name, '道具', 1);
                 }
               }
-               if (random < 0.001) {
-    // 天资等级序列（与洗炼相同）
+if (random < 0.0001) {
+    // 完整的天资等级序列（包含所有等级）
     const aptitudeSequence = [
-        '天弃之人',
-        '先天不足',
-        '平庸之资',
-        '超凡资质',
-        '天纵之资',
-        '旷世奇才',
-        '绝世天骄',
-        '万古无双',
-        '无演无尽'
+        '无化如是',      // 索引0 - 新增
+        '生而痴傻',      // 索引1 - 新增
+        '天弃之人',      // 索引2
+        '先天不足',      // 索引3
+        '平庸之资',      // 索引4
+        '超凡资质',      // 索引5
+        '天纵之资',      // 索引6
+        '旷世奇才',      // 索引7
+        '绝世天骄',      // 索引8
+        '万古无双',      // 索引9
+        '无演无尽'       // 索引10
     ];
     
     // 获取当前天资位置
     const currentIndex = aptitudeSequence.indexOf(player.天资等级);
     
-    // 最高提升到万古无双（限制在索引7）
-    let newIndex = Math.min(currentIndex + 1, 7);
-    
-    // 如果已经是万古无双或更高，则不再提升
-    if (currentIndex >= 7) {
-        last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。他目光如渊，仿佛能洞穿万古时空："小友资质已臻至境，老朽亦无可指点。"话音未落，身影已如梦幻泡影般消散。`;
+    // 如果玩家天资不在序列中（可能是旧数据），默认为最低
+    if (currentIndex === -1) {
+        player.天资等级 = '无化如是';
+        player.天资评价 = '无用之人，命中注定难有所作为，任何外力都无法改变';
+        await Write_player(usr_qq, player);
+        last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。他掐指一算，神色惊变："无化如是！天命所定，老朽亦不可违！"遂化作清风而去。`;
         return;
     }
     
-    let newAptitude = aptitudeSequence[newIndex];
+    // 特殊处理：无化如是无法提升
+    if (player.天资等级 === '无化如是') {
+        last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。\n他凝视你片刻，长叹一声："无化如是，无用之人，此乃天道所封。老朽虽为地仙，亦不敢逆天而行。"\n语罢，老者身影逐渐淡去，唯留一声叹息："天命如此，好自为之..."`;
+        return;
+    }
+    
+    // 特殊处理：生而痴傻最多提升到天弃之人
+    if (player.天资等级 === '生而痴傻') {
+        if (Math.random() < 0.3) { // 30%概率可突破
+            let newAptitude = '天弃之人';
+            const aptitudeEvaluations = {
+                '天弃之人': '被天道抛弃，修炼必遭反噬',
+                '生而痴傻': '天生愚笨，修炼难如登天'
+            };
+            
+            last_msg += `
+${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。
+老者眉头微皱："生而痴傻，本无仙缘...但念你心诚，老夫便以毕生修为，为你强行开窍！"
+老者双指并剑，点在泥丸宫上，顿时天雷滚滚，乌云压顶。
+"开！"老者一声暴喝，口吐鲜血，却见一道金光冲破你天灵盖。
+片刻后，天雷散去，老者面色苍白："老夫强行逆天为你开智，损了百年修为。你已从痴傻突破至天弃之人，好自为之..."
+天资蜕变：
+原资质：『生而痴傻』→ 新资质：『天弃之人』
+${aptitudeEvaluations['天弃之人']}
+`;
+            
+            player.天资等级 = '天弃之人';
+            player.天资评价 = aptitudeEvaluations['天弃之人'];
+            await Write_player(usr_qq, player);
+        } else {
+            last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。\n老者探查你资质后，摇头叹息："生而痴傻，愚昧如石，纵是仙丹妙药亦难回天。"\n说完化作青烟散去。`;
+        }
+        return;
+    }
     
     // 天资评价库
     const aptitudeEvaluations = {
@@ -5386,20 +5513,50 @@ const hasSpecialLinggen = specialLinggenTypes.includes(player.灵根.type);
         '超凡资质': '资质超凡，注定异于常人',
         '平庸之资': '资质平平，勉勉强强',
         '先天不足': '先天有缺，修炼事倍功半',
-        '天弃之人': '被天道抛弃，修炼必遭反噬'
+        '天弃之人': '被天道抛弃，修炼必遭反噬，但仍有希望',
+        '生而痴傻': '天生愚笨，修炼难如登天',
+        '无化如是': '无用之人，命中注定难有所作为，任何外力都无法改变'
     };
     
- 
-last_msg += `
+    // 不同天资对应的提升描述
+    const upgradeDescriptions = {
+        '天弃之人': '老者挥袖间，一道混沌之气注入你体内，洗去了部分天道诅咒。',
+        '先天不足': '老者取出一枚七窍玲珑丹喂你服下，先天缺损逐渐愈合。',
+        '平庸之资': '老者以无上法力为你易经伐髓，剔除体内杂质。',
+        '超凡资质': '老者引动星辰之力，为你开启灵台方寸，顿悟大道。',
+        '天纵之资': '老者展现三千大道虚影，任你观摩领悟，境界飞升。',
+        '旷世奇才': '时空倒转，老者带你神游太古，观天地初开之景。',
+        '绝世天骄': '老者召唤出上古帝影，为你烙印下大帝道纹。',
+        '万古无双': '老者撕裂时间长河，引来未来身与你共鸣，万古唯一。',
+        '无演无尽': '天地共鸣，万道臣服，超越时间与空间的界限。'
+    };
+    
+    // 最高提升到万古无双（索引9），无演无尽不可通过此途径获得
+    let newIndex = Math.min(currentIndex + 1, 9);
+    
+    // 如果已经是万古无双，不再提升
+    if (currentIndex >= 9) {
+        last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。他目光如渊，仿佛能洞穿万古时空："小友资质已臻至境，老朽亦无可指点。"话音未落，身影已如梦幻泡影般消散。`;
+        return;
+    }
+    
+    let newAptitude = aptitudeSequence[newIndex];
+    let description = upgradeDescriptions[player.天资等级] || '老者施展无上神通，为你重铸道基。';
+    
+    // 构建提升消息
+    last_msg += `
 ${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。
 他目光如渊，仿佛能洞穿万古时空："小友根骨尚可，却未脱樊笼。老朽观你与道有缘，便助你一臂之力。"
+${description}
 只见老者袖袍轻拂，九天星河倒悬，鸿蒙紫气自虚空裂缝奔涌而出，将你笼罩其中。
 你感到浑身经脉如被重塑，识海中浮现无尽道韵，仿佛经历了万世轮回。
 待光华散尽，老者身影已如梦幻泡影般消散，只余一缕道音回荡：
 "万古弹指间，大梦几千秋。他日若得道，莫忘此日缘..."
+
 天资蜕变：
 原资质：『${player.天资等级}』→ 新资质：『${newAptitude}』
 ${aptitudeEvaluations[newAptitude]}
+
 获得【如梦道痕】*1
 `;
     
@@ -5410,7 +5567,7 @@ ${aptitudeEvaluations[newAptitude]}
     
     // 添加特殊道具
     await Add_najie_thing(player_id, '如梦道痕', '道具', 1);
-   
+  
 }
               if (random > 0.1 && random < 0.1002) {
                 fyd_msg +=
