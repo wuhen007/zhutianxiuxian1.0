@@ -278,6 +278,9 @@ async proxyDailyGift(e, targetPlayerId) {
       护道人:"无",
        势力:"无",
        势力职位:"",
+       速度: 100,
+        仙道潜力:0,
+       道心:0,
       天资等级: aptitude.grade,       // 新增天资等级
       天资评价: aptitude.evaluation,  // 新增天资评价
       五色祭坛:0
@@ -680,6 +683,9 @@ async daily_lottery(e) {
       护道人:"无",
        势力:"无",
        势力职位:"",
+       速度: 100,
+        仙道潜力:0,
+       道心:0,
       天资等级: aptitude.grade,       // 新增天资等级
       天资评价: aptitude.evaluation,  // 新增天资评价
       五色祭坛:0
