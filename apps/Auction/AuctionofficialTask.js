@@ -4,86 +4,99 @@ import config from '../../model/Config.js';
 import {
   Add_najie_thing,
   Add_灵石,
-  isNotNull,
   Read_player,
-  sleep,
 } from '../../model/xiuxian.js';
 import { openAU } from '../Auction/Auction.js';
-import data from '../../model/XiuxianData.js';
-/**
- * 定时任务
- */
+import { get_auction_img } from '../../model/xiuxian.js';
 
+/**
+ * 星阁拍卖定时任务（图片版）
+ */
 export class AuctionofficialTask extends plugin {
   constructor() {
     super({
       name: 'AuctionofficialTask',
-      dsc: '定时任务',
+      dsc: '星阁拍卖定时任务',
       event: 'message',
       priority: 300,
       rule: [],
     });
+
     this.set = config.getConfig('xiuxian', 'xiuxian');
     this.task = {
       cron: this.set.Auction.Auction_task,
       name: 'AuctionofficialTask',
       fnc: () => this.AuctionofficialTask(),
     };
+    
   }
+
   async AuctionofficialTask() {
-    // 判断是否已经在拍卖中
     const wupinStr = await redis.get('xiuxian:AuctionofficialTask');
-    console.log("拍卖定时"+wupinStr)
-    // 如果不在拍卖中
+
+    /* ================= 未开拍 ================= */
     if (!wupinStr) {
-      // 判断是否在开启时间
       const nowDate = new Date();
       const todayDate = new Date(nowDate);
       const { openHour, closeHour } = this.set.Auction;
       const todayTime = todayDate.setHours(0, 0, 0, 0);
       const openTime = todayTime + openHour * 60 * 60 * 1000;
-      const nowTime = nowDate.getTime();
       const closeTime = todayTime + closeHour * 60 * 60 * 1000;
+      const nowTime = nowDate.getTime();
+
       if (nowTime < openTime || nowTime > closeTime) return;
 
-      // 在开启时间且未开启拍卖则开启拍卖
+      /* 开启拍卖 */
       const auction = await openAU();
-      let msg = `___[星阁]___\n目前正在拍卖【${auction.thing.name}】\n`;
-      if (auction.last_offer_player === 0) {
-        msg += '暂无人出价';
-      } else {
-        const player = await Read_player(auction.last_offer_player);
-        msg += `最高出价是${player.名号}叫出的${auction.last_price}`;
+
+      const msgArr = [
+        "📦 拍品：【" + auction.thing.name + "】",
+        "当前最高价：0",
+        "暂无出价者",
+        "请在群内 #星阁出价 XXX 参与"
+      ];
+
+      for (const group_id of auction.groupList) {
+        await this.sendAuctionImg(group_id, msgArr);
       }
-      auction.groupList.forEach(group_id => this.pushInfo(group_id, true, msg));
       return;
     }
 
-    // 如果已在拍卖中
+    /* ================= 正在拍卖 ================= */
     const wupin = JSON.parse(wupinStr);
-    let msg = '';
     const group_ids = wupin.groupList;
-    const last_offer_price = wupin.last_offer_price;
     const interMinu = this.set.Auction.interval;
-    const nowTime = new Date().getTime();
+    const nowTime = Date.now();
 
     if (wupin.last_offer_price + interMinu * 60 * 1000 > nowTime) {
-      const m = parseInt(
-        (last_offer_price + interMinu * 60 * 1000 - nowTime) / 1000 / 60
-      );
-      const s = parseInt(
-        (last_offer_price + interMinu * 60 * 1000 - nowTime - m * 60 * 1000) /
-          1000
-      );
-      msg = `星阁限定物品【${wupin.thing.name}】拍卖中\n距离拍卖结束还有${m}分${s}秒\n目前最高价${wupin.last_price}`;
+      const remain =
+        wupin.last_offer_price + interMinu * 60 * 1000 - nowTime;
+      const m = Math.floor(remain / 60000);
+      const s = Math.floor((remain % 60000) / 1000);
+
+      const msgArr = [
+        "📦 拍品：【" + wupin.thing.name + "】",
+        "当前最高价：" + wupin.last_price,
+        "剩余时间：" + m + "分" + s + "秒"
+      ];
 
       for (const group_id of group_ids) {
-        this.pushInfo(group_id, true, msg);
+        await this.sendAuctionImg(group_id, msgArr);
       }
     } else {
+      /* ================= 拍卖结束 ================= */
       const last_offer_player = wupin.last_offer_player;
+
       if (last_offer_player === 0) {
-        msg = `流拍，${wupin.thing.name}已退回神秘人的纳戒`;
+        const msgArr = [
+          "📦 拍品：【" + wupin.thing.name + "】",
+          "流拍",
+          "无人出价，已退回神秘人纳戒"
+        ];
+
+        for (const group_id of group_ids) {
+          await this.sendAuctionImg(group_id, msgArr);
+        }
       } else {
         await Add_灵石(last_offer_player, -wupin.last_price);
         await Add_najie_thing(
@@ -93,30 +106,54 @@ export class AuctionofficialTask extends plugin {
           wupin.amount,
           wupin.thing.pinji
         );
+
         const player = await Read_player(last_offer_player);
-        msg = `拍卖结束，${player.名号}最终拍得该物品！`;
+
+        const msgArr = [
+          "拍品：【" + wupin.thing.name + "】",
+          "成交！",
+          "最终价格：" + wupin.last_price,
+          "得主：" + player.名号
+        ];
+
+        for (const group_id of group_ids) {
+          await this.sendAuctionImg(group_id, msgArr);
+        }
       }
 
-      for (const group_id of group_ids) {
-        this.pushInfo(group_id, true, msg);
-      }
       await redis.del('xiuxian:AuctionofficialTask');
     }
   }
 
   /**
-   * 推送消息，群消息推送群，或者推送私人
-   * @param id
-   * @param is_group
-   * @returns {Promise<void>}
+   * 发送拍卖图片
+   */
+  async sendAuctionImg(group_id, msgArr) {
+    try {
+      const simulatedEvent = {
+        group_id,
+        isGroup: true,
+        sender: {
+          user_id: Bot.uin,
+          nickname: '星阁'
+        }
+      };
+
+      const img = await get_auction_img(simulatedEvent, msgArr);
+      await Bot.pickGroup(group_id).sendMsg(img);
+    } catch (err) {
+      console.error('拍卖图片发送失败:', err);
+      // 兜底文本
+      await this.pushInfo(group_id, true, msgArr.join('\n'));
+    }
+  }
+
+  /**
+   * 兜底文本推送
    */
   async pushInfo(id, is_group, msg) {
     if (is_group) {
-      await Bot.pickGroup(id)
-        .sendMsg(msg)
-        .catch(err => {
-          Bot.logger.mark(err);
-        });
+      await Bot.pickGroup(id).sendMsg(msg).catch(() => {});
     } else {
       await common.relpyPrivate(id, msg);
     }
