@@ -1926,7 +1926,7 @@ if (equipment.帝兵.name == "终古剑之主") {
     ];
 
     // 获取当前天资位置
-    const currentIndex = aptitude.index;
+    const currentIndex = aptitudeSequence.indexOf(player.天资等级);
     
     // === 特殊天资处理 ===
     if (player.天资等级 === '无化如是') {
