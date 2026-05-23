@@ -707,12 +707,12 @@ async zhiweijinsheng(e) {
                 "圣子": [
                     { name: "圣子令", type: "道具", count: 1, desc: "获得圣子令x1" },
                     { name: "超品源石", type: "道具", count: 20, desc: "获得超品源石×20" },
-                    { name: "龙纹黑金鼎仿品", type: "帝兵", count: 1, desc: "获得龙纹黑金鼎仿品x1" }
+                    { name: "龙纹黑金鼎仿品", type: "装备", count: 1, desc: "获得龙纹黑金鼎仿品x1" }
                 ],
                 "圣女": [
                     { name: "圣女令", type: "道具", count: 1, desc: "获得圣女令x1" },
                     { name: "超品源石", type: "道具", count: 20, desc: "获得超品源石×20" },
-                    { name: "龙纹黑金鼎仿品", type: "帝兵", count: 1, desc: "获得龙纹黑金鼎仿品x1" }
+                    { name: "龙纹黑金鼎仿品", type: "装备", count: 1, desc: "获得龙纹黑金鼎仿品x1" }
                 ]
             },
             messages: {
