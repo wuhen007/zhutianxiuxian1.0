@@ -37,17 +37,17 @@ async jiushu(e) {
         e.reply('修仙游戏请在群聊中游玩');
         return false;
     }
-    
+
     let casterQQ = e.user_id.toString().replace('qg_', '');
     casterQQ = await channel(casterQQ);
-    
+
     // 查看施法者存档
     let casterExists = await existplayer(casterQQ);
     if (!casterExists) {
         e.reply('施法者不存在，请先创建角色');
         return false;
     }
-    
+
     // 检查是否为魔法少女一脉
     const caster = await Read_player(casterQQ);
     const magicGirlTypes = ["魔法少女", "愿望化身", "希望化身", "圆环之理"];
@@ -55,7 +55,7 @@ async jiushu(e) {
         e.reply('🌸 血脉不符！非魔法少女一脉，无法施展救赎之术。');
         return false;
     }
-    
+
     // 初始化希望系统
     if (typeof caster.希望系统 === 'undefined') {
         caster.希望系统 = {
@@ -68,11 +68,11 @@ async jiushu(e) {
         };
         await Write_player(casterQQ, caster);
     }
-    
+
     // 检查目标玩家
     let targetQQ;
     const atItems = e.message.filter(item => item.type === "at");
-    
+
     if (atItems.length > 0) {
         // 救赎他人
         targetQQ = atItems[0].qq.toString().replace('qg_', '');
@@ -80,64 +80,161 @@ async jiushu(e) {
         // 救赎自己
         targetQQ = casterQQ;
     }
-    
+
     // 检查目标是否存在
     if (!await existplayer(targetQQ)) {
         e.reply('目标玩家不存在于诸天万界中');
         return false;
     }
-    
+
     const target = await Read_player(targetQQ);
     const isSelf = targetQQ === casterQQ;
-    
+
     // 检查目标状态
     const targetAction = await redis.get('xiuxian:player:' + targetQQ + ':action');
     const parsedAction = targetAction ? JSON.parse(targetAction) : null;
-    
+
+    // ===== 新增：检查永寂状态及等级 =====
+    let oblivionData = null;
+    let oblivionLevel = 21; // 默认仙帝级永寂
+    let obliteratorName = '未知存在';
+
+    // 尝试获取oblivion（新格式）
+    let oblivionStr = await redis.get('xiuxian:player:' + targetQQ + ':oblivion');
+    if (oblivionStr) {
+        oblivionData = JSON.parse(oblivionStr);
+        oblivionLevel = oblivionData.oblivionLevel || 21;
+        obliteratorName = oblivionData.obliteratorName || '未知存在';
+    } else {
+        // 尝试获取yongji（旧格式）
+        oblivionStr = await redis.get('xiuxian:player:' + targetQQ + ':yongji');
+        if (oblivionStr) {
+            oblivionData = { yongji: true };
+        }
+    }
+
     const status = {
-        isYongji: parsedAction?.yongji, // 永寂状态
+        isYongji: oblivionData !== null, // 永寂状态
+        oblivionLevel: oblivionLevel, // 永寂等级
+        obliteratorName: obliteratorName, // 致寂者
         isTianlao: parsedAction?.action === '天牢', // 天牢状态
         isHeianlaolong: parsedAction?.heianlaolong, // 黑暗牢笼状态
         isJinbi: parsedAction?.action === '禁闭', // 禁闭状态
         hasDaoshang: target.道伤 > 0, // 有道伤
         hasShengmingbenyuan: target.生命本源 < (100 + (target.灵根?.生命本源 || 0)) // 生命本源受损
     };
-    
+
+    // ===== 永寂等级与救援权限判定 =====
+    // 根据施法者的mijinglevel_id判断能救哪些永寂等级
+    // oblivionLevel 21 (仙帝永寂) → 需要仙帝(21+)救援
+    // oblivionLevel 22 (祭道永寂) → 需要祭道(22+)救援
+    // oblivionLevel 23 (终极始祖永寂) → 需要祭道之上(24+)救援
+    // oblivionLevel 24+ (祭道之上永寂) → 需要祭道之上(24+)救援
+
+    let canRescueYongji = false;
+    let yongjiRescueMsg = '';
+    let yongjiCost = 0;
+
+    if (status.isYongji) {
+        // 祭道之上(24+)：可救回一切永寂
+        if (caster.mijinglevel_id >= 24) {
+            canRescueYongji = true;
+            yongjiCost = 200; // 基础消耗
+            // 更高等级的永寂需要更多消耗
+            if (oblivionLevel >= 24) yongjiCost = 400;
+            else if (oblivionLevel === 23) yongjiCost = 300;
+        }
+        // 祭道(22-23)：可救回祭道(22)和仙帝(21)永寂，救不了终极始祖(23)和祭道之上(24)
+        else if (caster.mijinglevel_id >= 22) {
+            if (oblivionLevel <= 22) {
+                canRescueYongji = true;
+                yongjiCost = 250;
+            } else {
+                yongjiRescueMsg = `此为${this.getOblivionLevelName(oblivionLevel)}——需要祭道之上(24级+)方能映照逆转！`;
+            }
+        }
+        // 仙帝(21)：只能救被仙帝(21)永寂的
+        else if (caster.mijinglevel_id >= 21) {
+            if (oblivionLevel === 21) {
+                canRescueYongji = true;
+                yongjiCost = 200;
+            } else {
+                yongjiRescueMsg = `此为${this.getOblivionLevelName(oblivionLevel)}——您的境界不足以映照逆转！`;
+            }
+        } else {
+            yongjiRescueMsg = `需达仙帝境(21级)方能触及永寂层面的存在！`;
+        }
+    }
+
     // 根据施法者境界判断可救赎的状态
     const canRescue = {
         // 魔法少女：只能解放天牢和禁闭
         tianlao: caster.灵根.type === "魔法少女" && status.isTianlao,
         jinbi: caster.灵根.type === "魔法少女" && status.isJinbi,
-        
+
         // 愿望化身：解放天牢+黑暗牢笼+修复生命本源
         heianlaolong: ["愿望化身", "希望化身", "圆环之理"].includes(caster.灵根.type) && status.isHeianlaolong,
         shengmingbenyuan: ["愿望化身", "希望化身", "圆环之理"].includes(caster.灵根.type) && status.hasShengmingbenyuan,
-        
+
         // 希望化身：以上所有+修复道伤
         daoshang: ["希望化身", "圆环之理"].includes(caster.灵根.type) && status.hasDaoshang,
-        
-        // 圆神：以上所有+拯救永寂
-        yongji: caster.灵根.type === "圆环之理" && status.isYongji
+
+        // 永寂：需要境界检查
+        yongji: canRescueYongji
     };
-    
+
     // 检查是否有可救赎的状态
-    const hasRescuableStatus = Object.values(canRescue).some(v => v) || 
+    const hasRescuableStatus = Object.values(canRescue).some(v => v) ||
                               (!status.isYongji && !status.isTianlao && !status.isHeianlaolong && !status.isJinbi);
-    
+
     if (!hasRescuableStatus) {
+        // 如果是因为永寂无法救，显示特殊提示
+        if (status.isYongji && !canRescueYongji) {
+            e.reply([
+                `🌸 ${caster.名号}的救赎之光尝试触及${isSelf ? '自身' : target.名号}的永寂状态...`,
+                ``,
+                `检测到${this.getOblivionLevelName(oblivionLevel)}！`,
+                `【致寂者】${obliteratorName}`,
+                ``,
+                yongjiRescueMsg,
+                ``,
+                `「唯有超越${this.getOblivionLevelName(oblivionLevel)}的存在——」`,
+                `「方能映照逆转此等永寂！」`,
+            ].join('\n'));
+            return false;
+        }
         e.reply(this.buildNoRescueNeededMessage(caster, target, isSelf, status));
         return false;
     }
-    
-    // 检查希望碎片消耗
-    const cost = this.calculateRescueCost(caster, canRescue);
+
+    // 计算救赎消耗（包含永寂）
+    let cost = this.calculateRescueCost(caster, canRescue);
+    if (canRescueYongji) {
+        // 根据境界调整永寂救援消耗
+        const discount = {
+            "魔法少女": 1.0,
+            "愿望化身": 0.9,
+            "希望化身": 0.8,
+            "圆环之理": 0.7
+        }[caster.灵根.type] || 1.0;
+        cost += Math.floor(yongjiCost * discount);
+    }
+
     if (caster.希望系统.希望碎片 < cost) {
         e.reply(`🌸 希望碎片不足！需要${cost}个希望碎片，当前仅有${caster.希望系统.希望碎片}个。`);
         return false;
     }
-    
+
     // 执行救赎
-    return await this.executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf, casterQQ);
+    return await this.executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf, casterQQ, status);
+}
+
+/** 获取永寂等级名称 */
+getOblivionLevelName(level) {
+    if (level >= 24) return '祭道之上永寂';
+    if (level === 23) return '终极始祖永寂';
+    if (level === 22) return '祭道永寂';
+    return '仙帝永寂';
 }
 
 /** 构建无需救赎的提示消息 */
@@ -164,18 +261,18 @@ buildNoRescueNeededMessage(caster, target, isSelf, status) {
     return messages.join('\n');
 }
 
-/** 计算救赎消耗 */
+/** 计算救赎消耗（不含永寂） */
 calculateRescueCost(caster, canRescue) {
     let cost = 0;
-    
+
     // 基础救赎消耗
     if (canRescue.tianlao) cost += 50;
     if (canRescue.jinbi) cost += 40;
     if (canRescue.heianlaolong) cost += 100;
     if (canRescue.shengmingbenyuan) cost += 30;
     if (canRescue.daoshang) cost += 80;
-    if (canRescue.yongji) cost += 200;
-    
+    // 永寂消耗在jiushu中单独计算
+
     // 根据境界调整消耗
     const discount = {
         "魔法少女": 1.0,
@@ -183,12 +280,12 @@ calculateRescueCost(caster, canRescue) {
         "希望化身": 0.6,
         "圆环之理": 0.4
     }[caster.灵根.type] || 1.0;
-    
+
     return Math.floor(cost * discount);
 }
 
 /** 执行救赎 */
-async executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf, casterQQ) {
+async executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf, casterQQ, status = {}) {
     // 消耗希望碎片
     caster.希望系统.希望碎片 -= cost;
     
@@ -199,20 +296,24 @@ async executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf, caster
         heianlaolong: canRescue.heianlaolong ? await this.rescueHeianlaolong(targetQQ) : false,
         shengmingbenyuan: canRescue.shengmingbenyuan ? await this.healShengmingbenyuan(targetQQ) : false,
         daoshang: canRescue.daoshang ? await this.healDaoshang(targetQQ) : false,
-        yongji: canRescue.yongji ? await this.rescueYongji(targetQQ) : false
+        yongji: canRescue.yongji ? await this.rescueYongji(targetQQ, {
+            oblivionLevel: status.oblivionLevel,
+            obliteratorName: status.obliteratorName,
+            casterName: caster.名号
+        }) : false
     };
-    
+
     // 记录救赎统计
     caster.希望系统.拯救人数 += Object.values(results).filter(v => v).length;
     caster.希望系统.助人次数 += 1;
-    
+
     // 更新施法者数据
     await Write_player(casterQQ, caster);
-    
+
     // 构建回复消息
-    const message = this.buildRescueSuccessMessage(caster, target, canRescue, results, cost, isSelf);
+    const message = this.buildRescueSuccessMessage(caster, target, canRescue, results, cost, isSelf, status);
     e.reply(message);
-    
+
     return true;
 }
 
@@ -304,50 +405,140 @@ async healDaoshang(targetQQ) {
 }
 
 /** 拯救永寂 */
-async rescueYongji(targetQQ) {
+async rescueYongji(targetQQ, status = {}) {
+    // 清除所有可能的永寂状态key
     await redis.del(`xiuxian:player:${targetQQ}:yongji`);
+    await redis.del(`xiuxian:player:${targetQQ}:oblivion`);
     await redis.del(`xiuxian:player:${targetQQ}:action`);
-    
+
     const target = await Read_player(targetQQ);
     target.当前血量 = target.血量上限;
     target.道伤 = 0;
     target.生命本源 = 100 + (target.灵根?.生命本源 || 0);
-    
+
+    // 设置虚弱期
+    let weaknessTime = 20 * 60 * 1000; // 20分钟
+    let multiplier = 0.75;
+    if (status.oblivionLevel >= 24) {
+        weaknessTime = 30 * 60 * 1000;
+        multiplier = 0.6;
+    } else if (status.oblivionLevel === 23) {
+        weaknessTime = 25 * 60 * 1000;
+        multiplier = 0.65;
+    }
+
+    // 保存原始属性
+    if (!target.原始属性) {
+        target.原始属性 = {
+            血量上限: target.血量上限,
+            攻击: target.攻击,
+            防御: target.防御
+        };
+    }
+
+    // 应用虚弱减益
+    target.血量上限 = Math.trunc(target.原始属性.血量上限 * multiplier);
+    target.攻击 = Math.trunc(target.原始属性.攻击 * multiplier);
+    target.防御 = Math.trunc(target.原始属性.防御 * multiplier);
+    target.当前血量 = Math.min(target.当前血量, target.血量上限);
+
+    // 保存虚弱期到Redis
+    let weaknessEndTime = Date.now() + weaknessTime;
+    await redis.set(`xiuxian:player:${targetQQ}:weakness`, JSON.stringify({
+        startTime: Date.now(),
+        endTime: weaknessEndTime,
+        type: 'yongji_rescue',
+        multiplier: multiplier,
+        fromRescuer: status.casterName || '魔法少女'
+    }));
+
     target.救赎记录 = target.救赎记录 || [];
     target.救赎记录.push({
         类型: '永寂拯救',
         时间: new Date().toLocaleString(),
-        描述: '从永恒寂灭中归来'
+        描述: `从${this.getOblivionLevelName(status.oblivionLevel || 21)}中归来`,
+        致寂者: status.obliteratorName || '未知'
     });
-    
+
     await Write_player(targetQQ, target);
     return true;
 }
 
 /** 构建救赎成功消息 */
-buildRescueSuccessMessage(caster, target, canRescue, results, cost, isSelf) {
+buildRescueSuccessMessage(caster, target, canRescue, results, cost, isSelf, status = {}) {
     const messages = [];
     const targetName = isSelf ? '自身' : target.名号;
-    
+    const oblivionLevel = status.oblivionLevel || 21;
+    const obliteratorName = status.obliteratorName || '未知存在';
+
     // 根据救赎类型构建不同文案
     messages.push(`✨ ${caster.名号}施展${caster.灵根.type}之力，绽放希望之光！`);
-    
+
     if (canRescue.yongji && results.yongji) {
-        messages.push(
-            `🌈【圆环之理·逆转永寂】`,
-            `「眸光所至，枯竭所有，重现所有！」`,
-            `${caster.名号}的眸光穿透诸天万界，映照那本应永恒寂灭的存在！`,
-            ``,
-            `轰！整部古史突然剧烈震荡！`,
-            `接引古殿发出不堪重负的哀鸣，那流淌了万古纪元的黑暗物质竟开始...倒流！`,
-            ``,
-            `"重现。"`,
-            `二字道出，永寂黑暗如薄雾般被生生蒸干！`,
-            `${targetName}的身影从虚无中踏出，重归现世！`,
-            ``,
-            `诸天震颤，所有仙帝级存在皆心生感应：`,
-            `"永寂...被逆转了？！"`
-        );
+        // 根据永寂等级构建不同文案
+        if (oblivionLevel >= 24) {
+            // 逆转祭道之上永寂
+            messages.push(
+                `🌈【圆环之理·逆转祭道之上永寂】`,
+                `「眸光所至，枯竭所有，重现所有！」`,
+                `${caster.名号}的眸光穿透诸天万界，`,
+                `映照那本应永恒寂灭的祭道之上存在！`,
+                ``,
+                `轰！整部古史剧烈震荡！`,
+                `那超越祭道领域的终极湮灭——`,
+                `竟在${caster.名号}的眸光下化作虚无！`,
+                ``,
+                `"重现。"`,
+                `${targetName}的身影从虚无中踏出！`,
+                ``,
+                `诸天震颤，所有至高存在皆心生感应！`,
+                `"这便是......超越一切的希望！"`,
+                ``,
+                `【致寂者】${obliteratorName}`,
+                `【永寂等级】${this.getOblivionLevelName(oblivionLevel)}`
+            );
+        } else if (oblivionLevel === 23) {
+            // 逆转终极始祖永寂
+            messages.push(
+                `🌈【圆环之理·逆转终极始祖之寂】`,
+                `「眸光所至，枯竭所有，重现所有！」`,
+                `${caster.名号}以超越祭道的希望之光，`,
+                `映照那超越祭道的终极湮灭！`,
+                ``,
+                `轰！整部古史剧烈震荡！`,
+                `终极始祖留下的永寂烙印——`,
+                `竟在希望之力下寸寸崩裂！`,
+                ``,
+                `"重现。"`,
+                `${targetName}从超越祭道的湮灭中归来！`,
+                ``,
+                `"终极虽强——"`,
+                `"亦在希望一念之间！"`,
+                ``,
+                `【致寂者】${obliteratorName}`,
+                `【永寂等级】${this.getOblivionLevelName(oblivionLevel)}`
+            );
+        } else {
+            // 普通永寂逆转
+            messages.push(
+                `🌈【圆环之理·逆转永寂】`,
+                `「眸光所至，枯竭所有，重现所有！」`,
+                `${caster.名号}的眸光穿透诸天万界，映照那本应永恒寂灭的存在！`,
+                ``,
+                `轰！整部古史突然剧烈震荡！`,
+                `那流淌了万古纪元的黑暗物质竟开始...倒流！`,
+                ``,
+                `"重现。"`,
+                `二字道出，永寂黑暗如薄雾般被生生蒸干！`,
+                `${targetName}的身影从虚无中踏出，重归现世！`,
+                ``,
+                `诸天震颤，所有仙帝级存在皆心生感应：`,
+                `"永寂...被逆转了？！"`,
+                ``,
+                `【致寂者】${obliteratorName}`,
+                `【永寂等级】${this.getOblivionLevelName(oblivionLevel)}`
+            );
+        }
     } else if (canRescue.daoshang && results.daoshang) {
         messages.push(
             `🌟【希望化身·治愈道伤】`,

@@ -3319,79 +3319,261 @@ async yingzhao(e) {
 
 /** 处理永寂复活 */
 async handleYongjiResurrection(e, caster, target, targetQQ) {
+    // ===== 永寂等级检查 =====
+    // 获取目标的永寂状态
+    let oblivionInfo = await redis.get(`xiuxian:player:${targetQQ}:oblivion`);
+    if (!oblivionInfo) {
+        // 尝试获取旧格式
+        oblivionInfo = await redis.get(`xiuxian:player:${targetQQ}:yongji`);
+    }
+    
+    let oblivionLevel = 21; // 默认仙帝级永寂
+    let obliteratorName = '未知存在';
+    
+    if (oblivionInfo) {
+        let oblivionData = JSON.parse(oblivionInfo);
+        oblivionLevel = oblivionData.oblivionLevel || 21;
+        obliteratorName = oblivionData.obliteratorName || '未知存在';
+    }
+    
+    // ===== 救援权限判定 =====
+    // 永寂等级与救援要求：
+    // oblivionLevel 21 (仙帝永寂) → 需要仙帝(21+)救援
+    // oblivionLevel 22 (祭道永寂) → 需要祭道(22+)救援
+    // oblivionLevel 23 (终极始祖永寂) → 需要祭道之上(24+)救援（超越祭道但非完全超脱）
+    // oblivionLevel 24+ (祭道之上永寂) → 需要祭道之上(24+)救援
+    
+    let canRescue = false;
+    let rescueRequireMsg = '';
+    
+    if (oblivionLevel >= 24) {
+        // 祭道之上永寂 - 需要祭道之上(24+)才能救
+        if (caster.mijinglevel_id >= 24) {
+            canRescue = true;
+        } else {
+            rescueRequireMsg = `此为祭道之上级别的永寂，唯有同层次的至高存在方能映照逆转！`;
+        }
+    } else if (oblivionLevel === 23) {
+        // 终极始祖永寂 - 超越祭道但非完全超脱，需要祭道之上(24+)才能救
+        // 祭道境(22-23)无法救终极始祖永寂，因为终极始祖已超越祭道
+        if (caster.mijinglevel_id >= 24) {
+            canRescue = true;
+        } else {
+            rescueRequireMsg = `此为终极始祖的永寂——已超越祭道领域！祭道之下的存在无法触及此等层面的湮灭！`;
+        }
+    } else if (oblivionLevel === 22) {
+        // 祭道永寂 - 需要祭道(22+)才能救
+        if (caster.mijinglevel_id >= 22) {
+            canRescue = true;
+        } else {
+            rescueRequireMsg = `此为祭道级别的永寂，唯有祭道境以上的存在方能映照逆转！`;
+        }
+    } else {
+        // 仙帝永寂 - 需要仙帝(21+)才能救
+        if (caster.mijinglevel_id >= 21) {
+            canRescue = true;
+        } else {
+            rescueRequireMsg = `此为仙帝级别的永寂，需达仙帝境方可映照逆转！`;
+        }
+    }
+    
+    // ===== 权限不足处理 =====
+    if (!canRescue) {
+        await e.reply([
+            `【映照失败·权限不足】`,
+            `${caster.名号}尝试映照${target.名号}的永寂状态……`,
+            ``,
+            `然而，${obliteratorName}留下的永寂烙印太过强大！`,
+            `您的修为不足以触及这一层面的存在！`,
+            ``,
+            `【永寂等级】${this.getOblivionLevelName(oblivionLevel)}`,
+            `【致寂者】${obliteratorName}`,
+            ``,
+            rescueRequireMsg,
+            ``,
+            `「唯有超越${this.getOblivionLevelName(oblivionLevel)}的存在——」`,
+            `「方能映照逆转此等永寂！」`,
+        ].join('\n'));
+        return true;
+    }
+    
+    // ===== 映照消耗与限制 =====
+    
+    // 检查映照次数限制（每天最多映照复活3次）
+    let yingzhaoCount = await redis.get(`xiuxian:player:${caster.qq}:yingzhao_count`);
+    yingzhaoCount = yingzhaoCount ? parseInt(yingzhaoCount) : 0;
+    let maxYingzhaoPerDay = 3;
+    
+    let lastYingzhaoDate = await redis.get(`xiuxian:player:${caster.qq}:last_yingzhao_date`);
+    let today = new Date().toDateString();
+    
+    if (lastYingzhaoDate !== today) {
+        yingzhaoCount = 0;
+        await redis.set(`xiuxian:player:${caster.qq}:last_yingzhao_date`, today);
+    }
+    
+    // if (yingzhaoCount >= maxYingzhaoPerDay) {
+    //     await e.reply([
+    //         `【映照受限】`,
+    //         `今日你的映照次数已用尽（${maxYingzhaoPerDay}次/天）！`,
+    //         `「映照诸天需要消耗大量心力，不可滥用……」`,
+    //         `请明日再尝试。`,
+    //     ].join("\n"));
+    //     return true;
+    // }
+    
+    // 计算映照消耗（永寂等级越高，消耗越大）
+    // 仙帝(21)：消耗修为20%
+    // 祭道(22)：消耗修为15%
+    // 祭道之上(23-24)：消耗修为10%
+    // 祭道之上(25+)：消耗修为5%
+    let costRate = 0.2;
+    if (caster.mijinglevel_id >= 25) {
+        costRate = 0.05;
+    } else if (caster.mijinglevel_id >= 23) {
+        costRate = 0.1;
+    } else if (caster.mijinglevel_id >= 22) {
+        costRate = 0.15;
+    }
+    
+    // 永寂等级加成消耗（救援更高等级的永寂需要更多代价）
+    let oblivionBonus = 1.0;
+    if (oblivionLevel >= 24) {
+        oblivionBonus = 1.5; // 祭道之上永寂增加50%消耗
+    } else if (oblivionLevel === 23) {
+        oblivionBonus = 1.3; // 终极始祖永寂增加30%消耗
+    } else if (oblivionLevel === 22) {
+        oblivionBonus = 1.2; // 祭道永寂增加20%消耗
+    }
+    
+    let costCultivation = Math.floor(caster.修为 * costRate * oblivionBonus);
+    let costMaxHP = Math.floor(caster.血量上限 * costRate * oblivionBonus);
+    let costAttack = Math.floor(caster.攻击 * costRate * oblivionBonus);
+    let costDefense = Math.floor(caster.防御 * costRate * oblivionBonus);
+    
+    // 检查是否有足够的修为
+    if (caster.修为 < costCultivation) {
+        await e.reply([
+            `【修为不足】`,
+            `映照复活需要消耗${Math.round(costRate * oblivionBonus * 100)}%修为！`,
+            `你当前修为不足，无法施展此神通！`,
+            `所需修为：${bigNumberTransform(costCultivation)}`,
+            `当前修为：${bigNumberTransform(caster.修为)}`,
+        ].join("\n"));
+        return true;
+    }
+    
+    // 扣除消耗
+    caster.修为 -= costCultivation;
+    caster.血量上限 -= costMaxHP;
+    caster.攻击 -= costAttack;
+    caster.防御 -= costDefense;
+    caster.当前血量 = Math.min(caster.当前血量, caster.血量上限);
+    await Write_player(caster.qq, caster);
+    
+    // 增加映照计数
+    yingzhaoCount++;
+    await redis.set(`xiuxian:player:${caster.qq}:yingzhao_count`, yingzhaoCount.toString());
+    
     // 执行复活
     await this.resurrectPlayer(targetQQ, caster);
 
     // 构建回复消息
-    const messages = [
-        `【映照诸天·逆转生死】`,
-        `${caster.名号}于超脱现世外的永恒未知之地施展无上仙帝伟力，`,
-        `于岁月长河中映照${targetQQ === caster.qq ? '己身' : target.名号}！`,
-        ``,
-        `整部古史都在颤栗！${caster.名号}的身影同时显现在：`,
-        ` 仙域初开的混沌纪元`,
-        ` 帝落时代的血色黄昏`,
-        ` 现世轮回的尽头`,
-        ``,
-        `"归来！"`,
-        `一声道喝震碎时间长河！无穷诸天仿佛都要炸开了！`,
-        `强大的力量改写了古史中既定的命运`,
-        `一道贯穿古今未来的神光降临，`,
-        `${targetQQ === caster.qq ? '己身' : target.名号}从永寂中归来！`,
-    ];
+    const messages = [];
     
-    // 祭道级映照文案（22-23级）
-    if (caster.mijinglevel_id >= 22 && caster.mijinglevel_id <= 23) {
+    // 根据永寂等级添加不同文案
+    if (oblivionLevel >= 24) {
+        // 逆转祭道之上永寂
         messages.push(
-            ``,
-            `「他化自在，他化万古！」`,
-            ``,
-            `整部古史突然剧烈震荡！${caster.名号}的祭道符文照亮黑暗深渊：`,
-            `- 仙域边荒的帝骨残骸突然绽放霞光`,
-            `- 葬坑深处的祭文自主燃烧`,
-            `- 魂河尽头的无上存在猛然睁眼`,
-            ``,
-            `三道贯穿古今的帝影同时结印映照诸天，诸天万界响起祭祀音：`,
-            `"以我祭道真名，唤汝真灵重聚！"`
-        );
-    }
-    
-    // 祭道之上映照文案（24级+）
-    if (caster.mijinglevel_id >= 24) {
-        messages.push(
-            ``,
-            `【永恒映照·祭道之上】`,
+            `【永恒映照·逆转祭道之上永寂】`,
+            `${caster.名号}施展超越祭道的无上伟力！`,
             `「眸光所至，枯竭所有，重现所有！」`,
             ``,
-            `轰！`,
-            `整部古史突然剧烈震荡！`,
+            `号称"不可逆"的祭道之上永寂——`,
+            `竟在${caster.名号}的眸光下化作虚无！`,
+            `${target.名号}的身影从终极湮灭中归来！`,
             ``,
-            `诸天万界，无量宇宙，所有生灵心头莫名悸动，仿佛某种至高无上的存在睁开了双眼。`,
+            `诸天震颤，所有至高存在皆心生感应！`,
+            `"这便是......超越一切的存在！"`,
             ``,
-            `"枯竭。"`,
-            `二字道出，永寂黑暗吞噬万古！`,
+            `【致寂者】${obliteratorName}`,
+            `【永寂等级】${this.getOblivionLevelName(oblivionLevel)}`
+        );
+    } else if (oblivionLevel === 23) {
+        // 逆转终极始祖永寂
+        messages.push(
+            `【终极映照·逆转终极始祖之寂】`,
+            `${caster.名号}以祭道之上的修为，`,
+            `映照那超越祭道领域的终极湮灭！`,
             ``,
-            `无量量的宇宙开始枯竭，`,
-            `无数个纪元的事与物都化作了光雨，`,
-            `命运、造化、因果、时空、大道都如同梦幻泡影般虚淡了，仿佛要从未存在过！`,
+            `终极始祖的永寂烙印——`,
+            `在这无上眸光下寸寸崩裂！`,
+            `${target.名号}从超越祭道的湮灭中归来！`,
             ``,
-            `就在诸天即将彻底湮灭时——`,
+            `"终极虽强——"`,
+            `"亦在我一念之间！"`,
             ``,
-            `"重现。"`,
-            `${caster.名号}的眸光再次闪动！`,
+            `【致寂者】${obliteratorName}`,
+            `【永寂等级】${this.getOblivionLevelName(oblivionLevel)}`
+        );
+    } else if (caster.mijinglevel_id >= 22) {
+        // 祭道映照
+        messages.push(
+            `【祭道映照·逆转生死】`,
+            `${caster.名号}立于时光长河之上，祭道符文在眸中流转！`,
+            `「他化自在，他化万古！」`,
             ``,
-            `号称"不可逆"的永寂，竟如薄雾般被生生蒸干！ `,
-            `连"死亡"这个概念本身，都在颤栗、哀鸣！！ `,
-            `破碎的宇宙重新凝聚，`,
-            `干涸的时光长河重新奔涌，`,
-            `${target.名号}的身影从虚无中踏出，`,
-            `诸天震颤，所有仙帝级存在皆心生感应，望向此地！`,
-            `"这便是......祭道之上！"`
+            `整部古史都在颤栗！`,
+            `三道贯穿古今的帝影同时结印映照诸天：`,
+            `"以我祭道真名，唤汝真灵重聚！"`,
+            `${target.名号}从永寂中归来！`,
+            ``,
+            `【致寂者】${obliteratorName}`,
+            `【永寂等级】${this.getOblivionLevelName(oblivionLevel)}`
+        );
+    } else {
+        // 普通映照
+        messages.push(
+            `【映照诸天·逆转生死】`,
+            `${caster.名号}施展无上仙帝伟力，映照${target.名号}！`,
+            ``,
+            `整部古史都在颤栗！`,
+            `"归来！"`,
+            `一声道喝震碎时间长河！`,
+            `${target.名号}从永寂中归来！`,
+            ``,
+            `【致寂者】${obliteratorName}`,
+            `【永寂等级】${this.getOblivionLevelName(oblivionLevel)}`
         );
     }
     
+    // 映照消耗信息
+    messages.push(
+        ``,
+        `【映照代价】`,
+        `消耗修为：${bigNumberTransform(costCultivation)}`,
+        `消耗血量上限：${bigNumberTransform(costMaxHP)}`,
+        `消耗攻击：${bigNumberTransform(costAttack)}`,
+        `消耗防御：${bigNumberTransform(costDefense)}`,
+        ``,
+        `今日剩余映照次数：${maxYingzhaoPerDay - yingzhaoCount}次`,
+        ``,
+        `「映照诸天，虽代价沉重——」`,
+        `「然道友之情，重于泰山！」`
+    );
+    
     e.reply(messages.join('\n'));
+    console.log(`[映照复活] ${target.名号} 被 ${caster.名号} 从永寂中复活（永寂等级:${oblivionLevel}），已设置虚弱期`);
+    
     return true;
+}
+
+/** 获取永寂等级名称 */
+getOblivionLevelName(level) {
+    if (level >= 24) return '祭道之上永寂';
+    if (level === 23) return '终极始祖永寂';
+    if (level === 22) return '祭道永寂';
+    return '仙帝永寂';
 }
 
 /** 处理天牢解放 */
