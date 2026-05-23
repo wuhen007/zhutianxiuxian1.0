@@ -100,12 +100,13 @@ const SPECIAL_RESOURCES = [
   '虚空晶石', '时间碎片', '生命古树'
 ];
 
-// 神药生长阶段配置
+// 神药生长阶段配置（阶段不再含duration，仅用于展示剩余时间匹配）
+// 阶段匹配规则：剩余时间百分比 >80%=阶段1，>60%=阶段2，>40%=阶段3，>20%=阶段4，≤20%=阶段5(即将成熟)
 const SHENYAO_STAGES = {
-  1: { name: "萌芽", duration: 3600, desc: "种子破土而出，嫩芽初现" },
-  2: { name: "幼苗", duration: 10800, desc: "枝叶舒展，初具药形" },
-  3: { name: "成长期", duration: 21600, desc: "药株茁壮，散发神性光辉" },
-  4: { name: "开花期", duration: 43200, desc: "神花绽放，道韵流转" },
+  1: { name: "萌芽", desc: "种子破土而出，嫩芽初现" },
+  2: { name: "幼苗", desc: "枝叶舒展，初具药形" },
+  3: { name: "成长期", desc: "药株茁壮，散发神性光辉" },
+  4: { name: "开花期", desc: "神花绽放，道韵流转" },
   5: { name: "成熟期", desc: "神药成熟，可采摘" }
 };
 
@@ -117,31 +118,28 @@ const SHENYAO_SEEDS = {
     class: "草药",
     type: "神药种子",
     harvest: "麒麟神药",
-    stages: SHENYAO_STAGES,
     requirements: {
       灵气浓度: 3000,
       特殊环境: [ "仙泉"]
     }
   },
-   "玄武神药种子": {
+  "玄武神药种子": {
     id: 900433,
     name: "玄武神药种子",
     class: "草药",
     type: "神药种子",
     harvest: "玄武神药",
-    stages: SHENYAO_STAGES,
     requirements: {
       灵气浓度: 3000,
       特殊环境: [ "仙泉"]
     }
   },
-   "蟠桃仙种": {
+  "蟠桃仙种": {
     id: 900433,
     name: "蟠桃仙种",
     class: "草药",
     type: "神药种子",
     harvest: "蟠桃仙果",
-    stages: SHENYAO_STAGES,
     requirements: {
       灵气浓度: 3000,
       特殊环境: [ "仙泉"]
@@ -153,7 +151,6 @@ const SHENYAO_SEEDS = {
     class: "草药",
     type: "神药种子",
     harvest: "真龙不死药",
-    stages: SHENYAO_STAGES,
     requirements: {
       灵气浓度: 5000,
       特殊环境: ["龙穴"]
@@ -165,7 +162,6 @@ const SHENYAO_SEEDS = {
     class: "草药",
     type: "神药种子",
     harvest: "大夏神药",
-    stages: SHENYAO_STAGES,
     requirements: {
       灵气浓度: 3000
     }
@@ -176,7 +172,6 @@ const SHENYAO_SEEDS = {
     class: "草药",
     type: "神药种子",
     harvest: "九妙不死药",
-    stages: SHENYAO_STAGES,
     requirements: {
       灵气浓度: 8000,
       特殊环境: ["仙坟"]
@@ -188,7 +183,6 @@ const SHENYAO_SEEDS = {
     class: "草药",
     type: "古茶树种子",
     harvest: "悟道古茶树",
-    stages: SHENYAO_STAGES,
     requirements: {
       灵气浓度: 10000,
       特殊环境: ["仙坟","仙泉"]
@@ -232,6 +226,10 @@ export class xiaoshijie extends plugin {
     reg: '^#小世界栽种(.*?)$',
     fnc: 'plantShenyao'
 },
+{
+    reg: '^#小世界种植(.*?)$',
+    fnc: 'plantShenyao'
+},
         {
   reg: '^#浇灌小世界作物$',
   fnc: 'forceRipenAllCrops', 
@@ -248,20 +246,29 @@ export class xiaoshijie extends plugin {
         reg: '^#催熟小世界作物$',
         fnc: 'forceRipenCrops',
         permission: 'master'
-    }
+    },
+    {
+        reg: '^#一键种植(.*?)$',
+        fnc: 'batchPlantAll'
+    },
+    {
+        reg: '^#一键浇灌(草木精华露|岁月流金沙|掌天灵液|普通)?$',
+        fnc: 'batchWaterAll'
+    },
       ],
     });
   }
   // 将formatCropList方法放在类内部
-  formatCropList(crops) {
+  formatCropList(crops, world) {
     return crops.map((crop, index) => {
       const seedConfig = SHENYAO_SEEDS[crop.种子];
       if (!seedConfig) return `${index + 1}号: 未知作物`;
       
-      const stage = seedConfig.stages[crop.当前阶段];
-      const progress = "▰".repeat(crop.当前阶段) + "▱".repeat(5 - crop.当前阶段);
+      const stageConfig = SHENYAO_STAGES[crop.当前阶段] || SHENYAO_STAGES[1];
+      const remaining = this.calculateRemainingTime(crop, seedConfig, world);
+      const stageProgress = "▰".repeat(crop.当前阶段) + "▱".repeat(5 - crop.当前阶段);
       
-      return `${index + 1}号: ${seedConfig.name} [${progress}] ${stage.name}`;
+      return `${index + 1}号: ${seedConfig.name} [${stageProgress}] ${stageConfig.name} | 剩余: ${remaining}`;
     }).join("\n");
   }
 async forceRipenSingleCrop(e) {
@@ -291,7 +298,7 @@ async forceRipenSingleCrop(e) {
         
         // 检查位置是否有效
         if (position < 0 || position >= world.药田.length) {
-            return e.reply(`位置无效，请选择1-${world.药田.length}号作物\n当前药田情况：\n${this.formatCropList(world.药田)}`);
+            return e.reply(`位置无效，请选择1-${world.药田.length}号作物\n当前药田情况：\n${this.formatCropList(world.药田, world)}`);
         }
         
         // 获取作物
@@ -319,74 +326,103 @@ async forceRipenSingleCrop(e) {
             ].join("\n"));
         }
         
-        // 确定催熟阶段数
-        const stageEffects = {
-            '草木精华露': 1,
-            '岁月流金沙': 2,
-            '掌天灵液': 3
+        // 催熟效果：减少剩余收获时间（有效秒数百分比）
+        // 草木精华露：减少25%剩余时间
+        // 岁月流金沙：减少50%剩余时间
+        // 掌天灵液：减少75%剩余时间
+        const reductionEffects = {
+            '草木精华露': 0.25,
+            '岁月流金沙': 0.50,
+            '掌天灵液': 0.75
         };
         
-        const stagesToAdvance = stageEffects[itemName] || 1;
+        const reductionPct = reductionEffects[itemName] || 0.25;
         
-        // 计算新阶段
-        const newStage = Math.min(crop.当前阶段 + stagesToAdvance, 5);
-        const stagesAdvanced = newStage - crop.当前阶段;
+        // 计算当前剩余时间（有效秒数）
+        const now = new Date();
+        const startTime = new Date(crop.种植时间 || crop.阶段开始时间);
+        const elapsedMs = now - startTime;
+        if (elapsedMs < 0) {
+            return e.reply('作物种植时间异常，请联系统管理员');
+        }
+        const elapsedSeconds = elapsedMs / 1000;
         
-        if (stagesAdvanced <= 0) {
-            return e.reply('催熟未能推进作物生长阶段');
+        const timeFlow = world.attributes.时间流速.split(':');
+        const timeRatio = parseInt(timeFlow[1]) / parseInt(timeFlow[0]);
+        const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1);
+        const bonusSeconds = crop.时间加成 || 0;
+        const totalGrowthTime = elapsedSeconds * timeRatio * growthRate + bonusSeconds;
+        const requiredTime = this.calculateHarvestTime(seedConfig, world);
+        const remainingTime = Math.max(0, requiredTime - totalGrowthTime);
+        
+        if (remainingTime <= 0) {
+            // 已经成熟但阶段未更新，触发收获
+            const harvestResult = await this.harvestCropBonus(player_qq, crop, seedConfig);
+            world.药田.splice(position, 1);
+            
+            await this.saveWorld(player_qq, world);
+            
+            e.reply([
+                `【${seedConfig.name}】已成熟！`,
+                `收获：【${seedConfig.harvest}】x${harvestResult.totalYield}${harvestResult.seedReturned ? `，返种【${seedConfig.name}】x1` : ''}`,
+                `已自动存入纳戒`
+            ].join("\n"));
+            return true;
         }
         
-        // 更新作物阶段
+        // 计算减少的时间（有效秒数）
+        const reductionAmount = remainingTime * reductionPct;
+        crop.时间加成 = (crop.时间加成 || 0) + reductionAmount;
+        
+        // 重新计算剩余时间百分比，更新展示阶段
+        const newTotalGrowthTime = elapsedSeconds * timeRatio * growthRate + crop.时间加成;
+        const newRemainingPct = Math.max(0, 1 - newTotalGrowthTime / requiredTime);
+        const newStage = this.getStageByRemaining(newRemainingPct);
+        
+        const oldStage = crop.当前阶段;
         crop.当前阶段 = newStage;
-        crop.阶段开始时间 = new Date().toLocaleString();
+        crop.阶段开始时间 = now.toLocaleString();
         
         // 记录生长日志
         crop.生长记录 = crop.生长记录 || [];
-        crop.生长记录.push(`${new Date().toLocaleString()}: 使用【${itemName}】催熟，推进${stagesAdvanced}个阶段至【${seedConfig.stages[newStage].name}】`);
+        crop.生长记录.push(`${now.toLocaleString()}: 使用【${itemName}】催熟，减少${(reductionPct * 100).toFixed(0)}%剩余时间，阶段【${SHENYAO_STAGES[oldStage]?.name || '未知'}】→【${SHENYAO_STAGES[newStage]?.name || '成熟期'}】`);
         
         // 扣除道具
         await Add_najie_thing(player_qq, itemName, "道具", -1);
         
         let replyMessage = [];
         
-        // 如果作物成熟，则收获
-        if (newStage === 5) {
-            const harvestItem = seedConfig.harvest;
-            let itemType = "丹药";
-            if (harvestItem === "悟道古茶树") itemType = "道具";
-            
-            // 添加到纳戒
-            await Add_najie_thing(player_qq, harvestItem, itemType, 1);
+        // 检查是否成熟
+        if (newTotalGrowthTime >= requiredTime) {
+            // 成熟了，收获
+            const harvestResult = await this.harvestCropBonus(player_qq, crop, seedConfig);
             
             // 从药田中移除
             world.药田.splice(position, 1);
             
             replyMessage = [
                 `成功使用【${itemName}】催熟第${position + 1}号作物！`,
-                `作物：${seedConfig.name}直接成熟！`,
-                `收获：【${harvestItem}】x1`,
+                `作物：${seedConfig.name}已成熟！`,
+                `收获：【${seedConfig.harvest}】x${harvestResult.totalYield}${harvestResult.seedReturned ? `，返种【${seedConfig.name}】x1` : ''}`,
                 `已自动存入纳戒`
             ];
         } else {
+            const remaining = this.calculateRemainingTime(crop, seedConfig, world);
             replyMessage = [
                 `成功使用【${itemName}】催熟第${position + 1}号作物！`,
-                `作物：${seedConfig.name}推进${stagesAdvanced}个生长阶段`,
-                `当前：${seedConfig.stages[newStage].name}（${seedConfig.stages[newStage].desc}）`,
-                `下一阶段：${newStage < 4 ? seedConfig.stages[newStage + 1].name : '成熟'}`
+                `作物：${seedConfig.name}减少${(reductionPct * 100).toFixed(0)}%剩余时间`,
+                `当前阶段：【${SHENYAO_STAGES[newStage]?.name || '未知'}】`,
+                `剩余时间：${remaining}`
             ];
         }
         
         // 保存小世界数据
-        const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
-        if (worldIndex !== -1) {
-            data.xiaoshijie[worldIndex] = world;
-            fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
-        }
+        await this.saveWorld(player_qq, world);
         
         // 添加药田概览
         if (world.药田.length > 0) {
             replyMessage.push("\n当前药田概览：");
-            replyMessage.push(this.formatCropList(world.药田));
+            replyMessage.push(this.formatCropList(world.药田, world));
         }
         
         e.reply(replyMessage.join("\n"));
@@ -429,48 +465,61 @@ async forceRipenAllCrops(e) {
         return true;
     }
     
-    // 检查冷却时间（12小时）
+    await Add_najie_thing(player_qq, itemName, "道具", -1);
+    
     const now = new Date();
-   // if (world.lastGroupRipenTime) {
-      //  const lastTime = new Date(world.lastGroupRipenTime);
-       // const hoursPassed = (now - lastTime) / (1000 * 60 * 60);
-       // if (hoursPassed < 12) {
-         //   const remainingHours = (12 - hoursPassed).toFixed(1);
-        //    e.reply(`【${itemName}】正在冷却中，剩余${remainingHours}小时`);
-        //    return true;
-        //}
-    //}
-    await Add_najie_thing(player_qq,itemName, "道具", -1);
-    // 扣除道具（使用次数不扣除，只记录冷却）
-    // 不扣除道具，因为是一次性使用后进入冷却
-    
-    // 记录使用时间
-    //world.lastGroupRipenTime = now.toLocaleString();
-    
-    // 催熟所有作物一个阶段
+    const reductionPct = 0.25; // 群体催熟减少25%剩余时间
     const harvested = [];
     
+    // 催熟所有作物：减少剩余时间
     for (let i = world.药田.length - 1; i >= 0; i--) {
         const crop = world.药田[i];
+        const seedConfig = SHENYAO_SEEDS[crop.种子];
+        
+        if (!seedConfig) continue;
         
         // 如果已成熟则跳过
         if (crop.当前阶段 >= 5) continue;
         
-        // 进入下一阶段
-        crop.当前阶段++;
+        // 计算当前剩余时间（有效秒数）
+        const startTime = new Date(crop.种植时间 || crop.阶段开始时间);
+        const elapsedMs = now - startTime;
+        if (elapsedMs < 0) continue;
+        const elapsedSeconds = elapsedMs / 1000;
+        
+        const timeFlow = world.attributes.时间流速.split(':');
+        const timeRatio = parseInt(timeFlow[1]) / parseInt(timeFlow[0]);
+        const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1);
+        const bonusSeconds = crop.时间加成 || 0;
+        const totalGrowthTime = elapsedSeconds * timeRatio * growthRate + bonusSeconds;
+        const requiredTime = this.calculateHarvestTime(seedConfig, world);
+        const remainingTime = Math.max(0, requiredTime - totalGrowthTime);
+        
+        // 减少剩余时间
+        const reductionAmount = remainingTime * reductionPct;
+        crop.时间加成 = (crop.时间加成 || 0) + reductionAmount;
+        
+        // 重新计算剩余时间百分比，更新展示阶段
+        const newTotalGrowthTime = elapsedSeconds * timeRatio * growthRate + crop.时间加成;
+        const newRemainingPct = Math.max(0, 1 - newTotalGrowthTime / requiredTime);
+        const newStage = this.getStageByRemaining(newRemainingPct);
+        
+        const oldStage = crop.当前阶段;
+        crop.当前阶段 = newStage;
         crop.阶段开始时间 = now.toLocaleString();
         
-        const seedConfig = SHENYAO_SEEDS[crop.种子];
-        crop.生长记录.push(`${now.toLocaleString()}: 使用【${itemName}】群体催熟，进入【${seedConfig.stages[crop.当前阶段].name}】阶段`);
+        crop.生长记录 = crop.生长记录 || [];
+        crop.生长记录.push(`${now.toLocaleString()}: 使用【${itemName}】群体催熟，减少${(reductionPct * 100).toFixed(0)}%剩余时间，阶段【${SHENYAO_STAGES[oldStage]?.name || '未知'}】→【${SHENYAO_STAGES[newStage]?.name || '成熟期'}】`);
         
         // 如果成熟则收获
-        if (crop.当前阶段 === 5) {
-            harvested.push(seedConfig.harvest);
-            
-            // 添加到纳戒
-            let itemType = "丹药";
-            if (seedConfig.harvest === "悟道古茶树") itemType = "道具";
-            await Add_najie_thing(player_qq, seedConfig.harvest, itemType, 1);
+        if (newTotalGrowthTime >= requiredTime) {
+            const harvestResult = await this.harvestCropBonus(player_qq, crop, seedConfig);
+            harvested.push({
+                name: seedConfig.harvest,
+                yield: harvestResult.totalYield,
+                seedReturned: harvestResult.seedReturned,
+                seedName: seedConfig.name
+            });
             
             // 移除作物
             world.药田.splice(i, 1);
@@ -478,25 +527,24 @@ async forceRipenAllCrops(e) {
     }
     
     // 保存小世界数据
-    const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
-    data.xiaoshijie[worldIndex] = world;
-    fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
+    await this.saveWorld(player_qq, world);
     
     // 构建回复消息
     let msg = [
         `成功使用【${itemName}】！`,
-        `小世界内所有作物生长加速！`,
+        `小世界内所有作物剩余收获时间减少${(reductionPct * 100).toFixed(0)}%！`,
     ];
     
     if (harvested.length > 0) {
         msg.push(`以下作物已成熟并收获：`);
-        harvested.forEach(item => msg.push(`- ${item}`));
+        harvested.forEach(item => {
+            let info = `- ${item.name} x${item.yield}`;
+            if (item.seedReturned) info += `（返种【${item.seedName}】x1）`;
+            msg.push(info);
+        });
     } else {
-        msg.push(`所有作物进入下一生长阶段`);
+        msg.push(`所有作物生长加速，阶段已更新`);
     }
-    
-
-   // msg.push(`【${itemName}】进入冷却，12小时后可再次使用`);
     
     e.reply(msg.join("\n"));
     return true;
@@ -504,78 +552,70 @@ async forceRipenAllCrops(e) {
 checkShenyaoGrowth(world, hoursPassed) {
     const results = {
         harvested: [],
-        grown: []
+        grown: {}
     };
-    
+
     if (!world.药田 || world.药田.length === 0) {
         return results;
     }
-    
+
     const timeFlow = world.attributes.时间流速.split(':');
     const timeRatio = parseInt(timeFlow[1]) / parseInt(timeFlow[0]);
     const now = new Date();
-    
+
     for (let i = 0; i < world.药田.length; i++) {
         const plant = world.药田[i];
         const seedConfig = SHENYAO_SEEDS[plant.种子];
-        
-        if (plant.当前阶段 >= 5) continue;
-        
-        const growthRate = world.attributes.灵气浓度 / seedConfig.requirements.灵气浓度;
-        const effectiveSeconds = hoursPassed * 3600 * timeRatio * growthRate;
-        
-        // 计算当前阶段已生长时间
-        const startTime = new Date(plant.阶段开始时间);
-        const elapsedSeconds = (now - startTime) / 1000;
-        const adjustedElapsed = elapsedSeconds * timeRatio * growthRate;
-        
-        // 计算总可用生长时间（包括之前累积的时间）
 
-        let totalGrowthTime = adjustedElapsed + effectiveSeconds;
-        // 记录是否推进了阶段
-        let advanced = false;
-        
-        // 循环推进阶段直到时间不足
-        while (plant.当前阶段 < 5) {
-            const currentStage = seedConfig.stages[plant.当前阶段];
-            
-            // 检查是否满足当前阶段所需时间
-            if (totalGrowthTime >= currentStage.duration) {
-                // 扣除当前阶段所需时间
-                totalGrowthTime -= currentStage.duration;
-                
-                // 进入下一阶段
-                plant.当前阶段++;
-                advanced = true;
-                
-                // 记录生长日志
-                plant.生长记录.push(`${now.toLocaleString()}: 进入【${seedConfig.stages[plant.当前阶段].name}】阶段`);
-                
-                // 记录生长信息
-                results.grown.push(`【${seedConfig.harvest}】进入${seedConfig.stages[plant.当前阶段].name}阶段`);
-                
-                // 检查是否成熟
-                if (plant.当前阶段 === 5) {
-                    results.harvested.push(seedConfig.harvest);
-                    world.药田.splice(i, 1);
-                    i--;
-                    break; // 成熟后跳出循环
-                }
-            } else {
-                // 时间不足，更新阶段开始时间
-                // 计算剩余时间对应的实际时间
-                const remainingTime = totalGrowthTime / (timeRatio * growthRate);
-                plant.阶段开始时间 = new Date(now - remainingTime * 1000).toLocaleString();
-                break;
+        if (!seedConfig) continue;
+        if (plant.当前阶段 >= 5) continue;
+
+        const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1);
+        const startTime = new Date(plant.种植时间 || plant.阶段开始时间);
+        const elapsedMs = now - startTime;
+        if (elapsedMs < 0) continue;
+        const elapsedSeconds = elapsedMs / 1000;
+        const bonusSeconds = plant.时间加成 || 0;
+        const totalGrowthTime = elapsedSeconds * timeRatio * growthRate + bonusSeconds;
+
+        const requiredTime = this.calculateHarvestTime(seedConfig, world);
+
+        if (totalGrowthTime >= requiredTime) {
+            // 时间足够，直接收获！
+            plant.当前阶段 = 5;
+
+            results.harvested.push({
+                name: seedConfig.harvest,
+                seedName: seedConfig.name,
+                crop: plant
+            });
+
+            const harvestName = seedConfig.harvest;
+            results.grown[harvestName] = (results.grown[harvestName] || 0) + 1;
+
+            world.药田.splice(i, 1);
+            i--;
+        } else {
+            // 未成熟，根据剩余时间百分比更新展示阶段
+            const progress = totalGrowthTime / requiredTime;
+            const remainingPct = 1 - progress;
+
+            const newStage = this.getStageByRemaining(remainingPct);
+
+            if (newStage !== plant.当前阶段) {
+                const oldStage = plant.当前阶段;
+                plant.当前阶段 = newStage;
+                plant.阶段开始时间 = now.toLocaleString();
+
+                plant.生长记录 = plant.生长记录 || [];
+                plant.生长记录.push(`${now.toLocaleString()}: 生长阶段变化【${SHENYAO_STAGES[oldStage]?.name || '未知'}】→【${SHENYAO_STAGES[newStage]?.name || '成熟期'}】(剩余${(remainingPct * 100).toFixed(0)}%)`);
+
+                const harvestName = seedConfig.harvest;
+                results.grown[harvestName] = (results.grown[harvestName] || 0) + 1;
             }
         }
-        
-        // 如果没有推进阶段且没有成熟，更新阶段开始时间
-        if (!advanced && plant.当前阶段 < 5) {
-            plant.阶段开始时间 = now.toLocaleString();
-        }
     }
-    
+
     return results;
 }
 async forceRipenCrops(e) {
@@ -610,17 +650,14 @@ async forceRipenCrops(e) {
        plant.阶段开始时间 = new Date().toLocaleString();
        plant.生长记录.push(`${new Date().toLocaleString()}: 管理员催熟，【${seedConfig.harvest}】已成熟`);
        
-       // 添加到收获列表
-       harvested.push(seedConfig.harvest);
-       
-       // 根据收获物名称判断类型
-       let itemType = "丹药";
-       if (seedConfig.harvest === "悟道古茶树") {
-           itemType = "道具";
-       }
-       
-       // 添加到纳戒 - 在循环内部添加
-       await Add_najie_thing(player_qq, seedConfig.harvest, itemType, 1);
+       // 添加到收获列表（使用带加成的收获）
+       const harvestResult = await this.harvestCropBonus(player_qq, plant, seedConfig);
+       harvested.push({
+           name: seedConfig.harvest,
+           yield: harvestResult.totalYield,
+           seedReturned: harvestResult.seedReturned,
+           seedName: seedConfig.name
+       });
        
        // 移除成熟药株
        world.药田.splice(i, 1);
@@ -640,7 +677,9 @@ async forceRipenCrops(e) {
     
     // 添加收获的神药
     harvested.forEach(item => {
-        replyMsg.push(`- ${item}`);
+        let info = `- ${item.name} x${item.yield}`;
+        if (item.seedReturned) info += `（返种【${item.seedName}】x1）`;
+        replyMsg.push(info);
     });
     
     replyMsg.push('▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂');
@@ -1064,6 +1103,65 @@ async showEnvironmentHelp(e) {
     
     return resources;
   }
+
+  // ========== 神药收获时间计算 ==========
+  
+  // 计算神药从种下到成熟所需的有效秒数
+  // 公式：每1000灵气浓度 = 4小时(14400秒)，按世界灵气浓度加速
+  calculateHarvestTime(seedConfig, world) {
+    const baseConc = seedConfig.requirements?.灵气浓度 || 1000;
+    // 每1000灵气浓度需要4小时 = 14400秒（有效秒数，已含灵气浓度修正）
+    return (baseConc / 1000) * 14400;
+  }
+
+  // 根据剩余时间百分比计算当前应处阶段(1-5)
+  // 剩余>80%=阶段1, >60%=阶段2, >40%=阶段3, >20%=阶段4, ≤20%=阶段5(即将成熟)
+  getStageByRemaining(remainingPct) {
+    if (remainingPct > 0.8) return 1;
+    if (remainingPct > 0.6) return 2;
+    if (remainingPct > 0.4) return 3;
+    if (remainingPct > 0.2) return 4;
+    return 5;
+  }
+
+  // 计算单株作物剩余时间（真实时间，用于展示）
+  calculateRemainingTime(crop, seedConfig, world) {
+    const now = new Date();
+    const startTime = new Date(crop.种植时间 || crop.阶段开始时间);
+    const elapsedMs = now - startTime;
+    if (elapsedMs < 0) return '时间异常';
+    const elapsedSeconds = elapsedMs / 1000;
+
+    const timeFlow = world.attributes.时间流速.split(':');
+    const timeRatio = parseInt(timeFlow[1]) / parseInt(timeFlow[0]);
+    const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1);
+    const bonusSeconds = crop.时间加成 || 0;
+    const totalGrowthTime = elapsedSeconds * timeRatio * growthRate + bonusSeconds;
+
+    const requiredTime = this.calculateHarvestTime(seedConfig, world);
+    const remainingGrowthTime = Math.max(0, requiredTime - totalGrowthTime);
+
+    if (remainingGrowthTime <= 0) return '已成熟，可收获';
+
+    // 转换为真实剩余时间
+    const realRemaining = remainingGrowthTime / (timeRatio * growthRate);
+    const days = Math.floor(realRemaining / 86400);
+    const hours = Math.floor((realRemaining % 86400) / 3600);
+    const minutes = Math.floor((realRemaining % 3600) / 60);
+
+    if (days > 0) return `${days}天${hours}小时${minutes}分钟`;
+    if (hours > 0) return `${hours}小时${minutes}分钟`;
+    return `${minutes}分钟`;
+  }
+  
+  // 保存小世界数据（辅助方法）
+  async saveWorld(player_qq, world) {
+    const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
+    if (worldIndex !== -1) {
+      data.xiaoshijie[worldIndex] = world;
+      fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
+    }
+  }
   
   // 收获资源
   async harvestResources(e) {
@@ -1142,40 +1240,44 @@ async showEnvironmentHelp(e) {
     const shenyaoResults = this.checkShenyaoGrowth(world, harvestHours);
     
        // 处理收获的神药
-   for (const shenyao of shenyaoResults.harvested) {
+   for (const harvestData of shenyaoResults.harvested) {
+     const shenyao = harvestData.name;
+     const seedConfig = SHENYAO_SEEDS[harvestData.seedName];
+     
      // 根据神药名称添加属性加成
      switch(shenyao) {
        case '九妙不死药':
-         // 添加修为和血气
          await Add_修为(player_qq, 35000000);
          await Add_血气(player_qq, 35000000);
          break;
-         
        case '真龙不死药':
        case '神凰不死药':
          await Add_修为(player_qq, 8000000);
          await Add_血气(player_qq, 8000000);
          break;
-         
        case '麒麟神药':
        case '玄武神药':
          await Add_修为(player_qq, 5000000);
          await Add_血气(player_qq, 5000000);
          break;
-    case '蟠桃仙果':
+       case '蟠桃仙果':
          await Add_修为(player_qq, 15000000);
          await Add_血气(player_qq, 15000000);
          break;
      }
      
-     // 根据神药名称判断类型
-     let itemType = "丹药";
-     if (shenyao === "悟道古茶树") {
-       itemType = "道具";
+     // 使用带加成的收获，记录返种信息
+     if (harvestData.crop && seedConfig) {
+       const result = await this.harvestCropBonus(player_qq, harvestData.crop, seedConfig);
+       harvestData.seedReturned = result.seedReturned;
+       harvestData.totalYield = result.totalYield;
+     } else {
+       // 兼容旧数据，无加成直接添加
+       let itemType = "丹药";
+       if (shenyao === "悟道古茶树") itemType = "道具";
+       await Add_najie_thing(player_qq, shenyao, itemType, 1);
+       harvestData.totalYield = 1;
      }
-     
-     // 添加到纳戒
-     await Add_najie_thing(player_qq, shenyao, itemType, 1);
    }
     
     // 更新收获时间
@@ -1202,16 +1304,30 @@ async showEnvironmentHelp(e) {
     
     // 添加神药收获信息
     if (shenyaoResults.harvested.length > 0) {
-      replyMsg.push(
-        `【神药成熟】`,
-        ...shenyaoResults.harvested.map(item => `收获【${item}】`)
-      );
+      // 按名称分组统计
+      const harvestStats = {};
+      const seedReturns = {};
+      for (const item of shenyaoResults.harvested) {
+        const name = item.name || item;
+        harvestStats[name] = (harvestStats[name] || 0) + 1;
+        if (item.seedReturned && item.seedName) {
+          seedReturns[item.seedName] = (seedReturns[item.seedName] || 0) + 1;
+        }
+      }
+      replyMsg.push(`【神药成熟】`);
+      for (const [name, count] of Object.entries(harvestStats)) {
+        replyMsg.push(`收获【${name}】x${count}`);
+      }
+      for (const [seedName, count] of Object.entries(seedReturns)) {
+        replyMsg.push(`返种【${seedName}】x${count}`);
+      }
     }
     
-    if (shenyaoResults.grown.length > 0) {
+    const grownEntries = Object.entries(shenyaoResults.grown);
+    if (grownEntries.length > 0) {
       replyMsg.push(
         `【神药生长】`,
-        ...shenyaoResults.grown
+        ...grownEntries.map(([name, count]) => `【${name}】阶段推进 ${count} 次`)
       );
     }
     
@@ -1388,7 +1504,7 @@ async plantShenyao(e) {
     if (!e.isGroup) return;
     
     // 提取种子名称（支持更灵活的匹配）
-    const seedName = e.msg.replace(/^#小世界栽种/, '').trim();
+    const seedName = e.msg.replace(/^#小世界种(?:植|栽)/, '').trim();
     
     if (!seedName) {
         return this.showPlantingHelp(e);
@@ -1481,7 +1597,7 @@ async plantShenyao(e) {
     fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
     
     // 获取生长信息
-    const stageInfo = seedConfig.stages[1];
+    const stageInfo = SHENYAO_STAGES[1];
     const growthInfo = [
         `成功种植【${seedConfig.name}】！`,
         `当前阶段：${stageInfo.name}`,
@@ -1497,23 +1613,24 @@ async plantShenyao(e) {
     return true;
 }
 
-// 计算生长时间
+// 计算预计收获剩余时间（种植时展示，基于每1000灵气浓度=4小时）
 calculateGrowthTime(seedConfig, world) {
-    let totalSeconds = 0;
-    for (let stage = 1; stage <= 4; stage++) {
-        totalSeconds += seedConfig.stages[stage].duration;
-    }
-    
-    // 应用时间流速
+    const requiredTime = this.calculateHarvestTime(seedConfig, world);
+
     const timeFlow = world.attributes.时间流速.split(':');
     const timeRatio = parseInt(timeFlow[1]) / parseInt(timeFlow[0]);
-    totalSeconds /= timeRatio;
-    
-    // 转换为天、小时
-    const days = Math.floor(totalSeconds / 86400);
-    const hours = Math.floor((totalSeconds % 86400) / 3600);
-    
-    return `${days}天${hours}小时`;
+    const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1);
+
+    // requiredTime是有效秒数，转换为真实秒数
+    const realSeconds = requiredTime / (timeRatio * growthRate);
+
+    const days = Math.floor(realSeconds / 86400);
+    const hours = Math.floor((realSeconds % 86400) / 3600);
+    const minutes = Math.floor((realSeconds % 3600) / 60);
+
+    if (days > 0) return `${days}天${hours}小时${minutes}分钟`;
+    if (hours > 0) return `${hours}小时${minutes}分钟`;
+    return `${minutes}分钟`;
 }
 
 // 显示种植帮助信息
@@ -1553,7 +1670,445 @@ async showPlantingHelp(e, errorMsg = "") {
     
     e.reply(helpText.join("\n"));
     return true;
-}}
+}
+
+// ========== 一键种植 ==========
+async batchPlantAll(e) {
+    if (!e.isGroup) return;
+    
+    const seedNameFilter = e.msg.replace(/^#一键种植/, '').trim();
+    const usr_qq = e.user_id;
+    const player_qq = await channel(usr_qq);
+    
+    // 获取玩家小世界
+    const world = data.xiaoshijie.find(w => w.player_qq === player_qq);
+    if (!world) {
+        e.reply('请先开辟小世界');
+        return true;
+    }
+    
+    // 检查药田容量
+    const maxFields = world.attributes.药田上限 || 0;
+    if (!world.药田) world.药田 = [];
+    const currentCount = world.药田.length;
+    if (currentCount >= maxFields) {
+        e.reply([
+            `药田已满（${currentCount}/${maxFields}）`,
+            `提示：升级小世界可增加药田容量`
+        ].join("\n"));
+        return true;
+    }
+    
+    // 收集可用的种子
+    const availableSlots = maxFields - currentCount;
+    const seedsToPlant = [];
+    
+    if (seedNameFilter) {
+        // 指定种子名称，只种植匹配的
+        let matchedConfig = null;
+        for (const key in SHENYAO_SEEDS) {
+            if (key.includes(seedNameFilter)) {
+                matchedConfig = SHENYAO_SEEDS[key];
+                break;
+            }
+        }
+        if (!matchedConfig) {
+            e.reply(`未找到匹配【${seedNameFilter}】的种子`);
+            return true;
+        }
+        const count = await exist_najie_thing(player_qq, matchedConfig.name, "材料");
+        if (count <= 0) {
+            e.reply(`纳戒中无【${matchedConfig.name}】，当前拥有 ${count} 个`);
+            return true;
+        }
+        const plantCount = Math.min(count, availableSlots);
+        for (let i = 0; i < plantCount; i++) {
+            seedsToPlant.push(matchedConfig);
+        }
+    } else {
+        // 自动收集纳戒中所有种子
+        for (const key in SHENYAO_SEEDS) {
+            const config = SHENYAO_SEEDS[key];
+            const count = await exist_najie_thing(player_qq, config.name, "材料");
+            if (count > 0) {
+                for (let i = 0; i < count && seedsToPlant.length < availableSlots; i++) {
+                    seedsToPlant.push(config);
+                }
+            }
+        }
+    }
+    
+    if (seedsToPlant.length === 0) {
+        e.reply(seedNameFilter 
+            ? `纳戒中没有足够的【${seedNameFilter}】种子可种植`
+            : '纳戒中没有任何可种植的种子，请先获取种子'
+        );
+        return true;
+    }
+    
+    // 种植统计
+    const planted = {};
+    const skipped = [];
+    
+    for (const seedConfig of seedsToPlant) {
+        // 再次检查药田已满
+        if (world.药田.length >= maxFields) break;
+        
+        // 检查种植条件
+        const requirements = seedConfig.requirements || {};
+        let canPlant = true;
+        const reasons = [];
+        
+        if (requirements.灵气浓度 && world.attributes.灵气浓度 < requirements.灵气浓度) {
+            canPlant = false;
+            reasons.push(`灵气不足（需${requirements.灵气浓度}）`);
+        }
+        
+        if (requirements.特殊环境) {
+            const missingEnvs = requirements.特殊环境.filter(env => 
+                !world.attributes.特殊资源.includes(env)
+            );
+            if (missingEnvs.length > 0) {
+                canPlant = false;
+                reasons.push(`缺少环境：${missingEnvs.join('、')}`);
+            }
+        }
+        
+        if (!canPlant) {
+            const skipReason = `${seedConfig.name}（${reasons.join('，')}）`;
+            if (!skipped.includes(skipReason)) {
+                skipped.push(skipReason);
+            }
+            continue;
+        }
+        
+        // 扣除种子
+        await Add_najie_thing(player_qq, seedConfig.name, "草药", -1);
+        
+        // 添加到药田
+        world.药田.push({
+            种子: seedConfig.name,
+            当前阶段: 1,
+            阶段开始时间: new Date().toLocaleString(),
+            种植时间: new Date().toLocaleString(),
+            生长记录: [`${new Date().toLocaleString()}: 一键种植【${seedConfig.name}】`],
+            浇灌记录: []
+        });
+        
+        planted[seedConfig.name] = (planted[seedConfig.name] || 0) + 1;
+    }
+    
+    // 保存数据
+    const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
+    data.xiaoshijie[worldIndex] = world;
+    fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
+    
+    // 构建回复
+    const replyMsg = ['【一键种植结果】'];
+    const plantedEntries = Object.entries(planted);
+    if (plantedEntries.length > 0) {
+        replyMsg.push('成功种植：');
+        plantedEntries.forEach(([name, count]) => {
+            replyMsg.push(`- ${name} x${count}`);
+        });
+    } else {
+        replyMsg.push('未能种植任何种子');
+    }
+    
+    if (skipped.length > 0) {
+        replyMsg.push(`\n未能种植（条件不足）：`);
+        skipped.forEach(s => replyMsg.push(`- ${s}`));
+    }
+    
+    replyMsg.push(`\n药田：${world.药田.length}/${maxFields}`);
+    
+    if (world.药田.length >= maxFields) {
+        replyMsg.push('⚠️ 药田已满，无法继续种植');
+    }
+    
+    e.reply(replyMsg.join("\n"));
+    return true;
+}
+
+// ========== 一键浇灌 ==========
+async batchWaterAll(e) {
+    if (!e.isGroup) return;
+    
+    const match = e.msg.match(/^#一键浇灌(草木精华露|岁月流金沙|掌天灵液|普通)?$/);
+    const itemName = match && match[1] ? match[1] : '';
+    const isFree = !itemName || itemName === '普通';
+    
+    const usr_qq = e.user_id;
+    const player_qq = await channel(usr_qq);
+    
+    // 获取玩家小世界
+    const world = data.xiaoshijie.find(w => w.player_qq === player_qq);
+    if (!world) {
+        e.reply('请先开辟小世界');
+        return true;
+    }
+    
+    // 检查药田
+    if (!world.药田 || world.药田.length === 0) {
+        e.reply('药田中没有作物，无需浇灌');
+        return true;
+    }
+    
+    // 过滤出未成熟的作物
+    const immatureCrops = world.药田.filter(c => c.当前阶段 < 5);
+    if (immatureCrops.length === 0) {
+        e.reply('所有作物均已成熟，无需浇灌');
+        return true;
+    }
+    
+    const now = new Date();
+    
+    // 计算时间流速
+    const timeFlow = world.attributes.时间流速.split(':');
+    const timeRatio = parseInt(timeFlow[1]) / parseInt(timeFlow[0]);
+    
+    if (isFree) {
+        // 免费普通浇灌 - 检查冷却时间
+        const freeWaterCooldown = 6 * 60 * 60 * 1000; // 6小时冷却
+        if (world.lastFreeWaterTime) {
+            const lastTime = new Date(world.lastFreeWaterTime);
+            const elapsed = now - lastTime;
+            if (elapsed < freeWaterCooldown) {
+                const remaining = freeWaterCooldown - elapsed;
+                const remHours = Math.floor(remaining / (1000 * 60 * 60));
+                const remMins = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+                e.reply(`普通浇灌冷却中，剩余 ${remHours}小时${remMins}分钟`);
+                return true;
+            }
+        }
+        
+        // 执行免费浇灌
+        const timeReduce = 1800; // 30分钟（真实秒数）
+        
+        for (const crop of immatureCrops) {
+            const seedConfig = SHENYAO_SEEDS[crop.种子];
+            const growthRate = seedConfig ? world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1) : 1;
+            const effectiveReduce = timeReduce * timeRatio * growthRate; // 有效秒数
+            
+            // 累加时间加成（有效秒数）
+            crop.时间加成 = (crop.时间加成 || 0) + effectiveReduce;
+            
+            // 更新展示阶段
+            const now2 = new Date();
+            const elapsedMs2 = now2 - new Date(crop.种植时间 || crop.阶段开始时间);
+            const elapsedSec2 = elapsedMs2 / 1000;
+            const totalGT2 = elapsedSec2 * timeRatio * growthRate + (crop.时间加成 || 0);
+            const reqT = this.calculateHarvestTime(seedConfig, world);
+            const remPct = Math.max(0, 1 - totalGT2 / reqT);
+            const oldStage = crop.当前阶段;
+            crop.当前阶段 = this.getStageByRemaining(remPct);
+            crop.阶段开始时间 = now2.toLocaleString();
+            
+            // 记录浇灌
+            crop.浇灌记录 = crop.浇灌记录 || [];
+            crop.浇灌记录.push({
+                时间: now.toLocaleString(),
+                道具: '普通浇灌',
+                时间减少: timeReduce
+            });
+            crop.生长记录 = crop.生长记录 || [];
+            crop.生长记录.push(`${now.toLocaleString()}: 普通浇灌，减少${(timeReduce/60).toFixed(0)}分钟生长时间，阶段【${SHENYAO_STAGES[oldStage]?.name || '未知'}】→【${SHENYAO_STAGES[crop.当前阶段]?.name || '成熟期'}】`);
+        }
+        
+        // 更新冷却时间
+        world.lastFreeWaterTime = now.toLocaleString();
+        
+        // 保存数据
+        const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
+        data.xiaoshijie[worldIndex] = world;
+        fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
+        
+        e.reply([
+            `【普通浇灌】`,
+            `对所有未成熟作物进行了免费浇灌！`,
+            `减少生长时间：30分钟（受时间流速和灵气浓度加成）`,
+            `浇灌作物数：${immatureCrops.length}株`,
+            `下次免费浇灌：6小时后`,
+        ].join("\n"));
+        return true;
+    }
+    
+    // 道具浇灌
+    const waterConfig = {
+        '草木精华露': { timeReduce: 10800, yieldBonus: 1, seedBonus: 10, type: '道具' },
+        '岁月流金沙': { timeReduce: 21600, yieldBonus: 2, seedBonus: 20, type: '道具' },
+        '掌天灵液':   { timeReduce: 43200, yieldBonus: 3, seedBonus: 30, type: '道具' },
+    };
+    
+    const config = waterConfig[itemName];
+    if (!config) {
+        e.reply(`未知的浇灌道具：${itemName}`);
+        return true;
+    }
+    
+    // 检查道具数量
+    const itemCount = await exist_najie_thing(player_qq, itemName, config.type);
+    if (itemCount < 1) {
+        e.reply(`需要【${itemName}】x1，当前拥有 ${itemCount} 个`);
+        return true;
+    }
+    
+    // 扣除道具
+    await Add_najie_thing(player_qq, itemName, config.type, -1);
+    
+    // 执行道具浇灌
+    for (const crop of immatureCrops) {
+        const seedConfig = SHENYAO_SEEDS[crop.种子];
+        const growthRate = seedConfig ? world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1) : 1;
+        const effectiveReduce = config.timeReduce * timeRatio * growthRate; // 有效秒数
+        
+        // 累加时间加成（有效秒数）
+        crop.时间加成 = (crop.时间加成 || 0) + effectiveReduce;
+        
+        // 更新展示阶段
+        const now2 = new Date();
+        const startTime2 = new Date(crop.种植时间 || crop.阶段开始时间);
+        const elapsedMs2 = now2 - startTime2;
+        if (elapsedMs2 >= 0) {
+            const elapsedSec2 = elapsedMs2 / 1000;
+            const totalGT2 = elapsedSec2 * timeRatio * growthRate + crop.时间加成;
+            const reqT = this.calculateHarvestTime(seedConfig, world);
+            const remPct = Math.max(0, 1 - totalGT2 / reqT);
+            const oldStage = crop.当前阶段;
+            crop.当前阶段 = this.getStageByRemaining(remPct);
+            crop.阶段开始时间 = now2.toLocaleString();
+            
+            crop.生长记录 = crop.生长记录 || [];
+            crop.生长记录.push(`${now.toLocaleString()}: 使用【${itemName}】浇灌，减少生长时间，阶段【${SHENYAO_STAGES[oldStage]?.name || '未知'}】→【${SHENYAO_STAGES[crop.当前阶段]?.name || '成熟期'}】`);
+        }
+        
+        // 记录浇灌
+        crop.浇灌记录 = crop.浇灌记录 || [];
+        crop.浇灌记录.push({
+            时间: now.toLocaleString(),
+            道具: itemName,
+            时间减少: config.timeReduce,
+            有效减少: effectiveReduce,
+            产量加成: config.yieldBonus,
+            返种加成: config.seedBonus
+        });
+    }
+    
+    // 检查是否有作物直接成熟（时间判定）
+    const newlyMatured = [];
+    const timeFlow2 = world.attributes.时间流速.split(':');
+    const timeRatio2 = parseInt(timeFlow2[1]) / parseInt(timeFlow2[0]);
+    
+    for (let i = world.药田.length - 1; i >= 0; i--) {
+        const crop = world.药田[i];
+        if (crop.当前阶段 >= 5 && !crop._checked) {
+            // 已经是展示阶段5，再用时间精确判定一次
+            const seedConfig = SHENYAO_SEEDS[crop.种子];
+            if (!seedConfig) continue;
+            const startTime = new Date(crop.种植时间 || crop.阶段开始时间);
+            const elapsedMs = new Date() - startTime;
+            if (elapsedMs < 0) continue;
+            const elapsedSec = elapsedMs / 1000;
+            const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1);
+            const totalGT = elapsedSec * timeRatio2 * growthRate + (crop.时间加成 || 0);
+            const reqT = this.calculateHarvestTime(seedConfig, world);
+            if (totalGT >= reqT) {
+                const harvestResult = await this.harvestCropBonus(player_qq, crop, seedConfig);
+                newlyMatured.push({
+                    name: seedConfig.harvest,
+                    yield: harvestResult.totalYield,
+                    seedReturned: harvestResult.seedReturned,
+                    seedName: seedConfig.name
+                });
+                world.药田.splice(i, 1);
+            }
+        }
+    }
+    
+    // 保存数据
+    const worldIndex2 = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
+    data.xiaoshijie[worldIndex2] = world;
+    fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
+    
+    // 构建回复
+    const timeLabels = { 10800: '3小时', 21600: '6小时', 43200: '12小时' };
+    const replyMsg = [
+        `【${itemName}浇灌】`,
+        `使用【${itemName}】对所有未成熟作物进行了浇灌！`,
+        `减少生长时间：${timeLabels[config.timeReduce] || config.timeReduce + '秒'}（受时间流速和灵气浓度加成）`,
+        `浇灌作物数：${immatureCrops.length}株`,
+        `\n浇灌效果：`,
+        `- 产量加成：+${config.yieldBonus}（收获时额外获得）`,
+        `- 返种概率加成：+${config.seedBonus}%`,
+    ];
+    
+    if (newlyMatured.length > 0) {
+        replyMsg.push(`\n【作物成熟】`);
+        newlyMatured.forEach(item => {
+            let extraInfo = `收获【${item.name}】x${item.yield}`;
+            if (item.seedReturned) {
+                extraInfo += `，返种【${item.seedName}】x1`;
+            }
+            replyMsg.push(`- ${extraInfo}`);
+        });
+    }
+    
+    e.reply(replyMsg.join("\n"));
+    return true;
+}
+
+// ========== 收获加成计算 ==========
+calculateHarvestBonuses(crop) {
+    const bonuses = { extraYield: 0, seedReturnChance: 10 }; // 基础10%返种率
+    if (!crop.浇灌记录 || crop.浇灌记录.length === 0) return bonuses;
+    
+    for (const record of crop.浇灌记录) {
+        switch (record.道具) {
+            case '草木精华露':
+                bonuses.extraYield += (record.产量加成 || 1);
+                bonuses.seedReturnChance += (record.返种加成 || 10);
+                break;
+            case '岁月流金沙':
+                bonuses.extraYield += (record.产量加成 || 2);
+                bonuses.seedReturnChance += (record.返种加成 || 20);
+                break;
+            case '掌天灵液':
+                bonuses.extraYield += (record.产量加成 || 3);
+                bonuses.seedReturnChance += (record.返种加成 || 30);
+                break;
+            // 普通浇灌无加成
+        }
+    }
+    
+    bonuses.seedReturnChance = Math.min(bonuses.seedReturnChance, 90); // 最高90%
+    return bonuses;
+}
+
+// ========== 带加成的收获 ==========
+async harvestCropBonus(player_qq, crop, seedConfig) {
+    const bonuses = this.calculateHarvestBonuses(crop);
+    const totalYield = 1 + bonuses.extraYield;
+    
+    const harvestItem = seedConfig.harvest;
+    let itemType = "丹药";
+    if (harvestItem === "悟道古茶树") itemType = "道具";
+    if (harvestItem === "蟠桃仙果") itemType = "丹药";
+    
+    // 添加收获物品
+    await Add_najie_thing(player_qq, harvestItem, itemType, totalYield);
+    
+    // 返种判定
+    let seedReturned = false;
+    const roll = Math.random() * 100;
+    if (roll < bonuses.seedReturnChance) {
+        await Add_najie_thing(player_qq, seedConfig.name, "草药", 1);
+        seedReturned = true;
+    }
+    
+    return { totalYield, seedReturned };
+}
+
+}
 export async function get_xiaoshijie_img(e) {
     try {
         const usr_qq = e.user_id;
@@ -1644,17 +2199,15 @@ export async function get_xiaoshijie_img(e) {
 // 生成特殊资源HTML
 function generateSpecialResourcesHTML(world) {
     if (!world.attributes.特殊资源 || world.attributes.特殊资源.length === 0) {
-        return '<div class="no-resources">暂无特殊资源</div>';
+        return '<div class="no-content"><i class="fas fa-box-open"></i>暂无特殊资源</div>';
     }
     
     return world.attributes.特殊资源.map(res => {
         const iconClass = getResourceIcon(res);
         return `
-            <div class="resource-item">
-                <div class="resource-icon">
-                    <i class="fas ${iconClass}"></i>
-                </div>
-                <div class="resource-name">${res}</div>
+            <div class="resource-chip">
+                <div class="resource-chip-icon"><i class="fas ${iconClass}"></i></div>
+                <div class="resource-chip-name">${res}</div>
             </div>
         `;
     }).join('');
@@ -1663,97 +2216,117 @@ function generateSpecialResourcesHTML(world) {
 // 生成药田信息HTML
 function generateMedicineFieldHTML(world, timeRatio) {
     if (!world.药田 || world.药田.length === 0) {
-        return '<div class="no-plants">药田暂无神药种植</div>';
+        return '<div class="no-content"><i class="fas fa-seedling"></i>药田暂无神药种植</div>';
     }
-    
+
     const now = new Date();
-    
+
     return world.药田.map(plant => {
         const seedConfig = SHENYAO_SEEDS[plant.种子];
         if (!seedConfig) return '';
-        
-        const stageInfo = seedConfig.stages[plant.当前阶段];
-        if (!stageInfo) return '';
-        
-        // 计算进度百分比
-        let progressPercent = 0;
-        let stageRemaining = "已成熟";
-        let totalRemaining = "已成熟";
-        
-        if (plant.当前阶段 < 5) {
-            const startTime = new Date(plant.阶段开始时间);
-            const elapsedSeconds = (now - startTime) / 1000;
-            
-            // 计算生长速率（灵气浓度影响）
-            const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1);
-            const adjustedElapsed = elapsedSeconds * timeRatio * growthRate;
-            progressPercent = Math.min(100, (adjustedElapsed / stageInfo.duration) * 100);
-            
-            const remainingSeconds = Math.max(0, stageInfo.duration - adjustedElapsed);
-            
-            // 转换为天、小时、分钟
-            const days = Math.floor(remainingSeconds / 86400);
-            const hours = Math.floor((remainingSeconds % 86400) / 3600);
-            const minutes = Math.floor((remainingSeconds % 3600) / 60);
-            
-            stageRemaining = `${days}天${hours}小时${minutes}分钟`;
-            
-            // 计算整株神药剩余时间
-            let totalSeconds = 0;
-            for (let stage = plant.当前阶段; stage <= 4; stage++) {
-                totalSeconds += seedConfig.stages[stage].duration;
-            }
-            
-            // 应用时间流速和灵气浓度
-            const adjustedTotal = totalSeconds / (timeRatio * growthRate);
-            
-            // 转换为天、小时、分钟
-            const totalDays = Math.floor(adjustedTotal / 86400);
-            const totalHours = Math.floor((adjustedTotal % 86400) / 3600);
-            const totalMinutes = Math.floor((adjustedTotal % 3600) / 60);
-            
-            totalRemaining = `${totalDays}天${totalHours}小时${totalMinutes}分钟`;
-        } else {
-            progressPercent = 100;
+
+        // 计算已生长的有效秒数
+        const startTime = new Date(plant.种植时间 || plant.阶段开始时间);
+        const elapsedMs = now - startTime;
+        if (elapsedMs < 0) {
+            // 时间异常卡片
+            return `
+                <div class="field-card">
+                    <div class="field-card-head">
+                        <div class="plant-avatar">
+                            <i class="fas fa-exclamation-triangle" style="color:#f00"></i>
+                        </div>
+                        <div class="plant-info">
+                            <div class="plant-name">时间异常</div>
+                            <div class="plant-seed">${plant.种子}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
         }
-        
+        const elapsedSeconds = elapsedMs / 1000;
+
+        // 计算生长速率
+        const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1);
+        const bonusSeconds = plant.时间加成 || 0;
+        const totalGrowthTime = elapsedSeconds * timeRatio * growthRate + bonusSeconds;
+
+        // 计算所需总有效秒数（每1000灵气浓度=4小时=14400秒）
+        const baseConc = seedConfig.requirements?.灵气浓度 || 1000;
+        const requiredTime = (baseConc / 1000) * 14400;
+
+        // 判断是否成熟
+        const isMature = totalGrowthTime >= requiredTime;
+
+        // 计算剩余真实时间
+        let remainingText = '已成熟，可收获';
+        let progressPercent = 100;
+        let remainingPct = 0;
+
+        if (!isMature) {
+            const remainingGrowthTime = requiredTime - totalGrowthTime;
+            // 转换为真实剩余时间
+            const realRemaining = remainingGrowthTime / (timeRatio * growthRate);
+            remainingPct = 1 - (totalGrowthTime / requiredTime);
+
+            const days = Math.floor(realRemaining / 86400);
+            const hours = Math.floor((realRemaining % 86400) / 3600);
+            const minutes = Math.floor((realRemaining % 3600) / 60);
+
+            if (days > 0) remainingText = `${days}天${hours}小时${minutes}分钟`;
+            else if (hours > 0) remainingText = `${hours}小时${minutes}分钟`;
+            else remainingText = `${minutes}分钟`;
+
+            progressPercent = (totalGrowthTime / requiredTime * 100);
+        }
+
+        // 根据剩余百分比获取展示阶段
+        let displayStage = 5;
+        if (!isMature) {
+            if (remainingPct > 0.8) displayStage = 1;
+            else if (remainingPct > 0.6) displayStage = 2;
+            else if (remainingPct > 0.4) displayStage = 3;
+            else if (remainingPct > 0.2) displayStage = 4;
+            else displayStage = 5;
+        }
+
+        const stageInfo = SHENYAO_STAGES[displayStage];
+        const stageClass = `stage-${displayStage}`;
+        const plantIcon = isMature ? 'fa-spa' : 'fa-seedling';
+
         return `
-            <div class="field-item">
-                <div class="plant-name">
-                    <i class="fas fa-seedling plant-icon"></i>
-                    ${seedConfig.harvest}
+            <div class="field-card${isMature ? ' mature' : ''}">
+                <div class="field-card-head">
+                    <div class="plant-avatar${isMature ? ' mature' : ''}">
+                        <i class="fas ${plantIcon}" style="color:${isMature ? '#f0c060' : '#70d890'}"></i>
+                    </div>
+                    <div class="plant-info">
+                        <div class="plant-name${isMature ? ' mature' : ''}">${seedConfig.harvest}</div>
+                        <div class="plant-seed">${plant.种子}</div>
+                    </div>
+                    <span class="stage-badge ${stageClass}">${stageInfo.name} ${displayStage}/5</span>
                 </div>
-                
-                <div class="plant-stats">
-                    <div class="plant-stat">
-                        <div class="stat-label">当前阶段</div>
-                        <div class="stat-value">${stageInfo.name} (${plant.当前阶段}/5)</div>
+                <div class="field-card-body">
+                    <div class="field-stats-row">
+                        <div class="field-stat-item">
+                            <div class="fsi-label">剩余时间</div>
+                            <div class="fsi-val${isMature ? ' hi' : ''}">${remainingText}</div>
+                        </div>
+                        <div class="field-stat-item">
+                            <div class="fsi-label">种植时间</div>
+                            <div class="fsi-val" style="font-size:12px">${plant.种植时间 || plant.阶段开始时间 || '未知'}</div>
+                        </div>
                     </div>
-                    
-                    <div class="plant-stat">
-                        <div class="stat-label">种植时间</div>
-                        <div class="stat-value">${plant.种植时间}</div>
+                    <div class="field-progress">
+                        <div class="fp-header">
+                            <span>成熟总进度</span>
+                            <span>${isMature ? '已成熟' : progressPercent.toFixed(1) + '%'}</span>
+                        </div>
+                        <div class="fp-track">
+                            <div class="fp-fill${isMature ? ' mature-fill' : ''}" style="width:${progressPercent.toFixed(1)}%"></div>
+                        </div>
                     </div>
-                    
-                    <div class="plant-stat">
-                        <div class="stat-label">阶段剩余</div>
-                        <div class="stat-value">${stageRemaining}</div>
-                    </div>
-                    
-                    <div class="plant-stat">
-                        <div class="stat-label">成熟剩余</div>
-                        <div class="stat-value">${totalRemaining}</div>
-                    </div>
-                </div>
-                
-                <div class="progress-container">
-                    <div class="progress-label">
-                        <span>生长进度</span>
-                        <span>${progressPercent.toFixed(1)}%</span>
-                    </div>
-                    <div class="progress-bar">
-                        <div class="progress-fill" style="width: ${progressPercent.toFixed(1)}%"></div>
-                    </div>
+                    <div style="margin-top:8px;font-size:11px;color:#a0b8c8">阶段描述：${stageInfo.desc || '—'}</div>
                 </div>
             </div>
         `;
@@ -1776,43 +2349,42 @@ function generateAvatarHTML(world, timeRatio) {
     // 计算可收获资源量
     const resources = calculateResources(world, harvestHours);
     
-    // 构建资源卡片HTML
+    // 构建资源卡片HTML（新样式）
     const resourcesHTML = Object.entries(resources).map(([name, value]) => {
         const iconClass = getResourceIcon(name);
         const desc = getResourceDesc(name);
         return `
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas ${iconClass}"></i>
-                </div>
-                <div class="stat-title">${name}</div>
-                <div class="stat-value">${value}</div>
-                <div class="stat-desc">
-                    ${desc}
-                </div>
+            <div class="avatar-stat-card">
+                <div class="asc-icon"><i class="fas ${iconClass}"></i></div>
+                <div class="asc-label">${name}</div>
+                <div class="asc-val">${value}</div>
+                <div class="asc-sub">${desc}</div>
             </div>
         `;
     }).join('');
     
-    // 添加时间流速信息
-    const timeFlowInfo = `时间流速 ${world.attributes.时间流速}（加速${timeRatio}倍）`;
-    
     return `
-        <div class="section">
-            <div class="section-title">分身状态</div>
-            <div class="avatar-stats">
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="fas fa-user-clock"></i></div>
-                    <div class="stat-title">已收集时间</div>
-                    <div class="stat-value">${harvestHours.toFixed(1)}小时</div>
-                    <div class="stat-desc">最大积累：24小时</div>
-                </div>
-                ${resourcesHTML}
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="fas fa-hourglass"></i></div>
-                    <div class="stat-title">时间流速</div>
-                    <div class="stat-value">${world.attributes.时间流速}</div>
-                    <div class="stat-desc">加速${timeRatio}倍</div>
+        <div class="section-block" style="margin-bottom:20px">
+            <div class="section-head">
+                <div class="section-icon si-purple"><i class="fas fa-user-circle"></i></div>
+                <div class="section-title-text">分身状态</div>
+                <span style="font-size:13px;color:#a0a8c8">上次收获：${world.avatar.last_harvest_time}</span>
+            </div>
+            <div class="section-body">
+                <div class="avatar-grid">
+                    <div class="avatar-stat-card">
+                        <div class="asc-icon"><i class="fas fa-user-clock"></i></div>
+                        <div class="asc-label">已积累时间</div>
+                        <div class="asc-val">${harvestHours.toFixed(1)} 小时</div>
+                        <div class="asc-sub">最大积累 24 小时</div>
+                    </div>
+                    ${resourcesHTML}
+                    <div class="avatar-stat-card">
+                        <div class="asc-icon"><i class="fas fa-hourglass-half"></i></div>
+                        <div class="asc-label">时间流速</div>
+                        <div class="asc-val">${world.attributes.时间流速}</div>
+                        <div class="asc-sub">加速 ${timeRatio} 倍</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1822,16 +2394,19 @@ function generateAvatarHTML(world, timeRatio) {
 // 生成事件记录HTML
 function generateEventsHTML(world) {
     if (!world.事件记录 || world.事件记录.length === 0) {
-        return '<div class="no-events">暂无近期事件</div>';
+        return '<div class="no-content"><i class="fas fa-scroll"></i>暂无近期事件</div>';
     }
     
-    const recentEvents = world.事件记录.slice(-3);
+    const recentEvents = world.事件记录.slice(-5);
     
     return recentEvents.map(event => {
         return `
             <div class="event-item">
-                <div class="event-time">${event.时间}</div>
-                <div class="event-desc">${event.事件}：${event.描述}</div>
+                <div class="event-dot"></div>
+                <div class="event-body">
+                    <div class="event-time">${event.时间}</div>
+                    <div class="event-desc">${event.事件}：${event.描述}</div>
+                </div>
             </div>
         `;
     }).join('');
