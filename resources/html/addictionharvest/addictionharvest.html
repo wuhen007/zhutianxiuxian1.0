@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="content-type" content="text/html;charset=utf-8" />
+  <link rel="preload" href="../../font/tttgbnumber.ttf" as="font" />
+  <link rel="shortcut icon" href="#" />
+  <style>
+    @font-face {
+      font-family: 'tttgbnumber';
+      src: url('../../font/tttgbnumber.ttf');
+      font-weight: normal;
+      font-style: normal;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      transform: scale(1);
+      width: 100%;
+      font-family: 'tttgbnumber', 'Microsoft YaHei', sans-serif;
+      background-image: url('{{pluResPath}}/html/addictionharvest/1.jpg');
+      background-repeat: no-repeat;
+      background-position: top center;
+      background-size: 100% auto;
+      padding: 30px 0;
+    }
+
+    .container {
+      width: 85%;
+      max-width: 750px;
+      margin: 0 auto;
+      background: rgba(10, 15, 30, 0.8);
+      border: 1px solid rgba(255, 215, 0, 0.3);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 0 40px rgba(80, 120, 255, 0.2);
+    }
+
+    .header {
+      background: linear-gradient(135deg, rgba(60, 20, 90, 0.7), rgba(20, 40, 90, 0.6));
+      padding: 24px 28px;
+      border-bottom: 1px solid rgba(255, 215, 0, 0.3);
+      text-align: center;
+    }
+
+    .header-title {
+      font-size: 32px;
+      font-weight: bold;
+      color: #ffd700;
+      letter-spacing: 4px;
+      text-shadow: 0 0 20px rgba(255, 215, 0, 0.4);
+    }
+
+    .header-location {
+      font-size: 17px;
+      color: #a0c0ff;
+      margin-top: 8px;
+      letter-spacing: 2px;
+    }
+
+    .body {
+      padding: 22px 28px;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 16px;
+    }
+
+    .info-item {
+      display: flex;
+      align-items: center;
+      padding: 10px 14px;
+      background: rgba(25, 35, 65, 0.5);
+      border-radius: 8px;
+      border-left: 3px solid #4a9eff;
+    }
+
+    .info-label {
+      font-size: 14px;
+      color: #8899bb;
+      white-space: nowrap;
+      margin-right: 8px;
+    }
+
+    .info-value {
+      font-size: 16px;
+      color: #e0e8ff;
+      font-weight: bold;
+    }
+
+    .info-value.highlight {
+      color: #ffd700;
+    }
+
+    .info-value.danger {
+      color: #ff6b6b;
+    }
+
+    .info-value.success {
+      color: #51cf66;
+    }
+
+    .info-value.warning {
+      color: #ffd43b;
+    }
+
+    .section-title {
+      font-size: 18px;
+      color: #ffd700;
+      margin: 18px 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255, 215, 0, 0.2);
+      letter-spacing: 2px;
+    }
+
+    .item-list {
+      padding: 0;
+    }
+
+    .item-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      margin-bottom: 8px;
+      background: rgba(30, 40, 70, 0.5);
+      border-radius: 8px;
+      border: 1px solid rgba(100, 130, 200, 0.15);
+    }
+
+    .item-name {
+      font-size: 16px;
+      color: #d0dce8;
+    }
+
+    .item-count {
+      font-size: 16px;
+      color: #ffd700;
+      font-weight: bold;
+    }
+
+    .empty-items {
+      text-align: center;
+      padding: 24px;
+      color: #667788;
+      font-size: 16px;
+    }
+
+    .status-bar {
+      margin-top: 18px;
+      padding: 14px 18px;
+      border-radius: 10px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+      letter-spacing: 2px;
+    }
+
+    .status-completed {
+      background: rgba(81, 207, 102, 0.15);
+      border: 1px solid rgba(81, 207, 102, 0.3);
+      color: #51cf66;
+    }
+
+    .status-progress {
+      background: rgba(255, 212, 59, 0.15);
+      border: 1px solid rgba(255, 212, 59, 0.3);
+      color: #ffd43b;
+    }
+
+    .footer {
+      padding: 14px 28px;
+      text-align: center;
+      border-top: 1px solid rgba(255, 215, 0, 0.15);
+      font-size: 13px;
+      color: #556677;
+      letter-spacing: 2px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-title">【{{nickname}}的沉迷收获】</div>
+      <div class="header-location"></div>
+      <div class="header-location">{{location}} &middot; {{location_type}}</div>
+    </div>
+    <div class="body">
+      <div class="info-grid">
+        <div class="info-item">
+          <span class="info-label">沉迷次数</span>
+          <span class="info-value">{{settled_count}}/{{total_count}}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">死亡次数</span>
+          <span class="info-value danger">{{death_count}}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">获得修为</span>
+          <span class="info-value highlight">{{xiuwei_gained}}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">获得血气</span>
+          <span class="info-value success">{{xueqi_gained}}</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">开始时间</span>
+          <span class="info-value" style="font-size:14px;">{{start_time}}</span>
+        </div>
+        {{if end_time}}
+        <div class="info-item">
+          <span class="info-label">结束时间</span>
+          <span class="info-value" style="font-size:14px;">{{end_time}}</span>
+        </div>
+        {{else}}
+        <div class="info-item">
+          <span class="info-label">结束时间</span>
+          <span class="info-value warning">进行中...</span>
+        </div>
+        {{/if}}
+        {{if duration}}
+        <div class="info-item">
+          <span class="info-label">持续时间</span>
+          <span class="info-value">{{duration}}</span>
+        </div>
+        {{/if}}
+      </div>
+
+      {{if items_gained && items_gained.length > 0}}
+      <div class="section-title">&#x1F4E6; 获得物品</div>
+      <div class="item-list">
+        {{each items_gained item}}
+        <div class="item-row">
+          <span class="item-name">{{item.name}}</span>
+          <span class="item-count">x{{item.count}}</span>
+        </div>
+        {{/each}}
+      </div>
+      {{else}}
+      <div class="section-title">&#x1F4E6; 获得物品</div>
+      <div class="empty-items">暂无物品记录</div>
+      {{/if}}
+
+      <div class="status-bar {{status === 'completed' ? 'status-completed' : 'status-progress'}}">
+        {{status === 'completed' ? '状态： 沉迷已完结' : '状态： 沉迷进行中...'}}
+      </div>
+
+      {{if status === 'completed'}}
+      <div style="text-align:center;margin-top:12px;font-size:13px;color:#667788;">
+        提示：可发送 "#清除沉迷记录" 清除本次记录
+      </div>
+      {{/if}}
+    </div>
+    <div class="footer">诸天万界修炼系统 &middot; 大道印记</div>
+  </div>
+</body>
+</html>
