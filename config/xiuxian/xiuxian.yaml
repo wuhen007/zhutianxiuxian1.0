@@ -102,10 +102,13 @@ Era:
   task: 0 0 */2 * * *
   pushNotice: true
   notifyGroups:
-    - "801033919"
+    - "979295436"
   Master: null
   current:
-    index: 3
-    years: 3000
-    epoch: 4
+    index: 1
+    years: 0
+    epoch: 1
   yearlyAdvance: 1000
+BotType: official
+AutoDailyTask:
+  cron: 0 5 0 * * *
