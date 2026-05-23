@@ -13,6 +13,7 @@ import {
   Add_寿元,
    Add_血气,
   Goweizhi,
+  get_addictionharvest_img,
   channel
 } from '../../model/xiuxian.js';
 export class SecretPlaceplus extends plugin {
@@ -1343,65 +1344,54 @@ if (didian === "往世星海") {
     
     const history = JSON.parse(addictionHistory);
     
+    // 获取玩家名号
+    const player = await Read_player(usr_qq);
+    const nickname = player.名号 || usr_qq;
+    
     // 格式化时间
     const formatTime = (timestamp) => {
       const date = new Date(timestamp);
-      return date.toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      });
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      const hh = String(date.getHours()).padStart(2, '0');
+      const mm = String(date.getMinutes()).padStart(2, '0');
+      const ss = String(date.getSeconds()).padStart(2, '0');
+      return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
     };
     
-    // 构建收获信息
-    let harvestMsg = [
-      `【沉迷收获详情】`,
-      `沉迷地点：${history.location}`,
-      `地点类型：${history.location_type}`,
-      `沉迷次数：${history.settled_count}/${history.total_count}`,
-      `死亡次数：${history.death_count}`,
-      `获得修为：${history.xiuwei_gained.toLocaleString()}`,
-      `获得血气：${history.xueqi_gained.toLocaleString()}`,
-      `开始时间：${formatTime(history.start_time)}`,
-    ];
+    // 构建图片数据
+    let renderData = {
+      nickname: nickname,
+      location: history.location,
+      location_type: history.location_type,
+      settled_count: history.settled_count,
+      total_count: history.total_count,
+      death_count: history.death_count,
+      xiuwei_gained: history.xiuwei_gained.toLocaleString(),
+      xueqi_gained: history.xueqi_gained.toLocaleString(),
+      start_time: formatTime(history.start_time),
+      status: history.status,
+      items_gained: history.items_gained || [],
+    };
     
-    // 添加结束时间
+    // 结束时间和持续时间
     if (history.end_time) {
-      harvestMsg.push(`结束时间：${formatTime(history.end_time)}`);
+      renderData.end_time = formatTime(history.end_time);
       
-      // 计算持续时间
       const duration = history.end_time - history.start_time;
       const hours = Math.floor(duration / (1000 * 60 * 60));
       const minutes = Math.floor((duration % (1000 * 60 * 60)) / (1000 * 60));
-      harvestMsg.push(`持续时间：${hours}小时${minutes}分钟`);
-    } else {
-      harvestMsg.push(`结束时间：进行中...`);
+      if (hours > 0) {
+        renderData.duration = `${hours}小时${minutes}分钟`;
+      } else {
+        renderData.duration = `${minutes}分钟`;
+      }
     }
     
-    // 添加状态
-    const statusText = history.status === 'completed' ? '已完成' : '进行中';
-    harvestMsg.push(`状态：${statusText}`);
-    
-    // 添加获得的道具
-    if (history.items_gained && history.items_gained.length > 0) {
-      harvestMsg.push(`获得物品：`);
-      history.items_gained.forEach((item, index) => {
-        harvestMsg.push(`   ${index + 1}. [${item.name}] x${item.count}`);
-      });
-    } else {
-      harvestMsg.push(`获得道具：暂无记录`);
-    }
-    
-    
-    // 如果沉迷已完成，提供删除选项
-    if (history.status === 'completed') {
-      harvestMsg.push(`提示：可以发送"#清除沉迷记录"来清除本次记录`);
-    }
-    
-    e.reply(harvestMsg.join('\n'));
+    // 使用图片渲染
+    const img = await get_addictionharvest_img(e, renderData);
+    e.reply(img);
     return false;
   }
 

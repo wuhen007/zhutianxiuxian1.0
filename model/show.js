@@ -835,6 +835,34 @@ async get_jindi_placeData(myData) {
     };
   }
 
+  //自动每日任务领取记录
+  async get_autodailyData(myData) {
+    this.model = 'autodaily';
+    return {
+      ...this.screenData,
+      saveId: 'autodaily',
+      ...myData,
+    };
+  }
+
+  //沉迷收获
+  async get_addictionharvestData(myData) {
+    this.model = 'addictionharvest';
+    return {
+      ...this.screenData,
+      saveId: 'addictionharvest',
+      ...myData,
+    };
+  }
+// 星阁拍卖
+async get_auctionData(myData) {
+    this.model = 'auction';
+    return {
+        ...this.screenData,
+        saveId: 'auction',
+        ...myData,
+    };
+}
     //temp
     async get_battleData(myData) {
       this.model = 'battle';
