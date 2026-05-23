@@ -1,0 +1,1551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>修仙属性面板计算器</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Microsoft YaHei', 'SimSun', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        h1 {
+            text-align: center;
+            color: #ffd700;
+            text-shadow: 0 0 10px #ffd700, 0 0 20px #ff8c00;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 1.5em;
+            color: #ffd700;
+        }
+        
+        .loading::after {
+            content: '';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+        
+        @keyframes dots {
+            0%, 20% { content: ''; }
+            40% { content: '.'; }
+            60% { content: '..'; }
+            80%, 100% { content: '...'; }
+        }
+        
+        .error {
+            background: rgba(255, 107, 107, 0.2);
+            border: 1px solid #ff6b6b;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            color: #ff6b6b;
+            margin: 50px auto;
+            max-width: 500px;
+        }
+        
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 350px;
+            gap: 20px;
+        }
+        
+        @media (max-width: 1200px) {
+            .main-grid { grid-template-columns: 1fr; }
+        }
+        
+        .panel {
+            background: rgba(20, 30, 60, 0.9);
+            border: 2px solid #4a90d9;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 0 20px rgba(74, 144, 217, 0.3);
+        }
+        
+        .panel-title {
+            color: #ffd700;
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #4a90d9;
+        }
+        
+        .form-group { margin-bottom: 15px; }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #a0c4ff;
+            font-size: 0.95em;
+        }
+        
+        select, input[type="number"] {
+            width: 100%;
+            padding: 10px 12px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid #4a90d9;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 1em;
+        }
+        
+        select:focus, input:focus {
+            outline: none;
+            border-color: #ffd700;
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+        }
+        
+        .section-title {
+            color: #ff9966;
+            font-size: 1.1em;
+            margin: 20px 0 10px 0;
+            padding-left: 10px;
+            border-left: 3px solid #ff9966;
+        }
+        
+        .stat-result {
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.1), rgba(255, 140, 0, 0.1));
+            border: 1px solid #ffd700;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .final-stats {
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            border: 3px solid #ffd700;
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+        }
+        
+        .final-title {
+            color: #ffd700;
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px #ffd700;
+        }
+        
+        .final-stat {
+            background: rgba(255, 215, 0, 0.1);
+            border: 2px solid #ffd700;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .final-stat-label { color: #a0c4ff; font-size: 1em; margin-bottom: 5px; }
+        
+        .final-stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #ffd700;
+            text-shadow: 0 0 10px #ffd700;
+            word-break: break-all;
+        }
+        
+        .final-stat-raw {
+            font-size: 0.85em;
+            color: #888;
+            margin-top: 5px;
+        }
+        
+        .crit-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .crit-item {
+            background: rgba(255, 107, 107, 0.1);
+            border: 1px solid #ff6b6b;
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .crit-label { color: #ff6b6b; font-size: 0.9em; }
+        
+        .crit-value {
+            color: #ff6b6b;
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+        
+        .bonus-section {
+            background: linear-gradient(135deg, rgba(0, 255, 127, 0.1), rgba(0, 150, 255, 0.1));
+            border: 1px solid #00ff7f;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        
+        .bonus-title { color: #00ff7f; margin-bottom: 10px; }
+        
+        .bonus-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            color: #7fff7f;
+        }
+        
+        .preset-container { margin-bottom: 15px; }
+        
+        .preset-btn {
+            padding: 5px 10px;
+            background: rgba(0, 255, 127, 0.2);
+            border: 1px solid #00ff7f;
+            border-radius: 5px;
+            color: #00ff7f;
+            cursor: pointer;
+            font-size: 0.85em;
+            margin-right: 5px;
+            margin-bottom: 5px;
+        }
+        
+        .preset-btn:hover { background: rgba(0, 255, 127, 0.4); }
+        
+        .tab-container { margin-bottom: 15px; }
+        
+        .tab-buttons {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+        
+        .tab-btn {
+            padding: 8px 15px;
+            background: rgba(74, 144, 217, 0.3);
+            border: 1px solid #4a90d9;
+            border-radius: 5px;
+            color: #a0c4ff;
+            cursor: pointer;
+        }
+        
+        .tab-btn.active { background: #4a90d9; color: #fff; }
+        
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        .equipment-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        
+        .equipment-item {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid #4a90d9;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+        }
+        
+        .equipment-item.selected {
+            border-color: #ffd700;
+            background: rgba(255, 215, 0, 0.1);
+        }
+        
+        .equipment-name { color: #ffd700; font-weight: bold; margin-bottom: 5px; }
+        .equipment-stats { font-size: 0.85em; color: #a0c4ff; }
+        
+        .btn-calculate {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #ffd700, #ff8c00);
+            border: none;
+            border-radius: 10px;
+            color: #1a1a2e;
+            font-size: 1.2em;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        
+        .btn-calculate:hover {
+            transform: scale(1.02);
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+        }
+        
+        .set-effect {
+            background: linear-gradient(135deg, rgba(255, 0, 127, 0.1), rgba(138, 43, 226, 0.1));
+            border: 1px solid #ff00ff;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        
+        .set-effect-title { color: #ff00ff; margin-bottom: 10px; }
+        .set-effect-item { color: #ff88ff; padding: 3px 0; font-size: 0.9em; }
+        
+        .legendary-effect {
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 140, 0, 0.2));
+            border: 2px solid #ffd700;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        
+        .legendary-title { color: #ffd700; font-size: 1.2em; margin-bottom: 10px; }
+        
+        .combo-info {
+            background: rgba(74, 144, 217, 0.2);
+            border: 1px solid #4a90d9;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 10px;
+            text-align: center;
+            color: #888;
+        }
+        
+        .selected-equip {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        
+        .selected-equip span {
+            font-size: 0.85em;
+            padding: 3px 8px;
+            border-radius: 3px;
+            background: rgba(0, 0, 0, 0.3);
+        }
+        
+        .custom-emperor-section {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(255, 107, 107, 0.1);
+            border: 1px solid #ff6b6b;
+            border-radius: 10px;
+        }
+        
+        .custom-emperor-section input,
+        .custom-emperor-section select {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #ff6b6b;
+            color: #fff;
+        }
+        
+        .btn-custom-emperor {
+            width: 100%;
+            padding: 10px;
+            background: linear-gradient(135deg, #ff6b6b, #ff4757);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 1em;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        
+        .btn-custom-emperor:hover {
+            box-shadow: 0 0 15px rgba(255, 107, 107, 0.5);
+        }
+        
+        .custom-preview {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid #ffd700;
+            border-radius: 8px;
+        }
+        
+        .preview-title {
+            color: #ffd700;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .preview-stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            color: #a0c4ff;
+        }
+        
+        .preview-stat-value {
+            color: #00ff7f;
+        }
+        
+        /* 百分比装备样式 */
+        .percent-section {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(138, 43, 226, 0.1);
+            border: 1px solid #9370db;
+            border-radius: 10px;
+        }
+        
+        .percent-section .section-title {
+            color: #da70d6;
+            border-left-color: #da70d6;
+        }
+        
+        .percent-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin-top: 10px;
+        }
+        
+        .percent-item {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid #9370db;
+            border-radius: 8px;
+            padding: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .percent-item:hover {
+            background: rgba(138, 43, 226, 0.2);
+        }
+        
+        .percent-item.selected {
+            border-color: #ffd700;
+            background: rgba(255, 215, 0, 0.15);
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+        }
+        
+        .percent-item .eq-name {
+            color: #da70d6;
+            font-weight: bold;
+            font-size: 0.9em;
+            margin-bottom: 3px;
+        }
+        
+        .percent-item .eq-desc {
+            color: #a0c4ff;
+            font-size: 0.75em;
+        }
+        
+        /* 玩家炼制百分比样式 */
+        .craft-section {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(255, 140, 0, 0.1);
+            border: 1px solid #ffa500;
+            border-radius: 10px;
+        }
+        
+        .craft-section .section-title {
+            color: #ffa500;
+            border-left-color: #ffa500;
+        }
+        
+        .craft-section input {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #ffa500;
+            color: #fff;
+        }
+        
+        .craft-preview {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+        }
+        
+        .craft-preview-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 3px 0;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌟 修仙属性面板计算器 🌟</h1>
+        
+        <div id="loading" class="loading">正在加载数据</div>
+        
+        <div id="error" class="error" style="display:none;">
+            <h3>❌ 数据加载失败</h3>
+            <p id="error-message" style="margin-top:10px;"></p>
+            <p style="margin-top:15px;font-size:0.9em;">
+                请确保服务器已启动: <code>node calculator-server.js</code>
+            </p>
+        </div>
+        
+        <div id="main-content" style="display:none;">
+            <div class="main-grid">
+                <!-- 左侧面板：基础设置 -->
+                <div class="panel">
+                    <div class="panel-title">📜 基础信息</div>
+                    
+                    <div class="preset-container">
+                        <label>快速预设</label>
+                        <button class="preset-btn" onclick="loadPreset('low')">新手期</button>
+                        <button class="preset-btn" onclick="loadPreset('mid')">中期</button>
+                        <button class="preset-btn" onclick="loadPreset('high')">后期</button>
+                        <button class="preset-btn" onclick="loadPreset('endgame')">大乘期</button>
+                        <button class="preset-btn" onclick="loadPreset('xiandi')">仙帝级</button>
+                    </div>
+                    
+                    <div class="section-title">境界选择</div>
+                    
+                    <div class="form-group">
+                        <label>练气境界</label>
+                        <select id="level_id" onchange="calculate()">
+                            <option value="">-- 请选择境界 --</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>秘境体系</label>
+                        <select id="mijinglevel_id" onchange="calculate()">
+                            <option value="">-- 请选择秘境 --</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>仙古今世法</label>
+                        <select id="xiangulevel_id" onchange="calculate()">
+                            <option value="">-- 请选择仙古法 --</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>炼体境界</label>
+                        <select id="lianti_id" onchange="calculate()">
+                            <option value="">-- 请选择炼体境界 --</option>
+                        </select>
+                    </div>
+                    
+                    <div class="section-title">灵根选择</div>
+                    <div class="form-group">
+                        <select id="linggen" onchange="calculate()">
+                            <option value="">-- 请选择灵根 --</option>
+                        </select>
+                    </div>
+                    
+                    <div class="section-title">加成设置</div>
+                    <div class="form-group">
+                        <label>攻击加成</label>
+                        <input type="number" id="attack_bonus" value="0" onchange="calculate()">
+                    </div>
+                    <div class="form-group">
+                        <label>防御加成</label>
+                        <input type="number" id="defense_bonus" value="0" onchange="calculate()">
+                    </div>
+                    <div class="form-group">
+                        <label>生命加成</label>
+                        <input type="number" id="hp_bonus" value="0" onchange="calculate()">
+                    </div>
+                    
+                    <div class="section-title">光阴加成</div>
+                    <div class="form-group">
+                        <label>光阴·攻</label>
+                        <input type="number" id="guangyin_atk" value="0" onchange="calculate()">
+                    </div>
+                    <div class="form-group">
+                        <label>光阴·防</label>
+                        <input type="number" id="guangyin_def" value="0" onchange="calculate()">
+                    </div>
+                    <div class="form-group">
+                        <label>光阴·生</label>
+                        <input type="number" id="guangyin_hp" value="0" onchange="calculate()">
+                    </div>
+                </div>
+                
+                <!-- 中间面板：装备 -->
+                <div class="panel">
+                    <div class="panel-title">⚔️ 装备选择</div>
+                    
+                    <div class="tab-container">
+                        <div class="tab-buttons">
+                            <button class="tab-btn active" onclick="switchTab('weapon')">武器</button>
+                            <button class="tab-btn" onclick="switchTab('armor')">护具</button>
+                            <button class="tab-btn" onclick="switchTab('treasure')">法宝</button>
+                            <button class="tab-btn" onclick="switchTab('emperor')">帝兵</button>
+                        </div>
+                        
+                        <div id="tab-weapon" class="tab-content active">
+                            <div class="equipment-grid" id="weapon-list"></div>
+                        </div>
+                        <div id="tab-armor" class="tab-content">
+                            <div class="equipment-grid" id="armor-list"></div>
+                        </div>
+                        <div id="tab-treasure" class="tab-content">
+                            <div class="equipment-grid" id="treasure-list"></div>
+                        </div>
+                        <div id="tab-emperor" class="tab-content">
+                            <div class="equipment-grid" id="emperor-list"></div>
+                            
+                            <!-- 自定义帝兵区域 -->
+                            <div class="custom-emperor-section">
+                                <div class="section-title" style="margin-top:20px;">⚡ 自定义帝兵</div>
+                                
+                                <div class="form-group">
+                                    <label>帝兵名称</label>
+                                    <input type="text" id="emperor-name" placeholder="如：混沌剑" maxlength="10" onchange="updateCustomEmperor()">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>帝兵品阶</label>
+                                    <select id="emperor-rank" onchange="updateCustomEmperor()">
+                                        <option value="">-- 请选择品阶 --</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>蕴养次数 (0-25)</label>
+                                    <input type="number" id="emperor-nurture" value="0" min="0" max="25" onchange="updateCustomEmperor()">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>潜力星级 (1-40)</label>
+                                    <input type="number" id="emperor-potential" value="5" min="1" max="40" onchange="updateCustomEmperor()">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>刻写之道</label>
+                                    <select id="emperor-way" onchange="updateCustomEmperor()">
+                                        <option value="">无</option>
+                                        <option value="攻伐">攻伐之道</option>
+                                        <option value="护体">护体之道</option>
+                                        <option value="涅槃">涅槃之道</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>融合仙金数 (0-12)</label>
+                                    <input type="number" id="emperor-golds" value="0" min="0" max="12" onchange="updateCustomEmperor()">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>是否祭炼 (极道帝兵进阶条件)</label>
+                                    <select id="emperor-zhilian" onchange="updateCustomEmperor()">
+                                        <option value="false">否</option>
+                                        <option value="true">是</option>
+                                    </select>
+                                </div>
+                                
+                                <button class="btn-custom-emperor" onclick="applyCustomEmperor()">✅ 使用自定义帝兵</button>
+                                
+                                <div id="custom-emperor-preview" class="custom-preview" style="display:none;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="section-title">已选装备</div>
+                    <div class="combo-info" id="selected-equipment">
+                        尚未选择装备
+                    </div>
+                    
+                    <div id="set-effect-container"></div>
+                    
+                    <!-- 百分比装备区域 -->
+                    <div class="percent-section">
+                        <div class="section-title">📊 百分比装备</div>
+                        <div class="percent-grid" id="percent-equip-list"></div>
+                        <div style="margin-top:10px;color:#888;font-size:0.85em;">
+                            已选加成: <span id="percent-summary">无</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 玩家炼制百分比区域 -->
+                    <div class="craft-section">
+                        <div class="section-title">🔨 玩家自炼百分比</div>
+                        <div class="form-group">
+                            <label>自炼武器攻击加成 (%)</label>
+                            <input type="number" id="craft-weapon-atk" value="0" min="0" max="500" onchange="updateCraftPreview()">
+                        </div>
+                        <div class="form-group">
+                            <label>自炼护具防御加成 (%)</label>
+                            <input type="number" id="craft-armor-def" value="0" min="0" max="500" onchange="updateCraftPreview()">
+                        </div>
+                        <div class="form-group">
+                            <label>自炼法宝生命加成 (%)</label>
+                            <input type="number" id="craft-treasure-hp" value="0" min="0" max="500" onchange="updateCraftPreview()">
+                        </div>
+                        <div class="form-group">
+                            <label>全装备综合加成 (%)</label>
+                            <input type="number" id="craft-all-percent" value="0" min="0" max="100" onchange="updateCraftPreview()">
+                        </div>
+                        <div id="craft-preview" class="craft-preview"></div>
+                    </div>
+                </div>
+                
+                <!-- 右侧面板：结果 -->
+                <div class="panel">
+                    <div class="panel-title">📊 属性面板</div>
+                    
+                    <div class="final-stats">
+                        <div class="final-title">最终属性</div>
+                        
+                        <div class="final-stat">
+                            <div class="final-stat-label">攻击</div>
+                            <div class="final-stat-value" id="final-atk">0</div>
+                            <div class="final-stat-raw" id="final-atk-raw"></div>
+                        </div>
+                        
+                        <div class="final-stat">
+                            <div class="final-stat-label">防御</div>
+                            <div class="final-stat-value" id="final-def">0</div>
+                            <div class="final-stat-raw" id="final-def-raw"></div>
+                        </div>
+                        
+                        <div class="final-stat">
+                            <div class="final-stat-label">血量上限</div>
+                            <div class="final-stat-value" id="final-hp">0</div>
+                            <div class="final-stat-raw" id="final-hp-raw"></div>
+                        </div>
+                        
+                        <div class="crit-info">
+                            <div class="crit-item">
+                                <div class="crit-label">暴击率</div>
+                                <div class="crit-value" id="crit-rate">0%</div>
+                            </div>
+                            <div class="crit-item">
+                                <div class="crit-label">暴击伤害</div>
+                                <div class="crit-value" id="crit-dmg">150%</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bonus-section">
+                        <div class="bonus-title">📈 属性来源</div>
+                        <div id="stat-breakdown"></div>
+                    </div>
+                    
+                    <div id="legendary-effect-container"></div>
+                    
+                    <button class="btn-calculate" onclick="resetCalculation()">🔄 重置计算</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 全局数据
+        let gameData = {};
+        let selectedWeapon = null;
+        let selectedArmor = null;
+        let selectedTreasure = null;
+        let selectedEmperor = null;
+        let selectedPercentEquip = []; // 已选百分比装备
+        
+        // ============ 大数字转换 ============
+        function bigNumberTransform(number) {
+            if (number === undefined || number === null || isNaN(number)) return '0';
+            number = Math.abs(number);
+            const units = ['', '万', '亿', '兆', '京', '垓', '秭', '穰', '沟', '涧', '正', '载', '极', '恒河沙', '阿僧祇', '那由他', '不可思议', '无量', '大数'];
+            const exponents = [0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72];
+            
+            if (number < 10000) {
+                return Math.floor(number).toLocaleString();
+            }
+            
+            for (let i = units.length - 1; i >= 0; i--) {
+                if (number >= Math.pow(10, exponents[i])) {
+                    const value = number / Math.pow(10, exponents[i]);
+                    let fixed;
+                    if (value >= 100) {
+                        fixed = Math.floor(value).toString();
+                    } else if (value >= 10) {
+                        fixed = value.toFixed(1);
+                    } else {
+                        fixed = value.toFixed(2);
+                    }
+                    return fixed.replace(/\.0$/, '') + units[i];
+                }
+            }
+            return Math.floor(number).toLocaleString();
+        }
+        
+        // ============ 加载数据 ============
+        async function loadData() {
+            try {
+                const response = await fetch('/api/calculator-data');
+                if (!response.ok) throw new Error('网络请求失败');
+                
+                const result = await response.json();
+                if (!result.success) throw new Error('数据格式错误');
+                
+                gameData = result.data;
+                initializeUI();
+                
+            } catch (error) {
+                console.error('加载数据失败:', error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error-message').textContent = error.message;
+            }
+        }
+        
+        // ============ 初始化UI ============
+        function initializeUI() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('main-content').style.display = 'block';
+            
+            // 填充练气境界
+            const levelSelect = document.getElementById('level_id');
+            gameData.levelData.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.level_id;
+                opt.textContent = `[${item.level_id}] ${item.level}`;
+                levelSelect.appendChild(opt);
+            });
+            
+            // 填充秘境体系
+            const mijingSelect = document.getElementById('mijinglevel_id');
+            gameData.mijingData.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.level_id;
+                opt.textContent = `[${item.level_id}] ${item.level}`;
+                mijingSelect.appendChild(opt);
+            });
+            
+            // 填充仙古今世法
+            const xianguSelect = document.getElementById('xiangulevel_id');
+            gameData.xianguData.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.level_id;
+                opt.textContent = `[${item.level_id}] ${item.level}`;
+                if (item['极境名称']) {
+                    opt.textContent += ` (${item['极境名称']})`;
+                }
+                xianguSelect.appendChild(opt);
+            });
+            
+            // 填充炼体境界
+            const liantiSelect = document.getElementById('lianti_id');
+            gameData.liantiData.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.level_id;
+                opt.textContent = `[${item.level_id}] ${item.level}`;
+                liantiSelect.appendChild(opt);
+            });
+            
+            // 填充帝兵品阶选择
+            const rankSelect = document.getElementById('emperor-rank');
+            gameData.diBingRanks.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.rank;
+                opt.textContent = item.name;
+                rankSelect.appendChild(opt);
+            });
+            
+            // 填充百分比装备列表
+            fillPercentEquipList();
+            
+            // 填充灵根
+            const linggenSelect = document.getElementById('linggen');
+            const linggenGroups = gameData.linggenData;
+            for (const [type, items] of Object.entries(linggenGroups)) {
+                if (items.length > 0) {
+                    const optgroup = document.createElement('optgroup');
+                    optgroup.label = type;
+                    items.forEach(item => {
+                        const opt = document.createElement('option');
+                        opt.value = item.id;
+                        opt.textContent = item.name;
+                        opt.dataset.type = item.type;
+                        opt.dataset.atk = item.攻击 || 0;
+                        opt.dataset.def = item.防御 || 0;
+                        opt.dataset.hp = item.生命 || 0;
+                        optgroup.appendChild(opt);
+                    });
+                    linggenSelect.appendChild(optgroup);
+                }
+            }
+            
+            // 填充装备
+            fillEquipmentList('weapon-list', gameData.equipData['武器'] || [], 'weapon');
+            fillEquipmentList('armor-list', gameData.equipData['护具'] || [], 'armor');
+            fillEquipmentList('treasure-list', gameData.equipData['法宝'] || [], 'treasure');
+            fillEquipmentList('emperor-list', gameData.emperorData || [], 'emperor');
+            
+            // 默认选择
+            selectedWeapon = { name: '无', atk: 0, def: 0, HP: 0, bao: 0 };
+            selectedArmor = { name: '无', atk: 0, def: 0, HP: 0, bao: 0 };
+            selectedTreasure = { name: '无', atk: 0, def: 0, HP: 0, bao: 0 };
+            selectedEmperor = { name: '无', atk: 0, def: 0, HP: 0, 全属性: 0, bao: 0 };
+            
+            // 加载预设
+            loadPreset('mid');
+        }
+        
+        function fillEquipmentList(containerId, data, type) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            
+            // 添加"无"选项
+            const noneDiv = document.createElement('div');
+            noneDiv.className = 'equipment-item selected';
+            noneDiv.innerHTML = `<div class="equipment-name">无</div><div class="equipment-stats">无加成</div>`;
+            noneDiv.onclick = () => selectEquipment({ name: '无', atk: 0, def: 0, HP: 0, bao: 0, 全属性: 0 }, type, noneDiv);
+            container.appendChild(noneDiv);
+            
+            data.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'equipment-item';
+                div.onclick = () => selectEquipment(item, type, div);
+                
+                const stats = [];
+                if (item.攻击 > 0) stats.push(`攻:+${bigNumberTransform(item.攻击)}`);
+                if (item.防御 > 0) stats.push(`防:+${bigNumberTransform(item.防御)}`);
+                if (item.生命 > 0) stats.push(`血:+${bigNumberTransform(item.生命)}`);
+                if (item.全属性 > 0) stats.push(`全属性:${item.全属性}倍`);
+                
+                div.innerHTML = `
+                    <div class="equipment-name">${item.name}</div>
+                    <div class="equipment-stats">${stats.join('<br>') || '无加成'}</div>
+                `;
+                container.appendChild(div);
+            });
+        }
+        
+        // 填充百分比装备列表
+        function fillPercentEquipList() {
+            const container = document.getElementById('percent-equip-list');
+            container.innerHTML = '';
+            
+            const percentData = gameData.percentEquipList || [];
+            
+            // 添加"无"选项
+            const noneDiv = document.createElement('div');
+            noneDiv.className = 'percent-item selected';
+            noneDiv.innerHTML = `<div class="eq-name">无</div><div class="eq-desc">不使用百分比装备</div>`;
+            noneDiv.onclick = () => togglePercentEquip(null, noneDiv);
+            container.appendChild(noneDiv);
+            
+            percentData.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'percent-item';
+                div.dataset.id = item.id;
+                div.dataset.atk = item.atk_per || 0;
+                div.dataset.def = item.def_per || 0;
+                div.dataset.hp = item.hp_per || 0;
+                div.onclick = () => togglePercentEquip(item, div);
+                
+                const descParts = [];
+                if (item.atk_per > 0) descParts.push(`攻+${(item.atk_per * 100).toFixed(0)}%`);
+                if (item.def_per > 0) descParts.push(`防+${(item.def_per * 100).toFixed(0)}%`);
+                if (item.hp_per > 0) descParts.push(`血+${(item.hp_per * 100).toFixed(0)}%`);
+                
+                div.innerHTML = `
+                    <div class="eq-name">${item.name}</div>
+                    <div class="eq-desc">${descParts.join(' / ') || '无加成'}</div>
+                `;
+                container.appendChild(div);
+            });
+        }
+        
+        // 切换百分比装备选择
+        function togglePercentEquip(item, element) {
+            if (!item) {
+                // 清除所有选择
+                selectedPercentEquip = [];
+                document.querySelectorAll('.percent-item').forEach(el => el.classList.remove('selected'));
+                element.classList.add('selected');
+            } else {
+                const isSelected = element.classList.contains('selected');
+                
+                if (isSelected) {
+                    // 取消选择
+                    selectedPercentEquip = selectedPercentEquip.filter(e => e.id !== item.id);
+                    element.classList.remove('selected');
+                } else {
+                    // 选择（支持多选）
+                    selectedPercentEquip.push(item);
+                    element.classList.add('selected');
+                }
+            }
+            
+            updatePercentSummary();
+            calculate();
+        }
+        
+        // 更新百分比装备加成汇总
+        function updatePercentSummary() {
+            const summary = document.getElementById('percent-summary');
+            if (selectedPercentEquip.length === 0) {
+                summary.textContent = '无';
+                summary.style.color = '#888';
+            } else {
+                let totalAtk = 0, totalDef = 0, totalHp = 0;
+                selectedPercentEquip.forEach(e => {
+                    totalAtk += e.atk_per || 0;
+                    totalDef += e.def_per || 0;
+                    totalHp += e.hp_per || 0;
+                });
+                
+                const parts = [];
+                if (totalAtk > 0) parts.push(`攻+${(totalAtk * 100).toFixed(0)}%`);
+                if (totalDef > 0) parts.push(`防+${(totalDef * 100).toFixed(0)}%`);
+                if (totalHp > 0) parts.push(`血+${(totalHp * 100).toFixed(0)}%`);
+                
+                summary.textContent = parts.join(' / ') || '无';
+                summary.style.color = '#ffd700';
+            }
+        }
+        
+        // 更新玩家炼制百分比预览
+        function updateCraftPreview() {
+            const craftAtk = parseFloat(document.getElementById('craft-weapon-atk').value) || 0;
+            const craftDef = parseFloat(document.getElementById('craft-armor-def').value) || 0;
+            const craftHp = parseFloat(document.getElementById('craft-treasure-hp').value) || 0;
+            const craftAll = parseFloat(document.getElementById('craft-all-percent').value) || 0;
+            
+            const preview = document.getElementById('craft-preview');
+            preview.innerHTML = `
+                <div class="craft-preview-item" style="color:#da70d6;font-weight:bold;">📋 自炼加成预览</div>
+                <div class="craft-preview-item"><span>武器攻击:</span><span style="color:#ff6b6b;">+${craftAtk}%</span></div>
+                <div class="craft-preview-item"><span>护具防御:</span><span style="color:#4a90d9;">+${craftDef}%</span></div>
+                <div class="craft-preview-item"><span>法宝生命:</span><span style="color:#00ff7f;">+${craftHp}%</span></div>
+                <div class="craft-preview-item"><span>全装综合:</span><span style="color:#ffd700;">+${craftAll}%</span></div>
+            `;
+            
+            calculate();
+        }
+        
+        function selectEquipment(item, type, element) {
+            const siblings = element.parentElement.children;
+            for (let i = 0; i < siblings.length; i++) {
+                siblings[i].classList.remove('selected');
+            }
+            element.classList.add('selected');
+            
+            const equipItem = { ...item, bao: item.暴击 || 0 };
+            switch(type) {
+                case 'weapon': selectedWeapon = equipItem; break;
+                case 'armor': selectedArmor = equipItem; break;
+                case 'treasure': selectedTreasure = equipItem; break;
+                case 'emperor': selectedEmperor = equipItem; break;
+            }
+            
+            updateSelectedEquipment();
+            calculate();
+        }
+        
+        function updateSelectedEquipment() {
+            const container = document.getElementById('selected-equipment');
+            let html = '<div class="selected-equip">';
+            
+            if (selectedWeapon.name !== '无') html += `<span style="color:#ffd700">武:${selectedWeapon.name}</span>`;
+            if (selectedArmor.name !== '无') html += `<span style="color:#4a90d9">护:${selectedArmor.name}</span>`;
+            if (selectedTreasure.name !== '无') html += `<span style="color:#00ff7f">法:${selectedTreasure.name}</span>`;
+            if (selectedEmperor.name !== '无') html += `<span style="color:#ff6b6b">帝:${selectedEmperor.name}</span>`;
+            
+            html += '</div>';
+            
+            if (selectedWeapon.name === '无' && selectedArmor.name === '无' && 
+                selectedTreasure.name === '无' && selectedEmperor.name === '无') {
+                container.innerHTML = '尚未选择装备';
+            } else {
+                container.innerHTML = html;
+            }
+            
+            checkSetEffect();
+        }
+        
+        function checkSetEffect() {
+            const container = document.getElementById('set-effect-container');
+            const wName = selectedWeapon.name;
+            const aName = selectedArmor.name;
+            const tName = selectedTreasure.name;
+            let effects = [];
+            
+            // 武祖套装
+            if (wName.includes('武祖') && tName.includes('神命') && aName.includes('如梦')) {
+                effects.push({name:'武祖套装', effect:'全属性 x3'});
+            }
+            // 光阴套装
+            if (wName.includes('光阴') && tName.includes('光阴') && aName.includes('光阴')) {
+                effects.push({name:'光阴套装', effect:'全属性 x6'});
+            }
+            
+            if (effects.length > 0) {
+                container.innerHTML = `
+                    <div class="set-effect">
+                        <div class="set-effect-title">✨ 套装效果</div>
+                        ${effects.map(e => `<div class="set-effect-item">${e.name}: ${e.effect}</div>`).join('')}
+                    </div>
+                `;
+            } else {
+                container.innerHTML = '';
+            }
+        }
+        
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.querySelector(`.tab-btn[onclick="switchTab('${tabName}')"]`).classList.add('active');
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+        }
+        
+        function loadPreset(preset) {
+            switch(preset) {
+                case 'low':
+                    document.getElementById('level_id').value = 5;
+                    document.getElementById('lianti_id').value = 5;
+                    document.getElementById('mijinglevel_id').value = 1;
+                    document.getElementById('xiangulevel_id').value = 1;
+                    break;
+                case 'mid':
+                    document.getElementById('level_id').value = 20;
+                    document.getElementById('lianti_id').value = 20;
+                    document.getElementById('mijinglevel_id').value = 6;
+                    document.getElementById('xiangulevel_id').value = 6;
+                    break;
+                case 'high':
+                    document.getElementById('level_id').value = 35;
+                    document.getElementById('lianti_id').value = 35;
+                    document.getElementById('mijinglevel_id').value = 12;
+                    document.getElementById('xiangulevel_id').value = 12;
+                    break;
+                case 'endgame':
+                    document.getElementById('level_id').value = 50;
+                    document.getElementById('lianti_id').value = 50;
+                    document.getElementById('mijinglevel_id').value = 18;
+                    document.getElementById('xiangulevel_id').value = 16;
+                    break;
+                case 'xiandi':
+                    document.getElementById('level_id').value = 55;
+                    document.getElementById('lianti_id').value = 55;
+                    document.getElementById('mijinglevel_id').value = 21;
+                    document.getElementById('xiangulevel_id').value = 21;
+                    break;
+            }
+            calculate();
+        }
+        
+        // ============ 计算逻辑 ============
+        function calculate() {
+            const level_id = parseInt(document.getElementById('level_id').value) || 0;
+            const lianti_id = parseInt(document.getElementById('lianti_id').value) || 0;
+            const mijinglevel_id = parseInt(document.getElementById('mijinglevel_id').value) || 0;
+            const xiangulevel_id = parseInt(document.getElementById('xiangulevel_id').value) || 0;
+            
+            const levelItem = gameData.levelData.find(item => item.level_id === level_id) || {基础攻击:0,基础防御:0,基础血量:0,基础暴击:0};
+            const liantiItem = gameData.liantiData.find(item => item.level_id === lianti_id) || {基础攻击:0,基础防御:0,基础血量:0,基础暴击:0};
+            const mijingItem = gameData.mijingData.find(item => item.level_id === mijinglevel_id) || {基础攻击:0,基础防御:0,基础血量:0};
+            const xianguItem = gameData.xianguData.find(item => item.level_id === xiangulevel_id) || {基础攻击:0,基础防御:0,基础血量:0};
+            
+            // 获取灵根加成
+            const linggenSelect = document.getElementById('linggen');
+            const linggenOption = linggenSelect.options[linggenSelect.selectedIndex];
+            const linggenAtk = parseFloat(linggenOption?.dataset?.atk) || 0;
+            const linggenDef = parseFloat(linggenOption?.dataset?.def) || 0;
+            const linggenHp = parseFloat(linggenOption?.dataset?.hp) || 0;
+            const linggenType = linggenOption?.dataset?.type || '';
+            
+            const attack_bonus = parseInt(document.getElementById('attack_bonus').value) || 0;
+            const defense_bonus = parseInt(document.getElementById('defense_bonus').value) || 0;
+            const hp_bonus = parseInt(document.getElementById('hp_bonus').value) || 0;
+            const guangyin_atk = parseInt(document.getElementById('guangyin_atk').value) || 0;
+            const guangyin_def = parseInt(document.getElementById('guangyin_def').value) || 0;
+            const guangyin_hp = parseInt(document.getElementById('guangyin_hp').value) || 0;
+            
+            // 基础属性
+            let base_atk = (levelItem.基础攻击 || 0) + (liantiItem.基础攻击 || 0) + (mijingItem.基础攻击 || 0) + (xianguItem.基础攻击 || 0) + guangyin_atk + attack_bonus;
+            let base_def = (levelItem.基础防御 || 0) + (liantiItem.基础防御 || 0) + (mijingItem.基础防御 || 0) + (xianguItem.基础防御 || 0) + guangyin_def + defense_bonus;
+            let base_hp = (levelItem.基础血量 || 0) + (liantiItem.基础血量 || 0) + (mijingItem.基础血量 || 0) + (xianguItem.基础血量 || 0) + guangyin_hp + hp_bonus;
+            let base_crit = (levelItem.基础暴击 || 0) + (liantiItem.基础暴击 || 0);
+            
+            // 灵根加成 (乘法)
+            let final_atk = base_atk * (1 + linggenAtk);
+            let final_def = base_def * (1 + linggenDef);
+            let final_hp = base_hp * (1 + linggenHp);
+            
+            // 百分比装备加成
+            let percentAtkBonus = 0, percentDefBonus = 0, percentHpBonus = 0;
+            selectedPercentEquip.forEach(equip => {
+                percentAtkBonus += equip.atk_per || 0;
+                percentDefBonus += equip.def_per || 0;
+                percentHpBonus += equip.hp_per || 0;
+            });
+            
+            // 玩家炼制百分比加成
+            const craftAtkPercent = (parseFloat(document.getElementById('craft-weapon-atk').value) || 0) / 100;
+            const craftDefPercent = (parseFloat(document.getElementById('craft-armor-def').value) || 0) / 100;
+            const craftHpPercent = (parseFloat(document.getElementById('craft-treasure-hp').value) || 0) / 100;
+            const craftAllPercent = (parseFloat(document.getElementById('craft-all-percent').value) || 0) / 100;
+            
+            // 应用百分比装备加成
+            if (percentAtkBonus > 0) final_atk = Math.trunc(final_atk * (1 + percentAtkBonus));
+            if (percentDefBonus > 0) final_def = Math.trunc(final_def * (1 + percentDefBonus));
+            if (percentHpBonus > 0) final_hp = Math.trunc(final_hp * (1 + percentHpBonus));
+            
+            // 装备加成
+            const processEquip = (equip) => {
+                if (equip.atk > 99 || equip.def > 99 || equip.HP > 99) {
+                    final_atk += equip.atk || 0;
+                    final_def += equip.def || 0;
+                    final_hp += equip.HP || 0;
+                } else {
+                    final_atk = Math.trunc(final_atk * (1 + (equip.atk || 0)));
+                    final_def = Math.trunc(final_def * (1 + (equip.def || 0)));
+                    final_hp = Math.trunc(final_hp * (1 + (equip.HP || 0)));
+                }
+                return equip.bao || 0;
+            };
+            
+            let total_crit = base_crit;
+            total_crit += processEquip(selectedWeapon);
+            total_crit += processEquip(selectedArmor);
+            total_crit += processEquip(selectedTreasure);
+            
+            // 帝兵加成
+            if (selectedEmperor && selectedEmperor.name !== '无') {
+                if (selectedEmperor.全属性 > 0) {
+                    final_atk += Math.trunc(final_atk * selectedEmperor.全属性);
+                    final_def += Math.trunc(final_def * selectedEmperor.全属性);
+                    final_hp += Math.trunc(final_hp * selectedEmperor.全属性);
+                } else {
+                    final_atk += selectedEmperor.atk || 0;
+                    final_def += selectedEmperor.def || 0;
+                    final_hp += selectedEmperor.生命 || 0;
+                }
+                total_crit += selectedEmperor.bao || 0;
+            }
+            
+            // 套装效果
+            let legendaryEffects = [];
+            const wName = selectedWeapon?.name || '';
+            const aName = selectedArmor?.name || '';
+            const tName = selectedTreasure?.name || '';
+            
+            if (wName.includes('武祖') && tName.includes('神命') && aName.includes('如梦')) {
+                final_atk = Math.trunc(final_atk * 3);
+                final_def = Math.trunc(final_def * 3);
+                final_hp = Math.trunc(final_hp * 3);
+                legendaryEffects.push('武祖套装: 全属性 x3');
+            }
+            if (wName.includes('光阴') && tName.includes('光阴') && aName.includes('光阴')) {
+                final_atk = Math.trunc(final_atk * 6);
+                final_def = Math.trunc(final_def * 6);
+                final_hp = Math.trunc(final_hp * 6);
+                legendaryEffects.push('光阴套装: 全属性 x6');
+            }
+            
+            // 应用玩家炼制百分比加成
+            final_atk = Math.trunc(final_atk * (1 + craftAtkPercent + craftAllPercent));
+            final_def = Math.trunc(final_def * (1 + craftDefPercent + craftAllPercent));
+            final_hp = Math.trunc(final_hp * (1 + craftHpPercent + craftAllPercent));
+            
+            // 显示结果
+            document.getElementById('final-atk').textContent = bigNumberTransform(final_atk);
+            document.getElementById('final-def').textContent = bigNumberTransform(final_def);
+            document.getElementById('final-hp').textContent = bigNumberTransform(final_hp);
+            document.getElementById('final-atk-raw').textContent = `原始: ${final_atk.toLocaleString()}`;
+            document.getElementById('final-def-raw').textContent = `原始: ${final_def.toLocaleString()}`;
+            document.getElementById('final-hp-raw').textContent = `原始: ${final_hp.toLocaleString()}`;
+            
+            total_crit = Math.min(total_crit, 3.0);
+            let crit_dmg = Math.min(total_crit + 1.5, 2.5);
+            document.getElementById('crit-rate').textContent = (total_crit * 100).toFixed(0) + '%';
+            document.getElementById('crit-dmg').textContent = (crit_dmg * 100).toFixed(0) + '%';
+            
+            // 属性来源
+            let breakdown = `
+                <div class="bonus-item"><span>练气境界:</span><span>攻${bigNumberTransform(levelItem.基础攻击)} / 防${bigNumberTransform(levelItem.基础防御)} / 血${bigNumberTransform(levelItem.基础血量)}</span></div>
+                <div class="bonus-item"><span>炼体境界:</span><span>攻${bigNumberTransform(liantiItem.基础攻击)} / 防${bigNumberTransform(liantiItem.基础防御)} / 血${bigNumberTransform(liantiItem.基础血量)}</span></div>
+                <div class="bonus-item"><span>秘境体系:</span><span>攻${bigNumberTransform(mijingItem.基础攻击)} / 防${bigNumberTransform(mijingItem.基础防御)} / 血${bigNumberTransform(mijingItem.基础血量)}</span></div>
+                <div class="bonus-item"><span>仙古今世法:</span><span>攻${bigNumberTransform(xianguItem.基础攻击)} / 防${bigNumberTransform(xianguItem.基础防御)} / 血${bigNumberTransform(xianguItem.基础血量)}</span></div>
+            `;
+            if (linggenOption && linggenOption.value) {
+                breakdown += `<div class="bonus-item"><span>灵根 [${linggenOption.text}]:</span><span>攻x${(1+linggenAtk).toFixed(2)} / 防x${(1+linggenDef).toFixed(2)} / 血x${(1+linggenHp).toFixed(2)}</span></div>`;
+            }
+            
+            // 百分比装备加成显示
+            if (selectedPercentEquip.length > 0) {
+                let percentDesc = selectedPercentEquip.map(e => e.name).join('、');
+                breakdown += `<div class="bonus-item"><span>百分比装备 [${percentDesc}]:</span><span>攻+${(percentAtkBonus*100).toFixed(0)}% / 防+${(percentDefBonus*100).toFixed(0)}% / 血+${(percentHpBonus*100).toFixed(0)}%</span></div>`;
+            }
+            
+            // 玩家自炼加成显示
+            if (craftAtkPercent > 0 || craftDefPercent > 0 || craftHpPercent > 0 || craftAllPercent > 0) {
+                breakdown += `<div class="bonus-item"><span>玩家自炼:</span><span>武攻+${(craftAtkPercent*100).toFixed(0)}% / 护防+${(craftDefPercent*100).toFixed(0)}% / 法血+${(craftHpPercent*100).toFixed(0)}% / 全装+${(craftAllPercent*100).toFixed(0)}%</span></div>`;
+            }
+            
+            document.getElementById('stat-breakdown').innerHTML = breakdown;
+            
+            // 特殊效果
+            if (legendaryEffects.length > 0) {
+                document.getElementById('legendary-effect-container').innerHTML = `
+                    <div class="legendary-effect">
+                        <div class="legendary-title">🌟 特殊装备效果</div>
+                        ${legendaryEffects.map(e => `<div style="color:#ffd700;padding:3px 0;">${e}</div>`).join('')}
+                    </div>
+                `;
+            } else {
+                document.getElementById('legendary-effect-container').innerHTML = '';
+            }
+        }
+        
+        // ============ 自定义帝兵功能 ============
+        
+        // 帝兵品阶属性表
+        const DI_BING_RANK_STATS = {
+            "雏形": { baseAtk: 800, baseDef: 800, baseHp: 800, allAttr: 0.1 },
+            "通灵": { baseAtk: 1600, baseDef: 1600, baseHp: 1600, allAttr: 0.2 },
+            "铭刻道与理": { baseAtk: 3200, baseDef: 3200, baseHp: 3200, allAttr: 0.3 },
+            "斩道王兵": { baseAtk: 6400, baseDef: 6400, baseHp: 6400, allAttr: 0.5 },
+            "圣兵": { baseAtk: 12800, baseDef: 12800, baseHp: 12800, allAttr: 0.7 },
+            "准帝兵": { baseAtk: 25600, baseDef: 25600, baseHp: 25600, allAttr: 1.0 },
+            "极道帝兵": { baseAtk: 51200, baseDef: 51200, baseHp: 51200, allAttr: 2.0 },
+            "仙器": { baseAtk: 102400, baseDef: 102400, baseHp: 102400, allAttr: 3.0 },
+            "仙王器": { baseAtk: 204800, baseDef: 204800, baseHp: 204800, allAttr: 5.0 },
+            "准仙帝器": { baseAtk: 409600, baseDef: 409600, baseHp: 409600, allAttr: 10.0 },
+            "仙帝器": { baseAtk: 819200, baseDef: 819200, baseHp: 819200, allAttr: 20.0 },
+            "祭道器": { baseAtk: 1638400, baseDef: 1638400, baseHp: 1638400, allAttr: 40.0 }
+        };
+        
+        // 蕴养加成
+        const NURTURE_ATK = 5000000000; // 5e
+        const NURTURE_ATTR = 1;
+        const NURTURE_MAX_ATK = 125000000000; // 25次蕴养总攻击加成
+        const NURTURE_MAX_ATTR = 25;
+        
+        // 刻写之道加成
+        const WAY_BONUS = {
+            "攻伐": { atkMult: 1.5, baoAdd: 0.1 },
+            "护体": { defMult: 1.5, baoAdd: 0.1 },
+            "涅槃": { hpMult: 1.5, baoAdd: 0.1 }
+        };
+        
+        function updateCustomEmperor() {
+            const name = document.getElementById('emperor-name').value.trim();
+            const rank = document.getElementById('emperor-rank').value;
+            const nurture = parseInt(document.getElementById('emperor-nurture').value) || 0;
+            const potential = parseInt(document.getElementById('emperor-potential').value) || 5;
+            const way = document.getElementById('emperor-way').value;
+            const golds = parseInt(document.getElementById('emperor-golds').value) || 0;
+            const zhilian = document.getElementById('emperor-zhilian').value === 'true';
+            
+            if (!name || !rank) {
+                document.getElementById('custom-emperor-preview').style.display = 'none';
+                return;
+            }
+            
+            const rankStats = DI_BING_RANK_STATS[rank] || DI_BING_RANK_STATS["雏形"];
+            
+            // 计算属性
+            let atk = rankStats.baseAtk + (nurture * NURTURE_ATK);
+            let def = rankStats.baseDef + (nurture * NURTURE_ATK);
+            let hp = rankStats.baseHp + (nurture * NURTURE_ATK);
+            let allAttr = rankStats.allAttr + (nurture * NURTURE_ATTR);
+            let bao = 0;
+            
+            // 蕴养圆满加成
+            if (nurture >= 20) {
+                allAttr += 5;
+                bao += 0.1;
+            }
+            
+            // 刻写之道加成
+            if (way && WAY_BONUS[way]) {
+                allAttr += 5;
+                if (way === '攻伐') {
+                    atk = Math.floor(atk * WAY_BONUS[way].atkMult);
+                } else if (way === '护体') {
+                    def = Math.floor(def * WAY_BONUS[way].defMult);
+                } else if (way === '涅槃') {
+                    hp = Math.floor(hp * WAY_BONUS[way].hpMult);
+                }
+                bao += WAY_BONUS[way].baoAdd;
+            }
+            
+            // 仙金融合加成 (潜力)
+            potential = Math.min(Math.max(potential + golds * 2, 5), 40);
+            
+            // 品阶暴击加成
+            if (rank === "极道帝兵") bao += 0.05;
+            if (rank === "仙器") bao += 0.1;
+            if (rank === "仙王器") bao += 0.15;
+            if (rank === "准仙帝器") bao += 0.2;
+            if (rank === "仙帝器") bao += 0.25;
+            if (rank === "祭道器") bao += 0.5;
+            
+            // 显示预览
+            const preview = document.getElementById('custom-emperor-preview');
+            preview.style.display = 'block';
+            preview.innerHTML = `
+                <div class="preview-title">📋 自定义帝兵预览 - ${name}</div>
+                <div class="preview-stat">
+                    <span>品阶</span>
+                    <span class="preview-stat-value">${rank}</span>
+                </div>
+                <div class="preview-stat">
+                    <span>攻击</span>
+                    <span class="preview-stat-value">${bigNumberTransform(atk)}</span>
+                </div>
+                <div class="preview-stat">
+                    <span>防御</span>
+                    <span class="preview-stat-value">${bigNumberTransform(def)}</span>
+                </div>
+                <div class="preview-stat">
+                    <span>生命</span>
+                    <span class="preview-stat-value">${bigNumberTransform(hp)}</span>
+                </div>
+                <div class="preview-stat">
+                    <span>全属性加成</span>
+                    <span class="preview-stat-value">+${allAttr.toFixed(1)}</span>
+                </div>
+                <div class="preview-stat">
+                    <span>暴击率</span>
+                    <span class="preview-stat-value">${(bao * 100).toFixed(0)}%</span>
+                </div>
+                <div class="preview-stat">
+                    <span>潜力</span>
+                    <span class="preview-stat-value">${'★'.repeat(Math.min(5, Math.floor(potential / 8)))} (${potential}星)</span>
+                </div>
+                ${way ? `<div class="preview-stat"><span>刻写之道</span><span class="preview-stat-value">${way}</span></div>` : ''}
+                ${golds > 0 ? `<div class="preview-stat"><span>融合仙金</span><span class="preview-stat-value">${golds}种</span></div>` : ''}
+                ${zhilian ? `<div class="preview-stat"><span>祭炼状态</span><span class="preview-stat-value">已祭炼</span></div>` : ''}
+            `;
+        }
+        
+        function applyCustomEmperor() {
+            const name = document.getElementById('emperor-name').value.trim();
+            const rank = document.getElementById('emperor-rank').value;
+            const nurture = parseInt(document.getElementById('emperor-nurture').value) || 0;
+            const potential = parseInt(document.getElementById('emperor-potential').value) || 5;
+            const way = document.getElementById('emperor-way').value;
+            const golds = parseInt(document.getElementById('emperor-golds').value) || 0;
+            
+            if (!name || !rank) {
+                alert('请填写帝兵名称和选择品阶');
+                return;
+            }
+            
+            // 检查帝兵形态
+            const validForms = ["剑", "鼎", "枪", "钟", "塔", "镜", "印", "刀", "斧", "戟", "鞭", "琴", "扇"];
+            const hasForm = validForms.some(form => name.includes(form));
+            if (!hasForm) {
+                alert(`帝兵名称必须包含以下形态之一：\n${validForms.join('、')}`);
+                return;
+            }
+            
+            const rankStats = DI_BING_RANK_STATS[rank] || DI_BING_RANK_STATS["雏形"];
+            
+            // 构建自定义帝兵对象
+            let atk = rankStats.baseAtk + (nurture * NURTURE_ATK);
+            let def = rankStats.baseDef + (nurture * NURTURE_ATK);
+            let hp = rankStats.baseHp + (nurture * NURTURE_ATK);
+            let allAttr = rankStats.allAttr + (nurture * NURTURE_ATTR);
+            let bao = 0;
+            
+            // 蕴养圆满加成
+            if (nurture >= 20) {
+                allAttr += 5;
+                bao += 0.1;
+            }
+            
+            // 刻写之道加成
+            if (way && WAY_BONUS[way]) {
+                allAttr += 5;
+                if (way === '攻伐') {
+                    atk = Math.floor(atk * WAY_BONUS[way].atkMult);
+                } else if (way === '护体') {
+                    def = Math.floor(def * WAY_BONUS[way].defMult);
+                } else if (way === '涅槃') {
+                    hp = Math.floor(hp * WAY_BONUS[way].hpMult);
+                }
+                bao += WAY_BONUS[way].baoAdd;
+            }
+            
+            // 品阶暴击加成
+            if (rank === "极道帝兵") bao += 0.05;
+            if (rank === "仙器") bao += 0.1;
+            if (rank === "仙王器") bao += 0.15;
+            if (rank === "准仙帝器") bao += 0.2;
+            if (rank === "仙帝器") bao += 0.25;
+            if (rank === "祭道器") bao += 0.5;
+            
+            const customEmperor = {
+                name: name,
+                rank: rank,
+                atk: atk,
+                def: def,
+                HP: hp,
+                全属性: allAttr,
+                bao: bao,
+                蕴养: nurture,
+                潜力: Math.min(Math.max(potential + golds * 2, 5), 40),
+                刻写之道: way || null,
+                融合仙金: golds,
+                isCustom: true
+            };
+            
+            // 更新选中状态
+            selectedEmperor = customEmperor;
+            
+            // 更新UI
+            const emperorList = document.getElementById('emperor-list');
+            emperorList.querySelectorAll('.equipment-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            
+            updateSelectedEquipment();
+            calculate();
+            
+            alert(`✅ 自定义帝兵「${name}」已应用！\n品阶：${rank}\n攻击：${bigNumberTransform(atk)}\n防御：${bigNumberTransform(def)}\n生命：${bigNumberTransform(hp)}`);
+        }
+        
+        function resetCalculation() {
+            document.getElementById('attack_bonus').value = 0;
+            document.getElementById('defense_bonus').value = 0;
+            document.getElementById('hp_bonus').value = 0;
+            document.getElementById('guangyin_atk').value = 0;
+            document.getElementById('guangyin_def').value = 0;
+            document.getElementById('guangyin_hp').value = 0;
+            
+            // 重置百分比装备输入
+            document.getElementById('craft-weapon-atk').value = 0;
+            document.getElementById('craft-armor-def').value = 0;
+            document.getElementById('craft-treasure-hp').value = 0;
+            document.getElementById('craft-all-percent').value = 0;
+            
+            document.querySelectorAll('.equipment-item').forEach(item => {
+                item.classList.remove('selected');
+                if (item.querySelector('.equipment-name').textContent === '无') {
+                    item.classList.add('selected');
+                }
+            });
+            
+            // 重置百分比装备选择
+            selectedPercentEquip = [];
+            document.querySelectorAll('.percent-item').forEach(item => {
+                item.classList.remove('selected');
+                if (item.querySelector('.eq-name').textContent === '无') {
+                    item.classList.add('selected');
+                }
+            });
+            updatePercentSummary();
+            
+            selectedWeapon = { name: '无', atk: 0, def: 0, HP: 0, bao: 0 };
+            selectedArmor = { name: '无', atk: 0, def: 0, HP: 0, bao: 0 };
+            selectedTreasure = { name: '无', atk: 0, def: 0, HP: 0, bao: 0 };
+            selectedEmperor = { name: '无', atk: 0, def: 0, HP: 0, 全属性: 0, bao: 0 };
+            
+            updateSelectedEquipment();
+            updateCraftPreview();
+            calculate();
+        }
+        
+        // 启动
+        loadData();
+    </script>
+</body>
+</html>
