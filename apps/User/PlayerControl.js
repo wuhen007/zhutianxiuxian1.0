@@ -11,7 +11,8 @@ import {
   Read_danyao,
   Write_danyao,
   setFileValue,
-  channel
+  channel,
+  buildAt
 } from '../../model/xiuxian.js';
 export class PlayerControl extends plugin {
   constructor() {
@@ -395,7 +396,7 @@ export class PlayerControl extends plugin {
     //额外修为
     let other_xiuwei = 0;
 
-    let msg = [segment.at(usr_qq)];
+    let msg = [buildAt(usr_qq)];
     //炼丹师丹药修正
     let transformation = '修为';
     let xueqi = 0;
@@ -530,7 +531,7 @@ export class PlayerControl extends plugin {
     );
     let other_lingshi = 0; //额外的灵石
     let Time = time;
-    let msg = [segment.at(usr_qq)];
+    let msg = [buildAt(usr_qq)];
     if (is_random) {
       //随机事件预留空间
       let rand = Math.random();

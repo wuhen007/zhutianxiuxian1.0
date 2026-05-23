@@ -9,7 +9,8 @@ import {
   Add_HP,
   Read_player,
   zd_battle,
-  channel
+  channel,
+  buildAt
 } from '../../model/xiuxian.js';
 import {
   readall,
@@ -31,6 +32,10 @@ export class Battle extends plugin {
         {
           reg: '^(以武会友)$',
           fnc: 'biwu',
+        },
+        {
+          reg: '#对战幻影\\s*\\*\\s*\\d+',
+          fnc: 'huanying',
         },
       ],
     });
@@ -349,6 +354,73 @@ let now_mijinglevel_idAA;
       e.reply(`战斗过程出错`);
       return false;
     }
+    e.reply(final_msg);
+    return false;
+  }
+
+  //对战幻影
+  async huanying(e) {
+    if (!verc({ e })) return false;
+    let A = e.user_id.toString().replace('qg_','');
+    A = await channel(A);
+    let ifexistplay_A = await existplayer(A);
+    if (!ifexistplay_A || e.isPrivate) {
+      return false;
+    }
+
+    // 解析幻影数量（兼容各种格式，只要消息里有*数字就提取）
+    let count = 1;
+    let match = e.msg.match(/\*(\d+)/);
+    if (match) {
+      count = parseInt(match[1]);
+    } else {
+      // 兜底：尝试匹配中文数字
+      let cnMatch = e.msg.match(/[零一二两三四五六七八九十]+/);
+      if (cnMatch) {
+        const cnMap = { '零':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10 };
+        let numStr = cnMatch[0];
+        if (numStr === '十') count = 10;
+        else count = parseInt(numStr.split('').map(c => cnMap[c] || 0).join('')) || 1;
+      }
+    }
+    if (count < 1) count = 1;
+    if (count > 10) {
+      e.reply('最多只能同时挑战10个幻影！');
+      return false;
+    }
+
+    let player = await Read_player(A);
+    player.法球倍率 = player.灵根.法球倍率;
+    player.当前血量 = player.血量上限;
+
+    // 创建幻影
+    let phantoms = [];
+    for (let i = 0; i < count; i++) {
+      let phantom = JSON.parse(JSON.stringify(player));
+      phantom.名号 = `${player.名号}·幻影${i + 1}`;
+      phantom.当前血量 = phantom.血量上限;
+      phantoms.push(phantom);
+    }
+
+    let final_msg = [segment.at(A), '\n'];
+    final_msg.push(`${player.名号}向${count}个自身幻影发起了挑战！`);
+
+    let Data_battle = await zd_battle(player, phantoms);
+    let msg = Data_battle.msg;
+    await ForwardMsg(e, msg);
+
+    // 判断胜负
+    let A_alive = Data_battle.A_hp > 0 || Data_battle.A_xue > 0;
+    let B_alive = Data_battle.B_hp > 0 || Data_battle.B_xue > 0;
+
+    if (A_alive && !B_alive) {
+      final_msg.push(`\n${player.名号}成功击败了所有幻影！`);
+    } else if (!A_alive && B_alive) {
+      final_msg.push(`\n${player.名号}被幻影击败了...`);
+    } else {
+      final_msg.push(`\n双方势均力敌，战斗结束！`);
+    }
+
     e.reply(final_msg);
     return false;
   }

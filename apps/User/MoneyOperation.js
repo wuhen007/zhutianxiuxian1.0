@@ -15,7 +15,8 @@ import {
   __PATH,
   Add_修为,
   Add_血气,
-  channel
+  channel,
+  buildAt
 } from '../../model/xiuxian.js';
 export class MoneyOperation extends plugin {
   constructor() {
@@ -536,8 +537,8 @@ async Give(e) {
   }
   
   return e.reply([
-    segment.at(A_qq),
-    segment.at(B_qq),
+    buildAt(A_qq),
+    buildAt(B_qq),
     `【宝物相赠】`,
     `${A_player.名号} 赠予 ${B_player.名号} [${thing_name}]×${quantity}${qualityText}`,
     `愿此宝物助道友仙途更上一层楼！`
