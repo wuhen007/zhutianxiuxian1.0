@@ -51,11 +51,16 @@ export class BOSS4 extends plugin {
           reg: '^#天骄列表$',
           fnc: 'ShowTianjiaoList',
         },
+        {
+          reg: '^#天骄仇恨(?:\\s+(.*))?$',
+          fnc: 'ShowHatredStatus',
+        },
       ],
     });
 
     this.userCooldownMs = 30 * 60 * 1000; // 30分钟个人冷却
     this.tianjiaoRefreshMs = 18 * 60 * 60 * 1000; // 18小时天骄刷新时间
+    this.escapeRefreshMs = 6 * 60 * 60 * 1000; // 逃脱后6小时复活
 
     // 地点映射表
     this.LOCATION_MAP = {
@@ -69,9 +74,389 @@ export class BOSS4 extends plugin {
       '永恒未知之地': 5,
       '仙域': 6
     };
+
+    // 仇恨值系统配置
+    this.HATRED_CONFIG = {
+      LEVELS: {
+        陌生: { min: 0, max: 10, escapeChance: 0.1, protectorChance: 0 },
+        注意: { min: 11, max: 30, escapeChance: 0.25, protectorChance: 0.15 },
+        敌视: { min: 31, max: 60, escapeChance: 0.45, protectorChance: 0.35 },
+        仇恨: { min: 61, max: 100, escapeChance: 0.65, protectorChance: 0.55 },
+        死敌: { min: 101, max: 200, escapeChance: 0.8, protectorChance: 0.75 },
+        不死不休: { min: 201, max: Infinity, escapeChance: 0.95, protectorChance: 0.9 }
+      },
+      GAIN: {
+        挑战失败: 5,
+        挑战成功: 20,
+        击杀: 50,
+        嘲讽: 3,
+        护道失败: 30
+      }
+    };
+
+    // 通用对话库（备用）
+    this.GENERAL_DIALOGUES = {
+      出场: [
+        "天骄在此，谁敢一战？",
+        "今日便让你见识真正的实力！",
+        "蝼蚁之辈，也敢挑战天骄？"
+      ],
+      胜利嘲讽: [
+        "就这点实力？回去再练几百年吧。",
+        "天骄之威，岂是你能抗衡？",
+        "这一战，不过是我热身而已。"
+      ],
+      败北狠话: [
+        "该死...你竟能伤我...",
+        "此仇不报，誓不为人！",
+        "你等着，我会回来的！"
+      ],
+      保命成功: [
+        "今日之辱，来日必报！",
+        "保命手段发动，下次见面必取你性命！",
+        "该死...这次算你运气好！"
+      ],
+      护道人出场: [
+        "何人敢伤我派天骄？",
+        "小辈，你可知得罪我们的下场？",
+        "天骄乃我派未来，尔敢！"
+      ],
+      护道人败北: [
+        "该死...这小辈竟有如此实力...",
+        "我们...不会放过你的...",
+        "天骄快走...保留传承..."
+      ],
+      低血量警告: [
+        "不好...伤势过重...",
+        "该死...不能再战了...",
+        "必须撤退...否则伤及本源..."
+      ]
+    };
   }
 
-  // 显示天骄列表
+
+  // ======================
+  // 保命法宝（辰东文笔）
+  // ======================
+  getEscapeTreasure(name) {
+    const map = {
+      "猪咪岁岁": "替身猪偶·九命不灭",
+      "金翅小鹏王": "鲲鹏翅·血影遁",
+      "华云飞": "一念花开·替身笺",
+      "王腾": "乱古帝符·虚空替命",
+      "霸王浑战": "霸血焚天·紫血替身",
+      "十冠王天子": "世界树枝·替劫叶",
+      "鹤无双": "不朽王座·虚影遁"
+    };
+    return map[name] || "神秘保命法宝";
+  }
+
+  // ======================
+  // 护道人名字映射
+  // ======================
+  getProtectorName(name) {
+    const map = {
+      "猪咪岁岁": "猪家护道老祖·猪惊天",
+      "王家老祖·猪百万": "王家太上护道·猪霸天",
+      "金翅小鹏王": "鹏族大圣护道·鹏万里",
+      "金翅大鹏长老·鹏九霄": "鹏族不朽护道·鹏啸天",
+      "华云飞": "云飞护道仙·云中君",
+      "星峰太上长老·墨云": "星峰护道尊者·墨无极",
+      "王腾": "王家护道圣·王天帝",
+      "北原王家长老·王靖海": "北原王家护道·王苍穹",
+      "霸王浑战": "霸体护道人·浑天圣祖",
+      "霸体祖星长老·苍战": "祖星护道尊者·苍天霸皇",
+      "十冠王天子": "十冠王护道圣·世无双",
+      "仙古遗地长老·十方": "仙古护道长老·十方禁忌",
+      "鹤无双": "鹤族护道仙·鹤凌云",
+      "异域不朽客·鹤青冥": "异域护道不朽·鹤破虚"
+    };
+    return map[name] || `${name}的护道人`;
+  }
+  // ========== 仇恨值系统核心方法 ==========
+
+  getHatredKey(tianjiaoName, usr_qq) {
+    return `tianjiao:hatred:${tianjiaoName}:${usr_qq}`;
+  }
+
+  getTianjiaoHatredStatusKey(tianjiaoName) {
+    return `tianjiao:hatred_status:${tianjiaoName}`;
+  }
+
+  async addHatred(tianjiaoName, usr_qq, reason) {
+    const hatredKey = this.getHatredKey(tianjiaoName, usr_qq);
+    const currentHatred = parseInt(await redis.get(hatredKey) || '0');
+    const gain = this.HATRED_CONFIG.GAIN[reason] || 5;
+    const newHatred = currentHatred + gain;
+    
+    await redis.set(hatredKey, newHatred.toString());
+    await this.updateTianjiaoHatredStatus(tianjiaoName);
+    
+    return { old: currentHatred, new: newHatred, gain };
+  }
+
+  getHatredLevel(hatredValue) {
+    for (const [level, range] of Object.entries(this.HATRED_CONFIG.LEVELS)) {
+      if (hatredValue >= range.min && hatredValue <= range.max) {
+        return level;
+      }
+    }
+    return '陌生';
+  }
+
+  async updateTianjiaoHatredStatus(tianjiaoName) {
+    const statusKey = this.getTianjiaoHatredStatusKey(tianjiaoName);
+    const pattern = `tianjiao:hatred:${tianjiaoName}:*`;
+    const keys = await redis.keys(pattern);
+    
+    let totalHatred = 0;
+    let maxHatred = 0;
+    let enemyCount = keys.length;
+    
+    for (const key of keys) {
+      const value = parseInt(await redis.get(key) || '0');
+      totalHatred += value;
+      if (value > maxHatred) maxHatred = value;
+    }
+    
+    const status = { totalHatred, maxHatred, enemyCount, updateTime: Date.now() };
+    await redis.set(statusKey, JSON.stringify(status));
+    return status;
+  }
+
+  async getTianjiaoHatredStatus(tianjiaoName) {
+    const statusKey = this.getTianjiaoHatredStatusKey(tianjiaoName);
+    const status = await redis.get(statusKey);
+    return status ? JSON.parse(status) : { totalHatred: 0, maxHatred: 0, enemyCount: 0 };
+  }
+
+  async getPlayerHatred(tianjiaoName, usr_qq) {
+    const hatredKey = this.getHatredKey(tianjiaoName, usr_qq);
+    return parseInt(await redis.get(hatredKey) || '0');
+  }
+
+  // ========== 对话系统 ==========
+
+  getRandomDialogue(tianjiaoData, type) {
+    const dialogues = tianjiaoData[type] || this.GENERAL_DIALOGUES[type];
+    if (!dialogues || dialogues.length === 0) return "";
+    return dialogues[Math.floor(Math.random() * dialogues.length)];
+  }
+
+  // ========== 护道人系统 ==========
+
+  // ======================
+  // 护道人生成（按你给的数值）
+  // ======================
+  generateProtector(tianjiaoName, playerLevel) {
+    const base = {
+      无境: {
+        exp: 100000000000,
+        level_id: 64,
+        基础攻击: 10000000000,
+        基础防御: 10000000000,
+        基础血量: 20000000000,
+        基础暴击: 3.0
+      },
+      无上之境: {
+        exp: 30000000000,
+        level_id: 63,
+        基础攻击: 1600000000,
+        基础防御: 16500000000,
+        基础血量: 33500000000,
+        基础暴击: 1.0
+      },
+      "仙台秘境——大圣": {
+        level_id: 14,
+        基础攻击: 1500000000,
+        基础防御: 150000000,
+        基础血量: 150000000
+      }
+    };
+
+    const multiplier = 50 + Math.floor(Math.random() * 51);
+
+    return {
+      名号: this.getProtectorName(tianjiaoName),
+      境界: "护道者",
+      level_id: base.无境.level_id,
+      exp: base.无境.exp * multiplier,
+      攻击: Math.floor(
+        (base.无境.基础攻击 +
+          base.无上之境.基础攻击 +
+          base["仙台秘境——大圣"].基础攻击) *
+        multiplier
+      ),
+      防御: Math.floor(
+        (base.无境.基础防御 +
+          base.无上之境.基础防御 +
+          base["仙台秘境——大圣"].基础防御) *
+        multiplier
+      ),
+      血量上限: Math.floor(
+        (base.无境.基础血量 +
+          base.无上之境.基础血量 +
+          base["仙台秘境——大圣"].基础血量) *
+        multiplier
+      ),
+      当前血量: Math.floor(
+        (base.无境.基础血量 +
+          base.无上之境.基础血量 +
+          base["仙台秘境——大圣"].基础血量) *
+        multiplier
+      ),
+      暴击率: base.无境.基础暴击,
+      暴击伤害: 3.5,
+      灵根: { name: "护道灵根", 法球倍率: 1.8 },
+      学习的功法: ["护道圣诀", "天罡战气", "不灭金身"]
+    };
+  }
+
+  // ======================
+  // 护身法宝触发机制
+  // ======================
+  async triggerProtectiveTalisman(e, tianjiaoName, tianjiaoData, status) {
+    // 基础触发概率 30%
+    const baseChance = 0.30;
+    // 血量越低，触发概率越高（线性增加，最高到80%）
+    const hpFactor = Math.max(0, (50 - status.currentHP) / 50);
+    const triggerChance = Math.min(0.80, baseChance + hpFactor * 0.50);
+
+    if (Math.random() > triggerChance) {
+      return false; // 未触发护身法宝
+    }
+
+    const treasureName = this.getEscapeTreasure(tianjiaoName);
+    const treasureDialogues = [
+      `${tianjiaoName}身上爆发出一道璀璨光华！`,
+      `${treasureName}显化，护住${tianjiaoName}周身！`,
+      "护身法宝自动激发，天骄安然无恙！",
+      "危急关头，神秘力量涌现..."
+    ];
+
+    const randomDialogue = treasureDialogues[Math.floor(Math.random() * treasureDialogues.length)];
+    
+    // 恢复血量（恢复10%-20%，不超过100%）
+    const recoverPercent = 10 + Math.floor(Math.random() * 11);
+    const newHP = Math.min(100, status.currentHP + recoverPercent);
+    status.currentHP = newHP;
+
+    let messages = [
+      `【护身法宝触发】`,
+      randomDialogue,
+      `${treasureName}生效！`,
+      `天骄血量恢复${recoverPercent}%，当前血量：${status.currentHP}%`,
+      `（法宝已耗尽，本次战斗不会再触发）`
+    ];
+
+    await ForwardMsg(e, messages);
+    return true;
+  }
+
+  // ======================
+  // 护道人触发机制（基于血量的线性概率）
+  // ======================
+  async triggerProtector(e, tianjiaoName, tianjiaoData, player, currentHP) {
+    // 只有血量低于30%时才可能触发护道人
+    if (currentHP > 30) {
+      return { triggered: false, protectorWon: false };
+    }
+
+    // 线性概率计算：血量越低，触发概率越高
+    // 30%血量时 10%概率，0%血量时 80%概率
+    const triggerChance = 0.10 + (30 - currentHP) / 30 * 0.70;
+
+    if (Math.random() > triggerChance) {
+      return { triggered: false, protectorWon: false };
+    }
+
+    let messages = [
+      `【护道人触发】`,
+      `${tianjiaoName}大喝一声：「护道人何在！」`
+    ];
+
+    // 护道人出场
+    const protectorDialogue = this.getRandomDialogue(tianjiaoData, '护道人出场');
+    messages.push(protectorDialogue);
+
+    const protector = this.generateProtector(tianjiaoName, player.level_id);
+    const A_player = {
+      ...player,
+      名号: player.名号,
+      攻击: player.攻击,
+      防御: player.防御,
+      当前血量: player.当前血量,
+      血量上限: player.血量上限,
+      暴击率: player.暴击率,
+      暴击伤害: player.暴击伤害,
+      灵根: player.灵根,
+      法球倍率: player.灵根?.法球倍率 || 1,
+      学习的功法: player.学习的功法 || [],
+    };
+
+    const B_player = {
+      名号: protector.名号,
+      攻击: protector.攻击,
+      防御: protector.防御,
+      当前血量: protector.当前血量,
+      血量上限: protector.血量上限,
+      暴击率: protector.暴击率,
+      暴击伤害: protector.暴击伤害,
+      灵根: protector.灵根?.name || "普通灵根",
+      法球倍率: protector.灵根?.法球倍率 || 1,
+      学习的功法: protector.学习的功法 || [],
+    };
+
+    const result = await zd_battle(A_player, B_player);
+    let battleMsg = result.msg;
+
+    if (battleMsg.length <= 20) {
+      messages = messages.concat(battleMsg);
+    } else {
+      messages.push("战斗过程过长，仅展示关键结果...");
+      messages.push(battleMsg[0]);
+      messages.push("...");
+      messages.push(battleMsg[battleMsg.length - 1]);
+    }
+
+    const playerWinStr = `${A_player.名号}击败了${B_player.名号}`;
+    const protectorWinStr = `${B_player.名号}击败了${A_player.名号}`;
+
+    if (battleMsg.find(item => item === playerWinStr)) {
+      // 玩家击败护道人
+      const protectorDefeatDialogue = this.getRandomDialogue(tianjiaoData, '护道人败北');
+      messages.push("", `【护道人败北】`, protectorDefeatDialogue);
+      
+      await this.addHatred(tianjiaoName, e.user_id.toString(), '护道失败');
+      
+      messages.push("", `【天骄重伤遁走】`, `${tianjiaoName}的护道人被你击败，天骄趁乱重伤逃走！`);
+      
+      await Add_灵石(e.user_id.toString(), 8000000);
+      await Add_源石(e.user_id.toString(), 3000000);
+      messages.push("额外奖励：灵石800万、源石300万");
+      
+      await ForwardMsg(e, messages);
+      return { triggered: true, protectorWon: false, escaped: true };
+      
+    } else if (battleMsg.find(item => item === protectorWinStr)) {
+      // 护道人击败玩家
+      messages.push("", `【你被护道人击败】`, `护道人实力深不可测，你不得不撤退...`);
+      
+      player.当前血量 = Math.floor(player.当前血量 * 0.1);
+      await Write_player(e.user_id.toString(), player);
+      
+      await this.addHatred(tianjiaoName, e.user_id.toString(), '挑战失败');
+      
+      await ForwardMsg(e, messages);
+      return { triggered: true, protectorWon: true, escaped: false };
+    }
+
+    await ForwardMsg(e, messages);
+    return { triggered: false, protectorWon: false };
+  }
+
+  // ========== 显示方法 ==========
+
   async ShowTianjiaoList(e) {
     if (!verc({ e })) return false;
 
@@ -87,7 +472,6 @@ export class BOSS4 extends plugin {
     return false;
   }
 
-  // 获取位面名称
   getLocationName(locationId) {
     for (const [name, id] of Object.entries(this.LOCATION_MAP)) {
       if (id === locationId) return name;
@@ -95,7 +479,6 @@ export class BOSS4 extends plugin {
     return `未知位面(${locationId})`;
   }
 
-  // 开启天骄
   async CreateWorldBoss2(e) {
     if (!e || e.isMaster) {
       await InitWorldBoss(e);
@@ -103,7 +486,6 @@ export class BOSS4 extends plugin {
     }
   }
 
-  // 关闭天骄
   async DeleteWorldBoss2(e) {
     if (!verc({ e })) return false;
     if (e.isMaster) {
@@ -111,27 +493,30 @@ export class BOSS4 extends plugin {
         await redis.del('Xiuxian:WorldBossStatus2');
         await redis.del('zhutianxiuxian1.0Record2');
 
-        // 删除所有天骄的复活CD和贡献榜
         for (const tianjiao of data.weimiantianjiao_list) {
           await redis.del(`tianjiao:global:revive:${tianjiao.名号}`);
           await redis.del(`tianjiao:damage:${tianjiao.名号}`);
+          await redis.del(`tianjiao:hatred_status:${tianjiao.名号}`);
+          
+          const hatredPattern = `tianjiao:hatred:${tianjiao.名号}:*`;
+          const hatredKeys = await redis.keys(hatredPattern);
+          for (const key of hatredKeys) {
+            await redis.del(key);
+          }
         }
 
-        e.reply('天骄挑战关闭！');
+        e.reply('天骄挑战关闭！所有仇恨值已清零。');
       } else e.reply('天骄未开启');
     } else return false;
   }
 
-  // 天骄状态
   async LookUpWorldBossStatus2(e) {
     if (!verc({ e })) return false;
 
-    // 获取天骄名称
     const match = e.msg.match(/^#天骄状态(?:\s+(.*))?$/);
     const tianjiaoName = match[1] ? match[1].trim() : '';
 
     if (!tianjiaoName) {
-      // 如果没有指定天骄名称，显示所有天骄状态
       let allStatus = ['****所有天骄状态****'];
 
       for (const tianjiao of data.weimiantianjiao_list) {
@@ -139,18 +524,15 @@ export class BOSS4 extends plugin {
         let status = await redis.get(statusKey);
         status = JSON.parse(status || '{}');
 
-        // 检查全局复活CD
         const globalReviveKey = `tianjiao:global:revive:${tianjiao.名号}`;
         const globalReviveTime = await redis.get(globalReviveKey);
 
-        // 初始化天骄状态
         if (!status.currentHP || status.currentHP <= 0) {
           status.currentHP = 100;
           status.isAlive = true;
           await redis.set(statusKey, JSON.stringify(status));
         }
 
-        // 如果有全局复活CD，优先使用
         if (globalReviveTime && Date.now() < parseInt(globalReviveTime)) {
           const remainingMs = parseInt(globalReviveTime) - Date.now();
           const hours = Math.floor(remainingMs / (60 * 60 * 1000));
@@ -179,14 +561,12 @@ export class BOSS4 extends plugin {
       return false;
     }
 
-    // 检查天骄是否存在
     const tianjiaoData = data.weimiantianjiao_list.find(tj => tj.名号 === tianjiaoName);
     if (!tianjiaoData) {
       e.reply(`未找到名为「${tianjiaoName}」的天骄`);
       return false;
     }
 
-    // 检查全局复活CD
     const globalReviveKey = `tianjiao:global:revive:${tianjiaoName}`;
     const globalReviveTime = await redis.get(globalReviveKey);
 
@@ -198,19 +578,16 @@ export class BOSS4 extends plugin {
       return false;
     }
 
-    // 获取天骄状态
     const statusKey = `tianjiao:status:${tianjiaoName}`;
     let status = await redis.get(statusKey);
     status = JSON.parse(status || '{}');
 
-    // 初始化天骄状态
     if (!status.currentHP || status.currentHP <= 0) {
-      status.currentHP = 100; // 百分比血量，初始100%
+      status.currentHP = 100;
       status.isAlive = true;
       await redis.set(statusKey, JSON.stringify(status));
     }
 
-    // 正常状态
     let ReplyMsg = [
       `----${tianjiaoName}状态----`,
       `境界: ${tianjiaoData.境界}`,
@@ -223,35 +600,101 @@ export class BOSS4 extends plugin {
     return false;
   }
 
-  // 更新贡献值 - 支持大数字
+  async ShowHatredStatus(e) {
+    if (!verc({ e })) return false;
+    
+    const usr_qq = e.user_id.toString();
+    const match = e.msg.match(/^#天骄仇恨(?:\s+(.*))?$/);
+    const tianjiaoName = match[1] ? match[1].trim() : '';
+    
+    if (!tianjiaoName) {
+      let msg = ['****你的天骄仇恨值****'];
+      let hasHatred = false;
+      
+      for (const tianjiao of data.weimiantianjiao_list) {
+        const hatred = await this.getPlayerHatred(tianjiao.名号, usr_qq);
+        if (hatred > 0) {
+          hasHatred = true;
+          const level = this.getHatredLevel(hatred);
+          const config = this.HATRED_CONFIG.LEVELS[level];
+          msg.push(`【${tianjiao.名号}】`);
+          msg.push(`  仇恨值: ${hatred}`);
+          msg.push(`  关系: ${level}`);
+          msg.push(`  保命触发率: ${Math.floor(config.escapeChance * 100)}%`);
+          msg.push(`  护道人召唤率: ${Math.floor(config.protectorChance * 100)}%`);
+          msg.push('-------------------');
+        }
+      }
+      
+      if (!hasHatred) {
+        msg.push("你目前与所有天骄都是陌生关系");
+        msg.push("多挑战天骄，建立'深厚'的友谊吧！");
+      }
+      
+      e.reply(msg.join('\n'));
+      return false;
+    }
+    
+    const tianjiaoData = data.weimiantianjiao_list.find(tj => tj.名号 === tianjiaoName);
+    if (!tianjiaoData) {
+      e.reply(`未找到名为「${tianjiaoName}」的天骄`);
+      return false;
+    }
+    
+    const hatred = await this.getPlayerHatred(tianjiaoName, usr_qq);
+    const level = this.getHatredLevel(hatred);
+    const config = this.HATRED_CONFIG.LEVELS[level];
+    const globalStatus = await this.getTianjiaoHatredStatus(tianjiaoName);
+    
+    let msg = [
+      `****${tianjiaoName}仇恨状态****`,
+      `你的仇恨值: ${hatred}`,
+      `关系等级: ${level}`,
+      `保命手段触发率: ${Math.floor(config.escapeChance * 100)}%`,
+      `护道人召唤率: ${Math.floor(config.protectorChance * 100)}%`,
+      "",
+      `【全局统计】`,
+      `总仇恨值: ${globalStatus.totalHatred}`,
+      `最高仇恨: ${globalStatus.maxHatred}`,
+      `敌对玩家: ${globalStatus.enemyCount}人`
+    ];
+    
+    if (level === '死敌' || level === '不死不休') {
+      msg.push("");
+      msg.push("⚠️ 警告：该天骄对你恨之入骨，每次击败都可能触发强力保命手段！");
+    }
+    
+    e.reply(msg.join('\n'));
+    return false;
+  }
+
+  // ========== 贡献榜方法 ==========
+
   async updateDamageContribution(damageKey, usr_qq, damageDealt) {
     try {
-      // 获取当前值（字符串形式）
       let currentDamage = await redis.hGet(damageKey, usr_qq);
-
-      // 如果不存在或不是有效数字，设为0
-      if (!currentDamage || isNaN(BigInt(currentDamage))) {
+      // BigInt不能直接用于isNaN，需要用try-catch判断
+      if (!currentDamage) {
         currentDamage = '0';
+      } else {
+        try {
+          BigInt(currentDamage);
+        } catch (e) {
+          currentDamage = '0';
+        }
       }
-
-      // 使用BigInt进行计算
       const currentBig = BigInt(currentDamage);
       const incrementBig = BigInt(damageDealt);
       const newValue = (currentBig + incrementBig).toString();
-
-      // 存储为字符串
       await redis.hSet(damageKey, usr_qq, newValue);
-
       return true;
     } catch (error) {
       console.error('更新贡献值失败:', error);
-      // 保底方案：直接设置新值
       await redis.hSet(damageKey, usr_qq, damageDealt.toString());
       return false;
     }
   }
 
-  // 读取贡献榜 - 支持大数字
   async getDamageRankings(damageKey) {
     const damageData = await redis.hGetAll(damageKey);
     const contributors = [];
@@ -262,17 +705,14 @@ export class BOSS4 extends plugin {
         contributors.push({
           qq,
           damage: damageBig,
-          damageStr: damageStr // 保留原始字符串用于显示
+          damageStr: damageStr
         });
       } catch (error) {
-        // 处理无效数据
         console.warn(`无效的贡献值: QQ=${qq}, damage=${damageStr}`);
-        // 重置为0
         await redis.hSet(damageKey, qq, '0');
       }
     }
 
-    // 排序（BigInt可以直接比较）
     contributors.sort((a, b) => {
       if (a.damage > b.damage) return -1;
       if (a.damage < b.damage) return 1;
@@ -282,18 +722,13 @@ export class BOSS4 extends plugin {
     return contributors;
   }
 
-  // 支持BigInt的大数字转换函数
   bigNumberTransformBigInt(value) {
     try {
-      // 转换为BigInt
       const num = typeof value === 'bigint' ? value : BigInt(value.toString());
-
-      // 如果小于1万，直接返回字符串
       if (num < 10000n) {
         return num.toString();
       }
 
-      // 中文数字单位（可扩展到恒河沙级别）
       const units = [
         '', '万', '亿', '兆', '京', '垓', '秭', '穰', '沟',
         '涧', '正', '载', '极', '恒河沙', '阿僧祇', '那由他',
@@ -308,18 +743,14 @@ export class BOSS4 extends plugin {
         unitIndex++;
       }
 
-      // 计算小数部分
       const divisor = 10000n ** BigInt(unitIndex);
       const remainder = num % divisor;
 
       if (remainder === 0n) {
         return result.toString() + units[unitIndex];
       } else {
-        // 计算2位小数
         const decimalValue = (remainder * 100n) / divisor;
         const decimalStr = decimalValue.toString().padStart(2, '0');
-
-        // 去掉末尾的0
         let formattedDecimal = decimalStr;
         while (formattedDecimal.length > 0 && formattedDecimal.endsWith('0')) {
           formattedDecimal = formattedDecimal.slice(0, -1);
@@ -337,11 +768,18 @@ export class BOSS4 extends plugin {
     }
   }
 
+  // ========== 核心战斗方法 ==========
+
   async WorldBossBattle2(e) {
     if (!verc({ e })) return false;
     if (e.isPrivate) return false;
 
-    // 获取天骄名称
+    // 战斗锁检查
+    if (WorldBOSSBattleLock === 1) {
+      e.reply('天骄战斗正在进行中，请稍后再试！');
+      return false;
+    }
+
     const match = e.msg.match(/^#讨伐天骄\s+(.*)$/);
     if (!match || !match[1]) {
       e.reply('请指定要讨伐的天骄名称，例如: #讨伐天骄 猪咪岁岁');
@@ -350,9 +788,8 @@ export class BOSS4 extends plugin {
 
     const tianjiaoName = match[1].trim();
     const usr_qq = e.user_id.toString();
-    // 获取玩家数据
     const player = await Read_player(usr_qq);
-    // 检查天骄是否存在
+    
     const tianjiaoData = data.weimiantianjiao_list.find(tj => tj.名号 === tianjiaoName);
     if (!tianjiaoData) {
       e.reply(`未找到名为「${tianjiaoName}」的天骄`);
@@ -371,10 +808,10 @@ export class BOSS4 extends plugin {
       return false;
     }
 
-    // 检查CD时间（30分钟） - 使用全局CD
-    const now_Time = new Date().getTime();
+    // 检查CD时间
+    const now_Time = Date.now();
     const last_time = await redis.get(`xiuxian:player:${usr_qq}:BOSSCD`);
-    const userCooldownMs = this.userCooldownMs; // 30分钟
+    const userCooldownMs = this.userCooldownMs;
 
     if (player.id != "2283096140" && last_time && now_Time < parseInt(last_time) + userCooldownMs) {
       const remainingMs = parseInt(last_time) + userCooldownMs - now_Time;
@@ -384,284 +821,361 @@ export class BOSS4 extends plugin {
       return false;
     }
 
-    // 创建A_player变量表示玩家角色
-    const A_player = {
-      ...player, // 复制玩家所有属性
-      名号: player.名号,
-      攻击: player.攻击,
-      防御: player.防御,
-      当前血量: player.当前血量,
-      血量上限: player.血量上限,
-      暴击率: player.暴击率,
-      暴击伤害: player.暴击伤害,
-      灵根: player.灵根,
-      法球倍率: player.灵根?.法球倍率 || 1,
-      学习的功法: player.学习的功法 || [],
-    };
+    // 设置战斗锁
+    WorldBOSSBattleLock = 1;
+    SetWorldBOSSBattleUnLockTimer(e);
 
-    // 检查玩家状态
-    if (A_player.level_id < 32) {
-      e.reply('你的练气境界至少达到法身境才能讨伐天骄');
-      return false;
-    }
+    try {
+      // 创建玩家角色
+      const A_player = {
+        ...player,
+        名号: player.名号,
+        攻击: player.攻击,
+        防御: player.防御,
+        当前血量: player.当前血量,
+        血量上限: player.血量上限,
+        暴击率: player.暴击率,
+        暴击伤害: player.暴击伤害,
+        灵根: player.灵根,
+        法球倍率: player.灵根?.法球倍率 || 1,
+        学习的功法: player.学习的功法 || [],
+      };
 
-    // 检查玩家位面（必须与天骄相同）
-    if (A_player.power_place !== tianjiaoData.位面) {
-      e.reply(`你当前不在「${this.getLocationName(tianjiaoData.位面)}」，无法挑战${tianjiaoName}`);
-      return false;
-    }
-
-    // 检查玩家状态
-    if (A_player.当前血量 <= A_player.血量上限 * 0.1) {
-      e.reply('还是先疗伤吧，别急着参战了');
-      return false;
-    }
-
-    // 获取天骄状态
-    const statusKey = `tianjiao:status:${tianjiaoName}`;
-    let status = await redis.get(statusKey);
-    status = JSON.parse(status || '{}');
-
-    // 初始化天骄状态
-    if (!status.currentHP || status.currentHP <= 0) {
-      status.currentHP = 100; // 百分比血量，初始100%
-      status.isAlive = true;
-    }
-
-    // 根据玩家境界调整天骄属性
-    let attributeMultiplier = 10;
-    if (tianjiaoData.名号 === "猪咪岁岁") {
-      // 猪咪岁岁天骄的规则
-      if (A_player.level_id > 41) {
-        return e.reply(`成仙者不得以大欺小，请让后辈弟子来讨伐！`);
-      } else {
-        attributeMultiplier = 5;
-        e.reply(`${tianjiaoName}:雪豹闭嘴！`);
+      // 检查玩家状态
+      if (A_player.level_id < 32) {
+        e.reply('你的练气境界至少达到法身境才能讨伐天骄');
+        WorldBOSSBattleLock = 0;
+        return false;
       }
-    } else {
-      // 其他天骄的规则
-      if (A_player.mijinglevel_id >= 12 || A_player.xiangulevel_id >= 10) {
-        attributeMultiplier = 5;
-        e.reply(`检测到玩家已成就圣人/天神境，${tianjiaoName}将不再压制境界，以全部实力应战！`);
-      } else if (A_player.mijinglevel_id < 9 && A_player.xiangulevel_id < 7) {
-        player.道伤 += 1;
-        player.当前血量 = 0;
-        await Write_player(usr_qq, player);
-        e.reply(`你连仙台境/尊者境都未达到，${tianjiaoName}根本不想浪费时间在你这只蝼蚁身上，直接将你一巴掌拍死！(道伤+1)`);
-        return; // 直接返回，不再继续战斗
-      } else {
-        attributeMultiplier = 3;
-        e.reply(`${tianjiaoName}压制境界与你一战！`);
+
+      if (A_player.power_place !== tianjiaoData.位面) {
+        e.reply(`你当前不在「${this.getLocationName(tianjiaoData.位面)}」，无法挑战${tianjiaoName}`);
+        WorldBOSSBattleLock = 0;
+        return false;
       }
-    }
 
-    // 基于玩家属性生成天骄战斗属性
-    const B_player = {
-      名号: `${tianjiaoName}${attributeMultiplier > 1 ? '(全力状态)' : '(压制境界)'}`,
-      攻击: parseInt(A_player.攻击 * attributeMultiplier),
-      防御: parseInt(A_player.防御 * attributeMultiplier),
-      当前血量: parseInt(A_player.血量上限 * attributeMultiplier),
-      血量上限: parseInt(A_player.血量上限 * attributeMultiplier),
-      暴击率: tianjiaoData.暴击率, // 使用天骄自身的暴击率
-      暴击伤害: tianjiaoData.暴击伤害, // 使用天骄自身的暴击伤害
-      灵根: tianjiaoData.灵根?.name || "普通灵根", // 使用天骄自身的灵根
-      法球倍率: tianjiaoData.灵根?.法球倍率 || 1, // 使用天骄自身的法球倍率
-      学习的功法: tianjiaoData.学习的功法 || [], // 使用天骄自身的功法
-    };
+      if (A_player.当前血量 <= A_player.血量上限 * 0.1) {
+        e.reply('还是先疗伤吧，别急着参战了');
+        WorldBOSSBattleLock = 0;
+        return false;
+      }
 
-    // 进行战斗
-    const result = await zd_battle(A_player, B_player);
-    let msg = result.msg;
-      if (msg.length <= 30) await ForwardMsg(e, msg);
-      else {
+      // 获取天骄状态
+      const statusKey = `tianjiao:status:${tianjiaoName}`;
+      let status = await redis.get(statusKey);
+      status = JSON.parse(status || '{}');
+
+      if (!status.currentHP || status.currentHP <= 0) {
+        status.currentHP = 100;
+        status.isAlive = true;
+      }
+
+      // 获取仇恨值
+      const currentHatred = await this.getPlayerHatred(tianjiaoName, usr_qq);
+      const hatredLevel = this.getHatredLevel(currentHatred);
+
+      // 根据玩家境界调整天骄属性
+      let attributeMultiplier = 10;
+      let openingDialogue = "";
+
+      if (tianjiaoData.名号 === "猪咪岁岁") {
+        if (A_player.level_id > 41) {
+          e.reply(`成仙者不得以大欺小，请让后辈弟子来讨伐！`);
+          WorldBOSSBattleLock = 0;
+          return false;
+        } else {
+          attributeMultiplier = 5;
+          openingDialogue = "雪豹闭嘴！";
+        }
+      } else {
+        if (A_player.mijinglevel_id >= 12 || A_player.xiangulevel_id >= 10) {
+          attributeMultiplier = 5;
+          openingDialogue = `检测到玩家已成就圣人/天神境，${tianjiaoName}将不再压制境界，以全部实力应战！`;
+        } else if (A_player.mijinglevel_id < 9 && A_player.xiangulevel_id < 7) {
+          player.道伤 += 1;
+          player.当前血量 = 0;
+          await Write_player(usr_qq, player);
+          e.reply(`你连仙台境/尊者境都未达到，${tianjiaoName}根本不想浪费时间在你这只蝼蚁身上，直接将你一巴掌拍死！(道伤+1)`);
+          WorldBOSSBattleLock = 0;
+          return false;
+        } else {
+          attributeMultiplier = 3;
+          openingDialogue = `${tianjiaoName}压制境界与你一战！`;
+        }
+      }
+
+      // 发送开场白
+      const randomOpening = this.getRandomDialogue(tianjiaoData, '出场');
+      if (randomOpening) {
+        e.reply(`${tianjiaoName}:「${randomOpening}」`);
+      } else if (openingDialogue) {
+        e.reply(openingDialogue);
+      }
+
+      // 基于玩家属性生成天骄战斗属性
+      const B_player = {
+        名号: `${tianjiaoName}${attributeMultiplier > 1 ? '(全力状态)' : '(压制境界)'}`,
+        攻击: parseInt(A_player.攻击 * attributeMultiplier),
+        防御: parseInt(A_player.防御 * attributeMultiplier),
+        当前血量: parseInt(A_player.血量上限 * attributeMultiplier),
+        血量上限: parseInt(A_player.血量上限 * attributeMultiplier),
+        暴击率: tianjiaoData.暴击率,
+        暴击伤害: tianjiaoData.暴击伤害,
+        灵根: tianjiaoData.灵根?.name || "普通灵根",
+        法球倍率: tianjiaoData.灵根?.法球倍率 || 1,
+        学习的功法: tianjiaoData.学习的功法 || [],
+      };
+
+      // 进行战斗
+      const result = await zd_battle(A_player, B_player);
+      let msg = result.msg;
+      
+      if (msg.length <= 30) {
+        await ForwardMsg(e, msg);
+      } else {
         let msgg = JSON.parse(JSON.stringify(msg));
         msgg.length = 30;
         await ForwardMsg(e, msgg);
         e.reply('战斗过长，仅展示部分内容');
       }
 
-    // 判断战斗结果 - 使用明确的胜利标志
-    const playerWinStr = `${A_player.名号}击败了${B_player.名号}`;
-    const tianjiaoWinStr = `${B_player.名号}击败了${A_player.名号}`;
+      // 判断战斗结果
+      const playerWinStr = `${A_player.名号}击败了${B_player.名号}`;
+      const tianjiaoWinStr = `${B_player.名号}击败了${A_player.名号}`;
 
-    // 更新贡献值
-    const damageKey = `tianjiao:damage:${tianjiaoName}`;
-    let isWin = false;
-    if (msg.find(item => item === playerWinStr)) {
-      const damageDealt = Math.floor(A_player.血量上限 * attributeMultiplier);
-      await this.updateDamageContribution(damageKey, usr_qq, damageDealt);
-      isWin = true;
-    } else if (msg.find(item => item === tianjiaoWinStr)) {
-      const damageDealt = Math.floor(A_player.血量上限 * attributeMultiplier * 0.1);
-      await this.updateDamageContribution(damageKey, usr_qq, damageDealt);
-      isWin = false;
-    } else {
-      e.reply(`战斗过程出错，无法判断胜负`);
-      return;
-    }
-
-    // 更新天骄状态
-    if (isWin) {
-      // 胜利扣除20%血量
-      status.currentHP = Math.max(0, status.currentHP - 20);
-      e.reply(`恭喜你战胜${tianjiaoName}！天骄血量减少20%，当前剩余${status.currentHP}%`);
-    } else {
-      // 失败扣除1%血量
-      status.currentHP = Math.max(0, status.currentHP - 1);
-      e.reply(`你未能战胜${tianjiaoName}，天骄血量减少1%，当前剩余${status.currentHP}%`);
-    }
-
-    // 计算奖励
-    let reward = isWin ? 10000 : 10;
-    let zuizhong = (A_player.mijinglevel_id + A_player.xiangulevel_id) * A_player.level_id * A_player.Physique_id * reward;
-
-    // 发放奖励
-    if (isWin) {
-      // 胜利奖励
-      await Add_灵石(usr_qq, 15000000); // 1000万灵石
-      await Add_源石(usr_qq, 5000000); // 500万灵石
-      await Add_修为(usr_qq, zuizhong);
-      await Add_血气(usr_qq, zuizhong);
-
-      let rewardMsg = [
-        `成功战胜${tianjiaoName}！获得奖励：`,
-        `灵石：1500万`,
-        `源石：500万`,
-        `修为：${bigNumberTransform(zuizhong)}`,
-        `血气：${bigNumberTransform(zuizhong)}`
-      ];
-
-      // 斗字秘学习功法功能
-      if (player.学习的功法.includes("斗字秘") && Math.random() < 0.01) {
-        // 确保玩家功法列表存在
-        player.学习的功法 = player.学习的功法 || [];
-
-        // 获取玩家当前已学习的功法
-        const playerLearnedSkills = player.学习的功法;
-
-        // 获取天骄可学习的功法（排除玩家已学习的）
-        const learnableSkills = tianjiaoData.学习的功法.filter(skill =>
-          !playerLearnedSkills.includes(skill)
-        );
-
-        if (learnableSkills.length > 0) {
-          // 随机选择一个功法
-          const randomIndex = Math.floor(Math.random() * learnableSkills.length);
-          const newSkill = learnableSkills[randomIndex];
-
-          // 添加新功法
-          player.学习的功法.push(newSkill);
-          await Write_player(usr_qq, player);
-
-          // 根据功法类型生成不同的遮天风格文案
-          let skillDescription = "";
-
-          if (newSkill.includes("拳") || newSkill.includes("掌")) {
-            skillDescription = `拳掌交锋间，斗字秘运转到极致，演化出${newSkill}的无上奥义！`;
-          } else if (newSkill.includes("剑") || newSkill.includes("刀")) {
-            skillDescription = `兵器碰撞的刹那，斗字秘捕捉到${newSkill}的剑意道痕，将其烙印在识海！`;
-          } else if (newSkill.includes("秘") || newSkill.includes("诀")) {
-            skillDescription = `斗字秘推演万法，在生死搏杀中洞悉${newSkill}的运转轨迹！`;
-          } else if (newSkill.includes("经") || newSkill.includes("法")) {
-            skillDescription = `古经轰鸣，道音阵阵，斗字秘逆推${newSkill}的完整传承！`;
-          } else {
-            skillDescription = `斗战圣法演化到极致，在战斗中领悟${newSkill}的真谛！`;
-          }
-
-          // 完整的遮天风格文案
-          const douziMiMsg = [
-            "【斗字秘】触发",
-            "九秘之【斗字秘】运转，斗战圣法演化诸天万法！",
-            "",
-            skillDescription,
-            "",
-            `领悟功法：${newSkill}`,
-            "【斗字秘】不愧为战斗第一圣法，可演化一切攻伐之术！",
-            "在生死搏杀中，你的战斗经验与道行同步精进！"
-          ].join('\n');
-
-          rewardMsg.push(douziMiMsg);
-
-        } else {
-          const douziMiMsg = [
-            "【斗字秘】触发",
-            "九秘之【斗字秘】运转，斗战圣法演化诸天万法！",
-            "",
-            `在与${tianjiaoName}的激战中，【斗字秘】推演其所有功法，`,
-            `然你已尽数掌握${tianjiaoName}的传承，无法再演化新的功法。`,
-            "",
-            "【斗字秘】虽未演化出新法，但战斗经验与道行依旧精进！",
-            "万法归宗，殊途同归，你的战斗技艺已达化境！"
-          ].join('\n');
-
-          rewardMsg.push(douziMiMsg);
-        }
+      const damageKey = `tianjiao:damage:${tianjiaoName}`;
+      let isWin = false;
+      
+      if (msg.find(item => item === playerWinStr)) {
+        const damageDealt = Math.floor(A_player.血量上限 * attributeMultiplier);
+        await this.updateDamageContribution(damageKey, usr_qq, damageDealt);
+        isWin = true;
+      } else if (msg.find(item => item === tianjiaoWinStr)) {
+        const damageDealt = Math.floor(A_player.血量上限 * attributeMultiplier * 0.1);
+        await this.updateDamageContribution(damageKey, usr_qq, damageDealt);
+        isWin = false;
+      } else {
+        e.reply(`战斗过程出错，无法判断胜负`);
+        WorldBOSSBattleLock = 0;
+        return false;
       }
 
-      // 检查天骄是否被击败
-      if (status.currentHP <= 0) {
-        status.isAlive = false;
+      // ========== 仇恨值与对话系统 ==========
 
-        // 设置全局复活CD（18小时）
-        const reviveTime = Date.now() + this.tianjiaoRefreshMs;
-        await redis.set(globalReviveKey, reviveTime.toString());
+      if (isWin) {
+        // 玩家胜利
+        
+        // 先检查是否触发护身法宝（不扣血）
+        const talismanTriggered = await this.triggerProtectiveTalisman(e, tianjiaoName, tianjiaoData, status);
+        
+        if (!talismanTriggered) {
+          // 护身法宝未触发，正常扣血
+          status.currentHP = Math.max(0, status.currentHP - 20);
+        }
+        
+        const hatredResult = await this.addHatred(tianjiaoName, usr_qq, '挑战成功');
+        const newLevel = this.getHatredLevel(hatredResult.new);
 
-        rewardMsg.push(`${tianjiaoName}已被彻底击败，18小时后将重新出现！`);
-
-        // 发放击败奖励
-        if (tianjiaoData.掉落物) {
-          for (const item of tianjiaoData.掉落物) {
-            if (Math.random() < item.概率) {
-              await Add_najie_thing(usr_qq, item.name, item.class, item.数量);
-              rewardMsg.push(`${item.name} x${item.数量}`);
-            }
-          }
+        // 发送败北狠话
+        const defeatDialogue = this.getRandomDialogue(tianjiaoData, '败北狠话');
+        if (defeatDialogue) {
+          await e.reply(`${tianjiaoName}:「${defeatDialogue}」`);
         }
 
-        // 特殊掉落
-        if (tianjiaoData.特殊掉落) {
-          for (const special of tianjiaoData.特殊掉落) {
-            if (Math.random() < special.概率) {
-              await Add_najie_thing(usr_qq, special.name, special.class, special.数量);
-              rewardMsg.push(`特殊掉落：${special.name} x${special.数量}`);
-              if (special.效果) {
-                rewardMsg.push(`（${special.效果}）`);
+        let winMsg = [
+          `恭喜你战胜${tianjiaoName}！`,
+          talismanTriggered 
+            ? `护身法宝生效，天骄血量未减少，当前剩余${status.currentHP}%`
+            : `天骄血量减少20%，当前剩余${status.currentHP}%`,
+          `仇恨值+${hatredResult.gain}（当前：${hatredResult.new}，关系：${newLevel}）`
+        ];
+        await e.reply(winMsg.join('\n'));
+
+        // 检查天骄是否被彻底击败
+        if (status.currentHP <= 0) {
+          // 先检查护道人触发（基于血量的线性概率）
+          const protectorResult = await this.triggerProtector(e, tianjiaoName, tianjiaoData, player, status.currentHP);
+          
+          if (protectorResult.triggered) {
+            if (protectorResult.escaped) {
+              // 天骄被护道人救走逃脱
+              status.isAlive = false;
+              const shortReviveTime = Date.now() + this.escapeRefreshMs;
+              await redis.set(globalReviveKey, shortReviveTime.toString());
+              
+              await redis.set(statusKey, JSON.stringify(status));
+              await redis.set(`xiuxian:player:${usr_qq}:BOSSCD`, now_Time.toString());
+              WorldBOSSBattleLock = 0;
+              return true;
+            } else if (protectorResult.protectorWon) {
+              // 被护道人击败，结束战斗
+              await redis.set(`xiuxian:player:${usr_qq}:BOSSCD`, now_Time.toString());
+              WorldBOSSBattleLock = 0;
+              return true;
+            }
+          }
+          
+          // 无护道人触发或护道人被击败，天骄彻底死亡
+          status.isAlive = false;
+          const reviveTime = Date.now() + this.tianjiaoRefreshMs;
+          await redis.set(globalReviveKey, reviveTime.toString());
+          
+          await e.reply(`${tianjiaoName}已被彻底击败，18小时后将重新出现！`);
+
+          // 发放掉落物
+          if (tianjiaoData.掉落物) {
+            for (const item of tianjiaoData.掉落物) {
+              if (Math.random() < item.概率) {
+                await Add_najie_thing(usr_qq, item.name, item.class, item.数量);
+                await e.reply(`获得掉落：${item.name} x${item.数量}`);
               }
             }
           }
+
+          // 特殊掉落
+          if (tianjiaoData.特殊掉落) {
+            for (const special of tianjiaoData.特殊掉落) {
+              if (Math.random() < special.概率) {
+                await Add_najie_thing(usr_qq, special.name, special.class, special.数量);
+                let dropMsg = `特殊掉落：${special.name} x${special.数量}`;
+                if (special.效果) {
+                  dropMsg += `（${special.效果}）`;
+                }
+                await e.reply(dropMsg);
+              }
+            }
+          }
+
+          // 发放贡献榜奖励
+          await this.distributeContributionRewards(e, tianjiaoName, tianjiaoData, usr_qq);
         }
 
-        // 发放贡献榜奖励 - 确保所有有贡献的玩家都能获得奖励
-        await this.distributeContributionRewards(e, tianjiaoName, tianjiaoData, usr_qq);
+        // 计算奖励
+        let reward = 10000;
+        let zuizhong = (A_player.mijinglevel_id + A_player.xiangulevel_id) * A_player.level_id * A_player.Physique_id * reward;
+
+        // 发放胜利奖励
+        await Add_灵石(usr_qq, 15000000);
+        await Add_源石(usr_qq, 5000000);
+        await Add_修为(usr_qq, zuizhong);
+        await Add_血气(usr_qq, zuizhong);
+
+        let rewardMsg = [
+          `成功战胜${tianjiaoName}！获得奖励：`,
+          `灵石：1500万`,
+          `源石：500万`,
+          `修为：${bigNumberTransform(zuizhong)}`,
+          `血气：${bigNumberTransform(zuizhong)}`
+        ];
+
+        // 斗字秘学习功法功能
+        if (player.学习的功法.includes("斗字秘") && Math.random() < 0.01) {
+          player.学习的功法 = player.学习的功法 || [];
+          const playerLearnedSkills = player.学习的功法;
+          const learnableSkills = tianjiaoData.学习的功法.filter(skill => !playerLearnedSkills.includes(skill));
+
+          if (learnableSkills.length > 0) {
+            const randomIndex = Math.floor(Math.random() * learnableSkills.length);
+            const newSkill = learnableSkills[randomIndex];
+            player.学习的功法.push(newSkill);
+            await Write_player(usr_qq, player);
+
+            let skillDescription = "";
+            if (newSkill.includes("拳") || newSkill.includes("掌")) {
+              skillDescription = `拳掌交锋间，斗字秘运转到极致，演化出${newSkill}的无上奥义！`;
+            } else if (newSkill.includes("剑") || newSkill.includes("刀")) {
+              skillDescription = `兵器碰撞的刹那，斗字秘捕捉到${newSkill}的剑意道痕，将其烙印在识海！`;
+            } else if (newSkill.includes("秘") || newSkill.includes("诀")) {
+              skillDescription = `斗字秘推演万法，在生死搏杀中洞悉${newSkill}的运转轨迹！`;
+            } else if (newSkill.includes("经") || newSkill.includes("法")) {
+              skillDescription = `古经轰鸣，道音阵阵，斗字秘逆推${newSkill}的完整传承！`;
+            } else {
+              skillDescription = `斗战圣法演化到极致，在战斗中领悟${newSkill}的真谛！`;
+            }
+
+            const douziMiMsg = [
+              "【斗字秘】触发",
+              "九秘之【斗字秘】运转，斗战圣法演化诸天万法！",
+              "",
+              skillDescription,
+              "",
+              `领悟功法：${newSkill}`,
+              "【斗字秘】不愧为战斗第一圣法，可演化一切攻伐之术！",
+              "在生死搏杀中，你的战斗经验与道行同步精进！"
+            ].join('\n');
+
+            rewardMsg.push(douziMiMsg);
+          } else {
+            const douziMiMsg = [
+              "【斗字秘】触发",
+              "九秘之【斗字秘】运转，斗战圣法演化诸天万法！",
+              "",
+              `在与${tianjiaoName}的激战中，【斗字秘】推演其所有功法，`,
+              `然你已尽数掌握${tianjiaoName}的传承，无法再演化新的功法。`,
+              "",
+              "【斗字秘】虽未演化出新法，但战斗经验与道行依旧精进！",
+              "万法归宗，殊途同归，你的战斗技艺已达化境！"
+            ].join('\n');
+
+            rewardMsg.push(douziMiMsg);
+          }
+        }
+
+        await e.reply(rewardMsg.join('\n'));
+
+      } else {
+        // 玩家失败
+        status.currentHP = Math.max(0, status.currentHP - 1);
+        const hatredResult = await this.addHatred(tianjiaoName, usr_qq, '挑战失败');
+        const newLevel = this.getHatredLevel(hatredResult.new);
+
+        // 发送胜利嘲讽
+        const tauntDialogue = this.getRandomDialogue(tianjiaoData, '胜利嘲讽');
+        if (tauntDialogue) {
+          await e.reply(`${tianjiaoName}:「${tauntDialogue}」`);
+        }
+
+        await e.reply([
+          `你未能战胜${tianjiaoName}，天骄血量减少1%，当前剩余${status.currentHP}%`,
+          `仇恨值+${hatredResult.gain}（当前：${hatredResult.new}，关系：${newLevel}）`
+        ].join('\n'));
+
+        // 计算失败奖励
+        let reward = 10;
+        let zuizhong = (A_player.mijinglevel_id + A_player.xiangulevel_id) * A_player.level_id * A_player.Physique_id * reward;
+
+        await Add_源石(usr_qq, 1000000);
+        await Add_灵石(usr_qq, 3000000);
+        await Add_修为(usr_qq, zuizhong);
+        await Add_血气(usr_qq, zuizhong);
+
+        await e.reply([
+          `你与${tianjiaoName}激战一番，获得奖励：`,
+          `灵石：300万`,
+          `源石：100万`,
+          `修为：${bigNumberTransform(zuizhong)}`,
+          `血气：${bigNumberTransform(zuizhong)}`
+        ].join('\n'));
       }
 
-      e.reply(rewardMsg.join('\n'));
-    } else {
-      // 失败奖励
-      await Add_源石(usr_qq, 1000000); // 100万源石
-      await Add_灵石(usr_qq, 3000000); // 300万灵石
-      await Add_修为(usr_qq, zuizhong);
-      await Add_血气(usr_qq, zuizhong);
+      // 保存天骄状态
+      await redis.set(statusKey, JSON.stringify(status));
+      // 设置CD
+      await redis.set(`xiuxian:player:${usr_qq}:BOSSCD`, now_Time.toString());
 
-      e.reply([
-        `你与${tianjiaoName}激战一番，获得奖励：`,
-        `灵石：300万`,
-        `源石：100万`,
-        `修为：${bigNumberTransform(zuizhong)}`,
-        `血气：${bigNumberTransform(zuizhong)}`
-      ].join('\n'));
+    } catch (error) {
+      console.error('天骄战斗出错:', error);
+      e.reply('战斗过程发生错误，请稍后再试！');
+    } finally {
+      // 释放战斗锁
+      WorldBOSSBattleLock = 0;
     }
-
-    // 保存天骄状态
-    await redis.set(statusKey, JSON.stringify(status));
-
-    // 设置全局CD（30分钟）
-    await redis.set(`xiuxian:player:${usr_qq}:BOSSCD`, now_Time.toString());
 
     return true;
   }
 
-  // 分发贡献榜奖励
+  // ========== 贡献榜奖励分发 ==========
+
   async distributeContributionRewards(e, tianjiaoName, tianjiaoData, killerQQ) {
     const damageKey = `tianjiao:damage:${tianjiaoName}`;
     const contributors = await this.getDamageRankings(damageKey);
@@ -670,45 +1184,35 @@ export class BOSS4 extends plugin {
       return;
     }
 
-    // 发放奖励
     const rewardMessages = [`****${tianjiaoName}贡献榜奖励****`];
 
     for (let i = 0; i < contributors.length; i++) {
       const contributor = contributors[i];
-      let rewardCount = 1; // 默认1样物品
+      let rewardCount = 1;
 
-      // 根据排名调整奖励数量
       if (i === 0) {
-        // 第一名：3-5样物品
         rewardCount = 3 + Math.floor(Math.random() * 3);
       } else if (i >= 1 && i <= 4) {
-        // 第二到第五名：2-4样物品
         rewardCount = 2 + Math.floor(Math.random() * 3);
       } else if (i <= 9) {
-        // 第六到第十名：1-3样物品
         rewardCount = 1 + Math.floor(Math.random() * 3);
       }
-      // 十名以后保持1样物品
 
-      // 发放奖励
       const rewards = await this.giveRandomItems(contributor.qq, tianjiaoData, rewardCount);
-
-      // 显示奖励信息
       const playerName = await this.getPlayerName(contributor.qq);
       const damageDisplay = this.bigNumberTransformBigInt(contributor.damageStr || contributor.damage.toString());
+      
       rewardMessages.push(`${i + 1}. ${playerName} - 伤害: ${damageDisplay}`);
 
       if (rewards.length > 0) {
         rewardMessages.push(`   获得 ${rewards.length} 样物品: ${rewards.join('、')}`);
       } else {
-        // 理论上不会走到这里，因为有保底机制
         rewardMessages.push(`   获得基础奖励`);
       }
     }
 
-    // 发放击杀者额外奖励（50%概率获得1-3样物品）
     if (Math.random() < 0.5) {
-      const extraRewardCount = 1 + Math.floor(Math.random() * 3); // 1-3样物品
+      const extraRewardCount = 1 + Math.floor(Math.random() * 3);
       const extraRewards = await this.giveRandomItems(killerQQ, tianjiaoData, extraRewardCount);
 
       if (extraRewards.length > 0) {
@@ -717,66 +1221,67 @@ export class BOSS4 extends plugin {
       }
     }
 
-    // 发送奖励信息
     if (rewardMessages.length > 1) {
       await ForwardMsg(e, rewardMessages);
     }
 
-    // 清空贡献榜
     await redis.del(damageKey);
   }
 
-  // 发放随机物品
   async giveRandomItems(qq, tianjiaoData, count) {
     const rewards = [];
-
+    
+    // 先检查玩家是否存在
+    try {
+      await Read_player(qq);
+    } catch (error) {
+      console.warn(`玩家${qq}不存在，跳过物品发放`);
+      return rewards;
+    }
+    
     if (!tianjiaoData.掉落物 || tianjiaoData.掉落物.length === 0) {
       return rewards;
     }
 
-    // 将物品按概率分类：基础物品（概率≥0.5）和稀有物品（概率<0.5）
     const baseItems = tianjiaoData.掉落物.filter(item => item.概率 >= 0.5);
     const rareItems = tianjiaoData.掉落物.filter(item => item.概率 < 0.5);
-
-    // 确保至少有一个基础物品作为保底
     let hasDropped = false;
 
     for (let i = 0; i < count; i++) {
-      // 优先尝试掉落稀有物品（70%概率尝试稀有，30%概率尝试基础）
       let itemPool = Math.random() < 0.7 ? rareItems : baseItems;
-
-      // 如果稀有物品池为空，则使用基础物品池
       if (itemPool.length === 0) {
         itemPool = baseItems;
       }
 
-      // 随机选择一件物品
       const randomIndex = Math.floor(Math.random() * itemPool.length);
       const item = itemPool[randomIndex];
-
-      // 对于基础物品（概率≥0.5），实际掉落概率为100%
-      // 对于稀有物品，使用原概率
       const actualProbability = item.概率 >= 0.5 ? 1.0 : item.概率;
 
-      if (Math.random() < actualProbability) {
-        await Add_najie_thing(qq, item.name, item.class, item.数量);
-        rewards.push(`${item.name}x${item.数量}`);
-        hasDropped = true;
+      try {
+        if (Math.random() < actualProbability) {
+          await Add_najie_thing(qq, item.name, item.class, item.数量);
+          rewards.push(`${item.name}x${item.数量}`);
+          hasDropped = true;
+        }
+      } catch (itemError) {
+        console.warn(`发放物品失败: ${item.name}`, itemError);
       }
     }
 
-    // 保底机制：如果没有任何物品掉落，强制掉落一个基础物品
     if (!hasDropped && baseItems.length > 0) {
       const fallbackIndex = Math.floor(Math.random() * baseItems.length);
       const fallbackItem = baseItems[fallbackIndex];
-      await Add_najie_thing(qq, fallbackItem.name, fallbackItem.class, fallbackItem.数量);
-      rewards.push(`${fallbackItem.name}x${fallbackItem.数量}（保底奖励）`);
+      try {
+        await Add_najie_thing(qq, fallbackItem.name, fallbackItem.class, fallbackItem.数量);
+        rewards.push(`${fallbackItem.name}x${fallbackItem.数量}（保底奖励）`);
+      } catch (itemError) {
+        console.warn(`发放保底物品失败: ${fallbackItem.name}`, itemError);
+      }
     }
 
     return rewards;
   }
 
-  // 获取玩家名称
   async getPlayerName(qq) {
     try {
       const player = await Read_player(qq);
@@ -786,11 +1291,9 @@ export class BOSS4 extends plugin {
     }
   }
 
-  // 天骄伤害贡献榜
   async ShowDamageList2(e) {
     if (!verc({ e })) return false;
 
-    // 获取天骄名称
     const match = e.msg.match(/^#天骄贡献榜(?:\s+(.*))?$/);
     const tianjiaoName = match[1] ? match[1].trim() : '';
 
@@ -799,14 +1302,12 @@ export class BOSS4 extends plugin {
       return false;
     }
 
-    // 检查天骄是否存在
     const tianjiaoData = data.weimiantianjiao_list.find(tj => tj.名号 === tianjiaoName);
     if (!tianjiaoData) {
       e.reply(`未找到名为「${tianjiaoName}」的天骄`);
       return false;
     }
 
-    // 检查全局复活CD
     const globalReviveKey = `tianjiao:global:revive:${tianjiaoName}`;
     const globalReviveTime = await redis.get(globalReviveKey);
 
@@ -815,7 +1316,6 @@ export class BOSS4 extends plugin {
       return false;
     }
 
-    // 获取天骄状态
     const statusKey = `tianjiao:status:${tianjiaoName}`;
     let status = await redis.get(statusKey);
     status = JSON.parse(status || '{}');
@@ -825,7 +1325,6 @@ export class BOSS4 extends plugin {
       return false;
     }
 
-    // 获取贡献榜数据
     const damageKey = `tianjiao:damage:${tianjiaoName}`;
     const contributors = await this.getDamageRankings(damageKey);
 
@@ -834,7 +1333,6 @@ export class BOSS4 extends plugin {
       return false;
     }
 
-    // 构建贡献榜消息
     const msg = [`****${tianjiaoName}贡献榜****`];
     for (let i = 0; i < Math.min(contributors.length, 10); i++) {
       const contributor = contributors[i];
@@ -854,32 +1352,35 @@ export class BOSS4 extends plugin {
   }
 }
 
-// 初始化天骄
+// ========== 全局函数 ==========
+
 async function InitWorldBoss(e) {
-  // 初始化所有天骄状态
   for (const tianjiao of data.weimiantianjiao_list) {
     const statusKey = `tianjiao:status:${tianjiao.名号}`;
     const status = {
-      currentHP: 100, // 百分比血量
+      currentHP: 100,
       isAlive: true,
     };
     await redis.set(statusKey, JSON.stringify(status));
-
-    // 清除全局复活CD和贡献榜
     await redis.del(`tianjiao:global:revive:${tianjiao.名号}`);
     await redis.del(`tianjiao:damage:${tianjiao.名号}`);
+    await redis.del(`tianjiao:hatred_status:${tianjiao.名号}`);
+    
+    const hatredPattern = `tianjiao:hatred:${tianjiao.名号}:*`;
+    const hatredKeys = await redis.keys(hatredPattern);
+    for (const key of hatredKeys) {
+      await redis.del(key);
+    }
   }
 
   if (e && e.reply) {
-    e.reply('所有天骄已初始化，可以开始挑战！');
+    e.reply('所有天骄已初始化，可以开始挑战！仇恨值已清零。');
   }
 
   return false;
 }
 
-// 获取天骄是否已开启
 async function BossIsAlive() {
-  // 检查是否有天骄存活
   for (const tianjiao of data.weimiantianjiao_list) {
     const statusKey = `tianjiao:status:${tianjiao.名号}`;
     const status = await redis.get(statusKey);
@@ -891,7 +1392,6 @@ async function BossIsAlive() {
   return false;
 }
 
-// 排序玩家
 async function SortPlayer(PlayerRecordJSON) {
   if (PlayerRecordJSON) {
     let Temp0 = JSON.parse(JSON.stringify(PlayerRecordJSON));
@@ -912,7 +1412,6 @@ async function SortPlayer(PlayerRecordJSON) {
   }
 }
 
-// 设置防止锁卡死的计时器
 async function SetWorldBOSSBattleUnLockTimer(e) {
   WorldBOSSBattleUnLockTimer = setTimeout(() => {
     if (WorldBOSSBattleLock == 1) {
@@ -923,7 +1422,6 @@ async function SetWorldBOSSBattleUnLockTimer(e) {
   }, 30000);
 }
 
-// sleep函数
 async function sleep(time) {
   return new Promise(resolve => {
     setTimeout(resolve, time);
