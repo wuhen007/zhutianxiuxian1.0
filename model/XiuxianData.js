@@ -2,7 +2,7 @@ import fs from 'fs';
 import Config from './Config.js';
 import path from 'path';
 import { AppName } from '../app.config.js';
-import schedule from 'node-schedule';
+
 /*
   数据封装
  */
@@ -38,8 +38,6 @@ class XiuxianData {
      // 确保所有目录存在
     this.ensureDirsExist();
     
-    // 初始化道法仙术定时任务
-    this.initDaofaTask();
     
 
   }
@@ -431,78 +429,7 @@ this.gongfa_list = JSON.parse(
     }
   }
   
-  /**
-   * 初始化道法仙术定时任务
-   */
-  initDaofaTask() {
-    // 避免重复初始化
-    if (this.daofaTaskInitialized) return;
-    
-    // 每天00:00执行扣减
-    schedule.scheduleJob('0 0 0 * * *', () => {
-      console.log('开始执行道法仙术每日扣减任务');
-      const now = new Date();
-      const nowTime = now.getTime();
-      const list = this.getDaofaList();
-      let updated = false;
-      
-      for (const qq of Object.keys(list)) {
-        try {
-          // 检查玩家是否存在
-          if (!this.existData('player', qq)) {
-            this.removeFromDaofaList(qq);
-            updated = true;
-            continue;
-          }
-          
-          // 读取玩家数据
-          const player = this.getData('player', qq);
-          
-          // 检查玩家是否有道法仙术且未过期
-          if (!player.daofaxianshu_endtime || player.daofaxianshu_endtime <= nowTime) {
-            // 如果已经过期，则移除并更新状态
-            player.daofa = "未开启";
-            player.daofaxianshu_endtime = 0;
-            this.setData('player', qq, player);
-            this.removeFromDaofaList(qq);
-            updated = true;
-            continue;
-          }
-          
-          // 扣除一天（86400000毫秒）
-          player.daofaxianshu_endtime -= 86400000;
-          
-          // 检查扣除后是否过期
-          if (player.daofaxianshu_endtime <= nowTime) {
-            player.daofa = "未开启";
-            player.daofaxianshu_endtime = 0;
-            this.setData('player', qq, player);
-            this.removeFromDaofaList(qq);
-          } else {
-            // 更新剩余天数显示
-            const remainingDays = Math.round((player.daofaxianshu_endtime - nowTime) / 86400000 * 10) / 10;
-            player.daofa = `已开启，当前剩余${remainingDays}天`;
-            this.setData('player', qq, player);
-          }
-          
-          updated = true;
-          
-        } catch (error) {
-          console.error(`处理玩家 ${qq} 的道法仙术时出错:`, error);
-        }
-      }
-      
-      if (updated) {
-        // 如果有更新，保存列表（主要是为了移除过期玩家）
-        this.saveDaofaList(list);
-      }
-      
-      console.log('道法仙术每日扣减任务完成');
-    });
-    
-    this.daofaTaskInitialized = true;
-    console.log('道法仙术定时任务已初始化');
-  }
+
   
   /**
    * 开通道法仙术
