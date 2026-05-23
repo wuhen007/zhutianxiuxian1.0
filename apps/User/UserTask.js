@@ -89,14 +89,15 @@ export class DaofaDailyTask extends plugin {
     }
     
     // 处理批处理中的玩家
+    const nowTime = Date.now();
     for (const player of players) {
-      // 检查玩家是否拥有道法仙术
-      if (player.daofaxianshu === 2 && player.daofaxianshu_endtime > 0) {
+      // 检查玩家是否拥有道法仙术且未过期
+      if (player.daofaxianshu === 2 && player.daofaxianshu_endtime > nowTime) {
         // 减少一天（毫秒）
         player.daofaxianshu_endtime -= MILLISECONDS_PER_DAY;
         
-        // 计算新的剩余天数
-        const newRemainingDays = Math.ceil(player.daofaxianshu_endtime / MILLISECONDS_PER_DAY);
+        // 计算新的剩余天数（基于当前时间扣减后的差值）
+        const newRemainingDays = Math.ceil((player.daofaxianshu_endtime - nowTime) / MILLISECONDS_PER_DAY);
         
         // 更新道法状态
         if (newRemainingDays <= 0) {
