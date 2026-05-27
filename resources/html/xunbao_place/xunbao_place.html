@@ -3,325 +3,141 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{addres}} - 寻宝地图</title>
+    <title>{{addres}} - 寻宝列表</title>
     <link rel="stylesheet" href="{{pluResPath}}/html/xunbao_place/xunbao_place.css">
-    <link rel="preload" href="../../font/tttgbnumber.ttf" as="font">
-    <style>
-        /* 全局样式 */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            background: linear-gradient(135deg, #1a2a6c, #2a3c7a, #3a4c88);
-            color: #e0e0e0;
-            font-family: 'Microsoft YaHei', sans-serif;
-            padding: 20px;
-            min-height: 100vh;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        
-        /* 头部样式 */
-        .header {
-            background: rgba(0, 0, 0, 0.7);
-            border-radius: 15px;
-            padding: 25px;
-            margin-bottom: 25px;
-            border: 2px solid #4a90e2;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            text-align: center;
-        }
-        
-        .title {
-            font-size: 2.8em;
-            font-weight: bold;
-            color: #ffd700;
-            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
-            margin-bottom: 15px;
-        }
-        
-        .subtitle {
-            font-size: 1.3em;
-            color: #87ceeb;
-            margin-bottom: 10px;
-        }
-        
-        .warning {
-            font-size: 1.1em;
-            color: #ff6b6b;
-            background: rgba(255, 107, 107, 0.1);
-            padding: 10px;
-            border-radius: 8px;
-            border-left: 4px solid #ff6b6b;
-        }
-        
-        /* 卡片样式 */
-        .card-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
-            gap: 25px;
-            margin-top: 20px;
-        }
-        
-        .card {
-            background: linear-gradient(145deg, #2c3e50, #34495e);
-            border-radius: 15px;
-            padding: 20px;
-            border: 1px solid #4a90e2;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, #ffd700, #4a90e2);
-        }
-        
-        .card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.5);
-        }
-        
-        .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        
-        .location-name {
-            font-size: 1.6em;
-            font-weight: bold;
-            color: #ffd700;
-        }
-        
-        .location-grade {
-            background: #4a90e2;
-            color: white;
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 0.9em;
-            font-weight: bold;
-        }
-        
-        .price-tag {
-            background: #e74c3c;
-            color: white;
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 0.9em;
-            margin-top: 5px;
-        }
-        
-        /* 信息区块样式 */
-        .info-section {
-            margin-bottom: 15px;
-        }
-        
-        .info-title {
-            font-size: 1.1em;
-            font-weight: bold;
-            color: #87ceeb;
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-        }
-        
-        .info-title::before {
-            content: '▶';
-            margin-right: 8px;
-            color: #ffd700;
-        }
-        
-        .info-content {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-        
-        .info-item {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 6px 12px;
-            border-radius: 8px;
-            font-size: 0.95em;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            display: flex;
-            align-items: center;
-        }
-        
-        .item-name {
-            flex: 1;
-        }
-        
-        .amount-badge {
-            background: rgba(255, 215, 0, 0.3);
-            color: #ffd700;
-            border-radius: 10px;
-            padding: 2px 8px;
-            font-size: 0.85em;
-            margin-left: 8px;
-            font-weight: bold;
-        }
-        
-        .reward-item {
-            background: linear-gradient(45deg, rgba(255, 215, 0, 0.2), rgba(255, 165, 0, 0.2));
-            border: 1px solid rgba(255, 215, 0, 0.3);
-        }
-        
-        .rare-reward {
-            background: linear-gradient(45deg, rgba(255, 0, 0, 0.2), rgba(255, 69, 0, 0.2));
-            border: 1px solid rgba(255, 69, 0, 0.3);
-            color: #ff9e9e;
-        }
-        
-        .experience-info {
-            background: rgba(74, 144, 226, 0.2);
-            padding: 10px;
-            border-radius: 8px;
-            margin-top: 10px;
-            border-left: 4px solid #4a90e2;
-            font-size: 0.95em;
-        }
-        
-        /* 响应式设计 */
-        @media (max-width: 768px) {
-            .card-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .title {
-                font-size: 2.2em;
-            }
-            
-            .card {
-                padding: 15px;
-            }
-        }
-        
-        /* 动画效果 */
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .card {
-            animation: fadeIn 0.5s ease-out;
-        }
-        
-        .card:nth-child(odd) {
-            animation-delay: 0.1s;
-        }
-        
-        .card:nth-child(even) {
-            animation-delay: 0.2s;
-        }
-    </style>
 </head>
 <body>
     <div class="container">
         <!-- 页面头部 -->
         <div class="header">
-            <h1 class="title">{{addres}}寻宝地图</h1>
-            <p class="subtitle">寻宝指令：#寻宝+地图名</p>
-            <div class="warning">
-                ⚠️ 注：如进入需消耗修为则会在该秘境最下方显示需要修为数
-            </div>
+            <h1 class="title">🗺️ {{addres}}</h1>
+            <p class="subtitle">共 {{totalCount}} 个寻宝地点 · 指令：#寻宝+地图名</p>
+            <p class="hint">⚠ 进入秘境需消耗对应饱食度，部分高级秘境需要达到指定修为</p>
         </div>
-        
-        <!-- 寻宝地点网格 -->
+
+        <!-- 分类标签栏 -->
+        <div class="category-bar">
+            {{each categories cat}}
+            <span class="cat-tag {{cat.cssClass}} {{cat.active ? 'active' : ''}}">{{cat.icon}} {{cat.name}}</span>
+            {{/each}}
+        </div>
+
+        <!-- 地点卡片网格 -->
         <div class="card-grid">
+            {{if didian_list.length === 0}}
+            <div class="empty-state">
+                <div class="empty-icon">🏜️</div>
+                <div class="empty-text">该分类下暂无寻宝地点</div>
+            </div>
+            {{/if}}
+
             {{each didian_list item}}
-            <div class="card">
+            <div class="card {{item.catClass}}">
+                <!-- 卡片头部 -->
                 <div class="card-header">
-                    <div>
-                        <div class="location-name">{{item.name}}</div>
-                        <div class="price-tag">饱食度: {{item.Price}}</div>
-                    </div>
-                    <div class="location-grade">{{item.Grade}}</div>
-                </div>
-                
-                <!-- 必备地图 -->
-                <div class="info-section">
-                    <div class="info-title">必备地图</div>
-                    <div class="info-content">
-                        {{each item.one thing}}
-                        <div class="info-item">
-                            <span class="item-name">{{thing.name}}</span>
-                            {{if thing.amount}}
-                            <span class="amount-badge">×{{thing.amount}}</span>
+                    <div class="card-title-area">
+                        <div class="card-name">{{item.name}}</div>
+                        <div class="card-badges">
+                            <span class="badge badge-category">{{item.categoryIcon}} {{item.category}}</span>
+                            {{if item.levelReq > 0}}
+                            <span class="badge badge-level">🔒 修为{{item.levelReq}}+</span>
+                            {{else}}
+                            <span class="badge badge-level">🟢 无限制</span>
                             {{/if}}
                         </div>
+                        <div class="price-tag">🍖 饱食度: {{item.Price}}</div>
+                    </div>
+                    <div class="card-icon {{item.iconClass}}">{{item.categoryIcon}}</div>
+                </div>
+
+                <!-- 卡片内容 -->
+                <div class="card-body">
+                    <!-- 必备地图 -->
+                    {{if item.one.length > 0}}
+                    <div class="info-section">
+                        <div class="info-title"><span class="icon-dot"></span>必备地图</div>
+                        <div class="info-items">
+                            {{each item.one thing}}
+                            <span class="info-item">
+                                {{thing.name}}
+                                {{if thing.amount > 1}}<span class="amount-badge">×{{thing.amount}}</span>{{/if}}
+                            </span>
+                            {{/each}}
+                        </div>
+                    </div>
+                    {{/if}}
+
+                    <!-- 所需工具 -->
+                    {{if item.two.length > 0}}
+                    <div class="info-section">
+                        <div class="info-title"><span class="icon-dot"></span>所需工具</div>
+                        <div class="info-items">
+                            {{each item.two thing}}
+                            <span class="info-item">
+                                {{thing.name}}
+                                {{if thing.amount > 1}}<span class="amount-badge">×{{thing.amount}}</span>{{/if}}
+                            </span>
+                            {{/each}}
+                        </div>
+                    </div>
+                    {{/if}}
+
+                    <!-- 最佳奖励预览 -->
+                    {{if item.bestRewards.length > 0}}
+                    <div class="info-section">
+                        <div class="info-title"><span class="icon-dot"></span>最佳奖励</div>
+                        <div class="best-rewards">
+                            {{each item.bestRewards reward}}
+                            <span class="best-tag">💎 {{reward}}</span>
+                            {{/each}}
+                        </div>
+                    </div>
+                    {{/if}}
+
+                    <!-- 普通奖励 -->
+                    {{if item.three.length > 0}}
+                    <div class="info-section">
+                        <div class="info-title"><span class="icon-dot"></span>普通奖励</div>
+                        <div class="info-items">
+                            {{each item.three thing}}
+                            <span class="info-item reward-item">
+                                {{thing.name}}
+                                {{if thing.amount > 1}}<span class="amount-badge">×{{thing.amount}}</span>{{/if}}
+                            </span>
+                            {{/each}}
+                        </div>
+                    </div>
+                    {{/if}}
+
+                    <!-- 额外奖励 -->
+                    {{if item.four.length > 0}}
+                    <div class="info-section">
+                        <div class="info-title"><span class="icon-dot"></span>额外奖励</div>
+                        <div class="info-items">
+                            {{each item.four thing}}
+                            <span class="info-item rare-reward">
+                                {{thing.name}}
+                                {{if thing.amount > 1}}<span class="amount-badge">×{{thing.amount}}</span>{{/if}}
+                                <span class="chance-badge">{{(thing.chance * 100).toFixed(0)}}%</span>
+                            </span>
+                            {{/each}}
+                        </div>
+                    </div>
+                    {{/if}}
+                </div>
+
+                <!-- 卡片底部 -->
+                <div class="card-footer">
+                    {{if item.experience}}
+                    <div class="exp-info">{{item.experience}}</div>
+                    {{/if}}
+                    <div class="difficulty">
+                        <span class="difficulty-label">难度：</span>
+                        {{each [1,2,3,4,5] s}}
+                        <span class="star {{s <= item.stars ? 'filled' : ''}}">★</span>
                         {{/each}}
                     </div>
                 </div>
-                
-                <!-- 工具列表 -->
-                <div class="info-section">
-                    <div class="info-title">所需工具</div>
-                    <div class="info-content">
-                        {{each item.two thing}}
-                        <div class="info-item">
-                            <span class="item-name">{{thing.name}}</span>
-                            {{if thing.amount}}
-                            <span class="amount-badge">×{{thing.amount}}</span>
-                            {{/if}}
-                        </div>
-                        {{/each}}
-                    </div>
-                </div>
-                
-                <!-- 普通奖励 -->
-                <div class="info-section">
-                    <div class="info-title">普通奖励</div>
-                    <div class="info-content">
-                        {{each item.three thing}}
-                        <div class="info-item reward-item">
-                            <span class="item-name">{{thing.name}}</span>
-                            {{if thing.amount}}
-                            <span class="amount-badge">×{{thing.amount}}</span>
-                            {{/if}}
-                        </div>
-                        {{/each}}
-                    </div>
-                </div>
-                
-                <!-- 额外奖励 -->
-                <div class="info-section">
-                    <div class="info-title">额外奖励</div>
-                    <div class="info-content">
-                        {{each item.four thing}}
-                        <div class="info-item rare-reward">
-                            <span class="item-name">{{thing.name}}</span>
-                            {{if thing.amount}}
-                            <span class="amount-badge">×{{thing.amount}}</span>
-                            {{/if}}
-                            <span class="amount-badge" style="background: rgba(255,69,0,0.3);">概率: {{(thing.chance * 100).toFixed(1)}}%</span>
-                        </div>
-                        {{/each}}
-                    </div>
-                </div>
-                
-                <!-- 经验要求 -->
-                {{if item.experience}}
-                <div class="experience-info">
-                     {{item.experience}}
-                </div>
-                {{/if}}
             </div>
             {{/each}}
         </div>

@@ -5,165 +5,357 @@
   font-style: normal;
 }
 
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
 body {
-  transform: scale(1);
-  width: 100%;
+  font-family: 'Microsoft YaHei', 'tttgbnumber', sans-serif;
+  background: linear-gradient(160deg, #0a0f1e 0%, #1a2444 40%, #0d1528 100%);
+  color: #d4dce8;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.container { max-width: 1300px; margin: 0 auto; }
+
+/* ====== 头部 ====== */
+.header {
   text-align: center;
-  background-image: url('../..//img/secret_place/secret_place.jpg');
-  background-size: 100% auto;
+  padding: 28px 20px;
+  margin-bottom: 22px;
+  background: linear-gradient(180deg, rgba(20,40,80,0.7), rgba(10,20,50,0.5));
+  border-radius: 16px;
+  border: 1px solid rgba(100,160,255,0.2);
 }
 
-/*.bg{
-	background-image:url('../..//img/secret_place/三清山.jpg');	
-	border-bottom-left-radius:20px;
-	border-bottom-right-radius:20px;
-}*/
-
-.user_top {
-  width: 90%;
-  margin: auto;
+.header .title {
+  font-size: 2.4em;
+  font-weight: bold;
+  color: #ffd54f;
+  text-shadow: 0 0 18px rgba(255,213,79,0.4);
+  margin-bottom: 8px;
 }
 
-.user_top_left {
-  float: left;
-  width: 30%;
-  padding-top: 21px;
-  margin-top: 50px;
+.header .subtitle {
+  font-size: 1.1em;
+  color: #8ab4f8;
+  margin-bottom: 6px;
 }
 
-.user_top_img_bottom {
-  margin: auto;
-  background-image: url('../../img/state/user_state.png');
-  background-size: 100% auto;
-  width: 280px;
-  height: 280px;
-}
-
-.user_top_img {
-  margin-top: 52px;
-  margin-left: 2px;
-  width: 172px;
-  height: 172px;
-  border-radius: 100px;
-}
-
-.user_top_left_qq {
-  background-color: rgba(19, 21, 22, 0.486);
-  border-radius: 20px;
-  color: azure;
-  margin-left: 13px;
-  width: 240px;
-  height: 40px;
-  padding: 5px;
-  font-size: 30px;
-}
-
-.user_top_right {
-  float: right;
-  text-align: left;
-  margin-top: 65px;
-  width: 60%;
-  background-image: radial-gradient(
-    rgba(206, 226, 226, 0.078),
-    rgba(164, 193, 231, 0.408)
-  );
-  border-radius: 20px;
-}
-
-.user_bottom0 {
-  padding-top: 80px;
-  padding-bottom: 20px;
-  border-radius: 20px;
-  width: 90%;
-  height: 370px;
-  margin: auto;
-}
-
-.user_bottom1 {
-  border-radius: 20px;
-  width: 90%;
-  margin: auto;
-  background-image: radial-gradient(
-    rgba(206, 226, 226, 0.078),
-    rgba(164, 193, 231, 0.408)
-  );
-}
-
-.user_bottom2 {
-  border-radius: 20px;
-  width: 90%;
-  margin: auto;
-  height: 20px;
-}
-
-.use_data {
-  margin: 20px;
-  padding-top: 20px;
-  padding-bottom: 20px;
-}
-
-.user_font {
-  text-align: left;
-  margin: 0px;
-  font-size: 30px;
-  padding: 15px;
-  font-weight: 600;
-}
-
-.head {
-  border-radius: 20px;
-  background-color: rgba(19, 21, 22, 0.888);
-  color: rgb(255, 255, 255);
-}
-.card {
-  border-radius: 20px;
-  background-size: cover;
-  background-image: url('../..//img/secret_place/card.jpg');
-}
-.use_data_head {
-  border-top-left-radius: 20px;
-  border-top-right-radius: 20px;
-  background-color: rgba(19, 21, 22, 0.666);
-  color: rgb(255, 255, 255);
-}
-.use_data_body {
-  border-bottom-left-radius: 20px;
-  border-bottom-right-radius: 20px;
-  background-color: rgba(255, 255, 255, 0.666);
-  color: rgb(50, 50, 50);
-}
-
-.info {
-  padding: 5px;
-  font-size: 28px;
-  font-weight: 500;
-  padding-left: 20px;
-}
-
-.info2 {
-  font-size: 24px;
-  font-weight: 400;
+.header .hint {
+  font-size: 0.95em;
+  color: #7e8da6;
+  background: rgba(255,107,107,0.08);
   display: inline-block;
-  padding-left: 10px;
-  width: 25%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 6px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,107,107,0.2);
 }
 
-.price {
-  font-size: 25px;
-  float: right;
-  font-weight: 500;
-  padding-right: 20px;
+/* ====== 分类标签栏 ====== */
+.category-bar {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 24px;
 }
-.user_font0 {
-  text-align: left;
-  margin: 9px;
-  font-size: 30px;
-  padding: 15px;
+
+.cat-tag {
+  padding: 9px 22px;
+  border-radius: 24px;
+  font-size: 1em;
   font-weight: 600;
-  color: rgb(255, 255, 255);
-  border-radius: 20px;
-  background-color: rgba(19, 21, 22, 0.486);
+  cursor: pointer;
+  border: 2px solid rgba(255,255,255,0.12);
+  background: rgba(20,30,60,0.7);
+  color: #a0b4d0;
+  transition: all 0.25s ease;
+}
+
+.cat-tag:hover {
+  border-color: rgba(255,255,255,0.35);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.cat-tag.active {
+  border-color: #ffd54f;
+  background: rgba(255,213,79,0.15);
+  color: #ffd54f;
+  box-shadow: 0 0 16px rgba(255,213,79,0.2);
+}
+
+/* 品类专用色 */
+.cat-tag.cat-fishing { border-left: 3px solid #4fc3f7; }
+.cat-tag.cat-logging { border-left: 3px solid #81c784; }
+.cat-tag.cat-farming { border-left: 3px solid #ffb74d; }
+.cat-tag.cat-mining  { border-left: 3px solid #ff8a65; }
+.cat-tag.cat-special { border-left: 3px solid #ce93d8; }
+
+/* ====== 卡片网格 ====== */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 22px;
+}
+
+/* ====== 卡片 ====== */
+.card {
+  background: linear-gradient(160deg, rgba(30,48,80,0.85), rgba(20,35,60,0.9));
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(100,160,255,0.15);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+  transition: all 0.3s ease;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 品类顶条 */
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+}
+.card.cat-fishing::before { background: linear-gradient(90deg, #0288d1, #4fc3f7); }
+.card.cat-logging::before { background: linear-gradient(90deg, #2e7d32, #81c784); }
+.card.cat-farming::before { background: linear-gradient(90deg, #e65100, #ffb74d); }
+.card.cat-mining::before  { background: linear-gradient(90deg, #bf360c, #ff8a65); }
+.card.cat-special::before { background: linear-gradient(90deg, #6a1b9a, #ce93d8); }
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 40px rgba(0,0,0,0.45);
+  border-color: rgba(100,160,255,0.35);
+}
+
+/* 卡片头部 */
+.card-header {
+  padding: 20px 20px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.card-title-area { flex: 1; }
+
+.card-name {
+  font-size: 1.45em;
+  font-weight: bold;
+  color: #ffe082;
+  margin-bottom: 6px;
+}
+
+.card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+.badge-category {
+  background: rgba(255,255,255,0.08);
+  color: #b0c8e8;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.badge-level {
+  background: rgba(76,175,80,0.15);
+  color: #81c784;
+  border: 1px solid rgba(76,175,80,0.25);
+}
+
+.badge-level.locked {
+  background: rgba(244,67,54,0.15);
+  color: #ef5350;
+  border: 1px solid rgba(244,67,54,0.25);
+}
+
+/* 卡片品类图标（右侧） */
+.card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6em;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.card-icon.icon-fishing { background: rgba(2,136,209,0.25); }
+.card-icon.icon-logging { background: rgba(46,125,50,0.25); }
+.card-icon.icon-farming { background: rgba(230,81,0,0.25); }
+.card-icon.icon-mining  { background: rgba(191,54,12,0.25); }
+.card-icon.icon-special { background: rgba(106,27,154,0.25); }
+
+/* 价格标签 */
+.price-tag {
+  background: rgba(244,67,54,0.2);
+  color: #ef5350;
+  padding: 4px 12px;
+  border-radius: 14px;
+  font-size: 0.85em;
+  font-weight: bold;
+  border: 1px solid rgba(244,67,54,0.25);
+  margin-top: 8px;
+  display: inline-block;
+}
+
+/* 卡片内容 */
+.card-body { padding: 16px 20px 8px; flex: 1; }
+
+/* 信息区块 */
+.info-section { margin-bottom: 13px; }
+
+.info-title {
+  font-size: 0.9em;
+  font-weight: bold;
+  color: #8ab4f8;
+  margin-bottom: 7px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.info-title .icon-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #ffd54f;
+  flex-shrink: 0;
+}
+
+.info-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.info-item {
+  background: rgba(255,255,255,0.06);
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 0.88em;
+  border: 1px solid rgba(255,255,255,0.1);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.amount-badge {
+  background: rgba(255,213,79,0.2);
+  color: #ffe082;
+  border-radius: 8px;
+  padding: 1px 7px;
+  font-size: 0.82em;
+  font-weight: bold;
+}
+
+/* 奖励样式 */
+.reward-item {
+  background: linear-gradient(135deg, rgba(255,213,79,0.12), rgba(255,152,0,0.08));
+  border-color: rgba(255,213,79,0.2);
+}
+
+.rare-reward {
+  background: linear-gradient(135deg, rgba(244,67,54,0.12), rgba(255,87,34,0.08));
+  border-color: rgba(244,67,54,0.2);
+}
+
+.chance-badge {
+  background: rgba(255,87,34,0.25);
+  color: #ff8a65;
+  border-radius: 8px;
+  padding: 1px 7px;
+  font-size: 0.78em;
+  margin-left: 2px;
+}
+
+/* 最佳奖励预览 */
+.best-rewards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.best-tag {
+  background: linear-gradient(135deg, rgba(255,193,7,0.18), rgba(255,152,0,0.1));
+  border: 1px solid rgba(255,193,7,0.3);
+  color: #ffcc80;
+  padding: 3px 10px;
+  border-radius: 10px;
+  font-size: 0.82em;
+  font-weight: 600;
+}
+
+/* 经验 / 等级需求 */
+.card-footer {
+  padding: 10px 20px 14px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.88em;
+}
+
+.exp-info {
+  background: rgba(74,144,226,0.12);
+  padding: 8px 14px;
+  border-radius: 10px;
+  border-left: 3px solid #4a90e2;
+  color: #90caf9;
+}
+
+/* 难度星级 */
+.difficulty {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.difficulty .star { color: rgba(255,255,255,0.15); font-size: 0.9em; }
+.difficulty .star.filled { color: #ffd54f; }
+
+.difficulty-label {
+  font-size: 0.78em;
+  color: #7e8da6;
+  margin-left: 4px;
+}
+
+/* ====== 空状态 ====== */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #5a6d8a;
+  grid-column: 1 / -1;
+}
+
+.empty-state .empty-icon {
+  font-size: 3em;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.empty-state .empty-text {
+  font-size: 1.1em;
+}
+
+/* ====== 响应式 ====== */
+@media (max-width: 800px) {
+  .card-grid { grid-template-columns: 1fr; }
+  .header .title { font-size: 1.8em; }
+  .card { padding: 0; }
+  .card-header, .card-body, .card-footer { padding-left: 14px; padding-right: 14px; }
 }

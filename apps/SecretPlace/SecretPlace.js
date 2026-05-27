@@ -21,6 +21,7 @@ import {
   Goweizhi,
   Write_player,
   xunbaoweizhi,
+  xunbaoCategoryData,
   Go,
   channel,
   Read_renwu,
@@ -84,6 +85,26 @@ export class SecretPlace extends plugin {
         {
           reg: '^#寻宝$',
           fnc: 'xunbao',
+        },
+        {
+          reg: '^#寻宝钓鱼$',
+          fnc: 'xunbaoFishing',
+        },
+        {
+          reg: '^#寻宝砍树$',
+          fnc: 'xunbaoLogging',
+        },
+        {
+          reg: '^#寻宝种植$',
+          fnc: 'xunbaoFarming',
+        },
+        {
+          reg: '^#寻宝挖矿$',
+          fnc: 'xunbaoMining',
+        },
+        {
+          reg: '^#寻宝特殊$',
+          fnc: 'xunbaoSpecial',
         },
           {
           reg: '^#遮天位面',
@@ -564,14 +585,12 @@ async goToLocation(e) {
             break;
     }
     
-    // 扣除修为和血气
+    // 扣除修为和血气（先不修改power_place，确保travelAction能正确记录出发地）
     player.修为 -= xiuweiCost;
     player.血气 -= qixueCost;
     player.寿元 -= shouyuanCost;
-    player.power_place = targetLocation;
-    await Write_player(usr_qq, player);
     
-    // 设置传送行动
+    // 设置传送行动（此时player.power_place还是出发地，from_location会正确记录）
     const travelAction = {
         action: '位面传送',
         start_time: new Date().getTime(),
@@ -594,6 +613,10 @@ async goToLocation(e) {
     // 保存到Redis
     await redis.set(`xiuxian:travel_task:${usr_qq}`, JSON.stringify(travelAction));
     await redis.set(`xiuxian:player:${usr_qq}:action`, JSON.stringify(travelAction));
+    
+    // 最后再修改玩家位置为目标位面，写入数据库
+    player.power_place = targetLocation;
+    await Write_player(usr_qq, player);
     
     // 发送开始传送消息
     e.reply([
@@ -815,6 +838,32 @@ async xunbao(e) {
         return e.reply('❌ 寻宝信息生成失败，请稍后重试');
     }
 }
+     // === 寻宝分类快捷命令 ===
+   async xunbaoFishing(e) {
+        if (!verc({ e })) return false;
+        const img = await xunbaoCategoryData(e, 'fishing', '🎣钓鱼');
+        return e.reply(img);
+   }
+   async xunbaoLogging(e) {
+        if (!verc({ e })) return false;
+        const img = await xunbaoCategoryData(e, 'logging', '🪓砍树');
+        return e.reply(img);
+   }
+   async xunbaoFarming(e) {
+        if (!verc({ e })) return false;
+        const img = await xunbaoCategoryData(e, 'farming', '🌾种植');
+        return e.reply(img);
+   }
+   async xunbaoMining(e) {
+        if (!verc({ e })) return false;
+        const img = await xunbaoCategoryData(e, 'mining', '⛏️挖矿');
+        return e.reply(img);
+   }
+   async xunbaoSpecial(e) {
+        if (!verc({ e })) return false;
+        const img = await xunbaoCategoryData(e, 'special', '✨特殊');
+        return e.reply(img);
+   }
      //遮天位面地点
    async zhetian(e) {
         if (!verc({ e })) return false;
@@ -2906,8 +2955,9 @@ if (action != null) {
         const xiuweiRefund = Math.floor(action.xiuwei_cost * (1 - progress) * 0.5); // 返还50%的剩余资源
         const qixueRefund = Math.floor(action.qixue_cost * (1 - progress) * 0.5);
         const shouyuanRefund = Math.floor(action.shouyuan_cost * (1 - progress) * 0.5);
-        // 更新玩家资源
+        // 更新玩家资源，并恢复位置到出发地
         const player = await Read_player(usr_qq);
+        player.power_place = action.from_location; // 逃离后回到出发地，防止直接到达目标位面的bug
         player.修为 += xiuweiRefund;
         player.血气 += qixueRefund;
          player.寿元 += shouyuanRefund;
