@@ -24,6 +24,7 @@ import {
    bigNumberTransform,
   zd_battle,
   get_log_img,
+  buildAt
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
 export class SecretPlaceTask extends plugin {
@@ -663,6 +664,40 @@ if (weizhi.name === "万龙巢") {
                     player.学习的功法 = player.学习的功法 || [];
                                 player.学习的功法.push('斗字秘');
                                 await Write_player(usr_qq, player);
+                }
+            }
+        }
+        // 瑞泽云海探索事件 - 白泽奇遇
+        if (weizhi.name === "瑞泽云海") {
+            let random = Math.random();
+            let hasBaihao = await exist_najie_thing(usr_qq, "白毫", "仙宠");
+            
+            if (hasBaihao && hasBaihao > 0) {
+                if (random < 0.02) {
+                    last_msg += '你在云海深处再次见到白泽一族的身影，白毫感应到同族气息，欢鸣不已。一道祥瑞之光落入你怀中，白泽祖灵赐福于你！';
+                    player.制符成功率 = (player.制符成功率 || 0) + 0.02;
+                    await Write_player(usr_qq, player);
+                }
+            } else {
+                if (random < 0.04) {
+                    last_msg += [
+                        '【瑞泽云海·白泽现世】',
+                        '你在云海深处踏霞而行，忽见前方瑞气千条，祥光如瀑倾泻而下——',
+                        '一只通体雪白的小兽立于云端，眉心一点墨色胎记，眸子灵动如星辰流转。',
+                        '它静静注视着你，眼中竟映出万千符文的倒影，仿佛在看透你的道心。',
+                        '「我观道友周身道韵天成，非池中之物……」',
+                        '那幼兽竟口吐人言，声如清泉击玉：',
+                        '「吾乃白泽后裔，名唤白毫。自上古时代便在此云海等候有缘之人。」',
+                        '「道友可愿携我同行，共参天道符箓之秘？」',
+                        '白毫轻鸣一声，化作一道白光没入你的眉心——',
+                        '你识海中顿时浮现万卷天书虚影，三千符道隐隐有了共鸣。',
+                        '从此，这方天地的符箓之法，对你再无秘密可言。',
+                        '【获得仙宠：白毫（制符·仙胎）】'
+                    ].join('\n');
+                    await Add_najie_thing(player_id, "白毫", "仙宠", 1);
+                    await recordItemToHistory(player_id, "白毫", "仙宠", 1);
+                } else if (random < 0.08) {
+                    last_msg += '你在云海深处瞥见一道雪白身影，眉心墨色一闪而逝。白泽幼兽似乎察觉了你的气息，回头望了你一眼便消失在祥云之中。白毫似在等待……但道缘未至。';
                 }
             }
         }
