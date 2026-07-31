@@ -96,6 +96,14 @@ export class AdminSuper extends plugin {
 {
     reg: '^#设置修仙管理员.*$',
     fnc: 'setMaster'
+},
+{
+    reg: '^#全体纳戒修复字段(.*)$',
+    fnc: 'repairAllNajieFields'
+},
+{
+    reg: '^#发拉新奖励([1-4]).*$',
+    fnc: 'sendInvitationReward'
 }
       ],
     });
@@ -1081,8 +1089,362 @@ async relieveFashanAction(e) {
     });
     return e.reply('全部替换完成');
   }
-}
 
+
+  // ============ 全体纳戒字段修复 ============
+  // 指令：#全体纳戒修复字段          -> 执行修复（写盘前自动备份）
+  //       #全体纳戒修复字段 预览/检测 -> 仅统计，不写盘
+  async repairAllNajieFields(e) {
+    // 仅机器人管理员或修仙管理员可用
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
+      return false;
+    }
+    if (!verc({ e })) return false;
+
+    const msg = (e.msg || '');
+    const isPreview = /(预览|检测|dry|查询|查看)/.test(msg);
+
+    const najieDir = './plugins/' + AppName + '/resources/data/xiuxian_najie';
+    if (!fs.existsSync(najieDir)) {
+      return e.reply('未找到纳戒数据目录');
+    }
+    const files = fs.readdirSync(najieDir).filter(f => f.endsWith('.json'));
+
+    // 标准类别：数组名 === 物品 class（与 exist_najie_thing 的 type 列表一致）
+    const CATEGORIES = [
+      '装备', '丹药', '道具', '功法', '草药',
+      '食材', '盒子', '材料', '仙宠', '仙宠口粮', '宝石'
+    ];
+
+    // 构建 名称 -> 唯一正确类别 的权威映射（来自主物品表）
+    const nameClassMap = this._buildNajieNameClassMap();
+
+    // 备份目录（写盘前统一备份，便于回滚）
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupName = 'najie_repair_' + ts;
+    const backupDir = './plugins/' + AppName + '/_backups/' + backupName;
+    let backupMade = false;
+
+    let scanCount = 0;      // 扫描玩家数
+    let playerFixed = 0;    // 有修复的玩家数
+    let classFixed = 0;     // class 字段修正数
+    let movedCount = 0;     // 错放归位数
+    let mergedCount = 0;    // 归位时同数组同名合并数
+    let fieldFixed = 0;     // 关联字段（数量/锁定/售价）修正数
+    let missingArrFixed = 0; // 缺失数组补齐数
+    const samples = [];     // 预览样本
+
+    for (const file of files) {
+      const usrId = file.replace('.json', '');
+      const filePath = najieDir + '/' + file;
+      let raw;
+      try {
+        raw = fs.readFileSync(filePath, 'utf8');
+      } catch {
+        continue;
+      }
+      let najie;
+      try {
+        najie = JSON.parse(raw);
+      } catch {
+        // 损坏文件跳过，避免二次伤害
+        continue;
+      }
+      if (!najie || typeof najie !== 'object') continue;
+
+      scanCount++;
+      let playerChanged = false;
+      const log = [];
+
+      try {
+        // 1. 补齐缺失的标准类别数组
+        for (const cat of CATEGORIES) {
+          if (!Array.isArray(najie[cat])) {
+            najie[cat] = [];
+            missingArrFixed++;
+            playerChanged = true;
+            log.push('补齐缺失数组[' + cat + ']');
+          }
+        }
+
+        // 2. 重建类别数组：对齐 class + 安全归位
+        const rebuilt = {};
+        for (const cat of CATEGORIES) rebuilt[cat] = [];
+
+        for (const cat of CATEGORIES) {
+          if (!Array.isArray(najie[cat])) continue;
+          for (const item of najie[cat]) {
+            if (!item || typeof item !== 'object') continue;
+            const name = item.name;
+            let target = cat;
+
+            // 判定物品真正的类别（信任优先级：主表唯一类别 > 物品自身 class > 所在数组）
+            // 说明：很多“放错分类”的物品，其 class 字段在生成时已被主表正确赋值，
+            // 只是被塞进了错误的数组（如 class=材料 却躺在 道具 数组），故 class 比数组更可靠。
+            const c = name ? nameClassMap.get(name) : undefined;
+            if (c && CATEGORIES.includes(c)) {
+              target = c; // 主表能唯一确定，最权威
+            } else if (item.class && CATEGORIES.includes(item.class)) {
+              target = item.class; // 主表无记录时，信任物品自带 class
+            } else {
+              target = cat; // 都无法确定，则对齐到所在数组
+            }
+
+            // 修正 class 字段（与真正类别一致）
+            if (item.class !== target) {
+              item.class = target;
+              classFixed++;
+              playerChanged = true;
+            }
+            // 放错分类：真正类别与所在数组不符 → 归位
+            if (target !== cat) {
+              movedCount++;
+              playerChanged = true;
+              if (log.length < 8) log.push('归位[' + (name || '?') + '] ' + cat + '→' + target);
+            }
+
+            // 关联字段卫生
+            // 数量：必须为正整数（兼容字符串数字，如 "12"）
+            let q = item.数量;
+            if (typeof q === 'string') q = Number(q);
+            if (typeof q !== 'number' || !isFinite(q) || q <= 0) {
+              const old = item.数量;
+              item.数量 = 1;
+              fieldFixed++;
+              playerChanged = true;
+              if (log.length < 8 && typeof old !== 'undefined') log.push('数量修正[' + (name || '?') + ']=' + old + '→1');
+            } else {
+              const f = Math.floor(q);
+              if (f !== q) {
+                item.数量 = f;
+                fieldFixed++;
+                playerChanged = true;
+              } else {
+                item.数量 = q; // 字符串数字落为数字
+              }
+            }
+            // 锁定标记：仅 0/1
+            if (item.islockd !== 0 && item.islockd !== 1) {
+              item.islockd = 0;
+              fieldFixed++;
+              playerChanged = true;
+            }
+            // 售价：必须为有限数字（兼容字符串数字）
+            let price = item.出售价;
+            if (typeof price === 'string') price = Number(price);
+            if (typeof price !== 'number' || !isFinite(price)) {
+              item.出售价 = 0;
+              fieldFixed++;
+              playerChanged = true;
+            } else {
+              item.出售价 = price;
+            }
+
+            // 落点去重：同数组同名（装备需同品级）则合并数量，杜绝重复
+            const existIdx = rebuilt[target].findIndex(x =>
+              x && x.name === name && (target !== '装备' || x.pinji === item.pinji)
+            );
+            if (existIdx >= 0) {
+              rebuilt[target][existIdx].数量 = (rebuilt[target][existIdx].数量 || 0) + (item.数量 || 0);
+              mergedCount++;
+            } else {
+              rebuilt[target].push(item);
+            }
+          }
+        }
+
+        // 3. 组装结果：保留非类别元数据 + 未知数组原样保留 + 标准数组用重建结果
+        const result = {};
+        for (const k of Object.keys(najie)) {
+          if (CATEGORIES.includes(k)) continue;
+          result[k] = najie[k];
+        }
+        for (const cat of CATEGORIES) result[cat] = rebuilt[cat];
+
+        if (playerChanged) {
+          playerFixed++;
+          if (isPreview) {
+            if (samples.length < 15) samples.push({ usrId, log: log.slice(0, 6) });
+          } else {
+            try {
+              if (!backupMade) {
+                fs.mkdirSync(backupDir, { recursive: true });
+                backupMade = true;
+              }
+              fs.copyFileSync(filePath, backupDir + '/' + file);
+            } catch (_) { /* 备份失败不影响修复 */ }
+            fs.writeFileSync(filePath, JSON.stringify(result, '', '\t'), 'utf8');
+          }
+        }
+      } catch (err) {
+        console.error('[全体纳戒修复字段] 处理 ' + usrId + ' 失败:', err);
+      }
+    }
+
+    // 汇总
+    let out = '【全体纳戒字段修复】' + (isPreview ? '预览/检测模式（未写入）' : '已执行修复') + '\n';
+    out += '扫描玩家：' + scanCount + ' 人\n';
+    out += '需修复玩家：' + playerFixed + ' 人\n';
+    if (!isPreview) {
+      out += 'class 修正：' + classFixed + ' 处\n';
+      out += '错放归位：' + movedCount + ' 件（同名合并 ' + mergedCount + ' 次）\n';
+      out += '关联字段修正（数量/锁定/售价）：' + fieldFixed + ' 处\n';
+      out += '缺失数组补齐：' + missingArrFixed + ' 处\n';
+      if (backupMade) out += '备份目录：_backups/' + backupName + '\n';
+    } else {
+      out += '预计 class 修正：' + classFixed + ' 处\n';
+      out += '预计错放归位：' + movedCount + ' 件（同名合并 ' + mergedCount + ' 次）\n';
+      out += '预计关联字段修正：' + fieldFixed + ' 处\n';
+      out += '预计缺失数组补齐：' + missingArrFixed + ' 处\n';
+    }
+    if (isPreview && samples.length) {
+      out += '\n— 样本 —\n';
+      for (const s of samples) {
+        out += '[' + s.usrId + '] ' + (s.log.length ? s.log.join('；') : '字段微调') + '\n';
+      }
+    }
+    e.reply(out);
+    return true;
+  }
+
+  // 构建 名称 -> 唯一正确类别 的权威映射
+  _buildNajieNameClassMap() {
+    const map = new Map(); // name -> Set(class)
+    // 列表名本身即代表类别（这些列表的物品多不带 class 字段）
+    const listClass = {
+      equipment_list: '装备', dibing_list: '装备', tszb_list: '装备',
+      timeequipmen_list: '装备', duanzhaowuqi: '装备', duanzhaohuju: '装备',
+      duanzhaobaowu: '装备', namegive: '装备',
+      xianchon: '仙宠',
+      baoshi_list: '宝石'
+    };
+    // 这些列表里的物品自带 class 字段，直接采用
+    const withClassLists = [
+      'danyao_list', 'newdanyao_list', 'timedanyao_list', 'daoju_list',
+      'gongfa_list', 'timegongfa_list', 'caoyao_list', 'shicai_list',
+      'hecheng_list', 'cailiao_list', 'jingshenyuzhou_drop_list', 'hezi_list',
+      'dijingList', 'fuhua_list', 'jiagong_list', 'xianchonkouliang',
+      'xianchonkouliang2', 'duanzhaocailiao', 'kamian', 'kamian3'
+    ];
+    const add = (name, cls) => {
+      if (!name || !cls) return;
+      if (!map.has(name)) map.set(name, new Set());
+      map.get(name).add(cls);
+    };
+    for (const [list, cls] of Object.entries(listClass)) {
+      const arr = data[list];
+      if (Array.isArray(arr)) for (const it of arr) add(it.name, cls);
+    }
+    for (const list of withClassLists) {
+      const arr = data[list];
+      if (Array.isArray(arr)) for (const it of arr) add(it.name, it.class);
+    }
+    // 仅保留类别唯一确定的物品
+    const single = new Map();
+    for (const [name, set] of map) {
+      if (set.size === 1) single.set(name, [...set][0]);
+    }
+    return single;
+  }
+
+  // 🎁 发放拉新奖励（4档可选）
+  // 指令：#发拉新奖励1@用户  或  #发拉新奖励1 QQ号
+  // 基础（所有档位）：5超越宝盒 + 3位面传送阵 + 1亿灵石 + 500w源石
+  // 档1：+ 50轮回命签
+  // 档2：+ 25叩仙丹 + 50天药
+  // 档3：+ 10超越宝盒 + 3众生仙钓（超越宝盒共15）
+  // 档4：+ 500洗根水 + 1锁灵仙符
+  async sendInvitationReward(e) {
+    // 权限检查
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
+      return e.reply('你没有权限发放拉新奖励');
+    }
+
+    // 解析档位编号
+    const pkgMatch = e.msg.match(/#发拉新奖励([1-4])/);
+    if (!pkgMatch) {
+      return e.reply('请指定奖励档位（1-4）：\n例如 #发拉新奖励1@用户');
+    }
+    const pkg = parseInt(pkgMatch[1]);
+
+    // 解析目标QQ号：支持 @用户 和 纯数字
+    let targetQQ = '';
+    if (e.message && Array.isArray(e.message)) {
+      const atMsg = e.message.find(item => item.type === 'at');
+      if (atMsg && atMsg.qq) {
+        targetQQ = atMsg.qq.toString().replace('qg_', '');
+      }
+    }
+    if (!targetQQ && e.msg) {
+      const qqMatch = e.msg.match(/#发拉新奖励[1-4]\s*(\d{5,})/);
+      if (qqMatch) {
+        targetQQ = qqMatch[1];
+      }
+    }
+
+    if (!targetQQ) {
+      return e.reply('请指定目标玩家：#发拉新奖励1@用户 或 #发拉新奖励1 QQ号');
+    }
+
+    targetQQ = await channel(targetQQ);
+
+    // 检查玩家是否存在
+    if (!await existplayer(targetQQ)) {
+      return e.reply('目标玩家不存在于诸天万界中');
+    }
+
+    // ===== 基础奖励（所有档位共有） =====
+    await Add_najie_thing(targetQQ, '超越宝盒', '盒子', 5);
+    await Add_najie_thing(targetQQ, '位面传送阵', '道具', 3);
+    await Add_灵石(targetQQ, 100000000);
+    await Add_源石(targetQQ, 5000000);
+
+    // ===== 档位奖励 =====
+    let bonusText = '';
+    switch (pkg) {
+      case 1:
+        // 50轮回命签
+        await Add_najie_thing(targetQQ, '轮回命签', '道具', 50);
+        bonusText = '轮回命签 ×50\n';
+        break;
+      case 2:
+        // 25叩仙丹 + 50天药
+        await Add_najie_thing(targetQQ, '叩仙丹', '丹药', 25);
+        await Add_najie_thing(targetQQ, '天药', '丹药', 50);
+        bonusText = '叩仙丹 ×25\n天药 ×50\n';
+        break;
+      case 3:
+        // 10超越宝盒 + 3众生仙钓（超越宝盒共15）
+        await Add_najie_thing(targetQQ, '超越宝盒', '盒子', 10);
+        await Add_najie_thing(targetQQ, '众生仙钓', '道具', 3);
+        bonusText = '超越宝盒 ×10（共15）\n众生仙钓 ×3\n';
+        break;
+      case 4:
+        // 500洗根水 + 1锁灵仙符
+        await Add_najie_thing(targetQQ, '洗根水', '道具', 500);
+        await Add_najie_thing(targetQQ, '锁灵仙符', '道具', 1);
+        bonusText = '洗根水 ×500\n锁灵仙符 ×1\n';
+        break;
+    }
+
+    e.reply([
+      `🌟 拉新奖励（档${pkg}）已发放至玩家 ${targetQQ}！\n`,
+      '超越宝盒 ×5\n',
+      `${bonusText}`,
+      '位面传送阵 ×3\n',
+      '灵石 ×1亿\n',
+      '源石 ×500万'
+    ]);
+
+    return true;
+  }
+}
 async function found(A, B) {
   let qinmidu = await Read_qinmidu();
   let i;
