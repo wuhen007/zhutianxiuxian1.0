@@ -1,32 +1,80 @@
-- group: 小世界帮助
-  list:      
-    - icon: help-icon_44
-      title: '#开辟小世界xxx'
-      desc: '成仙后用世界石开辟小世界'
-    - icon: help-icon_44
+- group: 小世界经营
+  list:
+    - icon: help-icon_15
+      title: '#开辟小世界 世界名'
+      desc: '成仙后消耗世界石创建小世界，例如：#开辟小世界 紫霄界'
+    - icon: help-icon_9
       title: '#演化小世界'
-      desc: '消耗资源让小世界进阶'
-    - icon: help-icon_44
+      desc: '演化至5级，提升灵气、时间流速、药田和栖息地上限'
+    - icon: help-icon_37
       title: '#我的小世界'
-      desc: '查看自己的小世界信息'       
-    - icon: help-icon_44
+      desc: '查看世界资源、药田、仙宠、工坊和近期事件'
+    - icon: help-icon_38
       title: '#将分身化入小世界'
-      desc: '让分身替你收集小世界资源'
-    - icon: help-icon_44
+      desc: '消耗100万修为开启小世界挂机收集'
+    - icon: help-icon_26
       title: '#收获小世界资源'
-      desc: '收获分身收集的资源'
-    - icon: help-icon_44
+      desc: '结算最多96个现实小时的资源、成熟作物和仙宠工坊产出'
+    - icon: help-icon_62
+      title: '#使用材料名创造环境'
+      desc: '消耗材料永久创建种植环境，如仙泉、龙穴、雷池和仙坟'
+
+- group: 神药药田
+  list:
+    - icon: help-icon_13
       title: '#种植指南'
-      desc: '查看种植指南'      
-    - icon: help-icon_44
-      title: '#小世界栽种xxx'
-      desc: '栽种自己的神药种子或悟道古茶树'
-    - icon: help-icon_44
-      title: '#使用(草木精华露|岁月流金沙|掌天灵液)浇灌xxx'
-      desc: '用特殊道具浇灌作物，例如#使用草木精华露浇灌1'
-    - icon: help-icon_44
+      desc: '查看全部种子、灵气要求和特殊环境要求'
+    - icon: help-icon_11
+      title: '#小世界栽种种子名'
+      desc: '在一块空药田栽种指定神药种子'
+    - icon: help-icon_48
+      title: '#一键种植[种子名]'
+      desc: '不填名称自动种满可用种子，填写名称则只种该种子'
+    - icon: help-icon_41
+      title: '#一键浇灌普通'
+      desc: '免费浇灌全部未成熟作物，减少30分钟生长时间，冷却6小时'
+    - icon: help-icon_42
+      title: '#使用道具浇灌第N号作物'
+      desc: '单株使用草木精华露、岁月流金沙或掌天灵液，减少25%/50%/75%剩余时间'
+    - icon: help-icon_45
+      title: '#一键浇灌道具名'
+      desc: '消耗1件浇灌道具作用于全部作物，并增加收成和返种概率'
+    - icon: help-icon_40
       title: '#浇灌小世界作物'
-      desc: '乾坤造化瓶可以直接把所有药田都浇灌催熟'                   
-    - icon: help-icon_44
-      title: '#使用xxx创造环境'
-      desc: '混沌源石、仙泉之眼、龙魂精魄、仙坟土' 
+      desc: '消耗乾坤造化瓶，使全部作物剩余生长时间减少25%'
+
+- group: 仙宠工坊
+  list:
+    - icon: help-icon_39
+      title: '#安置仙宠仙宠名'
+      desc: '把纳戒仙宠安置到小世界栖息地'
+    - icon: help-icon_52
+      title: '#小世界工坊'
+      desc: '查看工坊岗位、仙宠精力、工作效率和休息状态'
+    - icon: help-icon_53
+      title: '#分配仙宠甲到工坊名'
+      desc: '可分配到灵田、丹房、器阁、符台或矿脉；类型匹配效率更高'
+    - icon: help-icon_68
+      title: '#召回休息仙宠名'
+      desc: '停止仙宠工作，让它回栖息地恢复精力；#处理分配仙宠名效果相同'
+    - icon: help-icon_43
+      title: '#召回仙宠仙宠名'
+      desc: '把仙宠从小世界栖息地收回纳戒'
+    - icon: help-icon_26
+      title: '工坊产出'
+      desc: '灵田产修为/机缘，丹房炼专属神药，器阁产矿石，符台产符纸，矿脉产灵石'
+
+- group: 诸界互动
+  list:
+    - icon: help-icon_57
+      title: '#小世界偷菜 [@玩家]'
+      desc: '不艾特随机寻找目标；冷却12小时，被偷世界受保护6小时且不损失基础收成'
+    - icon: help-icon_69
+      title: '#设置仙宠守卫仙宠名'
+      desc: '让休息中的栖息地仙宠拦截偷菜，遭遇时会消耗精力'
+    - icon: help-icon_31
+      title: '#小世界守卫 / #撤下仙宠守卫'
+      desc: '查看当前守卫状态，或撤下守卫返回栖息地休息'
+    - icon: help-icon_86
+      title: '#驯服仙兽'
+      desc: '收获时可能遭遇野生仙兽；30分钟内消耗封灵符尝试驯服'

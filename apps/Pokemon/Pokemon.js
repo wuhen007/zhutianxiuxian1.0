@@ -1,7 +1,9 @@
 import { plugin, verc, data } from '../../api/api.js';
+import fs from 'fs';
 import {
   exist_najie_thing,
   Read_najie,
+  Write_najie,
   isNotNull,
   Write_player,
   channel
@@ -9,9 +11,19 @@ import {
 import {
   Add_najie_thing,
   convert2integer,
-  Add_仙宠,
   Add_灵石,
 } from '../../model/xiuxian.js';
+import {
+  addInventoryPetVariant,
+  createHabitatPetData,
+  removeInventoryPetAt,
+  restoreHabitatPetToInventory,
+} from './habitatPetTransfer.js';
+import { getMinggeEffects, calculateMinggeYield } from '../../model/mingge.js';
+import {
+  getHabitatSlotBonus,
+  getPetTreasureRules,
+} from '../../model/innateTreasure.js';
 export class Pokemon extends plugin {
   constructor() {
     super({
@@ -39,6 +51,14 @@ export class Pokemon extends plugin {
         {
           reg: '^#结束仙宠寻宝$',
           fnc: 'getPetTreasure',
+        },
+        {
+          reg: '^#安置仙宠(.*)$',
+          fnc: 'settlePetToHabitat',
+        },
+        {
+          reg: '^#召回仙宠(.*)$',
+          fnc: 'recallPetFromHabitat',
         },
       ],
     });
@@ -116,6 +136,7 @@ export class Pokemon extends plugin {
     if (!ifexistplay) return false;
     
     let player = data.getData('player', usr_qq);
+    const treasureRules = getPetTreasureRules(player);
     
     // 检查仙宠是否在寻宝中
     if (player.仙宠寻宝状态 !== 1) {
@@ -130,7 +151,7 @@ export class Pokemon extends plugin {
     const isDreamMount = player.仙宠寻宝 === "如梦道祖的坐骑";
     
     // 如梦坐骑所需时间减半
-    const requiredTime = isDreamMount ? 60 : 120;
+    const requiredTime = treasureRules.requiredMinutes || (isDreamMount ? 60 : 120);
     
     // 检查是否达到所需时间
     if (timeDiff < requiredTime) {
@@ -139,11 +160,20 @@ export class Pokemon extends plugin {
     }
     
     // 计算奖励次数（每次5分钟，最多8次）
-    let rewardCount = Math.min(Math.floor(timeDiff / 4), 8);
+    const effectiveMinutes = treasureRules.maxMinutes
+      ? Math.min(timeDiff, treasureRules.maxMinutes)
+      : timeDiff;
+    let rewardCount = Math.min(
+      Math.floor(effectiveMinutes / 4),
+      treasureRules.maxMinutes ? Math.floor(treasureRules.maxMinutes / 4) : 8
+    );
     
     // 如梦坐骑奖励次数增加50%
     if (isDreamMount) {
-      rewardCount = Math.min(Math.ceil(rewardCount * 1.5), 12); // 上限提高到12次
+      const dreamCap = treasureRules.maxMinutes
+        ? Math.ceil(treasureRules.maxMinutes / 4 * 1.5)
+        : 12;
+      rewardCount = Math.min(Math.ceil(rewardCount * 1.5), dreamCap);
     }
     
     const petName = player.仙宠寻宝;
@@ -189,6 +219,16 @@ export class Pokemon extends plugin {
         if (isDreamMount) {
           quantity = Math.ceil(quantity * 1.5);
         }
+
+        // ==== 命格消费层：寻宝加成 ====
+        // 「寻龙点穴」类命格感应地脉龙气，使仙宠所获更为丰沛。
+        const minggeEffects = getMinggeEffects(player, data.minggeList);
+        const treasureBonus = minggeEffects?.['寻宝加成'] || 0; // 可正可负
+        if (treasureBonus !== 0) {
+          // calculateMinggeYield 内部已按 (1+bonus) 放大，此处直接传基础 quantity 即可，勿重复乘
+          quantity = Math.max(1, calculateMinggeYield(quantity, minggeEffects, '寻宝加成'));
+        }
+        quantity = Math.max(1, Math.floor(quantity * treasureRules.rewardMultiplier));
         
         // 合并相同奖励
         const key = `${selectedReward.name}|${selectedReward.class}`;
@@ -224,6 +264,7 @@ export class Pokemon extends plugin {
       if (isDreamMount) {
         quantity = Math.ceil(quantity * 1.5);
       }
+      quantity = Math.max(1, Math.floor(quantity * treasureRules.rewardMultiplier));
       
       await Add_najie_thing(
         usr_qq, 
@@ -331,16 +372,19 @@ export class Pokemon extends plugin {
     if (!ifexistplay) return false;
     let player = data.getData('player', usr_qq);
     let name = e.msg.replace('#', '');
-    name = name.replace('出战仙宠', '');
+    name = name.replace('出战仙宠', '').trim();
     let num = parseInt(name);
     let najie = await Read_najie(usr_qq);
+    let targetPetIndex = -1;
     if (num && num > 1000) {
-      try {
-        name = najie.仙宠[num - 1001].name;
-      } catch {
+      targetPetIndex = num - 1001;
+      if (targetPetIndex < 0 || targetPetIndex >= najie.仙宠.length) {
         e.reply('仙宠代号输入有误!');
         return false;
       }
+      name = najie.仙宠[targetPetIndex].name;
+    } else {
+      targetPetIndex = najie.仙宠.findIndex(item => item.name === name);
     }
     if (player.仙宠.灵魂绑定 == 1) {
       e.reply('你已经与' + player.仙宠.name + '绑定了灵魂,无法更换别的仙宠！');
@@ -351,26 +395,27 @@ export class Pokemon extends plugin {
       e.reply('这方世界不存在' + name);
       return false;
     }
-    //放回
-    let last = 114514;
-    for (var i = 0; najie.仙宠.length > i; i++) {
-      if (najie.仙宠[i].name == name) {
-        last = najie.仙宠[i];
-        break;
-      }
-    }
-    if (last == 114514) {
+    const selectedPet = najie.仙宠[targetPetIndex];
+    if (!selectedPet) {
       e.reply('你没有' + name);
       return false;
     }
-    if (isNotNull(player.仙宠.name)) {
-      await Add_仙宠(usr_qq, player.仙宠.name, 1, player.仙宠.等级);
-    }
+
+    const originalNajie = JSON.parse(JSON.stringify(najie));
+    const originalPlayer = JSON.parse(JSON.stringify(player));
+    const last = JSON.parse(JSON.stringify(selectedPet));
+    last.数量 = 1;
+    last.islockd = 0;
+    removeInventoryPetAt(najie, targetPetIndex);
+    if (isNotNull(player.仙宠.name)) addInventoryPetVariant(najie, player.仙宠);
     if (player.仙宠.type == '修炼') {
       player.修炼效率提升 = player.修炼效率提升 - player.仙宠.加成;
     }
     if (player.仙宠.type == '幸运') {
       player.幸运 = player.幸运 - player.仙宠.加成;
+    }
+    if (player.仙宠.type == '制符') {
+      player.制符成功率 = (player.制符成功率 || 0) - player.仙宠.加成;
     }
     player.仙宠 = last;
     player.仙宠.加成 = player.仙宠.等级 * player.仙宠.每级增加;
@@ -380,9 +425,19 @@ export class Pokemon extends plugin {
     if (last.type == '修炼') {
       player.修炼效率提升 = player.修炼效率提升 + last.加成;
     }
-    //增减仙宠方法
-    await Add_仙宠(usr_qq, last.name, -1, last.等级);
-    await Write_player(usr_qq, player); //写入
+    if (last.type == '制符') {
+      player.制符成功率 = (player.制符成功率 || 0) + last.加成;
+    }
+    try {
+      await Write_najie(usr_qq, najie);
+      await Write_player(usr_qq, player);
+    } catch (error) {
+      await Write_najie(usr_qq, originalNajie);
+      await Write_player(usr_qq, originalPlayer);
+      console.error('切换出战仙宠失败:', error);
+      e.reply('切换出战仙宠失败，仙宠数据已恢复');
+      return false;
+    }
     e.reply('成功出战' + name);
   }
 
@@ -423,7 +478,16 @@ export class Pokemon extends plugin {
     let last_jiachen = player.仙宠.加成;
     if (player_level == list_level[x]) {
       //判断是否满级
+      const basePet = data.xianchon.find(item => item.name === player.仙宠.name);
+      if (basePet?.来源 === '小世界野外') {
+        e.reply(`【${player.仙宠.name}】是野外仙宠，当前没有固定进阶形态`);
+        return false;
+      }
       let thing = data.xianchon.find(item => item.id == player.仙宠.id + 1); //查找下个等级仙宠
+      if (!thing) {
+        e.reply(`【${player.仙宠.name}】暂无可用的进阶形态`);
+        return false;
+      }
       console.log(thing);
       player.仙宠 = thing;
       player.仙宠.等级 = player_level; //赋值之前的等级
@@ -507,6 +571,9 @@ if (!ifexist) {
     if (player.仙宠.type == '幸运') {
       player.幸运 += jiachen * player.仙宠.每级增加;
     }
+    if (player.仙宠.type == '制符') {
+      player.制符成功率 = (player.制符成功率 || 0) + jiachen * player.仙宠.每级增加;
+    }
     if (player.仙宠.等级上限 > player.仙宠.等级 + jiachen) {
       player.仙宠.等级 += jiachen;
     } else {
@@ -518,7 +585,190 @@ if (!ifexist) {
       player.仙宠.等级 = player.仙宠.等级上限;
     }
     await data.setData('player', usr_qq, player);
-    e.reply(`喂养成功，仙宠的等级增加了${jiachen},当前为${player.仙宠.等级}`);
+
+    // 如果仙宠在小世界栖息地中，喂食恢复精力
+    let energyMsg = '';
+    if (data.xiaoshijie) {
+      const world = data.xiaoshijie.find(w => w.player_qq === usr_qq);
+      if (world && world.栖息地) {
+        const habitatPet = world.栖息地.find(p => p.name === player.仙宠.name);
+        if (habitatPet) {
+          let energyRecover = { '五果': 20, '六斋': 30, '七荤': 40, '八珍': 50 }[ifexist.name] || 20;
+          // 贪吃特性加成
+          if (habitatPet.特性 && habitatPet.特性.includes('贪吃')) {
+            energyRecover = Math.floor(energyRecover * 1.5);
+          }
+          habitatPet.精力 = Math.min(habitatPet.最大精力 || 100, (habitatPet.精力 || 100) + energyRecover);
+          const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === usr_qq);
+          data.xiaoshijie[worldIndex] = world;
+          const libPath = `${process.cwd()}/plugins/zhutianxiuxian1.0/resources/data/item/小世界列表.json`;
+          fs.writeFileSync(libPath, JSON.stringify(data.xiaoshijie, null, 2));
+          energyMsg = `\n${player.仙宠.name}在小世界中的精力恢复了${energyRecover}点（当前${habitatPet.精力}/${habitatPet.最大精力}）`;
+        }
+      }
+    }
+
+    e.reply(`喂养成功，仙宠的等级增加了${jiachen},当前为${player.仙宠.等级}${energyMsg}`);
     return false;
+  }
+
+  // ===== 栖息地功能 =====
+
+  // 安置仙宠到小世界栖息地
+  async settlePetToHabitat(e) {
+    if (!verc({ e })) return false;
+    const usr_qq = e.user_id;
+    const player_qq = await channel(usr_qq);
+    let ifexistplay = data.existData('player', player_qq);
+    if (!ifexistplay) return false;
+
+    let name = e.msg.replace('#安置仙宠', '').trim();
+    if (!name) {
+      e.reply('请指定要安置的仙宠名称，如：#安置仙宠 白毫');
+      return false;
+    }
+
+    // 读取小世界数据
+    // if (!data.xiaoshijie) data.xiaoshijie = [];
+    let world = data.xiaoshijie.find(
+      w => String(w.player_qq) === String(player_qq)
+    );
+    if (!world) {
+      e.reply('请先使用 #开辟小世界 创建你的小世界');
+      return false;
+    }
+
+    const player = data.getData('player', player_qq);
+
+    // 初始化栖息地
+    if (!world.栖息地) world.栖息地 = [];
+    const maxSlots = (world.attributes.栖息地上限 || 1) + getHabitatSlotBonus(player);
+    if (world.栖息地.length >= maxSlots) {
+      e.reply(`你的小世界栖息地已满（${world.栖息地.length}/${maxSlots}），请先#召回仙宠 腾出位置`);
+      return false;
+    }
+
+    // 查找纳戒中的仙宠
+    let najie = await Read_najie(player_qq);
+    if (!najie.仙宠 || najie.仙宠.length === 0) {
+      e.reply('你的纳戒中没有仙宠');
+      return false;
+    }
+
+    // 支持名称或序号
+    let targetPetIndex = -1;
+    let num = parseInt(name);
+    if (num && num > 1000) {
+      const index = num - 1001;
+      if (index >= 0 && index < najie.仙宠.length) targetPetIndex = index;
+    }
+    if (targetPetIndex === -1) {
+      targetPetIndex = najie.仙宠.findIndex(p => p.name === name);
+    }
+    const targetPet = najie.仙宠[targetPetIndex];
+    if (!targetPet) {
+      e.reply(`纳戒中找不到仙宠【${name}】`);
+      return false;
+    }
+
+    // 不能安置出战的仙宠
+    if (player.仙宠 && player.仙宠.name === targetPet.name) {
+      e.reply(`${targetPet.name}正在出战，请先切换其他仙宠或召回后再安置`);
+      return false;
+    }
+
+    const originalNajie = JSON.parse(JSON.stringify(najie));
+    const originalHabitat = JSON.parse(JSON.stringify(world.栖息地));
+    const petData = createHabitatPetData(targetPet);
+    removeInventoryPetAt(najie, targetPetIndex);
+    world.栖息地.push(petData);
+
+    const worldIndex = data.xiaoshijie.findIndex(
+      w => String(w.player_qq) === String(player_qq)
+    );
+    const libPath = `${process.cwd()}/plugins/zhutianxiuxian1.0/resources/data/item/小世界列表.json`;
+    try {
+      data.xiaoshijie[worldIndex] = world;
+      fs.writeFileSync(libPath, JSON.stringify(data.xiaoshijie, null, 2));
+      await Write_najie(player_qq, najie);
+    } catch (error) {
+      world.栖息地 = originalHabitat;
+      data.xiaoshijie[worldIndex] = world;
+      fs.writeFileSync(libPath, JSON.stringify(data.xiaoshijie, null, 2));
+      await Write_najie(player_qq, originalNajie);
+      console.error('安置仙宠失败:', error);
+      e.reply('安置仙宠失败，仙宠数据已恢复，请稍后重试');
+      return false;
+    }
+
+    e.reply(`${targetPet.name}已安置到【${world.world_name}】的栖息地（${world.栖息地.length}/${maxSlots}）\n它将自动产出资源，在#收获小世界资源 时一并结算`);
+    return true;
+  }
+
+  // 从栖息地召回仙宠
+  async recallPetFromHabitat(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_','');
+    usr_qq = await channel(usr_qq);
+    let ifexistplay = data.existData('player', usr_qq);
+    if (!ifexistplay) return false;
+
+    let name = e.msg.replace('#召回仙宠', '').trim();
+    if (!name) {
+      e.reply('请指定要召回的仙宠名称，如：#召回仙宠 白毫');
+      return false;
+    }
+
+    if (!data.xiaoshijie) data.xiaoshijie = [];
+    let world = data.xiaoshijie.find(
+      w => String(w.player_qq) === String(usr_qq)
+    );
+    if (!world) {
+      e.reply('请先使用 #开辟小世界 创建你的小世界');
+      return false;
+    }
+
+    if (!world.栖息地 || world.栖息地.length === 0) {
+      e.reply('你的小世界栖息地中没有仙宠');
+      return false;
+    }
+
+    const petIndex = world.栖息地.findIndex(p => p.name === name);
+    if (petIndex === -1) {
+      e.reply(`栖息地中找不到仙宠【${name}】`);
+      return false;
+    }
+
+    const pet = world.栖息地[petIndex];
+    const najie = await Read_najie(usr_qq);
+    const originalNajie = JSON.parse(JSON.stringify(najie));
+    const originalHabitat = JSON.parse(JSON.stringify(world.栖息地));
+    const restoreResult = restoreHabitatPetToInventory(najie, pet, data.xianchon || []);
+    if (!restoreResult.ok) {
+      e.reply(`召回失败：${restoreResult.reason}，仙宠仍保留在栖息地`);
+      return false;
+    }
+
+    const worldIndex = data.xiaoshijie.findIndex(
+      w => String(w.player_qq) === String(usr_qq)
+    );
+    const libPath = `${process.cwd()}/plugins/zhutianxiuxian1.0/resources/data/item/小世界列表.json`;
+    try {
+      await Write_najie(usr_qq, najie);
+      world.栖息地.splice(petIndex, 1);
+      data.xiaoshijie[worldIndex] = world;
+      fs.writeFileSync(libPath, JSON.stringify(data.xiaoshijie, null, 2));
+    } catch (error) {
+      world.栖息地 = originalHabitat;
+      data.xiaoshijie[worldIndex] = world;
+      await Write_najie(usr_qq, originalNajie);
+      console.error('召回仙宠失败:', error);
+      e.reply('召回仙宠失败，仙宠仍保留在栖息地，请稍后重试');
+      return false;
+    }
+
+    const maxSlots = world.attributes.栖息地上限 || 1;
+    e.reply(`${pet.name}已从栖息地召回（${world.栖息地.length}/${maxSlots}）`);
+    return true;
   }
 }

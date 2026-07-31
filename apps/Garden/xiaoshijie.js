@@ -1,6 +1,36 @@
 import { plugin, puppeteer, verc, data, config } from '../../api/api.js';
 import fs from 'fs';
 import Show from '../../model/show.js';
+import { calculateCropGrowthState } from './smallWorldGrowth.js';
+import {
+  SMALL_WORLD_ALCHEMY_RATE,
+  pickSmallWorldPill,
+} from './smallWorldAlchemy.js';
+import {
+  MAX_WORLD_ACCUMULATION_HOURS,
+  calculateElapsedEventChance,
+  calculateWorldAccumulation,
+} from './smallWorldAccumulation.js';
+import {
+  SMALL_WORLD_GUARD_ENERGY_COST,
+  SMALL_WORLD_STEAL_COOLDOWN_MS,
+  calculateGuardInterceptChance,
+  consumeGuardEnergy,
+  getStealCooldownRemaining,
+  isCropStealable,
+  isWorldStealProtected,
+  recordCropSteal,
+} from './smallWorldSteal.js';
+import { addInventoryPetVariant } from '../Pokemon/habitatPetTransfer.js';
+import { WUDAO_TEA_ITEM, isWudaoTeaItem } from '../User/wudaoTea.js';
+import {
+  formatCooldown,
+  getCooldownRemaining,
+  getHabitatSlotBonus,
+  getSmallWorldYieldMultiplier,
+  hasEquippedInnateTreasure,
+  startAuthorityCooldown,
+} from '../../model/innateTreasure.js';
 import {
   existplayer,
   Write_player,
@@ -21,7 +51,9 @@ import {
   get_log_img,
   channel,
   Add_修为,
-  Add_血气
+  Add_血气,
+  Read_najie,
+  Write_najie
 } from '../../model/xiuxian.js';
 import { Read_player, __PATH, Read_danyao } from '../../model/xiuxian.js';
 
@@ -33,7 +65,8 @@ const WORLD_LEVELS = {
       面积: '十里方圆',
       时间流速: '1:1',
       特殊资源: [],
-      药田上限: 1 // 新增药田上限
+      药田上限: 1,
+      栖息地上限: 1
     },
     requirements: {
       材料: { '世界石': 1 }
@@ -46,7 +79,8 @@ const WORLD_LEVELS = {
       面积: '百里方圆',
       时间流速: '1:2',
       特殊资源: [],
-      药田上限: 3 // 新增药田上限
+      药田上限: 3,
+      栖息地上限: 2
     },
     requirements: {
       材料: { '世界石': 3, '玄渊真水': 1, '元虚罡风': 1, '太初燧火': 1, '须弥神土': 1 }
@@ -59,7 +93,8 @@ const WORLD_LEVELS = {
       面积: '千里方圆',
       时间流速: '1:3',
       特殊资源: [],
-      药田上限: 5 // 新增药田上限
+      药田上限: 5,
+      栖息地上限: 3
     },
     requirements: {
       材料: { '世界石': 5, '造化玉碟': 1 }
@@ -72,7 +107,8 @@ const WORLD_LEVELS = {
       面积: '万里山河',
       时间流速: '1:4',
       特殊资源: [],
-      药田上限: 8 // 新增药田上限
+      药田上限: 8,
+      栖息地上限: 5
     },
     requirements: {
       材料: { '世界石': 10, '混沌母气': 10 }
@@ -85,7 +121,8 @@ const WORLD_LEVELS = {
       面积: '十万里疆域',
       时间流速: '1:8',
       特殊资源: [],
-      药田上限: 12 // 新增药田上限
+      药田上限: 12,
+      栖息地上限: 7
     },
     requirements: {
       材料: { '世界石': 20 }
@@ -93,11 +130,191 @@ const WORLD_LEVELS = {
   }
 };
 
+// 仙宠栖息地产出表（单位：每小时基础产出，最终乘算时间流速）
+const HABITAT_OUTPUT = {
+  '战斗': { '灵石': 50000 },
+  '修炼': { '修为': 30000 },
+  '炼丹': { '小世界神药': SMALL_WORLD_ALCHEMY_RATE },
+  '炼器': { '随机矿石': 0.3 },
+  '幸运': { '稀有道具': 0.1 },
+  '制符': { '符纸': 1 }
+};
+
+// 品级产出倍率
+const PINJI_RATE = { '仙胎': 1, '仙仔': 2, '仙兽': 3, '仙道': 4, '仙灵': 5 };
+
+// 幸运仙宠稀有道具池
+const LUCKY_REWARDS = [
+  { name: '劫光令', class: '道具', weight: 5 },
+  { name: '秘境之匙', class: '道具', weight: 20 },
+  { name: '仙舟', class: '道具', weight: 15 },
+  { name: '遣龙令', class: '道具', weight: 10 },
+  { name: '仙兽玉', class: '道具', weight: 10 },
+  { name: '世界石', class: '材料', weight: 25 },
+  { name: '混沌母气', class: '材料', weight: 15 },
+];
+
 // 特殊资源池
 const SPECIAL_RESOURCES = [
   '先天灵泉', '星辰矿脉', '混沌灵根', 
   '太初神木', '鸿蒙紫气', '大道金莲',
   '虚空晶石', '时间碎片', '生命古树'
+];
+
+
+const WORKSHOP_CONFIG = {
+  '灵田': { compatible: ['修炼', '幸运'], desc: '照料灵植仙草', icon: '🌿' },
+  '丹房': { compatible: ['炼丹'], desc: '炼制丹药灵散', icon: '🔥' },
+  '器阁': { compatible: ['炼器'], desc: '锻造法宝神兵', icon: '🔨' },
+  '符台': { compatible: ['制符'], desc: '绘制符箓阵纹', icon: '📜' },
+  '矿脉': { compatible: ['战斗'], desc: '开采灵石矿藏', icon: '⛏️' }
+};
+
+// 工坊等级效果（容量和产出加成）
+const WORKSHOP_LEVEL_EFFECTS = {
+  1: { capacity: 1, outputBonus: 1.0 },
+  2: { capacity: 2, outputBonus: 1.2 },
+  3: { capacity: 3, outputBonus: 1.4 },
+  4: { capacity: 4, outputBonus: 1.7 },
+  5: { capacity: 5, outputBonus: 2.0 }
+};
+
+// 默认工坊配置
+const DEFAULT_WORKSHOPS = {
+  '灵田': { level: 1, capacity: 1 },
+  '丹房': { level: 1, capacity: 1 },
+  '器阁': { level: 1, capacity: 1 },
+  '符台': { level: 1, capacity: 1 },
+  '矿脉': { level: 1, capacity: 1 }
+};
+
+// ══════════════════════════════════════
+// ⚡ 仙宠特性系统
+// ══════════════════════════════════════
+
+// 特性池（正面 + 负面）
+const PET_TRAITS = {
+  '勤勉': { desc: '工作速度+30%，任劳任怨', workBonus: 1.3, energyCost: 1.0, attr: '正面' },
+  '懒惰': { desc: '工作速度-20%，能偷懒就偷懒', workBonus: 0.8, energyCost: 1.0, attr: '负面' },
+  '强韧': { desc: '精力消耗-50%，不知疲倦', workBonus: 1.0, energyCost: 0.5, attr: '正面' },
+  '贪吃': { desc: '喂食效果+50%，胃口极好', feedBonus: 1.5, attr: '中性' },
+  '聪慧': { desc: '有概率产出高品质额外收获', qualityBonus: 0.15, attr: '正面' },
+  '神速': { desc: '产出速度+25%，事半功倍', workBonus: 1.25, energyCost: 1.0, attr: '正面' },
+  '灵秀': { desc: '在灵田工作时产出+40%', workshopBonus: { '灵田': 1.4 }, attr: '正面' },
+  '火灵': { desc: '在丹房工作时产出+40%', workshopBonus: { '丹房': 1.4 }, attr: '正面' },
+  '金刚': { desc: '在矿脉工作时产出+40%', workshopBonus: { '矿脉': 1.4 }, attr: '正面' },
+  '符心': { desc: '在符台工作时产出+40%', workshopBonus: { '符台': 1.4 }, attr: '正面' },
+  '匠魂': { desc: '在器阁工作时产出+40%', workshopBonus: { '器阁': 1.4 }, attr: '正面' },
+  '暴食': { desc: '精力消耗+30%，特别能吃', workBonus: 1.0, energyCost: 1.3, attr: '负面' }
+};
+
+// ══════════════════════════════════════
+// 📝 工作状态文字描述模板
+// ══════════════════════════════════════
+
+// 工坊 × 精力区间 → 描述文本池
+const WORK_DESCRIPTIONS = {
+  '灵田': {
+    high: [ // 精力 >= 30
+      '{name}盘坐于灵田中，周身灵气化作旋涡，正吞吐天地精华…',
+      '{name}轻挥爪间引动甘露洒落，灵药在雨露中以肉眼可见的速度生长…',
+      '{name}在灵田中来回穿梭除草，每一株灵药都被照料得精神抖擞…'
+    ],
+    low: [ // 精力 10-29
+      '{name}在灵田中缓慢挪动，时不时抬头喘口气…',
+      '{name}动作明显慢了下来，但仍在坚持为灵药松土…',
+      '{name}眼皮打架，手里的水壶差点掉进药田…'
+    ],
+    exhausted: [ // 精力 < 10
+      '{name}几乎瘫在田埂上，有气无力地往灵药上洒了几滴水…',
+      '{name}趴在灵田边睡着了，鼾声微起，灵药全靠天赋硬撑…',
+      '{name}眼神涣散地盯着灵药，似乎在用意念浇灌…'
+    ]
+  },
+  '丹房': {
+    high: [
+      '{name}在丹房内扇动炉火，一炉丹药已现雏形，额角渗出细密汗珠…',
+      '{name}以天赋控火之术精准调节炉温，丹炉中溢出沁人心脾的药香…',
+      '{name}一手投药一手掐诀，炼丹手法行云流水，丹炉嗡嗡作响…'
+    ],
+    low: [
+      '{name}炉火忽明忽暗，扇风的手已经有些颤抖了…',
+      '{name}擦了擦汗，强打起精神继续盯着炉内温度…',
+      '{name}累得直打哈欠，差点把炼丹配方搞反…'
+    ],
+    exhausted: [
+      '{name}靠在丹炉边打盹，炉火都快熄了自己也不知道…',
+      '{name}有气无力地往炉里丢了一把药材，管他对不对…',
+      '{name}趴在地上喃喃自语："再炼一炉…就一炉…"'
+    ]
+  },
+  '器阁': {
+    high: [
+      '{name}挥舞重锤锻打着器胚，火花四溅中神兵雏形渐显…',
+      '{name}一手执锤一手握钳，在铁砧前反复锤炼，器胚发出龙吟般的震颤…',
+      '{name}在器阁中忙碌穿梭，淬火、打磨、铭纹一气呵成…'
+    ],
+    low: [
+      '{name}锤子举起来放了三次才落下，累得连器胚都拿不稳…',
+      '{name}对着铁砧发呆，手里的锤子越来越沉…',
+      '{name}炼器炼到一半停下来揉腰，嘀咕道"老了老了"…'
+    ],
+    exhausted: [
+      '{name}把锤子扔在一边，坐在地上喘粗气…',
+      '{name}对着器胚闭眼念经，不知是在铭纹还是在祈祷…',
+      '{name}已经分不清面前是铁还是饼，眼神完全涣散…'
+    ]
+  },
+  '符台': {
+    high: [
+      '{name}运笔如飞蘸朱砂，符纸上勾勒出的阵纹散发着淡淡金光…',
+      '{name}屏息凝神，笔尖游走间一道符箓已一气呵成…',
+      '{name}左右手同时开弓，两张符箓同时完成，效率惊人…'
+    ],
+    low: [
+      '{name}画符的手微微发抖，笔画开始有些歪歪扭扭…',
+      '{name}对着符纸打了三个哈欠，墨都快干了还没下笔…',
+      '{name}揉着酸痛的手腕，看着还剩一沓符纸叹了口气…'
+    ],
+    exhausted: [
+      '{name}趴在符台上画符，画着画着变成了一团浆糊…',
+      '{name}手抖得连朱砂都洒了，符纸上全是散乱的红点…',
+      '{name}闭着眼瞎画，管它是符还是涂鸦…'
+    ]
+  },
+  '矿脉': {
+    high: [
+      '{name}以利爪劈开矿脉，碎石飞溅中露出晶莹仙晶…',
+      '{name}化出本相巨力凿山，矿脉入口不断有灵石被搬运出来…',
+      '{name}在矿洞深处横冲直撞，所过之处矿石纷纷掉落…'
+    ],
+    low: [
+      '{name}挖矿的速度明显慢了下来，时不时停下来擦汗…',
+      '{name}砸了三锤才敲下一块灵石，喘着粗气继续…',
+      '{name}坐在矿洞口休息，爪子上全是石屑…'
+    ],
+    exhausted: [
+      '{name}靠在矿壁上睡着了，手里还握着一块没敲下来的灵石…',
+      '{name}用头撞矿脉，不知道是在开采还是在自残…',
+      '{name}瘫在矿洞里数天花板上的晶簇，一块都没采下来…'
+    ]
+  },
+  '栖息地': {
+    rest: [
+      '{name}在栖息地中悠闲漫步，偶尔追逐一只灵蝶嬉戏…',
+      '{name}懒洋洋地趴在溪边晒太阳，尾巴轻轻拍打着水面…',
+      '{name}和几只小仙兽在草地上追逐打闹，玩得不亦乐乎…',
+      '{name}蜷成一团舒舒服服地睡着，喉咙里发出满足的呼噜声…',
+      '{name}在灵泉边大口喝水，不时抬头张望四周…'
+    ]
+  }
+};
+
+// 精疲力尽累倒描述
+const COLLAPSE_MESSAGES = [
+  '{name}终于撑不住了，累得一头栽倒，被仙童抬回了栖息地…',
+  '{name}四肢一软倒在工作岗位上，四周的仙灵赶紧把它送回栖息地…',
+  '{name}眼前一黑晕了过去，手中工具咣当落地…'
 ];
 
 // 神药生长阶段配置（阶段不再含duration，仅用于展示剩余时间匹配）
@@ -182,13 +399,224 @@ const SHENYAO_SEEDS = {
      name: "悟道古茶树幼苗",
     class: "草药",
     type: "古茶树种子",
-    harvest: "悟道古茶树",
+    harvest: WUDAO_TEA_ITEM,
     requirements: {
       灵气浓度: 10000,
       特殊环境: ["仙坟","仙泉"]
     }
   }
 };
+
+// ══════════════════════════════════════
+// 🔧 数据迁移函数
+// ══════════════════════════════════════
+
+// 迁移旧版小世界数据到新版（添加工坊、精力、特性字段）
+function migrateWorldData(world) {
+  let migrated = false;
+
+  // 初始化工坊
+  if (!world.工坊) {
+    world.工坊 = JSON.parse(JSON.stringify(DEFAULT_WORKSHOPS));
+    migrated = true;
+  }
+
+  // 迁移栖息地中的仙宠数据
+  if (world.栖息地 && world.栖息地.length > 0) {
+    for (const pet of world.栖息地) {
+      if (pet.精力 === undefined) {
+        pet.精力 = 100;
+        pet.最大精力 = 100;
+        migrated = true;
+      }
+      if (pet.工坊 === undefined) {
+        pet.工坊 = null; // 默认在栖息地休息
+        migrated = true;
+      }
+      // 清理旧版'兽栏'引用
+      if (pet.工坊 === '兽栏') {
+        pet.工坊 = null;
+        migrated = true;
+      }
+      if (!pet.特性) {
+        pet.特性 = [];
+        migrated = true;
+      }
+      if (pet.累倒 === undefined) {
+        pet.累倒 = false;
+        migrated = true;
+      }
+      if (pet.守卫 === undefined) {
+        pet.守卫 = false;
+        migrated = true;
+      }
+    }
+  }
+
+  return migrated;
+}
+
+// ══════════════════════════════════════
+// 🔧 辅助计算函数
+// ══════════════════════════════════════
+
+// 计算仙宠在指定工坊的工作效率
+function calculateWorkEfficiency(pet, workshop, world) {
+  if (!pet || !workshop) return 1.0;
+
+  // 基础倍率
+  let efficiency = 1.0;
+
+  // 类型匹配度
+  const wsConfig = WORKSHOP_CONFIG[workshop];
+  if (wsConfig) {
+    if (wsConfig.compatible.includes(pet.type)) {
+      efficiency *= 1.0; // 匹配
+    } else {
+      efficiency *= 0.5; // 不匹配
+    }
+  }
+
+  // 精力倍率
+  const energy = pet.精力 || 100;
+  if (energy >= 30) {
+    efficiency *= 1.0;
+  } else if (energy >= 10) {
+    efficiency *= 0.6;
+  } else if (energy > 0) {
+    efficiency *= 0.2;
+  } else {
+    efficiency *= 0; // 精力归零无产出
+  }
+
+  // 工坊等级加成
+  if (world && world.工坊 && world.工坊[workshop]) {
+    const wsLevel = world.工坊[workshop].level || 1;
+    const wsEffect = WORKSHOP_LEVEL_EFFECTS[wsLevel] || WORKSHOP_LEVEL_EFFECTS[1];
+    efficiency *= wsEffect.outputBonus;
+  }
+
+  // 特性加成
+  if (pet.特性 && pet.特性.length > 0) {
+    for (const traitName of pet.特性) {
+      const trait = PET_TRAITS[traitName];
+      if (!trait) continue;
+      // 通用工作加成
+      if (trait.workBonus) efficiency *= trait.workBonus;
+      // 特定工坊加成
+      if (trait.workshopBonus && trait.workshopBonus[workshop]) {
+        efficiency *= trait.workshopBonus[workshop];
+      }
+    }
+  }
+
+  return efficiency;
+}
+
+// 计算精力消耗（每小时）
+function calculateEnergyCost(pet, workshop) {
+  const baseCost = 4; // 每小时基础消耗
+  let cost = baseCost;
+
+  // 在栖息地休息：恢复精力
+  if (!workshop) {
+    return -8; // 栖息地每小时恢复8点精力
+  }
+
+  // 特性影响
+  if (pet.特性 && pet.特性.length > 0) {
+    for (const traitName of pet.特性) {
+      const trait = PET_TRAITS[traitName];
+      if (trait && trait.energyCost) cost *= trait.energyCost;
+    }
+  }
+
+  return cost;
+}
+
+// 获取仙宠的工作状态描述
+function getWorkDescription(pet, hoursWorked) {
+  const petName = pet.name;
+  const workshop = pet.工坊 || null;
+  const energy = pet.精力 || 100;
+
+  // 在栖息地休息/玩耍
+  if (!workshop) {
+    const restPool = WORK_DESCRIPTIONS['栖息地'].rest;
+    const msg = restPool[Math.floor(Math.random() * restPool.length)];
+    return msg.replace(/\{name\}/g, petName);
+  }
+
+  // 有工坊：根据精力选择描述池
+  const wsDesc = WORK_DESCRIPTIONS[workshop] || WORK_DESCRIPTIONS['矿脉'];
+  let pool;
+  if (energy >= 30) {
+    pool = wsDesc.high;
+  } else if (energy >= 10) {
+    pool = wsDesc.low;
+  } else if (energy > 0) {
+    pool = wsDesc.exhausted;
+  } else {
+    // 精疲力尽累倒
+    const collapseMsg = COLLAPSE_MESSAGES[Math.floor(Math.random() * COLLAPSE_MESSAGES.length)];
+    return collapseMsg.replace(/\{name\}/g, petName);
+  }
+
+  const msg = pool[Math.floor(Math.random() * pool.length)];
+  return msg.replace(/\{name\}/g, petName);
+}
+
+// 随机生成野生仙兽
+function generateWildBeast() {
+  const beastNames = [
+    '赤瞳灵狐', '青鳞幼蛟', '金翅大鹏雏', '九尾仙猫', '玄甲龙龟',
+    '紫电雷貂', '冰晶雪猿', '噬金仙蚁', '幻影灵蝶', '三足金乌雏',
+    '碧水麒麟崽', '幽冥玄虎', '天音仙鹤', '噬灵古藤', '炎阳火凤雏'
+  ];
+  const types = ['战斗', '修炼', '炼丹', '炼器', '幸运', '制符'];
+  const qualities = ['仙胎', '仙仔', '仙兽', '仙道', '仙灵'];
+  const qualityWeights = [35, 30, 20, 10, 5]; // 权重分配
+
+  // 按权重选择品级
+  let totalW = qualityWeights.reduce((s, w) => s + w, 0);
+  let roll = Math.random() * totalW;
+  let qualityIdx = 0;
+  for (let i = 0; i < qualities.length; i++) {
+    roll -= qualityWeights[i];
+    if (roll <= 0) { qualityIdx = i; break; }
+  }
+
+  // 随机1-2个特性
+  const allTraits = Object.keys(PET_TRAITS);
+  const traitCount = Math.random() < 0.3 ? 2 : 1;
+  const shuffled = [...allTraits].sort(() => Math.random() - 0.5);
+  const traits = shuffled.slice(0, traitCount);
+
+  return {
+    name: beastNames[Math.floor(Math.random() * beastNames.length)],
+    type: types[Math.floor(Math.random() * types.length)],
+    品级: qualities[qualityIdx],
+    特性: traits,
+    hp: 100
+  };
+}
+
+// 获取精力状态图标
+function getEnergyIcon(energy) {
+  if (energy >= 60) return '🟢';
+  if (energy >= 30) return '🟡';
+  if (energy > 0) return '🟠';
+  return '🔴';
+}
+
+// 生成精力条文字
+function getEnergyBar(current, max) {
+  const ratio = Math.max(0, Math.min(1, current / max));
+  const barLen = 8;
+  const filled = Math.round(ratio * barLen);
+  const bar = '█'.repeat(filled) + '░'.repeat(barLen - filled);
+  return `[${bar}] ${current}/${max}`;
+}
 
 export class xiaoshijie extends plugin {
   constructor() {
@@ -217,6 +645,26 @@ export class xiaoshijie extends plugin {
         {
           reg: '^#收获小世界资源$',
           fnc: 'harvestResources'
+        },
+        {
+          reg: '^#图中巡游$',
+          fnc: 'tourLandscape'
+        },
+        {
+          reg: '^#小世界偷菜(?:.*)?$',
+          fnc: 'stealSmallWorldCrop'
+        },
+        {
+          reg: '^#设置仙宠守卫(.+?)$',
+          fnc: 'setSmallWorldGuard'
+        },
+        {
+          reg: '^#撤下仙宠守卫$',
+          fnc: 'removeSmallWorldGuard'
+        },
+        {
+          reg: '^#小世界守卫$',
+          fnc: 'viewSmallWorldGuard'
         },
 {
     reg: '^#使用(.*?)创造环境$',
@@ -254,6 +702,27 @@ export class xiaoshijie extends plugin {
     {
         reg: '^#一键浇灌(草木精华露|岁月流金沙|掌天灵液|普通)?$',
         fnc: 'batchWaterAll'
+    },
+    // ══════ 工坊系统 ══════
+    {
+        reg: '^#分配仙宠(.+?)到(.+?)$',
+        fnc: 'assignPetToWorkshop'
+    },
+    {
+        reg: '^#召回休息(.+?)$',
+        fnc: 'recallPetToStable'
+    },
+    {
+        reg: '^#处理分配(.+?)$',
+        fnc: 'unassignPet'
+    },
+    {
+        reg: '^#小世界工坊$',
+        fnc: 'viewWorkshops'
+    },
+    {
+        reg: '^#驯服仙兽$',
+        fnc: 'tameBeast'
     },
       ],
     });
@@ -309,23 +778,6 @@ async forceRipenSingleCrop(e) {
             return e.reply('该作物配置异常，无法催熟');
         }
         
-        // 检查是否已成熟
-        if (crop.当前阶段 >= 5) {
-            return e.reply([
-                `【${seedConfig.name}】已成熟，无需催熟`,
-                `提示：使用 #收获${position + 1} 收获作物`
-            ].join("\n"));
-        }
-        
-        // 检查道具数量
-        const itemCount = await exist_najie_thing(player_qq, itemName, "道具");
-        if (itemCount < 1) {
-            return e.reply([
-                `需要【${itemName}】x1`,
-                `提示：您当前拥有 ${itemCount} 个`
-            ].join("\n"));
-        }
-        
         // 催熟效果：减少剩余收获时间（有效秒数百分比）
         // 草木精华露：减少25%剩余时间
         // 岁月流金沙：减少50%剩余时间
@@ -340,20 +792,18 @@ async forceRipenSingleCrop(e) {
         
         // 计算当前剩余时间（有效秒数）
         const now = new Date();
-        const startTime = new Date(crop.种植时间 || crop.阶段开始时间);
-        const elapsedMs = now - startTime;
-        if (elapsedMs < 0) {
+        const growthState = calculateCropGrowthState(crop, seedConfig, world, now);
+        if (!growthState.valid) {
             return e.reply('作物种植时间异常，请联系统管理员');
         }
-        const elapsedSeconds = elapsedMs / 1000;
-        
-        const timeFlow = world.attributes.时间流速.split(':');
-        const timeRatio = parseInt(timeFlow[1]) / parseInt(timeFlow[0]);
-        const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1);
-        const bonusSeconds = crop.时间加成 || 0;
-        const totalGrowthTime = elapsedSeconds * timeRatio * growthRate + bonusSeconds;
-        const requiredTime = this.calculateHarvestTime(seedConfig, world);
-        const remainingTime = Math.max(0, requiredTime - totalGrowthTime);
+        const {
+            elapsedSeconds,
+            timeRatio,
+            growthRate,
+            totalGrowthTime,
+            requiredTime,
+            remainingTime,
+        } = growthState;
         
         if (remainingTime <= 0) {
             // 已经成熟但阶段未更新，触发收获
@@ -368,6 +818,15 @@ async forceRipenSingleCrop(e) {
                 `已自动存入纳戒`
             ].join("\n"));
             return true;
+        }
+
+        // 只有未成熟作物才需要消耗催熟道具
+        const itemCount = await exist_najie_thing(player_qq, itemName, "道具");
+        if (itemCount < 1) {
+            return e.reply([
+                `需要【${itemName}】x1`,
+                `提示：您当前拥有 ${itemCount} 个`
+            ].join("\n"));
         }
         
         // 计算减少的时间（有效秒数）
@@ -478,22 +937,17 @@ async forceRipenAllCrops(e) {
         
         if (!seedConfig) continue;
         
-        // 如果已成熟则跳过
-        if (crop.当前阶段 >= 5) continue;
-        
         // 计算当前剩余时间（有效秒数）
-        const startTime = new Date(crop.种植时间 || crop.阶段开始时间);
-        const elapsedMs = now - startTime;
-        if (elapsedMs < 0) continue;
-        const elapsedSeconds = elapsedMs / 1000;
-        
-        const timeFlow = world.attributes.时间流速.split(':');
-        const timeRatio = parseInt(timeFlow[1]) / parseInt(timeFlow[0]);
-        const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1);
-        const bonusSeconds = crop.时间加成 || 0;
-        const totalGrowthTime = elapsedSeconds * timeRatio * growthRate + bonusSeconds;
-        const requiredTime = this.calculateHarvestTime(seedConfig, world);
-        const remainingTime = Math.max(0, requiredTime - totalGrowthTime);
+        const growthState = calculateCropGrowthState(crop, seedConfig, world, now);
+        if (!growthState.valid) continue;
+        const {
+            elapsedSeconds,
+            timeRatio,
+            growthRate,
+            totalGrowthTime,
+            requiredTime,
+            remainingTime,
+        } = growthState;
         
         // 减少剩余时间
         const reductionAmount = remainingTime * reductionPct;
@@ -559,8 +1013,6 @@ checkShenyaoGrowth(world, hoursPassed) {
         return results;
     }
 
-    const timeFlow = world.attributes.时间流速.split(':');
-    const timeRatio = parseInt(timeFlow[1]) / parseInt(timeFlow[0]);
     const now = new Date();
 
     for (let i = 0; i < world.药田.length; i++) {
@@ -568,17 +1020,10 @@ checkShenyaoGrowth(world, hoursPassed) {
         const seedConfig = SHENYAO_SEEDS[plant.种子];
 
         if (!seedConfig) continue;
-        if (plant.当前阶段 >= 5) continue;
 
-        const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1);
-        const startTime = new Date(plant.种植时间 || plant.阶段开始时间);
-        const elapsedMs = now - startTime;
-        if (elapsedMs < 0) continue;
-        const elapsedSeconds = elapsedMs / 1000;
-        const bonusSeconds = plant.时间加成 || 0;
-        const totalGrowthTime = elapsedSeconds * timeRatio * growthRate + bonusSeconds;
-
-        const requiredTime = this.calculateHarvestTime(seedConfig, world);
+        const growthState = calculateCropGrowthState(plant, seedConfig, world, now);
+        if (!growthState.valid) continue;
+        const { totalGrowthTime, requiredTime, remainingPct } = growthState;
 
         if (totalGrowthTime >= requiredTime) {
             // 时间足够，直接收获！
@@ -597,9 +1042,6 @@ checkShenyaoGrowth(world, hoursPassed) {
             i--;
         } else {
             // 未成熟，根据剩余时间百分比更新展示阶段
-            const progress = totalGrowthTime / requiredTime;
-            const remainingPct = 1 - progress;
-
             const newStage = this.getStageByRemaining(remainingPct);
 
             if (newStage !== plant.当前阶段) {
@@ -863,7 +1305,10 @@ async showEnvironmentHelp(e) {
       事件记录: [],
       creation_time: new Date().toLocaleString(),
       last_upgrade_time: null,
-      药田: [] // 初始化药田
+      药田: [], // 初始化药田
+      栖息地: [], // 初始化栖息地
+      栖息地上限: 1,
+      工坊: JSON.parse(JSON.stringify(DEFAULT_WORKSHOPS)) // 初始化工坊
     };
     
     // 添加到小世界列表
@@ -1061,7 +1506,7 @@ async showEnvironmentHelp(e) {
     data.xiaoshijie[worldIndex] = world;
     fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
     
-    e.reply(`你消耗${cultivationCost}点修为，化出一道分身进入【${world.world_name}】！\n分身将自动收集资源，最多积累12小时的资源`);
+    e.reply(`你消耗${cultivationCost}点修为，化出一道分身进入【${world.world_name}】！\n分身将自动收集资源，最多积累${MAX_WORLD_ACCUMULATION_HOURS}小时的资源`);
     
     return true;
   }
@@ -1126,20 +1571,9 @@ async showEnvironmentHelp(e) {
 
   // 计算单株作物剩余时间（真实时间，用于展示）
   calculateRemainingTime(crop, seedConfig, world) {
-    const now = new Date();
-    const startTime = new Date(crop.种植时间 || crop.阶段开始时间);
-    const elapsedMs = now - startTime;
-    if (elapsedMs < 0) return '时间异常';
-    const elapsedSeconds = elapsedMs / 1000;
-
-    const timeFlow = world.attributes.时间流速.split(':');
-    const timeRatio = parseInt(timeFlow[1]) / parseInt(timeFlow[0]);
-    const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1);
-    const bonusSeconds = crop.时间加成 || 0;
-    const totalGrowthTime = elapsedSeconds * timeRatio * growthRate + bonusSeconds;
-
-    const requiredTime = this.calculateHarvestTime(seedConfig, world);
-    const remainingGrowthTime = Math.max(0, requiredTime - totalGrowthTime);
+    const growthState = calculateCropGrowthState(crop, seedConfig, world);
+    if (!growthState.valid) return '时间异常';
+    const { remainingTime: remainingGrowthTime, timeRatio, growthRate } = growthState;
 
     if (remainingGrowthTime <= 0) return '已成熟，可收获';
 
@@ -1156,11 +1590,278 @@ async showEnvironmentHelp(e) {
   
   // 保存小世界数据（辅助方法）
   async saveWorld(player_qq, world) {
-    const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
+    const worldIndex = data.xiaoshijie.findIndex(
+      w => String(w.player_qq) === String(player_qq)
+    );
     if (worldIndex !== -1) {
       data.xiaoshijie[worldIndex] = world;
       fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
     }
+  }
+
+  async setSmallWorldGuard(e) {
+    if (!e.isGroup) return;
+
+    const player_qq = await channel(e.user_id);
+    const world = (data.xiaoshijie || []).find(
+      item => String(item.player_qq) === String(player_qq)
+    );
+    if (!world) {
+      e.reply('请先使用 #开辟小世界 创建你的小世界');
+      return true;
+    }
+
+    migrateWorldData(world);
+    const match = e.msg.match(/^#设置仙宠守卫(.+?)$/);
+    const petName = match?.[1]?.trim();
+    if (!petName) {
+      e.reply('用法：#设置仙宠守卫[仙宠名称]');
+      return true;
+    }
+
+    const pet = (world.栖息地 || []).find(item => item.name === petName);
+    if (!pet) {
+      e.reply(`栖息地中找不到仙宠【${petName}】`);
+      return true;
+    }
+    if (pet.累倒) {
+      e.reply(`${pet.name}正在休养，暂时不能担任守卫`);
+      return true;
+    }
+    if (Number(pet.精力 ?? 100) <= 0) {
+      e.reply(`${pet.name}精力不足，请先让它在栖息地恢复`);
+      return true;
+    }
+
+    const oldWorkshop = pet.工坊;
+    for (const habitatPet of world.栖息地 || []) habitatPet.守卫 = false;
+    pet.守卫 = true;
+    pet.工坊 = null;
+    await this.saveWorld(player_qq, world);
+
+    const chance = Math.round(calculateGuardInterceptChance(pet) * 100);
+    const workshopMessage = oldWorkshop ? `，已从【${oldWorkshop}】调离` : '';
+    e.reply([
+      `【${pet.name}】已成为小世界守卫${workshopMessage}`,
+      `当前拦截率：${chance}%`,
+      `当前精力：${pet.精力}/${pet.最大精力 || 100}`,
+      `每次遭遇偷菜消耗${SMALL_WORLD_GUARD_ENERGY_COST}点精力`,
+    ].join('\n'));
+    return true;
+  }
+
+  async removeSmallWorldGuard(e) {
+    if (!e.isGroup) return;
+
+    const player_qq = await channel(e.user_id);
+    const world = (data.xiaoshijie || []).find(
+      item => String(item.player_qq) === String(player_qq)
+    );
+    if (!world) {
+      e.reply('请先使用 #开辟小世界 创建你的小世界');
+      return true;
+    }
+
+    migrateWorldData(world);
+    const guards = (world.栖息地 || []).filter(pet => pet.守卫);
+    if (guards.length === 0) {
+      e.reply('你的小世界当前没有仙宠守卫');
+      return true;
+    }
+
+    for (const pet of guards) pet.守卫 = false;
+    await this.saveWorld(player_qq, world);
+    e.reply(`已撤下仙宠守卫【${guards[0].name}】，它会留在栖息地休息`);
+    return true;
+  }
+
+  async viewSmallWorldGuard(e) {
+    if (!e.isGroup) return;
+
+    const player_qq = await channel(e.user_id);
+    const world = (data.xiaoshijie || []).find(
+      item => String(item.player_qq) === String(player_qq)
+    );
+    if (!world) {
+      e.reply('请先使用 #开辟小世界 创建你的小世界');
+      return true;
+    }
+
+    migrateWorldData(world);
+    const guard = (world.栖息地 || []).find(pet => pet.守卫);
+    if (!guard) {
+      e.reply('当前没有仙宠守卫，可使用 #设置仙宠守卫[仙宠名称]');
+      return true;
+    }
+
+    const chance = Math.round(calculateGuardInterceptChance(guard) * 100);
+    e.reply([
+      `小世界守卫：【${guard.name}】`,
+      `类型/品级/等级：${guard.type} / ${guard.品级} / Lv.${guard.等级 || 1}`,
+      `精力：${guard.精力 ?? 100}/${guard.最大精力 || 100}`,
+      `当前拦截率：${chance}%`,
+      `每次遭遇消耗：${SMALL_WORLD_GUARD_ENERGY_COST}精力`,
+    ].join('\n'));
+    return true;
+  }
+
+  async stealSmallWorldCrop(e) {
+    if (!e.isGroup) return;
+
+    const player_qq = await channel(e.user_id);
+    const playerId = String(player_qq);
+    const worlds = Array.isArray(data.xiaoshijie) ? data.xiaoshijie : [];
+    const thiefWorld = worlds.find(world => String(world.player_qq) === playerId);
+
+    if (!thiefWorld) {
+      e.reply('请先使用 #开辟小世界 创建你的小世界');
+      return true;
+    }
+    if (!thiefWorld.avatar) {
+      e.reply('请先使用 #将分身化入小世界，分身才能潜入其他世界偷菜');
+      return true;
+    }
+
+    migrateWorldData(thiefWorld);
+    const now = Date.now();
+    const cooldownRemaining = getStealCooldownRemaining(
+      thiefWorld.偷菜状态?.上次偷菜时间,
+      now
+    );
+    if (cooldownRemaining > 0) {
+      const totalMinutes = Math.ceil(cooldownRemaining / (60 * 1000));
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+      e.reply(`分身正在避风头，距离下次偷菜还有${hours}小时${minutes}分钟`);
+      return true;
+    }
+
+    const atSegment = Array.isArray(e.message)
+      ? e.message.find(item => item?.type === 'at' && item?.qq !== 'all')
+      : null;
+    const atTarget = atSegment?.qq ?? (e.at !== 'all' ? e.at : null);
+    const commandSuffix = String(e.msg || '').replace(/^#小世界偷菜/, '').trim();
+    if (!atTarget && commandSuffix) {
+      e.reply('指定目标请使用：#小世界偷菜 @玩家\n不艾特玩家则随机寻找目标');
+      return true;
+    }
+
+    const nowDate = new Date(now);
+    const getStealableCrops = world => (world.药田 || []).filter(crop => {
+      const seedConfig = SHENYAO_SEEDS[crop.种子];
+      return isCropStealable(crop, seedConfig, world, nowDate);
+    });
+
+    let targets = [];
+    if (atTarget) {
+      const rawTargetId = String(atTarget).replace('qg_', '');
+      const targetId = String(await channel(rawTargetId));
+      if (targetId === playerId) {
+        e.reply('不能偷自己小世界里的菜');
+        return true;
+      }
+
+      const targetWorld = worlds.find(world => String(world.player_qq) === targetId);
+      if (!targetWorld) {
+        e.reply('对方尚未开辟小世界，本次不进入冷却');
+        return true;
+      }
+      if (isWorldStealProtected(targetWorld.上次被偷菜时间, now)) {
+        e.reply('对方的小世界正受法则保护，请稍后再来；本次不进入冷却');
+        return true;
+      }
+
+      const crops = getStealableCrops(targetWorld);
+      if (crops.length === 0) {
+        e.reply('对方没有可偷取的成熟作物，本次不进入冷却');
+        return true;
+      }
+      targets = [{ world: targetWorld, crops }];
+    } else {
+      targets = worlds.flatMap(world => {
+        if (String(world.player_qq) === playerId) return [];
+        if (isWorldStealProtected(world.上次被偷菜时间, now)) return [];
+        const crops = getStealableCrops(world);
+        return crops.length > 0 ? [{ world, crops }] : [];
+      });
+    }
+
+    if (targets.length === 0) {
+      e.reply('分身游荡诸界，却没有发现可下手的成熟作物；本次不进入冷却');
+      return true;
+    }
+
+    const target = targets[Math.floor(Math.random() * targets.length)];
+    const crop = target.crops[Math.floor(Math.random() * target.crops.length)];
+    const seedConfig = SHENYAO_SEEDS[crop.种子];
+    const harvestItem = seedConfig.harvest;
+    const itemType = isWudaoTeaItem(harvestItem) ? '道具' : '丹药';
+    const cooldownHours = SMALL_WORLD_STEAL_COOLDOWN_MS / (60 * 60 * 1000);
+
+    const addTargetEvent = (event, description) => {
+      target.world.事件记录 = Array.isArray(target.world.事件记录)
+        ? target.world.事件记录
+        : [];
+      target.world.事件记录.push({
+        时间: nowDate.toLocaleString(),
+        事件: event,
+        描述: description,
+      });
+      if (target.world.事件记录.length > 20) {
+        target.world.事件记录.splice(0, target.world.事件记录.length - 20);
+      }
+    };
+
+    thiefWorld.偷菜状态 = { 上次偷菜时间: now };
+    target.world.上次被偷菜时间 = now;
+
+    const guard = (target.world.栖息地 || []).find(pet => (
+      pet.守卫 && !pet.累倒 && !pet.工坊 && Number(pet.精力 ?? 100) > 0
+    ));
+    let guardResult = '';
+    if (guard) {
+      const interceptChance = calculateGuardInterceptChance(guard);
+      const remainingEnergy = consumeGuardEnergy(guard);
+      const chancePercent = Math.round(interceptChance * 100);
+      const exhaustedMessage = remainingEnergy <= 0
+        ? `\n${guard.name}精力耗尽，已自动撤下守卫岗位`
+        : '';
+
+      if (Math.random() < interceptChance) {
+        addTargetEvent(
+          '仙宠护界',
+          `${guard.name}发现了${thiefWorld.player_name || '神秘修士'}的分身并将其赶走`
+        );
+        await this.saveWorld(player_qq, thiefWorld);
+        e.reply([
+          `潜入失败！你的分身被【${guard.name}】当场发现并赶出了【${target.world.world_name}】`,
+          `守卫拦截率：${chancePercent}%`,
+          `守卫剩余精力：${remainingEnergy}/${guard.最大精力 || 100}${exhaustedMessage}`,
+          `偷菜冷却：${cooldownHours}小时`,
+        ].join('\n'));
+        return true;
+      }
+
+      guardResult = `成功避开守卫【${guard.name}】（拦截率${chancePercent}%），其剩余精力${remainingEnergy}/${guard.最大精力 || 100}${exhaustedMessage}`;
+    }
+
+    recordCropSteal(crop, playerId, now);
+    addTargetEvent(
+      '分身潜入',
+      `${thiefWorld.player_name || '神秘修士'}潜入药田，摘走了【${harvestItem}】的一份伴生产出`
+    );
+
+    await Add_najie_thing(player_qq, harvestItem, itemType, 1);
+    await this.saveWorld(player_qq, thiefWorld);
+
+    e.reply([
+      `你的分身潜入【${target.world.world_name}】，从成熟的【${seedConfig.name}】旁摘走一份伴生产出！`,
+      guardResult,
+      `获得：【${harvestItem}】x1`,
+      '原主的基础收成受到世界法则保护，不会减少',
+      `偷菜冷却：${cooldownHours}小时`,
+    ].filter(Boolean).join('\n'));
+    return true;
   }
   
   // 收获资源
@@ -1169,6 +1870,8 @@ async showEnvironmentHelp(e) {
     
     const usr_qq = e.user_id;
     const player_qq = await channel(usr_qq);
+    const player = await Read_player(player_qq);
+    const innateYieldMultiplier = getSmallWorldYieldMultiplier(player);
     
     // 获取玩家小世界
     const world = data.xiaoshijie.find(w => w.player_qq === player_qq);
@@ -1176,7 +1879,10 @@ async showEnvironmentHelp(e) {
       e.reply('请先使用 #开辟小世界 创建你的小世界');
       return true;
     }
-    
+
+    // 数据迁移：自动升级旧数据到新版本
+    migrateWorldData(world);
+
     // 检查是否有分身
     if (!world.avatar) {
       e.reply('请先使用 #将分身化入小世界 创建分身');
@@ -1192,12 +1898,10 @@ async showEnvironmentHelp(e) {
     const lastHarvest = new Date(world.avatar.last_harvest_time);
     const hoursPassed = (now - lastHarvest) / (1000 * 60 * 60);
     
-    // 应用时间流速
-    const effectiveHoursPassed = hoursPassed * timeRatio;
-    
-    // 最多积累24小时的资源
-    const maxHours = 24;
-    const harvestHours = Math.min(effectiveHoursPassed, maxHours);
+    // 先按现实时间封顶，再应用小世界时间流速
+    const accumulation = calculateWorldAccumulation(hoursPassed, timeRatio);
+    const harvestRealHours = accumulation.realHours;
+    const harvestHours = accumulation.effectiveHours;
     
     if (harvestHours <= 0) {
       e.reply('距离上次收获时间太短，暂无资源可收获');
@@ -1206,7 +1910,141 @@ async showEnvironmentHelp(e) {
     
     // 计算资源产量
     const resources = this.calculateResources(world, harvestHours);
-    
+    for (const resource of Object.keys(resources)) {
+      resources[resource] = Math.floor(resources[resource] * innateYieldMultiplier);
+    }
+
+    // ==== 栖息地结算（工坊劳作 + 栖息地休息恢复精力） ====
+    let habitatResults = [];
+    let workDescriptions = [];
+    if (world.栖息地 && world.栖息地.length > 0) {
+      for (const pet of world.栖息地) {
+        const workshop = pet.工坊 || null; // null = 在栖息地休息
+        const pinjiRate = PINJI_RATE[pet.品级] || 1;
+
+        // 累倒恢复检查（在栖息地休养）
+        if (pet.累倒) {
+          pet.累倒_counter = (pet.累倒_counter || 12) - harvestHours;
+          if (pet.累倒_counter <= 0) {
+            pet.累倒 = false;
+            pet.精力 = Math.min(100, (pet.精力 || 0) + 30);
+            habitatResults.push(`💤 ${pet.name}已从累倒中恢复，精神抖擞！`);
+          } else {
+            habitatResults.push(`💤 ${pet.name}还在栖息地休养中（还需${Math.ceil(pet.累倒_counter)}小时恢复）…`);
+          }
+          workDescriptions.push(getWorkDescription(pet, harvestHours));
+          continue;
+        }
+
+        // 精力消耗/恢复
+        const energyChange = calculateEnergyCost(pet, workshop) * harvestHours;
+        pet.精力 = Math.max(0, Math.min(pet.最大精力 || 100, (pet.精力 || 100) - energyChange));
+
+        // 累倒检查：精力归零且正在工作
+        if (pet.精力 <= 0 && workshop) {
+          pet.累倒 = true;
+          pet.累倒_counter = 12;
+          pet.工坊 = null; // 自动送回栖息地
+          habitatResults.push(`💥 ${pet.name}精疲力尽累倒了！已被仙童抬回栖息地休养…`);
+          workDescriptions.push(getWorkDescription(pet, harvestHours));
+          if (!world.事件记录) world.事件记录 = [];
+          world.事件记录.push(`【${new Date().toLocaleString()}】${pet.name}在${workshop}累倒，被送回栖息地`);
+          continue;
+        }
+
+        // 在栖息地休息：不产生资源，只恢复精力
+        if (!workshop) {
+          habitatResults.push(`🏠 ${pet.name}在栖息地休憩玩耍，精力恢复至 ${pet.精力}/${pet.最大精力}（${getEnergyIcon(pet.精力)}）`);
+          workDescriptions.push(getWorkDescription(pet, harvestHours));
+          continue;
+        }
+
+        // 计算工作效率
+        const workEfficiency = calculateWorkEfficiency(pet, workshop, world);
+
+        // 工坊产出（使用新的产出体系）
+        const wsOutput = HABITAT_OUTPUT[pet.type];
+        if (!wsOutput) {
+          workDescriptions.push(getWorkDescription(pet, harvestHours));
+          continue;
+        }
+
+        for (const [resName, baseRate] of Object.entries(wsOutput)) {
+          const amount = Math.floor(
+            baseRate * harvestHours * pinjiRate * workEfficiency * innateYieldMultiplier
+          );
+          if (amount <= 0) continue;
+
+          pet.产出累积 = pet.产出累积 || {};
+          const energyIcon = getEnergyIcon(pet.精力);
+          const efficiencyStr = workEfficiency !== 1.0 ? ` (效率${(workEfficiency*100).toFixed(0)}%)` : '';
+
+          switch (pet.type) {
+            case '战斗':
+              await Add_灵石(player_qq, amount);
+              pet.产出累积['灵石'] = (pet.产出累积['灵石'] || 0) + amount;
+              habitatResults.push(`${energyIcon} ${pet.name}在矿脉开采：灵石x${amount}${efficiencyStr}`);
+              break;
+            case '修炼':
+              await Add_修为(player_qq, amount);
+              pet.产出累积['修为'] = (pet.产出累积['修为'] || 0) + amount;
+              habitatResults.push(`${energyIcon} ${pet.name}在灵田修炼：修为x${amount}${efficiencyStr}`);
+              break;
+            case '炼丹':
+              pet.产出累积['丹药'] = (pet.产出累积['丹药'] || 0) + amount;
+              const pillCounts = {};
+              for (let i = 0; i < amount; i++) {
+                const pillName = pickSmallWorldPill();
+                pillCounts[pillName] = (pillCounts[pillName] || 0) + 1;
+              }
+              for (const [pillName, count] of Object.entries(pillCounts)) {
+                await Add_najie_thing(player_qq, pillName, '丹药', count);
+              }
+              const pillText = Object.entries(pillCounts)
+                .map(([pillName, count]) => `${pillName}x${count}`)
+                .join('、');
+              habitatResults.push(`${energyIcon} ${pet.name}在丹房炼成：${pillText}${efficiencyStr}`);
+              break;
+            case '炼器':
+              pet.产出累积['矿石'] = (pet.产出累积['矿石'] || 0) + amount;
+              const ores = ['灵矿', '仙晶矿', '七彩流晶矿'];
+              const randomOre = ores[Math.floor(Math.random() * ores.length)];
+              await Add_najie_thing(player_qq, randomOre, '道具', amount);
+              habitatResults.push(`${energyIcon} ${pet.name}在器阁锻造：${randomOre}x${amount}${efficiencyStr}`);
+              break;
+            case '幸运':
+              pet.产出累积['稀有'] = (pet.产出累积['稀有'] || 0) + amount;
+              const totalWeight = LUCKY_REWARDS.reduce((s, r) => s + r.weight, 0);
+              let roll = Math.random() * totalWeight;
+              for (const reward of LUCKY_REWARDS) {
+                roll -= reward.weight;
+                if (roll <= 0) {
+                  await Add_najie_thing(player_qq, reward.name, reward.class, Math.ceil(amount));
+                  habitatResults.push(`${energyIcon} ${pet.name}在灵田寻得机缘：${reward.name}x${Math.ceil(amount)}${efficiencyStr}`);
+                  break;
+                }
+              }
+              break;
+            case '制符':
+              pet.产出累积['符纸'] = (pet.产出累积['符纸'] || 0) + amount;
+              await Add_najie_thing(player_qq, '符纸', '材料', amount);
+              habitatResults.push(`${energyIcon} ${pet.name}在符台制符：符纸x${amount}${efficiencyStr}`);
+              break;
+          }
+        }
+
+        // 记录工作状态描述
+        workDescriptions.push(getWorkDescription(pet, harvestHours));
+
+        // 聪慧特性：额外品质产出
+        if (pet.特性 && pet.特性.includes('聪慧') && Math.random() < 0.15) {
+          const bonusRewards = ['炼丹经验翻倍', '炼器获得双倍矿石', '制符获得高级符纸'];
+          const bonus = bonusRewards[Math.floor(Math.random() * bonusRewards.length)];
+          habitatResults.push(`✨ ${pet.name}灵光一闪，触发聪慧：${bonus}！`);
+        }
+      }
+    }
+
     // 添加资源到纳戒
     for (const [resource, amount] of Object.entries(resources)) {
       switch(resource) {
@@ -1274,7 +2112,7 @@ async showEnvironmentHelp(e) {
      } else {
        // 兼容旧数据，无加成直接添加
        let itemType = "丹药";
-       if (shenyao === "悟道古茶树") itemType = "道具";
+       if (isWudaoTeaItem(shenyao)) itemType = "道具";
        await Add_najie_thing(player_qq, shenyao, itemType, 1);
        harvestData.totalYield = 1;
      }
@@ -1332,10 +2170,78 @@ async showEnvironmentHelp(e) {
     }
     
     replyMsg.push(`分身将继续在【${world.world_name}】中收集资源`);
-    
+
+    // 添加仙宠工作状态
+    if (habitatResults.length > 0) {
+      replyMsg.push(`【仙宠工坊】`);
+      replyMsg.push(...habitatResults);
+    }
+
+    // 添加工作状态描述
+    if (workDescriptions && workDescriptions.length > 0) {
+      replyMsg.push(`【工作掠影】`);
+      replyMsg.push(...workDescriptions);
+    }
+
+    // 野外驯服事件：每24现实小时约8%，按本次积累时长连续计算
+    let tameEventMsg = null;
+    const tameEventChance = calculateElapsedEventChance(harvestRealHours);
+    if (Math.random() < tameEventChance) {
+      const beast = generateWildBeast();
+      world.驯服状态 = {
+        active: true,
+        beast_name: beast.name,
+        beast_type: beast.type,
+        beast_quality: beast.品级,
+        beast_hp: beast.hp,
+        beast_traits: beast.特性,
+        expires: new Date(Date.now() + 30 * 60000).toLocaleString() // 30分钟有效期
+      };
+      const traitsStr = beast.特性.map(t => `【${t}】`).join('');
+      tameEventMsg = [
+        `【野外仙兽出没！】`,
+        `一只 ${beast.品级} 级【${beast.name}】(类型:${beast.type}) 出现在了小世界中！`,
+        `特性：${traitsStr || '无'}`,
+        `使用 #驯服仙兽 消耗封灵符尝试驯服它！（30分钟内有效）`
+      ].join('\n');
+    }
+
+    // 保存驯服状态
+    const worldIndex2 = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
+    data.xiaoshijie[worldIndex2] = world;
+    fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
+
     e.reply(replyMsg.join("\n"));
-    
+
+    // 如果有驯服事件，单独发一条消息
+    if (tameEventMsg) {
+      e.reply(tameEventMsg);
+    }
+
     return true;
+  }
+
+  async tourLandscape(e) {
+    if (!e.isGroup) return false;
+    const player_qq = await channel(e.user_id);
+    const player = await Read_player(player_qq);
+    if (!hasEquippedInnateTreasure(player, '山河社稷图')) {
+      return e.reply('需先执掌【山河社稷图】才能进入图中巡游。');
+    }
+    const remaining = getCooldownRemaining(player, '图中巡游');
+    if (remaining > 0) return e.reply(`图中巡游尚在冷却，还需${formatCooldown(remaining)}。`);
+    const world = data.xiaoshijie.find(w => String(w.player_qq) === String(player_qq));
+    if (!world?.avatar) return e.reply('需先开辟小世界并将分身化入其中。');
+
+    const lastHarvest = new Date(world.avatar.last_harvest_time);
+    world.avatar.last_harvest_time = new Date(lastHarvest.getTime() - 6 * 60 * 60 * 1000).toLocaleString();
+    const worldIndex = data.xiaoshijie.findIndex(w => String(w.player_qq) === String(player_qq));
+    data.xiaoshijie[worldIndex] = world;
+    fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
+    startAuthorityCooldown(player, '图中巡游');
+    await Write_player(player_qq, player);
+    await e.reply('你展开山河社稷图巡游一周，开始额外结算6小时小世界产出。');
+    return this.harvestResources(e);
   }
 //    // 查看小世界
 // async viewSmallWorld(e) {
@@ -1445,9 +2351,8 @@ async showEnvironmentHelp(e) {
 //         const now = new Date();
 //         const lastHarvest = new Date(world.avatar.last_harvest_time);
 //         const hoursPassed = (now - lastHarvest) / (1000 * 60 * 60);
-//         const effectiveHours = hoursPassed * timeRatio;
-//         const maxHours = 24;
-//         const harvestHours = Math.min(effectiveHours, maxHours);
+//         const accumulation = calculateWorldAccumulation(hoursPassed, timeRatio);
+//         const harvestHours = accumulation.effectiveHours;
         
 //         // 计算可收获资源量
 //         const resources = this.calculateResources(world, harvestHours);
@@ -1459,7 +2364,7 @@ async showEnvironmentHelp(e) {
 //             `分身已收集资源：${harvestHours.toFixed(1)}小时`,
 //             `可收获资源：${resourceList || '无'}`,
 //             `上次收获：${world.avatar.last_harvest_time}`,
-//             `最大积累：24小时资源`
+//             `最大积累：${MAX_WORLD_ACCUMULATION_HOURS}小时资源`
 //         ]
         
 //         msg.push(avatarMsg);
@@ -1544,7 +2449,7 @@ async plantShenyao(e) {
     }
     
     // 检查种子数量
-    const seedCount = await exist_najie_thing(player_qq, seedConfig.name, "材料");
+    const seedCount = await exist_najie_thing(player_qq, seedConfig.name, "草药");
     if (seedCount < 1) {
         e.reply([
             `需要【${seedConfig.name}】x1`,
@@ -1855,7 +2760,10 @@ async batchWaterAll(e) {
     }
     
     // 过滤出未成熟的作物
-    const immatureCrops = world.药田.filter(c => c.当前阶段 < 5);
+    const immatureCrops = world.药田.filter(crop => {
+        const seedConfig = SHENYAO_SEEDS[crop.种子];
+        return seedConfig && !calculateCropGrowthState(crop, seedConfig, world).isMature;
+    });
     if (immatureCrops.length === 0) {
         e.reply('所有作物均已成熟，无需浇灌');
         return true;
@@ -1996,23 +2904,14 @@ async batchWaterAll(e) {
     
     // 检查是否有作物直接成熟（时间判定）
     const newlyMatured = [];
-    const timeFlow2 = world.attributes.时间流速.split(':');
-    const timeRatio2 = parseInt(timeFlow2[1]) / parseInt(timeFlow2[0]);
-    
     for (let i = world.药田.length - 1; i >= 0; i--) {
         const crop = world.药田[i];
-        if (crop.当前阶段 >= 5 && !crop._checked) {
-            // 已经是展示阶段5，再用时间精确判定一次
+        if (immatureCrops.includes(crop)) {
+            // 展示阶段不代表成熟，始终使用实际生长时间精确判定
             const seedConfig = SHENYAO_SEEDS[crop.种子];
             if (!seedConfig) continue;
-            const startTime = new Date(crop.种植时间 || crop.阶段开始时间);
-            const elapsedMs = new Date() - startTime;
-            if (elapsedMs < 0) continue;
-            const elapsedSec = elapsedMs / 1000;
-            const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1);
-            const totalGT = elapsedSec * timeRatio2 * growthRate + (crop.时间加成 || 0);
-            const reqT = this.calculateHarvestTime(seedConfig, world);
-            if (totalGT >= reqT) {
+            const growthState = calculateCropGrowthState(crop, seedConfig, world);
+            if (growthState.isMature) {
                 const harvestResult = await this.harvestCropBonus(player_qq, crop, seedConfig);
                 newlyMatured.push({
                     name: seedConfig.harvest,
@@ -2087,11 +2986,14 @@ calculateHarvestBonuses(crop) {
 // ========== 带加成的收获 ==========
 async harvestCropBonus(player_qq, crop, seedConfig) {
     const bonuses = this.calculateHarvestBonuses(crop);
-    const totalYield = 1 + bonuses.extraYield;
+    const player = await Read_player(player_qq);
+    const totalYield = Math.floor(
+      (1 + bonuses.extraYield) * getSmallWorldYieldMultiplier(player)
+    );
     
     const harvestItem = seedConfig.harvest;
     let itemType = "丹药";
-    if (harvestItem === "悟道古茶树") itemType = "道具";
+    if (isWudaoTeaItem(harvestItem)) itemType = "道具";
     if (harvestItem === "蟠桃仙果") itemType = "丹药";
     
     // 添加收获物品
@@ -2107,6 +3009,357 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
     
     return { totalYield, seedReturned };
 }
+
+// ══════════════════════════════════════
+// 🏗️ 工坊系统命令
+// ══════════════════════════════════════
+
+  // 分配仙宠到工坊
+  async assignPetToWorkshop(e) {
+    if (!e.isGroup) return;
+    const usr_qq = e.user_id;
+    const player_qq = await channel(usr_qq);
+
+    let world = data.xiaoshijie.find(w => w.player_qq === player_qq);
+    if (!world) {
+      e.reply('请先使用 #开辟小世界 创建你的小世界');
+      return true;
+    }
+
+    migrateWorldData(world);
+
+    const petName = e.msg.match(/^#分配仙宠(.+?)到(.+?)$/);
+    if (!petName) {
+      const wsHelp = Object.entries(WORKSHOP_CONFIG)
+        .map(([name, cfg]) => `${cfg.icon} ${name}（兼容：${cfg.compatible.join('/')}）`)
+        .join('\n');
+      e.reply(`用法：#分配仙宠[名称]到[工坊名]\n\n工坊列表：\n${wsHelp}`);
+      return true;
+    }
+
+    const targetPetName = petName[1].trim();
+    const workshopName = petName[2].trim();
+
+    // 验证工坊
+    const validWss = Object.keys(WORKSHOP_CONFIG);
+    if (!validWss.includes(workshopName)) {
+      e.reply(`无效工坊名：${workshopName}\n可选：${validWss.join('、')}`);
+      return true;
+    }
+
+    // 确保工坊存在
+    if (!world.工坊) world.工坊 = JSON.parse(JSON.stringify(DEFAULT_WORKSHOPS));
+
+    // 查找栖息地中的仙宠
+    if (!world.栖息地 || world.栖息地.length === 0) {
+      e.reply('你的小世界中没有仙宠，请先使用 #安置仙宠');
+      return true;
+    }
+
+    const pet = world.栖息地.find(p => p.name === targetPetName);
+    if (!pet) {
+      e.reply(`栖息地中找不到仙宠【${targetPetName}】`);
+      return true;
+    }
+
+    // 检查是否已累倒
+    if (pet.累倒) {
+      e.reply(`${pet.name}已经累倒了，正在栖息地休养中，暂时无法分配工作`);
+      return true;
+    }
+    if (pet.守卫) {
+      e.reply(`${pet.name}正在守卫小世界，请先使用 #撤下仙宠守卫`);
+      return true;
+    }
+
+    // 检查工坊容量
+    const wsLevel = world.工坊[workshopName]?.level || 1;
+    const wsCapacity = WORKSHOP_LEVEL_EFFECTS[wsLevel]?.capacity || 1;
+    const currentAssign = world.栖息地.filter(p => p.工坊 === workshopName && !p.累倒).length;
+    if (currentAssign >= wsCapacity) {
+      e.reply(`${workshopName}已满（${currentAssign}/${wsCapacity}），请先 #召回休息 腾出位置或升级工坊`);
+      return true;
+    }
+
+    // 检查类型兼容性
+    const wsConfig = WORKSHOP_CONFIG[workshopName];
+    const isCompatible = wsConfig.compatible.includes(pet.type);
+
+    // 分配工坊
+    const oldWs = pet.工坊 ? `【${pet.工坊}】` : '栖息地';
+    pet.工坊 = workshopName;
+
+    // 保存
+    const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
+    data.xiaoshijie[worldIndex] = world;
+    const libPath = `${data.lib_path}/小世界列表.json`;
+    fs.writeFileSync(libPath, JSON.stringify(data.xiaoshijie, null, 2));
+
+    const emoji = wsConfig.icon;
+    if (isCompatible) {
+      e.reply(`${emoji} ${pet.name}已分配到【${workshopName}】！\n` +
+        `${pet.type}型仙宠与${workshopName}完美匹配，效率100%`);
+    } else {
+      e.reply(`${emoji} ${pet.name}已分配到【${workshopName}】\n` +
+        `⚠️ ${pet.type}型仙宠不擅长${workshopName}工作，效率仅50%`);
+    }
+
+    return true;
+  }
+
+  // 召回休息（停止工作回栖息地）
+  async recallPetToStable(e) {
+    if (!e.isGroup) return;
+    const usr_qq = e.user_id;
+    const player_qq = await channel(usr_qq);
+
+    let world = data.xiaoshijie.find(w => w.player_qq === player_qq);
+    if (!world) {
+      e.reply('请先使用 #开辟小世界 创建你的小世界');
+      return true;
+    }
+
+    migrateWorldData(world);
+
+    const petNameMatch = e.msg.match(/^#召回休息(.+?)$/);
+    if (!petNameMatch) {
+      e.reply('用法：#召回休息[仙宠名称]');
+      return true;
+    }
+
+    const petName = petNameMatch[1].trim();
+
+    if (!world.栖息地 || world.栖息地.length === 0) {
+      e.reply('你的小世界中没有仙宠');
+      return true;
+    }
+
+    const pet = world.栖息地.find(p => p.name === petName);
+    if (!pet) {
+      e.reply(`栖息地中找不到仙宠【${petName}】`);
+      return true;
+    }
+
+    const oldWs = pet.工坊 ? `【${pet.工坊}】` : '栖息地';
+    pet.工坊 = null; // 回栖息地休息玩耍
+
+    // 保存
+    const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
+    data.xiaoshijie[worldIndex] = world;
+    const libPath = `${data.lib_path}/小世界列表.json`;
+    fs.writeFileSync(libPath, JSON.stringify(data.xiaoshijie, null, 2));
+
+    e.reply(`🏠 ${pet.name}已从${oldWs}召回至【栖息地】休息玩耍，将缓慢恢复精力`);
+    return true;
+  }
+
+  // 处理分配（清除工坊状态回栖息地）
+  async unassignPet(e) {
+    if (!e.isGroup) return;
+    const usr_qq = e.user_id;
+    const player_qq = await channel(usr_qq);
+
+    let world = data.xiaoshijie.find(w => w.player_qq === player_qq);
+    if (!world) {
+      e.reply('请先使用 #开辟小世界 创建你的小世界');
+      return true;
+    }
+
+    const petNameMatch = e.msg.match(/^#处理分配(.+?)$/);
+    if (!petNameMatch) {
+      e.reply('用法：#处理分配[仙宠名称]\n清除仙宠的工坊分配（回到栖息地休息但不召回纳戒）');
+      return true;
+    }
+
+    const petName = petNameMatch[1].trim();
+
+    if (!world.栖息地 || world.栖息地.length === 0) {
+      e.reply('你的小世界中没有仙宠');
+      return true;
+    }
+
+    const pet = world.栖息地.find(p => p.name === petName);
+    if (!pet) {
+      e.reply(`栖息地中找不到仙宠【${petName}】`);
+      return true;
+    }
+
+    pet.工坊 = null; // 回栖息地
+
+    const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
+    data.xiaoshijie[worldIndex] = world;
+    const libPath = `${data.lib_path}/小世界列表.json`;
+    fs.writeFileSync(libPath, JSON.stringify(data.xiaoshijie, null, 2));
+
+    e.reply(`${pet.name}的工坊分配已清除，回到栖息地休息`);
+    return true;
+  }
+
+  // 查看工坊状态
+  async viewWorkshops(e) {
+    if (!e.isGroup) return;
+    const usr_qq = e.user_id;
+    const player_qq = await channel(usr_qq);
+
+    let world = data.xiaoshijie.find(w => w.player_qq === player_qq);
+    if (!world) {
+      e.reply('请先使用 #开辟小世界 创建你的小世界');
+      return true;
+    }
+
+    migrateWorldData(world);
+
+    if (!world.工坊) world.工坊 = JSON.parse(JSON.stringify(DEFAULT_WORKSHOPS));
+
+    const lines = [`【${world.world_name}】工坊总览`];
+
+    for (const [wsName, wsData] of Object.entries(world.工坊)) {
+      const wsConfig = WORKSHOP_CONFIG[wsName];
+      if (!wsConfig) continue; // 跳过已删除的工坊类型（如兽栏）
+      const level = wsData.level || 1;
+      const capacity = WORKSHOP_LEVEL_EFFECTS[level]?.capacity || 1;
+      const assignedPets = world.栖息地?.filter(p => p.工坊 === wsName) || [];
+      const pets = assignedPets.map(p => {
+        const traits = (p.特性 && p.特性.length > 0) ? ` [${p.特性.join(',')}]` : '';
+        return `  ${getEnergyIcon(p.精力 ?? 100)} ${p.name}（${p.type}·${p.品级}·Lv.${p.等级 || 1}）${traits}`;
+      }).join('\n');
+
+      lines.push(`${wsConfig.icon} ${wsName} Lv.${level}（${assignedPets.length}/${capacity}）`);
+      if (pets) lines.push(pets);
+    }
+
+    // 在栖息地休息玩耍的仙宠
+    const restingPets = world.栖息地?.filter(p => !p.工坊 && !p.累倒) || [];
+    if (restingPets.length > 0) {
+      lines.push(`🏠 栖息地（休息/守卫）：`);
+      for (const p of restingPets) {
+        const status = p.守卫
+          ? `守卫中（拦截率${Math.round(calculateGuardInterceptChance(p) * 100)}%）`
+          : getWorkDescription(p, 0);
+        lines.push(`  ${getEnergyIcon(p.精力 ?? 100)} ${p.name} — ${status}`);
+      }
+    }
+
+    // 累倒休养中的仙宠
+    const collapsedPets = world.栖息地?.filter(p => p.累倒) || [];
+    if (collapsedPets.length > 0) {
+      lines.push(`💤 休养中：`);
+      for (const p of collapsedPets) {
+        lines.push(`  ${p.name} — ${getWorkDescription(p, 0)}`);
+      }
+    }
+
+    e.reply(lines.join('\n'));
+    return true;
+  }
+
+  // 驯服野生仙兽
+  async tameBeast(e) {
+    if (!e.isGroup) return;
+    const usr_qq = e.user_id;
+    const player_qq = await channel(usr_qq);
+
+    let world = data.xiaoshijie.find(w => w.player_qq === player_qq);
+    if (!world) {
+      e.reply('请先使用 #开辟小世界 创建你的小世界');
+      return true;
+    }
+
+    if (!world.驯服状态 || !world.驯服状态.active) {
+      e.reply('当前没有可驯服的野生仙兽！\n在收获小世界资源时有概率遇到野生仙兽');
+      return true;
+    }
+
+    // 检查是否过期
+    const expires = new Date(world.驯服状态.expires);
+    if (new Date() > expires) {
+      world.驯服状态.active = false;
+      const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
+      data.xiaoshijie[worldIndex] = world;
+      e.reply('野生仙兽已经逃走了…下次请及时驯服（有效期30分钟）');
+      return true;
+    }
+
+    // 检查封灵符
+    const hasFengling = await exist_najie_thing(player_qq, '普通封灵符', '道具');
+    const hasShangpin = await exist_najie_thing(player_qq, '上品封灵符', '道具');
+    const hasJipin = await exist_najie_thing(player_qq, '极品封灵符', '道具');
+
+    if (!hasFengling && !hasShangpin && !hasJipin) {
+      e.reply('需要封灵符才能驯服仙兽！\n封灵符品质：普通(50%)、上品(70%)、极品(90%)');
+      return true;
+    }
+
+    // 优先使用最高品质封灵符
+    let talismanName = '普通封灵符';
+    let baseRate = 0.5;
+    if (hasJipin > 0) { talismanName = '极品封灵符'; baseRate = 0.9; }
+    else if (hasShangpin > 0) { talismanName = '上品封灵符'; baseRate = 0.7; }
+
+    // 消耗封灵符
+    await Add_najie_thing(player_qq, talismanName, '道具', -1);
+
+    const beast = world.驯服状态;
+    const successRate = baseRate + (1 - beast.beast_hp / 100) / 2;
+    const roll = Math.random();
+
+    if (roll < successRate) {
+      // 驯服成功
+      const newPet = {
+        id: data.xianchon.find(item => item.name === beast.beast_name)?.id
+          || Date.now() % 100000 + 2900,
+        name: beast.beast_name,
+        class: '仙宠',
+        type: beast.beast_type,
+        atk: 1, def: 1, HP: 1,
+        初始加成: 0.005,
+        每级增加: 0.001,
+        加成: 0.005,
+        灵魂绑定: 0,
+        品级: beast.beast_quality,
+        等级: 1,
+        等级上限: { '仙胎': 20, '仙仔': 40, '仙兽': 60, '仙道': 80, '仙灵': 100 }[beast.beast_quality] || 20,
+        获取难度: 10,
+        出售价: 100000,
+        特性: beast.beast_traits || []
+      };
+
+      // 按完整实例写入，避免同名同级但特性不同的野外仙宠被错误合并。
+      const najie = await Read_najie(player_qq);
+      const 加成 = newPet.等级 * newPet.每级增加;
+      addInventoryPetVariant(najie, {
+        ...newPet,
+        加成,
+      });
+      await Write_najie(player_qq, najie);
+
+      world.驯服状态.active = false;
+      const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
+      data.xiaoshijie[worldIndex] = world;
+      const libPath = `${data.lib_path}/小世界列表.json`;
+      fs.writeFileSync(libPath, JSON.stringify(data.xiaoshijie, null, 2));
+
+      const traitsStr = beast.beast_traits?.map(t => `【${t}】${PET_TRAITS[t]?.desc || ''}`).join('\n') || '无';
+      e.reply([
+        `✨ 驯服成功！`,
+        `【${beast.beast_name}】已被驯服并收入纳戒！`,
+        `品级：${beast.beast_quality} | 类型：${beast.beast_type}`,
+        `特性：\n${traitsStr}`,
+        `使用 #安置仙宠${beast.beast_name} 将它安置到小世界`
+      ].join('\n'));
+    } else {
+      // 驯服失败
+      world.驯服状态.active = false;
+      const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
+      data.xiaoshijie[worldIndex] = world;
+      const libPath = `${data.lib_path}/小世界列表.json`;
+      fs.writeFileSync(libPath, JSON.stringify(data.xiaoshijie, null, 2));
+
+      e.reply(`💨 ${beast.beast_name}挣脱了封灵符，逃入山林深处…\n${talismanName}已被消耗`);
+    }
+
+    return true;
+  }
 
 }
 export async function get_xiaoshijie_img(e) {
@@ -2132,7 +3385,10 @@ export async function get_xiaoshijie_img(e) {
         if (!world) {
             return e.reply('请先使用 #开辟小世界 创建您的小世界');
         }
-        
+
+        // 数据迁移
+        migrateWorldData(world);
+
         // 确保属性存在
         world.attributes = world.attributes || {};
         world.attributes.时间流速 = world.attributes.时间流速 || '1:1';
@@ -2170,6 +3426,11 @@ export async function get_xiaoshijie_img(e) {
             capacity_desc: world.attributes.药田上限 > (world.药田?.length || 0)
                 ? '可种植更多灵植'
                 : '药田已满',
+            habitatCount: world.栖息地?.length || 0,
+            habitatMax: (world.attributes.栖息地上限 || 1) + getHabitatSlotBonus(player),
+            habitat_desc: ((world.attributes.栖息地上限 || 1) + getHabitatSlotBonus(player)) > (world.栖息地?.length || 0)
+                ? '可安置更多仙宠'
+                : '栖息地已满',
             progressPercent: ((world.药田?.length || 0) / world.attributes.药田上限 * 100).toFixed(1),
             now: new Date().toLocaleString()
         };
@@ -2182,7 +3443,10 @@ export async function get_xiaoshijie_img(e) {
         
         // 生成分身信息HTML
         renderData.avatar_html = generateAvatarHTML(world, timeRatio);
-        
+
+        // 生成栖息地HTML
+        renderData.habitat_html = generateHabitatHTML(world);
+
         // 生成事件记录HTML
         renderData.events_html = generateEventsHTML(world);
         
@@ -2342,9 +3606,9 @@ function generateAvatarHTML(world, timeRatio) {
     const now = new Date();
     const lastHarvest = new Date(world.avatar.last_harvest_time);
     const hoursPassed = (now - lastHarvest) / (1000 * 60 * 60);
-    const effectiveHours = hoursPassed * timeRatio;
-    const maxHours = 24;
-    const harvestHours = Math.min(effectiveHours, maxHours);
+    const accumulation = calculateWorldAccumulation(hoursPassed, timeRatio);
+    const harvestRealHours = accumulation.realHours;
+    const harvestHours = accumulation.effectiveHours;
     
     // 计算可收获资源量
     const resources = calculateResources(world, harvestHours);
@@ -2375,8 +3639,8 @@ function generateAvatarHTML(world, timeRatio) {
                     <div class="avatar-stat-card">
                         <div class="asc-icon"><i class="fas fa-user-clock"></i></div>
                         <div class="asc-label">已积累时间</div>
-                        <div class="asc-val">${harvestHours.toFixed(1)} 小时</div>
-                        <div class="asc-sub">最大积累 24 小时</div>
+                        <div class="asc-val">${harvestRealHours.toFixed(1)} 小时</div>
+                        <div class="asc-sub">世界内等效 ${harvestHours.toFixed(1)} 小时 · 上限 ${MAX_WORLD_ACCUMULATION_HOURS} 小时</div>
                     </div>
                     ${resourcesHTML}
                     <div class="avatar-stat-card">
@@ -2390,6 +3654,114 @@ function generateAvatarHTML(world, timeRatio) {
         </div>
     `;
 }
+
+// 生成栖息地HTML
+function generateHabitatHTML(world) {
+    const hasPets = world.栖息地 && world.栖息地.length > 0;
+
+    if (!hasPets) {
+        return '<div class="no-content"><i class="fas fa-paw"></i>小世界暂无仙宠</div>';
+    }
+
+    // 按工坊分组（null = 在栖息地休息）
+    const workshopGroups = {};
+    for (const pet of world.栖息地) {
+        const ws = pet.工坊 || '栖息地';
+        if (!workshopGroups[ws]) workshopGroups[ws] = [];
+        workshopGroups[ws].push(pet);
+    }
+
+    let html = '';
+
+    // 先生成工坊分组
+    const workshopOrder = ['灵田', '丹房', '器阁', '符台', '矿脉'];
+    for (const wsName of workshopOrder) {
+        const pets = workshopGroups[wsName];
+        if (!pets || pets.length === 0) continue;
+
+        const wsConfig = WORKSHOP_CONFIG[wsName];
+        const level = world.工坊?.[wsName]?.level || 1;
+        const capacity = WORKSHOP_LEVEL_EFFECTS[level]?.capacity || 1;
+        const icon = wsConfig?.icon || '🏗️';
+
+        html += buildWorkshopGroupHTML(wsName, icon, level, capacity, pets);
+    }
+
+    // 栖息地休息中的仙宠
+    const restingPets = workshopGroups['栖息地'];
+    if (restingPets && restingPets.length > 0) {
+        html += `<div class="workshop-group">
+            <div class="workshop-header" style="border-color: #4caf50;">
+                <span class="workshop-icon">🏠</span>
+                <span class="workshop-name">栖息地（休息/守卫）</span>
+                <span class="workshop-count" style="color: #4caf50;">${restingPets.length}只</span>
+            </div>
+            <div class="habitat-grid">`;
+        for (const pet of restingPets) {
+            html += buildPetCardHTML(pet);
+        }
+        html += '</div></div>';
+    }
+
+    return html;
+}
+
+// 生成工坊分组HTML
+function buildWorkshopGroupHTML(wsName, icon, level, capacity, pets) {
+    let html = `<div class="workshop-group">
+        <div class="workshop-header">
+            <span class="workshop-icon">${icon}</span>
+            <span class="workshop-name">${wsName}</span>
+            <span class="workshop-level">Lv.${level}</span>
+            <span class="workshop-count">${pets.length}/${capacity}</span>
+        </div>
+        <div class="habitat-grid">`;
+
+    for (const pet of pets) {
+        html += buildPetCardHTML(pet);
+    }
+
+    html += '</div></div>';
+    return html;
+}
+
+// 生成单只仙宠卡片HTML
+function buildPetCardHTML(pet) {
+    const typeEmoji = {
+        '战斗': '⚔️', '修炼': '🧘', '炼丹': '🔥',
+        '炼器': '🔨', '幸运': '🍀', '制符': '📜'
+    };
+    const emoji = typeEmoji[pet.type] || '🐾';
+    const energy = pet.精力 ?? 100;
+    const maxEnergy = pet.最大精力 || 100;
+    const energyPct = Math.max(0, Math.min(100, Math.round(energy / maxEnergy * 100)));
+    const energyColor = energy >= 60 ? '#4caf50' : energy >= 30 ? '#ff9800' : energy > 0 ? '#f44336' : '#9e9e9e';
+    const energyBarW = Math.round(energyPct * 0.8);
+    const collapseTag = pet.累倒 ? '<span class="pet-collapse">💤 休养中</span>' : '';
+    const guardTag = pet.守卫 && !pet.累倒
+        ? '<span class="pet-collapse">🛡️ 守卫中</span>'
+        : '';
+    const traitsTag = (pet.特性 && pet.特性.length > 0)
+        ? `<span class="pet-traits">${pet.特性.map(t => `【${t}】`).join('')}</span>`
+        : '';
+    const workStatus = collapseTag || (pet.守卫
+        ? `守卫小世界 · 拦截率${Math.round(calculateGuardInterceptChance(pet) * 100)}%`
+        : getWorkDescription(pet, 0));
+
+    return `<div class="habitat-pet-card">
+        <div class="pet-icon">${emoji}</div>
+        <div class="pet-info">
+            <div class="pet-name">${pet.name} ${collapseTag}${guardTag}</div>
+            <div class="pet-meta">${pet.type} · ${pet.品级} · Lv.${pet.等级 || 1} ${traitsTag}</div>
+            <div class="pet-energy-bar">
+                <div class="pet-energy-fill" style="width:${energyBarW}px; background:${energyColor};"></div>
+            </div>
+            <div class="pet-energy-text">精力 ${energy}/${maxEnergy}</div>
+            <div class="pet-work-status">${workStatus}</div>
+        </div>
+    </div>`;
+}
+
 
 // 生成事件记录HTML
 function generateEventsHTML(world) {
@@ -2429,11 +3801,11 @@ function getWorldDescription(level) {
 function calculateResources(world, hours) {
     // 基础资源产量（根据小世界等级）
     const baseProduction = {
-        1: { '灵石': 1000000, '仙馐果': 500 },
-        2: { '灵石': 2000000, '仙馐果': 1000, '灵矿': 50 },
-        3: { '灵石': 3000000, '仙馐果': 1000, '灵矿': 100, '仙果': 50 },
-        4: { '灵石': 15000000, '仙馐果': 2000, '灵矿': 100, '仙果': 100, '混沌元液': 30 },
-        5: { '灵石': 28000000, '仙馐果': 5000, '灵矿': 400, '仙果': 450, '混沌元液': 450 }
+        1: { '灵石': 100000, '仙馐果': 50 },
+        2: { '灵石': 200000, '仙馐果': 100, '灵矿': 5 },
+        3: { '灵石': 300000, '仙馐果': 100, '灵矿': 10, '仙果': 5 },
+        4: { '灵石': 500000, '仙馐果': 200, '灵矿': 10, '仙果': 10, '混沌元液': 3 },
+        5: { '灵石': 800000, '仙馐果': 300, '灵矿': 20, '仙果': 15, '混沌元液': 5 }
     };
     
     // 获取基础产量

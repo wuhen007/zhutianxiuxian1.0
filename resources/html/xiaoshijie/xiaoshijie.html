@@ -761,6 +761,58 @@
         .lv3 { color: #a080e8; }
         .lv4 { color: #f0a830; }
         .lv5 { color: #ff6060; }
+
+        /* ===== 工坊/栖息地 ===== */
+        .workshop-group {
+            margin-bottom: 16px;
+        }
+        .workshop-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 0;
+            border-bottom: 1px solid var(--border-gold);
+            margin-bottom: 10px;
+        }
+        .workshop-icon { font-size: 18px; }
+        .workshop-name { font-weight: bold; color: var(--text-gold); }
+        .workshop-level { font-size: 12px; color: var(--teal); }
+        .workshop-count { margin-left: auto; font-size: 12px; color: var(--text-secondary); }
+        .habitat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        .habitat-pet-card {
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            background: var(--bg-card2);
+            border: 1px solid var(--border-gold);
+            border-radius: 8px;
+            align-items: flex-start;
+        }
+        .pet-icon { font-size: 28px; min-width: 36px; text-align: center; }
+        .pet-info { flex: 1; min-width: 0; }
+        .pet-name { font-weight: bold; color: var(--text-gold); font-size: 14px; }
+        .pet-collapse { color: #ff6060; font-size: 12px; }
+        .pet-meta { font-size: 12px; color: var(--text-secondary); margin: 2px 0; }
+        .pet-traits { font-size: 11px; color: var(--purple-light); display: block; margin-top: 2px; }
+        .pet-energy-bar {
+            width: 80px;
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+            margin-top: 4px;
+            overflow: hidden;
+        }
+        .pet-energy-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+        .pet-energy-text { font-size: 10px; color: var(--text-secondary); margin-top: 1px; }
+        .pet-work-status { font-size: 11px; color: var(--text-secondary); margin-top: 4px; font-style: italic; line-height: 1.4; }
     </style>
 </head>
 <body>
@@ -859,6 +911,17 @@
 
     <!-- ===== 分身信息 ===== -->
     {{@ avatar_html}}
+
+    <!-- ===== 仙宠工坊/栖息地 ===== -->
+    <div class="section-block">
+        <div class="section-head">
+            <div class="section-icon si-teal"><i class="fas fa-paw"></i></div>
+            <div class="section-title-text">仙宠栖息地 & 工坊</div>
+        </div>
+        <div class="section-body">
+            {{@ habitat_html}}
+        </div>
+    </div>
 
     <!-- ===== 近期事件 ===== -->
     <div class="section-block">
