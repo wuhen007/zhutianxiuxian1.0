@@ -1179,7 +1179,7 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
 
     // 检查渡劫资源
     const thunderResources = [
-        { name: "雷劫液", class: "道具", quantity: 3 },
+        { name: "雷池真液", class: "道具", quantity: 3 },
         { name: "血魂草", class: "草药", quantity: 1 },
         { name: "五行本源", class: "道具", quantity: 5 }
     ];
@@ -1205,7 +1205,7 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
             `【资源不足·雷劫难渡】`,
             `渡最强雷劫需以下资源：`,
             resourceList,
-            `（雷劫液可减轻雷劫伤害，血魂草激发潜能，五行本源稳固根基）`
+            `（雷池真液可减轻雷劫伤害，血魂草激发潜能，五行本源稳固根基）`
         ].join("\n"));
     }
 
@@ -1243,9 +1243,9 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
     let thunderPower = 0;
 
     for (const stage of thunderStages) {
-        // 消耗雷劫液减轻伤害
-        const thunderLiquidQty = await exist_najie_thing(usr_qq, "雷劫液", "道具");
-        const damageReduction = Math.min(0.5, thunderLiquidQty * 0.1); // 每滴雷劫液减少10%伤害，最多50%
+        // 消耗雷池真液减轻伤害
+        const thunderLiquidQty = await exist_najie_thing(usr_qq, "雷池真液", "道具");
+        const damageReduction = Math.min(0.5, thunderLiquidQty * 0.1); // 每滴雷池真液减少10%伤害，最多50%
         
         const actualDamage = stage.damage * (1 - damageReduction);
         const damageAmount = Math.floor(player.血量上限 * actualDamage);
@@ -1253,10 +1253,10 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
         // 应用伤害
         const currentHP = await Add_HP(usr_qq, -damageAmount, `${stage.name}伤害`);
         
-        // 消耗雷劫液
+        // 消耗雷池真液
         if (thunderLiquidQty > 0) {
             const usedLiquid = Math.min(thunderLiquidQty, 5); // 最多使用5滴
-            await Add_najie_thing(usr_qq, "雷劫液", "道具", -usedLiquid);
+            await Add_najie_thing(usr_qq, "雷池真液", "道具", -usedLiquid);
         }
 
         // 血魂草激发潜能（只在生命低于30%时触发）
@@ -1592,8 +1592,8 @@ async breakthroughUpperRealm(e, usr_qq, player) {
         player.xiangu_zhizun_external_dao_flaw = Boolean(result.externalDaoFlaw);
     }
 
-    if (result.reward === '雷劫液') {
-        await Add_najie_thing(usr_qq, '雷劫液', '道具', 1);
+    if (result.reward === '雷池真液') {
+        await Add_najie_thing(usr_qq, '雷池真液', '道具', 1);
     }
 
     await Write_player(usr_qq, player);
@@ -1603,7 +1603,7 @@ async breakthroughUpperRealm(e, usr_qq, player) {
         : result.path === '以身为种'
             ? '以身为种成功，体内众门开启，上苍天谴未能抹去真我。'
             : `劫难渡尽，${breakthrough.targetName}道果稳固。`);
-    const rewardLine = result.reward === '雷劫液' ? '雷劫液精粹 +1' : null;
+    const rewardLine = result.reward === '雷池真液' ? '雷池真液精粹 +1' : null;
     const lines = [
         `【突破·${breakthrough.targetName}·成功！】`,
         `${player.名号}正式踏入${breakthrough.targetName}！`,

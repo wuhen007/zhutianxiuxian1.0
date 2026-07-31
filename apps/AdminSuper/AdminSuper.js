@@ -1135,6 +1135,7 @@ async relieveFashanAction(e) {
     let mergedCount = 0;    // 归位时同数组同名合并数
     let fieldFixed = 0;     // 关联字段（数量/锁定/售价）修正数
     let missingArrFixed = 0; // 缺失数组补齐数
+    let renamedCount = 0;     // 历史物品更名数
     const samples = [];     // 预览样本
 
     for (const file of files) {
@@ -1178,6 +1179,15 @@ async relieveFashanAction(e) {
           if (!Array.isArray(najie[cat])) continue;
           for (const item of najie[cat]) {
             if (!item || typeof item !== 'object') continue;
+            // 历史物品名称迁移：雷劫液经重名冲突整改，按原类别分流
+            // 道具版(渡劫圣物)→雷池真液；丹药版(天药)→雷帝道液，避免旧库存变死物品
+            if (item.name === '雷劫液') {
+              const newName = (item.class === '丹药') ? '雷帝道液' : '雷池真液';
+              item.name = newName;
+              renamedCount++;
+              playerChanged = true;
+              if (log.length < 8) log.push('更名[雷劫液]→' + newName);
+            }
             const name = item.name;
             let target = cat;
 
@@ -1300,6 +1310,7 @@ async relieveFashanAction(e) {
       out += '预计关联字段修正：' + fieldFixed + ' 处\n';
       out += '预计缺失数组补齐：' + missingArrFixed + ' 处\n';
     }
+    if (renamedCount > 0) out += '物品更名：' + renamedCount + ' 处（雷劫液→雷池真液/雷帝道液）\n';
     if (isPreview && samples.length) {
       out += '\n— 样本 —\n';
       for (const s of samples) {

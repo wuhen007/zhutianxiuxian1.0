@@ -2135,8 +2135,14 @@ if (equipment.帝兵.name == "终古剑之主") {
             let 天药 =quantity * thing_exist.yuanshen;
            player.元神+= quantity * thing_exist.yuanshen;
            player.元神上限+= quantity * thing_exist.yuanshen;
+            let 道伤msg = '';
+            if (thing_exist.daoshang && player.道伤 > 0) {
+              const before = player.道伤;
+              player.道伤 = Math.max(0, player.道伤 - thing_exist.daoshang * quantity);
+              道伤msg = `,道伤-${before - player.道伤}`;
+            }
             await Write_player(usr_qq, player);
-            e.reply(`服用成功,元神与元神上限增加${天药}`);
+            e.reply(`服用成功,元神与元神上限增加${天药}${道伤msg}`);
             return false;
           }
       if (thing_exist.type == '血气') {

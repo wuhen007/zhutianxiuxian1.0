@@ -816,7 +816,7 @@ export class XianguTribulation {
       { frac: 0.07, note: '连续击穿九重雷天' },
       { frac: 0.08, note: '第十雷域与斩仙台余波' }
     ], [
-      `${name}击穿第十层雷域，在金色雷池中取得雷劫液。`,
+      `${name}击穿第十层雷域，在金色雷池中取得雷池真液。`,
       `史上最强天劫至此散去。`
     ], {
       waveOffset: 4,
@@ -826,7 +826,7 @@ export class XianguTribulation {
       summaryText: '【天劫渡尽】肉身与元神经九天十地淬炼圆满'
     });
 
-    return { success: !dead, revived: this.revived, targetLevelId: 9, reward: '雷劫液' };
+    return { success: !dead, revived: this.revived, targetLevelId: 9, reward: '雷池真液' };
   }
 
   async _runShengjiTribulation(e, player) {
@@ -884,7 +884,7 @@ export class XianguTribulation {
       { frac: 0.075, note: '第九重天压落修为，万灵古木袭杀' },
       { frac: 0.08, note: '第十重天真龙真凰与古台终极镇压' }
     ], [
-      `${name}以残躯登临第十重天，沐浴雷劫液。`,
+      `${name}以残躯登临第十重天，沐浴雷池真液。`,
       `神王劫尽，圣祭道果彻底稳定。`
     ], {
       reportTitle: '——神王雷劫——',
@@ -893,7 +893,7 @@ export class XianguTribulation {
       summaryText: '【神王劫毕】至强神王身经十重雷劫熬炼而成'
     });
 
-    return { success: !dead, revived: this.revived, targetLevelId: 10, reward: '雷劫液' };
+    return { success: !dead, revived: this.revived, targetLevelId: 10, reward: '雷池真液' };
   }
 
   async _runTianshenBreakthrough(e, player) {
@@ -1016,7 +1016,7 @@ export class XianguTribulation {
     await e.reply([
       `【雷池复苏·最后一层天】`,
       ``,
-      `${name}饮下雷劫液，在毁灭中复苏，恢复 ${bigNumberTransform(healed)} 点血量。`,
+      `${name}饮下雷池真液，在毁灭中复苏，恢复 ${bigNumberTransform(healed)} 点血量。`,
       `三头雷灵自雷池深处现身，既争夺造化，也引来最后的雷罚。`,
       ``,
       this._bar(player)
@@ -1048,7 +1048,7 @@ export class XianguTribulation {
       revived: this.revived,
       targetLevelId: 13,
       path: '斩我明道',
-      reward: '雷劫液',
+      reward: '雷池真液',
       thunderSpirits: dead ? 0 : 3,
       routeText: '绝世大劫渡尽，斩去虚妄旧我，并从雷池中降服三头雷灵。'
     };
@@ -1087,7 +1087,7 @@ export class XianguTribulation {
     await e.reply([
       `【道基圆满·遁一天劫】`,
       ``,
-      `${name}以雷劫液修复残躯，恢复 ${bigNumberTransform(healed)} 点血量。`,
+      `${name}以雷池真液修复残躯，恢复 ${bigNumberTransform(healed)} 点血量。`,
       `境界壁垒松动，真正的遁一天劫遮蔽天宇。原著只以“可怕无边、满身是血、九死一生”概括此战。`,
       ``,
       this._bar(player)
@@ -1105,7 +1105,7 @@ export class XianguTribulation {
       { frac: 0.075, note: '天地万法合击，只留遁去的一线生机' },
       { frac: 0.085, note: '九死一生，踏出斩我境最后一步' }
     ], [
-      `${name}满身是血地走出雷海，取到价值惊人的雷劫液。`,
+      `${name}满身是血地走出雷海，取到价值惊人的雷池真液。`,
       `大道遁去其一，道行超然物外，正式踏入遁一境。`
     ], {
       waveOffset: 4,
@@ -1120,7 +1120,7 @@ export class XianguTribulation {
       revived: this.revived,
       targetLevelId: 14,
       path: '遁去其一',
-      reward: '雷劫液',
+      reward: '雷池真液',
       routeText: '斩仙铡刀斩去外来印记，继而九死一生渡过遁一天劫。'
     };
   }

@@ -543,21 +543,21 @@ async nurtureEmperorWeapon(e) {
             `血气：${bigNumberTransform(totalBlood)}`,
             `生命本源：${totalLifeEssence}`,
             `当前资源：`,
-            `修为：${bigNumberTransform(playerCultivation)}`,
-            `血气：${bigNumberTransform(playerBlood)}`,
-            `生命本源：${playerLifeEssence}`
+            `修为：${bigNumberTransform(player.修为)}`,
+            `血气：${bigNumberTransform(player.血气)}`,
+            `生命本源：${player.生命本源}`
         ];
 
         if ( player.修为 < totalCultivation) {
-            messages.push(`修为不足：${bigNumberTransform(totalCultivation - playerCultivation)}`);
+            messages.push(`修为不足：${bigNumberTransform(totalCultivation - player.修为)}`);
         }
 
         if (player.血气 < totalBlood) {
-            messages.push(`血气不足：${bigNumberTransform(totalBlood - playerBlood)}`);
+            messages.push(`血气不足：${bigNumberTransform(totalBlood - player.血气)}`);
         }
 
         if (player.生命本源< totalLifeEssence) {
-            messages.push(`生命本源不足：${totalLifeEssence - playerLifeEssence}`);
+            messages.push(`生命本源不足：${totalLifeEssence - player.生命本源}`);
         }
 
         return e.reply(messages.join("\n"));

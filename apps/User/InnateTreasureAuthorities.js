@@ -15,6 +15,9 @@ import {
 } from '../../model/xiuxian.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
 import {
+  AUTHORITY_COOLDOWNS,
+  INNATE_TREASURE_CATALOG,
+  INNATE_TREASURE_NAMES,
   claimKongtongBorrow,
   formatCooldown,
   getAuthorityState,
@@ -88,6 +91,7 @@ export class InnateTreasureAuthorities extends plugin {
       event: 'message',
       priority: 590,
       rule: [
+        { reg: '^#(?:先天)?至宝图鉴(?:\\s+.+)?$', fnc: 'showTreasureCatalog' },
         { reg: '^#执掌先天至宝\\s+.+$', fnc: 'equipTreasure' },
         { reg: '^#先天至宝$', fnc: 'showTreasure' },
         { reg: '^#玄黄护道$', fnc: 'xuanhuangGuard' },
@@ -113,6 +117,59 @@ export class InnateTreasureAuthorities extends plugin {
       name: '山河社稷图投影结算',
       fnc: () => this.settleLandscapeRealms(),
     };
+  }
+
+  async treasureOwnerStatus(state, name) {
+    const ownerId = state.owners?.[name]?.ownerId;
+    if (!ownerId) return '未认主';
+    let ownerName = '一位修士';
+    if (await existplayer(ownerId)) ownerName = (await Read_player(ownerId)).名号 || ownerName;
+    const equipped = String(state.equipped?.[name]?.ownerId || '') === String(ownerId);
+    return `${equipped ? '执掌中' : '已认主'}·${ownerName}`;
+  }
+
+  async showTreasureCatalog(e) {
+    if (!verc({ e })) return false;
+    const requestedName = String(e.msg || '').replace(/^#(?:先天)?至宝图鉴\s*/, '').trim();
+    const state = readInnateTreasureState();
+    if (!requestedName) {
+      const statuses = await Promise.all(INNATE_TREASURE_NAMES.map(name => this.treasureOwnerStatus(state, name)));
+      const claimed = statuses.filter(status => status !== '未认主').length;
+      const lines = [
+        '【诸天先天至宝图鉴】',
+        `收录：${INNATE_TREASURE_NAMES.length}件｜已认主：${claimed}件｜待择主：${INNATE_TREASURE_NAMES.length - claimed}件`,
+        '',
+      ];
+      INNATE_TREASURE_NAMES.forEach((name, index) => {
+        const entry = INNATE_TREASURE_CATALOG[name];
+        lines.push(`${String(index + 1).padStart(2, '0')}.【${name}·${entry.title}】〔${statuses[index]}〕`);
+        lines.push(`   ${entry.summary}`);
+      });
+      lines.push('', '发送 #至宝图鉴 至宝名 查看完整权柄。', '本体由24小时择主之争第一名获得；第二、三名获得七日投影。');
+      return e.reply(lines.join('\n'));
+    }
+
+    const entry = INNATE_TREASURE_CATALOG[requestedName];
+    if (!entry) return e.reply(`未收录【${requestedName}】。可查：${INNATE_TREASURE_NAMES.join('、')}`);
+    const status = await this.treasureOwnerStatus(state, requestedName);
+    const lines = [
+      `【先天至宝图鉴·${requestedName}】`,
+      `尊号：${entry.title}｜状态：${status}`,
+      '本体属性：攻击1亿｜防御1亿｜生命1亿｜全属性100',
+      `宝录：${entry.lore}`,
+    ];
+    if (entry.passives.length) lines.push('', '常驻权柄：', ...entry.passives.map(text => `· ${text}`));
+    if (entry.authorities.length) {
+      lines.push('', '主动权柄：');
+      for (const authority of entry.authorities) {
+        const cooldown = authority.cooldownKey
+          ? `（冷却${formatCooldown(AUTHORITY_COOLDOWNS[authority.cooldownKey])}）`
+          : '';
+        lines.push(`· ${authority.command}${cooldown}`, `  ${authority.effect}`);
+      }
+    }
+    lines.push('', '获取：先天灵宝出世后抵达精确坐标参加24小时择主之争；第一名获得永久本体，第二、三名获得七日投影。');
+    return e.reply(lines.join('\n'));
   }
 
   async equipTreasure(e) {

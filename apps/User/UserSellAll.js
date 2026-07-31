@@ -1629,6 +1629,7 @@ padLeft(str, length) {
     // 检索方法
     let najie = await data.getData('najie', usr_qq);
     let totalYuanshen = 0; // 用于累计所有天药提供的元神值
+    let totalDaoshang = 0; // 累计道伤减免量
 
     for (var l of najie.丹药) {
       if (l.type == '天药') {
@@ -1636,6 +1637,10 @@ padLeft(str, length) {
         let quantity = await exist_najie_thing(usr_qq, l.name, l.class);
         // 累加这种天药提供的元神值
         totalYuanshen += l.yuanshen * quantity;
+        // 累加道伤减免（带 daoshang 字段的天药，如雷帝道液）
+        if (l.daoshang && quantity > 0) {
+          totalDaoshang += l.daoshang * quantity;
+        }
         // 消耗丹药
         await Add_najie_thing(usr_qq, l.name, l.class, -quantity);
       }
@@ -1644,8 +1649,14 @@ padLeft(str, length) {
     // 更新玩家元神和元神上限
     player.元神 += totalYuanshen;
     player.元神上限 += totalYuanshen;
+    let 道伤msg = '';
+    if (totalDaoshang > 0 && player.道伤 > 0) {
+      const before = player.道伤;
+      player.道伤 = Math.max(0, player.道伤 - totalDaoshang);
+      道伤msg = `,道伤-${before - player.道伤}`;
+    }
     await Write_player(usr_qq, player);
-    e.reply(`服用成功,元神与元神上限增加${totalYuanshen}`);
+    e.reply(`服用成功,元神与元神上限增加${totalYuanshen}${道伤msg}`);
     return false;
 }
 
