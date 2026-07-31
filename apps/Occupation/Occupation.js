@@ -23,6 +23,11 @@ import {
   channel
 } from '../../model/xiuxian.js';
 import { Read_player, __PATH, Read_danyao } from '../../model/xiuxian.js';
+import {
+  getMinggeBonusMultiplier,
+  getMinggeEffects,
+} from '../../model/mingge.js';
+import { getPetAbilityBonus, getTimedActionMultiplier } from '../../model/innateTreasure.js';
 
 // 材料稀有度
 const MATERIAL_RARITY = {
@@ -202,10 +207,10 @@ export class Occupation extends plugin {
   reg: '^#为帝兵更名\\s*(.*)$',
   fnc: 'renameEmperorWeapon'
 },
-                  {
-                    reg: '^#蕴养帝兵$',
-                    fnc: 'nurtureEmperorWeapon'
-                 },                  {
+{
+    reg: '^#蕴养帝兵(?:\\*(\\d+))?$',
+    fnc: 'nurtureEmperorWeapon'
+},                  {
                     reg: '^#刻写帝兵$',
                     fnc: 'engraveEmperorWeapon'
                  },
@@ -463,109 +468,144 @@ async  releaseForbiddenSeal(e) {
 
 async nurtureEmperorWeapon(e) {
     if (!e.isGroup) return;
-    
+
     const usr_qq = e.user_id;
+
+    // ✅ 解析次数（默认1次）
+    const match = e.msg.match(/^#蕴养帝兵(?:\*(\d+))?$/);
+    if (!match) return;
+
+    let times = parseInt(match[1]) || 1;
+    if (times <= 0) {
+        e.reply("蕴养次数必须大于0");
+        return true;
+    }
+
     // 检查玩家是否存在
     if (!await existplayer(usr_qq)) {
         e.reply("请先创建修仙角色");
         return true;
     }
-    
+
     // 获取玩家数据
     const player = await Read_player(usr_qq);
     const equipment = await Read_equipment(usr_qq);
-    
+
     // 检查是否有帝兵
     if (!equipment.帝兵 || equipment.帝兵.author_name !== player.id) {
         return e.reply("这并非你的本命帝兵，无法蕴养");
     }
-    
+
     const weapon = equipment.帝兵;
-    
-    //
+
+    // ✅ 实时判定兵字秘
     const hasBingziMi = player.学习的功法?.includes("兵字秘");
     const currentNurtureLimit = hasBingziMi ? 25 : 5;
-    
-    // 修改检查逻辑：使用实时计算的上限值
-    if (weapon.蕴养 && weapon.蕴养 >= currentNurtureLimit) {
+
+    // ✅ 已圆满到的上限（关键字段）
+    weapon.圆满上限 = weapon.圆满上限 || 0;
+
+    // ✅ 剩余可蕴养次数（永远以当前状态为准）
+    const remain = currentNurtureLimit - (weapon.蕴养 || 0);
+    if (remain <= 0) {
         return e.reply([
             `帝兵蕴养已达上限！`,
             `当前蕴养次数：${weapon.蕴养}/${currentNurtureLimit}`,
             `无法继续蕴养`
         ].join("\n"));
     }
-    
-    // 计算消耗
-    const costCultivation = 20000000000; // 20e修为
-    const costBlood = 20000000000; // 20e血气
-    const costLifeEssence = 50; // 50点生命本源
-    
-    // 检查资源是否足够
-    if (player.修为 < costCultivation || player.血气 < costBlood || player.生命本源 < costLifeEssence) {
+
+    if (times > remain) {
+        times = remain;
+    }
+
+    // ✅ 消耗
+    const costCultivation = 20000000000;
+    const costBlood = 20000000000;
+    const costLifeEssence = 50;
+
+    const totalCultivation = costCultivation * times;
+    const totalBlood = costBlood * times;
+    const totalLifeEssence = costLifeEssence * times;
+
+
+
+    // 检查资源
+    if (
+        player.修为 < totalCultivation ||
+        player.血气 < totalBlood ||
+        player.生命本源 < totalLifeEssence
+    ) {
         const messages = [
             `资源不足！`,
             `蕴养消耗：`,
-            `修为：${bigNumberTransform(costCultivation)}`,
-            `血气：${bigNumberTransform(costBlood)}`,
-            `生命本源：${costLifeEssence}`,
+            `修为：${bigNumberTransform(totalCultivation)}`,
+            `血气：${bigNumberTransform(totalBlood)}`,
+            `生命本源：${totalLifeEssence}`,
             `当前资源：`,
-            `修为：${bigNumberTransform(player.修为)}`,
-            `血气：${bigNumberTransform(player.血气)}`,
-            `生命本源：${player.生命本源}`
+            `修为：${bigNumberTransform(playerCultivation)}`,
+            `血气：${bigNumberTransform(playerBlood)}`,
+            `生命本源：${playerLifeEssence}`
         ];
-        
-        if (player.修为 < costCultivation) {
-            messages.push(`修为不足：${bigNumberTransform(costCultivation - player.修为)}`);
+
+        if ( player.修为 < totalCultivation) {
+            messages.push(`修为不足：${bigNumberTransform(totalCultivation - playerCultivation)}`);
         }
-        
-        if (player.血气 < costBlood) {
-            messages.push(`血气不足：${bigNumberTransform(costBlood - player.血气)}`);
+
+        if (player.血气 < totalBlood) {
+            messages.push(`血气不足：${bigNumberTransform(totalBlood - playerBlood)}`);
         }
-        
-        if (player.生命本源 < costLifeEssence) {
-            messages.push(`生命本源不足：${costLifeEssence - player.生命本源}`);
+
+        if (player.生命本源< totalLifeEssence) {
+            messages.push(`生命本源不足：${totalLifeEssence - playerLifeEssence}`);
         }
-        
+
         return e.reply(messages.join("\n"));
     }
-    
-    // 扣除消耗
-    player.修为 -= costCultivation;
-    player.血气 -= costBlood;
-    player.生命本源 -= costLifeEssence;
-    
-    // 更新蕴养次数
-    if (!weapon.蕴养) weapon.蕴养 = 0;
-    weapon.蕴养++;
-    
-    // 🛠️ 【核心修改点】更新帝兵的蕴养上限为当前实时计算的值
-    weapon.蕴养上限 = currentNurtureLimit;
-    
-    // 提升帝兵属性
-    const baseBoost = 5000000000; // 5e
+
+    // ✅ 扣资源
+    player.修为 -= totalCultivation;
+    player.血气 -= totalBlood;
+    player.生命本源 -= totalLifeEssence;
+
+    // ✅ 记录旧值
+    const oldNurture = weapon.蕴养 || 0;
+    weapon.蕴养 = oldNurture + times;
+
+    // ✅ 属性成长（基础）
+    const baseBoost = 5000000000*times;
     weapon.atk += baseBoost;
     weapon.def += baseBoost;
     weapon.HP += baseBoost;
-    weapon.全属性 += 1;
-    
-    // 特殊效果：达到上限时额外加成
-    if (weapon.蕴养 === weapon.蕴养上限) {
-        weapon.全属性 += hasBingziMi ? 25 : 5;
-        
-        // 兵字秘额外加成
-        if (hasBingziMi) {
-            weapon.bao += 0.1; // 暴击率增加10%
-        }
+    weapon.全属性 += times;
+
+if (
+    weapon.蕴养 === currentNurtureLimit &&
+    weapon.圆满上限 < currentNurtureLimit
+) {
+    // ✅ 正确补偿公式：新上限 − 已圆满上限
+    const bonus = currentNurtureLimit - weapon.圆满上限;
+    weapon.全属性 += bonus;
+
+    // 兵字秘额外效果（只在首次达到25时生效）
+    if (hasBingziMi && currentNurtureLimit === 25) {
+        weapon.bao = (weapon.bao || 0) + 0.1;
     }
-    
-    // 保存数据
+
+    weapon.圆满上限 = currentNurtureLimit;
+}
+
+    // ✅ 仅用于展示
+    weapon.蕴养上限 = currentNurtureLimit;
+
+    // ✅ 保存
     equipment.帝兵 = weapon;
     await Write_equipment(usr_qq, equipment);
     await Write_player(usr_qq, player);
-    
-    // 构建回复消息
+
+    // ✅ 回执（原文案零改动）
     const weaponForm = weapon.name.match(/剑|鼎|枪|钟|塔|镜|印|刀|斧|戟|鞭|琴|扇/)?.[0] || "帝兵";
-    
+
     let successMsg = [
         `【帝兵蕴养成功】`,
         `以自身生命本源温养帝兵，大道共鸣！`,
@@ -575,18 +615,17 @@ async nurtureEmperorWeapon(e) {
         `防御：+${bigNumberTransform(baseBoost)}`,
         `气血：+${bigNumberTransform(baseBoost)}`,
         `全属性：+1`,
-        `当前蕴养次数：${weapon.蕴养}/${weapon.蕴养上限}`
+        `当前蕴养次数：${weapon.蕴养}/${currentNurtureLimit}`
     ];
-    
-    // 达到上限的特殊消息
-    if (weapon.蕴养 === weapon.蕴养上限) {
+
+    if (weapon.蕴养 === currentNurtureLimit) {
         successMsg.push(
             ``,
             `【帝兵蕴养圆满】`,
             `帝兵与主人心意相通，达到完美蕴养状态！`,
             `全属性额外增加：${hasBingziMi ? "+25" : "+5"}`
         );
-        
+
         if (hasBingziMi) {
             successMsg.push(
                 `兵字秘效果触发，帝兵与主人心意相通！`,
@@ -594,15 +633,18 @@ async nurtureEmperorWeapon(e) {
             );
         }
     }
-    
-    // 兵字秘上限提示
+
     if (hasBingziMi) {
         successMsg.push(
             ``,
             `「兵字秘」效果：蕴养上限提升至25次`
         );
     }
-    
+
+    if (times > 1) {
+        successMsg.unshift(`连续蕴养 ${times} 次，天道轰鸣！`);
+    }
+
     e.reply(successMsg.join("\n"));
     return true;
 }
@@ -1518,7 +1560,8 @@ async xunyuan2(e) {
   const action_time = time * 60000; // 毫秒
   const arr = {
       action: '寻脉定源',
-      end_time: Date.now() + action_time,
+      start_time: Date.now(),
+      end_time: Date.now() + Math.floor(action_time * getTimedActionMultiplier(player)),
         time: action_time,
         xunyuan2:0,plant: 1, shutup: 1, working: 1, 
         Place_action: 1, power_up: 1, mojie: 1,
@@ -1549,7 +1592,7 @@ async xunyuan2_back(e) {
     }
 
     // 计算有效时间
-    const start_time = action.end_time - action.time;
+    const start_time = action.start_time || action.end_time - action.time;
     const now = Date.now();
     let validTime = 0;
     const TIME_UNIT = 15;
@@ -1700,7 +1743,8 @@ async xunyuan2_jiesuan(usr_qq, time, group_id) {
     const action_time = time * 60000; // 毫秒
     const arr = {
         action: '寻源',
-        end_time: Date.now() + action_time,
+        start_time: Date.now(),
+        end_time: Date.now() + Math.floor(action_time * getTimedActionMultiplier(player)),
         time: action_time,xunyuan:0,
         plant: 1, shutup: 1, working: 1, 
         Place_action: 1, power_up: 1, mojie: 1,
@@ -1730,7 +1774,7 @@ async xunyuan_back(e) {
     }
 
     // 计算有效时间
-    const start_time = action.end_time - action.time;
+    const start_time = action.start_time || action.end_time - action.time;
     const now = Date.now();
     let validTime = 0;
     const TIME_UNIT = 15;
@@ -1862,7 +1906,8 @@ async xunyuan_jiesuan(usr_qq, time, group_id) {
     const action_time = time * 60000; // 毫秒
     let arr = {
         action: '地脉引气',
-        end_time: Date.now() + action_time,
+        start_time: Date.now(),
+        end_time: Date.now() + Math.floor(action_time * getTimedActionMultiplier(player)),
         time: action_time,xunyuan3:0,
         plant: 1, shutup: 1, working: 1, 
         Place_action: 1, power_up: 1, mojie: 1,
@@ -1894,7 +1939,7 @@ async xunyuan3_back(e) {
     }
 
     // 计算有效时间
-    const start_time = action.end_time - action.time;
+    const start_time = action.start_time || action.end_time - action.time;
     const now = Date.now();
     let validTime = 0;
     const TIME_UNIT = 15;
@@ -2189,7 +2234,8 @@ async chakanhuaidan(e) {
     let action_time = time * 60 * 1000; //持续时间，单位毫秒
     let arr = {
       action: '狩猎', //动作
-      end_time: new Date().getTime() + action_time, //结束时间
+      start_time: Date.now(),
+      end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)), //结束时间
       time: action_time, //持续时间
       plant: '1', //采药-开启
       shoulie: '0', //狩猎-开启
@@ -2228,7 +2274,7 @@ async shoulie_back(e) {
     }
     //结算
     let end_time = action.end_time;
-    let start_time = action.end_time - action.time;
+    let start_time = action.start_time || action.end_time - action.time;
     let now_time = new Date().getTime();
     let time;
     var y = 15; //固定时间
@@ -2534,7 +2580,8 @@ async shoulie_back(e) {
     let action_time = time * 60 * 1000; //持续时间，单位毫秒
     let arr = {
       action: '采药', //动作
-      end_time: new Date().getTime() + action_time, //结束时间
+      start_time: Date.now(),
+      end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)), //结束时间
       time: action_time, //持续时间
       plant: '0', //采药-开启
       shutup: '1', //闭关状态-开启
@@ -2587,7 +2634,7 @@ async shoulie_back(e) {
     }
     //结算
     let end_time = action.end_time;
-    let start_time = action.end_time - action.time;
+    let start_time = action.start_time || action.end_time - action.time;
     let now_time = new Date().getTime();
     let time;
     var y = 15; //固定时间
@@ -2704,7 +2751,8 @@ async shoulie_back(e) {
     let action_time = time * 60 * 1000; //持续时间，单位毫秒
     let arr = {
       action: '采矿', //动作
-      end_time: new Date().getTime() + action_time, //结束时间
+      start_time: Date.now(),
+      end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)), //结束时间
       time: action_time, //持续时间
       plant: '1', //采药-开启
       mine: '0', //采药-开启
@@ -2734,7 +2782,7 @@ async shoulie_back(e) {
     if (action.mine == 1) return false;
     //结算
     let end_time = action.end_time;
-    let start_time = action.end_time - action.time;
+    let start_time = action.start_time || action.end_time - action.time;
     let now_time = new Date().getTime();
     let time;
     if (end_time > now_time) {
@@ -2834,17 +2882,26 @@ async shoulie_back(e) {
     if (player.level_id < 36) {
       newsum = sum2.map(item => item * sum);
     }
+    // ==== 命格消费层：采药加成 ====
+    // 「草木通灵」类命格引动灵脉，使采得药草数量按数学期望增益。
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
+    const herbBonus = minggeEffects?.['采药加成'] ? getMinggeBonusMultiplier(minggeEffects, '采药加成') : 1;
     for (let item in sum3) {
-      if (newsum[item] < 1) {
+      // 先按命格期望放大，再 floor 入库，保证小额产出也有概率吃到加成
+      const yieldCount = calculateMinggeYield(newsum[item], minggeEffects, '采药加成');
+      if (yieldCount < 1) {
         continue;
       }
-      msg+=`\n${names[item]}${Math.floor(newsum[item])}个`;
+      msg+=`\n${names[item]}${yieldCount}个`;
       await Add_najie_thing(
         usr_qq,
         names[item],
         '草药',
-        Math.floor(newsum[item])
+        yieldCount
       );
+    }
+    if (herbBonus > 1) {
+      msg+=`\n命格·草木通灵：采药产出 +${Math.round((herbBonus - 1) * 100)}%`;
     }
     await Add_职业经验(usr_qq, exp);
     let img=await get_log_img(msg)
@@ -2900,13 +2957,23 @@ async shoulie_back(e) {
     let xuanze = Math.trunc(Math.random() * A.length);
     end_amount *= player.level_id / 40;
     end_amount = Math.floor(end_amount);
-    await Add_najie_thing(usr_qq, '庚金', '材料', end_amount);
-    await Add_najie_thing(usr_qq, '玄土', '材料', end_amount);
-    await Add_najie_thing(usr_qq, A[xuanze], '材料', num);
-    await Add_najie_thing(usr_qq, B[xuanze], '材料', Math.trunc(num / 48));
+    // ==== 命格消费层：采矿加成 ====
+    // 「地脉亲和」类命格感应矿脉走向，使采得矿石数量按数学期望增益。
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
+    const mineBonus = minggeEffects?.['采矿加成'] ? getMinggeBonusMultiplier(minggeEffects, '采矿加成') : 1;
+    const minggeEnd = calculateMinggeYield(end_amount, minggeEffects, '采矿加成');
+    const minggeNum = calculateMinggeYield(num, minggeEffects, '采矿加成');
+    const minggeNumB = calculateMinggeYield(Math.trunc(num / 48), minggeEffects, '采矿加成');
+    await Add_najie_thing(usr_qq, '庚金', '材料', minggeEnd);
+    await Add_najie_thing(usr_qq, '玄土', '材料', minggeEnd);
+    await Add_najie_thing(usr_qq, A[xuanze], '材料', minggeNum);
+    await Add_najie_thing(usr_qq, B[xuanze], '材料', minggeNumB);
     await Add_职业经验(usr_qq, exp);
-    msg+=`\n采矿归来，${ext}\n收获庚金×${end_amount}\n玄土×${end_amount}`;
-    msg+=`\n${A[xuanze]}x${num}\n${B[xuanze]}x${Math.trunc(num / 48)}`;
+    msg+=`\n采矿归来，${ext}\n收获庚金×${minggeEnd}\n玄土×${minggeEnd}`;
+    msg+=`\n${A[xuanze]}x${minggeNum}\n${B[xuanze]}x${minggeNumB}`;
+    if (mineBonus > 1) {
+      msg+=`\n命格·地脉亲和：采矿产出 +${Math.round((mineBonus - 1) * 100)}%`;
+    }
     let img=await get_log_img(msg)
     if (group_id) {
       await this.pushInfo(group_id, true, img);
@@ -3028,10 +3095,11 @@ async shoulie_back(e) {
       );
     }
     let total_exp = exp[1] * n;
-    if (player.仙宠.type == '炼丹') {
+    const alchemyPetBonus = getPetAbilityBonus(player.仙宠, '炼丹');
+    if (alchemyPetBonus > 0) {
       let random = Math.random();
      
-      if (random < player.仙宠.加成) {
+      if (random < alchemyPetBonus) {
         n *= 2;
         e.reply(
           '你的仙宠' + player.仙宠.name + '辅佐了你进行炼丹,成功获得了双倍丹药'
@@ -3052,24 +3120,29 @@ async shoulie_back(e) {
       let dengjixiuzheng = player.occupation_level;
       let newrandom = Math.random();
       let newrandom2 = Math.random();
-   
-      if (newrandom >= 0.1 + (dengjixiuzheng * 3) / 100) {
-        await Add_najie_thing(usr_qq, '凡品' + danyao, '丹药', n);
-        e.reply(
-          `${tmp_msg}得到"凡品"${danyao}${n}颗，获得炼丹经验${total_exp}`
-        );
+
+      // ==== 命格消费层：炼丹成功率 / 炼丹品质 ====
+      // 「丹道通玄」类命格引动丹火，使出炉丹药更易成上品，仙品之姿更为可期。
+      const minggeEffects = getMinggeEffects(player, data.minggeList);
+      const danSuccess = minggeEffects?.['炼丹成功率'] || 0; // 可正可负：降低凡品率=提升出好丹概率
+      const danQuality = minggeEffects?.['炼丹品质'] || 0;   // 可正可负：提升仙品概率
+      let fanpinThreshold = Math.max(0, Math.min(0.95, 0.1 + (dengjixiuzheng * 3) / 100 - danSuccess));
+      let xianpinChance = Math.max(0, Math.min(0.95, 0.4 + danQuality));
+
+      let qualityName = '';
+      if (newrandom >= fanpinThreshold) {
+        qualityName = '凡品';
+      } else if (newrandom2 < xianpinChance) {
+        qualityName = '仙品';
       } else {
-        if (newrandom2 >= 0.4) {
-          await Add_najie_thing(usr_qq, '极品' + danyao, '丹药', n);
-          e.reply(
-            `${tmp_msg}得到"极品"${danyao}${n}颗，获得炼丹经验${total_exp}`
-          );
-        } else {
-          await Add_najie_thing(usr_qq, '仙品' + danyao, '丹药', n);
-          e.reply(
-            `${tmp_msg}得到"仙品"${danyao}${n}颗，获得炼丹经验${total_exp}`
-          );
-        }
+        qualityName = '极品';
+      }
+      await Add_najie_thing(usr_qq, qualityName + danyao, '丹药', n);
+      e.reply(`${tmp_msg}得到"${qualityName}"${danyao}${n}颗，获得炼丹经验${total_exp}`);
+      if (danSuccess !== 0 || danQuality !== 0) {
+        e.reply(
+          `命格·丹道通玄：出好丹概率 +${Math.round(danSuccess * 100)}%　仙品概率 +${Math.round(danQuality * 100)}%`
+        );
       }
     }
     await Add_职业经验(usr_qq, total_exp);
@@ -3116,15 +3189,28 @@ async zhizuo_fu(e) {
     for (const material of fufang.materials) {
       await Add_najie_thing(usr_qq, material.name, material.class, -material.amount * n);
     }
-    // 添加基础成品
-    await Add_najie_thing(usr_qq, fuming, fufang.class, n);
-    // 仙宠双倍判定
-    if (player.仙宠?.type === '制符' && Math.random() < player.仙宠.加成) {
-      await Add_najie_thing(usr_qq, fuming, fufang.class, n);
+
+    // ==== 命格消费层：制符加成 ====
+    // 「符道通玄」类命格灵力自化符纹，使绘制的符箓数量更为丰沛。
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
+    const fuBonus = minggeEffects?.['制符加成'] ? getMinggeBonusMultiplier(minggeEffects, '制符加成') : 1;
+    const minggeCount = Math.max(n, calculateMinggeYield(n, minggeEffects, '制符加成'));
+
+    // 添加基础成品（已含命格加成期望）
+    await Add_najie_thing(usr_qq, fuming, fufang.class, minggeCount);
+    // 仙宠双倍判定（基于命格加成后的数量）
+    let shownCount = minggeCount;
+    if (Math.random() < getPetAbilityBonus(player.仙宠, '制符')) {
+      await Add_najie_thing(usr_qq, fuming, fufang.class, minggeCount);
+      shownCount = minggeCount * 2;
       e.reply(`✨ 仙宠【${player.仙宠.name}】助力，符箓产出翻倍！`);
     }
+    // 命格提示
+    if (fuBonus > 1) {
+      e.reply(`命格·符道通玄：制符产出 +${Math.round((fuBonus - 1) * 100)}%`);
+    }
     // 成功反馈
-    e.reply(`成功制作「${fuming}」×${n}！`);
+    e.reply(`成功制作「${fuming}」×${shownCount}！`);
   } catch (err) {
     console.error(`制作失败@${usr_qq}:`, err);
     e.reply('灵力反噬！符纸自焚成灰...');
@@ -3138,6 +3224,7 @@ async zhizuo_fu(e) {
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) return false;
     let player = await Read_player(usr_qq);
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
     if (player.occupation != '炼器师') {
       e.reply('铜都不炼你还炼器？');
       return false;
@@ -3175,8 +3262,22 @@ async zhizuo_fu(e) {
         suc_rate = 0.8;
       }
       res_exp = exp[0];
-      tmp_msg2 += `，获得炼器经验${res_exp}`;
     }
+    const forgeSuccessMultiplier = getMinggeBonusMultiplier(
+      minggeEffects,
+      '炼器成功率'
+    );
+    const craftedEquipmentMultiplier = getMinggeBonusMultiplier(
+      minggeEffects,
+      '炼制装备加成'
+    );
+    const forgeExpMultiplier = getMinggeBonusMultiplier(
+      minggeEffects,
+      '锻造经验加成'
+    );
+    suc_rate = Math.max(0.01, Math.min(0.95, suc_rate * forgeSuccessMultiplier));
+    res_exp = Math.floor((Number(res_exp) || 0) * forgeExpMultiplier);
+    tmp_msg2 += `，获得炼器经验${res_exp}`;
     tmp_msg1 += '消耗';
     for (let i in materials) {
       let material = materials[i];
@@ -3208,7 +3309,14 @@ async zhizuo_fu(e) {
       e.reply('在你细致的把控下，一把绝世极品即将问世！！！！');
       await sleep(10000);
     }
-    await Add_najie_thing(usr_qq, equipment_name, '装备', 1, pinji);
+    await Add_najie_thing(
+      usr_qq,
+      equipment_name,
+      '装备',
+      1,
+      pinji,
+      craftedEquipmentMultiplier
+    );
     await Add_职业经验(usr_qq, res_exp);
     e.reply(
       `${tmp_msg1}打造成功，获得${equipment_name}(${
@@ -3378,9 +3486,7 @@ async zhizuo_fu(e) {
       };
       let Data_battle = await zd_battle(player_A, player_B);
       let msg = Data_battle.msg;
-      let A_win = `${player_A.名号}击败了${player_B.名号}`;
-      let B_win = `${player_B.名号}击败了${player_A.名号}`;
-      if (msg.find(item => item == A_win)) {
+      if (Data_battle.winner === 'A') {
         player_B.魔道值 -= 50;
         player_B.灵石 -= 1000000;
         player_B.当前血量 = 0;
@@ -3393,7 +3499,7 @@ async zhizuo_fu(e) {
           '【全服公告】' +
           player_B.名号 +
           '失去了1000000灵石,罪恶得到了洗刷,魔道值-50,无名侠客获得了部分灵石,自己的正气提升了,同时获得了更多的悬赏加成';
-      } else if (msg.find(item => item == B_win)) {
+      } else if (Data_battle.winner === 'B') {
         var shangjing = Math.trunc(action.arm[num].赏金 * 0.8);
         player.当前血量 = 0;
         player.灵石 += shangjing;
@@ -3620,10 +3726,8 @@ async zhizuo_fu(e) {
     };
     let Data_battle = await zd_battle(player_A, player_B);
     let msg = Data_battle.msg;
-    let A_win = `${player_A.名号}击败了${player_B.名号}`;
-    let B_win = `${player_B.名号}击败了${player_A.名号}`;
     let 赏金_2=action[num].赏金/2
-    if (msg.find(item => item == A_win)) {
+    if (Data_battle.winner === 'A') {
       player_B.当前血量 = 0;
       player_B.修为 -= 赏金_2;
       player_B.血气 -= 赏金_2;
@@ -3642,7 +3746,7 @@ async zhizuo_fu(e) {
         'xiuxian:player:' + 1 + ':shangjing',
         JSON.stringify(action)
       );
-    } else if (msg.find(item => item == B_win)) {
+    } else if (Data_battle.winner === 'B') {
       player.当前血量 = 0;
       await Write_player(usr_qq, player);
       last_msg +=
@@ -3781,7 +3885,6 @@ async taofa_cz(e) {
     }
     
     await Add_najie_thing(usr_qq, "唤魔令", "道具", -1);
-    await Write_player(usr_qq, player);
     
     let target = action.arm[num];
     // 使用与劫掠村庄相似的计算格式
@@ -3791,25 +3894,91 @@ async taofa_cz(e) {
     let zuizhongjiangli = Math.floor(target赏金 * 0.0002); // 降低的魔道值
     const end_amount = Math.floor(target赏金 * 0.001);
 
-
     // 执行劫掠逻辑
     player.灵石 += target赏金;
     player.魔道值 += zuizhongjiangli;
-    await Write_player(usr_qq, player);
     await Add_职业经验(usr_qq, 2255);
     await Add_najie_thing(usr_qq, "面包", "食材", end_amount);
     await Add_najie_thing(usr_qq, "小麦", "食材", end_amount);
     await Add_najie_thing(usr_qq, "胡萝卜", "食材", end_amount);
     await Add_najie_thing(usr_qq, "土豆", "食材", end_amount);
 
-    // 构建消息
-    let msg = `你劫掠了【${target.名号}】,获得灵石${target赏金}，魔道值${zuizhongjiangli}\n`;
-    msg += `你劫掠完村庄后一番搜索发现了几块菜田和宝箱，\n`;
-    msg += `最终搜刮获得：\n`;
-    msg += `小麦×${end_amount}\n`;
-    msg += `面包×${end_amount}\n`;
-    msg += `土豆×${end_amount}\n`;
-    msg += `胡萝卜×${end_amount}`;
+    // ===== 25%概率触发金色宝箱 =====
+    let isGoldenBox = Math.random() < 0.25;
+    let goldenReward = 0;
+    let goldenItem = "";
+    let goldenItemType = "道具";
+    let goldenItemAmount = 0;
+    
+    const goldenItems = [
+        { name: "超越宝盒", type: "盒子", amount: () => Math.floor(Math.random() * 3) + 1 },
+        { name: "噬魂幡碎片", type: "材料", amount: () => Math.floor(Math.random() * 5) + 3 },
+        { name: "血炼晶石", type: "材料", amount: () => Math.floor(Math.random() * 10) + 5 },
+        { name: "万魂幡", type: "法宝", amount: () => 1 },
+        { name: "魔道秘典", type: "功法", amount: () => 1 },
+        { name: "九幽玄铁", type: "材料", amount: () => Math.floor(Math.random() * 4) + 2 }
+    ];
+
+    if (isGoldenBox) {
+        goldenReward = Math.floor(target赏金 * (2.5 + Math.random() * 2.5)); // 额外2.5~5倍灵石
+        let item = goldenItems[Math.floor(Math.random() * goldenItems.length)];
+        goldenItem = item.name;
+        goldenItemType = item.type;
+        goldenItemAmount = item.amount();
+        player.灵石 += goldenReward;
+        await Add_najie_thing(usr_qq, goldenItem, goldenItemType, goldenItemAmount);
+    }
+    
+    await Write_player(usr_qq, player);
+
+    let msgLines = [];
+    
+    // 开场白随机池
+    const openLines = [
+        `你扛着唤魔幡，脚下黑云滚滚，大摇大摆地降临【${target.名号}】！\n村口老黄狗见你气势汹汹，夹着尾巴钻进了狗洞，边跑边吠："魔头来啦——！"`,
+        `你狞笑着祭出唤魔令，霎时间乌云蔽日，鬼哭狼嚎！\n【${target.名号}】的村民们吓得魂飞魄散，连滚带爬地躲进了地窖。`,
+        `你一脚踹开【${target.名号}】的栅栏门，门板飞出去三丈远，精准地拍晕了正在巡逻的村保安。\n你掸了掸衣袖："今日，此村归我了。"`,
+        `黑雾弥漫中，你缓缓降落在【${target.名号}】的晒谷场上。\n正在晒太阳的老大爷眯着眼看了你半天，颤巍巍地递来一杆旱烟："大仙，抽、抽一口？"`
+    ];
+    msgLines.push(openLines[Math.floor(Math.random() * openLines.length)]);
+    
+    msgLines.push(`\n你如入无人之境，挨家挨户"收租"，所到之处寸草不生！`);
+    msgLines.push(`最终搜刮获得灵石${target赏金}，魔道值+${zuizhongjiangli}（你的良心隐隐作痛，但很快就被贪婪淹没了）`);
+    
+    // 普通物资文案
+    msgLines.push(`\n【菜田大丰收】`);
+    const farmLines = [
+        `你在村东头的菜田里发现了隐藏的菜窖，里面堆满了粮食。你二话不说，连坛带罐统统收进纳戒！`,
+        `村长家的地窖比你想的还肥，你甚至翻出了一坛腌制了三十年的老酸菜——虽然臭，但你还是顺走了。`,
+        `你踹开粮仓大门，老鼠们排着队跟你敬礼，仿佛在说："老大，您终于来了！"`
+    ];
+    msgLines.push(farmLines[Math.floor(Math.random() * farmLines.length)]);
+    msgLines.push(`小麦×${end_amount} | 面包×${end_amount} | 土豆×${end_amount} | 胡萝卜×${end_amount}`);
+    
+    // 金色宝箱文案
+    if (isGoldenBox) {
+        msgLines.push(`\n【金色宝箱！逆天改命！】`);
+        const boxLines = [
+            `正当你准备收工，忽然发现村长的茅厕底下竟隐隐透出金光！\n你掘地三尺，挖出一个镶满宝石的【金色宝箱】，箱盖上刻着一行小字："此箱乃上古粪坑战神所留，得者发大财。"\n你屏住呼吸，缓缓打开——宝光冲天！`,
+            `你顺手掀了村口土地庙的供桌，没想到桌底下藏着一道暗门！\n暗室里端端正正摆着一只鎏金宝箱，箱角还蹲着一只会说话的蛤蟆："呱——恭喜发财，红包拿来——呱！"你一脚踢开蛤蟆，开箱！`,
+            `你正准备离去，村长的胖儿子哭哭啼啼地拽住你的衣角："大仙别走！俺爹床底下还有东西！"\n你狐疑地掀开床板，瞳孔骤缩——一个通体赤金的宝箱正在发光，旁边还贴着纸条："给有缘的魔道巨擘。"`,
+            `你随手放了一把魔火烧了村长的书房，火光中竟浮现出一道虚影！\n虚影拱手道："道友留步！吾乃三百年前坐化于此的散修，毕生积蓄藏于此箱，今日赠予有缘人！"\n话音未落，一个金灿灿的箱子从灰烬中冉冉升起！`
+        ];
+        msgLines.push(boxLines[Math.floor(Math.random() * boxLines.length)]);
+        msgLines.push(`额外灵石+${goldenReward}！（村长攒了一辈子的棺材本，便宜你了）`);
+        msgLines.push(`稀有掉落：${goldenItem}×${goldenItemAmount}（${goldenItemType}）`);
+        
+        const endLines = [
+            `你仰天大笑三声，扛着宝箱扬长而去，只留下一群在风中凌乱的村民。`,
+            `你心满意足地拍拍纳戒，化作一道黑光消失在天际，村民们追出来骂街，却只吃到一口尾气。`,
+            `临走前，你在村口石碑上刻下八个大字："下次还来，记得藏好。"然后潇洒离去。`
+        ];
+        msgLines.push(`\n${endLines[Math.floor(Math.random() * endLines.length)]}`);
+    } else {
+        msgLines.push(`\n你意犹未尽地舔了舔嘴唇，总觉得还漏了点什么……\n算了，下次再来！`);
+    }
+    
+    let msg = msgLines.join("\n");
 
     // 从列表中移除劫掠目标
     action.arm.splice(num, 1);

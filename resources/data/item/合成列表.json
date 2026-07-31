@@ -1089,6 +1089,18 @@
       }
     ]
   },
+  {
+    "name": "羽化仙经",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "羽化仙经残页",
+        "class": "材料",
+        "amount": 10
+      }
+    ]
+  },
      {
     "name": "前字秘",
     "class": "功法",
@@ -1376,6 +1388,33 @@
         "name": "霸血凝晶",
         "class": "材料",
         "amount": 5
+      }
+    ]
+  },
+  {
+    "name": "大位面传送阵",
+    "class": "道具",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "位面传送阵",
+        "class": "道具",
+        "amount": 1
+      },
+      {
+        "name": "扶摇羽",
+        "class": "材料",
+        "amount": 12
+      },
+      {
+        "name": "天外清风",
+        "class": "材料",
+        "amount": 5
+      },
+      {
+        "name": "星图",
+        "class": "道具",
+        "amount": 3
       }
     ]
   }
