@@ -28,6 +28,7 @@ class XiuxianData {
      givename: path.join(__dirname, '/resources/data/custom'),
       daofaList: path.join(__dirname, '/resources/data/daofa_list.json'),
       weimianList: path.join(__dirname, '/resources/data/位面.json'), // 去掉逗号
+      xianguSecretPlace: path.join(__dirname, '/data/xianguSecretPlace.json'),
     
    };
     this.lib_path = this.filePathMap.lib;
@@ -123,6 +124,12 @@ class XiuxianData {
     //加载丹药列表
     this.danyao_list = JSON.parse(
       fs.readFileSync(`${this.lib_path}/丹药列表.json`)
+    );
+    this.jingshenyuzhou_list = JSON.parse(
+      fs.readFileSync(`${this.lib_path}/精神宇宙.json`)
+    );
+    this.jingshenyuzhou_drop_list = this.jingshenyuzhou_list.flatMap(place =>
+      place.layers.flatMap(layer => layer.drops || [])
     );
     //加载炼丹师丹药列表
     this.newdanyao_list = JSON.parse(
@@ -325,18 +332,27 @@ this.gongfa_list = JSON.parse(
     this.shenjie = JSON.parse(
       fs.readFileSync(`${this.lib_path}/神界列表.json`)
     );
-    //加载技能列表
+    //加载命格词条
+    this.minggeList = JSON.parse(
+      fs.readFileSync(`${this.lib_path}/命格词条.json`)
+    );
+    //兼容旧字段名
+    this.minggeLlist = this.minggeList;
+    //加载技能列表（技能组）
     this.jineng1 = JSON.parse(
-      fs.readFileSync(`${this.lib_path}/技能列表/技能列表1.json`)
+      fs.readFileSync(`${this.lib_path}/技能组/攻击技能.json`)
     );
     this.jineng2 = JSON.parse(
-      fs.readFileSync(`${this.lib_path}/技能列表/技能列表2.json`)
+      fs.readFileSync(`${this.lib_path}/技能组/防御技能.json`)
     );
-      this.jineng3 = JSON.parse(
-      fs.readFileSync(`${this.lib_path}/技能列表/技能列表3.json`)
+    this.jineng3 = JSON.parse(
+      fs.readFileSync(`${this.lib_path}/技能组/复活技能.json`)
     );
-      this.teshujineng = JSON.parse(
-      fs.readFileSync(`${this.lib_path}/技能列表/特殊技能.json`)
+    this.teshujineng = JSON.parse(
+      fs.readFileSync(`${this.lib_path}/技能组/灵根增幅技能.json`)
+    );
+    this.jineng_heal = JSON.parse(
+      fs.readFileSync(`${this.lib_path}/技能组/治疗技能.json`)
     );
     //加载强化列表
     this.qianghua = JSON.parse(

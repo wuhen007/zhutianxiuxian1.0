@@ -74,6 +74,9 @@
       title: '#灵根图鉴'
       desc: '查看所有灵根'
     - icon: help-icon_13
+      title: '#命格图鉴'
+      desc: '查看所有命格词条与效果'
+    - icon: help-icon_13
       title: '#兑换码图鉴'
       desc: '查看所有兑换码'
     - icon: help-icon_13

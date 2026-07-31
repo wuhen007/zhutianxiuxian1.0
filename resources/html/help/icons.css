@@ -1,0 +1,30 @@
+.help-icon {
+  --help-icon-x: 0px;
+  --help-icon-y: 0px;
+  background-color: transparent;
+  background-image: url('../../img/help/icon.png');
+  background-repeat: no-repeat;
+  background-size: 500px auto;
+  background-position: var(--help-icon-x) var(--help-icon-y);
+}
+
+.help-icon_1, .help-icon_11, .help-icon_21, .help-icon_31, .help-icon_41, .help-icon_51, .help-icon_61, .help-icon_71, .help-icon_81 { --help-icon-x: 0px; }
+.help-icon_2, .help-icon_12, .help-icon_22, .help-icon_32, .help-icon_42, .help-icon_52, .help-icon_62, .help-icon_72, .help-icon_82 { --help-icon-x: -50px; }
+.help-icon_3, .help-icon_13, .help-icon_23, .help-icon_33, .help-icon_43, .help-icon_53, .help-icon_63, .help-icon_73, .help-icon_83 { --help-icon-x: -100px; }
+.help-icon_4, .help-icon_14, .help-icon_24, .help-icon_34, .help-icon_44, .help-icon_54, .help-icon_64, .help-icon_74, .help-icon_84 { --help-icon-x: -150px; }
+.help-icon_5, .help-icon_15, .help-icon_25, .help-icon_35, .help-icon_45, .help-icon_55, .help-icon_65, .help-icon_75, .help-icon_85 { --help-icon-x: -200px; }
+.help-icon_6, .help-icon_16, .help-icon_26, .help-icon_36, .help-icon_46, .help-icon_56, .help-icon_66, .help-icon_76, .help-icon_86 { --help-icon-x: -250px; }
+.help-icon_7, .help-icon_17, .help-icon_27, .help-icon_37, .help-icon_47, .help-icon_57, .help-icon_67, .help-icon_77, .help-icon_87 { --help-icon-x: -300px; }
+.help-icon_8, .help-icon_18, .help-icon_28, .help-icon_38, .help-icon_48, .help-icon_58, .help-icon_68, .help-icon_78, .help-icon_88 { --help-icon-x: -350px; }
+.help-icon_9, .help-icon_19, .help-icon_29, .help-icon_39, .help-icon_49, .help-icon_59, .help-icon_69, .help-icon_79 { --help-icon-x: -400px; }
+.help-icon_10, .help-icon_20, .help-icon_30, .help-icon_40, .help-icon_50, .help-icon_60, .help-icon_70, .help-icon_80 { --help-icon-x: -450px; }
+
+.help-icon_1, .help-icon_2, .help-icon_3, .help-icon_4, .help-icon_5, .help-icon_6, .help-icon_7, .help-icon_8, .help-icon_9, .help-icon_10 { --help-icon-y: 0px; }
+.help-icon_11, .help-icon_12, .help-icon_13, .help-icon_14, .help-icon_15, .help-icon_16, .help-icon_17, .help-icon_18, .help-icon_19, .help-icon_20 { --help-icon-y: -50px; }
+.help-icon_21, .help-icon_22, .help-icon_23, .help-icon_24, .help-icon_25, .help-icon_26, .help-icon_27, .help-icon_28, .help-icon_29, .help-icon_30 { --help-icon-y: -100px; }
+.help-icon_31, .help-icon_32, .help-icon_33, .help-icon_34, .help-icon_35, .help-icon_36, .help-icon_37, .help-icon_38, .help-icon_39, .help-icon_40 { --help-icon-y: -150px; }
+.help-icon_41, .help-icon_42, .help-icon_43, .help-icon_44, .help-icon_45, .help-icon_46, .help-icon_47, .help-icon_48, .help-icon_49, .help-icon_50 { --help-icon-y: -200px; }
+.help-icon_51, .help-icon_52, .help-icon_53, .help-icon_54, .help-icon_55, .help-icon_56, .help-icon_57, .help-icon_58, .help-icon_59, .help-icon_60 { --help-icon-y: -250px; }
+.help-icon_61, .help-icon_62, .help-icon_63, .help-icon_64, .help-icon_65, .help-icon_66, .help-icon_67, .help-icon_68, .help-icon_69, .help-icon_70 { --help-icon-y: -300px; }
+.help-icon_71, .help-icon_72, .help-icon_73, .help-icon_74, .help-icon_75, .help-icon_76, .help-icon_77, .help-icon_78, .help-icon_79, .help-icon_80 { --help-icon-y: -350px; }
+.help-icon_81, .help-icon_82, .help-icon_83, .help-icon_84, .help-icon_85, .help-icon_86, .help-icon_87, .help-icon_88 { --help-icon-y: -400px; }

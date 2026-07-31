@@ -3,6 +3,9 @@ import path from 'path';
 import { plugin, config } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
 
+/** 自动备份保留份数，超过则删除最旧的 */
+const KEEP_BACKUP_COUNT = 30;
+
 export class BackUp extends plugin {
   constructor() {
     super({
@@ -29,7 +32,7 @@ export class BackUp extends plugin {
     this.task = {
       cron: config.getConfig('task', 'task').AutoBackUpTask,
       name: '修仙备份存档Task',
-      fnc: this.saveBackUp,
+      fnc: () => this.saveBackUp(),
     };
   }
 
@@ -152,6 +155,9 @@ export class BackUp extends plugin {
 
       // 等待所有任务完成
       await Promise.all(finishTask);
+
+      // 清理旧备份，仅保留最近 KEEP_BACKUP_COUNT 份
+      await this.cleanOldBackups(KEEP_BACKUP_COUNT);
 
       const timeStr = this.getTimeStr(nowTimeStamp);
       e?.reply(`存档备份成功喵~\n${timeStr}`);
@@ -309,8 +315,7 @@ export class BackUp extends plugin {
       return false;
     }
   }
-
-  getTimeStr(timeStamp) {
+  async getTimeStr(timeStamp) {
     return new Date(Number(timeStamp)).toLocaleString('zh-CN', {
       year: 'numeric',
       month: '2-digit',
@@ -320,4 +325,28 @@ export class BackUp extends plugin {
       second: '2-digit'
     });
   }
+
+  /**
+   * 自动备份清理：仅保留最近 KEEP_BACKUP_COUNT 份，超出的删除最旧的
+   * 备份目录以毫秒时间戳命名，升序排序后末尾为最新
+   */
+  async cleanOldBackups(keepCount = KEEP_BACKUP_COUNT) {
+    try {
+      const backupDir = __PATH.backup;
+      if (!fs.existsSync(backupDir)) return;
+      const folders = fs.readdirSync(backupDir).filter(name => {
+        const stat = fs.statSync(`${backupDir}/${name}`);
+        return name === `${Number(name)}` && stat.isDirectory();
+      }).sort((a, b) => Number(a) - Number(b)); // 升序：旧的在前
+      if (folders.length <= keepCount) return;
+      const toDelete = folders.slice(0, folders.length - keepCount);
+      for (const f of toDelete) {
+        fs.rmSync(`${backupDir}/${f}`, { recursive: true, force: true });
+      }
+      logger.info(`修仙：清理旧备份 ${toDelete.length} 份，保留最新 ${keepCount} 份`);
+    } catch (err) {
+      logger.error('清理旧备份出错:', err);
+    }
+  }
+
 }

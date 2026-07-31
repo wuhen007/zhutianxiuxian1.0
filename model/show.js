@@ -260,6 +260,14 @@ async get_jindi_placeData(myData) {
       ...myData,
     };
   }
+  async get_minggeData(myData) {
+    this.model = 'mingge';
+    return {
+      ...this.screenData,
+      saveId: 'mingge',
+      ...myData,
+    };
+  }
   async get_xianchong(myData) {
     this.model = 'xianchong';
     return {
@@ -322,7 +330,7 @@ async get_jindi_placeData(myData) {
   }
   
   async get_najie_category_Data(myData) {
-    this.model = 'najie-category';
+    this.model = 'najie';
     return {
       ...this.screenData,
       saveId: 'najie-category',
@@ -879,6 +887,24 @@ async get_auctionData(myData) {
     return {
       ...this.screenData,
       saveId: 'BossReward',
+      ...myData,
+    };
+  }
+  // 问仙令战令系统
+  async get_wenxianlingData(myData) {
+    this.model = 'wenxianling';
+    return {
+      ...this.screenData,
+      saveId: 'wenxianling',
+      ...myData,
+    };
+  }
+  // 仙古秘境神识地图
+  async get_xiangu_map_template(myData) {
+    this.model = 'xiangu_map';
+    return {
+      ...this.screenData,
+      saveId: 'xiangu_map',
       ...myData,
     };
   }

@@ -16,7 +16,8 @@ import {
   get_najie_img,
   get_najie_category_img,
   get_najie_chouchou_img,
-  channel
+  channel,
+  buildAt
 } from '../../model/xiuxian.js';
 export class UserAction extends plugin {
   constructor() {
@@ -35,9 +36,9 @@ export class UserAction extends plugin {
           fnc: 'Show_najie_luck',
         },
         {
-reg: '^#纳戒(功法|草药|盒子|丹药|道具|材料|食材|装备)$',
-fnc: 'Show_najie_category'
-},
+        reg: '^#纳戒(功法|草药|盒子|丹药|道具|材料|食材|装备)$',
+        fnc: 'Show_najie_category'
+        },
         {
           reg: '^#升级纳戒$',
           fnc: 'Lv_up_najie',
@@ -45,34 +46,33 @@ fnc: 'Show_najie_category'
          {
           reg: '^#打听天机$',
           fnc: 'dating',
+        },
+        {
+            reg: '^#探索狠人道场$',
+            fnc: 'exploreHrenDao'
+        },
+        {
+            reg: '^#探索乱古遗址$',
+            fnc: 'exploreLuanGu'
+        },
+        {
+            reg: '^#探索青帝坟冢$',
+            fnc: 'exploreQingDi'
+        },
+        {
+            reg: '^#传音给作者\\s*(.*)$',
+            fnc: 'sendMessageToAuthor'
+        },
+        {
+            reg: '^#偷取纳戒物品随机\\s+(\\d+)$',
+            fnc: 'stealRandomItemFromPlayer',
+            event: 'message.private'
+        },
+        {
+            reg: '^#偷取纳戒物品\\s+(\\S+)\\s+(\\d+)$',
+            fnc: 'stealItemFromPlayer',
+            event: 'message.private'
         }
-       ,
-{
-    reg: '^#探索狠人道场$',
-    fnc: 'exploreHrenDao'
-},
-{
-    reg: '^#探索乱古遗址$',
-    fnc: 'exploreLuanGu'
-},
-{
-    reg: '^#探索青帝坟冢$',
-    fnc: 'exploreQingDi'
-},
-{
-    reg: '^#传音给作者\\s*(.*)$',
-    fnc: 'sendMessageToAuthor'
-},
-{
-    reg: '^#偷取纳戒物品随机\\s+(\\d+)$',
-    fnc: 'stealRandomItemFromPlayer',
-    event: 'message.private'
-},
-  {
-    reg: '^#偷取纳戒物品\\s+(\\S+)\\s+(\\d+)$',
-    fnc: 'stealItemFromPlayer',
-    event: 'message.private'
-}
       ],
     });
   }
@@ -496,24 +496,72 @@ async sendMessageToAuthor(e) {
         `发送时间：${new Date().toLocaleString()}`,
     ].join('\n');
     
+    let sent = false;
+    let failReason = '';
+    
+    // === 方案1：私聊通知作者 ===
     try {
-        // 使用pushInfo函数发送私信给作者
         await this.pushInfo(authorQQ, false, message);
-        
-        // 回复发送者
+        sent = true;
+    } catch (err) {
+        failReason += `私聊失败(${err.message})；`;
+        Bot.logger.warn(`[传音] 私聊作者失败: ${err.message}`);
+    }
+    
+    // === 方案2：失败则尝试在群里@作者 ===
+    if (!sent && e.isGroup) {
+        try {
+            const groupMsg = [buildAt(authorQQ), '\n', message].join('');
+            await e.group.sendMsg(groupMsg);
+            sent = true;
+        } catch (err) {
+            failReason += `群内@失败(${err.message})；`;
+            Bot.logger.warn(`[传音] 群内@作者失败: ${err.message}`);
+        }
+    }
+    
+    // === 方案3：还失败则写入日志文件兜底 ===
+    if (!sent) {
+        try {
+            const logDir = `${__PATH.player_path}/../chuanYin_log`;
+            if (!fs.existsSync(logDir)) {
+                fs.mkdirSync(logDir, { recursive: true });
+            }
+            const logFile = `${logDir}/chuanYin_${new Date().toISOString().slice(0, 10)}.log`;
+            const logEntry = [
+                `[${new Date().toLocaleString()}]`,
+                `发送者: ${playerName}(${playerQQ})`,
+                `内容: ${content}`,
+                `来源群: ${e.isGroup ? (e.group_id || '未知') : '私聊触发'}`,
+                `失败原因: ${failReason}`,
+                `---`
+            ].join('\n');
+            fs.appendFileSync(logFile, logEntry + '\n');
+            sent = true;
+            Bot.logger.mark(`[传音] 已写入日志文件: ${logFile}`);
+        } catch (logErr) {
+            failReason += `日志写入失败(${logErr.message})`;
+            Bot.logger.error(`[传音] 日志写入失败: ${logErr.message}`);
+        }
+    }
+    
+    // === 回复发送者 ===
+    if (sent) {
         e.reply([
             `【传音成功】`,
             `你的传音已跨越诸天万界，送达作者耳中！`,
             `传音内容：`,
             `${content}`,
         ].join('\n'));
-    } catch (err) {
-        Bot.logger.mark(err);
+    } else {
         e.reply([
             `【传音失败】`,
-            `传音途中遭遇时空乱流，未能送达！`,
-            `错误信息：${err.message}`,
-            `请稍后再试或联系管理员`
+            `传音途中遭遇时空乱流，所有通道均未送达！`,
+            ``,
+            `失败原因：`,
+            `${failReason || '未知错误'}`,
+            ``,
+            `建议联系管理员或稍后重试。`,
         ].join('\n'));
     }
     

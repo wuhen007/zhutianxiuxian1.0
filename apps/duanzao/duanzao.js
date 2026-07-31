@@ -2,6 +2,10 @@ import fs from 'fs';
 
 import { plugin, puppeteer, verc, data, Show } from '../../api/api.js';
 import { add_qinmidu, __PATH } from '../../model/xiuxian.js';
+import {
+  getMinggeBonusMultiplier,
+  getMinggeEffects,
+} from '../../model/mingge.js';
 import { AppName } from '../../app.config.js';
 import {
   looktripod,
@@ -35,6 +39,7 @@ import {
   channel
 } from '../../model/xiuxian.js';
 import { log } from 'console';
+import { getPetAbilityBonus, getTimedActionMultiplier } from '../../model/innateTreasure.js';
 export class duanzao extends plugin {
   constructor() {
     super({
@@ -318,12 +323,8 @@ export class duanzao extends plugin {
       e.reply(`正在炼制中,无法熔炼更多材料`);
       return false;
     }
-    let num1 = 0;
-    if (player.仙宠 && player.仙宠.type == '炼器') {
-        // 根据加成属性计算额外容纳量
-        // 10%加成 = 1格，40%加成 = 4格
-        num1 = Math.floor(player.仙宠.加成 * 10); 
-    }
+    const forgingPetBonus = getPetAbilityBonus(player.仙宠, '炼器');
+    let num1 = Math.floor(forgingPetBonus * 10);
     let num = 0;
     for (let item in tripod.数量) {
       num += Number(tripod.数量[item]);
@@ -410,13 +411,16 @@ export class duanzao extends plugin {
             return false;
           }
         }
-        item.状态 = 1;
-        item.TIME = Date.now();
-        await Write_duanlu(newtripod);
         let action_time = 180 * 60 * 1000; //持续时间，单位毫秒
+        const player = data.getData('player', user_qq);
+        const timeMultiplier = getTimedActionMultiplier(player);
+        const actualActionTime = Math.floor(action_time * timeMultiplier);
+        item.状态 = 1;
+        item.TIME = Date.now() - Math.floor(action_time * (1 - timeMultiplier));
+        await Write_duanlu(newtripod);
         let arr = {
           action: '锻造', //动作
-          end_time: new Date().getTime() + action_time, //结束时间
+          end_time: new Date().getTime() + actualActionTime, //结束时间
           time: action_time, //持续时间
         };
         let dy = await Read_danyao(user_qq);
@@ -431,7 +435,7 @@ export class duanzao extends plugin {
           'zhutianxiuxian1.0:' + user_qq + ':action10',
           JSON.stringify(arr)
         ); //redis设置动作
-        e.reply(`现在开始锻造武器,最少需锻造30分钟,高级装备需要更多温养时间`);
+        e.reply(`现在开始锻造武器，预计${Math.ceil(actualActionTime / 60000)}分钟后完成温养`);
         return false;
       }
     }
@@ -449,6 +453,7 @@ export class duanzao extends plugin {
     }
     let newtripod;
     const player = await data.getData('player', user_qq);
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
     if (player.occupation != '炼器师') {
       e.reply(`切换到炼器师后再来吧,宝贝`);
       return false;
@@ -599,15 +604,19 @@ export class duanzao extends plugin {
       
         const newtime1 = Date.now() - Math.floor(Date.now() / 1000) * 1000;
         const sum = jiuwei[0] + jiuwei[1] + jiuwei[2];
+        const craftedEquipmentMultiplier = getMinggeBonusMultiplier(
+          minggeEffects,
+          '炼制装备加成'
+        );
         const zhuangbei = {
           id: max[1],
           name: wuqiname + '·' + houzhui + newtime1,
           class: '装备',
           type: wehizhi1,
-          atk: Math.floor(jiuwei[0] * xishu * 1000) / 1000,
-          def: Math.floor(jiuwei[1] * (xishu - fangyuxuejian) * 1000) / 1000,
-          HP: Math.floor(jiuwei[2] * xishu * 1000) / 1000,
-          bao: Math.floor(jiuwei[3] * 1000) / 1000,
+          atk: Math.floor(jiuwei[0] * xishu * craftedEquipmentMultiplier * 1000) / 1000,
+          def: Math.floor(jiuwei[1] * (xishu - fangyuxuejian) * craftedEquipmentMultiplier * 1000) / 1000,
+          HP: Math.floor(jiuwei[2] * xishu * craftedEquipmentMultiplier * 1000) / 1000,
+          bao: Math.floor(jiuwei[3] * craftedEquipmentMultiplier * 1000) / 1000,
           author_name: player.id,
           出售价: Math.floor(1000000 * sum),
         };
@@ -627,10 +636,12 @@ export class duanzao extends plugin {
         } else if (sum >= 0.7) {
           z += 1000;
         }
-        if (player.仙宠.type == '炼器') {
-          z = Math.floor(z * (1 + (player.仙宠.等级 / 25) * 0.1));
-        }
-        Add_职业经验(user_qq, z);
+        const forgingPetBonus = getPetAbilityBonus(player.仙宠, '炼器');
+        if (forgingPetBonus > 0) z = Math.floor(z * (1 + forgingPetBonus));
+        z = Math.floor(
+          z * getMinggeBonusMultiplier(minggeEffects, '锻造经验加成')
+        );
+        await Add_职业经验(user_qq, z);
         //关闭所有状态
         item.状态 = 0;
         item.TIME = 0;

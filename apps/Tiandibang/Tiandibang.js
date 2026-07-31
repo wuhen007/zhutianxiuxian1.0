@@ -689,9 +689,7 @@ async duihuan(e) {
       }
       let Data_battle = await zd_battle(A_player, B_player);
       let msg = Data_battle.msg;
-      let A_win = `${A_player.名号}击败了${B_player.名号}`;
-      let B_win = `${B_player.名号}击败了${A_player.名号}`;
-      if (msg.find(item => item == A_win)) {
+      if (Data_battle.winner === 'A') {
         if (k == -1) {
           tiandibang[x].积分 += 1500;
           lingshi = tiandibang[x].积分 * 8;
@@ -704,7 +702,7 @@ async duihuan(e) {
           `${A_player.名号}击败了[${B_player.名号}],当前积分[${tiandibang[x].积分}],获得了[${lingshi}]灵石`
         );
         Write_tiandibang(tiandibang);
-      } else if (msg.find(item => item == B_win)) {
+      } else if (Data_battle.winner === 'B') {
         if (k == -1) {
           tiandibang[x].积分 += 800;
           lingshi = tiandibang[x].积分 * 6;
@@ -754,9 +752,7 @@ async duihuan(e) {
       };
       let Data_battle = await zd_battle(A_player, B_player);
       let msg = Data_battle.msg;
-      let A_win = `${A_player.名号}击败了${B_player.名号}`;
-      let B_win = `${B_player.名号}击败了${A_player.名号}`;
-      if (msg.find(item => item == A_win)) {
+      if (Data_battle.winner === 'A') {
         tiandibang[x].积分 += 1500;
         tiandibang[x].次数 -= 1;
         lingshi = tiandibang[x].积分 * 8;
@@ -764,7 +760,7 @@ async duihuan(e) {
           `${A_player.名号}击败了[${B_player.名号}],当前积分[${tiandibang[x].积分}],获得了[${lingshi}]灵石`
         );
         Write_tiandibang(tiandibang);
-      } else if (msg.find(item => item == B_win)) {
+      } else if (Data_battle.winner === 'B') {
         tiandibang[x].积分 += 800;
         tiandibang[x].次数 -= 1;
         lingshi = tiandibang[x].积分 * 6;

@@ -204,6 +204,12 @@
                 被动：【额外增伤】攻击+{{(player.灵根.法球倍率*100).toFixed(1)}}%<br />
                 天资：【{{player.天资等级}}】<br />
                 评价：【{{player.天资评价}}】<br />
+                {{if player.命格}}
+                命格：【{{player.命格.rarityName}}·{{player.命格.name}}{{if player.命格.isNegative}}·厄{{/if}}】<br />
+                {{else}}
+                命格：【未定】<br />
+                {{/if}}
+                仙道潜力：【{{player.仙道潜力 || 0}}】<br />
                 镇妖：【{{player.镇妖塔层数}}层】<br />
                 神魂：【{{player.神魄段数}}层】<br />
                 轮回点：【{{player.轮回点}}点】<br />

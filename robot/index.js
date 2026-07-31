@@ -26,7 +26,7 @@ export const appsOut = async AppsName => {
     let allExport = await import(address);
     let keys = Object.keys(allExport);
     keys.forEach(key => {
-      if (allExport[key].prototype) {
+      if (allExport[key]?.prototype instanceof plugin) {
         if (apps.hasOwnProperty(key))
           logger.info(
             `Template detection:已经存在class ${key}同名导出\n    ${address}`

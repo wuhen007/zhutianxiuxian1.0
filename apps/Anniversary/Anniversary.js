@@ -210,15 +210,15 @@ async preview_pifu(e) {
             let gift_xiuwei = player.星海之缘签到天数 * 100000;
             await Add_najie_thing(usr_qq, "秘境之匙", "道具", this.xiuxianConfigData.Sign.ticket);
             await Add_najie_thing(usr_qq, "群星秘钥", "道具", 1);
-            await Add_修为(usr_qq, gift_xiuwei);
-            await Add_血气(usr_qq, gift_xiuwei);
+
             player.爱莉希雅召唤次数 = (player.爱莉希雅召唤次数 || 0) + 1;
-            data.setData("player", usr_qq, player);
             let msg = [
                 segment.at(usr_qq),
                 `星海之缘签到成功,已经连续签到${player.星海之缘签到天数}天了，获得了${gift_xiuwei}修为与血气,群星秘钥x1,秘境之匙x${this.xiuxianConfigData.Sign.ticket}，爱莉希雅召唤次数剩余${player.爱莉希雅召唤次数}次`
             ]
             await Write_player(usr_qq,player)
+            await Add_修为(usr_qq, gift_xiuwei);
+            await Add_血气(usr_qq, gift_xiuwei);
             e.reply(msg);
             return;
         }
@@ -313,8 +313,8 @@ async zhaohuanailixiya(e) {
             // 50%概率：1个众生仙钓 + 5个仙品秘境结算卡 + 2000万修为血气
             await Add_najie_thing(usr_qq, "众生仙钓", "道具", 1);
             await Add_najie_thing(usr_qq, "仙品秘境结算卡", "道具", 5);
-            await Add_修为(usr_qq, 20000000);
-            await Add_血气(usr_qq, 20000000);
+            player.修为+=20000000;
+            player.血气+=20000000;
             obtainedItems.push("众生仙钓×1", "仙品秘境结算卡×5", "修为+2000万", "血气+2000万");
         }
 
@@ -331,6 +331,7 @@ async zhaohuanailixiya(e) {
                 ` 天资提升：${oldAptitude} → **${newAptitude}**`,
                 ` 天资评价：${newDescription}`
             );
+
         } else {
             replyMessage.push(
                 ` 爱莉希雅的身影轻轻环绕，但天资并未突破。`
@@ -353,7 +354,7 @@ async zhaohuanailixiya(e) {
         );
     }
 
-    // 保存玩家数据
+                // 保存玩家数据
     await Write_player(usr_qq, player);
 
     // 发送回复

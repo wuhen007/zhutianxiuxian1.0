@@ -11,7 +11,7 @@ CD:
   xiajie: 10
   timeplace: 7
   forbiddenarea: 7
-  reborn: 360
+  reborn: 0
   transfer: 240
   honbao: 1
   stone_market: 360
@@ -99,16 +99,16 @@ Group:
   - 372093406
 Era:
   enabled: true
-  task: 0 0 */2 * * *
+  task: 0 0 */1 * * *
   pushNotice: true
   notifyGroups:
-    - "979295436"
+    - "542501652"
   Master: null
   current:
-    index: 1
+    index: 3
     years: 0
     epoch: 1
   yearlyAdvance: 1000
-BotType: official
+BotType: onebot
 AutoDailyTask:
-  cron: 0 5 0 * * *
+  cron: 0 18 18 * * *

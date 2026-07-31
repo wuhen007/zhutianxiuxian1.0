@@ -263,6 +263,11 @@
             }
         }
     </style>
+    <link
+        rel="stylesheet"
+        type="text/css"
+        href="{{pluResPath}}/html/help/icons.css"
+    />
 </head>
 <body>
     <div class="container">
@@ -287,9 +292,7 @@
                     <div class="tr">
                         {{each val.list item}}
                         <div class="td">
-                            <span class="help-icon {{item.icon}}">
-                                <i class="fas fa-{{item.icon}}"></i>
-                            </span>
+                            <span class="help-icon {{item.icon}}"></span>
                             <div class="help-content">
                                 <strong class="help-title">{{item.title}}</strong>
                                 <span class="help-desc">{{item.desc}}</span>

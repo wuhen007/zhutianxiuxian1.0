@@ -3,6 +3,19 @@ import path from 'path';
 import puppeteer from '../../../lib/puppeteer/puppeteer.js';
 
 import data from './XiuxianData.js';
+// 道种专属技能全局池别名：战斗函数内 `data` 常被玩家参数遮蔽，故用 SKILL_DB 稳定引用 XiuxianData 单例
+const SKILL_DB = data;
+
+// 按道种专属技能名查找技能条目（跨攻击/防御/治疗池），返回含 技能分类 的条目
+function getSeedSkillEntry(name) {
+  if (!name) return null;
+  for (const pool of [SKILL_DB.jineng1, SKILL_DB.jineng2, SKILL_DB.jineng_heal]) {
+    if (!Array.isArray(pool)) continue;
+    const found = pool.find(s => s.name === name && s.class === '道种专属');
+    if (found) return found;
+  }
+  return null;
+}
 import { Writeit, Read_it,readall,dataall } from './duanzaofu.js';
 import { AppName } from '../app.config.js';
 import config from './Config.js';
@@ -13,6 +26,35 @@ import { userInfo } from 'os';
 // import {action_way_fun} from "../apps/Game/action.js";
 import{cheakbaoshi}from "../apps/xiangqian/xiangqian.js"
 import { segment } from "icqq";
+import { create1v1BattleResult, createTeamBattleResult } from './combat/BattleResult.js';
+import {
+  buildMinggeAtlasData,
+  calculateMinggeCurrencyGain,
+  calculateMinggeFourRealmBonus,
+  calculateMinggeGain,
+  getMinggeEffects,
+} from './mingge.js';
+import { getXianqiSuppressMultiplier } from './xianguXianqi.js';
+import {
+  getPetAbilityBonus,
+  isInnateTreasureName,
+  getInnateTreasureProjectionName,
+  updateEquippedInnateTreasure,
+} from './innateTreasure.js';
+import {
+  PLACE_LOCATION_MAP,
+  SPECIAL_LOCATIONS,
+  getBaseTravelThreshold,
+  getBodyTravelQuote,
+  ensureDefaultCoordinates,
+  getKunpengReduction,
+  getLocationThreshold,
+  getTokenTier,
+  getTokenTravelTime,
+  hasCoordinate,
+  hasEngravedCoordinate,
+} from './weimianTravel.js';
+import { calculateEquippedStats } from './equipmentStats.js';
 
 /**
  * 获取机器人类型
@@ -206,6 +248,11 @@ export async function Read_player(usr_qq) {
   });
   //将字符串数据转变成数组格式
   player = JSON.parse(player);
+  if (player.先天至宝失效时间 && Number(player.先天至宝失效时间) <= Date.now()) {
+    player.当前先天至宝 = '';
+    player.先天至宝失效时间 = 0;
+  }
+  ensureDefaultCoordinates(player);
   return player;
 }
 export async function LevelTask(e, power_n, power_m, power_Grade, aconut, illusionRate) {
@@ -686,6 +733,31 @@ export async function spirit_tribulation(e, player) {
                     msg += `≡ 元神上限提升至：${player.元神上限.toFixed(0)}\n`;
                     msg += `≡ 虚实转化率提升至：${(player.虚实转化率*100).toFixed(1)}%`;
                     
+                    // 天罗地网感知（第7~9转注入恐怖文本）
+                    if (playerState.current_transformation >= 7) {
+                        const tianluoMsgs = [
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            // 第7转
+                            `\n\n  ══════════════════════╗\n  你的元神在虚实转化的刹那——\n  忽然打了个寒颤。\n\n  虚空深处，似有冰冷锁链在碰撞。\n  那声音极其遥远，又似近在耳畔：\n  \n    "又来了一个……"\n  \n  你告诉自己那是错觉。\n  ══════════════════════╝`,
+                            // 第8转
+                            `\n\n  ══════════════════════╗\n  第捌转，虚实壁垒出现了裂痕——\n  不是你造成的裂痕。\n\n  透过那道裂痕，你看见了光。\n  你以为那是仙门。\n\n  但那光……冰冷刺骨。\n  光幕后面，有无数模糊的影子在挣扎，\n  它们的元神，正被一根根透明的丝线缠绕，\n  缓缓拖入光的彼端。\n\n  你忽然意识到——\n  那些丝线，一直都在你身上。\n  ══════════════════════╝`,
+                            // 第9转
+                            `\n\n  ══════════════════════╗\n  第玖转。最终转。\n\n  你终于看清了。\n\n  那不是仙门。\n  那是一张网。\n\n  一张从宇宙初开时就张开的网。\n  天罗在上，地网在下，\n  凡间所有修士的元神，皆在网中。\n\n  你不是第一个走到这一步的人。\n  也不会是最后一个。\n\n  网中的鱼，永远不可能自己挣脱渔网。\n\n    ——除非，你把撒网的人，拉下来。\n  ══════════════════════╝`,
+                        ];
+                        const senseText = tianluoMsgs[playerState.current_transformation];
+                        if (senseText) {
+                            msg += senseText;
+                            // 标记玩家已感知天罗地网
+                            player.天罗地网感知 = true;
+                            await Write_player(usr_qq, player);
+                        }
+                    }
+
                     // 保存玩家数据
                     await Write_player(usr_qq, player);
                     
@@ -693,20 +765,36 @@ export async function spirit_tribulation(e, player) {
                     if (playerState.current_transformation >= playerState.transformations) {
                         clearInterval(playerState.timer);
                         msg += `\n\n≡≡≡ 元神化真完成！≡≡≡`;
+                        
+                        // 天罗地网感知者，登仙喜报语气改变
+                        let celebrationMsg;
+                        if (player.天罗地网感知) {
+                            celebrationMsg = [
+                                `≡≡≡ 阴阳同济·永恒证真 ≡≡≡`,
+                                `≡ ${player.名号}成功渡过双重无妄真劫`,
+                                `≡ `,
+                                `≡ 但你的元神，已看见了网。`,
+                                `≡ 那扇所谓的"仙门"，冰冷刺骨。`,
+                                `≡ `,
+                                `≡ 请慎重 #登仙……`,
+                                `≡ 你确定，门后面，是你要去的地方吗？`,
+                            ].join('\n');
+                        } else {
+                            celebrationMsg = [
+                                `≡≡≡ 阴阳同济·永恒证真 ≡≡≡`,
+                                `≡ ${player.名号}成功渡过双重无妄真劫，超脱人世间`,
+                                `≡ 元神强度：${player.元神.toFixed(0)}`,
+                                `≡ 真实掌握度：100%`,
+                                `≡ 请即刻#登仙进入仙界！`
+                            ].join('\n');
+                        }
+
+                        // 原始终结处理（补回 power + 真实掌握度）
                         player.power = 2;
-                        player.真实掌握度 = 1.0; // 完全掌握真实法则
+                        player.真实掌握度 = 1.0;
                         await Write_player(usr_qq, player);
                         
-                        // 发送登仙喜报
-                        const celebrationMsg = [
-                            `≡≡≡ 阴阳同济·永恒证真 ≡≡≡`,
-                            `≡ ${player.名号}成功渡过双重无妄真劫，超脱人世间`,
-                            `≡ 元神强度：${player.元神.toFixed(0)}`,
-                            `≡ 真实掌握度：100%`,
-                            `≡ 请即刻#登仙进入仙界！`
-                        ].join("\n");
-                        
-                        e.reply(msg + "\n\n" + celebrationMsg);
+                        e.reply(msg + '\n\n' + celebrationMsg);
                         playerState.result = { success: true };
                         delete spirit_players[usr_qq];
                         return;
@@ -807,7 +895,7 @@ export async function dujie(user_qq) {
     '神体': 3.0,'妖体': 3.0,
     '圣体': 4.0,
     '小成圣体': 5.0,
-    '大成圣体': 8.0,'至尊体': 8.0,'命运': 8.0,'魔头': 8.0,
+    '大成圣体': 8.0,'至尊体': 8.0,'命运': 8.0,'天魔': 8.0,
     '混沌体': 8.0,
     '大道体': 8.0,
     '圣体道胎': 10.0,'神魔体': 12.0,
@@ -838,21 +926,36 @@ export async function Write_player(usr_qq, player) {
   return;
 }
 
+function normalizeEquipmentSlot(slot) {
+  return {
+    name: '',
+    atk: 0,
+    def: 0,
+    HP: 0,
+    bao: 0,
+    全属性: 0,
+    ...(slot && typeof slot === 'object' ? slot : {}),
+  };
+}
+
+function normalizeEquipment(equipment) {
+  const current = equipment && typeof equipment === 'object' ? equipment : {};
+  return {
+    ...current,
+    武器: normalizeEquipmentSlot(current.武器),
+    护具: normalizeEquipmentSlot(current.护具),
+    法宝: normalizeEquipmentSlot(current.法宝),
+    帝兵: normalizeEquipmentSlot(current.帝兵),
+  };
+}
+
 //读取装备信息，返回成一个JavaScript对象
 export async function Read_equipment(usr_qq) {
   let dir = path.join(`${__PATH.equipment_path}/${usr_qq}.json`);
   
   // 检查文件是否存在
   if (!fs.existsSync(dir)) {
-    // 返回默认空装备对象
-    return {
-      武器: { name: '', 品阶: '' },
-      护具: { name: '', 品阶: '' },
-      法宝: { name: '', 品阶: '' },
-      饰品: { name: '', 品阶: '' },
-      帝兵: null,
-      帝具: null
-    };
+    return normalizeEquipment({ 饰品: { name: '', 品阶: '' }, 帝具: null });
   }
   
   let equipment = fs.readFileSync(dir, 'utf8', (err, data) => {
@@ -864,178 +967,284 @@ export async function Read_equipment(usr_qq) {
   });
   //将字符串数据转变成数组格式
   equipment = JSON.parse(equipment);
-  return equipment;
+  return normalizeEquipment(equipment);
+}
+
+function addXianguExtremeBonus(total, bonus) {
+  if (!bonus) return;
+  total.攻击 += Number(bonus.攻击加成) || 0;
+  total.防御 += Number(bonus.防御加成) || 0;
+  total.血量 += Number(bonus.血量加成) || 0;
+}
+
+/**
+ * 按玩家已达成的极境汇总固定属性，重复调用不会累加存档值。
+ * 神火极境优先使用具体道种/路线配置，找不到时回退到神火境默认配置。
+ */
+export function calculateXianguExtremeBonus(player, levels = data.xiangujinshi_list) {
+  const completed = new Set(
+    (Array.isArray(player?.极境) ? player.极境 : []).map(levelId => String(levelId))
+  );
+  if (player?.xiangu_shenhuo?.极境达成) completed.add('8');
+
+  const total = { 攻击: 0, 防御: 0, 血量: 0 };
+  for (const realm of levels || []) {
+    const levelId = String(realm?.level_id);
+    if (!completed.has(levelId)) continue;
+
+    let bonus = realm.极境加成;
+    if (levelId === '8') {
+      const extremeName = player?.xiangu_shenhuo?.极境名称;
+      // 有具体道种名称时必须精确命中；旧版普通道种不能回退吃到祭炼真我的默认极境。
+      bonus = extremeName ? realm.极境?.[extremeName] : bonus;
+    }
+    addXianguExtremeBonus(total, bonus);
+  }
+  return total;
 }
 
 //写入装备信息,第二个参数是一个JavaScript对象
 export async function Write_equipment(usr_qq, equipment) {
   let player = await Read_player(usr_qq);
+  equipment = normalizeEquipment(equipment);
+
+  const projectionName = getInnateTreasureProjectionName(equipment.帝兵);
+  const innateTreasureName = projectionName || (isInnateTreasureName(equipment.帝兵?.name)
+    ? equipment.帝兵.name
+    : '');
+  player.当前先天至宝 = innateTreasureName;
+  player.先天至宝失效时间 = projectionName
+    ? Number(equipment.帝兵.先天投影截止)
+    : 0;
+  if (projectionName) {
+    updateEquippedInnateTreasure(usr_qq, '');
+  } else {
+    updateEquippedInnateTreasure(
+      usr_qq,
+      innateTreasureName,
+      player.宗门?.宗门名称 || ''
+    );
+  }
 
    // 新增逻辑：如果仙古今世法等级是undefined，则赋值为1
   if (player.xiangulevel_id === undefined) {
     player.xiangulevel_id = 1;
   }
-   if (!player.光阴加成) player.光阴加成 = { 攻: 0, 防: 0, 生: 0 };
-  player.攻击 =
-    data.Level_list.find(item => item.level_id == player.level_id).基础攻击 +
-    player.攻击加成 + player.光阴加成.攻+
-    data.LevelMax_list.find(item => item.level_id == player.Physique_id).基础攻击+ 
-    data.Levelmijing_list.find(item => item.level_id == player.mijinglevel_id).基础攻击+ 
-    data.xiangujinshi_list.find(item => item.level_id == player.xiangulevel_id).基础攻击;
-  player.防御 =
-    data.Level_list.find(item => item.level_id == player.level_id).基础防御 +
-   player.防御加成 +player.光阴加成.防+
-    data.LevelMax_list.find(item => item.level_id == player.Physique_id).基础防御+ 
-    data.Levelmijing_list.find(item => item.level_id == player.mijinglevel_id).基础防御+ 
-    data.xiangujinshi_list.find(item => item.level_id == player.xiangulevel_id).基础防御;
-  player.血量上限 =
-    data.Level_list.find(item => item.level_id == player.level_id).基础血量 +
-    player.生命加成 +player.光阴加成.生+
-    data.LevelMax_list.find(item => item.level_id == player.Physique_id).基础血量+ 
-    data.Levelmijing_list.find(item => item.level_id == player.mijinglevel_id).基础血量+ 
-    data.xiangujinshi_list.find(item => item.level_id == player.xiangulevel_id).基础血量;;
+  if (!player.光阴加成) player.光阴加成 = { 攻: 0, 防: 0, 生: 0 };
+
+  // ===== 额外加成阈值拆分 =====
+  // 未超上限的部分正常参与所有计算（灵根放大/装备乘法/套装乘法）
+  // 超出上限的部分移到最后加算（不被任何乘法放大 = 自然稀释）
+  const _lv = player.level_id || 1;
+  const _phy = player.Physique_id || 1;
+  const _mij = player.mijinglevel_id || 1;
+  // 练气：1~41每级100w，42+每级1000w
+  const 练气上限 = _lv <= 41 ? _lv * 1000000 : 41 * 1000000 + (_lv - 41) * 10000000;
+  // 炼体：1~41每级100w，42+每级1000w
+  const 炼体上限 = _phy <= 41 ? _phy * 1000000 : 41 * 1000000 + (_phy - 41) * 10000000;
+  // 证道体系（秘境）：每级1500w
+  const 证道上限 = _mij * 15000000;
+  // 总上限（三层相加）
+  const 额外上限 = 练气上限 + 炼体上限 + 证道上限;
+
+  // 光阴加成直接豁免：始终全额参与所有放大，不进阈值稀释
+  const 光阴攻 = player.光阴加成?.攻 || 0;
+  const 光阴防 = player.光阴加成?.防 || 0;
+  const 光阴血 = player.光阴加成?.生 || 0;
+
+  // 极境加成从配置统一重算。通用加成没有可靠来源标记，不对旧存档做数值猜测或自动扣减。
+  const 仙古极境加成 = calculateXianguExtremeBonus(player);
+  const 原始额外攻 = Number(player.攻击加成) || 0;
+  const 原始额外防 = Number(player.防御加成) || 0;
+  const 原始额外血 = Number(player.生命加成) || 0;
+  const 额外攻 = 原始额外攻;
+  const 额外防 = 原始额外防;
+  const 额外血 = 原始额外血;
+
+  // 阈值内部分（正常参与所有后续乘法计算）
+  const 阈内攻 = Math.min(额外攻, 额外上限);
+  const 阈内防 = Math.min(额外防, 额外上限);
+  const 阈内血 = Math.min(额外血, 额外上限);
+
+  // 超出部分（移到最后加算，不被任何乘法放大 = 自然稀释）
+  const 超出攻 = Math.max(额外攻 - 额外上限, 0);
+  const 超出防 = Math.max(额外防 - 额外上限, 0);
+  const 超出血 = Math.max(额外血 - 额外上限, 0);
+
+  // ===== 阶段1：命格倍率仅作用于练气、炼体、秘境、仙古四体系基础总和 =====
+  const 四体系境界 = {
+    练气: data.Level_list.find(item => item.level_id == player.level_id),
+    炼体: data.LevelMax_list.find(item => item.level_id == player.Physique_id),
+    秘境: data.Levelmijing_list.find(item => item.level_id == player.mijinglevel_id),
+    仙古: data.xiangujinshi_list.find(item => item.level_id == player.xiangulevel_id),
+  };
+  const 四体系基础 = {
+    攻击: 四体系境界.练气.基础攻击 + 四体系境界.炼体.基础攻击 +
+      四体系境界.秘境.基础攻击 + 四体系境界.仙古.基础攻击,
+    防御: 四体系境界.练气.基础防御 + 四体系境界.炼体.基础防御 +
+      四体系境界.秘境.基础防御 + 四体系境界.仙古.基础防御,
+    血量: 四体系境界.练气.基础血量 + 四体系境界.炼体.基础血量 +
+      四体系境界.秘境.基础血量 + 四体系境界.仙古.基础血量,
+  };
+  const 命格效果 = getMinggeEffects(player, data.minggeList);
+  const 命格四体系加成 = calculateMinggeFourRealmBonus(四体系基础, 命格效果);
+
+  // 先按原公式结算，命格产生的四体系增量留到最后，避免被其他乘区二次放大。
+  player.攻击 = 四体系基础.攻击 + 仙古极境加成.攻击 + 阈内攻 + 光阴攻;
+  player.防御 = 四体系基础.防御 + 仙古极境加成.防御 + 阈内防 + 光阴防;
+  player.血量上限 = 四体系基础.血量 + 仙古极境加成.血量 + 阈内血 + 光阴血;
   player.暴击率 =
-    data.Level_list.find(item => item.level_id == player.level_id).基础暴击 +
-    data.LevelMax_list.find(item => item.level_id == player.Physique_id)
-      .基础暴击;
-const 灵根攻击 = player.灵根?.攻击 ?? 0;
-const 灵根防御 = player.灵根?.防御 ?? 0;
-const 灵根生命 = player.灵根?.生命 ?? 0;   
-player.攻击 = player.攻击 * (1+灵根攻击);
-player.防御 = player.防御 *(1+灵根防御);
-player.血量上限 = player.血量上限 * (1+灵根生命);
+    四体系境界.练气.基础暴击 + 四体系境界.炼体.基础暴击 +
+    (Number(命格效果.暴击加成) || 0);
+
+  // ===== 阶段2：灵根百分比放大（乘法） =====
+  const 灵根攻击 = player.灵根?.攻击 ?? 0;
+  const 灵根防御 = player.灵根?.防御 ?? 0;
+  const 灵根生命 = player.灵根?.生命 ?? 0;
+  player.攻击 = player.攻击 * (1 + 灵根攻击);
+  player.防御 = player.防御 * (1 + 灵根防御);
+  player.血量上限 = player.血量上限 * (1 + 灵根生命);
   let type = ['武器', '护具', '法宝','帝兵'];
-  for (let i of type) {
-    if (
-      equipment[i].atk > 99 ||
-      equipment[i].def > 99||
-      equipment[i].HP > 99
-    ) {
-      player.攻击 += equipment[i].atk;
-      player.防御 += equipment[i].def;
-      player.血量上限 += equipment[i].HP;
-    } else {
-      player.攻击 = Math.trunc(player.攻击 * (1 + equipment[i].atk));
-      player.防御 = Math.trunc(player.防御 * (1 + equipment[i].def));
-      player.血量上限 = Math.trunc(player.血量上限 * (1 + equipment[i].HP));
-    }
-    player.暴击率 += equipment[i].bao;
-  }
+  const equippedStats = calculateEquippedStats(player, type.map(i => equipment[i]));
+  player.攻击 = equippedStats.攻击;
+  player.防御 = equippedStats.防御;
+  player.血量上限 = equippedStats.血量上限;
+  for (let i of type) player.暴击率 += equipment[i].bao;
   player.暴击伤害 = player.暴击率 + 1.5;
   if (player.暴击伤害 > 2.5) player.暴击伤害 = 2.5;
-  if (player.仙宠.type == '暴伤') player.暴击伤害 += player.仙宠.加成;
-      if (equipment.武器.name == "灭仙剑" && equipment.法宝.name == "灭仙符" && equipment.护具.name == "灭仙衣" && player.魔道值 > 999 && player.灵根.type == "魔头") {
-        player.攻击 = Math.trunc(1.15 * player.攻击);
-    }
-    if (equipment.武器.name == "诛仙枪" && equipment.法宝.name == "诛仙花" && equipment.护具.name == "诛仙甲" && player.魔道值 > 999 && player.灵根.type == "魔头") {
-        player.攻击 = Math.trunc(1.05 * player.攻击);
-        player.血量上限 = Math.trunc(1.2 * player.血量上限);
-    }
-    if (equipment.武器.name == "光明剑" && equipment.法宝.name == "光明符" && equipment.护具.name == "光明衣" && player.魔道值 < 1 && player.灵根.type == "转生" ) {
-        player.攻击 = Math.trunc(1.15 * player.攻击);
-    }
-    if (equipment.武器.name == "神月剑" && equipment.法宝.name == "神日花" && equipment.护具.name == "神星甲" && player.魔道值 < 1 && player.灵根.type == "转生" ) {
-        player.攻击 = Math.trunc(1.05 * player.攻击);
-        player.血量上限 = Math.trunc(1.2 * player.血量上限);
-    }
-    if (equipment.武器.name == "【武祖】万仙武极天" && equipment.法宝.name == "【神命】无法无天" && equipment.护具.name == "【如梦】道祖的加护" && player.魔道值 < 1 && (  player.灵根.type == "命运")) {
-        player.攻击 = Math.trunc(3 * player.攻击);
-        player.血量上限 = Math.trunc(3 * player.血量上限);
-        player.防御 = Math.trunc(3 * player.防御);
-    }
-    if (equipment.武器.name == "【邪神】斩仙灭神剑" && equipment.法宝.name == "【邪神】魔渊的凝视" && equipment.护具.name == "【邪神】冥王真祖甲" && player.魔道值 > 9999 && ( player.灵根.type == "天魔")) {
-        player.攻击 = Math.trunc( 4* player.攻击);
-        player.血量上限 = Math.trunc(2 * player.血量上限);
-        player.防御 = Math.trunc(2.5 * player.防御);
-    }
-    if (equipment.武器.name == "【光阴】天道之剑" && equipment.法宝.name == "【光阴】命运之心" && equipment.护具.name == "【光阴】主宰之甲"  && ( player.灵根.type == "命运")) {
-        player.攻击 = Math.trunc( 6* player.攻击);
-        player.血量上限 = Math.trunc(6 * player.血量上限);
-        player.防御 = Math.trunc(6 * player.防御);
-    }
-    if (equipment.武器.name == "【光阴】天道之剑" && equipment.法宝.name == "【光阴】命运之心" && equipment.护具.name == "【光阴】主宰之甲"  && ( player.灵根.type == "天魔")) {
-        player.攻击 = Math.trunc( 7* player.攻击);
-        player.血量上限 = Math.trunc(5 * player.血量上限);
-        player.防御 = Math.trunc(6 * player.防御);
-    }
-    if (equipment.武器.name == "【超维】天帝剑" && ( player.灵根.type == "命运")) {
-        player.攻击 = Math.trunc( 10* player.攻击);
-        player.血量上限 = Math.trunc(8 * player.血量上限);
-        player.防御 = Math.trunc(8* player.防御);
-    } 
-    if (equipment.武器.name == "【超维】多元星盘" && ( player.灵根.type == "命运")) {
-        player.攻击 = Math.trunc( 7* player.攻击);
-        player.血量上限 = Math.trunc(10 * player.血量上限);
-        player.防御 = Math.trunc(5 * player.防御);
-    }  
-    if (equipment.武器.name == "【超维】主帝神甲" && ( player.灵根.type == "命运")) {
-        player.攻击 = Math.trunc( 5* player.攻击);
-        player.血量上限 = Math.trunc(5 * player.血量上限);
-        player.防御 = Math.trunc(10 * player.防御);
-    } 
-    if (equipment.武器.name == "【超维】天帝剑" && ( player.灵根.type == "天魔")) {
-        player.攻击 = Math.trunc( 15* player.攻击);
-        player.血量上限 = Math.trunc(8 * player.血量上限);
-        player.防御 = Math.trunc(8 * player.防御);
-    } 
-    if (equipment.武器.name == "【超维】多元星盘" && ( player.灵根.type == "天魔")) {
-        player.攻击 = Math.trunc( 7* player.攻击);
-        player.血量上限 = Math.trunc(10 * player.血量上限);
-        player.防御 = Math.trunc(5 * player.防御);
-    }  
-    if (equipment.武器.name == "【超维】主帝神甲" && ( player.灵根.type == "天魔")) {
-        player.攻击 = Math.trunc( 5* player.攻击);
-        player.血量上限 = Math.trunc(5 * player.血量上限);
-        player.防御 = Math.trunc(10 * player.防御);
-    }    
-    if (equipment.武器.name == "【极道帝兵】万物母气鼎"  &&  player.灵根.type == "大成圣体") {
-        player.攻击 = Math.trunc( 15 * player.攻击);
-        player.血量上限 = Math.trunc(5 * player.血量上限);
-        player.防御 = Math.trunc(5 * player.防御);
-    }
-   if ( equipment.武器.name == "仙帝器·大罗仙剑" &&  player.mijinglevel_id >= 20 ) {
-        player.攻击 = Math.trunc( 17.5 * player.攻击);
-        player.血量上限 = Math.trunc(10 * player.血量上限);
-        player.防御 = Math.trunc(10 * player.防御);
-        
-    }
-       if ( equipment.武器.name == "荒剑"  &&  player.mijinglevel_id >= 21) {
-        player.攻击 = Math.trunc( 20 * player.攻击);
-        player.血量上限 = Math.trunc(10 * player.血量上限);
-        player.防御 = Math.trunc(10 * player.防御);
-        
-    }
-              if ( equipment.武器.name == "天帝鼎"  &&  player.mijinglevel_id >= 21) {
-        player.攻击 = Math.trunc( 20 * player.攻击);
-        player.血量上限 = Math.trunc(10 * player.血量上限);
-        player.防御 = Math.trunc(10 * player.防御);
-    }
+  player.暴击伤害 += getPetAbilityBonus(player.仙宠, '暴伤');
 
-                   if ( equipment.护具.name == "祭道甲胄" &&  player.mijinglevel_id >= 21) {
-        player.攻击 = Math.trunc( 15 * player.攻击);
-        player.血量上限 = Math.trunc(20 * player.血量上限);
-        player.防御 = Math.trunc(35 * player.防御);
-    }
-               if ( equipment.法宝.name == "雷池" &&  player.mijinglevel_id >= 21) {
-        player.攻击 = Math.trunc( 20 * player.攻击);
-        player.血量上限 = Math.trunc(20 * player.血量上限);
-        player.防御 = Math.trunc(20 * player.防御);
-    }
-     if ( equipment.帝兵.author_name == player.id ) {
-        player.攻击 += Math.trunc( equipment.帝兵.全属性 * player.攻击);
-        player.血量上限 += Math.trunc(equipment.帝兵.全属性 * player.血量上限);
-        player.防御 += Math.trunc(equipment.帝兵.全属性 * player.防御); 
-    }
-                  if ( (equipment.帝兵.name== "封神榜"||equipment.帝兵.name== "神女炉"||equipment.帝兵.name== "天庭权杖")&&player.mijinglevel_id < 12&&player.xiangulevel_id < 12  ) {
-       player.攻击 += Math.trunc( equipment.帝兵.全属性 * player.攻击/10);
-        player.血量上限 += Math.trunc(equipment.帝兵.全属性 * player.血量上限/10);
-        player.防御 += Math.trunc(equipment.帝兵.全属性 * player.防御/10); 
-}
-         else   if ( equipment.帝兵&&!equipment.帝兵.author_name  ) {
-       player.攻击 += Math.trunc( equipment.帝兵.全属性 * player.攻击);
-        player.血量上限 += Math.trunc(equipment.帝兵.全属性 * player.血量上限);
-        player.防御 += Math.trunc(equipment.帝兵.全属性 * player.防御); 
-}
+  // ===== 阶段5：套装效果（增益相加，不再乘法叠加） =====
+  let 套装增益 = { 攻: 0, 防: 0, 血: 0 };
+  // 灭仙套
+  if (equipment.武器.name == "灭仙剑" && equipment.法宝.name == "灭仙符" && equipment.护具.name == "灭仙衣" && player.魔道值 > 999 && player.灵根.type == "魔头") {
+    套装增益.攻 += 0.15;
+  }
+  // 诛仙套
+  if (equipment.武器.name == "诛仙枪" && equipment.法宝.name == "诛仙花" && equipment.护具.name == "诛仙甲" && player.魔道值 > 999 && player.灵根.type == "魔头") {
+    套装增益.攻 += 0.05;
+    套装增益.血 += 0.2;
+  }
+  // 光明套
+  if (equipment.武器.name == "光明剑" && equipment.法宝.name == "光明符" && equipment.护具.name == "光明衣" && player.魔道值 < 1 && player.灵根.type == "转生") {
+    套装增益.攻 += 0.15;
+  }
+  // 神月套
+  if (equipment.武器.name == "神月剑" && equipment.法宝.name == "神日花" && equipment.护具.name == "神星甲" && player.魔道值 < 1 && player.灵根.type == "转生") {
+    套装增益.攻 += 0.05;
+    套装增益.血 += 0.2;
+  }
+  // 武祖套
+  if (equipment.武器.name == "【武祖】万仙武极天" && equipment.法宝.name == "【神命】无法无天" && equipment.护具.name == "【如梦】道祖的加护" && player.魔道值 < 1 && player.灵根.type == "命运") {
+    套装增益.攻 += 2; 套装增益.血 += 2; 套装增益.防 += 2;
+  }
+  // 邪神套
+  if (equipment.武器.name == "【邪神】斩仙灭神剑" && equipment.法宝.name == "【邪神】魔渊的凝视" && equipment.护具.name == "【邪神】冥王真祖甲" && player.魔道值 > 9999 && player.灵根.type == "天魔") {
+    套装增益.攻 += 3; 套装增益.血 += 1; 套装增益.防 += 1.5;
+  }
+  // 光阴套（命运）
+  if (equipment.武器.name == "【光阴】天道之剑" && equipment.法宝.name == "【光阴】命运之心" && equipment.护具.name == "【光阴】主宰之甲" && player.灵根.type == "命运") {
+    套装增益.攻 += 5; 套装增益.血 += 5; 套装增益.防 += 5;
+  }
+  // 光阴套（天魔）
+  if (equipment.武器.name == "【光阴】天道之剑" && equipment.法宝.name == "【光阴】命运之心" && equipment.护具.name == "【光阴】主宰之甲" && player.灵根.type == "天魔") {
+    套装增益.攻 += 6; 套装增益.血 += 4; 套装增益.防 += 5;
+  }
+  // 超维·天帝剑（命运）
+  if (equipment.武器.name == "【超维】天帝剑" && player.灵根.type == "命运") {
+    套装增益.攻 += 9; 套装增益.血 += 7; 套装增益.防 += 7;
+  }
+  // 超维·多元星盘（命运）
+  if (equipment.武器.name == "【超维】多元星盘" && player.灵根.type == "命运") {
+    套装增益.攻 += 6; 套装增益.血 += 9; 套装增益.防 += 4;
+  }
+  // 超维·主帝神甲（命运）
+  if (equipment.武器.name == "【超维】主帝神甲" && player.灵根.type == "命运") {
+    套装增益.攻 += 4; 套装增益.血 += 4; 套装增益.防 += 9;
+  }
+  // 超维·天帝剑（天魔）
+  if (equipment.武器.name == "【超维】天帝剑" && player.灵根.type == "天魔") {
+    套装增益.攻 += 14; 套装增益.血 += 7; 套装增益.防 += 7;
+  }
+  // 超维·多元星盘（天魔）
+  if (equipment.武器.name == "【超维】多元星盘" && player.灵根.type == "天魔") {
+    套装增益.攻 += 6; 套装增益.血 += 9; 套装增益.防 += 4;
+  }
+  // 超维·主帝神甲（天魔）
+  if (equipment.武器.name == "【超维】主帝神甲" && player.灵根.type == "天魔") {
+    套装增益.攻 += 4; 套装增益.血 += 4; 套装增益.防 += 9;
+  }
+  // 极道帝兵·万物母气鼎
+  if (equipment.武器.name == "【极道帝兵】万物母气鼎" && player.灵根.type == "大成圣体") {
+    套装增益.攻 += 14; 套装增益.血 += 4; 套装增益.防 += 4;
+  }
+  // 仙帝器·大罗仙剑（准仙帝+）
+  if (equipment.武器.name == "仙帝器·大罗仙剑" && player.mijinglevel_id >= 20) {
+    套装增益.攻 += 16.5; 套装增益.血 += 9; 套装增益.防 += 9;
+  }
+  // 荒剑（仙帝+）
+  if (equipment.武器.name == "荒剑" && player.mijinglevel_id >= 21) {
+    套装增益.攻 += 19; 套装增益.血 += 9; 套装增益.防 += 9;
+  }
+  // 天帝鼎（仙帝+）
+  if (equipment.武器.name == "天帝鼎" && player.mijinglevel_id >= 21) {
+    套装增益.攻 += 19; 套装增益.血 += 9; 套装增益.防 += 9;
+  }
+
+  // 祭道甲胄（仙帝+）
+  if (equipment.护具.name == "祭道甲胄" && player.mijinglevel_id >= 21) {
+    套装增益.攻 += 14; 套装增益.血 += 19; 套装增益.防 += 34;
+  }
+  // 雷池（仙帝+）
+  if (equipment.法宝.name == "雷池" && player.mijinglevel_id >= 21) {
+    套装增益.攻 += 19; 套装增益.血 += 19; 套装增益.防 += 19;
+  }
+  // 统一应用套装增益（增益相加，不再乘法叠加）
+  player.攻击 = Math.trunc(player.攻击 * (1 + 套装增益.攻));
+  player.防御 = Math.trunc(player.防御 * (1 + 套装增益.防));
+  player.血量上限 = Math.trunc(player.血量上限 * (1 + 套装增益.血));
+
+  // 道种的常规百分比属性随装备总属性重算；顶级仙种的固定极境数值已在阶段1单独结算。
+  const 道种属性 = player.xiangu_shenhuo?.点燃方式 === '道种孕育'
+    ? (player.xiangu_shenhuo.属性加成 || {})
+    : {};
+  const 道种全属性率 = Number(道种属性.全属性加成) || 0;
+  const 道种攻击率 = 道种全属性率 + (Number(道种属性.攻击加成) || 0);
+  const 道种防御率 = 道种全属性率 + (Number(道种属性.防御加成) || 0);
+  const 道种生命率 = 道种全属性率 + (Number(道种属性.血气加成 ?? 道种属性.生命加成) || 0);
+  player.攻击 = Math.trunc((player.攻击 + (Number(道种属性.攻击) || 0)) * (1 + 道种攻击率));
+  player.防御 = Math.trunc((player.防御 + (Number(道种属性.防御) || 0)) * (1 + 道种防御率));
+  player.血量上限 = Math.trunc((player.血量上限 + (Number(道种属性.血气 ?? 道种属性.生命) || 0)) * (1 + 道种生命率));
+  player.暴击率 += Number(道种属性.暴击加成 ?? 道种属性.暴撃加成 ?? 道种属性.暴击) || 0;
+
+  // ===== 阶段6：帝兵全属性（只乘秘境基础+仙古基础，不再乘最终属性） =====
+  const 秘境基础数据 = data.Levelmijing_list.find(item => item.level_id == player.mijinglevel_id);
+  const 仙古基础数据 = data.xiangujinshi_list.find(item => item.level_id == player.xiangulevel_id);
+  const 后两层攻 = (秘境基础数据?.基础攻击 || 0) + (仙古基础数据?.基础攻击 || 0);
+  const 后两层防 = (秘境基础数据?.基础防御 || 0) + (仙古基础数据?.基础防御 || 0);
+  const 后两层血 = (秘境基础数据?.基础血量 || 0) + (仙古基础数据?.基础血量 || 0);
+  // 自己铸造的帝兵 → 全额
+  if (equipment.帝兵.author_name == player.id) {
+    player.攻击 += Math.trunc(equipment.帝兵.全属性 * 后两层攻);
+    player.血量上限 += Math.trunc(equipment.帝兵.全属性 * 后两层血);
+    player.防御 += Math.trunc(equipment.帝兵.全属性 * 后两层防);
+  }
+  // 特殊帝兵且境界不足 → 1/10
+  if ((equipment.帝兵.name == "封神榜" || equipment.帝兵.name == "神女炉" || equipment.帝兵.name == "天庭权杖") && player.mijinglevel_id < 12 && player.xiangulevel_id < 12) {
+    player.攻击 += Math.trunc(equipment.帝兵.全属性 * 后两层攻 / 10);
+    player.血量上限 += Math.trunc(equipment.帝兵.全属性 * 后两层血 / 10);
+    player.防御 += Math.trunc(equipment.帝兵.全属性 * 后两层防 / 10);
+  } else if (equipment.帝兵 && !equipment.帝兵.author_name) {
+    // 无主帝兵 → 全额
+    player.攻击 += Math.trunc(equipment.帝兵.全属性 * 后两层攻);
+    player.血量上限 += Math.trunc(equipment.帝兵.全属性 * 后两层血);
+    player.防御 += Math.trunc(equipment.帝兵.全属性 * 后两层防);
+  }
+
+  // ===== 阶段7：不参与其他乘区的属性最后加算 =====
+  player.攻击 = Math.max(1, player.攻击 + 超出攻 + 命格四体系加成.攻击);
+  player.防御 = Math.max(1, player.防御 + 超出防 + 命格四体系加成.防御);
+  player.血量上限 = Math.max(1, player.血量上限 + 超出血 + 命格四体系加成.血量);
     await Write_player(usr_qq, player);
     await Add_HP(usr_qq, 0);
     let dir = path.join(__PATH.equipment_path, `${usr_qq}.json`);
@@ -1171,9 +1380,19 @@ export async function get_log2_img(e){
 }
 // 辅助：格式化大数
 function fmtNum(n) {
-  if (n >= 100000000) return (n / 100000000).toFixed(1) + '亿';
-  if (n >= 10000) return (n / 10000).toFixed(1) + '万';
-  return String(n);
+  if (n === null || n === undefined) return '--';
+  const value = Number(n);
+  if (!Number.isFinite(value)) return '--';
+  const trim = num => num.toFixed(1).replace(/\.0$/, '');
+  if (value >= 100000000) return trim(value / 100000000) + '亿';
+  if (value >= 10000) return trim(value / 10000) + '万';
+  return trim(value);
+}
+
+function fmtLevel(list, levelId) {
+  const id = Number(levelId) || 0;
+  const name = list.find(item => Number(item.level_id) === id)?.level;
+  return name ? `${name}（${id}级）` : `${id}级`;
 }
 
 // 危险等级 → CSS class
@@ -1197,136 +1416,147 @@ export async function get_weimian_img(e) {
     let usr_qq = e.user_id.toString().replace('qg_', '');
     usr_qq = await channel(usr_qq);
 
-    if (!data.existData('player', usr_qq)) return;
+    if (!data.existData('player', usr_qq)) return '暂无修仙存档，请先发送 #修仙 创建角色';
     const player = await data.getData('player', usr_qq);
 
     const mijingLv = player.mijinglevel_id ?? 0;
     const xianguLv = player.xiangulevel_id ?? 0;
-    const physiqueLv = player.physiquelevel_id ?? 0;
-    const levelId = player.level_id ?? 0;
-    const currentPlace = player.power_place ?? 0;
-    const hasKunpeng = player.学习的功法?.includes('鲲鹏宝术');
+    const physiqueLv = player.Physique_id ?? 0;
+    const currentPlaceValue = Number(player.power_place ?? 0);
+    const currentPlace = Number.isFinite(currentPlaceValue) ? currentPlaceValue : 0;
+    const travelTechniqueReduction = getKunpengReduction(player);
 
-    // LOCATION_MAP: 与 goToLocation 保持一致
-    const LOCATION_MAP = {
-      '凡间': 0, '仙界': 1, '下界八域': 1.5, '遮天位面': 2,
-      '九天十地': 2.5, '界海': 3, '时间长河': 4, '永恒未知之地': 5, '仙域': 6
-    };
+    let worldState = {};
+    try {
+      worldState = JSON.parse(fs.readFileSync(data.filePathMap.weimianList, 'utf8'));
+    } catch (error) {
+      console.error('读取位面状态失败:', error.message);
+    }
+
     const ID_TO_NAME = {};
-    for (const [k, v] of Object.entries(LOCATION_MAP)) ID_TO_NAME[v] = k;
+    for (const [name, id] of Object.entries(PLACE_LOCATION_MAP)) ID_TO_NAME[id] = name;
 
-    // 9 个位面定义（与 goToLocation 的 req 严格对齐）
     const REALM_DEFS = [
       {
         id: 0, name: '凡间', icon: '🌍', description: '凡尘俗世，修仙起点。天地灵气稀薄但安全稳定，初入仙途的打基础之地。',
         danger: '极低', features: '凡人世界·王朝更替',
-        req: { mijin: 0, xiangu: 0, physique: 0, level_id: 0, special: null },
         isSpecial: false
       },
       {
         id: 1, name: '仙界', icon: '🌌', description: '仙灵之气充盈之地，大教圣地、仙宫神殿林立，成仙后的主要舞台。',
         danger: '中等', features: '仙气浓郁·大教林立',
-        req: { mijin: 12, xiangu: 10, physique: 42, level_id: 42, special: '需轮回或地仙境' },
         isSpecial: false
       },
       {
         id: 1.5, name: '下界八域', icon: '🏔️', description: '法则残缺的古界，蕴含大机缘。古教传承遍布，成就天神的关键跳板。',
         danger: '高', features: '法则残缺·古教传承',
-        req: { mijin: 6, xiangu: 8, physique: 30, level_id: 30, special: null },
         isSpecial: false
       },
       {
         id: 2, name: '遮天位面', icon: '🌟', description: '北斗星域，七大生命禁区。成就大帝、红尘仙的试炼场。',
         danger: '极高', features: '生命禁区·帝路争锋',
-        req: { mijin: 12, xiangu: 10, physique: 40, level_id: 40, special: '需激活五色祭坛' },
         isSpecial: false
       },
       {
         id: 2.5, name: '九天十地', icon: '🏛️', description: '乱古战场，仙古纪元遗迹。仙王传承地，异域前线。',
         danger: '极高', features: '仙王传承·乱古战场',
-        req: { mijin: 14, xiangu: 12, physique: 45, level_id: 45, special: null },
         isSpecial: false
       },
       {
         id: 3, name: '界海', icon: '🌊', description: '诸天万界汇聚地，浪花间沉浮残破古界。准仙帝战场，黑暗源头。',
         danger: '致命', features: '万界沉浮·准仙帝战场',
-        req: { mijin: 18, xiangu: 16, physique: 50, level_id: 50, special: null },
         isSpecial: false
       },
       {
         id: 4, name: '时间长河', icon: '⏳', description: '贯穿古今未来的长河，超脱者的领域。可逆溯万古，窥探未来。',
         danger: '不可知', features: '时间领域·历史长河',
-        req: { mijin: 20, xiangu: 20, physique: 60, level_id: 60, special: '需准仙帝实力' },
         isSpecial: true
       },
       {
         id: 5, name: '永恒未知之地', icon: '♾️', description: '超脱诸天之外，万法不存。仙帝也无法完全掌握的终极领域。',
         danger: '不可知', features: '诸天之外·终极秘密',
-        req: { mijin: 21, xiangu: 21, physique: 70, level_id: 70, special: '需仙帝实力' },
         isSpecial: true
       },
       {
         id: 6, name: '仙域', icon: '✨', description: '完美世界至高净土，仙王巨头坐镇，诸天万界之核心。',
         danger: '仙王级', features: '仙王坐镇·至高净土',
-        req: { mijin: 18, xiangu: 16, physique: 55, level_id: 55, special: '需仙王实力' },
         isSpecial: true
       },
     ];
 
-    // 构建 realmList
     const realmList = REALM_DEFS.map(realm => {
-      const { id, req } = realm;
-      const distance = Math.abs(currentPlace - id);
-
-      // 消耗（与 goToLocation 公式一致）
-      const cost_xiuwei = distance * 10000000;
-      const cost_xueqi = distance * 15000000;
-      const cost_shouyuan = distance * 10000;
-      let cost_time = Math.max(5, distance * 5);
-
-      // 鲲鹏加速
-      let kunpengTime = 0;
-      if (hasKunpeng && distance > 0) {
-        kunpengTime = 3;
-        if (mijingLv >= 15 || xianguLv >= 13) kunpengTime++;
-        if (mijingLv >= 18 || xianguLv >= 16) kunpengTime++;
-        cost_time = Math.max(1, cost_time - kunpengTime);
-      }
-
-      // 解锁判定
-      const met_mijin = mijingLv >= req.mijin;
-      const met_xiangu = xianguLv >= req.xiangu;
-      const met_physique = physiqueLv >= req.physique;
-      const met_level = levelId >= req.level_id;
-      const allMet = met_mijin && met_xiangu && met_physique && met_level;
-
-      // 状态
+      const { id, name } = realm;
       const isCurrent = currentPlace === id;
+      const worldOpen = worldState[name] !== 0;
+      const baseThreshold = getBaseTravelThreshold(player);
+      const locationThreshold = getLocationThreshold(player, name);
+      const coordinateKnown = hasCoordinate(player, name);
+      const tokenTier = getTokenTier(player);
+      const tokenRoute = Boolean(tokenTier && !SPECIAL_LOCATIONS.includes(name));
+      const coordinateEngraved = hasEngravedCoordinate(player, name);
+      const routeReady = !tokenRoute || coordinateEngraved;
+      const thresholdMet = tokenRoute || locationThreshold.ok;
+      const unlocked = worldOpen && baseThreshold.ok && coordinateKnown && routeReady && thresholdMet;
 
       let status_tag = 'locked';
       let status_label = '未解锁';
-      if (isCurrent) { status_tag = 'current'; status_label = '当前位置'; }
-      else if (allMet) { status_tag = 'unlocked'; status_label = '已解锁'; }
-
-      // 凡间特殊：id=0 总是已解锁
-      if (id === 0) {
-        status_tag = isCurrent ? 'current' : 'unlocked';
-        status_label = isCurrent ? '当前位置' : '已解锁';
+      if (isCurrent) {
+        status_tag = 'current';
+        status_label = '当前位置';
+      } else if (!worldOpen) {
+        status_tag = 'destroyed';
+        status_label = '已崩灭';
+      } else if (!coordinateKnown) {
+        status_label = '坐标未知';
+      } else if (tokenRoute && !coordinateEngraved) {
+        status_label = '阵图未刻';
+      } else if (unlocked) {
+        status_tag = 'unlocked';
+        status_label = '已解锁';
       }
 
-      // 仙帝下凡（凡间锁定）
-      if (id === 0 && (mijingLv > 20 || xianguLv > 20)) {
-        status_tag = 'locked';
-        status_label = '天地不容';
-      }
-
-      // 条件展示行
       const req_items = [
-        { label: '秘境等级', display: `${mijingLv}/${req.mijin}`, met: met_mijin },
-        { label: '仙古等级', display: `${xianguLv}/${req.xiangu}`, met: met_xiangu },
-        { label: '肉身境界', display: `${physiqueLv}/${req.physique}`, met: met_physique },
-        { label: '修炼等级', display: `${levelId}/${req.level_id}`, met: met_level },
+        { label: '位面状态', display: worldOpen ? '开放' : '已崩灭', met: worldOpen },
+        ...baseThreshold.checks,
+        ...locationThreshold.checks.map(check => ({
+          ...check,
+          bypassed: tokenRoute && !check.met,
+          display: tokenRoute && !check.met ? `${check.display}（传送阵通行）` : check.display,
+        })),
+        { label: '星空坐标', display: coordinateKnown ? '已知' : '未记录', met: coordinateKnown },
       ];
+      if (tokenRoute) {
+        req_items.push({ label: '传送阵坐标', display: coordinateEngraved ? '已刻画' : '未刻画', met: coordinateEngraved });
+      }
+
+      const bodyQuote = getBodyTravelQuote(player, currentPlace, id);
+      let route_label = isCurrent ? '无需穿梭' : '肉身穿梭';
+      let xiuweiCost = bodyQuote.xiuweiCost;
+      let qixueCost = bodyQuote.qixueCost;
+      let shouyuanCost = bodyQuote.shouyuanCost;
+      let travelTime = bodyQuote.travelTime;
+      let costClass = 'cost-ok';
+
+      if (!isCurrent && tokenRoute) {
+        route_label = tokenTier === 'high' ? '高级传送阵' : '传送阵';
+        if (coordinateEngraved) {
+          xiuweiCost = 0;
+          qixueCost = 0;
+          shouyuanCost = 0;
+          travelTime = getTokenTravelTime(player, currentPlace, id, tokenTier);
+        } else {
+          xiuweiCost = null;
+          qixueCost = null;
+          shouyuanCost = null;
+          travelTime = null;
+          costClass = 'cost-muted';
+        }
+      }
+
+      const resourceClass = (cost, current) => {
+        if (cost === null) return 'cost-muted';
+        return Number(current || 0) >= cost ? 'cost-ok' : 'cost-fail';
+      };
 
       return {
         id_css: idToCss(id),
@@ -1335,29 +1565,41 @@ export async function get_weimian_img(e) {
         icon: realm.icon,
         description: realm.description,
         isSpecial: realm.isSpecial,
+        features: realm.features,
+        danger: realm.danger,
         status_tag,
         status_label,
         danger_class: dangerClass(realm.danger),
         req_items,
-        special_condition: req.special,
-        cost_xiuwei: fmtNum(cost_xiuwei),
-        cost_xueqi: fmtNum(cost_xueqi),
-        cost_shouyuan: fmtNum(cost_shouyuan),
-        cost_time,
-        hasKunpeng: hasKunpeng && kunpengTime > 0,
+        route_label,
+        cost_xiuwei: fmtNum(xiuweiCost),
+        cost_xueqi: fmtNum(qixueCost),
+        cost_shouyuan: fmtNum(shouyuanCost),
+        cost_xiuwei_class: costClass === 'cost-muted' ? costClass : resourceClass(xiuweiCost, player.修为),
+        cost_xueqi_class: costClass === 'cost-muted' ? costClass : resourceClass(qixueCost, player.血气),
+        cost_shouyuan_class: costClass === 'cost-muted' ? costClass : resourceClass(shouyuanCost, player.寿元),
+        cost_time: travelTime === null ? '--' : `${fmtNum(travelTime)}分钟`,
+        hasKunpeng: !tokenRoute && bodyQuote.kunpengReduction > 0,
+        kunpengReduction: bodyQuote.kunpengReduction,
+        unlocked: isCurrent || unlocked,
       };
     });
 
-    const unlockedCount = realmList.filter(r => r.status_tag !== 'locked').length;
+    const unlockedCount = realmList.filter(realm => realm.unlocked).length;
     const total = realmList.length;
 
     const playerData = {
       nickname: player.名号 || usr_qq,
       current_location_name: ID_TO_NAME[currentPlace] || '未知',
       teleport_tokens: player.位面传送次数 || 0,
-      mijinLevel: mijingLv,
-      xianguLevel: xianguLv,
-      physiqueLevel: physiqueLv,
+      advanced_teleport_tokens: player.高级传送次数 || 0,
+      cultivationLevel: fmtLevel(data.Level_list, player.level_id),
+      physiqueLevel: fmtLevel(data.LevelMax_list, physiqueLv),
+      mijinLevel: fmtLevel(data.Levelmijing_list, mijingLv),
+      xianguLevel: fmtLevel(data.xiangujinshi_list, xianguLv),
+      travelTechnique: travelTechniqueReduction > 0
+        ? `鲲鹏宝术（-${travelTechniqueReduction}分）`
+        : '无',
       unlocked: unlockedCount,
       total,
       progress: Math.round((unlockedCount / total) * 100),
@@ -1748,6 +1990,20 @@ export async function get_linggen_img(e) {
             )
         ].join('\n');
     }
+}
+
+export async function get_mingge_img(e) {
+  try {
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    const player = await existplayer(usr_qq) ? await Read_player(usr_qq) : null;
+    const templateData = buildMinggeAtlasData(data.minggeList, player);
+    const renderData = await new Show(e).get_minggeData(templateData);
+    return await puppeteer.screenshot('mingge', renderData);
+  } catch (err) {
+    console.error('生成命格图鉴失败:', err);
+    return `生成命格图鉴失败：${err.message}`;
+  }
 }
 /**
  * 返回该玩家的功法图片
@@ -2608,9 +2864,10 @@ export async function get_player_img(e) {
      let rank_xiangujinshi = data.xiangujinshi_list.find(
     item => item.level_id == player.xiangulevel_id
   ).level;
-    let 极境名称 = data.xiangujinshi_list.find(
+    let 极境名称 = (player.xiangu_shenhuo && player.xiangu_shenhuo.极境名称)
+    || data.xiangujinshi_list.find(
     item => item.level_id == player.xiangulevel_id
-  ).极境名称;
+  )?.极境名称;
 let 元神等级数据 = data.Levelyuanshen_list.find(
           item => item.level_id == player.yuanshenlevel_id
       );
@@ -3187,36 +3444,37 @@ export async function get_equipment_img(e) {
 export async function get_najie_category_img(e, category) {
   let usr_qq = e.user_id.toString().replace('qg_','');
   usr_qq = await channel(usr_qq);
-  
+
   // 检查玩家是否存在
   let ifexistplay = data.existData('player', usr_qq);
   if (!ifexistplay) {
     return;
   }
-  
+
   // 获取玩家和纳戒数据
   let player = await data.getData('player', usr_qq);
   let najie = await Read_najie(usr_qq);
-  
-  // 数据处理
+
   const lingshi = Math.trunc(najie.灵石);
   const lingshi2 = Math.trunc(najie.灵石上限);
   let strand_hp = Strand(player.当前血量, player.血量上限);
   let strand_lingshi = Strand(najie.灵石, najie.灵石上限);
-  
-  // 获取指定类别的物品
-  const categoryItems = najie[category] || {};
-  
-  // 构建玩家数据对象（只包含指定类别）
+
+  // 所有类别名称
+  const allCategories = ['装备','丹药','道具','功法','草药','材料','食材','盒子','宝石','仙宠','仙宠口粮'];
+
+  // 复制纳戒数据，清空非目标类别（HTML模板通过 length>0 条件渲染）
+  let najieFiltered = { ...najie, 灵石: lingshi, 灵石上限: lingshi2 };
+  for (let cat of allCategories) {
+    if (cat !== category) {
+      najieFiltered[cat] = [];
+    }
+  }
+
   let player_data = {
     user_id: usr_qq,
     player: player,
-    // 添加纳戒基本信息供模板使用
-    najie: {
-      等级: najie.等级,
-      灵石: lingshi,
-      灵石上限: lingshi2
-    },
+    najie: najieFiltered,
     mdz: player.魔道值,
     nickname: player.名号,
     najie_lv: najie.等级,
@@ -3224,43 +3482,21 @@ export async function get_najie_category_img(e, category) {
     player_nowHP: player.当前血量,
     najie_maxlingshi: lingshi2,
     najie_lingshi: lingshi,
+    najie_equipment: najieFiltered.装备,
+    najie_danyao: najieFiltered.丹药,
+    najie_daoju: najieFiltered.道具,
+    najie_gongfa: najieFiltered.功法,
+    najie_caoyao: najieFiltered.草药,
+    najie_cailiao: najieFiltered.材料,
+    najie_shicai: najieFiltered.食材,
+    najie_hezi: najieFiltered.盒子,
     strand_hp: strand_hp,
     strand_lingshi: strand_lingshi,
     pifu: player.纳戒皮肤,
-    current_category: category,
   };
-  
-  // 根据类别设置对应的属性
-  const categoryMap = {
-    '装备': 'najie_装备',
-    '丹药': 'najie_丹药', 
-    '道具': 'najie_道具',
-    '功法': 'najie_功法',
-    '草药': 'najie_草药',
-    '材料': 'najie_材料',
-    '食材': 'najie_食材',
-    '盒子': 'najie_盒子'
-  };
-  
-  // 设置当前类别的物品数据
-  const dataKey = categoryMap[category];
-  if (dataKey) {
-    player_data[dataKey] = categoryItems;
-  }
-  
-  // 其他类别设为空数组
-  Object.values(categoryMap).forEach(key => {
-    if (player_data[key] === undefined) {
-      player_data[key] = [];
-    }
-  });
-  
-  // 设置当前查看的类别
-  player_data.current_category = category;
-  
-  // 生成并返回纳戒图片
+
   const data1 = await new Show(e).get_najie_category_Data(player_data);
-  return await puppeteer.screenshot('najie-category', {
+  return await puppeteer.screenshot('najie', {
     ...data1,
   });
 }
@@ -4428,11 +4664,13 @@ export async function Write_najie(usr_qq, najie) {
 
 //修为数量和灵石数量正增加,负减少
 //使用时记得加await
-export async function Add_灵石(usr_qq, 灵石数量 = 0) {
+export async function Add_灵石(usr_qq, 灵石数量 = 0, options = {}) {
   let player = await Read_player(usr_qq);
-  player.灵石 += Math.trunc(灵石数量);
+  const effects = getMinggeEffects(player, data.minggeList);
+  const actualAmount = calculateMinggeCurrencyGain(灵石数量, effects, options);
+  player.灵石 += actualAmount;
   await Write_player(usr_qq, player);
-  return;
+  return actualAmount;
 }
 export async function Add_源石(usr_qq, 源石数量 = 0) {
   let player = await Read_player(usr_qq);
@@ -4442,9 +4680,11 @@ export async function Add_源石(usr_qq, 源石数量 = 0) {
 }
 export async function Add_修为(usr_qq, 修为数量 = 0) {
   let player = await Read_player(usr_qq);
-  player.修为 += Math.trunc(修为数量);
+  const effects = getMinggeEffects(player, data.minggeList);
+  const actualAmount = calculateMinggeGain(修为数量, effects, '修炼加成');
+  player.修为 += actualAmount;
   await Write_player(usr_qq, player);
-  return;
+  return actualAmount;
 }
 export async function Add_练气(usr_qq, 数量 = 0) {
   const player = await Read_player(usr_qq);
@@ -4519,6 +4759,18 @@ export async function Add_HP(usr_qq, blood = 0) {
   }
   await Write_player(usr_qq, player);
   return;
+}
+
+export async function Set_HP(usr_qq, blood) {
+  const hp = Number(blood);
+  if (!Number.isFinite(hp)) {
+    throw new TypeError(`无法设置玩家${usr_qq}的血量：${blood}`);
+  }
+
+  const player = await Read_player(usr_qq);
+  player.当前血量 = Math.min(Math.max(Math.trunc(hp), 0), player.血量上限);
+  await Write_player(usr_qq, player);
+  return player.当前血量;
 }
 /**
  *
@@ -4625,10 +4877,7 @@ export async function player_efficiency(usr_qq) {
     }
     player.学习的功法.splice(i, 1);
   }
-  if (player.仙宠.type == '修炼') {
-    // 是否存在修炼仙宠
-    xianchong_efficiency = player.仙宠.加成; // 存在修炼仙宠，仙宠效率为仙宠效率加成
-  }
+  xianchong_efficiency = getPetAbilityBonus(player.仙宠, '修炼');
   let dy = await Read_danyao(usr_qq);
   let bgdan = dy.biguanxl;
   if (parseInt(player.修炼效率提升) != parseInt(player.修炼效率提升)) {
@@ -4736,9 +4985,17 @@ export async function exist_najie_thing(
  * @param thing_class  物品类别
  * @param x  操作的数量,取+增加,取 -减少
  * @param pinji 品级 数字0-6
+ * @param equipmentMultiplier 装备属性倍率
  * @returns 无
  */
-export async function Add_najie_thing(usr_qq, name, thing_class, x, pinji) {
+export async function Add_najie_thing(
+  usr_qq,
+  name,
+  thing_class,
+  x,
+  pinji,
+  equipmentMultiplier = 1
+) {
 
   if(x>0){
   let wupin= await foundthing(name)
@@ -4752,6 +5009,9 @@ export async function Add_najie_thing(usr_qq, name, thing_class, x, pinji) {
     if (!pinji && pinji != 0) {
       pinji = Math.trunc(Math.random() * 6);
     }
+    const safeEquipmentMultiplier = Number.isFinite(Number(equipmentMultiplier))
+      ? Math.max(0, Number(equipmentMultiplier))
+      : 1;
     let z = [0.8, 1, 1.1, 1.2, 1.3, 1.5, 2];
     if (x > 0) {
       if (typeof name != 'object') {
@@ -4770,9 +5030,9 @@ export async function Add_najie_thing(usr_qq, name, thing_class, x, pinji) {
           if (thing) {
             let equ = JSON.parse(JSON.stringify(thing));
             equ.pinji = pinji;
-            equ.atk *= z[pinji];
-            equ.def *= z[pinji];
-            equ.HP *= z[pinji];
+            equ.atk *= z[pinji] * safeEquipmentMultiplier;
+            equ.def *= z[pinji] * safeEquipmentMultiplier;
+            equ.HP *= z[pinji] * safeEquipmentMultiplier;
             equ.数量 = x;
             equ.islockd = 0;
             najie[thing_class].push(equ);
@@ -4876,7 +5136,8 @@ export async function Add_najie_thing(usr_qq, name, thing_class, x, pinji) {
     
      'shicai_list',
       'jiagong_list',
-     'cailiao_list',
+      'cailiao_list',
+      'jingshenyuzhou_drop_list',
       'hezi_list',
     'baoshi_list'
     ];
@@ -5164,7 +5425,7 @@ export async function get_random_talent() {
     '变异灵根': 0.05,      // 5%
     '体质': 0.2,           // 20%
     '真灵根': 0.29,        // 29%
-    '伪灵根': 0.3718       // 37.18% (调整后)
+    '伪灵根': 0.36869      // 36.869%（1 - 其余概率之和，确保总和为1，消除告警）
   };
 
   // 计算总概率确保为1
@@ -5994,6 +6255,40 @@ export async function Read_renwu() {
   return renwu;
 }
 
+export async function Add_renwu_progress(A, field, amount = 1) {
+  const statusField = { jilu1: 'wancheng1', jilu2: 'wancheng2', jilu3: 'wancheng3' }[field];
+  if (!statusField || !Number.isFinite(Number(amount))) return false;
+
+  const lockKey = 'xiuxian:lock:daily_task_records';
+  const token = `${A}:${Date.now()}:${Math.random()}`;
+  let locked = false;
+  for (let attempt = 0; attempt < 100 && !locked; attempt++) {
+    locked = Boolean(await redis.set(lockKey, token, { EX: 15, NX: true }));
+    if (!locked) await sleep(25);
+  }
+  if (!locked) return false;
+
+  try {
+    const renwu = await Read_renwu();
+    const record = renwu.find(item => String(item?.player) === String(A));
+    if (!record || record[statusField] !== 1) return false;
+    record[field] = (Number(record[field]) || 0) + Number(amount);
+    await Write_renwu(renwu);
+    return true;
+  } finally {
+    try {
+      await redis.eval(`
+        if redis.call('get', KEYS[1]) == ARGV[1] then
+          return redis.call('del', KEYS[1])
+        end
+        return 0
+      `, { keys: [lockKey], arguments: [token] });
+    } catch (error) {
+      console.error('释放每日任务记录锁失败:', error);
+    }
+  }
+}
+
 
 
 export async function fstadd_renwu(A) {
@@ -6037,7 +6332,7 @@ export async function add_renwu(A, num) {
   }
   let i;
   for (i = 0; i < renwu.length; i++) {
-      if (renwu[i].A == A) {
+      if (renwu[i].player == A) {
           break;
       }
   }
@@ -6060,7 +6355,6 @@ export async function find_renwu(A) {
       renwu = await Read_renwu();
   }
   let i;
-  let QQ = [];
   for (i = 0; i < renwu.length; i++) {
       if (renwu[i].player == A) {
           break;
@@ -6069,11 +6363,8 @@ export async function find_renwu(A) {
   }
   if (i == renwu.length) {
       return false;
-  } else if (QQ.length != 0) {
-      return 0;
-  } else {
-      return renwu[i].任务;
   }
+  return true;
 }
 /**
  * 常用查询合集
@@ -6098,10 +6389,10 @@ export async function Go(e) {
     const currentPlace = player.power_place || 0; // 默认为仙界
     const placeName = PLACE_STATES[currentPlace] || "未知之地";
     
-    // 不开放私聊
-    if (!e.isGroup) {
-        return 0;
-    }
+    // // 不开放私聊
+    // if (!e.isGroup) {
+    //     return 0;
+    // }
     
     // 有无存档
     let ifexistplay = await existplayer(usr_qq);
@@ -6279,10 +6570,11 @@ export async function existshop(didian) {
  * @param {Array} msg 消息数组
  * @returns {boolean} 是否触发了帝兵效果
  */
-export async function handleEmperorWeapon(attacker, defender, msg,emperorWeaponTriggered) {
+export async function handleEmperorWeapon(attacker, defender, msg, emperorWeaponTriggered, preloadedEquipment = null) {
     if (emperorWeaponTriggered || !isNotNull(attacker.id)|| !isNotNull(defender.id)) return false;
-    
-    const equipment = await Read_equipment(attacker.id);
+
+    // 优先使用预加载的装备（减少 IO），否则 fallback 到 await
+    const equipment = preloadedEquipment || await Read_equipment(attacker.id);
 const DI_BING_RANKS = [
     "雏形", "通灵", "铭刻道与理", "斩道王兵", 
     "圣兵", "准帝兵", "极道帝兵", "仙器", 
@@ -6294,11 +6586,11 @@ const DI_BING_RANKS = [
         return false;
     }
     
-    // 帝兵属性加成
-    const 攻击加成 = Math.trunc(10 * attacker.攻击);
-    const 血量加成 = Math.trunc(10 * attacker.血量上限);
-    const 防御加成 = Math.trunc(10 * attacker.防御);
-    
+    // 帝兵属性加成（一次性，乘 1.5 不再叠加，避免每回合指数膨胀）
+    const 攻击加成 = Math.trunc(0.5 * attacker.攻击);
+    const 血量加成 = Math.trunc(0.5 * attacker.血量上限);
+    const 防御加成 = Math.trunc(0.5 * attacker.防御);
+
     attacker.攻击 += 攻击加成;
     attacker.血量上限 += 血量加成;
     attacker.防御 += 防御加成;
@@ -6322,9 +6614,7 @@ const DI_BING_RANKS = [
     msg.push(`攻击增加：${bigNumberTransform(攻击加成)}`);
     msg.push(`血量上限增加：${bigNumberTransform(血量加成)}`);
     msg.push(`防御增加：${bigNumberTransform(防御加成)}`);
-    
-    emperorWeaponTriggered = true;
-    
+
     // 特殊效果 - 万物母气
     if (equipment.帝兵.主材料 === "万物母气") {
         msg.push(`玄黄垂落，母气流转，镇压诸天万道！`);
@@ -6450,27 +6740,127 @@ function handleCircularGod(attacker, defender, msg, context) {
     msg.push(...skillMessages);
     return true;
 }
+
+// P3-2: 提取九秘触发逻辑为公共函数（1v1 和团战共用）
+// 概率公式：base 1% + 已学九秘数 × 10%，最多 100%
+function calcMijueTriggerProb(attacker) {
+  const learnedMijue = attacker.学习的功法?.filter(gongfa =>
+    ["临", "兵", "斗", "者", "皆", "数", "组", "前", "行"].some(mijue => gongfa.includes(mijue))
+  ).length || 0;
+  return Math.min(1.0, 0.01 + learnedMijue * 0.1);
+}
+
+// 皆字秘：十倍战力。返回 true 表示触发了
+function tryJieziMijue(attacker, msgs) {
+  if (!attacker.学习的功法?.includes("皆字秘") || attacker.皆字秘触发) return false;
+  if (Math.random() >= calcMijueTriggerProb(attacker)) return false;
+
+  const originalAttack = attacker.攻击;
+  const originalDefense = attacker.防御;
+  const originalHP = attacker.当前血量;
+
+  attacker.攻击 = Math.trunc(attacker.攻击 * 10);
+  attacker.防御 = Math.trunc(attacker.防御 * 10);
+  attacker.当前血量 = Math.trunc(attacker.当前血量 * 10);
+  attacker.皆字秘触发 = true;
+
+  msgs.push(`「皆！」${attacker.名号}口吐真言，周身迸发开天辟地之光！`);
+  msgs.push(`九秘之皆字秘显化，战力飙升十倍，打破天地桎梏！`);
+  msgs.push(`【战力飙升】`);
+  msgs.push(`攻击：${bigNumberTransform(originalAttack)} → ${bigNumberTransform(attacker.攻击)}`);
+  msgs.push(`防御：${bigNumberTransform(originalDefense)} → ${bigNumberTransform(attacker.防御)}`);
+  msgs.push(`生命：${bigNumberTransform(originalHP)} → ${bigNumberTransform(attacker.当前血量)}`);
+  return true;
+}
+
+// 临字秘：禁忌领域。linziState 是按引用对象，isA 表示攻方是 A 队
+function tryLinzMijue(attacker, defender, msgs, linziState, isA) {
+  if (!attacker.学习的功法?.includes("临字秘")) return false;
+  const 已触发 = isA ? linziState.A_触发 : linziState.B_触发;
+  if (已触发) return false;
+  if (Math.random() >= calcMijueTriggerProb(attacker)) return false;
+
+  const realmLevel = Math.floor(Math.random() * 9) + 1;
+
+  // 皆字秘压制非神禁领域
+  if (attacker.皆字秘触发 && realmLevel !== 9) {
+    msgs.push(`「临！」${attacker.名号}欲展开禁忌领域，然皆字秘十倍战力如星河决堤，禁忌领域演化被强行中断！`);
+    return true;
+  }
+
+  // 神禁领域突破皆字秘抑制
+  if (attacker.皆字秘触发 && realmLevel === 9) {
+    msgs.push(`「轰——！」${attacker.名号}长啸震古烁今，十倍战力加持下强行踏足神禁！`);
+    msgs.push(`双秘共鸣，身涌帝气，威压万古青天！`);
+  }
+
+  const realmNames = {
+    1: "一禁领域", 2: "二禁领域", 3: "三禁领域", 4: "四禁领域",
+    5: "五禁领域", 6: "六禁领域", 7: "七禁领域", 8: "八禁领域", 9: "神禁领域"
+  };
+
+  const selfMultiplier = realmLevel;
+  const enemyMultiplier = realmLevel / 10;
+
+  attacker.攻击 = Math.trunc(attacker.攻击 * selfMultiplier + defender.攻击 * enemyMultiplier);
+  attacker.防御 = Math.trunc(attacker.防御 * selfMultiplier + defender.防御 * enemyMultiplier);
+  attacker.当前血量 = Math.trunc(attacker.当前血量 * selfMultiplier + defender.当前血量 * enemyMultiplier);
+
+  const suppressionRate = realmLevel * 0.05;
+  defender.攻击 = Math.trunc(defender.攻击 * (1 - suppressionRate));
+  defender.防御 = Math.trunc(defender.防御 * (1 - suppressionRate));
+
+  if (isA) {
+    linziState.A_加成 = realmLevel * 0.04;
+    linziState.A_触发 = true;
+  } else {
+    linziState.B_加成 = realmLevel * 0.04;
+    linziState.B_触发 = true;
+  }
+
+  msgs.push(`「临！」${attacker.名号}口吐真言，${realmNames[realmLevel]}轰然展开！`);
+  msgs.push(`战力指数级暴涨，位阶突破${realmLevel}重天关！`);
+
+  if (realmLevel === 9) {
+    msgs.push(`「神禁领域，唯我独尊！」${attacker.名号}身与道合，超脱在上！`);
+  }
+
+  // 九秘齐鸣文案
+  const learnedMijue = attacker.学习的功法?.filter(gongfa =>
+    ["临", "兵", "斗", "者", "皆", "数", "组", "前", "行"].some(mijue => gongfa.includes(mijue))
+  ).length || 0;
+  if (learnedMijue >= 9) {
+    msgs.push(`九秘齐鸣，万道合一！${attacker.名号}身后浮现九大天尊虚影！`);
+  } else if (learnedMijue >= 4) {
+    msgs.push(`${learnedMijue}秘交织，异象纷呈！`);
+  }
+
+  return true;
+}
+
 /**
  * 处理控制效果（冻结、禁锢等）
  * @param {Object} attacker 攻击者对象
  * @param {Object} defender 防御者对象
  * @param {Array} msg 消息数组
  */
-function handleControlEffects(A_immune_control, B_immune_control,A_player,B_player,attacker, cnt,defender, msg,emperorFieldTriggered,context,cnt2,A_临字秘触发,B_临字秘触发,A_临字秘加成,B_临字秘加成) {
-    if (emperorFieldTriggered === false && attacker.mijinglevel_id > 19 && defender.mijinglevel_id < 20) {
+// P3-1: 收敛参数 - 删除未使用的 cnt/cnt2/A_临字秘触发/B_临字秘触发/A_临字秘加成/B_临字秘加成（6 个）
+// 临字秘状态通过 linziState 对象按引用传递
+function handleControlEffects(A_immune_control, B_immune_control, A_player, B_player, attacker, defender, msg, emperorFieldTriggered, context, linziState) {
+    if (emperorFieldTriggered.value === false && attacker.mijinglevel_id > 19 && defender.mijinglevel_id < 20) {
       if (attacker.mijinglevel_id - defender.mijinglevel_id >= 2) {
             // 计算夺取数值
             let 夺取攻击 = Math.floor(defender.攻击 * 0.5);
             let 夺取防御 = Math.floor(defender.防御 * 0.5);
             let 夺取血量 = Math.floor(defender.当前血量 * 0.5);
-            
+
             // 执行夺取
             defender.攻击 = Math.max(defender.攻击 - 夺取攻击, 0);
             defender.防御 = Math.max(defender.防御 - 夺取防御, 0);
             defender.当前血量 = Math.max(defender.当前血量 - 夺取血量, 0);
       msg.push(`${defender.名号}受到帝之场域压制，一身战力被削去十之五六!`);
-       emperorFieldTriggered = true;
-    } 
+       emperorFieldTriggered.value = true;
+    }
 }
 if (attacker.mijinglevel_id > 19 && defender.mijinglevel_id < 20 && Math.random() < 0.99) {
   // 检查防御方是否有免疫控制效果
@@ -6517,56 +6907,19 @@ if ( defender.灵根&&defender.灵根.name === "命运神道体") {
     } 
 // 九秘触发主逻辑
 if (context !== "fenshen") {
-    // 检查已学九秘数量（用于共鸣计算）
-    const learnedMijue = attacker.学习的功法?.filter(gongfa => 
-        ["临", "兵", "斗", "者", "皆", "数", "组", "前", "行"].some(mijue => gongfa.includes(mijue))
-    ).length || 0;
+    // P3-2: 皆字秘 用共享函数（行为完全一致）
+    tryJieziMijue(attacker, msg);
 
-    // 九秘共鸣概率计算函数
-    const calculateTriggerProbability = (attacker) => {
-        const baseProb = 0.01;
-        const bonusProbability = learnedMijue * 0.1;
-        return Math.min(1.0, baseProb + bonusProbability);
-    };
-
-    // 先判断皆字秘触发
-    if (attacker.学习的功法?.includes("皆字秘") && !attacker.皆字秘触发) {
-        const prob = calculateTriggerProbability(attacker);
-        if (Math.random() < prob) {
-            // 保存原始属性用于文案
-            const originalAttack = attacker.攻击;
-            const originalDefense = attacker.防御;
-            const originalHP = attacker.当前血量;
-            
-            // 应用十倍战力
-            attacker.攻击 = Math.trunc(attacker.攻击 * 10);
-            attacker.防御 = Math.trunc(attacker.防御 * 10);
-            attacker.当前血量 = Math.trunc(attacker.当前血量 * 10);
-            attacker.皆字秘触发 = true;
-            
-            // 构建皆字秘文案
-            const jieziMsg = [
-                `「皆！」`,
-                `${attacker.名号}口吐真言，周身迸发开天辟地之光！`,
-                `九秘之皆字秘显化，战力飙升十倍，打破天地桎梏！`,
-                ``,
-                `【战力飙升】`,
-                `攻击：${bigNumberTransform(originalAttack)} → ${bigNumberTransform(attacker.攻击)}`,
-                `防御：${bigNumberTransform(originalDefense)} → ${bigNumberTransform(attacker.防御)}`,
-                `生命：${bigNumberTransform(originalHP)} → ${bigNumberTransform(attacker.当前血量)}`,
-            ];
-
-            
-            msg.push(jieziMsg.join('\n'));
-        }
-    }
-
-    // 再判断临字秘（禁忌领域）触发，受皆字秘抑制
-    if (attacker.学习的功法?.includes("临字秘") && !(attacker === A_player ? A_临字秘触发 : B_临字秘触发)) {
-        const prob = calculateTriggerProbability(attacker);
+    // P3-2: 临字秘 保留 1v1 专有的辰东风格丰富文案（与团战简单版不同，不共享）
+    if (attacker.学习的功法?.includes("临字秘") && !(attacker === A_player ? linziState.A_触发 : linziState.B_触发)) {
+        const prob = calcMijueTriggerProb(attacker);
         if (Math.random() < prob) {
             const realmLevel = Math.floor(Math.random() * 9) + 1;
-            
+            // 本地声明，供 1v1 辰东风格文案使用
+            const learnedMijue = attacker.学习的功法?.filter(gongfa =>
+                ["临", "兵", "斗", "者", "皆", "数", "组", "前", "行"].some(mijue => gongfa.includes(mijue))
+            ).length || 0;
+
             // 禁忌领域抑制判断：皆字秘触发时，非神禁领域不得触发
             if (attacker.皆字秘触发 && realmLevel !== 9) {
                 // 皆字秘压制非神禁领域，输出描述
@@ -6647,13 +7000,13 @@ if (context !== "fenshen") {
                 defender.攻击 = Math.trunc(defender.攻击 * (1 - suppressionRate));
                 defender.防御 = Math.trunc(defender.防御 * (1 - suppressionRate));
                 
-                // 设置技能触发概率加成
+                // 设置技能触发概率加成（通过 linziState 按引用传回主循环）
                 if (attacker === A_player) {
-                    A_临字秘加成 = realmLevel * 0.04;
-                    A_临字秘触发 = true;
+                    linziState.A_加成 = realmLevel * 0.04;
+                    linziState.A_触发 = true;
                 } else {
-                    B_临字秘加成 = realmLevel * 0.04;
-                    B_临字秘触发 = true;
+                    linziState.B_加成 = realmLevel * 0.04;
+                    linziState.B_触发 = true;
                 }
                 
                 // 构建临字秘文案
@@ -6929,6 +7282,128 @@ const 技能效果处理 = {
     msg.push(`攻击：${bigNumberTransform(原始攻击)} → ${bigNumberTransform(attacker.攻击)}`);
     msg.push(`防御：${bigNumberTransform(原始防御)} → ${bigNumberTransform(attacker.防御)}`);
     msg.push(`生命：${bigNumberTransform(原始血量)} → ${bigNumberTransform(attacker.当前血量)}`);
+  },
+
+  // 神王初现 - 神王体
+  "神王初现": function(attacker, defender, msg, skill) {
+    let processedMsg1 = skill.msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+    let processedMsg2 = skill.msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+    msg.push(processedMsg1);
+    msg.push(processedMsg2);
+
+    if (skill.神王威压) {
+      // 攻方 +15% 全属性
+      const 加成 = 0.15;
+      attacker.攻击 = Math.floor(attacker.攻击 * (1 + 加成));
+      attacker.防御 = Math.floor(attacker.防御 * (1 + 加成));
+      attacker.当前血量 = Math.floor(attacker.当前血量 * (1 + 加成));
+    }
+    if (skill.属性压制) {
+      // 压制对方 15% 三维
+      const 比例 = skill.属性压制;
+      defender.攻击 = Math.max(Math.floor(defender.攻击 * (1 - 比例)), 0);
+      defender.防御 = Math.max(Math.floor(defender.防御 * (1 - 比例)), 0);
+      defender.当前血量 = Math.max(Math.floor(defender.当前血量 * (1 - 比例)), 0);
+      msg.push(`${defender.名号}道心被神王威压震慑，全属性下降${Math.round(比例 * 100)}%！`);
+    }
+  },
+
+  // 神王领域 - 小成神王体
+  "神王领域": function(attacker, defender, msg, skill) {
+    let processedMsg1 = skill.msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+    let processedMsg2 = skill.msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+    msg.push(processedMsg1);
+    msg.push(processedMsg2);
+
+    if (skill.神王领域) {
+      // 攻方 +20% 战力
+      attacker.攻击 = Math.floor(attacker.攻击 * 1.2);
+      attacker.防御 = Math.floor(attacker.防御 * 1.2);
+      attacker.当前血量 = Math.floor(attacker.当前血量 * 1.2);
+      msg.push(`神王领域内，${attacker.名号}战力暴涨20%！`);
+    }
+    if (skill.属性压制) {
+      const 比例 = skill.属性压制;
+      defender.攻击 = Math.max(Math.floor(defender.攻击 * (1 - 比例)), 0);
+      defender.防御 = Math.max(Math.floor(defender.防御 * (1 - 比例)), 0);
+      defender.当前血量 = Math.max(Math.floor(defender.当前血量 * (1 - 比例)), 0);
+      msg.push(`${defender.名号}被神王领域法则压制，全属性下降${Math.round(比例 * 100)}%！`);
+    }
+  },
+
+  // 神王临世 - 大成神王体（cnt:1）
+  "神王临世": function(attacker, defender, msg, skill) {
+    let processedMsg1 = skill.msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+    let processedMsg2 = skill.msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+    msg.push(processedMsg1);
+    msg.push(processedMsg2);
+
+    if (skill.神王临世) {
+      // 攻方 +100% 战力
+      attacker.攻击 = Math.floor(attacker.攻击 * 2);
+      attacker.防御 = Math.floor(attacker.防御 * 2);
+      attacker.当前血量 = Math.floor(attacker.当前血量 * 2);
+    }
+    if (skill.属性提升) {
+      // 在属性提升基础上再叠加（如 JSON 配 2.0 = +200%）
+      const 提升 = skill.属性提升;
+      attacker.攻击 = Math.floor(attacker.攻击 * 提升);
+      attacker.防御 = Math.floor(attacker.防御 * 提升);
+      attacker.当前血量 = Math.floor(attacker.当前血量 * 提升);
+    }
+    if (skill.万法臣服) {
+      // 削对方 40% 三维 + 禁锢 1 回合
+      const 比例 = 0.4;
+      defender.攻击 = Math.max(Math.floor(defender.攻击 * (1 - 比例)), 0);
+      defender.防御 = Math.max(Math.floor(defender.防御 * (1 - 比例)), 0);
+      defender.当前血量 = Math.max(Math.floor(defender.当前血量 * (1 - 比例)), 0);
+      defender.dongjie = true;
+      msg.push(`万法臣服！${defender.名号}全属性下降40%且被禁锢1回合！`);
+    }
+  },
+
+  // 神王异象 - 大成神王体（cnt:-1）
+  "神王异象": function(attacker, defender, msg, skill) {
+    let processedMsg1 = skill.msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+    let processedMsg2 = skill.msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+    msg.push(processedMsg1);
+    msg.push(processedMsg2);
+
+    if (skill.神王异象) {
+      // 攻方 +30% 战力
+      attacker.攻击 = Math.floor(attacker.攻击 * 1.3);
+      attacker.防御 = Math.floor(attacker.防御 * 1.3);
+      attacker.当前血量 = Math.floor(attacker.当前血量 * 1.3);
+    }
+    if (skill.属性压制) {
+      const 比例 = skill.属性压制;
+      defender.攻击 = Math.max(Math.floor(defender.攻击 * (1 - 比例)), 0);
+      defender.防御 = Math.max(Math.floor(defender.防御 * (1 - 比例)), 0);
+      defender.当前血量 = Math.max(Math.floor(defender.当前血量 * (1 - 比例)), 0);
+      msg.push(`神王异象镇压！${defender.名号}道基震荡，全属性下降${Math.round(比例 * 100)}%！`);
+    }
+  },
+
+  // 往世星海 - 人之律者·爱莉希雅
+  "往世星海": function(attacker, defender, msg, skill) {
+    const processedMsg1 = skill.msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+    msg.push(processedMsg1);
+    const 提升 = skill.属性提升 || 2.0;
+    attacker.攻击 = Math.floor(attacker.攻击 * 提升);
+    attacker.防御 = Math.floor(attacker.防御 * 提升);
+    attacker.当前血量 = Math.floor(attacker.当前血量 * 提升);
+    msg.push(`${attacker.名号}在「往世星海」领域加持下，全属性暴涨${Math.round((提升 - 1) * 100)}%！`);
+  },
+
+  // 始源终焉 - 始源之律者·爱莉希雅
+  "始源终焉": function(attacker, defender, msg, skill) {
+    const processedMsg1 = skill.msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+    msg.push(processedMsg1);
+    const 提升 = skill.属性提升 || 5.0;
+    attacker.攻击 = Math.floor(attacker.攻击 * 提升);
+    attacker.防御 = Math.floor(attacker.防御 * 提升);
+    attacker.当前血量 = Math.floor(attacker.当前血量 * 提升);
+    msg.push(`${attacker.名号}在「始源终焉」领域加持下，全属性暴涨${Math.round((提升 - 1) * 100)}%！`);
   }
 };
 
@@ -6970,6 +7445,8 @@ function handleSpecialSkills(attacker, defender, msg, teshujineng) {
  *   群殴(Nv1): zd_battle([A,B], C)
  *   被群殴(1vN): zd_battle(A, [B,C])
  *   团战(NvM): zd_battle([A,B], [C,D])
+ * 返回约定：A_hp/B_hp 为对应一方的最终剩余总血量；
+ * A_xue/B_xue 仅作为旧调用方的兼容别名。
  */
 export async function zd_battle(A_input, B_input, options = {}) {
   const A_isArray = Array.isArray(A_input);
@@ -6977,7 +7454,7 @@ export async function zd_battle(A_input, B_input, options = {}) {
 
   // 兼容旧版 1v1
   if (!A_isArray && !B_isArray) {
-    return await zd_battle_1v1(A_input, B_input);
+    return await zd_battle_1v1(A_input, B_input, options);
   }
 
   // 团战模式
@@ -6988,12 +7465,17 @@ export async function zd_battle(A_input, B_input, options = {}) {
   const A_copy = A_team.map(p => JSON.parse(JSON.stringify(p)));
   const B_copy = B_team.map(p => JSON.parse(JSON.stringify(p)));
 
-  return await zd_battle_team(A_copy, B_copy, options);
+  return await zd_battle_team(A_copy, B_copy, {
+    ...options,
+    _sourceATeam: A_team,
+    _sourceBTeam: B_team,
+  });
 }
 
-async function zd_battle_1v1(AA_player, BB_player) {
-  let A_player = JSON.parse(JSON.stringify(BB_player));
-  let B_player = JSON.parse(JSON.stringify(AA_player));
+async function zd_battle_1v1(AA_player, BB_player, options = {}) {
+  // 保持输入、战斗状态与返回字段的 A/B 归属一致。
+  let A_player = JSON.parse(JSON.stringify(AA_player));
+  let B_player = JSON.parse(JSON.stringify(BB_player));
 
   // 初始化负面效果
   A_player.fumianhuihe = 0;
@@ -7023,43 +7505,191 @@ let B_speed = (B_player.速度 ?? 100)
 
   let cnt = 0;
   let cnt2;
-  let A_xue = 0;
-  let B_xue = 0;
   let t;
   let msg = [];
   let jineng1 = data.jineng1;
   let jineng2 = data.jineng2;
-  let jineng3 = data.jineng3; 
-  let teshujineng = data.teshujineng;
+  let jineng3 = data.jineng3;
+  // teshujineng 单独深拷贝，避免 handleSpecialSkills 中 cnt-- 污染全局 data
+  let teshujineng = JSON.parse(JSON.stringify(data.teshujineng || []));
   let A_immune_control = 0;
   let B_immune_control = 0;
   let A_immune_type = null;
   let B_immune_type = null;
-  let A_临字秘加成 = 0;
-  let B_临字秘加成 = 0;
-  let A_临字秘触发 = false;
-  let B_临字秘触发 = false;
+  // P3-1: 临字秘状态打包为对象（按引用传，避免 handleControlEffects 内部修改不传回主循环）
+  const linziState = { A_触发: false, B_触发: false, A_加成: 0, B_加成: 0 };
   let A_revived = false;
   let B_revived = false;
   let fenshen = ["【仙帝】他化自在法", "一气化三清"];
   let huifu = ["者字秘"];
   let healMessages = [];
-  let A_fenshen = null;
-  let B_fenshen = null;
-  let A_fenshen_duration = 0;
-  let B_fenshen_duration = 0;
-  let emperorFieldTriggered = false;
+  let A_tahua_entities = [];
+  let B_tahua_entities = [];
+  let A_tahua_triggered = false;
+  let B_tahua_triggered = false;
+  let emperorFieldTriggered = { value: false };
   let emperorWeaponTriggered = false;
   let 轮回诸天拳触发 = false;
 
-  const timeRiverAvatars = [
-    { name: "叶天帝", skill: "天帝拳", desc: "拳震万古，压塌诸天" },
-    { name: "狠人大帝", skill: "一念花开", desc: "君临天下，万道哀鸣" },
-    { name: "柳神", skill: "柳神法", desc: "祭灵之力，守护苍生" },
-    { name: "无始大帝", skill: "无始术", desc: "时间倒流，镇压永恒" },
-    { name: "鲲鹏王", skill: "鲲鹏宝术", desc: "阴阳逆转，撕裂虚空" },
-    { name: "雷帝", skill: "雷帝宝术", desc: "九天神雷，湮灭万界" }
+  // ==================== 装备缓存（避免每次攻击都 await Read_equipment） ====================
+  // P0-6: try/catch 兜底，IO 失败返回 null 不抛错（防止 Promise rejection 中断战斗）
+  const _equipmentCache = new Map();
+  async function getEquipment(player) {
+    if (!isNotNull(player?.id)) return null;
+    if (_equipmentCache.has(player.id)) return _equipmentCache.get(player.id);
+    try {
+      const eq = await Read_equipment(player.id);
+      _equipmentCache.set(player.id, eq);
+      return eq;
+    } catch (e) {
+      console.error(`[战斗] 读取装备失败 player=${player.id}`, e?.message);
+      return null;
+    }
+  }
+
+  async function consumeAuthorityFlag(player, flag) {
+    if (!player?.先天权柄?.[flag]) return false;
+    delete player.先天权柄[flag];
+    const source = player === A_player ? AA_player : player === B_player ? BB_player : null;
+    if (source?.先天权柄) delete source.先天权柄[flag];
+    if (!player.id) return true;
+    try {
+      const stored = await Read_player(player.id);
+      if (stored?.先天权柄) delete stored.先天权柄[flag];
+      await Write_player(player.id, stored);
+    } catch (error) {
+      console.error(`[先天至宝] 消耗战斗权柄失败 player=${player.id}`, error?.message);
+    }
+    return true;
+  }
+
+  function build1v1BattleResult(extra = {}) {
+    return create1v1BattleResult({
+      msg,
+      A_player,
+      B_player,
+      actionOrder,
+      A_speed,
+      B_speed,
+      extra
+    });
+  }
+
+  // ==================== 他化自在法·行者化身库 ====================
+  const TAHUA_AVATARS = [
+    {
+      id: "huangtiandi",
+      name: "荒天帝",
+      skill: "他化自在大法·起源一击",
+      desc: "一念化万古，一力破苍穹",
+      beilv: 15,
+      special: "不可防御",
+      msg1: "荒天帝眸光如炬，时间长河为之逆流！他抬手间，万古诸天之力汇聚成一道不朽仙光，轰然劈落——",
+      msg2: "被荒天帝的盖世一击正面轰中，肉身元神剧烈震荡，仿佛被从时间长河中抹去！"
+    },
+    {
+      id: "yetian",
+      name: "叶天帝",
+      skill: "天帝拳·镇压九天",
+      desc: "拳震万古，压塌诸天",
+      beilv: 12,
+      special: "不可防御",
+      msg1: "叶天帝眸绽金光，身后浮现六道轮回虚影！拳出如龙，裹挟混沌法则，天帝拳意撕裂虚空，镇压九天十地——",
+      msg2: "被天帝拳的无上拳意击中，防御尽碎，道基震颤！"
+    },
+    {
+      id: "henren",
+      name: "狠人大帝",
+      skill: "一念花开·君临天下",
+      desc: "一念花开，万道哀鸣",
+      beilv: 13,
+      special: "不可复活",
+      msg1: "狠人大帝素手轻扬，无数仙葩绽放虚空！每一朵花中都走出一道惊世真身，万千身影如潮水般涌来，君临天下——",
+      msg2: "被狠人大帝的万千真身同时击中，无处可遁，真灵被斩断复活之机！"
+    },
+    {
+      id: "wushi",
+      name: "无始大帝",
+      skill: "无始无终·镇压永恒",
+      desc: "仙路尽头谁为峰，一见无始道成空",
+      beilv: 14,
+      special: "不可防御+禁锢",
+      msg1: "无始大帝背对众生，一道朦胧伟岸的身影镇压万古！无始钟声响起，时间长河为之凝固，蕴含无始无终之意的神光自虚空尽头而至——",
+      msg2: "被无始无终之力贯穿，万般道法、一切神通皆化为虚无，身躯被永恒禁锢！"
+    },
+    {
+      id: "leidi",
+      name: "雷帝",
+      skill: "雷帝宝术·九天雷罚",
+      desc: "执掌天罚，代天行刑",
+      beilv: 10,
+      special: "麻痹禁锢",
+      msg1: "雷帝执掌天罚，代天行刑！九天雷池倾泻而下，亿万雷蛇狂舞化作灭世雷矛，贯穿时空而至——",
+      msg2: "被天罚之雷击中，全身焦黑麻痹，元神僵滞，行动受阻！"
+    },
+    {
+      id: "kunpeng",
+      name: "鲲鹏王",
+      skill: "鲲鹏宝术·阴阳逆转",
+      desc: "鲲化鹏击九天，阴阳逆转虚空",
+      beilv: 11,
+      special: "极速先手",
+      msg1: "鲲鹏王一念间化鲲为鹏！太阴太阳二气流转演化混沌，双翼遮天蔽日，一振扶摇直上九万里，挟万钧之力扑杀而至——",
+      msg2: "被鲲鹏极速击中，根本来不及反应！"
+    },
+    {
+      id: "liushen",
+      name: "柳神",
+      skill: "柳神法·万灵归墟",
+      desc: "通天彻地祭灵之祖，掌生命与毁灭",
+      beilv: 13,
+      special: "不可防御",
+      msg1: "通天柳树虚影撑开天地，万千晶莹柳条垂落！生命法则与毁灭法则交织成璀璨光雨，将整片战场淹没——",
+      msg2: "被柳神的生命与毁灭轮回之力洗礼，生机与死气同时炸开！"
+    },
+    {
+      id: "mirror_enemy",
+      name: "敌之映照",
+      skill: "他化自在·映照敌身",
+      desc: "映照万古敌，化最强之矛为己用",
+      beilv: 12,
+      special: "复刻敌方",
+      msg1: "他化自在法映照时间长河，捞出对手最为辉煌的一瞬间！那道道果凝聚成无敌战体，携对手毕生最强一击轰杀而至——",
+      msg2: "被自己的道果映照击中，直面自身的终极一击，为之骇然！"
+    },
+    {
+      id: "mirror_self",
+      name: "己之映照",
+      skill: "他化自在·映照己身",
+      desc: "化出绝世道果，另一个我横扫诸天",
+      beilv: 14,
+      special: "本体之力",
+      msg1: "他化自在法逆溯时间长河，映照出一尊踏碎万古的无敌身影！那是另一个我，携超越时空的无上伟力降临当世——",
+      msg2: "被另一个我的无上伟力轰击，直面自身最恐怖的可能！"
+    }
   ];
+
+  // ==================== 他化自在法等级配置 ====================
+  function getTahuaLevelConfig(mijinglevel_id) {
+    switch(mijinglevel_id) {
+      case 18: // 仙王 - 借来道果，化出战体，存在一回合
+        return { minCount: 1, maxCount: 1, duration: 1, maxActive: 1, triggerChance: 0.30, desc: "借来道果" };
+      case 19: // 仙王巨头 - 可存在两回合
+        return { minCount: 1, maxCount: 1, duration: 2, maxActive: 1, triggerChance: 0.35, desc: "借来道果" };
+      case 20: // 道祖准仙帝 - 随机1~2个，存在三回合，至多3个
+        return { minCount: 1, maxCount: 2, duration: 3, maxActive: 3, triggerChance: 0.40, desc: "他化自在" };
+      case 21: // 路尽级仙帝 - 随机1~3个，永久存在(可被击杀)，至多5个
+        return { minCount: 1, maxCount: 3, duration: -1, maxActive: 5, triggerChance: 0.50, desc: "他化自在" };
+      case 22: // 祭道 - 固定3个，永久存在，至多6个
+        return { minCount: 3, maxCount: 3, duration: -1, maxActive: 6, triggerChance: 0.60, desc: "他化自在" };
+      case 23: // 祭道之上 - 固定4个，永久存在，至多7个
+        return { minCount: 4, maxCount: 4, duration: -1, maxActive: 7, triggerChance: 0.70, desc: "他化自在" };  
+      case 24: // 唯一道之上 - 固定5个，永久存在，至多8个
+        return { minCount: 5, maxCount: 5, duration: -1, maxActive: 8, triggerChance: 0.80, desc: "他化自在" };
+      default:
+        return null; // 境界不足，不可触发
+    }
+  }
 
   // ==================== 行动拉条核心函数 ====================
   
@@ -7118,12 +7748,26 @@ let B_speed = (B_player.速度 ?? 100)
   async function performAttack(attacker, defender, cnt2, context = "main") {
     const isImmune = (attacker === A_player && A_immune_control > 0) || 
                      (attacker === B_player && B_immune_control > 0);
+    const attackerEquipment = await getEquipment(attacker);
+
+    if (context === 'main' && Number(attacker._东皇冻结回合) > 0) {
+      attacker._东皇冻结回合--;
+      msg.push(`${attacker.名号}被至宝镇封，本回合无法行动！`);
+      return null;
+    }
+    const innateSilenced = context === 'main' && attacker._陷仙沉默 && Math.random() < 0.3;
+    if (innateSilenced) msg.push(`【陷仙剑】${attacker.名号}神通被沉默，本回合只能进行普通攻击。`);
 
     if (attacker.dongjie) {
       if (isImmune) {
         attacker.dongjie = false;
         const immuneType = (attacker === A_player ? A_immune_type : B_immune_type) || "涅槃真火护体";
         msg.push(`${attacker.名号}的${immuneType}效果免疫了冻结状态！`);
+      } else if (attackerEquipment?.护具?.name === '逍遥仙袍' && !attacker._逍遥仙袍已触发) {
+        attacker.dongjie = false;
+        attacker._逍遥仙袍已触发 = true;
+        attacker._逍遥仙袍闪避次数 = 1;
+        msg.push(`${attacker.名号}的逍遥仙袍清风流转，解除了首次控制，并获得一次10%闪避加成！`);
       } else {
         if (context !== "fenshen") {
           msg.push(`${attacker.名号}无法动弹！`);
@@ -7133,13 +7777,31 @@ let B_speed = (B_player.速度 ?? 100)
       }
     }
 
-    let baoji = baojishanghai(attacker.暴击率);
+    // —— 道种·治疗技：回合起手持续回血（生生不息/乙木逢春）——
+    if (attacker.xiangu_shenhuo && attacker.xiangu_shenhuo.专属技能) {
+      const 治疗条目 = getSeedSkillEntry(attacker.xiangu_shenhuo.专属技能);
+      if (!attacker._先天禁疗 && 治疗条目 && 治疗条目.技能分类 === '治疗' && 治疗条目.回复比例 && attacker.当前血量 < attacker.血量上限) {
+        const 回血量 = Math.trunc(attacker.血量上限 * 治疗条目.回复比例 * (1 + (attacker.治疗效果加成 || 0)));
+        if (回血量 > 0) {
+          const _before = attacker.当前血量;
+          attacker.当前血量 = Math.min(attacker.当前血量 + 回血量, attacker.血量上限);
+          const _实际 = attacker.当前血量 - _before;
+          if (_实际 > 0) msg.push(`${attacker.名号}的「${治疗条目.name}」道种生机涌动，气血自愈，恢复${bigNumberTransform(_实际)}点生命！`);
+        }
+      }
+    }
+
+    let baoji = baojishanghai(attacker.暴击率, attacker.暴击伤害);
     let isCritical = baoji > 1;
 
-    handleControlEffects( A_immune_control, B_immune_control, A_player,B_player,attacker,cnt, defender, msg,emperorFieldTriggered,context,cnt2,A_临字秘触发,B_临字秘触发,A_临字秘加成,B_临字秘加成);
-    handleEmperorWeapon(attacker, defender, msg,emperorWeaponTriggered);
-    handleCircularGod(attacker, defender, msg, context);
-    handleSpecialSkills(attacker, defender, msg, teshujineng,emperorFieldTriggered);
+    if (!innateSilenced) {
+      handleControlEffects( A_immune_control, B_immune_control, A_player, B_player, attacker, defender, msg, emperorFieldTriggered, context, linziState);
+      if (await handleEmperorWeapon(attacker, defender, msg, emperorWeaponTriggered, attackerEquipment)) {
+        emperorWeaponTriggered = true;
+      }
+      handleCircularGod(attacker, defender, msg, context);
+      handleSpecialSkills(attacker, defender, msg, teshujineng,emperorFieldTriggered);
+    }
 
     if (attacker.灵根 && attacker.灵根.name === "彼岸·命运神道体" && 轮回诸天拳触发 == false) {
       轮回诸天拳触发 = true;
@@ -7198,15 +7860,12 @@ let B_speed = (B_player.速度 ?? 100)
             } else {
               godDemonMsg.push(`「这一世，你败了。」${attacker.名号}收拳而立，眸光冰冷`);
               godDemonMsg.push(`${defender.名号}的道果被彻底磨灭，再无重生可能！`);
-              
+
               msg = msg.concat(godDemonMsg);
               cnt += godDemonMsg.length;
-              
-              return { 
-                msg, 
-                battleEnded: true,
-                winner: attacker === A_player ? "A" : "B"
-              };
+
+              // 统一返回结构：{ 伤害, isCritical, baoji, battleEnded, winner, msg }
+              return { 伤害: 0, isCritical: false, baoji: 1, battleEnded: true, winner: attacker === A_player ? "A" : "B", msg };
             }
           }
         }
@@ -7224,23 +7883,26 @@ let B_speed = (B_player.速度 ?? 100)
     let 伤害 = 暴击伤害 + 法球伤害;
 
     if (isNotNull(attacker.仙宠)) {
-      if (attacker.仙宠.type == '暴伤') baoji += attacker.仙宠.加成;
-      else if (attacker.仙宠.type == '战斗') {
+      const petCriticalBonus = getPetAbilityBonus(attacker.仙宠, '暴伤');
+      const petCombatBonus = getPetAbilityBonus(attacker.仙宠, '战斗');
+      if (petCriticalBonus > 0) baoji += petCriticalBonus;
+      if (petCombatBonus > 0) {
         let ran = Math.random();
         if (ran < 0.35) {
-          attacker.攻击 += Math.trunc(attacker.攻击 * attacker.仙宠.加成);
-          attacker.防御 += Math.trunc(attacker.防御 * attacker.仙宠.加成);
-          attacker.当前血量 += Math.trunc(attacker.当前血量 * attacker.仙宠.加成);
-          msg.push(`仙宠【${attacker.仙宠.name}】辅佐了${attacker.名号}，使其伤害增加了${Math.trunc(attacker.仙宠.加成 * 100)}%防御增加了${Math.trunc(attacker.仙宠.加成 * 100)}%血量增加了${Math.trunc(attacker.仙宠.加成 * 100)}%`);
+          attacker.攻击 += Math.trunc(attacker.攻击 * petCombatBonus);
+          attacker.防御 += Math.trunc(attacker.防御 * petCombatBonus);
+          attacker.当前血量 += Math.trunc(attacker.当前血量 * petCombatBonus);
+          msg.push(`仙宠【${attacker.仙宠.name}】辅佐了${attacker.名号}，攻防血增加${Math.trunc(petCombatBonus * 100)}%`);
         }
       }
     }
      
     if (isNotNull(attacker.id)) {
-      let equipment = await Read_equipment(attacker.id);
+      let equipment = await getEquipment(attacker);
       let ran = Math.random();
       
-      if (equipment.法宝.name == '万灵天图' && ran > 0.1) {
+      // P0-6: 装备 IO 失败时 equipment === null, 加 optional chaining 防 TypeError
+      if (equipment?.法宝?.name == '万灵天图' && ran > 0.1) {
         const shieldValue = Math.trunc(attacker.血量上限 * 0.4);
         attacker.护盾值 = shieldValue;
         msg.push(`【万灵天图·诸天护体】`);
@@ -7248,69 +7910,66 @@ let B_speed = (B_player.速度 ?? 100)
         msg.push(`诸天符文流转，演化无上防御：万灵护体，诸邪不侵！`);
         msg.push(`一道混沌光幕笼罩${attacker.名号}，凝聚万灵之力（护盾值+${shieldValue}）`);
       }
-      
-      if (equipment.护具.name == '星辰袍' && ran > 0.15) {
+
+      if (equipment?.护具?.name == '星辰袍' && ran > 0.15) {
         const shieldValue = Math.trunc(attacker.血量上限 * 0.35);
         attacker.护盾值 = (attacker.护盾值 || 0) + shieldValue;
         const defenseBoost = Math.trunc(attacker.防御 * 0.5);
         attacker.防御 += defenseBoost;
-        
+
         msg.push(`【星辰袍·周天星斗护体】`);
         msg.push(`${attacker.名号}身披星辰袍，引动周天星斗之力！`);
         msg.push(`三百六十五颗主星同时亮起，垂落无尽星辉，结成周天星斗大阵！`);
         msg.push(`星辰之力凝聚成不灭护盾，万法不侵（护盾值+${shieldValue}）`);
         msg.push(`星辉淬体，防御力大幅提升（防御+${defenseBoost}）`);
-        
+
         if (ran > 0.85) {
           const counterDamage = Math.trunc(defender.攻击 * 0.8);
           defender.当前血量 = Math.max(defender.当前血量 - counterDamage, 0);
-          
+
           msg.push(`【星辰反噬·星陨天罚】`);
           msg.push(`周天星斗大阵逆转，星辰之力化作毁灭光束！`);
           msg.push(`一道璀璨星芒贯穿虚空，直击${defender.名号}！`);
           msg.push(`星辰反噬造成${counterDamage}点伤害！`);
         }
       }
-      
-      if (equipment.武器.name == '紫云剑' && ran > 0.7) {
+
+      if (equipment?.武器?.name == '紫云剑' && ran > 0.7) {
         attacker.攻击 *= 3;
         msg.push(`${attacker.名号}触发了紫云剑被动,攻击力提高了200%`);
-      } else if (equipment.武器.name == '炼血竹枪' && ran > 0.75) {
+      } else if (equipment?.武器?.name == '炼血竹枪' && ran > 0.75) {
         attacker.攻击 *= 2;
         attacker.当前血量 = Math.trunc(attacker.当前血量 * 1.2);
         msg.push(`${attacker.名号}触发了炼血竹枪被动,攻击力提高了100%,血量回复了20%`);
-      } else if (equipment.武器.name == '少阴玉剑' && ran > 0.75) {
+      } else if (equipment?.武器?.name == '少阴玉剑' && ran > 0.75) {
         attacker.当前血量 = Math.trunc(attacker.当前血量 * 1.4);
         msg.push(`${attacker.名号}触发了少阴玉剑被动,血量回复了40%`);
-      } else if (equipment.武器.name == '荒剑' && (attacker.mijinglevel_id>20||attacker.xiangulevel_id>20) && ran > 0.75) {
+      } else if (equipment?.武器?.name == '荒剑' && (attacker.mijinglevel_id>20||attacker.xiangulevel_id>20) && ran > 0.75) {
         let 武器伤害 = attacker.攻击 * attacker.法球倍率 * 100;
         defender.当前血量 = Math.max(defender.当前血量 - 武器伤害, 0);
         msg.push(`${attacker.名号}眼眸开阖间挥动帝剑，煌煌剑光仿佛截断了永恒，斩开了时间长河，无穷大宇宙都在这一剑的滔天伟力下毁灭了，${defender.名号}在过去现在未来都受到了这毁天灭地的一击，仙躯与元神瞬间炸开！失去了${bigNumberTransform(武器伤害)}点血量,${defender.名号}当前血量${defender.当前血量}`);
-        
+
         if (defender.当前血量 <= 0) {
           const 复活结果 = checkRevival(defender, "main");
           if (复活结果.revived) {
             msg.push(复活结果.message);
           } else {
             msg.push(`${attacker.名号}击败了${defender.名号}`);
-            return { 
-              msg, 
-              battleEnded: true,
-              winner: attacker === A_player ? "A" : "B"
-            };
+            return { 伤害: 0, isCritical: false, baoji: 1, battleEnded: true, winner: attacker === A_player ? "A" : "B", msg };
           }
         }
       }
-      
-      if (equipment.帝兵 && equipment.帝兵.name === "如梦的诸天棋盘") {
+
+      if (equipment?.帝兵 && equipment.帝兵.name === "如梦的诸天棋盘") {
         msg.push(`「诸天为盘，众生为子！」${attacker.名号}轻语，抬手间祭出如梦的诸天棋盘`);
         msg.push(`棋盘上星罗棋布，每一颗棋子都映照着一方大千世界`);
         msg.push(`一道贯穿古今未来的光芒从棋盘射出，锁定${defender.名号}的所有时空存在，刹那间，风不转，云不动，一切都静止了`);
         msg.push(`「这一局，你输了。」${attacker.名号}落下一枚黑子，诸天震动！`);
-        
+
         defender.当前血量 = 0;
         msg.push(`${defender.名号}的存在痕迹被从所有时间线上彻底抹除！`);
-        return { msg };
+        // 统一返回结构
+        return { 伤害: 0, isCritical: false, baoji: 1, battleEnded: true, winner: attacker === A_player ? "A" : "B", msg };
       }
     }
 
@@ -7319,22 +7978,29 @@ let B_speed = (B_player.速度 ?? 100)
     let 不可防御 = false;
     let 不可复活 = false;
     let 攻击方技能 = null; // 在if语句块外定义变量
-    for (var i = 0; i < jineng1.length; i++) {
+    let 无视减伤 = false; // 草字剑诀·斩真我：无视目标减伤与类型减免
+    let 斩杀阈值 = 0; // 草字剑诀·斩真我：命中后目标血量低于此比例(×血量上限)则直接斩杀
+    const _基础伤害 = 伤害; // 基础普攻伤害（归为神通类型）
+    let 类型桶 = { '神通': _基础伤害 }; // 分类型伤害桶：每个技能按自身攻击类型累加增量
+    for (var i = 0; !innateSilenced && i < jineng1.length; i++) {
       if (context === "fenshen" && fenshen.includes(jineng1[i].name)) {
         continue;
       }
       
       let actualPr = jineng1[i].pr;
       if (attacker === A_player) {
-        actualPr += A_临字秘加成;
+        actualPr += linziState.A_加成;
       } else {
-        actualPr += B_临字秘加成;
+        actualPr += linziState.B_加成;
       }
       
       if ((jineng1[i].class == '常驻' && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
           (attacker.学习的功法 && jineng1[i].class == '功法' && attacker.学习的功法.indexOf(jineng1[i].name) > -1 && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
-          (attacker.灵根 && jineng1[i].class == '灵根' && attacker.灵根.name == jineng1[i].name && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr)) {
-         攻击方技能 = jineng1[i]; // 在这里赋值
+          (attacker.灵根 && jineng1[i].class == '灵根' && attacker.灵根.name == jineng1[i].name && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
+          (attacker.xiangu_shenhuo && jineng1[i].class == '道种专属' && attacker.xiangu_shenhuo.专属技能 === jineng1[i].name && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr)) {
+          攻击方技能 = jineng1[i]; // 在这里赋值
+          if (jineng1[i].无视减伤) 无视减伤 = true; // 草字剑诀·斩真我
+          if (jineng1[i].斩杀阈值) 斩杀阈值 = jineng1[i].斩杀阈值; // 草字剑诀·斩真我
         let processedMsg1 = jineng1[i].msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
         let processedMsg2 = jineng1[i].msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
         
@@ -7375,17 +8041,24 @@ let B_speed = (B_player.速度 ?? 100)
           msg.push(`${attacker.名号}体内道则轰鸣，速度暴涨${Math.round(jineng1[i].速度加成 * 100)}%！`);
         }
 
+        // —— 每个技能按自身攻击类型单独结算：基础连乘保留，增量归入对应类型桶 ——
+        const _旧伤害 = 伤害;
+        伤害 = 伤害 * jineng1[i].beilv + jineng1[i].other;
+        const 该技能增量 = 伤害 - _旧伤害;
+        const _t = jineng1[i].攻击类型 || '神通';
+        类型桶[_t] = (类型桶[_t] || 0) + 该技能增量;
+
         if (jineng1[i].负面效果) {
           defender.fumianhuihe = jineng1[i].负面回合;
-          defender.fumian_damage = Math.trunc(伤害 * jineng1[i].beilv + jineng1[i].other);
+          defender.fumian_damage = Math.trunc(该技能增量 * jineng1[i].beilv + jineng1[i].other);
           defender.fumian_type = jineng1[i].负面类型;
         }
 
-        伤害 = 伤害 * jineng1[i].beilv + jineng1[i].other;
         count++;
         if (count == 3) break;
       }
     }
+    const 伤害_循环末 = 伤害; // 技能循环结束时的原始总伤（用于对轰/防御技能/反弹的整体缩放映射）
 // ==================== 对轰判断 ====================
   // 调试日志
   // console.log(`[对轰调试] 攻击方技能: ${攻击方技能?.name || '无'}, 不可防御: ${不可防御}, count: ${count}, 回合cnt2: ${cnt2}`);
@@ -7395,7 +8068,7 @@ let B_speed = (B_player.速度 ?? 100)
   if (攻击方技能 && 攻击方技能.控制 !== 1 && !不可防御) {
     // 速度影响对轰触发概率：防御方速度越快，越容易及时反击
     const 速度比值 = defender.速度 / (attacker.速度 + defender.速度);
-    const 基础触发概率 = 1; // 基础30%触发概率
+    const 基础触发概率 = 0.3; // 基础30%触发概率
     const 速度加成 = 速度比值 * 0.3; // 速度优势最多加30%
     const 最终触发概率 = Math.min(1, 基础触发概率 + 速度加成);
     
@@ -7423,12 +8096,12 @@ let B_speed = (B_player.速度 ?? 100)
         return false;
       });
       
-      if (可用反击技能.length > 0 && Math.random() < 1) { // 60%概率找到合适反击技能
+      if (可用反击技能.length > 0 && Math.random() < 0.6) { // 60%概率找到合适反击技能
         防御方反击技能 = 可用反击技能[Math.floor(Math.random() * 可用反击技能.length)];
         
         // 计算反击伤害
         let 反击基础伤害 = Harm(defender.攻击 * 0.7, attacker.防御); // 反击伤害较低
-        let 反击暴击 = baojishanghai(defender.暴击率);
+        let 反击暴击 = baojishanghai(defender.暴击率, defender.暴击伤害);
         let 反击最终伤害 = Math.trunc(反击基础伤害 * 反击暴击 * 防御方反击技能.beilv + 防御方反击技能.other);
         
         msg.push(`「嗯？」${defender.名号}见对方来势汹汹，不闪不避，同样施展神通对轰！`);
@@ -7508,15 +8181,16 @@ let B_speed = (B_player.速度 ?? 100)
       for (var i = 0; i < sortedSkills.length; i++) {
         const skill = sortedSkills[i];
         let actualPr = skill.pr;
-        
+
         if (defender === A_player) {
-          actualPr += A_临字秘加成;
+          actualPr += linziState.A_加成;
         } else {
-          actualPr += B_临字秘加成;
+          actualPr += linziState.B_加成;
         }
         
         if ((defender.学习的功法 && skill.class == '功法' && defender.学习的功法.indexOf(skill.name) > -1 && (cnt2 == skill.cnt || skill.cnt == -1) && random < skill.pr) ||
-            (defender.灵根 && skill.class == '灵根' && defender.灵根.name == skill.name && (cnt2 == skill.cnt || skill.cnt == -1) && random < skill.pr)) {
+            (defender.灵根 && skill.class == '灵根' && defender.灵根.name == skill.name && (cnt2 == skill.cnt || skill.cnt == -1) && random < skill.pr) ||
+            (defender.xiangu_shenhuo && skill.class == '道种专属' && defender.xiangu_shenhuo.专属技能 === skill.name && (cnt2 == skill.cnt || skill.cnt == -1) && random < skill.pr)) {
           
           if (skill.msg1 == '') {
             msg.push(attacker.名号 + skill.msg2);
@@ -7524,6 +8198,25 @@ let B_speed = (B_player.速度 ?? 100)
             msg.push(defender.名号 + skill.msg1);
           } else {
             msg.push(defender.名号 + skill.msg1 + attacker.名号 + skill.msg2);
+          }
+
+          // —— 道种·防御技专属效果（护盾/免控/厚土无敌持续减伤）——
+          if (skill.class == '道种专属') {
+            if (skill.护盾值 > 0) {
+              const 护盾量 = Math.trunc(defender.血量上限 * skill.护盾值);
+              defender.护盾值 = (defender.护盾值 || 0) + 护盾量;
+              msg.push(`${defender.名号}的道种之力凝聚护盾，获得${bigNumberTransform(护盾量)}点护盾！`);
+            }
+            if (skill.免控回合 > 0) {
+              if (defender === A_player) { A_immune_control = skill.免控回合; A_immune_type = skill.name; }
+              else { B_immune_control = skill.免控回合; B_immune_type = skill.name; }
+              msg.push(`${defender.名号}道体不染尘埃，${skill.免控回合}回合内免疫一切控制！`);
+            }
+            if (skill.持续减伤 > 0 && skill.持续减伤回合 > 0) {
+              defender._持续减伤比例 = skill.持续减伤;
+              defender._持续减伤回合 = skill.持续减伤回合;
+              msg.push(`${defender.名号}催动「${skill.name}」，厚土加身，未来${skill.持续减伤回合}回合内减伤${Math.trunc(skill.持续减伤 * 100)}%！`);
+            }
           }
 
           if (skill.负面转移 && defender.fumianhuihe > 0) {
@@ -7580,7 +8273,7 @@ let B_speed = (B_player.速度 ?? 100)
     if (attacker.魔道值 > 999 && attacker.灵根.type == '天魔') {
       buff += Math.trunc(attacker.魔道值 / 1000) / 100;
       if (buff > 1.3) buff = 1.3;
-      if (attacker.灵根.name == '极道天魔') buff += 0.3;
+      if (['极道天魔', '无相·万化天魔体'].includes(attacker.灵根.name)) buff += 0.3;
       msg.push(`${attacker.名号}将魔道之力转化为邪神之力，获得了${Math.trunc((buff - 1) * 100)}%的增伤`);
     }
     if (defender.魔道值 < 1 && defender.灵根.type == '命运') {
@@ -7592,22 +8285,60 @@ let B_speed = (B_player.速度 ?? 100)
     }
 
     伤害 = Math.trunc(伤害 * buff);
-    return { 伤害, isCritical, baoji };
+
+    // 统一伤害修正管线（闪避/类型加成/类型减免/穿透）；dmgType 按攻击技能类型分流
+    // 无视减伤（草字剑诀·斩真我）：跳过类型减免
+    const _cd = calcDamage(attacker, defender, 伤害, { buckets: 类型桶, baseRaw: 伤害_循环末 }, false, 无视减伤);
+    伤害 = _cd.actual_damage;
+    msg = msg.concat(_cd.msgs);
+
+    if (!无视减伤) {
+      // 减伤效果（圆环之理 0.3 减伤等配置属性实际生效）
+      if (defender.减伤比例 > 0) {
+        const before = 伤害;
+        伤害 = Math.trunc(伤害 * (1 - defender.减伤比例));
+        msg.push(`${defender.名号}的护体减伤效果抵消了${bigNumberTransform(before - 伤害)}点伤害！`);
+      }
+      // 道种·厚土无敌 持续减伤（多回合 80% 减伤，回合数由主循环递减）
+      if (defender._持续减伤回合 > 0 && defender._持续减伤比例 > 0) {
+        const before = 伤害;
+        伤害 = Math.trunc(伤害 * (1 - defender._持续减伤比例));
+        msg.push(`${defender.名号}的「厚土无敌」大地之力护体，抵消了${bigNumberTransform(before - 伤害)}点伤害！`);
+      }
+    } else {
+      msg.push(`${attacker.名号}的攻击斩落真我本源，无视了${defender.名号}的一切护体减伤！`);
+    }
+
+    return { 伤害, isCritical, baoji, 无视减伤, 斩杀阈值 };
   }
 
   // ==================== 伤害应用函数（保持原样） ====================
-  function applyDamage(defender, 伤害, context) {
+  function applyDamage(defender, 伤害, context, source = null) {
     let fenshen_blocked = false;
     let actual_damage = 伤害;
 
+    if (
+      context === 'main' && source &&
+      defender.当前先天至宝 === '太极图' &&
+      defender.先天权柄?.太极模式 === '阴' &&
+      Math.random() < 0.3
+    ) {
+      const counterDamage = Math.max(1, Harm((Number(defender.攻击) || 1) * 0.85, Number(source.防御) || 0));
+      source.当前血量 = Math.max(0, source.当前血量 - counterDamage);
+      msg.push(`【太极·阴】${defender.名号}化去本次伤害，并反击${source.名号}造成${bigNumberTransform(counterDamage)}点伤害。`);
+      return { actual_damage: 0, fenshen_blocked: false, countered: true };
+    }
+
     if (defender.护盾值 > 0) {
       if (defender.护盾值 >= actual_damage) {
+        const 抵消值 = actual_damage;  // 先记录抵消值
         defender.护盾值 -= actual_damage;
         actual_damage = 0;
-        msg.push(`${defender.名号}的护盾抵消了${bigNumberTransform(actual_damage)}点伤害！`);
+        msg.push(`${defender.名号}的护盾抵消了${bigNumberTransform(抵消值)}点伤害！`);
       } else {
+        const 抵消值 = defender.护盾值;
         actual_damage -= defender.护盾值;
-        msg.push(`${defender.名号}的护盾抵消${bigNumberTransform(defender.护盾值)}点伤害！`);
+        msg.push(`${defender.名号}的护盾抵消${bigNumberTransform(抵消值)}点伤害！`);
         defender.护盾值 = 0;
       }
     }
@@ -7637,34 +8368,64 @@ let B_speed = (B_player.速度 ?? 100)
     }
 
     if (context !== "fenshen") {
-      if (defender === A_player && A_fenshen) {
-        let blocked_damage = Math.trunc(伤害 * 1);
-        A_fenshen.当前血量 -= blocked_damage;
-        actual_damage = 伤害 - blocked_damage;
-        fenshen_blocked = true;
-        msg.push(`${A_fenshen.名号}为${defender.名号}抵挡了${bigNumberTransform(blocked_damage)}点伤害！`);
+      // 他化自在身抵挡伤害（按血量从高到低遍历，逐个挡伤）
+      const tahuaEntities = defender === A_player ? A_tahua_entities : 
+                            defender === B_player ? B_tahua_entities : null;
+      
+      if (tahuaEntities && tahuaEntities.length > 0) {
+        const entities = tahuaEntities
+          .filter(e => e.当前血量 > 0)
+          .sort((a, b) => b.当前血量 - a.当前血量);
+        let remainingDmg = actual_damage;
         
-        if (A_fenshen.当前血量 <= 0) {
-          msg.push(`${A_fenshen.名号}承受了致命伤害，消散在虚空中！`);
-          A_fenshen = null;
+        for (const entity of entities) {
+          if (remainingDmg <= 0) break;
+          
+          if (entity.当前血量 >= remainingDmg) {
+            entity.当前血量 -= remainingDmg;
+            msg.push(`${entity.名号}挺身而出，为${defender.名号}抵挡了${bigNumberTransform(remainingDmg)}点伤害！`);
+            remainingDmg = 0;
+            fenshen_blocked = true;
+          } else {
+            remainingDmg -= entity.当前血量;
+            msg.push(`${entity.名号}为${defender.名号}抵挡${bigNumberTransform(entity.当前血量)}点伤害后，承受致命一击崩碎消散！`);
+            entity.当前血量 = 0;
+            fenshen_blocked = true;
+          }
         }
-      } else if (defender === B_player && B_fenshen) {
-        let blocked_damage = Math.trunc(伤害 * 0.8);
-        B_fenshen.当前血量 -= blocked_damage;
-        actual_damage = 伤害 - blocked_damage;
-        fenshen_blocked = true;
-        msg.push(`${B_fenshen.名号}为${defender.名号}抵挡了${bigNumberTransform(blocked_damage)}点伤害！`);
         
-        if (B_fenshen.当前血量 <= 0) {
-          msg.push(`${B_fenshen.名号}承受了致命伤害，消散在虚空中！`);
-          B_fenshen = null;
+        actual_damage = remainingDmg;
+        
+        // 清理已阵亡的化身
+        if (defender === A_player) {
+          A_tahua_entities = A_tahua_entities.filter(e => e.当前血量 > 0);
+        } else {
+          B_tahua_entities = B_tahua_entities.filter(e => e.当前血量 > 0);
         }
       }
     }
 
+    if (context === 'main' && source && defender._阴阳逆转护命 && actual_damage >= defender.当前血量) {
+      defender._阴阳逆转护命 = false;
+      const healing = actual_damage;
+      defender.当前血量 = Math.min(defender.血量上限 || defender.当前血量, defender.当前血量 + healing);
+      source.当前血量 = Math.max(0, source.当前血量 - actual_damage);
+      msg.push(`【阴阳逆转】致命伤害化为${bigNumberTransform(healing)}点治疗，并等量返还给${source.名号}！`);
+      return { actual_damage: 0, fenshen_blocked, reversed: true };
+    }
+
     defender.当前血量 -= actual_damage;
     if (defender.当前血量 < 0) defender.当前血量 = 0;
-    
+
+    // P0-2: 致死时立即检查复活（不让主循环漏掉涅槃仙功/圆神复活机会）
+    if (context !== "fenshen" && defender.当前血量 <= 0) {
+      const 复活结果 = checkRevival(defender, context);
+      if (复活结果.revived) {
+        msg.push(复活结果.message);
+        return { actual_damage: 0, fenshen_blocked, revived: true };
+      }
+    }
+
     return { actual_damage, fenshen_blocked };
   }
 
@@ -7812,6 +8573,71 @@ let B_speed = (B_player.速度 ?? 100)
   }
 
   // ==================== 主战斗循环（仅修改行动条文案） ====================
+  const A_isPersistentPlayer = Boolean(A_player.id) && fs.existsSync(path.join(__PATH.player_path, `${A_player.id}.json`));
+  const B_isPersistentPlayer = Boolean(B_player.id) && fs.existsSync(path.join(__PATH.player_path, `${B_player.id}.json`));
+  const isTianjiaoBattle = options.battleType === 'tianjiao';
+  const isPvpBattle = A_isPersistentPlayer && B_isPersistentPlayer && !isTianjiaoBattle;
+
+  function isBossOpponent(player) {
+    return isTianjiaoBattle || player?.boss === true || player?.type === 'boss' ||
+      /BOSS|Boss|首领|天骄/.test(String(player?.名号 || player?.name || ''));
+  }
+
+  async function applyInnateBattleOpening(holder, opponent) {
+    const treasure = holder.当前先天至宝;
+
+    if (treasure === '盘古幡' && !isPvpBattle) {
+      opponent.防御 = Math.max(0, Math.floor((Number(opponent.防御) || 0) * 0.7));
+      msg.push(`【盘古幡·破界】${holder.名号}无视了${opponent.名号}三成防御。`);
+      if (await consumeAuthorityFlag(holder, '盘古开天待用')) {
+        opponent.防御 = 0;
+        const hpLossRate = isBossOpponent(opponent) ? 0.03 : 0.3;
+        const hpLoss = Math.floor((Number(opponent.血量上限) || Number(opponent.当前血量) || 0) * hpLossRate);
+        opponent.当前血量 = Math.max(1, opponent.当前血量 - hpLoss);
+        msg.push(`【开天】盘古幡撕裂大道，${opponent.名号}防御归零，初始气血-${Math.round(hpLossRate * 100)}%。`);
+      }
+    }
+
+    if (treasure === '诛仙四剑') {
+      opponent._先天禁疗 = true;
+      if (await consumeAuthorityFlag(holder, '诛仙剑阵待用')) {
+        const sword = ['戮仙剑', '绝仙剑', '陷仙剑', '诛仙剑'][Math.floor(Math.random() * 4)];
+        if (sword === '戮仙剑') opponent._诛仙易伤 = 0.5;
+        if (sword === '绝仙剑') opponent._绝仙流血 = true;
+        if (sword === '陷仙剑') opponent._陷仙沉默 = true;
+        if (sword === '诛仙剑') {
+          const damage = Math.floor((Number(holder.攻击) || 1) * (Number(holder.法球倍率) || 1) * 5);
+          opponent.当前血量 = Math.max(0, opponent.当前血量 - damage);
+          msg.push(`【诛仙剑】必中且无法防御的五倍神通贯穿${opponent.名号}，造成${bigNumberTransform(damage)}点伤害。`);
+        }
+        if (sword !== '诛仙剑') msg.push(`【诛仙剑阵·${sword}】剑阵开局权柄已降临。`);
+      }
+    }
+
+    if (treasure === '东皇钟' && await consumeAuthorityFlag(holder, '东皇镇世待用')) {
+      const boss = isBossOpponent(opponent);
+      opponent._东皇冻结回合 = isPvpBattle || boss ? 1 : 3;
+      if (boss) opponent.攻击 = Math.floor((Number(opponent.攻击) || 0) * 0.7);
+      msg.push(boss
+        ? `【东皇镇世】${opponent.名号}首回合被冻结，且攻击降低30%。`
+        : `【东皇镇世】${opponent.名号}被东皇钟镇封${opponent._东皇冻结回合}回合。`);
+    }
+
+    if (treasure === '太极图') {
+      if (holder.先天权柄?.太极模式 === '阳') holder.吸血率 = Math.max(Number(holder.吸血率) || 0, 0.5);
+      if (await consumeAuthorityFlag(holder, '阴阳逆转待用')) {
+        holder._阴阳逆转护命 = true;
+        opponent._东皇冻结回合 = Math.max(Number(opponent._东皇冻结回合) || 0, 1);
+        msg.push(`【阴阳逆转】${opponent.名号}开局被定住一回合，${holder.名号}获得一次致命伤害逆转。`);
+      }
+    }
+  }
+
+  if (A_player.当前先天至宝 === '六道轮回盘') B_speed = Math.max(1, Math.floor(B_speed * 0.8));
+  if (B_player.当前先天至宝 === '六道轮回盘') A_speed = Math.max(1, Math.floor(A_speed * 0.8));
+  await applyInnateBattleOpening(A_player, B_player);
+  await applyInnateBattleOpening(B_player, A_player);
+
 msg.push(`天地元气涌动，二人周身气势攀升，大战一触即发！`);
 msg.push(`【天道法则】行动条满三千点方可出手，速度决定先机`);
 msg.push(`【神通对轰】高速度可抢先出手，更有机会施展神通与对方对轰，占据主动！`);
@@ -7843,6 +8669,24 @@ msg.push(bSpeedMsg);
 
 
   while (A_player.当前血量 > 0 && B_player.当前血量 > 0) {
+    // 整场战斗回合上限保护（避免高回复/护盾循环长期占用进程）
+    const MAX_ROUND = 100;
+    if (cnt >= MAX_ROUND) {
+      msg.push(`【天道法则】战局陷入僵持，已达${MAX_ROUND}回合上限，天道降下裁决！`);
+      // 取血量较高者为胜方
+      if (A_player.当前血量 > B_player.当前血量) {
+        msg.push(`${A_player.名号}略占上风，险胜！`);
+        B_player.当前血量 = 0;
+      } else if (B_player.当前血量 > A_player.当前血量) {
+        msg.push(`${B_player.名号}略占上风，险胜！`);
+        A_player.当前血量 = 0;
+      } else {
+        msg.push(`双方战至力竭，平局收场！`);
+        A_player.当前血量 = 0;
+        B_player.当前血量 = 0;
+      }
+      break;
+    }
     cnt2 = Math.trunc(cnt / 2);
     
     // ===== 推进行动条 =====
@@ -7868,6 +8712,11 @@ msg.push(bSpeedMsg);
     msg.push(`${attacker.名号} 元气充盈，抢占先机！[${A_player.名号}:${A_bar}/${ACTION_BAR_MAX}] [${B_player.名号}:${B_bar}/${ACTION_BAR_MAX}]`);
     
     resetActionBar(attackerBar);
+
+    if (attacker.当前先天至宝 === '六道轮回盘' && Math.random() < 0.2) {
+      pushBackActionBar(defenderBar, Math.floor(ACTION_BAR_MAX * 0.2));
+      msg.push(`【六道轮回盘】${defender.名号}的行动进度被推退20%。`);
+    }
     
     actionOrder.push({
       round: cnt + 1,
@@ -7876,44 +8725,51 @@ msg.push(bSpeedMsg);
       opponentBar: defender === A_player ? A_actionBar : B_actionBar
     });
 
-    // 负面效果（保持原样）
-    if (A_player.fumianhuihe > 0) {
-      let effectMsg = "";
-      switch (A_player.fumian_type) {
-        case "太阴之力": effectMsg = "被太阴之力冰封，生机冻结，元神僵硬"; break;
-        case "火焰风暴": effectMsg = "被火焰风暴席卷全身"; break;
-        case "剧毒": effectMsg = "被剧毒侵蚀，五脏六腑如被腐蚀"; break;
-        default: effectMsg = `受到${A_player.fumian_type}影响`;
-      }
-      
-      A_player.当前血量 -= A_player.fumian_damage;
-      A_player.当前血量 = Math.max(A_player.当前血量, 0);
-      msg.push(`${A_player.名号}${effectMsg}，损失了${bigNumberTransform(A_player.fumian_damage)}点生命值！`);
-      
-      A_player.fumianhuihe--;
-      if (A_player.fumianhuihe === 0) {
-        msg.push(`${A_player.名号}身上的${A_player.fumian_type}效果消失了。`);
-        A_player.fumian_type = null;
+    if (attacker._绝仙流血) {
+      const bleedDamage = Math.floor((Number(attacker.血量上限) || 0) * 0.2);
+      attacker.当前血量 = Math.max(0, attacker.当前血量 - bleedDamage);
+      msg.push(`【绝仙剑】${attacker.名号}本源流血，损失${bigNumberTransform(bleedDamage)}点生命。`);
+      if (attacker.当前血量 <= 0) {
+        const revival = checkRevival(attacker, 'main');
+        if (revival.revived) msg.push(revival.message);
+        else {
+          msg.push(`${attacker.名号}被绝仙剑流血斩灭。`);
+          break;
+        }
       }
     }
 
-    if (B_player.fumianhuihe > 0) {
+    // 持续伤害在受影响角色自己的行动开始时结算。
+    if (attacker.fumianhuihe > 0) {
       let effectMsg = "";
-      switch (B_player.fumian_type) {
+      switch (attacker.fumian_type) {
         case "太阴之力": effectMsg = "被太阴之力冰封，生机冻结，元神僵硬"; break;
         case "火焰风暴": effectMsg = "被火焰风暴席卷全身"; break;
         case "剧毒": effectMsg = "被剧毒侵蚀，五脏六腑如被腐蚀"; break;
-        default: effectMsg = `受到${B_player.fumian_type}影响`;
+        default: effectMsg = `受到${attacker.fumian_type}影响`;
       }
       
-      B_player.当前血量 -= B_player.fumian_damage;
-      B_player.当前血量 = Math.max(B_player.当前血量, 0);
-      msg.push(`${B_player.名号}${effectMsg}，损失了${bigNumberTransform(B_player.fumian_damage)}点生命值！`);
+      attacker.当前血量 = Math.max(attacker.当前血量 - attacker.fumian_damage, 0);
+      msg.push(`${attacker.名号}${effectMsg}，损失了${bigNumberTransform(attacker.fumian_damage)}点生命值！`);
       
-      B_player.fumianhuihe--;
-      if (B_player.fumianhuihe === 0) {
-        msg.push(`${B_player.名号}身上的${B_player.fumian_type}效果消失了。`);
-        B_player.fumian_type = null;
+      attacker.fumianhuihe--;
+      if (attacker.fumianhuihe === 0) {
+        msg.push(`${attacker.名号}身上的${attacker.fumian_type}效果消失了。`);
+        attacker.fumian_type = null;
+      }
+
+      if (attacker.当前血量 <= 0) {
+        const 复活结果 = checkRevival(attacker, "main");
+        if (复活结果.revived) {
+          msg.push(...(Array.isArray(复活结果.message) ? 复活结果.message : [复活结果.message]));
+        } else {
+          msg.push(`${attacker.名号}被持续伤害击溃！`);
+          msg.push(`${defender.名号}击败了${attacker.名号}`);
+          return build1v1BattleResult({
+            battleEnded: true,
+            winner: defender === A_player ? "A" : "B"
+          });
+        }
       }
     }
 
@@ -7930,6 +8786,17 @@ msg.push(bSpeedMsg);
       const immuneType = B_immune_type || "涅槃真火护体";
       if (B_immune_control > 0) {
         msg.push(`${B_player.名号}的${immuneType}效果剩余${B_immune_control}回合`);
+      }
+    }
+
+    // 道种·厚土无敌 持续减伤回合递减（每回合末）
+    for (const _p of [A_player, B_player]) {
+      if (_p && _p._持续减伤回合 > 0) {
+        _p._持续减伤回合--;
+        if (_p._持续减伤回合 <= 0) {
+          _p._持续减伤比例 = 0;
+          msg.push(`${_p.名号}的「厚土无敌」大地之力渐渐消散。`);
+        }
       }
     }
 
@@ -7978,11 +8845,10 @@ msg.push(bSpeedMsg);
               msg.push(复活结果.message);
             } else {
               msg.push(`${attacker.名号}击败了${defender.名号}`);
-              return { 
-                msg, 
+              return build1v1BattleResult({
                 battleEnded: true,
                 winner: attacker === A_player ? "A" : "B"
-              };
+              });
             }
           }
         }
@@ -8005,168 +8871,246 @@ msg.push(bSpeedMsg);
               msg.push(复活结果.message);
             } else {
               msg.push(`${attacker.名号}击败了${defender.名号}`);
-              return { 
-                msg, 
+              return build1v1BattleResult({
                 battleEnded: true,
                 winner: attacker === A_player ? "A" : "B"
-              };
+              });
             }
           }
         }
       }
 
-      // 分身触发（保持原样）
+      // ==================== 他化自在法·行者化身召唤 ====================
       if (!attacker.名号.includes('分身')) {
-        if (attacker.学习的功法?.includes("【仙帝】他化自在法") && Math.random() < 0.3) {
-          const fenshen_obj = JSON.parse(JSON.stringify(attacker));
-          fenshen_obj.名号 = `${attacker.名号}·他化自在身`;
+        // 他化自在法（等级化机制）
+        if (attacker.学习的功法?.includes("【仙帝】他化自在法")) {
+          const levelConfig = getTahuaLevelConfig(attacker.mijinglevel_id);
+          const isA = attacker === A_player;
+          const tahuaEntities = isA ? A_tahua_entities : B_tahua_entities;
+          const isTriggered = isA ? A_tahua_triggered : B_tahua_triggered;
           
-          if (attacker === A_player) {
-            A_fenshen = fenshen_obj;
-            A_fenshen_duration = 3;
-          } else {
-            B_fenshen = fenshen_obj;
-            B_fenshen_duration = 3;
-          }
-          
-          const selectedAvatars = [];
-          while (selectedAvatars.length < 1) {
-            const randomIndex = Math.floor(Math.random() * timeRiverAvatars.length);
-            const avatar = timeRiverAvatars[randomIndex];
-            if (!selectedAvatars.includes(avatar)) selectedAvatars.push(avatar);
-          }
-          
-          const avatar1 = selectedAvatars[0];
-          const damage1 = attacker.攻击 * 10;
-          defender.当前血量 -= damage1;
-          defender.当前血量 = Math.max(defender.当前血量, 0);
-          
-          msg.push(`${attacker.名号}施展「他化自在法」，时间长河泛起涟漪！`);
-          msg.push(`一道身影自时间长河中踏出，那是${avatar1.name}！`);
-          msg.push(`${avatar1.name}眸绽冷电，睥睨万古：「${avatar1.desc}」`);
-          msg.push(`${avatar1.name}施展${avatar1.skill}，一道贯穿古今的神光轰向${defender.名号}！`);
-          msg.push(`这一击蕴含了跨越万古的伟力，造成${bigNumberTransform(damage1)}点伤害！`);
-          msg.push(`${defender.名号}剩余血量：${bigNumberTransform(defender.当前血量)}`);
-          
-          if (defender.当前血量 <= 0) {
-            const 复活结果 = checkRevival(defender, "main");
-            if (复活结果.revived) {
-              msg.push(复活结果.message);
-            } else {
-              msg.push(`${attacker.名号}击败了${defender.名号}`);
-              return { 
-                msg, 
-                battleEnded: true,
-                winner: attacker === A_player ? "A" : "B"
-              };
+          if (levelConfig && !isTriggered && Math.random() < levelConfig.triggerChance) {
+            const activeCount = tahuaEntities.filter(e => e.当前血量 > 0).length;
+            const canSummon = levelConfig.maxActive - activeCount;
+            
+            if (canSummon > 0) {
+              const summonCount = Math.min(
+                Math.floor(Math.random() * (levelConfig.maxCount - levelConfig.minCount + 1)) + levelConfig.minCount,
+                canSummon
+              );
+              
+              msg.push(`≡ ${attacker.名号}低喝一声「他化自在，他化万古」！时间长河为之震颤，掀起滔天巨浪！`);
+              
+              const usedTypes = tahuaEntities.filter(e => e.当前血量 > 0).map(e => e._tahua_type);
+              const availableAvatars = TAHUA_AVATARS.filter(a => !usedTypes.includes(a.id));
+              const shuffled = availableAvatars.sort(() => Math.random() - 0.5);
+              const selectedAvatars = shuffled.slice(0, summonCount);
+              
+              for (const avatar of selectedAvatars) {
+                const entity = JSON.parse(JSON.stringify(attacker));
+                entity.名号 = `${attacker.名号}·他化自在身(${avatar.name})`;
+                entity._tahua_type = avatar.id;
+                entity._tahua_duration = levelConfig.duration;
+                entity._tahua_master = isA ? "A" : "B";
+                entity.avatarSkill = { ...avatar };
+                entity.当前血量 = entity.血量上限;
+                
+                if (isA) {
+                  A_tahua_entities.push(entity);
+                } else {
+                  B_tahua_entities.push(entity);
+                }
+                
+                msg.push(`时间长河中踏出一道伟岸身影——${avatar.name}降临！`);
+                msg.push(`${avatar.name}眸绽冷电，睥睨万古：「${avatar.desc}」`);
+                
+                const avatarDmg = Math.trunc(entity.攻击 * avatar.beilv * (0.8 + Math.random() * 0.4));
+                defender.当前血量 -= avatarDmg;
+                defender.当前血量 = Math.max(defender.当前血量, 0);
+                
+                msg.push(`${avatar.name}施展「${avatar.skill}」！${avatar.msg1}`);
+                msg.push(`${avatar.msg2}，造成${bigNumberTransform(avatarDmg)}点伤害！`);
+                msg.push(`${defender.名号}剩余血量：${bigNumberTransform(defender.当前血量)}`);
+                
+                if (avatar.special.includes("禁锢") || avatar.special.includes("麻痹")) {
+                  defender.dongjie = true;
+                  msg.push(`${defender.名号}被${avatar.name}的力量禁锢，无法行动！`);
+                }
+                
+                if (defender.当前血量 <= 0) {
+                  const 复活结果 = checkRevival(defender, "main");
+                  if (复活结果.revived) {
+                    msg.push(复活结果.message);
+                    continue;
+                  } else {
+                    msg.push(`${attacker.名号}击败了${defender.名号}`);
+                    return build1v1BattleResult({
+                      battleEnded: true,
+                      winner: attacker === A_player ? "A" : "B"
+                    });
+                  }
+                }
+              }
+              
+              if (isA) A_tahua_triggered = true;
+              else B_tahua_triggered = true;
+              
+              if (levelConfig.duration > 0) {
+                msg.push(`${attacker.名号}的他化自在身可存在${levelConfig.duration}回合`);
+              } else {
+                const currentCount = tahuaEntities.filter(e => e.当前血量 > 0).length;
+                msg.push(`${attacker.名号}的他化自在身永驻战场，直至被击杀！【${currentCount}/${levelConfig.maxActive}】`);
+              }
             }
           }
-          
-          msg.push(`${attacker.名号}施展「他化自在法」，虚空震荡中走出另一个自我！`);
         }
+        // 一气化三清（保持独立机制，加入同一实体数组）
         else if (attacker.学习的功法?.includes("一气化三清") && Math.random() < 0.9) {
-          const fenshen_obj = JSON.parse(JSON.stringify(attacker));
-          fenshen_obj.名号 = `${attacker.名号}·道身`;
-          fenshen_obj.攻击力 *= 0.6;
-          fenshen_obj.防御力 *= 0.6;
+          const entity = JSON.parse(JSON.stringify(attacker));
+          entity.名号 = `${attacker.名号}·道身`;
+          entity.攻击 = Math.trunc(entity.攻击 * 0.6);
+          entity.防御 = Math.trunc(entity.防御 * 0.6);
+          entity._tahua_type = "yiqihua";
+          entity._tahua_duration = 4;
+          entity._tahua_master = attacker === A_player ? "A" : "B";
+          entity.avatarSkill = null;
+          entity.当前血量 = entity.血量上限;
           
           if (attacker === A_player) {
-            A_fenshen = fenshen_obj;
-            A_fenshen_duration = 4;
+            A_tahua_entities.push(entity);
           } else {
-            B_fenshen = fenshen_obj;
-            B_fenshen_duration = 4;
+            B_tahua_entities.push(entity);
           }
           
           msg.push(`${attacker.名号}施展「一气化三清」，三花聚顶凝聚出道身！`);
         }
       }
 
-      // 防御者他化自在法（保持原样）
+      // 防御者他化自在法（等级化机制）
       if (defender && !defender.名号?.includes('分身') && 
-          defender.学习的功法?.includes("【仙帝】他化自在法") && 
-          Math.random() < 0.25) {
+          defender.学习的功法?.includes("【仙帝】他化自在法")) {
+        const defLevelConfig = getTahuaLevelConfig(defender.mijinglevel_id);
+        const isDefA = defender === A_player;
+        const defTahuaEntities = isDefA ? A_tahua_entities : B_tahua_entities;
+        const defIsTriggered = isDefA ? A_tahua_triggered : B_tahua_triggered;
         
-        const fenshen_obj = JSON.parse(JSON.stringify(attacker));
-        fenshen_obj.名号 = `${defender.名号}化出的${attacker.名号}虚影`;
-        
-        const selectedAvatars = [];
-        while (selectedAvatars.length < 2) {
-          const randomIndex = Math.floor(Math.random() * timeRiverAvatars.length);
-          const avatar = timeRiverAvatars[randomIndex];
-          if (!selectedAvatars.includes(avatar)) selectedAvatars.push(avatar);
-        }
-        
-        const avatar1 = selectedAvatars[0];
-        const damage1 = defender.攻击 * 10;
-        attacker.当前血量 -= damage1;
-        attacker.当前血量 = Math.max(attacker.当前血量, 0);
-        
-        msg.push(`${defender.名号}暴喝道「他化自在，他化万古」，映照出${attacker.名号}的时空投影！同时时间长河泛起涟漪！`);
-        msg.push(`一道身影自时间长河中踏出，那是${avatar1.name}！`);
-        msg.push(`${avatar1.name}眸绽冷电，睥睨万古：「${avatar1.desc}」`);
-        msg.push(`${avatar1.name}施展${avatar1.skill}，一道贯穿古今的神光轰向${attacker.名号}！`);
-        msg.push(`这一击蕴含了跨越万古的伟力，造成${bigNumberTransform(damage1)}点伤害！`);
-        msg.push(`${attacker.名号}剩余血量：${bigNumberTransform(attacker.当前血量)}`);
-        
-        if (attacker.当前血量 <= 0) {
-          const 复活结果 = checkRevival(attacker, "main");
-          if (复活结果.revived) {
-            msg.push(复活结果.message);
-          } else {
-            msg.push(`${defender.名号}击败了${attacker.名号}`);
-            return { 
-              msg, 
-              battleEnded: true,
-              winner: defender === A_player ? "A" : "B"
-            };
+        if (defLevelConfig && !defIsTriggered && Math.random() < defLevelConfig.triggerChance) {
+          const activeCount = defTahuaEntities.filter(e => e.当前血量 > 0).length;
+          const canSummon = defLevelConfig.maxActive - activeCount;
+          
+          if (canSummon > 0) {
+            const summonCount = Math.min(
+              Math.floor(Math.random() * (defLevelConfig.maxCount - defLevelConfig.minCount + 1)) + defLevelConfig.minCount,
+              canSummon
+            );
+            
+            msg.push(`≡ ${defender.名号}暴喝道「他化自在，他化万古」！时间长河为之震颤，掀起滔天巨浪！`);
+            
+            const usedTypes = defTahuaEntities.filter(e => e.当前血量 > 0).map(e => e._tahua_type);
+            const availableAvatars = TAHUA_AVATARS.filter(a => !usedTypes.includes(a.id));
+            const shuffled = availableAvatars.sort(() => Math.random() - 0.5);
+            const selectedAvatars = shuffled.slice(0, summonCount);
+            
+            for (const avatar of selectedAvatars) {
+              const entity = JSON.parse(JSON.stringify(defender));
+              entity.名号 = `${defender.名号}·他化自在身(${avatar.name})`;
+              entity._tahua_type = avatar.id;
+              entity._tahua_duration = defLevelConfig.duration;
+              entity._tahua_master = isDefA ? "A" : "B";
+              entity.avatarSkill = { ...avatar };
+              entity.当前血量 = entity.血量上限;
+              
+              if (isDefA) {
+                A_tahua_entities.push(entity);
+              } else {
+                B_tahua_entities.push(entity);
+              }
+              
+              msg.push(`时间长河中踏出一道伟岸身影——${avatar.name}降临！`);
+              msg.push(`${avatar.name}眸绽冷电，睥睨万古：「${avatar.desc}」`);
+              
+              const avatarDmg = Math.trunc(entity.攻击 * avatar.beilv * (0.8 + Math.random() * 0.4));
+              attacker.当前血量 -= avatarDmg;
+              attacker.当前血量 = Math.max(attacker.当前血量, 0);
+              
+              msg.push(`${avatar.name}施展「${avatar.skill}」！${avatar.msg1}`);
+              msg.push(`${avatar.msg2}，造成${bigNumberTransform(avatarDmg)}点伤害！`);
+              msg.push(`${attacker.名号}剩余血量：${bigNumberTransform(attacker.当前血量)}`);
+              
+              if (avatar.special.includes("禁锢") || avatar.special.includes("麻痹")) {
+                attacker.dongjie = true;
+                msg.push(`${attacker.名号}被${avatar.name}的力量禁锢，无法行动！`);
+              }
+              
+              if (attacker.当前血量 <= 0) {
+                const 复活结果 = checkRevival(attacker, "main");
+                if (复活结果.revived) {
+                  msg.push(复活结果.message);
+                  continue;
+                } else {
+                  msg.push(`${defender.名号}击败了${attacker.名号}`);
+                  return build1v1BattleResult({
+                    battleEnded: true,
+                    winner: defender === A_player ? "A" : "B"
+                  });
+                }
+              }
+            }
+            
+            if (isDefA) A_tahua_triggered = true;
+            else B_tahua_triggered = true;
+            
+            if (defLevelConfig.duration > 0) {
+              msg.push(`${defender.名号}的他化自在身可存在${defLevelConfig.duration}回合`);
+            } else {
+              msg.push(`${defender.名号}的他化自在身永驻战场，直至被击杀！`);
+            }
           }
-        }
-        
-        const avatar2 = selectedAvatars[1];
-        const damage2 = defender.攻击 * 10;
-        attacker.当前血量 -= damage2;
-        attacker.当前血量 = Math.max(attacker.当前血量, 0);
-        
-        msg.push(`又一道身影自时间长河中显现，那是${avatar2.name}！`);
-        msg.push(`${avatar2.name}周身道则缭绕：「${avatar2.desc}」`);
-        msg.push(`${avatar2.name}施展${avatar2.skill}，无尽法则之力倾泻而下！`);
-        msg.push(`这一击撕裂了时空壁垒，造成${bigNumberTransform(damage2)}点伤害！`);
-        msg.push(`${attacker.名号}剩余血量：${bigNumberTransform(attacker.当前血量)}`);
-        
-        if (attacker.当前血量 <= 0) {
-          const 复活结果 = checkRevival(attacker, "main");
-          if (复活结果.revived) {
-            msg.push(复活结果.message);
-          } else {
-            msg.push(`${defender.名号}击败了${attacker.名号}`);
-            return { 
-              msg, 
-              battleEnded: true,
-              winner: defender === A_player ? "A" : "B"
-            };
-          }
-        }
-        
-        msg.push(`两位强者身影渐渐虚淡，回归时间长河，只留下万古不灭的道韵...`);
-        
-        if (defender === A_player) {
-          A_fenshen = fenshen_obj;
-          A_fenshen_duration = 3;
-        } else {
-          B_fenshen = fenshen_obj;
-          B_fenshen_duration = 3;
         }
       }
 
       // 主要攻击（保持原样）
-      const { 伤害, isCritical, baoji } = await performAttack(attacker, defender, cnt2, "main");
-      const { actual_damage, fenshen_blocked } = applyDamage(defender, 伤害, "main");
+      const attackResult = await performAttack(attacker, defender, cnt2, "main");
+      let { 伤害 = 0, isCritical = false, baoji = 1, battleEnded: attackBattleEnded = false, winner: attackWinner = null, 斩杀阈值 = 0 } = attackResult || {};
+      if (attackBattleEnded) {
+        msg.push(...((attackResult && attackResult.msg) || []));
+        return build1v1BattleResult({ battleEnded: true, winner: attackWinner });
+      }
+      // 仙气压制：攻击方每多一道仙气，对少一道者伤害+30%（完美世界·石昊三道仙气）
+      const xianqiMul = calcXianqiSuppressMul(attacker, defender);
+      if (xianqiMul > 1) {
+        伤害 = Math.trunc(伤害 * xianqiMul);
+        msg.push(`【仙气压制】${attacker.名号}仙气加身，碾压${defender.名号}，本击伤害 ×${xianqiMul.toFixed(2)}！`);
+      }
+      if (defender._诛仙易伤 > 0) 伤害 = Math.floor(伤害 * (1 + defender._诛仙易伤));
+      const { actual_damage, fenshen_blocked } = applyDamage(defender, 伤害, "main", attacker);
+      // 吸血（批次1：基于实际造成伤害回复，封顶血量上限）
+      if (!attacker._先天禁疗 && attacker.吸血率 > 0 && actual_damage > 0) {
+        const _heal = Math.trunc(actual_damage * attacker.吸血率);
+        const _max = attacker.血量上限 || attacker.当前血量;
+        attacker.当前血量 = Math.min(attacker.当前血量 + _heal, _max);
+        msg.push(`${attacker.名号}汲取了${bigNumberTransform(_heal)}点生命！`);
+      }
       const attack_msg = createCombatMessage(cnt, attacker, defender, 伤害, actual_damage, isCritical, fenshen_blocked);
       msg.push(attack_msg);
 
+      if (
+        attacker.当前先天至宝 === '诛仙四剑' &&
+        defender.当前血量 > 0 &&
+        defender.当前血量 < defender.血量上限 * 0.25
+      ) {
+        defender.当前血量 = 0;
+        msg.push(`【诛仙斩命】${defender.名号}气血低于25%，本源被诛仙四剑直接斩灭！`);
+      }
+
+      // —— 草字剑诀·斩真我：命中后残血斩杀 ——
+      if (斩杀阈值 > 0 && defender.当前血量 > 0 && defender.当前血量 <= 斩杀阈值 * defender.血量上限) {
+        defender.当前血量 = 0;
+        msg.push(`${attacker.名号}一剑「草字剑诀」斩落真我，${defender.名号}气血已衰竭至极，本源被当场斩断！`);
+      }
+
       // 者字秘恢复（保持原样）
-      if (attacker.学习的功法?.some(gongfa => huifu.includes(gongfa))) {
+      if (!attacker._先天禁疗 && attacker.学习的功法?.some(gongfa => huifu.includes(gongfa))) {
         const 最大血量 = attacker.血量上限;
         const 恢复量 = Math.trunc(最大血量 * 0.1);
         if (attacker.当前血量 < 最大血量) {
@@ -8187,7 +9131,7 @@ msg.push(bSpeedMsg);
       for (const fenshen of attacker.分身) {
         if (fenshen.当前血量 > 0) {
           const { 伤害: fenshen_damage } = await performAttack(fenshen, defender, cnt2, "fenshen");
-          const { actual_damage } = applyDamage(defender, fenshen_damage, "fenshen");
+          const { actual_damage } = applyDamage(defender, fenshen_damage, "fenshen", fenshen);
           
           msg.push(`${fenshen.名号}拉弓凝聚虹光，`);
           msg.push(`造成${bigNumberTransform(actual_damage)}点协同伤害`);
@@ -8195,81 +9139,90 @@ msg.push(bSpeedMsg);
       }
     }
 
-    // 独立分身攻击（保持原样）
-    if (A_fenshen && A_fenshen_duration > 0) {
-      const { 伤害: fenshen_damage, isCritical: fenshen_critical } = await performAttack(A_fenshen, B_player, cnt2, "fenshen");
-      const { actual_damage } = applyDamage(B_player, fenshen_damage, "fenshen");
-      
-      let criticalText = fenshen_critical ? "暴击！" : "";
-      msg.push(`${A_fenshen.名号}发动攻击，${criticalText}对${B_player.名号}造成${bigNumberTransform(actual_damage)}伤害，${B_player.名号}剩余血量${bigNumberTransform(B_player.当前血量)}`);
-      
-      A_fenshen_duration--;
-    }
+    // ==================== 他化自在身独立攻击（统一攻守，消除对称重复） ====================
+    // 抽象后：任一方的化身攻击任一方，都走同一段逻辑
+    async function processTahuaAttack(entities, target, winner) {
+      for (const entity of entities.filter(e => e.当前血量 > 0)) {
+        if (entity.avatarSkill) {
+          const avatar = entity.avatarSkill;
+          const entityDmg = Math.trunc(entity.攻击 * avatar.beilv * (0.8 + Math.random() * 0.4));
+          target.当前血量 -= entityDmg;
+          target.当前血量 = Math.max(target.当前血量, 0);
 
-    if (B_fenshen && B_fenshen_duration > 0) {
-      const { 伤害: fenshen_damage, isCritical: fenshen_critical } = await performAttack(B_fenshen, A_player, cnt2, "fenshen");
-      const { actual_damage } = applyDamage(A_player, fenshen_damage, "fenshen");
-      
-      let criticalText = fenshen_critical ? "暴击！" : "";
-      msg.push(`${B_fenshen.名号}发动攻击，${criticalText}对${A_player.名号}造成${bigNumberTransform(actual_damage)}伤害，${A_player.名号}剩余血量${bigNumberTransform(A_player.当前血量)}`);
-      
-      B_fenshen_duration--;
-    }
+          msg.push(`${entity.名号}施展「${avatar.skill}」攻击${target.名号}！`);
+          if (avatar.special.includes("禁锢") || avatar.special.includes("麻痹")) {
+            target.dongjie = true;
+            msg.push(`${target.名号}被${avatar.name}的力量禁锢！`);
+          }
+          msg.push(`造成${bigNumberTransform(entityDmg)}点伤害，${target.名号}剩余${bigNumberTransform(target.当前血量)}`);
+        } else {
+          const { 伤害: entityDmg } = await performAttack(entity, target, cnt2, "fenshen");
+          const { actual_damage } = applyDamage(target, entityDmg, "fenshen", entity);
+          msg.push(`${entity.名号}发动攻击，对${target.名号}造成${bigNumberTransform(actual_damage)}伤害`);
+        }
 
-    // 分身消散（保持原样）
-    if (A_fenshen && A_fenshen_duration <= 0) {
-      if (A_fenshen.名号.includes('道身')) {
-        msg.push(`${A_fenshen.名号}化作一缕清气，重归天地之间！`);
-      } else if (A_fenshen.名号.includes('虚影')) {
-        msg.push(`${A_fenshen.名号}渐渐虚淡，消散在时空长河中！`);
-      } else {
-        msg.push(`${A_fenshen.名号}的持续时间结束，化作光雨消散！`);
+        if (target.当前血量 <= 0) {
+          const rev = checkRevival(target, "main");
+          if (!rev.revived) {
+            return { battleEnded: true, winner };
+          }
+          msg.push(rev.message);
+        }
       }
-      A_fenshen = null;
+      return null;
     }
 
-    if (B_fenshen && B_fenshen_duration <= 0) {
-      if (B_fenshen.名号.includes('道身')) {
-        msg.push(`${B_fenshen.名号}化作一缕清气，重归天地之间！`);
-      } else if (B_fenshen.名号.includes('虚影')) {
-        msg.push(`${B_fenshen.名号}渐渐虚淡，消散在时空长河中！`);
-      } else {
-        msg.push(`${B_fenshen.名号}的持续时间结束，化作光雨消散！`);
-      }
-      B_fenshen = null;
+    // A 化身打 B
+    const aResult = await processTahuaAttack(A_tahua_entities, B_player, "A");
+    if (aResult) return build1v1BattleResult(aResult);
+
+    // B 化身打 A
+    const bResult = await processTahuaAttack(B_tahua_entities, A_player, "B");
+    if (bResult) return build1v1BattleResult(bResult);
+
+    // ==================== 他化自在身持续时间处理 ====================
+    for (const entity of A_tahua_entities) {
+      if (entity._tahua_duration > 0) entity._tahua_duration--;
     }
+    for (const entity of B_tahua_entities) {
+      if (entity._tahua_duration > 0) entity._tahua_duration--;
+    }
+
+    // ==================== 他化自在身消散 ====================
+    for (const entity of [...A_tahua_entities]) {
+      if (entity.当前血量 > 0 && entity._tahua_duration === 0) {
+        if (entity._tahua_type === "yiqihua") {
+          msg.push(`${entity.名号}化作一缕清气，重归天地之间！`);
+        } else {
+          msg.push(`${entity.名号}持续时间结束，伟岸身影渐趋虚淡，回归时间长河...`);
+        }
+      }
+    }
+    A_tahua_entities = A_tahua_entities.filter(e => e.当前血量 <= 0 || e._tahua_duration !== 0);
+
+    for (const entity of [...B_tahua_entities]) {
+      if (entity.当前血量 > 0 && entity._tahua_duration === 0) {
+        if (entity._tahua_type === "yiqihua") {
+          msg.push(`${entity.名号}化作一缕清气，重归天地之间！`);
+        } else {
+          msg.push(`${entity.名号}持续时间结束，伟岸身影渐趋虚淡，回归时间长河...`);
+        }
+      }
+    }
+    B_tahua_entities = B_tahua_entities.filter(e => e.当前血量 <= 0 || e._tahua_duration !== 0);
 
     cnt++;
   }
 
 
   
-  const A_actions = actionOrder.filter(a => a.name === A_player.名号).length;
-  const B_actions = actionOrder.filter(a => a.name === B_player.名号).length;
-  
-
-
-
   if (B_player.当前血量 <= 0) {
-    msg.push(`${BB_player.名号}击败了${AA_player.名号}`);
-    A_xue = A_player.当前血量;
-    B_xue = B_player.当前血量;
-  } else if (A_player.当前血量 <= 0) {
     msg.push(`${AA_player.名号}击败了${BB_player.名号}`);
-    A_xue = A_player.当前血量;
-    B_xue = B_player.当前血量;
+  } else if (A_player.当前血量 <= 0) {
+    msg.push(`${BB_player.名号}击败了${AA_player.名号}`);
   }
 
-  return {
-    msg: msg,
-    A_xue: A_xue,
-    B_xue: B_xue,
-    A_hp: A_player.当前血量,
-    B_hp: B_player.当前血量,
-    actionOrder: actionOrder,
-    speedRatio: B_speed / A_speed,
-    actualRatio: B_actions / A_actions
-  };
+  return build1v1BattleResult();
 }
 
 
@@ -8283,10 +9236,8 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   const allUnits = [];
 
   // 团队状态追踪
-  let A_临字秘触发 = false;
-  let B_临字秘触发 = false;
-  let A_临字秘加成 = 0;
-  let B_临字秘加成 = 0;
+  // P3-1: 临字秘状态打包为对象（与 1v1 一致）
+  const linziState = { A_触发: false, B_触发: false, A_加成: 0, B_加成: 0 };
   let A_帝兵触发 = false;
   let B_帝兵触发 = false;
   let 轮回诸天拳触发 = false;
@@ -8319,6 +9270,78 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
   initTeam(A_team, 'A');
   initTeam(B_team, 'B');
+
+  async function consumeTeamAuthority(holder, flag) {
+    if (!holder?.先天权柄?.[flag]) return false;
+    delete holder.先天权柄[flag];
+    const sources = holder._team === 'A' ? options._sourceATeam : options._sourceBTeam;
+    const source = sources?.find(unit => String(unit?.id || unit?.名号) === String(holder?.id || holder?.名号));
+    if (source?.先天权柄) delete source.先天权柄[flag];
+    if (holder.id) {
+      try {
+        const stored = await Read_player(holder.id);
+        if (stored?.先天权柄) delete stored.先天权柄[flag];
+        await Write_player(holder.id, stored);
+      } catch (error) {
+        console.error(`[先天至宝] 团队战权柄消耗失败 player=${holder.id}`, error?.message);
+      }
+    }
+    return true;
+  }
+
+  async function applyTeamInnateOpening(holder, enemies) {
+    if (holder.当前先天至宝 === '盘古幡') {
+      for (const enemy of enemies) enemy.防御 = Math.floor((Number(enemy.防御) || 0) * 0.7);
+      if (await consumeTeamAuthority(holder, '盘古开天待用')) {
+        for (const enemy of enemies) {
+          enemy.防御 = 0;
+          const boss = enemy.boss === true || enemy.type === 'boss' || /BOSS|Boss|首领|天骄/.test(String(enemy.名号 || ''));
+          const maxHp = Number(enemy.血量上限) || Number(enemy.当前血量) || 1;
+          enemy.当前血量 = Math.max(1, enemy.当前血量 - Math.floor(maxHp * (boss ? 0.03 : 0.3)));
+        }
+        msg.push(`【开天】${holder.名号}令敌方全体防御归零，并斩去初始气血。`);
+      }
+    }
+    if (holder.当前先天至宝 === '诛仙四剑') {
+      for (const enemy of enemies) enemy._先天禁疗 = true;
+      if (await consumeTeamAuthority(holder, '诛仙剑阵待用')) {
+        const sword = ['戮仙剑', '绝仙剑', '陷仙剑', '诛仙剑'][Math.floor(Math.random() * 4)];
+        for (const enemy of enemies) {
+          if (sword === '戮仙剑') enemy._诛仙易伤 = 0.5;
+          if (sword === '绝仙剑') enemy._绝仙流血 = true;
+          if (sword === '陷仙剑') enemy._陷仙沉默 = true;
+          if (sword === '诛仙剑') enemy.当前血量 = Math.max(0, enemy.当前血量 - Math.floor(holder.攻击 * (holder.法球倍率 || 1) * 5));
+        }
+        msg.push(`【诛仙剑阵·${sword}】剑阵笼罩敌方全体。`);
+      }
+    }
+    if (holder.当前先天至宝 === '东皇钟' && await consumeTeamAuthority(holder, '东皇镇世待用')) {
+      for (const enemy of enemies) {
+        const boss = enemy.boss === true || enemy.type === 'boss' || /BOSS|Boss|首领|天骄/.test(String(enemy.名号 || ''));
+        enemy._东皇冻结回合 = boss ? 1 : 3;
+        if (boss) enemy.攻击 = Math.floor((Number(enemy.攻击) || 0) * 0.7);
+      }
+      msg.push(`【东皇镇世】敌方全体被镇封，首领攻击同时受到压制。`);
+    }
+    if (holder.当前先天至宝 === '太极图' && holder.先天权柄?.太极模式 === '阳') {
+      holder.吸血率 = Math.max(Number(holder.吸血率) || 0, 0.5);
+    }
+    if (holder.当前先天至宝 === '太极图' && await consumeTeamAuthority(holder, '阴阳逆转待用')) {
+      holder._阴阳逆转护命 = true;
+      for (const enemy of enemies) enemy.dongjie = true;
+      msg.push(`【阴阳逆转】敌方全体开局被定住，${holder.名号}获得一次致命伤害逆转。`);
+    }
+  }
+
+  for (const holder of A_team) await applyTeamInnateOpening(holder, B_team);
+  for (const holder of B_team) await applyTeamInnateOpening(holder, A_team);
+
+  if (A_team.some(unit => unit.当前先天至宝 === '六道轮回盘')) {
+    for (const unit of B_team) unit._speed = Math.max(1, Math.floor(unit._speed * 0.8));
+  }
+  if (B_team.some(unit => unit.当前先天至宝 === '六道轮回盘')) {
+    for (const unit of A_team) unit._speed = Math.max(1, Math.floor(unit._speed * 0.8));
+  }
 
   msg.push(`≡≡≡ 群战开启 ≡≡≡`);
   msg.push(`【${A_team.map(p => p.名号).join('、')}】 VS 【${B_team.map(p => p.名号).join('、')}】`);
@@ -8395,82 +9418,9 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       }
     }
 
-    // 九秘共鸣计算
-    const learnedMijue = attacker.学习的功法?.filter(gongfa => 
-      ["临", "兵", "斗", "者", "皆", "数", "组", "前", "行"].some(mijue => gongfa.includes(mijue))
-    ).length || 0;
-    const baseProb = 0.01;
-    const bonusProbability = learnedMijue * 0.1;
-    const triggerProb = Math.min(1.0, baseProb + bonusProbability);
-
-    // 皆字秘触发
-    if (attacker.学习的功法?.includes("皆字秘") && !attacker.皆字秘触发 && Math.random() < triggerProb) {
-      const originalAttack = attacker.攻击;
-      const originalDefense = attacker.防御;
-      const originalHP = attacker.当前血量;
-      
-      attacker.攻击 = Math.trunc(attacker.攻击 * 10);
-      attacker.防御 = Math.trunc(attacker.防御 * 10);
-      attacker.当前血量 = Math.trunc(attacker.当前血量 * 10);
-      attacker.皆字秘触发 = true;
-      
-      attackMsgs.push(`「皆！」${attacker.名号}口吐真言，战力飙升十倍！`);
-      attackMsgs.push(`攻击：${bigNumberTransform(originalAttack)} → ${bigNumberTransform(attacker.攻击)}`);
-      attackMsgs.push(`防御：${bigNumberTransform(originalDefense)} → ${bigNumberTransform(attacker.防御)}`);
-      attackMsgs.push(`生命：${bigNumberTransform(originalHP)} → ${bigNumberTransform(attacker.当前血量)}`);
-    }
-
-    // 临字秘触发
-    const 临字秘已触发 = isA ? A_临字秘触发 : B_临字秘触发;
-    if (attacker.学习的功法?.includes("临字秘") && !临字秘已触发 && Math.random() < triggerProb) {
-      const realmLevel = Math.floor(Math.random() * 9) + 1;
-      
-      // 皆字秘压制判断
-      if (attacker.皆字秘触发 && realmLevel !== 9) {
-        attackMsgs.push(`「临！」${attacker.名号}欲展开禁忌领域，然皆字秘十倍战力如星河决堤，禁忌领域演化被强行中断！`);
-      } else {
-        const realmNames = {
-          1: "一禁领域", 2: "二禁领域", 3: "三禁领域", 4: "四禁领域",
-          5: "五禁领域", 6: "六禁领域", 7: "七禁领域", 8: "八禁领域", 9: "神禁领域"
-        };
-        
-        const originalAttack = attacker.攻击;
-        const originalDefense = attacker.防御;
-        const originalHP = attacker.当前血量;
-        
-        const selfMultiplier = realmLevel;
-        const enemyMultiplier = realmLevel / 10;
-        
-        attacker.攻击 = Math.trunc(attacker.攻击 * selfMultiplier + defender.攻击 * enemyMultiplier);
-        attacker.防御 = Math.trunc(attacker.防御 * selfMultiplier + defender.防御 * enemyMultiplier);
-        attacker.当前血量 = Math.trunc(attacker.当前血量 * selfMultiplier + defender.当前血量 * enemyMultiplier);
-        
-        const suppressionRate = realmLevel * 0.05;
-        defender.攻击 = Math.trunc(defender.攻击 * (1 - suppressionRate));
-        defender.防御 = Math.trunc(defender.防御 * (1 - suppressionRate));
-        
-        if (isA) {
-          A_临字秘加成 = realmLevel * 0.04;
-          A_临字秘触发 = true;
-        } else {
-          B_临字秘加成 = realmLevel * 0.04;
-          B_临字秘触发 = true;
-        }
-        
-        attackMsgs.push(`「临！」${attacker.名号}口吐真言，${realmNames[realmLevel]}轰然展开！`);
-        attackMsgs.push(`战力指数级暴涨，位阶突破${realmLevel}重天关！`);
-        
-        if (realmLevel === 9) {
-          attackMsgs.push(`「神禁领域，唯我独尊！」${attacker.名号}身与道合，超脱在上！`);
-        }
-        
-        if (learnedMijue >= 9) {
-          attackMsgs.push(`九秘齐鸣，万道合一！${attacker.名号}身后浮现九大天尊虚影！`);
-        } else if (learnedMijue >= 4) {
-          attackMsgs.push(`${learnedMijue}秘交织，异象纷呈！`);
-        }
-      }
-    }
+    // P3-2: 九秘触发改用共享函数（消除 60+ 行重复代码）
+    tryJieziMijue(attacker, attackMsgs);
+    tryLinzMijue(attacker, defender, attackMsgs, linziState, isA);
   }
 
   // ====== 团队版帝兵处理 ======
@@ -8489,9 +9439,10 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         return false;
       }
       
-      const 攻击加成 = Math.trunc(10 * attacker.攻击);
-      const 血量加成 = Math.trunc(10 * attacker.血量上限);
-      const 防御加成 = Math.trunc(10 * attacker.防御);
+      // 帝兵属性加成（一次性，乘 0.5 不再叠加，与 1v1 P0-3 保持一致防指数膨胀）
+      const 攻击加成 = Math.trunc(0.5 * attacker.攻击);
+      const 血量加成 = Math.trunc(0.5 * attacker.血量上限);
+      const 防御加成 = Math.trunc(0.5 * attacker.防御);
       
       attacker.攻击 += 攻击加成;
       attacker.血量上限 += 血量加成;
@@ -8565,10 +9516,13 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         
         if (defender.当前血量 <= 0) {
           const canRevive = defender.学习的功法?.some(gongfa => ["涅槃仙功", "圆神"].includes(gongfa)) && !defender._revived;
-          if (!canRevive) {
-            轮回诸天拳触发 = true;
-            return { battleEnded: true, winner: attacker._team };
+          if (canRevive) {
+            // P0-3: 可复活时返回 false（不结束战斗），血量已为 0，由主循环统一调用 checkTeamRevival
+            // 不标记 轮回诸天拳触发，让 checkTeamRevival 有机会工作
+            return false;
           }
+          轮回诸天拳触发 = true;
+          return { battleEnded: true, winner: attacker._team };
         }
       }
       轮回诸天拳触发 = true;
@@ -8580,7 +9534,15 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   async function performTeamAttack(attacker, defender, round, allEnemies) {
     const attackMsgs = [];
     const isA = attacker._team === 'A';
-    const 临字秘加成 = isA ? A_临字秘加成 : B_临字秘加成;
+    const 临字秘加成 = isA ? linziState.A_加成 : linziState.B_加成;
+
+    if (Number(attacker._东皇冻结回合) > 0) {
+      attacker._东皇冻结回合--;
+      attackMsgs.push(`${attacker.名号}被东皇钟镇封，无法行动！`);
+      return { msgs: attackMsgs, damage: 0, killed: false, aoeKilled: [] };
+    }
+    const innateSilenced = attacker._陷仙沉默 && Math.random() < 0.3;
+    if (innateSilenced) attackMsgs.push(`【陷仙剑】${attacker.名号}神通被沉默，本回合只能进行普通攻击。`);
 
     if (attacker.dongjie) {
       if (attacker._immune_control > 0) {
@@ -8594,19 +9556,35 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       }
     }
 
-    // 帝之场域 + 九秘 + 命运神道体
-    handleTeamControlEffects(attacker, defender, round, attackMsgs);
-
-    // 帝兵处理
-    await handleTeamEmperorWeapon(attacker, defender, attackMsgs);
-
-    // 轮回诸天拳
-    const 轮回结果 = handleTeam轮回诸天拳(attacker, defender, attackMsgs);
-    if (轮回结果?.battleEnded) {
-      return { msgs: attackMsgs, damage: 0, killed: true, aoeKilled: [], battleEnded: true, winner: 轮回结果.winner };
+    // —— 道种·治疗技：回合起手持续回血（生生不息/乙木逢春）——
+    if (attacker.xiangu_shenhuo && attacker.xiangu_shenhuo.专属技能) {
+      const 治疗条目 = getSeedSkillEntry(attacker.xiangu_shenhuo.专属技能);
+      if (!attacker._先天禁疗 && 治疗条目 && 治疗条目.技能分类 === '治疗' && 治疗条目.回复比例 && attacker.当前血量 < attacker.血量上限) {
+        const 回血量 = Math.trunc(attacker.血量上限 * 治疗条目.回复比例 * (1 + (attacker.治疗效果加成 || 0)));
+        if (回血量 > 0) {
+          const _before = attacker.当前血量;
+          attacker.当前血量 = Math.min(attacker.当前血量 + 回血量, attacker.血量上限);
+          const _实际 = attacker.当前血量 - _before;
+          if (_实际 > 0) attackMsgs.push(`${attacker.名号}的「${治疗条目.name}」道种生机涌动，气血自愈，恢复${bigNumberTransform(_实际)}点生命！`);
+        }
+      }
     }
 
-    let baoji = baojishanghai(attacker.暴击率);
+    if (!innateSilenced) {
+      // 帝之场域 + 九秘 + 命运神道体
+      handleTeamControlEffects(attacker, defender, round, attackMsgs);
+
+      // 帝兵处理
+      await handleTeamEmperorWeapon(attacker, defender, attackMsgs);
+
+      // 轮回诸天拳
+      const 轮回结果 = handleTeam轮回诸天拳(attacker, defender, attackMsgs);
+      if (轮回结果?.battleEnded) {
+        return { msgs: attackMsgs, damage: 0, killed: true, aoeKilled: [], battleEnded: true, winner: 轮回结果.winner };
+      }
+    }
+
+    let baoji = baojishanghai(attacker.暴击率, attacker.暴击伤害);
     if (临字秘加成 > 0) baoji = Math.min(baoji + 临字秘加成, 5);
     let isCritical = baoji > 1;
 
@@ -8732,14 +9710,16 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     // 仙宠
     if (isNotNull(attacker.仙宠)) {
-      if (attacker.仙宠.type == '暴伤') baoji += attacker.仙宠.加成;
-      else if (attacker.仙宠.type == '战斗') {
+      const petCriticalBonus = getPetAbilityBonus(attacker.仙宠, '暴伤');
+      const petCombatBonus = getPetAbilityBonus(attacker.仙宠, '战斗');
+      if (petCriticalBonus > 0) baoji += petCriticalBonus;
+      if (petCombatBonus > 0) {
         let ran = Math.random();
         if (ran < 0.35) {
-          attacker.攻击 += Math.trunc(attacker.攻击 * attacker.仙宠.加成);
-          attacker.防御 += Math.trunc(attacker.防御 * attacker.仙宠.加成);
-          attacker.当前血量 += Math.trunc(attacker.当前血量 * attacker.仙宠.加成);
-          attackMsgs.push(`仙宠【${attacker.仙宠.name}】辅佐了${attacker.名号}，伤害+${Math.trunc(attacker.仙宠.加成 * 100)}%`);
+          attacker.攻击 += Math.trunc(attacker.攻击 * petCombatBonus);
+          attacker.防御 += Math.trunc(attacker.防御 * petCombatBonus);
+          attacker.当前血量 += Math.trunc(attacker.当前血量 * petCombatBonus);
+          attackMsgs.push(`仙宠【${attacker.仙宠.name}】辅佐了${attacker.名号}，伤害+${Math.trunc(petCombatBonus * 100)}%`);
         }
       }
     }
@@ -8754,15 +9734,22 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     let count = 0;
     let Random = Math.random();
     let 不可防御 = false;
+    let 无视减伤 = false; // 草字剑诀·斩真我：无视目标减伤与类型减免
+    let 斩杀阈值 = 0; // 草字剑诀·斩真我：命中后残血斩杀阈值
     let 攻击方技能列表 = [];
+    const _基础伤害 = 伤害; // 基础普攻伤害（归为神通类型）
+    let 类型桶 = { '神通': _基础伤害 }; // 分类型伤害桶：每个技能按自身攻击类型累加增量
 
-    for (var i = 0; i < jineng1.length; i++) {
+    for (var i = 0; !innateSilenced && i < jineng1.length; i++) {
       let actualPr = jineng1[i].pr;
 
       if ((jineng1[i].class == '常驻' && (round == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
           (attacker.学习的功法 && jineng1[i].class == '功法' && attacker.学习的功法.indexOf(jineng1[i].name) > -1 && (round == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
-          (attacker.灵根 && jineng1[i].class == '灵根' && attacker.灵根.name == jineng1[i].name && (round == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr)) {
+          (attacker.灵根 && jineng1[i].class == '灵根' && attacker.灵根.name == jineng1[i].name && (round == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
+          (attacker.xiangu_shenhuo && jineng1[i].class == '道种专属' && attacker.xiangu_shenhuo.专属技能 === jineng1[i].name && (round == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr)) {
         攻击方技能列表.push(jineng1[i]);
+        if (jineng1[i].无视减伤) 无视减伤 = true; // 草字剑诀·斩真我
+        if (jineng1[i].斩杀阈值) 斩杀阈值 = jineng1[i].斩杀阈值; // 草字剑诀·斩真我
         let processedMsg1 = jineng1[i].msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
         let processedMsg2 = jineng1[i].msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
 
@@ -8776,17 +9763,24 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         if (jineng1[i].不可复活 === 1) defender.不可复活 = true;
         if (jineng1[i].控制 === 1) defender.dongjie = true;
 
+        // —— 每个技能按自身攻击类型单独结算：基础连乘保留，增量归入对应类型桶 ——
+        const _旧伤害 = 伤害;
+        伤害 = 伤害 * jineng1[i].beilv + jineng1[i].other;
+        const 该技能增量 = 伤害 - _旧伤害;
+        const _t = jineng1[i].攻击类型 || '神通';
+        类型桶[_t] = (类型桶[_t] || 0) + 该技能增量;
+
         if (jineng1[i].负面效果) {
           defender._fumianhuihe = jineng1[i].负面回合;
-          defender._fumian_damage = Math.trunc(伤害 * jineng1[i].beilv + jineng1[i].other);
+          defender._fumian_damage = Math.trunc(该技能增量 * jineng1[i].beilv + jineng1[i].other);
           defender._fumian_type = jineng1[i].负面类型;
         }
 
-        伤害 = 伤害 * jineng1[i].beilv + jineng1[i].other;
         count++;
         if (count == 3) break;
       }
     }
+    const 伤害_循环末 = 伤害; // 技能循环结束时的原始总伤（用于防御技能/buff/反弹的整体缩放映射）
 
     // 防御技能
     if (!不可防御) {
@@ -8797,7 +9791,8 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         const skill = sortedSkills[i];
 
         if ((defender.学习的功法 && skill.class == '功法' && defender.学习的功法.indexOf(skill.name) > -1 && (round == skill.cnt || skill.cnt == -1) && random < skill.pr) ||
-            (defender.灵根 && skill.class == '灵根' && defender.灵根.name == skill.name && (round == skill.cnt || skill.cnt == -1) && random < skill.pr)) {
+            (defender.灵根 && skill.class == '灵根' && defender.灵根.name == skill.name && (round == skill.cnt || skill.cnt == -1) && random < skill.pr) ||
+            (defender.xiangu_shenhuo && skill.class == '道种专属' && defender.xiangu_shenhuo.专属技能 === skill.name && (round == skill.cnt || skill.cnt == -1) && random < skill.pr)) {
 
           if (skill.msg1 == '') {
             attackMsgs.push(attacker.名号 + skill.msg2);
@@ -8805,6 +9800,25 @@ async function zd_battle_team(A_team, B_team, options = {}) {
             attackMsgs.push(defender.名号 + skill.msg1);
           } else {
             attackMsgs.push(defender.名号 + skill.msg1 + attacker.名号 + skill.msg2);
+          }
+
+          // —— 道种·防御技专属效果（护盾/免控/厚土无敌持续减伤）——
+          if (skill.class == '道种专属') {
+            if (skill.护盾值 > 0) {
+              const 护盾量 = Math.trunc(defender.血量上限 * skill.护盾值);
+              defender._护盾值 = (defender._护盾值 || 0) + 护盾量;
+              attackMsgs.push(`${defender.名号}的道种之力凝聚护盾，获得${bigNumberTransform(护盾量)}点护盾！`);
+            }
+            if (skill.免控回合 > 0) {
+              defender._immune_control = skill.免控回合;
+              defender._immune_type = skill.name;
+              attackMsgs.push(`${defender.名号}道体不染尘埃，${skill.免控回合}回合内免疫一切控制！`);
+            }
+            if (skill.持续减伤 > 0 && skill.持续减伤回合 > 0) {
+              defender._持续减伤比例 = skill.持续减伤;
+              defender._持续减伤回合 = skill.持续减伤回合;
+              attackMsgs.push(`${defender.名号}催动「${skill.name}」，厚土加身，未来${skill.持续减伤回合}回合内减伤${Math.trunc(skill.持续减伤 * 100)}%！`);
+            }
           }
 
           if (skill.反弹伤害) {
@@ -8835,7 +9849,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     if (attacker.魔道值 > 999 && attacker.灵根.type == '天魔') {
       buff += Math.trunc(attacker.魔道值 / 1000) / 100;
       if (buff > 1.3) buff = 1.3;
-      if (attacker.灵根.name == '极道天魔') buff += 0.3;
+      if (['极道天魔', '无相·万化天魔体'].includes(attacker.灵根.name)) buff += 0.3;
     }
     if (defender.魔道值 < 1 && defender.灵根.type == '命运') {
       let buff2 = defender.神石 * 0.0015;
@@ -8846,10 +9860,26 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     伤害 = Math.trunc(伤害 * buff);
 
-    // 减伤效果
-    if (attacker._减伤比例 > 0) {
-      伤害 = Math.trunc(伤害 * (1 - attacker._减伤比例));
-      attacker._减伤比例 = 0;
+    // 统一伤害修正管线（闪避/类型加成/类型减免/穿透）；不可防御技能无视闪避；dmgType 按攻击技能类型分流
+    // 无视减伤（草字剑诀·斩真我）：跳过类型减免
+    const _cd = calcDamage(attacker, defender, 伤害, { buckets: 类型桶, baseRaw: 伤害_循环末 }, 不可防御, 无视减伤);
+    伤害 = _cd.actual_damage;
+    attackMsgs = attackMsgs.concat(_cd.msgs);
+
+    if (!无视减伤) {
+      // 减伤效果（检查的是防御方，而不是攻击方）
+      if (defender._减伤比例 > 0) {
+        伤害 = Math.trunc(伤害 * (1 - defender._减伤比例));
+        defender._减伤比例 = 0;
+      }
+      // 道种·厚土无敌 持续减伤（多回合 80% 减伤，回合数由主循环递减）
+      if (defender._持续减伤回合 > 0 && defender._持续减伤比例 > 0) {
+        const before = 伤害;
+        伤害 = Math.trunc(伤害 * (1 - defender._持续减伤比例));
+        attackMsgs.push(`${defender.名号}的「厚土无敌」大地之力护体，抵消了${bigNumberTransform(before - 伤害)}点伤害！`);
+      }
+    } else {
+      attackMsgs.push(`${attacker.名号}的攻击斩落真我本源，无视了${defender.名号}的一切护体减伤！`);
     }
 
     // ===== 群攻处理 =====
@@ -8888,13 +9918,39 @@ async function zd_battle_team(A_team, B_team, options = {}) {
           t.当前血量 -= 群攻伤害;
           if (t.当前血量 < 0) t.当前血量 = 0;
           attackMsgs.push(`【群攻】${attacker.名号}的余波扫中${t.名号}，造成${bigNumberTransform(群攻伤害)}伤害`);
-          if (t.当前血量 <= 0) aoeKilled.push(t);
+          if (t.当前血量 <= 0) {
+            // P0-7: 群攻击杀也走复活检查（与主目标保持一致）
+            const rev = checkTeamRevival(t);
+            if (rev.revived) {
+              attackMsgs.push(...(Array.isArray(rev.message) ? rev.message : [rev.message]));
+              continue;  // 已复活，不算 aoeKilled
+            }
+            aoeKilled.push(t);
+          }
         }
       }
     }
 
+    // 仙气压制：攻击方每多一道仙气，对少一道者伤害+30%（完美世界·石昊三道仙气）
+    const xianqiMul_team = calcXianqiSuppressMul(attacker, defender);
+    if (xianqiMul_team > 1) {
+      伤害 = Math.trunc(伤害 * xianqiMul_team);
+      attackMsgs.push(`【仙气压制】${attacker.名号}仙气加身，碾压${defender.名号}，本击伤害 ×${xianqiMul_team.toFixed(2)}！`);
+    }
+
     // 应用伤害
+    if (defender._诛仙易伤 > 0) 伤害 = Math.floor(伤害 * (1 + defender._诛仙易伤));
     let actual_damage = 伤害;
+    if (
+      defender.当前先天至宝 === '太极图' &&
+      defender.先天权柄?.太极模式 === '阴' &&
+      Math.random() < 0.3
+    ) {
+      const counterDamage = Math.max(1, Harm((Number(defender.攻击) || 1) * 0.85, Number(attacker.防御) || 0));
+      attacker.当前血量 = Math.max(0, attacker.当前血量 - counterDamage);
+      attackMsgs.push(`【太极·阴】${defender.名号}化去伤害并反击${bigNumberTransform(counterDamage)}点。`);
+      actual_damage = 0;
+    }
     if (defender._护盾值 > 0) {
       if (defender._护盾值 >= actual_damage) {
         defender._护盾值 -= actual_damage;
@@ -8905,8 +9961,34 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       }
     }
 
+    if (defender._阴阳逆转护命 && actual_damage >= defender.当前血量) {
+      defender._阴阳逆转护命 = false;
+      defender.当前血量 = Math.min(defender.血量上限 || defender.当前血量, defender.当前血量 + actual_damage);
+      attacker.当前血量 = Math.max(0, attacker.当前血量 - actual_damage);
+      attackMsgs.push(`【阴阳逆转】致命伤害化为治疗，并等量返还给${attacker.名号}！`);
+      actual_damage = 0;
+    }
+
     defender.当前血量 -= actual_damage;
     if (defender.当前血量 < 0) defender.当前血量 = 0;
+
+    // —— 草字剑诀·斩真我：命中后残血斩杀 ——
+    if (斩杀阈值 > 0 && defender.当前血量 > 0 && defender.当前血量 <= 斩杀阈值 * defender.血量上限) {
+      defender.当前血量 = 0;
+      attackMsgs.push(`${attacker.名号}一剑「草字剑诀」斩落真我，${defender.名号}气血已衰竭至极，本源被当场斩断！`);
+    }
+    if (attacker.当前先天至宝 === '诛仙四剑' && defender.当前血量 > 0 && defender.当前血量 < defender.血量上限 * 0.25) {
+      defender.当前血量 = 0;
+      attackMsgs.push(`【诛仙斩命】${defender.名号}气血低于25%，被直接斩杀！`);
+    }
+
+    // 吸血（批次1：基于实际造成伤害回复，封顶血量上限）
+    if (!attacker._先天禁疗 && attacker.吸血率 > 0 && actual_damage > 0) {
+      const _heal = Math.trunc(actual_damage * attacker.吸血率);
+      const _max = attacker.血量上限 || attacker.当前血量;
+      attacker.当前血量 = Math.min(attacker.当前血量 + _heal, _max);
+      attackMsgs.push(`${attacker.名号}汲取了${bigNumberTransform(_heal)}点生命！`);
+    }
 
     let criticalText = isCritical ? "暴击！" : "";
     attackMsgs.push(`${attacker.名号}攻击${defender.名号}，${criticalText}造成伤害${bigNumberTransform(伤害)}，${defender.名号}剩余血量${bigNumberTransform(defender.当前血量)}`);
@@ -9003,7 +10085,23 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     const enemies = getAliveEnemies(readyUnit);
     if (enemies.length === 0) break;
 
+    if (readyUnit._绝仙流血) {
+      const bleedDamage = Math.floor((Number(readyUnit.血量上限) || 0) * 0.2);
+      readyUnit.当前血量 = Math.max(0, readyUnit.当前血量 - bleedDamage);
+      msg.push(`【绝仙剑】${readyUnit.名号}本源流血，损失${bigNumberTransform(bleedDamage)}点生命。`);
+      if (readyUnit.当前血量 <= 0) {
+        const revival = checkTeamRevival(readyUnit);
+        if (revival.revived) msg.push(...revival.message);
+        else continue;
+      }
+    }
+
     const target = enemies[Math.floor(Math.random() * enemies.length)];
+
+    if (readyUnit.当前先天至宝 === '六道轮回盘' && Math.random() < 0.2) {
+      target._actionBar = Math.max(0, target._actionBar - Math.floor(ACTION_BAR_MAX * 0.2));
+      msg.push(`【六道轮回盘】${target.名号}的行动进度被推退20%。`);
+    }
 
     msg.push(`【第${cnt}回合】${readyUnit.名号} 抢占先机！[${readyUnit._team}方行动]`);
 
@@ -9024,6 +10122,17 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         msg.push(`${readyUnit.名号}身上的${readyUnit._fumian_type}效果消失了。`);
         readyUnit._fumian_type = null;
       }
+
+      if (readyUnit.当前血量 <= 0) {
+        const reviveResult = checkTeamRevival(readyUnit);
+        if (reviveResult.revived) {
+          msg.push(...reviveResult.message);
+        } else {
+          msg.push(`${readyUnit.名号}被持续伤害击溃！`);
+          if (!isTeamAlive(A_team) || !isTeamAlive(B_team)) break;
+          continue;
+        }
+      }
     }
 
     // 免疫控制
@@ -9032,6 +10141,15 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       const immuneType = readyUnit._immune_type || "涅槃真火护体";
       if (readyUnit._immune_control > 0) {
         msg.push(`${readyUnit.名号}的${immuneType}效果剩余${readyUnit._immune_control}回合`);
+      }
+    }
+
+    // 道种·厚土无敌 持续减伤回合递减（每次行动结算）
+    if (readyUnit._持续减伤回合 > 0) {
+      readyUnit._持续减伤回合--;
+      if (readyUnit._持续减伤回合 <= 0) {
+        readyUnit._持续减伤比例 = 0;
+        msg.push(`${readyUnit.名号}的「厚土无敌」大地之力渐渐消散。`);
       }
     }
 
@@ -9098,19 +10216,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     msg.push(`\n双方势均力敌，战斗结束！`);
   }
 
-  // 计算总血量
-  const A_total_hp = A_team.reduce((sum, p) => sum + (p.当前血量 > 0 ? p.当前血量 : 0), 0);
-  const B_total_hp = B_team.reduce((sum, p) => sum + (p.当前血量 > 0 ? p.当前血量 : 0), 0);
-
-  return {
-    msg: msg,
-    A_xue: A_total_hp,
-    B_xue: B_total_hp,
-    A_hp: A_alive.length,
-    B_hp: B_alive.length,
-    A_team: A_team,
-    B_team: B_team
-  };
+  return createTeamBattleResult({ msg, A_team, B_team });
 }
 
 // 团本战斗逻辑
@@ -9129,22 +10235,19 @@ export async function tb_battle(players, boss, team) {
     player.初始血量 = player.当前血量; // 记录初始血量
     
     // 魔道值增益处理
-    if (player.魔道值 > 999 && player.灵根.type == '魔头'||player.灵根.type == '天魔') {
+    if (player.魔道值 > 999 && (player.灵根.type == '魔头' || player.灵根.type == '天魔')) {
       let buff = Math.trunc(player.魔道值 / 1000) / 100 + 1;
       if (buff > 1.3) buff = 1.3;
-      if (player.灵根.name == '极道天魔') buff += 0.2;
+      if (['极道天魔', '无相·万化天魔体'].includes(player.灵根.name)) buff += 0.2;
       msg.push(
-        `${attacker.名号}将魔道之力转化为邪神之力，获得了${Math.trunc((buff - 1) * 100)}%的增伤`
+        `${player.名号}将魔道之力转化为邪神之力，获得了${Math.trunc((buff - 1) * 100)}%的增伤`
       );
-    }
- else if (
-      player.灵根.type == '转生'|| player.灵根.type == '命运')
-     {
+    } else if (player.灵根.type == '转生' || player.灵根.type == '命运') {
       let buff2 = player.神石 * 0.0015;
       if (buff2 > 0.3) buff2 = 0.3;
       if (player.灵根.name == '命运神道体') buff2 += 0.2;
       msg.push(
-        `${defender.名号}将神石之力转化为命运之力，获得了${Math.trunc(buff2 * 100)}%的减伤`
+        `${player.名号}将神石之力转化为命运之力，获得了${Math.trunc(buff2 * 100)}%的减伤`
       );
     }
   }
@@ -9156,8 +10259,34 @@ export async function tb_battle(players, boss, team) {
   // 战斗主循环
   while (bossCopy.当前血量 > 0 && teamData.some(p => p.当前血量 > 0)) {
     cnt++;
+
+    // P0-4: 整场战斗回合上限保护（避免高回血/者字秘死循环占用进程）
+    const MAX_BOSS_ROUND = 100;
+    if (cnt > MAX_BOSS_ROUND) {
+      msg.push(`\n【天道法则】战局陷入僵持，已达${MAX_BOSS_ROUND}回合上限，天道降下裁决！`);
+      // 玩家还活着则玩家胜，否则 BOSS 胜
+      if (teamData.some(p => p.当前血量 > 0)) {
+        msg.push(`玩家阵营略占上风，险胜！`);
+        bossCopy.当前血量 = 0;
+      } else {
+        msg.push(`${bossCopy.名号}略占上风，险胜！`);
+        teamData.forEach(p => p.当前血量 = 0);
+      }
+      break;
+    }
     msg.push(`\n===== 第 ${cnt} 回合开始 =====`);
-    
+
+    // 道种·厚土无敌 持续减伤回合递减（每回合初，玩家与BOSS统一结算）
+    for (const _u of [...teamData, bossCopy]) {
+      if (_u && _u._持续减伤回合 > 0) {
+        _u._持续减伤回合--;
+        if (_u._持续减伤回合 <= 0) {
+          _u._持续减伤比例 = 0;
+          msg.push(`${_u.名号}的「厚土无敌」大地之力渐渐消散。`);
+        }
+      }
+    }
+
     // ---------- 玩家阶段 ----------
     msg.push(`【玩家阶段】`);
     
@@ -9178,7 +10307,13 @@ export async function tb_battle(players, boss, team) {
       // 更新BOSS血量
       bossCopy.当前血量 -= result.damage;
       if (bossCopy.当前血量 < 0) bossCopy.当前血量 = 0;
-      
+
+      // 草字剑诀·斩真我：命中后残血斩杀
+      if (result.斩杀阈值 > 0 && bossCopy.当前血量 > 0 && bossCopy.当前血量 <= result.斩杀阈值 * bossCopy.血量上限) {
+        bossCopy.当前血量 = 0;
+        msg.push(`${player.名号}一剑「草字剑诀」斩落真我，${bossCopy.名号}气血已衰竭至极，本源被当场斩断！`);
+      }
+
       // 更新仇恨值（伤害越高仇恨越高）
       hatred[i] += result.damage;
       
@@ -9208,7 +10343,13 @@ export async function tb_battle(players, boss, team) {
     // 更新玩家血量
     targetPlayer.当前血量 -= result.damage;
     if (targetPlayer.当前血量 < 0) targetPlayer.当前血量 = 0;
-    
+
+    // 草字剑诀·斩真我：BOSS 也可触发残血斩杀
+    if (result.斩杀阈值 > 0 && targetPlayer.当前血量 > 0 && targetPlayer.当前血量 <= result.斩杀阈值 * targetPlayer.血量上限) {
+      targetPlayer.当前血量 = 0;
+      msg.push(`${bossCopy.名号}一击斩落真我，${targetPlayer.名号}气血衰竭，本源被当场斩断！`);
+    }
+
     msg.push(`${bossCopy.名号}攻击${targetPlayer.名号}，造成${result.damage}点伤害，${targetPlayer.名号}剩余血量：${targetPlayer.当前血量}`);
     
     // 检查玩家是否全部死亡
@@ -9252,34 +10393,65 @@ function selectTarget(players, hatred) {
 }
 
 // 计算攻击伤害（删除仙宠逻辑）
+// P0-5: 加 equipment 缓存 + 装备属性加成不修改 attacker（防指数膨胀）
+const _tbEquipmentCache = new Map();
 async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
-  const msgs = [];
+  let msgs = [];
   let triggerShengti = false; // 小成圣体触发标志
-  
-  // 装备效果
+  let 无视减伤 = false; // 草字剑诀·斩真我：无视目标减伤与类型减免
+  let 斩杀阈值 = 0; // 草字剑诀·斩真我：命中后残血斩杀阈值
+
+  // —— 道种·治疗技：回合起手持续回血（生生不息/乙木逢春）——
+  if (attacker.xiangu_shenhuo && attacker.xiangu_shenhuo.专属技能) {
+    const 治疗条目 = getSeedSkillEntry(attacker.xiangu_shenhuo.专属技能);
+    if (治疗条目 && 治疗条目.技能分类 === '治疗' && 治疗条目.回复比例 && attacker.当前血量 < attacker.血量上限) {
+      const 回血量 = Math.trunc(attacker.血量上限 * 治疗条目.回复比例 * (1 + (attacker.治疗效果加成 || 0)));
+      if (回血量 > 0) {
+        const _before = attacker.当前血量;
+        attacker.当前血量 = Math.min(attacker.当前血量 + 回血量, attacker.血量上限);
+        const _实际 = attacker.当前血量 - _before;
+        if (_实际 > 0) msgs.push(`${attacker.名号}的「${治疗条目.name}」道种生机涌动，气血自愈，恢复${bigNumberTransform(_实际)}点生命！`);
+      }
+    }
+  }
+
+  // P0-5: 装备缓存（避免每回合重复 IO）
+  let equipment = null;
   if (isNotNull(attacker.id)) {
-    let equipment = await Read_equipment(attacker.id);
+    if (_tbEquipmentCache.has(attacker.id)) {
+      equipment = _tbEquipmentCache.get(attacker.id);
+    } else {
+      try {
+        equipment = await Read_equipment(attacker.id);
+        _tbEquipmentCache.set(attacker.id, equipment);
+      } catch (e) {
+        equipment = null;
+      }
+    }
+  }
+
+  // P0-5: 保存原值，装备加成不直接改 attacker 属性（用加成变量参与伤害公式）
+  const originalAtk = attacker.攻击;
+  const originalDef = attacker.防御;
+  let weaponAtkBoost = 0;
+  let weaponDefBoost = 0;
+  let weaponHpHeal = 0;
+
+  if (equipment) {
     let ran = Math.random();
-    
-    if (equipment.武器.name == '紫云剑' && ran > 0.7) {
-      const originalAtk = attacker.攻击;
-      attacker.攻击 *= 3;
-      msgs.push(`${attacker.名号}触发了紫云剑被动，攻击力从${originalAtk}提高到${attacker.攻击}`);
-    } else if (equipment.武器.name == '炼血竹枪' && ran > 0.75) {
-      const originalAtk = attacker.攻击;
-      const originalHp = attacker.当前血量;
-      
-      attacker.攻击 *= 2;
-      attacker.当前血量 = Math.trunc(attacker.当前血量 * 1.2);
-      
-      msgs.push(
-        `${attacker.名号}触发了炼血竹枪被动，攻击力从${originalAtk}提高到${attacker.攻击}，` +
-        `血量从${originalHp}回复到${attacker.当前血量}`
-      );
-    } else if (equipment.武器.name == '少阴玉剑' && ran > 0.85) {
-      const originalHp = attacker.当前血量;
-      attacker.当前血量 = Math.trunc(attacker.当前血量 * 1.4);
-      msgs.push(`${attacker.名号}触发了少阴玉剑被动，血量从${originalHp}回复到${attacker.当前血量}`);
+
+    if (equipment.武器?.name == '紫云剑' && ran > 0.7) {
+      weaponAtkBoost = originalAtk * 2;  // 攻击力 +200%
+      msgs.push(`${attacker.名号}触发了紫云剑被动，攻击力临时提高${weaponAtkBoost}`);
+    } else if (equipment.武器?.name == '炼血竹枪' && ran > 0.75) {
+      weaponAtkBoost = originalAtk;  // 攻击力 +100%
+      weaponHpHeal = attacker.当前血量 * 0.2;
+      attacker.当前血量 = Math.trunc(attacker.当前血量 + weaponHpHeal);
+      msgs.push(`${attacker.名号}触发了炼血竹枪被动，攻击力临时提高${weaponAtkBoost}，血量回复${weaponHpHeal}`);
+    } else if (equipment.武器?.name == '少阴玉剑' && ran > 0.85) {
+      weaponHpHeal = attacker.当前血量 * 0.4;
+      attacker.当前血量 = Math.trunc(attacker.当前血量 + weaponHpHeal);
+      msgs.push(`${attacker.名号}触发了少阴玉剑被动，血量回复${weaponHpHeal}`);
     }
   }
   
@@ -9293,14 +10465,27 @@ async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
     }
   }
 
-  let 伤害 = Harm(attacker.攻击 * 0.85, defender.防御);
-  let 法球伤害 = Math.trunc(attacker.攻击 * attacker.法球倍率);
-  伤害 = Math.trunc( 伤害 + 法球伤害 + attacker.防御 * 0.1);
+  // P0-5: 伤害公式用 (原值 + 装备加成) 而不是修改后属性
+  const realAtk = originalAtk + weaponAtkBoost;
+  const realDef = originalDef + weaponDefBoost;
+  let 伤害 = Harm(realAtk * 0.85, defender.防御);
+  let 法球伤害 = Math.trunc(realAtk * attacker.法球倍率);
+  伤害 = Math.trunc(伤害 + 法球伤害 + realDef * 0.1);
+
+  // 仙气压制：攻击方每多一道仙气，对少一道者伤害+30%（完美世界·石昊三道仙气）
+  const xianqiMul_tb = calcXianqiSuppressMul(attacker, defender);
+  if (xianqiMul_tb > 1) {
+    伤害 = Math.trunc(伤害 * xianqiMul_tb);
+    msgs.push(`【仙气压制】${attacker.名号}仙气加身，碾压${defender.名号}，本击伤害 ×${xianqiMul_tb.toFixed(2)}！`);
+  }
   
   // 技能触发
   let count = 0; // 限制次数
   let cnt2 = Math.trunc(cnt / 2);
-  
+  let 攻击类型 = '神通'; // 攻击技能类型（元神/神通/近战），用于 calcDamage 类型加成/减免
+  const _基础伤害 = 伤害; // 基础普攻伤害（归为神通类型）
+  let 类型桶 = { '神通': _基础伤害 }; // 分类型伤害桶：每个技能按自身攻击类型累加增量
+
   for (var i = 0; i < jineng1.length; i++) {
     if (
       (jineng1[i].class == '常驻' &&
@@ -9315,6 +10500,11 @@ async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
         jineng1[i].class == '灵根' &&
         attacker.灵根.name == jineng1[i].name &&
         (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) &&
+        Math.random() < jineng1[i].pr) ||
+      (attacker.xiangu_shenhuo &&
+        jineng1[i].class == '道种专属' &&
+        attacker.xiangu_shenhuo.专属技能 === jineng1[i].name &&
+        (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) &&
         Math.random() < jineng1[i].pr)
     ) {
       // 构建技能消息
@@ -9323,15 +10513,24 @@ async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
         skillMsg += defender.名号 + jineng1[i].msg2;
       }
       msgs.push(skillMsg);
-      
-      // 应用技能效果
+
+      if (jineng1[i].无视减伤) 无视减伤 = true; // 草字剑诀·斩真我
+      if (jineng1[i].斩杀阈值) 斩杀阈值 = jineng1[i].斩杀阈值; // 草字剑诀·斩真我
+
+      // 应用技能效果（按自身攻击类型单独结算：基础连乘保留，增量归入对应类型桶）
+      const _旧伤害 = 伤害;
       伤害 = 伤害 * jineng1[i].beilv + jineng1[i].other;
-      
+      const 该技能增量 = 伤害 - _旧伤害;
+      const _t = jineng1[i].攻击类型 || '神通';
+      类型桶[_t] = (类型桶[_t] || 0) + 该技能增量;
+      攻击类型 = jineng1[i].攻击类型 || 攻击类型;
+
       count++;
       if (count == 2) break; // 最多触发3个技能
     }
   }
-  
+  const 伤害_循环末 = 伤害; // 攻击方技能循环结束时的原始总伤（用于防御方技能/buff的整体缩放映射）
+
   for (var i = 0; i < jineng2.length; i++) {
     if (
       (defender.学习的功法 &&
@@ -9343,6 +10542,11 @@ async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
         jineng2[i].class == '灵根' &&
         defender.灵根.name == jineng2[i].name &&
         (cnt2 == jineng2[i].cnt || jineng2[i].cnt == -1) &&
+        Math.random() < jineng2[i].pr) ||
+      (defender.xiangu_shenhuo &&
+        jineng2[i].class == '道种专属' &&
+        defender.xiangu_shenhuo.专属技能 === jineng2[i].name &&
+        (cnt2 == jineng2[i].cnt || jineng2[i].cnt == -1) &&
         Math.random() < jineng2[i].pr)
     ) {
       // 构建技能消息
@@ -9351,7 +10555,21 @@ async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
         skillMsg += attacker.名号 + jineng2[i].msg2;
       }
       msgs.push(skillMsg);
-      
+
+      // —— 道种·防御技专属效果（护盾/免控/厚土无敌持续减伤）——
+      if (jineng2[i].class == '道种专属') {
+        if (jineng2[i].护盾值 > 0) {
+          const 护盾量 = Math.trunc(defender.血量上限 * jineng2[i].护盾值);
+          defender.当前血量 = Math.min((defender.当前血量 || 0) + 护盾量, defender.血量上限);
+          msgs.push(`${defender.名号}的道种之力凝聚护盾，气血充盈${bigNumberTransform(护盾量)}点！`);
+        }
+        if (jineng2[i].持续减伤 > 0 && jineng2[i].持续减伤回合 > 0) {
+          defender._持续减伤比例 = jineng2[i].持续减伤;
+          defender._持续减伤回合 = jineng2[i].持续减伤回合;
+          msgs.push(`${defender.名号}催动「${jineng2[i].name}」，厚土加身，未来${jineng2[i].持续减伤回合}回合内减伤${Math.trunc(jineng2[i].持续减伤 * 100)}%！`);
+        }
+      }
+
       // 应用技能效果
       伤害 = 伤害 * jineng2[i].beilv + jineng2[i].other;
     }
@@ -9376,16 +10594,132 @@ async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
   }
   
   伤害 = Math.trunc(伤害 * buff);
-  
 
-  
+  // 统一伤害修正管线（闪避/类型加成/类型减免/穿透）；无视减伤跳过类型减免
+  const _cd = calcDamage(attacker, defender, 伤害, { buckets: 类型桶, baseRaw: 伤害_循环末 }, false, 无视减伤);
+  伤害 = _cd.actual_damage;
+  msgs = msgs.concat(_cd.msgs);
+
+  // 道种·厚土无敌 持续减伤（多回合减伤，回合数由 tb 主循环递减）
+  if (!无视减伤 && defender._持续减伤回合 > 0 && defender._持续减伤比例 > 0) {
+    const before = 伤害;
+    伤害 = Math.trunc(伤害 * (1 - defender._持续减伤比例));
+    msgs.push(`${defender.名号}的「厚土无敌」大地之力护体，抵消了${bigNumberTransform(before - 伤害)}点伤害！`);
+  } else if (无视减伤) {
+    msgs.push(`${attacker.名号}的攻击斩落真我本源，无视了${defender.名号}的一切护体减伤！`);
+  }
+
+  // 吸血（批次1：基于实际造成伤害回复，封顶血量上限）
+  if (attacker.吸血率 > 0 && 伤害 > 0) {
+    const _heal = Math.trunc(伤害 * attacker.吸血率);
+    const _max = attacker.血量上限 || attacker.当前血量;
+    attacker.当前血量 = Math.min(attacker.当前血量 + _heal, _max);
+    msgs.push(`${attacker.名号}汲取了${bigNumberTransform(_heal)}点生命！`);
+  }
+
   return {
     damage: 伤害,
     msgs: msgs,
+    斩杀阈值: 斩杀阈值, // 草字剑诀·斩真我：由调用方在扣血后判定斩杀
     triggerShengti: triggerShengti // 返回是否触发了小成圣体领域
   };
 }
 // 创建一个专门的 combatUtils.js 模块
+// ===== 仙气压制（完美世界·石昊三道仙气）=====
+// xiangu_xianqi 兼容数字、数字字符串和旧版 { strands }，统一限制为0至3道。
+// ===== 统一伤害修正管线（批次1：闪避 / 类型伤害加成 / 类型伤害减免 / 穿透）=====
+// 纯函数：从 raw 伤害算出最终伤害，处理 闪避→类型伤害加成→类型伤害减免→穿透。
+// 不含 护盾/分身/扣血/复活（各入口保留原逻辑）。dmgType 预留近战/元神扩展。
+// 所有字段均带兜底（||0 / ??defender.防御），无来源时数值完全不变。
+function calcDamage(attacker, defender, rawDamage, dmgTypeOrBuckets = '神通', ignoreDodge = false, ignoreReduction = false) {
+  const msgs = [];
+  // 闪避（防御端；整轮只判定一次；ignoreDodge 用于"不可防御"类技能）
+  const firstDodge = defender.首次闪避 && !defender._首次闪避已触发;
+  const robeDodge = !ignoreDodge && defender._逍遥仙袍闪避次数 > 0 ? 0.1 : 0;
+  const dodge = firstDodge ? 1 : (defender.闪避率 || 0) + robeDodge;
+  if (robeDodge > 0) defender._逍遥仙袍闪避次数 -= 1;
+  if (!ignoreDodge && dodge > 0 && Math.random() < dodge) {
+    if (firstDodge) defender._首次闪避已触发 = true;
+    const rate = Number(defender.闪避增攻) || 0;
+    const maxStacks = Math.max(0, Number(defender.闪避增攻上限) || 0);
+    if (rate > 0 && (defender._闪避增攻层数 || 0) < maxStacks) {
+      defender._闪避增攻基础攻击 ??= defender.攻击;
+      defender._闪避增攻层数 = (defender._闪避增攻层数 || 0) + 1;
+      defender.攻击 = Math.trunc(defender._闪避增攻基础攻击 * (1 + rate * defender._闪避增攻层数));
+      msgs.push(`${defender.名号}乘风而起，攻击提升${Math.trunc(rate * defender._闪避增攻层数 * 100)}%！`);
+    }
+    msgs.unshift(`${defender.名号}身形虚化，避开了一击！`);
+    return { actual_damage: 0, dodged: true, msgs };
+  }
+
+  // ===== 分桶模式：每个技能按自身攻击类型单独结算类型加成/减免 =====
+  // dmgTypeOrBuckets = { buckets: {神通, 元神, 近战, ...}, baseRaw }
+  // buckets 之和 == 技能循环末原始总伤（baseRaw）；rawDamage 为经过对轰/防御技能/反弹/buff 后的最终 raw，
+  // 用 rawDamage/baseRaw 等比缩放，保证这些整体改动对总伤的影响不变（仅把"单一类型"换成"各自类型"）。
+  if (dmgTypeOrBuckets && typeof dmgTypeOrBuckets === 'object') {
+    const buckets = dmgTypeOrBuckets.buckets || {};
+    const baseRaw = dmgTypeOrBuckets.baseRaw || rawDamage;
+    let total = 0;
+    for (const type of Object.keys(buckets)) {
+      const amt = buckets[type];
+      if (!amt) continue;
+      let d = amt;
+      // 类型伤害加成（攻击端倍率层；已建 元神/神通/近战 伤害加成 消费层）
+      const typeAtk = attacker[type + '伤害加成'] || 0;
+      if (typeAtk > 0) {
+        d = Math.trunc(d * (1 + typeAtk));
+        msgs.push(`${attacker.名号}的${type}之力爆发，伤害提升${Math.trunc(typeAtk * 100)}%！`);
+      }
+      // 类型伤害减免（防御端倍率层；已建 元神/神通/近战 伤害减免 消费层）
+      const typeRed = defender[type + '伤害减免'] || 0;
+      if (!ignoreReduction && typeRed > 0) {
+        const before = d;
+        d = Math.trunc(d * (1 - typeRed));
+        msgs.push(`${defender.名号}的${type}抗性抵消了${bigNumberTransform(before - d)}点伤害！`);
+      }
+      total += d;
+    }
+    // 等比映射对轰/防御技能/反弹/buff 对 raw 的整体缩放（保持总伤不变）
+    if (baseRaw > 0 && rawDamage !== baseRaw) {
+      total = Math.trunc(total * (rawDamage / baseRaw));
+    }
+    // 穿透（整轮只判定一次；无视防御/减免百分比，直接增幅伤害）
+    const pierce = attacker.穿透 || 0;
+    if (pierce > 0) {
+      total = Math.trunc(total * (1 + pierce));
+      msgs.push(`${attacker.名号}的穿透之力撕裂防线，伤害提升${Math.trunc(pierce * 100)}%！`);
+    }
+    return { actual_damage: total, dodged: false, msgs };
+  }
+
+  // ===== 旧模式（单类型），保持原逻辑兼容 =====
+  let dmg = rawDamage;
+  // 类型伤害加成（攻击端倍率层）
+  const typeAtk = attacker[dmgTypeOrBuckets + '伤害加成'] || 0;
+  if (typeAtk > 0) {
+    dmg = Math.trunc(dmg * (1 + typeAtk));
+    msgs.push(`${attacker.名号}的${dmgTypeOrBuckets}之力爆发，伤害提升${Math.trunc(typeAtk * 100)}%！`);
+  }
+  // 类型伤害减免（防御端倍率层）
+  const typeRed = defender[dmgTypeOrBuckets + '伤害减免'] || 0;
+  if (!ignoreReduction && typeRed > 0) {
+    const before = dmg;
+    dmg = Math.trunc(dmg * (1 - typeRed));
+    msgs.push(`${defender.名号}的${dmgTypeOrBuckets}抗性抵消了${bigNumberTransform(before - dmg)}点伤害！`);
+  }
+  // 穿透
+  const pierce = attacker.穿透 || 0;
+  if (pierce > 0) {
+    dmg = Math.trunc(dmg * (1 + pierce));
+    msgs.push(`${attacker.名号}的穿透之力撕裂防线，伤害提升${Math.trunc(pierce * 100)}%！`);
+  }
+  return { actual_damage: dmg, dodged: false, msgs };
+}
+
+function calcXianqiSuppressMul(attacker, defender) {
+  return getXianqiSuppressMultiplier(attacker, defender);
+}
+
 export function calculateHarm(atk, def, baoji = 1) {
   // 确保输入是数字
   atk = ensureNumber(atk);
@@ -9431,16 +10765,10 @@ export function ensureNumber(value, defaultValue = 0) {
   const num = Number(value);
   return isNaN(num) ? defaultValue : num;
 }
-export function baojishanghai(baojilv) {
-  if (baojilv > 1) {
-    baojilv = 1;
-  } //暴击率最高为100%,即1
-  let rand = Math.random();
-  let bl = 1;
-  if (rand < baojilv) {
-    bl = baojilv + 1.5; //这个是暴击伤害倍率//满暴击时暴伤2为50%
-  }
-  return bl;
+export function baojishanghai(baojilv, baojiDamage = 1.5) {
+  const critRate = Math.min(Math.max(ensureNumber(baojilv, 0), 0), 1);
+  const critMultiplier = Math.max(ensureNumber(baojiDamage, 1.5), 1);
+  return Math.random() < critRate ? critMultiplier : 1;
 }
 // 修改Harm函数，使其能处理暴击
 export function Harm(atk, def, baoji = 1) {
@@ -9641,87 +10969,163 @@ return await puppeteer.screenshot('secret_place', {
 });
 }
 
+// 品类配置（emoji/英文/中文/难度基础分）
+const CATEGORY_CONFIG = {
+  fishing: { icon: '🎣', name: '钓鱼', cssClass: 'cat-fishing', iconClass: 'icon-fishing', sort: 1 },
+  logging: { icon: '🪓', name: '砍树', cssClass: 'cat-logging', iconClass: 'icon-logging', sort: 2 },
+  farming: { icon: '🌾', name: '种植', cssClass: 'cat-farming', iconClass: 'icon-farming', sort: 3 },
+  mining:  { icon: '⛏️', name: '挖矿', cssClass: 'cat-mining',  iconClass: 'icon-mining',  sort: 4 },
+  special: { icon: '✨', name: '特殊', cssClass: 'cat-special', iconClass: 'icon-special', sort: 5 }
+};
+
+/** 根据地点名反查品类 */
+function getPlaceCategory(placeName) {
+  const categories = data?.xunbao_list?.mapCategories;
+  if (!categories) return 'mining';
+  for (const [cat, places] of Object.entries(categories)) {
+    if (places.includes(placeName)) return cat;
+  }
+  return 'mining';
+}
+
+/** 计算难度星级（1-5，按饱食度消耗） */
+function calcDifficulty(price) {
+  const p = parseInt(price) || 500;
+  if (p <= 500) return 1;
+  if (p <= 2000) return 2;
+  if (p <= 5000) return 3;
+  if (p <= 10000) return 4;
+  return 5;
+}
+
 export async function xunbaoweizhi(e, placeNames, addres) {
     try {
-        // 确保数据存在
         if (!data || !data.xunbao_list || !data.xunbao_list.treasureMaps) {
             return e.reply('❌ 寻宝数据未初始化');
         }
-        
+
         const treasureMaps = data.xunbao_list.treasureMaps;
-        
-        // 转换数据格式 - 修复版本
+        const levelReqs = data.xunbao_list.levelRequirements || {};
+
+        // 转换数据格式
         const weizhi = placeNames.map(placeName => {
             const place = treasureMaps[placeName];
             if (!place) return null;
-            
-            // 处理必备地图
+
+            const category = getPlaceCategory(placeName);
+            const cfg = CATEGORY_CONFIG[category] || CATEGORY_CONFIG.mining;
+            const priceNum = typeof place.price === 'string'
+                ? parseInt(place.price.split(',')[0]) || 500
+                : (place.price || 500);
+            const levelReq = levelReqs[placeName] || 0;
+
+            // 必备地图
             const one = place.requirements?.map?.map(item => ({
-                name: item.name,
-                amount: item.amount || 1 // 添加数量字段
+                name: item.name, amount: item.amount || 1
             })) || [];
-            
-            // 处理所需工具
+
+            // 所需工具
             const two = place.requirements?.tools?.map(item => ({
-                name: item.name,
-                amount: item.amount || 1 // 添加数量字段
+                name: item.name, amount: item.amount || 1
             })) || [];
-            
-            // 处理普通奖励
+
+            // 普通奖励
             const three = place.rewards?.base?.map(item => ({
-                name: item.name,
-                amount: item.amount || 1 // 添加数量字段
+                name: item.name, amount: item.amount || 1
             })) || [];
-            
-            // 处理额外奖励
+
+            // 额外奖励
             const four = place.rewards?.random?.map(item => ({
                 name: item.items?.[0]?.name || '未知',
                 chance: item.chance || 0,
-                amount: item.items?.[0]?.amount || 1 // 添加数量字段
+                amount: item.items?.[0]?.amount || 1
             })) || [];
-            
+
+            // 最佳奖励预览
+            const bestRewards = (place.bestRewards || []).slice(0, 3);
+
+            // 难度星级
+            const stars = calcDifficulty(priceNum);
+
             return {
                 name: place.name,
                 Grade: place.grade,
-                Price: typeof place.price === 'string' ? 
-                       place.price.split(',')[0] : place.price,
-                one, // 包含数量的必备地图
-                two, // 包含数量的所需工具
-                three, // 包含数量的普通奖励
-                four, // 包含数量的额外奖励
-                experience: place.experience ? `经验要求: ${place.experience.toLocaleString()}` : ''
+                Price: priceNum,
+                one, two, three, four,
+                // 新品类字段
+                category: cfg.name,
+                categoryIcon: cfg.icon,
+                catClass: cfg.cssClass,
+                iconClass: cfg.iconClass,
+                levelReq,
+                levelReqLabel: levelReq > 0 ? `修为${levelReq}+` : '无限制',
+                levelLocked: false, // 模板侧判断，预留
+                bestRewards,
+                stars,
+                experience: place.experience
+                    ? `经验要求: ${place.experience.toLocaleString()}`
+                    : ''
             };
         }).filter(Boolean);
-        
-        // 如果没有找到任何地点
+
+        // 按品类 + 价格排序
+        weizhi.sort((a, b) => {
+            const catA = CATEGORY_CONFIG[getPlaceCategory(a.name)]?.sort || 99;
+            const catB = CATEGORY_CONFIG[getPlaceCategory(b.name)]?.sort || 99;
+            if (catA !== catB) return catA - catB;
+            return (a.Price || 0) - (b.Price || 0);
+        });
+
         if (weizhi.length === 0) {
             return e.reply(`❌ 未找到${addres}的寻宝地点信息`);
         }
-        
-        // 构建数据对象
+
+        // 品类列表（按sort排序）
+        const allCats = Object.entries(CATEGORY_CONFIG)
+            .sort((a, b) => a[1].sort - b[1].sort)
+            .map(([key, cfg]) => ({
+                key,
+                icon: cfg.icon,
+                name: cfg.name,
+                cssClass: cfg.cssClass,
+                active: addres && addres.includes(cfg.name)
+            }));
+
         const get_data = {
             didian_list: weizhi,
-            addres: addres || "寻宝地图",
+            addres: addres || '寻宝地图',
+            categories: allCats,
+            totalCount: weizhi.length,
             timestamp: Date.now()
         };
-        
-        // 获取模板数据
+
         const templateData = await new Show(e).get_xunbao_placeData(get_data);
-        
-        // 使用 puppeteer 截图
         const screenshot = await puppeteer.screenshot('get_xunbao_placeData', {
             ...templateData,
             quality: 90,
             waitFor: 1000,
             viewport: { width: 1200, height: 800 }
         });
-        
+
         return screenshot;
     } catch (error) {
         console.error('寻宝位置导出错误:', error);
-        
-        // 错误处理：返回默认错误消息
         return '❌ 寻宝信息生成失败，请稍后重试';
+    }
+}
+
+/** 按分类筛选寻宝地点 */
+export async function xunbaoCategoryData(e, categoryKey, categoryName) {
+    try {
+        const categories = data?.xunbao_list?.mapCategories;
+        if (!categories || !categories[categoryKey]) {
+            return e.reply(`❌ 未找到"${categoryName}"分类的寻宝地点`);
+        }
+        const placeNames = categories[categoryKey];
+        return xunbaoweizhi(e, placeNames, `${categoryName}寻宝`);
+    } catch (error) {
+        console.error('分类寻宝错误:', error);
+        return '❌ 分类寻宝信息生成失败';
     }
 }
 export async function xianjingweizhi(e, weizhi, addres) {
@@ -10199,6 +11603,7 @@ export async function foundthing(thing_name) {
      'jiagong_list',
      'shicai_list',
      'cailiao_list',
+     'jingshenyuzhou_drop_list',
      'duanzhaohuju',
       'hezi_list',
   'baoshi_list'
@@ -10227,6 +11632,11 @@ export async function foundthing(thing_name) {
     for (var j of data[i]) {
       if (j.name == thing_name) return j;
     }
+  }
+  const craftedBaseName = thing_name.split('·')[0];
+  for (const list of ['duanzhaowuqi', 'duanzhaohuju', 'duanzhaobaowu']) {
+    const base = data[list].find(item => item.name === craftedBaseName);
+    if (base) return { ...base, name: thing_name };
   }
   return false;
 }
@@ -10795,12 +12205,33 @@ export {
 // 创建内景地空间
 export async function Create_inner_world(usr_qq) {
   const dir = path.join(__PATH.inner_world_path, `${usr_qq}.json`);
-  
+
   if (!fs.existsSync(__PATH.inner_world_path)) {
     fs.mkdirSync(__PATH.inner_world_path, { recursive: true });
   }
-  
-  fs.writeFileSync(dir, JSON.stringify(createInnerWorld(), null, 2), 'utf8');
+
+  // 🔧 修复：原代码引用了不存在的 createInnerWorld()，导致首次存入触发 ReferenceError
+  // 改为直接内联默认 schema（与 resources/data/inner_world/*.json 既有结构保持一致）
+  const defaultInnerWorld = {
+    等级: 1,
+    灵石: 0,
+    当前容量: 0,
+    最大容量: 500,
+    装备: [],
+    丹药: [],
+    道具: [],
+    功法: [],
+    草药: [],
+    食材: [],
+    盒子: [],
+    材料: [],
+    仙宠: [],
+    仙宠口粮: [],
+    宝石: [],
+    最后更新时间: Date.now()
+  };
+
+  fs.writeFileSync(dir, JSON.stringify(defaultInnerWorld, null, 2), 'utf8');
 }
 
 // 读取内景地空间

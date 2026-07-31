@@ -17,6 +17,7 @@ import {
   get_character_img,
   get_lqpf_img,
   get_linggen_img,
+  get_mingge_img,
   get_jianyunhai_img,
   get_weimian_img,
   get_yaochi_img
@@ -101,6 +102,10 @@ export class Showningmeng extends plugin {
           reg: '^#灵根图鉴$',
           fnc: 'show_linggen',
         },
+        {
+          reg: '^#命格图鉴$',
+          fnc: 'show_mingge',
+        },
          {
           reg: '^#剧情人物图鉴$',
           fnc: 'Show_character',
@@ -113,6 +118,12 @@ export class Showningmeng extends plugin {
     if (!verc({ e })) return false;
     let thing_type = e.msg.replace('#灵根图鉴', '');
     let img = await get_linggen_img(e, thing_type);
+    e.reply(img);
+    return false;
+  }
+  async show_mingge(e) {
+    if (!verc({ e })) return false;
+    const img = await get_mingge_img(e);
     e.reply(img);
     return false;
   }

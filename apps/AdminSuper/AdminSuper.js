@@ -16,6 +16,7 @@ import {
   channel
 } from '../../model/xiuxian.js';
 import { Read_player, __PATH } from '../../model/xiuxian.js';
+import { deletePlayerDataBundle } from './playerDeletion.js';
 export class AdminSuper extends plugin {
   constructor() {
     super({
@@ -288,7 +289,9 @@ async sendToRebirth(e) {
       `- 经历阴阳大磨盘考验`,
       `- 30%概率灵魂磨损，变得痴傻`,
       `- 70%概率熬过考验，天资降低一级`,
-      `- 斩道王者（秘境11级）或真神境以上可硬扛阴阳大磨盘`,
+      `- 斩道王者（秘境11级）或真一境（仙古9级）以上可硬扛阴阳大磨盘`,
+      `- 达到上述境界者可使用 #轮回救人 @目标 强闯轮回路救人`,
+      `- 大帝或仙古至尊境可执掌轮回，裁定所有魂魄是否往生`,
       `- 强制再入仙途`,
       `"轮回之门已开启，前尘往事尽成空..."`
     ];
@@ -647,45 +650,54 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
   }
 
 
-  async down(e){
-        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+  async down(e) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
     const userQQ = e.user_id.toString().replace('qg_', '');
     if (!e.isMaster && !masterList.includes(userQQ)) {
-        return false;
+      return false;
     }
     if (!verc({ e })) return false;
-    //没有at信息直接返回,不执行
-    let isat = e.message.some(item => item.type === 'at');
-    if (!isat) return false;
-    //获取at信息
-    let atItem = e.message.filter(item => item.type === 'at');
-    //对方qq
-    let qq = atItem[0].qq.replace('qg_','');
-    qq=await channel(qq)
-    //检查存档
-    let ifexistplay = await existplayer(qq);
-    if (!ifexistplay){
-      e.reply("不存在:"+qq)
-      return
+
+    const atItem = e.message?.find(item => item.type === 'at');
+    if (!atItem?.qq) {
+      await e.reply('请使用 #打入地狱 @玩家 指定要清除的存档');
+      return false;
     }
-    fs.unlink(`./plugins/xiuxian-emulator-plugin/resources/data/xiuxian_player/${qq}.json`,(err)=>{
-      if (err) throw err;
-      console.log('Rename complete!1');
-    })
-    fs.unlink(`./plugins/xiuxian-emulator-plugin/resources/data//xiuxian_najie/${qq}.json`,(err)=>{
-      if (err) throw err;
-      console.log('Rename complete!1');
-    })
-    fs.unlink(`./plugins/xiuxian-emulator-plugin/resources/data/xiuxian_equipment/${qq}.json`,(err)=>{
-      if (err) throw err;
-      console.log('Rename complete!1');
-    })
-    fs.unlink(`./plugins/xiuxian-emulator-plugin/resources/data/xiuxian_danyao/${qq}.json`,(err)=>{
-      if (err) throw err;
-      console.log('Rename complete!1');
-    })
-    e.reply("清除完成")
+
+    const rawTarget = String(atItem.qq).replace('qg_', '');
+    const qq = String(await channel(rawTarget)).replace('qg_', '');
+
+    try {
+      const result = deletePlayerDataBundle({
+        playerId: qq,
+        paths: __PATH,
+        smallWorlds: data.xiaoshijie ?? [],
+        smallWorldFile: `${data.lib_path}/小世界列表.json`,
+      });
+
+      data.xiaoshijie = result.remainingSmallWorlds;
+      const removed = [...result.removedFiles];
+      if (result.removedSmallWorlds > 0) {
+        removed.push(`小世界×${result.removedSmallWorlds}`);
+      }
+
+      if (removed.length === 0) {
+        await e.reply(`未找到玩家 ${qq} 的任何可清除数据`);
+        return false;
+      }
+
+      const missingText = result.missingFiles.length > 0
+        ? `\n原本不存在：${result.missingFiles.join('、')}`
+        : '';
+      await e.reply(
+        `【打入地狱】\n玩家：${qq}\n已彻底抹除：${removed.join('、')}${missingText}`
+      );
+    } catch (error) {
+      console.error(`[打入地狱] 清除玩家 ${qq} 失败`, error);
+      await e.reply(`玩家 ${qq} 删档失败，已尝试回滚全部改动，请查看后台日志`);
+    }
+    return false;
   }
   async add_level(e){
         const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');

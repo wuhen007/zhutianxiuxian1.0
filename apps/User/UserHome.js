@@ -1,4 +1,14 @@
 import { plugin,  verc, data, config } from '../../api/api.js';
+import {
+  calculateMinggeCost,
+  calculateMinggeYield,
+  createPlayerMingge,
+  drawMingge,
+  formatMinggeDrawMessage,
+  getMinggeDirectMultiplier,
+  getMinggeEffects,
+  grantMinggePotential,
+} from '../../model/mingge.js';
 import path from 'path';
 import xiuxianData from '../../model/XiuxianData.js';
 import fs from 'fs';
@@ -45,6 +55,7 @@ import {__PATH} from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
 import { readall } from '../../model/duanzaofu.js';
 import { bigNumberTransform } from '../Help/TopList.js';
+import { isInnateTreasureName } from '../../model/innateTreasure.js';
 // 在文件顶部新增全局映射和优先级定义
 const talentSelectionMap = new Map(); // 存储玩家洗髓状态
 const talentPriorityMap = {
@@ -322,7 +333,18 @@ async repairDaoshang(e) {
     let reward = 5000000; // 基础消耗常量
     let daoshangMultiplier = 1 + (player.道伤 * 0.5); // 道伤越重，消耗越大
     let zuizhong = (player.level_id+player.Physique_id+player.mijinglevel_id + player.xiangulevel_id) * reward * daoshangMultiplier;
-    zuizhong = Math.ceil(zuizhong * (1 / repairEfficiency)); // 功法效率越低，总消耗越高
+    const originalRepairCost = Math.ceil(zuizhong * (1 / repairEfficiency)); // 功法效率越低，总消耗越高
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
+    zuizhong = calculateMinggeCost(
+      originalRepairCost,
+      minggeEffects,
+      '修复道伤代价减少',
+      '修复道伤代价增加',
+      { minimum: 1 }
+    );
+    const minggeRepairLine = zuizhong === originalRepairCost
+      ? ''
+      : `命格影响：修复代价${zuizhong < originalRepairCost ? '减少' : '增加'}${Math.abs(originalRepairCost - zuizhong).toLocaleString()}`;
     
     // 检查修为和血气是否足够
     if (player.修为 < zuizhong || player.血气 < zuizhong) {
@@ -333,8 +355,9 @@ async repairDaoshang(e) {
             `需血气: ${zuizhong.toLocaleString()}`,
             `当前修为: ${player.修为.toLocaleString()}`,
             `当前血气: ${player.血气.toLocaleString()}`,
-            "修为血气不足，无法完成道伤修复。"
-        ].join("\n"));
+            "修为血气不足，无法完成道伤修复。",
+            minggeRepairLine
+        ].filter(Boolean).join("\n"));
         return true;
     }
     
@@ -411,6 +434,7 @@ async repairDaoshang(e) {
         `大道伤痕已从 ${originalDaoshang.toFixed(1)} 完全修复至 0！`,
         `修复功法：${strongestSkill}`,
         `修复效率：${(repairEfficiency * 100).toFixed(0)}%`,
+        minggeRepairLine,
         `消耗修为：${zuizhong.toLocaleString()}`,
         `消耗血气：${zuizhong.toLocaleString()}`,
         `当前修为：${player.修为.toLocaleString()}`,
@@ -1728,6 +1752,9 @@ if (func == "打开") {
             } else {
                 equ = najie.装备.find(item => item.name == thing_name && item.pinji == pj);
             }
+            if (isInnateTreasureName(equ?.name) || equ?.先天至宝本体) {
+                return e.reply(`先天至宝不使用普通装备指令，请发送 #执掌先天至宝 ${equ.name}`);
+            }
             var equipment = await Read_equipment(usr_qq);
             if (equ.type == "项链") {
                 if (equ.属性 == "幸运") {
@@ -1901,6 +1928,14 @@ if (equipment.帝兵.name == "终古剑之主") {
         await Add_修为(usr_qq, quantity * thing_exist.exp);
         e.reply(`服用成功,修为增加${quantity * thing_exist.exp}`);
         await Add_najie_thing(usr_qq, thing_name, '丹药', -quantity);
+        return false;
+      }
+      if (thing_exist.type == '仙道潜力') {
+        const effects = getMinggeEffects(player, data.minggeList);
+        const gain = grantMinggePotential(player, effects, quantity * thing_exist.potential);
+        await Write_player(usr_qq, player);
+        await Add_najie_thing(usr_qq, thing_name, '丹药', -quantity);
+        e.reply(`服用成功，仙道潜力增加${gain}点，当前共有${player.仙道潜力}点`);
         return false;
       }
    if (thing_exist.type == '天资洗炼') {
@@ -2692,6 +2727,18 @@ if (thing_exist.type == '神药') {
                 data.setData('player', player_id, player);
                 await Write_player(usr_qq, player);
             }
+
+            // ==== 命格消费层：寻宝加成 ====
+            // 「寻龙点穴」类命格感应地脉龙气，使寻常寻宝中所得更为丰沛。
+            const minggeEffects = getMinggeEffects(player, data.minggeList);
+            const treasureBonus = minggeEffects?.['寻宝加成'] || 0; // 可正可负
+            if (treasureBonus !== 0) {
+                // 将命格期望倍率并入赐福倍率 n（保持整数，所有 *n 分支自动受益），下限 1 保证至少基础产出。
+                // 注意 calculateMinggeYield 内部已按 (1+bonus) 放大，此处直接传基础 n 即可，勿重复乘。
+                n = Math.max(1, calculateMinggeYield(n, minggeEffects, '寻宝加成'));
+                last_msg += `命格·寻龙点穴：本次寻宝产出倍率 +${Math.round(treasureBonus * 100)}%\n`;
+            }
+
             if (random > newrandom) {
                 let length = data.xianchonkouliang.length;
                 let index = Math.trunc(Math.random() * length);
@@ -3620,6 +3667,18 @@ if (thing_exist.type == '神药') {
         
         
     if (func == '消耗') {
+        if (thing_name == "天外清风") {
+                const windCount = await exist_najie_thing(usr_qq, thing_name, "材料");
+                if (windCount < quantity) {
+                    e.reply(`你没有那么多的天外清风，当前只有${windCount || 0}缕`);
+                    return;
+                }
+                player.天外清风加速次数 = (Number(player.天外清风加速次数) || 0) + quantity;
+                await Add_najie_thing(usr_qq, thing_name, "材料", -quantity);
+                await Write_player(usr_qq, player);
+                e.reply(`清风引路已生效，可使接下来${player.天外清风加速次数}次跨位面穿梭各缩短5分钟（最低1分钟）`);
+                return;
+            }
         if (thing_name == "熔炉") {
                 player.熔炉 = 1;
                 e.reply("熔炉放置成功");
@@ -3737,6 +3796,67 @@ if (thing_exist.type == '神药') {
                     e.reply(`使用成功，位面传送次数增加${3*quantity}次`);
                     return;
                 }
+             if (thing_name == "星图") {
+                    if (player.星图 == undefined) {
+                        player.星图 = 0;
+                    }
+                    player.星图 += quantity;
+                    await Write_player(usr_qq, player);
+                    await Add_najie_thing(usr_qq, "星图","道具", -quantity);
+                    e.reply(`使用成功，星图增加${quantity}枚（可用于 #记坐标 拓印位面坐标）`);
+                    return;
+                }
+             if (thing_name == "高级传送阵令牌") {
+                    if (player.高级传送次数 == undefined) {
+                        player.高级传送次数 = 0;
+                    }
+                    player.高级传送次数 += quantity;
+                    await Write_player(usr_qq, player);
+                    await Add_najie_thing(usr_qq, "高级传送阵令牌","道具", -quantity);
+                    e.reply(`使用成功，高级传送次数增加${quantity}次（可用于高级传送阵瞬抵，更快且不易遇虚空乱流）`);
+                    return;
+                }
+            // 命格道具：消耗【轮回命签】重抽指定命格词条（#消耗轮回命签*序号 选择重抽第几条，默认第 1 条）
+            if (thing_name == "轮回命签") {
+                const fates = [player?.命格, ...(Array.isArray(player?.附加命格) ? player.附加命格 : [])].filter(Boolean);
+                if (!fates.length) {
+                    e.reply('你尚未抽取命格词条，请先发送 #抽取命格词条。');
+                    return;
+                }
+                const requested = Number(e.msg.match(/\*(\d+)$/)?.[1] || 1);
+                if (requested < 1 || requested > fates.length) {
+                    e.reply(`命格词条序号应为 1 至 ${fates.length}。`);
+                    return;
+                }
+                if (!Array.isArray(player.附加命格)) player.附加命格 = [];
+                const occupied = new Set(fates.filter((_, index) => index !== requested - 1).map(item => item.id));
+                let pool = data.minggeList.filter(item => !occupied.has(item.id) && item.id !== fates[requested - 1]?.id);
+                if (!pool.length) pool = data.minggeList;
+                const mingge = drawMingge(pool);
+                const stored = createPlayerMingge(mingge);
+                stored.初始效果已应用 = true;
+                const oldName = fates[requested - 1]?.name || '无名命格';
+                if (requested === 1) player.命格 = stored;
+                else player.附加命格[requested - 2] = stored;
+
+                await Add_najie_thing(usr_qq, '轮回命签', '道具', -1);
+                await Write_player(usr_qq, player);
+                e.reply(`【轮回命签·重定命数】\n第${requested}命格：${oldName} → ${mingge.name}\n\n${formatMinggeDrawMessage(mingge, player.名号)}`);
+                return;
+            }
+            // 命格道具：消耗【命宫拓碑】将命格词条上限拓展一格（最多三格）
+            if (thing_name == "命宫拓碑") {
+                const limit = Math.max(1, Math.trunc(Number(player.命格词条上限) || 1));
+                if (limit >= 3) {
+                    e.reply('你的命宫最多承载三条命格，无法继续拓展。');
+                    return;
+                }
+                player.命格词条上限 = limit + 1;
+                await Add_najie_thing(usr_qq, '命宫拓碑', '道具', -1);
+                await Write_player(usr_qq, player);
+                e.reply(`【命宫拓碑】命宫壁垒向外展开，命格词条上限提升至 ${player.命格词条上限}。\n发送 #抽取命格词条 可补足空缺词条。`);
+                return;
+            }
                 if (thing_name == "符道修士的感悟") {
                 if (player.occupation != "符师") {
                     e.reply("你并非符师，无法从中获得领悟");
@@ -4483,6 +4603,32 @@ if (thing_name == "星峰传承令") {
         e.reply(msg);
         return;
     }
+}
+// 无拘仙印使用逻辑
+if (thing_name == "无拘仙印") {
+    if (!player.支线任务) player.支线任务 = [];
+    if (player.称号列表?.includes("世外逍遥客")) {
+        e.reply("你已走完天地无拘之路，无需再次启印。");
+        return;
+    }
+    if (player.支线任务.includes(4)) {
+        e.reply("无拘仙印已化作星路指引，任务正在进行中。");
+        return;
+    }
+
+    player.支线任务.push(4);
+    player.支线任务进度 = player.支线任务进度 || {};
+    player.支线任务进度[4] = { 阶段: 1, 横渡位面: 0 };
+
+    await Write_player(usr_qq, player);
+    await Add_najie_thing(usr_qq, "无拘仙印", "道具", -1);
+    e.reply([
+        "【隐藏任务触发：天地无拘】",
+        "仙印化作一缕清风，引出三条横贯诸天的星路。",
+        "完成三次跨位面穿梭，体悟鲲鹏遨游万界的无拘真意。",
+        "发送 #我的支线任务 查看任务详情"
+    ].join('\n'));
+    return;
 }
 // 华云飞的执念使用逻辑
 if (thing_name == "华云飞的执念") {
@@ -6155,39 +6301,43 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
   let player = await Read_player(usr_qq);
   let islearned = player.学习的功法.find(item => item == thing_name);
   
-  // 定义功法层级映射
+  // 定义功法层级映射（数字越大 = 越难学）
   const gongfaHierarchy = {
-    "神慧者": 0,
-    "仙帝法": 1,
-    "仙王法": 2,
-    "十凶宝术": 3,
-    "帝经": 4,
-    "九秘": 5,
-    "盖世杀术": 5,
-    "道与法": 6,
-    "宝术": 6,
-    "天魔法": 7,
-    "命运法": 7,
-    "修炼功法": 8,
-    "炼器": 8,
-    "炼丹": 8,
-    "武学": 8
+    "武学": 0,
+    "限定功法": 0,
+    "修炼功法": 1,
+    "炼器": 1,
+    "炼丹": 1,
+    "天魔法": 2,
+    "命运法": 2,
+    "道与法": 3,
+    "宝术": 3,
+    "九秘": 4,
+    "盖世杀术": 4,
+    "帝经": 5,
+    "十凶宝术": 6,
+    "仙王法": 7,
+    "仙帝法": 8,
+    "神慧者": 9
   };
 
-  // 天资等级对应的最高可学习层级
+  // 天资等级对应的最高可学习难度（值=能学的最高gongfaHierarchy）
   const aptitudeLevels = {
-   "无演无尽": 0,     // 可学神慧者
-    "万古无双": 1,     // 可学仙帝法
-    "绝世天骄": 2,     // 可学仙王法
-    "旷世奇才": 3,     // 可学十凶宝术
-    "天纵之资": 4,     // 可学帝经
-    "超凡资质": 5,     // 可学九秘/盖世杀术
-    "平庸之资": 6,     // 可学道与法/宝术
-    "先天不足": 7,     // 可学天魔法/命运法
-    "天弃之人": 8,     // 可学修炼功法等基础
-    "生而愚痴": 9,     // 特殊处理
-    "无化如是": 10     // 无法学习任何功法
+    "生而愚痴": 0,   // 只能学武学(0)
+    "天弃之人": 1,   // 可学修炼功法/炼器/炼丹(1)
+    "先天不足": 2,   // 可学天魔法/命运法(2)
+    "平庸之资": 2,   // 可学天魔法/命运法(2)，学不了道与法(3)
+    "超凡资质": 3,   // 可学道与法/宝术(3)
+    "天纵之资": 4,   // 可学九秘/盖世杀术(4)
+    "旷世奇才": 5,   // 可学帝经(5)
+    "绝世天骄": 7,   // 可学十凶宝术(6)/仙王法(7)
+    "万古无双": 8,   // 可学仙帝法(8)
+    "无演无尽": 9,   // 可学神慧者(9)
+    "无化如是": -1   // 什么都学不了
   };
+
+  // 获取玩家的天资等级
+  const aptitudeLevel = player.天资等级;
 
   // 检查是否已学习
   if (islearned) {
@@ -6264,62 +6414,90 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
     return false;
   }
 
-        // === 特殊功法检查 ===
-        if (gongfaName === '自然大道') {
-            const allowedAptitudes = ["平庸之资", "先天不足", "天弃之人", "生而愚痴"];
-            
-            if (!allowedAptitudes.includes(targetAptitude.grade)) {
-                e.reply([
-                    `〖大道拒斥〗`,
-                    `${target.名号}的天资【${targetAptitude.grade}】过于聪慧，`,
-                    `无法领悟【自然大道】的真谛！`,
-                    ``,
-                    `〖自然大道真意〗`,
-                    `"道法自然，无为而化，唯愚者可悟！"`,
-                    `当前天资：${targetAptitude.grade}`,
-                    `适合天资：平庸之资、先天不足、天弃之人、生而愚痴`
-                ].join('\n'));
-                return true;
-            }
-        }
-  
-  // 获取玩家的天资等级
-  const aptitudeLevel = player.天资等级;
+  // === 特殊功法检查：自然大道 ===
+  if (thing_name === '自然大道') {
+    const allowedAptitudes = ["平庸之资", "先天不足", "天弃之人", "生而愚痴"];
+    if (!allowedAptitudes.includes(aptitudeLevel)) {
+      e.reply([
+        `〖大道拒斥〗`,
+        `你的天资【${aptitudeLevel}】过于聪慧，`,
+        `无法领悟【自然大道】的真谛！`,
+        ``,
+        `〖自然大道真意〗`,
+        `"道法自然，无为而化，唯愚者可悟！"`,
+        `当前天资：${aptitudeLevel}`,
+        `适合天资：平庸之资、先天不足、天弃之人、生而愚痴`
+      ].join('\n'));
+      return false;
+    }
+  }
   
   // 获取玩家可学习的最高层级
-  const playerMaxLevel = aptitudeLevels[aptitudeLevel] || 6; // 默认为6（平庸之资）
+  const playerMaxLevel = aptitudeLevels[aptitudeLevel] ?? 2; // 默认为2（平庸之资）
   
   // 获取功法的层级
   const gongfaLevel = gongfaHierarchy[thing_exist.type] || 8; // 默认为修炼功法层级
   
-  // ==== 修复判断逻辑 ====
-  // 原逻辑：if (gongfaLevel < playerMaxLevel) {
-  // 改为：
-  if (gongfaLevel < playerMaxLevel) {
-    e.reply(`你的天资等级【${aptitudeLevel}】不足，无法学习【${thing_exist.type}】类功法`);
+  // ==== 天资层级判断 ====
+  if (gongfaLevel > playerMaxLevel) {
+    e.reply(`你的天资等级【${aptitudeLevel}】不足以学习【${thing_exist.type}】类功法（难度${gongfaLevel}，你的上限${playerMaxLevel}）`);
     return false;
   }
-  
+
+  // ========== 仙道潜力检查（功法学习） ==========
+  {
+    const potentialCost = gongfaLevel + 1; // 难度越高消耗越多（武学1点，神慧者10点）
+    const currentPotential = player.仙道潜力 || 0;
+    if (currentPotential < potentialCost) {
+      e.reply([
+        `【仙道潜力不足·功法学习受阻】`,
+        `你展开${thing_name}，字字珠玑如星辰，`,
+        `却感到识海中的仙道潜力已几近枯竭，无法承载这份传承！`,
+        ``,
+        `当前仙道潜力：${currentPotential} 点`,
+        `学习所需潜力：${potentialCost} 点（${thing_exist.type}）`,
+        `「潜力有尽，传承无穷，请先补足仙道潜力方可领悟！」`
+      ].join('\n'));
+      return false;
+    }
+  }
+  // ========== 仙道潜力检查结束 ==========
+
+  // 计算本次学习消耗的潜力
+  const learnPotentialCost = 9 - gongfaLevel;
+
   // 学习功法
   await Add_najie_thing(usr_qq, thing_name, '功法', -1);
+player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - learnPotentialCost);
+  for (const [field, value] of Object.entries(thing_exist.属性加成 || {})) {
+    player[field] = (Number(player[field]) || 0) + Number(value);
+  }
+  await Write_player(usr_qq, player);
   await Add_player_学习功法(usr_qq, thing_name);
+  // 扣除仙道潜力
+
   
+  const remainPotential = player.仙道潜力;
+
   // 自然大道特殊成功文案
   if (thing_name == '自然大道') {
     e.reply([
       `【大道至简】`,
       `你翻开《自然大道》古卷，却见书页空白如洗！`,
-      
       `正疑惑间，忽闻天地共鸣：`,
       `"道法自然，无为而化..."`,
-      
       `刹那间，草木生长、溪流奔涌、云卷云舒...`,
       `万物运转的至理如清泉般流入心田！`,
-      `你顿悟了：`,
-      `"原来愚钝才是通天道，平庸方为真逍遥！"`,
+      `你顿悟了："原来愚钝才是通天道，平庸方为真逍遥！"`,
+      ``,
+      `消耗仙道潜力：${learnPotentialCost} 点 | 剩余：${remainPotential} 点`,
     ].join('\n'));
   } else {
-    e.reply(`你学会了${thing_name},可以在【#我的炼体】中查看`);
+    e.reply([
+      `你领悟了【${thing_name}】，道法烙印于识海！`,
+      `可在【#我的炼体】中查看已学功法`,
+      `消耗仙道潜力：${learnPotentialCost} 点 | 剩余：${remainPotential} 点`,
+    ].join('\n'));
   }
 }}
   //兑换方法
@@ -6931,7 +7109,7 @@ async Sell_comodities(e) {
     // 设置默认价格：如果没有出售价字段，默认12000灵石
     let unitPrice = thing_exist.出售价 ?? 12000;
     commodities_price = unitPrice * thing_amount;
-    
+
     if (data.zalei.find(item => item.name == thing_name.replace(/[0-9]+/g, ''))) {
         let sell = najie.装备.find(
             item => item.name == thing_name && thing_piji == item.pinji
@@ -6940,11 +7118,21 @@ async Sell_comodities(e) {
         let equipPrice = sell.出售价 ?? 12000;
         commodities_price = equipPrice * thing_amount;
     }
-    
+
+    // ==== 命格消费层：出售价格倍率 ====
+    const sellPlayer = await Read_player(usr_qq);
+    const sellEffects = getMinggeEffects(sellPlayer, data.minggeList);
+    const sellMult = getMinggeDirectMultiplier(sellEffects, '出售价格倍率');
+    if (sellMult !== 1) {
+      commodities_price = Math.floor(commodities_price * sellMult);
+    }
+
     await Add_灵石(usr_qq, commodities_price);
-    e.reply(
-        `出售成功!  获得${commodities_price}灵石,还剩余${thing_name}*${x - thing_amount} `
-    );
+    let sellMsg = `出售成功!  获得${commodities_price}灵石,还剩余${thing_name}*${x - thing_amount} `;
+    if (sellMult !== 1) {
+      sellMsg += `\n命格·商道通玄：售价倍率 +${Math.round((sellMult - 1) * 100)}%`;
+    }
+    e.reply(sellMsg);
     return false;
 }}
 function getDaysUntilNextGift(currentGiftType,daysRounded) {
@@ -7133,4 +7321,3 @@ async function checkAndRemoveShengtiMishu(player, usr_qq) {
     
     return removed;
 }
-
