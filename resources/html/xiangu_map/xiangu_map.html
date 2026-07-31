@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="content-type" content="text/html;charset=utf-8" />
+  <title>仙古秘境·神识地图</title>
+  <link rel="shortcut icon" href="#" />
+  <style>
+    @font-face {
+      font-family: 'tttgb';
+      src: url('{{pluResPath}}/font/tttgbnumber.ttf') format('truetype');
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: radial-gradient(ellipse at 20% 30%, #130c2a 0%, #06091a 60%, #020408 100%);
+      color: #d4c8f0;
+      font-family: 'Microsoft YaHei', 'PingFang SC', serif;
+      width: 860px;
+      padding: 18px;
+    }
+
+    /* ===================== 顶部标题栏 ===================== */
+    .header {
+      background: linear-gradient(135deg, #1a0f3a 0%, #0d1a35 50%, #1a0f3a 100%);
+      border: 1px solid rgba(160, 110, 255, 0.35);
+      border-radius: 12px;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      box-shadow: 0 0 24px rgba(120, 60, 220, 0.18), inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+    .header-left h1 {
+      font-size: 22px;
+      color: #e8d4ff;
+      letter-spacing: 3px;
+      text-shadow: 0 0 18px rgba(180, 100, 255, 0.8), 0 0 40px rgba(140, 60, 220, 0.4);
+    }
+    .header-left .sub {
+      font-size: 12px;
+      color: #7a6aaa;
+      margin-top: 3px;
+      letter-spacing: 1px;
+    }
+    .header-right {
+      text-align: right;
+    }
+    .player-name {
+      font-size: 18px;
+      color: #ffd84a;
+      font-weight: bold;
+      text-shadow: 0 0 12px rgba(255, 200, 50, 0.6);
+    }
+    .player-realm {
+      font-size: 12px;
+      color: #aa9acc;
+      margin-top: 2px;
+    }
+
+    /* ===================== 主体两栏 ===================== */
+    .main-layout {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+    }
+
+    /* ===================== 左侧地图区 ===================== */
+    .map-panel {
+      flex: 0 0 auto;
+      background: linear-gradient(135deg, #0a0f20 0%, #070c1a 100%);
+      border: 1px solid rgba(100, 60, 200, 0.4);
+      border-radius: 10px;
+      padding: 14px;
+      box-shadow: 0 0 30px rgba(80, 40, 160, 0.2), inset 0 0 60px rgba(0,0,0,0.3);
+    }
+    .map-title {
+      text-align: center;
+      font-size: 13px;
+      color: #9980cc;
+      letter-spacing: 2px;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(100, 60, 200, 0.3);
+    }
+    .map-title .frag-name {
+      color: #c8aaff;
+      font-weight: bold;
+      font-size: 15px;
+    }
+    .map-title .frag-zone {
+      color: #7a6aaa;
+      font-size: 11px;
+      margin-top: 2px;
+    }
+
+    /* 网格容器 */
+    .grid-container {
+      display: inline-block;
+      border: 1px solid rgba(80, 40, 160, 0.5);
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 0 20px rgba(100, 50, 200, 0.15);
+    }
+    .grid-row {
+      display: flex;
+    }
+
+    /* 格子基础样式 */
+    .cell {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: bold;
+      position: relative;
+      transition: all 0.2s;
+      border: 1px solid rgba(30, 20, 60, 0.6);
+    }
+
+    /* 各格子类型 */
+    .cell-fog {
+      background: #06060f;
+      color: #1a1530;
+    }
+    .cell-fog::after {
+      content: '▓';
+      font-size: 16px;
+      color: #12102a;
+    }
+
+    .cell-wall {
+      background: linear-gradient(135deg, #1a1428, #0f0c1e);
+      color: #2a2245;
+    }
+    .cell-wall::after {
+      content: '█';
+      font-size: 18px;
+      color: #2a2245;
+    }
+
+    .cell-empty {
+      background: #0c0f22;
+    }
+    .cell-empty-explored {
+      background: #0e1226;
+    }
+
+    /* 玩家 — 金色发光圆点 */
+    .cell-player {
+      background: radial-gradient(circle, #1a1530 30%, #0c0f22 100%);
+    }
+    .cell-player::after {
+      content: '';
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #fff7a0 0%, #ffd700 40%, #ff9500 80%, rgba(255,120,0,0) 100%);
+      box-shadow: 0 0 10px 4px rgba(255,200,0,0.7), 0 0 20px 8px rgba(255,150,0,0.3);
+      display: block;
+    }
+
+    /* 机缘 — 蓝紫色 */
+    .cell-treasure {
+      background: radial-gradient(circle at center, rgba(80, 40, 180, 0.3) 0%, #0a0d1e 100%);
+    }
+    .cell-treasure::after {
+      content: '◆';
+      font-size: 16px;
+      color: #9966ff;
+      text-shadow: 0 0 8px rgba(150, 80, 255, 0.9), 0 0 16px rgba(120, 60, 220, 0.5);
+    }
+
+    /* 危险 — 赤红色 */
+    .cell-danger {
+      background: radial-gradient(circle at center, rgba(160, 20, 20, 0.25) 0%, #0f0a0a 100%);
+    }
+    .cell-danger::after {
+      content: '✦';
+      font-size: 16px;
+      color: #ff4444;
+      text-shadow: 0 0 8px rgba(255, 50, 50, 0.9), 0 0 16px rgba(200, 0, 0, 0.5);
+    }
+
+    /* NPC — 金色方块 */
+    .cell-npc {
+      background: radial-gradient(circle at center, rgba(160, 120, 20, 0.2) 0%, #0f0d08 100%);
+    }
+    .cell-npc::after {
+      content: '人';
+      font-size: 14px;
+      color: #ffd84a;
+      text-shadow: 0 0 8px rgba(255, 200, 50, 0.8), 0 0 16px rgba(220, 160, 0, 0.4);
+    }
+
+    /* 出口 — 青绿色 */
+    .cell-exit {
+      background: radial-gradient(circle at center, rgba(20, 160, 120, 0.2) 0%, #080f0d 100%);
+    }
+    .cell-exit::after {
+      content: '⊕';
+      font-size: 18px;
+      color: #40ffcc;
+      text-shadow: 0 0 8px rgba(50, 255, 200, 0.9), 0 0 20px rgba(0, 220, 160, 0.5);
+    }
+
+    /* 虚空裂缝 — 青蓝混乱 */
+    .cell-void {
+      background: radial-gradient(circle at center, rgba(0, 100, 200, 0.2) 0%, #080d14 100%);
+    }
+    .cell-void::after {
+      content: '∞';
+      font-size: 16px;
+      color: #44aaff;
+      text-shadow: 0 0 8px rgba(50, 150, 255, 0.9), 0 0 16px rgba(0, 100, 220, 0.5);
+    }
+
+    /* 唯一机缘 — 金白辉光，多层光晕 */
+    .cell-unique {
+      background: radial-gradient(circle at center, rgba(200, 160, 20, 0.35) 0%, #0f0d08 100%);
+      box-shadow: inset 0 0 12px rgba(255, 220, 80, 0.15);
+    }
+    .cell-unique::after {
+      content: '★';
+      font-size: 18px;
+      color: #fffaaa;
+      text-shadow: 0 0 6px #fff, 0 0 12px #ffd700, 0 0 24px rgba(255,180,0,0.8), 0 0 40px rgba(255,120,0,0.4);
+    }
+
+    /* 道韵共鸣：唯一机缘附近格子 */
+    .cell-echo-1 { box-shadow: inset 0 0 12px rgba(255, 220, 80, 0.35); }
+    .cell-echo-2 { box-shadow: inset 0 0 8px rgba(255, 220, 80, 0.2); }
+    .cell-echo-3 { box-shadow: inset 0 0 5px rgba(255, 220, 80, 0.1); }
+
+    /* 坐标轴标签 */
+    .axis-row {
+      display: flex;
+    }
+    .axis-corner { width: 20px; height: 20px; }
+    .axis-x {
+      width: 40px;
+      height: 20px;
+      text-align: center;
+      font-size: 10px;
+      color: #3d3466;
+      line-height: 20px;
+    }
+    .axis-y {
+      width: 20px;
+      height: 40px;
+      text-align: right;
+      font-size: 10px;
+      color: #3d3466;
+      line-height: 40px;
+      padding-right: 3px;
+    }
+
+    /* ===================== 右侧面板 ===================== */
+    .info-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .panel-card {
+      background: linear-gradient(135deg, #0f0c1e 0%, #0a0816 100%);
+      border: 1px solid rgba(100, 60, 180, 0.3);
+      border-radius: 8px;
+      padding: 12px 14px;
+      box-shadow: 0 2px 12px rgba(80, 40, 140, 0.1);
+    }
+    .panel-card h3 {
+      font-size: 12px;
+      color: #7a6aaa;
+      letter-spacing: 2px;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(100, 60, 180, 0.25);
+      text-transform: uppercase;
+    }
+
+    /* 统计数据 */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .stat-item {
+      text-align: center;
+      padding: 8px 4px;
+      background: rgba(80, 50, 140, 0.1);
+      border-radius: 6px;
+      border: 1px solid rgba(100, 60, 180, 0.15);
+    }
+    .stat-value {
+      font-size: 22px;
+      font-family: 'tttgb', 'Microsoft YaHei';
+      color: #c8aaff;
+      font-weight: bold;
+      text-shadow: 0 0 10px rgba(160, 100, 255, 0.5);
+    }
+    .stat-value.gold { color: #ffd84a; text-shadow: 0 0 10px rgba(255, 200, 50, 0.5); }
+    .stat-value.cyan { color: #40ffcc; text-shadow: 0 0 10px rgba(50, 255, 200, 0.5); }
+    .stat-label {
+      font-size: 10px;
+      color: #5a4a88;
+      margin-top: 2px;
+    }
+
+    /* 进度条 */
+    .progress-wrap {
+      margin-top: 8px;
+    }
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #7a6aaa;
+      margin-bottom: 4px;
+    }
+    .progress-bar {
+      height: 6px;
+      background: rgba(50, 30, 100, 0.4);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #7744cc, #aa66ff);
+      border-radius: 3px;
+      box-shadow: 0 0 6px rgba(150, 80, 255, 0.6);
+    }
+
+    /* 碎片列表 */
+    .frag-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .frag-item {
+      display: flex;
+      align-items: center;
+      padding: 6px 10px;
+      background: rgba(50, 30, 100, 0.12);
+      border-radius: 6px;
+      border: 1px solid rgba(80, 50, 140, 0.2);
+      font-size: 12px;
+    }
+    .frag-item.current {
+      border-color: rgba(160, 100, 255, 0.5);
+      background: rgba(100, 50, 200, 0.15);
+      box-shadow: 0 0 8px rgba(120, 60, 220, 0.1);
+    }
+    .frag-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 8px;
+      flex-shrink: 0;
+      background: #4a3a88;
+    }
+    .frag-dot.current { background: #aa66ff; box-shadow: 0 0 6px rgba(150, 80, 255, 0.8); }
+    .frag-info { flex: 1; min-width: 0; }
+    .frag-name-text {
+      color: #c8aaff;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .frag-item.current .frag-name-text { color: #e0ccff; font-weight: bold; }
+    .frag-meta {
+      font-size: 10px;
+      color: #5a4a88;
+      margin-top: 1px;
+    }
+    .frag-risk {
+      font-size: 10px;
+      color: #7a5aaa;
+      flex-shrink: 0;
+      margin-left: 4px;
+    }
+
+    /* 出口列表 */
+    .exit-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .exit-item {
+      display: flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      border: 1px solid rgba(40, 200, 160, 0.2);
+      background: rgba(20, 80, 60, 0.08);
+    }
+    .exit-item.locked {
+      border-color: rgba(100, 60, 60, 0.3);
+      background: rgba(60, 20, 20, 0.08);
+      opacity: 0.7;
+    }
+    .exit-arrow {
+      font-size: 14px;
+      margin-right: 6px;
+      color: #40ffcc;
+    }
+    .exit-item.locked .exit-arrow { color: #884444; }
+    .exit-dir {
+      color: #7a9aaa;
+      margin-right: 4px;
+      min-width: 16px;
+    }
+    .exit-target {
+      flex: 1;
+      color: #a0ddc8;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .exit-item.locked .exit-target { color: #884444; }
+    .exit-req {
+      font-size: 10px;
+      color: #664444;
+      margin-left: 4px;
+    }
+
+    /* 图例 */
+    .legend-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      font-size: 11px;
+      color: #7a6aaa;
+      gap: 6px;
+    }
+    .legend-swatch {
+      width: 20px;
+      height: 20px;
+      border-radius: 3px;
+      border: 1px solid rgba(100, 60, 200, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+
+    /* 底栏 */
+    .footer {
+      margin-top: 12px;
+      text-align: center;
+      font-size: 11px;
+      color: #2e2550;
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部标题栏 -->
+  <div class="header">
+    <div class="header-left">
+      <h1>仙古秘境·神识开图</h1>
+      <div class="sub">混沌未判，先天道韵，方知吉凶</div>
+    </div>
+    <div class="header-right">
+      <div class="player-name">{{playerName}}</div>
+      <div class="player-realm">{{playerTitle}} · 道韵 {{daoyun}}</div>
+    </div>
+  </div>
+
+  <!-- 主体两栏 -->
+  <div class="main-layout">
+
+    <!-- 左侧地图区 -->
+    <div class="map-panel">
+      <div class="map-title">
+        <div class="frag-name">{{fragmentName}}</div>
+        <div class="frag-zone">{{fragmentZone}} · {{fragmentSize}} · 危险等级 {{fragmentRiskStars}}</div>
+      </div>
+
+      <!-- 坐标轴 X -->
+      <div class="axis-row">
+        <div class="axis-corner"></div>
+        {{each axisX col}}
+        <div class="axis-x">{{col}}</div>
+        {{/each}}
+      </div>
+
+      <!-- 网格主体 -->
+      <div style="display:flex;">
+        <div>
+          {{each axisY row}}
+          <div class="axis-y">{{row}}</div>
+          {{/each}}
+        </div>
+        <div class="grid-container">
+          {{each cells row rowIdx}}
+          <div class="grid-row">
+            {{each row cell colIdx}}
+            <div class="cell {{cell.cls}} {{cell.echo}}"></div>
+            {{/each}}
+          </div>
+          {{/each}}
+        </div>
+      </div>
+
+      <!-- 步数/揭示进度 -->
+      <div class="progress-wrap" style="margin-top:10px;">
+        <div class="progress-label">
+          <span>探索进度</span>
+          <span>{{revealedCount}} / {{totalCells}} 格</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width:{{revealedPct}}%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧信息面板 -->
+    <div class="info-panel">
+
+      <!-- 统计 -->
+      <div class="panel-card">
+        <h3>探索数据</h3>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-value gold">{{daoyun}}</div>
+            <div class="stat-label">💎 道韵</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">{{steps}}</div>
+            <div class="stat-label">👣 探索步数</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value cyan">{{fragmentCount}}</div>
+            <div class="stat-label">🗺️ 已发现碎片</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">{{senseRange}}</div>
+            <div class="stat-label">👁️ 神识范围</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 已发现碎片 -->
+      {{if discoveredFragments.length > 0}}
+      <div class="panel-card">
+        <h3>碎片历史</h3>
+        <div class="frag-list">
+          {{each discoveredFragments f}}
+          <div class="frag-item {{f.current ? 'current' : ''}}">
+            <div class="frag-dot {{f.current ? 'current' : ''}}"></div>
+            <div class="frag-info">
+              <div class="frag-name-text">{{f.name}}</div>
+              <div class="frag-meta">{{f.zone}} · {{f.explored}}</div>
+            </div>
+            <div class="frag-risk">{{f.riskStars}}</div>
+          </div>
+          {{/each}}
+        </div>
+      </div>
+      {{/if}}
+
+      <!-- 出口连接 -->
+      {{if exits.length > 0}}
+      <div class="panel-card">
+        <h3>碎片出口</h3>
+        <div class="exit-list">
+          {{each exits ex}}
+          <div class="exit-item {{ex.locked ? 'locked' : ''}}">
+            <span class="exit-arrow">{{ex.locked ? '🔒' : '⊕'}}</span>
+            <span class="exit-dir">{{ex.direction}}</span>
+            <span class="exit-target">{{ex.target}}</span>
+            {{if ex.locked}}<span class="exit-req">需{{ex.levelRequired}}</span>{{/if}}
+          </div>
+          {{/each}}
+        </div>
+      </div>
+      {{/if}}
+
+      <!-- 图例 -->
+      <div class="panel-card">
+        <h3>图 例</h3>
+        <div class="legend-grid">
+          <div class="legend-item">
+            <div class="legend-swatch cell-player" style="border-radius:50%;"></div>
+            <span>你（当前位置）</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch cell-treasure"></div>
+            <span>机缘宝地</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch cell-danger"></div>
+            <span>危险区域</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch cell-npc"></div>
+            <span>NPC天骄</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch cell-exit"></div>
+            <span>碎片出口</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch cell-void"></div>
+            <span>虚空裂缝</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch cell-unique"></div>
+            <span>唯一机缘</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch cell-fog"></div>
+            <span>混沌迷雾</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 快捷命令 -->
+      <div class="panel-card">
+        <h3>快捷指令</h3>
+        <div style="font-size:11px; color:#5a4a88; line-height:1.8;">
+          <div><span style="color:#9980cc;">#上 #下 #左 #右</span> — 四方向移动</div>
+          <div><span style="color:#9980cc;">#左上 #右上</span> — 斜向移动</div>
+          <div><span style="color:#9980cc;">#秘境探索</span> — 神识感知周围</div>
+          <div><span style="color:#9980cc;">#秘境推演</span> — 消耗5道韵推演前方</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="footer">大道三千 · 仙古开辟 · 机缘自取</div>
+
+</body>
+</html>

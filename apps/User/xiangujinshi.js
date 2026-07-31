@@ -26,6 +26,14 @@ import {
   get_log_img,
   channel
 } from '../../model/xiuxian.js';
+import { XianguTribulation, XIANGU_REALM_ROUTES } from '../SecretPlace/xianguTribulation.js';
+import {
+  ensureXianqiState,
+  getNextXianqiTrial,
+  getXianqiStrands,
+  grantXianqi,
+} from '../../model/xianguXianqi.js';
+import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
 
 export class xiangujinshi extends plugin {
   constructor() {
@@ -125,6 +133,23 @@ export class xiangujinshi extends plugin {
       e.reply(`你已破关至最高境界`);
       return;
     }
+    
+    // ========== 仙道潜力检查（冲关=10点） ==========
+    {
+      const potentialCost = applyQuestionFortuneCost(player, 10);
+      const currentPotential = player.仙道潜力 || 0;
+      if (currentPotential < potentialCost) {
+        e.reply([
+          `【仙道潜力不足·冲关受阻】`,
+          `${player.名号}欲冲破今世法境界，却感仙道潜力枯竭，大道之门紧闭！`,
+          `当前仙道潜力：${currentPotential} 点`,
+          `冲关所需：${potentialCost} 点`,
+          `「仙古今世法深奥无比，无潜力者，今世之法遥不可及！」`
+        ].join('\n'));
+        return;
+      }
+    }
+    // ========== 仙道潜力检查结束 ==========
 
     const isExtreme = e.msg.includes("极境");
 if (!player.极境 || !Array.isArray(player.极境)) {
@@ -201,16 +226,35 @@ if (player.xiangulevel_id === 4) {
             }
             return await this.breakthroughExtremeZunzheRealm(e, usr_qq, player);
         } else {
-           return e.reply("后续内容还在更新");
+           return await this.breakthroughShenhuoRealm(e, usr_qq, player);
         }
     }
-   return e.reply("后续内容还在更新");
+    if (player.xiangulevel_id === 8) {
+        if (isExtreme) {
+            return await this.breakthroughXianqiExtreme(e, usr_qq, player);
+        } else {
+           return await this.breakthroughZhenyiRealm(e, usr_qq, player);
+        }
+    }
+    if (player.xiangulevel_id === 9) {
+        return await this.breakthroughUpperRealm(e, usr_qq, player);
+    }
+    if (player.xiangulevel_id === 10) {
+        return await this.breakthroughUpperRealm(e, usr_qq, player);
+    }
+    if (player.xiangulevel_id === 11) {
+        return await this.breakthroughUpperRealm(e, usr_qq, player);
+    }
+    if ([12, 13, 14].includes(Number(player.xiangulevel_id))) {
+        return await this.breakthroughUpperRealm(e, usr_qq, player);
+    }
+    return e.reply("后续内容还在更新");
   }
 
   // 普通搬血境突破
   async breakthroughNormalBloodRealm(e, usr_qq, player) {
     const baseBloodNeed = 500000;
-    const actualBloodNeed = this.calculateActualCost(baseBloodNeed);
+    const actualBloodNeed = this.calculateActualCost(baseBloodNeed, player);
 
     if (player.血气 < actualBloodNeed) {
       const missingBlood = actualBloodNeed - player.血气;
@@ -292,7 +336,7 @@ if (player.xiangulevel_id === 4) {
   // 普通境界突破
   async normalBreakthrough(e, usr_qq, player) {
     const baseNeedExp = this.calculateBaseNeedExp(player);
-    const actualNeedExp = this.calculateActualCost(baseNeedExp);
+    const actualNeedExp = this.calculateActualCost(baseNeedExp, player);
     
     if (player.血气 < actualNeedExp || player.修为 < actualNeedExp) {
       return e.reply([
@@ -307,6 +351,8 @@ if (player.xiangulevel_id === 4) {
     player.xiangulevel_id += 1;
     player.血气 -= actualNeedExp;
     player.修为 -= actualNeedExp;
+    // 扣除仙道潜力（冲关=10点）
+    player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - applyQuestionFortuneCost(player, 10));
     
     const level = data.xiangujinshi_list.find(item => item.level_id == player.xiangulevel_id).level;
     await Write_player(usr_qq, player);
@@ -447,7 +493,7 @@ async breakthroughNormalDongtianRealm(e, usr_qq, player) {
     
     // 能量要求（参考原著十洞天突破）
     const baseEnergyNeed = this.calculateBaseNeedExp(player);
-    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed);
+    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed, player);
 
        // ==== 资源检查拦截（新增详细物品缺失提示）====
     const missingItems = [];
@@ -539,7 +585,7 @@ async breakthroughExtremeDongtianRealm(e, usr_qq, player) {
 
     // 能量要求（十倍于普通突破）
     const baseEnergyNeed = this.calculateBaseNeedExp(player);
-    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed);
+    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed, player);
 
      // 检查柳神本源
     const willowEssenceQty = await exist_najie_thing(usr_qq, "柳神本源", "道具");
@@ -605,7 +651,7 @@ async breakthroughExtremeDongtianRealm(e, usr_qq, player) {
 async breakthroughNormalhualingRealm(e, usr_qq, player) {
     // 三阶段总能量需求（洞天境的5倍）
     const baseEnergyNeed = this.calculateBaseNeedExp(player);
-    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed);
+    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed, player);
 
     // 检查前置境界极境（参考石昊根基）[3,7](@ref)
     if (!player.极境.includes("2") || !player.极境.includes("3")) { 
@@ -656,7 +702,7 @@ async breakthroughNormalhualingRealm(e, usr_qq, player) {
 async breakthroughExtremeHualingRealm(e, usr_qq, player) {
     // 能量需求（普通突破的20倍）[7](@ref)
     const baseEnergyNeed = this.calculateBaseNeedExp(player);
-    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed);
+    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed, player);
 
     // 前置检查
     if (player.hualing_stage !== 3) return e.reply("需先完成化灵三阶段修行");
@@ -733,7 +779,7 @@ async breakthroughExtremeHualingRealm(e, usr_qq, player) {
 async breakthroughNormalMingwenRealm(e, usr_qq, player) {
     // 能量需求（化灵境的8倍）
     const baseEnergyNeed = this.calculateBaseNeedExp(player);
-    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed);
+    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed, player);
 
     // 前置检查：必须完成化灵极境
     if (!player.极境.includes("4")) {
@@ -799,7 +845,7 @@ async breakthroughNormalMingwenRealm(e, usr_qq, player) {
 async breakthroughExtremeMingwenRealm(e, usr_qq, player) {
     // 能量需求（普通铭文境的25倍）
     const baseEnergyNeed = this.calculateBaseNeedExp(player);
-    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed);
+    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed, player);
 
     // 前置检查
     if (player.xiangulevel_id !== 5) return e.reply("需先突破至铭文境");
@@ -869,7 +915,7 @@ async breakthroughNormalLiezhenRealm(e, usr_qq, player) {
     ];
     
     const baseEnergyNeed = this.calculateBaseNeedExp(player);
-    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed);
+    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed, player);
 
     // ==== 功法检查 ====
     if (!player.学习的功法.includes("原始真解神引篇")) {
@@ -933,7 +979,7 @@ async breakthroughNormalLiezhenRealm(e, usr_qq, player) {
 // 列阵极境突破（需要万灵图）
 async breakthroughExtremeLiezhenRealm(e, usr_qq, player) {
     const baseEnergyNeed = this.calculateBaseNeedExp(player);
-    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed);
+    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed, player);
 
     // 前置检查
     if (player.xiangulevel_id !== 6) return e.reply("需先突破至列阵境");
@@ -989,17 +1035,7 @@ async breakthroughExtremeLiezhenRealm(e, usr_qq, player) {
 async breakthroughZunzheRealm(e, usr_qq, player) {
     // 能量需求（列阵境的15倍）
     const baseEnergyNeed = this.calculateBaseNeedExp(player);
-    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed) * 15;
-
-    // 检查前置境界（必须完成列阵极境）
-    if (!player.极境.includes("6")) {
-        return e.reply([
-            `【阵基未固·尊者难成】`,
-            `尊者境需先达列阵极境，演化诸天阵法为基`,
-            `极境状态：${player.极境.includes("6") ? '✓' : '✗'}`,
-            `未达极境者，无法承载尊者威能！`
-        ].join("\n"));
-    }
+    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed, player) * 15;
 
     // 检查功法（必须学习药神秘典）
     if (!player.学习的功法.includes("药神秘典")) {
@@ -1114,7 +1150,7 @@ async breakthroughZunzheRealm(e, usr_qq, player) {
 async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
     // 能量需求（普通尊者境的30倍）
     const baseEnergyNeed = this.calculateBaseNeedExp(player);
-    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed) * 30;
+    const actualEnergyNeed = this.calculateActualCost(baseEnergyNeed, player) * 30;
 
     // 前置检查
     if (player.xiangulevel_id !== 7) return e.reply("需先突破至尊者境");
@@ -1317,6 +1353,274 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
         `尊者极境——打破极限，成就万古最强尊者！`
     ].join("\n"));
 }
+
+// 尊者→神火 普通突破（自身修炼方式）
+async breakthroughShenhuoRealm(e, usr_qq, player) {
+    const baseNeed = this.calculateBaseNeedExp(player);
+    const actualNeed = this.calculateActualCost(baseNeed, player) * 25;
+
+    if (player.血气 < actualNeed || player.修为 < actualNeed) {
+        const lackBlood = Math.max(0, actualNeed - player.血气);
+        const lackXiuwei = Math.max(0, actualNeed - player.修为);
+        return e.reply([
+            `【本源不足·神火难燃】`,
+            `点燃神火需海量本源支撑：`,
+            `缺血气：${bigNumberTransform(lackBlood)}`,
+            `缺修为：${bigNumberTransform(lackXiuwei)}`,
+            ``,
+            `【四种点燃方式】`,
+            `① 自身修炼（当前方式）：消耗修为血气直接冲关，无额外条件`,
+            `② 天材地宝：需特定丹药辅助，提高成功率`,
+            `③ 道种孕育：在仙古秘境中获取极品/神话道种（#借助XX道种点燃神火），可获得1道仙气`,
+            `④ 祭炼真我：三千道火祭炼肉身元神（#祭炼真我），最强但最危险`
+        ].join('\n'));
+    }
+
+    // 消耗能量
+    await Add_血气(usr_qq, -actualNeed);
+    await Add_修为(usr_qq, -actualNeed);
+
+    // 基础成功率60% - 没有极境的修炼方式成功率较低
+    const successRate = 0.6;
+
+    e.reply([
+        `【点燃神火·自身修炼】`,
+        `${player.名号}盘坐虚空，以自身道行引动天地之火...`,
+        `大道之火自虚空而生，缓缓灼烧肉身...`,
+        `成功率：${(successRate*100).toFixed(0)}%（普通修炼方式）`
+    ].join('\n'));
+
+    await sleep(2000);
+
+    if (Math.random() > successRate) {
+        return e.reply([
+            `【神火未燃·道基不稳】`,
+            `${player.名号}以自身修炼点燃神火...`,
+            `然而大道之火忽明忽灭，始终无法稳定！`,
+            `血气修为已消耗，建议积累更多资源后再尝试`,
+            ``,
+            `提示：去仙古秘境获取道种火种可大幅提升成功率`
+        ].join('\n'));
+    }
+
+    // 成功
+    const levelData = JSON.parse(fs.readFileSync(path.join(__PATH.data_path, '..', 'resources', 'data', 'Level', '仙古今世法.json'), 'utf8'));
+    const lv7 = levelData.find(l => l.level_id === 7);
+    const lv8 = levelData.find(l => l.level_id === 8);
+    const diff = lv8 && lv7 ? {
+        攻击: Math.floor((lv8.基础攻击 - lv7.基础攻击) * 0.3),
+        防御: Math.floor((lv8.基础防御 - lv7.基础防御) * 0.3),
+        血气: Math.floor((lv8.基础血量 - lv7.基础血量) * 0.3)
+    } : { 攻击: 6000000, 防御: 6000000, 血气: 6000000 };
+
+    player.xiangulevel_id = 8;
+    player.攻击 += diff.攻击;
+    player.防御 += diff.防御;
+    player.血气上限 += diff.血气;
+    player.血气 = player.血气上限;
+    ensureXianqiState(player); // 自身修炼不修出仙气，仅规范旧存档字段
+
+    if (!player.xiangu_shenhuo) player.xiangu_shenhuo = {};
+    player.xiangu_shenhuo.已点燃 = true;
+    player.xiangu_shenhuo.点燃方式 = '自身修炼';
+    player.xiangu_shenhuo.神火品质 = '下品';
+    player.xiangu_shenhuo.属性倍率 = 0.3;
+
+    await Write_player(usr_qq, player);
+
+    return e.reply([
+        `【神火点燃·自身修炼·成功！】`,
+        `${player.名号}以自身道行引燃神火！`,
+        ``,
+        `攻击 +${bigNumberTransform(diff.攻击)}`,
+        `防御 +${bigNumberTransform(diff.防御)}`,
+        `血气 +${bigNumberTransform(diff.血气)}`,
+        ``,
+        `神火品质：下品（×0.3倍）`,
+        `仙气：无（自身修炼方式不可修出仙气）`,
+        ``,
+        `提示：前往仙古秘境通过 #祭炼真我 或 #借助极品道种点燃神火 可修出仙气`
+    ].join('\n'));
+}
+
+// 神火境内凝聚第二、第三道仙气；仙气是极境成果，不随境界突破赠送。
+async breakthroughXianqiExtreme(e, usr_qq, player) {
+    const trial = getNextXianqiTrial(player);
+    if (!trial.allowed) {
+        if (trial.reason === 'first_strand_required') {
+            return e.reply([
+                `【神火极境·仙气未生】`,
+                `第二道仙气必须以第一道仙气为引。`,
+                `第一道仙气只可在点燃神火时，通过极品仙种或三千道火修出。`,
+                `普通道种、自身苦修与丹药路线不会补发仙气。`
+            ].join('\n'));
+        }
+        if (trial.reason === 'complete') {
+            return e.reply('【神火绝巅】三道仙气已经圆满，无需再次冲击极境');
+        }
+        return e.reply('仙气极境只能在神火境内修炼；踏入真一后不可回头补修');
+    }
+
+    const baseNeed = this.calculateBaseNeedExp(player);
+    const actualNeed = this.calculateActualCost(baseNeed, player) * trial.costMultiplier;
+    if (player.血气 < actualNeed || player.修为 < actualNeed) {
+        return e.reply([
+            `【本源不足·${trial.name}难成】`,
+            `凝聚${trial.name}需在神火境内再破一次极限。`,
+            `缺血气：${bigNumberTransform(Math.max(0, actualNeed - player.血气))}`,
+            `缺修为：${bigNumberTransform(Math.max(0, actualNeed - player.修为))}`
+        ].join('\n'));
+    }
+
+    await Add_血气(usr_qq, -actualNeed);
+    await Add_修为(usr_qq, -actualNeed);
+    player.血气 = Math.max(0, (Number(player.血气) || 0) - actualNeed);
+    player.修为 = Math.max(0, (Number(player.修为) || 0) - actualNeed);
+
+    const currentMaxHp = Number(player.血量上限 || player.血气上限) || 1;
+    player.血量上限 = currentMaxHp;
+    player.当前血量 = currentMaxHp;
+
+    const tribulation = new XianguTribulation();
+    const result = await tribulation.runXianqiCondensation(e, player, trial.targetStrand);
+    if (!result.success) {
+        player.当前血量 = Math.max(1, Math.floor(currentMaxHp * 0.1));
+        await Write_player(usr_qq, player);
+        return e.reply([
+            `【神火极境·冲击失败】`,
+            `${trial.name}未能凝聚，境界与现有仙气得以保住。`,
+            `本次修为、血气已经消耗，当前血量仅余一成。`
+        ].join('\n'));
+    }
+
+    const granted = grantXianqi(player, `神火极境·${trial.name}试炼`);
+    if (!granted) {
+        await Write_player(usr_qq, player);
+        return e.reply('仙气状态已发生变化，本次试炼未重复发放仙气');
+    }
+
+    if (trial.targetStrand === 3) {
+        player.xiangu_xianqi_three_complete = true;
+    }
+    await Write_player(usr_qq, player);
+
+    return e.reply([
+        `【神火极境·${trial.name}凝聚成功！】`,
+        `${player.名号}仍立于神火境，却在极限之上再进一步。`,
+        `当前仙气：${getXianqiStrands(player)}/3道`,
+        trial.targetStrand === 3
+            ? `三道仙气圆满，神火境绝巅道果已成！`
+            : `可再次使用 #冲关极境，挑战第三道仙气。`,
+        `也可使用 #冲关，放弃继续打磨并突破真一境。`
+    ].join('\n'));
+}
+
+// 神火→真一 普通突破
+async breakthroughZhenyiRealm(e, usr_qq, player) {
+    return this.breakthroughUpperRealm(e, usr_qq, player);
+}
+
+// 神火→真一及后续境界：只推进境界，不再自动补发仙气。
+async breakthroughUpperRealm(e, usr_qq, player) {
+    const fromLevelId = Number(player.xiangulevel_id);
+    const breakthrough = XIANGU_REALM_ROUTES[fromLevelId];
+    if (!breakthrough) return e.reply('当前境界没有对应的仙古今世法渡劫');
+    ensureXianqiState(player);
+
+    const baseNeed = this.calculateBaseNeedExp(player);
+    const actualNeed = this.calculateActualCost(baseNeed, player) * breakthrough.costMultiplier;
+
+    if (player.血气 < actualNeed || player.修为 < actualNeed) {
+        return e.reply([
+            `【本源不足·${breakthrough.targetName}难成】`,
+            `突破${breakthrough.targetName}需磅礴本源，`,
+            `缺血气：${bigNumberTransform(Math.max(0, actualNeed - player.血气))}`,
+            `缺修为：${bigNumberTransform(Math.max(0, actualNeed - player.修为))}`
+        ].join('\n'));
+    }
+
+    await Add_血气(usr_qq, -actualNeed);
+    await Add_修为(usr_qq, -actualNeed);
+    // Add_* 会独立写档；同步本地对象，避免后续 Write_player 把消耗覆盖回去。
+    player.血气 = Math.max(0, (Number(player.血气) || 0) - actualNeed);
+    player.修为 = Math.max(0, (Number(player.修为) || 0) - actualNeed);
+
+    const currentMaxHp = Number(player.血量上限 || player.血气上限) || 1;
+    player.血量上限 = currentMaxHp;
+    player.当前血量 = currentMaxHp;
+    const tribulation = new XianguTribulation();
+    const result = await tribulation.runRealmBreakthrough(e, player, { fromLevelId });
+    if (!result.success) {
+        const maxHp = Number(player.血量上限 || player.血气上限) || 1;
+        player.当前血量 = Math.max(1, Math.floor(maxHp * 0.1));
+        await Write_player(usr_qq, player);
+        return e.reply([
+            `【冲关失败·${breakthrough.targetName}未成】`,
+            `${player.名号}未能熬过本次劫难，境界得以保住，但道躯遭受重创。`,
+            `修为与血气已经消耗，当前血量仅余一成。`
+        ].join('\n'));
+    }
+
+    const levelData = JSON.parse(fs.readFileSync(path.join(__PATH.data_path, '..', 'resources', 'data', 'Level', '仙古今世法.json'), 'utf8'));
+    const currentLevel = levelData.find(l => Number(l.level_id) === fromLevelId);
+    const targetLevel = levelData.find(l => Number(l.level_id) === breakthrough.targetLevelId);
+    const diff = currentLevel && targetLevel ? {
+        攻击: targetLevel.基础攻击 - currentLevel.基础攻击,
+        防御: targetLevel.基础防御 - currentLevel.基础防御,
+        血气: targetLevel.基础血量 - currentLevel.基础血量
+    } : { 攻击: 20000000, 防御: 20000000, 血气: 20000000 };
+
+    player.xiangulevel_id = breakthrough.targetLevelId;
+    player.攻击 = (Number(player.攻击) || 0) + diff.攻击;
+    player.防御 = (Number(player.防御) || 0) + diff.防御;
+    player.血气上限 = (Number(player.血气上限) || 0) + diff.血气;
+    player.血量上限 = currentMaxHp + diff.血气;
+    player.当前血量 = player.血量上限 || player.血气上限;
+
+    if (breakthrough.targetLevelId === 11) player.xiangu_tianshen_deferred_tribulation = true;
+    if (breakthrough.targetLevelId === 12) {
+        player.xiangu_yishenweizhong = true;
+        player.xiangu_tianshen_deferred_tribulation = false;
+    }
+    if (breakthrough.targetLevelId === 13) {
+        player.xiangu_zhanwo_mingdao = true;
+        player.xiangu_leiling = Math.max(Number(player.xiangu_leiling) || 0, Number(result.thunderSpirits) || 0);
+    }
+    if (breakthrough.targetLevelId === 14) player.xiangu_dunyi_tribulation = true;
+    if (breakthrough.targetLevelId === 15) {
+        player.xiangu_zhizun_road = true;
+        player.xiangu_zhizun_external_dao_flaw = Boolean(result.externalDaoFlaw);
+    }
+
+    if (result.reward === '雷劫液') {
+        await Add_najie_thing(usr_qq, '雷劫液', '道具', 1);
+    }
+
+    await Write_player(usr_qq, player);
+
+    const routeLine = result.routeText || (result.noTribulation
+        ? '此次晋阶没有雷劫，积蓄的劫力延后至以身为种时爆发。'
+        : result.path === '以身为种'
+            ? '以身为种成功，体内众门开启，上苍天谴未能抹去真我。'
+            : `劫难渡尽，${breakthrough.targetName}道果稳固。`);
+    const rewardLine = result.reward === '雷劫液' ? '雷劫液精粹 +1' : null;
+    const lines = [
+        `【突破·${breakthrough.targetName}·成功！】`,
+        `${player.名号}正式踏入${breakthrough.targetName}！`,
+        routeLine,
+        ``,
+        `攻击 +${bigNumberTransform(diff.攻击)}`,
+        `防御 +${bigNumberTransform(diff.防御)}`,
+        `血气 +${bigNumberTransform(diff.血气)}`,
+        ``,
+        `仙气数：${getXianqiStrands(player)}道`
+    ];
+    if (result.thunderSpirits) lines.push(`雷灵：${player.xiangu_leiling}头`);
+    if (rewardLine) lines.push(rewardLine);
+    if (result.revived) lines.push('本次渡劫曾触发功法复活；每一道劫均在复活后继续结算功法减伤。');
+    return e.reply(lines.join('\n'));
+}
+
 getPlaceName(power_place) {
     const placeMap = {
         '凡间': 0,
@@ -1377,9 +1681,9 @@ getPlaceName(power_place) {
     return 500000 * Math.pow(2, player.xiangulevel_id - 1);
   }
 
-  calculateActualCost(baseCost) {
+  calculateActualCost(baseCost, player) {
     // 考虑各种修正因素后的实际消耗
-    return baseCost;
+    return applyQuestionFortuneCost(player, baseCost);
   }
 
   hasRequiredGongfa(player, realm) {
