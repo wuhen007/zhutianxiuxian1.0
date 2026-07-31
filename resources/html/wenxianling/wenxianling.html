@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="content-type" content="text/html;charset=utf-8" />
+  <link rel="shortcut icon" href="#" />
+  <link rel="stylesheet" type="text/css" href="{{pluResPath}}html/wenxianling/wenxianling.css" />
+</head>
+<body>
+
+<!-- 外围能量粒子 -->
+<div class="wxl-particles">
+  <div class="wxl-part" style="--dx:10;--dy:20;--s:1.2s"></div>
+  <div class="wxl-part" style="--dx:85;--dy:12;--s:1.8s"></div>
+  <div class="wxl-part" style="--dx:92;--dy:60;--s:1.4s"></div>
+  <div class="wxl-part" style="--dx:8;--dy:75;--s:2.0s"></div>
+  <div class="wxl-part" style="--dx:50;--dy:5;--s:1.6s"></div>
+  <div class="wxl-part" style="--dx:95;--dy:85;--s:1.3s"></div>
+  <div class="wxl-part" style="--dx:5;--dy:45;--s:1.9s"></div>
+  <div class="wxl-part" style="--dx:70;--dy:92;--s:1.5s"></div>
+</div>
+
+<div class="wxl-root">
+
+  <!-- 八角卦纹 -->
+  <div class="wxl-octagram"></div>
+
+  <!-- 顶部金焰冕冠 -->
+  <div class="wxl-crown">
+    <div class="wxl-crown-flame wxl-cf-l"></div>
+    <div class="wxl-crown-flame wxl-cf-c"></div>
+    <div class="wxl-crown-flame wxl-cf-r"></div>
+  </div>
+
+  <!-- ===== 顶部信息栏 ===== -->
+  <div class="wxl-header">
+    <div class="wxl-header-left">
+      <div class="wxl-avatar-ring">
+        <img class="wxl-avatar"
+             src="https://q1.qlogo.cn/g?b=qq&s=0&nk={{user_id}}"
+             onerror="this.src=''" />
+      </div>
+      <div class="wxl-user-info">
+        <div class="wxl-name">{{nickname}}</div>
+        <div class="wxl-realm">{{level}}</div>
+      </div>
+    </div>
+    <div class="wxl-header-center">
+      <div class="wxl-title"> 问 仙 令</div>
+      <div class="wxl-subtitle">-- 传承之路  共 {{maxLevel}} 级 --</div>
+    </div>
+    <div class="wxl-header-right">
+      <div class="wxl-level-badge">Lv.<span class="wxl-lv-num">{{passLevel}}</span></div>
+      <div class="wxl-potential">仙道潜力 <span>{{potentialLeft}}</span></div>
+      <div class="wxl-claimed-count">已领 {{claimedCount}} 级</div>
+    </div>
+  </div>
+
+  <!-- ===== 经验进度条 ===== -->
+  <div class="wxl-progress-section">
+    <div class="wxl-progress-label">
+      <span> 问仙令进度 Lv.{{passLevel}} / {{maxLevel}}</span>
+      {{if passLevel >= maxLevel}}
+      <span class="wxl-progress-tip wxl-maxed"> 传承圆满  问仙者归途 </span>
+      {{else}}
+      <span class="wxl-progress-tip">距下一级还需 {{nextLevelExp - currentExp}} 经验</span>
+      {{/if}}
+    </div>
+    <div class="wxl-progress-bar-bg">
+      <div class="wxl-progress-bar-fill" style="width:{{progressPct}}%">
+        <div class="wxl-pb-spark"></div>
+      </div>
+      <span class="wxl-progress-text">{{progressPct}}%</span>
+    </div>
+  </div>
+
+  <!-- ===== 5级展示窗口 ===== -->
+  <div class="wxl-cards-section">
+
+    <!-- 范围标签 -->
+    <div class="wxl-range-label">
+      <span class="wxl-range-arrow">{{if hasMoreLeft}} {{/if}}</span>
+      <span class="wxl-range-text">第 {{visibleRange.start}} ~ {{visibleRange.end}} 级</span>
+      <span class="wxl-range-arrow">{{if hasMoreRight}} {{/if}}</span>
+    </div>
+
+    <!-- 5级金碟卡组 -->
+    <div class="wxl-cards-row">
+
+      {{each visibleLevels lv}}
+      <div class="wxl-card
+        {{if lv.isPlayerLevel}} card-current
+        {{else if lv.claimed}} card-claimed
+        {{else if lv.canClaim}} card-claimable
+        {{else if lv.unlocked}} card-unlocked
+        {{else}} card-locked
+        {{/if}}
+        {{if lv.isFinalBonus}} card-final
+        {{/if}}">
+
+        <!-- 等级标签 -->
+        <div class="wxl-card-level">
+          <span class="wxl-card-lv-num">{{lv.level}}</span>
+          <span class="wxl-card-lv-unit">级</span>
+          {{if lv.isPlayerLevel}}<span class="wxl-card-lv-tag">当前</span>{{/if}}
+        </div>
+
+        <!-- 状态标识 -->
+        <div class="wxl-card-status">
+          {{if lv.claimed}}
+          <span class="wxl-card-badge badge-done"> 已领</span>
+          {{else if lv.canClaim}}
+          <span class="wxl-card-badge badge-claim"> 可领</span>
+          {{else if lv.unlocked}}
+          <span class="wxl-card-badge badge-pending">待领</span>
+          {{else}}
+          <span class="wxl-card-badge badge-lock">未解锁</span>
+          {{/if}}
+        </div>
+
+        <!-- 奖励列表 -->
+        <div class="wxl-card-rewards">
+          <div class="wxl-card-rw">
+            <span class="wxl-rw-icon"> </span>
+            <span class="wxl-rw-text">修为 +{{lv.xiuwei}}</span>
+          </div>
+          <div class="wxl-card-rw">
+            <span class="wxl-rw-icon"> </span>
+            <span class="wxl-rw-text">血气 +{{lv.xueqi}}</span>
+          </div>
+          <div class="wxl-card-rw">
+            <span class="wxl-rw-icon"> </span>
+            <span class="wxl-rw-text">灵石 +{{lv.lingshi}}</span>
+          </div>
+          <div class="wxl-card-rw">
+            <span class="wxl-rw-icon"> </span>
+            <span class="wxl-rw-text">源石 +{{lv.yuanshi}}</span>
+          </div>
+        </div>
+
+        <!-- 额外奖励横幅 -->
+        {{if lv.hasBonus}}
+        <div class="wxl-card-bonus {{if lv.isBigBonus}}bonus-big{{/if}} {{if lv.isFinalBonus}}bonus-final{{/if}}">
+          <div class="wxl-card-bonus-name">{{lv.bonusName}}</div>
+          <div class="wxl-card-bonus-items">{{lv.bonusLabel}}</div>
+        </div>
+        {{/if}}
+
+        <!-- 玩家等级光柱指示 -->
+        {{if lv.isPlayerLevel}}
+        <div class="wxl-card-beam"></div>
+        {{/if}}
+      </div>
+      {{/each}}
+
+    </div>
+  </div>
+
+  <!-- ===== 底部 ===== -->
+  <div class="wxl-footer">
+    <div class="wxl-footer-line"></div>
+    {{if anyUnclaimed}}
+    <div class="wxl-hint wxl-hint-active">
+       发送 <b>#领取问仙令</b> 一键领取所有可领奖励
+    </div>
+    {{else}}
+    <div class="wxl-hint"> 发送 #领取问仙令N 领取指定等级  |  #问仙令帮助 查看经验来源</div>
+    {{/if}}
+  </div>
+
+</div>
+</body>
+</html>

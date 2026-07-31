@@ -1,25 +1,42 @@
 import { plugin, puppeteer, verc, data, Show } from '../../api/api.js';
-import {  __PATH } from '../../model/xiuxian.js';
-import config from "../../model/Config.js"
-import fs from "fs"
 import {
     Read_player,
     existplayer,
-    sleep,
     add_renwu,
-     Write_player,
+    Write_player,
     Write_renwu,
     Read_renwu,
-    fstadd_renwu,
-    find_renwu,
-    shijianc,
     channel
 } from '../../model/xiuxian.js';
 import { Add_灵石, Add_修为, Add_血气, Add_najie_thing } from '../../model/xiuxian.js';
+import {
+    DAILY_TASK_WENXIAN_EXP,
+    findDailyTaskIndex,
+    getDailyTaskPotentialReward,
+    isDailyTaskComplete,
+    wasDailyTaskAcceptedToday,
+} from '../../model/dailyTask.js';
+import { getMinggeEffects, grantMinggePotential } from '../../model/mingge.js';
+import { recordWenXianTrial } from '../../model/wenxianling.js';
+import { WenXianLing } from '../WenXianLing/WenXianLing.js';
+import {
+    acquireRedisLock,
+    releaseRedisLock,
+} from '../SecretPlace/xianyiBaodiState.js';
 
+const DAILY_TASK_LOCK_KEY = 'xiuxian:lock:daily_task_records';
 
-
-let allaction = false; //全局状态判断
+async function withDailyTaskLock(e, callback) {
+    const token = `${Date.now()}:${Math.random()}`;
+    if (!await acquireRedisLock(redis, DAILY_TASK_LOCK_KEY, token, 15)) {
+        return e.reply('每日任务正在结算其他指令，请稍候再试。');
+    }
+    try {
+        return await callback();
+    } finally {
+        await releaseRedisLock(redis, DAILY_TASK_LOCK_KEY, token);
+    }
+}
 
 /**
  * 作者：晓飞
@@ -60,123 +77,81 @@ export class meirrenwu extends plugin {
      * 接取每日任务
      */
     async zuolao(e) {
+        if (!e.isGroup) return false;
         let usr_qq = e.user_id.toString().replace('qg_','');
         usr_qq = await channel(usr_qq);
-        let player = await Read_player(usr_qq);
-        let A = usr_qq;
-        let user_A = A;
-        let renwu = await Read_renwu();
-        let i = await found(user_A);
-        let chazhao = await find_renwu(A);
-        let lingshi = player.灵石
-        // let arr = [];
-        // let Random
-        //不开放私聊功能
-        if (!e.isGroup) {
-            return;
-        }
-        //有无账号
-        let ifexistplay = await existplayer(usr_qq);
-        if (!ifexistplay) {
-            return;
-        }
-        let now = new Date();
-        let nowTime = now.getTime(); //获取当前日期的时间戳
-        let Today = await shijianc(nowTime);
-        let lastrenwu_time = await redis.get("xiuxian:player:" + usr_qq + ":last_renwu_time");//获得上次接取任务日期,
-        lastrenwu_time = parseInt(lastrenwu_time);
-        lastrenwu_time = await shijianc(lastrenwu_time);
-        if (Today.Y == lastrenwu_time.Y && Today.M == lastrenwu_time.M && Today.D == lastrenwu_time.D) {
-            e.reply(`今日已经接取过任务了`);
-            return;
-        }
-        //查看有没有存档
-        if (chazhao == 0) {
-            await add_renwu(A, 1);
-            e.reply('由于这是你第一次接取每日任务，已为你建立存档，请再次发送"#获取每日任务"');
-            return;
-        }
-        renwu[i].wancheng1 = 1
-        renwu[i].wancheng2 = 1
-        renwu[i].wancheng3 = 1
-        renwu[i].renwu = 0
-        renwu[i].jilu1 = 0
-        renwu[i].jilu2 = 0
-        renwu[i].jilu3 = 0
-        await Write_renwu(renwu);
-        await redis.set("xiuxian:player:" + usr_qq + ":last_renwu_time", nowTime);//redis设置签到时间
-        await redis.set("xiuxian:player:" + usr_qq + ":renwu_lingshi_jilu", lingshi);
-        e.reply('今日任务成功接取');
-        return
-        // //创造一个在1-9范围内的3个随机数
-        // for (let i = 0; i < 3; i++) {
-        //   getLuckyNum();
-        // }
-        // function getLuckyNum() {
-        //   do {
-        //     Random = Math.floor(Math.random() * 9) + 1;
-        //   } while (arr.indexOf(Random) != -1)
-        //   arr.push(Random);
-        // }
-        // //写入
-        // renwu[i].renwu1 = arr[0]
+        if (!await existplayer(usr_qq)) return false;
+
+        return withDailyTaskLock(e, async () => {
+            const nowTime = Date.now();
+            const lastTaskTime = await redis.get(`xiuxian:player:${usr_qq}:last_renwu_time`);
+            if (wasDailyTaskAcceptedToday(lastTaskTime, nowTime)) {
+                return e.reply('今日已经接取过任务了');
+            }
+
+            const player = await Read_player(usr_qq);
+            let renwu = await Read_renwu();
+            let i = findDailyTaskIndex(renwu, usr_qq);
+            if (i < 0) {
+                await add_renwu(usr_qq, 1);
+                renwu = await Read_renwu();
+                i = findDailyTaskIndex(renwu, usr_qq);
+            }
+            if (i < 0) return e.reply('每日任务存档建立失败，请稍后再试。');
+
+            Object.assign(renwu[i], {
+                wancheng1: 1,
+                wancheng2: 1,
+                wancheng3: 1,
+                renwu: 0,
+                jilu1: 0,
+                jilu2: 0,
+                jilu3: 0,
+            });
+            await Write_renwu(renwu);
+            await redis.set(`xiuxian:player:${usr_qq}:last_renwu_time`, nowTime);
+            await redis.set(`xiuxian:player:${usr_qq}:renwu_lingshi_jilu`, player.灵石);
+            return e.reply('今日任务成功接取');
+        });
     }
     /**
      * 提交每日任务
      */
     async zuowanle(e) {
-        let A = e.user_id.toString().replace('qg_','');
-        A = await channel(A);
-        let user_A = A;
-        let renwu = await Read_renwu();
-        let i = await found(user_A);
-        let m = ``;
-        //不开放私聊功能
-        if (!e.isGroup) {
-            return;
+        if (!e.isGroup) return false;
+        let usr_qq = e.user_id.toString().replace('qg_','');
+        usr_qq = await channel(usr_qq);
+        if (!await existplayer(usr_qq)) return false;
+        const lastTaskTime = await redis.get(`xiuxian:player:${usr_qq}:last_renwu_time`);
+        if (!wasDailyTaskAcceptedToday(lastTaskTime)) {
+            return e.reply('请先发送 #获取每日任务 接取今日任务。');
         }
-        let usr_qq = A;
-        let player = await Read_player(usr_qq);
-        let chazhao = await find_renwu(A);
-        //有无账号
-        let ifexistplay = await existplayer(usr_qq);
-        if (!ifexistplay) {
-            return;
+
+        return withDailyTaskLock(e, async () => {
+        const renwu = await Read_renwu();
+        const i = findDailyTaskIndex(renwu, usr_qq);
+        if (i < 0) return e.reply('请先发送 #获取每日任务 接取今日任务。');
+        if (isDailyTaskComplete(renwu[i])) {
+            return e.reply(renwu[i].renwu === 2 ? '今日奖励已经领取。' : '全部任务已完成，请发送 #领取每日奖励。');
         }
-        //查看有没有存档
-        if (chazhao == 0) {
-            await add_renwu(A, 1);
-            e.reply(`请先#接取每日任务！`);
-            return;
+        if (renwu[i].wancheng1 === 0 && renwu[i].wancheng2 === 0 && renwu[i].wancheng3 === 0) {
+            return e.reply('请先发送 #获取每日任务 接取今日任务。');
         }
-        //查看任务完成状态
-        if (renwu[i].wancheng1 == 2 && renwu[i].wancheng2 == 2 && renwu[i].wancheng3 == 2) {
-            return;
+
+        const player = await Read_player(usr_qq);
+        const lingshi = Number(player.灵石) || 0;
+        const lastLingshiRaw = await redis.get(`xiuxian:player:${usr_qq}:renwu_lingshi_jilu`);
+        const lastLingshi = Number(lastLingshiRaw);
+        if (lastLingshiRaw !== null && Number.isFinite(lastLingshi) && lastLingshi !== lingshi) {
+            if (lingshi < lastLingshi && renwu[i].wancheng1 === 1) {
+                renwu[i].jilu1 += lastLingshi - lingshi;
+            } else if (lingshi > lastLingshi && renwu[i].wancheng2 === 1) {
+                renwu[i].jilu2 += lingshi - lastLingshi;
+            }
         }
-        //查看任务接取状态
-        if (renwu[i].wancheng1 == 0 && renwu[i].wancheng2 == 0 && renwu[i].wancheng3 == 0) {
-            e.reply(`请先#接取每日任务！`);
-            return;
-        }
-        //这里是查看灵石有无增多or减少，写入任务记录
-        let lingshi = player.灵石;
-        let lingshijilu = await redis.get("xiuxian:player:" + usr_qq + ":renwu_lingshi_jilu");
-        let jian = 0;
-        if (lingshijilu != lingshi && (renwu[i].wancheng1 == 1 || renwu[i].wancheng2 == 1)) {
-            if (lingshi < lingshijilu) {
-                jian = lingshijilu - lingshi;
-                renwu[i].jilu1 += jian;
-                await Write_renwu(renwu);
-                await redis.set("xiuxian:player:" + usr_qq + ":renwu_lingshi_jilu", lingshi);
-            } else
-                if (lingshi > lingshijilu) {
-                    jian = lingshi - lingshijilu;
-                    renwu[i].jilu2 += jian;
-                    await Write_renwu(renwu);
-                    await redis.set("xiuxian:player:" + usr_qq + ":renwu_lingshi_jilu", lingshi);
-                }
-        }
-        await sleep(2000);
+        await redis.set(`xiuxian:player:${usr_qq}:renwu_lingshi_jilu`, lingshi);
+
+        let m = '';
         let dengji = renwu[i].等级
         //这里是任务提交需要的东西
         //需要消耗：(任务等级*5+player炼气+player练体)*5000个灵石
@@ -192,7 +167,6 @@ export class meirrenwu extends plugin {
         let jiangli = (dengji * (player.level_id + player.Physique_id)) * 3000
         //这个是获得的物品的数量
         //计算公式：任务等级
-        let wupin = dengji
         //这个是任务经验，任务等级越高获得的东西越多，但是这个等级挺难升的，不用改，问题不大
         //(我自己测试是64练气54炼体，也要做上小一周才能升一级，而且越往后越难升)
         //计算公式：((任务等级*5)+player炼气+player练体)*8
@@ -216,7 +190,7 @@ export class meirrenwu extends plugin {
             renwu[i].经验 += jingyan
             m += `你完成了任务2,获得了：\n1.修为*${jiangli}\n2.血气*${jiangli}\n3.灵石*${jiangli}\n4.任务经验*${jingyan}\n`;
         }
-        if (renwu[i].jilu3 > xuyao3 - 1) {
+        if (renwu[i].jilu3 > xuyao3 - 1 && renwu[i].wancheng3 == 1) {
             renwu[i].wancheng3 = 2;
             renwu[i].jilu3 = 0;
             await Add_修为(usr_qq, jiangli);
@@ -225,81 +199,101 @@ export class meirrenwu extends plugin {
             renwu[i].经验 += jingyan
             m += `你完成了任务3,获得了：\n1.修为*${jiangli}\n2.血气*${jiangli}\n3.灵石*${jiangli}\n4.任务经验*${jingyan}\n`;
         }
-        if (renwu[i].wancheng1 == 2 && renwu[i].wancheng2 == 2 && renwu[i].wancheng3 == 2) {
+        if (isDailyTaskComplete(renwu[i])) {
+            const rewardPlayer = await Read_player(usr_qq);
+            const potentialBase = getDailyTaskPotentialReward(rewardPlayer);
+            const potentialGain = grantMinggePotential(
+                rewardPlayer,
+                getMinggeEffects(rewardPlayer, data.minggeList),
+                potentialBase,
+            );
+            const passTrial = recordWenXianTrial(rewardPlayer, 'daily');
+            await Write_player(usr_qq, rewardPlayer);
             renwu[i].renwu = 1;
-            m += `你已完成全部每日任务，可以领取奖励了！`;
+            m += `你已完成全部每日任务，仙道潜力 +${potentialGain}，可以领取奖励了！`;
+            if (passTrial.changed) {
+                m += `\n问仙试炼：每日任务 ${passTrial.trial.dailyTasks}/7。`;
+            }
         }
-        await Write_renwu(renwu);
-        await sleep(1000);
         //这里是经验升级的地方，你如果要是需要改记得给底下还有俩也改了，一般来说不用改，要的挺多的，等级巨难升
         //计算公式：(任务等级*1000加2333)*5
         let shengji = (dengji * 2200 + 1000) * 10 + 2333
         if (renwu[i].经验 > shengji - 1) {
             renwu[i].等级++
             renwu[i].经验 -= shengji
-            await Write_renwu(renwu);
+        }
+        await Write_renwu(renwu);
+        if (m) {
+            const latestPlayer = await Read_player(usr_qq);
+            await redis.set(`xiuxian:player:${usr_qq}:renwu_lingshi_jilu`, latestPlayer.灵石);
         }
         //最后发送任务完成状态
-        if (m != 0) {
-            e.reply(m);
-            return;
-        }
-        if (renwu[i].wancheng1 != 2 || renwu[i].wancheng2 != 2 || renwu[i].wancheng3 != 2) {
-            e.reply(`你还有任务没完成哦~`);
-            return;
-        }
-        return;
+        if (m) return e.reply(m);
+        return e.reply('你还有任务没完成哦~');
+        });
     }
     /**
      * 我的任务
      */
     
     async look_renwu(e) {
-        let A = e.user_id.toString().replace('qg_','');
-        A = await channel(A);
-        let user_A = A;
-        let renwu = await Read_renwu();
-        let i = await found(user_A);
-        let usr_qq = A;
-        let player = await Read_player(usr_qq);
-        let chazhao = await find_renwu(A);
-        //这里是查看灵石有无增多or减少，写入任务记录
-        let lingshi = player.灵石;
-        let lingshijilu = await redis.get("xiuxian:player:" + usr_qq + ":renwu_lingshi_jilu");
-        let jian = 0;
-        if (lingshijilu != lingshi && (renwu[i].wancheng1 == 1 || renwu[i].wancheng2 == 1)) {
-            if (lingshi < lingshijilu) {
-                jian = lingshijilu - lingshi;
-                renwu[i].jilu1 += jian;
-                await Write_renwu(renwu);
-                await redis.set("xiuxian:player:" + usr_qq + ":renwu_lingshi_jilu", lingshi);
-            } else
-                if (lingshi > lingshijilu) {
-                    jian = lingshi - lingshijilu;
-                    renwu[i].jilu2 += jian;
-                    await Write_renwu(renwu);
-                    await redis.set("xiuxian:player:" + usr_qq + ":renwu_lingshi_jilu", lingshi);
+        if (!e.isGroup) return false;
+        let usr_qq = e.user_id.toString().replace('qg_','');
+        usr_qq = await channel(usr_qq);
+        if (!await existplayer(usr_qq)) return false;
+        const lastTaskTime = await redis.get(`xiuxian:player:${usr_qq}:last_renwu_time`);
+        if (!wasDailyTaskAcceptedToday(lastTaskTime)) {
+            return e.reply('你今天还没有接取任务，请发送 #获取每日任务。');
+        }
+
+        let ready = false;
+        await withDailyTaskLock(e, async () => {
+            const renwu = await Read_renwu();
+            const i = findDailyTaskIndex(renwu, usr_qq);
+            if (i < 0) return e.reply('你还没有每日任务档案，请发送 #获取每日任务。');
+
+            const player = await Read_player(usr_qq);
+            const lingshi = Number(player.灵石) || 0;
+            const lastLingshiRaw = await redis.get(`xiuxian:player:${usr_qq}:renwu_lingshi_jilu`);
+            const lastLingshi = Number(lastLingshiRaw);
+            if (lastLingshiRaw !== null && Number.isFinite(lastLingshi) && lastLingshi !== lingshi) {
+                if (lingshi < lastLingshi && renwu[i].wancheng1 === 1) {
+                    renwu[i].jilu1 += lastLingshi - lingshi;
+                } else if (lingshi > lastLingshi && renwu[i].wancheng2 === 1) {
+                    renwu[i].jilu2 += lingshi - lastLingshi;
                 }
-        }
-        //不开放私聊功能
-        if (!e.isGroup) {
-            return;
-        }
-        let img = await get_renwu_img(e);
-        e.reply(img);
-        return;
+                await Write_renwu(renwu);
+            }
+            await redis.set(`xiuxian:player:${usr_qq}:renwu_lingshi_jilu`, lingshi);
+            ready = true;
+        });
+        if (!ready) return false;
+
+        const img = await get_renwu_img(e);
+        return e.reply(img);
     }
     /**
      * 领取每日奖励
      */
     async xingchen(e) {
-        let A = e.user_id.toString().replace('qg_','');
-        A = await channel(A);
-        let user_A = A;
-        let renwu = await Read_renwu();
-        let i = await found(user_A);
-        let usr_qq = A;
-        let player = await Read_player(usr_qq);
+        if (!e.isGroup) return false;
+        let usr_qq = e.user_id.toString().replace('qg_','');
+        usr_qq = await channel(usr_qq);
+        if (!await existplayer(usr_qq)) return false;
+        const lastTaskTime = await redis.get(`xiuxian:player:${usr_qq}:last_renwu_time`);
+        if (!wasDailyTaskAcceptedToday(lastTaskTime)) {
+            return e.reply('请先发送 #获取每日任务 接取今日任务。');
+        }
+
+        return withDailyTaskLock(e, async () => {
+        const renwu = await Read_renwu();
+        const i = findDailyTaskIndex(renwu, usr_qq);
+        if (i < 0) return e.reply('请先发送 #获取每日任务 接取今日任务。');
+        if (!isDailyTaskComplete(renwu[i])) return e.reply('你还有任务没完成哦~');
+        if (renwu[i].renwu === 2) return e.reply('你已经领取了每日任务奖励。');
+        if (renwu[i].renwu !== 1) return e.reply('请先提交已完成的每日任务。');
+
+        const player = await Read_player(usr_qq);
         let dengji = renwu[i].等级
         //这里是奖励
         //看你怎么弄了，反正给的东西是不多的，巨少！(估计狗都嫌弃)
@@ -313,34 +307,34 @@ export class meirrenwu extends plugin {
         //(我自己测试是64练气54炼体，也要做上小一周才能升一级，而且越往后越难升)
         //计算公式：((任务等级*5)+player炼气+player练体)*12
         let jingyan = ((dengji * 5) + player.level_id + player.Physique_id) * 12
-        if (renwu[i].wancheng1 == 2 && renwu[i].wancheng2 == 2 && renwu[i].wancheng3 == 2 && renwu[i].renwu == 1) {
-            renwu[i].renwu = 2;
-            await Add_修为(usr_qq, jiangli);
-            await Add_血气(usr_qq, jiangli);
-            await Add_灵石(usr_qq, jiangli);
-            await Add_najie_thing(usr_qq, "秘境之匙", "道具", wupin);
-            player.抽奖次数 += 3
-            renwu[i].经验 += jingyan
-            await Write_renwu(renwu);
-            await Write_player(usr_qq, player);
-            e.reply(`你领取了每日任务奖励，获得了：\n1.修为*${jiangli}\n2.血气*${jiangli}\n3.灵石*${jiangli}\n4.任务经验*${jingyan}\n5.秘境之匙*${wupin}个\n6.每日抽奖次数*3次\n`);
-        } else if (renwu[i].wancheng1 != 2 || renwu[i].wancheng2 != 2 || renwu[i].wancheng3 != 2) {
-            e.reply(`你还有任务没完成哦~`);
-            return
-        } else if (renwu[i].renwu == 2) {
-            e.reply(`你已经领取了每日任务奖励了`);
-            return
-        }
-        await sleep(3000);
+        await Add_修为(usr_qq, jiangli);
+        await Add_血气(usr_qq, jiangli);
+        await Add_灵石(usr_qq, jiangli);
+        await Add_najie_thing(usr_qq, "秘境之匙", "道具", wupin);
+
+        const latestPlayer = await Read_player(usr_qq);
+        latestPlayer.抽奖次数 = (Number(latestPlayer.抽奖次数) || 0) + 3;
+        await Write_player(usr_qq, latestPlayer);
+        const passResult = await WenXianLing.addExp(usr_qq, DAILY_TASK_WENXIAN_EXP);
+
+        renwu[i].renwu = 2;
+        renwu[i].经验 += jingyan
         //这里是经验升级的地方，你如果要是需要改记得给底下的显示也改了，一般来说不用改，要的挺多的，等级巨难升
         //计算公式：(任务等级*1000加2333)*5
         let shengji = (dengji * 2200 + 1000) * 10 + 2333
         if (renwu[i].经验 > shengji - 1) {
             renwu[i].等级 += 1
             renwu[i].经验 -= shengji
-            await Write_renwu(renwu);
         }
-        return
+        await Write_renwu(renwu);
+        await redis.set(`xiuxian:player:${usr_qq}:renwu_lingshi_jilu`, latestPlayer.灵石);
+        const passMessage = !passResult
+            ? '7.问仙令经验发放失败，请联系管理员'
+            : passResult.unlocked === false
+                ? `7.问仙道痕*${passResult.added}（暂存${passResult.pendingExp}/1000）`
+                : `7.问仙令经验*${passResult.added}${passResult.levelUp ? `（等级提升至${passResult.newLevel}级）` : ''}`;
+        return e.reply(`你领取了每日任务奖励，获得了：\n1.修为*${jiangli}\n2.血气*${jiangli}\n3.灵石*${jiangli}\n4.任务经验*${jingyan}\n5.秘境之匙*${wupin}个\n6.每日抽奖次数*3次\n${passMessage}\n`);
+        });
     }
 }
 /**
@@ -351,29 +345,16 @@ export class meirrenwu extends plugin {
 export async function get_renwu_img(e) {
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);
-    let player = await Read_player(usr_qq);
-    let user_A;
-    let A = usr_qq;
-    user_A = A;
-    let renwu11 = await Read_renwu();
-    let x = await found(user_A);
-    let shifu = await find_renwu(A);
-    //无存档
-    let ifexistplay = data.existData('player', usr_qq);
-    if (!ifexistplay) {
-        return;
+    if (!data.existData('player', usr_qq)) return false;
+    const player = await Read_player(usr_qq);
+    const A = usr_qq;
+    const renwu11 = await Read_renwu();
+    const x = findDailyTaskIndex(renwu11, A);
+    if (x < 0) {
+        e.reply('你还没有每日任务档案，请发送 #获取每日任务。');
+        return false;
     }
-    //判断对方有没有存档
-    if (shifu == 0) {
-        e.reply('你还没有收过徒弟');
-        return;
-    }
-
-    let action = await find_renwu(A);
-    if (action == false) {
-        await fstadd_renwu(A);
-    }
-    let newaction = await Read_renwu();
+    const newaction = renwu11;
     let i;
     for (i = 0; i < newaction.length; i++) {
         if (newaction[i].player == A) {
@@ -469,17 +450,6 @@ export async function get_renwu_img(e) {
  * @param {Number} res 百分比小数
  * @return {*} css样式
  */
-
-async function found(A) {
-    let renwu = await Read_renwu();
-    let i;
-    for (i = 0; i < renwu.length; i++) {
-        if (renwu[i].player == A) {
-            break;
-        }
-    }
-    return i;
-}
 
 function Strand(now, max) {
     let num = (now / max * 100).toFixed(0);

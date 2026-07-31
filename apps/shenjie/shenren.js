@@ -1,5 +1,6 @@
 import { plugin, verc, data } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
+import { getTimedActionMultiplier } from '../../model/innateTreasure.js';
 import {
   existplayer,
   Read_player,
@@ -212,7 +213,7 @@ export class shenren extends plugin {
     let action_time = 60000 * time; //持续时间，单位毫秒
     let arr = {
       action: '神界', //动作
-      end_time: new Date().getTime() + action_time, //结束时间
+      end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)), //结束时间
       time: action_time, //持续时间
       shutup: '1', //闭关
       working: '1', //降妖

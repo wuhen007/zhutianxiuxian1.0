@@ -9,8 +9,14 @@ import {
   Harm,
   zd_battle,
   channel, Add_najie_thing ,bigNumberTransform,
-  buildAt
+  buildAt,
+  Add_修为,
+  Add_血气,
 } from '../../model/xiuxian.js';
+import { startWeimianDestruction, stopWeimianDestruction, handleDestructionStatusCommand } from './WeimianDestruction.js';
+import {
+  getYongJiStats,
+} from './YongJiList.js';
 
 let WorldBOSSBattleCD = []; //CD
 let WorldBOSSBattleLock = 0; //BOSS战斗锁
@@ -45,9 +51,20 @@ export class BOSS3 extends plugin {
           reg: '^#迎战厄土高原$',
           fnc: 'WorldBossBattle',
         },
+        {
+          reg: '^#位面毁灭状态$',
+          fnc: 'ShowWeimianDestructionStatus',
+        },
+        {
+          reg: '^#永寂名单$',
+          fnc: 'ShowYongJiList',
+        },
+        // 映照功能已统一迁移至 zhengdaotixi.js，由 #映照 统一入口接管
+        // 包括：#映照[名号]（复活）、#映照[位面名]（修复位面）、#映照诸天
       ],
     });
     this.set = config.getConfig('task', 'task');
+    this.task = []; // 无定时任务，防止loader报undefined.cron
   }
   
   //黑暗动乱开启指令
@@ -93,6 +110,9 @@ export class BOSS3 extends plugin {
           await redis.del('guiyishizu');
           await redis.del('gaoyuan');
           await redis.del('guiyishizu_ancestors'); // 删除始祖状态
+          
+          // 停止位面破坏系统
+          await stopWeimianDestruction();
           
           e.reply([
             `【天道归来】`,
@@ -206,6 +226,12 @@ export class BOSS3 extends plugin {
       await e.reply(timeMsg.join("\n"));
       return true;
     }
+  }
+  
+  // 位面毁灭状态指令
+  async ShowWeimianDestructionStatus(e) {
+    if (!verc({ e })) return false;
+    await handleDestructionStatusCommand(e);
   }
   
   // 黑暗动乱伤害贡献榜
@@ -357,7 +383,34 @@ export class BOSS3 extends plugin {
 
     let usr_qq = e.user_id.toString().replace("qg_", "");
     usr_qq = await channel(usr_qq);
-    
+
+    // ===== 检查「不念不想」虚弱状态（映照诸天后遗症）=====
+    const buNianCheckKey = `xiuxian:player:${usr_qq}:bunian`;
+    const buNianData = await redis.get(buNianCheckKey);
+    if (buNianData) {
+      const buNian = JSON.parse(buNianData);
+      const buNianRemain = buNian.endTime - Date.now();
+      if (buNianRemain > 0) {
+        const bnHours = Math.floor(buNianRemain / 3600000);
+        const bnMins = Math.floor((buNianRemain % 3600000) / 60000);
+        await e.reply([
+          `【不念不想·修炼受阻】`,
+          ``,
+          `你的帝意在映照诸天后已近乎枯竭，`,
+          `灵台空明如镜，一念不生，一想不起——`,
+          ``,
+          `这种状态下，你无法凝神战斗……`,
+          ``,
+          `「不念不想，方是帝意映照诸天后的真实代价。」`,
+          ``,
+          `剩余虚弱时间：${bnHours}小时${bnMins}分钟`,
+        ].join('\n'));
+        return true;
+      } else {
+        await redis.del(buNianCheckKey);
+      }
+    }
+
     // ===== 检查寂灭状态（圣墟设定）=====
     let oblivionKey = `xiuxian:player:${usr_qq}:oblivion`;
     let oblivionData = await redis.get(oblivionKey);
@@ -449,8 +502,19 @@ export class BOSS3 extends plugin {
               `「唯有超越祭道，方能挣脱永寂枷锁……」`,
             ].join("\n"));
             
-            // 玩家彻底永寂，删除玩家数据
-            await data.delData('player', usr_qq);
+            // 玩家彻底永寂，删除玩家数据（data.delData 不存在，改用 fs）
+            const playerFile = data.filePathMap.player + '/' + usr_qq + '.json';
+            try { if (fs.existsSync(playerFile)) fs.unlinkSync(playerFile); } catch (e) {}
+            // 清理 Redis 状态键
+            const keysToClean = [
+              `xiuxian:player:${usr_qq}:action`,
+              `xiuxian:player:${usr_qq}BOSSCD`,
+              oblivionKey,
+              `xiuxian:player:${usr_qq}:worldbosscd`,
+              `xiuxian:player:${usr_qq}:shenyou`,
+              `xiuxian:player:${usr_qq}:game_action`,
+            ];
+            for (const k of keysToClean) { try { await redis.del(k); } catch (e) {} }
             return false;
           }
         }
@@ -651,13 +715,13 @@ export class BOSS3 extends plugin {
       let ancestorConfigs = [
         { 名号: '诡异始祖·厄土圣尊', 灵根: { type: '祭道', name: '终焉神魔体', 法球倍率: 1.5, 攻击: 10, 防御: 10, 生命: 10 }, 功法: ['祭道归墟经', '高原不灭体', '九重魔功', '诡异物质洪流'], 描述: '十大始祖之首，背负世外高原，执掌诸天祭礼。' },
         { 名号: '诡异始祖·轮回葬主', 灵根: { type: '祭道', name: '葬天葬地体', 法球倍率: 1.4, 攻击: 9, 防御: 12, 生命: 15 }, 功法: ['葬天术', '葬士经', '九重魔功', '诡异物质洪流'], 描述: '葬士之祖，执掌六道轮回外的诡异葬土。' },
-        { 名号: '诡异始祖·血祭之母', 灵根: { type: '祭道', name: '终焉神魔体', 法球倍率: 1.3, 攻击: 12, 防御: 8, 生命: 12 }, 功法: ['血神经', '血海无边', '九重魔功', '诡异物质洪流'], 描述: '血海源头，以诸天万界生灵血祭高原。' },
-        { 名号: '诡异始祖·虚无道尊', 灵根: { type: '祭道', name: '虚无体', 法球倍率: 1.5, 攻击: 11, 防御: 9, 生命: 9 }, 功法: ['幽冥指', '黄泉路', '九重魔功', '诡异物质洪流'], 描述: '身化虚无，驾驭诡异黑血。' },
+        { 名号: '诡异始祖·血祭之母', 灵根: { type: '祭道', name: '大成·荒古圣体', 法球倍率: 1.3, 攻击: 12, 防御: 8, 生命: 12 }, 功法: ['血神经', '血海无边', '九重魔功', '诡异物质洪流'], 描述: '血海源头，以诸天万界生灵血祭高原。' },
+        { 名号: '诡异始祖·虚无道尊', 灵根: { type: '祭道', name: '大成·苍天圣体', 法球倍率: 1.5, 攻击: 11, 防御: 9, 生命: 9 }, 功法: ['幽冥指', '黄泉路', '九重魔功', '诡异物质洪流'], 描述: '身化虚无，驾驭诡异黑血。' },
         { 名号: '诡异始祖·太初邪神', 灵根: { type: '祭道', name: '混沌体', 法球倍率: 1.4, 攻击: 13, 防御: 10, 生命: 10 }, 功法: ['他化自在法', '尸骸帝经', '九重魔功', '诡异物质洪流'], 描述: '自混沌中苏醒的古老存在。' },
         { 名号: '诡异始祖·永夜魔祖', 灵根: { type: '祭道', name: '灭世九幽体', 法球倍率: 1.3, 攻击: 14, 防御: 8, 生命: 11 }, 功法: ['灭世九击', '九幽獓祖术', '九重魔功', '诡异物质洪流'], 描述: '吞噬大千宇宙之光，带来永恒黑夜。' },
-        { 名号: '诡异始祖·万古尸皇', 灵根: { type: '祭道', name: '先天圣体道胎', 法球倍率: 1.5, 攻击: 15, 防御: 15, 生命: 15 }, 功法: ['原始真解（诡异化）', '尸骸帝经', '九重魔功', '诡异物质洪流'], 描述: '最早沾染高原骨灰的强者之一。' },
-        { 名号: '诡异始祖·苍穹之孽', 灵根: { type: '祭道', name: '苍天霸血体', 法球倍率: 1.4, 攻击: 12, 防御: 11, 生命: 10 }, 功法: ['苍帝拳', '灭世九击', '九重魔功', '诡异物质洪流'], 描述: '霸占苍天青空，以万灵为刍狗。' },
-        { 名号: '诡异始祖·鸿蒙死劫', 灵根: { type: '祭道', name: '鸿蒙命运体', 法球倍率: 1.3, 攻击: 10, 防御: 10, 生命: 10 }, 功法: ['鸿蒙掌', '命运之轮', '九重魔功', '诡异物质洪流'], 描述: '执掌诡异命运，拨弄众生因果。' },
+        { 名号: '诡异始祖·万古尸皇', 灵根: { type: '祭道', name: '先天混沌圣体道胎', 法球倍率: 1.5, 攻击: 15, 防御: 15, 生命: 15 }, 功法: ['原始真解', '尸骸帝经', '九重魔功', '诡异物质洪流'], 描述: '最早沾染高原骨灰的强者之一。' },
+        { 名号: '诡异始祖·苍穹之孽', 灵根: { type: '祭道', name: '先天圣体道胎', 法球倍率: 1.4, 攻击: 12, 防御: 11, 生命: 10 }, 功法: ['苍帝拳', '灭世九击', '九重魔功', '诡异物质洪流'], 描述: '霸占苍天青空，以万灵为刍狗。' },
+        { 名号: '诡异始祖·鸿蒙死劫', 灵根: { type: '祭道', name: '终极涅槃·至尊', 法球倍率: 1.3, 攻击: 10, 防御: 10, 生命: 10 }, 功法: ['鸿蒙掌', '命运之轮', '九重魔功', '诡异物质洪流'], 描述: '执掌诡异命运，拨弄众生因果。' },
         { 名号: '诡异始祖·羽化邪神', 灵根: { type: '祭道', name: '羽化飞仙体', 法球倍率: 1.5, 攻击: 16, 防御: 7, 生命: 9 }, 功法: ['羽化飞仙术', '弑帝战矛', '九重魔功', '诡异物质洪流'], 描述: '手持诡异版弑帝战矛，仙帝沾之即死。' }
       ];
       
@@ -733,9 +797,13 @@ export class BOSS3 extends plugin {
       await sendBattleMsg(e, allMsg);
       await sleep(1500);
 
-      // 恢复玩家状态
-      let battlePlayer = Data_battle1.A_team[0];
-      player.当前血量 = battlePlayer.当前血量;
+      // 恢复玩家状态（兼容zd_battle两种返回签名）
+      if (Data_battle1.A_team && Data_battle1.A_team.length > 0) {
+        player.当前血量 = Data_battle1.A_team[0].当前血量;
+      } else {
+        logger.warn(`[WorldBossBattle] A_team缺失，使用A_hp兜底: ${JSON.stringify(Data_battle1.A_hp)}`);
+        player.当前血量 = typeof Data_battle1.A_hp === 'number' ? Data_battle1.A_hp : player.当前血量;
+      }
 
       // 统计始祖存活情况（使用战斗返回的B_team数据，而非原始BossList）
       let battleBTeam = Data_battle1.B_team || [];
@@ -1045,7 +1113,13 @@ export class BOSS3 extends plugin {
           await sendBattleMsg(e, Data_battle1_again.msg);
           await sleep(1500);
           
-          player.当前血量 = Data_battle1_again.A_team[0].当前血量;
+          // 恢复玩家状态（兼容zd_battle两种返回签名）
+          if (Data_battle1_again.A_team && Data_battle1_again.A_team.length > 0) {
+            player.当前血量 = Data_battle1_again.A_team[0].当前血量;
+          } else {
+            logger.warn(`[WorldBossBattle] again A_team缺失，使用A_hp兜底`);
+            player.当前血量 = typeof Data_battle1_again.A_hp === 'number' ? Data_battle1_again.A_hp : player.当前血量;
+          }
           
           // 更新存活情况（使用战斗返回的B_team数据，而非原始revivedBossList）
           let battleRevivedBTeam = Data_battle1_again.B_team || [];
@@ -1106,13 +1180,22 @@ export class BOSS3 extends plugin {
             await sendBattleMsg(e, Data_battle2.msg);
             await sleep(1500);
             
-            player.当前血量 = Data_battle2.A_team[0].当前血量;
+            // 恢复玩家状态（兼容zd_battle两种返回签名）
+            if (Data_battle2.A_team && Data_battle2.A_team.length > 0) {
+              player.当前血量 = Data_battle2.A_team[0].当前血量;
+            } else {
+              logger.warn(`[WorldBossBattle] battle2 A_team缺失，使用A_hp兜底`);
+              player.当前血量 = typeof Data_battle2.A_hp === 'number' ? Data_battle2.A_hp : player.当前血量;
+            }
             
             if (Data_battle2.A_hp > 0) {
               // 彻底终结大祭！
               TotalDamage = Math.trunc(WorldBossStatus.Healthmax * 0.8);
               WorldBossStatus.Health = 0;
               WorldBossStatus.isEternallyDefeated = true;
+              
+              // 停止位面破坏系统
+              await stopWeimianDestruction();
               
               // 记录大祭被终结
               await redis.set('xiuxian:dajie_eternally_defeated', 'true');
@@ -1338,6 +1421,9 @@ export class BOSS3 extends plugin {
           TotalDamage = Math.trunc(WorldBossStatus.Healthmax * 0.8);
           WorldBossStatus.Health = 0;
           WorldBossStatus.isEternallyDefeated = true;
+          
+          // 停止位面破坏系统
+          await stopWeimianDestruction();
           
           // 记录大祭被终结
           await redis.set('xiuxian:dajie_eternally_defeated', 'true');
@@ -1630,6 +1716,53 @@ export class BOSS3 extends plugin {
       ].join("\n"));
     }
   }
+
+  // ==================== 永寂名单查询 ====================
+
+  /**
+   * #永寂名单 — 查看当前永寂者总览
+   */
+  async ShowYongJiList(e) {
+    if (!verc({ e })) return false;
+
+    const stats = await getYongJiStats();
+
+    if (stats.total === 0) {
+      await e.reply([
+        `【永寂之界·名单】`,
+        ``,
+        `永寂之界一片虚空，万籁俱寂……`,
+        `此刻尚无修士沉眠于此。`,
+        ``,
+        `「永寂者若有，必是诡异大祭的牺牲。」`,
+        `「待大祭降临，此地将再不寂寥。」`,
+      ].join('\n'));
+      return true;
+    }
+
+    const lines = [
+      `\n══════ 永寂之界 · 沉眠名单 ══════`,
+      ``,
+      `永寂者总计：${stats.total} 名`,
+      ``,
+      `【按位面分布】`,
+    ];
+
+    for (const plane of stats.byPlane) {
+      lines.push(`  ◆ ${plane.planeName}：${plane.count} 名`);
+    }
+
+    lines.push(``, `「他们的道果悬于永寂之界，`);
+    lines.push(`　等待仙帝「映照」权能将其召唤归来。」`);
+    lines.push(``, `【映照指令】`);
+    lines.push(`  #映照[名号] — 复活单名永寂者`);
+    lines.push(`  #映照[位面名] — 修复被诡异大祭崩灭的位面`);
+    lines.push(`  #映照诸天 — 复活全部永寂者（代价极大）`);
+
+    await e.reply(lines.join('\n'));
+    return true;
+  }
+
 }
 
 // 辅助函数
@@ -1650,8 +1783,8 @@ async function InitWorldBoss(e) {
   let X = AverageDamage * 0.2;
   
   let Health = Math.trunc(X * 15000000 * player_quantity * 2);
-  let Attack = Math.trunc(X * 2200000 * player_quantity * 2);
-  let Defence = Math.trunc(X * 2200000 * player_quantity * 2);
+  let Attack = Math.trunc(X * 15000000 * player_quantity * 2);
+  let Defence = Math.trunc(X * 15000000 * player_quantity * 2);
   
   let WorldBossStatus = {
     Health: Health,
@@ -1680,6 +1813,9 @@ async function InitWorldBoss(e) {
   await redis.set('guiyishizu', JSON.stringify(WorldBossStatus));
   await redis.set('gaoyuan', JSON.stringify(PlayerRecord));
   await redis.set('guiyishizu_ancestors', JSON.stringify(ancestorsState));
+  
+  // 启动位面破坏系统
+  await startWeimianDestruction();
   
   // 广播开启消息
   let msg = [
@@ -1774,7 +1910,7 @@ async function GetAverageDamage(e) {
   for (let i = 0; i < File.length; i++) {
     let this_qq = File[i].replace('.json', '');
     let player = await data.getData('player', this_qq);
-    if (player && player.mijinglevel_id > 21 && player.mijinglevel_id <= 24) {
+    if (player && player.mijinglevel_id > 20 && player.mijinglevel_id <= 24) {
       temp[TotalPlayer] = parseInt(player.攻击);
       TotalPlayer++;
     }
@@ -1807,6 +1943,9 @@ async function checkAndCloseInactiveBoss() {
     await redis.del('guiyishizu');
     await redis.del('gaoyuan');
     await redis.del('guiyishizu_ancestors');
+
+    // 停止位面破坏系统
+    await stopWeimianDestruction();
 
     await applyJueLingEraPenalty();
     

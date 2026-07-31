@@ -5,8 +5,8 @@ import {
   ForwardMsg,
   isNotNull,
   Read_player,
+  Set_HP,
   Add_灵石,
-  Add_HP,
   Add_血气,
   zd_battle,
   channel,
@@ -225,12 +225,11 @@ export class WDT extends plugin {
     } else {
       await ForwardMsg(e, msg);
     }
-    //下面的战斗超过100回合会报错
-    await Add_HP(A, Data_battle.A_xue);
-    await Add_HP(B, Data_battle.B_xue);
+    await Set_HP(A, Data_battle.A_hp);
+    await Set_HP(B, Data_battle.B_hp);
     let A_win = `${A_player.名号}击败了${B_player.名号}`;
     let B_win = `${B_player.名号}击败了${A_player.名号}`;
-    if (msg.find(item => item == A_win)) {
+    if (Data_battle.winner === 'A') {
       let qixue = Math.trunc(1000 * now_level_idBB);
       let qixue2 = Math.trunc(500 * now_level_idAA);
       let JL = Math.trunc(10 * now_level_idAA);
@@ -246,7 +245,7 @@ export class WDT extends plugin {
       final_msg.push(
         ` 经过一番大战,${A_win}获得了胜利,${A_player.名号}获得${qixue}气血，${B_player.名号}获得${qixue2}气血，双方都获得了${JL}的灵石。`
       );
-    } else if (msg.find(item => item == B_win)) {
+    } else if (Data_battle.winner === 'B') {
       let qixue = Math.trunc(500 * now_level_idBB);
       let qixue2 = Math.trunc(1000 * now_level_idAA);
       let JL = Math.trunc(10 * now_level_idAA);

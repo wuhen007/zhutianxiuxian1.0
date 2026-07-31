@@ -11,7 +11,7 @@ import {
   bigNumberTransform,
   zd_battle,
   Harm,
-  Add_HP,Read_Boss_List, Write_Boss_List, getNumversFromString, GetPower,Go,channel
+  Add_HP,Set_HP,Read_Boss_List, Write_Boss_List, getNumversFromString, GetPower,Go,channel
 } from '../../model/xiuxian.js';
 import Show from "../../model/show.js";
 import puppeteer from "../../../../lib/puppeteer/puppeteer.js";
@@ -864,21 +864,19 @@ export class TeamBoss extends plugin {
             WorldBOSSBattleLock[Boss_player.Boss_id] = 1;*/
       let Data_battle = await zd_battle(player, Boss);
       let msg = Data_battle.msg;
-      let A_win = `${player.名号}击败了${Boss.名号}`;
-      let B_win = `${Boss.名号}击败了${player.名号}`;
       await sleep(1000);
       if (!WorldBossStatus.Healthmax) {
         e.reply('请联系管理员重新开启!');
         return;
       }
-      if (msg.find(item => item == A_win)) {
+      if (Data_battle.winner === 'A') {
         TotalDamage = Math.trunc(
             WorldBossStatus.Healthmax * 0.25 +
             Harm(player.攻击 * 0.85, Boss.防御) * 6
         );
         WorldBossStatus.Health -= TotalDamage;
         msg.push(`${player.名号}击败了[${Boss.名号}],重创[若陀龙王${Boss_player.Boss_id}号],造成伤害${TotalDamage}`);
-      } else if (msg.find(item => item == B_win)) {
+      } else if (Data_battle.winner === 'B') {
         TotalDamage = Math.trunc(
             WorldBossStatus.Healthmax * 0.05 +
             Harm(player.攻击 * 0.85, Boss.防御) * 4
@@ -886,13 +884,13 @@ export class TeamBoss extends plugin {
         WorldBossStatus.Health -= TotalDamage;
         msg.push(`${player.名号}被[${Boss.名号}]击败了,只对[若陀龙王${Boss_player.Boss_id}号]造成了伤害${TotalDamage}`);
       }
-      await Add_HP(usr_qq, Data_battle.A_xue);
+      player.当前血量 = await Set_HP(usr_qq, Data_battle.A_hp);
       await sleep(1000);
       let random = Math.random();
-      if (random < 0.05 && msg.find(item => item == A_win)) {
+      if (random < 0.05 && Data_battle.winner === 'A') {
         msg.push('[若陀龙王]吸收仙界灵石，炼化地脉，元素风暴降临，血量回复了50%')
         WorldBossStatus.Health += Math.trunc(WorldBossStatus.Healthmax * 0.5);
-      } else if (random > 0.95 && msg.find(item => item == B_win)) {
+      } else if (random > 0.95 && Data_battle.winner === 'B') {
         TotalDamage += Math.trunc(WorldBossStatus.Health * 0.15);
         WorldBossStatus.Health -= Math.trunc(WorldBossStatus.Health * 0.15);
         msg.push(`危及时刻,懒狗DD睡醒了，@了小梦，小梦使出！金光雷电对[若陀龙王]造成${Math.trunc(

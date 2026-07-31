@@ -1,5 +1,8 @@
 import { plugin, puppeteer, data, Show } from '../../api/api.js';
 import { Read_player, Write_player, Add_najie_thing, Add_灵石, Add_修为, Add_血气, sleep } from '../../model/xiuxian.js';
+import { validateZhiXianChoice } from './zhixianChoice.js';
+
+const zhiXianChoiceLocks = new Set();
 
 export class zhiXianRenWu extends plugin {
     constructor() {
@@ -144,6 +147,9 @@ export class zhiXianRenWu extends plugin {
             }
         }
 
+        // 奖励函数会独立写入存档，刷新后再合并任务进度，避免旧快照覆盖奖励。
+        player = await Read_player(usr_qq);
+
         // 推进到下一阶段
         progress.阶段 = (progress.阶段 || 1) + 1;
         
@@ -182,19 +188,34 @@ export class zhiXianRenWu extends plugin {
      */
     async zhixian_choice(e) {
         let matches = e.msg.match(/#选择支线(\d+)选项(\d+)/);
+        if (!matches) return;
+
         let taskId = parseInt(matches[1]);
         let choiceId = parseInt(matches[2]);
         let usr_qq = e.user_id.toString().replace('qg_','');
-        let player = await Read_player(usr_qq);
 
-        let task = getZhiXianData(taskId);
-        let progress = player.支线任务进度[taskId] || {};
-        
-        // 根据任务ID和选项处理不同逻辑
-        if (taskId === 1) {
-            await handleHuaYunFeiChoice(usr_qq, player, choiceId, e);
-        } else if (taskId === 2) {
-            await handleWangTengChoice(usr_qq, player, choiceId, e);
+        const lockKey = `${usr_qq}:${taskId}`;
+        if (zhiXianChoiceLocks.has(lockKey)) {
+            e.reply('该任务选项正在处理中，请勿重复提交。');
+            return;
+        }
+
+        zhiXianChoiceLocks.add(lockKey);
+        try {
+            let player = await Read_player(usr_qq);
+            const validation = validateZhiXianChoice(player, taskId, choiceId);
+            if (!validation.ok) {
+                e.reply(validation.message);
+                return;
+            }
+
+            if (taskId === 1) {
+                await handleHuaYunFeiChoice(usr_qq, player, choiceId, e);
+            } else if (taskId === 2) {
+                await handleWangTengChoice(usr_qq, player, choiceId, e);
+            }
+        } finally {
+            zhiXianChoiceLocks.delete(lockKey);
         }
     }
 }
@@ -248,35 +269,35 @@ function getZhiXianData(taskId) {
                     名称: "跨界之门",
                     描述: "你站在异域之门前，感受到腐朽与不朽交织的气息。准备跨界！",
                     需求: { 跨界准备: 1 },
-                    奖励: { 异域抗性: 50, 修为: 10000 },
+                    奖励: { 修为: 10000 },
                     完成描述: "你踏入了异域，这里的法则与九天十地截然不同。"
                 },
                 {
                     名称: "化身迷局",
                     描述: "鹤无双有九道化身，每一道都有本体的部分实力。找出真身！",
                     需求: { 击败化身: 3 },
-                    奖励: { 战斗经验: 200, 元神强度: 80 },
+                    奖励: { 元神强度: 80 },
                     完成描述: "你击败了部分化身，但真身仍未出现..."
                 },
                 {
                     名称: "鹤鸣九霄",
                     描述: "鹤无双的真身终于出现！那恐怖的元神攻击'鹤鸣九霄'震碎了虚空。",
                     需求: { 抵抗鹤鸣: 1 },
-                    奖励: { 元神防御: 100, 悟性: 50 },
+                    奖励: {},
                     完成描述: "你以无上意志抵抗住了鹤鸣九霄，但元神受到了重创。"
                 },
                 {
                     名称: "不朽之血",
                     描述: "鹤无双受伤，不朽之血洒落。收集这些血液，可炼制绝世神丹。",
                     需求: { 收集仙血: 5 },
-                    奖励: { 不朽之血: 5, 炼体值: 200 },
+                    奖励: {},
                     完成描述: "你收集了足够的不朽之血，肉身开始蜕变。"
                 },
                 {
                     名称: "终极对决",
                     描述: "最终战！鹤无双施展完整传承，你必须全力以赴！",
                     需求: { 击败真身: 1 },
-                    奖励: { 修为: 50000, 气运: 100 },
+                    奖励: { 修为: 50000 },
                     完成描述: "你赢了！鹤无双的真身在你脚下崩解，传承归你所有。"
                 },
                 {
@@ -289,6 +310,23 @@ function getZhiXianData(taskId) {
             ],
             最终奖励: { 鹤鸣九霄: 1, 不朽之王传承: 1, 异域法则: 1 },
             完成文案: "跨界追杀，九死一生。你带着鹤无双的完整传承归来，从此同代无敌，俯瞰天下！"
+        },
+        4: {
+            id: 4,
+            name: "天地无拘",
+            desc: "循无拘仙印横渡诸天，体悟鲲鹏扶摇而上、不受万界拘束的逍遥真意",
+            阶段数: 1,
+            阶段: [
+                {
+                    名称: "乘风诸天",
+                    描述: "完成三次跨位面穿梭，让仙印记下不同世界的风。",
+                    需求: { 横渡位面: 3 },
+                    奖励: {},
+                    完成描述: "三界清风汇入仙印，鲲鹏道纹在你识海中徐徐展开。"
+                }
+            ],
+            最终奖励: { 永久称号: "世外逍遥客", 功法: "逍遥游" },
+            完成文案: "三次横渡之后，无拘仙印随风消散。你不再追逐逍遥子的背影，而是走出了自己的逍遥路。\n获得永久称号【世外逍遥客】与功法《逍遥游》。"
         }
     };
     
@@ -413,7 +451,7 @@ async function handleHuaYunFeiChoice(usr_qq, player, choiceId, e) {
 async function handleWangTengChoice(usr_qq, player, choiceId, e) {
     if (choiceId === 1) {
         // 觉醒武道天眼 - 需要道心>500且元神等级为仙台级
-        const isXiantaiLevel = yuanshenlevel_id = 1; // 假设元神等级是字符串
+        const isXiantaiLevel = player.yuanshenlevel_id >= 1;
         
         if (player.道心 <= 500) {
             e.reply([
@@ -527,15 +565,23 @@ async function giveReward(usr_qq, type, value) {
         case '灵石':
             await Add_灵石(usr_qq, value);
             break;
-        case '魔功熟练度':
-        case '战意值':
+        case '仙道潜力':
         case '元神强度':
-        case '悟性':
-        case '气运':
-            // 这些属性需要添加到player对象中
-            let player = await Read_player(usr_qq);
-            player[type] = (player[type] || 0) + value;
+            // “元神强度”是显示名称，真实存档字段为“元神”。
+            const player = await Read_player(usr_qq);
+            const playerField = type === '元神强度' ? '元神' : type;
+            player[playerField] = (player[playerField] || 0) + Math.trunc(value);
             await Write_player(usr_qq, player);
+            break;
+        case '永久称号': {
+            const player = await Read_player(usr_qq);
+            if (!Array.isArray(player.称号列表)) player.称号列表 = [];
+            if (!player.称号列表.includes(value)) player.称号列表.push(value);
+            await Write_player(usr_qq, player);
+            break;
+        }
+        case '功法':
+            await Add_najie_thing(usr_qq, value, "功法", 1);
             break;
         default:
             // 道具类奖励

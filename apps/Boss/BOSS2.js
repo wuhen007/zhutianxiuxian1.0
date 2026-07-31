@@ -320,8 +320,6 @@ export class BOSS2 extends plugin {
       WorldBOSSBattleLock = 1;
       let Data_battle = await zd_battle(player, Boss);
       let msg = Data_battle.msg;
-      let A_win = `${player.名号}击败了${Boss.名号}`;
-      let B_win = `${Boss.名号}击败了${player.名号}`;
       if (msg.length <= 60) await ForwardMsg(e, msg);
       else {
         let msgg = JSON.parse(JSON.stringify(msg));
@@ -334,7 +332,7 @@ export class BOSS2 extends plugin {
         e.reply('请联系管理员重新开启!');
         return false;
       }
-      if (msg.find(item => item == A_win)) {
+      if (Data_battle.winner === 'A') {
         TotalDamage = Math.trunc(
           WorldBossStatus.Healthmax * 0.76 +
             Harm(player.攻击 * 0.85, Boss.防御) * 10
@@ -343,7 +341,7 @@ export class BOSS2 extends plugin {
         e.reply(
           `${player.名号}击败了[${Boss.名号}],重创[长生天尊],造成伤害${TotalDamage}`
         );
-      } else if (msg.find(item => item == B_win)) {
+      } else if (Data_battle.winner === 'B') {
         TotalDamage = Math.trunc(
           WorldBossStatus.Healthmax * 0.04 +
             Harm(player.攻击 * 0.85, Boss.防御) * 6

@@ -2255,7 +2255,7 @@ if (bossCopy.名号 === '帝尊') {
         if (isSuppressed) continue;
       }
       // ==== 极道天魔技能 ====
-      if (player.灵根?.name === "极道天魔" && Math.random() > 0.7) {
+      if (["极道天魔", "无相·万化天魔体"].includes(player.灵根?.name) && Math.random() > 0.7) {
         const demonMsg = [
           `${player.名号}周身魔气滔天，`,
           `六道轮回在其身后显化！`,
@@ -2692,7 +2692,6 @@ if (bossCopy.当前血量 <= 0) {
       `者字秘演化至终极境界，破碎的帝躯在仙光中重组！`,
       `帝血倒流，万道重组，破碎的仙台重聚！`,
       `帝尊在寂灭中归来，气息更胜往昔！`,
-      `「吾为长生天尊，掌不死秘术，谁能葬吾？」`,
       `帝尊极尽升华，重回巅峰！`,
        `攻击提升：${bigNumberTransform(originalAttack)} → ${bigNumberTransform(bossCopy.攻击)}`,
         `防御提升：${bigNumberTransform(originalDefense)} → ${bigNumberTransform(bossCopy.防御)}`,

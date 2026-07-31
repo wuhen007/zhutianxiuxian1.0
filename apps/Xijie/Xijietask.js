@@ -7,7 +7,9 @@ import {
   existshop,
   Write_shop,
   Read_shop,
-  buildAt
+  buildAt,
+  Read_player,
+  Write_player,
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
 export class Xijietask extends plugin {
@@ -107,26 +109,27 @@ export class Xijietask extends plugin {
               法球倍率: monster.灵根.法球倍率,
             };
             let Data_battle;
+            let playerSide;
             let last_msg = '';
             if (A_player.魔值 == 0) {
               //根据魔道值决定先后手顺序
               Data_battle = await zd_battle(A_player, B_player);
+              playerSide = 'A';
               last_msg += A_player.名号 + '悄悄靠近' + B_player.名号;
-              A_player.当前血量 += Data_battle.A_xue;
+              A_player.当前血量 = Data_battle.A_hp;
             } else {
               Data_battle = await zd_battle(B_player, A_player);
+              playerSide = 'B';
               last_msg +=
                 A_player.名号 + '杀气过重,被' + B_player.名号 + '发现了';
-              A_player.当前血量 += Data_battle.B_xue;
+              A_player.当前血量 = Data_battle.B_hp;
             }
             let msgg = Data_battle.msg;
             console.log(msgg);
-            let A_win = `${A_player.名号}击败了${B_player.名号}`;
-            let B_win = `${B_player.名号}击败了${A_player.名号}`;
             let arr = action;
             let time;
             let action_time;
-            if (msgg.find(item => item == A_win)) {
+            if (Data_battle.winner === playerSide) {
               time = 10; //时间（分钟）
               action_time = 60000 * time; //持续时间，单位毫秒
               arr.A_player = A_player;
@@ -138,7 +141,7 @@ export class Xijietask extends plugin {
                 ',经过一番战斗,击败对手,剩余' +
                 A_player.当前血量 +
                 '血量,开始搜刮物品';
-            } else if (msgg.find(item => item == B_win)) {
+            } else if (Data_battle.winner === (playerSide === 'A' ? 'B' : 'A')) {
               var num = weizhi.Grade;
               last_msg +=
                 ',经过一番战斗,败下阵来,被抓进了地牢\n在地牢中你找到了秘境之匙x' +
@@ -195,6 +198,8 @@ export class Xijietask extends plugin {
             let action_time;
             let last_msg = '';
             let thing_name = [];
+            const raider = await Read_player(player_id);
+            const panguLootMultiplier = raider.先天权柄?.盘古洗劫翻倍待用 ? 2 : 1;
             let shop = await Read_shop();
             let i;
             for (i = 0; i < shop.length; i++) {
@@ -210,7 +215,7 @@ export class Xijietask extends plugin {
               while (x > 0 && thing != false) {
                 var t; //临时存储物品名
                 var thing_index = Math.trunc(Math.random() * thing.length);
-                t = thing[thing_index];
+                t = { ...thing[thing_index], 数量: (Number(thing[thing_index].数量) || 1) * panguLootMultiplier };
                 thing_name.push(t);
                 shop = await Read_shop();
                 for (var j = 0; j < shop[i].one.length; j++) {
@@ -227,6 +232,11 @@ export class Xijietask extends plugin {
                 x--;
               }
               last_msg += '经过一番搜寻' + arr.A_player.名号 + '找到了';
+              if (panguLootMultiplier > 1) {
+                delete raider.先天权柄.盘古洗劫翻倍待用;
+                await Write_player(player_id, raider);
+                last_msg += '，盘古幡开天余威令本次洗劫奖励翻倍';
+              }
               for (var j = 0; j < thing_name.length; j++) {
                 last_msg +=
                   '\n' + thing_name[j].name + ' x ' + thing_name[j].数量;

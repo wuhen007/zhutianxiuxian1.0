@@ -4,6 +4,7 @@ import {
   Add_灵石,
   ForwardMsg,
   Add_HP,
+  Set_HP,
   Harm,
   zd_battle,
 } from '../../model/xiuxian.js';
@@ -266,8 +267,6 @@ export class BOSS extends plugin {
       WorldBOSSBattleLock = 1;
       let Data_battle = await zd_battle(player, Boss);
       let msg = Data_battle.msg;
-      let A_win = `${player.名号}击败了${Boss.名号}`;
-      let B_win = `${Boss.名号}击败了${player.名号}`;
       if (msg.length <= 60) await ForwardMsg(e, msg);
       else {
         let msgg = JSON.parse(JSON.stringify(msg));
@@ -280,7 +279,7 @@ export class BOSS extends plugin {
         e.reply('请联系管理员重新开启!');
         return false;
       }
-      if (msg.find(item => item == A_win)) {
+      if (Data_battle.winner === 'A') {
         TotalDamage = Math.trunc(
           WorldBossStatus.Healthmax * 0.05 +
             Harm(player.攻击 * 0.85, Boss.防御) * 6
@@ -289,7 +288,7 @@ export class BOSS extends plugin {
         e.reply(
           `${player.名号}击败了[${Boss.名号}],重创[妖王],造成伤害${TotalDamage}`
         );
-      } else if (msg.find(item => item == B_win)) {
+      } else if (Data_battle.winner === 'B') {
         TotalDamage = Math.trunc(
           WorldBossStatus.Healthmax * 0.03 +
             Harm(player.攻击 * 0.85, Boss.防御) * 4
@@ -299,13 +298,13 @@ export class BOSS extends plugin {
           `${player.名号}被[${Boss.名号}]击败了,只对[妖王]造成了${TotalDamage}伤害`
         );
       }
-      await Add_HP(usr_qq, Data_battle.A_xue);
+      player.当前血量 = await Set_HP(usr_qq, Data_battle.A_hp);
       await sleep(1000);
       let random = Math.random();
-      if (random < 0.05 && msg.find(item => item == A_win)) {
+      if (random < 0.05 && Data_battle.winner === 'A') {
         e.reply('这场战斗重创了[妖王]，妖王使用了古典秘籍,血量回复了20%');
         WorldBossStatus.Health += Math.trunc(WorldBossStatus.Healthmax * 0.2);
-      } else if (random > 0.95 && msg.find(item => item == B_win)) {
+      } else if (random > 0.95 && Data_battle.winner === 'B') {
         TotalDamage += Math.trunc(WorldBossStatus.Health * 0.15);
         WorldBossStatus.Health -= Math.trunc(WorldBossStatus.Health * 0.15);
         e.reply(

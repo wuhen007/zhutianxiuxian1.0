@@ -1,5 +1,6 @@
 import { plugin, puppeteer, verc, data, config,Show } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
+import { getTimedActionMultiplier } from '../../model/innateTreasure.js';
 import {
   existplayer,
   Read_player,
@@ -111,17 +112,28 @@ export class Xijie extends plugin {
     );
     lastxijie_time = parseInt(lastxijie_time);
     if (now_time < lastxijie_time + 7200000) {
-      let lastxijie_m = Math.trunc(
-        (lastxijie_time + 7200000 - now_time) / 60 / 1000
-      );
-      let lastxijie_s = Math.trunc(
-        ((lastxijie_time + 7200000 - now_time) % 60000) / 1000
-      );
-      e.reply(
-        `每120分钟洗劫一次，正在CD中，` +
-          `剩余cd: ${lastxijie_m}分${lastxijie_s}秒`
-      );
-      return false;
+      // 检查是否有劫光令可重置CD
+      let jieGuangLingCount = await exist_najie_thing(usr_qq, "劫光令", "道具");
+      if (jieGuangLingCount > 0) {
+        // 消耗劫光令，重置CD
+        await Add_najie_thing(usr_qq, "劫光令", "道具", -1);
+        lastxijie_time = 0;
+        e.reply('你祭出一枚劫光令，劫光一闪间，天道禁制化为虚无，洗劫冷却已重置！');
+        // 更新redis中的lastxijie_time，让后续逻辑继续
+        await redis.set('xiuxian:player:' + usr_qq + ':lastxijie_time', 0);
+      } else {
+        let lastxijie_m = Math.trunc(
+          (lastxijie_time + 7200000 - now_time) / 60 / 1000
+        );
+        let lastxijie_s = Math.trunc(
+          ((lastxijie_time + 7200000 - now_time) % 60000) / 1000
+        );
+        e.reply(
+          `每120分钟洗劫一次，正在CD中，` +
+            `剩余cd: ${lastxijie_m}分${lastxijie_s}秒`
+        );
+        return false;
+      }
     }
     //判断是否在开启时段
  //   let Today = await shijianc(now_time);
@@ -228,7 +240,7 @@ export class Xijie extends plugin {
     let action_time = 60000 * time; //持续时间，单位毫秒
     let arr = {
       action: '洗劫', //动作
-      end_time: new Date().getTime() + action_time, //结束时间
+      end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)), //结束时间
       time: action_time, //持续时间
       shutup: '1', //闭关
       working: '1', //降妖

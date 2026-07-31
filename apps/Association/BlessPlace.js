@@ -1,5 +1,7 @@
 import fs from 'fs';
 import { plugin, verc, config, data } from '../../api/api.js';
+import { createSecretPlaceAddictionAction } from '../../model/secretPlaceAddiction.js';
+import { getTimedActionMultiplier } from '../../model/innateTreasure.js';
 import {
   Add_灵石,
   Add_najie_thing,
@@ -328,7 +330,7 @@ export class BlessPlace extends plugin {
     let action_time = 60000 * time; //持续时间，单位毫秒
     let arr = {
       action: '历练', //动作
-      end_time: new Date().getTime() + action_time, //结束时间
+      end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)), //结束时间
       time: action_time, //持续时间
       shutup: '1', //闭关
       working: '1', //降妖
@@ -411,25 +413,32 @@ export class BlessPlace extends plugin {
 
     await Add_灵石(usr_qq, -Price);
     var time = i * 10 * 5 + 10; //时间（分钟）
-    let action_time = 60000 * time; //持续时间，单位毫秒
-    let arr = {
-      action: '历练', //动作
-      end_time: new Date().getTime() + action_time, //结束时间
-      time: action_time, //持续时间
-      shutup: '1', //闭关
-      working: '1', //降妖
-      Place_action: '1', //秘境状态---开启
-      Place_actionplus: '0', //沉迷秘境状态---关闭
-      power_up: '1', //渡劫状态--关闭
-      cishu: 10 * i,
-      //这里要保存秘境特别需要留存的信息
-      Place_address: weizhi,
-      XF: ass.power,
-    };
+    const totalCount = 10 * i;
+    const now = Date.now();
+    let arr = createSecretPlaceAddictionAction({
+      durationMinutes: time,
+      totalCount,
+      place: weizhi,
+      xf: ass.power,
+      now,
+    });
     if (e.isGroup) {
       arr.group_id = e.group_id;
     }
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
+    await redis.set('xiuxian:player:' + usr_qq + ':addiction_history', JSON.stringify({
+      start_time: now,
+      location: weizhi.name,
+      location_type: '宗门秘境',
+      total_count: totalCount,
+      settled_count: 0,
+      death_count: 0,
+      xiuwei_gained: 0,
+      xueqi_gained: 0,
+      items_gained: [],
+      status: 'in_progress',
+      end_time: null,
+    }));
     // setTimeout(() => {
     //         SecretPlaceMax(e, weizhi);
     //     }, 60000 );

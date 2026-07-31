@@ -6,7 +6,7 @@ import {
   isNotNull,
   Write_player,
   Add_najie_thing,
-  Add_HP,
+  Set_HP,
   Read_player,
   zd_battle,
   channel,
@@ -285,12 +285,11 @@ let now_mijinglevel_idAA;
     } else {
       await ForwardMsg(e, msg);
     }
-    //下面的战斗超过100回合会报错
-    await Add_HP(A, Data_battle.A_xue);
-    await Add_HP(B, Data_battle.B_xue);
+    A_player.当前血量 = await Set_HP(A, Data_battle.A_hp);
+    B_player.当前血量 = await Set_HP(B, Data_battle.B_hp);
     let A_win = `${A_player.名号}击败了${B_player.名号}`;
     let B_win = `${B_player.名号}击败了${A_player.名号}`;
-    if (msg.find(item => item == A_win)) {
+    if (Data_battle.winner === 'A') {
       if (
         (await exist_najie_thing(B, '替身人偶', '道具')) &&
         B_player.魔道值 < 1 &&
@@ -317,7 +316,7 @@ let now_mijinglevel_idAA;
       final_msg.push(
         ` 经过一番大战,${A_win},成功抢走${lingshi}灵石,${A_player.名号}获得${qixue}血气，`
       );
-    } else if (msg.find(item => item == B_win)) {
+    } else if (Data_battle.winner === 'B') {
       if (A_player.灵石 < 30002) {
         let qixue = Math.trunc(100 * now_level_idBB);
         B_player.血气 += qixue;
@@ -410,8 +409,8 @@ let now_mijinglevel_idAA;
     await ForwardMsg(e, msg);
 
     // 判断胜负
-    let A_alive = Data_battle.A_hp > 0 || Data_battle.A_xue > 0;
-    let B_alive = Data_battle.B_hp > 0 || Data_battle.B_xue > 0;
+    let A_alive = Data_battle.A_hp > 0;
+    let B_alive = Data_battle.B_hp > 0;
 
     if (A_alive && !B_alive) {
       final_msg.push(`\n${player.名号}成功击败了所有幻影！`);

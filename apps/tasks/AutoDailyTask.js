@@ -14,6 +14,9 @@ import {
     channel
 } from '../../model/xiuxian.js';
 import schedule from 'node-schedule';
+import { getDailyTaskDateKey } from '../../model/dailyTask.js';
+// 问仙令：每日任务完成后 +50 经验
+import { WenXianLing } from '../WenXianLing/WenXianLing.js';
 
 /**
  * 自动每日任务系统
@@ -42,6 +45,11 @@ export class AutoDailyTask extends plugin {
                     permission: 'master'
                 },
                 {
+                    reg: '^#重置全体今日签到记录$',
+                    fnc: 'resetAllTodaySignRecords',
+                    permission: 'master'
+                },
+                {
                     reg: '^#开启自动任务$',
                     fnc: 'enableAutoTask'
                 },
@@ -59,28 +67,58 @@ export class AutoDailyTask extends plugin {
         // 读取配置
         this.set = config.getConfig('xiuxian', 'xiuxian');
         
+        // 无Yunzai定时任务（使用node-schedule），防止loader报undefined.cron
+        this.task = [];
+        
         // 初始化定时任务
         this.initAutoTask();
+    }
+
+    /**
+     * 生成本地日期字符串 YYYY-MM-DD
+     * 统一时间基准，避免 UTC 与本地时区错位导致 redis 键不匹配（记录查不到 / 重置删不掉）
+     */
+    getLocalDateStr(date = new Date()) {
+        return getDailyTaskDateKey(date.getTime());
+    }
+
+    /**
+     * 按模式清理玩家的某类消息键（如 sign_msg / daofa_msg / salary_msg 等）
+     * 删除整个 key 族，避免旧消息键永久堆积在 redis（#查看领取记录 只读近 3 天，旧键皆为死重）
+     */
+    async _delMsgPattern(usr_qq, prefix) {
+        const keys = await redis.keys(`xiuxian:player:${usr_qq}:${prefix}:*`);
+        if (keys.length > 0) {
+            await redis.del(...keys);
+        }
     }
 
     /**
      * 初始化自动任务
      */
     initAutoTask() {
-        // 防止热重载时创建重复的定时任务
-        if (AutoDailyTask._scheduleJob) {
-            console.log('自动每日任务定时器已存在，跳过重复注册');
-            return;
+        // 防止热重载重复注册：
+        // 旧模块实例注册的 job 引用存到 globalThis，跨模块重载保留，
+        // 每次初始化先 cancel 旧定时器再重建，避免同一天重复发放奖励
+        if (globalThis.__AUTODAILY_TASK_JOB__) {
+            try {
+                globalThis.__AUTODAILY_TASK_JOB__.cancel();
+                console.log('[AutoDailyTask] 已取消旧定时器（防止热重载重复）');
+            } catch (e) {
+                console.warn('[AutoDailyTask] 取消旧定时器异常:', e);
+            }
         }
-        
+
         // 从配置读取cron表达式，默认每天00:05执行
         const cronExpr = this.set.AutoDailyTask?.cron || '0 5 0 * * *';
-        AutoDailyTask._scheduleJob = schedule.scheduleJob(cronExpr, async () => {
+        const job = schedule.scheduleJob(cronExpr, async () => {
             console.log('[AutoDailyTask] 开始执行自动每日任务');
             await this.executeAutoTask();
             console.log('[AutoDailyTask] 自动每日任务执行完成');
         });
-        
+        AutoDailyTask._scheduleJob = job;
+        globalThis.__AUTODAILY_TASK_JOB__ = job;
+
         console.log(`自动每日任务定时器已设置 - cron: ${cronExpr}`);
     }
 
@@ -201,28 +239,38 @@ async processPlayer(qq) {
     // 只有自动任务开启时才执行以下任务
     try {
         // 1. 自动签到
-        const signResult = await this.autoSign(usr_qq, player);
+        const signResult = await this.autoSign(usr_qq, await Read_player(usr_qq));
         if (signResult) stats.sign = 1;
         
         // 2. 自动领取势力俸禄
-        const salaryResult = await this.autoClaimSalary(usr_qq, player);
+        const salaryResult = await this.autoClaimSalary(usr_qq, await Read_player(usr_qq));
         if (salaryResult) stats.salary = 1;
         
         // 3. 自动天道赐福
-        const tiandaoResult = await this.autoTiandaoCifu(usr_qq, player);
+        const tiandaoResult = await this.autoTiandaoCifu(usr_qq, await Read_player(usr_qq));
         if (tiandaoResult) stats.tiandao = 1;
         
         // 4. 自动道法赐福
-        const daofaResult = await this.autoDaofaCifu(usr_qq, player);
+        const daofaResult = await this.autoDaofaCifu(usr_qq, await Read_player(usr_qq));
         if (daofaResult) stats.daofa = 1;
         
         // 5. 自动开采宗门灵脉
-        const veinResult = await this.autoExploitVein(usr_qq, player);
+        const veinResult = await this.autoExploitVein(usr_qq, await Read_player(usr_qq));
         if (veinResult) stats.vein = 1;
         
         // 6. 自动神兽赐福
-        const beastResult = await this.autoBeastBonus(usr_qq, player);
+        const beastResult = await this.autoBeastBonus(usr_qq, await Read_player(usr_qq));
         if (beastResult) stats.beast = 1;
+
+        // 问仙令：实际完成签到后 +50 经验，和手动签到共用每日标记
+        try {
+            const passResult = signResult
+                ? await WenXianLing.addDailySignExp(usr_qq, 50)
+                : null;
+            if (passResult?.levelUp) {
+                console.log(`[问仙令] ${player.名号} 升级 ${passResult.oldLevel} → ${passResult.newLevel}`);
+            }
+        } catch (e) { /* 不影响主流程 */ }
 
         console.log(`玩家 ${player.名号 || usr_qq} 自动任务执行完成`);
         return stats;
@@ -245,19 +293,6 @@ async isAutoTaskEnabled(usr_qq) {
     }
 }
 
-/**
- * 检查玩家是否开启了自动签到（已存在的方法，保持兼容）
- */
-async isAutoSignEnabled(usr_qq) {
-    try {
-        const enabled = await redis.get(`xiuxian:player:${usr_qq}:auto_sign_enabled`);
-        return enabled === 'true';
-    } catch (error) {
-        console.error(`检查玩家 ${usr_qq} 自动签到状态失败:`, error);
-        return true; // 默认开启
-    }
-}
-
     /**
      * 自动签到
      */
@@ -265,16 +300,18 @@ async isAutoSignEnabled(usr_qq) {
         try {
             // 检查今日是否已签到
             let today = new Date();
-            const todayStr = `${today.getFullYear()}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getDate().toString().padStart(2, '0')}`;
+            const todayStr = this.getLocalDateStr(today);
             
 
 
 
-            const lastSignTime = await redis.get(`xiuxian:player:${usr_qq}:lastsign_time`);
+            const signTimeKey = `xiuxian:player:${usr_qq}:daily_last_sign_time`;
+            const legacySignTimeKey = `xiuxian:player:${usr_qq}:lastsign_time`;
+            const lastSignTime = await redis.get(signTimeKey) || await redis.get(legacySignTimeKey);
             
             if (lastSignTime) {
                 const lastSignDate = new Date(parseInt(lastSignTime));
-                const lastSignStr = `${lastSignDate.getFullYear()}-${lastSignDate.getMonth()+1}-${lastSignDate.getDate()}`;
+                const lastSignStr = this.getLocalDateStr(lastSignDate);
                 
                 if (lastSignStr === todayStr) {
                     console.log(`玩家 ${usr_qq} 今日已签到，跳过`);
@@ -284,11 +321,11 @@ async isAutoSignEnabled(usr_qq) {
 
             // 更新连续签到天数（先更新再计算奖励）
             const yesterday = new Date(today.getTime() - 86400000);
-            const yesterdayStr = `${yesterday.getFullYear()}-${yesterday.getMonth()+1}-${yesterday.getDate()}`;
+            const yesterdayStr = this.getLocalDateStr(yesterday);
             
             if (lastSignTime) {
                 const lastSignDate = new Date(parseInt(lastSignTime));
-                const lastSignDateStr = `${lastSignDate.getFullYear()}-${lastSignDate.getMonth()+1}-${lastSignDate.getDate()}`;
+                const lastSignDateStr = this.getLocalDateStr(lastSignDate);
                 
                 if (lastSignDateStr === yesterdayStr) {
                     player.连续签到天数 = (player.连续签到天数 || 0) + 1;
@@ -315,6 +352,9 @@ async isAutoSignEnabled(usr_qq) {
             let ticketCount = 5 * baseMultiplier;
             let yuanshi = player.连续签到天数 * 300 * baseMultiplier * 加成;
 
+            // 先保存连续签到状态，避免后续奖励写档后又被旧 player 覆盖。
+            await Write_player(usr_qq, player);
+
             // 发放奖励
             await Add_najie_thing(usr_qq, '秘境之匙', '道具', ticketCount);
             await Add_najie_thing(usr_qq, '喇叭', '道具', ticketCount);
@@ -324,19 +364,13 @@ async isAutoSignEnabled(usr_qq) {
             await Add_血气(usr_qq, gift_xiuwei);
 
             // 记录签到消息文本（使用一致的日期格式，与todayStr相同）
-            const signMsg = `每日签到成功：\n` +
-                `您获得了${this.formatNumber(gift_xiuwei)}修为与血气\n` +
-                `${this.formatNumber(yuanshi)}源石\n` +
-                `${this.formatNumber(yuanshi)}灵石\n` +
-                `${ticketCount}把秘境之匙\n` +
-                `${ticketCount}个喇叭\n` +
-                `连续签到${player.连续签到天数}天`;
+            const signMsg = `每日签到成功：您获得了${this.formatNumber(gift_xiuwei)}修为与血气、${this.formatNumber(yuanshi)}源石、${this.formatNumber(yuanshi)}灵石、${ticketCount}把秘境之匙、${ticketCount}个喇叭，连续签到${player.连续签到天数}天`;
             
-            await redis.set(`xiuxian:player:${usr_qq}:sign_msg:${todayStr}`, signMsg);
+            await redis.set(`xiuxian:player:${usr_qq}:sign_msg:${todayStr}`, JSON.stringify({ msg: signMsg, ts: Date.now() }));
 
-            // 保存数据
-            await Write_player(usr_qq, player);
-            await redis.set(`xiuxian:player:${usr_qq}:lastsign_time`, new Date().getTime());
+            const signTime = Date.now();
+            await redis.set(signTimeKey, signTime);
+            await redis.set(legacySignTimeKey, signTime);
 
             console.log(`玩家 ${usr_qq} 自动签到完成`);
             return true;
@@ -360,7 +394,9 @@ async isAutoSignEnabled(usr_qq) {
 
             // 处理瑶池和摇光圣地的俸禄
             if (player.势力 === "瑶池" || player.势力 === "摇光圣地") {
-                const today = new Date().toISOString().split('T')[0];
+                // 统一使用本地日期格式，与其他任务保持一致
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
                 
                 // 检查今日是否已领取
                 let redisKey;
@@ -371,7 +407,7 @@ async isAutoSignEnabled(usr_qq) {
                 }
 
                 const lastClaimDate = await redis.get(redisKey);
-                if (lastClaimDate !== today) {
+                if (lastClaimDate !== todayStr) {
                     // 计算俸禄
                     let salary = 0;
                     const position = player.势力职位 || "记名弟子";
@@ -404,9 +440,14 @@ async isAutoSignEnabled(usr_qq) {
                             salary *= 2;
                         }
                         
-                        player.源石 += salary;
+                        // 防止 player.源石 为 undefined/NaN
+                        player.源石 = (player.源石 || 0) + salary;
                         await Write_player(usr_qq, player);
-                        await redis.set(redisKey, today);
+                        await redis.set(redisKey, todayStr);
+
+                        // 保存详细领取消息，供 #查看领取记录 使用
+                        const salaryMsg = `势力俸禄领取成功：\n您作为【${player.势力职位}】自动领取了${player.势力}俸禄${this.formatNumber(salary)}源石`;
+                        await redis.set(`xiuxian:player:${usr_qq}:salary_msg:${todayStr}`, JSON.stringify({ msg: salaryMsg, ts: Date.now() }));
 
                         console.log(`玩家 ${usr_qq} 自动领取${player.势力}俸禄 ${salary} 源石`);
                         success = true;
@@ -434,15 +475,14 @@ async isAutoSignEnabled(usr_qq) {
      */
     async autoOpenJianyunhai(usr_qq, player) {
         try {
-            // 获取当前日期（基于本地时间的0点）
-            const now = new Date();
-            const today = now.getDate(); // 获取当月日期数字（1-31）
+            // 获取当前本地日期字符串 YYYY-MM-DD（统一基准，避免跨月 day-of-month 重复判定）
+            const todayStr = this.getLocalDateStr();
             
             // 获取上次开启的日期
             const lastOpenDay = await redis.get(`xiuxian:player:${usr_qq}:jianyunhai_open_day`);
             
-            // 检查今日是否已开启秘库（比较日期数字）
-            if (lastOpenDay && parseInt(lastOpenDay) === today) {
+            // 检查今日是否已开启秘库（比较完整本地日期，避免跨月 day-of-month 歧义）
+            if (lastOpenDay && lastOpenDay === todayStr) {
                 console.log(`玩家 ${usr_qq} 今日已开启剑云海秘库，跳过`);
                 return false;
             }
@@ -475,7 +515,7 @@ async isAutoSignEnabled(usr_qq) {
             } else {
                 // 10%概率：每组5个物品 + 10个超越宝盒
                 rewardMultiplier = 5;
-                extraRewards += "10个超越宝盒、";
+                extraRewards += "10个超越宝盒";
             }
             
             // 发放奖励
@@ -487,25 +527,20 @@ async isAutoSignEnabled(usr_qq) {
                 await Add_najie_thing(usr_qq, "超越宝盒", "盒子", 10);
             }
             
-            // 记录开启日期（存储日期数字）
-            await redis.set(`xiuxian:player:${usr_qq}:jianyunhai_open_day`, today);
+            // 记录开启日期（存储完整本地日期字符串）
+            await redis.set(`xiuxian:player:${usr_qq}:jianyunhai_open_day`, todayStr);
             
             // 保存玩家数据（源石增加）
             await Write_player(usr_qq, player);
 
-            // 记录剑云海秘库消息文本
-            const todayStr = new Date().toISOString().split('T')[0];
-            let jianyunhaiMsg = `剑云海秘库开启成功：\n` +
-                `您获得了3000万源石供奉\n` +
-                `${rewardMultiplier}个众生仙钓\n` +
-                `${rewardMultiplier}个剑云海圣药\n` +
-                `${rewardMultiplier}个${isXianpin ? "仙品" : "圣品"}秘境结算卡\n`;
+            // 记录剑云海秘库消息文本（todayStr 已在上方声明，统一本地日期）
+            let jianyunhaiMsg = `剑云海秘库开启成功：您获得了3000万源石供奉、${rewardMultiplier}个众生仙钓、${rewardMultiplier}个剑云海圣药、${rewardMultiplier}个${isXianpin ? "仙品" : "圣品"}秘境结算卡`;
             
             if (extraRewards) {
-                jianyunhaiMsg += `${extraRewards}\n`;
+                jianyunhaiMsg += `、${extraRewards}`;
             }
 
-            await redis.set(`xiuxian:player:${usr_qq}:jianyunhai_msg:${todayStr}`, jianyunhaiMsg);
+            await redis.set(`xiuxian:player:${usr_qq}:jianyunhai_msg:${todayStr}`, JSON.stringify({ msg: jianyunhaiMsg, ts: Date.now() }));
 
             console.log(`玩家 ${usr_qq} 自动开启剑云海秘库完成`);
             return true;
@@ -573,33 +608,29 @@ async isAutoSignEnabled(usr_qq) {
             }
 
             // 记录天道赐福消息文本（使用一致的日期格式）
-            let tiandaoMsg = `天道赐福成功：\n` +
-                `您获得了${lastjiangli}把秘境之匙${lastjiangli}张打工券\n`;
-            
+            let tiandaoMsg = `天道赐福成功：您获得了${lastjiangli}把秘境之匙、${lastjiangli}张打工券`;
+
             // 职业额外奖励
             if (player.occupation === '侠客') {
-                tiandaoMsg += `作为侠客，您额外获得了3个侠客令\n`;
+                tiandaoMsg += `，作为侠客，您额外获得了3个侠客令`;
             } else if (player.occupation === '唤魔者') {
-                tiandaoMsg += `作为唤魔者，您额外获得了3个唤魔令\n`;
+                tiandaoMsg += `，作为唤魔者，您额外获得了3个唤魔令`;
             }
 
             // 等级额外奖励
             if (player.level_id > 41) {
-                tiandaoMsg += `您是仙人，您额外获得了${lastjiangli}个仙舟\n`;
+                tiandaoMsg += `，您是仙人，您额外获得了${lastjiangli}个仙舟`;
             }
             if (player.level_id > 54) {
-                tiandaoMsg += `您是万界之上的存在，您额外获得了${lastjiangli}个神域令牌\n`;
+                tiandaoMsg += `，您是万界之上的存在，您额外获得了${lastjiangli}个神域令牌`;
             }
 
             // 道法仙术额外奖励
             if (player.daofaxianshu === 2) {
-                tiandaoMsg += `【道法仙术】对您赐福！您额外获得了${lastjiangli}把秘境之匙\n` +
-                    `${lastjiangli}张打工券\n` +
-                    `${lastjiangli}个九阶玄元丹\n` +
-                    `${lastjiangli}个九阶淬体丹！`;
+                tiandaoMsg += `，【道法仙术】对您赐福！您额外获得了${lastjiangli}把秘境之匙、${lastjiangli}张打工券、${lastjiangli}个九阶玄元丹、${lastjiangli}个九阶淬体丹`;
             }
 
-            await redis.set(`xiuxian:player:${usr_qq}:tiandao_msg:${todayStr}`, tiandaoMsg);
+            await redis.set(`xiuxian:player:${usr_qq}:tiandao_msg:${todayStr}`, JSON.stringify({ msg: tiandaoMsg, ts: Date.now() }));
 
             // 记录时间
             await redis.set(`xiuxian:player:${usr_qq}:lastCifuTime`, new Date().getTime());
@@ -649,8 +680,9 @@ async isAutoSignEnabled(usr_qq) {
                 player.道法赐福天数 = 1;
     }
 
-            // 连续7天重置奖励
-            if (player.道法赐福天数 >= 7) {
+            // 连续7天重置奖励（先记录是否触发，再重置天数，避免消息判断时天数已被清零）
+            const gotBonus = player.道法赐福天数 >= 7;
+            if (gotBonus) {
                 player.道法赐福天数 = 1;
                 await Add_najie_thing(usr_qq, '超越宝盒', '盒子', 5);
             }
@@ -658,6 +690,9 @@ async isAutoSignEnabled(usr_qq) {
             // 计算奖励
             let gift_xiuwei = player.道法赐福天数 * 10000 * player.level_id * player.Physique_id * (player.mijinglevel_id + player.xiangulevel_id);
             const tickets = player.道法赐福天数 * 2;
+
+            // 先保存连续赐福状态，避免后续奖励写档后又被旧 player 覆盖。
+            await Write_player(usr_qq, player);
 
             // 发放奖励
             await Add_najie_thing(usr_qq, '龙', '道具', tickets);
@@ -673,27 +708,15 @@ async isAutoSignEnabled(usr_qq) {
             await Add_血气(usr_qq, gift_xiuwei);
 
             // 记录道法赐福消息文本（使用一致的日期格式）
-            let daofaMsg = `道法赐福成功：\n` +
-                `您获得了${bigNumberTransform(gift_xiuwei)}修为\n` +
-                `${bigNumberTransform(gift_xiuwei)}血气\n` +
-                `${tickets}个龙\n` +
-                `${tickets}个腾\n` +
-                `${tickets}个虎\n` +
-                `${tickets}个跃\n` +
-                `${tickets}个遣龙令\n` +
-                `${tickets}个遣虎令\n` +
-                `1个位面传送阵\n` +
-                `${tickets}张灵品秘境结算卡`;
+            let daofaMsg = `道法赐福成功：您获得了${bigNumberTransform(gift_xiuwei)}修为、${bigNumberTransform(gift_xiuwei)}血气、${tickets}个龙、${tickets}个腾、${tickets}个虎、${tickets}个跃、${tickets}个遣龙令、${tickets}个遣虎令、1个位面传送阵、${tickets}张灵品秘境结算卡`;
 
-            // 连续7天重置奖励
-            if (player.道法赐福天数 >= 7) {
-                daofaMsg += `\n5个超越宝盒`;
+            // 连续7天重置奖励（用 gotBonus 判断，此时天数已被重置为 1）
+            if (gotBonus) {
+                daofaMsg += `、5个超越宝盒`;
             }
 
-            await redis.set(`xiuxian:player:${usr_qq}:daofa_msg:${todayStr}`, daofaMsg);
+            await redis.set(`xiuxian:player:${usr_qq}:daofa_msg:${todayStr}`, JSON.stringify({ msg: daofaMsg, ts: Date.now() }));
 
-            // 保存数据
-            await Write_player(usr_qq, player);
             await redis.set(`xiuxian:player:${usr_qq}:lastsign_time3`, new Date().getTime());
 
             console.log(`玩家 ${usr_qq} 自动道法赐福完成`);
@@ -780,7 +803,7 @@ async isAutoSignEnabled(usr_qq) {
             // 记录开采消息
             const veinMsg = `自动开采灵脉成功：\n` +
                 `本次开采灵脉获得${gift_lingshi * 2}灵石，上交一半给宗门，最后获得${num}灵石`;
-            await redis.set(`xiuxian:player:${usr_qq}:vein_msg:${todayStr}`, veinMsg);
+            await redis.set(`xiuxian:player:${usr_qq}:vein_msg:${todayStr}`, JSON.stringify({ msg: veinMsg, ts: Date.now() }));
 
             console.log(`玩家 ${usr_qq} 自动开采灵脉完成`);
             return true;
@@ -828,7 +851,6 @@ async isAutoSignEnabled(usr_qq) {
 
             // 执行赐福逻辑
             let random = Math.random();
-            let flag = 0.5;
             
             // 根据好感度获取概率
             const { Read_danyao, Write_danyao } = await import('../../model/xiuxian.js');
@@ -922,7 +944,7 @@ async isAutoSignEnabled(usr_qq) {
                     beastMsg = `自动神兽赐福成功：\n` +
                         `${ass.宗门神兽}今天心情不错，随手丢给了你${item_name}`;
                 }
-                await redis.set(`xiuxian:player:${usr_qq}:beast_msg:${todayStr}`, beastMsg);
+                await redis.set(`xiuxian:player:${usr_qq}:beast_msg:${todayStr}`, JSON.stringify({ msg: beastMsg, ts: Date.now() }));
                 
                 console.log(`玩家 ${usr_qq} 自动神兽赐福完成，获得${item_name}`);
                 return true;
@@ -933,7 +955,7 @@ async isAutoSignEnabled(usr_qq) {
                 // 记录赐福消息
                 const beastMsg = `自动神兽赐福：\n` +
                     `${ass.宗门神兽}闭上了眼睛，表示今天不想理你`;
-                await redis.set(`xiuxian:player:${usr_qq}:beast_msg:${todayStr}`, beastMsg);
+                await redis.set(`xiuxian:player:${usr_qq}:beast_msg:${todayStr}`, JSON.stringify({ msg: beastMsg, ts: Date.now() }));
                 
                 console.log(`玩家 ${usr_qq} 自动神兽赐福未获得奖励`);
                 return true;
@@ -1090,17 +1112,73 @@ async isAutoSignEnabled(usr_qq) {
     }
 
     /**
+     * 重置全体「今日」签到记录（仅管理员可用）
+     * 语义：只清掉今日签到展示文本（sign_msg），不动 lastsign_time、不动连续签到天数。
+     * 玩家今日仍为“已签”状态、不能补签，仅 #查看领取记录 里今天的签到条目被清空。
+     */
+    async resetAllTodaySignRecords(e) {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        const masterList = xiuxianConfig.Master || [];
+        const userQQ = e.user_id.toString().replace('qg_', '');
+        if (!e.isMaster && !masterList.includes(userQQ)) {
+            return false;
+        }
+
+        try {
+            // 获取所有道法仙术玩家
+            const daofaList = xiuxianData.getDaofaList();
+            const playerQQs = Object.keys(daofaList);
+
+            if (playerQQs.length === 0) {
+                await this.broadcastMessage('当前无道法仙术玩家，无需重置今日签到记录');
+                return true;
+            }
+
+            const todayStr = this.getLocalDateStr();
+            let resetCount = 0;
+            let errorCount = 0;
+
+            // 遍历所有玩家，仅清掉今日签到展示文本
+            for (const qq of playerQQs) {
+                try {
+                    const usr_qq = await channel(qq.toString().replace('qg_', ''));
+                    console.log(`正在重置玩家今日签到记录: ${qq} -> ${usr_qq}`);
+
+                    // 只删除今日的签到消息文本（展示），其余签到状态保持不变
+                    await redis.del(`xiuxian:player:${usr_qq}:sign_msg:${todayStr}`);
+
+                    resetCount++;
+                } catch (error) {
+                    console.error(`重置玩家 ${qq} 今日签到记录时出错:`, error);
+                    errorCount++;
+                }
+            }
+
+            const message = `全体今日签到记录重置完成！\n成功重置: ${resetCount}人\n失败: ${errorCount}人\n\n说明：仅清空今日签到展示，连续签到天数与“已签”状态保持不变`;
+            await this.broadcastMessage(message);
+            console.log(`[重置全体今日签到记录] ${message}`);
+
+            return true;
+        } catch (error) {
+            console.error('重置全体今日签到记录时发生严重错误:', error);
+            await this.broadcastMessage('重置全体今日签到记录失败，请查看控制台日志');
+            return false;
+        }
+    }
+
+    /**
      * 重置单个玩家的修仙签到记录
      */
     async resetPlayerSignRecords(usr_qq) {
         try {
-            // 删除签到时间记录
-            await redis.del(`xiuxian:player:${usr_qq}:lastsign_time`);
-            
-            // 删除今日签到奖励记录
-            const today = new Date().toISOString().split('T')[0];
-            await redis.del(`xiuxian:player:${usr_qq}:sign_reward:${today}`);
-            await redis.del(`xiuxian:player:${usr_qq}:sign_msg:${today}`);
+            // 自动与手动签到共用 daily_last_sign_time，旧键保留用于领取记录兼容。
+            await redis.del(
+                `xiuxian:player:${usr_qq}:daily_last_sign_time`,
+                `xiuxian:player:${usr_qq}:lastsign_time`,
+            );
+
+            // 删除签到详情消息（按模式清理整个 key 族，避免旧键永久堆积）
+            await this._delMsgPattern(usr_qq, 'sign_msg');
             
             // 重置玩家连续签到天数
             const player = await Read_player(usr_qq);
@@ -1127,8 +1205,12 @@ async isAutoSignEnabled(usr_qq) {
             
             // 删除剑云海秘库记录
             await redis.del(`xiuxian:player:${usr_qq}:jianyunhai_open_day`);
-            const today = new Date().toISOString().split('T')[0];
-            await redis.del(`xiuxian:player:${usr_qq}:jianyunhai_msg:${today}`);
+
+            // 删除剑云海秘库详情消息（按模式清理整个 key 族，防止永久堆积在 redis）
+            await this._delMsgPattern(usr_qq, 'jianyunhai_msg');
+
+            // 删除势力俸禄详情消息（按模式清理整个 key 族）
+            await this._delMsgPattern(usr_qq, 'salary_msg');
         } catch (error) {
             console.error(`重置玩家 ${usr_qq} 俸禄记录失败:`, error);
             throw error;
@@ -1142,11 +1224,9 @@ async isAutoSignEnabled(usr_qq) {
         try {
             // 删除天道赐福时间记录
             await redis.del(`xiuxian:player:${usr_qq}:lastCifuTime`);
-            
-            // 删除天道赐福奖励记录（如果有）
-            const today = new Date().toISOString().split('T')[0];
-            await redis.del(`xiuxian:player:${usr_qq}:tiandao_cifu:${today}`);
-            await redis.del(`xiuxian:player:${usr_qq}:tiandao_msg:${today}`);
+
+            // 删除天道赐福详情消息（按模式清理整个 key 族）
+            await this._delMsgPattern(usr_qq, 'tiandao_msg');
         } catch (error) {
             console.error(`重置玩家 ${usr_qq} 天道赐福记录失败:`, error);
             throw error;
@@ -1167,11 +1247,9 @@ async isAutoSignEnabled(usr_qq) {
                 player.道法赐福天数 = 0;
                 await Write_player(usr_qq, player);
             }
-            
-            // 删除道法赐福奖励记录（如果有）
-            const today = new Date().toISOString().split('T')[0];
-            await redis.del(`xiuxian:player:${usr_qq}:daofa_cifu:${today}`);
-            await redis.del(`xiuxian:player:${usr_qq}:daofa_msg:${today}`);
+
+            // 删除道法赐福详情消息（按模式清理整个 key 族）
+            await this._delMsgPattern(usr_qq, 'daofa_msg');
         } catch (error) {
             console.error(`重置玩家 ${usr_qq} 道法赐福记录失败:`, error);
             throw error;
@@ -1186,9 +1264,8 @@ async isAutoSignEnabled(usr_qq) {
             // 删除开采灵脉时间记录
             await redis.del(`xiuxian:player:${usr_qq}:getLastsign_Explor`);
             
-            // 删除开采灵脉奖励记录
-            const today = new Date().toISOString().split('T')[0];
-            await redis.del(`xiuxian:player:${usr_qq}:vein_msg:${today}`);
+            // 删除开采灵脉详情消息（按模式清理整个 key 族）
+            await this._delMsgPattern(usr_qq, 'vein_msg');
         } catch (error) {
             console.error(`重置玩家 ${usr_qq} 开采灵脉记录失败:`, error);
             throw error;
@@ -1203,9 +1280,8 @@ async isAutoSignEnabled(usr_qq) {
             // 删除神兽赐福时间记录
             await redis.del(`xiuxian:player:${usr_qq}:getLastsign_Bonus`);
             
-            // 删除神兽赐福奖励记录
-            const today = new Date().toISOString().split('T')[0];
-            await redis.del(`xiuxian:player:${usr_qq}:beast_msg:${today}`);
+            // 删除神兽赐福详情消息（按模式清理整个 key 族）
+            await this._delMsgPattern(usr_qq, 'beast_msg');
         } catch (error) {
             console.error(`重置玩家 ${usr_qq} 神兽赐福记录失败:`, error);
             throw error;
@@ -1272,6 +1348,23 @@ async isAutoSignEnabled(usr_qq) {
     }
 
     /**
+     * 解析领取消息：兼容旧版纯文本 + 新版带时间戳 JSON
+     * 返回 { msg, ts }，ts 为领取毫秒时间戳；
+     * 旧版纯文本无 ts 时回退到 fallbackTs（各任务已有的真实毫秒时间戳，如 lastsign_time），确保旧记录也能按真实时间排序
+     */
+    async _readClaimMsg(usr_qq, prefix, dateStr, fallbackTs = 0) {
+        const raw = await redis.get(`xiuxian:player:${usr_qq}:${prefix}:${dateStr}`);
+        if (!raw) return null;
+        try {
+            const obj = JSON.parse(raw);
+            if (obj && typeof obj === 'object' && typeof obj.msg === 'string') {
+                return { msg: obj.msg, ts: obj.ts || fallbackTs };
+            }
+        } catch (e) { /* 旧版纯文本降级处理 */ }
+        return { msg: raw, ts: fallbackTs };
+    }
+
+    /**
      * 获取指定日期的领取消息（结构化返回）
      */
     async getDayClaimMessages(usr_qq, dateStr) {
@@ -1284,9 +1377,9 @@ async isAutoSignEnabled(usr_qq) {
                 const signDate = new Date(parseInt(lastSignTime));
                 const signDateStr = `${signDate.getFullYear()}-${(signDate.getMonth() + 1).toString().padStart(2, '0')}-${signDate.getDate().toString().padStart(2, '0')}`;
                 if (signDateStr === dateStr) {
-                    const signMsg = await redis.get(`xiuxian:player:${usr_qq}:sign_msg:${dateStr}`);
-                    if (signMsg) {
-                        result.tasks.push({ type: 'sign', typeName: '签到', msg: signMsg });
+                    const signData = await this._readClaimMsg(usr_qq, 'sign_msg', dateStr, parseInt(lastSignTime));
+                    if (signData) {
+                        result.tasks.push({ type: 'sign', typeName: '签到', msg: signData.msg, ts: signData.ts });
                     }
                 }
             }
@@ -1300,25 +1393,27 @@ async isAutoSignEnabled(usr_qq) {
             for (const key of salaryKeys) {
                 const lastClaimDate = await redis.get(key);
                 if (lastClaimDate === dateStr) {
-                    const shiliName = key.includes('yaochi') ? '瑶池' : '摇光圣地';
-                    result.tasks.push({ type: 'salary', typeName: '俸禄', msg: `势力俸禄：自动领取了${shiliName}俸禄` });
+                    // 读取详细的俸禄领取消息
+                    const salaryData = await this._readClaimMsg(usr_qq, 'salary_msg', dateStr);
+                    if (salaryData) {
+                        result.tasks.push({ type: 'salary', typeName: '俸禄', msg: salaryData.msg, ts: salaryData.ts });
+                    } else {
+                        const shiliName = key.includes('yaochi') ? '瑶池' : '摇光圣地';
+                        result.tasks.push({ type: 'salary', typeName: '俸禄', msg: `势力俸禄：自动领取了${shiliName}俸禄` });
+                    }
                     break;
                 }
             }
 
-            // 3. 剑云海秘库记录
+            // 3. 剑云海秘库记录（直接用完整本地日期串比对，与写入基准一致）
             const lastJianyunhaiDay = await redis.get(`xiuxian:player:${usr_qq}:jianyunhai_open_day`);
-            if (lastJianyunhaiDay) {
-                const targetDate = new Date(dateStr);
-                const targetDay = targetDate.getDate();
-                if (parseInt(lastJianyunhaiDay) === targetDay) {
-                    const jianyunhaiMsg = await redis.get(`xiuxian:player:${usr_qq}:jianyunhai_msg:${dateStr}`);
-                    if (jianyunhaiMsg) {
-                        result.tasks.push({ type: 'jianyunhai', typeName: '剑云海', msg: jianyunhaiMsg });
+            if (lastJianyunhaiDay && lastJianyunhaiDay === dateStr) {
+                    const jianyunhaiData = await this._readClaimMsg(usr_qq, 'jianyunhai_msg', dateStr);
+                    if (jianyunhaiData) {
+                        result.tasks.push({ type: 'jianyunhai', typeName: '剑云海', msg: jianyunhaiData.msg, ts: jianyunhaiData.ts });
                     } else {
                         result.tasks.push({ type: 'jianyunhai', typeName: '剑云海', msg: '剑云海秘库开启成功' });
                     }
-                }
             }
 
             // 4. 天道赐福记录
@@ -1328,9 +1423,9 @@ async isAutoSignEnabled(usr_qq) {
                 const cifuDateStr = `${cifuDate.getFullYear()}-${(cifuDate.getMonth() + 1).toString().padStart(2, '0')}-${cifuDate.getDate().toString().padStart(2, '0')}`;
                 
                 if (cifuDateStr === dateStr) {
-                    const tiandaoMsg = await redis.get(`xiuxian:player:${usr_qq}:tiandao_msg:${dateStr}`);
-                    if (tiandaoMsg) {
-                        result.tasks.push({ type: 'tiandao', typeName: '天道赐福', msg: tiandaoMsg });
+                    const tiandaoData = await this._readClaimMsg(usr_qq, 'tiandao_msg', dateStr, parseInt(lastTiandaoTime));
+                    if (tiandaoData) {
+                        result.tasks.push({ type: 'tiandao', typeName: '天道赐福', msg: tiandaoData.msg, ts: tiandaoData.ts });
                     }
                 }
             }
@@ -1342,9 +1437,9 @@ async isAutoSignEnabled(usr_qq) {
                 const daofaDateStr = `${daofaDate.getFullYear()}-${(daofaDate.getMonth() + 1).toString().padStart(2, '0')}-${daofaDate.getDate().toString().padStart(2, '0')}`;
                 
                 if (daofaDateStr === dateStr) {
-                    const daofaMsg = await redis.get(`xiuxian:player:${usr_qq}:daofa_msg:${dateStr}`);
-                    if (daofaMsg) {
-                        result.tasks.push({ type: 'daofa', typeName: '道法', msg: `【道法仙术】${daofaMsg}` });
+                    const daofaData = await this._readClaimMsg(usr_qq, 'daofa_msg', dateStr, parseInt(lastDaofaTime));
+                    if (daofaData) {
+                        result.tasks.push({ type: 'daofa', typeName: '道法', msg: `【道法仙术】${daofaData.msg}`, ts: daofaData.ts });
                     }
                 }
             }
@@ -1356,9 +1451,9 @@ async isAutoSignEnabled(usr_qq) {
                 const veinDateStr = `${veinDate.getFullYear()}-${(veinDate.getMonth() + 1).toString().padStart(2, '0')}-${veinDate.getDate().toString().padStart(2, '0')}`;
                 
                 if (veinDateStr === dateStr) {
-                    const veinMsg = await redis.get(`xiuxian:player:${usr_qq}:vein_msg:${dateStr}`);
-                    if (veinMsg) {
-                        result.tasks.push({ type: 'vein', typeName: '开采灵脉', msg: veinMsg });
+                    const veinData = await this._readClaimMsg(usr_qq, 'vein_msg', dateStr, parseInt(lastVeinTime));
+                    if (veinData) {
+                        result.tasks.push({ type: 'vein', typeName: '开采灵脉', msg: veinData.msg, ts: veinData.ts });
                     }
                 }
             }
@@ -1370,9 +1465,9 @@ async isAutoSignEnabled(usr_qq) {
                 const beastDateStr = `${beastDate.getFullYear()}-${(beastDate.getMonth() + 1).toString().padStart(2, '0')}-${beastDate.getDate().toString().padStart(2, '0')}`;
                 
                 if (beastDateStr === dateStr) {
-                    const beastMsg = await redis.get(`xiuxian:player:${usr_qq}:beast_msg:${dateStr}`);
-                    if (beastMsg) {
-                        result.tasks.push({ type: 'beast', typeName: '神兽赐福', msg: beastMsg });
+                    const beastData = await this._readClaimMsg(usr_qq, 'beast_msg', dateStr, parseInt(lastBeastTime));
+                    if (beastData) {
+                        result.tasks.push({ type: 'beast', typeName: '神兽赐福', msg: beastData.msg, ts: beastData.ts });
                     }
                 }
             }
@@ -1380,6 +1475,9 @@ async isAutoSignEnabled(usr_qq) {
         } catch (error) {
             console.error(`获取${dateStr}领取消息失败:`, error);
         }
+
+        // 同一天内按实际领取时间（毫秒时间戳）降序排列：最新领取的卡片在最上面
+        result.tasks.sort((a, b) => (b.ts || 0) - (a.ts || 0));
 
         return [result];
     }
