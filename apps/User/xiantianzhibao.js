@@ -11,7 +11,7 @@ import {
   Read_player,
 foundthing,
   Read_equipment,
-  Add_HP,
+  Set_HP,
    zd_battle,
    Read_najie,
   exist_najie_thing,
@@ -610,15 +610,8 @@ async daozhengXuying(e) {
             await ForwardMsg(e, battleResult.msg);
         }
         
-        // 判断胜负
-        const playerName = player.名号 || player.名称 || '挑战者';
-        const targetName = targetPlayer.名号 || targetPlayer.名称 || '虚影';
-        const A_win = `${playerName}击败了${targetName}`;
-        const B_win = `${targetName}击败了${playerName}`;
-        
-        const battleMsg = battleResult.msg || [];
-        const isWin = battleMsg.some(item => item.includes(A_win));
-        const isDefeated = battleMsg.some(item => item.includes(B_win));
+        const isWin = battleResult.winner === 'A';
+        const isDefeated = battleResult.winner === 'B';
         
         if (isWin) {
             // ==== 胜利处理 ====
@@ -637,8 +630,8 @@ async daozhengXuying(e) {
         }
         
         // 更新玩家血量
-        if (battleResult.A_xue !== undefined) {
-            await Add_HP(usr_qq, battleResult.A_xue);
+        if (battleResult.A_hp !== undefined) {
+            player.当前血量 = await Set_HP(usr_qq, battleResult.A_hp);
         }
         
         // 清理Redis数据

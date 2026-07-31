@@ -1,6 +1,8 @@
 import fs from 'fs';
 import { plugin } from '../../api/api.js';
 import { Read_player, Write_player, __PATH } from '../../model/xiuxian.js';
+import { readShouyuanDifficulty } from './shouyuanDifficulty.js';
+import { triggerShouyuanRebirth } from './shouyuantask.js';
 
 
 export class ManualShouyuanTask extends plugin {
@@ -61,6 +63,11 @@ export class ManualShouyuanTask extends plugin {
 
   async reduceShouyuan(amount) {
     try {
+      const difficulty = readShouyuanDifficulty(`${__PATH.data_path}/位面.json`);
+      if (!difficulty.drainsLifespan) {
+        return '当前为简单难度，玩家不会随时间流逝扣除寿元。';
+      }
+
       const playerDir = __PATH.player_path;
       const files = fs.readdirSync(playerDir);
       
@@ -135,6 +142,10 @@ export class ManualShouyuanTask extends plugin {
           
           await Write_player(usr_qq, player);
           count++;
+
+          if (difficulty.reincarnatesOnExhaustion && player.寿元 <= 0) {
+            await triggerShouyuanRebirth(usr_qq, player);
+          }
           
           // 每处理100个玩家休息一下，避免阻塞
           if (count % 100 === 0) {

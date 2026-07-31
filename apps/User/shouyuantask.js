@@ -1,6 +1,64 @@
 import fs from 'fs';
 import { plugin, config } from '../../api/api.js';
 import { Read_player, Write_player,__PATH } from '../../model/xiuxian.js';
+import { readShouyuanDifficulty } from './shouyuanDifficulty.js';
+import { notifyReincarnationPlayer } from '../SecretPlace/ZhuanshiTask.js';
+import { buildShouyuanRebirthNotice } from './shouyuanRebirthNotice.js';
+import { hasReincarnationProtection } from '../../model/innateTreasure.js';
+
+const SHOUYUAN_RESCUE_WINDOW_MS = 5 * 60 * 1000;
+
+// 寿元耗尽 → 自动送入轮回往生路（惩罚型，复用 ZhuanshiTask 转世链路）
+export async function triggerShouyuanRebirth(usr_qq, player) {
+  try {
+    if (hasReincarnationProtection(player)) return false;
+    // 幂等：已有转世任务则跳过，避免重复送入
+    const existing = await redis.get(`xiuxian:zhuanshi_task:${usr_qq}`);
+    if (existing) return;
+
+    // 重生次数上限保护（与 #送入轮回 一致，避免被无限转世）
+    let reincarnation_count = await redis.get(`xiuxian:player:${usr_qq}:reCreate_acount`);
+    reincarnation_count = parseInt(reincarnation_count) || 0;
+    if (reincarnation_count >= 15) return;
+
+    const task = {
+      player_qq: usr_qq,
+      player_id: usr_qq,
+      player_name: player.名号,
+      player_data: player,
+      group_id: null,
+      admin_info: {
+        qq: 'system',
+        name: '天道',
+        time: new Date().toLocaleString()
+      },
+      start_time: Date.now(),
+      end_time: Date.now() + SHOUYUAN_RESCUE_WINDOW_MS,
+      acount: reincarnation_count,
+      status: '轮回中',
+      type: '寿元耗尽',
+      admin: 'system'
+    };
+    await redis.multi()
+      .set(`xiuxian:zhuanshi_task:${usr_qq}`, JSON.stringify(task), { EX: 24 * 60 * 60 })
+      .set(`xiuxian:player:${usr_qq}:action`, JSON.stringify({
+        action: '轮回往生路',
+        type: 'zhuanshi',
+        start_time: task.start_time,
+        end_time: task.end_time,
+        description: '寿元耗尽，等待往生或救援',
+        status: '轮回中',
+      }))
+      .exec();
+    await notifyReincarnationPlayer(
+      usr_qq,
+      buildShouyuanRebirthNotice(player.名号, usr_qq, SHOUYUAN_RESCUE_WINDOW_MS)
+    );
+    console.log(`【寿元耗尽】玩家 ${usr_qq} 寿元已尽，送入轮回往生路`);
+  } catch (err) {
+    console.error(`【寿元耗尽】触发转世失败 (${usr_qq}):`, err);
+  }
+}
 
 export class ReduceShouyuanTask extends plugin {
   constructor() {
@@ -21,6 +79,12 @@ export class ReduceShouyuanTask extends plugin {
 
   async reduceShouyuan() {
     try {
+      const difficulty = readShouyuanDifficulty(`${__PATH.data_path}/位面.json`);
+      if (!difficulty.drainsLifespan) {
+        console.log('[寿元流逝] 当前为简单难度，本轮不扣除寿元');
+        return true;
+      }
+
       // 获取所有玩家文件列表
       const playerDir = __PATH.player_path;
       const files = fs.readdirSync(playerDir);
@@ -66,9 +130,14 @@ export class ReduceShouyuanTask extends plugin {
           }
           // 确保寿元不为负
           player.寿元 = Math.max(0, player.寿元 - reduction);
-          
+
           await Write_player(usr_qq, player);
           count++;
+
+          // 寿元耗尽 → 自动送入轮回往生路（惩罚型）
+          if (difficulty.reincarnatesOnExhaustion && player.寿元 <= 0) {
+            await triggerShouyuanRebirth(usr_qq, player);
+          }
           
           // 每处理100个玩家休息一下，避免阻塞
           if (count % 100 === 0) {

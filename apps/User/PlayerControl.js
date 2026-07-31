@@ -14,6 +14,8 @@ import {
   channel,
   buildAt
 } from '../../model/xiuxian.js';
+import { getKongtongModifiers, getTimedActionMultiplier } from '../../model/innateTreasure.js';
+import { getPlayerPlaneName } from '../../model/planeCoords.js';
 export class PlayerControl extends plugin {
   constructor() {
     super({
@@ -97,10 +99,13 @@ export class PlayerControl extends plugin {
       }
     }
 
-    let action_time = time * 60 * 1000; //持续时间，单位毫秒
+    const player = await Read_player(usr_qq);
+    let action_time = time * 60 * 1000; //结算时长，单位毫秒
+    const actualActionTime = Math.floor(action_time * getTimedActionMultiplier(player));
     let arr = {
       action: '闭关', //动作
-      end_time: new Date().getTime() + action_time, //结束时间
+      start_time: Date.now(),
+      end_time: Date.now() + actualActionTime, //结束时间
       time: action_time, //持续时间
       plant: '1', //采药-关闭
       shutup: '0', //闭关状态-开启
@@ -120,7 +125,7 @@ export class PlayerControl extends plugin {
     }
 
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr)); //redis设置动作
-    e.reply(`现在开始闭关${time}分钟,两耳不闻窗外事了`);
+    e.reply(`现在开始闭关${time}分钟,预计${Math.ceil(actualActionTime / 60000)}分钟后圆满`);
 
     return false;
   }
@@ -187,10 +192,12 @@ export class PlayerControl extends plugin {
         return false;
       }
     }
-    let action_time = time * 60 * 1000; //持续时间，单位毫秒
+    let action_time = time * 60 * 1000; //结算时长，单位毫秒
+    const actualActionTime = Math.floor(action_time * getTimedActionMultiplier(player));
     let arr = {
       action: '降妖', //动作
-      end_time: new Date().getTime() + action_time, //结束时间
+      start_time: Date.now(),
+      end_time: Date.now() + actualActionTime, //结束时间
       time: action_time, //持续时间
       plant: '1', //采药-关闭
       shutup: '1', //闭关状态-关闭
@@ -209,7 +216,7 @@ export class PlayerControl extends plugin {
       arr.group_id = e.group_id;
     }
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr)); //redis设置动作
-    e.reply(`现在开始降妖${time}分钟`);
+    e.reply(`现在开始降妖${time}分钟,预计${Math.ceil(actualActionTime / 60000)}分钟后完成`);
     return false;
   }
   /**
@@ -231,7 +238,7 @@ export class PlayerControl extends plugin {
 
     //结算
     let end_time = action.end_time;
-    let start_time = action.end_time - action.time;
+    let start_time = action.start_time || action.end_time - action.time;
     let now_time = new Date().getTime();
     let time;
 
@@ -308,7 +315,7 @@ export class PlayerControl extends plugin {
     if (action.working == 1) return false;
     //结算
     let end_time = action.end_time;
-    let start_time = action.end_time - action.time;
+    let start_time = action.start_time || action.end_time - action.time;
     let now_time = new Date().getTime();
     let time;
     const cf = config.getConfig('xiuxian', 'xiuxian');
@@ -444,6 +451,12 @@ export class PlayerControl extends plugin {
     }
     let other_x = 0;
     let qixue = 0;
+    const kongtong = getKongtongModifiers(player);
+    const cultivationDecree = kongtong.decree?.type === '修炼' &&
+      kongtong.decree.plane === getPlayerPlaneName(player);
+    const cultivationMultiplier = kongtong.cultivationMultiplier * (cultivationDecree ? 1.5 : 1);
+    const cultivationGain = Math.floor((xiuwei * time + other_xiuwei) * cultivationMultiplier);
+    const imperialBlood = cultivationDecree ? Math.floor(cultivationGain * 0.35) : 0;
     if (
       (await exist_najie_thing(usr_qq, '魔界秘宝', '道具')) &&
       player.魔道值 > 999
@@ -471,26 +484,30 @@ export class PlayerControl extends plugin {
     if (transformation == '血气') {
       await setFileValue(
         usr_qq,
-        (xiuwei * time + other_xiuwei) * dy.beiyong4,
+        cultivationGain * dy.beiyong4,
         transformation
       ); //丹药修正
       msg.push(
-        '\n受到炼神之力的影响,增加血气:' + xiuwei * time * dy.beiyong4,
+        '\n受到炼神之力的影响,增加血气:' + cultivationGain * dy.beiyong4,
         '  获得治疗,血量增加:' + blood * time
       );
     } else {
-      await setFileValue(usr_qq, xiuwei * time + other_xiuwei, transformation);
+      await setFileValue(usr_qq, cultivationGain, transformation);
       if (is_random) {
         msg.push(
-          '\n增加气血:' + xiuwei * time,
+          '\n增加气血:' + cultivationGain,
           '  获得治疗,血量增加:' + blood * time + '炼神之力消散了'
         );
       } else {
         msg.push(
-          '\n增加修为:' + xiuwei * time,
+          '\n增加修为:' + cultivationGain,
           '  获得治疗,血量增加:' + blood * time
         );
       }
+    }
+    if (imperialBlood > 0) {
+      await Add_血气(usr_qq, imperialBlood);
+      msg.push(`\n人皇气运额外淬炼血气:${imperialBlood}`);
     }
     if (group_id) {
       await this.pushInfo(group_id, true, msg);
