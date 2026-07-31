@@ -16,6 +16,12 @@ import {
   Goweizhi,
   channel
 } from '../../model/xiuxian.js';
+import {
+  getMinggeEffects,
+  getMinggeBonusMultiplier,
+  calculateMinggeYield,
+} from '../../model/mingge.js';
+import { getTimedActionMultiplier } from '../../model/innateTreasure.js';
 export class guajixitong extends plugin {
   constructor() {
     super({
@@ -121,6 +127,7 @@ async qingchushenqi(e) {
     player.修为 -=20000000;
     player.血气 -=20000000;
     player.神祇 =1;
+    player.神祇经验 = 0;
     await Write_player(usr_qq, player);
       e.reply([
         `神祇凝练成功`,
@@ -165,6 +172,8 @@ async qingchushenqi(e) {
     player.修为 -= 20000000;
     player.血气 -= 20000000;
     player.灵身 = 1;
+    player.灵性 = 1;
+    player.灵性经验 = 0;
     await Write_player(usr_qq, player);
     e.reply([
         `洞天灵身·初成`,
@@ -427,7 +436,7 @@ let currentTime = Date.now();
 let arr = {
     taskType: taskType, // 任务类型
     start_time: currentTime, // 添加开始时间
-    end_time: currentTime + action_time, // 结束时间
+    end_time: currentTime + Math.floor(action_time * getTimedActionMultiplier(player)), // 结束时间
     time: action_time, // 持续时间
 };
     
@@ -480,6 +489,10 @@ async shenqi_jiesuan(e) {
     shenqiaction = JSON.parse(shenqiaction);
     const taskType = shenqiaction.taskType; // 任务类型
     
+    // 神祇重天倍率（0.5 + 重天×0.05：1重=55% … 9重=95%）
+    const shenqiTier = player.神祇 || 1;
+    const shenqiFactor = 0.5 + shenqiTier * 0.05;
+    
     // 检查任务是否包含开始时间
     if (!shenqiaction.start_time) {
         e.reply('任务数据异常，缺少开始时间');
@@ -524,26 +537,44 @@ async shenqi_jiesuan(e) {
     let result;
     switch(taskType) {
         case '采药':
-            result = await this.shenqi_plant_jiesuan(usr_qq, actualMinutes);
+            result = await this.shenqi_plant_jiesuan(usr_qq, actualMinutes, shenqiFactor);
             break;
         case '采矿':
-            result = await this.shenqi_mine_jiesuan(usr_qq, actualMinutes);
+            result = await this.shenqi_mine_jiesuan(usr_qq, actualMinutes, shenqiFactor);
             break;
         case '狩猎':
-            result = await this.shenqi_hunt_jiesuan(usr_qq, actualMinutes);
+            result = await this.shenqi_hunt_jiesuan(usr_qq, actualMinutes, shenqiFactor);
             break;
         case '寻源':
-            result = await this.shenqi_source_jiesuan(usr_qq, actualMinutes);
+            result = await this.shenqi_source_jiesuan(usr_qq, actualMinutes, shenqiFactor);
             break;
         case '地脉引气':
-            result = await this.shenqi_earth_qi_jiesuan(usr_qq, actualMinutes);
+            result = await this.shenqi_earth_qi_jiesuan(usr_qq, actualMinutes, shenqiFactor);
             break;
         case '寻脉定源':
-            result = await this.shenqi_vein_locate_jiesuan(usr_qq, actualMinutes);
+            result = await this.shenqi_vein_locate_jiesuan(usr_qq, actualMinutes, shenqiFactor);
             break;
         default:
             e.reply('未知的神祇代行任务类型');
             return;
+    }
+    
+    // === 神祇重天·经验获取与进阶（经验仅由代行结算赋予）===
+    if (result) {
+        player.神祇经验 = (player.神祇经验 || 0) + actualMinutes;
+        let need = (player.神祇 || 1) * 1000;
+        let advanced = false;
+        while (player.神祇 < 9 && player.神祇经验 >= need) {
+            player.神祇经验 -= need;
+            player.神祇 += 1;
+            advanced = true;
+            need = player.神祇 * 1000;
+        }
+        if (player.神祇 >= 9) player.神祇经验 = Math.min(player.神祇经验, 9 * 1000);
+        await Write_player(usr_qq, player);
+        result.msg += `\n\n收益倍率: ×${Math.round(shenqiFactor * 100)}% (神祇${player.神祇}重天)`;
+        result.msg += `\n神祇经验: ${player.神祇经验}/${player.神祇 * 1000}` + (player.神祇 >= 9 ? ' (已臻极境)' : '');
+        if (advanced) result.msg += `\n\n道音轰鸣，神祇晋升至 ${player.神祇}重天！`;
     }
     
     // 检查是否超时
@@ -596,7 +627,7 @@ async shenqi_jiesuan(e) {
     return true;
 }
 // 神祇采药任务结算
-async shenqi_plant_jiesuan(usr_qq, time) {
+async shenqi_plant_jiesuan(usr_qq, time, factor = 1) {
     const player = data.getData('player', usr_qq);
     if (!player.level_id) return;
     
@@ -617,6 +648,7 @@ async shenqi_plant_jiesuan(usr_qq, time) {
         k = 1.5;
     }
     sum *= k;
+    sum = Math.floor(sum * factor);
     
     // 药材种类和概率分布
     const names = [
@@ -637,9 +669,11 @@ async shenqi_plant_jiesuan(usr_qq, time) {
     const prob = player.level_id < 36 ? commonProb : rareProb;
     
     // 计算每种药材数量
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
+    const herbBonus = minggeEffects?.['采药加成'] ? getMinggeBonusMultiplier(minggeEffects, '采药加成') : 1;
     const rewards = [];
     for (let i = 0; i < names.length; i++) {
-        const count = Math.floor(prob[i] * sum);
+        const count = calculateMinggeYield(prob[i] * sum, minggeEffects, '采药加成');
         if (count > 0) {
             rewards.push({
                 name: names[i],
@@ -648,15 +682,15 @@ async shenqi_plant_jiesuan(usr_qq, time) {
             });
         }
     }
-    
+
     // 添加物品到纳戒
     for (const reward of rewards) {
         await Add_najie_thing(usr_qq, reward.name, reward.type, reward.count);
     }
-    
+
     // 增加职业经验
     await Add_职业经验(usr_qq, exp);
-    
+
     // 构造神祇归来文案
     const herbNames = rewards.map(r => `${r.name}x${r.count}`).join('、');
     const msg = [
@@ -665,17 +699,21 @@ async shenqi_plant_jiesuan(usr_qq, time) {
         `获得职业经验: ${exp}`,
         `采集药材: ${herbNames}`,
         `药材总量: ${Math.floor(sum)}份`
-    ].join('\n');
-    
+    ];
+    if (herbBonus > 1) {
+        msg.push(`命格·草木通灵：采药产出 +${Math.round((herbBonus - 1) * 100)}%`);
+    }
+    const msgText = msg.join('\n');
+
     return {
         exp: exp,
         items: rewards,
-        msg: msg
+        msg: msgText
     };
 }
 
 // 神祇采矿任务结算
-async shenqi_mine_jiesuan(usr_qq, time) {
+async shenqi_mine_jiesuan(usr_qq, time, factor = 1) {
     const player = data.getData('player', usr_qq);
     if (!player.level_id) return;
     
@@ -693,6 +731,7 @@ async shenqi_mine_jiesuan(usr_qq, time) {
     
     // 境界惩罚
     end_amount = Math.floor(end_amount * (player.level_id / 40));
+    end_amount = Math.floor(end_amount * factor);
     
     // 石胚和妖石种类
     const A = [
@@ -707,47 +746,58 @@ async shenqi_mine_jiesuan(usr_qq, time) {
     
     // 随机选择一种石胚和妖石
     const xuanze = Math.trunc(Math.random() * A.length);
-    const num = Math.floor(((rate / 12) * time) / 30);
-    
+    const num = Math.floor(Math.floor(((rate / 12) * time) / 30) * factor);
+
+    // ==== 命格消费层：采矿加成 ====
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
+    const mineBonus = minggeEffects?.['采矿加成'] ? getMinggeBonusMultiplier(minggeEffects, '采矿加成') : 1;
+    const minggeEnd = calculateMinggeYield(end_amount, minggeEffects, '采矿加成');
+    const minggeNum = calculateMinggeYield(num, minggeEffects, '采矿加成');
+    const minggeNumB = calculateMinggeYield(Math.trunc(num / 48), minggeEffects, '采矿加成');
+
     // 添加物品到纳戒
-    await Add_najie_thing(usr_qq, '庚金', '材料', end_amount);
-    await Add_najie_thing(usr_qq, '玄土', '材料', end_amount);
-    await Add_najie_thing(usr_qq, A[xuanze], '材料', num);
-    await Add_najie_thing(usr_qq, B[xuanze], '材料', Math.trunc(num / 48));
-    
+    await Add_najie_thing(usr_qq, '庚金', '材料', minggeEnd);
+    await Add_najie_thing(usr_qq, '玄土', '材料', minggeEnd);
+    await Add_najie_thing(usr_qq, A[xuanze], '材料', minggeNum);
+    await Add_najie_thing(usr_qq, B[xuanze], '材料', minggeNumB);
+
     // 增加职业经验
     await Add_职业经验(usr_qq, exp);
-    
+
     // 构造神祇归来文案
     const oreNames = [
-        `庚金x${end_amount}`,
-        `玄土x${end_amount}`,
-        `${A[xuanze]}x${num}`,
-        `${B[xuanze]}x${Math.trunc(num / 48)}`
+        `庚金x${minggeEnd}`,
+        `玄土x${minggeEnd}`,
+        `${A[xuanze]}x${minggeNum}`,
+        `${B[xuanze]}x${minggeNumB}`
     ].join('、');
-    
+
     const msg = [
         `${player.名号}的神祇采矿归来`,
         `采矿时间: ${time}分钟`,
         `获得职业经验: ${exp}`,
         `开采矿石: ${oreNames}`,
-        `矿石总量: ${end_amount * 2 + num + Math.trunc(num / 48)}份`
-    ].join('\n');
-    
+        `矿石总量: ${minggeEnd * 2 + minggeNum + minggeNumB}份`
+    ];
+    if (mineBonus > 1) {
+        msg.push(`命格·地脉亲和：采矿产出 +${Math.round((mineBonus - 1) * 100)}%`);
+    }
+    const msgText = msg.join('\n');
+
     return {
         exp: exp,
         items: [
-            {name: '庚金', type: '材料', count: end_amount},
-            {name: '玄土', type: '材料', count: end_amount},
-            {name: A[xuanze], type: '材料', count: num},
-            {name: B[xuanze], type: '材料', count: Math.trunc(num / 48)}
+            {name: '庚金', type: '材料', count: minggeEnd},
+            {name: '玄土', type: '材料', count: minggeEnd},
+            {name: A[xuanze], type: '材料', count: minggeNum},
+            {name: B[xuanze], type: '材料', count: minggeNumB}
         ],
-        msg: msg
+        msg: msgText
     };
 }
 
 // 狩猎任务结算
-async shenqi_hunt_jiesuan(usr_qq, time) {
+async shenqi_hunt_jiesuan(usr_qq, time, factor = 1) {
     const player = data.getData('player', usr_qq);
     if (!player.level_id) return;
     
@@ -771,6 +821,8 @@ async shenqi_hunt_jiesuan(usr_qq, time) {
     
     end_amount = Math.floor(end_amount * levelFactor);
     end_amount2 = Math.floor(end_amount2 * levelFactor);
+    end_amount = Math.floor(end_amount * factor);
+    end_amount2 = Math.floor(end_amount2 * factor);
 
     // 添加物品到纳戒
     await Add_najie_thing(usr_qq, "野兔", "食材", end_amount);
@@ -813,7 +865,7 @@ async shenqi_hunt_jiesuan(usr_qq, time) {
 }
 
 // 寻源任务结算
-async shenqi_source_jiesuan(usr_qq, time) {
+async shenqi_source_jiesuan(usr_qq, time, factor = 1) {
     const player = data.getData('player', usr_qq);
     if (!player.level_id) return;
     
@@ -827,17 +879,17 @@ async shenqi_source_jiesuan(usr_qq, time) {
     const baseAmount = Math.floor((1.8 + Math.random() * 0.4) * time);
     
     // 普通源石奖励
-    const commonAmount = Math.floor(3 * (rate + 1) * baseAmount);
+    const commonAmount = Math.floor(Math.floor(3 * (rate + 1) * baseAmount) * factor);
     
     // 稀有源石奖励
     const rareAmount = Math.floor(time / 30);
-    const rareSource = Math.floor(2 * (rate + 0.7) * rareAmount);
+    const rareSource = Math.floor(Math.floor(2 * (rate + 0.7) * rareAmount) * factor);
     
     // 神源石奖励
-    const divineSource = Math.floor(1 * (rate + 0.5) * rareAmount);
+    const divineSource = Math.floor(Math.floor(1 * (rate + 0.5) * rareAmount) * factor);
     
     // 源药奖励
-    const sourceMedicine = Math.floor(1 * (rate + 0.5) * rareAmount);
+    const sourceMedicine = Math.floor(Math.floor(1 * (rate + 0.5) * rareAmount) * factor);
     
     // 添加物品到纳戒
     await Add_najie_thing(usr_qq, "下品源石", "道具", commonAmount);
@@ -880,7 +932,7 @@ async shenqi_source_jiesuan(usr_qq, time) {
 }
 
 // 地脉引气任务结算
-async shenqi_earth_qi_jiesuan(usr_qq, time) {
+async shenqi_earth_qi_jiesuan(usr_qq, time, factor = 1) {
     const player = data.getData('player', usr_qq);
     if (!player.level_id) return;
 
@@ -904,6 +956,8 @@ async shenqi_earth_qi_jiesuan(usr_qq, time) {
     
     end_amount2 = Math.floor(end_amount2 * levelFactor);
     end_amount3 = Math.floor(end_amount3 * levelFactor);
+    end_amount2 = Math.floor(end_amount2 * factor);
+    end_amount3 = Math.floor(end_amount3 * factor);
 
     // 添加物品到纳戒
     await Add_najie_thing(usr_qq, "上品源石", "道具", end_amount2);
@@ -943,7 +997,7 @@ async shenqi_earth_qi_jiesuan(usr_qq, time) {
 }
 
 // 寻脉定源任务结算
-async shenqi_vein_locate_jiesuan(usr_qq, time) {
+async shenqi_vein_locate_jiesuan(usr_qq, time, factor = 1) {
     const player = data.getData('player', usr_qq);
     if (!player || !player.level_id) return;
     
@@ -954,9 +1008,9 @@ async shenqi_vein_locate_jiesuan(usr_qq, time) {
     )?.rate * 10 || 1;
     
     // 高级奖励计算
-    const end_amount = Math.floor(0.5 * (rate + 1) * baseAmount);
-    const end_amount2 = Math.floor(0.3 * (rate + 0.8) * baseAmount);
-    const end_amount3 = Math.floor(0.1 * (rate + 0.6) * baseAmount);
+    const end_amount = Math.floor(Math.floor(0.5 * (rate + 1) * baseAmount) * factor);
+    const end_amount2 = Math.floor(Math.floor(0.3 * (rate + 0.8) * baseAmount) * factor);
+    const end_amount3 = Math.floor(Math.floor(0.1 * (rate + 0.6) * baseAmount) * factor);
     
     // 特殊奖励
     let longmaiEssence = 0;
@@ -1120,7 +1174,7 @@ async lingshendaixing(e) {
     let action_time = time * 60 * 1000; // 持续时间，单位毫秒
     let arr = {
         taskType: taskType, // 任务类型
-        end_time: new Date().getTime() + action_time, // 结束时间
+        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)), // 结束时间
         time: action_time, // 持续时间
     };
     
@@ -1156,6 +1210,7 @@ async lingshen_jiesuan(e) {
         e.reply('请先创建角色');
         return;
     }
+    let player = await Read_player(usr_qq);
         if (!player.灵身 || player.灵身 < 1) {
         e.reply('你的洞天都没有蕴养出灵身');
         return;
@@ -1169,7 +1224,11 @@ async lingshen_jiesuan(e) {
     }
     
     lingshenaction = JSON.parse(lingshenaction);
-    const taskType = lingshenaction.lingshenaction; // 任务类
+    const taskType = lingshenaction.taskType; // 任务类型
+    
+    // 灵性倍率（0.5 + 灵性×0.05：1重=55% … 9重=95%）
+    const lingshenTier = player.灵性 || 1;
+    const lingshenFactor = 0.5 + lingshenTier * 0.05;
     
     // 结束任务也需要职业验证
     let requiredOccupation = '';
@@ -1221,26 +1280,51 @@ async lingshen_jiesuan(e) {
     let result;
     switch(taskType) {
         case '采药':
-            result = await this.lingshen_plant_jiesuan(usr_qq, time);
+            result = await this.lingshen_plant_jiesuan(usr_qq, time, lingshenFactor);
             break;
         case '采矿':
-            result = await this.lingshen_mine_jiesuan(usr_qq, time);
+            result = await this.lingshen_mine_jiesuan(usr_qq, time, lingshenFactor);
             break;
         case '狩猎':
-            result = await this.lingshen_hunt_jiesuan(usr_qq,time);
+            result = await this.lingshen_hunt_jiesuan(usr_qq, time, lingshenFactor);
             break;
         case '寻源':
-            result = await this.lingshen_source_jiesuan(usr_qq,time);
+            result = await this.lingshen_source_jiesuan(usr_qq, time, lingshenFactor);
             break;
         case '地脉引气':
-            result = await this.lingshen_earth_qi_jiesuan(usr_qq,time);
+            result = await this.lingshen_earth_qi_jiesuan(usr_qq, time, lingshenFactor);
             break;
         case '寻脉定源':
-            result = await this.lingshen_vein_locate_jiesuan(usr_qq, time);
+            result = await this.lingshen_vein_locate_jiesuan(usr_qq, time, lingshenFactor);
             break;
         default:
             e.reply('未知的灵身代行任务类型');
             return;
+    }
+    
+    // === 灵性·经验获取与进阶（经验仅由代行结算赋予）===
+    if (result) {
+        player.灵性经验 = (player.灵性经验 || 0) + time;
+        let need = (player.灵性 || 1) * 1000;
+        let advanced = false;
+        while (player.灵性 < 9 && player.灵性经验 >= need) {
+            player.灵性经验 -= need;
+            player.灵性 += 1;
+            advanced = true;
+            need = player.灵性 * 1000;
+        }
+        if (player.灵性 >= 9) player.灵性经验 = Math.min(player.灵性经验, 9 * 1000);
+        await Write_player(usr_qq, player);
+        const headerLines = [
+            `【灵身代行结算】`,
+            `任务类型: ${taskType}`,
+            `计划时间: ${plannedMinutes}分钟`,
+            `实际执行: ${time}分钟`,
+            `灵性: ${player.灵性}重 (收益×${Math.round(lingshenFactor * 100)}%)`,
+            `灵性经验: ${player.灵性经验}/${player.灵性 * 1000}` + (player.灵性 >= 9 ? ' (已臻极境)' : '')
+        ];
+        if (advanced) headerLines.push(`\n灵机圆融，灵性晋升至 ${player.灵性}重！`);
+        result.msg = headerLines.join('\n') + `\n\n` + result.msg;
     }
     
     // 清除代行任务
@@ -1261,7 +1345,7 @@ async lingshen_jiesuan(e) {
     return true;
 }
 // 灵身采药任务结算
-async lingshen_plant_jiesuan(usr_qq, time) {
+async lingshen_plant_jiesuan(usr_qq, time, factor = 1) {
     const player = data.getData('player', usr_qq);
     if (!player.level_id) return;
     
@@ -1282,6 +1366,7 @@ async lingshen_plant_jiesuan(usr_qq, time) {
         k = 1.5;
     }
     sum *= k;
+    sum = Math.floor(sum * factor);
     
     // 药材种类和概率分布
     const names = [
@@ -1302,9 +1387,11 @@ async lingshen_plant_jiesuan(usr_qq, time) {
     const prob = player.level_id < 36 ? commonProb : rareProb;
     
     // 计算每种药材数量
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
+    const herbBonus = minggeEffects?.['采药加成'] ? getMinggeBonusMultiplier(minggeEffects, '采药加成') : 1;
     const rewards = [];
     for (let i = 0; i < names.length; i++) {
-        const count = Math.floor(prob[i] * sum);
+        const count = calculateMinggeYield(prob[i] * sum, minggeEffects, '采药加成');
         if (count > 0) {
             rewards.push({
                 name: names[i],
@@ -1313,15 +1400,15 @@ async lingshen_plant_jiesuan(usr_qq, time) {
             });
         }
     }
-    
+
     // 添加物品到纳戒
     for (const reward of rewards) {
         await Add_najie_thing(usr_qq, reward.name, reward.type, reward.count);
     }
-    
+
     // 增加职业经验
     await Add_职业经验(usr_qq, exp);
-    
+
     // 构造灵身归来文案
     const herbNames = rewards.map(r => `${r.name}x${r.count}`).join('、');
     const msg = [
@@ -1330,17 +1417,21 @@ async lingshen_plant_jiesuan(usr_qq, time) {
         `获得职业经验: ${exp}`,
         `采集药材: ${herbNames}`,
         `药材总量: ${Math.floor(sum)}份`
-    ].join('\n');
-    
+    ];
+    if (herbBonus > 1) {
+        msg.push(`命格·草木通灵：采药产出 +${Math.round((herbBonus - 1) * 100)}%`);
+    }
+    const msgText = msg.join('\n');
+
     return {
         exp: exp,
         items: rewards,
-        msg: msg
+        msg: msgText
     };
 }
 
 // 灵身采矿任务结算
-async lingshen_mine_jiesuan(usr_qq, time) {
+async lingshen_mine_jiesuan(usr_qq, time, factor = 1) {
     const player = data.getData('player', usr_qq);
     if (!player.level_id) return;
     
@@ -1358,6 +1449,7 @@ async lingshen_mine_jiesuan(usr_qq, time) {
     
     // 境界惩罚
     end_amount = Math.floor(end_amount * (player.level_id / 40));
+    end_amount = Math.floor(end_amount * factor);
     
     // 石胚和妖石种类
     const A = [
@@ -1372,47 +1464,58 @@ async lingshen_mine_jiesuan(usr_qq, time) {
     
     // 随机选择一种石胚和妖石
     const xuanze = Math.trunc(Math.random() * A.length);
-    const num = Math.floor(((rate / 12) * time) / 30);
-    
+    const num = Math.floor(Math.floor(((rate / 12) * time) / 30) * factor);
+
+    // ==== 命格消费层：采矿加成 ====
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
+    const mineBonus = minggeEffects?.['采矿加成'] ? getMinggeBonusMultiplier(minggeEffects, '采矿加成') : 1;
+    const minggeEnd = calculateMinggeYield(end_amount, minggeEffects, '采矿加成');
+    const minggeNum = calculateMinggeYield(num, minggeEffects, '采矿加成');
+    const minggeNumB = calculateMinggeYield(Math.trunc(num / 48), minggeEffects, '采矿加成');
+
     // 添加物品到纳戒
-    await Add_najie_thing(usr_qq, '庚金', '材料', end_amount);
-    await Add_najie_thing(usr_qq, '玄土', '材料', end_amount);
-    await Add_najie_thing(usr_qq, A[xuanze], '材料', num);
-    await Add_najie_thing(usr_qq, B[xuanze], '材料', Math.trunc(num / 48));
-    
+    await Add_najie_thing(usr_qq, '庚金', '材料', minggeEnd);
+    await Add_najie_thing(usr_qq, '玄土', '材料', minggeEnd);
+    await Add_najie_thing(usr_qq, A[xuanze], '材料', minggeNum);
+    await Add_najie_thing(usr_qq, B[xuanze], '材料', minggeNumB);
+
     // 增加职业经验
     await Add_职业经验(usr_qq, exp);
-    
+
     // 构造灵身归来文案
     const oreNames = [
-        `庚金x${end_amount}`,
-        `玄土x${end_amount}`,
-        `${A[xuanze]}x${num}`,
-        `${B[xuanze]}x${Math.trunc(num / 48)}`
+        `庚金x${minggeEnd}`,
+        `玄土x${minggeEnd}`,
+        `${A[xuanze]}x${minggeNum}`,
+        `${B[xuanze]}x${minggeNumB}`
     ].join('、');
-    
+
     const msg = [
         `${player.名号}的灵身采矿归来`,
         `采矿时间: ${time}分钟`,
         `获得职业经验: ${exp}`,
         `开采矿石: ${oreNames}`,
-        `矿石总量: ${end_amount * 2 + num + Math.trunc(num / 48)}份`
-    ].join('\n');
-    
+        `矿石总量: ${minggeEnd * 2 + minggeNum + minggeNumB}份`
+    ];
+    if (mineBonus > 1) {
+        msg.push(`命格·地脉亲和：采矿产出 +${Math.round((mineBonus - 1) * 100)}%`);
+    }
+    const msgText = msg.join('\n');
+
     return {
         exp: exp,
         items: [
-            {name: '庚金', type: '材料', count: end_amount},
-            {name: '玄土', type: '材料', count: end_amount},
-            {name: A[xuanze], type: '材料', count: num},
-            {name: B[xuanze], type: '材料', count: Math.trunc(num / 48)}
+            {name: '庚金', type: '材料', count: minggeEnd},
+            {name: '玄土', type: '材料', count: minggeEnd},
+            {name: A[xuanze], type: '材料', count: minggeNum},
+            {name: B[xuanze], type: '材料', count: minggeNumB}
         ],
-        msg: msg
+        msg: msgText
     };
 }
 
 // 狩猎任务结算
-async lingshen_hunt_jiesuan(usr_qq, time) {
+async lingshen_hunt_jiesuan(usr_qq, time, factor = 1) {
     const player = data.getData('player', usr_qq);
     if (!player.level_id) return;
     
@@ -1436,6 +1539,8 @@ async lingshen_hunt_jiesuan(usr_qq, time) {
     
     end_amount = Math.floor(end_amount * levelFactor);
     end_amount2 = Math.floor(end_amount2 * levelFactor);
+    end_amount = Math.floor(end_amount * factor);
+    end_amount2 = Math.floor(end_amount2 * factor);
 
     // 添加物品到纳戒
     await Add_najie_thing(usr_qq, "野兔", "食材", end_amount);
@@ -1478,7 +1583,7 @@ async lingshen_hunt_jiesuan(usr_qq, time) {
 }
 
 // 寻源任务结算
-async lingshen_source_jiesuan(usr_qq, time) {
+async lingshen_source_jiesuan(usr_qq, time, factor = 1) {
     const player = data.getData('player', usr_qq);
     if (!player.level_id) return;
     
@@ -1492,17 +1597,17 @@ async lingshen_source_jiesuan(usr_qq, time) {
     const baseAmount = Math.floor((1.8 + Math.random() * 0.4) * time);
     
     // 普通源石奖励
-    const commonAmount = Math.floor(3 * (rate + 1) * baseAmount);
+    const commonAmount = Math.floor(Math.floor(3 * (rate + 1) * baseAmount) * factor);
     
     // 稀有源石奖励
     const rareAmount = Math.floor(time / 30);
-    const rareSource = Math.floor(2 * (rate + 0.7) * rareAmount);
+    const rareSource = Math.floor(Math.floor(2 * (rate + 0.7) * rareAmount) * factor);
     
     // 神源石奖励
-    const divineSource = Math.floor(1 * (rate + 0.5) * rareAmount);
+    const divineSource = Math.floor(Math.floor(1 * (rate + 0.5) * rareAmount) * factor);
     
     // 源药奖励
-    const sourceMedicine = Math.floor(1 * (rate + 0.5) * rareAmount);
+    const sourceMedicine = Math.floor(Math.floor(1 * (rate + 0.5) * rareAmount) * factor);
     
     // 添加物品到纳戒
     await Add_najie_thing(usr_qq, "下品源石", "道具", commonAmount);
@@ -1545,7 +1650,7 @@ async lingshen_source_jiesuan(usr_qq, time) {
 }
 
 // 地脉引气任务结算
-async lingshen_earth_qi_jiesuan(usr_qq, time) {
+async lingshen_earth_qi_jiesuan(usr_qq, time, factor = 1) {
     const player = data.getData('player', usr_qq);
     if (!player.level_id) return;
 
@@ -1569,6 +1674,8 @@ async lingshen_earth_qi_jiesuan(usr_qq, time) {
     
     end_amount2 = Math.floor(end_amount2 * levelFactor);
     end_amount3 = Math.floor(end_amount3 * levelFactor);
+    end_amount2 = Math.floor(end_amount2 * factor);
+    end_amount3 = Math.floor(end_amount3 * factor);
 
     // 添加物品到纳戒
     await Add_najie_thing(usr_qq, "上品源石", "道具", end_amount2);
@@ -1608,7 +1715,7 @@ async lingshen_earth_qi_jiesuan(usr_qq, time) {
 }
 
 // 寻脉定源任务结算
-async lingshen_vein_locate_jiesuan(usr_qq, time) {
+async lingshen_vein_locate_jiesuan(usr_qq, time, factor = 1) {
     const player = data.getData('player', usr_qq);
     if (!player || !player.level_id) return;
     
@@ -1619,9 +1726,9 @@ async lingshen_vein_locate_jiesuan(usr_qq, time) {
     const rate = occupationData ? occupationData.rate * 20 : 20;
     
     // 高级奖励计算
-    const end_amount = Math.floor(0.5 * (rate + 1) * baseAmount);
-    const end_amount2 = Math.floor(0.3 * (rate + 0.8) * baseAmount);
-    const end_amount3 = Math.floor(0.1 * (rate + 0.6) * baseAmount);
+    const end_amount = Math.floor(Math.floor(0.5 * (rate + 1) * baseAmount) * factor);
+    const end_amount2 = Math.floor(Math.floor(0.3 * (rate + 0.8) * baseAmount) * factor);
+    const end_amount3 = Math.floor(Math.floor(0.1 * (rate + 0.6) * baseAmount) * factor);
     
     // 特殊奖励
     let longmaiEssence = 0;

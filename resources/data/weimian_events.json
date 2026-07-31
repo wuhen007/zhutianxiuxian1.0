@@ -1,0 +1,222 @@
+{
+    "eventHistory": [
+        {
+            "type": "treasureAppear",
+            "treasure": {
+                "name": "昆仑镜",
+                "desc": "可照见过去未来",
+                "rarity": "至宝",
+                "power": 14
+            },
+            "location": "通天古星禁地",
+            "luckyPlayer": {
+                "qq": "2496443121",
+                "name": "路人甲23号"
+            },
+            "witnessCount": 7,
+            "timestamp": 1785261600681
+        },
+        {
+            "type": "coordinateClue",
+            "sourcePlane": "凡间",
+            "location": "血色禁地",
+            "targetPlane": "永恒未知之地",
+            "discovererName": "路人甲27号",
+            "claimedQqs": [],
+            "timestamp": 1785290400653,
+            "expiresAt": 1785376800653
+        },
+        {
+            "type": "worldChange",
+            "eraIndex": 0,
+            "event": {
+                "title": "仙根觉醒",
+                "desc": "天地灵根突然大规模开花结果，灵气暴涨"
+            },
+            "timestamp": 1785297602602
+        },
+        {
+            "type": "worldChange",
+            "eraIndex": 0,
+            "event": {
+                "title": "仙根觉醒",
+                "desc": "天地灵根突然大规模开花结果，灵气暴涨"
+            },
+            "timestamp": 1785304800877
+        },
+        {
+            "type": "sectWar",
+            "attacker": {
+                "name": "太初圣宗",
+                "desc": "太古传承，底蕴深厚"
+            },
+            "defender": {
+                "name": "九霄圣地",
+                "desc": "九天神霄道统"
+            },
+            "reason": "上古恩怨的延续",
+            "plane": "遮天位面",
+            "location": "姬家",
+            "coordinate": {
+                "x": 300,
+                "y": 206
+            },
+            "timestamp": 1785326400792,
+            "expiresAt": 1785412800791,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": [
+                "2640850832",
+                "392852264",
+                "3219381398"
+            ]
+        },
+        {
+            "type": "forbiddenZone",
+            "zone": {
+                "name": "不死山",
+                "locationId": "busishan",
+                "desc": "位于北斗南域，传闻其中有石皇沉睡",
+                "danger": "极高"
+            },
+            "phenomenon": "散发出令人心悸的帝威",
+            "plane": "遮天位面",
+            "location": "不死山",
+            "coordinate": {
+                "x": 364,
+                "y": 250
+            },
+            "timestamp": 1785344402483,
+            "expiresAt": 1785430802483,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": [
+                "2640850832"
+            ]
+        },
+        {
+            "type": "prodigyRise",
+            "player": {
+                "qq": "2640850832",
+                "name": "石凡"
+            },
+            "level": 10,
+            "levelName": "铭文境",
+            "achievement": "在一处上古遗迹中获得逆天机缘",
+            "achievement2": "诸多大能开始研究此人的来历",
+            "plane": "仙域",
+            "location": "混沌仙池",
+            "coordinate": {
+                "x": 173,
+                "y": 404
+            },
+            "timestamp": 1785406200085,
+            "expiresAt": 1785492600081,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": []
+        },
+        {
+            "type": "wenxianClue",
+            "plane": "遮天位面",
+            "location": "太初古矿",
+            "coordinate": {
+                "x": 212,
+                "y": 52
+            },
+            "discovererName": "路人甲23号",
+            "claimedQqs": [],
+            "timestamp": 1785416700089,
+            "expiresAt": 1785503100089,
+            "source": "era",
+            "interaction": "wenxian",
+            "participantQqs": []
+        },
+        {
+            "type": "worldChange",
+            "eraIndex": 3,
+            "event": {
+                "title": "道统断裂",
+                "desc": "诸多上古传承断绝，后人难以为继"
+            },
+            "plane": "仙域",
+            "location": "太始仙王府",
+            "coordinate": {
+                "x": 848,
+                "y": 96
+            },
+            "timestamp": 1785431100058,
+            "expiresAt": 1785517500057,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": []
+        }
+    ],
+    "lastEventTime": 0,
+    "lastEventWorldYear": 30000,
+    "activeEvents": [
+        {
+            "type": "prodigyRise",
+            "player": {
+                "qq": "2640850832",
+                "name": "石凡"
+            },
+            "level": 10,
+            "levelName": "铭文境",
+            "achievement": "在一处上古遗迹中获得逆天机缘",
+            "achievement2": "诸多大能开始研究此人的来历",
+            "plane": "仙域",
+            "location": "混沌仙池",
+            "coordinate": {
+                "x": 173,
+                "y": 404
+            },
+            "timestamp": 1785406200085,
+            "expiresAt": 1785492600081,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": []
+        },
+        {
+            "type": "wenxianClue",
+            "plane": "遮天位面",
+            "location": "太初古矿",
+            "coordinate": {
+                "x": 212,
+                "y": 52
+            },
+            "discovererName": "路人甲23号",
+            "claimedQqs": [],
+            "timestamp": 1785416700089,
+            "expiresAt": 1785503100089,
+            "source": "era",
+            "interaction": "wenxian",
+            "participantQqs": []
+        },
+        {
+            "type": "worldChange",
+            "eraIndex": 3,
+            "event": {
+                "title": "道统断裂",
+                "desc": "诸多上古传承断绝，后人难以为继"
+            },
+            "plane": "仙域",
+            "location": "太始仙王府",
+            "coordinate": {
+                "x": 848,
+                "y": 96
+            },
+            "timestamp": 1785431100058,
+            "expiresAt": 1785517500057,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": []
+        }
+    ],
+    "eventCooldown": 2000,
+    "enableEvents": true,
+    "eraTriggerChance": 0.35,
+    "dungeonTriggerChance": 0.002,
+    "eventDurationMs": 86400000,
+    "maxActiveEvents": 3
+}

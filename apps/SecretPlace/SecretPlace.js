@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { plugin, verc, data, config } from '../../api/api.js';
 
 import {
@@ -7,6 +8,9 @@ import {
   sleep,
   exist_najie_thing,
   Add_najie_thing,
+  Read_najie,
+  Read_equipment,
+  Write_najie,
 
 } from '../../model/xiuxian.js';
 
@@ -14,7 +18,7 @@ import {
   Add_灵石,
   Add_修为,
    Add_血气,
-   Add_寿元,
+  Add_寿元,
   exist_hunyin,
   find_qinmidu,
   add_qinmidu,
@@ -26,10 +30,122 @@ import {
   channel,
   Read_renwu,
   Write_renwu,
+  zd_battle,
   find_renwu,
+  Add_renwu_progress,
 } from '../../model/xiuxian.js';
 import Show from "../../model/show.js";
 import puppeteer from "../../../../lib/puppeteer/puppeteer.js";
+import RealmEvents from '../tasks/RealmEvents.js';
+import {
+  claimInnateTreasure,
+  createInnateTreasure,
+  createInnateTreasureProjection,
+  getTimedActionMultiplier,
+  readInnateTreasureState,
+} from '../../model/innateTreasure.js';
+import {
+  TREASURE_DAO_HEARTS,
+  TREASURE_TRIAL_LIMIT,
+  createTreasureGuardian,
+  getRevealedTreasureClues,
+  getTreasureContestProfile,
+  rankTreasureContest,
+} from '../../model/innateTreasureContest.js';
+import { calculateMinggeGain, getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
+import { getPlayerPlaneCoordinate } from '../../model/planeCoords.js';
+import {
+    formatRealmEventLocation,
+    formatRealmEventTravel,
+    getRealmEventReach,
+} from '../../model/realmEventLocation.js';
+import {
+    ACCIDENT_BASE,
+    ACCIDENT_REALM_REDUCE,
+    COORDINATE_CLUE_COST,
+    DEFAULT_KNOWN_LOCATIONS,
+    PLACE_LOCATION_MAP,
+    SPECIAL_LOCATIONS,
+    TRAVEL_REDUCE_MAX,
+    calcRealmReducePct,
+    consumeTravelWind,
+    getBaseTravelThreshold,
+    getBodyTravelQuote,
+    getLocationThreshold,
+    getTokenTravelTime,
+    getUnknownCoordinates,
+    hasCoordinate,
+    purchaseCoordinateClue,
+    rememberCoordinate,
+} from '../../model/weimianTravel.js';
+import {
+    WENXIAN_REQUIRED_REALM_LEVEL,
+    grantWenXianClue,
+    isWenXianEligible,
+} from '../../model/wenxianling.js';
+import {
+    RED_DUST_FORTUNE_COST,
+    RED_DUST_FORTUNES,
+    createRedDustFortune,
+    getActiveRedDustFortune,
+    getRedDustFortuneType,
+} from '../../model/redDustFortune.js';
+
+// ==================== 诡异大祭·崩灭位面检查工具 ====================
+function isWeiMianDestroyed(planeName) {
+    try {
+        const filePath = data.filePathMap.weimianList;
+        const obj = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        return obj[planeName] === 0;
+    } catch (e) { return false; }
+}
+
+async function replyPlaneDestroyed(e, planeName) {
+    return e.reply([
+        `【虚空封锁·位面崩灭】`,
+        ``,
+        `厄土仙帝的一掌彻底粉碎了「${planeName}」的位面壁垒，副本入口随之崩塌！`,
+        `「崩灭的位面，岂容尔等自由进出？」`,
+        ``,
+        `唯仙帝映照权能，方可修复崩灭的位面。`,
+    ].join('\n'));
+}
+// ================================================================
+
+// ==================== 位面穿梭·接引请求 ====================
+// 待确认请求缓存：key = 被接引/送往者QQ，value = { fromQQ, fromName, type, locationName, expire }
+const pendingJieyinMap = new Map();
+const treasureSettlementLocks = new Set();
+
+function treasureBattleExcerpt(messages) {
+    if (!Array.isArray(messages)) return [];
+    if (messages.length <= 16) return messages;
+    return [...messages.slice(0, 4), '……战斗过程过长，仅展示末段……', ...messages.slice(-10)];
+}
+
+// 刻画坐标消耗的灵石（在传送阵上刻入坐标）
+const ENGRAVE_LINGSHI_COST = 5e7;
+// ================================================================
+
+// 崩灭位面提示文案（与 goToLocation 保持一致）
+function buildPlaneDestroyedMsgs(planeName) {
+    return [
+        `【虚空封锁·位面崩灭】`,
+        ``,
+        `你试图踏入「${planeName}」——`,
+        `然而星空古路的另一端，只有无尽的黑暗与虚空乱流。`,
+        ``,
+        `诡异大祭期间，始祖亲手将「${planeName}」打爆，`,
+        `位面壁垒彻底崩碎，山河破灭，生灵涂炭！`,
+        ``,
+        `「此界已成废墟，汝欲入死地乎？」`,
+        ``,
+        `唯仙帝映照权能，方可修复崩灭的位面。`,
+    ].join('\n');
+}
+// ================================================================
+
+
 export class SecretPlace extends plugin {
   constructor() {
     super({
@@ -161,9 +277,98 @@ export class SecretPlace extends plugin {
 {
   reg: '^#送往',
   fnc: 'sendPlayerToLocation'
+},
+{
+  reg: '^#同意接引$',
+  fnc: 'confirmJieyin'
+},
+{
+  reg: '^#拒绝接引$',
+  fnc: 'refuseJieyin'
+},
+{
+  reg: '^#记坐标',
+  fnc: 'recordCoordinate'
+},
+{
+  reg: '^#坐标记忆$',
+  fnc: 'coordinateMemory'
+},
+{
+  reg: '^#(?:求购|求取)位面线索',
+  fnc: 'buyCoordinateClue'
+},
+{
+  reg: '^#探索位面线索',
+  fnc: 'exploreCoordinateClue'
+},
+{
+  reg: '^#参悟问仙古碑$',
+  fnc: 'exploreWenXianStele'
+},
+{
+  reg: '^#(?:参与(?:位面)?大事件|夺宝|探查遗迹)$',
+  fnc: 'participateRealmEvent'
+},
+{
+  reg: '^#(?:观摩灵宝|查看夺宝进度|灵宝择主榜)$',
+  fnc: 'treasureContestInfo'
+},
+{
+  reg: '^#挑战守护灵\\s+(?:普通|凶险|绝境)$',
+  fnc: 'treasureContestTrial'
+},
+{
+  reg: '^#参悟先天禁制\\s+.+$',
+  fnc: 'treasureContestTrial'
+},
+{
+  reg: '^#护持天地灵脉\\s+.+\\*\\d+$',
+  fnc: 'treasureContestTrial'
+},
+{
+  reg: '^#跃入命运乱流$',
+  fnc: 'treasureContestTrial'
+},
+{
+  reg: '^#立下道心\\s+(?:镇压诸天|守护苍生|参悟大道|逍遥天地)$',
+  fnc: 'treasureContestDaoHeart'
+},
+{
+  reg: '^#白须仙翁$',
+  fnc: 'whiteBeardShop'
+},
+{
+  reg: '^#购买仙翁商品\\*[1-9]\\d*$',
+  fnc: 'buyWhiteBeardItem'
+},
+{
+  reg: '^#黑衣神秘人$',
+  fnc: 'blackMarketShop'
+},
+{
+  reg: '^#购买黑市商品\\*[1-9]\\d*$',
+  fnc: 'buyBlackMarketItem'
+},
+{
+  reg: '^#绝美仙子$',
+  fnc: 'fairyFortuneShop'
+},
+{
+  reg: '^#求取(?:问道|历练|寻缘)签$',
+  fnc: 'buyFairyFortune'
+},
+{
+  reg: '^#刻画坐标',
+  fnc: 'engraveCoordinate'
 }
       ],
     });
+    this.task = {
+      cron: '0 */5 * * * ?',
+      name: '先天至宝择主结算',
+      fnc: () => this.settleExpiredTreasureContests(),
+    };
   }
 async goToLocation(e) {
     if (!verc({ e })) return false;
@@ -175,18 +380,8 @@ async goToLocation(e) {
     // 解析目标地点
     const location = e.msg.match(/^#穿梭(凡间|仙界|下界八域|九天十地|遮天位面|界海|时间长河|永恒未知之地|仙域)$/)[1];
     
-    // 地点映射表
-    const LOCATION_MAP = {
-        '凡间': 0,
-        '仙界': 1, 
-        '下界八域': 1.5,
-        '遮天位面': 2,
-        '九天十地': 2.5,
-        '界海': 3,
-        '时间长河': 4,
-        '永恒未知之地': 5,
-        '仙域': 6
-    };
+    // 地点映射表（统一引用模块级 PLACE_LOCATION_MAP，避免多处分散硬编码）
+    const LOCATION_MAP = PLACE_LOCATION_MAP;
     
     // 检查是否有效地点
     if (!LOCATION_MAP.hasOwnProperty(location)) {
@@ -195,28 +390,7 @@ async goToLocation(e) {
     
     const targetLocation = LOCATION_MAP[location];
     
-    // // ========== 【新增】坐标记忆检查 ==========
-    // // 凡间是默认已知的，无需记忆
-    // const DEFAULT_KNOWN_LOCATIONS = ['凡间'];
-    
-    // // 如果玩家没有记忆坐标属性，初始化一个空数组
-    // if (!player.记忆坐标) {
-    //     player.记忆坐标 = [];
-    //     await Write_player(usr_qq, player);
-    // }
-    
-    // // 玩家已知的坐标 = 默认已知的 + 已经记忆的
-    // const knownLocations = DEFAULT_KNOWN_LOCATIONS.concat(player.记忆坐标 || []);
-    
-    // // 检查玩家是否知道这个坐标
-    // const hasLocationInMemory = knownLocations.includes(location);
-    
-    // // 如果没有记忆坐标，则拦截
-    // if (!hasLocationInMemory) {
-    //     return e.reply(`【坐标未知】你并不知道${location}的坐标在哪里，无法进行穿梭。\n※ 当前记忆坐标：${player.记忆坐标.length > 0 ? player.记忆坐标.join('、') : '无'}`);
-    // }
-    
-    if (player.level_id < 42||player.Physique_id < 42) {
+    if (!getBaseTravelThreshold(player).ok) {
         const messages = [`你必须成就地仙，肉身成圣后才能承受住穿梭空间的能量风暴`,];
         
          e.reply(messages);
@@ -227,6 +401,12 @@ async goToLocation(e) {
     if (player.power_place === targetLocation) {
         return e.reply(`你已经在${location}了`);
     }
+
+    // ========== 【诡异大祭】崩灭位面检查（统一入口，先于任何传送逻辑） ==========
+    if (isWeiMianDestroyed(location)) {
+        return e.reply(buildPlaneDestroyedMsgs(location));
+    }
+    // =========================================================================
     
     // 检查是否可以前往
     const flag = await Go(e);
@@ -234,148 +414,138 @@ async goToLocation(e) {
         return false;
     }
     
-    // 检查是否拥有位面传送次数
-    const hasTeleportToken = player.位面传送次数 > 0;
-    const isSpecialLocation = ['仙域', '时间长河', '永恒未知之地'].includes(location);
-    
-    // 如果有传送次数且不是特殊地点，可以无视条件
-    if (hasTeleportToken && !isSpecialLocation) {
-        // 构建传送消息
-        const teleportMsg = [
-            `【位面传送阵·破碎虚空】`,
-            `你祭出场域宗师刻写的传送阵纹，`,
-            `阵图瞬间迸发亿万缕空间道则：`,
-            `「嗡——」虚空震颤，阵纹交织成星空古路`,
-            `五色祭坛虚影浮现，洒落漫天星辉`,
-            `周围空间如水波般荡漾，星辰在脚下流转`,
-            `你感受到时空法则的撕扯，肉身几近崩裂`,
-            `「横渡虚空，非大能不可为！」`,
-            `阵纹中传出场域宗师的烙印低语：`,
-            `"此阵乃摹刻五色祭坛道纹所制，仅能使用一次"`,
-            `星空古路尽头，${location}逐渐清晰`,
-            `你成功跨越无尽星域，抵达彼岸`,
-            `阵纹耗尽最后一丝神能，化作光雨消散`,
-            `※ 位面传送次数 -1（剩余：${player.位面传送次数 - 1}次）`
-        ].join('\n');
-        
-        // 扣除传送次数
-        player.位面传送次数 -= 1;
-        player.power_place = targetLocation;
+    // ========== 坐标记忆校验（凡间默认已知，其余需先记坐标；五色祭坛激活可免记直抵遮天） ==========
+    const altarBypassZhatian = (location === '遮天位面' && player.五色祭坛激活 === 1);
+    if (!hasCoordinate(player, location) && !altarBypassZhatian) {
+        return e.reply([
+            `【坐标未知·星路迷茫】`,
+            `你并不知道「${location}」的星空坐标，无法定位彼岸。`,
+            ``,
+            `※ 坐标可通过每日副本、位面石壁事件或 #求购位面线索 ${location} 获得，`,
+            `  也可使用1枚星图执行 #记坐标 ${location}。`,
+            `※ 传送阵还需执行 #刻画坐标 ${location}，将已知坐标刻入阵纹。`,
+            `※ 当前记忆坐标：${(Array.isArray(player.记忆坐标) && player.记忆坐标.length) ? player.记忆坐标.join('、') : '无（凡间默认已知）'}`
+        ].join('\n'));
+    }
+    // 五色祭坛激活：九龙拉棺自带星路，自动将「遮天位面」记入记忆坐标（兼容旧号已激活者）
+    if (altarBypassZhatian) {
+        if (!Array.isArray(player.记忆坐标)) player.记忆坐标 = [];
+        if (!player.记忆坐标.includes('遮天位面')) {
+            player.记忆坐标.push('遮天位面');
+            await Write_player(usr_qq, player);
+        }
+    }
+    // =====================================================================
+
+    // ========== 位面传送阵（消耗令牌，异步分级传送，不再瞬达） ==========
+    const hasHighToken = (player.高级传送次数 || 0) > 0;
+    const hasLowToken = (player.位面传送次数 || 0) > 0;
+    const tokenTier = hasHighToken ? 'high' : (hasLowToken ? 'low' : null);
+    const isSpecialLocation = SPECIAL_LOCATIONS.includes(location);
+
+    if (tokenTier && !isSpecialLocation) {
+        // 传送阵要求：目标位面已在传送阵上"刻画"坐标
+        const engraved = Array.isArray(player.传送阵坐标) ? player.传送阵坐标 : [];
+        if (!engraved.includes(location)) {
+            return e.reply([
+                `【传送阵·坐标未刻】`,
+                `你的位面传送阵上并未刻画「${location}」的坐标，`,
+                `阵纹无法锚定彼岸，传送失败。`,
+                ``,
+                `※ 请先用 #刻画坐标 @${location} 在阵上刻入该位面坐标。`,
+                `※ 已刻画坐标：${engraved.length ? engraved.join('、') : '无'}`
+            ].join('\n'));
+        }
+
+        // 计算传送阵耗时（分级 + 随境界缩短）
+        const reducePct = calcRealmReducePct(player);
+        let travelTime = getTokenTravelTime(player, player.power_place, targetLocation, tokenTier);
+
+        // 虚空乱流事故判定（低级阵/低境界风险高）
+        const accidentChance = Math.max(0,
+            (tokenTier === 'high' ? ACCIDENT_BASE.high : ACCIDENT_BASE.low) - reducePct * (ACCIDENT_REALM_REDUCE / TRAVEL_REDUCE_MAX)
+        );
+        let isAccident = false;
+        let accidentExtra = 0;
+        if (Math.random() < accidentChance) {
+            isAccident = true;
+            accidentExtra = Math.ceil(travelTime * 0.5); // 乱流额外延迟
+            travelTime += accidentExtra;
+        }
+
+        const windResult = consumeTravelWind(player, travelTime);
+        travelTime = windResult.travelTime;
+        travelTime = Math.max(1, Math.ceil(travelTime * getTimedActionMultiplier(player)));
+
+        // 消耗令牌（高级优先）
+        if (tokenTier === 'high') player.高级传送次数 -= 1;
+        else player.位面传送次数 -= 1;
+
+        // 构建启程消息
+        const tierName = tokenTier === 'high' ? '高级传送阵' : '传送阵';
+        const startTravelMsg = [
+            `【${tierName}·横渡星域】`,
+            `你激活位面传送阵纹，空间道则交织成星空古路，`,
+            `「轰——」阵图迸发无量神光，撕裂虚空壁垒。`,
+            `预计需要 ${travelTime} 分钟横渡至${location}。`,
+            isAccident ? `※ 星路震荡，似有虚空乱流潜伏，前路未卜……` : `※ 星路平稳，时空法则有序流转。`,
+            windResult.consumed ? `※ 天外清风引路，行程缩短${windResult.reduction}分钟（剩余${windResult.remainingUses}次）。` : null,
+            `※ ${tierName}消耗 -1（剩余：${tokenTier === 'high' ? player.高级传送次数 : player.位面传送次数}次）`
+        ].filter(Boolean).join('\n');
+
+        // 写入异步任务（位置在抵达时才落库，真正耗时）
+        const travelAction = {
+            action: '位面传送',
+            start_time: new Date().getTime(),
+            end_time: new Date().getTime() + travelTime * 60 * 1000,
+            from_location: player.power_place,
+            to_location: targetLocation,
+            from_name: Object.keys(LOCATION_MAP).find(key => LOCATION_MAP[key] === player.power_place),
+            to_name: location,
+            travel_time: travelTime,
+            xiuwei_cost: 0,
+            qixue_cost: 0,
+            shouyuan_cost: 0,
+            used_token: true,
+            token_tier: tokenTier,
+            accident: isAccident,
+            tianwai_wind: windResult.consumed,
+            travel_msg: [
+                `阵纹流转，星空古路在脚下铺展`,
+                `你沿古路横渡，位面光影在身侧缓缓流淌`,
+                `彼岸坐标已锚定，古路尽头隐约浮现${location}的轮廓`
+            ],
+            player_name: player.名号,
+            player_qq: usr_qq,
+            group_id: e.isGroup ? e.group_id : null
+        };
+        await redis.set(`xiuxian:travel_task:${usr_qq}`, JSON.stringify(travelAction));
+        await redis.set(`xiuxian:player:${usr_qq}:action`, JSON.stringify(travelAction));
         await Write_player(usr_qq, player);
-        return e.reply(teleportMsg);
-    }
-    
-    // 以下是常规传送逻辑（没有使用传送次数或前往特殊地点）
-    
-    // 特殊地点检查
-    if (location === '时间长河') {
-        if (player.mijinglevel_id < 20 && player.xiangulevel_id < 20) {
-            return e.reply([
-                `【时间长河·境界不足】`,
-                `时间长河乃万古岁月汇聚之地，`,
-                `唯有准仙帝级强者方可踏足！`,
-                `你当前境界不足，无法进入。`,
-            ].join('\n'));
-        }
-    }
-    
-    if (location === '永恒未知之地') {
-        if (player.mijinglevel_id < 21 && player.xiangulevel_id < 21) {
-            return e.reply([
-                `【永恒未知之地·境界不足】`,
-                `永恒未知之地乃超脱诸天之外的存在，`,
-                `唯有仙帝级强者方可踏足！`,
-                `你当前境界不足，无法进入。`,
-            ].join('\n'));
-        }
-    }
 
-    const now_level_id = data.Level_list.find(
-        item => item.level_id == player.level_id
-    ).level_id;
-    
-    // 境界不足检查
-    if (location === '仙界' && now_level_id < 42 && player.lunhui == 0) {
-        return e.reply([
-            `【轮回未启】`,
-            `仙境乃仙人之地，非成仙者不可入！`,
-            `道友当前并未成仙，无法踏足仙境。`,
-        ].join('\n'));
+        e.reply(startTravelMsg);
+        return true;
     }
-    
-    // 遮天位面传送条件检查
-    if (location === '遮天位面') {
-        if (player.mijinglevel_id < 12 && player.xiangulevel_id <= 10) {
-            if (player.五色祭坛激活 !== 1) {
-                return e.reply([
-                    `【遮天宇宙·前路未明】`,
-                    `北斗星域遥在无尽星海之外，非圣人/天神级别的强者难以肉身横渡星海！`,
-                    `你立于星空古路前，眸中神光闪烁，试图洞穿虚空：`,
-                    `"茫茫宇宙，何处是北斗？"`,
-                    ``,
-                    `忽闻一声叹息自虚空传来：`,
-                    `"不成圣，终为蝼蚁！不化天神，难渡星海！欲往遮天，当寻五色祭坛！"`,
-                    ``,
-                    `你忆起古籍记载：`,
-                    `- 五色祭坛乃上古先民所筑，可接引九龙拉棺`,
-                    `- 九龙拉棺乃横渡星域之无上法器（听闻凡间秘境荧惑古星可以寻到五色祭坛的踪迹）`,
-                    `- 唯此方可抵达那荒古禁地所在的北斗星域`,
-                    ``,
-                    `你当前：`,
-                    `秘境体系：${player.mijinglevel_id}级（未成圣人）`,
-                    `仙古今世法：${player.xiangulevel_id}级（未成天神）`,
-                    `五色祭坛：${player.五色祭坛 === 1 ? '已寻得' : '未寻得'}`,
-                    `激活状态：${player.五色祭坛激活 === 1 ? '已激活' : '未激活'}`,
-                    ``,
-                    `需踏遍诸天，寻得五色祭坛，并且激活方可启程！`
-                ].join('\n'));
-            }
-        }
-    }
-    
-    // 在特殊地点检查部分添加仙域条件
-    if (location === '仙域') {
-        if (player.mijinglevel_id < 18 && player.xiangulevel_id < 16) {
-            return e.reply([
-                `【仙域壁垒·境界不足】`,
-                `仙域乃诸天至高净土，非仙王者不可入！`,
-                `你立于仙域壁垒前，感受到无上威压：`,
-                ``,
-                `- 仙域界壁流淌着原始真解之力`,
-                `- 唯有凝聚出完整王印者方可叩关`,
-                `- 仙域法则排斥一切未达仙王境的生灵`,
-                ``,
-                `「不成仙王，终是蝼蚁...」`,
-                `界壁后传来冷漠的道音`
-            ].join('\n'));
-        }
-    }
+    // =====================================================================
 
-    // 凡间特殊检查（如果是仙帝以上境界）
-    if (location === '凡间' && (player.mijinglevel_id > 20 || player.xiangulevel_id > 20)) {
-        return e.reply([
-            `【仙帝下凡·天地不容】`,
-            `你身为仙帝级强者，帝威浩荡！`,
-            `凡间世界无法承受你的存在，`,
-            `强行下凡将导致位面崩溃！`,
-            `请收敛气息或压制境界后再尝试。`
-        ].join('\n'));
+    // 以下是常规肉身穿梭逻辑
+
+    // ========== 通用位面准入门槛检查（接引/送往复用同一套逻辑） ==========
+    const threshold = await this.checkLocationThreshold(player, location);
+    if (!threshold.ok) {
+        return e.reply(threshold.msgs);
     }
+    // =====================================================================
     
-    // 计算传送消耗（每差1级增加1000万修为和1500万血气）
-    const distance = Math.abs(player.power_place - targetLocation);
-    const xiuweiCost = distance * 10000000;
-    const qixueCost = distance * 15000000;
-    const shouyuanCost = distance * 10000;
-    
-    // 计算传送时间（每差1级增加5分钟，最低5分钟）
-    let travelTime = Math.max(5, distance * 5); // 至少5分钟
-    let timeReduction = 0;
+    // 计算传送消耗（随境界递减）
+    const travelQuote = getBodyTravelQuote(player, player.power_place, targetLocation);
+    const { xiuweiCost, qixueCost, shouyuanCost } = travelQuote;
+    let travelTime = travelQuote.travelTime;
     let allMsgs = [];
 
     // ==== 鲲鹏宝术检查 ====
-    if (player.学习的功法.includes('鲲鹏宝术')) {
-        let kunpengReduction = 3;
+    if (travelQuote.kunpengReduction > 0) {
+        const kunpengReduction = travelQuote.kunpengReduction;
         const kunpengTexts = [
             `【鲲鹏极速·扶摇九天】`,
             `你背后浮现鲲鹏虚影，羽翼遮天蔽日！`,
@@ -385,13 +555,11 @@ async goToLocation(e) {
             `- 阴阳二气流转，虚空为之震颤`
         ];
 
-        // 根据境界增强效果
+        // 根据境界补充对应叙事
         if (player.mijinglevel_id >= 15 || player.xiangulevel_id >= 13) { // 至尊境以上
-            kunpengReduction += 1;
             kunpengTexts.push(`鲲鹏真羽显化，撕裂虚空而行`);
         }
         if (player.mijinglevel_id >= 18 || player.xiangulevel_id >= 16) { // 真仙以上
-            kunpengReduction += 1;
             kunpengTexts.push(`时间长河浮现，展翅间横渡万古`);
         }
 
@@ -400,12 +568,8 @@ async goToLocation(e) {
             `时间大幅减少${kunpengReduction}分钟`
         );
         
-        timeReduction += kunpengReduction;
         allMsgs.push(kunpengTexts.join('\n'));
     }
-
-    // 应用时间减少（确保不低于1分钟）
-    travelTime = Math.max(1, travelTime - timeReduction);
     
     // 检查修为和血气是否足够
     if (player.修为 < xiuweiCost) {
@@ -435,6 +599,17 @@ async goToLocation(e) {
             `当前寿元：${player.寿元}`,
             `所需寿元：${shouyuanCost}`,
             `寿元不足，无法完成传送`
+        ].join('\n'));
+    }
+
+    const windResult = consumeTravelWind(player, travelTime);
+    travelTime = windResult.travelTime;
+    travelTime = Math.max(1, Math.ceil(travelTime * getTimedActionMultiplier(player)));
+    if (windResult.consumed) {
+        allMsgs.push([
+            `【天外清风·清风引路】`,
+            `一缕天外罡风托起你的身形，虚空星路骤然缩短。`,
+            `行程减少${windResult.reduction}分钟，剩余加速${windResult.remainingUses}次。`
         ].join('\n'));
     }
 
@@ -607,7 +782,8 @@ async goToLocation(e) {
         player_name: player.名号,
         player_qq: usr_qq,
         group_id: e.isGroup ? e.group_id : null,
-        used_token: false // 标记未使用传送次数
+        used_token: false, // 标记未使用传送次数
+        tianwai_wind: windResult.consumed
     };
     
     // 保存到Redis
@@ -663,13 +839,20 @@ if (player.五色祭坛激活 !== 1) {
             ].join('\n'));
         }
 
+        if (!Array.isArray(player.记忆坐标)) player.记忆坐标 = [];
+        const hadZhatianMem = player.记忆坐标.includes('遮天位面');
+        if (!hadZhatianMem) player.记忆坐标.push('遮天位面');
         e.reply([
             `【五色祭坛激活】`,
             `你以无上法力激活五色祭坛，祭坛绽放璀璨神光`,
             `消耗修为：${xiuweiCost}`,
             `消耗血气：${qixueCost}`,
+            hadZhatianMem
+                ? `※ 遮天位面坐标：早已铭记于心`
+                : `※ 九龙拉棺自带星路，你已记下「遮天位面」坐标，日后可免记坐标直抵`
         ].join('\n'));
         player.五色祭坛激活 = 1
+        rememberCoordinate(player, '遮天位面');
         await Write_player(usr_qq, player);
         return;
     }
@@ -927,6 +1110,10 @@ async Gojiehaiplace(e) {
     if (!flag) {
         return false;
     }
+    // 诡异大祭·崩灭检查
+    if (isWeiMianDestroyed('界海')) {
+        return replyPlaneDestroyed(e, '界海');
+    }
       // 检查是否已在目标地点
     if (player.power_place != 3) {
         return e.reply(`你不在界海`);
@@ -1013,7 +1200,7 @@ async Gojiehaiplace(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: `探索界海`,
-        end_time: new Date().getTime() + action_time,
+        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -1033,12 +1220,7 @@ async Gojiehaiplace(e) {
     
     // 更新任务记录
     const A = await channel(e.user_id);
-    const renwu = await Read_renwu();
-    const i = await found(A);
-    if (renwu[i]?.wancheng3 == 1) {
-        renwu[i].jilu3 += 1;
-        await Write_renwu(renwu);
-    }
+    await Add_renwu_progress(A, 'jilu3');
     
     // 使用原键名存储真身行动
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
@@ -1171,6 +1353,10 @@ async Gosecretplace(e) {
     if (!flag) {
         return false;
     }
+    // 诡异大祭·崩灭检查
+    if (isWeiMianDestroyed('凡间')) {
+        return replyPlaneDestroyed(e, '凡间');
+    }
       // 检查是否已在目标地点
     if (player.power_place != 0) {
         return e.reply(`你不在凡间`);
@@ -1227,12 +1413,7 @@ async Gosecretplace(e) {
     
     // 更新任务记录
     const A = await channel(e.user_id);
-    const renwu = await Read_renwu();
-    const i = await found(A);
-    if (renwu[i]?.wancheng3 === 1) {
-        renwu[i].jilu3 += 1;
-        await Write_renwu(renwu);
-    }
+    await Add_renwu_progress(A, 'jilu3');
             player.lastDungeonType = '秘境';
     player.lastDungeonName = didian;
     await Write_player(usr_qq, player);
@@ -1285,7 +1466,7 @@ async Gosecretplace(e) {
             const arr = {
                 action: '秘境探索',
                 isFashan: true,
-                end_time: new Date().getTime() + action_time,
+                end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
                 time: action_time,
                 shutup: '1',
                 working: '1',
@@ -1346,7 +1527,7 @@ async Gosecretplace(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '秘境历练',
-        end_time: new Date().getTime() + action_time,
+        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -1379,6 +1560,10 @@ async Goxiajie(e) {
     const flag = await Go(e);
     if (!flag) {
         return false;
+    }
+    // 诡异大祭·崩灭检查
+    if (isWeiMianDestroyed('下界八域')) {
+        return replyPlaneDestroyed(e, '下界八域');
     }
       // 检查是否已在目标地点
     if (player.power_place != 1.5) {
@@ -1425,12 +1610,7 @@ async Goxiajie(e) {
     
     // 更新任务记录
     const A = await channel(e.user_id);
-    const renwu = await Read_renwu();
-    const i = await found(A);
-    if (renwu[i]?.wancheng3 === 1) {
-        renwu[i].jilu3 += 1;
-        await Write_renwu(renwu);
-    }
+    await Add_renwu_progress(A, 'jilu3');
             player.lastDungeonType = '下界八域';
     player.lastDungeonName = didian;
     await Write_player(usr_qq, player);
@@ -1475,7 +1655,7 @@ async Goxiajie(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '下界八域历练',
-        end_time: new Date().getTime() + action_time,
+        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -1508,6 +1688,10 @@ async Gojiutianshidi(e) {
     const flag = await Go(e);
     if (!flag) {
         return false;
+    }
+    // 诡异大祭·崩灭检查
+    if (isWeiMianDestroyed('九天十地')) {
+        return replyPlaneDestroyed(e, '九天十地');
     }
       // 检查是否已在目标地点
     if (player.power_place != 2.5) {
@@ -1549,12 +1733,7 @@ async Gojiutianshidi(e) {
     
     // 更新任务记录
     const A = await channel(e.user_id);
-    const renwu = await Read_renwu();
-    const i = await found(A);
-    if (renwu[i]?.wancheng3 === 1) {
-        renwu[i].jilu3 += 1;
-        await Write_renwu(renwu);
-    }
+    await Add_renwu_progress(A, 'jilu3');
             player.lastDungeonType = '九天十地';
     player.lastDungeonName = didian;
     await Write_player(usr_qq, player);
@@ -1599,7 +1778,7 @@ async Gojiutianshidi(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '九天十地历练',
-        end_time: new Date().getTime() + action_time,
+        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -1634,6 +1813,11 @@ async Gozhetian(e) {
     // ==== 基础检查 ====
     const flag = await Go(e);
     if (!flag) return false;
+
+    // 诡异大祭·崩灭检查
+    if (isWeiMianDestroyed('遮天位面')) {
+        return replyPlaneDestroyed(e, '遮天位面');
+    }
 
     if (player.power_place != 2) {
         allMsgs.push(`你不在遮天位面`);
@@ -1717,7 +1901,7 @@ async Gozhetian(e) {
                 const arr = {
                     action: '法身探索遮天位面',
                     isFashan: true,
-                    end_time: nowTime + action_time,
+                    end_time: nowTime + Math.floor(action_time * getTimedActionMultiplier(player)),
                     time: action_time,
                     shutup: '1',
                     working: '1',
@@ -1914,12 +2098,7 @@ async Gozhetian(e) {
     
     // ==== 任务记录 ====
     const A = await channel(e.user_id);
-    const renwu = await Read_renwu();
-    const i = await found(A);
-    if (renwu[i]?.wancheng3 === 1) {
-        renwu[i].jilu3 += 1;
-        await Write_renwu(renwu);
-    }
+    await Add_renwu_progress(A, 'jilu3');
     
     // ==== 扣除寿元 ====
     await Add_寿元(usr_qq, -weizhi.shouyuan);
@@ -1928,7 +2107,7 @@ async Gozhetian(e) {
     const action_time = 60000 * time;
     const arr = {
         action: '遮天位面历练',
-        end_time: new Date().getTime() + action_time,
+        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -1967,6 +2146,13 @@ async Goforbiddenarea(e) {
     }
     
     const player = await Read_player(usr_qq);
+    
+    // 诡异大祭·崩灭检查：玩家当前所在位面被毁则封锁副本
+    const planeMap = { 0: '凡间', 1: '仙界', 1.5: '下界八域', 2: '遮天位面', 2.5: '九天十地', 3: '界海', 6: '仙域' };
+    const currentPlaneName = planeMap[player.power_place];
+    if (currentPlaneName && isWeiMianDestroyed(currentPlaneName)) {
+        return replyPlaneDestroyed(e, currentPlaneName);
+    }
     
     // ==== 法身系统检查 ====
     if (player.法身 === 1) {
@@ -2036,7 +2222,7 @@ async Goforbiddenarea(e) {
             const arr = {
                 action: '法身探索禁地',
                 isFashan: true, // 标记为法身行动
-                end_time: new Date().getTime() + action_time,
+                end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
                 time: action_time,
                 shutup: '1',
                 working: '1',
@@ -2157,7 +2343,7 @@ async Goforbiddenarea(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '禁地历练',
-        end_time: new Date().getTime() + action_time,
+        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -2325,7 +2511,7 @@ async GoTimeplace(e) {
             const arr = {
                 action: '法身探索仙府',
                 isFashan: true, // 标记为法身行动
-                end_time: new Date().getTime() + action_time,
+                end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
                 time: action_time,
                 shutup: '1',
                 working: '1',
@@ -2435,7 +2621,7 @@ async GoTimeplace(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '探索仙府', // 动作
-        end_time: new Date().getTime() + action_time,
+        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -2455,12 +2641,7 @@ async GoTimeplace(e) {
     
     // 更新任务记录
     const A = await channel(e.user_id);
-    const renwu = await Read_renwu();
-    const i = await found(A);
-    if (renwu[i]?.wancheng3 === 1) {
-        renwu[i].jilu3 += 1;
-        await Write_renwu(renwu);
-    }
+    await Add_renwu_progress(A, 'jilu3');
     
     // 使用原键名存储真身行动
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
@@ -2493,6 +2674,10 @@ async Gofairyrealm(e) {
     const flag = await Go(e);
     if (!flag) {
         return false;
+    }
+    // 诡异大祭·崩灭检查
+    if (isWeiMianDestroyed('仙界')) {
+        return replyPlaneDestroyed(e, '仙界');
     }
      // 检查是否已在目标地点
     if (player.power_place != 1) {
@@ -2683,12 +2868,7 @@ if (didian === "往世星海") {
     
     // 更新任务记录
     const A = await channel(e.user_id);
-    const renwu = await Read_renwu();
-    const i = await found(A);
-    if (renwu[i]?.wancheng3 === 1) {
-        renwu[i].jilu3 += 1;
-        await Write_renwu(renwu);
-    }
+    await Add_renwu_progress(A, 'jilu3');
     
     // 获取基础时间
     const cf = config.getConfig('xiuxian', 'xiuxian');
@@ -2749,7 +2929,7 @@ if (didian === "往世星海") {
                 const arr = {
                     action: '法身镇守仙境',
                     isFashan: true,
-                    end_time: new Date().getTime() + action_time,
+                    end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
                     time: action_time,
                     shutup: '1',
                     working: '1',
@@ -2794,7 +2974,7 @@ if (didian === "往世星海") {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '镇守仙境',
-        end_time: new Date().getTime() + action_time,
+        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -3061,12 +3241,12 @@ async jieyinPlayer(e) {
     e.reply('修仙游戏请在群聊中游玩');
     return;
   }
-  
-  // 获取操作者信息
-  const usr_qq = e.user_id;
+
+  let usr_qq = e.user_id.toString().replace('qg_', '');
+  usr_qq = await channel(usr_qq);
   const player = await Read_player(usr_qq);
-  
-  // 检查操作者境界
+
+  // 检查操作者境界（仙王）
   if (player.mijinglevel_id < 18) {
     return e.reply([
       `【接引失败·境界不足】`,
@@ -3075,59 +3255,85 @@ async jieyinPlayer(e) {
       `需达到18级（仙王）方可接引其他道友。`
     ].join('\n'));
   }
-  
+
   // 检查是否有艾特信息
   const atItems = e.message.filter(item => item.type === "at");
   if (atItems.length === 0) {
     return e.reply("请艾特需要接引的玩家");
   }
-  
-  // 获取目标玩家QQ
-  const targetQQ = atItems[0].qq;
-  
-  // 验证目标玩家
+
+  let targetQQ = atItems[0].qq.toString().replace('qg_', '');
+  targetQQ = await channel(targetQQ);
+
+  if (targetQQ === usr_qq) {
+    return e.reply("不可接引自身，请艾特其他道友");
+  }
+
   if (!await existplayer(targetQQ)) {
     return e.reply("目标玩家不存在，请先创建角色");
   }
-  
+
   const targetPlayer = await Read_player(targetQQ);
-  
-  
-  // 地点映射表
-  const LOCATION_MAP = {
-    '凡间': 0,
-    '仙界': 1, 
-    '下界八域': 1.5,
-    '遮天位面': 2,
-    '九天十地': 2.5,
-    '界海': 3,
-    '时间长河': 4,
-    '永恒未知之地': 5,
-    '仙域': 6
-  };
-  
-  // 接引到接引者当前位面
-  const currentLocation = Object.keys(LOCATION_MAP).find(key => LOCATION_MAP[key] === player.power_place) || '未知位面';
-  
-  // 执行接引
-  targetPlayer.power_place = player.power_place;
-  await Write_player(targetQQ, targetPlayer);
-  
-  // 构建回复消息
-  const message = [
+
+  // 接引目标位面 = 接引者当前位面
+  const targetLocationName = Object.keys(PLACE_LOCATION_MAP).find(key => PLACE_LOCATION_MAP[key] === player.power_place);
+  if (!targetLocationName) {
+    return e.reply([
+      `【接引失败·坐标迷失】`,
+      `你当前所处的位面不在已知星图之中，无法锚定接引坐标。`
+    ].join('\n'));
+  }
+
+  // 锁1：目标位面准入（复用 goToLocation 同一套门槛）
+  if (isWeiMianDestroyed(targetLocationName)) {
+    return e.reply(buildPlaneDestroyedMsgs(targetLocationName));
+  }
+  const threshold = await this.checkLocationThreshold(targetPlayer, targetLocationName);
+  if (!threshold.ok) {
+    return e.reply([
+      `【接引失败·位面壁垒】`,
+      `道友${targetPlayer.名号 || targetQQ}无法承受${targetLocationName}的位面法则：`,
+      ``,
+      ...threshold.msgs
+    ].join('\n'));
+  }
+
+  // 锁0：接引者须已知目标位面坐标（仙王需记住自己所处位面）
+  if (!hasCoordinate(player, targetLocationName)) {
+    return e.reply([
+      `【接引失败·星路未知】`,
+      `你竟不知自己所处「${targetLocationName}」的星空坐标，`,
+      `无从锚定接引通道，接引中止。`,
+      `※ 先以 #记坐标 ${targetLocationName} 记下坐标。`
+    ].join('\n'));
+  }
+
+  // 锁3（续）：目标是否正处于传送/秘境等动作中
+  const targetBusy = await this._getPlayerAction(targetQQ);
+  if (targetBusy) {
+    return e.reply([
+      `【接引失败·真身忙碌】`,
+      `道友${targetPlayer.名号 || targetQQ}正在${targetBusy}，`,
+      `此刻强行接引恐扰动其道基，请待其归位后再试。`
+    ].join('\n'));
+  }
+
+  // 锁2：发起请求，等待目标 #同意接引 确认（60秒）
+  pendingJieyinMap.set(targetQQ, {
+    fromQQ: usr_qq,
+    fromName: player.名号 || usr_qq,
+    type: 'jieyin',
+    locationName: targetLocationName,
+    expire: Date.now() + 60000
+  });
+
+  return e.reply([
     `【仙王神通·接引道友】`,
-    `${player.名号}施展仙王级接引神通，`,
-    `将道友${targetPlayer.名号 || targetQQ}接引至${currentLocation}！`,
+    `${player.名号 || usr_qq}欲将${targetPlayer.名号 || targetQQ}接引至${targetLocationName}。`,
     ``,
-    `【接引效果】`,
-    `- 目标位面：${currentLocation}`,
-    `- 被接引者：${targetPlayer.名号 || targetQQ}`,
-    `- 接引者：${player.名号 || usr_qq}`,
-    ``,
-    `仙王神通，横渡虚空，不过弹指之间！`
-  ].join("\n");
-  
-  return e.reply(message);
+    `⏳ 等待${targetPlayer.名号 || targetQQ}在60秒内发送 #同意接引 确认。`,
+    `（超时则请求失效，需重新发起）`
+  ].join('\n'));
 }
 
 
@@ -3139,12 +3345,12 @@ async sendPlayerToLocation(e) {
     e.reply('修仙游戏请在群聊中游玩');
     return;
   }
-  
-  // 获取操作者信息
-  const usr_qq = e.user_id;
+
+  let usr_qq = e.user_id.toString().replace('qg_', '');
+  usr_qq = await channel(usr_qq);
   const player = await Read_player(usr_qq);
-  
-  // 检查操作者境界
+
+  // 检查操作者境界（仙王）
   if (player.mijinglevel_id < 18) {
     return e.reply([
       `【传送失败·境界不足】`,
@@ -3153,118 +3359,1262 @@ async sendPlayerToLocation(e) {
       `需达到18级（仙王）方可传送其他道友。`
     ].join('\n'));
   }
-  
+
   // 检查是否有艾特信息
   const atItems = e.message.filter(item => item.type === "at");
   if (atItems.length === 0) {
     return e.reply("请艾特需要传送的玩家");
   }
-  
-  // 获取目标玩家QQ
-  const targetQQ = atItems[0].qq;
-  
+
+  let targetQQ = atItems[0].qq.toString().replace('qg_', '');
+  targetQQ = await channel(targetQQ);
+
+  if (targetQQ === usr_qq) {
+    return e.reply("不可传送自身，请艾特其他道友");
+  }
+
   // 处理消息内容：去掉指令前缀和所有艾特
   let content = e.msg.replace(/^#送往\s*/, '');
   content = content.replace(/\[CQ:at,qq=\d+\]\s*/g, '');
   const location = content.trim();
-  
+
   // 如果没有提取到地点名称，提示用户输入
   if (!location) {
     return e.reply("请指定要传送的目标地点，例如：#送往 @QQ号 凡间");
   }
-  
-  // 地点映射表
-  const LOCATION_MAP = {
-    '凡间': 0,
-    '仙界': 1, 
-    '下界八域': 1.5,
-    '遮天位面': 2,
-    '九天十地': 2.5,
-    '界海': 3,
-    '时间长河': 4,
-    '永恒未知之地': 5,
-    '仙域': 6
-  };
-  
-  // 检查是否有效地点
-  if (!LOCATION_MAP.hasOwnProperty(location)) {
+
+  // 检查是否有效地点（统一引用 PLACE_LOCATION_MAP）
+  if (!PLACE_LOCATION_MAP.hasOwnProperty(location)) {
     return e.reply(`无效地点：${location}\n可用地点：凡间、仙界、下界八域、遮天位面、九天十地、仙域、界海、时间长河、永恒未知之地`);
   }
-  
-  // 验证目标玩家
+
   if (!await existplayer(targetQQ)) {
     return e.reply("目标玩家不存在，请先创建角色");
   }
-  
+
   const targetPlayer = await Read_player(targetQQ);
-  
-  
-  // 特殊地点的境界要求检查
-  if (location === '时间长河') {
-    // 检查发送者境界
-    if (player.mijinglevel_id < 20 && player.xiangulevel_id < 20) {
-      return e.reply([
-        `【时间长河·境界不足】`,
-        `时间长河乃万古岁月汇聚之地，`,
-        `唯有准仙帝级强者方可传送他人前往！`,
-        `你当前境界不足，无法施展此等神通。`
-      ].join('\n'));
-    }
-    
-    // 检查被传送者境界
-    if (targetPlayer.mijinglevel_id < 20 && targetPlayer.xiangulevel_id < 20) {
-      return e.reply([
-        `【时间长河·因果反噬】`,
-        `该道友境界不足，无法承受时间长河的因果！`,
-        `强行传送可能导致其道基崩溃，`,
-        `需准仙帝级强者方可踏足时间长河。`
-      ].join('\n'));
-    }
+
+  // 锁1：目标位面准入（复用 goToLocation 同一套门槛，覆盖全部位面）
+  if (isWeiMianDestroyed(location)) {
+    return e.reply(buildPlaneDestroyedMsgs(location));
   }
-  
-  if (location === '永恒未知之地') {
-    // 检查发送者境界
-    if (player.mijinglevel_id < 21 && player.xiangulevel_id < 21) {
-      return e.reply([
-        `【永恒未知之地·境界不足】`,
-        `永恒未知之地乃超脱诸天之外的存在，`,
-        `唯有仙帝级强者方可传送他人前往！`,
-        `你当前境界不足，无法施展此等神通。`
-      ].join('\n'));
-    }
-    
-    // 检查被传送者境界
-    if (targetPlayer.mijinglevel_id < 21 && targetPlayer.xiangulevel_id < 21) {
-      return e.reply([
-        `【永恒未知之地·因果反噬】`,
-        `该道友境界不足，无法承受永恒未知之地的因果！`,
-        `强行传送可能导致其形神俱灭，`,
-        `需仙帝级强者方可踏足永恒未知之地。`
-      ].join('\n'));
-    }
+  const threshold = await this.checkLocationThreshold(targetPlayer, location);
+  if (!threshold.ok) {
+    return e.reply([
+      `【传送失败·位面壁垒】`,
+      `道友${targetPlayer.名号 || targetQQ}无法承受${location}的位面法则：`,
+      ``,      ...threshold.msgs
+    ].join('\n'));
   }
-  
-  // 执行传送
-  const targetLocation = LOCATION_MAP[location];
-  targetPlayer.power_place = targetLocation;
-  await Write_player(targetQQ, targetPlayer);
-  
-  // 构建回复消息
-  const message = [
+
+  // 锁0：施法者（仙王）须已知目标位面坐标
+  if (!hasCoordinate(player, location)) {
+    return e.reply([
+      `【传送失败·星路未知】`,
+      `你竟不知「${location}」的星空坐标，无从锚定传送通道。`,
+      `※ 先以 #记坐标 ${location} 记下该位面坐标。`
+    ].join('\n'));
+  }
+
+  // 锁3（续）：目标是否正处于传送/秘境等动作中
+  const targetBusy = await this._getPlayerAction(targetQQ);
+  if (targetBusy) {
+    return e.reply([
+      `【传送失败·真身忙碌】`,
+      `道友${targetPlayer.名号 || targetQQ}正在${targetBusy}，`,
+      `此刻强行传送恐扰动其道基，请待其归位后再试。`
+    ].join('\n'));
+  }
+
+  // 锁2：发起请求，等待目标 #同意接引 确认（60秒）
+  pendingJieyinMap.set(targetQQ, {
+    fromQQ: usr_qq,
+    fromName: player.名号 || usr_qq,
+    type: 'songwang',
+    locationName: location,
+    expire: Date.now() + 60000
+  });
+
+  return e.reply([
     `【仙王神通·传送道友】`,
-    `${player.名号}施展仙王级传送神通，`,
-    `将道友${targetPlayer.名号 || targetQQ}送往${location}！`,
+    `${player.名号 || usr_qq}欲将${targetPlayer.名号 || targetQQ}送往${location}。`,
     ``,
-    `【传送效果】`,
-    `- 目标地点：${location}`,
-    `- 被传送者：${targetPlayer.名号 || targetQQ}`,
-    `- 传送者：${player.名号 || usr_qq}`,
-    ``,
-    `仙王神通，跨越位面，不过弹指之间！`
-  ].join("\n");
-  
-  return e.reply(message);
+    `⏳ 等待${targetPlayer.名号 || targetQQ}在60秒内发送 #同意接引 确认。`,
+    `（超时则请求失效，需重新发起）`
+  ].join('\n'));
 }
+
+// ==================== 接引/送往·共用门槛与确认逻辑 ====================
+// 位面准入门槛检查（与 goToLocation 完全一致的判定逻辑，单一真相源）
+async checkLocationThreshold(player, location) {
+    const threshold = getLocationThreshold(player, location);
+    // 时间长河：准仙帝
+    if (location === '时间长河') {
+        if (threshold.code === 'time-river') {
+            return { ok: false, msgs: [
+                `【时间长河·境界不足】`,
+                `时间长河乃万古岁月汇聚之地，`,
+                `唯有准仙帝级强者方可踏足！`,
+                `你当前境界不足，无法进入。`,
+            ] };
+        }
+    }
+    // 永恒未知之地：仙帝
+    if (location === '永恒未知之地') {
+        if (threshold.code === 'eternal-land') {
+            return { ok: false, msgs: [
+                `【永恒未知之地·境界不足】`,
+                `永恒未知之地乃超脱诸天之外的存在，`,
+                `唯有仙帝级强者方可踏足！`,
+                `你当前境界不足，无法进入。`,
+            ] };
+        }
+    }
+    // 仙界：需成仙（轮回开启或境界达标）
+    if (location === '仙界') {
+        if (threshold.code === 'immortal-realm') {
+            return { ok: false, msgs: [
+                `【轮回未启】`,
+                `仙境乃仙人之地，非成仙者不可入！`,
+                `道友当前并未成仙，无法踏足仙境。`,
+            ] };
+        }
+    }
+    // 遮天位面：需圣人/天神，或已寻得并激活五色祭坛
+    if (location === '遮天位面') {
+        if (threshold.code === 'zhetian') {
+                return { ok: false, msgs: [
+                    `【遮天宇宙·前路未明】`,
+                    `北斗星域遥在无尽星海之外，非圣人/天神级别的强者难以肉身横渡星海！`,
+                    `你立于星空古路前，眸中神光闪烁，试图洞穿虚空：`,
+                    `"茫茫宇宙，何处是北斗？"`,
+                    ``,
+                    `忽闻一声叹息自虚空传来：`,
+                    `"不成圣，终为蝼蚁！不化天神，难渡星海！欲往遮天，当寻五色祭坛！"`,
+                    ``,
+                    `你忆起古籍记载：`,
+                    `- 五色祭坛乃上古先民所筑，可接引九龙拉棺`,
+                    `- 九龙拉棺乃横渡星域之无上法器（听闻凡间秘境荧惑古星可以寻到五色祭坛的踪迹）`,
+                    `- 唯此方可抵达那荒古禁地所在的北斗星域`,
+                    ``,
+                    `你当前：`,
+                    `秘境体系：${player.mijinglevel_id}级（未成圣人）`,
+                    `仙古今世法：${player.xiangulevel_id}级（未成天神）`,
+                    `五色祭坛：${player.五色祭坛 === 1 ? '已寻得' : '未寻得'}`,
+                    `激活状态：${player.五色祭坛激活 === 1 ? '已激活' : '未激活'}`,
+                    ``,
+                    `需踏遍诸天，寻得五色祭坛，并且激活方可启程！`
+                ] };
+        }
+    }
+    // 仙域：仙王（秘境18 或 仙古16）
+    if (location === '仙域') {
+        if (threshold.code === 'immortal-domain') {
+            return { ok: false, msgs: [
+                `【仙域壁垒·境界不足】`,
+                `仙域乃诸天至高净土，非仙王者不可入！`,
+                `你立于仙域壁垒前，感受到无上威压：`,
+                ``,
+                `- 仙域界壁流淌着原始真解之力`,
+                `- 唯有凝聚出完整王印者方可叩关`,
+                `- 仙域法则排斥一切未达仙王境的生灵`,
+                ``,
+                `「不成仙王，终是蝼蚁...」`,
+                `界壁后传来冷漠的道音`
+            ] };
+        }
+    }
+    // 凡间：仙帝以上禁止下凡
+    if (threshold.code === 'mortal-realm') {
+        return { ok: false, msgs: [
+            `【仙帝下凡·天地不容】`,
+            `你身为仙帝级强者，帝威浩荡！`,
+            `凡间世界无法承受你的存在，`,
+            `强行下凡将导致位面崩溃！`,
+            `请收敛气息或压制境界后再尝试。`
+        ] };
+    }
+    return { ok: true, msgs: [] };
+}
+
+// 查询玩家是否处于传送/秘境等动作中，返回忙碌描述或 null
+async _getPlayerAction(qq) {
+    try {
+        const action = await redis.get('xiuxian:player:' + qq + ':action');
+        if (!action) return null;
+        const a = JSON.parse(action);
+        if (a == null) return null;
+        let end_time = a.end_time;
+        const now = Date.now();
+        if (a.Place_actionplus === '0') {
+            end_time = a.start_time + a.total_time * 60 * 1000;
+        }
+        if (now <= end_time) {
+            const m = parseInt((end_time - now) / 1000 / 60);
+            const s = parseInt((end_time - now - m * 60 * 1000) / 1000);
+            return `${a.action || '未知'}（剩余${m}分${s}秒）`;
+        }
+    } catch (err) {
+        // 查询失败不阻断，视为空闲
+    }
+    return null;
+}
+
+// 确认接引/送往请求（目标玩家在60秒内发送 #同意接引）
+async confirmJieyin(e) {
+    if (!e.isGroup) {
+        e.reply('修仙游戏请在群聊中游玩');
+        return;
+    }
+
+    let targetQQ = e.user_id.toString().replace('qg_', '');
+    targetQQ = await channel(targetQQ);
+
+    const req = pendingJieyinMap.get(targetQQ);
+    if (!req) {
+        return e.reply("当前没有需要你确认的接引/传送请求。");
+    }
+    if (Date.now() > req.expire) {
+        pendingJieyinMap.delete(targetQQ);
+        return e.reply("该接引/传送请求已超时（需在60秒内 #同意接引），请让对方重新发起。");
+    }
+
+    // 目标仍须空闲
+    const targetBusy = await this._getPlayerAction(targetQQ);
+    if (targetBusy) {
+        return e.reply(`你正在${targetBusy}中，暂无法响应接引，请结束后重试。`);
+    }
+
+    const targetPlayer = await Read_player(targetQQ);
+
+    // 终检：目标准入（防止请求期间状态变化）
+    if (isWeiMianDestroyed(req.locationName)) {
+        pendingJieyinMap.delete(targetQQ);
+        return e.reply(buildPlaneDestroyedMsgs(req.locationName));
+    }
+    const threshold = await this.checkLocationThreshold(targetPlayer, req.locationName);
+    if (!threshold.ok) {
+        pendingJieyinMap.delete(targetQQ);
+        return e.reply([
+            `【${req.fromName}的${req.type === 'jieyin' ? '接引' : '传送'}中止·位面壁垒】`,
+            `你已无法承受${req.locationName}的位面法则：`,
+            ``,
+            ...threshold.msgs
+        ].join('\n'));
+    }
+
+    // 执行传送
+    targetPlayer.power_place = PLACE_LOCATION_MAP[req.locationName];
+    await Write_player(targetQQ, targetPlayer);
+    pendingJieyinMap.delete(targetQQ);
+
+    const typeLabel = req.type === 'jieyin' ? '接引' : '传送';
+    return e.reply([
+        `【${req.fromName}的${typeLabel}神通·生效】`,
+        `你已同意${req.fromName}的${typeLabel}请求。`,
+        `空间通道开启，你被送往「${req.locationName}」！`
+    ].join('\n'));
+}
+
+// 拒绝接引/送往请求（目标玩家发送 #拒绝接引 立即作废请求）
+async refuseJieyin(e) {
+    if (!e.isGroup) {
+        e.reply('修仙游戏请在群聊中游玩');
+        return;
+    }
+
+    let targetQQ = e.user_id.toString().replace('qg_', '');
+    targetQQ = await channel(targetQQ);
+
+    const req = pendingJieyinMap.get(targetQQ);
+    if (!req) {
+        return e.reply("当前没有需要你确认或拒绝的接引/传送请求。");
+    }
+    if (Date.now() > req.expire) {
+        pendingJieyinMap.delete(targetQQ);
+        return e.reply("该接引/传送请求已超时失效，无需拒绝。");
+    }
+
+    const typeLabel = req.type === 'jieyin' ? '接引' : '传送';
+    pendingJieyinMap.delete(targetQQ);
+    return e.reply([
+        `【${typeLabel}请求·已拒绝】`,
+        `你已拒绝${req.fromName}将你${req.type === 'jieyin' ? '接引至' : '送往'}${req.locationName}的${typeLabel}请求。`,
+        `空间通道消散，一切归于平静。`
+    ].join('\n'));
+}
+
+async coordinateMemory(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    const player = await Read_player(usr_qq);
+    const known = ['凡间', ...getUnknownCoordinates({}).filter(location => hasCoordinate(player, location))];
+    const unknown = getUnknownCoordinates(player);
+    const event = RealmEvents.getActiveEvent('coordinateClue');
+    const lines = [
+        `【位面坐标记忆】`,
+        `已知：${known.join('、')}`,
+        `未知：${unknown.length ? unknown.join('、') : '无'}`,
+        `求购线索：${COORDINATE_CLUE_COST.toLocaleString('zh-CN')}灵石/个位面`
+    ];
+    if (event) {
+        const minutes = Math.max(1, Math.ceil((event.expiresAt - Date.now()) / 60000));
+        lines.push(`石壁线索：${formatRealmEventLocation(event)} → ${event.targetPlane}（剩余${minutes}分钟）`);
+        const travel = formatRealmEventTravel(event);
+        if (travel) lines.push(`赶路方式：${travel}`);
+    }
+    return e.reply(lines.join('\n'));
+}
+
+async treasurePlayerContext(e, { requireReach = true, requireJoined = false } = {}) {
+    if (!verc({ e })) return null;
+    let qq = await channel(String(e.user_id).replace('qg_', ''));
+    if (!await existplayer(qq)) return null;
+    const player = await Read_player(qq);
+    const events = RealmEvents.getTreasureContestEvents(true)
+        .filter(event => Number(event.expiresAt) > Date.now())
+        .sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
+    let event = requireJoined
+        ? events.find(item => item.contest?.participants?.[String(qq)])
+        : events.find(item => !requireReach || getRealmEventReach(player, item).ok);
+    if (!event && requireJoined) event = events[0];
+    if (!event) {
+        await e.reply('当前没有正在进行的先天至宝择主之争。');
+        return null;
+    }
+    if (requireReach && !getRealmEventReach(player, event).ok) {
+        await e.reply([
+            '你尚未抵达至宝出世的精确坐标。',
+            `地点：${formatRealmEventLocation(event)}`,
+            `赶路方式：${formatRealmEventTravel(event)}`,
+        ].join('\n'));
+        return null;
+    }
+    if (requireJoined && !event.contest?.participants?.[String(qq)]) {
+        await e.reply('你尚未参加本次择主之争，请先抵达坐标并发送 #夺宝。');
+        return null;
+    }
+    return { qq, player, event };
+}
+
+async treasureContestInfo(e) {
+    const command = String(e.msg || '').trim();
+    if (command === '#灵宝择主榜') {
+        let event = RealmEvents.getLatestTreasureContestEvent();
+        if (!event) return e.reply('尚无先天至宝择主记录。');
+        if (event.contest?.status !== 'settled' && Number(event.expiresAt) <= Date.now()) {
+            await this.settleTreasureEventRewards(event);
+            event = RealmEvents.getLatestTreasureContestEvent() || event;
+        }
+        const rankings = event.contest?.status === 'settled'
+            ? event.contest.rankings || []
+            : rankTreasureContest(event.contest, event.treasure?.name, event.timestamp);
+        const lines = [
+            `【${event.treasure?.name || '先天至宝'}·${event.contest?.status === 'settled' ? '择主结果' : '当前择主榜'}】`,
+            `封印破解度：${event.contest?.sealProgress || 0}%`,
+        ];
+        if (!rankings.length) lines.push('目前还没有完成三次试炼并立下道心的修士。');
+        rankings.slice(0, 10).forEach((item, index) => {
+            lines.push(`${index + 1}. ${item.name} ${item.total}分`);
+            if (event.contest?.status === 'settled') {
+                lines.push(`试炼${item.trialScore}｜契合${item.affinity}｜贡献${item.contribution}｜天运${item.luck}`);
+            }
+        });
+        if (event.contest?.status !== 'settled') {
+            const minutes = Math.max(1, Math.ceil((Number(event.expiresAt) - Date.now()) / 60000));
+            lines.push(`最终分数将在${minutes}分钟后公开结算。`);
+        } else if (event.contest.winner) {
+            lines.push(`【${event.treasure.name}】最终选择${event.contest.winner.name}为主。`);
+        } else {
+            lines.push('本次无人完成择主资格，至宝重新遁入诸天。');
+        }
+        return e.reply(lines.join('\n'));
+    }
+
+    const ctx = await this.treasurePlayerContext(e, {
+        requireReach: command === '#观摩灵宝',
+        requireJoined: command === '#查看夺宝进度',
+    });
+    if (!ctx) return false;
+    if (command === '#观摩灵宝' && !await Go(e)) return false;
+    const contest = ctx.event.contest || { sealProgress: 0, participants: {} };
+    const profile = getTreasureContestProfile(ctx.event.treasure?.name);
+    const clues = getRevealedTreasureClues(ctx.event.treasure?.name, contest.sealProgress);
+    const mine = contest.participants?.[String(ctx.qq)];
+    const completed = Object.keys(mine?.trials || {}).length;
+    const lines = [
+        `【${ctx.event.treasure.name}·择主之争】`,
+        `地点：${formatRealmEventLocation(ctx.event)}`,
+        `天象：${profile.omen}`,
+        `封印破解度：${contest.sealProgress || 0}%`,
+        `参与修士：${Object.keys(contest.participants || {}).length}人`,
+        clues.length ? `已显线索：${clues.join('；')}` : '已显线索：尚无',
+    ];
+    if (!mine) {
+        lines.push('', '发送 #夺宝 参加。参加后从四种试炼中任选三种，每种限一次。');
+    } else {
+        lines.push('', `你的天机行动：${completed}/${TREASURE_TRIAL_LIMIT}`);
+        lines.push(`已完成：${Object.keys(mine.trials || {}).map(key => ({ battle: '守护灵', insight: '先天禁制', support: '天地灵脉', fate: '命运乱流' })[key]).join('、') || '无'}`);
+        lines.push(`当前试炼分：${mine.trialScore || 0}｜破封贡献：${mine.contribution || 0}｜道心：${mine.daoHeart || '未立'}`);
+    }
+    lines.push(
+        '',
+        '#挑战守护灵 普通/凶险/绝境',
+        `#参悟先天禁制 ${profile.insightOptions.join('/')}`,
+        '#护持天地灵脉 源石*数量（1万至200万）',
+        '#护持天地灵脉 材料名*数量',
+        '#跃入命运乱流',
+        `完成三项后：#立下道心 ${TREASURE_DAO_HEARTS.join('/')}`,
+        '#查看夺宝进度｜#灵宝择主榜'
+    );
+    return e.reply(lines.join('\n'));
+}
+
+async treasureContestTrial(e) {
+    const ctx = await this.treasurePlayerContext(e, { requireReach: true, requireJoined: true });
+    if (!ctx || !await Go(e)) return false;
+    const msg = String(e.msg || '').trim();
+    let trial;
+    let options = {};
+    let refund = null;
+
+    if (msg.startsWith('#挑战守护灵')) {
+        trial = 'battle';
+        options.difficulty = msg.match(/^#挑战守护灵\s+(普通|凶险|绝境)$/)?.[1];
+        options.healthRatio = (Number(ctx.player.当前血量) || 0) / Math.max(1, Number(ctx.player.血量上限) || 1);
+        const existing = ctx.event.contest?.participants?.[String(ctx.qq)];
+        if (existing?.trials?.battle) return e.reply('守护灵试炼已经完成，不能重复挑战。');
+        if (Object.keys(existing?.trials || {}).length >= TREASURE_TRIAL_LIMIT) {
+            return e.reply('三次天机行动已经用尽，不能再挑战守护灵。');
+        }
+        const guardian = createTreasureGuardian(ctx.player, options.difficulty, ctx.event.treasure?.name);
+        if (!guardian) return e.reply('守护灵难度无效。');
+        const battlePlayer = {
+            ...ctx.player,
+            当前血量: Math.max(1, Number(ctx.player.当前血量) || 1),
+            血量上限: Math.max(1, Number(ctx.player.血量上限) || 1),
+            灵根: ctx.player.灵根 || {},
+            学习的功法: ctx.player.学习的功法 || [],
+            仙宠: ctx.player.仙宠 || null,
+            神石: ctx.player.神石 || {},
+        };
+        const battle = await zd_battle(battlePlayer, guardian, { battleType: 'treasure_guardian' });
+        options.battleWon = battle.winner === 'A';
+        const storedPlayer = await Read_player(ctx.qq);
+        storedPlayer.当前血量 = options.battleWon
+            ? Math.max(1, Math.trunc(Number(battle.A_hp) || 1))
+            : 1;
+        await Write_player(ctx.qq, storedPlayer);
+        const report = [
+            `【${ctx.event.treasure.name}·${options.difficulty}守护灵】`,
+            `器灵属性：攻击${guardian.攻击.toLocaleString('zh-CN')}｜防御${guardian.防御.toLocaleString('zh-CN')}｜血量${guardian.血量上限.toLocaleString('zh-CN')}`,
+            '',
+            ...treasureBattleExcerpt(battle.msg),
+            '',
+            options.battleWon ? '你击败了守护灵。' : '你败于守护灵，拼尽全力脱离试炼，当前血量降至1。',
+        ];
+        await e.reply(report.join('\n'));
+    } else if (msg.startsWith('#参悟先天禁制')) {
+        trial = 'insight';
+        options.choice = msg.replace(/^#参悟先天禁制\s+/, '').trim();
+    } else if (msg === '#跃入命运乱流') {
+        trial = 'fate';
+    } else {
+        trial = 'support';
+        const match = msg.match(/^#护持天地灵脉\s+(.+?)\*(\d+)$/);
+        if (!match) return e.reply('用法：#护持天地灵脉 源石或材料名*数量');
+        const resourceName = match[1].trim();
+        const amount = Number(match[2]);
+        if (!Number.isSafeInteger(amount) || amount < 1) return e.reply('投入数量必须为正整数。');
+        if (resourceName === '源石') {
+            if (amount < 10000 || amount > 2000000) return e.reply('单次需投入1万至200万源石。');
+            if ((Number(ctx.player.源石) || 0) < amount) return e.reply('你的源石不足。');
+            ctx.player.源石 -= amount;
+            await Write_player(ctx.qq, ctx.player);
+            options.contribution = Math.min(10, Math.ceil(amount / 200000));
+            options.resourceLabel = `${amount.toLocaleString('zh-CN')}源石`;
+            refund = async () => {
+                const player = await Read_player(ctx.qq);
+                player.源石 = (Number(player.源石) || 0) + amount;
+                await Write_player(ctx.qq, player);
+            };
+        } else {
+            const najie = await Read_najie(ctx.qq);
+            const material = najie.材料?.find(item => item.name === resourceName);
+            if (!material || Number(material.数量) < amount) return e.reply('纳戒中没有足够的该材料。');
+            material.数量 -= amount;
+            najie.材料 = najie.材料.filter(item => Number(item.数量) > 0);
+            await Write_najie(ctx.qq, najie);
+            const rarity = Math.max(0, Number(material.稀有度 ?? material.pinji) || 0);
+            options.contribution = Math.min(10, 1 + Math.floor(Math.log10(amount)) + Math.floor(rarity));
+            options.resourceLabel = `【${resourceName}】x${amount}`;
+            refund = async () => {
+                const currentNajie = await Read_najie(ctx.qq);
+                currentNajie.材料 ||= [];
+                const current = currentNajie.材料.find(item => item.name === material.name);
+                if (current) current.数量 = (Number(current.数量) || 0) + amount;
+                else currentNajie.材料.push({ ...material, 数量: amount });
+                await Write_najie(ctx.qq, currentNajie);
+            };
+        }
+    }
+
+    const result = RealmEvents.recordTreasureTrial(ctx.event.timestamp, ctx.qq, trial, options);
+    if (!result.ok) {
+        if (refund) await refund();
+        const errors = {
+            duplicate_trial: '这类试炼你已经完成过，每种试炼只能选择一次。',
+            limit: '三次天机行动已经用尽，不能再选择第四种试炼。',
+            invalid_option: '选择不在本次试炼允许的范围内，请发送 #观摩灵宝 查看。',
+            expired: '择主之争已经结束。',
+        };
+        return e.reply(errors[result.reason] || '本次试炼无法进行。');
+    }
+
+    if (result.healthPenaltyRate > 0) {
+        const player = await Read_player(ctx.qq);
+        const loss = Math.max(1, Math.floor((Number(player.血量上限) || 1) * result.healthPenaltyRate));
+        player.当前血量 = Math.max(1, (Number(player.当前血量) || 1) - loss);
+        await Write_player(ctx.qq, player);
+        result.detail += ` 你损失了${loss.toLocaleString('zh-CN')}点当前血量。`;
+    }
+
+    const milestoneText = result.milestones.map(value => ({
+        25: '封印显露了第一条灵宝性情。',
+        50: '所有参与者将在结算时额外获得先天道痕。',
+        75: '封印显露了第二条灵宝性情。',
+        100: '先天封印完全破解，完整择主仪式已经开启。',
+    })[value]);
+    const actionCount = Object.keys(result.participant.trials || {}).length;
+    return e.reply([
+        '【先天至宝·试炼完成】',
+        result.detail,
+        `本次试炼：${result.score}分｜封印破解+${result.progress}%`,
+        `你的天机行动：${actionCount}/${TREASURE_TRIAL_LIMIT}`,
+        `当前封印破解度：${result.event.contest.sealProgress}%`,
+        ...milestoneText,
+        actionCount === TREASURE_TRIAL_LIMIT ? '三项试炼已毕，请发送 #立下道心 选择。' : '还可继续选择其他试炼。',
+    ].join('\n'));
+}
+
+async treasureContestDaoHeart(e) {
+    const ctx = await this.treasurePlayerContext(e, { requireReach: true, requireJoined: true });
+    if (!ctx || !await Go(e)) return false;
+    const choice = String(e.msg).replace(/^#立下道心\s+/, '').trim();
+    const result = RealmEvents.setTreasureDaoHeart(ctx.event.timestamp, ctx.qq, choice);
+    if (!result.ok) {
+        if (result.reason === 'trials_required') return e.reply('需先完成三种不同试炼，才能面对器灵的最后一问。');
+        if (result.reason === 'duplicate') return e.reply('道心一经立下便不可更改。');
+        return e.reply('当前无法立下道心。');
+    }
+    return e.reply([
+        '【道心已立】',
+        `你向器灵作答：${choice}。`,
+        '答案不会立即判定；事件结束时将与试炼路线一同计算性情契合度。',
+    ].join('\n'));
+}
+
+async settleExpiredTreasureContests() {
+    const events = RealmEvents.getTreasureContestEvents().filter(event => Number(event.expiresAt) <= Date.now());
+    for (const event of events) {
+        try {
+            await this.settleTreasureEventRewards(event);
+        } catch (error) {
+            console.error('[先天至宝] 择主结算失败:', error);
+        }
+    }
+}
+
+async settleTreasureEventRewards(event) {
+    const lockKey = String(event.timestamp);
+    if (treasureSettlementLocks.has(lockKey)) return { ok: true, pending: true, event };
+    treasureSettlementLocks.add(lockKey);
+    try {
+        const settlement = RealmEvents.settleTreasureEvent(event.timestamp);
+        if (!settlement.ok) return settlement;
+        event = settlement.event;
+        const rankings = event.contest?.rankings || [];
+        const rankByQq = new Map(rankings.map((item, index) => [String(item.qq), index + 1]));
+        const rewarded = new Set((event.contest?.rewardedQqs || []).map(String));
+
+        for (const entry of Object.values(event.contest?.participants || {})) {
+            const qq = String(entry.qq);
+            if (rewarded.has(qq)) continue;
+            if (!await existplayer(qq)) {
+                RealmEvents.markTreasureRewarded(event.timestamp, qq);
+                continue;
+            }
+            const player = await Read_player(qq);
+            const settlementKey = String(event.timestamp);
+            if (player.已结算先天至宝事件?.includes(settlementKey)) {
+                RealmEvents.markTreasureRewarded(event.timestamp, qq);
+                continue;
+            }
+            const rank = rankByQq.get(qq) || 0;
+            const qualified = Boolean(rank);
+            const realmPower = Math.max(1,
+                (Number(player.level_id) || 0) +
+                (Number(player.Physique_id) || 0) +
+                (Number(player.mijinglevel_id) || 0) * 2 + 2
+            );
+            const multiplier = rank === 1 ? 5 : rank > 0 && rank <= 3 ? 3 : qualified ? 2 : 1;
+            const reward = realmPower * 10000 * multiplier;
+            const traces = rank === 1 ? 30 : rank === 2 ? 20 : rank === 3 ? 15 : qualified ? 8 : 3;
+            const fragments = rank === 1 ? 10 : rank === 2 ? 6 : rank === 3 ? 4 : qualified ? 2 : 0;
+
+            if (rank === 1) {
+                const owner = readInnateTreasureState().owners?.[event.treasure.name]?.ownerId;
+                const ownership = owner === qq ? { ok: true } : claimInnateTreasure(event.treasure.name, qq);
+                if (ownership.ok) {
+                    const najie = await Read_najie(qq);
+                    const equipment = await Read_equipment(qq);
+                    const alreadyHas = equipment.帝兵?.name === event.treasure.name ||
+                        najie.装备?.some(item => item.name === event.treasure.name);
+                    if (!alreadyHas) {
+                        await Add_najie_thing(qq, createInnateTreasure(event.treasure.name, qq), '装备', 1, 6);
+                    }
+                }
+            } else if (rank === 2 || rank === 3) {
+                const projectionName = `${event.treasure.name}·七日投影`;
+                const najie = await Read_najie(qq);
+                const equipment = await Read_equipment(qq);
+                const alreadyHas = equipment.帝兵?.name === projectionName ||
+                    najie.装备?.some(item => item.name === projectionName);
+                if (!alreadyHas) {
+                    await Add_najie_thing(
+                        qq,
+                        createInnateTreasureProjection(event.treasure.name, qq),
+                        '装备',
+                        1,
+                        6
+                    );
+                }
+            }
+
+            const effects = getMinggeEffects(player, data.minggeList);
+            player.修为 = (Number(player.修为) || 0) + calculateMinggeGain(reward, effects, '修炼加成');
+            player.血气 = (Number(player.血气) || 0) + Math.trunc(reward);
+            player.先天道痕 = (Number(player.先天道痕) || 0) + traces + (Number(event.contest.sealProgress) >= 50 ? 5 : 0);
+            if (fragments > 0) {
+                player.灵宝残片 ||= {};
+                player.灵宝残片[event.treasure.name] = (Number(player.灵宝残片[event.treasure.name]) || 0) + fragments;
+            }
+            player.已结算先天至宝事件 ||= [];
+            player.已结算先天至宝事件.push(settlementKey);
+            player.已结算先天至宝事件 = player.已结算先天至宝事件.slice(-20);
+            await Write_player(qq, player);
+            RealmEvents.markTreasureRewarded(event.timestamp, qq);
+        }
+        return settlement;
+    } finally {
+        treasureSettlementLocks.delete(lockKey);
+    }
+}
+
+async participateRealmEvent(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return false;
+
+    const player = await Read_player(usr_qq);
+    const requestedTypes = e.msg === '#夺宝'
+        ? ['treasureAppear']
+        : e.msg === '#探查遗迹'
+            ? ['emperorLegacy', 'mysteriousRuins']
+            : null;
+    const events = RealmEvents.getActiveEvents().filter(event => {
+        const interaction = RealmEvents.getEventInteraction(event);
+        const supported = requestedTypes?.includes('treasureAppear')
+            ? interaction === 'treasure'
+            : interaction === 'generic';
+        return supported && (!requestedTypes || requestedTypes.includes(event.type));
+    });
+    if (events.length === 0) {
+        return e.reply('当前没有可以直接参与的位面大事件。发送 #大事件 可查看全部事件。');
+    }
+
+    const event = events.find(item => getRealmEventReach(player, item).ok);
+    if (!event) {
+        const destinations = events.slice(0, 3).map(item => [
+            `【${RealmEvents.getEventTypeName(item.type)}】${formatRealmEventLocation(item)}`,
+            formatRealmEventTravel(item)
+        ].filter(Boolean).join('\n'));
+        return e.reply([
+            '你尚未抵达任何大事件的精确坐标。',
+            ...destinations
+        ].join('\n'));
+    }
+
+    if (event.type !== 'treasureAppear' && event.participantQqs?.includes(String(usr_qq))) {
+        return e.reply(`你已经参与过本次【${RealmEvents.getEventTypeName(event.type)}】。`);
+    }
+    if (!await Go(e)) return false;
+
+    if (event.type === 'treasureAppear') {
+        const joined = RealmEvents.joinTreasureEvent(event.timestamp, usr_qq, player.名号);
+        if (!joined.ok && joined.reason !== 'duplicate') {
+            return e.reply('这场先天至宝择主之争已经结束。');
+        }
+        if (joined.reason === 'duplicate') {
+            return e.reply('你已经参加本次择主之争。发送 #观摩灵宝 或 #查看夺宝进度 继续。');
+        }
+        const profile = getTreasureContestProfile(event.treasure?.name);
+        return e.reply([
+            `【${event.treasure.name}·择主之争】`,
+            `你已在${formatRealmEventLocation(event)}留下神识烙印。`,
+            `天象：${profile.omen}`,
+            `你拥有${TREASURE_TRIAL_LIMIT}次天机行动，四种试炼中只能选择三种，每种限一次。`,
+            `发送 #观摩灵宝 查看试炼、线索与当前进度。`,
+            `至宝将在事件结束后公开评分择主，不会由最先抵达者直接取得。`
+        ].join('\n'));
+    }
+
+    const participation = RealmEvents.markEventParticipated(event.timestamp, usr_qq);
+    if (!participation.ok) {
+        return e.reply(participation.reason === 'duplicate'
+            ? '你已经参与过本次位面大事件。'
+            : '这场位面大事件已经结束。');
+    }
+
+    const reward = Math.max(10000, Math.trunc((
+        (Number(player.level_id) || 0) +
+        (Number(player.Physique_id) || 0) +
+        (Number(player.mijinglevel_id) || 0) * 2 + 2
+    ) * 5000));
+    const actualXiuwei = await Add_修为(usr_qq, reward);
+    await Add_血气(usr_qq, reward);
+
+    const outcomes = {
+        treasureAppear: '你穿过争夺此宝的修士洪流，截取到一缕先天道韵。',
+        merchantVisit: '你与云游商人交换见闻，从其口中悟得一段异域修行心得。',
+        sectWar: '你踏入圣地战场，在交锋中磨砺了自身道法。',
+        prodigyRise: '你亲临天骄扬名之地，与各方俊杰论道争锋。',
+        forbiddenZone: '你在禁区边缘记录大道异变，赶在帝威复苏前全身而退。',
+        emperorLegacy: '你触及古帝遗留的道痕，虽未得完整传承，却有所领悟。',
+        worldChange: '你抵达天地异变的源点，捕捉到一缕转瞬即逝的大道轨迹。',
+        mysteriousRuins: '你踏入遗迹外围完成初步探查，带回一份残缺的古史记录。'
+    };
+    return e.reply([
+        `【${RealmEvents.getEventTypeName(event.type)}·参与成功】`,
+        outcomes[event.type] || '你亲历这场位面大事件，并从中有所收获。',
+        `事件地点：${formatRealmEventLocation(event)}`,
+        `获得修为：${Math.trunc(actualXiuwei || reward).toLocaleString('zh-CN')}`,
+        `获得血气：${reward.toLocaleString('zh-CN')}`,
+        `当前参与人数：${participation.count}`
+    ].join('\n'));
+}
+
+async whiteBeardShop(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return false;
+
+    const event = RealmEvents.getActiveEvent('merchantVisit');
+    if (!event || event.merchant?.name !== '白须仙翁' || !Array.isArray(event.stock)) {
+        return e.reply('白须仙翁此刻并未在诸天现身。');
+    }
+    const player = await Read_player(usr_qq);
+    if (!getRealmEventReach(player, event).ok) {
+        return e.reply([
+            `白须仙翁位于：${formatRealmEventLocation(event)}`,
+            `赶路方式：${formatRealmEventTravel(event)}`
+        ].join('\n'));
+    }
+
+    const minutes = Math.max(1, Math.ceil((Number(event.expiresAt) - Date.now()) / 60000));
+    const lines = [
+        '【白须仙翁·诸天仙炉】',
+        `剩余时间：${minutes}分钟`,
+        `你的源石：${(Number(player.源石) || 0).toLocaleString('zh-CN')}`,
+        ''
+    ];
+    for (const item of event.stock) {
+        if (item.soldTo) {
+            lines.push(`【${item.id}】${item.displayName}（已售罄）`, '');
+            continue;
+        }
+        const equipment = item.equipment;
+        const recipe = item.recipe.map(entry => `${entry.name}×${entry.count}`).join('、');
+        lines.push(
+            `【${item.id}】${item.displayName}（${item.type}）`,
+            `攻击+${Math.round(equipment.atk * 100)}% 防御+${Math.round(equipment.def * 100)}% 血量+${Math.round(equipment.HP * 100)}% 暴击+${Math.round(equipment.bao * 100)}%`,
+            `综合：${item.power}%｜价格：${item.price.toLocaleString('zh-CN')}源石`,
+            `配方：${recipe}`,
+            `购买：#购买仙翁商品*${item.id}`,
+            ''
+        );
+    }
+    return e.reply(lines.join('\n').trim());
+}
+
+async buyWhiteBeardItem(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return false;
+    const stockNumber = Number(e.msg.match(/\*(\d+)$/)?.[1]);
+    const event = RealmEvents.getActiveEvent('merchantVisit');
+    if (!event || event.merchant?.name !== '白须仙翁' || !Array.isArray(event.stock)) {
+        return e.reply('白须仙翁此刻并未在诸天现身。');
+    }
+
+    const player = await Read_player(usr_qq);
+    const reach = getRealmEventReach(player, event);
+    if (!reach.ok) {
+        return e.reply([
+            '你尚未抵达白须仙翁所在的精确坐标。',
+            `位置：${formatRealmEventLocation(event)}`,
+            `赶路方式：${formatRealmEventTravel(event)}`
+        ].join('\n'));
+    }
+    const stockItem = event.stock[stockNumber - 1];
+    if (!stockItem) return e.reply('仙炉中没有这件商品。');
+    if (stockItem.soldTo) return e.reply('这件仙宝已经被其他修士买走了。');
+    if ((Number(player.源石) || 0) < stockItem.price) {
+        return e.reply([
+            '【白须仙翁·源石不足】',
+            `${stockItem.displayName}需要${stockItem.price.toLocaleString('zh-CN')}源石。`,
+            `你当前拥有${(Number(player.源石) || 0).toLocaleString('zh-CN')}源石。`
+        ].join('\n'));
+    }
+
+    const claimed = RealmEvents.claimMerchantItem(event.timestamp, stockNumber, usr_qq);
+    if (!claimed.ok) {
+        return e.reply(claimed.reason === 'sold' ? '这件仙宝刚刚被其他修士买走了。' : '这件商品已经不在仙炉中。');
+    }
+
+    player.源石 -= claimed.item.price;
+    try {
+        await Write_player(usr_qq, player);
+        await Add_najie_thing(
+            usr_qq,
+            claimed.item.equipment,
+            '装备',
+            1,
+            claimed.item.equipment.pinji
+        );
+    } catch (error) {
+        player.源石 += claimed.item.price;
+        await Write_player(usr_qq, player);
+        RealmEvents.releaseMerchantItem(event.timestamp, stockNumber, usr_qq);
+        console.error('购买白须仙翁商品失败:', error);
+        return e.reply('仙炉交易出现异常，源石已经退还。');
+    }
+
+    return e.reply([
+        '【白须仙翁·交易完成】',
+        `获得：${claimed.item.displayName}`,
+        `花费：${claimed.item.price.toLocaleString('zh-CN')}源石`,
+        `剩余：${player.源石.toLocaleString('zh-CN')}源石`,
+        `装备代号已收入纳戒，可直接使用 #装备 进行穿戴。`
+    ].join('\n'));
+}
+
+async blackMarketShop(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return false;
+
+    const event = RealmEvents.getActiveEvent('merchantVisit');
+    if (!event || event.merchant?.name !== '黑衣神秘人' || !Array.isArray(event.stock)) {
+        return e.reply('黑衣神秘人此刻并未在诸天现身。');
+    }
+    const player = await Read_player(usr_qq);
+    if (!getRealmEventReach(player, event).ok) {
+        return e.reply([
+            `黑衣神秘人位于：${formatRealmEventLocation(event)}`,
+            `赶路方式：${formatRealmEventTravel(event)}`
+        ].join('\n'));
+    }
+
+    const minutes = Math.max(1, Math.ceil((Number(event.expiresAt) - Date.now()) / 60000));
+    const lines = [
+        '【黑衣神秘人·无名黑市】',
+        `剩余时间：${minutes}分钟`,
+        `你的源石：${(Number(player.源石) || 0).toLocaleString('zh-CN')}`,
+        ''
+    ];
+    for (const item of event.stock) {
+        if (item.soldTo) {
+            lines.push(`【${item.id}】${item.displayName}（已售罄）`, '');
+            continue;
+        }
+        lines.push(
+            `【${item.id}】${item.displayName}（${item.category}）`,
+            item.description,
+            `价格：${item.price.toLocaleString('zh-CN')}源石`,
+            `购买：#购买黑市商品*${item.id}`,
+            ''
+        );
+    }
+    return e.reply(lines.join('\n').trim());
+}
+
+async buyBlackMarketItem(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return false;
+    const stockNumber = Number(e.msg.match(/\*(\d+)$/)?.[1]);
+    const event = RealmEvents.getActiveEvent('merchantVisit');
+    if (!event || event.merchant?.name !== '黑衣神秘人' || !Array.isArray(event.stock)) {
+        return e.reply('黑衣神秘人此刻并未在诸天现身。');
+    }
+
+    const player = await Read_player(usr_qq);
+    if (!getRealmEventReach(player, event).ok) {
+        return e.reply([
+            '你尚未抵达黑衣神秘人所在的精确坐标。',
+            `位置：${formatRealmEventLocation(event)}`,
+            `赶路方式：${formatRealmEventTravel(event)}`
+        ].join('\n'));
+    }
+    const stockItem = event.stock[stockNumber - 1];
+    if (!stockItem) return e.reply('黑市货单中没有这件商品。');
+    if (stockItem.soldTo) return e.reply('这件货物已经被其他修士买走了。');
+    if ((Number(player.源石) || 0) < stockItem.price) {
+        return e.reply([
+            '【无名黑市·源石不足】',
+            `${stockItem.displayName}需要${stockItem.price.toLocaleString('zh-CN')}源石。`,
+            `你当前拥有${(Number(player.源石) || 0).toLocaleString('zh-CN')}源石。`
+        ].join('\n'));
+    }
+
+    const claimed = RealmEvents.claimMerchantItem(event.timestamp, stockNumber, usr_qq);
+    if (!claimed.ok) {
+        return e.reply(claimed.reason === 'sold' ? '这件货物刚刚被其他修士买走了。' : '这件商品已经不在黑市货单中。');
+    }
+
+    player.源石 -= claimed.item.price;
+    try {
+        await Write_player(usr_qq, player);
+        await Add_najie_thing(
+            usr_qq,
+            claimed.item.item.name,
+            claimed.item.item.class,
+            claimed.item.quantity || 1
+        );
+    } catch (error) {
+        player.源石 += claimed.item.price;
+        await Write_player(usr_qq, player);
+        RealmEvents.releaseMerchantItem(event.timestamp, stockNumber, usr_qq);
+        console.error('购买黑衣神秘人商品失败:', error);
+        return e.reply('黑市交易出现异常，源石已经退还。');
+    }
+
+    return e.reply([
+        '【无名黑市·交易完成】',
+        `获得：${claimed.item.displayName}×${claimed.item.quantity || 1}`,
+        `花费：${claimed.item.price.toLocaleString('zh-CN')}源石`,
+        `剩余：${player.源石.toLocaleString('zh-CN')}源石`
+    ].join('\n'));
+}
+
+async fairyFortuneShop(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return false;
+
+    const event = RealmEvents.getActiveEvent('merchantVisit');
+    if (!event || event.merchant?.name !== '绝美仙子') {
+        return e.reply('绝美仙子此刻并未在诸天现身。');
+    }
+    const player = await Read_player(usr_qq);
+    if (!getRealmEventReach(player, event).ok) {
+        return e.reply([
+            `绝美仙子位于：${formatRealmEventLocation(event)}`,
+            `赶路方式：${formatRealmEventTravel(event)}`
+        ].join('\n'));
+    }
+
+    const active = getActiveRedDustFortune(player);
+    const activeInfo = active
+        ? `当前：${RED_DUST_FORTUNES[active.type].name}（剩余${Math.max(1, Math.ceil((active.expiresAt - Date.now()) / 60000))}分钟）`
+        : '当前：未持有生效中的红尘仙缘签';
+    const claimed = event.serviceQqs?.includes(String(usr_qq));
+    return e.reply([
+        '【绝美仙子·红尘仙缘签】',
+        `每签价格：${RED_DUST_FORTUNE_COST.toLocaleString('zh-CN')}源石`,
+        '三选一，立即生效24小时；不可叠加、续时或中途更换。',
+        activeInfo,
+        claimed ? '本次相逢你已经求过签。' : '',
+        '',
+        `1. 问道签：${RED_DUST_FORTUNES.question.description}`,
+        '求取：#求取问道签',
+        '',
+        `2. 历练签：${RED_DUST_FORTUNES.adventure.description}`,
+        '求取：#求取历练签',
+        '',
+        `3. 寻缘签：${RED_DUST_FORTUNES.seeking.description}`,
+        '大事件0.2%→1%，位面坐标10%→20%，问仙残痕1%→2%。',
+        '求取：#求取寻缘签',
+    ].filter(Boolean).join('\n'));
+}
+
+async buyFairyFortune(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return false;
+
+    const event = RealmEvents.getActiveEvent('merchantVisit');
+    if (!event || event.merchant?.name !== '绝美仙子') {
+        return e.reply('绝美仙子此刻并未在诸天现身。');
+    }
+    const player = await Read_player(usr_qq);
+    if (!getRealmEventReach(player, event).ok) {
+        return e.reply([
+            '你尚未抵达绝美仙子所在的精确坐标。',
+            `位置：${formatRealmEventLocation(event)}`,
+            `赶路方式：${formatRealmEventTravel(event)}`
+        ].join('\n'));
+    }
+    const active = getActiveRedDustFortune(player);
+    if (active) {
+        return e.reply(`你的${RED_DUST_FORTUNES[active.type].name}仍在生效，无法覆盖或续时。`);
+    }
+    const type = getRedDustFortuneType(e.msg.replace(/^#求取/, ''));
+    if (!type) return e.reply('请选择问道签、历练签或寻缘签。');
+    if ((Number(player.源石) || 0) < RED_DUST_FORTUNE_COST) {
+        return e.reply([
+            '【红尘仙缘签·源石不足】',
+            `求签需要${RED_DUST_FORTUNE_COST.toLocaleString('zh-CN')}源石。`,
+            `你当前拥有${(Number(player.源石) || 0).toLocaleString('zh-CN')}源石。`
+        ].join('\n'));
+    }
+
+    const claimed = RealmEvents.claimFairyService(event.timestamp, usr_qq);
+    if (!claimed.ok) {
+        return e.reply(claimed.reason === 'claimed'
+            ? '本次相逢你已经求过红尘仙缘签。'
+            : '绝美仙子的身影已经消散。');
+    }
+
+    player.源石 -= RED_DUST_FORTUNE_COST;
+    player.红尘仙缘签 = createRedDustFortune(type, event.timestamp);
+    try {
+        await Write_player(usr_qq, player);
+    } catch (error) {
+        player.源石 += RED_DUST_FORTUNE_COST;
+        delete player.红尘仙缘签;
+        await Write_player(usr_qq, player);
+        RealmEvents.releaseFairyService(event.timestamp, usr_qq);
+        console.error('求取红尘仙缘签失败:', error);
+        return e.reply('求签出现异常，源石已经退还。');
+    }
+
+    const fortune = RED_DUST_FORTUNES[type];
+    return e.reply([
+        `【绝美仙子·${fortune.name}】`,
+        fortune.description,
+        `花费：${RED_DUST_FORTUNE_COST.toLocaleString('zh-CN')}源石`,
+        `剩余：${player.源石.toLocaleString('zh-CN')}源石`,
+        `有效期至：${new Date(player.红尘仙缘签.expiresAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`
+    ].join('\n'));
+}
+
+async buyCoordinateClue(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    const player = await Read_player(usr_qq);
+    const match = e.msg.match(/^#(?:求购|求取)位面线索\s*([^\s]+)$/);
+    if (!match) return e.reply('用法：#求购位面线索 仙界');
+
+    const location = match[1];
+    const result = purchaseCoordinateClue(player, location);
+    if (result.reason === 'invalid') {
+        return e.reply(`无效位面：${location}\n可求购：${getUnknownCoordinates({}).join('、')}`);
+    }
+    if (result.reason === 'known') return e.reply(`你已记住「${location}」的坐标，无需求购。`);
+    if (result.reason === 'insufficient') {
+        return e.reply([
+            `【重金求购·灵石不足】`,
+            `探寻「${location}」的可靠线索需${result.cost.toLocaleString('zh-CN')}灵石。`,
+            `你当前仅有${(Number(player.灵石) || 0).toLocaleString('zh-CN')}灵石。`
+        ].join('\n'));
+    }
+
+    await Write_player(usr_qq, player);
+    return e.reply([
+        `【重金求购·星路入识】`,
+        `你散尽重金，从跨界行商手中换得「${location}」的完整星图线索。`,
+        `神识推演后，该位面坐标已烙入识海。`,
+        `※ 灵石 -${result.cost.toLocaleString('zh-CN')}`,
+        `※ 记忆坐标：${player.记忆坐标.join('、')}`
+    ].join('\n'));
+}
+
+async exploreCoordinateClue(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    const player = await Read_player(usr_qq);
+    const event = RealmEvents.getActiveEvent('coordinateClue');
+    if (!event) return e.reply('当前没有仍在显化的位面坐标石壁。');
+
+    const match = e.msg.match(/^#探索位面线索\s*([^\s]+)$/);
+    if (!match || match[1] !== event.location) {
+        return e.reply(`当前线索位于「${formatRealmEventLocation(event)}」\n请抵达后发送：#探索位面线索 ${event.location}`);
+    }
+    const currentPlane = Object.keys(PLACE_LOCATION_MAP).find(name => PLACE_LOCATION_MAP[name] === player.power_place);
+    if (currentPlane !== event.sourcePlane) {
+        return e.reply(`你当前身处${currentPlane || '未知位面'}，需先穿梭至${event.sourcePlane}才能前往${event.location}。`);
+    }
+    if (event.coordinate) {
+        const currentCoordinate = getPlayerPlaneCoordinate(player, event.sourcePlane);
+        if (!currentCoordinate || currentCoordinate.x !== event.coordinate.x || currentCoordinate.y !== event.coordinate.y) {
+            return e.reply(`你尚未抵达石壁坐标。\n${formatRealmEventTravel(event)}`);
+        }
+    }
+    if (event.claimedQqs?.includes(String(usr_qq))) return e.reply('你已经拓印过这面石壁，道纹不再对你显化。');
+    if (hasCoordinate(player, event.targetPlane)) return e.reply(`你早已记住「${event.targetPlane}」的坐标，这面石壁已无新意。`);
+    if (!await Go(e)) return false;
+
+    rememberCoordinate(player, event.targetPlane);
+    await Write_player(usr_qq, player);
+    RealmEvents.markCoordinateClueClaimed(event.timestamp, usr_qq);
+    return e.reply([
+        `【石壁参悟·坐标已记】`,
+        `你赶到「${formatRealmEventLocation(event)}」，拂去石壁尘埃，以神识补全残缺星纹。`,
+        `一道横渡诸天的星路在识海中成形，你记住了「${event.targetPlane}」的位面坐标。`,
+        `※ 记忆坐标：${player.记忆坐标.join('、')}`
+    ].join('\n'));
+}
+
+async exploreWenXianStele(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return false;
+
+    const event = RealmEvents.getActiveEvent('wenxianClue');
+    if (!event) return e.reply('当前没有仍在显化的问仙古碑。');
+    if (event.claimedQqs?.includes(String(usr_qq))) return e.reply('你已经参悟过这座问仙古碑。');
+
+    const player = await Read_player(usr_qq);
+    if (!isWenXianEligible(player)) {
+        return e.reply(`秘境或仙古今世法任一体系达到${WENXIAN_REQUIRED_REALM_LEVEL}级，才能承受问仙古碑的道韵。`);
+    }
+    const reach = getRealmEventReach(player, event);
+    if (!reach.ok) {
+        return e.reply([
+            `问仙古碑位于：${formatRealmEventLocation(event)}`,
+            formatRealmEventTravel(event),
+        ].filter(Boolean).join('\n'));
+    }
+    if (!await Go(e)) return false;
+
+    const result = grantWenXianClue(player, '位面问仙古碑');
+    if (result.reason === 'unlocked') return e.reply('你已经激活问仙令，古碑中已无新的传承。');
+    if (result.reason === 'known') return e.reply('你已经持有一份问仙线索，无需重复参悟。');
+    if (!result.ok) return e.reply('古碑道纹晦暗不明，本次参悟未能得到线索。');
+
+    await Write_player(usr_qq, player);
+    RealmEvents.markWenXianClueClaimed(event.timestamp, usr_qq);
+    return e.reply([
+        '【问仙古碑·残图入识】',
+        '古碑上的问仙二字化作道痕，在你识海中凝成一卷残图。',
+        `残图最终指向：${formatRealmEventLocation(result.clue)}`,
+        formatRealmEventTravel(result.clue),
+        '发送 #问仙令 查看完整试炼。',
+    ].join('\n'));
+}
+
+// 记录位面坐标（消耗1枚星图，记入个人记忆坐标）
+async recordCoordinate(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    const player = await Read_player(usr_qq);
+
+    const m = e.msg.match(/^#记坐标\s*([^\s]+)$/);
+    if (!m) {
+        return e.reply('用法：#记坐标 仙界（消耗1枚星图，记录该位面坐标）');
+    }
+    const location = m[1];
+    if (!PLACE_LOCATION_MAP.hasOwnProperty(location)) {
+        return e.reply(`无效位面：${location}\n可用：${Object.keys(PLACE_LOCATION_MAP).join('、')}`);
+    }
+    if (DEFAULT_KNOWN_LOCATIONS.includes(location)) {
+        return e.reply(`「${location}」为默认已知坐标，无需记录。`);
+    }
+    if (hasCoordinate(player, location)) {
+        return e.reply(`你已记住「${location}」的坐标，无需重复记录。`);
+    }
+    if (!Array.isArray(player.记忆坐标)) player.记忆坐标 = [];
+    if ((player.星图 || 0) < 1) {
+        return e.reply([
+            `【星图不足】`,
+            `记录「${location}」坐标需消耗 1 枚星图，你当前没有星图。`,
+            `※ 可发送 #购买星图*1 花费3亿灵石购得；成功探索副本每日也有概率直接悟得未知坐标。`
+        ].join('\n'));
+    }
+
+    player.星图 -= 1;
+    rememberCoordinate(player, location);
+    await Write_player(usr_qq, player);
+    return e.reply([
+        `【星图拓印·坐标已记】`,
+        `你展开星图，以神识拓印「${location}」的星空坐标，`,
+        `将其牢牢记入识海。`,
+        `※ 星图 -1（剩余：${player.星图}枚）`,
+        `※ 记忆坐标：${player.记忆坐标.join('、')}`
+    ].join('\n'));
+}
+
+// 在传送阵上刻画位面坐标（消耗灵石，记入传送阵坐标列表）
+async engraveCoordinate(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    const player = await Read_player(usr_qq);
+
+    const m = e.msg.match(/^#刻画坐标\s*([^\s]+)$/);
+    if (!m) {
+        return e.reply('用法：#刻画坐标 仙界（消耗灵石，在传送阵上刻入该位面坐标）');
+    }
+    const location = m[1];
+    if (!PLACE_LOCATION_MAP.hasOwnProperty(location)) {
+        return e.reply(`无效位面：${location}\n可用：${Object.keys(PLACE_LOCATION_MAP).join('、')}`);
+    }
+    if (!hasCoordinate(player, location)) {
+        return e.reply([
+            `【刻画失败·未记坐标】`,
+            `你尚未记录「${location}」的个人坐标，无法在阵上刻画。`,
+            `※ 请先 #记坐标 ${location} 记下该位面坐标。`
+        ].join('\n'));
+    }
+    if (!Array.isArray(player.传送阵坐标)) player.传送阵坐标 = [];
+    if (player.传送阵坐标.includes(location)) {
+        return e.reply(`你的传送阵上已刻画「${location}」坐标，无需重复刻画。`);
+    }
+    if ((player.灵石 || 0) < ENGRAVE_LINGSHI_COST) {
+        return e.reply([
+            `【刻画失败·灵石不足】`,
+            `在传送阵上刻画「${location}」坐标需 ${ENGRAVE_LINGSHI_COST} 灵石，`,
+            `你当前灵石不足以完成刻画。`
+        ].join('\n'));
+    }
+
+    player.灵石 -= ENGRAVE_LINGSHI_COST;
+    player.传送阵坐标.push(location);
+    await Write_player(usr_qq, player);
+    return e.reply([
+        `【阵纹刻画·坐标已镌】`,
+        `你以无上神能催动传送阵，将「${location}」的星空坐标`,
+        `一笔一笔镌刻于阵纹深处，阵图微微震颤，似已锚定彼岸。`,
+        `※ 灵石 -${ENGRAVE_LINGSHI_COST}`,
+        `※ 已刻画坐标：${player.传送阵坐标.join('、')}`
+    ].join('\n'));
+}
+// ================================================================
+
 
 // 副本掉落指令处理
 async handleDungeonDrop(e) {
@@ -3575,7 +4925,23 @@ async function calculateTimeReduction(player) {
         timeReduction += 2;
         msgs.push('受到道法仙术加持，历练时间减少2分钟');
     }
-
+    /**
+     * ===== 命格 · 秘境加速（消费层，走契约层/原语层）=====
+     * 秘境加速为 flat-seconds（秒），由原语层从配置表解析，
+     * 统一换算为分钟并入 timeReduction，文案展示秒数。
+     */
+    const secretPlaceEffects = getMinggeEffects(player, data.minggeList);
+    const secretPlaceReductionMs = getMinggeSecretPlaceReductionMs(secretPlaceEffects);
+    if (secretPlaceReductionMs > 0) {
+        timeReduction += secretPlaceReductionMs / 60000;
+        const secretPlaceSecs = Math.round(secretPlaceReductionMs / 1000);
+        msgs.push(
+            `【命格·秘境加速】\n` +
+            `命格加护，你对秘境法则的亲和大幅提升，\n` +
+            `行动如游鱼入海，无滞无碍。\n` +
+            `时间减少${secretPlaceSecs}秒`
+        );
+    }
     return { timeReduction, msgs };
 }
 export async function zhetianweizhi(e, weizhi, addres) {
@@ -3644,4 +5010,3 @@ function formatTime(ms) {
     const seconds = Math.floor((ms % (1000 * 60)) / 1000);
     return `${minutes}分${seconds}秒`;
 }
-

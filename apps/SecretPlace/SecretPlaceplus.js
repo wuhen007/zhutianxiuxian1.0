@@ -1,4 +1,6 @@
+import fs from 'fs';
 import { plugin, verc, data } from '../../api/api.js';
+import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
 import {
   Read_player,
   isNotNull,
@@ -16,6 +18,45 @@ import {
   get_addictionharvest_img,
   channel
 } from '../../model/xiuxian.js';
+
+// ==================== 诡异大祭·崩灭位面检查工具 ====================
+/**
+ * 检查目标位面是否被诡异大祭摧毁（位面.json对应key为0）
+ * @param {string} planeName - 位面名称，如'凡间'/'仙界'/'下界八域'等
+ * @returns {boolean} true=已崩灭，false=正常
+ */
+function isWeiMianDestroyed(planeName) {
+  try {
+    const filePath = data.filePathMap.weimianList;
+    const obj = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    return obj[planeName] === 0;
+  } catch (e) {
+    return false; // 读取失败容错，不阻断副本
+  }
+}
+
+/**
+ * 诡异大祭崩灭位面的副本拦截回复
+ * @param {object} e - 消息对象
+ * @param {string} planeName - 被崩灭的位面名称
+ */
+async function replyPlaneDestroyed(e, planeName) {
+  return e.reply([
+    `【诡异大祭·副本封锁】`,
+    ``,
+    `你试图进入「${planeName}」的秘境——`,
+    `然而通往此地的虚空古路，已是一片废墟与乱流。`,
+    ``,
+    `厄土仙帝的一掌彻底粉碎了「${planeName}」的位面壁垒，`,
+    `副本入口随之崩塌，无法再行涉足！`,
+    ``,
+    `「崩灭的位面，岂容尔等自由进出？」`,
+    ``,
+    `唯仙帝映照权能，方可修复崩灭的位面。`,
+  ].join('\n'));
+}
+// ===========================================================
+
 export class SecretPlaceplus extends plugin {
   constructor() {
     super({
@@ -133,6 +174,11 @@ async Gosecretplace(e) {
          // 检查是否已在目标地点
     if (player.power_place != 0) {
         return e.reply(`你不在凡间`);
+    }
+
+    // 诡异大祭·崩灭检查：凡间被毁时禁止进入凡间副本
+    if (isWeiMianDestroyed('凡间')) {
+        return replyPlaneDestroyed(e, '凡间');
     }
     // 特殊秘境检查
     if (didian == '桃花岛') {
@@ -316,6 +362,12 @@ async Goxiajie(e) {
     if (player.power_place != 1.5) {
         return e.reply(`你不在下界八域`);
     }
+
+    // 诡异大祭·崩灭检查
+    if (isWeiMianDestroyed('下界八域')) {
+        return replyPlaneDestroyed(e, '下界八域');
+    }
+
     // 特殊地点境界检查
     if (didian === "鲲鹏巢" && player.xiangulevel_id > 4) {
         e.reply('北海鲲鹏巢只有化灵境及以下的修士才能前往');
@@ -489,6 +541,12 @@ async Gojiutianshidi(e) {
     if (player.power_place != 2.5) {
         return e.reply(`你不在九天十地`);
     }
+
+    // 诡异大祭·崩灭检查
+    if (isWeiMianDestroyed('九天十地')) {
+        return replyPlaneDestroyed(e, '九天十地');
+    }
+
     // 特殊地点境界检查
  // 特殊地点境界检查
     if (didian === "元天秘境" && player.xiangulevel_id > 7) {
@@ -645,6 +703,12 @@ async Gozhetian(e) {
     if (player.power_place != 2) {
         return e.reply(`你不在遮天位面`);
     }
+
+    // 诡异大祭·崩灭检查
+    if (isWeiMianDestroyed('遮天位面')) {
+        return replyPlaneDestroyed(e, '遮天位面');
+    }
+
     // 检查沉迷次数
     if (i < 1 || i > 12) {
         return e.reply('沉迷次数必须在1-12之间');
@@ -898,7 +962,19 @@ async Goforbiddenarea(e) {
     const parts = msg.split('*');
     const didian = parts[0].trim();
     const i = parseInt(parts[1]) || 1; // 默认1次
-    
+
+    // 诡异大祭·崩灭检查：玩家当前所在位面被毁则封锁副本
+    {
+        const PLANE_ID_TO_NAME = {
+            0: '凡间', 1: '仙界', 1.5: '下界八域',
+            2: '遮天位面', 2.5: '九天十地', 3: '界海', 6: '仙域'
+        };
+        const currentPlaneName = PLANE_ID_TO_NAME[player.power_place];
+        if (currentPlaneName && isWeiMianDestroyed(currentPlaneName)) {
+            return replyPlaneDestroyed(e, currentPlaneName);
+        }
+    }
+
     // 检查沉迷次数
     if (i < 1 || i > 12) {
         return e.reply('沉迷次数必须在1-12之间');
@@ -1101,6 +1177,11 @@ async Gofairyrealm(e) {
     if (player.power_place != 1) {
         return e.reply(`你不在仙界`);
     }
+
+    // 诡异大祭·崩灭检查
+    if (isWeiMianDestroyed('仙界')) {
+        return replyPlaneDestroyed(e, '仙界');
+    }
     
     // 检查等级要求
     let now_level_id = data.Level_list.find(
@@ -1171,7 +1252,7 @@ async Gofairyrealm(e) {
     let specialCost = "";
 
 if (didian === "往世星海") {
-    const requiredKeys = i * 5;           // 每次消耗 5 枚，可随 i 叠加
+    const requiredKeys = i * 10;           // 每次消耗 5 枚，可随 i 叠加
     const keyCount = await exist_najie_thing(usr_qq, "群星秘钥", "道具");
     if (!keyCount || keyCount < requiredKeys) {
         return e.reply(`你需要${requiredKeys}个群星秘钥才能前往往世星海`);
@@ -1424,7 +1505,7 @@ if (didian === "往世星海") {
   }
 }
 /**
- * 统一计算时间缩减效果
+ * 统一计算时间缩减效果（沉迷版本）
  * @param {Object} player 玩家对象
  * @param {number} i 沉迷次数
  * @returns {Object} 包含时间缩减值和消息数组的对象
@@ -1488,6 +1569,24 @@ async function calculateTimeReductionForAddiction(player, i) {
         const reduction = 2 * 10 * i;
         timeReduction += reduction;
         msgs.push(`【道法仙术】天地道则加持，时间减少${reduction}分钟`);
+    }
+
+    /**
+     * ===== 命格 · 秘境加速（消费层，走契约层/原语层）=====
+     * 秘境加速为 flat-seconds（秒），由原语层从配置表解析，
+     * 不随层数 i 缩放，统一换算为分钟并入 timeReduction，文案展示秒数。
+     */
+    const secretPlaceEffects = getMinggeEffects(player, data.minggeList);
+    const secretPlaceReductionMs = getMinggeSecretPlaceReductionMs(secretPlaceEffects);
+    if (secretPlaceReductionMs > 0) {
+        timeReduction += secretPlaceReductionMs / 60000;
+        const secretPlaceSecs = Math.round(secretPlaceReductionMs / 1000);
+        msgs.push(
+            `【命格·秘境加速】\n` +
+            `命格加护，你对秘境法则的亲和大幅提升，\n` +
+            `行动如游鱼入海，无滞无碍。\n` +
+            `时间减少${secretPlaceSecs}秒`
+        );
     }
 
     return { timeReduction, msgs };

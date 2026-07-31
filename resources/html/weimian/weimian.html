@@ -14,9 +14,14 @@
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
+    html {
+      width: 1000px;
+      background: #0a0a1a;
+    }
+
     body {
       transform: scale(1);
-      width: 100%;
+      width: 1000px;
       font-family: 'tttgbnumber', 'Microsoft YaHei', sans-serif;
       background: linear-gradient(135deg, #0a0a1a 0%, #1a1030 30%, #0d1b2a 60%, #0a0a1a 100%);
       padding: 24px;
@@ -24,7 +29,7 @@
     }
 
     .container {
-      max-width: 1050px;
+      width: 100%;
       margin: 0 auto;
     }
 
@@ -60,9 +65,8 @@
 
     /* 玩家信息栏 */
     .player-bar {
-      display: flex;
-      justify-content: space-around;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 8px;
       background: rgba(20, 20, 40, 0.75);
       border-radius: 12px;
@@ -73,7 +77,8 @@
 
     .p-item {
       text-align: center;
-      min-width: 80px;
+      min-width: 0;
+      padding: 4px;
     }
 
     .p-label {
@@ -83,8 +88,10 @@
     }
 
     .p-value {
-      font-size: 18px;
+      font-size: 15px;
       font-weight: bold;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
     }
 
     .p-value.gold { color: #ffd93d; }
@@ -96,14 +103,14 @@
     /* 位面网格 */
     .realms-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 16px;
     }
 
     /* 位面卡片 */
     .card {
       background: linear-gradient(145deg, rgba(20, 20, 40, 0.9), rgba(10, 10, 30, 0.9));
-      border-radius: 14px;
+      border-radius: 8px;
       padding: 18px;
       position: relative;
       overflow: hidden;
@@ -123,19 +130,16 @@
 
     /* 徽章 */
     .badge {
-      position: absolute;
-      top: 14px;
-      right: 14px;
-      width: 52px;
-      height: 52px;
+      flex: 0 0 42px;
+      width: 42px;
+      height: 42px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 22px;
+      font-size: 18px;
       font-weight: bold;
       border-radius: 50%;
       color: white;
-      z-index: 1;
     }
 
     .realm-0 .badge { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
@@ -150,31 +154,30 @@
 
     /* 状态标签 */
     .status-tag {
-      position: absolute;
-      top: 18px;
-      right: 78px;
+      flex: 0 0 auto;
       font-size: 12px;
       padding: 3px 10px;
       border-radius: 10px;
       font-weight: bold;
+      white-space: nowrap;
     }
 
     .tag-current { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; }
     .tag-unlocked { background: linear-gradient(135deg, #10b981, #059669); color: white; }
     .tag-locked { background: linear-gradient(135deg, #6b7280, #4b5563); color: #e5e7eb; }
+    .tag-destroyed { background: linear-gradient(135deg, #991b1b, #7f1d1d); color: white; }
 
     /* 特殊标记 */
     .special-badge {
-      position: absolute;
-      top: 10px;
-      left: 10px;
+      display: inline-flex;
+      width: fit-content;
       background: linear-gradient(135deg, #8b5cf6, #7c3aed);
       color: white;
       padding: 2px 8px;
       border-radius: 10px;
       font-size: 10px;
       font-weight: bold;
-      z-index: 1;
+      margin-top: 4px;
     }
 
     /* 卡片头 */
@@ -183,8 +186,22 @@
       padding-bottom: 10px;
       border-bottom: 2px solid rgba(255, 255, 255, 0.08);
       display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 54px;
+    }
+
+    .card-heading,
+    .card-meta {
+      display: flex;
       align-items: center;
       gap: 8px;
+      min-width: 0;
+    }
+
+    .card-title-wrap {
+      min-width: 0;
     }
 
     .card-icon {
@@ -199,9 +216,10 @@
     }
 
     .card-name {
-      font-size: 20px;
+      font-size: 18px;
       font-weight: bold;
       color: #ffd93d;
+      white-space: nowrap;
     }
 
     .card-desc {
@@ -231,6 +249,22 @@
     .danger-不可知 { color: #dc2626; }
     .danger-仙王级 { color: #dc2626; }
 
+    .realm-info {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .realm-info-item {
+      background: rgba(0, 0, 0, 0.24);
+      border-radius: 6px;
+      padding: 7px 8px;
+    }
+
+    .realm-info-label { color: #8a8aff; font-size: 10px; margin-bottom: 2px; }
+    .realm-info-value { color: #e5e7eb; font-size: 11px; font-weight: bold; }
+
     /* 条件区域 */
     .req-box {
       background: rgba(0, 0, 0, 0.3);
@@ -255,6 +289,7 @@
     .req-v { font-size: 11px; font-weight: bold; }
     .req-met { color: #6bcf7f; }
     .req-fail { color: #ff6b6b; }
+    .req-bypass { color: #fbbf24; }
 
     /* 消耗区域 */
     .cost-box {
@@ -282,6 +317,9 @@
 
     .cost-l { color: #8a8aff; font-size: 10px; margin-bottom: 2px; }
     .cost-v { font-size: 12px; font-weight: bold; color: #ffd93d; }
+    .cost-v.cost-ok { color: #6bcf7f; }
+    .cost-v.cost-fail { color: #ff6b6b; }
+    .cost-v.cost-muted { color: #6b7280; }
     .cost-time {
       text-align: center;
       font-size: 11px;
@@ -317,24 +355,36 @@
         <div class="p-value gold">{{current_location_name}}</div>
       </div>
       <div class="p-item">
-        <div class="p-label">位面进度</div>
+        <div class="p-label">可达进度</div>
         <div class="p-value blue">{{unlocked}}/{{total}} ({{progress}}%)</div>
       </div>
       <div class="p-item">
-        <div class="p-label">秘境等级</div>
+        <div class="p-label">练气境界</div>
+        <div class="p-value cyan">{{cultivationLevel}}</div>
+      </div>
+      <div class="p-item">
+        <div class="p-label">炼体境界</div>
+        <div class="p-value orange">{{physiqueLevel}}</div>
+      </div>
+      <div class="p-item">
+        <div class="p-label">秘境体系</div>
         <div class="p-value cyan">{{mijinLevel}}</div>
       </div>
       <div class="p-item">
-        <div class="p-label">仙古等级</div>
+        <div class="p-label">仙古今世法</div>
         <div class="p-value cyan">{{xianguLevel}}</div>
       </div>
       <div class="p-item">
-        <div class="p-label">肉身境界</div>
-        <div class="p-value orange">{{physiqueLevel}}</div>
+        <div class="p-label">穿梭功法</div>
+        <div class="p-value gold">{{travelTechnique}}</div>
       </div>
       <div class="p-item">
         <div class="p-label">传送次数</div>
         <div class="p-value green">{{teleport_tokens}}</div>
+      </div>
+      <div class="p-item">
+        <div class="p-label">高级传送</div>
+        <div class="p-value green">{{advanced_teleport_tokens}}</div>
       </div>
     </div>
 
@@ -342,52 +392,62 @@
     <div class="realms-grid">
       {{each realmList realm}}
       <div class="card realm-{{realm.id_css}}">
-        {{if realm.isSpecial}}<div class="special-badge">特殊位面</div>{{/if}}
-        <div class="badge">{{realm.id_badge}}</div>
-        <div class="status-tag tag-{{realm.status_tag}}">{{realm.status_label}}</div>
-
         <div class="card-header">
-          <div class="card-icon">{{realm.icon}}</div>
-          <div class="card-name">{{realm.name}}</div>
+          <div class="card-heading">
+            <div class="card-icon">{{realm.icon}}</div>
+            <div class="card-title-wrap">
+              <div class="card-name">{{realm.name}}</div>
+              {{if realm.isSpecial}}<div class="special-badge">特殊位面</div>{{/if}}
+            </div>
+          </div>
+          <div class="card-meta">
+            <div class="status-tag tag-{{realm.status_tag}}">{{realm.status_label}}</div>
+            <div class="badge">{{realm.id_badge}}</div>
+          </div>
         </div>
 
         <div class="card-desc">{{realm.description}}</div>
+
+        <div class="realm-info">
+          <div class="realm-info-item">
+            <div class="realm-info-label">危险度</div>
+            <div class="realm-info-value {{realm.danger_class}}">{{realm.danger}}</div>
+          </div>
+          <div class="realm-info-item">
+            <div class="realm-info-label">位面特征</div>
+            <div class="realm-info-value">{{realm.features}}</div>
+          </div>
+        </div>
 
         <div class="req-box">
           <div class="req-box-title">⊿ 传送条件</div>
           {{each realm.req_items req}}
           <div class="req-row">
             <span class="req-l">{{req.label}}</span>
-            <span class="req-v {{req.met ? 'req-met' : 'req-fail'}}">
+            <span class="req-v {{req.bypassed ? 'req-bypass' : (req.met ? 'req-met' : 'req-fail')}}">
               {{req.display}}
             </span>
           </div>
           {{/each}}
-          {{if realm.special_condition}}
-          <div class="req-row">
-            <span class="req-l">特殊要求</span>
-            <span class="req-v req-fail">{{realm.special_condition}}</span>
-          </div>
-          {{/if}}
         </div>
 
         <div class="cost-box">
-          <div class="cost-title">⊿ 穿梭消耗</div>
+          <div class="cost-title">⊿ {{realm.route_label}}</div>
           <div class="cost-grid">
             <div class="cost-item">
               <div class="cost-l">修为</div>
-              <div class="cost-v">{{realm.cost_xiuwei}}</div>
+              <div class="cost-v {{realm.cost_xiuwei_class}}">{{realm.cost_xiuwei}}</div>
             </div>
             <div class="cost-item">
               <div class="cost-l">血气</div>
-              <div class="cost-v">{{realm.cost_xueqi}}</div>
+              <div class="cost-v {{realm.cost_xueqi_class}}">{{realm.cost_xueqi}}</div>
             </div>
             <div class="cost-item">
               <div class="cost-l">寿元</div>
-              <div class="cost-v">{{realm.cost_shouyuan}}</div>
+              <div class="cost-v {{realm.cost_shouyuan_class}}">{{realm.cost_shouyuan}}</div>
             </div>
           </div>
-          <div class="cost-time">时间: {{realm.cost_time}}分钟{{if realm.hasKunpeng}} (含鲲鹏加速){{/if}}</div>
+          <div class="cost-time">时间: {{realm.cost_time}}{{if realm.hasKunpeng}} (鲲鹏 -{{realm.kunpengReduction}}分钟){{/if}}</div>
         </div>
       </div>
       {{/each}}

@@ -5,7 +5,7 @@ import {
   Add_najie_thing,
   Add_修为,
   Add_血气,
-  Add_HP,
+  Set_HP,
   Add_寿元,
   Add_player_学习功法,
   Reduse_player_学习功法,
@@ -24,6 +24,16 @@ import {
   get_log_img,
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
+import { rollDailyDungeonCoordinate } from '../../model/weimianTravel.js';
+import { rollDailyDungeonWenXianClue } from '../../model/wenxianling.js';
+import { getPlayerPlaneName } from '../../model/planeCoords.js';
+import {
+  getDungeonFortuneMultiplier,
+  getSeekingFortuneMultipliers,
+} from '../../model/redDustFortune.js';
+import RealmEvents from '../tasks/RealmEvents.js';
+import { getInnateDungeonRewardMultiplier } from '../../model/innateTreasure.js';
+import { normalizeLegacySecretPlaceAddictionAction } from '../../model/secretPlaceAddiction.js';
 export class SecretPlaceplusTask extends plugin {
   constructor() {
     super({
@@ -56,7 +66,12 @@ export class SecretPlaceplusTask extends plugin {
       log_mag = log_mag + '查询' + player_id + '是否有动作,';
       //得到动作
       let action = await redis.get('xiuxian:player:' + player_id + ':action');
-      action = await JSON.parse(action);    
+      action = await JSON.parse(action);
+      const normalizedAction = normalizeLegacySecretPlaceAddictionAction(action);
+      if (normalizedAction !== action) {
+        action = normalizedAction;
+        await redis.set('xiuxian:player:' + player_id + ':action', JSON.stringify(action));
+      }
       //不为空，存在动作
       if (action != null) {
         let push_address; //消息推送地址
@@ -83,7 +98,7 @@ export class SecretPlaceplusTask extends plugin {
         // 检查是否到达结算时间
         if (now_time > settleTime) {
             let weizhi = action.Place_address;
-          let xf = -1;
+          let xf = action.XF ?? -1;
 
             if (player.当前血量 < 0.3 * player.血量上限) {
               if (await exist_najie_thing(player_id, '起死回生丹', '丹药')) {
@@ -110,9 +125,8 @@ export class SecretPlaceplusTask extends plugin {
               法球倍率: 0.1,
             };
             let Data_battle = await zd_battle(A_player, B_player);
+            player.当前血量 = await Set_HP(player_id, Data_battle.A_hp);
             let msgg = Data_battle.msg;
-            let A_win = `${A_player.名号}击败了${B_player.名号}`;
-            let B_win = `${B_player.名号}击败了${A_player.名号}`;
             var thing_name;
             var thing_class;
             const cf = config.getConfig('xiuxian', 'xiuxian');
@@ -138,6 +152,7 @@ export class SecretPlaceplusTask extends plugin {
             }
            
             var n = 1;
+            let dungeonFortuneMultiplier = 1;
             let last_msg = '';
             let final_msg = '';
                if (player.出金次数 >0 ) {
@@ -1664,6 +1679,14 @@ if (player.灵根.type === "魔卡少女·完全") {
                 data.setData('player', player_id, player);
               }
             }
+            const redDustDungeonMultiplier = getDungeonFortuneMultiplier(player);
+            player.副本通关次数 = (Number(player.副本通关次数) || 0) + 1;
+            const innateDungeonMultiplier = getInnateDungeonRewardMultiplier(player);
+            dungeonFortuneMultiplier = redDustDungeonMultiplier * innateDungeonMultiplier;
+            n *= dungeonFortuneMultiplier;
+            if (redDustDungeonMultiplier > 1) last_msg += '红尘历练签显化，副本物品收益再度翻倍。';
+            if (innateDungeonMultiplier > 1) last_msg += '先天至宝权柄显化，副本物品收益获得加成。';
+            if (player.先天权柄?.盘古开天待用) delete player.先天权柄.盘古开天待用;
            
             // 条件：玩家境界>42，炼体>42，秘境<21，仙古<21，33%概率
 if (player.level_id > 42 && player.Physique_id > 42 && 
@@ -1695,7 +1718,7 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
             now_physique_id = player.Physique_id;
             //结算
             let qixue = 0;
-            if (msgg.find(item => item == A_win)) {
+            if (Data_battle.winner === 'A') {
               xiuwei = Math.trunc(
                 2000 + (100 * now_level_id * now_level_id * t1 * 0.1) / 5
               );
@@ -1708,8 +1731,38 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
               last_msg += `${m}不巧撞见[${
                 B_player.名号
               }],经过一番战斗，击败对手,获得修为${xiuwei},气血${qixue},剩余血量${
-    A_player.当前血量 + Data_battle.A_xue
+    Data_battle.A_hp
               },剩余次数${action.total_count - action.settled_count - 1}`;
+              const seekingMultipliers = getSeekingFortuneMultipliers(player);
+              const coordinateDrop = rollDailyDungeonCoordinate(player, {
+                chanceMultiplier: seekingMultipliers.coordinate,
+              });
+              const wenxianDrop = rollDailyDungeonWenXianClue(player, {
+                chanceMultiplier: seekingMultipliers.wenxian,
+              });
+              if (coordinateDrop.attempted || wenxianDrop.attempted) {
+                await Write_player(player_id, player);
+                if (coordinateDrop.location) {
+                  last_msg += ` 你在副本残卷中拼出了一条完整星路，成功记住「${coordinateDrop.location}」的位面坐标！`;
+                }
+                if (wenxianDrop.found) {
+                  last_msg += ` 你从副本深处寻得一道问仙残痕，问仙试炼已经开启！发送 #问仙令 查看详情。`;
+                }
+              }
+              const realmEvent = await RealmEvents.triggerDungeonEvent({
+                era: config.getConfig('xiuxian', 'xiuxian')?.Era?.current,
+                discoveredBy: {
+                  qq: String(player_id),
+                  name: player.名号,
+                  dungeon: weizhi.name || '未知秘境'
+                },
+                chanceMultiplier: seekingMultipliers.realmEvent,
+                preferredPlane: seekingMultipliers.realmEvent > 1 ? getPlayerPlaneName(player) : null,
+              });
+              if (realmEvent) {
+                await RealmEvents.broadcastEvent(realmEvent.message);
+                last_msg += ` 你的这次历练意外引动了【${RealmEvents.getEventTypeName(realmEvent.eventData.type)}】，发送 #大事件 可查看详情。`;
+              }
               let random = Math.random(); //万分之一出神迹
               let newrandom = 0.995;
               let dy = await Read_danyao(player_id);
@@ -1963,7 +2016,7 @@ ${aptitudeEvaluations[newAptitude]}
                   '并把它放进了口袋';
               }
             }
-            } else if (msgg.find(item => item == B_win)) {
+            } else if (Data_battle.winner === 'B') {
   // === 添加大帝庇护逻辑开始 ===
   if (player.大帝庇护 === 1 && player.庇护人) {
     const protectorQQ = player.庇护人; // 庇护人的QQ号
@@ -2046,6 +2099,7 @@ ${aptitudeEvaluations[newAptitude]}
       // === 添加庇护人出手保护文案 ===
       msg.push(`${protector.名号}对${player.名号}说："小友莫慌，一切有我！"`);
       
+      let protectorBattle;
       // 仙帝及以上境界 - 概念级秒杀
       if (protectorLevel >= 19) {
         // 添加战斗细节
@@ -2063,8 +2117,9 @@ ${aptitudeEvaluations[newAptitude]}
         B_player.当前血量 = 0;
         
         // 构建战斗结果
-        const protectorBattle = {
+        protectorBattle = {
           msg: msg,
+          A_hp: protectorBattleData.当前血量,
           B_hp: 0 // 怪物死亡
         };
       } 
@@ -2074,12 +2129,13 @@ ${aptitudeEvaluations[newAptitude]}
         msg.push(`${protector.名号}施展「一气化三清」，三花聚顶凝聚出道身！`);
         
         // 进行正常战斗
-        const protectorBattle = await zd_battle(protectorBattleData, B_player);
+        protectorBattle = await zd_battle(protectorBattleData, B_player);
         msg = msg.concat(protectorBattle.msg);
       }
+      B_player.当前血量 = protectorBattle.B_hp;
       
       // === 战斗结果处理 ===
-      if (B_player.当前血量 <= 0) {
+      if (protectorBattle.B_hp <= 0) {
         // 庇护人胜利
          if (protectorLevel < 19) {
           msg.push(`${protector.名号}转身对${player.名号}说："修行之路凶险，下次务必小心！"言罢顺手治好了${player.名号}的伤势，潇洒离去`);
@@ -2122,6 +2178,11 @@ ${aptitudeEvaluations[newAptitude]}
     last_msg = `${m},不巧撞见[${B_player.名号}],经过一番战斗，败下阵来，还好跑得快,只获得了修为${xiuwei}`;
   }
 }
+            if (dungeonFortuneMultiplier > 1) {
+              xiuwei *= dungeonFortuneMultiplier;
+              qixue *= dungeonFortuneMultiplier;
+              last_msg += ` 红尘历练签显化，最终获得修为${xiuwei}、血气${qixue}。`;
+            }
             msg.push(player.名号 + last_msg+fyd_msg);
 
   // 结算后更新动作状态
@@ -2150,7 +2211,7 @@ action.settled_count++;
     }
     
     // 记录死亡（如果战斗失败）
-    if (Data_battle && Data_battle.B_win) {
+    if (Data_battle?.A_hp <= 0) {
       history.death_count++;
     }
     
@@ -2187,7 +2248,6 @@ if (action.settled_count >= action.total_count) {
     // 结算属性
     await Add_血气(player_id, qixue);
     await Add_修为(player_id, xiuwei);
-    await Add_HP(player_id, Data_battle.A_xue);
     await Write_player(player_id, player);
        // 构建最终消息
     let finalMsg = [
@@ -2219,7 +2279,6 @@ if (action.settled_count >= action.total_count) {
               //先完结再结算
               await Add_血气(player_id, qixue);
               await Add_修为(player_id, xiuwei);
-              await Add_HP(player_id, Data_battle.A_xue);
               await Add_寿元(player_id,-Math.max(x,1))
               //发送消息
               try {

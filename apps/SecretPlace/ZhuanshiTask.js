@@ -2,19 +2,76 @@ import { plugin, common, config, data } from '../../api/api.js';
 import fs from 'fs';
 import { __PATH } from '../../model/xiuxian.js';
 import {
+  existplayer,
   Read_player,
   Write_player,
-  Write_equipment,
   Write_najie,
-  Write_danyao,
-  Add_HP,
+  Write_equipment,
+  Read_equipment,
   isNotNull,
   get_random_talent,
   get_random_fromARR,
   Read_najie
 } from '../../model/xiuxian.js';
+import {
+  mergeNajieContents,
+  prepareIndependentDropItem,
+} from '../../model/najieMerge.js';
+import {
+  checkNajieDropReach,
+  createNajieDropLocation,
+  findNearbyNajieDrops,
+  getNajieDropPlanes,
+  normalizeNajieDropLocation,
+} from '../../model/najieDropLocation.js';
+import {
+  getPlayerPlaneCoordinate,
+  getPlayerPlaneName,
+} from '../../model/planeCoords.js';
+import { createFromDrop as createXianyiBaodi } from './XianyiBaodi.js';
+import {
+  FileRollbackTransaction,
+  writeJsonAtomically,
+} from './rebirthTransaction.js';
+import {
+  applyReincarnationDecision,
+  getPlayerRealmNames,
+  getReincarnationAuthority,
+  requiresControllerDecision,
+} from './reincarnationAuthority.js';
+import { readShouyuanDifficulty } from '../User/shouyuanDifficulty.js';
 
 let ZxTask = null;
+
+const PICKUP_LOCK_TTL_SECONDS = 30;
+const REBIRTH_TASK_LOCK_TTL_SECONDS = 120;
+const FAILED_TASK_TTL_SECONDS = 24 * 60 * 60;
+const REINCARNATION_CONTROLLER_KEY = 'xiuxian:zhuanshi:controller';
+const CONTROLLER_ACTION_REFRESH_MS = 2 * 60 * 1000;
+const RELEASE_LOCK_SCRIPT = `
+  if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('del', KEYS[1])
+  end
+  return 0
+`;
+
+async function acquireRedisLock(lockKey, token, ttlSeconds = PICKUP_LOCK_TTL_SECONDS) {
+  return Boolean(await redis.set(lockKey, token, {
+    NX: true,
+    EX: ttlSeconds,
+  }));
+}
+
+async function releaseRedisLock(lockKey, token) {
+  try {
+    await redis.eval(RELEASE_LOCK_SCRIPT, {
+      keys: [lockKey],
+      arguments: [token],
+    });
+  } catch (err) {
+    console.error(`释放纳戒领取锁失败 (${lockKey}):`, err);
+  }
+}
 
 // ==================== 境界体系 ====================
 const MijingLevels = [
@@ -141,6 +198,186 @@ async function sendRebirthMessage(e, message) {
   }
 }
 
+function buildPlayerMentionMessage(playerId, message) {
+  const qq = String(playerId).replace('qg_', '');
+  const at = globalThis.segment?.at;
+  if (typeof at === 'function' && /^\d+$/.test(qq)) {
+    return [at(Number(qq)), `\n${message}`];
+  }
+  return `@${qq}\n${message}`;
+}
+
+export async function notifyReincarnationPlayer(playerId, message) {
+  try {
+    const groupList = await getNotifyGroupList();
+    const bot = globalThis.Bot;
+    if (groupList.length > 0 && bot) {
+      const payload = buildPlayerMentionMessage(playerId, message);
+      const results = await Promise.allSettled(
+        groupList.map(async groupId => bot.pickGroup(groupId).sendMsg(payload))
+      );
+      if (results.some(result => result.status === 'fulfilled')) return;
+    }
+    await common.relpyPrivate(String(playerId), message);
+  } catch (err) {
+    console.error(`【轮回】通知玩家 ${playerId} 失败:`, err);
+  }
+}
+
+function getMentionedPlayerId(e) {
+  const atItem = Array.isArray(e?.message)
+    ? e.message.find(item => item?.type === 'at' && item?.qq !== 'all')
+    : null;
+  if (atItem?.qq) return String(atItem.qq).replace('qg_', '');
+
+  const match = String(e?.msg || '').match(/@(\d+)/);
+  return match?.[1] || null;
+}
+
+function getAuthority(player) {
+  return getReincarnationAuthority(
+    player,
+    data.Levelmijing_list,
+    data.xiangujinshi_list
+  );
+}
+
+async function getActiveReincarnationController() {
+  const raw = await redis.get(REINCARNATION_CONTROLLER_KEY);
+  if (!raw) return null;
+
+  try {
+    const record = JSON.parse(raw);
+    if (!record?.player_id || !(await existplayer(record.player_id))) {
+      await redis.del(REINCARNATION_CONTROLLER_KEY);
+      return null;
+    }
+
+    const player = await Read_player(record.player_id);
+    const authority = getAuthority(player);
+    if (!authority.canControl) {
+      await redis.del(REINCARNATION_CONTROLLER_KEY);
+      return null;
+    }
+
+    return {
+      ...record,
+      player_name: player.名号,
+      player,
+      authority,
+    };
+  } catch (err) {
+    console.error('【轮回执掌】校验当前执掌者失败:', err);
+    await redis.del(REINCARNATION_CONTROLLER_KEY);
+    return null;
+  }
+}
+
+async function restoreRescuedPlayer(task) {
+  const playerId = String(task.player_id);
+  let player = null;
+
+  try {
+    player = await Read_player(playerId);
+  } catch (err) {
+    if (!task.player_data) throw err;
+    player = JSON.parse(JSON.stringify(task.player_data));
+  }
+
+  let changed = false;
+  if ((Number(player.当前血量) || 0) <= 0) {
+    player.当前血量 = 1;
+    changed = true;
+  }
+  if (task.type === '寿元耗尽' && (Number(player.寿元) || 0) <= 0) {
+    player.寿元 = 1000;
+    changed = true;
+  }
+
+  if (changed || !(await existplayer(playerId))) {
+    await Write_player(playerId, player);
+  }
+  return player;
+}
+
+async function cancelPendingRebirth(targetId, actor, reason) {
+  const taskKey = `xiuxian:zhuanshi_task:${targetId}`;
+  const actionKey = `xiuxian:player:${targetId}:action`;
+  const lockKey = `xiuxian:lock:zhuanshi_task:${targetId}`;
+  const lockToken = `rescue:${actor.player_id}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  const locked = await acquireRedisLock(
+    lockKey,
+    lockToken,
+    REBIRTH_TASK_LOCK_TTL_SECONDS
+  );
+
+  if (!locked) {
+    return { success: false, code: 'busy' };
+  }
+
+  try {
+    const raw = await redis.get(taskKey);
+    if (!raw) return { success: false, code: 'missing' };
+
+    const task = JSON.parse(raw);
+    const taskId = getRebirthTaskId(task, taskKey);
+    if (await isRebirthTaskCommitted(targetId, taskId)) {
+      return { success: false, code: 'committed' };
+    }
+
+    const deniedTask = applyReincarnationDecision(task, 'deny', actor);
+    deniedTask.rescue_reason = reason;
+    await redis.set(taskKey, JSON.stringify(deniedTask));
+    const player = await restoreRescuedPlayer(deniedTask);
+
+    await redis.multi()
+      .del(taskKey)
+      .del(actionKey)
+      .exec();
+
+    return { success: true, task: deniedTask, player };
+  } finally {
+    await releaseRedisLock(lockKey, lockToken);
+  }
+}
+
+async function holdTaskForController(taskKey, task, controller) {
+  const now = Date.now();
+  const actionKey = `xiuxian:player:${task.player_id}:action`;
+  let action = {};
+
+  try {
+    const raw = await redis.get(actionKey);
+    if (raw) action = JSON.parse(raw);
+  } catch (err) {
+    console.error(`读取轮回行动状态失败 (${task.player_id}):`, err);
+  }
+
+  const pendingTask = {
+    ...task,
+    status: '待轮回执掌者裁定',
+    controller_pending: {
+      controller_id: String(controller.player_id),
+      controller_name: controller.player_name,
+      since: task.controller_pending?.since || now,
+    },
+  };
+  const pendingAction = {
+    ...action,
+    action: '轮回往生路',
+    type: 'zhuanshi',
+    start_time: action.start_time || task.start_time || now,
+    end_time: now + CONTROLLER_ACTION_REFRESH_MS,
+    description: `等待${controller.player_name}裁定是否往生`,
+    status: '等待轮回裁定',
+  };
+
+  await redis.multi()
+    .set(taskKey, JSON.stringify(pendingTask))
+    .set(actionKey, JSON.stringify(pendingAction))
+    .exec();
+}
+
 // 获取随机称号
 function getRandomTitle() {
   const titles = [
@@ -158,43 +395,11 @@ function getRandomPhenomenon() {
 
 // ==================== 纳戒掉落系统 ====================
 // 位面定义
-const weimianList = [
-  { id: 0, name: "下界八域", minX: 1, maxX: 100, minY: 1, maxY: 100 },
-  { id: 1, name: "九天十地", minX: 101, maxX: 500, minY: 101, maxY: 500 },
-  { id: 2, name: "遮天位面", minX: 501, maxX: 1000, minY: 501, maxY: 1000 },
-  { id: 3, name: "禁地", minX: 1001, maxX: 2000, minY: 1001, maxY: 2000 },
-  { id: 4, name: "仙境", minX: 2001, maxX: 5000, minY: 2001, maxY: 5000 },
-  { id: 5, name: "仙古秘境", minX: 5001, maxX: 10000, minY: 5001, maxY: 10000 },
-  { id: 6, name: "古地府", minX: 10001, maxX: 20000, minY: 10001, maxY: 20000 },
-  { id: 7, name: "轮回路", minX: 20001, maxX: 50000, minY: 20001, maxY: 50000 },
-];
-
-// 根据轮回次数确定可能掉落的位面范围
-function getAvailableWeimian(lunhuiCount) {
-  if (lunhuiCount <= 1) {
-    return weimianList.slice(0, 2); // 前两个位面
-  } else if (lunhuiCount <= 3) {
-    return weimianList.slice(0, 4);
-  } else if (lunhuiCount <= 5) {
-    return weimianList.slice(0, 6);
-  } else {
-    return weimianList; // 所有位面
-  }
-}
+const weimianList = getNajieDropPlanes();
 
 // 生成随机掉落坐标
 function generateDropLocation(lunhuiCount) {
-  const availableWeimian = getAvailableWeimian(lunhuiCount);
-  const weimian = availableWeimian[Math.floor(Math.random() * availableWeimian.length)];
-  const x = Math.floor(Math.random() * (weimian.maxX - weimian.minX + 1)) + weimian.minX;
-  const y = Math.floor(Math.random() * (weimian.maxY - weimian.minY + 1)) + weimian.minY;
-  
-  return {
-    weimianId: weimian.id,
-    weimianName: weimian.name,
-    x: x,
-    y: y
-  };
+  return createNajieDropLocation(lunhuiCount);
 }
 
 // 纳戒是否为空
@@ -209,7 +414,7 @@ function isNajieEmpty(najie) {
 }
 
 // 创建纳戒掉落记录
-async function createNajieDrop(player_id, oldPlayer, oldNajie) {
+async function createNajieDrop(player_id, oldPlayer, oldNajie, taskId = null) {
   const lunhuiCount = oldPlayer.轮回转世次数 || 0;
   const location = generateDropLocation(lunhuiCount);
   
@@ -220,6 +425,7 @@ async function createNajieDrop(player_id, oldPlayer, oldNajie) {
   const dropData = {
     player_id: player_id,
     player_name: oldPlayer.名号,
+    player_level_id: oldPlayer.level_id,
     najie: oldNajie,
     location: location,
     lunhuiCount: lunhuiCount,
@@ -229,14 +435,122 @@ async function createNajieDrop(player_id, oldPlayer, oldNajie) {
   };
   
   // 保存到Redis
-  const dropKey = `xiuxian:najie_drop:${player_id}:${Date.now()}`;
+  const dropId = taskId ? encodeURIComponent(taskId) : Date.now();
+  const dropKey = `xiuxian:najie_drop:${player_id}:${dropId}`;
   await redis.set(dropKey, JSON.stringify(dropData), { EX: 7 * 24 * 60 * 60 });
-  
-  // 同时保存一份索引，方便查询
+
   const indexKey = `xiuxian:najie_drop_index`;
-  await redis.zAdd(indexKey, { score: Date.now(), value: dropKey });
-  
-  return { location, value };
+  try {
+    await redis.zAdd(indexKey, { score: Date.now(), value: dropKey });
+  } catch (err) {
+    await redis.del(dropKey);
+    throw err;
+  }
+
+  return { location, value, dropKey };
+}
+
+async function removeNajieDrop(dropKey) {
+  if (!dropKey) return;
+
+  const results = await Promise.allSettled([
+    redis.del(dropKey),
+    redis.zRem('xiuxian:najie_drop_index', dropKey),
+  ]);
+  const failed = results.find(result => result.status === 'rejected');
+  if (failed) throw failed.reason;
+}
+
+// ==================== 仙遗宝地转化（寿元耗尽掉落 12h 未捡 → 秘境） ====================
+const RELIC_UNCLAIMED_MS = 12 * 60 * 60 * 1000;  // 12 小时无人捡取
+const RELIC_MIN_LEVEL = 41;                       // 死者境界需 level_id > 41（筑基及以上）
+const RELIC_EXPIRE_MS = 30 * 24 * 60 * 60 * 1000; // 仙遗宝地存续 30 天
+
+// 获取全服推送群列表（与诡异大祭保持一致）
+async function getNotifyGroupList() {
+  try {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const notifyGroups = xiuxianConfig?.Era?.notifyGroups || [];
+    if (notifyGroups.length > 0) return notifyGroups.map(g => String(g));
+  } catch (e) {
+    logger.error('[仙遗宝地] 读取群列表失败:', e.message);
+  }
+  try {
+    const redisGroups = await redis.sMembers('xiuxian:AuctionofficialTask_GroupList');
+    if (redisGroups && redisGroups.length > 0) return redisGroups.map(g => String(g));
+  } catch (e) {
+    logger.error('[仙遗宝地] 从Redis读取群列表失败:', e.message);
+  }
+  return [];
+}
+
+async function broadcastToAllGroups(msg) {
+  try {
+    const groupList = await getNotifyGroupList();
+    const bot = globalThis.Bot;
+    if (!bot) return;
+    for (const gid of groupList) {
+      try {
+        await bot.pickGroup(gid).sendMsg(msg);
+      } catch (e) {
+        console.error('[仙遗宝地] 广播发送失败:', e.message);
+      }
+    }
+  } catch (e) {
+    console.error('[仙遗宝地] 广播失败:', e.message);
+  }
+}
+
+// 检查并转化超时未捡的掉落为仙遗宝地
+async function checkRelicConversion() {
+  try {
+    const drops = await getAllNajieDrops();
+    for (const drop of drops) {
+      if (drop.isRelic) continue;
+      if ((Date.now() - (drop.createTime || 0)) <= RELIC_UNCLAIMED_MS) continue;
+      if ((drop.player_level_id || 0) <= RELIC_MIN_LEVEL) continue;
+
+      const lockToken = `relic:${drop.key}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+      const lockKey = `xiuxian:lock:najie_drop:${drop.key}`;
+      let locked = false;
+
+      try {
+        locked = await acquireRedisLock(lockKey, lockToken);
+        if (!locked) continue;
+
+        const freshDropRaw = await redis.get(drop.key);
+        if (!freshDropRaw) continue;
+        const freshDrop = { key: drop.key, ...JSON.parse(freshDropRaw) };
+        if (freshDrop.beFound) continue;
+        if ((Date.now() - (freshDrop.createTime || 0)) <= RELIC_UNCLAIMED_MS) continue;
+        if ((freshDrop.player_level_id || 0) <= RELIC_MIN_LEVEL) continue;
+
+        const conversion = await createXianyiBaodi(freshDrop);
+        if (conversion?.baodi) {
+          if (!conversion.created) {
+            console.log(`【仙遗宝地】玩家 ${freshDrop.player_id} 的遗物已完成转化，清理残留掉落`);
+            continue;
+          }
+
+          const msg = [
+            `【仙遗宝地·现世】`,
+            `岁月长河之中，一座古老的仙遗宝地自虚空中浮现！`,
+            `此处乃【${freshDrop.player_name}】（第${freshDrop.player_level_id}层修士）坐化前遗落的一切造化，`,
+            `历经十二时辰无人问津，终成一方独立秘境。`,
+            `有缘者可循【#仙遗宝地】前往探索，夺取其中机缘！`
+          ].join('\n');
+          await broadcastToAllGroups(msg);
+          console.log(`【仙遗宝地】玩家 ${freshDrop.player_id} 的遗物转化为仙遗宝地`);
+        }
+      } catch (err) {
+        console.error(`【仙遗宝地】转化失败 (${drop.key}):`, err);
+      } finally {
+        if (locked) await releaseRedisLock(lockKey, lockToken);
+      }
+    }
+  } catch (err) {
+    console.error('仙遗宝地转化检查出错:', err);
+  }
 }
 
 // 获取所有未捡取的纳戒掉落
@@ -254,7 +568,11 @@ async function getAllNajieDrops() {
       if (dropData) {
         const data = JSON.parse(dropData);
         if (!data.beFound && now < data.expiredTime) {
-          drops.push({ key, ...data });
+          drops.push({
+            key,
+            ...data,
+            location: normalizeNajieDropLocation(data.location),
+          });
         }
       }
     } catch (e) {
@@ -265,50 +583,103 @@ async function getAllNajieDrops() {
   return drops;
 }
 
-// 获取指定位面的纳戒掉落
-async function getNajieDropsByWeimian(weimianId) {
-  const allDrops = await getAllNajieDrops();
-  return allDrops.filter(drop => drop.location.weimianId === weimianId);
-}
-
 // 捡取纳戒
 async function pickupNajieDrop(dropKey, pickerId) {
-  const dropData = await redis.get(dropKey);
-  if (!dropData) {
-    return { success: false, message: '纳戒不存在或已被捡取' };
+  const lockToken = `${pickerId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  const dropLockKey = `xiuxian:lock:najie_drop:${dropKey}`;
+  const pickerLockKey = `xiuxian:lock:najie_pickup:${pickerId}`;
+  let dropLocked = false;
+  let pickerLocked = false;
+
+  try {
+    dropLocked = await acquireRedisLock(dropLockKey, lockToken);
+    if (!dropLocked) {
+      return { success: false, message: '该纳戒正在被其他玩家捡取，请稍后重试' };
+    }
+
+    pickerLocked = await acquireRedisLock(pickerLockKey, lockToken);
+    if (!pickerLocked) {
+      return { success: false, message: '你正在捡取另一枚纳戒，请稍后重试' };
+    }
+
+    const dropData = await redis.get(dropKey);
+    if (!dropData) {
+      return { success: false, message: '纳戒不存在或已被捡取' };
+    }
+
+    const data = JSON.parse(dropData);
+    data.location = normalizeNajieDropLocation(data.location);
+    if (data.beFound) {
+      return { success: false, message: '纳戒已被捡取' };
+    }
+
+    if (Date.now() > data.expiredTime) {
+      return { success: false, message: '纳戒已过期消散' };
+    }
+
+    const picker = await Read_player(pickerId);
+    const reach = checkNajieDropReach(picker, data.location);
+    if (!reach.ok && reach.reason === 'plane') {
+      return {
+        success: false,
+        message: `纳戒遗落于${reach.location.weimianName}，你当前身处${reach.currentPlane || '未知位面'}，无法隔界捡取。`,
+      };
+    }
+    if (!reach.ok && reach.reason === 'unset') {
+      return {
+        success: false,
+        message: `你尚未在${reach.currentPlane}确定位置，请先发送 #前往${reach.location.x},${reach.location.y}。`,
+      };
+    }
+    if (!reach.ok) {
+      return {
+        success: false,
+        message: [
+          `你尚未抵达纳戒所在坐标。`,
+          `当前位置：${reach.coordinate.x},${reach.coordinate.y}`,
+          `目标坐标：${reach.location.x},${reach.location.y}`,
+          `相距：${Math.ceil(reach.distance)}格`,
+          `请发送 #前往${reach.location.x},${reach.location.y} 后再捡取。`,
+        ].join('\n'),
+      };
+    }
+
+    const originalNajie = await Read_najie(pickerId);
+    const mergedNajie = mergeNajieContents(originalNajie, data.najie);
+    await Write_najie(pickerId, mergedNajie);
+
+    data.beFound = true;
+    data.foundTime = Date.now();
+    data.foundBy = pickerId;
+
+    try {
+      // 兼容 Redis<6.0（本服为 3.2.100）：KEEPTTL 子命令 6.0 才引入，旧版会报 ERR syntax error。
+      // 改用剩余秒数重新设置过期，既保留原 7 天 TTL，又对所有版本安全。
+      const remainingMs = data.expiredTime - Date.now();
+      const remainingSec = Math.max(1, Math.ceil(remainingMs / 1000));
+      await redis.set(dropKey, JSON.stringify(data), { EX: remainingSec });
+    } catch (err) {
+      await Write_najie(pickerId, originalNajie);
+      throw err;
+    }
+
+    const indexKey = `xiuxian:najie_drop_index`;
+    try {
+      await redis.zRem(indexKey, dropKey);
+    } catch (err) {
+      console.error(`移除已领取纳戒索引失败 (${dropKey}):`, err);
+    }
+
+    return {
+      success: true,
+      data,
+      najie: data.najie,
+      mergedNajie,
+    };
+  } finally {
+    if (pickerLocked) await releaseRedisLock(pickerLockKey, lockToken);
+    if (dropLocked) await releaseRedisLock(dropLockKey, lockToken);
   }
-  
-  const data = JSON.parse(dropData);
-  if (data.beFound) {
-    return { success: false, message: '纳戒已被捡取' };
-  }
-  
-  // 检查过期
-  if (Date.now() > data.expiredTime) {
-    return { success: false, message: '纳戒已过期消散' };
-  }
-  
-  // 将纳戒内容添加到捡取者
-  const najie = data.najie;
-  
-  // 写入新的纳戒文件（覆盖原玩家的纳戒）
-  await Write_najie(pickerId, najie);
-  
-  // 标记为已捡取
-  data.beFound = true;
-  data.foundTime = Date.now();
-  data.foundBy = pickerId;
-  await redis.set(dropKey, JSON.stringify(data));
-  
-  // 从索引中移除
-  const indexKey = `xiuxian:najie_drop_index`;
-  await redis.zRem(indexKey, dropKey);
-  
-  return { 
-    success: true, 
-    data: data,
-    najie: najie
-  };
 }
 
 // 格式化坐标显示
@@ -381,6 +752,7 @@ async function createNewPlayerAfterRebirth(e, oldPlayer, isChixiao, downgradedAp
       生命加成: 0,
       power_place: 0,
       当前血量: 8000 + lunhuiGanwu * 100,
+      血量上限: 8000 + lunhuiGanwu * 100,
       lunhui: 0,
       lunhuiBH: 0,
       轮回点: 10 + lunhuiGanwu,
@@ -417,7 +789,33 @@ async function createNewPlayerAfterRebirth(e, oldPlayer, isChixiao, downgradedAp
       痴傻状态: isChixiao || oldPlayer.痴傻状态 || false,
       轮回转世次数: (oldPlayer.轮回转世次数 || 0) + 1,
       轮回感悟: lunhuiGanwu,
-      轮回印记: hasYinji
+      轮回印记: hasYinji,
+      // 以下字段对齐正常 #开始修仙 模板，避免重生后玩家对象缺字段导致属性/战力 NaN
+      速度: 100,
+      仙道潜力: 0,
+      道心: 0,
+      元神伤害加成: 0,
+      元神伤害减免: 0,
+      神通伤害加成: 0,
+      神通伤害减免: 0,
+      近战伤害加成: 0,
+      近战伤害减免: 0,
+      闪避率: 0,
+      穿透: 0,
+      治疗效果加成: 0,
+      每回合恢复: 0,
+      血上限加成: 0,
+      全伤害类型加成: 0,
+      全类型减免: 0,
+      减伤: 0,
+      治疗加成: 0,
+      神通加成: 0,
+      暴击率加成: 0,
+      位面传送次数: 0,
+      高级传送次数: 0,
+      记忆坐标: ['凡间'],
+      传送阵坐标: [],
+      星图: 0
     };
     
     // 轮回印记加成
@@ -435,29 +833,29 @@ async function createNewPlayerAfterRebirth(e, oldPlayer, isChixiao, downgradedAp
 }
 
 // ==================== 处理宗门关系 ====================
-async function handleSectRelationship(player_id, oldPlayer) {
+async function handleSectRelationship(player_id, oldPlayer, fileTransaction) {
   if (!isNotNull(oldPlayer.宗门)) return;
-  
+
+  const associationName = oldPlayer.宗门.宗门名称;
+  const associationPath = `${__PATH.association}/${associationName}.json`;
   let ass = data.getAssociation(oldPlayer.宗门.宗门名称);
-  if (!ass) return;
-  
+  if (!ass || ass === 'error' || typeof ass !== 'object') {
+    throw new Error(`无法读取宗门数据：${associationName}`);
+  }
+
+  fileTransaction.capture(associationPath);
+
   if (oldPlayer.宗门.职位 !== '宗主') {
     // 普通成员，直接移除
     if (ass[oldPlayer.宗门.职位]) {
       ass[oldPlayer.宗门.职位] = ass[oldPlayer.宗门.职位].filter(item => item != player_id);
     }
     ass['所有成员'] = ass['所有成员'].filter(item => item != player_id);
-    await data.setAssociation(ass.宗门名称, ass);
+    writeJsonAtomically(associationPath, ass);
   } else {
     // 宗主陨落，宗门大乱
     if (ass.所有成员.length < 2) {
-      // 宗门覆灭
-      try {
-        const assFile = `${data.filePathMap.association}/${oldPlayer.宗门.宗门名称}.json`;
-        if (fs.existsSync(assFile)) fs.unlinkSync(assFile);
-      } catch (error) {
-        console.warn('宗门覆灭:', error);
-      }
+      if (fs.existsSync(associationPath)) fs.unlinkSync(associationPath);
     } else {
       // 传承之争
       ass['所有成员'] = ass['所有成员'].filter(item => item != player_id);
@@ -473,73 +871,95 @@ async function handleSectRelationship(player_id, oldPlayer) {
       
       if (newSectMaster) {
         let newMaster = await data.getData('player', newSectMaster);
-        if (newMaster && newMaster.宗门) {
-          if (ass[newMaster.宗门.职位]) {
-            ass[newMaster.宗门.职位] = ass[newMaster.宗门.职位].filter(
-              item => item != newSectMaster
-            );
-          }
-          ass['宗主'] = newSectMaster;
-          newMaster.宗门.职位 = '宗主';
-          await data.setData('player', newSectMaster, newMaster);
-          await data.setAssociation(ass.宗门名称, ass);
+        if (!newMaster || !newMaster.宗门) {
+          throw new Error(`无法读取宗主继任人数据：${newSectMaster}`);
         }
+
+        const newMasterPath = `${__PATH.player_path}/${newSectMaster}.json`;
+        fileTransaction.capture(newMasterPath);
+        if (ass[newMaster.宗门.职位]) {
+          ass[newMaster.宗门.职位] = ass[newMaster.宗门.职位].filter(
+            item => item != newSectMaster
+          );
+        }
+        ass['宗主'] = newSectMaster;
+        newMaster.宗门.职位 = '宗主';
+        writeJsonAtomically(newMasterPath, newMaster);
+        writeJsonAtomically(associationPath, ass);
+      } else {
+        throw new Error(`宗门 ${associationName} 没有可继任的成员`);
       }
     }
   }
 }
 
+async function captureRedisValues(keys) {
+  const values = new Map();
+  for (const key of keys) {
+    values.set(key, await redis.get(key));
+  }
+  return values;
+}
+
+async function restoreRedisValues(values) {
+  for (const [key, value] of values) {
+    if (value === null || value === undefined) {
+      await redis.del(key);
+    } else {
+      await redis.set(key, value);
+    }
+  }
+}
+
 // ==================== 强制再入仙途 ====================
-async function forceRebirthPlayer(e, oldPlayer, acount, isChixiao = false, downgradedAptitude = null) {
+async function forceRebirthPlayer(
+  e,
+  oldPlayer,
+  acount,
+  isChixiao = false,
+  downgradedAptitude = null,
+  taskId = null
+) {
+  const player_id = oldPlayer.id;
+  const fileTransaction = new FileRollbackTransaction();
+  const playerFiles = {
+    player: `${__PATH.player_path}/${player_id}.json`,
+    equipment: `${__PATH.equipment_path}/${player_id}.json`,
+    najie: `${__PATH.najie_path}/${player_id}.json`,
+    danyao: `${__PATH.danyao_path}/${player_id}.json`,
+  };
+  const redisKeys = [
+    `xiuxian:player:${player_id}:last_reCreate_time`,
+    `xiuxian:player:${player_id}:reCreate_acount`,
+  ];
+  let redisBefore = new Map();
+  let dropInfo = null;
+  let committed = false;
+
   try {
-    const player_id = oldPlayer.id;
     console.log(`【再入仙途】玩家 ${player_id} 开始转世...`);
-    
-    // 1. 处理宗门
-    await handleSectRelationship(player_id, oldPlayer);
-    
-    // 2. 读取旧纳戒并创建掉落（先读取再删除）
-    let dropInfo = null;
-    try {
-      const oldNajie = await Read_najie(player_id);
-      if (oldNajie && !isNajieEmpty(oldNajie)) {
-        dropInfo = await createNajieDrop(player_id, oldPlayer, oldNajie);
-        console.log(`【纳戒掉落】玩家 ${player_id} 的纳戒掉落至 ${formatLocation(dropInfo.location)}`);
-      }
-    } catch (error) {
-      console.error('处理纳戒掉落失败:', error);
-    }
-    
-    // 3. 删除旧存档（保留纳戒掉落记录）
-    try {
-      const files = [
-        `${__PATH.player_path}/${player_id}.json`,
-        `${__PATH.equipment_path}/${player_id}.json`,
-        `${__PATH.najie_path}/${player_id}.json`
-      ];
-      files.forEach(file => {
-        if (fs.existsSync(file)) fs.unlinkSync(file);
-      });
-    } catch (error) {
-      console.error('删除旧存档失败:', error);
-    }
-    
-    // 5. 创建新玩家
-    const new_player = await createNewPlayerAfterRebirth(e, oldPlayer, isChixiao, downgradedAptitude);
-    
-    // 6. 初始化装备
-    let new_equipment = {
+
+    Object.values(playerFiles).forEach(file => fileTransaction.capture(file));
+    redisBefore = await captureRedisValues(redisKeys);
+
+    const new_player = await createNewPlayerAfterRebirth(
+      e,
+      oldPlayer,
+      isChixiao,
+      downgradedAptitude
+    );
+    if (taskId) new_player.last_rebirth_task_id = taskId;
+    const new_equipment = {
       武器: data.equipment_list.find(item => item.name == '烂铁匕首'),
       护具: data.equipment_list.find(item => item.name == '破铜护具'),
       法宝: data.equipment_list.find(item => item.name == '廉价炮仗'),
       帝兵: data.dibing_list.find(item => item.name == '废铁'),
     };
-    
-    // 7. 初始化纳戒
-    let new_najie = {
+    const new_najie = {
       等级: 1,
       灵石上限: 5000 + (oldPlayer.轮回感悟 || 0) * 100,
       灵石: 0,
+      源石: 0,
       装备: [],
       丹药: [],
       道具: [],
@@ -552,74 +972,150 @@ async function forceRebirthPlayer(e, oldPlayer, acount, isChixiao = false, downg
       仙宠口粮: [],
       宝石: [],
     };
-    
-    // 8. 写入数据
-    await Write_player(player_id, new_player);
-    await Write_equipment(player_id, new_equipment);
-    await Write_najie(player_id, new_najie);
-    await Add_HP(player_id, 999999);
-    
-    // 9. 初始化丹药
-    const arr = {
+    const new_danyao = {
       biguan: 0, biguanxl: 0, xingyun: 0, lianti: 0,
       ped: 0, modao: 0,
       beiyong1: 0, beiyong2: 0, beiyong3: 0, beiyong4: 0, beiyong5: 0,
     };
-    await Write_danyao(player_id, arr);
-    
-    // 10. 更新Redis
-    await redis.set('xiuxian:player:' + player_id + ':last_reCreate_time', Date.now());
-    await redis.set('xiuxian:player:' + player_id + ':reCreate_acount', acount + 1);
-    
-    // 11. 构建消息
+
+    const maxHp = Number(new_player.血量上限) || (8000 + (oldPlayer.轮回感悟 || 0) * 100);
+    new_player.血量上限 = maxHp;
+    new_player.当前血量 = maxHp; // 转世满血，修复此前 +999999 暴涨 bug
+
+    await handleSectRelationship(player_id, oldPlayer, fileTransaction);
+
+    try {
+      let oldNajie = null;
+      try {
+        oldNajie = await Read_najie(player_id);
+      } catch (e) {
+        if (e?.code !== 'ENOENT') throw e;
+      }
+
+      const augmentedNajie = oldNajie
+        ? JSON.parse(JSON.stringify(oldNajie))
+        : {
+            等级: 0, 灵石上限: 0, 灵石: 0, 源石: 0,
+            装备: [], 丹药: [], 道具: [], 功法: [], 草药: [],
+            材料: [], 食材: [], 盒子: [], 仙宠: [], 仙宠口粮: [], 宝石: []
+          };
+
+      // 将已穿戴的装备拍平为「装备」类道具，并入掉落（捡取者获得的是未穿戴装备，自行 #装备）
+      const starterEquip = ['烂铁匕首', '破铜护具', '廉价炮仗', '废铁'];
+      let hasEquipment = false;
+      try {
+        const oldEquipment = await Read_equipment(player_id);
+        for (const slot of ['武器', '护具', '法宝', '帝兵']) {
+          const item = oldEquipment?.[slot];
+          if (item && item.name && !starterEquip.includes(item.name)) {
+            augmentedNajie.装备.push(prepareIndependentDropItem(item, { 部位: slot }));
+            hasEquipment = true;
+          }
+        }
+      } catch (e) {
+        if (e?.code !== 'ENOENT') console.warn(`【纳戒掉落】读取装备失败:`, e.message);
+      }
+
+      // 已装备的单体仙宠一并掉落
+      let hasPet = false;
+      if (oldPlayer.仙宠 && oldPlayer.仙宠.name) {
+        augmentedNajie.仙宠.push(prepareIndependentDropItem(oldPlayer.仙宠));
+        hasPet = true;
+      }
+
+      const hasLoot = (oldNajie && !isNajieEmpty(oldNajie)) || hasEquipment || hasPet;
+      if (hasLoot) {
+        dropInfo = await createNajieDrop(player_id, oldPlayer, augmentedNajie, taskId);
+        console.log(`【纳戒掉落】玩家 ${player_id} 的遗物掉落至 ${formatLocation(dropInfo.location)}（装备:${hasEquipment} 仙宠:${hasPet}）`);
+      }
+    } catch (err) {
+      console.error(`【纳戒掉落】处理掉落失败:`, err);
+      throw err;
+    }
+
+    // 关键修复：必须走 Write_equipment 重算并写回 攻击/防御/生命/暴击/暴伤 等基础属性。
+    // 直接 writeJsonAtomically(new_player) 不会触发属性计算（属性计算在 Write_equipment 内部完成），
+    // 会导致重生后玩家存档缺 攻击/防御/血量上限/暴击率 → 战力面板算成 NaN → 战力 0。
+    // 流程与 #开始修仙 一致：Write_player 落盘 → Write_equipment 读盘、计算属性、再 Write_player 写回带属性版。
+    await Write_player(player_id, new_player);
+    await Write_equipment(player_id, new_equipment);
+    writeJsonAtomically(playerFiles.najie, new_najie);
+    writeJsonAtomically(playerFiles.danyao, new_danyao);
+
+    await redis.multi()
+      .set(redisKeys[0], Date.now())
+      .set(redisKeys[1], acount + 1)
+      .exec();
+
+    fileTransaction.commit();
+    committed = true;
+
     let effectMsg = '';
     if (isChixiao) {
       effectMsg = '\n【灵魂重创】前世灵魂在阴阳大磨盘中磨灭殆尽，此生灵智蒙尘，如那初生之婴，痴痴傻傻...';
     } else if (downgradedAptitude) {
       effectMsg = `\n【道基受损】阴阳大磨盘磨灭部分本源，天资从"${oldPlayer.天资等级}"降至"${downgradedAptitude}"，前世荣光不再...`;
     }
-    
-    // 纳戒掉落消息
+
     let najieDropMsg = '';
     if (dropInfo) {
       najieDropMsg = `\n【纳戒遗落】前世纳戒遗落于${dropInfo.location.weimianName}，坐标(${dropInfo.location.x}, ${dropInfo.location.y})，有缘人或可寻得...`;
     }
-    
+
     const rebornMsg = [
-      `━━━━━━━━━━━━━━━━━━━━━━`,
       `【轮回转世·重生完成】`,
-      `━━━━━━━━━━━━━━━━━━━━━━`,
-      ``,
       `岁月如刀斩天骄，长生路上叹妖娆。`,
       `${oldPlayer.名号}的残魂在轮回中重新凝聚，前尘往事尽成空...`,
       effectMsg,
       najieDropMsg,
-      ``,
       `一声婴儿啼哭，你重新降临于世！`,
       `这一世，你将再踏仙路，追寻那永恒的大道！`,
-      ``,
-      `━━━━━━━━━━━━━━━━━━━━━━`,
+      `QQ：${player_id}`,
       `道号：${new_player.名号}`,
       `天资：${new_player.天资等级}`,
       `灵根：${new_player.灵根.name}`,
       `轮回次数：${new_player.轮回转世次数}`,
-      `━━━━━━━━━━━━━━━━━━━━━━`,
-      ``,
       `仙路漫漫，愿你此生能够走得更远，`,
       `终有一日，踏破诸天，证道永恒！`
     ].join('\n');
-    
-    await sendRebirthMessage(e, rebornMsg);
+
+    await notifyReincarnationPlayer(player_id, rebornMsg);
     console.log(`【再入仙途】玩家 ${player_id} 转世完成！`);
-    
+    return new_player;
   } catch (err) {
-    console.error(`【再入仙途】出错:`, err);
-    await sendRebirthMessage(e, `\n【转世出错】发生未知错误，请联系管理员！`);
+    if (committed) {
+      console.error(`【再入仙途】玩家 ${player_id} 已提交，但后续处理出错:`, err);
+      throw err;
+    }
+
+    const rollbackErrors = [];
+
+    try {
+      fileTransaction.rollback();
+    } catch (rollbackErr) {
+      rollbackErrors.push(rollbackErr);
+    }
+    try {
+      await restoreRedisValues(redisBefore);
+    } catch (rollbackErr) {
+      rollbackErrors.push(rollbackErr);
+    }
+    try {
+      await removeNajieDrop(dropInfo?.dropKey);
+    } catch (rollbackErr) {
+      rollbackErrors.push(rollbackErr);
+    }
+
+    console.error(`【再入仙途】玩家 ${player_id} 转世失败，已执行回滚:`, err);
+    if (rollbackErrors.length > 0) {
+      console.error(`【再入仙途】玩家 ${player_id} 回滚不完整:`, rollbackErrors);
+    }
+    throw err;
   }
 }
 
 // ==================== 执行轮回转世 ====================
-async function executeZhuanshiRebirth(e, task) {
+async function executeZhuanshiRebirth(e, task, taskId) {
   try {
     const player_id = task.player_id;
     const oldPlayer = task.player_data;
@@ -635,24 +1131,19 @@ async function executeZhuanshiRebirth(e, task) {
     let messages = [];
     
     // ===== 第一阶段：寿元耗尽，魂归地府 =====
-    messages.push(`━━━━━━━━━━━━━━━━━━━━━━`);
     messages.push(`【轮回转世·魂归地府】`);
-    messages.push(`━━━━━━━━━━━━━━━━━━━━━━`);
-    messages.push(``);
+
     messages.push(`岁月无情，大道苍凉。`);
     messages.push(`${oldPlayer.名号}的寿元终于走到了尽头...`);
-    messages.push(``);
     messages.push(`那一日，${phenomenon}，`);
     messages.push(`仿佛在为你送行，又仿佛在嘲笑这世间众生的渺小。`);
-    messages.push(``);
     messages.push(`一缕残魂飘飘荡荡，脱离肉身，坠入那传说中的古地府...`);
     messages.push(`黄泉路上，阴风怒号，无数亡魂与你擦肩而过，`);
     messages.push(`它们或是哭嚎，或是麻木，或是茫然...`);
-    messages.push(``);
     messages.push(`你随着亡魂大军，来到了地府深处。`);
     messages.push(`一座古老的石殿横亘在前，上书三个大字：`);
     messages.push(`【判官殿】`);
-    messages.push(``);
+
     
     await sendRebirthMessage(e, messages.join('\n'));
     await new Promise(resolve => setTimeout(resolve, 2000));
@@ -660,22 +1151,16 @@ async function executeZhuanshiRebirth(e, task) {
     // ===== 第二阶段：判官审魂 =====
     let judgeMessages = [];
     
-    judgeMessages.push(`━━━━━━━━━━━━━━━━━━━━━━`);
     judgeMessages.push(`【判官审魂】`);
-    judgeMessages.push(`━━━━━━━━━━━━━━━━━━━━━━`);
-    judgeMessages.push(``);
     judgeMessages.push(`殿内，一盏魂灯摇曳，照亮了那高大的身影。`);
     judgeMessages.push(`判官翻开生死簿，目光如电，声音如雷霆：`);
-    judgeMessages.push(``);
     judgeMessages.push(`"${oldPlayer.名号}，阳寿已尽，功德已消，`);
     judgeMessages.push(`今生种种，皆为定数。`);
     judgeMessages.push(`速入轮回，来世或可得道！"`);
-    judgeMessages.push(``);
     
     if (oldPlayer.轮回转世次数 > 0) {
       judgeMessages.push(`判官眉头微皱："嗯？此人已轮回${oldPlayer.轮回转世次数}次..."`);
       judgeMessages.push(`"轮回印记在身，倒也是个有故事的人。"`);
-      judgeMessages.push(``);
     }
     
     if (canWithstand) {
@@ -712,51 +1197,35 @@ async function executeZhuanshiRebirth(e, task) {
     
     if (canWithstand) {
       // 强者硬扛
-      grindMessages.push(`━━━━━━━━━━━━━━━━━━━━━━`);
       grindMessages.push(`【阴阳大磨盘·以力破法】`);
-      grindMessages.push(`━━━━━━━━━━━━━━━━━━━━━━`);
-      grindMessages.push(``);
       grindMessages.push(`阴阳大磨盘轰然震动，轮回之力如海啸般席卷而来！`);
       grindMessages.push(`那磨盘上的阴鱼与阳鱼仿佛活了过来，`);
       grindMessages.push(`化作两条巨大的阴阳鱼，张口要将你吞噬！`);
-      grindMessages.push(``);
       grindMessages.push(`但你只是静静地站在那里，周身散发出无尽神威。`);
       grindMessages.push(`你的道，你的法，你的意志，在这一刻凝成实质！`);
-      grindMessages.push(``);
       grindMessages.push(`"轰——！"`);
-      grindMessages.push(``);
       grindMessages.push(`阴阳大磨盘发出不堪重负的哀鸣，`);
       grindMessages.push(`磨盘上出现无数裂痕，如那蛛网般蔓延！`);
-      grindMessages.push(``);
       grindMessages.push(`判官目瞪口呆："这...这怎么可能！`);
       grindMessages.push(`阴阳大磨盘，自古长存，从未有人能将其震裂！"`);
-      grindMessages.push(``);
       grindMessages.push(`你淡淡开口："我的道，不在轮回之中。"`);
       grindMessages.push(`"今日，我便以力破法，超脱这轮回之外！"`);
-      grindMessages.push(``);
       grindMessages.push(`"咔嚓——！"`);
       grindMessages.push(`阴阳大磨盘，碎！`);
     } else {
       // 弱者受磨
-      grindMessages.push(`━━━━━━━━━━━━━━━━━━━━━━`);
       grindMessages.push(`【阴阳大磨盘·灵魂淬炼】`);
-      grindMessages.push(`━━━━━━━━━━━━━━━━━━━━━━`);
-      grindMessages.push(``);
       grindMessages.push(`你被投入阴阳大磨盘之中！`);
       grindMessages.push(`磨盘缓缓转动，发出"轰隆隆"的巨响，`);
       grindMessages.push(`仿佛天道在怒吼，又仿佛万古的丧钟在敲响...`);
-      grindMessages.push(``);
       grindMessages.push(`阴鱼与阳鱼交织成太极图案，`);
       grindMessages.push(`无尽轮回之力开始研磨你的灵魂！`);
-      grindMessages.push(``);
       grindMessages.push(`那一刻，你的记忆如走马灯般闪过...`);
       grindMessages.push(`童年的欢笑，少年的热血，中年的沧桑，老年的悲凉...`);
       grindMessages.push(`爱恨情仇，喜怒哀乐，一切情感都在磨盘中化为虚无...`);
-      grindMessages.push(``);
       grindMessages.push(`"啊——！"`);
       grindMessages.push(`你忍不住发出痛苦的嘶吼，`);
       grindMessages.push(`那是对过往的眷恋，对今生的不甘，对未来的迷茫...`);
-      grindMessages.push(``);
       grindMessages.push(`磨盘无情，继续转动。`);
       grindMessages.push(`你的灵魂在痛苦中颤抖，在颤抖中蜕变...`);
     }
@@ -772,16 +1241,11 @@ async function executeZhuanshiRebirth(e, task) {
     
     if (canWithstand) {
       // 完美转世
-      resultMessages.push(`━━━━━━━━━━━━━━━━━━━━━━`);
       resultMessages.push(`【轮回结果·完美无缺】`);
-      resultMessages.push(`━━━━━━━━━━━━━━━━━━━━━━`);
-      resultMessages.push(``);
       resultMessages.push(`阴阳大磨盘破碎，轮回之力四散！`);
       resultMessages.push(`你的灵魂完好无损，道基未受丝毫影响！`);
-      resultMessages.push(``);
       resultMessages.push(`判官躬身行礼："大人神威，古今罕见！`);
       resultMessages.push(`既已超脱轮回，本官便助大人完美转世！"`);
-      resultMessages.push(``);
       resultMessages.push(`"愿大人来世，踏破诸天，证道永恒！"`);
     } else {
       // 受损转世
@@ -790,19 +1254,13 @@ async function executeZhuanshiRebirth(e, task) {
       
       if (isChixiaoRandom) {
         // 灵魂重创
-        resultMessages.push(`━━━━━━━━━━━━━━━━━━━━━━`);
         resultMessages.push(`【轮回结果·灵魂重创】`);
-        resultMessages.push(`━━━━━━━━━━━━━━━━━━━━━━`);
-        resultMessages.push(``);
         resultMessages.push(`阴阳大磨盘疯狂转动，轮回之力远超你的承受极限！`);
         resultMessages.push(`"咔嚓——"一声脆响，你的灵魂出现无数裂痕！`);
-        resultMessages.push(``);
         resultMessages.push(`那一刻，你感觉自己的记忆在飞速流逝...`);
         resultMessages.push(`功法、神通、阅历、情感，一切都在磨灭...`);
-        resultMessages.push(``);
         resultMessages.push(`最终，你熬过了磨盘的磨砺，`);
         resultMessages.push(`但你的灵智已失，记忆几乎被磨灭殆尽...`);
-        resultMessages.push(``);
         resultMessages.push(`判官叹息："灵魂受损至此，来世恐怕是痴傻之人..."`);
         resultMessages.push(`"也罢，送你再入轮回，望来世能够修复灵魂..."`);
         
@@ -813,73 +1271,118 @@ async function executeZhuanshiRebirth(e, task) {
         const newAptitude = downgradeAptitude(currentAptitude);
         downgradedAptitude = newAptitude;
         
-        resultMessages.push(`━━━━━━━━━━━━━━━━━━━━━━`);
         resultMessages.push(`【轮回结果·道基受损】`);
-        resultMessages.push(`━━━━━━━━━━━━━━━━━━━━━━`);
-        resultMessages.push(``);
         resultMessages.push(`阴阳大磨盘疯狂转动，轮回之力如潮水般涌来！`);
         resultMessages.push(`你的灵魂在磨盘中苦苦支撑，如那风中残烛...`);
-        resultMessages.push(``);
         resultMessages.push(`最终，你熬过了磨盘的磨砺，`);
         resultMessages.push(`但你的灵魂本源受损，道基不再完美！`);
-        resultMessages.push(``);
         resultMessages.push(`天资从"${currentAptitude}"降至"${newAptitude}"！`);
-        resultMessages.push(``);
         resultMessages.push(`判官摇头："能熬过已是万幸，只是道基受损...`);
         resultMessages.push(`去吧，再入轮回，或许还有恢复之日。"`);
       }
     }
     
     // 轮回感悟
-    if (acount >= 5 && !isChixiao && !canWithstand) {
-      resultMessages.push(``);
+    if (acount + 1 >= 5 && !isChixiao && !canWithstand) {
       resultMessages.push(`【轮回感悟】`);
       resultMessages.push(`历经多次轮回，你对生死之道有了更深的感悟！`);
       resultMessages.push(`轮回感悟+1，来世或可得大道眷顾！`);
       oldPlayer.轮回感悟 = (oldPlayer.轮回感悟 || 0) + 1;
     }
     
-    if (acount >= 10 && !isChixiao && !canWithstand) {
-      resultMessages.push(``);
+    if (acount + 1 >= 10 && !isChixiao && !canWithstand) {
       resultMessages.push(`【轮回印记】`);
       resultMessages.push(`轮回印记在你灵魂上留下淡淡光芒，`);
       resultMessages.push(`这是大道的馈赠，也是你逆天而行的证明！`);
       oldPlayer.轮回印记 = true;
     }
     
-    resultMessages.push(``);
     await sendRebirthMessage(e, resultMessages.join('\n'));
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     // ===== 第五阶段：再入仙途 =====
     const rebirthMessage = [
-      `━━━━━━━━━━━━━━━━━━━━━━`,
       `【再入仙途】`,
-      `━━━━━━━━━━━━━━━━━━━━━━`,
-      ``,
       `六道轮回之门轰然开启，`,
       `你的魂魄被一股无形之力牵引，投入那无尽的轮回之中...`,
-      ``,
       `前尘往事尽成空，`,
       `而今迈步从头越！`,
-      ``,
       `正在为你重塑肉身，重开仙路...`,
       `这一世，你将如何书写你的传奇？`,
-      ``
     ].join('\n');
     
     await sendRebirthMessage(e, rebirthMessage);
     await new Promise(resolve => setTimeout(resolve, 3000));
     
     // 执行转世
-    await forceRebirthPlayer(e, oldPlayer, acount, isChixiao, downgradedAptitude);
+    await forceRebirthPlayer(
+      e,
+      oldPlayer,
+      acount,
+      isChixiao,
+      downgradedAptitude,
+      taskId
+    );
     
     console.log(`【轮回】玩家 ${player_id} 轮回完成！`);
     
   } catch (err) {
     console.error(`【轮回】执行出错:`, err);
-    await sendRebirthMessage(e, `\n【轮回出错】发生未知错误，请联系管理员！`);
+    await sendRebirthMessage(e, `\n【轮回出错】发生未知错误，旧存档已恢复，系统稍后会自动重试。`);
+    throw err;
   }
+}
+
+function getRebirthTaskId(task, taskKey) {
+  return task.task_id || `${taskKey}:${task.start_time || task.end_time}`;
+}
+
+async function isRebirthTaskCommitted(playerId, taskId) {
+  try {
+    const player = await Read_player(playerId);
+    return player.last_rebirth_task_id === taskId;
+  } catch {
+    return false;
+  }
+}
+
+async function scheduleRebirthRetry(taskKey, task, error) {
+  const retryCount = (Number(task.retry_count) || 0) + 1;
+  const retryMinutes = Math.min(5 * (2 ** Math.min(retryCount - 1, 3)), 60);
+  const retryAt = Date.now() + retryMinutes * 60 * 1000;
+  const updatedTask = {
+    ...task,
+    retry_count: retryCount,
+    last_error: String(error?.message || error).slice(0, 500),
+    last_error_time: Date.now(),
+    end_time: retryAt,
+    status: '轮回重试中',
+  };
+
+  await redis.set(taskKey, JSON.stringify(updatedTask), {
+    EX: FAILED_TASK_TTL_SECONDS,
+  });
+
+  const actionKey = `xiuxian:player:${task.player_id}:action`;
+  let action = {};
+  try {
+    const actionData = await redis.get(actionKey);
+    if (actionData) action = JSON.parse(actionData);
+  } catch (err) {
+    console.error(`读取轮回行动状态失败 (${task.player_id}):`, err);
+  }
+
+  await redis.set(actionKey, JSON.stringify({
+    ...action,
+    action: action.action || '轮回转世',
+    type: 'zhuanshi',
+    start_time: action.start_time || task.start_time || Date.now(),
+    end_time: retryAt,
+    description: '轮回失败，等待自动重试',
+    status: '轮回重试中',
+  }));
+
+  return { retryCount, retryMinutes };
 }
 
 // ==================== 定时任务类 ====================
@@ -909,6 +1412,7 @@ class ZhuanshiTask extends plugin {
     try {
       console.log('【轮回检查】开始执行...');
       const keys = await redis.keys('xiuxian:zhuanshi_task:*');
+      const difficulty = readShouyuanDifficulty(data.filePathMap.weimianList);
 
       for (const key of keys) {
         try {
@@ -923,28 +1427,97 @@ class ZhuanshiTask extends plugin {
           const player_id = task.player_id;
 
           if (now >= task.end_time) {
-            console.log(`【轮回】玩家 ${player_id} 时间到，开始轮回...`);
+            const taskId = getRebirthTaskId(task, key);
+            const lockToken = `${taskId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+            const lockKey = `xiuxian:lock:zhuanshi_task:${player_id}`;
+            const locked = await acquireRedisLock(
+              lockKey,
+              lockToken,
+              REBIRTH_TASK_LOCK_TTL_SECONDS
+            );
+            if (!locked) continue;
 
-            const msgCtx = {
-              isGroup: !!task.group_id,
-              group_id: task.group_id || null,
-              user_id: player_id,
-              reply: async (msg) => {
-                try {
-                  if (task.group_id) {
-                    await Bot.pickGroup(task.group_id).sendMsg([segment.at(Number(player_id)), msg]);
-                  } else {
-                    await common.relpyPrivate(player_id, msg);
-                  }
-                } catch (err) {
-                  console.error('【轮回】发送消息失败:', err);
-                }
+            try {
+              if (await isRebirthTaskCommitted(player_id, taskId)) {
+                await redis.del(key);
+                await redis.del(`xiuxian:player:${player_id}:action`);
+                console.log(`【轮回】玩家 ${player_id} 的任务已完成，清理残留任务`);
+                continue;
               }
-            };
 
-            await executeZhuanshiRebirth(msgCtx, task);
-            await redis.del(key);
-            await redis.del(`xiuxian:player:${player_id}:action`);
+              if (task.rebirth_decision?.status === 'deny') {
+                await restoreRescuedPlayer(task);
+                await redis.multi()
+                  .del(key)
+                  .del(`xiuxian:player:${player_id}:action`)
+                  .exec();
+                console.log(`【轮回】玩家 ${player_id} 的往生已被驳回`);
+                continue;
+              }
+
+              if (task.type === '寿元耗尽' && !difficulty.reincarnatesOnExhaustion) {
+                await restoreRescuedPlayer(task);
+                await redis.multi()
+                  .del(key)
+                  .del(`xiuxian:player:${player_id}:action`)
+                  .exec();
+                console.log(`【轮回】当前为${difficulty.name}难度，取消玩家 ${player_id} 的寿元轮回`);
+                continue;
+              }
+
+              const controller = await getActiveReincarnationController();
+              if (requiresControllerDecision(task, controller)) {
+                const wasPending = Boolean(task.controller_pending);
+                await holdTaskForController(key, task, controller);
+                if (!wasPending) {
+                  await notifyReincarnationPlayer(
+                    player_id,
+                    `【轮回路·等待裁定】\n${task.player_name || player_id}的魂魄已抵达轮回路。当前执掌者：${controller.player_name}，等待其裁定是否往生。`
+                  );
+                }
+                console.log(
+                  `【轮回执掌】玩家 ${player_id} 等待 ${controller.player_name} 裁定`
+                );
+                continue;
+              }
+
+              task.task_id = taskId;
+              console.log(`【轮回】玩家 ${player_id} 时间到，开始轮回...`);
+
+              const msgCtx = {
+                isGroup: false,
+                group_id: null,
+                user_id: player_id,
+                reply: async (msg) => {
+                  try {
+                    // 改为全服公告（复用插件既有 broadcastToAllGroups，无需造轮子）
+                    await broadcastToAllGroups(msg);
+                  } catch (err) {
+                    console.error('【轮回】全服公告发送失败:', err);
+                  }
+                }
+              };
+
+              try {
+                await executeZhuanshiRebirth(msgCtx, task, taskId);
+              } catch (err) {
+                const retry = await scheduleRebirthRetry(key, task, err);
+                console.error(
+                  `【轮回】玩家 ${player_id} 第${retry.retryCount}次失败，` +
+                  `${retry.retryMinutes}分钟后重试`
+                );
+                continue;
+              }
+
+              try {
+                await redis.del(`xiuxian:player:${player_id}:action`);
+                await redis.del(key);
+              } catch (cleanupErr) {
+                console.error(`轮回成功后的任务清理失败 (${key}):`, cleanupErr);
+              }
+            } finally {
+              await releaseRedisLock(lockKey, lockToken);
+            }
           } else {
             const remaining = task.end_time - now;
             const hours = Math.floor(remaining / (1000 * 60 * 60));
@@ -956,10 +1529,284 @@ class ZhuanshiTask extends plugin {
         }
       }
 
+      // 仙遗宝地转化检查（12h 未捡且筑基以上）
+      try {
+        await checkRelicConversion();
+      } catch (err) {
+        console.error('仙遗宝地转化检查出错:', err);
+      }
+
       console.log('【轮回检查】完成');
     } catch (err) {
       console.error('轮回任务检查出错:', err);
     }
+  }
+}
+
+// ==================== 轮回路救援与执掌 ====================
+class ReincarnationRoad extends plugin {
+  constructor() {
+    super({
+      name: '轮回往生路执掌系统',
+      dsc: '强闯轮回救人以及大帝执掌轮回裁定',
+      event: 'message',
+      priority: 550,
+      rule: [
+        {
+          reg: '^#(?:轮回救人|强闯轮回路).*$',
+          fnc: 'rescueFromReincarnation',
+        },
+        {
+          reg: '^#执掌轮回路$',
+          fnc: 'takeControlOfReincarnation',
+        },
+        {
+          reg: '^#放弃执掌轮回路$',
+          fnc: 'releaseControlOfReincarnation',
+        },
+        {
+          reg: '^#(?:准许往生|放行往生).*$',
+          fnc: 'allowReincarnation',
+        },
+        {
+          reg: '^#(?:驳回往生|拒绝往生).*$',
+          fnc: 'denyReincarnation',
+        },
+        {
+          reg: '^#轮回路状态$',
+          fnc: 'showReincarnationStatus',
+        },
+      ],
+    });
+  }
+
+  async getInvoker(e) {
+    const playerId = String(e.user_id).replace('qg_', '');
+    if (!(await existplayer(playerId))) return null;
+    const player = await Read_player(playerId);
+    return {
+      player_id: playerId,
+      player_name: player.名号,
+      player,
+      authority: getAuthority(player),
+    };
+  }
+
+  async rescueFromReincarnation(e) {
+    try {
+      const invoker = await this.getInvoker(e);
+      if (!invoker) return e.reply('你尚未踏上修行路，无法进入轮回往生路。');
+      if (!invoker.authority.canRescue) {
+        const required = invoker.authority.thresholds.rescue;
+        return e.reply(
+          `境界不足，至少需要达到${required.mijingName}或${required.xianguName}，` +
+          `方可强闯轮回往生路救人。`
+        );
+      }
+
+      const targetId = getMentionedPlayerId(e);
+      if (!targetId) return e.reply('请指定要营救的玩家，例如：#轮回救人 @某人');
+      if (targetId === invoker.player_id) {
+        return e.reply('轮回路中不可自救，只能由他人接引魂魄归来。');
+      }
+
+      const result = await cancelPendingRebirth(
+        targetId,
+        invoker,
+        '强闯轮回往生路救人'
+      );
+      if (!result.success) return this.replyCancelFailure(e, result.code);
+
+      return e.reply([
+        `【强闯轮回·救人成功】`,
+        `${invoker.player_name}踏碎黄泉、横渡轮回，`,
+        `将${result.task.player_name || result.player.名号}的魂魄从往生路上强行接回！`,
+        `本次轮回任务已解除。`,
+      ].join('\n'));
+    } catch (err) {
+      console.error('【轮回救人】执行失败:', err);
+      return e.reply('强闯轮回往生路失败，魂魄仍在轮回路中。');
+    }
+  }
+
+  async takeControlOfReincarnation(e) {
+    try {
+      const invoker = await this.getInvoker(e);
+      if (!invoker) return e.reply('你尚未踏上修行路，无法执掌轮回。');
+      if (!invoker.authority.canControl) {
+        const required = invoker.authority.thresholds.control;
+        return e.reply(
+          `只有达到${required.mijingName}或仙古${required.xianguName}（极道至尊层次），` +
+          `才能强行执掌轮回路。`
+        );
+      }
+
+      const previous = await getActiveReincarnationController();
+      const realms = getPlayerRealmNames(
+        invoker.player,
+        data.Levelmijing_list,
+        data.xiangujinshi_list
+      );
+      const record = {
+        player_id: invoker.player_id,
+        player_name: invoker.player_name,
+        mijing_realm: realms.mijing,
+        xiangu_realm: realms.xiangu,
+        controlled_at: Date.now(),
+      };
+      await redis.set(REINCARNATION_CONTROLLER_KEY, JSON.stringify(record));
+
+      const replaced = previous && previous.player_id !== invoker.player_id
+        ? `\n${previous.player_name}对轮回路的执掌已被强行取代。`
+        : '';
+      return e.reply(
+        `【执掌轮回路】\n${invoker.player_name}以无上道果镇压六道，正式执掌轮回！\n` +
+        `此后所有到期往生者都将等待你的裁定。${replaced}\n` +
+        `使用 #准许往生 @某人 或 #驳回往生 @某人 进行裁定。`
+      );
+    } catch (err) {
+      console.error('【执掌轮回】执行失败:', err);
+      return e.reply('执掌轮回路失败。');
+    }
+  }
+
+  async releaseControlOfReincarnation(e) {
+    try {
+      const invokerId = String(e.user_id).replace('qg_', '');
+      const controller = await getActiveReincarnationController();
+      if (!controller) return e.reply('当前无人执掌轮回路。');
+      if (controller.player_id !== invokerId) {
+        return e.reply(`当前轮回路由${controller.player_name}执掌，你无权放弃其权柄。`);
+      }
+
+      await redis.del(REINCARNATION_CONTROLLER_KEY);
+      return e.reply('【轮回权柄归天】你已放弃执掌轮回路，待裁定魂魄将恢复自动往生。');
+    } catch (err) {
+      console.error('【放弃轮回执掌】执行失败:', err);
+      return e.reply('放弃轮回权柄失败。');
+    }
+  }
+
+  async allowReincarnation(e) {
+    let lockKey = null;
+    let lockToken = null;
+    let locked = false;
+
+    try {
+      const controller = await getActiveReincarnationController();
+      const invokerId = String(e.user_id).replace('qg_', '');
+      if (!controller || controller.player_id !== invokerId) {
+        return e.reply('只有当前轮回路执掌者可以准许往生。');
+      }
+
+      const targetId = getMentionedPlayerId(e);
+      if (!targetId) return e.reply('请指定待裁定玩家，例如：#准许往生 @某人');
+
+      const taskKey = `xiuxian:zhuanshi_task:${targetId}`;
+      lockKey = `xiuxian:lock:zhuanshi_task:${targetId}`;
+      lockToken = `allow:${invokerId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+      locked = await acquireRedisLock(lockKey, lockToken, REBIRTH_TASK_LOCK_TTL_SECONDS);
+      if (!locked) return e.reply('该魂魄正在接受其他裁定，请稍后重试。');
+
+      const raw = await redis.get(taskKey);
+      if (!raw) return e.reply('目标当前不在轮回往生路上。');
+
+      const task = applyReincarnationDecision(
+        JSON.parse(raw),
+        'allow',
+        controller
+      );
+      await redis.set(taskKey, JSON.stringify(task));
+      await redis.set(`xiuxian:player:${targetId}:action`, JSON.stringify({
+        action: '轮回往生路',
+        type: 'zhuanshi',
+        start_time: task.start_time || Date.now(),
+        end_time: Date.now() + 60 * 1000,
+        description: `已获${controller.player_name}准许往生`,
+        status: '已准许往生',
+      }));
+
+      return e.reply(
+        `【轮回裁定·准许】\n${controller.player_name}落下法旨：` +
+        `${task.player_name || targetId}准入六道，下一次轮回检查时正式往生。`
+      );
+    } catch (err) {
+      console.error('【准许往生】执行失败:', err);
+      return e.reply('准许往生失败。');
+    } finally {
+      if (locked) await releaseRedisLock(lockKey, lockToken);
+    }
+  }
+
+  async denyReincarnation(e) {
+    try {
+      const controller = await getActiveReincarnationController();
+      const invokerId = String(e.user_id).replace('qg_', '');
+      if (!controller || controller.player_id !== invokerId) {
+        return e.reply('只有当前轮回路执掌者可以驳回往生。');
+      }
+
+      const targetId = getMentionedPlayerId(e);
+      if (!targetId) return e.reply('请指定待裁定玩家，例如：#驳回往生 @某人');
+
+      const result = await cancelPendingRebirth(
+        targetId,
+        controller,
+        '轮回执掌者驳回往生'
+      );
+      if (!result.success) return this.replyCancelFailure(e, result.code);
+
+      return e.reply(
+        `【轮回裁定·驳回】\n${controller.player_name}逆转生死簿，` +
+        `将${result.task.player_name || result.player.名号}遣返阳世，本次往生取消。`
+      );
+    } catch (err) {
+      console.error('【驳回往生】执行失败:', err);
+      return e.reply('驳回往生失败。');
+    }
+  }
+
+  async showReincarnationStatus(e) {
+    try {
+      const controller = await getActiveReincarnationController();
+      const keys = await redis.keys('xiuxian:zhuanshi_task:*');
+      const tasks = [];
+
+      for (const key of keys) {
+        try {
+          const raw = await redis.get(key);
+          if (raw) tasks.push(JSON.parse(raw));
+        } catch (err) {
+          console.error(`读取轮回任务失败 (${key}):`, err);
+        }
+      }
+
+      const lines = [
+        '【轮回往生路状态】',
+        controller
+          ? `当前执掌者：${controller.player_name}`
+          : '当前执掌者：无（到期后自动往生）',
+        `路上魂魄：${tasks.length}人`,
+      ];
+      for (const task of tasks.slice(0, 10)) {
+        lines.push(`- ${task.player_name || task.player_id}：${task.status || '轮回中'}`);
+      }
+      if (tasks.length > 10) lines.push(`- 另有${tasks.length - 10}人等待`);
+
+      return e.reply(lines.join('\n'));
+    } catch (err) {
+      console.error('【轮回路状态】查询失败:', err);
+      return e.reply('查询轮回路状态失败。');
+    }
+  }
+
+  replyCancelFailure(e, code) {
+    const messages = {
+      busy: '该魂魄正在进行轮回结算或接受其他裁定，请稍后重试。',
+      missing: '目标当前不在轮回往生路上。',
+      committed: '目标已经完成往生，现世手段已无法追回。',
+    };
+    return e.reply(messages[code] || '本次轮回干预失败。');
   }
 }
 
@@ -977,7 +1824,7 @@ class NajieDrop extends plugin {
           fnc: 'listNajieDrops',
         },
         {
-          reg: '^#查询遗落纳戒$',
+          reg: '^#查询遗落纳戒.*$',
           fnc: 'queryNajieDrops',
         },
         {
@@ -985,7 +1832,7 @@ class NajieDrop extends plugin {
           fnc: 'pickupNajie',
         },
         {
-          reg: '^#附近纳戒(\\d+)$',
+          reg: '^#附近纳戒(?:\\s*(\\d{1,4}))?$',
           fnc: 'nearbyNajie',
         },
       ],
@@ -1002,7 +1849,7 @@ class NajieDrop extends plugin {
         return;
       }
       
-      let msg = ['━━━━━━━━━━━━━━━━━━━━━━', '【遗落纳戒列表】', '━━━━━━━━━━━━━━━━━━━━━━', ''];
+      let msg = [ '【遗落纳戒列表】', '━━━━━━━━━━━━━━━━━━━━━━', ''];
       
       for (let i = 0; i < Math.min(drops.length, 10); i++) {
         const drop = drops[i];
@@ -1018,7 +1865,8 @@ class NajieDrop extends plugin {
       }
       
       msg.push('使用【#捡取纳戒序号】可捡取对应纳戒');
-      msg.push('使用【#附近纳戒坐标】可查看附近纳戒');
+      msg.push('先抵达对应位面并发送【#前往x,y】，才能捡取');
+      msg.push('使用【#附近纳戒50】可搜索当前坐标50格内的纳戒');
       
       await e.reply(msg.join('\n'));
     } catch (err) {
@@ -1033,17 +1881,18 @@ class NajieDrop extends plugin {
       const msg = e.msg.replace('#查询遗落纳戒', '').trim();
       const weimianName = msg || '';
       
+      const allDrops = await getAllNajieDrops();
       let drops;
       if (weimianName) {
         const weimian = weimianList.find(w => w.name.includes(weimianName));
         if (weimian) {
-          drops = await getNajieDropsByWeimian(weimian.id);
+          drops = allDrops.filter(drop => drop.location.weimianName === weimian.name);
         } else {
           await e.reply(`未找到名为"${weimianName}"的位面。`);
           return;
         }
       } else {
-        drops = await getAllNajieDrops();
+        drops = allDrops;
       }
       
       if (drops.length === 0) {
@@ -1051,11 +1900,12 @@ class NajieDrop extends plugin {
         return;
       }
       
-      let replyMsg = ['━━━━━━━━━━━━━━━━━━━━━━', `【${weimianName || '所有位面'}遗落纳戒】`, '━━━━━━━━━━━━━━━━━━━━━━', ''];
+      let replyMsg = [ `【${weimianName || '所有位面'}遗落纳戒】` ];
       
       for (let i = 0; i < Math.min(drops.length, 5); i++) {
         const drop = drops[i];
-        replyMsg.push(`【${i + 1}】前主：${drop.player_name}`);
+        const globalIndex = allDrops.findIndex(item => item.key === drop.key) + 1;
+        replyMsg.push(`【${globalIndex}】前主：${drop.player_name}`);
         replyMsg.push(`    坐标：(${drop.location.x}, ${drop.location.y})`);
         replyMsg.push('');
       }
@@ -1063,9 +1913,10 @@ class NajieDrop extends plugin {
       if (drops.length > 5) {
         replyMsg.push(`...共${drops.length}个遗落纳戒`);
       }
-      
-      replyMsg.push('━━━━━━━━━━━━━━━━━━━━━━');
-      
+
+      replyMsg.push('请先前往该位面，再使用 #前往x,y 抵达目标坐标。');
+      replyMsg.push('抵达后使用 #捡取纳戒序号。');
+
       await e.reply(replyMsg.join('\n'));
     } catch (err) {
       console.error('【查询遗落纳戒】出错:', err);
@@ -1105,11 +1956,11 @@ class NajieDrop extends plugin {
       
       const selectedDrop = drops[index];
       
-      // 检查是否是自己的纳戒（转世后同一QQ）
-      if (selectedDrop.player_id === usr_qq) {
-        await e.reply('这是你自己的纳戒，无需捡取。');
-        return;
-      }
+      // // 检查是否是自己的纳戒（转世后同一QQ）
+      // if (selectedDrop.player_id === usr_qq) {
+      //   await e.reply('这是你自己的纳戒，无需捡取。');
+      //   return;
+      // }
       
       // 执行捡取
       const result = await pickupNajieDrop(selectedDrop.key, usr_qq);
@@ -1126,6 +1977,7 @@ class NajieDrop extends plugin {
       let replyMsg = [
         `【纳戒捡取成功】`,
         `你捡取了${selectedDrop.player_name}遗落的纳戒！`,
+        `发现地点：${selectedDrop.location.weimianName} (${selectedDrop.location.x}, ${selectedDrop.location.y})`,
         `纳戒中包含：`,
         `  灵石：${totalLingshi.toLocaleString()}`,
         `  装备：${najie.装备?.length || 0}件`,
@@ -1159,71 +2011,53 @@ class NajieDrop extends plugin {
         return;
       }
       
-      // 提取范围（0-7表示位面索引，0表示当前位面，1表示上下各1个位面范围）
-      const match = e.msg.match(/^#附近纳戒(\d+)$/);
+      // 提取当前位面坐标搜索半径，默认50格
+      const match = e.msg.match(/^#附近纳戒(?:\s*(\d{1,4}))?$/);
       if (!match) {
-        await e.reply('请输入正确的命令格式：#附近纳戒范围（0-7）');
+        await e.reply('请输入正确的命令格式：#附近纳戒50');
         return;
       }
-      const rangeLevel = Math.min(Math.max(parseInt(match[1]), 0), 7);
+      const radius = Math.min(Math.max(parseInt(match[1] || '50'), 0), 2000);
       
-      // 获取玩家当前位面
-      const playerWeimianId = player.power_place || 0;
-      const currentWeimian = weimianList.find(w => w.id === playerWeimianId);
-      const weimianName = currentWeimian ? currentWeimian.name : '未知位面';
+      const weimianName = getPlayerPlaneName(player);
+      const coordinate = getPlayerPlaneCoordinate(player, weimianName);
+      if (!weimianName || !weimianList.some(plane => plane.name === weimianName)) {
+        await e.reply('你当前所在位面没有固定坐标轴，无法搜索附近纳戒。');
+        return;
+      }
+      if (!coordinate) {
+        await e.reply(`你尚未在${weimianName}确定位置，请先发送 #前往x,y。`);
+        return;
+      }
       
-      // 查找当前位面及附近的掉落
       const allDrops = await getAllNajieDrops();
-      const nearbyDrops = allDrops.filter(drop => {
-        const diff = Math.abs(drop.location.weimianId - playerWeimianId);
-        return diff <= rangeLevel;
-      });
+      const nearbyDrops = findNearbyNajieDrops(allDrops, player, radius);
       
       if (nearbyDrops.length === 0) {
-        if (rangeLevel === 0) {
-          await e.reply(`在${weimianName}中没有遗落的纳戒。\n可以尝试【#附近纳戒1】扩大搜索范围到相邻位面。`);
-        } else {
-          await e.reply(`在${weimianName}及相邻${rangeLevel}个位面范围内都没有遗落的纳戒。`);
-        }
+        await e.reply(`在${weimianName}坐标${coordinate.x},${coordinate.y}周围${radius}格内没有遗落纳戒。`);
         return;
       }
       
       let msg = [
-        `━━━━━━━━━━━━━━━━━━━━━━`,
+  
         `【附近纳戒】`,
-        `━━━━━━━━━━━━━━━━━━━━━━`,
-        `当前位置：${weimianName}`,
-        `搜索范围：${rangeLevel === 0 ? '本位于面' : `本位于面及上下各${rangeLevel}个位面`}`,
-        `━━━━━━━━━━━━━━━━━━━━━━`,
+        `当前位置：${weimianName} (${coordinate.x}, ${coordinate.y})`,
+        `搜索半径：${radius}格`,
         ``
       ];
-      
-      // 按位面分组显示
-      const groupedByWeimian = {};
-      nearbyDrops.forEach(drop => {
-        const wName = drop.location.weimianName;
-        if (!groupedByWeimian[wName]) {
-          groupedByWeimian[wName] = [];
-        }
-        groupedByWeimian[wName].push(drop);
-      });
-      
-      let index = 1;
-      for (const [wName, drops] of Object.entries(groupedByWeimian)) {
-        msg.push(`【${wName}】`);
-        for (const drop of drops.slice(0, 3)) {
-          msg.push(`  ${index}. ${drop.player_name} - 坐标(${drop.location.x}, ${drop.location.y})`);
-          index++;
-        }
-        if (drops.length > 3) {
-          msg.push(`  ...等${drops.length}个纳戒`);
-        }
-        msg.push('');
+
+      for (const item of nearbyDrops.slice(0, 15)) {
+        const drop = item.drop;
+        msg.push(
+          `【${item.globalIndex}】${drop.player_name} - ` +
+          `坐标(${drop.location.x}, ${drop.location.y}) - 距离${Math.ceil(item.distance)}格`
+        );
       }
+      if (nearbyDrops.length > 15) msg.push(`...另有${nearbyDrops.length - 15}个纳戒`);
       
       msg.push('━━━━━━━━━━━━━━━━━━━━━━');
       msg.push('使用【#捡取纳戒序号】可捡取纳戒');
-      msg.push(`共${nearbyDrops.length}个纳戒在附近`);
+      msg.push(`共${nearbyDrops.length}个纳戒在搜索范围内`);
       
       await e.reply(msg.join('\n'));
     } catch (err) {
@@ -1233,5 +2067,5 @@ class NajieDrop extends plugin {
   }
 }
 
-export { ZhuanshiTask, NajieDrop };
+export { ZhuanshiTask, ReincarnationRoad, NajieDrop };
 export default ZhuanshiTask;

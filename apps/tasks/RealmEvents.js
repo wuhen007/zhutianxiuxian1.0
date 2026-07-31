@@ -1,0 +1,1307 @@
+import fs from 'fs';
+import path from 'path';
+import { __PATH } from '../../model/xiuxian.js';
+import { config as xiuxianConfig, data } from '../../api/api.js';
+import { Read_player, Read_najie, Write_najie } from '../../model/xiuxian.js';
+import {
+    createRealmEventLocation,
+    formatRealmEventLocation,
+    formatRealmEventTravel
+} from '../../model/realmEventLocation.js';
+import {
+    COORDINATE_EVENT_DURATION_MS,
+    getCoordinateLocations
+} from '../../model/weimianTravel.js';
+import {
+    TIANMO_HUASHENG_TECHNIQUE,
+    TIANMO_LEGACY_DURATION_MS
+} from '../../model/tianmoHuasheng.js';
+import {
+    getRealmEventWorldYear,
+    isRealmEventCooldownReady
+} from '../../model/realmEventClock.js';
+import { createBlackMarketStock, createWhiteBeardStock } from '../../model/realmMerchant.js';
+import {
+    INNATE_TREASURE_NAMES,
+    readInnateTreasureState
+} from '../../model/innateTreasure.js';
+import {
+    TREASURE_CONTEST_DURATION_MS,
+    createTreasureContest,
+    getRevealedTreasureClues,
+    getTreasureContestProfile,
+    joinTreasureContest,
+    performTreasureTrial,
+    placeTreasureDaoHeart,
+    settleTreasureContest
+} from '../../model/innateTreasureContest.js';
+
+const DEFAULT_ERA_TRIGGER_CHANCE = 0.35;
+const DEFAULT_DUNGEON_TRIGGER_CHANCE = 0.002;
+const DEFAULT_EVENT_DURATION_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_MAX_ACTIVE_EVENTS = 3;
+
+function hasPendingTreasureSettlement(event) {
+    if (event?.type !== 'treasureAppear') return false;
+    if (event.contest?.status !== 'settled') return true;
+    const participants = Object.keys(event.contest?.participants || {}).length;
+    const rewarded = new Set((event.contest?.rewardedQqs || []).map(String)).size;
+    return rewarded < participants;
+}
+
+function getDefaultEventConfig() {
+    return {
+        eventHistory: [],
+        lastEventTime: 0,
+        lastEventWorldYear: null,
+        activeEvents: [],
+        eventCooldown: 2000,
+        enableEvents: true,
+        eraTriggerChance: DEFAULT_ERA_TRIGGER_CHANCE,
+        dungeonTriggerChance: DEFAULT_DUNGEON_TRIGGER_CHANCE,
+        eventDurationMs: DEFAULT_EVENT_DURATION_MS,
+        maxActiveEvents: DEFAULT_MAX_ACTIVE_EVENTS
+    };
+}
+
+/** 位面大事件系统 */
+export class RealmEvents {
+    constructor() {
+        // 位面大事件配置文件路径
+        this.eventConfigPath = path.join(__PATH.data_path, 'weimian_events.json');
+        
+        // 初始化事件配置
+        this.initEventConfig();
+    }
+    
+    /** 初始化事件配置 */
+    initEventConfig() {
+        try {
+            if (!fs.existsSync(this.eventConfigPath)) {
+                const defaultConfig = getDefaultEventConfig();
+                fs.writeFileSync(this.eventConfigPath, JSON.stringify(defaultConfig, null, 4), 'utf8');
+            }
+        } catch (e) {
+            console.error("初始化位面大事件配置失败:", e);
+        }
+    }
+    
+    /** 读取事件配置 */
+    readEventConfig() {
+        try {
+            if (fs.existsSync(this.eventConfigPath)) {
+                return { ...getDefaultEventConfig(), ...JSON.parse(fs.readFileSync(this.eventConfigPath, 'utf8')) };
+            }
+        } catch (e) {
+            console.error("读取事件配置失败:", e);
+        }
+        return getDefaultEventConfig();
+    }
+    
+    /** 保存事件配置 */
+    saveEventConfig(config) {
+        try {
+            fs.writeFileSync(this.eventConfigPath, JSON.stringify(config, null, 4), 'utf8');
+        } catch (e) {
+            console.error("保存事件配置失败:", e);
+        }
+    }
+    
+    /** 获取随机玩家 */
+    async getRandomPlayer(excludeQqs = []) {
+        try {
+            const playerFiles = fs.readdirSync(__PATH.player_path);
+            const jsonFiles = playerFiles.filter(file => file.endsWith(".json"));
+            
+            const validPlayers = [];
+            for (const file of jsonFiles) {
+                const qq = file.replace(".json", "");
+                if (excludeQqs.includes(qq)) continue;
+                
+                const player = await Read_player(qq);
+                if (player && player.名号) {
+                    validPlayers.push({ qq, player });
+                }
+            }
+            
+            if (validPlayers.length === 0) return null;
+            return validPlayers[Math.floor(Math.random() * validPlayers.length)];
+        } catch (e) {
+            console.error("获取随机玩家失败:", e);
+            return null;
+        }
+    }
+    
+    /** 获取随机玩家（可指定境界范围） */
+    async getRandomPlayerByLevel(minLevel, maxLevel, excludeQqs = []) {
+        try {
+            const playerFiles = fs.readdirSync(__PATH.player_path);
+            const jsonFiles = playerFiles.filter(file => file.endsWith(".json"));
+            
+            const validPlayers = [];
+            for (const file of jsonFiles) {
+                const qq = file.replace(".json", "");
+                if (excludeQqs.includes(qq)) continue;
+                
+                const player = await Read_player(qq);
+                if (player && player.名号 && player.mijinglevel_id >= minLevel && player.mijinglevel_id <= maxLevel) {
+                    validPlayers.push({ qq, player });
+                }
+            }
+            
+            if (validPlayers.length === 0) return null;
+            return validPlayers[Math.floor(Math.random() * validPlayers.length)];
+        } catch (e) {
+            console.error("按境界获取随机玩家失败:", e);
+            return null;
+        }
+    }
+    
+    /** 获取所有玩家 */
+    async getAllPlayers() {
+        try {
+            const playerFiles = fs.readdirSync(__PATH.player_path);
+            const jsonFiles = playerFiles.filter(file => file.endsWith(".json"));
+            
+            const players = [];
+            for (const file of jsonFiles) {
+                const qq = file.replace(".json", "");
+                const player = await Read_player(qq);
+                if (player && player.名号) {
+                    players.push({ qq, player });
+                }
+            }
+            return players;
+        } catch (e) {
+            console.error("获取所有玩家失败:", e);
+            return [];
+        }
+    }
+    
+    /** 检查冷却时间 */
+    checkCooldown(config, currentWorldYear, currentYears) {
+        return isRealmEventCooldownReady(config, currentWorldYear, currentYears);
+    }
+    
+    /** ============ 大事件类型定义 ============ */
+    
+    /** 先天灵宝出世事件 */
+    async treasureAppearEvent(eraIndex) {
+        const treasureDefinitions = [
+            { name: "混沌珠", desc: "内含混沌，可开天辟地", rarity: "至宝", power: 15 },
+            { name: "太极图", desc: "阴阳轮转，道法自然", rarity: "至宝", power: 15 },
+            { name: "盘古幡", desc: "开天斧所化，威力无穷", rarity: "至宝", power: 15 },
+            { name: "诛仙四剑", desc: "诛仙利，戮仙亡，陷仙四处起红光", rarity: "至宝", power: 15 },
+            { name: "山河社稷图", desc: "内含一方小世界", rarity: "至宝", power: 14 },
+            { name: "天地玄黄玲珑塔", desc: "后天第一防御至宝", rarity: "至宝", power: 14 },
+            { name: "东皇钟", desc: "镇压鸿蒙宇宙", rarity: "至宝", power: 15 },
+            { name: "混沌钟", desc: "攻防一体，威震诸天", rarity: "至宝", power: 14 },
+            { name: "六道轮回盘", desc: "可掌轮回之力", rarity: "至宝", power: 14 },
+            { name: "炼妖壶", desc: "可炼化万物", rarity: "至宝", power: 14 },
+            { name: "崆峒印", desc: "人皇至宝", rarity: "至宝", power: 14 }
+        ];
+        const owners = readInnateTreasureState().owners || {};
+        const treasures = treasureDefinitions.filter(treasure =>
+            INNATE_TREASURE_NAMES.includes(treasure.name) && !owners[treasure.name]
+        );
+        if (!treasures.length) return null;
+        const treasure = treasures[Math.floor(Math.random() * treasures.length)];
+        const destination = createRealmEventLocation();
+        if (!destination) return null;
+        
+        // 获取一个幸运玩家
+        const luckyPlayer = await this.getRandomPlayer();
+        const witnessCount = Math.floor(Math.random() * 5) + 3;
+        const witnessMsg = luckyPlayer ? `传闻${luckyPlayer.player.名号}曾在附近出没...` : "各方势力蠢蠢欲动";
+        
+        const timestamp = Date.now();
+        const eventData = {
+            type: 'treasureAppear',
+            treasure: treasure,
+            ...destination,
+            luckyPlayer: luckyPlayer ? { qq: luckyPlayer.qq, name: luckyPlayer.player.名号 } : null,
+            witnessCount: witnessCount,
+            timestamp,
+            expiresAt: timestamp + TREASURE_CONTEST_DURATION_MS
+        };
+        eventData.contest = createTreasureContest(treasure.name, eventData.timestamp);
+        eventData.contest.profile = {
+            omen: getTreasureContestProfile(treasure.name).omen
+        };
+        
+        const message = [
+            `【逆天机缘·先天至宝出世】`,
+            ``,
+            `天地异变！${formatRealmEventLocation(eventData)}上空突现万丈霞光！`,
+            `一件${treasure.rarity}——【${treasure.name}】横空出世！`,
+            `${treasure.desc}`,
+            ``,
+            `各方势力纷纷感应，大批修士正向此地赶来！`,
+            witnessMsg,
+            `天象：${getTreasureContestProfile(treasure.name).omen}`,
+            `「这是成道的契机！」`,
+            `「先天灵宝，有德者居之！」`,
+            ``,
+            `赶路方式：${formatRealmEventTravel(eventData)}`,
+            `抵达坐标后发送 #观摩灵宝，再发送 #夺宝参加择主之争。`,
+            `事件持续24小时，需完成三次试炼并立下道心，结束后按公开评分择主。`
+        ].join('\n');
+        
+        return { eventData, message };
+    }
+    
+    /** 云游商人降临事件 */
+    async merchantVisitEvent(eraIndex, random = Math.random) {
+        const merchants = [
+            { name: "矮胖道人", desc: "圆滚滚的身材，却身手敏捷", special: "专卖功法秘籍" },
+            { name: "白须仙翁", desc: "白须垂胸，背负一座袖珍仙炉", special: "专卖游历诸天时炼成的百分比神兵、护具与法宝" },
+            { name: "黑衣神秘人", desc: "浑身笼罩在黑雾之中", special: "专卖禁忌之物" },
+            { name: "绝美仙子", desc: "倾国倾城，却无人知其来历", special: "可求红尘仙缘签，问道、历练、寻缘三选一" }
+        ];
+        
+        const merchant = merchants[Math.floor(random() * merchants.length)];
+        const destination = createRealmEventLocation();
+        if (!destination) return null;
+        const timestamp = Date.now();
+        
+        const eventData = {
+            type: 'merchantVisit',
+            merchant: merchant,
+            ...destination,
+            timestamp
+        };
+        if (merchant.name === '白须仙翁') {
+            eventData.interaction = 'merchant';
+            eventData.stock = createWhiteBeardStock({
+                weaponTemplates: data.duanzhaowuqi,
+                armorTemplates: data.duanzhaohuju,
+                treasureTemplates: data.duanzhaobaowu,
+                materials: data.duanzhaocailiao,
+                random,
+                serial: timestamp
+            });
+        } else if (merchant.name === '黑衣神秘人') {
+            eventData.interaction = 'merchant';
+            eventData.stock = createBlackMarketStock({
+                pills: data.danyao_list,
+                props: data.daoju_list,
+                random
+            });
+        } else if (merchant.name === '绝美仙子') {
+            eventData.interaction = 'merchant';
+            eventData.serviceQqs = [];
+        }
+        
+        const message = [
+            `【神秘来客·云游商人】`,
+            ``,
+            `${formatRealmEventLocation(eventData)}传来消息：`,
+            `一位自称${merchant.name}的商旅悄然现身！`,
+            `${merchant.desc}`,
+            `据传其带来诸多奇珍，皆是世间罕见之物！`,
+            `「${merchant.special}」`,
+            ``,
+            `消息灵通者纷纷前往，欲购所需之物...`,
+            `「此人来历成谜，所售之物却皆为真品」`,
+            ``,
+            `赶路方式：${formatRealmEventTravel(eventData)}`,
+            merchant.name === '白须仙翁'
+                ? `抵达后发送 #白须仙翁 查看仙炉藏品。`
+                : merchant.name === '黑衣神秘人'
+                    ? `抵达后发送 #黑衣神秘人 查看黑市货单。`
+                    : merchant.name === '绝美仙子'
+                        ? `抵达后发送 #绝美仙子 求取红尘仙缘签。`
+                    : `「有缘者可得其青睐」`
+        ].join('\n');
+        
+        return { eventData, message };
+    }
+    
+    /** 圣地战争事件 */
+    async sectWarEvent(eraIndex) {
+        const attackerSects = [
+            { name: "太初圣宗", desc: "太古传承，底蕴深厚" },
+            { name: "天璇圣地", desc: "北斗星域第一势力" },
+            { name: "摇光圣地", desc: "以炼器闻名天下" },
+            { name: "姬家皇朝", desc: "帝族血脉，威压当世" },
+            { name: "虚空殿", desc: "行踪诡秘，刺杀无双" },
+            { name: "万初圣地", desc: "太古大教复苏" },
+            { name: "道一圣宫", desc: "道法传承最为悠久" },
+            { name: "太虚圣地", desc: "以阵法称雄诸天" },
+            { name: "神蚕岭", desc: "神蚕一族蛰伏万古" },
+            { name: "紫微星主", desc: "紫微帝星守护者" }
+        ];
+        
+        const defenderSects = [
+            { name: "瑶池圣地", desc: "西皇传承，女修圣地" },
+            { name: "姜家", desc: "恒宇大帝后裔" },
+            { name: "秦岭万龙巢", desc: "真龙后裔巢穴" },
+            { name: "荒古姬家", desc: "虚空大帝血脉" },
+            { name: "太玄门", desc: "拙峰一脉传承" },
+            { name: "阴阳圣教", desc: "阴阳合一之道" },
+            { name: "大衍圣地", desc: "大衍天机术" },
+            { name: "九霄圣地", desc: "九天神霄道统" },
+            { name: "五行宫", desc: "五行本源法则" },
+            { name: "天妖宫", desc: "妖帝传承" }
+        ];
+        
+        const reasons = [
+            "因一件帝兵归属反目", 
+            "争夺某处仙矿开采权",
+            "弟子间的私怨升级",
+            "上古恩怨的延续",
+            "信仰与道统之争",
+            "神源矿脉的归属",
+            "天骄被对方斩杀",
+            "古帝传承的归属"
+        ];
+        
+        const attacker = attackerSects[Math.floor(Math.random() * attackerSects.length)];
+        const defender = defenderSects[Math.floor(Math.random() * defenderSects.length)];
+        const reason = reasons[Math.floor(Math.random() * reasons.length)];
+        const destination = createRealmEventLocation({ plane: '遮天位面' });
+        if (!destination) return null;
+        
+        const eventData = {
+            type: 'sectWar',
+            attacker: attacker,
+            defender: defender,
+            reason: reason,
+            ...destination,
+            timestamp: Date.now()
+        };
+        
+        const message = [
+            `【风云突变·圣地大战】`,
+            ``,
+            `遮天位面惊天消息！`,
+            `${attacker.name}正式向${defender.name}宣战！`,
+            `交战地点：${formatRealmEventLocation(eventData)}`,
+            ``,
+            `导火索：${reason}`,
+            ``,
+            `${attacker.name}：${attacker.desc}`,
+            `${defender.name}：${defender.desc}`,
+            ``,
+            `两方势力剑拔弩张，大战一触即发！`,
+            `无数修士纷纷站队，诸天万界为之震动！`,
+            `「这是万年来最大的圣地之战！」`,
+            `「不知多少天骄将陨落于此...」`,
+            `赶路方式：${formatRealmEventTravel(eventData)}`
+        ].join('\n');
+        
+        return { eventData, message };
+    }
+    
+    /** 天骄崛起事件 */
+    async prodigyRiseEvent(eraIndex) {
+        const playerInfo = await this.getRandomPlayerByLevel(10, 15);
+        
+        if (!playerInfo) {
+            return null; // 没有符合条件的玩家
+        }
+        const destination = createRealmEventLocation();
+        if (!destination) return null;
+        
+        const achievements = [
+            "于万丈深渊中悟得绝世剑意",
+            "斩杀一头为祸一方的远古凶兽",
+            "在一处上古遗迹中获得逆天机缘",
+            "以弱胜强，击败高出自己数个境界的强敌",
+            "独自一人探索仙古秘境并全身而退",
+            "在一场天骄论道中力压群雄",
+            "获得某位陨落大帝的认可与传承"
+        ];
+        
+        const achievements2 = [
+            "从此名动天下，被各方势力关注",
+            "其名号开始在诸天万界流传",
+            "诸多大能开始研究此人的来历",
+            "被誉为当世最有潜力的天骄之一",
+            "成为众多势力争相拉拢的对象"
+        ];
+        
+        const achievement = achievements[Math.floor(Math.random() * achievements.length)];
+        const achievement2 = achievements2[Math.floor(Math.random() * achievements2.length)];
+        
+        const levelNames = [
+            "铭文境", "列阵境", "尊者境", "教主级", "大能级", 
+            "准帝", "大帝", "红尘仙", "仙王", "仙帝"
+        ];
+        
+        const eventData = {
+            type: 'prodigyRise',
+            player: { qq: playerInfo.qq, name: playerInfo.player.名号 },
+            level: playerInfo.player.mijinglevel_id,
+            levelName: levelNames[playerInfo.player.mijinglevel_id - 10] || "未知",
+            achievement: achievement,
+            achievement2: achievement2,
+            ...destination,
+            timestamp: Date.now()
+        };
+        
+        const message = [
+            `【天骄崛起·震动诸天】`,
+            ``,
+            `一位横空出世的少年天才引发热议！`,
+            ``,
+            `【${playerInfo.player.名号}】`,
+            `境界：${levelNames[playerInfo.player.mijinglevel_id - 10] || "未知"}`,
+            `现身地点：${formatRealmEventLocation(eventData)}`,
+            ``,
+            `此人${achievement}`,
+            achievement2,
+            ``,
+            `消息传遍诸天万界，无数势力为之侧目！`,
+            `「又一个时代的弄潮儿出现了...」`,
+            `「此子日后必成大器！」`
+        ].join('\n');
+        
+        return { eventData, message };
+    }
+    
+    /** 禁区异动事件 */
+    async forbiddenZoneEvent(eraIndex) {
+        const forbiddenZones = [
+            { name: "不死山", locationId: "busishan", desc: "位于北斗南域，传闻其中有石皇沉睡", danger: "极高" },
+            { name: "神墟", locationId: "shenxu", desc: "太古年前的战场，埋葬无数神魔", danger: "极高" },
+            { name: "仙陵", locationId: "xianling", desc: "据传为仙人流放之地", danger: "极高" },
+            { name: "太初古矿", locationId: "taichugukuang", desc: "太古年间开采神源之地，传闻有至尊蛰伏", danger: "极高" },
+            { name: "葬天岛", locationId: "shangcang", desc: "漂浮于九天之上，来历成谜", danger: "高" },
+            { name: "上苍", locationId: "shangcang", desc: "传说中的神秘之地，无人知其具体位置", danger: "未知" },
+            { name: "轮回海", locationId: "lunhuihai", desc: "传说可以让人进入轮回的诡异之地", danger: "极高" }
+        ];
+        
+        const phenomena = [
+            "传出惊天动地的怒吼声",
+            "冲出一道贯穿星河的魔光",
+            "散发出令人心悸的帝威",
+            "有古老的祭祀声回荡",
+            "异象笼罩方圆亿万里",
+            "无数修士莫名失踪",
+            "天地灵气骤然紊乱",
+            "大道法则出现短暂扭曲"
+        ];
+        
+        const zone = forbiddenZones[Math.floor(Math.random() * forbiddenZones.length)];
+        const phenomenon = phenomena[Math.floor(Math.random() * phenomena.length)];
+        const destination = createRealmEventLocation({ plane: '遮天位面', location: zone.locationId });
+        if (!destination) return null;
+        
+        const eventData = {
+            type: 'forbiddenZone',
+            zone: zone,
+            phenomenon: phenomenon,
+            ...destination,
+            timestamp: Date.now()
+        };
+        
+        const message = [
+            `【禁区异动·风云再起】`,
+            ``,
+            `${zone.name}发生惊天异变！`,
+            phenomenon,
+            `异动坐标：${formatRealmEventLocation(eventData)}`,
+            ``,
+            `禁区描述：${zone.desc}`,
+            `危险等级：${zone.danger}`,
+            ``,
+            `各方势力惶恐不安，派遣探子前往查探！`,
+            `传闻有至尊即将苏醒？`,
+            `「禁区一动，必有大事发生...」`,
+            `「不知又有多少无辜者将遭殃」`,
+            ``,
+            `赶路方式：${formatRealmEventTravel(eventData)}`,
+            `诸位修士请谨慎行事！`
+        ].join('\n');
+        
+        return { eventData, message };
+    }
+    
+    /** 古帝传承现世事件 */
+    async emperorLegacyEvent(eraIndex) {
+        const emperors = [
+            { name: "荒天帝", desc: "独断万古，一剑劈开仙域" },
+            { name: "叶天帝", desc: "平定黑暗动乱，护佑苍生" },
+            { name: "无始天帝", desc: "先天神圣，未成帝前已无敌" },
+            { name: "狠人大帝", desc: "吞天噬地，逆夺造化" },
+            { name: "虚空大帝", desc: "以身为饵，斩杀不死天皇子嗣" },
+            { name: "恒宇大帝", desc: "炼神丹布道，庇护苍生" },
+            { name: "阿弥陀佛", desc: "慈悲为怀，普度众生" },
+            { name: "不死天皇", desc: "浴火重生，永恒不灭" },
+            { name: "帝尊", desc: "天庭之主，布局万古" },
+            { name: "太皇", desc: "无敌于世，横推一切敌" }
+        ];
+        
+        const emperor = emperors[Math.floor(Math.random() * emperors.length)];
+        const destination = createRealmEventLocation();
+        if (!destination) return null;
+        
+        const eventData = {
+            type: 'emperorLegacy',
+            emperor: emperor,
+            ...destination,
+            timestamp: Date.now()
+        };
+        
+        const message = [
+            `【惊世传承·古帝遗迹现世】`,
+            ``,
+            `天地间传来一声叹息：`,
+            `"吾名${emperor.name}，今日传承再现..."`,
+            ``,
+            `${formatRealmEventLocation(eventData)}突然霞光万丈！`,
+            `疑似${emperor.name}的传承遗迹即将开启！`,
+            `${emperor.desc}`,
+            ``,
+            `诸多势力闻风而动，纷纷前往探寻！`,
+            `「这是成帝的机缘！」`,
+            `「不知谁能获得大帝认可...」`,
+            ``,
+            `赶路方式：${formatRealmEventTravel(eventData)}`,
+            `欲探遗迹者，可使用 #探查遗迹`
+        ].join('\n');
+        
+        return { eventData, message };
+    }
+    
+    /** 天地异变事件 */
+    async worldChangeEvent(eraIndex) {
+        const eraEvents = {
+            0: [ // 神话时代
+                { title: "万灵朝拜", desc: "诸多神兽灵禽齐聚某地，疑似有祥瑞降世" },
+                { title: "仙根觉醒", desc: "天地灵根突然大规模开花结果，灵气暴涨" },
+                { title: "神迹频现", desc: "天神下凡，诸多神迹降临凡尘" }
+            ],
+            1: [ // 太古时代
+                { title: "万族争锋", desc: "各大强族纷纷出世，血脉之力觉醒" },
+                { title: "神魔战场", desc: "沉寂的神魔战场再度开启" },
+                { title: "血脉觉醒", desc: "诸多隐世种族血脉觉醒，实力暴涨" }
+            ],
+            2: [ // 天命时代
+                { title: "天命降临", desc: "天降异象，诸多修士感应天命" },
+                { title: "宗门林立", desc: "各大宗门招收弟子，竞争激烈" },
+                { title: "天骄辈出", desc: "当世天才如雨后春笋般涌现" }
+            ],
+            3: [ // 末法时代
+                { title: "灵气衰退", desc: "天地灵气急剧减少，修士苦不堪言" },
+                { title: "道统断裂", desc: "诸多上古传承断绝，后人难以为继" },
+                { title: "武道崛起", desc: "在灵气匮乏之时，凡人武道开始崛起" }
+            ],
+            4: [ // 绝灵时代
+                { title: "天道倾覆", desc: "天道法则崩乱，大道隐没" },
+                { title: "万物凋零", desc: "天地万物开始凋零，灵物枯竭" },
+                { title: "希望微光", desc: "有传言称，绝灵之中仍有希望存在..." }
+            ]
+        };
+        
+        const eraSpecificEvents = eraEvents[eraIndex] || eraEvents[2];
+        const event = eraSpecificEvents[Math.floor(Math.random() * eraSpecificEvents.length)];
+        const destination = createRealmEventLocation();
+        if (!destination) return null;
+        
+        const eventData = {
+            type: 'worldChange',
+            eraIndex: eraIndex,
+            event: event,
+            ...destination,
+            timestamp: Date.now()
+        };
+        
+        const message = [
+            `【天地异变·${event.title}】`,
+            ``,
+            `${event.desc}`,
+            `异变源点：${formatRealmEventLocation(eventData)}`,
+            ``,
+            `这是时代更迭的征兆，亦或是命运的安排...`,
+            `「天道无常，世事难料」`,
+            `「或许...这其中蕴含着某种深意」`
+        ].join('\n');
+        
+        return { eventData, message };
+    }
+    
+    /** 神秘遗迹发现事件 */
+    async mysteriousRuinsEvent(eraIndex) {
+        const ruins = [
+            { name: "上古仙宫", desc: "传闻为真仙所留，宫门紧闭" },
+            { name: "远古战场", desc: "埋葬着上古神魔，怨气冲天" },
+            { name: "神魔祭坛", desc: "古老而诡异的祭坛，作用未知" },
+            { name: "仙古学府", desc: "曾经传授仙法的至高学府遗迹" },
+            { name: "大帝陵寝", desc: "某位陨落大帝的长眠之地" },
+            { name: "外星遗迹", desc: "据说是域外文明的遗留之物" },
+            { name: "时空裂隙", desc: "时而出现时而消失的神秘空间入口" },
+            { name: "天道棋盘", desc: "疑似上古大能博弈天地之所留" }
+        ];
+        
+        const ruin = ruins[Math.floor(Math.random() * ruins.length)];
+        const destination = createRealmEventLocation();
+        if (!destination) return null;
+        
+        const eventData = {
+            type: 'mysteriousRuins',
+            ruins: ruin,
+            ...destination,
+            timestamp: Date.now()
+        };
+        
+        const message = [
+            `【惊天发现·神秘遗迹】`,
+            ``,
+            `${formatRealmEventLocation(eventData)}传来惊人消息！`,
+            `一座名为"${ruin.name}"的神秘遗迹被意外发现！`,
+            `${ruin.desc}`,
+            ``,
+            `遗迹散发古老气息，疑似蕴含逆天机缘！`,
+            `各方势力闻讯赶来，场面一度混乱！`,
+            `「这遗迹...来头不小！」`,
+            `「不知其中有何危险与机遇」`,
+            ``,
+            `赶路方式：${formatRealmEventTravel(eventData)}`,
+            `消息来源：一位不愿透露姓名的散修`
+        ].join('\n');
+        
+        return { eventData, message };
+    }
+
+    /** 万化天魔传承现世事件 */
+    async tianmoHuashengLegacyEvent() {
+        const candidates = (await this.getAllPlayers()).filter(({ player }) =>
+            player.灵根?.name === '极道天魔' &&
+            !player.学习的功法?.includes(TIANMO_HUASHENG_TECHNIQUE)
+        );
+        if (candidates.length === 0) return null;
+
+        const destination = createRealmEventLocation();
+        if (!destination) return null;
+        const timestamp = Date.now();
+        const eventData = {
+            type: 'tianmoHuashengLegacy',
+            technique: TIANMO_HUASHENG_TECHNIQUE,
+            ...destination,
+            eligibleCount: candidates.length,
+            timestamp,
+            expiresAt: timestamp + TIANMO_LEGACY_DURATION_MS
+        };
+        const message = [
+            `【万化天魔传承·万相魔冢】`,
+            ``,
+            `${formatRealmEventLocation(eventData)}裂开一道贯穿诸天的魔隙！`,
+            `亿万残破灵根与众生本源在其中沉浮，最终凝作一座万相魔冢。`,
+            ``,
+            `唯有极道天魔能够踏入其中，直面由自身魔念凝成的【万灵怨胎】。`,
+            `通过试炼者，可获得禁忌功法【${TIANMO_HUASHENG_TECHNIQUE}】。`,
+            ``,
+            `「炼万灵之根，化诸天之生；众生资质，尽归吾身。」`,
+            `赶路方式：${formatRealmEventTravel(eventData)}`,
+            `魔冢将在24小时后闭合，使用 #进入万相魔冢 接受传承试炼。`
+        ].join('\n');
+        return { eventData, message };
+    }
+
+    /** 石壁显露位面坐标线索事件 */
+    async coordinateClueEvent() {
+        const destination = createRealmEventLocation();
+        if (!destination) return null;
+        const sourcePlane = destination.plane;
+        const targets = getCoordinateLocations().filter(name => name !== sourcePlane);
+        const targetPlane = targets[Math.floor(Math.random() * targets.length)];
+        const discoverer = await this.getRandomPlayer();
+        const discovererName = discoverer?.player?.名号 || '一名无名散修';
+        const timestamp = Date.now();
+        const eventData = {
+            type: 'coordinateClue',
+            ...destination,
+            sourcePlane,
+            targetPlane,
+            discovererName,
+            claimedQqs: [],
+            timestamp,
+            expiresAt: timestamp + COORDINATE_EVENT_DURATION_MS
+        };
+        const message = [
+            `【诸天传闻·石壁星图】`,
+            `惊闻${discovererName}在「${formatRealmEventLocation(eventData)}」发现一面古老石壁！`,
+            `石壁上刻满残缺星纹，似乎藏着前往「${targetPlane}」的位面坐标。`,
+            `赶路方式：${formatRealmEventTravel(eventData)}`,
+            `抵达后发送 #探索位面线索 ${eventData.location} 亲自拓印。`,
+            `石壁道纹将在24小时后消散。`
+        ].join('\n');
+        return { eventData, message };
+    }
+
+    /** 问仙古碑显化事件 */
+    async wenXianClueEvent() {
+        const destination = createRealmEventLocation();
+        if (!destination) return null;
+        const discoverer = await this.getRandomPlayer();
+        const discovererName = discoverer?.player?.名号 || '一名无名散修';
+        const timestamp = Date.now();
+        const eventData = {
+            type: 'wenxianClue',
+            ...destination,
+            discovererName,
+            claimedQqs: [],
+            timestamp,
+            expiresAt: timestamp + DEFAULT_EVENT_DURATION_MS
+        };
+        const message = [
+            '【诸天传闻·问仙古碑】',
+            `惊闻${discovererName}在「${formatRealmEventLocation(eventData)}」发现一座无名古碑！`,
+            '碑上仅余“问仙”二字，深处似乎封存着一份失落的传承线索。',
+            `赶路方式：${formatRealmEventTravel(eventData)}`,
+            '抵达后发送 #参悟问仙古碑，每位合资格修士均可参悟一次。',
+            '古碑将在24小时后隐入虚空。'
+        ].join('\n');
+        return { eventData, message };
+    }
+    
+    /** ============ 主函数：触发随机大事件 ============ */
+    
+    /** 触发位面大事件 */
+    async triggerRandomEvent(eraIndex, currentYears, epoch = 1, options = {}) {
+        try {
+            const config = this.readEventConfig();
+            const currentWorldYear = getRealmEventWorldYear(eraIndex, currentYears, epoch);
+            const random = options.random || Math.random;
+            if (!config.enableEvents) return null;
+            
+            // 检查冷却
+            if (!options.ignoreCooldown && !this.checkCooldown(config, currentWorldYear, currentYears)) {
+                return null; // 冷却中
+            }
+
+            const triggerChance = Math.min(1, Math.max(0,
+                Number(options.triggerChance ?? config.eraTriggerChance) || 0
+            ));
+            if (random() >= triggerChance) return null;
+
+            const now = Date.now();
+            const activeEvents = (config.activeEvents || []).filter(event =>
+                !event.expiresAt || Number(event.expiresAt) > now ||
+                hasPendingTreasureSettlement(event)
+            );
+            const maxActiveEvents = Math.max(1, Number(config.maxActiveEvents) || DEFAULT_MAX_ACTIVE_EVENTS);
+            if (activeEvents.length >= maxActiveEvents) return null;
+            
+            // 根据当前时代调整事件概率和类型
+            const activeTypes = new Set(activeEvents.map(event => event.type));
+            const availableEvents = this.getAvailableEvents(eraIndex).filter(event =>
+                !activeTypes.has(this.getEventDataType(event))
+            );
+            
+            if (availableEvents.length === 0) {
+                return null;
+            }
+            
+            // 随机选择事件类型
+            const eventType = availableEvents[Math.floor(random() * availableEvents.length)];
+            
+            // 触发事件
+            let result;
+            switch (eventType) {
+                case 'treasure':
+                    result = await this.treasureAppearEvent(eraIndex);
+                    break;
+                case 'merchant':
+                    result = await this.merchantVisitEvent(eraIndex, random);
+                    break;
+                case 'war':
+                    result = await this.sectWarEvent(eraIndex);
+                    break;
+                case 'prodigy':
+                    result = await this.prodigyRiseEvent(eraIndex);
+                    break;
+                case 'forbidden':
+                    result = await this.forbiddenZoneEvent(eraIndex);
+                    break;
+                case 'legacy':
+                    result = await this.emperorLegacyEvent(eraIndex);
+                    break;
+                case 'worldChange':
+                    result = await this.worldChangeEvent(eraIndex);
+                    break;
+                case 'ruins':
+                    result = await this.mysteriousRuinsEvent(eraIndex);
+                    break;
+                case 'tianmoLegacy':
+                    result = await this.tianmoHuashengLegacyEvent();
+                    break;
+                case 'coordinateClue':
+                    result = await this.coordinateClueEvent();
+                    break;
+                case 'wenxianClue':
+                    result = await this.wenXianClueEvent();
+                    break;
+                default:
+                    return null;
+            }
+            
+            if (!result) {
+                return null; // 事件生成失败（如没有符合条件的玩家）
+            }
+
+            const relocatableTypes = new Set([
+                'treasureAppear', 'merchantVisit', 'sectWar', 'prodigyRise',
+                'emperorLegacy', 'worldChange', 'mysteriousRuins'
+            ]);
+            if (options.preferredPlane && relocatableTypes.has(result.eventData.type)) {
+                const oldLocation = formatRealmEventLocation(result.eventData);
+                const oldTravel = formatRealmEventTravel(result.eventData);
+                const destination = createRealmEventLocation({ plane: options.preferredPlane, random });
+                if (destination?.plane === options.preferredPlane) {
+                    Object.assign(result.eventData, destination);
+                    result.message = result.message
+                        .replaceAll(oldLocation, formatRealmEventLocation(result.eventData))
+                        .replaceAll(oldTravel, formatRealmEventTravel(result.eventData));
+                }
+            }
+
+            if (!result.eventData.plane || !result.eventData.coordinate) return null;
+
+            const durationMs = Math.max(60000, Number(config.eventDurationMs) || DEFAULT_EVENT_DURATION_MS);
+            result.eventData.expiresAt ||= now + durationMs;
+            result.eventData.source = options.source || 'era';
+            result.eventData.interaction ||= this.getEventInteraction(result.eventData);
+            result.eventData.participantQqs ||= [];
+            if (options.discoveredBy) result.eventData.discoveredBy = options.discoveredBy;
+
+            if (result.eventData.interaction === 'generic') {
+                const discoverer = options.discoveredBy
+                    ? `\n此异象由${options.discoveredBy.name}在${options.discoveredBy.dungeon}历练时意外引动。`
+                    : '';
+                result.message += [
+                    discoverer,
+                    `\n事件位置：${formatRealmEventLocation(result.eventData)}`,
+                    `赶路方式：${formatRealmEventTravel(result.eventData)}`,
+                    `抵达精确坐标后发送 #参与位面大事件。`
+                ].filter(Boolean).join('\n');
+            }
+            
+            // 更新配置
+            config.lastEventTime = currentYears;
+            config.lastEventWorldYear = currentWorldYear;
+            config.eventHistory.push(result.eventData);
+            config.activeEvents = [...activeEvents, result.eventData];
+            
+            // 保持历史记录不超过100条
+            if (config.eventHistory.length > 100) {
+                config.eventHistory = config.eventHistory.slice(-100);
+            }
+            
+            this.saveEventConfig(config);
+            
+            return result;
+            
+        } catch (e) {
+            console.error("触发位面大事件失败:", e);
+            return null;
+        }
+    }
+
+    /** 副本胜利结算时以极低概率引动一个位面大事件。 */
+    async triggerDungeonEvent(context = {}, random = Math.random) {
+        const config = this.readEventConfig();
+        const chance = Math.min(1, Math.max(0,
+            (Number(config.dungeonTriggerChance) || 0) * (Number(context.chanceMultiplier) || 1)
+        ));
+        if (!config.enableEvents || random() >= chance) return null;
+        const era = context.era || {};
+        return this.triggerRandomEvent(
+            Number(era.index) || 0,
+            Number(era.years) || 0,
+            Number(era.epoch) || 1,
+            {
+                source: 'dungeon',
+                ignoreCooldown: true,
+                triggerChance: 1,
+                discoveredBy: context.discoveredBy,
+                preferredPlane: context.preferredPlane,
+                random
+            }
+        );
+    }
+
+    async broadcastEvent(message) {
+        const settings = xiuxianConfig.getConfig('xiuxian', 'xiuxian') || {};
+        const groups = settings.Era?.notifyGroups || [];
+        let sent = 0;
+        for (const groupId of groups) {
+            try {
+                await Bot.sendGroupMsg(groupId, message);
+                sent++;
+            } catch (error) {
+                console.error(`广播位面大事件到群${groupId}失败:`, error);
+            }
+        }
+        return sent;
+    }
+    
+    /** 根据时代获取可用事件类型 */
+    getAvailableEvents(eraIndex) {
+        // 所有事件类型
+        const allEvents = ['treasure', 'merchant', 'war', 'prodigy', 'forbidden', 'legacy', 'worldChange', 'ruins', 'tianmoLegacy', 'coordinateClue', 'wenxianClue'];
+        
+        // 根据时代调整事件权重和可用性
+        const eraWeights = {
+            0: { treasure: 3, merchant: 2, prodigy: 2, worldChange: 3, tianmoLegacy: 1, coordinateClue: 2, wenxianClue: 1 }, // 神话时代：宝物多、灵气足
+            1: { war: 3, forbidden: 2, prodigy: 2, treasure: 2, tianmoLegacy: 1, coordinateClue: 2, wenxianClue: 1 }, // 太古时代：万族争锋
+            2: { legacy: 3, prodigy: 2, war: 2, merchant: 2, tianmoLegacy: 1, coordinateClue: 2, wenxianClue: 1 }, // 天命时代：传承现世
+            3: { ruins: 3, war: 2, forbidden: 2, worldChange: 2, tianmoLegacy: 1, coordinateClue: 2, wenxianClue: 1 }, // 末法时代：遗迹求生
+            4: { forbidden: 3, worldChange: 3, merchant: 2, ruins: 2, tianmoLegacy: 1, coordinateClue: 2, wenxianClue: 1 } // 绝灵时代：危机四伏
+        };
+        
+        const weights = eraWeights[eraIndex] || eraWeights[2];
+        
+        // 构建加权事件列表
+        let weightedEvents = [];
+        for (const [event, weight] of Object.entries(weights)) {
+            for (let i = 0; i < weight; i++) {
+                weightedEvents.push(event);
+            }
+        }
+        
+        return weightedEvents.length > 0 ? weightedEvents : allEvents;
+    }
+
+    getEventDataType(eventType) {
+        return {
+            treasure: 'treasureAppear',
+            merchant: 'merchantVisit',
+            war: 'sectWar',
+            prodigy: 'prodigyRise',
+            forbidden: 'forbiddenZone',
+            legacy: 'emperorLegacy',
+            worldChange: 'worldChange',
+            ruins: 'mysteriousRuins',
+            tianmoLegacy: 'tianmoHuashengLegacy',
+            coordinateClue: 'coordinateClue',
+            wenxianClue: 'wenxianClue'
+        }[eventType] || eventType;
+    }
+
+    getEventInteraction(eventOrType) {
+        const event = typeof eventOrType === 'object' ? eventOrType : null;
+        const type = event?.type || eventOrType;
+        if (event?.interaction) return event.interaction;
+        if (type === 'treasureAppear') return 'treasure';
+        if (type === 'merchantVisit' && ['白须仙翁', '黑衣神秘人', '绝美仙子'].includes(event?.merchant?.name)) return 'merchant';
+        if (type === 'tianmoHuashengLegacy') return 'tianmo';
+        if (type === 'coordinateClue') return 'coordinate';
+        if (type === 'wenxianClue') return 'wenxian';
+        return 'generic';
+    }
+
+    getEventParticipationCommand(event) {
+        if (this.getEventInteraction(event) === 'treasure') return '#夺宝';
+        if (this.getEventInteraction(event) === 'merchant') return `#${event.merchant.name}`;
+        if (this.getEventInteraction(event) === 'tianmo') return '#进入万相魔冢';
+        if (this.getEventInteraction(event) === 'coordinate') {
+            return `#探索位面线索 ${event.location}`;
+        }
+        if (this.getEventInteraction(event) === 'wenxian') return '#参悟问仙古碑';
+        return '#参与位面大事件';
+    }
+    
+    /** 获取事件历史 */
+    getEventHistory(count = 10) {
+        const config = this.readEventConfig();
+        return config.eventHistory.slice(-count).reverse();
+    }
+
+    getActiveEvents(now = Date.now()) {
+        const config = this.readEventConfig();
+        const activeEvents = (config.activeEvents || []).filter(event =>
+            !event.expiresAt || Number(event.expiresAt) > now ||
+            hasPendingTreasureSettlement(event)
+        );
+        if (activeEvents.length !== (config.activeEvents || []).length) {
+            config.activeEvents = activeEvents;
+            this.saveEventConfig(config);
+        }
+        return activeEvents.filter(event => !event.expiresAt || Number(event.expiresAt) > now);
+    }
+
+    getTreasureContestEvents(includeSettled = false) {
+        const config = this.readEventConfig();
+        return (config.activeEvents || []).filter(event =>
+            event.type === 'treasureAppear' && (includeSettled || hasPendingTreasureSettlement(event))
+        );
+    }
+
+    getLatestTreasureContestEvent() {
+        const active = this.getTreasureContestEvents(true);
+        if (active.length) return active.sort((a, b) => Number(b.timestamp) - Number(a.timestamp))[0];
+        return this.getEventHistory(100).find(event => event.type === 'treasureAppear') || null;
+    }
+
+    _syncTreasureHistory(config, event) {
+        const historyEvent = (config.eventHistory || []).find(item =>
+            Number(item.timestamp) === Number(event.timestamp)
+        );
+        if (!historyEvent) return;
+        historyEvent.contest = JSON.parse(JSON.stringify(event.contest));
+        historyEvent.participantQqs = Object.keys(event.contest?.participants || {});
+        if (event.contest?.winner) historyEvent.winner = event.contest.winner;
+    }
+
+    _ensureTreasureContest(event) {
+        if (!event.contest || typeof event.contest !== 'object') {
+            event.contest = createTreasureContest(event.treasure?.name, Number(event.timestamp) || Date.now());
+        }
+        if (!event.contest.participants || typeof event.contest.participants !== 'object') {
+            event.contest.participants = {};
+        }
+        if (!Array.isArray(event.contest.rewardedQqs)) event.contest.rewardedQqs = [];
+        return event.contest;
+    }
+
+    _findTreasureEvent(config, timestamp) {
+        return (config.activeEvents || []).find(item =>
+            item.type === 'treasureAppear' && Number(item.timestamp) === Number(timestamp)
+        ) || null;
+    }
+
+    joinTreasureEvent(timestamp, qq, name, now = Date.now()) {
+        const config = this.readEventConfig();
+        const event = this._findTreasureEvent(config, timestamp);
+        if (!event || Number(event.expiresAt) <= now) return { ok: false, reason: 'expired' };
+        const contest = this._ensureTreasureContest(event);
+        const result = joinTreasureContest(contest, qq, name, now);
+        if (!result.ok) return result;
+        event.participantQqs = Object.keys(contest.participants);
+        this._syncTreasureHistory(config, event);
+        this.saveEventConfig(config);
+        return { ...result, event };
+    }
+
+    recordTreasureTrial(timestamp, qq, trial, options = {}, now = Date.now()) {
+        const config = this.readEventConfig();
+        const event = this._findTreasureEvent(config, timestamp);
+        if (!event || Number(event.expiresAt) <= now) return { ok: false, reason: 'expired' };
+        const contest = this._ensureTreasureContest(event);
+        const result = performTreasureTrial(
+            contest,
+            event.treasure?.name,
+            qq,
+            trial,
+            { ...options, now },
+            options.random
+        );
+        if (!result.ok) return result;
+        event.participantQqs = Object.keys(contest.participants);
+        this._syncTreasureHistory(config, event);
+        this.saveEventConfig(config);
+        return { ...result, event };
+    }
+
+    setTreasureDaoHeart(timestamp, qq, choice, now = Date.now()) {
+        const config = this.readEventConfig();
+        const event = this._findTreasureEvent(config, timestamp);
+        if (!event || Number(event.expiresAt) <= now) return { ok: false, reason: 'expired' };
+        const contest = this._ensureTreasureContest(event);
+        const result = placeTreasureDaoHeart(contest, qq, choice, now);
+        if (!result.ok) return result;
+        this._syncTreasureHistory(config, event);
+        this.saveEventConfig(config);
+        return { ...result, event };
+    }
+
+    settleTreasureEvent(timestamp, now = Date.now()) {
+        const config = this.readEventConfig();
+        const event = this._findTreasureEvent(config, timestamp);
+        if (!event) return { ok: false, reason: 'missing' };
+        if (Number(event.expiresAt) > now) return { ok: false, reason: 'open', event };
+        const contest = this._ensureTreasureContest(event);
+        const result = settleTreasureContest(contest, event.treasure?.name, event.timestamp, now);
+        if (!result.ok) return result;
+        event.participantQqs = Object.keys(contest.participants || {});
+        this._syncTreasureHistory(config, event);
+        this.saveEventConfig(config);
+        return { ...result, event };
+    }
+
+    markTreasureRewarded(timestamp, qq) {
+        const config = this.readEventConfig();
+        const event = this._findTreasureEvent(config, timestamp);
+        if (!event) return false;
+        const contest = this._ensureTreasureContest(event);
+        if (contest.status !== 'settled') return false;
+        const key = String(qq);
+        if (!contest.rewardedQqs.includes(key)) contest.rewardedQqs.push(key);
+        this._syncTreasureHistory(config, event);
+        this.saveEventConfig(config);
+        return true;
+    }
+
+    /** 获取仍在持续的指定事件 */
+    getActiveEvent(type, now = Date.now()) {
+        return this.getActiveEvents(now).find(event => event.type === type) || null;
+    }
+
+    markEventParticipated(timestamp, qq) {
+        const config = this.readEventConfig();
+        const now = Date.now();
+        const event = (config.activeEvents || []).find(item =>
+            Number(item.timestamp) === Number(timestamp)
+        );
+        if (!event || Number(event.expiresAt) <= now) return { ok: false, reason: 'expired' };
+        if (this.getEventInteraction(event) !== 'generic') return { ok: false, reason: 'specialized' };
+        if (!Array.isArray(event.participantQqs)) event.participantQqs = [];
+        if (event.participantQqs.includes(String(qq))) return { ok: false, reason: 'duplicate' };
+        event.participantQqs.push(String(qq));
+
+        const historyEvent = (config.eventHistory || []).find(item =>
+            Number(item.timestamp) === Number(timestamp)
+        );
+        if (historyEvent) historyEvent.participantQqs = [...event.participantQqs];
+        this.saveEventConfig(config);
+        return { ok: true, count: event.participantQqs.length };
+    }
+
+    claimMerchantItem(timestamp, stockNumber, qq, now = Date.now()) {
+        const config = this.readEventConfig();
+        const event = (config.activeEvents || []).find(item =>
+            item.type === 'merchantVisit' && Number(item.timestamp) === Number(timestamp)
+        );
+        if (!event || Number(event.expiresAt) <= now) return { ok: false, reason: 'expired' };
+        const item = event.stock?.[Number(stockNumber) - 1];
+        if (!item) return { ok: false, reason: 'invalid' };
+        if (item.soldTo) return { ok: false, reason: 'sold' };
+        item.soldTo = String(qq);
+        item.soldAt = now;
+
+        const historyEvent = (config.eventHistory || []).find(entry =>
+            Number(entry.timestamp) === Number(timestamp)
+        );
+        if (historyEvent) historyEvent.stock = JSON.parse(JSON.stringify(event.stock));
+        this.saveEventConfig(config);
+        return { ok: true, item: JSON.parse(JSON.stringify(item)) };
+    }
+
+    releaseMerchantItem(timestamp, stockNumber, qq) {
+        const config = this.readEventConfig();
+        const event = (config.activeEvents || []).find(item =>
+            item.type === 'merchantVisit' && Number(item.timestamp) === Number(timestamp)
+        );
+        const item = event?.stock?.[Number(stockNumber) - 1];
+        if (!item || item.soldTo !== String(qq)) return false;
+        item.soldTo = null;
+        item.soldAt = null;
+        const historyEvent = (config.eventHistory || []).find(entry =>
+            Number(entry.timestamp) === Number(timestamp)
+        );
+        if (historyEvent) historyEvent.stock = JSON.parse(JSON.stringify(event.stock));
+        this.saveEventConfig(config);
+        return true;
+    }
+
+    claimFairyService(timestamp, qq, now = Date.now()) {
+        const config = this.readEventConfig();
+        const event = (config.activeEvents || []).find(item =>
+            item.type === 'merchantVisit' &&
+            item.merchant?.name === '绝美仙子' &&
+            Number(item.timestamp) === Number(timestamp)
+        );
+        if (!event || Number(event.expiresAt) <= now) return { ok: false, reason: 'expired' };
+        if (!Array.isArray(event.serviceQqs)) event.serviceQqs = [];
+        if (event.serviceQqs.includes(String(qq))) return { ok: false, reason: 'claimed' };
+        event.serviceQqs.push(String(qq));
+
+        const historyEvent = (config.eventHistory || []).find(item =>
+            Number(item.timestamp) === Number(timestamp)
+        );
+        if (historyEvent) historyEvent.serviceQqs = [...event.serviceQqs];
+        this.saveEventConfig(config);
+        return { ok: true };
+    }
+
+    releaseFairyService(timestamp, qq) {
+        const config = this.readEventConfig();
+        const event = (config.activeEvents || []).find(item =>
+            item.type === 'merchantVisit' &&
+            item.merchant?.name === '绝美仙子' &&
+            Number(item.timestamp) === Number(timestamp)
+        );
+        if (!event || !Array.isArray(event.serviceQqs)) return false;
+        const oldLength = event.serviceQqs.length;
+        event.serviceQqs = event.serviceQqs.filter(item => item !== String(qq));
+        if (event.serviceQqs.length === oldLength) return false;
+
+        const historyEvent = (config.eventHistory || []).find(item =>
+            Number(item.timestamp) === Number(timestamp)
+        );
+        if (historyEvent) historyEvent.serviceQqs = [...event.serviceQqs];
+        this.saveEventConfig(config);
+        return true;
+    }
+
+    markCoordinateClueClaimed(timestamp, qq) {
+        const config = this.readEventConfig();
+        const event = (config.activeEvents || []).find(item =>
+            item.type === 'coordinateClue' && Number(item.timestamp) === Number(timestamp)
+        );
+        if (!event || Number(event.expiresAt) <= Date.now()) return false;
+        if (!Array.isArray(event.claimedQqs)) event.claimedQqs = [];
+        if (!event.claimedQqs.includes(String(qq))) event.claimedQqs.push(String(qq));
+        this.saveEventConfig(config);
+        return true;
+    }
+
+    markWenXianClueClaimed(timestamp, qq) {
+        const config = this.readEventConfig();
+        const event = (config.activeEvents || []).find(item =>
+            item.type === 'wenxianClue' && Number(item.timestamp) === Number(timestamp)
+        );
+        if (!event || Number(event.expiresAt) <= Date.now()) return false;
+        if (!Array.isArray(event.claimedQqs)) event.claimedQqs = [];
+        if (!event.claimedQqs.includes(String(qq))) event.claimedQqs.push(String(qq));
+        const historyEvent = (config.eventHistory || []).find(item =>
+            item.type === 'wenxianClue' && Number(item.timestamp) === Number(timestamp)
+        );
+        if (historyEvent) historyEvent.claimedQqs = [...event.claimedQqs];
+        this.saveEventConfig(config);
+        return true;
+    }
+    
+    /** 获取事件统计 */
+    getEventStats() {
+        const config = this.readEventConfig();
+        const history = config.eventHistory;
+        
+        const stats = {
+            total: history.length,
+            byType: {}
+        };
+        
+        for (const event of history) {
+            if (!stats.byType[event.type]) {
+                stats.byType[event.type] = 0;
+            }
+            stats.byType[event.type]++;
+        }
+        
+        return stats;
+    }
+    
+    /** 获取事件描述 */
+    getEventTypeName(type) {
+        const names = {
+            treasureAppear: '先天灵宝出世',
+            merchantVisit: '云游商人降临',
+            sectWar: '圣地大战',
+            prodigyRise: '天骄崛起',
+            forbiddenZone: '禁区异动',
+            emperorLegacy: '古帝传承现世',
+            worldChange: '天地异变',
+            mysteriousRuins: '神秘遗迹',
+            tianmoHuashengLegacy: '万化天魔传承',
+            coordinateClue: '位面坐标石壁',
+            wenxianClue: '问仙古碑'
+        };
+        return names[type] || '未知事件';
+    }
+}
+
+export default new RealmEvents();

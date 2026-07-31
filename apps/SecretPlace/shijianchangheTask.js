@@ -8,7 +8,7 @@ import {
   Add_炼体,
   Add_练气,
   Add_血气,
-  Add_HP,
+  Set_HP,
   Write_player,
   Read_equipment,
   ForwardMsg,
@@ -141,9 +141,9 @@ async checkTimeRiverActions() {
     // 进行战斗
     const battleResult = await zd_battle(A_player, B_player);
     
-    // 调整战斗结果解析
-    const playerHp = battleResult.B_xue;
-    const enemyHp = battleResult.A_xue;
+    const playerHp = battleResult.A_hp;
+    const enemyHp = battleResult.B_hp;
+    player.当前血量 = await Set_HP(usr_qq, playerHp);
     
     // 确定战斗结果
     let outcome;

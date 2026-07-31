@@ -1,9 +1,6 @@
 import { plugin, common,  config, data } from '../../api/api.js';
-import fs from 'fs';
-import {__PATH} from '../../model/xiuxian.js';
 import {
   Read_player,
-  Read_najie,
   isNotNull,
   Add_najie_thing,
   Add_修为,
@@ -27,6 +24,7 @@ import {
   get_log_img,
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
+import { recordUnfetteredJourney } from '../../model/weimianTravel.js';
 export class TravelTask extends plugin {
   constructor() {
     super({
@@ -66,7 +64,7 @@ export class TravelTask extends plugin {
 
 this.AMBUSH_CONFIG = {
   // 基础触发概率（根据仇恨等级调整）
-  BASE_CHANCE: 1, // 15%基础概率
+  BASE_CHANCE: 0.15, // 15%基础概率
   
   // 仇恨等级配置
   LEVELS: {
@@ -233,46 +231,35 @@ this.FORMATION_NAMES = [
       // 2. 发送死亡消息（文本）
       await this.sendTextMessage(usr_qq, deathMessages.join('\n'), group_id);
       
-      // 3. 读取纳戒并创建掉落
-      let dropInfo = null;
-      try {
-        const oldNajie = await Read_najie(usr_qq);
-        if (oldNajie) {
-          // 这里调用你的纳戒掉落函数
-          dropInfo = { value: 1000 }; // 示例
-        }
-      } catch (error) {
-        console.error('创建纳戒掉落失败:', error);
-      }
-
-      // 4. 删除玩家存档（触发转世状态）
-      try {
-        const files = [
-          `${__PATH.player_path}/${usr_qq}.json`,
-          `${__PATH.equipment_path}/${usr_qq}.json`,
-          `${__PATH.najie_path}/${usr_qq}.json`
-        ];
-        files.forEach(file => {
-          if (fs.existsSync(file)) fs.unlinkSync(file);
-        });
-      } catch (error) {
-        console.error('删除存档失败:', error);
-      }
-
-      // 5. 设置轮回转世状态（定时任务会处理）
+      // 保留当前存档，由轮回事务在最终往生时统一生成遗物并重建角色。
+      // 这样轮回路上的强者仍有机会在倒计时结束前将玩家救回。
       const rebirthTime = Date.now() + 5 * 60 * 1000; // 5分钟后转世
-      await redis.set(`xiuxian:zhuanshi_task:${usr_qq}`, JSON.stringify({
+      const task = {
         player_id: usr_qq,
+        player_name: player.名号,
         player_data: player,
+        start_time: Date.now(),
         end_time: rebirthTime,
         acount: player.轮回转世次数 || 0,
         group_id: group_id,
+        status: '轮回中',
+        type: '偷袭身死',
         isAmbushDeath: true, // 标记为偷袭死亡
         ambushTianjiao: tianjiaoName
-      }));
+      };
+      const action = {
+        action: '轮回往生路',
+        type: 'zhuanshi',
+        start_time: task.start_time,
+        end_time: task.end_time,
+        description: `被${tianjiaoName}击杀，等待往生或救援`,
+        status: '轮回中',
+      };
 
-      // 6. 清除行动状态
-      await redis.del(`xiuxian:player:${usr_qq}:action`);
+      await redis.multi()
+        .set(`xiuxian:zhuanshi_task:${usr_qq}`, JSON.stringify(task))
+        .set(`xiuxian:player:${usr_qq}:action`, JSON.stringify(action))
+        .exec();
 
       console.log(`【偷袭死亡】玩家 ${usr_qq} 被 ${tianjiaoName} 击杀`);
 
@@ -440,6 +427,8 @@ this.FORMATION_NAMES = [
    */
   async checkAmbush(e, player, tianjiaoName, group_id) {
     const usr_qq = player.id;
+    const fearUntil = Number(await redis.get(`tianjiao:fear:${tianjiaoName}:${usr_qq}`)) || 0;
+    if (fearUntil > Date.now()) return false;
     
     // 获取仇恨值
     const hatred = await this.getPlayerHatred(tianjiaoName, usr_qq);
@@ -613,14 +602,10 @@ this.FORMATION_NAMES = [
       await this.sendTextMessage(usr_qq, '战斗过长，仅展示部分内容...', group_id);
     }
     
-    // 判断战斗结果
-    const playerWinStr = `${A_player.名号}击败了${B_player.名号}`;
-    const tianjiaoWinStr = `${B_player.名号}击败了${A_player.名号}`;
-    
     let isWin = false;
-    if (msg.find(item => item === playerWinStr)) {
+    if (result.winner === 'A') {
       isWin = true;
-    } else if (msg.find(item => item === tianjiaoWinStr)) {
+    } else if (result.winner === 'B') {
       isWin = false;
     } else {
       await this.sendTextMessage(usr_qq, '战斗过程出错，无法判断胜负...', group_id);
@@ -855,8 +840,10 @@ this.FORMATION_NAMES = [
   }
   
   async completeTravelTask(task) {
-    const { player_qq, to_location, to_name, travel_msg, player_name, group_id } = task;
-    
+    const { player_qq, to_location, to_name, travel_msg, player_name, group_id, used_token, token_tier, accident } = task;
+    // 防御：老任务/异常数据可能未携带 travel_msg，归一化为数组避免展开时崩溃
+    const travelMsgArr = Array.isArray(travel_msg) ? travel_msg : [];
+
     try {
       const player = await Read_player(player_qq);
       
@@ -880,15 +867,39 @@ this.FORMATION_NAMES = [
       
       // ===== 正常传送完成 =====
       player.power_place = to_location;
+      const unfetteredJourneyProgress = recordUnfetteredJourney(player);
       await Write_player(player_qq, player);
       
       await redis.del(`xiuxian:player:${player_qq}:action`);
       await redis.del(`xiuxian:travel_task:${player_qq}`);
       
+      // 传送阵抵达：虚空乱流事故处理（仅令牌任务）
+      let accidentMsgs = [];
+      if (used_token && accident) {
+        // 小额资源损失（不删档），并附乱流文案
+        const lossXiuwei = 5e6;
+        const lossQixue = 5e6;
+        player.修为 = Math.max(0, (Number(player.修为) || 0) - lossXiuwei);
+        player.血气 = Math.max(0, (Number(player.血气) || 0) - lossQixue);
+        await Write_player(player_qq, player);
+        accidentMsgs = [
+          ``,
+          `【虚空乱流·星路偏移】`,
+          `传送途中骤起虚空乱流，星空古路剧烈震荡！`,
+          `你竭力稳住阵纹，却被乱流卷走部分修为与血气：`,
+          `- 修为 -${lossXiuwei}`,
+          `- 血气 -${lossQixue}`,
+          `乱流散去，你狼狈地跌入${to_name}边缘……`
+        ];
+      }
+      
+      const tierLabel = used_token ? (token_tier === 'high' ? '高级传送阵' : '传送阵') : '肉身穿梭';
       const arriveMsg = [
         `【位面穿梭·完成】`,
-        `${player_name}已成功抵达${to_name}!`,
-        ...travel_msg,
+        `${player_name}已借助${tierLabel}成功抵达${to_name}!`,
+        ...travelMsgArr,
+        ...accidentMsgs,
+        ...(unfetteredJourneyProgress ? [`【天地无拘】横渡位面：${unfetteredJourneyProgress}/3`] : []),
         `位面穿梭完成，你现已身处${to_name}`
       ].join('\n');
       

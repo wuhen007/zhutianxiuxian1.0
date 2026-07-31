@@ -12,6 +12,8 @@ import {
   ForwardMsg,
    Read_najie
 } from '../../model/xiuxian.js';
+import RealmEvents from './RealmEvents.js';
+import { formatRealmEventLocation } from '../../model/realmEventLocation.js';
 
 export class EraChangeTask extends plugin {
   constructor() {
@@ -48,6 +50,10 @@ export class EraChangeTask extends plugin {
         {
           reg: '^#模拟损失(?:\\s+(\\d+))?$',
           fnc: 'simulateJuelingEraLossCommand', // 修改函数名
+        },
+        {
+          reg: '^#?(位面)?大事件(记录)?$',
+          fnc: 'queryRealmEvents',
         }
       ]
     });
@@ -952,6 +958,16 @@ function saveWeimianData(data) {
         );
       }
       
+      // ==== 位面大事件系统 ====
+      try {
+        const eventResult = await RealmEvents.triggerRandomEvent(index, years, epoch);
+        if (eventResult && era.pushNotice) {
+          await this.broadcastMessage(eventResult.message);
+        }
+      } catch (eventErr) {
+        console.error("触发位面大事件失败:", eventErr);
+      }
+      
       // ==== 新增：检查高境界玩家 ====
       const highLevelPlayers = await this.checkHighLevelPlayers();
       
@@ -1012,7 +1028,7 @@ function saveWeimianData(data) {
         await this.broadcastNewEra(oldEraName, newEraName, epochIncreased ? epoch : null);
       }
       
-      // ==== 新增：寿元压制逻辑 ====
+      // ==== 新增：检查是否进入绝灵时代 ====
       // 检查是否进入绝灵时代
       if (oldIndex !== 4 && index === 4) {
         const suppressedCount = await this.suppressLifespan();
@@ -1030,6 +1046,10 @@ function saveWeimianData(data) {
         
         await this.broadcastMessage(message);
       }
+      
+      // ==== 诡异大祭8纪元自动开启 ====
+      // 检查是否在时代变迁时触发诡异大祭
+      await this.checkAndTriggerDajie(epoch);
       
       // 检查是否离开绝灵时代
       if (oldIndex === 4 && index !== 4) {
@@ -1052,6 +1072,75 @@ function saveWeimianData(data) {
     } catch (e) {
       console.error("时代推进失败:", e);
       await this.broadcastToAdmins(`时代推进失败: ${e.message}`);
+    }
+  }
+  
+  /** 检查并触发诡异大祭（每8个纪元触发一次） */
+  async checkAndTriggerDajie(epoch) {
+    try {
+      // 检查大祭是否已被终结
+      const eternalDefeat = await redis.get('xiuxian:dajie_eternally_defeated');
+      if (eternalDefeat === 'true') {
+        // 如果大祭被终结，重置计数器
+        await redis.set('xiuxian:epochs_since_dajie', epoch.toString());
+        return;
+      }
+      
+      // 获取上次大祭开始的纪元
+      let epochsSinceLastDajie = await redis.get('xiuxian:epochs_since_dajie');
+      epochsSinceLastDajie = epochsSinceLastDajie ? parseInt(epochsSinceLastDajie) : 0;
+      
+      // 检查是否满8个纪元
+      if (epoch - epochsSinceLastDajie >= 8) {
+        // 检查诡异大祭是否已开启
+        let dajieAlive = await redis.get('guiyishizu');
+        if (!dajieAlive) {
+          // 触发诡异大祭
+          await this.triggerDajie(epoch);
+        }
+      }
+    } catch (e) {
+      console.error("检查诡异大祭触发失败:", e);
+    }
+  }
+  
+  /** 触发诡异大祭 */
+  async triggerDajie(epoch) {
+    try {
+      // 记录大祭开始的纪元
+      await redis.set('xiuxian:epochs_since_dajie', epoch.toString());
+      
+      const message = [
+        `═══════ 诡异大祭·预兆 ═══════`,
+        `【诸天异变】`,
+        `就在这一日——`,
+        `厄土高原深处，传来一阵诡异的脉动！`,
+        `那股沉寂了万古的气息，`,
+        `正在缓缓苏醒……`,
+        ``,
+        `「诡异……将再次降临。」`,
+        ``,
+        `黑雾开始在高原上空汇聚，`,
+        `亿万被祭掉生灵的残魂在黑雾中哀嚎，`,
+        `诉说着那段永世难忘的血泪史……`,
+        ``,
+        `距离诡异大祭正式降临还有一个千年……`,
+        `诸天万界的路尽级仙帝们，`,
+        `请做好迎接大祭的准备！`,
+      ].join('\n');
+      
+      await this.broadcastMessage(message);
+      
+      // 广播到所有群
+      const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
+      const groupList = await redis.sMembers(redisGlKey);
+      for (const group_id of groupList) {
+        Bot.pickGroup(group_id).sendMsg(message).catch(console.error);
+      }
+      
+      console.log(`[诡异大祭] 第${epoch}纪元，诡异大祭预兆已发布`);
+    } catch (e) {
+      console.error("触发诡异大祭失败:", e);
     }
   }
   
@@ -1286,11 +1375,11 @@ function saveWeimianData(data) {
       let epochIncreased = false;
       
       if (eraPass > 0) {
-        index = (index + eraPass) % totalEras;
+        const totalIndex = index + eraPass;
+        const fullCycles = Math.floor(totalIndex / totalEras);
+        index = totalIndex % totalEras;
         eraChanged = true;
         newEraName = this.eras[index].name;
-        
-        const fullCycles = Math.floor(eraPass / totalEras);
         epoch += fullCycles;
         epochIncreased = fullCycles > 0;
       }
@@ -1333,6 +1422,16 @@ function saveWeimianData(data) {
             `「此世修仙路，终将归于凡尘...」`
           ].join('\n');
         }
+      }
+      
+      // ==== 位面大事件系统 ====
+      try {
+        const eventResult = await RealmEvents.triggerRandomEvent(this.set.Era.current.index, years, epoch);
+        if (eventResult) {
+          message += '\n\n' + eventResult.message;
+        }
+      } catch (eventErr) {
+        console.error("触发位面大事件失败:", eventErr);
       }
       
       // 检查高境界玩家
@@ -1513,6 +1612,16 @@ function saveWeimianData(data) {
         message += `\n\n${restoreMsg}`;
       }
       
+      // ==== 位面大事件系统 ====
+      try {
+        const eventResult = await RealmEvents.triggerRandomEvent(index, years, epoch);
+        if (eventResult) {
+          message += '\n\n' + eventResult.message;
+        }
+      } catch (eventErr) {
+        console.error("触发位面大事件失败:", eventErr);
+      }
+      
       await e.reply(message);
       
     } catch (e) {
@@ -1598,10 +1707,115 @@ function saveWeimianData(data) {
     const progress = Math.min(100, Math.floor(years / 100));
     const filled = Math.floor(progress / (100 / width));
     const empty = width - filled;
-    
+
     return `${'▰'.repeat(filled)}${'▱'.repeat(empty)}`;
   }
-  
+
+  /** 查询位面大事件记录 */
+  async queryRealmEvents(e) {
+    try {
+      const activeEvents = RealmEvents.getActiveEvents();
+      const eventHistory = RealmEvents.getEventHistory(10);
+      const eventStats = RealmEvents.getEventStats();
+
+      let msg = [`【位面大事件】`, `【当前事件】`];
+      if (activeEvents.length === 0) {
+        msg.push('当前诸天平静，暂无正在发生的大事件。', '');
+      } else {
+        for (const event of activeEvents) {
+          const minutes = Math.max(1, Math.ceil((Number(event.expiresAt) - Date.now()) / 60000));
+          const remaining = minutes >= 60
+            ? `${Math.floor(minutes / 60)}小时${minutes % 60 ? `${minutes % 60}分钟` : ''}`
+            : `${minutes}分钟`;
+          msg.push(
+            `- ${RealmEvents.getEventTypeName(event.type)}`,
+            `  地点：${formatRealmEventLocation(event)}`,
+            `  剩余：${remaining}`,
+            `  参与：${RealmEvents.getEventParticipationCommand(event)}`,
+            `  已参与：${event.participantQqs?.length || event.claimedQqs?.length || 0}人`
+          );
+        }
+        msg.push('');
+      }
+      msg.push(`【最近记录】`);
+
+      if (eventHistory.length === 0) {
+        msg.push(`暂无大事件记录`);
+      } else {
+        for (let i = 0; i < eventHistory.length; i++) {
+          const event = eventHistory[i];
+          const eventType = RealmEvents.getEventTypeName(event.type);
+          const date = new Date(event.timestamp);
+          const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+
+          // 根据不同事件类型显示不同摘要
+          let summary = '';
+          switch (event.type) {
+            case 'treasureAppear':
+              summary = `${event.treasure.name} 出世于 ${formatRealmEventLocation(event)}`;
+              break;
+            case 'merchantVisit':
+              summary = `${event.merchant.name} 降临 ${formatRealmEventLocation(event)}`;
+              break;
+            case 'sectWar':
+              summary = `${event.attacker.name} 与 ${event.defender.name}${event.location ? ` 于 ${formatRealmEventLocation(event)}` : ''} 爆发战争`;
+              break;
+            case 'prodigyRise':
+              summary = event.location
+                ? `${event.player.name} 崛起于 ${formatRealmEventLocation(event)}`
+                : `${event.player.name} 崛起于诸天`;
+              break;
+            case 'forbiddenZone':
+              summary = `${event.zone.name}${event.location ? ` 于 ${formatRealmEventLocation(event)}` : ''} 发生异动`;
+              break;
+            case 'emperorLegacy':
+              summary = `${event.emperor.name} 传承现世于 ${formatRealmEventLocation(event)}`;
+              break;
+            case 'worldChange':
+              summary = event.location
+                ? `${event.event.title}，源点位于 ${formatRealmEventLocation(event)}`
+                : `${event.event.title}`;
+              break;
+            case 'mysteriousRuins':
+              summary = `${event.ruins.name} 被发现于 ${formatRealmEventLocation(event)}`;
+              break;
+            case 'tianmoHuashengLegacy':
+              summary = `万相魔冢现世于 ${formatRealmEventLocation(event)}`;
+              break;
+            case 'coordinateClue':
+              summary = `${formatRealmEventLocation(event)}显露通往${event.targetPlane}的坐标线索`;
+              break;
+            case 'wenxianClue':
+              summary = `问仙古碑显化于 ${formatRealmEventLocation(event)}`;
+              break;
+            default:
+              summary = '未知事件';
+          }
+
+          msg.push(`${i + 1}. [${dateStr}] ${eventType}`);
+          msg.push(`   ${summary}（参与${event.participantQqs?.length || event.claimedQqs?.length || 0}人）`);
+          msg.push(``);
+        }
+      }
+
+      msg.push(`【事件统计】`);
+      msg.push(`总事件数：${eventStats.total}`);
+      if (Object.keys(eventStats.byType).length > 0) {
+        for (const [type, count] of Object.entries(eventStats.byType)) {
+          const typeName = RealmEvents.getEventTypeName(type);
+          msg.push(`- ${typeName}：${count}次`);
+        }
+      }
+
+      await e.reply(msg.join('\n'));
+      return true;
+    } catch (error) {
+      console.error("查询大事件失败:", error);
+      await e.reply(`查询大事件失败: ${error.message}`);
+      return false;
+    }
+  }
+
   /** 广播消息到所有配置的群组 */
   async broadcastMessage(msg) {
     try {

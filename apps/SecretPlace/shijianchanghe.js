@@ -1,4 +1,5 @@
 import { plugin, verc, data, config } from '../../api/api.js';
+import { getTimedActionMultiplier } from '../../model/innateTreasure.js';
 
 import {
   Read_player,
@@ -23,9 +24,7 @@ import {
   xunbaoweizhi,
   Go,
   channel,
-  Read_renwu,
-  Write_renwu,
-  find_renwu,
+  Add_renwu_progress,
 } from '../../model/xiuxian.js';
 import Show from "../../model/show.js";
 import puppeteer from "../../../../lib/puppeteer/puppeteer.js";
@@ -85,7 +84,7 @@ export class shijianchanghe extends plugin {
       let action_time = 60000 * time; //持续时间，单位毫秒
       let arr = {
         action: '遨游时间长河', //动作
-       end_time: new Date().getTime() + action_time,//结束时间
+       end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),//结束时间
         time: action_time, //持续时间
         shutup: '1', //闭关
         working: '1', //降妖
@@ -103,16 +102,7 @@ export class shijianchanghe extends plugin {
       }
       let A = e.user_id;
       A=await channel(A)
-      let user_A = A;
-      let renwu = await Read_renwu();
-      let i = await found(user_A);
-      let chazhao = await find_renwu(A);
-      if (chazhao == 0) {
-        }else
-      if(renwu[i].wancheng3 == 1){
-      renwu[i].jilu3 += 1
-      await Write_renwu(renwu);
-      }
+      await Add_renwu_progress(A, 'jilu3');
        await redis.set(`xiuxian:time_river:end_time:${usr_qq}`, arr.end_time);
         const activePlayers = await redis.get('xiuxian:time_river:active_players') || '[]';
   const playersList = JSON.parse(activePlayers);
@@ -128,14 +118,4 @@ export class shijianchanghe extends plugin {
       
       return true;
   }
-}
-async function found(A) {
-  let renwu = await Read_renwu();
-  let i;
-  for (i = 0; i < renwu.length; i++) {
-      if (renwu[i].player == A) {
-          break;
-      }
-  }
-  return i;
 }
