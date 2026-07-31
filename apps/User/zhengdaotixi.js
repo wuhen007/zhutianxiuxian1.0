@@ -2,6 +2,13 @@ import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'path';
 import {
+  reviveFromYongJi,
+  revivePlaneFromYongJi,
+  reviveAllFromYongJi,
+  findYongJiByNameOrQQ,
+} from '../Boss/YongJiList.js';
+import { repairAllDestroyedPlanes, repairSinglePlane } from '../Boss/WeimianDestruction.js';
+import {
   existplayer,
   Write_player,
   Write_equipment,
@@ -28,6 +35,18 @@ foundthing,
   channel,
   ForwardMsg
 } from '../../model/xiuxian.js';
+import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
+
+// 源石兑换表：源石道具 → 可兑换的源石数值（斤）
+const SOURCE_STONE_EXCHANGE_RATES = {
+    "下品源石": 10,
+    "中品源石": 50,
+    "上品源石": 100,
+    "超品源石": 300,
+    "神源石": 5000,
+    "上品神源石": 7000,
+    "超品神源石": 12500
+};
 
 export class zhengdaotixi extends plugin {
   constructor() {
@@ -98,6 +117,10 @@ fnc: 'tianyi_yidao'
     {
         reg: '^#神城兑换源石 (.*)$',
         fnc: 'exchangeSourceStone'
+    },
+    {
+        reg: '^#神城一键兑换源石$',
+        fnc: 'oneClickExchangeSourceStone'
     },
      {
         reg: '^#造化万物 (.*)$',
@@ -816,10 +839,6 @@ async changeAptitude(e) {
   }
   const targetPlayer = await Read_player(targetQQ);
   
-  // === 使用外部的天资数据函数 ===
-  const targetAptitudeData = await getPlayerAptitudeData(targetPlayer);
-  const invokerAptitudeData = await getPlayerAptitudeData(invoker);
-  
   // 完整的天资序列
   const aptitudeSequence = [
     '无化如是',      // 索引0
@@ -835,6 +854,16 @@ async changeAptitude(e) {
     '无演无尽'       // 索引10
   ];
   
+  // 内联构建天资数据对象（替代不存在的 getPlayerAptitudeData 函数）
+  const targetAptitudeData = {
+    grade: targetPlayer.天资等级 || '平庸之资',
+    index: aptitudeSequence.indexOf(targetPlayer.天资等级 || '平庸之资')
+  };
+  const invokerAptitudeData = {
+    grade: invoker.天资等级 || '平庸之资',
+    index: aptitudeSequence.indexOf(invoker.天资等级 || '平庸之资')
+  };
+
   // 检查新的天资是否有效
   const newAptitude = aptitudeName[1];
   if (!aptitudeSequence.includes(newAptitude)) {
@@ -970,7 +999,7 @@ async changeAptitude(e) {
     `  目标修士：${targetPlayer.名号}`,
     `  原始天资：【${oldAptitude}】`,
     `  重塑天资：【${newAptitude}】`,
-    `  天资跃迁：${targetAptitudeData.index} → ${newAptitudeIndex}`,
+    `  天资跃迁：${targetAptitudeData.index} → ${aptitudeSequence.indexOf(newAptitude)}`,
   ];
   
   // 天资评价
@@ -2450,16 +2479,6 @@ async createEverything(e) {
     
     const stoneName = match[1].trim();
     let amount = match[2] ? parseInt(match[2]) : 1;
-        // 源石兑换表
-const SOURCE_STONE_EXCHANGE_RATES = {
-    "下品源石": 10,
-    "中品源石": 50,
-    "上品源石": 100,
-    "超品源石": 300,
-    "神源石": 5000,
-    "上品神源石": 7000,
-    "超品神源石": 12500
-};
     // 检查源石类型是否有效
     if (!SOURCE_STONE_EXCHANGE_RATES[stoneName]) {
         const validStones = Object.keys(SOURCE_STONE_EXCHANGE_RATES).join('、');
@@ -2525,6 +2544,69 @@ const SOURCE_STONE_EXCHANGE_RATES = {
     e.reply(exchangeTexts.join("\n"));
     return true;
 }
+
+  // 神城一键兑换源石：把纳戒中所有可兑换源石道具一次性全部兑换为源石数值
+  async oneClickExchangeSourceStone(e) {
+    if (!e.isGroup) return;
+
+    const usr_qq = e.user_id;
+    const player_qq = await channel(usr_qq);
+    const player = await Read_player(player_qq);
+
+    // ==== 初始化源石属性 ====
+    if (player.源石 === undefined) {
+        player.源石 = 0;
+        await Write_player(player_qq, player);
+        e.reply([
+            `【源石系统激活】`,
+            `首次兑换源石，系统已激活源石属性！`,
+            `当前源石：0斤`,
+        ].join("\n"));
+    }
+
+    // 遍历兑换表，把背包里每种源石道具有多少换多少
+    let totalValue = 0;          // 本次兑换获得的总源石数值
+    let exchangedTypes = 0;      // 实际兑换了几类源石
+    const detailLines = [];      // 兑换明细
+
+    for (const [stoneName, exchangeRate] of Object.entries(SOURCE_STONE_EXCHANGE_RATES)) {
+        const stoneCount = await exist_najie_thing(player_qq, stoneName, "道具");
+        if (!stoneCount || stoneCount <= 0) continue; // 背包里没有这种源石，跳过
+
+        const value = exchangeRate * stoneCount;
+        // 扣除背包中全部该源石道具
+        await Add_najie_thing(player_qq, stoneName, "道具", -stoneCount);
+        totalValue += value;
+        exchangedTypes++;
+        detailLines.push(`· 交出【${stoneName}】x${stoneCount}，得 ${bigNumberTransform(value)} 斤源石`);
+    }
+
+    // 没有任何可兑换的源石
+    if (exchangedTypes === 0) {
+        return e.reply([
+            `【神城·一键兑换源石】`,
+            `你将纳戒翻了个底朝天，却寻不到半块源石。`,
+            `可兑换源石类型：${Object.keys(SOURCE_STONE_EXCHANGE_RATES).join('、')}`,
+        ].join("\n"));
+    }
+
+    // 汇总累加源石数值
+    player.源石 = (player.源石 || 0) + totalValue;
+    await Write_player(player_qq, player);
+
+    const lines = [
+        `【神城·一键兑换源石】`,
+        `你迈步踏入神城源天师后人开设的兑换铺，将纳戒中诸般源石尽数倾出——`,
+        ...detailLines,
+        `──────────────`,
+        `本次共得源石：${bigNumberTransform(totalValue)} 斤`,
+        `当前源石总计：${bigNumberTransform(player.源石)} 斤`,
+        `源天师后人抚石而笑："道友豪阔，一笔结清，源气沛然！"`,
+    ];
+    e.reply(lines.join("\n"));
+    return true;
+}
+
 // 传授指定功法
 async teachGongfa(e) {
         if (!e.isGroup) {
@@ -2580,8 +2662,8 @@ async handleTeach(e, isAll = false) {
         return true;
     }
     
-    // === 使用外部的天资数据函数 ===
-    const casterAptitude = await getPlayerAptitudeData(caster);
+    // === 传授者天资（当前只用于日志，不影响传授判断） ===
+    const casterAptitude = { grade: caster.天资等级 || '平庸之资' };
     
     // === 获取目标玩家 ===
     const atItems = e.message.filter(item => item.type === "at");
@@ -2605,7 +2687,24 @@ async handleTeach(e, isAll = false) {
     }
 
     const target = await Read_player(targetQQ);
-    const targetAptitude = await getPlayerAptitudeData(target);
+    // 内联天资数据（grade=天资等级字段，description=描述）
+    const aptitudeDescMap = {
+        '无化如是': '天道封禁，一无所能',
+        '生而愚痴': '愚钝之资，仅通武学',
+        '天弃之人': '被天道遗弃，基础尚可',
+        '先天不足': '根骨稍差，可学常法',
+        '平庸之资': '中规中矩，天魔命运可学',
+        '超凡资质': '资质不俗，道与法可入',
+        '天纵之资': '天纵奇才，九秘杀术可习',
+        '旷世奇才': '旷世之姿，帝经可悟',
+        '绝世天骄': '绝世天骄，仙王法可领',
+        '万古无双': '万古罕见，仙帝法可承',
+        '无演无尽': '超脱造化，神慧者可学'
+    };
+    const targetAptitude = {
+        grade: target.天资等级 || '平庸之资',
+        description: aptitudeDescMap[target.天资等级] || '天资难辨'
+    };
     
     // === 特殊天资：无化如是 ===
     if (targetAptitude.grade === '无化如是') {
@@ -2646,44 +2745,46 @@ async handleTeach(e, isAll = false) {
         }
     }
     
-    // === 定义功法层级映射 ===
+    // === 定义功法层级映射（数字越大=越难学，与UserHome.js保持一致） ===
     const gongfaHierarchy = {
-        "神慧者": 0,      // 最高级
-        "仙帝法": 1,
-        "仙王法": 2,
-        "十凶宝术": 3,
-        "帝经": 4,
-        "九秘": 5,
-        "盖世杀术": 5,
-        "道与法": 6,
-        "宝术": 6,
-        "天赋": 7,
-        "天魔法": 7,
-        "命运法": 7,
-        "修炼功法": 8,
-        "炼器": 8,
-        "推演": 8,
-        "技能": 8,
-        "武学": 8
+        "武学": 0,
+        "限定功法": 0,
+        "修炼功法": 1,
+        "炼器": 1,
+        "炼丹": 1,
+        "推演": 1,
+        "技能": 1,
+        "天魔法": 2,
+        "命运法": 2,
+        "天赋": 2,
+        "道与法": 3,
+        "宝术": 3,
+        "九秘": 4,
+        "盖世杀术": 4,
+        "帝经": 5,
+        "十凶宝术": 6,
+        "仙王法": 7,
+        "仙帝法": 8,
+        "神慧者": 9
     };
     
-    // 天资等级对应的最高可学习层级
+    // 天资等级对应的最高可学习难度（值=能学的最高gongfaHierarchy，与UserHome.js保持一致）
     const aptitudeLevels = {
-        "无演无尽": 0,     // 可学神慧者
-        "万古无双": 1,     // 可学仙帝法
-        "绝世天骄": 2,     // 可学仙王法
-        "旷世奇才": 3,     // 可学十凶宝术
-        "天纵之资": 4,     // 可学帝经
-        "超凡资质": 5,     // 可学九秘/盖世杀术
-        "平庸之资": 6,     // 可学道与法/宝术
-        "先天不足": 7,     // 可学天赋/天魔法等
-        "天弃之人": 8,     // 可学修炼功法等基础
-        "生而愚痴": 9,     // 只能学最基础，有失败率
-        "无化如是": 10     // 无法学习任何功法
+        "生而愚痴": 0,   // 只能学武学(0)
+        "天弃之人": 1,   // 可学修炼功法/炼器/炼丹(1)
+        "先天不足": 2,   // 可学天魔法/命运法/限定功法(2)
+        "平庸之资": 2,   // 可学天魔法/命运法(2)，学不了道与法(3)
+        "超凡资质": 3,   // 可学道与法/宝术(3)
+        "天纵之资": 4,   // 可学九秘/盖世杀术(4)
+        "旷世奇才": 5,   // 可学帝经(5)
+        "绝世天骄": 7,   // 可学十凶宝术(6)/仙王法(7)
+        "万古无双": 8,   // 可学仙帝法(8)
+        "无演无尽": 9,   // 可学神慧者(9)
+        "无化如是": -1   // 什么都学不了
     };
     
-    // 获取目标玩家最高可学层级
-    const targetMaxLevel = aptitudeLevels[targetAptitude.grade] || 8;
+    // 获取目标玩家最高可学层级（默认平庸之资=2）
+    const targetMaxLevel = aptitudeLevels[targetAptitude.grade] ?? 2;
     
     // === 传授指定功法 ===
     if (!isAll) {
@@ -2837,6 +2938,27 @@ async handleTeach(e, isAll = false) {
             return true;
         }
         
+        // === 仙道潜力检查（被传授方消耗） ===
+        {
+            const potentialCost = gongfaLevel + 1; // 难度越高消耗越多（武学1点，神慧者10点）
+            const currentPotential = target.仙道潜力 || 0;
+            if (currentPotential < potentialCost) {
+                e.reply([
+                    `〖仙道潜力不足·传授受阻〗`,
+                    `你向${target.名号}传授【${gongfaName}】，`,
+                    `然其识海中的仙道潜力已几近枯竭，无法承载这份传承！`,
+                    ``,
+                    `目标当前仙道潜力：${currentPotential} 点`,
+                    `学习所需潜力：${potentialCost} 点（${gongfaType}）`,
+                    `「请先为目标补足仙道潜力方可传授！」`
+                ].join('\n'));
+                return true;
+            }
+            // 扣除目标玩家仙道潜力
+            target.仙道潜力 = currentPotential - potentialCost;
+            await Write_player(targetQQ, target);
+        }
+
         // === 传授成功 ===
         await Add_player_学习功法(targetQQ, gongfaName);
         await player_efficiency(targetQQ);
@@ -2879,7 +3001,9 @@ async handleTeach(e, isAll = false) {
     const failedByAptitude = [];
     const failedBySpecial = [];
     const failedByLuck = [];
+    const failedByPotential = []; // 新增：仙道潜力不足
     const specialSuccess = [];
+    let remainingPotential = target.仙道潜力 || 0; // 实时追踪目标剩余潜力
     
     for (const gongfaName of caster.学习的功法) {
         // 检查目标是否已学习
@@ -2961,9 +3085,9 @@ async handleTeach(e, isAll = false) {
         
         if (targetAptitude.grade === '生而愚痴') {
             successRate = 0.3; // 生而愚痴只有30%成功率
-        } else if (gongfaLevel <= 3) { // 十凶宝术及以上
+        } else if (gongfaLevel >= 6) { // 十凶宝术及以上（难度6+）
             successRate = 0.7;
-        } else if (gongfaLevel <= 5) { // 帝经/九秘
+        } else if (gongfaLevel >= 4) { // 帝经/九秘（难度4-5）
             successRate = 0.8;
         }
         
@@ -2972,12 +3096,20 @@ async handleTeach(e, isAll = false) {
             continue;
         }
         
+        // === 仙道潜力检查（批量，实时追踪剩余潜力） ===
+        const potentialCost = gongfaLevel + 1;
+        if (remainingPotential < potentialCost) {
+            failedByPotential.push(`${gongfaName}(潜力不足)`);
+            continue;
+        }
+        remainingPotential -= potentialCost; // 预扣，真正扣除在传授成功后统一处理
+
         // 可以传授
         teachableGongfa.push(gongfaName);
         
         // 特殊功法标记
         if (gongfaName === '自然大道' || gongfaName === '愚钝真经' || 
-            gongfaName === '混沌道经' || gongfaLevel <= 3) {
+            gongfaName === '混沌道经' || gongfaLevel >= 6) {
             specialSuccess.push(gongfaName);
         }
     }
@@ -3005,6 +3137,10 @@ async handleTeach(e, isAll = false) {
             message.push(`传授失败：${failedByLuck.length}门`);
         }
         
+        if (failedByPotential.length > 0) {
+            message.push(`潜力不足：${failedByPotential.length}门（${target.名号}仙道潜力不足，需补充后再试）`);
+        }
+        
         e.reply(message.join('\n'));
         return true;
     }
@@ -3014,6 +3150,10 @@ async handleTeach(e, isAll = false) {
         await Add_player_学习功法(targetQQ, gongfaName);
     }
     await player_efficiency(targetQQ);
+    
+    // 扣除目标玩家仙道潜力（统一结算：remainingPotential已是预扣后的值）
+    target.仙道潜力 = remainingPotential;
+    await Write_player(targetQQ, target);
     
     // 添加传授记录
     caster.传授记录 = caster.传授记录 || [];
@@ -3077,8 +3217,13 @@ async handleTeach(e, isAll = false) {
         message.push(`传授失败：${failedByLuck.length}门`);
     }
     
+    if (failedByPotential.length > 0) {
+        message.push(`潜力不足跳过：${failedByPotential.length}门`);
+    }
+    
     message.push(``);
     message.push(`${target.名号}灵台清明，如获新生！`);
+    message.push(`${target.名号}剩余仙道潜力：${remainingPotential} 点`);
     
     // 特殊天资的成功消息
     if (targetAptitude.grade === '生而愚痴' && teachableGongfa.length > 0) {
@@ -3259,13 +3404,23 @@ async yingzhao(e) {
     // 只有仙帝级以上才能使用映照复活
     if (caster.mijinglevel_id < 21) {
         e.reply([
-            `▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂`,
             `【境界不足】`,
             `映照诸天、逆转生死乃仙帝伟力！`,
             `道友当前境界不足，无法施展此无上神通！`,
-            `▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂`
         ].join('\n'));
         return true;
+    }
+
+    // ===== 映照诸天（优先级最高）=====
+    const rawMsg = e.msg.trim();
+    if (/^#映照诸天$/.test(rawMsg)) {
+        return await this.handleZhuTianYingzhao(e, caster, casterQQ);
+    }
+
+    // ===== 映照位面（无@时匹配位面名）=====
+    const planeMatch = rawMsg.match(/^#映照(?:复活)?(凡间|仙界|下界八域|遮天位面|九天十地|界海)$/);
+    if (planeMatch) {
+        return await this.handlePlaneYingzhao(e, caster, casterQQ, planeMatch[1]);
     }
 
     // 检查是否有艾特信息（可以复活他人或自己）
@@ -3317,13 +3472,74 @@ async yingzhao(e) {
     }
 }
 
-/** 处理永寂复活 */
+/** 处理永寂复活（整合 YongJiList 新系统 + 旧永寂兼容） */
 async handleYongjiResurrection(e, caster, target, targetQQ) {
-    // ===== 永寂等级检查 =====
+    // ===== 步骤1：查 YongJiList（诡异大祭·位面破坏产生的永寂者）=====
+    const yongjiResult = await findYongJiByNameOrQQ(targetQQ);
+    
+    if (yongjiResult.found) {
+        // --- 新系统永寂复活（数据从备份完整恢复）---
+        const record = yongjiResult.record;
+        const { planeName, yongjiTimeStr, 名号 } = record;
+
+        // 消耗：修为20%+血量上限20%（沿用zhengdaotixi百分比模型）
+        const costCultivation = Math.floor(caster.修为 * 0.2);
+        const costMaxHP = Math.floor(caster.血量上限 * 0.2);
+
+        if (caster.修为 < costCultivation) {
+            await e.reply([
+                `【映照·修为不足】`,
+                `${caster.名号}尝试映照${名号 || targetQQ}的永寂状态……`,
+                `然而修为不足以支撑这道权能！`,
+                `所需修为：${bigNumberTransform(costCultivation)}`,
+                `当前修为：${bigNumberTransform(caster.修为)}`,
+            ].join('\n'));
+            return true;
+        }
+
+        // 扣除消耗
+        caster.修为 -= costCultivation;
+        caster.血量上限 -= costMaxHP;
+        caster.当前血量 = Math.min(caster.当前血量, caster.血量上限);
+        await Write_player(caster.qq, caster);
+
+        // 执行复活
+        const reviveResult = await reviveFromYongJi(record.qq);
+        if (!reviveResult.success) {
+            await e.reply(`映照失败：${reviveResult.reason || '未知错误'}`);
+            return true;
+        }
+
+        // 回复
+        await e.reply([
+            `【映照诸天·逆转生死】`,
+            `${caster.名号}施展无上仙帝伟力，映照${reviveResult.playerName}！`,
+            ``,
+            `整部古史都在颤栗！`,
+            `"归来！"`,
+            `一声道喝震碎时间长河！`,
+            `${reviveResult.playerName}从永寂之界中归来！`,
+            ``,
+            `曾沉眠于：${reviveResult.planeName}`,
+            `永寂时间：${yongjiTimeStr}`,
+            ``,
+            `【映照代价】`,
+            `消耗修为：${bigNumberTransform(costCultivation)}`,
+            `消耗血量上限：${bigNumberTransform(costMaxHP)}`,
+            ``,
+            `「映照诸天，虽代价沉重——」`,
+            `「然道友之情，重于泰山！」`
+        ].join('\n'));
+
+        // 全服广播
+        await this._broadcastYingZhaoSimple('single', caster.名号, reviveResult.playerName, reviveResult.planeName);
+        return true;
+    }
+
+    // ===== 步骤2：兼容旧永寂系统 =====
     // 获取目标的永寂状态
     let oblivionInfo = await redis.get(`xiuxian:player:${targetQQ}:oblivion`);
     if (!oblivionInfo) {
-        // 尝试获取旧格式
         oblivionInfo = await redis.get(`xiuxian:player:${targetQQ}:yongji`);
     }
     
@@ -3805,6 +4021,527 @@ async resurrectPlayer(targetQQ, caster) {
     });
 
     await Write_player(targetQQ, target);
+}
+
+// ==================== 映照位面 & 映照诸天（整合 YongJiList）====================
+
+/** 位面级别映照：修复被诡异大祭崩灭的位面（不复活永寂者） */
+async handlePlaneYingzhao(e, caster, casterQQ, planeName) {
+    const PLANE_ID_MAP = {
+        '凡间': 0, '仙界': 1, '下界八域': 1.5,
+        '遮天位面': 2, '九天十地': 2.5, '界海': 3,
+    };
+    const planeId = PLANE_ID_MAP[planeName];
+    if (planeId === undefined) {
+        await e.reply(`【映照·位面不明】\n「${planeName}」并非可映照的位面。`);
+        return true;
+    }
+
+    // 映照CD检查
+    const cdKey = `xiuxian:player:${casterQQ}:yingzhao_cd`;
+    if (await this._checkYingZhaoCD(e, caster, cdKey)) return true;
+
+    // 消耗：1000亿修为+1000亿血气
+    const COST = 100000000000;
+    if (caster.修为 < COST || caster.血气 < COST) {
+        await e.reply([
+            `【映照·资源不足】`,
+            `帝意映照崩灭的位面——`,
+            `那是何等浩大的伟力涌动！`,
+            ``,
+            `所需消耗：修为 1000亿（当前：${bigNumberTransform(caster.修为)}）`,
+            `　　　　　血气 1000亿（当前：${bigNumberTransform(caster.血气)}）`,
+        ].join('\n'));
+        return true;
+    }
+
+    caster.修为 -= COST;
+    caster.血气 -= COST;
+    if (caster.修为 < 0) caster.修为 = 0;
+    if (caster.血气 < 0) caster.血气 = 0;
+    await Write_player(casterQQ, caster);
+
+    const repaired = await repairSinglePlane(planeId);
+    if (!repaired) {
+        // 位面未被破坏，归还资源
+        caster.修为 += COST;
+        caster.血气 += COST;
+        await Write_player(casterQQ, caster);
+        await e.reply([
+            `【映照·位面无恙】`,
+            `你的帝意探入「${planeName}」——`,
+            `然而此位面并未崩灭，无需映照修复。`,
+            ``,
+            `「位面安好，何必映照？」`,
+            `资源已归还。`,
+        ].join('\n'));
+        return true;
+    }
+
+    // 全服广播
+    await this._broadcastYingZhaoSimple('plane', caster.名号, planeName, planeName, 0);
+
+    await e.reply([
+        `══════ 仙帝映照 · 位面修复 ══════`,
+        ``,
+        `帝意如大日骤然升起，`,
+        `映照「${planeName}」的崩灭废墟——`,
+        ``,
+        `扭曲的虚空裂缝在帝辉中缓缓弥合，`,
+        `崩碎的山河大地重新拼接成型，`,
+        ``,
+        `「此界，朕一言修复——！」`,
+        ``,
+        `轰隆！`,
+        `诡异大祭留下的创伤被帝威抹去，`,
+        `「${planeName}」位面壁垒重铸，`,
+        `崩灭状态已解除，修士可再次踏入！`,
+        ``,
+        `【消耗】修为 -1000亿 | 血气 -1000亿`,
+    ].join('\n'));
+    return true;
+}
+
+/** 映照诸天：复活所有永寂者 + 修复所有被毁位面
+ *  境界分层消耗：
+ *    仙帝(21)：    1兆修为+血气，CD 24h，不念不想 360min
+ *    祭道(22)：    5000亿修为+血气，CD 12h，不念不想 180min
+ *    祭道之上(23+)：无消耗，无CD，无任何代价
+ */
+async handleZhuTianYingzhao(e, caster, casterQQ) {
+    const level = caster.mijinglevel_id;
+    const cdKey = `xiuxian:player:${casterQQ}:yingzhao_cd`;
+
+    // ===== 祭道之上：无视一切代价 =====
+    const isAboveJidao = level >= 23;
+    // ===== 祭道：代价减半 =====
+    const isJidao = level === 22;
+
+    // ===== 非祭道之上：CD检查 =====
+    if (!isAboveJidao) {
+        if (await this._checkYingZhaoCD(e, caster, cdKey)) return true;
+    }
+
+    // ===== 消耗分层 =====
+    let COST = 1000000000000;  // 仙帝默认：1兆
+    let cdHours = 24;          // 仙帝默认：24h
+    let bunianMin = 360;       // 仙帝默认：360min
+
+    if (isAboveJidao) {
+        COST = 0;
+        cdHours = 0;
+        bunianMin = 0;
+    } else if (isJidao) {
+        COST = 500000000000;   // 祭道：5000亿
+        cdHours = 12;
+        bunianMin = 180;
+    }
+
+    // ===== 消耗检查（祭道之上跳过） =====
+    if (COST > 0 && (caster.修为 < COST || caster.血气 < COST)) {
+        const realmName = isJidao ? '祭道' : '仙帝';
+        await e.reply([
+            `\n══════ ${realmName}映照 · 诸天引渡 ══════`,
+            ``,
+            `帝意浩荡，欲映照诸天万界……`,
+            ``,
+            `然而——`,
+            `修为与血气的枯竭，令这道权能无以为继！`,
+            ``,
+            `「映照诸天」所需消耗：`,
+            `  ◆ 修为：${bigNumberTransform(COST)}（当前：${bigNumberTransform(caster.修为)}）`,
+            `  ◆ 血气：${bigNumberTransform(COST)}（当前：${bigNumberTransform(caster.血气)}）`,
+            ``,
+            `「汝之帝意，尚不足以映照诸天！」`,
+        ].join('\n'));
+        return true;
+    }
+
+    // ===== 扣除消耗 =====
+    if (COST > 0) {
+        caster.修为 -= COST;
+        caster.血气 -= COST;
+        if (caster.修为 < 0) caster.修为 = 0;
+        if (caster.血气 < 0) caster.血气 = 0;
+        await Write_player(casterQQ, caster);
+    }
+
+    // ===== 执行全体复活 =====
+    const reviveResult = await reviveAllFromYongJi();
+
+    if (reviveResult.total === 0) {
+        // 无永寂者
+        if (isAboveJidao) {
+            // 祭道之上不消耗，无需归还
+            await e.reply([
+                `【终极映照·虚空无感】`,
+                `永寂之界空无一物——`,
+                ``,
+                `你的意志扫过诸天万界，`,
+                `确认无一道果沉眠。`,
+                ``,
+                `「映照诸天，虚发。」`,
+            ].join('\n'));
+        } else {
+            // 归还资源
+            caster.修为 += COST;
+            caster.血气 += COST;
+            await Write_player(casterQQ, caster);
+            await e.reply([
+                `【映照诸天·虚空无感】`,
+                `帝意如日悬空，映照诸天万界——`,
+                `然而永寂之界一片虚空，此刻无一道沉眠的道果气息！`,
+                ``,
+                `「永寂者皆已归来，或从未入永寂——」`,
+                `「映照诸天，虚发。」`,
+                `资源已归还。`,
+            ].join('\n'));
+        }
+        return true;
+    }
+
+    // ===== 修复所有被破坏的位面 =====
+    await repairAllDestroyedPlanes();
+
+    // ===== 施加惩罚（祭道之上跳过） =====
+    if (!isAboveJidao) {
+        await redis.set(cdKey, JSON.stringify({
+            endTime: Date.now() + cdHours * 60 * 60 * 1000,
+            reason: isJidao ? '祭道映照·帝意暂封' : '映照诸天·帝意枯竭，形神将散',
+        }));
+        await redis.set(`xiuxian:player:${casterQQ}:bunian`, JSON.stringify({
+            endTime: Date.now() + bunianMin * 60 * 1000,
+            reason: isJidao ? '祭道映照后帝意波动，暂入不念不想' : '映照诸天后帝意枯竭，濒临从古史中消散',
+        }));
+    }
+
+    // ===== 全服广播（传入境界） =====
+    await this._broadcastYingZhaoSimple('all', caster.名号, '诸天', '诸天万界', reviveResult.total, level);
+
+    const planesRevived = reviveResult.byPlane.map(p => `  ◆ ${p.planeName}：${p.count}人`).join('\n');
+
+    // ===== 成功文案（境界分层） =====
+    if (isAboveJidao) {
+        await e.reply([
+            `\n 万古无声`,
+            `　　祭道之上 · 映照万界`,
+
+            ``,
+            `${caster.名号}，你已超脱一切时空、维度、法则与命运——`,
+            `纵是诡异始祖倾巢而出，`,
+            `纵是诸天万界一同坠入永寂，`,
+            `在你眼中——`,
+            `不过是时间长河中的一粒微尘。`,
+            ``,
+            `你一念起——`,
+            `永寂之界的壁垒，如同薄纸般洞穿！`,
+            ``,
+            `没有消耗，没有挣扎，没有代价。`,
+            `因为你本身，`,
+            `就已经超越了代价这个概念。`,
+            ``,
+            `「永寂之界中沉眠的道果——」`,
+            `「归——来。」`,
+            ``,
+            `这一声轻语，`,
+            `却令整个诡异高原都在颤抖！`,
+            `${reviveResult.total} 道沉寂的道果，`,
+            `在祭道之上的意志中——`,
+            `瞬间摆脱永寂之界的束缚！`,
+            `瞬间重塑不朽道基！`,
+            `瞬间归位于诸天万界！`,
+            ``,
+            `【复活分布】`,
+            planesRevived,
+            ``,
+            `不仅如此`,
+            `被诡异大祭崩灭的位面碎片，`,
+            `在你意志降临的刹那——`,
+            `连时间本身都在倒退！`,
+            `断裂的壁垒自行愈合！`,
+            `湮灭的法则重新编织！`,
+            `崩碎的位面——从无到有，重生！`,
+            ``,
+            `「祭道之上——」`,
+            `「万古诸天，不过一念之间。」`,
+            `「寂灭与新生，皆由我心。」`,
+            ``,
+            `【代价】`,
+            `  ◆ 修为消耗：无`,
+            `  ◆ 血气消耗：无`,
+            `  ◆ 映照CD：无（祭道之上，不受任何限制）`,
+            `  ◆ 不念不想：无（汝身已超越心念之困）`,
+            `  ◆ 所有被毁位面：已修复 ✓`,
+        ].join('\n'));
+    } else if (isJidao) {
+        await e.reply([
+            `\n`,
+            `　　诸天震颤 · 祭道映照`,
+            `${caster.名号}，你已焚尽规则与秩序，`,
+            `祭掉了自身的至高大道与过往一切——`,
+            `这一刻，祭道符文在眼眸深处熊熊燃烧！`,
+            ``,
+            `你无需再顾忌诸天因果，`,
+            `因为你自己，`,
+            `就是焚烧大道的起源！`,
+            ``,
+            `「永寂之界中的道果——」`,
+            `「以我祭道真名，唤尔等归来！！」`,
+            ``,
+            `祭道伟力化作焚天黑炎，`,
+            `点燃永寂之界的每一寸灰雾！`,
+            `沉寂的道果在黑炎中——`,
+            `被剥离永寂的枷锁！`,
+            `被召回现世的怀抱！`,
+            `被重塑不朽的真灵！`,
+            ``,
+            `${reviveResult.total} 道沉寂的道果，`,
+            `在祭道神火中重铸道基，`,
+            `自永寂之界的深渊——归位！`,
+            ``,
+            `【复活分布】`,
+            planesRevived,
+            ``,
+            `同时`,
+            `祭道符文流转间，`,
+            `被崩灭的位面碎片自行愈合，`,
+            `诸天壁垒在祭道的意志下重塑！`,
+            ``,
+            `「焚尽大道者，代价已然减半——」`,
+            `「然祭道之身终究未超脱，`,
+            `　映照过后，帝意仍不免暂封。」`,
+            ``,
+            `【代价（减半）】`,
+            `  ◆ 修为 -${bigNumberTransform(COST)} | 血气 -${bigNumberTransform(COST)}`,
+            `  ◆ 映照权能暂封 ${cdHours}小时`,
+            `  ◆ 修仙状态陷入「不念不想」${bunianMin}分钟`,
+            `  ◆ 所有被毁位面：已修复 ✓`,
+        ].join('\n'));
+    } else {
+        await e.reply([
+            `诸天震动 · 仙帝映照`,
+            ``,
+            `${caster.名号}，你缓缓睁开仙帝之眸——`,
+            `那道贯穿万古的帝光，超脱了时间与空间的桎梏，`,
+            `映照诸天已崩之界！`,
+            ``,
+            `「坠入永寂之界的道果——」`,
+            `「本座来了！」`,
+            ``,
+            `帝意轰鸣，如诸天开辟的第一缕曦光！`,
+            `仙帝伟力化作无量神芒，`,
+            `贯穿永寂之界每一寸灰雾！`,
+            ``,
+            `一道道沉寂的道果在光辉中——`,
+            `颤抖！苏醒！凝聚！升腾！`,
+            `归——来——！！`,
+            ``,
+            `轰！！！`,
+            `诸天永寂之界，被仙帝伟力撕开一道裂缝！`,
+            `${reviveResult.total} 名修士的道果，悉数重归诸天万界！`,
+            ``,
+            `【复活分布】`,
+            planesRevived,
+            ``,
+            `不仅如此`,
+            `被诡异大祭崩灭的位面，`,
+            `在仙帝帝意的映照下——`,
+            `壁垒愈合，万道归位，重获新生！`,
+            ``,
+            `然而——`,
+            `如此磅礴的帝意涌动，`,
+            `几乎抽干了你的仙帝本源！`,
+            ``,
+            `帝躯龟裂——`,
+            `一道道裂痕自眉心蔓延至四肢百骸，`,
+            `帝血自裂缝中渗出，尚未滴落，便化作虚无！`,
+            ``,
+            `「不念，不想……」`,
+            ``,
+            `这是帝意枯竭的恐怖征兆——`,
+            `不念不想，非为悟道空明，`,
+            `而是形神将散、`,
+            `即将从古史中彻底淡去的濒灭前兆！`,
+            ``,
+            `你的身影在时间长河中变得模糊，`,
+            `诸天万界的伟力不再向你汇聚，`,
+            `曾经一念可灭诸天的仙帝——`,
+            `此刻连维持自身的存在，都在艰难挣扎！`,
+            ``,
+            `「映照诸天……」`,
+            `「这，便是代价。」`,
+            ``,
+            `【代价】`,
+            `  ◆ 修为 -${bigNumberTransform(COST)} | 血气 -${bigNumberTransform(COST)}`,
+            `  ◆ 映照权能封闭 ${cdHours}小时`,
+            `  ◆ 修仙状态陷入「不念不想」${bunianMin}分钟`,
+            `  ◆ 所有被毁位面：已修复 ✓`,
+        ].join('\n'));
+    }
+    return true;
+}
+
+/** 检查映照CD（24小时封闭）*/
+async _checkYingZhaoCD(e, caster, cdKey) {
+    const cdData = await redis.get(cdKey);
+    if (!cdData) return false;
+    
+    const cd = JSON.parse(cdData);
+    const remaining = cd.endTime - Date.now();
+    if (remaining <= 0) {
+        await redis.del(cdKey);
+        return false;
+    }
+    
+    const hours = Math.floor(remaining / 3600000);
+    const mins = Math.floor((remaining % 3600000) / 60000);
+    await e.reply([
+        `【映照·权能暂封】`,
+        `你曾以帝躯崩裂为代价，`,
+        `将永寂之界的亡魂悉数引渡——`,
+        `那道映照诸天的帝光，几乎燃尽了你的一切！`,
+        ``,
+        `如今帝意枯竭，形神尚未稳固，`,
+        `若再强行映照——`,
+        `恐将从古史中彻底消散，再无归来的可能！`,
+        ``,
+        `「权能封闭，`,
+        `　待帝意重聚之后方可再用。」`,
+        ``,
+        `剩余封闭时间：${hours}小时${mins}分钟`,
+    ].join('\n'));
+    return true;
+}
+
+/** 简单全服广播（支持境界分层）*/
+async _broadcastYingZhaoSimple(type, casterName, targetName, planeName, count = 1, casterLevel = 21) {
+    // 读取全局推送群组（优先配置，配置为空时fallback到Redis）
+    let groupList = [];
+    try {
+        const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+        const notifyGroups = xiuxianConfig?.Era?.notifyGroups || [];
+        if (notifyGroups.length > 0) {
+            groupList = notifyGroups.map(g => String(g));
+            logger.info(`[映照广播] 从配置读取群列表: ${groupList.join(', ')}`);
+        }
+    } catch (e) {
+        logger.error('[映照广播] 从配置读取群列表失败，将尝试Redis:', e.message);
+    }
+
+    // 配置为空，fallback到Redis拍卖群列表（与EraChangeTask.js一致）
+    if (groupList.length === 0) {
+        try {
+            const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
+            const redisGroups = await redis.sMembers(redisGlKey);
+            if (redisGroups && redisGroups.length > 0) {
+                groupList = redisGroups.map(g => String(g));
+                logger.info(`[映照广播] 从Redis读取群列表(fallback): ${groupList.join(', ')}`);
+            }
+        } catch (e) {
+            logger.error('[映照广播] 从Redis读取群列表失败:', e.message);
+        }
+    }
+
+    if (groupList.length === 0) {
+        logger.warn('[映照广播] 群列表为空，无法推送消息！请检查AdminSuper配置或Redis拍卖群列表');
+    }
+
+    let msg = '';
+    if (type === 'single') {
+        msg = [
+            `\n══════ 仙帝映照 · 引渡 ══════`,
+            ``,
+            `${casterName}，立于时光长河之巅，`,
+            `伸出那只曾经映照过无数纪元兴衰的手——`,
+            ``,
+            `「${targetName}……」`,
+            `「朕已见汝道果。」`,
+            `「归来——！」`,
+            ``,
+            `永寂之界震颤！${targetName} 的道果归位！`,
+            `曾沉眠「${planeName}」的亡魂，重归诸天！`,
+        ].join('\n');
+    } else if (type === 'plane') {
+        msg = [
+            `══════ 仙帝映照 · 位面修复 ══════`,
+            ``,
+            `${casterName} 帝意浩荡，`,
+            `映照「${planeName}」的崩灭废墟——`,
+            `帝威过处，虚空裂缝弥合，山河大地重组！`,
+            ``,
+            `「此界，朕一言修复！」`,
+            `诡异大祭的创伤被帝辉抹去，`,
+            `「${planeName}」崩灭状态解除，修士可再次踏入！`,
+        ].join('\n');
+    } else if (type === 'all') {
+        if (casterLevel >= 23) {
+            // 祭道之上广播
+            msg = [
+                `\n══════════ 万古无声 ══════════`,
+                `　　祭道之上 · 映照万界`,
+                ``,
+                `${casterName}——`,
+                `超脱一切时空维度，`,
+                `超越一切法则命运！`,
+                ``,
+                `一念起，永寂之界洞穿！`,
+                `${count} 道沉寂的道果，`,
+                `在祭道之上的意志中——`,
+                `瞬间归位于诸天万界！`,
+                ``,
+                `█ 被崩灭的位面——`,
+                `　在意志降临的刹那，连时间都在倒退！█`,
+                `█ 万古诸天，不过一念之间 █`,
+                ``,
+                `「永寂消弭，万界重生。」`,
+            ].join('\n');
+        } else if (casterLevel === 22) {
+            // 祭道广播
+            msg = [
+                `\n══════════════════════════`,
+                `　　诸天震颤 · 祭道映照`,
+                `══════════════════════════`,
+                ``,
+                `${casterName}立于焚尽大道的至高之处，`,
+                `祭道符文燃烧万古诸天！`,
+                ``,
+                `永寂之界在祭道伟力下剧烈震荡！`,
+                `${count} 名修士的道果，`,
+                `在焚天之火中重铸道基、自深渊归来！`,
+                ``,
+                `█ 所有被诡异大祭崩灭的位面——`,
+                `　在祭道的意志中重塑重生 █`,
+                ``,
+                `「焚尽大道者——`,
+                `　映照诸天，修复万界，渡尽永寂！」`,
+            ].join('\n');
+        } else {
+            // 仙帝广播（保持原有）
+            msg = [
+                `\n══════════════════════════`,
+                `　　诸天震动 · 仙帝映照`,
+                `══════════════════════════`,
+                ``,
+                `${casterName}立于帝座之巅，`,
+                `帝意如日，映照诸天！`,
+                ``,
+                `永寂之界剧烈震荡！`,
+                `${count} 名修士的道果，自永寂之界中归位！`,
+                ``,
+                `█ 所有被诡异大祭崩灭的位面——`,
+                `　在帝意的映照下重获新生 █`,
+                ``,
+                `「朕以此帝意——`,
+                `　映照诸天，修复万界，渡尽永寂！」`,
+            ].join('\n');
+        }
+    }
+
+    if (!msg) return;
+    const groups = groupList || [];
+    for (const groupId of groups) {
+        Bot.pickGroup(groupId).sendMsg(msg).catch(console.error);
+    }
 }
  
 async reshapeLinggen(e) {
@@ -4544,7 +5281,10 @@ if (hasHeavenHeartMark && !isProtected) {
     
     // 计算实际需求
     const base_need_exp = Math.pow(2, 15) * 250000;
-    const actual_need_exp = Math.ceil(base_need_exp * costRate);
+    const actual_need_exp = applyQuestionFortuneCost(
+        player,
+        Math.ceil(base_need_exp * costRate)
+    );
     const exp2 = Math.max(0, actual_need_exp - player.修为);
     const exp3 = Math.max(0, actual_need_exp - player.血气);
     
@@ -4647,7 +5387,7 @@ for (const emperor of emperors) {
     
    
 // 修改后
-const battleResult = await zd_battle(BB_player, player);
+const battleResult = await zd_battle(player, BB_player);
   // 更新玩家血量
         player.当前血量 = battleResult.A_hp;
        
@@ -4903,5 +5643,4 @@ async function pushInfo(id, is_group, msg) {
     await common.relpyPrivate(id, msg);
   }
 }
-
 

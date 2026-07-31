@@ -1,0 +1,745 @@
+[
+  {
+    "id": "hunter_son",
+    "name": "猎户之子",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "采集",
+    "desc": "自幼随父深山狩猎，对天地草木极为敏感，嗅觉异于常人。",
+    "effects": {
+      "采药加成": 0.15,
+      "寻宝加成": 0.08
+    }
+  },
+  {
+    "id": "healer_family",
+    "name": "医者世家",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "采集",
+    "desc": "家传三代医术，辨草识药手到擒来，炉火纯青。",
+    "effects": {
+      "炼丹成功率": 0.15,
+      "采药加成": 0.10
+    }
+  },
+  {
+    "id": "mountain_child",
+    "name": "山野之子",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "采集",
+    "desc": "生于山野，长于荒林，对天材地宝有天然的感知力。",
+    "effects": {
+      "采药加成": 0.20
+    }
+  },
+  {
+    "id": "merchant_born",
+    "name": "商贾之后",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "采集",
+    "desc": "出身商贾之家，从小耳濡目染，善于发现宝物价值。",
+    "effects": {
+      "寻宝加成": 0.20,
+      "灵石收益": 0.10
+    }
+  },
+  {
+    "id": "agile_body",
+    "name": "轻灵体质",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "战斗",
+    "desc": "天生筋骨灵巧，身法远超常人，如燕掠水面。",
+    "effects": {
+      "速度": 60
+    }
+  },
+  {
+    "id": "iron_blood",
+    "name": "铁血武夫",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "战斗",
+    "desc": "武道世家出身，以体魄为刃，一身铁骨无惧生死。",
+    "effects": {
+      "攻击加成": 0.12,
+      "生命加成": 0.08
+    }
+  },
+  {
+    "id": "shield_bearer",
+    "name": "盾卫遗孤",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "战斗",
+    "desc": "父亲是城门守卫，从小习得格挡之术，防御意识极强。",
+    "effects": {
+      "防御加成": 0.15,
+      "生命加成": 0.10
+    }
+  },
+  {
+    "id": "swift_feet",
+    "name": "疾风步",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "战斗",
+    "desc": "双腿天生如风，出手先机占尽，令对手防不胜防。",
+    "effects": {
+      "速度": 80,
+      "暴击加成": 0.05
+    }
+  },
+  {
+    "id": "scholar_family",
+    "name": "书香门第",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "修炼",
+    "desc": "诗书传家，心性沉稳，参悟功法事半功倍。",
+    "effects": {
+      "修炼加成": 0.15,
+      "境界突破成功率": 0.05
+    }
+  },
+  {
+    "id": "dao_heart",
+    "name": "道心纯粹",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "修炼",
+    "desc": "心无旁骛，无欲无求，修炼时灵气自然涌入。",
+    "effects": {
+      "修炼加成": 0.20
+    }
+  },
+  {
+    "id": "wisdom_awakening",
+    "name": "慧根初醒",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "修炼",
+    "desc": "灵台偶有道音回响，参悟经文与天地道痕时，常能比旁人多得一分领会。",
+    "effects": {
+      "悟道收益": 0.10
+    }
+  },
+  {
+    "id": "clear_dao_mind",
+    "name": "道心澄明",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "修炼",
+    "desc": "心境澄澈如镜，诸般道痕映入心海皆有迹可循，偶能于枯坐中一朝顿悟。",
+    "effects": {
+      "悟道收益": 0.20,
+      "顿悟概率": 0.05
+    }
+  },
+  {
+    "id": "born_close_to_dao",
+    "name": "近道之命",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "修炼",
+    "desc": "生来近道，天地万法与之相亲。静坐推演之时道音自鸣，漫长岁月亦难磨灭其悟性。",
+    "effects": {
+      "悟道收益": 0.40,
+      "顿悟概率": 0.10,
+      "悟道寿元消耗减少": 0.15
+    }
+  },
+  {
+    "id": "lucky_star",
+    "name": "福星高照",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "特殊",
+    "desc": "生逢祥瑞之日，命中自有贵人相助，机缘不断。",
+    "effects": {
+      "幸运值": 30,
+      "寻宝加成": 0.15,
+      "灵石收益": 0.10
+    }
+  },
+  {
+    "id": "phoenix_blood",
+    "name": "凤凰余血",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "战斗",
+    "desc": "体内流淌着远古凤凰微薄血脉，浴火重生之力犹存。",
+    "effects": {
+      "复活概率": 0.10,
+      "生命加成": 0.15,
+      "攻击加成": 0.08
+    }
+  },
+  {
+    "id": "divine_root",
+    "name": "仙根初现",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "修炼",
+    "desc": "生而有异象，灵根天赋超越凡人，修炼如鱼得水。",
+    "effects": {
+      "修炼加成": 0.25,
+      "境界突破成功率": 0.10,
+      "速度": 30
+    }
+  },
+  {
+    "id": "alchemy_prodigy",
+    "name": "丹道天才",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "采集",
+    "desc": "对丹道有着天生的领悟力，连呼吸都能闻到草药的气息。",
+    "effects": {
+      "炼丹成功率": 0.25,
+      "采药加成": 0.15,
+      "炼丹品质": 0.10
+    }
+  },
+  {
+    "id": "killing_intent",
+    "name": "杀意天成",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "战斗",
+    "desc": "生而带有凶煞之气，出手必取要害，令敌人心胆俱裂。",
+    "effects": {
+      "攻击加成": 0.20,
+      "暴击加成": 0.12,
+      "速度": 40
+    }
+  },
+  {
+    "id": "ancient_bloodline",
+    "name": "太古血脉",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "特殊",
+    "desc": "体内沉睡着太古时代强者的血脉，有朝一日将会觉醒……",
+    "effects": {
+      "攻击加成": 0.15,
+      "防御加成": 0.15,
+      "生命加成": 0.20,
+      "速度": 50,
+      "修炼加成": 0.10
+    }
+  },
+  {
+    "id": "world_will",
+    "name": "天地意志",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "修炼",
+    "desc": "生来与天地共鸣，仿佛得到了这片天地的认可与庇护。",
+    "effects": {
+      "修炼加成": 0.30,
+      "境界突破成功率": 0.20,
+      "幸运值": 20,
+      "寻宝加成": 0.20
+    }
+  },
+  {
+    "id": "dao_bone",
+    "name": "道骨仙胎",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "修炼",
+    "desc": "万年难出一人，生而具道骨仙胎，与大道相合，仙途注定。",
+    "effects": {
+      "修炼加成": 0.25,
+      "境界突破成功率": 0.15,
+      "炼丹成功率": 0.15,
+      "速度": 60
+    }
+  },
+  {
+    "id": "war_god_descendant",
+    "name": "战神后裔",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "战斗",
+    "desc": "传说中战神的后代，生而好战，血脉中流淌着不屈的战意。",
+    "effects": {
+      "攻击加成": 0.25,
+      "暴击加成": 0.15,
+      "防御加成": 0.10,
+      "生命加成": 0.15
+    }
+  },
+  {
+    "id": "reincarnation_sage",
+    "name": "前世仙人",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "特殊",
+    "desc": "乃前世大能转世，虽记忆封印，但灵魂深处残存无上感悟。",
+    "effects": {
+      "修炼加成": 0.20,
+      "境界突破成功率": 0.15,
+      "炼丹成功率": 0.12,
+      "攻击加成": 0.12,
+      "幸运值": 25,
+      "速度": 30
+    }
+  },
+  {
+    "id": "mine_adept",
+    "name": "矿道奇才",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "采集",
+    "desc": "自幼在矿坑中长大，对灵矿脉理有天然的直觉。",
+    "effects": {
+      "采矿加成": 0.20
+    }
+  },
+  {
+    "id": "mine_master",
+    "name": "地脉之子",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "采集",
+    "desc": "能感应大地深处的灵脉走向，矿石自行汇聚于掌中。",
+    "effects": {
+      "采矿加成": 0.35,
+      "寻宝加成": 0.10
+    }
+  },
+  {
+    "id": "mine_emperor",
+    "name": "矿道帝师",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "采集",
+    "desc": "前世曾为矿道帝君，一眼可看穿万丈地脉，点石成金。",
+    "effects": {
+      "采矿加成": 0.55,
+      "寻宝加成": 0.20,
+      "灵石收益": 0.15
+    }
+  },
+  {
+    "id": "talisman_intuition",
+    "name": "符道直觉",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "采集",
+    "desc": "天生平行感较强，随手刻画便有灵韵，符道入门极快。",
+    "effects": {
+      "制符加成": 0.15
+    }
+  },
+  {
+    "id": "talisman_born",
+    "name": "天符体质",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "采集",
+    "desc": "天生以身为符，灵力自化符纹，制符时成功率远超常人。",
+    "effects": {
+      "制符加成": 0.30,
+      "炼丹成功率": 0.10
+    }
+  },
+  {
+    "id": "talisman_sage",
+    "name": "符道圣手",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "采集",
+    "desc": "万符一道，皆在掌心。传闻上古符圣再世，符道之路坦途。",
+    "effects": {
+      "制符加成": 0.50,
+      "炼丹成功率": 0.15,
+      "修炼加成": 0.10
+    }
+  },
+  {
+    "id": "secret_realm_native",
+    "name": "秘境之子",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "特殊",
+    "desc": "生于秘境裂缝之中，天生不受秘境法则压制，探索更迅速。",
+    "effects": {
+      "秘境加速": 60
+    }
+  },
+  {
+    "id": "secret_realm_walker",
+    "name": "虚空行者",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "特殊",
+    "desc": "能扭曲秘境空间法则，在秘境中来去如风，快人一步。",
+    "effects": {
+      "秘境加速": 60,
+      "寻宝加成": 0.15,
+      "采矿加成": 0.10
+    }
+  },
+  {
+    "id": "dao_wound_healer",
+    "name": "道伤自愈体",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "修炼",
+    "desc": "体内灵力带有修复道伤的特性，修复代价大幅降低。",
+    "effects": {
+      "修复道伤代价减少": 0.20
+    }
+  },
+  {
+    "id": "lifespring_touched",
+    "name": "本源之泉",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "修炼",
+    "desc": "生命本源异常充沛，修复本源时灵力消耗更低。",
+    "effects": {
+      "修复本源代价减少": 0.20
+    }
+  },
+  {
+    "id": "vitality_overflow",
+    "name": "生生不息",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "修炼",
+    "desc": "生命本源远超同龄之人，恢复力极强，根基深厚。",
+    "effects": {
+      "生命本源额外": 50,
+      "生命加成": 0.10
+    }
+  },
+  {
+    "id": "yuanshen_inclined",
+    "name": "神识天赋",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "修炼",
+    "desc": "神识天生强大，修炼元神功法时如鱼得水，事半功倍。",
+    "effects": {
+      "元神修炼加成": 0.20
+    }
+  },
+  {
+    "id": "yuanshen_prodigy",
+    "name": "元神圣体",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "修炼",
+    "desc": "元神天生圆满之相，修习元神功法一日千里，远超常人。",
+    "effects": {
+      "元神修炼加成": 0.35,
+      "修炼加成": 0.10,
+      "境界突破成功率": 0.08
+    }
+  },
+  {
+    "id": "shore_patriarch",
+    "name": "彼岸教祖",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "特殊",
+    "desc": "前世乃彼岸大教之教祖，可开启内景地，自成一界修行。",
+    "effects": {
+      "内景地开启概率": 0.40,
+      "内景地收益": 0.3,
+      "内景地消耗倍率": 0.80,
+      "修炼加成": 0.20,
+      "生命加成": 0.15,
+      "境界突破成功率": 0.10
+    }
+  },
+  {
+    "id": "dao_wound_sage",
+    "name": "天道医者",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "修炼",
+    "desc": "悟透天道疗愈之法，道伤与本源修复皆轻而易举。",
+    "effects": {
+      "修复道伤代价减少": 0.35,
+      "修复本源代价减少": 0.35,
+      "生命本源额外": 50,
+      "生命加成": 0.10
+    }
+  },
+  {
+    "id": "alchemy_grandmaster",
+    "name": "丹道大宗师",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "采集",
+    "desc": "丹道之上的上位命格，前世曾为古丹帝，炼丹之术登峰造极。",
+    "effects": {
+      "炼丹成功率": 0.35,
+      "采药加成": 0.25,
+      "炼丹品质": 0.20,
+      "修炼加成": 0.08
+    }
+  },
+  {
+    "id": "divine_wisdom",
+    "name": "神慧者",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "特殊",
+    "desc": "天生神慧，悟性通天，天地万法一念即通，仙途坦荡无阻。",
+    "effects": {
+      "秘境加速": 60,
+      "寻宝加成": 0.50,
+      "出售价格倍率": 2.0,
+      "修复道伤代价减少": 0.45,
+      "修复本源代价减少": 0.45,
+      "证道修为减少": 0.40,
+      "渡劫修为减少": 0.40
+    }
+  },
+  {
+    "id": "immortal_spark",
+    "name": "仙缘初萌",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "修炼",
+    "desc": "生来便与仙道有一丝若有若无的感应，灵台深处孕育着尚未绽放的仙缘。",
+    "effects": {
+      "仙道潜力额外": 20
+    }
+  },
+  {
+    "id": "immortal_grace",
+    "name": "仙姿天成",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "修炼",
+    "desc": "仙姿自成，悟道修行皆有余裕，每逢机缘都能从中汲取更多仙道底蕴。",
+    "effects": {
+      "仙道潜力额外": 50,
+      "仙道潜力收益": 0.10
+    }
+  },
+  {
+    "id": "great_dao_immortal_embryo",
+    "name": "大道仙胚",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "修炼",
+    "desc": "未入仙途，体内已孕育大道仙胚。潜力如渊似海，承载无上传承亦不伤根本。",
+    "effects": {
+      "仙道潜力额外": 100,
+      "仙道潜力收益": 0.25,
+      "仙道潜力消耗减少": 0.10
+    }
+  },
+  {
+    "id": "blacksmith_lineage",
+    "name": "铁匠世家",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "采集",
+    "desc": "祖辈以炉火与铁锤为伴，耳濡目染之下，对火候和锤力的把控远胜常人。",
+    "effects": {
+      "炼器成功率": 0.10,
+      "炼制装备加成": 0.05,
+      "锻造经验加成": 0.10
+    }
+  },
+  {
+    "id": "hundred_refinement_smith",
+    "name": "百炼巧匠",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "采集",
+    "desc": "百炼成钢，心手相应。经其锤炼的兵甲灵性更足，锋芒与坚韧皆胜同阶。",
+    "effects": {
+      "炼器成功率": 0.20,
+      "炼制装备加成": 0.12,
+      "锻造经验加成": 0.20
+    }
+  },
+  {
+    "id": "artifact_dao_grandmaster",
+    "name": "器道宗师",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "采集",
+    "desc": "通晓万物器理，凡铁入手亦可化作神兵。炉火开合之间，自有器道法则相随。",
+    "effects": {
+      "炼器成功率": 0.35,
+      "炼制装备加成": 0.25,
+      "锻造经验加成": 0.35
+    }
+  },
+  {
+    "id": "heaven_rewards_diligence",
+    "name": "天道酬勤",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "特殊",
+    "desc": "大道不负有心人。日日勤修不辍者，自有天道垂青，每次签到所得奖励皆化为双份。",
+    "effects": {
+      "签到奖励倍率": 2.0
+    }
+  },
+  {
+    "id": "frail_constitution",
+    "name": "先天孱弱",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "战斗",
+    "isNegative": true,
+    "severity": 1,
+    "desc": "自幼气血虚弱，筋骨难承重负，纵使勤修苦练也比常人更易力竭。",
+    "effects": {
+      "攻击加成": -0.08,
+      "生命加成": -0.15
+    }
+  },
+  {
+    "id": "blocked_meridians",
+    "name": "经脉滞涩",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "修炼",
+    "isNegative": true,
+    "severity": 1,
+    "desc": "先天经脉细弱闭塞，灵气运转处处受阻，修炼与突破皆要付出更多心力。",
+    "effects": {
+      "修炼加成": -0.15,
+      "境界突破成功率": -0.05
+    }
+  },
+  {
+    "id": "clouded_spiritual_mind",
+    "name": "灵台蒙尘",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "修炼",
+    "isNegative": true,
+    "severity": 2,
+    "desc": "灵台似被尘雾遮蔽，推演道法时杂念丛生，往往耗去更多岁月才能窥见一线真意。",
+    "effects": {
+      "悟道收益": -0.20,
+      "顿悟概率": -0.05,
+      "悟道寿元消耗增加": 0.15
+    }
+  },
+  {
+    "id": "clumsy_smith",
+    "name": "拙手笨匠",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "采集",
+    "isNegative": true,
+    "severity": 1,
+    "desc": "对炉火与锤力的感知迟钝，炼器时常错过最佳火候，成品也难尽如人意。",
+    "effects": {
+      "炼器成功率": -0.10,
+      "炼制装备加成": -0.05,
+      "锻造经验加成": -0.10
+    }
+  },
+  {
+    "id": "ill_fortune",
+    "name": "时运不济",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "特殊",
+    "isNegative": true,
+    "severity": 1,
+    "desc": "命中常有微小波折，机缘总在伸手之前悄然溜走，所得收获也往往不及旁人。",
+    "effects": {
+      "幸运值": -15,
+      "寻宝加成": -0.10,
+      "灵石收益": -0.08
+    }
+  },
+  {
+    "id": "rebellious_alchemy_flame",
+    "name": "丹火反噬",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "采集",
+    "isNegative": true,
+    "severity": 2,
+    "desc": "体内丹火暴烈难驯，炼丹时稍有不慎便会反噬丹炉，丹成品质亦大受影响。",
+    "effects": {
+      "炼丹成功率": -0.20,
+      "炼丹品质": -0.10,
+      "生命加成": -0.05
+    }
+  },
+  {
+    "id": "shallow_immortal_fate",
+    "name": "仙缘浅薄",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "修炼",
+    "isNegative": true,
+    "severity": 2,
+    "desc": "虽能踏上仙途，却始终难得大道垂青，积攒仙道潜力缓慢，承载传承时损耗更重。",
+    "effects": {
+      "仙道潜力收益": -0.20,
+      "仙道潜力消耗增加": 0.15
+    }
+  },
+  {
+    "id": "wounded_dao_body",
+    "name": "道伤之躯",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "修炼",
+    "isNegative": true,
+    "severity": 2,
+    "desc": "降生之时便被大道裂痕侵入本源，道伤难愈，修补根基所需代价远超常人。",
+    "effects": {
+      "修复道伤代价增加": 0.25,
+      "修复本源代价增加": 0.25,
+      "生命加成": -0.10
+    }
+  },
+  {
+    "id": "five_disadvantages_three_deficiencies",
+    "name": "五弊三缺",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "特殊",
+    "isNegative": true,
+    "severity": 2,
+    "desc": "窥探天机而受命数反噬，福禄寿皆有亏缺，天道日常赐予也被无形削去一半。",
+    "effects": {
+      "签到奖励倍率": 0.50,
+      "寿元额外": -20,
+      "灵石收益": -0.15
+    }
+  },
+  {
+    "id": "heaven_forsaken_fate",
+    "name": "天弃之命",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "特殊",
+    "isNegative": true,
+    "severity": 3,
+    "desc": "生来不容于天地，大道闭门，机缘远遁。每向仙路迈进一步，都似在与整片天地为敌。",
+    "effects": {
+      "修炼加成": -0.25,
+      "境界突破成功率": -0.15,
+      "幸运值": -30,
+      "寻宝加成": -0.25,
+      "仙道潜力收益": -0.25,
+      "仙道潜力消耗增加": 0.25,
+      "签到奖励倍率": 0.50
+    }
+  }
+]

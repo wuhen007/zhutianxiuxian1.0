@@ -28,7 +28,37 @@ import {
   dj,
   dj_players
 } from '../../model/xiuxian.js';
+import { tryInterceptAscension } from '../../model/TianLuoDiWang.js';
+import { getMinggeEffects } from '../../model/mingge.js';
+import { getBreakthroughPotentialCost } from './breakthroughPotential.js';
+import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
+import { getKongtongModifiers } from '../../model/innateTreasure.js';
+import { getPlayerPlaneName } from '../../model/planeCoords.js';
+import {
+  DAO_DAILY_LIMIT,
+  DAO_REALM_RULES,
+  calculateWudaoResult,
+  consumePlayerLifespan,
+  ensureDaoPath,
+  formatSignedPercent,
+  getAvailableLifespan,
+  getDaoRuleForRealm,
+  getDaoStage,
+  getShanghaiDateKey,
+  getTechniqueWudaoProfile,
+  recordDaoAttempt,
+  refreshDaoDaily,
+  unlockDaoRealm,
+} from './wudaoRules.js';
+import { findWudaoTeaItem } from './wudaoTea.js';
 import { clearInterval } from 'timers';
+
+function consumeBreakthroughPill(player) {
+  if (player.breakthrough !== true) return 0;
+  player.breakthrough = false;
+  return 0.2;
+}
+
 export class Level extends plugin {
   constructor() {
     super({
@@ -81,8 +111,12 @@ export class Level extends plugin {
                     fnc: 'hudao'
                 },
                 {
-                    reg: '^#悟道$',
+                    reg: '^#悟道(?:\\s*(?:古茶(?:树|叶)?|悟道古茶(?:树|叶)))?$',
                     fnc: 'wudao'
+                },
+                {
+                    reg: '^#(?:我的道途|道途)$',
+                    fnc: 'showDaoPath'
                 },
                 {
                   reg:'^#打散雷劫$',
@@ -251,9 +285,27 @@ async nihuojiushi(e) {
     // 当前处于第几世
     const currentLife = player.nihuo_count || 1;
     
+    // ========== 仙道潜力检查（逆活九世） ==========
+    {
+        // 第1世=1点，第2世=2点...第9世=9点，递增1点
+        const potentialCost = applyQuestionFortuneCost(player, currentLife);
+        const currentPotential = player.仙道潜力 || 0;
+        if (currentPotential < potentialCost) {
+            e.reply([
+                `【仙道潜力不足·逆活受阻】`,
+                `${player.名号}欲逆天改命，第${currentLife}世轮回却力不从心！`,
+                `当前仙道潜力：${currentPotential} 点`,
+                `第${currentLife}世逆活所需：${potentialCost} 点`,
+                `「每逆活一世，需耗费更多仙道潜力，命运之门对你暂时关闭。」`
+            ].join('\n'));
+            return;
+        }
+    }
+    // ========== 仙道潜力检查结束 ==========
+    
     // 计算消耗资源
     const baseExpCost = 1500000000 * Math.pow(2, currentLife-1);
-    const actualExpCost = Math.ceil(baseExpCost * difficulty);
+    const actualExpCost = applyQuestionFortuneCost(player, Math.ceil(baseExpCost * difficulty));
     
     // 资源检查
     if (player.修为 < actualExpCost || player.血气 < actualExpCost) {
@@ -366,6 +418,12 @@ async nihuojiushi(e) {
     
     // 逆活成功
     player.nihuo_count = currentLife + 1;
+    
+    // 扣除仙道潜力（逆活成功后扣除，第currentLife世消耗currentLife点）
+    player.仙道潜力 = Math.max(
+        0,
+        (player.仙道潜力 || 0) - applyQuestionFortuneCost(player, currentLife)
+    );
     
     // 属性增强
     const powerGain = Math.round(30 * difficulty * Math.sqrt(currentLife)*500000000);
@@ -737,7 +795,7 @@ const gongfaName = getRequiredGongfaName(player, "化龙");
     }
         // 检查是否正在尝试突破ID22境界
     if (player.mijinglevel_id  === 15) {
-        e.reply('你已到达准帝九重天，想要再更进一步唯有打破天地桎梏，融合天心印记，成就无上道果，执掌乾坤，镇压万道！');
+        e.reply('你已到达准帝九重天，想要再更进一步唯有打破天地桎梏：或融合天心印记，或以无上体质凌驾万道，成就无缺帝果！');
         return;
     }
      if (player.mijinglevel_id === 16) {
@@ -849,7 +907,7 @@ return;
     
     // 计算基础和经验值并应用时代系数
     const base_need_exp = Math.pow(2, player.mijinglevel_id) * 250000;
-    const actual_need_exp = Math.ceil(base_need_exp * costRate);
+    const actual_need_exp = applyQuestionFortuneCost(player, Math.ceil(base_need_exp * costRate));
     
     // 假设player.修为和player.血气都是数值类型
     let now_exp_xiuwei = player.修为; 
@@ -884,7 +942,7 @@ if (player.mijinglevel_id === 6) {
     ].join("\n");
     
     // 检查源石
-    const requiredShenyuan = 10000000;
+    const requiredShenyuan = applyQuestionFortuneCost(player, 10000000);
     if (player.源石 < requiredShenyuan) {
         const missingShenyuan = requiredShenyuan - player.源石;
         return e.reply([
@@ -918,7 +976,7 @@ if (player.mijinglevel_id === 6) {
         // 计算突破消耗（修为和血气）
         const base_need_exp = 1000000;
         const { costRate, eraName } = this.getEraInfo(); // 获取当前时代信息
-        const actual_need_exp = Math.floor(base_need_exp * costRate);
+        const actual_need_exp = applyQuestionFortuneCost(player, Math.floor(base_need_exp * costRate));
         
         // 构建时代信息字符串
         const eraInfo = costRate !== 1.0 
@@ -1530,105 +1588,235 @@ async hudao(e) {
     }
   }
   async wudao(e) {
-    if (!e.isGroup) {
-        e.reply('修仙游戏请在群聊中游玩');
-        return;
-      }
-      let usr_qq = e.user_id.toString().replace('qg_', '');
-      let ifexistplay = await existplayer(usr_qq);
-      if (!ifexistplay) {
-        e.reply('玩家不存在，请先创建角色');
-        return;
-      }
-      let game_action = await redis.get("xiuxian:player:" + usr_qq + ":game_action");
-      if (game_action == 0) {
-        e.reply("修仙：游戏进行中...");
-        return;
-      }
-      let player = await Read_player(usr_qq);
-      if (!isNotNull(player.Physique_id)) {
-        e.reply("请先#刷新信息");
-        return;
-      }
-      
-     // 检查纳戒中是否有悟道古茶树道具
-     if (await exist_najie_thing(usr_qq, "悟道古茶树", "道具")) {
-        // 读取玩家数据
-        let player = await Read_player(usr_qq);
+    if (!e.isGroup) return e.reply('修仙游戏请在群聊中游玩');
 
-        // 计算增加的修为和血气值
-        let increaseValue;
-        if (player.mijinglevel_id < 11) {
-            increaseValue = player.mijinglevel_id * 5000000 * 1.5;
-        } else {
-            increaseValue = player.mijinglevel_id * 50000000 * 3.5;
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    if (!(await existplayer(usr_qq))) return e.reply('玩家不存在，请先创建角色');
+
+    const game_action = await redis.get(`xiuxian:player:${usr_qq}:game_action`);
+    if (game_action == 0) return e.reply('修仙：游戏进行中...');
+
+    const lockKey = `xiuxian:player:${usr_qq}:wudao_lock`;
+    const lockToken = `${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+    const lockAcquired = await redis.set(lockKey, lockToken, { EX: 30, NX: true });
+    if (!lockAcquired) return e.reply('你正在参悟大道，请勿重复发送命令。');
+
+    try {
+      const player = await Read_player(usr_qq);
+      if (!isNotNull(player.Physique_id)) return e.reply('请先#刷新信息');
+
+      const realmId = Number(player.mijinglevel_id) || 0;
+      if (realmId < 11) return this.legacyTeaWudao(e, usr_qq, player);
+      if (realmId >= 16) {
+        return e.reply([
+          '【帝道无缺】',
+          `${player.名号}已证无缺帝道，寻常悟道已无法再补益自身。`,
+          '可发送#我的道途查看昔日道果。'
+        ].join('\n'));
+      }
+
+      const rule = getDaoRuleForRealm(realmId);
+      if (!rule) return e.reply('当前境界尚未开放对应的悟道阶段。');
+
+      const ensured = ensureDaoPath(player);
+      unlockDaoRealm(player, realmId);
+      const dateKey = getShanghaiDateKey();
+      refreshDaoDaily(ensured.path, dateKey);
+      const currentExp = Number(ensured.path.stages[rule.key]) || 0;
+
+      if (currentExp >= rule.targetExp) {
+        await Write_player(usr_qq, player);
+        return e.reply([
+          `【${rule.name}·圆满】`,
+          `${player.名号}的${rule.name}已臻圆满，可引动${rule.nextRealm}雷劫。`,
+          '当前法则不会在渡劫时消耗。'
+        ].join('\n'));
+      }
+
+      if (ensured.path.daily.count >= DAO_DAILY_LIMIT) {
+        await Write_player(usr_qq, player);
+        return e.reply(`今日悟道已达${DAO_DAILY_LIMIT}次上限，静待明日再参大道。`);
+      }
+
+      const command = String(e.msg || '').replace(/\s/g, '');
+      const useTea = command !== '#悟道';
+      let teaItem = '';
+      if (useTea) {
+        teaItem = await findWudaoTeaItem(itemName =>
+          exist_najie_thing(usr_qq, itemName, '道具')
+        );
+        if (!teaItem) {
+          await Write_player(usr_qq, player);
+          return e.reply('纳戒中没有悟道古茶叶，无法借古茶道韵加速悟道。');
         }
+      }
 
-        // 计算悟道成功率
-        let baseSuccessRate = 0.20; // 初始成功率20%
-        let additionalRatePerLevel = 0.025; // 每级增加2.5%
-        let successRateIncrease = player.mijinglevel_id * additionalRatePerLevel;
-        let totalSuccessRate = baseSuccessRate + successRateIncrease;
+      const set = config.getConfig('xiuxian', 'xiuxian');
+      const eraIndex = Number(set.Era?.current?.index ?? 2);
+      const minggeEffects = getMinggeEffects(player, data.minggeList);
+      const technique = getTechniqueWudaoProfile(player.学习的功法, {
+        gongfaList: data.gongfa_list,
+        timeGongfaList: data.timegongfa_list,
+        dijingList: data.dijingList,
+      });
+      const result = calculateWudaoResult({
+        rule,
+        physiqueName: player.灵根?.name,
+        eraIndex,
+        aptitudeName: player.天资等级,
+        techniqueBonus: technique.bonus,
+        minggeEffects,
+        useTea,
+      });
+      const lifespanCost = applyQuestionFortuneCost(player, result.lifespanCost);
+      const availableLifespan = getAvailableLifespan(player);
+      if (availableLifespan <= lifespanCost) {
+        await Write_player(usr_qq, player);
+        return e.reply([
+          '【寿元不足·悟道中止】',
+          `${rule.name}单次悟道需消耗${lifespanCost.toLocaleString()}年寿元。`,
+          `当前真实寿元：${availableLifespan.toLocaleString()}年。`,
+          '悟道不会耗尽最后一缕寿元，请先寻得延寿机缘。'
+        ].join('\n'));
+      }
 
-        // 判断悟道是否成功
-        if (Math.random() < totalSuccessRate) {
-            // 增加修为和血气
-            player.修为 += increaseValue;
-            player.血气 += increaseValue;
+      const previousStage = getDaoStage(currentExp, rule);
+      const kongtong = getKongtongModifiers(player);
+      const imperialWudao = kongtong.decree?.type === '修炼' &&
+        kongtong.decree.plane === getPlayerPlaneName(player);
+      const actualGain = Math.min(
+        Math.floor(result.gain * (imperialWudao ? 1.5 : 1)),
+        rule.targetExp - currentExp
+      );
+      consumePlayerLifespan(player, lifespanCost);
+      ensured.path.stages[rule.key] = currentExp + actualGain;
+      const attemptCount = recordDaoAttempt(ensured.path, dateKey);
+      const currentStage = getDaoStage(ensured.path.stages[rule.key], rule);
+      await Write_player(usr_qq, player);
+      if (teaItem) await Add_najie_thing(usr_qq, teaItem, '道具', -1);
 
-            // 增加全属性
-            let 全属性增加值;
-            if (player.mijinglevel_id < 11) {
-                全属性增加值 = 5000000;
-            } else {
-                全属性增加值 = 1500000000; // 固定增加1500万
-            }
+      const factorLines = [
+        `体质 ${formatSignedPercent(result.bonuses.physique)}`,
+        `${result.era.name} ${formatSignedPercent(result.bonuses.era)}`,
+        `天资 ${formatSignedPercent(result.bonuses.aptitude)}`,
+        `功法「${technique.name}」${formatSignedPercent(result.bonuses.technique)}`,
+        `命格 ${formatSignedPercent(result.bonuses.mingge)}`,
+      ];
+      if (useTea) factorLines.push(`悟道古茶 ${formatSignedPercent(result.bonuses.tea)}`);
+      if (imperialWudao) factorLines.push('人皇敕令 +50%');
 
-            // 检查全属性是否已达上限
-            let 全属性上限 = 15000000000000;
-            let 全属性总和 = player.攻击加成 + player.生命加成 + player.防御加成;
-            if (全属性总和 >= 全属性上限) {
-                e.reply(`你的全属性已经到达顶点，无法再增加。`);
-            } else {
-                // 更新全属性
-                player.攻击加成 += 全属性增加值;
-                player.攻击 += 全属性增加值;
-                player.生命加成 += 全属性增加值;
-                player.血量上限 += 全属性增加值;
-                player.当前血量 += 全属性增加值;
-                player.防御加成 += 全属性增加值;
-                player.防御 += 全属性增加值;
-                // 确保全属性不超过上限
-                player.攻击加成 = Math.min(player.攻击加成, 全属性上限);
-                player.生命加成 = Math.min(player.生命加成, 全属性上限);
-                player.防御加成 = Math.min(player.防御加成, 全属性上限);
-            }
-
-            // 更新玩家数据
-            await Write_player(usr_qq, player);
-
-            // 减少悟道古茶树道具数量
-            await Add_najie_thing(usr_qq, "悟道古茶树", "道具", -1);
-
-            // 通知玩家悟道成功
-            let message = `你静下心来体悟悟道古茶树上每一片叶子所蕴含的道韵`;
-            if (player.mijinglevel_id < 11) {
-                message += `然而你并没有开创出属于自身的道，无法领悟悟道古茶树的大道至理，最终你的修为和血气只增加了${increaseValue}点`;
-            } else {
-                message += `悟道古茶树叶片上的道韵与你自身所修行开创出的道交相印证，其上似乎有昔日古之大帝创法时的烙印，你观摩它们的帝法很快便踏入了悟道境，天地间恍然光华大盛，绽开金莲朵朵，仙音袅袅，天地众生都心有所感，那些金莲每一朵都蕴含着大道至理，完善你的道与法，你的修为和血气各增加了${increaseValue}点`;
-            }
-            if (全属性总和 < 全属性上限) {
-                message += `，全属性增加了${全属性增加值}点`;
-            }
-            message += `。`;
-            e.reply(message);
-        } else {
-            e.reply(`悟道失败，你的悟道古茶树未能发挥作用。`);
-        }
-    } else {
-        e.reply(`你的纳戒中没有悟道古茶树道具。`);
+      const reply = [
+        `【悟道·${rule.name}】`,
+        result.enlightened
+          ? '灵光贯穿识海，你于刹那间顿悟，诸般道理豁然贯通！'
+          : '你以自身之道印证天地万法，于枯坐中补全一缕道则。',
+        `消耗寿元：${lifespanCost.toLocaleString()}年`,
+        `本次感悟：+${actualGain}${result.enlightened ? '（顿悟）' : ''}`,
+        `道途进度：${ensured.path.stages[rule.key]}/${rule.targetExp}（${currentStage.name}）`,
+        `收益倍率：×${result.multiplier.toFixed(2)}〔${factorLines.join('，')}〕`,
+        `今日悟道：${attemptCount}/${DAO_DAILY_LIMIT}`,
+      ];
+      if (previousStage.name !== currentStage.name) {
+        reply.push(`【境界精进】${rule.name}由${previousStage.name}迈入${currentStage.name}！`);
+      }
+      if (currentStage.name === '圆满') {
+        reply.push(`【${rule.completion}】己道圆满，可引动${rule.nextRealm}雷劫！`);
+      }
+      return e.reply(reply.join('\n'));
+    } finally {
+      try {
+        if ((await redis.get(lockKey)) === lockToken) await redis.del(lockKey);
+      } catch (error) {
+        console.error('释放悟道锁失败:', error);
+      }
     }
-}
+  }
+
+  async legacyTeaWudao(e, usr_qq, player) {
+    const teaItem = await findWudaoTeaItem(itemName =>
+      exist_najie_thing(usr_qq, itemName, '道具')
+    );
+    if (!teaItem) {
+      return e.reply([
+        '【己道未开】',
+        '斩道王者方能开创自身之道，当前无法进行道途悟道。',
+        '纳戒中也没有悟道古茶叶可供参悟。'
+      ].join('\n'));
+    }
+
+    const increaseValue = player.mijinglevel_id * 5000000 * 1.5;
+    const successRate = 0.2 + player.mijinglevel_id * 0.025;
+    if (Math.random() >= successRate) {
+      return e.reply('悟道失败，古茶道韵未能与你共鸣，道具未消耗。');
+    }
+
+    const statGain = 5000000;
+    const statCap = 15000000000000;
+    const statTotal =
+      (Number(player.攻击加成) || 0) +
+      (Number(player.生命加成) || 0) +
+      (Number(player.防御加成) || 0);
+    player.修为 = (Number(player.修为) || 0) + increaseValue;
+    player.血气 = (Number(player.血气) || 0) + increaseValue;
+    if (statTotal < statCap) {
+      player.攻击加成 = Math.min((Number(player.攻击加成) || 0) + statGain, statCap);
+      player.攻击 = (Number(player.攻击) || 0) + statGain;
+      player.生命加成 = Math.min((Number(player.生命加成) || 0) + statGain, statCap);
+      player.血量上限 = (Number(player.血量上限) || 0) + statGain;
+      player.当前血量 = (Number(player.当前血量) || 0) + statGain;
+      player.防御加成 = Math.min((Number(player.防御加成) || 0) + statGain, statCap);
+      player.防御 = (Number(player.防御) || 0) + statGain;
+    }
+
+    await Write_player(usr_qq, player);
+    await Add_najie_thing(usr_qq, teaItem, '道具', -1);
+    return e.reply([
+      '【古茶悟道】',
+      '你尚未斩道，未能开创己道，只从古茶道韵中汲取了修行感悟。',
+      `修为、血气各增加${increaseValue.toLocaleString()}点。`,
+      statTotal < statCap ? `全属性增加${statGain.toLocaleString()}点。` : '全属性已达上限。'
+    ].join('\n'));
+  }
+
+  async showDaoPath(e) {
+    if (!e.isGroup) return e.reply('修仙游戏请在群聊中游玩');
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    if (!(await existplayer(usr_qq))) return e.reply('玩家不存在，请先创建角色');
+
+    const player = await Read_player(usr_qq);
+    const realmId = Number(player.mijinglevel_id) || 0;
+    if (realmId < 11) {
+      return e.reply('你尚未斩道，需成就斩道王者后才能开创自身道途。');
+    }
+
+    const ensured = ensureDaoPath(player);
+    const currentRule = getDaoRuleForRealm(realmId);
+    let changed = ensured.changed;
+    if (currentRule && ensured.path.stages[currentRule.key] === undefined) {
+      unlockDaoRealm(player, realmId);
+      changed = true;
+    }
+    if (refreshDaoDaily(ensured.path)) changed = true;
+    if (changed) await Write_player(usr_qq, player);
+
+    const lines = DAO_REALM_RULES
+      .filter(rule => rule.realmId <= realmId || ensured.path.stages[rule.key] !== undefined)
+      .map(rule => {
+        const exp = Number(ensured.path.stages[rule.key]) || 0;
+        const stage = getDaoStage(exp, rule);
+        const marker = rule.realmId === realmId ? '→' : '·';
+        return `${marker} ${rule.name}：${exp}/${rule.targetExp}（${stage.name}）`;
+      });
+    const remaining = Math.max(0, DAO_DAILY_LIMIT - ensured.path.daily.count);
+
+    return e.reply([
+      `【${player.名号}·我的道途】`,
+      ...lines,
+      realmId >= 16 ? `帝道道果：${ensured.path.result?.name || '无缺帝道'}` : '',
+      `今日剩余悟道：${remaining}/${DAO_DAILY_LIMIT}`,
+      `真实寿元：${getAvailableLifespan(player).toLocaleString()}年`
+    ].filter(Boolean).join('\n'));
+  }
 
 async jijinshenghua(e) {
     if (!verc({ e })) return false;
@@ -1872,7 +2060,7 @@ async OneKeyMaxUp(e) {
         `当前时代：${era.name}`,
         `- 时代特性: 突破成功率 ${era.breakthrough.bodySuccessRate}%，消耗系数 ${era.breakthrough.bodyCostFactor}`
     ];
-    let totalCost = 0, fail = 0, addShou = 0, pets = [];
+    let totalCost = 0, totalPotentialCost = 0, fail = 0, addShou = 0, pets = [];
 
     e.reply(luck ? "一键幸运破体开始，正在积蓄气血..." : "一键破体开始，正在积蓄气血...");
 
@@ -1891,6 +2079,12 @@ async OneKeyMaxUp(e) {
         const nextInfo = data.LevelMax_list.find(i => i.level_id === player.Physique_id + 1);
         if (!nextInfo) break;
 
+        const potentialCost = getBreakthroughPotentialCost(player.Physique_id);
+        if ((player.仙道潜力 || 0) < potentialCost) {
+            msg.push(`仙道潜力不足！本次破体需要 ${potentialCost} 点，当前 ${player.仙道潜力 || 0} 点`);
+            break;
+        }
+
         /* 消耗 & 概率 */
         const base = parseInt(nowInfo.exp);
         const afterTalent = Math.round(base * talent.costReduction);
@@ -1901,12 +2095,13 @@ async OneKeyMaxUp(e) {
         }
 
         const baseProb = Math.max(0.01, 1 - player.Physique_id / 60);
-        let prob = baseProb + era.breakthrough.bodySuccessRate / 100 + talent.probBonus;
+        const breakthroughPillBonus = consumeBreakthroughPill(player);
+        let prob = baseProb + era.breakthrough.bodySuccessRate / 100 + talent.probBonus + breakthroughPillBonus;
         if (prob < 0.01) prob = 0.01;
 
         msg.push(`突破：${nowInfo.level} → ${nextInfo.level}`);
         msg.push(`基础消耗: ${base} → 体质后: ${afterTalent} → 时代后: ${cost} (×${era.breakthrough.bodyCostFactor})`);
-        msg.push(`突破成功率: ${Math.round(prob * 100)}%（基础:${Math.round(baseProb * 100)}% +时代:${Math.round(era.breakthrough.bodySuccessRate)}% +体质:${Math.round(talent.probBonus * 100)}%）`);
+        msg.push(`突破成功率: ${Math.round(prob * 100)}%（基础:${Math.round(baseProb * 100)}% +时代:${Math.round(era.breakthrough.bodySuccessRate)}% +体质:${Math.round(talent.probBonus * 100)}%${breakthroughPillBonus ? ` +破境丹:${Math.round(breakthroughPillBonus * 100)}%` : ''}）`);
 
         /* 使用幸运草 */
         if (luck) {
@@ -1932,7 +2127,9 @@ async OneKeyMaxUp(e) {
         } else { // 成功
             player.Physique_id++;
             player.血气 -= cost;
+            player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - potentialCost);
             totalCost += cost;
+            totalPotentialCost += potentialCost;
             const sy = calculateShouyuan(player.Physique_id);
             let actualShouyuanAdd = sy, suppressMsg = "";
             if (currentEra.index === 4 && player.mijinglevel_id < 18) {
@@ -1979,6 +2176,7 @@ async OneKeyMaxUp(e) {
         `- 消耗系数：${era.breakthrough.bodyCostFactor}`,
         `失败次数：${fail}`,
         `总消耗气血：${bigNumberTransform(totalCost)}`,
+        `总消耗仙道潜力：${totalPotentialCost} 点（剩余 ${player.仙道潜力 || 0} 点）`,
         `总增加寿元：${bigNumberTransform(addShou)}年`,
     ].join('\n');
     if (pets.length) resultMsg += `\n获得仙宠：${pets.join('、')}`;
@@ -2053,6 +2251,7 @@ const luck = e.msg.includes('幸运');
     let allResults = [];
     let petsObtained = [];
     let totalDeductedExp = 0;
+    let totalPotentialCost = 0;
     let failCount = 0;
     let totalAddShouyuan = 0;
     let luckGrassUsed = 0; // 记录使用的幸运草数量
@@ -2128,6 +2327,12 @@ const luck = e.msg.includes('幸运');
             break;
         }
 
+        const potentialCost = getBreakthroughPotentialCost(player.level_id);
+        if ((player.仙道潜力 || 0) < potentialCost) {
+            msg.push(`仙道潜力不足！本次突破需要 ${potentialCost} 点，当前 ${player.仙道潜力 || 0} 点`);
+            break;
+        }
+
         /* 消耗计算 */
         const base_exp = parseInt(now_level_info.exp);
         const talentReducedExp = Math.round(base_exp * costReduction);
@@ -2140,12 +2345,17 @@ const luck = e.msg.includes('幸运');
 
         const baseProb = Math.max(0.01, 1 - player.level_id / 60);
         const eraBaseProb = currentEraData.breakthrough.qiSuccessRate / 100;
-        let prob = baseProb + eraBaseProb + probBonus;
+        // ==== 命格消费层：境界突破成功率 ====
+        // 「破障通玄」类命格引动道则，使破境之时少一分天妒、多一分契机。
+        const minggeEffects = getMinggeEffects(player, data.minggeList);
+        const breakthroughBonus = minggeEffects?.['境界突破成功率'] || 0; // 可正可负
+        const breakthroughPillBonus = consumeBreakthroughPill(player);
+        let prob = baseProb + eraBaseProb + probBonus + breakthroughBonus + breakthroughPillBonus;
         if (prob < 0.01) prob = 0.01;
 
         msg.push(`突破目标：${now_level_info.level} → ${next_level_info.level}`);
         msg.push(`基础消耗: ${base_exp} → 体质后: ${talentReducedExp} → 时代后: ${actual_need_exp} ${eraRateMessage}`);
-        msg.push(`☆ 突破成功率: ${Math.round(prob * 100)}%（基础:${Math.round(baseProb * 100)}% +时代:${Math.round(eraBaseProb * 100)}% +体质:${Math.round(probBonus * 100)}%）`);
+        msg.push(`☆ 突破成功率: ${Math.round(prob * 100)}%（基础:${Math.round(baseProb * 100)}% +时代:${Math.round(eraBaseProb * 100)}% +体质:${Math.round(probBonus * 100)}%${breakthroughBonus !== 0 ? ` +命格:${Math.round(breakthroughBonus * 100)}%` : ''}${breakthroughPillBonus ? ` +破境丹:${Math.round(breakthroughPillBonus * 100)}%` : ''}）`);
 
         /* 使用幸运草 */
         if (luck) {
@@ -2176,7 +2386,9 @@ const luck = e.msg.includes('幸运');
         /* 成功 */
         player.level_id = nextLevelId;
         player.修为 -= actual_need_exp;
+        player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - potentialCost);
         totalDeductedExp += actual_need_exp;
+        totalPotentialCost += potentialCost;
 
         const addShouyuan = calculateShouyuan(player.level_id, currentEra.index, player.mijinglevel_id);
         let actualShouyuanAdd = addShouyuan, suppressMsg = "";
@@ -2226,6 +2438,7 @@ const luck = e.msg.includes('幸运');
         `- 消耗系数：${currentEraData.breakthrough.qiCostFactor}`,
         `失败次数：${failCount}`,
         `总消耗修为：${bigNumberTransform(totalDeductedExp)}`,
+        `总消耗仙道潜力：${totalPotentialCost} 点（剩余 ${player.仙道潜力 || 0} 点）`,
         `总增加寿元：${bigNumberTransform(totalAddShouyuan)}年`,
     ].join("\n");
     if (petsObtained.length) resultMsg += `\n获得仙宠：${petsObtained.join('、')}`;
@@ -2333,6 +2546,13 @@ const luck = e.msg.includes('幸运');
             result.talentDesc = `【彼岸·命运神道体】命运长河显化，彼岸花开！突破消耗减少50%，成功率提升50%！`;
             result.effectDesc = `【彼岸·命运神道体异象】\n命运长河显化，彼岸花开！诸天命运轮盘在身后转动，\n过去现在未来三身合一，超脱彼岸，掌缘生灭！`;
             break;
+
+        case "无相·万化天魔体":
+            result.costReduction = 0.50;
+            result.probBonus = 0.50;
+            result.talentDesc = `【无相·万化天魔体】万灵根性尽归魔胎！突破消耗减少50%，成功率提升50%！`;
+            result.effectDesc = `【无相·万化天魔体异象】\n无相魔胎显化诸天，亿万灵根如星河归流，\n众生资质与生命本源熔作一体，万法万相皆为化生资粮！`;
+            break;
             
         default:
             // 根据体质名称补充特殊体质
@@ -2397,6 +2617,23 @@ async LevelMax_up(e, luck) {
     
     // 读取玩家信息
     let player = await Read_player(usr_qq);
+    
+    // ========== 仙道潜力检查（炼体破体） ==========
+    {
+        const potentialCost = getBreakthroughPotentialCost(player.Physique_id);
+        const currentPotential = player.仙道潜力 || 0;
+        if (currentPotential < potentialCost) {
+            e.reply([
+                `【仙道潜力不足·破体受阻】`,
+                `${player.名号}调动肉身潜力，却发现血肉之力枯竭，仙道潜力已尽！`,
+                `当前仙道潜力：${currentPotential} 点`,
+                `本次破体所需：${potentialCost} 点`,
+                `「无潜力者，肉身大道停滞，需补足仙道潜力方可继续蜕变！」`
+            ].join('\n'));
+            return false;
+        }
+    }
+    // ========== 仙道潜力检查结束 ==========
     
     // 使用体质突破信息函数获取加成和特效
     const talentInfo = await this.getTalentBreakthroughInfo(player);
@@ -2499,11 +2736,12 @@ async LevelMax_up(e, luck) {
     
     // 计算突破概率（时代基础成功率 + 体质加成）
     const eraBaseProb = currentEraData.breakthrough.bodySuccessRate / 100;
-    let prob = baseProb + eraBaseProb + probBonus;
+    const breakthroughPillBonus = consumeBreakthroughPill(player);
+    let prob = baseProb + eraBaseProb + probBonus + breakthroughPillBonus;
     
     if (prob < 0.01) prob = 0.01; // 下限1%
     
-    msg.push(`突破成功率: ${Math.round(prob * 100)}%（基础境界成功率：${Math.round(baseProb * 100)}% + 时代基础:${Math.round(eraBaseProb * 100)}% + 体质加成:${Math.round(probBonus * 100)}%）`);
+    msg.push(`突破成功率: ${Math.round(prob * 100)}%（基础境界成功率：${Math.round(baseProb * 100)}% + 时代基础:${Math.round(eraBaseProb * 100)}% + 体质加成:${Math.round(probBonus * 100)}%${breakthroughPillBonus ? ` +破境丹:${Math.round(breakthroughPillBonus * 100)}%` : ''}）`);
     
     // 应用幸运草效果（如果有可用）
     let luckGrassUsed = 0;
@@ -2607,6 +2845,12 @@ async LevelMax_up(e, luck) {
             msg.push(` ${petResult.message}`);
         }
         
+        // 扣除仙道潜力（破体成功后扣除）
+        {
+            const potentialCost = getBreakthroughPotentialCost(nextLevelId - 1);
+            player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - potentialCost);
+        }
+        
         // 更新玩家数据
         await Write_player(usr_qq, player);
         let equipment = await Read_equipment(usr_qq);
@@ -2698,6 +2942,23 @@ async Level_up(e, luck) {
     
     // 读取玩家信息
     let player = await Read_player(usr_qq);
+    
+    // ========== 仙道潜力检查（练气突破） ==========
+    {
+        const potentialCost = getBreakthroughPotentialCost(player.level_id);
+        const currentPotential = player.仙道潜力 || 0;
+        if (currentPotential < potentialCost) {
+            e.reply([
+                `【仙道潜力不足·突破受阻】`,
+                `${player.名号}凝神冲关，却发现灵台空空，仙道潜力已竭！`,
+                `当前仙道潜力：${currentPotential} 点`,
+                `本次突破所需：${potentialCost} 点`,
+                `「无潜力者，道路已到尽头，需另寻机缘补足潜力方可继续！」`
+            ].join('\n'));
+            return false;
+        }
+    }
+    // ========== 仙道潜力检查结束 ==========
     
     // 使用体质突破信息函数获取加成和特效
     const talentInfo = await this.getTalentBreakthroughInfo(player);
@@ -2862,7 +3123,11 @@ async Level_up(e, luck) {
     const talentBonus = probBonus; // 体质加成效果
     
     // 计算最终成功率
-    let prob = baseProb + eraBonus + talentBonus;
+    // ==== 命格消费层：境界突破成功率 ====
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
+    const breakthroughBonus = minggeEffects?.['境界突破成功率'] || 0; // 可正可负
+    const breakthroughPillBonus = consumeBreakthroughPill(player);
+    let prob = baseProb + eraBonus + talentBonus + breakthroughBonus + breakthroughPillBonus;
     
     // 幸运草额外加成（如果有）
     let luckGrassUsed = 0;
@@ -2891,6 +3156,8 @@ async Level_up(e, luck) {
         `境界基础成功率：${Math.round(baseProb * 100)}%`,
         `时代加成：+${Math.round(eraBonus * 100)}%`,
         `体质加成：+${Math.round(talentBonus * 100)}%`,
+        breakthroughBonus !== 0 ? `命格加成：+${Math.round(breakthroughBonus * 100)}%` : '',
+        breakthroughPillBonus !== 0 ? `破境丹加成：+${Math.round(breakthroughPillBonus * 100)}%` : '',
         luckyCloverMsg,
         `综合成功率：${Math.round(prob * 100)}%`,
         `基础消耗：${base_need_exp}`,
@@ -3029,6 +3296,12 @@ async Level_up(e, luck) {
         player.寿元 += actualShouyuanAdd;
         // ==== 寿元增加逻辑结束 ====
 
+        // 扣除仙道潜力（突破成功后扣除）
+        {
+            const potentialCost = getBreakthroughPotentialCost(newLevelId - 1);
+            player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - potentialCost);
+        }
+        
         // 保存玩家数据
         await Write_player(usr_qq, player);
         
@@ -3400,13 +3673,43 @@ async  fate_up(e) {
       e.reply(`修为不足,再积累${need_exp - now_exp}修为后方可成仙！`);
       return false;
     }
+    // ════════════════════════════════╗
+    // 天罗地网拦截检查（感知到网者，登仙前先战Boss）
+    // ════════════════════════════════╝
+    const tianluoResult = await tryInterceptAscension(e, player);
+    if (tianluoResult.intercepted) {
+        // Boss战已触发，不再执行原登仙逻辑
+        return false;
+    }
     //零，开仙门
     if (player.power == 2) {
-      e.reply(
-        '天空一声巨响，一道虚影从眼中浮现，突然身体微微颤抖，似乎感受到了什么，' +
-          player.名号 +
-          '来不及思索，立即向前飞去！只见万物仰头相望，似乎感觉到了，也似乎没有感觉，殊不知......'
-      );
+      // 天罗地网已被破除者 → 真飞升文本
+      if (player.囚牢之主_已击败) {
+        e.reply([
+          ``,
+          `你再一次站在了那扇门前。`,
+          ``,
+          `上一次，它冰冷刺骨，网上缠满了被收割的元神。`,
+          `但这一次——`,
+          ``,
+          `门后的光，是暖的。`,
+          ``,
+          `你深吸一口气，抬脚，迈了进去。`,
+          ``,
+          `没有了丝线。`,
+          `没有了尖啸。`,
+          `只有一片宁静的、真正的……仙界。`,
+          ``,
+          `${player.名号} · 真飞升！`,
+          ``,
+        ].join('\n'));
+      } else {
+        e.reply(
+          '天空一声巨响，一道虚影从眼中浮现，突然身体微微颤抖，似乎感受到了什么，' +
+            player.名号 +
+            '来不及思索，立即向前飞去！只见万物仰头相望，似乎感觉到了，也似乎没有感觉，殊不知......'
+        );
+      }
       now_level_id = now_level_id + 1;
       player.level_id = now_level_id;
       player.修为 -= need_exp;
@@ -3624,7 +3927,7 @@ function getRequiredGongfaName(player, realm) {
     // 完整帝经列表（优先级最高）
     const fullDiJingList = [
         "虚空经", "恒宇经", "妖帝古经", "无始经", 
-        "太阳真经", "太阴真经", "万龙古经", 
+        "太阳真经", "太阴真经", "万龙古经", "羽化仙经",
         ...customDiJingList // 添加玩家自创帝经
     ];
     
@@ -3668,7 +3971,7 @@ function hasRequiredGongfa(player, realm) {
         "虚空经", "恒宇经", "自然大道", "妖帝古经", 
         "无始经", "太阳真经", "太阴真经", "万龙古经", 
         "乱古经", "不灭天功", "吞天魔功", "永恒终极剑道", 
-        "西皇经", "摇光圣典", ...customDiJingList
+        "西皇经", "摇光圣典", "羽化仙经", ...customDiJingList
     ];
     
     // 检查玩家是否拥有当前秘境的单一经卷
@@ -3686,4 +3989,3 @@ function hasRequiredGongfa(player, realm) {
     
     return false;
 }
-

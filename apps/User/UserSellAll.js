@@ -19,9 +19,11 @@ import {
   Add_寿元,
   Add_player_学习功法,
   Add_血气,
-   Add_HP,
+  Add_HP,
+  Set_HP,
   __PATH,
   zd_battle,
+  player_efficiency,
   Read_equipment,
   instead_equipment,
   Read_najie,
@@ -33,6 +35,8 @@ import {
   channel,
   buildAt
 } from '../../model/xiuxian.js';
+import { getMinggeEffects, getMinggeDirectMultiplier } from '../../model/mingge.js';
+import { rollDailyDungeonCoordinate } from '../../model/weimianTravel.js';
 import { AppName } from '../../app.config.js';
 import {
   dataall,
@@ -486,7 +490,7 @@ async quickSettleDungeon(e) {
     //检索方法
     let najie = await data.getData('najie', usr_qq);
     let xueqi = 0;
-     if (player.mijinglevel_id>19 && player.xiangulevel_id > 19) {
+     if (player.mijinglevel_id > 19 || player.xiangulevel_id > 19) {
         e.reply(`「自荒古岁月至今...」
 「本座早已不需要这等外物了」`);
         return false;
@@ -829,13 +833,18 @@ async all_shenyao(e) {
     
         // 增加灵石
         if (commodities_price > 0) {
+            // ==== 命格消费层：出售价格倍率（商道通玄）====
+            const sellPlayer = await Read_player(usr_qq);
+            const sellEffects = getMinggeEffects(sellPlayer, data.minggeList);
+            const sellMult = getMinggeDirectMultiplier(sellEffects, '出售价格倍率');
+            if (sellMult !== 1) commodities_price = Math.floor(commodities_price * sellMult);
             await Add_灵石(usr_qq, commodities_price);
             e.reply(`一键卖钞票成功！共获得${commodities_price}灵石`);
         } else {
             e.reply('纳戒中没有钞票可以出售');
         }
     }
-    
+
     async sellMineral(e) {
         if (!verc({ e })) return false;
         let usr_qq = e.user_id.toString().replace('qg_', '');
@@ -859,6 +868,11 @@ async all_shenyao(e) {
     
         // 增加灵石
         if (commodities_price > 0) {
+            // ==== 命格消费层：出售价格倍率（商道通玄）====
+            const sellPlayer = await Read_player(usr_qq);
+            const sellEffects = getMinggeEffects(sellPlayer, data.minggeList);
+            const sellMult = getMinggeDirectMultiplier(sellEffects, '出售价格倍率');
+            if (sellMult !== 1) commodities_price = Math.floor(commodities_price * sellMult);
             await Add_灵石(usr_qq, commodities_price);
             e.reply(`一键卖矿石成功！共获得${commodities_price}灵石`);
         } else {
@@ -1386,8 +1400,19 @@ async Sell_all_comodities(e) {
             }
         }
         
+        // ==== 命格消费层：出售价格倍率 ====
+        const sellPlayer = await Read_player(usr_qq);
+        const sellEffects = getMinggeEffects(sellPlayer, data.minggeList);
+        const sellMult = getMinggeDirectMultiplier(sellEffects, '出售价格倍率');
+        if (sellMult !== 1) {
+          commodities_price = Math.floor(commodities_price * sellMult);
+        }
+
         await Add_灵石(usr_qq, commodities_price);
         let replyMsg = `出售成功! 获得${commodities_price}灵石`;
+        if (sellMult !== 1) {
+          replyMsg += `\n命格·商道通玄：售价倍率 +${Math.round((sellMult - 1) * 100)}%`;
+        }
         if (protectedWeapons.length > 0) {
             replyMsg += `\n【帝兵保护】以下本命帝兵未出售：${protectedWeapons.join('、')}`;
         }
@@ -1544,8 +1569,20 @@ padLeft(str, length) {
         }
       }
     }
+    // ==== 命格消费层：出售价格倍率 ====
+    const sellPlayer = await Read_player(usr_qq);
+    const sellEffects = getMinggeEffects(sellPlayer, data.minggeList);
+    const sellMult = getMinggeDirectMultiplier(sellEffects, '出售价格倍率');
+    if (sellMult !== 1) {
+      commodities_price = Math.floor(commodities_price * sellMult);
+    }
+
     await Add_灵石(usr_qq, commodities_price);
-    e.reply(await get_log_img(`出售成功!  获得${commodities_price}灵石 `))
+    let sellMsg = `出售成功!  获得${commodities_price}灵石 `;
+    if (sellMult !== 1) {
+      sellMsg += `\n命格·商道通玄：售价倍率 +${Math.round((sellMult - 1) * 100)}%`;
+    }
+    e.reply(await get_log_img(sellMsg));
     return false;
   }
 
@@ -1561,7 +1598,7 @@ padLeft(str, length) {
     //检索方法
     let najie = await data.getData('najie', usr_qq);
     let xiuwei = 0;
-          if (player.mijinglevel_id>19 && player.xiangulevel_id > 19) {
+          if (player.mijinglevel_id > 19 || player.xiangulevel_id > 19) {
         e.reply(`「自荒古岁月至今...」
 「本座早已不需要这等外物了」`);
         return false;
@@ -1625,49 +1662,51 @@ padLeft(str, length) {
   let najie = await data.getData('najie', usr_qq);
   let player = await Read_player(usr_qq);
   
-  // 定义功法层级映射（数字越小越高级，与之前保持一致）
+  // 定义功法层级映射（数字越大 = 越难学）
   const gongfaHierarchy = {
-    "神慧者": 0,      // 最高级
-    "仙帝法": 1,
-    "仙王法": 2,
-    "十凶宝术": 3,
-    "帝经": 4,
-    "九秘": 5,
-    "盖世杀术": 5,
-    "道与法": 6,
-    "宝术": 6,
-    "天魔法": 7,
-    "命运法": 7,
-    "修炼功法": 8,
-    "炼器": 8,
-    "炼丹": 8,
-    "武学": 8
+    "武学": 0,
+    "限定功法": 0,
+    "修炼功法": 1,
+    "炼器": 1,
+    "炼丹": 1,
+    "天魔法": 2,
+    "命运法": 2,
+    "道与法": 3,
+    "宝术": 3,
+    "九秘": 4,
+    "盖世杀术": 4,
+    "帝经": 5,
+    "十凶宝术": 6,
+    "仙王法": 7,
+    "仙帝法": 8,
+    "神慧者": 9
   };
 
-  // 天资等级对应的最高可学习层级（数字越小可学的功法层级越小）
+  // 天资等级对应的最高可学习难度（值=能学的最高gongfaHierarchy）
   const aptitudeLevels = {
-    "无演无尽": 0,     // 可学神慧者
-    "万古无双": 1,     // 可学仙帝法
-    "绝世天骄": 2,     // 可学仙王法
-    "旷世奇才": 3,     // 可学十凶宝术
-    "天纵之资": 4,     // 可学帝经
-    "超凡资质": 5,     // 可学九秘/盖世杀术
-    "平庸之资": 6,     // 可学道与法/宝术
-    "先天不足": 7,     // 可学天魔法/命运法
-    "天弃之人": 8,     // 可学修炼功法等基础
-    "生而愚痴": 9,     // 特殊处理
-    "无化如是": 10     // 无法学习任何功法
+    "生而愚痴": 0,   // 只能学武学(0)
+    "天弃之人": 1,   // 可学修炼功法/炼器/炼丹(1)
+    "先天不足": 2,   // 可学天魔法/命运法(2)
+    "平庸之资": 2,   // 可学天魔法/命运法(2)，学不了道与法(3)
+    "超凡资质": 3,   // 可学道与法/宝术(3)
+    "天纵之资": 4,   // 可学九秘/盖世杀术(4)
+    "旷世奇才": 5,   // 可学帝经(5)
+    "绝世天骄": 7,   // 可学十凶宝术(6)/仙王法(7)
+    "万古无双": 8,   // 可学仙帝法(8)
+    "无演无尽": 9,   // 可学神慧者(9)
+    "无化如是": -1   // 什么都学不了
   };
   
  // 获取玩家的天资等级
 const aptitudeLevel = player.天资等级;
 
 // 获取玩家天资层级（数字越大越好）
-const playerAptitudeLevel = aptitudeLevels[aptitudeLevel] || 0; // 默认为天赋层级
+const playerAptitudeLevel = aptitudeLevels[aptitudeLevel] ?? 2; // 默认为平庸之资（值=2）
   
   let learnedGongfa = []; // 成功学习的功法
   let skippedGongfa = []; // 因条件不符跳过的功法
   let failedGongfa = [];  // 因特殊条件失败的功法
+  let totalPotentialCost = 0; // 累积消耗的仙道潜力
    // === 特殊天资：无化如是 ===
   if (aptitudeLevel === '无化如是') {
     e.reply([
@@ -1733,23 +1772,43 @@ const playerAptitudeLevel = aptitudeLevels[aptitudeLevel] || 0; // 默认为天�
     // 获取功法的层级
    const gongfaLevel = gongfaHierarchy[l.type] || 8; // 默认为修炼功法层级
     
-   // 学习条件：玩家天资层级 >= 功法层级 才能学习
-  if (playerAptitudeLevel < gongfaLevel) {
+   // 学习条件：功法难度超过玩家上限则拒绝
+  if (gongfaLevel > playerAptitudeLevel) {
     skippedGongfa.push(`${l.name}(天资不足)`);
     continue;
   }
-    
+
+  // ========== 仙道潜力检查（批量学习） ==========
+  const potentialCost = gongfaLevel + 1; // 难度越高消耗越多（武学1点，神慧者10点）
+  const currentPotential = player.仙道潜力 || 0;
+  if (currentPotential < potentialCost) {
+    failedGongfa.push(`${l.name}(仙道潜力不足，需${potentialCost}点，剩余${currentPotential}点)`);
+    continue;
+  }
+  // ========== 仙道潜力检查结束 ==========
+
     // 学习功法
     await Add_najie_thing(usr_qq, l.name, '功法', -1);
-    await Add_player_学习功法(usr_qq, l.name);
+   
+    // 扣除仙道潜力
+    player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - potentialCost);
+    totalPotentialCost += potentialCost;
+    player.学习的功法.push(l.name);
     learnedGongfa.push(l.name);
   }
-  
+  // 保存数据
+if (totalPotentialCost > 0) {
+    await Write_player(usr_qq, player);
+    await player_efficiency(usr_qq);      // 更新效率（Add_player_学习功法原本做的）
+}
   // 构建回复消息
   let replyMsg = '';
   
   if (learnedGongfa.length > 0) {
+    // 保存潜力变化（在循环中已逐次扣除）
     replyMsg += `你学会了${learnedGongfa.join('、')}\n`;
+    replyMsg += `本次批量学习共消耗仙道潜力：${totalPotentialCost} 点\n`;
+    replyMsg += `剩余仙道潜力：${player.仙道潜力 || 0} 点\n`;
   }
   
   if (skippedGongfa.length > 0) {
@@ -1765,7 +1824,7 @@ const playerAptitudeLevel = aptitudeLevels[aptitudeLevel] || 0; // 默认为天�
   } else {
     replyMsg += '可以在【#我的炼体】中查看已学功法';
   }
-  
+
   e.reply(replyMsg);
   return false;
 }
@@ -1822,9 +1881,8 @@ const playerAptitudeLevel = aptitudeLevels[aptitudeLevel] || 0; // 默认为天�
               法球倍率: 0.1,
             };
             let Data_battle = await zd_battle(A_player, B_player);
+            player.当前血量 = await Set_HP(player_id, Data_battle.A_hp);
             let msgg = Data_battle.msg;
-            let A_win = `${A_player.名号}击败了${B_player.名号}`;
-            let B_win = `${B_player.名号}击败了${A_player.名号}`;
             var thing_name;
             var thing_class;
             const cf = config.getConfig('xiuxian', 'xiuxian');
@@ -3365,7 +3423,7 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
             now_physique_id = player.Physique_id;
             //结算
             let qixue = 0;
-            if (msgg.find(item => item == A_win)) {
+            if (Data_battle.winner === 'A') {
               xiuwei = Math.trunc(
                 2000 + (100 * now_level_id * now_level_id * t1 * 0.1) / 5
               );
@@ -3378,8 +3436,16 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
               last_msg += `${m},不巧撞见[${
                 B_player.名号
               }],经过一番战斗，击败对手,获得修为${xiuwei},气血${qixue},剩余血量${
-                A_player.当前血量 + Data_battle.A_xue
+                Data_battle.A_hp
               }`;
+
+              const coordinateDrop = rollDailyDungeonCoordinate(player);
+              if (coordinateDrop.attempted) {
+                await Write_player(player_id, player);
+                if (coordinateDrop.location) {
+                  last_msg += ` 你在副本残卷中拼出了一条完整星路，成功记住「${coordinateDrop.location}」的位面坐标！`;
+                }
+              }
 
              let random = Math.random();
                             if ( weizhi.name == '荧惑古星' && random <0.1&& player.五色祭坛 !== 1) {
@@ -3634,7 +3700,7 @@ ${aptitudeEvaluations[newAptitude]}
                   '并把它放进了口袋';
               }
             }
-            } else if (msgg.find(item => item == B_win)) {
+            } else if (Data_battle.winner === 'B') {
   // === 添加大帝庇护逻辑开始 ===
   if (player.大帝庇护 === 1 && player.庇护人) {
     const protectorQQ = player.庇护人; // 庇护人的QQ号
@@ -3717,6 +3783,7 @@ ${aptitudeEvaluations[newAptitude]}
       // === 添加庇护人出手保护文案 ===
       msg.push(`${protector.名号}对${player.名号}说："小友莫慌，一切有我！"`);
       
+      let protectorBattle;
       // 仙帝及以上境界 - 概念级秒杀
       if (protectorLevel >= 19) {
         // 添加战斗细节
@@ -3734,8 +3801,9 @@ ${aptitudeEvaluations[newAptitude]}
         B_player.当前血量 = 0;
         
         // 构建战斗结果
-        const protectorBattle = {
+        protectorBattle = {
           msg: msg,
+          A_hp: protectorBattleData.当前血量,
           B_hp: 0 // 怪物死亡
         };
       } 
@@ -3745,12 +3813,13 @@ ${aptitudeEvaluations[newAptitude]}
         msg.push(`${protector.名号}施展「一气化三清」，三花聚顶凝聚出道身！`);
         
         // 进行正常战斗
-        const protectorBattle = await zd_battle(protectorBattleData, B_player);
+        protectorBattle = await zd_battle(protectorBattleData, B_player);
         msg = msg.concat(protectorBattle.msg);
       }
+      B_player.当前血量 = protectorBattle.B_hp;
       
       // === 战斗结果处理 ===
-      if (B_player.当前血量 <= 0) {
+      if (protectorBattle.B_hp <= 0) {
        if (protectorLevel < 19) {
           msg.push(`${protector.名号}转身对${player.名号}说："修行之路凶险，下次务必小心！"言罢顺手治好了${player.名号}的伤势，潇洒离去`);
         }
@@ -3812,7 +3881,6 @@ ${aptitudeEvaluations[newAptitude]}
               //先完结再结算
               await Add_血气(player_id, qixue);
               await Add_修为(player_id, xiuwei);
-              await Add_HP(player_id, Data_battle.A_xue);
             //发送消息
             e.reply(await get_log_img(msg))
           }else{
@@ -3867,9 +3935,8 @@ ${aptitudeEvaluations[newAptitude]}
               法球倍率: 0.1,
             };
             let Data_battle = await zd_battle(A_player, B_player);
+            player.当前血量 = await Set_HP(player_id, Data_battle.A_hp);
             let msgg = Data_battle.msg;
-            let A_win = `${A_player.名号}击败了${B_player.名号}`;
-            let B_win = `${B_player.名号}击败了${A_player.名号}`;
             var thing_name;
             var thing_class;
             const cf = config.getConfig('xiuxian', 'xiuxian');
@@ -5419,7 +5486,7 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
             now_physique_id = player.Physique_id;
             //结算
             let qixue = 0;
-            if (msgg.find(item => item == A_win)) {
+            if (Data_battle.winner === 'A') {
               xiuwei = Math.trunc(
                 2000 + (100 * now_level_id * now_level_id * t1 * 0.1) / 5
               );
@@ -5441,8 +5508,15 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
               last_msg += `${m},不巧撞见[${
                 B_player.名号
               }],经过一番战斗，击败对手,获得修为${xiuwei},气血${qixue},剩余血量${
-                A_player.当前血量 + Data_battle.A_xue
+                 Data_battle.A_hp
               },剩余次数${action.cishu - 1}`;
+              const coordinateDrop = rollDailyDungeonCoordinate(player);
+              if (coordinateDrop.attempted) {
+                await Write_player(player_id, player);
+                if (coordinateDrop.location) {
+                  last_msg += ` 你在副本残卷中拼出了一条完整星路，成功记住「${coordinateDrop.location}」的位面坐标！`;
+                }
+              }
                 let random = Math.random();
                   if ( weizhi.name == '荧惑古星' && random <0.1&& player.五色祭坛 !== 1) {
           player.五色祭坛 = 1
@@ -5697,7 +5771,7 @@ ${aptitudeEvaluations[newAptitude]}
                   '并把它放进了口袋';
               }
             }
-            }else if (msgg.find(item => item == B_win)) {
+            }else if (Data_battle.winner === 'B') {
   // === 添加大帝庇护逻辑开始 ===
   if (player.大帝庇护 === 1 && player.庇护人) {
     const protectorQQ = player.庇护人; // 庇护人的QQ号
@@ -5780,6 +5854,7 @@ ${aptitudeEvaluations[newAptitude]}
       // === 添加庇护人出手保护文案 ===
       msg.push(`${protector.名号}对${player.名号}说："小友莫慌，一切有我！"`);
       
+      let protectorBattle;
       // 仙帝及以上境界 - 概念级秒杀
       if (protectorLevel >= 19) {
         // 添加战斗细节
@@ -5797,8 +5872,9 @@ ${aptitudeEvaluations[newAptitude]}
         B_player.当前血量 = 0;
         
         // 构建战斗结果
-        const protectorBattle = {
+        protectorBattle = {
           msg: msg,
+          A_hp: protectorBattleData.当前血量,
           B_hp: 0 // 怪物死亡
         };
       } 
@@ -5808,12 +5884,13 @@ ${aptitudeEvaluations[newAptitude]}
         msg.push(`${protector.名号}施展「一气化三清」，三花聚顶凝聚出道身！`);
         
         // 进行正常战斗
-        const protectorBattle = await zd_battle(protectorBattleData, B_player);
+        protectorBattle = await zd_battle(protectorBattleData, B_player);
         msg = msg.concat(protectorBattle.msg);
       }
+      B_player.当前血量 = protectorBattle.B_hp;
       
       // === 战斗结果处理 ===
-      if (B_player.当前血量 <= 0) {
+      if (protectorBattle.B_hp <= 0) {
        if (protectorLevel < 19) {
           msg.push(`${protector.名号}转身对${player.名号}说："修行之路凶险，下次务必小心！"言罢顺手治好了${player.名号}的伤势，潇洒离去`);
         }
@@ -5861,7 +5938,6 @@ ${aptitudeEvaluations[newAptitude]}
               //先完结再结算
               await Add_血气(player_id, qixue);
               await Add_修为(player_id, xiuwei);
-              await Add_HP(player_id, Data_battle.A_xue);
            // 每次结算后，更新已结算次数
     action.settled_count++;
 }

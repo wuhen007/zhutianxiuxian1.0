@@ -2,6 +2,27 @@ import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'path';
 import {
+  ZHENGDAO_ROUTES,
+  getZhengdaoSuccessState,
+  resolveZhengdaoRoute,
+} from './zhengdaoRules.js';
+import {
+  getDaoGateState,
+  markDaoAsEmperor,
+  unlockDaoRealm,
+} from './wudaoRules.js';
+import {
+  calculateMinggeFourRealmBonus,
+  getMinggeEffectNumber,
+  getMinggeEffects,
+} from '../../model/mingge.js';
+import {
+  calculateZhetianTribulationCosts,
+  rollZhetianMinggeRevival,
+} from './zhetianTribulationMingge.js';
+import { calculateEquippedStats } from '../../model/equipmentStats.js';
+import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
+import {
   existplayer,
   Write_player,
   Write_equipment,
@@ -113,11 +134,30 @@ export class zhetiandujie extends plugin {
         desc: "远古流传的残缺仙功，可涅槃重生但效果有限"
     }
     };
+    this.minggeRevivalAttempts = new WeakSet();
   }
 
 // ==== 遮天风格功法复活逻辑（生命本源消耗版）====
 async checkGongfaResurrection(e, player) {
     console.log('【DEBUG】开始检查复活功法，当前生命本源：', player.生命本源 || 0);
+
+    // 命格复活每次渡劫只判定一次，不消耗生命本源，也不占用功法冷却。
+    if (!this.minggeRevivalAttempts.has(player)) {
+        this.minggeRevivalAttempts.add(player);
+        const minggeEffects = getMinggeEffects(player, data.minggeList);
+        const { chance: revivalChance, revived } = rollZhetianMinggeRevival(minggeEffects);
+        if (revived) {
+            const healAmount = Math.max(1, Math.floor(player.血量上限 * 0.3));
+            player.当前血量 = healAmount;
+            await e.reply([
+                `【命格·凤凰余血】`,
+                `${player.名号}体内残存的凤凰血脉骤然燃烧，于死境中重聚生机！`,
+                `命格复活概率：${(revivalChance * 100).toFixed(0)}%`,
+                `恢复血量：${bigNumberTransform(healAmount)}/${bigNumberTransform(player.血量上限)}`
+            ].join('\n'));
+            return true;
+        }
+    }
   
     // 初始化生命本源（如果不存在）
     player.生命本源 = player.生命本源 ?? 100; // 默认100点生命本源
@@ -394,6 +434,22 @@ async duzhendaoLeijie(e) {
     ].join('\n'));
   }
 
+  /* ========== 仙道潜力检查（渡斩道雷劫=1点） ========== */
+  {
+    const potentialCost = applyQuestionFortuneCost(player, 1);
+    const currentPotential = player.仙道潜力 || 0;
+    if (currentPotential < potentialCost) {
+      return e.reply([
+        `【仙道潜力不足·渡劫受阻】`,
+        `${player.名号}欲引动斩道劫，却感仙道潜力枯竭，天雷拒绝降临！`,
+        `当前仙道潜力：${currentPotential} 点`,
+        `渡斩道雷劫所需：${potentialCost} 点`,
+        `「无潜力者，天劫不降，只能蛰伏等待机缘！」`
+      ].join('\n'));
+    }
+  }
+  /* ========== 仙道潜力检查结束 ========== */
+
   /* ========== 时代系数 ========== */
   const set = config.getConfig('xiuxian', 'xiuxian');
   const currentEra = set.Era?.current || { index: 0, years: 0 };
@@ -405,11 +461,15 @@ async duzhendaoLeijie(e) {
 
   /* ========== 资源检查 ========== */
   const baseCost = Math.pow(2, 9) * 500000;
-  const actualCost = Math.ceil(baseCost * costRate);
-  if (player.修为 < actualCost || player.血气 < actualCost) {
+  const actualBloodCost = applyQuestionFortuneCost(player, Math.ceil(baseCost * costRate));
+  const actualCost = this.getMinggeCultivationCost(player, actualBloodCost);
+  const minggeCostLine = this.getMinggeCostLine(player, actualBloodCost);
+  if (player.修为 < actualCost || player.血气 < actualBloodCost) {
     return e.reply([
       `资源不足渡斩道劫！`,
-      `需求修为 / 血气：${actualCost.toLocaleString()}`,
+      `需求修为：${actualCost.toLocaleString()}`,
+      `需求血气：${actualBloodCost.toLocaleString()}`,
+      ...(minggeCostLine ? [minggeCostLine] : []),
       `当前修为：${player.修为.toLocaleString()}`,
       `当前血气：${player.血气.toLocaleString()}`
     ].join('\n'));
@@ -417,8 +477,14 @@ async duzhendaoLeijie(e) {
 
   /* ========== 扣资源 ========== */
   player.修为 -= actualCost;
-  player.血气 -= actualCost;
+  player.血气 -= actualBloodCost;
   await Write_player(usr_qq, player);
+
+  // ===== 天道排斥外物，进入渡劫状态 =====
+  const _tribSnap = this.enterTribulationState(player, equipment);
+
+  // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
+  const maxAtk = this.calcMaxTheoreticalAtk(player, equipment);
 
   /* ========== 阶段定义 ========== */
   const stages = [
@@ -471,16 +537,18 @@ async duzhendaoLeijie(e) {
     `${player.名号}盘坐星空，五大秘境齐鸣！`,
     `「我之道，当斩尽世间枷锁！」`,
     `九重天降下斩道神雷，欲磨灭逆天者！`,
-    `当前时代：${eraName}（消耗系数 ${costRate}，难度系数 ${difficultyRate}）`
+    `当前时代：${eraName}（消耗系数 ${costRate}，难度系数 ${difficultyRate}）`,
+    `消耗修为：${actualCost.toLocaleString()}｜消耗血气：${actualBloodCost.toLocaleString()}`,
+    ...(minggeCostLine ? [minggeCostLine] : [])
   ];
-  await e.reply(battleLog.join('\n'));
+  await this.broadcastToAll(player,battleLog.join('\n'));
   battleLog = [];
 
   /* ========== 逐阶段 ========== */
   for (const [idx, stage] of stages.entries()) {
     battleLog.push(`【第 ${idx + 1} 阶段：${stage.name}】`);
     battleLog.push(...stage.desc);
-    await e.reply(battleLog.join('\n'));
+    await this.broadcastToAll(player,battleLog.join('\n'));
     battleLog = [];
 
     for (let wave = 1; wave <= stage.waves; wave++) {
@@ -490,7 +558,7 @@ async duzhendaoLeijie(e) {
       /* ---- 计算基础伤害 ---- */
       let base = stage.useHP
         ? player.血量上限 * stage.baseMul * (1 + 0.03 * wave)
-        : player.攻击 * stage.baseMul * (1 + 0.03 * wave);
+        : maxAtk * stage.baseMul * (1 + 0.03 * wave) * difficultyRate;
 
       /* ---- 功法/灵根/帝兵/时代 统一结算 ---- */
       const { damage: finalDamage, messages } = this.applyGongfaEffects(player, base, equipment);
@@ -526,14 +594,14 @@ async duzhendaoLeijie(e) {
           );
           this.clearTempEffects(player);
           await Write_player(usr_qq, player);
-          await e.reply(battleLog.join('\n'));
+          await this.broadcastToAll(player,battleLog.join('\n'));
           return;
         }
         battleLog.push('【逆天续命】重燃生命之火！');
       }
 
       await Write_player(usr_qq, player);
-      await e.reply(battleLog.join('\n'));
+      await this.broadcastToAll(player,battleLog.join('\n'));
       battleLog = [];
 
       /* ---- 间隔 ---- */
@@ -555,7 +623,7 @@ async duzhendaoLeijie(e) {
     }
 
     if (idx < stages.length - 1) {
-      await e.reply(battleLog.join('\n'));
+      await this.broadcastToAll(player,battleLog.join('\n'));
       battleLog = [];
       await new Promise(r => setTimeout(r, 3000));
     }
@@ -565,12 +633,16 @@ async duzhendaoLeijie(e) {
   if (player.当前血量 > 1) {
     /* ---- 晋升斩道王者 ---- */
     player.mijinglevel_id = 11;
+    unlockDaoRealm(player, 11);
     player.道伤 = 0;
     player.攻击 = Math.floor(player.攻击 * 1.3);
     player.防御 = Math.floor(player.防御 * 1.3);
     player.血量上限 = Math.floor(player.血量上限 * 1.3);
     player.当前血量 = player.血量上限;
     await Add_寿元(usr_qq, 500);
+    
+    // 扣除仙道潜力（渡斩道=1点）
+    player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - applyQuestionFortuneCost(player, 1));
 
     battleLog.push(
       `【斩道成功】`,
@@ -600,7 +672,9 @@ async duzhendaoLeijie(e) {
 
   this.clearTempEffects(player);
   await Write_player(usr_qq, player);
-  await e.reply(battleLog.join('\n'));
+  await this.broadcastToAll(player,battleLog.join('\n'));
+  // ===== 渡劫结束，重算全装属性 =====
+  await this.exitTribulationState(player, _tribSnap, usr_qq, equipment);
 }
 
 
@@ -608,6 +682,21 @@ async duzhendaoLeijie(e) {
 getEraCostFactor() {
     const eraIndex = config.getConfig('xiuxian', 'xiuxian').Era?.current?.index || 0;
     return [0.7, 0.8, 1.0, 1.5, 2.0][eraIndex];
+}
+
+async checkWudaoGate(e, player, usr_qq, realmId) {
+    const gate = getDaoGateState(player, realmId);
+    if (gate.changed) await Write_player(usr_qq, player);
+    if (gate.ok) return true;
+
+    await e.reply([
+      `【${gate.rule.name}未圆·渡劫受阻】`,
+      `${player.名号}欲引动${gate.rule.nextRealm}雷劫，却感自身之道尚有残缺！`,
+      `当前进度：${gate.exp}/${gate.rule.targetExp}（${gate.stage.name}）`,
+      `需将${gate.rule.name}修至【圆满】，方可继续前行。`,
+      `发送#悟道参悟己道，#我的道途查看完整进度。`
+    ].join('\n'));
+    return false;
 }
   // ==== 渡圣人雷劫主逻辑（修复版）====
   async shengrenleijie(e) {
@@ -634,6 +723,24 @@ getEraCostFactor() {
         `需突破至斩道王者方可引动圣人劫`
       ].join('\n'));
     }
+    
+    /* ========== 仙道潜力检查（渡圣人雷劫=2点） ========== */
+    {
+      const potentialCost = applyQuestionFortuneCost(player, 2);
+      const currentPotential = player.仙道潜力 || 0;
+      if (currentPotential < potentialCost) {
+        return e.reply([
+          `【仙道潜力不足·渡劫受阻】`,
+          `${player.名号}欲引动圣人劫，却感仙道潜力枯竭，天雷拒绝降临！`,
+          `当前仙道潜力：${currentPotential} 点`,
+          `渡圣人雷劫所需：${potentialCost} 点`,
+          `「无潜力者，天劫不降，只能蛰伏等待机缘！」`
+        ].join('\n'));
+      }
+    }
+    /* ========== 仙道潜力检查结束 ========== */
+
+    if (!(await this.checkWudaoGate(e, player, usr_qq, 11))) return false;
 
     // ==== 时代系统配置 ====
     const set = config.getConfig('xiuxian', 'xiuxian');
@@ -649,9 +756,11 @@ getEraCostFactor() {
 
     // ==== 资源检查 ====
     const base_need_exp = Math.pow(2, 11) * 2000000;
-    const actual_need_exp = Math.ceil(base_need_exp * costRate);
+    const actual_blood_need = applyQuestionFortuneCost(player, Math.ceil(base_need_exp * costRate));
+    const actual_need_exp = this.getMinggeCultivationCost(player, actual_blood_need);
+    const minggeCostLine = this.getMinggeCostLine(player, actual_blood_need);
     const exp2 = Math.max(0, actual_need_exp - player.修为);
-    const exp3 = Math.max(0, actual_need_exp - player.血气);
+    const exp3 = Math.max(0, actual_blood_need - player.血气);
 
     if (player.修为 < actual_need_exp) {
       return e.reply([
@@ -659,24 +768,31 @@ getEraCostFactor() {
         `当前时代: ${eraName} ${costRate !== 1.0 ? `(消耗${costRate > 1 ? '增加' : '减少'}${Math.abs(100 - costRate*100)}%)` : ''}`,
         `基础需求: ${base_need_exp.toLocaleString()}`,
         `实际需求: ${actual_need_exp.toLocaleString()} ${costModifier}`,
+        ...(minggeCostLine ? [minggeCostLine] : []),
         `还需修为: ${exp2.toLocaleString()}`
       ].join("\n"));
     }
 
-    if (player.血气 < actual_need_exp) {
+    if (player.血气 < actual_blood_need) {
       return e.reply([
         `血气不足以渡圣人劫！`,
         `当前时代: ${eraName} ${costRate !== 1.0 ? `(消耗${costRate > 1 ? '增加' : '减少'}${Math.abs(100 - costRate*100)}%)` : ''}`,
         `基础需求: ${base_need_exp.toLocaleString()}`,
-        `实际需求: ${actual_need_exp.toLocaleString()} ${costModifier}`,
+        `实际需求: ${actual_blood_need.toLocaleString()} ${costModifier}`,
         `还需血气: ${exp3.toLocaleString()}`
       ].join("\n"));
     }
 
     // ==== 扣除资源 ====
     player.修为 -= actual_need_exp;
-    player.血气 -= actual_need_exp;
+    player.血气 -= actual_blood_need;
     
+    // ===== 天道排斥外物，进入渡劫状态 =====
+    const _tribSnap2 = this.enterTribulationState(player, equipment);
+
+    // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
+    const maxAtk = this.calcMaxTheoreticalAtk(player, equipment);
+
     // ==== 开始渡劫 ====
     let battleLog = [
       `【圣人劫启·星域震动】`,
@@ -685,14 +801,15 @@ getEraCostFactor() {
       `「轰！」第一道雷光便劈碎陨星，照亮黑暗宇宙！`,
       `当前时代：${eraName}`,
       `消耗修为：${actual_need_exp.toLocaleString()}`,
-      `消耗血气：${actual_need_exp.toLocaleString()}`
+      `消耗血气：${actual_blood_need.toLocaleString()}`,
+      ...(minggeCostLine ? [minggeCostLine] : [])
     ];
 
     const stages = [
       { 
         name: "毁灭雷海", 
         waves: 9,
-        baseDamage: player.攻击 * 0.05 * difficultyRate,
+        baseDamage: maxAtk * 0.05 * difficultyRate,
         desc: [
           `天穹崩塌，无穷雷海倾泻而下！`,
           `共9道毁灭雷光，每道威力递增3%`,
@@ -702,7 +819,7 @@ getEraCostFactor() {
       {
         name: "先天道图",
         waves: 9,
-        baseDamage: player.攻击 * 0.15 * difficultyRate,
+        baseDamage: maxAtk * 0.15 * difficultyRate,
         desc: [
           `雷劫演化先天道图，由大道符文交织`,
           `9轮道图镇压，磨灭渡劫者道基`,
@@ -712,7 +829,7 @@ getEraCostFactor() {
       {
         name: "圣贤烙印",
         waves: 9,
-        baseDamage: player.攻击 * 0.4 * difficultyRate,
+        baseDamage: maxAtk * 0.4 * difficultyRate,
         desc: [
           `时间长河泛起涟漪，古之圣贤显现`,
           `9位同阶无敌者轮番出手`,
@@ -722,7 +839,7 @@ getEraCostFactor() {
       {
         name: "天庭镇杀",
         waves: 9,
-        baseDamage: player.攻击 * 1 * difficultyRate,
+        baseDamage: maxAtk * 1 * difficultyRate,
         desc: [
           `九重天阙降临，天庭宫阙镇压而下`,
           `9道帝器虚影贯穿古今`,
@@ -773,7 +890,7 @@ for (let stageIndex = 0; stageIndex < stages.length; stageIndex++) {
         if (resurrected) {
             battleLog.push(`【逆转生死,欺瞒天地】${player.名号}以无上秘法成功复活，并避开第${wave}道劫数！`);
             await Write_player(usr_qq, player);
-            await e.reply(battleLog.join('\n'));
+            await this.broadcastToAll(player,battleLog.join('\n'));
             battleLog = [];
             
             // 直接进入下一道劫难
@@ -786,7 +903,7 @@ for (let stageIndex = 0; stageIndex < stages.length; stageIndex++) {
     // ==== 每道雷劫间隔10秒 ====
     if (wave < 9) {
       await Write_player(usr_qq, player);
-      await e.reply(battleLog.join('\n'));
+      await this.broadcastToAll(player,battleLog.join('\n'));
       battleLog = [];
       await new Promise(resolve => setTimeout(resolve, 10000)); // 10秒间隔
     }
@@ -798,7 +915,7 @@ for (let stageIndex = 0; stageIndex < stages.length; stageIndex++) {
   
   if (stageIndex < stages.length - 1) {
     await Write_player(usr_qq, player);
-    await e.reply(battleLog.join('\n'));
+    await this.broadcastToAll(player,battleLog.join('\n'));
     battleLog = [];
     await new Promise(resolve => setTimeout(resolve, 3000)); // 阶段间3秒间隔
   }
@@ -807,7 +924,10 @@ for (let stageIndex = 0; stageIndex < stages.length; stageIndex++) {
     // ==== 渡劫结果判定 ====
     if (player.当前血量 > 1) {
       player.mijinglevel_id = 12;
+      unlockDaoRealm(player, 12);
       player.道伤=0;
+      // 扣除仙道潜力（渡圣人=2点）
+      player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - applyQuestionFortuneCost(player, 2));
       battleLog.push(`【劫尽成圣】`);
       battleLog.push(`雷劫散去，${player.名号}沐浴仙光重生！`);
       battleLog.push(`破碎的躯体重组，每一滴血都蕴含圣道法则，`);
@@ -843,6 +963,8 @@ const 淬体增益 = actual_need_exp * 0.3;
     this.clearTempEffects(player);
     await Write_player(usr_qq, player);
     e.reply(battleLog.join('\n'));
+    // ===== 渡劫结束，重算全装属性 =====
+    await this.exitTribulationState(player, _tribSnap2, usr_qq, equipment);
   }
 // ==== 渡圣人王雷劫主逻辑 ====
 async shengrenwangleijie(e) {
@@ -863,6 +985,24 @@ async shengrenwangleijie(e) {
         `需先渡过圣人劫，成就圣人之位方可引动圣人王劫`
       ].join('\n'));
     }
+    
+    /* ========== 仙道潜力检查（渡圣人王雷劫=3点） ========== */
+    {
+      const potentialCost = applyQuestionFortuneCost(player, 3);
+      const currentPotential = player.仙道潜力 || 0;
+      if (currentPotential < potentialCost) {
+        return e.reply([
+          `【仙道潜力不足·渡劫受阻】`,
+          `${player.名号}欲引动圣人王劫，却感仙道潜力枯竭，天雷拒绝降临！`,
+          `当前仙道潜力：${currentPotential} 点`,
+          `渡圣人王雷劫所需：${potentialCost} 点`,
+          `「无潜力者，天劫不降，只能蛰伏等待机缘！」`
+        ].join('\n'));
+      }
+    }
+    /* ========== 仙道潜力检查结束 ========== */
+
+    if (!(await this.checkWudaoGate(e, player, usr_qq, 12))) return false;
 
     // ==== 时代系统配置 ====
     const set = config.getConfig('xiuxian', 'xiuxian');
@@ -878,9 +1018,11 @@ async shengrenwangleijie(e) {
 
     // ==== 资源检查 ====
     const base_need_exp = Math.pow(2, 12) * 2000000; // 圣人王劫消耗更大
-    const actual_need_exp = Math.ceil(base_need_exp * costRate);
+    const actual_blood_need = applyQuestionFortuneCost(player, Math.ceil(base_need_exp * costRate));
+    const actual_need_exp = this.getMinggeCultivationCost(player, actual_blood_need);
+    const minggeCostLine = this.getMinggeCostLine(player, actual_blood_need);
     const exp2 = Math.max(0, actual_need_exp - player.修为);
-    const exp3 = Math.max(0, actual_need_exp - player.血气);
+    const exp3 = Math.max(0, actual_blood_need - player.血气);
 
     if (player.修为 < actual_need_exp) {
       return e.reply([
@@ -888,24 +1030,31 @@ async shengrenwangleijie(e) {
         `当前时代: ${eraName} ${costRate !== 1.0 ? `(消耗${costRate > 1 ? '增加' : '减少'}${Math.abs(100 - costRate*100)}%)` : ''}`,
         `基础需求: ${base_need_exp.toLocaleString()}`,
         `实际需求: ${actual_need_exp.toLocaleString()} ${costModifier}`,
+        ...(minggeCostLine ? [minggeCostLine] : []),
         `还需修为: ${exp2.toLocaleString()}`
       ].join("\n"));
     }
 
-    if (player.血气 < actual_need_exp) {
+    if (player.血气 < actual_blood_need) {
       return e.reply([
         `血气不足以渡圣人王劫！`,
         `当前时代: ${eraName} ${costRate !== 1.0 ? `(消耗${costRate > 1 ? '增加' : '减少'}${Math.abs(100 - costRate*100)}%)` : ''}`,
         `基础需求: ${base_need_exp.toLocaleString()}`,
-        `实际需求: ${actual_need_exp.toLocaleString()} ${costModifier}`,
+        `实际需求: ${actual_blood_need.toLocaleString()} ${costModifier}`,
         `还需血气: ${exp3.toLocaleString()}`
       ].join("\n"));
     }
 
     // ==== 扣除资源 ====
     player.修为 -= actual_need_exp;
-    player.血气 -= actual_need_exp;
+    player.血气 -= actual_blood_need;
     
+    // ===== 天道排斥外物，进入渡劫状态 =====
+    const _tribSnap3 = this.enterTribulationState(player, equipment);
+
+    // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
+    const maxAtk = this.calcMaxTheoreticalAtk(player, equipment);
+
     // ==== 开始渡劫 ====
     let battleLog = [
       `【圣人王劫启·星域崩塌】`,
@@ -914,7 +1063,8 @@ async shengrenwangleijie(e) {
       `「轰隆！」雷劫未至，已有无数小星辰承受不住威压而崩碎！`,
       `当前时代：${eraName}`,
       `消耗修为：${actual_need_exp.toLocaleString()}`,
-      `消耗血气：${actual_need_exp.toLocaleString()}`
+      `消耗血气：${actual_blood_need.toLocaleString()}`,
+      ...(minggeCostLine ? [minggeCostLine] : [])
     ];
 
     // ==== 圣人王劫阶段 ====
@@ -922,7 +1072,7 @@ async shengrenwangleijie(e) {
       { 
         name: "九重仙劫", 
         waves: 9,
-        baseDamage: player.攻击 * 0.2 * difficultyRate,
+        baseDamage: maxAtk * 0.2 * difficultyRate,
         desc: [
           `九重天阙降临，每一重都代表一种极致天罚！`,
           `混沌雷海、五行仙光、阴阳道图、时空碎片...`,
@@ -946,7 +1096,7 @@ async shengrenwangleijie(e) {
          {
         name: "心魔劫",
         waves: 9,
-        baseDamage: player.攻击 * 0.3 * difficultyRate,
+        baseDamage: maxAtk * 0.3 * difficultyRate,
         desc: [
           `心魔丛生，过往遗憾与心结具现化！`,
           `亲人、爱人、仇敌、道心漏洞...`,
@@ -978,7 +1128,7 @@ async shengrenwangleijie(e) {
       {
         name: "肉身劫",
         waves: 9,
-        baseDamage: player.攻击 * 0.4 * difficultyRate,
+        baseDamage: maxAtk * 0.4 * difficultyRate,
         desc: [
           `专门针对肉身的考验，万道锤炼圣体！`,
           `不灭经文化作枷锁，大道符文烙印血肉，`,
@@ -1018,7 +1168,7 @@ async shengrenwangleijie(e) {
       {
         name: "少年大帝烙印",
         waves: 9,
-        baseDamage: player.攻击 * 0.6 * difficultyRate,
+        baseDamage: maxAtk * 0.6 * difficultyRate,
         desc: [
           `时间长河奔腾，九位少年大帝从过去走来！`,
           `虚空大帝、恒宇大帝、无始大帝、狠人大帝...`,
@@ -1048,7 +1198,7 @@ async shengrenwangleijie(e) {
       {
         name: "帝兵劫",
         waves: 9,
-        baseDamage: player.攻击 * 1 * difficultyRate,
+        baseDamage: maxAtk * 1 * difficultyRate,
         desc: [
           `雷劫演化极道帝兵，进行终极攻伐！`,
           `虚空镜、恒宇炉、无始钟、吞天魔罐...`,
@@ -1132,7 +1282,7 @@ async shengrenwangleijie(e) {
           if (resurrected) {
             battleLog.push(`【逆转生死】${player.名号}成功复活！`);
             await Write_player(usr_qq, player);
-            await e.reply(battleLog.join('\n'));
+            await this.broadcastToAll(player,battleLog.join('\n'));
             battleLog = [];
             wave--;
             continue;
@@ -1144,7 +1294,7 @@ async shengrenwangleijie(e) {
         // 每道劫难间隔
         if (wave < stage.waves) {
           await Write_player(usr_qq, player);
-          await e.reply(battleLog.join('\n'));
+          await this.broadcastToAll(player,battleLog.join('\n'));
           battleLog = [];
           await new Promise(resolve => setTimeout(resolve, 12000)); // 12秒间隔
         }
@@ -1166,7 +1316,7 @@ async shengrenwangleijie(e) {
       
       if (stageIndex < stages.length - 1) {
         await Write_player(usr_qq, player);
-        await e.reply(battleLog.join('\n'));
+        await this.broadcastToAll(player,battleLog.join('\n'));
         battleLog = [];
         await new Promise(resolve => setTimeout(resolve, 5000)); // 阶段间5秒间隔
       }
@@ -1175,6 +1325,9 @@ async shengrenwangleijie(e) {
     // ==== 渡劫结果判定 ====
     if (player.当前血量 > 1) {
       player.mijinglevel_id = 13; // 圣人王境界
+      unlockDaoRealm(player, 13);
+      // 扣除仙道潜力（渡圣人王=3点）
+      player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - applyQuestionFortuneCost(player, 3));
       battleLog.push(`【劫尽成王】`);
       battleLog.push(`雷劫散去，${player.名号}屹立星空，圣王之威震慑九天十地！`);
       battleLog.push(`肉身经过万道锤炼，已近不灭，圣王道果圆满，`);
@@ -1213,6 +1366,8 @@ async shengrenwangleijie(e) {
     this.clearTempEffects(player);
     await Write_player(usr_qq, player);
     e.reply(battleLog.join('\n'));
+    // ===== 渡劫结束，重算全装属性 =====
+    await this.exitTribulationState(player, _tribSnap3, usr_qq, equipment);
   }
   // ==== 渡大圣雷劫主逻辑 ====
 async dashengleijie(e) {
@@ -1233,6 +1388,24 @@ async dashengleijie(e) {
         `需先渡过圣人王劫，成就圣王之位方可引动大圣劫`
       ].join('\n'));
     }
+    
+    /* ========== 仙道潜力检查（渡大圣雷劫=4点） ========== */
+    {
+      const potentialCost = applyQuestionFortuneCost(player, 4);
+      const currentPotential = player.仙道潜力 || 0;
+      if (currentPotential < potentialCost) {
+        return e.reply([
+          `【仙道潜力不足·渡劫受阻】`,
+          `${player.名号}欲引动大圣劫，却感仙道潜力枯竭，天雷拒绝降临！`,
+          `当前仙道潜力：${currentPotential} 点`,
+          `渡大圣雷劫所需：${potentialCost} 点`,
+          `「无潜力者，天劫不降，只能蛰伏等待机缘！」`
+        ].join('\n'));
+      }
+    }
+    /* ========== 仙道潜力检查结束 ========== */
+
+    if (!(await this.checkWudaoGate(e, player, usr_qq, 13))) return false;
 
     // ==== 时代系统配置 ====
     const set = config.getConfig('xiuxian', 'xiuxian');
@@ -1258,9 +1431,11 @@ async dashengleijie(e) {
 
     // ==== 资源检查 ====
     const base_need_exp = Math.pow(2, 13) * 2000000; // 大圣劫消耗巨大
-    const actual_need_exp = Math.ceil(base_need_exp * costRate);
+    const actual_blood_need = applyQuestionFortuneCost(player, Math.ceil(base_need_exp * costRate));
+    const actual_need_exp = this.getMinggeCultivationCost(player, actual_blood_need);
+    const minggeCostLine = this.getMinggeCostLine(player, actual_blood_need);
     const exp2 = Math.max(0, actual_need_exp - player.修为);
-    const exp3 = Math.max(0, actual_need_exp - player.血气);
+    const exp3 = Math.max(0, actual_blood_need - player.血气);
 
     if (player.修为 < actual_need_exp) {
       return e.reply([
@@ -1268,16 +1443,17 @@ async dashengleijie(e) {
         `当前时代: ${eraName} ${costRate !== 1.0 ? `(消耗${costRate > 1 ? '增加' : '减少'}${Math.abs(100 - costRate*100)}%)` : ''}`,
         `基础需求: ${base_need_exp.toLocaleString()}`,
         `实际需求: ${actual_need_exp.toLocaleString()} ${costModifier}`,
+        ...(minggeCostLine ? [minggeCostLine] : []),
         `还需修为: ${exp2.toLocaleString()}`
       ].join("\n"));
     }
 
-    if (player.血气 < actual_need_exp) {
+    if (player.血气 < actual_blood_need) {
       return e.reply([
         `血气不足以渡大圣劫！`,
         `当前时代: ${eraName} ${costRate !== 1.0 ? `(消耗${costRate > 1 ? '增加' : '减少'}${Math.abs(100 - costRate*100)}%)` : ''}`,
         `基础需求: ${base_need_exp.toLocaleString()}`,
-        `实际需求: ${actual_need_exp.toLocaleString()} ${costModifier}`,
+        `实际需求: ${actual_blood_need.toLocaleString()} ${costModifier}`,
         `还需血气: ${exp3.toLocaleString()}`
       ].join("\n"));
     }
@@ -1286,8 +1462,14 @@ async dashengleijie(e) {
 
     // ==== 扣除资源 ====
     player.修为 -= actual_need_exp;
-    player.血气 -= actual_need_exp;
+    player.血气 -= actual_blood_need;
     
+    // ===== 天道排斥外物，进入渡劫状态 =====
+    const _tribSnap4 = this.enterTribulationState(player, equipment);
+
+    // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
+    const maxAtk = this.calcMaxTheoreticalAtk(player, equipment);
+
     // ==== 开始渡劫 ====
     let battleLog = [
       `【大圣劫启·宇宙震颤】`,
@@ -1296,7 +1478,8 @@ async dashengleijie(e) {
       `「轰！」第一道雷光便劈碎了星河，湮灭万千星辰！`,
       `当前时代：${eraName} (难度系数:${difficultyRate})`,
       `消耗修为：${actual_need_exp.toLocaleString()}`,
-      `消耗血气：${actual_need_exp.toLocaleString()}`
+      `消耗血气：${actual_blood_need.toLocaleString()}`,
+      ...(minggeCostLine ? [minggeCostLine] : [])
     ];
 
     // ==== 大圣劫阶段 ====
@@ -1304,7 +1487,7 @@ async dashengleijie(e) {
       { 
         name: "混沌天雷", 
         waves: 9,
-        baseDamage: player.攻击 * 0.3 * difficultyRate,
+        baseDamage: maxAtk * 0.3 * difficultyRate,
         desc: [
           `开天辟地前的混沌雷海降临，蕴含创世与灭世之力！`,
           `每一道混沌天雷都携带先天道则，磨灭万物！`,
@@ -1328,7 +1511,7 @@ async dashengleijie(e) {
             {
         name: "心魔劫",
         waves: 9,
-        baseDamage: player.攻击 * 0.4 * difficultyRate,
+        baseDamage: maxAtk * 0.4 * difficultyRate,
         desc: [
           `大圣心魔劫，直指道心最深处！`,
           `过往一切遗憾、恐惧、执念具现化！`,
@@ -1392,7 +1575,7 @@ async dashengleijie(e) {
       {
         name: "肉身劫",
         waves: 9,
-        baseDamage: player.攻击 * 0.5 * difficultyRate,
+        baseDamage: maxAtk * 0.5 * difficultyRate,
         desc: [
           `专门针对大圣肉身的终极考验！`,
           `万道化为实质枷锁，大道符文烙印每一寸血肉！`,
@@ -1474,7 +1657,7 @@ async dashengleijie(e) {
       {
         name: "至尊烙印",
         waves: 9,
-        baseDamage: player.攻击 * 0.7 * difficultyRate-player.防御 * 0.1,
+        baseDamage: maxAtk * 0.7 * difficultyRate,
         desc: [
           `古往今来最强大的九位至尊烙印显化！`,
           `不死天皇、狠人大帝、无始大帝、帝尊...`,
@@ -1572,7 +1755,7 @@ async dashengleijie(e) {
       {
         name: "帝兵劫",
         waves: 9,
-        baseDamage: player.攻击 * 0.9 * difficultyRate-player.防御 * 0.2,
+        baseDamage: maxAtk * 0.9 * difficultyRate,
         desc: [
           `雷劫演化极道帝兵，进行终极攻伐！`,
           `不仅有无始钟、虚空镜等已知帝兵，`,
@@ -1660,7 +1843,7 @@ async dashengleijie(e) {
       {
         name: "天道审判",
         waves: 1,
-        baseDamage: player.攻击 * 2 * difficultyRate-player.防御 * 0.1,
+        baseDamage: maxAtk * 2 * difficultyRate,
         desc: [
           `最终审判！天道显化，降下终极一击！`,
           `这是天地对逆天者的最终考验！`,
@@ -1749,7 +1932,7 @@ async dashengleijie(e) {
         if (resurrected) {
             battleLog.push(`【逆转生死,欺瞒天地】${player.名号}以无上秘法成功复活，并避开第${wave}道劫数！`);
             await Write_player(usr_qq, player);
-            await e.reply(battleLog.join('\n'));
+            await this.broadcastToAll(player,battleLog.join('\n'));
             battleLog = [];
             
             // 直接进入下一道劫难
@@ -1762,7 +1945,7 @@ async dashengleijie(e) {
         // 每道劫难间隔
         if (wave < stage.waves) {
           await Write_player(usr_qq, player);
-          await e.reply(battleLog.join('\n'));
+          await this.broadcastToAll(player,battleLog.join('\n'));
           battleLog = [];
           await new Promise(resolve => setTimeout(resolve, 15000)); // 15秒间隔
         }
@@ -1787,7 +1970,7 @@ async dashengleijie(e) {
       
       if (stageIndex < stages.length - 1) {
         await Write_player(usr_qq, player);
-        await e.reply(battleLog.join('\n'));
+        await this.broadcastToAll(player,battleLog.join('\n'));
         battleLog = [];
         await new Promise(resolve => setTimeout(resolve, 8000)); // 阶段间8秒间隔
       }
@@ -1796,6 +1979,9 @@ async dashengleijie(e) {
     // ==== 渡劫结果判定 ====
     if (player.当前血量 > 1) {
       player.mijinglevel_id = 14; // 大圣境界
+      unlockDaoRealm(player, 14);
+      // 扣除仙道潜力（渡大圣=4点）
+      player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - applyQuestionFortuneCost(player, 4));
       battleLog.push(`【劫尽成圣】`);
       battleLog.push(`雷劫散去，${player.名号}屹立星空，大圣之威震慑九天十地！`);
       battleLog.push(`肉身经过万道锤炼，已近不灭，大圣道果圆满，`);
@@ -1846,6 +2032,8 @@ async dashengleijie(e) {
     this.clearTempEffects(player);
     await Write_player(usr_qq, player);
     e.reply(battleLog.join('\n'));
+    // ===== 渡劫结束，重算全装属性 =====
+    await this.exitTribulationState(player, _tribSnap4, usr_qq, equipment);
   }
     // ==== 渡准帝雷劫主逻辑 ====
 async zhundileijie(e) {
@@ -1866,6 +2054,24 @@ async zhundileijie(e) {
         `需先渡过大圣劫，成就大圣之位方可引动准帝劫`
       ].join('\n'));
     }
+    
+    /* ========== 仙道潜力检查（渡准帝雷劫=5点） ========== */
+    {
+      const potentialCost = applyQuestionFortuneCost(player, 5);
+      const currentPotential = player.仙道潜力 || 0;
+      if (currentPotential < potentialCost) {
+        return e.reply([
+          `【仙道潜力不足·渡劫受阻】`,
+          `${player.名号}欲引动准帝劫，却感仙道潜力枯竭，天雷拒绝降临！`,
+          `当前仙道潜力：${currentPotential} 点`,
+          `渡准帝雷劫所需：${potentialCost} 点`,
+          `「无潜力者，天劫不降，只能蛰伏等待机缘！」`
+        ].join('\n'));
+      }
+    }
+    /* ========== 仙道潜力检查结束 ========== */
+
+    if (!(await this.checkWudaoGate(e, player, usr_qq, 14))) return false;
 
     // ==== 准帝劫重数选择 ====
     // 准帝劫分为1-9重天，玩家可以选择渡几重天的劫难
@@ -1896,9 +2102,11 @@ async zhundileijie(e) {
 
     // ==== 资源检查 ====
     const base_need_exp = Math.pow(2, 14) * 2000000; // 准帝劫消耗巨大
-    const actual_need_exp = Math.ceil(base_need_exp * costRate);
+    const actual_blood_need = applyQuestionFortuneCost(player, Math.ceil(base_need_exp * costRate));
+    const actual_need_exp = this.getMinggeCultivationCost(player, actual_blood_need);
+    const minggeCostLine = this.getMinggeCostLine(player, actual_blood_need);
     const exp2 = Math.max(0, actual_need_exp - player.修为);
-    const exp3 = Math.max(0, actual_need_exp - player.血气);
+    const exp3 = Math.max(0, actual_blood_need - player.血气);
 
     if (player.修为 < actual_need_exp) {
       return e.reply([
@@ -1906,24 +2114,31 @@ async zhundileijie(e) {
         `当前时代: ${eraName} ${costRate !== 1.0 ? `(消耗${costRate > 1 ? '增加' : '减少'}${Math.abs(100 - costRate*100).toFixed(0)}%)` : ''}`,
         `基础需求: ${base_need_exp.toLocaleString()}`,
         `实际需求: ${actual_need_exp.toLocaleString()} ${costModifier}`,
+        ...(minggeCostLine ? [minggeCostLine] : []),
         `还需修为: ${exp2.toLocaleString()}`
       ].join("\n"));
     }
 
-    if (player.血气 < actual_need_exp) {
+    if (player.血气 < actual_blood_need) {
       return e.reply([
         `血气不足以渡准帝劫！`,
         `当前时代: ${eraName} ${costRate !== 1.0 ? `(消耗${costRate > 1 ? '增加' : '减少'}${Math.abs(100 - costRate*100).toFixed(0)}%)` : ''}`,
         `基础需求: ${base_need_exp.toLocaleString()}`,
-        `实际需求: ${actual_need_exp.toLocaleString()} ${costModifier}`,
+        `实际需求: ${actual_blood_need.toLocaleString()} ${costModifier}`,
         `还需血气: ${exp3.toLocaleString()}`
       ].join("\n"));
     }
 
     // ==== 扣除资源 ====
     player.修为 -= actual_need_exp;
-    player.血气 -= actual_need_exp;
+    player.血气 -= actual_blood_need;
     
+    // ===== 天道排斥外物，进入渡劫状态 =====
+    const _tribSnap5 = this.enterTribulationState(player, equipment);
+
+    // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
+    const maxAtk = this.calcMaxTheoreticalAtk(player, equipment);
+
     // ==== 开始渡劫 ====
     let battleLog = [
       `【准帝劫启·诸天震动】`,
@@ -1933,7 +2148,8 @@ async zhundileijie(e) {
       `选择重数：${selectedHeaven}重天`,
       `当前时代：${eraName} (难度系数:${difficultyRate.toFixed(1)})`,
       `消耗修为：${actual_need_exp.toLocaleString()}`,
-      `消耗血气：${actual_need_exp.toLocaleString()}`
+      `消耗血气：${actual_blood_need.toLocaleString()}`,
+      ...(minggeCostLine ? [minggeCostLine] : [])
     ];
 
     // ==== 准帝劫阶段 ====
@@ -1943,7 +2159,7 @@ async zhundileijie(e) {
         name: "混沌雷海", 
         requiredHeaven: 1,
         waves: 9,
-        baseDamage: player.攻击 * 0.3 * difficultyRate,
+        baseDamage: maxAtk * 0.3 * difficultyRate,
         desc: [
           `开天辟地前的混沌雷海降临，蕴含创世与灭世之力！`,
           `每一滴雷液都足以湮灭大圣，每一道雷光都足以重创准帝！`,
@@ -1969,7 +2185,7 @@ async zhundileijie(e) {
         name: "帝皇烙印",
         requiredHeaven: 1,
         waves: 9,
-        baseDamage: player.攻击 * 1 * difficultyRate-player.防御 * 0.5,
+        baseDamage: maxAtk * 1 * difficultyRate,
         desc: [
           `古往今来最强大的九位帝皇烙印显化！`,
           `不死天皇、狠人大帝、无始大帝、帝尊、叶凡...`,
@@ -2082,7 +2298,7 @@ async zhundileijie(e) {
         name: "心魔劫",
         requiredHeaven: 3,
         waves: 9,
-        baseDamage: player.攻击 * 0.5 * difficultyRate-player.防御 * 0.25,
+        baseDamage: maxAtk * 0.5 * difficultyRate,
         desc: [
           `准帝心魔劫，直指道心最深处！`,
           `过往一切遗憾、恐惧、执念具现化！`,
@@ -2155,7 +2371,7 @@ async zhundileijie(e) {
         name: "肉身劫",
         requiredHeaven: 3,
         waves: 9,
-        baseDamage: player.攻击 * 0.7 * difficultyRate-player.防御 * 0.3,
+        baseDamage: maxAtk * 0.7 * difficultyRate,
         desc: [
           `专门针对准帝肉身的终极考验！`,
           `万道化为实质枷锁，大道符文烙印每一寸血肉！`,
@@ -2253,7 +2469,7 @@ async zhundileijie(e) {
         name: "帝兵劫",
         requiredHeaven: 6,
         waves: 9,
-        baseDamage: player.攻击 * 2 * difficultyRate-player.防御 * 1,
+        baseDamage: maxAtk * 2 * difficultyRate,
         desc: [
           `雷劫演化极道帝兵，进行终极攻伐！`,
           `不仅有无始钟、虚空镜等已知帝兵，`,
@@ -2342,7 +2558,7 @@ async zhundileijie(e) {
         name: "天道审判",
         requiredHeaven: 6,
         waves: 1,
-        baseDamage: player.攻击 * 5 * difficultyRate-player.防御 * 3,
+        baseDamage: maxAtk * 5 * difficultyRate,
         desc: [
           `最终审判！天道显化，降下终极一击！`,
           `这是天地对逆天者的最终考验！`,
@@ -2434,7 +2650,7 @@ async zhundileijie(e) {
         if (resurrected) {
             battleLog.push(`【逆转生死,欺瞒天地】${player.名号}以无上秘法成功复活，并避开第${wave}道劫数！`);
             await Write_player(usr_qq, player);
-            await e.reply(battleLog.join('\n'));
+            await this.broadcastToAll(player,battleLog.join('\n'));
             battleLog = [];
             
             // 直接进入下一道劫难
@@ -2447,7 +2663,7 @@ async zhundileijie(e) {
         // 每道劫难间隔
         if (wave < stage.waves) {
           await Write_player(usr_qq, player);
-          await e.reply(battleLog.join('\n'));
+          await this.broadcastToAll(player,battleLog.join('\n'));
           battleLog = [];
           await new Promise(resolve => setTimeout(resolve, 18000)); // 18秒间隔
         }
@@ -2479,7 +2695,7 @@ async zhundileijie(e) {
       
       if (stageIndex < stages.length - 1) {
         await Write_player(usr_qq, player);
-        await e.reply(battleLog.join('\n'));
+        await this.broadcastToAll(player,battleLog.join('\n'));
         battleLog = [];
         await new Promise(resolve => setTimeout(resolve, 10000)); // 阶段间10秒间隔
       }
@@ -2488,7 +2704,10 @@ async zhundileijie(e) {
     // ==== 渡劫结果判定 ====
     if (player.当前血量 > 1) {
       player.mijinglevel_id = 15; // 准帝境界
+      unlockDaoRealm(player, 15);
       player.准帝重天 = selectedHeaven; // 记录达到的准帝重数
+      // 扣除仙道潜力（渡准帝=5点）
+      player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - applyQuestionFortuneCost(player, 5));
       
       battleLog.push(`【劫尽成帝】`);
       battleLog.push(`雷劫散去，${player.名号}屹立星空，准帝之威震慑九天十地！`);
@@ -2563,6 +2782,8 @@ async zhundileijie(e) {
     this.clearTempEffects(player);
     await Write_player(usr_qq, player);
     e.reply(battleLog.join('\n'));
+    // ===== 渡劫结束，重算全装属性 =====
+    await this.exitTribulationState(player, _tribSnap5, usr_qq, equipment);
   }
   async command_zhengdao(e) {
     if (!verc({ e })) return false;
@@ -2570,20 +2791,65 @@ async zhundileijie(e) {
     const usr_qq = e.user_id.toString().replace('qg_', '');
     const player = await Read_player(usr_qq);
     const equipment = await Read_equipment(usr_qq);
+
+    // 先确认帝路境界，避免低境界玩家提前触发天心与准帝法则判断
+    if (player.mijinglevel_id < 15) {
+        const levelName = data.Levelmijing_list.find(l => l.level_id === player.mijinglevel_id)?.level || "未知境界";
+        e.reply([
+            `证道成帝需达到准帝九重天！`,
+            `你当前的证道体系仅到达 ${levelName}`
+        ].join("\n"));
+        return false;
+    }
+    if (player.mijinglevel_id >= 16) {
+        e.reply(`你早已成就帝位，不可重复证道`);
+        return false;
+    }
     
     // 检查当世是否已有大帝（天心印记持有者）
     const hasHeavenHeartMark = await this.checkHeavenHeartMark(usr_qq);
+    const now = Date.now();
+
+    // 护道状态是限时证道窗口，过期后不应继续绕过天心压制
+    if (player.护道状态 && Number(player.护道状态) <= now) {
+      delete player.护道状态;
+      await Write_player(usr_qq, player);
+    }
+
+    const zhengdaoDecision = resolveZhengdaoRoute(player, hasHeavenHeartMark, now);
+    const isAboveAllDaos = zhengdaoDecision.route === ZHENGDAO_ROUTES.ABOVE_ALL_DAOS;
+    const isProtectedZhengdao = zhengdaoDecision.route === ZHENGDAO_ROUTES.PROTECTED;
     
-    // 如果当世已有大帝，且当前玩家没有护道状态，则无法证道
-    if (hasHeavenHeartMark && !player.护道状态) {
+    // 普通体质既无护道者开路，也无法自行凌驾万道
+    if (zhengdaoDecision.route === ZHENGDAO_ROUTES.BLOCKED) {
         e.reply([
             `【天心印记·帝路断绝】`,
             `${player.名号}欲证道成帝，却感天地大道压制！`,
             `当世已有大帝存在，天心印记镇压万道！`,
-            `"一时代只容一帝，此乃天道铁律！"`
+            `唯有大成荒古圣体、先天圣体道胎、混沌体、先天混沌圣体道胎，`,
+            `方可不借天心，凌驾万道成帝！`,
+            `其余修士需请当世大帝轰击天地万道，开辟限时证道契机。`
         ].join("\n"));
         return false;
     }
+    
+    /* ========== 仙道潜力检查（证道成帝=6点） ========== */
+    {
+      const potentialCost = applyQuestionFortuneCost(player, 6);
+      const currentPotential = player.仙道潜力 || 0;
+      if (currentPotential < potentialCost) {
+        return e.reply([
+          `【仙道潜力不足·证道受阻】`,
+          `${player.名号}欲证道成帝，却感仙道潜力枯竭，帝道之门紧闭！`,
+          `当前仙道潜力：${currentPotential} 点`,
+          `证道成帝所需：${potentialCost} 点`,
+          `「无潜力者，帝道断绝，需补足仙道潜力方可踏上帝路！」`
+        ].join('\n'));
+      }
+    }
+    /* ========== 仙道潜力检查结束 ========== */
+
+    if (!(await this.checkWudaoGate(e, player, usr_qq, 15))) return false;
     
     // 获取时代信息
     const set = config.getConfig('xiuxian', 'xiuxian');
@@ -2598,13 +2864,16 @@ async zhundileijie(e) {
     const costRate = eraCostRates[currentEra.index];
     const eraName = eraNames[currentEra.index];
     const eraBoost = difficultyRate; // 使用难度系数作为时代加成
+    const challengeDifficultyRate = difficultyRate * zhengdaoDecision.difficultyMultiplier;
     const costModifier = costRate !== 1.0 ? `(×${costRate})` : "";
     
     // 计算实际需求
     const base_need_exp = Math.pow(2, 15) * 250000;
-    const actual_need_exp = Math.ceil(base_need_exp * costRate);
+    const actual_blood_need = applyQuestionFortuneCost(player, Math.ceil(base_need_exp * costRate));
+    const actual_need_exp = this.getMinggeCultivationCost(player, actual_blood_need, 'zhengdao');
+    const minggeCostLine = this.getMinggeCostLine(player, actual_blood_need, 'zhengdao');
     const exp2 = Math.max(0, actual_need_exp - player.修为);
-    const exp3 = Math.max(0, actual_need_exp - player.血气);
+    const exp3 = Math.max(0, actual_blood_need - player.血气);
     
     // 资源检查
     if (player.修为 < actual_need_exp) {
@@ -2613,32 +2882,19 @@ async zhundileijie(e) {
             `当前时代: ${eraName} ${costRate !== 1.0 ? `(消耗${costRate > 1 ? '增加' : '减少'}${Math.abs(100 - costRate*100)}%)` : ''}`,
             `基础需求: ${base_need_exp.toLocaleString()}`,
             `实际需求: ${actual_need_exp.toLocaleString()} ${costModifier}`,
+            ...(minggeCostLine ? [minggeCostLine] : []),
             `还需修为: ${exp2.toLocaleString()}`
         ].join("\n"));
         return false;
     }
-    if (player.血气 < actual_need_exp) {
+    if (player.血气 < actual_blood_need) {
         e.reply([
             `血气不足以证道成帝！`,
             `当前时代: ${eraName} ${costRate !== 1.0 ? `(消耗${costRate > 1 ? '增加' : '减少'}${Math.abs(100 - costRate*100)}%)` : ''}`,
             `基础需求: ${base_need_exp.toLocaleString()}`,
-            `实际需求: ${actual_need_exp.toLocaleString()} ${costModifier}`,
+            `实际需求: ${actual_blood_need.toLocaleString()} ${costModifier}`,
             `还需血气: ${exp3.toLocaleString()}`
         ].join("\n"));
-        return false;
-    }
-    
-    // 境界检查
-    if (player.mijinglevel_id < 15) {
-        const levelName = data.Levelmijing_list.find(l => l.level_id === player.mijinglevel_id)?.level || "未知境界";
-        e.reply([
-            `证道成帝需达到准帝九重天！`,
-            `你当前的证道体系仅到达 ${levelName}`
-        ].join("\n"));
-        return false;
-    }
-    if (player.mijinglevel_id >= 16) {
-        e.reply(`你早已成就帝位，不可重复证道`);
         return false;
     }
     
@@ -2655,27 +2911,58 @@ async zhundileijie(e) {
     
     // ==== 扣除资源 ====
     player.修为 -= actual_need_exp;
-    player.血气 -= actual_need_exp;
+    player.血气 -= actual_blood_need;
+    
+    // ===== 天道排斥外物，进入渡劫状态 =====
+    const _tribSnap6 = this.enterTribulationState(player, equipment);
+
+    // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
+    const maxAtk = this.calcMaxTheoreticalAtk(player, equipment);
+
 // ==== 推送全服公告 ====
-const startMsg = [
-    `【诸天震动·帝劫启】`,
-    `轰！！！`,
-    `宇宙边荒，一道惊世神光撕裂星海，照亮了万古长夜！`,
-    `「${player.名号}」于${eraName}末路，逆天而行，欲证道成帝！`,
-    `天心印记震颤，万道哀鸣，整片古史都在颤抖！`,
-    `无数沉睡的古皇、至尊自禁区中苏醒，`,
-    `冰冷的目光跨越时空，注视着这逆天之举！`,
-    `"这一世，又要有人踏上帝路了吗？"`,
-    `宇宙八荒，所有修士皆心生感应，抬头望天，`,
-    `只见雷海漫天，混沌气汹涌，一场旷世帝劫即将开启！`
-].join("\n");
+let startMsg;
+if (isAboveAllDaos) {
+    startMsg = [
+        `【逆天证道·凌驾万道】`,
+        `轰！！！`,
+        `当世帝印与宇宙万道同时复苏，欲镇杀后来者！`,
+        `「${player.名号}」身负${zhengdaoDecision.physique.name}，不退反进，直入帝劫！`,
+        zhengdaoDecision.physique.opening,
+        zhengdaoDecision.physique.mechanism,
+        `此劫若成，其道果将不寄托天心，而是凌驾于万道之上！`,
+        `宇宙八荒尽皆失声，连当世大帝都向雷海投来目光！`
+    ].join("\n");
+} else if (isProtectedZhengdao) {
+    startMsg = [
+        `【帝血开路·诸帝并存】`,
+        `轰！！！`,
+        `护道者留下的大道裂隙尚未闭合，天心压制被暂时撕开！`,
+        `「${player.名号}」抓住这唯一的契机，闯入帝劫！`,
+        `此路不夺当世天心，只在万道之外另立自身帝道！`
+    ].join("\n");
+} else {
+    startMsg = [
+        `【诸天震动·帝劫启】`,
+        `轰！！！`,
+        `宇宙边荒，一道惊世神光撕裂星海，照亮了万古长夜！`,
+        `「${player.名号}」于${eraName}末路，逆天而行，欲证道成帝！`,
+        `天心印记震颤，万道哀鸣，整片古史都在颤抖！`,
+        `无数沉睡的古皇、至尊自禁区中苏醒，`,
+        `冰冷的目光跨越时空，注视着这逆天之举！`,
+        `"这一世，又要有人踏上帝路了吗？"`,
+        `宇宙八荒，所有修士皆心生感应，抬头望天，`,
+        `只见雷海漫天，混沌气汹涌，一场旷世帝劫即将开启！`
+    ].join("\n");
+}
 await this.broadcastToAll(player,startMsg);
 
 // ==== 开始证道劫 ====
 let battleLog = [
     `【帝劫启·万古颤】`,
     `轰隆！！！`,
-    `${player.名号}屹立宇宙边荒，周身黄金血气冲霄，淹没了整片星域！`,
+    isAboveAllDaos
+      ? zhengdaoDecision.physique.opening
+      : `${player.名号}屹立宇宙边荒，周身帝道神光冲霄，淹没了整片星域！`,
     `准帝九重天的气息毫无保留地释放，一颗又一颗死寂古星在威压下炸开！`,
     `"来吧！让我看看这帝劫能否阻我证道！"`,
     `话音未落，第一道雷光便已劈落，粗大如星河，照亮了黑暗的宇宙，`,
@@ -2683,8 +2970,12 @@ let battleLog = [
     `这已不是寻常雷劫，而是天地大道的具现化，`,
     `每一缕电芒都蕴含着灭世之力，足以让寻常准帝饮恨！`,
     `当前时代：${eraName} (天道压制:${difficultyRate.toFixed(1)}倍)`,
+    isAboveAllDaos
+      ? `凌驾万道：当世帝印额外压制${zhengdaoDecision.difficultyMultiplier.toFixed(1)}倍`
+      : `证道方式：${zhengdaoDecision.route}`,
     `燃烧修为：${actual_need_exp.toLocaleString()}年苦修`,
-    `献祭血气：${actual_need_exp.toLocaleString()}载积累`
+    `献祭血气：${actual_blood_need.toLocaleString()}载积累`,
+    ...(minggeCostLine ? [minggeCostLine] : [])
 ];
     
     // ==== 证道劫阶段 ====
@@ -2692,7 +2983,7 @@ let battleLog = [
         { 
             name: "万道枷锁", 
             waves: 9,
-            baseDamage: player.攻击 * 0.5 * difficultyRate,
+            baseDamage: maxAtk * 0.5 * challengeDifficultyRate,
             desc: [
                 `天道降下万道枷锁，欲将逆天者束缚！`,
                 `每一道枷锁都蕴含一种大道法则，`,
@@ -2717,7 +3008,7 @@ let battleLog = [
         {
             name: "心魔劫",
             waves: 9,
-            baseDamage: player.攻击 * 0.8 * difficultyRate-player.防御 *0.1,
+            baseDamage: maxAtk * 0.8 * challengeDifficultyRate,
             desc: [
                 `证道心魔劫，直指道心最深处！`,
                 `过往一切遗憾、恐惧、执念具现化！`,
@@ -2788,7 +3079,7 @@ let battleLog = [
         {
             name: "帝兵劫",
             waves: 9,
-            baseDamage: player.攻击 * 1.2 * difficultyRate-player.防御 *0.5,
+            baseDamage: maxAtk * 1.2 * challengeDifficultyRate,
             desc: [
                 `雷劫演化极道帝兵，进行终极攻伐！`,
                 `不仅有无始钟、虚空镜等已知帝兵，`,
@@ -2852,7 +3143,7 @@ let battleLog = [
         {
             name: "天道审判",
             waves: 1,
-            baseDamage: player.攻击 * 6.0 * difficultyRate-player.防御 *1,
+            baseDamage: maxAtk * 6.0 * challengeDifficultyRate,
             desc: [
                 `最终审判！天道显化，降下终极一击！`,
                 `这是天地对逆天者的最终考验！`,
@@ -2948,12 +3239,13 @@ let battleLog = [
         if (resurrected) {
             battleLog.push(`【逆转生死,欺瞒天地】${player.名号}以无上秘法成功复活，并避开第${wave}道劫数！`);
             await Write_player(usr_qq, player);
-            await e.reply(battleLog.join('\n'));
+            await this.broadcastToAll(player,battleLog.join('\n'));
             battleLog = [];
             
             // 直接进入下一道劫难
             continue;
         } else {
+            battleSuccess = false;
             break;
         }
     }
@@ -2961,7 +3253,7 @@ let battleLog = [
             // 每道劫难间隔
             if (wave < stage.waves) {
                 await Write_player(usr_qq, player);
-                await e.reply(battleLog.join('\n'));
+                await this.broadcastToAll(player,battleLog.join('\n'));
                 battleLog = [];
                 await new Promise(resolve => setTimeout(resolve, 18000)); // 18秒间隔
             }
@@ -2986,7 +3278,7 @@ let battleLog = [
         
         if (stageIndex < allStages.length - 1 && battleSuccess) {
             await Write_player(usr_qq, player);
-            await e.reply(battleLog.join('\n'));
+            await this.broadcastToAll(player,battleLog.join('\n'));
             battleLog = [];
             await new Promise(resolve => setTimeout(resolve, 10000)); // 阶段间10秒间隔
         }
@@ -3025,6 +3317,8 @@ await this.broadcastToAll(player,startMsg);
         
         this.clearTempEffects(player);
         await Write_player(usr_qq, player);
+        // ===== 渡劫结束，重算全装属性 =====
+        await this.exitTribulationState(player, _tribSnap6, usr_qq, equipment);
         return e.reply(battleLog.join('\n'));
     }
     
@@ -3049,7 +3343,7 @@ await this.broadcastToAll(player,startMsg);
             emperor.name,
             battleCount,
             player,
-            difficultyRate
+            challengeDifficultyRate
         );
         
         // 恢复玩家血量
@@ -3068,7 +3362,7 @@ await this.broadcastToAll(player,startMsg);
         await sleep(5000);
         
         // 进行战斗
-        const battleResult = await zd_battle(BB_player, player);
+        const battleResult = await zd_battle(player, BB_player);
         
         // 更新玩家血量
         player.当前血量 = battleResult.A_hp;
@@ -3150,11 +3444,10 @@ await this.broadcastToAll(player,startMsg);
     
     // 最终证道结果
     if (battleSuccess) {
-        // 扣除资源
-        player.修为 -= actual_need_exp;
-        player.血气 -= actual_need_exp;
         player.mijinglevel_id = 16;
         player.道伤=0;
+        // 扣除仙道潜力（证道成帝=6点）
+        player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - applyQuestionFortuneCost(player, 6));
 
         player.无法证道=false;
         // 生成帝号
@@ -3169,35 +3462,83 @@ await this.broadcastToAll(player,startMsg);
         player.防御加成 += finalPowerBonus;
         player.生命加成 += finalPowerBonus;
         
-        // 授予天心印记
-        player.天心印记 = 1;
+        // 天心合道独占天心；其他路线在万道之外另立自身帝道
+        const successState = getZhengdaoSuccessState(zhengdaoDecision.route);
+        player.证道方式 = successState.zhengdaoMethod;
+        player.天心印记 = successState.heavenHeartMark;
+        markDaoAsEmperor(player, successState.zhengdaoMethod);
+        delete player.护道状态;
         
         await Write_player(usr_qq, player);
-        // 证道成功结局
-        await e.reply([
-            `大道共鸣！诸天齐贺！`,
-            `${player.名号}成功证道成帝！`,
-            `诸天尊号：${player.帝号}`,
-            `时代背景：${eraName}`,
-            `资源消耗：${actual_need_exp.toLocaleString()} ${costModifier}`,
-            `最终属性提升：${bigNumberTransform(finalPowerBonus)}`,
-            `【天心印记】`,
-            `天道认可，授予天心印记！`,
-            `此时代唯你独尊，镇压万道！`,
-        ].join("\n"));
-        const startMsg = [
-    `【证道成功·大帝诞生】`,
-    `轰！！！！！！`,
-    `万道共鸣，诸天齐贺！整片宇宙都在颤抖！`,
-    `${player.名号}屹立雷海中央，周身帝气弥漫，`,
-    `一道璀璨的天心印记自虚空凝聚，没入其眉心！`,
-    `"这一世，我为${player.帝号}！"`,
-    `道音传遍九天十地，所有修士心生感应，`,
-    `不由自主地跪伏在地，朝拜这新诞生的大帝！`,
-    `天降祥瑞，地涌金莲，宇宙边荒绽放无尽仙光，`,
-    `一个新的时代，由此开启！`
-];
-await this.broadcastToAll(player,startMsg);
+
+        let successReply;
+        let successBroadcast;
+        if (isAboveAllDaos) {
+            successReply = [
+                `【逆天成帝·凌驾万道】`,
+                `${player.名号}以${zhengdaoDecision.physique.name}击穿天心，成功证道成帝！`,
+                `诸天尊号：${player.帝号}`,
+                `证道方式：${player.证道方式}`,
+                `时代背景：${eraName}`,
+                `资源消耗：${actual_need_exp.toLocaleString()} ${costModifier}`,
+                `最终属性提升：${bigNumberTransform(finalPowerBonus)}`,
+                `真身踏于万道之上，道果不寄托天心！`,
+                `当世帝印仍在，而诸天自此再添一尊无缺大帝！`,
+            ];
+            successBroadcast = [
+                `【证道成功·万道之上】`,
+                `轰！！！！！！`,
+                `天心印记与宇宙万道同时裂开，一道帝影自九天之外降临！`,
+                `${player.名号}立身万道之上，将当世帝印与诸天法则尽数踏在脚下！`,
+                `其道果不与天心相合，却绽放出无缺大帝的盖世威压！`,
+                `"天心非我道，万道在我下！这一世，我为${player.帝号}！"`,
+                `自此诸帝并存，一条前所未有的帝路烙印在古史中！`
+            ];
+        } else if (isProtectedZhengdao) {
+            successReply = [
+                `【护道成帝·另立帝道】`,
+                `${player.名号}借护道者开辟的万道裂隙，成功证道成帝！`,
+                `诸天尊号：${player.帝号}`,
+                `证道方式：${player.证道方式}`,
+                `时代背景：${eraName}`,
+                `资源消耗：${actual_need_exp.toLocaleString()} ${costModifier}`,
+                `最终属性提升：${bigNumberTransform(finalPowerBonus)}`,
+                `此道不夺当世天心，于万道之外自成一域！`,
+            ];
+            successBroadcast = [
+                `【证道成功·诸帝并立】`,
+                `护道者撕开的万道裂隙中，第二种无缺帝道冲霄而起！`,
+                `${player.名号}不与当世天心相争，于诸天之外证得${player.帝号}道果！`,
+                `这一世不再一帝独尊，诸帝并存的古史由此开启！`
+            ];
+        } else {
+            successReply = [
+                `大道共鸣！诸天齐贺！`,
+                `${player.名号}成功证道成帝！`,
+                `诸天尊号：${player.帝号}`,
+                `时代背景：${eraName}`,
+                `资源消耗：${actual_need_exp.toLocaleString()} ${costModifier}`,
+                `最终属性提升：${bigNumberTransform(finalPowerBonus)}`,
+                `【天心印记】`,
+                `天道认可，授予天心印记！`,
+                `此时代唯你独尊，镇压万道！`,
+            ];
+            successBroadcast = [
+                `【证道成功·大帝诞生】`,
+                `轰！！！！！！`,
+                `万道共鸣，诸天齐贺！整片宇宙都在颤抖！`,
+                `${player.名号}屹立雷海中央，周身帝气弥漫，`,
+                `一道璀璨的天心印记自虚空凝聚，没入其眉心！`,
+                `"这一世，我为${player.帝号}！"`,
+                `道音传遍九天十地，所有修士心生感应，`,
+                `不由自主地跪伏在地，朝拜这新诞生的大帝！`,
+                `天降祥瑞，地涌金莲，宇宙边荒绽放无尽仙光，`,
+                `一个新的时代，由此开启！`
+            ];
+        }
+
+        await e.reply(successReply.join("\n"));
+        await this.broadcastToAll(player, successBroadcast);
     } else {
         // 证道失败结局
         await e.reply([
@@ -3208,6 +3549,8 @@ await this.broadcastToAll(player,startMsg);
         ].join('\n'));
     }
     
+    // ===== 渡劫结束，重算全装属性 =====
+    await this.exitTribulationState(player, _tribSnap6, usr_qq, equipment);
     return true;
 }
 /**
@@ -3242,18 +3585,22 @@ async poWangChengDi(e) {
 
   /* ====== 资源检查 ====== */
   const baseNeed = Math.pow(2, 15) * 250000;
-  const realNeed = Math.ceil(baseNeed * costRate);
-  if (player.修为 < realNeed || player.血气 < realNeed)
+  const bloodNeed = applyQuestionFortuneCost(player, Math.ceil(baseNeed * costRate));
+  const realNeed = this.getMinggeCultivationCost(player, bloodNeed, 'zhengdao');
+  const minggeCostLine = this.getMinggeCostLine(player, bloodNeed, 'zhengdao');
+  if (player.修为 < realNeed || player.血气 < bloodNeed)
     return e.reply([
       `资源不足以破王成帝！`,
-      `需修为 / 血气：${realNeed.toLocaleString()}`,
+      `需修为：${realNeed.toLocaleString()}`,
+      `需血气：${bloodNeed.toLocaleString()}`,
+      ...(minggeCostLine ? [minggeCostLine] : []),
       `当前修为：${player.修为.toLocaleString()}`,
       `当前血气：${player.血气.toLocaleString()}`
     ].join('\n'));
 
 /* ====== 扣资源 & 初始化 ====== */
 player.修为 -= realNeed;
-player.血气 -= realNeed;
+player.血气 -= bloodNeed;
 player.生命本源 = player.生命本源 ?? 100;
 const totalShackles = 30;
 player.神明枷锁 = totalShackles;
@@ -3268,11 +3615,18 @@ if (player.护法玩家) {
 
 await Write_player(usr_qq, player);
 
+// ===== 天道排斥外物，进入渡劫状态 =====
+const _tribSnap7 = this.enterTribulationState(player, equipment);
+
+  // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
+  const maxAtk = this.calcMaxTheoreticalAtk(player, equipment);
+
   let log = [
     `【破王成帝·帝劫启】`,
     `${player.名号}欲破王称帝，引动诸天震荡！`,
     `融合第六秘境「举头三尺有神明」，头顶小人浮现，其周身缠绕${totalShackles}道大道枷锁！`,
-    `消耗修为：${realNeed.toLocaleString()} 消耗血气：${realNeed.toLocaleString()}`
+    `消耗修为：${realNeed.toLocaleString()} 消耗血气：${bloodNeed.toLocaleString()}`,
+    ...(minggeCostLine ? [minggeCostLine] : [])
   ];
   await e.reply(log.join('\n'));
   log = [];
@@ -3335,6 +3689,8 @@ await Write_player(usr_qq, player);
             `生命本源 −50（剩余 ${player.生命本源}）`,
             `需修养 24 时辰，以无上神物修复道基方能再战帝路！`
           ].join('\n'));
+          // ===== 渡劫结束，重算全装属性 =====
+          await this.exitTribulationState(player, _tribSnap7, usr_qq, equipment);
         } else {
           log.push(`【向死而生】重燃生命之火，继续迎战枷锁！`);
         }
@@ -3362,6 +3718,8 @@ await Write_player(usr_qq, player);
         `${player.名号}长啸震九天：「我身为炉，万道为火，今日熔炼古今法，重开帝者路！」`,
         `破碎王境，登临准仙帝！`
       ].join('\n'));
+      // ===== 渡劫结束，重算全装属性 =====
+      await this.exitTribulationState(player, _tribSnap7, usr_qq, equipment);
     }
   }, 1000);
 }
@@ -3593,6 +3951,256 @@ async broadcastToAll(player,startMsg) {
     }
 }
 
+// ==== 渡劫属性计算 ====
+// 天道排斥外物：武器/护具/法宝的加成与套装效果被此方天地力量抗拒，归零
+// 帝兵在雷海中沉浮渡劫：保留全部加成（固定属性 + 全属性×后两层基础）
+// 调用方式：const tAttr = this.calcTribulationAttr(player, equipment);
+
+/**
+ * 渡劫全属性计算 —— 镜像 Write_equipment，剥离武器/护具/法宝+套装，保留帝兵
+ * @param {Object} player  - Read_player 的玩家对象
+ * @param {Object} equipment - Read_equipment 的装备对象
+ * @returns {{攻击, 防御, 血量上限, 暴击率, 暴击伤害}}
+ */
+calcTribulationAttr(player, equipment) {
+  // ===== 阈值拆分（与 Write_equipment 完全一致） =====
+  const _lv = player.level_id || 1;
+  const _phy = player.Physique_id || 1;
+  const _mij = player.mijinglevel_id || 1;
+  const 练气上限 = _lv <= 41 ? _lv * 1000000 : 41 * 1000000 + (_lv - 41) * 10000000;
+  const 炼体上限 = _phy <= 41 ? _phy * 1000000 : 41 * 1000000 + (_phy - 41) * 10000000;
+  const 证道上限 = _mij * 15000000;
+  const 额外上限 = 练气上限 + 炼体上限 + 证道上限;
+
+  // 光阴加成豁免：始终全额参与所有放大
+  const 光阴攻 = player.光阴加成?.攻 || 0;
+  const 光阴防 = player.光阴加成?.防 || 0;
+  const 光阴血 = player.光阴加成?.生 || 0;
+
+  const 额外攻 = player.攻击加成 || 0;
+  const 额外防 = player.防御加成 || 0;
+  const 额外血 = player.生命加成 || 0;
+
+  const 阈内攻 = Math.min(额外攻, 额外上限);
+  const 阈内防 = Math.min(额外防, 额外上限);
+  const 阈内血 = Math.min(额外血, 额外上限);
+  const 超出攻 = Math.max(额外攻 - 额外上限, 0);
+  const 超出防 = Math.max(额外防 - 额外上限, 0);
+  const 超出血 = Math.max(额外血 - 额外上限, 0);
+
+  // ===== 阶段1：命格只作用于四体系基础总和，且独立留到最后加算 =====
+  const 四体系境界 = {
+    练气: data.Level_list.find(item => item.level_id == player.level_id),
+    炼体: data.LevelMax_list.find(item => item.level_id == player.Physique_id),
+    秘境: data.Levelmijing_list.find(item => item.level_id == player.mijinglevel_id),
+    仙古: data.xiangujinshi_list.find(item => item.level_id == (player.xiangulevel_id || 1)),
+  };
+  const 四体系基础 = {
+    攻击: 四体系境界.练气.基础攻击 + 四体系境界.炼体.基础攻击 +
+      四体系境界.秘境.基础攻击 + 四体系境界.仙古.基础攻击,
+    防御: 四体系境界.练气.基础防御 + 四体系境界.炼体.基础防御 +
+      四体系境界.秘境.基础防御 + 四体系境界.仙古.基础防御,
+    血量: 四体系境界.练气.基础血量 + 四体系境界.炼体.基础血量 +
+      四体系境界.秘境.基础血量 + 四体系境界.仙古.基础血量,
+  };
+  const 命格效果 = getMinggeEffects(player, data.minggeList);
+  const 命格四体系加成 = calculateMinggeFourRealmBonus(四体系基础, 命格效果);
+
+  let 攻击 = 四体系基础.攻击 + 阈内攻 + 光阴攻;
+  let 防御 = 四体系基础.防御 + 阈内防 + 光阴防;
+  let 血量上限 = 四体系基础.血量 + 阈内血 + 光阴血;
+  let 暴击率 = 四体系境界.练气.基础暴击 + 四体系境界.炼体.基础暴击 +
+    getMinggeEffectNumber(命格效果, '暴击加成');
+
+  // ===== 阶段2：灵根百分比放大（乘法） =====
+  const 灵根攻击 = player.灵根?.攻击 ?? 0;
+  const 灵根防御 = player.灵根?.防御 ?? 0;
+  const 灵根生命 = player.灵根?.生命 ?? 0;
+  攻击 = 攻击 * (1 + 灵根攻击);
+  防御 = 防御 * (1 + 灵根防御);
+  血量上限 = 血量上限 * (1 + 灵根生命);
+
+  // ===== 阶段3：帝兵加成（武器/护具/法宝被天道排斥，跳过） =====
+  if (equipment.帝兵) {
+    const equippedStats = calculateEquippedStats(
+      { 攻击, 防御, 血量上限 },
+      [equipment.帝兵]
+    );
+    攻击 = equippedStats.攻击;
+    防御 = equippedStats.防御;
+    血量上限 = equippedStats.血量上限;
+    暴击率 += equipment.帝兵.bao || 0;
+  }
+
+  // 暴击伤害（与 Write_equipment 一致）
+  let 暴击伤害 = 暴击率 + 1.5;
+  if (暴击伤害 > 2.5) 暴击伤害 = 2.5;
+  if (player.仙宠?.type == '暴伤') 暴击伤害 += player.仙宠.加成 || 0;
+
+  // ===== 阶段5：套装效果 —— 天道排斥，全部归零（×1 无变化） =====
+  // 不计算任何套装增益
+
+  // ===== 阶段6：帝兵全属性（只乘后两层基础，保留） =====
+  if (equipment.帝兵) {
+    const 秘境基础数据 = data.Levelmijing_list.find(item => item.level_id == player.mijinglevel_id);
+    const 仙古基础数据 = data.xiangujinshi_list.find(item => item.level_id == (player.xiangulevel_id || 1));
+    const 后两层攻 = (秘境基础数据?.基础攻击 || 0) + (仙古基础数据?.基础攻击 || 0);
+    const 后两层防 = (秘境基础数据?.基础防御 || 0) + (仙古基础数据?.基础防御 || 0);
+    const 后两层血 = (秘境基础数据?.基础血量 || 0) + (仙古基础数据?.基础血量 || 0);
+
+    // 自铸帝兵 → 全额
+    if (equipment.帝兵.author_name == player.id) {
+      攻击 += Math.trunc(equipment.帝兵.全属性 * 后两层攻);
+      防御 += Math.trunc(equipment.帝兵.全属性 * 后两层防);
+      血量上限 += Math.trunc(equipment.帝兵.全属性 * 后两层血);
+    }
+    // 特殊帝兵且境界不足 → 1/10
+    else if ((equipment.帝兵.name == "封神榜" || equipment.帝兵.name == "神女炉" || equipment.帝兵.name == "天庭权杖")
+             && player.mijinglevel_id < 12 && (player.xiangulevel_id || 1) < 12) {
+      攻击 += Math.trunc(equipment.帝兵.全属性 * 后两层攻 / 10);
+      防御 += Math.trunc(equipment.帝兵.全属性 * 后两层防 / 10);
+      血量上限 += Math.trunc(equipment.帝兵.全属性 * 后两层血 / 10);
+    }
+    // 无主帝兵 → 全额
+    else if (!equipment.帝兵.author_name) {
+      攻击 += Math.trunc(equipment.帝兵.全属性 * 后两层攻);
+      防御 += Math.trunc(equipment.帝兵.全属性 * 后两层防);
+      血量上限 += Math.trunc(equipment.帝兵.全属性 * 后两层血);
+    }
+  }
+
+  // ===== 阶段7：超出上限的额外加成（最后加算，自然稀释） =====
+  攻击 = Math.max(1, 攻击 + 超出攻 + 命格四体系加成.攻击);
+  防御 = Math.max(1, 防御 + 超出防 + 命格四体系加成.防御);
+  血量上限 = Math.max(1, 血量上限 + 超出血 + 命格四体系加成.血量);
+
+  return {
+    攻击: Math.trunc(攻击),
+    防御: Math.trunc(防御),
+    血量上限: Math.trunc(血量上限),
+    暴击率: 暴击率,
+    暴击伤害: 暴击伤害
+  };
+}
+
+/**
+ * 进入渡劫状态 —— 保存原始属性，替换为渡劫属性
+ * 在渡劫函数开头调用，渡劫过程中 player.攻击/防御/血量上限 均为剥离外物的值
+ * @param {Object} player
+ * @param {Object} equipment
+ * @returns {Object} 原始属性快照（供 restoreAfterTribulation 使用）
+ */
+enterTribulationState(player, equipment) {
+  const snapshot = {
+    攻击: player.攻击,
+    防御: player.防御,
+    血量上限: player.血量上限,
+    当前血量: player.当前血量,
+    暴击率: player.暴击率,
+    暴击伤害: player.暴击伤害,
+    mijinglevel_id: player.mijinglevel_id
+  };
+
+  const tAttr = this.calcTribulationAttr(player, equipment);
+  player.攻击 = tAttr.攻击;
+  player.防御 = tAttr.防御;
+  player.血量上限 = tAttr.血量上限;
+  player.暴击率 = tAttr.暴击率;
+  player.暴击伤害 = tAttr.暴击伤害;
+  player.当前血量 = tAttr.血量上限; // 满血进入渡劫
+
+  return snapshot;
+}
+
+/**
+ * 退出渡劫状态 —— 渡劫结束后重算全装属性
+ * 渡劫结果已通过 Write_player 保存（mijinglevel_id 提升等），
+ * 此函数调用 Write_equipment 按新境界重新计算全装属性（含武器/护具/法宝/套装/帝兵）
+ * 成功渡劫后满血恢复，失败则保留残余血量
+ * @param {Object} player   - 渡劫函数中的局部 player 对象（含结果修改）
+ * @param {Object} snapshot  - enterTribulationState 返回的快照
+ * @param {string} usr_qq
+ * @param {Object} equipment
+ */
+async exitTribulationState(player, snapshot, usr_qq, equipment) {
+  // 判断是否渡劫成功（mijinglevel_id 提升了 = 成功）
+  const success = player.mijinglevel_id > snapshot.mijinglevel_id;
+
+  // Write_equipment 内部会 Read_player（含新 mijinglevel_id）→ 重算全装属性 → Write_player
+  await Write_equipment(usr_qq, equipment);
+
+  // 清除本次玄黄护道；成功渡劫时按重算后的血量上限补满。
+  const refreshed = await Read_player(usr_qq);
+  delete refreshed._玄黄护道渡劫;
+  if (success) {
+    refreshed.当前血量 = refreshed.血量上限;
+  }
+  await Write_player(usr_qq, refreshed);
+}
+
+// ==== 理论最大攻击计算 ====
+// 大能至准帝：终境练气攻击 + 终境炼体攻击 + 当前秘境攻击 + 帝兵攻击，
+// 再乘以当前秘境无兵字秘/有兵字秘蕴养极限之间的随机全属性。
+calcMaxTheoreticalAtk(player, equipment = {}) {
+  const 练气Atk = data.Level_list.find(item => item.level_id == 64)?.基础攻击 || 0;
+  const 炼体Atk = data.LevelMax_list.find(item => item.level_id == 63)?.基础攻击 || 0;
+  const 秘境Atk = data.Levelmijing_list.find(item => item.level_id == player.mijinglevel_id)?.基础攻击 || 0;
+  const 秘境等级 = Number(player.mijinglevel_id) || 0;
+
+  const 帝兵全属性极限 = {
+    10: { 无兵字秘: 14.2, 有兵字秘: 54.2 },
+    11: { 无兵字秘: 22.2, 有兵字秘: 62.2 },
+    12: { 无兵字秘: 32.2, 有兵字秘: 72.2 },
+    13: { 无兵字秘: 47.2, 有兵字秘: 87.2 },
+    14: { 无兵字秘: 62.2, 有兵字秘: 102.2 },
+    15: { 无兵字秘: 89.2, 有兵字秘: 129.2 }
+  };
+
+  const 当前极限 = 帝兵全属性极限[秘境等级];
+  if (当前极限) {
+    // 帝兵全属性以 1 点为成长单位，保留九彩神金初始属性产生的 .2。
+    const 随机跨度 = Math.round(当前极限.有兵字秘 - 当前极限.无兵字秘);
+    const 随机全属性 = 当前极限.无兵字秘 + Math.floor(Math.random() * (随机跨度 + 1));
+    const 帝兵Atk = Number(equipment?.帝兵?.atk) || 0;
+    const 雷劫攻击基础 = 练气Atk + 炼体Atk + 秘境Atk + 帝兵Atk;
+
+    return Math.trunc(雷劫攻击基础 * 随机全属性);
+  }
+
+  // 其他境界保留原理论攻击算法，避免影响破王成帝等共享调用。
+  const 仙古Atk = data.xiangujinshi_list.find(item => item.level_id == (player.xiangulevel_id || 1))?.基础攻击 || 0;
+
+  // 最大额外加成上限（阈值，与 Write_equipment 一致）
+  const _lv = player.level_id || 1;
+  const _phy = player.Physique_id || 1;
+  const _mij = player.mijinglevel_id || 1;
+  const 练气上限 = _lv <= 41 ? _lv * 1000000 : 41 * 1000000 + (_lv - 41) * 10000000;
+  const 炼体上限 = _phy <= 41 ? _phy * 1000000 : 41 * 1000000 + (_phy - 41) * 10000000;
+  const 证道上限 = _mij * 15000000;
+  const 额外上限 = 练气上限 + 炼体上限 + 证道上限;
+
+  // 光阴加成（雷劫中光阴之力不减）
+  const 光阴攻 = player.光阴加成?.攻 || 0;
+
+  // 最大帝兵攻击加成
+  let 帝兵Atk = 0;
+  if (equipment?.帝兵) {
+    帝兵Atk += equipment.帝兵.atk || 0;
+    const 后两层攻 = 秘境Atk + 仙古Atk;
+    // 自铸帝兵全额，特殊帝兵境界不足1折，无主帝兵全额
+    if (equipment.帝兵.author_name == player.id) {
+      帝兵Atk += Math.trunc((equipment.帝兵.全属性 || 0) * 后两层攻);
+    } else if ((equipment.帝兵.name == "封神榜" || equipment.帝兵.name == "神女炉" || equipment.帝兵.name == "天庭权杖")
+               && player.mijinglevel_id < 12 && (player.xiangulevel_id || 1) < 12) {
+      帝兵Atk += Math.trunc((equipment.帝兵.全属性 || 0) * 后两层攻 / 10);
+    } else if (!equipment.帝兵.author_name) {
+      帝兵Atk += Math.trunc((equipment.帝兵.全属性 || 0) * 后两层攻);
+    }
+  }
+
+  return 练气Atk + 炼体Atk + 秘境Atk + 仙古Atk + 额外上限 + 光阴攻 + 帝兵Atk;
+}
+
 // ==== 功法特效应用函数 ====
 applyGongfaEffects(player, originalDamage, equipment = {}) {
   if (!player || typeof originalDamage !== 'number') {
@@ -3798,6 +4406,11 @@ applyGongfaEffects(player, originalDamage, equipment = {}) {
     reduction: 0.75,
     desc: "脚踏彼岸金桥，命运长河环绕己身",
     special: "彼岸金桥"
+  },
+  "无相·万化天魔体": {
+    reduction: 0.75,
+    desc: "无相魔胎吞吐万灵根性，诸天劫光亦成化生资粮",
+    special: "万化魔胎"
   },
     // ==== 诸天万界体质 ====
     "爱莉希雅": {
@@ -4536,6 +5149,16 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
         }
     }
 
+    if (
+      player.当前先天至宝 === '天地玄黄玲珑塔' &&
+      player.先天权柄?.玄黄护道待用
+    ) {
+      player._玄黄护道渡劫 = true;
+      delete player.先天权柄.玄黄护道待用;
+      effectMessages.push('【玄黄护道】天地玄黄气护住道基，本次渡劫所受伤害降低30%。');
+    }
+    if (player._玄黄护道渡劫) finalDamage *= 0.7;
+
     return {
       damage: Math.max(1, finalDamage),
       messages: effectMessages
@@ -4552,6 +5175,22 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
     const eraIndex = set.Era?.current?.index || 0;
     const difficultyRates = [0.8, 0.9, 1.0, 1.2, 1.5];
     return difficultyRates[eraIndex];
+  }
+
+  getMinggeCultivationCost(player, eraAdjustedCost, type = 'tribulation') {
+    const effects = getMinggeEffects(player, data.minggeList);
+    return calculateZhetianTribulationCosts(eraAdjustedCost, effects, type).cultivationCost;
+  }
+
+  getMinggeCostLine(player, eraAdjustedCost, type = 'tribulation') {
+    const effects = getMinggeEffects(player, data.minggeList);
+    const { cultivationCost, reduction } = calculateZhetianTribulationCosts(
+      eraAdjustedCost,
+      effects,
+      type
+    );
+    if (cultivationCost >= eraAdjustedCost) return null;
+    return `命格修为减免：${(reduction * 100).toFixed(0)}%（血气消耗不变）`;
   }
 
 clearTempEffects(player) {

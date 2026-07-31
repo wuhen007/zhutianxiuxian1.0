@@ -1,8 +1,10 @@
 import { plugin, verc, data, config } from '../../api/api.js';
-import { 
-    Read_najie, Read_player, Write_player, exist_najie_thing, Add_najie_thing, 
-    get_neijingdi_img, foundthing, get_log_img, Write_inner_world, Read_inner_world 
+import {
+    Read_najie, Read_player, Write_player, exist_najie_thing, Add_najie_thing,
+    get_neijingdi_img, foundthing, get_log_img, Write_inner_world, Read_inner_world
 } from '../../model/xiuxian.js';
+import { getMinggeEffects } from '../../model/mingge.js';
+import { recordWenXianTrial } from '../../model/wenxianling.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -902,10 +904,10 @@ async takeCategoryFromInnerWorld(e) {
     // 开辟内景地
     async openInnerWorld(e) {
         const usr_qq = e.user_id.toString().replace('qg_','');
-        
+
         try {
             const player = await Read_player(usr_qq);
-            
+
             // 检查是否已开辟
             if (player.内景地开辟 === 1) {
                 return e.reply(await get_log_img([
@@ -914,7 +916,39 @@ async takeCategoryFromInnerWorld(e) {
                     '无需重复开辟'
                 ]));
             }
-            
+
+            // ==== 命格消费层：内景地乃掌御一方小千世界之法 ====
+            // 唯有命格烙印「彼岸之印」者，方能一念之间撕开神识海界壁。
+            // 这是消耗命格词条的关键闸门——元神再浩瀚，若命数不允，亦难撼界壁分毫。
+            // const minggeEffects = getMinggeEffects(player, data.minggeList);
+            // if (!minggeEffects?.可开启内景地) {
+            //     const minggeName = player?.命格?.name || '未曾烙印';
+            //     const minggeId = player?.命格?.id || 'none';
+            //     return e.reply(await get_log_img([
+            //         '【内景地·命格反噬】',
+            //         '',
+            //         '你凝神内观，泥丸宫中一片死寂。',
+            //         '神识海深处，命星黯淡无光，',
+            //         '那传说中的「彼岸之印」未曾烙印于命宫之上。',
+            //         '',
+            //         '一缕苍茫之音自识海尽头响起——',
+            //         '「内景地，非寻常储物之术，',
+            //         '  乃掌御一方小千世界的无上之法。',
+            //         '  若无命中注定的「彼岸」之缘，',
+            //         '  纵使元神浩瀚如海，',
+            //         '  亦难撼动神识界壁分毫。」',
+            //         '',
+            //         `◇ 当前命格：${minggeName}（${minggeId}）`,
+            //         '◇ 命格未携带「可开启内景地」词条',
+            //         '破界所需命格：',
+            //         '  · 彼岸教祖（传说·特殊）',
+            //         '    ——前世乃彼岸大教之教祖，可开启内景地，自成一界修行。',
+            //         '',
+            //         '提示：命格由开局推演决定，无法中途更换。',
+            //         '若想开启内景地，请重新创建角色。'
+            //     ]));
+            // }
+
             // 检查元神值
             if (player.元神 < 5000000) {
                 return e.reply(await get_log_img([
@@ -952,6 +986,7 @@ async takeCategoryFromInnerWorld(e) {
                         // 扣除元神并开辟
             player.元神 -= 5000000;
             player.内景地开辟 = 1;
+            const passTrial = recordWenXianTrial(player, 'inner-world');
             await Write_player(usr_qq, player);
             return e.reply(await get_log_img([
                 ' 内景地开辟成功',
@@ -959,7 +994,8 @@ async takeCategoryFromInnerWorld(e) {
                 '你以无上元神之力在体内',
                 '开辟出一方小世界',
                 '初始容量: 500格',
-                '使用 #存入内景地 管理物品'
+                '使用 #存入内景地 管理物品',
+                ...(passTrial.changed ? ['问仙试炼：内景地印记已完成'] : [])
             ]));
             
         } catch (err) {

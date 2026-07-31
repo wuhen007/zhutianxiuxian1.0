@@ -1,6 +1,14 @@
 import { plugin, verc, data, config } from '../../api/api.js';
 import fs, { write } from 'fs';
 import {
+  applyInitialMinggeEffects,
+  drawMingge,
+  formatMinggeDrawMessage,
+  getMinggeDirectMultiplier,
+  getMinggeEffects,
+  hasPlayerMingge,
+} from '../../model/mingge.js';
+import {
   Read_player,
   existplayer,
   get_random_talent,
@@ -36,6 +44,13 @@ import{
 import { Add_HP, Add_修为, Add_灵石, Add_血气,Add_源石, Add_najie_thing } from '../../model/xiuxian.js';
 import { __PATH } from '../../model/xiuxian.js';
 import { userInfo } from 'os';
+import { WenXianLing } from '../WenXianLing/WenXianLing.js';
+import {
+  applyOpeningOmen,
+  DEFAULT_OPENING_POTENTIAL,
+  drawOpeningOmen,
+  formatOpeningOmenMessage,
+} from '../../model/openingOmen.js';
 export class UserStart extends plugin {
   constructor() {
     super({
@@ -46,6 +61,10 @@ export class UserStart extends plugin {
         {
           reg: '^#踏入仙途$',
           fnc: 'Create_player',
+        },
+        {
+          reg: '^#抽取命格词条$',
+          fnc: 'draw_player_mingge',
         },
         {
           reg: '^#全员重签$',
@@ -157,6 +176,49 @@ async proxyDailyGift(e, targetPlayerId) {
   // 调用签到功能
   return await this.daily_gift(fakeEvent);
 }
+
+async draw_player_mingge(e) {
+  if (!verc({ e })) return false;
+  let usr_qq = e.user_id.toString().replace('qg_', '');
+  usr_qq = await channel(usr_qq);
+  if (usr_qq == 80000000) return false;
+
+  if (!await existplayer(usr_qq)) {
+    e.reply('凡界众生册中尚无你的名字，请先发送 #踏入仙途。');
+    return false;
+  }
+
+  const player = await Read_player(usr_qq);
+  if (!player) {
+    e.reply('命盘未能映照你的存档，请稍后重试。');
+    return false;
+  }
+  const extras = Array.isArray(player.附加命格) ? player.附加命格 : [];
+  const fateCount = (hasPlayerMingge(player) ? 1 : 0) + extras.length;
+  const fateLimit = Math.max(1, Math.trunc(Number(player.命格词条上限) || 1));
+  if (fateCount >= fateLimit) {
+    e.reply(`你的命宫已显化 ${fateCount}/${fateLimit} 条命格，无法继续抽取。`);
+    return false;
+  }
+
+  const occupied = new Set([player.命格, ...extras].map(item => typeof item === 'string' ? item : item?.id));
+  const available = data.minggeList.filter(item => !occupied.has(item.id));
+  const mingge = drawMingge(available.length ? available : data.minggeList);
+  if (!hasPlayerMingge(player)) {
+    applyInitialMinggeEffects(player, mingge);
+  } else {
+    const primary = player.命格;
+    player.命格 = undefined;
+    applyInitialMinggeEffects(player, mingge);
+    const additional = player.命格;
+    player.命格 = primary;
+    player.附加命格 = [...extras, additional];
+  }
+  await Write_player(usr_qq, player);
+  await e.reply(`【命格词条 ${fateCount + 1}/${fateLimit}】\n${formatMinggeDrawMessage(mingge, player.名号)}`);
+  return false;
+}
+
       //#帮你踏入仙途
     async Create_player2(e) {
     if (!e.isGroup) {
@@ -207,12 +269,13 @@ async proxyDailyGift(e, targetPlayerId) {
     let currentDate = new Date();
     let year = currentDate.getFullYear();
     let aptitude = await get_random_aptitude(); // 新增天资等级
+    const openingOmen = drawOpeningOmen(talent);
     let month = String(currentDate.getMonth() + 1).padStart(2, '0');
     let day = String(currentDate.getDate()).padStart(2, '0');
     let birthDate = `${year}-${month}-${day}`;
     
     let new_player = {
-      id: usr_qq,
+      id: B_qq.toString(),
       sex: 0, //性别
       名号: `路人甲${n}号`,
       宣言: '这个人很懒还没有写',
@@ -279,12 +342,42 @@ async proxyDailyGift(e, targetPlayerId) {
        势力:"无",
        势力职位:"",
        速度: 100,
-        仙道潜力:0,
+        仙道潜力: DEFAULT_OPENING_POTENTIAL,
+       命格词条上限: 1,
+       附加命格: [],
        道心:0,
+      道途: {
+        version: 1,
+        stages: {},
+        daily: { date: '', count: 0 }
+      },
       天资等级: aptitude.grade,       // 新增天资等级
       天资评价: aptitude.evaluation,  // 新增天资评价
-      五色祭坛:0
+      五色祭坛:0,
+      元神伤害加成: 0,
+      元神伤害减免: 0,
+      神通伤害加成: 0,
+      神通伤害减免: 0,
+      近战伤害加成: 0,
+      近战伤害减免: 0,
+      闪避率: 0,
+      穿透: 0,
+      治疗效果加成: 0,
+      每回合恢复: 0,
+      血上限加成: 0,
+      全伤害类型加成: 0,
+      全类型减免: 0,
+      减伤: 0,
+      治疗加成: 0,
+      神通加成: 0,
+      暴击率加成: 0,
+      位面传送次数: 0,
+      高级传送次数: 0,
+      记忆坐标: ['凡间'],
+      传送阵坐标: [],
+      星图: 0
     };
+    applyOpeningOmen(new_player, openingOmen);
 
     //初始化装备
     let new_equipment = {
@@ -327,7 +420,8 @@ async proxyDailyGift(e, targetPlayerId) {
       beiyong4: 0,
       beiyong5: 0,
     };
-    await Write_danyao(B_qq, new_player);
+    await Write_danyao(B_qq, arr);
+    await e.reply(`${formatOpeningOmenMessage(openingOmen, new_player.名号)}\n\n命格尚未显化，请由本人发送 #抽取命格词条。`);
     
     // 显示被帮助者的面板
     const fakeEvent = {
@@ -616,6 +710,7 @@ async daily_lottery(e) {
     let n = File_msg.length + 1;
     let talent = await get_random_talent();
     let aptitude = await get_random_aptitude(); // 新增天资等级
+    const openingOmen = drawOpeningOmen(talent);
     let new_player = {
       id: usr_qq,
       sex: 0, //性别
@@ -651,7 +746,7 @@ async daily_lottery(e) {
       攻击加成: 0,
       防御加成: 0,
       生命加成: 0,
-      power_place: 0, //仙界状态
+      power_place: 0, //凡界状态
       当前血量: 8000,
       lunhui: 0,
       lunhuiBH: 0,
@@ -684,12 +779,42 @@ async daily_lottery(e) {
        势力:"无",
        势力职位:"",
        速度: 100,
-        仙道潜力:0,
+        仙道潜力: DEFAULT_OPENING_POTENTIAL,
+       命格词条上限: 1,
+       附加命格: [],
        道心:0,
+      道途: {
+        version: 1,
+        stages: {},
+        daily: { date: '', count: 0 }
+      },
       天资等级: aptitude.grade,       // 新增天资等级
       天资评价: aptitude.evaluation,  // 新增天资评价
-      五色祭坛:0
+      五色祭坛:0,
+      元神伤害加成: 0,
+      元神伤害减免: 0,
+      神通伤害加成: 0,
+      神通伤害减免: 0,
+      近战伤害加成: 0,
+      近战伤害减免: 0,
+      闪避率: 0,
+      穿透: 0,
+      治疗效果加成: 0,
+      每回合恢复: 0,
+      血上限加成: 0,
+      全伤害类型加成: 0,
+      全类型减免: 0,
+      减伤: 0,
+      治疗加成: 0,
+      神通加成: 0,
+      暴击率加成: 0,
+      位面传送次数: 0,
+      高级传送次数: 0,
+      记忆坐标: ['凡间'],
+      传送阵坐标: [],
+      星图: 0
     };
+    applyOpeningOmen(new_player, openingOmen);
 
     //初始化装备
     let new_equipment = {
@@ -733,6 +858,7 @@ async daily_lottery(e) {
       beiyong5: 0,
     };
     await Write_danyao(usr_qq, arr);
+    await e.reply(`${formatOpeningOmenMessage(openingOmen, new_player.名号)}\n\n命格尚未显化，请发送 #抽取命格词条。`);
     await this.Show_player(e);
     return false;
   }
@@ -1286,13 +1412,18 @@ async daily_gift(e) {
     const isDaofaPlayer = player.daofaxianshu == 2;
     
     // 计算奖励
-    let baseMultiplier = isDaofaPlayer ? 2 : 1;
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
+    const signMultiplier = getMinggeDirectMultiplier(
+      minggeEffects,
+      '签到奖励倍率'
+    );
+    let baseMultiplier = (isDaofaPlayer ? 2 : 1) * signMultiplier;
     let 加成 = player.level_id * player.Physique_id + (player.mijinglevel_id*player.xiangulevel_id)
     // 简化奖励计算，避免过大数值
     let gift_xiuwei = player.连续签到天数 * 10000 * baseMultiplier*加成;
     const cf = config.getConfig('xiuxian', 'xiuxian');
     
-    let ticketCount = cf.Sign.ticket * baseMultiplier;
+    let ticketCount = Math.floor(cf.Sign.ticket * baseMultiplier);
     await Add_najie_thing(usr_qq, '秘境之匙', '道具', ticketCount);
     await Add_najie_thing(usr_qq, '喇叭', '道具', ticketCount);
     let yuanshi = player.连续签到天数 * 300 * baseMultiplier *加成;
@@ -1303,10 +1434,21 @@ async daily_gift(e) {
     await Add_灵石(usr_qq, yuanshi);
     await Add_修为(usr_qq, gift_xiuwei);
     await Add_血气(usr_qq, gift_xiuwei);
+
+    // 手动、代签共用每日标记；问仙令经验也属于签到奖励，应用命格倍率。
+    const passExp = Math.max(0, Math.floor(50 * signMultiplier));
+    const passResult = await WenXianLing.addDailySignExp(usr_qq, passExp);
     
     // 生成签到截图
     const img = await get_xiuxianqiandao_img(e, player, gift_xiuwei, yuanshi, ticketCount);
     e.reply(img);
+    if (passResult?.levelUp) {
+      e.reply(`问仙令经验 +${passExp}，等级提升：${passResult.oldLevel} -> ${passResult.newLevel}`);
+    } else if (passResult?.unlocked === false && passResult.added > 0) {
+      e.reply(`问仙道痕 +${passResult.added}，当前暂存 ${passResult.pendingExp}/1000`);
+    } else if (signMultiplier !== 1) {
+      e.reply(`命格·签到奖励倍率生效：问仙令经验 +${passExp}`);
+    }
     return false;
 }
 
