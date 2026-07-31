@@ -22,6 +22,7 @@ import {
 } from './zhetianTribulationMingge.js';
 import { calculateEquippedStats } from '../../model/equipmentStats.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
+import { ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS } from './zhetianTribulationRules.js';
 import {
   existplayer,
   Write_player,
@@ -558,7 +559,9 @@ async duzhendaoLeijie(e) {
       /* ---- 计算基础伤害 ---- */
       let base = stage.useHP
         ? player.血量上限 * stage.baseMul * (1 + 0.03 * wave)
-        : maxAtk * stage.baseMul * (1 + 0.03 * wave) * difficultyRate;
+          * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.斩道
+        : maxAtk * stage.baseMul * (1 + 0.03 * wave) * difficultyRate
+          * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.斩道;
 
       /* ---- 功法/灵根/帝兵/时代 统一结算 ---- */
       const { damage: finalDamage, messages } = this.applyGongfaEffects(player, base, equipment);
@@ -809,7 +812,7 @@ async checkWudaoGate(e, player, usr_qq, realmId) {
       { 
         name: "毁灭雷海", 
         waves: 9,
-        baseDamage: maxAtk * 0.05 * difficultyRate,
+        baseDamage: maxAtk * 0.05 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.圣人,
         desc: [
           `天穹崩塌，无穷雷海倾泻而下！`,
           `共9道毁灭雷光，每道威力递增3%`,
@@ -819,7 +822,7 @@ async checkWudaoGate(e, player, usr_qq, realmId) {
       {
         name: "先天道图",
         waves: 9,
-        baseDamage: maxAtk * 0.15 * difficultyRate,
+        baseDamage: maxAtk * 0.15 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.圣人,
         desc: [
           `雷劫演化先天道图，由大道符文交织`,
           `9轮道图镇压，磨灭渡劫者道基`,
@@ -829,7 +832,7 @@ async checkWudaoGate(e, player, usr_qq, realmId) {
       {
         name: "圣贤烙印",
         waves: 9,
-        baseDamage: maxAtk * 0.4 * difficultyRate,
+        baseDamage: maxAtk * 0.4 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.圣人,
         desc: [
           `时间长河泛起涟漪，古之圣贤显现`,
           `9位同阶无敌者轮番出手`,
@@ -839,7 +842,7 @@ async checkWudaoGate(e, player, usr_qq, realmId) {
       {
         name: "天庭镇杀",
         waves: 9,
-        baseDamage: maxAtk * 1 * difficultyRate,
+        baseDamage: maxAtk * 1 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.圣人,
         desc: [
           `九重天阙降临，天庭宫阙镇压而下`,
           `9道帝器虚影贯穿古今`,
@@ -1072,7 +1075,7 @@ async shengrenwangleijie(e) {
       { 
         name: "九重仙劫", 
         waves: 9,
-        baseDamage: maxAtk * 0.2 * difficultyRate,
+        baseDamage: maxAtk * 0.2 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.圣人王,
         desc: [
           `九重天阙降临，每一重都代表一种极致天罚！`,
           `混沌雷海、五行仙光、阴阳道图、时空碎片...`,
@@ -1096,7 +1099,7 @@ async shengrenwangleijie(e) {
          {
         name: "心魔劫",
         waves: 9,
-        baseDamage: maxAtk * 0.3 * difficultyRate,
+        baseDamage: maxAtk * 0.3 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.圣人王,
         desc: [
           `心魔丛生，过往遗憾与心结具现化！`,
           `亲人、爱人、仇敌、道心漏洞...`,
@@ -1128,7 +1131,7 @@ async shengrenwangleijie(e) {
       {
         name: "肉身劫",
         waves: 9,
-        baseDamage: maxAtk * 0.4 * difficultyRate,
+        baseDamage: maxAtk * 0.4 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.圣人王,
         desc: [
           `专门针对肉身的考验，万道锤炼圣体！`,
           `不灭经文化作枷锁，大道符文烙印血肉，`,
@@ -1168,7 +1171,7 @@ async shengrenwangleijie(e) {
       {
         name: "少年大帝烙印",
         waves: 9,
-        baseDamage: maxAtk * 0.6 * difficultyRate,
+        baseDamage: maxAtk * 0.6 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.圣人王,
         desc: [
           `时间长河奔腾，九位少年大帝从过去走来！`,
           `虚空大帝、恒宇大帝、无始大帝、狠人大帝...`,
@@ -1198,7 +1201,7 @@ async shengrenwangleijie(e) {
       {
         name: "帝兵劫",
         waves: 9,
-        baseDamage: maxAtk * 1 * difficultyRate,
+        baseDamage: maxAtk * 1 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.圣人王,
         desc: [
           `雷劫演化极道帝兵，进行终极攻伐！`,
           `虚空镜、恒宇炉、无始钟、吞天魔罐...`,
@@ -1487,7 +1490,7 @@ async dashengleijie(e) {
       { 
         name: "混沌天雷", 
         waves: 9,
-        baseDamage: maxAtk * 0.3 * difficultyRate,
+        baseDamage: maxAtk * 0.3 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大圣,
         desc: [
           `开天辟地前的混沌雷海降临，蕴含创世与灭世之力！`,
           `每一道混沌天雷都携带先天道则，磨灭万物！`,
@@ -1511,7 +1514,7 @@ async dashengleijie(e) {
             {
         name: "心魔劫",
         waves: 9,
-        baseDamage: maxAtk * 0.4 * difficultyRate,
+        baseDamage: maxAtk * 0.4 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大圣,
         desc: [
           `大圣心魔劫，直指道心最深处！`,
           `过往一切遗憾、恐惧、执念具现化！`,
@@ -1575,7 +1578,7 @@ async dashengleijie(e) {
       {
         name: "肉身劫",
         waves: 9,
-        baseDamage: maxAtk * 0.5 * difficultyRate,
+        baseDamage: maxAtk * 0.5 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大圣,
         desc: [
           `专门针对大圣肉身的终极考验！`,
           `万道化为实质枷锁，大道符文烙印每一寸血肉！`,
@@ -1657,7 +1660,7 @@ async dashengleijie(e) {
       {
         name: "至尊烙印",
         waves: 9,
-        baseDamage: maxAtk * 0.7 * difficultyRate,
+        baseDamage: maxAtk * 0.7 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大圣,
         desc: [
           `古往今来最强大的九位至尊烙印显化！`,
           `不死天皇、狠人大帝、无始大帝、帝尊...`,
@@ -1755,7 +1758,7 @@ async dashengleijie(e) {
       {
         name: "帝兵劫",
         waves: 9,
-        baseDamage: maxAtk * 0.9 * difficultyRate,
+        baseDamage: maxAtk * 0.9 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大圣,
         desc: [
           `雷劫演化极道帝兵，进行终极攻伐！`,
           `不仅有无始钟、虚空镜等已知帝兵，`,
@@ -1843,7 +1846,7 @@ async dashengleijie(e) {
       {
         name: "天道审判",
         waves: 1,
-        baseDamage: maxAtk * 2 * difficultyRate,
+        baseDamage: maxAtk * 2 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大圣,
         desc: [
           `最终审判！天道显化，降下终极一击！`,
           `这是天地对逆天者的最终考验！`,
@@ -2159,7 +2162,7 @@ async zhundileijie(e) {
         name: "混沌雷海", 
         requiredHeaven: 1,
         waves: 9,
-        baseDamage: maxAtk * 0.3 * difficultyRate,
+        baseDamage: maxAtk * 0.3 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.准帝,
         desc: [
           `开天辟地前的混沌雷海降临，蕴含创世与灭世之力！`,
           `每一滴雷液都足以湮灭大圣，每一道雷光都足以重创准帝！`,
@@ -2185,7 +2188,7 @@ async zhundileijie(e) {
         name: "帝皇烙印",
         requiredHeaven: 1,
         waves: 9,
-        baseDamage: maxAtk * 1 * difficultyRate,
+        baseDamage: maxAtk * 1 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.准帝,
         desc: [
           `古往今来最强大的九位帝皇烙印显化！`,
           `不死天皇、狠人大帝、无始大帝、帝尊、叶凡...`,
@@ -2298,7 +2301,7 @@ async zhundileijie(e) {
         name: "心魔劫",
         requiredHeaven: 3,
         waves: 9,
-        baseDamage: maxAtk * 0.5 * difficultyRate,
+        baseDamage: maxAtk * 0.5 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.准帝,
         desc: [
           `准帝心魔劫，直指道心最深处！`,
           `过往一切遗憾、恐惧、执念具现化！`,
@@ -2371,7 +2374,7 @@ async zhundileijie(e) {
         name: "肉身劫",
         requiredHeaven: 3,
         waves: 9,
-        baseDamage: maxAtk * 0.7 * difficultyRate,
+        baseDamage: maxAtk * 0.7 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.准帝,
         desc: [
           `专门针对准帝肉身的终极考验！`,
           `万道化为实质枷锁，大道符文烙印每一寸血肉！`,
@@ -2469,7 +2472,7 @@ async zhundileijie(e) {
         name: "帝兵劫",
         requiredHeaven: 6,
         waves: 9,
-        baseDamage: maxAtk * 2 * difficultyRate,
+        baseDamage: maxAtk * 2 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.准帝,
         desc: [
           `雷劫演化极道帝兵，进行终极攻伐！`,
           `不仅有无始钟、虚空镜等已知帝兵，`,
@@ -2558,7 +2561,7 @@ async zhundileijie(e) {
         name: "天道审判",
         requiredHeaven: 6,
         waves: 1,
-        baseDamage: maxAtk * 5 * difficultyRate,
+        baseDamage: maxAtk * 5 * difficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.准帝,
         desc: [
           `最终审判！天道显化，降下终极一击！`,
           `这是天地对逆天者的最终考验！`,
@@ -2983,7 +2986,7 @@ let battleLog = [
         { 
             name: "万道枷锁", 
             waves: 9,
-            baseDamage: maxAtk * 0.5 * challengeDifficultyRate,
+            baseDamage: maxAtk * 0.5 * challengeDifficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大帝,
             desc: [
                 `天道降下万道枷锁，欲将逆天者束缚！`,
                 `每一道枷锁都蕴含一种大道法则，`,
@@ -3008,7 +3011,7 @@ let battleLog = [
         {
             name: "心魔劫",
             waves: 9,
-            baseDamage: maxAtk * 0.8 * challengeDifficultyRate,
+            baseDamage: maxAtk * 0.8 * challengeDifficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大帝,
             desc: [
                 `证道心魔劫，直指道心最深处！`,
                 `过往一切遗憾、恐惧、执念具现化！`,
@@ -3079,7 +3082,7 @@ let battleLog = [
         {
             name: "帝兵劫",
             waves: 9,
-            baseDamage: maxAtk * 1.2 * challengeDifficultyRate,
+            baseDamage: maxAtk * 1.2 * challengeDifficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大帝,
             desc: [
                 `雷劫演化极道帝兵，进行终极攻伐！`,
                 `不仅有无始钟、虚空镜等已知帝兵，`,
@@ -3143,7 +3146,7 @@ let battleLog = [
         {
             name: "天道审判",
             waves: 1,
-            baseDamage: maxAtk * 6.0 * challengeDifficultyRate,
+            baseDamage: maxAtk * 6.0 * challengeDifficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大帝,
             desc: [
                 `最终审判！天道显化，降下终极一击！`,
                 `这是天地对逆天者的最终考验！`,
@@ -3952,12 +3955,12 @@ async broadcastToAll(player,startMsg) {
 }
 
 // ==== 渡劫属性计算 ====
-// 天道排斥外物：武器/护具/法宝的加成与套装效果被此方天地力量抗拒，归零
-// 帝兵在雷海中沉浮渡劫：保留全部加成（固定属性 + 全属性×后两层基础）
+// 渡劫保留武器/护具/法宝/帝兵的直接属性，套装效果仍被天道压制
+// 帝兵额外保留全属性×后两层基础
 // 调用方式：const tAttr = this.calcTribulationAttr(player, equipment);
 
 /**
- * 渡劫全属性计算 —— 镜像 Write_equipment，剥离武器/护具/法宝+套装，保留帝兵
+ * 渡劫全属性计算 —— 镜像 Write_equipment，保留装备直接属性但剥离套装效果
  * @param {Object} player  - Read_player 的玩家对象
  * @param {Object} equipment - Read_equipment 的装备对象
  * @returns {{攻击, 防御, 血量上限, 暴击率, 暴击伤害}}
@@ -4020,17 +4023,16 @@ calcTribulationAttr(player, equipment) {
   防御 = 防御 * (1 + 灵根防御);
   血量上限 = 血量上限 * (1 + 灵根生命);
 
-  // ===== 阶段3：帝兵加成（武器/护具/法宝被天道排斥，跳过） =====
-  if (equipment.帝兵) {
-    const equippedStats = calculateEquippedStats(
-      { 攻击, 防御, 血量上限 },
-      [equipment.帝兵]
-    );
-    攻击 = equippedStats.攻击;
-    防御 = equippedStats.防御;
-    血量上限 = equippedStats.血量上限;
-    暴击率 += equipment.帝兵.bao || 0;
-  }
+  // ===== 阶段3：渡劫保留四个装备槽的直接属性 =====
+  const equipmentSlots = [equipment.武器, equipment.护具, equipment.法宝, equipment.帝兵];
+  const equippedStats = calculateEquippedStats(
+    { 攻击, 防御, 血量上限 },
+    equipmentSlots
+  );
+  攻击 = equippedStats.攻击;
+  防御 = equippedStats.防御;
+  血量上限 = equippedStats.血量上限;
+  for (const slot of equipmentSlots) 暴击率 += Number(slot?.bao) || 0;
 
   // 暴击伤害（与 Write_equipment 一致）
   let 暴击伤害 = 暴击率 + 1.5;
@@ -4139,7 +4141,7 @@ async exitTribulationState(player, snapshot, usr_qq, equipment) {
 }
 
 // ==== 理论最大攻击计算 ====
-// 大能至准帝：终境练气攻击 + 终境炼体攻击 + 当前秘境攻击 + 帝兵攻击，
+// 大能至准帝：理论境界攻击 + 武器/护具/法宝直接攻击 + 帝兵攻击，
 // 再乘以当前秘境无兵字秘/有兵字秘蕴养极限之间的随机全属性。
 calcMaxTheoreticalAtk(player, equipment = {}) {
   const 练气Atk = data.Level_list.find(item => item.level_id == 64)?.基础攻击 || 0;
@@ -4162,7 +4164,11 @@ calcMaxTheoreticalAtk(player, equipment = {}) {
     const 随机跨度 = Math.round(当前极限.有兵字秘 - 当前极限.无兵字秘);
     const 随机全属性 = 当前极限.无兵字秘 + Math.floor(Math.random() * (随机跨度 + 1));
     const 帝兵Atk = Number(equipment?.帝兵?.atk) || 0;
-    const 雷劫攻击基础 = 练气Atk + 炼体Atk + 秘境Atk + 帝兵Atk;
+    const 装备后攻击 = calculateEquippedStats(
+      { 攻击: 练气Atk + 炼体Atk + 秘境Atk },
+      [equipment?.武器, equipment?.护具, equipment?.法宝]
+    ).攻击;
+    const 雷劫攻击基础 = 装备后攻击 + 帝兵Atk;
 
     return Math.trunc(雷劫攻击基础 * 随机全属性);
   }
@@ -4198,7 +4204,12 @@ calcMaxTheoreticalAtk(player, equipment = {}) {
     }
   }
 
-  return 练气Atk + 炼体Atk + 秘境Atk + 仙古Atk + 额外上限 + 光阴攻 + 帝兵Atk;
+  const 装备后攻击 = calculateEquippedStats(
+    { 攻击: 练气Atk + 炼体Atk + 秘境Atk + 仙古Atk + 额外上限 + 光阴攻 },
+    [equipment?.武器, equipment?.护具, equipment?.法宝]
+  ).攻击;
+
+  return 装备后攻击 + 帝兵Atk;
 }
 
 // ==== 功法特效应用函数 ====

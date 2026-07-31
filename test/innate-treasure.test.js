@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  AUTHORITY_COOLDOWNS,
+  INNATE_TREASURE_CATALOG,
+  INNATE_TREASURE_NAMES,
   createInnateTreasure,
   createInnateTreasureProjection,
   getCooldownRemaining,
@@ -14,6 +17,19 @@ import {
   hasReincarnationProtection,
   startAuthorityCooldown,
 } from '../model/innateTreasure.js';
+
+test('至宝图鉴完整覆盖全部先天至宝及真实冷却', () => {
+  assert.deepEqual(Object.keys(INNATE_TREASURE_CATALOG), [...INNATE_TREASURE_NAMES]);
+  for (const entry of Object.values(INNATE_TREASURE_CATALOG)) {
+    assert.ok(entry.title && entry.lore && entry.summary);
+    assert.ok(Array.isArray(entry.passives));
+    assert.ok(Array.isArray(entry.authorities));
+    for (const authority of entry.authorities) {
+      assert.match(authority.command, /^#/);
+      if (authority.cooldownKey) assert.ok(AUTHORITY_COOLDOWNS[authority.cooldownKey] > 0);
+    }
+  }
+});
 
 test('先天至宝实体绑定唯一主人并使用帝兵槽', () => {
   const treasure = createInnateTreasure('混沌珠', '10001', 1234);

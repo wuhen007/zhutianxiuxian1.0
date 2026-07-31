@@ -957,7 +957,10 @@ async settleTeamRewards(e) {
 }
 /**
  * 批量结算魔君奖励
- * e.batch = 想要结算的次数（已转 Number）
+ * 规则：
+ *  - 队长与队员都需消耗【魔君讨伐令】，按量发放（有几枚令牌结算几轮，其余轮数无奖励）
+ *  - 队长需至少持有 1 枚令牌方可结算，否则整体拒绝
+ *  - 每位玩家每周独立最多结算 10 次（轮），自然周（周一0点）重置，用完即止
  */
 async batchSettleDevilMonarch(e) {
   // 1. 基础检查
@@ -980,39 +983,75 @@ async batchSettleDevilMonarch(e) {
     return e.reply('队伍尚未击败九幽魔君，无法结算。');
   }
 
-  // 4. 检查队长讨伐令
-  const hasToken = await exist_najie_thing(usr_qq, '魔君讨伐令', '道具');
-  if (!hasToken || hasToken < batch) {
-    return e.reply(`您的【魔君讨伐令】不足，当前拥有 ${hasToken || 0} 枚，需要 ${batch} 枚。`);
+  // 4. 周结算额度：自然周（周一0点重置），每位玩家独立最多 10 次
+  const WEEKLY_LIMIT = 10;
+  const weekKey = (() => {
+    const now = new Date();
+    const dow = (now.getDay() + 6) % 7;            // 周一=0 … 周日=6
+    const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow);
+    const y = mon.getFullYear();
+    const m = String(mon.getMonth() + 1).padStart(2, '0');
+    const d = String(mon.getDate()).padStart(2, '0');
+    return `${y}${m}${d}`;                          // 本周一日期，作为周标识
+  })();
+  const weeklyKeyOf    = (qq) => `Xiuxian:Tuanben:MojunWeekly:${qq}:${weekKey}`;
+  const weeklyUsedOf   = async (qq) => Number(await redis.get(weeklyKeyOf(qq))) || 0;
+  const weeklyRemainOf = (used) => Math.max(0, WEEKLY_LIMIT - used);
+
+  // 5. 队长令牌 + 队长本周额度检查（队长需至少1枚令牌，且本周仍有结算次数）
+  const leaderToken = await exist_najie_thing(usr_qq, '魔君讨伐令', '道具') || 0;
+  if (leaderToken < 1) {
+    return e.reply('您身上没有【魔君讨伐令】，无法结算魔君奖励（队长需至少持有1枚）。');
+  }
+  const leaderWeeklyRemain = weeklyRemainOf(await weeklyUsedOf(usr_qq));
+  if (leaderWeeklyRemain <= 0) {
+    return e.reply('您本周的魔君奖励结算次数（10次/周，自然周周一0点重置）已用完。');
   }
 
-  // 5. 准备玩家数据
+  // 6. 准备玩家数据 & 计算每位成员可结算轮数（按量发放）
   const playersData = await Promise.all(
     team.members.map(id => Read_player(id))
   );
   const bossData = await this.getBossData(team.boss);
   if (!bossData) return e.reply(`BOSS数据加载失败: ${team.boss}`);
 
-  // 6. 奖励定义
+  // 队伍总轮数 = min(本次请求, 队长本周剩余额度)；超出则自动纠正
+  let rounds = Math.min(batch, leaderWeeklyRemain);
+  let truncated = batch > leaderWeeklyRemain;
+
+  // 每位成员可结算轮数 = min(队伍总轮数, 本人令牌数, 本人本周剩余额度)
+  const memberRounds = {};
+  for (const id of team.members) {
+    const t = await exist_najie_thing(id, '魔君讨伐令', '道具') || 0;
+    const remain = weeklyRemainOf(await weeklyUsedOf(id));
+    memberRounds[id] = Math.min(rounds, t, remain);
+  }
+
+  // 7. 奖励定义
   const firstGroup = ["遣龙令","遣虎令","玄品秘境结算卡","灵品秘境结算卡","仙舟","神域令牌","秘境之匙","仙品秘境结算卡","圣品秘境结算卡"];
   const secondGroup= ["天药","九转天药","天命轮回丹","琴笙的加持","圣品福源丹","七星玄元丹","神魔炼体丹","纪元道果"];
 
-  // 7. 队长/队员分开汇总
-  const leaderDrop = { 修为:0,血气:0,源石:0, 灵石:0, first:{}, second:{} };
-  const memberDrop = { 修为:0,血气:0,源石:0, 灵石:0, first:{}, second:{} };
+  // 8. 逐成员汇总容器（仅令牌足够的成员进入）
+  const drops = {};
+  for (const id of team.members) {
+    if (memberRounds[id] <= 0) continue;
+    const p = playersData[team.members.indexOf(id)];
+    drops[id] = { name: p.名号 || id, 修为:0,血气:0,源石:0,灵石:0, first:{}, second:{} };
+  }
 
-  // 8. 真正结算 N 次
-  for (let round = 0; round < batch; round++) {
-    for (let i = 0; i < team.members.length; i++) {
-      const playerId = team.members[i];
-      const isLeader = playerId === usr_qq;
-      const target = isLeader ? leaderDrop : memberDrop;
+  // 9. 真正结算 rounds 轮（仅令牌足够的轮数/成员拿奖励）
+  for (let round = 0; round < rounds; round++) {
+    for (const id of team.members) {
+      if (round >= memberRounds[id]) continue; // 该轮此成员令牌不足 → 无奖励
+      const idx = team.members.indexOf(id);
+      const target = drops[id];
+      const p = playersData[idx];
 
       // 固定资源
-      playersData[i].修为 = (playersData[i].修为 || 0) + 10000000;
-      playersData[i].血气 = (playersData[i].血气 || 0) + 10000000;
-      playersData[i].源石 = (playersData[i].源石 || 0) + 10000000;
-      playersData[i].灵石 = (playersData[i].灵石 || 0) + 10000000;
+      p.修为 = (p.修为 || 0) + 10000000;
+      p.血气 = (p.血气 || 0) + 10000000;
+      p.源石 = (p.源石 || 0) + 10000000;
+      p.灵石 = (p.灵石 || 0) + 10000000;
       target.修为 += 10000000;
       target.血气 += 10000000;
       target.源石 += 10000000;
@@ -1020,58 +1059,81 @@ async batchSettleDevilMonarch(e) {
 
       // 随机道具*3
       for (let j = 0; j < 3; j++) {
-        const idx  = Math.floor(Math.random() * firstGroup.length);
+        const idxg  = Math.floor(Math.random() * firstGroup.length);
         const cnt  = Math.floor(Math.random() * 5) + 1;
-        const name = firstGroup[idx];
+        const name = firstGroup[idxg];
         target.first[name] = (target.first[name] || 0) + cnt;
-        await Add_najie_thing(playerId, name, "道具", cnt);
+        await Add_najie_thing(id, name, "道具", cnt);
       }
 
       // 随机丹药*2
       for (let j = 0; j < 2; j++) {
-        const idx  = Math.floor(Math.random() * secondGroup.length);
+        const idxg  = Math.floor(Math.random() * secondGroup.length);
         const cnt  = Math.floor(Math.random() * 5) + 1;
-        const name = secondGroup[idx];
+        const name = secondGroup[idxg];
         target.second[name] = (target.second[name] || 0) + cnt;
-        await Add_najie_thing(playerId, name, "丹药", cnt);
+        await Add_najie_thing(id, name, "丹药", cnt);
       }
     }
   }
 
-  // 9. 扣除讨伐令
-  await Add_najie_thing(usr_qq, '魔君讨伐令', '道具', -batch);
+  // 10. 持久化玩家固定资源（修为/血气/源石/灵石），并扣除令牌
+  for (const id of team.members) {
+    const consume = memberRounds[id];
+    if (consume <= 0) continue;
+    const idx = team.members.indexOf(id);
+    await Write_player(id, playersData[idx]);
+    await Add_najie_thing(id, '魔君讨伐令', '道具', -consume);
+  }
 
-// 10. 打印结果 - 优化文案格式
-const buildLine = (obj) => {
-  const lines = [];
-  lines.push(`  修为 x${(obj.修为/10000000).toFixed(0)}千万，血气 x${(obj.血气/10000000).toFixed(0)}千万`);
-  lines.push(`  源石 x${(obj.源石/10000000).toFixed(0)}千万，灵石 x${(obj.灵石/10000000).toFixed(0)}千万`);
-  
-  const firstItems = Object.entries(obj.first).map(([k, v]) => `${k} x${v}`).join('、');
-  const secondItems = Object.entries(obj.second).map(([k, v]) => `${k} x${v}`).join('、');
-  
-  if (firstItems) lines.push(`  道具：${firstItems}`);
-  if (secondItems) lines.push(`  丹药：${secondItems}`);
-  
-  return lines.join('\n');
-};
+  // 11. 扣减每位成员本周结算额度（自然周：键含 weekKey，进入下一周后随周标识变化自动重置）
+  for (const id of team.members) {
+    if (memberRounds[id] <= 0) continue;
+    const key = weeklyKeyOf(id);
+    await redis.incrby(key, memberRounds[id]);
+    await redis.expire(key, 9 * 86400); // 兜底清理，下周不再被读取
+  }
 
-// 获取队长名号
-const leaderName = playersData.find(p => p.qq === usr_qq)?.名号 || '队长';
+  // 12. 打印结果
+  const buildLine = (obj) => {
+    const lines = [];
+    lines.push(`  修为 x${(obj.修为/10000000).toFixed(0)}千万，血气 x${(obj.血气/10000000).toFixed(0)}千万`);
+    lines.push(`  源石 x${(obj.源石/10000000).toFixed(0)}千万，灵石 x${(obj.灵石/10000000).toFixed(0)}千万`);
 
-let reply = [
-  `===== 九幽魔君批量结算完成 =====`,
-  `结算次数：${batch}次`,
-  `消耗道具：【魔君讨伐令】×${batch}`,
-  ``,
-  `【队长】${leaderName} 获得：`,
-  `${buildLine(leaderDrop)}`,
-  ``,
-  `【队员】合计获得：`,
-  `${buildLine(memberDrop)}`,
-].join('\n');
+    const firstItems = Object.entries(obj.first).map(([k, v]) => `${k} x${v}`).join('、');
+    const secondItems = Object.entries(obj.second).map(([k, v]) => `${k} x${v}`).join('、');
 
-e.reply(reply);
+    if (firstItems) lines.push(`  道具：${firstItems}`);
+    if (secondItems) lines.push(`  丹药：${secondItems}`);
+
+    return lines.join('\n');
+  };
+
+  const rewardLines = [];
+  for (const id of team.members) {
+    const r = memberRounds[id];
+    const name = (playersData[team.members.indexOf(id)].名号) || id;
+    if (r > 0) {
+      rewardLines.push(`【${drops[id].name}】结算 ${r} 轮，获得：`);
+      rewardLines.push(buildLine(drops[id]));
+    } else {
+      rewardLines.push(`【${name}】令牌不足或本周结算次数已用尽，本次无任何奖励`);
+    }
+    rewardLines.push('');
+  }
+
+  const leaderWeeklyLeft = weeklyRemainOf(await weeklyUsedOf(usr_qq));
+  const reply = [
+    `===== 九幽魔君批量结算完成 =====`,
+    `本次结算：${rounds}轮${truncated ? `（已自动纠正：原请求 ${batch} 轮，超出您本周上限）` : ''}`,
+    `消耗道具：【魔君讨伐令】按各人结算轮数分别扣除`,
+    ``,
+    ...rewardLines,
+    `您本周剩余结算次数：${leaderWeeklyLeft <= 0 ? '已用尽（下周一0点重置）' : leaderWeeklyLeft + ' / ' + WEEKLY_LIMIT}`,
+    `（每位玩家每周独立 ${WEEKLY_LIMIT} 次，自然周周一0点重置）`,
+  ].join('\n');
+
+  e.reply(reply);
 
   return true;
 }
@@ -2021,6 +2083,9 @@ const addBattleLog = (...lines) => {
     player.已复活 = false; // 是否已复活
     player.免疫控制 = 0; // 免疫控制回合数
     player.已死亡 = false; // 是否已死亡
+    player.九幽灼烧回合数 = 0; // 九幽冥火灼烧剩余回合
+    player.定身回合数 = 0; // 定时定身剩余回合（受控于九幽魔君/帝尊等）
+    player.禁疗 = 0; // 禁疗减疗比例（九幽魔君灭世魔威施加）
   }
   
   // 仇恨系统：记录每个玩家的仇恨值
@@ -2354,7 +2419,7 @@ if (bossCopy.名号 === '帝尊') {
     const healMessages = [];
     for (const member of playersData) {
         if (member.当前血量 > 0) {
-            const healAmount = Math.trunc(member.血量上限 * 0.3);
+            const healAmount = Math.trunc(member.血量上限 * 0.3 * (1 - (member.禁疗 || 0)));
             member.当前血量 = Math.min(member.当前血量 + healAmount, member.血量上限);
             healMessages.push(`${member.名号}恢复${bigNumberTransform(healAmount)}生命`);
         }
@@ -2917,9 +2982,146 @@ if (bossCopy.火焰风暴) {
   
   if (bossCopy.火焰风暴.回合 <= 0) {
     await addBattleLog(`火焰风暴渐渐平息...`);
-    delete bossCopy.火焰风暴;
+      delete bossCopy.火焰风暴;
+    }
   }
-}
+
+    // ============ 九幽魔君专属机制 ============
+    if (bossCopy.名号 === '九幽魔君') {
+      // ---- 灭世魔威（开局第1回合必定触发）----
+      if (cnt === 1 && !bossCopy.灭世魔威已触发) {
+        bossCopy.灭世魔威已触发 = true;
+        await addBattleLog(`【灭世魔威】`);
+        await addBattleLog(`九幽魔君自九幽深渊苏醒，灭世魔威如潮水般席卷战场，天地为之失色！`);
+        const 斩道王者阈值 = 11; // 秘境体系：斩道王者
+        const 神火阈值 = 8;      // 仙古今世法：神火
+        for (const p of playersData) {
+          const 秘境 = p.mijinglevel_id || 0;
+          const 仙古 = p.xiangulevel_id || 0;
+          if (秘境 < 斩道王者阈值 && 仙古 < 神火阈值) {
+            const oa = p.攻击, od = p.防御, oc = p.当前血量;
+            p.攻击 = Math.trunc(p.攻击 * 0.7);
+            p.防御 = Math.trunc(p.防御 * 0.7);
+            p.血量上限 = Math.trunc(p.血量上限 * 0.7);
+            p.当前血量 = Math.trunc(p.当前血量 * 0.7);
+            await addBattleLog(
+              `${p.名号}秘境(${秘境})与仙古(${仙古})皆未达阈值，被灭世魔威压制，全属性下降30%！`,
+              `攻击 ${bigNumberTransform(oa)}→${bigNumberTransform(p.攻击)}，`,
+              `防御 ${bigNumberTransform(od)}→${bigNumberTransform(p.防御)}，`,
+              `气血 ${bigNumberTransform(oc)}→${bigNumberTransform(p.当前血量)}`
+            );
+          } else {
+            await addBattleLog(`${p.名号}境界超脱（秘境${秘境}/仙古${仙古}），未受灭世魔威全属性压制。`);
+          }
+        }
+        // 灭世魔威附带被动
+        bossCopy.九幽剑 = true;    // 攻击自带九幽剑特性
+        bossCopy.九幽碎甲 = 0.5;   // 碎甲：命中降低目标50%防御
+        for (const p of playersData) p.禁疗 = 0.25; // 禁疗25%
+        await addBattleLog(`九幽魔君攻击自带【九幽剑】特性，并附带禁疗25%与碎甲（命中降低目标50%防御）！`);
+      }
+
+      // ---- 若被定身，则本回合无法行动 ----
+      if (bossCopy.dongjie) {
+        await addBattleLog(`${bossCopy.名号}被定身，无法行动！`);
+        bossCopy.dongjie = false;
+        continue;
+      }
+
+      // ---- 清理上回合残留的定时定身（按回合数递减）----
+      for (const p of playersData) {
+        if ((p.定身回合数 || 0) > 0) {
+          p.定身回合数--;
+          if (p.定身回合数 <= 0) p.dongjie = false;
+        }
+      }
+
+      // ---- 九幽冥火灼烧结算：每回合扣15%气血 + 15%概率定身 ----
+      for (const p of playersData) {
+        if (p.当前血量 > 0 && (p.九幽灼烧回合数 || 0) > 0) {
+          const burnDmg = Math.trunc(p.血量上限 * 0.15);
+          p.当前血量 = Math.max(0, p.当前血量 - burnDmg);
+          p.九幽灼烧回合数--;
+          await addBattleLog(`${p.名号}身负九幽冥火灼烧，每回合流失${bigNumberTransform(burnDmg)}点气血（剩余${bigNumberTransform(p.当前血量)}）！`);
+          if (Math.random() < 0.15) {
+            p.dongjie = true;
+            p.定身回合数 = (p.定身回合数 || 0) + 1;
+            await addBattleLog(`${p.名号}被冥火侵入经脉，动弹不得，下回合无法行动！`);
+          }
+          if (p.当前血量 <= 0 && !p.已复活) {
+            const rev = await this.checkPlayerRevival(p);
+            if (rev.success) { p.已复活 = true; p.已死亡 = false; addBattleLog(...rev.message); }
+            else { p.已死亡 = true; await addBattleLog(`${p.名号}被九幽冥火灼烧致死！`); }
+          }
+        }
+      }
+
+      // ---- BOSS主行动：每回合35%九幽冥狱火，否则冥渊万化斩；斩杀后再出手一次 ----
+      if (playersData.some(p => p.当前血量 > 0)) {
+        if (Math.random() < 0.35) {
+          // 九幽冥狱火：群体攻击，5倍神通伤害，全体施加灼烧
+          await addBattleLog(`【九幽冥狱火】`);
+          await addBattleLog(`九幽魔君抬手召出九幽冥狱之火，焚尽八荒，冥火滔天！`);
+          const baseDmg = Math.trunc(bossCopy.攻击 * 5);
+          let total = 0;
+          for (const p of playersData) {
+            if (p.当前血量 <= 0) continue;
+            let dmg = baseDmg;
+            if (p.护盾值 > 0) {
+              if (p.护盾值 >= dmg) { p.护盾值 -= dmg; dmg = 0; }
+              else { dmg -= p.护盾值; p.护盾值 = 0; }
+            }
+            p.当前血量 = Math.max(0, p.当前血量 - dmg);
+            p.九幽灼烧回合数 = 3;
+            total += dmg;
+            if (p.当前血量 <= 0 && !p.已复活) {
+              const rev = await this.checkPlayerRevival(p);
+              if (rev.success) { p.已复活 = true; p.已死亡 = false; addBattleLog(...rev.message); }
+              else { p.已死亡 = true; await addBattleLog(`${p.名号}被九幽冥狱火焚为灰烬！`); }
+            }
+            await addBattleLog(`${p.名号}被冥狱之火吞没，承受${bigNumberTransform(dmg)}点神通伤害并陷入灼烧！`);
+          }
+          await addBattleLog(`九幽冥狱火共造成${bigNumberTransform(total)}点伤害，全场陷入冥火炼狱！`);
+        } else {
+          // 冥渊万化斩：单体，10倍神通伤害，无法被防御；斩杀后再出手一次
+          const doMingyuan = async (target) => {
+            await addBattleLog(`【冥渊万化斩】`);
+            await addBattleLog(`九幽魔君祭出冥渊万化斩，一剑斩出万般变化，虚空崩裂、法则哀鸣！`);
+            const dmg = Math.trunc(bossCopy.攻击 * 10);
+            target.当前血量 = Math.max(0, target.当前血量 - dmg); // 无法被防御：直接扣除
+            if (bossCopy.九幽碎甲) {
+              const od = target.防御;
+              target.防御 = Math.max(0, Math.trunc(target.防御 * (1 - bossCopy.九幽碎甲)));
+              await addBattleLog(`【九幽剑·碎甲】${target.名号}防御被削减 ${bigNumberTransform(od)}→${bigNumberTransform(target.防御)}！`);
+            }
+            await addBattleLog(`冥渊万化斩贯穿${target.名号}，造成${bigNumberTransform(dmg)}点不可防御的神通伤害！`);
+            if (target.当前血量 <= 0 && !target.已复活) {
+              const rev = await this.checkPlayerRevival(target);
+              if (rev.success) { target.已复活 = true; target.已死亡 = false; addBattleLog(...rev.message); return false; }
+              target.已死亡 = true;
+              await addBattleLog(`${target.名号}被冥渊万化斩彻底斩杀，神魂俱灭！`);
+              return true;
+            }
+            return false;
+          };
+          const alive = playersData.filter(p => p.当前血量 > 0);
+          if (alive.length > 0) {
+            const t = alive[Math.floor(Math.random() * alive.length)];
+            const killed = await doMingyuan(t);
+            if (killed) {
+              const alive2 = playersData.filter(p => p.当前血量 > 0);
+              if (alive2.length > 0) {
+                const t2 = alive2[Math.floor(Math.random() * alive2.length)];
+                await addBattleLog(`斩杀得手，九幽魔君借冥渊之力再次出手！`);
+                await doMingyuan(t2);
+              }
+            }
+          }
+        }
+      }
+
+      continue; // 跳过通用普通攻击
+    }
     
     // 选择仇恨目标（仇恨值最高的存活玩家）
     if (bossCopy.dongjie) {
@@ -3133,12 +3335,14 @@ async checkPlayerStatus(playersData, addBattleLog) {
         }
       }
       
-      // 检查是否被定身
+      // 检查是否被定身（定时定身由 定身回合数 管理，不在此处无条件清除）
       if (player.dongjie) {
         if (logs.length < 100) {
           logs.push(`${player.名号}被定身，无法行动！`);
         }
-        player.dongjie = false;
+        if ((player.定身回合数 || 0) <= 0) {
+          player.dongjie = false;
+        }
       }
       
       // 减少免疫控制回合数
@@ -3164,7 +3368,7 @@ async checkPlayerRevival(player) {
     // 1. 涅槃仙功复活
     if (player.学习的功法?.includes("涅槃仙功") && Math.random() < 0.2) {
       const 最大血量 = player.血量上限;
-      player.当前血量 = Math.trunc(最大血量 * 0.5);
+      player.当前血量 = Math.trunc(最大血量 * 0.5 * (1 - (player.禁疗 || 0)));
       
       return {
         success: true,
@@ -3180,7 +3384,7 @@ async checkPlayerRevival(player) {
     // 2. 斩我明道诀复活（乱古大帝版）
     if (player.学习的功法?.includes("斩我明道诀") && Math.random() < 0.3) {
       const 最大血量 = player.血量上限;
-      player.当前血量 = 最大血量; // 满血复活
+      player.当前血量 = Math.trunc(最大血量 * (1 - (player.禁疗 || 0))); // 满血复活（受禁疗影响）
       
       // 属性提升
       const originalAttack = player.攻击;

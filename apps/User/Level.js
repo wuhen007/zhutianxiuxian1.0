@@ -34,6 +34,11 @@ import { getBreakthroughPotentialCost } from './breakthroughPotential.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
 import { getKongtongModifiers } from '../../model/innateTreasure.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
+import { zhetiandujie } from './zhetiandujie.js';
+import {
+  getReverseLifeTribulationWaves,
+  ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS,
+} from './zhetianTribulationRules.js';
 import {
   DAO_DAILY_LIMIT,
   DAO_REALM_RULES,
@@ -327,10 +332,6 @@ async nihuojiushi(e) {
     // 记录本次逆活时间
     player.last_nihuo_time = currentTotalYears;
     
-    // 天道惩罚概率
-    const tribulationChance = Math.min(90, 10 * currentLife); // 第1世10%，第9世90%
-    const eraPenalty = [0, 5, 10, 20, 30][currentEra.index]; // 不同时代额外天罚概率
-    
     // 创建九世心魔
     const demons = [
         { name: "旧我执念", power: 0.5, desc: "过往自我不愿消亡" },
@@ -378,43 +379,54 @@ async nihuojiushi(e) {
         return;
     }
     
-    // 天道惩罚判定
-    const totalTribulationChance = Math.min(95, tribulationChance + eraPenalty);
-    const hasTribulation = Math.random() * 100 < totalTribulationChance;
-    
-    if (hasTribulation) {
-        // 天道惩罚
-        const tribulationType = currentLife >= 7 ? "仙道法则" : "天道雷劫";
-        await e.reply([
-            `天道预警！`,
-            `${tribulationType}锁定逆天者！`,
-            `需以肉身硬抗${Math.min(9, currentLife)}重天罚`
-        ].join("\n"));
-        await sleep(2000);
-        
-        // 抵挡天罚
-        const tribulationSuccess = Math.random() * 100 < (player.境界 * 5 - currentLife * 3);
-        if (!tribulationSuccess) {
-            const penaltyMulti = difficulty * (currentLife >= 7 ? 2 : 1);
-            player.攻击加成 = Math.max(0, player.攻击加成 * (1 - 0.1 * penaltyMulti));
-            player.防御加成 = Math.max(0, player.防御加成 * (1 - 0.1 * penaltyMulti));
-            
-            await Write_player(usr_qq, player);
-            
-            e.reply([
-                `${tribulationType}重创仙体！`,
-                `攻击减损：${bigNumberTransform(player.攻击加成 * 0.1 * penaltyMulti)}`,
-                `防御减损：${bigNumberTransform(player.防御加成 * 0.1 * penaltyMulti)}`,
-                currentEra.index >= 3 ? `【${eraNames[currentEra.index]}天罚】伤害增强${eraPenalty}%` : ""
-            ].join("\n"));
-        } else {
-            await e.reply([
-                `抗劫成功！`,
-                `体悟${tribulationType}真意`,
-                `道体更近圆满`
-            ].join("\n"));
+    const equipment = await Read_equipment(usr_qq);
+    const tribulation = new zhetiandujie();
+    tribulation.enterTribulationState(player, equipment);
+    const maxAtk = tribulation.calcMaxTheoreticalAtk(player, equipment);
+    const totalWaves = getReverseLifeTribulationWaves(currentLife);
+    const baseDamage = maxAtk * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.逆活 * difficulty;
+    const tribulationLog = [
+        `【第${currentLife}世逆活雷劫】`,
+        `共${totalWaves}道｜雷劫倍率×${ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.逆活}｜时代倍率×${difficulty}`,
+    ];
+    let roundDamage = 0;
+    let roundEffects = 0;
+
+    for (let wave = 1; wave <= totalWaves; wave++) {
+        tribulation.clearTempEffects(player);
+        const { damage, messages } = tribulation.applyGongfaEffects(player, baseDamage, equipment);
+        player.当前血量 = Math.max(1, player.当前血量 - damage);
+        roundDamage += damage;
+        roundEffects += messages.length;
+        tribulation.updateCooldowns(player);
+
+        if (player.当前血量 <= 1) {
+            const resurrected = await tribulation.checkGongfaResurrection(e, player);
+            if (!resurrected) {
+                tribulationLog.push(
+                    `第${wave}道雷劫后道基崩碎｜累计承伤${bigNumberTransform(roundDamage)}`,
+                    `【逆活失败】第${currentLife}世未能渡过雷劫`
+                );
+                await ForwardMsg(e, tribulationLog);
+                tribulation.clearTempEffects(player);
+                await Write_player(usr_qq, player);
+                await Write_equipment(usr_qq, equipment);
+                return;
+            }
+        }
+
+        if (wave % 7 === 0) {
+            tribulationLog.push(
+                `第${wave - 6}-${wave}道｜承伤${bigNumberTransform(roundDamage)}` +
+                `｜触发效果${roundEffects}次｜剩余血量${bigNumberTransform(player.当前血量)}`
+            );
+            roundDamage = 0;
+            roundEffects = 0;
         }
     }
+    tribulation.clearTempEffects(player);
+    tribulationLog.push(`【雷劫已渡】第${currentLife}世仙基在劫火中重生`);
+    await ForwardMsg(e, tribulationLog);
     
     // 逆活成功
     player.nihuo_count = currentLife + 1;
@@ -463,7 +475,12 @@ async nihuojiushi(e) {
         ].join("\n"));
     }
     
+    player.当前血量 = player.血量上限;
     await Write_player(usr_qq, player);
+    await Write_equipment(usr_qq, equipment);
+    const refreshedPlayer = await Read_player(usr_qq);
+    refreshedPlayer.当前血量 = refreshedPlayer.血量上限;
+    await Write_player(usr_qq, refreshedPlayer);
 }
 async zhengdao(e) {
     if (!e.isGroup) {
