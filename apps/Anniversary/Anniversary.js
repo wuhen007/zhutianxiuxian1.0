@@ -8,6 +8,7 @@ import { Read_player, existplayer,sleep,exist_najie_thing, Add_修为,Add_血气
 import {  Write_player,  } from '../../model/xiuxian.js'
 import { shijianc,  isNotNull,ForwardMsg } from '../../model/xiuxian.js'
 import { Add_灵石,  Add_najie_thing,channel} from '../../model/xiuxian.js'
+import { getMinggeEffects, getMinggeDirectMultiplier } from '../../model/mingge.js';
 
 import { segment } from "oicq"
 import { __PATH } from '../../model/xiuxian.js'
@@ -206,16 +207,23 @@ async preview_pifu(e) {
                 return
             }
 
-            //给奖励
-            let gift_xiuwei = player.星海之缘签到天数 * 100000;
-            await Add_najie_thing(usr_qq, "秘境之匙", "道具", this.xiuxianConfigData.Sign.ticket);
-            await Add_najie_thing(usr_qq, "群星秘钥", "道具", 1);
+            //给奖励（命格·签到奖励倍率，与修仙签到一致）
+            const _mg3 = getMinggeEffects(player, data.minggeList);
+            const _sm3 = getMinggeDirectMultiplier(_mg3, '签到奖励倍率');
+            let gift_xiuwei = Math.floor(player.星海之缘签到天数 * 100000 * _sm3);
+            const ticket3 = Math.floor(this.xiuxianConfigData.Sign.ticket * _sm3);
+            const starKey3 = Math.floor(1 * _sm3);
+            await Add_najie_thing(usr_qq, "秘境之匙", "道具", ticket3);
+            await Add_najie_thing(usr_qq, "群星秘钥", "道具", starKey3);
 
             player.爱莉希雅召唤次数 = (player.爱莉希雅召唤次数 || 0) + 1;
             let msg = [
                 segment.at(usr_qq),
-                `星海之缘签到成功,已经连续签到${player.星海之缘签到天数}天了，获得了${gift_xiuwei}修为与血气,群星秘钥x1,秘境之匙x${this.xiuxianConfigData.Sign.ticket}，爱莉希雅召唤次数剩余${player.爱莉希雅召唤次数}次`
+                `星海之缘签到成功,已经连续签到${player.星海之缘签到天数}天了，获得了${gift_xiuwei}修为与血气,群星秘钥x${starKey3},秘境之匙x${ticket3}，爱莉希雅召唤次数剩余${player.爱莉希雅召唤次数}次`
             ]
+            if (_sm3 !== 1) {
+                msg.push(`【命格】签到奖励倍率生效：本次星海之缘签到奖励 ×${_sm3}`);
+            }
             await Write_player(usr_qq,player)
             await Add_修为(usr_qq, gift_xiuwei);
             await Add_血气(usr_qq, gift_xiuwei);
@@ -600,14 +608,20 @@ async yijianzhaohuan(e) {
                 return
             }
 
-            //给奖励
-            let gift_xiuwei = player.新年签到天数 * 3000;
-            await Add_najie_thing(usr_qq, "秘境之匙", "道具", this.xiuxianConfigData.Sign.ticket);
+            //给奖励（命格·签到奖励倍率，与修仙签到一致）
+            const _mg2 = getMinggeEffects(player, data.minggeList);
+            const _sm2 = getMinggeDirectMultiplier(_mg2, '签到奖励倍率');
+            let gift_xiuwei = Math.floor(player.新年签到天数 * 3000 * _sm2);
+            const ticket2 = Math.floor(this.xiuxianConfigData.Sign.ticket * _sm2);
+            await Add_najie_thing(usr_qq, "秘境之匙", "道具", ticket2);
             await Add_血气(usr_qq, gift_xiuwei);
             let msg = [
                 segment.at(usr_qq),
-                `周年签到成功,已经连续签到${player.新年签到天数}天了，获得了${gift_xiuwei}血气,秘境之匙x${this.xiuxianConfigData.Sign.ticket}`
+                `周年签到成功,已经连续签到${player.新年签到天数}天了，获得了${gift_xiuwei}血气,秘境之匙x${ticket2}`
             ]
+            if (_sm2 !== 1) {
+                msg.push(`【命格】签到奖励倍率生效：本次周年签到奖励 ×${_sm2}`);
+            }
             await Write_player(usr_qq,player)
             e.reply(msg);
             return;

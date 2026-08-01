@@ -641,11 +641,15 @@ export class yuanshentixi extends plugin {
       ].join('\n'));
     }
 
+    // 命格消费层（批量与单次 neijing 保持一致）：内景地消耗倍率 / 内景地开启概率
+    const batchMingge = getMinggeEffects(player, data.minggeList);
+    const batchCostMult = getMinggeDirectMultiplier(batchMingge, '内景地消耗倍率');
+
     for (let i = 0; i < times; i++) {
       await Write_player(usr_qq, player);
       const 要求 = applyQuestionFortuneCost(
         player,
-        15000000 * (player.mijinglevel_id + player.xiangulevel_id)
+        Math.floor(15000000 * (player.mijinglevel_id + player.xiangulevel_id) * batchCostMult)
       );
       if (player.元神 < 要求) {
         msgs.push(`【中止】第${i + 1}次：元神不足（需${bigNumberTransform(要求)}，仅剩${bigNumberTransform(player.元神)}）`);
@@ -653,7 +657,10 @@ export class yuanshentixi extends plugin {
         break;
       }
 
-      const prob = getInnerWorldOpenChance(0.1 + player.yuanshenlevel_id * 0.1, player);
+      const prob = getInnerWorldOpenChance(
+        calculateMinggeChance(0.1 + player.yuanshenlevel_id * 0.1, batchMingge, '内景地开启概率', { max: 1 }),
+        player
+      );
       const isWin = Math.random() <= prob;
 
       player.元神 -= 要求;
@@ -685,8 +692,15 @@ export class yuanshentixi extends plugin {
 
     await Write_player(usr_qq, player);
 
+    // 命格生效提示
+    const fateNotes = [];
+    if (batchCostMult !== 1) fateNotes.push(`命格·内景地消耗倍率 ${Math.round(batchCostMult * 100)}%（减免${Math.round((1 - batchCostMult) * 100)}%）`);
+    const fateOpen = getMinggeEffectNumber(batchMingge, '内景地开启概率');
+    if (fateOpen > 0) fateNotes.push(`命格·内景地开启概率加成 +${Math.round(fateOpen * 100)}%`);
+
     const summary = [
       `内景地批量修炼完成！`,
+      ...(fateNotes.length ? [`命格生效：${fateNotes.join('，')}`] : []),
       `计划次数：${times} 次`,
       `实际执行：${successCnt + failCnt} 次`,
       `成功开启：${successCnt} 次`,

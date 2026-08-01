@@ -12353,3 +12353,46 @@ export  function getTargetQQFromEvent(e, selfQQ = '') {
   if (!/^\d{5,20}$/.test(id)) return '';
   return id !== String(selfQQ) ? id : '';
 }
+
+// ==================== 行动条公共函数（供团本 tuanben 等复用，勿造轮子） ====================
+// 行动条满 max 点方可出手，速度决定先机；拉条=立即再动，推条=延后行动。
+export const ACTION_BAR_MAX = 3000;
+
+// 初始化单位的行动条字段：_actionBar / _speed / _speedBoost
+// 速度算法：传入 speed 则直接作为最终速度（不再叠加）；否则用 基础速度 + 秘境*50 + 仙古*50
+export function initActionBar(unit, { speed, boost = 1.0 } = {}) {
+  unit._actionBar = unit._actionBar || 0;
+  const base = (speed != null)
+    ? speed
+    : (unit.速度 ?? 100) + (unit.mijinglevel_id ?? 0) * 50 + (unit.xiangulevel_id ?? 0) * 50;
+  unit._speed = Math.floor(base);
+  unit._speedBoost = boost;
+  return unit;
+}
+
+// 推进所有存活单位的行动条（每单位 += floor(_speed * _speedBoost)）
+export function advanceUnitBars(units, max = ACTION_BAR_MAX) {
+  for (const u of units) {
+    if (u.当前血量 > 0) {
+      u._actionBar = (u._actionBar || 0) + Math.floor((u._speed || 100) * (u._speedBoost || 1));
+    }
+  }
+}
+
+// 取本拍就绪（行动条 >= max）的单位，按溢出降序（条满最多的先手）
+export function getReadyUnits(units, max = ACTION_BAR_MAX) {
+  return units
+    .filter(u => u.当前血量 > 0 && (u._actionBar || 0) >= max)
+    .sort((a, b) => (b._actionBar || 0) - (a._actionBar || 0));
+}
+
+// 拉条：行动条增加 amount（封顶 max），用于「气势如虹立即再动」
+export function boostActionBar(unit, amount, max = ACTION_BAR_MAX) {
+  unit._actionBar = Math.min((unit._actionBar || 0) + amount, max);
+  return (unit._actionBar || 0) >= max;
+}
+
+// 推条：行动条减少 amount（最低 0），用于「被镇压延后行动」
+export function pushBackActionBar(unit, amount) {
+  unit._actionBar = Math.max((unit._actionBar || 0) - amount, 0);
+}

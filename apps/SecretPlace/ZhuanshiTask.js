@@ -1,6 +1,9 @@
 import { plugin, common, config, data } from '../../api/api.js';
 import fs from 'fs';
-import { __PATH } from '../../model/xiuxian.js';
+import {
+  __PATH,
+  buildAt
+} from '../../model/xiuxian.js';
 import {
   existplayer,
   Read_player,
@@ -198,21 +201,30 @@ async function sendRebirthMessage(e, message) {
   }
 }
 
-function buildPlayerMentionMessage(playerId, message) {
-  const qq = String(playerId).replace('qg_', '');
-  const at = globalThis.segment?.at;
-  if (typeof at === 'function' && /^\d+$/.test(qq)) {
-    return [at(Number(qq)), `\n${message}`];
+function buildPlayerMentionMessage(playerIds, message) {
+  const ids = Array.isArray(playerIds) ? playerIds : [playerIds];
+  const segs = [];
+  for (const raw of ids) {
+    if (raw == null) continue;
+    const at = buildAt(raw); // 复用项目标准艾特封装（处理 qg_ 前缀 / 官方机器人 / OneBot）
+    if (!at) continue;
+    segs.push(at);
   }
-  return `@${qq}\n${message}`;
+  if (segs.length === 0) return message;
+  return [...segs, `\n${message}`];
 }
 
-export async function notifyReincarnationPlayer(playerId, message) {
+export async function notifyReincarnationPlayer(playerId, message, extraMentions = []) {
   try {
     const groupList = await getNotifyGroupList();
     const bot = globalThis.Bot;
+    const mentionIds = [...new Set(
+      [playerId, ...(Array.isArray(extraMentions) ? extraMentions : [extraMentions])]
+        .map(id => String(id == null ? '' : id).replace('qg_', ''))
+        .filter(id => id !== '')
+    )];
     if (groupList.length > 0 && bot) {
-      const payload = buildPlayerMentionMessage(playerId, message);
+      const payload = buildPlayerMentionMessage(mentionIds, message);
       const results = await Promise.allSettled(
         groupList.map(async groupId => bot.pickGroup(groupId).sendMsg(payload))
       );
@@ -242,7 +254,7 @@ function getAuthority(player) {
   );
 }
 
-async function getActiveReincarnationController() {
+export async function getActiveReincarnationController() {
   const raw = await redis.get(REINCARNATION_CONTROLLER_KEY);
   if (!raw) return null;
 
@@ -410,7 +422,7 @@ function isNajieEmpty(najie) {
       return false;
     }
   }
-  return najie.灵石 <= 0 && najie.源石 <= 0;
+  return (najie.灵石 || 0) <= 0 && (najie.源石 || 0) <= 0;
 }
 
 // 创建纳戒掉落记录
@@ -1472,7 +1484,8 @@ class ZhuanshiTask extends plugin {
                 if (!wasPending) {
                   await notifyReincarnationPlayer(
                     player_id,
-                    `【轮回路·等待裁定】\n${task.player_name || player_id}的魂魄已抵达轮回路。当前执掌者：${controller.player_name}，等待其裁定是否往生。`
+                    `【轮回路·等待裁定】\n${task.player_name || player_id}的魂魄已抵达轮回路。当前执掌者：${controller.player_name}，等待其裁定是否往生。`,
+                    [controller.player_id]
                   );
                 }
                 console.log(

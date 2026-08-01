@@ -2,7 +2,7 @@ import fs from 'fs';
 import { plugin, config } from '../../api/api.js';
 import { Read_player, Write_player,__PATH } from '../../model/xiuxian.js';
 import { readShouyuanDifficulty } from './shouyuanDifficulty.js';
-import { notifyReincarnationPlayer } from '../SecretPlace/ZhuanshiTask.js';
+import { notifyReincarnationPlayer, getActiveReincarnationController } from '../SecretPlace/ZhuanshiTask.js';
 import { buildShouyuanRebirthNotice } from './shouyuanRebirthNotice.js';
 import { hasReincarnationProtection } from '../../model/innateTreasure.js';
 
@@ -50,9 +50,18 @@ export async function triggerShouyuanRebirth(usr_qq, player) {
         status: '轮回中',
       }))
       .exec();
+    // 若有轮回路执掌者，弥留通知一并 @ 执掌者（补上此前遗漏的 @）
+    let controller = null;
+    try {
+      controller = await getActiveReincarnationController();
+    } catch (e) {
+      // 获取执掌者失败不影响弥留通知主流程
+    }
+    const extraMentions = controller && controller.player_id ? [controller.player_id] : [];
     await notifyReincarnationPlayer(
       usr_qq,
-      buildShouyuanRebirthNotice(player.名号, usr_qq, SHOUYUAN_RESCUE_WINDOW_MS)
+      buildShouyuanRebirthNotice(player.名号, usr_qq, SHOUYUAN_RESCUE_WINDOW_MS),
+      extraMentions
     );
     console.log(`【寿元耗尽】玩家 ${usr_qq} 寿元已尽，送入轮回往生路`);
   } catch (err) {

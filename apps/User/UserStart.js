@@ -592,7 +592,10 @@ async daily_lottery(e) {
         }
         let player = await Read_player(usr_qq);
         let level_id = data.Level_list.find(item => item.level_id == player.level_id).level_id;
-        let lastjiangli=Math.floor( level_id* 0.1);
+        // 命格·签到奖励倍率（与修仙签到一致）
+        const minggeEffects_td = getMinggeEffects(player, data.minggeList);
+        const signMult_td = getMinggeDirectMultiplier(minggeEffects_td, '签到奖励倍率');
+        let lastjiangli=Math.floor( level_id* 0.1 * signMult_td);
         if (level_id < 22) {
             e.reply("你的境界实在太低，天道不想给你赐福");
             return;
@@ -682,6 +685,9 @@ async daily_lottery(e) {
             await Add_najie_thing(usr_qq, '九阶玄元丹', '丹药', lastjiangli);
             await Add_najie_thing(usr_qq, '九阶淬体丹', '丹药', lastjiangli);
             msg +=`【道法仙术】对您赐福!您额外获得了${lastjiangli}把秘境之匙\n${lastjiangli}张打工券\n${lastjiangli}个九阶玄元丹\n${lastjiangli}个九阶淬体丹！`
+        }
+        if (signMult_td !== 1) {
+            msg += `\n【命格】签到奖励倍率生效：本次天道赐福奖励 ×${signMult_td}`;
         }
         // 更新最后一次天道赐福时间为当前时间
         await redis.set("xiuxian:player:" + usr_qq + ":lastCifuTime", new Date().getTime());
@@ -1463,10 +1469,14 @@ async daofa_gift(e) {
   let ifexistplay = await existplayer(usr_qq);
   if (!ifexistplay) return false;
   
-  // 获取玩家数据
-  let player = await data.getData('player', usr_qq);
-  
-  // 新增条件：只有道法现数为2才能签到
+        // 获取玩家数据
+        let player = await data.getData('player', usr_qq);
+
+        // 命格·签到奖励倍率（与修仙签到一致）
+        const minggeEffects_df = getMinggeEffects(player, data.minggeList);
+        const signMult_df = getMinggeDirectMultiplier(minggeEffects_df, '签到奖励倍率');
+
+        // 新增条件：只有道法现数为2才能签到
   if (player.daofaxianshu !== 2) {
     e.reply(`你并没有道法仙术无法进行赐福`);
     return false;
@@ -1528,10 +1538,10 @@ async daofa_gift(e) {
   // 计算奖励
   const cf = config.getConfig('xiuxian', 'xiuxian');
 
-  let gift_xiuwei = player.道法赐福天数 * 10000*player.level_id*player.Physique_id*(player.mijinglevel_id+player.xiangulevel_id);
-  // 添加道具奖励
-  const tickets = player.道法赐福天数*2
-  const tickets3 = player.道法赐福天数*2
+        let gift_xiuwei = Math.floor(player.道法赐福天数 * 10000*player.level_id*player.Physique_id*(player.mijinglevel_id+player.xiangulevel_id) * signMult_df);
+        // 添加道具奖励（命格·签到奖励倍率）
+        const tickets = Math.floor(player.道法赐福天数*2 * signMult_df)
+        const tickets3 = Math.floor(player.道法赐福天数*2 * signMult_df)
 
   await Add_najie_thing(usr_qq, '龙', '道具', tickets);
   await Add_najie_thing(usr_qq, '腾', '道具', tickets);
@@ -1558,7 +1568,10 @@ async daofa_gift(e) {
     `获得遣龙令×${tickets}`,
     `获得遣虎令×${tickets}`
   ].join('\n');
-  
+
+  if (signMult_df !== 1) {
+      b += `\n【命格】签到奖励倍率生效：本次道法赐福奖励 ×${signMult_df}`;
+  }
   e.reply(b);
   return true;
 }

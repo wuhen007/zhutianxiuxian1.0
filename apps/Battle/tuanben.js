@@ -1,5 +1,5 @@
 import { plugin, config ,data} from '../../api/api.js';
-import { existplayer, Read_player, Write_player, Add_najie_thing,ForwardMsg, channel ,calculateHarm, ensureNumber, bigNumberTransform, exist_najie_thing} from '../../model/xiuxian.js';
+import { existplayer, Read_player, Write_player, Add_najie_thing,ForwardMsg, channel ,calculateHarm, ensureNumber, bigNumberTransform, exist_najie_thing, initActionBar, advanceUnitBars, getReadyUnits, boostActionBar, pushBackActionBar, ACTION_BAR_MAX} from '../../model/xiuxian.js';
 import { segment } from "icqq"
 import {
  checkEmperorAwareness,
@@ -1423,6 +1423,7 @@ async disbandTeamInternal(teamId, team) {
         '尸骸仙帝': {
         名号: '尸骸仙帝',
         级别: '仙帝',
+        速度: 1200,
         攻击: 150000 * Math.floor(Math.random() * 800000000000),
         防御: 150000*Math.floor(Math.random() * 800000000000),
         当前血量: 250000 *Math.floor(Math.random() * 800000000000),
@@ -1434,6 +1435,7 @@ async disbandTeamInternal(teamId, team) {
       '狠人大帝': {
         名号: '狠人大帝',
          级别: '大帝',
+        速度: 1000,
         攻击: 5000 * Math.floor(Math.random() * 8000000000),
         防御: 3000 * Math.floor(Math.random() * 1000000000),
         当前血量: 2000 * Math.floor(Math.random() * 50000000000),
@@ -1445,6 +1447,7 @@ async disbandTeamInternal(teamId, team) {
       '九幽魔君': {
         名号: '九幽魔君',
          级别: '魔君',
+        速度: 700,
         攻击: 500 * Math.floor(Math.random() * 8000000000),
         防御: 300 * Math.floor(Math.random() * 1000000000),
         当前血量: 200 * Math.floor(Math.random() * 50000000000),
@@ -2087,7 +2090,20 @@ const addBattleLog = (...lines) => {
     player.定身回合数 = 0; // 定时定身剩余回合（受控于九幽魔君/帝尊等）
     player.禁疗 = 0; // 禁疗减疗比例（九幽魔君灭世魔威施加）
   }
-  
+
+  // ===== 行动条系统接入（复用 xiuxian.js 公共函数，速度决定先机）=====
+  // 全员统一用真实速度：基础速度 + 秘境*50 + 仙古*50（与主战斗系统一致，不再加 2500 基准）
+  // boss 无秘境/仙古字段 → 取裸速度（魔君700 / 狠人1000 / 尸骸1200）；玩家带境界加成 → 约 950~1450
+  const allUnits = [bossCopy, ...playersData];
+  for (const u of allUnits) {
+    const baseSpeed = (u.速度 ?? 100) + (u.mijinglevel_id ?? 0) * 50 + (u.xiangulevel_id ?? 0) * 50;
+    initActionBar(u, { speed: baseSpeed });
+  }
+  // 九幽魔君：开局行动条拉满，确保首拍最先出手（先手）
+  if (bossCopy.名号 === '九幽魔君') {
+    boostActionBar(bossCopy, ACTION_BAR_MAX);
+  }
+
   // 仇恨系统：记录每个玩家的仇恨值
   let hatred = new Array(playersData.length).fill(0);
   let currentTarget = 0; // 当前仇恨目标索引
@@ -2123,6 +2139,17 @@ const addBattleLog = (...lines) => {
       await addBattleLog(`所有玩家已被击败！`);
       break;
     }
+
+    // ===== 行动条推进（速度决定先机）=====
+    advanceUnitBars(allUnits);
+    const readyUnits = getReadyUnits(allUnits);
+    const isUnitReady = (u) => readyUnits.includes(u);
+    const actionBarInfo = allUnits
+      .filter(u => u.当前血量 > 0)
+      .map(u => `${u.名号}:${u._actionBar}/${ACTION_BAR_MAX}`)
+      .join('  ');
+    await addBattleLog(`【行动条】${actionBarInfo}`);
+
 // ==== 尸骸仙帝：帝之场域 ====
 if (bossCopy.名号 === '尸骸仙帝') {
     // 仙帝境界对应的等级阈值
@@ -2308,6 +2335,11 @@ if (bossCopy.名号 === '帝尊') {
       // 跳过死亡或被定身玩家
       if (player.已死亡 || player.dongjie) {
         await addBattleLog(`${player.名号}无法行动`);
+        continue;
+      }
+      // 行动条门控：未就绪则本拍暂不出手（速度慢者蓄势）
+      if (!isUnitReady(player)) {
+        await addBattleLog(`${player.名号}行动条未满，蓄势待发`);
         continue;
       }
         // ==== 九秘功法压制检测 ====
@@ -2727,7 +2759,10 @@ if (player.分身 && player.分身.length > 0) {
       hatred[i] += damage;
       
       await addBattleLog(`${player.名号}对${bossCopy.名号}造成${bigNumberTransform(damage)}点伤害，BOSS剩余血量：${bigNumberTransform(bossCopy.当前血量)}`);
-      
+
+      // 出手后扣减行动条（保留溢出，速度决定下次出手快慢）
+      player._actionBar -= ACTION_BAR_MAX;
+
       // 如果BOSS死亡，提前结束回合
       if (bossCopy.当前血量 <= 0) break;
     }
@@ -2772,7 +2807,8 @@ if (bossCopy.当前血量 <= 0) {
   }
 }
     
-    // ---------- BOSS阶段 ----------
+    // ---------- BOSS阶段（行动条门控：boss 就绪才出手）----------
+    if (isUnitReady(bossCopy)) {
     await addBattleLog(`【BOSS阶段】`);
     
     // ==== 尸骸仙帝：大罗剑胎·诸天寂灭 ====
@@ -3115,6 +3151,8 @@ if (bossCopy.火焰风暴) {
                 await addBattleLog(`斩杀得手，九幽魔君借冥渊之力再次出手！`);
                 await doMingyuan(t2);
               }
+              // 击杀拉条：行动条拉满，下一次出手立即降临（复用 xiuxian.js 公共函数）
+              boostActionBar(bossCopy, ACTION_BAR_MAX);
             }
           }
         }
@@ -3268,8 +3306,16 @@ if (targetPlayer.分身 && targetPlayer.分身.length > 0) {
       bossCopy.dongjie = false;
       await addBattleLog(`${bossCopy.名号}的定身状态解除`);
     }
-  }
-  
+    }
+    // boss 出手后扣减行动条（保留溢出，速度决定下次出手）
+    bossCopy._actionBar -= ACTION_BAR_MAX;
+    // 狠人大帝：仙道法则加持（如梦似幻，时间长河驻足），每次行动后 +500 进度，比肩行字秘
+    if (bossCopy.名号 === '狠人大帝') {
+      boostActionBar(bossCopy, 500);
+      await addBattleLog(`狠人大帝身影如梦似幻，时间长河恍若凝固为她驻足，自身若一道仙光划过——行动进度 +500`);
+    }
+    } // end if (isUnitReady(bossCopy))
+
   // 战斗结束处理
   if (cnt >= maxRounds) {
     await addBattleLog(`战斗超过${maxRounds}回合，强制结束！`);
