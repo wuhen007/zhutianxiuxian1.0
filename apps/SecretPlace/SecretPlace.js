@@ -116,6 +116,27 @@ async function replyPlaneDestroyed(e, planeName) {
 // 待确认请求缓存：key = 被接引/送往者QQ，value = { fromQQ, fromName, type, locationName, expire }
 const pendingJieyinMap = new Map();
 const treasureSettlementLocks = new Set();
+const sectWarSettlementLocks = new Set();
+
+const SECT_WAR_SIDE_LABELS = {
+    attacker: '攻方',
+    defender: '守方',
+    coalition: '联军',
+    neutral: '中立'
+};
+
+function getSectWarActionPower(player) {
+    const realmPower =
+        (Number(player.level_id) || 0) +
+        (Number(player.Physique_id) || 0) +
+        (Number(player.mijinglevel_id) || 0) * 2 +
+        (Number(player.xiangulevel_id) || 0) * 2 + 2;
+    return Math.max(1, Math.min(12, Math.floor(realmPower / 4) + 1));
+}
+
+function getSectWarSideName(war, side) {
+    return war?.sides?.[side]?.name || SECT_WAR_SIDE_LABELS[side] || side;
+}
 
 function treasureBattleExcerpt(messages) {
     if (!Array.isArray(messages)) return [];
@@ -311,6 +332,34 @@ export class SecretPlace extends plugin {
   fnc: 'participateRealmEvent'
 },
 {
+  reg: '^#圣战详情$',
+  fnc: 'sectWarInfo'
+},
+{
+  reg: '^#圣战站队\\s+(?:攻方|守方|联军|中立|观望)$',
+  fnc: 'joinSectWar'
+},
+{
+  reg: '^#战场行动\\s+(?:正面攻伐|护送资源|源术勘脉|潜入夺证|救援伤员)$',
+  fnc: 'sectWarAction'
+},
+{
+  reg: '^#调查战端$',
+  fnc: 'sectWarAction'
+},
+{
+  reg: '^#投入战资\\s+源石\\*[1-9]\\d*$',
+  fnc: 'supportSectWar'
+},
+{
+  reg: '^#查看战场榜$',
+  fnc: 'sectWarRanking'
+},
+{
+  reg: '^#提交战场决议\\s+(?:继续争夺|停战查真|联军攻禁区|强攻禁区|稳固封印|撤离伤员)$',
+  fnc: 'voteSectWarDecision'
+},
+{
   reg: '^#(?:观摩灵宝|查看夺宝进度|灵宝择主榜)$',
   fnc: 'treasureContestInfo'
 },
@@ -366,8 +415,8 @@ export class SecretPlace extends plugin {
     });
     this.task = {
       cron: '0 */5 * * * ?',
-      name: '先天至宝择主结算',
-      fnc: () => this.settleExpiredTreasureContests(),
+      name: '位面大事件结算',
+      fnc: () => this.settleExpiredRealmEvents(),
     };
   }
 async goToLocation(e) {
@@ -3667,6 +3716,234 @@ async coordinateMemory(e) {
     return e.reply(lines.join('\n'));
 }
 
+async sectWarPlayerContext(e, { requireReach = true, requireJoined = false } = {}) {
+    if (!verc({ e })) return null;
+    let qq = await channel(String(e.user_id).replace('qg_', ''));
+    if (!await existplayer(qq)) return null;
+    const player = await Read_player(qq);
+    const event = RealmEvents.getActiveEvent('sectWar');
+    if (!event) {
+        await e.reply('当前没有正在进行的圣地大战。');
+        return null;
+    }
+    if (requireReach && !getRealmEventReach(player, event).ok) {
+        await e.reply([
+            '你尚未抵达圣战发生的精确坐标。',
+            `地点：${formatRealmEventLocation(event)}`,
+            `赶路方式：${formatRealmEventTravel(event)}`
+        ].join('\n'));
+        return null;
+    }
+    if (requireJoined && !event.sectWar?.participants?.[String(qq)]) {
+        const sides = event.sectWar?.mode === 'frontier' ? '联军/中立' : '攻方/守方/中立';
+        await e.reply(`你尚未加入本次圣战，请先发送 #圣战站队 ${sides.split('/')[0]}（可选：${sides}）。`);
+        return null;
+    }
+    return { qq, player, event };
+}
+
+async sectWarInfo(e) {
+    if (!verc({ e })) return false;
+    let event = RealmEvents.getActiveEvent('sectWar');
+    if (!event) {
+        event = RealmEvents.getLatestSectWarEvent();
+        if (!event) return e.reply('诸天当前没有圣地大战记录。');
+        if (event.sectWar?.status !== 'settled' && Number(event.expiresAt) <= Date.now()) {
+            await this.settleSectWarEventRewards(event);
+            event = RealmEvents.getLatestSectWarEvent() || event;
+        }
+        if (event.sectWar?.outcome) {
+            return e.reply([
+                '【圣地大战·战后公报】',
+                event.sectWar.outcome.title,
+                event.sectWar.outcome.summary,
+                `战场余波：${event.sectWar.outcome.planeEffect}`,
+                '发送 #查看战场榜 查看个人战功排名。'
+            ].join('\n'));
+        }
+        return e.reply('当前没有正在进行的圣地大战。');
+    }
+
+    const war = event.sectWar;
+    const minutes = Math.max(1, Math.ceil((Number(event.expiresAt) - Date.now()) / 60000));
+    const lines = [
+        `【圣地大战·${war.phase}】`,
+        `地点：${formatRealmEventLocation(event)}`,
+        `剩余：${minutes}分钟`,
+        `导火索：${event.reason}`,
+        '',
+        `军势 ${war.meters.military}%｜辎重 ${war.meters.supplies}%`,
+        `真相 ${war.meters.truth}%｜封印 ${war.meters.seal}%`
+    ];
+    if (war.mode === 'frontier') {
+        lines.push(`联军战功：${war.scores.coalition || 0}`);
+    } else {
+        lines.push(
+            `攻方：${war.sides.attacker.name}（${war.scores.attacker || 0}）`,
+            `守方：${war.sides.defender.name}（${war.scores.defender || 0}）`
+        );
+    }
+    if (war.clues?.length) {
+        lines.push('', '【已揭露战端】', ...war.clues.map(clue => `${clue.threshold}%：${clue.text}`));
+    } else {
+        lines.push('', '战端真相尚未揭露。');
+    }
+    lines.push(
+        '',
+        war.mode === 'frontier'
+            ? '#圣战站队 联军（也可选择中立）'
+            : '#圣战站队 攻方/守方/中立',
+        '#战场行动 正面攻伐/护送资源/源术勘脉/潜入夺证/救援伤员',
+        '#投入战资 源石*数量',
+        '#查看战场榜'
+    );
+    if (Number(war.meters.truth) >= 50) {
+        lines.push(war.mode === 'frontier'
+            ? '#提交战场决议 强攻禁区/稳固封印/撤离伤员'
+            : '#提交战场决议 继续争夺/停战查真/联军攻禁区');
+    }
+    lines.push(`赶路方式：${formatRealmEventTravel(event)}`);
+    return e.reply(lines.join('\n'));
+}
+
+async joinSectWar(e) {
+    const ctx = await this.sectWarPlayerContext(e, { requireReach: true });
+    if (!ctx || !await Go(e)) return false;
+    const sideText = String(e.msg).replace(/^#圣战站队\s+/, '').trim();
+    const side = {
+        攻方: 'attacker',
+        守方: 'defender',
+        联军: 'coalition',
+        中立: 'neutral',
+        观望: 'neutral'
+    }[sideText];
+    const result = RealmEvents.joinSectWar(
+        ctx.event.timestamp,
+        ctx.qq,
+        ctx.player.名号 || ctx.player.名称,
+        side
+    );
+    if (!result.ok) {
+        if (result.reason === 'duplicate') {
+            return e.reply(`你已经加入${getSectWarSideName(ctx.event.sectWar, result.participant.side)}，不可临阵易帜。`);
+        }
+        if (result.reason === 'invalid_side') {
+            return e.reply(ctx.event.sectWar?.mode === 'frontier'
+                ? '禁区外缘事件只能选择联军或中立。'
+                : '本次龙脉争夺只能选择攻方、守方或中立。');
+        }
+        return e.reply('本次圣地大战已经结束。');
+    }
+    return e.reply([
+        '【圣战站队成功】',
+        `阵营：${getSectWarSideName(result.event.sectWar, side)}`,
+        `地点：${formatRealmEventLocation(result.event)}`,
+        '每种战场行动限完成一次，最多五次；结算同时计算阵营胜负与个人贡献。',
+        '发送 #圣战详情 查看可用行动。'
+    ].join('\n'));
+}
+
+async sectWarAction(e) {
+    const ctx = await this.sectWarPlayerContext(e, { requireReach: true, requireJoined: true });
+    if (!ctx || !await Go(e)) return false;
+    const action = e.msg === '#调查战端'
+        ? '潜入夺证'
+        : String(e.msg).replace(/^#战场行动\s+/, '').trim();
+    const result = RealmEvents.recordSectWarAction(
+        ctx.event.timestamp,
+        ctx.qq,
+        action,
+        { power: getSectWarActionPower(ctx.player) }
+    );
+    if (!result.ok) {
+        const reasons = {
+            duplicate: '这项战场行动你已经完成过了。',
+            limit: '你的五次战场行动已经全部用完。',
+            side_restricted: '中立修士不能参加正面攻伐或阵营资源护送，可调查、勘脉或救援。',
+            expired: '本次圣地大战已经结束。'
+        };
+        return e.reply(reasons[result.reason] || '当前无法执行这项战场行动。');
+    }
+    const lines = [
+        `【战场行动·${action}】`,
+        `本次获得战功：${result.contribution}`,
+        `个人总贡献：${result.participant.contribution}`,
+        `军势 ${result.event.sectWar.meters.military}%｜辎重 ${result.event.sectWar.meters.supplies}%`,
+        `真相 ${result.event.sectWar.meters.truth}%｜封印 ${result.event.sectWar.meters.seal}%`
+    ];
+    if (result.newClues.length) {
+        lines.push('', '【战场转折】', ...result.newClues.map(clue => clue.text));
+    }
+    if (Number(result.event.sectWar.meters.truth) >= 50) {
+        lines.push('', '真相已经足够清晰，可以发送 #圣战详情 查看并提交战场决议。');
+    }
+    return e.reply(lines.join('\n'));
+}
+
+async supportSectWar(e) {
+    const ctx = await this.sectWarPlayerContext(e, { requireReach: true, requireJoined: true });
+    if (!ctx) return false;
+    const amount = Number(e.msg.match(/源石\*(\d+)$/)?.[1]);
+    if (!Number.isSafeInteger(amount) || amount < 1000 || amount > 1e12) {
+        return e.reply('单次战资须为1,000至1万亿源石。');
+    }
+    if ((Number(ctx.player.源石) || 0) < amount) return e.reply('你的源石不足，无法投入这批战资。');
+    const result = RealmEvents.recordSectWarSupport(ctx.event.timestamp, ctx.qq, amount);
+    if (!result.ok) {
+        if (result.reason === 'limit') return e.reply('每场圣战最多投入三批战资。');
+        return e.reply('当前无法向本次圣战投入战资。');
+    }
+    ctx.player.源石 -= amount;
+    try {
+        await Write_player(ctx.qq, ctx.player);
+    } catch (error) {
+        RealmEvents.rollbackSectWarSupport(ctx.event.timestamp, result.supportId);
+        console.error('[圣地大战] 投入战资失败:', error);
+        return e.reply('战资交割失败，源石没有扣除。');
+    }
+    return e.reply([
+        '【圣战战资·交割完成】',
+        `投入源石：${amount.toLocaleString('zh-CN')}`,
+        `增加辎重：${result.supplies}%`,
+        `获得战功：${result.contribution}`,
+        `剩余源石：${ctx.player.源石.toLocaleString('zh-CN')}`
+    ].join('\n'));
+}
+
+async sectWarRanking(e) {
+    if (!verc({ e })) return false;
+    const event = RealmEvents.getActiveEvent('sectWar') || RealmEvents.getLatestSectWarEvent();
+    if (!event) return e.reply('当前没有圣地大战记录。');
+    const rankings = RealmEvents.getSectWarRankings(event).slice(0, 10);
+    const lines = [
+        `【${event.sectWar?.phase || '圣地大战'}·战场榜】`,
+        `地点：${formatRealmEventLocation(event)}`
+    ];
+    if (!rankings.length) lines.push('尚无人留下战功。');
+    rankings.forEach((entry, index) => lines.push(
+        `${index + 1}. ${entry.name}｜${getSectWarSideName(event.sectWar, entry.side)}｜战功${entry.contribution}`
+    ));
+    if (event.sectWar?.outcome) lines.push('', `结局：${event.sectWar.outcome.title}`);
+    return e.reply(lines.join('\n'));
+}
+
+async voteSectWarDecision(e) {
+    const ctx = await this.sectWarPlayerContext(e, { requireReach: true, requireJoined: true });
+    if (!ctx) return false;
+    const choice = String(e.msg).replace(/^#提交战场决议\s+/, '').trim();
+    const result = RealmEvents.submitSectWarDecision(ctx.event.timestamp, ctx.qq, choice);
+    if (!result.ok) {
+        if (result.reason === 'truth_locked') return e.reply('真相进度达到50%后才能提交战场决议。');
+        if (result.reason === 'invalid_choice') return e.reply('这项决议不适用于当前战场。');
+        return e.reply('当前无法提交战场决议。');
+    }
+    return e.reply([
+        '【战场决议·已提交】',
+        `你的选择：${choice}`,
+        '投票可在事件结束前修改，最终采用票数最多的方案。'
+    ].join('\n'));
+}
+
 async treasurePlayerContext(e, { requireReach = true, requireJoined = false } = {}) {
     if (!verc({ e })) return null;
     let qq = await channel(String(e.user_id).replace('qg_', ''));
@@ -3915,6 +4192,93 @@ async treasureContestDaoHeart(e) {
     ].join('\n'));
 }
 
+async settleExpiredRealmEvents() {
+    await this.settleExpiredTreasureContests();
+    await this.settleExpiredSectWars();
+}
+
+async settleExpiredSectWars() {
+    const events = RealmEvents.getSectWarEvents().filter(event => Number(event.expiresAt) <= Date.now());
+    for (const event of events) {
+        try {
+            await this.settleSectWarEventRewards(event);
+        } catch (error) {
+            console.error('[圣地大战] 事件结算失败:', error);
+        }
+    }
+}
+
+async settleSectWarEventRewards(event) {
+    const lockKey = String(event.timestamp);
+    if (sectWarSettlementLocks.has(lockKey)) return { ok: true, pending: true, event };
+    sectWarSettlementLocks.add(lockKey);
+    try {
+        const settlement = RealmEvents.settleSectWarEvent(event.timestamp);
+        if (!settlement.ok) return settlement;
+        event = settlement.event;
+        const outcome = event.sectWar?.outcome || {};
+        const rewarded = new Set((event.sectWar?.rewardedQqs || []).map(String));
+
+        if (!settlement.alreadySettled) {
+            await RealmEvents.broadcastEvent([
+                '【圣地大战·战后公报】',
+                outcome.title,
+                outcome.summary,
+                `战场余波：${outcome.planeEffect}`,
+                '发送 #查看战场榜 查看本次战功排名。'
+            ].join('\n'));
+        }
+
+        for (const entry of Object.values(event.sectWar?.participants || {})) {
+            const qq = String(entry.qq);
+            if (rewarded.has(qq)) continue;
+            try {
+                if (!await existplayer(qq)) {
+                    RealmEvents.markSectWarRewarded(event.timestamp, qq);
+                    continue;
+                }
+                const player = await Read_player(qq);
+                const settlementKey = String(event.timestamp);
+                if (player.已结算圣地大战?.includes(settlementKey)) {
+                    RealmEvents.markSectWarRewarded(event.timestamp, qq);
+                    continue;
+                }
+                const realmPower =
+                    (Number(player.level_id) || 0) +
+                    (Number(player.Physique_id) || 0) +
+                    (Number(player.mijinglevel_id) || 0) * 2 +
+                    (Number(player.xiangulevel_id) || 0) * 2 + 2;
+                const baseReward = Math.max(30000, Math.trunc(realmPower * 8000));
+                const contributionBonus = 1 + Math.min(1.5, (Number(entry.contribution) || 0) / 100);
+                const coalitionWinner = outcome.winnerSide === 'coalition' &&
+                    ['attacker', 'defender', 'coalition'].includes(entry.side);
+                const factionWinner = outcome.winnerSide === entry.side;
+                const winnerBonus = coalitionWinner || factionWinner ? 1.35 : outcome.winnerSide === 'draw' ? 1.1 : 1;
+                const reward = Math.trunc(baseReward * contributionBonus * winnerBonus);
+                const merit = Math.max(1, Math.round((Number(entry.contribution) || 0) * winnerBonus));
+                const effects = getMinggeEffects(player, data.minggeList);
+                player.修为 = (Number(player.修为) || 0) + calculateMinggeGain(reward, effects, '修炼加成');
+                player.血气 = (Number(player.血气) || 0) + reward;
+                player.圣地战功 = (Number(player.圣地战功) || 0) + merit;
+                if (event.sectWar.mode === 'frontier') {
+                    player.禁区残痕 = (Number(player.禁区残痕) || 0) + Math.max(1, Math.floor(merit / 10));
+                }
+                player.已结算圣地大战 ||= [];
+                player.已结算圣地大战.push(settlementKey);
+                player.已结算圣地大战 = player.已结算圣地大战.slice(-20);
+                await Write_player(qq, player);
+                RealmEvents.markSectWarRewarded(event.timestamp, qq);
+            } catch (error) {
+                console.error(`[圣地大战] 玩家${qq}奖励结算失败:`, error);
+            }
+        }
+        RealmEvents.getActiveEvents();
+        return settlement;
+    } finally {
+        sectWarSettlementLocks.delete(lockKey);
+    }
+}
+
 async settleExpiredTreasureContests() {
     const events = RealmEvents.getTreasureContestEvents().filter(event => Number(event.expiresAt) <= Date.now());
     for (const event of events) {
@@ -4032,6 +4396,15 @@ async participateRealmEvent(e) {
         return supported && (!requestedTypes || requestedTypes.includes(event.type));
     });
     if (events.length === 0) {
+        const sectWar = RealmEvents.getActiveEvent('sectWar');
+        if (sectWar) {
+            return e.reply([
+                '当前开放的是专属玩法【圣地大战】，不能用通用参与指令直接领奖。',
+                `战场：${formatRealmEventLocation(sectWar)}`,
+                `赶路方式：${formatRealmEventTravel(sectWar)}`,
+                '抵达后发送 #圣战详情。'
+            ].join('\n'));
+        }
         return e.reply('当前没有可以直接参与的位面大事件。发送 #大事件 可查看全部事件。');
     }
 

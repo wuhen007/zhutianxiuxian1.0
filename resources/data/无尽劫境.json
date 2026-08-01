@@ -1,0 +1,532 @@
+{
+  "version": 1,
+  "worlds": [
+    {
+      "id": "perfect",
+      "name": "乱古界海",
+      "rule": "极境：凶兽擅长狂暴与再生，拖延战斗会越来越危险。",
+      "normal": [
+        {
+          "name": "搬血凶兽",
+          "hp": 700,
+          "attack": 72,
+          "defense": 18,
+          "trait": "狂暴"
+        },
+        {
+          "name": "界海黑兽",
+          "hp": 780,
+          "attack": 68,
+          "defense": 24,
+          "trait": "再生"
+        }
+      ],
+      "elite": [
+        {
+          "name": "至尊骨猎杀者",
+          "hp": 1550,
+          "attack": 112,
+          "defense": 34,
+          "trait": "破甲"
+        }
+      ],
+      "boss": [
+        {
+          "name": "黑暗仙王残影",
+          "hp": 2800,
+          "attack": 142,
+          "defense": 46,
+          "trait": "群攻"
+        }
+      ]
+    },
+    {
+      "id": "zhetian",
+      "name": "葬帝星路",
+      "rule": "禁区：荒奴压制恢复，太古生灵拥有更密集的攻势。",
+      "normal": [
+        {
+          "name": "太古王族斥候",
+          "hp": 720,
+          "attack": 78,
+          "defense": 17,
+          "trait": "迅捷"
+        },
+        {
+          "name": "荒奴投影",
+          "hp": 850,
+          "attack": 72,
+          "defense": 27,
+          "trait": "禁疗"
+        }
+      ],
+      "elite": [
+        {
+          "name": "圣崖恶念",
+          "hp": 1650,
+          "attack": 118,
+          "defense": 36,
+          "trait": "禁疗"
+        }
+      ],
+      "boss": [
+        {
+          "name": "黑暗至尊化身",
+          "hp": 3000,
+          "attack": 150,
+          "defense": 48,
+          "trait": "破甲"
+        }
+      ]
+    },
+    {
+      "id": "flame",
+      "name": "异火天玄",
+      "rule": "焚界：部分生灵会反射伤害或吞噬破碎的玩家投影。",
+      "normal": [
+        {
+          "name": "陨落火灵",
+          "hp": 690,
+          "attack": 75,
+          "defense": 19,
+          "trait": "反射"
+        },
+        {
+          "name": "异魔腐蚀者",
+          "hp": 790,
+          "attack": 70,
+          "defense": 25,
+          "trait": "吞噬"
+        }
+      ],
+      "elite": [
+        {
+          "name": "祖符掠夺者",
+          "hp": 1600,
+          "attack": 114,
+          "defense": 38,
+          "trait": "吞噬"
+        }
+      ],
+      "boss": [
+        {
+          "name": "帝炎魔像",
+          "hp": 2900,
+          "attack": 146,
+          "defense": 44,
+          "trait": "反射"
+        }
+      ]
+    },
+    {
+      "id": "saintking",
+      "name": "恒沙地狱",
+      "rule": "地狱潮：敌人数量被压缩为一体，越到后期攻势越密集。",
+      "normal": [
+        {
+          "name": "修罗魔兵",
+          "hp": 740,
+          "attack": 76,
+          "defense": 21,
+          "trait": "狂暴"
+        },
+        {
+          "name": "地狱熔岩兽",
+          "hp": 880,
+          "attack": 69,
+          "defense": 29,
+          "trait": "再生"
+        }
+      ],
+      "elite": [
+        {
+          "name": "冥神执矛者",
+          "hp": 1700,
+          "attack": 120,
+          "defense": 40,
+          "trait": "迅捷"
+        }
+      ],
+      "boss": [
+        {
+          "name": "太古地狱领主",
+          "hp": 3150,
+          "attack": 154,
+          "defense": 50,
+          "trait": "群攻"
+        }
+      ]
+    },
+    {
+      "id": "multiverse",
+      "name": "多元危机",
+      "rule": "宇宙碰撞：迅捷怪物频繁行动，机械使徒能够反射伤害。",
+      "normal": [
+        {
+          "name": "反物质猎犬",
+          "hp": 710,
+          "attack": 80,
+          "defense": 16,
+          "trait": "迅捷"
+        },
+        {
+          "name": "共生体聚合物",
+          "hp": 820,
+          "attack": 71,
+          "defense": 26,
+          "trait": "再生"
+        }
+      ],
+      "elite": [
+        {
+          "name": "天启机械使徒",
+          "hp": 1680,
+          "attack": 116,
+          "defense": 42,
+          "trait": "反射"
+        }
+      ],
+      "boss": [
+        {
+          "name": "反物质君王投影",
+          "hp": 3050,
+          "attack": 152,
+          "defense": 49,
+          "trait": "群攻"
+        }
+      ]
+    },
+    {
+      "id": "anime",
+      "name": "万象番界",
+      "rule": "能力乱流：鬼影不断再生，咒胎会压制玩家的恢复能力。",
+      "normal": [
+        {
+          "name": "上弦鬼影",
+          "hp": 760,
+          "attack": 77,
+          "defense": 20,
+          "trait": "再生"
+        },
+        {
+          "name": "咒胎聚合体",
+          "hp": 800,
+          "attack": 74,
+          "defense": 25,
+          "trait": "禁疗"
+        }
+      ],
+      "elite": [
+        {
+          "name": "君王级魔兽",
+          "hp": 1720,
+          "attack": 119,
+          "defense": 37,
+          "trait": "吞噬"
+        }
+      ],
+      "boss": [
+        {
+          "name": "无限城噩梦之主",
+          "hp": 2950,
+          "attack": 148,
+          "defense": 45,
+          "trait": "群攻"
+        }
+      ]
+    }
+  ],
+  "abilities": [
+    {
+      "id": "perfect_supreme_bone",
+      "name": "至尊骨",
+      "world": "perfect",
+      "rarity": "稀有",
+      "tags": ["肉身", "生存"],
+      "description": "生命上限提高，首次致命伤可涅槃归来。",
+      "maxLevel": 3,
+      "effect": { "hpPct": 0.12, "revivePct": 0.18 }
+    },
+    {
+      "id": "perfect_thunder_emperor",
+      "name": "雷帝宝术",
+      "world": "perfect",
+      "rarity": "核心",
+      "tags": ["雷霆", "爆发"],
+      "description": "每三回合降下雷罚，追加一次雷霆伤害。",
+      "maxLevel": 3,
+      "effect": { "attackPct": 0.06 },
+      "proc": { "everyRounds": 3, "damagePct": 0.35, "label": "雷帝宝术" }
+    },
+    {
+      "id": "perfect_free_transformation",
+      "name": "他化自在法",
+      "world": "perfect",
+      "rarity": "禁忌",
+      "tags": ["召唤", "时间", "规则"],
+      "description": "每三回合映照一尊过去之我协同出手。",
+      "maxLevel": 3,
+      "effect": { "summonPct": 0.12 },
+      "proc": { "everyRounds": 3, "damagePct": 0.3, "label": "他化自在" }
+    },
+    {
+      "id": "zhetian_all_secret",
+      "name": "皆字秘",
+      "world": "zhetian",
+      "rarity": "核心",
+      "tags": ["爆发", "秘术"],
+      "description": "提高攻击与暴击率，偶发极境爆发。",
+      "maxLevel": 3,
+      "effect": { "attackPct": 0.08, "critChance": 0.05 }
+    },
+    {
+      "id": "zhetian_healer_secret",
+      "name": "者字秘",
+      "world": "zhetian",
+      "rarity": "稀有",
+      "tags": ["生存", "恢复", "秘术"],
+      "description": "每回合结束恢复生命，禁疗环境下效果减半。",
+      "maxLevel": 3,
+      "effect": { "regenPct": 0.025 }
+    },
+    {
+      "id": "zhetian_fight_secret",
+      "name": "斗字秘",
+      "world": "zhetian",
+      "rarity": "普通",
+      "tags": ["战技", "爆发", "秘术"],
+      "description": "演化万法，稳定提高所有直接攻击伤害。",
+      "maxLevel": 3,
+      "effect": { "attackPct": 0.12 }
+    },
+    {
+      "id": "flame_fenjue",
+      "name": "焚诀",
+      "world": "flame",
+      "rarity": "核心",
+      "tags": ["火焰", "成长"],
+      "description": "火焰能力越多，攻击提升越高。",
+      "maxLevel": 3,
+      "effect": { "attackPct": 0.08, "fireScalingPct": 0.025 }
+    },
+    {
+      "id": "flame_lotus",
+      "name": "佛怒火莲",
+      "world": "flame",
+      "rarity": "禁忌",
+      "tags": ["火焰", "爆发"],
+      "description": "每四回合引爆火莲重创敌人，同时反噬自身。",
+      "maxLevel": 3,
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.55,
+        "selfDamagePct": 0.04,
+        "label": "佛怒火莲"
+      }
+    },
+    {
+      "id": "flame_devour_symbol",
+      "name": "吞噬祖符",
+      "world": "flame",
+      "rarity": "稀有",
+      "tags": ["吞噬", "成长"],
+      "description": "每次胜利吞噬残余力量，永久提高本局攻击。",
+      "maxLevel": 3,
+      "effect": { "onWinAttackPct": 0.012 }
+    },
+    {
+      "id": "saintking_elephant",
+      "name": "神象镇狱劲",
+      "world": "saintking",
+      "rarity": "核心",
+      "tags": ["肉身", "生存", "成长"],
+      "description": "提高生命与防御，承伤后觉醒巨象微粒增强攻击。",
+      "maxLevel": 3,
+      "effect": {
+        "hpPct": 0.1,
+        "defensePct": 0.12,
+        "takeDamageAttackPct": 0.018
+      }
+    },
+    {
+      "id": "saintking_furnace",
+      "name": "地狱熔炉",
+      "world": "saintking",
+      "rarity": "稀有",
+      "tags": ["吞噬", "火焰", "生存"],
+      "description": "降低所受伤害，胜利后炼化敌人恢复生命。",
+      "maxLevel": 3,
+      "effect": { "damageReduction": 0.07, "victoryHealPct": 0.06 }
+    },
+    {
+      "id": "saintking_pure_land",
+      "name": "诸神净土",
+      "world": "saintking",
+      "rarity": "禁忌",
+      "tags": ["领域", "生存", "团队"],
+      "description": "战斗开始时为全队展开净土护盾。",
+      "maxLevel": 3,
+      "effect": { "teamShieldPct": 0.06 }
+    },
+    {
+      "id": "multi_speed_force",
+      "name": "速度力残响",
+      "world": "multiverse",
+      "rarity": "核心",
+      "tags": ["速度", "时间"],
+      "description": "提高闪避，并有概率在行动后留下残影再次攻击。",
+      "maxLevel": 3,
+      "effect": { "dodgeChance": 0.035, "extraActionChance": 0.09 }
+    },
+    {
+      "id": "multi_vector_control",
+      "name": "矢量操纵",
+      "world": "multiverse",
+      "rarity": "禁忌",
+      "tags": ["规则", "防御", "速度"],
+      "description": "概率反射来袭伤害，但无法完全解析未知规则。",
+      "maxLevel": 3,
+      "effect": {
+        "damageReduction": 0.04,
+        "reflectChance": 0.12,
+        "reflectPct": 0.45
+      }
+    },
+    {
+      "id": "multi_phoenix",
+      "name": "凤凰之力",
+      "world": "multiverse",
+      "rarity": "禁忌",
+      "tags": ["火焰", "复活", "精神"],
+      "description": "提高攻击，首次致命伤浴火重生。",
+      "maxLevel": 3,
+      "effect": { "attackPct": 0.05, "revivePct": 0.25 }
+    },
+    {
+      "id": "anime_sun_breath",
+      "name": "日之呼吸",
+      "world": "anime",
+      "rarity": "核心",
+      "tags": ["火焰", "战技", "连段"],
+      "description": "连续行动使伤害逐回合提高，倒下会令连段中断。",
+      "maxLevel": 3,
+      "effect": { "attackPct": 0.07, "comboAttackPct": 0.012 }
+    },
+    {
+      "id": "anime_transparent_world",
+      "name": "通透世界",
+      "world": "anime",
+      "rarity": "稀有",
+      "tags": ["感知", "斩杀", "战技"],
+      "description": "提高暴击与闪避，对濒死敌人造成斩杀伤害。",
+      "maxLevel": 3,
+      "effect": {
+        "critChance": 0.055,
+        "dodgeChance": 0.025,
+        "executePct": 0.04
+      }
+    },
+    {
+      "id": "anime_shadow_monarch",
+      "name": "暗影君王",
+      "world": "anime",
+      "rarity": "禁忌",
+      "tags": ["召唤", "成长", "领域"],
+      "description": "暗影军团每回合协同攻击，胜利后扩充军势。",
+      "maxLevel": 3,
+      "effect": { "summonPct": 0.17, "onWinAttackPct": 0.008 }
+    },
+    {
+      "id": "neutral_attack",
+      "name": "无尽战意",
+      "world": "neutral",
+      "rarity": "普通",
+      "tags": ["成长", "爆发"],
+      "description": "稳定提高本局攻击，可重复强化。",
+      "maxLevel": 999,
+      "effect": { "attackPct": 0.04 }
+    },
+    {
+      "id": "neutral_health",
+      "name": "不灭血气",
+      "world": "neutral",
+      "rarity": "普通",
+      "tags": ["成长", "生存"],
+      "description": "稳定提高本局生命上限，可重复强化。",
+      "maxLevel": 999,
+      "effect": { "hpPct": 0.05 }
+    },
+    {
+      "id": "neutral_defense",
+      "name": "归墟护体",
+      "world": "neutral",
+      "rarity": "普通",
+      "tags": ["成长", "防御"],
+      "description": "稳定提高本局防御，可重复强化。",
+      "maxLevel": 999,
+      "effect": { "defensePct": 0.05 }
+    }
+  ],
+  "fusions": [
+    {
+      "id": "fusion_prison_body",
+      "name": "诸天镇狱体",
+      "requires": [
+        "saintking_elephant",
+        "perfect_supreme_bone",
+        "zhetian_healer_secret"
+      ],
+      "description": "全队生命、防御与承伤爆发提高。",
+      "effect": {
+        "hpPct": 0.18,
+        "defensePct": 0.15,
+        "takeDamageAttackPct": 0.02
+      }
+    },
+    {
+      "id": "fusion_all_furnace",
+      "name": "万道焚天炉",
+      "requires": ["saintking_furnace", "flame_fenjue", "flame_devour_symbol"],
+      "description": "全队伤害提高，胜利后额外炼化恢复。",
+      "effect": { "attackPct": 0.14, "victoryHealPct": 0.08 }
+    },
+    {
+      "id": "fusion_thunder_lotus",
+      "name": "混沌雷火莲",
+      "requires": ["flame_lotus", "perfect_thunder_emperor"],
+      "description": "每四回合引爆覆盖全场的混沌雷火。",
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.65,
+        "selfDamagePct": 0.025,
+        "label": "混沌雷火莲"
+      }
+    },
+    {
+      "id": "fusion_eternal_shadow",
+      "name": "万古影朝",
+      "requires": ["perfect_free_transformation", "anime_shadow_monarch"],
+      "description": "诸世投影加入暗影军团，全队召唤伤害提高。",
+      "effect": { "summonPct": 0.3 }
+    },
+    {
+      "id": "fusion_absolute_motion",
+      "name": "绝对运动领域",
+      "requires": ["multi_speed_force", "multi_vector_control"],
+      "description": "全队重新分配运动矢量，获得闪避、反射与追加行动。",
+      "effect": {
+        "dodgeChance": 0.08,
+        "reflectChance": 0.08,
+        "reflectPct": 0.35,
+        "extraActionChance": 0.12
+      }
+    },
+    {
+      "id": "fusion_solar_rebirth",
+      "name": "恒星涅槃",
+      "requires": ["anime_sun_breath", "multi_phoenix"],
+      "description": "日轮与凤凰共鸣，提高攻击并赋予全队一次微弱涅槃。",
+      "effect": { "attackPct": 0.12, "revivePct": 0.16 }
+    }
+  ]
+}

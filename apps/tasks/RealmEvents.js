@@ -40,6 +40,85 @@ const DEFAULT_ERA_TRIGGER_CHANCE = 0.35;
 const DEFAULT_DUNGEON_TRIGGER_CHANCE = 0.002;
 const DEFAULT_EVENT_DURATION_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_ACTIVE_EVENTS = 3;
+const SECT_WAR_MAX_ACTIONS = 5;
+const SECT_WAR_MAX_SUPPORTS = 3;
+
+const SECT_WAR_ACTIONS = {
+    '正面攻伐': { military: 2, contribution: 2 },
+    '护送资源': { supplies: 2, seal: 0.5, contribution: 2 },
+    '源术勘脉': { truth: 2, seal: 1, contribution: 2 },
+    '潜入夺证': { truth: 3, seal: 0.5, contribution: 2 },
+    '救援伤员': { supplies: 1, military: 0.5, seal: 0.5, contribution: 2 }
+};
+
+const SECT_WAR_CLUES = {
+    mine: [
+        [25, '矿脉深处存在人为凿开的古老甬道，双方最初得到的矿图都不完整。'],
+        [50, '所谓神源龙脉其实是一处封印节点，争夺正在削弱地下帝阵。'],
+        [75, '封印另一端传来禁区气息；继续大战，可能唤醒沉睡在黑暗中的存在。']
+    ],
+    frontier: [
+        [25, '裂缝会吞噬神源并反哺禁区，寻常封禁只能延缓扩张。'],
+        [50, '联军发现一座血祭古坛，破坏它可以切断裂缝与禁区深处的联系。'],
+        [75, '古坛背后有至尊意志短暂复苏，联军必须在其完全醒来前作出决断。']
+    ]
+};
+
+function clampWarMeter(value) {
+    return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+}
+
+function createSectWarState({ mode, attacker, defender, coalitionMembers = [], timestamp }) {
+    const frontier = mode === 'frontier';
+    return {
+        mode,
+        status: 'open',
+        phase: frontier ? '禁区外缘联军' : '神源龙脉争夺',
+        openedAt: timestamp,
+        maxActions: SECT_WAR_MAX_ACTIONS,
+        sides: frontier ? {
+            coalition: { name: '圣地联军', members: coalitionMembers },
+            neutral: { name: '观望修士' }
+        } : {
+            attacker,
+            defender,
+            neutral: { name: '中立修士' }
+        },
+        scores: frontier
+            ? { coalition: 0, neutral: 0 }
+            : { attacker: 0, defender: 0, neutral: 0 },
+        meters: { military: 0, supplies: 0, truth: 0, seal: 0 },
+        participants: {},
+        decisionVotes: {},
+        clues: [],
+        actionLog: [],
+        supportLog: [],
+        rewardedQqs: [],
+        outcome: null
+    };
+}
+
+function rankSectWar(war) {
+    return Object.values(war?.participants || {})
+        .map(entry => ({ ...entry }))
+        .sort((a, b) =>
+            (Number(b.contribution) || 0) - (Number(a.contribution) || 0) ||
+            (Number(a.joinedAt) || 0) - (Number(b.joinedAt) || 0)
+        );
+}
+
+function revealSectWarClues(war) {
+    const known = new Set((war.clues || []).map(item => Number(item.threshold)));
+    const newlyRevealed = [];
+    for (const [threshold, text] of SECT_WAR_CLUES[war.mode] || []) {
+        if (Number(war.meters?.truth) >= threshold && !known.has(threshold)) {
+            const clue = { threshold, text };
+            war.clues.push(clue);
+            newlyRevealed.push(clue);
+        }
+    }
+    return newlyRevealed;
+}
 
 function hasPendingTreasureSettlement(event) {
     if (event?.type !== 'treasureAppear') return false;
@@ -47,6 +126,18 @@ function hasPendingTreasureSettlement(event) {
     const participants = Object.keys(event.contest?.participants || {}).length;
     const rewarded = new Set((event.contest?.rewardedQqs || []).map(String)).size;
     return rewarded < participants;
+}
+
+function hasPendingSectWarSettlement(event) {
+    if (event?.type !== 'sectWar') return false;
+    if (event.sectWar?.status !== 'settled') return true;
+    const participants = Object.keys(event.sectWar?.participants || {}).length;
+    const rewarded = new Set((event.sectWar?.rewardedQqs || []).map(String)).size;
+    return rewarded < participants;
+}
+
+function hasPendingEventSettlement(event) {
+    return hasPendingTreasureSettlement(event) || hasPendingSectWarSettlement(event);
 }
 
 function getDefaultEventConfig() {
@@ -318,7 +409,7 @@ export class RealmEvents {
     }
     
     /** 圣地战争事件 */
-    async sectWarEvent(eraIndex) {
+    async sectWarEvent(eraIndex, random = Math.random) {
         const attackerSects = [
             { name: "太初圣宗", desc: "太古传承，底蕴深厚" },
             { name: "天璇圣地", desc: "北斗星域第一势力" },
@@ -345,49 +436,63 @@ export class RealmEvents {
             { name: "天妖宫", desc: "妖帝传承" }
         ];
         
-        const reasons = [
-            "因一件帝兵归属反目", 
-            "争夺某处仙矿开采权",
-            "弟子间的私怨升级",
-            "上古恩怨的延续",
-            "信仰与道统之争",
-            "神源矿脉的归属",
-            "天骄被对方斩杀",
-            "古帝传承的归属"
+        const mineDisputes = [
+            '双方都持有残缺矿图，并宣称神源龙脉是祖上传下的疆界',
+            '一批神源矿料在交割时失踪，护送者全部被灭口',
+            '源术师发现龙脉改道，两家圣地同时封锁了矿眼',
+            '一名天骄在矿区陨落，遗留证据却同时指向交战双方'
         ];
+        const forbiddenZones = ['太初古矿外缘', '不死山外缘', '神墟边界', '轮回海旧址'];
         
-        const attacker = attackerSects[Math.floor(Math.random() * attackerSects.length)];
-        const defender = defenderSects[Math.floor(Math.random() * defenderSects.length)];
-        const reason = reasons[Math.floor(Math.random() * reasons.length)];
-        const destination = createRealmEventLocation({ plane: '遮天位面' });
+        const attacker = attackerSects[Math.floor(random() * attackerSects.length)];
+        const defender = defenderSects[Math.floor(random() * defenderSects.length)];
+        const frontier = random() < 0.3;
+        const reason = frontier
+            ? `${forbiddenZones[Math.floor(random() * forbiddenZones.length)]}出现吞噬神源的空间裂缝`
+            : mineDisputes[Math.floor(random() * mineDisputes.length)];
+        const destination = createRealmEventLocation({ plane: '遮天位面', random });
         if (!destination) return null;
-        
+        const timestamp = Date.now();
+        const coalitionMembers = frontier
+            ? [...new Set([attacker.name, defender.name, '瑶池圣地'])]
+            : [];
+        const mode = frontier ? 'frontier' : 'mine';
         const eventData = {
             type: 'sectWar',
-            attacker: attacker,
-            defender: defender,
-            reason: reason,
+            interaction: 'sectWar',
+            attacker,
+            defender,
+            reason,
             ...destination,
-            timestamp: Date.now()
+            timestamp,
+            sectWar: createSectWarState({ mode, attacker, defender, coalitionMembers, timestamp })
         };
-        
-        const message = [
-            `【风云突变·圣地大战】`,
-            ``,
-            `遮天位面惊天消息！`,
+
+        const message = frontier ? [
+            '【圣地大战·禁区外缘联军】',
+            '',
+            `${reason}！`,
+            `${coalitionMembers.join('、')}已经组成联军，封锁禁区外缘。`,
+            `集结地点：${formatRealmEventLocation(eventData)}`,
+            '联军目标：稳住裂缝、救出被困修士，并摧毁血祭古坛。',
+            '此战只在禁区外缘展开，不会直接讨伐沉睡至尊。',
+            '',
+            `赶路方式：${formatRealmEventTravel(eventData)}`,
+            '抵达后发送 #圣战详情，并以 #圣战站队 联军 加入。',
+            '事件持续24小时，军势、辎重、真相与封印进度共同决定结局。'
+        ].join('\n') : [
+            '【圣地大战·神源龙脉争夺】',
+            '',
             `${attacker.name}正式向${defender.name}宣战！`,
             `交战地点：${formatRealmEventLocation(eventData)}`,
-            ``,
-            `导火索：${reason}`,
-            ``,
+            `公开导火索：${reason}。`,
             `${attacker.name}：${attacker.desc}`,
             `${defender.name}：${defender.desc}`,
-            ``,
-            `两方势力剑拔弩张，大战一触即发！`,
-            `无数修士纷纷站队，诸天万界为之震动！`,
-            `「这是万年来最大的圣地之战！」`,
-            `「不知多少天骄将陨落于此...」`,
-            `赶路方式：${formatRealmEventTravel(eventData)}`
+            '',
+            '两方争夺神源、矿权与帝阵控制权，但矿脉深处似乎另有隐情。',
+            `赶路方式：${formatRealmEventTravel(eventData)}`,
+            '抵达后发送 #圣战详情，再以 #圣战站队 攻方/守方/中立 选择立场。',
+            '事件持续24小时；调查真相后，玩家可以推动停战或联军转攻禁区外缘。'
         ].join('\n');
         
         return { eventData, message };
@@ -780,7 +885,7 @@ export class RealmEvents {
             const now = Date.now();
             const activeEvents = (config.activeEvents || []).filter(event =>
                 !event.expiresAt || Number(event.expiresAt) > now ||
-                hasPendingTreasureSettlement(event)
+                hasPendingEventSettlement(event)
             );
             const maxActiveEvents = Math.max(1, Number(config.maxActiveEvents) || DEFAULT_MAX_ACTIVE_EVENTS);
             if (activeEvents.length >= maxActiveEvents) return null;
@@ -808,7 +913,7 @@ export class RealmEvents {
                     result = await this.merchantVisitEvent(eraIndex, random);
                     break;
                 case 'war':
-                    result = await this.sectWarEvent(eraIndex);
+                    result = await this.sectWarEvent(eraIndex, random);
                     break;
                 case 'prodigy':
                     result = await this.prodigyRiseEvent(eraIndex);
@@ -986,6 +1091,7 @@ export class RealmEvents {
         const type = event?.type || eventOrType;
         if (event?.interaction) return event.interaction;
         if (type === 'treasureAppear') return 'treasure';
+        if (type === 'sectWar') return 'sectWar';
         if (type === 'merchantVisit' && ['白须仙翁', '黑衣神秘人', '绝美仙子'].includes(event?.merchant?.name)) return 'merchant';
         if (type === 'tianmoHuashengLegacy') return 'tianmo';
         if (type === 'coordinateClue') return 'coordinate';
@@ -996,6 +1102,7 @@ export class RealmEvents {
     getEventParticipationCommand(event) {
         if (this.getEventInteraction(event) === 'treasure') return '#夺宝';
         if (this.getEventInteraction(event) === 'merchant') return `#${event.merchant.name}`;
+        if (this.getEventInteraction(event) === 'sectWar') return '#圣战详情';
         if (this.getEventInteraction(event) === 'tianmo') return '#进入万相魔冢';
         if (this.getEventInteraction(event) === 'coordinate') {
             return `#探索位面线索 ${event.location}`;
@@ -1014,7 +1121,7 @@ export class RealmEvents {
         const config = this.readEventConfig();
         const activeEvents = (config.activeEvents || []).filter(event =>
             !event.expiresAt || Number(event.expiresAt) > now ||
-            hasPendingTreasureSettlement(event)
+            hasPendingEventSettlement(event)
         );
         if (activeEvents.length !== (config.activeEvents || []).length) {
             config.activeEvents = activeEvents;
@@ -1131,6 +1238,276 @@ export class RealmEvents {
         const key = String(qq);
         if (!contest.rewardedQqs.includes(key)) contest.rewardedQqs.push(key);
         this._syncTreasureHistory(config, event);
+        this.saveEventConfig(config);
+        return true;
+    }
+
+    _ensureSectWar(event) {
+        if (!event.sectWar || typeof event.sectWar !== 'object') {
+            event.sectWar = createSectWarState({
+                mode: 'mine',
+                attacker: event.attacker || { name: '攻方圣地' },
+                defender: event.defender || { name: '守方圣地' },
+                timestamp: Number(event.timestamp) || Date.now()
+            });
+        }
+        event.sectWar.participants ||= {};
+        event.sectWar.decisionVotes ||= {};
+        event.sectWar.clues ||= [];
+        event.sectWar.actionLog ||= [];
+        event.sectWar.supportLog ||= [];
+        event.sectWar.rewardedQqs ||= [];
+        return event.sectWar;
+    }
+
+    _findSectWarEvent(config, timestamp) {
+        return (config.activeEvents || []).find(item =>
+            item.type === 'sectWar' && Number(item.timestamp) === Number(timestamp)
+        ) || null;
+    }
+
+    _syncSectWarHistory(config, event) {
+        const historyEvent = (config.eventHistory || []).find(item =>
+            item.type === 'sectWar' && Number(item.timestamp) === Number(event.timestamp)
+        );
+        if (!historyEvent) return;
+        historyEvent.sectWar = JSON.parse(JSON.stringify(event.sectWar));
+        historyEvent.participantQqs = Object.keys(event.sectWar?.participants || {});
+    }
+
+    getSectWarEvents(includeSettled = false) {
+        const config = this.readEventConfig();
+        return (config.activeEvents || []).filter(event =>
+            event.type === 'sectWar' && (includeSettled || hasPendingSectWarSettlement(event))
+        );
+    }
+
+    getLatestSectWarEvent() {
+        const events = this.getSectWarEvents(true);
+        if (events.length) return events.sort((a, b) => Number(b.timestamp) - Number(a.timestamp))[0];
+        return this.getEventHistory(100).find(event => event.type === 'sectWar') || null;
+    }
+
+    getSectWarRankings(event) {
+        return rankSectWar(event?.sectWar);
+    }
+
+    joinSectWar(timestamp, qq, name, side, now = Date.now()) {
+        const config = this.readEventConfig();
+        const event = this._findSectWarEvent(config, timestamp);
+        if (!event || Number(event.expiresAt) <= now) return { ok: false, reason: 'expired' };
+        const war = this._ensureSectWar(event);
+        if (war.status !== 'open') return { ok: false, reason: 'settled' };
+        const allowedSides = war.mode === 'frontier'
+            ? ['coalition', 'neutral']
+            : ['attacker', 'defender', 'neutral'];
+        if (!allowedSides.includes(side)) return { ok: false, reason: 'invalid_side' };
+        const key = String(qq);
+        if (war.participants[key]) return { ok: false, reason: 'duplicate', participant: war.participants[key] };
+        war.participants[key] = {
+            qq: key,
+            name: name || `修士${key}`,
+            side,
+            contribution: 0,
+            sourceStones: 0,
+            supportCount: 0,
+            actions: [],
+            joinedAt: now
+        };
+        event.participantQqs = Object.keys(war.participants);
+        this._syncSectWarHistory(config, event);
+        this.saveEventConfig(config);
+        return { ok: true, event, participant: war.participants[key] };
+    }
+
+    recordSectWarAction(timestamp, qq, action, options = {}, now = Date.now()) {
+        const config = this.readEventConfig();
+        const event = this._findSectWarEvent(config, timestamp);
+        if (!event || Number(event.expiresAt) <= now) return { ok: false, reason: 'expired' };
+        const war = this._ensureSectWar(event);
+        const participant = war.participants[String(qq)];
+        const effect = SECT_WAR_ACTIONS[action];
+        if (!participant) return { ok: false, reason: 'not_joined' };
+        if (!effect) return { ok: false, reason: 'invalid_action' };
+        if (participant.actions.length >= SECT_WAR_MAX_ACTIONS) return { ok: false, reason: 'limit' };
+        if (participant.actions.some(item => item.name === action)) return { ok: false, reason: 'duplicate' };
+        if (participant.side === 'neutral' && ['正面攻伐', '护送资源'].includes(action)) {
+            return { ok: false, reason: 'side_restricted' };
+        }
+
+        const power = Math.max(1, Math.min(12, Math.round(Number(options.power) || 1)));
+        const meterGains = {};
+        for (const meter of ['military', 'supplies', 'truth', 'seal']) {
+            const gain = Math.round((Number(effect[meter]) || 0) * power);
+            meterGains[meter] = gain;
+            war.meters[meter] = clampWarMeter((Number(war.meters[meter]) || 0) + gain);
+        }
+        const contribution = Math.max(1, Math.round((Number(effect.contribution) || 1) * power));
+        participant.contribution += contribution;
+        participant.actions.push({ name: action, contribution, at: now });
+        war.scores[participant.side] = (Number(war.scores[participant.side]) || 0) + contribution;
+        war.actionLog.push({ qq: String(qq), name: participant.name, side: participant.side, action, contribution, at: now });
+        war.actionLog = war.actionLog.slice(-100);
+        const newClues = revealSectWarClues(war);
+        this._syncSectWarHistory(config, event);
+        this.saveEventConfig(config);
+        return { ok: true, event, participant, contribution, meterGains, newClues };
+    }
+
+    recordSectWarSupport(timestamp, qq, amount, now = Date.now()) {
+        const config = this.readEventConfig();
+        const event = this._findSectWarEvent(config, timestamp);
+        if (!event || Number(event.expiresAt) <= now) return { ok: false, reason: 'expired' };
+        const war = this._ensureSectWar(event);
+        const participant = war.participants[String(qq)];
+        if (!participant) return { ok: false, reason: 'not_joined' };
+        if (participant.supportCount >= SECT_WAR_MAX_SUPPORTS) return { ok: false, reason: 'limit' };
+        amount = Math.trunc(Number(amount));
+        if (!Number.isSafeInteger(amount) || amount < 1000 || amount > 1e12) {
+            return { ok: false, reason: 'invalid_amount' };
+        }
+        const contribution = Math.max(1, Math.min(30, Math.round(Math.log10(amount / 1000 + 1) * 6)));
+        const supplies = Math.max(1, Math.round(contribution * 1.5));
+        const seal = war.mode === 'frontier' ? Math.max(1, Math.round(contribution / 3)) : 0;
+        const supportId = `${qq}:${now}:${war.supportLog.length}`;
+        participant.sourceStones += amount;
+        participant.supportCount += 1;
+        participant.contribution += contribution;
+        war.scores[participant.side] = (Number(war.scores[participant.side]) || 0) + contribution;
+        war.meters.supplies = clampWarMeter(war.meters.supplies + supplies);
+        war.meters.seal = clampWarMeter(war.meters.seal + seal);
+        war.supportLog.push({ id: supportId, qq: String(qq), side: participant.side, amount, contribution, supplies, seal, at: now });
+        this._syncSectWarHistory(config, event);
+        this.saveEventConfig(config);
+        return { ok: true, event, participant, supportId, contribution, supplies, seal };
+    }
+
+    rollbackSectWarSupport(timestamp, supportId) {
+        const config = this.readEventConfig();
+        const event = this._findSectWarEvent(config, timestamp);
+        if (!event) return false;
+        const war = this._ensureSectWar(event);
+        const index = war.supportLog.findIndex(item => item.id === supportId);
+        if (index < 0) return false;
+        const support = war.supportLog[index];
+        const participant = war.participants[support.qq];
+        if (participant) {
+            participant.sourceStones = Math.max(0, participant.sourceStones - support.amount);
+            participant.supportCount = Math.max(0, participant.supportCount - 1);
+            participant.contribution = Math.max(0, participant.contribution - support.contribution);
+        }
+        war.scores[support.side] = Math.max(0, (Number(war.scores[support.side]) || 0) - support.contribution);
+        war.meters.supplies = clampWarMeter(war.meters.supplies - support.supplies);
+        war.meters.seal = clampWarMeter(war.meters.seal - support.seal);
+        war.supportLog.splice(index, 1);
+        this._syncSectWarHistory(config, event);
+        this.saveEventConfig(config);
+        return true;
+    }
+
+    submitSectWarDecision(timestamp, qq, choice, now = Date.now()) {
+        const config = this.readEventConfig();
+        const event = this._findSectWarEvent(config, timestamp);
+        if (!event || Number(event.expiresAt) <= now) return { ok: false, reason: 'expired' };
+        const war = this._ensureSectWar(event);
+        const participant = war.participants[String(qq)];
+        if (!participant) return { ok: false, reason: 'not_joined' };
+        if (Number(war.meters.truth) < 50) return { ok: false, reason: 'truth_locked' };
+        const choices = war.mode === 'frontier'
+            ? ['强攻禁区', '稳固封印', '撤离伤员']
+            : ['继续争夺', '停战查真', '联军攻禁区'];
+        if (!choices.includes(choice)) return { ok: false, reason: 'invalid_choice' };
+        war.decisionVotes[String(qq)] = choice;
+        this._syncSectWarHistory(config, event);
+        this.saveEventConfig(config);
+        return { ok: true, event, choice };
+    }
+
+    settleSectWarEvent(timestamp, now = Date.now()) {
+        const config = this.readEventConfig();
+        const event = this._findSectWarEvent(config, timestamp);
+        if (!event) return { ok: false, reason: 'missing' };
+        if (Number(event.expiresAt) > now) return { ok: false, reason: 'open', event };
+        const war = this._ensureSectWar(event);
+        if (war.status === 'settled') return { ok: true, event, alreadySettled: true };
+
+        const voteCounts = Object.values(war.decisionVotes).reduce((counts, choice) => {
+            counts[choice] = (counts[choice] || 0) + 1;
+            return counts;
+        }, {});
+        const decision = Object.entries(voteCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+        let outcome;
+        if (war.mode === 'frontier') {
+            const military = Number(war.meters.military) || 0;
+            const supplies = Number(war.meters.supplies) || 0;
+            const seal = Number(war.meters.seal) || 0;
+            const success = decision === '强攻禁区'
+                ? military >= 60 && seal >= 40
+                : decision === '撤离伤员'
+                    ? supplies >= 50 && seal >= 40
+                    : seal >= 50 && supplies >= 30;
+            outcome = success ? {
+                type: 'frontier_success',
+                title: decision === '撤离伤员' ? '联军护送众修士安全撤离' : '禁区裂缝被暂时镇封',
+                summary: '血祭古坛被毁，联军守住了禁区外缘。',
+                winnerSide: 'coalition',
+                planeEffect: '禁区外缘暂时恢复平静',
+                decision: decision || '稳固封印'
+            } : {
+                type: 'frontier_failure',
+                title: '禁区裂缝冲破联军封锁',
+                summary: '联军保住主力后撤，但禁区气息仍在外溢。',
+                winnerSide: null,
+                planeEffect: '遮天位面仍有禁区气息外溢',
+                decision: decision || '稳固封印'
+            };
+        } else if (Number(war.meters.truth) >= 50 && ['停战查真', '联军攻禁区'].includes(decision)) {
+            outcome = {
+                type: decision === '联军攻禁区' ? 'forbidden_coalition' : 'ceasefire',
+                title: decision === '联军攻禁区' ? '两大圣地结成禁区联军' : '双方停战共查封印',
+                summary: decision === '联军攻禁区'
+                    ? '争夺矿脉的兵锋转向禁区外缘，血战暂时止息。'
+                    : '双方共同修补帝阵，神源龙脉免于崩毁。',
+                winnerSide: 'coalition',
+                planeEffect: decision === '联军攻禁区' ? '双方兵锋已经转向禁区外缘' : '神源龙脉的地下封印恢复稳定',
+                decision
+            };
+        } else {
+            const attackScore = Number(war.scores.attacker) || 0;
+            const defendScore = Number(war.scores.defender) || 0;
+            const winnerSide = attackScore === defendScore ? 'draw' : attackScore > defendScore ? 'attacker' : 'defender';
+            const winnerName = winnerSide === 'draw' ? '双方' : war.sides[winnerSide]?.name;
+            outcome = {
+                type: winnerSide === 'draw' ? 'draw' : 'faction_victory',
+                title: winnerSide === 'draw' ? '双方罢兵，矿脉暂归无主' : `${winnerName}控制神源龙脉`,
+                summary: winnerSide === 'draw'
+                    ? '双方伤亡惨重，只得各自退回山门。'
+                    : `${winnerName}夺得矿权与外围帝阵控制权。`,
+                winnerSide,
+                planeEffect: '神源矿脉归属已经改变',
+                decision: decision || '继续争夺'
+            };
+        }
+
+        war.status = 'settled';
+        war.settledAt = now;
+        war.outcome = outcome;
+        war.rankings = rankSectWar(war);
+        event.participantQqs = Object.keys(war.participants);
+        this._syncSectWarHistory(config, event);
+        this.saveEventConfig(config);
+        return { ok: true, event, outcome };
+    }
+
+    markSectWarRewarded(timestamp, qq) {
+        const config = this.readEventConfig();
+        const event = this._findSectWarEvent(config, timestamp);
+        if (!event) return false;
+        const war = this._ensureSectWar(event);
+        if (war.status !== 'settled') return false;
+        const key = String(qq);
+        if (!war.rewardedQqs.includes(key)) war.rewardedQqs.push(key);
+        this._syncSectWarHistory(config, event);
         this.saveEventConfig(config);
         return true;
     }

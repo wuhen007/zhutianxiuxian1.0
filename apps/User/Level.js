@@ -57,6 +57,7 @@ import {
 } from './wudaoRules.js';
 import { findWudaoTeaItem } from './wudaoTea.js';
 import { clearInterval } from 'timers';
+import { getRedDustDaoFruit, getRedDustPath, getRedDustVow } from '../../model/redDustPath.js';
 
 function consumeBreakthroughPill(player) {
   if (player.breakthrough !== true) return 0;
@@ -245,7 +246,7 @@ async nihuojiushi(e) {
         return;
     }
     
-    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const usr_qq = (await channel(e.user_id.toString().replace('qg_', ''))).toString();
     const player = await Read_player(usr_qq);
     
     // 获取当前时代信息
@@ -261,8 +262,19 @@ async nihuojiushi(e) {
     }
     
     if (player.mijinglevel_id >= 17) {
-        e.reply(`你已成就红尘仙，无需再行逆活`);
-        return;
+      e.reply(`你已成就红尘仙，无需再行逆活`);
+      return;
+    }
+
+    const redDustPath = getRedDustPath(player);
+    if (!redDustPath?.unlocked) {
+      e.reply('你尚未知晓红尘仙法。请先使用【#打听天机 红尘仙】，再推演本世生门。');
+      return;
+    }
+    const redDustVow = getRedDustVow(redDustPath.vow);
+    if (!redDustVow) {
+      e.reply('本世尚未立下世愿。请先使用【#推演红尘仙】，再选择【#立下世愿 化凡/争渡/逆天】。');
+      return;
     }
     
     // 时间间隔限制（五千年冷却）
@@ -298,7 +310,7 @@ async nihuojiushi(e) {
         if (currentPotential < potentialCost) {
             e.reply([
                 `【仙道潜力不足·逆活受阻】`,
-                `${player.名号}欲逆天改命，第${currentLife}世轮回却力不从心！`,
+                `${player.名号}欲逆天改命，第${currentLife}世蜕变却力不从心！`,
                 `当前仙道潜力：${currentPotential} 点`,
                 `第${currentLife}世逆活所需：${potentialCost} 点`,
                 `「每逆活一世，需耗费更多仙道潜力，命运之门对你暂时关闭。」`
@@ -310,7 +322,10 @@ async nihuojiushi(e) {
     
     // 计算消耗资源
     const baseExpCost = 1500000000 * Math.pow(2, currentLife-1);
-    const actualExpCost = applyQuestionFortuneCost(player, Math.ceil(baseExpCost * difficulty));
+    const actualExpCost = applyQuestionFortuneCost(
+      player,
+      Math.ceil(baseExpCost * difficulty * redDustVow.costRate)
+    );
     
     // 资源检查
     if (player.修为 < actualExpCost || player.血气 < actualExpCost) {
@@ -346,17 +361,22 @@ async nihuojiushi(e) {
     ];
     
     const demon = demons[currentLife-1];
-    const demonPower = Math.round(demon.power * 10000000 * difficulty);
+    const ashRelief = Math.max(0.8, 1 - redDustPath.ashes * 0.02);
+    const demonPower = Math.round(
+      demon.power * 10000000 * difficulty * redDustVow.demonRate * ashRelief
+    );
     
     await e.reply([
         `第${currentLife}世逆活开启！`,
         `时代背景：${eraNames[currentEra.index]}`,
         `消耗修为/血气：${actualExpCost.toLocaleString()}`,
         `难度系数：${difficulty}×`,
+        `本世世愿：${redDustVow.name}`,
         `面对心魔：${demon.name}`,
         `「${demon.desc}」`,
-        `心魔威能：${bigNumberTransform(demonPower)}`
-    ].join("\n"));
+        `心魔威能：${bigNumberTransform(demonPower)}`,
+        redDustPath.ashes ? `劫灰化去${Math.round((1 - ashRelief) * 100)}%心魔威能` : ''
+    ].filter(Boolean).join("\n"));
     
     await sleep(3000);
     
@@ -367,6 +387,8 @@ async nihuojiushi(e) {
         const penaltyRate = difficulty * currentLife * 0.1;
         const lostHp = Math.round(player.当前血量 * penaltyRate);
         player.当前血量 = Math.max(1, player.当前血量 - lostHp);
+        redDustPath.ashes += 1;
+        player.红尘仙路 = redDustPath;
         
         await Write_player(usr_qq, player);
         
@@ -374,6 +396,7 @@ async nihuojiushi(e) {
             `逆活失败！道痕破碎`,
             `失去气血：${bigNumberTransform(lostHp)}`,
             `境界动摇：${currentLife}世道痕消散`,
+            `劫灰 +1，下次心魔威能降低2%`,
             `心魔低语："你逃不过最终的寂灭"`
         ].join("\n"));
         return;
@@ -405,8 +428,11 @@ async nihuojiushi(e) {
             if (!resurrected) {
                 tribulationLog.push(
                     `第${wave}道雷劫后道基崩碎｜累计承伤${bigNumberTransform(roundDamage)}`,
-                    `【逆活失败】第${currentLife}世未能渡过雷劫`
+                    `【逆活失败】第${currentLife}世未能渡过雷劫`,
+                    '劫灰 +1，下次心魔威能降低2%'
                 );
+                redDustPath.ashes += 1;
+                player.红尘仙路 = redDustPath;
                 await ForwardMsg(e, tribulationLog);
                 tribulation.clearTempEffects(player);
                 await Write_player(usr_qq, player);
@@ -430,6 +456,15 @@ async nihuojiushi(e) {
     
     // 逆活成功
     player.nihuo_count = currentLife + 1;
+
+    redDustPath.seals = [
+      ...redDustPath.seals,
+      { life: currentLife, vow: redDustVow.id, completedAt: Date.now() },
+    ];
+    redDustPath.life = currentLife + 1;
+    redDustPath.vow = null;
+    redDustPath.ashes = 0;
+    player.红尘仙路 = redDustPath;
     
     // 扣除仙道潜力（逆活成功后扣除，第currentLife世消耗currentLife点）
     player.仙道潜力 = Math.max(
@@ -438,9 +473,9 @@ async nihuojiushi(e) {
     );
     
     // 属性增强
-    const powerGain = Math.round(30 * difficulty * Math.sqrt(currentLife)*500000000);
-    const powerGain2 = Math.round(30 * difficulty * Math.sqrt(currentLife)*500000000);
-    const powerGain3 = Math.round(30 * difficulty * Math.sqrt(currentLife)*500000000);
+    const powerGain = Math.round(30 * difficulty * Math.sqrt(currentLife) * 500000000 * redDustVow.gainRate);
+    const powerGain2 = Math.round(30 * difficulty * Math.sqrt(currentLife) * 500000000 * redDustVow.gainRate);
+    const powerGain3 = Math.round(30 * difficulty * Math.sqrt(currentLife) * 500000000 * redDustVow.gainRate);
     player.攻击加成 += powerGain;
     player.防御加成 += powerGain2;
     player.生命加成 += powerGain3;
@@ -449,6 +484,7 @@ async nihuojiushi(e) {
     if (currentLife === 9) {
         player.mijinglevel_id = 17;
         player.境界称号 = "红尘仙";
+        player.红尘道果 = getRedDustDaoFruit(redDustPath.seals);
         
         // 红尘仙特性
         player.长生特性 = true;
@@ -457,10 +493,11 @@ async nihuojiushi(e) {
 
         await e.reply([
             `九世圆满！红尘为仙！`,
+            `九世所行汇聚为：【${player.红尘道果}】`,
             `跳出生死轮回，超脱岁月长河`,
             `掌缘生灭，万古长存`,
             `《葬仙纪元》记载：`,
-           `「${player.名号}历九世轮回，于${eraNames[currentEra.index]}超脱红尘，成就不灭仙基」`
+           `「${player.名号}活出九世，于${eraNames[currentEra.index]}超脱红尘，成就不灭仙基」`
         ].join("\n"));
     } else {
         await e.reply([
@@ -469,7 +506,7 @@ async nihuojiushi(e) {
             `  攻击 +${bigNumberTransform(powerGain)}`,
             `  防御 +${bigNumberTransform(powerGain)}`,
             `  生命 +${bigNumberTransform(powerGain)}`,
-            `距红尘仙还需：${9 - currentLife}世轮回`,
+            `距红尘仙还需：${9 - currentLife}世蜕变`,
             `当前仙基：${currentLife}/9`,
             `下次逆活需等待：5000年后`
         ].join("\n"));

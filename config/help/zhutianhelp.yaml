@@ -88,6 +88,18 @@
       title: '#打听天机'
       desc: '花五百万斤源石打听天机' 
     - icon: help-icon_2
+      title: '#打听天机 红尘仙'
+      desc: '向天机老人追问红尘仙法总纲，开启九世仙路'
+    - icon: help-icon_2
+      title: '#推演红尘仙'
+      desc: '查看当前一世的命题、生门与可选择的世愿'
+    - icon: help-icon_2
+      title: '#立下世愿 化凡/争渡/逆天'
+      desc: '选择本世逆活方式，不同世愿会改变消耗与心魔强度'
+    - icon: help-icon_2
+      title: '#我的红尘仙路'
+      desc: '查看九世道痕、当前世愿与逆活进度'
+    - icon: help-icon_2
       title: '#探索狠人道场'
       desc: ' 探索狠人大帝的道场，需要打听到对应情报和各大体质的精血，具备唯一性'
     - icon: help-icon_2
