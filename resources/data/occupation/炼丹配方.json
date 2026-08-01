@@ -378,5 +378,30 @@
     "rate": 1,
     "level_limit": 20,
     "exp": [55555, 55555]
+  },
+  {
+    "name": "极道丹",
+    "type": "仙道潜力",
+    "materials": [
+      {
+        "name": "太玄仙草",
+        "amount": 50
+      },
+      {
+        "name": "万年太玄果",
+        "amount": 50
+      },
+      {
+        "name": "万年天魂菊",
+        "amount": 50
+      },
+      {
+        "name": "绝天白灵芝",
+        "amount": 20
+      }
+    ],
+    "rate": 1,
+    "level_limit": 20,
+    "exp": [55555, 55555]
   }
 ]
