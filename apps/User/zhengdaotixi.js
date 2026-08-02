@@ -2661,7 +2661,34 @@ async handleTeach(e, isAll = false) {
         e.reply('你的道行不够，还没有传道授业为别人指点修行的能力');
         return true;
     }
-    
+
+    // === 传授冷却检查（累计10门功法后进入24小时冷却） ===
+    const TEACH_COOLDOWN_HOURS = 24;
+    const TEACH_COUNT_THRESHOLD = 10;
+    const teachCDKey = `xiuxian:player:${casterQQ}:teach_cooldown_until`;
+    const teachCountKey = `xiuxian:player:${casterQQ}:teach_count`;
+    const teachCDUntil = await redis.get(teachCDKey);
+    if (teachCDUntil) {
+        const remainingMs = parseInt(teachCDUntil) - Date.now();
+        if (remainingMs > 0) {
+            const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
+            e.reply([
+                `〖传道冷却·元神未复〗`,
+                `你已累计传授${TEACH_COUNT_THRESHOLD}门功法，元神大损！`,
+                `需等待 ${remainingHours} 小时后元神恢复方可再次传道。`,
+                `「传道授业虽积功德，亦不可竭泽而渔」`
+            ].join('\n'));
+            return true;
+        }
+        // 冷却已过期，清除
+        await redis.del(teachCDKey);
+        await redis.del(teachCountKey);
+    }
+
+    // === 元神消耗公式（按功法难度平方递增） ===
+    // level 0(武学)=10万, 5(帝经)=360万, 8(仙帝法)=810万, 9(神慧者)=1000万
+    const spiritCostForLevel = (level) => 100000 * (level + 1) * (level + 1);
+
     // === 传授者天资（当前只用于日志，不影响传授判断） ===
     const casterAptitude = { grade: caster.天资等级 || '平庸之资' };
     
@@ -2938,6 +2965,20 @@ async handleTeach(e, isAll = false) {
             return true;
         }
         
+        // === 施法者元神消耗（按功法难度递增） ===
+        const casterSpiritCost = spiritCostForLevel(gongfaLevel);
+        const casterYuanShen = caster.元神 || 0;
+        if (casterYuanShen < casterSpiritCost) {
+            e.reply([
+                `〖元神不足·传道受阻〗`,
+                `传授【${gongfaName}】需消耗元神 ${casterSpiritCost.toLocaleString()}，`,
+                `你当前元神仅 ${casterYuanShen.toLocaleString()}，无法支撑此次传道！`,
+                ``,
+                `「元神乃修士根本，传道耗损甚巨」`
+            ].join('\n'));
+            return true;
+        }
+
         // === 仙道潜力检查（被传授方消耗） ===
         {
             const potentialCost = gongfaLevel + 1; // 难度越高消耗越多（武学1点，神慧者10点）
@@ -2962,7 +3003,10 @@ async handleTeach(e, isAll = false) {
         // === 传授成功 ===
         await Add_player_学习功法(targetQQ, gongfaName);
         await player_efficiency(targetQQ);
-        
+
+        // 扣除施法者元神
+        caster.元神 = casterYuanShen - casterSpiritCost;
+
         // 添加传授记录
         caster.传授记录 = caster.传授记录 || [];
         caster.传授记录.push({
@@ -2970,16 +3014,38 @@ async handleTeach(e, isAll = false) {
             目标: target.名号,
             功法: gongfaName,
             成功率: `${(successRate * 100).toFixed(0)}%`,
-            结果: "成功"
+            结果: "成功",
+            元神消耗: casterSpiritCost
         });
         await Write_player(casterQQ, caster);
+
+        // === 累计传授计数与冷却触发 ===
+        let teachCount = parseInt(await redis.get(teachCountKey) || '0') + 1;
+        await redis.set(teachCountKey, teachCount.toString());
+        let cooldownTriggered = false;
+        if (teachCount >= TEACH_COUNT_THRESHOLD) {
+            const cooldownUntil = Date.now() + TEACH_COOLDOWN_HOURS * 60 * 60 * 1000;
+            await redis.set(teachCDKey, cooldownUntil.toString());
+            await redis.del(teachCountKey);
+            cooldownTriggered = true;
+        }
         
         // 构建成功消息
         let successMsg = [
             `〖功法传授〗`,
             `${caster.名号}将毕生所学【${gongfaName}】倾囊相授`,
-            `${target.名号}灵台清明，如获新生！`
+            `${target.名号}灵台清明，如获新生！`,
+            ``,
+            `〖传道代价〗`,
+            `元神消耗：${casterSpiritCost.toLocaleString()}（剩余 ${caster.元神.toLocaleString()}）`,
+            `累计传授：${teachCount}/${TEACH_COUNT_THRESHOLD} 门`
         ];
+
+        if (cooldownTriggered) {
+            successMsg.push(`〖元神大损·传道冷却〗`);
+            successMsg.push(`累计传授已达${TEACH_COUNT_THRESHOLD}门，元神透支！`);
+            successMsg.push(`进入${TEACH_COOLDOWN_HOURS}小时冷却，期间无法再传授功法。`);
+        }
         
         if (targetAptitude.grade === '生而愚痴') {
             successMsg.push(`〖奇迹发生〗生而愚痴者竟能领悟此功法，实乃天意！`);
@@ -3002,8 +3068,10 @@ async handleTeach(e, isAll = false) {
     const failedBySpecial = [];
     const failedByLuck = [];
     const failedByPotential = []; // 新增：仙道潜力不足
+    const failedBySpirit = []; // 元神不足跳过
     const specialSuccess = [];
     let remainingPotential = target.仙道潜力 || 0; // 实时追踪目标剩余潜力
+    let totalSpiritCost = 0; // 施法者元神总消耗（实时追踪）
     
     for (const gongfaName of caster.学习的功法) {
         // 检查目标是否已学习
@@ -3104,6 +3172,15 @@ async handleTeach(e, isAll = false) {
         }
         remainingPotential -= potentialCost; // 预扣，真正扣除在传授成功后统一处理
 
+        // === 施法者元神检查（批量，实时追踪剩余元神） ===
+        const spiritCost = spiritCostForLevel(gongfaLevel);
+        const casterYuanShenRemaining = (caster.元神 || 0) - totalSpiritCost;
+        if (casterYuanShenRemaining < spiritCost) {
+            failedBySpirit.push(`${gongfaName}(元神不足)`);
+            continue;
+        }
+        totalSpiritCost += spiritCost; // 预扣，真正扣除在传授成功后统一处理
+
         // 可以传授
         teachableGongfa.push(gongfaName);
         
@@ -3141,6 +3218,10 @@ async handleTeach(e, isAll = false) {
             message.push(`潜力不足：${failedByPotential.length}门（${target.名号}仙道潜力不足，需补充后再试）`);
         }
         
+        if (failedBySpirit.length > 0) {
+            message.push(`元神不足：${failedBySpirit.length}门（施法者元神不够支撑传授）`);
+        }
+        
         e.reply(message.join('\n'));
         return true;
     }
@@ -3154,7 +3235,10 @@ async handleTeach(e, isAll = false) {
     // 扣除目标玩家仙道潜力（统一结算：remainingPotential已是预扣后的值）
     target.仙道潜力 = remainingPotential;
     await Write_player(targetQQ, target);
-    
+
+    // 扣除施法者元神
+    caster.元神 = (caster.元神 || 0) - totalSpiritCost;
+
     // 添加传授记录
     caster.传授记录 = caster.传授记录 || [];
     caster.传授记录.push({
@@ -3162,9 +3246,22 @@ async handleTeach(e, isAll = false) {
         目标: target.名号,
         功法: '批量传授',
         传授数量: teachableGongfa.length,
-        成功率: `${((teachableGongfa.length / (teachableGongfa.length + failedByLuck.length)) * 100).toFixed(0)}%`
+        成功率: `${((teachableGongfa.length / (teachableGongfa.length + failedByLuck.length)) * 100).toFixed(0)}%`,
+        元神消耗: totalSpiritCost
     });
     await Write_player(casterQQ, caster);
+
+    // === 累计传授计数与冷却触发 ===
+    let teachCount = parseInt(await redis.get(teachCountKey) || '0') + teachableGongfa.length;
+    let cooldownTriggered = false;
+    if (teachCount >= TEACH_COUNT_THRESHOLD) {
+        const cooldownUntil = Date.now() + TEACH_COOLDOWN_HOURS * 60 * 60 * 1000;
+        await redis.set(teachCDKey, cooldownUntil.toString());
+        await redis.del(teachCountKey);
+        cooldownTriggered = true;
+    } else {
+        await redis.set(teachCountKey, teachCount.toString());
+    }
     
     // === 构建结果消息 ===
     const message = [
@@ -3221,6 +3318,20 @@ async handleTeach(e, isAll = false) {
         message.push(`潜力不足跳过：${failedByPotential.length}门`);
     }
     
+    if (failedBySpirit.length > 0) {
+        message.push(`元神不足跳过：${failedBySpirit.length}门`);
+    }
+    
+    message.push(``);
+    message.push(`〖传道代价〗`);
+    message.push(`元神消耗：${totalSpiritCost.toLocaleString()}（剩余 ${caster.元神.toLocaleString()}）`);
+    message.push(`累计传授：${teachCount}/${TEACH_COUNT_THRESHOLD} 门`);
+
+    if (cooldownTriggered) {
+        message.push(`〖元神大损·传道冷却〗`);
+        message.push(`累计传授已达${TEACH_COUNT_THRESHOLD}门，元神透支！`);
+        message.push(`进入${TEACH_COOLDOWN_HOURS}小时冷却，期间无法再传授功法。`);
+    }
     message.push(``);
     message.push(`${target.名号}灵台清明，如获新生！`);
     message.push(`${target.名号}剩余仙道潜力：${remainingPotential} 点`);

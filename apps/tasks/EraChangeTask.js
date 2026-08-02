@@ -958,6 +958,13 @@ function saveWeimianData(data) {
         );
       }
       
+      // ==== 天骄境界增长机制 ====
+      try {
+        await this.handleTianjiaoGrowth();
+      } catch (tianjiaoErr) {
+        console.error("天骄境界增长处理失败:", tianjiaoErr);
+      }
+      
       // ==== 位面大事件系统 ====
       try {
         const eventResult = await RealmEvents.triggerRandomEvent(index, years, epoch);
@@ -1205,6 +1212,106 @@ function saveWeimianData(data) {
     }
   }
   
+  /** 天骄境界增长 - 每千年有概率找到机缘或修炼有成 */
+  async handleTianjiaoGrowth() {
+    try {
+      const tianjiaoList = data.weimiantianjiao_list;
+      if (!tianjiaoList || tianjiaoList.length === 0) return;
+      
+      const growthReports = [];
+
+      // 构建境界名映射：复用已加载的官方原著境界体系数据（秘境体系=遮天，仙古今世法=完美世界）
+      const mijingRealmMap = {};
+      for (const lv of data.Levelmijing_list) mijingRealmMap[lv.level_id] = lv.level;
+      const xianguRealmMap = {};
+      for (const lv of data.xiangujinshi_list) xianguRealmMap[lv.level_id] = lv.level;
+      const getRealmName = (field, lv) => {
+        const map = field === 'mijinglevel_id' ? mijingRealmMap : xianguRealmMap;
+        return map[lv] || `第${lv}境`;
+      };
+
+      for (const tianjiao of tianjiaoList) {
+        const mijingLv = Number(tianjiao.mijinglevel_id) || 1;
+        const xianguLv = Number(tianjiao.xiangulevel_id) || 1;
+        
+        let growthField = null;
+        let currentLevel = 0;
+        
+        // 确定增长哪个字段：取大于1的字段
+        if (mijingLv > 1 && xianguLv > 1) {
+          // 两个字段都大于1，随机选一个
+          if (Math.random() < 0.5) {
+            growthField = 'mijinglevel_id';
+            currentLevel = mijingLv;
+          } else {
+            growthField = 'xiangulevel_id';
+            currentLevel = xianguLv;
+          }
+        } else if (mijingLv > 1) {
+          growthField = 'mijinglevel_id';
+          currentLevel = mijingLv;
+        } else if (xianguLv > 1) {
+          growthField = 'xiangulevel_id';
+          currentLevel = xianguLv;
+        }
+        
+        if (!growthField) continue; // 两个字段都是1，不增长
+        
+        // 增长概率：基础30%，境界越高概率越低
+        const baseProb = 0.3;
+        const levelPenalty = Math.min((currentLevel - 1) * 0.015, 0.2);
+        const finalProb = Math.max(baseProb - levelPenalty, 0.1);
+        
+        if (Math.random() < finalProb) {
+          tianjiao[growthField] = currentLevel + 1;
+          const fieldName = growthField === 'mijinglevel_id' ? '遮天秘境' : '仙古纪元';
+          growthReports.push({
+            name: tianjiao.名号,
+            field: fieldName,
+            oldLevel: currentLevel,
+            newLevel: currentLevel + 1,
+            oldRealm: getRealmName(growthField, currentLevel),
+            newRealm: getRealmName(growthField, currentLevel + 1)
+          });
+        }
+      }
+      
+      // 如果有增长，保存到JSON文件并广播
+      if (growthReports.length > 0) {
+        const bossListPath = path.join(data.filePathMap.lib, '位面boss列表.json');
+        fs.writeFileSync(bossListPath, JSON.stringify(tianjiaoList, null, 2), 'utf8');
+        
+        // 按作品分桶文案（遮天·秘境体系 / 完美世界·仙古纪元），使用官方原著境界名
+        const mijingReports = growthReports.filter(r => r.field === '遮天秘境');
+        const xianguReports = growthReports.filter(r => r.field === '仙古纪元');
+        const msgLines = [];
+
+        if (mijingReports.length > 0) {
+          msgLines.push('【遮天秘境·天骄证道】');
+          msgLines.push('北斗星域，道韵流转，诸天骄于秘境道途中再破关隘！');
+          for (const r of mijingReports) {
+            msgLines.push(`  ${r.name} 闭关千年，自【${r.oldRealm}】证得【${r.newRealm}】！`);
+          }
+        }
+
+        if (xianguReports.length > 0) {
+          msgLines.push('【仙古纪元·神子蜕变】');
+          msgLines.push('下界八域，血气冲霄，仙古路上的神子们历劫蜕变！');
+          for (const r of xianguReports) {
+            msgLines.push(`  ${r.name} 历经磨劫，自【${r.oldRealm}】蜕变至【${r.newRealm}】！`);
+          }
+        }
+
+        msgLines.push('「机缘所致，大道可期」');
+        
+        await this.broadcastMessage(msgLines.join('\n'));
+        console.log(`[天骄增长] ${growthReports.length}位天骄境界提升`);
+      }
+    } catch (e) {
+      console.error('天骄境界增长处理失败:', e);
+    }
+  }
+  
   /** 广播新时代通知 */
   async broadcastNewEra(oldEra, newEra, newEpoch) {
     const newEraObj = this.eras.find(e => e.name === newEra);
@@ -1422,6 +1529,13 @@ function saveWeimianData(data) {
             `「此世修仙路，终将归于凡尘...」`
           ].join('\n');
         }
+      }
+      
+      // ==== 天骄境界增长机制 ====
+      try {
+        await this.handleTianjiaoGrowth();
+      } catch (tianjiaoErr) {
+        console.error("天骄境界增长处理失败:", tianjiaoErr);
       }
       
       // ==== 位面大事件系统 ====
