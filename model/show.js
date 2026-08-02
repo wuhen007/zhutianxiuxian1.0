@@ -244,6 +244,15 @@ async get_jindi_placeData(myData) {
     };
   }
 
+  async get_announceData(myData) {
+    this.model = 'announce';
+    return {
+      ...this.screenData,
+      saveId: 'announce',
+      ...myData,
+    };
+  }
+
   async get_danyaoData(myData) {
     this.model = 'danyao';
     return {

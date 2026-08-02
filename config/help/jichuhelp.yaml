@@ -7,6 +7,9 @@
       title: '#踏入仙途 #再入仙途 #轮回'
       desc: '创建存档，转世重生'
     - icon: help-icon_2
+      title: '#轮回往生输出切换 简略/完整'
+      desc: '切换轮回转世播报模式（简略不刷屏/完整全剧情，仅管理员）'
+    - icon: help-icon_2
       title: '#设置性别|修改性别|改性别|更替性别|变更性别|调整性别'
       desc: '设置性别'
     - icon: help-icon_3

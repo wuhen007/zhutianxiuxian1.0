@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>诸天修仙 · 更新公告</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+        }
+
+        body {
+            background: radial-gradient(circle at 50% -10%, #2a2150 0%, #0c0e1a 55%, #070811 100%);
+            color: #e2e8f0;
+            padding: 24px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            background: rgba(15, 18, 32, 0.92);
+            border-radius: 18px;
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+            overflow: hidden;
+            border: 1px solid rgba(159, 122, 234, 0.18);
+        }
+
+        /* ===== 顶部横幅 ===== */
+        .header {
+            position: relative;
+            padding: 38px 36px 30px;
+            background: linear-gradient(115deg, #4c1d95 0%, #6d28d9 42%, #b83280 100%);
+            text-align: center;
+            border-bottom: 2px solid rgba(255, 215, 0, 0.45);
+            overflow: hidden;
+        }
+
+        .header::after {
+            content: '';
+            position: absolute;
+            top: -60px;
+            right: -60px;
+            width: 220px;
+            height: 220px;
+            background: radial-gradient(circle, rgba(255, 215, 0, 0.25), transparent 70%);
+            pointer-events: none;
+        }
+
+        .title {
+            font-size: 38px;
+            font-weight: 900;
+            letter-spacing: 2px;
+            color: #fff;
+            text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+            margin-bottom: 12px;
+        }
+
+        .title span {
+            color: #FFD700;
+        }
+
+        .meta-row {
+            display: flex;
+            justify-content: center;
+            gap: 14px;
+            flex-wrap: wrap;
+            font-size: 14px;
+            color: #ede9fe;
+        }
+
+        .meta-chip {
+            padding: 5px 14px;
+            border-radius: 20px;
+            background: rgba(0, 0, 0, 0.28);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+
+        .meta-chip b {
+            color: #FFD700;
+        }
+
+        /* ===== 总览条 ===== */
+        .hero {
+            margin: 26px 30px 6px;
+            padding: 22px 26px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, rgba(80, 60, 160, 0.22), rgba(184, 50, 128, 0.16));
+            border-left: 4px solid #FFD700;
+            box-shadow: inset 0 0 30px rgba(124, 92, 200, 0.12);
+        }
+
+        .hero-label {
+            font-size: 14px;
+            color: #f6ad55;
+            letter-spacing: 4px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .hero-text {
+            font-size: 17px;
+            line-height: 1.7;
+            color: #f1f5f9;
+        }
+
+        .hero-text em {
+            color: #FFD700;
+            font-style: normal;
+            font-weight: bold;
+        }
+
+        /* ===== 更新卡片 ===== */
+        .section-title {
+            font-size: 22px;
+            color: #FFD700;
+            margin: 34px 30px 16px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 215, 0, 0.25);
+            display: flex;
+            align-items: center;
+        }
+
+        .section-title::before {
+            content: "✦";
+            margin-right: 10px;
+            font-size: 20px;
+        }
+
+        .update-list {
+            padding: 0 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .update-card {
+            position: relative;
+            background: linear-gradient(145deg, #1e2336, #161a2b);
+            border-radius: 14px;
+            padding: 22px 24px;
+            border: 1px solid rgba(101, 119, 155, 0.25);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+            overflow: hidden;
+            transition: transform 0.25s ease;
+        }
+
+        .update-card::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 5px;
+            background: linear-gradient(180deg, #9f7aea, #d53f8c);
+        }
+
+        .update-head {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+
+        .tag {
+            font-size: 13px;
+            font-weight: bold;
+            padding: 5px 12px;
+            border-radius: 8px;
+            color: #fff;
+            letter-spacing: 1px;
+        }
+
+        .tag-天骄 { background: linear-gradient(90deg, #6d28d9, #9f7aea); }
+        .tag-丹药 { background: linear-gradient(90deg, #2f855a, #48bb78); }
+        .tag-团本 { background: linear-gradient(90deg, #c53030, #ed8936); }
+        .tag-系统 { background: linear-gradient(90deg, #2b6cb0, #4299e1); }
+
+        .update-title {
+            font-size: 21px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .update-summary {
+            font-size: 15px;
+            color: #cbd5e0;
+            margin-bottom: 14px;
+            padding-left: 4px;
+            font-style: italic;
+        }
+
+        .point-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+        }
+
+        .point-list li {
+            position: relative;
+            padding-left: 24px;
+            font-size: 15px;
+            line-height: 1.6;
+            color: #dbe4f0;
+        }
+
+        .point-list li::before {
+            content: "▹";
+            position: absolute;
+            left: 0;
+            top: 0;
+            color: #FFD700;
+            font-size: 16px;
+        }
+
+        /* ===== 天骄属性一览 ===== */
+        .tianjiao-wrap {
+            margin: 0 30px 10px;
+        }
+
+        .tj-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+            gap: 16px;
+        }
+
+        .tj-card {
+            background: linear-gradient(145deg, #202744, #171c30);
+            border-radius: 12px;
+            padding: 16px 18px;
+            border: 1px solid rgba(101, 119, 155, 0.25);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .tj-name {
+            font-size: 19px;
+            font-weight: bold;
+            color: #FFD700;
+            margin-bottom: 4px;
+        }
+
+        .tj-realm {
+            font-size: 13px;
+            color: #a0aec0;
+            margin-bottom: 12px;
+        }
+
+        .tj-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .tj-stat {
+            text-align: center;
+            padding: 10px 4px;
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 8px;
+        }
+
+        .tj-stat .lab {
+            font-size: 12px;
+            color: #8b9bb4;
+            margin-bottom: 4px;
+        }
+
+        .tj-stat .val {
+            font-size: 18px;
+            font-weight: bold;
+            color: #68d391;
+        }
+
+        .tj-stat .val.speed { color: #63b3ed; }
+        .tj-stat .val.mijing { color: #b794f4; }
+        .tj-stat .val.xiangu { color: #f6ad55; }
+
+        /* ===== 剧情人物进度 ===== */
+        .char-wrap {
+            margin: 0 30px 10px;
+            padding: 22px 26px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, rgba(58, 28, 113, 0.2), rgba(215, 109, 119, 0.14));
+            border: 1px solid rgba(215, 109, 119, 0.25);
+        }
+
+        .char-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 12px;
+        }
+
+        .char-top .ct {
+            font-size: 17px;
+            color: #fbd5d5;
+            font-weight: bold;
+        }
+
+        .char-top .cn {
+            font-size: 15px;
+            color: #FFD700;
+        }
+
+        .progress-track {
+            height: 22px;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.35);
+            border-radius: 11px;
+            overflow: hidden;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3a1c71, #d76d77, #f6ad55);
+            border-radius: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 10px;
+            color: #fff;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .char-note {
+            margin-top: 12px;
+            font-size: 13px;
+            color: #cbd5e0;
+            line-height: 1.6;
+        }
+
+        /* ===== 更新日志（git 提交） ===== */
+        .changelog-wrap {
+            margin: 0 30px 10px;
+        }
+
+        .cl-group {
+            margin-bottom: 22px;
+        }
+
+        .cl-date {
+            display: inline-block;
+            font-size: 14px;
+            font-weight: bold;
+            color: #0c0e1a;
+            background: linear-gradient(90deg, #FFD700, #f6ad55);
+            padding: 4px 16px;
+            border-radius: 0 12px 12px 0;
+            margin-bottom: 14px;
+            box-shadow: 0 3px 10px rgba(255, 215, 0, 0.25);
+            letter-spacing: 1px;
+        }
+
+        .cl-item {
+            position: relative;
+            padding: 14px 18px 14px 20px;
+            margin-bottom: 12px;
+            background: linear-gradient(145deg, #1a1f30, #151928);
+            border-radius: 10px;
+            border: 1px solid rgba(101, 119, 155, 0.2);
+            border-left: 3px solid #4299e1;
+        }
+
+        .cl-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 6px;
+            flex-wrap: wrap;
+        }
+
+        .cl-hash {
+            font-size: 12px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            color: #8b9bb4;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 8px;
+            border-radius: 5px;
+            letter-spacing: 0.5px;
+        }
+
+        .cl-msg {
+            font-size: 16px;
+            font-weight: bold;
+            color: #e2e8f0;
+            line-height: 1.5;
+        }
+
+        .cl-detail {
+            font-size: 14px;
+            color: #a0aec0;
+            line-height: 1.65;
+            padding-left: 2px;
+        }
+
+        /* ===== 页脚 ===== */
+        .footer {
+            margin-top: 30px;
+            padding: 20px;
+            text-align: center;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            color: #8b9bb4;
+            font-size: 14px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .footer b { color: #FFD700; }
+
+        /* ===== 响应式 ===== */
+        @media (max-width: 760px) {
+            .tj-grid { grid-template-columns: 1fr; }
+            .title { font-size: 30px; }
+            .container { border-radius: 12px; }
+            .header, .hero, .update-list, .tianjiao-wrap, .char-wrap { margin-left: 16px; margin-right: 16px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 顶部横幅 -->
+        <div class="header">
+            <div class="title">诸天修仙 · <span>更新公告</span></div>
+            <div class="meta-row">
+                <div class="meta-chip">版本 <b>{{version}}</b></div>
+                <div class="meta-chip">发布 <b>{{date}}</b></div>
+                <div class="meta-chip">修士 <b>{{nickname}}</b></div>
+            </div>
+        </div>
+
+        <!-- 总览 -->
+        <div class="hero">
+            <div class="hero-label">近 期 最 大 更 新</div>
+            <div class="hero-text">
+                本版聚焦<em>位面天骄</em>深度重构、<em>大衍悟道丹</em>登场与<em>团本行动条</em>落地——
+                天骄接入速度 / 秘境 / 仙古三系，千年机缘自动突破；悟道古茶叶终成丹；
+                战斗节奏交由速度主宰。详情见下方。
+            </div>
+        </div>
+
+        <!-- 更新卡片 -->
+        <div class="section-title">更新详情</div>
+        <div class="update-list">
+            {{each updates u}}
+            <div class="update-card">
+                <div class="update-head">
+                    <span class="tag tag-{{u.tag}}">{{u.tag}}</span>
+                    <span class="update-title">{{u.title}}</span>
+                </div>
+                <div class="update-summary">{{u.summary}}</div>
+                <ul class="point-list">
+                    {{each u.points p}}
+                    <li>{{p}}</li>
+                    {{/each}}
+                </ul>
+            </div>
+            {{/each}}
+        </div>
+
+        <!-- 更新日志（git 提交，2a11e4c「本次重大更新概览」之后） -->
+        <div class="section-title">更新日志 · 提交记录</div>
+        <div class="changelog-wrap">
+            {{each changelog g}}
+            <div class="cl-group">
+                <div class="cl-date">{{g.date}}</div>
+                {{each g.items it}}
+                <div class="cl-item">
+                    <div class="cl-head">
+                        <span class="cl-hash">{{it.hash}}</span>
+                        <span class="cl-msg">{{it.msg}}</span>
+                    </div>
+                    {{if it.detail}}
+                    <div class="cl-detail">{{it.detail}}</div>
+                    {{/if}}
+                </div>
+                {{/each}}
+            </div>
+            {{/each}}
+        </div>
+
+        <!-- 天骄属性一览 -->
+        <div class="section-title">天骄属性一览 · 重构后</div>
+        <div class="tianjiao-wrap">
+            <div class="tj-grid">
+                {{each tianjiaoItems t}}
+                <div class="tj-card">
+                    <div class="tj-name">{{t.名号}}</div>
+                    <div class="tj-realm">{{t.境界}}</div>
+                    <div class="tj-stats">
+                        <div class="tj-stat">
+                            <div class="lab">速度</div>
+                            <div class="val speed">{{t.速度}}</div>
+                        </div>
+                        <div class="tj-stat">
+                            <div class="lab">秘境</div>
+                            <div class="val mijing">{{t.秘境}}</div>
+                        </div>
+                        <div class="tj-stat">
+                            <div class="lab">仙古</div>
+                            <div class="val xiangu">{{t.仙古}}</div>
+                        </div>
+                    </div>
+                </div>
+                {{/each}}
+            </div>
+        </div>
+
+        <!-- 剧情人物进度 -->
+        <div class="section-title">剧情人物 · 收集进度</div>
+        <div class="char-wrap">
+            <div class="char-top">
+                <div class="ct">诸天传奇，缘法相牵</div>
+                <div class="cn">已结识 {{unlockedCount}} / {{totalCharacters}} 位</div>
+            </div>
+            <div class="progress-track">
+                <div class="progress-fill" style="width: {{progressPercentage}}%;">{{progressPercentage}}%</div>
+            </div>
+            <div class="char-note">
+                结识更多剧情人物可解锁专属关系与好感剧情。前往诸天万界游历、完成对应奇遇即可收录于【剧情人物图鉴】。
+            </div>
+        </div>
+
+        <!-- 页脚 -->
+        <div class="footer">
+            诸天修仙 · 版本 <b>{{version}}</b> &nbsp;|&nbsp; 发送 <b>#更新公告</b> 随时查阅 &nbsp;|&nbsp; 大道无情，唯勤者得之
+        </div>
+    </div>
+</body>
+</html>

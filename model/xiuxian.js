@@ -2529,6 +2529,156 @@ export async function get_character_img(e) {
         return `生成人物图鉴失败: ${err.message}`;
     }
 }
+export async function get_announce_img(e) {
+    try {
+        // 1. 获取玩家数据
+        let usr_qq = e.user_id.toString().replace('qg_', '');
+        usr_qq = await channel(usr_qq);
+
+        // 验证玩家是否存在
+        if (!data.existData('player', usr_qq)) return;
+
+        const player = await data.getData('player', usr_qq);
+
+        // 2. 近期最大更新日志（静态内容，可在此维护）
+        const updates = [
+            {
+                tag: '天骄',
+                title: '位面天骄系统重构',
+                summary: '接入速度 / 秘境 / 仙古三系加成，千年机缘自动突破',
+                points: [
+                    '为全部天骄新增「速度」「秘境等级」「仙古等级」三项属性，速度公式自动生效',
+                    '时代每推进一千年，天骄有概率秘境 / 仙古境界 +1，越老越强',
+                    '境界突破文案分「遮天秘境·天骄证道」与「仙古纪元·神子蜕变」两桶，复用原著境界名'
+                ]
+            },
+            {
+                tag: '丹药',
+                title: '大衍悟道丹',
+                summary: '悟道古茶叶入丹方，今日悟道次数 +1',
+                points: [
+                    '新增丹方：悟道古茶叶 ×10 + 三种万年级珍草',
+                    '服用后今日悟道次数 +1，#悟道 达上限自动续道',
+                    '每日悟道上限 3 次，续丹可叠加，当天有效'
+                ]
+            },
+            {
+                tag: '团本',
+                title: '团本行动条系统',
+                summary: '速度真正决定先手与出手频率',
+                points: [
+                    '团本战斗接入行动条逻辑，玩家与 boss 按速度就绪出手',
+                    '三位 boss 配置专属速度与法则（如狠人「时间长河驻足」拉条）',
+                    '节奏由速度主宰，高境界玩家可每回合必动'
+                ]
+            }
+        ];
+
+        // 3. 更新日志（取自 git 提交，2a11e4c「本次重大更新概览」之后）
+        //    如需同步最新提交，在此处维护；或改为运行时读取 git log 2a11e4c..HEAD
+        const changelog = [
+            {
+                date: '2026-08-02',
+                items: [
+                    {
+                        hash: 'cf46283',
+                        msg: '添加大衍悟道丹及悟道古茶叶类型支持',
+                        detail: '新增【大衍悟道丹】作为突破每日悟道上限的道具，并将【悟道古茶叶】的材料类型修正为道具。'
+                    },
+                    {
+                        hash: '7949ec4',
+                        msg: '完善传道系统与天骄机制，新增剧情人物帮助',
+                        detail: '传道系统增加施法者元神消耗（按功法难度平方递增）与 24 小时累计传授冷却；天骄每千年概率提升境界（遮天秘境 / 仙古纪元独立晋升并广播）；新增剧情人物帮助说明（柳神、张五爷互动）；新增无尽秘境单元测试。'
+                    },
+                    {
+                        hash: 'b4b20d6',
+                        msg: '实现无尽劫境副本与圣地大战系统',
+                        detail: '新增无尽劫境组队肉鸽副本（队伍管理、能力选择、层级推进、结算）；位面大事件新增圣地大战玩法（站队、战场行动、资源投入、决议投票）；修复宝藏结算定时任务命名；新增圣地大战辅助函数与配置。'
+                    }
+                ]
+            },
+            {
+                date: '2026-08-01',
+                items: [
+                    {
+                        hash: '9e65e6a',
+                        msg: '添加新的丹药道具和相关配置',
+                        detail: '每日抽奖新增太素蕴灵丹、玄黄造化丹；丹药列表新增太素蕴灵丹、玄黄造化丹、极道丹；灵根列表新增九幽魔体；炼丹配方新增极道丹制作配方。'
+                    },
+                    {
+                        hash: 'df9a09c',
+                        msg: '加强签到命格（匹配更多签到），教祖命格，优化团本战斗逻辑，转世重生弥留逻辑',
+                        detail: ''
+                    },
+                    {
+                        hash: '6e8b217',
+                        msg: '加强九幽魔君，修改魔君奖励结算机制，完善魔君技能',
+                        detail: ''
+                    },
+                    {
+                        hash: '26d7859',
+                        msg: '增加先天至宝图鉴，修复雷劫液业务逻辑冲突，以及蕴养帝兵bug',
+                        detail: ''
+                    }
+                ]
+            },
+            {
+                date: '2026-07-31',
+                items: [
+                    {
+                        hash: '6bcf120',
+                        msg: '增加全体字段修复和拉新奖励',
+                        detail: ''
+                    }
+                ]
+            }
+        ];
+
+        // 4. 天骄属性一览（动态拉取，参考位面天骄图鉴后端）
+        const tianjiaoItems = (data.weimiantianjiao_list || []).map(t => ({
+            名号: t.名号,
+            境界: t.境界 || '未知',
+            速度: t.速度 ?? 100,
+            秘境: t.mijinglevel_id ?? 1,
+            仙古: t.xiangulevel_id ?? 1
+        }));
+
+        // 4. 剧情人物收集进度（动态拉取，参考剧情人物图鉴后端）
+        const characters = data.juqingrenwu_list || [];
+        const unlockedCharacters = player.剧情人物 || [];
+        const unlockedMap = {};
+        unlockedCharacters.forEach(char => {
+            const charKey = Object.keys(char).find(key =>
+                key !== '关系' && key !== '好感度' && key !== '解锁时间' && key !== '事件记录'
+            );
+            if (charKey) unlockedMap[charKey] = true;
+        });
+        const unlockedCount = Object.keys(unlockedMap).length;
+        const totalCharacters = characters.length;
+        const progressPercentage = totalCharacters > 0 ? Math.round((unlockedCount / totalCharacters) * 100) : 0;
+
+        // 5. 构建模板数据
+        const renderData = {
+            nickname: player.名号 || '无名修士',
+            version: 'v1.0 诸天修仙',
+            date: '2026.08',
+            updates,
+            changelog,
+            tianjiaoItems,
+            unlockedCount,
+            totalCharacters,
+            progressPercentage
+        };
+
+        // 6. 渲染并截图
+        const templateData = await new Show(e).get_announceData(renderData);
+        return await puppeteer.screenshot('announce', templateData);
+
+    } catch (err) {
+        console.error('生成更新公告失败:', err);
+        return `生成更新公告失败: ${err.message}`;
+    }
+}
 export async function get_power_img(e) {
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);

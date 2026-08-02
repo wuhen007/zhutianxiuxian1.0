@@ -186,6 +186,24 @@ function canWithstandYinYangGrind(player) {
   return (player.mijinglevel_id >= 11) || (player.xiangulevel_id >= 9);
 }
 
+// ==================== 轮回转世输出模式（简略/完整） ====================
+// 简略：仅最终简报，避免全服刷屏；完整：五阶段全剧情
+const REBIRTH_OUTPUT_MODE_KEY = 'xiuxian:reincarnation_output_mode';
+
+async function getRebirthOutputMode() {
+  try {
+    const v = await redis.get(REBIRTH_OUTPUT_MODE_KEY);
+    return v === '简略' ? '简略' : '完整';
+  } catch {
+    return '完整';
+  }
+}
+
+async function setRebirthOutputMode(mode) {
+  const m = mode === '简略' ? '简略' : '完整';
+  await redis.set(REBIRTH_OUTPUT_MODE_KEY, m);
+}
+
 // 发送消息
 async function sendRebirthMessage(e, message) {
   try {
@@ -930,7 +948,8 @@ async function forceRebirthPlayer(
   acount,
   isChixiao = false,
   downgradedAptitude = null,
-  taskId = null
+  taskId = null,
+  brief = false
 ) {
   const player_id = oldPlayer.id;
   const fileTransaction = new FileRollbackTransaction();
@@ -1074,22 +1093,35 @@ async function forceRebirthPlayer(
       najieDropMsg = `\n【纳戒遗落】前世纳戒遗落于${dropInfo.location.weimianName}，坐标(${dropInfo.location.x}, ${dropInfo.location.y})，有缘人或可寻得...`;
     }
 
-    const rebornMsg = [
-      `【轮回转世·重生完成】`,
-      `岁月如刀斩天骄，长生路上叹妖娆。`,
-      `${oldPlayer.名号}的残魂在轮回中重新凝聚，前尘往事尽成空...`,
-      effectMsg,
-      najieDropMsg,
-      `一声婴儿啼哭，你重新降临于世！`,
-      `这一世，你将再踏仙路，追寻那永恒的大道！`,
-      `QQ：${player_id}`,
-      `道号：${new_player.名号}`,
-      `天资：${new_player.天资等级}`,
-      `灵根：${new_player.灵根.name}`,
-      `轮回次数：${new_player.轮回转世次数}`,
-      `仙路漫漫，愿你此生能够走得更远，`,
-      `终有一日，踏破诸天，证道永恒！`
-    ].join('\n');
+    let rebornMsg;
+    if (brief) {
+      // 简略模式：只保留关键信息，避免刷屏
+      const briefLines = [
+        `【轮回转世·重生完成】`,
+        `${oldPlayer.名号}已再入仙途，道号「${new_player.名号}」`,
+        `天资：${new_player.天资等级}｜灵根：${new_player.灵根.name}｜轮回次数：${new_player.轮回转世次数}`,
+      ];
+      if (effectMsg) briefLines.push(effectMsg.replace(/^\n/, ''));
+      if (najieDropMsg) briefLines.push(najieDropMsg.replace(/^\n/, ''));
+      rebornMsg = briefLines.join('\n');
+    } else {
+      rebornMsg = [
+        `【轮回转世·重生完成】`,
+        `岁月如刀斩天骄，长生路上叹妖娆。`,
+        `${oldPlayer.名号}的残魂在轮回中重新凝聚，前尘往事尽成空...`,
+        effectMsg,
+        najieDropMsg,
+        `一声婴儿啼哭，你重新降临于世！`,
+        `这一世，你将再踏仙路，追寻那永恒的大道！`,
+        `QQ：${player_id}`,
+        `道号：${new_player.名号}`,
+        `天资：${new_player.天资等级}`,
+        `灵根：${new_player.灵根.name}`,
+        `轮回次数：${new_player.轮回转世次数}`,
+        `仙路漫漫，愿你此生能够走得更远，`,
+        `终有一日，踏破诸天，证道永恒！`
+      ].join('\n');
+    }
 
     await notifyReincarnationPlayer(player_id, rebornMsg);
     console.log(`【再入仙途】玩家 ${player_id} 转世完成！`);
@@ -1139,7 +1171,42 @@ async function executeZhuanshiRebirth(e, task, taskId) {
     const mijingLevel = MijingLevels.find(l => l.id === oldPlayer.mijinglevel_id)?.name || '未知';
     const xianguLevel = oldPlayer.xiangulevel_id;
     const phenomenon = getRandomPhenomenon();
-    
+
+    // ===== 简略模式：跳过五阶段长篇剧情，仅输出最终简报（避免全服刷屏） =====
+    if ((await getRebirthOutputMode()) === '简略') {
+      let isChixiao = false;
+      let downgradedAptitude = null;
+      if (!canWithstand) {
+        const random = Math.random();
+        const isChixiaoRandom = random < 0.3;
+        if (isChixiaoRandom) {
+          isChixiao = true;
+        } else {
+          const currentAptitude = oldPlayer.天资等级 || '平庸之资';
+          downgradedAptitude = downgradeAptitude(currentAptitude);
+        }
+      }
+      // 轮回感悟 / 印记（与完整模式第四阶段一致）
+      if (acount + 1 >= 5 && !isChixiao && !canWithstand) {
+        oldPlayer.轮回感悟 = (oldPlayer.轮回感悟 || 0) + 1;
+      }
+      if (acount + 1 >= 10 && !isChixiao && !canWithstand) {
+        oldPlayer.轮回印记 = true;
+      }
+      const outcomeText = isChixiao
+        ? '阴阳大磨盘下灵魂重创，转世为痴傻之身'
+        : canWithstand
+        ? '以力破法震碎阴阳大磨盘，完美转世、道基无伤'
+        : `道基受损，天资「${oldPlayer.天资等级 || '平庸之资'}」降至「${downgradedAptitude}」`;
+      await sendRebirthMessage(
+        e,
+        `【轮回转世·简报】${oldPlayer.名号}寿元已尽，魂归地府；${outcomeText}，现已再入仙途。`
+      );
+      await forceRebirthPlayer(e, oldPlayer, acount, isChixiao, downgradedAptitude, taskId, true);
+      console.log(`【轮回】玩家 ${player_id} 轮回完成（简略模式）！`);
+      return;
+    }
+
     let messages = [];
     
     // ===== 第一阶段：寿元耗尽，魂归地府 =====
@@ -1589,6 +1656,10 @@ class ReincarnationRoad extends plugin {
           reg: '^#轮回路状态$',
           fnc: 'showReincarnationStatus',
         },
+        {
+          reg: '^#轮回往生输出切换(?:\\s+(简略|完整))?$',
+          fnc: 'toggleRebirthOutput',
+        },
       ],
     });
   }
@@ -1810,6 +1881,41 @@ class ReincarnationRoad extends plugin {
     } catch (err) {
       console.error('【轮回路状态】查询失败:', err);
       return e.reply('查询轮回路状态失败。');
+    }
+  }
+
+  async toggleRebirthOutput(e) {
+    try {
+      if (!e.isMaster && !this.getMasterList().includes(String(e.user_id).replace('qg_', ''))) {
+        return e.reply('此指令仅限管理员使用。');
+      }
+
+      const arg = e.msg.match(/^#轮回往生输出切换(?:\s+(简略|完整))?$/);
+      const current = await getRebirthOutputMode();
+      let next;
+      if (arg && arg[1]) {
+        next = arg[1];
+      } else {
+        next = current === '简略' ? '完整' : '简略';
+      }
+      await setRebirthOutputMode(next);
+
+      const desc = next === '简略'
+        ? '简略：轮回转世仅输出一行最终简报，不再刷屏五阶段剧情'
+        : '完整：轮回转世输出五阶段全剧情（魂归地府→判官审魂→阴阳大磨盘→轮回结果→再入仙途）';
+      return e.reply(`【轮回往生输出】已切换为「${next}」模式。\n当前模式：${desc}`);
+    } catch (err) {
+      console.error('【轮回输出切换】失败:', err);
+      return e.reply('切换轮回往生输出模式失败。');
+    }
+  }
+
+  getMasterList() {
+    try {
+      const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+      return xiuxianConfig.Master || [];
+    } catch {
+      return [];
     }
   }
 

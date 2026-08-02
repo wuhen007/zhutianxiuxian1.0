@@ -15,6 +15,7 @@ import {
   get_wmtj_img,
   get_chengjiu_img,
   get_character_img,
+  get_announce_img,
   get_lqpf_img,
   get_linggen_img,
   get_mingge_img,
@@ -109,6 +110,10 @@ export class Showningmeng extends plugin {
          {
           reg: '^#剧情人物图鉴$',
           fnc: 'Show_character',
+        },
+          {
+          reg: '^#更新公告$',
+          fnc: 'Show_announce',
         },
       ],
     });
@@ -249,6 +254,13 @@ export class Showningmeng extends plugin {
   async Show_character(e) {
     if (!verc({ e })) return false;
     let img = await get_character_img(e);
+    e.reply(img);
+    return false;
+  }
+    //更新公告
+  async Show_announce(e) {
+    if (!verc({ e })) return false;
+    let img = await get_announce_img(e);
     e.reply(img);
     return false;
   }
