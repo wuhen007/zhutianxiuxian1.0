@@ -403,5 +403,30 @@
     "rate": 1,
     "level_limit": 20,
     "exp": [55555, 55555]
+  },
+  {
+    "name": "大衍悟道丹",
+    "type": "悟道",
+    "materials": [
+      {
+        "name": "悟道古茶叶",
+        "amount": 10
+      },
+      {
+        "name": "万年凝血草",
+        "amount": 1
+      },
+      {
+        "name": "万年太玄果",
+        "amount": 1
+      },
+      {
+        "name": "万年天魂菊",
+        "amount": 1
+      }
+    ],
+    "rate": 1,
+    "level_limit": 0,
+    "exp": [200, 400]
   }
 ]

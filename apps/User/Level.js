@@ -1687,9 +1687,15 @@ async hudao(e) {
         ].join('\n'));
       }
 
+      let usedWudaoDan = false;
       if (ensured.path.daily.count >= DAO_DAILY_LIMIT) {
-        await Write_player(usr_qq, player);
-        return e.reply(`今日悟道已达${DAO_DAILY_LIMIT}次上限，静待明日再参大道。`);
+        const hasWudaoDan = await exist_najie_thing(usr_qq, '大衍悟道丹', '丹药');
+        if (!hasWudaoDan) {
+          await Write_player(usr_qq, player);
+          return e.reply(`今日悟道已达${DAO_DAILY_LIMIT}次上限，可服【大衍悟道丹】延续道途，再参一次大道。`);
+        }
+        await Add_najie_thing(usr_qq, '大衍悟道丹', '丹药', -1);
+        usedWudaoDan = true;
       }
 
       const command = String(e.msg || '').replace(/\s/g, '');
@@ -1768,13 +1774,18 @@ async hudao(e) {
         `本次感悟：+${actualGain}${result.enlightened ? '（顿悟）' : ''}`,
         `道途进度：${ensured.path.stages[rule.key]}/${rule.targetExp}（${currentStage.name}）`,
         `收益倍率：×${result.multiplier.toFixed(2)}〔${factorLines.join('，')}〕`,
-        `今日悟道：${attemptCount}/${DAO_DAILY_LIMIT}`,
+        usedWudaoDan
+          ? `今日悟道：${attemptCount}（服大衍悟道丹·续道）/${DAO_DAILY_LIMIT}`
+          : `今日悟道：${attemptCount}/${DAO_DAILY_LIMIT}`,
       ];
       if (previousStage.name !== currentStage.name) {
         reply.push(`【境界精进】${rule.name}由${previousStage.name}迈入${currentStage.name}！`);
       }
       if (currentStage.name === '圆满') {
         reply.push(`【${rule.completion}】己道圆满，可引动${rule.nextRealm}雷劫！`);
+      }
+      if (usedWudaoDan) {
+        reply.push('「服下大衍悟道丹，道途再续一程，今日可多参一道」');
       }
       return e.reply(reply.join('\n'));
     } finally {

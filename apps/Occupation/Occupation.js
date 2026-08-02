@@ -3070,7 +3070,10 @@ async shoulie_back(e) {
     for (let i in materials) {
       let material = materials[i];
       // 根据丹药名称决定材料类型
-      let materialType = (danyao === '天命轮回丹') ? '丹药' : '草药';
+      let materialType;
+      if (danyao === '天命轮回丹') materialType = '丹药';
+      else if (material.name === '悟道古茶叶') materialType = '道具';
+      else materialType = '草药';
       let x = await exist_najie_thing(usr_qq, material.name, materialType);
       if (x === false) {
         x = 0;
@@ -3085,7 +3088,10 @@ async shoulie_back(e) {
 
     for (let i in materials) {
       let material = materials[i];
-      let materialType = (danyao === '天命轮回丹') ? '丹药' : '草药';
+      let materialType;
+      if (danyao === '天命轮回丹') materialType = '丹药';
+      else if (material.name === '悟道古茶叶') materialType = '道具';
+      else materialType = '草药';
       tmp_msg += `${material.name}×${material.amount * n}，`;
       await Add_najie_thing(
         usr_qq,
@@ -3112,7 +3118,7 @@ async shoulie_back(e) {
       danyao == '神心丹' ||
       danyao == '九阶淬体丹' ||
       danyao == '九阶玄元丹' ||
-      danyao == '起死回生丹' ||danyao == '天命轮回丹'   // 添加这一行
+      danyao == '起死回生丹' ||danyao == '天命轮回丹' || danyao == '大衍悟道丹'
     ) {
       await Add_najie_thing(usr_qq, danyao, '丹药', n);
       e.reply(`${tmp_msg}得到${danyao}${n}颗，获得炼丹经验${total_exp}`);
