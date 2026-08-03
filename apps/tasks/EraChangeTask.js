@@ -18,6 +18,7 @@ import RealmEvents from './RealmEvents.js';
 import { formatRealmEventLocation } from '../../model/realmEventLocation.js';
 import { triggerPeriodicRiftsForEra } from '../../model/planeRiftFestival.js';
 import {
+  advanceSpecialTianjiaoEvolution,
   attemptTianjiaoBreakthrough,
   getTianjiaoImprovementChance,
   improveTianjiao,
@@ -1313,6 +1314,7 @@ function saveWeimianData(data) {
         equipmentList: data.equipment_list,
         specialEquipmentList: data.tszb_list,
         imperialWeaponList: data.dibing_list,
+        talentList: data.talent_list,
         techniqueList: [
           ...(data.jineng1 || []),
           ...(data.jineng2 || []),
@@ -1322,6 +1324,7 @@ function saveWeimianData(data) {
       };
       const realmReports = [];
       const improvementReports = [];
+      const bloodlineReports = [];
 
       for (const tianjiao of tianjiaoList) {
         if (!isIndependentTianjiao(tianjiao)) continue;
@@ -1333,6 +1336,9 @@ function saveWeimianData(data) {
           }
         }
 
+        const bloodline = advanceSpecialTianjiaoEvolution(tianjiao, context);
+        if (bloodline) bloodlineReports.push(bloodline);
+
         if (Math.random() < getTianjiaoImprovementChance(eraIndex)) {
           const improvements = improveTianjiao(tianjiao, context);
           if (improvements.length > 0) {
@@ -1341,7 +1347,7 @@ function saveWeimianData(data) {
         }
       }
 
-      if (realmReports.length > 0 || improvementReports.length > 0) {
+      if (realmReports.length > 0 || improvementReports.length > 0 || bloodlineReports.length > 0) {
         const bossListPath = path.join(data.filePathMap.lib, '位面boss列表.json');
         fs.writeFileSync(bossListPath, JSON.stringify(tianjiaoList, null, 2), 'utf8');
 
@@ -1372,10 +1378,18 @@ function saveWeimianData(data) {
           }
         }
 
+        if (bloodlineReports.length > 0) {
+          msgLines.push('【天骄血脉·本源蜕变】');
+          for (const report of bloodlineReports) {
+            msgLines.push(`  ${report.name}：${report.message}`);
+            if (report.evolvedTo) msgLines.push(`  体质蜕变为【${report.evolvedTo}】！`);
+          }
+        }
+
         msgLines.push('「机缘所致，大道可期」');
 
         await this.broadcastMessage(msgLines.join('\n'));
-        console.log(`[天骄成长] ${realmReports.length}次境界突破，${improvementReports.length}位天骄完成自我强化`);
+        console.log(`[天骄成长] ${realmReports.length}次境界突破，${improvementReports.length}位自我强化，${bloodlineReports.length}次血脉事件`);
       }
     } catch (e) {
       console.error('天骄境界增长处理失败:', e);

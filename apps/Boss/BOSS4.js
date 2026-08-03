@@ -960,7 +960,7 @@ export class BOSS4 extends plugin {
         ...independentStats,
         名号: `${tianjiaoName}(当前状态)`,
         速度: (tianjiaoData.速度 ?? 100) + (tianjiaoData.mijinglevel_id ?? 0) * 50 + (tianjiaoData.xiangulevel_id ?? 0) * 50,
-        灵根: tianjiaoData.灵根?.name || "普通灵根",
+        灵根: tianjiaoData.灵根 || { name: "普通灵根", type: "普通灵根" },
         法球倍率: tianjiaoData.灵根?.法球倍率 || 1,
       } : {
         名号: `${tianjiaoName}${attributeMultiplier > 1 ? '(全力状态)' : '(压制境界)'}`,

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  advanceSpecialTianjiaoEvolution,
   applyTianjiaoImprovement,
   attemptTianjiaoBreakthrough,
   buildTianjiaoBattleStats,
@@ -41,7 +42,17 @@ const context = {
     { name: '废铁', class: '装备', type: '帝兵', atk: 0, def: 0, HP: 0, bao: 0, 全属性: 0 },
   ],
   techniqueList: [{ name: '新功法', class: '功法' }],
+  talentList: [
+    { name: '大成·苍天霸体', type: '大成霸体', 法球倍率: 2, 攻击: 5, 防御: 3, 生命: 3 },
+    { name: '魔胎仙体', type: '魔胎', 法球倍率: 8, 攻击: 5, 防御: 2, 生命: 3 },
+    { name: '混沌体', type: '混沌体', 法球倍率: 1.45, 攻击: 5, 防御: 5, 生命: 5 },
+  ],
 };
+
+function sequenceRandom(...values) {
+  let index = 0;
+  return () => values[index++] ?? 0;
+}
 
 test('天骄每两千年才尝试突破，时代和关隘会压低概率', () => {
   assert.equal(isTianjiaoBreakthroughYear(1000), false);
@@ -108,4 +119,47 @@ test('每千年自强保持高概率，单次最多完成四种行为', () => {
 
   applyTianjiaoImprovement(tianjiao, 'equipment', context, () => 0);
   assert.ok(tianjiao.装备.武器.归一属性.百分比.atk > 0);
+});
+
+test('霸王境界满足后大成，华云飞吞噬五次和十次依次进化', () => {
+  const overlord = {
+    名号: '霸王浑战', mijinglevel_id: 14, xiangulevel_id: 1,
+    灵根: { name: '小成·苍天霸体', type: '霸体', 法球倍率: 1.5 },
+  };
+  assert.equal(advanceSpecialTianjiaoEvolution(overlord, context, () => 0), null);
+  overlord.mijinglevel_id = 15;
+  assert.equal(advanceSpecialTianjiaoEvolution(overlord, context, () => 0).evolvedTo, '大成·苍天霸体');
+  assert.equal(overlord.灵根.type, '大成霸体');
+
+  const huayunfei = {
+    名号: '华云飞', 境界: '大能', mijinglevel_id: 10, xiangulevel_id: 1,
+    灵根: { name: '伪·魔胎仙体', type: '魔胎', 法球倍率: 2 },
+  };
+  assert.equal(advanceSpecialTianjiaoEvolution(huayunfei, context, () => 0.99), null);
+  const first = advanceSpecialTianjiaoEvolution(
+    huayunfei,
+    context,
+    sequenceRandom(0, 0.9, 0, 0),
+  );
+  assert.equal(first.targetType, '同境天骄');
+  assert.equal(first.targetName, '大能天骄·姬玄');
+
+  let fifth;
+  for (let count = 0; count < 4; count++) fifth = advanceSpecialTianjiaoEvolution(huayunfei, context, () => 0);
+  assert.equal(fifth.count, 5);
+  assert.equal(fifth.evolvedTo, '魔胎仙体');
+  assert.equal(huayunfei.灵根.name, '魔胎仙体');
+
+  let tenth;
+  for (let count = 0; count < 5; count++) tenth = advanceSpecialTianjiaoEvolution(huayunfei, context, () => 0);
+  assert.equal(tenth.count, 10);
+  assert.equal(tenth.evolvedTo, '混沌体');
+  assert.equal(huayunfei.灵根.name, '混沌体');
+  assert.equal(huayunfei.吞噬本源记录.length, 10);
+
+  const evolvedStats = buildTianjiaoBattleStats(overlord, context);
+  const plainStats = buildTianjiaoBattleStats({ ...overlord, 灵根: {} }, context);
+  assert.ok(evolvedStats.攻击 > plainStats.攻击);
+  assert.ok(evolvedStats.防御 > plainStats.防御);
+  assert.ok(evolvedStats.血量上限 > plainStats.血量上限);
 });

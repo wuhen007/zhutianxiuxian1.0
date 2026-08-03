@@ -1,6 +1,7 @@
 import { calculateEquippedStats } from './equipmentStats.js';
 
 export const TIANJIAO_PLANES = Object.freeze([2, 2.5]);
+export const HUAYUNFEI_DEVOUR_CHANCE = 0.4;
 
 const ERA_FACTORS = Object.freeze([1, 0.75, 0.5, 0.08, 0.02]);
 const IMPROVEMENT_CHANCES = Object.freeze([0.9, 0.85, 0.8, 0.7, 0.6]);
@@ -11,6 +12,9 @@ const STARTER_NAMES = Object.freeze({
   法宝: '廉价炮仗',
   帝兵: '废铁',
 });
+const HOLY_LANDS = Object.freeze(['摇光圣地', '姬家', '姜家', '瑶池圣地', '紫府圣地', '万初圣地']);
+const CULTIVATOR_SURNAMES = Object.freeze(['姬', '姜', '李', '周', '陆', '顾', '宁', '楚']);
+const CULTIVATOR_NAMES = Object.freeze(['玄', '尘', '道一', '凌霄', '无极', '长风', '天衡', '星河']);
 
 function cloneItem(item) {
   if (!item) return null;
@@ -81,6 +85,81 @@ export function getTianjiaoImprovementChance(eraIndex) {
 export function isTianjiaoBreakthroughYear(eraYears) {
   const years = Number(eraYears);
   return Number.isFinite(years) && years >= 0 && years % 2000 === 0;
+}
+
+function randomEntry(items, random) {
+  return items[Math.min(items.length - 1, Math.floor(random() * items.length))];
+}
+
+function talentByName(context, name, fallback) {
+  return { ...(context.talentList || []).find(talent => talent?.name === name) || fallback };
+}
+
+function evolveHuayunfeiByCount(tianjiao, context) {
+  const count = Math.max(0, Math.floor(Number(tianjiao.吞噬本源次数) || 0));
+  if (count >= 10 && tianjiao.灵根?.name !== '混沌体') {
+    tianjiao.灵根 = talentByName(context, '混沌体', {
+      name: '混沌体', type: '混沌体', 法球倍率: 1.45, 攻击: 5, 防御: 5, 生命: 5,
+    });
+    return '混沌体';
+  }
+  if (count >= 5 && tianjiao.灵根?.name === '伪·魔胎仙体') {
+    tianjiao.灵根 = talentByName(context, '魔胎仙体', {
+      name: '魔胎仙体', type: '魔胎', 法球倍率: 8, 攻击: 5, 防御: 2, 生命: 3,
+    });
+    return '魔胎仙体';
+  }
+  return null;
+}
+
+export function advanceSpecialTianjiaoEvolution(tianjiao, context, random = Math.random) {
+  if (tianjiao?.名号 === '霸王浑战') {
+    if (Number(tianjiao.mijinglevel_id) < 15 || tianjiao.灵根?.name === '大成·苍天霸体') return null;
+    tianjiao.灵根 = talentByName(context, '大成·苍天霸体', {
+      name: '大成·苍天霸体', type: '大成霸体', 法球倍率: 2, 攻击: 5, 防御: 3, 生命: 3,
+    });
+    return {
+      name: tianjiao.名号,
+      message: '准帝霸血贯穿轮海，苍天霸体臻至大成',
+      evolvedTo: tianjiao.灵根.name,
+    };
+  }
+
+  if (tianjiao?.名号 !== '华云飞') return null;
+  const repairedEvolution = evolveHuayunfeiByCount(tianjiao, context);
+  if (repairedEvolution) {
+    return {
+      name: tianjiao.名号,
+      message: `吞噬本源积累圆满，体质进化为【${repairedEvolution}】`,
+      evolvedTo: repairedEvolution,
+      count: Number(tianjiao.吞噬本源次数) || 0,
+    };
+  }
+  if ((Number(tianjiao.吞噬本源次数) || 0) >= 10 || random() >= HUAYUNFEI_DEVOUR_CHANCE) return null;
+
+  const realm = findRealm(context.secretLevels, tianjiao.mijinglevel_id).level || tianjiao.境界 || '同境界';
+  const targetType = random() < 0.5 ? '圣人先贤尸骸' : '同境天骄';
+  const randomName = `${randomEntry(CULTIVATOR_SURNAMES, random)}${randomEntry(CULTIVATOR_NAMES, random)}`;
+  const targetName = targetType === '圣人先贤尸骸'
+    ? `${randomEntry(HOLY_LANDS, random)}圣人先贤·${randomName}`
+    : `${realm}天骄·${randomName}`;
+  tianjiao.吞噬本源次数 = Math.max(0, Math.floor(Number(tianjiao.吞噬本源次数) || 0)) + 1;
+  tianjiao.吞噬本源记录 = [
+    ...(Array.isArray(tianjiao.吞噬本源记录) ? tianjiao.吞噬本源记录 : []),
+    { 目标: targetName, 类型: targetType, 境界: realm },
+  ].slice(-10);
+  const evolvedTo = evolveHuayunfeiByCount(tianjiao, context);
+  return {
+    name: tianjiao.名号,
+    targetName,
+    targetType,
+    realm,
+    count: tianjiao.吞噬本源次数,
+    evolvedTo,
+    message: targetType === '圣人先贤尸骸'
+      ? `潜入${targetName.split('圣人先贤')[0]}祖地，吞噬【${targetName}】的遗蜕本源（${tianjiao.吞噬本源次数}/10）`
+      : `猎杀同境界的【${targetName}】，吞噬其天骄本源（${tianjiao.吞噬本源次数}/10）`,
+  };
 }
 
 export function attemptTianjiaoBreakthrough(tianjiao, context, random = Math.random) {
@@ -250,7 +329,13 @@ export function buildTianjiaoBattleStats(tianjiao, context) {
     防御: tianjiao?.防御加成,
     血量上限: tianjiao?.生命加成,
   });
-  const stats = calculateEquippedStats(withBonus, [equipment.武器, equipment.护具, equipment.法宝, equipment.帝兵]);
+  const root = tianjiao?.灵根 || {};
+  const withRoot = {
+    攻击: withBonus.攻击 * (1 + (Number(root.攻击) || 0)),
+    防御: withBonus.防御 * (1 + (Number(root.防御) || 0)),
+    血量上限: withBonus.血量上限 * (1 + (Number(root.生命) || 0)),
+  };
+  const stats = calculateEquippedStats(withRoot, [equipment.武器, equipment.护具, equipment.法宝, equipment.帝兵]);
   const imperialMultiplier = Number(equipment.帝兵?.全属性) || 0;
   stats.攻击 += Math.trunc(realms.laterRealms.攻击 * imperialMultiplier);
   stats.防御 += Math.trunc(realms.laterRealms.防御 * imperialMultiplier);
