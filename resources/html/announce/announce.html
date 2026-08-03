@@ -432,6 +432,7 @@
             </div>
         </div>
 
+        {{if showOverview}}
         <!-- 总览 -->
         <div class="hero">
             <div class="hero-label">近 期 最 大 更 新</div>
@@ -460,6 +461,7 @@
             </div>
             {{/each}}
         </div>
+        {{/if}}
 
         <!-- 更新日志（git 提交，2a11e4c「本次重大更新概览」之后） -->
         <div class="section-title">更新日志 · 提交记录</div>
@@ -482,6 +484,7 @@
             {{/each}}
         </div>
 
+        {{if showOverview}}
         <!-- 天骄属性一览 -->
         <div class="section-title">天骄属性一览 · 重构后</div>
         <div class="tianjiao-wrap">
@@ -523,10 +526,14 @@
                 结识更多剧情人物可解锁专属关系与好感剧情。前往诸天万界游历、完成对应奇遇即可收录于【剧情人物图鉴】。
             </div>
         </div>
+        {{/if}}
 
         <!-- 页脚 -->
         <div class="footer">
-            诸天修仙 · 版本 <b>{{version}}</b> &nbsp;|&nbsp; 发送 <b>#更新公告</b> 随时查阅 &nbsp;|&nbsp; 大道无情，唯勤者得之
+            诸天修仙 · 版本 <b>{{version}}</b> &nbsp;|&nbsp; 第 <b>{{page}}</b> / <b>{{totalPages}}</b> 页
+            {{if hasMore}}&nbsp;|&nbsp; 发送 <b>#更新公告{{page+1}}</b> 查看过往{{/if}}
+            {{if page>1}}&nbsp;|&nbsp; 发送 <b>#更新公告1</b> 回到最新{{/if}}
+            <br>大道无情，唯勤者得之
         </div>
     </div>
 </body>

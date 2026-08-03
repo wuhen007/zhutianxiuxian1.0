@@ -112,7 +112,7 @@ export class Showningmeng extends plugin {
           fnc: 'Show_character',
         },
           {
-          reg: '^#更新公告$',
+          reg: '^#更新公告\\s*(\\d*)$',
           fnc: 'Show_announce',
         },
       ],
