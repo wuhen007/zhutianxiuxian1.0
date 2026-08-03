@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link
+      rel="stylesheet"
+      href="{{pluResPath}}/html/endless_battle/endless_battle.css"
+    />
+    <title>无尽劫境战报</title>
+  </head>
+  <body>
+    <main id="container" class="report {{victory ? 'is-victory' : 'is-defeat'}}">
+      <header class="hero">
+        <div class="eyebrow">ENDLESS REALM · BATTLE RECORD</div>
+        <div class="hero-line">
+          <div>
+            <h1>无尽劫境</h1>
+            <div class="world">第 {{layer}} 层 · {{world}}</div>
+          </div>
+          <div class="result-seal">
+            <span>{{victory ? '胜' : '败'}}</span>
+            <small>{{victory ? '怪潮覆灭' : '投影破碎'}}</small>
+          </div>
+        </div>
+        <div class="encounter">
+          <div class="encounter-main">
+            <span class="stage stage-{{stage}}">{{stageName}}</span>
+            <strong>{{enemy}}</strong>
+            <span class="trait">劫境词条 · {{trait}}</span>
+          </div>
+          <div class="enemy-vitals">
+            <div class="vital-label">
+              <span>守关者生命</span>
+              <b>{{enemyHp}} / {{enemyMaxHp}}</b>
+            </div>
+            <div class="bar enemy-bar">
+              <i style="width: {{enemyHpPct}}%"></i>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section class="overview">
+        <div class="metric"><span>战斗回合</span><b>{{rounds}}</b></div>
+        <div class="metric"><span>队伍总输出</span><b>{{totalDamage}}</b></div>
+        <div class="metric"><span>诸天共鸣</span><b>{{fusionDamage}}</b></div>
+        <div class="metric"><span>共享命火</span><b>{{lifeFire}} / {{maxLifeFire}}</b></div>
+      </section>
+
+      <section class="section party-section">
+        <div class="section-heading">
+          <div><span class="index">壹</span><h2>队伍战况</h2></div>
+          <p>MVP · {{mvpName}} / {{mvpDamage}}</p>
+        </div>
+        <div class="party-list">
+          {{each members member rank}}
+          <article class="member {{member.alive ? '' : 'fallen'}}">
+            <div class="rank">{{rank + 1}}</div>
+            <div class="member-main">
+              <div class="member-title">
+                <strong>{{member.name}}</strong>
+                {{if member.isMvp}}<span class="mvp">MVP</span>{{/if}}
+                {{if !member.alive}}<span class="fallen-tag">残魂</span>{{/if}}
+                <small>承伤 {{member.damageTaken}}</small>
+              </div>
+              <div class="build-line">
+                <span>携带能力</span>
+                {{if member.abilities.length}}
+                  {{each member.abilities ability}}
+                  <b>{{ability.name}} Lv.{{ability.level}}</b>
+                  {{/each}}
+                {{else}}
+                  <em>尚无能力</em>
+                {{/if}}
+              </div>
+              {{if victory}}
+              <div class="member-reward">
+                本层所得 · 修为 <b>{{member.layerCultivation}}</b> · 血气 <b>{{member.layerBlood}}</b>
+              </div>
+              {{/if}}
+              <div class="member-vitals">
+                <div class="hp-line">
+                  <div class="bar member-hp {{member.hpTone}}">
+                    <i style="width: {{member.hpPct}}%"></i>
+                  </div>
+                  <span>{{member.hp}} / {{member.maxHp}}</span>
+                </div>
+                <div class="damage-line">
+                  <div class="bar damage-bar">
+                    <i style="width: {{member.damagePct}}%"></i>
+                  </div>
+                  <b>输出 {{member.damage}}</b>
+                </div>
+              </div>
+            </div>
+          </article>
+          {{/each}}
+        </div>
+      </section>
+
+      <section class="section rounds-section">
+        <div class="section-heading">
+          <div><span class="index">贰</span><h2>回合纪要</h2></div>
+          <p>每轮伤害与战场余波</p>
+        </div>
+        <div class="round-list">
+          {{each roundDetails round}}
+          <article class="round">
+            <div class="round-no"><small>ROUND</small><b>{{round.round}}</b></div>
+            <div class="round-body">
+              <div class="round-summary">
+                <span>造成 <b>{{round.enemyDamage}}</b></span>
+                <span>承受 <b>{{round.teamDamageTaken}}</b></span>
+                {{if round.fusionDamage != '0'}}
+                <span class="fusion">共鸣 <b>{{round.fusionDamage}}</b></span>
+                {{/if}}
+              </div>
+              <div class="round-bars">
+                <div>
+                  <label>敌方</label>
+                  <div class="bar"><i class="enemy-fill" style="width: {{round.enemyHpPct}}%"></i></div>
+                  <em>{{round.enemyHp}} / {{round.enemyMaxHp}}</em>
+                </div>
+                <div>
+                  <label>我方</label>
+                  <div class="bar"><i class="team-fill" style="width: {{round.teamHpPct}}%"></i></div>
+                  <em>{{round.teamHpPct}}%</em>
+                </div>
+              </div>
+              {{if round.actions.length}}
+              <div class="action-list">
+                {{each round.actions action}}
+                <div class="action action-{{action.side}} action-kind-{{action.kind}}">
+                  <span class="side-mark">{{action.sideName}}</span>
+                  <strong class="actor">{{action.actor}}</strong>
+                  <span class="uses">{{action.verb}}</span>
+                  <b class="skill">《{{action.skill}}》</b>
+                  {{if action.target}}<span class="target">→ {{action.target}}</span>{{/if}}
+                  {{if action.hasDamage}}<strong class="damage">造成 {{action.damage}} 伤害</strong>{{/if}}
+                  {{if action.hasHealing}}<strong class="healing">恢复 {{action.healing}}</strong>{{/if}}
+                  {{if action.hasAbsorbed}}<span class="absorbed">护盾抵消 {{action.absorbed}}</span>{{/if}}
+                  {{if action.critical}}<span class="action-tag critical-tag">暴击</span>{{/if}}
+                  {{if action.execute}}<span class="action-tag execute-tag">斩杀</span>{{/if}}
+                  {{if action.narration}}<span class="action-narration">{{action.narration}}</span>{{/if}}
+                  {{if action.note}}<span class="action-note">{{action.note}}</span>{{/if}}
+                </div>
+                {{/each}}
+              </div>
+              {{/if}}
+            </div>
+          </article>
+          {{/each}}
+        </div>
+      </section>
+
+      <section class="section review-section">
+        <div class="section-heading">
+          <div><span class="index">叁</span><h2>劫后复盘</h2></div>
+          <p>{{victory ? '再入诸天' : '本次征伐止步于此'}}</p>
+        </div>
+        <div class="review-grid">
+          <div><span>诸天共鸣触发</span><b>{{fusionHits}} 次</b></div>
+          <div><span>涅槃与复活</span><b>{{revive}} 次</b></div>
+          <div><span>命火消耗</span><b>{{lifeFireUsed}} 点</b></div>
+          <div><span>本场魁首</span><b>{{mvpName}}</b></div>
+        </div>
+        {{if fusions.length}}
+        <div class="fusion-line">
+          <span>已激活诸天共鸣</span>
+          {{each fusions fusion}}<b>{{fusion}}</b>{{/each}}
+        </div>
+        {{/if}}
+        {{if analysis}}<p class="analysis">{{analysis}}</p>{{/if}}
+        {{if victory}}
+        {{if layerReward}}
+        <div class="layer-reward">
+          <strong>本层战利品</strong>
+          <span>灵石 {{layerReward.lingshi}}</span>
+          <span>源石 {{layerReward.sourceStone}}</span>
+          <span>劫境道痕 {{layerReward.tokens}}</span>
+        </div>
+        {{/if}}
+        <div class="treasury">
+          <div><span>已封存</span><b>灵石 {{bankedLingshi}}</b><b>源石 {{bankedSourceStone}}</b><b>道痕 {{bankedTokens}}</b></div>
+          <div><span>未封存</span><b>灵石 {{unbankedLingshi}}</b><b>源石 {{unbankedSourceStone}}</b><b>道痕 {{unbankedTokens}}</b></div>
+        </div>
+        {{/if}}
+        {{if settlement}}
+        <div class="settlement">
+          <strong>团灭结算{{settlement.complete ? '' : '暂未完成'}}</strong>
+          <span>带出灵石 {{settlement.lingshi}}</span>
+          <span>带出源石 {{settlement.sourceStone}}</span>
+          <span>带出劫境道痕 {{settlement.tokens}}</span>
+          <span>遗失 {{settlement.lostLingshi}} 灵石 / {{settlement.lostSourceStone}} 源石 / {{settlement.lostTokens}} 道痕</span>
+          {{each settlement.members member}}
+          <span class="settlement-member">{{member.name}} · 修为 {{member.cultivation}} / 血气 {{member.blood}}（遗失 {{member.lostCultivation}} / {{member.lostBlood}}）</span>
+          {{/each}}
+        </div>
+        {{/if}}
+      </section>
+
+      <footer>
+        <span>诸天投影记录完毕</span>
+        <b>{{victory ? '选择新的能力，继续深入' : '一切所得，皆由劫中带回'}}</b>
+      </footer>
+    </main>
+  </body>
+</html>

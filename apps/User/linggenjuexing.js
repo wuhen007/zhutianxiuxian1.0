@@ -10,7 +10,7 @@ import {
   Read_player,
   Read_equipment,
   Add_HP,
-   zd_battle,
+  zd_battle,
   exist_najie_thing,
   Add_修为,
   Add_血气,
@@ -23,6 +23,14 @@ import {
   channel,
   ForwardMsg
 } from '../../model/xiuxian.js';
+import {
+  SUPREME_STAGE_NAMES,
+  ensureSupremePath,
+  getNirvanaMissing,
+  getSupremeTitle,
+  getSupremeTrialSpec,
+  getUltimateMissing,
+} from '../../model/supremePath.js';
 export class linggenjuexing extends plugin {
   constructor() {
     super({
@@ -54,6 +62,34 @@ export class linggenjuexing extends plugin {
             {
             reg: '^#妖体觉醒$',
             fnc: 'yaotijuexing'
+            },
+            {
+            reg: '^#至尊之路$',
+            fnc: 'supremePathStatus'
+            },
+            {
+            reg: '^#斩骨涅槃$',
+            fnc: 'startSupremeNirvana'
+            },
+            {
+            reg: '^#舍骨入血$',
+            fnc: 'startSupremeUltimate'
+            },
+            {
+            reg: '^#至尊试炼$',
+            fnc: 'supremeTrial'
+            },
+            {
+            reg: '^#孕育仙骨$',
+            fnc: 'awakenImmortalBone'
+            },
+            {
+            reg: '^#重瞳开天$',
+            fnc: 'awakenDoublePupil'
+            },
+            {
+            reg: '^#瞳骨合一$',
+            fnc: 'mergeSupremeTalents'
             },
       ],
       
@@ -790,6 +826,232 @@ async yaotijuexing(e) {
     else {
         e.reply(` 觉醒条件不足！需达到更高境界。`);
     }
+}
+
+async getSupremeContext(e) {
+    if (!verc({ e })) return null;
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    if (!await existplayer(usr_qq)) {
+        await e.reply('玩家不存在，请先创建角色');
+        return null;
+    }
+    const player = await Read_player(usr_qq);
+    const path = ensureSupremePath(player);
+    if (!path) {
+        await e.reply('你并非天生至尊，无法踏上至尊骨进阶之路。');
+        return null;
+    }
+    return { usr_qq, player, path };
+}
+
+async saveSupremePlayer(usr_qq, player) {
+    const path = ensureSupremePath(player);
+    if (path) path.称号 = getSupremeTitle(player);
+    await Write_player(usr_qq, player);
+    await player_efficiency(usr_qq);
+}
+
+async supremePathStatus(e) {
+    const ctx = await this.getSupremeContext(e);
+    if (!ctx) return false;
+    const { usr_qq, player, path } = ctx;
+    const trial = path.试炼;
+    const nextMissing = path.阶段 === 1
+        ? getNirvanaMissing(player)
+        : path.阶段 === 2
+            ? getUltimateMissing(player)
+            : [];
+
+    await Write_player(usr_qq, player);
+    return e.reply([
+        '【至尊之路】',
+        `本命阶段：${SUPREME_STAGE_NAMES[path.阶段]}`,
+        `组合称号：${getSupremeTitle(player)}`,
+        `至尊骨：${player.至尊骨 || '尚未显化'}`,
+        `重瞳：${path.重瞳 ? '已觉醒' : '未觉醒'}`,
+        `仙骨：${path.仙骨 ? '已孕育' : '未孕育'}`,
+        `瞳骨共鸣：${path.共鸣 ? '已完成' : '未完成'}`,
+        trial ? `当前试炼：${trial.名称} ${trial.胜场}/${trial.目标}` : '当前试炼：无',
+        nextMissing.length ? `下一阶段尚缺：${nextMissing.join('、')}` : path.阶段 < 3 ? '下一阶段条件已经满足' : '至尊骨主线已经圆满',
+        '',
+        '可用指令：#斩骨涅槃、#舍骨入血、#至尊试炼、#孕育仙骨、#重瞳开天、#瞳骨合一',
+    ].join('\n'));
+}
+
+async startSupremeNirvana(e) {
+    const ctx = await this.getSupremeContext(e);
+    if (!ctx) return false;
+    const { usr_qq, player, path } = ctx;
+    if (path.阶段 !== 1) return e.reply('只有天生至尊可以开启第一次斩骨涅槃。');
+    if (path.试炼) return e.reply(`你正在进行${path.试炼.名称}，请使用 #至尊试炼。`);
+
+    const missing = getNirvanaMissing(player);
+    if (missing.length) return e.reply(`【斩骨涅槃·条件不足】\n尚缺：${missing.join('、')}`);
+
+    const spec = getSupremeTrialSpec('nirvana');
+    path.试炼 = { 类型: 'nirvana', 名称: '失骨涅槃', 胜场: 0, 目标: spec.target };
+    await Write_player(usr_qq, player);
+    return e.reply([
+        '【斩骨涅槃】',
+        '你亲手震碎胸口至尊骨，将上苍符文散入血肉。',
+        '试炼期间将以凡血之躯迎战夺骨者投影。',
+        `取得${spec.target}场胜利后，至尊骨将由自身重新孕育。`,
+        '使用 #至尊试炼 开始战斗。',
+    ].join('\n'));
+}
+
+async startSupremeUltimate(e) {
+    const ctx = await this.getSupremeContext(e);
+    if (!ctx) return false;
+    const { usr_qq, player, path } = ctx;
+    if (path.阶段 !== 2) return e.reply('只有涅槃·至尊可以开启舍骨入血。');
+    if (path.试炼) return e.reply(`你正在进行${path.试炼.名称}，请使用 #至尊试炼。`);
+
+    const missing = getUltimateMissing(player);
+    if (missing.length) return e.reply(`【舍骨入血·条件不足】\n尚缺：${missing.join('、')}`);
+
+    const spec = getSupremeTrialSpec('ultimate');
+    path.试炼 = { 类型: 'ultimate', 名称: '血肉铭骨', 胜场: 0, 目标: spec.target };
+    await Write_player(usr_qq, player);
+    return e.reply([
+        '【舍骨入血】',
+        '第二块至尊骨化作漫天符文，烙印进血液、脏腑与每一寸肉身。',
+        `你必须以无骨之身战胜自身道果${spec.target}次。`,
+        '使用 #至尊试炼 迎战至尊骨中的自己。',
+    ].join('\n'));
+}
+
+buildSupremeTrialFighters(player, trial) {
+    const spec = getSupremeTrialSpec(trial.类型);
+    const maxHp = Math.max(1, Number(player.血量上限 || player.当前血量 || player.生命 || 1));
+    const attacker = JSON.parse(JSON.stringify(player));
+    attacker.名号 = `${player.名号}·无骨之身`;
+    attacker.当前血量 = maxHp;
+    attacker.血量上限 = maxHp;
+    attacker.灵根 = { name: '凡血之躯', type: '体质', 法球倍率: 0.8 };
+    attacker.法球倍率 = 0.8;
+    delete attacker.至尊之路;
+
+    const enemyRootName = trial.类型 === 'nirvana' ? '天生至尊' : '涅槃·至尊';
+    const enemyRoot = data.talent_list.find(item => item.name === enemyRootName) || player.灵根;
+    const enemy = {
+        名号: spec.enemyName,
+        攻击: Math.max(1, Math.trunc(Number(player.攻击 || 1) * spec.enemyScale)),
+        防御: Math.max(1, Math.trunc(Number(player.防御 || 1) * spec.enemyScale)),
+        当前血量: Math.max(1, Math.trunc(maxHp * spec.enemyScale)),
+        血量上限: Math.max(1, Math.trunc(maxHp * spec.enemyScale)),
+        暴击率: Number(player.暴击率 || 0.1),
+        暴击伤害: Number(player.暴击伤害 || 1.5),
+        灵根: { ...enemyRoot },
+        法球倍率: Number(enemyRoot.法球倍率 || 1),
+        学习的功法: [],
+        仙宠: null,
+        速度: Number(player.速度 || 100),
+        mijinglevel_id: Number(player.mijinglevel_id || 0),
+        xiangulevel_id: Number(player.xiangulevel_id || 0),
+    };
+    return { attacker, enemy };
+}
+
+async supremeTrial(e) {
+    const ctx = await this.getSupremeContext(e);
+    if (!ctx) return false;
+    const { usr_qq, player, path } = ctx;
+    if (!path.试炼) return e.reply('你尚未开启至尊试炼。');
+
+    const { attacker, enemy } = this.buildSupremeTrialFighters(player, path.试炼);
+    const result = await zd_battle(attacker, enemy);
+    if (Array.isArray(result.msg) && result.msg.length) await ForwardMsg(e, result.msg);
+
+    if (result.winner !== 'A') {
+        return e.reply(`【至尊试炼失败】\n道痕未损，当前进度仍为 ${path.试炼.胜场}/${path.试炼.目标}。`);
+    }
+
+    path.试炼.胜场++;
+    if (path.试炼.胜场 < path.试炼.目标) {
+        await Write_player(usr_qq, player);
+        return e.reply(`【至尊试炼胜利】\n${path.试炼.名称}：${path.试炼.胜场}/${path.试炼.目标}`);
+    }
+
+    const completedType = path.试炼.类型;
+    const nextStage = completedType === 'nirvana' ? 2 : 3;
+    const nextName = SUPREME_STAGE_NAMES[nextStage];
+    const nextTalent = data.talent_list.find(item => item.name === nextName);
+    if (!nextTalent) return e.reply(`未找到灵根配置：${nextName}，请联系管理员。`);
+
+    player.灵根 = { ...nextTalent };
+    player.至尊骨 = completedType === 'nirvana' ? '涅槃再生' : '血肉铭骨';
+    path.阶段 = nextStage;
+    path.试炼 = null;
+    player.生命本源 = 100 + Number(player.灵根.生命本源 || 0);
+    await this.saveSupremePlayer(usr_qq, player);
+
+    return e.reply([
+        `【${nextName}】`,
+        completedType === 'nirvana'
+            ? '失去的骨没有归来，一块更强的至尊骨却从自身血肉中重新生出。轮回宝术就此觉醒。'
+            : '至尊符文不再拘泥于一块骨，而是遍布血肉脏腑。第三至尊术于体内轰鸣。',
+        `当前称号：${getSupremeTitle(player)}`,
+    ].join('\n'));
+}
+
+async awakenImmortalBone(e) {
+    const ctx = await this.getSupremeContext(e);
+    if (!ctx) return false;
+    const { usr_qq, player, path } = ctx;
+    if (path.仙骨) return e.reply('你的仙骨已经孕育完成。');
+    if (!player.学习的功法?.includes('五行涅槃法')) return e.reply('孕育仙骨需要掌握五行涅槃法。');
+    if (player.生命本源 !== 100 + Number(player.灵根.生命本源 || 0)) return e.reply('生命本源亏空，无法孕育仙骨。');
+
+    const souls = Number(await exist_najie_thing(usr_qq, '仙王残魂', '材料') || 0);
+    const worldStones = Number(await exist_najie_thing(usr_qq, '世界石', '材料') || 0);
+    if (souls < 3 || worldStones < 1) {
+        return e.reply(`【仙骨材料不足】\n仙王残魂：${souls}/3\n世界石：${worldStones}/1`);
+    }
+
+    await Add_najie_thing(usr_qq, '仙王残魂', '材料', -3);
+    await Add_najie_thing(usr_qq, '世界石', '材料', -1);
+    path.仙骨 = true;
+    path.共鸣 = false;
+    await this.saveSupremePlayer(usr_qq, player);
+    return e.reply(`【仙骨孕育】\n仙光贯穿四肢百骸，第二块不朽仙骨在体内成形。\n获得称号：${getSupremeTitle(player)}`);
+}
+
+async awakenDoublePupil(e) {
+    const ctx = await this.getSupremeContext(e);
+    if (!ctx) return false;
+    const { usr_qq, player, path } = ctx;
+    if (path.重瞳) return e.reply('你的重瞳已经觉醒。');
+    if (Math.max(Number(player.mijinglevel_id || 0), Number(player.xiangulevel_id || 0)) < 6) {
+        return e.reply('重瞳开天需要遮天或仙古境界达到第六境。');
+    }
+
+    const source = Number(await exist_najie_thing(usr_qq, '重瞳本源', '材料') || 0);
+    if (source < 1) return e.reply('你没有重瞳本源，无法映照开天神瞳。');
+
+    await Add_najie_thing(usr_qq, '重瞳本源', '材料', -1);
+    path.重瞳 = true;
+    path.共鸣 = false;
+    await this.saveSupremePlayer(usr_qq, player);
+    return e.reply(`【重瞳开天】\n双眸各生重瞳，左眼开天，右眼寂灭。\n获得称号：${getSupremeTitle(player)}`);
+}
+
+async mergeSupremeTalents(e) {
+    const ctx = await this.getSupremeContext(e);
+    if (!ctx) return false;
+    const { usr_qq, player, path } = ctx;
+    if (path.阶段 < 2) return e.reply('至少完成第一次至尊涅槃，方能承受瞳骨合一。');
+    if (!path.重瞳 || !path.仙骨) return e.reply('瞳骨合一需要同时拥有重瞳、至尊骨与仙骨。');
+    if (path.共鸣) return e.reply('重瞳、至尊骨与仙骨已经完成共鸣。');
+
+    path.共鸣 = true;
+    await this.saveSupremePlayer(usr_qq, player);
+    return e.reply([
+        '【瞳骨合一】',
+        '重瞳洞察万法，至尊骨主掌攻伐，仙骨镇压反噬。',
+        '三种本源贯通周身，获得终极共鸣：瞳照上苍·不朽轮回。',
+        `无上称号：${getSupremeTitle(player)}`,
+    ].join('\n'));
 }
 
 }

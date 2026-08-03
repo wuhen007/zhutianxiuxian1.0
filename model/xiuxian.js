@@ -55,6 +55,7 @@ import {
   hasEngravedCoordinate,
 } from './weimianTravel.js';
 import { calculateEquippedStats } from './equipmentStats.js';
+import { hasSupremeInnate } from './supremePath.js';
 
 /**
  * 获取机器人类型
@@ -1407,7 +1408,7 @@ function idToCss(id) { return String(id).replace('.', '_'); }
 
 // 位面 ID → 徽章字
 function idToBadge(id) {
-  const m = { 0: '凡', 1: '仙', 1.5: '下', 2: '遮', 2.5: '九', 3: '界', 4: '时', 5: '永', 6: '域' };
+  const m = { 0: '凡', 1: '仙', 1.5: '下', 2: '遮', 2.5: '九', 3: '界', 3.5: '墟', 4: '时', 5: '永', 6: '域' };
   return m[id] || '?';
 }
 
@@ -1465,6 +1466,11 @@ export async function get_weimian_img(e) {
       {
         id: 3, name: '界海', icon: '🌊', description: '诸天万界汇聚地，浪花间沉浮残破古界。准仙帝战场，黑暗源头。',
         danger: '致命', features: '万界沉浮·准仙帝战场',
+        isSpecial: false
+      },
+      {
+        id: 3.5, name: '太初星墟', icon: '☄️', description: '开天前残界堆叠成的星海废墟，古老观测站仍在捕捉诸天裂隙。',
+        danger: '致命', features: '残界潮汐·裂界观测',
         isSpecial: false
       },
       {
@@ -4816,9 +4822,15 @@ export async function Write_najie(usr_qq, najie) {
 //使用时记得加await
 export async function Add_灵石(usr_qq, 灵石数量 = 0, options = {}) {
   let player = await Read_player(usr_qq);
+  const idempotencyKey = options?.idempotencyKey;
+  if (idempotencyKey && player._rewardClaims?.[idempotencyKey]) return 0;
   const effects = getMinggeEffects(player, data.minggeList);
-  const actualAmount = calculateMinggeCurrencyGain(灵石数量, effects, options);
+  const actualAmount = calculateMinggeCurrencyGain(灵石数量, effects, options || {});
   player.灵石 += actualAmount;
+  if (idempotencyKey) {
+    player._rewardClaims ??= {};
+    player._rewardClaims[idempotencyKey] = { amount: actualAmount, claimedAt: Date.now() };
+  }
   await Write_player(usr_qq, player);
   return actualAmount;
 }
@@ -5144,7 +5156,8 @@ export async function Add_najie_thing(
   thing_class,
   x,
   pinji,
-  equipmentMultiplier = 1
+  equipmentMultiplier = 1,
+  options = {}
 ) {
 
   if(x>0){
@@ -5153,6 +5166,15 @@ export async function Add_najie_thing(
   }
   if (x == 0) return;
   let najie = await Read_najie(usr_qq);
+  const idempotencyKey = options?.idempotencyKey;
+  if (idempotencyKey && najie._rewardClaims?.[idempotencyKey]) return 0;
+  const persistNajie = async () => {
+    if (idempotencyKey) {
+      najie._rewardClaims ??= {};
+      najie._rewardClaims[idempotencyKey] = { amount: x, claimedAt: Date.now() };
+    }
+    await Write_najie(usr_qq, najie);
+  };
   //写入
   //这部分写得很冗余,但能跑
   if (thing_class == '装备') {
@@ -5186,7 +5208,7 @@ export async function Add_najie_thing(
             equ.数量 = x;
             equ.islockd = 0;
             najie[thing_class].push(equ);
-            await Write_najie(usr_qq, najie);
+            await persistNajie();
             return;
           }
         }
@@ -5195,7 +5217,7 @@ export async function Add_najie_thing(
         name.数量 = x;
         name.islockd = 0;
         najie[thing_class].push(name);
-        await Write_najie(usr_qq, najie);
+        await persistNajie();
         return;
       }
     }
@@ -5204,12 +5226,18 @@ export async function Add_najie_thing(
         item => item.name == name && item.pinji == pinji
       ).数量 += x;
     } else {
-      najie[thing_class].find(
+      const sameVariant = najie[thing_class].find(
+        item =>
+          item.name == name.name &&
+          item.pinji == pinji &&
+          Boolean(item.归一属性) === Boolean(name.归一属性)
+      );
+      (sameVariant || najie[thing_class].find(
         item => item.name == name.name && item.pinji == pinji
-      ).数量 += x;
+      )).数量 += x;
     }
     najie.装备 = najie.装备.filter(item => item.数量 > 0);
-    await Write_najie(usr_qq, najie);
+    await persistNajie();
     return;
   } else if (thing_class == '仙宠') {
     if (x > 0) {
@@ -5220,14 +5248,14 @@ export async function Add_najie_thing(
           thing.数量 = x;
           thing.islockd = 0;
           najie[thing_class].push(thing);
-          await Write_najie(usr_qq, najie);
+          await persistNajie();
           return;
         }
       } else {
         name.数量 = x;
         name.islockd = 0;
         najie[thing_class].push(name);
-        await Write_najie(usr_qq, najie);
+        await persistNajie();
         return;
       }
     }
@@ -5237,7 +5265,7 @@ export async function Add_najie_thing(
       najie[thing_class].find(item => item.name == name.name).数量 += x;
     }
     najie.仙宠 = najie.仙宠.filter(item => item.数量 > 0);
-    await Write_najie(usr_qq, najie);
+    await persistNajie();
     return;
   }else  if (thing_class == '宝石')
     if (x > 0) {
@@ -5252,7 +5280,7 @@ export async function Add_najie_thing(
             equ.数量 = x;
             equ.islockd = 0;
             najie[thing_class].push(equ);
-            await Write_najie(usr_qq, najie);
+            await persistNajie();
             return;
           }
         }
@@ -5260,7 +5288,7 @@ export async function Add_najie_thing(
         name.数量 = x;
         name.islockd = 0;
         najie[thing_class].push(name);
-        await Write_najie(usr_qq, najie);
+        await persistNajie();
         return;
       }
   }
@@ -5297,14 +5325,14 @@ export async function Add_najie_thing(
         najie[thing_class].push(thing);
         najie[thing_class].find(item => item.name == name).数量 = x;
         najie[thing_class].find(item => item.name == name).islockd = 0;
-        await Write_najie(usr_qq, najie);
+        await persistNajie();
         return;
       }
     }
   }
   najie[thing_class].find(item => item.name == name).数量 += x;
   najie[thing_class] = najie[thing_class].filter(item => item.数量 > 0);
-  await Write_najie(usr_qq, najie);
+  await persistNajie();
   return;
 }
 
@@ -6531,6 +6559,7 @@ export async function Go(e) {
         2: "遮天位面",
         2.5: "九天十地",
         3: "界海",
+        3.5: "太初星墟",
         4: "时间长河",
         5: "永恒未知之地"
     };
@@ -7562,7 +7591,7 @@ function handleSpecialSkills(attacker, defender, msg, teshujineng) {
   for (var i = 0; i < teshujineng.length; i++) {
     if (teshujineng[i].cnt === 0) continue;
     
-    if (attacker.灵根 && attacker.灵根.name === teshujineng[i].name) {
+    if (hasSupremeInnate(attacker, teshujineng[i].name)) {
       let Random = Math.random();
       
       if (Random < teshujineng[i].pr) {
@@ -8146,7 +8175,7 @@ let B_speed = (B_player.速度 ?? 100)
       
       if ((jineng1[i].class == '常驻' && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
           (attacker.学习的功法 && jineng1[i].class == '功法' && attacker.学习的功法.indexOf(jineng1[i].name) > -1 && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
-          (attacker.灵根 && jineng1[i].class == '灵根' && attacker.灵根.name == jineng1[i].name && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
+          (jineng1[i].class == '灵根' && hasSupremeInnate(attacker, jineng1[i].name) && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
           (attacker.xiangu_shenhuo && jineng1[i].class == '道种专属' && attacker.xiangu_shenhuo.专属技能 === jineng1[i].name && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr)) {
           攻击方技能 = jineng1[i]; // 在这里赋值
           if (jineng1[i].无视减伤) 无视减伤 = true; // 草字剑诀·斩真我
@@ -8237,7 +8266,7 @@ let B_speed = (B_player.速度 ?? 100)
         if (skill.class === '功法' && defender.学习的功法 && defender.学习的功法.includes(skill.name)) {
           return true;
         }
-        if (skill.class === '灵根' && defender.灵根 && defender.灵根.name === skill.name) {
+        if (skill.class === '灵根' && hasSupremeInnate(defender, skill.name)) {
           return true;
         }
         if (skill.class === '常驻') {
@@ -8339,7 +8368,7 @@ let B_speed = (B_player.速度 ?? 100)
         }
         
         if ((defender.学习的功法 && skill.class == '功法' && defender.学习的功法.indexOf(skill.name) > -1 && (cnt2 == skill.cnt || skill.cnt == -1) && random < skill.pr) ||
-            (defender.灵根 && skill.class == '灵根' && defender.灵根.name == skill.name && (cnt2 == skill.cnt || skill.cnt == -1) && random < skill.pr) ||
+            (skill.class == '灵根' && hasSupremeInnate(defender, skill.name) && (cnt2 == skill.cnt || skill.cnt == -1) && random < skill.pr) ||
             (defender.xiangu_shenhuo && skill.class == '道种专属' && defender.xiangu_shenhuo.专属技能 === skill.name && (cnt2 == skill.cnt || skill.cnt == -1) && random < skill.pr)) {
           
           if (skill.msg1 == '') {
@@ -9895,7 +9924,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
       if ((jineng1[i].class == '常驻' && (round == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
           (attacker.学习的功法 && jineng1[i].class == '功法' && attacker.学习的功法.indexOf(jineng1[i].name) > -1 && (round == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
-          (attacker.灵根 && jineng1[i].class == '灵根' && attacker.灵根.name == jineng1[i].name && (round == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
+          (jineng1[i].class == '灵根' && hasSupremeInnate(attacker, jineng1[i].name) && (round == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr) ||
           (attacker.xiangu_shenhuo && jineng1[i].class == '道种专属' && attacker.xiangu_shenhuo.专属技能 === jineng1[i].name && (round == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < jineng1[i].pr)) {
         攻击方技能列表.push(jineng1[i]);
         if (jineng1[i].无视减伤) 无视减伤 = true; // 草字剑诀·斩真我
@@ -9941,7 +9970,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         const skill = sortedSkills[i];
 
         if ((defender.学习的功法 && skill.class == '功法' && defender.学习的功法.indexOf(skill.name) > -1 && (round == skill.cnt || skill.cnt == -1) && random < skill.pr) ||
-            (defender.灵根 && skill.class == '灵根' && defender.灵根.name == skill.name && (round == skill.cnt || skill.cnt == -1) && random < skill.pr) ||
+            (skill.class == '灵根' && hasSupremeInnate(defender, skill.name) && (round == skill.cnt || skill.cnt == -1) && random < skill.pr) ||
             (defender.xiangu_shenhuo && skill.class == '道种专属' && defender.xiangu_shenhuo.专属技能 === skill.name && (round == skill.cnt || skill.cnt == -1) && random < skill.pr)) {
 
           if (skill.msg1 == '') {
@@ -10646,9 +10675,8 @@ async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
         attacker.学习的功法.indexOf(jineng1[i].name) > -1 &&
         (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) &&
         Math.random() < jineng1[i].pr) ||
-      (attacker.灵根 &&
-        jineng1[i].class == '灵根' &&
-        attacker.灵根.name == jineng1[i].name &&
+      (jineng1[i].class == '灵根' &&
+        hasSupremeInnate(attacker, jineng1[i].name) &&
         (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) &&
         Math.random() < jineng1[i].pr) ||
       (attacker.xiangu_shenhuo &&
@@ -10688,9 +10716,8 @@ async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
         defender.学习的功法.indexOf(jineng2[i].name) > -1 &&
         (cnt2 == jineng2[i].cnt || jineng2[i].cnt == -1) &&
         Math.random() < jineng2[i].pr) ||
-      (defender.灵根 &&
-        jineng2[i].class == '灵根' &&
-        defender.灵根.name == jineng2[i].name &&
+      (jineng2[i].class == '灵根' &&
+        hasSupremeInnate(defender, jineng2[i].name) &&
         (cnt2 == jineng2[i].cnt || jineng2[i].cnt == -1) &&
         Math.random() < jineng2[i].pr) ||
       (defender.xiangu_shenhuo &&
@@ -12529,11 +12556,14 @@ export function advanceUnitBars(units, max = ACTION_BAR_MAX) {
   }
 }
 
-// 取本拍就绪（行动条 >= max）的单位，按溢出降序（条满最多的先手）
+// 取本拍就绪（行动条 >= max）的单位，速度优先，溢出量用于同速判定。
 export function getReadyUnits(units, max = ACTION_BAR_MAX) {
   return units
     .filter(u => u.当前血量 > 0 && (u._actionBar || 0) >= max)
-    .sort((a, b) => (b._actionBar || 0) - (a._actionBar || 0));
+    .sort((a, b) =>
+      ((b._speed || 0) - (a._speed || 0)) ||
+      ((b._actionBar || 0) - (a._actionBar || 0))
+    );
 }
 
 // 拉条：行动条增加 amount（封顶 max），用于「气势如虹立即再动」

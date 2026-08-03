@@ -150,64 +150,43 @@
             "source": "era",
             "interaction": "generic",
             "participantQqs": []
-        }
-    ],
-    "lastEventTime": 0,
-    "lastEventWorldYear": 30000,
-    "activeEvents": [
+        },
         {
-            "type": "prodigyRise",
-            "player": {
-                "qq": "2640850832",
-                "name": "石凡"
+            "type": "mysteriousRuins",
+            "ruins": {
+                "name": "天道棋盘",
+                "desc": "疑似上古大能博弈天地之所留"
             },
-            "level": 10,
-            "levelName": "铭文境",
-            "achievement": "在一处上古遗迹中获得逆天机缘",
-            "achievement2": "诸多大能开始研究此人的来历",
-            "plane": "仙域",
-            "location": "混沌仙池",
+            "plane": "太初星墟",
+            "location": "无光观测站",
             "coordinate": {
-                "x": 173,
-                "y": 404
+                "x": 807,
+                "y": 214
             },
-            "timestamp": 1785406200085,
-            "expiresAt": 1785492600081,
+            "timestamp": 1785690001300,
+            "expiresAt": 1785776401299,
             "source": "era",
             "interaction": "generic",
             "participantQqs": []
-        },
+        }
+    ],
+    "lastEventTime": 3000,
+    "lastEventWorldYear": 33000,
+    "activeEvents": [
         {
-            "type": "wenxianClue",
-            "plane": "遮天位面",
-            "location": "太初古矿",
+            "type": "mysteriousRuins",
+            "ruins": {
+                "name": "天道棋盘",
+                "desc": "疑似上古大能博弈天地之所留"
+            },
+            "plane": "太初星墟",
+            "location": "无光观测站",
             "coordinate": {
-                "x": 212,
-                "y": 52
+                "x": 807,
+                "y": 214
             },
-            "discovererName": "路人甲23号",
-            "claimedQqs": [],
-            "timestamp": 1785416700089,
-            "expiresAt": 1785503100089,
-            "source": "era",
-            "interaction": "wenxian",
-            "participantQqs": []
-        },
-        {
-            "type": "worldChange",
-            "eraIndex": 3,
-            "event": {
-                "title": "道统断裂",
-                "desc": "诸多上古传承断绝，后人难以为继"
-            },
-            "plane": "仙域",
-            "location": "太始仙王府",
-            "coordinate": {
-                "x": 848,
-                "y": 96
-            },
-            "timestamp": 1785431100058,
-            "expiresAt": 1785517500057,
+            "timestamp": 1785690001300,
+            "expiresAt": 1785776401299,
             "source": "era",
             "interaction": "generic",
             "participantQqs": []

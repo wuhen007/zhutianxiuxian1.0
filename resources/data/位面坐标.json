@@ -172,6 +172,22 @@
       { "id": "diguanjieyingbao", "name": "帝关接应堡", "type": "site", "parent": "diba", "source": "完美世界", "bounds": { "x1": 60, "y1": 870, "x2": 200, "y2": 960 }, "desc": "接应帝关援军的堡垒" }
     ]
   },
+  "太初星墟": {
+    "planeId": 3.5,
+    "source": "巡界司活动",
+    "desc": "开天前破碎位面堆叠成的星墟，残界潮汐每两千年撕开一次通往未知之处的裂界",
+    "locations": [
+      { "id": "guilingjianmuqu", "name": "归零舰墓区", "type": "region", "parent": null, "source": "巡界司活动", "bounds": { "x1": 0, "y1": 0, "x2": 333, "y2": 333 }, "desc": "无数古老渡界舰在此失去动力，舰骸仍残留异世道则" },
+      { "id": "guilingjianmu", "name": "归零舰墓", "type": "site", "parent": "guilingjianmuqu", "source": "巡界司活动", "bounds": { "x1": 120, "y1": 120, "x2": 240, "y2": 240 }, "desc": "舰骸重叠的裂界入口，适合搜寻失落航图" },
+      { "id": "wuguangqu", "name": "无光天穹", "type": "region", "parent": null, "source": "巡界司活动", "bounds": { "x1": 667, "y1": 0, "x2": 999, "y2": 333 }, "desc": "星光无法抵达的天穹，观测阵列依靠界潮运转" },
+      { "id": "wuguangguancezhan", "name": "无光观测站", "type": "site", "parent": "wuguangqu", "source": "巡界司活动", "bounds": { "x1": 760, "y1": 120, "x2": 880, "y2": 240 }, "desc": "巡界司前身留下的观测站，记录着裂界出现的周期" },
+      { "id": "taichukuangqu", "name": "太初矿区", "type": "region", "parent": null, "source": "巡界司活动", "bounds": { "x1": 334, "y1": 334, "x2": 666, "y2": 666 }, "desc": "位面碰撞将界壁压成矿脉，深处界压足以碾碎真仙" },
+      { "id": "taichukuangxin", "name": "太初矿心", "type": "site", "parent": "taichukuangqu", "source": "巡界司活动", "bounds": { "x1": 440, "y1": 440, "x2": 560, "y2": 560 }, "desc": "星墟界壁最厚处，也是界源凝聚之地" },
+      { "id": "xunjiesi", "name": "巡界司驻地", "type": "region", "parent": null, "source": "巡界司活动", "bounds": { "x1": 0, "y1": 667, "x2": 333, "y2": 999 }, "desc": "后来者修复的位面锚点，负责接应探索修士" },
+      { "id": "wanjiedengta", "name": "万界灯塔", "type": "site", "parent": "xunjiesi", "source": "巡界司活动", "bounds": { "x1": 100, "y1": 740, "x2": 240, "y2": 880 }, "desc": "灯火以众修贡献为薪，锚定度越高，裂界越稳定" },
+      { "id": "canjiefengbao", "name": "残界风暴带", "type": "region", "parent": null, "source": "巡界司活动", "bounds": { "x1": 667, "y1": 667, "x2": 999, "y2": 999 }, "desc": "破碎世界的法则在此互相冲撞，只有强者敢深入" }
+    ]
+  },
   "仙域": {
     "planeId": 6,
     "source": "遮天三部曲",

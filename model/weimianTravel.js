@@ -5,6 +5,7 @@ export const PLACE_LOCATION_MAP = Object.freeze({
   '遮天位面': 2,
   '九天十地': 2.5,
   '界海': 3,
+  '太初星墟': 3.5,
   '时间长河': 4,
   '永恒未知之地': 5,
   '仙域': 6,
@@ -162,6 +163,10 @@ export function getLocationThreshold(player, location) {
     const met = mijing >= 18 || xiangu >= 16;
     code = met ? null : 'immortal-domain';
     checks = [{ label: '仙王境界', display: `秘境 ${mijing}/18 或仙古 ${xiangu}/16`, met }];
+  } else if (location === '太初星墟') {
+    const met = mijing >= 16 || xiangu >= 16;
+    code = met ? null : 'primordial-ruins';
+    checks = [{ label: '裂界承载', display: `秘境 ${mijing}/16 或仙古 ${xiangu}/16`, met }];
   } else if (location === '凡间') {
     const met = mijing <= 20 && xiangu <= 20;
     code = met ? null : 'mortal-realm';

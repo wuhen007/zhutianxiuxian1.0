@@ -10,6 +10,10 @@ export function calculateEquippedStats(baseStats, slots = []) {
   let fixedHp = 0;
 
   for (const slot of slots) {
+    const merged = slot?.归一属性?.百分比 || {};
+    attackBonus += Number(merged.atk) || 0;
+    defenseBonus += Number(merged.def) || 0;
+    hpBonus += Number(merged.HP) || 0;
     const atk = Number(slot?.atk) || 0;
     const def = Number(slot?.def) || 0;
     const HP = Number(slot?.HP) || 0;

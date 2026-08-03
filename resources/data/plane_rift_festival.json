@@ -1,0 +1,57 @@
+{
+  "lastCheckWorldYear": 34000,
+  "pity": {
+    "仙界": 0,
+    "太初星墟": 0
+  },
+  "activeRifts": [
+    {
+      "id": "34000-仙界",
+      "plane": "仙界",
+      "name": "万象丹庭",
+      "location": "广寒界",
+      "coordinate": {
+        "x": 90,
+        "y": 745
+      },
+      "worldYear": 34000,
+      "openedAt": 1785693600326,
+      "expiresAt": 1785708000326,
+      "anchor": 0,
+      "contribution": {},
+      "expeditions": {}
+    },
+    {
+      "id": "34000-太初星墟",
+      "plane": "太初星墟",
+      "name": "太初矿心",
+      "location": "太初矿心",
+      "coordinate": {
+        "x": 500,
+        "y": 500
+      },
+      "worldYear": 34000,
+      "openedAt": 1785693600326,
+      "expiresAt": 1785708000326,
+      "anchor": 0,
+      "contribution": {},
+      "expeditions": {}
+    }
+  ],
+  "history": [
+    {
+      "id": "34000-仙界",
+      "plane": "仙界",
+      "name": "万象丹庭",
+      "worldYear": 34000,
+      "openedAt": 1785693600326
+    },
+    {
+      "id": "34000-太初星墟",
+      "plane": "太初星墟",
+      "name": "太初矿心",
+      "worldYear": 34000,
+      "openedAt": 1785693600326
+    }
+  ]
+}
