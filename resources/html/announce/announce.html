@@ -24,7 +24,7 @@
             margin: 0 auto;
             background: rgba(15, 18, 32, 0.92);
             border-radius: 18px;
-            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), 0 0 60px rgba(124, 58, 237, 0.08);
             overflow: hidden;
             border: 1px solid rgba(159, 122, 234, 0.18);
         }
@@ -37,6 +37,17 @@
             text-align: center;
             border-bottom: 2px solid rgba(255, 215, 0, 0.45);
             overflow: hidden;
+            box-shadow: inset 0 -2px 18px rgba(255, 215, 0, 0.15);
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(circle at 18% 20%, rgba(255, 215, 0, 0.18), transparent 45%),
+                radial-gradient(circle at 82% 80%, rgba(255, 100, 200, 0.18), transparent 50%);
+            pointer-events: none;
         }
 
         .header::after {
@@ -46,24 +57,28 @@
             right: -60px;
             width: 220px;
             height: 220px;
-            background: radial-gradient(circle, rgba(255, 215, 0, 0.25), transparent 70%);
+            background: radial-gradient(circle, rgba(255, 215, 0, 0.32), transparent 70%);
             pointer-events: none;
+            filter: blur(8px);
         }
 
         .title {
-            font-size: 38px;
+            position: relative;
+            font-size: 40px;
             font-weight: 900;
-            letter-spacing: 2px;
+            letter-spacing: 3px;
             color: #fff;
-            text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+            text-shadow: 0 2px 14px rgba(0, 0, 0, 0.5), 0 0 18px rgba(255, 215, 0, 0.18);
             margin-bottom: 12px;
         }
 
         .title span {
             color: #FFD700;
+            text-shadow: 0 0 12px rgba(255, 215, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.5);
         }
 
         .meta-row {
+            position: relative;
             display: flex;
             justify-content: center;
             gap: 14px;
@@ -75,12 +90,14 @@
         .meta-chip {
             padding: 5px 14px;
             border-radius: 20px;
-            background: rgba(0, 0, 0, 0.28);
-            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(0, 0, 0, 0.32);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
         }
 
         .meta-chip b {
             color: #FFD700;
+            text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
         }
 
         /* ===== 总览条 ===== */
@@ -88,9 +105,12 @@
             margin: 26px 30px 6px;
             padding: 22px 26px;
             border-radius: 14px;
-            background: linear-gradient(135deg, rgba(80, 60, 160, 0.22), rgba(184, 50, 128, 0.16));
+            background:
+                linear-gradient(135deg, rgba(80, 60, 160, 0.32), rgba(184, 50, 128, 0.22)),
+                rgba(15, 18, 32, 0.4);
+            border: 1px solid rgba(255, 215, 0, 0.18);
             border-left: 4px solid #FFD700;
-            box-shadow: inset 0 0 30px rgba(124, 92, 200, 0.12);
+            box-shadow: inset 0 0 30px rgba(124, 92, 200, 0.16), 0 0 22px rgba(255, 215, 0, 0.06);
         }
 
         .hero-label {
@@ -99,11 +119,12 @@
             letter-spacing: 4px;
             margin-bottom: 10px;
             font-weight: bold;
+            text-shadow: 0 0 10px rgba(246, 173, 85, 0.35);
         }
 
         .hero-text {
             font-size: 17px;
-            line-height: 1.7;
+            line-height: 1.75;
             color: #f1f5f9;
         }
 
@@ -111,25 +132,47 @@
             color: #FFD700;
             font-style: normal;
             font-weight: bold;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+            margin: 0 2px;
         }
 
-        /* ===== 更新卡片 ===== */
+        /* ===== 章节标题 ===== */
         .section-title {
+            position: relative;
             font-size: 22px;
             color: #FFD700;
-            margin: 34px 30px 16px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid rgba(255, 215, 0, 0.25);
-            display: flex;
-            align-items: center;
+            margin: 36px 30px 18px;
+            padding: 4px 0 10px 32px;
+            border-bottom: 1px solid rgba(255, 215, 0, 0.22);
+            text-shadow: 0 0 12px rgba(255, 215, 0, 0.3);
+            letter-spacing: 1px;
         }
 
         .section-title::before {
-            content: "✦";
-            margin-right: 10px;
-            font-size: 20px;
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 18px;
+            height: 6px;
+            background: linear-gradient(90deg, #FFD700, #ff8c00);
+            border-radius: 3px;
+            box-shadow: 0 0 14px rgba(255, 215, 0, 0.65);
         }
 
+        .section-title::after {
+            content: "✦";
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(255, 215, 0, 0.45);
+            font-size: 16px;
+            text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+        }
+
+        /* ===== 更新卡片 ===== */
         .update-list {
             padding: 0 30px;
             display: flex;
@@ -141,11 +184,10 @@
             position: relative;
             background: linear-gradient(145deg, #1e2336, #161a2b);
             border-radius: 14px;
-            padding: 22px 24px;
-            border: 1px solid rgba(101, 119, 155, 0.25);
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+            padding: 22px 24px 22px 28px;
+            border: 1px solid rgba(101, 119, 155, 0.28);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.04);
             overflow: hidden;
-            transition: transform 0.25s ease;
         }
 
         .update-card::before {
@@ -156,6 +198,18 @@
             bottom: 0;
             width: 5px;
             background: linear-gradient(180deg, #9f7aea, #d53f8c);
+            box-shadow: 0 0 14px rgba(213, 63, 140, 0.45);
+        }
+
+        .update-card::after {
+            content: '';
+            position: absolute;
+            top: -40px;
+            right: -40px;
+            width: 140px;
+            height: 140px;
+            background: radial-gradient(circle, rgba(159, 122, 234, 0.18), transparent 70%);
+            pointer-events: none;
         }
 
         .update-head {
@@ -172,17 +226,19 @@
             border-radius: 8px;
             color: #fff;
             letter-spacing: 1px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.18);
         }
 
-        .tag-天骄 { background: linear-gradient(90deg, #6d28d9, #9f7aea); }
-        .tag-丹药 { background: linear-gradient(90deg, #2f855a, #48bb78); }
-        .tag-团本 { background: linear-gradient(90deg, #c53030, #ed8936); }
-        .tag-系统 { background: linear-gradient(90deg, #2b6cb0, #4299e1); }
+        .tag-天骄 { background: linear-gradient(90deg, #6d28d9, #9f7aea); box-shadow: 0 2px 12px rgba(159, 122, 234, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
+        .tag-丹药 { background: linear-gradient(90deg, #2f855a, #48bb78); box-shadow: 0 2px 12px rgba(72, 187, 120, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
+        .tag-团本 { background: linear-gradient(90deg, #c53030, #ed8936); box-shadow: 0 2px 12px rgba(237, 137, 54, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
+        .tag-系统 { background: linear-gradient(90deg, #2b6cb0, #4299e1); box-shadow: 0 2px 12px rgba(66, 153, 225, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
 
         .update-title {
             font-size: 21px;
             font-weight: bold;
             color: #fff;
+            text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
         }
 
         .update-summary {
@@ -191,6 +247,7 @@
             margin-bottom: 14px;
             padding-left: 4px;
             font-style: italic;
+            opacity: 0.92;
         }
 
         .point-list {
@@ -204,7 +261,7 @@
             position: relative;
             padding-left: 24px;
             font-size: 15px;
-            line-height: 1.6;
+            line-height: 1.65;
             color: #dbe4f0;
         }
 
@@ -215,6 +272,7 @@
             top: 0;
             color: #FFD700;
             font-size: 16px;
+            text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
         }
 
         /* ===== 天骄属性一览 ===== */
@@ -229,24 +287,65 @@
         }
 
         .tj-card {
+            position: relative;
             background: linear-gradient(145deg, #202744, #171c30);
             border-radius: 12px;
             padding: 16px 18px;
-            border: 1px solid rgba(101, 119, 155, 0.25);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(101, 119, 155, 0.28);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            overflow: hidden;
         }
+
+        .tj-card::before {
+            content: '';
+            position: absolute;
+            top: -30px;
+            right: -30px;
+            width: 90px;
+            height: 90px;
+            background: radial-gradient(circle, rgba(159, 122, 234, 0.18), transparent 70%);
+            pointer-events: none;
+        }
+
+        .tj-head {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+
+        .tj-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #6d28d9, #b83280);
+            color: #fff;
+            font-size: 22px;
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 14px rgba(109, 40, 217, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+            flex-shrink: 0;
+        }
+
+        .tj-meta { flex: 1; min-width: 0; }
 
         .tj-name {
             font-size: 19px;
             font-weight: bold;
             color: #FFD700;
             margin-bottom: 4px;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.28);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .tj-realm {
             font-size: 13px;
             color: #a0aec0;
-            margin-bottom: 12px;
         }
 
         .tj-stats {
@@ -258,33 +357,59 @@
         .tj-stat {
             text-align: center;
             padding: 10px 4px;
-            background: rgba(0, 0, 0, 0.25);
+            background: rgba(0, 0, 0, 0.28);
             border-radius: 8px;
+            border: 1px solid rgba(101, 119, 155, 0.18);
         }
 
         .tj-stat .lab {
             font-size: 12px;
             color: #8b9bb4;
-            margin-bottom: 4px;
+            margin-bottom: 6px;
+            letter-spacing: 1px;
         }
 
         .tj-stat .val {
-            font-size: 18px;
-            font-weight: bold;
-            color: #68d391;
+            display: inline-block;
+            font-size: 17px;
+            font-weight: 900;
+            padding: 3px 10px;
+            border-radius: 6px;
+            min-width: 36px;
         }
 
-        .tj-stat .val.speed { color: #63b3ed; }
-        .tj-stat .val.mijing { color: #b794f4; }
-        .tj-stat .val.xiangu { color: #f6ad55; }
+        .tj-stat .val.speed {
+            color: #90cdf4;
+            background: linear-gradient(135deg, rgba(56, 178, 246, 0.22), rgba(99, 179, 237, 0.08));
+            border: 1px solid rgba(99, 179, 237, 0.55);
+            text-shadow: 0 0 10px rgba(99, 179, 237, 0.55);
+            box-shadow: 0 0 12px rgba(99, 179, 237, 0.12);
+        }
+
+        .tj-stat .val.mijing {
+            color: #d6bcfa;
+            background: linear-gradient(135deg, rgba(159, 122, 234, 0.22), rgba(183, 148, 244, 0.08));
+            border: 1px solid rgba(183, 148, 244, 0.55);
+            text-shadow: 0 0 10px rgba(183, 148, 244, 0.55);
+            box-shadow: 0 0 12px rgba(183, 148, 244, 0.12);
+        }
+
+        .tj-stat .val.xiangu {
+            color: #fbd38d;
+            background: linear-gradient(135deg, rgba(237, 137, 54, 0.22), rgba(246, 173, 85, 0.08));
+            border: 1px solid rgba(246, 173, 85, 0.55);
+            text-shadow: 0 0 10px rgba(246, 173, 85, 0.55);
+            box-shadow: 0 0 12px rgba(246, 173, 85, 0.12);
+        }
 
         /* ===== 剧情人物进度 ===== */
         .char-wrap {
             margin: 0 30px 10px;
             padding: 22px 26px;
             border-radius: 14px;
-            background: linear-gradient(135deg, rgba(58, 28, 113, 0.2), rgba(215, 109, 119, 0.14));
-            border: 1px solid rgba(215, 109, 119, 0.25);
+            background: linear-gradient(135deg, rgba(58, 28, 113, 0.28), rgba(215, 109, 119, 0.18));
+            border: 1px solid rgba(215, 109, 119, 0.3);
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04);
         }
 
         .char-top {
@@ -303,35 +428,40 @@
         .char-top .cn {
             font-size: 15px;
             color: #FFD700;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
         }
 
         .progress-track {
-            height: 22px;
+            height: 24px;
             width: 100%;
-            background: rgba(0, 0, 0, 0.35);
-            border-radius: 11px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 12px;
             overflow: hidden;
-            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.06);
         }
 
         .progress-fill {
             height: 100%;
-            background: linear-gradient(90deg, #3a1c71, #d76d77, #f6ad55);
-            border-radius: 11px;
+            background: linear-gradient(90deg, #3a1c71 0%, #d76d77 55%, #f6ad55 100%);
+            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: flex-end;
-            padding-right: 10px;
+            padding-right: 12px;
             color: #fff;
             font-size: 12px;
             font-weight: bold;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+            box-shadow: 0 0 18px rgba(215, 109, 119, 0.45);
+            transition: width 0.4s ease;
         }
 
         .char-note {
-            margin-top: 12px;
+            margin-top: 14px;
             font-size: 13px;
             color: #cbd5e0;
-            line-height: 1.6;
+            line-height: 1.65;
         }
 
         /* ===== 更新日志（git 提交） ===== */
@@ -349,11 +479,12 @@
             font-weight: bold;
             color: #0c0e1a;
             background: linear-gradient(90deg, #FFD700, #f6ad55);
-            padding: 4px 16px;
-            border-radius: 0 12px 12px 0;
+            padding: 5px 18px 5px 14px;
+            border-radius: 0 14px 14px 0;
             margin-bottom: 14px;
-            box-shadow: 0 3px 10px rgba(255, 215, 0, 0.25);
+            box-shadow: 0 3px 14px rgba(255, 215, 0, 0.35);
             letter-spacing: 1px;
+            text-shadow: 0 1px 0 rgba(255, 255, 255, 0.18);
         }
 
         .cl-item {
@@ -362,8 +493,9 @@
             margin-bottom: 12px;
             background: linear-gradient(145deg, #1a1f30, #151928);
             border-radius: 10px;
-            border: 1px solid rgba(101, 119, 155, 0.2);
+            border: 1px solid rgba(101, 119, 155, 0.22);
             border-left: 3px solid #4299e1;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
         }
 
         .cl-head {
@@ -377,11 +509,13 @@
         .cl-hash {
             font-size: 12px;
             font-family: 'Consolas', 'Courier New', monospace;
-            color: #8b9bb4;
-            background: rgba(0, 0, 0, 0.3);
-            padding: 2px 8px;
-            border-radius: 5px;
+            color: #90cdf4;
+            background: linear-gradient(135deg, rgba(56, 178, 246, 0.18), rgba(159, 122, 234, 0.12));
+            padding: 3px 10px;
+            border-radius: 6px;
             letter-spacing: 0.5px;
+            border: 1px solid rgba(99, 179, 237, 0.45);
+            text-shadow: 0 0 8px rgba(99, 179, 237, 0.45);
         }
 
         .cl-msg {
@@ -394,29 +528,33 @@
         .cl-detail {
             font-size: 14px;
             color: #a0aec0;
-            line-height: 1.65;
+            line-height: 1.7;
             padding-left: 2px;
         }
 
         /* ===== 页脚 ===== */
         .footer {
-            margin-top: 30px;
-            padding: 20px;
+            margin-top: 32px;
+            padding: 22px;
             text-align: center;
             border-top: 1px solid rgba(255, 255, 255, 0.08);
             color: #8b9bb4;
             font-size: 14px;
-            background: rgba(0, 0, 0, 0.2);
+            background: rgba(0, 0, 0, 0.25);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
         }
 
-        .footer b { color: #FFD700; }
+        .footer b {
+            color: #FFD700;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+        }
 
         /* ===== 响应式 ===== */
         @media (max-width: 760px) {
             .tj-grid { grid-template-columns: 1fr; }
             .title { font-size: 30px; }
             .container { border-radius: 12px; }
-            .header, .hero, .update-list, .tianjiao-wrap, .char-wrap { margin-left: 16px; margin-right: 16px; }
+            .header, .hero, .update-list, .tianjiao-wrap, .char-wrap, .changelog-wrap { margin-left: 16px; margin-right: 16px; }
         }
     </style>
 </head>
@@ -463,7 +601,7 @@
         </div>
         {{/if}}
 
-        <!-- 更新日志（git 提交，2a11e4c「本次重大更新概览」之后） -->
+        <!-- 更新日志（git 提交，分页） -->
         <div class="section-title">更新日志 · 提交记录</div>
         <div class="changelog-wrap">
             {{each changelog g}}
@@ -491,8 +629,13 @@
             <div class="tj-grid">
                 {{each tianjiaoItems t}}
                 <div class="tj-card">
-                    <div class="tj-name">{{t.名号}}</div>
-                    <div class="tj-realm">{{t.境界}}</div>
+                    <div class="tj-head">
+                        <div class="tj-avatar">{{t.avatar}}</div>
+                        <div class="tj-meta">
+                            <div class="tj-name">{{t.名号}}</div>
+                            <div class="tj-realm">{{t.境界}}</div>
+                        </div>
+                    </div>
                     <div class="tj-stats">
                         <div class="tj-stat">
                             <div class="lab">速度</div>

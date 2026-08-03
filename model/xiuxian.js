@@ -2570,7 +2570,7 @@ export async function get_announce_img(e) {
         // 4. 解析页码（#更新公告=1，#更新公告2=2...）并切片
         const pageMatch = e.msg.match(/#更新公告\s*(\d+)/);
         const requestedPage = pageMatch ? parseInt(pageMatch[1], 10) : 1;
-        const PAGE_SIZE = 6;
+        const PAGE_SIZE = 8;
         const totalPages = Math.max(1, Math.ceil(allEntries.length / PAGE_SIZE));
         const page = Math.min(Math.max(requestedPage, 1), totalPages);
         const segStart = (page - 1) * PAGE_SIZE;
@@ -2592,6 +2592,7 @@ export async function get_announce_img(e) {
         const tianjiaoItems = showOverview
             ? (data.weimiantianjiao_list || []).map(t => ({
                 名号: t.名号,
+                avatar: (t.名号 || '修').substr(0, 1),
                 境界: t.境界 || '未知',
                 速度: t.速度 ?? 100,
                 秘境: t.mijinglevel_id ?? 1,
