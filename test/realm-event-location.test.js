@@ -24,6 +24,20 @@ test("位面事件可落在指定真实地点的坐标范围内", () => {
   });
 });
 
+test("兵字秘传承固定显化在秦岭秦门后山", () => {
+  const event = createRealmEventLocation({
+    plane: "遮天位面",
+    location: "qinlingqinmen",
+    random: () => 0,
+  });
+
+  assert.deepEqual(event, {
+    plane: "遮天位面",
+    location: "秦岭·秦门后山",
+    coordinate: { x: 600, y: 40 },
+  });
+});
+
 test("位面事件地点同时输出位面、坐标和前往指令", () => {
   const event = {
     plane: "凡间",

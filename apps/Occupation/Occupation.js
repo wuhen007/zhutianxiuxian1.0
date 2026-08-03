@@ -3060,6 +3060,10 @@ async shoulie_back(e) {
       e.reply(`世界上没有丹药[${danyao}]的配方`);
       return false;
     }
+    if (danfang.传承要求 && !player[danfang.传承要求]) {
+      e.reply(`你尚未获得【${danfang.传承要求}】，无法理解${danyao}的丹方`);
+      return false;
+    }
     if (danfang.level_limit > player.occupation_level) {
       e.reply(`${danfang.level_limit}级炼丹师才能炼制${danyao}`);
       return false;
@@ -3116,6 +3120,8 @@ async shoulie_back(e) {
     }
     if (
       danyao == '神心丹' ||
+      danyao == '定神丹' ||
+      danyao == '太虚养神丹' ||
       danyao == '九阶淬体丹' ||
       danyao == '九阶玄元丹' ||
       danyao == '起死回生丹' ||danyao == '天命轮回丹' || danyao == '大衍悟道丹'

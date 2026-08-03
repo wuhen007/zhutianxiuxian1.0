@@ -21,6 +21,8 @@ import {
   rollZhetianMinggeRevival,
 } from './zhetianTribulationMingge.js';
 import { calculateEquippedStats } from '../../model/equipmentStats.js';
+import { consumeBlackEmperorTribulationFormation } from '../../model/blackEmperor.js';
+import { reduceTribulationDamageByDefense } from '../../model/tribulationDamage.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
 import { ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS } from './zhetianTribulationRules.js';
 import {
@@ -4222,6 +4224,11 @@ applyGongfaEffects(player, originalDamage, equipment = {}) {
   let finalDamage = originalDamage;
   let effectMessages = [];
   const eraFactor = this.getEraDifficultyFactor();
+  const qitianFormation = consumeBlackEmperorTribulationFormation(player);
+  if (qitianFormation.message && !qitianFormation.announced) {
+    effectMessages.push(qitianFormation.message);
+    qitianFormation.announced = true;
+  }
 
   if (player.护法玩家) {
     const share = Math.floor(finalDamage * 0.4); // 护法吃40%
@@ -5170,8 +5177,16 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
     }
     if (player._玄黄护道渡劫) finalDamage *= 0.7;
 
+    finalDamage *= qitianFormation.damageMultiplier;
+    const defended = reduceTribulationDamageByDefense(finalDamage, player.防御);
+    if (defended.reduction > 0) {
+      effectMessages.push(
+        `【道躯防御】防御×0.3抵消${bigNumberTransform(defended.reduction)}点雷劫伤害`
+      );
+    }
+
     return {
-      damage: Math.max(1, finalDamage),
+      damage: defended.damage,
       messages: effectMessages
     };
   }

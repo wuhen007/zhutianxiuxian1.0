@@ -230,6 +230,18 @@
       text-shadow: 0 0 6px #fff, 0 0 12px #ffd700, 0 0 24px rgba(255,180,0,0.8), 0 0 40px rgba(255,120,0,0.4);
     }
 
+    /* 万道仙髓池 — 青碧水光 */
+    .cell-pool {
+      background: radial-gradient(circle at center, rgba(20, 180, 180, 0.35) 0%, #071516 100%);
+      box-shadow: inset 0 0 12px rgba(90, 255, 225, 0.2);
+    }
+    .cell-pool::after {
+      content: '♨';
+      font-size: 18px;
+      color: #8ffff0;
+      text-shadow: 0 0 7px #cffff8, 0 0 15px #20d8c6, 0 0 28px rgba(20, 180, 180, 0.75);
+    }
+
     /* 道韵共鸣：唯一机缘附近格子 */
     .cell-echo-1 { box-shadow: inset 0 0 12px rgba(255, 220, 80, 0.35); }
     .cell-echo-2 { box-shadow: inset 0 0 8px rgba(255, 220, 80, 0.2); }
@@ -620,6 +632,10 @@
           <div class="legend-item">
             <div class="legend-swatch cell-unique"></div>
             <span>唯一机缘</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch cell-pool"></div>
+            <span>万道仙髓池</span>
           </div>
           <div class="legend-item">
             <div class="legend-swatch cell-fog"></div>

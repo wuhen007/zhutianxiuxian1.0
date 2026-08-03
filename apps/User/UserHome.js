@@ -56,6 +56,15 @@ import { AppName } from '../../app.config.js';
 import { readall } from '../../model/duanzaofu.js';
 import { bigNumberTransform } from '../Help/TopList.js';
 import { isInnateTreasureName } from '../../model/innateTreasure.js';
+import {
+  getSpiritHeartMax,
+  increaseSpiritHeartLimit,
+  refreshSpiritHeart,
+} from '../../model/spiritUniverse.js';
+import {
+  findItemSources,
+  parseItemSearchQuery,
+} from '../../model/itemSourceFinder.js';
 // 在文件顶部新增全局映射和优先级定义
 const talentSelectionMap = new Map(); // 存储玩家洗髓状态
 const talentPriorityMap = {
@@ -174,6 +183,10 @@ export class UserHome extends plugin {
 {
     reg: '^#修复生命本源(\\*\\d+)?$', // 支持 #修复生命本源 和 #修复生命本源*阶数
     fnc: 'shengmingbenyuan'
+},
+{
+    reg: '^#切换重抽命格(\\s+\\d+|\\*\\d+)?$',
+    fnc: 'switchRerollFate'
 }
       ],
     });
@@ -445,6 +458,48 @@ async repairDaoshang(e) {
     ].join("\n");
     
     e.reply(msg);
+    return true;
+}
+
+// 切换轮回命签重抽目标：先在面板/图鉴确认想重抽第几条，切换后再 #消耗轮回命签 重抽
+async switchRerollFate(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_','');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) {
+        e.reply("请先创建修仙角色");
+        return true;
+    }
+    const player = await Read_player(usr_qq);
+    const fates = [player?.命格, ...(Array.isArray(player?.附加命格) ? player.附加命格 : [])].filter(Boolean);
+    if (!fates.length) {
+        e.reply('你尚未抽取命格词条，请先发送 #抽取命格词条。');
+        return true;
+    }
+    const m = e.msg.match(/(\d+)/);
+    const requested = m ? Number(m[1]) : null;
+    if (requested === null) {
+        const list = fates.map((f, i) => `第${i + 1}条：${f.name || '无名命格'}${f.isNegative ? '（厄）' : ''}`).join('\n');
+        const cur = Number(player.重抽命格序号) || 1;
+        e.reply(
+            `【命格重抽·目标切换】\n` +
+            `当前已选重抽目标：第${cur}条（${fates[cur - 1]?.name || '—'}）\n\n` +
+            `可重抽命格：\n${list}\n\n` +
+            `发送 #切换重抽命格*序号 或 #切换重抽命格 序号 选择要重抽的命格，再 #消耗轮回命签 重抽。`
+        );
+        return true;
+    }
+    if (requested < 1 || requested > fates.length) {
+        e.reply(`命格词条序号应为 1 至 ${fates.length}。`);
+        return true;
+    }
+    player.重抽命格序号 = requested;
+    await Write_player(usr_qq, player);
+    e.reply(
+        `【命格重抽·目标切换】\n` +
+        `已将重抽目标切换为第${requested}条命格：${fates[requested - 1]?.name || '无名命格'}。\n` +
+        `发送 #消耗轮回命签 即可重抽该命格（也可 #消耗轮回命签*序号 直接指定）。`
+    );
     return true;
 }
 
@@ -1272,50 +1327,30 @@ async huodong(e) {
     if (!verc({ e })) return false;
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);
-    var reg = new RegExp(/哪里有/);
-    let msg = e.msg.replace(reg, '');
-    msg = msg.replace('#', '');
-    let thing_name = msg.replace('哪里有', '');
-    let didian = [
-      'guildSecrets_list',
-      'forbiddenarea_list',
-      'Fairyrealm_list',
-      'timeplace_list',
-      'didian_list',
-      'shenjie',
-      'mojie',
-      'xingge',
-      'shop_list',
-    ];
-    let found = [];
-    let thing_exist = await foundthing(thing_name);
-    if (!thing_exist) {
-      e.reply(`你在瞎说啥呢?哪来的【${thing_name}】?`);
+    const thing_name = parseItemSearchQuery(e.msg);
+    if (!thing_name) {
+      await e.reply('请输入要查找的物品，例如：#哪里有秘境之匙');
       return false;
     }
-    let number = await exist_najie_thing(usr_qq, '寻物纸', '道具');
-    if (!number) {
-      e.reply('查找物品需要【寻物纸】');
+
+    const sources = findItemSources(data, thing_name);
+    if (sources.length === 0 && !(await foundthing(thing_name))) {
+      await e.reply(`未曾听闻【${thing_name}】，请检查物品名称是否正确`);
       return false;
     }
-    for (var i of didian) {
-      for (var j of data[i]) {
-        let n = ['one', 'two', 'three'];
-        for (var k of n) {
-          if (j[k] && j[k].find(item => item.name == thing_name)) {
-            found.push(j.name + '\n');
-            break;
-          }
-        }
-      }
+
+    const number = Number(await exist_najie_thing(usr_qq, '寻物纸', '道具'));
+    if (!Number.isFinite(number) || number < 1) {
+      await e.reply('查找物品需要【寻物纸】');
+      return false;
     }
-    found.push('消耗了一张寻物纸');
-    if (found.length == 1) {
-      e.reply('天地没有回应......');
-    } else {
-      await e.reply(found);
-    }
+
     await Add_najie_thing(usr_qq, '寻物纸', '道具', -1);
+    const result = sources.length
+      ? [`【${thing_name}】可通过以下渠道获得：`, ...sources.map(source => `- ${source}`)]
+      : [`寻物纸燃尽，天地没有回应……`, `暂未发现【${thing_name}】的固定获得渠道`];
+    result.push('消耗【寻物纸】x1');
+    await e.reply(result.join('\n'));
     return false;
   }
 
@@ -1455,9 +1490,13 @@ async broadcastToAll(player,message) {
      if (thing_name === "图鉴") {
         return; 
     }
-    if (!isNotNull(wupin)) {
+     if (!isNotNull(wupin)) {
         e.reply(`合成物品暂时未添加，请持续关注`);
         return;
+    }
+    if (wupin.传承要求 && !player[wupin.传承要求]) {
+      e.reply(`你尚未获得【${wupin.传承要求}】，无法合成${thing_name}`);
+      return;
     }
     
     // 确保数量是数字
@@ -1942,6 +1981,44 @@ if (equipment.帝兵.name == "终古剑之主") {
         await Write_player(usr_qq, player);
         await Add_najie_thing(usr_qq, thing_name, '丹药', -quantity);
         e.reply(`服用成功，仙道潜力增加${gain}点，当前共有${player.仙道潜力}点`);
+        return false;
+      }
+      if (thing_exist.type == '心神恢复') {
+        const heart = refreshSpiritHeart(player);
+        if (heart.current >= heart.max) {
+          e.reply(`你的心神已满（${heart.current}/${heart.max}），无需服用`);
+          return false;
+        }
+        const restore = Math.max(1, Number(thing_exist.heart) || 0);
+        const useCount = Math.min(quantity, Math.ceil((heart.max - heart.current) / restore));
+        player.心神 = Math.min(heart.max, heart.current + restore * useCount);
+        if (player.心神 >= heart.max) player.心神恢复时间 = Date.now();
+        await Write_player(usr_qq, player);
+        await Add_najie_thing(usr_qq, thing_name, '丹药', -useCount);
+        e.reply(`服用${thing_name}×${useCount}，心神恢复至${player.心神}/${heart.max}`);
+        return false;
+      }
+      if (thing_exist.type == '心神上限') {
+        refreshSpiritHeart(player);
+        player.心神丹药使用 ||= {};
+        const used = Math.max(0, Number(player.心神丹药使用[thing_name]) || 0);
+        const limit = Math.max(1, Number(thing_exist.useLimit) || 1);
+        if (quantity > limit - used) {
+          e.reply(`【${thing_name}】最多服用${limit}颗，你已服用${used}颗，本次最多还能服用${Math.max(0, limit - used)}颗`);
+          return false;
+        }
+        const currentMax = getSpiritHeartMax(player);
+        if (currentMax >= 100) {
+          e.reply('你的心神上限已达到100点，无法继续拓展');
+          return false;
+        }
+        const perPill = Math.max(1, Number(thing_exist.heartMax) || 0);
+        const useCount = Math.min(quantity, Math.ceil((100 - currentMax) / perPill));
+        const gain = increaseSpiritHeartLimit(player, perPill * useCount);
+        player.心神丹药使用[thing_name] = used + useCount;
+        await Write_player(usr_qq, player);
+        await Add_najie_thing(usr_qq, thing_name, '丹药', -useCount);
+        e.reply(`服用${thing_name}×${useCount}，心神上限+${gain}，当前${player.心神}/${getSpiritHeartMax(player)}（已服用${used + useCount}/${limit}）`);
         return false;
       }
    if (thing_exist.type == '天资洗炼') {
@@ -3828,14 +3905,16 @@ if (thing_exist.type == '神药') {
                     e.reply(`使用成功，高级传送次数增加${quantity}次（可用于高级传送阵瞬抵，更快且不易遇虚空乱流）`);
                     return;
                 }
-            // 命格道具：消耗【轮回命签】重抽指定命格词条（#消耗轮回命签*序号 选择重抽第几条，默认第 1 条）
+            // 命格道具：消耗【轮回命签】重抽命格词条
+            // 重抽目标优先级：#消耗轮回命签*序号 内联指定 > #切换重抽命格 已选目标 > 默认第 1 条
             if (thing_name == "轮回命签") {
                 const fates = [player?.命格, ...(Array.isArray(player?.附加命格) ? player.附加命格 : [])].filter(Boolean);
                 if (!fates.length) {
                     e.reply('你尚未抽取命格词条，请先发送 #抽取命格词条。');
                     return;
                 }
-                const requested = Number(e.msg.match(/\*(\d+)$/)?.[1] || 1);
+                const inlineIdx = Number(e.msg.match(/\*(\d+)$/)?.[1]);
+                const requested = inlineIdx || Number(player.重抽命格序号) || 1;
                 if (requested < 1 || requested > fates.length) {
                     e.reply(`命格词条序号应为 1 至 ${fates.length}。`);
                     return;
@@ -3850,6 +3929,7 @@ if (thing_exist.type == '神药') {
                 const oldName = fates[requested - 1]?.name || '无名命格';
                 if (requested === 1) player.命格 = stored;
                 else player.附加命格[requested - 2] = stored;
+                delete player.重抽命格序号; // 重抽后清空已选目标，避免误重抽同一格
 
                 await Add_najie_thing(usr_qq, '轮回命签', '道具', -1);
                 await Write_player(usr_qq, player);
@@ -6324,6 +6404,7 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
     "命运法": 2,
     "道与法": 3,
     "宝术": 3,
+    "精神法门": 3,
     "九秘": 4,
     "盖世杀术": 4,
     "帝经": 5,

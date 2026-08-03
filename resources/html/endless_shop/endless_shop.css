@@ -1,0 +1,241 @@
+@font-face {
+  font-family: realm-number;
+  src: url("../../font/tttgbnumber.ttf");
+}
+
+:root {
+  --gold: #d8b86d;
+  --bright: #f4e2b2;
+  --deep: #765720;
+  --ink: #0b0c0a;
+}
+
+* { box-sizing: border-box; }
+
+html,
+body {
+  margin: 0;
+  width: 1080px;
+}
+
+body {
+  padding: 24px;
+  color: #f4f0e7;
+  background: #2a2925;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  letter-spacing: 0;
+}
+
+.auction {
+  position: relative;
+  width: 1032px;
+  overflow: hidden;
+  border: 1px solid #725b2b;
+  border-top: 6px solid #e4c679;
+  background: #0b0c0a;
+  box-shadow: 0 22px 56px rgba(8, 8, 6, .48);
+}
+
+.auction::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0 0 auto;
+  height: 232px;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 0 62%, rgba(231, 201, 126, .08) 62% 63%, transparent 63%),
+    repeating-linear-gradient(135deg, transparent 0 54px, rgba(234, 207, 143, .035) 54px 55px);
+}
+
+header {
+  position: relative;
+  z-index: 1;
+  min-height: 222px;
+  padding: 34px 44px;
+  display: grid;
+  grid-template-columns: 96px 1fr 250px;
+  align-items: center;
+  gap: 25px;
+  background: linear-gradient(100deg, #0a0b09, #14150f 58%, #1d180d);
+}
+
+.monogram {
+  width: 80px;
+  height: 118px;
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  place-items: center;
+  border: 1px solid #ad8a42;
+  box-shadow: inset 0 0 0 6px #17160f, inset 0 0 0 7px #6f572a;
+  color: #f2d894;
+  background: linear-gradient(180deg, #342714, #17150f);
+  font: 28px/1 "STKaiti", "KaiTi", serif;
+}
+
+.monogram span { align-self: end; }
+.monogram b { align-self: start; font-weight: 400; }
+.title-copy p { margin: 0 0 9px; color: #a88844; font-size: 12px; font-weight: 700; }
+
+.title-copy h1 {
+  margin: 0;
+  color: transparent;
+  background: linear-gradient(90deg, #fff0bf, #c79c44 54%, #f4dda2);
+  background-clip: text;
+  font: 700 49px/1.08 "STKaiti", "KaiTi", serif;
+}
+
+.title-copy span { display: block; margin-top: 13px; color: #8b897f; font-size: 14px; }
+
+.wallet {
+  padding: 18px 20px;
+  border-top: 1px solid #b8954d;
+  border-bottom: 1px solid #56431f;
+  text-align: right;
+  background: rgba(32, 28, 18, .6);
+}
+
+.wallet small,
+.wallet span { display: block; }
+.wallet small { color: #797970; font-size: 10px; }
+.wallet strong { display: block; margin: 6px 0 8px; color: #f1d38a; font: 700 32px/1 realm-number, sans-serif; }
+.wallet span { color: #c9c0aa; font-size: 12px; }
+
+.featured {
+  position: relative;
+  z-index: 1;
+  min-height: 172px;
+  margin: 0 31px;
+  padding: 25px 29px;
+  display: grid;
+  grid-template-columns: 104px 1fr 170px;
+  align-items: center;
+  gap: 27px;
+  border: 1px solid #91733a;
+  border-left: 5px solid #e6c77b;
+  background:
+    linear-gradient(95deg, rgba(216, 184, 109, .14), transparent 35%),
+    linear-gradient(135deg, #1e1b12, #0f110e);
+  box-shadow: inset 0 1px 0 rgba(255, 235, 182, .08);
+}
+
+.featured-mark {
+  width: 90px;
+  height: 90px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #b59046;
+  color: #f0d591;
+  background: radial-gradient(circle, #312713 0 38%, #151610 39% 100%);
+  font: 30px/1 "STKaiti", "KaiTi", serif;
+  transform: rotate(-5deg);
+}
+
+.featured span { color: #a98e52; font-size: 11px; font-weight: 700; }
+.featured h2 { margin: 7px 0 8px; color: #f5ead0; font: 700 29px/1.1 "STKaiti", "KaiTi", serif; }
+.featured p { margin: 0; color: #89867b; font-size: 12px; }
+.featured-price { text-align: right; }
+.featured-price small,
+.featured-price b { display: block; }
+.featured-price small { color: #787970; font-size: 9px; }
+.featured-price strong { display: block; margin: 7px 0; color: #f1cf78; font: 700 30px/1 realm-number, sans-serif; }
+.featured-price b { color: #b29350; font-size: 10px; }
+
+nav {
+  position: relative;
+  z-index: 1;
+  height: 65px;
+  margin: 0 31px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid #373429;
+}
+
+nav b,
+nav span {
+  padding: 7px 11px;
+  border: 1px solid #454235;
+  color: #828077;
+  font-size: 10px;
+}
+
+nav b { color: #16150f; border-color: #c8a85e; background: linear-gradient(90deg, #c7a557, #ecd18a); }
+nav i { margin-left: auto; color: #665b41; font: 10px/1 realm-number, sans-serif; font-style: normal; }
+
+.catalog {
+  position: relative;
+  z-index: 1;
+  padding: 0 31px 32px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.product {
+  position: relative;
+  min-width: 0;
+  height: 126px;
+  padding: 16px 116px 13px 55px;
+  overflow: hidden;
+  border-bottom: 1px solid #433b28;
+  background: linear-gradient(120deg, #141511, #0d0f0d);
+}
+
+.product.is-wide {
+  grid-column: 1 / -1;
+  border-left: 3px solid #c5a253;
+  background: linear-gradient(95deg, #211d12, #10110e 62%);
+}
+
+.product.is-sold-out { opacity: .48; }
+.item-no { position: absolute; left: 16px; top: 18px; color: #655d48; font: 700 13px/1 realm-number, sans-serif; }
+.item-tags { display: flex; align-items: center; gap: 5px; }
+
+.item-tags span,
+.item-tags b,
+.item-tags i {
+  padding: 3px 5px;
+  border: 1px solid #494330;
+  color: #928669;
+  font-size: 9px;
+  line-height: 1;
+  font-style: normal;
+}
+
+.item-tags b { color: #d7b86f; border-color: #705d34; }
+.item-tags i { color: #e0c682; border-color: #8b6d34; }
+.product h2 { margin: 10px 0 6px; overflow-wrap: anywhere; color: #e9e1d0; font: 700 20px/1.05 "STKaiti", "KaiTi", serif; }
+.product p { margin: 0; color: #74766e; font-size: 10px; }
+.item-price { position: absolute; right: 15px; bottom: 16px; width: 94px; text-align: right; }
+.item-price small { display: block; color: #62645e; font-size: 8px; }
+.item-price strong { display: block; margin-top: 5px; color: #dfbe6b; font: 700 21px/1 realm-number, sans-serif; }
+
+footer {
+  min-height: 92px;
+  padding: 20px 44px;
+  display: grid;
+  grid-template-columns: 100px 1fr auto;
+  align-items: center;
+  gap: 18px;
+  border-top: 1px solid #765f31;
+  background: linear-gradient(100deg, #171710, #211a0e);
+}
+
+footer span { color: #c3a45c; font: 19px/1 "STKaiti", "KaiTi", serif; }
+footer b { color: #e9e1d0; font-size: 13px; }
+footer i { color: #6f6b60; font-size: 9px; font-style: normal; }
+
+@media (max-width: 767px) {
+  html,
+  body { width: 100%; }
+  body { padding: 0; }
+  .auction { width: 100%; }
+  header { grid-template-columns: 70px 1fr; }
+  .wallet { grid-column: 1 / -1; text-align: left; }
+  .featured { grid-template-columns: 80px 1fr; }
+  .featured-price { grid-column: 1 / -1; text-align: left; }
+  .catalog { grid-template-columns: 1fr; }
+  .product.is-wide { grid-column: auto; }
+  footer { grid-template-columns: 1fr; }
+}

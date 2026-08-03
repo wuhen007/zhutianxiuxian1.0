@@ -13,14 +13,17 @@
 // 每一阶段每一道伤害都真实扣减 player.当前血量，并接入：
 //   ① 时代系数 difficultyRate（神话/太古/天命/末法/绝灵，由全局 Era 配置读取）
 //   ② 灵根/体质减伤（bodyEffects 表，与遮天同源）
-//   ③ 功法/生命本源复活（真凰/万化免死、生命本源≥50 且习有复活功法）
-//   ④ 功法减伤（者字秘/不灭经/真凰/柳神/涅槃/雷帝/万化/凰劫 等，复活后再结算）
+//   ③ 欺天阵纹与玩家防御（防御×0.3）
+//   ④ 功法/生命本源复活（真凰/万化免死、生命本源≥50 且习有复活功法）
+//   ⑤ 功法减伤（者字秘/不灭经/真凰/柳神/涅槃/雷帝/万化/凰劫 等，复活后再结算）
 // 让玩家切实体会到「血条崩落、假死、复苏、濒死被功法救回」的艰难，且修炼成果（减伤/复活）真实生效。
 // 本模块负责原著劫难编排与统一伤害结算，实际境界、属性和奖励仍由调用方写入。
 
 import { sleep, bigNumberTransform } from '../../model/xiuxian.js';
 import { getXianqiStrands } from '../../model/xianguXianqi.js';
 import { config } from '../../api/api.js';
+import { consumeBlackEmperorTribulationFormation } from '../../model/blackEmperor.js';
+import { reduceTribulationDamageByDefense } from '../../model/tribulationDamage.js';
 import {
   hasXianguGongfa,
   settleXianguWaveDamage,
@@ -140,13 +143,29 @@ export class XianguTribulation {
     return `剩余血量：${bigNumberTransform(player.当前血量 || 0)}/${bigNumberTransform(this._M(player))}（肉身完整度 ${this._pct(player)}%）`;
   }
 
-  // ============ 统一伤害结算：时代系数 × 灵根减伤 × 功法减伤 ============
-  // equipment 恒为 {}（以身为种·不借外物，天道排斥凡器；但灵根/功法减伤仍生效）
+  // ============ 统一伤害结算：灵根减伤 → 欺天阵纹 → 防御 → 功法减伤 ============
   applyDefenses(player, base) {
     const { damage: bodyDamage, msgs } = this._applyBodyDefenses(player, base);
-    const finalDamage = this._gongfaReduce(player, base, bodyDamage, msgs);
+    const defendedDamage = this._applyThunderDefense(player, bodyDamage, msgs);
+    const finalDamage = this._gongfaReduce(player, base, defendedDamage, msgs);
 
     return { damage: Math.max(1, Math.floor(finalDamage)), msgs };
+  }
+
+  _applyThunderDefense(player, damage, msgs) {
+    const formation = consumeBlackEmperorTribulationFormation(player);
+    if (formation.message && !formation.announced) {
+      msgs.push(formation.message);
+      formation.announced = true;
+    }
+    const defended = reduceTribulationDamageByDefense(
+      damage * formation.damageMultiplier,
+      player.防御
+    );
+    if (defended.reduction > 0) {
+      msgs.push(`【道躯防御】防御×0.3抵消 ${bigNumberTransform(defended.reduction)} 点劫伤`);
+    }
+    return defended.damage;
   }
 
   // 灵根防御必须单独结算，供致死判定先触发复活，再应用功法减伤。
@@ -396,6 +415,7 @@ export class XianguTribulation {
     // 基础伤害公式与遮天渡劫对齐：血量上限 × 系数 × (1 + 0.03×wave)，不随时代缩放
     const base = M * frac * (1 + 0.03 * wave);
     const { damage: bodyDamage, msgs: bodyMsgs } = this._applyBodyDefenses(player, base);
+    const defendedDamage = this._applyThunderDefense(player, bodyDamage, bodyMsgs);
     const sourceName = opts.sourceName || '道火本源';
     const fatalName = opts.fatalName || '劫力';
 
@@ -407,9 +427,9 @@ export class XianguTribulation {
     const gongfaMsgs = [];
     const settlement = settleXianguWaveDamage({
       player,
-      bodyDamage,
+      bodyDamage: defendedDamage,
       tryRevive: () => this._tryRevive(player),
-      applyGongfaReduction: () => this._gongfaReduce(player, base, bodyDamage, gongfaMsgs),
+      applyGongfaReduction: () => this._gongfaReduce(player, base, defendedDamage, gongfaMsgs),
     });
     if (settlement.revival) {
       lines.push(`　${fatalName}致死！先触发${settlement.revival}｜血量回升至 ${bigNumberTransform(settlement.revivedHp)}`);

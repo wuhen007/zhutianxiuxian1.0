@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "tokenName": "劫境道痕",
+  "fusionItem": "万象归一炉",
+  "products": [
+    {
+      "id": 1,
+      "name": "大衍悟道丹",
+      "itemClass": "丹药",
+      "category": "悟道",
+      "rarity": "珍稀",
+      "price": 1000,
+      "description": "增加悟道次数",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 2,
+      "name": "叩仙丹",
+      "itemClass": "丹药",
+      "category": "仙途",
+      "rarity": "灵品",
+      "price": 80,
+      "description": "仙道潜力+10",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 3,
+      "name": "问道丹",
+      "itemClass": "丹药",
+      "category": "仙途",
+      "rarity": "珍稀",
+      "price": 180,
+      "description": "仙道潜力+25",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 4,
+      "name": "化仙丹",
+      "itemClass": "丹药",
+      "category": "仙途",
+      "rarity": "珍稀",
+      "price": 350,
+      "description": "仙道潜力+50",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 5,
+      "name": "玄黄造化丹",
+      "itemClass": "丹药",
+      "category": "仙途",
+      "rarity": "绝品",
+      "price": 800,
+      "description": "仙道潜力+100",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 6,
+      "name": "极道丹",
+      "itemClass": "丹药",
+      "category": "仙途",
+      "rarity": "禁忌",
+      "price": 3000,
+      "description": "仙道潜力+500",
+      "dailyLimit": 2,
+      "action": "item"
+    },
+    {
+      "id": 7,
+      "name": "位面传送阵",
+      "itemClass": "道具",
+      "category": "破界",
+      "rarity": "绝品",
+      "price": 500,
+      "description": "进行一次位面传送",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 8,
+      "name": "先天灵宝天机",
+      "itemClass": "",
+      "category": "天机",
+      "rarity": "禁忌",
+      "price": 5000,
+      "description": "获知一件尚未认主的先天至宝消息",
+      "dailyLimit": 1,
+      "action": "clue"
+    },
+    {
+      "id": 9,
+      "name": "万象归一炉",
+      "itemClass": "道具",
+      "category": "熔铸",
+      "rarity": "禁忌",
+      "price": 8000,
+      "description": "熔铸一件百分比装备与已穿戴套装部件",
+      "dailyLimit": 1,
+      "action": "item"
+    },
+    {
+      "id": 10,
+      "name": "九妙不死药",
+      "itemClass": "丹药",
+      "category": "神药",
+      "rarity": "绝品",
+      "price": 300,
+      "description": "修为、血气各+3500万",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 11,
+      "name": "真龙不死药",
+      "itemClass": "丹药",
+      "category": "神药",
+      "rarity": "绝品",
+      "price": 600,
+      "description": "修为、血气各+5000万",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 12,
+      "name": "蟠桃神药",
+      "itemClass": "丹药",
+      "category": "神药",
+      "rarity": "禁忌",
+      "price": 900,
+      "description": "修为、血气各+7500万",
+      "dailyLimit": 0,
+      "action": "item"
+    }
+  ]
+}

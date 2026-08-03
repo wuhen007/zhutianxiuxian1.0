@@ -12,15 +12,29 @@ import {
   existplayer,
 } from '../model/xiuxian.js';
 import {
+  applyCheckpointChoice,
   applyEndlessChoice,
   createEndlessRun,
   getAbility,
+  getCheckpointBoon,
   getFusion,
   getMemberStats,
   getSettlement,
+  getEndlessSweepReward,
   getWorldForLayer,
   resolveEndlessLayer,
 } from '../model/endlessRealm.js';
+import {
+  ENDLESS_ENTRY_ITEM,
+  ENDLESS_KEY_RECIPE_FLAG,
+  ENDLESS_KEY_RECIPE_ITEM,
+  ENDLESS_SPIRIT_HEART_COST,
+  ENDLESS_SWEEP_ITEM,
+} from '../model/endlessAccess.js';
+import {
+  consumeSpiritHeart,
+  refreshSpiritHeart,
+} from '../model/spiritUniverse.js';
 import {
   ENDLESS_SHOP,
   ENDLESS_TOKEN,
@@ -29,15 +43,19 @@ import {
   mergeSetEquipment,
 } from '../model/endlessShop.js';
 import {
+  ENDLESS_BATTLE_TEMPLATES,
+  getEndlessBattleTemplateModel,
+  normalizeEndlessBattleTemplate,
+} from '../model/endlessBattleTemplate.js';
+import {
+  CONTESTABLE_INNATE_TREASURE_NAMES,
   INNATE_TREASURE_CATALOG,
-  INNATE_TREASURE_NAMES,
   readInnateTreasureState,
 } from '../model/innateTreasure.js';
 
 const STATE_TTL_SECONDS = 7 * 24 * 60 * 60;
 const LOCK_TTL_SECONDS = 12;
 const MAX_TEAM_SIZE = 4;
-const ENTRY_ITEM = '无尽秘钥';
 
 export class EndlessRealm extends plugin {
   constructor() {
@@ -55,9 +73,13 @@ export class EndlessRealm extends plugin {
         { reg: '^#解散无尽队伍$', fnc: 'disbandTeam' },
         { reg: '^#开启无尽劫境$', fnc: 'startRun' },
         { reg: '^#无尽选择\\s*[1-3]$', fnc: 'chooseAbility' },
+        { reg: '^#劫后(?:抉择|选择)\\s*[1-3]$', fnc: 'chooseCheckpoint' },
         { reg: '^#无尽(?:下一关|下一层|挑战)$', fnc: 'nextLayer' },
         { reg: '^#无尽构筑$', fnc: 'showBuild' },
-        { reg: '^#无尽撤离$', fnc: 'withdrawRun' },
+        { reg: '^#无尽战斗模[版板](?:\\s*[1-4])?$', fnc: 'setBattleTemplate' },
+        { reg: '^#(?:无尽撤离|退出无尽劫境)$', fnc: 'withdrawRun' },
+        { reg: '^#扫荡无尽劫境$', fnc: 'sweepEndlessRealm' },
+        { reg: '^#参悟无尽秘钥配方$', fnc: 'learnEndlessKeyRecipe' },
         { reg: '^#无尽商店$', fnc: 'showEndlessShop' },
         { reg: '^#无尽购买\\s+.+$', fnc: 'buyEndlessItem' },
         { reg: '^#万象归一\\s+(?:武器|护具|法宝)\\*.+$', fnc: 'mergeEquipment' },
@@ -225,6 +247,57 @@ export class EndlessRealm extends plugin {
     );
   }
 
+  formatCheckpoint(run) {
+    const checkpoint = run.checkpoint;
+    if (!checkpoint) return [];
+    return [
+      `【${checkpoint.title}·第${checkpoint.layer}层】`,
+      '十层天关已破，三条道途只能择其一：',
+      ...checkpoint.choices.map(
+        (choice, index) =>
+          `${index + 1}. ${choice.name} · ${choice.subtitle}\n   ${choice.description}`
+      ),
+      '队长发送 #劫后抉择1/2/3',
+    ];
+  }
+
+  formatCheckpointResult(run, result) {
+    const lines = [
+      `【劫后问道·${result.choice.name}】`,
+      result.choice.subtitle,
+    ];
+    if (result.reward.kind === 'rest') {
+      lines.push(
+        `全员投影复苏并恢复至满血，命火${
+          result.reward.recoveredLifeFire ? '+1' : '已满'
+        }（${result.reward.lifeFire}/${run.maxLifeFire}）`
+      );
+    } else if (result.reward.kind === 'fortune') {
+      if (result.reward.boon) {
+        const boon = result.reward.boon;
+        lines.push(
+          `${result.reward.memberName}获得【${boon.kind}·${boon.name}】`,
+          `源自：${boon.origin}`,
+          boon.description
+        );
+      } else {
+        lines.push(
+          `${result.reward.memberName}参透重复道痕，本局攻击成长额外提高12%`
+        );
+      }
+    } else {
+      lines.push(
+        ...result.reward.upgrades.map(upgrade =>
+          upgrade.fallback
+            ? `${upgrade.memberName}已无可升华能力，本局攻击成长提高8%`
+            : `${upgrade.memberName}：${upgrade.abilityName}升至Lv.${upgrade.level}`
+        )
+      );
+    }
+    lines.push('', ...this.formatAllChoices(run));
+    return lines;
+  }
+
   async showHelp(e) {
     if (!e.isGroup) return e.reply('无尽劫境只能在群聊中进行');
     const userId = await this.getUserId(e);
@@ -239,23 +312,54 @@ export class EndlessRealm extends plugin {
     return e.reply(
       [
         '【诸天无尽劫境·第一版】',
-        `1～${MAX_TEAM_SIZE}人组队，每名成员入场消耗【${ENTRY_ITEM}】×1`,
-        '每层击退怪潮后独立三选一；每5层精英，每10层位面Boss并封存奖励。',
+        `1～${MAX_TEAM_SIZE}人组队，每名成员入场消耗【${ENDLESS_ENTRY_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点`,
+        '每层击退怪潮后独立三选一；每5层精英，每10层位面Boss并开启劫后问道。',
         '',
         '#创建无尽队伍',
         '#加入无尽队伍 123456',
         '#无尽队伍',
         '#开启无尽劫境',
         '#无尽选择1',
+        '#劫后抉择1',
         '#无尽下一关',
         '#无尽构筑',
+        '#无尽战斗模版1/2/3/4',
         '#无尽撤离',
+        '#退出无尽劫境',
+        '#扫荡无尽劫境',
+        '#参悟无尽秘钥配方',
         '#无尽商店',
         '#无尽购买 商品名*数量',
         '#万象归一 武器/护具/法宝*百分比装备名',
         '',
         '主动撤离保留全部奖励；团灭保留已封存奖励和30%未封存奖励。',
+        `扫荡消耗【${ENDLESS_ENTRY_ITEM}】×1、【${ENDLESS_SWEEP_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点，结算最高层向前最多10层。`,
       ].join('\n')
+    );
+  }
+
+  async setBattleTemplate(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const player = await Read_player(userId);
+    const match = String(e.msg || '').match(/([1-4])\s*$/);
+    if (!match) {
+      const current = normalizeEndlessBattleTemplate(player.无尽战斗模板);
+      return e.reply(
+        [
+          `当前无尽战报：${current} · ${ENDLESS_BATTLE_TEMPLATES[current]}`,
+          ...Object.entries(ENDLESS_BATTLE_TEMPLATES).map(
+            ([id, name]) => `${id}. ${name}`
+          ),
+          '发送 #无尽战斗模版1/2/3/4 切换',
+        ].join('\n')
+      );
+    }
+    const templateId = normalizeEndlessBattleTemplate(match[1]);
+    player.无尽战斗模板 = templateId;
+    await Write_player(userId, player);
+    return e.reply(
+      `无尽战报已切换为 ${templateId} · ${ENDLESS_BATTLE_TEMPLATES[templateId]}`
     );
   }
 
@@ -263,13 +367,51 @@ export class EndlessRealm extends plugin {
     const userId = await this.checkPlayer(e);
     if (!userId) return false;
     const player = await Read_player(userId);
+    const day = this.todayKey();
+    const products = ENDLESS_SHOP.map((item, index) => {
+      const bought = Number(
+        player.无尽商店购买记录?.[`${day}:${item.id}`]
+      ) || 0;
+      const remaining = item.dailyLimit
+        ? Math.max(0, item.dailyLimit - bought)
+        : null;
+      return {
+        ...item,
+        index: String(index + 1).padStart(2, '0'),
+        tone: item.category || '寻常',
+        wide: [7, 9, 12].includes(item.id),
+        price: this.formatAmount(item.price),
+        limitText: item.dailyLimit ? `每日限购 ${item.dailyLimit}` : '',
+        stockText: item.dailyLimit ? `今日余 ${remaining}` : '不限购',
+        soldOut: remaining === 0,
+      };
+    });
+    const featured = products.find(item => item.id === 8) || products[0];
+    const catalogProducts = products.filter(item => item !== featured);
+    try {
+      const renderData = await new Show(e).get_endlessShopData({
+        saveId: `endless_shop_${userId}_${Date.now()}`,
+        playerName: player.名号 || `无名修士${String(userId).slice(-4)}`,
+        tokenAmount: this.formatAmount(player[ENDLESS_TOKEN]),
+        date: day,
+        productCount: products.length,
+        products,
+        featured,
+        catalogProducts,
+      });
+      const image = await puppeteer.screenshot('endless_shop', renderData);
+      if (image) return e.reply(image);
+    } catch (error) {
+      logger.error('[无尽商店] 商店图片生成失败', error);
+    }
+
     const lines = [
       '【无尽商店】',
       `${ENDLESS_TOKEN}：${this.formatAmount(player[ENDLESS_TOKEN])}`,
       '',
-      ...ENDLESS_SHOP.map(item =>
+      ...products.map(item =>
         `${item.id}. ${item.name} · ${item.price}${ENDLESS_TOKEN}${
-          item.dailyLimit ? `（每日限购${item.dailyLimit}）` : ''
+          item.limitText ? `（${item.limitText}，${item.stockText}）` : ''
         }\n   ${item.description}`
       ),
       '',
@@ -286,8 +428,8 @@ export class EndlessRealm extends plugin {
 
   createTreasureClue() {
     const state = readInnateTreasureState();
-    const unclaimed = INNATE_TREASURE_NAMES.filter(name => !state.owners?.[name]);
-    const pool = unclaimed.length ? unclaimed : INNATE_TREASURE_NAMES;
+    const unclaimed = CONTESTABLE_INNATE_TREASURE_NAMES.filter(name => !state.owners?.[name]);
+    const pool = unclaimed.length ? unclaimed : CONTESTABLE_INNATE_TREASURE_NAMES;
     const name = pool[Math.floor(Math.random() * pool.length)];
     const profile = INNATE_TREASURE_CATALOG[name];
     const owner = state.owners?.[name];
@@ -416,7 +558,7 @@ export class EndlessRealm extends plugin {
           `队长：${team.memberNames[userId]}`,
           `成员：1/${MAX_TEAM_SIZE}`,
           `其他玩家发送 #加入无尽队伍 ${id}`,
-          `开局时每人消耗【${ENTRY_ITEM}】×1`,
+          `开局时每人消耗【${ENDLESS_ENTRY_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点`,
         ].join('\n')
       );
     });
@@ -479,6 +621,8 @@ export class EndlessRealm extends plugin {
             ? '等待能力选择'
             : run.phase === 'ready'
             ? '可以挑战下一关'
+            : run.phase === 'checkpoint'
+            ? '劫后问道'
             : run.phase
         }`,
         `已封存：灵石${this.formatAmount(
@@ -494,6 +638,8 @@ export class EndlessRealm extends plugin {
       );
       if (run.pendingChoices?.[userId])
         lines.push('', ...this.formatChoices(run, userId));
+      if (run.phase === 'checkpoint')
+        lines.push('', ...this.formatCheckpoint(run));
     }
     return e.reply(lines.join('\n'));
   }
@@ -574,10 +720,17 @@ export class EndlessRealm extends plugin {
           continue;
         }
         const amount =
-          Number(await exist_najie_thing(id, ENTRY_ITEM, '道具')) || 0;
+          Number(await exist_najie_thing(id, ENDLESS_ENTRY_ITEM, '道具')) || 0;
         if (amount < 1)
-          missing.push(`${team.memberNames[id]}（缺少${ENTRY_ITEM}）`);
-        players.push({ id, player: await Read_player(id) });
+          missing.push(`${team.memberNames[id]}（缺少${ENDLESS_ENTRY_ITEM}）`);
+        const player = await Read_player(id);
+        const heart = refreshSpiritHeart(player);
+        if (heart.current < ENDLESS_SPIRIT_HEART_COST) {
+          missing.push(
+            `${team.memberNames[id]}（心神不足：${heart.current}/${heart.max}，需要${ENDLESS_SPIRIT_HEART_COST}）`
+          );
+        }
+        players.push({ id, player });
       }
       if (missing.length)
         return e.reply(['【无法开启无尽劫境】', ...missing].join('\n'));
@@ -588,11 +741,21 @@ export class EndlessRealm extends plugin {
         players,
         seed: Date.now() ^ Number(team.id),
       });
+      const originalPlayers = new Map(
+        players.map(({ id, player }) => [id, structuredClone(player)])
+      );
       const deducted = [];
       try {
-        for (const id of team.members) {
-          await Add_najie_thing(id, ENTRY_ITEM, '道具', -1);
+        for (const entry of players) {
+          const { id, player } = entry;
+          await Add_najie_thing(id, ENDLESS_ENTRY_ITEM, '道具', -1);
           deducted.push(id);
+          const heart = consumeSpiritHeart(
+            player,
+            ENDLESS_SPIRIT_HEART_COST
+          );
+          if (!heart.ok) throw new Error(`player=${id} 心神状态发生变化`);
+          await Write_player(id, player);
         }
         team.status = 'running';
         team.runId = run.id;
@@ -602,10 +765,19 @@ export class EndlessRealm extends plugin {
         const refundFailures = [];
         for (const id of deducted) {
           try {
-            await Add_najie_thing(id, ENTRY_ITEM, '道具', 1);
+            await Add_najie_thing(id, ENDLESS_ENTRY_ITEM, '道具', 1);
           } catch (refundError) {
             refundFailures.push(team.memberNames[id] || id);
             logger.error(`[无尽劫境] 退还秘钥失败 player=${id}`, refundError);
+          }
+        }
+        for (const [id, snapshot] of originalPlayers) {
+          try {
+            await Write_player(id, snapshot);
+          } catch (restoreError) {
+            if (!refundFailures.includes(team.memberNames[id] || id))
+              refundFailures.push(team.memberNames[id] || id);
+            logger.error(`[无尽劫境] 退还心神失败 player=${id}`, restoreError);
           }
         }
         try {
@@ -626,7 +798,7 @@ export class EndlessRealm extends plugin {
             ? `劫境开启失败；${refundFailures.join(
                 '、'
               )}的秘钥退还失败，请联系管理员处理`
-            : '劫境开启失败，已退还成功扣除的无尽秘钥'
+            : '劫境开启失败，已退还成功扣除的无尽秘钥与心神'
         );
       }
 
@@ -634,7 +806,7 @@ export class EndlessRealm extends plugin {
       return e.reply(
         [
           '【诸天无尽劫境开启】',
-          `全队消耗【${ENTRY_ITEM}】×1`,
+          `全队消耗【${ENDLESS_ENTRY_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点`,
           `首个世界：${world.name}`,
           `世界规则：${world.rule}`,
           `共享命火：${run.lifeFire}/${run.maxLifeFire}`,
@@ -679,6 +851,30 @@ export class EndlessRealm extends plugin {
           `仍有${Object.keys(run.pendingChoices).length}名成员尚未选择`
         );
       return e.reply(lines.join('\n'));
+    });
+  }
+
+  async chooseCheckpoint(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const current = await this.getPlayerTeam(userId);
+    if (!current || current.status !== 'running')
+      return e.reply('你当前不在无尽劫境中');
+    if (!this.isTeamGroup(e, current))
+      return e.reply('请回到无尽队伍所在群进行操作');
+    if (current.leader !== userId) return e.reply('只有队长可以决定十层天关的道途');
+    const choice = Number(e.msg.match(/[1-3]$/)?.[0]);
+    return this.withLock(e, `team:${current.id}`, async () => {
+      const run = await this.getRun(current.id);
+      if (!run) return e.reply('无尽劫境状态已经失效');
+      let result;
+      try {
+        result = applyCheckpointChoice(run, choice);
+      } catch (error) {
+        return e.reply(error.message);
+      }
+      await this.saveRun(run);
+      return e.reply(this.formatCheckpointResult(run, result).join('\n'));
     });
   }
 
@@ -778,7 +974,9 @@ export class EndlessRealm extends plugin {
           run.unbanked.tokens
         )}`,
         '',
-        ...this.formatAllChoices(run)
+        ...(run.phase === 'checkpoint'
+          ? this.formatCheckpoint(run)
+          : this.formatAllChoices(run))
       );
     }
     return lines;
@@ -875,6 +1073,9 @@ export class EndlessRealm extends plugin {
       })),
     }));
 
+    const layerMemberRewards = Object.values(result.layerReward?.members || {});
+    const routeStart = Math.floor((Math.max(1, result.layer) - 1) / 10) * 10 + 1;
+
     return {
       saveId: `endless_${run.teamId}_${result.layer}_${Date.now()}`,
       layer: result.layer,
@@ -884,6 +1085,17 @@ export class EndlessRealm extends plugin {
       enemy: result.enemy,
       trait: result.trait,
       victory: result.victory,
+      checkpoint: run.phase === 'checkpoint',
+      loop: Math.floor((Math.max(1, result.layer) - 1) / 10) + 1,
+      routeNodes: Array.from({ length: 10 }, (_, index) => {
+        const layer = routeStart + index;
+        return {
+          layer,
+          label: String(layer).padStart(2, '0'),
+          current: layer === result.layer,
+          cleared: layer <= result.layer,
+        };
+      }),
       rounds: result.rounds,
       enemyHp: this.formatAmount(result.enemyRemainingHp),
       enemyMaxHp: this.formatAmount(result.enemyMaxHp),
@@ -916,6 +1128,18 @@ export class EndlessRealm extends plugin {
             lingshi: this.formatAmount(result.layerReward.lingshi),
             sourceStone: this.formatAmount(result.layerReward.sourceStone),
             tokens: this.formatAmount(result.layerReward.tokens),
+            cultivation: this.formatAmount(
+              layerMemberRewards.reduce(
+                (sum, reward) => sum + (Number(reward.cultivation) || 0),
+                0
+              )
+            ),
+            blood: this.formatAmount(
+              layerMemberRewards.reduce(
+                (sum, reward) => sum + (Number(reward.blood) || 0),
+                0
+              )
+            ),
           }
         : null,
       settlement: settlement
@@ -944,12 +1168,27 @@ export class EndlessRealm extends plugin {
   async replyBattleReport(e, run, result, settlement = null) {
     try {
       const view = this.buildBattleView(run, result, settlement);
-      const renderData = await new Show(e).get_endlessBattleData(view);
-      const image = await puppeteer.screenshot('endless_battle', renderData);
+      const userId = await this.getUserId(e);
+      const player = await Read_player(userId);
+      const templateId = normalizeEndlessBattleTemplate(player.无尽战斗模板);
+      const templateModel = getEndlessBattleTemplateModel(templateId);
+      const renderData = await new Show(e).get_endlessBattleData(
+        {
+          ...view,
+          battleTemplate: templateId,
+          battleTemplateName: ENDLESS_BATTLE_TEMPLATES[templateId],
+        },
+        templateModel
+      );
+      const image = await puppeteer.screenshot(templateModel, renderData);
       if (image) {
         await e.reply(image);
         if (result.victory) {
-          return e.reply(this.formatAllChoices(run).join('\n'));
+          const nextStep =
+            run.phase === 'checkpoint'
+              ? this.formatCheckpoint(run)
+              : this.formatAllChoices(run);
+          return e.reply(nextStep.join('\n'));
         }
         return true;
       }
@@ -999,6 +1238,8 @@ export class EndlessRealm extends plugin {
         return e.reply(
           `还有${Object.keys(run.pendingChoices).length}名成员尚未完成能力选择`
         );
+      if (run.phase === 'checkpoint')
+        return e.reply(this.formatCheckpoint(run).join('\n'));
       if (run.phase === 'settling') return this.finishSettlement(e, team, run);
       let result;
       try {
@@ -1029,6 +1270,9 @@ export class EndlessRealm extends plugin {
     for (const member of Object.values(run.members)) {
       const stats = getMemberStats(run, member.id);
       const abilities = Object.entries(member.abilities || {});
+      const blessings = (member.blessings || [])
+        .map(id => getCheckpointBoon(id))
+        .filter(Boolean);
       lines.push(
         '',
         `${member.alive ? '[存活]' : '[残魂]'} ${member.name}`,
@@ -1041,7 +1285,12 @@ export class EndlessRealm extends plugin {
           ? abilities
               .map(([id, level]) => `${getAbility(id)?.name || id}Lv.${level}`)
               .join('、')
-          : '尚无能力'
+          : '尚无能力',
+        blessings.length
+          ? `天关机缘：${blessings
+              .map(boon => `[${boon.kind}]${boon.name}·${boon.origin}`)
+              .join('、')}`
+          : '天关机缘：尚无'
       );
     }
     if (run.fusions.length) {
@@ -1053,6 +1302,8 @@ export class EndlessRealm extends plugin {
     }
     if (run.pendingChoices?.[userId])
       lines.push('', ...this.formatChoices(run, userId));
+    if (run.phase === 'checkpoint')
+      lines.push('', ...this.formatCheckpoint(run));
     return e.reply(lines.join('\n'));
   }
 
@@ -1134,9 +1385,15 @@ export class EndlessRealm extends plugin {
             (Number(player.修为) || 0) + (Number(memberReward.cultivation) || 0);
           player.血气 =
             (Number(player.血气) || 0) + (Number(memberReward.blood) || 0);
+          const highestClearedLayer = Math.max(
+            0,
+            Number(run.highestClearedLayer) ||
+              (run.lastBattle?.victory ? Number(run.layer) : Number(run.layer) - 1) ||
+              0
+          );
           player.无尽劫境最高层 = Math.max(
             Number(player.无尽劫境最高层) || 0,
-            run.layer
+            highestClearedLayer
           );
           player.无尽劫境次数 = (Number(player.无尽劫境次数) || 0) + 1;
           player.无尽劫境结算记录 = [...records, run.settlement.id].slice(-30);
@@ -1177,6 +1434,148 @@ export class EndlessRealm extends plugin {
       run.settlement?.reason || 'withdraw'
     );
     return e.reply(this.formatSettlement(result, '无尽劫境结算').join('\n'));
+  }
+
+  async learnEndlessKeyRecipe(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    return this.withLock(e, `recipe:${userId}`, async () => {
+      const player = await Read_player(userId);
+      if (player[ENDLESS_KEY_RECIPE_FLAG])
+        return e.reply('你已参悟【无尽秘钥配方】，可直接使用 #合成无尽秘钥*数量');
+      const amount = Number(
+        await exist_najie_thing(userId, ENDLESS_KEY_RECIPE_ITEM, '道具')
+      ) || 0;
+      if (amount < 1) return e.reply(`你尚未获得【${ENDLESS_KEY_RECIPE_ITEM}】`);
+
+      const snapshot = structuredClone(player);
+      let deducted = false;
+      try {
+        await Add_najie_thing(userId, ENDLESS_KEY_RECIPE_ITEM, '道具', -1);
+        deducted = true;
+        player[ENDLESS_KEY_RECIPE_FLAG] = true;
+        await Write_player(userId, player);
+      } catch (error) {
+        if (deducted) {
+          try {
+            await Add_najie_thing(userId, ENDLESS_KEY_RECIPE_ITEM, '道具', 1);
+          } catch (refundError) {
+            logger.error('[无尽劫境] 配方退还失败', refundError);
+          }
+        }
+        try {
+          await Write_player(userId, snapshot);
+        } catch (restoreError) {
+          logger.error('[无尽劫境] 配方参悟回滚失败', restoreError);
+        }
+        logger.error('[无尽劫境] 配方参悟失败', error);
+        return e.reply('配方参悟失败，消耗已回滚，请稍后重试');
+      }
+      return e.reply(
+        [
+          '【无尽秘钥配方已参悟】',
+          '世界石×3、天外清风×8、星图×1、符纸×20',
+          '发送 #合成无尽秘钥*数量 即可炼制。',
+        ].join('\n')
+      );
+    });
+  }
+
+  async sweepEndlessRealm(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const current = await this.getPlayerTeam(userId);
+    if (current?.status === 'running')
+      return e.reply('你正在无尽劫境中，需先退出后才能扫荡');
+
+    return this.withLock(e, `sweep:${userId}`, async () => {
+      const player = await Read_player(userId);
+      const highestLayer = Math.max(
+        0,
+        Math.floor(Number(player.无尽劫境最高层) || 0)
+      );
+      if (!highestLayer)
+        return e.reply('你尚无无尽劫境通关记录，无法进行扫荡');
+
+      const keyAmount = Number(
+        await exist_najie_thing(userId, ENDLESS_ENTRY_ITEM, '道具')
+      ) || 0;
+      const ticketAmount = Number(
+        await exist_najie_thing(userId, ENDLESS_SWEEP_ITEM, '道具')
+      ) || 0;
+      const heart = refreshSpiritHeart(player);
+      const missing = [];
+      if (keyAmount < 1) missing.push(`【${ENDLESS_ENTRY_ITEM}】×1`);
+      if (ticketAmount < 1) missing.push(`【${ENDLESS_SWEEP_ITEM}】×1`);
+      if (heart.current < ENDLESS_SPIRIT_HEART_COST) {
+        missing.push(
+          `心神${ENDLESS_SPIRIT_HEART_COST}点（当前${heart.current}/${heart.max}）`
+        );
+      }
+      if (missing.length)
+        return e.reply(`扫荡所需资源不足：${missing.join('、')}`);
+
+      const reward = getEndlessSweepReward(player, highestLayer);
+      const snapshot = structuredClone(player);
+      const deducted = [];
+      try {
+        await Add_najie_thing(userId, ENDLESS_ENTRY_ITEM, '道具', -1);
+        deducted.push(ENDLESS_ENTRY_ITEM);
+        await Add_najie_thing(userId, ENDLESS_SWEEP_ITEM, '道具', -1);
+        deducted.push(ENDLESS_SWEEP_ITEM);
+        const consumed = consumeSpiritHeart(
+          player,
+          ENDLESS_SPIRIT_HEART_COST
+        );
+        if (!consumed.ok) throw new Error('心神状态发生变化');
+
+        player.修为 = (Number(player.修为) || 0) + reward.cultivation;
+        player.血气 = (Number(player.血气) || 0) + reward.blood;
+        player.灵石 = (Number(player.灵石) || 0) + reward.lingshi;
+        player.源石 = (Number(player.源石) || 0) + reward.sourceStone;
+        player[ENDLESS_TOKEN] =
+          (Number(player[ENDLESS_TOKEN]) || 0) + reward.tokens;
+        player.无尽劫境扫荡次数 =
+          (Number(player.无尽劫境扫荡次数) || 0) + 1;
+        await Write_player(userId, player);
+      } catch (error) {
+        const failures = [];
+        for (const item of deducted) {
+          try {
+            await Add_najie_thing(userId, item, '道具', 1);
+          } catch (refundError) {
+            failures.push(item);
+            logger.error(`[无尽劫境] 扫荡退还${item}失败`, refundError);
+          }
+        }
+        try {
+          await Write_player(userId, snapshot);
+        } catch (restoreError) {
+          failures.push('心神与奖励存档');
+          logger.error('[无尽劫境] 扫荡存档回滚失败', restoreError);
+        }
+        logger.error('[无尽劫境] 扫荡失败', error);
+        return e.reply(
+          failures.length
+            ? `扫荡失败，${failures.join('、')}回滚失败，请联系管理员`
+            : '扫荡失败，消耗已全部回滚'
+        );
+      }
+
+      return e.reply(
+        [
+          '【无尽劫境扫荡完成】',
+          `扫荡层数：第${reward.startLayer}～${reward.endLayer}层（共${reward.layers}层）`,
+          `消耗：【${ENDLESS_ENTRY_ITEM}】×1、【${ENDLESS_SWEEP_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点`,
+          `修为：+${this.formatAmount(reward.cultivation)}`,
+          `血气：+${this.formatAmount(reward.blood)}`,
+          `灵石：+${this.formatAmount(reward.lingshi)}`,
+          `源石：+${this.formatAmount(reward.sourceStone)}`,
+          `${ENDLESS_TOKEN}：+${this.formatAmount(reward.tokens)}`,
+          `剩余心神：${player.心神}/${heart.max}`,
+        ].join('\n')
+      );
+    });
   }
 
   async withdrawRun(e) {

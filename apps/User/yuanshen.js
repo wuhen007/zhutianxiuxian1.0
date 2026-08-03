@@ -24,16 +24,24 @@ import {
   getMinggeEffectNumber,
 } from '../../model/mingge.js';
 import {
-  SPIRIT_DEEPEN_STABILITY_COST,
-  SPIRIT_STABILITY_MAX,
+  SPIRIT_HEART_ENTRY_COST,
+  SPIRIT_HEART_RECOVERY_MS,
+  consumeSpiritHeartEntry,
+  createSpiritFinding,
   createSpiritJourney,
   getSpiritChoice,
   getSpiritInsightRequirement,
+  getSpiritLegacyChance,
   getSpiritRetentionRate,
+  increaseSpiritHeartLimit,
   mergeSpiritItemsIntoNajie,
   normalizeSpiritJourney,
+  pickWeightedDrop,
+  refreshSpiritHeart,
   resolveSpiritChoice,
+  resolveSpiritGuardianBattle,
   retainSpiritFindings,
+  shouldTriggerSpiritLegacy,
 } from '../../model/spiritUniverse.js';
 import {
   consumeXuanhuangGuard,
@@ -363,7 +371,9 @@ export class yuanshentixi extends plugin {
   async yuanshen(e) {
     const v = await this._validatePlayer(e, false);
     if (v.err) return e.reply(v.err);
-    const { player: p } = v;
+    const { usr_qq, player: p } = v;
+    const heart = refreshSpiritHeart(p);
+    await Write_player(usr_qq, p);
 
     let 元神状态 = "尚未凝练";
     let 元神等级名称 = "无";
@@ -394,6 +404,7 @@ export class yuanshentixi extends plugin {
       `元神强度：${bigNumberTransform(p.元神 || 0)}/${bigNumberTransform(p.元神上限 || 0)}`,
       `元神等级：${元神等级名称}`,
       `神识强度：${bigNumberTransform(p.神识 || 0)}点`,
+      `心神：${heart.current}/${heart.max}（每30分钟恢复1点）`,
       `状态：${元神状态}`,
     ];
 
@@ -763,6 +774,7 @@ export class yuanshentixi extends plugin {
       insight_recover: '你看破表象，从精神潮汐中炼出纯净念力，道痕接连浮现。',
       insight_expand: `你触及元神蜕变之秘，归位后可令元神上限提升${bigNumberTransform(finding?.amount || 0)}。`,
       insight_skill: `古老传承主动与你共鸣，「${finding?.name}」暂时烙印在神识之中。`,
+      insight_legacy: `一道强者残魂从道痕中苏醒，唯有胜过它，方能承接「${finding?.name || '未知传承'}」。`,
       insight_trace: '完整传承虽未显现，你仍从残痕中连续悟出两道道痕。',
       insight_backlash: '你强行追索大道源头，却被混乱意志反噬，神识剧烈震荡。',
     };
@@ -810,7 +822,11 @@ export class yuanshentixi extends plugin {
     let najie = null;
     if (itemFindings.length) {
       najie = await Read_najie(usr_qq);
-      mergeSpiritItemsIntoNajie(najie, itemFindings, data.jingshenyuzhou_drop_list || []);
+      mergeSpiritItemsIntoNajie(najie, itemFindings, [
+        ...(data.jingshenyuzhou_drop_list || []),
+        ...(data.daoju_list || []),
+        ...(data.danyao_list || []),
+      ]);
     }
 
     if (najie) await Write_najie(usr_qq, najie);
@@ -818,7 +834,7 @@ export class yuanshentixi extends plugin {
     await redis.del(`shenyou:${usr_qq}`);
 
     lines.push(
-      forced ? '神识稳定度耗尽，你被精神宇宙强行排斥！' : '你主动收束念头，神识沿来路归位。',
+      forced ? '元神投影受创，你被精神宇宙强行排斥！' : '你主动收束念头，神识沿来路归位。',
       `【${state.place_name}·神游结算】`,
       `最深到达：第${state.max_layer_reached}层`,
       `完成抉择：${state.guanxiang_count}次`,
@@ -838,15 +854,17 @@ export class yuanshentixi extends plugin {
   async jingshenyuzhou(e) {
     const v = await this._validatePlayer(e, false);
     if (v.err) return e.reply(v.err);
-    const { player: p } = v;
+    const { usr_qq, player: p } = v;
+    const heart = refreshSpiritHeart(p);
+    await Write_player(usr_qq, p);
     const places = this._spiritPlaces();
     if (!places.length) return e.reply('精神宇宙数据不存在');
 
     const lines = [
       '╔══════════ 精神宇宙·神识云游 ══════════╗',
-      '║  观想时从镇守、寻宝、悟道中作出抉择。 ║',
-      '║  主动归位保留全部战利品；稳定度耗尽   ║',
-      '║  会强制归位，越深入遗失风险越高。     ║',
+      `心神：${heart.current}/${heart.max}｜每次神游消耗${SPIRIT_HEART_ENTRY_COST}点`,
+      '每层完成有限观想后，需以元神战胜守关残魂。',
+      '主动归位保留全部收获；战败强制归位并可能遗失。',
       '╠══════════════════════════════════════╣',
     ];
 
@@ -856,7 +874,7 @@ export class yuanshentixi extends plugin {
       const canEnter = p.yuanshenlevel_id != null && p.yuanshenlevel_id >= reqLevel;
       lines.push(
         `${canEnter ? '✅' : '🔒'}【${place.name}】（${place.depth}层）`,
-        `   要求：${meta?.level || '未知'}｜入场：${bigNumberTransform(place.entry_cost || 0)}元神`,
+        `   要求：${meta?.level || '未知'}｜入场：${SPIRIT_HEART_ENTRY_COST}心神 + ${bigNumberTransform(place.entry_cost || 0)}元神`,
         `   珍品：${(place.Best || []).join('、') || '未知'}`,
         canEnter ? `   命令：#神游${place.name}` : '   元神等级不足',
         '─────────────────────────────────────',
@@ -896,6 +914,14 @@ export class yuanshentixi extends plugin {
         return e.reply(`神识云游需要 ${bigNumberTransform(entryCost)} 元神，你当前仅 ${bigNumberTransform(p.元神 || 0)}`);
       }
 
+      const heart = consumeSpiritHeartEntry(p);
+      if (!heart.ok) {
+        const elapsed = Date.now() - Number(p.心神恢复时间 || Date.now());
+        const waitMinutes = Math.max(1, Math.ceil((SPIRIT_HEART_RECOVERY_MS - elapsed) / 60000));
+        await Write_player(usr_qq, p);
+        return e.reply(`进入精神宇宙需要${SPIRIT_HEART_ENTRY_COST}点心神，你当前为${heart.current}/${heart.max}\n约${waitMinutes}分钟后恢复下一点心神`);
+      }
+
       const firstLayer = place.layers[0];
       p.元神 -= entryCost;
       const state = createSpiritJourney(place, usr_qq, entryCost);
@@ -907,8 +933,8 @@ export class yuanshentixi extends plugin {
         `进入「${place.name}」·第1层「${firstLayer.name}」`,
         place.desc || '',
         '',
-        `神识稳定度：${SPIRIT_STABILITY_MAX}/${SPIRIT_STABILITY_MAX}`,
-        `入场消耗：${bigNumberTransform(entryCost)} 元神`,
+        `心神：${heart.current}/${heart.max}`,
+        `入场消耗：${SPIRIT_HEART_ENTRY_COST}心神、${bigNumberTransform(entryCost)}元神`,
         '发送 #观想 寻找当前层的机缘',
       ].join('\n'));
     });
@@ -932,6 +958,12 @@ export class yuanshentixi extends plugin {
       if (!place || !layer) return e.reply('神识云游数据异常，请 #归位 后重试');
       if (state.pending_event) return e.reply('眼前的异象尚未消散，请先使用 #抉择1、#抉择2 或 #抉择3');
 
+      const bonus = this._spiritBonuses(p);
+      const nodeLimit = getSpiritInsightRequirement(bonus.depth);
+      if (state.layer_actions >= nodeLimit) {
+        return e.reply(`本层${nodeLimit}处精神节点均已探明，守关意识已经显化\n使用 #深入 发起元神战斗，或 #归位 保全收获`);
+      }
+
       const choices = [1, 2, 3].map(number => getSpiritChoice(number, layer));
       if ((p.元神 || 0) < choices[0].cost) {
         return e.reply(`你至少需要 ${bigNumberTransform(choices[0].cost)} 元神才能继续观想\n请使用 #归位 结算收益`);
@@ -942,15 +974,15 @@ export class yuanshentixi extends plugin {
       state.pending_event = { type: eventType, layer: state.current_layer };
       await redis.set(`shenyou:${usr_qq}`, JSON.stringify(state));
 
-      const bonus = this._spiritBonuses(p);
       const treasureChance = Math.min(90, Math.round((0.65 + bonus.event) * 100));
       return e.reply([
         `【${place.name}·${layer.name}】`,
         this._eventIntro(eventType),
         '',
-        `1. 镇守心神｜${bigNumberTransform(choices[0].cost)}元神｜稳定度-${choices[0].stabilityLoss}｜悟痕+1`,
-        `2. 搜寻机缘｜${bigNumberTransform(choices[1].cost)}元神｜稳定度-${choices[1].stabilityLoss}｜寻宝率${treasureChance}%`,
-        `3. 参悟道痕｜${bigNumberTransform(choices[2].cost)}元神｜稳定度-${choices[2].stabilityLoss}｜收益高但可能反噬`,
+        `精神节点：${state.layer_actions + 1}/${nodeLimit}`,
+        `1. 镇守心神｜${bigNumberTransform(choices[0].cost)}元神｜稳获道痕`,
+        `2. 搜寻机缘｜${bigNumberTransform(choices[1].cost)}元神｜寻宝率${treasureChance}%`,
+        `3. 参悟道痕｜${bigNumberTransform(choices[2].cost)}元神｜可能触发特殊传承`,
         '',
         '使用 #抉择1、#抉择2 或 #抉择3',
       ].join('\n'));
@@ -995,8 +1027,28 @@ export class yuanshentixi extends plugin {
       state.yuanshen_consumed += result.action.cost;
       state.guanxiang_count++;
       state.layer_insight += result.insightGain;
-      state.stability = Math.max(0, state.stability - result.action.stabilityLoss - result.extraStabilityLoss);
+      state.layer_actions++;
       state.pending_event = null;
+
+      let legacyBattle = null;
+      if (choiceNumber === 3 && p.元神 > 0) {
+        const skillDrops = (layer.drops || []).filter(drop => drop.class === '功法');
+        const pity = Math.max(0, Number(p.精神传承保底) || 0);
+        const triggered = skillDrops.length > 0 && shouldTriggerSpiritLegacy(
+          pity,
+          getSpiritLegacyChance(state.current_layer, place.depth),
+        );
+        if (triggered) {
+          result.finding = createSpiritFinding(pickWeightedDrop(skillDrops));
+          result.outcome = 'insight_legacy';
+          p.精神传承保底 = 0;
+          legacyBattle = resolveSpiritGuardianBattle({ player: p, place, layer, legacy: true });
+          p.元神 = legacyBattle.remainingYuanshen;
+          if (!legacyBattle.won) result.finding = null;
+        } else {
+          p.精神传承保底 = pity + 1;
+        }
+      }
       if (result.finding) state.findings.push(result.finding);
 
       const required = getSpiritInsightRequirement(bonuses.depth);
@@ -1009,18 +1061,26 @@ export class yuanshentixi extends plugin {
         const sign = result.currentYuanshenDelta > 0 ? '+' : '';
         lines.push(`额外元神变化：${sign}${bigNumberTransform(result.currentYuanshenDelta)}`);
       }
+      if (legacyBattle) {
+        lines.push(
+          '',
+          `【特殊传承·${legacyBattle.guardianName}】`,
+          ...legacyBattle.logs,
+          legacyBattle.won
+            ? `残魂认可了你的元神，传承「${result.finding?.name}」化作烙印。`
+            : '你未能承受传承意志，元神投影被逐出此界。',
+        );
+      }
       lines.push(
-        `神识稳定度：${state.stability}/${SPIRIT_STABILITY_MAX}`,
-        state.current_layer < place.depth
-          ? `本层悟痕：${state.layer_insight}/${required}`
-          : '你已身处此位面的最深层',
+        `本层精神节点：${state.layer_actions}/${required}`,
+        `本层悟痕：${state.layer_insight}`,
         `临时收获：${state.findings.length}件`,
       );
-      if (state.current_layer < place.depth && state.layer_insight >= required) {
-        lines.push('精神壁垒已经松动，可以使用 #深入');
+      if (state.layer_actions >= required) {
+        lines.push('本层节点已经探明，使用 #深入 挑战守关意识');
       }
 
-      if (state.stability <= 0 || p.元神 <= 0) {
+      if ((legacyBattle && !legacyBattle.won) || p.元神 <= 0) {
         return this._settleShenyou(e, usr_qq, p, state, { forced: true, prelude: lines });
       }
 
@@ -1031,7 +1091,7 @@ export class yuanshentixi extends plugin {
   }
 
   /* =========================================================
-   * #深入 —— 悟痕达标后进入下一层
+   * #深入 —— 探明节点后挑战守关意识
    * ========================================================= */
   async shenyouDeep(e) {
     const v = await this._validatePlayer(e, false);
@@ -1046,37 +1106,73 @@ export class yuanshentixi extends plugin {
       const place = this._spiritPlaces().find(item => item.id == state.place_id);
       if (!place) return e.reply('神识云游数据异常');
       if (state.pending_event) return e.reply('眼前异象尚未处理，请先完成当前抉择');
-      if (state.current_layer >= place.depth) {
-        return e.reply(`你已在「${place.name}」最深层，可以继续观想或 #归位`);
-      }
-
-      const nextLayer = place.layers[state.current_layer];
-      const depthReq = (place.yuanshen_required || 0) + state.current_layer;
-      if (p.yuanshenlevel_id < depthReq) {
-        const meta = data.Levelyuanshen_list.find(l => l.level_id == depthReq);
-        return e.reply(`下一层需要元神等级 ${meta?.level || depthReq}`);
-      }
 
       const bonuses = this._spiritBonuses(p);
       const required = getSpiritInsightRequirement(bonuses.depth);
-      if (state.layer_insight < required) {
-        return e.reply(`精神壁垒尚未松动，本层需要 ${required} 道悟痕，你当前拥有 ${state.layer_insight} 道`);
-      }
-      if (state.stability <= SPIRIT_DEEPEN_STABILITY_COST) {
-        return e.reply(`深入需要 ${SPIRIT_DEEPEN_STABILITY_COST} 点稳定度，你的神识已难以维持，请 #归位`);
+      if (state.layer_actions < required) {
+        return e.reply(`本层还有精神节点尚未探明，需要完成${required}次观想，你当前完成${state.layer_actions}次`);
       }
 
-      state.stability -= SPIRIT_DEEPEN_STABILITY_COST;
+      const isFinalLayer = state.current_layer >= place.depth;
+      if (!isFinalLayer) {
+        const depthReq = (place.yuanshen_required || 0) + state.current_layer;
+        if (p.yuanshenlevel_id < depthReq) {
+          const meta = data.Levelyuanshen_list.find(l => l.level_id == depthReq);
+          return e.reply(`守关意识感知到你的元神尚未圆满，下一层需要 ${meta?.level || depthReq}`);
+        }
+      }
+
+      const layer = place.layers[state.current_layer - 1];
+      const battle = resolveSpiritGuardianBattle({ player: p, place, layer });
+      p.元神 = battle.remainingYuanshen;
+      const lines = [
+        `【${place.name}·守关元神战】`,
+        `${battle.guardianName}挡住了通往下一层的精神通道。`,
+        ...battle.logs,
+        `元神损耗：${bigNumberTransform(battle.yuanshenLost)}`,
+      ];
+
+      if (!battle.won) {
+        lines.push(`${battle.guardianName}仍余${bigNumberTransform(battle.guardianRemainingHp)}点魂力，你的投影被震出精神宇宙。`);
+        return this._settleShenyou(e, usr_qq, p, state, { forced: true, prelude: lines });
+      }
+
+      lines.push(`${battle.guardianName}消散，精神壁垒随之洞开。`);
+      if (isFinalLayer) {
+        p.精神宇宙首通 = Array.isArray(p.精神宇宙首通) ? p.精神宇宙首通 : [];
+        const firstClear = !p.精神宇宙首通.includes(Number(place.id));
+        if (firstClear) {
+          p.精神宇宙首通.push(Number(place.id));
+          const heartGain = increaseSpiritHeartLimit(p, 2);
+          lines.push(`首次贯通「${place.name}」，心神上限永久+${heartGain}。`);
+        }
+        if (firstClear || Math.random() < 0.05) {
+          state.findings.push({
+            kind: 'item',
+            type: 'item',
+            name: '虚天神钥',
+            class: '道具',
+            itemType: '宝物',
+          });
+          lines.push('守关残念中浮现一枚【虚天神钥】。');
+        }
+        state.max_layer_reached = Math.max(state.max_layer_reached, state.current_layer);
+        lines.push(`你已贯通「${place.name}」，神识沿完整道标归位。`);
+        return this._settleShenyou(e, usr_qq, p, state, { prelude: lines });
+      }
+
+      const nextLayer = place.layers[state.current_layer];
       state.current_layer++;
       state.layer_name = nextLayer.name;
       state.layer_insight = 0;
+      state.layer_actions = 0;
       state.max_layer_reached = Math.max(state.max_layer_reached, state.current_layer);
+      await Write_player(usr_qq, p);
       await redis.set(`shenyou:${usr_qq}`, JSON.stringify(state));
 
       return e.reply([
-        '积累的悟痕同时亮起，精神壁垒轰然洞开。',
+        ...lines,
         `进入第${state.current_layer}层「${nextLayer.name}」`,
-        `稳定度 -${SPIRIT_DEEPEN_STABILITY_COST}，剩余 ${state.stability}/${SPIRIT_STABILITY_MAX}`,
         `本层可能遭遇：${(nextLayer.events || []).join('、') || '未知异象'}`,
         '发送 #观想 继续探索，或 #归位 保全收获',
       ].join('\n'));
@@ -1105,9 +1201,11 @@ export class yuanshentixi extends plugin {
     const v = await this._validatePlayer(e, false);
     if (v.err) return e.reply(v.err);
     const { usr_qq, player: p } = v;
+    const heart = refreshSpiritHeart(p);
+    await Write_player(usr_qq, p);
 
     const raw = await redis.get(`shenyou:${usr_qq}`);
-    if (!raw) return e.reply('你的神识并未云游\n使用 #精神宇宙 查看可进入的位面');
+    if (!raw) return e.reply(`你的神识并未云游\n心神：${heart.current}/${heart.max}（每30分钟恢复1点）\n使用 #精神宇宙 查看可进入的位面`);
 
     const state = normalizeSpiritJourney(JSON.parse(raw));
     const place = this._spiritPlaces().find(item => item.id == state.place_id);
@@ -1117,12 +1215,11 @@ export class yuanshentixi extends plugin {
 
     e.reply([
       '【神识云游状态】',
+      `心神：${heart.current}/${heart.max}`,
       `位面：${state.place_name}（共${place?.depth || '?'}层）`,
       `当前：第${state.current_layer}层「${state.layer_name}」`,
-      `神识稳定度：${state.stability}/${SPIRIT_STABILITY_MAX}`,
-      state.current_layer < (place?.depth || 0)
-        ? `本层悟痕：${state.layer_insight}/${required}`
-        : '当前已是最深层',
+      `本层精神节点：${state.layer_actions}/${required}`,
+      `本层悟痕：${state.layer_insight}`,
       `完成抉择：${state.guanxiang_count}次`,
       `累计消耗元神：${bigNumberTransform(state.yuanshen_consumed)}`,
       `临时收获：${state.findings.length}件`,

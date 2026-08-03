@@ -24,6 +24,40 @@ export const COORDINATE_DUNGEON_CHANCE = 0.1;
 export const COORDINATE_CLUE_COST = 300_000_000;
 export const COORDINATE_EVENT_DURATION_MS = 24 * 60 * 60 * 1000;
 export const TIANWAI_WIND_REDUCTION_MINUTES = 5;
+export const FORBIDDEN_SUPREME_ATTENTION_THRESHOLD = 3;
+export const FORBIDDEN_SUPREME_ALL_ATTRIBUTE = 75_000_000_000;
+export const FORBIDDEN_SUPREME_EQUIPMENT_MULTIPLIER = 150;
+
+export const FORBIDDEN_SUPREMES = Object.freeze([
+  {
+    name: '石皇',
+    weight: 45,
+    root: { name: '大圆满圣灵皇体', type: '大成圣体', 法球倍率: 2.2, 攻击: 4, 防御: 5, 生命: 6 },
+    techniques: ['石皇经·天荒镇世', '行字秘·极尽', '者字秘'],
+    equipment: '不死山古皇战装',
+    imperialWeapon: '天荒戟',
+  },
+  {
+    name: '光暗至尊',
+    weight: 35,
+    root: { name: '光暗双生皇体', type: '光暗皇体', 法球倍率: 2, 攻击: 3, 防御: 3, 生命: 3.5 },
+    techniques: ['光暗古经·两仪葬界', '维宙星灭诀', '皆字秘'],
+    equipment: '光暗古皇战装',
+    imperialWeapon: '光暗至尊器',
+  },
+  {
+    name: '神墟之主',
+    weight: 20,
+    root: { name: '神墟古皇体', type: '古皇体', 法球倍率: 1.8, 攻击: 2, 防御: 2.5, 生命: 3 },
+    techniques: ['神墟古经·万域放逐', '永恒的放逐', '临字秘'],
+    equipment: '神墟古皇战装',
+    imperialWeapon: '神墟古皇兵',
+  },
+]);
+
+const SUPREME_GEAR_BASE = Object.freeze({ 攻击: 120_000_000, 防御: 120_000_000, 血量: 180_000_000 });
+const SUPREME_WEAPON_BASE = Object.freeze({ 攻击: 50_000_000, 防御: 50_000_000, 血量: 50_000_000, 全属性: 12 });
+const SUPREME_LOOT_CATEGORIES = Object.freeze(['装备', '丹药', '道具', '功法', '草药', '材料', '盒子', '宝石']);
 
 const TRAVEL_MAX_REALM = 21;
 
@@ -234,4 +268,138 @@ export function recordUnfetteredJourney(player) {
   if (!progress || progress.阶段 !== 1) return 0;
   progress.横渡位面 = Math.min(3, Math.max(0, Number(progress.横渡位面) || 0) + 1);
   return progress.横渡位面;
+}
+
+export function registerForbiddenSupremeAttention(player, task) {
+  const touchesZhetian = Number(task?.from_location) === PLACE_LOCATION_MAP.遮天位面 ||
+    Number(task?.to_location) === PLACE_LOCATION_MAP.遮天位面;
+  if (!touchesZhetian) return { relevant: false, count: 0, intercept: false, warning: '' };
+
+  const count = Math.min(
+    FORBIDDEN_SUPREME_ATTENTION_THRESHOLD,
+    Math.max(0, Math.floor(Number(player?.禁区至尊注视) || 0)) + 1
+  );
+  player.禁区至尊注视 = count;
+  const warnings = {
+    1: '虚空深处似有一道冰冷眸光扫过，位面阵纹已被某位禁区至尊记住。',
+    2: '北斗生命禁区传来帝兵复苏之音，那道目光再次锁定了你的穿梭轨迹。',
+  };
+  return {
+    relevant: true,
+    count,
+    intercept: count >= FORBIDDEN_SUPREME_ATTENTION_THRESHOLD,
+    warning: warnings[count] || '',
+  };
+}
+
+export function selectForbiddenSupreme(random = Math.random) {
+  const totalWeight = FORBIDDEN_SUPREMES.reduce((sum, supreme) => sum + supreme.weight, 0);
+  let roll = Math.min(0.999999999999, Math.max(0, Number(random()) || 0)) * totalWeight;
+  for (const supreme of FORBIDDEN_SUPREMES) {
+    roll -= supreme.weight;
+    if (roll < 0) return supreme;
+  }
+  return FORBIDDEN_SUPREMES.at(-1);
+}
+
+function maxRealm(levels) {
+  return (levels || []).reduce((highest, current) =>
+    !highest || Number(current?.level_id) > Number(highest?.level_id) ? current : highest, null) || {};
+}
+
+function realmStat(realm, key) {
+  return Number(realm?.[key]) || 0;
+}
+
+export function buildForbiddenSupreme(supreme, realms) {
+  const cultivation = maxRealm(realms?.cultivation);
+  const physique = maxRealm(realms?.physique);
+  const secret = (realms?.secret || []).find(item => Number(item.level_id) === 16) || {};
+  const ancient = (realms?.ancient || []).find(item => Number(item.level_id) === 1) || {};
+  const root = supreme.root;
+  const base = key => realmStat(cultivation, key) + realmStat(physique, key) +
+    realmStat(secret, key) + realmStat(ancient, key) + FORBIDDEN_SUPREME_ALL_ATTRIBUTE;
+  const weaponRealm = {
+    攻击: realmStat(secret, '基础攻击') + realmStat(ancient, '基础攻击'),
+    防御: realmStat(secret, '基础防御') + realmStat(ancient, '基础防御'),
+    血量: realmStat(secret, '基础血量') + realmStat(ancient, '基础血量'),
+  };
+  const stat = (key, rootKey) => Math.trunc(
+    base(key) * (1 + Number(root[rootKey] || 0)) +
+    (SUPREME_GEAR_BASE[rootKey] + SUPREME_WEAPON_BASE[rootKey]) * FORBIDDEN_SUPREME_EQUIPMENT_MULTIPLIER +
+    weaponRealm[rootKey] * SUPREME_WEAPON_BASE.全属性 * FORBIDDEN_SUPREME_EQUIPMENT_MULTIPLIER
+  );
+  const hp = stat('基础血量', '血量');
+
+  return {
+    名号: `${supreme.name}·极尽升华`,
+    level_id: Number(cultivation.level_id) || 0,
+    Physique_id: Number(physique.level_id) || 0,
+    mijinglevel_id: 16,
+    xiangulevel_id: 1,
+    攻击: stat('基础攻击', '攻击'),
+    防御: stat('基础防御', '防御'),
+    当前血量: hp,
+    血量上限: hp,
+    暴击率: realmStat(cultivation, '基础暴击') + realmStat(physique, '基础暴击'),
+    暴击伤害: 2.5,
+    速度: 100,
+    灵根: { ...root },
+    法球倍率: root.法球倍率,
+    学习的功法: [...supreme.techniques],
+    装备描述: `${supreme.equipment}×${FORBIDDEN_SUPREME_EQUIPMENT_MULTIPLIER}`,
+    帝兵描述: `${supreme.imperialWeapon}×${FORBIDDEN_SUPREME_EQUIPMENT_MULTIPLIER}`,
+  };
+}
+
+function itemValue(item) {
+  return (Number(item?.稀有度) || 0) * 1e15 +
+    (Number(item?.pinji ?? item?.品阶) || 0) * 1e12 +
+    (Number(item?.出售价) || 0);
+}
+
+export function applyForbiddenSupremePlunder(player, najie, keepRatio = 0.2) {
+  const learnedTechniques = Array.isArray(player?.学习的功法) ? [...player.学习的功法] : [];
+  player.学习的功法 = [];
+  player.当前血量 = 1;
+  player.元神 = Math.max(0, Math.trunc((Number(player.元神) || 0) * 0.1));
+  player.禁区至尊注视 = 0;
+  player.禁区至尊堵截次数 = Math.max(0, Math.floor(Number(player.禁区至尊堵截次数) || 0)) + 1;
+
+  const stacks = [];
+  for (const category of SUPREME_LOOT_CATEGORIES) {
+    for (const item of Array.isArray(najie?.[category]) ? najie[category] : []) {
+      stacks.push({ category, item, quantity: Math.max(1, Math.floor(Number(item?.数量) || 1)) });
+    }
+  }
+  const totalQuantity = stacks.reduce((sum, entry) => sum + entry.quantity, 0);
+  let keepQuantity = Math.floor(totalQuantity * Math.min(1, Math.max(0, Number(keepRatio) || 0)));
+  const kept = new Map();
+  for (const entry of [...stacks].sort((a, b) => itemValue(a.item) - itemValue(b.item))) {
+    if (keepQuantity <= 0) break;
+    const amount = Math.min(entry.quantity, keepQuantity);
+    kept.set(entry.item, amount);
+    keepQuantity -= amount;
+  }
+
+  const takenItems = [];
+  for (const category of SUPREME_LOOT_CATEGORIES) {
+    if (!Array.isArray(najie?.[category])) continue;
+    const remaining = [];
+    for (const item of najie[category]) {
+      const originalQuantity = Math.max(1, Math.floor(Number(item?.数量) || 1));
+      const remainingQuantity = kept.get(item) || 0;
+      const takenQuantity = originalQuantity - remainingQuantity;
+      if (takenQuantity > 0) takenItems.push({ category, name: item?.name || '无名物品', quantity: takenQuantity });
+      if (remainingQuantity > 0) remaining.push({ ...item, 数量: remainingQuantity });
+    }
+    najie[category] = remaining;
+  }
+
+  return {
+    learnedTechniques,
+    takenItems,
+    takenQuantity: takenItems.reduce((sum, item) => sum + item.quantity, 0),
+    remainingQuantity: totalQuantity - takenItems.reduce((sum, item) => sum + item.quantity, 0),
+  };
 }

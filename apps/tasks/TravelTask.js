@@ -1,6 +1,7 @@
 import { plugin, common,  config, data } from '../../api/api.js';
 import {
   Read_player,
+  Read_najie,
   isNotNull,
   Add_najie_thing,
   Add_修为,
@@ -11,6 +12,7 @@ import {
   Add_灵石,
   Add_源石,
   Write_player,
+  Write_najie,
     Read_equipment,
     Write_equipment,
     exist_najie_thing,
@@ -22,9 +24,16 @@ import {
    bigNumberTransform,
   zd_battle,
   get_log_img,
+  player_efficiency,
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
-import { recordUnfetteredJourney } from '../../model/weimianTravel.js';
+import {
+  applyForbiddenSupremePlunder,
+  buildForbiddenSupreme,
+  recordUnfetteredJourney,
+  registerForbiddenSupremeAttention,
+  selectForbiddenSupreme,
+} from '../../model/weimianTravel.js';
 export class TravelTask extends plugin {
   constructor() {
     super({
@@ -820,6 +829,74 @@ this.FORMATION_NAMES = [
     return Math.floor(Math.random() * (max - min + 1)) + min;
   }
 
+  async executeForbiddenSupremeInterception(task, player) {
+    const supreme = selectForbiddenSupreme();
+    const boss = buildForbiddenSupreme(supreme, {
+      cultivation: data.Level_list,
+      physique: data.LevelMax_list,
+      secret: data.Levelmijing_list,
+      ancient: data.xiangujinshi_list,
+    });
+    const travelMethod = task.used_token ? '位面传送阵' : '肉身横渡';
+    const speed = boss.速度 + boss.mijinglevel_id * 50 + boss.xiangulevel_id * 50;
+
+    await this.sendTextMessage(task.player_qq, [
+      '【禁区至尊·横断星路】',
+      `你连续以${travelMethod}撕开遮天位面壁垒，第三次波动终于惊醒了${supreme.name}。`,
+      '一只帝道大手压塌虚空，封死所有退路。',
+      `灵根：${supreme.root.name}`,
+      `功法：${supreme.techniques.join('、')}`,
+      `装备：${boss.装备描述}；帝兵：${boss.帝兵描述}`,
+      `境界：练气${boss.level_id}级、炼体${boss.Physique_id}级、秘境大帝、仙古1级`,
+      `极道全属性：750亿；速度：100 + 16×50 + 1×50 = ${speed}`,
+      `${supreme.name}：“让本皇看看，你从诸天带回了什么。”`,
+    ].join('\n'), task.group_id);
+
+    const result = await zd_battle(player, boss);
+    const battleLog = Array.isArray(result?.msg) ? result.msg.slice(0, 20) : [];
+    if (battleLog.length > 0) await this.sendBattleImage(task.player_qq, battleLog, task.group_id);
+
+    if (result?.winner === 'A') {
+      player.禁区至尊注视 = 0;
+      player.击退禁区至尊次数 = Math.max(0, Math.floor(Number(player.击退禁区至尊次数) || 0)) + 1;
+      await this.sendTextMessage(task.player_qq,
+        `你正面击退了${supreme.name}，帝道目光暂时从你的星路上移开。`, task.group_id);
+      return 'victory';
+    }
+    if (result?.winner !== 'B') {
+      await this.sendTextMessage(task.player_qq,
+        '至尊交锋被崩塌的位面通道强行中止，本次不作战败结算。', task.group_id);
+      return 'error';
+    }
+
+    const najie = await Read_najie(task.player_qq);
+    const loss = applyForbiddenSupremePlunder(player, najie);
+    player.power_place = task.from_location;
+    await Write_najie(task.player_qq, najie);
+    await Write_player(task.player_qq, player);
+    try {
+      await player_efficiency(task.player_qq);
+    } catch (error) {
+      console.error(`[禁区至尊] 重算玩家修炼效率失败 player=${task.player_qq}`, error?.message);
+    }
+    await redis.del(`xiuxian:player:${task.player_qq}:action`);
+
+    const itemSummary = loss.takenItems.slice(0, 8)
+      .map(item => `- ${item.category}【${item.name}】×${item.quantity}`);
+    if (loss.takenItems.length > itemSummary.length) {
+      itemSummary.push(`- 另有${loss.takenItems.length - itemSummary.length}类物品`);
+    }
+    await this.sendTextMessage(task.player_qq, [
+      `【${supreme.name}·搜魂夺宝】`,
+      '你被帝威镇压，元神记忆被强行翻阅，毕生所学尽数从识海中抹去。',
+      `已废除功法：${loss.learnedTechniques.length}门`,
+      `元神仅余一成，当前血量降至1，并被打回${task.from_name || '原位面'}。`,
+      `纳戒的可掠夺物被夺走${loss.takenQuantity}件，仅留下${loss.remainingQuantity}件低价值物品；仙宠、口粮与食材未动：`,
+      ...(itemSummary.length > 0 ? itemSummary : ['- 纳戒中没有可供至尊取走的物品']),
+    ].join('\n'), task.group_id);
+    return 'defeat';
+  }
+
   async checkTravelTasks() {
     // 获取所有传送任务
     const keys = await redis.keys('xiuxian:travel_task:*');
@@ -849,20 +926,23 @@ this.FORMATION_NAMES = [
       
       // 创建模拟事件对象
       const simulatedEvent = this.createSimulatedEvent(player_qq, group_id);
-      
-      // ===== 检查偷袭事件 =====
-      const hatredTianjiaoList = await this.getHatredTianjiaoList(player_qq);
-      
-      if (hatredTianjiaoList.length > 0) {
-        const randomTianjiao = hatredTianjiaoList[Math.floor(Math.random() * hatredTianjiaoList.length)];
-        const ambushResult = await this.checkAmbush(simulatedEvent, player, randomTianjiao, group_id);
-        
-        // ambushResult: true=胜利继续传送, false=未触发, 'defeat'=战败死亡
-        if (ambushResult === 'defeat') {
-          // 玩家已死亡，传送失败
-          return false;
+
+      let supremeAttention = { warning: '', count: 0, intercept: false };
+      if (!task.travel_protected) {
+        // ===== 遮天位面·禁区至尊注视 =====
+        supremeAttention = registerForbiddenSupremeAttention(player, task);
+        if (supremeAttention.intercept) {
+          const supremeResult = await this.executeForbiddenSupremeInterception(task, player);
+          if (supremeResult === 'defeat') return false;
         }
-        // true或false都继续传送
+
+        // ===== 检查偷袭事件 =====
+        const hatredTianjiaoList = await this.getHatredTianjiaoList(player_qq);
+        if (hatredTianjiaoList.length > 0) {
+          const randomTianjiao = hatredTianjiaoList[Math.floor(Math.random() * hatredTianjiaoList.length)];
+          const ambushResult = await this.checkAmbush(simulatedEvent, player, randomTianjiao, group_id);
+          if (ambushResult === 'defeat') return false;
+        }
       }
       
       // ===== 正常传送完成 =====
@@ -898,6 +978,7 @@ this.FORMATION_NAMES = [
         `【位面穿梭·完成】`,
         `${player_name}已借助${tierLabel}成功抵达${to_name}!`,
         ...travelMsgArr,
+        ...(supremeAttention.warning ? ['', `【禁区至尊注视 ${supremeAttention.count}/3】`, supremeAttention.warning] : []),
         ...accidentMsgs,
         ...(unfetteredJourneyProgress ? [`【天地无拘】横渡位面：${unfetteredJourneyProgress}/3`] : []),
         `位面穿梭完成，你现已身处${to_name}`

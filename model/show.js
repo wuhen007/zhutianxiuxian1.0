@@ -14,8 +14,15 @@ export default class Game extends base {
       ...myData,
     };
   }
-  async get_endlessBattleData(myData) {
-    this.model = 'endless_battle';
+  async get_endlessBattleData(myData, model = 'endless_battle') {
+    this.model = model;
+    return {
+      ...this.screenData,
+      ...myData,
+    };
+  }
+  async get_endlessShopData(myData) {
+    this.model = 'endless_shop';
     return {
       ...this.screenData,
       ...myData,

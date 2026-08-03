@@ -3,16 +3,24 @@ import fs from 'node:fs';
 import test from 'node:test';
 
 import {
-  SPIRIT_DEEPEN_STABILITY_COST,
-  SPIRIT_STABILITY_MAX,
+  SPIRIT_HEART_ENTRY_COST,
+  SPIRIT_HEART_RECOVERY_MS,
+  consumeSpiritHeart,
+  consumeSpiritHeartEntry,
   createSpiritJourney,
   getSpiritChoice,
+  getSpiritHeartMax,
   getSpiritInsightRequirement,
+  getSpiritLegacyChance,
   getSpiritRetentionRate,
+  increaseSpiritHeartLimit,
   mergeSpiritItemsIntoNajie,
   normalizeSpiritJourney,
+  refreshSpiritHeart,
   resolveSpiritChoice,
+  resolveSpiritGuardianBattle,
   retainSpiritFindings,
+  shouldTriggerSpiritLegacy,
   validateSpiritPlaces,
 } from '../model/spiritUniverse.js';
 
@@ -33,25 +41,43 @@ test('精神位面层数、行动成本和掉落配置完整', () => {
   }
 });
 
-test('新神游状态带有稳定度、悟痕和待处理事件', () => {
+test('新神游状态带有有限节点、悟痕和待处理事件', () => {
   const place = places[0];
   const state = createSpiritJourney(place, '10001', place.entry_cost, 1234);
-  assert.equal(state.stability, SPIRIT_STABILITY_MAX);
+  assert.equal(state.layer_actions, 0);
   assert.equal(state.layer_insight, 0);
   assert.equal(state.pending_event, null);
   assert.equal(state.start_time, 1234);
 
   const migrated = normalizeSpiritJourney({ place_name: place.name, findings: [] });
-  assert.equal(migrated.stability, SPIRIT_STABILITY_MAX);
+  assert.equal(migrated.layer_actions, 0);
   assert.equal(migrated.max_layer_reached, 1);
 });
 
-test('三种抉择费用递增且稳定度必定下降', () => {
+test('三种抉择仅消耗元神且费用递增', () => {
   const layer = places[0].layers[0];
   const choices = [1, 2, 3].map(number => getSpiritChoice(number, layer));
   assert.deepEqual(choices.map(choice => choice.cost), [75000, 150000, 180000]);
-  assert.deepEqual(choices.map(choice => choice.stabilityLoss), [6, 10, 12]);
-  assert.ok(SPIRIT_DEEPEN_STABILITY_COST > 0);
+  assert.deepEqual(choices.map(choice => choice.stabilityLoss), [undefined, undefined, undefined]);
+});
+
+test('心神只在入场消耗并按半小时恢复，上限由元神境界与永久成长组成', () => {
+  const player = { yuanshenlevel_id: 2 };
+  assert.deepEqual(refreshSpiritHeart(player, 1000), { current: 36, max: 36, recovered: 0 });
+  assert.equal(consumeSpiritHeartEntry(player, 1000).ok, true);
+  assert.equal(player.心神, 36 - SPIRIT_HEART_ENTRY_COST);
+  assert.equal(refreshSpiritHeart(player, 1000 + SPIRIT_HEART_RECOVERY_MS * 2).current, 28);
+  assert.equal(increaseSpiritHeartLimit(player, 5), 5);
+  assert.equal(getSpiritHeartMax(player), 41);
+});
+
+test('其他副本可复用指定数值的心神扣除', () => {
+  const player = { yuanshenlevel_id: 20, 心神: 80, 心神恢复时间: 1000 };
+  const result = consumeSpiritHeart(player, 50, 1000);
+  assert.equal(result.ok, true);
+  assert.equal(player.心神, 30);
+  assert.equal(consumeSpiritHeart(player, 50, 1000).ok, false);
+  assert.equal(player.心神, 30);
 });
 
 test('镇守稳定获得悟痕，悟道上限收益只跟行动成本相关', () => {
@@ -93,6 +119,37 @@ test('花粉蜕变经式深度加成减少悟痕要求', () => {
   assert.equal(getSpiritInsightRequirement(0), 2);
   assert.equal(getSpiritInsightRequirement(1), 1);
   assert.equal(getSpiritInsightRequirement(99), 1);
+});
+
+test('特殊传承随深度提升概率并在第十次参悟保底', () => {
+  assert.equal(getSpiritLegacyChance(1, 5), 0.03);
+  assert.equal(getSpiritLegacyChance(5, 5), 0.14);
+  assert.equal(shouldTriggerSpiritLegacy(8, 0.03, () => 0.9), false);
+  assert.equal(shouldTriggerSpiritLegacy(9, 0.03, () => 0.9), true);
+});
+
+test('守关战使用神识、元神攻防加成和已学攻防功法', () => {
+  const place = places[0];
+  const layer = place.layers[0];
+  const base = {
+    元神: 2_000_000,
+    元神上限: 2_000_000,
+    神识: 200_000,
+    学习的功法: [],
+    元神伤害加成: 0,
+    元神伤害减免: 0,
+  };
+  const normal = resolveSpiritGuardianBattle({ player: base, place, layer });
+  const trained = resolveSpiritGuardianBattle({
+    player: { ...base, 学习的功法: ['劫运神拳', '元神盾'] },
+    place,
+    layer,
+  });
+  assert.equal(normal.won, true);
+  assert.equal(trained.won, true);
+  assert.ok(trained.yuanshenLost < normal.yuanshenLost);
+  assert.equal(trained.attackSkill, '劫运神拳');
+  assert.equal(trained.defenseSkill, '元神盾');
 });
 
 test('主动归位全保留，强制归位随深度降低保留率', () => {

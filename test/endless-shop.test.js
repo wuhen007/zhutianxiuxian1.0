@@ -12,9 +12,21 @@ import {
 } from '../model/endlessShop.js';
 
 const itemDir = fileURLToPath(new URL('../resources/data/item/', import.meta.url));
+const shopData = JSON.parse(
+  fs.readFileSync(
+    fileURLToPath(new URL('../resources/data/无尽商店.json', import.meta.url)),
+    'utf8'
+  )
+);
 
 test('无尽商店商品可按编号和名称查找', () => {
   assert.equal(ENDLESS_TOKEN, '劫境道痕');
+  assert.equal(ENDLESS_SHOP.length, shopData.products.length);
+  assert.equal(
+    new Set(ENDLESS_SHOP.map(item => item.id)).size,
+    ENDLESS_SHOP.length
+  );
+  assert.equal(ENDLESS_SHOP[0].name, shopData.products[0].name);
   assert.equal(findEndlessProduct('1').name, '大衍悟道丹');
   assert.equal(findEndlessProduct(FUSION_ITEM).price, 8000);
 });

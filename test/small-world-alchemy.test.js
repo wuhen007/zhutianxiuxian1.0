@@ -5,6 +5,7 @@ import test from 'node:test';
 import {
   SMALL_WORLD_ALCHEMY_RATE,
   SMALL_WORLD_PILL_POOL,
+  XUTIAN_SMALL_WORLD_PILL_POOL,
   pickSmallWorldPill,
 } from '../apps/Garden/smallWorldAlchemy.js';
 
@@ -22,6 +23,12 @@ test('小世界丹房使用低产率和四档权重', () => {
     [0, 0.7, 0.92, 0.99].map(pickSmallWorldPill),
     Object.keys(expectedPills),
   );
+});
+
+test('虚天舟丹房池加入两种心神恢复丹药', () => {
+  assert.equal(XUTIAN_SMALL_WORLD_PILL_POOL.reduce((sum, pill) => sum + pill.weight, 0), 100);
+  assert.equal(pickSmallWorldPill(0.82, { xutianAlchemy: true }), '定神丹');
+  assert.equal(pickSmallWorldPill(0.99, { xutianAlchemy: true }), '太虚养神丹');
 });
 
 test('四种专属神药已写入丹药列表并具有正确药力', () => {

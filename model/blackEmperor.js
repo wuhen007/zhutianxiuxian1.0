@@ -14,7 +14,7 @@ export const BLACK_EMPEROR_FORMATIONS = Object.freeze([
     favor: 60,
     cost: 15_000_000,
     type: 'battle',
-    description: '下次副本遮蔽天机，使敌方攻击降低30%、暴击率降低15%',
+    description: '下次渡劫有25%概率欺瞒天劫，成功则整场伤害降低25%',
   },
   {
     name: '山河困龙阵',
@@ -129,8 +129,7 @@ export function consumeBlackEmperorBattleFormation(player, attacker, defender) {
   if (!name || !attacker || !defender) return { consumed: false, name: null, message: '' };
 
   if (name === '欺天阵纹') {
-    defender.攻击 = Math.max(1, Math.floor((Number(defender.攻击) || 0) * 0.7));
-    defender.暴击率 = Math.max(0, Number(((Number(defender.暴击率) || 0) - 0.15).toFixed(4)));
+    return { consumed: false, name, message: '' };
   } else if (name === '山河困龙阵') {
     defender.攻击 = Math.max(1, Math.floor((Number(defender.攻击) || 0) * 0.85));
     defender.防御 = Math.max(0, Math.floor((Number(defender.防御) || 0) * 0.55));
@@ -149,4 +148,37 @@ export function consumeBlackEmperorBattleFormation(player, attacker, defender) {
     name,
     message: ` 黑皇预先刻下的「${name}」骤然复苏，阵纹覆盖战场！`,
   };
+}
+
+export function consumeBlackEmperorTribulationFormation(player, options = {}) {
+  if (!player || typeof player !== 'object') {
+    return { consumed: false, success: false, damageMultiplier: 1, message: '' };
+  }
+  if (player._欺天阵纹渡劫) return player._欺天阵纹渡劫;
+
+  const pending = player.黑皇待用阵纹 === '欺天阵纹';
+  const chance = Math.min(1, Math.max(0, Number(options.chance ?? 0.25)));
+  const success = pending && Number((options.random || Math.random)()) < chance;
+  const result = {
+    consumed: pending,
+    success,
+    damageMultiplier: success ? 0.75 : 1,
+    announced: false,
+    message: pending
+      ? success
+        ? '【欺天阵纹·欺天成功】阵纹遮蔽天机，本次渡劫所受伤害降低25%！'
+        : '【欺天阵纹·阵纹失灵】雷劫洞穿虚妄，阵纹崩散，本次未能减伤！'
+      : '',
+  };
+
+  if (pending) {
+    delete player.黑皇待用阵纹;
+    const character = getBlackEmperorData(player);
+    if (character) recordEvent(character, `渡劫激活欺天阵纹（${success ? '成功' : '失灵'}）`);
+  }
+  Object.defineProperty(player, '_欺天阵纹渡劫', {
+    value: result,
+    configurable: true,
+  });
+  return result;
 }

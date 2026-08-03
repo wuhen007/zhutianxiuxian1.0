@@ -428,5 +428,30 @@
     "rate": 1,
     "level_limit": 0,
     "exp": [200, 400]
+  },
+  {
+    "name": "定神丹",
+    "type": "心神恢复",
+    "传承要求": "虚天之主传承",
+    "materials": [
+      { "name": "万年清心草", "amount": 10 },
+      { "name": "万年天魂菊", "amount": 5 }
+    ],
+    "rate": 1,
+    "level_limit": 10,
+    "exp": [1000, 2000]
+  },
+  {
+    "name": "太虚养神丹",
+    "type": "心神恢复",
+    "传承要求": "虚天之主传承",
+    "materials": [
+      { "name": "万年清心草", "amount": 30 },
+      { "name": "万年天魂菊", "amount": 20 },
+      { "name": "悟道古茶叶", "amount": 1 }
+    ],
+    "rate": 1,
+    "level_limit": 15,
+    "exp": [5000, 10000]
   }
 ]

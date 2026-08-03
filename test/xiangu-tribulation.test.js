@@ -6,6 +6,7 @@ import {
   hasXianguGongfa,
   settleXianguWaveDamage,
 } from '../apps/SecretPlace/xianguTribulationSettlement.js';
+import { reduceTribulationDamageByDefense } from '../model/tribulationDamage.js';
 
 function makePlayer(extra = {}) {
   return {
@@ -17,6 +18,17 @@ function makePlayer(extra = {}) {
     ...extra,
   };
 }
+
+test('玩家防御按30%固定抵消雷劫伤害且至少承受1点', () => {
+  assert.deepEqual(reduceTribulationDamageByDefense(100, 100), {
+    damage: 70,
+    reduction: 30,
+  });
+  assert.deepEqual(reduceTribulationDamageByDefense(20, 100), {
+    damage: 1,
+    reduction: 19,
+  });
+});
 
 test('仙古渡劫先复活，再结算功法减伤和本次伤害', () => {
   const player = makePlayer();

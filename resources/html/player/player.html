@@ -205,7 +205,7 @@
                 天资：【{{player.天资等级}}】<br />
                 评价：【{{player.天资评价}}】<br />
                 {{if player.命格}}
-                命格：【{{player.命格.rarityName}}·{{player.命格.name}}{{if player.命格.isNegative}}·厄{{/if}}】<br />
+                命格：【{{player.命格.rarityName}}·{{player.命格.name}}{{if player.命格.isNegative}}·厄{{/if}}】{{if player.附加命格}}{{each player.附加命格 item}}【{{item.rarityName}}·{{item.name}}{{if item.isNegative}}·厄{{/if}}】{{/each}}{{/if}}<br />
                 {{else}}
                 命格：【未定】<br />
                 {{/if}}

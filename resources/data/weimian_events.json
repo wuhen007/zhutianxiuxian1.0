@@ -168,10 +168,90 @@
             "source": "era",
             "interaction": "generic",
             "participantQqs": []
+        },
+        {
+            "type": "sectWar",
+            "interaction": "sectWar",
+            "attacker": {
+                "name": "道一圣宫",
+                "desc": "道法传承最为悠久"
+            },
+            "defender": {
+                "name": "天妖宫",
+                "desc": "妖帝传承"
+            },
+            "reason": "一批神源矿料在交割时失踪，护送者全部被灭口",
+            "plane": "遮天位面",
+            "location": "太初古矿",
+            "coordinate": {
+                "x": 227,
+                "y": 116
+            },
+            "timestamp": 1785747601492,
+            "sectWar": {
+                "mode": "mine",
+                "status": "open",
+                "phase": "神源龙脉争夺",
+                "openedAt": 1785747601492,
+                "maxActions": 5,
+                "sides": {
+                    "attacker": {
+                        "name": "道一圣宫",
+                        "desc": "道法传承最为悠久"
+                    },
+                    "defender": {
+                        "name": "天妖宫",
+                        "desc": "妖帝传承"
+                    },
+                    "neutral": {
+                        "name": "中立修士"
+                    }
+                },
+                "scores": {
+                    "attacker": 0,
+                    "defender": 0,
+                    "neutral": 0
+                },
+                "meters": {
+                    "military": 0,
+                    "supplies": 0,
+                    "truth": 0,
+                    "seal": 0
+                },
+                "participants": {},
+                "decisionVotes": {},
+                "clues": [],
+                "actionLog": [],
+                "supportLog": [],
+                "rewardedQqs": [],
+                "outcome": null
+            },
+            "expiresAt": 1785834001491,
+            "source": "era",
+            "participantQqs": []
+        },
+        {
+            "type": "worldChange",
+            "eraIndex": 3,
+            "event": {
+                "title": "武道崛起",
+                "desc": "在灵气匮乏之时，凡人武道开始崛起"
+            },
+            "plane": "仙域",
+            "location": "混沌仙池",
+            "coordinate": {
+                "x": 120,
+                "y": 421
+            },
+            "timestamp": 1785754800992,
+            "expiresAt": 1785841200992,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": []
         }
     ],
-    "lastEventTime": 3000,
-    "lastEventWorldYear": 33000,
+    "lastEventTime": 9000,
+    "lastEventWorldYear": 39000,
     "activeEvents": [
         {
             "type": "mysteriousRuins",
@@ -187,6 +267,86 @@
             },
             "timestamp": 1785690001300,
             "expiresAt": 1785776401299,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": []
+        },
+        {
+            "type": "sectWar",
+            "interaction": "sectWar",
+            "attacker": {
+                "name": "道一圣宫",
+                "desc": "道法传承最为悠久"
+            },
+            "defender": {
+                "name": "天妖宫",
+                "desc": "妖帝传承"
+            },
+            "reason": "一批神源矿料在交割时失踪，护送者全部被灭口",
+            "plane": "遮天位面",
+            "location": "太初古矿",
+            "coordinate": {
+                "x": 227,
+                "y": 116
+            },
+            "timestamp": 1785747601492,
+            "sectWar": {
+                "mode": "mine",
+                "status": "open",
+                "phase": "神源龙脉争夺",
+                "openedAt": 1785747601492,
+                "maxActions": 5,
+                "sides": {
+                    "attacker": {
+                        "name": "道一圣宫",
+                        "desc": "道法传承最为悠久"
+                    },
+                    "defender": {
+                        "name": "天妖宫",
+                        "desc": "妖帝传承"
+                    },
+                    "neutral": {
+                        "name": "中立修士"
+                    }
+                },
+                "scores": {
+                    "attacker": 0,
+                    "defender": 0,
+                    "neutral": 0
+                },
+                "meters": {
+                    "military": 0,
+                    "supplies": 0,
+                    "truth": 0,
+                    "seal": 0
+                },
+                "participants": {},
+                "decisionVotes": {},
+                "clues": [],
+                "actionLog": [],
+                "supportLog": [],
+                "rewardedQqs": [],
+                "outcome": null
+            },
+            "expiresAt": 1785834001491,
+            "source": "era",
+            "participantQqs": []
+        },
+        {
+            "type": "worldChange",
+            "eraIndex": 3,
+            "event": {
+                "title": "武道崛起",
+                "desc": "在灵气匮乏之时，凡人武道开始崛起"
+            },
+            "plane": "仙域",
+            "location": "混沌仙池",
+            "coordinate": {
+                "x": 120,
+                "y": 421
+            },
+            "timestamp": 1785754800992,
+            "expiresAt": 1785841200992,
             "source": "era",
             "interaction": "generic",
             "participantQqs": []

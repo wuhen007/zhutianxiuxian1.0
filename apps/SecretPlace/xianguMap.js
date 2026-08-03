@@ -13,6 +13,15 @@ export const DEFAULT_XIANGU_FRAGMENT_SIZES = Object.freeze({
   void_rift: Object.freeze([5, 5]),
 });
 
+export const XIANGU_MARROW_POOL_NAME = '万道仙髓池';
+export const XIANGU_MARROW_POOL_KIND = 'wandao_xiansui_pool';
+export const DEFAULT_XIANGU_MARROW_POOL_CONFIG = Object.freeze({
+  exploreChance: 0.03,
+  npcInviteChance: 0.18,
+  potentialGain: 50,
+  rewardMultiplier: 5,
+});
+
 const MIN_FRAGMENT_SIDE = 4;
 const MAX_FRAGMENT_SIDE = 11;
 
@@ -36,6 +45,57 @@ function normalizeSize(value, fallback) {
   ];
 }
 
+function normalizeProbability(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(1, Math.max(0, number));
+}
+
+function normalizeNonNegative(value, fallback, integer = false) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  const normalized = Math.max(0, number);
+  return integer ? Math.floor(normalized) : normalized;
+}
+
+export function resolveXianguMarrowPoolConfig(config = {}) {
+  const poolConfig = config?.万道仙髓池配置 ||
+    config?.万道仙髓池 ||
+    config?.机缘宝池 ||
+    config?.marrowPool ||
+    config;
+
+  return {
+    exploreChance: normalizeProbability(
+      poolConfig?.探索概率 ?? poolConfig?.exploreChance,
+      DEFAULT_XIANGU_MARROW_POOL_CONFIG.exploreChance,
+    ),
+    npcInviteChance: normalizeProbability(
+      poolConfig?.NPC邀请概率 ?? poolConfig?.npcInviteChance,
+      DEFAULT_XIANGU_MARROW_POOL_CONFIG.npcInviteChance,
+    ),
+    potentialGain: normalizeNonNegative(
+      poolConfig?.仙道潜力 ?? poolConfig?.potentialGain,
+      DEFAULT_XIANGU_MARROW_POOL_CONFIG.potentialGain,
+      true,
+    ),
+    rewardMultiplier: normalizeNonNegative(
+      poolConfig?.修血倍率 ?? poolConfig?.rewardMultiplier,
+      DEFAULT_XIANGU_MARROW_POOL_CONFIG.rewardMultiplier,
+    ),
+  };
+}
+
+export function getXianguMarrowPoolTrapChance(npc, relation = 0) {
+  if (npc?.hostile === true || npc?.personality === 'hostile') return 0.75;
+  if (npc?.personality === 'scheming') return 0.6;
+  if ((Number(relation) || 0) < 0) return 0.4;
+  if (npc?.personality === 'friendly' || npc?.faction === 'good') return 0;
+  return 0.1;
+}
+
 export function resolveXianguFragmentSize(config = {}, fragmentId, fallback = [6, 6]) {
   const mapConfig = config?.地图配置 || config?.mapConfig || config;
   const configuredSizes = mapConfig?.碎片尺寸 || mapConfig?.fragmentSizes || {};
@@ -43,10 +103,125 @@ export function resolveXianguFragmentSize(config = {}, fragmentId, fallback = [6
   return normalizeSize(configuredSizes[fragmentId], defaultSize);
 }
 
-function randomIndex(length, random) {
+function boundedRandom(random) {
   const value = Number(typeof random === 'function' ? random() : Math.random());
-  const bounded = Number.isFinite(value) ? Math.min(1 - Number.EPSILON, Math.max(0, value)) : 0;
-  return Math.floor(bounded * length);
+  return Number.isFinite(value) ? Math.min(1 - Number.EPSILON, Math.max(0, value)) : 0;
+}
+
+function randomIndex(length, random) {
+  return Math.floor(boundedRandom(random) * length);
+}
+
+export function calculateXianguMarrowPoolRewards(
+  player = {},
+  {
+    rewardMultiplier = DEFAULT_XIANGU_MARROW_POOL_CONFIG.rewardMultiplier,
+    random = Math.random,
+  } = {},
+) {
+  const levelId = Number(player.level_id) || 0;
+  const physiqueId = Number(player.Physique_id) || 0;
+  const secretRealmId = Number(player.mijinglevel_id) || 0;
+  const ancientRealmId = Number(player.xiangulevel_id) || 0;
+  const multiplier = normalizeNonNegative(
+    rewardMultiplier,
+    DEFAULT_XIANGU_MARROW_POOL_CONFIG.rewardMultiplier,
+  );
+
+  const baseXiuwei = Math.trunc(
+    2000 + 10000 * levelId * levelId * secretRealmId * ancientRealmId * (2 + boundedRandom(random)),
+  );
+  const baseXueqi = Math.trunc(
+    2000 + 10000 * physiqueId * physiqueId * secretRealmId * ancientRealmId * (2 + boundedRandom(random)),
+  );
+
+  return {
+    xiuwei: Math.trunc(baseXiuwei * multiplier),
+    xueqi: Math.trunc(baseXueqi * multiplier),
+  };
+}
+
+export function placeXianguMarrowPool(
+  map,
+  {
+    reveal = false,
+    metadata = {},
+    random = Math.random,
+    emptyValue = 0,
+    uniqueTreasureValue = 8,
+  } = {},
+) {
+  const size = getRectangularGridSize(map?.grid);
+  if (!size) return { placed: false, reason: 'invalid_map' };
+
+  const uniqueTreasures = map.uniqueTreasures && typeof map.uniqueTreasures === 'object' &&
+    !Array.isArray(map.uniqueTreasures)
+    ? map.uniqueTreasures
+    : {};
+  const existingEntry = Object.entries(uniqueTreasures).find(([key, treasure]) =>
+    treasure?.kind === XIANGU_MARROW_POOL_KIND ||
+    treasure?.name === XIANGU_MARROW_POOL_NAME ||
+    String(key).startsWith(`${XIANGU_MARROW_POOL_NAME}@`),
+  );
+  if (existingEntry) {
+    return {
+      placed: false,
+      reason: 'exists',
+      key: existingEntry[0],
+      position: clonePlainData(existingEntry[1]?.pos),
+      treasure: existingEntry[1],
+    };
+  }
+
+  const candidates = [];
+  for (let y = 1; y < size.height - 1; y++) {
+    for (let x = 1; x < size.width - 1; x++) {
+      if (
+        map.grid[y][x] === emptyValue &&
+        (map.playerPos?.x !== x || map.playerPos?.y !== y)
+      ) {
+        candidates.push({ x, y });
+      }
+    }
+  }
+  if (candidates.length === 0) return { placed: false, reason: 'no_empty_cell' };
+
+  const position = candidates[randomIndex(candidates.length, random)];
+  const customMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+    ? clonePlainData(metadata)
+    : {};
+  const treasure = {
+    desc: '仙古万道残韵沉积而成的仙髓宝池，可洗炼根骨、增益潜力',
+    distEcho: 2,
+    echoMsg: {
+      2: '远处传来水波声，万道残韵随之轻鸣...',
+      1: '仙髓气息扑面而来，一方宝池已近在眼前！',
+    },
+    ...customMetadata,
+    kind: XIANGU_MARROW_POOL_KIND,
+    name: XIANGU_MARROW_POOL_NAME,
+    pos: { ...position },
+    claimed: false,
+  };
+
+  let key = `${XIANGU_MARROW_POOL_NAME}@${position.x},${position.y}`;
+  for (let suffix = 2; Object.hasOwn(uniqueTreasures, key); suffix++) {
+    key = `${XIANGU_MARROW_POOL_NAME}@${position.x},${position.y}#${suffix}`;
+  }
+
+  map.uniqueTreasures = uniqueTreasures;
+  map.grid[position.y][position.x] = uniqueTreasureValue;
+  uniqueTreasures[key] = treasure;
+  if (reveal && Array.isArray(map.revealed?.[position.y])) {
+    map.revealed[position.y][position.x] = true;
+  }
+
+  return {
+    placed: true,
+    key,
+    position: { ...position },
+    treasure,
+  };
 }
 
 export function pickDifferentXianguFragment(currentFragmentId, candidates, random = Math.random) {

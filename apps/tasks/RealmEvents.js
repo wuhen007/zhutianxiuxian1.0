@@ -35,6 +35,17 @@ import {
     placeTreasureDaoHeart,
     settleTreasureContest
 } from '../../model/innateTreasureContest.js';
+import {
+    BINGZI_DURATION_MS,
+    createBingziLegacy,
+    declareOnlyWeapon,
+    identifyBingziMountain,
+    observeBingziDiagram,
+    rankBingziLegacy,
+    settleBingziLegacy,
+    traceCaiClan,
+    trackMoonPrincess
+} from '../../model/bingziLegacy.js';
 
 const DEFAULT_ERA_TRIGGER_CHANCE = 0.35;
 const DEFAULT_DUNGEON_TRIGGER_CHANCE = 0.002;
@@ -136,8 +147,18 @@ function hasPendingSectWarSettlement(event) {
     return rewarded < participants;
 }
 
+function hasPendingBingziSettlement(event) {
+    if (event?.type !== 'bingziLegacy') return false;
+    if (event.bingzi?.status !== 'settled') return true;
+    const participants = Object.keys(event.bingzi?.participants || {}).length;
+    const rewarded = new Set((event.bingzi?.rewardedQqs || []).map(String)).size;
+    return rewarded < participants;
+}
+
 function hasPendingEventSettlement(event) {
-    return hasPendingTreasureSettlement(event) || hasPendingSectWarSettlement(event);
+    return hasPendingTreasureSettlement(event) ||
+        hasPendingSectWarSettlement(event) ||
+        hasPendingBingziSettlement(event);
 }
 
 function getDefaultEventConfig() {
@@ -623,50 +644,39 @@ export class RealmEvents {
         return { eventData, message };
     }
     
-    /** 古帝传承现世事件 */
-    async emperorLegacyEvent(eraIndex) {
-        const emperors = [
-            { name: "荒天帝", desc: "独断万古，一剑劈开仙域" },
-            { name: "叶天帝", desc: "平定黑暗动乱，护佑苍生" },
-            { name: "无始天帝", desc: "先天神圣，未成帝前已无敌" },
-            { name: "狠人大帝", desc: "吞天噬地，逆夺造化" },
-            { name: "虚空大帝", desc: "以身为饵，斩杀不死天皇子嗣" },
-            { name: "恒宇大帝", desc: "炼神丹布道，庇护苍生" },
-            { name: "阿弥陀佛", desc: "慈悲为怀，普度众生" },
-            { name: "不死天皇", desc: "浴火重生，永恒不灭" },
-            { name: "帝尊", desc: "天庭之主，布局万古" },
-            { name: "太皇", desc: "无敌于世，横推一切敌" }
-        ];
-        
-        const emperor = emperors[Math.floor(Math.random() * emperors.length)];
-        const destination = createRealmEventLocation();
+    /** 秦岭秦门兵字秘传承事件 */
+    async bingziLegacyEvent(eraIndex, random = Math.random) {
+        const destination = createRealmEventLocation({
+            plane: '遮天位面',
+            location: 'qinlingqinmen',
+            random
+        });
         if (!destination) return null;
-        
+        const timestamp = Date.now();
         const eventData = {
-            type: 'emperorLegacy',
-            emperor: emperor,
+            type: 'bingziLegacy',
+            interaction: 'bingzi',
             ...destination,
-            timestamp: Date.now()
+            timestamp,
+            expiresAt: timestamp + BINGZI_DURATION_MS,
+            bingzi: createBingziLegacy(timestamp, random)
         };
-        
+
         const message = [
-            `【惊世传承·古帝遗迹现世】`,
-            ``,
-            `天地间传来一声叹息：`,
-            `"吾名${emperor.name}，今日传承再现..."`,
-            ``,
-            `${formatRealmEventLocation(eventData)}突然霞光万丈！`,
-            `疑似${emperor.name}的传承遗迹即将开启！`,
-            `${emperor.desc}`,
-            ``,
-            `诸多势力闻风而动，纷纷前往探寻！`,
-            `「这是成帝的机缘！」`,
-            `「不知谁能获得大帝认可...」`,
-            ``,
+            '【九秘传承·秦门兵图显化】',
+            '',
+            '中州秦岭传出异象：秦门后山的拙劣兵器刻痕正在吞吐月华。',
+            '古老线索指向三万年前覆灭的蔡族，而秦门掌教一脉疑为其后人。',
+            `显化地点：${formatRealmEventLocation(eventData)}`,
+            '',
+            '此传承不是战利品。须追查蔡族旧事、跟踪月灵公主、在九座石山中辨出真迹，最终以自身唯一之器承受兵道经文。',
+            '完整兵字秘只择一名参悟最深者，其余参与者可获得兵字秘残卷。',
+            '',
             `赶路方式：${formatRealmEventTravel(eventData)}`,
-            `欲探遗迹者，可使用 #探查遗迹`
+            '抵达后发送 #秦门兵图 查看传承步骤。',
+            '石壁只显化24小时。'
         ].join('\n');
-        
+
         return { eventData, message };
     }
     
@@ -922,7 +932,7 @@ export class RealmEvents {
                     result = await this.forbiddenZoneEvent(eraIndex);
                     break;
                 case 'legacy':
-                    result = await this.emperorLegacyEvent(eraIndex);
+                    result = await this.bingziLegacyEvent(eraIndex, random);
                     break;
                 case 'worldChange':
                     result = await this.worldChangeEvent(eraIndex);
@@ -1077,7 +1087,7 @@ export class RealmEvents {
             war: 'sectWar',
             prodigy: 'prodigyRise',
             forbidden: 'forbiddenZone',
-            legacy: 'emperorLegacy',
+            legacy: 'bingziLegacy',
             worldChange: 'worldChange',
             ruins: 'mysteriousRuins',
             tianmoLegacy: 'tianmoHuashengLegacy',
@@ -1092,6 +1102,7 @@ export class RealmEvents {
         if (event?.interaction) return event.interaction;
         if (type === 'treasureAppear') return 'treasure';
         if (type === 'sectWar') return 'sectWar';
+        if (type === 'bingziLegacy') return 'bingzi';
         if (type === 'merchantVisit' && ['白须仙翁', '黑衣神秘人', '绝美仙子'].includes(event?.merchant?.name)) return 'merchant';
         if (type === 'tianmoHuashengLegacy') return 'tianmo';
         if (type === 'coordinateClue') return 'coordinate';
@@ -1103,6 +1114,7 @@ export class RealmEvents {
         if (this.getEventInteraction(event) === 'treasure') return '#夺宝';
         if (this.getEventInteraction(event) === 'merchant') return `#${event.merchant.name}`;
         if (this.getEventInteraction(event) === 'sectWar') return '#圣战详情';
+        if (this.getEventInteraction(event) === 'bingzi') return '#秦门兵图';
         if (this.getEventInteraction(event) === 'tianmo') return '#进入万相魔冢';
         if (this.getEventInteraction(event) === 'coordinate') {
             return `#探索位面线索 ${event.location}`;
@@ -1512,6 +1524,129 @@ export class RealmEvents {
         return true;
     }
 
+    _ensureBingziLegacy(event) {
+        if (!event.bingzi || typeof event.bingzi !== 'object') {
+            event.bingzi = createBingziLegacy(Number(event.timestamp) || Date.now());
+        }
+        event.bingzi.participants ||= {};
+        event.bingzi.rankings ||= [];
+        event.bingzi.rewardedQqs ||= [];
+        return event.bingzi;
+    }
+
+    _findBingziEvent(config, timestamp) {
+        return (config.activeEvents || []).find(item =>
+            item.type === 'bingziLegacy' && Number(item.timestamp) === Number(timestamp)
+        ) || null;
+    }
+
+    _syncBingziHistory(config, event) {
+        const historyEvent = (config.eventHistory || []).find(item =>
+            item.type === 'bingziLegacy' && Number(item.timestamp) === Number(event.timestamp)
+        );
+        if (!historyEvent) return;
+        historyEvent.bingzi = JSON.parse(JSON.stringify(event.bingzi));
+        historyEvent.participantQqs = Object.keys(event.bingzi?.participants || {});
+    }
+
+    _mutateBingziLegacy(timestamp, now, mutation) {
+        const config = this.readEventConfig();
+        const event = this._findBingziEvent(config, timestamp);
+        if (!event || Number(event.expiresAt) <= now) return { ok: false, reason: 'expired' };
+        const legacy = this._ensureBingziLegacy(event);
+        if (legacy.status !== 'open') return { ok: false, reason: 'settled' };
+        const result = mutation(legacy);
+        event.participantQqs = Object.keys(legacy.participants);
+        this._syncBingziHistory(config, event);
+        this.saveEventConfig(config);
+        return { ...result, event };
+    }
+
+    getBingziLegacyEvents(includeSettled = false) {
+        const config = this.readEventConfig();
+        return (config.activeEvents || []).filter(event =>
+            event.type === 'bingziLegacy' && (includeSettled || hasPendingBingziSettlement(event))
+        );
+    }
+
+    getLatestBingziLegacyEvent() {
+        const events = this.getBingziLegacyEvents(true);
+        if (events.length) return events.sort((a, b) => Number(b.timestamp) - Number(a.timestamp))[0];
+        return this.getEventHistory(100).find(event => event.type === 'bingziLegacy') || null;
+    }
+
+    getBingziRankings(event) {
+        return rankBingziLegacy(event?.bingzi);
+    }
+
+    traceBingziCaiClan(timestamp, qq, name, now = Date.now()) {
+        return this._mutateBingziLegacy(timestamp, now, legacy =>
+            traceCaiClan(legacy, qq, name, now)
+        );
+    }
+
+    trackBingziMoonPrincess(timestamp, qq, now = Date.now()) {
+        return this._mutateBingziLegacy(timestamp, now, legacy =>
+            trackMoonPrincess(legacy, qq)
+        );
+    }
+
+    recordBingziMountain(timestamp, qq, mountain, now = Date.now()) {
+        return this._mutateBingziLegacy(timestamp, now, legacy =>
+            identifyBingziMountain(legacy, qq, mountain)
+        );
+    }
+
+    recordBingziObservation(timestamp, qq, insight, now = Date.now()) {
+        return this._mutateBingziLegacy(timestamp, now, legacy =>
+            observeBingziDiagram(legacy, qq, insight)
+        );
+    }
+
+    recordBingziWeapon(timestamp, qq, weapon, now = Date.now()) {
+        return this._mutateBingziLegacy(timestamp, now, legacy =>
+            declareOnlyWeapon(legacy, qq, weapon, now)
+        );
+    }
+
+    settleBingziLegacyEvent(timestamp, now = Date.now()) {
+        const config = this.readEventConfig();
+        const event = this._findBingziEvent(config, timestamp);
+        if (!event) return { ok: false, reason: 'missing' };
+        if (Number(event.expiresAt) > now) return { ok: false, reason: 'open', event };
+        const legacy = this._ensureBingziLegacy(event);
+        const result = settleBingziLegacy(legacy, now);
+        event.participantQqs = Object.keys(legacy.participants);
+        this._syncBingziHistory(config, event);
+        this.saveEventConfig(config);
+        return { ...result, event };
+    }
+
+    setBingziWinner(timestamp, winner) {
+        const config = this.readEventConfig();
+        const event = this._findBingziEvent(config, timestamp);
+        if (!event) return false;
+        const legacy = this._ensureBingziLegacy(event);
+        if (legacy.status !== 'settled') return false;
+        legacy.winner = winner ? { ...winner } : null;
+        this._syncBingziHistory(config, event);
+        this.saveEventConfig(config);
+        return true;
+    }
+
+    markBingziRewarded(timestamp, qq) {
+        const config = this.readEventConfig();
+        const event = this._findBingziEvent(config, timestamp);
+        if (!event) return false;
+        const legacy = this._ensureBingziLegacy(event);
+        if (legacy.status !== 'settled') return false;
+        const key = String(qq);
+        if (!legacy.rewardedQqs.includes(key)) legacy.rewardedQqs.push(key);
+        this._syncBingziHistory(config, event);
+        this.saveEventConfig(config);
+        return true;
+    }
+
     /** 获取仍在持续的指定事件 */
     getActiveEvent(type, now = Date.now()) {
         return this.getActiveEvents(now).find(event => event.type === type) || null;
@@ -1671,6 +1806,7 @@ export class RealmEvents {
             prodigyRise: '天骄崛起',
             forbiddenZone: '禁区异动',
             emperorLegacy: '古帝传承现世',
+            bingziLegacy: '秦门兵字秘传承',
             worldChange: '天地异变',
             mysteriousRuins: '神秘遗迹',
             tianmoHuashengLegacy: '万化天魔传承',

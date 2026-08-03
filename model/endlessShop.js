@@ -1,20 +1,18 @@
-export const ENDLESS_TOKEN = '劫境道痕';
-export const FUSION_ITEM = '万象归一炉';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
-export const ENDLESS_SHOP = Object.freeze([
-  product(1, '大衍悟道丹', '丹药', 300, '增加悟道次数'),
-  product(2, '叩仙丹', '丹药', 80, '仙道潜力+10'),
-  product(3, '问道丹', '丹药', 180, '仙道潜力+25'),
-  product(4, '化仙丹', '丹药', 350, '仙道潜力+50'),
-  product(5, '玄黄造化丹', '丹药', 800, '仙道潜力+100'),
-  product(6, '极道丹', '丹药', 3000, '仙道潜力+500', 2),
-  product(7, '位面传送阵', '道具', 500, '进行一次位面传送'),
-  product(8, '先天灵宝天机', '', 5000, '获知一件尚未认主的先天至宝消息', 1, 'clue'),
-  product(9, FUSION_ITEM, '道具', 8000, '熔铸一件百分比装备与已穿戴套装部件', 1),
-  product(10, '九妙不死药', '丹药', 2000, '修为、血气各+3500万', 3),
-  product(11, '真龙不死药', '丹药', 3000, '修为、血气各+5000万', 2),
-  product(12, '蟠桃神药', '丹药', 4500, '修为、血气各+7500万', 1),
-]);
+const shopPath = fileURLToPath(
+  new URL('../resources/data/无尽商店.json', import.meta.url)
+);
+const SHOP_CONTENT = Object.freeze(
+  JSON.parse(fs.readFileSync(shopPath, 'utf8'))
+);
+
+export const ENDLESS_TOKEN = SHOP_CONTENT.tokenName;
+export const FUSION_ITEM = SHOP_CONTENT.fusionItem;
+export const ENDLESS_SHOP = Object.freeze(
+  SHOP_CONTENT.products.map(item => Object.freeze({ ...item }))
+);
 
 const SET_PIECES = new Set([
   '灭仙剑', '灭仙符', '灭仙衣',
@@ -25,10 +23,6 @@ const SET_PIECES = new Set([
   '【邪神】斩仙灭神剑', '【邪神】魔渊的凝视', '【邪神】冥王真祖甲',
   '【光阴】天道之剑', '【光阴】命运之心', '【光阴】主宰之甲',
 ]);
-
-function product(id, name, itemClass, price, description, dailyLimit = 0, action = 'item') {
-  return Object.freeze({ id, name, itemClass, price, description, dailyLimit, action });
-}
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));

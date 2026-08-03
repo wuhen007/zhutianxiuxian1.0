@@ -33,6 +33,7 @@ import {
     acquireRedisLock,
     releaseRedisLock,
 } from '../SecretPlace/xianyiBaodiState.js';
+import { WENXIAN_ENDLESS_REWARDS } from '../../model/endlessAccess.js';
 
 /**
  * 问仙令 - 战令系统 v2
@@ -157,6 +158,10 @@ const BONUS_REWARDS = {
         ],
     },
 };
+
+for (const [level, rewards] of Object.entries(WENXIAN_ENDLESS_REWARDS)) {
+    if (BONUS_REWARDS[level]) BONUS_REWARDS[level].rewards.push(...rewards);
+}
 
 // 所有有额外奖励的节点
 const BONUS_LEVELS = Object.keys(BONUS_REWARDS).map(Number);
@@ -570,7 +575,13 @@ export class WenXianLing extends plugin {
                 player.仙道潜力 = (player.仙道潜力 || 0) + reward.value;
                 break;
             case '道具':
-                await Add_najie_thing(usr_qq, reward.name, '丹药', reward.count, 0);
+                await Add_najie_thing(
+                    usr_qq,
+                    reward.name,
+                    reward.class || '丹药',
+                    reward.count,
+                    0
+                );
                 break;
             case '称号':
                 if (!player.称号列表) player.称号列表 = [];

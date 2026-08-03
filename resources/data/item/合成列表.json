@@ -1417,5 +1417,28 @@
         "amount": 3
       }
     ]
+  },
+  {
+    "name": "劫光令",
+    "class": "道具",
+    "amount": 1,
+    "传承要求": "虚天之主传承",
+    "materials": [
+      { "name": "天外清风", "class": "材料", "amount": 3 },
+      { "name": "世界石", "class": "材料", "amount": 1 },
+      { "name": "符纸", "class": "道具", "amount": 10 }
+    ]
+  },
+  {
+    "name": "无尽秘钥",
+    "class": "道具",
+    "amount": 1,
+    "传承要求": "无尽秘钥配方",
+    "materials": [
+      { "name": "世界石", "class": "材料", "amount": 3 },
+      { "name": "天外清风", "class": "材料", "amount": 8 },
+      { "name": "星图", "class": "道具", "amount": 1 },
+      { "name": "符纸", "class": "道具", "amount": 20 }
+    ]
   }
 ]

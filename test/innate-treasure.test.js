@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 
 import {
   AUTHORITY_COOLDOWNS,
+  CONTESTABLE_INNATE_TREASURE_NAMES,
   INNATE_TREASURE_CATALOG,
   INNATE_TREASURE_NAMES,
+  applyInnateTravelReduction,
   createInnateTreasure,
   createInnateTreasureProjection,
   getCooldownRemaining,
@@ -29,6 +31,20 @@ test('至宝图鉴完整覆盖全部先天至宝及真实冷却', () => {
       if (authority.cooldownKey) assert.ok(AUTHORITY_COOLDOWNS[authority.cooldownKey] > 0);
     }
   }
+});
+
+test('虚天舟为传承专属至宝并固定缩短5至10分钟', () => {
+  assert.ok(INNATE_TREASURE_NAMES.includes('虚天舟'));
+  assert.ok(!CONTESTABLE_INNATE_TREASURE_NAMES.includes('虚天舟'));
+  assert.deepEqual(applyInnateTravelReduction({ 当前先天至宝: '虚天舟' }, 20, () => 0), {
+    travelTime: 15,
+    reduction: 5,
+  });
+  assert.deepEqual(applyInnateTravelReduction({ 当前先天至宝: '虚天舟' }, 20, () => 0.999), {
+    travelTime: 10,
+    reduction: 10,
+  });
+  assert.deepEqual(applyInnateTravelReduction({}, 20, () => 0), { travelTime: 20, reduction: 0 });
 });
 
 test('先天至宝实体绑定唯一主人并使用帝兵槽', () => {

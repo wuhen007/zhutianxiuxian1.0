@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 3,
   "worlds": [
     {
       "id": "perfect",
@@ -264,7 +264,7 @@
       "world": "perfect",
       "rarity": "禁忌",
       "tags": ["召唤", "时间", "规则"],
-      "description": "每三回合映照一尊过去之我协同出手。",
+      "description": "每三回合映照一尊同构筑的当世之我协同出手；每六回合改为携带3至4条额外随机能力的更强未来身。",
       "maxLevel": 3,
       "effect": { "summonPct": 0.12 },
       "proc": { "everyRounds": 3, "damagePct": 0.3, "label": "他化自在" }
@@ -287,6 +287,7 @@
       "tags": ["生存", "恢复", "秘术"],
       "description": "每回合结束恢复生命，禁疗环境下效果减半。",
       "maxLevel": 3,
+      "choiceWeight": 0.22,
       "effect": { "regenPct": 0.025 }
     },
     {
@@ -437,6 +438,164 @@
       "effect": { "summonPct": 0.17, "onWinAttackPct": 0.008 }
     },
     {
+      "id": "anime_one_cut_shura",
+      "name": "一刀修罗",
+      "world": "anime",
+      "rarity": "核心",
+      "tags": ["剑道", "爆发", "反噬"],
+      "description": "短暂解除身体限制；每五回合斩出极限一刀，同时承受反噬。升至2级后可遇见进阶能力一刀罗刹。",
+      "maxLevel": 2,
+      "effect": { "attackPct": 0.1, "critChance": 0.04 },
+      "proc": {
+        "everyRounds": 5,
+        "damagePct": 0.8,
+        "selfDamagePct": 0.06,
+        "label": "一刀修罗",
+        "verb": "解放",
+        "narration": "{member}解除肉身限制，将全部气力、剑意与灵魂压进斩向{enemy}的一刀"
+      }
+    },
+    {
+      "id": "anime_one_cut_rakshasa",
+      "name": "一刀罗刹",
+      "world": "anime",
+      "rarity": "禁忌",
+      "tags": ["剑道", "爆发", "斩杀", "反噬"],
+      "description": "一刀修罗的进阶形态；燃尽极限换取更强斩击与斩杀能力。",
+      "maxLevel": 1,
+      "requires": { "anime_one_cut_shura": 2 },
+      "effect": { "attackPct": 0.18, "critChance": 0.08, "executePct": 0.1 },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 1.35,
+        "selfDamagePct": 0.1,
+        "label": "一刀罗刹",
+        "verb": "燃尽",
+        "narration": "{member}将生命压缩到刹那之间，罗刹般的剑光先于意识斩过{enemy}"
+      }
+    },
+    {
+      "id": "anime_devil_fruit",
+      "name": "恶魔果实",
+      "world": "anime",
+      "rarity": "核心",
+      "tags": ["异能", "规则", "爆发"],
+      "description": "每四回合随机觉醒一种果实权能，发动岩浆、震动或闪光攻击。",
+      "maxLevel": 3,
+      "effect": { "attackPct": 0.08, "hpPct": 0.04 },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.5,
+        "label": "恶魔果实·觉醒",
+        "variants": [
+          {
+            "label": "岩浆果实·冥狗",
+            "damageMultiplier": 1.15,
+            "verb": "化作",
+            "narration": "{member}的手臂化作灼热岩浆，贯穿火拳撕裂{enemy}的防线"
+          },
+          {
+            "label": "震震果实·海震",
+            "damageMultiplier": 1.05,
+            "verb": "震碎",
+            "narration": "{member}握碎面前的大气，空间裂纹化作海啸拍向{enemy}"
+          },
+          {
+            "label": "闪闪果实·八咫镜",
+            "damageMultiplier": 0.95,
+            "verb": "折射",
+            "narration": "{member}化作光束连续折射，从无法防守的角度贯穿{enemy}"
+          }
+        ]
+      }
+    },
+    {
+      "id": "anime_rasengan",
+      "name": "螺旋丸",
+      "world": "anime",
+      "rarity": "稀有",
+      "tags": ["查克拉", "战技", "爆发"],
+      "description": "每三回合凝聚高速旋转的查克拉球，近身粉碎敌人的防御。",
+      "maxLevel": 3,
+      "effect": { "attackPct": 0.05 },
+      "proc": {
+        "everyRounds": 3,
+        "damagePct": 0.45,
+        "label": "大玉螺旋丸",
+        "verb": "凝聚",
+        "narration": "{member}在掌心压缩高速旋转的查克拉，贴近{enemy}引爆大玉螺旋丸"
+      }
+    },
+    {
+      "id": "anime_shadow_clone",
+      "name": "影分身之术",
+      "world": "anime",
+      "rarity": "稀有",
+      "tags": ["召唤", "查克拉", "连段"],
+      "description": "影分身每回合协同攻击，并周期性发动多重围攻。",
+      "maxLevel": 3,
+      "effect": { "summonPct": 0.14, "comboAttackPct": 0.008 },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.3,
+        "label": "影分身·多重围攻",
+        "verb": "结印",
+        "narration": "{member}结印分出数十道实体分身，从上下四方同时围攻{enemy}"
+      }
+    },
+    {
+      "id": "anime_ultra_instinct",
+      "name": "龙珠超·自在极意",
+      "world": "anime",
+      "rarity": "禁忌",
+      "tags": ["武道", "速度", "规则"],
+      "description": "身体脱离意识自行攻防，提高闪避、攻击并追加行动。",
+      "maxLevel": 3,
+      "effect": { "attackPct": 0.09, "dodgeChance": 0.055, "extraActionChance": 0.07 },
+      "proc": {
+        "everyRounds": 5,
+        "damagePct": 0.7,
+        "label": "自在极意·无念神击",
+        "verb": "无念",
+        "narration": "{member}的意识归于寂静，身体自行越过所有攻击，以无念神击命中{enemy}"
+      }
+    },
+    {
+      "id": "anime_void_tears",
+      "name": "虚空之泪",
+      "world": "anime",
+      "rarity": "核心",
+      "tags": ["空间", "规则", "爆发"],
+      "description": "以银色泪滴切开空间，提高闪避并周期性造成虚空斩击。",
+      "maxLevel": 3,
+      "effect": { "attackPct": 0.07, "dodgeChance": 0.035 },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.58,
+        "label": "虚空之泪·空间断层",
+        "verb": "划开",
+        "narration": "{member}祭出银色泪滴划开空间，断层从{enemy}体内交错闭合"
+      }
+    },
+    {
+      "id": "anime_pure_yang_flame",
+      "name": "纯质阳炎",
+      "world": "anime",
+      "rarity": "核心",
+      "tags": ["火焰", "净化", "爆发"],
+      "description": "至阳神火焚灭邪祟，强化攻击、恢复并周期性灼烧敌人。",
+      "maxLevel": 3,
+      "choiceWeight": 0.35,
+      "effect": { "attackPct": 0.08, "regenPct": 0.018 },
+      "proc": {
+        "everyRounds": 3,
+        "damagePct": 0.48,
+        "label": "纯质阳炎·焚界",
+        "verb": "点燃",
+        "narration": "{member}点燃金色纯质阳炎，至阳火海沿着因果缠上{enemy}"
+      }
+    },
+    {
       "id": "neutral_attack",
       "name": "无尽战意",
       "world": "neutral",
@@ -465,6 +624,268 @@
       "description": "稳定提高本局防御，可重复强化。",
       "maxLevel": 999,
       "effect": { "defensePct": 0.05 }
+    }
+  ],
+  "checkpointBoons": [
+    {
+      "id": "relic_ruyi_staff",
+      "name": "如意金箍棒",
+      "kind": "诸天神器",
+      "origin": "西游",
+      "description": "定海神珍随心变化，重击与连段会不断抬高战势。",
+      "effect": { "attackPct": 0.18, "comboAttackPct": 0.012 },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.9,
+        "label": "定海一棒",
+        "verb": "擎起",
+        "narration": "{member}令金箍棒迎风暴涨，定海神珍压塌长空砸向{enemy}"
+      }
+    },
+    {
+      "id": "relic_excalibur",
+      "name": "誓约胜利之剑",
+      "kind": "诸天神器",
+      "origin": "型月",
+      "description": "将光汇聚为斩断城塞的洪流，强化暴击与周期爆发。",
+      "effect": { "attackPct": 0.15, "critChance": 0.05 },
+      "proc": {
+        "everyRounds": 5,
+        "damagePct": 1.15,
+        "label": "Excalibur",
+        "verb": "解放",
+        "narration": "{member}高举誓约之剑，汇聚的星之吐息化作金色洪流吞没{enemy}"
+      }
+    },
+    {
+      "id": "relic_thousand_blades",
+      "name": "魔刀千刃",
+      "kind": "诸天神器",
+      "origin": "刺客伍六七",
+      "description": "千枚碎刃只攻不防，从所有死角连续切割目标。",
+      "effect": { "attackPct": 0.12, "dodgeChance": 0.035 },
+      "proc": {
+        "everyRounds": 3,
+        "damagePct": 0.58,
+        "label": "千刃追魂",
+        "verb": "御使",
+        "narration": "{member}御使千枚魔刀碎片绕过防御，从四面八方追斩{enemy}"
+      }
+    },
+    {
+      "id": "relic_vibranium_shield",
+      "name": "美队盾牌·振金圆盾",
+      "kind": "诸天神器",
+      "origin": "漫威",
+      "description": "吸收冲击并将力量反掷回去，显著强化防御与反射。",
+      "effect": {
+        "defensePct": 0.25,
+        "damageReduction": 0.08,
+        "reflectChance": 0.12,
+        "reflectPct": 0.5
+      }
+    },
+    {
+      "id": "relic_iron_armor",
+      "name": "钢铁侠·纳米战甲",
+      "kind": "诸天神器",
+      "origin": "漫威",
+      "description": "纳米单元实时重构武器与护盾，兼顾攻防和追击。",
+      "effect": {
+        "attackPct": 0.1,
+        "defensePct": 0.15,
+        "teamShieldPct": 0.1,
+        "extraActionChance": 0.05
+      },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.5,
+        "label": "纳米集束炮",
+        "verb": "重构",
+        "narration": "{member}的纳米战甲展开肩炮与掌心炮，集束能量交叉锁定{enemy}"
+      }
+    },
+    {
+      "id": "art_eight_nine",
+      "name": "八九玄功",
+      "kind": "无上道法",
+      "origin": "洪荒",
+      "description": "肉身万劫不坏、变化无穷，并保留一次玄功护命。",
+      "effect": {
+        "hpPct": 0.2,
+        "defensePct": 0.16,
+        "damageReduction": 0.06,
+        "revivePct": 0.12
+      }
+    },
+    {
+      "id": "art_unlimited_void",
+      "name": "无量空处",
+      "kind": "无上道法",
+      "origin": "咒术回战",
+      "description": "展开无限信息灌入的领域，迟滞敌人并创造无防备窗口。",
+      "effect": { "dodgeChance": 0.08, "extraActionChance": 0.07 },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.7,
+        "label": "领域展开·无量空处",
+        "verb": "展开",
+        "narration": "{member}展开无量空处，无穷信息瞬间灌入{enemy}的意识"
+      }
+    },
+    {
+      "id": "art_seven_demon_blades",
+      "name": "逆天七魔刀",
+      "kind": "无上道法",
+      "origin": "神墓",
+      "description": "以生命为薪连续逆斩天道，伤害极高但会反噬自身。",
+      "effect": { "attackPct": 0.17, "executePct": 0.1 },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 1.25,
+        "selfDamagePct": 0.06,
+        "label": "逆天七魔刀",
+        "verb": "逆斩",
+        "narration": "{member}燃烧生命连踏七步，七道魔影合一逆斩{enemy}"
+      }
+    },
+    {
+      "id": "art_life_death_intent",
+      "name": "生死意境",
+      "kind": "无上道法",
+      "origin": "仙逆",
+      "description": "一念掌生、一念判死，在濒死与斩杀之间循环壮大。",
+      "effect": {
+        "regenPct": 0.025,
+        "revivePct": 0.22,
+        "executePct": 0.06,
+        "onWinAttackPct": 0.008
+      }
+    },
+    {
+      "id": "relic_ea",
+      "name": "乖离剑·Ea",
+      "kind": "诸天神器",
+      "origin": "型月",
+      "description": "旋开天地未分前的洪荒气流，以创世断层撕裂战场。",
+      "effect": { "attackPct": 0.18 },
+      "proc": {
+        "everyRounds": 6,
+        "damagePct": 1.5,
+        "label": "天地乖离·开辟之星",
+        "verb": "旋开",
+        "narration": "{member}旋开乖离剑三重剑身，创世断层将{enemy}所在空间层层剥离"
+      }
+    },
+    {
+      "id": "relic_ryujin_jakka",
+      "name": "流刃若火",
+      "kind": "诸天神器",
+      "origin": "死神",
+      "description": "万象一切皆归灰烬，火焰构筑越多威力越强。",
+      "effect": { "attackPct": 0.14, "fireScalingPct": 0.03 },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.8,
+        "label": "火焚城郭",
+        "verb": "始解",
+        "narration": "{member}横刀始解流刃若火，焚城烈焰沿大地吞向{enemy}"
+      }
+    },
+    {
+      "id": "relic_infinity_gauntlet",
+      "name": "无限手套",
+      "kind": "诸天神器",
+      "origin": "漫威",
+      "description": "驾驭多重宇宙规则，全面强化并周期性改写局部现实。",
+      "effect": { "attackPct": 0.15, "hpPct": 0.1, "damageReduction": 0.05 },
+      "proc": {
+        "everyRounds": 5,
+        "damagePct": 0.95,
+        "label": "现实重写",
+        "verb": "响指",
+        "narration": "{member}扣响无限手套，宝石辉光将{enemy}周围的现实改写为毁灭"
+      }
+    },
+    {
+      "id": "art_three_pure_ones",
+      "name": "一气化三清",
+      "kind": "无上道法",
+      "origin": "洪荒",
+      "description": "清气化出三尊道身，与本体共同推演神通。",
+      "effect": { "summonPct": 0.28, "extraActionChance": 0.05 }
+    },
+    {
+      "id": "art_flower_monarch",
+      "name": "一念花开·君临天下",
+      "kind": "无上道法",
+      "origin": "遮天",
+      "description": "每一朵仙葩都化出真身，万化圣诀同时镇杀诸敌。",
+      "effect": { "attackPct": 0.14, "summonPct": 0.2 },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.75,
+        "label": "一念花开",
+        "verb": "绽放",
+        "narration": "{member}身侧万千仙葩同时绽放，每朵花中都走出真身围杀{enemy}"
+      }
+    },
+    {
+      "id": "art_grass_sword",
+      "name": "草字剑诀",
+      "kind": "无上道法",
+      "origin": "完美世界",
+      "description": "一株草可斩尽日月星辰，极大强化暴击与斩杀。",
+      "effect": { "critChance": 0.08, "executePct": 0.12 },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.85,
+        "label": "一草斩星辰",
+        "verb": "斩出",
+        "narration": "{member}并指化出碧绿剑草，一线剑光越过星海斩向{enemy}"
+      }
+    },
+    {
+      "id": "art_six_paths_body",
+      "name": "六道仙人体",
+      "kind": "无上道法",
+      "origin": "火影忍者",
+      "description": "生命与查克拉完成六道蜕变，持续恢复并庇护全队。",
+      "effect": { "hpPct": 0.15, "regenPct": 0.03, "teamShieldPct": 0.08 }
+    },
+    {
+      "id": "art_serious_punch",
+      "name": "认真一拳",
+      "kind": "无上道法",
+      "origin": "一拳超人",
+      "description": "舍弃复杂变化，将绝对力量集中在极少数决定性攻击中。",
+      "effect": { "attackPct": 0.2, "critChance": 0.06 },
+      "proc": {
+        "everyRounds": 7,
+        "damagePct": 1.65,
+        "label": "必杀·认真一拳",
+        "verb": "认真",
+        "narration": "{member}收敛所有气息递出一拳，拳风先一步将{enemy}背后的天幕分开"
+      }
+    },
+    {
+      "id": "art_kyoka_suigetsu",
+      "name": "镜花水月",
+      "kind": "无上道法",
+      "origin": "死神",
+      "description": "支配五感制造完全催眠，让敌人追逐错误的战局。",
+      "effect": {
+        "dodgeChance": 0.09,
+        "damageReduction": 0.05,
+        "extraActionChance": 0.06
+      },
+      "proc": {
+        "everyRounds": 5,
+        "damagePct": 0.55,
+        "label": "完全催眠·镜花水月",
+        "verb": "催眠",
+        "narration": "{enemy}斩中的只是一层幻象，{member}已从真实方位完成致命一击"
+      }
     }
   ],
   "fusions": [
@@ -527,6 +948,46 @@
       "requires": ["anime_sun_breath", "multi_phoenix"],
       "description": "日轮与凤凰共鸣，提高攻击并赋予全队一次微弱涅槃。",
       "effect": { "attackPct": 0.12, "revivePct": 0.16 }
+    },
+    {
+      "id": "fusion_clone_rasengan",
+      "name": "仙法·超大玉螺旋多连丸",
+      "requires": ["anime_rasengan", "anime_shadow_clone"],
+      "description": "影分身共同凝聚螺旋丸，每三回合降下覆盖战场的查克拉风暴。",
+      "proc": {
+        "everyRounds": 3,
+        "damagePct": 0.78,
+        "label": "超大玉螺旋多连丸",
+        "verb": "合击",
+        "narration": "漫天影分身同时托起螺旋丸，查克拉群星从四面砸向{enemy}"
+      }
+    },
+    {
+      "id": "fusion_rakshasa_instinct",
+      "name": "无念罗刹",
+      "requires": ["anime_one_cut_rakshasa", "anime_ultra_instinct"],
+      "description": "自在极意接管燃尽极限的肉身，使罗刹之刀更快且更难被命中。",
+      "effect": { "attackPct": 0.2, "critChance": 0.08, "dodgeChance": 0.07 }
+    },
+    {
+      "id": "fusion_void_yang",
+      "name": "虚空阳炎界",
+      "requires": ["anime_void_tears", "anime_pure_yang_flame"],
+      "description": "空间断层填满至阳神火，每四回合从敌人体内焚毁其存在。",
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.86,
+        "label": "虚空阳炎界",
+        "verb": "展开",
+        "narration": "银色泪滴张开虚空断层，纯质阳炎从{enemy}体内向外爆燃"
+      }
+    },
+    {
+      "id": "fusion_fruit_flame",
+      "name": "果实觉醒·焚天领域",
+      "requires": ["anime_devil_fruit", "flame_fenjue", "anime_pure_yang_flame"],
+      "description": "恶魔果实规则与焚诀、纯质阳炎共鸣，大幅强化火焰与持续成长。",
+      "effect": { "attackPct": 0.16, "fireScalingPct": 0.035, "onWinAttackPct": 0.006 }
     }
   ]
 }

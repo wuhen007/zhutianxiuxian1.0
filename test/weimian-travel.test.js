@@ -3,6 +3,10 @@ import test from 'node:test';
 
 import {
   COORDINATE_CLUE_COST,
+  FORBIDDEN_SUPREME_ALL_ATTRIBUTE,
+  FORBIDDEN_SUPREMES,
+  applyForbiddenSupremePlunder,
+  buildForbiddenSupreme,
   calcRealmReducePct,
   consumeTravelWind,
   ensureDefaultCoordinates,
@@ -17,8 +21,10 @@ import {
   hasEngravedCoordinate,
   purchaseCoordinateClue,
   recordUnfetteredJourney,
+  registerForbiddenSupremeAttention,
   rememberCoordinate,
   rollDailyDungeonCoordinate,
+  selectForbiddenSupreme,
 } from '../model/weimianTravel.js';
 
 const traveler = {
@@ -169,4 +175,64 @@ test('天地无拘任务只记录有效的跨位面抵达', () => {
 
   player.支线任务进度[4].阶段 = 2;
   assert.equal(recordUnfetteredJourney(player), 0);
+});
+
+test('触及遮天位面三次后触发禁区至尊堵截', () => {
+  const player = {};
+  const task = { from_location: 0, to_location: 2 };
+  assert.equal(registerForbiddenSupremeAttention(player, task).intercept, false);
+  assert.equal(registerForbiddenSupremeAttention(player, task).count, 2);
+  assert.equal(registerForbiddenSupremeAttention(player, task).intercept, true);
+  assert.equal(player.禁区至尊注视, 3);
+
+  const unrelated = registerForbiddenSupremeAttention(player, { from_location: 0, to_location: 1 });
+  assert.equal(unrelated.relevant, false);
+  assert.equal(player.禁区至尊注视, 3);
+});
+
+test('禁区至尊按权重选择并使用最高练气炼体与大帝秘境', () => {
+  assert.equal(selectForbiddenSupreme(() => 0).name, '石皇');
+  assert.equal(selectForbiddenSupreme(() => 0.46).name, '光暗至尊');
+  assert.equal(selectForbiddenSupreme(() => 0.81).name, '神墟之主');
+
+  const supreme = selectForbiddenSupreme(() => 0);
+  const boss = buildForbiddenSupreme(supreme, {
+    cultivation: [
+      { level_id: 1, 基础攻击: 1, 基础防御: 1, 基础血量: 1, 基础暴击: 0.1 },
+      { level_id: 64, 基础攻击: 10, 基础防御: 10, 基础血量: 10, 基础暴击: 0.5 },
+    ],
+    physique: [{ level_id: 63, 基础攻击: 20, 基础防御: 20, 基础血量: 20, 基础暴击: 0.5 }],
+    secret: [{ level_id: 16, 基础攻击: 30, 基础防御: 30, 基础血量: 30 }],
+    ancient: [{ level_id: 1, 基础攻击: 40, 基础防御: 40, 基础血量: 40 }],
+  });
+  assert.equal(boss.level_id, 64);
+  assert.equal(boss.Physique_id, 63);
+  assert.equal(boss.mijinglevel_id, 16);
+  assert.equal(boss.xiangulevel_id, 1);
+  assert.equal(boss.速度 + boss.mijinglevel_id * 50 + boss.xiangulevel_id * 50, 950);
+  assert.ok(boss.攻击 > FORBIDDEN_SUPREME_ALL_ATTRIBUTE);
+  assert.ok(FORBIDDEN_SUPREMES.every(item =>
+    item.root.攻击 >= 1.6 && item.root.防御 >= 2 && item.root.生命 >= 3));
+});
+
+test('至尊搜魂废除全部功法并只留下最低价值约两成物品', () => {
+  const player = { 学习的功法: ['斗字秘', '行字秘'], 当前血量: 999, 元神: 1000 };
+  const najie = {
+    道具: [
+      { name: '碎石', 数量: 10, 出售价: 1 },
+      { name: '仙金', 数量: 10, 出售价: 1000, 稀有度: 4 },
+    ],
+    装备: [{ name: '帝甲', 数量: 5, 出售价: 500 }],
+    食材: [{ name: '灵米', 数量: 99 }],
+  };
+  const loss = applyForbiddenSupremePlunder(player, najie);
+
+  assert.deepEqual(player.学习的功法, []);
+  assert.equal(player.当前血量, 1);
+  assert.equal(player.元神, 100);
+  assert.equal(loss.takenQuantity, 20);
+  assert.equal(loss.remainingQuantity, 5);
+  assert.deepEqual(najie.道具, [{ name: '碎石', 数量: 5, 出售价: 1 }]);
+  assert.deepEqual(najie.装备, []);
+  assert.equal(najie.食材[0].数量, 99);
 });

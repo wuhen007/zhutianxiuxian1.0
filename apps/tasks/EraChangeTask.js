@@ -17,6 +17,13 @@ import {
 import RealmEvents from './RealmEvents.js';
 import { formatRealmEventLocation } from '../../model/realmEventLocation.js';
 import { triggerPeriodicRiftsForEra } from '../../model/planeRiftFestival.js';
+import {
+  attemptTianjiaoBreakthrough,
+  getTianjiaoImprovementChance,
+  improveTianjiao,
+  isIndependentTianjiao,
+  isTianjiaoBreakthroughYear,
+} from '../../model/tianjiaoGrowth.js';
 
 export class EraChangeTask extends plugin {
   constructor() {
@@ -1289,78 +1296,57 @@ function saveWeimianData(data) {
     }
   }
   
-  /** 天骄境界增长 - 每千年有概率找到机缘或修炼有成 */
+  /** 天骄每千年自我强化，每两千年额外尝试突破一次境界。 */
   async handleTianjiaoGrowth() {
     try {
       const tianjiaoList = data.weimiantianjiao_list;
       if (!tianjiaoList || tianjiaoList.length === 0) return;
-      
-      const growthReports = [];
-
-      // 构建境界名映射：复用已加载的官方原著境界体系数据（秘境体系=遮天，仙古今世法=完美世界）
-      const mijingRealmMap = {};
-      for (const lv of data.Levelmijing_list) mijingRealmMap[lv.level_id] = lv.level;
-      const xianguRealmMap = {};
-      for (const lv of data.xiangujinshi_list) xianguRealmMap[lv.level_id] = lv.level;
-      const getRealmName = (field, lv) => {
-        const map = field === 'mijinglevel_id' ? mijingRealmMap : xianguRealmMap;
-        return map[lv] || `第${lv}境`;
+      const eraIndex = Number(this.set.Era.current.index) || 0;
+      const eraYears = Number(this.set.Era.current.years) || 0;
+      const breakthroughDue = isTianjiaoBreakthroughYear(eraYears);
+      const context = {
+        eraIndex,
+        cultivationLevels: data.Level_list,
+        physiqueLevels: data.LevelMax_list,
+        secretLevels: data.Levelmijing_list,
+        ancientLevels: data.xiangujinshi_list,
+        equipmentList: data.equipment_list,
+        specialEquipmentList: data.tszb_list,
+        imperialWeaponList: data.dibing_list,
+        techniqueList: [
+          ...(data.jineng1 || []),
+          ...(data.jineng2 || []),
+          ...(data.jineng3 || []),
+          ...(data.jineng_heal || []),
+        ],
       };
+      const realmReports = [];
+      const improvementReports = [];
 
       for (const tianjiao of tianjiaoList) {
-        const mijingLv = Number(tianjiao.mijinglevel_id) || 1;
-        const xianguLv = Number(tianjiao.xiangulevel_id) || 1;
-        
-        let growthField = null;
-        let currentLevel = 0;
-        
-        // 确定增长哪个字段：取大于1的字段
-        if (mijingLv > 1 && xianguLv > 1) {
-          // 两个字段都大于1，随机选一个
-          if (Math.random() < 0.5) {
-            growthField = 'mijinglevel_id';
-            currentLevel = mijingLv;
-          } else {
-            growthField = 'xiangulevel_id';
-            currentLevel = xianguLv;
+        if (!isIndependentTianjiao(tianjiao)) continue;
+
+        if (breakthroughDue) {
+          const breakthrough = attemptTianjiaoBreakthrough(tianjiao, context);
+          if (breakthrough) {
+            realmReports.push({ name: tianjiao.名号, ...breakthrough });
           }
-        } else if (mijingLv > 1) {
-          growthField = 'mijinglevel_id';
-          currentLevel = mijingLv;
-        } else if (xianguLv > 1) {
-          growthField = 'xiangulevel_id';
-          currentLevel = xianguLv;
         }
-        
-        if (!growthField) continue; // 两个字段都是1，不增长
-        
-        // 增长概率：基础30%，境界越高概率越低
-        const baseProb = 0.3;
-        const levelPenalty = Math.min((currentLevel - 1) * 0.015, 0.2);
-        const finalProb = Math.max(baseProb - levelPenalty, 0.1);
-        
-        if (Math.random() < finalProb) {
-          tianjiao[growthField] = currentLevel + 1;
-          const fieldName = growthField === 'mijinglevel_id' ? '遮天秘境' : '仙古纪元';
-          growthReports.push({
-            name: tianjiao.名号,
-            field: fieldName,
-            oldLevel: currentLevel,
-            newLevel: currentLevel + 1,
-            oldRealm: getRealmName(growthField, currentLevel),
-            newRealm: getRealmName(growthField, currentLevel + 1)
-          });
+
+        if (Math.random() < getTianjiaoImprovementChance(eraIndex)) {
+          const improvements = improveTianjiao(tianjiao, context);
+          if (improvements.length > 0) {
+            improvementReports.push({ name: tianjiao.名号, improvements });
+          }
         }
       }
-      
-      // 如果有增长，保存到JSON文件并广播
-      if (growthReports.length > 0) {
+
+      if (realmReports.length > 0 || improvementReports.length > 0) {
         const bossListPath = path.join(data.filePathMap.lib, '位面boss列表.json');
         fs.writeFileSync(bossListPath, JSON.stringify(tianjiaoList, null, 2), 'utf8');
-        
-        // 按作品分桶文案（遮天·秘境体系 / 完美世界·仙古纪元），使用官方原著境界名
-        const mijingReports = growthReports.filter(r => r.field === '遮天秘境');
-        const xianguReports = growthReports.filter(r => r.field === '仙古纪元');
+
+        const mijingReports = realmReports.filter(r => r.field === 'mijinglevel_id');
+        const xianguReports = realmReports.filter(r => r.field === 'xiangulevel_id');
         const msgLines = [];
 
         if (mijingReports.length > 0) {
@@ -1379,10 +1365,17 @@ function saveWeimianData(data) {
           }
         }
 
+        if (improvementReports.length > 0) {
+          msgLines.push('【千年积累·天骄自强】');
+          for (const report of improvementReports) {
+            msgLines.push(`  ${report.name}：${report.improvements.join('；')}`);
+          }
+        }
+
         msgLines.push('「机缘所致，大道可期」');
-        
+
         await this.broadcastMessage(msgLines.join('\n'));
-        console.log(`[天骄增长] ${growthReports.length}位天骄境界提升`);
+        console.log(`[天骄成长] ${realmReports.length}次境界突破，${improvementReports.length}位天骄完成自我强化`);
       }
     } catch (e) {
       console.error('天骄境界增长处理失败:', e);
@@ -1966,6 +1959,11 @@ function saveWeimianData(data) {
               break;
             case 'emperorLegacy':
               summary = `${event.emperor.name} 传承现世于 ${formatRealmEventLocation(event)}`;
+              break;
+            case 'bingziLegacy':
+              summary = event.bingzi?.winner
+                ? `${event.bingzi.winner.name}于 ${formatRealmEventLocation(event)} 承下完整兵字秘`
+                : `秦门兵图显化于 ${formatRealmEventLocation(event)}`;
               break;
             case 'worldChange':
               summary = event.location

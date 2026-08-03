@@ -1994,7 +1994,9 @@ async showEnvironmentHelp(e) {
               pet.产出累积['丹药'] = (pet.产出累积['丹药'] || 0) + amount;
               const pillCounts = {};
               for (let i = 0; i < amount; i++) {
-                const pillName = pickSmallWorldPill();
+                const pillName = pickSmallWorldPill(Math.random(), {
+                  xutianAlchemy: Boolean(player.虚天之主传承 && hasEquippedInnateTreasure(player, '虚天舟')),
+                });
                 pillCounts[pillName] = (pillCounts[pillName] || 0) + 1;
               }
               for (const [pillName, count] of Object.entries(pillCounts)) {

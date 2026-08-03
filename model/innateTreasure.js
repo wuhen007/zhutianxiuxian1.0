@@ -15,7 +15,12 @@ export const INNATE_TREASURE_NAMES = Object.freeze([
   '六道轮回盘',
   '炼妖壶',
   '崆峒印',
+  '虚天舟',
 ]);
+
+export const CONTESTABLE_INNATE_TREASURE_NAMES = Object.freeze(
+  INNATE_TREASURE_NAMES.filter(name => name !== '虚天舟')
+);
 
 export const INNATE_TREASURE_CATALOG = Object.freeze({
   混沌珠: {
@@ -133,6 +138,22 @@ export const INNATE_TREASURE_CATALOG = Object.freeze({
     authorities: [
       { command: '#人皇敕令 修炼/历练', cooldownKey: '人皇敕令', effect: '敕封当前位面24小时。修炼敕令令修炼、悟道收益+50%，修炼额外获得35%血气；历练敕令令副本收益+100%。' },
       { command: '#借人皇气运修炼', effect: '修炼敕令期间，同位面玩家可使用一次，立即取得相当于闭关1200分钟的修炼收益。' },
+    ],
+  },
+  虚天舟: {
+    title: '诸界无碍',
+    lore: '虚天之主往来精神宇宙与诸天位面所乘之舟，一叶横空，万界壁垒皆化清风。',
+    summary: '位面穿梭缩短5至10分钟，搭载三名道友并免受至尊和天骄截杀。',
+    passives: [
+      '位面穿梭固定缩短5至10分钟，最低保留1分钟。',
+      '虚天舟航程不会触发禁区至尊截杀或仇敌天骄伏击。',
+      '承接虚天之主传承后，小世界丹房中的炼丹仙宠可以炼制定神丹和太虚养神丹。',
+    ],
+    authorities: [
+      { command: '#邀请登舟 @玩家', effect: '邀请同位面的空闲玩家登舟，最多搭载3名乘员。' },
+      { command: '#同意登舟', effect: '接受最近一次虚天舟邀请。' },
+      { command: '#虚天舟乘员', effect: '查看当前已经登舟的乘员。' },
+      { command: '#离开虚天舟', effect: '在启航前主动离舟。' },
     ],
   },
 });
@@ -301,6 +322,15 @@ export function getTimedActionMultiplier(player) {
   if (hasEquippedInnateTreasure(player, '混沌钟')) return 0.7;
   if (hasEquippedInnateTreasure(player, '东皇钟')) return 0.8;
   return 1;
+}
+
+export function applyInnateTravelReduction(player, travelTime, random = Math.random) {
+  const original = Math.max(1, Math.ceil(Number(travelTime) || 1));
+  if (!hasEquippedInnateTreasure(player, '虚天舟')) {
+    return { travelTime: original, reduction: 0 };
+  }
+  const reduction = 5 + Math.floor(Math.min(Math.max(Number(random()) || 0, 0), 1 - Number.EPSILON) * 6);
+  return { travelTime: Math.max(1, original - reduction), reduction: Math.min(reduction, original - 1) };
 }
 
 export function getPetTreasureRules(player) {

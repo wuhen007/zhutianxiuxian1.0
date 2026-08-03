@@ -110,6 +110,10 @@ export class InnateTreasureAuthorities extends plugin {
         { reg: '^#执掌轮回', fnc: 'protectReincarnation' },
         { reg: '^#切换太极\\s+(阴|阳)$', fnc: 'switchTaiji' },
         { reg: '^#阴阳逆转$', fnc: 'reverseTaiji' },
+        { reg: '^#邀请登舟', fnc: 'inviteXutianPassenger' },
+        { reg: '^#同意登舟$', fnc: 'acceptXutianPassenger' },
+        { reg: '^#虚天舟乘员$', fnc: 'showXutianPassengers' },
+        { reg: '^#离开虚天舟$', fnc: 'leaveXutianShip' },
       ],
     });
     this.task = {
@@ -145,7 +149,7 @@ export class InnateTreasureAuthorities extends plugin {
         lines.push(`${String(index + 1).padStart(2, '0')}.【${name}·${entry.title}】〔${statuses[index]}〕`);
         lines.push(`   ${entry.summary}`);
       });
-      lines.push('', '发送 #至宝图鉴 至宝名 查看完整权柄。', '本体由24小时择主之争第一名获得；第二、三名获得七日投影。');
+      lines.push('', '发送 #至宝图鉴 至宝名 查看完整权柄。', '普通本体由24小时择主之争第一名获得；虚天舟仅随虚天之主传承认主。');
       return e.reply(lines.join('\n'));
     }
 
@@ -168,7 +172,9 @@ export class InnateTreasureAuthorities extends plugin {
         lines.push(`· ${authority.command}${cooldown}`, `  ${authority.effect}`);
       }
     }
-    lines.push('', '获取：先天灵宝出世后抵达精确坐标参加24小时择主之争；第一名获得永久本体，第二、三名获得七日投影。');
+    lines.push('', requestedName === '虚天舟'
+      ? '获取：从虚天宝库取得并参悟【虚天之主传承】，由唯一虚天舟自行认主。'
+      : '获取：先天灵宝出世后抵达精确坐标参加24小时择主之争；第一名获得永久本体，第二、三名获得七日投影。');
     return e.reply(lines.join('\n'));
   }
 
@@ -532,5 +538,94 @@ export class InnateTreasureAuthorities extends plugin {
     await Write_player(targetQq, target);
     if (String(targetQq) !== String(ctx.qq)) await Write_player(ctx.qq, ctx.player);
     return e.reply(`六道轮回盘已庇护【${target.名号}】24小时，寿元枯竭时不会被强制送入轮回。`);
+  }
+
+  async isPlayerBusy(qq) {
+    const raw = await redis.get(`xiuxian:player:${qq}:action`);
+    if (!raw) return false;
+    try {
+      const action = JSON.parse(raw);
+      return Number(action?.end_time) > Date.now();
+    } catch {
+      return false;
+    }
+  }
+
+  async inviteXutianPassenger(e) {
+    const ctx = await this.context(e, '虚天舟');
+    if (!ctx) return false;
+    const rawTarget = e.at && e.at !== 'all' ? String(e.at).replace('qg_', '') : '';
+    if (!rawTarget) return e.reply('用法：#邀请登舟 @玩家');
+    const targetQq = await channel(rawTarget);
+    if (String(targetQq) === String(ctx.qq)) return e.reply('你已经在掌舵虚天舟。');
+    if (!await existplayer(targetQq)) return e.reply('目标尚未踏入修行。');
+    const target = await Read_player(targetQq);
+    if (target.power_place !== ctx.player.power_place) return e.reply('虚天舟只能接引当前位面的道友登舟。');
+    if (await this.isPlayerBusy(targetQq)) return e.reply(`${target.名号}当前正在行动，无法登舟。`);
+    const passengers = [...new Set((ctx.player.虚天舟乘员 || []).map(String))];
+    if (!passengers.includes(String(targetQq)) && passengers.length >= 3) return e.reply('虚天舟至多搭载三名乘员。');
+    await redis.set(`xutian:boarding:${targetQq}`, JSON.stringify({
+      ownerQq: String(ctx.qq),
+      ownerName: ctx.player.名号,
+      expiresAt: Date.now() + 60000,
+    }), { EX: 60 });
+    return e.reply(`【${ctx.player.名号}】邀请【${target.名号}】登上虚天舟，请对方在60秒内发送 #同意登舟。`);
+  }
+
+  async acceptXutianPassenger(e) {
+    if (!verc({ e })) return false;
+    let qq = await channel(String(e.user_id).replace('qg_', ''));
+    if (!await existplayer(qq)) return false;
+    const raw = await redis.get(`xutian:boarding:${qq}`);
+    if (!raw) return e.reply('当前没有等待确认的虚天舟邀请。');
+    const invitation = JSON.parse(raw);
+    if (Number(invitation.expiresAt) <= Date.now() || !await existplayer(invitation.ownerQq)) {
+      await redis.del(`xutian:boarding:${qq}`);
+      return e.reply('这次登舟邀请已经失效。');
+    }
+    const owner = await Read_player(invitation.ownerQq);
+    const passenger = await Read_player(qq);
+    if (!hasEquippedInnateTreasure(owner, '虚天舟')) return e.reply('船主已经不再执掌虚天舟。');
+    if (owner.power_place !== passenger.power_place) return e.reply('你与虚天舟已不在同一位面。');
+    if (await this.isPlayerBusy(qq)) return e.reply('你当前正在行动，无法登舟。');
+    owner.虚天舟乘员 = [...new Set((owner.虚天舟乘员 || []).map(String))];
+    if (!owner.虚天舟乘员.includes(String(qq)) && owner.虚天舟乘员.length >= 3) return e.reply('虚天舟已经满载。');
+    if (!owner.虚天舟乘员.includes(String(qq))) owner.虚天舟乘员.push(String(qq));
+    passenger.虚天舟船主 = String(invitation.ownerQq);
+    await Write_player(invitation.ownerQq, owner);
+    await Write_player(qq, passenger);
+    await redis.del(`xutian:boarding:${qq}`);
+    return e.reply(`你已登上【${owner.名号}】的虚天舟。船主下次穿梭位面时，你将一同启程。`);
+  }
+
+  async showXutianPassengers(e) {
+    const ctx = await this.context(e, '虚天舟');
+    if (!ctx) return false;
+    const passengers = [];
+    for (const qq of [...new Set((ctx.player.虚天舟乘员 || []).map(String))].slice(0, 3)) {
+      if (await existplayer(qq)) passengers.push((await Read_player(qq)).名号 || qq);
+    }
+    return e.reply(passengers.length
+      ? `【虚天舟乘员 ${passengers.length}/3】\n${passengers.map((name, index) => `${index + 1}. ${name}`).join('\n')}`
+      : '虚天舟当前没有乘员。使用 #邀请登舟 @玩家。');
+  }
+
+  async leaveXutianShip(e) {
+    if (!verc({ e })) return false;
+    let qq = await channel(String(e.user_id).replace('qg_', ''));
+    if (!await existplayer(qq)) return false;
+    const passenger = await Read_player(qq);
+    const ownerQq = String(passenger.虚天舟船主 || '');
+    if (!ownerQq || !await existplayer(ownerQq)) {
+      passenger.虚天舟船主 = '';
+      await Write_player(qq, passenger);
+      return e.reply('你当前不在任何虚天舟上。');
+    }
+    const owner = await Read_player(ownerQq);
+    owner.虚天舟乘员 = (owner.虚天舟乘员 || []).map(String).filter(id => id !== String(qq));
+    passenger.虚天舟船主 = '';
+    await Write_player(ownerQq, owner);
+    await Write_player(qq, passenger);
+    return e.reply('你在启航前离开了虚天舟。');
   }
 }

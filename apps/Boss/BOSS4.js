@@ -15,6 +15,10 @@ import {
   zd_battle,
 } from '../../model/xiuxian.js';
 import { recordWenXianTrial } from '../../model/wenxianling.js';
+import {
+  buildTianjiaoBattleStats,
+  isIndependentTianjiao,
+} from '../../model/tianjiaoGrowth.js';
 
 let WorldBOSSBattleCD = []; //CD
 let WorldBOSSBattleLock = 0; //BOSS战斗锁，防止打架频率过高造成奖励多发
@@ -894,6 +898,7 @@ export class BOSS4 extends plugin {
       // 根据玩家境界调整天骄属性
       let attributeMultiplier = 10;
       let openingDialogue = "";
+      const usesIndependentStats = isIndependentTianjiao(tianjiaoData);
 
       if (tianjiaoData.名号 === "猪咪岁岁") {
         if (A_player.level_id > 41) {
@@ -904,6 +909,17 @@ export class BOSS4 extends plugin {
           attributeMultiplier = 5;
           openingDialogue = "雪豹闭嘴！";
         }
+      } else if (usesIndependentStats) {
+        attributeMultiplier = 1;
+        if (A_player.mijinglevel_id < 9 && A_player.xiangulevel_id < 7) {
+          player.道伤 += 1;
+          player.当前血量 = 0;
+          await Write_player(usr_qq, player);
+          e.reply(`你连仙台境/尊者境都未达到，${tianjiaoName}根本不想浪费时间在你这只蝼蚁身上，直接将你一巴掌拍死！(道伤+1)`);
+          WorldBOSSBattleLock = 0;
+          return false;
+        }
+        openingDialogue = `${tianjiaoName}携自身当前境界与你一战！`;
       } else {
         if (A_player.mijinglevel_id >= 12 || A_player.xiangulevel_id >= 10) {
           attributeMultiplier = 5;
@@ -929,8 +945,24 @@ export class BOSS4 extends plugin {
         e.reply(openingDialogue);
       }
 
-      // 基于玩家属性生成天骄战斗属性
-      const B_player = {
+      // 遮天与九天十地天骄使用自身境界、装备和积累，不再镜像挑战者属性。
+      const independentStats = usesIndependentStats
+        ? buildTianjiaoBattleStats(tianjiaoData, {
+            cultivationLevels: data.Level_list,
+            physiqueLevels: data.LevelMax_list,
+            secretLevels: data.Levelmijing_list,
+            ancientLevels: data.xiangujinshi_list,
+            equipmentList: data.equipment_list,
+            imperialWeaponList: data.dibing_list,
+          })
+        : null;
+      const B_player = independentStats ? {
+        ...independentStats,
+        名号: `${tianjiaoName}(当前状态)`,
+        速度: (tianjiaoData.速度 ?? 100) + (tianjiaoData.mijinglevel_id ?? 0) * 50 + (tianjiaoData.xiangulevel_id ?? 0) * 50,
+        灵根: tianjiaoData.灵根?.name || "普通灵根",
+        法球倍率: tianjiaoData.灵根?.法球倍率 || 1,
+      } : {
         名号: `${tianjiaoName}${attributeMultiplier > 1 ? '(全力状态)' : '(压制境界)'}`,
         攻击: parseInt(A_player.攻击 * attributeMultiplier),
         防御: parseInt(A_player.防御 * attributeMultiplier),

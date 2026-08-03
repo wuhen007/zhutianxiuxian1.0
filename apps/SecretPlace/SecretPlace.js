@@ -38,10 +38,12 @@ import Show from "../../model/show.js";
 import puppeteer from "../../../../lib/puppeteer/puppeteer.js";
 import RealmEvents from '../tasks/RealmEvents.js';
 import {
+  applyInnateTravelReduction,
   claimInnateTreasure,
   createInnateTreasure,
   createInnateTreasureProjection,
   getTimedActionMultiplier,
+  hasEquippedInnateTreasure,
   readInnateTreasureState,
 } from '../../model/innateTreasure.js';
 import {
@@ -90,6 +92,7 @@ import {
     getActiveRedDustFortune,
     getRedDustFortuneType,
 } from '../../model/redDustFortune.js';
+import { BINGZI_FRAGMENT, BINGZI_TECHNIQUE } from '../../model/bingziLegacy.js';
 
 // ==================== 诡异大祭·崩灭位面检查工具 ====================
 function isWeiMianDestroyed(planeName) {
@@ -117,6 +120,7 @@ async function replyPlaneDestroyed(e, planeName) {
 const pendingJieyinMap = new Map();
 const treasureSettlementLocks = new Set();
 const sectWarSettlementLocks = new Set();
+const bingziSettlementLocks = new Set();
 
 const SECT_WAR_SIDE_LABELS = {
     attacker: '攻方',
@@ -136,6 +140,15 @@ function getSectWarActionPower(player) {
 
 function getSectWarSideName(war, side) {
     return war?.sides?.[side]?.name || SECT_WAR_SIDE_LABELS[side] || side;
+}
+
+function getBingziInsight(player) {
+    const realmPower =
+        (Number(player.level_id) || 0) +
+        (Number(player.Physique_id) || 0) +
+        (Number(player.mijinglevel_id) || 0) * 2 +
+        (Number(player.xiangulevel_id) || 0) * 2;
+    return Math.max(0, Math.min(20, Math.floor(realmPower / 3)));
 }
 
 function treasureBattleExcerpt(messages) {
@@ -360,6 +373,34 @@ export class SecretPlace extends plugin {
   fnc: 'voteSectWarDecision'
 },
 {
+  reg: '^#(?:秦门兵图|兵字秘事件)$',
+  fnc: 'bingziLegacyInfo'
+},
+{
+  reg: '^#追查蔡族$',
+  fnc: 'traceBingziCaiClan'
+},
+{
+  reg: '^#跟踪月灵公主$',
+  fnc: 'trackBingziMoonPrincess'
+},
+{
+  reg: '^#辨认石山\\*[1-9]$',
+  fnc: 'identifyBingziMountain'
+},
+{
+  reg: '^#月下观兵$',
+  fnc: 'observeBingziDiagram'
+},
+{
+  reg: '^#以器证兵$',
+  fnc: 'declareBingziWeapon'
+},
+{
+  reg: '^#兵字秘榜$',
+  fnc: 'bingziLegacyRanking'
+},
+{
   reg: '^#(?:观摩灵宝|查看夺宝进度|灵宝择主榜)$',
   fnc: 'treasureContestInfo'
 },
@@ -419,6 +460,52 @@ export class SecretPlace extends plugin {
       fnc: () => this.settleExpiredRealmEvents(),
     };
   }
+
+  async startXutianPassengers(owner, ownerTask) {
+    if (!ownerTask.travel_protected || !hasEquippedInnateTreasure(owner, '虚天舟')) return [];
+    const passengerIds = [...new Set((owner.虚天舟乘员 || []).map(String))].slice(0, 3);
+    const boarded = [];
+
+    for (const passengerQq of passengerIds) {
+      if (passengerQq === String(ownerTask.player_qq) || !await existplayer(passengerQq)) continue;
+      const passenger = await Read_player(passengerQq);
+      const actionRaw = await redis.get(`xiuxian:player:${passengerQq}:action`);
+      let busy = false;
+      if (actionRaw) {
+        try { busy = Number(JSON.parse(actionRaw)?.end_time) > Date.now(); } catch { busy = false; }
+      }
+      const threshold = await this.checkLocationThreshold(passenger, ownerTask.to_name);
+      if (busy || passenger.power_place !== ownerTask.from_location || !threshold.ok) {
+        passenger.虚天舟船主 = '';
+        await Write_player(passengerQq, passenger);
+        continue;
+      }
+
+      const passengerTask = {
+        ...ownerTask,
+        action: '乘坐虚天舟',
+        player_qq: passengerQq,
+        player_name: passenger.名号,
+        xiuwei_cost: 0,
+        qixue_cost: 0,
+        shouyuan_cost: 0,
+        used_token: false,
+        accident: false,
+        travel_protected: true,
+        passenger_of: String(ownerTask.player_qq),
+        travel_msg: [`你随${owner.名号}乘虚天舟横渡诸界，万千位面在舟外化为流光`],
+      };
+      passenger.虚天舟船主 = '';
+      await redis.set(`xiuxian:travel_task:${passengerQq}`, JSON.stringify(passengerTask));
+      await redis.set(`xiuxian:player:${passengerQq}:action`, JSON.stringify(passengerTask));
+      await Write_player(passengerQq, passenger);
+      boarded.push(passenger.名号 || passengerQq);
+    }
+
+    owner.虚天舟乘员 = [];
+    return boarded;
+  }
+
 async goToLocation(e) {
     if (!verc({ e })) return false;
     
@@ -525,6 +612,8 @@ async goToLocation(e) {
         const windResult = consumeTravelWind(player, travelTime);
         travelTime = windResult.travelTime;
         travelTime = Math.max(1, Math.ceil(travelTime * getTimedActionMultiplier(player)));
+        const shipResult = applyInnateTravelReduction(player, travelTime);
+        travelTime = shipResult.travelTime;
 
         // 消耗令牌（高级优先）
         if (tokenTier === 'high') player.高级传送次数 -= 1;
@@ -539,6 +628,7 @@ async goToLocation(e) {
             `预计需要 ${travelTime} 分钟横渡至${location}。`,
             isAccident ? `※ 星路震荡，似有虚空乱流潜伏，前路未卜……` : `※ 星路平稳，时空法则有序流转。`,
             windResult.consumed ? `※ 天外清风引路，行程缩短${windResult.reduction}分钟（剩余${windResult.remainingUses}次）。` : null,
+            shipResult.reduction ? `※ 虚天舟横渡界壁，行程再缩短${shipResult.reduction}分钟。` : null,
             `※ ${tierName}消耗 -1（剩余：${tokenTier === 'high' ? player.高级传送次数 : player.位面传送次数}次）`
         ].filter(Boolean).join('\n');
 
@@ -559,6 +649,7 @@ async goToLocation(e) {
             token_tier: tokenTier,
             accident: isAccident,
             tianwai_wind: windResult.consumed,
+            travel_protected: hasEquippedInnateTreasure(player, '虚天舟'),
             travel_msg: [
                 `阵纹流转，星空古路在脚下铺展`,
                 `你沿古路横渡，位面光影在身侧缓缓流淌`,
@@ -570,9 +661,10 @@ async goToLocation(e) {
         };
         await redis.set(`xiuxian:travel_task:${usr_qq}`, JSON.stringify(travelAction));
         await redis.set(`xiuxian:player:${usr_qq}:action`, JSON.stringify(travelAction));
+        const passengerNames = await this.startXutianPassengers(player, travelAction);
         await Write_player(usr_qq, player);
 
-        e.reply(startTravelMsg);
+        e.reply([startTravelMsg, passengerNames.length ? `※ 同行乘员：${passengerNames.join('、')}` : ''].filter(Boolean).join('\n'));
         return true;
     }
     // =====================================================================
@@ -654,12 +746,17 @@ async goToLocation(e) {
     const windResult = consumeTravelWind(player, travelTime);
     travelTime = windResult.travelTime;
     travelTime = Math.max(1, Math.ceil(travelTime * getTimedActionMultiplier(player)));
+    const shipResult = applyInnateTravelReduction(player, travelTime);
+    travelTime = shipResult.travelTime;
     if (windResult.consumed) {
         allMsgs.push([
             `【天外清风·清风引路】`,
             `一缕天外罡风托起你的身形，虚空星路骤然缩短。`,
             `行程减少${windResult.reduction}分钟，剩余加速${windResult.remainingUses}次。`
         ].join('\n'));
+    }
+    if (shipResult.reduction) {
+      allMsgs.push(`【虚天舟·诸界无碍】行程缩短${shipResult.reduction}分钟，本次航程不受至尊与天骄截杀。`);
     }
 
     // 根据不同地点构建不同传送描述
@@ -832,12 +929,14 @@ async goToLocation(e) {
         player_qq: usr_qq,
         group_id: e.isGroup ? e.group_id : null,
         used_token: false, // 标记未使用传送次数
-        tianwai_wind: windResult.consumed
+        tianwai_wind: windResult.consumed,
+        travel_protected: hasEquippedInnateTreasure(player, '虚天舟')
     };
     
     // 保存到Redis
     await redis.set(`xiuxian:travel_task:${usr_qq}`, JSON.stringify(travelAction));
     await redis.set(`xiuxian:player:${usr_qq}:action`, JSON.stringify(travelAction));
+    const passengerNames = await this.startXutianPassengers(player, travelAction);
     
     // 最后再修改玩家位置为目标位面，写入数据库
     player.power_place = targetLocation;
@@ -849,6 +948,7 @@ async goToLocation(e) {
         `${player.名号}施展无上神通，`,
         ...startMsg,
         ...allMsgs,
+        ...(passengerNames.length ? [`同行乘员：${passengerNames.join('、')}`] : []),
         `请耐心等待传送完成...`
     ].join('\n'));
     
@@ -3952,6 +4052,218 @@ async voteSectWarDecision(e) {
     ].join('\n'));
 }
 
+async bingziLegacyPlayerContext(e, { requireReach = true, requireJoined = false } = {}) {
+    if (!verc({ e })) return null;
+    let qq = await channel(String(e.user_id).replace('qg_', ''));
+    if (!await existplayer(qq)) return null;
+    const player = await Read_player(qq);
+    const event = RealmEvents.getActiveEvent('bingziLegacy');
+    if (!event) {
+        await e.reply('秦门后山的兵图此刻并未显化。');
+        return null;
+    }
+    if (requireReach && !getRealmEventReach(player, event).ok) {
+        await e.reply([
+            '你尚未抵达秦门后山石壁所在的精确坐标。',
+            `地点：${formatRealmEventLocation(event)}`,
+            `赶路方式：${formatRealmEventTravel(event)}`
+        ].join('\n'));
+        return null;
+    }
+    if (requireJoined && !event.bingzi?.participants?.[String(qq)]) {
+        await e.reply('你尚未追查蔡族旧事，请先发送 #追查蔡族。');
+        return null;
+    }
+    return { qq, player, event };
+}
+
+async bingziLegacyInfo(e) {
+    if (!verc({ e })) return false;
+    let qq = await channel(String(e.user_id).replace('qg_', ''));
+    if (!await existplayer(qq)) return false;
+    let event = RealmEvents.getActiveEvent('bingziLegacy');
+    if (!event) {
+        event = RealmEvents.getLatestBingziLegacyEvent();
+        if (!event) return e.reply('诸天尚无秦门兵字秘传承记录。');
+        if (event.bingzi?.status !== 'settled' && Number(event.expiresAt) <= Date.now()) {
+            await this.settleBingziLegacyRewards(event);
+            event = RealmEvents.getLatestBingziLegacyEvent() || event;
+        }
+        const winner = event.bingzi?.winner;
+        return e.reply([
+            '【秦门兵图·显化已终】',
+            winner
+                ? `${winner.name}以【${winner.weapon}】承下完整兵字秘。`
+                : '本次无人走完兵道试炼，完整经文随月华隐去。',
+            '发送 #兵字秘榜 查看本次参悟排名。'
+        ].join('\n'));
+    }
+
+    const legacy = event.bingzi;
+    const mine = legacy.participants?.[String(qq)];
+    const minutes = Math.max(1, Math.ceil((Number(event.expiresAt) - Date.now()) / 60000));
+    const progress = mine ? [
+        mine.tracedCaiClan ? '蔡族线索已明' : '尚未追查蔡族',
+        mine.trackedMoonPrincess ? '已跟踪月灵公主' : '尚未锁定九山',
+        mine.mountainFound ? '已找到真山' : `辨山${mine.guesses?.length || 0}/3`,
+        mine.observedWeaponDiagram ? '已观完整兵图' : '尚未月下观兵',
+        mine.completedAt ? `已以${mine.declaredWeapon}证兵` : '尚未以器证兵'
+    ].join('｜') : '尚未参与';
+    return e.reply([
+        '【九秘传承·秦门兵图】',
+        `地点：${formatRealmEventLocation(event)}`,
+        `剩余：${minutes}分钟`,
+        `参与修士：${Object.keys(legacy.participants || {}).length}人`,
+        `你的进度：${progress}`,
+        mine ? `当前参悟分：${mine.score}` : '',
+        '',
+        '1. #追查蔡族',
+        '2. #跟踪月灵公主',
+        '3. #辨认石山*数字（第一山至第九山，最多三次）',
+        '4. #月下观兵',
+        '5. 装备武器或帝兵后发送 #以器证兵',
+        '#兵字秘榜',
+        '',
+        '事件结束时按完成度、参悟分和完成时间择主；其余参与者获得兵字秘残卷。',
+        `赶路方式：${formatRealmEventTravel(event)}`
+    ].filter(Boolean).join('\n'));
+}
+
+async traceBingziCaiClan(e) {
+    const ctx = await this.bingziLegacyPlayerContext(e, { requireReach: true });
+    if (!ctx || !await Go(e)) return false;
+    const result = RealmEvents.traceBingziCaiClan(
+        ctx.event.timestamp,
+        ctx.qq,
+        ctx.player.名号 || ctx.player.名称
+    );
+    if (!result.ok) {
+        return e.reply(result.reason === 'duplicate'
+            ? '你已经查明秦门掌教一脉与蔡族的关系。'
+            : '秦门兵图已经隐去。');
+    }
+    return e.reply([
+        '【兵字秘·追查蔡族】',
+        '你翻阅秦岭旧卷，查明秦门掌教一脉正是蔡族后人。',
+        '主峰还藏有可度化修士心神的度神诀，贸然潜入风险极高。',
+        `参悟分：${result.participant.score}`,
+        '下一步：#跟踪月灵公主'
+    ].join('\n'));
+}
+
+async trackBingziMoonPrincess(e) {
+    const ctx = await this.bingziLegacyPlayerContext(e, { requireReach: true, requireJoined: true });
+    if (!ctx || !await Go(e)) return false;
+    const result = RealmEvents.trackBingziMoonPrincess(ctx.event.timestamp, ctx.qq);
+    if (!result.ok) {
+        if (result.reason === 'trace_required') return e.reply('需先发送 #追查蔡族，确定兵字秘确在秦门。');
+        if (result.reason === 'duplicate') return e.reply('你已经记下月灵公主的换山轨迹。');
+        return e.reply('月灵公主的踪迹已经消失。');
+    }
+    return e.reply([
+        '【兵字秘·月灵踪迹】',
+        '你避开秦门主峰，在外围九座石山间跟随月灵公主留下的月华痕迹。',
+        `真山位于第${result.clue.rangeStart}至第${result.clue.rangeEnd}山之间，并且序号是${result.clue.parity}。`,
+        '使用 #辨认石山*数字 作出判断，最多三次。'
+    ].join('\n'));
+}
+
+async identifyBingziMountain(e) {
+    const ctx = await this.bingziLegacyPlayerContext(e, { requireReach: true, requireJoined: true });
+    if (!ctx || !await Go(e)) return false;
+    const mountain = Number(e.msg.match(/\*([1-9])$/)?.[1]);
+    const result = RealmEvents.recordBingziMountain(ctx.event.timestamp, ctx.qq, mountain);
+    if (!result.ok) {
+        const reasons = {
+            track_required: '需先发送 #跟踪月灵公主，取得九山线索。',
+            already_found: '你已经找到了兵图所在的真山。',
+            duplicate_guess: '这座石山你已经辨认过。',
+            limit: '三次辨山机会已经用尽，本次只能带走一份残缺道痕。',
+            expired: '月华消散，秦门兵图已经隐去。'
+        };
+        if (result.reason === 'wrong') {
+            return e.reply([
+                `第${mountain}山只有普通控器刻痕，并非兵字秘真迹。`,
+                `余韵表明真山${result.direction}。`,
+                `剩余机会：${3 - result.participant.guesses.length}`
+            ].join('\n'));
+        }
+        return e.reply(reasons[result.reason] || '无法辨认这座石山。');
+    }
+    return e.reply([
+        '【九山辨真·兵图所在】',
+        `第${mountain}山后壁的鼎、钟、塔、剑刻痕在月华下缓缓流动。`,
+        `参悟分：${result.participant.score}`,
+        '下一步：#月下观兵'
+    ].join('\n'));
+}
+
+async observeBingziDiagram(e) {
+    const ctx = await this.bingziLegacyPlayerContext(e, { requireReach: true, requireJoined: true });
+    if (!ctx || !await Go(e)) return false;
+    const result = RealmEvents.recordBingziObservation(
+        ctx.event.timestamp,
+        ctx.qq,
+        getBingziInsight(ctx.player)
+    );
+    if (!result.ok) {
+        if (result.reason === 'mountain_required') return e.reply('你还没有辨出兵图所在的真山。');
+        if (result.reason === 'duplicate') return e.reply('你已经观尽石壁上的锤炼、养兵与控器道痕。');
+        return e.reply('石壁上的月华已经消散。');
+    }
+    return e.reply([
+        '【月满中天·万兵归一】',
+        '鼎、钟、塔、炉、镜、矛、剑在石壁上轮转重组，最终归为一个“兵”字。',
+        '你承受住兵锋冲击，悟见从锤炼、蕴养到控器的完整兵道。',
+        `悟性得分：${result.insightScore}｜总参悟分：${result.participant.score}`,
+        '最后一步：装备一件武器或帝兵，发送 #以器证兵'
+    ].join('\n'));
+}
+
+async declareBingziWeapon(e) {
+    const ctx = await this.bingziLegacyPlayerContext(e, { requireReach: true, requireJoined: true });
+    if (!ctx || !await Go(e)) return false;
+    const equipment = await Read_equipment(ctx.qq);
+    const equipped = equipment?.帝兵 || equipment?.武器;
+    if (!equipped?.name) return e.reply('欲控万兵，必先掌一兵。请先装备一件武器或自己的帝兵。');
+    const result = RealmEvents.recordBingziWeapon(ctx.event.timestamp, ctx.qq, {
+        name: equipped.name,
+        isEmperorWeapon: Boolean(equipment?.帝兵)
+    });
+    if (!result.ok) {
+        if (result.reason === 'observe_required') return e.reply('需先发送 #月下观兵，承受完整兵图道痕。');
+        if (result.reason === 'duplicate') return e.reply(`你已经以【${result.participant.declaredWeapon}】立下兵道根基。`);
+        return e.reply('当前无法以器证兵。');
+    }
+    return e.reply([
+        '【唯一之器·兵道根基】',
+        `你以【${equipped.name}】为自身唯一之器，完成兵字秘传承试炼。`,
+        equipment?.帝兵 ? '本命帝兵与石壁道痕共鸣，获得额外契合分。' : '此器虽非帝兵，亦可作为兵道起点。',
+        `最终参悟分：${result.participant.score}`,
+        '完整兵字秘将在事件结束后择主。'
+    ].join('\n'));
+}
+
+async bingziLegacyRanking(e) {
+    if (!verc({ e })) return false;
+    let event = RealmEvents.getActiveEvent('bingziLegacy') || RealmEvents.getLatestBingziLegacyEvent();
+    if (!event) return e.reply('当前没有秦门兵字秘传承记录。');
+    if (event.bingzi?.status !== 'settled' && Number(event.expiresAt) <= Date.now()) {
+        await this.settleBingziLegacyRewards(event);
+        event = RealmEvents.getLatestBingziLegacyEvent() || event;
+    }
+    const rankings = RealmEvents.getBingziRankings(event).slice(0, 10);
+    const lines = ['【秦门兵字秘·参悟榜】'];
+    if (!rankings.length) lines.push('尚无人追查到蔡族线索。');
+    rankings.forEach((entry, index) => lines.push(
+        `${index + 1}. ${entry.name}｜${entry.score}分｜${entry.completedAt ? `以${entry.declaredWeapon}证兵` : '参悟未完'}`
+    ));
+    if (event.bingzi?.winner) {
+        lines.push('', `完整传承：${event.bingzi.winner.name}｜唯一之器：${event.bingzi.winner.weapon}`);
+    }
+    return e.reply(lines.join('\n'));
+}
+
 async treasurePlayerContext(e, { requireReach = true, requireJoined = false } = {}) {
     if (!verc({ e })) return null;
     let qq = await channel(String(e.user_id).replace('qg_', ''));
@@ -4203,6 +4515,115 @@ async treasureContestDaoHeart(e) {
 async settleExpiredRealmEvents() {
     await this.settleExpiredTreasureContests();
     await this.settleExpiredSectWars();
+    await this.settleExpiredBingziLegacies();
+}
+
+async settleExpiredBingziLegacies() {
+    const events = RealmEvents.getBingziLegacyEvents().filter(event => Number(event.expiresAt) <= Date.now());
+    for (const event of events) {
+        try {
+            await this.settleBingziLegacyRewards(event);
+        } catch (error) {
+            console.error('[兵字秘] 秦门传承结算失败:', error);
+        }
+    }
+}
+
+async settleBingziLegacyRewards(event) {
+    const lockKey = String(event.timestamp);
+    if (bingziSettlementLocks.has(lockKey)) return { ok: true, pending: true, event };
+    bingziSettlementLocks.add(lockKey);
+    try {
+        const settlement = RealmEvents.settleBingziLegacyEvent(event.timestamp);
+        if (!settlement.ok) return settlement;
+        event = settlement.event;
+        const rankings = event.bingzi?.rankings || RealmEvents.getBingziRankings(event);
+        const rewarded = new Set((event.bingzi?.rewardedQqs || []).map(String));
+        let winner = event.bingzi?.winner || null;
+
+        if (!winner) {
+            for (const entry of rankings.filter(item => item.completedAt)) {
+                const qq = String(entry.qq);
+                try {
+                    if (!await existplayer(qq)) continue;
+                    const player = await Read_player(qq);
+                    if (player.学习的功法?.includes(BINGZI_TECHNIQUE)) continue;
+                    winner = {
+                        qq,
+                        name: entry.name,
+                        weapon: entry.declaredWeapon,
+                        score: entry.score,
+                    };
+                    break;
+                } catch (error) {
+                    console.error(`[兵字秘] 检查玩家${qq}传承资格失败:`, error);
+                }
+            }
+            RealmEvents.setBingziWinner(event.timestamp, winner);
+            event.bingzi.winner = winner;
+        }
+
+        if (!settlement.alreadySettled) {
+            await RealmEvents.broadcastEvent([
+                '【秦门兵图·传承落定】',
+                winner
+                    ? `${winner.name}以【${winner.weapon}】承下完整兵字秘。`
+                    : '本次无人走完兵道试炼，完整经文随月华隐去。',
+                '其余参与者将按追查与参悟进度获得兵字秘残卷。',
+                '发送 #兵字秘榜 查看本次参悟排名。'
+            ].join('\n'));
+        }
+
+        for (const entry of Object.values(event.bingzi?.participants || {})) {
+            const qq = String(entry.qq);
+            if (rewarded.has(qq)) continue;
+            try {
+                if (!await existplayer(qq)) {
+                    RealmEvents.markBingziRewarded(event.timestamp, qq);
+                    continue;
+                }
+                const player = await Read_player(qq);
+                const settlementKey = String(event.timestamp);
+                if (player.已结算兵字秘事件?.includes(settlementKey)) {
+                    RealmEvents.markBingziRewarded(event.timestamp, qq);
+                    continue;
+                }
+
+                const isWinner = String(winner?.qq) === qq;
+                if (isWinner) {
+                    player.学习的功法 ||= [];
+                    if (!player.学习的功法.includes(BINGZI_TECHNIQUE)) {
+                        player.学习的功法.push(BINGZI_TECHNIQUE);
+                    }
+                } else {
+                    const fragments = entry.completedAt ? 3 : entry.mountainFound ? 2 : entry.tracedCaiClan ? 1 : 0;
+                    if (fragments > 0) {
+                        await Add_najie_thing(
+                            qq,
+                            BINGZI_FRAGMENT,
+                            '材料',
+                            fragments,
+                            undefined,
+                            1,
+                            { idempotencyKey: `bingzi-legacy:${settlementKey}:${qq}` }
+                        );
+                    }
+                }
+
+                player.已结算兵字秘事件 ||= [];
+                player.已结算兵字秘事件.push(settlementKey);
+                player.已结算兵字秘事件 = player.已结算兵字秘事件.slice(-20);
+                await Write_player(qq, player);
+                RealmEvents.markBingziRewarded(event.timestamp, qq);
+            } catch (error) {
+                console.error(`[兵字秘] 玩家${qq}奖励结算失败:`, error);
+            }
+        }
+        RealmEvents.getActiveEvents();
+        return settlement;
+    } finally {
+        bingziSettlementLocks.delete(lockKey);
+    }
 }
 
 async settleExpiredSectWars() {
@@ -4404,6 +4825,15 @@ async participateRealmEvent(e) {
         return supported && (!requestedTypes || requestedTypes.includes(event.type));
     });
     if (events.length === 0) {
+        const bingziLegacy = RealmEvents.getActiveEvent('bingziLegacy');
+        if (bingziLegacy) {
+            return e.reply([
+                '当前开放的是专属玩法【秦门兵字秘传承】，不能用通用参与指令直接领奖。',
+                `地点：${formatRealmEventLocation(bingziLegacy)}`,
+                `赶路方式：${formatRealmEventTravel(bingziLegacy)}`,
+                '抵达后发送 #秦门兵图。'
+            ].join('\n'));
+        }
         const sectWar = RealmEvents.getActiveEvent('sectWar');
         if (sectWar) {
             return e.reply([

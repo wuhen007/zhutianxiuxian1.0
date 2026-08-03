@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   consumeBlackEmperorBattleFormation,
+  consumeBlackEmperorTribulationFormation,
   getBlackEmperorData,
   getBlackEmperorRelation,
   getUnlockedBlackEmperorFormations,
@@ -42,12 +43,30 @@ test('无始杀阵只强化一次副本战斗并在激活后消耗', () => {
   assert.equal(consumeBlackEmperorBattleFormation(player, attacker, defender).consumed, false);
 });
 
-test('欺天阵纹与山河困龙阵按各自规则削弱副本敌人', () => {
+test('欺天阵纹只在下次渡劫判定一次，成功率为25%', () => {
   const attacker = { 攻击: 100, 暴击率: 0.1 };
   const hiddenEnemy = { 攻击: 100, 防御: 100, 暴击率: 0.2 };
-  consumeBlackEmperorBattleFormation({ 黑皇待用阵纹: '欺天阵纹' }, attacker, hiddenEnemy);
-  assert.deepEqual(hiddenEnemy, { 攻击: 70, 防御: 100, 暴击率: 0.05 });
+  const player = { 黑皇待用阵纹: '欺天阵纹' };
+  assert.equal(consumeBlackEmperorBattleFormation(player, attacker, hiddenEnemy).consumed, false);
+  assert.equal(player.黑皇待用阵纹, '欺天阵纹');
 
+  const success = consumeBlackEmperorTribulationFormation(player, { random: () => 0.24 });
+  assert.equal(success.success, true);
+  assert.equal(success.damageMultiplier, 0.75);
+  assert.equal(player.黑皇待用阵纹, undefined);
+  assert.doesNotMatch(JSON.stringify(player), /_欺天阵纹渡劫/);
+  assert.equal(consumeBlackEmperorTribulationFormation(player, { random: () => 0.99 }), success);
+
+  const failed = consumeBlackEmperorTribulationFormation(
+    { 黑皇待用阵纹: '欺天阵纹' },
+    { random: () => 0.25 }
+  );
+  assert.equal(failed.success, false);
+  assert.equal(failed.damageMultiplier, 1);
+});
+
+test('山河困龙阵仍在副本中削弱敌人', () => {
+  const attacker = { 攻击: 100, 暴击率: 0.1 };
   const trappedEnemy = { 攻击: 100, 防御: 100, 暴击率: 0.2 };
   consumeBlackEmperorBattleFormation({ 黑皇待用阵纹: '山河困龙阵' }, attacker, trappedEnemy);
   assert.equal(trappedEnemy.攻击, 85);

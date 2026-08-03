@@ -112,6 +112,7 @@
       { "id": "yaoguangshengdi", "name": "摇光圣地", "type": "site", "parent": "donghuang", "source": "遮天", "bounds": { "x1": 185, "y1": 360, "x2": 275, "y2": 450 }, "desc": "东荒南域顶级圣地，暗藏狠人一脉传承" },
       { "id": "huanggujindi", "name": "荒古禁地", "type": "site", "parent": "donghuang", "source": "遮天", "bounds": { "x1": 185, "y1": 470, "x2": 275, "y2": 550 }, "desc": "禁区·东荒南域，荒的气息剥夺寿元，叶凡于此得圣果" },
       { "id": "zhongzhou", "name": "中州", "type": "region", "parent": "beidouxingyu", "source": "遮天", "bounds": { "x1": 580, "y1": 20, "x2": 830, "y2": 280 }, "desc": "北斗中央之地，奇士府网罗奇才，大夏古华九黎神州四皇朝并立" },
+      { "id": "qinlingqinmen", "name": "秦岭·秦门后山", "type": "site", "parent": "zhongzhou", "source": "遮天", "bounds": { "x1": 600, "y1": 40, "x2": 690, "y2": 130 }, "desc": "蔡族后人隐居的秦门，满月时后山兵图显化" },
       { "id": "ximo", "name": "西漠", "type": "region", "parent": "beidouxingyu", "source": "遮天", "bounds": { "x1": 580, "y1": 300, "x2": 830, "y2": 560 }, "desc": "黄沙佛国，须弥山阿弥陀佛大帝道场，佛光普照" },
       { "id": "nanling", "name": "南岭", "type": "region", "parent": "beidouxingyu", "source": "遮天", "bounds": { "x1": 170, "y1": 580, "x2": 490, "y2": 840 }, "desc": "十万大山妖族盘踞，妖皇殿号令南岭" },
       { "id": "beiyuan", "name": "北原", "type": "region", "parent": "beidouxingyu", "source": "遮天", "bounds": { "x1": 510, "y1": 580, "x2": 830, "y2": 840 }, "desc": "冰原万里，北原王家与黄金家族争雄，狼居胥山祭天" },

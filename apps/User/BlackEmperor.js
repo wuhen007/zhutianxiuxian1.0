@@ -194,7 +194,8 @@ export class BlackEmperor extends plugin {
       return true;
     }
     if (formation.type === 'battle' && player.黑皇待用阵纹) {
-      await e.reply(`已有待用阵纹「${player.黑皇待用阵纹}」，请在下次副本使用后再刻。`);
+      const useAt = player.黑皇待用阵纹 === '欺天阵纹' ? '下次渡劫' : '下次副本';
+      await e.reply(`已有待用阵纹「${player.黑皇待用阵纹}」，请在${useAt}使用后再刻。`);
       return true;
     }
     if (formation.type.startsWith('travel')) {
@@ -234,7 +235,9 @@ export class BlackEmperor extends plugin {
     await Write_player(userId, player);
     if (formation.type === 'training') await Add_职业经验(userId, 1000);
 
-    const effect = formation.type === 'battle'
+    const effect = name === '欺天阵纹'
+      ? '阵纹已封存，将在下次渡劫首次落劫时尝试欺瞒天机。'
+      : formation.type === 'battle'
       ? '阵纹已封存，将在下次副本战斗自动激活。'
       : formation.type === 'training'
         ? '聚灵阵运转，阵法师职业经验+1000。'

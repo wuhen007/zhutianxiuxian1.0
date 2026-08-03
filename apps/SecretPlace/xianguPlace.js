@@ -44,6 +44,10 @@ import {
   grantXianqi,
 } from '../../model/xianguXianqi.js';
 import {
+  getMinggeEffects,
+  grantMinggePotential,
+} from '../../model/mingge.js';
+import {
   drawXianguSeed,
   findXianguTopSeed,
   grantXianguSeed,
@@ -62,13 +66,27 @@ import {
   validateEvacuationState,
 } from './xianguEvacuation.js';
 import {
+  XIANGU_MARROW_POOL_KIND,
+  XIANGU_MARROW_POOL_NAME,
+  calculateXianguMarrowPoolRewards,
   createXianguFragmentSnapshot,
   createXianguExitPositions,
   ensureXianguExitConnectivity,
+  getXianguMarrowPoolTrapChance,
   pickDifferentXianguFragment,
+  placeXianguMarrowPool,
   restoreXianguFragmentSnapshot,
+  resolveXianguMarrowPoolConfig,
   resolveXianguFragmentSize,
 } from './xianguMap.js';
+import {
+  applyXianguHeavyInjury,
+  buildXianguArenaRewardPlan,
+  buildXianguBattleSides,
+  getXianguExploreEfficiency,
+  recordXianguArenaWin,
+  resolveXianguLeaderWinner,
+} from './xianguCombat.js';
 
 const XIANGU_ACTIVE_PLAYERS_KEY = 'xiuxian:xiangu:player_set';
 const XIANGU_RELEASE_LOCK_SCRIPT = `
@@ -224,6 +242,33 @@ function getXianguSecretConfig() {
     console.error('读取仙古秘境配置失败:', error);
     return {};
   }
+}
+
+async function grantXianguGrowthRewards(player, playerId, rewards = {}) {
+  const result = { xiuwei: 0, xueqi: 0, lingshi: 0 };
+  if (Number(rewards.xiuwei) > 0) {
+    result.xiuwei = await Add_修为(playerId, rewards.xiuwei);
+    player.修为 = (Number(player.修为) || 0) + result.xiuwei;
+  }
+  if (Number(rewards.xueqi) > 0) {
+    result.xueqi = Math.trunc(rewards.xueqi);
+    await Add_血气(playerId, result.xueqi);
+    player.血气 = (Number(player.血气) || 0) + result.xueqi;
+  }
+  if (Number(rewards.lingshi) > 0) {
+    result.lingshi = await Add_灵石(playerId, rewards.lingshi);
+    player.灵石 = (Number(player.灵石) || 0) + result.lingshi;
+  }
+  return result;
+}
+
+async function addXianguSpoil(playerId, name, quantity = 1, desc = '仙古秘境战利品') {
+  const najie = await Read_najie(playerId);
+  najie.材料 ||= [];
+  const existing = najie.材料.find(item => item.name === name);
+  if (existing) existing.数量 = (Number(existing.数量) || 0) + quantity;
+  else najie.材料.push({ name, 数量: quantity, islockd: 0, desc });
+  await Write_najie(playerId, najie);
 }
 
 function getXianguCooldownHours(xianguConfig = getXianguSecretConfig()) {
@@ -1140,7 +1185,9 @@ export class xianguPlace extends plugin {
             case CELL_TYPE.NPC:            cls = 'cell-npc'; break;
             case CELL_TYPE.EXIT:           cls = 'cell-exit'; break;
             case CELL_TYPE.VOID_RIFT:      cls = 'cell-void'; break;
-            case CELL_TYPE.UNIQUE_TREASURE:cls = 'cell-unique'; break;
+            case CELL_TYPE.UNIQUE_TREASURE:
+              cls = isXianguMarrowPoolPosition(map, x, y) ? 'cell-pool' : 'cell-unique';
+              break;
             case CELL_TYPE.EMPTY:          cls = 'cell-empty'; break;
             case CELL_TYPE.EXPLORED_EMPTY: cls = 'cell-empty-explored'; break;
             default:                       cls = 'cell-empty';
@@ -1271,14 +1318,14 @@ export class xianguPlace extends plugin {
           case CELL_TYPE.NPC: row += '人'; break;
           case CELL_TYPE.EXIT: row += '⊕'; break;
           case CELL_TYPE.VOID_RIFT: row += '∞'; break;
-          case CELL_TYPE.UNIQUE_TREASURE: row += '★'; break;
+          case CELL_TYPE.UNIQUE_TREASURE: row += isXianguMarrowPoolPosition(map, x, y) ? '♨' : '★'; break;
           default: row += '·';
         }
       }
       lines.push(' ' + row);
     }
     lines.push('');
-    lines.push(`图例：你=你 ◆机缘 ✦危险 人NPC ⊕出口 ∞裂缝 ★唯一 ▓迷雾`);
+    lines.push(`图例：你=你 ◆机缘 ✦危险 人NPC ⊕出口 ∞裂缝 ♨${XIANGU_MARROW_POOL_NAME} ★唯一 ▓迷雾`);
     return e.reply(lines.join('\n'));
 
   } catch (error) {
@@ -1342,6 +1389,22 @@ export class xianguPlace extends plugin {
     }
     const map = player.xiangu_realm_map;
 
+    const poolConfig = resolveXianguMarrowPoolConfig(getXianguSecretConfig());
+    const exploreEfficiency = getXianguExploreEfficiency(player);
+    let poolDiscovery = null;
+    if (Math.random() < poolConfig.exploreChance * exploreEfficiency) {
+      poolDiscovery = placeXianguMarrowPool(map, {
+        reveal: true,
+        metadata: { source: 'explore', isTrap: false },
+      });
+      if (poolDiscovery.placed) {
+        ensureXianguExitConnectivity(map.grid, map.playerPos, [poolDiscovery.position], {
+          wallValue: CELL_TYPE.WALL,
+          emptyValue: CELL_TYPE.EMPTY,
+        });
+      }
+    }
+
     // 揭示当前位置周围（神识范围）
     revealAdjacentCells(map, map.playerPos, getDivineSenseRange(player));
 
@@ -1369,6 +1432,19 @@ export class xianguPlace extends plugin {
 
     // 构建消息
     let msg = gridRender + '\n\n';
+
+    if (poolDiscovery?.placed) {
+      msg += [
+        `💧【机缘显化·${XIANGU_MARROW_POOL_NAME}】`,
+        `神识扫过时，万道水光忽然冲破迷雾！`,
+        `宝池坐标：[${poolDiscovery.position.x}, ${poolDiscovery.position.y}]，可按地图方向前往。`,
+        ``,
+      ].join('\n');
+    }
+
+    if (exploreEfficiency < 1) {
+      msg += `🩸【重伤】神识运转受阻，本次机缘发现率降低50%。\n\n`;
+    }
 
     if (echoes && echoes.length > 0) {
       msg += `🔥【道韵共鸣】\n`;
@@ -1840,7 +1916,9 @@ async XianguDivineScan(e) {
             scanResults.push({ dist, text: detail });
             break;
           case CELL_TYPE.UNIQUE_TREASURE:
-            detail = `🔥🔥🔥 天机震动！${cardinalDir}${dist}格处有【✨绝世机缘】——此乃大造化！`;
+            detail = isXianguMarrowPoolPosition(map, sx, sy)
+              ? `💧 万道水声共鸣！${cardinalDir}${dist}格处有【${XIANGU_MARROW_POOL_NAME}】！`
+              : `🔥🔥🔥 天机震动！${cardinalDir}${dist}格处有【✨绝世机缘】——此乃大造化！`;
             scanResults.push({ dist, text: detail });
             break;
         }
@@ -3402,41 +3480,12 @@ async XianguYiShenWeiZhong(e) {
         await e.reply('【撤离中断】杀机惊动秘境法则，交战双方正在维持的撤离通道均已崩散。');
       }
 
-      // 构建战斗对象
-      let A_player = {
-        名号: player.名号,
-        攻击: parseInt(player.攻击 || 0),
-        防御: parseInt(player.防御 || 0),
-        当前血量: parseInt(player.当前血量 || player.血气上限 || 10000),
-        暴击率: player.暴击率 || 0.05,
-        法球倍率: player.灵根?.法球倍率 || 0.1,
-        灵根: player.灵根 || {},
-        学习的功法: player.学习的功法 || {},
-        魔道值: player.魔道值 || 0,
-        仙宠: player.仙宠 || null,
-        神石: player.神石 || {},
-        xiangulevel_id: player.xiangulevel_id || 5,
-        mijinglevel_id: player.mijinglevel_id || 1,
-      };
-
-      let B_player = {
-        名号: targetPlayer.名号,
-        攻击: parseInt(targetPlayer.攻击 || 0),
-        防御: parseInt(targetPlayer.防御 || 0),
-        当前血量: parseInt(targetPlayer.当前血量 || targetPlayer.血气上限 || 10000),
-        暴击率: targetPlayer.暴击率 || 0.05,
-        法球倍率: targetPlayer.灵根?.法球倍率 || 0.1,
-        灵根: targetPlayer.灵根 || {},
-        学习的功法: targetPlayer.学习的功法 || {},
-        魔道值: targetPlayer.魔道值 || 0,
-        仙宠: targetPlayer.仙宠 || null,
-        神石: targetPlayer.神石 || {},
-        xiangulevel_id: targetPlayer.xiangulevel_id || 5,
-        mijinglevel_id: targetPlayer.mijinglevel_id || 1,
-      };
-
-      // 执行真实战斗
-      const Data_battle = await zd_battle(A_player, B_player);
+      const battleSides = buildXianguBattleSides(player, targetPlayer, {
+        attackerId: player_qq,
+        defenderId: targetId,
+      });
+      const Data_battle = await zd_battle(battleSides.A, battleSides.B, { battleType: 'xiangu_pvp' });
+      const leaderWinner = resolveXianguLeaderWinner(Data_battle);
       const msg = Data_battle.msg;
 
       // 拼接战斗消息
@@ -3446,13 +3495,14 @@ async XianguYiShenWeiZhong(e) {
         `战场：${location}`,
         `攻击方：${player.名号}`,
         `防守方：${targetPlayer.名号}`,
+        ...battleSides.messages,
         ``,
         `━━━━ 战斗过程 ━━━━`,
         ...msg,
         `━━━━ 战斗结果 ━━━━`
       ];
 
-      if (Data_battle.winner === 'A') {
+      if (leaderWinner === 'A') {
         let targetForcedExit = false;
         // 攻击方胜利
         const infamyGain = Math.floor(Math.random() * 20) + 10 + (location === '核心区域' ? 20 : location === '深层区域' ? 10 : 0);
@@ -3464,8 +3514,10 @@ async XianguYiShenWeiZhong(e) {
         // 击杀奖励：灵石和修为
         const killRewardLingshi = Math.floor(1000 * (1 + infamyGain / 10));
         const killRewardXiuwei = Math.floor(200 * infamyGain);
-        await Add_灵石(player_qq, killRewardLingshi);
-        await Add_修为(player_qq, killRewardXiuwei);
+        const killRewards = await grantXianguGrowthRewards(player, player_qq, {
+          lingshi: killRewardLingshi,
+          xiuwei: killRewardXiuwei,
+        });
 
         // 掉落判定 - 50%几率掠夺对方一件物品/道种
         let lootMsg = '';
@@ -3478,7 +3530,7 @@ async XianguYiShenWeiZhong(e) {
           } else if (targetPlayer.纳戒 && targetPlayer.纳戒.length > 0) {
             // 掠夺纳戒随机物品
             const stolenItem = targetPlayer.纳戒.splice(Math.floor(Math.random() * targetPlayer.纳戒.length), 1)[0];
-            await Add_najie_thing(player_qq, stolenItem.名称 || stolenItem.name, '战利品', 1);
+            await addXianguSpoil(player_qq, stolenItem.名称 || stolenItem.name, 1);
             lootMsg = `掠夺物品：${stolenItem.名称 || stolenItem.name}`;
           }
         }
@@ -3487,15 +3539,19 @@ async XianguYiShenWeiZhong(e) {
         // 被击败者受损
         const hpLoss = Math.floor(targetPlayer.当前血量 * 0.5);
         targetPlayer.当前血量 = Math.max(1, targetPlayer.当前血量 - hpLoss);
-        targetPlayer.xiangu_gains = targetPlayer.xiangu_gains || {};
-        targetPlayer.xiangu_gains.debuff = '重伤';
+        applyXianguHeavyInjury(targetPlayer);
+
+        const arenaWin = XIANGU_EVENTS.activeEvent?.type === 'arena' &&
+          XIANGU_EVENTS.activeEvent.endTime > Date.now() &&
+          recordXianguArenaWin(XIANGU_EVENTS.arenaParticipants, player_qq, targetId);
 
         resultMsg.push(
           `战斗结果：${player.名号}胜！`,
           `凶名值 +${infamyGain}（累计：${player.xiangu_infamy}）`,
           `击杀数：${player.xiangu_kills}`,
-          `灵石奖励 +${killRewardLingshi.toLocaleString()}`,
-          `修为奖励 +${killRewardXiuwei}`
+          `灵石奖励 +${killRewards.lingshi.toLocaleString()}`,
+          `修为奖励 +${killRewards.xiuwei.toLocaleString()}`,
+          ...(arenaWin ? [`仙古擂台胜场 +1`] : [])
         );
 
         // 检查是否需要强制撤离（生命值过低）
@@ -3525,20 +3581,25 @@ async XianguYiShenWeiZhong(e) {
           }
         }
 
-      } else if (Data_battle.winner === 'B') {
+      } else if (leaderWinner === 'B') {
         let playerForcedExit = false;
         // 防守方胜利
         const daoyunGain = Math.floor(Math.random() * 20) + 5;
-        player.xiangu_gains = player.xiangu_gains || {};
-        player.xiangu_gains.daoyun = (player.xiangu_gains.daoyun || 0) + daoyunGain;
+        targetPlayer.xiangu_gains = targetPlayer.xiangu_gains || {};
+        targetPlayer.xiangu_gains.daoyun = (targetPlayer.xiangu_gains.daoyun || 0) + daoyunGain;
 
         const hpLoss = Math.floor(player.当前血量 * 0.4);
         player.当前血量 = Math.max(1, player.当前血量 - hpLoss);
+        applyXianguHeavyInjury(player);
+        const arenaWin = XIANGU_EVENTS.activeEvent?.type === 'arena' &&
+          XIANGU_EVENTS.activeEvent.endTime > Date.now() &&
+          recordXianguArenaWin(XIANGU_EVENTS.arenaParticipants, targetId, player_qq);
 
         resultMsg.push(
           `战斗结果：${targetPlayer.名号}胜！`,
           `防御成功，道韵领悟 +${daoyunGain}`,
-          `攻击方${player.名号}负伤，血气 -${hpLoss.toLocaleString()}`
+          `攻击方${player.名号}负伤，血气 -${hpLoss.toLocaleString()}`,
+          ...(arenaWin ? [`仙古擂台胜场 +1`] : [])
         );
 
         const playerMaxHp = Number(player.血量上限 || player.血气上限) || 1;
@@ -3640,50 +3701,36 @@ async XianguYiShenWeiZhong(e) {
         await e.reply('【撤离中断】交手引动法则波动，双方正在维持的撤离通道均已崩散。');
       }
 
-      // 构建战斗对象
-      let A_player = {
-        名号: player.名号, 攻击: parseInt(player.攻击 || 0),
-        防御: parseInt(player.防御 || 0),
-        当前血量: parseInt(player.当前血量 || player.血气上限 || 10000),
-        暴击率: player.暴击率 || 0.05, 法球倍率: player.灵根?.法球倍率 || 0.1,
-        灵根: player.灵根 || {}, 学习的功法: player.学习的功法 || {},
-        魔道值: player.魔道值 || 0, 仙宠: player.仙宠 || null, 神石: player.神石 || {},
-        xiangulevel_id: player.xiangulevel_id || 5,
-        mijinglevel_id: player.mijinglevel_id || 1,
-      };
-
-      let B_player = {
-        名号: targetPlayer.名号, 攻击: parseInt(targetPlayer.攻击 || 0),
-        防御: parseInt(targetPlayer.防御 || 0),
-        当前血量: parseInt(targetPlayer.当前血量 || targetPlayer.血气上限 || 10000),
-        暴击率: targetPlayer.暴击率 || 0.05, 法球倍率: targetPlayer.灵根?.法球倍率 || 0.1,
-        灵根: targetPlayer.灵根 || {}, 学习的功法: targetPlayer.学习的功法 || {},
-        魔道值: targetPlayer.魔道值 || 0, 仙宠: targetPlayer.仙宠 || null, 神石: targetPlayer.神石 || {},
-        xiangulevel_id: targetPlayer.xiangulevel_id || 5,
-        mijinglevel_id: targetPlayer.mijinglevel_id || 1,
-      };
-
-      const Data_battle = await zd_battle(A_player, B_player);
+      const battleSides = buildXianguBattleSides(player, targetPlayer, {
+        attackerId: player_qq,
+        defenderId: targetId,
+      });
+      const Data_battle = await zd_battle(battleSides.A, battleSides.B, { battleType: 'xiangu_spar' });
+      const leaderWinner = resolveXianguLeaderWinner(Data_battle);
       const msg = Data_battle.msg;
 
       let resultMsg = [
         `【仙古秘境·以道会友】`,
         ``,
         `${player.名号}与${targetPlayer.名号}于${location}切磋道法`,
+        ...battleSides.messages,
         `━━━━ 精 彩 对 决 ━━━━`,
         ...msg,
         `━━━━ 结 束 ━━━━`
       ];
 
-      if (Data_battle.winner === 'A') {
+      if (leaderWinner === 'A') {
         resultMsg.push(`${player.名号}技高一筹！`);
-      } else if (Data_battle.winner === 'B') {
+      } else if (leaderWinner === 'B') {
         resultMsg.push(`${targetPlayer.名号}略胜一筹！`);
       } else {
         resultMsg.push(`双方平分秋色！`);
       }
 
       resultMsg.push(``, `友情切磋，不伤和气`);
+
+      await Write_player(player_qq, player);
+      await Write_player(targetId, targetPlayer);
 
       return e.reply(resultMsg.join('\n'));
 
@@ -4267,15 +4314,14 @@ async function handleTreasureCell(e, player, player_qq, map, x, y) {
     const seed = generateRandomSeed(zone, { fragmentId: map.fragmentId, source: 'treasure' });
     grantXianguSeed(player, seed);
     const { xiuwei, xueqi } = calcExploreRewards(player, riskMultiplier * 2);
-    await Add_修为(player_qq, xiuwei);
-    await Add_血气(player_qq, xueqi);
+    const reward = await grantXianguGrowthRewards(player, player_qq, { xiuwei, xueqi });
     return [
       `💎🔥【机缘·道种现世·${seed.品质}】`,
       `${player.名号}在${fragment?.name || zone}深处感应到一枚道种，`,
       `${seed.顶级道种 ? '仙古法则齐鸣，神话仙种破土而出！' : '道种在残存的仙古法则中缓缓搏动...'}`, ``,
       `获得：${seed.名称} [${seed.品质}]`,
       `融合成功率：${(seed.融合成功率 * 100).toFixed(0)}%`,
-      `修为 +${xiuwei.toLocaleString()} | 血气 +${xueqi.toLocaleString()}`,
+      `修为 +${reward.xiuwei.toLocaleString()} | 血气 +${reward.xueqi.toLocaleString()}`,
       '', `提示：前往核心区域使用 #借助${seed.名称}点燃神火`
     ].join('\n');
   }
@@ -4290,14 +4336,13 @@ async function handleTreasureCell(e, player, player_qq, map, x, y) {
       await Add_najie_thing(player_qq, item.name, item.type, 1);
       await markUniqueItemObtained(item.name, player_qq);
       const { xiuwei, xueqi } = calcExploreRewards(player, riskMultiplier * 2);
-      await Add_修为(player_qq, xiuwei);
-      await Add_血气(player_qq, xueqi);
+      const reward = await grantXianguGrowthRewards(player, player_qq, { xiuwei, xueqi });
       return [
         `💎✨【机缘·稀世宝物·${item.rarity || '稀有'}】`,
         `${player.名号}在${fragment.name}深处发现一件宝物...`,
         `${item.desc || '一件蕴含古老力量的宝物'}`, ``,
         `获得：${item.name} × 1`,
-        `修为 +${xiuwei.toLocaleString()} | 血气 +${xueqi.toLocaleString()}`
+        `修为 +${reward.xiuwei.toLocaleString()} | 血气 +${reward.xueqi.toLocaleString()}`
       ].join('\n');
     }
   }
@@ -4309,29 +4354,27 @@ async function handleTreasureCell(e, player, player_qq, map, x, y) {
         if (!player.xiangu_gains) player.xiangu_gains = { daoyun: 0 };
         player.xiangu_gains.daoyun = (player.xiangu_gains.daoyun || 0) + dg;
         const { xiuwei, xueqi } = calcExploreRewards(player, riskMultiplier);
-        await Add_修为(player_qq, xiuwei); await Add_血气(player_qq, xueqi);
-        return `${player.名号}盘膝感悟道则...\n获得：${dg}道韵 | 修为 +${xiuwei.toLocaleString()} | 血气 +${xueqi.toLocaleString()}`;
+        const reward = await grantXianguGrowthRewards(player, player_qq, { xiuwei, xueqi });
+        return `${player.名号}盘膝感悟道则...\n获得：${dg}道韵 | 修为 +${reward.xiuwei.toLocaleString()} | 血气 +${reward.xueqi.toLocaleString()}`;
       }},
     { name: '灵石矿脉', weight: 0.3, handler: async () => {
         const lg = Math.floor((500 + Math.random() * 3000) * riskMultiplier);
-        await Add_灵石(player_qq, lg);
         const { xiuwei, xueqi } = calcExploreRewards(player, riskMultiplier);
-        await Add_修为(player_qq, xiuwei); await Add_血气(player_qq, xueqi);
-        return `${player.名号}发现小型灵石矿脉！\n获得：${lg.toLocaleString()}灵石 | 修为 +${xiuwei.toLocaleString()} | 血气 +${xueqi.toLocaleString()}`;
+        const reward = await grantXianguGrowthRewards(player, player_qq, { lingshi: lg, xiuwei, xueqi });
+        return `${player.名号}发现小型灵石矿脉！\n获得：${reward.lingshi.toLocaleString()}灵石 | 修为 +${reward.xiuwei.toLocaleString()} | 血气 +${reward.xueqi.toLocaleString()}`;
       }},
     { name: '古兽精血', weight: 0.2, handler: async () => {
         const xq = Math.floor((200 + Math.random() * 800) * riskMultiplier);
-        await Add_血气(player_qq, xq);
-        return `${player.名号}寻得古兽残留精血...\n获得：${xq.toLocaleString()}点血气`;
+        const reward = await grantXianguGrowthRewards(player, player_qq, { xueqi: xq });
+        return `${player.名号}寻得古兽残留精血...\n获得：${reward.xueqi.toLocaleString()}点血气`;
       }},
     { name: '残破法器', weight: 0.15, handler: async () => {
         const faqiNames = ['残破战戟', '断裂古剑', '破碎神甲碎片', '古盾残片', '仙古符骨'];
         const fn = faqiNames[Math.floor(Math.random() * faqiNames.length)];
         const { xiuwei, xueqi } = calcExploreRewards(player, riskMultiplier);
-        await Add_修为(player_qq, xiuwei); await Add_血气(player_qq, xueqi);
         const sp = Math.floor((200 + Math.random() * 800) * riskMultiplier);
-        await Add_灵石(player_qq, sp);
-        return `${player.名号}挖出${fn}（可卖${sp.toLocaleString()}灵石）\n修为 +${xiuwei.toLocaleString()} | 血气 +${xueqi.toLocaleString()}`;
+        const reward = await grantXianguGrowthRewards(player, player_qq, { lingshi: sp, xiuwei, xueqi });
+        return `${player.名号}挖出${fn}（可卖${reward.lingshi.toLocaleString()}灵石）\n修为 +${reward.xiuwei.toLocaleString()} | 血气 +${reward.xueqi.toLocaleString()}`;
       }},
     { name: '神识碎片', weight: 0.1, handler: async () => {
         if (!player.xiangu_gains) player.xiangu_gains = { daoyun: 0 };
@@ -4367,33 +4410,26 @@ async function handleDangerCell(e, player, player_qq, map, x, y) {
     const scaled = getBossScaledStats(player.xiangulevel_id || 5, riskMultiplier * 0.5);
     let B_enemy = {
       名号: bossName, 攻击: Math.floor(scaled.attack * 0.8), 防御: Math.floor(scaled.defense * 0.8),
-      当前血量: Math.floor(scaled.hp * 0.8), 暴击率: 0.05, 法球倍率: 0.1, 灵根: { 法球倍率: 0.1 },
-      学习的功法: {}, 魔道值: 0, 仙宠: null, 神石: {},
+      当前血量: Math.floor(scaled.hp * 0.8), 血量上限: Math.floor(scaled.hp * 0.8),
+      暴击率: 0.05, 法球倍率: 0.1, 灵根: { 法球倍率: 0.1 },
+      学习的功法: [], 魔道值: 0, 仙宠: null, 神石: {},
       xiangulevel_id: player.xiangulevel_id || 5, mijinglevel_id: Math.max(1, (player.xiangulevel_id || 5) - 3),
     };
-    let A_player = {
-      名号: player.名号, 攻击: parseInt(player.攻击 || 0), 防御: parseInt(player.防御 || 0),
-      当前血量: parseInt(player.当前血量 || player.血气上限 || 10000),
-      血量上限: parseInt(player.当前血量 || player.血气上限 || 10000),
-      暴击率: parseFloat(player.暴击率 || 0), 法球倍率: parseFloat(player.法球倍率 || 0),
-      灵根: player.灵根 || {}, 学习的功法: player.学习的功法 || {},
-      魔道值: player.魔道值 || 0, 仙宠: player.仙宠 || null, 神石: player.神石 || {},
-      xiangulevel_id: player.xiangulevel_id || 5, mijinglevel_id: player.mijinglevel_id || 1,
-      Physique_id: player.Physique_id || 3,
-    };
     try {
-      const battleResult = await zd_battle(A_player, B_enemy, bossName);
-      let battleMsg = Array.isArray(battleResult.msg) ? battleResult.msg.join('\n') : (battleResult.msg || '');
-      player.血气 = Math.max(1, battleResult.A_hp ?? A_player.当前血量 ?? player.血气);
-      if (battleResult.winner === 'A') {
+      const battleSides = buildXianguBattleSides(player, B_enemy, { attackerId: player_qq });
+      const battleResult = await zd_battle(battleSides.A, battleSides.B, { battleType: 'xiangu_boss' });
+      const leaderWinner = resolveXianguLeaderWinner(battleResult);
+      const battleLines = [...battleSides.messages, ...(Array.isArray(battleResult.msg) ? battleResult.msg : [battleResult.msg || ''])];
+      let battleMsg = battleLines.join('\n');
+      if (leaderWinner === 'A') {
         const dropLingshi = Math.floor((1000 + Math.random() * 5000) * riskMultiplier);
-        await Add_灵石(player_qq, dropLingshi);
+        const reward = await grantXianguGrowthRewards(player, player_qq, { lingshi: dropLingshi });
         const daoyunGain = Math.floor(3 + Math.random() * 8);
         if (!player.xiangu_gains) player.xiangu_gains = { daoyun: 0 };
         player.xiangu_gains.daoyun = (player.xiangu_gains.daoyun || 0) + daoyunGain;
         player.xiangu_infamy = (player.xiangu_infamy || 0) + 10;
         map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
-        battleMsg += `\n\n⚔️【Boss击败】${player.名号}力战${bossName}！\n获得：${dropLingshi.toLocaleString()}灵石 + ${daoyunGain}道韵 | 凶名+10`;
+        battleMsg += `\n\n⚔️【Boss击败】${player.名号}力战${bossName}！\n获得：${reward.lingshi.toLocaleString()}灵石 + ${daoyunGain}道韵 | 凶名+10`;
 
         const xianguConfig = getXianguSecretConfig();
         if (shouldDropXianguSeed(xianguConfig, zone, 'boss')) {
@@ -4401,29 +4437,40 @@ async function handleDangerCell(e, player, player_qq, map, x, y) {
           grantXianguSeed(player, seed);
           battleMsg += `\n【Boss道种掉落】${seed.名称} [${seed.品质}]`;
         }
+      } else {
+        const hpLoss = Math.floor((Number(player.当前血量) || 1) * 0.3);
+        player.当前血量 = Math.max(1, (Number(player.当前血量) || 1) - hpLoss);
+        applyXianguHeavyInjury(player);
+        battleMsg += `\n\n【战败】当前血量 -${hpLoss.toLocaleString()}，陷入重伤。`;
       }
       return [`⚡🐲【遭遇·${bossName}】`, `${player.名号}在${zone}撞见${bossName}！`, ``, battleMsg].join('\n');
     } catch (battleErr) {
       console.error('Boss战斗异常:', battleErr);
       const hpLoss = Math.floor((500 + Math.random() * 2000) * riskMultiplier);
-      player.血气 = Math.max(1, player.血气 - hpLoss);
-      return [`⚡【Boss遭遇·异常】`, `${player.名号}遭遇${bossName}，苦战后撤退...`, `损失生命：-${hpLoss.toLocaleString()} | 剩余血气：${player.血气.toLocaleString()}`].join('\n');
+      player.当前血量 = Math.max(1, (Number(player.当前血量) || 1) - hpLoss);
+      applyXianguHeavyInjury(player);
+      return [`⚡【Boss遭遇·异常】`, `${player.名号}遭遇${bossName}，苦战后撤退...`, `损失生命：-${hpLoss.toLocaleString()} | 剩余血量：${player.当前血量.toLocaleString()} | 状态：重伤`].join('\n');
     }
   }
 
+  const takeCurrentHpDamage = amount => {
+    const currentHp = Number(player.当前血量) || Number(player.血量上限 || player.血气上限) || 1;
+    player.当前血量 = Math.max(1, currentHp - amount);
+    return player.当前血量;
+  };
   const dangerPool = [
     { name: '道则陷阱', desc: '脚下道则突然炸裂，杀阵启动！',
-      handler: () => { const hl = Math.floor((200 + Math.random() * 600) * riskMultiplier); player.血气 = Math.max(1, player.血气 - hl); map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY; return `损失生命：-${hl.toLocaleString()} | 剩余血气：${player.血气.toLocaleString()}`; }},
+      handler: () => { const hl = Math.floor((200 + Math.random() * 600) * riskMultiplier); takeCurrentHpDamage(hl); map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY; return `当前血量：-${hl.toLocaleString()} | 剩余：${player.当前血量.toLocaleString()}`; }},
     { name: '守护兽', desc: '一头远古守护兽从暗处扑来！',
-      handler: () => { const hl = Math.floor((500 + Math.random() * 1500) * riskMultiplier); const nh = Math.max(1, player.血气 - hl); player.血气 = nh; map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY; const dg = Math.floor(Math.random() * 3) + 1; if (!player.xiangu_gains) player.xiangu_gains = { daoyun: 0 }; player.xiangu_gains.daoyun = (player.xiangu_gains.daoyun || 0) + dg; return `损失生命：-${hl.toLocaleString()} | 剩余血气：${nh.toLocaleString()}\n反杀守护兽，获得${dg}道韵！`; }},
+      handler: () => { const hl = Math.floor((500 + Math.random() * 1500) * riskMultiplier); takeCurrentHpDamage(hl); map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY; const dg = Math.floor(Math.random() * 3) + 1; if (!player.xiangu_gains) player.xiangu_gains = { daoyun: 0 }; player.xiangu_gains.daoyun = (player.xiangu_gains.daoyun || 0) + dg; return `当前血量：-${hl.toLocaleString()} | 剩余：${player.当前血量.toLocaleString()}\n反杀守护兽，获得${dg}道韵！`; }},
     { name: '毒瘴', desc: '前方弥漫着腐蚀万物的剧毒瘴气...',
-      handler: () => { const hl = Math.floor((100 + Math.random() * 400) * riskMultiplier); player.血气 = Math.max(1, player.血气 - hl); map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY; if (Math.random() < 0.3) { const { xiuwei } = calcExploreRewards(player, riskMultiplier * 0.5); return `损失生命：-${hl.toLocaleString()} | 剩余血气：${player.血气.toLocaleString()}\n毒瘴中竟生长着稀有灵药！修为 +${xiuwei.toLocaleString()}`; } return `损失生命：-${hl.toLocaleString()} | 剩余血气：${player.血气.toLocaleString()}`; }},
+      handler: async () => { const hl = Math.floor((100 + Math.random() * 400) * riskMultiplier); takeCurrentHpDamage(hl); map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY; if (Math.random() < 0.3) { const { xiuwei } = calcExploreRewards(player, riskMultiplier * 0.5); const reward = await grantXianguGrowthRewards(player, player_qq, { xiuwei }); return `当前血量：-${hl.toLocaleString()} | 剩余：${player.当前血量.toLocaleString()}\n毒瘴中竟生长着稀有灵药！修为 +${reward.xiuwei.toLocaleString()}`; } return `当前血量：-${hl.toLocaleString()} | 剩余：${player.当前血量.toLocaleString()}`; }},
     { name: '空间乱流', desc: '空间突然扭曲，乱流撕裂一切！',
-      handler: () => { const hl = Math.floor((300 + Math.random() * 1000) * riskMultiplier); player.血气 = Math.max(1, player.血气 - hl); if (Math.random() < 0.3) { const possible = []; for (let ty = 0; ty < map.height; ty++) { for (let tx = 0; tx < map.width; tx++) { if (map.grid[ty][tx] !== CELL_TYPE.WALL && !(tx === x && ty === y)) possible.push({ x: tx, y: ty }); } } if (possible.length > 0) { const np = possible[Math.floor(Math.random() * possible.length)]; map.playerPos = np; player.xiangu_pos_x = np.x; player.xiangu_pos_y = np.y; revealAdjacentCells(map, np, 2); return `损失生命：-${hl.toLocaleString()} | 剩余血气：${player.血气.toLocaleString()}\n🌀空间乱流将你吹向远方！新位置：[${np.x}, ${np.y}]`; } } return `损失生命：-${hl.toLocaleString()} | 剩余血气：${player.血气.toLocaleString()}`; }},
+      handler: () => { const hl = Math.floor((300 + Math.random() * 1000) * riskMultiplier); takeCurrentHpDamage(hl); map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY; if (Math.random() < 0.3) { const possible = []; for (let ty = 0; ty < map.height; ty++) { for (let tx = 0; tx < map.width; tx++) { if (map.grid[ty][tx] !== CELL_TYPE.WALL && !(tx === x && ty === y)) possible.push({ x: tx, y: ty }); } } if (possible.length > 0) { const np = possible[Math.floor(Math.random() * possible.length)]; map.playerPos = np; player.xiangu_pos_x = np.x; player.xiangu_pos_y = np.y; revealAdjacentCells(map, np, 2); return `当前血量：-${hl.toLocaleString()} | 剩余：${player.当前血量.toLocaleString()}\n🌀空间乱流将你吹向远方！新位置：[${np.x}, ${np.y}]`; } } return `当前血量：-${hl.toLocaleString()} | 剩余：${player.当前血量.toLocaleString()}`; }},
   ];
 
   const danger = dangerPool[Math.floor(Math.random() * dangerPool.length)];
-  const result = danger.handler();
+  const result = await danger.handler();
   return [`⚡【${danger.name}·遭遇】`, `${player.名号}${danger.desc}`, `${result}`].join('\n');
 }
 
@@ -4442,13 +4489,111 @@ async function handleVoidRiftCell(e, player, player_qq, map, x, y) {
     }
   } else if (roll < 0.7) {
     const tc = 500 + Math.floor(Math.random() * 2000);
-    await Add_灵石(player_qq, tc); map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
-    return [`🌀【虚空宝藏】`, `裂缝中竟有宝物飘浮！`, `${player.名号}取出了${tc}灵石。`].join('\n');
+    const reward = await grantXianguGrowthRewards(player, player_qq, { lingshi: tc });
+    map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
+    return [`🌀【虚空宝藏】`, `裂缝中竟有宝物飘浮！`, `${player.名号}取出了${reward.lingshi}灵石。`].join('\n');
   } else {
     const hl = Math.floor(500 + Math.random() * 2000);
-    player.血气 = Math.max(1, player.血气 - hl);
-    return [`🌀【虚空风暴】`, `裂缝中涌出虚空风暴，`, `${player.名号}被波及受伤！`, `损失生命：-${hl} | 剩余血气：${player.血气}`].join('\n');
+    player.当前血量 = Math.max(1, (Number(player.当前血量) || 1) - hl);
+    return [`🌀【虚空风暴】`, `裂缝中涌出虚空风暴，`, `${player.名号}被波及受伤！`, `损失生命：-${hl} | 剩余血量：${player.当前血量}`].join('\n');
   }
+}
+
+async function handleXianguMarrowPoolCell(player, player_qq, map, x, y, pool) {
+  pool.claimed = true;
+  map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
+  player.xiangu_gains ||= {};
+  player.xiangu_gains.unique_found = (Number(player.xiangu_gains.unique_found) || 0) + 1;
+
+  if (pool.isTrap) {
+    const ambushers = Array.isArray(pool.ambushers) && pool.ambushers.length > 0
+      ? pool.ambushers
+      : createXianguPoolAmbushers({
+          name: '蒙面猎手',
+          level_id: player.xiangulevel_id || 5,
+          personality: 'hostile',
+        });
+    const battleSides = buildXianguBattleSides(player, ambushers, { attackerId: player_qq });
+    let battleResult;
+    try {
+      battleResult = await zd_battle(battleSides.A, battleSides.B, { battleType: 'xiangu_ambush' });
+    } catch (error) {
+      console.error('万道仙髓池伏杀战异常:', error);
+      const hpLoss = Math.max(1, Math.floor((Number(player.当前血量) || 1) * 0.2));
+      player.当前血量 = Math.max(1, (Number(player.当前血量) || 1) - hpLoss);
+      applyXianguHeavyInjury(player);
+      return [
+        `🩸【${XIANGU_MARROW_POOL_NAME}·杀局】`,
+        `池中仙光骤灭，杀阵与伏兵同时现身！`,
+        `${player.名号}趁乱破阵而出，当前血量 -${hpLoss.toLocaleString()}，陷入重伤。`,
+      ].join('\n');
+    }
+
+    if (pool.invitedBy) {
+      player.xiangu_npc_relations ||= {};
+      player.xiangu_npc_relations[pool.invitedBy] =
+        (Number(player.xiangu_npc_relations[pool.invitedBy]) || 0) - 30;
+    }
+    const battleLog = [
+      ...battleSides.messages,
+      ...(Array.isArray(battleResult.msg) ? battleResult.msg : [String(battleResult.msg || '')]),
+    ];
+
+    if (resolveXianguLeaderWinner(battleResult) === 'A') {
+      const daoyunGain = 20;
+      player.xiangu_gains.daoyun = (Number(player.xiangu_gains.daoyun) || 0) + daoyunGain;
+      return [
+        `🩸【${XIANGU_MARROW_POOL_NAME}·伏杀反转】`,
+        `${pool.invitedByName || '引路修士'}以假池为饵，伏兵自杀阵中齐出！`,
+        ``,
+        `━━━━ 围杀战 ━━━━`,
+        ...battleLog.slice(-10),
+        `━━━━ 战斗结果 ━━━━`,
+        `${player.名号}反杀伏兵，识破杀局，道韵 +${daoyunGain}。`,
+      ].join('\n');
+    }
+
+    const hpLoss = Math.max(1, Math.floor((Number(player.当前血量) || 1) * 0.35));
+    player.当前血量 = Math.max(1, (Number(player.当前血量) || 1) - hpLoss);
+    applyXianguHeavyInjury(player);
+    return [
+      `🩸【${XIANGU_MARROW_POOL_NAME}·伏杀】`,
+      `${pool.invitedByName || '引路修士'}以假池为饵，伏兵自杀阵中齐出！`,
+      ``,
+      `━━━━ 围杀战 ━━━━`,
+      ...battleLog.slice(-10),
+      `━━━━ 战斗结果 ━━━━`,
+      `${player.名号}拼死突围，当前血量 -${hpLoss.toLocaleString()}，陷入重伤。`,
+    ].join('\n');
+  }
+
+  const poolConfig = resolveXianguMarrowPoolConfig(getXianguSecretConfig());
+  const calculated = calculateXianguMarrowPoolRewards(player, {
+    rewardMultiplier: poolConfig.rewardMultiplier,
+  });
+  const rewards = await grantXianguGrowthRewards(player, player_qq, calculated);
+  const potentialGain = grantMinggePotential(
+    player,
+    getMinggeEffects(player, data.minggeList),
+    poolConfig.potentialGain,
+  );
+  player.xiangu_gains.仙髓池浸泡 = (Number(player.xiangu_gains.仙髓池浸泡) || 0) + 1;
+  if (pool.invitedBy) {
+    player.xiangu_npc_relations ||= {};
+    player.xiangu_npc_relations[pool.invitedBy] =
+      (Number(player.xiangu_npc_relations[pool.invitedBy]) || 0) + 15;
+  }
+
+  return [
+    `💧【机缘·${XIANGU_MARROW_POOL_NAME}】`,
+    `池中承载着仙古残存的万道精粹，${player.名号}入池浸泡，根骨与道基一同蜕变。`,
+    ``,
+    `【浸泡所得】`,
+    `仙道潜力 +${potentialGain}`,
+    `修为 +${rewards.xiuwei.toLocaleString()}`,
+    `血气 +${rewards.xueqi.toLocaleString()}`,
+    `修为、血气均按寻宝算法 ×${poolConfig.rewardMultiplier}结算。`,
+  ].join('\n');
 }
 
 // 处理唯一机缘格子
@@ -4461,11 +4606,14 @@ async function handleUniqueTreasureCell(e, player, player_qq, map, x, y) {
     }
   }
   if (foundTreasure) {
+    if (foundTreasure.kind === XIANGU_MARROW_POOL_KIND) {
+      return handleXianguMarrowPoolCell(player, player_qq, map, x, y, foundTreasure);
+    }
     foundTreasure.claimed = true;
     if (!player.xiangu_gains) player.xiangu_gains = { daoyun: 0 };
     player.xiangu_gains.daoyun = (player.xiangu_gains.daoyun || 0) + 20;
     player.xiangu_gains.unique_found = (player.xiangu_gains.unique_found || 0) + 1;
-    await Add_灵石(player_qq, 10000); await Add_修为(player_qq, 5000);
+    const reward = await grantXianguGrowthRewards(player, player_qq, { lingshi: 10000, xiuwei: 5000 });
     map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
     let seedMessage = '';
     const fragment = REALM_FRAGMENTS[map.fragmentId];
@@ -4476,7 +4624,7 @@ async function handleUniqueTreasureCell(e, player, player_qq, map, x, y) {
       grantXianguSeed(player, seed);
       seedMessage = `\n伴生道种：${seed.名称} [${seed.品质}]`;
     }
-    return [`✨✨✨【绝世机缘·${foundName}】✨✨✨`, `${player.名号}伸手触及${foundTreasure.desc}`, ``, `获得：${foundName} | 10000灵石 | 5000修为 | 20道韵${seedMessage}`, ``, `此等造化，足以震动九天十地！`].join('\n');
+    return [`✨✨✨【绝世机缘·${foundName}】✨✨✨`, `${player.名号}伸手触及${foundTreasure.desc}`, ``, `获得：${foundName} | ${reward.lingshi}灵石 | ${reward.xiuwei}修为 | 20道韵${seedMessage}`, ``, `此等造化，足以震动九天十地！`].join('\n');
   }
   return `✨ ${player.名号}感知到绝世机缘的存在，却无法触及...`;
 }
@@ -4609,8 +4757,7 @@ async function handleFlameTrial(player, location, player_qq, trial) {
   grantXianguSeed(player, trialData.reward);
 
   const { xiuwei, xueqi } = calcExploreRewards(player, 3);
-  await Add_修为(player_qq, xiuwei);
-  await Add_血气(player_qq, xueqi);
+  const trialRewards = await grantXianguGrowthRewards(player, player_qq, { xiuwei, xueqi });
 
   return [
     `【${trialData.name}·试炼成功！！！】`,
@@ -4628,8 +4775,8 @@ async function handleFlameTrial(player, location, player_qq, trial) {
     `${trialData.reward.名称} [${trialData.reward.品质}]`,
     `融合成功率：${(trialData.reward.融合成功率 * 100).toFixed(0)}%`,
     `专属技能：${trialData.reward.专属技能}`,
-    `修为 +${xiuwei.toLocaleString()}`,
-    `血气 +${xueqi.toLocaleString()}`,
+    `修为 +${trialRewards.xiuwei.toLocaleString()}`,
+    `血气 +${trialRewards.xueqi.toLocaleString()}`,
     ``,
     `"三千道火焚身，万道火种淬道种！"`
   ].join('\n');
@@ -4723,7 +4870,9 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
   const eventChance = adjustedRisk;
   
   // 基础探索结果 - 各区域独立成功率 + 境界加成
-  const baseSuccess = Math.random() < (riskData.baseSuccess + (player.xiangulevel_id - 5) * 0.03);
+  const injuryEfficiency = getXianguExploreEfficiency(player);
+  const successChance = Math.min(0.95, riskData.baseSuccess + (player.xiangulevel_id - 5) * 0.03) * injuryEfficiency;
+  const baseSuccess = Math.random() < successChance;
   
   if (!baseSuccess) {
     // 探索失败
@@ -4773,10 +4922,9 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
 
     // 境界修为/血气奖励
     const { xiuwei: dyXw, xueqi: dyXq } = calcExploreRewards(player, rewardMultiplier);
-    await Add_修为(player_qq, dyXw);
-    await Add_血气(player_qq, dyXq);
-    result.gains.xiuwei = dyXw;
-    result.gains.xueqi = dyXq;
+    const dyReward = await grantXianguGrowthRewards(player, player_qq, { xiuwei: dyXw, xueqi: dyXq });
+    result.gains.xiuwei = dyReward.xiuwei;
+    result.gains.xueqi = dyReward.xueqi;
 
     result.message = [
       `【探索·道韵领悟】`,
@@ -4786,8 +4934,8 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
       ``,
       `【获得】`,
       `道韵领悟 +${daoyunGain}`,
-      `修为 +${dyXw.toLocaleString()}`,
-      `血气 +${dyXq.toLocaleString()}`,
+      `修为 +${dyReward.xiuwei.toLocaleString()}`,
+      `血气 +${dyReward.xueqi.toLocaleString()}`,
       ``,
       `【探索统计】`,
       `- 当前位置：${location}`,
@@ -4806,12 +4954,13 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
     const lingganBase = Math.floor(5000 * rewardMultiplier * eventRewardMult);
     const lingganGain = Math.floor(lingganBase * (0.8 + Math.random() * 0.4));
     
-    await Add_灵石(player_qq, lingganGain);
-
     // 境界修为/血气奖励
     const { xiuwei: lsXw, xueqi: lsXq } = calcExploreRewards(player, rewardMultiplier);
-    await Add_修为(player_qq, lsXw);
-    await Add_血气(player_qq, lsXq);
+    const lsReward = await grantXianguGrowthRewards(player, player_qq, {
+      lingshi: lingganGain,
+      xiuwei: lsXw,
+      xueqi: lsXq,
+    });
     
     result.message = [
       `【探索·灵石矿脉】`,
@@ -4820,9 +4969,9 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
       `晶莹剔透的灵石散落一地！`,
       ``,
       `【获得】`,
-      `灵石 +${lingganGain.toLocaleString()}`,
-      `修为 +${lsXw.toLocaleString()}`,
-      `血气 +${lsXq.toLocaleString()}`,
+      `灵石 +${lsReward.lingshi.toLocaleString()}`,
+      `修为 +${lsReward.xiuwei.toLocaleString()}`,
+      `血气 +${lsReward.xueqi.toLocaleString()}`,
       ``,
       `【探索统计】`,
       `- 当前位置：${location}`,
@@ -4844,8 +4993,7 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
 
       // 境界修为/血气奖励
       const { xiuwei: djXw, xueqi: djXq } = calcExploreRewards(player, rewardMultiplier);
-      await Add_修为(player_qq, djXw);
-      await Add_血气(player_qq, djXq);
+      const itemReward = await grantXianguGrowthRewards(player, player_qq, { xiuwei: djXw, xueqi: djXq });
       
       result.message = [
         `【探索·奇遇·${item.rarity}】`,
@@ -4855,8 +5003,8 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
         ``,
         `【获得】`,
         `${item.name} × 1`,
-        `修为 +${djXw.toLocaleString()}`,
-        `血气 +${djXq.toLocaleString()}`,
+        `修为 +${itemReward.xiuwei.toLocaleString()}`,
+        `血气 +${itemReward.xueqi.toLocaleString()}`,
         ``,
         `【物品说明】`,
         item.desc,
@@ -4905,10 +5053,11 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
         攻击: Math.floor(scaled.attack * 0.5),
         防御: Math.floor(scaled.defense * 0.5),
         当前血量: Math.floor(scaled.hp * 0.5),
+        血量上限: Math.floor(scaled.hp * 0.5),
         暴击率: 0.03,
         法球倍率: 0.08,
         灵根: { 法球倍率: 0.08 },
-        学习的功法: {},
+        学习的功法: [],
         魔道值: 0,
         仙宠: null,
         神石: {},
@@ -4916,49 +5065,37 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
         mijinglevel_id: Math.max(1, enemyLevel - 4),
       };
 
-      // 构建玩家战斗对象
-      let A_player = {
-        名号: player.名号,
-        攻击: parseInt(player.攻击 || 0),
-        防御: parseInt(player.防御 || 0),
-        当前血量: parseInt(player.当前血量 || player.血气上限 || 10000),
-        暴击率: player.暴击率 || 0.05,
-        法球倍率: player.灵根?.法球倍率 || 0.1,
-        灵根: player.灵根 || {},
-        学习的功法: player.学习的功法 || {},
-        魔道值: player.魔道值 || 0,
-        仙宠: player.仙宠 || null,
-        神石: player.神石 || {},
-        xiangulevel_id: player.xiangulevel_id || 5,
-        mijinglevel_id: player.mijinglevel_id || 1,
-      };
-
-      // 执行真实战斗
-      const Data_battle = await zd_battle(A_player, B_enemy);
+      const battleSides = buildXianguBattleSides(player, B_enemy, { attackerId: player_qq });
+      const Data_battle = await zd_battle(battleSides.A, battleSides.B, { battleType: 'xiangu_normal' });
+      const leaderWinner = resolveXianguLeaderWinner(Data_battle);
       const msg = Data_battle.msg;
       
-      if (Data_battle.winner === 'A') {
+      if (leaderWinner === 'A') {
         const { xiuwei: btXw, xueqi: btXq } = calcExploreRewards(player, rewardMultiplier * 1.5);
         const expGain = btXw;
         const xueqiGain = btXq;
         const xiongmngGain = Math.floor(5 * rewardMultiplier);
         result.gains.xiongmng = xiongmngGain;
+        player.xiangu_infamy = (Number(player.xiangu_infamy) || 0) + xiongmngGain;
 
-        await Add_修为(player_qq, expGain);
-        await Add_血气(player_qq, xueqiGain);
+        const battleRewards = await grantXianguGrowthRewards(player, player_qq, {
+          xiuwei: expGain,
+          xueqi: xueqiGain,
+        });
         
         result.message = [
           `【探索·遭遇·战斗】`,
           ``,
           `${player.名号}在${location}遭遇一头${enemyName}！`,
+          ...battleSides.messages,
           `━━━ 战斗过程 ━━━`,
           ...msg.slice(-6),
           `━━━ 战斗结果 ━━━`,
           `击败${enemyName}，威名远扬！`,
           ``,
           `【获得】`,
-          `修为 +${expGain.toLocaleString()}`,
-          `血气 +${xueqiGain.toLocaleString()}`,
+          `修为 +${battleRewards.xiuwei.toLocaleString()}`,
+          `血气 +${battleRewards.xueqi.toLocaleString()}`,
           `凶名值 +${xiongmngGain}`,
           ``,
           `【探索统计】`,
@@ -4968,8 +5105,8 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
         ].join('\n');
 
         // 道种掉落
-        if (shouldDropXianguSeed(xianguConfig, location, 'boss')) {
-          const seed = generateRandomSeed(location, { source: 'boss' });
+        if (shouldDropXianguSeed(xianguConfig, location, 'treasure')) {
+          const seed = generateRandomSeed(location, { source: 'treasure' });
           grantXianguSeed(player, seed);
           await Write_player(player_qq, player);
 
@@ -4984,15 +5121,16 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
         }
       } else {
         // 战败或平局
-        const hpLoss = Math.floor(player.血气上限 * 0.25);
-        const currentHP = Math.max(1, (player.血气 || player.血气上限) - hpLoss);
-        player.血气 = currentHP;
+        const hpLoss = Math.floor((Number(player.血量上限 || player.血气上限) || 1) * 0.25);
+        player.当前血量 = Math.max(1, (Number(player.当前血量) || 1) - hpLoss);
+        applyXianguHeavyInjury(player);
         await Write_player(player_qq, player);
 
         result.message = [
           `【探索·遭遇·战斗】`,
           ``,
           `${player.名号}在${location}遭遇一头${enemyName}！`,
+          ...battleSides.messages,
           `━━━ 战斗过程 ━━━`,
           ...msg.slice(-6),
           `━━━ 战斗结果 ━━━`,
@@ -5019,8 +5157,7 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
 
       // 惊天发现额外修为/血气（2倍）
       const { xiuwei: jtXw, xueqi: jtXq } = calcExploreRewards(player, rewardMultiplier * 2);
-      await Add_修为(player_qq, jtXw);
-      await Add_血气(player_qq, jtXq);
+      const specialReward = await grantXianguGrowthRewards(player, player_qq, { xiuwei: jtXw, xueqi: jtXq });
       
       result.message = [
         `【探索·惊天发现·${special.rarity}】`,
@@ -5035,8 +5172,8 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
         special.desc,
         ``,
         `【获得】`,
-        `修为 +${jtXw.toLocaleString()}`,
-        `血气 +${jtXq.toLocaleString()}`,
+        `修为 +${specialReward.xiuwei.toLocaleString()}`,
+        `血气 +${specialReward.xueqi.toLocaleString()}`,
         ``,
         `【探索统计】`,
         `- 当前位置：${location}`,
@@ -5208,10 +5345,11 @@ async function handleBossEncounter(player, location, player_qq, usr_qq) {
     攻击: scaled.attack,
     防御: scaled.defense,
     当前血量: scaled.hp,
+    血量上限: scaled.hp,
     暴击率: 0.1,
     法球倍率: 0.15,
     灵根: { 法球倍率: 0.15 },
-    学习的功法: { [bossDef.skills[0]]: { 伤害倍率: 2.5 }, [bossDef.skills[1]]: { 伤害倍率: 1.8 } },
+    学习的功法: bossDef.skills.slice(0, 2),
     魔道值: 100,
     仙宠: null,
     神石: {},
@@ -5219,42 +5357,27 @@ async function handleBossEncounter(player, location, player_qq, usr_qq) {
     mijinglevel_id: Math.max(1, bossLevel - 3),
   };
 
-  // 构建玩家战斗对象
-  let A_player = {
-    名号: player.名号,
-    攻击: parseInt(player.攻击 || 0),
-    防御: parseInt(player.防御 || 0),
-    当前血量: parseInt(player.当前血量 || player.血气上限 || 10000),
-    暴击率: player.暴击率 || 0.05,
-    法球倍率: player.灵根?.法球倍率 || 0.1,
-    灵根: player.灵根 || {},
-    学习的功法: player.学习的功法 || {},
-    魔道值: player.魔道值 || 0,
-    仙宠: player.仙宠 || null,
-    神石: player.神石 || {},
-    xiangulevel_id: player.xiangulevel_id || 5,
-    mijinglevel_id: player.mijinglevel_id || 1,
-  };
-
   // 凶名值给Boss附加压力（高凶名者Boss会狂暴）
   const infamy = player.xiangu_infamy || 0;
   if (infamy > 100) {
     B_enemy.攻击 = Math.floor(B_enemy.攻击 * (1 + infamy / 500));
     B_enemy.当前血量 = Math.floor(B_enemy.当前血量 * (1 + infamy / 1000));
+    B_enemy.血量上限 = B_enemy.当前血量;
   }
 
-  // 执行真实战斗
-  const Data_battle = await zd_battle(A_player, B_enemy);
+  const battleSides = buildXianguBattleSides(player, B_enemy, { attackerId: player_qq });
+  const Data_battle = await zd_battle(battleSides.A, battleSides.B, { battleType: 'xiangu_boss' });
+  const leaderWinner = resolveXianguLeaderWinner(Data_battle);
   const msg = Data_battle.msg;
-  const battleLog = Array.isArray(msg) ? msg : [String(msg || '')];
+  const battleLog = [...battleSides.messages, ...(Array.isArray(msg) ? msg : [String(msg || '')])];
   
-  if (Data_battle.winner === 'A') {
+  if (leaderWinner === 'A') {
     // 战斗胜利
     const rewards = [];
     for (const drop of bossDef.drops) {
       if (Math.random() < drop.chance) {
         rewards.push(drop);
-        await Add_najie_thing(player_qq, drop.name, '战利品', 1);
+        await addXianguSpoil(player_qq, drop.name, 1);
         await markUniqueItemObtained(drop.name, player_qq);
       }
     }
@@ -5267,12 +5390,18 @@ async function handleBossEncounter(player, location, player_qq, usr_qq) {
     const xiongmngGain = Math.floor(20 * riskMultiplier);
     const daoyunGain = Math.floor(50 * riskMultiplier);
     
-    await Add_修为(player_qq, expGain);
-    await Add_血气(player_qq, xueqiGain);
+    const bossRewards = await grantXianguGrowthRewards(player, player_qq, {
+      xiuwei: expGain,
+      xueqi: xueqiGain,
+    });
+    player.xiangu_infamy = (Number(player.xiangu_infamy) || 0) + xiongmngGain;
+    player.xiangu_gains ||= {};
+    player.xiangu_gains.xiongmng = (Number(player.xiangu_gains.xiongmng) || 0) + xiongmngGain;
+    player.xiangu_gains.daoyun = (Number(player.xiangu_gains.daoyun) || 0) + daoyunGain;
     
     let rewardMsg = [
-      `修为 +${expGain.toLocaleString()}`,
-      `血气 +${xueqiGain.toLocaleString()}`,
+      `修为 +${bossRewards.xiuwei.toLocaleString()}`,
+      `血气 +${bossRewards.xueqi.toLocaleString()}`,
       `凶名值 +${xiongmngGain}`,
       `道韵领悟 +${daoyunGain}`
     ];
@@ -5319,10 +5448,9 @@ async function handleBossEncounter(player, location, player_qq, usr_qq) {
 
   } else {
     // 战斗失败
-    const hpLoss = Math.floor((player.血气 || player.血气上限) * 0.4);
-    player.血气 = Math.max(1, (player.血气 || player.血气上限) - hpLoss);
-    player.xiangu_gains = player.xiangu_gains || {};
-    player.xiangu_gains.debuff = '重伤';
+    const hpLoss = Math.floor((Number(player.当前血量) || Number(player.血量上限 || player.血气上限) || 1) * 0.4);
+    player.当前血量 = Math.max(1, (Number(player.当前血量) || 1) - hpLoss);
+    applyXianguHeavyInjury(player);
     await Write_player(player_qq, player);
     
     return [
@@ -6022,6 +6150,45 @@ function getNPCScaledStats(npc, zoneFactor = 0.5) {
   };
 }
 
+function createXianguNpcBattleData(npc, zoneFactor = 0.5, name = npc.name || npc.名号) {
+  const scaled = getNPCScaledStats(npc, zoneFactor);
+  const maxHp = Number(scaled.当前血量) || Number(npc.血量上限) || 500000;
+  return {
+    ...npc,
+    id: undefined,
+    名号: name,
+    攻击: scaled.攻击,
+    防御: scaled.防御,
+    当前血量: maxHp,
+    血量上限: maxHp,
+    速度: Number(npc.速度) || 1000,
+    暴击率: Number(npc.暴击率) || 0.15,
+    暴击伤害: Number(npc.暴击伤害) || 2,
+    法球倍率: Number(npc.法球倍率 ?? npc.灵根?.法球倍率) || 1,
+    学习的功法: Array.isArray(npc.学习的功法) ? npc.学习的功法 : Object.keys(npc.学习的功法 || {}),
+    xiangulevel_id: Number(npc.xiangulevel_id || npc.level_id) || 5,
+    mijinglevel_id: Number(npc.mijinglevel_id) || 0,
+    灵根: npc.灵根 || { name: '无', type: '无', 法球倍率: 1 },
+    道心值: Number(npc.道心值) || 100,
+    元神: Number(npc.元神) || 500000,
+  };
+}
+
+function createXianguPoolAmbushers(npc) {
+  const leader = createXianguNpcBattleData(npc, 0.6);
+  const accompliceHp = Math.max(1, Math.floor(leader.血量上限 * 0.75));
+  const accomplice = {
+    ...leader,
+    id: undefined,
+    名号: `${leader.名号}的伏兵`,
+    攻击: Math.max(1, Math.floor(leader.攻击 * 0.8)),
+    防御: Math.max(1, Math.floor(leader.防御 * 0.8)),
+    当前血量: accompliceHp,
+    血量上限: accompliceHp,
+  };
+  return [leader, accomplice];
+}
+
 function getNPCsForPlayer(location, infamy) {
   // 基础NPC（静态）
   const baseNpcs = XIANGU_NPCS[location] || [];
@@ -6283,6 +6450,42 @@ async function XianguNPCTalkFn(e, player, player_qq) {
     lines.push(`⚠️ 此NPC性格危险，提防其突然出手`);
   }
 
+  const poolConfig = resolveXianguMarrowPoolConfig(getXianguSecretConfig());
+  if (Math.random() < poolConfig.npcInviteChance) {
+    if (!player.xiangu_realm_map) initXianguRealmMap(player);
+    const npcId = npc.id || npc.name || npc.名号;
+    const relation = Number(player.xiangu_npc_relations?.[npcId] ?? factionRep) || 0;
+    const trapChance = getXianguMarrowPoolTrapChance(npc, relation);
+    const isTrap = Math.random() < trapChance;
+    const invitation = placeXianguMarrowPool(player.xiangu_realm_map, {
+      reveal: true,
+      metadata: {
+        source: 'npc_invite',
+        invitedBy: npcId,
+        invitedByName: npc.name || npc.名号,
+        isTrap,
+        ambushers: isTrap ? createXianguPoolAmbushers(npc) : [],
+      },
+    });
+    if (invitation.placed) {
+      ensureXianguExitConnectivity(
+        player.xiangu_realm_map.grid,
+        player.xiangu_realm_map.playerPos,
+        [invitation.position],
+        { wallValue: CELL_TYPE.WALL, emptyValue: CELL_TYPE.EMPTY },
+      );
+      lines.push(
+        ``,
+        `💧【隐秘邀请】`,
+        `${npc.name || npc.名号}压低声音：`,
+        `“我发现一方${XIANGU_MARROW_POOL_NAME}，其中仙髓可洗炼根骨。你若有胆，便随这道印记前去。”`,
+        `宝池坐标：[${invitation.position.x}, ${invitation.position.y}]`,
+        `对方没有再作解释，这份邀请究竟是善意还是杀局，只能到场方知。`,
+      );
+      await Write_player(player_qq, player);
+    }
+  }
+
   // 触发特殊效果
   if (npc.id === 'ancient_guide' && Math.random() < 0.3) {
     player.xiangu_faction_rep = player.xiangu_faction_rep || { good: 0, neutral: 0, evil: 0 };
@@ -6402,27 +6605,13 @@ async function XianguNPCAttackFn(e, player, player_qq) {
   }
 
   // === 真实战斗 (zd_battle) ===
-  const scaledNpc = getNPCScaledStats(npc, 0.5);
-  const npcBattleData = {
-    名号: npc.name || npc.名号,
-    攻击: scaledNpc.攻击,
-    防御: scaledNpc.防御,
-    当前血量: scaledNpc.当前血量,
-    血量上限: npc.血量上限 || 500000,
-    速度: npc.速度 || 1000,
-    暴击率: npc.暴击率 || 0.15,
-    暴击伤害: npc.暴击伤害 || 2.0,
-    学习的功法: npc.学习的功法 || [],
-    xiangulevel_id: 5,
-    mijinglevel_id: 0,
-    灵根: { name: '无', type: '无', 法球倍率: 1 },
-    道心值: 100,
-    元神: 500000
-  };
+  const npcBattleData = createXianguNpcBattleData(npc);
 
   try {
-    const battleResult = await zd_battle(player, npcBattleData, { battleType: 'xiangu_npc' });
-    const playerWon = battleResult?.winner === 'A' || battleResult?.[0]?.result === 'win';
+    const battleSides = buildXianguBattleSides(player, npcBattleData, { attackerId: player_qq });
+    const battleResult = await zd_battle(battleSides.A, battleSides.B, { battleType: 'xiangu_npc' });
+    const playerWon = resolveXianguLeaderWinner(battleResult) === 'A' ||
+      (!battleResult?.winner && battleResult?.[0]?.result === 'win');
 
     if (playerWon) {
       // === 玩家胜利 ===
@@ -6433,7 +6622,7 @@ async function XianguNPCAttackFn(e, player, player_qq) {
       }
 
       // 击杀掉落
-      const lootMsg = processNPCKillLoot(player, npc, location);
+      const lootMsg = await processNPCKillLoot(player, player_qq, npc, location);
 
       // 记录弥留之际状态（5分钟窗口可搜魂）
       player.xiangu_soulsearch_target = {
@@ -6455,6 +6644,7 @@ async function XianguNPCAttackFn(e, player, player_qq) {
         `【击杀NPC·${npc.name || npc.名号}】`,
         ``,
         `${player.名号}大展神威，将${npc.name || npc.名号}击败！`,
+        ...battleSides.messages,
         `对方倒地不起，气息微弱...`,
         ``,
         ...lootMsg,
@@ -6486,6 +6676,7 @@ async function XianguNPCAttackFn(e, player, player_qq) {
         `【攻击NPC·战败】`,
         ``,
         `${player.名号}主动挑衅${npc.name || npc.名号}，`,
+        ...battleSides.messages,
         `却低估了对方的实力，被反手重创！`,
         ``,
         `【损失】`,
@@ -6502,7 +6693,7 @@ async function XianguNPCAttackFn(e, player, player_qq) {
 }
 
 // ==== NPC击杀掉落处理 ====
-function processNPCKillLoot(player, npc, location) {
+async function processNPCKillLoot(player, player_qq, npc, location) {
   const lines = [`【战利品搜刮】`];
   let totalLingshi = 0;
 
@@ -6513,9 +6704,10 @@ function processNPCKillLoot(player, npc, location) {
       if (item.灵石) {
         totalLingshi += item.灵石;
       } else {
-        // 放入玩家纳戒
-        try { Add_najie_thing(player, item); } catch (e) {}
-        lines.push(`  · ${item.name || item.名称 || item}${item.数量 ? ' ×' + item.数量 : ''}`);
+        const itemName = item.name || item.名称 || String(item);
+        const quantity = Number(item.数量) || 1;
+        await addXianguSpoil(player_qq, itemName, quantity, item.desc);
+        lines.push(`  · ${itemName}${quantity > 1 ? ' ×' + quantity : ''}`);
       }
     }
     npc.inventory = [];
@@ -6526,7 +6718,7 @@ function processNPCKillLoot(player, npc, location) {
     lines.push(npc.isCanon ? `【原著天骄·特殊掉落】` : `【随机掉落】`);
     for (const drop of npc.dropTable) {
       if (Math.random() < drop.chance) {
-        try { Add_najie_thing(player, { name: drop.item, 数量: 1, desc: drop.desc }); } catch (e) {}
+        await addXianguSpoil(player_qq, drop.item, 1, drop.desc);
         lines.push(`  ✅ ${drop.item} — ${drop.desc}`);
       }
     }
@@ -6553,8 +6745,8 @@ function processNPCKillLoot(player, npc, location) {
   const realmBonus = { '核心区域': 5, '深层区域': 3, '中层区域': 2, '边缘区域': 1 };
   totalLingshi += Math.floor((getNPCScaledStats(npc, 0.5).当前血量) * 0.001 * (realmBonus[location] || 1));
   if (totalLingshi > 0) {
-    try { Add_灵石(player, totalLingshi); } catch (e) {}
-    lines.push(``, `💰 灵石 +${totalLingshi.toLocaleString()}`);
+    const reward = await grantXianguGrowthRewards(player, player_qq, { lingshi: totalLingshi });
+    lines.push(``, `💰 灵石 +${reward.lingshi.toLocaleString()}`);
   }
 
   return lines;
@@ -7039,7 +7231,7 @@ async function XianguOfferSeedFn(e, player, player_qq) {
     player.xiangu_gains.daoyun = (player.xiangu_gains.daoyun || 0) + reward.daoyun;
   }
   
-  await Add_灵石(player_qq, reward.lingshi);
+  const grantedReward = await grantXianguGrowthRewards(player, player_qq, { lingshi: reward.lingshi });
   await Write_player(player_qq, player);
 
   return e.reply([
@@ -7051,7 +7243,7 @@ async function XianguOfferSeedFn(e, player, player_qq) {
     `【收益】`,
     `阵营声望 +${reward.rep}`,
     `道韵 +${reward.daoyun}`,
-    `灵石 +${reward.lingshi.toLocaleString()}`,
+    `灵石 +${grantedReward.lingshi.toLocaleString()}`,
     player.xiangu_shenhuo?.已点燃 ? `（神火已燃，道韵双倍回收！）` : '',
     ``,
     `当前善良声望：${player.xiangu_faction_rep.good}`
@@ -7181,16 +7373,29 @@ async function checkArenaSettlement() {
   if (participants.length === 0) {
     await broadcastToXianguPlayers(`【仙古擂台·无人问津】\n擂台缓缓坠入虚空，无一人参与。`);
     XIANGU_EVENTS.activeEvent = null;
+    XIANGU_EVENTS.arenaParticipants = [];
+    return;
+  }
+
+  if (participants.length < arenaDef.minPlayers) {
+    await broadcastToXianguPlayers([
+      `【仙古擂台·未能成局】`,
+      `仅有${participants.length}名修士应战，未达到${arenaDef.minPlayers}人的开擂条件。`,
+      `本届擂台不发放排名奖励。`,
+    ].join('\n'));
+    XIANGU_EVENTS.activeEvent = null;
+    XIANGU_EVENTS.arenaParticipants = [];
     return;
   }
 
   participants.sort((a, b) => b.wins - a.wins);
-  const top3 = participants.slice(0, 3);
+  const rewardPlan = buildXianguArenaRewardPlan(participants, arenaDef.rewards);
+  const top3 = rewardPlan.slice(0, 3);
   const lines = [`🏆【仙古擂台·结算】`, ``, `擂台缓缓沉入大地，金光冲天而起！`, ``];
 
   for (let i = 0; i < top3.length; i++) {
     const p = top3[i];
-    const rewardDaoyun = i === 0 ? arenaDef.rewards.winner.daoyun : arenaDef.rewards.top3.daoyun;
+    const rewardDaoyun = p.daoyun;
     const desc = i === 0 ? arenaDef.rewards.winner.desc : arenaDef.rewards.top3.desc;
     let rewardGranted = false;
     try {
@@ -7206,7 +7411,23 @@ async function checkArenaSettlement() {
   }
 
   if (participants.length > 3) {
-    lines.push(``, `其他参赛者（${participants.length - 3}人）各获得道韵+${arenaDef.rewards.runner.daoyun}`);
+    let rewarded = 0;
+    let departed = 0;
+    for (const participant of rewardPlan.slice(3)) {
+      try {
+        const granted = await updateXianguPlayerUnderLock(participant.qq, async player => {
+          player.xiangu_gains ||= {};
+          player.xiangu_gains.daoyun = (Number(player.xiangu_gains.daoyun) || 0) + participant.daoyun;
+        });
+        if (granted) rewarded++;
+        else departed++;
+      } catch (error) {
+        departed++;
+        console.error('擂台参与奖励发放失败:', error);
+      }
+    }
+    if (rewarded > 0) lines.push(``, `其他参赛者（${rewarded}人）各获得道韵+${arenaDef.rewards.runner.daoyun}`);
+    if (departed > 0) lines.push(`已有${departed}名参赛者离开秘境，未结算参与奖励。`);
   }
 
   XIANGU_EVENTS.activeEvent = null;
@@ -7534,6 +7755,14 @@ const CELL_TYPE = {
   UNIQUE_TREASURE: 8 // 唯一机缘（传说中的终极造化）
 };
 
+function isXianguMarrowPoolPosition(map, x, y) {
+  return Object.values(map?.uniqueTreasures || {}).some(treasure =>
+    treasure?.kind === XIANGU_MARROW_POOL_KIND &&
+    treasure?.pos?.x === x &&
+    treasure?.pos?.y === y
+  );
+}
+
 // ====== 地图初始化 ======
 function initXianguRealmMap(player) {
   const level = player.xiangulevel_id || 5;
@@ -7855,7 +8084,13 @@ function getDivineSensePerception(player, map) {
           perceptions.push({ dir, msg: `空间扭曲——有虚空裂缝！`, distance: Math.abs(dx) + Math.abs(dy) });
           break;
         case CELL_TYPE.UNIQUE_TREASURE:
-          perceptions.push({ dir, msg: `🔥浩瀚道韵波动——绝世机缘就在附近！`, distance: Math.abs(dx) + Math.abs(dy) });
+          perceptions.push({
+            dir,
+            msg: isXianguMarrowPoolPosition(map, nx, ny)
+              ? `万道水声轻鸣——仙髓宝池就在附近！`
+              : `🔥浩瀚道韵波动——绝世机缘就在附近！`,
+            distance: Math.abs(dx) + Math.abs(dy),
+          });
           break;
         case CELL_TYPE.EXPLORED_EMPTY:
           perceptions.push({ dir, msg: `已被搜刮，空空如也`, distance: Math.abs(dx) + Math.abs(dy) });
@@ -7946,7 +8181,7 @@ function renderRealmGrid(player, map) {
             case CELL_TYPE.NPC: row += '👤'; break;
             case CELL_TYPE.EXIT: row += '🚪'; break;
             case CELL_TYPE.VOID_RIFT: row += '🌀'; break;
-            case CELL_TYPE.UNIQUE_TREASURE: row += '✨'; break;
+            case CELL_TYPE.UNIQUE_TREASURE: row += isXianguMarrowPoolPosition(map, x, y) ? '💧' : '✨'; break;
             default: row += '·';
           }
         } else {
@@ -7958,7 +8193,7 @@ function renderRealmGrid(player, map) {
             case CELL_TYPE.NPC: row += '🙂'; break;
             case CELL_TYPE.EXIT: row += '➤'; break;
             case CELL_TYPE.VOID_RIFT: row += '🌀'; break;
-            case CELL_TYPE.UNIQUE_TREASURE: row += '∞'; break;
+            case CELL_TYPE.UNIQUE_TREASURE: row += isXianguMarrowPoolPosition(map, x, y) ? '≈' : '∞'; break;
             case CELL_TYPE.EXPLORED_EMPTY: row += '·'; break;
             default: row += '·';
           }
@@ -7972,8 +8207,8 @@ function renderRealmGrid(player, map) {
   
   // 图例
   lines.push('');
-  lines.push(`🐉玩家  💎机缘  ⚡危险  👤NPC  🚪出口  🌀裂缝  ✨唯一机缘`);
-  lines.push(`▓迷雾/墙  ·空地  $$道韵感应  ∞绝世机缘  ➤出口感召`);
+  lines.push(`🐉玩家  💎机缘  ⚡危险  👤NPC  🚪出口  🌀裂缝  💧${XIANGU_MARROW_POOL_NAME}  ✨唯一机缘`);
+  lines.push(`▓迷雾/墙  ·空地  $$道韵感应  ≈仙髓感应  ∞绝世机缘  ➤出口感召`);
   
   return lines.join('\n');
 }

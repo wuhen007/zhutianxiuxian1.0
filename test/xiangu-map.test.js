@@ -3,12 +3,19 @@ import fs from 'node:fs';
 import test from 'node:test';
 
 import {
+  DEFAULT_XIANGU_MARROW_POOL_CONFIG,
   DEFAULT_XIANGU_FRAGMENT_SIZES,
+  XIANGU_MARROW_POOL_KIND,
+  XIANGU_MARROW_POOL_NAME,
+  calculateXianguMarrowPoolRewards,
   createXianguExitPositions,
   createXianguFragmentSnapshot,
   ensureXianguExitConnectivity,
+  getXianguMarrowPoolTrapChance,
   pickDifferentXianguFragment,
+  placeXianguMarrowPool,
   restoreXianguFragmentSnapshot,
+  resolveXianguMarrowPoolConfig,
   resolveXianguFragmentSize,
 } from '../apps/SecretPlace/xianguMap.js';
 
@@ -155,4 +162,115 @@ test('返程快照完整恢复地图进度和唯一机缘领取状态', () => {
   restored.grid[1][1] = 7;
   assert.equal(snapshot.grid[1][1], 0, '恢复后的当前地图不应反向修改历史快照');
   assert.equal(restoreXianguFragmentSnapshot({ grid: map.grid }, 'xiangu_core'), null);
+});
+
+test('marrow pool config uses defaults and normalizes overrides', () => {
+  assert.deepEqual(resolveXianguMarrowPoolConfig(), DEFAULT_XIANGU_MARROW_POOL_CONFIG);
+  assert.deepEqual(resolveXianguMarrowPoolConfig({
+    万道仙髓池: {
+      探索概率: 2,
+      NPC邀请概率: -1,
+      仙道潜力: 75.9,
+      修血倍率: 6,
+    },
+  }), {
+    exploreChance: 1,
+    npcInviteChance: 0,
+    potentialGain: 75,
+    rewardMultiplier: 6,
+  });
+  assert.deepEqual(resolveXianguMarrowPoolConfig({
+    marrowPool: {
+      exploreChance: 'bad',
+      npcInviteChance: 0.25,
+      potentialGain: -10,
+      rewardMultiplier: '',
+    },
+  }), {
+    exploreChance: 0.03,
+    npcInviteChance: 0.25,
+    potentialGain: 0,
+    rewardMultiplier: 5,
+  });
+});
+
+test('marrow pool trap chance follows NPC hostility and relation precedence', () => {
+  assert.equal(getXianguMarrowPoolTrapChance({ hostile: true, personality: 'friendly' }, -100), 0.75);
+  assert.equal(getXianguMarrowPoolTrapChance({ personality: 'hostile', faction: 'good' }, -100), 0.75);
+  assert.equal(getXianguMarrowPoolTrapChance({ personality: 'scheming', faction: 'good' }, -100), 0.6);
+  assert.equal(getXianguMarrowPoolTrapChance({ personality: 'friendly', faction: 'good' }, -1), 0.4);
+  assert.equal(getXianguMarrowPoolTrapChance({ personality: 'friendly' }, 0), 0);
+  assert.equal(getXianguMarrowPoolTrapChance({ faction: 'good' }, 0), 0);
+  assert.equal(getXianguMarrowPoolTrapChance({ faction: 'neutral' }, -Number.EPSILON), 0.4);
+  assert.equal(getXianguMarrowPoolTrapChance({ faction: 'neutral' }, 0), 0.1);
+});
+
+test('marrow pool rewards use the treasure formula then multiply the whole result by five', () => {
+  const rolls = [0, 0.5];
+  const rewards = calculateXianguMarrowPoolRewards({
+    level_id: 2,
+    Physique_id: 3,
+    mijinglevel_id: 4,
+    xiangulevel_id: 5,
+  }, {
+    random: () => rolls.shift(),
+  });
+
+  assert.deepEqual(rewards, {
+    xiuwei: 8_010_000,
+    xueqi: 22_510_000,
+  });
+});
+
+test('marrow pool placement reuses unique treasure cells and allows only one per fragment', () => {
+  const map = {
+    fragmentId: 'edge_camp',
+    grid: [
+      [1, 1, 1, 1, 1],
+      [1, 0, 2, 0, 1],
+      [1, 0, 0, 0, 1],
+      [1, 0, 0, 0, 1],
+      [1, 1, 1, 1, 1],
+    ],
+    revealed: Array.from({ length: 5 }, () => Array(5).fill(false)),
+    playerPos: { x: 2, y: 2 },
+    uniqueTreasures: {},
+  };
+
+  const placed = placeXianguMarrowPool(map, {
+    reveal: true,
+    metadata: { invitedBy: 'npc-1', isTrap: true },
+    random: () => 0,
+  });
+
+  assert.equal(placed.placed, true);
+  assert.equal(placed.key, `${XIANGU_MARROW_POOL_NAME}@1,1`);
+  assert.deepEqual(placed.position, { x: 1, y: 1 });
+  assert.equal(map.grid[1][1], 8);
+  assert.equal(map.revealed[1][1], true);
+  assert.equal(placed.treasure.kind, XIANGU_MARROW_POOL_KIND);
+  assert.equal(placed.treasure.name, XIANGU_MARROW_POOL_NAME);
+  assert.equal(placed.treasure.invitedBy, 'npc-1');
+  assert.equal(placed.treasure.isTrap, true);
+  assert.equal(placed.treasure.claimed, false);
+
+  const gridAfterFirstPlacement = structuredClone(map.grid);
+  const duplicate = placeXianguMarrowPool(map, { random: () => 0.99 });
+  assert.equal(duplicate.placed, false);
+  assert.equal(duplicate.reason, 'exists');
+  assert.deepEqual(map.grid, gridAfterFirstPlacement);
+  assert.equal(Object.keys(map.uniqueTreasures).length, 1);
+});
+
+test('marrow pool placement reports when no internal empty cell is available', () => {
+  const map = {
+    grid: Array.from({ length: 4 }, () => Array(4).fill(1)),
+    revealed: Array.from({ length: 4 }, () => Array(4).fill(false)),
+    uniqueTreasures: {},
+  };
+
+  assert.deepEqual(placeXianguMarrowPool(map), {
+    placed: false,
+    reason: 'no_empty_cell',
+  });
 });

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { ENDLESS_SWEEP_MAX_LAYERS } from './endlessAccess.js';
 
 const contentPath = fileURLToPath(
   new URL('../resources/data/无尽劫境.json', import.meta.url)
@@ -8,8 +9,31 @@ const CONTENT = Object.freeze(JSON.parse(fs.readFileSync(contentPath, 'utf8')));
 const ABILITIES = new Map(
   CONTENT.abilities.map((ability) => [ability.id, ability])
 );
+const CHECKPOINT_BOONS = new Map(
+  (CONTENT.checkpointBoons || []).map(boon => [boon.id, boon])
+);
 const WORLDS = new Map(CONTENT.worlds.map((world) => [world.id, world]));
 const RARITY_WEIGHT = Object.freeze({ 普通: 6, 稀有: 4, 核心: 2.5, 禁忌: 1 });
+const CHECKPOINT_CHOICES = Object.freeze([
+  Object.freeze({
+    id: 'rest',
+    name: '涅槃归息',
+    subtitle: '收拢残魂，重燃命火',
+    description: '全员复苏并恢复至满血，同时回复1点命火。',
+  }),
+  Object.freeze({
+    id: 'fortune',
+    name: '诸天垂青',
+    subtitle: '以伤躯叩问未知机缘',
+    description: '一名存活成员随机获得诸天神器或无上道法。',
+  }),
+  Object.freeze({
+    id: 'ascend',
+    name: '道果升华',
+    subtitle: '熔炼此战，推高已有构筑',
+    description: '每名成员随机一项未满级能力提升1级。',
+  }),
+]);
 
 const EFFECT_KEYS = Object.freeze([
   'attackPct',
@@ -67,13 +91,18 @@ function shuffle(run, items) {
 
 function weightedPick(run, pool) {
   if (!pool.length) return null;
+  const getWeight = (item) => {
+    const base = RARITY_WEIGHT[item.rarity] || 1;
+    const recoveryWeight = item.effect?.regenPct ? 0.35 : 1;
+    return base * Math.max(0.01, asNumber(item.choiceWeight, recoveryWeight));
+  };
   const total = pool.reduce(
-    (sum, item) => sum + (RARITY_WEIGHT[item.rarity] || 1),
+    (sum, item) => sum + getWeight(item),
     0
   );
   let cursor = random(run) * total;
   for (const item of pool) {
-    cursor -= RARITY_WEIGHT[item.rarity] || 1;
+    cursor -= getWeight(item);
     if (cursor < 0) return item;
   }
   return pool.at(-1);
@@ -107,6 +136,9 @@ function collectEffects(member, run) {
   for (const [abilityId, level] of Object.entries(member.abilities || {})) {
     mergeEffect(effects, ABILITIES.get(abilityId)?.effect, level);
   }
+  for (const boonId of member.blessings || []) {
+    mergeEffect(effects, CHECKPOINT_BOONS.get(boonId)?.effect);
+  }
   effects.teamShieldPct = Object.values(run.members).reduce(
     (total, current) => {
       return (
@@ -118,6 +150,11 @@ function collectEffects(member, run) {
               asNumber(ABILITIES.get(abilityId)?.effect?.teamShieldPct) * level
             );
           },
+          0
+        ) +
+        (current.blessings || []).reduce(
+          (sum, boonId) =>
+            sum + asNumber(CHECKPOINT_BOONS.get(boonId)?.effect?.teamShieldPct),
           0
         )
       );
@@ -220,12 +257,19 @@ function createProjection(id, player) {
     maxHp: base.hp,
     alive: true,
     abilities: {},
+    blessings: [],
     growthAttackPct: 0,
   };
 }
 
 function isAbilityAvailable(member, ability) {
-  return getOwnedLevel(member, ability.id) < asNumber(ability.maxLevel, 1);
+  const meetsRequirements = Object.entries(ability.requires || {}).every(
+    ([abilityId, level]) => getOwnedLevel(member, abilityId) >= asNumber(level)
+  );
+  return (
+    meetsRequirements &&
+    getOwnedLevel(member, ability.id) < asNumber(ability.maxLevel, 1)
+  );
 }
 
 function pickUnique(run, pool, member, picked) {
@@ -277,6 +321,16 @@ function setPendingChoices(run, layer) {
   run.phase = Object.keys(run.pendingChoices).length ? 'choice' : 'ready';
 }
 
+function beginCheckpoint(run, layer) {
+  run.pendingChoices = {};
+  run.phase = 'checkpoint';
+  run.checkpoint = {
+    title: '劫后问道',
+    layer,
+    choices: clone(CHECKPOINT_CHOICES),
+  };
+}
+
 export function getEndlessContent() {
   return clone(CONTENT);
 }
@@ -284,6 +338,11 @@ export function getEndlessContent() {
 export function getAbility(abilityId) {
   const ability = ABILITIES.get(abilityId);
   return ability ? clone(ability) : null;
+}
+
+export function getCheckpointBoon(boonId) {
+  const boon = CHECKPOINT_BOONS.get(boonId);
+  return boon ? clone(boon) : null;
 }
 
 export function getWorldForLayer(run, layer) {
@@ -323,17 +382,20 @@ export function createEndlessRun({
   if (!players?.length) throw new Error('无尽劫境至少需要一名玩家');
   const run = {
     id: `${Date.now().toString(36)}-${(Number(seed) >>> 0).toString(36)}`,
-    version: 2,
+    version: 3,
     contentVersion: CONTENT.version,
     teamId,
     groupId: String(groupId),
     layer: 0,
+    highestClearedLayer: 0,
     phase: 'choice',
     rngState: Number(seed) >>> 0,
     worldOrder: [],
     members: {},
     fusions: [],
     pendingChoices: {},
+    checkpoint: null,
+    lastCheckpoint: null,
     maxLifeFire: Math.max(2, Math.ceil(players.length / 2)),
     lifeFire: Math.max(2, Math.ceil(players.length / 2)),
     banked: { lingshi: 0, sourceStone: 0, tokens: 0 },
@@ -359,6 +421,9 @@ export function applyEndlessChoice(run, memberId, choiceNumber) {
   const abilityId = choices[index];
   const ability = ABILITIES.get(abilityId);
   if (!ability) throw new Error('请选择1、2或3');
+  const member = run.members[memberId];
+  if (!isAbilityAvailable(member, ability))
+    throw new Error(`${ability.name}的进阶条件尚未满足`);
 
   const oldMaximums = Object.fromEntries(
     Object.values(run.members).map((member) => [
@@ -366,7 +431,6 @@ export function applyEndlessChoice(run, memberId, choiceNumber) {
       calculateMemberStats(member, run).maxHp,
     ])
   );
-  const member = run.members[memberId];
   member.abilities[abilityId] = getOwnedLevel(member, abilityId) + 1;
   delete run.pendingChoices[memberId];
 
@@ -386,30 +450,146 @@ export function applyEndlessChoice(run, memberId, choiceNumber) {
   };
 }
 
+export function applyCheckpointChoice(run, choiceNumber) {
+  if (run.phase !== 'checkpoint' || !run.checkpoint)
+    throw new Error('当前没有等待抉择的十层天关');
+  const index = Math.floor(asNumber(choiceNumber)) - 1;
+  const choice = run.checkpoint.choices?.[index];
+  if (!choice) throw new Error('请选择1、2或3');
+
+  const oldMaximums = Object.fromEntries(
+    Object.values(run.members).map(member => [
+      member.id,
+      calculateMemberStats(member, run).maxHp,
+    ])
+  );
+  let reward;
+  if (choice.id === 'rest') {
+    const restored = Object.values(run.members).map(member => {
+      member.alive = true;
+      const maxHp = calculateMemberStats(member, run).maxHp;
+      member.maxHp = maxHp;
+      member.hp = maxHp;
+      return { memberId: member.id, memberName: member.name, hp: maxHp };
+    });
+    const before = run.lifeFire;
+    run.lifeFire = Math.min(run.maxLifeFire, run.lifeFire + 1);
+    reward = {
+      kind: 'rest',
+      restored,
+      recoveredLifeFire: run.lifeFire - before,
+      lifeFire: run.lifeFire,
+    };
+  } else if (choice.id === 'fortune') {
+    const living = Object.values(run.members).filter(member => member.alive);
+    const candidates = living.flatMap(member =>
+      [...CHECKPOINT_BOONS.values()]
+        .filter(boon => !(member.blessings || []).includes(boon.id))
+        .map(boon => ({ member, boon }))
+    );
+    const selected = candidates[Math.floor(random(run) * candidates.length)];
+    if (selected) {
+      selected.member.blessings ||= [];
+      selected.member.blessings.push(selected.boon.id);
+      reward = {
+        kind: 'fortune',
+        memberId: selected.member.id,
+        memberName: selected.member.name,
+        boon: clone(selected.boon),
+      };
+    } else {
+      const member = living[Math.floor(random(run) * living.length)];
+      member.growthAttackPct += 0.12;
+      reward = {
+        kind: 'fortune',
+        memberId: member.id,
+        memberName: member.name,
+        overflow: true,
+      };
+    }
+    refreshMemberVitals(run, oldMaximums);
+  } else {
+    const upgrades = [];
+    for (const member of Object.values(run.members)) {
+      const candidates = Object.entries(member.abilities || {}).filter(
+        ([abilityId, level]) => {
+          const ability = ABILITIES.get(abilityId);
+          return ability && level < asNumber(ability.maxLevel, 1);
+        }
+      );
+      const selected = candidates[Math.floor(random(run) * candidates.length)];
+      if (selected) {
+        const [abilityId] = selected;
+        member.abilities[abilityId] += 1;
+        upgrades.push({
+          memberId: member.id,
+          memberName: member.name,
+          abilityId,
+          abilityName: ABILITIES.get(abilityId).name,
+          level: member.abilities[abilityId],
+        });
+      } else {
+        member.growthAttackPct += 0.08;
+        upgrades.push({
+          memberId: member.id,
+          memberName: member.name,
+          fallback: true,
+        });
+      }
+    }
+    reward = { kind: 'ascend', upgrades };
+    refreshMemberVitals(run, oldMaximums);
+  }
+
+  run.lastCheckpoint = {
+    layer: run.checkpoint.layer,
+    choice: clone(choice),
+    reward,
+    at: Date.now(),
+  };
+  run.checkpoint = null;
+  setPendingChoices(run, run.layer + 1);
+  return clone(run.lastCheckpoint);
+}
+
 function getStage(layer) {
   if (layer % 10 === 0) return 'boss';
   if (layer % 5 === 0) return 'elite';
   return 'normal';
 }
 
-function createEnemy(run, layer) {
+export function createEndlessEnemy(run, layer) {
   const world = getWorldForLayer(run, layer);
   const stage = getStage(layer);
   const pool = world[stage];
   const template = pool[Math.floor(random(run) * pool.length)];
   const teamSize = Object.keys(run.members).length;
-  const healthScale = Math.pow(1.105, layer - 1) * (0.45 + 0.55 * teamSize);
-  const attackScale =
-    Math.pow(1.05, layer - 1) * (0.84 + 0.08 * (teamSize - 1));
-  const defenseScale = Math.pow(1.035, layer - 1);
+  const teamScale = 1 + Math.max(0, teamSize - 1) * 0.3;
+  const monsterCount = stage === 'normal'
+    ? 1 + Math.floor(Math.max(0, layer - 1) / 10)
+    : 1;
+  const unitMaxHp = Math.round(
+    template.hp * Math.pow(1.105, layer - 1) * teamScale
+  );
   const enemy = {
     ...template,
+    unitName: template.name,
+    name: monsterCount > 1
+      ? `${template.name}·怪潮×${monsterCount}`
+      : template.name,
     world: world.id,
     worldName: world.name,
     stage,
-    maxHp: Math.round(template.hp * healthScale),
-    attack: Math.round(template.attack * attackScale),
-    defense: Math.round(template.defense * defenseScale),
+    monsterCount,
+    unitMaxHp,
+    teamScale,
+    maxHp: unitMaxHp * monsterCount,
+    attack: Math.round(
+      template.attack * Math.pow(1.05, layer - 1) * teamScale
+    ),
+    defense: Math.round(
+      template.defense * Math.pow(1.035, layer - 1) * teamScale
+    ),
   };
   enemy.hp = enemy.maxHp;
   return enemy;
@@ -445,6 +625,11 @@ function abilityProcs(member) {
     if (ability?.proc)
       procs.push({ ...ability.proc, level, source: ability.name, abilityId });
   }
+  for (const boonId of member.blessings || []) {
+    const boon = CHECKPOINT_BOONS.get(boonId);
+    if (boon?.proc)
+      procs.push({ ...boon.proc, level: 1, source: boon.name, abilityId: boonId });
+  }
   return procs;
 }
 
@@ -462,18 +647,32 @@ function fusionProcs(run) {
 
 function summonAssist(member, run) {
   const hasShadow = getOwnedLevel(member, 'anime_shadow_monarch') > 0;
-  const hasPastSelf = getOwnedLevel(member, 'perfect_free_transformation') > 0;
+  const hasTransformedSelf =
+    getOwnedLevel(member, 'perfect_free_transformation') > 0;
+  const hasShadowClone = getOwnedLevel(member, 'anime_shadow_clone') > 0;
   const eternalShadow = (run.fusions || []).includes('fusion_eternal_shadow');
+  if (eternalShadow && hasShadowClone) {
+    return {
+      name: '诸世暗影分身军团',
+      detail: '未来投影与影分身披上影甲，万千暗影之手从每一道分身脚下探出',
+    };
+  }
   if (eternalShadow) {
     return {
       name: '诸世暗影军团',
-      detail: '过去之我披上影甲，万千暗影之手从敌人脚下同时探出',
+      detail: '映照之我披上影甲，万千暗影之手从敌人脚下同时探出',
     };
   }
-  if (hasShadow && hasPastSelf) {
+  if (hasShadow && hasTransformedSelf) {
     return {
-      name: '暗影之手与过去之我',
+      name: '暗影之手与当世之我',
       detail: '暗影之手封锁退路，跨越岁月的投影从正面轰杀',
+    };
+  }
+  if (hasShadow && hasShadowClone) {
+    return {
+      name: '暗影分身军团',
+      detail: '实体分身封锁四方，每道影子中又升起一只暗影之手发动夹击',
     };
   }
   if (hasShadow) {
@@ -482,10 +681,16 @@ function summonAssist(member, run) {
       detail: '漆黑巨手撕开目标身后的影子，与本体形成夹击',
     };
   }
-  if (hasPastSelf) {
+  if (hasTransformedSelf) {
     return {
-      name: '过去之我',
-      detail: '古老投影跨越岁月长河，与当世之身同时出手',
+      name: '当世之我',
+      detail: '映照出的另一尊当世真身，与本体使用相同构筑同时出手',
+    };
+  }
+  if (hasShadowClone) {
+    return {
+      name: '影分身军团',
+      detail: '数十道实体分身从烟幕中冲出，以连续体术封死目标退路',
     };
   }
   return {
@@ -495,15 +700,17 @@ function summonAssist(member, run) {
 }
 
 function procNarrative(proc, member, enemy) {
+  if (proc.narration)
+    return {
+      verb: proc.verb || '发动',
+      detail: proc.narration
+        .replaceAll('{member}', member.name)
+        .replaceAll('{enemy}', enemy.name),
+    };
   if (proc.abilityId === 'perfect_thunder_emperor')
     return {
       verb: '引动',
       detail: `${member.name}结出雷帝法印，九天雷罚贯穿云海锁定${enemy.name}`,
-    };
-  if (proc.abilityId === 'perfect_free_transformation')
-    return {
-      verb: '映照',
-      detail: `${member.name}截取岁月道痕，映照一尊过去之我跨越时空出手`,
     };
   if (proc.abilityId === 'flame_lotus')
     return {
@@ -516,7 +723,30 @@ function procNarrative(proc, member, enemy) {
   };
 }
 
+function futureSelf(run, member, round, level) {
+  const pool = CONTENT.abilities.filter(
+    ability =>
+      ability.id !== 'perfect_free_transformation' &&
+      !member.abilities?.[ability.id]
+  );
+  const abilities = shuffle(run, pool).slice(
+    0,
+    Math.min(pool.length, 2 + Math.min(2, level))
+  );
+  const projection = clone(member);
+  projection.abilities = { ...(member.abilities || {}) };
+  for (const ability of abilities) projection.abilities[ability.id] = 1;
+  return {
+    abilities,
+    stats: calculateMemberStats(projection, run, round),
+  };
+}
+
 function fusionNarrative(proc, enemy) {
+  if (proc.narration)
+    return proc.narration
+      .replaceAll('{member}', '全队')
+      .replaceAll('{enemy}', enemy.name);
   if (proc.fusionId === 'fusion_thunder_lotus')
     return `全队将雷帝神雷灌入异火莲心，混沌雷火覆盖${enemy.name}所在战场`;
   return `诸天能力完成共鸣，${proc.label}越过世界规则轰向${enemy.name}`;
@@ -663,25 +893,64 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
 
   for (const proc of abilityProcs(member)) {
     if (enemy.hp <= 0 || round % proc.everyRounds !== 0) continue;
-    const procDamage = Math.max(
+    const variant = proc.variants?.length
+      ? proc.variants[Math.floor(random(run) * proc.variants.length)]
+      : null;
+    const resolved = variant ? { ...proc, ...variant } : proc;
+    const baseProcDamage = Math.max(
       1,
-      Math.round(stats.attack * proc.damagePct * proc.level)
+      Math.round(
+        stats.attack *
+          proc.damagePct *
+          asNumber(variant?.damageMultiplier, 1) *
+          proc.level
+      )
     );
+    let procDamage = baseProcDamage;
+    let skill = resolved.label;
+    let note = '';
+    let narrative;
+    if (proc.abilityId === 'perfect_free_transformation') {
+      const isFuture = round % (proc.everyRounds * 2) === 0;
+      if (isFuture) {
+        const future = futureSelf(run, member, round, proc.level);
+        procDamage = Math.max(
+          baseProcDamage + 1,
+          Math.round(future.stats.attack * proc.damagePct * proc.level * 1.3)
+        );
+        skill = '他化自在·未来身';
+        note = `未来构筑：${future.abilities.map(ability => ability.name).join('、')}`;
+        narrative = {
+          verb: '映照',
+          detail: `${member.name}截取未来岁月，映照出携带${future.abilities
+            .map(ability => ability.name)
+            .join('、')}的更强未来之我`,
+        };
+      } else {
+        skill = '他化自在·当世身';
+        narrative = {
+          verb: '映照',
+          detail: `${member.name}映照当世之我，两尊真身以完全相同的构筑同时攻向${enemy.name}`,
+        };
+      }
+    } else {
+      narrative = procNarrative(resolved, member, enemy);
+    }
     enemy.hp -= procDamage;
     damageByMember[member.id] += procDamage;
-    const narrative = procNarrative(proc, member, enemy);
     addBattleAction(run, {
       side: 'player',
       actor: member.name,
-      skill: proc.label,
+      skill,
       verb: narrative.verb,
       target: enemy.name,
       damage: procDamage,
       narration: narrative.detail,
+      note,
     });
     addBattleLog(
       logs,
-      `${narrative.detail}，${proc.label}追加${procDamage}点伤害！`
+      `${narrative.detail}，${skill}追加${procDamage}点伤害！${note ? `（${note}）` : ''}`
     );
     if (proc.selfDamagePct) {
       damageMember(
@@ -693,7 +962,7 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
           side: 'system',
           kind: 'recoil',
           actor: member.name,
-          skill: `${proc.label}反噬`,
+          skill: `${skill}反噬`,
         }
       );
     }
@@ -766,41 +1035,168 @@ function enemyHit(run, enemy, member, multiplier, logs, skill = '普通攻击') 
   }
 }
 
+function enemyAreaHit(run, enemy, multiplier, logs, skill) {
+  addBattleLog(logs, `${enemy.name}施展《${skill}》，杀机覆盖整片战场！`);
+  for (const member of Object.values(run.members)) {
+    if (enemy.hp <= 0) break;
+    if (member.alive) enemyHit(run, enemy, member, multiplier, logs, skill);
+  }
+}
+
+function triggerEnemyMechanic(run, enemy, round, logs) {
+  const alive = Object.values(run.members).filter((member) => member.alive);
+  if (!alive.length || enemy.hp <= 0) return false;
+
+  if (enemy.stage === 'boss' && round % 5 === 0) {
+    const target = [...alive].sort(
+      (a, b) => a.hp / Math.max(1, a.maxHp) - b.hp / Math.max(1, b.maxHp)
+    )[0];
+    addBattleLog(logs, `${enemy.name}锁定气息最衰弱者，斩断其生路与因果！`);
+    enemyHit(run, enemy, target, 1.55, logs, '因果绝命印');
+    return true;
+  }
+  if (enemy.stage === 'boss' && round % 3 === 0) {
+    enemyAreaHit(run, enemy, 0.78, logs, '位面覆灭');
+    return true;
+  }
+
+  switch (enemy.trait) {
+    case '群攻':
+      if (round % 4 === 0) {
+        enemyAreaHit(run, enemy, 0.76, logs, '怪潮横扫');
+        return true;
+      }
+      break;
+    case '狂暴':
+      if (round % 4 === 0) {
+        enemyAreaHit(run, enemy, 0.66, logs, '血怒震荡');
+        return true;
+      }
+      break;
+    case '反射':
+      if (round % 4 === 0) {
+        enemyAreaHit(run, enemy, 0.58, logs, '镜界反冲');
+        return true;
+      }
+      break;
+    case '破甲':
+      if (round % 3 === 0) {
+        const target = alive[Math.floor(random(run) * alive.length)];
+        enemyHit(run, enemy, target, 1.42, logs, '碎甲镇杀');
+        return true;
+      }
+      break;
+    case '吞噬':
+      if (round % 4 === 0) {
+        const target = alive[Math.floor(random(run) * alive.length)];
+        enemyHit(run, enemy, target, 0.92, logs, '噬魂汲取');
+        if (enemy.hp > 0) {
+          const before = enemy.hp;
+          enemy.hp = Math.min(
+            enemy.maxHp,
+            enemy.hp + Math.round(enemy.maxHp * 0.04)
+          );
+          addBattleAction(run, {
+            side: 'enemy',
+            kind: 'recover',
+            actor: enemy.name,
+            skill: '噬魂汲取',
+            target: enemy.name,
+            healing: enemy.hp - before,
+          });
+          addBattleLog(logs, `${enemy.name}吞噬生机，恢复${enemy.hp - before}生命。`);
+        }
+        return true;
+      }
+      break;
+    case '迅捷':
+      if (round % 3 === 0) {
+        for (let index = 0; index < 2; index++) {
+          const remaining = Object.values(run.members).filter(
+            (member) => member.alive
+          );
+          if (!remaining.length || enemy.hp <= 0) break;
+          enemyHit(
+            run,
+            enemy,
+            remaining[Math.floor(random(run) * remaining.length)],
+            0.72,
+            logs,
+            `时间残像·第${index + 1}击`
+          );
+        }
+        return true;
+      }
+      break;
+    case '再生':
+      if (round % 4 === 0) {
+        const target = alive[Math.floor(random(run) * alive.length)];
+        enemyHit(run, enemy, target, 1.12, logs, '不灭血肉·腐生扑杀');
+        if (enemy.hp > 0) {
+          const before = enemy.hp;
+          enemy.hp = Math.min(
+            enemy.maxHp,
+            enemy.hp + Math.round(enemy.maxHp * 0.05)
+          );
+          addBattleAction(run, {
+            side: 'enemy',
+            kind: 'recover',
+            actor: enemy.name,
+            skill: '不灭血肉',
+            target: enemy.name,
+            healing: enemy.hp - before,
+          });
+        }
+        return true;
+      }
+      break;
+    case '禁疗':
+      if (round % 4 === 0) {
+        enemyAreaHit(run, enemy, 0.62, logs, '断生禁域');
+        return true;
+      }
+      break;
+  }
+  return false;
+}
+
+function monsterPackFollowUp(run, enemy, logs) {
+  if (enemy.stage !== 'normal' || enemy.monsterCount <= 1 || enemy.hp <= 0)
+    return;
+  const remainingUnits = Math.max(
+    1,
+    Math.ceil(enemy.hp / Math.max(1, enemy.unitMaxHp))
+  );
+  const extraAttackers = remainingUnits - 1;
+  if (!extraAttackers) return;
+
+  const strikes = Math.min(extraAttackers, 8);
+  addBattleLog(logs, `怪潮尚余${remainingUnits}只，余众从四面八方发动围猎！`);
+  for (let index = 0; index < strikes; index++) {
+    const alive = Object.values(run.members).filter((member) => member.alive);
+    if (!alive.length || enemy.hp <= 0) break;
+    const overflow = index === strikes - 1 && extraAttackers > strikes
+      ? extraAttackers - strikes + 1
+      : 1;
+    enemyHit(
+      run,
+      enemy,
+      alive[Math.floor(random(run) * alive.length)],
+      0.55 * overflow,
+      logs,
+      overflow > 1 ? `怪潮合击·${overflow}重` : `怪潮围猎·第${index + 1}击`
+    );
+  }
+}
+
 function enemyTurn(run, enemy, round, logs) {
   const alive = Object.values(run.members).filter((member) => member.alive);
   if (!alive.length || enemy.hp <= 0) return;
-  const isAreaAttack = enemy.stage === 'boss' && round % 3 === 0;
-  if (isAreaAttack || (enemy.trait === '群攻' && round % 4 === 0)) {
-    addBattleLog(logs, `${enemy.name}发动覆灭全场的攻势！`);
-    for (const member of alive) {
-      if (enemy.hp <= 0) break;
-      enemyHit(
-        run,
-        enemy,
-        member,
-        0.72,
-        logs,
-        enemy.stage === 'boss' ? '位面覆灭' : '怪潮横扫'
-      );
-    }
-    return;
+  if (!triggerEnemyMechanic(run, enemy, round, logs)) {
+    const target = alive[Math.floor(random(run) * alive.length)];
+    enemyHit(run, enemy, target, 1, logs, '普通攻击');
   }
-  const target = alive[Math.floor(random(run) * alive.length)];
-  enemyHit(run, enemy, target, 1, logs, '普通攻击');
-  if (enemy.trait === '迅捷' && round % 3 === 0 && enemy.hp > 0) {
-    const remaining = Object.values(run.members).filter(
-      (member) => member.alive
-    );
-    if (remaining.length)
-      enemyHit(
-        run,
-        enemy,
-        remaining[Math.floor(random(run) * remaining.length)],
-        0.65,
-        logs,
-        '迅捷追击'
-      );
-  }
+  monsterPackFollowUp(run, enemy, logs);
 }
 
 function endRound(run, enemy, logs) {
@@ -877,20 +1273,87 @@ function ensureRewardState(run) {
   }
 }
 
-function treasureReward(run, realm, member) {
-  const realms = member.rewardRealms || {};
+function treasureRewardFromRealms(realms, realm, roll) {
   const primary = Math.max(0, asNumber(realms[realm]));
   const secret = Math.max(0, asNumber(realms.secret));
   const ancient = Math.max(0, asNumber(realms.ancient));
   return Math.trunc(
-    (2000 + 10000 * primary ** 2 * secret * ancient * (2 + random(run))) * 10
+    (2000 + 10000 * primary ** 2 * secret * ancient * (2 + roll)) * 10
   );
+}
+
+function treasureReward(run, realm, member) {
+  return treasureRewardFromRealms(
+    member.rewardRealms || {},
+    realm,
+    random(run)
+  );
+}
+
+export function getEndlessLayerCurrencyReward(layer) {
+  const safeLayer = Math.max(1, Math.floor(asNumber(layer, 1)));
+  const stage = getStage(safeLayer);
+  const stageMultiplier = stage === 'boss' ? 3 : stage === 'elite' ? 1.6 : 1;
+  const rewardBase = Math.round(
+    30000 * safeLayer * (1 + safeLayer * 0.03) * stageMultiplier
+  );
+  return {
+    stage,
+    lingshi: rewardBase * 10000,
+    sourceStone: Math.round(
+      ((1200000 + safeLayer * 80000) * stageMultiplier) / 2
+    ),
+    tokens: Math.round((20 + safeLayer * 5) * stageMultiplier * 1.3),
+  };
+}
+
+export function getEndlessSweepReward(
+  player,
+  highestLayer,
+  randomizer = Math.random
+) {
+  const endLayer = Math.max(0, Math.floor(asNumber(highestLayer)));
+  if (!endLayer) return null;
+  const startLayer = Math.max(1, endLayer - ENDLESS_SWEEP_MAX_LAYERS + 1);
+  const rewardRealms = {
+    level: asNumber(player?.level_id),
+    physique: asNumber(player?.Physique_id),
+    secret: asNumber(player?.mijinglevel_id),
+    ancient: asNumber(player?.xiangulevel_id),
+  };
+  const reward = {
+    startLayer,
+    endLayer,
+    layers: endLayer - startLayer + 1,
+    cultivation: 0,
+    blood: 0,
+    lingshi: 0,
+    sourceStone: 0,
+    tokens: 0,
+  };
+  for (let layer = startLayer; layer <= endLayer; layer++) {
+    const currency = getEndlessLayerCurrencyReward(layer);
+    reward.lingshi += currency.lingshi;
+    reward.sourceStone += currency.sourceStone;
+    reward.tokens += currency.tokens;
+    reward.cultivation += treasureRewardFromRealms(
+      rewardRealms,
+      'level',
+      Math.max(0, Math.min(1, asNumber(randomizer())))
+    );
+    reward.blood += treasureRewardFromRealms(
+      rewardRealms,
+      'physique',
+      Math.max(0, Math.min(1, asNumber(randomizer())))
+    );
+  }
+  return reward;
 }
 
 function finishVictory(run, enemy, layer) {
   ensureRewardState(run);
   const baseRecovery =
-    enemy.stage === 'boss' ? 1 : enemy.stage === 'elite' ? 0.12 : 0.05;
+    enemy.stage === 'boss' ? 0.08 : enemy.stage === 'elite' ? 0.12 : 0.05;
   for (const member of Object.values(run.members)) {
     const stats = calculateMemberStats(member, run);
     if (member.alive) {
@@ -906,15 +1369,11 @@ function finishVictory(run, enemy, layer) {
     delete member.shield;
   }
 
-  const stageMultiplier =
-    enemy.stage === 'boss' ? 3 : enemy.stage === 'elite' ? 1.6 : 1;
-  const rewardBase = Math.round(
-    30000 * layer * (1 + layer * 0.03) * stageMultiplier
-  );
+  const currencyReward = getEndlessLayerCurrencyReward(layer);
   const layerReward = {
-    lingshi: rewardBase * 100000,
-    sourceStone: Math.round((1200000 + layer * 80000) * stageMultiplier),
-    tokens: Math.round((20 + layer * 5) * stageMultiplier),
+    lingshi: currencyReward.lingshi,
+    sourceStone: currencyReward.sourceStone,
+    tokens: currencyReward.tokens,
     members: {},
   };
   run.unbanked.lingshi += layerReward.lingshi;
@@ -936,13 +1395,6 @@ function finishVictory(run, enemy, layer) {
       member.bankedRewards.cultivation += member.unbankedRewards.cultivation;
       member.bankedRewards.blood += member.unbankedRewards.blood;
       member.unbankedRewards = { cultivation: 0, blood: 0 };
-    }
-    run.lifeFire = Math.min(run.maxLifeFire, run.lifeFire + 1);
-    for (const member of Object.values(run.members)) {
-      member.alive = true;
-      const stats = calculateMemberStats(member, run);
-      member.maxHp = stats.maxHp;
-      member.hp = stats.maxHp;
     }
   }
   return layerReward;
@@ -968,7 +1420,7 @@ function applyFusionProc(run, enemy, round, logs, damageByMember) {
       side: 'team',
       actor: '全队共鸣',
       skill: proc.label,
-      verb: '凝聚',
+      verb: proc.verb || '凝聚',
       target: enemy.name,
       damage,
       narration,
@@ -990,7 +1442,7 @@ function applyFusionProc(run, enemy, round, logs, damageByMember) {
 export function resolveEndlessLayer(run) {
   if (run.phase !== 'ready') throw new Error('全队尚未完成能力选择');
   const layer = run.layer + 1;
-  const enemy = createEnemy(run, layer);
+  const enemy = createEndlessEnemy(run, layer);
   const logs = [];
   const damageByMember = Object.fromEntries(
     Object.keys(run.members).map((id) => [id, 0])
@@ -1009,7 +1461,9 @@ export function resolveEndlessLayer(run) {
   run.__counters = counters;
   addBattleLog(
     logs,
-    `第${layer}层·${enemy.worldName}：${enemy.name}降临（${enemy.trait}）。`
+    `第${layer}层·${enemy.worldName}：${enemy.name}降临（${enemy.trait}；队伍修正+${Math.round(
+      (enemy.teamScale - 1) * 100
+    )}%）。`
   );
 
   let rounds = 0;
@@ -1089,8 +1543,13 @@ export function resolveEndlessLayer(run) {
   run.layer = layer;
   let layerReward = null;
   if (victory) {
+    run.highestClearedLayer = Math.max(
+      asNumber(run.highestClearedLayer),
+      layer
+    );
     layerReward = finishVictory(run, enemy, layer);
-    setPendingChoices(run, layer + 1);
+    if (enemy.stage === 'boss') beginCheckpoint(run, layer);
+    else setPendingChoices(run, layer + 1);
   } else {
     for (const member of Object.values(run.members)) {
       member.alive = false;
@@ -1138,6 +1597,9 @@ export function resolveEndlessLayer(run) {
     world: enemy.worldName,
     enemy: enemy.name,
     trait: enemy.trait,
+    enemyCount: enemy.monsterCount,
+    enemyUnitMaxHp: enemy.unitMaxHp,
+    enemyTeamScale: enemy.teamScale,
     victory,
     rounds,
     enemyRemainingHp: enemy.hp,
