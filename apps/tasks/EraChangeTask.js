@@ -10,10 +10,13 @@ import {
   Write_player,
   Write_najie,
   ForwardMsg,
-   Read_najie
+  Read_najie,
+  exist_najie_thing,
+  Add_najie_thing
 } from '../../model/xiuxian.js';
 import RealmEvents from './RealmEvents.js';
 import { formatRealmEventLocation } from '../../model/realmEventLocation.js';
+import { triggerPeriodicRiftsForEra } from '../../model/planeRiftFestival.js';
 
 export class EraChangeTask extends plugin {
   constructor() {
@@ -46,6 +49,10 @@ export class EraChangeTask extends plugin {
         {
           reg: '^#查看损失$',
           fnc: 'checkJuelingLoss',
+        },
+        {
+          reg: '^#使用星宇护身符$',
+          fnc: 'useXingyuHufu',
         },
         {
           reg: '^#模拟损失(?:\\s+(\\d+))?$',
@@ -423,6 +430,7 @@ async handleJuelingEraLoss() {
         
         let totalLossCount = 0;
         let sealedCount = 0; // 新增：被封印玩家计数
+        let immuneCount = 0; // 新增：星宇护身符免疫计数
         const lossReports = [];
         
         for (const file of jsonFiles) {
@@ -442,7 +450,34 @@ async handleJuelingEraLoss() {
             
             // 仙王及以上境界不损失物品
             if (player.mijinglevel_id >= 19) continue;
-            
+
+            // === 星宇护身符：绝灵免疫护盾（消耗一层挡下本次纳戒损失）===
+            const immuneKey = `jueling_loss_immune:${qq}`;
+            const immuneLayers = Number(await redis.get(immuneKey)) || 0;
+            if (immuneLayers > 0) {
+                await redis.decr(immuneKey);
+                immuneCount++;
+                // 记录护身符豁免（便于 #查看损失 展示）
+                const immuneRecord = {
+                    timestamp: Date.now(),
+                    eraYears: this.set.Era.current.years,
+                    items: [{ name: '星宇护身符', category: '护身符', amount: 0 }],
+                    isSimulated: false,
+                    type: 'hufu_immune'
+                };
+                try {
+                    const immuneRedisKey = `jueling_loss:${qq}`;
+                    let existingLosses = [];
+                    const existingData = await redis.get(immuneRedisKey);
+                    if (existingData) existingLosses = JSON.parse(existingData).filter(l => !l.isSimulated);
+                    existingLosses.push(immuneRecord);
+                    await redis.set(immuneRedisKey, JSON.stringify(existingLosses));
+                } catch (e2) {
+                    console.error('记录星宇护身符豁免失败:', e2);
+                }
+                continue; // 护身符挡下，跳过本次纳戒损失
+            }
+
             const najie = await Read_najie(qq);
             
             // 计算损失组数 (基础3-5组 + 每千年增加2组)
@@ -550,11 +585,43 @@ async handleJuelingEraLoss() {
             }
         }
         
-        return { totalLossCount, lossReports, sealedCount }; // 返回被封印玩家数量
+        return { totalLossCount, lossReports, sealedCount, immuneCount }; // 返回被封印玩家数量与星宇护身符免疫数量
     } catch (e) {
         console.error("处理绝灵时代物品损失失败:", e);
-        return { totalLossCount: 0, lossReports: [], sealedCount: 0 };
+        return { totalLossCount: 0, lossReports: [], sealedCount: 0, immuneCount: 0 };
     }
+}
+
+/** 使用星宇护身符：消耗1个，凝聚一层绝灵免疫护盾（redis持久化） */
+async useXingyuHufu(e) {
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+
+    if (!await existplayer(usr_qq)) {
+        e.reply("请先创建修仙角色");
+        return true;
+    }
+
+    // 检查纳戒是否拥有星宇护身符
+    if (Number(await exist_najie_thing(usr_qq, '星宇护身符', '道具')) < 1) {
+        e.reply("你的纳戒中没有【星宇护身符】，无法凝聚星宇护盾。");
+        return true;
+    }
+
+    // 消耗1个护身符
+    await Add_najie_thing(usr_qq, '星宇护身符', '道具', -1);
+
+    // 护盾层数 +1（与玩家绑定，长期有效，每次绝灵损失消耗1层）
+    const immuneKey = `jueling_loss_immune:${usr_qq}`;
+    const layers = await redis.incr(immuneKey);
+
+    await e.reply([
+        `【星宇护身符·激活】`,
+        `你祭出【星宇护身符】，星宇之力萦绕周身，万法不侵。`,
+        `当前已凝聚星宇护盾：${layers}层`,
+        `绝灵时代来临后，将自动替你挡下 ${layers} 次纳戒损失（每次消耗1层）。`,
+        `「星河不灭，绝灵难侵」`
+    ].join('\n'));
+    return true;
 }
 
 /** 查看损失信息指令 */
@@ -600,7 +667,14 @@ async checkJuelingLoss(e) {
             
             // 标记是否为模拟损失
             const lossType = loss.isSimulated ? "[模拟]" : "[真实]";
-            
+
+            // 星宇护身符豁免记录单独展示
+            if (loss.type === 'hufu_immune') {
+                msg.push(`[${dateStr}] ${lossType} 绝灵${loss.eraYears}年：【星宇护身符】替你挡下绝灵侵蚀，纳戒无损`);
+                msg.push("");
+                continue;
+            }
+
             msg.push(`[${dateStr}] ${lossType} 绝灵${loss.eraYears}年时损失:`);
             
             // 修复：按类别和名称分组，合并相同物品的数量
@@ -747,9 +821,9 @@ async checkJuelingLoss(e) {
   // ==== 绝灵时代物品损失处理 ====
 let lossMessage = '';
 if (index === 4) { // 当前是绝灵时代
-    const { totalLossCount, lossReports, sealedCount } = await this.handleJuelingEraLoss();
+    const { totalLossCount, lossReports, sealedCount, immuneCount } = await this.handleJuelingEraLoss();
     
-    if (totalLossCount > 0 || sealedCount > 0) {
+    if (totalLossCount > 0 || sealedCount > 0 || immuneCount > 0) {
         const sampleReports = lossReports
             .slice(0, 5)
             .map(r => {
@@ -765,6 +839,7 @@ if (index === 4) { // 当前是绝灵时代
             `- 总损失组数: ${totalLossCount}组`,
             `- 影响修士: ${lossReports.length}人`,
             `- 被封印玩家豁免: ${sealedCount}人`,
+            `- 星宇护身符挡下: ${immuneCount}人`,
             `- 损失记录可通过指令查看：#查看损失`,
             `「灵性消散，道法凋零」`,
             `「此世修仙路，终将归于凡尘...」`,
@@ -971,6 +1046,8 @@ function saveWeimianData(data) {
         if (eventResult && era.pushNotice) {
           await this.broadcastMessage(eventResult.message);
         }
+        const riftResult = triggerPeriodicRiftsForEra(index, years, epoch);
+        if (riftResult && era.pushNotice) await this.broadcastMessage(riftResult.message);
       } catch (eventErr) {
         console.error("触发位面大事件失败:", eventErr);
       }
@@ -1506,9 +1583,9 @@ function saveWeimianData(data) {
       // ==== 新增：绝灵时代物品损失 ====
       let lossMessage = '';
       if (this.set.Era.current.index === 4) {
-        const { totalLossCount, lossReports } = await this.handleJuelingEraLoss();
-        
-        if (totalLossCount > 0) {
+        const { totalLossCount, lossReports, immuneCount } = await this.handleJuelingEraLoss();
+
+        if (totalLossCount > 0 || immuneCount > 0) {
           const sampleReports = lossReports
             .slice(0, 5)
             .map(r => {
@@ -1523,6 +1600,7 @@ function saveWeimianData(data) {
             `本次千年流逝造成：`,
             `- 总损失组数: ${totalLossCount}组`,
             `- 影响修士: ${lossReports.length}人`,
+            `- 星宇护身符挡下: ${immuneCount}人`,
             `部分损失记录：`,
             ...sampleReports,
             `「灵性消散，道法凋零」`,
@@ -1544,6 +1622,8 @@ function saveWeimianData(data) {
         if (eventResult) {
           message += '\n\n' + eventResult.message;
         }
+        const riftResult = triggerPeriodicRiftsForEra(this.set.Era.current.index, years, epoch);
+        if (riftResult) message += '\n\n' + riftResult.message;
       } catch (eventErr) {
         console.error("触发位面大事件失败:", eventErr);
       }
@@ -1732,6 +1812,8 @@ function saveWeimianData(data) {
         if (eventResult) {
           message += '\n\n' + eventResult.message;
         }
+        const riftResult = triggerPeriodicRiftsForEra(index, years, epoch);
+        if (riftResult) message += '\n\n' + riftResult.message;
       } catch (eventErr) {
         console.error("触发位面大事件失败:", eventErr);
       }

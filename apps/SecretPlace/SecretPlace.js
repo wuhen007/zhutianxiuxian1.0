@@ -288,7 +288,7 @@ export class SecretPlace extends plugin {
           fnc: 'handleDungeonDrop',
         },
        {
-  reg: '^#穿梭(凡间|仙界|下界八域|仙域|遮天位面|九天十地|界海|时间长河|永恒未知之地)$',
+  reg: '^#穿梭(凡间|仙界|下界八域|仙域|遮天位面|九天十地|界海|太初星墟|时间长河|永恒未知之地)$',
   fnc: 'goToLocation'
 },
 {
@@ -427,14 +427,14 @@ async goToLocation(e) {
     const player = await Read_player(usr_qq);
     
     // 解析目标地点
-    const location = e.msg.match(/^#穿梭(凡间|仙界|下界八域|九天十地|遮天位面|界海|时间长河|永恒未知之地|仙域)$/)[1];
+    const location = e.msg.match(/^#穿梭(凡间|仙界|下界八域|九天十地|遮天位面|界海|太初星墟|时间长河|永恒未知之地|仙域)$/)[1];
     
     // 地点映射表（统一引用模块级 PLACE_LOCATION_MAP，避免多处分散硬编码）
     const LOCATION_MAP = PLACE_LOCATION_MAP;
     
     // 检查是否有效地点
     if (!LOCATION_MAP.hasOwnProperty(location)) {
-        return e.reply(`无效地点：${location}\n可用地点：凡间、仙界、下界八域、遮天位面、九天十地、仙域、界海、时间长河、永恒未知之地`);
+        return e.reply(`无效地点：${location}\n可用地点：${Object.keys(LOCATION_MAP).join('、')}`);
     }
     
     const targetLocation = LOCATION_MAP[location];
@@ -922,6 +922,7 @@ async Xiuxianstate(e) {
         2: "遮天位面",
         2.5: "九天十地",
         3: "界海",
+        3.5: "太初星墟",
         4: "时间长河",
         5: "永恒未知之地",
         6: "仙域"
@@ -2197,7 +2198,7 @@ async Goforbiddenarea(e) {
     const player = await Read_player(usr_qq);
     
     // 诡异大祭·崩灭检查：玩家当前所在位面被毁则封锁副本
-    const planeMap = { 0: '凡间', 1: '仙界', 1.5: '下界八域', 2: '遮天位面', 2.5: '九天十地', 3: '界海', 6: '仙域' };
+    const planeMap = { 0: '凡间', 1: '仙界', 1.5: '下界八域', 2: '遮天位面', 2.5: '九天十地', 3: '界海', 3.5: '太初星墟', 6: '仙域' };
     const currentPlaneName = planeMap[player.power_place];
     if (currentPlaneName && isWeiMianDestroyed(currentPlaneName)) {
         return replyPlaneDestroyed(e, currentPlaneName);
@@ -3434,7 +3435,7 @@ async sendPlayerToLocation(e) {
 
   // 检查是否有效地点（统一引用 PLACE_LOCATION_MAP）
   if (!PLACE_LOCATION_MAP.hasOwnProperty(location)) {
-    return e.reply(`无效地点：${location}\n可用地点：凡间、仙界、下界八域、遮天位面、九天十地、仙域、界海、时间长河、永恒未知之地`);
+    return e.reply(`无效地点：${location}\n可用地点：${Object.keys(PLACE_LOCATION_MAP).join('、')}`);
   }
 
   if (!await existplayer(targetQQ)) {
@@ -3572,6 +3573,13 @@ async checkLocationThreshold(player, location) {
                 `界壁后传来冷漠的道音`
             ] };
         }
+    }
+    if (location === '太初星墟' && threshold.code === 'primordial-ruins') {
+        return { ok: false, msgs: [
+            `【太初星墟·界压难承】`,
+            `星墟由破碎位面重叠而成，真仙以下踏入便会被界压撕碎。`,
+            `需秘境体系或仙古今世法达到16级。`
+        ] };
     }
     // 凡间：仙帝以上禁止下凡
     if (threshold.code === 'mortal-realm') {

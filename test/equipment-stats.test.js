@@ -26,4 +26,13 @@ test('装备百分比统一加算后只乘一次基础属性', () => {
     calculateEquippedStats(base, [{ atk: 0.5 }, { atk: 100, def: 200, HP: 300 }]),
     { 攻击: 1600, 防御: 1200, 血量上限: 1300 }
   );
+  assert.deepEqual(
+    calculateEquippedStats(base, [{
+      atk: 100,
+      def: 200,
+      HP: 300,
+      归一属性: { 百分比: { atk: 0.5, def: 0.25, HP: 1 } },
+    }]),
+    { 攻击: 1600, 防御: 1450, 血量上限: 2300 }
+  );
 });

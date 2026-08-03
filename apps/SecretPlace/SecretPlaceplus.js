@@ -967,7 +967,7 @@ async Goforbiddenarea(e) {
     {
         const PLANE_ID_TO_NAME = {
             0: '凡间', 1: '仙界', 1.5: '下界八域',
-            2: '遮天位面', 2.5: '九天十地', 3: '界海', 6: '仙域'
+            2: '遮天位面', 2.5: '九天十地', 3: '界海', 3.5: '太初星墟', 6: '仙域'
         };
         const currentPlaneName = PLANE_ID_TO_NAME[player.power_place];
         if (currentPlaneName && isWeiMianDestroyed(currentPlaneName)) {

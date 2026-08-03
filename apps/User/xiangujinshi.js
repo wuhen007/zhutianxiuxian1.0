@@ -1242,16 +1242,22 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
     let survive = true;
     let thunderPower = 0;
 
+    // 防御减免：雷劫具穿透性，减免率随防御平滑增长，封顶 60%
+    const DEF_K = 500000; // 约 50 万防御时减免 50%
+    const DEF_REDUCTION_CAP = 0.6;
+    const playerDef = Number(player.防御) || 0;
+    const defReduction = Math.min(DEF_REDUCTION_CAP, playerDef / (playerDef + DEF_K));
+
     for (const stage of thunderStages) {
         // 消耗雷池真液减轻伤害
         const thunderLiquidQty = await exist_najie_thing(usr_qq, "雷池真液", "道具");
         const damageReduction = Math.min(0.5, thunderLiquidQty * 0.1); // 每滴雷池真液减少10%伤害，最多50%
         
-        const actualDamage = stage.damage * (1 - damageReduction);
+        const actualDamage = stage.damage * (1 - damageReduction) * (1 - defReduction);
         const damageAmount = Math.floor(player.血量上限 * actualDamage);
         
         // 应用伤害
-        const currentHP = await Add_HP(usr_qq, -damageAmount, `${stage.name}伤害`);
+        let currentHP = await Add_HP(usr_qq, -damageAmount, `${stage.name}伤害`);
         
         // 消耗雷池真液
         if (thunderLiquidQty > 0) {
@@ -1265,16 +1271,19 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
             if (bloodGrassQty > 0) {
                 await Add_najie_thing(usr_qq, "血魂草", "草药", -1);
                 const recoverAmount = Math.floor(player.血量上限 * 0.4);
-                await Add_HP(usr_qq, recoverAmount, "血魂草激发潜能");
+                currentHP = await Add_HP(usr_qq, recoverAmount, "血魂草激发潜能");
                 e.reply(`血魂草激发潜能，恢复${bigNumberTransform(recoverAmount)}点生命值`);
             }
         }
 
         thunderPower += actualDamage;
         
+        const reduceInfo = defReduction > 0
+            ? `（雷池减伤${Math.round(damageReduction * 100)}% · 防御减免${Math.round(defReduction * 100)}%）`
+            : `（雷池减伤${Math.round(damageReduction * 100)}%）`;
         e.reply([
             `${stage.desc}`,
-            `造成${bigNumberTransform(damageAmount)}点伤害`,
+            `造成${bigNumberTransform(damageAmount)}点伤害${reduceInfo}`,
             currentHP <= 0 ? "生命垂危！" : `当前生命：${bigNumberTransform(currentHP)}/${bigNumberTransform(player.血量上限)}`
         ].join("\n"));
 

@@ -47,9 +47,10 @@ import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
  * ========================================================= */
 const YUANSHEN_SKILLS = {
   /* ---------- 恢复类：缓慢恢复元神 ---------- */
-  '前字秘':              { cd: 240, ratio: 0.10, type: '恢复' },
+  '前字秘':              { cd: 240, ratio: 0.20, type: '恢复' },
   '太一凝神诀':          { cd: 180, ratio: 0.08, type: '恢复' },
   '涅槃法门·残缺':       { cd: 360, ratio: 0.01, type: '恢复' },
+  '涅槃法门':            { cd: 240, ratio: 0.10, type: '恢复' },
   '神火淬魂法':          { cd: 300, ratio: 0.12, type: '恢复' },   // 神火祭坛掉落
   '观照经':              { cd: 200, ratio: 0.06, type: '恢复' },
   '太虚蕴神经':          { cd: 240, ratio: 0.10, type: '恢复' },   // 灵界裂缝掉落

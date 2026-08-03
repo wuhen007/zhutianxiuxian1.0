@@ -938,7 +938,7 @@ export class BOSS4 extends plugin {
         血量上限: parseInt(A_player.血量上限 * attributeMultiplier),
         暴击率: tianjiaoData.暴击率,
         暴击伤害: tianjiaoData.暴击伤害,
-        速度: tianjiaoData.速度,
+        速度: (tianjiaoData.速度 ?? 100) + (tianjiaoData.mijinglevel_id ?? 0) * 50 + (tianjiaoData.xiangulevel_id ?? 0) * 50,
         闪避率: tianjiaoData.闪避率,
         首次闪避: tianjiaoData.首次闪避,
         闪避增攻: tianjiaoData.闪避增攻,

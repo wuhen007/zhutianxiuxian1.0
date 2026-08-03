@@ -80,3 +80,22 @@ test('仙气压制每领先一道增加百分之三十并兼容旧存档', () =>
   assert.equal(getXianqiSuppressMultiplier({ xiangu_xianqi: 10 }, { xiangu_xianqi: 0 }), 1.9);
   assert.equal(getXianqiSuppressMultiplier({ xiangu_xianqi: 1 }, { xiangu_xianqi: 3 }), 1);
 });
+
+test('斩道王者及以上以己道法则免疫仙气压制', () => {
+  const threeStrands = { xiangu_xianqi: 3 };
+
+  assert.equal(getXianqiSuppressMultiplier(threeStrands, { mijinglevel_id: 10, xiangu_xianqi: 0 }), 1.9);
+  assert.equal(getXianqiSuppressMultiplier(threeStrands, {
+    mijinglevel_id: 11,
+    xiangu_xianqi: 0,
+    道途: { stages: { kingDao: 0 } },
+  }), 1);
+  assert.equal(getXianqiSuppressMultiplier(threeStrands, { mijinglevel_id: '11', xiangu_xianqi: 0 }), 1);
+  assert.equal(getXianqiSuppressMultiplier(threeStrands, { mijinglevel_id: 12, xiangu_xianqi: 0 }), 1);
+
+  // 免疫只看防守方；斩道王者攻击尚未立道者时，已有仙气仍可形成压制。
+  assert.equal(getXianqiSuppressMultiplier(
+    { mijinglevel_id: 11, xiangu_xianqi: 3 },
+    { mijinglevel_id: 10, xiangu_xianqi: 0 },
+  ), 1.9);
+});

@@ -103,6 +103,8 @@ export function getNextXianqiTrial(player) {
 }
 
 export function getXianqiSuppressMultiplier(attacker, defender) {
+  // 斩道王者已立己道、掌握法则，仙气无法再形成层次压制。
+  if (Number(defender?.mijinglevel_id) >= 11) return 1;
   const diff = Math.max(0, getXianqiStrands(attacker) - getXianqiStrands(defender));
   return 1 + diff * XIANGU_XIANQI.suppressPerStrand;
 }

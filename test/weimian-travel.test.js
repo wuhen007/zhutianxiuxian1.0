@@ -40,6 +40,8 @@ test('高位面门槛采用秘境或仙古任一体系', () => {
   assert.equal(getLocationThreshold({ mijinglevel_id: 19, xiangulevel_id: 19 }, '时间长河').ok, false);
   assert.equal(getLocationThreshold({ mijinglevel_id: 21 }, '永恒未知之地').ok, true);
   assert.equal(getLocationThreshold({ xiangulevel_id: 16 }, '仙域').ok, true);
+  assert.equal(getLocationThreshold({ mijinglevel_id: 16 }, '太初星墟').ok, true);
+  assert.equal(getLocationThreshold({ xiangulevel_id: 15 }, '太初星墟').ok, false);
 });
 
 test('遮天位面支持境界或五色祭坛三种通行方式', () => {

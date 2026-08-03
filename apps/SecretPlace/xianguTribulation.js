@@ -393,15 +393,15 @@ export class XianguTribulation {
   // ============ 一道劫：灵根减伤 → 濒死复活 → 功法减伤 → 真实扣血 ============
   _dealWave(player, frac, wave, note, opts = {}) {
     const M = this._M(player);
-    const baseRaw = M * frac * (1 + 0.03 * (wave - 1));
-    const base = baseRaw * this._eraFactor; // 时代系数
+    // 基础伤害公式与遮天渡劫对齐：血量上限 × 系数 × (1 + 0.03×wave)，不随时代缩放
+    const base = M * frac * (1 + 0.03 * wave);
     const { damage: bodyDamage, msgs: bodyMsgs } = this._applyBodyDefenses(player, base);
     const sourceName = opts.sourceName || '道火本源';
     const fatalName = opts.fatalName || '劫力';
 
     const lines = [];
     lines.push(`　第${wave}道劫｜${note}`);
-    lines.push(`　${sourceName} ${bigNumberTransform(base)}（时代系数×${this._eraFactor}）｜灵根减伤后 ${bigNumberTransform(bodyDamage)}`);
+    lines.push(`　${sourceName} ${bigNumberTransform(base)}（不随时代缩放·与遮天同构）｜灵根减伤后 ${bigNumberTransform(bodyDamage)}`);
     for (const m of bodyMsgs) lines.push(`　　${m}`);
 
     const gongfaMsgs = [];
@@ -492,7 +492,8 @@ export class XianguTribulation {
       `"以天地为炉，以万道为火，焚肉身，烧元神，筑真我。"`,
       `——这条路，古来走者多形神俱灭。`,
       ``,
-      `当前时代系数：×${this._eraFactor}（结算顺序：灵根减伤 / 功法复活 / 功法减伤）`,
+      `仙古渡劫基础伤害不随时代缩放（与遮天一致）｜者字秘减伤仍随时代（与遮天一致）`,
+      `结算顺序：灵根减伤 / 功法复活 / 功法减伤`,
       ``,
       this._bar(player)
     ].join('\n'));

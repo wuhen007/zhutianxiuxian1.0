@@ -102,11 +102,11 @@ Era:
   task: 0 0 */1 * * *
   pushNotice: true
   notifyGroups:
-    - "542501652"
+    - C63D35605BF41FD1313B815E64CB6DFD
   Master: null
   current:
     index: 3
-    years: 0
+    years: 4000
     epoch: 1
   yearlyAdvance: 1000
 BotType: onebot

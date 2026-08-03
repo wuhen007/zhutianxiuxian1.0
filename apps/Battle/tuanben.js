@@ -1,11 +1,12 @@
 import { plugin, config ,data} from '../../api/api.js';
-import { existplayer, Read_player, Write_player, Add_najie_thing,ForwardMsg, channel ,calculateHarm, ensureNumber, bigNumberTransform, exist_najie_thing, initActionBar, advanceUnitBars, getReadyUnits, boostActionBar, pushBackActionBar, ACTION_BAR_MAX} from '../../model/xiuxian.js';
+import { existplayer, Read_player, Write_player, Add_najie_thing, channel ,calculateHarm, ensureNumber, bigNumberTransform, exist_najie_thing, get_fight_img, initActionBar, advanceUnitBars, getReadyUnits, boostActionBar, pushBackActionBar, ACTION_BAR_MAX} from '../../model/xiuxian.js';
 import { segment } from "icqq"
 import {
  checkEmperorAwareness,
  clearEmperorAwareness,
  setEmperorAwareness,
 } from '../tasks/EraChangeTask.js';
+import { hasSupremeInnate } from '../../model/supremePath.js';
 export class tuanben extends plugin {
   constructor() {
     super({
@@ -444,9 +445,6 @@ if (battleResult.result === "玩家胜利") {
   // 清除帝尊感知标记
   await clearEmperorAwareness();
 }
-        // 发送战报
-        await ForwardMsg(e, battleResult.msg);
-        
         // 构建战斗结果总结
         const resultSummary = [
             ` 帝尊挑战结果 `,
@@ -455,10 +453,10 @@ if (battleResult.result === "玩家胜利") {
                 : `很遗憾，队伍未能击败帝尊...`,
             `战斗时长: ${((Date.now() - team.battleStartTime) / 1000).toFixed(1)}秒`,
             `此战只为证道，不计奖励，不占CD`
-        ].join('\n');
+        ];
         
         if (battleResult.result === "玩家胜利") {
-      const 帝尊陨落 = [
+      resultSummary.push(...[
         ``,
         `【帝尊陨落·万古成空】`,
         `帝尊帝躯寸寸崩裂，万道法则如琉璃破碎，帝血洒落星空，染红诸天万界！`,
@@ -475,12 +473,9 @@ if (battleResult.result === "玩家胜利") {
         `时间长河奔涌不息，埋葬了万古多少帝与皇的故事，`,
         `帝尊的传说，至此画上句号。`,
         `此战之后，世间再无帝尊，唯有传说流传...`
-    ].join('\n');
-
-    e.reply(resultSummary + 帝尊陨落);
-} else {
-    e.reply(resultSummary);
+    ]);
 }
+        await this.sendBattleImages(e, resultSummary);
 
     } catch (err) {
         console.error('战斗异常:', err);
@@ -557,9 +552,11 @@ if (battleResult.result === "玩家胜利") {
     const usr_qq = await this.getUserId(e);
          // 验证BOSS存在
     const bossData = await this.getBossData(bossName);
+    if (!bossData) return e.reply(`未知BOSS: ${bossName}`);
+
   // 检查玩家CD
   const hasCD = await this.checkPlayerCD(usr_qq);
-  if (hasCD&&!bossData.名号 === '九幽魔君') {
+  if (hasCD && bossData.名号 !== '九幽魔君') {
     const cdTime = await redis.get(`Xiuxian:Battle:PlayerCD:${usr_qq}`);
     const remaining = this.CD_DURATION - (Date.now() - parseInt(cdTime));
     const hours = Math.floor(remaining / 3600000);
@@ -578,7 +575,6 @@ if (battleResult.result === "玩家胜利") {
     }
    let mojun = await exist_najie_thing (usr_qq, "魔君讨伐令", "道具", 1);
 
-    if (!bossData) return e.reply(`未知BOSS: ${bossName}`);
      // 魔君特殊消耗
   if (bossData.名号 === '九幽魔君') {
     const hasToken = await exist_najie_thing(usr_qq, '魔君讨伐令', '道具');
@@ -635,22 +631,6 @@ async joinBossTeam(e) {
   const usr_qq = await this.getUserId(e);
 
   
- // 检查玩家CD
-  const hasCD = await this.checkPlayerCD(usr_qq);
-  if (hasCD) {
-    const cdTime = await redis.get(`Xiuxian:Battle:PlayerCD:${usr_qq}`);
-    const remaining = this.CD_DURATION - (Date.now() - parseInt(cdTime));
-    const hours = Math.floor(remaining / 3600000);
-    const minutes = Math.floor((remaining % 3600000) / 60000);
-    
-    return e.reply([
-      `您正处于讨伐冷却时间！`,
-      `上次参与讨伐后需等待16小时后才能再次参与`,
-      `剩余冷却时间: ${hours}小时${minutes}分钟`,
-      `冷却结束后才能加入队伍`
-    ].join('\n'));
-  }
-
   if (!usr_qq) {
     e.reply('无法获取用户ID');
     return true;
@@ -683,6 +663,22 @@ async joinBossTeam(e) {
   // 获取队伍数据
   const team = await this.getTeam(teamId);
   if (!team) return e.reply(`队伍 ${teamId} 不存在或已解散`);
+
+  // 九幽魔君使用讨伐令结算，不受普通团本CD限制
+  const hasCD = await this.checkPlayerCD(usr_qq);
+  if (hasCD && team.boss !== '九幽魔君') {
+    const cdTime = await redis.get(`Xiuxian:Battle:PlayerCD:${usr_qq}`);
+    const remaining = this.CD_DURATION - (Date.now() - parseInt(cdTime));
+    const hours = Math.floor(remaining / 3600000);
+    const minutes = Math.floor((remaining % 3600000) / 60000);
+
+    return e.reply([
+      `您正处于讨伐冷却时间！`,
+      `上次参与讨伐后需等待16小时后才能再次参与`,
+      `剩余冷却时间: ${hours}小时${minutes}分钟`,
+      `冷却结束后才能加入队伍`
+    ].join('\n'));
+  }
   
   // 检查状态
   if (team.status !== 'recruiting') {
@@ -823,9 +819,6 @@ const playersData = await Promise.all(
     });
     await this.saveTeam(teamId, team);
     
-    // 发送战报
-    await ForwardMsg(e, battleResult.msg);
-    
     // 构建战斗结果总结
     const resultSummary = [
       `===== ${team.boss}讨伐战报 =====`,
@@ -834,9 +827,9 @@ const playersData = await Promise.all(
         ? `恭喜队伍成功击败${team.boss}！请队长使用 #结算团本奖励 领取奖励` 
         : `很遗憾，队伍未能击败${team.boss}...`,
       `战斗时长: ${((Date.now() - team.battleStartTime) / 1000).toFixed(1)}秒`
-    ].join('\n');
+    ];
     
-    e.reply(resultSummary);
+    await this.sendBattleImages(e, resultSummary);
 
   } catch (err) {
     console.error('战斗异常:', err);
@@ -1416,7 +1409,12 @@ async disbandTeamInternal(teamId, team) {
   async getBossData(name) {
     // 尝试从缓存获取
     let boss = await redis.get(this.redisKeys.boss(name));
-    if (boss) return JSON.parse(boss);
+    if (boss) {
+      const cachedBoss = JSON.parse(boss);
+      cachedBoss.当前血量 = cachedBoss.血量上限;
+      cachedBoss.初始血量 = cachedBoss.当前血量;
+      return cachedBoss;
+    }
     
     // 从数据库加载（模拟数据）
     const bossDatabase = {
@@ -1459,6 +1457,7 @@ async disbandTeamInternal(teamId, team) {
       '帝尊': {
         名号: '帝尊',
          级别: '红尘仙',
+        速度: 1500,
         攻击: 500 * Math.floor(Math.random() * 180000000000),
         防御: 300 * Math.floor(Math.random() * 180000000000),
         当前血量: 200 * Math.floor(Math.random() * 580000000000),
@@ -1491,6 +1490,10 @@ async disbandTeamInternal(teamId, team) {
     
     const data = bossDatabase[name];
     if (!data) return null;
+
+    // BOSS每场战斗都从完整血量开始，初始血量用于战报统计。
+    data.当前血量 = data.血量上限;
+    data.初始血量 = data.当前血量;
     
     // 写入缓存
     await redis.set(
@@ -1909,9 +1912,8 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
           safeAttacker.学习的功法.indexOf(jineng1[i].name) > -1 &&
           (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) &&
           Math.random() < jineng1[i].pr) ||
-        (safeAttacker.灵根 &&
-          jineng1[i].class == '灵根' &&
-          safeAttacker.灵根.name == jineng1[i].name &&
+        (jineng1[i].class == '灵根' &&
+          hasSupremeInnate(safeAttacker, jineng1[i].name) &&
           (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) &&
           Math.random() < jineng1[i].pr)
       ) {
@@ -1924,6 +1926,19 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
         
         // 应用技能效果
         伤害 = 伤害 * jineng1[i].beilv + jineng1[i].other;
+
+        if (jineng1[i].拉条) {
+          boostActionBar(attacker, jineng1[i].拉条);
+          msgs.push(`${safeAttacker.名号}行动进度提升${jineng1[i].拉条}点！`);
+        }
+        if (jineng1[i].推条) {
+          pushBackActionBar(defender, jineng1[i].推条);
+          msgs.push(`${safeDefender.名号}行动进度被压制${jineng1[i].推条}点！`);
+        }
+        if (jineng1[i].速度加成) {
+          attacker._speedBoost = ensureNumber(attacker._speedBoost, 1) + jineng1[i].速度加成;
+          msgs.push(`${safeAttacker.名号}速度提升${Math.round(jineng1[i].速度加成 * 100)}%！`);
+        }
         
         count++;
         if (count == 2) break; // 最多触发3个技能
@@ -1937,9 +1952,8 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
           safeDefender.学习的功法.indexOf(jineng2[i].name) > -1 &&
           (cnt2 == jineng2[i].cnt || jineng2[i].cnt == -1) &&
           Math.random() < jineng2[i].pr) ||
-        (safeDefender.灵根 &&
-          jineng2[i].class == '灵根' &&
-          safeDefender.灵根.name == jineng2[i].name &&
+        (jineng2[i].class == '灵根' &&
+          hasSupremeInnate(safeDefender, jineng2[i].name) &&
           (cnt2 == jineng2[i].cnt || jineng2[i].cnt == -1) &&
           Math.random() < jineng2[i].pr)
       ) {
@@ -2004,15 +2018,31 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
     return ensureNumber(bl, 1);
   }
   
+  // 战斗日志只通过图片输出，分片串行发送避免刷屏和截图并发。
+  async sendBattleImages(e, messages, chunkSize = 80) {
+    const logs = Array.isArray(messages) ? messages.filter(Boolean) : [messages].filter(Boolean);
+    for (let i = 0; i < logs.length; i += chunkSize) {
+      const chunk = logs.slice(i, i + chunkSize);
+      try {
+        const image = await get_fight_img(e, chunk);
+        if (image) await e.reply(image);
+      } catch (error) {
+        console.error('生成战斗日志图片失败:', error);
+      }
+    }
+  }
+
   // 团本战斗核心逻辑
 async tb_battle(players, boss, e) {
   // 深拷贝玩家和BOSS数据，并进行数字安全处理
   const playersData = players.map(p => this.sanitizeCombatant(p));
   const bossCopy = this.sanitizeCombatant(boss);
+  bossCopy.初始血量 = bossCopy.当前血量;
   const battleLogs = []; // 用于收集所有战斗日志
   let cnt = 0; // 回合计数器
   let jineng1 = data.jineng1; // 玩家技能库
 let jineng2 = data.jineng2; // BOSS技能库
+  let imageSendQueue = Promise.resolve();
 // 在战斗日志生成处
 const addBattleLog = (...lines) => {
   // 1. 过滤空行和无效内容
@@ -2045,39 +2075,12 @@ const addBattleLog = (...lines) => {
   // 3. 添加到日志
   battleLogs.push(...combinedLines);
   
-  // 4. 实时发送部分日志（避免积累过多）
-  if (battleLogs.length > 50) {
-    const logsToSend = battleLogs.splice(0, 30); // 发送前30条
-    sendBattleMessages(e, logsToSend); // 不等待，避免阻塞战斗
+  // 4. 实时发送图片，队列保证截图和消息顺序稳定。
+  if (battleLogs.length >= 80) {
+    const logsToSend = battleLogs.splice(0, 80);
+    imageSendQueue = imageSendQueue.then(() => this.sendBattleImages(e, logsToSend));
   }
 };
-  
- // 定义sendBattleMessages函数
-  const sendBattleMessages = async (e, messages) => {
-    if (messages.length === 0) return;
-    
-    try {
-      // 尝试构建转发消息
-      const msgList = messages.map(msg => ({
-        message: msg,
-        nickname: '战斗日志',
-        user_id: Bot.uin,
-      }));
-      
-      const forwardMsg = await Bot.makeForwardMsg(msgList);
-      await e.reply(forwardMsg);
-    } catch (error) {
-      console.error('发送转发消息失败:', error);
-      
-      // 回退到普通消息发送
-      const chunkSize = 20;
-      for (let i = 0; i < messages.length; i += chunkSize) {
-        const chunk = messages.slice(i, i + chunkSize);
-        await e.reply(chunk.join('\n'));
-        await this.sleep(500); // 避免消息轰炸
-      }
-    }
-  };
   
   // 初始化玩家状态
   for (let player of playersData) {
@@ -2143,7 +2146,6 @@ const addBattleLog = (...lines) => {
     // ===== 行动条推进（速度决定先机）=====
     advanceUnitBars(allUnits);
     const readyUnits = getReadyUnits(allUnits);
-    const isUnitReady = (u) => readyUnits.includes(u);
     const actionBarInfo = allUnits
       .filter(u => u.当前血量 > 0)
       .map(u => `${u.名号}:${u._actionBar}/${ACTION_BAR_MAX}`)
@@ -2325,21 +2327,23 @@ if (bossCopy.名号 === '帝尊') {
       }
     }
     
+    // 同一拍内按行动条排序逐个结算，出手入口统一扣条。
+    for (const activeUnit of readyUnits) {
+      if (activeUnit.当前血量 <= 0 || activeUnit._actionBar < ACTION_BAR_MAX) continue;
+      activeUnit._actionBar -= ACTION_BAR_MAX;
+
+    if (activeUnit !== bossCopy) {
     // ---------- 玩家阶段 ----------
     await addBattleLog(`【玩家阶段】`);
     
     // 玩家按照队伍顺序依次攻击
     for (let i = 0; i < playersData.length; i++) {
       const player = playersData[i];
+      if (player !== activeUnit) continue;
       
       // 跳过死亡或被定身玩家
       if (player.已死亡 || player.dongjie) {
         await addBattleLog(`${player.名号}无法行动`);
-        continue;
-      }
-      // 行动条门控：未就绪则本拍暂不出手（速度慢者蓄势）
-      if (!isUnitReady(player)) {
-        await addBattleLog(`${player.名号}行动条未满，蓄势待发`);
         continue;
       }
         // ==== 九秘功法压制检测 ====
@@ -2735,7 +2739,7 @@ if (player.灵根?.name === "木之本樱" &&
       }
       
       // 玩家攻击BOSS
-      const result = await this.calculateAttack(player, bossCopy, cnt, jineng1, jineng2);
+      const result = await this.calculateAttack(player, bossCopy, cnt, jineng1, jineng2, addBattleLog);
       if (result.msgs && result.msgs.length > 0) {
         await addBattleLog(...result.msgs);
       }
@@ -2760,11 +2764,9 @@ if (player.分身 && player.分身.length > 0) {
       
       await addBattleLog(`${player.名号}对${bossCopy.名号}造成${bigNumberTransform(damage)}点伤害，BOSS剩余血量：${bigNumberTransform(bossCopy.当前血量)}`);
 
-      // 出手后扣减行动条（保留溢出，速度决定下次出手快慢）
-      player._actionBar -= ACTION_BAR_MAX;
-
       // 如果BOSS死亡，提前结束回合
       if (bossCopy.当前血量 <= 0) break;
+    }
     }
     
    // 检查BOSS是否死亡
@@ -2808,7 +2810,7 @@ if (bossCopy.当前血量 <= 0) {
 }
     
     // ---------- BOSS阶段（行动条门控：boss 就绪才出手）----------
-    if (isUnitReady(bossCopy)) {
+    if (activeUnit === bossCopy) {
     await addBattleLog(`【BOSS阶段】`);
     
     // ==== 尸骸仙帝：大罗剑胎·诸天寂灭 ====
@@ -2944,7 +2946,7 @@ if (bossCopy.名号 === '帝尊' && !bossCopy.九秘合一触发 && Math.random(
   
   if (playerCount === 0) {
     await addBattleLog(`所有玩家已阵亡，帝尊法旨无需施展！`);
-    return;
+    break;
   }
   
   // 计算每个玩家承受的伤害比例
@@ -3209,7 +3211,7 @@ if (bossCopy.火焰风暴) {
       }
       
       // BOSS攻击玩家
-      const result = await this.calculateAttack(bossCopy, targetPlayer, cnt, jineng1, jineng2);
+      const result = await this.calculateAttack(bossCopy, targetPlayer, cnt, jineng1, jineng2, addBattleLog);
       if (result.msgs && result.msgs.length > 0) {
         await addBattleLog(...result.msgs);
       }
@@ -3307,14 +3309,13 @@ if (targetPlayer.分身 && targetPlayer.分身.length > 0) {
       await addBattleLog(`${bossCopy.名号}的定身状态解除`);
     }
     }
-    // boss 出手后扣减行动条（保留溢出，速度决定下次出手）
-    bossCopy._actionBar -= ACTION_BAR_MAX;
     // 狠人大帝：仙道法则加持（如梦似幻，时间长河驻足），每次行动后 +500 进度，比肩行字秘
     if (bossCopy.名号 === '狠人大帝') {
       boostActionBar(bossCopy, 500);
       await addBattleLog(`狠人大帝身影如梦似幻，时间长河恍若凝固为她驻足，自身若一道仙光划过——行动进度 +500`);
     }
-    } // end if (isUnitReady(bossCopy))
+    } // end if (activeUnit === bossCopy)
+    } // end for (const activeUnit of readyUnits)
 
   // 战斗结束处理
   if (cnt >= maxRounds) {
@@ -3337,13 +3338,15 @@ if (targetPlayer.分身 && targetPlayer.分身.length > 0) {
   // 重置玩家状态
   this.resetPlayersStatus(playersData);
   
-  // 发送剩余的消息
+  // 发送剩余日志图片，并等待此前排队的图片完成。
   if (battleLogs.length > 0) {
-    await sendBattleMessages(e, battleLogs);
+    const remainingLogs = battleLogs.splice(0);
+    imageSendQueue = imageSendQueue.then(() => this.sendBattleImages(e, remainingLogs));
   }
+  await imageSendQueue;
   
   return {
-    msg: battleLogs,
+    msg: [],
     players_hp_change: playersHpChange,
     boss_hp_change: bossHpChange,
     result: result
@@ -3493,44 +3496,6 @@ async checkPlayerRevival(player) {
   }
   
   return { success: false };
-}
-
-// 修改后的 sendBattleMessages 方法
-async  sendBattleMessages(e, messages) {
-  if (messages.length === 0) return;
-  
-  // 将消息数组分割成多个部分，每个部分最多15条消息
-  const chunks = [];
-  const chunkSize = 300;
-  
-  for (let i = 0; i < messages.length; i += chunkSize) {
-    chunks.push(messages.slice(i, i + chunkSize));
-  }
-  
-  // 构建转发消息节点
-  const forwardNodes = chunks.map((chunk, index) => {
-    return {
-      nickname: '战斗日志',
-      content: chunk.join('\n'),
-      user_id: Bot.uin,
-    };
-  });
-  
-  // 使用Bot.makeForwardMsg构建转发消息
-  const forwardMsg = await Bot.makeForwardMsg(forwardNodes);
-  
-  // 发送转发消息
-  try {
-    await e.reply(forwardMsg);
-  } catch (error) {
-    console.error('发送转发消息失败:', error);
-    
-    // 回退到普通消息发送
-    for (const chunk of chunks) {
-      await e.reply(chunk.join('\n'));
-      await this.sleep(500); // 避免消息轰炸
-    }
-  }
 }
 
 // 辅助方法：重置玩家状态

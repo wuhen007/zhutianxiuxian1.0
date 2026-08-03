@@ -2,7 +2,7 @@
   list:
     - icon: help-icon_59
       title: '#转职+职业名'
-      desc: '炼丹师|采药师|炼器师|采矿师|侠客|猎户|源师'
+      desc: '炼丹师|采药师|炼器师|采矿师|侠客|猎户|源师|符师|阵法师'
     - icon: help-icon_59
       title: '#转换副职'
       desc: '切换到副职业'
@@ -101,4 +101,9 @@
       desc: '查看符方列表'
     - icon: help-icon_26
       title: '#制作xxx*数量'
-      desc: '制符'      
+      desc: '制符'
+- group: 阵法师（阵道传承来自剧情人物黑皇）
+  list:
+    - icon: help-icon_26
+      title: '#黑皇阵法 / #请黑皇刻阵 阵法名'
+      desc: '查看并刻画聚灵、欺天、困敌、杀阵与位面传送阵纹'

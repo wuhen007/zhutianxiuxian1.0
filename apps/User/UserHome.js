@@ -1747,7 +1747,11 @@ if (func == "打开") {
             if (code[1] == undefined) {
                 equ = najie.装备.find(item => item.name == thing_name);
                 for (var i = 0; i < najie.装备.length; i++) {//遍历列表有没有比那把强的
-                    if (najie.装备[i].name == thing_name && najie.装备[i].pinji > equ.pinji) {
+                    if (
+                        najie.装备[i].name == thing_name &&
+                        (najie.装备[i].pinji > equ.pinji ||
+                            (najie.装备[i].pinji == equ.pinji && najie.装备[i].归一属性 && !equ.归一属性))
+                    ) {
                         equ = najie.装备[i];
                     }
                 }

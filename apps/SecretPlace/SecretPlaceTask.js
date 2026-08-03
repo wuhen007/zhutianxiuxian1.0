@@ -28,6 +28,7 @@ import {
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
 import { rollDailyDungeonCoordinate } from '../../model/weimianTravel.js';
+import { consumeBlackEmperorBattleFormation, rollBlackEmperorDungeonEncounter } from '../../model/blackEmperor.js';
 import { rollDailyDungeonWenXianClue } from '../../model/wenxianling.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
 import {
@@ -194,8 +195,10 @@ let A_player = {
               暴击率: monster.暴击率,
               法球倍率: 0.1,
             };
+            const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_player);
             let Data_battle = await zd_battle(A_player, B_player);
             player.当前血量 = await Set_HP(player_id, Data_battle.A_hp);
+            if (blackEmperorFormation.consumed) await Write_player(player_id, player);
             let msgg = Data_battle.msg;
             var thing_name;
             var thing_class;
@@ -215,6 +218,7 @@ let A_player = {
             var n = 1;
             let dungeonFortuneMultiplier = 1;
             let last_msg = '';
+            if (blackEmperorFormation.message) last_msg += blackEmperorFormation.message;
                if (player.出金次数 >0 ) {
             player.出金次数 -= 1;
              if (player.出金次数 != 0) {
@@ -1758,6 +1762,14 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
               }],经过一番战斗，击败对手,获得修为${xiuwei},气血${qixue},剩余血量${
                 Data_battle.A_hp
               }`;
+              const blackEmperorEncounter = rollBlackEmperorDungeonEncounter(player, {
+                dungeon: weizhi?.name,
+                plane: player.power_place,
+              });
+              if (blackEmperorEncounter.encountered) {
+                last_msg += blackEmperorEncounter.message;
+                await Write_player(player_id, player);
+              }
               const seekingMultipliers = getSeekingFortuneMultipliers(player);
               const coordinateDrop = rollDailyDungeonCoordinate(player, {
                 chanceMultiplier: seekingMultipliers.coordinate,
