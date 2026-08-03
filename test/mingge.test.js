@@ -11,6 +11,7 @@ import {
   calculateMinggeFourRealmBonus,
   calculateMinggeGain,
   calculateMinggePotentialCost,
+  calculateMinggeSourceGain,
   calculateMinggeYield,
   drawMingge,
   formatMinggeDrawMessage,
@@ -76,7 +77,14 @@ test('命格抽取先判定正负面，再按稀有度权重选择', () => {
 });
 
 test('命格身份写入存档且一次性效果不会重复叠加', () => {
-  const player = { 仙道潜力: 0, 生命本源: 100, 寿元: 99, 速度: 100 };
+  const player = {
+    仙道潜力: 0,
+    生命本源: 100,
+    寿元: 99,
+    速度: 100,
+    心神: 30,
+    心神额外上限: 0,
+  };
   const mingge = {
     ...minggeList[0],
     effects: {
@@ -84,6 +92,7 @@ test('命格身份写入存档且一次性效果不会重复叠加', () => {
       生命本源额外: 20,
       寿元额外: -10,
       速度: 30,
+      心神额外上限: 5,
     },
   };
 
@@ -97,7 +106,29 @@ test('命格身份写入存档且一次性效果不会重复叠加', () => {
   assert.equal(player.生命本源, 120);
   assert.equal(player.寿元, 89);
   assert.equal(player.速度, 130);
+  assert.equal(player.心神额外上限, 5);
+  assert.equal(player.心神, 35);
   assert.deepEqual(getMinggeEffects(player, [mingge]), mingge.effects);
+});
+
+test('心神与源石命格配置完整，源石收益只放大正向奖励', () => {
+  const byId = new Map(configuredMinggeList.map(item => [item.id, item]));
+  for (const id of [
+    'calm_spirit',
+    'glazed_spirit_platform',
+    'immortal_divine_will',
+    'source_affinity',
+    'earth_vein_favored',
+    'source_heaven_eye',
+    'fractured_spirit',
+    'source_cursed',
+  ]) {
+    assert.ok(byId.has(id), `缺少命格：${id}`);
+  }
+
+  assert.equal(calculateMinggeSourceGain(1000, { 源石收益: 0.5 }), 1500);
+  assert.equal(calculateMinggeSourceGain(1000, { 源石收益: -0.2 }), 800);
+  assert.equal(calculateMinggeSourceGain(-1000, { 源石收益: 0.5 }), -1000);
 });
 
 test('独立抽取命格时兼容识别新旧存档且空存档允许抽取', () => {

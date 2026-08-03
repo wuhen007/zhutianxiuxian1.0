@@ -29,6 +29,7 @@ import {
   consumeSpiritHeartEntry,
   createSpiritFinding,
   createSpiritJourney,
+  getSpiritHeartCost,
   getSpiritChoice,
   getSpiritInsightRequirement,
   getSpiritLegacyChance,
@@ -856,13 +857,17 @@ export class yuanshentixi extends plugin {
     if (v.err) return e.reply(v.err);
     const { usr_qq, player: p } = v;
     const heart = refreshSpiritHeart(p);
+    const heartCost = getSpiritHeartCost(
+      SPIRIT_HEART_ENTRY_COST,
+      getMinggeEffects(p, data.minggeList)
+    );
     await Write_player(usr_qq, p);
     const places = this._spiritPlaces();
     if (!places.length) return e.reply('精神宇宙数据不存在');
 
     const lines = [
       '╔══════════ 精神宇宙·神识云游 ══════════╗',
-      `心神：${heart.current}/${heart.max}｜每次神游消耗${SPIRIT_HEART_ENTRY_COST}点`,
+      `心神：${heart.current}/${heart.max}｜每次神游消耗${heartCost}点`,
       '每层完成有限观想后，需以元神战胜守关残魂。',
       '主动归位保留全部收获；战败强制归位并可能遗失。',
       '╠══════════════════════════════════════╣',
@@ -874,7 +879,7 @@ export class yuanshentixi extends plugin {
       const canEnter = p.yuanshenlevel_id != null && p.yuanshenlevel_id >= reqLevel;
       lines.push(
         `${canEnter ? '✅' : '🔒'}【${place.name}】（${place.depth}层）`,
-        `   要求：${meta?.level || '未知'}｜入场：${SPIRIT_HEART_ENTRY_COST}心神 + ${bigNumberTransform(place.entry_cost || 0)}元神`,
+        `   要求：${meta?.level || '未知'}｜入场：${heartCost}心神 + ${bigNumberTransform(place.entry_cost || 0)}元神`,
         `   珍品：${(place.Best || []).join('、') || '未知'}`,
         canEnter ? `   命令：#神游${place.name}` : '   元神等级不足',
         '─────────────────────────────────────',
@@ -914,12 +919,14 @@ export class yuanshentixi extends plugin {
         return e.reply(`神识云游需要 ${bigNumberTransform(entryCost)} 元神，你当前仅 ${bigNumberTransform(p.元神 || 0)}`);
       }
 
-      const heart = consumeSpiritHeartEntry(p);
+      const minggeEffects = getMinggeEffects(p, data.minggeList);
+      const heartCost = getSpiritHeartCost(SPIRIT_HEART_ENTRY_COST, minggeEffects);
+      const heart = consumeSpiritHeartEntry(p, Date.now(), minggeEffects);
       if (!heart.ok) {
         const elapsed = Date.now() - Number(p.心神恢复时间 || Date.now());
         const waitMinutes = Math.max(1, Math.ceil((SPIRIT_HEART_RECOVERY_MS - elapsed) / 60000));
         await Write_player(usr_qq, p);
-        return e.reply(`进入精神宇宙需要${SPIRIT_HEART_ENTRY_COST}点心神，你当前为${heart.current}/${heart.max}\n约${waitMinutes}分钟后恢复下一点心神`);
+        return e.reply(`进入精神宇宙需要${heartCost}点心神，你当前为${heart.current}/${heart.max}\n约${waitMinutes}分钟后恢复下一点心神`);
       }
 
       const firstLayer = place.layers[0];
@@ -934,7 +941,7 @@ export class yuanshentixi extends plugin {
         place.desc || '',
         '',
         `心神：${heart.current}/${heart.max}`,
-        `入场消耗：${SPIRIT_HEART_ENTRY_COST}心神、${bigNumberTransform(entryCost)}元神`,
+        `入场消耗：${heart.cost}心神、${bigNumberTransform(entryCost)}元神`,
         '发送 #观想 寻找当前层的机缘',
       ].join('\n'));
     });

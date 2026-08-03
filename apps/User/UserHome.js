@@ -2008,8 +2008,8 @@ if (equipment.帝兵.name == "终古剑之主") {
           return false;
         }
         const currentMax = getSpiritHeartMax(player);
-        if (currentMax >= 100) {
-          e.reply('你的心神上限已达到100点，无法继续拓展');
+        if (currentMax >= 200) {
+          e.reply('你的心神上限已达到200点，无法继续拓展');
           return false;
         }
         const perPill = Math.max(1, Number(thing_exist.heartMax) || 0);

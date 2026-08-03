@@ -66,12 +66,12 @@
         },
         {
           "hash": "02fa89e",
-          "msg": "现有玩法增强与平衡——团本/秘境/仙古扩展及配套数据",
+          "msg": "现有玩法增强与平衡：团本/秘境/仙古扩展及配套数据",
           "detail": "团本行动条逻辑重构（tuanben.js）；秘境与仙古探索扩展（SecretPlace / xianguTribulation），多种 boss 数值大改；时代变更任务扩展（EraChangeTask）；灵根 / 职业 / 帮助文案更新；补充团本行动条、装备属性等单元测试。"
         },
         {
           "hash": "24bc0ac",
-          "msg": "新增五大玩法系统——至高道途/黑帝/位面裂隙/天地榜/无尽",
+          "msg": "新增五大玩法系统：至高道途/黑帝/位面裂隙/天地榜/无尽",
           "detail": "新增五大玩法系统：至高道途（supremePath 道途抉择与加成）、黑帝（BlackEmperor 黑帝试炼）、位面裂隙节庆（PlaneRiftFestival 限时节庆）、天地榜重构（Tiandibang 结算重写）、无尽商店与无尽战斗（endlessRealm + endlessShop）。扩展灵根觉醒、更新位面大事件数据，并补齐对应单元测试。"
         }
       ]

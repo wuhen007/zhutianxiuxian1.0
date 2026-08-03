@@ -32,6 +32,7 @@ import {
   calculateMinggeCurrencyGain,
   calculateMinggeFourRealmBonus,
   calculateMinggeGain,
+  calculateMinggeSourceGain,
   getMinggeEffects,
 } from './mingge.js';
 import { getXianqiSuppressMultiplier } from './xianguXianqi.js';
@@ -4788,11 +4789,15 @@ export async function Add_灵石(usr_qq, 灵石数量 = 0, options = {}) {
   await Write_player(usr_qq, player);
   return actualAmount;
 }
-export async function Add_源石(usr_qq, 源石数量 = 0) {
+export async function Add_源石(usr_qq, 源石数量 = 0, options = {}) {
   let player = await Read_player(usr_qq);
-  player.源石 += Math.trunc(源石数量);
+  const effects = getMinggeEffects(player, data.minggeList);
+  const actualAmount = options?.applyMingge === false
+    ? Math.trunc(源石数量)
+    : calculateMinggeSourceGain(源石数量, effects);
+  player.源石 = (Number(player.源石) || 0) + actualAmount;
   await Write_player(usr_qq, player);
-  return;
+  return actualAmount;
 }
 export async function Add_修为(usr_qq, 修为数量 = 0) {
   let player = await Read_player(usr_qq);

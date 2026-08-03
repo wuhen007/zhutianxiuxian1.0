@@ -1414,7 +1414,7 @@ async relieveFashanAction(e) {
     await Add_najie_thing(targetQQ, '超越宝盒', '盒子', 5);
     await Add_najie_thing(targetQQ, '位面传送阵', '道具', 3);
     await Add_灵石(targetQQ, 100000000);
-    await Add_源石(targetQQ, 5000000);
+    await Add_源石(targetQQ, 5000000, { applyMingge: false });
 
     // ===== 档位奖励 =====
     let bonusText = '';

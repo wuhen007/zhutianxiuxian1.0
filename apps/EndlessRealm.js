@@ -1,4 +1,4 @@
-import { plugin, puppeteer, Show } from '../api/api.js';
+import { data, plugin, puppeteer, Show } from '../api/api.js';
 import {
   Add_najie_thing,
   Read_equipment,
@@ -33,8 +33,13 @@ import {
 } from '../model/endlessAccess.js';
 import {
   consumeSpiritHeart,
+  getSpiritHeartCost,
   refreshSpiritHeart,
 } from '../model/spiritUniverse.js';
+import {
+  calculateMinggeSourceGain,
+  getMinggeEffects,
+} from '../model/mingge.js';
 import {
   ENDLESS_SHOP,
   ENDLESS_TOKEN,
@@ -725,12 +730,16 @@ export class EndlessRealm extends plugin {
           missing.push(`${team.memberNames[id]}（缺少${ENDLESS_ENTRY_ITEM}）`);
         const player = await Read_player(id);
         const heart = refreshSpiritHeart(player);
-        if (heart.current < ENDLESS_SPIRIT_HEART_COST) {
+        const heartCost = getSpiritHeartCost(
+          ENDLESS_SPIRIT_HEART_COST,
+          getMinggeEffects(player, data.minggeList)
+        );
+        if (heart.current < heartCost) {
           missing.push(
-            `${team.memberNames[id]}（心神不足：${heart.current}/${heart.max}，需要${ENDLESS_SPIRIT_HEART_COST}）`
+            `${team.memberNames[id]}（心神不足：${heart.current}/${heart.max}，需要${heartCost}）`
           );
         }
-        players.push({ id, player });
+        players.push({ id, player, heartCost });
       }
       if (missing.length)
         return e.reply(['【无法开启无尽劫境】', ...missing].join('\n'));
@@ -747,12 +756,12 @@ export class EndlessRealm extends plugin {
       const deducted = [];
       try {
         for (const entry of players) {
-          const { id, player } = entry;
+          const { id, player, heartCost } = entry;
           await Add_najie_thing(id, ENDLESS_ENTRY_ITEM, '道具', -1);
           deducted.push(id);
           const heart = consumeSpiritHeart(
             player,
-            ENDLESS_SPIRIT_HEART_COST
+            heartCost
           );
           if (!heart.ok) throw new Error(`player=${id} 心神状态发生变化`);
           await Write_player(id, player);
@@ -806,7 +815,7 @@ export class EndlessRealm extends plugin {
       return e.reply(
         [
           '【诸天无尽劫境开启】',
-          `全队消耗【${ENDLESS_ENTRY_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点`,
+          `全队消耗【${ENDLESS_ENTRY_ITEM}】×1、心神按各自命格结算`,
           `首个世界：${world.name}`,
           `世界规则：${world.rule}`,
           `共享命火：${run.lifeFire}/${run.maxLifeFire}`,
@@ -1504,12 +1513,14 @@ export class EndlessRealm extends plugin {
         await exist_najie_thing(userId, ENDLESS_SWEEP_ITEM, '道具')
       ) || 0;
       const heart = refreshSpiritHeart(player);
+      const minggeEffects = getMinggeEffects(player, data.minggeList);
+      const heartCost = getSpiritHeartCost(ENDLESS_SPIRIT_HEART_COST, minggeEffects);
       const missing = [];
       if (keyAmount < 1) missing.push(`【${ENDLESS_ENTRY_ITEM}】×1`);
       if (ticketAmount < 1) missing.push(`【${ENDLESS_SWEEP_ITEM}】×1`);
-      if (heart.current < ENDLESS_SPIRIT_HEART_COST) {
+      if (heart.current < heartCost) {
         missing.push(
-          `心神${ENDLESS_SPIRIT_HEART_COST}点（当前${heart.current}/${heart.max}）`
+          `心神${heartCost}点（当前${heart.current}/${heart.max}）`
         );
       }
       if (missing.length)
@@ -1518,21 +1529,26 @@ export class EndlessRealm extends plugin {
       const reward = getEndlessSweepReward(player, highestLayer);
       const snapshot = structuredClone(player);
       const deducted = [];
+      let consumed;
+      let sourceStoneGain = 0;
       try {
         await Add_najie_thing(userId, ENDLESS_ENTRY_ITEM, '道具', -1);
         deducted.push(ENDLESS_ENTRY_ITEM);
         await Add_najie_thing(userId, ENDLESS_SWEEP_ITEM, '道具', -1);
         deducted.push(ENDLESS_SWEEP_ITEM);
-        const consumed = consumeSpiritHeart(
+        consumed = consumeSpiritHeart(
           player,
-          ENDLESS_SPIRIT_HEART_COST
+          ENDLESS_SPIRIT_HEART_COST,
+          Date.now(),
+          minggeEffects
         );
         if (!consumed.ok) throw new Error('心神状态发生变化');
 
         player.修为 = (Number(player.修为) || 0) + reward.cultivation;
         player.血气 = (Number(player.血气) || 0) + reward.blood;
         player.灵石 = (Number(player.灵石) || 0) + reward.lingshi;
-        player.源石 = (Number(player.源石) || 0) + reward.sourceStone;
+        sourceStoneGain = calculateMinggeSourceGain(reward.sourceStone, minggeEffects);
+        player.源石 = (Number(player.源石) || 0) + sourceStoneGain;
         player[ENDLESS_TOKEN] =
           (Number(player[ENDLESS_TOKEN]) || 0) + reward.tokens;
         player.无尽劫境扫荡次数 =
@@ -1566,11 +1582,11 @@ export class EndlessRealm extends plugin {
         [
           '【无尽劫境扫荡完成】',
           `扫荡层数：第${reward.startLayer}～${reward.endLayer}层（共${reward.layers}层）`,
-          `消耗：【${ENDLESS_ENTRY_ITEM}】×1、【${ENDLESS_SWEEP_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点`,
+          `消耗：【${ENDLESS_ENTRY_ITEM}】×1、【${ENDLESS_SWEEP_ITEM}】×1、心神${consumed.cost}点`,
           `修为：+${this.formatAmount(reward.cultivation)}`,
           `血气：+${this.formatAmount(reward.blood)}`,
           `灵石：+${this.formatAmount(reward.lingshi)}`,
-          `源石：+${this.formatAmount(reward.sourceStone)}`,
+          `源石：+${this.formatAmount(sourceStoneGain)}`,
           `${ENDLESS_TOKEN}：+${this.formatAmount(reward.tokens)}`,
           `剩余心神：${player.心神}/${heart.max}`,
         ].join('\n')

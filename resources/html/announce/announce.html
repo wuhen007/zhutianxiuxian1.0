@@ -5,679 +5,971 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>诸天修仙 · 更新公告</title>
     <style>
+        @font-face {
+            font-family: "Zhutian Display";
+            src: url("../../font/AlimamaDongFangDaKai-Regular.ttf");
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: "Zhutian Text";
+            src: url("../../font/HYWenHei-55W.ttf");
+            font-display: swap;
+        }
+
+        :root {
+            --ink-950: #05090a;
+            --ink-900: #091012;
+            --ink-850: #0d1719;
+            --ink-800: #122024;
+            --ink-700: #203337;
+            --paper: #f2f5f1;
+            --muted: #a9b8b6;
+            --faint: #718481;
+            --gold: #e8bd62;
+            --gold-soft: rgba(232, 189, 98, 0.16);
+            --line: rgba(232, 189, 98, 0.22);
+            --radius: 6px;
+        }
+
         * {
+            box-sizing: border-box;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
-            font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+        }
+
+        html {
+            background: var(--ink-950);
         }
 
         body {
-            background: radial-gradient(circle at 50% -10%, #2a2150 0%, #0c0e1a 55%, #070811 100%);
-            color: #e2e8f0;
-            padding: 24px;
+            min-width: 320px;
             min-height: 100vh;
+            padding: 22px;
+            color: var(--paper);
+            background-color: var(--ink-950);
+            font-family: "Zhutian Text", "Microsoft YaHei", "PingFang SC", sans-serif;
+            -webkit-font-smoothing: antialiased;
         }
 
         .container {
-            max-width: 1100px;
+            width: min(1080px, 100%);
             margin: 0 auto;
-            background: rgba(15, 18, 32, 0.92);
-            border-radius: 18px;
-            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), 0 0 60px rgba(124, 58, 237, 0.08);
             overflow: hidden;
-            border: 1px solid rgba(159, 122, 234, 0.18);
+            background: var(--ink-900);
+            border: 1px solid rgba(232, 189, 98, 0.18);
+            border-radius: var(--radius);
+            box-shadow: 0 26px 70px rgba(0, 0, 0, 0.48);
         }
 
-        /* ===== 顶部横幅 ===== */
-        .header {
+        .masthead {
             position: relative;
-            padding: 38px 36px 30px;
-            background: linear-gradient(115deg, #4c1d95 0%, #6d28d9 42%, #b83280 100%);
-            text-align: center;
-            border-bottom: 2px solid rgba(255, 215, 0, 0.45);
-            overflow: hidden;
-            box-shadow: inset 0 -2px 18px rgba(255, 215, 0, 0.15);
-        }
-
-        .header::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background:
-                radial-gradient(circle at 18% 20%, rgba(255, 215, 0, 0.18), transparent 45%),
-                radial-gradient(circle at 82% 80%, rgba(255, 100, 200, 0.18), transparent 50%);
-            pointer-events: none;
-        }
-
-        .header::after {
-            content: '';
-            position: absolute;
-            top: -60px;
-            right: -60px;
-            width: 220px;
-            height: 220px;
-            background: radial-gradient(circle, rgba(255, 215, 0, 0.32), transparent 70%);
-            pointer-events: none;
-            filter: blur(8px);
-        }
-
-        .title {
-            position: relative;
-            font-size: 40px;
-            font-weight: 900;
-            letter-spacing: 3px;
-            color: #fff;
-            text-shadow: 0 2px 14px rgba(0, 0, 0, 0.5), 0 0 18px rgba(255, 215, 0, 0.18);
-            margin-bottom: 12px;
-        }
-
-        .title span {
-            color: #FFD700;
-            text-shadow: 0 0 12px rgba(255, 215, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.5);
-        }
-
-        .meta-row {
-            position: relative;
+            min-height: 420px;
             display: flex;
-            justify-content: center;
-            gap: 14px;
-            flex-wrap: wrap;
-            font-size: 14px;
-            color: #ede9fe;
+            align-items: flex-end;
+            overflow: hidden;
+            isolation: isolate;
+            background-image:
+                linear-gradient(90deg, rgba(4, 9, 10, 0.97) 0%, rgba(4, 9, 10, 0.8) 48%, rgba(4, 9, 10, 0.18) 100%),
+                linear-gradient(0deg, rgba(4, 9, 10, 0.98) 0%, rgba(4, 9, 10, 0) 42%),
+                url("{{pluResPath}}/img/help/zhutian.jpg");
+            background-position: center, center, center 43%;
+            background-size: cover;
+            border-bottom: 1px solid var(--line);
         }
 
-        .meta-chip {
-            padding: 5px 14px;
-            border-radius: 20px;
-            background: rgba(0, 0, 0, 0.32);
-            border: 1px solid rgba(255, 255, 255, 0.22);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-        }
-
-        .meta-chip b {
-            color: #FFD700;
-            text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
-        }
-
-        /* ===== 总览条 ===== */
-        .hero {
-            margin: 26px 30px 6px;
-            padding: 22px 26px;
-            border-radius: 14px;
-            background:
-                linear-gradient(135deg, rgba(80, 60, 160, 0.32), rgba(184, 50, 128, 0.22)),
-                rgba(15, 18, 32, 0.4);
-            border: 1px solid rgba(255, 215, 0, 0.18);
-            border-left: 4px solid #FFD700;
-            box-shadow: inset 0 0 30px rgba(124, 92, 200, 0.16), 0 0 22px rgba(255, 215, 0, 0.06);
-        }
-
-        .hero-label {
-            font-size: 14px;
-            color: #f6ad55;
-            letter-spacing: 4px;
-            margin-bottom: 10px;
-            font-weight: bold;
-            text-shadow: 0 0 10px rgba(246, 173, 85, 0.35);
-        }
-
-        .hero-text {
-            font-size: 17px;
-            line-height: 1.75;
-            color: #f1f5f9;
-        }
-
-        .hero-text em {
-            color: #FFD700;
-            font-style: normal;
-            font-weight: bold;
-            text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
-            margin: 0 2px;
-        }
-
-        /* ===== 章节标题 ===== */
-        .section-title {
-            position: relative;
-            font-size: 22px;
-            color: #FFD700;
-            margin: 36px 30px 18px;
-            padding: 4px 0 10px 32px;
-            border-bottom: 1px solid rgba(255, 215, 0, 0.22);
-            text-shadow: 0 0 12px rgba(255, 215, 0, 0.3);
-            letter-spacing: 1px;
-        }
-
-        .section-title::before {
-            content: '';
+        .masthead::before,
+        .masthead::after {
+            content: "";
             position: absolute;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .masthead::before {
+            inset: 18px;
+            border: 1px solid rgba(232, 189, 98, 0.32);
+        }
+
+        .masthead::after {
+            top: 0;
             left: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 18px;
-            height: 6px;
-            background: linear-gradient(90deg, #FFD700, #ff8c00);
-            border-radius: 3px;
-            box-shadow: 0 0 14px rgba(255, 215, 0, 0.65);
+            width: 46%;
+            height: 3px;
+            background: var(--gold);
         }
 
-        .section-title::after {
-            content: "✦";
-            position: absolute;
-            right: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            color: rgba(255, 215, 0, 0.45);
+        .masthead-archive {
+            min-height: 280px;
+        }
+
+        .masthead-content {
+            width: 100%;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 280px;
+            gap: 42px;
+            align-items: end;
+            padding: 64px 58px 52px;
+        }
+
+        .edition {
+            margin-bottom: 16px;
+            color: var(--gold);
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .brand-title {
+            max-width: 680px;
+            color: #fff;
+            font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
+            font-size: 62px;
+            font-weight: 400;
+            line-height: 1.02;
+            text-shadow: 0 4px 24px rgba(0, 0, 0, 0.58);
+        }
+
+        .brand-title span {
+            display: block;
+            margin-top: 8px;
+            color: var(--gold);
+            font-family: "Zhutian Text", "Microsoft YaHei", sans-serif;
+            font-size: 23px;
+            font-weight: 700;
+        }
+
+        .brand-note {
+            max-width: 620px;
+            margin-top: 18px;
+            color: #d8e0dc;
             font-size: 16px;
-            text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+            line-height: 1.75;
         }
 
-        /* ===== 更新卡片 ===== */
-        .update-list {
-            padding: 0 30px;
+        .meta-panel {
+            border-left: 1px solid rgba(232, 189, 98, 0.42);
+            padding-left: 24px;
+        }
+
+        .meta-item {
+            display: grid;
+            grid-template-columns: 56px minmax(0, 1fr);
+            gap: 12px;
+            padding: 11px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .meta-item:last-child {
+            border-bottom: 0;
+        }
+
+        .meta-label {
+            color: var(--faint);
+            font-size: 12px;
+        }
+
+        .meta-value {
+            min-width: 0;
+            overflow-wrap: anywhere;
+            color: var(--paper);
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .meta-value.gold {
+            color: var(--gold);
+        }
+
+        main {
+            background-image: linear-gradient(rgba(232, 189, 98, 0.035) 1px, transparent 1px);
+            background-size: 100% 44px;
+        }
+
+        .release-intro {
+            display: grid;
+            grid-template-columns: 200px minmax(0, 1fr);
+            gap: 44px;
+            margin: 0 48px;
+            padding: 36px 10px 34px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .release-count {
             display: flex;
-            flex-direction: column;
-            gap: 20px;
+            align-items: baseline;
+            gap: 10px;
+            color: var(--gold);
+        }
+
+        .release-count strong {
+            font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
+            font-size: 58px;
+            font-weight: 400;
+            line-height: 1;
+        }
+
+        .release-count span {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .release-copy {
+            color: #d8e0dc;
+            font-size: 17px;
+            line-height: 1.8;
+        }
+
+        .release-copy strong {
+            color: var(--gold);
+            font-weight: 700;
+        }
+
+        .section {
+            padding: 48px;
+        }
+
+        .section + .section {
+            border-top: 1px solid rgba(232, 189, 98, 0.12);
+        }
+
+        .section-head {
+            display: flex;
+            align-items: baseline;
+            gap: 18px;
+            margin-bottom: 26px;
+        }
+
+        .section-head h2 {
+            flex: 0 0 auto;
+            color: var(--paper);
+            font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
+            font-size: 30px;
+            font-weight: 400;
+            line-height: 1.2;
+        }
+
+        .section-head span {
+            color: var(--faint);
+            font-size: 12px;
+        }
+
+        .section-head::after {
+            content: "";
+            height: 1px;
+            flex: 1;
+            background: linear-gradient(90deg, var(--gold), rgba(232, 189, 98, 0));
+            opacity: 0.48;
+        }
+
+        .update-list {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+            counter-reset: update;
         }
 
         .update-card {
             position: relative;
-            background: linear-gradient(145deg, #1e2336, #161a2b);
-            border-radius: 14px;
-            padding: 22px 24px 22px 28px;
-            border: 1px solid rgba(101, 119, 155, 0.28);
-            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            min-width: 0;
+            padding: 24px 24px 24px 72px;
             overflow: hidden;
+            background: rgba(13, 23, 25, 0.94);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            border-radius: var(--radius);
+            counter-increment: update;
         }
 
         .update-card::before {
-            content: '';
+            content: "0" counter(update);
             position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 5px;
-            background: linear-gradient(180deg, #9f7aea, #d53f8c);
-            box-shadow: 0 0 14px rgba(213, 63, 140, 0.45);
+            top: 24px;
+            left: 20px;
+            color: var(--gold);
+            font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
+            font-size: 26px;
+            line-height: 1;
         }
 
         .update-card::after {
-            content: '';
+            content: "";
             position: absolute;
-            top: -40px;
-            right: -40px;
-            width: 140px;
-            height: 140px;
-            background: radial-gradient(circle, rgba(159, 122, 234, 0.18), transparent 70%);
-            pointer-events: none;
+            top: 0;
+            left: 52px;
+            width: 1px;
+            height: 100%;
+            background: rgba(232, 189, 98, 0.18);
+        }
+
+        .update-card:first-child {
+            grid-column: 1 / -1;
+            min-height: 230px;
+            display: grid;
+            grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.2fr);
+            grid-template-rows: auto 1fr;
+            column-gap: 42px;
+            align-items: start;
+            background-image:
+                linear-gradient(90deg, rgba(13, 23, 25, 0.99) 0%, rgba(13, 23, 25, 0.9) 56%, rgba(13, 23, 25, 0.6) 100%),
+                url("{{pluResPath}}/img/help/zhutian.jpg");
+            background-position: center, center 58%;
+            background-size: cover;
+        }
+
+        .update-card:first-child .point-list {
+            grid-column: 2;
+            grid-row: 1 / span 2;
         }
 
         .update-head {
             display: flex;
             align-items: center;
-            gap: 14px;
-            margin-bottom: 14px;
+            gap: 12px;
+            margin-bottom: 12px;
         }
 
         .tag {
-            font-size: 13px;
-            font-weight: bold;
-            padding: 5px 12px;
-            border-radius: 8px;
-            color: #fff;
-            letter-spacing: 1px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+            flex: 0 0 auto;
+            padding: 4px 8px;
+            color: var(--gold);
+            background: var(--gold-soft);
+            border: 1px solid rgba(232, 189, 98, 0.42);
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: 700;
         }
 
-        .tag-天骄 { background: linear-gradient(90deg, #6d28d9, #9f7aea); box-shadow: 0 2px 12px rgba(159, 122, 234, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
-        .tag-丹药 { background: linear-gradient(90deg, #2f855a, #48bb78); box-shadow: 0 2px 12px rgba(72, 187, 120, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
-        .tag-团本 { background: linear-gradient(90deg, #c53030, #ed8936); box-shadow: 0 2px 12px rgba(237, 137, 54, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
-        .tag-系统 { background: linear-gradient(90deg, #2b6cb0, #4299e1); box-shadow: 0 2px 12px rgba(66, 153, 225, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
-
         .update-title {
-            font-size: 21px;
-            font-weight: bold;
+            min-width: 0;
             color: #fff;
-            text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+            font-size: 20px;
+            font-weight: 700;
+            line-height: 1.4;
         }
 
         .update-summary {
-            font-size: 15px;
-            color: #cbd5e0;
-            margin-bottom: 14px;
-            padding-left: 4px;
-            font-style: italic;
-            opacity: 0.92;
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.7;
         }
 
         .point-list {
             list-style: none;
-            display: flex;
-            flex-direction: column;
-            gap: 9px;
         }
 
         .point-list li {
             position: relative;
-            padding-left: 24px;
-            font-size: 15px;
+            padding: 9px 0 9px 18px;
+            color: #d4ddda;
+            font-size: 14px;
             line-height: 1.65;
-            color: #dbe4f0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .point-list li:last-child {
+            border-bottom: 0;
         }
 
         .point-list li::before {
-            content: "▹";
+            content: "";
             position: absolute;
+            top: 18px;
             left: 0;
-            top: 0;
-            color: #FFD700;
-            font-size: 16px;
-            text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+            width: 7px;
+            height: 1px;
+            background: var(--gold);
         }
 
-        /* ===== 天骄属性一览 ===== */
-        .tianjiao-wrap {
-            margin: 0 30px 10px;
+        .changelog-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+
+        .cl-group {
+            display: grid;
+            grid-template-columns: 120px minmax(0, 1fr);
+            gap: 28px;
+        }
+
+        .cl-date {
+            align-self: start;
+            padding-top: 4px;
+            color: var(--gold);
+            font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
+            font-size: 19px;
+            line-height: 1.25;
+        }
+
+        .cl-items {
+            border-left: 1px solid rgba(232, 189, 98, 0.26);
+            padding-left: 28px;
+        }
+
+        .cl-item {
+            position: relative;
+            padding: 0 0 22px;
+            margin-bottom: 22px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+        }
+
+        .cl-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .cl-item::before {
+            content: "";
+            position: absolute;
+            top: 7px;
+            left: -33px;
+            width: 9px;
+            height: 9px;
+            background: var(--ink-900);
+            border: 2px solid var(--gold);
+            transform: rotate(45deg);
+        }
+
+        .cl-head {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .cl-hash {
+            flex: 0 0 auto;
+            padding: 3px 7px;
+            color: var(--gold);
+            background: rgba(232, 189, 98, 0.08);
+            border: 1px solid rgba(232, 189, 98, 0.3);
+            border-radius: 3px;
+            font-family: "Consolas", "Courier New", monospace;
+            font-size: 12px;
+        }
+
+        .cl-msg {
+            min-width: 0;
+            color: var(--paper);
+            font-size: 16px;
+            font-weight: 700;
+            line-height: 1.5;
+        }
+
+        .cl-detail {
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.75;
         }
 
         .tj-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
         }
 
         .tj-card {
-            position: relative;
-            background: linear-gradient(145deg, #202744, #171c30);
-            border-radius: 12px;
-            padding: 16px 18px;
-            border: 1px solid rgba(101, 119, 155, 0.28);
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-            overflow: hidden;
-        }
-
-        .tj-card::before {
-            content: '';
-            position: absolute;
-            top: -30px;
-            right: -30px;
-            width: 90px;
-            height: 90px;
-            background: radial-gradient(circle, rgba(159, 122, 234, 0.18), transparent 70%);
-            pointer-events: none;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 230px;
+            gap: 20px;
+            align-items: center;
+            min-width: 0;
+            padding: 18px;
+            background: var(--ink-850);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            border-radius: var(--radius);
         }
 
         .tj-head {
             display: flex;
             align-items: center;
-            gap: 14px;
-            margin-bottom: 14px;
+            min-width: 0;
+            gap: 13px;
         }
 
         .tj-avatar {
-            width: 48px;
-            height: 48px;
-            border-radius: 12px;
-            background: linear-gradient(135deg, #6d28d9, #b83280);
-            color: #fff;
-            font-size: 22px;
-            font-weight: 900;
+            width: 44px;
+            height: 52px;
+            flex: 0 0 auto;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 4px 14px rgba(109, 40, 217, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18);
-            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
-            flex-shrink: 0;
+            color: var(--gold);
+            background: rgba(232, 189, 98, 0.08);
+            border: 1px solid rgba(232, 189, 98, 0.36);
+            border-radius: 3px;
+            font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
+            font-size: 24px;
         }
 
-        .tj-meta { flex: 1; min-width: 0; }
+        .tj-meta {
+            min-width: 0;
+        }
 
         .tj-name {
-            font-size: 19px;
-            font-weight: bold;
-            color: #FFD700;
-            margin-bottom: 4px;
-            text-shadow: 0 0 10px rgba(255, 215, 0, 0.28);
-            white-space: nowrap;
             overflow: hidden;
+            color: var(--paper);
+            font-size: 17px;
+            font-weight: 700;
+            line-height: 1.45;
             text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .tj-realm {
-            font-size: 13px;
-            color: #a0aec0;
+            margin-top: 3px;
+            overflow: hidden;
+            color: var(--faint);
+            font-size: 12px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .tj-stats {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
         }
 
         .tj-stat {
+            min-width: 0;
+            padding: 2px 8px;
             text-align: center;
-            padding: 10px 4px;
-            background: rgba(0, 0, 0, 0.28);
-            border-radius: 8px;
-            border: 1px solid rgba(101, 119, 155, 0.18);
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .tj-stat .lab {
-            font-size: 12px;
-            color: #8b9bb4;
-            margin-bottom: 6px;
-            letter-spacing: 1px;
+            margin-bottom: 4px;
+            color: var(--faint);
+            font-size: 11px;
         }
 
         .tj-stat .val {
-            display: inline-block;
-            font-size: 17px;
-            font-weight: 900;
-            padding: 3px 10px;
-            border-radius: 6px;
-            min-width: 36px;
+            display: block;
+            overflow: hidden;
+            color: var(--gold);
+            font-family: "Consolas", "Microsoft YaHei", sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
-        .tj-stat .val.speed {
-            color: #90cdf4;
-            background: linear-gradient(135deg, rgba(56, 178, 246, 0.22), rgba(99, 179, 237, 0.08));
-            border: 1px solid rgba(99, 179, 237, 0.55);
-            text-shadow: 0 0 10px rgba(99, 179, 237, 0.55);
-            box-shadow: 0 0 12px rgba(99, 179, 237, 0.12);
+        .character-band {
+            display: grid;
+            grid-template-columns: 280px minmax(0, 1fr);
+            gap: 36px;
+            align-items: center;
+            padding: 28px 32px;
+            background: #101a1c;
+            border: 1px solid rgba(232, 189, 98, 0.18);
+            border-radius: var(--radius);
         }
 
-        .tj-stat .val.mijing {
-            color: #d6bcfa;
-            background: linear-gradient(135deg, rgba(159, 122, 234, 0.22), rgba(183, 148, 244, 0.08));
-            border: 1px solid rgba(183, 148, 244, 0.55);
-            text-shadow: 0 0 10px rgba(183, 148, 244, 0.55);
-            box-shadow: 0 0 12px rgba(183, 148, 244, 0.12);
+        .character-title {
+            color: var(--paper);
+            font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
+            font-size: 24px;
+            line-height: 1.25;
         }
 
-        .tj-stat .val.xiangu {
-            color: #fbd38d;
-            background: linear-gradient(135deg, rgba(237, 137, 54, 0.22), rgba(246, 173, 85, 0.08));
-            border: 1px solid rgba(246, 173, 85, 0.55);
-            text-shadow: 0 0 10px rgba(246, 173, 85, 0.55);
-            box-shadow: 0 0 12px rgba(246, 173, 85, 0.12);
+        .character-count {
+            margin-top: 7px;
+            color: var(--muted);
+            font-size: 13px;
         }
 
-        /* ===== 剧情人物进度 ===== */
-        .char-wrap {
-            margin: 0 30px 10px;
-            padding: 22px 26px;
-            border-radius: 14px;
-            background: linear-gradient(135deg, rgba(58, 28, 113, 0.28), rgba(215, 109, 119, 0.18));
-            border: 1px solid rgba(215, 109, 119, 0.3);
-            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-        }
-
-        .char-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            margin-bottom: 12px;
-        }
-
-        .char-top .ct {
-            font-size: 17px;
-            color: #fbd5d5;
-            font-weight: bold;
-        }
-
-        .char-top .cn {
-            font-size: 15px;
-            color: #FFD700;
-            text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+        .character-count strong {
+            color: var(--gold);
+            font-size: 18px;
         }
 
         .progress-track {
-            height: 24px;
-            width: 100%;
-            background: rgba(0, 0, 0, 0.4);
-            border-radius: 12px;
+            position: relative;
+            height: 12px;
             overflow: hidden;
-            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.06);
+            background: #05090a;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 2px;
         }
 
         .progress-fill {
+            min-width: 28px;
             height: 100%;
-            background: linear-gradient(90deg, #3a1c71 0%, #d76d77 55%, #f6ad55 100%);
-            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: flex-end;
-            padding-right: 12px;
-            color: #fff;
-            font-size: 12px;
-            font-weight: bold;
-            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
-            box-shadow: 0 0 18px rgba(215, 109, 119, 0.45);
-            transition: width 0.4s ease;
+            padding-right: 5px;
+            color: #061012;
+            background: var(--gold);
+            font-size: 8px;
+            font-weight: 700;
         }
 
-        .char-note {
-            margin-top: 14px;
-            font-size: 13px;
-            color: #cbd5e0;
+        .character-note {
+            margin-top: 10px;
+            color: var(--faint);
+            font-size: 12px;
             line-height: 1.65;
         }
 
-        /* ===== 更新日志（git 提交） ===== */
-        .changelog-wrap {
-            margin: 0 30px 10px;
-        }
-
-        .cl-group {
-            margin-bottom: 22px;
-        }
-
-        .cl-date {
-            display: inline-block;
-            font-size: 14px;
-            font-weight: bold;
-            color: #0c0e1a;
-            background: linear-gradient(90deg, #FFD700, #f6ad55);
-            padding: 5px 18px 5px 14px;
-            border-radius: 0 14px 14px 0;
-            margin-bottom: 14px;
-            box-shadow: 0 3px 14px rgba(255, 215, 0, 0.35);
-            letter-spacing: 1px;
-            text-shadow: 0 1px 0 rgba(255, 255, 255, 0.18);
-        }
-
-        .cl-item {
-            position: relative;
-            padding: 14px 18px 14px 20px;
-            margin-bottom: 12px;
-            background: linear-gradient(145deg, #1a1f30, #151928);
-            border-radius: 10px;
-            border: 1px solid rgba(101, 119, 155, 0.22);
-            border-left: 3px solid #4299e1;
-            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
-        }
-
-        .cl-head {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 6px;
-            flex-wrap: wrap;
-        }
-
-        .cl-hash {
-            font-size: 12px;
-            font-family: 'Consolas', 'Courier New', monospace;
-            color: #90cdf4;
-            background: linear-gradient(135deg, rgba(56, 178, 246, 0.18), rgba(159, 122, 234, 0.12));
-            padding: 3px 10px;
-            border-radius: 6px;
-            letter-spacing: 0.5px;
-            border: 1px solid rgba(99, 179, 237, 0.45);
-            text-shadow: 0 0 8px rgba(99, 179, 237, 0.45);
-        }
-
-        .cl-msg {
-            font-size: 16px;
-            font-weight: bold;
-            color: #e2e8f0;
-            line-height: 1.5;
-        }
-
-        .cl-detail {
-            font-size: 14px;
-            color: #a0aec0;
-            line-height: 1.7;
-            padding-left: 2px;
-        }
-
-        /* ===== 页脚 ===== */
         .footer {
-            margin-top: 32px;
-            padding: 22px;
-            text-align: center;
-            border-top: 1px solid rgba(255, 255, 255, 0.08);
-            color: #8b9bb4;
-            font-size: 14px;
-            background: rgba(0, 0, 0, 0.25);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 24px;
+            align-items: center;
+            padding: 24px 48px;
+            color: var(--faint);
+            background: #060b0c;
+            border-top: 1px solid var(--line);
+            font-size: 12px;
+            line-height: 1.7;
         }
 
-        .footer b {
-            color: #FFD700;
-            text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+        .footer strong {
+            color: var(--gold);
         }
 
-        /* ===== 响应式 ===== */
+        .footer-nav {
+            color: var(--muted);
+            text-align: right;
+        }
+
         @media (max-width: 760px) {
-            .tj-grid { grid-template-columns: 1fr; }
-            .title { font-size: 30px; }
-            .container { border-radius: 12px; }
-            .header, .hero, .update-list, .tianjiao-wrap, .char-wrap, .changelog-wrap { margin-left: 16px; margin-right: 16px; }
+            body {
+                padding: 0;
+            }
+
+            .container {
+                border: 0;
+                border-radius: 0;
+            }
+
+            .masthead {
+                min-height: 430px;
+                background-image:
+                    linear-gradient(0deg, rgba(4, 9, 10, 0.98) 0%, rgba(4, 9, 10, 0.38) 70%, rgba(4, 9, 10, 0.12) 100%),
+                    url("{{pluResPath}}/img/help/zhutian.jpg");
+                background-position: center, center 30%;
+            }
+
+            .masthead::before {
+                inset: 10px;
+            }
+
+            .masthead-content {
+                grid-template-columns: 1fr;
+                gap: 24px;
+                padding: 48px 28px 34px;
+            }
+
+            .brand-title {
+                font-size: 42px;
+            }
+
+            .brand-title span {
+                font-size: 19px;
+            }
+
+            .brand-note {
+                font-size: 14px;
+            }
+
+            .meta-panel {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                padding: 0;
+                border-top: 1px solid rgba(232, 189, 98, 0.42);
+                border-left: 0;
+            }
+
+            .meta-item {
+                grid-template-columns: 1fr;
+                gap: 4px;
+                padding: 10px 8px 0 0;
+                border-bottom: 0;
+            }
+
+            .release-intro {
+                grid-template-columns: 1fr;
+                gap: 16px;
+                margin: 0 24px;
+                padding: 28px 0;
+            }
+
+            .release-count strong {
+                font-size: 44px;
+            }
+
+            .release-copy {
+                font-size: 15px;
+            }
+
+            .section {
+                padding: 38px 24px;
+            }
+
+            .section-head {
+                align-items: flex-end;
+                margin-bottom: 20px;
+            }
+
+            .section-head h2 {
+                font-size: 25px;
+            }
+
+            .section-head span {
+                display: none;
+            }
+
+            .update-list,
+            .tj-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .update-card,
+            .update-card:first-child {
+                grid-column: auto;
+                display: block;
+                min-height: 0;
+                padding: 22px 18px 22px 62px;
+            }
+
+            .update-card::before {
+                left: 16px;
+            }
+
+            .update-card::after {
+                left: 46px;
+            }
+
+            .update-card:first-child .point-list {
+                margin-top: 12px;
+            }
+
+            .update-head {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .update-title {
+                font-size: 18px;
+            }
+
+            .cl-group {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            .cl-date {
+                font-size: 17px;
+            }
+
+            .cl-items {
+                margin-left: 5px;
+                padding-left: 22px;
+            }
+
+            .cl-item::before {
+                left: -27px;
+            }
+
+            .cl-head {
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .tj-card {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+
+            .tj-stats {
+                border-top: 1px solid rgba(255, 255, 255, 0.1);
+                padding-top: 12px;
+            }
+
+            .tj-stat:first-child {
+                border-left: 0;
+            }
+
+            .character-band {
+                grid-template-columns: 1fr;
+                gap: 20px;
+                padding: 24px;
+            }
+
+            .footer {
+                grid-template-columns: 1fr;
+                padding: 22px 24px;
+            }
+
+            .footer-nav {
+                text-align: left;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                scroll-behavior: auto !important;
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- 顶部横幅 -->
-        <div class="header">
-            <div class="title">诸天修仙 · <span>更新公告</span></div>
-            <div class="meta-row">
-                <div class="meta-chip">版本 <b>{{version}}</b></div>
-                <div class="meta-chip">发布 <b>{{date}}</b></div>
-                <div class="meta-chip">修士 <b>{{nickname}}</b></div>
-            </div>
-        </div>
-
-        {{if showOverview}}
-        <!-- 总览 -->
-        <div class="hero">
-            <div class="hero-label">近 期 最 大 更 新</div>
-            <div class="hero-text">
-                本版聚焦<em>位面天骄</em>深度重构、<em>大衍悟道丹</em>登场与<em>团本行动条</em>落地——
-                天骄接入速度 / 秘境 / 仙古三系，千年机缘自动突破；悟道古茶叶终成丹；
-                战斗节奏交由速度主宰。详情见下方。
-            </div>
-        </div>
-
-        <!-- 更新卡片 -->
-        <div class="section-title">更新详情</div>
-        <div class="update-list">
-            {{each updates u}}
-            <div class="update-card">
-                <div class="update-head">
-                    <span class="tag tag-{{u.tag}}">{{u.tag}}</span>
-                    <span class="update-title">{{u.title}}</span>
+        <header class="masthead {{if showOverview}}masthead-main{{else}}masthead-archive{{/if}}">
+            <div class="masthead-content">
+                <div class="brand-lockup">
+                    <div class="edition">诸天纪元 · 天道诏令</div>
+                    <h1 class="brand-title">诸天修仙<span>更新天书</span></h1>
+                    <p class="brand-note">
+                        诸界法则重新编定，新机缘、新征途与新敌手已落入天书。此卷记载本期全部大道变迁。
+                    </p>
                 </div>
-                <div class="update-summary">{{u.summary}}</div>
-                <ul class="point-list">
-                    {{each u.points p}}
-                    <li>{{p}}</li>
+                <div class="meta-panel">
+                    <div class="meta-item">
+                        <span class="meta-label">版本</span>
+                        <span class="meta-value gold">{{version}}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">发布</span>
+                        <span class="meta-value">{{date}}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">阅卷</span>
+                        <span class="meta-value">{{nickname}}</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            {{if showOverview}}
+            <section class="release-intro" aria-label="本期概览">
+                <div class="release-count">
+                    <strong>{{updates.length}}</strong>
+                    <span>条核心更新</span>
+                </div>
+                <p class="release-copy">
+                    本期围绕<strong>无尽劫境、精神宇宙、仙古秘境、位面穿梭与天骄成长</strong>展开。
+                    从准入资源到战斗结算，从诸界坐标到人物传承，所有改动均已接入正式玩法。
+                </p>
+            </section>
+
+            <section class="section update-section">
+                <div class="section-head">
+                    <h2>天书新章</h2>
+                    <span>本期核心内容</span>
+                </div>
+                <div class="update-list">
+                    {{each updates u}}
+                    <article class="update-card">
+                        <div class="update-head">
+                            <span class="tag tag-{{u.tag}}">{{u.tag}}</span>
+                            <h3 class="update-title">{{u.title}}</h3>
+                        </div>
+                        <p class="update-summary">{{u.summary}}</p>
+                        <ul class="point-list">
+                            {{each u.points p}}
+                            <li>{{p}}</li>
+                            {{/each}}
+                        </ul>
+                    </article>
                     {{/each}}
-                </ul>
-            </div>
-            {{/each}}
-        </div>
-        {{/if}}
-
-        <!-- 更新日志（git 提交，分页） -->
-        <div class="section-title">更新日志 · 提交记录</div>
-        <div class="changelog-wrap">
-            {{each changelog g}}
-            <div class="cl-group">
-                <div class="cl-date">{{g.date}}</div>
-                {{each g.items it}}
-                <div class="cl-item">
-                    <div class="cl-head">
-                        <span class="cl-hash">{{it.hash}}</span>
-                        <span class="cl-msg">{{it.msg}}</span>
-                    </div>
-                    {{if it.detail}}
-                    <div class="cl-detail">{{it.detail}}</div>
-                    {{/if}}
                 </div>
-                {{/each}}
-            </div>
-            {{/each}}
-        </div>
+            </section>
+            {{/if}}
 
-        {{if showOverview}}
-        <!-- 天骄属性一览 -->
-        <div class="section-title">天骄属性一览 · 重构后</div>
-        <div class="tianjiao-wrap">
-            <div class="tj-grid">
-                {{each tianjiaoItems t}}
-                <div class="tj-card">
-                    <div class="tj-head">
-                        <div class="tj-avatar">{{t.avatar}}</div>
-                        <div class="tj-meta">
-                            <div class="tj-name">{{t.名号}}</div>
-                            <div class="tj-realm">{{t.境界}}</div>
+            <section class="section changelog-section">
+                <div class="section-head">
+                    <h2>大道刻录</h2>
+                    <span>更新日志 · 提交记录</span>
+                </div>
+                <div class="changelog-wrap">
+                    {{each changelog g}}
+                    <div class="cl-group">
+                        <div class="cl-date">{{g.date}}</div>
+                        <div class="cl-items">
+                            {{each g.items it}}
+                            <article class="cl-item">
+                                <div class="cl-head">
+                                    <span class="cl-hash">{{it.hash}}</span>
+                                    <h3 class="cl-msg">{{it.msg}}</h3>
+                                </div>
+                                {{if it.detail}}
+                                <p class="cl-detail">{{it.detail}}</p>
+                                {{/if}}
+                            </article>
+                            {{/each}}
                         </div>
                     </div>
-                    <div class="tj-stats">
-                        <div class="tj-stat">
-                            <div class="lab">速度</div>
-                            <div class="val speed">{{t.速度}}</div>
+                    {{/each}}
+                </div>
+            </section>
+
+            {{if showOverview}}
+            <section class="section tianjiao-section">
+                <div class="section-head">
+                    <h2>诸界天骄</h2>
+                    <span>独立成长档案</span>
+                </div>
+                <div class="tj-grid">
+                    {{each tianjiaoItems t}}
+                    <article class="tj-card">
+                        <div class="tj-head">
+                            <div class="tj-avatar">{{t.avatar}}</div>
+                            <div class="tj-meta">
+                                <h3 class="tj-name">{{t.名号}}</h3>
+                                <div class="tj-realm">{{t.境界}}</div>
+                            </div>
                         </div>
-                        <div class="tj-stat">
-                            <div class="lab">秘境</div>
-                            <div class="val mijing">{{t.秘境}}</div>
+                        <div class="tj-stats">
+                            <div class="tj-stat">
+                                <div class="lab">速度</div>
+                                <div class="val speed">{{t.速度}}</div>
+                            </div>
+                            <div class="tj-stat">
+                                <div class="lab">秘境</div>
+                                <div class="val mijing">{{t.秘境}}</div>
+                            </div>
+                            <div class="tj-stat">
+                                <div class="lab">仙古</div>
+                                <div class="val xiangu">{{t.仙古}}</div>
+                            </div>
                         </div>
-                        <div class="tj-stat">
-                            <div class="lab">仙古</div>
-                            <div class="val xiangu">{{t.仙古}}</div>
+                    </article>
+                    {{/each}}
+                </div>
+            </section>
+
+            <section class="section character-section">
+                <div class="character-band">
+                    <div>
+                        <h2 class="character-title">诸天人物志</h2>
+                        <p class="character-count">已结识 <strong>{{unlockedCount}}</strong> / {{totalCharacters}} 位</p>
+                    </div>
+                    <div>
+                        <div class="progress-track" aria-label="剧情人物收集进度">
+                            <div class="progress-fill" style="width: {{progressPercentage}}%;">{{progressPercentage}}%</div>
                         </div>
+                        <p class="character-note">游历诸天万界并完成对应奇遇，可解锁人物关系与专属好感剧情。</p>
                     </div>
                 </div>
-                {{/each}}
-            </div>
-        </div>
+            </section>
+            {{/if}}
+        </main>
 
-        <!-- 剧情人物进度 -->
-        <div class="section-title">剧情人物 · 收集进度</div>
-        <div class="char-wrap">
-            <div class="char-top">
-                <div class="ct">诸天传奇，缘法相牵</div>
-                <div class="cn">已结识 {{unlockedCount}} / {{totalCharacters}} 位</div>
+        <footer class="footer">
+            <div>诸天修仙 · 大道无情，唯勤者得之</div>
+            <div class="footer-nav">
+                第 <strong>{{page}}</strong> / <strong>{{totalPages}}</strong> 页
+                {{if hasMore}} · 发送 <strong>#更新公告{{page+1}}</strong> 查看过往{{/if}}
+                {{if page>1}} · 发送 <strong>#更新公告1</strong> 回到最新{{/if}}
             </div>
-            <div class="progress-track">
-                <div class="progress-fill" style="width: {{progressPercentage}}%;">{{progressPercentage}}%</div>
-            </div>
-            <div class="char-note">
-                结识更多剧情人物可解锁专属关系与好感剧情。前往诸天万界游历、完成对应奇遇即可收录于【剧情人物图鉴】。
-            </div>
-        </div>
-        {{/if}}
-
-        <!-- 页脚 -->
-        <div class="footer">
-            诸天修仙 · 版本 <b>{{version}}</b> &nbsp;|&nbsp; 第 <b>{{page}}</b> / <b>{{totalPages}}</b> 页
-            {{if hasMore}}&nbsp;|&nbsp; 发送 <b>#更新公告{{page+1}}</b> 查看过往{{/if}}
-            {{if page>1}}&nbsp;|&nbsp; 发送 <b>#更新公告1</b> 回到最新{{/if}}
-            <br>大道无情，唯勤者得之
-        </div>
+        </footer>
     </div>
 </body>
 </html>

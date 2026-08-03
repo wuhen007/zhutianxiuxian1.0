@@ -741,5 +741,106 @@
       "仙道潜力消耗增加": 0.25,
       "签到奖励倍率": 0.50
     }
+  },
+  {
+    "id": "calm_spirit",
+    "name": "抱元守一",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "修炼",
+    "desc": "灵台天生安定，纵有万念纷起，亦能抱元守一，使识海比常人更为宽广。",
+    "effects": {
+      "心神额外上限": 5
+    }
+  },
+  {
+    "id": "glazed_spirit_platform",
+    "name": "琉璃灵台",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "修炼",
+    "desc": "识海澄澈如琉璃，诸邪难染，神游太虚时心念凝而不散，可承载更多精神伟力。",
+    "effects": {
+      "心神额外上限": 10,
+      "心神消耗减少": 0.15,
+      "元神修炼加成": 0.10
+    }
+  },
+  {
+    "id": "immortal_divine_will",
+    "name": "不灭神念",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "特殊",
+    "desc": "眉心有一缕先天神光长明不灭，念动可照彻虚妄，纵横精神宇宙而心神不竭。",
+    "effects": {
+      "心神额外上限": 20,
+      "心神消耗减少": 0.30,
+      "元神修炼加成": 0.20
+    }
+  },
+  {
+    "id": "source_affinity",
+    "name": "源气亲和",
+    "rarity": 1,
+    "rarityName": "普通",
+    "category": "采集",
+    "desc": "对山川源气格外敏锐，所得源石往往比旁人更为丰厚。",
+    "effects": {
+      "源石收益": 0.12
+    }
+  },
+  {
+    "id": "earth_vein_favored",
+    "name": "地脉眷者",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "采集",
+    "desc": "行至山川之间，沉睡地脉自会显露脉络，源气与矿藏皆愿向你汇聚。",
+    "effects": {
+      "源石收益": 0.25,
+      "采矿加成": 0.10
+    }
+  },
+  {
+    "id": "source_heaven_eye",
+    "name": "源天神觉",
+    "rarity": 3,
+    "rarityName": "传说",
+    "category": "特殊",
+    "desc": "一念可观山河龙脉，一眼能辨仙源神藏。大地之下的造化于你而言无所遁形。",
+    "effects": {
+      "源石收益": 0.50,
+      "采矿加成": 0.20,
+      "寻宝加成": 0.15
+    }
+  },
+  {
+    "id": "fractured_spirit",
+    "name": "神魂有隙",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "修炼",
+    "isNegative": true,
+    "severity": 2,
+    "desc": "先天神魂留有一道无法弥合的裂隙，每次神游都会逸散更多心念，元神修行亦倍感艰难。",
+    "effects": {
+      "心神消耗增加": 0.25,
+      "元神修炼加成": -0.10
+    }
+  },
+  {
+    "id": "source_cursed",
+    "name": "源厄缠身",
+    "rarity": 2,
+    "rarityName": "稀有",
+    "category": "特殊",
+    "isNegative": true,
+    "severity": 2,
+    "desc": "命中似被一条衰败龙脉纠缠，源气近身便自行溃散，寻得的造化也常无端折损。",
+    "effects": {
+      "源石收益": -0.20,
+      "幸运值": -10
+    }
   }
 ]

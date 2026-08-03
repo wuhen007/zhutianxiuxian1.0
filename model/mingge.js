@@ -22,6 +22,9 @@ export const MINGGE_EFFECT_REGISTRY = Object.freeze({
   修炼加成: { mode: 'bonus-rate', consumer: 'cultivation' },
   境界突破成功率: { mode: 'chance', consumer: 'breakthrough' },
   元神修炼加成: { mode: 'bonus-rate', consumer: 'yuanshen' },
+  心神额外上限: { mode: 'initial-flat', consumer: 'initial' },
+  心神消耗减少: { mode: 'cost-reduction', consumer: 'spirit-heart' },
+  心神消耗增加: { mode: 'cost-increase', consumer: 'spirit-heart' },
   悟道收益: { mode: 'bonus-rate', consumer: 'wudao' },
   顿悟概率: { mode: 'chance', consumer: 'wudao' },
   悟道寿元消耗减少: { mode: 'cost-reduction', consumer: 'wudao' },
@@ -39,6 +42,7 @@ export const MINGGE_EFFECT_REGISTRY = Object.freeze({
   锻造经验加成: { mode: 'bonus-rate', consumer: 'forging' },
   签到奖励倍率: { mode: 'direct-multiplier', consumer: 'sign' },
   灵石收益: { mode: 'bonus-rate', consumer: 'currency' },
+  源石收益: { mode: 'bonus-rate', consumer: 'source-stone' },
   出售价格倍率: { mode: 'direct-multiplier', consumer: 'selling' },
   秘境加速: { mode: 'flat-seconds', consumer: 'secret-place' },
   寻宝加成: { mode: 'bonus-rate', consumer: 'treasure' },
@@ -199,6 +203,10 @@ export function calculateMinggeCurrencyGain(amount, effects, options = {}) {
   return Math.max(0, gain);
 }
 
+export function calculateMinggeSourceGain(amount, effects) {
+  return calculateMinggeGain(amount, effects, '源石收益');
+}
+
 /** 按数学期望随机取整，避免小额产出因 floor 永远吃不到百分比加成。 */
 export function calculateMinggeYield(amount, effects, key, random = Math.random) {
   const value = Math.max(0, Number(amount) || 0);
@@ -309,6 +317,14 @@ export function applyInitialMinggeEffects(player, mingge, obtainedAt = Date.now(
   );
   player.幸运 = (Number(player.幸运) || 0) +
     (Number(effects.幸运值) || 0) / 100;
+  const spiritHeartGain = Math.max(0, Math.trunc(Number(effects.心神额外上限) || 0));
+  player.心神额外上限 = Math.max(
+    0,
+    (Number(player.心神额外上限) || 0) + spiritHeartGain
+  );
+  if (spiritHeartGain && Number.isFinite(Number(player.心神))) {
+    player.心神 = Math.max(0, Number(player.心神) + spiritHeartGain);
+  }
   stored.初始效果已应用 = true;
   player.命格 = stored;
   return player;

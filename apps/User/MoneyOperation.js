@@ -162,7 +162,7 @@ export class MoneyOperation extends plugin {
     } else if (thing_name == '修为') {
       await Add_修为(B_qq, thing_amount);
     } else if (thing_name == '源石') {
-      await Add_源石(B_qq, thing_amount);
+      await Add_源石(B_qq, thing_amount, { applyMingge: false });
     }else if (thing_name == '寿元') {
       await Add_寿元(B_qq, thing_amount);
     } else if (thing_name == '血气') {
@@ -368,7 +368,7 @@ async Give(e) {
     
     // 执行交易
     await Add_源石(A_qq, -totalCost);
-    await Add_源石(B_qq, sourceStoneAmount);
+    await Add_源石(B_qq, sourceStoneAmount, { applyMingge: false });
     
     // 构建回复
     return e.reply([

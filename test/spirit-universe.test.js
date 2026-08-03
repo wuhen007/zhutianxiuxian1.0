@@ -9,6 +9,7 @@ import {
   consumeSpiritHeartEntry,
   createSpiritJourney,
   getSpiritChoice,
+  getSpiritHeartCost,
   getSpiritHeartMax,
   getSpiritInsightRequirement,
   getSpiritLegacyChance,
@@ -78,6 +79,20 @@ test('其他副本可复用指定数值的心神扣除', () => {
   assert.equal(player.心神, 30);
   assert.equal(consumeSpiritHeart(player, 50, 1000).ok, false);
   assert.equal(player.心神, 30);
+});
+
+test('命格能减少或增加心神消耗，且最低仍消耗1点', () => {
+  assert.equal(getSpiritHeartCost(50, { 心神消耗减少: 0.3 }), 35);
+  assert.equal(getSpiritHeartCost(50, { 心神消耗增加: 0.25 }), 63);
+  assert.equal(getSpiritHeartCost(1, { 心神消耗减少: 0.99 }), 1);
+
+  const player = { yuanshenlevel_id: 20, 心神: 80, 心神恢复时间: 1000 };
+  const result = consumeSpiritHeart(player, 50, 1000, { 心神消耗减少: 0.3 });
+  assert.deepEqual({ ok: result.ok, cost: result.cost, current: result.current }, {
+    ok: true,
+    cost: 35,
+    current: 45,
+  });
 });
 
 test('镇守稳定获得悟痕，悟道上限收益只跟行动成本相关', () => {

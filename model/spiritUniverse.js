@@ -63,12 +63,23 @@ export function refreshSpiritHeart(player, now = Date.now()) {
   return { current: player.心神, max, recovered: player.心神 - before };
 }
 
-export function consumeSpiritHeartEntry(player, now = Date.now()) {
-  return consumeSpiritHeart(player, SPIRIT_HEART_ENTRY_COST, now);
+export function getSpiritHeartCost(cost, effects = {}) {
+  const base = Math.max(0, Math.floor(Number(cost) || 0));
+  return calculateMinggeCost(
+    base,
+    effects,
+    '心神消耗减少',
+    '心神消耗增加',
+    { minimum: base > 0 ? 1 : 0 }
+  );
 }
 
-export function consumeSpiritHeart(player, cost, now = Date.now()) {
-  const required = Math.max(0, Math.floor(Number(cost) || 0));
+export function consumeSpiritHeartEntry(player, now = Date.now(), effects = {}) {
+  return consumeSpiritHeart(player, SPIRIT_HEART_ENTRY_COST, now, effects);
+}
+
+export function consumeSpiritHeart(player, cost, now = Date.now(), effects = {}) {
+  const required = getSpiritHeartCost(cost, effects);
   const status = refreshSpiritHeart(player, now);
   if (status.current < required) {
     return { ok: false, cost: required, ...status };
@@ -376,3 +387,4 @@ export function validateSpiritPlaces(places) {
   }
   return errors;
 }
+import { calculateMinggeCost } from './mingge.js';
