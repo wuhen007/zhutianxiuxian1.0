@@ -3,6 +3,8 @@ export const SPIRIT_HEART_BASE_MAX = 30;
 export const SPIRIT_HEART_LEVEL_BONUS = 3;
 export const SPIRIT_HEART_HARD_CAP = 100;
 export const SPIRIT_HEART_RECOVERY_MS = 30 * 60 * 1000;
+export const WENDAO_PALACE_NAME = '伪·先天至宝·问道仙宫';
+export const WENDAO_PALACE_DESC = '问道天宫的仿制品，真品已消失在岁月长河之中；可额外存储一倍心神，并使心神自然恢复速度加快10%。';
 
 export const SPIRIT_CHOICES = Object.freeze([
   Object.freeze({ id: 'steady', number: 1, label: '镇守心神', costRate: 0.5 }),
@@ -33,7 +35,7 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-export function getSpiritHeartMax(player) {
+export function getSpiritHeartBaseMax(player) {
   const level = Math.max(0, Math.floor(Number(player?.yuanshenlevel_id) || 0));
   const extra = Math.max(0, Math.floor(Number(player?.心神额外上限) || 0));
   return clamp(
@@ -43,8 +45,28 @@ export function getSpiritHeartMax(player) {
   );
 }
 
+export function getSpiritHeartMax(player) {
+  const baseMax = getSpiritHeartBaseMax(player);
+  return player?.问道仙宫 ? baseMax * 2 : baseMax;
+}
+
+export function getSpiritHeartRecoveryMs(player) {
+  return player?.问道仙宫
+    ? Math.floor(SPIRIT_HEART_RECOVERY_MS * 0.9)
+    : SPIRIT_HEART_RECOVERY_MS;
+}
+
+export function grantWendaoPalace(player, now = Date.now()) {
+  if (!player || typeof player !== 'object' || player.问道仙宫) return false;
+  const wasFull = Number(player.心神) >= getSpiritHeartMax(player);
+  player.问道仙宫 = true;
+  if (wasFull) player.心神恢复时间 = now;
+  return true;
+}
+
 export function refreshSpiritHeart(player, now = Date.now()) {
   const max = getSpiritHeartMax(player);
+  const recoveryMs = getSpiritHeartRecoveryMs(player);
   const current = Number(player?.心神);
   if (!Number.isFinite(current)) {
     player.心神 = max;
@@ -54,12 +76,12 @@ export function refreshSpiritHeart(player, now = Date.now()) {
 
   let last = Number(player.心神恢复时间);
   if (!Number.isFinite(last) || last > now) last = now;
-  const ticks = Math.max(0, Math.floor((now - last) / SPIRIT_HEART_RECOVERY_MS));
+  const ticks = Math.max(0, Math.floor((now - last) / recoveryMs));
   const before = clamp(Math.floor(current), 0, max);
   player.心神 = clamp(before + ticks, 0, max);
   player.心神恢复时间 = player.心神 >= max
     ? now
-    : last + ticks * SPIRIT_HEART_RECOVERY_MS;
+    : last + ticks * recoveryMs;
   return { current: player.心神, max, recovered: player.心神 - before };
 }
 
@@ -96,12 +118,13 @@ export function consumeSpiritHeart(player, cost, now = Date.now(), effects = {})
 
 export function increaseSpiritHeartLimit(player, amount) {
   const beforeMax = getSpiritHeartMax(player);
-  const room = Math.max(0, SPIRIT_HEART_HARD_CAP - beforeMax);
+  const room = Math.max(0, SPIRIT_HEART_HARD_CAP - getSpiritHeartBaseMax(player));
   const gain = Math.min(room, Math.max(0, Math.floor(Number(amount) || 0)));
   if (!gain) return 0;
   player.心神额外上限 = Math.max(0, Math.floor(Number(player.心神额外上限) || 0)) + gain;
-  player.心神 = Math.min(getSpiritHeartMax(player), Math.max(0, Number(player.心神) || 0) + gain);
-  return gain;
+  const capacityGain = getSpiritHeartMax(player) - beforeMax;
+  player.心神 = Math.min(getSpiritHeartMax(player), Math.max(0, Number(player.心神) || 0) + capacityGain);
+  return capacityGain;
 }
 
 export function createSpiritJourney(place, usrQq, entryCost, now = Date.now()) {

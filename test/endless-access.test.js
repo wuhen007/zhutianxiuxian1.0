@@ -26,7 +26,7 @@ const recipes = JSON.parse(
 );
 
 test('无尽准入资源与问仙令投放数量固定', () => {
-  assert.equal(ENDLESS_SPIRIT_HEART_COST, 50);
+  assert.equal(ENDLESS_SPIRIT_HEART_COST, 30);
   const rewards = Object.values(WENXIAN_ENDLESS_REWARDS).flat();
   const count = (name) => rewards
     .filter((reward) => reward.name === name)

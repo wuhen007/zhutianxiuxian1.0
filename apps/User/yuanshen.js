@@ -25,11 +25,11 @@ import {
 } from '../../model/mingge.js';
 import {
   SPIRIT_HEART_ENTRY_COST,
-  SPIRIT_HEART_RECOVERY_MS,
   consumeSpiritHeartEntry,
   createSpiritFinding,
   createSpiritJourney,
   getSpiritHeartCost,
+  getSpiritHeartRecoveryMs,
   getSpiritChoice,
   getSpiritInsightRequirement,
   getSpiritLegacyChance,
@@ -405,7 +405,7 @@ export class yuanshentixi extends plugin {
       `元神强度：${bigNumberTransform(p.元神 || 0)}/${bigNumberTransform(p.元神上限 || 0)}`,
       `元神等级：${元神等级名称}`,
       `神识强度：${bigNumberTransform(p.神识 || 0)}点`,
-      `心神：${heart.current}/${heart.max}（每30分钟恢复1点）`,
+      `心神：${heart.current}/${heart.max}（每${getSpiritHeartRecoveryMs(p) / 60000}分钟恢复1点${p.问道仙宫 ? '，问道仙宫加持' : ''}）`,
       `状态：${元神状态}`,
     ];
 
@@ -924,7 +924,7 @@ export class yuanshentixi extends plugin {
       const heart = consumeSpiritHeartEntry(p, Date.now(), minggeEffects);
       if (!heart.ok) {
         const elapsed = Date.now() - Number(p.心神恢复时间 || Date.now());
-        const waitMinutes = Math.max(1, Math.ceil((SPIRIT_HEART_RECOVERY_MS - elapsed) / 60000));
+        const waitMinutes = Math.max(1, Math.ceil((getSpiritHeartRecoveryMs(p) - elapsed) / 60000));
         await Write_player(usr_qq, p);
         return e.reply(`进入精神宇宙需要${heartCost}点心神，你当前为${heart.current}/${heart.max}\n约${waitMinutes}分钟后恢复下一点心神`);
       }
@@ -1212,7 +1212,7 @@ export class yuanshentixi extends plugin {
     await Write_player(usr_qq, p);
 
     const raw = await redis.get(`shenyou:${usr_qq}`);
-    if (!raw) return e.reply(`你的神识并未云游\n心神：${heart.current}/${heart.max}（每30分钟恢复1点）\n使用 #精神宇宙 查看可进入的位面`);
+    if (!raw) return e.reply(`你的神识并未云游\n心神：${heart.current}/${heart.max}（每${getSpiritHeartRecoveryMs(p) / 60000}分钟恢复1点${p.问道仙宫 ? '，问道仙宫加持' : ''}）\n使用 #精神宇宙 查看可进入的位面`);
 
     const state = normalizeSpiritJourney(JSON.parse(raw));
     const place = this._spiritPlaces().find(item => item.id == state.place_id);

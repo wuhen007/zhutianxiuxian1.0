@@ -11,6 +11,7 @@ import {
   getSpiritChoice,
   getSpiritHeartCost,
   getSpiritHeartMax,
+  getSpiritHeartRecoveryMs,
   getSpiritInsightRequirement,
   getSpiritLegacyChance,
   getSpiritRetentionRate,
@@ -18,6 +19,7 @@ import {
   mergeSpiritItemsIntoNajie,
   normalizeSpiritJourney,
   refreshSpiritHeart,
+  grantWendaoPalace,
   resolveSpiritChoice,
   resolveSpiritGuardianBattle,
   retainSpiritFindings,
@@ -70,6 +72,17 @@ test('心神只在入场消耗并按半小时恢复，上限由元神境界与�
   assert.equal(refreshSpiritHeart(player, 1000 + SPIRIT_HEART_RECOVERY_MS * 2).current, 28);
   assert.equal(increaseSpiritHeartLimit(player, 5), 5);
   assert.equal(getSpiritHeartMax(player), 41);
+});
+
+test('问道仙宫提供一倍额外心神容量并将自然恢复缩短至27分钟', () => {
+  const player = { yuanshenlevel_id: 2, 心神: 36, 心神恢复时间: 1000 };
+  assert.equal(grantWendaoPalace(player, 1000), true);
+  assert.equal(grantWendaoPalace(player, 1000), false);
+  assert.equal(getSpiritHeartMax(player), 72);
+  assert.equal(getSpiritHeartRecoveryMs(player), 27 * 60 * 1000);
+  assert.equal(refreshSpiritHeart(player, 1000 + getSpiritHeartRecoveryMs(player)).current, 37);
+  assert.equal(increaseSpiritHeartLimit(player, 5), 10);
+  assert.equal(getSpiritHeartMax(player), 82);
 });
 
 test('其他副本可复用指定数值的心神扣除', () => {

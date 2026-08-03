@@ -2,7 +2,7 @@ export const ENDLESS_ENTRY_ITEM = '无尽秘钥';
 export const ENDLESS_SWEEP_ITEM = '无尽扫荡券';
 export const ENDLESS_KEY_RECIPE_ITEM = '无尽秘钥配方';
 export const ENDLESS_KEY_RECIPE_FLAG = '无尽秘钥配方';
-export const ENDLESS_SPIRIT_HEART_COST = 50;
+export const ENDLESS_SPIRIT_HEART_COST = 30;
 export const ENDLESS_SWEEP_MAX_LAYERS = 10;
 
 export const WENXIAN_ENDLESS_REWARDS = Object.freeze({

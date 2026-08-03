@@ -1,13 +1,11 @@
-import { plugin, puppeteer, verc, data, Show } from '../../api/api.js';
+import { plugin, puppeteer, data, Show } from '../../api/api.js';
 import {
     Read_player,
     Write_player,
     existplayer,
     channel,
-    bigNumberTransform,
     Add_najie_thing,
 } from '../../model/xiuxian.js';
-import { Add_灵石, Add_修为, Add_血气 } from '../../model/xiuxian.js';
 import {
     WENXIAN_CLUE_COST,
     WENXIAN_DAILY_TASK_TARGET,
@@ -34,6 +32,11 @@ import {
     releaseRedisLock,
 } from '../SecretPlace/xianyiBaodiState.js';
 import { WENXIAN_ENDLESS_REWARDS } from '../../model/endlessAccess.js';
+import {
+    WENDAO_PALACE_DESC,
+    WENDAO_PALACE_NAME,
+    grantWendaoPalace,
+} from '../../model/spiritUniverse.js';
 
 /**
  * 问仙令 - 战令系统 v2
@@ -44,9 +47,9 @@ import { WENXIAN_ENDLESS_REWARDS } from '../../model/endlessAccess.js';
 
 // ====== 生成每级基础奖励（修为/血气/灵石/源石，确定但每级不同） ======
 function generateLevelRewards(level) {
-    const xiuweiBase = 80000;
-    const xueqiBase = 40000;
-    const lingshiBase = 150000;
+    const xiuweiBase = 8000000;
+    const xueqiBase = 4000000;
+    const lingshiBase = 15000000;
     const yuanshiBase = 1;
 
     // 每级增长系数
@@ -72,14 +75,16 @@ const BONUS_REWARDS = {
         name: '初入仙途',
         desc: '踏上问仙之路的第一步',
         rewards: [
+            { kind: '丹药', name: '大衍悟道丹', count: 15, label: '大衍悟道丹x15' },
             { kind: '仙道潜力', value: 20, label: '仙道潜力+20' },
+            { kind: '丹药', name: '定神丹', count: 1, label: '定神丹x1' },
         ],
     },
     10: {
         name: '洗髓铸骨',
         desc: '洗髓丹淬炼识海，根骨得以强化',
         rewards: [
-            { kind: '道具', name: '洗髓丹', count: 3, label: '洗髓丹x3' },
+            { kind: '丹药', name: '洗髓丹', count: 3, label: '洗髓丹x3' },
             { kind: '仙道潜力', value: 25, label: '仙道潜力+25' },
         ],
     },
@@ -87,6 +92,7 @@ const BONUS_REWARDS = {
         name: '灵台澄澈',
         desc: '问仙之路愈行愈明',
         rewards: [
+            { kind: '盒子', name: '超越宝盒', count: 1, label: '超越宝盒x1' },
             { kind: '仙道潜力', value: 30, label: '仙道潜力+30' },
         ],
     },
@@ -94,21 +100,24 @@ const BONUS_REWARDS = {
         name: '道种感悟',
         desc: '以道种入药，感悟天地大道',
         rewards: [
-            { kind: '道具', name: '道种感悟丹', count: 2, label: '道种感悟丹x2' },
+            { kind: '盒子', name: '超越宝盒', count: 3, label: '超越宝盒x3' },
+            { kind: '丹药', name: '大衍悟道丹', count: 2, label: '大衍悟道丹x2' },
         ],
     },
     25: {
         name: '识海拓宽',
         desc: '识海如苍穹，容纳更多道韵',
         rewards: [
+            { kind: '盒子', name: '超越宝盒', count: 3, label: '超越宝盒x3' },
             { kind: '仙道潜力', value: 40, label: '仙道潜力+40' },
+            { kind: '丹药', name: '七窍养神丹', count: 1, label: '七窍养神丹x1' },
         ],
     },
     30: {
         name: '九转玲珑',
         desc: '历经九转，灵台玲珑剔透',
         rewards: [
-            { kind: '道具', name: '九转玲珑丹', count: 1, label: '九转玲珑丹x1' },
+            { kind: '丹药', name: '九转玲珑丹', count: 10, label: '九转玲珑丹x10' },
             { kind: '仙道潜力', value: 50, label: '仙道潜力+50' },
         ],
     },
@@ -116,14 +125,17 @@ const BONUS_REWARDS = {
         name: '天道眷顾',
         desc: '天道偶有眷顾，赐予感悟',
         rewards: [
+             { kind: '道具', name: '轮回命签', count: 10, label: '轮回命签x10' },
             { kind: '仙道潜力', value: 60, label: '仙道潜力+60' },
+            { kind: '丹药', name: '化仙丹', count: 1, label: '化仙丹x1' },
         ],
     },
     40: {
         name: '先天元灵',
-        desc: '先天元灵液，点化识海根骨',
+        desc: '太虚清气拓展识海，令灵台愈发广大',
         rewards: [
-            { kind: '道具', name: '先天元灵液', count: 1, label: '先天元灵液x1' },
+             { kind: '道具', name: '命宫拓碑', count: 1, label: '命宫拓碑x1' },
+            { kind: '丹药', name: '太虚拓识丹', count: 1, label: '太虚拓识丹x1' },
         ],
     },
     45: {
@@ -131,14 +143,16 @@ const BONUS_REWARDS = {
         desc: '识海如海，万法归于一念',
         rewards: [
             { kind: '仙道潜力', value: 80, label: '仙道潜力+80' },
+            { kind: '丹药', name: '太虚养神丹', count: 2, label: '太虚养神丹x2' },
         ],
     },
     50: {
         name: '混沌造化',
         desc: '混沌之气淬炼，造化无穷',
         rewards: [
-            { kind: '道具', name: '混沌造化丹', count: 1, label: '混沌造化丹x1' },
-            { kind: '道具', name: '天资固本丹', count: 1, label: '天资固本丹x1' },
+            { kind: '丹药', name: '玄黄造化丹', count: 1, label: '玄黄造化丹x1' },
+            { kind: '丹药', name: '天命轮回丹', count: 50, label: '天命轮回丹x50' },
+            { kind: '丹药', name: '七窍养神丹', count: 2, label: '七窍养神丹x2' },
         ],
     },
     55: {
@@ -146,15 +160,18 @@ const BONUS_REWARDS = {
         desc: '问道至此，道心坚如磐石',
         rewards: [
             { kind: '仙道潜力', value: 100, label: '仙道潜力+100' },
+            { kind: '丹药', name: '虚天悟道丹', count: 1, label: '虚天悟道丹x1' },
         ],
     },
     60: {
         name: '问仙者归途',
-        desc: '走完这条问仙之路，你已是真正的仙道传承者',
+        desc: WENDAO_PALACE_DESC,
         rewards: [
-            { kind: '道具', name: '先天元灵液', count: 3, label: '先天元灵液x3' },
+            { kind: '丹药', name: '极道丹', count: 1, label: '极道丹x1' },
+            { kind: '丹药', name: '太虚拓识丹', count: 2, label: '太虚拓识丹x2' },
             { kind: '仙道潜力', value: 500, label: '仙道潜力+500' },
             { kind: '称号', name: '问仙者', label: '限定称号「问仙者」' },
+            { kind: '永久宝物', name: WENDAO_PALACE_NAME, label: WENDAO_PALACE_NAME },
         ],
     },
 };
@@ -432,6 +449,23 @@ export class WenXianLing extends plugin {
             e.reply('请先创建角色再使用问仙令！');
             return false;
         }
+
+        const lockKey = `xiuxian:lock:wenxian_claim:${usr_qq}`;
+        const token = `${Date.now()}:${Math.random()}`;
+        if (!await acquireRedisLock(redis, lockKey, token, 60)) {
+            return e.reply('问仙令奖励正在领取中，请稍后再试。');
+        }
+
+        try {
+            return await this._claimReward(e, usr_qq);
+        } finally {
+            try {
+                await releaseRedisLock(redis, lockKey, token);
+            } catch { /* 锁会按时自动失效 */ }
+        }
+    }
+
+    async _claimReward(e, usr_qq) {
         const player = await Read_player(usr_qq);
         this._initPassData(player);
 
@@ -484,15 +518,10 @@ export class WenXianLing extends plugin {
             const bonus = BONUS_REWARDS[lv];
 
             // 发放基础奖励
-            await Add_修为(usr_qq, baseReward.xiuwei);
-            await Add_血气(usr_qq, baseReward.xueqi);
-            await Add_灵石(usr_qq, baseReward.lingshi);
-            // 源石直接加在player上（如果有字段的话）
-            if (player.源石 !== undefined) {
-                player.源石 = (player.源石 || 0) + baseReward.yuanshi;
-            } else {
-                player.源石 = (player.源石 || 0) + baseReward.yuanshi;
-            }
+            player.修为 = (Number(player.修为) || 0) + baseReward.xiuwei;
+            player.血气 = (Number(player.血气) || 0) + baseReward.xueqi;
+            player.灵石 = (Number(player.灵石) || 0) + baseReward.lingshi;
+            player.源石 = (Number(player.源石) || 0) + baseReward.yuanshi;
 
             rewardLines.push(`【第${lv}级】修为+${fmtNum(baseReward.xiuwei)}  血气+${fmtNum(baseReward.xueqi)}  灵石+${fmtNum(baseReward.lingshi)}  源石+${baseReward.yuanshi}`);
 
@@ -531,7 +560,8 @@ export class WenXianLing extends plugin {
             `问仙令是修仙之旅的传承令牌，共60级。`,
             `每升1级均可领取修为、血气、灵石、源石奖励！`,
             `每逢5级/10级额外赠送丹药、仙道潜力等稀有奖励。`,
-            `第60级终极大奖含限定称号「问仙者」！`,
+            `第60级终极大奖含限定称号「问仙者」与${WENDAO_PALACE_NAME}！`,
+            WENDAO_PALACE_DESC,
             ``,
             `【获取方式】`,
             `秘境或仙古今世法任一体系达到${WENXIAN_REQUIRED_REALM_LEVEL}级后，取得问仙线索并完成试炼。`,
@@ -583,11 +613,18 @@ export class WenXianLing extends plugin {
                     0
                 );
                 break;
+            case '丹药':
+            case '盒子':
+                await Add_najie_thing(usr_qq, reward.name, reward.kind, reward.count, 0);
+                break;
             case '称号':
                 if (!player.称号列表) player.称号列表 = [];
                 if (!player.称号列表.includes(reward.name)) {
                     player.称号列表.push(reward.name);
                 }
+                break;
+            case '永久宝物':
+                grantWendaoPalace(player);
                 break;
         }
     }

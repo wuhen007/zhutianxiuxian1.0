@@ -57,6 +57,7 @@ import { readall } from '../../model/duanzaofu.js';
 import { bigNumberTransform } from '../Help/TopList.js';
 import { isInnateTreasureName } from '../../model/innateTreasure.js';
 import {
+  getSpiritHeartBaseMax,
   getSpiritHeartMax,
   increaseSpiritHeartLimit,
   refreshSpiritHeart,
@@ -2007,13 +2008,13 @@ if (equipment.帝兵.name == "终古剑之主") {
           e.reply(`【${thing_name}】最多服用${limit}颗，你已服用${used}颗，本次最多还能服用${Math.max(0, limit - used)}颗`);
           return false;
         }
-        const currentMax = getSpiritHeartMax(player);
-        if (currentMax >= 200) {
-          e.reply('你的心神上限已达到200点，无法继续拓展');
+        const currentBaseMax = getSpiritHeartBaseMax(player);
+        if (currentBaseMax >= 100) {
+          e.reply('你的基础心神上限已达到100点，无法继续拓展');
           return false;
         }
         const perPill = Math.max(1, Number(thing_exist.heartMax) || 0);
-        const useCount = Math.min(quantity, Math.ceil((100 - currentMax) / perPill));
+        const useCount = Math.min(quantity, Math.ceil((100 - currentBaseMax) / perPill));
         const gain = increaseSpiritHeartLimit(player, perPill * useCount);
         player.心神丹药使用[thing_name] = used + useCount;
         await Write_player(usr_qq, player);
