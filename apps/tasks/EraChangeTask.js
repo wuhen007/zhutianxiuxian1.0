@@ -16,6 +16,7 @@ import {
 } from '../../model/xiuxian.js';
 import RealmEvents from './RealmEvents.js';
 import { formatRealmEventLocation } from '../../model/realmEventLocation.js';
+import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { triggerPeriodicRiftsForEra } from '../../model/planeRiftFestival.js';
 import {
   advanceSpecialTianjiaoEvolution,
@@ -24,6 +25,7 @@ import {
   improveTianjiao,
   isIndependentTianjiao,
   isTianjiaoBreakthroughYear,
+  isTianjiaoImprovementYear,
 } from '../../model/tianjiaoGrowth.js';
 
 export class EraChangeTask extends plugin {
@@ -98,11 +100,12 @@ export class EraChangeTask extends plugin {
     if (!set.Era) {
       set.Era = {
         enabled: true,
-        current: { index: 0, years: 0, epoch: 1 }, // 添加纪元计数，初始为第一纪元
+        current: { index: 0, years: 0, epoch: 1, totalYears: 0 }, // totalYears：累计年数（不随时代切换重置），用于位面自我修复
         task: "0 0 */2 * * *", // 默认每2小时执行一次
         pushNotice: true,
         notifyGroups: [],
-        yearlyAdvance: 1000 // 每次推进1000年
+        yearlyAdvance: 1000, // 每次推进1000年
+        weimianRepairInterval: 2000 // 位面自我修复间隔（每多少年修复一次）
       };
       config.setConfig(this.configKey, 'xiuxian', set);
     }
@@ -110,6 +113,18 @@ export class EraChangeTask extends plugin {
     // 确保有纪元计数
     if (!set.Era.current.epoch) {
       set.Era.current.epoch = 1;
+      config.setConfig(this.configKey, 'xiuxian', set);
+    }
+    
+    // 确保有累计年数（兼容旧配置）
+    if (typeof set.Era.current.totalYears !== 'number') {
+      set.Era.current.totalYears = set.Era.current.years || 0;
+      config.setConfig(this.configKey, 'xiuxian', set);
+    }
+    
+    // 确保有修复间隔配置
+    if (!set.Era.weimianRepairInterval) {
+      set.Era.weimianRepairInterval = 2000;
       config.setConfig(this.configKey, 'xiuxian', set);
     }
     
@@ -789,6 +804,24 @@ async checkJuelingLoss(e) {
       // 推进年份
       years += advanceYears;
       
+      // ==== 位面自我修复机制：累计年数推进 ====
+      const repairInterval = era.weimianRepairInterval || 2000;
+      const totalYearsBefore = era.current.totalYears || 0;
+      const totalYearsAfter = totalYearsBefore + advanceYears;
+      
+      // 计算本轮跨过的修复节点（处理一次 tick 跨多节点的边界情况）
+      const repairsBefore = Math.floor(totalYearsBefore / repairInterval);
+      const repairsAfter = Math.floor(totalYearsAfter / repairInterval);
+      const pendingRepairs = repairsAfter - repairsBefore;
+      
+      // 暂存到本地变量，下面会写回
+      let totalYears = totalYearsAfter;
+      
+      // 先处理修复（后续 era.current 重新赋值时再统一持久化）
+      for (let i = 0; i < pendingRepairs; i++) {
+        await this.repairWeimian();
+      }
+      
       // ==== 关键修改：统一读取位面数据 ====
       let weimianData = {};
       let weimianPath = data.filePathMap.weimianList;
@@ -1026,7 +1059,7 @@ function saveWeimianData(data) {
       }
       
       // 更新配置
-      era.current = { index, years, epoch };
+      era.current = { index, years, epoch, totalYears: era.current.totalYears || 0 };
       config.setConfig(this.configKey, 'xiuxian', this.set);
       
       // 每千年发送进度通知
@@ -1167,6 +1200,113 @@ function saveWeimianData(data) {
     }
   }
   
+  /**
+   * 位面自我修复
+   * 每累计 weimianRepairInterval 年触发一次：诸天位面 +1（上限 10）
+   * 三档文案：普通修复(5→8) / 高位修复(8→10) / 完全修复(10·诸天重光)
+   */
+  async repairWeimian() {
+    const weimianPath = data.filePathMap.weimianList;
+    let weimianData = {};
+    
+    try {
+      if (fs.existsSync(weimianPath)) {
+        weimianData = JSON.parse(fs.readFileSync(weimianPath, 'utf8'));
+      } else {
+        console.error('[位面修复] 位面数据文件不存在');
+        return;
+      }
+    } catch (err) {
+      console.error('[位面修复] 读取位面数据失败:', err);
+      return;
+    }
+    
+    const oldLevel = weimianData["诸天位面"] || 5;
+    
+    // 已达顶峰，不再修复
+    if (oldLevel >= 10) return;
+    
+    const newLevel = oldLevel + 1;
+    weimianData["诸天位面"] = newLevel;
+    
+    try {
+      fs.writeFileSync(weimianPath, JSON.stringify(weimianData, null, 4), 'utf8');
+    } catch (err) {
+      console.error('[位面修复] 保存位面数据失败:', err);
+      return;
+    }
+    
+    const oldSuppress = 10 - oldLevel;
+    const newSuppress = 10 - newLevel;
+    const line = `位面等级：${oldLevel} → ${newLevel}`;
+    const suppressLine = `位面压制：${oldSuppress} → ${newSuppress}`;
+    
+    let msg;
+    if (newLevel >= 10) {
+      // 完全修复·诸天重光
+      msg = [
+        `【诸天重光·万界归一】`,
+        `万古诸天，一纪沉浮。`,
+        `当最后一缕裂痕在虚空中弥合，`,
+        `一道横贯古今的金光从混沌深处迸发——`,
+        `诸天万界，终于在这一刻彻底复苏！`,
+        ``,
+        `成仙路的尽头，隐约可见那扇古老的仙门；`,
+        `时间长河的彼岸，似乎有谁正在回眸。`,
+        `那些沉睡万古的存在，也在这一刻睁开了眼眸。`,
+        ``,
+        `这一世，将不再是末法；`,
+        `这一纪，将有人真正登临绝顶！`,
+        ``,
+        `「山高路远，诸位道友，且行且珍惜。」`,
+        ``,
+        `${line}（已达顶峰·诸天重光）`,
+        `位面压制：0（位面完全修复！）`
+      ].join('\n');
+    } else if (newLevel >= 8) {
+      // 高位修复·大道回响
+      msg = [
+        `【位面复苏·大道回响】`,
+        `亘古匆匆，沧海桑田。`,
+        `当世人都以为诸天已彻底沉沦时，`,
+        `天地尽头忽然传来一声沉闷的轰鸣——`,
+        `那是大道在重塑，那是命运在回响！`,
+        ``,
+        `曾断绝的成仙路，似又有了微弱的回音；`,
+        `曾破碎的天心印记，似又重新凝聚。`,
+        `那扇横贯万古的仙门，似在混沌深处缓缓浮现。`,
+        ``,
+        `修士们仰望苍穹，心中皆有一个疑问：`,
+        `「这一纪元的尽头，究竟谁将叩开那扇门？」`,
+        ``,
+        line,
+        suppressLine
+      ].join('\n');
+    } else {
+      // 普通修复·道则弥合
+      msg = [
+        `【位面修复·道则弥合】`,
+        `万古如长夜，弹指已千年。`,
+        ``,
+        `诸天万界深处，混沌初动，`,
+        `一缕大道金光自时间长河尽头涌来——`,
+        `那是岁月的回眸，是命运的缝合，是宇宙本源的自我修复。`,
+        ``,
+        `破碎的天地法则在虚空中缓缓弥合，`,
+        `断绝的灵脉在山河间重新凝聚，`,
+        `曾被末法斩断的成道之机，似又有了微弱的回音。`,
+        ``,
+        `——「这一纪元，又要起风了。」`,
+        ``,
+        line,
+        suppressLine
+      ].join('\n');
+    }
+    
+    await this.broadcastMessage(msg);
+    console.log(`[位面修复] ${oldLevel} → ${newLevel}，压制 ${oldSuppress} → ${newSuppress}`);
+  }
+  
   /** 检查并触发诡异大祭（每8个纪元触发一次） */
   async checkAndTriggerDajie(epoch) {
     try {
@@ -1297,14 +1437,16 @@ function saveWeimianData(data) {
     }
   }
   
-  /** 天骄每千年自我强化，每两千年额外尝试突破一次境界。 */
+  /** 天骄每三千年自我强化，每五千年额外尝试突破一次境界。 */
   async handleTianjiaoGrowth() {
     try {
       const tianjiaoList = data.weimiantianjiao_list;
       if (!tianjiaoList || tianjiaoList.length === 0) return;
       const eraIndex = Number(this.set.Era.current.index) || 0;
       const eraYears = Number(this.set.Era.current.years) || 0;
-      const breakthroughDue = isTianjiaoBreakthroughYear(eraYears);
+      const worldYears = getRealmEventWorldYear(eraIndex, eraYears, this.set.Era.current.epoch);
+      const breakthroughDue = isTianjiaoBreakthroughYear(worldYears);
+      const improvementDue = isTianjiaoImprovementYear(worldYears);
       const context = {
         eraIndex,
         cultivationLevels: data.Level_list,
@@ -1339,7 +1481,7 @@ function saveWeimianData(data) {
         const bloodline = advanceSpecialTianjiaoEvolution(tianjiao, context);
         if (bloodline) bloodlineReports.push(bloodline);
 
-        if (Math.random() < getTianjiaoImprovementChance(eraIndex)) {
+        if (improvementDue && Math.random() < getTianjiaoImprovementChance(eraIndex)) {
           const improvements = improveTianjiao(tianjiao, context);
           if (improvements.length > 0) {
             improvementReports.push({ name: tianjiao.名号, improvements });
@@ -1359,7 +1501,7 @@ function saveWeimianData(data) {
           msgLines.push('【遮天秘境·天骄证道】');
           msgLines.push('北斗星域，道韵流转，诸天骄于秘境道途中再破关隘！');
           for (const r of mijingReports) {
-            msgLines.push(`  ${r.name} 闭关千年，自【${r.oldRealm}】证得【${r.newRealm}】！`);
+            msgLines.push(`  ${r.name} 闭关五千年，自【${r.oldRealm}】证得【${r.newRealm}】！`);
           }
         }
 
@@ -1372,7 +1514,7 @@ function saveWeimianData(data) {
         }
 
         if (improvementReports.length > 0) {
-          msgLines.push('【千年积累·天骄自强】');
+          msgLines.push('【三千年积累·天骄自强】');
           for (const report of improvementReports) {
             msgLines.push(`  ${report.name}：${report.improvements.join('；')}`);
           }
@@ -1575,7 +1717,7 @@ function saveWeimianData(data) {
         epochIncreased = fullCycles > 0;
       }
       
-      era.current = { index, years, epoch };
+      era.current = { index, years, epoch, totalYears: era.current.totalYears || 0 };
       config.setConfig(this.configKey, 'xiuxian', this.set);
       
       const currentEra = this.eras[index];
@@ -1766,7 +1908,7 @@ function saveWeimianData(data) {
       }
       
       // 更新配置
-      era.current = { index, years, epoch };
+      era.current = { index, years, epoch, totalYears: era.current.totalYears || 0 };
       config.setConfig(this.configKey, 'xiuxian', this.set);
       
       const newEraName = this.eras[index].name;

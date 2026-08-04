@@ -46,6 +46,7 @@ import {
     traceCaiClan,
     trackMoonPrincess
 } from '../../model/bingziLegacy.js';
+import { formatTianjiaoTrace, rollRealmEventTianjiaoTrace } from '../../model/tianjiaoGrowth.js';
 
 const DEFAULT_ERA_TRIGGER_CHANCE = 0.35;
 const DEFAULT_DUNGEON_TRIGGER_CHANCE = 0.002;
@@ -981,6 +982,16 @@ export class RealmEvents {
             result.eventData.interaction ||= this.getEventInteraction(result.eventData);
             result.eventData.participantQqs ||= [];
             if (options.discoveredBy) result.eventData.discoveredBy = options.discoveredBy;
+
+            const tianjiaoTrace = rollRealmEventTianjiaoTrace(
+                data.weimiantianjiao_list,
+                result.eventData,
+                { random, now }
+            );
+            if (tianjiaoTrace) {
+                result.eventData.tianjiaoTrace = tianjiaoTrace;
+                result.message += `\n【天骄踪迹】${tianjiaoTrace.name}现身于${formatTianjiaoTrace(tianjiaoTrace)}，踪迹24小时内有效。`;
+            }
 
             if (result.eventData.interaction === 'generic') {
                 const discoverer = options.discoveredBy
