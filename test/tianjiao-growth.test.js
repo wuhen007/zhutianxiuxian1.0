@@ -6,10 +6,16 @@ import {
   applyTianjiaoImprovement,
   attemptTianjiaoBreakthrough,
   buildTianjiaoBattleStats,
+  createTianjiaoTrace,
+  getKnownTianjiaoTrace,
+  getTianjiaoTraceReach,
   getTianjiaoBreakthroughChance,
   getTianjiaoImprovementChance,
   improveTianjiao,
   isTianjiaoBreakthroughYear,
+  isTianjiaoImprovementYear,
+  rollDungeonTianjiaoTrace,
+  rollRealmEventTianjiaoTrace,
 } from '../model/tianjiaoGrowth.js';
 
 const context = {
@@ -54,9 +60,14 @@ function sequenceRandom(...values) {
   return () => values[index++] ?? 0;
 }
 
-test('天骄每两千年才尝试突破，时代和关隘会压低概率', () => {
-  assert.equal(isTianjiaoBreakthroughYear(1000), false);
-  assert.equal(isTianjiaoBreakthroughYear(2000), true);
+test('天骄每五千年尝试证道、每三千年尝试自强', () => {
+  assert.equal(isTianjiaoBreakthroughYear(0), false);
+  assert.equal(isTianjiaoBreakthroughYear(2000), false);
+  assert.equal(isTianjiaoBreakthroughYear(5000), true);
+  assert.equal(isTianjiaoBreakthroughYear(10000), true);
+  assert.equal(isTianjiaoImprovementYear(0), false);
+  assert.equal(isTianjiaoImprovementYear(1000), false);
+  assert.equal(isTianjiaoImprovementYear(3000), true);
 
   const myth = getTianjiaoBreakthroughChance('mijinglevel_id', 9, 0);
   assert.ok(myth > getTianjiaoBreakthroughChance('mijinglevel_id', 9, 1));
@@ -99,7 +110,7 @@ test('遮天与九天十地天骄按满练气、满炼体和自身境界生成�
   assert.equal(stats.装备.帝兵.name, '废铁');
 });
 
-test('每千年自强保持高概率，单次最多完成四种行为', () => {
+test('每三千年自强保持高概率，单次最多完成四种行为', () => {
   assert.ok(getTianjiaoImprovementChance(0) > getTianjiaoImprovementChance(4));
   assert.ok(getTianjiaoImprovementChance(4) > 0.5);
 
@@ -113,12 +124,65 @@ test('每千年自强保持高概率，单次最多完成四种行为', () => {
   const reports = improveTianjiao(tianjiao, context, () => 0.99);
   assert.equal(reports.length, 4);
   assert.equal(tianjiao.装备.法宝.name, '更好的法宝');
-  assert.equal(tianjiao.装备.帝兵.name, '测试天骄·本命道兵');
+  assert.notEqual(tianjiao.装备.帝兵.name, '测试天骄·本命道兵');
+  assert.equal(tianjiao.装备.帝兵.洗礼次数, 1);
   assert.ok(tianjiao.攻击加成 > 0);
   assert.deepEqual(tianjiao.学习的功法, ['新功法']);
 
   applyTianjiaoImprovement(tianjiao, 'equipment', context, () => 0);
   assert.ok(tianjiao.装备.武器.归一属性.百分比.atk > 0);
+  assert.notEqual(tianjiao.装备.武器.name, '测试天骄祭炼的武器');
+  const percentageName = tianjiao.装备.武器.name;
+  const firstPercentage = tianjiao.装备.武器.归一属性.百分比.atk;
+  applyTianjiaoImprovement(tianjiao, 'equipment', context, () => 0);
+  assert.equal(tianjiao.装备.武器.name, percentageName);
+  assert.equal(tianjiao.装备.武器.百分比洗礼次数, 2);
+  assert.ok(tianjiao.装备.武器.归一属性.百分比.atk > firstPercentage);
+
+  const imperialName = tianjiao.装备.帝兵.name;
+  const imperialAttack = tianjiao.装备.帝兵.atk;
+  const imperialAll = tianjiao.装备.帝兵.全属性;
+  applyTianjiaoImprovement(tianjiao, 'imperialWeapon', context, () => 0);
+  assert.equal(tianjiao.装备.帝兵.name, imperialName);
+  assert.equal(tianjiao.装备.帝兵.洗礼次数, 2);
+  assert.ok(tianjiao.装备.帝兵.atk > imperialAttack);
+  assert.ok(tianjiao.装备.帝兵.全属性 > imperialAll);
+
+  tianjiao.装备.武器.name = '测试天骄祭炼的武器';
+  tianjiao.装备.帝兵.name = '测试天骄·本命道兵';
+  applyTianjiaoImprovement(tianjiao, 'equipment', context, () => 0);
+  applyTianjiaoImprovement(tianjiao, 'imperialWeapon', context, () => 0);
+  assert.notEqual(tianjiao.装备.武器.name, '测试天骄祭炼的武器');
+  assert.notEqual(tianjiao.装备.帝兵.name, '测试天骄·本命道兵');
+});
+
+test('副本和位面事件会刷新限时踪迹，特殊位面不会成为天骄位置', () => {
+  const now = 1_000_000;
+  const tianjiao = { 名号: '测试天骄', 位面: 2 };
+  const player = { power_place: 2 };
+  const dungeonTrace = rollDungeonTianjiaoTrace(player, [tianjiao], { chance: 1, now, random: () => 0 });
+  assert.equal(dungeonTrace.plane, '遮天位面');
+  assert.equal(getKnownTianjiaoTrace(player, tianjiao, now), dungeonTrace);
+  assert.equal(getTianjiaoTraceReach(player, dungeonTrace).reason, 'coordinate');
+  player.遮天位面坐标 = { ...dungeonTrace.coordinate };
+  assert.equal(getTianjiaoTraceReach(player, dungeonTrace).ok, true);
+  assert.equal(getKnownTianjiaoTrace(player, tianjiao, dungeonTrace.expiresAt), null);
+
+  const publicTrace = rollRealmEventTianjiaoTrace([tianjiao], {
+    plane: '九天十地',
+    location: '神碑林',
+    coordinate: { x: 380, y: 380 },
+  }, { chance: 1, now, random: () => 0 });
+  assert.equal(publicTrace.plane, '九天十地');
+  assert.equal(tianjiao.公开踪迹, publicTrace);
+
+  const forbidden = createTianjiaoTrace(
+    { 名号: '迷路天骄', 位面: 5 },
+    { destination: { plane: '永恒未知之地', coordinate: { x: 1, y: 1 } }, now, random: () => 0 },
+  );
+  assert.notEqual(forbidden.plane, '永恒未知之地');
+  assert.notEqual(forbidden.plane, '时间长河');
+  assert.notEqual(forbidden.plane, '仙域');
 });
 
 test('霸王境界满足后大成，华云飞吞噬五次和十次依次进化', () => {

@@ -1,7 +1,17 @@
 import { calculateEquippedStats } from './equipmentStats.js';
+import { createRealmEventLocation } from './realmEventLocation.js';
+import { getPlayerPlaneCoordinate, getPlayerPlaneName } from './planeCoords.js';
+import { PLACE_LOCATION_MAP, SPECIAL_LOCATIONS } from './weimianTravel.js';
 
 export const TIANJIAO_PLANES = Object.freeze([2, 2.5]);
 export const HUAYUNFEI_DEVOUR_CHANCE = 0.4;
+export const TIANJIAO_BREAKTHROUGH_INTERVAL = 5000;
+export const TIANJIAO_IMPROVEMENT_INTERVAL = 3000;
+export const TIANJIAO_TRACE_DURATION_MS = 24 * 60 * 60 * 1000;
+export const TIANJIAO_DUNGEON_TRACE_CHANCE = 0.1;
+export const TIANJIAO_EVENT_TRACE_CHANCE = 0.15;
+export const TIANJIAO_HEALING_YEARS = 1000;
+export const TIANJIAO_HEALING_RECOVERY = 20;
 
 const ERA_FACTORS = Object.freeze([1, 0.75, 0.5, 0.08, 0.02]);
 const IMPROVEMENT_CHANCES = Object.freeze([0.9, 0.85, 0.8, 0.7, 0.6]);
@@ -15,6 +25,25 @@ const STARTER_NAMES = Object.freeze({
 const HOLY_LANDS = Object.freeze(['摇光圣地', '姬家', '姜家', '瑶池圣地', '紫府圣地', '万初圣地']);
 const CULTIVATOR_SURNAMES = Object.freeze(['姬', '姜', '李', '周', '陆', '顾', '宁', '楚']);
 const CULTIVATOR_NAMES = Object.freeze(['玄', '尘', '道一', '凌霄', '无极', '长风', '天衡', '星河']);
+const ARTIFACT_PREFIXES = Object.freeze(['太初', '紫极', '吞天', '星河', '万劫', '天命', '不灭', '混元', '九霄', '虚空']);
+const ARTIFACT_SUFFIXES = Object.freeze(['问道', '镇世', '破劫', '照夜', '归一', '无双', '葬星', '凌天']);
+const ARTIFACT_CORES = Object.freeze({
+  武器: ['剑', '战戟', '天刀', '神枪', '羽刃', '道尺', '古矛', '仙锏'],
+  护具: ['战甲', '仙衣', '道袍', '神铠', '羽衣', '玄甲', '天衣', '圣铠'],
+  法宝: ['古镜', '神炉', '道塔', '宝印', '天钟', '仙图', '宝轮', '星盘'],
+  帝兵: ['帝剑', '皇戟', '天刀', '古钟', '神炉', '道塔', '王印', '仙轮'],
+});
+const REINCARNATION_PREFIXES = Object.freeze(['紫微', '星墟', '北斗', '天外', '轮回', '太初', '九霄', '万古']);
+const REINCARNATION_SUFFIXES = Object.freeze(['转世身', '归来者', '道胎', '新生', '轮回子', '再世身']);
+const INITIAL_TEMPLATE_FIELDS = Object.freeze([
+  '境界', 'level_id', 'Physique_id', 'mijinglevel_id', 'xiangulevel_id',
+  '攻击', '防御', '当前血量', '血量上限', '暴击率', '暴击伤害', '速度',
+  '闪避率', '首次闪避', '闪避增攻', '闪避增攻上限', '灵根', '学习的功法',
+]);
+
+function cloneValue(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
 
 function cloneItem(item) {
   if (!item) return null;
@@ -84,11 +113,189 @@ export function getTianjiaoImprovementChance(eraIndex) {
 
 export function isTianjiaoBreakthroughYear(eraYears) {
   const years = Number(eraYears);
-  return Number.isFinite(years) && years >= 0 && years % 2000 === 0;
+  return Number.isFinite(years) && years > 0 && years % TIANJIAO_BREAKTHROUGH_INTERVAL === 0;
+}
+
+export function isTianjiaoImprovementYear(eraYears) {
+  const years = Number(eraYears);
+  return Number.isFinite(years) && years > 0 && years % TIANJIAO_IMPROVEMENT_INTERVAL === 0;
 }
 
 function randomEntry(items, random) {
   return items[Math.min(items.length - 1, Math.floor(random() * items.length))];
+}
+
+const ALLOWED_TIANJIAO_PLANES = Object.freeze(
+  Object.keys(PLACE_LOCATION_MAP).filter(plane => !SPECIAL_LOCATIONS.includes(plane)),
+);
+
+function planeNameFromId(planeId) {
+  return Object.entries(PLACE_LOCATION_MAP)
+    .find(([, id]) => Number(id) === Number(planeId))?.[0] || null;
+}
+
+export function createTianjiaoTrace(tianjiao, options = {}) {
+  const random = options.random || Math.random;
+  const now = Number(options.now) || Date.now();
+  const requestedPlane = options.destination?.plane || options.plane || planeNameFromId(tianjiao?.位面);
+  const plane = ALLOWED_TIANJIAO_PLANES.includes(requestedPlane)
+    ? requestedPlane
+    : randomEntry(ALLOWED_TIANJIAO_PLANES, random);
+  const destination = options.destination?.plane === plane && options.destination?.coordinate
+    ? options.destination
+    : createRealmEventLocation({ plane, random });
+  if (!destination || SPECIAL_LOCATIONS.includes(destination.plane)) return null;
+  return {
+    name: tianjiao.名号,
+    plane: destination.plane,
+    location: destination.location,
+    coordinate: { ...destination.coordinate },
+    source: options.source || '未知线索',
+    reincarnation: Number(tianjiao.轮回世数) || 0,
+    traceVersion: Number(tianjiao.踪迹代数) || 0,
+    foundAt: now,
+    expiresAt: now + TIANJIAO_TRACE_DURATION_MS,
+  };
+}
+
+export function formatTianjiaoTrace(trace) {
+  if (!trace) return '踪迹未明';
+  return `${trace.plane}·${trace.location}（坐标 ${trace.coordinate.x},${trace.coordinate.y}）`;
+}
+
+export function getKnownTianjiaoTrace(player, tianjiao, now = Date.now()) {
+  const personal = player?.天骄踪迹?.[tianjiao?.名号];
+  const currentLife = Number(tianjiao?.轮回世数) || 0;
+  const currentTraceVersion = Number(tianjiao?.踪迹代数) || 0;
+  const isCurrent = trace =>
+    Number(trace?.reincarnation || 0) === currentLife &&
+    Number(trace?.traceVersion || 0) === currentTraceVersion;
+  if (personal && Number(personal.expiresAt) > now && isCurrent(personal)) return personal;
+  const publicTrace = tianjiao?.公开踪迹;
+  return publicTrace && Number(publicTrace.expiresAt) > now && isCurrent(publicTrace) ? publicTrace : null;
+}
+
+export function getTianjiaoTraceReach(player, trace) {
+  if (!trace) return { ok: false, reason: 'unknown' };
+  if (getPlayerPlaneName(player) !== trace.plane) return { ok: false, reason: 'plane' };
+  const coordinate = getPlayerPlaneCoordinate(player, trace.plane);
+  if (!coordinate || coordinate.x !== Number(trace.coordinate?.x) || coordinate.y !== Number(trace.coordinate?.y)) {
+    return { ok: false, reason: 'coordinate' };
+  }
+  return { ok: true, reason: null };
+}
+
+export function rollDungeonTianjiaoTrace(player, tianjiaoList, options = {}) {
+  const random = options.random || Math.random;
+  const chance = Number(options.chance ?? TIANJIAO_DUNGEON_TRACE_CHANCE);
+  const candidates = (tianjiaoList || []).filter(tianjiao => tianjiao?.名号);
+  if (candidates.length === 0 || random() >= chance) return null;
+  const tianjiao = randomEntry(candidates, random);
+  const trace = createTianjiaoTrace(tianjiao, { random, now: options.now, source: '副本寻迹' });
+  if (!trace) return null;
+  player.天骄踪迹 ||= {};
+  player.天骄踪迹[tianjiao.名号] = trace;
+  return trace;
+}
+
+export function rollRealmEventTianjiaoTrace(tianjiaoList, event, options = {}) {
+  const random = options.random || Math.random;
+  const chance = Number(options.chance ?? TIANJIAO_EVENT_TRACE_CHANCE);
+  const candidates = (tianjiaoList || []).filter(tianjiao => tianjiao?.名号);
+  if (candidates.length === 0 || random() >= chance) return null;
+  const tianjiao = randomEntry(candidates, random);
+  const trace = createTianjiaoTrace(tianjiao, {
+    random,
+    now: options.now,
+    source: '位面事件',
+    destination: event,
+  });
+  if (!trace) return null;
+  tianjiao.公开踪迹 = trace;
+  return trace;
+}
+
+export function ensureTianjiaoInitialTemplate(tianjiao) {
+  if (!tianjiao || tianjiao.初始模板) return false;
+  const template = {};
+  for (const field of INITIAL_TEMPLATE_FIELDS) {
+    if (tianjiao[field] !== undefined) template[field] = cloneValue(tianjiao[field]);
+  }
+  if (!isIndependentTianjiao(tianjiao) && tianjiao.装备) template.装备 = cloneValue(tianjiao.装备);
+  tianjiao.初始模板 = template;
+  return true;
+}
+
+export function resetTianjiaoToInitialTemplate(tianjiao, context, random = Math.random) {
+  ensureTianjiaoInitialTemplate(tianjiao);
+  const template = tianjiao.初始模板 || {};
+  for (const field of INITIAL_TEMPLATE_FIELDS) {
+    if (template[field] === undefined) delete tianjiao[field];
+    else tianjiao[field] = cloneValue(template[field]);
+  }
+
+  delete tianjiao.攻击加成;
+  delete tianjiao.防御加成;
+  delete tianjiao.生命加成;
+  delete tianjiao.吞噬本源次数;
+  delete tianjiao.吞噬本源记录;
+  delete tianjiao.公开踪迹;
+  if (isIndependentTianjiao(tianjiao)) tianjiao.装备 = getStarterTianjiaoEquipment(context);
+  else if (template.装备) tianjiao.装备 = cloneValue(template.装备);
+  else delete tianjiao.装备;
+
+  tianjiao.轮回世数 = Math.max(0, Math.floor(Number(tianjiao.轮回世数) || 0)) + 1;
+  tianjiao.踪迹代数 = Math.max(0, Math.floor(Number(tianjiao.踪迹代数) || 0)) + 1;
+  tianjiao.轮回称号 = `${randomEntry(REINCARNATION_PREFIXES, random)}${randomEntry(REINCARNATION_SUFFIXES, random)}`;
+  return { life: tianjiao.轮回世数, title: tianjiao.轮回称号 };
+}
+
+function rollSetbackType(defeats, random) {
+  const roll = random();
+  if (defeats <= 3) return roll < 0.7 ? '轻伤' : roll < 0.95 ? '道心受创' : '道心破碎';
+  if (defeats <= 6) return roll < 0.4 ? '轻伤' : roll < 0.85 ? '道心受创' : '道心破碎';
+  return roll < 0.2 ? '轻伤' : roll < 0.7 ? '道心受创' : '道心破碎';
+}
+
+function erodeGrowthAfterDaoHeartBreak(tianjiao, random) {
+  const fields = ['攻击加成', '防御加成', '生命加成'].filter(field => Number(tianjiao?.[field]) > 0);
+  if (fields.length === 0) return null;
+  const field = randomEntry(fields, random);
+  const before = Number(tianjiao[field]) || 0;
+  tianjiao[field] = Math.max(0, Math.trunc(before * 0.9));
+  return `${field}因道心崩裂衰退10%`;
+}
+
+export function registerTianjiaoDefeat(tianjiao, status, worldYear, random = Math.random) {
+  status.本世败绩 = Math.max(0, Math.floor(Number(status.本世败绩) || 0)) + 1;
+  const defeats = status.本世败绩;
+  if (defeats % 3 !== 0 || Number(status.currentHP) <= 0) return { defeats, setback: null };
+
+  const type = rollSetbackType(defeats, random);
+  status.养伤 = {
+    type,
+    startedAtWorldYear: Number(worldYear) || 0,
+    untilWorldYear: (Number(worldYear) || 0) + TIANJIAO_HEALING_YEARS,
+  };
+  status.isHealing = true;
+  if (type === '道心受创') status.下次自强倍率 = 0.7;
+  if (type === '道心破碎') {
+    status.下次自强倍率 = 0.5;
+    status.下次证道阻断 = true;
+  }
+  const lostGrowth = type === '道心破碎' ? erodeGrowthAfterDaoHeartBreak(tianjiao, random) : null;
+  tianjiao.踪迹代数 = Math.max(0, Math.floor(Number(tianjiao.踪迹代数) || 0)) + 1;
+  delete tianjiao.公开踪迹;
+  return { defeats, setback: { ...status.养伤, lostGrowth } };
+}
+
+export function recoverTianjiaoFromSetback(status, worldYear) {
+  if (!status?.isHealing || Number(status.养伤?.untilWorldYear) > Number(worldYear)) return null;
+  const type = status.养伤.type;
+  status.currentHP = Math.min(100, Math.max(1, Number(status.currentHP) || 1) + TIANJIAO_HEALING_RECOVERY);
+  status.isHealing = false;
+  delete status.养伤;
+  return { type, currentHP: status.currentHP };
 }
 
 function talentByName(context, name, fallback) {
@@ -225,24 +432,41 @@ function itemScore(item, base) {
   return stats.攻击 + stats.防御 + stats.血量上限;
 }
 
+function randomArtifactName(slot, random) {
+  return `${randomEntry(ARTIFACT_PREFIXES, random)}${randomEntry(ARTIFACT_CORES[slot], random)}·${randomEntry(ARTIFACT_SUFFIXES, random)}`;
+}
+
+function hasPercentageStats(item) {
+  return Object.values(item?.归一属性?.百分比 || {}).some(value => Number(value) > 0);
+}
+
+function washPercentageEquipment(tianjiao, equipment, slot, random) {
+  const current = equipment[slot];
+  const crafted = cloneItem(current);
+  const pathLevel = Math.max(Number(tianjiao.mijinglevel_id) || 1, Number(tianjiao.xiangulevel_id) || 1);
+  const legacyName = `${tianjiao.名号}祭炼的${slot}`;
+  const wasPercentageEquipment = hasPercentageStats(current);
+  if (!crafted.天骄炼制 || crafted.name === legacyName) crafted.name = randomArtifactName(slot, random);
+  crafted.天骄炼制 = true;
+  crafted.百分比洗礼次数 = Math.max(0, Math.floor(Number(crafted.百分比洗礼次数) || 0)) + 1;
+  crafted.归一属性 ||= { 百分比: {} };
+  crafted.归一属性.百分比 ||= {};
+  const stat = randomEntry(['atk', 'def', 'HP'], random);
+  const rate = Number((0.01 + pathLevel * 0.002 + random() * 0.03).toFixed(3));
+  crafted.归一属性.百分比[stat] = Number(crafted.归一属性.百分比[stat] || 0) + rate;
+  equipment[slot] = crafted;
+  const action = wasPercentageEquipment ? `第${crafted.百分比洗礼次数}次洗礼` : '炼成';
+  return `${action}百分比${slot}【${crafted.name}】（${stat}+${(rate * 100).toFixed(1)}%）`;
+}
+
 function improveEquipment(tianjiao, context, random) {
   const equipment = ensureTianjiaoEquipment(tianjiao, context);
   const slot = ['武器', '护具', '法宝'][Math.floor(random() * 3)];
   const realm = getTianjiaoRealmStats(tianjiao, context);
   const current = equipment[slot];
 
-  if (random() < 0.3) {
-    const stat = ['atk', 'def', 'HP'][Math.floor(random() * 3)];
-    const rate = Number((0.01 + Math.max(tianjiao.mijinglevel_id || 1, tianjiao.xiangulevel_id || 1) * 0.002 + random() * 0.03).toFixed(3));
-    const crafted = cloneItem(current);
-    crafted.name = `${tianjiao.名号}祭炼的${slot}`;
-    crafted.天骄炼制 = true;
-    crafted.归一属性 ||= { 百分比: {} };
-    crafted.归一属性.百分比 ||= {};
-    crafted.归一属性.百分比[stat] = Number(crafted.归一属性.百分比[stat] || 0) + rate;
-    equipment[slot] = crafted;
-    return `炼制百分比${slot}【${crafted.name}】（${stat}+${(rate * 100).toFixed(1)}%）`;
-  }
+  const washChance = hasPercentageStats(current) ? 0.7 : 0.3;
+  if (random() < washChance) return washPercentageEquipment(tianjiao, equipment, slot, random);
 
   const candidates = [...(context.equipmentList || []), ...(context.specialEquipmentList || [])]
     .filter(item => item?.type === slot && itemScore(item, realm.base) > itemScore(current, realm.base));
@@ -257,22 +481,30 @@ function forgeImperialWeapon(tianjiao, context, random) {
   const realm = getTianjiaoRealmStats(tianjiao, context);
   const oldWeapon = equipment.帝兵;
   const pathLevel = Math.max(Number(tianjiao.mijinglevel_id) || 1, Number(tianjiao.xiangulevel_id) || 1);
+  const wasForged = oldWeapon?.author_name === tianjiao.名号 && oldWeapon?.name !== STARTER_NAMES.帝兵;
+  const legacyName = `${tianjiao.名号}·本命道兵`;
+  const weaponName = !wasForged || oldWeapon.name === legacyName
+    ? randomArtifactName('帝兵', random)
+    : oldWeapon.name;
   const gain = Number((0.1 + Math.max(0, pathLevel - 8) * 0.05 + random() * 0.1).toFixed(2));
-  const fixedRate = 0.01 * Math.max(1, pathLevel - 8);
+  const fixedRate = (0.003 + random() * 0.002) * Math.max(1, pathLevel - 8);
   equipment.帝兵 = {
     ...cloneItem(oldWeapon),
-    name: `${tianjiao.名号}·本命道兵`,
+    name: weaponName,
     type: '帝兵',
     class: '装备',
     品阶: pathLevel >= 16 ? '极道帝兵' : '本命道兵',
     author_name: tianjiao.名号,
-    atk: Math.max(Number(oldWeapon?.atk) || 0, Math.trunc(realm.laterRealms.攻击 * fixedRate)),
-    def: Math.max(Number(oldWeapon?.def) || 0, Math.trunc(realm.laterRealms.防御 * fixedRate)),
-    HP: Math.max(Number(oldWeapon?.HP) || 0, Math.trunc(realm.laterRealms.血量上限 * fixedRate)),
-    bao: Math.max(Number(oldWeapon?.bao) || 0, Math.min(1, pathLevel * 0.03)),
+    天骄本命: true,
+    洗礼次数: Math.max(0, Math.floor(Number(oldWeapon?.洗礼次数) || 0)) + 1,
+    atk: (Number(oldWeapon?.atk) || 0) + Math.max(1, Math.trunc(realm.laterRealms.攻击 * fixedRate)),
+    def: (Number(oldWeapon?.def) || 0) + Math.max(1, Math.trunc(realm.laterRealms.防御 * fixedRate)),
+    HP: (Number(oldWeapon?.HP) || 0) + Math.max(1, Math.trunc(realm.laterRealms.血量上限 * fixedRate)),
+    bao: Math.min(1, Math.max(Number(oldWeapon?.bao) || 0, pathLevel * 0.03) + 0.01),
     全属性: Number((Number(oldWeapon?.全属性) + gain).toFixed(2)),
   };
-  return `炼成本命道兵【${equipment.帝兵.name}】（全属性+${gain}）`;
+  const action = wasForged ? `第${equipment.帝兵.洗礼次数}次洗礼` : '炼成';
+  return `${action}本命帝兵【${equipment.帝兵.name}】（全属性+${gain}）`;
 }
 
 function addExtraBonus(tianjiao, context, random) {
