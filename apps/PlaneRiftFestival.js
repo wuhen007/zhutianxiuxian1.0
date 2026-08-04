@@ -1,4 +1,7 @@
 import { plugin } from '../api/api.js';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+import yaml from 'yaml';
 
 import {
   Add_najie_thing,
@@ -12,26 +15,47 @@ import { getPlayerPlaneCoordinate, getPlayerPlaneName } from '../model/planeCoor
 import { getShanghaiDateKey, rememberCoordinate } from '../model/weimianTravel.js';
 import {
   FESTIVAL_PLANE,
+  RIFT_EXCHANGES,
   RIFT_MAX_DEPTH,
   RIFT_PLANES,
   beginRiftExpedition,
   calculateRiftPayout,
+  closeRifts,
   exploreRift,
   getActiveRifts,
   getRiftRefreshChance,
+  openRiftManually,
   readRiftState,
   saveRiftState,
   updateFestivalSign,
   withdrawRift,
 } from '../model/planeRiftFestival.js';
+import {
+  createRiftGuardian,
+  getCombatPower,
+  getEliteAverage,
+  getUnitSpeed,
+} from '../model/riftGuardian.js';
 
 const PASS_NAME = '巡界玉符';
-const EXCHANGES = Object.freeze({
-  秘境之匙: { cost: 12, name: '秘境之匙', class: '道具', amount: 1 },
-  星图: { cost: 40, name: '星图', class: '道具', amount: 1 },
-  巡界玉符: { cost: 18, name: PASS_NAME, class: '道具', amount: 2 },
-  真我宝盒: { cost: 100, name: '真我宝盒', class: '盒子', amount: 1 },
-});
+
+function formatPower(value) {
+  const num = Math.max(0, Number(value) || 0);
+  if (num >= 100000000) return `${(num / 100000000).toFixed(2)}亿`;
+  if (num >= 10000) return `${(num / 10000).toFixed(2)}万`;
+  return String(num);
+}
+
+/** 战斗损耗：按比例扣当前血量，最少保留 1 点，不会致死 */
+function applyHpLoss(player, rate) {
+  const ratio = Math.max(0, Number(rate) || 0);
+  if (!ratio) return 0;
+  const current = Math.max(0, Number(player.当前血量) || 0);
+  const loss = Math.min(Math.max(0, current - 1), Math.floor(current * ratio));
+  if (loss <= 0) return 0;
+  player.当前血量 = current - loss;
+  return loss;
+}
 
 function previousDateKey(now) {
   return getShanghaiDateKey(new Date(now.getTime() - 24 * 60 * 60 * 1000));
@@ -60,21 +84,54 @@ function findPlayerExpedition(state, qq) {
   return null;
 }
 
+// 内部管理员判定：优先用框架 e.isMaster，QQBot 通道 openid 不匹配时回退读机器人 master 配置。
+// 关键目的：去掉框架级 permission 静默拦截，任何路径都给可见回复，杜绝"毫无反应"。
+function loadMasterIds() {
+  try {
+    const p = resolve(process.cwd(), 'config/config/other.yaml');
+    const cfg = yaml.parse(readFileSync(p, 'utf-8')) || {};
+    const master = cfg.master || {};
+    const ids = new Set();
+    for (const v of Object.values(master)) {
+      if (Array.isArray(v)) v.forEach(x => ids.add(String(x)));
+      else if (v != null) ids.add(String(v));
+    }
+    return ids;
+  } catch {
+    return new Set();
+  }
+}
+
+function isAdmin(e) {
+  if (e.isMaster) return true;
+  try {
+    return loadMasterIds().has(String(e.user_id));
+  } catch {
+    return false;
+  }
+}
+
 export class PlaneRiftFestival extends plugin {
   constructor() {
     super({
       name: '巡界司活动',
       dsc: '巡界签到、太初星墟与限时裂界副本',
       event: 'message',
-      priority: 580,
+      priority: 1,
       rule: [
         { reg: '^#(?:巡界活动|太初星墟)$', fnc: 'festivalInfo' },
         { reg: '^#(?:巡界|太初)签到$', fnc: 'festivalSign' },
         { reg: '^#裂界副本$', fnc: 'riftStatus' },
         { reg: '^#进入裂界$', fnc: 'enterRift' },
-        { reg: '^#裂界探索\s+(?:稳阵|寻宝|强攻)$', fnc: 'explore' },
+        { reg: '^#裂界探索$', fnc: 'exploreHelp', priority: 1 },
+        { reg: '^#裂界稳阵$', fnc: 'explore', priority: 1 },
+        { reg: '^#裂界寻宝$', fnc: 'explore', priority: 1 },
+        { reg: '^#裂界强攻$', fnc: 'explore', priority: 1 },
         { reg: '^#撤离裂界$', fnc: 'withdraw' },
         { reg: '^#界源兑换(?:\s+.*)?$', fnc: 'exchange' },
+        { reg: '^#开启裂界(?:\s.*)?$', fnc: 'adminOpenRift', priority: 1 },
+        { reg: '^#关闭所有裂界$', fnc: 'adminCloseAllRifts', priority: 1 },
+        { reg: '^#关闭裂界(?:\s+(\S+))?$', fnc: 'adminCloseRift', priority: 1 },
       ],
     });
   }
@@ -93,8 +150,12 @@ export class PlaneRiftFestival extends plugin {
       '#裂界副本：查看仙界与太初星墟当前裂界。',
       '每过2000世界年，两处各自判定刷新；未刷新会累积概率，最高80%。',
       '抵达入口后 #进入裂界，再用 #裂界探索 稳阵/寻宝/强攻。',
+      '三种路线各有外界干扰：',
+      '· 稳阵——可能遇【界潮涌动】压低成功率，全服锚定≥60%可压制大半。',
+      '· 寻宝——可能惊动【守护灵】，潜行成则收益×1.3，败则收益×0.6且成功率下降。',
+      '· 强攻——每层必遇【裂界守卫】，需以战力正面击溃（守卫取全服前十平均战力）。',
       '可随时 #撤离裂界；失败只保住一半界源，三层通关则全部带出。',
-      '#界源兑换：兑换秘境之匙、星图、巡界玉符或真我宝盒。',
+      '#界源兑换：兑换秘境之匙、星图、巡界玉符、真我宝盒或无尽秘钥配方。',
     ].join('\n'));
   }
 
@@ -177,14 +238,24 @@ export class PlaneRiftFestival extends plugin {
     return e.reply([
       `【踏入${rift.name}】`,
       `${PASS_NAME}化作一道稳定界门，你抵达裂界第一层。`,
-      '#裂界探索 稳阵：成功率高，提升全服锚定度最多。',
-      '#裂界探索 寻宝：收益均衡。',
-      '#裂界探索 强攻：收益与贡献最高，风险也最大。',
+      '#裂界稳阵：成功率最高，易遇【界潮涌动】压成功率，全服锚定高可压制。',
+      '#裂界寻宝：收益均衡，可能惊动【守护灵】，潜行成败影响收益。',
+      '#裂界强攻：每层必战【裂界守卫】，战力取全服前十均值，胜则收获与贡献最高。',
       '探索后可继续深入，或发送 #撤离裂界 带走界源。',
     ].join('\n'));
   }
 
+  async exploreHelp(e) {
+    return e.reply([
+      '【裂界探索】请使用以下指令：',
+      '· #裂界稳阵：成功率最高，可能遭遇【界潮涌动】压低成功率（位面锚定≥60%可压制）。',
+      '· #裂界寻宝：收益均衡，可能惊动【守护灵】，潜行成败影响收益。',
+      '· #裂界强攻：每层必战【裂界守卫】，战力取全服前十均值，胜则收获与贡献最高。',
+    ].join('\n'));
+  }
+
   async explore(e) {
+    try {
     const account = await this.getPlayer(e);
     if (!account) return e.reply('暂无修仙存档，请先发送 #修仙。');
     const { qq, player } = account;
@@ -193,43 +264,79 @@ export class PlaneRiftFestival extends plugin {
     if (!current || current.expedition.status !== 'active') return e.reply('你当前没有正在进行的裂界探索。');
     if (getPlayerPlaneName(player) !== current.rift.plane) return e.reply(`你的真身已离开${current.rift.plane}，无法继续深入。`);
     const route = e.msg.match(/(稳阵|寻宝|强攻)$/)?.[1];
+
+    // 强攻路线每层必遇裂界守卫：战力取全服前十平均，按层数系数放大
+    const playerPower = getCombatPower(player);
+    const guardian = route === '强攻'
+      ? createRiftGuardian(current.expedition.depth + 1, getEliteAverage())
+      : null;
+
     const result = exploreRift(state, current.rift.id, qq, route, {
       realmLevel: Math.max(Number(player.mijinglevel_id) || 0, Number(player.xiangulevel_id) || 0),
       signStreak: Number(player.巡界签到?.streak) || 0,
+      guardian,
+      combatPower: playerPower,
     });
     if (!result.ok && result.reason === 'expired') {
       const withdrawn = withdrawRift(state, current.rift.id, qq);
       saveRiftState(state);
       const payout = await this.settlePayout(qq, player, withdrawn.rift, withdrawn.expedition);
-      return e.reply(`裂界已闭合，你被界潮推出，带回界源${payout.source}。`);
+      return e.reply(`裂界已闭合，你被界潮推出，带回界源${payout.source}（境界乘区×${payout.realmMult}，修为+${formatPower(payout.cultivation)}）。`);
     }
     if (!result.ok) return e.reply('本次裂界探索无法继续。');
     saveRiftState(state);
+
+    const hpLost = result.hpLoss ? applyHpLoss(player, result.hpLoss) : 0;
+    const disturbanceLine = this.formatDisturbance(route, result, guardian);
     const chance = Math.round(result.chance * 100);
     if (!result.success) {
       const payout = await this.settlePayout(qq, player, result.rift, result.expedition);
       return e.reply([
         `【裂界失陷·${route}】`,
+        disturbanceLine,
         `第${result.expedition.depth + 1}层探索失败（本次成功率${chance}%）。`,
+        hpLost ? `激战损耗气血${formatPower(hpLost)}，当前气血余${formatPower(player.当前血量)}。` : null,
         `你舍弃大半战利品遁出裂界，保住界源${payout.source}。`,
-        `获得修为与血气各${payout.cultivation}。`,
-      ].join('\n'));
+        `境界乘区×${payout.realmMult}（${player.level_id}×${player.Physique_id}×${player.xiangulevel_id}×${player.mijinglevel_id}），获得修为与血气各${formatPower(payout.cultivation)}。`,
+      ].filter(Boolean).join('\n'));
     }
     if (result.completed) {
       const payout = await this.settlePayout(qq, player, result.rift, result.expedition);
       return e.reply([
         `【裂界贯通·三层尽破】`,
+        disturbanceLine,
         `${route}成功（本次成功率${chance}%），取得界源胚${result.gained}。`,
+        hpLost ? `激战损耗气血${formatPower(hpLost)}，当前气血余${formatPower(player.当前血量)}。` : null,
         `锚定度${result.rift.anchor}%令最终收益×${payout.multiplier.toFixed(2)}。`,
-        `带出界源${payout.source}，获得修为与血气各${payout.cultivation}。`,
-      ].join('\n'));
+        `带出界源${payout.source}，境界乘区×${payout.realmMult}，获得修为与血气各${formatPower(payout.cultivation)}。`,
+      ].filter(Boolean).join('\n'));
     }
+    await Write_player(qq, player);
     return e.reply([
       `【裂界第${result.expedition.depth}层·${route}成功】`,
+      disturbanceLine,
       `本次成功率${chance}%，取得界源胚${result.gained}。`,
+      hpLost ? `激战损耗气血${formatPower(hpLost)}，当前气血余${formatPower(player.当前血量)}。` : null,
       `当前携带${result.expedition.loot}，位面锚定度${result.rift.anchor}%。`,
       `可继续探索第${result.expedition.depth + 1}层，或 #撤离裂界。`,
-    ].join('\n'));
+    ].filter(Boolean).join('\n'));
+    } catch (err) {
+      logger?.error?.(`[PlaneRiftFestival] explore 异常：${err?.stack || err}`);
+      return e.reply(`【裂界探索出错】${err?.message || String(err)}（已记录到日志，请联系管理员排查）`);
+    }
+  }
+
+  /** 把本次探索的“外界干扰”渲染成一句话 */
+  formatDisturbance(route, result, guardian) {
+    const d = result?.disturbance;
+    if (!d || !d.type) return '';
+    if (d.type === '裂界守卫' && guardian) {
+      const v = d.verdict;
+      const verdict = v?.outcome === 'win' ? '正面击溃' : v?.outcome === 'narrow' ? '力战险胜' : '被轰出';
+      return `遭遇【裂界守卫·${guardian.名号}】（战力${formatPower(guardian.战力)}，速度${guardian.实际速度}）→ ${verdict}。`;
+    }
+    if (!d.triggered) return '';
+    return `外界干扰·${d.type}：${d.detail || ''}`;
   }
 
   async withdraw(e) {
@@ -243,7 +350,7 @@ export class PlaneRiftFestival extends plugin {
     if (!result.ok) return e.reply('本次裂界探索已经结算。');
     saveRiftState(state);
     const payout = await this.settlePayout(qq, player, result.rift, result.expedition);
-    return e.reply(`【见好即收】\n你从第${result.expedition.depth}层撤离，带出界源${payout.source}，获得修为与血气各${payout.cultivation}。`);
+    return e.reply(`【见好即收】\n你从第${result.expedition.depth}层撤离，带出界源${payout.source}，境界乘区×${payout.realmMult}，获得修为与血气各${formatPower(payout.cultivation)}。`);
   }
 
   async settlePayout(qq, player, rift, expedition) {
@@ -251,7 +358,12 @@ export class PlaneRiftFestival extends plugin {
     if (expedition.settled || player.裂界结算记录.includes(rift.id)) {
       return { multiplier: 1, source: 0, cultivation: 0, blood: 0 };
     }
-    const payout = calculateRiftPayout(rift, expedition.secured);
+    const payout = calculateRiftPayout(rift, expedition.secured, {
+      level: player.level_id,
+      physique: player.Physique_id,
+      xiangu: player.xiangulevel_id,
+      mijing: player.mijinglevel_id,
+    });
     player.太初界源 = (Number(player.太初界源) || 0) + payout.source;
     player.修为 = (Number(player.修为) || 0) + payout.cultivation;
     player.血气 = (Number(player.血气) || 0) + payout.blood;
@@ -274,15 +386,67 @@ export class PlaneRiftFestival extends plugin {
     if (!name) {
       return e.reply([
         `【界源兑换】当前界源：${Number(player.太初界源) || 0}`,
-        ...Object.entries(EXCHANGES).map(([label, item]) => `${label}：${item.cost}界源 -> ${item.name}×${item.amount}`),
+        ...Object.entries(RIFT_EXCHANGES).map(([label, item]) => `${label}：${item.cost}界源 -> ${item.name}×${item.amount}`),
       ].join('\n'));
     }
-    const item = EXCHANGES[name];
+    const item = RIFT_EXCHANGES[name];
     if (!item) return e.reply(`不可兑换「${name}」，发送 #界源兑换 查看清单。`);
+    if (name === '无尽秘钥配方') {
+      const owned = Number(await exist_najie_thing(qq, item.name, item.class)) || 0;
+      if (player.无尽秘钥配方 || owned > 0)
+        return e.reply('你已经持有或参悟了【无尽秘钥配方】，无需重复兑换。');
+    }
     if ((Number(player.太初界源) || 0) < item.cost) return e.reply(`界源不足，需要${item.cost}，当前${Number(player.太初界源) || 0}。`);
     player.太初界源 -= item.cost;
     await Write_player(qq, player);
     await Add_najie_thing(qq, item.name, item.class, item.amount);
     return e.reply(`兑换成功：消耗界源${item.cost}，获得${item.name}×${item.amount}。剩余界源${player.太初界源}。`);
+  }
+
+  async adminOpenRift(e) {
+    if (!isAdmin(e)) return e.reply('该指令仅限管理员使用。');
+    const plane = RIFT_PLANES[Math.floor(Math.random() * RIFT_PLANES.length)];
+    const state = readRiftState();
+    const result = openRiftManually(state, plane, {});
+    if (!result.ok) return e.reply(`开启失败：${result.reason}。`);
+    saveRiftState(state);
+    const r = result.rift;
+    return e.reply([
+      '【管理员·强制开启裂界】',
+      `${plane} · 「${r.name}」已开启（随机生成）`,
+      `入口：${r.location}（坐标 ${r.coordinate.x},${r.coordinate.y}）`,
+      '持续4小时，抵达对应位面坐标后发送 #进入裂界。',
+    ].join('\n'));
+  }
+
+  async adminCloseRift(e) {
+    if (!isAdmin(e)) return e.reply('该指令仅限管理员使用。');
+    const match = e.msg.match(/^#关闭裂界(?:\s+(\S+))?$/);
+    const plane = (match?.[1] || '').replace(/\s+/g, '');
+    if (!plane) return e.reply('请指定位面，如 #关闭裂界 仙界；或发送 #关闭所有裂界。');
+    if (!RIFT_PLANES.includes(plane)) {
+      return e.reply(`位面不存在，可选：${RIFT_PLANES.join('、')}；或发送 #关闭所有裂界。`);
+    }
+    const state = readRiftState();
+    const result = closeRifts(state, { plane });
+    saveRiftState(state);
+    if (!result.closed.length) return e.reply(`${plane}当前没有进行中的裂界。`);
+    return e.reply([
+      '【管理员·关闭裂界】',
+      `已强制闭合：${result.closed.map(c => `${c.plane}·${c.name}`).join('、')}。`,
+      '进行中的探索将在玩家下次操作时按过期结算，已得界源不受影响。',
+    ].join('\n'));
+  }
+
+  async adminCloseAllRifts(e) {
+    if (!isAdmin(e)) return e.reply('该指令仅限管理员使用。');
+    const state = readRiftState();
+    const result = closeRifts(state, { all: true });
+    saveRiftState(state);
+    if (!result.closed.length) return e.reply('当前没有进行中的裂界。');
+    return e.reply([
+      '【管理员·关闭所有裂界】',
+      `已强制闭合：${result.closed.map(c => `${c.plane}·${c.name}`).join('、')}。`,
+    ].join('\n'));
   }
 }
