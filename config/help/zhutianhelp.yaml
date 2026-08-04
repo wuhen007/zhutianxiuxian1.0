@@ -52,6 +52,9 @@
       title: '#加入摇光'
       desc: '摇光不收废材弟子'
     - icon: help-icon_2
+      title: '#脱离势力'
+      desc: '离开势力' 
+    - icon: help-icon_2
       title: '#造访剑云海'
       desc: '需要下本奇遇获得的剑云海令牌'      
     - icon: help-icon_2
@@ -90,6 +93,9 @@
     - icon: help-icon_2
       title: '#打听天机 红尘仙'
       desc: '向天机老人追问红尘仙法总纲，开启九世仙路'
+    - icon: help-icon_2
+      title: '#打听天机 渡劫'
+      desc: '寻找安全的渡劫地点'
     - icon: help-icon_2
       title: '#推演红尘仙'
       desc: '查看当前一世的命题、生门与可选择的世愿'
