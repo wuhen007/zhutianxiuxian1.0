@@ -978,7 +978,11 @@ this.FORMATION_NAMES = [
         `【位面穿梭·完成】`,
         `${player_name}已借助${tierLabel}成功抵达${to_name}!`,
         ...travelMsgArr,
-        ...(supremeAttention.warning ? ['', `【禁区至尊注视 ${supremeAttention.count}/3】`, supremeAttention.warning] : []),
+        ...(supremeAttention.exempt
+          ? ['', `【禁区至尊·${supremeAttention.exemptLevel === 'emperor' ? '大帝极忌' : '至尊重忌'}】`, supremeAttention.warning]
+          : supremeAttention.warning
+            ? ['', `【禁区至尊注视 ${supremeAttention.count}/3】`, supremeAttention.warning]
+            : []),
         ...accidentMsgs,
         ...(unfetteredJourneyProgress ? [`【天地无拘】横渡位面：${unfetteredJourneyProgress}/3`] : []),
         `位面穿梭完成，你现已身处${to_name}`

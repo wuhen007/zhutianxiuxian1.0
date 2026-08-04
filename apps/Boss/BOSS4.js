@@ -12,11 +12,16 @@ import {
   Write_player,
   bigNumberTransform,
   Harm,
+  __PATH,
   zd_battle,
 } from '../../model/xiuxian.js';
 import { recordWenXianTrial } from '../../model/wenxianling.js';
+import { absorbTuntianSource } from '../../model/tuntianMagic.js';
 import {
   buildTianjiaoBattleStats,
+  formatTianjiaoTrace,
+  getKnownTianjiaoTrace,
+  getTianjiaoTraceReach,
   isIndependentTianjiao,
 } from '../../model/tianjiaoGrowth.js';
 
@@ -465,11 +470,13 @@ export class BOSS4 extends plugin {
   async ShowTianjiaoList(e) {
     if (!verc({ e })) return false;
 
+    const player = await Read_player(e.user_id.toString());
     let msg = ['****位面天骄列表****'];
     for (const tianjiao of data.weimiantianjiao_list) {
+      const trace = this.getAvailableTianjiaoTrace(player, tianjiao);
       msg.push(`名号: ${tianjiao.名号}`);
       msg.push(`境界: ${tianjiao.境界}`);
-      msg.push(`位面: ${this.getLocationName(tianjiao.位面)}`);
+      msg.push(`踪迹: ${formatTianjiaoTrace(trace)}`);
       msg.push('-------------------');
     }
 
@@ -482,6 +489,19 @@ export class BOSS4 extends plugin {
       if (id === locationId) return name;
     }
     return `未知位面(${locationId})`;
+  }
+
+  getAvailableTianjiaoTrace(player, tianjiao, now = Date.now()) {
+    const known = getKnownTianjiaoTrace(player, tianjiao, now);
+    if (known) return known;
+    try {
+      const eventConfig = JSON.parse(fs.readFileSync(`${__PATH.data_path}/weimian_events.json`, 'utf8'));
+      return (eventConfig.activeEvents || [])
+        .map(event => event.tianjiaoTrace)
+        .find(trace => trace?.name === tianjiao?.名号 && Number(trace.expiresAt) > now) || null;
+    } catch {
+      return null;
+    }
   }
 
   async CreateWorldBoss2(e) {
@@ -518,6 +538,7 @@ export class BOSS4 extends plugin {
   async LookUpWorldBossStatus2(e) {
     if (!verc({ e })) return false;
 
+    const player = await Read_player(e.user_id.toString());
     const match = e.msg.match(/^#天骄状态(?:\s+(.*))?$/);
     const tianjiaoName = match[1] ? match[1].trim() : '';
 
@@ -525,6 +546,7 @@ export class BOSS4 extends plugin {
       let allStatus = ['****所有天骄状态****'];
 
       for (const tianjiao of data.weimiantianjiao_list) {
+        const trace = this.getAvailableTianjiaoTrace(player, tianjiao);
         const statusKey = `tianjiao:status:${tianjiao.名号}`;
         let status = await redis.get(statusKey);
         status = JSON.parse(status || '{}');
@@ -546,7 +568,7 @@ export class BOSS4 extends plugin {
           allStatus.push(
             `名号: ${tianjiao.名号}`,
             `境界: ${tianjiao.境界}`,
-            `位面: ${this.getLocationName(tianjiao.位面)}`,
+            `踪迹: ${formatTianjiaoTrace(trace)}`,
             `状态: 已击败，${hours}小时${minutes}分钟后刷新`,
             '-------------------'
           );
@@ -554,7 +576,7 @@ export class BOSS4 extends plugin {
           allStatus.push(
             `名号: ${tianjiao.名号}`,
             `境界: ${tianjiao.境界}`,
-            `位面: ${this.getLocationName(tianjiao.位面)}`,
+            `踪迹: ${formatTianjiaoTrace(trace)}`,
             `血量: ${status.currentHP}%`,
             `状态: ${status.isAlive ? '存活' : '已击败'}`,
             '-------------------'
@@ -571,6 +593,8 @@ export class BOSS4 extends plugin {
       e.reply(`未找到名为「${tianjiaoName}」的天骄`);
       return false;
     }
+
+    const trace = this.getAvailableTianjiaoTrace(player, tianjiaoData);
 
     const globalReviveKey = `tianjiao:global:revive:${tianjiaoName}`;
     const globalReviveTime = await redis.get(globalReviveKey);
@@ -596,7 +620,7 @@ export class BOSS4 extends plugin {
     let ReplyMsg = [
       `----${tianjiaoName}状态----`,
       `境界: ${tianjiaoData.境界}`,
-      `位面: ${this.getLocationName(tianjiaoData.位面)}`,
+      `踪迹: ${formatTianjiaoTrace(trace)}`,
       `当前血量: ${status.currentHP}%`,
       `状态: ${status.isAlive ? '存活' : '已击败'}`
     ];
@@ -817,6 +841,22 @@ export class BOSS4 extends plugin {
       return false;
     }
 
+    const trace = this.getAvailableTianjiaoTrace(player, tianjiaoData);
+    const traceReach = getTianjiaoTraceReach(player, trace);
+    if (!trace) {
+      e.reply(`你尚未找到${tianjiaoName}的踪迹。通关副本或关注位面大事件，均有机会发现其位置。`);
+      return false;
+    }
+    if (!traceReach.ok) {
+      e.reply([
+        `${tianjiaoName}当前踪迹：${formatTianjiaoTrace(trace)}`,
+        traceReach.reason === 'plane'
+          ? `请先穿梭至${trace.plane}。`
+          : `请抵达精确坐标后再讨伐：#前往${trace.coordinate.x},${trace.coordinate.y}`,
+      ].join('\n'));
+      return false;
+    }
+
     // 检查全局复活CD
     const globalReviveKey = `tianjiao:global:revive:${tianjiaoName}`;
     const globalReviveTime = await redis.get(globalReviveKey);
@@ -865,12 +905,6 @@ export class BOSS4 extends plugin {
       // 检查玩家状态
       if (A_player.level_id < 32) {
         e.reply('你的练气境界至少达到法身境才能讨伐天骄');
-        WorldBOSSBattleLock = 0;
-        return false;
-      }
-
-      if (A_player.power_place !== tianjiaoData.位面) {
-        e.reply(`你当前不在「${this.getLocationName(tianjiaoData.位面)}」，无法挑战${tianjiaoName}`);
         WorldBOSSBattleLock = 0;
         return false;
       }
@@ -1054,6 +1088,17 @@ export class BOSS4 extends plugin {
         ];
         await e.reply(winMsg.join('\n'));
 
+        // 普通掉落按每次战胜结算；特殊掉落仍只属于最终击杀。
+        if (tianjiaoData.掉落物) {
+          for (const item of tianjiaoData.掉落物) {
+            if (Math.random() < item.概率) {
+              const amount = item.数量 * panguRewardMultiplier;
+              await Add_najie_thing(usr_qq, item.name, item.class, amount);
+              await e.reply(`获得掉落：${item.name} x${amount}`);
+            }
+          }
+        }
+
         // 检查天骄是否被彻底击败
         if (status.currentHP <= 0) {
           // 先检查护道人触发（基于血量的线性概率）
@@ -1085,17 +1130,6 @@ export class BOSS4 extends plugin {
           await redis.set(globalReviveKey, reviveTime.toString());
           
           await e.reply(`${tianjiaoName}已被彻底击败，18小时后将重新出现！`);
-
-          // 发放掉落物
-          if (tianjiaoData.掉落物) {
-            for (const item of tianjiaoData.掉落物) {
-              if (Math.random() < item.概率) {
-                const amount = item.数量 * panguRewardMultiplier;
-                await Add_najie_thing(usr_qq, item.name, item.class, amount);
-                await e.reply(`获得掉落：${item.name} x${amount}`);
-              }
-            }
-          }
 
           // 特殊掉落
           if (tianjiaoData.特殊掉落) {
@@ -1192,7 +1226,19 @@ export class BOSS4 extends plugin {
         if (tianjiaoDefeated) {
           const latestPlayer = await Read_player(usr_qq);
           const passTrial = recordWenXianTrial(latestPlayer, 'tianjiao');
-          if (passTrial.changed) await Write_player(usr_qq, latestPlayer);
+          const devour = absorbTuntianSource(latestPlayer, {
+            类型: '天骄本源',
+            目标: tianjiaoName,
+          });
+          if (passTrial.changed || devour.gained) await Write_player(usr_qq, latestPlayer);
+          if (devour.gained) {
+            await e.reply([
+              '【吞天魔功·猎杀天骄】',
+              `大道宝瓶吞尽${tianjiaoName}的天骄本源。`,
+              `吞天本源：${devour.count}/${devour.target}｜魔道值 +20`,
+              devour.evolved ? '万般体质熔炼归一，你已蜕变为【混沌体】！' : '',
+            ].filter(Boolean).join('\n'));
+          }
         }
 
       } else {

@@ -28,6 +28,16 @@ export const FORBIDDEN_SUPREME_ATTENTION_THRESHOLD = 3;
 export const FORBIDDEN_SUPREME_ALL_ATTRIBUTE = 75_000_000_000;
 export const FORBIDDEN_SUPREME_EQUIPMENT_MULTIPLIER = 150;
 
+// 禁区至尊注视·概率与豁免（按穿梭方式区分触发概率；准帝九重天以上可凭体质/境界豁免）
+// 肉身横渡 50% / 低级传送阵 25% / 高级传送阵 5%
+export const SUPREME_NOTICE_CHANCE = Object.freeze({ body: 0.5, low: 0.25, high: 0.05 });
+// 准帝九重天可威慑至尊的「绝世体质」（圣体道胎 = 先天圣体道胎在灵根.type 中的写法）
+export const SUPREME_EXEMPT_PHYSIQUES = Object.freeze(['圣体', '霸体', '圣体道胎', '混沌体']);
+export const SUPREME_EXEMPT_MIJING = 15;       // 仙台秘境——准帝九重天（mijinglevel_id）
+export const SUPREME_TERRIFIED_MIJING = 16;    // 仙台秘境——大帝（mijinglevel_id）
+// 可为玩家「抹除禁区至尊印记」的剧情 NPC
+export const SUPREME_MARK_ERASERS = Object.freeze(['盖九幽', '莫晓羽', '苏灵', '武祖叶萧', '柳神']);
+
 export const FORBIDDEN_SUPREMES = Object.freeze([
   {
     name: '石皇',
@@ -55,8 +65,187 @@ export const FORBIDDEN_SUPREMES = Object.freeze([
   },
 ]);
 
-const SUPREME_GEAR_BASE = Object.freeze({ 攻击: 120_000_000, 防御: 120_000_000, 血量: 180_000_000 });
-const SUPREME_WEAPON_BASE = Object.freeze({ 攻击: 50_000_000, 防御: 50_000_000, 血量: 50_000_000, 全属性: 12 });
+export const LOWER_REALM_POWERS = Object.freeze([
+  {
+    name: '不老山神灵法身',
+    weight: 40,
+    root: { name: '五行天脉神体', type: '神体', 法球倍率: 1.8, 攻击: 2.2, 防御: 2.8, 生命: 3.2 },
+    techniques: ['五行神令·封天绝地'],
+    equipment: '不老山五行神甲',
+    imperialWeapon: '五行神盘',
+    xianguLevel: 11,
+    allAttribute: 3_500_000_000,
+  },
+  {
+    name: '魔灵湖老尊者',
+    weight: 35,
+    root: { name: '太古天蛛王血', type: '太古王血', 法球倍率: 1.7, 攻击: 2.5, 防御: 2, 生命: 2.8 },
+    techniques: ['天蛛宝术·八荒缚界'],
+    equipment: '魔灵天蛛战衣',
+    imperialWeapon: '八荒蛛矛',
+    xianguLevel: 7,
+    allAttribute: 2_500_000_000,
+    equipmentMultiplier: 25,
+  },
+  {
+    name: '太古神山老天神',
+    weight: 25,
+    root: { name: '太古天神体', type: '天神体', 法球倍率: 1.9, 攻击: 2.4, 防御: 2.6, 生命: 3.5 },
+    techniques: ['太古神山印·天神镇界'],
+    equipment: '太古神山战铠',
+    imperialWeapon: '天神镇界印',
+    xianguLevel: 11,
+    allAttribute: 4_000_000_000,
+  },
+]);
+
+export const NINE_HEAVENS_POWERS = Object.freeze([
+  {
+    name: '仙殿残仙',
+    weight: 45,
+    root: { name: '残仙真躯', type: '真仙体', 法球倍率: 2.1, 攻击: 3.5, 防御: 3.2, 生命: 4 },
+    techniques: ['仙殿古经·青铜镇世'],
+    equipment: '仙殿残仙战衣',
+    imperialWeapon: '青铜仙殿',
+    xianguLevel: 16,
+    allAttribute: 30_000_000_000,
+  },
+  {
+    name: '王长生',
+    weight: 35,
+    root: { name: '长生仙体', type: '长生仙体', 法球倍率: 2, 攻击: 3.2, 防御: 3, 生命: 3.8 },
+    techniques: ['平乱诀·元神化剑'],
+    equipment: '长生世家至尊战衣',
+    imperialWeapon: '平乱仙剑',
+    xianguLevel: 15,
+    allAttribute: 26_000_000_000,
+  },
+  {
+    name: '金太君',
+    weight: 20,
+    root: { name: '至尊金身', type: '至尊体', 法球倍率: 1.9, 攻击: 2.8, 防御: 3.4, 生命: 3.6 },
+    techniques: ['金家至尊经·边荒镇天'],
+    equipment: '金家至尊甲',
+    imperialWeapon: '边荒至尊杖',
+    xianguLevel: 15,
+    allAttribute: 22_000_000_000,
+  },
+]);
+
+export const IMMORTAL_REALM_POWERS = Object.freeze([
+  {
+    name: '巡天仙君',
+    weight: 45,
+    root: { name: '九霄巡天仙体', type: '仙体', 法球倍率: 2, 攻击: 3.2, 防御: 2.8, 生命: 3.5 },
+    techniques: ['巡天仙经·万里封疆'],
+    equipment: '九霄巡天仙甲',
+    imperialWeapon: '巡天仙鉴',
+    mijingLevel: 1,
+    allAttribute: 18_000_000_000,
+  },
+  {
+    name: '镇界天尊',
+    weight: 35,
+    root: { name: '玄黄镇界仙胎', type: '仙胎', 法球倍率: 1.9, 攻击: 2.8, 防御: 3.8, 生命: 4.2 },
+    techniques: ['镇界天书·山河永固'],
+    equipment: '玄黄镇界仙衣',
+    imperialWeapon: '山河镇界钟',
+    mijingLevel: 1,
+    allAttribute: 20_000_000_000,
+  },
+  {
+    name: '接引殿主',
+    weight: 20,
+    root: { name: '彼岸接引仙体', type: '仙体', 法球倍率: 1.8, 攻击: 2.6, 防御: 3, 生命: 3.4 },
+    techniques: ['接引古经·彼岸天门'],
+    equipment: '接引殿主法袍',
+    imperialWeapon: '彼岸天门',
+    mijingLevel: 1,
+    allAttribute: 16_000_000_000,
+  },
+]);
+
+export const LOCAL_POWER_GROUPS = Object.freeze({
+  '遮天位面': {
+    planeName: '遮天位面',
+    title: '禁区至尊',
+    attentionField: '禁区至尊注视',
+    defeatField: '禁区至尊堵截次数',
+    repelField: '击退禁区至尊次数',
+    encounterTitle: '横断星路',
+    powers: FORBIDDEN_SUPREMES,
+    threshold: FORBIDDEN_SUPREME_ATTENTION_THRESHOLD,
+    mijingLevel: 16,
+    xianguLevel: 1,
+    allAttribute: FORBIDDEN_SUPREME_ALL_ATTRIBUTE,
+    equipmentMultiplier: FORBIDDEN_SUPREME_EQUIPMENT_MULTIPLIER,
+    keepRatio: 0.2,
+    warnings: {
+      1: '虚空深处似有一道冰冷眸光扫过，位面阵纹已被某位禁区至尊记住。',
+      2: '北斗生命禁区传来帝兵复苏之音，那道目光再次锁定了你的穿梭轨迹。',
+    },
+  },
+  '下界八域': {
+    planeName: '下界八域',
+    title: '下界巨头',
+    attentionField: '下界八域大能注视',
+    defeatField: '下界八域堵截次数',
+    repelField: '击退下界八域大能次数',
+    encounterTitle: '神灵法旨封路',
+    powers: LOWER_REALM_POWERS,
+    threshold: 3,
+    mijingLevel: 1,
+    xianguLevel: 11,
+    allAttribute: 3_000_000_000,
+    equipmentMultiplier: 30,
+    keepRatio: 0.5,
+    warnings: {
+      1: '大荒深处有古老祭坛亮起，你撕裂界壁的气息已被上界道统捕捉。',
+      2: '一纸神灵法旨横过八域，数道神念开始推演你的下一次落点。',
+    },
+  },
+  '九天十地': {
+    planeName: '九天十地',
+    title: '九天至尊',
+    attentionField: '九天十地大能注视',
+    defeatField: '九天十地堵截次数',
+    repelField: '击退九天十地大能次数',
+    encounterTitle: '仙道法旨截空',
+    powers: NINE_HEAVENS_POWERS,
+    threshold: 3,
+    mijingLevel: 1,
+    xianguLevel: 15,
+    allAttribute: 25_000_000_000,
+    equipmentMultiplier: 90,
+    keepRatio: 0.25,
+    warnings: {
+      1: '三千道州上空仙光一闪，有至尊隔着无尽疆域望向了位面裂口。',
+      2: '青铜仙殿传出钟鸣，数位古老存在已联手锁定你的虚空坐标。',
+    },
+  },
+  '仙界': {
+    planeName: '仙界',
+    title: '仙界执法者',
+    attentionField: '仙界大能注视',
+    defeatField: '仙界堵截次数',
+    repelField: '击退仙界大能次数',
+    encounterTitle: '天规封锁仙门',
+    powers: IMMORTAL_REALM_POWERS,
+    threshold: 3,
+    mijingLevel: 17,
+    xianguLevel: 1,
+    allAttribute: 18_000_000_000,
+    equipmentMultiplier: 60,
+    keepRatio: 0.35,
+    warnings: {
+      1: '九霄巡天镜映出你的身影，私自穿越仙凡壁垒已被记入天规。',
+      2: '接引天门忽然闭合，仙界执法者正在沿着残留空间波动追索而来。',
+    },
+  },
+});
+
+const POWER_GEAR_BASE = Object.freeze({ 攻击: 120_000_000, 防御: 120_000_000, 血量: 180_000_000 });
+const POWER_WEAPON_BASE = Object.freeze({ 攻击: 50_000_000, 防御: 50_000_000, 血量: 50_000_000, 全属性: 12 });
 const SUPREME_LOOT_CATEGORIES = Object.freeze(['装备', '丹药', '道具', '功法', '草药', '材料', '盒子', '宝石']);
 
 const TRAVEL_MAX_REALM = 21;
@@ -270,26 +459,105 @@ export function recordUnfetteredJourney(player) {
   return progress.横渡位面;
 }
 
-export function registerForbiddenSupremeAttention(player, task) {
+function getPlaneNameByLocation(location) {
+  const numericLocation = Number(location);
+  return Object.entries(PLACE_LOCATION_MAP)
+    .find(([, value]) => Number(value) === numericLocation)?.[0] || '';
+}
+
+function registerGroupAttention(player, group) {
+  const count = Math.min(
+    group.threshold,
+    Math.max(0, Math.floor(Number(player?.[group.attentionField]) || 0)) + 1
+  );
+  player[group.attentionField] = count;
+  return {
+    relevant: true,
+    planeName: group.planeName,
+    title: group.title,
+    count,
+    threshold: group.threshold,
+    intercept: count >= group.threshold,
+    warning: group.warnings[count] || '',
+    group,
+  };
+}
+
+export function registerLocalPowerAttention(player, task) {
+  const toPlane = task?.to_name || getPlaneNameByLocation(task?.to_location);
+  const fromPlane = task?.from_name || getPlaneNameByLocation(task?.from_location);
+  const group = LOCAL_POWER_GROUPS[toPlane] || LOCAL_POWER_GROUPS[fromPlane];
+  if (!group) return { relevant: false, count: 0, intercept: false, warning: '' };
+  return registerGroupAttention(player, group);
+}
+
+export function evaluateSupremeExemption(player) {
+  const mijing = level(player, 'mijinglevel_id');
+  if (mijing >= SUPREME_TERRIFIED_MIJING) {
+    return {
+      exempt: true,
+      level: 'emperor',
+      warning: '你横渡遮天位面，万古禁区一片死寂——大帝意志所及，无人敢窥伺你的星路。',
+    };
+  }
+  if (mijing >= SUPREME_EXEMPT_MIJING) {
+    const physique = String(player?.灵根?.type || '');
+    if (SUPREME_EXEMPT_PHYSIQUES.includes(physique)) {
+      return {
+        exempt: true,
+        level: 'quasi-emperor',
+        warning: '你撕裂界壁的气息让禁区至尊侧目，但感应到你的体质与帝道之威后，那道冰冷眸光悄然退散。',
+      };
+    }
+  }
+  return { exempt: false, level: null, warning: '' };
+}
+
+export function registerForbiddenSupremeAttention(player, task, options = {}) {
   const touchesZhetian = Number(task?.from_location) === PLACE_LOCATION_MAP.遮天位面 ||
     Number(task?.to_location) === PLACE_LOCATION_MAP.遮天位面;
   if (!touchesZhetian) return { relevant: false, count: 0, intercept: false, warning: '' };
 
-  const count = Math.min(
-    FORBIDDEN_SUPREME_ATTENTION_THRESHOLD,
-    Math.max(0, Math.floor(Number(player?.禁区至尊注视) || 0)) + 1
-  );
-  player.禁区至尊注视 = count;
-  const warnings = {
-    1: '虚空深处似有一道冰冷眸光扫过，位面阵纹已被某位禁区至尊记住。',
-    2: '北斗生命禁区传来帝兵复苏之音，那道目光再次锁定了你的穿梭轨迹。',
-  };
-  return {
-    relevant: true,
-    count,
-    intercept: count >= FORBIDDEN_SUPREME_ATTENTION_THRESHOLD,
-    warning: warnings[count] || '',
-  };
+  const group = LOCAL_POWER_GROUPS.遮天位面;
+  const exemption = evaluateSupremeExemption(player);
+  if (exemption.exempt) {
+    return {
+      relevant: true,
+      planeName: group.planeName,
+      title: group.title,
+      count: Math.max(0, Math.floor(Number(player?.[group.attentionField]) || 0)),
+      threshold: group.threshold,
+      intercept: false,
+      exempt: true,
+      exemptLevel: exemption.level,
+      warning: exemption.warning,
+      group,
+    };
+  }
+
+  // 按穿梭方式概率掷骰决定本次是否引起注视
+  const random = typeof options.random === 'function' ? options.random : Math.random;
+  const usedToken = Boolean(task?.used_token);
+  const tokenTier = task?.token_tier;
+  const chance = !usedToken
+    ? SUPREME_NOTICE_CHANCE.body
+    : (tokenTier === 'high' ? SUPREME_NOTICE_CHANCE.high : SUPREME_NOTICE_CHANCE.low);
+
+  if (random() >= chance) {
+    return {
+      relevant: true,
+      planeName: group.planeName,
+      title: group.title,
+      count: Math.max(0, Math.floor(Number(player?.[group.attentionField]) || 0)),
+      threshold: group.threshold,
+      intercept: false,
+      warning: '',
+      noticed: false,
+      group,
+    };
+  }
+
+  return registerGroupAttention(player, group);
 }
 
 export function selectForbiddenSupreme(random = Math.random) {
@@ -302,6 +570,22 @@ export function selectForbiddenSupreme(random = Math.random) {
   return FORBIDDEN_SUPREMES.at(-1);
 }
 
+export function selectLocalPower(planeName, random = Math.random) {
+  const group = LOCAL_POWER_GROUPS[planeName];
+  if (!group) return null;
+  const totalWeight = group.powers.reduce((sum, power) => sum + power.weight, 0);
+  let roll = Math.min(0.999999999999, Math.max(0, Number(random()) || 0)) * totalWeight;
+  let selected = group.powers.at(-1);
+  for (const power of group.powers) {
+    roll -= power.weight;
+    if (roll < 0) {
+      selected = power;
+      break;
+    }
+  }
+  return { ...selected, group };
+}
+
 function maxRealm(levels) {
   return (levels || []).reduce((highest, current) =>
     !highest || Number(current?.level_id) > Number(highest?.level_id) ? current : highest, null) || {};
@@ -311,14 +595,19 @@ function realmStat(realm, key) {
   return Number(realm?.[key]) || 0;
 }
 
-export function buildForbiddenSupreme(supreme, realms) {
+export function buildLocalPower(encounter, realms) {
+  const group = encounter.group;
   const cultivation = maxRealm(realms?.cultivation);
   const physique = maxRealm(realms?.physique);
-  const secret = (realms?.secret || []).find(item => Number(item.level_id) === 16) || {};
-  const ancient = (realms?.ancient || []).find(item => Number(item.level_id) === 1) || {};
-  const root = supreme.root;
+  const mijingLevel = Number(encounter.mijingLevel ?? group.mijingLevel) || 1;
+  const xianguLevel = Number(encounter.xianguLevel ?? group.xianguLevel) || 1;
+  const allAttribute = Number(encounter.allAttribute ?? group.allAttribute) || 0;
+  const equipmentMultiplier = Number(encounter.equipmentMultiplier ?? group.equipmentMultiplier) || 1;
+  const secret = (realms?.secret || []).find(item => Number(item.level_id) === mijingLevel) || {};
+  const ancient = (realms?.ancient || []).find(item => Number(item.level_id) === xianguLevel) || {};
+  const root = encounter.root;
   const base = key => realmStat(cultivation, key) + realmStat(physique, key) +
-    realmStat(secret, key) + realmStat(ancient, key) + FORBIDDEN_SUPREME_ALL_ATTRIBUTE;
+    realmStat(secret, key) + realmStat(ancient, key) + allAttribute;
   const weaponRealm = {
     攻击: realmStat(secret, '基础攻击') + realmStat(ancient, '基础攻击'),
     防御: realmStat(secret, '基础防御') + realmStat(ancient, '基础防御'),
@@ -326,17 +615,17 @@ export function buildForbiddenSupreme(supreme, realms) {
   };
   const stat = (key, rootKey) => Math.trunc(
     base(key) * (1 + Number(root[rootKey] || 0)) +
-    (SUPREME_GEAR_BASE[rootKey] + SUPREME_WEAPON_BASE[rootKey]) * FORBIDDEN_SUPREME_EQUIPMENT_MULTIPLIER +
-    weaponRealm[rootKey] * SUPREME_WEAPON_BASE.全属性 * FORBIDDEN_SUPREME_EQUIPMENT_MULTIPLIER
+    (POWER_GEAR_BASE[rootKey] + POWER_WEAPON_BASE[rootKey]) * equipmentMultiplier +
+    weaponRealm[rootKey] * POWER_WEAPON_BASE.全属性 * equipmentMultiplier
   );
   const hp = stat('基础血量', '血量');
 
   return {
-    名号: `${supreme.name}·极尽升华`,
+    名号: encounter.group.planeName === '遮天位面' ? `${encounter.name}·极尽升华` : encounter.name,
     level_id: Number(cultivation.level_id) || 0,
     Physique_id: Number(physique.level_id) || 0,
-    mijinglevel_id: 16,
-    xiangulevel_id: 1,
+    mijinglevel_id: mijingLevel,
+    xiangulevel_id: xianguLevel,
     攻击: stat('基础攻击', '攻击'),
     防御: stat('基础防御', '防御'),
     当前血量: hp,
@@ -346,10 +635,16 @@ export function buildForbiddenSupreme(supreme, realms) {
     速度: 100,
     灵根: { ...root },
     法球倍率: root.法球倍率,
-    学习的功法: [...supreme.techniques],
-    装备描述: `${supreme.equipment}×${FORBIDDEN_SUPREME_EQUIPMENT_MULTIPLIER}`,
-    帝兵描述: `${supreme.imperialWeapon}×${FORBIDDEN_SUPREME_EQUIPMENT_MULTIPLIER}`,
+    学习的功法: [...encounter.techniques],
+    装备描述: `${encounter.equipment}×${equipmentMultiplier}`,
+    帝兵描述: `${encounter.imperialWeapon}×${equipmentMultiplier}`,
+    全属性加成: allAttribute,
+    装备倍率: equipmentMultiplier,
   };
+}
+
+export function buildForbiddenSupreme(supreme, realms) {
+  return buildLocalPower({ ...supreme, group: LOCAL_POWER_GROUPS.遮天位面 }, realms);
 }
 
 function itemValue(item) {
@@ -358,13 +653,15 @@ function itemValue(item) {
     (Number(item?.出售价) || 0);
 }
 
-export function applyForbiddenSupremePlunder(player, najie, keepRatio = 0.2) {
+export function applyLocalPowerPlunder(player, najie, encounter, keepRatio = encounter?.group?.keepRatio ?? 0.2) {
   const learnedTechniques = Array.isArray(player?.学习的功法) ? [...player.学习的功法] : [];
   player.学习的功法 = [];
   player.当前血量 = 1;
   player.元神 = Math.max(0, Math.trunc((Number(player.元神) || 0) * 0.1));
-  player.禁区至尊注视 = 0;
-  player.禁区至尊堵截次数 = Math.max(0, Math.floor(Number(player.禁区至尊堵截次数) || 0)) + 1;
+  const attentionField = encounter?.group?.attentionField || '禁区至尊注视';
+  const defeatField = encounter?.group?.defeatField || '禁区至尊堵截次数';
+  player[attentionField] = 0;
+  player[defeatField] = Math.max(0, Math.floor(Number(player[defeatField]) || 0)) + 1;
 
   const stacks = [];
   for (const category of SUPREME_LOOT_CATEGORIES) {
@@ -402,4 +699,18 @@ export function applyForbiddenSupremePlunder(player, najie, keepRatio = 0.2) {
     takenQuantity: takenItems.reduce((sum, item) => sum + item.quantity, 0),
     remainingQuantity: totalQuantity - takenItems.reduce((sum, item) => sum + item.quantity, 0),
   };
+}
+
+export function applyForbiddenSupremePlunder(player, najie, keepRatio = 0.2) {
+  return applyLocalPowerPlunder(
+    player,
+    najie,
+    { group: LOCAL_POWER_GROUPS.遮天位面 },
+    keepRatio
+  );
+}
+
+export function resetLocalPowerAttention(player, encounter) {
+  const field = encounter?.group?.attentionField;
+  if (field) player[field] = 0;
 }

@@ -180,14 +180,68 @@ test('天地无拘任务只记录有效的跨位面抵达', () => {
 test('触及遮天位面三次后触发禁区至尊堵截', () => {
   const player = {};
   const task = { from_location: 0, to_location: 2 };
-  assert.equal(registerForbiddenSupremeAttention(player, task).intercept, false);
-  assert.equal(registerForbiddenSupremeAttention(player, task).count, 2);
-  assert.equal(registerForbiddenSupremeAttention(player, task).intercept, true);
+  const alwaysHit = { random: () => 0 };
+  assert.equal(registerForbiddenSupremeAttention(player, task, alwaysHit).intercept, false);
+  assert.equal(registerForbiddenSupremeAttention(player, task, alwaysHit).count, 2);
+  assert.equal(registerForbiddenSupremeAttention(player, task, alwaysHit).intercept, true);
   assert.equal(player.禁区至尊注视, 3);
 
-  const unrelated = registerForbiddenSupremeAttention(player, { from_location: 0, to_location: 1 });
+  const unrelated = registerForbiddenSupremeAttention(player, { from_location: 0, to_location: 1 }, alwaysHit);
   assert.equal(unrelated.relevant, false);
   assert.equal(player.禁区至尊注视, 3);
+});
+
+test('大帝境界无视禁区至尊注视', () => {
+  const player = { mijinglevel_id: 16 };
+  const task = { from_location: 0, to_location: 2 };
+  const result = registerForbiddenSupremeAttention(player, task);
+  assert.equal(result.relevant, true);
+  assert.equal(result.exempt, true);
+  assert.equal(result.exemptLevel, 'emperor');
+  assert.equal(result.intercept, false);
+  assert.equal(player.禁区至尊注视, undefined);
+});
+
+test('准帝九重天+圣体/霸体/圣体道胎/混沌体 受至尊忌惮', () => {
+  const task = { from_location: 0, to_location: 2 };
+  for (const physique of ['圣体', '霸体', '圣体道胎', '混沌体']) {
+    const player = { mijinglevel_id: 15, 灵根: { type: physique } };
+    const result = registerForbiddenSupremeAttention(player, task);
+    assert.equal(result.exempt, true, `${physique} 应豁免`);
+    assert.equal(result.exemptLevel, 'quasi-emperor');
+    assert.equal(result.intercept, false);
+  }
+});
+
+test('准帝九重天+非绝世体质 不豁免，按概率决定', () => {
+  const task = { from_location: 0, to_location: 2 };
+  const p1 = { mijinglevel_id: 15, 灵根: { type: '普通灵根' } };
+  assert.equal(registerForbiddenSupremeAttention(p1, task, { random: () => 0.999 }).intercept, false);
+  assert.equal(p1.禁区至尊注视, undefined);
+  const p2 = { mijinglevel_id: 15, 灵根: { type: '普通灵根' } };
+  registerForbiddenSupremeAttention(p2, task, { random: () => 0 });
+  assert.equal(p2.禁区至尊注视, 1);
+});
+
+test('肉身穿梭概率高于低级/高级传送阵', () => {
+  const taskBody = { from_location: 0, to_location: 2, used_token: false };
+  const taskLow = { from_location: 0, to_location: 2, used_token: true, token_tier: 'low' };
+  const taskHigh = { from_location: 0, to_location: 2, used_token: true, token_tier: 'high' };
+  const pBody = {};
+  registerForbiddenSupremeAttention(pBody, taskBody, { random: () => 0.49 });
+  assert.equal(pBody.禁区至尊注视, 1);
+  const pBodyMiss = {};
+  assert.equal(registerForbiddenSupremeAttention(pBodyMiss, taskBody, { random: () => 0.6 }).intercept, false);
+  assert.equal(pBodyMiss.禁区至尊注视, undefined);
+  const pLow = {};
+  registerForbiddenSupremeAttention(pLow, taskLow, { random: () => 0.2 });
+  assert.equal(pLow.禁区至尊注视, 1);
+  const pHigh = {};
+  registerForbiddenSupremeAttention(pHigh, taskHigh, { random: () => 0.04 });
+  assert.equal(pHigh.禁区至尊注视, 1);
+  const pHighMiss = {};
+  assert.equal(registerForbiddenSupremeAttention(pHighMiss, taskHigh, { random: () => 0.1 }).intercept, false);
+  assert.equal(pHighMiss.禁区至尊注视, undefined);
 });
 
 test('禁区至尊按权重选择并使用最高练气炼体与大帝秘境', () => {
