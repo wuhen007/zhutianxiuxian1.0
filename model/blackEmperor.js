@@ -152,29 +152,32 @@ export function consumeBlackEmperorBattleFormation(player, attacker, defender) {
 
 export function consumeBlackEmperorTribulationFormation(player, options = {}) {
   if (!player || typeof player !== 'object') {
-    return { consumed: false, success: false, damageMultiplier: 1, message: '' };
+    return { consumed: false, success: false, rangeShift: 0, message: '' };
   }
   if (player._欺天阵纹渡劫) return player._欺天阵纹渡劫;
 
   const pending = player.黑皇待用阵纹 === '欺天阵纹';
-  const chance = Math.min(1, Math.max(0, Number(options.chance ?? 0.25)));
-  const success = pending && Number((options.random || Math.random)()) < chance;
+  // 随机偏移区间：-15 ~ +15（含两端），共 31 个整数
+  const rangeShift = pending ? Math.floor(Math.random() * 31) - 15 : 0;
   const result = {
     consumed: pending,
-    success,
-    damageMultiplier: success ? 0.75 : 1,
+    success: pending,
+    rangeShift,
+    damageMultiplier: 1, // 兼容旧调用方（不再实际生效，改为区间偏移）
     announced: false,
     message: pending
-      ? success
-        ? '【欺天阵纹·欺天成功】阵纹遮蔽天机，本次渡劫所受伤害降低25%！'
-        : '【欺天阵纹·阵纹失灵】雷劫洞穿虚妄，阵纹崩散，本次未能减伤！'
+      ? rangeShift < 0
+        ? `【欺天阵纹·天机偏正】阵纹遮蔽天机，本场雷劫随机区间向安全端偏移 ${Math.abs(rangeShift)} 点！`
+        : rangeShift > 0
+        ? `【欺天阵纹·阵纹反噬】阵纹失稳反向引动天机，本场雷劫随机区间向凶险端偏移 ${rangeShift} 点！`
+        : '【欺天阵纹·阵纹中和】偏移归零，本场雷劫区间随机不变。'
       : '',
   };
 
   if (pending) {
     delete player.黑皇待用阵纹;
     const character = getBlackEmperorData(player);
-    if (character) recordEvent(character, `渡劫激活欺天阵纹（${success ? '成功' : '失灵'}）`);
+    if (character) recordEvent(character, `渡劫激活欺天阵纹（区间偏移 ${rangeShift > 0 ? '+' : ''}${rangeShift}）`);
   }
   Object.defineProperty(player, '_欺天阵纹渡劫', {
     value: result,
