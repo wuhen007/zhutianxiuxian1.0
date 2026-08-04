@@ -1,6 +1,23 @@
 import {plugin, verc, data, config} from '../../api/api.js';
 import common from '../../../../lib/common/common.js';
 import fs from 'fs';
+import { getDispatchState } from '../../model/factionDispatch.js';
+import {
+  applyFactionExit,
+  formatFactionCooldown,
+  getFactionDateKey,
+  getFactionExitCooldownMs,
+  getFactionJoinBlock,
+  hasClaimedFactionJoinReward,
+  hasClaimedFactionPositionReward,
+  recordFactionJoin,
+  recordFactionPositionReward,
+  wasFactionRewardClaimedToday,
+} from '../../model/factionSystem.js';
+import {
+  acquireRedisLock,
+  releaseRedisLock,
+} from '../SecretPlace/xianyiBaodiState.js';
 import {
   Read_player,
   existplayer,
@@ -19,6 +36,61 @@ import {
   getPlayerAptitudeData,
   channel
 } from '../../model/xiuxian.js';
+
+const FACTION_EXIT_CONFIRM_SECONDS = 60;
+
+function factionExitConfirmKey(usrQq) {
+  return `xiuxian:player:${usrQq}:faction_exit_confirm`;
+}
+
+function factionDispatchKey(usrQq) {
+  return `xiuxian:player:${usrQq}:faction_dispatch`;
+}
+
+async function hasUnsettledFactionDispatch(usrQq) {
+  const encoded = await redis.get(factionDispatchKey(usrQq));
+  if (!encoded) return false;
+  try {
+    const state = getDispatchState(JSON.parse(encoded));
+    return state === 'running' || state === 'ready';
+  } catch {
+    return false;
+  }
+}
+
+function getFactionJoinBlockMessage(player) {
+  const block = getFactionJoinBlock(player);
+  if (block.ok) return '';
+  if (block.reason === 'member') {
+    return `你已加入${block.faction}，需先脱离当前势力。`;
+  }
+  return `你刚刚脱离势力，尚需等待${formatFactionCooldown(block.remainingMs)}才能重新拜入势力。`;
+}
+
+async function hasClaimedDailyFactionReward(usrQq, factionKey, now = Date.now()) {
+  const keys = [
+    `xiuxian:player:${usrQq}:faction_salary_date`,
+    `xiuxian:player:${usrQq}:${factionKey}`,
+  ];
+  const values = await Promise.all(keys.map(key => redis.get(key)));
+  return values.some(value => wasFactionRewardClaimedToday(value, now));
+}
+
+async function reserveDailyFactionReward(usrQq, factionKey, now = Date.now()) {
+  if (await hasClaimedDailyFactionReward(usrQq, factionKey, now)) return '';
+  const claimKey = `xiuxian:player:${usrQq}:faction_salary_claim:${getFactionDateKey(now)}`;
+  const reserved = await redis.set(claimKey, factionKey, { NX: true, EX: 2 * 24 * 60 * 60 });
+  return reserved ? claimKey : '';
+}
+
+async function markDailyFactionReward(usrQq, factionKey, now = Date.now()) {
+  const today = getFactionDateKey(now);
+  await Promise.all([
+    redis.set(`xiuxian:player:${usrQq}:faction_salary_date`, today),
+    redis.set(`xiuxian:player:${usrQq}:${factionKey}`, today),
+  ]);
+}
+
 export class shilitixi extends plugin {
   constructor() {
     super({
@@ -58,10 +130,88 @@ export class shilitixi extends plugin {
 {
     reg: '^#开启剑云海秘库$',
     fnc: 'lingqujianyunhai'
+},
+{
+    reg: '^#脱离势力$',
+    fnc: 'requestFactionExit'
+},
+{
+    reg: '^#确认脱离势力$',
+    fnc: 'confirmFactionExit'
 }
       ],
     });
   }
+
+async requestFactionExit(e) {
+    if (!verc({ e })) return false;
+    const usr_qq = (await channel(e.user_id.toString().replace('qg_',''))).toString();
+    if (!await existplayer(usr_qq)) return false;
+    const player = await Read_player(usr_qq);
+
+    if (!player.势力 || player.势力 === '无') {
+        return e.reply('你当前无门无派，无需脱离势力。');
+    }
+    if (await hasUnsettledFactionDispatch(usr_qq)) {
+        return e.reply('尚有势力弟子正在执行任务或等待结算，请先召回或领取势力弟子收获。');
+    }
+
+    const cooldownMs = getFactionExitCooldownMs(player.势力职位);
+    await redis.set(factionExitConfirmKey(usr_qq), JSON.stringify({
+        faction: player.势力,
+        position: player.势力职位 || '',
+    }), { EX: FACTION_EXIT_CONFIRM_SECONDS });
+
+    return e.reply([
+        '【脱离势力确认】',
+        `当前身份：${player.势力}${player.势力职位 || '弟子'}`,
+        '脱离后职位归零，晋升消耗不予返还。',
+        `此后${formatFactionCooldown(cooldownMs)}内不能加入任何势力。`,
+        '已经领取过的入门和晋升奖励不会再次发放。',
+        player.势力 === '剑云海' ? '剑云海传人机缘不可再次选择。' : '',
+        `若已决定，请在${FACTION_EXIT_CONFIRM_SECONDS}秒内发送：#确认脱离势力`,
+    ].filter(Boolean).join('\n'));
+}
+
+async confirmFactionExit(e) {
+    if (!verc({ e })) return false;
+    const usr_qq = (await channel(e.user_id.toString().replace('qg_',''))).toString();
+    if (!await existplayer(usr_qq)) return false;
+
+    const encoded = await redis.get(factionExitConfirmKey(usr_qq));
+    if (!encoded) {
+        return e.reply('脱离确认已失效，请先发送 #脱离势力。');
+    }
+
+    const player = await Read_player(usr_qq);
+    let pending;
+    try {
+        pending = JSON.parse(encoded);
+    } catch {
+        await redis.del(factionExitConfirmKey(usr_qq));
+        return e.reply('脱离确认状态异常，请重新发送 #脱离势力。');
+    }
+
+    if (player.势力 !== pending.faction || (player.势力职位 || '') !== pending.position) {
+        await redis.del(factionExitConfirmKey(usr_qq));
+        return e.reply('你的势力身份已经变化，本次脱离确认已取消。');
+    }
+    if (await hasUnsettledFactionDispatch(usr_qq)) {
+        await redis.del(factionExitConfirmKey(usr_qq));
+        return e.reply('尚有势力弟子任务未结算，本次脱离确认已取消。');
+    }
+
+    const result = applyFactionExit(player);
+    await Write_player(usr_qq, player);
+    await redis.del(factionExitConfirmKey(usr_qq));
+
+    return e.reply([
+        '【已脱离势力】',
+        `你已脱离${result.faction}，原职位${result.position || '弟子'}已解除。`,
+        `${formatFactionCooldown(result.cooldownMs)}后方可重新加入势力。`,
+        result.faction === '剑云海' ? '剑云海传人机缘已经舍弃，此后不可重选。' : '',
+    ].filter(Boolean).join('\n'));
+}
 
 async  lingquYaochiSalary(e) {
     if (!verc({ e })) return false;
@@ -91,11 +241,10 @@ async  lingquYaochiSalary(e) {
         "圣女": 12000000
     };
     
-    // 检查今日是否已领取俸禄
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-    const lastClaimDate = await redis.get(`xiuxian:player:${usr_qq}:yaochi_salary_date`);
-    
-    if (lastClaimDate === today) {
+    // 同一天所有势力共用一次俸禄名额，避免换势力重复领取。
+    const now = Date.now();
+    const claimKey = await reserveDailyFactionReward(usr_qq, 'yaochi_salary_date', now);
+    if (!claimKey) {
         return e.reply([
             `【俸禄已领】`,
             `今日俸禄已领取，请明日再来！`,
@@ -104,14 +253,17 @@ async  lingquYaochiSalary(e) {
     }
     
     // 计算俸禄
-    const salary = salaryTable[position];
+    const salary = salaryTable[position] || salaryTable["记名女弟子"];
     
     // 发放俸禄
-    player.源石 += salary;
-    await Write_player(usr_qq, player);
-    
-    // 记录领取日期
-    await redis.set(`xiuxian:player:${usr_qq}:yaochi_salary_date`, today);
+    try {
+        player.源石 = (Number(player.源石) || 0) + salary;
+        await Write_player(usr_qq, player);
+        await markDailyFactionReward(usr_qq, 'yaochi_salary_date', now);
+    } catch (error) {
+        await redis.del(claimKey);
+        throw error;
+    }
     
     // 构建回复文案
     const positionDesc = {
@@ -161,11 +313,10 @@ async lingquYaoguangSalary(e) {
         "圣女": 12000000          // 1200万源石
     };
     
-    // 检查今日是否已领取俸禄
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-    const lastClaimDate = await redis.get(`xiuxian:player:${usr_qq}:yaoguang_salary_date`);
-    
-    if (lastClaimDate === today) {
+    // 同一天所有势力共用一次俸禄名额，避免换势力重复领取。
+    const now = Date.now();
+    const claimKey = await reserveDailyFactionReward(usr_qq, 'yaoguang_salary_date', now);
+    if (!claimKey) {
         return e.reply([
             `【俸禄已领】`,
             `今日俸禄已领取，请明日再来！`,
@@ -177,11 +328,14 @@ async lingquYaoguangSalary(e) {
     const salary = salaryTable[position] || salaryTable["记名弟子"];
     
     // 发放俸禄
-    player.源石 += salary;
-    await Write_player(usr_qq, player);
-    
-    // 记录领取日期
-    await redis.set(`xiuxian:player:${usr_qq}:yaoguang_salary_date`, today);
+    try {
+        player.源石 = (Number(player.源石) || 0) + salary;
+        await Write_player(usr_qq, player);
+        await markDailyFactionReward(usr_qq, 'yaoguang_salary_date', now);
+    } catch (error) {
+        await redis.del(claimKey);
+        throw error;
+    }
     
     // 构建职位描述
     const positionDesc = {
@@ -199,7 +353,7 @@ async lingquYaoguangSalary(e) {
         `【摇光俸禄】`,
         `龙纹黑金鼎微光流转，${positionDesc[position]}俸禄发放完成！`,
         `职位：${positionDesc[position]}`,
-        `本月俸禄：${salary.toLocaleString()}源石`,
+        `今日俸禄：${salary.toLocaleString()}源石`,
         `已存入你的纳戒中`,
         `当前源石总额：${player.源石.toLocaleString()}源石`,
         `提示：俸禄每日可领取一次，勤修圣光术，早日晋升更高职位！`
@@ -221,15 +375,9 @@ async lingqujianyunhai(e) {
         ].join('\n'));
     }
     
-    // 获取当前日期（基于本地时间的0点）
-    const now = new Date();
-    const today = now.getDate(); // 获取当月日期数字（1-31）
-    
-    // 获取上次开启的日期
-    const lastOpenDay = await redis.get(`xiuxian:player:${usr_qq}:jianyunhai_open_day`);
-    
-    // 检查今日是否已开启秘库（比较日期数字）
-    if (lastOpenDay && parseInt(lastOpenDay) === today) {
+    const now = Date.now();
+    const claimKey = await reserveDailyFactionReward(usr_qq, 'jianyunhai_open_day', now);
+    if (!claimKey) {
         return e.reply([
             `【剑云海秘库禁令】`,
             `今日秘库已为尊驾开启。`,
@@ -297,11 +445,9 @@ async lingqujianyunhai(e) {
     // 添加结算卡备注
     rewardMsg += `\n 本次秘库开启，随机赐予${isXianpin ? "仙品" : "圣品"}秘境结算卡`;
     
-    // 记录开启日期（存储日期数字）
-    await redis.set(`xiuxian:player:${usr_qq}:jianyunhai_open_day`, today);
-    
     // 保存玩家数据（源石增加）
     await Write_player(usr_qq, player);
+    await markDailyFactionReward(usr_qq, 'jianyunhai_open_day', now);
     
     // 添加宗门律令
     rewardMsg += `\n\n【剑云海律令】真传弟子每日可开启一次秘库，以彰宗门恩典。`;
