@@ -24,7 +24,15 @@ import { calculateEquippedStats } from '../../model/equipmentStats.js';
 import { consumeBlackEmperorTribulationFormation } from '../../model/blackEmperor.js';
 import { reduceTribulationDamageByDefense } from '../../model/tribulationDamage.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
-import { ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS } from './zhetianTribulationRules.js';
+import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
+import { getPlayerPlaneCoordinate } from '../../model/planeCoords.js';
+import {
+  resetTribulationGongfaCooldowns,
+  ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS,
+  BODY_TRIBULATION_SHIFT,
+  calcPlaneCoordinateShift,
+  applyTribulationShift,
+} from './zhetianTribulationRules.js';
 import {
   existplayer,
   Write_player,
@@ -86,6 +94,14 @@ export class zhetiandujie extends plugin {
         { 
           reg: '^#破王成帝$', 
           fnc: 'poWangChengDi' 
+        },
+        {
+          reg: '^#打听天机[渡劫]+$',
+          fnc: 'command_datitingtianji'
+        },
+        {
+          reg: '^#库洛牌祈愿(\\s+@?\\S+)?$',
+          fnc: 'command_kuluoqiyuan'
         }
       ],
     });
@@ -487,7 +503,7 @@ async duzhendaoLeijie(e) {
   const _tribSnap = this.enterTribulationState(player, equipment);
 
   // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
-  const maxAtk = this.calcMaxTheoreticalAtk(player, equipment);
+  const { maxAtk, formationShift, kuluoShift, qitianMessage } = this.calcMaxAtkWithTribulationShifts(player, equipment);
 
   /* ========== 阶段定义 ========== */
   const stages = [
@@ -796,7 +812,7 @@ async checkWudaoGate(e, player, usr_qq, realmId) {
     const _tribSnap2 = this.enterTribulationState(player, equipment);
 
     // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
-    const maxAtk = this.calcMaxTheoreticalAtk(player, equipment);
+    const { maxAtk, formationShift, kuluoShift, qitianMessage } = this.calcMaxAtkWithTribulationShifts(player, equipment);
 
     // ==== 开始渡劫 ====
     let battleLog = [
@@ -1058,7 +1074,7 @@ async shengrenwangleijie(e) {
     const _tribSnap3 = this.enterTribulationState(player, equipment);
 
     // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
-    const maxAtk = this.calcMaxTheoreticalAtk(player, equipment);
+    const { maxAtk, formationShift, kuluoShift, qitianMessage } = this.calcMaxAtkWithTribulationShifts(player, equipment);
 
     // ==== 开始渡劫 ====
     let battleLog = [
@@ -1473,7 +1489,7 @@ async dashengleijie(e) {
     const _tribSnap4 = this.enterTribulationState(player, equipment);
 
     // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
-    const maxAtk = this.calcMaxTheoreticalAtk(player, equipment);
+    const { maxAtk, formationShift, kuluoShift, qitianMessage } = this.calcMaxAtkWithTribulationShifts(player, equipment);
 
     // ==== 开始渡劫 ====
     let battleLog = [
@@ -2142,7 +2158,7 @@ async zhundileijie(e) {
     const _tribSnap5 = this.enterTribulationState(player, equipment);
 
     // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
-    const maxAtk = this.calcMaxTheoreticalAtk(player, equipment);
+    const { maxAtk, formationShift, kuluoShift, qitianMessage } = this.calcMaxAtkWithTribulationShifts(player, equipment);
 
     // ==== 开始渡劫 ====
     let battleLog = [
@@ -2922,7 +2938,7 @@ async zhundileijie(e) {
     const _tribSnap6 = this.enterTribulationState(player, equipment);
 
     // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
-    const maxAtk = this.calcMaxTheoreticalAtk(player, equipment);
+    const { maxAtk, formationShift, kuluoShift, qitianMessage } = this.calcMaxAtkWithTribulationShifts(player, equipment);
 
 // ==== 推送全服公告 ====
 let startMsg;
@@ -3624,7 +3640,7 @@ await Write_player(usr_qq, player);
 const _tribSnap7 = this.enterTribulationState(player, equipment);
 
   // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
-  const maxAtk = this.calcMaxTheoreticalAtk(player, equipment);
+  const { maxAtk, formationShift, kuluoShift, qitianMessage } = this.calcMaxAtkWithTribulationShifts(player, equipment);
 
   let log = [
     `【破王成帝·帝劫启】`,
@@ -4088,6 +4104,253 @@ calcTribulationAttr(player, equipment) {
 }
 
 /**
+ * #打听天机 渡劫 —— 推演渡劫随机区间与可去位面坐标
+ * 三部分：①帝兵全属性随机波动 + 单波伤害区间；②玩家当前可去的位面及其坐标；③不可去位面与差距
+ */
+async command_datitingtianji(e) {
+  if (!e.isGroup) return e.reply('修仙：请在群聊中打听天机');
+
+  const usr_qq = e.user_id.toString().replace('qg_', '');
+  if (!await existplayer(usr_qq)) return e.reply('玩家不存在，请先创建角色');
+
+  const player = await Read_player(usr_qq);
+  const equipment = await Read_equipment(usr_qq);
+  const mijing = Number(player.mijinglevel_id) || 1;
+  const xiangu = Number(player.xiangulevel_id) || 1;
+  const mijingData = data.Levelmijing_list.find(i => i.level_id === mijing);
+
+  // ===== 帝兵全属性随机区间（与 calcMaxTheoreticalAtk 同源） =====
+  const 帝兵全属性极限 = {
+    10: { 无兵字秘: 14.2, 有兵字秘: 54.2, name: '圣主' },
+    11: { 无兵字秘: 22.2, 有兵字秘: 62.2, name: '斩道王者' },
+    12: { 无兵字秘: 32.2, 有兵字秘: 72.2, name: '圣人' },
+    13: { 无兵字秘: 47.2, 有兵字秘: 87.2, name: '圣人王' },
+    14: { 无兵字秘: 62.2, 有兵字秘: 102.2, name: '大圣' },
+    15: { 无兵字秘: 89.2, 有兵字秘: 129.2, name: '准帝' }
+  };
+  const 区间 = 帝兵全属性极限[mijing] || null;
+
+  // ===== 当前理论 maxAtk =====
+  let maxAtk = 0;
+  try {
+    maxAtk = this.calcMaxTheoreticalAtk(player, equipment);
+  } catch (err) {
+    console.error('[打听天机] calcMaxTheoreticalAtk 失败:', err);
+  }
+
+  // ===== 下场雷劫信息 =====
+  const 雷劫列表 = [
+    { idx: 10, name: '斩道雷劫', 倍率: 30, 阶段最高: 1.0 },
+    { idx: 11, name: '圣人雷劫', 倍率: 45, 阶段最高: 1.0 },
+    { idx: 12, name: '圣人王雷劫', 倍率: 60, 阶段最高: 1.0 },
+    { idx: 13, name: '大圣雷劫', 倍率: 90, 阶段最高: 2.0 },
+    { idx: 14, name: '准帝雷劫', 倍率: 120, 阶段最高: 5.0 }
+  ];
+  const 下场雷劫 = 雷劫列表.find(r => r.idx === mijing);
+  const 时代 = config.getConfig('xiuxian', 'xiuxian');
+  const eraIndex = 时代?.Era?.current?.index ?? 2;
+  const eraDifficultyRates = [0.8, 0.9, 1.0, 1.2, 1.5];
+  const eraNames = ['神话时代', '太古时代', '天命时代', '末法时代', '绝灵时代'];
+  const eraDiff = eraDifficultyRates[eraIndex] || 1.0;
+  const eraName = eraNames[eraIndex] || '天命时代';
+
+  // ===== 位面通行要求 =====
+  // 仙域/界海 等用户口述要求与代码 getLocationThreshold 不一致，此处按用户设计意图呈现
+  const 位面列表 = [
+    { name: '仙界',         要求: '地仙境或轮回',           需: (p) => Number(p.level_id) >= 42 || (Number(p?.lunhui) || 0) !== 0, 坐标字段: '仙界坐标' },
+    { name: '下界八域',     要求: '默认通行',               需: () => true,                                                            坐标字段: '下界八域坐标' },
+    { name: '遮天位面',     要求: '秘境≥12(圣人) / 五色祭坛', 需: (p) => p.mijinglevel_id >= 12 || p.xiangulevel_id > 10 || Number(p?.五色祭坛激活) === 1, 坐标字段: '遮天位面坐标' },
+    { name: '九天十地',     要求: '默认通行',               需: () => true,                                                            坐标字段: '九天十地坐标' },
+    { name: '界海',         要求: '仙王巨头(秘境≥19)',        需: (p) => p.mijinglevel_id >= 19 || p.xiangulevel_id >= 19,            坐标字段: '界海坐标' },
+    { name: '太初星墟',     要求: '秘境≥16(大帝) / 仙古≥16',  需: (p) => p.mijinglevel_id >= 16 || p.xiangulevel_id >= 16,            坐标字段: '太初星墟坐标' },
+    { name: '仙域',         要求: '红尘仙(秘境≥17) / 仙古≥16', 需: (p) => p.mijinglevel_id >= 17 || p.xiangulevel_id >= 16,            坐标字段: '仙域坐标' },
+    { name: '时间长河',     要求: '准仙帝(秘境≥20)',           需: (p) => p.mijinglevel_id >= 20 || p.xiangulevel_id >= 20,            坐标字段: '时间长河坐标' },
+    { name: '永恒未知之地', 要求: '仙帝(秘境≥21)',             需: (p) => p.mijinglevel_id >= 21 || p.xiangulevel_id >= 21,            坐标字段: '永恒未知之地坐标' }
+  ];
+  const 位面状态 = 位面列表.map(p => {
+    const 可去 = p.需(player);
+    const 差值 = p.要求.match(/秘境≥(\d+)/);
+    const 所需 = 差值 ? Number(差值[1]) : 0;
+    return {
+      ...p,
+      可去,
+      差值: 可去 || !所需 ? 0 : Math.max(0, 所需 - Math.max(mijing, xiangu)),
+      坐标: 可去 ? getPlayerPlaneCoordinate(player, p.name) : null
+    };
+  });
+
+  // ===== 当前位面 =====
+  const 当前位面 = Object.entries(PLACE_LOCATION_MAP).find(([, id]) => Number(id) === Number(player.power_place))?.[0] || '凡间';
+  const 当前坐标 = getPlayerPlaneCoordinate(player);
+
+  // ===== 组装输出 =====
+  const lines = [];
+  lines.push('【天机推演·渡劫吉凶】');
+  lines.push(`${player.名号}，本座为你推演渡劫吉凶——`);
+  lines.push('');
+  lines.push(`当前秘境境界：${mijingData?.level || `lv.${mijing}`}（秘境 ${mijing} / 仙古 ${xiangu}）`);
+  lines.push(`当前位面：${当前位面}${当前坐标 ? `（坐标 ${当前坐标.x},${当前坐标.y}）` : '（坐标未记录）'}`);
+  lines.push(`当前时代：${eraName}（难度 ×${eraDiff}）`);
+  lines.push('');
+
+  // ===== 天机一：帝兵随机伤害区间 =====
+  if (区间 && 下场雷劫) {
+    const 波动倍数 = (区间.有兵字秘 / 区间.无兵字秘).toFixed(2);
+    const 最幸运伤害 = Math.trunc(maxAtk * 下场雷劫.阶段最高 * 0.8 * 下场雷劫.倍率 * 区间.无兵字秘);
+    const 最凶险伤害 = Math.trunc(maxAtk * 下场雷劫.阶段最高 * 1.5 * 下场雷劫.倍率 * 区间.有兵字秘);
+    const 当前时代幸运 = Math.trunc(maxAtk * 下场雷劫.阶段最高 * eraDiff * 下场雷劫.倍率 * 区间.无兵字秘);
+    const 当前时代凶险 = Math.trunc(maxAtk * 下场雷劫.阶段最高 * eraDiff * 下场雷劫.倍率 * 区间.有兵字秘);
+    const 推荐预留 = 当前时代凶险 > 0 ? Math.min(99, Math.max(50, Math.ceil((当前时代凶险 / Math.max(1, player.血量上限 || 1)) * 100))) : 99;
+
+    lines.push('【天机一·帝兵随机伤害区间】');
+    lines.push(`帝兵全属性随机：${区间.无兵字秘}× ~ ${区间.有兵字秘}×（波动 ${波动倍数} 倍）`);
+    lines.push('');
+    lines.push(`按当前 maxAtk 与 ${下场雷劫.name}（倍率 ×${下场雷劫.倍率}）：`);
+    lines.push(`  极限区间（神话 ×0.8 ~ 绝灵 ×1.5）：`);
+    lines.push(`    最幸运：${bigNumberTransform(最幸运伤害)}`);
+    lines.push(`    最凶险：${bigNumberTransform(最凶险伤害)}`);
+    lines.push(`  ${eraName}（×${eraDiff}）：`);
+    lines.push(`    最幸运：${bigNumberTransform(当前时代幸运)}`);
+    lines.push(`    最凶险：${bigNumberTransform(当前时代凶险)}`);
+    lines.push(`建议：渡劫前至少预留 ${推荐预留}% 血量上限，方能扛过最凶险。`);
+    lines.push(`「天机玄妙，帝兵蕴养之极致与贫瘠，全在一线之间。」`);
+    lines.push('');
+  } else {
+    lines.push('【天机一·帝兵随机伤害区间】');
+    lines.push(`当前秘境等级 ${mijing} 尚未进入帝兵蕴养区间（需圣主 lv.10 及以上）。`);
+    lines.push('');
+  }
+
+  // ===== 天机二：渡劫区间修正明细（体质/位面/阵纹/库洛牌） =====
+  const 体质偏移 = BODY_TRIBULATION_SHIFT[player.灵根?.name] || 0;
+  const 位面偏移 = 当前坐标 ? calcPlaneCoordinateShift(player) : 0;
+  const 库洛牌偏移 = player.库洛牌祈愿?.区间偏移 || 0;
+  // 黑皇阵纹偏移：仅在渡劫时才触发（且随机 -15~+15），此处仅显示"是否待用"
+  const 待用阵纹 = player.黑皇待用阵纹 === '欺天阵纹';
+  const 区间跨度 = 区间 ? Math.round(区间.有兵字秘 - 区间.无兵字秘) : 0;
+
+  // 实际渡劫时的偏移总和（不含随机黑皇阵纹）
+  const 已确定偏移 = 体质偏移 + 位面偏移 + 库洛牌偏移;
+  // 理论可能总偏移（黑皇最有利+15）
+  const 最优可能 = 已确定偏移 + 15;
+  const 最差可能 = 已确定偏移 - 15;
+
+  lines.push('【天机二·渡劫区间修正明细】');
+  lines.push(`帝兵全属性随机跨度：0 ~ ${区间跨度}（共 ${区间跨度 + 1} 个值）`);
+  lines.push('');
+  lines.push(`已确认的修正项（实际渡劫时叠加）：`);
+  lines.push(`  · 体质 [${player.灵根?.name || '无'}]：${体质偏移 >= 0 ? '+' : ''}${体质偏移}`);
+  if (体质偏移 !== 0) {
+    lines.push(`    ${体质偏移 < 0 ? '天生受天地法则青睐，区间向安全端平移' : ''}`);
+  }
+  lines.push(`  · 位面坐标 [${当前位面 || '凡间'} ${当前坐标 ? `(${当前坐标.x},${当前坐标.y})` : '无'}]：${位面偏移 >= 0 ? '+' : ''}${位面偏移}`);
+  if (当前坐标 && 位面偏移 !== 0) {
+    lines.push(`    ${位面偏移 < 0 ? '此坐标为吉位，渡劫更稳' : 位面偏移 > 0 ? '此坐标为凶位，渡劫更险' : ''}`);
+  }
+  lines.push(`  · 库洛牌祈愿：${库洛牌偏移 !== 0 ? `${库洛牌偏移 >= 0 ? '+' : ''}${库洛牌偏移}（身上有 buff）` : '无（未被祈愿）'}`);
+  lines.push(`  · 黑皇欺天阵纹：${待用阵纹 ? '⚠ 已待用（渡劫时随机 -15 ~ +15）' : '未刻入'}`);
+  lines.push('');
+  lines.push(`修正后随机区间：${Math.max(0, 最优可能)} ~ ${Math.min(区间跨度, 最差可能)}`);
+  lines.push(`（钳位范围 [0, ${区间跨度}]，超出自动取边界值）`);
+  lines.push('');
+
+  // ===== 天机三：可去位面渡劫坐标 =====
+  const 可去位面 = 位面状态.filter(p => p.可去);
+  if (可去位面.length > 0) {
+    lines.push('【天机二·可去位面渡劫坐标】');
+    lines.push('以下位面你可前往渡劫——伤害区间与位面无关（maxAtk 不变），主要看位面是否有坐标记录：');
+    lines.push('');
+    for (const p of 可去位面) {
+      const 当前位标记 = p.name === 当前位面 ? ' ★ 你当前所在' : '';
+      const 坐标文本 = p.坐标 ? `(${p.坐标.x}, ${p.坐标.y})` : '尚未记录（需先 #位面穿梭 到此位面）';
+      lines.push(`✓ ${p.name}${当前位标记}`);
+      lines.push(`   准入要求：${p.要求}`);
+      lines.push(`   你的坐标：${坐标文本}`);
+      lines.push(`   区间安全：${p.坐标 ? '✓ 坐标已锚定，可直接在此渡劫' : '⚠ 需先穿梭记录坐标'}`);
+      lines.push('');
+    }
+  } else {
+    lines.push('【天机二·可去位面】');
+    lines.push('当前境界下，尚未有可去的位面。');
+    lines.push('');
+  }
+
+  // ===== 天机四：不可去位面与差距 =====
+  const 不可去位面 = 位面状态.filter(p => !p.可去);
+  if (不可去位面.length > 0) {
+    lines.push('【天机四·暂不可去位面】');
+    for (const p of 不可去位面) {
+      const 差文本 = p.差值 > 0 ? `（差 ${p.差值} 级）` : '';
+      lines.push(`✗ ${p.name} — ${p.要求}${差文本}`);
+    }
+    lines.push('');
+  }
+
+  lines.push(`「位面有壁，大道无形。可去者方为退路，不可去者莫强求。」`);
+
+  await e.reply(lines.join('\n'));
+  return true;
+}
+
+/**
+ * #库洛牌祈愿 —— 为他人施加一次性的渡劫区间减伤 buff
+ * 限制：发起者每日 3 次；目标单次受益 -5 区间偏移（向安全端）
+ * buff 存储在目标 player.库洛牌祈愿，下次对方渡劫时自动消耗
+ */
+async command_kuluoqiyuan(e) {
+  if (!e.isGroup) return e.reply('修仙：请在群聊中使用库洛牌祈愿');
+
+  const fromQQ = e.user_id.toString().replace('qg_', '');
+  if (!await existplayer(fromQQ)) return e.reply('你还未踏入修仙路');
+
+  // 解析 @ 目标
+  const rawTarget = e.at && e.at !== 'all' ? String(e.at).replace('qg_', '') : '';
+  if (!rawTarget) return e.reply('用法：#库洛牌祈愿 @玩家\n（例如：#库洛牌祈愿 @叶凡）');
+  if (rawTarget === fromQQ) return e.reply('不能为自己祈愿，渡劫终须独自面对。');
+
+  if (!await existplayer(rawTarget)) return e.reply('对方未踏入修仙路，祈愿无法传达。');
+
+  // 每日 3 次限制（Redis）
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const counterKey = `xiuxian:kuluo_wish:${fromQQ}:${today}`;
+  let used = Number(await redis.get(counterKey)) || 0;
+  if (used >= 3) {
+    return e.reply([
+      `【库洛牌·祈愿已达上限】`,
+      `今日已祈愿 ${used} 次（上限 3 次）`,
+      `明日再来吧，愿星光为你蓄势。`
+    ].join('\n'));
+  }
+
+  // 固定 buff 值 -5（向安全端偏移 5 点）
+  const 区间偏移 = -5;
+  const targetPlayer = await Read_player(rawTarget);
+
+  // 若目标已有 buff，覆盖（最新一次生效）
+  targetPlayer.库洛牌祈愿 = {
+    区间偏移,
+    来源: fromQQ,
+    时间: Date.now(),
+    一次性: true,
+  };
+  await Write_player(rawTarget, targetPlayer);
+
+  // 计数 +1
+  await redis.set(counterKey, String(used + 1), 'EX', 60 * 60 * 25); // 25h 防止跨日漂移
+
+  const 剩余 = 3 - used - 1;
+  await e.reply([
+    `【库洛牌·祈愿成功】`,
+    `${targetPlayer.名号}，你身上已被星光庇佑。`,
+    `下次渡劫时，本场雷劫随机区间向安全端偏移 ${Math.abs(区间偏移)} 点。`,
+    `（buff 为一次性，对方渡劫即消耗）`,
+    ``,
+    `你今日剩余祈愿次数：${剩余}/3`
+  ].join('\n'));
+  return true;
+}
+
+/**
  * 进入渡劫状态 —— 保存原始属性，替换为渡劫属性
  * 在渡劫函数开头调用，渡劫过程中 player.攻击/防御/血量上限 均为剥离外物的值
  * @param {Object} player
@@ -4095,6 +4358,8 @@ calcTribulationAttr(player, equipment) {
  * @returns {Object} 原始属性快照（供 restoreAfterTribulation 使用）
  */
 enterTribulationState(player, equipment) {
+  resetTribulationGongfaCooldowns(player);
+
   const snapshot = {
     攻击: player.攻击,
     防御: player.防御,
@@ -4145,7 +4410,7 @@ async exitTribulationState(player, snapshot, usr_qq, equipment) {
 // ==== 理论最大攻击计算 ====
 // 大能至准帝：理论境界攻击 + 武器/护具/法宝直接攻击 + 帝兵攻击，
 // 再乘以当前秘境无兵字秘/有兵字秘蕴养极限之间的随机全属性。
-calcMaxTheoreticalAtk(player, equipment = {}) {
+calcMaxTheoreticalAtk(player, equipment = {}, shiftOptions = {}) {
   const 练气Atk = data.Level_list.find(item => item.level_id == 64)?.基础攻击 || 0;
   const 炼体Atk = data.LevelMax_list.find(item => item.level_id == 63)?.基础攻击 || 0;
   const 秘境Atk = data.Levelmijing_list.find(item => item.level_id == player.mijinglevel_id)?.基础攻击 || 0;
@@ -4164,7 +4429,18 @@ calcMaxTheoreticalAtk(player, equipment = {}) {
   if (当前极限) {
     // 帝兵全属性以 1 点为成长单位，保留九彩神金初始属性产生的 .2。
     const 随机跨度 = Math.round(当前极限.有兵字秘 - 当前极限.无兵字秘);
-    const 随机全属性 = 当前极限.无兵字秘 + Math.floor(Math.random() * (随机跨度 + 1));
+    const 基础随机 = Math.floor(Math.random() * (随机跨度 + 1));
+
+    // 汇总区间偏移：体质 + 位面坐标 + 黑皇阵纹 + 库洛牌祈愿
+    const shifts = {
+      bodyShift: shiftOptions.bodyShift ?? (BODY_TRIBULATION_SHIFT[player?.灵根?.name] || 0),
+      planeShift: shiftOptions.planeShift ?? calcPlaneCoordinateShift(player),
+      formationShift: Number(shiftOptions.formationShift || 0),
+      kuluoShift: Number(shiftOptions.kuluoShift || 0),
+    };
+    const { final: 修正后随机 } = applyTribulationShift(基础随机, 随机跨度, shifts);
+
+    const 随机全属性 = 当前极限.无兵字秘 + 修正后随机;
     const 帝兵Atk = Number(equipment?.帝兵?.atk) || 0;
     const 装备后攻击 = calculateEquippedStats(
       { 攻击: 练气Atk + 炼体Atk + 秘境Atk },
@@ -4212,6 +4488,40 @@ calcMaxTheoreticalAtk(player, equipment = {}) {
   ).攻击;
 
   return 装备后攻击 + 帝兵Atk;
+}
+
+/**
+ * 消耗库洛牌祈愿 buff（一次性，读取后立即移除）
+ * @returns {number} buff 提供的偏移量（负数=安全）
+ */
+consumeKuluoWishBuff(player) {
+  if (!player?.库洛牌祈愿) return 0;
+  const buff = player.库洛牌祈愿;
+  const shift = Number(buff.区间偏移 || 0);
+  delete player.库洛牌祈愿;
+  return shift;
+}
+
+/**
+ * 综合计算 maxAtk（用于实际渡劫）
+ * 自动读取：体质偏移 + 位面坐标偏移 + 黑皇阵纹偏移 + 库洛牌偏移
+ * @returns {{ maxAtk: number, formationShift: number, kuluoShift: number, planeShift: number, bodyShift: number, qitianMessage: string }}
+ */
+calcMaxAtkWithTribulationShifts(player, equipment = {}) {
+  // 1. 黑皇欺天阵纹（区间偏移，-15 ~ +15）
+  const qitianFormation = consumeBlackEmperorTribulationFormation(player);
+  const formationShift = qitianFormation.consumed ? qitianFormation.rangeShift : 0;
+  const qitianMessage = qitianFormation.message || '';
+
+  // 2. 库洛牌祈愿（一次性 buff）
+  const kuluoShift = this.consumeKuluoWishBuff(player);
+
+  const maxAtk = this.calcMaxTheoreticalAtk(player, equipment, {
+    formationShift,
+    kuluoShift,
+  });
+
+  return { maxAtk, formationShift, kuluoShift, qitianMessage };
 }
 
 // ==== 功法特效应用函数 ====
@@ -5177,7 +5487,7 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
     }
     if (player._玄黄护道渡劫) finalDamage *= 0.7;
 
-    finalDamage *= qitianFormation.damageMultiplier;
+    // 黑皇欺天阵纹：现在改为区间偏移（-15 ~ +15），由 calcMaxTheoreticalAtk 应用，此处不再乘伤害
     const defended = reduceTribulationDamageByDefense(finalDamage, player.防御);
     if (defended.reduction > 0) {
       effectMessages.push(
