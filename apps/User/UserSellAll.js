@@ -37,6 +37,7 @@ import {
 } from '../../model/xiuxian.js';
 import { getMinggeEffects, getMinggeDirectMultiplier } from '../../model/mingge.js';
 import { rollDailyDungeonCoordinate } from '../../model/weimianTravel.js';
+import { formatTianjiaoTrace, rollDungeonTianjiaoTrace } from '../../model/tianjiaoGrowth.js';
 import { consumeBlackEmperorBattleFormation, rollBlackEmperorDungeonEncounter } from '../../model/blackEmperor.js';
 import { AppName } from '../../app.config.js';
 import {
@@ -3470,6 +3471,11 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
                   last_msg += ` 你在副本残卷中拼出了一条完整星路，成功记住「${coordinateDrop.location}」的位面坐标！`;
                 }
               }
+              const tianjiaoTrace = rollDungeonTianjiaoTrace(player, data.weimiantianjiao_list);
+              if (tianjiaoTrace) {
+                await Write_player(player_id, player);
+                last_msg += ` 你循着战斗余波发现【${tianjiaoTrace.name}】的踪迹：${formatTianjiaoTrace(tianjiaoTrace)}，24小时内有效。`;
+              }
 
              let random = Math.random();
                             if ( weizhi.name == '荧惑古星' && random <0.1&& player.五色祭坛 !== 1) {
@@ -5551,6 +5557,11 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
                 if (coordinateDrop.location) {
                   last_msg += ` 你在副本残卷中拼出了一条完整星路，成功记住「${coordinateDrop.location}」的位面坐标！`;
                 }
+              }
+              const tianjiaoTrace = rollDungeonTianjiaoTrace(player, data.weimiantianjiao_list);
+              if (tianjiaoTrace) {
+                await Write_player(player_id, player);
+                last_msg += ` 你循着战斗余波发现【${tianjiaoTrace.name}】的踪迹：${formatTianjiaoTrace(tianjiaoTrace)}，24小时内有效。`;
               }
                 let random = Math.random();
                   if ( weizhi.name == '荧惑古星' && random <0.1&& player.五色祭坛 !== 1) {

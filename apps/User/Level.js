@@ -2363,7 +2363,7 @@ const luck = e.msg.includes('幸运');
 
     e.reply(luck ? "一键幸运突破开始，正在积蓄真元..." : "一键突破开始，正在积蓄真元...");
 
-    const maxLevelId = 64;
+    const maxLevelId = 64 - weimianyazhi;  // 位面压制：与一键破体保持一致
     const initialLevel = player.level_id;
     const hasSpecialTalent = talentInfo.costReduction !== 1.0;
 

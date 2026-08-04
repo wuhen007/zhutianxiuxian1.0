@@ -8,6 +8,8 @@ import {
   getMinggeDirectMultiplier,
   getMinggeEffects,
   grantMinggePotential,
+  applyInitialMinggeEffectsRaw,
+  rollbackInitialMinggeEffects,
 } from '../../model/mingge.js';
 import path from 'path';
 import xiuxianData from '../../model/XiuxianData.js';
@@ -3928,8 +3930,12 @@ if (thing_exist.type == '神药') {
                 const stored = createPlayerMingge(mingge);
                 stored.初始效果已应用 = true;
                 const oldName = fates[requested - 1]?.name || '无名命格';
+                // 先回滚旧命格的「获得时」一次性效果（速度/仙道潜力/生命本源/寿元/幸运/心神），再应用新命格，避免只增不减地累加
+                const oldMingge = data.minggeList.find(m => m.id === fates[requested - 1]?.id);
+                rollbackInitialMinggeEffects(player, oldMingge?.effects);
                 if (requested === 1) player.命格 = stored;
                 else player.附加命格[requested - 2] = stored;
+                applyInitialMinggeEffectsRaw(player, mingge.effects);
                 delete player.重抽命格序号; // 重抽后清空已选目标，避免误重抽同一格
 
                 await Add_najie_thing(usr_qq, '轮回命签', '道具', -1);
