@@ -281,6 +281,7 @@ export function createXianguFragmentSnapshot(map = {}) {
     connectedFragments: map.connectedFragments || {},
     uniqueTreasures: map.uniqueTreasures || {},
     npcLocations: map.npcLocations || [],
+    npcEcology: map.npcEcology || {},
     exitPositions: map.exitPositions || [],
     generatedAt: Number(map.generatedAt) || Date.now(),
   });
@@ -310,6 +311,7 @@ export function restoreXianguFragmentSnapshot(snapshot, fragmentId) {
     connectedFragments: snapshot.connectedFragments || {},
     uniqueTreasures: snapshot.uniqueTreasures || {},
     npcLocations: snapshot.npcLocations || [],
+    npcEcology: snapshot.npcEcology || {},
     exitPositions: snapshot.exitPositions || [],
     generatedAt: Number(snapshot.generatedAt) || Date.now(),
   });

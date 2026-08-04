@@ -87,6 +87,12 @@ import {
   recordXianguArenaWin,
   resolveXianguLeaderWinner,
 } from './xianguCombat.js';
+import {
+  advanceXianguNpcState,
+  bindXianguNpcLocations,
+  getBoundXianguNpc,
+  removeBoundXianguNpc,
+} from './xianguNpc.js';
 
 const XIANGU_ACTIVE_PLAYERS_KEY = 'xiuxian:xiangu:player_set';
 const XIANGU_RELEASE_LOCK_SCRIPT = `
@@ -1408,15 +1414,6 @@ export class xianguPlace extends plugin {
     // 揭示当前位置周围（神识范围）
     revealAdjacentCells(map, map.playerPos, getDivineSenseRange(player));
 
-    // 检查道韵共鸣（远距离唯一机缘）
-    const echoes = checkTreasureEcho(player, map);
-
-    // 渲染网格
-    const gridRender = renderRealmGrid(player, map);
-
-    // 神识感知
-    const perceptions = getDivineSensePerception(player, map);
-
     // 混沌蚊湖特殊效果
     let mosquitoMsg = '';
     if (isInMosquitoLake(map)) {
@@ -1427,6 +1424,11 @@ export class xianguPlace extends plugin {
         mosquitoMsg = `\n⚠️ 血气过低！混沌蚊群正在蚕食你的生命力！速离此地！`;
       }
     }
+
+    const npcEvents = await processNPCBehavior(player, player_qq);
+    const echoes = checkTreasureEcho(player, map);
+    const gridRender = renderRealmGrid(player, map);
+    const perceptions = getDivineSensePerception(player, map);
 
     await Write_player(player_qq, player);
 
@@ -1467,6 +1469,10 @@ export class xianguPlace extends plugin {
 
     if (mosquitoMsg) {
       msg += mosquitoMsg + '\n\n';
+    }
+
+    if (npcEvents.length > 0) {
+      msg += `【秘境动态】\n${npcEvents.join('\n')}\n\n`;
     }
 
     const fragment = REALM_FRAGMENTS[map.fragmentId];
@@ -1643,6 +1649,7 @@ export class xianguPlace extends plugin {
             connectedFragments: nextConnections,
             uniqueTreasures: generated.specials.uniqueTreasures || {},
             npcLocations: generated.specials.npcLocations || [],
+            npcEcology: {},
             exitPositions: generated.specials.exitPositions || [],
             generatedAt: Date.now(),
           };
@@ -1662,6 +1669,7 @@ export class xianguPlace extends plugin {
         map.connectedFragments = nextFragmentState.connectedFragments;
         map.uniqueTreasures = nextFragmentState.uniqueTreasures;
         map.npcLocations = nextFragmentState.npcLocations;
+        map.npcEcology = nextFragmentState.npcEcology || {};
         map.exitPositions = nextFragmentState.exitPositions;
         map.generatedAt = nextFragmentState.generatedAt;
 
@@ -1674,6 +1682,9 @@ export class xianguPlace extends plugin {
         player.xiangu_location = gridPosToZone(map);
         map.stepsTaken++;
 
+        ensureXianguMapNpcBindings(player);
+        const npcEvents = await processNPCBehavior(player, player_qq);
+
         await Write_player(player_qq, player);
 
         const gridRender = renderRealmGrid(player, map);
@@ -1685,6 +1696,7 @@ export class xianguPlace extends plugin {
           `描述：${nextFrag.desc}`,
           ``,
           gridRender,
+          ...(npcEvents.length > 0 ? [``, `【秘境动态】`, ...npcEvents] : []),
           ``,
           `可用命令：#秘境探索 | #秘境推演 | #上/#下/#左/#右/#左上/#右上`
         ].join('\n'));
@@ -1741,8 +1753,11 @@ export class xianguPlace extends plugin {
         break;
 
       case CELL_TYPE.NPC:
-        // 遇到NPC
-        cellMsg = `👤 ${player.名号}发现前方有一道修士气息在徘徊！\n可使用 #与NPC交谈 与之互动。`;
+        {
+          const encounter = getBoundXianguNpc(map, nx, ny);
+          const npcName = encounter?.npc?.name || encounter?.npc?.名号 || '神秘修士';
+          cellMsg = `👤 ${player.名号}遇见了【${npcName}】！\n可使用 #与NPC交谈、#攻击NPC 或 #NPC组队。`;
+        }
         break;
 
       case CELL_TYPE.EXIT:
@@ -1780,6 +1795,10 @@ export class xianguPlace extends plugin {
       if (mosquito.msg) cellMsg += '\n' + mosquito.msg;
     }
 
+    const npcEvents = await processNPCBehavior(player, player_qq, {
+      allowCombat: targetCell !== CELL_TYPE.DANGER && targetCell !== CELL_TYPE.UNIQUE_TREASURE,
+    });
+
     await Write_player(player_qq, player);
 
     // 道韵共鸣检测
@@ -1791,6 +1810,7 @@ export class xianguPlace extends plugin {
 
     let finalMsg = gridRender + '\n\n';
     if (cellMsg) finalMsg += cellMsg + '\n\n';
+    if (npcEvents.length > 0) finalMsg += `【秘境动态】\n${npcEvents.join('\n')}\n\n`;
     if (echoes && echoes.length > 0) {
       finalMsg += `🔥【道韵共鸣】\n`;
       for (const echo of echoes) {
@@ -2196,6 +2216,7 @@ async XianguDivineScan(e) {
         connectedFragments: targetConnections,
         uniqueTreasures: generated.specials.uniqueTreasures || {},
         npcLocations: generated.specials.npcLocations || [],
+        npcEcology: {},
         exitPositions: generated.specials.exitPositions || [],
         generatedAt: Date.now(),
       };
@@ -2220,6 +2241,7 @@ async XianguDivineScan(e) {
       connectedFragments: targetFragmentState.connectedFragments,
       uniqueTreasures: targetFragmentState.uniqueTreasures,
       npcLocations: targetFragmentState.npcLocations,
+      npcEcology: targetFragmentState.npcEcology || {},
       exitPositions: targetFragmentState.exitPositions,
       stepsTaken: (oldMap?.stepsTaken || 0) + 1,
       generatedAt: targetFragmentState.generatedAt,
@@ -2232,7 +2254,7 @@ async XianguDivineScan(e) {
     player.xiangu_location = targetFragment.zone;
 
     // === NPC生态系统：移动时处理NPC行为 ===
-    const npcMoveEvents = processNPCBehavior(player, targetArea);
+    const npcMoveEvents = await processNPCBehavior(player, player_qq);
 
     await Write_player(player_qq, player);
 
@@ -4233,22 +4255,30 @@ async XianguYiShenWeiZhong(e) {
       const player = await Read_player(player_qq);
       if (!player.in_xiangu) return e.reply('需先进入仙古秘境！');
       
+      if (!player.xiangu_realm_map) initXianguRealmMap(player);
       const location = player.xiangu_location || '边缘区域';
-      const npcs = getNPCsForPlayer(location, player.xiangu_infamy || 0);
-      if (npcs.length === 0) return e.reply(`【寻找NPC】在${location}没有发现任何修士的踪迹...`);
+      const npcEntries = getXianguMapNpcEntries(player);
+      await Write_player(player_qq, player);
+      if (npcEntries.length === 0) return e.reply(`【寻找NPC】在${location}没有发现任何修士的踪迹...`);
       
       const lines = [`【寻找NPC·${location}】`, '', `${player.名号}放出神识，搜索周围的修士...`, ''];
-      for (const npc of npcs) {
+      for (const spot of npcEntries) {
+        const npc = spot.npc;
         const tag = npc.isCanon ? '【原著天骄】' : npc.hostile ? '⚠️敌意' : npc.faction === 'good' ? '✦善良' : npc.faction === 'evil' ? '▼邪恶' : '◆中立';
         const tradeTag = npc.trade ? '💱可交易' : '';
+        const dx = spot.x - player.xiangu_realm_map.playerPos.x;
+        const dy = spot.y - player.xiangu_realm_map.playerPos.y;
+        const range = Math.abs(dx) + Math.abs(dy);
+        const direction = range === 0 ? '就在身前' : `${getDirectionName(dx, dy)}·${range}格`;
         lines.push(`${tag} ${npc.name || npc.名号} ${tradeTag}`);
+        lines.push(`  坐标：[${spot.x}, ${spot.y}]（${direction}）`);
         lines.push(`  ${npc.desc || npc.title || ''}`);
         if (npc.dialogs && npc.dialogs.length > 0) lines.push(`  "${npc.dialogs[0]}"`);
         if (npc.trade) lines.push(`  出售：${npc.trade.items?.map(i => i.name).join('、') || '无'}`);
         lines.push('');
       }
       
-      lines.push('使用 #与NPC交谈 或 #攻击NPC 与目标交互');
+      lines.push('移动到对应NPC格后，使用 #与NPC交谈、#攻击NPC 或 #NPC组队');
       return e.reply(lines.join('\n'));
     } catch (err) {
       console.error('寻找NPC失败:', err);
@@ -4287,12 +4317,11 @@ async XianguYiShenWeiZhong(e) {
           else player.xiangu_gains[key] = (player.xiangu_gains[key] || 0) + value;
         }
       }
-      const npcEvents = processNPCBehavior(player, currentLocation);
+      const npcEvents = await processNPCBehavior(player, player_qq);
       if (npcEvents && npcEvents.length > 0) exploreResult.message += '\n\n【秘境动态】\n' + npcEvents.join('\n');
       await redis.del(`xiuxian:player:${usr_qq}:xianguOptions`);
       await Write_player(player_qq, player);
       await e.reply(exploreResult.message);
-      if (Math.random() < 0.25) await triggerNPCEncounter(e, player, player_qq, currentLocation);
     } catch (error) {
       console.error('探索选择处理失败:', error);
     }
@@ -6218,6 +6247,50 @@ function getNPCsForPlayer(location, infamy) {
   });
 }
 
+function ensureXianguMapNpcBindings(player) {
+  const map = player?.xiangu_realm_map;
+  if (!map || !Array.isArray(map.npcLocations)) return [];
+  map.npcLocations = map.npcLocations.filter(spot =>
+    map.grid?.[spot?.y]?.[spot?.x] === CELL_TYPE.NPC
+  );
+  const knownLocations = new Set(map.npcLocations.map(spot => `${spot.x},${spot.y}`));
+  for (let y = 0; y < (map.grid?.length || 0); y++) {
+    for (let x = 0; x < map.grid[y].length; x++) {
+      if (map.grid[y][x] === CELL_TYPE.NPC && !knownLocations.has(`${x},${y}`)) {
+        map.npcLocations.push({ x, y });
+      }
+    }
+  }
+  const missingCount = map.npcLocations.filter(spot => !spot?.npc).length;
+  if (missingCount === 0) return map.npcLocations;
+
+  const location = REALM_FRAGMENTS[map.fragmentId]?.zone || player.xiangu_location || '边缘区域';
+  const historicalSpots = Object.values(player.xiangu_realm_history || {})
+    .flatMap(snapshot => snapshot?.npcLocations || []);
+  const usedIds = new Set([...map.npcLocations, ...historicalSpots]
+    .map(spot => spot?.npcId || spot?.npc?.id)
+    .filter(Boolean));
+  const candidates = getNPCsForPlayer(location, player.xiangu_infamy || 0)
+    .filter(npc => !usedIds.has(npc.id || npc.name || npc.名号));
+  while (candidates.length < missingCount) {
+    candidates.push(generateRandomNPC(location, player.xiangu_infamy || 0));
+  }
+  return bindXianguNpcLocations(map, candidates);
+}
+
+function getCurrentXianguNpc(player) {
+  ensureXianguMapNpcBindings(player);
+  const map = player?.xiangu_realm_map;
+  const pos = map?.playerPos;
+  if (!pos || map.grid?.[pos.y]?.[pos.x] !== CELL_TYPE.NPC) return null;
+  return getBoundXianguNpc(map, pos.x, pos.y);
+}
+
+function getXianguMapNpcEntries(player) {
+  return ensureXianguMapNpcBindings(player)
+    .filter(spot => spot?.npc?.isAlive !== false);
+}
+
 // ==== 动态事件命令 ====
 
 // 查看当前秘境事件
@@ -6397,31 +6470,33 @@ async function XianguArenaJoinFn(e, player, player_qq) {
 // 与NPC交谈
 async function XianguNPCTalkFn(e, player, player_qq) {
   const location = player.xiangu_location || '边缘区域';
-  const infamy = player.xiangu_infamy || 0;
-  const npcs = getNPCsForPlayer(location, infamy);
+  const current = getCurrentXianguNpc(player);
 
-  if (npcs.length === 0) {
+  if (!current) {
     return e.reply([
-      `【NPC·无人迹】`,
-      `${player.名号}在${location}四处张望，`,
-      `此处寂静如斯，暂无其他存在的气息。`,
+      `【NPC·距离过远】`,
+      `${player.名号}身边没有可以交谈的修士。`,
       ``,
-      `提示：不同区域有不同的修士和存在，深入探索可遇更多NPC`
+      `使用 #寻找NPC 查看坐标，并移动到NPC格后再交谈。`
     ].join('\n'));
   }
 
-  // 随机遭遇一个NPC
-  const npc = npcs[Math.floor(Math.random() * npcs.length)];
-  const dialog = npc.dialogs[Math.floor(Math.random() * npc.dialogs.length)];
+  const { npc } = current;
+  const dialogs = Array.isArray(npc.dialogs) && npc.dialogs.length > 0
+    ? npc.dialogs
+    : ['此地机缘与杀劫并存，道友还需谨慎。'];
+  const dialog = dialogs[Math.floor(Math.random() * dialogs.length)];
 
   // 阵营关系影响对话
   const faction = player.xiangu_faction_rep || { good: 0, neutral: 0, evil: 0 };
   const factionRep = faction[npc.faction] || 0;
+  const npcId = npc.id || npc.name || npc.名号;
+  const relation = Number(player.xiangu_npc_relations?.[npcId] ?? factionRep) || 0;
   let relationDesc = '陌生人';
-  if (factionRep >= 200) relationDesc = '信任';
-  else if (factionRep >= 100) relationDesc = '友善';
-  else if (factionRep >= 50) relationDesc = '熟识';
-  else if (factionRep < 0) relationDesc = '警惕';
+  if (relation >= 200) relationDesc = '信任';
+  else if (relation >= 100) relationDesc = '友善';
+  else if (relation >= 50) relationDesc = '熟识';
+  else if (relation < 0) relationDesc = '警惕';
 
   const lines = [
     `【NPC遭遇·${location}】`,
@@ -6430,7 +6505,7 @@ async function XianguNPCTalkFn(e, player, player_qq) {
     ``,
     `【${npc.name}】${npc.title}`,
     `阵营：${npc.faction === 'good' ? '善良' : npc.faction === 'evil' ? '邪恶' : '中立'}`,
-    `关系：${relationDesc}（${factionRep >= 0 ? '+' : ''}${factionRep}）`,
+    `关系：${relationDesc}（${relation >= 0 ? '+' : ''}${relation}）`,
     ``,
     `"${dialog}"`,
     ``,
@@ -6453,8 +6528,6 @@ async function XianguNPCTalkFn(e, player, player_qq) {
   const poolConfig = resolveXianguMarrowPoolConfig(getXianguSecretConfig());
   if (Math.random() < poolConfig.npcInviteChance) {
     if (!player.xiangu_realm_map) initXianguRealmMap(player);
-    const npcId = npc.id || npc.name || npc.名号;
-    const relation = Number(player.xiangu_npc_relations?.[npcId] ?? factionRep) || 0;
     const trapChance = getXianguMarrowPoolTrapChance(npc, relation);
     const isTrap = Math.random() < trapChance;
     const invitation = placeXianguMarrowPool(player.xiangu_realm_map, {
@@ -6504,39 +6577,33 @@ async function XianguNPCTalkFn(e, player, player_qq) {
     lines.push(``, `古帝虚影赐下帝念，道韵领悟 +${daoyunGain}！`);
   }
 
+  await Write_player(player_qq, player);
   return e.reply(lines.join('\n'));
 }
 
 // 向NPC购买物品
 async function XianguNPCBuyFn(e, player, player_qq) {
-  const location = player.xiangu_location || '边缘区域';
   const infamy = player.xiangu_infamy || 0;
-  const npcs = getNPCsForPlayer(location, infamy).filter(n => n.trade);
+  const current = getCurrentXianguNpc(player);
+  const npc = current?.npc;
 
-  if (npcs.length === 0) {
-    return e.reply(`【NPC购买·无商人】当前${location}没有可交易的NPC，前往中层或深层区域寻找商人`);
+  if (!npc?.trade) {
+    return e.reply(`【NPC购买·无商人】请移动到可交易NPC所在格，再使用购买命令。`);
   }
 
   const itemName = e.msg.replace('#向NPC购买', '').trim();
   if (!itemName) {
-    // 显示所有商品
     let lines = [`【NPC商店】`, ``];
-    npcs.forEach(npc => {
-      lines.push(`◇ ${npc.name}`);
-      npc.trade.items.forEach(item => {
-        lines.push(`  · ${item.name} — ${item.price}${item.currency}`);
-      });
+    lines.push(`◇ ${npc.name}`);
+    npc.trade.items.forEach(item => {
+      lines.push(`  · ${item.name} — ${item.price}${item.currency}`);
     });
     lines.push(``, `提示：#向NPC购买 [物品名] 进行购买`);
     return e.reply(lines.join('\n'));
   }
 
-  // 查找商品
-  let foundNpc = null, foundItem = null;
-  for (const npc of npcs) {
-    const item = npc.trade.items.find(i => i.name === itemName);
-    if (item) { foundNpc = npc; foundItem = item; break; }
-  }
+  const foundNpc = npc;
+  const foundItem = npc.trade.items.find(item => item.name === itemName);
 
   if (!foundItem) {
     return e.reply(`未找到物品"${itemName}"，使用 #向NPC购买 查看商品列表`);
@@ -6577,18 +6644,9 @@ async function XianguNPCBuyFn(e, player, player_qq) {
 // 攻击NPC
 async function XianguNPCAttackFn(e, player, player_qq) {
   const location = player.xiangu_location || '边缘区域';
-  const infamy = player.xiangu_infamy || 0;
-  const allNpcs = getNPCsForPlayer(location, infamy);
-
-  if (allNpcs.length === 0) {
-    return e.reply(`此处没有可攻击的NPC`);
-  }
-
-  // 优先选择原著/随机NPC（排除基础善意NPC）
-  const combatReady = allNpcs.filter(n => n.isCanon || n.personality || n.faction === 'evil');
-  const npc = (combatReady.length > 0)
-    ? combatReady[Math.floor(Math.random() * combatReady.length)]
-    : allNpcs[Math.floor(Math.random() * allNpcs.length)];
+  const current = getCurrentXianguNpc(player);
+  if (!current) return e.reply(`此处没有可攻击的NPC，请先使用 #寻找NPC 并移动到目标所在格。`);
+  const { npc } = current;
 
   // 攻击善良NPC — 警告不进入战斗
   if (npc.faction === 'good' && !npc.isCanon && !npc.personality) {
@@ -6632,11 +6690,8 @@ async function XianguNPCAttackFn(e, player, player_qq) {
         expiresAt: Date.now() + 300000
       };
 
-      // NPC死亡标记
-      if (npc.isCanon) {
-        npc.isAlive = false;
-        npc.respawnTime = Date.now() + 7200000; // 2小时后重生
-      }
+      npc.isAlive = false;
+      removeBoundXianguNpc(player.xiangu_realm_map, npc.id || current.spot.npcId);
 
       await Write_player(player_qq, player);
 
@@ -6834,131 +6889,99 @@ async function XianguSoulSearchNPCFn(e, player, player_qq) {
   return e.reply(lines.join('\n'));
 }
 
-// ==== NPC行为系统（定时触发，在探索/移动时调用） ====
-function processNPCBehavior(player, location) {
-  // 每隔15分钟处理一次NPC行为
-  const now = Date.now();
-  if (player.xiangu_last_npc_tick && now - player.xiangu_last_npc_tick < 900000) return;
-  player.xiangu_last_npc_tick = now;
+async function resolveXianguNpcEcologyBattle(player, player_qq, action) {
+  const npc = action.npc;
+  const npcName = npc.name || npc.名号 || '神秘修士';
+  const isFraud = action.type === 'fraud';
+  const enemies = isFraud
+    ? createXianguPoolAmbushers(npc)
+    : [createXianguNpcBattleData(npc)];
+  const battleSides = buildXianguBattleSides(player, enemies, { attackerId: player_qq });
 
-  const allNpcs = getNPCsForPlayer(location, player.xiangu_infamy || 0);
-  const activeNpcs = allNpcs.filter(n => n.isAlive !== false);
-
-  const events = [];
-
-  for (const npc of activeNpcs) {
-    if (!npc.isCanon && !npc.personality) continue; // 跳过基础静态NPC
-
-    const behaviorRoll = Math.random();
-
-    // NPC搜刮宝物（50%概率，非hostile不会抢夺）
-    if (behaviorRoll < 0.5 && npc.personality !== 'hostile') {
-      const treasures = ['灵石', '普通道种碎片', '仙古矿材', '古兽残骨', '秘境灵药', '远古符纸'];
-      const found = treasures[Math.floor(Math.random() * treasures.length)];
-      if (!npc.inventory) npc.inventory = [];
-      npc.inventory.push({ name: found, 灵石: found === '灵石' ? Math.floor(Math.random() * 5000) + 1000 : 0 });
-      events.push(`${npc.name || npc.名号}在${location}发现了一些${found}`);
-    }
-
-    // 敌对NPC搜刮可能引发区域危险提示
-    if (behaviorRoll < 0.3 && npc.personality === 'hostile') {
-      events.push(`⚠ ${npc.name || npc.名号}在附近游荡，似在寻找猎物...`);
-    }
+  let battleResult;
+  try {
+    battleResult = await zd_battle(battleSides.A, battleSides.B, {
+      battleType: isFraud ? 'xiangu_npc_ambush' : 'xiangu_npc_hunt',
+    });
+  } catch (error) {
+    console.error('仙古NPC追猎战异常:', error);
+    const hpLoss = Math.max(1, Math.floor((Number(player.当前血量) || 1) * 0.15));
+    player.当前血量 = Math.max(1, (Number(player.当前血量) || 1) - hpLoss);
+    applyXianguHeavyInjury(player);
+    return [`⚠️【NPC追猎】${npcName}突然出手，你负伤突围，当前血量 -${hpLoss.toLocaleString()}。`];
   }
 
-  return events;
+  const battleLog = [
+    ...battleSides.messages,
+    ...(Array.isArray(battleResult?.msg) ? battleResult.msg : [String(battleResult?.msg || '')]),
+  ].filter(Boolean);
+  const playerWon = resolveXianguLeaderWinner(battleResult) === 'A' ||
+    (!battleResult?.winner && battleResult?.[0]?.result === 'win');
+  if (playerWon) {
+    npc.isAlive = false;
+    const lootMsg = await processNPCKillLoot(
+      player,
+      player_qq,
+      npc,
+      player.xiangu_location || '边缘区域',
+    );
+    player.xiangu_soulsearch_target = {
+      name: npcName,
+      学习的功法: [...(npc.学习的功法 || [])],
+      isCanon: npc.isCanon || false,
+      expiresAt: Date.now() + 300000,
+    };
+    removeBoundXianguNpc(player.xiangu_realm_map, action.npcId);
+    const daoyunGain = isFraud ? 25 : 15;
+    player.xiangu_gains ||= {};
+    player.xiangu_gains.daoyun = (Number(player.xiangu_gains.daoyun) || 0) + daoyunGain;
+    return [
+      `${isFraud ? '🩸【NPC骗局·反杀】' : '⚔️【NPC追猎·反杀】'}`,
+      `${npcName}${isFraud ? '以假意结交为饵，伙同伏兵围杀' : '一路追踪而来，悍然出手'}！`,
+      ...battleLog.slice(-8),
+      `${player.名号}击败${npcName}，道韵 +${daoyunGain}。`,
+      ...lootMsg,
+    ];
+  }
+
+  const hpLoss = Math.max(1, Math.floor((Number(player.当前血量) || 1) * 0.3));
+  player.当前血量 = Math.max(1, (Number(player.当前血量) || 1) - hpLoss);
+  applyXianguHeavyInjury(player);
+  player.xiangu_npc_relations ||= {};
+  player.xiangu_npc_relations[action.npcId] =
+    (Number(player.xiangu_npc_relations[action.npcId]) || 0) - 15;
+  return [
+    `${isFraud ? '🩸【NPC骗局·围杀】' : '⚔️【NPC追猎·战败】'}`,
+    `${npcName}${isFraud ? '撕下伪装，伏兵同时现身' : '循着你的气息追杀而至'}！`,
+    ...battleLog.slice(-8),
+    `${player.名号}负伤突围，当前血量 -${hpLoss.toLocaleString()}，陷入重伤。`,
+  ];
 }
 
-// ==== NPC结交/欺诈事件（探索中触发） ====
-async function triggerNPCEncounter(e, player, player_qq, location) {
-  const allNpcs = getNPCsForPlayer(location, player.xiangu_infamy || 0);
-  const activeNpcs = allNpcs.filter(n =>
-    (n.isCanon || n.personality) && n.isAlive !== false
-  );
-  if (activeNpcs.length === 0) return null;
+// 行动驱动的懒更新：不建后台定时器，每次移动/探索最多推进一名NPC。
+async function processNPCBehavior(player, player_qq, { allowCombat = true } = {}) {
+  ensureXianguMapNpcBindings(player);
+  const action = advanceXianguNpcState(player.xiangu_realm_map, player, {
+    allowEncounter: allowCombat,
+  });
+  const npcName = action.npc?.name || action.npc?.名号 || '神秘修士';
 
-  const npc = activeNpcs[Math.floor(Math.random() * activeNpcs.length)];
-  const npcId = npc.id || npc.name;
-  const relations = player.xiangu_npc_relations || {};
-  const relationVal = relations[npcId] || 0;
-
-  const roll = Math.random();
-
-  // 好感<0且30%概率：NPC欺诈
-  if (relationVal < 0 && roll < 0.3 && npc.personality !== 'friendly') {
-    relations[npcId] = relationVal - 10;
-    player.xiangu_npc_relations = relations;
-    await Write_player(player_qq, player);
-
-    const trapLocations = ['深层区域', '核心区域'];
-    const trapLocation = trapLocations[Math.floor(Math.random() * trapLocations.length)];
-    return e.reply([
-      `【NPC结交·虚假机缘！】`,
-      ``,
-      `${npc.name || npc.名号}（${npc.title || ''}）靠近你，低声道：`,
-      ``,
-      `"道友，我近日在${trapLocation}发现一处古帝洞府，`,
-      `其中宝物无数，但我一人难以深入..."`,
-      ``,
-      `对方眼中闪过一丝不易察觉的阴鸷。`,
-      ``,
-      `⚠ 此乃陷阱！若前往${trapLocation}，可能遭遇伏击！`,
-      `好感度 -10（当前：${relationVal - 10}）`,
-      ``,
-      `提示：好感度<0的NPC有30%概率欺诈`
-    ].join('\n'));
+  if (action.type === 'loot' && action.visible) {
+    return [`💨 ${npcName}抢先搜刮了坐标[${action.to.x}, ${action.to.y}]的机缘，所得已收入其纳戒。`];
   }
-
-  // 真心结交（40%概率，好感>=0时）
-  if (relationVal >= 0 && roll < 0.4) {
-    const actionRoll = Math.random();
-
-    if (actionRoll < 0.5 && npc.personality !== 'hostile') {
-      // NPC提供真实线索
-      const hints = {
-        '边缘区域': '边缘区域的古树根基藏着稀世矿材',
-        '中层区域': '中层区域的古老祭坛有道的共鸣',
-        '深层区域': '深层区域的裂谷深处有一枚传说道种',
-        '核心区域': '核心区域的帝冢最近有不寻常的波动'
-      };
-      const hint = hints[location] || '此地的灵气波动异常，定有机缘';
-      relations[npcId] = (relations[npcId] || 0) + 15;
-      player.xiangu_npc_relations = relations;
-      await Write_player(player_qq, player);
-
-      return e.reply([
-        `【NPC结交·真诚指引】`,
-        ``,
-        `${npc.name || npc.名号}（${npc.title || ''}）环顾四周后，`,
-        `对你轻声道：`,
-        ``,
-        `"${npc.isCanon ? '以我的身份，不屑于欺骗你' : ''}`,
-        `${hint}。"`,
-        ``,
-        `好感度 +15（当前：${relations[npcId]}）`,
-        `对方眼中坦荡，此言似乎不虚。`,
-        ``,
-        `提示：真心结交的NPC线索真实有效，赶紧去探索！`
-      ].join('\n'));
-    } else if (actionRoll < 0.8) {
-      // NPC请求交易
-      if (!npc.trade) {
-        relations[npcId] = (relations[npcId] || 0) + 10;
-        player.xiangu_npc_relations = relations;
-        await Write_player(player_qq, player);
-        return e.reply([
-          `【NPC结交·友好交谈】`,
-          ``,
-          `你与${npc.name || npc.名号}相谈甚欢，`,
-          `对方分享了一些秘境见闻。`,
-          ``,
-          `好感度 +10（当前：${relations[npcId]}）`
-        ].join('\n'));
-      }
-    }
+  if (action.type === 'move' && action.visible && action.npc?.hostile) {
+    return [`⚠️ ${npcName}正在向你的方向逼近，当前位置：[${action.to.x}, ${action.to.y}]。`];
   }
-
-  return null;
+  if (action.type === 'befriend') {
+    const clue = action.clue
+      ? `并指出一处机缘坐标：[${action.clue.x}, ${action.clue.y}]。`
+      : `并与你交换了沿途见闻。`;
+    return [`🤝【NPC主动结交】${npcName}主动释放善意，好感 +${action.relationDelta}，${clue}`];
+  }
+  if (action.type === 'fraud' || action.type === 'hunt') {
+    return resolveXianguNpcEcologyBattle(player, player_qq, action);
+  }
+  return [];
 }
 
 // ==== 查看NPC好感度 ====
@@ -7020,14 +7043,10 @@ async function XianguNPCRelationFn(e, player) {
 
 // ==== NPC组队 ====
 async function XianguNPCTeamFn(e, player, player_qq) {
-  const location = player.xiangu_location || '边缘区域';
-  const allNpcs = getNPCsForPlayer(location, player.xiangu_infamy || 0);
-  const canTeam = allNpcs.filter(n =>
-    (n.isCanon || n.personality) && n.isAlive !== false && n.faction !== 'evil'
-  );
-
-  if (canTeam.length === 0) {
-    return e.reply(`【组队·无合适NPC】此处没有可以组队的NPC。`);
+  const current = getCurrentXianguNpc(player);
+  const npc = current?.npc;
+  if (!npc || (!npc.isCanon && !npc.personality) || npc.isAlive === false || npc.faction === 'evil') {
+    return e.reply(`【组队·无合适NPC】请移动到愿意同行的NPC所在格。`);
   }
 
   // 已有组队
@@ -7046,10 +7065,9 @@ async function XianguNPCTeamFn(e, player, player_qq) {
     return e.reply(`【组队·冷却中】刚组建过队伍，需等待 ${remaining} 分钟。`);
   }
 
-  const npc = canTeam[Math.floor(Math.random() * canTeam.length)];
   const npcId = npc.id || npc.name;
   const relations = player.xiangu_npc_relations || {};
-  const rel = relations[npcId] || 0;
+  const rel = Number(relations[npcId] ?? player.xiangu_faction_rep?.[npc.faction]) || 0;
 
   // 好感检查
   if (rel < 50 && npc.personality !== 'friendly') {
@@ -7091,6 +7109,8 @@ async function XianguNPCTeamFn(e, player, player_qq) {
   } else {
     player.xiangu_teammate_betray_chance = 0;
   }
+
+  removeBoundXianguNpc(player.xiangu_realm_map, npcId);
 
   await Write_player(player_qq, player);
 
@@ -7792,6 +7812,7 @@ function initXianguRealmMap(player) {
     connectedFragments,
     uniqueTreasures: specials.uniqueTreasures || {},
     npcLocations: specials.npcLocations || [],
+    npcEcology: {},
     exitPositions: specials.exitPositions || [],
     stepsTaken: 0,
     generatedAt: Date.now()
@@ -7801,6 +7822,7 @@ function initXianguRealmMap(player) {
   player.xiangu_pos_x = playerPos.x;
   player.xiangu_pos_y = playerPos.y;
   player.xiangu_location = fragment.zone;
+  ensureXianguMapNpcBindings(player);
   
   // 揭示出生点周围
   revealAdjacentCells(player.xiangu_realm_map, playerPos, 1);
