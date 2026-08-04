@@ -443,13 +443,15 @@
       "world": "anime",
       "rarity": "核心",
       "tags": ["剑道", "爆发", "反噬"],
-      "description": "短暂解除身体限制；每五回合斩出极限一刀，同时承受反噬。升至2级后可遇见进阶能力一刀罗刹。",
-      "maxLevel": 2,
-      "effect": { "attackPct": 0.1, "critChance": 0.04 },
+      "description": "解除肉身限制斩出极限一刀；每次升级都会增强斩击并降低反噬，升至2级后可遇见一刀罗刹。",
+      "maxLevel": 3,
+      "effect": { "attackPct": 0.12, "critChance": 0.05 },
       "proc": {
-        "everyRounds": 5,
-        "damagePct": 0.8,
-        "selfDamagePct": 0.06,
+        "everyRounds": 4,
+        "damagePct": 0.95,
+        "selfDamagePct": 0.07,
+        "selfDamageReductionPerLevel": 0.015,
+        "minSelfDamagePct": 0.04,
         "label": "一刀修罗",
         "verb": "解放",
         "narration": "{member}解除肉身限制，将全部气力、剑意与灵魂压进斩向{enemy}的一刀"
@@ -461,17 +463,87 @@
       "world": "anime",
       "rarity": "禁忌",
       "tags": ["剑道", "爆发", "斩杀", "反噬"],
-      "description": "一刀修罗的进阶形态；燃尽极限换取更强斩击与斩杀能力。",
-      "maxLevel": 1,
+      "description": "一刀修罗的进阶形态；每次升级都会让罗刹斩更强、反噬更低。",
+      "maxLevel": 3,
       "requires": { "anime_one_cut_shura": 2 },
-      "effect": { "attackPct": 0.18, "critChance": 0.08, "executePct": 0.1 },
+      "effect": { "attackPct": 0.2, "critChance": 0.08, "executePct": 0.08 },
       "proc": {
-        "everyRounds": 4,
-        "damagePct": 1.35,
-        "selfDamagePct": 0.1,
+        "everyRounds": 3,
+        "damagePct": 1.45,
+        "selfDamagePct": 0.09,
+        "selfDamageReductionPerLevel": 0.025,
+        "minSelfDamagePct": 0.04,
         "label": "一刀罗刹",
         "verb": "燃尽",
         "narration": "{member}将生命压缩到刹那之间，罗刹般的剑光先于意识斩过{enemy}"
+      }
+    },
+    {
+      "id": "neutral_ghost_eye",
+      "name": "鬼眼",
+      "world": "neutral",
+      "rarity": "稀有",
+      "tags": ["瞳术", "洞察", "斩杀"],
+      "description": "窥见魂魄裂隙与死亡之线，提高暴击、闪避与斩杀，并周期性直击神魂。",
+      "maxLevel": 3,
+      "effect": { "critChance": 0.055, "dodgeChance": 0.025, "executePct": 0.045 },
+      "proc": {
+        "everyRounds": 3,
+        "damagePct": 0.5,
+        "label": "鬼眼·勘破死线",
+        "verb": "洞见",
+        "narration": "{member}睁开鬼眼，万物生机化作黯淡丝线，其中最脆弱的一根径直连向{enemy}"
+      }
+    },
+    {
+      "id": "neutral_spring_autumn_cicada",
+      "name": "春秋蝉",
+      "world": "neutral",
+      "rarity": "禁忌",
+      "tags": ["光阴", "重生", "规则"],
+      "description": "每场战斗遭受致命伤时尝试逆流光阴；升级可提高回溯概率与回溯后的生命。",
+      "maxLevel": 3,
+      "effect": { "timeRewindChance": 0.12, "timeRewindHealPct": 0.15, "extraActionChance": 0.025 },
+      "proc": {
+        "everyRounds": 6,
+        "damagePct": 0.42,
+        "label": "春秋蝉·岁月回声",
+        "verb": "逆流",
+        "narration": "春秋蝉在{member}识海振翅，上一瞬的攻势沿光阴长河重现，再次落向{enemy}"
+      }
+    },
+    {
+      "id": "zhetian_six_paths_reincarnation_fist",
+      "name": "六道轮回拳",
+      "world": "zhetian",
+      "rarity": "核心",
+      "tags": ["拳法", "轮回", "爆发"],
+      "description": "拳开六道，轮回虚影同时镇压现世，兼具持续增伤与低血线斩杀。",
+      "maxLevel": 3,
+      "effect": { "attackPct": 0.09, "critChance": 0.035, "executePct": 0.04 },
+      "proc": {
+        "everyRounds": 3,
+        "damagePct": 0.76,
+        "label": "六道轮回拳",
+        "verb": "轮转",
+        "narration": "{member}挥动六道轮回拳，天人、修罗、地狱等六座古界虚影一同碾向{enemy}"
+      }
+    },
+    {
+      "id": "anime_decade_driver",
+      "name": "帝骑腰带",
+      "world": "anime",
+      "rarity": "禁忌",
+      "tags": ["骑士", "变身", "斩杀"],
+      "description": "变身假面骑士Decade，全面提高生命、攻击与防御；敌人低于30%生命时有概率发动最终骑士驾驭处决。",
+      "maxLevel": 3,
+      "effect": { "attackPct": 0.1, "hpPct": 0.1, "defensePct": 0.1, "riderKickChance": 0.08 },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.68,
+        "label": "Kamen Ride·Decade",
+        "verb": "变身",
+        "narration": "{member}将骑士卡插入帝骑腰带，品红装甲合拢，驾驭卡化作光幕贯穿{enemy}"
       }
     },
     {
@@ -724,10 +796,10 @@
       "kind": "无上道法",
       "origin": "咒术回战",
       "description": "展开无限信息灌入的领域，迟滞敌人并创造无防备窗口。",
-      "effect": { "dodgeChance": 0.08, "extraActionChance": 0.07 },
+      "effect": { "dodgeChance": 0.1, "extraActionChance": 0.1 },
       "proc": {
         "everyRounds": 4,
-        "damagePct": 0.7,
+        "damagePct": 0.88,
         "label": "领域展开·无量空处",
         "verb": "展开",
         "narration": "{member}展开无量空处，无穷信息瞬间灌入{enemy}的意识"
@@ -813,7 +885,14 @@
       "kind": "无上道法",
       "origin": "洪荒",
       "description": "清气化出三尊道身，与本体共同推演神通。",
-      "effect": { "summonPct": 0.28, "extraActionChance": 0.05 }
+      "effect": { "summonPct": 0.32, "extraActionChance": 0.08 },
+      "proc": {
+        "everyRounds": 3,
+        "damagePct": 0.95,
+        "label": "一气化三清·三大道身",
+        "verb": "化生",
+        "narration": "{member}头顶清气冲霄，三尊道身各执一法，与本体同时围攻{enemy}"
+      }
     },
     {
       "id": "art_flower_monarch",
@@ -885,6 +964,21 @@
         "label": "完全催眠·镜花水月",
         "verb": "催眠",
         "narration": "{enemy}斩中的只是一层幻象，{member}已从真实方位完成致命一击"
+      }
+    },
+    {
+      "id": "art_heavenly_emperor_fist",
+      "name": "天帝拳",
+      "kind": "无上道法",
+      "origin": "遮天",
+      "description": "唯有十层天关后的诸天垂青才会显化；一拳汇聚天帝万道，镇压古今未来。",
+      "effect": { "attackPct": 0.22, "critChance": 0.08, "executePct": 0.1 },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 1.3,
+        "label": "天帝拳·镇压万古",
+        "verb": "挥动",
+        "narration": "{member}挥动天帝拳，诸天万道在拳锋上合一，璀璨帝光横贯古今轰向{enemy}"
       }
     }
   ],
@@ -966,8 +1060,8 @@
       "id": "fusion_rakshasa_instinct",
       "name": "无念罗刹",
       "requires": ["anime_one_cut_rakshasa", "anime_ultra_instinct"],
-      "description": "自在极意接管燃尽极限的肉身，使罗刹之刀更快且更难被命中。",
-      "effect": { "attackPct": 0.2, "critChance": 0.08, "dodgeChance": 0.07 }
+      "description": "自在极意接管燃尽极限的肉身，使罗刹之刀更快，并额外削减65%反噬。",
+      "effect": { "attackPct": 0.2, "critChance": 0.08, "dodgeChance": 0.07, "recoilReduction": 0.65 }
     },
     {
       "id": "fusion_void_yang",

@@ -13,6 +13,18 @@ const CHECKPOINT_BOONS = new Map(
   (CONTENT.checkpointBoons || []).map(boon => [boon.id, boon])
 );
 const WORLDS = new Map(CONTENT.worlds.map((world) => [world.id, world]));
+const BOSS_MECHANISMS = Object.freeze([
+  '回血',
+  '复活',
+  '禁疗',
+  '破盾',
+  '斩杀',
+  '连击',
+  '分身',
+  '吸血',
+  '沉默',
+  '护盾',
+]);
 const RARITY_WEIGHT = Object.freeze({ 普通: 6, 稀有: 4, 核心: 2.5, 禁忌: 1 });
 const CHECKPOINT_CHOICES = Object.freeze([
   Object.freeze({
@@ -55,6 +67,10 @@ const EFFECT_KEYS = Object.freeze([
   'fireScalingPct',
   'comboAttackPct',
   'revivePct',
+  'recoilReduction',
+  'riderKickChance',
+  'timeRewindChance',
+  'timeRewindHealPct',
 ]);
 
 function clamp(value, min, max) {
@@ -213,6 +229,10 @@ function calculateMemberStats(member, run, round = 1) {
     onWinAttackPct: Math.max(0, effects.onWinAttackPct),
     teamShieldPct: Math.max(0, effects.teamShieldPct),
     revivePct: clamp(effects.revivePct, 0, 0.8),
+    recoilReduction: clamp(effects.recoilReduction, 0, 0.9),
+    riderKickChance: clamp(effects.riderKickChance, 0, 0.6),
+    timeRewindChance: clamp(effects.timeRewindChance, 0, 0.75),
+    timeRewindHealPct: clamp(effects.timeRewindHealPct, 0, 0.75),
   };
 }
 
@@ -356,6 +376,27 @@ export function getWorldForLayer(run, layer) {
 export function getMemberStats(run, memberId) {
   const member = run.members?.[memberId];
   return member ? calculateMemberStats(member, run) : null;
+}
+
+function getProcSelfDamageRate(proc, stats) {
+  const level = Math.max(1, Math.floor(asNumber(proc.level, 1)));
+  const baseRate = Math.max(0, asNumber(proc.selfDamagePct));
+  const reducedByLevel = Math.max(
+    asNumber(proc.minSelfDamagePct),
+    baseRate - asNumber(proc.selfDamageReductionPerLevel) * (level - 1)
+  );
+  return Math.max(0, reducedByLevel * (1 - stats.recoilReduction));
+}
+
+export function getEndlessAbilitySelfDamageRate(run, memberId, abilityId) {
+  const member = run.members?.[memberId];
+  const ability = ABILITIES.get(abilityId);
+  const level = getOwnedLevel(member, abilityId);
+  if (!member || !ability?.proc?.selfDamagePct || !level) return 0;
+  return getProcSelfDamageRate(
+    { ...ability.proc, level },
+    calculateMemberStats(member, run)
+  );
 }
 
 export function detectFusions(run) {
@@ -558,6 +599,32 @@ function getStage(layer) {
   return 'normal';
 }
 
+function getBossCount(layer) {
+  const cycle = Math.max(1, Math.floor(layer / 10));
+  return Math.min(Number.MAX_SAFE_INTEGER, 2 ** (cycle - 1));
+}
+
+function createBossRoster(run, world, template, bossCount) {
+  const profiles = CONTENT.worlds.flatMap((entry) =>
+    entry.boss.map((boss) => ({ ...boss, worldName: entry.name }))
+  );
+  const primary = { ...template, worldName: world.name };
+  const others = profiles.filter(
+    (profile) =>
+      profile.name !== primary.name || profile.worldName !== primary.worldName
+  );
+  const selected = [
+    primary,
+    ...shuffle(run, others).slice(0, Math.min(bossCount - 1, others.length)),
+  ];
+  const baseCount = Math.floor(bossCount / selected.length);
+  const remainder = bossCount % selected.length;
+  return selected.map((profile, index) => ({
+    ...profile,
+    count: baseCount + (index < remainder ? 1 : 0),
+  }));
+}
+
 export function createEndlessEnemy(run, layer) {
   const world = getWorldForLayer(run, layer);
   const stage = getStage(layer);
@@ -565,17 +632,52 @@ export function createEndlessEnemy(run, layer) {
   const template = pool[Math.floor(random(run) * pool.length)];
   const teamSize = Object.keys(run.members).length;
   const teamScale = 1 + Math.max(0, teamSize - 1) * 0.3;
-  const monsterCount = stage === 'normal'
-    ? 1 + Math.floor(Math.max(0, layer - 1) / 10)
-    : 1;
-  const unitMaxHp = Math.round(
-    template.hp * Math.pow(1.105, layer - 1) * teamScale
-  );
+  const bossCycle = stage === 'boss' ? Math.floor(layer / 10) : 0;
+  const monsterCount = stage === 'boss'
+    ? getBossCount(layer)
+    : stage === 'normal'
+      ? 1 + Math.floor(Math.max(0, layer - 1) / 10)
+      : 1;
+  const bossRoster = stage === 'boss'
+    ? createBossRoster(run, world, template, monsterCount)
+    : [];
+  const hpScale = Math.pow(1.105, layer - 1) * teamScale;
+  const attackScale = Math.pow(1.05, layer - 1) * teamScale;
+  const defenseScale = Math.pow(1.035, layer - 1) * teamScale;
+  const baseHp = bossRoster.length
+    ? bossRoster.reduce((sum, boss) => sum + boss.hp * boss.count, 0)
+    : template.hp * monsterCount;
+  const averageAttack = bossRoster.length
+    ? bossRoster.reduce((sum, boss) => sum + boss.attack * boss.count, 0) /
+      monsterCount
+    : template.attack;
+  const averageDefense = bossRoster.length
+    ? bossRoster.reduce((sum, boss) => sum + boss.defense * boss.count, 0) /
+      monsterCount
+    : template.defense;
+  const unitMaxHp = bossRoster.length
+    ? Math.max(1, Math.round((baseHp * hpScale) / monsterCount))
+    : Math.max(1, Math.round(template.hp * hpScale));
+  const maxHp = bossRoster.length
+    ? Math.round(baseHp * hpScale)
+    : unitMaxHp * monsterCount;
+  const mechanismCount = Math.min(BOSS_MECHANISMS.length, 2 + bossCycle);
+  const mechanisms = stage === 'boss'
+    ? [
+        '连击',
+        ...shuffle(
+          run,
+          BOSS_MECHANISMS.filter((mechanism) => mechanism !== '连击')
+        ).slice(0, mechanismCount - 1),
+      ]
+    : [];
   const enemy = {
     ...template,
     unitName: template.name,
     name: monsterCount > 1
-      ? `${template.name}·怪潮×${monsterCount}`
+      ? stage === 'boss'
+        ? `诸天Boss联军×${monsterCount}`
+        : `${template.name}·怪潮×${monsterCount}`
       : template.name,
     world: world.id,
     worldName: world.name,
@@ -583,15 +685,24 @@ export function createEndlessEnemy(run, layer) {
     monsterCount,
     unitMaxHp,
     teamScale,
-    maxHp: unitMaxHp * monsterCount,
-    attack: Math.round(
-      template.attack * Math.pow(1.05, layer - 1) * teamScale
-    ),
-    defense: Math.round(
-      template.defense * Math.pow(1.035, layer - 1) * teamScale
-    ),
+    bossCycle,
+    bossRoster: bossRoster.map(({ name, worldName, count }) => ({
+      name,
+      worldName,
+      count,
+    })),
+    mechanisms,
+    revivesLeft: mechanisms.includes('复活') ? 1 : 0,
+    cloneCount: 0,
+    maxHp,
+    attack: Math.round(averageAttack * attackScale),
+    defense: Math.round(averageDefense * defenseScale),
   };
   enemy.hp = enemy.maxHp;
+  enemy.maxShield = mechanisms.includes('护盾')
+    ? Math.round(enemy.maxHp * 0.12)
+    : 0;
+  enemy.shield = enemy.maxShield;
   return enemy;
 }
 
@@ -616,6 +727,59 @@ function addBattleAction(run, action) {
     narration: action.narration || '',
     note: action.note || '',
   });
+}
+
+function damageEnemy(enemy, amount) {
+  const incoming = Math.max(1, Math.round(asNumber(amount)));
+  const absorbed = Math.min(Math.max(0, enemy.shield || 0), incoming);
+  enemy.shield = Math.max(0, (enemy.shield || 0) - absorbed);
+  const damage = Math.min(enemy.hp, incoming - absorbed);
+  enemy.hp = Math.max(0, enemy.hp - damage);
+  return { damage, absorbed, dealt: damage + absorbed };
+}
+
+function healEnemy(run, enemy, amount, logs, skill, note = '') {
+  if (enemy.hp <= 0) return 0;
+  const before = enemy.hp;
+  enemy.hp = Math.min(enemy.maxHp, enemy.hp + Math.max(0, Math.round(amount)));
+  const healing = enemy.hp - before;
+  if (!healing) return 0;
+  addBattleAction(run, {
+    side: 'enemy',
+    kind: 'recover',
+    actor: enemy.name,
+    skill,
+    target: enemy.name,
+    healing,
+    note,
+  });
+  addBattleLog(logs, `${enemy.name}发动《${skill}》，恢复${healing}点生命。`);
+  return healing;
+}
+
+function tryBossRevive(run, enemy, logs) {
+  if (enemy.stage !== 'boss' || enemy.hp > 0 || enemy.revivesLeft <= 0)
+    return false;
+  enemy.revivesLeft--;
+  enemy.hp = Math.max(1, Math.round(enemy.maxHp * 0.22));
+  if (enemy.mechanisms.includes('护盾'))
+    enemy.shield = Math.max(enemy.shield, Math.round(enemy.maxHp * 0.06));
+  addBattleAction(run, {
+    side: 'enemy',
+    kind: 'recover',
+    actor: enemy.name,
+    skill: '不灭道印·复生',
+    target: enemy.name,
+    healing: enemy.hp,
+    absorbed: enemy.shield,
+    note: '本场战斗仅可触发一次',
+  });
+  addBattleLog(
+    logs,
+    `${enemy.name}以不灭道印重聚真身，复生至${enemy.hp}生命！`
+  );
+  if (run.__counters) run.__counters.bossRevive++;
+  return true;
 }
 
 function abilityProcs(member) {
@@ -755,6 +919,29 @@ function fusionNarrative(proc, enemy) {
 function handleLethal(run, member, logs) {
   if (member.hp > 0) return false;
   const stats = calculateMemberStats(member, run);
+  if (!member.battleTimeRewound && stats.timeRewindChance > 0) {
+    member.battleTimeRewound = true;
+    if (random(run) < stats.timeRewindChance) {
+      member.hp = Math.max(
+        1,
+        Math.round(stats.maxHp * stats.timeRewindHealPct)
+      );
+      addBattleLog(
+        logs,
+        `${member.name}体内春秋蝉振翅，光阴逆流至致命一击发生之前！`
+      );
+      addBattleAction(run, {
+        side: 'player',
+        kind: 'recover',
+        actor: member.name,
+        skill: '春秋蝉·逆流光阴',
+        target: member.name,
+        healing: member.hp,
+        note: '本场仅可触发一次',
+      });
+      return false;
+    }
+  }
   if (!member.battleRevived && stats.revivePct > 0) {
     member.battleRevived = true;
     member.hp = Math.max(1, Math.round(stats.maxHp * stats.revivePct));
@@ -838,23 +1025,26 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
   const isExecute = stats.executePct > 0 && enemy.hp / enemy.maxHp <= 0.15;
   if (isExecute) damage *= 1 + stats.executePct;
   const summonDamage = stats.attack * stats.summonPct;
-  let dealt = Math.max(1, Math.round(damage + summonDamage));
   const directDamage = Math.max(1, Math.round(damage));
-  const summonDealt = Math.max(0, dealt - directDamage);
-  enemy.hp -= dealt;
-  damageByMember[member.id] += dealt;
+  const directResult = damageEnemy(enemy, directDamage);
+  let dealt = directResult.dealt;
+  damageByMember[member.id] += directResult.dealt;
   addBattleAction(run, {
     side: 'player',
     actor: member.name,
     skill: '普通攻击',
     target: enemy.name,
-    damage: directDamage,
+    damage: directResult.damage,
+    absorbed: directResult.absorbed,
     critical: isCrit,
     execute: isExecute,
   });
-  if (summonDealt > 0)
+  if (summonDamage > 0 && enemy.hp > 0)
     {
       const assist = summonAssist(member, run);
+      const summonResult = damageEnemy(enemy, summonDamage);
+      dealt += summonResult.dealt;
+      damageByMember[member.id] += summonResult.dealt;
       addBattleAction(run, {
       side: 'player',
       kind: 'summon',
@@ -862,36 +1052,84 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
       skill: `${assist.name}·协同攻击`,
       verb: '召唤',
       target: enemy.name,
-      damage: summonDealt,
+      damage: summonResult.damage,
+      absorbed: summonResult.absorbed,
       narration: assist.detail,
       });
       addBattleLog(
         logs,
-        `${member.name}召唤${assist.name}协同攻击，${assist.detail}，造成${summonDealt}点伤害！`
+        `${member.name}召唤${assist.name}协同攻击，${assist.detail}，造成${summonResult.dealt}点伤害！`
       );
     }
   if (isCrit)
-    addBattleLog(logs, `${member.name}抓住破绽，暴击轰出${directDamage}点伤害！`);
+    addBattleLog(logs, `${member.name}抓住破绽，暴击轰出${directResult.dealt}点伤害！`);
   if (isExecute)
-    addBattleLog(logs, `${member.name}看准敌势衰微，斩杀追加至${directDamage}点伤害！`);
+    addBattleLog(logs, `${member.name}看准敌势衰微，斩杀追加至${directResult.dealt}点伤害！`);
 
-  if (random(run) < stats.extraActionChance && enemy.hp > 0) {
+  const isSilenced = round <= asNumber(member.silencedUntilRound);
+  if (isSilenced) {
+    addBattleAction(run, {
+      side: 'enemy',
+      kind: 'status',
+      actor: enemy.name,
+      skill: '大道沉寂',
+      target: member.name,
+      note: '本回合无法触发能力追击',
+    });
+    addBattleLog(logs, `${member.name}被大道沉寂压制，本回合只能以基础攻势迎战。`);
+  }
+
+  if (!isSilenced && random(run) < stats.extraActionChance && enemy.hp > 0) {
     const echoDamage = Math.max(1, Math.round(damage * 0.55));
-    enemy.hp -= echoDamage;
-    damageByMember[member.id] += echoDamage;
+    const echoResult = damageEnemy(enemy, echoDamage);
+    dealt += echoResult.dealt;
+    damageByMember[member.id] += echoResult.dealt;
     addBattleAction(run, {
       side: 'player',
       actor: member.name,
       skill: '速度残响·追击',
       verb: '留下',
       target: enemy.name,
-      damage: echoDamage,
+      damage: echoResult.damage,
+      absorbed: echoResult.absorbed,
       narration: '本体已经收势，第二条时间线中的残影却从死角补上致命一击',
     });
-    addBattleLog(logs, `${member.name}留下速度残响，追加${echoDamage}伤害。`);
+    addBattleLog(logs, `${member.name}留下速度残响，追加${echoResult.dealt}伤害。`);
   }
 
-  for (const proc of abilityProcs(member)) {
+  if (
+    !isSilenced &&
+    enemy.hp > 0 &&
+    enemy.hp / enemy.maxHp <= 0.3 &&
+    stats.riderKickChance > 0 &&
+    random(run) < stats.riderKickChance
+  ) {
+    const kickDamage = Math.max(1, Math.round(enemy.hp));
+    const brokenShield = enemy.shield || 0;
+    enemy.hp = 0;
+    enemy.shield = 0;
+    dealt += kickDamage + brokenShield;
+    damageByMember[member.id] += kickDamage + brokenShield;
+    addBattleAction(run, {
+      side: 'player',
+      actor: member.name,
+      skill: '最终骑士驾驭·Decade骑士踢',
+      verb: '发动',
+      target: enemy.name,
+      damage: kickDamage,
+      absorbed: brokenShield,
+      execute: true,
+      narration: `${member.name}刷过最终攻击驾驭卡，历代骑士之力汇聚成贯穿世界的一踢`,
+      note: '敌方生命低于30%，处决成功',
+    });
+    addBattleLog(
+      logs,
+      `${member.name}发动最终骑士驾驭·Decade骑士踢，一击终结${enemy.name}！`
+    );
+    return;
+  }
+
+  if (!isSilenced) for (const proc of abilityProcs(member)) {
     if (enemy.hp <= 0 || round % proc.everyRounds !== 0) continue;
     const variant = proc.variants?.length
       ? proc.variants[Math.floor(random(run) * proc.variants.length)]
@@ -936,33 +1174,37 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
     } else {
       narrative = procNarrative(resolved, member, enemy);
     }
-    enemy.hp -= procDamage;
-    damageByMember[member.id] += procDamage;
+    const procResult = damageEnemy(enemy, procDamage);
+    dealt += procResult.dealt;
+    damageByMember[member.id] += procResult.dealt;
     addBattleAction(run, {
       side: 'player',
       actor: member.name,
       skill,
       verb: narrative.verb,
       target: enemy.name,
-      damage: procDamage,
+      damage: procResult.damage,
+      absorbed: procResult.absorbed,
       narration: narrative.detail,
       note,
     });
     addBattleLog(
       logs,
-      `${narrative.detail}，${skill}追加${procDamage}点伤害！${note ? `（${note}）` : ''}`
+      `${narrative.detail}，${skill}追加${procResult.dealt}点伤害！${note ? `（${note}）` : ''}`
     );
     if (proc.selfDamagePct) {
+      const selfDamageRate = getProcSelfDamageRate(proc, stats);
       damageMember(
         run,
         member,
-        stats.maxHp * proc.selfDamagePct * proc.level,
+        stats.maxHp * selfDamageRate,
         logs,
         {
           side: 'system',
           kind: 'recoil',
           actor: member.name,
           skill: `${skill}反噬`,
+          note: `当前反噬率${(selfDamageRate * 100).toFixed(1)}%`,
         }
       );
     }
@@ -1005,33 +1247,44 @@ function enemyHit(run, enemy, member, multiplier, logs, skill = '普通攻击') 
   damage *= 1 - stats.damageReduction;
   if (random(run) < stats.reflectChance) {
     const reflected = Math.max(1, Math.round(damage * stats.reflectPct));
-    enemy.hp = Math.max(0, enemy.hp - reflected);
+    const reflectResult = damageEnemy(enemy, reflected);
     damage *= 0.35;
-    addBattleLog(logs, `${member.name}逆转矢量，反射${reflected}伤害！`);
+    addBattleLog(logs, `${member.name}逆转矢量，反射${reflectResult.dealt}伤害！`);
     addBattleAction(run, {
       side: 'player',
       actor: member.name,
       skill: '矢量操纵·反射',
       target: enemy.name,
-      damage: reflected,
+      damage: reflectResult.damage,
+      absorbed: reflectResult.absorbed,
     });
   }
+  const takenBefore = asNumber(run.__damageTakenByMember?.[member.id]);
   const died = damageMember(run, member, damage, logs, {
     side: 'enemy',
     actor: enemy.name,
     skill,
   });
+  const inflicted = Math.max(
+    0,
+    asNumber(run.__damageTakenByMember?.[member.id]) - takenBefore
+  );
+  if (
+    enemy.stage === 'boss' &&
+    enemy.mechanisms.includes('吸血') &&
+    inflicted > 0 &&
+    enemy.hp > 0
+  )
+    healEnemy(
+      run,
+      enemy,
+      inflicted * 0.28,
+      logs,
+      '吞天噬血',
+      `吸取本次实际伤害的28%`
+    );
   if (died && enemy.trait === '吞噬') {
-    enemy.hp = Math.min(enemy.maxHp, enemy.hp + Math.round(enemy.maxHp * 0.08));
-    addBattleLog(logs, `${enemy.name}吞噬破碎投影，恢复了部分生命。`);
-    addBattleAction(run, {
-      side: 'enemy',
-      kind: 'recover',
-      actor: enemy.name,
-      skill: '吞噬投影',
-      target: enemy.name,
-      healing: Math.round(enemy.maxHp * 0.08),
-    });
+    healEnemy(run, enemy, enemy.maxHp * 0.08, logs, '吞噬投影');
   }
 }
 
@@ -1043,9 +1296,120 @@ function enemyAreaHit(run, enemy, multiplier, logs, skill) {
   }
 }
 
+function triggerBossMechanisms(run, enemy, round, logs) {
+  if (enemy.stage !== 'boss' || enemy.hp <= 0) return;
+  const has = (mechanism) => enemy.mechanisms.includes(mechanism);
+  const living = () =>
+    Object.values(run.members).filter((member) => member.alive);
+
+  if (
+    has('分身') &&
+    !enemy.cloneCount &&
+    enemy.hp / enemy.maxHp <= 0.65
+  ) {
+    enemy.cloneCount = Math.min(3, Math.max(1, enemy.bossCycle));
+    addBattleAction(run, {
+      side: 'enemy',
+      kind: 'status',
+      actor: enemy.name,
+      skill: '万象分身',
+      target: enemy.name,
+      note: `化出${enemy.cloneCount}尊战斗分身`,
+    });
+    addBattleLog(logs, `${enemy.name}一气化出${enemy.cloneCount}尊分身，围杀全场！`);
+  }
+
+  if (has('回血') && round % 4 === 0)
+    healEnemy(run, enemy, enemy.maxHp * 0.05, logs, '万劫回春');
+
+  if (has('护盾') && round % 5 === 0 && enemy.hp > 0) {
+    const before = enemy.shield;
+    enemy.shield = Math.min(
+      enemy.maxShield,
+      enemy.shield + Math.round(enemy.maxHp * 0.08)
+    );
+    const gained = enemy.shield - before;
+    if (gained > 0) {
+      addBattleAction(run, {
+        side: 'enemy',
+        kind: 'shield',
+        actor: enemy.name,
+        skill: '诸天庇护',
+        target: enemy.name,
+        absorbed: gained,
+        note: `当前护盾${enemy.shield}`,
+      });
+      addBattleLog(logs, `${enemy.name}引动诸天庇护，重聚${gained}点护盾。`);
+    }
+  }
+
+  if (has('沉默') && round % 4 === 0) {
+    const alive = living();
+    if (alive.length) {
+      const target = alive[Math.floor(random(run) * alive.length)];
+      target.silencedUntilRound = Math.max(
+        asNumber(target.silencedUntilRound),
+        round + 1
+      );
+      addBattleAction(run, {
+        side: 'enemy',
+        kind: 'status',
+        actor: enemy.name,
+        skill: '大道沉寂',
+        target: target.name,
+        note: '下回合无法触发能力追击',
+      });
+      addBattleLog(logs, `${enemy.name}施展大道沉寂，封禁${target.name}的能力追击！`);
+    }
+  }
+
+  if (has('破盾') && round % 3 === 0 && enemy.hp > 0) {
+    const target = [...living()].sort((a, b) => b.shield - a.shield)[0];
+    if (target) {
+      const broken = target.shield;
+      target.shield = 0;
+      addBattleAction(run, {
+        side: 'enemy',
+        kind: 'status',
+        actor: enemy.name,
+        skill: '破界碎盾',
+        target: target.name,
+        absorbed: broken,
+        note: broken ? `粉碎${broken}点护盾` : '无视护盾直击本体',
+      });
+      enemyHit(run, enemy, target, 1.28, logs, '破界碎盾');
+    }
+  }
+
+  if (has('斩杀') && round % 5 === 0 && enemy.hp > 0) {
+    const target = [...living()].sort(
+      (a, b) => a.hp / Math.max(1, a.maxHp) - b.hp / Math.max(1, b.maxHp)
+    )[0];
+    if (target) {
+      const execute = target.hp / Math.max(1, target.maxHp) <= 0.25;
+      addBattleLog(
+        logs,
+        `${enemy.name}引落天命斩杀，${execute ? '欲断绝生机' : '重创'}${target.name}！`
+      );
+      if (execute)
+        damageMember(run, target, target.hp + target.shield + 1, logs, {
+          side: 'enemy',
+          actor: enemy.name,
+          skill: '天命斩杀',
+          note: '生命低于25%，触发处决',
+        });
+      else enemyHit(run, enemy, target, 1.6, logs, '天命斩杀');
+    }
+  }
+}
+
 function triggerEnemyMechanic(run, enemy, round, logs) {
   const alive = Object.values(run.members).filter((member) => member.alive);
   if (!alive.length || enemy.hp <= 0) return false;
+
+  triggerBossMechanisms(run, enemy, round, logs);
+  if (enemy.hp <= 0 || !Object.values(run.members).some(member => member.alive))
+    return true;
 
   if (enemy.stage === 'boss' && round % 5 === 0) {
     const target = [...alive].sort(
@@ -1189,6 +1553,45 @@ function monsterPackFollowUp(run, enemy, logs) {
   }
 }
 
+function bossPackFollowUp(run, enemy, logs) {
+  if (enemy.stage !== 'boss' || enemy.hp <= 0) return;
+  const activeBosses = Math.min(
+    enemy.monsterCount,
+    Math.max(1, Math.ceil(enemy.hp / Math.max(1, enemy.unitMaxHp)))
+  );
+  const strikeMany = (count, multiplier, label) => {
+    const strikes = Math.min(count, 8);
+    for (let index = 0; index < strikes; index++) {
+      const alive = Object.values(run.members).filter(member => member.alive);
+      if (!alive.length || enemy.hp <= 0) break;
+      const overflow = index === strikes - 1 && count > strikes
+        ? count - strikes + 1
+        : 1;
+      enemyHit(
+        run,
+        enemy,
+        alive[Math.floor(random(run) * alive.length)],
+        multiplier * overflow,
+        logs,
+        overflow > 1
+          ? `${label}·${overflow}重合一`
+          : `${label}·第${index + 1}击`
+      );
+    }
+  };
+
+  if (activeBosses > 1) {
+    addBattleLog(logs, `尚有${activeBosses}尊Boss屹立战场，诸王联手镇压全队！`);
+    strikeMany(activeBosses - 1, 0.62, '诸王联击');
+  }
+  if (enemy.mechanisms.includes('连击')) {
+    const comboHits = Math.min(3, 1 + Math.floor(enemy.bossCycle / 3));
+    strikeMany(comboHits, 0.56, 'Boss连击');
+  }
+  if (enemy.cloneCount > 0)
+    strikeMany(enemy.cloneCount, 0.42, '万象分身');
+}
+
 function enemyTurn(run, enemy, round, logs) {
   const alive = Object.values(run.members).filter((member) => member.alive);
   if (!alive.length || enemy.hp <= 0) return;
@@ -1197,6 +1600,7 @@ function enemyTurn(run, enemy, round, logs) {
     enemyHit(run, enemy, target, 1, logs, '普通攻击');
   }
   monsterPackFollowUp(run, enemy, logs);
+  bossPackFollowUp(run, enemy, logs);
 }
 
 function endRound(run, enemy, logs) {
@@ -1215,7 +1619,11 @@ function endRound(run, enemy, logs) {
   for (const member of Object.values(run.members)) {
     if (!member.alive) continue;
     const stats = calculateMemberStats(member, run);
-    const healingPenalty = enemy.trait === '禁疗' ? 0.5 : 1;
+    const healingPenalty = enemy.mechanisms?.includes('禁疗')
+      ? 0.35
+      : enemy.trait === '禁疗'
+        ? 0.5
+        : 1;
     const before = member.hp;
     member.hp = Math.min(
       stats.maxHp,
@@ -1240,6 +1648,8 @@ function prepareBattle(run) {
   for (const member of Object.values(run.members)) {
     member.battleRage = 0;
     member.battleRevived = false;
+    member.battleTimeRewound = false;
+    delete member.silencedUntilRound;
     const stats = calculateMemberStats(member, run);
     member.maxHp = stats.maxHp;
     member.hp = clamp(member.hp, 0, stats.maxHp);
@@ -1366,6 +1776,8 @@ function finishVictory(run, enemy, layer) {
     member.growthAttackPct += stats.onWinAttackPct;
     delete member.battleRage;
     delete member.battleRevived;
+    delete member.battleTimeRewound;
+    delete member.silencedUntilRound;
     delete member.shield;
   }
 
@@ -1411,18 +1823,19 @@ function applyFusionProc(run, enemy, round, logs, damageByMember) {
   for (const proc of fusionProcs(run)) {
     if (round % proc.everyRounds !== 0 || enemy.hp <= 0) continue;
     const damage = Math.max(1, Math.round(teamAttack * proc.damagePct));
-    enemy.hp = Math.max(0, enemy.hp - damage);
-    damageByMember._fusion += damage;
+    const result = damageEnemy(enemy, damage);
+    damageByMember._fusion += result.dealt;
     if (run.__counters) run.__counters.fusionHits++;
     const narration = fusionNarrative(proc, enemy);
-    addBattleLog(logs, `${narration}，轰出${damage}点伤害！`);
+    addBattleLog(logs, `${narration}，轰出${result.dealt}点伤害！`);
     addBattleAction(run, {
       side: 'team',
       actor: '全队共鸣',
       skill: proc.label,
       verb: proc.verb || '凝聚',
       target: enemy.name,
-      damage,
+      damage: result.damage,
+      absorbed: result.absorbed,
       narration,
     });
     if (proc.selfDamagePct) {
@@ -1455,6 +1868,7 @@ export function resolveEndlessLayer(run) {
     fusionHits: 0,
     revive: 0,
     lifeFireUsed: 0,
+    bossRevive: 0,
   };
   prepareBattle(run);
   run.__damageTakenByMember = damageTakenByMember;
@@ -1465,6 +1879,17 @@ export function resolveEndlessLayer(run) {
       (enemy.teamScale - 1) * 100
     )}%）。`
   );
+  if (enemy.stage === 'boss') {
+    addBattleLog(
+      logs,
+      `Boss阵容：${enemy.bossRoster
+        .map(boss => `${boss.name}×${boss.count}`)
+        .join('、')}。`
+    );
+    addBattleLog(logs, `Boss机制：${enemy.mechanisms.join('·')}。`);
+    if (enemy.shield > 0)
+      addBattleLog(logs, `诸天庇护展开，Boss获得${enemy.shield}点初始护盾。`);
+  }
 
   let rounds = 0;
   const roundDetails = [];
@@ -1473,6 +1898,7 @@ export function resolveEndlessLayer(run) {
     run.__roundActions = [];
     const logStart = logs.length;
     const enemyHpBefore = enemy.hp;
+    const enemyShieldBefore = enemy.shield;
     const damageBefore = { ...damageByMember };
     const takenBefore = Object.values(damageTakenByMember).reduce(
       (sum, value) => sum + value,
@@ -1480,11 +1906,13 @@ export function resolveEndlessLayer(run) {
     );
     for (const member of Object.values(run.members)) {
       playerAttack(run, member, enemy, round, logs, damageByMember);
-      if (enemy.hp <= 0) break;
+      if (enemy.hp <= 0 && !tryBossRevive(run, enemy, logs)) break;
     }
     if (enemy.hp > 0)
       applyFusionProc(run, enemy, round, logs, damageByMember);
+    if (enemy.hp <= 0) tryBossRevive(run, enemy, logs);
     if (enemy.hp > 0) enemyTurn(run, enemy, round, logs);
+    if (enemy.hp <= 0) tryBossRevive(run, enemy, logs);
     if (
       enemy.hp > 0 &&
       Object.values(run.members).some((member) => member.alive)
@@ -1520,9 +1948,13 @@ export function resolveEndlessLayer(run) {
         0,
         damageByMember._fusion - damageBefore._fusion
       ),
-      enemyDamage: Math.max(0, enemyHpBefore - enemy.hp),
+      enemyDamage: Math.max(
+        0,
+        enemyHpBefore + enemyShieldBefore - enemy.hp - enemy.shield
+      ),
       teamDamageTaken: Math.max(0, takenAfter - takenBefore),
       enemyHp: Math.max(0, enemy.hp),
+      enemyShield: Math.max(0, enemy.shield),
       enemyHpPct: Math.round(
         (Math.max(0, enemy.hp) / Math.max(1, enemy.maxHp)) * 100
       ),
@@ -1554,6 +1986,8 @@ export function resolveEndlessLayer(run) {
     for (const member of Object.values(run.members)) {
       member.alive = false;
       member.hp = 0;
+      delete member.silencedUntilRound;
+      delete member.shield;
     }
     run.phase = 'defeated';
     run.pendingChoices = {};
@@ -1588,6 +2022,7 @@ export function resolveEndlessLayer(run) {
     fusionHits: counters.fusionHits,
     revive: counters.revive,
     lifeFireUsed: counters.lifeFireUsed,
+    bossRevive: counters.bossRevive,
     analysis: analysis || null,
   };
 
@@ -1596,7 +2031,10 @@ export function resolveEndlessLayer(run) {
     stage: enemy.stage,
     world: enemy.worldName,
     enemy: enemy.name,
-    trait: enemy.trait,
+    trait: [enemy.trait, ...enemy.mechanisms].filter(Boolean).join(' / '),
+    baseTrait: enemy.trait,
+    mechanisms: enemy.mechanisms,
+    bossRoster: enemy.bossRoster,
     enemyCount: enemy.monsterCount,
     enemyUnitMaxHp: enemy.unitMaxHp,
     enemyTeamScale: enemy.teamScale,
@@ -1604,6 +2042,8 @@ export function resolveEndlessLayer(run) {
     rounds,
     enemyRemainingHp: enemy.hp,
     enemyMaxHp: enemy.maxHp,
+    enemyRemainingShield: enemy.shield,
+    enemyMaxShield: enemy.maxShield,
     damageByMember,
     damageTakenByMember,
     roundDetails,

@@ -5,10 +5,12 @@ import {
   createEndlessEnemy,
   createEndlessRun,
   detectFusions,
+  getEndlessAbilitySelfDamageRate,
   getEndlessContent,
   getEndlessLayerCurrencyReward,
   getEndlessSweepReward,
   getCheckpointBoon,
+  getMemberStats,
   getSettlement,
   getWorldForLayer,
   resolveEndlessLayer,
@@ -52,9 +54,9 @@ function chooseFirstForEveryone(run) {
 
 const content = getEndlessContent();
 assert.equal(content.worlds.length, 6);
-assert.equal(content.abilities.length, 29);
+assert.equal(content.abilities.length, 33);
 assert.equal(content.fusions.length, 10);
-assert.equal(content.checkpointBoons.length, 18);
+assert.equal(content.checkpointBoons.length, 19);
 assert.equal(
   new Set(content.checkpointBoons.map(boon => boon.id)).size,
   content.checkpointBoons.length
@@ -72,6 +74,10 @@ for (const id of [
   'anime_ultra_instinct',
   'anime_void_tears',
   'anime_pure_yang_flame',
+  'neutral_ghost_eye',
+  'neutral_spring_autumn_cicada',
+  'zhetian_six_paths_reincarnation_fist',
+  'anime_decade_driver',
 ]) {
   assert.ok(content.abilities.some((ability) => ability.id === id));
 }
@@ -101,9 +107,12 @@ for (const name of [
   '无量空处',
   '逆天七魔刀',
   '生死意境',
+  '一气化三清',
+  '天帝拳',
 ]) {
   assert.ok(content.checkpointBoons.some(boon => boon.name === name));
 }
+assert.ok(!content.abilities.some((ability) => ability.name === '天帝拳'));
 
 const soloScaleRun = createOnePlayerRun(314159);
 const teamScaleRun = createTwoPlayerRun(314159);
@@ -126,6 +135,86 @@ for (const [layer, expectedCount] of [[11, 2], [21, 3]]) {
   assert.equal(wave.monsterCount, expectedCount);
   assert.equal(wave.maxHp, wave.unitMaxHp * expectedCount);
 }
+
+for (const [layer, expectedCount] of [[10, 1], [20, 2], [30, 4], [40, 8]]) {
+  const boss = createEndlessEnemy(createOnePlayerRun(20260804), layer);
+  assert.equal(boss.stage, 'boss');
+  assert.equal(boss.monsterCount, expectedCount);
+  assert.equal(
+    boss.bossRoster.reduce((sum, entry) => sum + entry.count, 0),
+    expectedCount
+  );
+  assert.ok(boss.mechanisms.includes('连击'));
+  if (expectedCount > 1) assert.ok(boss.bossRoster.length > 1);
+}
+
+const calamityBoss = createEndlessEnemy(createOnePlayerRun(100100), 100);
+assert.deepEqual(
+  new Set(calamityBoss.mechanisms),
+  new Set(['回血', '复活', '禁疗', '破盾', '斩杀', '连击', '分身', '吸血', '沉默', '护盾'])
+);
+assert.equal(calamityBoss.monsterCount, 512);
+assert.ok(calamityBoss.maxShield > 0);
+
+const bossPackRun = createOnePlayerRun(88220);
+chooseFirstForEveryone(bossPackRun);
+bossPackRun.layer = 19;
+bossPackRun.members['10001'].base.attack = 1;
+bossPackRun.members['10001'].base.hp = 1_000_000_000;
+bossPackRun.members['10001'].base.defense = 1_000_000_000;
+const bossPackBattle = resolveEndlessLayer(bossPackRun);
+const bossPackActions = bossPackBattle.roundDetails.flatMap(
+  round => round.actions
+);
+assert.equal(bossPackBattle.enemyCount, 2);
+assert.ok(bossPackActions.some(action => action.skill.startsWith('诸王联击')));
+assert.ok(bossPackActions.some(action => action.skill.startsWith('Boss连击')));
+
+const fullMechanicRun = createOnePlayerRun(66100);
+chooseFirstForEveryone(fullMechanicRun);
+fullMechanicRun.layer = 99;
+fullMechanicRun.members['10001'].abilities = {
+  zhetian_healer_secret: 1,
+  saintking_pure_land: 1,
+};
+const fullMechanicProbe = createEndlessEnemy(
+  structuredClone(fullMechanicRun),
+  100
+);
+fullMechanicRun.members['10001'].base.attack = fullMechanicProbe.maxHp * 0.2;
+fullMechanicRun.members['10001'].base.hp = 1e20;
+fullMechanicRun.members['10001'].base.defense = 0;
+const fullMechanicBattle = resolveEndlessLayer(fullMechanicRun);
+const fullMechanicActions = fullMechanicBattle.roundDetails.flatMap(
+  round => round.actions
+);
+assert.equal(fullMechanicBattle.victory, true);
+assert.equal(fullMechanicBattle.summary.bossRevive, 1);
+assert.ok(
+  fullMechanicActions.some(
+    action => action.side === 'player' && action.absorbed > 0
+  )
+);
+assert.ok(
+  fullMechanicActions.some(action => action.skill === '不灭道印·复生')
+);
+for (const skill of [
+  '万劫回春',
+  '破界碎盾',
+  '天命斩杀',
+  'Boss连击·第1击',
+  '万象分身',
+  '吞天噬血',
+  '大道沉寂',
+  '诸天庇护',
+]) {
+  assert.ok(fullMechanicActions.some(action => action.skill === skill), skill);
+}
+assert.ok(
+  fullMechanicActions.some(
+    action => action.skill === '者字秘·回天' && /禁疗/.test(action.note)
+  )
+);
 
 const packCombatRun = createOnePlayerRun(808080);
 chooseFirstForEveryone(packCombatRun);
@@ -168,6 +257,83 @@ assert.throws(
 progressionRun.members['10001'].abilities.anime_one_cut_shura = 2;
 const advancement = applyEndlessChoice(progressionRun, '10001', 1);
 assert.equal(advancement.ability.name, '一刀罗刹');
+
+const recoilRun = createTwoPlayerRun(224466);
+const recoilMember = recoilRun.members['10001'];
+recoilMember.abilities = { anime_one_cut_shura: 1 };
+assert.equal(
+  getEndlessAbilitySelfDamageRate(
+    recoilRun,
+    recoilMember.id,
+    'anime_one_cut_shura'
+  ),
+  0.07
+);
+recoilMember.abilities.anime_one_cut_shura = 2;
+assert.ok(
+  Math.abs(
+    getEndlessAbilitySelfDamageRate(
+      recoilRun,
+      recoilMember.id,
+      'anime_one_cut_shura'
+    ) - 0.055
+  ) < 1e-10
+);
+recoilMember.abilities.anime_one_cut_shura = 3;
+assert.ok(
+  Math.abs(
+    getEndlessAbilitySelfDamageRate(
+      recoilRun,
+      recoilMember.id,
+      'anime_one_cut_shura'
+    ) - 0.04
+  ) < 1e-10
+);
+recoilMember.abilities.anime_one_cut_rakshasa = 3;
+assert.ok(
+  Math.abs(
+    getEndlessAbilitySelfDamageRate(
+      recoilRun,
+      recoilMember.id,
+      'anime_one_cut_rakshasa'
+    ) - 0.04
+  ) < 1e-10
+);
+recoilMember.abilities.anime_ultra_instinct = 1;
+recoilRun.fusions = detectFusions(recoilRun);
+assert.ok(recoilRun.fusions.includes('fusion_rakshasa_instinct'));
+assert.ok(
+  Math.abs(
+    getEndlessAbilitySelfDamageRate(
+      recoilRun,
+      recoilMember.id,
+      'anime_one_cut_rakshasa'
+    ) - 0.014
+  ) < 1e-10
+);
+
+const newAbilityStatsRun = createOnePlayerRun(357911);
+newAbilityStatsRun.members['10001'].abilities = {
+  neutral_spring_autumn_cicada: 3,
+  anime_decade_driver: 3,
+};
+const newAbilityStats = getMemberStats(newAbilityStatsRun, '10001');
+assert.ok(Math.abs(newAbilityStats.timeRewindChance - 0.36) < 1e-10);
+assert.ok(Math.abs(newAbilityStats.timeRewindHealPct - 0.45) < 1e-10);
+assert.ok(Math.abs(newAbilityStats.riderKickChance - 0.24) < 1e-10);
+
+const recoilLogRun = createOnePlayerRun(998877);
+chooseFirstForEveryone(recoilLogRun);
+recoilLogRun.members['10001'].abilities = { anime_one_cut_shura: 3 };
+recoilLogRun.members['10001'].base.attack = 1;
+recoilLogRun.members['10001'].base.hp = 1_000_000;
+recoilLogRun.members['10001'].base.defense = 1_000_000;
+const recoilLogBattle = resolveEndlessLayer(recoilLogRun);
+const recoilAction = recoilLogBattle.roundDetails
+  .flatMap((round) => round.actions)
+  .find((action) => action.skill === '一刀修罗反噬');
+assert.equal(recoilAction?.damage, 40_000);
+assert.equal(recoilAction?.note, '当前反噬率4.0%');
 
 const run = createTwoPlayerRun();
 assert.equal(run.phase, 'choice');
@@ -277,9 +443,49 @@ const fruitAction = fruitBattle.roundDetails
 assert.ok(fruitAction?.damage > 0);
 assert.ok(fruitAction.narration);
 
+let rewindAction = null;
+for (let seed = 1; seed <= 50 && !rewindAction; seed++) {
+  const rewindRun = createOnePlayerRun(seed);
+  chooseFirstForEveryone(rewindRun);
+  rewindRun.members['10001'].abilities = {
+    neutral_spring_autumn_cicada: 3,
+  };
+  rewindRun.members['10001'].base.attack = 1;
+  rewindRun.members['10001'].base.hp = 50;
+  rewindRun.members['10001'].base.defense = 0;
+  const rewindBattle = resolveEndlessLayer(rewindRun);
+  rewindAction = rewindBattle.roundDetails
+    .flatMap((round) => round.actions)
+    .find((action) => action.skill === '春秋蝉·逆流光阴');
+}
+assert.ok(rewindAction?.healing > 0);
+assert.match(rewindAction.note, /仅可触发一次/);
+
+let riderKickAction = null;
+for (let seed = 1; seed <= 80 && !riderKickAction; seed++) {
+  const decadeRun = createOnePlayerRun(seed);
+  chooseFirstForEveryone(decadeRun);
+  decadeRun.members['10001'].abilities = { anime_decade_driver: 3 };
+  decadeRun.members['10001'].base.attack = 20;
+  decadeRun.members['10001'].base.hp = 1_000_000_000;
+  decadeRun.members['10001'].base.defense = 1_000_000_000;
+  const decadeBattle = resolveEndlessLayer(decadeRun);
+  riderKickAction = decadeBattle.roundDetails
+    .flatMap((round) => round.actions)
+    .find(
+      (action) => action.skill === '最终骑士驾驭·Decade骑士踢'
+    );
+}
+assert.equal(riderKickAction?.execute, true);
+assert.match(riderKickAction.note, /低于30%.*处决成功/);
+
 const boonBattleRun = createTwoPlayerRun(99001);
 chooseFirstForEveryone(boonBattleRun);
 boonBattleRun.members['10001'].blessings = ['relic_ruyi_staff'];
+boonBattleRun.members['10002'].blessings = [
+  'art_three_pure_ones',
+  'art_heavenly_emperor_fist',
+];
 for (const member of Object.values(boonBattleRun.members)) {
   member.base.attack = 1;
   member.base.hp = 10_000_000;
@@ -291,6 +497,15 @@ const boonAction = boonBattle.roundDetails
   .find(action => action.skill === '定海一棒');
 assert.ok(boonAction?.damage > 0);
 assert.match(boonAction.narration, /金箍棒.*定海神珍/);
+const threePureOnesAction = boonBattle.roundDetails
+  .flatMap((round) => round.actions)
+  .find((action) => action.skill === '一气化三清·三大道身');
+assert.ok(threePureOnesAction?.damage > 0);
+const heavenlyEmperorFistAction = boonBattle.roundDetails
+  .flatMap((round) => round.actions)
+  .find((action) => action.skill === '天帝拳·镇压万古');
+assert.ok(heavenlyEmperorFistAction?.damage > 0);
+assert.match(heavenlyEmperorFistAction.narration, /诸天万道.*古今/);
 
 const checkpointRun = createTwoPlayerRun(44010);
 chooseFirstForEveryone(checkpointRun);
