@@ -330,6 +330,47 @@ export function applyInitialMinggeEffects(player, mingge, obtainedAt = Date.now(
   return player;
 }
 
+/**
+ * 回滚某条命格在「获得时」一次性结算的字段（速度/仙道潜力/生命本源/寿元/幸运/心神）。
+ * 与 applyInitialMinggeEffects 完全对称，仅做减法，不掉用 stored 赋值。
+ * 用于重抽命格时先减回旧值，再叠加新值，避免速度等属性只增不减地累加。
+ * @param {object} effects 命格配置里的 effects 对象（含 速度 / 仙道潜力额外 等字段）
+ */
+export function rollbackInitialMinggeEffects(player, effects) {
+  const e = effects || {};
+  player.仙道潜力 = Math.max(0, (Number(player.仙道潜力) || 0) - (Number(e.仙道潜力额外) || 0));
+  player.生命本源 = Math.max(1, (Number(player.生命本源) || 0) - (Number(e.生命本源额外) || 0));
+  player.寿元 = Math.max(1, (Number(player.寿元) || 0) - (Number(e.寿元额外) || 0));
+  player.速度 = Math.max(1, (Number(player.速度) || 0) - (Number(e.速度) || 0));
+  player.幸运 = (Number(player.幸运) || 0) - (Number(e.幸运值) || 0) / 100;
+  const spiritHeartGain = Math.max(0, Math.trunc(Number(e.心神额外上限) || 0));
+  player.心神额外上限 = Math.max(0, (Number(player.心神额外上限) || 0) - spiritHeartGain);
+  if (spiritHeartGain && Number.isFinite(Number(player.心神))) {
+    player.心神 = Math.max(0, Number(player.心神) - spiritHeartGain);
+  }
+  return player;
+}
+
+/**
+ * 应用某条命格在「获得时」一次性结算的字段，逻辑与 applyInitialMinggeEffects 内部一致，
+ * 但去掉 alreadyApplied 守卫、不赋值 player.命格，专供重抽「减旧加新」复用。
+ * @param {object} effects 命格配置里的 effects 对象
+ */
+export function applyInitialMinggeEffectsRaw(player, effects) {
+  const e = effects || {};
+  player.仙道潜力 = Math.max(0, (Number(player.仙道潜力) || 0) + (Number(e.仙道潜力额外) || 0));
+  player.生命本源 = Math.max(1, (Number(player.生命本源) || 0) + (Number(e.生命本源额外) || 0));
+  player.寿元 = Math.max(1, (Number(player.寿元) || 0) + (Number(e.寿元额外) || 0));
+  player.速度 = Math.max(1, (Number(player.速度) || 0) + (Number(e.速度) || 0));
+  player.幸运 = (Number(player.幸运) || 0) + (Number(e.幸运值) || 0) / 100;
+  const spiritHeartGain = Math.max(0, Math.trunc(Number(e.心神额外上限) || 0));
+  player.心神额外上限 = Math.max(0, (Number(player.心神额外上限) || 0) + spiritHeartGain);
+  if (spiritHeartGain && Number.isFinite(Number(player.心神))) {
+    player.心神 = Math.max(0, Number(player.心神) + spiritHeartGain);
+  }
+  return player;
+}
+
 function safeRate(value) {
   return Math.max(Number(value) || 0, -0.95);
 }
