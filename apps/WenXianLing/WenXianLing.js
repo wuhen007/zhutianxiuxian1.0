@@ -75,7 +75,7 @@ const BONUS_REWARDS = {
         name: '初入仙途',
         desc: '踏上问仙之路的第一步',
         rewards: [
-            { kind: '丹药', name: '大衍悟道丹', count: 15, label: '大衍悟道丹x15' },
+            { kind: '丹药', name: '大衍悟道丹', count: 5, label: '大衍悟道丹x5' },
             { kind: '仙道潜力', value: 20, label: '仙道潜力+20' },
             { kind: '丹药', name: '定神丹', count: 1, label: '定神丹x1' },
         ],
@@ -92,6 +92,7 @@ const BONUS_REWARDS = {
         name: '灵台澄澈',
         desc: '问仙之路愈行愈明',
         rewards: [
+            { kind: '丹药', name: '大衍悟道丹', count: 5, label: '大衍悟道丹x5' },
             { kind: '盒子', name: '超越宝盒', count: 1, label: '超越宝盒x1' },
             { kind: '仙道潜力', value: 30, label: '仙道潜力+30' },
         ],
