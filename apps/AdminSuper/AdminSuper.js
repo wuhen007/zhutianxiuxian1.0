@@ -16,6 +16,11 @@ import {
   channel
 } from '../../model/xiuxian.js';
 import { Read_player, __PATH } from '../../model/xiuxian.js';
+import {
+  ensureWenXianState,
+  activateWenXianLing,
+  WENXIAN_DAILY_TASK_TARGET,
+} from '../../model/wenxianling.js';
 import { deletePlayerDataBundle } from './playerDeletion.js';
 export class AdminSuper extends plugin {
   constructor() {
@@ -104,6 +109,14 @@ export class AdminSuper extends plugin {
 {
     reg: '^#发拉新奖励([1-4]).*$',
     fnc: 'sendInvitationReward'
+},
+{
+    reg: '^#重置每日任务.*$',
+    fnc: 'resetDailyTaskCD'
+},
+{
+    reg: '^#开启问仙令.*$',
+    fnc: 'openWenXianLing'
 }
       ],
     });
@@ -1454,6 +1467,152 @@ async relieveFashanAction(e) {
     ]);
 
     return true;
+  }
+
+  /**
+   * 重置目标玩家每日任务接取CD
+   * 用法: #重置每日任务@用户
+   */
+  async resetDailyTaskCD(e) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
+      return false;
+    }
+
+    // 解析目标QQ号：支持 @用户 和 纯数字
+    let targetQQ = '';
+    if (e.message && Array.isArray(e.message)) {
+      const atMsg = e.message.find(item => item.type === 'at');
+      if (atMsg && atMsg.qq) {
+        targetQQ = atMsg.qq.toString().replace('qg_', '');
+      }
+    }
+    if (!targetQQ && e.msg) {
+      const cqAtMatch = e.msg.match(/\[CQ:at,qq=(\d+)\]/);
+      if (cqAtMatch) targetQQ = cqAtMatch[1];
+    }
+    if (!targetQQ && e.msg) {
+      const atMatch = e.msg.match(/@(\d+)/);
+      if (atMatch) targetQQ = atMatch[1];
+    }
+    if (!targetQQ && e.msg) {
+      const qqMatch = e.msg.match(/(\d{5,})/);
+      if (qqMatch) targetQQ = qqMatch[1];
+    }
+
+    if (!targetQQ) {
+      return e.reply('请指定要重置每日任务CD的目标，格式：#重置每日任务@用户');
+    }
+
+    targetQQ = await channel(targetQQ);
+
+    if (!await existplayer(targetQQ)) {
+      return e.reply('目标玩家不存在于诸天万界中');
+    }
+
+    // 清除每日任务接取CD
+    const cdKey = `xiuxian:player:${targetQQ}:last_renwu_time`;
+    const lastTime = await redis.get(cdKey);
+    await redis.del(cdKey);
+
+    // 同时清除灵石记录键，接取时会重新写入
+    await redis.del(`xiuxian:player:${targetQQ}:renwu_lingshi_jilu`);
+
+    const player = await Read_player(targetQQ);
+    const playerName = player.名号 || targetQQ;
+
+    if (lastTime) {
+      e.reply(`已重置「${playerName}」的每日任务接取CD，现在可以重新接取每日任务了。`);
+    } else {
+      e.reply(`「${playerName}」当前没有每日任务CD记录，无需重置。`);
+    }
+    return true;
+  }
+
+  /**
+   * 强制为目标玩家开启问仙令
+   * 用法: #开启问仙令@用户
+   * 跳过线索获取和四道试炼，直接激活问仙令
+   */
+  async openWenXianLing(e) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
+      return false;
+    }
+
+    // 解析目标QQ号：支持 @用户 和 纯数字
+    let targetQQ = '';
+    if (e.message && Array.isArray(e.message)) {
+      const atMsg = e.message.find(item => item.type === 'at');
+      if (atMsg && atMsg.qq) {
+        targetQQ = atMsg.qq.toString().replace('qg_', '');
+      }
+    }
+    if (!targetQQ && e.msg) {
+      const cqAtMatch = e.msg.match(/\[CQ:at,qq=(\d+)\]/);
+      if (cqAtMatch) targetQQ = cqAtMatch[1];
+    }
+    if (!targetQQ && e.msg) {
+      const atMatch = e.msg.match(/@(\d+)/);
+      if (atMatch) targetQQ = atMatch[1];
+    }
+    if (!targetQQ && e.msg) {
+      const qqMatch = e.msg.match(/(\d{5,})/);
+      if (qqMatch) targetQQ = qqMatch[1];
+    }
+
+    if (!targetQQ) {
+      return e.reply('请指定要开启问仙令的目标，格式：#开启问仙令@用户');
+    }
+
+    targetQQ = await channel(targetQQ);
+
+    if (!await existplayer(targetQQ)) {
+      return e.reply('目标玩家不存在于诸天万界中');
+    }
+
+    const player = await Read_player(targetQQ);
+    const state = ensureWenXianState(player);
+
+    if (state.unlocked) {
+      return e.reply(`「${player.名号 || targetQQ}」的问仙令已经激活，无需重复开启。`);
+    }
+
+    // 强制补全前置条件：线索 + 四道试炼
+    if (!state.clue) {
+      state.clue = {
+        source: '管理员赐予',
+        acquiredAt: Date.now(),
+        plane: '凡间',
+        location: '未知',
+        coordinate: '未知',
+      };
+    }
+    state.trial.dailyTasks = WENXIAN_DAILY_TASK_TARGET;
+    state.trial.innerWorldOpened = true;
+    state.trial.tianjiaoDefeated = true;
+    state.trial.clueExplored = true;
+
+    // 激活问仙令（转化积攒的道痕）
+    const result = activateWenXianLing(player);
+    if (!result.ok) {
+      return e.reply(`问仙令激活失败：${result.reason || '未知原因'}`);
+    }
+
+    await Write_player(targetQQ, player);
+
+    const playerName = player.名号 || targetQQ;
+    return e.reply([
+      `【问仙令·管理员强制开启】`,
+      `已为「${playerName}」强制开启问仙令。`,
+      `问仙道痕转化：${result.pendingExp}点`,
+      `当前问仙令等级：${result.newLevel}级`,
+      `该玩家可发送 #问仙令 查看传承奖励。`,
+    ].join('\n'));
   }
 }
 async function found(A, B) {
