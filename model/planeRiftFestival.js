@@ -23,6 +23,10 @@ export const RIFT_EXCHANGES = Object.freeze({
   无尽秘钥配方: Object.freeze({cost: 100,name: '无尽秘钥配方',class: '道具',amount: 1,}),
 });
 
+export function parseRiftExchangeName(message) {
+  return String(message || '').replace(/^#界源兑换/, '').replace(/\s+/g, '');
+}
+
 const MODEL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = path.join(MODEL_DIR, '..', 'resources', 'data', 'plane_rift_festival.json');
 

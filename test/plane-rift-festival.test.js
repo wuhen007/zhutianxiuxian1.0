@@ -10,11 +10,18 @@ import {
   getDefaultRiftState,
   getRiftRefreshChance,
   openRiftManually,
+  parseRiftExchangeName,
   RIFT_EXCHANGES,
   rollPeriodicRifts,
   updateFestivalSign,
   withdrawRift,
 } from '../model/planeRiftFestival.js';
+
+test('界源兑换兼容紧邻参数与QQBot词内空格', () => {
+  assert.equal(parseRiftExchangeName('#界源兑换真我宝盒'), '真我宝盒');
+  assert.equal(parseRiftExchangeName('#界源兑换 真我 宝盒'), '真我宝盒');
+  assert.equal(parseRiftExchangeName('#界源兑换'), '');
+});
 
 test('无尽秘钥配方可用100界源兑换', () => {
   assert.deepEqual(RIFT_EXCHANGES.无尽秘钥配方, {

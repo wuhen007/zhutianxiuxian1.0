@@ -25,6 +25,7 @@ import {
   getActiveRifts,
   getRiftRefreshChance,
   openRiftManually,
+  parseRiftExchangeName,
   readRiftState,
   saveRiftState,
   updateFestivalSign,
@@ -128,10 +129,10 @@ export class PlaneRiftFestival extends plugin {
         { reg: '^#裂界寻宝$', fnc: 'explore', priority: 1 },
         { reg: '^#裂界强攻$', fnc: 'explore', priority: 1 },
         { reg: '^#撤离裂界$', fnc: 'withdraw' },
-        { reg: '^#界源兑换(?:\s+.*)?$', fnc: 'exchange' },
-        { reg: '^#开启裂界(?:\s.*)?$', fnc: 'adminOpenRift', priority: 1 },
+        { reg: '^#界源兑换.*$', fnc: 'exchange' },
+        { reg: '^#开启裂界(?:\\s.*)?$', fnc: 'adminOpenRift', priority: 1 },
         { reg: '^#关闭所有裂界$', fnc: 'adminCloseAllRifts', priority: 1 },
-        { reg: '^#关闭裂界(?:\s+(\S+))?$', fnc: 'adminCloseRift', priority: 1 },
+        { reg: '^#关闭裂界(?:\\s+(\\S+))?$', fnc: 'adminCloseRift', priority: 1 },
       ],
     });
   }
@@ -382,7 +383,7 @@ export class PlaneRiftFestival extends plugin {
     const account = await this.getPlayer(e);
     if (!account) return e.reply('暂无修仙存档，请先发送 #修仙。');
     const { qq, player } = account;
-    const name = e.msg.replace('#界源兑换', '').trim();
+    const name = parseRiftExchangeName(e.msg);
     if (!name) {
       return e.reply([
         `【界源兑换】当前界源：${Number(player.太初界源) || 0}`,

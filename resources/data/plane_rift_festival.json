@@ -1,12 +1,12 @@
 {
-  "lastCheckWorldYear": 40000,
+  "lastCheckWorldYear": 36000,
   "pity": {
     "仙界": 0,
     "太初星墟": 0
   },
   "activeRifts": [
     {
-      "id": "38000-仙界",
+      "id": "36000-仙界",
       "plane": "仙界",
       "name": "斩岁仙府",
       "location": "冥寒仙府",
@@ -14,58 +14,28 @@
         "x": 242,
         "y": 116
       },
-      "worldYear": 38000,
-      "openedAt": 1785848402002,
-      "expiresAt": 1785862802002,
+      "worldYear": 36000,
+      "openedAt": 1785938400900,
+      "expiresAt": 1785952800900,
       "anchor": 0,
       "contribution": {},
       "expeditions": {}
     },
     {
-      "id": "38000-太初星墟",
+      "id": "36000-太初星墟",
       "plane": "太初星墟",
-      "name": "太初矿心",
-      "location": "太初矿心",
+      "name": "归零舰墓",
+      "location": "归零舰墓",
       "coordinate": {
-        "x": 500,
-        "y": 500
+        "x": 180,
+        "y": 180
       },
-      "worldYear": 38000,
-      "openedAt": 1785848402002,
-      "expiresAt": 1785862802002,
-      "anchor": 6,
-      "contribution": {
-        "2283096140": 6
-      },
-      "expeditions": {
-        "2283096140": {
-          "status": "failed",
-          "depth": 2,
-          "loot": 10,
-          "contribution": 6,
-          "startedAt": 1785851474362,
-          "settled": true,
-          "finishedAt": 1785852536474,
-          "secured": 5
-        }
-      }
-    },
-    {
-      "id": "manual-太初星墟-1785851416525-467698",
-      "plane": "太初星墟",
-      "name": "太初矿心",
-      "location": "太初矿心",
-      "coordinate": {
-        "x": 500,
-        "y": 500
-      },
-      "worldYear": 0,
-      "openedAt": 1785851416525,
-      "expiresAt": 1785865816525,
+      "worldYear": 36000,
+      "openedAt": 1785938400900,
+      "expiresAt": 1785952800900,
       "anchor": 0,
       "contribution": {},
-      "expeditions": {},
-      "manual": true
+      "expeditions": {}
     }
   ],
   "history": [
@@ -117,6 +87,20 @@
       "name": "太初矿心",
       "worldYear": 38000,
       "openedAt": 1785848402002
+    },
+    {
+      "id": "36000-仙界",
+      "plane": "仙界",
+      "name": "斩岁仙府",
+      "worldYear": 36000,
+      "openedAt": 1785938400900
+    },
+    {
+      "id": "36000-太初星墟",
+      "plane": "太初星墟",
+      "name": "归零舰墓",
+      "worldYear": 36000,
+      "openedAt": 1785938400900
     }
   ]
 }
