@@ -36,6 +36,15 @@ foundthing,
   ForwardMsg
 } from '../../model/xiuxian.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
+import { createTianjiaoTrace, formatTianjiaoTrace, getKnownTianjiaoTrace } from '../../model/tianjiaoGrowth.js';
+import {
+  formatTianjiSearchResult,
+  parseTianjiCommand,
+  requestNameFrom,
+  searchPlayerGongfa,
+  TIANJI_COSTS,
+} from '../../model/tianjiSearch.js';
+
 
 // 源石兑换表：源石道具 → 可兑换的源石数值（斤）
 const SOURCE_STONE_EXCHANGE_RATES = {
@@ -4790,79 +4799,98 @@ async tuiyanTianji(e) {
   const masterList = xiuxianConfig.Master || [];
   const userQQ = e.user_id.toString().replace('qg_', '');
   // 检查玩家境界是否足够推演天机
-  if (!e.isMaster && !masterList.includes(userQQ)&&player.mijinglevel_id < 15) {
+  if (!e.isMaster && !masterList.includes(userQQ)&&player.mijinglevel_id < 16) {
     e.reply('你境界不足，无法推演天机！');
     return;
   }
   
-  // 解析功法名称
-  const match = e.msg.match(/^#推演天机(.*)$/);
-  if (!match || !match[1] || match[1].trim() === '') {
-    e.reply('请指定要推演的功法名称！格式：#推演天机 功法名');
+  const request = parseTianjiCommand(e.msg);
+  if (!request) {
+    e.reply([
+      '【天机推演·指引】',
+      '功法溯源：#推演天机 功法名（消耗2000万修为与2000万血气）',
+      '天骄位置：#推演天机 位置 天骄名（消耗2000万修为与2000万血气）',
+    ].join('\n'));
     return;
   }
-  
-  const targetGongfa = match[1].trim();
-  
-  // 遍历所有玩家存档
-  let File = fs.readdirSync(__PATH.player_path);
-  File = File.filter(file => file.endsWith(".json"));
-  
-  let foundPlayers = [];
-  let processed = 0;
-  
-  for (let i = 0; i < File.length; i++) {
-    let this_qq = File[i].replace(".json", '');
-    let playerData = await Read_player(this_qq);
-    
-    // 检查玩家是否有这个功法
-    if (playerData.学习的功法 && playerData.学习的功法.includes(targetGongfa)) {
-      foundPlayers.push({
-        qq: this_qq,
-        name: playerData.名号 || '未知修士',
-        realm: playerData.mijinglevel_id || 0
-      });
-    }
-    
-    processed++;
-    
-    // 每处理50个玩家显示进度
-    if (processed % 50 === 0) {
-      e.reply(`已推演 ${processed}/${File.length} 名修士的天机...`);
+  if (request.type === 'tianjiao') {
+    const name = requestNameFrom(e.msg);
+    if (!data.weimiantianjiao_list.find(item => item.名号 === name)) {
+      e.reply('未找到名为「' + name + '」的天骄。可先查看 #天骄列表 确认名号。');
+      return;
     }
   }
-  
-  // 构建回复消息
-  if (foundPlayers.length === 0) {
-    e.reply(`经过天机推演，发现诸天万界并无修士修炼【${targetGongfa}】此功法！`);
-  } else {
-    let message = [
-      `【天机推演·功法溯源】`,
-      `经过推演诸天万界，发现【${targetGongfa}】的修炼者信息：`,
-      ``,
-      `共计发现 ${foundPlayers.length} 名修士修炼此功法：`,
-      ``
-    ];
-    
-    // 如果玩家数量超过10个，只显示前10个
-    let displayPlayers = foundPlayers.slice(0, 10);
-    
-    displayPlayers.forEach((p, index) => {
-      message.push(`${index + 1}. ${p.name} (ID: ${p.qq}) - 境界: ${p.realm}`);
-    });
-    
-    if (foundPlayers.length > 10) {
-      message.push(``);
-      message.push(`...还有 ${foundPlayers.length - 10} 名修士的信息被天机所遮蔽`);
-    }
-    
-    message.push(``);
-    message.push(`推演完成！共检查了 ${File.length} 名修士的修行记录。`);
-    
-    e.reply(message.join('\n'));
+  const cost = TIANJI_COSTS[request.type === 'tianjiao' ? '天骄位置' : '功法溯源'];
+  if ((player.修为 || 0) < cost.修为 || (player.血气 || 0) < cost.血气) {
+    e.reply([
+      '【天机推演·道基不足】',
+      '本次推演需消耗 ' + cost.修为.toLocaleString() + ' 修为与 ' + cost.血气.toLocaleString() + ' 血气。',
+      '当前修为：' + (player.修为 || 0).toLocaleString() + '｜血气：' + (player.血气 || 0).toLocaleString(),
+    ].join('\n'));
+    return;
   }
+  player.修为 -= cost.修为;
+  player.血气 -= cost.血气;
+  await Write_player(usr_qq, player);
+
+  if (request.type === 'tianjiao') {
+    await this.searchTianjiaoPosition(e, player);
+    return;
+  }
+
+  const files = fs.readdirSync(__PATH.player_path).filter(file => file.endsWith('.json'));
+  const results = searchPlayerGongfa(qq => Read_player(qq), files, request.keyword);
+  results.totalChecked = files.length;
+  e.reply(formatTianjiSearchResult({ type: 'gongfa', target: request.keyword, results }));
 }
-    async  tianyi_yidao(e) {
+
+  async searchTianjiaoPosition(e, player) {
+    const name = requestNameFrom(e.msg);
+    const tianjiao = data.weimiantianjiao_list.find(item => item.名号 === name);
+    if (!tianjiao) {
+      e.reply('未找到名为「' + name + '」的天骄。可先查看 #天骄列表 确认名号。');
+      return;
+    }
+    const known = getKnownTianjiaoTrace(player, tianjiao);
+    if (known) {
+      e.reply([
+        '【天机推演·天骄位置】',
+        '你已知晓' + tianjiao.名号 + '的当前位置：' + formatTianjiaoTrace(known),
+        '踪迹有效期至 ' + new Date(Number(known.expiresAt)).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+      ].join('\n'));
+      return;
+    }
+    player.天骄踪迹 ||= {};
+    player.天骄踪迹[tianjiao.名号] = createTianjiaoTrace(tianjiao, {
+      source: '天机推演',
+      now: Date.now(),
+    });
+    await Write_player(e.user_id.toString().replace('qg_', ''), player);
+    this.persistTianjiaoPosition(tianjiao);
+    const trace = player.天骄踪迹[tianjiao.名号];
+    e.reply([
+      '【天机推演·天骄位置】',
+      '你付出2000万修为与2000万血气，推演出' + tianjiao.名号 + '的踪迹。',
+      '当前位置：' + formatTianjiaoTrace(trace),
+      '踪迹24小时内有效，抵达后可发送 #讨伐天骄 ' + tianjiao.名号,
+    ].join('\n'));
+  }
+
+  persistTianjiaoPosition(tianjiao) {
+    try {
+      const listPath = path.join(data.filePathMap.lib, '位面boss列表.json');
+      const list = JSON.parse(fs.readFileSync(listPath, 'utf8'));
+      const index = list.findIndex(item => item.名号 === tianjiao.名号);
+      if (index >= 0) {
+        list[index] = { ...list[index], 公开踪迹: tianjiao.公开踪迹 };
+        fs.writeFileSync(listPath, JSON.stringify(list, null, 2), 'utf8');
+      }
+    } catch (error) {
+      console.error('[天机推演] 保存天骄踪迹失败:', error);
+    }
+  }
+
+  async tianyi_yidao(e) {
           if (!e.isGroup) {
               e.reply('修仙游戏请在群聊中游玩');
               return;
