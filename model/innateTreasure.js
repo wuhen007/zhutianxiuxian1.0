@@ -208,13 +208,32 @@ export function isInnateTreasureName(name) {
   return TREASURE_SET.has(String(name || ''));
 }
 
+export function isInnateTreasureItem(item) {
+  return isInnateTreasureName(item?.name) || isInnateTreasureName(item?.先天至宝本体);
+}
+
+export function migrateLegacyInnateTreasureSlot(equipment = {}, now = Date.now()) {
+  const migrated = { ...equipment };
+  if (isInnateTreasureItem(migrated.帝兵)) {
+    if (!isInnateTreasureItem(migrated.至宝)) migrated.至宝 = migrated.帝兵;
+    migrated.帝兵 = null;
+  }
+  if (isInnateTreasureItem(migrated.至宝)) {
+    migrated.至宝 = { ...migrated.至宝, type: '至宝' };
+    if (migrated.至宝.先天至宝本体 && Number(migrated.至宝.先天投影截止) <= now) {
+      migrated.至宝 = null;
+    }
+  }
+  return migrated;
+}
+
 export function createInnateTreasure(name, ownerId, now = Date.now()) {
   if (!isInnateTreasureName(name)) throw new Error(`未知先天至宝：${name}`);
   return {
     id: 29000000 + INNATE_TREASURE_NAMES.indexOf(name) + 1,
     name,
     class: '装备',
-    type: '帝兵',
+    type: '至宝',
     品阶: '先天至宝',
     author_name: String(ownerId),
     atk: 100000000,
@@ -237,7 +256,7 @@ export function createInnateTreasureProjection(name, ownerId, now = Date.now()) 
     id: 29100000 + INNATE_TREASURE_NAMES.indexOf(name) + 1,
     name: `${name}·七日投影`,
     class: '装备',
-    type: '帝兵',
+    type: '至宝',
     品阶: '先天投影',
     先天至宝本体: name,
     先天投影截止: now + INNATE_TREASURE_PROJECTION_DURATION_MS,

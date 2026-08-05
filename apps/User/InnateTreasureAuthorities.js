@@ -203,12 +203,12 @@ export class InnateTreasureAuthorities extends plugin {
       const owner = readInnateTreasureState().owners?.[treasureName]?.ownerId;
       if (String(owner || '') !== String(qq)) return e.reply('至宝本体并未认你为主。');
     }
-    await instead_equipment(qq, item);
+    await instead_equipment(qq, { ...item, type: '至宝' });
     const equipment = await Read_equipment(qq);
-    if (equipment.帝兵?.name !== item.name) return e.reply('至宝执掌失败，请检查帝兵栏。');
+    if (equipment.至宝?.name !== item.name) return e.reply('至宝执掌失败，请检查独立至宝位。');
     return e.reply(projectionName
       ? `你执掌了【${requestedName}】，可在投影消散前动用【${treasureName}】的权柄。`
-      : `【${treasureName}】已归于帝兵位，其先天权柄开始显化。`);
+      : `【${treasureName}】已归于独立至宝位，其先天权柄开始显化。`);
   }
 
   async context(e, treasureName, cooldownKey = '') {

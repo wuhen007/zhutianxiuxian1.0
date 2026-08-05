@@ -17,6 +17,7 @@ import {
   getPetTreasureRules,
   getTimedActionMultiplier,
   hasReincarnationProtection,
+  migrateLegacyInnateTreasureSlot,
   startAuthorityCooldown,
 } from '../model/innateTreasure.js';
 
@@ -47,9 +48,9 @@ test('虚天舟为传承专属至宝并固定缩短5至10分钟', () => {
   assert.deepEqual(applyInnateTravelReduction({}, 20, () => 0), { travelTime: 20, reduction: 0 });
 });
 
-test('先天至宝实体绑定唯一主人并使用帝兵槽', () => {
+test('先天至宝实体绑定唯一主人并使用独立至宝槽', () => {
   const treasure = createInnateTreasure('混沌珠', '10001', 1234);
-  assert.equal(treasure.type, '帝兵');
+  assert.equal(treasure.type, '至宝');
   assert.equal(treasure.品阶, '先天至宝');
   assert.equal(treasure.author_name, '10001');
   assert.equal(treasure.绑定者, '10001');
@@ -58,10 +59,37 @@ test('先天至宝实体绑定唯一主人并使用帝兵槽', () => {
 
 test('择主榜第二三名获得有明确期限的七日投影', () => {
   const projection = createInnateTreasureProjection('太极图', '10002', 1000);
+  assert.equal(projection.type, '至宝');
   assert.equal(projection.name, '太极图·七日投影');
   assert.equal(projection.先天至宝本体, '太极图');
   assert.equal(projection.绑定者, '10002');
   assert.equal(projection.先天投影截止, 1000 + 7 * 24 * 60 * 60 * 1000);
+});
+
+test('旧帝兵栏中的先天至宝自动迁移且过期投影自动清除', () => {
+  const treasure = createInnateTreasure('混沌珠', '10001', 1000);
+  const migrated = migrateLegacyInnateTreasureSlot({ 帝兵: { ...treasure, type: '帝兵' } }, 2000);
+  assert.equal(migrated.帝兵, null);
+  assert.equal(migrated.至宝.name, '混沌珠');
+  assert.equal(migrated.至宝.type, '至宝');
+
+  const projection = createInnateTreasureProjection('太极图', '10001', 1000);
+  const expired = migrateLegacyInnateTreasureSlot({ 帝兵: projection }, projection.先天投影截止);
+  assert.equal(expired.帝兵, null);
+  assert.equal(expired.至宝, null);
+});
+
+test('普通帝兵与独立先天至宝可以同时执掌', () => {
+  const emperorWeapon = { name: '本命帝兵', type: '帝兵' };
+  const treasure = createInnateTreasure('盘古幡', '10001', 1000);
+  const equipment = migrateLegacyInnateTreasureSlot({
+    帝兵: emperorWeapon,
+    至宝: treasure,
+  }, 2000);
+
+  assert.equal(equipment.帝兵.name, '本命帝兵');
+  assert.equal(equipment.至宝.name, '盘古幡');
+  assert.equal(equipment.至宝.type, '至宝');
 });
 
 test('不同权柄使用独立冷却', () => {
