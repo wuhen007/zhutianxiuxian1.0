@@ -89,9 +89,9 @@ export function hasClaimedFactionJoinReward(player, faction) {
   return Boolean(getHistoryEntry(player, faction)?.已领取入门奖励);
 }
 
-export function recordFactionJoin(player, faction, position, now = Date.now()) {
+export function recordFactionJoin(player, faction, position, now = Date.now(), firstJoin = false) {
   const entry = getHistoryEntry(player, faction, true);
-  entry.已领取入门奖励 = true;
+  if (firstJoin) entry.已领取入门奖励 = true;
   entry.最近加入时间 = now;
   updateHighestPosition(entry, faction, position);
   return entry;
