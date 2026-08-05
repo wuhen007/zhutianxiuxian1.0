@@ -18,7 +18,7 @@ export const appsOut = async AppsName => {
     });
   };
   travel(filepath, path => {
-    if (path.search('.js') != -1) sum.push(path);
+    if (path.endsWith('.js')) sum.push(path);
   });
   let apps = {};
   for (let item of sum) {
