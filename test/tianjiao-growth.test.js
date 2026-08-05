@@ -12,8 +12,12 @@ import {
   getTianjiaoBreakthroughChance,
   getTianjiaoImprovementChance,
   improveTianjiao,
+  isTianjiaoHealing,
   isTianjiaoBreakthroughYear,
   isTianjiaoImprovementYear,
+  recoverTianjiaoFromSetback,
+  registerTianjiaoDefeat,
+  resetTianjiaoToInitialTemplate,
   rollDungeonTianjiaoTrace,
   rollRealmEventTianjiaoTrace,
 } from '../model/tianjiaoGrowth.js';
@@ -226,4 +230,45 @@ test('霸王境界满足后大成，华云飞吞噬五次和十次依次进化',
   assert.ok(evolvedStats.攻击 > plainStats.攻击);
   assert.ok(evolvedStats.防御 > plainStats.防御);
   assert.ok(evolvedStats.血量上限 > plainStats.血量上限);
+});
+
+test('天骄连续败绩触发养伤，千年后伤愈且轮回归零', () => {
+  const tianjiao = {
+    名号: '测试天骄',
+    位面: 2,
+    境界: '大能',
+    攻击: 1000,
+    防御: 1000,
+    血量上限: 1000,
+    当前血量: 1000,
+    mijinglevel_id: 10,
+    xiangulevel_id: 1,
+    攻击加成: 100,
+    学习的功法: [],
+  };
+  const status = { currentHP: 80, isAlive: true };
+
+  registerTianjiaoDefeat(tianjiao, status, 1000, () => 0.99);
+  registerTianjiaoDefeat(tianjiao, status, 1000, () => 0.99);
+  assert.equal(status.isHealing, undefined);
+
+  const third = registerTianjiaoDefeat(tianjiao, status, 1000, () => 0.99);
+  assert.equal(third.setback.type, '道心破碎');
+  assert.equal(third.setback.startedAtWorldYear, 1000);
+  assert.equal(third.setback.untilWorldYear, 2000);
+  assert.ok(Number(tianjiao.攻击加成) < 100);
+  assert.equal(isTianjiaoHealing(status, 1999), true);
+  assert.equal(isTianjiaoHealing(status, 2000), false);
+  assert.equal(recoverTianjiaoFromSetback(status, 1999), null);
+
+  const recovered = recoverTianjiaoFromSetback(status, 2000);
+  assert.equal(recovered.type, '道心破碎');
+  assert.equal(recovered.currentHP, 100);
+  assert.equal(status.isHealing, false);
+
+  const reset = resetTianjiaoToInitialTemplate(tianjiao, context, () => 0);
+  assert.equal(reset.life, 1);
+  assert.equal(tianjiao.攻击, 1000);
+  assert.equal(tianjiao.攻击加成, undefined);
+  assert.equal(tianjiao.装备.帝兵.name, '废铁');
 });

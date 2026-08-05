@@ -269,7 +269,9 @@ function erodeGrowthAfterDaoHeartBreak(tianjiao, random) {
 export function registerTianjiaoDefeat(tianjiao, status, worldYear, random = Math.random) {
   status.本世败绩 = Math.max(0, Math.floor(Number(status.本世败绩) || 0)) + 1;
   const defeats = status.本世败绩;
-  if (defeats % 3 !== 0 || Number(status.currentHP) <= 0) return { defeats, setback: null };
+  if (status.isHealing || defeats % 3 !== 0 || Number(status.currentHP) <= 0) {
+    return { defeats, setback: null };
+  }
 
   const type = rollSetbackType(defeats, random);
   status.养伤 = {
@@ -289,8 +291,16 @@ export function registerTianjiaoDefeat(tianjiao, status, worldYear, random = Mat
   return { defeats, setback: { ...status.养伤, lostGrowth } };
 }
 
+export function isTianjiaoHealing(status, worldYear) {
+  if (!status?.isHealing) return false;
+  const until = Number(status.养伤?.untilWorldYear);
+  return Number.isFinite(until) && until > Number(worldYear);
+}
+
 export function recoverTianjiaoFromSetback(status, worldYear) {
-  if (!status?.isHealing || Number(status.养伤?.untilWorldYear) > Number(worldYear)) return null;
+  if (!status?.isHealing) return null;
+  const until = Number(status.养伤?.untilWorldYear);
+  if (Number.isFinite(until) && until > Number(worldYear)) return null;
   const type = status.养伤.type;
   status.currentHP = Math.min(100, Math.max(1, Number(status.currentHP) || 1) + TIANJIAO_HEALING_RECOVERY);
   status.isHealing = false;
