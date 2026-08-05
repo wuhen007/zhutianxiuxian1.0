@@ -1233,10 +1233,10 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
 
     // 模拟雷劫伤害（分阶段）
     const thunderStages = [
-        { name: "五行雷罚", damage: 0.3, desc: "五行神雷轰击，肉身几近崩解" },
-        { name: "仙道虚影", damage: 0.4, desc: "真龙、仙凰、雷帝虚影联手攻伐" },
+        { name: "五行雷罚", damage: 0.1, desc: "五行神雷轰击，肉身几近崩解" },
+        { name: "仙道虚影", damage: 0.15, desc: "真龙、仙凰、雷帝虚影联手攻伐" },
         { name: "心魔劫", damage: 0.2, desc: "内心魔障显现，道心震颤" },
-        { name: "终极雷海", damage: 0.5, desc: "雷海淹没天地，万物俱灭" }
+        { name: "终极雷海", damage: 0.3, desc: "雷海淹没天地，万物俱灭" }
     ];
 
     let survive = true;

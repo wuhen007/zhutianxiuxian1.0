@@ -56,6 +56,7 @@ import {
 } from '../../model/innateTreasureContest.js';
 import { calculateMinggeGain, getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
 import { getPlayerPlaneCoordinate } from '../../model/planeCoords.js';
+import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 import {
     formatRealmEventLocation,
     formatRealmEventTravel,
@@ -4396,7 +4397,10 @@ async treasureContestTrial(e) {
             仙宠: ctx.player.仙宠 || null,
             神石: ctx.player.神石 || {},
         };
-        const battle = await zd_battle(battlePlayer, guardian, { battleType: 'treasure_guardian' });
+        const guardianBattle = { ...guardian };
+        const blackEmperorFormation = consumeBlackEmperorBattleFormation(ctx.player, battlePlayer, guardianBattle);
+        if (blackEmperorFormation.consumed) await Write_player(ctx.qq, ctx.player);
+        const battle = await zd_battle(battlePlayer, guardianBattle, { battleType: 'treasure_guardian' });
         options.battleWon = battle.winner === 'A';
         const storedPlayer = await Read_player(ctx.qq);
         storedPlayer.当前血量 = options.battleWon
@@ -4408,6 +4412,7 @@ async treasureContestTrial(e) {
             `器灵属性：攻击${guardian.攻击.toLocaleString('zh-CN')}｜防御${guardian.防御.toLocaleString('zh-CN')}｜血量${guardian.血量上限.toLocaleString('zh-CN')}`,
             '',
             ...treasureBattleExcerpt(battle.msg),
+            ...(blackEmperorFormation.message ? [blackEmperorFormation.message] : []),
             '',
             options.battleWon ? '你击败了守护灵。' : '你败于守护灵，拼尽全力脱离试炼，当前血量降至1。',
         ];
@@ -4762,7 +4767,7 @@ async settleTreasureEventRewards(event) {
                 if (ownership.ok) {
                     const najie = await Read_najie(qq);
                     const equipment = await Read_equipment(qq);
-                    const alreadyHas = equipment.帝兵?.name === event.treasure.name ||
+                    const alreadyHas = equipment.至宝?.name === event.treasure.name ||
                         najie.装备?.some(item => item.name === event.treasure.name);
                     if (!alreadyHas) {
                         await Add_najie_thing(qq, createInnateTreasure(event.treasure.name, qq), '装备', 1, 6);
@@ -4772,7 +4777,7 @@ async settleTreasureEventRewards(event) {
                 const projectionName = `${event.treasure.name}·七日投影`;
                 const najie = await Read_najie(qq);
                 const equipment = await Read_equipment(qq);
-                const alreadyHas = equipment.帝兵?.name === projectionName ||
+                const alreadyHas = equipment.至宝?.name === projectionName ||
                     najie.装备?.some(item => item.name === projectionName);
                 if (!alreadyHas) {
                     await Add_najie_thing(

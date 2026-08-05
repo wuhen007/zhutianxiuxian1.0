@@ -23,6 +23,7 @@ import {
   exist_najie_thing
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
+import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 
 export class ShijianChangheTask extends plugin {
   constructor() {
@@ -138,8 +139,11 @@ async checkTimeRiverActions() {
     // 发送遭遇消息
     await this.sendEncounterMessage(usr_qq, action, encounterMessage);
     
+    const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_player);
+    if (blackEmperorFormation.consumed) await Write_player(usr_qq, player);
     // 进行战斗
     const battleResult = await zd_battle(A_player, B_player);
+    if (blackEmperorFormation.message && Array.isArray(battleResult.msg)) battleResult.msg.unshift(blackEmperorFormation.message);
     
     const playerHp = battleResult.A_hp;
     const enemyHp = battleResult.B_hp;

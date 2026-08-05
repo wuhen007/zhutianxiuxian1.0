@@ -32,6 +32,7 @@ import {
   rollRiftAftermath,
   resolveRiftRewardBonus,
 } from '../../model/lingjieRift.js';
+import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
 import {
   getLocationByCoord,
@@ -422,7 +423,11 @@ export class LingjieRift extends plugin {
     await this.clearRiftAction(task);
 
     const monster = createRiftMonster();
-    const battle = await zd_battle(this.battlePlayer(player), monster);
+    const A_player = this.battlePlayer(player);
+    const B_player = { ...monster };
+    const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_player);
+    if (blackEmperorFormation.consumed) await Write_player(task.qq, player);
+    const battle = await zd_battle(A_player, B_player);
     player.当前血量 = battle.winner === 'A' ? Math.max(1, Math.trunc(battle.A_hp)) : 1;
     await Write_player(task.qq, player);
 
@@ -432,6 +437,7 @@ export class LingjieRift extends plugin {
       `敌方属性：攻击${monster.攻击.toLocaleString()} / 防御${monster.防御.toLocaleString()} / 血量${monster.血量上限.toLocaleString()}`,
       '',
       ...battleExcerpt(battle.msg),
+      ...(blackEmperorFormation.message ? ['', blackEmperorFormation.message] : []),
     ];
 
     if (battle.winner !== 'A') {
@@ -507,7 +513,11 @@ export class LingjieRift extends plugin {
     const count = event === 'triple_ambush' ? 3 : 1;
     const names = [...NPC_NAMES].sort(() => Math.random() - 0.5).slice(0, count);
     const enemies = names.map(name => createLevelThirtyNpc(level, physique, `${name}（伏杀者）`));
-    const battle = await zd_battle(this.battlePlayer(player), count === 1 ? enemies[0] : enemies);
+    const A_player = this.battlePlayer(player);
+    const B_team = count === 1 ? { ...enemies[0] } : enemies.map(item => ({ ...item }));
+    const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_team);
+    if (blackEmperorFormation.consumed) await Write_player(task.qq, player);
+    const battle = await zd_battle(A_player, B_team);
     player.当前血量 = battle.winner === 'A' ? Math.max(1, Math.trunc(battle.A_hp)) : 1;
     await Write_player(task.qq, player);
 
@@ -516,6 +526,7 @@ export class LingjieRift extends plugin {
       event === 'triple_ambush' ? '【杀阵骤起·三人埋伏】三名天灵根修士同时封死退路！' : `【归途惊变·修士偷袭】${names[0]}趁你战后力竭突然出手！`,
       '伏杀者境界：练气30级 + 炼体30级；额外全属性 +1,500,000；天五灵根。',
       ...battleExcerpt(battle.msg),
+      ...(blackEmperorFormation.message ? [blackEmperorFormation.message] : []),
       battle.winner === 'A' ? '你杀出重围，带着战利品返回凡间。' : '你不敌伏杀者，舍弃部分精血遁回凡间，当前血量降至1。',
     ];
   }
