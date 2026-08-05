@@ -34,6 +34,7 @@ import {
   registerForbiddenSupremeAttention,
   selectForbiddenSupreme,
 } from '../../model/weimianTravel.js';
+import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 export class TravelTask extends plugin {
   constructor() {
     super({
@@ -594,9 +595,12 @@ this.FORMATION_NAMES = [
     // 发送偷袭消息 - 文本
     await this.sendTextMessage(usr_qq, ambushMsg.join('\n'), group_id);
     
+    const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_player);
+    if (blackEmperorFormation.consumed) await Write_player(usr_qq, player);
     // 进行强制战斗
     const result = await zd_battle(A_player, B_player);
     let msg = result.msg;
+    if (blackEmperorFormation.message && Array.isArray(msg)) msg.unshift(blackEmperorFormation.message);
     
     // 发送战斗过程 - 转换为图片
     if (msg.length <= 20) {
@@ -852,7 +856,12 @@ this.FORMATION_NAMES = [
       `${supreme.name}：“让本皇看看，你从诸天带回了什么。”`,
     ].join('\n'), task.group_id);
 
-    const result = await zd_battle(player, boss);
+    const A_player = { ...player };
+    const B_player = { ...boss };
+    const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_player);
+    if (blackEmperorFormation.consumed) await Write_player(task.player_qq, player);
+    const result = await zd_battle(A_player, B_player);
+    if (blackEmperorFormation.message && Array.isArray(result?.msg)) result.msg.unshift(blackEmperorFormation.message);
     const battleLog = Array.isArray(result?.msg) ? result.msg.slice(0, 20) : [];
     if (battleLog.length > 0) await this.sendBattleImage(task.player_qq, battleLog, task.group_id);
 

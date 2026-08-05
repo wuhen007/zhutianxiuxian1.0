@@ -21,11 +21,14 @@ import { triggerPeriodicRiftsForEra } from '../../model/planeRiftFestival.js';
 import {
   advanceSpecialTianjiaoEvolution,
   attemptTianjiaoBreakthrough,
+  ensureTianjiaoInitialTemplate,
   getTianjiaoImprovementChance,
   improveTianjiao,
   isIndependentTianjiao,
+  isTianjiaoHealing,
   isTianjiaoBreakthroughYear,
   isTianjiaoImprovementYear,
+  recoverTianjiaoFromSetback,
 } from '../../model/tianjiaoGrowth.js';
 
 export class EraChangeTask extends plugin {
@@ -1467,35 +1470,81 @@ function saveWeimianData(data) {
       const realmReports = [];
       const improvementReports = [];
       const bloodlineReports = [];
+      const recoveryReports = [];
+      let tianjiaoDataChanged = false;
 
       for (const tianjiao of tianjiaoList) {
-        if (!isIndependentTianjiao(tianjiao)) continue;
+        if (ensureTianjiaoInitialTemplate(tianjiao)) tianjiaoDataChanged = true;
 
+        const statusKey = `tianjiao:status:${tianjiao.名号}`;
+        let status = {};
+        try {
+          status = JSON.parse(await redis.get(statusKey) || '{}');
+        } catch {
+          status = {};
+        }
+
+        const recovered = recoverTianjiaoFromSetback(status, worldYears);
+        if (recovered) {
+          recoveryReports.push({ name: tianjiao.名号, ...recovered });
+          await redis.set(statusKey, JSON.stringify(status));
+        }
+
+        if (!isIndependentTianjiao(tianjiao)) continue;
+        if (isTianjiaoHealing(status, worldYears)) continue;
+
+        let statusChanged = false;
         if (breakthroughDue) {
-          const breakthrough = attemptTianjiaoBreakthrough(tianjiao, context);
-          if (breakthrough) {
-            realmReports.push({ name: tianjiao.名号, ...breakthrough });
+          if (status.下次证道阻断) {
+            delete status.下次证道阻断;
+            statusChanged = true;
+          } else {
+            const breakthrough = attemptTianjiaoBreakthrough(tianjiao, context);
+            if (breakthrough) {
+              realmReports.push({ name: tianjiao.名号, ...breakthrough });
+              tianjiaoDataChanged = true;
+            }
           }
         }
 
         const bloodline = advanceSpecialTianjiaoEvolution(tianjiao, context);
-        if (bloodline) bloodlineReports.push(bloodline);
+        if (bloodline) {
+          bloodlineReports.push(bloodline);
+          tianjiaoDataChanged = true;
+        }
 
-        if (improvementDue && Math.random() < getTianjiaoImprovementChance(eraIndex)) {
-          const improvements = improveTianjiao(tianjiao, context);
-          if (improvements.length > 0) {
-            improvementReports.push({ name: tianjiao.名号, improvements });
+        if (improvementDue) {
+          const improvementMultiplier = Number(status.下次自强倍率) || 1;
+          delete status.下次自强倍率;
+          statusChanged = true;
+          if (Math.random() < getTianjiaoImprovementChance(eraIndex) * improvementMultiplier) {
+            const improvements = improveTianjiao(tianjiao, context);
+            if (improvements.length > 0) {
+              improvementReports.push({ name: tianjiao.名号, improvements });
+              tianjiaoDataChanged = true;
+            }
           }
         }
+
+        if (statusChanged) await redis.set(statusKey, JSON.stringify(status));
       }
 
-      if (realmReports.length > 0 || improvementReports.length > 0 || bloodlineReports.length > 0) {
+      if (tianjiaoDataChanged) {
         const bossListPath = path.join(data.filePathMap.lib, '位面boss列表.json');
         fs.writeFileSync(bossListPath, JSON.stringify(tianjiaoList, null, 2), 'utf8');
+      }
 
+      if (tianjiaoDataChanged || recoveryReports.length > 0) {
         const mijingReports = realmReports.filter(r => r.field === 'mijinglevel_id');
         const xianguReports = realmReports.filter(r => r.field === 'xiangulevel_id');
         const msgLines = [];
+
+        if (recoveryReports.length > 0) {
+          msgLines.push('【天骄伤愈·再临天下】');
+          for (const r of recoveryReports) {
+            msgLines.push(`  ${r.name} 养伤千载，自【${r.type}】中走出，气血恢复到 ${r.currentHP}%。`);
+          }
+        }
 
         if (mijingReports.length > 0) {
           msgLines.push('【遮天秘境·天骄证道】');
@@ -1531,7 +1580,7 @@ function saveWeimianData(data) {
         msgLines.push('「机缘所致，大道可期」');
 
         await this.broadcastMessage(msgLines.join('\n'));
-        console.log(`[天骄成长] ${realmReports.length}次境界突破，${improvementReports.length}位自我强化，${bloodlineReports.length}次血脉事件`);
+        console.log(`[天骄成长] ${realmReports.length}次境界突破，${improvementReports.length}位自我强化，${bloodlineReports.length}次血脉事件，${recoveryReports.length}位伤愈`);
       }
     } catch (e) {
       console.error('天骄境界增长处理失败:', e);

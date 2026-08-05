@@ -15,6 +15,7 @@ import {
 } from '../../model/xiuxian.js';
 import schedule from 'node-schedule';
 import { getDailyTaskDateKey } from '../../model/dailyTask.js';
+import { wasFactionRewardClaimedToday } from '../../model/factionSystem.js';
 // 问仙令：每日任务完成后 +50 经验
 import { WenXianLing } from '../WenXianLing/WenXianLing.js';
 
@@ -390,6 +391,12 @@ async isAutoTaskEnabled(usr_qq) {
                 return false;
             }
 
+            const sharedSalaryDate = await redis.get(`xiuxian:player:${usr_qq}:faction_salary_date`);
+            if (wasFactionRewardClaimedToday(sharedSalaryDate)) {
+                console.log(`玩家 ${usr_qq} 今日已领取势力俸禄，跳过自动俸禄`);
+                return false;
+            }
+
             let success = false;
 
             // 处理瑶池和摇光圣地的俸禄
@@ -444,6 +451,7 @@ async isAutoTaskEnabled(usr_qq) {
                         player.源石 = (player.源石 || 0) + salary;
                         await Write_player(usr_qq, player);
                         await redis.set(redisKey, todayStr);
+                        await redis.set(`xiuxian:player:${usr_qq}:faction_salary_date`, todayStr);
 
                         // 保存详细领取消息，供 #查看领取记录 使用
                         const salaryMsg = `势力俸禄领取成功：\n您作为【${player.势力职位}】自动领取了${player.势力}俸禄${this.formatNumber(salary)}源石`;
@@ -529,6 +537,7 @@ async isAutoTaskEnabled(usr_qq) {
             
             // 记录开启日期（存储完整本地日期字符串）
             await redis.set(`xiuxian:player:${usr_qq}:jianyunhai_open_day`, todayStr);
+            await redis.set(`xiuxian:player:${usr_qq}:faction_salary_date`, todayStr);
             
             // 保存玩家数据（源石增加）
             await Write_player(usr_qq, player);
