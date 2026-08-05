@@ -106,9 +106,11 @@ export class Taopaotask extends plugin {
             };
             let Random = Math.random();
             let npc_damage = Math.trunc(
-              Harm(B_player.攻击 * 0.85, A_player.防御) +
-                Math.trunc(B_player.攻击 * B_player.法球倍率) +
-                B_player.防御 * 0.1
+              Harm(
+                B_player.攻击 * (0.85 + B_player.法球倍率) +
+                  B_player.防御 * 0.1,
+                A_player.防御
+              )
             );
             let last_msg = '';
             if (Random < 0.1) {

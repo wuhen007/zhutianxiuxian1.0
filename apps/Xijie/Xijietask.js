@@ -12,6 +12,7 @@ import {
   Write_player,
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
+import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 export class Xijietask extends plugin {
   constructor() {
     super({
@@ -108,23 +109,28 @@ export class Xijietask extends plugin {
               灵根: monster.灵根,
               法球倍率: monster.灵根.法球倍率,
             };
+            const currentPlayer = await Read_player(player_id);
+            const battleA = { ...A_player };
+            const blackEmperorFormation = consumeBlackEmperorBattleFormation(currentPlayer, battleA, B_player);
+            if (blackEmperorFormation.consumed) await Write_player(player_id, currentPlayer);
             let Data_battle;
             let playerSide;
             let last_msg = '';
             if (A_player.魔值 == 0) {
               //根据魔道值决定先后手顺序
-              Data_battle = await zd_battle(A_player, B_player);
+              Data_battle = await zd_battle(battleA, B_player);
               playerSide = 'A';
               last_msg += A_player.名号 + '悄悄靠近' + B_player.名号;
               A_player.当前血量 = Data_battle.A_hp;
             } else {
-              Data_battle = await zd_battle(B_player, A_player);
+              Data_battle = await zd_battle(B_player, battleA);
               playerSide = 'B';
               last_msg +=
                 A_player.名号 + '杀气过重,被' + B_player.名号 + '发现了';
               A_player.当前血量 = Data_battle.B_hp;
             }
             let msgg = Data_battle.msg;
+            if (blackEmperorFormation.message && Array.isArray(msgg)) msgg.unshift(blackEmperorFormation.message);
             console.log(msgg);
             let arr = action;
             let time;
