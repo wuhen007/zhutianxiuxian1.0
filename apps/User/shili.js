@@ -471,9 +471,10 @@ async yaochi(e) {
         return e.reply(`瑶池圣地自古只招收女修，仙规森严，恕不接待男客。`);
     }
     
-    // 检查是否已加入其他势力
-    if (player.势力 && player.势力 !== "无") {
-        return e.reply(`你已投身${player.势力}，心有所属，大道已定，与瑶池仙境无缘。`);
+    // 检查是否已加入其他势力或处于脱离冷却
+    const joinBlockMessage = getFactionJoinBlockMessage(player);
+    if (joinBlockMessage) {
+        return e.reply(joinBlockMessage);
     }
     
     // 定义天资等级序列
@@ -515,25 +516,29 @@ async yaochi(e) {
         ].join('\n'));
     }
     
+    const firstJoin = !hasClaimedFactionJoinReward(player, "瑶池");
     // 加入瑶池
     player.势力 = "瑶池";
     player.势力职位 = "记名女弟子";
+    recordFactionJoin(player, "瑶池", player.势力职位, Date.now(), firstJoin);
     
     // 根据资质和境界给予差异化入门奖励 (瑶池会根据弟子潜力给予不同资源
     let extraReward = "";
-    if (currentAptitudeIndex >= 7) { // 旷世奇才以上
-        await Add_najie_thing(usr_qq, '太阴缚灵诀', '功法', 1);
-        await Add_najie_thing(usr_qq, '百草液', '道具', 10);
-        extraReward = "因你资质出众，赐下瑶池无上功法《太阴缚灵诀》与百草液十瓶。";
-    } else if (currentAptitudeIndex >= 5) { // 超凡资质以上
-        await Add_najie_thing(usr_qq, '瑶池筑基丹', '丹药', 3);
-        await Add_najie_thing(usr_qq, '百草液', '道具', 5);
-        extraReward = "赐予瑶池筑基丹三枚与百草液五瓶，助你巩固道基。";
+    if (firstJoin) {
+        if (currentAptitudeIndex >= 7) { // 旷世奇才以上
+            await Add_najie_thing(usr_qq, '太阴缚灵诀', '功法', 1);
+            await Add_najie_thing(usr_qq, '百草液', '道具', 10);
+            extraReward = "因你资质出众，赐下瑶池无上功法《太阴缚灵诀》与百草液十瓶。";
+        } else if (currentAptitudeIndex >= 5) { // 超凡资质以上
+            await Add_najie_thing(usr_qq, '瑶池筑基丹', '丹药', 3);
+            await Add_najie_thing(usr_qq, '百草液', '道具', 5);
+            extraReward = "赐予瑶池筑基丹三枚与百草液五瓶，助你巩固道基。";
+        }
+        
+        // 所有入门弟子皆可获得的基础资源
+        await Add_najie_thing(usr_qq, '西皇经·轮海卷', '功法', 1);
+        await Add_najie_thing(usr_qq, '下品源石', '道具', 100);
     }
-    
-    // 所有入门弟子皆可获得的基础资源
-    await Add_najie_thing(usr_qq, '西皇经·轮海卷', '功法', 1);
-    await Add_najie_thing(usr_qq, '下品源石', '道具', 100);
     
     await Write_player(usr_qq, player);
     
@@ -573,11 +578,10 @@ async yaoguang(e) {
         );
     }
     
-    // 检查是否已加入其他势力
-    if (player.势力 && player.势力 !== "无") {
-        return e.reply(
-            `你已加入${player.势力}，需先脱离当前势力才能拜入摇光圣地。`,
-        );
+    // 检查是否已加入其他势力或处于脱离冷却
+    const joinBlockMessage = getFactionJoinBlockMessage(player);
+    if (joinBlockMessage) {
+        return e.reply(joinBlockMessage);
     }
     
    const aptitude = await getPlayerAptitudeData(player);
@@ -613,32 +617,32 @@ async yaoguang(e) {
     }
     
     
+    const firstJoin = !hasClaimedFactionJoinReward(player, "摇光圣地");
     // 加入摇光圣地
     player.势力 = "摇光圣地";
     player.势力职位 = "记名弟子";
+    recordFactionJoin(player, "摇光圣地", player.势力职位, Date.now(), firstJoin);
     
-    // --- 所有弟子均获得的基础奖励 ---
-    await Add_najie_thing(usr_qq, '摇光经·轮海卷', '功法', 1);
-    await Add_najie_thing(usr_qq, '下品源石', '道具', 100); 
-    let baseRewardDesc = `- 《摇光经·轮海卷》x1\n- 下品源石 x100`;
-    
-// --- 根据天资等级给予差异化额外奖励 ---
+    let baseRewardDesc = "";
     let extraRewardDesc = "";
-    let rewardTitle = "";
-    
-   if (aptitude.grade === '旷世奇才') {
-        await Add_najie_thing(usr_qq, '中品源石', '道具', 50);
-        await Add_najie_thing(usr_qq, '百草液', '道具', 5);
-        rewardTitle = "【重点栽培】";
-        extraRewardDesc = `因你资质不凡，圣地重点栽培：- 百草液 x5（固本培元） - 中品源石 x50（更精纯的修炼资源）`;
-    } else if (aptitude.grade === '天纵之资') {
-        await Add_najie_thing(usr_qq, '百草液', '道具', 3);
-        rewardTitle = "【优秀弟子】";
-        extraRewardDesc = `因你资质优异，赐下额外资源：- 百草液 x3（固本培元）`;
-    } else if (aptitude.grade === '超凡资质') {
-        await Add_najie_thing(usr_qq, '百草液', '道具', 1);
-        rewardTitle = "【普通弟子】";
-        extraRewardDesc = `资质达标，赐予入门资源：- 百草液 x1（固本培元）`;
+    if (firstJoin) {
+        // --- 所有弟子均获得的基础奖励 ---
+        await Add_najie_thing(usr_qq, '摇光经·轮海卷', '功法', 1);
+        await Add_najie_thing(usr_qq, '下品源石', '道具', 100); 
+        baseRewardDesc = `- 《摇光经·轮海卷》x1\n- 下品源石 x100`;
+        
+        // --- 根据天资等级给予差异化额外奖励 ---
+        if (aptitude.grade === '旷世奇才') {
+            await Add_najie_thing(usr_qq, '中品源石', '道具', 50);
+            await Add_najie_thing(usr_qq, '百草液', '道具', 5);
+            extraRewardDesc = `因你资质不凡，圣地重点栽培：- 百草液 x5（固本培元） - 中品源石 x50（更精纯的修炼资源）`;
+        } else if (aptitude.grade === '天纵之资') {
+            await Add_najie_thing(usr_qq, '百草液', '道具', 3);
+            extraRewardDesc = `因你资质优异，赐下额外资源：- 百草液 x3（固本培元）`;
+        } else if (aptitude.grade === '超凡资质') {
+            await Add_najie_thing(usr_qq, '百草液', '道具', 1);
+            extraRewardDesc = `资质达标，赐予入门资源：- 百草液 x1（固本培元）`;
+        }
     }
     
     await Write_player(usr_qq, player);
@@ -648,9 +652,9 @@ async yaoguang(e) {
         `【拜入摇光】`,
         `龙纹黑金鼎微微震动，你通过化龙镜检测，正式成为摇光圣地记名弟子！`,
         `当前职位：记名弟子`,
-        `入门赐福：`,
-        baseRewardDesc,
-        extraRewardDesc ? `\n额外嘉奖：\n${extraRewardDesc}` : ``,
+        firstJoin ? `入门赐福：` : `重入师门，入门赐福不再重复发放。`,
+        firstJoin ? baseRewardDesc : ``, 
+        firstJoin && extraRewardDesc ? `\n额外嘉奖：\n${extraRewardDesc}` : ``,
         `\n提示：摇光圣地竞争激烈，需努力提升实力，早日晋升！`
     ].join('\n'));
 }
@@ -1019,9 +1023,10 @@ async zhiweijinsheng(e) {
     player.源石 -= positionInfo.cost;
     player.势力职位 = positionInfo.next;
     
-    // 发放奖励
+    // 发放奖励（每个职位只发放一次）
     let extraReward = "";
-    const nextPositionRewards = factionConfig.rewards[positionInfo.next];
+    const rewardAlreadyClaimed = hasClaimedFactionPositionReward(player, player.势力, positionInfo.next);
+    const nextPositionRewards = rewardAlreadyClaimed ? null : factionConfig.rewards[positionInfo.next];
     if (nextPositionRewards) {
         for (const reward of nextPositionRewards) {
             await Add_najie_thing(usr_qq, reward.name, reward.type, reward.count);
@@ -1030,6 +1035,7 @@ async zhiweijinsheng(e) {
             }
         }
     }
+    recordFactionPositionReward(player, player.势力, positionInfo.next);
     
     await Write_player(usr_qq, player);
     
@@ -1143,6 +1149,11 @@ async jianyunhaiChoice(e) {
             ].join('\n'));
             
         case '2': // 成为传人
+            // 已有势力或处于脱离冷却时，不能直接改投剑云海
+            const swordJoinBlock = getFactionJoinBlockMessage(player);
+            if (swordJoinBlock) {
+                return e.reply(swordJoinBlock);
+            }
             // 检查服务器中是否已有剑云海传人
             const hasChuanren = await this.checkJianyunhaiChuanren();
             if (hasChuanren) {
@@ -1167,6 +1178,7 @@ async jianyunhaiChoice(e) {
             player.学习的功法.push('永恒终极剑道');
             player.势力 = "剑云海";
             player.势力职位 = "传人";
+            recordFactionJoin(player, "剑云海", player.势力职位);
             
             // 标记为已完成选择
             player.剑云海选择中 = false;

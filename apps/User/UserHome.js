@@ -68,6 +68,10 @@ import {
   findItemSources,
   parseItemSearchQuery,
 } from '../../model/itemSourceFinder.js';
+import {
+  activateTianjiaoScent,
+  calculateTianjiTrainingReward,
+} from '../../model/tianjiTalismans.js';
 // 在文件顶部新增全局映射和优先级定义
 const talentSelectionMap = new Map(); // 存储玩家洗髓状态
 const talentPriorityMap = {
@@ -2143,8 +2147,8 @@ if (equipment.帝兵.name == "终古剑之主") {
         `消耗了${requiredPills}颗天命轮回丹`
     ];
 
-    // 固定提升一级（最高到万古无双，索引7）
-    let newIndex = Math.min(currentIndex + 1, 7); // 最高到索引7（万古无双）
+    // 固定提升一级（最高到万古无双，索引9）
+    let newIndex = Math.min(currentIndex + 1, 9); // 最高到索引9（万古无双）
     let newAptitude = aptitudeSequence[newIndex];
     
     // 天资评价库
@@ -3759,6 +3763,40 @@ if (thing_exist.type == '神药') {
         
         
     if (func == '消耗') {
+        if (thing_name == '天机历练符') {
+                const reward = calculateTianjiTrainingReward(player, quantity);
+                await Add_najie_thing(usr_qq, thing_name, '道具', -quantity);
+                await Add_修为(usr_qq, reward.cultivation);
+                await Add_血气(usr_qq, reward.blood);
+                e.reply([
+                    '【天机历练·符引神藏】',
+                    `消耗天机历练符×${reward.count}，获得修为${bigNumberTransform(reward.cultivation)}、血气${bigNumberTransform(reward.blood)}。`,
+                    reward.doubled > 0
+                        ? `天机赐福触发${reward.doubled}次，对应历练收获翻倍！`
+                        : `本次未触发天机赐福（单张概率${Math.round(reward.doubleChance * 100)}%）。`,
+                ].join('\n'));
+                return;
+            }
+        if (thing_name == '万里定位符') {
+                if (quantity !== 1) {
+                    e.reply('万里定位符不可叠加使用，请一次消耗一张。');
+                    return;
+                }
+                const result = activateTianjiaoScent(player);
+                if (!result.ok) {
+                    e.reply(`追息印仍在生效：已锁定${result.state.target || '待定天骄'}，剩余${result.state.remaining}次免线索讨伐。`);
+                    return;
+                }
+                await Add_najie_thing(usr_qq, thing_name, '道具', -1);
+                await Write_player(usr_qq, player);
+                e.reply([
+                    '【万里定位符·追息印成】',
+                    '符火化作三缕无形道纹，悬于识海。',
+                    '下一次在没有有效踪迹时讨伐天骄，将锁定其气息；该目标连续三次讨伐无需线索与坐标。',
+                    '讨伐冷却、境界限制与天骄复活时间仍然生效。',
+                ].join('\n'));
+                return;
+            }
         if (thing_name == "天外清风") {
                 const windCount = await exist_najie_thing(usr_qq, thing_name, "材料");
                 if (windCount < quantity) {
@@ -6696,6 +6734,15 @@ async Buy_yaochi(e) {
   // 检查玩家状态
   const player = await Read_player(usr_qq);
   
+  // 检查是否瑶池弟子
+  if (player.势力 !== "瑶池") {
+    return e.reply([
+      "瑶池仙楼管事：",
+      "此乃瑶池私库，只向本门弟子开放。",
+      "你尚未加入瑶池，不得在此兑换。"
+    ].join("\n"));
+  }
+  
   // 检查是否在遮天位面
   if (player.power_place != 2) {
     return e.reply([
@@ -6847,6 +6894,15 @@ async Buy_yaoguang(e) {
   
   // 检查玩家状态
   const player = await Read_player(usr_qq);
+  
+  // 检查是否摇光圣地弟子
+  if (player.势力 !== "摇光圣地") {
+    return e.reply([
+      "摇光圣殿执事：",
+      "此乃摇光圣殿秘藏，非本门弟子不得兑换。",
+      "你尚未加入摇光圣地，不得在此兑换。"
+    ].join("\n"));
+  }
   
   // 检查是否在遮天位面
   if (player.power_place != 2) {

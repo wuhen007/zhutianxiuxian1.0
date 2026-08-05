@@ -113,7 +113,7 @@ export class XutianTreasury extends plugin {
       } else {
         const owner = readInnateTreasureState().owners?.虚天舟?.ownerId;
         shipLine = String(owner) === String(ctx.qq)
-          ? '虚天舟已认你为主，可从纳戒帝兵栏执掌。'
+          ? '虚天舟已认你为主，可发送 #执掌先天至宝 虚天舟，令其归入独立至宝位。'
           : '虚天舟已有主人，但劫光令与养神丹配方仍已完整烙入你的识海。';
       }
 
