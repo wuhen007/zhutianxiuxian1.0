@@ -287,8 +287,8 @@ async zhaohuanailixiya(e) {
     replyMessage.push(' 爱莉希雅轻轻叹息：「哎呀，你的资质是『无化如是』呢～」');
     replyMessage.push(' 「这是连我也无法改变的命运枷锁哦，真是遗憾♪」');
     } 
-       else  if (Math.random() < 0.1 && currentAptitudeIndex < 8) {
-            const newAptitudeIndex = Math.min(currentAptitudeIndex + 1, 8); // 上限为万古无双（索引7）
+       else  if (Math.random() < 0.1 && currentAptitudeIndex < 9) {
+            const newAptitudeIndex = Math.min(currentAptitudeIndex + 1, 9); // 上限为万古无双（索引8）
             newAptitude = aptitudeSequence[newAptitudeIndex];
             newDescription = aptitudeDescriptions[newAptitude];
             player.天资等级 = newAptitude;
@@ -449,8 +449,8 @@ async yijianzhaohuan(e) {
     replyMessage.push(' 「这是连我也无法改变的命运枷锁哦，真是遗憾♪」');
     }     
             // 天资提升判定（10%概率提升）
-           else  if (Math.random() < 0.1 && currentIndex < 8) {
-                const newAptitudeIndex = Math.min(currentIndex + 1, 8);
+           else  if (Math.random() < 0.1 && currentIndex < 9) {
+                const newAptitudeIndex = Math.min(currentIndex + 1, 9);
                 const newAptitude = aptitudeSequence[newAptitudeIndex];
                 player.天资等级 = newAptitude;
                 player.天资评价 = aptitudeDescriptions[newAptitude];
