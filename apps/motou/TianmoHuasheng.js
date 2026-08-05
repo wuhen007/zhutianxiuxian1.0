@@ -27,6 +27,7 @@ import {
   hasTianmoHuashengTechnique,
   isTianmoHuashengPhysique,
 } from "../../model/tianmoHuasheng.js";
+import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 
 const activeRefinements = new Set();
 
@@ -128,7 +129,12 @@ export class TianmoHuasheng extends plugin {
 
       player.法球倍率 = Number(player.灵根.法球倍率) || 0;
       const opponent = createTianmoTrialOpponent(player);
-      const battle = await zd_battle(player, opponent);
+      const A_player = { ...player };
+      const B_player = { ...opponent };
+      const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_player);
+      if (blackEmperorFormation.consumed) await Write_player(qq, player);
+      const battle = await zd_battle(A_player, B_player);
+      if (blackEmperorFormation.message && Array.isArray(battle.msg)) battle.msg.unshift(blackEmperorFormation.message);
       const succeeded = battle.winner === "A";
       player.当前血量 = Math.max(0, Number(battle.A_hp) || 0);
       player.万化天魔传承试炼 = {
