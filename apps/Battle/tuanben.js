@@ -1083,7 +1083,7 @@ async batchSettleDevilMonarch(e) {
   for (const id of team.members) {
     if (memberRounds[id] <= 0) continue;
     const key = weeklyKeyOf(id);
-    await redis.incrby(key, memberRounds[id]);
+    await redis.incrBy(key, memberRounds[id]);
     await redis.expire(key, 9 * 86400); // 兜底清理，下周不再被读取
   }
 

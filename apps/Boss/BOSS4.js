@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import { plugin, verc, data, config } from '../../api/api.js';
 import {
   Add_灵石,
@@ -17,13 +18,25 @@ import {
 } from '../../model/xiuxian.js';
 import { recordWenXianTrial } from '../../model/wenxianling.js';
 import { absorbTuntianSource } from '../../model/tuntianMagic.js';
+import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import {
   buildTianjiaoBattleStats,
+  ensureTianjiaoInitialTemplate,
   formatTianjiaoTrace,
   getKnownTianjiaoTrace,
   getTianjiaoTraceReach,
   isIndependentTianjiao,
+  isTianjiaoHealing,
+  registerTianjiaoDefeat,
+  resetTianjiaoToInitialTemplate,
 } from '../../model/tianjiaoGrowth.js';
+import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
+import {
+  applyPveStatMultiplier,
+  consumeSourceStoneField,
+  consumeTianjiaoScent,
+  getTianjiaoScentAccess,
+} from '../../model/tianjiTalismans.js';
 
 let WorldBOSSBattleCD = []; //CD
 let WorldBOSSBattleLock = 0; //BOSS战斗锁，防止打架频率过高造成奖励多发
@@ -68,7 +81,14 @@ export class BOSS4 extends plugin {
       ],
     });
 
-    this.task = []; // 无定时任务，防止loader报undefined.cron
+    this.task = [
+      {
+        cron: '0 */15 * * * *',
+        name: '天骄转世巡查',
+        fnc: () => this.checkTianjiaoReincarnation(),
+        log: true,
+      },
+    ];
     this.userCooldownMs = 30 * 60 * 1000; // 30分钟个人冷却
     this.tianjiaoRefreshMs = 18 * 60 * 60 * 1000; // 18小时天骄刷新时间
     this.escapeRefreshMs = 6 * 60 * 60 * 1000; // 逃脱后6小时复活
@@ -369,7 +389,7 @@ export class BOSS4 extends plugin {
   // ======================
   // 护道人触发机制（基于血量的线性概率）
   // ======================
-  async triggerProtector(e, tianjiaoName, tianjiaoData, player, currentHP) {
+  async triggerProtector(e, tianjiaoName, tianjiaoData, player, currentHP, sourceField = null) {
     // 只有血量低于30%时才可能触发护道人
     if (currentHP > 30) {
       return { triggered: false, protectorWon: false };
@@ -406,6 +426,7 @@ export class BOSS4 extends plugin {
       法球倍率: player.灵根?.法球倍率 || 1,
       学习的功法: player.学习的功法 || [],
     };
+    if (sourceField?.consumed) applyPveStatMultiplier(A_player, sourceField.multiplier);
 
     const B_player = {
       名号: protector.名号,
@@ -420,8 +441,11 @@ export class BOSS4 extends plugin {
       学习的功法: protector.学习的功法 || [],
     };
 
+    const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_player, { sourceField });
+    if (blackEmperorFormation.consumed) await Write_player(e.user_id.toString(), player);
     const result = await zd_battle(A_player, B_player, { battleType: 'tianjiao' });
     let battleMsg = result.msg;
+    if (blackEmperorFormation.message && Array.isArray(battleMsg)) battleMsg.unshift(blackEmperorFormation.message);
 
     if (battleMsg.length <= 20) {
       messages = messages.concat(battleMsg);
@@ -504,6 +528,99 @@ export class BOSS4 extends plugin {
     }
   }
 
+  getTianjiaoWorldYear() {
+    const era = config.getConfig('xiuxian', 'xiuxian')?.Era?.current || {};
+    return getRealmEventWorldYear(era.index, era.years, era.epoch);
+  }
+
+  getTianjiaoContext() {
+    const era = config.getConfig('xiuxian', 'xiuxian')?.Era?.current || {};
+    return {
+      eraIndex: Number(era.index) || 0,
+      cultivationLevels: data.Level_list,
+      physiqueLevels: data.LevelMax_list,
+      secretLevels: data.Levelmijing_list,
+      ancientLevels: data.xiangujinshi_list,
+      equipmentList: data.equipment_list,
+      specialEquipmentList: data.tszb_list,
+      imperialWeaponList: data.dibing_list,
+      talentList: data.talent_list,
+      techniqueList: [
+        ...(data.jineng1 || []),
+        ...(data.jineng2 || []),
+        ...(data.jineng3 || []),
+        ...(data.jineng_heal || []),
+      ],
+    };
+  }
+
+  persistTianjiaoList() {
+    try {
+      const bossListPath = path.join(data.filePathMap.lib, '位面boss列表.json');
+      fs.writeFileSync(bossListPath, JSON.stringify(data.weimiantianjiao_list, null, 2), 'utf8');
+    } catch (error) {
+      console.error('保存天骄列表失败:', error);
+    }
+  }
+
+  async checkTianjiaoReincarnation() {
+    try {
+      const era = config.getConfig('xiuxian', 'xiuxian')?.Era || {};
+      const groups = era.notifyGroups || [];
+      const now = Date.now();
+
+      for (const tianjiao of data.weimiantianjiao_list || []) {
+        const name = tianjiao.名号;
+        const reviveKey = `tianjiao:global:revive:${name}`;
+        const reviveTime = Number(await redis.get(reviveKey));
+        if (!reviveTime || now < reviveTime) continue;
+
+        const announcedKey = `tianjiao:reincarnation:announced:${name}`;
+        if (await redis.get(announcedKey)) continue;
+
+        const life = Math.max(1, Number(tianjiao.轮回世数) || 1);
+        const title = tianjiao.轮回称号 || '轮回者';
+        const statusKey = `tianjiao:status:${name}`;
+        let status = {};
+        try {
+          status = JSON.parse(await redis.get(statusKey) || '{}');
+        } catch {
+          status = {};
+        }
+        status.currentHP = 100;
+        status.isAlive = true;
+        delete status.本世败绩;
+        delete status.isHealing;
+        delete status.养伤;
+        delete status.下次自强倍率;
+        delete status.下次证道阻断;
+        await redis.set(statusKey, JSON.stringify(status));
+        await redis.set(announcedKey, '1');
+        await redis.del(reviveKey);
+
+        const message = [
+          '【轮回钟鸣·转世归来】',
+          `第${life}世·${title}，${name}！`,
+          '道身崩灭处，一点真灵不灭；轮回深处，昔年印记重新亮起。',
+          '万载积累尽散，神骨道胎重铸，这一世自原点再踏征途。',
+          '旧怨未消，新敌四起，诸天修士当心，天骄已归来！',
+          '「纵死一次，大道不灭」',
+        ].join('\n');
+
+        for (const groupId of groups) {
+          try {
+            await Bot.sendGroupMsg(groupId, message);
+          } catch (error) {
+            console.error(`[天骄轮回] 群 ${groupId} 公告失败:`, error);
+          }
+        }
+        console.log(`[天骄轮回] ${name} 第${life}世归来`);
+      }
+    } catch (error) {
+      console.error('[天骄转世巡查] 失败:', error);
+    }
+  }
+
   async CreateWorldBoss2(e) {
     if (!e || e.isMaster) {
       await InitWorldBoss(e);
@@ -539,6 +656,7 @@ export class BOSS4 extends plugin {
     if (!verc({ e })) return false;
 
     const player = await Read_player(e.user_id.toString());
+    await this.checkTianjiaoReincarnation();
     const match = e.msg.match(/^#天骄状态(?:\s+(.*))?$/);
     const tianjiaoName = match[1] ? match[1].trim() : '';
 
@@ -570,15 +688,19 @@ export class BOSS4 extends plugin {
             `境界: ${tianjiao.境界}`,
             `踪迹: ${formatTianjiaoTrace(trace)}`,
             `状态: 已击败，${hours}小时${minutes}分钟后刷新`,
+            ...(Number(tianjiao.轮回世数) > 0 ? [`转世: 第${tianjiao.轮回世数}世·${tianjiao.轮回称号 || ''}`] : []),
             '-------------------'
           );
         } else {
+          const healing = isTianjiaoHealing(status, this.getTianjiaoWorldYear());
           allStatus.push(
             `名号: ${tianjiao.名号}`,
             `境界: ${tianjiao.境界}`,
             `踪迹: ${formatTianjiaoTrace(trace)}`,
             `血量: ${status.currentHP}%`,
-            `状态: ${status.isAlive ? '存活' : '已击败'}`,
+            `状态: ${status.isAlive ? (healing ? '存活（养伤中）' : '存活') : '已击败'}`,
+            ...(healing ? [`养伤: ${status.养伤?.type || '疗伤中'}，至第${status.养伤?.untilWorldYear}年`] : []),
+            ...(Number(tianjiao.轮回世数) > 0 ? [`转世: 第${tianjiao.轮回世数}世·${tianjiao.轮回称号 || ''}`] : []),
             '-------------------'
           );
         }
@@ -617,12 +739,15 @@ export class BOSS4 extends plugin {
       await redis.set(statusKey, JSON.stringify(status));
     }
 
+    const healing = isTianjiaoHealing(status, this.getTianjiaoWorldYear());
     let ReplyMsg = [
       `----${tianjiaoName}状态----`,
       `境界: ${tianjiaoData.境界}`,
       `踪迹: ${formatTianjiaoTrace(trace)}`,
       `当前血量: ${status.currentHP}%`,
-      `状态: ${status.isAlive ? '存活' : '已击败'}`
+      `状态: ${status.isAlive ? (healing ? '存活（养伤中）' : '存活') : '已击败'}`,
+      ...(healing ? [`养伤: ${status.养伤?.type || '疗伤中'}，至第${status.养伤?.untilWorldYear}年`] : []),
+      ...(Number(tianjiaoData.轮回世数) > 0 ? [`转世: 第${tianjiaoData.轮回世数}世·${tianjiaoData.轮回称号 || ''}`] : []),
     ];
 
     e.reply(ReplyMsg.join('\n'));
@@ -816,6 +941,7 @@ export class BOSS4 extends plugin {
   async WorldBossBattle2(e) {
     if (!verc({ e })) return false;
     if (e.isPrivate) return false;
+    await this.checkTianjiaoReincarnation();
 
     // 战斗锁检查
     if (WorldBOSSBattleLock === 1) {
@@ -840,14 +966,21 @@ export class BOSS4 extends plugin {
       e.reply(`未找到名为「${tianjiaoName}」的天骄`);
       return false;
     }
+    if (ensureTianjiaoInitialTemplate(tianjiaoData)) this.persistTianjiaoList();
 
     const trace = this.getAvailableTianjiaoTrace(player, tianjiaoData);
     const traceReach = getTianjiaoTraceReach(player, trace);
-    if (!trace) {
-      e.reply(`你尚未找到${tianjiaoName}的踪迹。通关副本或关注位面大事件，均有机会发现其位置。`);
-      return false;
-    }
-    if (!traceReach.ok) {
+    const scentAccess = getTianjiaoScentAccess(player, tianjiaoName);
+    const usesScent = !traceReach.ok && scentAccess.ok;
+    if (!traceReach.ok && !usesScent) {
+      if (!trace && scentAccess.reason === 'target') {
+        e.reply(`万里追息印已锁定${scentAccess.state.target}，剩余${scentAccess.state.remaining}次，无法改追${tianjiaoName}。`);
+        return false;
+      }
+      if (!trace) {
+        e.reply(`你尚未找到${tianjiaoName}的踪迹。通关副本、关注位面大事件，或消耗万里定位符均可追踪。`);
+        return false;
+      }
       e.reply([
         `${tianjiaoName}当前踪迹：${formatTianjiaoTrace(trace)}`,
         traceReach.reason === 'plane'
@@ -1014,9 +1147,22 @@ export class BOSS4 extends plugin {
         学习的功法: tianjiaoData.学习的功法 || [],
       };
 
+      const scentResult = usesScent ? consumeTianjiaoScent(player, tianjiaoName) : null;
+      const sourceField = consumeSourceStoneField(player, A_player);
+      if (scentResult?.ok || sourceField.consumed) await Write_player(usr_qq, player);
+
       // 进行战斗
+      const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_player, { sourceField });
+      if (blackEmperorFormation.consumed) await Write_player(usr_qq, player);
       const result = await zd_battle(A_player, B_player, { battleType: 'tianjiao' });
       let msg = result.msg;
+      if (scentResult?.ok && Array.isArray(msg)) {
+        msg.unshift(`【万里追息】锁定${scentResult.target}气息，本次无需踪迹；追息印剩余${scentResult.remaining}次。`);
+      }
+      if (sourceField.consumed && Array.isArray(msg)) {
+        msg.unshift(`【${sourceField.name}】山川龙气入体，攻防血提升${Math.round((sourceField.multiplier - 1) * 100)}%，阵势剩余${sourceField.remaining}场。`);
+      }
+      if (blackEmperorFormation.message && Array.isArray(msg)) msg.unshift(blackEmperorFormation.message);
       
       if (msg.length <= 30) {
         await ForwardMsg(e, msg);
@@ -1063,6 +1209,23 @@ export class BOSS4 extends plugin {
           // 护身法宝未触发，正常扣血
           status.currentHP = Math.max(0, status.currentHP - (zhuxianTianjiao ? 40 : 20));
         }
+
+        const defeatResult = registerTianjiaoDefeat(tianjiaoData, status, this.getTianjiaoWorldYear());
+        const setbackLines = [];
+        if (defeatResult.setback) {
+          const typeText = {
+            轻伤: '本源震荡，血洒长空',
+            道心受创: '连败之下道心受创',
+            道心破碎: '道心破碎，万载积累溃散一角',
+          }[defeatResult.setback.type] || '道伤缠身';
+          setbackLines.push(
+            `【天骄道伤】${typeText}！`,
+            `自第${defeatResult.setback.startedAtWorldYear}年起闭关养伤千载，伤愈之前不再精进。`,
+          );
+          if (defeatResult.setback.lostGrowth) {
+            setbackLines.push(defeatResult.setback.lostGrowth);
+          }
+        }
         
         const hatredResult = await this.addHatred(tianjiaoName, usr_qq, '挑战成功');
         if (zhuxianTianjiao) {
@@ -1086,6 +1249,7 @@ export class BOSS4 extends plugin {
             : `天骄血量减少${zhuxianTianjiao ? 40 : 20}%，当前剩余${status.currentHP}%`,
           `仇恨值+${hatredResult.gain}（当前：${hatredResult.new}，关系：${newLevel}）`
         ];
+        if (setbackLines.length > 0) winMsg.push(...setbackLines);
         await e.reply(winMsg.join('\n'));
 
         // 普通掉落按每次战胜结算；特殊掉落仍只属于最终击杀。
@@ -1102,7 +1266,7 @@ export class BOSS4 extends plugin {
         // 检查天骄是否被彻底击败
         if (status.currentHP <= 0) {
           // 先检查护道人触发（基于血量的线性概率）
-          const protectorResult = await this.triggerProtector(e, tianjiaoName, tianjiaoData, player, status.currentHP);
+          const protectorResult = await this.triggerProtector(e, tianjiaoName, tianjiaoData, player, status.currentHP, sourceField);
           
           if (protectorResult.triggered) {
             if (protectorResult.escaped) {
@@ -1129,7 +1293,7 @@ export class BOSS4 extends plugin {
           const reviveTime = Date.now() + this.tianjiaoRefreshMs;
           await redis.set(globalReviveKey, reviveTime.toString());
           
-          await e.reply(`${tianjiaoName}已被彻底击败，18小时后将重新出现！`);
+          await e.reply(`${tianjiaoName}道身崩灭，已入轮回！18小时后转世之身归来，届时全服公告。`);
 
           // 特殊掉落
           if (tianjiaoData.特殊掉落) {
@@ -1148,6 +1312,16 @@ export class BOSS4 extends plugin {
 
           // 发放贡献榜奖励
           await this.distributeContributionRewards(e, tianjiaoName, tianjiaoData, usr_qq);
+
+          const reincarnation = resetTianjiaoToInitialTemplate(tianjiaoData, this.getTianjiaoContext());
+          status.currentHP = 100;
+          status.isAlive = false;
+          delete status.本世败绩;
+          delete status.isHealing;
+          delete status.养伤;
+          delete status.下次自强倍率;
+          delete status.下次证道阻断;
+          await e.reply(`第${reincarnation.life}世·${reincarnation.title}，${tianjiaoName}轮回印记已定。`);
         }
 
         // 计算奖励
@@ -1240,6 +1414,8 @@ export class BOSS4 extends plugin {
             ].filter(Boolean).join('\n'));
           }
         }
+
+        this.persistTianjiaoList();
 
       } else {
         // 玩家失败
@@ -1493,6 +1669,7 @@ async function InitWorldBoss(e) {
     };
     await redis.set(statusKey, JSON.stringify(status));
     await redis.del(`tianjiao:global:revive:${tianjiao.名号}`);
+    await redis.del(`tianjiao:reincarnation:announced:${tianjiao.名号}`);
     await redis.del(`tianjiao:damage:${tianjiao.名号}`);
     await redis.del(`tianjiao:hatred_status:${tianjiao.名号}`);
     

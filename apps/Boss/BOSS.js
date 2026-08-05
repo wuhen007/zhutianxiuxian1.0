@@ -1,9 +1,11 @@
 import fs from 'fs';
+import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 import { plugin, verc, data, config } from '../../api/api.js';
 import {
   Add_灵石,
   ForwardMsg,
   Add_HP,
+  Write_player,
   Set_HP,
   Harm,
   zd_battle,
@@ -265,8 +267,13 @@ export class BOSS extends plugin {
         return false;
       }
       WorldBOSSBattleLock = 1;
-      let Data_battle = await zd_battle(player, Boss);
+      const A_player = { ...player };
+      const B_player = { ...Boss };
+      const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_player);
+      if (blackEmperorFormation.consumed) await Write_player(usr_qq, player);
+      let Data_battle = await zd_battle(A_player, B_player);
       let msg = Data_battle.msg;
+      if (blackEmperorFormation.message) msg.unshift(blackEmperorFormation.message);
       if (msg.length <= 60) await ForwardMsg(e, msg);
       else {
         let msgg = JSON.parse(JSON.stringify(msg));

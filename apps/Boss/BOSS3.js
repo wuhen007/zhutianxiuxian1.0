@@ -14,6 +14,7 @@ import {
   Add_血气,
 } from '../../model/xiuxian.js';
 import { startWeimianDestruction, stopWeimianDestruction, handleDestructionStatusCommand } from './WeimianDestruction.js';
+import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 import {
   getYongJiStats,
 } from './YongJiList.js';
@@ -792,8 +793,13 @@ export class BOSS3 extends plugin {
       await sleep(2000);
 
       // 战斗
-      let Data_battle1 = await zd_battle(player, BossList);
+      const A_player1 = { ...player };
+      const B_team1 = BossList.map(item => ({ ...item }));
+      const blackEmperorFormation1 = consumeBlackEmperorBattleFormation(player, A_player1, B_team1);
+      if (blackEmperorFormation1.consumed) await Write_player(usr_qq, player);
+      let Data_battle1 = await zd_battle(A_player1, B_team1);
       let allMsg = [...Data_battle1.msg];
+      if (blackEmperorFormation1.message) allMsg.unshift(blackEmperorFormation1.message);
       await sendBattleMsg(e, allMsg);
       await sleep(1500);
 
@@ -1109,7 +1115,12 @@ export class BOSS3 extends plugin {
           await sleep(2000);
           
           // 第二轮战斗
-          let Data_battle1_again = await zd_battle(player, revivedBossList);
+          const A_player2 = { ...player };
+          const B_team2 = revivedBossList.map(item => ({ ...item }));
+          const blackEmperorFormation2 = consumeBlackEmperorBattleFormation(player, A_player2, B_team2);
+          if (blackEmperorFormation2.consumed) await Write_player(usr_qq, player);
+          let Data_battle1_again = await zd_battle(A_player2, B_team2);
+          if (blackEmperorFormation2.message && Array.isArray(Data_battle1_again.msg)) Data_battle1_again.msg.unshift(blackEmperorFormation2.message);
           await sendBattleMsg(e, Data_battle1_again.msg);
           await sleep(1500);
           
@@ -1176,7 +1187,12 @@ export class BOSS3 extends plugin {
             await sleep(2000);
             
             // 终极战斗
-            let Data_battle2 = await zd_battle(player, [ultimateBoss]);
+            const A_player3 = { ...player };
+            const B_player3 = { ...ultimateBoss };
+            const blackEmperorFormation3 = consumeBlackEmperorBattleFormation(player, A_player3, B_player3);
+            if (blackEmperorFormation3.consumed) await Write_player(usr_qq, player);
+            let Data_battle2 = await zd_battle(A_player3, [B_player3]);
+            if (blackEmperorFormation3.message && Array.isArray(Data_battle2.msg)) Data_battle2.msg.unshift(blackEmperorFormation3.message);
             await sendBattleMsg(e, Data_battle2.msg);
             await sleep(1500);
             
@@ -1410,7 +1426,12 @@ export class BOSS3 extends plugin {
         };
         
         // 终极战斗
-        let Data_battle2 = await zd_battle(player, [ultimateBoss]);
+        const A_player4 = { ...player };
+        const B_player4 = { ...ultimateBoss };
+        const blackEmperorFormation4 = consumeBlackEmperorBattleFormation(player, A_player4, B_player4);
+        if (blackEmperorFormation4.consumed) await Write_player(usr_qq, player);
+        let Data_battle2 = await zd_battle(A_player4, [B_player4]);
+        if (blackEmperorFormation4.message && Array.isArray(Data_battle2.msg)) Data_battle2.msg.unshift(blackEmperorFormation4.message);
         await sendBattleMsg(e, Data_battle2.msg);
         await sleep(1500);
         

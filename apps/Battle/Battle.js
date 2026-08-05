@@ -17,6 +17,7 @@ import {
   dataall
 
 } from '../../model/duanzaofu.js';
+import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 export class Battle extends plugin {
   constructor() {
     super({
@@ -404,8 +405,13 @@ let now_mijinglevel_idAA;
     let final_msg = [segment.at(A), '\n'];
     final_msg.push(`${player.名号}向${count}个自身幻影发起了挑战！`);
 
-    let Data_battle = await zd_battle(player, phantoms);
+    const A_player = { ...player };
+    const B_team = phantoms.map(item => ({ ...item }));
+    const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_team);
+    if (blackEmperorFormation.consumed) await Write_player(A, player);
+    let Data_battle = await zd_battle(A_player, B_team);
     let msg = Data_battle.msg;
+    if (blackEmperorFormation.message && Array.isArray(msg)) msg.unshift(blackEmperorFormation.message);
     await ForwardMsg(e, msg);
 
     // 判断胜负

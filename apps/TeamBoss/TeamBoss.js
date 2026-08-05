@@ -1,5 +1,6 @@
 import {plugin} from '../../api/api.js';
 import fs from 'node:fs';
+import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 import data from '../../model/XiuxianData.js';
 import config from '../../model/Config.js';
 import {
@@ -8,6 +9,7 @@ import {
   convert2integer,
   Add_灵石,
   Read_player,
+  Write_player,
   bigNumberTransform,
   zd_battle,
   Harm,
@@ -862,8 +864,13 @@ export class TeamBoss extends plugin {
               return true;
             }
             WorldBOSSBattleLock[Boss_player.Boss_id] = 1;*/
-      let Data_battle = await zd_battle(player, Boss);
+      const A_player = { ...player };
+      const B_player = { ...Boss };
+      const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_player);
+      if (blackEmperorFormation.consumed) await Write_player(usr_qq, player);
+      let Data_battle = await zd_battle(A_player, B_player);
       let msg = Data_battle.msg;
+      if (blackEmperorFormation.message) msg.unshift(blackEmperorFormation.message);
       await sleep(1000);
       if (!WorldBossStatus.Healthmax) {
         e.reply('请联系管理员重新开启!');

@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
@@ -25,6 +25,16 @@ function loadGetReadyUnits() {
   return Function(`${source.replace('export ', '')}; return getReadyUnits;`)();
 }
 
+function loadBoostActionBar() {
+  const source = xiuxianSource.match(
+    /export function boostActionBar\([\s\S]*?\n\}/
+  )?.[0];
+  assert.ok(source, "未找到 boostActionBar");
+  return Function(`${source.replace("export ", "")}; return boostActionBar;`)();
+}
+
+
+
 test('团本同拍单位按速度和行动条排序', () => {
   const getReadyUnits = loadGetReadyUnits();
   const units = [
@@ -38,6 +48,19 @@ test('团本同拍单位按速度和行动条排序', () => {
     ['更快单位', '狠人大帝', '玩家']
   );
 });
+
+test('拉条保留溢出，不满条不会提前触发', () => {
+  const boostActionBar = loadBoostActionBar();
+  const unit = { 当前血量: 1, _actionBar: 2800 };
+
+  assert.equal(boostActionBar(unit, 300), true);
+  assert.equal(unit._actionBar, 3100);
+
+  unit._actionBar = 2500;
+  assert.equal(boostActionBar(unit, 300), false);
+  assert.equal(unit._actionBar, 2800);
+});
+
 
 test('团本在专属分支前统一扣除行动条', () => {
   assert.match(
