@@ -149,6 +149,40 @@
     "rate": 0.5,
     "level_limit": 10,
     "exp": [12250, 25500]
+  },
+  {
+    "name": "万里定位符",
+    "class": "道具",
+    "type": "天骄追踪",
+    "materials": [
+      {
+        "name": "天机仙水",
+        "class": "道具",
+        "amount": 8
+      },
+      {
+        "name": "灵墨汁",
+        "class": "草药",
+        "amount": 8
+      },
+      {
+        "name": "星图",
+        "class": "道具",
+        "amount": 1
+      },
+      {
+        "name": "符纸",
+        "class": "道具",
+        "amount": 1
+      },
+      {
+        "name": "符笔",
+        "class": "道具",
+        "amount": 1
+      }
+    ],
+    "rate": 0.4,
+    "level_limit": 12,
+    "exp": [15500, 30000]
   }
-  
 ]

@@ -28,6 +28,10 @@ import {
   getMinggeEffects,
 } from '../../model/mingge.js';
 import { getPetAbilityBonus, getTimedActionMultiplier } from '../../model/innateTreasure.js';
+import {
+  SOURCE_STONE_FIELD_CONFIG,
+  prepareSourceStoneField as createSourceStoneField,
+} from '../../model/tianjiTalismans.js';
 
 // 材料稀有度
 const MATERIAL_RARITY = {
@@ -184,6 +188,14 @@ export class Occupation extends plugin {
                     fnc: 'xunyuan3_back'
                 },
                 {
+                    reg: '^#布置源石场$',
+                    fnc: 'prepareSourceStoneField'
+                },
+                {
+                    reg: '^#查看源石场$',
+                    fnc: 'showSourceStoneField'
+                },
+                {
     reg: '^#禁仙六封$',
     fnc: 'forbiddenImmortalSixSeals'
 },
@@ -225,6 +237,63 @@ export class Occupation extends plugin {
       ],
     });
   }
+
+async prepareSourceStoneField(e) {
+    if (!e.isGroup) return e.reply('请在群聊中布置源石场');
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return e.reply('玩家不存在，请先创建角色');
+    const player = await Read_player(usr_qq);
+    const result = createSourceStoneField(player);
+
+    if (!result.ok) {
+        if (result.reason === 'occupation') {
+            return e.reply('唯有源地师或源天师能勾连山川龙脉，布下源石场。');
+        }
+        if (result.reason === 'location') {
+            return e.reply('此处地脉坐标未明，先抵达有正式坐标的位面再布置源石场。');
+        }
+        if (result.reason === 'cost') {
+            return e.reply(`布阵需要${bigNumberTransform(result.cost)}源石，你当前只有${bigNumberTransform(player.源石 || 0)}。`);
+        }
+        if (result.reason === 'active') {
+            const field = result.field;
+            return e.reply(`【${field.name}】仍在${field.plane}（${field.coordinate.x},${field.coordinate.y}）运转，剩余${field.remaining}场。`);
+        }
+    }
+
+    await Write_player(usr_qq, player);
+    const field = result.field;
+    return e.reply([
+        `【源术布阵·${field.name}】`,
+        `你耗费${bigNumberTransform(result.cost)}源石，沿${field.plane}山川走势钉下源桩，拘来地脉龙气。`,
+        `阵眼：${field.plane}（${field.coordinate.x},${field.coordinate.y}）`,
+        `效果：在此坐标进行接下来3场讨伐PVE时，攻防血提升${Math.round((field.multiplier - 1) * 100)}%。`,
+        '源石场持续24小时；离开阵眼不会消耗次数，返回后仍可使用。',
+    ].join('\n'));
+}
+
+async showSourceStoneField(e) {
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return e.reply('玩家不存在，请先创建角色');
+    const player = await Read_player(usr_qq);
+    const field = player.源石场;
+    if (!field || Number(field.remaining) <= 0 || Number(field.expiresAt) <= Date.now()) {
+        const config = SOURCE_STONE_FIELD_CONFIG[player.occupation];
+        return e.reply(config
+            ? `当前没有生效中的源石场。发送 #布置源石场，消耗${bigNumberTransform(config.cost)}源石布阵。`
+            : '当前没有生效中的源石场。源地师或源天师方可布阵。');
+    }
+    const minutes = Math.max(0, Math.ceil((field.expiresAt - Date.now()) / 60000));
+    return e.reply([
+        `【${field.name}】`,
+        `阵眼：${field.plane}（${field.coordinate.x},${field.coordinate.y}）`,
+        `PVE增幅：${Math.round((field.multiplier - 1) * 100)}%`,
+        `剩余：${field.remaining}场｜${Math.floor(minutes / 60)}小时${minutes % 60}分`,
+    ].join('\n'));
+}
+
 async  forbiddenImmortalSixSeals(e) {
     if (!e.isGroup) {
         e.reply('请在群聊中施展禁仙六封');
