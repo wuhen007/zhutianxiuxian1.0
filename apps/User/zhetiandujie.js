@@ -31,7 +31,10 @@ import {
   ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS,
   BODY_TRIBULATION_SHIFT,
   calcPlaneCoordinateShift,
+  calcCoordinateShift,
   applyTribulationShift,
+  TRIBULATION_BASE_ATK_SCALE,
+  canUseClowWish,
 } from './zhetianTribulationRules.js';
 import {
   existplayer,
@@ -96,11 +99,11 @@ export class zhetiandujie extends plugin {
           fnc: 'poWangChengDi' 
         },
         {
-          reg: '^#打听天机[渡劫]+$',
+          reg: '^#(打听天机\\s*渡劫|渡劫天机)$',
           fnc: 'command_datitingtianji'
         },
         {
-          reg: '^#库洛牌祈愿(\\s+@?\\S+)?$',
+          reg: '^#库洛牌祈愿\\s*(@?\\S+)?\\s*$',
           fnc: 'command_kuluoqiyuan'
         }
       ],
@@ -3973,8 +3976,8 @@ async broadcastToAll(player,startMsg) {
 }
 
 // ==== 渡劫属性计算 ====
-// 渡劫保留武器/护具/法宝/帝兵的直接属性，套装效果仍被天道压制
-// 帝兵额外保留全属性×后两层基础
+// 渡劫保留武器/护具/法宝/帝兵/至宝的直接属性，套装效果仍被天道压制
+// 帝兵与独立至宝额外保留全属性×后两层基础
 // 调用方式：const tAttr = this.calcTribulationAttr(player, equipment);
 
 /**
@@ -4041,8 +4044,8 @@ calcTribulationAttr(player, equipment) {
   防御 = 防御 * (1 + 灵根防御);
   血量上限 = 血量上限 * (1 + 灵根生命);
 
-  // ===== 阶段3：渡劫保留四个装备槽的直接属性 =====
-  const equipmentSlots = [equipment.武器, equipment.护具, equipment.法宝, equipment.帝兵];
+  // ===== 阶段3：渡劫保留五个装备槽的直接属性 =====
+  const equipmentSlots = [equipment.武器, equipment.护具, equipment.法宝, equipment.帝兵, equipment.至宝];
   const equippedStats = calculateEquippedStats(
     { 攻击, 防御, 血量上限 },
     equipmentSlots
@@ -4060,14 +4063,13 @@ calcTribulationAttr(player, equipment) {
   // ===== 阶段5：套装效果 —— 天道排斥，全部归零（×1 无变化） =====
   // 不计算任何套装增益
 
-  // ===== 阶段6：帝兵全属性（只乘后两层基础，保留） =====
+  // ===== 阶段6：帝兵与至宝全属性（只乘后两层基础，保留） =====
+  const 秘境基础数据 = data.Levelmijing_list.find(item => item.level_id == player.mijinglevel_id);
+  const 仙古基础数据 = data.xiangujinshi_list.find(item => item.level_id == (player.xiangulevel_id || 1));
+  const 后两层攻 = (秘境基础数据?.基础攻击 || 0) + (仙古基础数据?.基础攻击 || 0);
+  const 后两层防 = (秘境基础数据?.基础防御 || 0) + (仙古基础数据?.基础防御 || 0);
+  const 后两层血 = (秘境基础数据?.基础血量 || 0) + (仙古基础数据?.基础血量 || 0);
   if (equipment.帝兵) {
-    const 秘境基础数据 = data.Levelmijing_list.find(item => item.level_id == player.mijinglevel_id);
-    const 仙古基础数据 = data.xiangujinshi_list.find(item => item.level_id == (player.xiangulevel_id || 1));
-    const 后两层攻 = (秘境基础数据?.基础攻击 || 0) + (仙古基础数据?.基础攻击 || 0);
-    const 后两层防 = (秘境基础数据?.基础防御 || 0) + (仙古基础数据?.基础防御 || 0);
-    const 后两层血 = (秘境基础数据?.基础血量 || 0) + (仙古基础数据?.基础血量 || 0);
-
     // 自铸帝兵 → 全额
     if (equipment.帝兵.author_name == player.id) {
       攻击 += Math.trunc(equipment.帝兵.全属性 * 后两层攻);
@@ -4087,6 +4089,11 @@ calcTribulationAttr(player, equipment) {
       防御 += Math.trunc(equipment.帝兵.全属性 * 后两层防);
       血量上限 += Math.trunc(equipment.帝兵.全属性 * 后两层血);
     }
+  }
+  if (equipment.至宝?.name) {
+    攻击 += Math.trunc((Number(equipment.至宝.全属性) || 0) * 后两层攻);
+    防御 += Math.trunc((Number(equipment.至宝.全属性) || 0) * 后两层防);
+    血量上限 += Math.trunc((Number(equipment.至宝.全属性) || 0) * 后两层血);
   }
 
   // ===== 阶段7：超出上限的额外加成（最后加算，自然稀释） =====
@@ -4193,26 +4200,62 @@ async command_datitingtianji(e) {
   lines.push(`当前时代：${eraName}（难度 ×${eraDiff}）`);
   lines.push('');
 
-  // ===== 天机一：帝兵随机伤害区间 =====
+  // ===== 渡劫区间修正（体质 / 位面坐标 / 库洛牌 / 黑皇阵纹） =====
+  const 体质偏移 = BODY_TRIBULATION_SHIFT[player.灵根?.name] || 0;
+  const 位面偏移 = 当前坐标 ? calcPlaneCoordinateShift(player) : 0;
+  const 库洛牌偏移 = player.库洛牌祈愿?.区间偏移 || 0;
+  const 待用阵纹 = player.黑皇待用阵纹 === '欺天阵纹';
+  const 区间跨度 = 区间 ? Math.round(区间.有兵字秘 - 区间.无兵字秘) : 0;
+  const 已确定偏移 = 体质偏移 + 位面偏移 + 库洛牌偏移;
+  // 阵纹偏正 = 区间下移 = 更安全；阵纹反噬 = 区间上移 = 更凶险
+  const 阵纹最优 = 待用阵纹 ? -15 : 0;
+  const 阵纹最差 = 待用阵纹 ? 15 : 0;
+  const clampSpan = (v) => Math.max(0, Math.min(区间跨度, v));
+  const 实际最低随机 = clampSpan(0 + 已确定偏移 + 阵纹最优);
+  const 实际最高随机 = clampSpan(区间跨度 + 已确定偏移 + 阵纹最差);
+  const 实际最低倍率 = 区间 ? Number((区间.无兵字秘 + 实际最低随机).toFixed(1)) : 0;
+  const 实际最高倍率 = 区间 ? Number((区间.无兵字秘 + 实际最高随机).toFixed(1)) : 0;
+
+  // ===== 天机一：帝兵随机伤害区间（已计入修正） =====
   if (区间 && 下场雷劫) {
-    const 波动倍数 = (区间.有兵字秘 / 区间.无兵字秘).toFixed(2);
-    const 最幸运伤害 = Math.trunc(maxAtk * 下场雷劫.阶段最高 * 0.8 * 下场雷劫.倍率 * 区间.无兵字秘);
-    const 最凶险伤害 = Math.trunc(maxAtk * 下场雷劫.阶段最高 * 1.5 * 下场雷劫.倍率 * 区间.有兵字秘);
-    const 当前时代幸运 = Math.trunc(maxAtk * 下场雷劫.阶段最高 * eraDiff * 下场雷劫.倍率 * 区间.无兵字秘);
-    const 当前时代凶险 = Math.trunc(maxAtk * 下场雷劫.阶段最高 * eraDiff * 下场雷劫.倍率 * 区间.有兵字秘);
-    const 推荐预留 = 当前时代凶险 > 0 ? Math.min(99, Math.max(50, Math.ceil((当前时代凶险 / Math.max(1, player.血量上限 || 1)) * 100))) : 99;
+    const 波动倍数 = 实际最低倍率 > 0 ? (实际最高倍率 / 实际最低倍率).toFixed(2) : '—';
+    const 血上限 = Math.max(1, Number(player.血量上限) || 1);
+
+    // 修正（2026-08-05）：maxAtk 本身已含「帝兵全属性随机倍率」，原逻辑再乘 实际最低/最高倍率 = 双重放大，
+    //   致「最凶险」被夸大约 25 倍（788 倍血量虚高）。改为对「雷劫攻击基础」只乘一次随机倍率。
+    // 斩道天刀（idx 10）为血量上限系（useHP=true），终关按血量上限估算，与 maxAtk / 帝兵随机档均无关。
+    const 雷劫攻击基础 = (data.Level_list.find(i => i.level_id == 64)?.基础攻击 || 0)
+      + (data.LevelMax_list.find(i => i.level_id == 63)?.基础攻击 || 0)
+      + (data.Levelmijing_list.find(i => i.level_id == player.mijinglevel_id)?.基础攻击 || 0);
+    const 终波系数 = 1 + 0.03 * 1;   // 终关均为 1 波：(1 + 0.03*1)
+    const 是HP终关 = (下场雷劫.idx === 10);   // 仅斩道天刀为血量上限系
+    let 当前时代幸运, 当前时代凶险;
+    if (是HP终关) {
+      当前时代幸运 = Math.trunc(血上限 * 下场雷劫.阶段最高 * 终波系数 * 下场雷劫.倍率);
+      当前时代凶险 = 当前时代幸运;
+    } else {
+      当前时代幸运 = Math.trunc(雷劫攻击基础 * 实际最低倍率 * eraDiff * 下场雷劫.倍率 * 下场雷劫.阶段最高 * 终波系数);
+      当前时代凶险 = Math.trunc(雷劫攻击基础 * 实际最高倍率 * eraDiff * 下场雷劫.倍率 * 下场雷劫.阶段最高 * 终波系数);
+    }
+    const 凶险倍数 = 当前时代凶险 / 血上限;
 
     lines.push('【天机一·帝兵随机伤害区间】');
-    lines.push(`帝兵全属性随机：${区间.无兵字秘}× ~ ${区间.有兵字秘}×（波动 ${波动倍数} 倍）`);
+    lines.push(`理论区间：${区间.无兵字秘}× ~ ${区间.有兵字秘}×`);
+    lines.push(`修正后区间：${实际最低倍率}× ~ ${实际最高倍率}×（波动 ${波动倍数} 倍）`);
     lines.push('');
-    lines.push(`按当前 maxAtk 与 ${下场雷劫.name}（倍率 ×${下场雷劫.倍率}）：`);
-    lines.push(`  极限区间（神话 ×0.8 ~ 绝灵 ×1.5）：`);
-    lines.push(`    最幸运：${bigNumberTransform(最幸运伤害)}`);
-    lines.push(`    最凶险：${bigNumberTransform(最凶险伤害)}`);
-    lines.push(`  ${eraName}（×${eraDiff}）：`);
-    lines.push(`    最幸运：${bigNumberTransform(当前时代幸运)}`);
-    lines.push(`    最凶险：${bigNumberTransform(当前时代凶险)}`);
-    lines.push(`建议：渡劫前至少预留 ${推荐预留}% 血量上限，方能扛过最凶险。`);
+    lines.push(`本次雷劫基准 maxAtk：${bigNumberTransform(maxAtk)}`);
+    lines.push(`（只由境界层数决定——天道不认外物，装备与帝兵再强也不会招来更猛的雷）`);
+    lines.push('');
+    lines.push(`${下场雷劫.name}（境界倍率 ×${下场雷劫.倍率}）· ${eraName}（×${eraDiff}）单波峰值：`);
+    lines.push(`  最幸运：${bigNumberTransform(当前时代幸运)}`);
+    lines.push(`  最凶险：${bigNumberTransform(当前时代凶险)}`);
+    if (是HP终关) lines.push(`  （终关「斩道天刀」按血量上限结算，与帝兵随机档无关——此即你方才所问的"最终那道雷"）`);
+    lines.push(`  你的血量上限：${bigNumberTransform(血上限)}`);
+    if (凶险倍数 <= 1) {
+      lines.push(`  ⇒ 最凶险仅为血量上限的 ${(凶险倍数 * 100).toFixed(1)}%，可硬扛。`);
+    } else {
+      lines.push(`  ⇒ 最凶险为血量上限的 ${凶险倍数.toFixed(1)} 倍，须靠功法减伤 / 体质减伤 / 复活手段。`);
+    }
     lines.push(`「天机玄妙，帝兵蕴养之极致与贫瘠，全在一线之间。」`);
     lines.push('');
   } else {
@@ -4221,56 +4264,59 @@ async command_datitingtianji(e) {
     lines.push('');
   }
 
-  // ===== 天机二：渡劫区间修正明细（体质/位面/阵纹/库洛牌） =====
-  const 体质偏移 = BODY_TRIBULATION_SHIFT[player.灵根?.name] || 0;
-  const 位面偏移 = 当前坐标 ? calcPlaneCoordinateShift(player) : 0;
-  const 库洛牌偏移 = player.库洛牌祈愿?.区间偏移 || 0;
-  // 黑皇阵纹偏移：仅在渡劫时才触发（且随机 -15~+15），此处仅显示"是否待用"
-  const 待用阵纹 = player.黑皇待用阵纹 === '欺天阵纹';
-  const 区间跨度 = 区间 ? Math.round(区间.有兵字秘 - 区间.无兵字秘) : 0;
-
-  // 实际渡劫时的偏移总和（不含随机黑皇阵纹）
-  const 已确定偏移 = 体质偏移 + 位面偏移 + 库洛牌偏移;
-  // 理论可能总偏移（黑皇最有利+15）
-  const 最优可能 = 已确定偏移 + 15;
-  const 最差可能 = 已确定偏移 - 15;
-
+  // ===== 天机二：渡劫区间修正明细 =====
   lines.push('【天机二·渡劫区间修正明细】');
-  lines.push(`帝兵全属性随机跨度：0 ~ ${区间跨度}（共 ${区间跨度 + 1} 个值）`);
+  lines.push(`帝兵全属性随机跨度：0 ~ ${区间跨度}（共 ${区间跨度 + 1} 个值，取值越低越安全）`);
   lines.push('');
-  lines.push(`已确认的修正项（实际渡劫时叠加）：`);
-  lines.push(`  · 体质 [${player.灵根?.name || '无'}]：${体质偏移 >= 0 ? '+' : ''}${体质偏移}`);
-  if (体质偏移 !== 0) {
-    lines.push(`    ${体质偏移 < 0 ? '天生受天地法则青睐，区间向安全端平移' : ''}`);
-  }
-  lines.push(`  · 位面坐标 [${当前位面 || '凡间'} ${当前坐标 ? `(${当前坐标.x},${当前坐标.y})` : '无'}]：${位面偏移 >= 0 ? '+' : ''}${位面偏移}`);
-  if (当前坐标 && 位面偏移 !== 0) {
-    lines.push(`    ${位面偏移 < 0 ? '此坐标为吉位，渡劫更稳' : 位面偏移 > 0 ? '此坐标为凶位，渡劫更险' : ''}`);
-  }
-  lines.push(`  · 库洛牌祈愿：${库洛牌偏移 !== 0 ? `${库洛牌偏移 >= 0 ? '+' : ''}${库洛牌偏移}（身上有 buff）` : '无（未被祈愿）'}`);
-  lines.push(`  · 黑皇欺天阵纹：${待用阵纹 ? '⚠ 已待用（渡劫时随机 -15 ~ +15）' : '未刻入'}`);
+  lines.push(`修正项（负数向安全端平移，正数向凶险端平移）：`);
+  lines.push(`  · 体质 [${player.灵根?.name || '无'}]：${体质偏移 >= 0 ? '+' : ''}${体质偏移}${体质偏移 < 0 ? '　受天地法则青睐' : ''}`);
+  lines.push(`  · 位面坐标 [${当前位面 || '凡间'}${当前坐标 ? ` (${当前坐标.x},${当前坐标.y})` : ''}]：${位面偏移 >= 0 ? '+' : ''}${位面偏移}${当前坐标 ? (位面偏移 < 0 ? '　吉位，渡劫更稳' : 位面偏移 > 0 ? '　凶位，渡劫更险' : '　平位') : '　坐标未记录'}`);
+  lines.push(`  · 库洛牌祈愿：${库洛牌偏移 !== 0 ? `${库洛牌偏移 >= 0 ? '+' : ''}${库洛牌偏移}（已受祈愿）` : '±0（未被祈愿）'}`);
+  lines.push(`  · 黑皇欺天阵纹：${待用阵纹 ? '已待用（渡劫时随机 -15 ~ +15）' : '±0（未刻入）'}`);
   lines.push('');
-  lines.push(`修正后随机区间：${Math.max(0, 最优可能)} ~ ${Math.min(区间跨度, 最差可能)}`);
-  lines.push(`（钳位范围 [0, ${区间跨度}]，超出自动取边界值）`);
+  lines.push(`已确定偏移合计：${已确定偏移 >= 0 ? '+' : ''}${已确定偏移}`);
+  lines.push(`修正后随机取值：${实际最低随机} ~ ${实际最高随机}（原 0 ~ ${区间跨度}，已钳位）`);
   lines.push('');
 
   // ===== 天机三：可去位面渡劫坐标 =====
   const 可去位面 = 位面状态.filter(p => p.可去);
   if (可去位面.length > 0) {
-    lines.push('【天机二·可去位面渡劫坐标】');
-    lines.push('以下位面你可前往渡劫——伤害区间与位面无关（maxAtk 不变），主要看位面是否有坐标记录：');
+    lines.push('【天机三·可去位面渡劫吉凶】');
+    lines.push('位面坐标决定区间偏移（-10 吉 ~ +10 凶），换个地方渡劫结果大不同：');
     lines.push('');
-    for (const p of 可去位面) {
+    // 逐个位面算坐标偏移，按吉凶排序（偏移越低越安全）
+    const 位面吉凶 = 可去位面.map(p => {
+      const planeId = PLACE_LOCATION_MAP?.[p.name];
+      const 偏移 = p.坐标 ? calcCoordinateShift(planeId, p.坐标.x, p.坐标.y) : null;
+      return { ...p, 偏移 };
+    }).sort((a, b) => {
+      if (a.偏移 === null) return 1;
+      if (b.偏移 === null) return -1;
+      return a.偏移 - b.偏移;
+    });
+    for (const p of 位面吉凶) {
       const 当前位标记 = p.name === 当前位面 ? ' ★ 你当前所在' : '';
-      const 坐标文本 = p.坐标 ? `(${p.坐标.x}, ${p.坐标.y})` : '尚未记录（需先 #位面穿梭 到此位面）';
-      lines.push(`✓ ${p.name}${当前位标记}`);
-      lines.push(`   准入要求：${p.要求}`);
-      lines.push(`   你的坐标：${坐标文本}`);
-      lines.push(`   区间安全：${p.坐标 ? '✓ 坐标已锚定，可直接在此渡劫' : '⚠ 需先穿梭记录坐标'}`);
+      if (p.坐标 === null || p.偏移 === null) {
+        lines.push(`○ ${p.name}${当前位标记}　坐标未记录`);
+        lines.push(`   准入：${p.要求}　｜　需先 #位面穿梭 至此锚定坐标后方可推演`);
+      } else {
+        const 吉凶符 = p.偏移 <= -6 ? '◎ 大吉' : p.偏移 < 0 ? '○ 吉' : p.偏移 === 0 ? '· 平' : p.偏移 <= 5 ? '△ 小凶' : '✗ 大凶';
+        const 实际倍率 = 区间
+          ? `${(区间.无兵字秘 + clampSpan(0 + 体质偏移 + p.偏移 + 库洛牌偏移 + 阵纹最优)).toFixed(1)}× ~ ${(区间.无兵字秘 + clampSpan(区间跨度 + 体质偏移 + p.偏移 + 库洛牌偏移 + 阵纹最差)).toFixed(1)}×`
+          : '—';
+        lines.push(`${吉凶符}　${p.name}${当前位标记}`);
+        lines.push(`   坐标 (${p.坐标.x}, ${p.坐标.y})　位面偏移 ${p.偏移 >= 0 ? '+' : ''}${p.偏移}`);
+        lines.push(`   在此渡劫区间：${实际倍率}`);
+      }
+      lines.push('');
+    }
+    const 最佳 = 位面吉凶.find(p => p.偏移 !== null);
+    if (最佳) {
+      lines.push(`推演所得：${最佳.name}（${最佳.坐标.x}, ${最佳.坐标.y}）为你眼下最稳之地。`);
       lines.push('');
     }
   } else {
-    lines.push('【天机二·可去位面】');
+    lines.push('【天机三·可去位面】');
     lines.push('当前境界下，尚未有可去的位面。');
     lines.push('');
   }
@@ -4302,6 +4348,10 @@ async command_kuluoqiyuan(e) {
 
   const fromQQ = e.user_id.toString().replace('qg_', '');
   if (!await existplayer(fromQQ)) return e.reply('你还未踏入修仙路');
+  const caster = await Read_player(fromQQ);
+  if (!canUseClowWish(caster)) {
+    return e.reply('只有木之本樱、星之杖·木之本樱或梦之杖·木之本樱才能使用库洛牌祈愿。');
+  }
 
   // 解析 @ 目标
   const rawTarget = e.at && e.at !== 'all' ? String(e.at).replace('qg_', '') : '';
@@ -4408,8 +4458,10 @@ async exitTribulationState(player, snapshot, usr_qq, equipment) {
 }
 
 // ==== 理论最大攻击计算 ====
-// 大能至准帝：理论境界攻击 + 武器/护具/法宝直接攻击 + 帝兵攻击，
-// 再乘以当前秘境无兵字秘/有兵字秘蕴养极限之间的随机全属性。
+// 大能至准帝（雷劫基准）：天道只认「境界」，不认外物。
+// 基准 = 练气圆满 + 炼体圆满 + 当前秘境 三层基础攻击，
+// 再乘以当前秘境无兵字秘/有兵字秘蕴养极限之间的随机全属性（含各项区间修正）。
+// 【重要】武器/护具/法宝加成与帝兵 atk 一律不参与，避免"越肝装备天雷越猛"的反向激励。
 calcMaxTheoreticalAtk(player, equipment = {}, shiftOptions = {}) {
   const 练气Atk = data.Level_list.find(item => item.level_id == 64)?.基础攻击 || 0;
   const 炼体Atk = data.LevelMax_list.find(item => item.level_id == 63)?.基础攻击 || 0;
@@ -4441,12 +4493,11 @@ calcMaxTheoreticalAtk(player, equipment = {}, shiftOptions = {}) {
     const { final: 修正后随机 } = applyTribulationShift(基础随机, 随机跨度, shifts);
 
     const 随机全属性 = 当前极限.无兵字秘 + 修正后随机;
-    const 帝兵Atk = Number(equipment?.帝兵?.atk) || 0;
-    const 装备后攻击 = calculateEquippedStats(
-      { 攻击: 练气Atk + 炼体Atk + 秘境Atk },
-      [equipment?.武器, equipment?.护具, equipment?.法宝]
-    ).攻击;
-    const 雷劫攻击基础 = 装备后攻击 + 帝兵Atk;
+
+    // 天道只认境界，不认外物：装备（武器/护具/法宝）与帝兵 atk 均不计入雷劫基准。
+    // 同秘境同炼体的玩家，雷劫强度完全一致，差异只来自随机区间与各项修正。
+    // 整体强度可通过 TRIBULATION_BASE_ATK_SCALE 统一缩放。
+    const 雷劫攻击基础 = (练气Atk + 炼体Atk + 秘境Atk) * TRIBULATION_BASE_ATK_SCALE;
 
     return Math.trunc(雷劫攻击基础 * 随机全属性);
   }
@@ -4482,12 +4533,18 @@ calcMaxTheoreticalAtk(player, equipment = {}, shiftOptions = {}) {
     }
   }
 
+  let 至宝Atk = 0;
+  if (equipment?.至宝?.name) {
+    至宝Atk += Number(equipment.至宝.atk) || 0;
+    至宝Atk += Math.trunc((Number(equipment.至宝.全属性) || 0) * (秘境Atk + 仙古Atk));
+  }
+
   const 装备后攻击 = calculateEquippedStats(
     { 攻击: 练气Atk + 炼体Atk + 秘境Atk + 仙古Atk + 额外上限 + 光阴攻 },
     [equipment?.武器, equipment?.护具, equipment?.法宝]
   ).攻击;
 
-  return 装备后攻击 + 帝兵Atk;
+  return 装备后攻击 + 帝兵Atk + 至宝Atk;
 }
 
 /**
@@ -5657,7 +5714,5 @@ function getDivineAppellation() {
     const appellations = ["玄", "昊", "寰", "太初", "道衍", "星穹", "混元", "混沌"];
     return appellations[Math.floor(Math.random() * appellations.length)];
 }
-
-
 
 

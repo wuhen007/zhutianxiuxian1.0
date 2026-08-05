@@ -2,10 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  canUseClowWish,
   getReverseLifeTribulationWaves,
   resetTribulationGongfaCooldowns,
   ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS,
 } from '../apps/User/zhetianTribulationRules.js';
+
+test('库洛牌祈愿仅允许小樱系列灵根', () => {
+  for (const name of ['木之本樱', '星之杖·木之本樱', '梦之杖·木之本樱']) {
+    assert.equal(canUseClowWish({ 灵根: { name } }), true);
+  }
+  assert.equal(canUseClowWish({ 灵根: { name: '鹿目圆' } }), false);
+  assert.equal(canUseClowWish({}), false);
+});
 
 test('遮天各境界使用独立雷劫倍率', () => {
   assert.deepEqual(ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS, {

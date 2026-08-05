@@ -1,3 +1,29 @@
+/**
+ * 雷劫基准攻击缩放系数
+ *
+ * 雷劫基准 maxAtk = (练气圆满 + 炼体圆满 + 当前秘境) 三层基础攻击
+ *                   × 帝兵全属性随机值 × 本系数
+ *
+ * 天道只认境界、不认外物：装备（武器/护具/法宝）与帝兵 atk 一律不计入雷劫基准，
+ * 因此同秘境同炼体的玩家雷劫强度完全一致，杜绝"越肝装备天雷越猛"的反向激励。
+ *
+ * 调平衡时只需改这一个数：
+ *   1     → 当前设定（斩道天命最凶险约 18.9 兆）
+ *   10    → 雷劫强度 ×10
+ *   0.5   → 雷劫强度减半
+ */
+export const TRIBULATION_BASE_ATK_SCALE = 1;
+
+const SAKURA_ROOT_NAMES = new Set([
+  '木之本樱',
+  '星之杖·木之本樱',
+  '梦之杖·木之本樱',
+]);
+
+export function canUseClowWish(player) {
+  return SAKURA_ROOT_NAMES.has(player?.灵根?.name);
+}
+
 export const ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS = Object.freeze({
   斩道: 30,
   圣人: 45,
@@ -42,11 +68,21 @@ export function calcPlaneCoordinateShift(player) {
   const planeId = Number(player?.power_place) || 0;
   const coord = player?.[planeIdToCoordField(planeId)];
   if (!coord) return 0;
-  const x = Number(coord?.x);
-  const y = Number(coord?.y);
-  if (!Number.isInteger(x) || !Number.isInteger(y)) return 0;
-  // 确定性哈希：基于 planeId, x, y 取模到 [0, 20]，再 -10 得 [-10, +10]
-  const hash = ((planeId * 31 + x * 17 + y * 13) % 21 + 21) % 21;
+  return calcCoordinateShift(planeId, coord.x, coord.y);
+}
+
+/**
+ * 由「位面 id + 坐标」直接算渡劫区间偏移，范围 [-10, +10]
+ * 确定性哈希：同一位面同一坐标恒定，换坐标才会变
+ * 供 #打听天机渡劫 预览各位面吉凶用
+ */
+export function calcCoordinateShift(planeId, x, y) {
+  const px = Number(x);
+  const py = Number(y);
+  if (!Number.isFinite(px) || !Number.isFinite(py)) return 0;
+  // planeId 可能是 1.5 / 2.5 / 3.5 这种半级，×2 归整避免浮点取模误差
+  const pid = Math.round((Number(planeId) || 0) * 2);
+  const hash = ((pid * 31 + Math.trunc(px) * 17 + Math.trunc(py) * 13) % 21 + 21) % 21;
   return hash - 10;
 }
 

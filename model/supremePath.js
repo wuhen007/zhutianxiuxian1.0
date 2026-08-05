@@ -5,8 +5,26 @@ export const SUPREME_STAGE_NAMES = Object.freeze([
   '终极涅槃·至尊',
 ]);
 
+const SUPREME_BONE_ARTS = Object.freeze({
+  至尊骨: Object.freeze({ skill: '上苍之手', minStage: 1 }),
+  涅槃至尊骨: Object.freeze({ skill: '轮回宝术', minStage: 2 }),
+});
+
+const SUPREME_COMBINED_ART = '轮回天罚';
+
 export function getSupremeStage(player) {
   return Math.max(0, SUPREME_STAGE_NAMES.indexOf(player?.灵根?.name));
+}
+
+export function repairSupremeBoneManifestation(player) {
+  const stage = getSupremeStage(player);
+  const reachedBloodExtreme = new Set((player?.极境 || []).map(String)).has('2');
+  // 仅「天生至尊」(阶段 1) 在达到搬血极境后自动补齐并显化至尊骨；
+  // 涅槃·至尊 / 终极涅槃·至尊 须走 #至尊试炼 进阶，不在此自动显化。
+  if (stage !== 1 || !reachedBloodExtreme || player?.至尊骨) return false;
+
+  player.至尊骨 = [null, '初现', '涅槃再生', '血肉铭骨'][stage];
+  return true;
 }
 
 export function ensureSupremePath(player) {
@@ -23,6 +41,36 @@ export function ensureSupremePath(player) {
   };
   player.至尊之路.称号 = getSupremeTitle(player);
   return player.至尊之路;
+}
+
+function syncSupremeCombinedArt(player) {
+  const learned = player?.学习的功法;
+  if (!Array.isArray(learned)) return false;
+  if (!learned.includes('上苍之手') || !learned.includes('轮回宝术') || learned.includes(SUPREME_COMBINED_ART)) {
+    return false;
+  }
+  learned.push(SUPREME_COMBINED_ART);
+  return true;
+}
+
+export function learnSupremeBoneArt(player, boneName) {
+  const art = SUPREME_BONE_ARTS[boneName];
+  if (!art) return { ok: false, reason: 'unknown_bone' };
+
+  const stage = getSupremeStage(player);
+  if (stage < art.minStage) return { ok: false, reason: 'wrong_stage', requiredStage: art.minStage };
+
+  player.学习的功法 ??= [];
+  if (player.学习的功法.includes(art.skill)) {
+    return { ok: false, reason: 'known', skill: art.skill };
+  }
+
+  player.学习的功法.push(art.skill);
+  return {
+    ok: true,
+    skill: art.skill,
+    combined: syncSupremeCombinedArt(player) ? SUPREME_COMBINED_ART : null,
+  };
 }
 
 export function getSupremeTitle(player) {
