@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { ENDLESS_SWEEP_MAX_LAYERS } from './endlessAccess.js';
+import {
+  getEndlessMetaEffects,
+  normalizeEndlessMeta,
+} from './endlessMeta.js';
 
 const contentPath = fileURLToPath(
   new URL('../resources/data/无尽劫境.json', import.meta.url)
@@ -149,6 +153,9 @@ function countTeamTags(run) {
 
 function collectEffects(member, run) {
   const effects = {};
+  mergeEffect(effects, member.endlessMetaEffects);
+  if (getOwnedLevel(member, 'neutral_ghost_eye') > 0)
+    mergeEffect(effects, member.endlessMetaEffects?.puzzleEffects);
   for (const [abilityId, level] of Object.entries(member.abilities || {})) {
     mergeEffect(effects, ABILITIES.get(abilityId)?.effect, level);
   }
@@ -261,6 +268,7 @@ function createProjection(id, player) {
     defense: Math.round(45 * foundation),
     speed: 100,
   };
+  const endlessMeta = normalizeEndlessMeta(player);
   return {
     id,
     name: player.名号 || `无名修士${String(id).slice(-4)}`,
@@ -279,6 +287,8 @@ function createProjection(id, player) {
     abilities: {},
     blessings: [],
     growthAttackPct: 0,
+    endlessMeta,
+    endlessMetaEffects: getEndlessMetaEffects(endlessMeta),
   };
 }
 
@@ -306,15 +316,20 @@ function createChoices(run, memberId, layer = Math.max(1, run.layer + 1)) {
   if (!member?.alive) return [];
   const world = getWorldForLayer(run, layer);
   const picked = new Set();
-  const related = CONTENT.abilities.filter(
+  const choicePool = CONTENT.abilities.filter(ability => !ability.bossOnly);
+  const related = choicePool.filter(
     (ability) => ability.world === world.id
   );
-  const survival = CONTENT.abilities.filter((ability) =>
+  const survival = choicePool.filter((ability) =>
     ability.tags?.some((tag) => ['生存', '防御', '恢复'].includes(tag))
   );
-  const all = CONTENT.abilities;
-  const neutral = CONTENT.abilities.filter(
+  const all = choicePool;
+  const neutral = choicePool.filter(
     (ability) => ability.world === 'neutral'
+  );
+  const choiceCount = Math.max(
+    3,
+    Math.min(4, asNumber(member.endlessMetaEffects?.choiceCount, 3))
   );
   const choices = [
     pickUnique(run, related, member, picked),
@@ -322,7 +337,7 @@ function createChoices(run, memberId, layer = Math.max(1, run.layer + 1)) {
     pickUnique(run, all, member, picked),
   ].filter(Boolean);
 
-  while (choices.length < 3) {
+  while (choices.length < choiceCount) {
     const fallback =
       pickUnique(run, neutral, member, picked) ||
       pickUnique(run, all, member, picked);
@@ -334,6 +349,7 @@ function createChoices(run, memberId, layer = Math.max(1, run.layer + 1)) {
 
 function setPendingChoices(run, layer) {
   run.pendingChoices = {};
+  run.pendingChoiceLayer = layer;
   for (const member of Object.values(run.members)) {
     if (member.alive)
       run.pendingChoices[member.id] = createChoices(run, member.id, layer);
@@ -461,7 +477,7 @@ export function applyEndlessChoice(run, memberId, choiceNumber) {
   const index = Math.floor(asNumber(choiceNumber)) - 1;
   const abilityId = choices[index];
   const ability = ABILITIES.get(abilityId);
-  if (!ability) throw new Error('请选择1、2或3');
+  if (!ability) throw new Error(`请选择1至${choices.length}`);
   const member = run.members[memberId];
   if (!isAbilityAvailable(member, ability))
     throw new Error(`${ability.name}的进阶条件尚未满足`);
@@ -473,7 +489,32 @@ export function applyEndlessChoice(run, memberId, choiceNumber) {
     ])
   );
   member.abilities[abilityId] = getOwnedLevel(member, abilityId) + 1;
-  delete run.pendingChoices[memberId];
+  const choiceCycle = Math.max(
+    0,
+    Math.floor((Math.max(1, asNumber(run.pendingChoiceLayer, 1)) - 1) / 10)
+  );
+  const selectingExtra = member.pendingDoubleChoiceCycle === choiceCycle;
+  let extraChoice = false;
+  if (selectingExtra) {
+    delete member.pendingDoubleChoiceCycle;
+    delete run.pendingChoices[memberId];
+  } else {
+    member.doubleChoiceCycles ||= [];
+    const canDoubleChoose =
+      member.endlessMetaEffects?.doubleChoice &&
+      !member.doubleChoiceCycles.includes(choiceCycle) &&
+      choices.length > 1;
+    if (canDoubleChoose) {
+      member.doubleChoiceCycles.push(choiceCycle);
+      member.pendingDoubleChoiceCycle = choiceCycle;
+      run.pendingChoices[memberId] = choices.filter(
+        (_, choiceIndex) => choiceIndex !== index
+      );
+      extraChoice = true;
+    } else {
+      delete run.pendingChoices[memberId];
+    }
+  }
 
   const previousFusions = new Set(run.fusions || []);
   run.fusions = detectFusions(run);
@@ -487,6 +528,7 @@ export function applyEndlessChoice(run, memberId, choiceNumber) {
     newFusions: newFusions.map((id) =>
       clone(CONTENT.fusions.find((fusion) => fusion.id === id))
     ),
+    extraChoice,
     ready: run.phase === 'ready',
   };
 }
@@ -525,18 +567,37 @@ export function applyCheckpointChoice(run, choiceNumber) {
     const living = Object.values(run.members).filter(member => member.alive);
     const candidates = living.flatMap(member =>
       [...CHECKPOINT_BOONS.values()]
-        .filter(boon => !(member.blessings || []).includes(boon.id))
+        .filter(boon => {
+          if (!boon.grantsAbility)
+            return !(member.blessings || []).includes(boon.id);
+          const ability = ABILITIES.get(boon.grantsAbility);
+          return (
+            ability &&
+            getOwnedLevel(member, ability.id) < asNumber(ability.maxLevel, 1)
+          );
+        })
         .map(boon => ({ member, boon }))
     );
-    const selected = candidates[Math.floor(random(run) * candidates.length)];
+    const selected = weightedPick(
+      run,
+      candidates.map(candidate => ({ ...candidate.boon, candidate }))
+    )?.candidate;
     if (selected) {
-      selected.member.blessings ||= [];
-      selected.member.blessings.push(selected.boon.id);
+      let abilityLevel = 0;
+      if (selected.boon.grantsAbility) {
+        const abilityId = selected.boon.grantsAbility;
+        abilityLevel = getOwnedLevel(selected.member, abilityId) + 1;
+        selected.member.abilities[abilityId] = abilityLevel;
+      } else {
+        selected.member.blessings ||= [];
+        selected.member.blessings.push(selected.boon.id);
+      }
       reward = {
         kind: 'fortune',
         memberId: selected.member.id,
         memberName: selected.member.name,
         boon: clone(selected.boon),
+        abilityLevel,
       };
     } else {
       const member = living[Math.floor(random(run) * living.length)];
@@ -581,6 +642,8 @@ export function applyCheckpointChoice(run, choiceNumber) {
     reward = { kind: 'ascend', upgrades };
     refreshMemberVitals(run, oldMaximums);
   }
+
+  run.fusions = detectFusions(run);
 
   run.lastCheckpoint = {
     layer: run.checkpoint.layer,
@@ -760,6 +823,43 @@ function healEnemy(run, enemy, amount, logs, skill, note = '') {
 function tryBossRevive(run, enemy, logs) {
   if (enemy.stage !== 'boss' || enemy.hp > 0 || enemy.revivesLeft <= 0)
     return false;
+  const coffinOwner = Object.values(run.members).find(
+    member =>
+      member.alive &&
+      hasGhostPuzzle(member, 'coffin_nail') &&
+      !member.battleCoffinNailUsed
+  );
+  if (coffinOwner) {
+    coffinOwner.battleCoffinNailUsed = true;
+    enemy.revivesLeft = 0;
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'status',
+      actor: coffinOwner.name,
+      skill: '棺材钉·镇压厉鬼',
+      target: enemy.name,
+      note: '封死本次Boss复活',
+    });
+    addBattleLog(logs, `${coffinOwner.name}以棺材钉贯穿${enemy.name}，将复活彻底镇压！`);
+    return false;
+  }
+  const ninthDomainOwner = Object.values(run.members).find(
+    member => member.alive && getGhostDomainLevel(member) >= 9
+  );
+  if (ninthDomainOwner && !run.__ninthGhostDomainUsed) {
+    run.__ninthGhostDomainUsed = true;
+    enemy.revivesLeft = 0;
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'status',
+      actor: ninthDomainOwner.name,
+      skill: '九层鬼域·改写结果',
+      target: enemy.name,
+      note: '抹除Boss复活结果',
+    });
+    addBattleLog(logs, `${ninthDomainOwner.name}展开九层鬼域，直接抹去了${enemy.name}复活的结果！`);
+    return false;
+  }
   enemy.revivesLeft--;
   enemy.hp = Math.max(1, Math.round(enemy.maxHp * 0.22));
   if (enemy.mechanisms.includes('护盾'))
@@ -782,6 +882,19 @@ function tryBossRevive(run, enemy, logs) {
   return true;
 }
 
+function getGhostDomainLevel(member) {
+  return getOwnedLevel(member, 'neutral_ghost_eye') > 0
+    ? Math.max(5, asNumber(member.endlessMetaEffects?.ghostDomainLevel, 5))
+    : 0;
+}
+
+function hasGhostPuzzle(member, puzzleId) {
+  return (
+    getGhostDomainLevel(member) > 0 &&
+    member.endlessMetaEffects?.equippedPuzzles?.includes(puzzleId)
+  );
+}
+
 function abilityProcs(member) {
   const procs = [];
   for (const [abilityId, level] of Object.entries(member.abilities || {})) {
@@ -794,6 +907,17 @@ function abilityProcs(member) {
     if (boon?.proc)
       procs.push({ ...boon.proc, level: 1, source: boon.name, abilityId: boonId });
   }
+  if (hasGhostPuzzle(member, 'ghost_cleaver'))
+    procs.push({
+      everyRounds: 4,
+      damagePct: 0.82,
+      level: 1,
+      source: '鬼柴刀',
+      abilityId: 'meta_ghost_cleaver',
+      label: '鬼柴刀·媒介斩击',
+      verb: '循着脚印斩下',
+      narration: '{member}借鬼眼锁定媒介，锈迹斑斑的柴刀隔着鬼域斩向{enemy}',
+    });
   return procs;
 }
 
@@ -893,9 +1017,10 @@ function futureSelf(run, member, round, level) {
       ability.id !== 'perfect_free_transformation' &&
       !member.abilities?.[ability.id]
   );
+  const extraCount = 3 + (random(run) < 0.5 ? 0 : 1);
   const abilities = shuffle(run, pool).slice(
     0,
-    Math.min(pool.length, 2 + Math.min(2, level))
+    Math.min(pool.length, extraCount)
   );
   const projection = clone(member);
   projection.abilities = { ...(member.abilities || {}) };
@@ -904,6 +1029,231 @@ function futureSelf(run, member, round, level) {
     abilities,
     stats: calculateMemberStats(projection, run, round),
   };
+}
+
+function memberBuildNames(member) {
+  return [
+    ...Object.entries(member.abilities || {}).map(([abilityId, level]) => {
+      const ability = ABILITIES.get(abilityId);
+      return `${ability?.name || abilityId} Lv.${level}`;
+    }),
+    ...(member.blessings || []).map(
+      boonId => CHECKPOINT_BOONS.get(boonId)?.name || boonId
+    ),
+  ];
+}
+
+function createFreeTransformationBody(run, member, round, level) {
+  const ownerStats = calculateMemberStats(member, run, round);
+  const roll = random(run);
+  const heroChance = 0.08 + level * 0.04;
+  const futureChance = 0.22 + level * 0.05;
+  const serial = (member.freeTransformationSerial || 0) + 1;
+  member.freeTransformationSerial = serial;
+  let body;
+
+  if (roll < heroChance && CONTENT.freeTransformationHeroes?.length) {
+    const profile =
+      CONTENT.freeTransformationHeroes[
+        Math.floor(random(run) * CONTENT.freeTransformationHeroes.length)
+      ];
+    body = {
+      kind: 'hero',
+      name: profile.name,
+      origin: profile.origin,
+      maxHp: Math.round(ownerStats.maxHp * asNumber(profile.hpMultiplier, 1)),
+      attack: Math.round(
+        ownerStats.attack * asNumber(profile.attackMultiplier, 1)
+      ),
+      defense: Math.round(
+        ownerStats.defense * asNumber(profile.defenseMultiplier, 1)
+      ),
+      damageMultiplier: asNumber(profile.damageMultiplier, 1),
+      guardDamageMultiplier: Math.max(
+        0.55,
+        1 / asNumber(profile.defenseMultiplier, 1)
+      ),
+      critChance: Math.min(0.75, ownerStats.critChance + 0.12),
+      skills: profile.skills,
+      build: profile.skills,
+      narration: profile.narration,
+    };
+  } else if (roll < heroChance + futureChance) {
+    const future = futureSelf(run, member, round, level);
+    const scale = 1.18 + level * 0.08;
+    body = {
+      kind: 'future',
+      name: `${member.name}·未来自在身`,
+      origin: '未来岁月',
+      maxHp: Math.round(future.stats.maxHp * scale),
+      attack: Math.round(future.stats.attack * scale),
+      defense: Math.round(future.stats.defense * scale),
+      damageMultiplier: 1.08 + level * 0.04,
+      guardDamageMultiplier: 0.78,
+      critChance: Math.min(0.75, future.stats.critChance + 0.08),
+      skills: ['他化自在·未来道果'],
+      build: [...memberBuildNames(member), ...future.abilities.map(a => a.name)],
+      extraAbilities: future.abilities.map(ability => ability.name),
+      narration: '截取未来岁月中的更强道果，携额外构筑跨越时间长河降临',
+    };
+  } else {
+    body = {
+      kind: 'current',
+      name: `${member.name}·当世自在身`,
+      origin: '当世映照',
+      maxHp: ownerStats.maxHp,
+      attack: ownerStats.attack,
+      defense: ownerStats.defense,
+      damageMultiplier: 1,
+      guardDamageMultiplier: 1,
+      critChance: ownerStats.critChance,
+      skills: ['他化自在·同构一击'],
+      build: memberBuildNames(member),
+      narration: '完整复制本体全属性与能力构筑，以相同战力自主出手',
+    };
+  }
+
+  body.id = `${member.id}-free-${serial}`;
+  body.ownerId = member.id;
+  body.level = level;
+  body.hp = Math.max(1, body.maxHp);
+  body.temporary = level === 1;
+  body.summonedRound = round;
+  return body;
+}
+
+function summonFreeTransformationBodies(run, member, round, logs) {
+  const level = getOwnedLevel(member, 'perfect_free_transformation');
+  if (!level) return;
+  member.freeTransformationBodies ||= [];
+  const capacity = level >= 3 ? 4 : level === 2 ? 2 : 1;
+  const requested = round === 1 ? (level >= 3 ? 2 : 1) : round % 3 === 0 ? 1 : 0;
+  const count = Math.min(requested, capacity - member.freeTransformationBodies.length);
+  if (count <= 0) return;
+
+  if (level >= 3 && round === 1)
+    addBattleLog(logs, `${member.name}祭起他化自在法，古今未来断裂，两尊自在身同时踏出岁月长河！`);
+  for (let index = 0; index < count; index++) {
+    const body = createFreeTransformationBody(run, member, round, level);
+    member.freeTransformationBodies.push(body);
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'summon',
+      actor: member.name,
+      skill: level >= 3 ? '他化自在法·祭道映照' : level === 2 ? '他化自在法·仙帝映照' : '他化自在法·残缺映照',
+      verb: '映照',
+      target: body.name,
+      healing: body.maxHp,
+      narration: body.narration,
+      note: `${body.origin}｜生命${body.maxHp}｜构筑：${body.build.slice(0, 6).join('、')}${body.build.length > 6 ? '等' : ''}`,
+    });
+    addBattleLog(logs, `${member.name}映照出${body.name}，${body.narration}。`);
+    if (run.__counters) run.__counters.freeBodiesSummoned++;
+  }
+}
+
+function attackWithFreeTransformationBodies(
+  run,
+  member,
+  enemy,
+  logs,
+  damageByMember
+) {
+  for (const body of member.freeTransformationBodies || []) {
+    if (body.hp <= 0 || enemy.hp <= 0) continue;
+    let damage = Math.max(1, body.attack - enemy.defense * 0.62);
+    const critical = random(run) < body.critChance;
+    if (critical) damage *= 1.7;
+    damage *= body.damageMultiplier;
+    const result = damageEnemy(enemy, damage);
+    damageByMember[member.id] += result.dealt;
+    const skill = body.skills[Math.floor(random(run) * body.skills.length)];
+    const note = body.kind === 'future'
+      ? `未来构筑：${body.extraAbilities.join('、')}`
+      : body.kind === 'current'
+        ? '全属性与伤害继承本体'
+        : `异界强者·${body.origin}｜专属构筑：${body.build.join('、')}`;
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'summon',
+      actor: body.name,
+      skill,
+      verb: '自主施展',
+      target: enemy.name,
+      damage: result.damage,
+      absorbed: result.absorbed,
+      critical,
+      narration: body.narration,
+      note,
+    });
+    addBattleLog(logs, `${body.name}自主施展《${skill}》，轰出${result.dealt}点伤害！`);
+    if (run.__counters) run.__counters.freeBodyAttacks++;
+  }
+}
+
+function interceptWithFreeTransformationBody(run, member, amount, logs, source) {
+  const bodies = (member.freeTransformationBodies || []).filter(
+    body => body.hp > 0
+  );
+  if (!bodies.length || source.side !== 'enemy') return false;
+  const body = bodies.find(candidate => candidate.temporary) || bodies[0];
+  const incoming = Math.max(
+    1,
+    Math.round(amount * asNumber(body.guardDamageMultiplier, 1))
+  );
+  const damage = Math.min(body.hp, incoming);
+  body.hp -= incoming;
+  const disappears = body.temporary || body.hp <= 0;
+  if (disappears)
+    member.freeTransformationBodies = member.freeTransformationBodies.filter(
+      candidate => candidate.id !== body.id
+    );
+  addBattleAction(run, {
+    side: 'enemy',
+    actor: source.actor || '劫境守关者',
+    skill: source.skill || '普通攻击',
+    target: body.name,
+    damage,
+    note: `自在身代替${member.name}承受攻击`,
+  });
+  addBattleAction(run, {
+    side: 'player',
+    kind: 'guard',
+    actor: body.name,
+    skill: '他化自在身·代劫',
+    target: member.name,
+    absorbed: Math.max(1, Math.round(amount)),
+    note: disappears ? '自在身完成代劫后消散' : `剩余生命${Math.max(0, body.hp)}`,
+  });
+  addBattleLog(
+    logs,
+    `${body.name}横渡岁月挡在${member.name}身前，代为承受${damage}点伤害${disappears ? '并随即消散' : ''}！`
+  );
+  if (run.__counters) run.__counters.freeBodyGuards++;
+  return true;
+}
+
+function expireTemporaryFreeTransformationBodies(run, logs) {
+  for (const member of Object.values(run.members)) {
+    const expired = (member.freeTransformationBodies || []).filter(
+      body => body.temporary
+    );
+    if (!expired.length) continue;
+    member.freeTransformationBodies = member.freeTransformationBodies.filter(
+      body => !body.temporary
+    );
+    for (const body of expired) {
+      addBattleAction(run, {
+        side: 'system',
+        kind: 'status',
+        actor: body.name,
+        skill: '残缺自在身·岁月耗尽',
+        target: member.name,
+        note: '仅可存在一回合',
+      });
+      addBattleLog(logs, `${body.name}存在的一回合耗尽，重新归于岁月长河。`);
+    }
+  }
 }
 
 function fusionNarrative(proc, enemy) {
@@ -919,6 +1269,71 @@ function fusionNarrative(proc, enemy) {
 function handleLethal(run, member, logs) {
   if (member.hp > 0) return false;
   const stats = calculateMemberStats(member, run);
+  if (!member.battleGhostShadowSaved && hasGhostPuzzle(member, 'ghost_shadow')) {
+    member.battleGhostShadowSaved = true;
+    member.hp = Math.max(1, Math.round(stats.maxHp * 0.18));
+    addBattleLog(logs, `${member.name}脚下鬼影突然站起，替本体承受了致命结果！`);
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'recover',
+      actor: member.name,
+      skill: '鬼影·替死拼图',
+      target: member.name,
+      healing: member.hp,
+      note: '本场仅可触发一次',
+    });
+    return false;
+  }
+  if (!member.battleGhostSelfRestarted && getGhostDomainLevel(member) >= 7) {
+    member.battleGhostSelfRestarted = true;
+    member.hp = Math.max(1, Math.round(stats.maxHp * 0.45));
+    member.shield = Math.max(member.shield, Math.round(stats.maxHp * 0.1));
+    delete member.silencedUntilRound;
+    addBattleLog(logs, `${member.name}展开七层鬼域，重启自身至致命伤发生之前！`);
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'recover',
+      actor: member.name,
+      skill: '七层鬼域·重启自身',
+      target: member.name,
+      healing: member.hp,
+      absorbed: member.shield,
+      note: '解除沉默并重启生命状态',
+    });
+    if (run.__counters) run.__counters.ghostRestarts++;
+    return false;
+  }
+  const fieldOwner = Object.values(run.members).find(
+    candidate => candidate.alive && getGhostDomainLevel(candidate) >= 8
+  );
+  if (fieldOwner && !run.__ghostFieldRestarted) {
+    run.__ghostFieldRestarted = true;
+    for (const current of Object.values(run.members)) {
+      const currentStats = calculateMemberStats(current, run);
+      current.alive = true;
+      current.hp = Math.max(1, Math.round(currentStats.maxHp * 0.32));
+      current.shield = Math.max(
+        current.shield || 0,
+        Math.round(currentStats.maxHp * 0.08)
+      );
+      delete current.silencedUntilRound;
+    }
+    addBattleLog(logs, `${fieldOwner.name}展开八层鬼域，整片战场被强行重启！`);
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'recover',
+      actor: fieldOwner.name,
+      skill: '八层鬼域·重启战场',
+      target: '全队',
+      healing: Object.values(run.members).reduce(
+        (sum, current) => sum + current.hp,
+        0
+      ),
+      note: '全员重启至32%生命并解除沉默',
+    });
+    if (run.__counters) run.__counters.ghostRestarts++;
+    return false;
+  }
   if (!member.battleTimeRewound && stats.timeRewindChance > 0) {
     member.battleTimeRewound = true;
     if (random(run) < stats.timeRewindChance) {
@@ -991,6 +1406,8 @@ function handleLethal(run, member, logs) {
 
 function damageMember(run, member, amount, logs, source = {}) {
   if (!member.alive || amount <= 0) return false;
+  if (interceptWithFreeTransformationBody(run, member, amount, logs, source))
+    return false;
   let remaining = Math.max(1, Math.round(amount));
   let absorbed = 0;
   if (member.shield > 0) {
@@ -1144,36 +1561,10 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
           proc.level
       )
     );
-    let procDamage = baseProcDamage;
-    let skill = resolved.label;
-    let note = '';
-    let narrative;
-    if (proc.abilityId === 'perfect_free_transformation') {
-      const isFuture = round % (proc.everyRounds * 2) === 0;
-      if (isFuture) {
-        const future = futureSelf(run, member, round, proc.level);
-        procDamage = Math.max(
-          baseProcDamage + 1,
-          Math.round(future.stats.attack * proc.damagePct * proc.level * 1.3)
-        );
-        skill = '他化自在·未来身';
-        note = `未来构筑：${future.abilities.map(ability => ability.name).join('、')}`;
-        narrative = {
-          verb: '映照',
-          detail: `${member.name}截取未来岁月，映照出携带${future.abilities
-            .map(ability => ability.name)
-            .join('、')}的更强未来之我`,
-        };
-      } else {
-        skill = '他化自在·当世身';
-        narrative = {
-          verb: '映照',
-          detail: `${member.name}映照当世之我，两尊真身以完全相同的构筑同时攻向${enemy.name}`,
-        };
-      }
-    } else {
-      narrative = procNarrative(resolved, member, enemy);
-    }
+    const procDamage = baseProcDamage;
+    const skill = resolved.label;
+    const note = '';
+    const narrative = procNarrative(resolved, member, enemy);
     const procResult = damageEnemy(enemy, procDamage);
     dealt += procResult.dealt;
     damageByMember[member.id] += procResult.dealt;
@@ -1209,6 +1600,16 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
       );
     }
   }
+
+  if (!isSilenced && enemy.hp > 0)
+    summonFreeTransformationBodies(run, member, round, logs);
+  attackWithFreeTransformationBodies(
+    run,
+    member,
+    enemy,
+    logs,
+    damageByMember
+  );
 
   if (enemy.trait === '反射' && dealt > 0 && member.alive) {
     damageMember(
@@ -1592,9 +1993,50 @@ function bossPackFollowUp(run, enemy, logs) {
     strikeMany(enemy.cloneCount, 0.42, '万象分身');
 }
 
+function interruptEnemyTurn(run, enemy, round, logs) {
+  const living = Object.values(run.members).filter(member => member.alive);
+  const musicBoxOwner = living.find(member => hasGhostPuzzle(member, 'music_box'));
+  if (musicBoxOwner && round % 5 === 0) {
+    addBattleLog(
+      logs,
+      `${musicBoxOwner.name}身旁的八音盒自行奏响，${enemy.name}的整轮行动被灵异旋律抹去！`
+    );
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'status',
+      actor: musicBoxOwner.name,
+      skill: '八音盒·永不终止的旋律',
+      target: enemy.name,
+      note: '打断敌方本回合全部行动',
+    });
+    if (run.__counters) run.__counters.ghostInterrupts++;
+    return true;
+  }
+
+  const domainOwner = living.find(member => getGhostDomainLevel(member) >= 6);
+  if (domainOwner && round % 6 === 0) {
+    addBattleLog(
+      logs,
+      `${domainOwner.name}展开六层鬼域，现实暂停一瞬，${enemy.name}的本轮攻势尚未发生便已消失！`
+    );
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'status',
+      actor: domainOwner.name,
+      skill: '六层鬼域·暂停现实',
+      target: enemy.name,
+      note: '取消敌方本回合全部行动',
+    });
+    if (run.__counters) run.__counters.ghostInterrupts++;
+    return true;
+  }
+  return false;
+}
+
 function enemyTurn(run, enemy, round, logs) {
   const alive = Object.values(run.members).filter((member) => member.alive);
   if (!alive.length || enemy.hp <= 0) return;
+  if (interruptEnemyTurn(run, enemy, round, logs)) return;
   if (!triggerEnemyMechanic(run, enemy, round, logs)) {
     const target = alive[Math.floor(random(run) * alive.length)];
     enemyHit(run, enemy, target, 1, logs, '普通攻击');
@@ -1642,13 +2084,21 @@ function endRound(run, enemy, logs) {
   }
   if (enemy.trait === '再生')
     addBattleLog(logs, `${enemy.name}不断再生，必须尽快结束战斗。`);
+  expireTemporaryFreeTransformationBodies(run, logs);
 }
 
 function prepareBattle(run) {
+  delete run.__ghostFieldRestarted;
+  delete run.__ninthGhostDomainUsed;
   for (const member of Object.values(run.members)) {
     member.battleRage = 0;
     member.battleRevived = false;
     member.battleTimeRewound = false;
+    member.freeTransformationBodies = [];
+    member.freeTransformationSerial = 0;
+    member.battleGhostShadowSaved = false;
+    member.battleGhostSelfRestarted = false;
+    member.battleCoffinNailUsed = false;
     delete member.silencedUntilRound;
     const stats = calculateMemberStats(member, run);
     member.maxHp = stats.maxHp;
@@ -1777,9 +2227,16 @@ function finishVictory(run, enemy, layer) {
     delete member.battleRage;
     delete member.battleRevived;
     delete member.battleTimeRewound;
+    delete member.battleGhostShadowSaved;
+    delete member.battleGhostSelfRestarted;
+    delete member.battleCoffinNailUsed;
+    delete member.freeTransformationBodies;
+    delete member.freeTransformationSerial;
     delete member.silencedUntilRound;
     delete member.shield;
   }
+  delete run.__ghostFieldRestarted;
+  delete run.__ninthGhostDomainUsed;
 
   const currencyReward = getEndlessLayerCurrencyReward(layer);
   const layerReward = {
@@ -1869,6 +2326,11 @@ export function resolveEndlessLayer(run) {
     revive: 0,
     lifeFireUsed: 0,
     bossRevive: 0,
+    freeBodiesSummoned: 0,
+    freeBodyAttacks: 0,
+    freeBodyGuards: 0,
+    ghostRestarts: 0,
+    ghostInterrupts: 0,
   };
   prepareBattle(run);
   run.__damageTakenByMember = damageTakenByMember;
@@ -1937,6 +2399,12 @@ export function resolveEndlessLayer(run) {
         hp: Math.max(0, member.hp),
         maxHp: stats.maxHp,
         alive: member.alive,
+        freeBodies: (member.freeTransformationBodies || []).map(body => ({
+          name: body.name,
+          kind: body.kind,
+          hp: Math.max(0, body.hp),
+          maxHp: body.maxHp,
+        })),
       };
     });
     const teamHp = members.reduce((sum, member) => sum + member.hp, 0);
@@ -1986,9 +2454,16 @@ export function resolveEndlessLayer(run) {
     for (const member of Object.values(run.members)) {
       member.alive = false;
       member.hp = 0;
+      delete member.freeTransformationBodies;
+      delete member.freeTransformationSerial;
+      delete member.battleGhostShadowSaved;
+      delete member.battleGhostSelfRestarted;
+      delete member.battleCoffinNailUsed;
       delete member.silencedUntilRound;
       delete member.shield;
     }
+    delete run.__ghostFieldRestarted;
+    delete run.__ninthGhostDomainUsed;
     run.phase = 'defeated';
     run.pendingChoices = {};
     if (rounds >= 30)
@@ -2023,6 +2498,11 @@ export function resolveEndlessLayer(run) {
     revive: counters.revive,
     lifeFireUsed: counters.lifeFireUsed,
     bossRevive: counters.bossRevive,
+    freeBodiesSummoned: counters.freeBodiesSummoned,
+    freeBodyAttacks: counters.freeBodyAttacks,
+    freeBodyGuards: counters.freeBodyGuards,
+    ghostRestarts: counters.ghostRestarts,
+    ghostInterrupts: counters.ghostInterrupts,
     analysis: analysis || null,
   };
 

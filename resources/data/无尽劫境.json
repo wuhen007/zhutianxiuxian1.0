@@ -264,10 +264,9 @@
       "world": "perfect",
       "rarity": "禁忌",
       "tags": ["召唤", "时间", "规则"],
-      "description": "每三回合映照一尊同构筑的当世之我协同出手；每六回合改为携带3至4条额外随机能力的更强未来身。",
+      "description": "Boss级机缘。残缺级自在身仅存在一回合；仙帝级可常驻两尊；祭道级开场映照两尊、上限四尊，并可能召来古今未来与异界至强者。",
       "maxLevel": 3,
-      "effect": { "summonPct": 0.12 },
-      "proc": { "everyRounds": 3, "damagePct": 0.3, "label": "他化自在" }
+      "bossOnly": true
     },
     {
       "id": "zhetian_all_secret",
@@ -484,8 +483,8 @@
       "world": "neutral",
       "rarity": "稀有",
       "tags": ["瞳术", "洞察", "斩杀"],
-      "description": "窥见魂魄裂隙与死亡之线，提高暴击、闪避与斩杀，并周期性直击神魂。",
-      "maxLevel": 3,
+      "description": "窥见魂魄裂隙与死亡之线；获得后按万劫道碑已参悟的最高鬼域层级与已装配拼图生效。",
+      "maxLevel": 1,
       "effect": { "critChance": 0.055, "dodgeChance": 0.025, "executePct": 0.045 },
       "proc": {
         "everyRounds": 3,
@@ -980,6 +979,150 @@
         "verb": "挥动",
         "narration": "{member}挥动天帝拳，诸天万道在拳锋上合一，璀璨帝光横贯古今轰向{enemy}"
       }
+    },
+    {
+      "id": "art_free_transformation",
+      "name": "他化自在法",
+      "kind": "Boss级机缘",
+      "origin": "完美世界",
+      "rarity": "禁忌",
+      "choiceWeight": 0.03,
+      "grantsAbility": "perfect_free_transformation",
+      "description": "极低概率自十层天关后的岁月长河显化；首次获得残缺法，重复显化或道果升华可晋升仙帝级、祭道级。"
+    }
+  ],
+  "freeTransformationHeroes": [
+    {
+      "id": "xiao_yan",
+      "name": "萧炎",
+      "origin": "斗气大陆",
+      "hpMultiplier": 1.12,
+      "attackMultiplier": 1.38,
+      "defenseMultiplier": 1.08,
+      "damageMultiplier": 1.18,
+      "skills": ["佛怒火莲·帝炎", "异火恒古尺", "焚诀·万火归一"],
+      "narration": "帝炎化作万火之主，毁灭火莲在掌中压缩至极限"
+    },
+    {
+      "id": "luo_feng",
+      "name": "罗峰",
+      "origin": "吞噬星空",
+      "hpMultiplier": 1.22,
+      "attackMultiplier": 1.32,
+      "defenseMultiplier": 1.2,
+      "damageMultiplier": 1.16,
+      "skills": ["星辰塔镇封", "一念宇宙", "弑吴羽翼·时空绞杀"],
+      "narration": "一念宇宙降临，星辰塔携无尽镇封之力贯穿战场"
+    },
+    {
+      "id": "yang_jian",
+      "name": "杨戬·鬼眼之主",
+      "origin": "神秘复苏",
+      "hpMultiplier": 1.18,
+      "attackMultiplier": 1.28,
+      "defenseMultiplier": 1.26,
+      "damageMultiplier": 1.2,
+      "skills": ["鬼眼复苏·无间鬼域", "诡影替死", "灵异长枪·必死诅咒"],
+      "narration": "猩红鬼眼层层睁开，现实被无间鬼域强行改写"
+    },
+    {
+      "id": "fang_yuan",
+      "name": "方源",
+      "origin": "蛊真人",
+      "hpMultiplier": 1.16,
+      "attackMultiplier": 1.3,
+      "defenseMultiplier": 1.18,
+      "damageMultiplier": 1.24,
+      "skills": ["春秋蝉·逆流光阴", "万我第一式", "逆流河护身印"],
+      "narration": "光阴长河逆卷，万我虚影从既定败局中夺回胜机"
+    },
+    {
+      "id": "shi_hao",
+      "name": "荒天帝",
+      "origin": "完美世界",
+      "hpMultiplier": 1.32,
+      "attackMultiplier": 1.46,
+      "defenseMultiplier": 1.3,
+      "damageMultiplier": 1.28,
+      "skills": ["他化自在·他化万古", "草字剑诀", "荒芜剑诀"],
+      "narration": "独断万古的帝者踏出岁月长河，一剑斩开古今未来"
+    },
+    {
+      "id": "ye_fan",
+      "name": "叶凡",
+      "origin": "遮天",
+      "hpMultiplier": 1.28,
+      "attackMultiplier": 1.4,
+      "defenseMultiplier": 1.3,
+      "damageMultiplier": 1.22,
+      "skills": ["天帝拳", "万物母气鼎", "九秘合一"],
+      "narration": "圣体金血照亮星海，天帝拳裹挟万物母气镇压而下"
+    },
+    {
+      "id": "ruthless_empress",
+      "name": "狠人大帝",
+      "origin": "遮天",
+      "hpMultiplier": 1.18,
+      "attackMultiplier": 1.44,
+      "defenseMultiplier": 1.2,
+      "damageMultiplier": 1.3,
+      "skills": ["一念花开·君临天下", "吞天魔功", "飞仙诀"],
+      "narration": "仙葩开遍虚空，每一片花瓣都化作斩灭大道的飞仙之光"
+    },
+    {
+      "id": "willow_deity",
+      "name": "柳神",
+      "origin": "完美世界",
+      "hpMultiplier": 1.36,
+      "attackMultiplier": 1.3,
+      "defenseMultiplier": 1.42,
+      "damageMultiplier": 1.16,
+      "skills": ["柳神法·万界生灭", "祭灵之火", "三千神国"],
+      "narration": "亿万柳枝贯穿虚空，三千神国在枝叶间生灭轮转"
+    },
+    {
+      "id": "chu_feng",
+      "name": "楚风",
+      "origin": "圣墟",
+      "hpMultiplier": 1.24,
+      "attackMultiplier": 1.36,
+      "defenseMultiplier": 1.22,
+      "damageMultiplier": 1.22,
+      "skills": ["轮回路镇杀", "场域天书", "小阴间究极拳"],
+      "narration": "轮回路轰鸣开启，诸天场域化作一座绝杀天地"
+    },
+    {
+      "id": "madoka",
+      "name": "圆神",
+      "origin": "魔法少女小圆",
+      "hpMultiplier": 1.2,
+      "attackMultiplier": 1.38,
+      "defenseMultiplier": 1.28,
+      "damageMultiplier": 1.26,
+      "skills": ["圆环之理", "因果律改写", "终焉神弓"],
+      "narration": "跨越无数时间线的因果汇聚成光箭，从概念层面抹去灾厄"
+    },
+    {
+      "id": "yorichi",
+      "name": "继国缘一",
+      "origin": "鬼灭之刃",
+      "hpMultiplier": 1.08,
+      "attackMultiplier": 1.48,
+      "defenseMultiplier": 1.04,
+      "damageMultiplier": 1.28,
+      "skills": ["日之呼吸·十三型", "通透世界", "赫刀·斩尽再生"],
+      "narration": "日轮十三型首尾相连，赫刀在一息间斩过所有要害"
+    },
+    {
+      "id": "gojo_satoru",
+      "name": "五条悟",
+      "origin": "咒术回战",
+      "hpMultiplier": 1.12,
+      "attackMultiplier": 1.4,
+      "defenseMultiplier": 1.34,
+      "damageMultiplier": 1.24,
+      "skills": ["无量空处", "术式反转·赫", "虚式·茈"],
+      "narration": "无下限术式扭曲距离，虚式茈将路径上的一切归于虚无"
     }
   ],
   "fusions": [

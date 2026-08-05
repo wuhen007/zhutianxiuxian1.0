@@ -52,11 +52,23 @@ function chooseFirstForEveryone(run) {
     applyEndlessChoice(run, id, 1);
 }
 
+function grantGhostPath(member, domainLevel, equippedPuzzles = []) {
+  member.abilities = { neutral_ghost_eye: 1 };
+  member.endlessMetaEffects = {
+    choiceCount: 3,
+    doubleChoice: false,
+    ghostDomainLevel: domainLevel,
+    equippedPuzzles,
+    puzzleEffects: {},
+  };
+}
+
 const content = getEndlessContent();
 assert.equal(content.worlds.length, 6);
 assert.equal(content.abilities.length, 33);
 assert.equal(content.fusions.length, 10);
-assert.equal(content.checkpointBoons.length, 19);
+assert.equal(content.checkpointBoons.length, 20);
+assert.equal(content.freeTransformationHeroes.length, 12);
 assert.equal(
   new Set(content.checkpointBoons.map(boon => boon.id)).size,
   content.checkpointBoons.length
@@ -113,6 +125,52 @@ for (const name of [
   assert.ok(content.checkpointBoons.some(boon => boon.name === name));
 }
 assert.ok(!content.abilities.some((ability) => ability.name === '天帝拳'));
+const freeTransformation = content.abilities.find(
+  ability => ability.id === 'perfect_free_transformation'
+);
+assert.equal(freeTransformation.bossOnly, true);
+assert.equal(freeTransformation.proc, undefined);
+const freeTransformationBoon = content.checkpointBoons.find(
+  boon => boon.id === 'art_free_transformation'
+);
+assert.equal(freeTransformationBoon.grantsAbility, 'perfect_free_transformation');
+assert.equal(freeTransformationBoon.choiceWeight, 0.03);
+
+for (let seed = 1; seed <= 20; seed++) {
+  const choiceRun = createOnePlayerRun(seed);
+  assert.ok(
+    Object.values(choiceRun.pendingChoices).flat().every(
+      abilityId => abilityId !== 'perfect_free_transformation'
+    )
+  );
+}
+
+const metaChoiceRun = createEndlessRun({
+  teamId: 'meta-choice',
+  groupId: 'test-group',
+  seed: 20260805,
+  players: [{
+    id: '10001',
+    player: {
+      ...player('道碑修士'),
+      无尽道碑: {
+        nodes: { choice: 1, double: 1 },
+        equippedPuzzles: [],
+      },
+    },
+  }],
+});
+const initialMetaChoices = [...metaChoiceRun.pendingChoices['10001']];
+assert.equal(initialMetaChoices.length, 4);
+assert.equal(applyEndlessChoice(metaChoiceRun, '10001', 1).extraChoice, true);
+assert.equal(metaChoiceRun.pendingChoices['10001'].length, 3);
+assert.equal(applyEndlessChoice(metaChoiceRun, '10001', 1).extraChoice, false);
+assert.equal(metaChoiceRun.phase, 'ready');
+metaChoiceRun.phase = 'choice';
+metaChoiceRun.pendingChoiceLayer = 2;
+metaChoiceRun.pendingChoices = { '10001': initialMetaChoices.slice(2) };
+assert.equal(applyEndlessChoice(metaChoiceRun, '10001', 1).extraChoice, false);
+assert.equal(metaChoiceRun.phase, 'ready');
 
 const soloScaleRun = createOnePlayerRun(314159);
 const teamScaleRun = createTwoPlayerRun(314159);
@@ -402,27 +460,104 @@ assert.match(summonAction.narration, /漆黑巨手.*夹击/);
 assert.ok(summonAction.damage > 0);
 assert.ok(summonLogBattle.logs.some(text => /召唤暗影之手协同攻击/.test(text)));
 
-const futureRun = createTwoPlayerRun(55667);
-chooseFirstForEveryone(futureRun);
-futureRun.members['10001'].abilities = { perfect_free_transformation: 1 };
-for (const member of Object.values(futureRun.members)) {
-  member.base.attack = 1;
-  member.base.hp = 10_000_000;
-  member.base.defense = 10_000_000;
+const incompleteFreeRun = createOnePlayerRun(55667);
+chooseFirstForEveryone(incompleteFreeRun);
+incompleteFreeRun.members['10001'].abilities = {
+  perfect_free_transformation: 1,
+};
+incompleteFreeRun.members['10001'].base.attack = 1;
+incompleteFreeRun.members['10001'].base.hp = 10_000_000;
+incompleteFreeRun.members['10001'].base.defense = 10_000_000;
+const incompleteFreeBattle = resolveEndlessLayer(incompleteFreeRun);
+const incompleteFreeActions = incompleteFreeBattle.roundDetails.flatMap(
+  round => round.actions
+);
+assert.ok(
+  incompleteFreeActions.some(
+    action => action.skill === '他化自在法·残缺映照'
+  )
+);
+assert.ok(
+  incompleteFreeActions.some(action => action.skill === '他化自在身·代劫')
+);
+assert.ok(
+  incompleteFreeBattle.roundDetails.every(round =>
+    round.members.every(member => member.freeBodies.length === 0)
+  )
+);
+
+const emperorFreeRun = createOnePlayerRun(55668);
+chooseFirstForEveryone(emperorFreeRun);
+emperorFreeRun.members['10001'].abilities = {
+  perfect_free_transformation: 2,
+};
+emperorFreeRun.members['10001'].base.attack = 1;
+emperorFreeRun.members['10001'].base.hp = 10_000_000;
+emperorFreeRun.members['10001'].base.defense = 10_000_000;
+const emperorFreeBattle = resolveEndlessLayer(emperorFreeRun);
+assert.equal(emperorFreeBattle.summary.freeBodiesSummoned, 2);
+assert.ok(
+  emperorFreeBattle.roundDetails.some(
+    round => round.members[0].freeBodies.length === 2
+  )
+);
+assert.ok(
+  emperorFreeBattle.roundDetails.every(
+    round => round.members[0].freeBodies.length <= 2
+  )
+);
+
+const sacrificeFreeRun = createOnePlayerRun(55669);
+chooseFirstForEveryone(sacrificeFreeRun);
+sacrificeFreeRun.members['10001'].abilities = {
+  perfect_free_transformation: 3,
+};
+sacrificeFreeRun.members['10001'].base.attack = 1;
+sacrificeFreeRun.members['10001'].base.hp = 10_000_000;
+sacrificeFreeRun.members['10001'].base.defense = 10_000_000;
+const sacrificeFreeBattle = resolveEndlessLayer(sacrificeFreeRun);
+const sacrificeActions = sacrificeFreeBattle.roundDetails.flatMap(
+  round => round.actions
+);
+assert.equal(
+  sacrificeActions.filter(action => action.skill === '他化自在法·祭道映照')
+    .length >= 2,
+  true
+);
+assert.equal(sacrificeFreeBattle.summary.freeBodiesSummoned, 4);
+assert.ok(
+  sacrificeFreeBattle.roundDetails.some(
+    round => round.members[0].freeBodies.length === 4
+  )
+);
+
+let futureSelfAction = null;
+let foreignHeroAction = null;
+for (let seed = 1; seed <= 30 && (!futureSelfAction || !foreignHeroAction); seed++) {
+  const freeRun = createOnePlayerRun(60000 + seed);
+  chooseFirstForEveryone(freeRun);
+  freeRun.members['10001'].abilities = { perfect_free_transformation: 1 };
+  freeRun.members['10001'].base.attack = 1;
+  freeRun.members['10001'].base.hp = 10_000_000;
+  freeRun.members['10001'].base.defense = 10_000_000;
+  const freeBattle = resolveEndlessLayer(freeRun);
+  const actions = freeBattle.roundDetails.flatMap(round => round.actions);
+  futureSelfAction ||= actions.find(
+    action => action.kind === 'summon' && /^未来构筑：/.test(action.note)
+  );
+  foreignHeroAction ||= actions.find(
+    action => action.kind === 'summon' && /^异界强者·/.test(action.note)
+  );
 }
-const futureBattle = resolveEndlessLayer(futureRun);
-const futureActions = futureBattle.roundDetails.flatMap(round => round.actions);
-const currentSelfAction = futureActions.find(
-  action => action.skill === '他化自在·当世身'
+assert.ok(futureSelfAction?.damage > 0);
+assert.ok([3, 4].includes(futureSelfAction.note.slice(5).split('、').length));
+assert.match(futureSelfAction.narration, /未来岁月|未来道果/);
+assert.ok(foreignHeroAction?.damage > 0);
+assert.ok(
+  content.freeTransformationHeroes.some(
+    hero => hero.name === foreignHeroAction.actor
+  )
 );
-const futureSelfAction = futureActions.find(
-  action => action.skill === '他化自在·未来身'
-);
-assert.ok(currentSelfAction?.damage > 0);
-assert.ok(futureSelfAction.damage > currentSelfAction.damage);
-assert.match(futureSelfAction.narration, /更强未来之我/);
-assert.match(futureSelfAction.note, /^未来构筑：/);
-assert.equal(futureSelfAction.note.slice(5).split('、').length, 3);
 
 const fruitRun = createTwoPlayerRun(77889);
 chooseFirstForEveryone(fruitRun);
@@ -507,6 +642,72 @@ const heavenlyEmperorFistAction = boonBattle.roundDetails
 assert.ok(heavenlyEmperorFistAction?.damage > 0);
 assert.match(heavenlyEmperorFistAction.narration, /诸天万道.*古今/);
 
+const ghostInterruptRun = createOnePlayerRun(66771);
+chooseFirstForEveryone(ghostInterruptRun);
+grantGhostPath(ghostInterruptRun.members['10001'], 6, ['music_box']);
+ghostInterruptRun.members['10001'].base.attack = 1;
+ghostInterruptRun.members['10001'].base.hp = 1_000_000_000;
+ghostInterruptRun.members['10001'].base.defense = 1_000_000_000;
+const ghostInterruptBattle = resolveEndlessLayer(ghostInterruptRun);
+const ghostInterruptActions = ghostInterruptBattle.roundDetails.flatMap(
+  round => round.actions
+);
+assert.ok(
+  ghostInterruptActions.some(
+    action => action.skill === '八音盒·永不终止的旋律'
+  )
+);
+assert.ok(
+  ghostInterruptActions.some(action => action.skill === '六层鬼域·暂停现实')
+);
+assert.ok(ghostInterruptBattle.summary.ghostInterrupts >= 2);
+
+const ghostShadowRun = createOnePlayerRun(66772);
+chooseFirstForEveryone(ghostShadowRun);
+grantGhostPath(ghostShadowRun.members['10001'], 5, ['ghost_shadow']);
+ghostShadowRun.lifeFire = 0;
+ghostShadowRun.members['10001'].base.attack = 1;
+ghostShadowRun.members['10001'].base.hp = 1;
+ghostShadowRun.members['10001'].base.defense = 0;
+const ghostShadowBattle = resolveEndlessLayer(ghostShadowRun);
+assert.ok(
+  ghostShadowBattle.roundDetails
+    .flatMap(round => round.actions)
+    .some(action => action.skill === '鬼影·替死拼图')
+);
+
+const ghostRestartRun = createTwoPlayerRun(66773);
+chooseFirstForEveryone(ghostRestartRun);
+ghostRestartRun.members['10001'].alive = false;
+ghostRestartRun.members['10001'].hp = 0;
+grantGhostPath(ghostRestartRun.members['10002'], 8);
+ghostRestartRun.lifeFire = 0;
+ghostRestartRun.members['10002'].base.attack = 1;
+ghostRestartRun.members['10002'].base.hp = 1;
+ghostRestartRun.members['10002'].base.defense = 0;
+const ghostRestartBattle = resolveEndlessLayer(ghostRestartRun);
+assert.ok(
+  ghostRestartBattle.roundDetails
+    .flatMap(round => round.actions)
+    .some(action => action.skill === '八层鬼域·重启战场')
+);
+assert.ok(ghostRestartBattle.summary.ghostRestarts >= 1);
+
+const coffinNailRun = createOnePlayerRun(66774);
+chooseFirstForEveryone(coffinNailRun);
+grantGhostPath(coffinNailRun.members['10001'], 5, ['coffin_nail']);
+coffinNailRun.layer = 99;
+coffinNailRun.members['10001'].base.attack = Number.MAX_SAFE_INTEGER;
+coffinNailRun.members['10001'].base.hp = Number.MAX_SAFE_INTEGER;
+coffinNailRun.members['10001'].base.defense = Number.MAX_SAFE_INTEGER;
+const coffinNailBattle = resolveEndlessLayer(coffinNailRun);
+assert.equal(coffinNailBattle.victory, true);
+assert.ok(
+  coffinNailBattle.roundDetails
+    .flatMap(round => round.actions)
+    .some(action => action.skill === '棺材钉·镇压厉鬼')
+);
+
 const checkpointRun = createTwoPlayerRun(44010);
 chooseFirstForEveryone(checkpointRun);
 checkpointRun.layer = 9;
@@ -540,12 +741,42 @@ const fortuneRun = structuredClone(checkpointRun);
 const fortuneResult = applyCheckpointChoice(fortuneRun, 2);
 assert.equal(fortuneResult.reward.kind, 'fortune');
 assert.ok(getCheckpointBoon(fortuneResult.reward.boon.id));
-assert.ok(
-  fortuneRun.members[fortuneResult.reward.memberId].blessings.includes(
-    fortuneResult.reward.boon.id
-  )
-);
+if (fortuneResult.reward.boon.grantsAbility)
+  assert.equal(
+    fortuneRun.members[fortuneResult.reward.memberId].abilities[
+      fortuneResult.reward.boon.grantsAbility
+    ],
+    fortuneResult.reward.abilityLevel
+  );
+else
+  assert.ok(
+    fortuneRun.members[fortuneResult.reward.memberId].blessings.includes(
+      fortuneResult.reward.boon.id
+    )
+  );
 assert.equal(fortuneRun.phase, 'choice');
+
+let freeTransformationFortune = null;
+for (let rngState = 1; rngState <= 10_000 && !freeTransformationFortune; rngState++) {
+  const trial = structuredClone(checkpointRun);
+  trial.rngState = rngState;
+  const result = applyCheckpointChoice(trial, 2);
+  if (result.reward.boon?.id === 'art_free_transformation')
+    freeTransformationFortune = { trial, result };
+}
+assert.ok(freeTransformationFortune);
+assert.equal(freeTransformationFortune.result.reward.abilityLevel, 1);
+assert.equal(
+  freeTransformationFortune.trial.members[
+    freeTransformationFortune.result.reward.memberId
+  ].abilities.perfect_free_transformation,
+  1
+);
+assert.ok(
+  !freeTransformationFortune.trial.members[
+    freeTransformationFortune.result.reward.memberId
+  ].blessings.includes('art_free_transformation')
+);
 
 const ascendRun = structuredClone(checkpointRun);
 for (const member of Object.values(ascendRun.members)) {
@@ -559,6 +790,17 @@ assert.ok(
   )
 );
 assert.equal(ascendRun.phase, 'choice');
+
+const freeAscendRun = structuredClone(checkpointRun);
+for (const member of Object.values(freeAscendRun.members)) member.abilities = {};
+freeAscendRun.members['10001'].abilities = { perfect_free_transformation: 1 };
+const freeAscendResult = applyCheckpointChoice(freeAscendRun, 3);
+assert.equal(
+  freeAscendResult.reward.upgrades.find(
+    upgrade => upgrade.memberId === '10001'
+  ).level,
+  2
+);
 
 run.members['10001'].abilities = {
   multi_speed_force: 1,

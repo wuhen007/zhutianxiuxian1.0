@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="{{pluResPath}}/html/endless_panel/endless_panel.css" />
+    <title>{{title}}</title>
+  </head>
+  <body>
+    <main id="container" class="realm-panel mode-{{mode}}">
+      <header class="realm-hero">
+        <div class="realm-seal" aria-hidden="true"><span>无</span><b>尽</b></div>
+        <div class="hero-copy">
+          <p>{{eyebrow}}</p>
+          <h1>{{title}}</h1>
+          <span>{{subtitle}}</span>
+        </div>
+        <div class="hero-mark">
+          <strong>{{mark}}</strong>
+          <span>{{status}}</span>
+        </div>
+      </header>
+
+      {{if heroStats && heroStats.length}}
+      <section class="stat-band">
+        {{each heroStats stat}}
+        <div>
+          <span>{{stat.label}}</span>
+          <strong>{{stat.value}}</strong>
+          <small>{{stat.note}}</small>
+        </div>
+        {{/each}}
+      </section>
+      {{/if}}
+
+      {{if notices && notices.length}}
+      <section class="notice-band">
+        {{each notices notice}}
+        <div class="notice notice-{{notice.tone}}">
+          <b>{{notice.title}}</b><span>{{notice.text}}</span>
+        </div>
+        {{/each}}
+      </section>
+      {{/if}}
+
+      {{if mode === 'help'}}
+      <section class="command-ledger">
+        {{each commandGroups group groupIndex}}
+        <div class="command-group">
+          <div class="section-index">0{{groupIndex + 1}}</div>
+          <div class="command-heading">
+            <span>{{group.kicker}}</span>
+            <h2>{{group.title}}</h2>
+          </div>
+          <div class="command-list">
+            {{each group.items item}}
+            <div class="command-row">
+              <b>{{item.command}}</b><span>{{item.description}}</span>
+            </div>
+            {{/each}}
+          </div>
+        </div>
+        {{/each}}
+      </section>
+      {{/if}}
+
+      {{if team}}
+      <section class="team-overview">
+        <div class="section-heading">
+          <div><span>PARTY</span><h2>同行者名录</h2></div>
+          <b>{{team.id ? '队伍 ' + team.id : '当前投影'}}</b>
+        </div>
+        <div class="member-grid">
+          {{each members member memberIndex}}
+          <article class="member {{member.alive ? '' : 'is-fallen'}} {{member.viewer ? 'is-viewer' : ''}}">
+            <span class="member-index">0{{memberIndex + 1}}</span>
+            <div class="member-main">
+              <div class="member-name">
+                <b>{{member.name}}</b>
+                <span>{{member.leader ? '劫境引渡者' : (member.alive ? '诸天投影稳定' : '残魂待归')}}</span>
+              </div>
+              {{if member.hp}}
+              <div class="hp-line"><i><em style="width: {{member.hpPct}}%"></em></i><span>{{member.hp}} / {{member.maxHp}}</span></div>
+              {{/if}}
+            </div>
+            {{if member.attack}}
+            <div class="member-stats"><span>攻 {{member.attack}}</span><span>御 {{member.defense}}</span></div>
+            {{/if}}
+            {{if member.abilities && member.abilities.length}}
+            <div class="ability-tags">
+              {{each member.abilities ability}}<span>{{ability.name}} <b>Lv.{{ability.level}}</b></span>{{/each}}
+            </div>
+            {{else if mode === 'build'}}
+            <div class="empty-line">尚未铭刻任何能力</div>
+            {{/if}}
+            {{if member.blessings && member.blessings.length}}
+            <div class="boon-line">{{each member.blessings boon}}<span>{{boon.kind}} · {{boon.name}}</span>{{/each}}</div>
+            {{/if}}
+          </article>
+          {{/each}}
+        </div>
+      </section>
+      {{/if}}
+
+      {{if fusions && fusions.length}}
+      <section class="fusion-band">
+        <div><span>RESONANCE</span><h2>诸天共鸣</h2></div>
+        <div>{{each fusions fusion}}<b>{{fusion}}</b>{{/each}}</div>
+      </section>
+      {{/if}}
+
+      {{if choiceGroups && choiceGroups.length}}
+      <section class="choice-section">
+        <div class="section-heading">
+          <div><span>ROGUELIKE DRAFT</span><h2>本层能力推演</h2></div>
+          <b>每位修士独立抉择</b>
+        </div>
+        {{each choiceGroups group}}
+        <div class="choice-owner">
+          <div><span>{{group.name}}</span><b>{{group.command}}</b></div>
+          <small>{{group.hint}}</small>
+        </div>
+        <div class="choice-grid choice-count-{{group.choices.length}}">
+          {{each group.choices choice}}
+          <article class="choice rarity-{{choice.rarityClass}}">
+            <span class="choice-index">{{choice.index}}</span>
+            <div class="choice-rarity">{{choice.rarity}}</div>
+            <h3>{{choice.name}}</h3>
+            <p>{{choice.description}}</p>
+            <div><span>{{choice.levelText}}</span><b>{{choice.tags}}</b></div>
+          </article>
+          {{/each}}
+        </div>
+        {{/each}}
+      </section>
+      {{/if}}
+
+      {{if checkpoint}}
+      <section class="checkpoint-section">
+        <div class="checkpoint-title">
+          <span>十层天关已破</span><h2>{{checkpoint.title}}</h2><b>第{{checkpoint.layer}}层</b>
+        </div>
+        <div class="checkpoint-grid">
+          {{each checkpoint.choices choice}}
+          <article>
+            <span>道途 {{choice.index}}</span>
+            <h3>{{choice.name}}</h3>
+            <b>{{choice.subtitle}}</b>
+            <p>{{choice.description}}</p>
+          </article>
+          {{/each}}
+        </div>
+        <div class="checkpoint-command">{{checkpoint.command}}</div>
+      </section>
+      {{/if}}
+
+      {{if treasury}}
+      <section class="treasury-band">
+        <div class="section-heading">
+          <div><span>TREASURY</span><h2>劫境所得</h2></div>
+          <b>每十层封存</b>
+        </div>
+        <div class="treasury-grid">
+          <div><span>已封存</span><b>灵石 {{treasury.bankedLingshi}}</b><b>源石 {{treasury.bankedSourceStone}}</b><b>道痕 {{treasury.bankedTokens}}</b></div>
+          <div><span>未封存</span><b>灵石 {{treasury.unbankedLingshi}}</b><b>源石 {{treasury.unbankedSourceStone}}</b><b>道痕 {{treasury.unbankedTokens}}</b></div>
+        </div>
+      </section>
+      {{/if}}
+
+      {{if mode === 'meta'}}
+      <section class="meta-section">
+        <div class="section-heading">
+          <div><span>OUTER REALM</span><h2>永恒道痕</h2></div>
+          <b>局外传承</b>
+        </div>
+        <div class="meta-grid">
+          {{each metaNodes node}}
+          <article class="meta-node {{node.maxed ? 'is-maxed' : ''}} {{node.locked ? 'is-locked' : ''}}">
+            <div class="node-head"><span>{{node.index}}</span><b>{{node.name}}</b><i>Lv.{{node.rank}}/{{node.maxRank}}</i></div>
+            <p>{{node.description}}</p>
+            <div class="node-progress"><i><em style="width: {{node.progress}}%"></em></i><span>{{node.next}}</span></div>
+          </article>
+          {{/each}}
+        </div>
+      </section>
+      <section class="puzzle-section">
+        <div class="section-heading">
+          <div><span>GHOST PUZZLE</span><h2>厉鬼拼图</h2></div>
+          <b>已装配 {{puzzleEquipped}} / {{puzzleSlots}}</b>
+        </div>
+        <div class="puzzle-grid">
+          {{each puzzleNodes node}}
+          <article class="puzzle {{node.equipped ? 'is-equipped' : ''}} {{node.locked ? 'is-locked' : ''}}">
+            <span>{{node.equipped ? '已装配' : (node.rank ? '待装配' : '未参悟')}}</span>
+            <h3>{{node.name}}</h3>
+            <p>{{node.description}}</p>
+            <b>{{node.next}}</b>
+          </article>
+          {{/each}}
+        </div>
+      </section>
+      {{/if}}
+
+      <footer>
+        <div><span>当前敕令</span><b>{{footerCommand}}</b></div>
+        <p>{{footerNote}}</p>
+        <strong>诸天无尽劫境</strong>
+      </footer>
+    </main>
+  </body>
+</html>

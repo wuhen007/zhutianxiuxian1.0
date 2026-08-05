@@ -57,6 +57,12 @@ import {
   INNATE_TREASURE_CATALOG,
   readInnateTreasureState,
 } from '../model/innateTreasure.js';
+import {
+  getEndlessMetaView,
+  resetEndlessMeta,
+  toggleEndlessPuzzle,
+  upgradeEndlessMeta,
+} from '../model/endlessMeta.js';
 
 const STATE_TTL_SECONDS = 7 * 24 * 60 * 60;
 const LOCK_TTL_SECONDS = 12;
@@ -77,7 +83,7 @@ export class EndlessRealm extends plugin {
         { reg: '^#离开无尽队伍$', fnc: 'leaveTeam' },
         { reg: '^#解散无尽队伍$', fnc: 'disbandTeam' },
         { reg: '^#开启无尽劫境$', fnc: 'startRun' },
-        { reg: '^#无尽选择\\s*[1-3]$', fnc: 'chooseAbility' },
+        { reg: '^#无尽选择\\s*[1-4]$', fnc: 'chooseAbility' },
         { reg: '^#劫后(?:抉择|选择)\\s*[1-3]$', fnc: 'chooseCheckpoint' },
         { reg: '^#无尽(?:下一关|下一层|挑战)$', fnc: 'nextLayer' },
         { reg: '^#无尽构筑$', fnc: 'showBuild' },
@@ -87,6 +93,11 @@ export class EndlessRealm extends plugin {
         { reg: '^#参悟无尽秘钥配方$', fnc: 'learnEndlessKeyRecipe' },
         { reg: '^#无尽商店$', fnc: 'showEndlessShop' },
         { reg: '^#无尽购买\\s+.+$', fnc: 'buyEndlessItem' },
+        { reg: '^#万劫道碑$', fnc: 'showEndlessMeta' },
+        { reg: '^#参悟道碑\\s*.+$', fnc: 'upgradeEndlessMeta' },
+        { reg: '^#装配厉鬼拼图\\s*.+$', fnc: 'toggleEndlessPuzzle' },
+        { reg: '^#重置万劫道碑$', fnc: 'requestResetEndlessMeta' },
+        { reg: '^#确认重置万劫道碑$', fnc: 'confirmResetEndlessMeta' },
         { reg: '^#万象归一\\s+(?:武器|护具|法宝)\\*.+$', fnc: 'mergeEquipment' },
       ],
     });
@@ -106,6 +117,10 @@ export class EndlessRealm extends plugin {
 
   lockKey(scope) {
     return `Xiuxian:Endless:Lock:${scope}`;
+  }
+
+  metaResetKey(id) {
+    return `Xiuxian:Endless:MetaReset:${id}`;
   }
 
   async getUserId(e) {
@@ -242,8 +257,406 @@ export class EndlessRealm extends plugin {
           ability.description
         }`;
       }),
-      `${member.name}发送 #无尽选择1/2/3`,
+      `${member.name}发送 #无尽选择${choices.map((_, index) => index + 1).join('/')}`,
     ];
+  }
+
+  formatEndlessMeta(view) {
+    const equipped = new Set(view.meta.equippedPuzzles);
+    const nodeLines = view.nodes.map(node => {
+      const next = node.rank >= node.maxRank
+        ? '已圆满'
+        : `下一级${node.nextCost}道痕${node.nextGate ? `，需最高通过${node.nextGate}层` : ''}`;
+      return `${node.puzzle ? '[拼图]' : '[道碑]'} ${node.name} Lv.${node.rank}/${node.maxRank} · ${next}\n  ${node.description}`;
+    });
+    const equippedNames = view.nodes
+      .filter(node => equipped.has(node.id))
+      .map(node => node.name);
+    return [
+      '【万劫道碑·局外传承】',
+      `劫境道痕：${view.balance}｜最高通过：${view.highestLayer}层`,
+      `厉鬼拼图：${equipped.size}/${view.puzzleSlots}（${equippedNames.join('、') || '未装配'}）`,
+      'Boss前未封存的道痕在团灭时仅保留30%，主动撤离全额保留。',
+      '',
+      ...nodeLines,
+      '',
+      '#参悟道碑 名称',
+      '#装配厉鬼拼图 名称（重复发送可卸下）',
+      '#重置万劫道碑',
+    ];
+  }
+
+  rarityClass(rarity) {
+    if (/神话|传说|禁忌|至高/.test(rarity || '')) return 'legendary';
+    if (/稀有|史诗/.test(rarity || '')) return 'rare';
+    return 'common';
+  }
+
+  panelChoiceGroups(run, memberIds = Object.keys(run.pendingChoices || {})) {
+    return memberIds
+      .filter(id => run.pendingChoices?.[id])
+      .map(id => {
+        const member = run.members[id];
+        const choices = run.pendingChoices[id];
+        return {
+          name: member.name,
+          command: `#无尽选择${choices.map((_, index) => index + 1).join('/')}`,
+          hint: choices.length === 4 ? '衍算天机 · 四象齐现' : '三道投影 · 择一铭刻',
+          choices: choices.map((abilityId, index) => {
+            const ability = getAbility(abilityId);
+            const owned = member.abilities?.[abilityId] || 0;
+            return {
+              index: index + 1,
+              name: ability?.name || abilityId,
+              rarity: ability?.rarity || '未知',
+              rarityClass: this.rarityClass(ability?.rarity),
+              description: ability?.description || '道痕受到未知力量遮蔽。',
+              levelText: owned ? `当前 Lv.${owned}` : '初次参悟',
+              tags: (ability?.tags || []).join(' · ') || '诸天能力',
+            };
+          }),
+        };
+      });
+  }
+
+  panelCheckpoint(run) {
+    if (!run.checkpoint) return null;
+    return {
+      title: run.checkpoint.title,
+      layer: run.checkpoint.layer,
+      command: '#劫后抉择1 / 2 / 3',
+      choices: run.checkpoint.choices.map((choice, index) => ({
+        ...choice,
+        index: index + 1,
+      })),
+    };
+  }
+
+  panelMembers(team, run, userId, showBuild = false) {
+    return team.members.map(id => {
+      const member = run?.members?.[id];
+      if (!member)
+        return {
+          name: team.memberNames[id] || id,
+          leader: id === team.leader,
+          viewer: id === userId,
+          alive: true,
+          abilities: [],
+          blessings: [],
+        };
+      const stats = getMemberStats(run, id);
+      const abilities = Object.entries(member.abilities || {})
+        .map(([abilityId, level]) => ({
+          name: getAbility(abilityId)?.name || abilityId,
+          level,
+        }));
+      return {
+        name: member.name,
+        leader: id === team.leader,
+        viewer: id === userId,
+        alive: member.alive,
+        hp: this.formatAmount(member.hp),
+        maxHp: this.formatAmount(stats.maxHp),
+        hpPct: Math.round(Math.max(0, member.hp) / Math.max(1, stats.maxHp) * 100),
+        attack: this.formatAmount(stats.attack),
+        defense: this.formatAmount(stats.defense),
+        abilities: showBuild ? abilities : abilities.slice(-6),
+        blessings: (member.blessings || [])
+          .map(boonId => getCheckpointBoon(boonId))
+          .filter(Boolean)
+          .map(boon => ({ kind: boon.kind, name: boon.name })),
+      };
+    });
+  }
+
+  phaseText(phase) {
+    return {
+      choice: '等待能力选择',
+      ready: '可以挑战下一关',
+      checkpoint: '劫后问道',
+      settling: '正在结算',
+      defeated: '投影破碎',
+    }[phase] || phase;
+  }
+
+  async replyEndlessPanel(e, view, fallback) {
+    try {
+      const renderData = await new Show(e).get_endlessPanelData({
+        saveId: `endless_panel_${view.mode}_${Date.now()}`,
+        ...view,
+      });
+      const image = await puppeteer.screenshot('endless_panel', renderData);
+      if (image) return e.reply(image);
+    } catch (error) {
+      logger.error(`[无尽劫境] ${view.title}面板生成失败`, error);
+    }
+    return e.reply(Array.isArray(fallback) ? fallback.join('\n') : fallback);
+  }
+
+  helpPanelView() {
+    return {
+      mode: 'help',
+      eyebrow: 'INFINITE CALAMITY · 诸天轮回远征',
+      title: '诸天无尽劫境',
+      subtitle: '跨越诸天位面，在一次次怪潮与天关中重塑构筑；每次抉择都将改写下一场战斗。',
+      mark: '∞',
+      status: '第一纪元 · 劫境已开启',
+      heroStats: [
+        { label: '远征人数', value: `1—${MAX_TEAM_SIZE}`, note: '支持单人或组队投影' },
+        { label: '入境代价', value: '秘钥 × 1', note: `基础心神 ${ENDLESS_SPIRIT_HEART_COST}` },
+        { label: '天关循环', value: '10 层', note: '第5层精英 · 第10层Boss' },
+        { label: '团灭保留', value: '30%', note: 'Boss前未封存战利品' },
+      ],
+      notices: [
+        { tone: 'jade', title: '构筑法则', text: '每层独立选择能力；衍算天机可增加选项，一念双悟可在每个十层循环额外参悟一次。' },
+        { tone: 'danger', title: '劫境警示', text: '主动撤离可带回全部战利品；团灭仅保留已封存奖励和30%未封存奖励。' },
+      ],
+      commandGroups: [
+        {
+          kicker: 'ASSEMBLE',
+          title: '结队入境',
+          items: [
+            { command: '#创建无尽队伍', description: '在当前群建立一支远征队伍' },
+            { command: '#加入无尽队伍 123456', description: '凭六位队伍编号加入同行者' },
+            { command: '#无尽队伍', description: '查看成员、层数、命火与待选能力' },
+            { command: '#开启无尽劫境', description: '队长消耗全队秘钥与心神并开启远征' },
+          ],
+        },
+        {
+          kicker: 'DESCEND',
+          title: '劫境行动',
+          items: [
+            { command: '#无尽选择1', description: '铭刻当前层的一项诸天能力' },
+            { command: '#无尽下一关', description: '全员完成抉择后由队长推进' },
+            { command: '#劫后抉择1', description: 'Boss战后选择归息、机缘或升华' },
+            { command: '#无尽构筑', description: '检视队伍属性、能力、机缘与共鸣' },
+          ],
+        },
+        {
+          kicker: 'ASCEND',
+          title: '局外传承',
+          items: [
+            { command: '#万劫道碑', description: '查看永久强化路线与厉鬼拼图' },
+            { command: '#参悟道碑 攻击', description: '消耗劫境道痕提升局外传承' },
+            { command: '#装配厉鬼拼图 八音盒', description: '切换已参悟拼图，获得鬼眼后生效' },
+            { command: '#无尽商店', description: '以劫境道痕购买诸天遗珍' },
+          ],
+        },
+        {
+          kicker: 'RETURN',
+          title: '撤离与扫荡',
+          items: [
+            { command: '#退出无尽劫境', description: '由队长主动结算并保留全部所得' },
+            { command: '#扫荡无尽劫境', description: `消耗扫荡券、秘钥与${ENDLESS_SPIRIT_HEART_COST}心神` },
+            { command: '#无尽战斗模版1/2/3/4', description: '切换战斗图片的叙事风格' },
+            { command: '#参悟无尽秘钥配方', description: '解锁无尽秘钥制作资格' },
+          ],
+        },
+      ],
+      footerCommand: '#创建无尽队伍',
+      footerNote: '先结队，再入境。无尽劫境中的属性与能力均为投影，不会覆盖角色本体构筑。',
+    };
+  }
+
+  teamPanelView(team, run, userId) {
+    const nextWorld = run ? getWorldForLayer(run, run.layer + 1) : null;
+    const phase = run ? this.phaseText(run.phase) : this.statusText(team.status);
+    return {
+      mode: 'team',
+      eyebrow: 'PARTY PROJECTION · 远征队伍',
+      title: `无尽队伍 · ${team.id}`,
+      subtitle: run
+        ? `当前投影位于第${run.layer}层，下一道位面裂隙通往${nextWorld.name}。`
+        : '同行者正在集结，待队长确认后共同投入诸天劫境。',
+      mark: run ? String(run.layer).padStart(2, '0') : `${team.members.length}/${MAX_TEAM_SIZE}`,
+      status: phase,
+      heroStats: [
+        { label: '队伍状态', value: phase, note: run ? '劫境投影同步中' : '等待队长开启' },
+        { label: '同行者', value: `${team.members.length} / ${MAX_TEAM_SIZE}`, note: team.memberNames[team.leader] || team.leader },
+        { label: '当前层数', value: run ? run.layer : '未入境', note: nextWorld ? `下一位面 ${nextWorld.name}` : '等待位面坐标' },
+        { label: '共享命火', value: run ? `${run.lifeFire} / ${run.maxLifeFire}` : '未点燃', note: '投影破碎时自动续命' },
+      ],
+      notices: run
+        ? [{ tone: run.phase === 'ready' ? 'jade' : 'normal', title: '当前进程', text: phase }]
+        : [{ tone: 'jade', title: '入境准备', text: `每名成员需要【${ENDLESS_ENTRY_ITEM}】×1与基础心神${ENDLESS_SPIRIT_HEART_COST}点。` }],
+      team: { id: team.id },
+      members: this.panelMembers(team, run, userId),
+      choiceGroups: run ? this.panelChoiceGroups(run, [userId]) : [],
+      checkpoint: run?.phase === 'checkpoint' ? this.panelCheckpoint(run) : null,
+      treasury: run ? {
+        bankedLingshi: this.formatAmount(run.banked.lingshi),
+        bankedSourceStone: this.formatAmount(run.banked.sourceStone),
+        bankedTokens: this.formatAmount(run.banked.tokens),
+        unbankedLingshi: this.formatAmount(run.unbanked.lingshi),
+        unbankedSourceStone: this.formatAmount(run.unbanked.sourceStone),
+        unbankedTokens: this.formatAmount(run.unbanked.tokens),
+      } : null,
+      footerCommand: !run
+        ? '#开启无尽劫境'
+        : run.phase === 'choice'
+          ? '#无尽选择 序号'
+          : run.phase === 'checkpoint'
+            ? '#劫后抉择 序号'
+            : '#无尽下一关',
+      footerNote: run ? '未封存战利品会在团灭时损失70%，抵达十层Boss并取胜即可封存。' : `队伍编号 ${team.id} 仅在当前群有效。`,
+    };
+  }
+
+  buildPanelView(team, run, userId) {
+    return {
+      mode: 'build',
+      eyebrow: 'BUILD ARCHIVE · 诸天铭刻',
+      title: `无尽构筑 · 第${run.layer}层`,
+      subtitle: '能力、天关机缘与跨世界共鸣共同塑造本次投影；局外道碑加成已经计入下列属性。',
+      mark: String(run.layer).padStart(2, '0'),
+      status: this.phaseText(run.phase),
+      heroStats: [
+        { label: '当前层数', value: run.layer, note: getWorldForLayer(run, run.layer + 1).name },
+        { label: '共享命火', value: `${run.lifeFire} / ${run.maxLifeFire}`, note: '全队共用' },
+        { label: '诸天共鸣', value: run.fusions.length, note: '已激活组合流派' },
+        { label: '待选投影', value: Object.keys(run.pendingChoices || {}).length, note: this.phaseText(run.phase) },
+      ],
+      team: { id: team.id },
+      members: this.panelMembers(team, run, userId, true),
+      fusions: run.fusions.map(id => getFusion(id)?.name || id),
+      choiceGroups: this.panelChoiceGroups(run, [userId]),
+      checkpoint: run.phase === 'checkpoint' ? this.panelCheckpoint(run) : null,
+      treasury: {
+        bankedLingshi: this.formatAmount(run.banked.lingshi),
+        bankedSourceStone: this.formatAmount(run.banked.sourceStone),
+        bankedTokens: this.formatAmount(run.banked.tokens),
+        unbankedLingshi: this.formatAmount(run.unbanked.lingshi),
+        unbankedSourceStone: this.formatAmount(run.unbanked.sourceStone),
+        unbankedTokens: this.formatAmount(run.unbanked.tokens),
+      },
+      footerCommand: run.phase === 'ready' ? '#无尽下一关' : '#无尽选择 序号',
+      footerNote: '能力等级、天关机缘与局外道碑会共同参与最终战斗属性推演。',
+    };
+  }
+
+  metaPanelView(view, playerName) {
+    const equipped = new Set(view.meta.equippedPuzzles);
+    const mapNode = (node, index) => ({
+      ...node,
+      index: String(index + 1).padStart(2, '0'),
+      progress: Math.round(node.rank / node.maxRank * 100),
+      maxed: node.rank >= node.maxRank,
+      locked: node.rank < node.maxRank && view.highestLayer < node.nextGate,
+      equipped: equipped.has(node.id),
+      next: node.rank >= node.maxRank
+        ? '已参悟圆满'
+        : view.highestLayer < node.nextGate
+          ? `需最高通过${node.nextGate}层`
+          : `下一级消耗${node.nextCost}道痕`,
+    });
+    const metaNodes = view.nodes.filter(node => !node.puzzle).map(mapNode);
+    const puzzleNodes = view.nodes.filter(node => node.puzzle).map(mapNode);
+    return {
+      mode: 'meta',
+      eyebrow: 'MONUMENT OF CALAMITIES · 局外传承',
+      title: '万劫道碑',
+      subtitle: `${playerName}在一次次轮回中留下永恒刻痕；它们将在下一次投影降临时化作真实战力。`,
+      mark: String(view.highestLayer).padStart(2, '0'),
+      status: '无尽劫境最高层',
+      heroStats: [
+        { label: '劫境道痕', value: this.formatAmount(view.balance), note: '可用于参悟道碑' },
+        { label: '最高通过', value: `${view.highestLayer} 层`, note: '决定传承解锁门槛' },
+        { label: '拼图槽位', value: `${view.meta.equippedPuzzles.length} / ${view.puzzleSlots}`, note: '第50、100层增加槽位' },
+        { label: '已耗道痕', value: this.formatAmount(view.meta.spent), note: '重置返还其中90%' },
+      ],
+      notices: [
+        { tone: 'jade', title: '厉鬼拼图', text: '局外装配后，仍需在本局获得【鬼眼】才会激活拼图属性与机制。' },
+        { tone: 'danger', title: '死亡代价', text: 'Boss前未封存道痕在团灭时只保留30%；主动撤离可以全额带回。' },
+      ],
+      metaNodes,
+      puzzleNodes,
+      puzzleEquipped: view.meta.equippedPuzzles.length,
+      puzzleSlots: view.puzzleSlots,
+      footerCommand: '#参悟道碑 名称',
+      footerNote: '使用 #装配厉鬼拼图 名称 切换拼图；使用 #重置万劫道碑 返还90%已消耗道痕。',
+    };
+  }
+
+  async showEndlessMeta(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const player = await Read_player(userId);
+    const view = getEndlessMetaView(player);
+    return this.replyEndlessPanel(
+      e,
+      this.metaPanelView(view, player.名号 || '无名修士'),
+      this.formatEndlessMeta(view)
+    );
+  }
+
+  async upgradeEndlessMeta(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const input = String(e.msg || '').replace(/^#参悟道碑\s*/, '').trim();
+    return this.withLock(e, `meta:${userId}`, async () => {
+      const player = await Read_player(userId);
+      let result;
+      try {
+        result = upgradeEndlessMeta(player, input);
+      } catch (error) {
+        return e.reply(error.message);
+      }
+      await Write_player(userId, player);
+      return e.reply([
+        '【万劫道碑·参悟成功】',
+        `${result.node.name} Lv.${result.rank}/${result.node.maxRank}`,
+        `消耗劫境道痕：${result.cost}`,
+        `剩余劫境道痕：${result.balance}`,
+      ].join('\n'));
+    });
+  }
+
+  async toggleEndlessPuzzle(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const input = String(e.msg || '').replace(/^#装配厉鬼拼图\s*/, '').trim();
+    return this.withLock(e, `meta:${userId}`, async () => {
+      const player = await Read_player(userId);
+      let result;
+      try {
+        result = toggleEndlessPuzzle(player, input);
+      } catch (error) {
+        return e.reply(error.message);
+      }
+      await Write_player(userId, player);
+      const view = getEndlessMetaView(player);
+      return e.reply(
+        `${result.equipped ? '已装配' : '已卸下'}【${result.node.name}】（${view.meta.equippedPuzzles.length}/${view.puzzleSlots}）\n厉鬼拼图仅在本局获得【鬼眼】后生效。`
+      );
+    });
+  }
+
+  async requestResetEndlessMeta(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const player = await Read_player(userId);
+    const view = getEndlessMetaView(player);
+    if (!view.meta.spent) return e.reply('万劫道碑尚未消耗道痕，无需重置');
+    await redis.set(this.metaResetKey(userId), '1', { EX: 60 });
+    return e.reply(
+      `重置将返还已消耗劫境道痕的90%（预计${Math.floor(view.meta.spent * 0.9)}），并清空全部传承与拼图。\n60秒内发送 #确认重置万劫道碑`
+    );
+  }
+
+  async confirmResetEndlessMeta(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    if (!(await redis.get(this.metaResetKey(userId))))
+      return e.reply('重置确认已失效，请先发送 #重置万劫道碑');
+    return this.withLock(e, `meta:${userId}`, async () => {
+      const player = await Read_player(userId);
+      const result = resetEndlessMeta(player);
+      await Write_player(userId, player);
+      await redis.del(this.metaResetKey(userId));
+      return e.reply(
+        `【万劫道碑已重置】\n返还劫境道痕：${result.refund}\n当前劫境道痕：${result.balance}`
+      );
+    });
   }
 
   formatAllChoices(run) {
@@ -285,6 +698,10 @@ export class EndlessRealm extends plugin {
           `源自：${boon.origin}`,
           boon.description
         );
+        if (result.reward.abilityLevel)
+          lines.push(
+            `当前境界：${['残缺级', '仙帝级', '祭道级'][result.reward.abilityLevel - 1]}（Lv.${result.reward.abilityLevel}）`
+          );
       } else {
         lines.push(
           `${result.reward.memberName}参透重复道痕，本局攻击成长额外提高12%`
@@ -314,17 +731,19 @@ export class EndlessRealm extends plugin {
         return this.replyTeamStatus(e, team, userId);
       }
     }
-    return e.reply(
-      [
+    const lines = [
         '【诸天无尽劫境·第一版】',
         `1～${MAX_TEAM_SIZE}人组队，每名成员入场消耗【${ENDLESS_ENTRY_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点`,
         '每层击退怪潮后独立三选一；每5层精英，每10层位面Boss并开启劫后问道。',
+        '他化自在法仅在Boss后的诸天垂青中以极低概率显化。',
         '',
         '#创建无尽队伍',
         '#加入无尽队伍 123456',
         '#无尽队伍',
         '#开启无尽劫境',
         '#无尽选择1',
+        '#万劫道碑 / #参悟道碑 攻击',
+        '#装配厉鬼拼图 八音盒',
         '#劫后抉择1',
         '#无尽下一关',
         '#无尽构筑',
@@ -339,8 +758,8 @@ export class EndlessRealm extends plugin {
         '',
         '主动撤离保留全部奖励；团灭保留已封存奖励和30%未封存奖励。',
         `扫荡消耗【${ENDLESS_ENTRY_ITEM}】×1、【${ENDLESS_SWEEP_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点，结算最高层向前最多10层。`,
-      ].join('\n')
-    );
+      ];
+    return this.replyEndlessPanel(e, this.helpPanelView(), lines);
   }
 
   async setBattleTemplate(e) {
@@ -646,7 +1065,11 @@ export class EndlessRealm extends plugin {
       if (run.phase === 'checkpoint')
         lines.push('', ...this.formatCheckpoint(run));
     }
-    return e.reply(lines.join('\n'));
+    return this.replyEndlessPanel(
+      e,
+      this.teamPanelView(team, run, userId),
+      lines
+    );
   }
 
   async showTeam(e) {
@@ -834,7 +1257,7 @@ export class EndlessRealm extends plugin {
       return e.reply('你当前不在无尽劫境中');
     if (!this.isTeamGroup(e, current))
       return e.reply('请回到无尽队伍所在群进行操作');
-    const choice = Number(e.msg.match(/[1-3]$/)?.[0]);
+      const choice = Number(e.msg.match(/[1-4]$/)?.[0]);
     return this.withLock(e, `team:${current.id}`, async () => {
       const run = await this.getRun(current.id);
       if (!run) return e.reply('无尽劫境状态已经失效');
@@ -853,7 +1276,13 @@ export class EndlessRealm extends plugin {
       for (const fusion of result.newFusions) {
         lines.push('', `诸天共鸣：${fusion.name}`, fusion.description);
       }
-      if (result.ready) lines.push('', '全队选择完成，队长可发送 #无尽下一关');
+      if (result.extraChoice)
+        lines.push(
+          '',
+          '一念双悟触发，本轮可再参悟一项能力：',
+          ...this.formatChoices(run, userId)
+        );
+      else if (result.ready) lines.push('', '全队选择完成，队长可发送 #无尽下一关');
       else
         lines.push(
           '',
@@ -1313,7 +1742,11 @@ export class EndlessRealm extends plugin {
       lines.push('', ...this.formatChoices(run, userId));
     if (run.phase === 'checkpoint')
       lines.push('', ...this.formatCheckpoint(run));
-    return e.reply(lines.join('\n'));
+    return this.replyEndlessPanel(
+      e,
+      this.buildPanelView(team, run, userId),
+      lines
+    );
   }
 
   formatSettlement(settlement, title) {
