@@ -30,7 +30,10 @@ import {
   getSupremeTitle,
   getSupremeTrialSpec,
   getUltimateMissing,
+  learnSupremeBoneArt,
+  repairSupremeBoneManifestation,
 } from '../../model/supremePath.js';
+import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 export class linggenjuexing extends plugin {
   constructor() {
     super({
@@ -68,8 +71,12 @@ export class linggenjuexing extends plugin {
             fnc: 'supremePathStatus'
             },
             {
-            reg: '^#斩骨涅槃$',
+            reg: '^#(?:斩骨|斩骨涅槃)$',
             fnc: 'startSupremeNirvana'
+            },
+            {
+            reg: '^#参悟(?:涅槃)?至尊骨$',
+            fnc: 'comprehendSupremeBone'
             },
             {
             reg: '^#舍骨入血$',
@@ -836,11 +843,13 @@ async getSupremeContext(e) {
         return null;
     }
     const player = await Read_player(usr_qq);
+    const boneRepaired = repairSupremeBoneManifestation(player);
     const path = ensureSupremePath(player);
     if (!path) {
         await e.reply('你并非天生至尊，无法踏上至尊骨进阶之路。');
         return null;
     }
+    if (boneRepaired) await Write_player(usr_qq, player);
     return { usr_qq, player, path };
 }
 
@@ -868,13 +877,14 @@ async supremePathStatus(e) {
         `本命阶段：${SUPREME_STAGE_NAMES[path.阶段]}`,
         `组合称号：${getSupremeTitle(player)}`,
         `至尊骨：${player.至尊骨 || '尚未显化'}`,
+        `至尊宝术：${['上苍之手', '轮回宝术', '轮回天罚'].filter(skill => player.学习的功法?.includes(skill)).join('、') || '尚未参悟'}`,
         `重瞳：${path.重瞳 ? '已觉醒' : '未觉醒'}`,
         `仙骨：${path.仙骨 ? '已孕育' : '未孕育'}`,
         `瞳骨共鸣：${path.共鸣 ? '已完成' : '未完成'}`,
         trial ? `当前试炼：${trial.名称} ${trial.胜场}/${trial.目标}` : '当前试炼：无',
         nextMissing.length ? `下一阶段尚缺：${nextMissing.join('、')}` : path.阶段 < 3 ? '下一阶段条件已经满足' : '至尊骨主线已经圆满',
         '',
-        '可用指令：#斩骨涅槃、#舍骨入血、#至尊试炼、#孕育仙骨、#重瞳开天、#瞳骨合一',
+        '可用指令：#斩骨涅槃、#参悟至尊骨、#参悟涅槃至尊骨、#舍骨入血、#至尊试炼、#孕育仙骨、#重瞳开天、#瞳骨合一',
     ].join('\n'));
 }
 
@@ -890,10 +900,15 @@ async startSupremeNirvana(e) {
 
     const spec = getSupremeTrialSpec('nirvana');
     path.试炼 = { 类型: 'nirvana', 名称: '失骨涅槃', 胜场: 0, 目标: spec.target };
+    player.至尊骨 = '已斩出';
+    await Add_najie_thing(usr_qq, '至尊骨', '材料', 1, undefined, 1, {
+        idempotencyKey: 'supreme-path:first-bone',
+    });
     await Write_player(usr_qq, player);
     return e.reply([
         '【斩骨涅槃】',
-        '你亲手震碎胸口至尊骨，将上苍符文散入血肉。',
+        '你亲手挖出胸口至尊骨，将上苍符文散入血肉。',
+        '获得【至尊骨】×1，可使用 #参悟至尊骨 领悟上苍之手。',
         '试炼期间将以凡血之躯迎战夺骨者投影。',
         `取得${spec.target}场胜利后，至尊骨将由自身重新孕育。`,
         '使用 #至尊试炼 开始战斗。',
@@ -912,12 +927,47 @@ async startSupremeUltimate(e) {
 
     const spec = getSupremeTrialSpec('ultimate');
     path.试炼 = { 类型: 'ultimate', 名称: '血肉铭骨', 胜场: 0, 目标: spec.target };
+    player.至尊骨 = '已舍入血肉';
+    await Add_najie_thing(usr_qq, '涅槃至尊骨', '材料', 1, undefined, 1, {
+        idempotencyKey: 'supreme-path:nirvana-bone',
+    });
     await Write_player(usr_qq, player);
     return e.reply([
         '【舍骨入血】',
-        '第二块至尊骨化作漫天符文，烙印进血液、脏腑与每一寸肉身。',
+        '你从第二块至尊骨中截下核心宝骨，余下符文化入血液、脏腑与每一寸肉身。',
+        '获得【涅槃至尊骨】×1，可使用 #参悟涅槃至尊骨 领悟轮回宝术。',
         `你必须以无骨之身战胜自身道果${spec.target}次。`,
         '使用 #至尊试炼 迎战至尊骨中的自己。',
+    ].join('\n'));
+}
+
+async comprehendSupremeBone(e) {
+    const ctx = await this.getSupremeContext(e);
+    if (!ctx) return false;
+    const { usr_qq, player } = ctx;
+    const boneName = e.msg.includes('涅槃至尊骨') ? '涅槃至尊骨' : '至尊骨';
+    const amount = Number(await exist_najie_thing(usr_qq, boneName, '材料') || 0);
+    if (amount < 1) return e.reply(`你的纳戒中没有【${boneName}】。`);
+
+    const result = learnSupremeBoneArt(player, boneName);
+    if (!result.ok) {
+        if (result.reason === 'known') return e.reply(`你已经参悟出【${result.skill}】，无需重复参悟。`);
+        if (result.reason === 'wrong_stage') {
+            return e.reply(`【${boneName}】中的符文尚未回应你，需达到${SUPREME_STAGE_NAMES[result.requiredStage]}。`);
+        }
+        return e.reply('这块骨中没有可供参悟的至尊符文。');
+    }
+
+    await Add_najie_thing(usr_qq, boneName, '材料', -1);
+    await this.saveSupremePlayer(usr_qq, player);
+    return e.reply([
+        `【至尊骨参悟】`,
+        `消耗【${boneName}】×1，领悟【${result.skill}】。`,
+        result.combined
+            ? '上苍符文与轮回符文交融，自动领悟【轮回天罚】！'
+            : result.skill === '上苍之手'
+                ? '上苍之手可镇压对手，使其无法行动。'
+                : '轮回符文流转不息，只待与上苍之手合一。',
     ].join('\n'));
 }
 
@@ -960,7 +1010,10 @@ async supremeTrial(e) {
     if (!path.试炼) return e.reply('你尚未开启至尊试炼。');
 
     const { attacker, enemy } = this.buildSupremeTrialFighters(player, path.试炼);
+    const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, attacker, enemy);
+    if (blackEmperorFormation.consumed) await Write_player(usr_qq, player);
     const result = await zd_battle(attacker, enemy);
+    if (blackEmperorFormation.message && Array.isArray(result.msg)) result.msg.unshift(blackEmperorFormation.message);
     if (Array.isArray(result.msg) && result.msg.length) await ForwardMsg(e, result.msg);
 
     if (result.winner !== 'A') {
