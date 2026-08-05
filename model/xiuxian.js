@@ -40,6 +40,7 @@ import {
   getPetAbilityBonus,
   isInnateTreasureName,
   getInnateTreasureProjectionName,
+  migrateLegacyInnateTreasureSlot,
   updateEquippedInnateTreasure,
 } from './innateTreasure.js';
 import {
@@ -941,13 +942,16 @@ function normalizeEquipmentSlot(slot) {
 }
 
 function normalizeEquipment(equipment) {
-  const current = equipment && typeof equipment === 'object' ? equipment : {};
+  const current = migrateLegacyInnateTreasureSlot(
+    equipment && typeof equipment === 'object' ? equipment : {}
+  );
   return {
     ...current,
     武器: normalizeEquipmentSlot(current.武器),
     护具: normalizeEquipmentSlot(current.护具),
     法宝: normalizeEquipmentSlot(current.法宝),
     帝兵: normalizeEquipmentSlot(current.帝兵),
+    至宝: normalizeEquipmentSlot(current.至宝),
   };
 }
 
@@ -1010,13 +1014,13 @@ export async function Write_equipment(usr_qq, equipment) {
   let player = await Read_player(usr_qq);
   equipment = normalizeEquipment(equipment);
 
-  const projectionName = getInnateTreasureProjectionName(equipment.帝兵);
-  const innateTreasureName = projectionName || (isInnateTreasureName(equipment.帝兵?.name)
-    ? equipment.帝兵.name
+  const projectionName = getInnateTreasureProjectionName(equipment.至宝);
+  const innateTreasureName = projectionName || (isInnateTreasureName(equipment.至宝?.name)
+    ? equipment.至宝.name
     : '');
   player.当前先天至宝 = innateTreasureName;
   player.先天至宝失效时间 = projectionName
-    ? Number(equipment.帝兵.先天投影截止)
+    ? Number(equipment.至宝.先天投影截止)
     : 0;
   if (projectionName) {
     updateEquippedInnateTreasure(usr_qq, '');
@@ -1106,7 +1110,7 @@ export async function Write_equipment(usr_qq, equipment) {
   player.攻击 = player.攻击 * (1 + 灵根攻击);
   player.防御 = player.防御 * (1 + 灵根防御);
   player.血量上限 = player.血量上限 * (1 + 灵根生命);
-  let type = ['武器', '护具', '法宝','帝兵'];
+  let type = ['武器', '护具', '法宝', '帝兵', '至宝'];
   const equippedStats = calculateEquippedStats(player, type.map(i => equipment[i]));
   player.攻击 = equippedStats.攻击;
   player.防御 = equippedStats.防御;
@@ -1241,6 +1245,13 @@ export async function Write_equipment(usr_qq, equipment) {
     player.攻击 += Math.trunc(equipment.帝兵.全属性 * 后两层攻);
     player.血量上限 += Math.trunc(equipment.帝兵.全属性 * 后两层血);
     player.防御 += Math.trunc(equipment.帝兵.全属性 * 后两层防);
+  }
+
+  // 先天至宝使用独立槽位，保留本体全属性，但不参与帝兵淬炼与品阶压制。
+  if (innateTreasureName) {
+    player.攻击 += Math.trunc(equipment.至宝.全属性 * 后两层攻);
+    player.血量上限 += Math.trunc(equipment.至宝.全属性 * 后两层血);
+    player.防御 += Math.trunc(equipment.至宝.全属性 * 后两层防);
   }
 
   // ===== 阶段7：不参与其他乘区的属性最后加算 =====
@@ -5346,14 +5357,30 @@ export async function instead_equipment(usr_qq, equipment_data) {
     return;
   }
   if (equipment_data.type == '帝兵') {
-    await Add_najie_thing(
-      usr_qq,
-      equipment.帝兵,
-      '装备',
-      1,
-      equipment.帝兵.pinji
-    );
+    if (equipment.帝兵?.name) {
+      await Add_najie_thing(
+        usr_qq,
+        equipment.帝兵,
+        '装备',
+        1,
+        equipment.帝兵.pinji
+      );
+    }
     equipment.帝兵 = equipment_data;
+    await Write_equipment(usr_qq, equipment);
+    return;
+  }
+  if (equipment_data.type == '至宝') {
+    if (equipment.至宝?.name) {
+      await Add_najie_thing(
+        usr_qq,
+        equipment.至宝,
+        '装备',
+        1,
+        equipment.至宝.pinji
+      );
+    }
+    equipment.至宝 = equipment_data;
     await Write_equipment(usr_qq, equipment);
     return;
   }
@@ -7602,6 +7629,8 @@ export async function zd_battle(A_input, B_input, options = {}) {
   // 深拷贝
   const A_copy = A_team.map(p => JSON.parse(JSON.stringify(p)));
   const B_copy = B_team.map(p => JSON.parse(JSON.stringify(p)));
+  A_copy.forEach(p => { if (p?._困龙封印) { p.dongjie = true; delete p._困龙封印; } });
+  B_copy.forEach(p => { if (p?._困龙封印) { p.dongjie = true; delete p._困龙封印; } });
 
   return await zd_battle_team(A_copy, B_copy, {
     ...options,
@@ -7622,6 +7651,16 @@ async function zd_battle_1v1(AA_player, BB_player, options = {}) {
   B_player.fumianhuihe = 0;
   B_player.fumian_damage = 0;
   B_player.fumian_type = null;
+  if (AA_player?._困龙封印) {
+    A_player.dongjie = true;
+    delete AA_player._困龙封印;
+    delete A_player._困龙封印;
+  }
+  if (BB_player?._困龙封印) {
+    B_player.dongjie = true;
+    delete BB_player._困龙封印;
+    delete B_player._困龙封印;
+  }
 
   // ==================== 行动拉条系统 ====================
   let A_actionBar = 0;
@@ -12525,9 +12564,9 @@ export function getReadyUnits(units, max = ACTION_BAR_MAX) {
     );
 }
 
-// 拉条：行动条增加 amount（封顶 max），用于「气势如虹立即再动」
+// 拉条：行动条增加 amount，保留溢出量；达到 max 即视为可立即行动。
 export function boostActionBar(unit, amount, max = ACTION_BAR_MAX) {
-  unit._actionBar = Math.min((unit._actionBar || 0) + amount, max);
+  unit._actionBar = (unit._actionBar || 0) + amount;
   return (unit._actionBar || 0) >= max;
 }
 

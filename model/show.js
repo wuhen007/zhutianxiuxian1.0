@@ -28,6 +28,13 @@ export default class Game extends base {
       ...myData,
     };
   }
+  async get_endlessPanelData(myData) {
+    this.model = 'endless_panel';
+    return {
+      ...this.screenData,
+      ...myData,
+    };
+  }
   async get_player_pindao_Data(myData) {
     this.model = 'player_pindao';
     return {
