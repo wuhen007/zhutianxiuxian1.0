@@ -16,10 +16,9 @@ export async function triggerShouyuanRebirth(usr_qq, player) {
     const existing = await redis.get(`xiuxian:zhuanshi_task:${usr_qq}`);
     if (existing) return;
 
-    // 重生次数上限保护（与 #送入轮回 一致，避免被无限转世）
+    // 轮回次数只用于记录；低至生而愚痴者再次轮回会在结算时真灵消散。
     let reincarnation_count = await redis.get(`xiuxian:player:${usr_qq}:reCreate_acount`);
     reincarnation_count = parseInt(reincarnation_count) || 0;
-    if (reincarnation_count >= 15) return;
 
     const task = {
       player_qq: usr_qq,

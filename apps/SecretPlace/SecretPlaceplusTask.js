@@ -26,7 +26,12 @@ import {
 import { AppName } from '../../app.config.js';
 import { rollDailyDungeonCoordinate } from '../../model/weimianTravel.js';
 import { consumeBlackEmperorBattleFormation, rollBlackEmperorDungeonEncounter } from '../../model/blackEmperor.js';
-import { rollDailyDungeonWenXianClue } from '../../model/wenxianling.js';
+import { rollSuLingDungeonEncounter } from '../../model/suLing.js';
+import { tryNpcProtectorIntervention } from '../../model/npcProtector.js';
+import {
+  recordWenXianTaskProgress,
+  rollDailyDungeonWenXianClue,
+} from '../../model/wenxianling.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
 import {
   getDungeonFortuneMultiplier,
@@ -35,6 +40,7 @@ import {
 import RealmEvents from '../tasks/RealmEvents.js';
 import { getInnateDungeonRewardMultiplier } from '../../model/innateTreasure.js';
 import { normalizeLegacySecretPlaceAddictionAction } from '../../model/secretPlaceAddiction.js';
+import { rollDahuangPupilEncounter } from '../../model/supremePath.js';
 export class SecretPlaceplusTask extends plugin {
   constructor() {
     super({
@@ -113,8 +119,15 @@ export class SecretPlaceplusTask extends plugin {
               攻击: player.攻击,
               防御: player.防御,
               当前血量: player.当前血量,
+              血量上限: player.血量上限,
               暴击率: player.暴击率,
+              灵根: player.灵根,
               法球倍率: player.灵根.法球倍率,
+              学习的功法: player.学习的功法,
+              命运终章已领悟: player.命运终章已领悟,
+              速度: player.速度,
+              mijinglevel_id: player.mijinglevel_id,
+              xiangulevel_id: player.xiangulevel_id,
             };
            let monster = getMonsterByLocation(weizhi, xf);
             let B_player = {
@@ -158,6 +171,11 @@ export class SecretPlaceplusTask extends plugin {
             let dungeonFortuneMultiplier = 1;
             let last_msg = '';
             if (blackEmperorFormation.message) last_msg += blackEmperorFormation.message;
+            const suLingEncounter = rollSuLingDungeonEncounter(player, { dungeon: weizhi?.name });
+            if (suLingEncounter.encountered) {
+              last_msg += suLingEncounter.message;
+              await Write_player(player_id, player);
+            }
             let final_msg = '';
                if (player.出金次数 >0 ) {
             player.出金次数 -= 1;
@@ -1685,6 +1703,7 @@ if (player.灵根.type === "魔卡少女·完全") {
             }
             const redDustDungeonMultiplier = getDungeonFortuneMultiplier(player);
             player.副本通关次数 = (Number(player.副本通关次数) || 0) + 1;
+            recordWenXianTaskProgress(player, 'dungeon');
             const innateDungeonMultiplier = getInnateDungeonRewardMultiplier(player);
             dungeonFortuneMultiplier = redDustDungeonMultiplier * innateDungeonMultiplier;
             n *= dungeonFortuneMultiplier;
@@ -1737,6 +1756,21 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
               }],经过一番战斗，击败对手,获得修为${xiuwei},气血${qixue},剩余血量${
     Data_battle.A_hp
               },剩余次数${action.total_count - action.settled_count - 1}`;
+              const pupilOpponent = rollDahuangPupilEncounter(player, {
+                dungeon: weizhi?.name,
+                hasSource: Boolean(await exist_najie_thing(player_id, '重瞳本源', '材料')),
+              });
+              if (pupilOpponent) {
+                last_msg += ' 正欲离开大荒峡谷，一名重瞳者拦住去路，双瞳开阖间天地失色！';
+                const pupilBattle = await zd_battle(player, pupilOpponent);
+                player.当前血量 = await Set_HP(player_id, Math.max(1, pupilBattle.A_hp));
+                if (pupilBattle.winner === 'A') {
+                  await Add_najie_thing(player_id, '重瞳本源', '材料', 1);
+                  last_msg += ' 你以至尊骨镇压重瞳神光，将其击败，获得【重瞳本源】×1。';
+                } else {
+                  last_msg += ' 你不敌重瞳开天之威，燃烧至尊血才得以重伤遁走。';
+                }
+              }
               const blackEmperorEncounter = rollBlackEmperorDungeonEncounter(player, {
                 dungeon: weizhi?.name,
                 plane: player.power_place,
@@ -1845,7 +1879,7 @@ if (random < 0.0001) {
     // 完整的天资等级序列（包含所有等级）
     const aptitudeSequence = [
         '无化如是',      // 索引0 - 新增
-        '生而痴傻',      // 索引1 - 新增
+        '生而愚痴',      // 索引1
         '天弃之人',      // 索引2
         '先天不足',      // 索引3
         '平庸之资',      // 索引4
@@ -1860,12 +1894,12 @@ if (random < 0.0001) {
     // 获取当前天资位置
     const currentIndex = aptitudeSequence.indexOf(player.天资等级);
     
-    // 如果玩家天资不在序列中（可能是旧数据），默认为最低
+    // 如果玩家天资不在序列中（可能是旧数据），统一修正到轮回最低档
     if (currentIndex === -1) {
-        player.天资等级 = '无化如是';
-        player.天资评价 = '无用之人，命中注定难有所作为，任何外力都无法改变';
+        player.天资等级 = '生而愚痴';
+        player.天资评价 = '天生愚笨，修炼难如登天';
         await Write_player(usr_qq, player);
-        last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。他掐指一算，神色惊变："无化如是！天命所定，老朽亦不可违！"遂化作清风而去。`;
+        last_msg += `${B_player.名号}倒下后，你的旧天资被天地法则重新厘定为「生而愚痴」。`;
         return;
     }
     
@@ -1875,23 +1909,23 @@ if (random < 0.0001) {
         return;
     }
     
-    // 特殊处理：生而痴傻最多提升到天弃之人
-    if (player.天资等级 === '生而痴傻') {
+    // 特殊处理：生而愚痴最多提升到天弃之人
+    if (player.天资等级 === '生而愚痴') {
         if (Math.random() < 0.3) { // 30%概率可突破
             let newAptitude = '天弃之人';
             const aptitudeEvaluations = {
                 '天弃之人': '被天道抛弃，修炼必遭反噬',
-                '生而痴傻': '天生愚笨，修炼难如登天'
+                '生而愚痴': '天生愚笨，修炼难如登天'
             };
             
             last_msg += `
 ${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。
-老者眉头微皱："生而痴傻，本无仙缘...但念你心诚，老夫便以毕生修为，为你强行开窍！"
+老者眉头微皱："生而愚痴，本无仙缘...但念你心诚，老夫便以毕生修为，为你强行开窍！"
 老者双指并剑，点在泥丸宫上，顿时天雷滚滚，乌云压顶。
 "开！"老者一声暴喝，口吐鲜血，却见一道金光冲破你天灵盖。
 片刻后，天雷散去，老者面色苍白："老夫强行逆天为你开智，损了百年修为。你已从痴傻突破至天弃之人，好自为之..."
 天资蜕变：
-原资质：『生而痴傻』→ 新资质：『天弃之人』
+原资质：『生而愚痴』→ 新资质：『天弃之人』
 ${aptitudeEvaluations['天弃之人']}
 `;
             
@@ -1899,7 +1933,7 @@ ${aptitudeEvaluations['天弃之人']}
             player.天资评价 = aptitudeEvaluations['天弃之人'];
             await Write_player(usr_qq, player);
         } else {
-            last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。\n老者探查你资质后，摇头叹息："生而痴傻，愚昧如石，纵是仙丹妙药亦难回天。"\n说完化作青烟散去。`;
+            last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。\n老者探查你资质后，摇头叹息："生而愚痴，愚昧如石，纵是仙丹妙药亦难回天。"\n说完化作青烟散去。`;
         }
         return;
     }
@@ -1915,7 +1949,7 @@ ${aptitudeEvaluations['天弃之人']}
         '平庸之资': '资质平平，勉勉强强',
         '先天不足': '先天有缺，修炼事倍功半',
         '天弃之人': '被天道抛弃，修炼必遭反噬，但仍有希望',
-        '生而痴傻': '天生愚笨，修炼难如登天',
+        '生而愚痴': '天生愚笨，修炼难如登天',
         '无化如是': '无用之人，命中注定难有所作为，任何外力都无法改变'
     };
     
@@ -2030,7 +2064,20 @@ ${aptitudeEvaluations[newAptitude]}
             }
             } else if (Data_battle.winner === 'B') {
   // === 添加大帝庇护逻辑开始 ===
-  if (player.大帝庇护 === 1 && player.庇护人) {
+  const npcProtection = await tryNpcProtectorIntervention(player, B_player, zd_battle);
+  if (npcProtection.triggered) {
+    msg.push(...npcProtection.messages);
+    if (npcProtection.won) {
+      if (thing_name) await Add_najie_thing(player_id, thing_name, thing_class, n);
+      xiuwei = 1600;
+      qixue = 1200;
+      last_msg = `${m},${npcProtection.name}应护道之约抹去了${B_player.名号}的胜果，获得修为${xiuwei},气血${qixue}`;
+    } else {
+      xiuwei = 800;
+      last_msg = `${m},${npcProtection.name}护你脱离险境，只获得了修为${xiuwei}`;
+    }
+    await Write_player(player_id, player);
+  } else if (player.大帝庇护 === 1 && player.庇护人) {
     const protectorQQ = player.庇护人; // 庇护人的QQ号
     
     try {

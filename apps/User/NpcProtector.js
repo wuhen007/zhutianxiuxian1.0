@@ -25,7 +25,7 @@ export class NpcProtector extends plugin {
       event: 'message',
       priority: 600,
       rule: [
-        { reg: '^#请(柳神|狠人)护道$', fnc: 'inviteNpcProtector' },
+        { reg: '^#请(柳神|狠人|苏灵)护道$', fnc: 'inviteNpcProtector' },
         { reg: '^#我的护道人$', fnc: 'showProtector' },
         { reg: '^#解除护道$', fnc: 'dismissProtector' },
         { reg: '^#抹除至尊印记\\s*(.+)$', fnc: 'eraseSupremeMark' },
@@ -44,8 +44,12 @@ export class NpcProtector extends plugin {
     const context = await this.getPlayer(e);
     if (!context) return false;
     const { qq, player } = context;
-    const requested = e.msg.includes('柳神') ? '柳神' : '狠人大帝';
+    const requested = e.msg.includes('苏灵') ? '苏灵' : e.msg.includes('柳神') ? '柳神' : '狠人大帝';
     const current = player.护道人 && player.护道人 !== '无' ? player.护道人 : '';
+    if (current === requested) {
+      await e.reply(`「${requested}」已经是你的护道人，无需重复立约。`);
+      return true;
+    }
     if (current && current !== requested) {
       await e.reply(`你已有护道人「${current}」，需先使用#解除护道。`);
       return true;
@@ -78,9 +82,11 @@ export class NpcProtector extends plugin {
     await Write_player(qq, player);
     await e.reply([
       `【护道之约·${requested}】`,
-      requested === '柳神'
-        ? '柳神留下一枚嫩叶印记：“仙路凶险，危急之时，我自会出手。”'
-        : '狠人大帝留下一道青铜面具烙印：“持吾传承者，不容旁人搜魂。”',
+      requested === '苏灵'
+        ? '苏灵将一道命轮印记留在你眉心：“若有必死之劫，我会替你删去那一种未来。”'
+        : requested === '柳神'
+          ? '柳神留下一枚嫩叶印记：“仙路凶险，危急之时，我自会出手。”'
+          : '狠人大帝留下一道青铜面具烙印：“持吾传承者，不容旁人搜魂。”',
       '护道人遭遇截杀时会先行参战，出手后需休养24小时。',
     ].join('\n'));
     return true;

@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "tokenName": "圣地战功",
+  "products": [
+    {
+      "id": 1,
+      "name": "灵火",
+      "itemClass": "道具",
+      "category": "火种",
+      "price": 50,
+      "description": "炼器时间缩短18%，兑换后永久拥有",
+      "unique": true
+    },
+    {
+      "id": 2,
+      "name": "帝火",
+      "itemClass": "道具",
+      "category": "火种",
+      "price": 120,
+      "description": "炼器时间缩短32%，兑换后永久拥有",
+      "unique": true
+    },
+    {
+      "id": 3,
+      "name": "仙火",
+      "itemClass": "道具",
+      "category": "火种",
+      "price": 240,
+      "description": "炼器时间缩短45%，兑换后永久拥有",
+      "unique": true
+    },
+    {
+      "id": 4,
+      "name": "道火",
+      "itemClass": "道具",
+      "category": "火种",
+      "price": 400,
+      "description": "炼器时间缩短60%，兑换后永久拥有",
+      "unique": true
+    },
+    {
+      "id": 5,
+      "name": "玄铁炉",
+      "itemClass": "道具",
+      "category": "锻炉",
+      "price": 80,
+      "description": "容纳量15，炼器系数+0.05",
+      "unique": true
+    },
+    {
+      "id": 6,
+      "name": "地火炉",
+      "itemClass": "道具",
+      "category": "锻炉",
+      "price": 180,
+      "description": "容纳量20，炼器系数+0.10",
+      "unique": true
+    },
+    {
+      "id": 7,
+      "name": "天火炉",
+      "itemClass": "道具",
+      "category": "锻炉",
+      "price": 350,
+      "description": "容纳量26，炼器系数+0.15",
+      "unique": true
+    },
+    {
+      "id": 8,
+      "name": "混沌炉",
+      "itemClass": "道具",
+      "category": "锻炉",
+      "price": 600,
+      "description": "容纳量34，炼器系数+0.25",
+      "unique": true
+    },
+    {
+      "id": 9,
+      "name": "时光令配方",
+      "itemClass": "道具",
+      "category": "配方",
+      "price": 150,
+      "description": "参悟后永久解锁时光令合成",
+      "unique": true
+    }
+  ]
+}

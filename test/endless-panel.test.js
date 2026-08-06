@@ -11,6 +11,7 @@ const css = fs.readFileSync(
   new URL('../resources/html/endless_panel/endless_panel.css', import.meta.url),
   'utf8'
 );
+const appSource = fs.readFileSync(new URL('../apps/EndlessRealm.js', import.meta.url), 'utf8');
 
 const base = {
   pluResPath: '..',
@@ -99,7 +100,64 @@ test('万劫道碑面板显示道碑进度与拼图装配状态', () => {
   assert.match(output, /已装配 1 \/ 2/);
 });
 
+test('劫途星图面板显示十层星轨、投票与定途指令', () => {
+  const output = template.render(html, {
+    ...base,
+    mode: 'star-map',
+    starMap: {
+      targetLayer: 1,
+      selectedName: '尚未定途',
+      commandRange: '1/2',
+      rows: Array.from({ length: 10 }, (_, index) => ({
+        label: String(index + 1).padStart(2, '0'),
+        current: index === 0,
+        nodes: [{
+          statusClass: index ? 'hidden' : 'future',
+          current: index === 0,
+          visible: index === 0,
+          symbol: '战',
+          displayName: index === 0 ? '征伐' : '未观测',
+          displayWorld: index === 0 ? '完美世界' : '因果迷雾',
+        }],
+      })),
+      seals: [{ name: '杀伐印', value: 1, note: '三印后Boss获得吸血' }],
+      options: [{
+        index: 1,
+        risk: '寻常',
+        riskClass: 'stable',
+        symbol: '战',
+        name: '完美世界·征伐劫星',
+        description: '正面击溃当地怪潮。',
+        rewardText: '基础战利品',
+        votes: 2,
+        voters: '荒古修士、无名修士',
+      }],
+    },
+  });
+  assert.match(output, /十层因果星轨/);
+  assert.match(output, /完美世界·征伐劫星/);
+  assert.match(output, /建议 2 票/);
+  assert.match(output, /#星图定途1\/2/);
+  assert.match(css, /grid-template-columns:\s*repeat\(10,/);
+});
+
 test('面板使用稳定宽度并禁止视口字号缩放', () => {
   assert.match(css, /width:\s*1032px/);
   assert.doesNotMatch(css, /font-size:\s*(?:clamp|min|max|calc)\(/);
+});
+
+test('面板支持二倍原生像素渲染', () => {
+  const output = template.render(html, { ...base, renderScale: 2 });
+  assert.match(output, /style="zoom: 2"/);
+  assert.match(appSource, /renderScale:\s*2/);
+  assert.match(appSource, /imgType:\s*'png'/);
+});
+
+test('劫途星图群聊指令与处理方法完整注册', () => {
+  assert.ok(appSource.includes("{ reg: '^#劫途星图$', fnc: 'showStarMap' }"));
+  assert.ok(appSource.includes("{ reg: '^#星图建议\\\\s*[1-3]$', fnc: 'suggestStarRoute' }"));
+  assert.ok(appSource.includes("{ reg: '^#星图情报\\\\s*[1-3]$', fnc: 'showStarIntel' }"));
+  assert.ok(appSource.includes("{ reg: '^#星图定途\\\\s*[1-3]$', fnc: 'selectStarRoute' }"));
+  assert.match(appSource, /async showStarMap\(e\)/);
+  assert.match(appSource, /async selectStarRoute\(e\)/);
 });

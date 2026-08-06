@@ -77,6 +77,17 @@ export function getUnlockedBlackEmperorFormations(favor = 0) {
   return BLACK_EMPEROR_FORMATIONS.filter(formation => value >= formation.favor);
 }
 
+export function parseBlackEmperorFormationRequest(content) {
+  const compact = String(content || '').replace(/\s+/g, '');
+  const formation = BLACK_EMPEROR_FORMATIONS.find(item =>
+    compact === item.name || compact.startsWith(item.name)
+  );
+  return {
+    formation,
+    target: formation ? compact.slice(formation.name.length) : '',
+  };
+}
+
 function recordEvent(character, event) {
   if (!Array.isArray(character.事件记录)) character.事件记录 = [];
   character.事件记录.push(event);
@@ -249,7 +260,7 @@ export function consumeBlackEmperorTribulationFormation(player, options = {}) {
 export function getSelfEngraveChance(level = 0, failures = 0) {
   const value = Math.max(1, Number(level) || 0);
   const pity = Math.min(0.2, Math.max(0, Number(failures) || 0) * 0.05);
-  return Math.min(0.95, 0.25 + value * 0.02 + pity);
+  return Number(Math.min(0.95, 0.25 + value * 0.02 + pity).toFixed(4));
 }
 
 export function selfEngraveFormation(player, formationName, options = {}) {

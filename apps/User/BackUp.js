@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { plugin, config } from '../../api/api.js';
-import { __PATH } from '../../model/xiuxian.js';
+import { __PATH, channel, existplayer, Read_player } from '../../model/xiuxian.js';
 
 /** 自动备份保留份数，超过则删除最旧的 */
 const KEEP_BACKUP_COUNT = 30;
@@ -25,6 +25,10 @@ export class BackUp extends plugin {
         {
           reg: '^#读取存档(.*)',
           fnc: 'loadBackUp',
+        },
+        {
+          reg: '^#回溯玩家(练气|纳戒|练气/纳戒)存档',
+          fnc: 'rollbackPlayerArchive',
         },
       ],
     });
@@ -315,7 +319,149 @@ export class BackUp extends plugin {
       return false;
     }
   }
-  async getTimeStr(timeStamp) {
+  // ============ 单玩家·单维度存档回溯 ============
+  // 指令：
+  //   #回溯玩家练气存档@玩家 [序号]        -> 仅回溯练气（修行）存档
+  //   #回溯玩家纳戒存档@玩家 [序号]        -> 仅回溯纳戒存档
+  //   #回溯玩家练气/纳戒存档@玩家 [序号]    -> 同时回溯两者
+  // 序号对应 #存档列表（倒序，1=最新），缺省为最新一份
+  async rollbackPlayerArchive(e) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
+      e.reply('只有主人可以执行操作');
+      return false;
+    }
+
+    // 1. 解析维度（练气 / 纳戒 / 练气/纳戒）
+    const dimMatch = e.msg.match(/^#回溯玩家(练气|纳戒|练气\/纳戒)存档/);
+    if (!dimMatch) return false;
+    const dim = dimMatch[1];
+
+    // 2. 解析目标 QQ（@ 优先：CQ at 消息 > 裸 @数字）
+    let targetQQ = '';
+    const atItem = e.message?.find(item => item.type === 'at');
+    if (atItem?.qq) {
+      targetQQ = atItem.qq.toString().replace('qg_', '');
+    }
+    if (!targetQQ) {
+      const atMatch = e.msg.match(/@(\d+)/);
+      if (atMatch) targetQQ = atMatch[1];
+    }
+    if (!targetQQ) {
+      e.reply([
+        '请指定目标玩家：',
+        '#回溯玩家练气存档@玩家 [序号]',
+        '#回溯玩家纳戒存档@玩家 [序号]',
+        '#回溯玩家练气/纳戒存档@玩家 [序号]',
+        '（序号对应 #存档列表，缺省为最新一份）',
+      ].join('\n'));
+      return false;
+    }
+    targetQQ = await channel(targetQQ);
+    if (!await existplayer(targetQQ)) {
+      e.reply('目标玩家不存在于诸天万界中');
+      return false;
+    }
+
+    // 3. 解析序号（去掉指令前缀与 @ 部分，剩余数字；缺省=1 最新）
+    const indexStr = e.msg
+      .replace(/^#回溯玩家(练气|纳戒|练气\/纳戒)存档/, '')
+      .replace(/\[CQ:at,qq=\d+\]/, '')
+      .replace(/@\d+/, '')
+      .replace(/\s/g, '')
+      .trim();
+    const saveDataNum = indexStr ? Number(indexStr) : 1;
+
+    // 4. 取得备份点列表（倒序，1=最新）
+    let backUpList = [];
+    try {
+      backUpList = fs.readdirSync(__PATH.backup).filter(folderName => {
+        const stat = fs.statSync(`${__PATH.backup}/${folderName}`);
+        return folderName === `${Number(folderName)}` && stat.isDirectory();
+      }).sort((a, b) => Number(b) - Number(a));
+    } catch (err) {
+      e.reply('读取备份目录失败：' + err.message);
+      return false;
+    }
+    if (backUpList.length > 80) backUpList = backUpList.slice(0, 80);
+    if (isNaN(saveDataNum) || saveDataNum < 1 || saveDataNum > backUpList.length) {
+      e.reply(`该存档不存在（当前共 ${backUpList.length} 份，可用 #存档列表 查看）`);
+      return false;
+    }
+    const backUpPath = `${__PATH.backup}/${backUpList[saveDataNum - 1]}`;
+    if (!fs.existsSync(backUpPath)) {
+      e.reply('该存档已损坏');
+      return false;
+    }
+
+    // 5. 维度 -> 路径键
+    const dimMap = {
+      '练气': ['player_path'],
+      '纳戒': ['najie_path'],
+      '练气/纳戒': ['player_path', 'najie_path'],
+    };
+    const keys = dimMap[dim] || ['player_path'];
+    const labelMap = {
+      player_path: '练气（修行）',
+      najie_path: '纳戒',
+    };
+
+    try {
+      // 6. 回溯前，先为该玩家做轻量回滚备份，保证可逆（不污染 #存档列表）
+      const rbDir = `${__PATH.backup}/rollback_${Date.now()}`;
+      fs.mkdirSync(`${rbDir}/player_path`, { recursive: true });
+      fs.mkdirSync(`${rbDir}/najie_path`, { recursive: true });
+      const curPlayer = `${__PATH.player_path}/${targetQQ}.json`;
+      const curNajie = `${__PATH.najie_path}/${targetQQ}.json`;
+      if (fs.existsSync(curPlayer)) fs.copyFileSync(curPlayer, `${rbDir}/player_path/${targetQQ}.json`);
+      if (fs.existsSync(curNajie)) fs.copyFileSync(curNajie, `${rbDir}/najie_path/${targetQQ}.json`);
+
+      // 仅保留最近 5 份回滚备份，避免无限增长
+      const rbDirs = fs.readdirSync(__PATH.backup)
+        .filter(n => n.startsWith('rollback_'))
+        .sort();
+      while (rbDirs.length > 5) {
+        const old = rbDirs.shift();
+        fs.rmSync(`${__PATH.backup}/${old}`, { recursive: true, force: true });
+      }
+
+      // 7. 单玩家·单维度覆盖恢复
+      const restored = [];
+      for (const key of keys) {
+        const src = `${backUpPath}/${key}/${targetQQ}.json`;
+        if (!fs.existsSync(src)) {
+          e.reply(`该玩家在此备份点无【${labelMap[key]}】存档，已跳过`);
+          continue;
+        }
+        const dst = `${__PATH[key]}/${targetQQ}.json`;
+        fs.copyFileSync(src, dst);
+        restored.push(labelMap[key]);
+      }
+
+      if (restored.length === 0) {
+        e.reply('回溯已完成，但没有任何维度被恢复（目标备份点不含该玩家对应数据）');
+        return false;
+      }
+
+      const timeStr = this.getTimeStr(backUpList[saveDataNum - 1]);
+      const playerName = (await Read_player(targetQQ)).名号 || targetQQ;
+      e.reply([
+        '【回溯·单兵档案】',
+        `目标：${playerName}`,
+        `已将【${restored.join('、')}】存档回溯至：${timeStr}`,
+        '（回溯前已自动留档，可凭 rollback_ 备份回退）',
+      ].join('\n'));
+      return false;
+    } catch (err) {
+      e.reply('回溯失败，' + err.message);
+      logger.error('回溯玩家存档出错:', err);
+      return false;
+    }
+  }
+
+  getTimeStr(timeStamp) {
     return new Date(Number(timeStamp)).toLocaleString('zh-CN', {
       year: 'numeric',
       month: '2-digit',

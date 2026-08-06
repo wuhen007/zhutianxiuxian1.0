@@ -417,6 +417,37 @@
                         <div class="description-title">人物描述</div>
                         <div class="description-content">{{character.人物描述}}</div>
                     </div>
+
+                    {{if character.剧情线}}
+                    <div class="description-section">
+                        <div class="description-title">剧情线</div>
+                        <div class="description-content">
+                            {{each character.剧情线 story}}
+                            <div>{{story}}</div>
+                            {{/each}}
+                        </div>
+                    </div>
+                    {{/if}}
+
+                    {{if character.终极奥秘}}
+                    <div class="appearance-section">
+                        <div class="appearance-title">终极奥秘</div>
+                        <div class="appearance-content">{{character.终极奥秘}}：{{character.奥秘效果}}</div>
+                    </div>
+                    {{/if}}
+
+                    {{if character.护道数据}}
+                    <div class="relationship-info">
+                        <div class="relationship-item">
+                            <div class="relationship-label">护道数据</div>
+                            <div class="relationship-value">{{character.护道数据}}</div>
+                        </div>
+                        <div class="relationship-item">
+                            <div class="relationship-label">触发方式</div>
+                            <div class="relationship-value">{{character.触发方式}}</div>
+                        </div>
+                    </div>
+                    {{/if}}
                 </div>
                 {{/each}}
             </div>

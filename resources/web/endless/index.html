@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>诸天无尽劫境</title>
+    <link rel="stylesheet" href="/endless/style.css?v=1" />
+  </head>
+  <body>
+    <div id="app" class="app-shell is-loading">
+      <header class="realm-header">
+        <nav class="topbar">
+          <div class="brand-seal" aria-hidden="true"><span>无</span><b>尽</b></div>
+          <div class="brand-copy">
+            <span>INFINITE CALAMITY</span>
+            <b>诸天无尽劫境</b>
+          </div>
+          <div class="connection"><i id="connection-dot"></i><span id="connection-text">连接劫境</span></div>
+        </nav>
+        <div class="realm-summary">
+          <div>
+            <p id="world-name">诸天投影载入中</p>
+            <h1>无尽劫境 <span id="layer-title">第 -- 层</span></h1>
+            <small id="phase-text">正在读取本次远征</small>
+          </div>
+          <dl>
+            <div><dt>队伍</dt><dd id="team-id">------</dd></div>
+            <div><dt>命火</dt><dd id="life-fire">-- / --</dd></div>
+            <div><dt>轮回</dt><dd id="cycle-number">--</dd></div>
+          </dl>
+        </div>
+        <div id="route" class="route" aria-label="当前十层路线"></div>
+      </header>
+
+      <main>
+        <div class="campaign-grid">
+          <aside class="party-panel panel-section">
+            <div class="section-title"><span>PARTY</span><h2>同行者</h2><b id="party-count">0/4</b></div>
+            <div id="party-list" class="party-list"></div>
+          </aside>
+
+          <section class="battle-panel panel-section">
+            <div class="section-title"><span>BATTLE RECORD</span><h2>劫境回响</h2><b id="battle-result">尚未交战</b></div>
+            <div id="battle-empty" class="empty-state">
+              <strong>怪潮尚未降临</strong>
+              <span>完成本层构筑后，队长即可推进天关。</span>
+            </div>
+            <div id="battle-content" class="battle-content" hidden>
+              <div class="enemy-line">
+                <div><span id="battle-stage">怪潮</span><h3 id="enemy-name">未知敌影</h3></div>
+                <b id="battle-rounds">0 回合</b>
+              </div>
+              <p id="enemy-trait" class="enemy-trait"></p>
+              <div id="battle-reward" class="battle-reward" hidden></div>
+              <div id="damage-board" class="damage-board"></div>
+              <ol id="battle-logs" class="battle-logs"></ol>
+            </div>
+          </section>
+
+          <aside class="archive-panel panel-section">
+            <div class="section-title"><span>BUILD ARCHIVE</span><h2>本命构筑</h2><b id="viewer-name">未显化</b></div>
+            <div class="build-stats">
+              <div><span>攻击</span><strong id="viewer-attack">--</strong></div>
+              <div><span>防御</span><strong id="viewer-defense">--</strong></div>
+              <div><span>生命</span><strong id="viewer-hp">--</strong></div>
+            </div>
+            <div class="minor-title"><span>ABILITY</span><b>能力铭刻</b></div>
+            <div id="ability-list" class="ability-list"></div>
+            <div class="minor-title"><span>RESONANCE</span><b>诸天共鸣</b></div>
+            <div id="fusion-list" class="fusion-list"></div>
+          </aside>
+        </div>
+
+        <section class="treasury-band">
+          <div class="section-title"><span>TREASURY</span><h2>劫境所得</h2><b>Boss层自动封存</b></div>
+          <div class="treasury-grid">
+            <div><span>已封存</span><b id="banked-lingshi">灵石 --</b><b id="banked-source">源石 --</b><b id="banked-cultivation">修为 --</b><b id="banked-blood">血气 --</b><b id="banked-token">劫境道痕 --</b></div>
+            <div><span>未封存</span><b id="unbanked-lingshi">灵石 --</b><b id="unbanked-source">源石 --</b><b id="unbanked-cultivation">修为 --</b><b id="unbanked-blood">血气 --</b><b id="unbanked-token">劫境道痕 --</b></div>
+          </div>
+        </section>
+
+        <section id="action-deck" class="action-deck">
+          <div class="section-title"><span>ROGUELIKE DRAFT</span><h2 id="action-title">等待劫境响应</h2><b id="action-note"></b></div>
+          <div id="choice-grid" class="choice-grid"></div>
+          <div id="command-bar" class="command-bar"></div>
+        </section>
+      </main>
+
+      <footer><span>诸天无尽劫境</span><b id="footer-status">投影连接中</b><small>所有战斗结果由服务器推演</small></footer>
+    </div>
+
+    <div id="gate" class="gate">
+      <div class="gate-seal" aria-hidden="true">劫</div>
+      <h2 id="gate-title">正在叩问劫境</h2>
+      <p id="gate-message">验证本次远征入口</p>
+      <button id="retry-button" type="button" hidden>重新连接</button>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/endless/app.js?v=1"></script>
+  </body>
+</html>

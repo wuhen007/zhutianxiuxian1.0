@@ -9,9 +9,19 @@ import {
   getBlackEmperorRelation,
   getSelfEngraveChance,
   getUnlockedBlackEmperorFormations,
+  parseBlackEmperorFormationRequest,
+  pauseBlackEmperorBattleFormation,
   rollBlackEmperorDungeonEncounter,
+  selectBlackEmperorBattleFormation,
   selfEngraveFormation,
 } from '../model/blackEmperor.js';
+
+test('刻阵指令兼容紧邻参数与QQBot词内空格', () => {
+  assert.equal(parseBlackEmperorFormationRequest('无始 杀阵').formation.name, '无始杀阵');
+  const travel = parseBlackEmperorFormationRequest('位面传送阵 遮天 位面');
+  assert.equal(travel.formation.name, '位面传送阵');
+  assert.equal(travel.target, '遮天位面');
+});
 
 test('黑皇可在任意副本首次出现并建立剧情人物关系', () => {
   const player = {};
@@ -49,6 +59,14 @@ test('无始杀阵连续5次PVE生效，每战攻击翻倍后逐次递减', () =
   }
   assert.deepEqual(player.黑皇PVE阵纹, []);
   assert.equal(consumeBlackEmperorBattleFormation(player, { 攻击: 1 }, { 攻击: 1 }).consumed, false);
+});
+
+test('重复请黑皇刻同名战阵会合并次数并自动启用', () => {
+  const player = {};
+  addBlackEmperorBattleFormation(player, '无始杀阵');
+  addBlackEmperorBattleFormation(player, '无始杀阵');
+  assert.deepEqual(player.黑皇PVE阵纹, [{ 名称: '无始杀阵', 剩余次数: 10 }]);
+  assert.equal(player.当前PVE阵法, '无始杀阵');
 });
 
 test('山河困龙阵一次性封印敌方一回合并削弱攻防', () => {
@@ -94,6 +112,47 @@ test('阵法师自刻成功率随职业等级提升且消耗材料灵石', () =>
 
   const success = selfEngraveFormation(player, '无始杀阵', { materialCount: 3, random: () => 0 });
   assert.equal(success.ok, true);
-  assert.equal(success.chance, 0.65);
+  assert.equal(success.chance, 0.7);
+  assert.equal(player.自刻阵法连续失败, 0);
   assert.deepEqual(player.自刻PVE阵纹, [{ 名称: '无始杀阵', 剩余次数: 5 }]);
+});
+
+test('自刻连续失败每次增加5%成功率且最多额外20%', () => {
+  assert.equal(getSelfEngraveChance(10, 0), 0.45);
+  assert.equal(getSelfEngraveChance(10, 1), 0.5);
+  assert.equal(getSelfEngraveChance(10, 99), 0.65);
+});
+
+test('可手动选择阵纹或停用阵匣，避免PVE误消耗', () => {
+  const player = {
+    自刻PVE阵纹: [{ 名称: '山河困龙阵', 剩余次数: 1 }],
+    黑皇PVE阵纹: [{ 名称: '无始杀阵', 剩余次数: 2 }],
+  };
+  assert.equal(selectBlackEmperorBattleFormation(player, '无始杀阵').ok, true);
+  const attacker = { 攻击: 100, 暴击率: 0 };
+  assert.equal(consumeBlackEmperorBattleFormation(player, attacker, {}).name, '无始杀阵');
+  assert.equal(attacker.攻击, 200);
+  assert.equal(player.自刻PVE阵纹[0].剩余次数, 1);
+
+  pauseBlackEmperorBattleFormation(player);
+  assert.equal(consumeBlackEmperorBattleFormation(player, { 攻击: 100 }, {}).consumed, false);
+  assert.equal(player.黑皇PVE阵纹[0].剩余次数, 1);
+  assert.equal(selectBlackEmperorBattleFormation(player, '自动').ok, true);
+  assert.equal(player.PVE阵法停用, undefined);
+});
+
+test('源石场接引山川龙脉可增强困龙阵与无始杀阵', () => {
+  const terrain = { sourceField: { consumed: true } };
+  const trappedPlayer = { 自刻PVE阵纹: [{ 名称: '山河困龙阵', 剩余次数: 1 }] };
+  const enemy = { 攻击: 100, 防御: 100 };
+  const trapped = consumeBlackEmperorBattleFormation(trappedPlayer, { 攻击: 1 }, enemy, terrain);
+  assert.equal(trapped.terrainBoost, true);
+  assert.equal(enemy.攻击, 75);
+  assert.equal(enemy.防御, 45);
+
+  const killingPlayer = { 黑皇PVE阵纹: [{ 名称: '无始杀阵', 剩余次数: 1 }] };
+  const attacker = { 攻击: 100, 暴击率: 0.1 };
+  consumeBlackEmperorBattleFormation(killingPlayer, attacker, {}, terrain);
+  assert.equal(attacker.攻击, 220);
+  assert.equal(attacker.暴击率, 0.35);
 });

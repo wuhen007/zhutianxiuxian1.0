@@ -30,7 +30,7 @@ const REGULAR_SEED_POOLS = {
   '火道禁区': [
     { name: '青鸾焰', type: '火', quality: '稀有', successRate: 0.7, attrs: { 攻击加成: 0.05, 暴击加成: 0.05 }, skill: '青鸾焚天' },
     { name: '朱雀焚天炎', type: '火', quality: '传说', successRate: 0.75, attrs: { 攻击加成: 0.12, 暴击加成: 0.15, 血气加成: 0.05 }, skill: '朱雀降世', extra: '修炼效率+20%' },
-    { name: '太阳真火', type: '火', quality: '传说', successRate: 0.78, attrs: { 攻击加成: 0.16, 暴击加成: 0.18 }, skill: '大日临空', extra: '火道威能+20%' }
+    { name: '太阳神火', type: '火', quality: '传说', successRate: 0.78, attrs: { 攻击加成: 0.16, 暴击加成: 0.18 }, skill: '大日临空', extra: '火道威能+20%' }
   ],
   '核心区域': [
     { name: '朱雀焚天炎', type: '火', quality: '传说', successRate: 0.75, attrs: { 攻击加成: 0.12, 暴击加成: 0.15, 血气加成: 0.05 }, skill: '朱雀降世', extra: '修炼效率+20%' },

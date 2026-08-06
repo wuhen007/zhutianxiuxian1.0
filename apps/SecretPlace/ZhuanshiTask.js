@@ -42,6 +42,12 @@ import {
   getReincarnationAuthority,
   requiresControllerDecision,
 } from './reincarnationAuthority.js';
+import { deletePlayerDataBundle } from '../AdminSuper/playerDeletion.js';
+import {
+  REINCARNATION_APTITUDE_FLOOR,
+  normalizeReincarnationAptitude,
+  resolveReincarnationAptitudeLoss,
+} from '../../model/reincarnationAptitude.js';
 import { readShouyuanDifficulty } from '../User/shouyuanDifficulty.js';
 
 let ZxTask = null;
@@ -104,21 +110,6 @@ const MijingLevels = [
   { id: 24, name: "唯一道之上", desc: "道之外，永恒自在" }
 ];
 
-// ==================== 天资体系 ====================
-const aptitudeGrades = {
-  '无演无尽': 0.00001,   // 0.001% - 超脱天道
-  '万古无双': 0.0001,    // 0.01% - 百万年难遇
-  '绝世天骄': 0.001,     // 0.1% - 十万年难遇
-  '旷世奇才': 0.005,     // 0.5% - 万年难遇
-  '天纵之资': 0.01,      // 1% - 百年难遇
-  '超凡资质': 0.05,      // 5% - 宗门核心
-  '平庸之资': 0.78379,   // 78.379% - 芸芸众生
-  '先天不足': 0.1,       // 10% - 道途艰难
-  '天弃之人': 0.05,       // 5% - 天道不容
-  '生而痴傻': 0.005,       // 0.5% - 灵智蒙尘
-  '无化如是': 0.001       // 0.1% - 大道难成
-};
-
 // 天资评价（辰东风格）
 const aptitudeDescriptions = {
   '无演无尽': '亘古未有，超脱天道之外，一念可演诸天万界，此等天资已非生灵所能拥有',
@@ -130,15 +121,9 @@ const aptitudeDescriptions = {
   '平庸之资': '资质平平，如那芸芸众生，若无大机缘，终生难窥仙道',
   '先天不足': '先天有缺，如那漏底的木桶，修炼事倍功半，需以百倍努力弥补',
   '天弃之人': '被天道所弃，修炼必遭反噬，每一步都如行走在刀尖之上，九死一生',
-  '生而痴傻': '天生愚笨，灵智蒙尘，修炼难如登天，纵有仙经在前，亦难明其义',
+  '生而愚痴': '天生愚笨，灵智蒙尘，修炼难如登天，纵有仙经在前，亦难明其义',
   '无化如是': '无用之人，命中注定难有所为，如那风中残烛，随时可灭'
 };
-
-// 天资等级顺序（从高到低）
-const aptitudeOrder = [
-  '无演无尽', '万古无双', '绝世天骄', '旷世奇才', '天纵之资',
-  '超凡资质', '平庸之资', '先天不足', '天弃之人', '生而痴傻', '无化如是'
-];
 
 // ==================== 轮回异象 ====================
 const rebirthPhenomena = [
@@ -153,33 +138,6 @@ const rebirthPhenomena = [
   "阴阳二气化作太极图，缓缓转动",
   "星辰坠落，如那烟花般绚烂"
 ];
-
-// 获取随机天资
-function get_random_aptitude() {
-  const rand = Math.random();
-  let cumulative = 0;
-  
-  for (const [grade, prob] of Object.entries(aptitudeGrades)) {
-    cumulative += prob;
-    if (rand < cumulative) {
-      return {
-        grade: grade,
-        evaluation: aptitudeDescriptions[grade],
-        probability: prob
-      };
-    }
-  }
-  return { grade: '平庸之资', evaluation: aptitudeDescriptions['平庸之资'], probability: 0.78379 };
-}
-
-// 降低天资
-function downgradeAptitude(currentAptitude) {
-  const currentIndex = aptitudeOrder.indexOf(currentAptitude);
-  if (currentIndex === -1 || currentIndex >= aptitudeOrder.length - 1) {
-    return '无化如是'; // 已是最低，无法再降
-  }
-  return aptitudeOrder[currentIndex + 1];
-}
 
 // 判断能否硬扛阴阳大磨盘
 function canWithstandYinYangGrind(player) {
@@ -729,7 +687,7 @@ async function createNewPlayerAfterRebirth(e, oldPlayer, isChixiao, downgradedAp
     let newAptitude;
     if (isChixiao) {
       newAptitude = {
-        grade: '生而痴傻',
+        grade: REINCARNATION_APTITUDE_FLOOR,
         evaluation: '前世灵魂在阴阳大磨盘中磨灭殆尽，仅余一缕残魂，灵智蒙尘，如那初生之婴'
       };
     } else if (downgradedAptitude) {
@@ -738,17 +696,22 @@ async function createNewPlayerAfterRebirth(e, oldPlayer, isChixiao, downgradedAp
         evaluation: aptitudeDescriptions[downgradedAptitude] + '（轮回磨砺，道基受损，前世荣光不再）'
       };
     } else {
-      newAptitude = await get_random_aptitude();
+      const preservedAptitude = normalizeReincarnationAptitude(oldPlayer.天资等级 || '平庸之资');
+      newAptitude = {
+        grade: preservedAptitude,
+        evaluation: oldPlayer.天资评价 || aptitudeDescriptions[preservedAptitude]
+      };
     }
     
     // 轮回奖励计算
     const lunhuiGanwu = oldPlayer.轮回感悟 || 0;
     const hasYinji = oldPlayer.轮回印记 || false;
+    const isFoolishRebirth = newAptitude.grade === REINCARNATION_APTITUDE_FLOOR;
     
     let new_player = {
       id: player_id,
       sex: 0,
-      名号: isChixiao ? `痴儿${n}号` : oldPlayer.痴傻状态 ? `痴儿${n}号` : `${getRandomTitle()}${n}号`,
+      名号: isFoolishRebirth || oldPlayer.痴傻状态 ? `痴儿${n}号` : `${getRandomTitle()}${n}号`,
       宣言: '这一世，我要踏破诸天，证道永恒！',
       daofa: '未开启',
       level_id: 1,
@@ -816,7 +779,7 @@ async function createNewPlayerAfterRebirth(e, oldPlayer, isChixiao, downgradedAp
       天资等级: newAptitude.grade,
       天资评价: newAptitude.evaluation,
       五色祭坛: 0,
-      痴傻状态: isChixiao || oldPlayer.痴傻状态 || false,
+      痴傻状态: isFoolishRebirth || oldPlayer.痴傻状态 || false,
       轮回转世次数: (oldPlayer.轮回转世次数 || 0) + 1,
       轮回感悟: lunhuiGanwu,
       轮回印记: hasYinji,
@@ -938,6 +901,42 @@ async function restoreRedisValues(values) {
     } else {
       await redis.set(key, value);
     }
+  }
+}
+
+async function extinguishTrueSpirit(oldPlayer) {
+  const playerId = String(oldPlayer.id);
+  const sectTransaction = new FileRollbackTransaction();
+
+  try {
+    if (await existplayer(playerId)) {
+      await handleSectRelationship(playerId, oldPlayer, sectTransaction);
+    }
+
+    const deletion = deletePlayerDataBundle({
+      playerId,
+      paths: __PATH,
+      smallWorlds: data.xiaoshijie ?? [],
+      smallWorldFile: `${data.lib_path}/小世界列表.json`,
+    });
+    data.xiaoshijie = deletion.remainingSmallWorlds;
+    sectTransaction.commit();
+
+    try {
+      const playerKeys = await redis.keys(`xiuxian:player:${playerId}:*`);
+      await Promise.allSettled(playerKeys.map(key => redis.del(key)));
+    } catch (error) {
+      console.error(`【真灵消散】清理玩家 ${playerId} Redis 状态失败:`, error);
+    }
+
+    return deletion;
+  } catch (error) {
+    try {
+      sectTransaction.rollback();
+    } catch (rollbackError) {
+      throw new AggregateError([error, rollbackError], `玩家 ${playerId} 真灵消散失败，且宗门关系回滚不完整`);
+    }
+    throw error;
   }
 }
 
@@ -1171,9 +1170,27 @@ async function executeZhuanshiRebirth(e, task, taskId) {
     const mijingLevel = MijingLevels.find(l => l.id === oldPlayer.mijinglevel_id)?.name || '未知';
     const xianguLevel = oldPlayer.xiangulevel_id;
     const phenomenon = getRandomPhenomenon();
+    const aptitudeLoss = resolveReincarnationAptitudeLoss(oldPlayer.天资等级);
+    const outputMode = await getRebirthOutputMode();
+
+    if (!canWithstand && aptitudeLoss.extinguished) {
+      await extinguishTrueSpirit(oldPlayer);
+      const extinctionMessage = outputMode === '简略'
+        ? `【轮回终局·真灵消散】${oldPlayer.名号}的真灵已无法承受下一次轮回，所有存档归于虚无，不再转世。`
+        : [
+            `【轮回终局·真灵消散】`,
+            `${oldPlayer.名号}的天资已至「${aptitudeLoss.current}」，真灵再也承受不住阴阳大磨盘。`,
+            `磨盘再转，最后一缕灵光寸寸崩灭，生死簿上的名字随之化作飞灰。`,
+            `练气、装备、纳戒、丹药、内景地与小世界存档已全部抹除。`,
+            `此魂不入六道，不留来世，不再轮回。`,
+          ].join('\n');
+      await sendRebirthMessage(e, extinctionMessage);
+      console.log(`【真灵消散】玩家 ${player_id} 的全部存档已删除`);
+      return { extinguished: true };
+    }
 
     // ===== 简略模式：跳过五阶段长篇剧情，仅输出最终简报（避免全服刷屏） =====
-    if ((await getRebirthOutputMode()) === '简略') {
+    if (outputMode === '简略') {
       let isChixiao = false;
       let downgradedAptitude = null;
       if (!canWithstand) {
@@ -1182,8 +1199,7 @@ async function executeZhuanshiRebirth(e, task, taskId) {
         if (isChixiaoRandom) {
           isChixiao = true;
         } else {
-          const currentAptitude = oldPlayer.天资等级 || '平庸之资';
-          downgradedAptitude = downgradeAptitude(currentAptitude);
+          downgradedAptitude = aptitudeLoss.next;
         }
       }
       // 轮回感悟 / 印记（与完整模式第四阶段一致）
@@ -1346,8 +1362,8 @@ async function executeZhuanshiRebirth(e, task, taskId) {
         isChixiao = true;
       } else {
         // 天资受损
-        const currentAptitude = oldPlayer.天资等级 || '平庸之资';
-        const newAptitude = downgradeAptitude(currentAptitude);
+          const currentAptitude = aptitudeLoss.current;
+          const newAptitude = aptitudeLoss.next;
         downgradedAptitude = newAptitude;
         
         resultMessages.push(`【轮回结果·道基受损】`);
@@ -1417,6 +1433,7 @@ function getRebirthTaskId(task, taskKey) {
 }
 
 async function isRebirthTaskCommitted(playerId, taskId) {
+  if (!(await existplayer(playerId))) return true;
   try {
     const player = await Read_player(playerId);
     return player.last_rebirth_task_id === taskId;

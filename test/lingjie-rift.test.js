@@ -77,6 +77,7 @@ test('裂缝探索继承行字秘、道法仙术和命格秘境加速', () => {
     学习的功法: ['行字秘', '天璇步法'],
     mijinglevel_id: 16,
     daofaxianshu: 2,
+    daofaxianshu_endtime: Number.MAX_SAFE_INTEGER,
   }, 60 * 1000);
 
   assert.equal(timing.durationMs, 8 * 60 * 1000);
@@ -85,6 +86,16 @@ test('裂缝探索继承行字秘、道法仙术和命格秘境加速', () => {
   assert.ok(timing.messages.some(message => message.includes('道法仙术')));
   assert.ok(timing.messages.some(message => message.includes('命格')));
   assert.ok(!timing.messages.some(message => message.includes('天璇步法')));
+});
+
+test('过期道法仙术不再缩短裂缝探索时间', () => {
+  const timing = calculateRiftExploreDuration({
+    daofaxianshu: 2,
+    daofaxianshu_endtime: 1,
+  });
+
+  assert.equal(timing.durationMs, RIFT_EXPLORE_MS);
+  assert.ok(!timing.messages.some(message => message.includes('道法仙术')));
 });
 
 test('秘境结算卡缩短玩家行动后会同步提前裂缝结算', () => {

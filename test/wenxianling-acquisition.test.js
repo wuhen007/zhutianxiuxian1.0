@@ -3,15 +3,21 @@ import test from 'node:test';
 
 import {
   WENXIAN_CLUE_COST,
+  WENXIAN_DAILY_QUEST_EXP,
+  WENXIAN_WEEKLY_TASK_EXP,
   activateWenXianLing,
   addWenXianExp,
+  claimWenXianWeeklyTask,
   ensureWenXianState,
+  ensureWenXianTaskState,
   grantWenXianClue,
   isWenXianTrialComplete,
   purchaseWenXianClue,
+  recordWenXianTaskProgress,
   recordWenXianTrial,
   rollDailyDungeonWenXianClue,
 } from '../model/wenxianling.js';
+import { consumeSpiritHeart } from '../model/spiritUniverse.js';
 
 const fixedLocation = {
   plane: '凡间',
@@ -107,4 +113,57 @@ test('四项问仙试炼完成后激活并转入最多1000点暂存道痕', () =
   assert.equal(player.问仙令.pendingExp, 0);
   assert.equal(player.问仙令.exp, 1000);
   assert.equal(player.问仙令.level, 1);
+});
+
+test('问仙令每日任务逐项奖励200经验并在上海日期变化后重置', () => {
+  const player = { 心神: 100, 问仙令: { unlocked: true } };
+  const now = new Date('2026-08-06T02:00:00Z');
+
+  consumeSpiritHeart(player, 10, now);
+  consumeSpiritHeart(player, 20, now);
+  assert.equal(player.问仙令.exp, WENXIAN_DAILY_QUEST_EXP);
+  assert.equal(player.问仙令.tasks.daily.rewarded.spiritHeart, true);
+
+  recordWenXianTaskProgress(player, 'tianjiao', 1, { now });
+  recordWenXianTaskProgress(player, 'dungeon', 3, { now });
+  assert.equal(player.问仙令.exp, WENXIAN_DAILY_QUEST_EXP * 3);
+  recordWenXianTaskProgress(player, 'dungeon', 3, { now });
+  assert.equal(player.问仙令.exp, WENXIAN_DAILY_QUEST_EXP * 3);
+
+  const tomorrow = new Date('2026-08-07T02:00:00Z');
+  recordWenXianTaskProgress(player, 'tianjiao', 1, { now: tomorrow });
+  assert.equal(player.问仙令.exp, WENXIAN_DAILY_QUEST_EXP * 4);
+  assert.equal(ensureWenXianTaskState(player, { now: tomorrow }).daily.progress.dungeon, 0);
+});
+
+test('每周五项任务达标后只可领取一次完整奖励', () => {
+  const player = {
+    level_id: 2,
+    Physique_id: 3,
+    mijinglevel_id: 4,
+    xiangulevel_id: 5,
+    问仙令: { unlocked: true },
+  };
+  const options = { dateKey: '2026-08-06', weekKey: '2026-08-03' };
+  recordWenXianTaskProgress(player, 'dailyTask', 5, options);
+  recordWenXianTaskProgress(player, 'tianjiao', 5, options);
+  recordWenXianTaskProgress(player, 'stoneMarket', 5, options);
+  recordWenXianTaskProgress(player, 'spiritHeart', 100, options);
+  recordWenXianTaskProgress(player, 'dungeon', 20, options);
+
+  const result = claimWenXianWeeklyTask(player, { ...options, random: () => 0 });
+  assert.equal(result.ok, true);
+  assert.equal(result.rewards.xiuwei, 1_602_000);
+  assert.equal(result.rewards.xueqi, 3_602_000);
+  assert.equal(result.rewards.lingshi, 90_000_000);
+  assert.equal(result.rewards.yuanshi, 90_000_000);
+  assert.equal(player.问仙令.exp, WENXIAN_DAILY_QUEST_EXP * 3 + WENXIAN_WEEKLY_TASK_EXP);
+  assert.equal(claimWenXianWeeklyTask(player, options).reason, 'claimed');
+
+  const nextWeek = ensureWenXianTaskState(player, {
+    dateKey: '2026-08-10',
+    weekKey: '2026-08-10',
+  });
+  assert.equal(nextWeek.weekly.claimed, false);
+  assert.equal(nextWeek.weekly.progress.dailyTask, 0);
 });

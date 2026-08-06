@@ -23,6 +23,7 @@ import {
   channel
 } from '../../model/xiuxian.js';
 import { Add_灵石, Add_修为 } from '../../model/xiuxian.js';
+import { recordWenXianTaskProgress } from '../../model/wenxianling.js';
 import {
   SOURCE_DUEL_COOLDOWN_MS,
   SOURCE_DUEL_NPCS,
@@ -486,6 +487,7 @@ async StoneBuy(e) {
 
     player[garden.currency] -= stone.price;
     player.源石坊购石次数 = (player.源石坊购石次数 || 0) + 1;
+    recordWenXianTaskProgress(player, 'stoneMarket');
     addStoneMarketSpend(player, garden.currency, stone.price);
     stone.purchased = true;
     batch.purchasedIds.push(stone.id);

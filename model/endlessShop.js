@@ -1,6 +1,13 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { INNATE_TREASURE_CATALOG } from './innateTreasure.js';
+import { getTreasureContestProfile } from './innateTreasureContest.js';
+import {
+  formatRealmEventLocation,
+  formatRealmEventTravel,
+} from './realmEventLocation.js';
+
 const shopPath = fileURLToPath(
   new URL('../resources/data/无尽商店.json', import.meta.url)
 );
@@ -39,6 +46,29 @@ function stats(item) {
 export function findEndlessProduct(selector) {
   const text = String(selector || '').trim();
   return ENDLESS_SHOP.find(item => String(item.id) === text || item.name === text) || null;
+}
+
+export function formatTreasureClue(event, now = Date.now()) {
+  if (!event) return [];
+  const name = event.treasure?.name || '未知先天至宝';
+  const catalog = INNATE_TREASURE_CATALOG[name];
+  const omen = event.contest?.profile?.omen || getTreasureContestProfile(name).omen;
+  const remainingMinutes = Math.max(1, Math.ceil((Number(event.expiresAt) - now) / 60000));
+  const hours = Math.floor(remainingMinutes / 60);
+  const minutes = remainingMinutes % 60;
+  const remaining = hours
+    ? `${hours}小时${minutes ? `${minutes}分钟` : ''}`
+    : `${minutes}分钟`;
+  return [
+    '【先天灵宝天机·显化】',
+    `天机锁定：${name}·${catalog?.title || '先天至宝'}`,
+    `权能：${catalog?.summary || event.treasure?.desc || '大道权柄尚在混沌中'}`,
+    `天象线索：${omen}`,
+    `出世之地：${formatRealmEventLocation(event)}`,
+    `现世余时：${remaining}`,
+    `赶路方式：${formatRealmEventTravel(event)}`,
+    '抵达精确坐标后发送 #观摩灵宝，再发送 #夺宝参加择主之争。',
+  ];
 }
 
 export function mergeSetEquipment(equipment, najie, slot, sourceName) {

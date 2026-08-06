@@ -107,12 +107,14 @@ export function consumeSpiritHeart(player, cost, now = Date.now(), effects = {})
     return { ok: false, cost: required, ...status };
   }
   player.心神 -= required;
+  const wenxianTasks = recordWenXianTaskProgress(player, 'spiritHeart', required, { now });
   return {
     ok: true,
     cost: required,
     current: player.心神,
     max: status.max,
     recovered: status.recovered,
+    wenxianTasks,
   };
 }
 
@@ -411,3 +413,4 @@ export function validateSpiritPlaces(places) {
   return errors;
 }
 import { calculateMinggeCost } from './mingge.js';
+import { recordWenXianTaskProgress } from './wenxianling.js';

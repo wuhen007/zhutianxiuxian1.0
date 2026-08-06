@@ -1,0 +1,270 @@
+@font-face {
+  font-family: realm-number;
+  src: url('/endless/number.ttf');
+  font-display: swap;
+}
+
+:root {
+  --paper: #edf0ed;
+  --paper-strong: #f8f8f4;
+  --paper-dim: #e1e5e0;
+  --ink: #202622;
+  --muted: #6c746e;
+  --line: #c7c9c3;
+  --gold: #99712a;
+  --gold-bright: #d8b95f;
+  --jade: #356d63;
+  --jade-soft: #dce8e3;
+  --cinnabar: #a44a3f;
+  --cinnabar-soft: #eee0dc;
+}
+
+* { box-sizing: border-box; }
+
+html { min-width: 320px; background: #cbd0cc; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: #cbd0cc;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  letter-spacing: 0;
+}
+
+button { font: inherit; }
+
+.app-shell {
+  width: min(1480px, 100%);
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: var(--paper);
+  box-shadow: 0 0 70px rgba(39, 46, 42, .2);
+}
+
+.realm-header {
+  position: relative;
+  color: #f4f1e8;
+  background:
+    linear-gradient(90deg, rgba(17, 23, 23, .94), rgba(26, 34, 34, .74) 58%, rgba(64, 42, 28, .64)),
+    url('/endless/realm.jpg') center 56% / cover;
+  border-top: 5px solid var(--gold-bright);
+}
+
+.topbar {
+  min-height: 76px;
+  padding: 12px 40px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  border-bottom: 1px solid rgba(218, 188, 101, .28);
+}
+
+.brand-seal {
+  width: 42px;
+  height: 48px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  place-items: center;
+  border: 1px solid var(--gold-bright);
+  color: #ecd385;
+  font-family: "STKaiti", "KaiTi", serif;
+}
+
+.brand-copy { display: grid; gap: 4px; }
+.brand-copy span { color: #d9bd6c; font: 700 10px/1 realm-number, sans-serif; }
+.brand-copy b { font: 700 17px/1 "STKaiti", "KaiTi", serif; }
+
+.connection {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #cdd2ce;
+  font-size: 12px;
+}
+
+.connection i { width: 8px; height: 8px; background: var(--gold-bright); box-shadow: 0 0 12px rgba(216, 185, 95, .7); }
+.connection.is-online i { background: #79b2a5; box-shadow: 0 0 12px rgba(121, 178, 165, .75); }
+.connection.is-error i { background: #d27265; box-shadow: none; }
+
+.realm-summary {
+  min-height: 210px;
+  padding: 36px 54px 29px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 40px;
+}
+
+.realm-summary p { margin: 0 0 9px; color: #d8ba67; font: 700 11px/1 realm-number, sans-serif; }
+.realm-summary h1 { margin: 0; font: 700 44px/1.12 "STKaiti", "KaiTi", serif; }
+.realm-summary h1 span { color: #f1d47e; }
+.realm-summary small { display: block; margin-top: 15px; color: #cdd2ce; font-size: 13px; }
+.realm-summary dl { margin: 0; display: grid; grid-template-columns: repeat(3, 108px); border-top: 1px solid #cda94f; }
+.realm-summary dl div { padding: 15px 12px; border-bottom: 1px solid rgba(205, 169, 79, .45); }
+.realm-summary dt { color: #afb7b1; font-size: 10px; }
+.realm-summary dd { margin: 8px 0 0; color: #efd681; font: 700 20px/1 realm-number, sans-serif; }
+
+.route {
+  height: 64px;
+  padding: 0 54px;
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  align-items: center;
+  background: rgba(13, 18, 18, .55);
+}
+
+.route-node { position: relative; height: 32px; display: grid; place-items: center; color: #98a19b; font: 11px/1 realm-number, sans-serif; border-top: 1px solid #667069; }
+.route-node::before { content: ""; position: absolute; top: -4px; width: 7px; height: 7px; background: #667069; }
+.route-node.is-cleared { color: #d0b76e; border-color: #a68c49; }
+.route-node.is-cleared::before { background: #b69a50; }
+.route-node.is-current { color: #fff; font-size: 15px; }
+.route-node.is-current::before { width: 11px; height: 11px; top: -6px; background: var(--gold-bright); box-shadow: 0 0 14px rgba(216, 185, 95, .8); }
+
+main { background: var(--paper); }
+
+.campaign-grid {
+  display: grid;
+  grid-template-columns: 330px minmax(420px, 1fr) 340px;
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-section { min-width: 0; padding: 28px 30px 34px; }
+.battle-panel { border-inline: 1px solid var(--line); background: var(--paper-strong); }
+
+.section-title { min-height: 50px; display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 13px; border-bottom: 1px solid #ae9e6d; }
+.section-title span { color: var(--gold); font: 700 9px/1 realm-number, sans-serif; }
+.section-title h2 { margin: 0; font: 700 23px/1 "STKaiti", "KaiTi", serif; }
+.section-title > b { color: var(--muted); font-size: 10px; }
+
+.party-list { display: grid; }
+.member-card { min-width: 0; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.member-name { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.member-name strong { overflow-wrap: anywhere; font: 700 17px/1.2 "STKaiti", "KaiTi", serif; }
+.member-name span { color: var(--jade); font-size: 10px; }
+.member-card.is-fallen { opacity: .52; }
+.member-card.is-fallen .member-name span { color: var(--cinnabar); }
+.hp-track { height: 5px; margin-top: 12px; background: #cbd2ce; }
+.hp-track i { display: block; height: 100%; background: var(--jade); }
+.member-card.is-fallen .hp-track i { background: var(--cinnabar); }
+.member-meta { margin-top: 8px; display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font: 10px/1 realm-number, sans-serif; }
+.member-skills { margin-top: 11px; display: flex; flex-wrap: wrap; gap: 5px; }
+.member-skills span { padding: 4px 6px; border: 1px solid #c8bd99; color: #56615b; background: rgba(255, 255, 255, .45); font-size: 9px; }
+
+.empty-state { min-height: 430px; display: grid; place-content: center; justify-items: center; gap: 10px; color: var(--muted); text-align: center; }
+.empty-state[hidden], .battle-content[hidden] { display: none; }
+.empty-state strong { color: #3f4944; font: 700 23px/1 "STKaiti", "KaiTi", serif; }
+.empty-state span { font-size: 12px; }
+
+.battle-content { padding-top: 18px; }
+.enemy-line { display: flex; justify-content: space-between; align-items: end; gap: 18px; }
+.enemy-line span { color: var(--cinnabar); font-size: 10px; }
+.enemy-line h3 { margin: 7px 0 0; overflow-wrap: anywhere; font: 700 25px/1.1 "STKaiti", "KaiTi", serif; }
+.enemy-line > b { color: var(--gold); font: 14px/1 realm-number, sans-serif; }
+.enemy-trait { margin: 14px 0; padding: 8px 10px; color: #804139; background: var(--cinnabar-soft); border-left: 3px solid var(--cinnabar); font-size: 11px; }
+.battle-reward { display: flex; flex-wrap: wrap; gap: 5px; padding-bottom: 12px; }
+.battle-reward[hidden] { display: none; }
+.battle-reward b { padding: 5px 7px; color: #6d5928; border: 1px solid #c7b87d; background: #f3f0e3; font-size: 9px; }
+.damage-board { display: grid; gap: 7px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.damage-row { display: grid; grid-template-columns: 100px 1fr 72px; align-items: center; gap: 9px; font-size: 10px; }
+.damage-row i { height: 4px; background: #d0d4d0; }
+.damage-row em { display: block; height: 100%; background: var(--gold); }
+.damage-row b { text-align: right; color: var(--gold); font: 10px/1 realm-number, sans-serif; }
+.battle-logs { max-height: 330px; margin: 0; padding: 15px 0 0; overflow: auto; list-style: none; scrollbar-color: #b2a46f transparent; }
+.battle-logs li { padding: 7px 5px 7px 15px; color: #535c56; border-left: 1px solid #c9ccc8; font-size: 11px; line-height: 1.55; }
+.battle-logs li:nth-child(3n) { color: #8c443a; border-left-color: #b76558; }
+
+.build-stats { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--line); }
+.build-stats div { padding: 17px 5px; border-left: 1px solid var(--line); }
+.build-stats div:first-child { border-left: 0; }
+.build-stats span, .build-stats strong { display: block; }
+.build-stats span { color: var(--muted); font-size: 9px; }
+.build-stats strong { margin-top: 8px; color: var(--gold); font: 700 14px/1 realm-number, sans-serif; }
+.minor-title { margin: 22px 0 10px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.minor-title span { color: var(--gold); font: 8px/1 realm-number, sans-serif; }
+.minor-title b { font: 700 15px/1 "STKaiti", "KaiTi", serif; }
+.ability-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ability-item { min-width: 0; padding: 9px; border-top: 2px solid #b8a160; background: #f5f5f0; }
+.ability-item b { display: block; overflow-wrap: anywhere; font-size: 10px; }
+.ability-item span { display: block; margin-top: 5px; color: var(--gold); font: 9px/1 realm-number, sans-serif; }
+.fusion-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.fusion-list span { padding: 7px 8px; color: #755c25; border: 1px solid #ad9556; background: #f6f3e8; font: 11px/1 "STKaiti", "KaiTi", serif; }
+.archive-empty { color: var(--muted); font-size: 10px; }
+
+.treasury-band { padding: 25px 40px 28px; border-bottom: 1px solid var(--line); background: var(--paper-dim); }
+.treasury-grid { display: grid; grid-template-columns: 1fr 1fr; margin-top: 15px; }
+.treasury-grid > div { min-width: 0; padding: 15px 18px; display: grid; grid-template-columns: 84px repeat(5, 1fr); gap: 10px; border-left: 1px solid var(--line); }
+.treasury-grid > div:first-child { border-left: 0; }
+.treasury-grid span { color: var(--gold); font: 700 15px/1 "STKaiti", "KaiTi", serif; }
+.treasury-grid b { color: var(--muted); font-size: 10px; }
+
+.action-deck { padding: 31px 40px 36px; background: #f6f6f1; }
+.choice-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-top: 18px; }
+.choice-card { position: relative; min-width: 0; min-height: 190px; padding: 20px 16px 15px; display: flex; flex-direction: column; text-align: left; color: var(--ink); border: 0; border-top: 4px solid var(--jade); border-radius: 0; background: #e7ece8; cursor: pointer; }
+.choice-card:hover { background: #dfe8e3; }
+.choice-card:active { transform: translateY(1px); }
+.choice-card:disabled { cursor: wait; opacity: .55; }
+.choice-card.is-legendary { border-top-color: var(--cinnabar); background: #eee4df; }
+.choice-card > i { position: absolute; right: 14px; top: 12px; color: #b1b6b1; font: 700 28px/1 realm-number, sans-serif; font-style: normal; }
+.choice-card > span { color: var(--gold); font-size: 9px; }
+.choice-card h3 { margin: 14px 30px 10px 0; overflow-wrap: anywhere; font: 700 19px/1.1 "STKaiti", "KaiTi", serif; }
+.choice-card p { flex: 1; margin: 0; color: #606963; font-size: 11px; line-height: 1.6; }
+.choice-card footer { margin-top: 13px; padding-top: 9px; display: flex; justify-content: space-between; gap: 8px; color: var(--muted); border-top: 1px solid #c7cec9; background: none; font-size: 9px; }
+
+.command-bar { min-height: 58px; margin-top: 17px; display: flex; justify-content: flex-end; align-items: center; gap: 9px; }
+.command-button { min-height: 42px; padding: 0 18px; color: #f8f5eb; border: 1px solid #846521; border-radius: 0; background: var(--gold); cursor: pointer; font-weight: 700; font-size: 12px; }
+.command-button:hover { background: #84611e; }
+.command-button:active { transform: translateY(1px); }
+.command-button:disabled { cursor: wait; opacity: .55; }
+.command-button.is-danger { color: #8b4037; border-color: #b2665b; background: transparent; }
+.command-button.is-danger:hover { color: #fff; background: var(--cinnabar); }
+
+.app-shell > footer { min-height: 78px; padding: 20px 40px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 22px; color: #cdd2ce; background: #272d29; }
+.app-shell > footer span { color: #d2b862; font: 17px/1 "STKaiti", "KaiTi", serif; }
+.app-shell > footer b { font-size: 11px; }
+.app-shell > footer small { justify-self: end; color: #929b95; }
+
+.gate { position: fixed; inset: 0; z-index: 10; display: grid; place-content: center; justify-items: center; padding: 25px; color: #e8e7df; text-align: center; background: #202622; }
+.gate[hidden] { display: none; }
+.gate-seal { width: 72px; height: 92px; display: grid; place-items: center; color: #efd17b; border: 1px solid #c7a34d; box-shadow: inset 0 0 0 7px #202622, inset 0 0 0 8px rgba(199, 163, 77, .45); font: 38px/1 "STKaiti", "KaiTi", serif; }
+.gate h2 { margin: 25px 0 0; font: 700 29px/1 "STKaiti", "KaiTi", serif; }
+.gate p { max-width: 420px; margin: 13px 0 0; color: #aeb7b1; font-size: 13px; line-height: 1.6; }
+.gate button { margin-top: 22px; min-height: 40px; padding: 0 18px; color: #272d29; border: 0; background: #d2b862; cursor: pointer; }
+
+.toast { position: fixed; right: 22px; bottom: 22px; z-index: 20; max-width: min(420px, calc(100vw - 44px)); padding: 13px 16px; color: #f3f2eb; border-left: 4px solid var(--gold-bright); background: #29312d; box-shadow: 0 14px 35px rgba(31, 38, 34, .25); opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity .18s ease, transform .18s ease; font-size: 12px; line-height: 1.55; }
+.toast.is-visible { opacity: 1; transform: translateY(0); }
+.is-loading .panel-section, .is-loading .treasury-band, .is-loading .action-deck { opacity: .5; }
+
+@media (max-width: 1120px) {
+  .campaign-grid { grid-template-columns: 290px 1fr; }
+  .archive-panel { grid-column: 1 / -1; border-top: 1px solid var(--line); }
+  .ability-list { grid-template-columns: repeat(4, 1fr); }
+}
+
+@media (max-width: 760px) {
+  .topbar { padding-inline: 20px; }
+  .brand-copy span { display: none; }
+  .realm-summary { min-height: 245px; padding: 31px 22px 24px; grid-template-columns: 1fr; align-items: end; gap: 24px; }
+  .realm-summary h1 { font-size: 34px; }
+  .realm-summary dl { grid-template-columns: repeat(3, 1fr); }
+  .route { padding-inline: 22px; }
+  .campaign-grid { grid-template-columns: 1fr; }
+  .battle-panel { border: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .party-panel, .battle-panel, .archive-panel { padding: 25px 22px; }
+  .battle-panel { min-height: 470px; }
+  .ability-list { grid-template-columns: 1fr 1fr; }
+  .treasury-band, .action-deck { padding: 25px 22px 29px; }
+  .treasury-grid { grid-template-columns: 1fr; }
+  .treasury-grid > div { grid-template-columns: repeat(2, 1fr); border-left: 0; border-top: 1px solid var(--line); }
+  .treasury-grid > div > span { grid-column: 1 / -1; }
+  .choice-grid { grid-template-columns: 1fr; }
+  .choice-card { min-height: 165px; }
+  .command-bar { justify-content: stretch; flex-wrap: wrap; }
+  .command-button { flex: 1; min-width: 130px; }
+  .app-shell > footer { padding-inline: 22px; grid-template-columns: 1fr; }
+  .app-shell > footer small { justify-self: start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+}

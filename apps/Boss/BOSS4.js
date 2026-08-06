@@ -16,7 +16,7 @@ import {
   __PATH,
   zd_battle,
 } from '../../model/xiuxian.js';
-import { recordWenXianTrial } from '../../model/wenxianling.js';
+import { recordWenXianTaskProgress, recordWenXianTrial } from '../../model/wenxianling.js';
 import { absorbTuntianSource } from '../../model/tuntianMagic.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import {
@@ -24,6 +24,7 @@ import {
   ensureTianjiaoInitialTemplate,
   formatTianjiaoTrace,
   getKnownTianjiaoTrace,
+  getTianjiaoRealmName,
   getTianjiaoTraceReach,
   isIndependentTianjiao,
   isTianjiaoHealing,
@@ -665,6 +666,7 @@ export class BOSS4 extends plugin {
 
       for (const tianjiao of data.weimiantianjiao_list) {
         const trace = this.getAvailableTianjiaoTrace(player, tianjiao);
+        const realm = getTianjiaoRealmName(tianjiao, data.Levelmijing_list, data.xiangujinshi_list);
         const statusKey = `tianjiao:status:${tianjiao.名号}`;
         let status = await redis.get(statusKey);
         status = JSON.parse(status || '{}');
@@ -685,7 +687,7 @@ export class BOSS4 extends plugin {
 
           allStatus.push(
             `名号: ${tianjiao.名号}`,
-            `境界: ${tianjiao.境界}`,
+            `境界: ${realm}`,
             `踪迹: ${formatTianjiaoTrace(trace)}`,
             `状态: 已击败，${hours}小时${minutes}分钟后刷新`,
             ...(Number(tianjiao.轮回世数) > 0 ? [`转世: 第${tianjiao.轮回世数}世·${tianjiao.轮回称号 || ''}`] : []),
@@ -695,7 +697,7 @@ export class BOSS4 extends plugin {
           const healing = isTianjiaoHealing(status, this.getTianjiaoWorldYear());
           allStatus.push(
             `名号: ${tianjiao.名号}`,
-            `境界: ${tianjiao.境界}`,
+            `境界: ${realm}`,
             `踪迹: ${formatTianjiaoTrace(trace)}`,
             `血量: ${status.currentHP}%`,
             `状态: ${status.isAlive ? (healing ? '存活（养伤中）' : '存活') : '已击败'}`,
@@ -740,9 +742,10 @@ export class BOSS4 extends plugin {
     }
 
     const healing = isTianjiaoHealing(status, this.getTianjiaoWorldYear());
+    const realm = getTianjiaoRealmName(tianjiaoData, data.Levelmijing_list, data.xiangujinshi_list);
     let ReplyMsg = [
       `----${tianjiaoName}状态----`,
-      `境界: ${tianjiaoData.境界}`,
+      `境界: ${realm}`,
       `踪迹: ${formatTianjiaoTrace(trace)}`,
       `当前血量: ${status.currentHP}%`,
       `状态: ${status.isAlive ? (healing ? '存活（养伤中）' : '存活') : '已击败'}`,
@@ -1126,7 +1129,6 @@ export class BOSS4 extends plugin {
       const B_player = independentStats ? {
         ...independentStats,
         名号: `${tianjiaoName}(当前状态)`,
-        速度: (tianjiaoData.速度 ?? 100) + (tianjiaoData.mijinglevel_id ?? 0) * 50 + (tianjiaoData.xiangulevel_id ?? 0) * 50,
         灵根: tianjiaoData.灵根 || { name: "普通灵根", type: "普通灵根" },
         法球倍率: tianjiaoData.灵根?.法球倍率 || 1,
       } : {
@@ -1137,7 +1139,6 @@ export class BOSS4 extends plugin {
         血量上限: parseInt(A_player.血量上限 * attributeMultiplier),
         暴击率: tianjiaoData.暴击率,
         暴击伤害: tianjiaoData.暴击伤害,
-        速度: (tianjiaoData.速度 ?? 100) + (tianjiaoData.mijinglevel_id ?? 0) * 50 + (tianjiaoData.xiangulevel_id ?? 0) * 50,
         闪避率: tianjiaoData.闪避率,
         首次闪避: tianjiaoData.首次闪避,
         闪避增攻: tianjiaoData.闪避增攻,
@@ -1189,6 +1190,11 @@ export class BOSS4 extends plugin {
         e.reply(`战斗过程出错，无法判断胜负`);
         WorldBOSSBattleLock = 0;
         return false;
+      }
+
+      const wenxianTasks = recordWenXianTaskProgress(player, 'tianjiao');
+      if (wenxianTasks.changed || wenxianTasks.dailyCompleted) {
+        await Write_player(usr_qq, player);
       }
 
       // ========== 仇恨值与对话系统 ==========

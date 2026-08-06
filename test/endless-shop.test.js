@@ -8,6 +8,7 @@ import {
   ENDLESS_TOKEN,
   FUSION_ITEM,
   findEndlessProduct,
+  formatTreasureClue,
   mergeSetEquipment,
 } from '../model/endlessShop.js';
 
@@ -29,6 +30,7 @@ test('无尽商店商品可按编号和名称查找', () => {
   assert.equal(ENDLESS_SHOP[0].name, shopData.products[0].name);
   assert.equal(findEndlessProduct('1').name, '大衍悟道丹');
   assert.equal(findEndlessProduct(FUSION_ITEM).price, 8000);
+  assert.equal(findEndlessProduct('造化本源').price, 3000);
 });
 
 test('无尽商店实体商品都存在于物品目录', () => {
@@ -40,6 +42,26 @@ test('无尽商店实体商品都存在于物品目录', () => {
       `${product.name}不存在于${product.itemClass}物品目录`
     );
   }
+});
+
+test('先天灵宝天机将新显化至宝的精确坐标交给购买者', () => {
+  const now = 1_000_000;
+  const manifested = {
+    type: 'treasureAppear',
+    treasure: { name: '混沌珠' },
+    contest: { status: 'open', profile: { omen: '混沌气遮蔽星河。' } },
+    plane: '遮天位面',
+    location: '太初古矿',
+    coordinate: { x: 227, y: 116 },
+    expiresAt: now + 90 * 60000,
+    timestamp: 2,
+  };
+
+  const clue = formatTreasureClue(manifested, now).join('\n');
+  assert.match(clue, /天机锁定：混沌珠·万象之源/);
+  assert.match(clue, /出世之地：遮天位面·太初古矿（坐标 227,116）/);
+  assert.match(clue, /现世余时：1小时30分钟/);
+  assert.match(clue, /#前往227,116/);
 });
 
 test('万象归一消耗材料并保留套装数值和百分比属性', () => {

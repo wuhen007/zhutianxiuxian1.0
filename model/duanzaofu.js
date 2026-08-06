@@ -19,6 +19,7 @@ export async function settripod(qq) {
     const newtripod = {
       qq: qq,
       煅炉: 0,
+      炉阶: '凡铁炉',
       容纳量: 10,
       材料: [],
       数量: [],

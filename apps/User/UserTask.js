@@ -5,9 +5,7 @@ import {__PATH} from '../../model/xiuxian.js';
 import config from '../../model/Config.js';
 import { Read_player, Write_player } from '../../model/xiuxian.js';
 import data from '../../model/XiuxianData.js';
-
-// 毫秒/天常量
-const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000; // 86400000
+import { refreshDaofaStatus } from '../../model/daofa.js';
 
 /**
  * 道法仙术定时任务
@@ -16,7 +14,7 @@ export class DaofaDailyTask extends plugin {
   constructor() {
     super({
       name: 'DaofaDailyTask',
-      dsc: '每天0点减少道法仙术天数',
+      dsc: '每天0点同步道法仙术有效期',
       event: 'message',
       priority: 300,
       rule: [],
@@ -91,30 +89,15 @@ export class DaofaDailyTask extends plugin {
     // 处理批处理中的玩家
     const nowTime = Date.now();
     for (const player of players) {
-      // 检查玩家是否拥有道法仙术且未过期
-      if (player.daofaxianshu === 2 && player.daofaxianshu_endtime > nowTime) {
-        // 减少一天（毫秒）
-        player.daofaxianshu_endtime -= MILLISECONDS_PER_DAY;
-        
-        // 计算新的剩余天数（基于当前时间扣减后的差值）
-        const newRemainingDays = Math.ceil((player.daofaxianshu_endtime - nowTime) / MILLISECONDS_PER_DAY);
-        
-        // 更新道法状态
-        if (newRemainingDays <= 0) {
-          // 道法仙术到期
-          player.daofaxianshu_endtime = 0;
-          player.daofa = '未开启';
-          player.daofaxianshu = 0;
-          expiredCount++;
-        } else {
-          // 更新显示文本
-          player.daofa = `已开启，当前剩余${newRemainingDays}天`;
-        }
-        
-        // 保存玩家数据
-        await Write_player(player.qq, player);
-        updatedCount++;
+      const status = refreshDaofaStatus(player, nowTime);
+      if (status === 'inactive') continue;
+
+      await Write_player(player.qq, player);
+      if (status === 'expired') {
+        data.removeFromDaofaList(player.qq);
+        expiredCount++;
       }
+      updatedCount++;
     }
     
     return { updatedCount, expiredCount };

@@ -3,6 +3,29 @@ import { SUPREME_MARK_ERASERS } from './weimianTravel.js';
 export const NPC_PROTECTOR_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 export const NPC_PROTECTORS = Object.freeze({
+  苏灵: {
+    name: '苏灵',
+    requirement: '与苏灵好感度达到480（生死同命）',
+    intro: '命运轮盘跨越诸天降临，万千败亡之果同时消散。苏灵自星辉中走出，挡在你身前。',
+    combatant: {
+      名号: '苏灵·命运至尊帝',
+      level_id: 64,
+      Physique_id: 64,
+      mijinglevel_id: 24,
+      xiangulevel_id: 23,
+      攻击: 40_000_000_000_000_000,
+      防御: 40_000_000_000_000_000,
+      当前血量: 40_000_000_000_000_000,
+      血量上限: 40_000_000_000_000_000,
+      暴击率: 1,
+      暴击伤害: 4,
+      速度: 1200,
+      灵根: { name: '命运神道体', type: '命运', 法球倍率: 4, 攻击: 10, 防御: 10, 生命: 10 },
+      法球倍率: 4,
+      本命帝兵: { name: '命运轮盘', 全属性: 120 },
+      学习的功法: ['命运终章·移劫夺运', '命运轮盘·万果归一', '命运神道体'],
+    },
+  },
   柳神: {
     name: '柳神',
     requirement: '与柳神好感度达到480（护道者）',
@@ -56,6 +79,18 @@ export function isNpcProtector(name) {
 }
 
 export function getNpcProtectorEligibility(player, najie, name) {
+  if (name === '苏灵') {
+    const relation = Array.isArray(player?.剧情人物)
+      ? player.剧情人物.find(character => character?.苏灵)
+      : null;
+    const favor = Math.max(0, Number(relation?.好感度) || 0);
+    return {
+      ok: favor >= 480,
+      progress: `${favor}/480好感度`,
+      missing: favor >= 480 ? [] : [`还需${480 - favor}好感度`],
+    };
+  }
+
   if (name === '柳神') {
     const relation = Array.isArray(player?.剧情人物)
       ? player.剧情人物.find(character => character?.柳神)
@@ -115,6 +150,39 @@ export function getProtectorCooldown(player, now = Date.now()) {
 export function consumeProtectorIntervention(player, now = Date.now()) {
   player.护道人下次出手时间 = Number(now) + NPC_PROTECTOR_COOLDOWN_MS;
   player.护道人出手次数 = Math.max(0, Math.floor(Number(player.护道人出手次数) || 0)) + 1;
+}
+
+export async function tryNpcProtectorIntervention(player, enemy, battle, now = Date.now()) {
+  const name = player?.护道人;
+  if (player?.大帝庇护 !== 1 || !isNpcProtector(name)) return { triggered: false, reason: 'none' };
+  const cooldown = getProtectorCooldown(player, now);
+  if (!cooldown.ready) return { triggered: false, reason: 'cooldown', remaining: cooldown.remaining };
+
+  const config = NPC_PROTECTORS[name];
+  const protector = buildNpcProtector(name);
+  consumeProtectorIntervention(player, now);
+  const messages = [config.intro, `${name}淡然开口：“既已应下护道之约，此劫便不该落在你身上。”`];
+  let won = false;
+
+  if ((Number(protector.mijinglevel_id) || 0) >= 19) {
+    enemy.当前血量 = 0;
+    won = true;
+    messages.push(name === '苏灵'
+      ? `命运轮盘转过一格，${enemy.名号}所有能够伤及你的未来同时被删去。`
+      : `${protector.名号}一念落下，${enemy.名号}的攻势随因果一同消散。`);
+  } else if (typeof battle === 'function') {
+    const result = await battle(protector, enemy);
+    won = result?.winner === 'A' || Number(result?.B_hp) <= 0;
+    if (Array.isArray(result?.msg)) messages.push(...result.msg);
+  }
+
+  if (won) {
+    player.当前血量 = Math.max(1, Number(player.血量上限) || 1);
+    messages.push(`${name}替你平复伤势，随后收起法相。护道神念进入24小时休养。`);
+  } else {
+    messages.push(`${name}的护道法相未能彻底镇住来敌，只得先护送你脱离险境。`);
+  }
+  return { triggered: true, won, name, messages, protector };
 }
 
 // ===== 抹除禁区至尊印记（盖九幽/莫晓羽/苏灵/武祖叶萧/柳神等） =====

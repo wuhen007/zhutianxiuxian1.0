@@ -106,9 +106,11 @@ Era:
   Master: null
   current:
     index: 3
-    years: 4000
+    years: 6000
     epoch: 1
+    totalYears: 4000
   yearlyAdvance: 1000
+  weimianRepairInterval: 2000
 BotType: onebot
 AutoDailyTask:
   cron: 0 18 18 * * *

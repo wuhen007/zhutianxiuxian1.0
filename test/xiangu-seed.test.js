@@ -68,7 +68,7 @@ test('旧版道种名称可规范到顶级道种目录', () => {
 });
 
 test('普通、稀有、传说道种不会命中神火极境', () => {
-  for (const name of ['灵火灵种', '青鸾焰', '朱雀焚天炎', '太阳真火']) {
+  for (const name of ['灵火灵种', '青鸾焰', '朱雀焚天炎', '太阳神火']) {
     assert.equal(resolveXianguSeedExtremeName(config, levels, name), null);
   }
 });

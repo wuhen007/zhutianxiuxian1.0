@@ -8,17 +8,24 @@ import {
 } from '../../model/xiuxian.js';
 import {
     WENXIAN_CLUE_COST,
+    WENXIAN_DAILY_QUEST_EXP,
+    WENXIAN_DAILY_QUEST_GOALS,
     WENXIAN_DAILY_TASK_TARGET,
     WENXIAN_DUNGEON_CLUE_PITY,
     WENXIAN_EXP_PER_LEVEL as EXP_PER_LEVEL,
     WENXIAN_MAX_LEVEL as MAX_LEVEL,
     WENXIAN_PENDING_EXP_CAP,
     WENXIAN_REQUIRED_REALM_LEVEL,
+    WENXIAN_WEEKLY_TASK_EXP,
+    WENXIAN_WEEKLY_TASK_GOALS,
     activateWenXianLing,
     addWenXianExp,
+    claimWenXianWeeklyTask,
     ensureWenXianState,
+    ensureWenXianTaskState,
     isWenXianEligible,
     isWenXianTrialComplete,
+    isWenXianWeeklyTaskComplete,
     purchaseWenXianClue,
     recordWenXianTrial,
 } from '../../model/wenxianling.js';
@@ -184,6 +191,19 @@ for (const [level, rewards] of Object.entries(WENXIAN_ENDLESS_REWARDS)) {
 // 所有有额外奖励的节点
 const BONUS_LEVELS = Object.keys(BONUS_REWARDS).map(Number);
 
+const DAILY_QUEST_LABELS = {
+    spiritHeart: '消耗心神',
+    tianjiao: '讨伐天骄',
+    dungeon: '副本结算',
+};
+const WEEKLY_TASK_LABELS = {
+    dailyTask: '完成每日任务',
+    tianjiao: '讨伐天骄',
+    stoneMarket: '源石坊购石',
+    spiritHeart: '消耗心神',
+    dungeon: '副本结算',
+};
+
 /**
  * 格式化数字为可读文本
  */
@@ -202,6 +222,9 @@ export class WenXianLing extends plugin {
             priority: 600,
             rule: [
                 { reg: '^#问仙令$', fnc: 'showPass' },
+                { reg: '^#问仙令任务$', fnc: 'showDailyQuests' },
+                { reg: '^#(?:问仙令)?每周任务$', fnc: 'showWeeklyTask' },
+                { reg: '^#领取每周任务$', fnc: 'claimWeeklyTask' },
                 { reg: '^#领取问仙令(\\d+)?$', fnc: 'claimReward' },
                 { reg: '^#重金求取问仙线索$', fnc: 'buyWenXianClue' },
                 { reg: '^#探索问仙线索$', fnc: 'exploreWenXianClue' },
@@ -443,6 +466,80 @@ export class WenXianLing extends plugin {
         ].join('\n'));
     }
 
+    async showDailyQuests(e) {
+        const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
+        if (!(await existplayer(usr_qq))) return false;
+        const player = await Read_player(usr_qq);
+        const { daily } = ensureWenXianTaskState(player);
+        await Write_player(usr_qq, player);
+        const lines = [
+            '【问仙令·每日任务】',
+            `每项首次完成奖励${WENXIAN_DAILY_QUEST_EXP}问仙令经验，每日重置。`,
+            '',
+        ];
+        for (const [type, goal] of Object.entries(WENXIAN_DAILY_QUEST_GOALS)) {
+            const done = daily.rewarded[type];
+            lines.push(`${done ? '已完成' : '未完成'}｜${DAILY_QUEST_LABELS[type]} ${daily.progress[type]}/${goal}`);
+        }
+        return e.reply(lines.join('\n'));
+    }
+
+    async showWeeklyTask(e) {
+        const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
+        if (!(await existplayer(usr_qq))) return false;
+        const player = await Read_player(usr_qq);
+        const { weekly } = ensureWenXianTaskState(player);
+        const ready = isWenXianWeeklyTaskComplete(player);
+        await Write_player(usr_qq, player);
+        const lines = ['【每周任务】'];
+        for (const [type, goal] of Object.entries(WENXIAN_WEEKLY_TASK_GOALS)) {
+            lines.push(`${weekly.progress[type] >= goal ? '已完成' : '未完成'}｜${WEEKLY_TASK_LABELS[type]} ${weekly.progress[type]}/${goal}`);
+        }
+        lines.push(
+            '',
+            `状态：${weekly.claimed ? '本周奖励已领取' : ready ? '已完成，可发送 #领取每周任务' : '尚未完成'}`,
+            `奖励：问仙令经验${WENXIAN_WEEKLY_TASK_EXP}、寻宝公式修为/血气、境界源石/灵石、定神丹x5、超越宝盒x2、遣龙令x5`,
+        );
+        return e.reply(lines.join('\n'));
+    }
+
+    async claimWeeklyTask(e) {
+        const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
+        if (!(await existplayer(usr_qq))) return false;
+        const lockKey = `xiuxian:lock:wenxian_weekly:${usr_qq}`;
+        const token = `${Date.now()}:${Math.random()}`;
+        if (!await acquireRedisLock(redis, lockKey, token, 30)) {
+            return e.reply('每周任务奖励正在结算，请稍后再试。');
+        }
+
+        try {
+            const player = await Read_player(usr_qq);
+            const result = claimWenXianWeeklyTask(player);
+            if (result.reason === 'claimed') return e.reply('本周任务奖励已经领取。');
+            if (result.reason === 'incomplete') return e.reply('本周任务尚未全部完成，发送 #每周任务 查看进度。');
+            if (!result.ok) return e.reply('每周任务奖励结算失败，请稍后再试。');
+
+            await Add_najie_thing(usr_qq, '定神丹', '丹药', 5);
+            await Add_najie_thing(usr_qq, '超越宝盒', '盒子', 2);
+            await Add_najie_thing(usr_qq, '遣龙令', '道具', 5);
+            await Write_player(usr_qq, player);
+            const { rewards, expResult } = result;
+            return e.reply([
+                '【每周任务奖励】',
+                `修为 +${fmtNum(rewards.xiuwei)}`,
+                `血气 +${fmtNum(rewards.xueqi)}`,
+                `灵石 +${fmtNum(rewards.lingshi)}`,
+                `源石 +${fmtNum(rewards.yuanshi)}`,
+                `${expResult.unlocked === false ? '问仙道痕' : '问仙令经验'} +${expResult.added}`,
+                '定神丹x5 / 超越宝盒x2 / 遣龙令x5',
+            ].join('\n'));
+        } finally {
+            try {
+                await releaseRedisLock(redis, lockKey, token);
+            } catch { /* 锁会按时自动失效 */ }
+        }
+    }
+
     // ====== 领取奖励 ======
     async claimReward(e) {
         const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
@@ -572,6 +669,8 @@ export class WenXianLing extends plugin {
             ``,
             `【指令】`,
             `#问仙令    - 查看战令进度（展示5级窗口）`,
+            `#问仙令任务 - 查看每日问仙令任务`,
+            `#每周任务 / #领取每周任务 - 查看并领取周任务奖励`,
             `#领取问仙令  - 一键领取所有可领奖励`,
             `#领取问仙令30 - 领取指定第30级奖励`,
             `#重金求取问仙线索 - 消耗30亿源石获取线索`,
@@ -580,8 +679,8 @@ export class WenXianLing extends plugin {
             `#问仙令帮助 - 查看帮助`,
             ``,
             `【经验来源】`,
-            `修仙签到 +50  |  每日任务 +50  |  练气/炼体突破 +20`,
-            `渡劫 +100  |  冲关(仙古今世法) +80  |  BOSS击杀 +30`,
+            `修仙签到基础 +50  |  每日任务 +50`,
+            `问仙令每日任务每项 +${WENXIAN_DAILY_QUEST_EXP}  |  每周任务 +${WENXIAN_WEEKLY_TASK_EXP}`,
             ``,
             `【额外奖励节点】`,
         ];

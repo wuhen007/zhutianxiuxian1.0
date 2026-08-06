@@ -268,7 +268,7 @@ async draw_player_mingge(e) {
     
     let currentDate = new Date();
     let year = currentDate.getFullYear();
-    let aptitude = await get_random_aptitude(); // 新增天资等级
+    let aptitude = await get_random_aptitude({ allowWuhuaRushi: true }); // 开局才可极低概率获得无化如是
     const openingOmen = drawOpeningOmen(talent);
     let month = String(currentDate.getMonth() + 1).padStart(2, '0');
     let day = String(currentDate.getDate()).padStart(2, '0');
@@ -701,7 +701,7 @@ async daily_lottery(e) {
     e.reply('仙凡有别 渡劫一念天地宽\n仙路漫漫 一见鸡哥道成空\n攻略 docs.qq.com/doc/DY25pbVlEakJaaW1u ')
   }
   //#踏入仙途
-  async Create_player(e) {
+  async Create_player(e, isInitialEntry = true) {
     if (!verc({ e })) return false;
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);
@@ -717,7 +717,7 @@ async daily_lottery(e) {
     let File_msg = fs.readdirSync(__PATH.player_path);
     let n = File_msg.length + 1;
     let talent = await get_random_talent();
-    let aptitude = await get_random_aptitude(); // 新增天资等级
+    let aptitude = await get_random_aptitude({ allowWuhuaRushi: isInitialEntry });
     const openingOmen = drawOpeningOmen(talent);
     let new_player = {
       id: usr_qq,
@@ -1037,7 +1037,7 @@ async force_reCreate_player(e) {
   
   // 调用创建新玩家的方法
   try {
-    await this.Create_player(e);
+    await this.Create_player(e, false);
   } catch (error) {
     console.error('创建新玩家时出错:', error);
     e.reply('创建新玩家时出现错误，请联系管理员！');
@@ -1199,7 +1199,7 @@ async force_reCreate_player(e) {
         segment.at(usr_qq),
         '来世，信则有，不信则无，岁月悠悠，世间终会出现两朵相同的花，千百年的回眸，一花凋零，一花绽。是否为同一朵，任后人去评断！！',
       ]);
-      await this.Create_player(e);
+      await this.Create_player(e, false);
       await redis.set(
         'xiuxian:player:' + usr_qq + ':last_reCreate_time',
         nowTime
@@ -1632,7 +1632,5 @@ async function recordMonthlySignData(player, year, month, day) {
         }
     }
 }
-
-
 
 

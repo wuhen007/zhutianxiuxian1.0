@@ -55,6 +55,7 @@ import {
   rankTreasureContest,
 } from '../../model/innateTreasureContest.js';
 import { calculateMinggeGain, getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
+import { isDaofaActive } from '../../model/daofa.js';
 import { getPlayerPlaneCoordinate } from '../../model/planeCoords.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 import {
@@ -94,6 +95,11 @@ import {
     getRedDustFortuneType,
 } from '../../model/redDustFortune.js';
 import { BINGZI_FRAGMENT, BINGZI_TECHNIQUE } from '../../model/bingziLegacy.js';
+import {
+    findSectWarProduct,
+    SECT_WAR_SHOP,
+    SECT_WAR_TOKEN,
+} from '../../model/sectWarShop.js';
 
 // ==================== 诡异大祭·崩灭位面检查工具 ====================
 function isWeiMianDestroyed(planeName) {
@@ -121,6 +127,7 @@ async function replyPlaneDestroyed(e, planeName) {
 const pendingJieyinMap = new Map();
 const treasureSettlementLocks = new Set();
 const sectWarSettlementLocks = new Set();
+const sectWarShopLocks = new Set();
 const bingziSettlementLocks = new Set();
 
 const SECT_WAR_SIDE_LABELS = {
@@ -368,6 +375,14 @@ export class SecretPlace extends plugin {
 {
   reg: '^#查看战场榜$',
   fnc: 'sectWarRanking'
+},
+{
+  reg: '^#战功商店$',
+  fnc: 'showSectWarShop'
+},
+{
+  reg: '^#战功兑换\\s*.+$',
+  fnc: 'buySectWarProduct'
 },
 {
   reg: '^#提交战场决议\\s+(?:继续争夺|停战查真|联军攻禁区|强攻禁区|稳固封印|撤离伤员)$',
@@ -3904,7 +3919,8 @@ async sectWarInfo(e) {
             : '#圣战站队 攻方/守方/中立',
         '#战场行动 正面攻伐/护送资源/源术勘脉/潜入夺证/救援伤员',
         '#投入战资 源石*数量',
-        '#查看战场榜'
+        '#查看战场榜',
+        '#战功商店'
     );
     if (Number(war.meters.truth) >= 50) {
         lines.push(war.mode === 'frontier'
@@ -4034,6 +4050,71 @@ async sectWarRanking(e) {
     ));
     if (event.sectWar?.outcome) lines.push('', `结局：${event.sectWar.outcome.title}`);
     return e.reply(lines.join('\n'));
+}
+
+async showSectWarShop(e) {
+    if (!verc({ e })) return false;
+    const qq = await channel(String(e.user_id).replace('qg_', ''));
+    if (!await existplayer(qq)) return false;
+    const player = await Read_player(qq);
+    const lines = [
+        '【圣地大战·战功商店】',
+        `${SECT_WAR_TOKEN}：${Number(player[SECT_WAR_TOKEN]) || 0}`,
+        '',
+        ...SECT_WAR_SHOP.map(product =>
+            `${product.id}. ${product.name}｜${product.category}｜${product.price}战功\n   ${product.description}`
+        ),
+        '',
+        '发送 #战功兑换 名称（也可填写编号）',
+        '火种和锻炉兑换后永久保留，可在炼器前自由装配。'
+    ];
+    return e.reply(lines.join('\n'));
+}
+
+async buySectWarProduct(e) {
+    if (!verc({ e })) return false;
+    const qq = await channel(String(e.user_id).replace('qg_', ''));
+    if (!await existplayer(qq)) return false;
+    const selector = String(e.msg).replace(/^#战功兑换\s*/, '');
+    const product = findSectWarProduct(selector);
+    if (!product) return e.reply('战功商店没有这件物品，请发送 #战功商店 查看');
+    if (sectWarShopLocks.has(qq)) return e.reply('战功正在交割，请勿重复兑换');
+
+    sectWarShopLocks.add(qq);
+    try {
+        const player = await Read_player(qq);
+        if (product.unique && Number(await exist_najie_thing(qq, product.name, product.itemClass)) > 0) {
+            return e.reply(`你已经拥有【${product.name}】，无需重复兑换`);
+        }
+        if (product.name === '时光令配方' && player.时光令配方) {
+            return e.reply('你已经参悟【时光令配方】，无需重复兑换');
+        }
+        const balance = Number(player[SECT_WAR_TOKEN]) || 0;
+        if (balance < product.price) {
+            return e.reply(`${SECT_WAR_TOKEN}不足：需要${product.price}，当前${balance}`);
+        }
+
+        const originalBalance = balance;
+        player[SECT_WAR_TOKEN] = balance - product.price;
+        await Write_player(qq, player);
+        try {
+            await Add_najie_thing(qq, product.name, product.itemClass, 1);
+        } catch (error) {
+            player[SECT_WAR_TOKEN] = originalBalance;
+            await Write_player(qq, player);
+            console.error(`[圣地战功商店] 兑换失败 player=${qq} item=${product.name}`, error);
+            return e.reply('兑换失败，消耗的圣地战功已经退还');
+        }
+
+        return e.reply([
+            '【战功兑换成功】',
+            `获得：${product.name}×1`,
+            `消耗战功：${product.price}`,
+            `剩余战功：${player[SECT_WAR_TOKEN]}`
+        ].join('\n'));
+    } finally {
+        sectWarShopLocks.delete(qq);
+    }
 }
 
 async voteSectWarDecision(e) {
@@ -4659,7 +4740,7 @@ async settleSectWarEventRewards(event) {
                 outcome.title,
                 outcome.summary,
                 `战场余波：${outcome.planeEffect}`,
-                '发送 #查看战场榜 查看本次战功排名。'
+                '发送 #查看战场榜 查看本次战功排名，或发送 #战功商店 兑换炼器资产。'
             ].join('\n'));
         }
 
@@ -5737,7 +5818,7 @@ async function calculateTimeReduction(player) {
     }
 
     // 道法仙术效果（独立触发）
-    if (player.daofaxianshu == 2) {
+    if (isDaofaActive(player)) {
         timeReduction += 2;
         msgs.push('受到道法仙术加持，历练时间减少2分钟');
     }

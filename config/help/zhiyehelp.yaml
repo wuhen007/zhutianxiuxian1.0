@@ -38,6 +38,21 @@
       title: '#开炉'
       desc: '结束装备炼制,获得装备'
     - icon: help-icon_40
+      title: '#炼器炉 / #安装锻炉 锻炉名'
+      desc: '查看并安装战功商店兑换的永久锻炉'
+    - icon: help-icon_40
+      title: '#炉火 / #点燃炉火 火种名'
+      desc: '查看并自由装配已经拥有的炼器火种'
+    - icon: help-icon_40
+      title: '#炼器功法 / #修炼功法 功法名'
+      desc: '查看、修炼炼器功法并积累熟练度'
+    - icon: help-icon_40
+      title: '#一键开炉 / #一键完美开炉'
+      desc: '分别消耗时光令，或时光令加造化本源立即开炉'
+    - icon: help-icon_40
+      title: '#参悟时光令配方 / #合成时光令*数量'
+      desc: '参悟战功商店配方后制作时光令'
+    - icon: help-icon_40
       title: '#清空锻炉'
       desc: '清空材料和炼制时间'
     - icon: help-icon_40

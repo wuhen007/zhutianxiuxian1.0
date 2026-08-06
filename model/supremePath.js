@@ -11,6 +11,7 @@ const SUPREME_BONE_ARTS = Object.freeze({
 });
 
 const SUPREME_COMBINED_ART = '轮回天罚';
+export const DAHUANG_PUPIL_ENCOUNTER_CHANCE = 0.1;
 
 export function getSupremeStage(player) {
   return Math.max(0, SUPREME_STAGE_NAMES.indexOf(player?.灵根?.name));
@@ -111,6 +112,49 @@ export function getSupremeTrialSpec(kind) {
     return { target: 4, enemyName: '至尊骨中的自己', enemyScale: 0.8 };
   }
   return null;
+}
+
+export function rollDahuangPupilEncounter(player, options = {}) {
+  const {
+    dungeon,
+    hasSource = false,
+    random = Math.random,
+  } = options;
+  if (
+    dungeon !== '大荒峡谷' ||
+    getSupremeStage(player) < 1 ||
+    player?.至尊之路?.重瞳 ||
+    hasSource ||
+    random() >= DAHUANG_PUPIL_ENCOUNTER_CHANCE
+  ) {
+    return null;
+  }
+
+  const maxHp = Math.max(1, Number(player?.血量上限 || player?.当前血量 || 1));
+  const opponentHp = Math.max(1, Math.trunc(maxHp * 0.8));
+  return {
+    名号: '大荒重瞳者',
+    攻击: Math.max(1, Math.trunc(Number(player?.攻击 || 1) * 0.6)),
+    防御: Math.max(1, Math.trunc(Number(player?.防御 || 1) * 0.65)),
+    当前血量: opponentHp,
+    血量上限: opponentHp,
+    暴击率: Math.min(0.35, Number(player?.暴击率 || 0.1)),
+    暴击伤害: Number(player?.暴击伤害 || 1.5),
+    灵根: {
+      name: '重瞳者',
+      type: '重瞳',
+      法球倍率: 3,
+      攻击: 5,
+      防御: 5,
+      生命: 5,
+    },
+    法球倍率: 3,
+    学习的功法: [],
+    仙宠: null,
+    速度: Number(player?.速度 || 100),
+    mijinglevel_id: Number(player?.mijinglevel_id || 0),
+    xiangulevel_id: Number(player?.xiangulevel_id || 0),
+  };
 }
 
 export function getNirvanaMissing(player) {

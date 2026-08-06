@@ -13,6 +13,9 @@ import {
   addBlackEmperorBattleFormation,
   getBlackEmperorData,
   getBlackEmperorRelation,
+  parseBlackEmperorFormationRequest,
+  pauseBlackEmperorBattleFormation,
+  selectBlackEmperorBattleFormation,
   selfEngraveFormation,
 } from '../../model/blackEmperor.js';
 import { PLACE_LOCATION_MAP, SPECIAL_LOCATIONS, hasCoordinate } from '../../model/weimianTravel.js';
@@ -23,20 +26,11 @@ function shanghaiDateKey(now = new Date()) {
   }).format(now);
 }
 
-function parseFormationRequest(content) {
-  const formation = BLACK_EMPEROR_FORMATIONS.find(item =>
-    content === item.name || content.startsWith(`${item.name} `)
-  );
-  return {
-    formation,
-    target: formation ? content.slice(formation.name.length).trim() : '',
-  };
-}
-
 function formatBattleFormations(player) {
   const self = Array.isArray(player.自刻PVE阵纹) ? player.自刻PVE阵纹 : [];
   const emperor = Array.isArray(player.黑皇PVE阵纹) ? player.黑皇PVE阵纹 : [];
   const lines = [];
+  lines.push(`启用策略：${player.PVE阵法停用 ? '停用' : player.当前PVE阵法 || '自动（自刻优先）'}`);
   if (player.黑皇待用阵纹) lines.push(`黑皇待用：${player.黑皇待用阵纹}`);
   if (emperor.length) lines.push(`黑皇阵纹：${emperor.map(item => `${item.名称}×${item.剩余次数}`).join('、')}`);
   if (self.length) lines.push(`自刻阵纹：${self.map(item => `${item.名称}×${item.剩余次数}`).join('、')}`);
@@ -56,8 +50,10 @@ export class BlackEmperor extends plugin {
         { reg: '^#黑皇(?:交流|请教阵道)$', fnc: 'blackEmperorInteraction' },
         { reg: '^#黑皇传授阵道$', fnc: 'learnFormationDao' },
         { reg: '^#黑皇阵法$', fnc: 'formationList' },
-        { reg: '^#请黑皇刻阵\\s+.+$', fnc: 'engraveFormation' },
-        { reg: '^#自刻阵法\\s+.+$', fnc: 'selfEngrave' },
+        { reg: '^#请黑皇刻阵.*$', fnc: 'engraveFormation' },
+        { reg: '^#自刻阵法.*$', fnc: 'selfEngrave' },
+        { reg: '^#启用阵法.*$', fnc: 'selectBattleFormation' },
+        { reg: '^#停用阵法$', fnc: 'pauseBattleFormation' },
       ],
     });
   }
@@ -191,6 +187,8 @@ export class BlackEmperor extends plugin {
       '请黑皇刻阵：#请黑皇刻阵 阵法名',
       '传送阵：#请黑皇刻阵 位面传送阵 目标位面',
       '阵法师自刻：#自刻阵法 山河困龙阵 / 无始杀阵',
+      '选择下次PVE阵法：#启用阵法 阵法名 / 自动',
+      '暂不消耗阵纹：#停用阵法',
     ].join('\n'));
     return true;
   }
@@ -199,8 +197,9 @@ export class BlackEmperor extends plugin {
     const context = await this.getEmperorContext(e);
     if (!context) return true;
     const { userId, player, character } = context;
-    const content = e.msg.replace(/^#请黑皇刻阵\s+/, '').trim();
-    const { formation, target } = parseFormationRequest(content);
+    const content = e.msg.replace(/^#请黑皇刻阵/, '').trim();
+    if (!content) return this.formationList(e);
+    const { formation, target } = parseBlackEmperorFormationRequest(content);
     if (!formation) {
       await e.reply(`黑皇没听说过「${content}」。发送 #黑皇阵法 查看可用阵图。`);
       return true;
@@ -217,10 +216,6 @@ export class BlackEmperor extends plugin {
     }
     if (formation.type === 'tribulation' && player.黑皇待用阵纹) {
       await e.reply(`已有待用阵纹「${player.黑皇待用阵纹}」，请在下次渡劫使用后再刻。`);
-      return true;
-    }
-    if (formation.type === 'battle' && Array.isArray(player.黑皇PVE阵纹) && player.黑皇PVE阵纹.length) {
-      await e.reply(`黑皇PVE阵纹已待用：${player.黑皇PVE阵纹.map(item => `${item.名称}×${item.剩余次数}`).join('、')}。`);
       return true;
     }
     if (formation.type.startsWith('travel')) {
@@ -291,7 +286,11 @@ export class BlackEmperor extends plugin {
       await e.reply('只有阵法师才能独立刻画阵纹。请先转职为阵法师。');
       return true;
     }
-    const name = e.msg.replace(/^#自刻阵法\s+/, '').trim();
+    const name = e.msg.replace(/^#自刻阵法/, '').replace(/\s+/g, '');
+    if (!name) {
+      await e.reply('用法：#自刻阵法 山河困龙阵 / 无始杀阵');
+      return true;
+    }
     const formation = BLACK_EMPEROR_FORMATIONS.find(item => item.name === name && item.engraveCost);
     if (!formation) {
       await e.reply(`「${name}」不可自刻。可自刻：山河困龙阵、无始杀阵。`);
@@ -317,8 +316,41 @@ export class BlackEmperor extends plugin {
       `【自刻阵法·${formation.name}】`,
       `灵石-${formation.engraveCost.toLocaleString()}${material ? `，${material.name}-${material.count}` : ''}`,
       `成功率：${Math.round(result.chance * 100)}%（阵法师${player.occupation_level}级）`,
-      result.ok ? result.message : '阵纹崩散，下次结阵时运气与阵道都将更进一步。',
+      result.ok
+        ? result.message
+        : `阵纹崩散，连续失败${player.自刻阵法连续失败}次；下次成功率提升至${Math.round(result.nextChance * 100)}%。`,
     ].join('\n'));
+    return true;
+  }
+
+  async selectBattleFormation(e) {
+    const context = await this.getEmperorContext(e);
+    if (!context) return true;
+    const { userId, player } = context;
+    const name = e.msg.replace(/^#启用阵法/, '').replace(/\s+/g, '');
+    if (!name) {
+      await e.reply('请指定阵法名，或发送 #启用阵法 自动。');
+      return true;
+    }
+    const result = selectBlackEmperorBattleFormation(player, name);
+    if (!result.ok) {
+      await e.reply(`启用失败：${result.reason}。发送 #黑皇状态 查看持有阵纹。`);
+      return true;
+    }
+    await Write_player(userId, player);
+    await e.reply(result.name === '自动'
+      ? '阵匣已切回自动模式：PVE战斗优先使用自刻阵纹，再使用黑皇阵纹。'
+      : `已启用【${result.name}】，将在下一场已接入阵法系统的PVE战斗中自动激活（剩余${result.remaining}次）。`);
+    return true;
+  }
+
+  async pauseBattleFormation(e) {
+    const context = await this.getEmperorContext(e);
+    if (!context) return true;
+    const { userId, player } = context;
+    pauseBlackEmperorBattleFormation(player);
+    await Write_player(userId, player);
+    await e.reply('阵匣已封闭，PVE战斗暂不消耗阵纹。发送 #启用阵法 阵法名/自动 可重新开启。');
     return true;
   }
 }

@@ -5,6 +5,14 @@ import {
   getEndlessMetaEffects,
   normalizeEndlessMeta,
 } from './endlessMeta.js';
+import {
+  autoSelectEndlessStarRoute,
+  completeEndlessStarNode,
+  ensureEndlessStarMap,
+  getEndlessStarBossMechanisms,
+  getEndlessStarEncounter,
+  getSelectedEndlessStarNode,
+} from './endlessStarMap.js';
 
 const contentPath = fileURLToPath(
   new URL('../resources/data/无尽劫境.json', import.meta.url)
@@ -371,6 +379,10 @@ export function getEndlessContent() {
   return clone(CONTENT);
 }
 
+export function ensureEndlessStarMapState(run, targetLayer = run.layer + 1) {
+  return ensureEndlessStarMap(run, CONTENT.worlds, targetLayer);
+}
+
 export function getAbility(abilityId) {
   const ability = ABILITIES.get(abilityId);
   return ability ? clone(ability) : null;
@@ -382,6 +394,12 @@ export function getCheckpointBoon(boonId) {
 }
 
 export function getWorldForLayer(run, layer) {
+  const selectedWorldId = getSelectedEndlessStarNode(run, layer)?.worldId;
+  const inheritedWorldId = layer === run.layer + 1
+    ? run.starMap?.lastClearedWorldId
+    : null;
+  const starWorld = WORLDS.get(selectedWorldId || inheritedWorldId);
+  if (starWorld) return starWorld;
   const chapter = Math.max(0, Math.floor((Math.max(1, layer) - 1) / 10));
   const order = run.worldOrder?.length
     ? run.worldOrder
@@ -466,6 +484,7 @@ export function createEndlessRun({
   );
   for (const entry of players)
     run.members[entry.id] = createProjection(entry.id, entry.player);
+  ensureEndlessStarMap(run, CONTENT.worlds, 1);
   setPendingChoices(run, 1);
   return run;
 }
@@ -652,6 +671,7 @@ export function applyCheckpointChoice(run, choiceNumber) {
     at: Date.now(),
   };
   run.checkpoint = null;
+  ensureEndlessStarMap(run, CONTENT.worlds, run.layer + 1);
   setPendingChoices(run, run.layer + 1);
   return clone(run.lastCheckpoint);
 }
@@ -689,24 +709,36 @@ function createBossRoster(run, world, template, bossCount) {
 }
 
 export function createEndlessEnemy(run, layer) {
-  const world = getWorldForLayer(run, layer);
-  const stage = getStage(layer);
+  ensureEndlessStarMap(run, CONTENT.worlds, layer);
+  const encounter = getEndlessStarEncounter(run, layer) || (() => {
+    autoSelectEndlessStarRoute(run, layer);
+    return getEndlessStarEncounter(run, layer);
+  })();
+  const world = WORLDS.get(encounter?.worldId) || getWorldForLayer(run, layer);
+  const stage = layer % 10 === 0
+    ? 'boss'
+    : layer % 5 === 0
+      ? 'elite'
+      : encounter?.stage || getStage(layer);
   const pool = world[stage];
   const template = pool[Math.floor(random(run) * pool.length)];
   const teamSize = Object.keys(run.members).length;
   const teamScale = 1 + Math.max(0, teamSize - 1) * 0.3;
   const bossCycle = stage === 'boss' ? Math.floor(layer / 10) : 0;
-  const monsterCount = stage === 'boss'
+  const monsterCount = (stage === 'boss'
     ? getBossCount(layer)
     : stage === 'normal'
       ? 1 + Math.floor(Math.max(0, layer - 1) / 10)
-      : 1;
+      : 1) + (stage === 'boss' ? 0 : Number(encounter?.monsterCountBonus) || 0);
   const bossRoster = stage === 'boss'
     ? createBossRoster(run, world, template, monsterCount)
     : [];
-  const hpScale = Math.pow(1.105, layer - 1) * teamScale;
-  const attackScale = Math.pow(1.05, layer - 1) * teamScale;
-  const defenseScale = Math.pow(1.035, layer - 1) * teamScale;
+  const hpScale =
+    Math.pow(1.105, layer - 1) * teamScale * (encounter?.enemyHpMultiplier || 1);
+  const attackScale =
+    Math.pow(1.05, layer - 1) * teamScale * (encounter?.enemyAttackMultiplier || 1);
+  const defenseScale =
+    Math.pow(1.035, layer - 1) * teamScale * (encounter?.enemyDefenseMultiplier || 1);
   const baseHp = bossRoster.length
     ? bossRoster.reduce((sum, boss) => sum + boss.hp * boss.count, 0)
     : template.hp * monsterCount;
@@ -732,7 +764,8 @@ export function createEndlessEnemy(run, layer) {
           run,
           BOSS_MECHANISMS.filter((mechanism) => mechanism !== '连击')
         ).slice(0, mechanismCount - 1),
-      ]
+        ...getEndlessStarBossMechanisms(run),
+      ].filter((mechanism, index, values) => values.indexOf(mechanism) === index)
     : [];
   const enemy = {
     ...template,
@@ -754,6 +787,15 @@ export function createEndlessEnemy(run, layer) {
       worldName,
       count,
     })),
+    starNode: encounter ? {
+      id: encounter.id,
+      typeId: encounter.typeId,
+      name: encounter.name,
+      shortName: encounter.shortName,
+      risk: encounter.risk,
+      rewardMultiplier: encounter.rewardMultiplier,
+      skyName: encounter.skyName,
+    } : null,
     mechanisms,
     revivesLeft: mechanisms.includes('复活') ? 1 : 0,
     cloneCount: 0,
@@ -2150,6 +2192,57 @@ function treasureReward(run, realm, member) {
   );
 }
 
+function applyEndlessStarVictoryEffect(run, encounter) {
+  if (!encounter?.victoryEffect) return null;
+  const oldMaximums = Object.fromEntries(
+    Object.values(run.members).map(member => [
+      member.id,
+      calculateMemberStats(member, run).maxHp,
+    ])
+  );
+  const living = Object.values(run.members).filter(member => member.alive);
+  const candidates = living.flatMap(member =>
+    Object.entries(member.abilities || {})
+      .filter(([abilityId, level]) => {
+        const ability = ABILITIES.get(abilityId);
+        return ability && level < asNumber(ability.maxLevel, 1);
+      })
+      .map(([abilityId]) => ({ member, abilityId }))
+  );
+  const selected = candidates[Math.floor(random(run) * candidates.length)];
+  let reward;
+  if (selected) {
+    selected.member.abilities[selected.abilityId] += 1;
+    const ability = ABILITIES.get(selected.abilityId);
+    reward = {
+      kind: encounter.victoryEffect,
+      memberId: selected.member.id,
+      memberName: selected.member.name,
+      abilityId: selected.abilityId,
+      abilityName: ability.name,
+      level: selected.member.abilities[selected.abilityId],
+      description: `${selected.member.name}参透《${ability.name}》，升至Lv.${
+        selected.member.abilities[selected.abilityId]
+      }`,
+    };
+  } else {
+    for (const member of living)
+      member.growthAttackPct += encounter.victoryEffect === 'mirror' ? 0.04 : 0.025;
+    reward = {
+      kind: encounter.victoryEffect,
+      overflow: true,
+      description: encounter.victoryEffect === 'mirror'
+        ? '镜世道痕融入全队，本局攻击成长提高4%'
+        : '遗府道痕无可承载，全队本局攻击成长提高2.5%',
+    };
+  }
+  if (encounter.victoryEffect === 'mirror' && selected)
+    for (const member of living) member.growthAttackPct += 0.02;
+  run.fusions = detectFusions(run);
+  refreshMemberVitals(run, oldMaximums);
+  return reward;
+}
+
 export function getEndlessLayerCurrencyReward(layer) {
   const safeLayer = Math.max(1, Math.floor(asNumber(layer, 1)));
   const stage = getStage(safeLayer);
@@ -2238,23 +2331,33 @@ function finishVictory(run, enemy, layer) {
   delete run.__ghostFieldRestarted;
   delete run.__ninthGhostDomainUsed;
 
+  const encounter = getEndlessStarEncounter(run, layer);
+  const rewardMultiplier = Math.max(1, asNumber(encounter?.rewardMultiplier, 1));
   const currencyReward = getEndlessLayerCurrencyReward(layer);
   const layerReward = {
-    lingshi: currencyReward.lingshi,
-    sourceStone: currencyReward.sourceStone,
-    tokens: currencyReward.tokens,
+    lingshi: Math.round(currencyReward.lingshi * rewardMultiplier),
+    sourceStone: Math.round(currencyReward.sourceStone * rewardMultiplier),
+    tokens: Math.round(currencyReward.tokens * rewardMultiplier),
     members: {},
+    starRoute: encounter ? {
+      name: encounter.name,
+      shortName: encounter.shortName,
+      risk: encounter.risk,
+      skyName: encounter.skyName,
+      rewardMultiplier,
+    } : null,
   };
   run.unbanked.lingshi += layerReward.lingshi;
   run.unbanked.sourceStone += layerReward.sourceStone;
   run.unbanked.tokens += layerReward.tokens;
   for (const member of Object.values(run.members)) {
-    const cultivation = treasureReward(run, 'level', member);
-    const blood = treasureReward(run, 'physique', member);
+    const cultivation = Math.round(treasureReward(run, 'level', member) * rewardMultiplier);
+    const blood = Math.round(treasureReward(run, 'physique', member) * rewardMultiplier);
     member.unbankedRewards.cultivation += cultivation;
     member.unbankedRewards.blood += blood;
     layerReward.members[member.id] = { cultivation, blood };
   }
+  layerReward.starReward = applyEndlessStarVictoryEffect(run, encounter);
 
   if (enemy.stage === 'boss') {
     for (const key of ['lingshi', 'sourceStone', 'tokens'])
@@ -2313,6 +2416,7 @@ export function resolveEndlessLayer(run) {
   if (run.phase !== 'ready') throw new Error('全队尚未完成能力选择');
   const layer = run.layer + 1;
   const enemy = createEndlessEnemy(run, layer);
+  const encounter = getEndlessStarEncounter(run, layer);
   const logs = [];
   const damageByMember = Object.fromEntries(
     Object.keys(run.members).map((id) => [id, 0])
@@ -2335,6 +2439,21 @@ export function resolveEndlessLayer(run) {
   prepareBattle(run);
   run.__damageTakenByMember = damageTakenByMember;
   run.__counters = counters;
+  if (encounter) {
+    addBattleLog(
+      logs,
+      `劫途锁定【${encounter.shortName}】，${encounter.skyName}笼罩战场；危险：${encounter.risk}，奖励倍率×${encounter.rewardMultiplier.toFixed(2)}。`
+    );
+    if (encounter.entryHpCostPct > 0) {
+      for (const member of Object.values(run.members)) {
+        if (!member.alive) continue;
+        const maxHp = calculateMemberStats(member, run).maxHp;
+        const cost = Math.max(1, Math.round(maxHp * encounter.entryHpCostPct));
+        member.hp = Math.max(1, member.hp - cost);
+      }
+      addBattleLog(logs, '逆命祭坛吞噬全队10%最大生命，献祭已经无法撤回。');
+    }
+  }
   addBattleLog(
     logs,
     `第${layer}层·${enemy.worldName}：${enemy.name}降临（${enemy.trait}；队伍修正+${Math.round(
@@ -2448,9 +2567,13 @@ export function resolveEndlessLayer(run) {
       layer
     );
     layerReward = finishVictory(run, enemy, layer);
+    if (layerReward.starReward?.description)
+      addBattleLog(logs, `劫星回响：${layerReward.starReward.description}。`);
+    completeEndlessStarNode(run, layer, true);
     if (enemy.stage === 'boss') beginCheckpoint(run, layer);
     else setPendingChoices(run, layer + 1);
   } else {
+    completeEndlessStarNode(run, layer, false);
     for (const member of Object.values(run.members)) {
       member.alive = false;
       member.hp = 0;
@@ -2518,6 +2641,7 @@ export function resolveEndlessLayer(run) {
     enemyCount: enemy.monsterCount,
     enemyUnitMaxHp: enemy.unitMaxHp,
     enemyTeamScale: enemy.teamScale,
+    starRoute: enemy.starNode,
     victory,
     rounds,
     enemyRemainingHp: enemy.hp,

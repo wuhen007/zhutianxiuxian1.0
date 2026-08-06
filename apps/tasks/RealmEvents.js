@@ -22,6 +22,7 @@ import {
 } from '../../model/realmEventClock.js';
 import { createBlackMarketStock, createWhiteBeardStock } from '../../model/realmMerchant.js';
 import {
+    CONTESTABLE_INNATE_TREASURE_NAMES,
     INNATE_TREASURE_NAMES,
     readInnateTreasureState
 } from '../../model/innateTreasure.js';
@@ -33,6 +34,7 @@ import {
     joinTreasureContest,
     performTreasureTrial,
     placeTreasureDaoHeart,
+    registerTianjiTreasureEvent,
     settleTreasureContest
 } from '../../model/innateTreasureContest.js';
 import {
@@ -215,8 +217,10 @@ export class RealmEvents {
     saveEventConfig(config) {
         try {
             fs.writeFileSync(this.eventConfigPath, JSON.stringify(config, null, 4), 'utf8');
+            return true;
         } catch (e) {
             console.error("保存事件配置失败:", e);
+            return false;
         }
     }
     
@@ -299,7 +303,9 @@ export class RealmEvents {
     /** ============ 大事件类型定义 ============ */
     
     /** 先天灵宝出世事件 */
-    async treasureAppearEvent(eraIndex) {
+    async treasureAppearEvent(eraIndex, options = {}) {
+        const random = options.random || Math.random;
+        const excludedNames = new Set(options.excludeNames || []);
         const treasureDefinitions = [
             { name: "混沌珠", desc: "内含混沌，可开天辟地", rarity: "至宝", power: 15 },
             { name: "太极图", desc: "阴阳轮转，道法自然", rarity: "至宝", power: 15 },
@@ -315,16 +321,18 @@ export class RealmEvents {
         ];
         const owners = readInnateTreasureState().owners || {};
         const treasures = treasureDefinitions.filter(treasure =>
-            INNATE_TREASURE_NAMES.includes(treasure.name) && !owners[treasure.name]
+            INNATE_TREASURE_NAMES.includes(treasure.name) &&
+            !owners[treasure.name] &&
+            !excludedNames.has(treasure.name)
         );
         if (!treasures.length) return null;
-        const treasure = treasures[Math.floor(Math.random() * treasures.length)];
-        const destination = createRealmEventLocation();
+        const treasure = treasures[Math.floor(random() * treasures.length)];
+        const destination = createRealmEventLocation({ random });
         if (!destination) return null;
         
         // 获取一个幸运玩家
-        const luckyPlayer = await this.getRandomPlayer();
-        const witnessCount = Math.floor(Math.random() * 5) + 3;
+        const luckyPlayer = options.skipLuckyPlayer ? null : await this.getRandomPlayer();
+        const witnessCount = Math.floor(random() * 5) + 3;
         const witnessMsg = luckyPlayer ? `传闻${luckyPlayer.player.名号}曾在附近出没...` : "各方势力蠢蠢欲动";
         
         const timestamp = Date.now();
@@ -918,7 +926,7 @@ export class RealmEvents {
             let result;
             switch (eventType) {
                 case 'treasure':
-                    result = await this.treasureAppearEvent(eraIndex);
+                    result = await this.treasureAppearEvent(eraIndex, { random });
                     break;
                 case 'merchant':
                     result = await this.merchantVisitEvent(eraIndex, random);
@@ -1047,6 +1055,46 @@ export class RealmEvents {
                 random
             }
         );
+    }
+
+    /** 购买先天灵宝天机后，强行唤醒一件仍在蛰伏的未认主至宝。 */
+    async triggerTreasureFromTianji(invoker = {}, options = {}) {
+        try {
+            const random = options.random || Math.random;
+            const config = this.readEventConfig();
+            if (!config.enableEvents) return { ok: false, reason: 'disabled' };
+
+            const now = Date.now();
+            const activeEvents = (config.activeEvents || []).filter(event =>
+                !event.expiresAt || Number(event.expiresAt) > now || hasPendingEventSettlement(event)
+            );
+            const activeTreasureNames = new Set(activeEvents
+                .filter(event => event.type === 'treasureAppear' && event.contest?.status !== 'settled')
+                .map(event => event.treasure?.name)
+                .filter(Boolean));
+            const owners = readInnateTreasureState().owners || {};
+            const unclaimed = CONTESTABLE_INNATE_TREASURE_NAMES.filter(name => !owners[name]);
+            if (!unclaimed.length) return { ok: false, reason: 'all_claimed' };
+            if (unclaimed.every(name => activeTreasureNames.has(name))) {
+                return { ok: false, reason: 'all_manifested' };
+            }
+
+            const result = await this.treasureAppearEvent(0, {
+                excludeNames: activeTreasureNames,
+                skipLuckyPlayer: true,
+                random
+            });
+            if (!result?.eventData?.plane || !result.eventData.coordinate) {
+                return { ok: false, reason: 'failed' };
+            }
+
+            const registered = registerTianjiTreasureEvent(config, activeEvents, result, invoker);
+            if (!this.saveEventConfig(config)) return { ok: false, reason: 'failed' };
+            return registered;
+        } catch (error) {
+            console.error('先天灵宝天机引动至宝失败:', error);
+            return { ok: false, reason: 'failed' };
+        }
     }
 
     async broadcastEvent(message) {

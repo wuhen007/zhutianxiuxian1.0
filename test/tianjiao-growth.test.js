@@ -11,6 +11,7 @@ import {
   getTianjiaoTraceReach,
   getTianjiaoBreakthroughChance,
   getTianjiaoImprovementChance,
+  getTianjiaoRealmName,
   improveTianjiao,
   isTianjiaoHealing,
   isTianjiaoBreakthroughYear,
@@ -63,6 +64,27 @@ function sequenceRandom(...values) {
   let index = 0;
   return () => values[index++] ?? 0;
 }
+
+test('天骄展示境界取秘境与仙古字段中的最高者', () => {
+  const secretLevels = [{ level_id: 12, level: '仙台秘境——圣人' }];
+  const ancientLevels = [{ level_id: 13, level: '斩我境' }];
+
+  assert.equal(getTianjiaoRealmName(
+    { 境界: '旧境界', mijinglevel_id: 12, xiangulevel_id: 1 },
+    secretLevels,
+    ancientLevels,
+  ), '仙台秘境——圣人');
+  assert.equal(getTianjiaoRealmName(
+    { 境界: '旧境界', mijinglevel_id: 1, xiangulevel_id: 13 },
+    secretLevels,
+    ancientLevels,
+  ), '斩我境');
+  assert.equal(getTianjiaoRealmName(
+    { 境界: '无妄真劫境', mijinglevel_id: 1, xiangulevel_id: 1 },
+    secretLevels,
+    ancientLevels,
+  ), '无妄真劫境');
+});
 
 test('天骄每五千年尝试证道、每三千年尝试自强', () => {
   assert.equal(isTianjiaoBreakthroughYear(0), false);

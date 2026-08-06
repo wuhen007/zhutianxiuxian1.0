@@ -9,6 +9,7 @@ import {
   performTreasureTrial,
   placeTreasureDaoHeart,
   rankTreasureContest,
+  registerTianjiTreasureEvent,
   settleTreasureContest,
 } from '../model/innateTreasureContest.js';
 
@@ -88,4 +89,24 @@ test('封印线索随全服破解进度显露且结算结果固定', () => {
   assert.equal(first.winner.qq, '10003');
   assert.deepEqual(second.rankings, first.rankings);
   assert.equal(second.alreadySettled, true);
+});
+
+test('购买天机生成的至宝会登记为新的活跃位面事件', () => {
+  const config = { eventHistory: [], activeEvents: [] };
+  const result = registerTianjiTreasureEvent(config, [], {
+    eventData: {
+      type: 'treasureAppear',
+      treasure: { name: '混沌珠' },
+      plane: '遮天位面',
+      coordinate: { x: 227, y: 116 },
+    },
+    message: '至宝出世',
+  }, { qq: '10001', name: '问道者' });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.eventData.source, 'tianji');
+  assert.equal(result.eventData.awakenedBy.name, '问道者');
+  assert.equal(config.activeEvents.length, 1);
+  assert.equal(config.eventHistory[0].treasure.name, '混沌珠');
+  assert.match(result.message, /令一件蛰伏于诸天的先天至宝显化/);
 });

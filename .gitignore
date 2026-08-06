@@ -27,3 +27,9 @@ defSet/
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 
+# WorkBuddy 本机工具记忆（不入库）
+.workbuddy/
+
+# 嵌套残留副本（非项目本体）
+plugins/
+

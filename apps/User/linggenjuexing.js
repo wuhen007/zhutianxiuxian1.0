@@ -884,7 +884,7 @@ async supremePathStatus(e) {
         trial ? `当前试炼：${trial.名称} ${trial.胜场}/${trial.目标}` : '当前试炼：无',
         nextMissing.length ? `下一阶段尚缺：${nextMissing.join('、')}` : path.阶段 < 3 ? '下一阶段条件已经满足' : '至尊骨主线已经圆满',
         '',
-        '可用指令：#斩骨涅槃、#参悟至尊骨、#参悟涅槃至尊骨、#舍骨入血、#至尊试炼、#孕育仙骨、#重瞳开天、#瞳骨合一',
+        '可用指令：#斩骨、#斩骨涅槃、#参悟至尊骨、#参悟涅槃至尊骨、#舍骨入血、#至尊试炼、#孕育仙骨、#重瞳开天、#瞳骨合一',
     ].join('\n'));
 }
 
@@ -892,6 +892,7 @@ async startSupremeNirvana(e) {
     const ctx = await this.getSupremeContext(e);
     if (!ctx) return false;
     const { usr_qq, player, path } = ctx;
+    if (e.msg === '#斩骨' && path.阶段 === 2) return this.startSupremeUltimate(e, ctx);
     if (path.阶段 !== 1) return e.reply('只有天生至尊可以开启第一次斩骨涅槃。');
     if (path.试炼) return e.reply(`你正在进行${path.试炼.名称}，请使用 #至尊试炼。`);
 
@@ -915,8 +916,8 @@ async startSupremeNirvana(e) {
     ].join('\n'));
 }
 
-async startSupremeUltimate(e) {
-    const ctx = await this.getSupremeContext(e);
+async startSupremeUltimate(e, existingContext = null) {
+    const ctx = existingContext || await this.getSupremeContext(e);
     if (!ctx) return false;
     const { usr_qq, player, path } = ctx;
     if (path.阶段 !== 2) return e.reply('只有涅槃·至尊可以开启舍骨入血。');

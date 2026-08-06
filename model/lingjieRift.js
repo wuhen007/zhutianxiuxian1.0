@@ -1,3 +1,5 @@
+import { isDaofaActive } from './daofa.js';
+
 export const RIFT_DURATION_MS = 6 * 60 * 60 * 1000;
 export const RIFT_EXPLORE_MS = 15 * 60 * 1000;
 export const RIFT_MIN_EXPLORE_MS = 60 * 1000;
@@ -110,7 +112,7 @@ export function calculateRiftExploreDuration(player, minggeReductionMs = 0) {
     messages.push('天璇步法踏过乱流：-1分钟');
   }
 
-  if (Number(player?.daofaxianshu) === 2) {
+  if (isDaofaActive(player)) {
     reductionMs += 2 * 60 * 1000;
     messages.push('道法仙术梳理空间法则：-2分钟');
   }

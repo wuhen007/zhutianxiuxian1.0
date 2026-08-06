@@ -67,6 +67,15 @@ function findRealm(levels, levelId) {
   return (levels || []).find(realm => Number(realm?.level_id) === Number(levelId)) || {};
 }
 
+export function getTianjiaoRealmName(tianjiao, secretLevels = [], ancientLevels = []) {
+  const secretLevel = Number(tianjiao?.mijinglevel_id) || 1;
+  const ancientLevel = Number(tianjiao?.xiangulevel_id) || 1;
+  if (secretLevel === 1 && ancientLevel === 1) return tianjiao?.境界 || '普通人';
+
+  const levels = secretLevel >= ancientLevel ? secretLevels : ancientLevels;
+  return findRealm(levels, Math.max(secretLevel, ancientLevel)).level || tianjiao?.境界 || '未知境界';
+}
+
 function realmStats(realm) {
   return {
     攻击: Number(realm?.基础攻击) || 0,

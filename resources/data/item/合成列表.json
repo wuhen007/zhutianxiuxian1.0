@@ -1440,5 +1440,17 @@
       { "name": "星图", "class": "道具", "amount": 1 },
       { "name": "符纸", "class": "道具", "amount": 20 }
     ]
+  },
+  {
+    "name": "时光令",
+    "class": "道具",
+    "amount": 1,
+    "传承要求": "时光令配方",
+    "materials": [
+      { "name": "光阴石", "class": "道具", "amount": 2 },
+      { "name": "世界石", "class": "材料", "amount": 1 },
+      { "name": "天外清风", "class": "材料", "amount": 1 },
+      { "name": "符纸", "class": "道具", "amount": 10 }
+    ]
   }
 ]

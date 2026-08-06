@@ -17,7 +17,7 @@ test('仙界天骄逍遥子的设定、掉落与传承完整可用', () => {
 
   const xiaoyaozi = bosses.find(item => item.名号 === '逍遥子');
   assert.equal(xiaoyaozi?.位面, 1);
-  assert.equal(xiaoyaozi?.境界, '真仙境圆满');
+  assert.equal(xiaoyaozi?.境界, '金仙境');
   assert.equal(xiaoyaozi?.身份, '无门无派，独行诸天');
   assert.equal(xiaoyaozi?.灵根?.name, '鲲鹏道胎');
   assert.equal(xiaoyaozi?.首次闪避, true);

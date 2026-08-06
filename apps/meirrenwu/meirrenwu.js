@@ -17,7 +17,7 @@ import {
     wasDailyTaskAcceptedToday,
 } from '../../model/dailyTask.js';
 import { getMinggeEffects, grantMinggePotential } from '../../model/mingge.js';
-import { recordWenXianTrial } from '../../model/wenxianling.js';
+import { recordWenXianTaskProgress, recordWenXianTrial } from '../../model/wenxianling.js';
 import { WenXianLing } from '../WenXianLing/WenXianLing.js';
 import {
     acquireRedisLock,
@@ -208,11 +208,15 @@ export class meirrenwu extends plugin {
                 potentialBase,
             );
             const passTrial = recordWenXianTrial(rewardPlayer, 'daily');
+            const weeklyTask = recordWenXianTaskProgress(rewardPlayer, 'dailyTask');
             await Write_player(usr_qq, rewardPlayer);
             renwu[i].renwu = 1;
             m += `你已完成全部每日任务，仙道潜力 +${potentialGain}，可以领取奖励了！`;
             if (passTrial.changed) {
                 m += `\n问仙试炼：每日任务 ${passTrial.trial.dailyTasks}/7。`;
+            }
+            if (weeklyTask.changed) {
+                m += `\n每周任务：每日任务 ${weeklyTask.weekly.progress.dailyTask}/5。`;
             }
         }
         //这里是经验升级的地方，你如果要是需要改记得给底下还有俩也改了，一般来说不用改，要的挺多的，等级巨难升

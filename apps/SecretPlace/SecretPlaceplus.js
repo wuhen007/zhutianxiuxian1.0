@@ -1,6 +1,7 @@
 import fs from 'fs';
 import { plugin, verc, data } from '../../api/api.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
+import { isDaofaActive } from '../../model/daofa.js';
 import {
   Read_player,
   isNotNull,
@@ -1565,7 +1566,7 @@ async function calculateTimeReductionForAddiction(player, i) {
     }
 
     // 道法仙术效果（独立触发）
-    if (player.daofaxianshu == 2) {
+    if (isDaofaActive(player)) {
         const reduction = 2 * 10 * i;
         timeReduction += reduction;
         msgs.push(`【道法仙术】天地道则加持，时间减少${reduction}分钟`);

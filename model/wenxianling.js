@@ -13,9 +13,140 @@ export const WENXIAN_CLUE_COST = 3_000_000_000;
 export const WENXIAN_DUNGEON_CLUE_CHANCE = 0.01;
 export const WENXIAN_DUNGEON_CLUE_PITY = 30;
 export const WENXIAN_DAILY_TASK_TARGET = 7;
+export const WENXIAN_DAILY_QUEST_EXP = 200;
+export const WENXIAN_WEEKLY_TASK_EXP = 500;
+export const WENXIAN_DAILY_QUEST_GOALS = Object.freeze({
+  spiritHeart: 30,
+  tianjiao: 1,
+  dungeon: 3,
+});
+export const WENXIAN_WEEKLY_TASK_GOALS = Object.freeze({
+  dailyTask: 5,
+  tianjiao: 5,
+  stoneMarket: 5,
+  spiritHeart: 100,
+  dungeon: 20,
+});
 
 function toNonNegativeInteger(value) {
   return Math.max(0, Math.floor(Number(value) || 0));
+}
+
+export function getWenXianWeekKey(now = new Date()) {
+  const date = new Date(`${getShanghaiDateKey(now)}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeTaskProgress(progress, goals) {
+  return Object.fromEntries(Object.entries(goals).map(([type, goal]) => [
+    type,
+    Math.min(goal, toNonNegativeInteger(progress?.[type])),
+  ]));
+}
+
+export function ensureWenXianTaskState(player, options = {}) {
+  const state = ensureWenXianState(player);
+  if (!state) return null;
+
+  const dateKey = options.dateKey || getShanghaiDateKey(options.now);
+  const weekKey = options.weekKey || getWenXianWeekKey(options.now);
+  const tasks = state.tasks && typeof state.tasks === 'object' ? state.tasks : {};
+
+  const oldDaily = tasks.daily && tasks.daily.dateKey === dateKey ? tasks.daily : {};
+  const oldWeekly = tasks.weekly && tasks.weekly.weekKey === weekKey ? tasks.weekly : {};
+  tasks.daily = {
+    dateKey,
+    progress: normalizeTaskProgress(oldDaily.progress, WENXIAN_DAILY_QUEST_GOALS),
+    rewarded: Object.fromEntries(Object.keys(WENXIAN_DAILY_QUEST_GOALS).map(type => [
+      type,
+      Boolean(oldDaily.rewarded?.[type]),
+    ])),
+  };
+  tasks.weekly = {
+    weekKey,
+    progress: normalizeTaskProgress(oldWeekly.progress, WENXIAN_WEEKLY_TASK_GOALS),
+    claimed: Boolean(oldWeekly.claimed),
+  };
+  state.tasks = tasks;
+  return tasks;
+}
+
+export function isWenXianWeeklyTaskComplete(player, options = {}) {
+  const weekly = ensureWenXianTaskState(player, options)?.weekly;
+  return Boolean(weekly && Object.entries(WENXIAN_WEEKLY_TASK_GOALS)
+    .every(([type, goal]) => weekly.progress[type] >= goal));
+}
+
+export function recordWenXianTaskProgress(player, type, amount = 1, options = {}) {
+  const tasks = ensureWenXianTaskState(player, options);
+  const gain = toNonNegativeInteger(amount);
+  if (!tasks || gain <= 0) return { changed: false, reason: 'invalid' };
+
+  let changed = false;
+  let dailyCompleted = false;
+  let expResult = null;
+  const dailyGoal = WENXIAN_DAILY_QUEST_GOALS[type];
+  if (dailyGoal) {
+    const before = tasks.daily.progress[type];
+    tasks.daily.progress[type] = Math.min(dailyGoal, before + gain);
+    changed ||= tasks.daily.progress[type] !== before;
+    if (tasks.daily.progress[type] >= dailyGoal && !tasks.daily.rewarded[type]) {
+      tasks.daily.rewarded[type] = true;
+      dailyCompleted = true;
+      expResult = addWenXianExp(player, WENXIAN_DAILY_QUEST_EXP);
+    }
+  }
+
+  const weeklyGoal = WENXIAN_WEEKLY_TASK_GOALS[type];
+  if (weeklyGoal) {
+    const before = tasks.weekly.progress[type];
+    tasks.weekly.progress[type] = Math.min(weeklyGoal, before + gain);
+    changed ||= tasks.weekly.progress[type] !== before;
+  }
+
+  return {
+    changed,
+    type,
+    dailyCompleted,
+    expResult,
+    daily: tasks.daily,
+    weekly: tasks.weekly,
+    weeklyReady: isWenXianWeeklyTaskComplete(player, options),
+  };
+}
+
+export function calculateWenXianWeeklyRewards(player, random = Math.random) {
+  const level = toNonNegativeInteger(player?.level_id);
+  const physique = toNonNegativeInteger(player?.Physique_id);
+  const mijing = toNonNegativeInteger(player?.mijinglevel_id);
+  const xiangu = toNonNegativeInteger(player?.xiangulevel_id);
+  const realmTotal = mijing + xiangu;
+  return {
+    xiuwei: Math.floor(2000 + 10000 * level * level * mijing * xiangu * (2 + random())),
+    xueqi: Math.floor(2000 + 10000 * physique * physique * mijing * xiangu * (2 + random())),
+    lingshi: 10_000_000 * realmTotal,
+    yuanshi: 10_000_000 * realmTotal,
+    wenxianExp: WENXIAN_WEEKLY_TASK_EXP,
+  };
+}
+
+export function claimWenXianWeeklyTask(player, options = {}) {
+  const tasks = ensureWenXianTaskState(player, options);
+  if (!tasks) return { ok: false, reason: 'invalid' };
+  if (tasks.weekly.claimed) return { ok: false, reason: 'claimed', weekly: tasks.weekly };
+  if (!isWenXianWeeklyTaskComplete(player, options)) {
+    return { ok: false, reason: 'incomplete', weekly: tasks.weekly };
+  }
+
+  const rewards = calculateWenXianWeeklyRewards(player, options.random || Math.random);
+  player.修为 = (Number(player.修为) || 0) + rewards.xiuwei;
+  player.血气 = (Number(player.血气) || 0) + rewards.xueqi;
+  player.灵石 = (Number(player.灵石) || 0) + rewards.lingshi;
+  player.源石 = (Number(player.源石) || 0) + rewards.yuanshi;
+  const expResult = addWenXianExp(player, rewards.wenxianExp);
+  tasks.weekly.claimed = true;
+  return { ok: true, rewards, expResult, weekly: tasks.weekly };
 }
 
 export function isWenXianEligible(player) {

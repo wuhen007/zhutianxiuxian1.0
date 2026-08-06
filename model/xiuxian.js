@@ -58,6 +58,12 @@ import {
 } from './weimianTravel.js';
 import { calculateEquippedStats } from './equipmentStats.js';
 import { hasSupremeInnate } from './supremePath.js';
+import { getTianjiaoRealmName } from './tianjiaoGrowth.js';
+import {
+  consumeDeletedFateAction,
+  resolveSuLingFatalFate,
+  transferSuLingFateEffects,
+} from './suLing.js';
 
 /**
  * 获取机器人类型
@@ -2443,6 +2449,7 @@ export async function get_wmtj_img(e) {
     const formattedTianjiaoItems = tianjiaoItems.map(tianjiao => {
         return {
             ...tianjiao,
+            境界: getTianjiaoRealmName(tianjiao, data.Levelmijing_list, data.xiangujinshi_list),
             攻击: bigNumberTransform(tianjiao.攻击),
             防御: bigNumberTransform(tianjiao.防御),
             血量: bigNumberTransform(tianjiao.血量),
@@ -2826,7 +2833,9 @@ export async function get_player_img(e) {
     player.灵根 = await get_random_talent();
   }
   if (player.天资等级 == null || player.天资等级 == undefined) {
-    player.天资等级 = await  get_random_aptitude();
+    const aptitude = await get_random_aptitude();
+    player.天资等级 = aptitude.grade;
+    player.天资评价 = aptitude.evaluation;
   }
   data.setData('player', usr_qq, player);
   await player_efficiency(usr_qq); // 注意这里刷新了修炼效率提升
@@ -5517,7 +5526,9 @@ export async function getPlayerAptitudeData(player) {
     };
 }
 // 获取随机天资等级
-async function get_random_aptitude() {
+async function get_random_aptitude(options = {}) {
+  const allowWuhuaRushi = options.allowWuhuaRushi === true;
+  const random = options.random || Math.random;
   // 定义天资等级及其概率
   const aptitudeGrades = {
     '无演无尽': 0.00001,   // 0.001% (传说中的存在)
@@ -5526,11 +5537,11 @@ async function get_random_aptitude() {
     '旷世奇才': 0.005,     // 0.5% (万年难遇)
     '天纵之资': 0.01,      // 1% (百年难遇)
     '超凡资质': 0.05,      // 5% (宗门核心弟子级别)
-    '平庸之资': 0.78379,   // 78.379% (普通凡人)
+    '平庸之资': allowWuhuaRushi ? 0.77888 : 0.77889,
     '先天不足': 0.1,       // 10% (修炼困难)
     '天弃之人': 0.05,       // 5% (被天道诅咒)
-    '生而痴傻': 0.005,       // 0.5% (几乎被磨灭资质)
-    '无化如是': 0.001,       // 0.1% (无用之人)
+    '生而愚痴': 0.005,       // 0.5% (几乎被磨灭资质)
+    ...(allowWuhuaRushi ? { '无化如是': 0.00001 } : {}), // 仅开局可得，十万分之一
   };
 
   // 计算总概率确保为1
@@ -5540,7 +5551,7 @@ async function get_random_aptitude() {
   }
 
   // 生成随机数决定天资等级
-  const rand = Math.random();
+  const rand = random();
   let cumulative = 0;
   let selectedGrade = '平庸之资';
 
@@ -5563,7 +5574,7 @@ async function get_random_aptitude() {
     '平庸之资': '资质平平，勉勉强强',
     '先天不足': '先天有缺，修炼事倍功半',
     '天弃之人': '被天道抛弃，修炼必遭反噬，但仍有希望',
-    '生而痴傻': '天生愚笨，修炼难如登天',
+    '生而愚痴': '天生愚笨，修炼难如登天',
     '无化如是': '无用之人，命中注定难有所作为'
   };
 
@@ -8591,6 +8602,17 @@ let B_speed = (B_player.速度 ?? 100)
       return { actual_damage: 0, fenshen_blocked, reversed: true };
     }
 
+    if (source) {
+      const fateSource = source._tahua_master === 'A'
+        ? A_player
+        : source._tahua_master === 'B'
+          ? B_player
+          : source;
+      const fate = resolveSuLingFatalFate(defender, fateSource, actual_damage);
+      if (fate.triggered) msg.push(fate.message);
+      actual_damage = fate.damage;
+    }
+
     defender.当前血量 -= actual_damage;
     if (defender.当前血量 < 0) defender.当前血量 = 0;
 
@@ -8889,6 +8911,15 @@ msg.push(bSpeedMsg);
     msg.push(`${attacker.名号} 元气充盈，抢占先机！[${A_player.名号}:${A_bar}/${ACTION_BAR_MAX}] [${B_player.名号}:${B_bar}/${ACTION_BAR_MAX}]`);
     
     resetActionBar(attackerBar);
+
+    const deletedFateAction = consumeDeletedFateAction(attacker);
+    if (deletedFateAction.skipped) {
+      msg.push(deletedFateAction.message);
+      cnt++;
+      continue;
+    }
+    const fateTransfer = transferSuLingFateEffects(attacker, defender);
+    if (fateTransfer.triggered) msg.push(fateTransfer.message);
 
     if (attacker.当前先天至宝 === '六道轮回盘' && Math.random() < 0.2) {
       pushBackActionBar(defenderBar, Math.floor(ACTION_BAR_MAX * 0.2));
@@ -10092,6 +10123,9 @@ async function zd_battle_team(A_team, B_team, options = {}) {
               t._护盾值 = 0;
             }
           }
+          const aoeFate = resolveSuLingFatalFate(t, attacker, 群攻伤害);
+          if (aoeFate.triggered) attackMsgs.push(aoeFate.message);
+          群攻伤害 = aoeFate.damage;
           t.当前血量 -= 群攻伤害;
           if (t.当前血量 < 0) t.当前血量 = 0;
           attackMsgs.push(`【群攻】${attacker.名号}的余波扫中${t.名号}，造成${bigNumberTransform(群攻伤害)}伤害`);
@@ -10146,17 +10180,29 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       actual_damage = 0;
     }
 
+    const fate = resolveSuLingFatalFate(defender, attacker, actual_damage);
+    if (fate.triggered) attackMsgs.push(fate.message);
+    actual_damage = fate.damage;
+
     defender.当前血量 -= actual_damage;
     if (defender.当前血量 < 0) defender.当前血量 = 0;
 
     // —— 草字剑诀·斩真我：命中后残血斩杀 ——
     if (斩杀阈值 > 0 && defender.当前血量 > 0 && defender.当前血量 <= 斩杀阈值 * defender.血量上限) {
-      defender.当前血量 = 0;
-      attackMsgs.push(`${attacker.名号}一剑「草字剑诀」斩落真我，${defender.名号}气血已衰竭至极，本源被当场斩断！`);
+      const executeFate = resolveSuLingFatalFate(defender, attacker, defender.当前血量);
+      if (executeFate.triggered) attackMsgs.push(executeFate.message);
+      else {
+        defender.当前血量 = 0;
+        attackMsgs.push(`${attacker.名号}一剑「草字剑诀」斩落真我，${defender.名号}气血已衰竭至极，本源被当场斩断！`);
+      }
     }
     if (attacker.当前先天至宝 === '诛仙四剑' && defender.当前血量 > 0 && defender.当前血量 < defender.血量上限 * 0.25) {
-      defender.当前血量 = 0;
-      attackMsgs.push(`【诛仙斩命】${defender.名号}气血低于25%，被直接斩杀！`);
+      const executeFate = resolveSuLingFatalFate(defender, attacker, defender.当前血量);
+      if (executeFate.triggered) attackMsgs.push(executeFate.message);
+      else {
+        defender.当前血量 = 0;
+        attackMsgs.push(`【诛仙斩命】${defender.名号}气血低于25%，被直接斩杀！`);
+      }
     }
 
     // 吸血（批次1：基于实际造成伤害回复，封顶血量上限）
@@ -10261,6 +10307,14 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     const enemies = getAliveEnemies(readyUnit);
     if (enemies.length === 0) break;
+
+    const deletedFateAction = consumeDeletedFateAction(readyUnit);
+    if (deletedFateAction.skipped) {
+      msg.push(deletedFateAction.message);
+      continue;
+    }
+    const fateTransfer = transferSuLingFateEffects(readyUnit, enemies[0]);
+    if (fateTransfer.triggered) msg.push(fateTransfer.message);
 
     if (readyUnit._绝仙流血) {
       const bleedDamage = Math.floor((Number(readyUnit.血量上限) || 0) * 0.2);
@@ -10476,10 +10530,22 @@ export async function tb_battle(players, boss, team) {
         msg.push(`${player.名号}已倒下，无法行动`);
         continue;
       }
+
+      const playerDeletedAction = consumeDeletedFateAction(player);
+      if (playerDeletedAction.skipped) {
+        msg.push(playerDeletedAction.message);
+        continue;
+      }
+      const playerFateTransfer = transferSuLingFateEffects(player, bossCopy);
+      if (playerFateTransfer.triggered) msg.push(playerFateTransfer.message);
       
       // 玩家攻击BOSS
       const result = await calculateAttack(player, bossCopy, cnt, jineng1, jineng2);
       msg.push(...result.msgs);
+
+      const bossFate = resolveSuLingFatalFate(bossCopy, player, result.damage);
+      if (bossFate.triggered) msg.push(bossFate.message);
+      result.damage = bossFate.damage;
       
       // 更新BOSS血量
       bossCopy.当前血量 -= result.damage;
@@ -10487,8 +10553,12 @@ export async function tb_battle(players, boss, team) {
 
       // 草字剑诀·斩真我：命中后残血斩杀
       if (result.斩杀阈值 > 0 && bossCopy.当前血量 > 0 && bossCopy.当前血量 <= result.斩杀阈值 * bossCopy.血量上限) {
-        bossCopy.当前血量 = 0;
-        msg.push(`${player.名号}一剑「草字剑诀」斩落真我，${bossCopy.名号}气血已衰竭至极，本源被当场斩断！`);
+        const executeFate = resolveSuLingFatalFate(bossCopy, player, bossCopy.当前血量);
+        if (executeFate.triggered) msg.push(executeFate.message);
+        else {
+          bossCopy.当前血量 = 0;
+          msg.push(`${player.名号}一剑「草字剑诀」斩落真我，${bossCopy.名号}气血已衰竭至极，本源被当场斩断！`);
+        }
       }
 
       // 更新仇恨值（伤害越高仇恨越高）
@@ -10512,10 +10582,22 @@ export async function tb_battle(players, boss, team) {
     // 选择仇恨目标（仇恨值最高的存活玩家）
     currentTarget = selectTarget(teamData, hatred);
     const targetPlayer = teamData[currentTarget];
+
+    const bossDeletedAction = consumeDeletedFateAction(bossCopy);
+    if (bossDeletedAction.skipped) {
+      msg.push(bossDeletedAction.message);
+      continue;
+    }
+    const bossFateTransfer = transferSuLingFateEffects(bossCopy, targetPlayer);
+    if (bossFateTransfer.triggered) msg.push(bossFateTransfer.message);
     
     // BOSS攻击仇恨目标
     const result = await calculateAttack(bossCopy, targetPlayer, cnt, jineng1, jineng2);
     msg.push(...result.msgs);
+
+    const playerFate = resolveSuLingFatalFate(targetPlayer, bossCopy, result.damage);
+    if (playerFate.triggered) msg.push(playerFate.message);
+    result.damage = playerFate.damage;
     
     // 更新玩家血量
     targetPlayer.当前血量 -= result.damage;
@@ -10523,8 +10605,12 @@ export async function tb_battle(players, boss, team) {
 
     // 草字剑诀·斩真我：BOSS 也可触发残血斩杀
     if (result.斩杀阈值 > 0 && targetPlayer.当前血量 > 0 && targetPlayer.当前血量 <= result.斩杀阈值 * targetPlayer.血量上限) {
-      targetPlayer.当前血量 = 0;
-      msg.push(`${bossCopy.名号}一击斩落真我，${targetPlayer.名号}气血衰竭，本源被当场斩断！`);
+      const executeFate = resolveSuLingFatalFate(targetPlayer, bossCopy, targetPlayer.当前血量);
+      if (executeFate.triggered) msg.push(executeFate.message);
+      else {
+        targetPlayer.当前血量 = 0;
+        msg.push(`${bossCopy.名号}一击斩落真我，${targetPlayer.名号}气血衰竭，本源被当场斩断！`);
+      }
     }
 
     msg.push(`${bossCopy.名号}攻击${targetPlayer.名号}，造成${result.damage}点伤害，${targetPlayer.名号}剩余血量：${targetPlayer.当前血量}`);

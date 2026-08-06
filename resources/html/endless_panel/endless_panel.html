@@ -7,7 +7,7 @@
     <title>{{title}}</title>
   </head>
   <body>
-    <main id="container" class="realm-panel mode-{{mode}}">
+    <main id="container" class="realm-panel mode-{{mode}}" style="zoom: {{renderScale || 1}}">
       <header class="realm-hero">
         <div class="realm-seal" aria-hidden="true"><span>无</span><b>尽</b></div>
         <div class="hero-copy">
@@ -41,6 +41,61 @@
         </div>
         {{/each}}
       </section>
+      {{/if}}
+
+      {{if mode === 'star-map' && starMap}}
+      <section class="star-map-section">
+        <div class="section-heading star-map-heading">
+          <div><span>FATE TRAJECTORY</span><h2>十层因果星轨</h2></div>
+          <b>当前锁定 · {{starMap.selectedName}}</b>
+        </div>
+        <div class="star-track">
+          {{each starMap.rows row}}
+          <div class="star-step {{row.current ? 'is-current' : ''}}">
+            <div class="star-layer"><span>层</span><b>{{row.label}}</b></div>
+            <div class="star-node-stack node-count-{{row.nodes.length}}">
+              {{each row.nodes node}}
+              <div class="star-node node-{{node.statusClass}} {{node.current ? 'is-current' : ''}}">
+                <span class="star-glyph">{{node.visible ? node.symbol : '·'}}</span>
+                <b>{{node.displayName}}</b>
+                <small>{{node.displayWorld}}</small>
+              </div>
+              {{/each}}
+            </div>
+          </div>
+          {{/each}}
+        </div>
+        <div class="seal-strip">
+          {{each starMap.seals seal}}
+          <div><span>{{seal.name}}</span><b>{{seal.value}}</b><small>{{seal.note}}</small></div>
+          {{/each}}
+        </div>
+      </section>
+
+      {{if starMap.options && starMap.options.length}}
+      <section class="star-option-section">
+        <div class="section-heading">
+          <div><span>OBSERVED ROUTES</span><h2>第{{starMap.targetLayer}}层可选劫途</h2></div>
+          <b>队员建议 · 队长定途</b>
+        </div>
+        <div class="star-option-grid option-count-{{starMap.options.length}}">
+          {{each starMap.options option}}
+          <article class="star-option risk-{{option.riskClass}} {{option.selected ? 'is-selected' : ''}}">
+            <div class="star-option-head">
+              <span>0{{option.index}}</span><b>{{option.risk}}</b><i>{{option.symbol}}</i>
+            </div>
+            <h3>{{option.name}}</h3>
+            <p>{{option.description}}</p>
+            <div class="star-reward">{{option.rewardText}}</div>
+            <div class="star-vote"><span>建议 {{option.votes}} 票</span><b>{{option.voters}}</b></div>
+          </article>
+          {{/each}}
+        </div>
+        <div class="star-command-row">
+          <span>#星图情报{{starMap.commandRange}}</span><span>#星图建议{{starMap.commandRange}}</span><b>#星图定途{{starMap.commandRange}}</b>
+        </div>
+      </section>
+      {{/if}}
       {{/if}}
 
       {{if mode === 'help'}}

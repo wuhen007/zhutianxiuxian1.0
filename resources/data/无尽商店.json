@@ -87,7 +87,7 @@
       "category": "天机",
       "rarity": "禁忌",
       "price": 5000,
-      "description": "获知一件尚未认主的先天至宝消息",
+      "description": "强行推演天机，令一件尚未认主且仍在蛰伏的先天至宝显化，并获知其精确坐标",
       "dailyLimit": 1,
       "action": "clue"
     },
@@ -147,13 +147,24 @@
       "action": "item"
     },
     {
-      "id": 13,
+      "id": 14,
       "name": "超越宝盒",
       "itemClass": "盒子",
       "category": "神迹",
       "rarity": "禁忌",
       "price": 1500,
       "description": "传说是多元宇宙中如梦道祖投影而来的机缘",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 15,
+      "name": "造化本源",
+      "itemClass": "道具",
+      "category": "炼器",
+      "rarity": "禁忌",
+      "price": 3000,
+      "description": "与时光令共同用于一键完美开炉",
       "dailyLimit": 0,
       "action": "item"
     }

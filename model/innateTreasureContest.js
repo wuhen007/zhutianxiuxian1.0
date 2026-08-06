@@ -106,6 +106,27 @@ export function createTreasureContest(treasureName, now = Date.now()) {
   };
 }
 
+export function registerTianjiTreasureEvent(config, activeEvents, result, invoker = {}) {
+  const event = result.eventData;
+  event.source = 'tianji';
+  event.interaction = 'treasure';
+  event.participantQqs ||= [];
+  event.awakenedBy = {
+    qq: String(invoker.qq || ''),
+    name: String(invoker.name || invoker.qq || '一位无名修士'),
+  };
+  result.message = [
+    '【先天灵宝天机·扰动诸天】',
+    `${event.awakenedBy.name}以劫境道痕推演天机，令一件蛰伏于诸天的先天至宝显化！`,
+    '',
+    result.message,
+  ].join('\n');
+  config.eventHistory.push(event);
+  config.activeEvents = [...activeEvents, event];
+  if (config.eventHistory.length > 100) config.eventHistory = config.eventHistory.slice(-100);
+  return { ok: true, ...result };
+}
+
 export function joinTreasureContest(contest, qq, name, now = Date.now()) {
   if (!contest || contest.status !== 'open') return { ok: false, reason: 'closed' };
   const key = String(qq);
