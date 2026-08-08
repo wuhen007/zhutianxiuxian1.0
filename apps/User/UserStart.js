@@ -51,6 +51,7 @@ import {
   drawOpeningOmen,
   formatOpeningOmenMessage,
 } from '../../model/openingOmen.js';
+import { reserveDailyAction } from '../../model/dailyAction.js';
 export class UserStart extends plugin {
   constructor() {
     super({
@@ -628,6 +629,10 @@ async daily_lottery(e) {
         // 比较今天是否已经进行过天道赐福
         if (lastCifuDate && today.Y == lastCifuDate.Y && today.M == lastCifuDate.M && today.D == lastCifuDate.D) {
             e.reply(`你今日已经进行过天道赐福了`);
+            return;
+        }
+        if (!await reserveDailyAction(redis, usr_qq, 'tiandao', now_Time)) {
+            e.reply('天道赐福正在处理或今日已经领取');
             return;
         }
     
@@ -1400,6 +1405,10 @@ async daily_gift(e) {
         e.reply(img);
         return false;
     }
+    if (!await reserveDailyAction(redis, usr_qq, 'sign', nowTime)) {
+        e.reply('今日签到正在处理或已经完成');
+        return false;
+    }
     
     let Sign_Yesterday = Yesterday.Y == lastsign_time.Y && Yesterday.M == lastsign_time.M && Yesterday.D == lastsign_time.D;
     
@@ -1508,6 +1517,10 @@ async daofa_gift(e) {
   // 如果今日已签到
   if (lastSignStr === todayStr) {
     e.reply(`今日已经道法赐福过了`);
+    return false;
+  }
+  if (!await reserveDailyAction(redis, usr_qq, 'daofa', nowTime)) {
+    e.reply('道法赐福正在处理或今日已经完成');
     return false;
   }
   
@@ -1632,5 +1645,4 @@ async function recordMonthlySignData(player, year, month, day) {
         }
     }
 }
-
 

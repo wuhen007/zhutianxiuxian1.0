@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
   <meta http-equiv="content-type" content="text/html;charset=utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>仙古秘境·神识地图</title>
   <link rel="shortcut icon" href="#" />
   <style>
@@ -10,9 +11,23 @@
       src: url('{{pluResPath}}/font/tttgbnumber.ttf') format('truetype');
     }
 
+    @font-face {
+      font-family: 'Dongfang';
+      src: url('{{pluResPath}}/font/AlimamaDongFangDaKai-Regular.ttf') format('truetype');
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'ZhongSong';
+      src: url('{{pluResPath}}/font/华文中宋.TTF') format('truetype');
+      font-display: swap;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
+      --cell-size: 52px;
+      --axis-size: 22px;
       background: radial-gradient(ellipse at 20% 30%, #130c2a 0%, #06091a 60%, #020408 100%);
       color: #d4c8f0;
       font-family: 'Microsoft YaHei', 'PingFang SC', serif;
@@ -59,22 +74,33 @@
       margin-top: 2px;
     }
 
-    /* ===================== 主体两栏 ===================== */
+    /* ===================== 地图置顶，信息置底 ===================== */
     .main-layout {
       display: flex;
+      flex-direction: column;
       gap: 14px;
-      align-items: flex-start;
+      align-items: stretch;
     }
 
-    /* ===================== 左侧地图区 ===================== */
+    /* ===================== 地图区 ===================== */
     .map-panel {
-      flex: 0 0 auto;
+      width: 100%;
       background: linear-gradient(135deg, #0a0f20 0%, #070c1a 100%);
       border: 1px solid rgba(100, 60, 200, 0.4);
       border-radius: 10px;
       padding: 14px;
       box-shadow: 0 0 30px rgba(80, 40, 160, 0.2), inset 0 0 60px rgba(0,0,0,0.3);
     }
+    .map-stage {
+      display: flex;
+      justify-content: center;
+      width: 100%;
+    }
+    .map-board {
+      display: inline-flex;
+      flex-direction: column;
+    }
+    .map-body { display: flex; }
     .map-title {
       text-align: center;
       font-size: 13px;
@@ -109,8 +135,8 @@
 
     /* 格子基础样式 */
     .cell {
-      width: 40px;
-      height: 40px;
+      width: var(--cell-size);
+      height: var(--cell-size);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -161,6 +187,17 @@
       background: radial-gradient(circle, #fff7a0 0%, #ffd700 40%, #ff9500 80%, rgba(255,120,0,0) 100%);
       box-shadow: 0 0 10px 4px rgba(255,200,0,0.7), 0 0 20px 8px rgba(255,150,0,0.3);
       display: block;
+    }
+
+    /* 同图修士 — 冷白剑芒 */
+    .cell-rival {
+      background: radial-gradient(circle, rgba(210, 235, 255, 0.18) 0%, #0c0f22 72%);
+    }
+    .cell-rival::after {
+      content: '修';
+      font-size: 14px;
+      color: #d9f2ff;
+      text-shadow: 0 0 7px rgba(120, 210, 255, 0.95), 0 0 15px rgba(80, 150, 255, 0.55);
     }
 
     /* 机缘 — 蓝紫色 */
@@ -251,32 +288,39 @@
     .axis-row {
       display: flex;
     }
-    .axis-corner { width: 20px; height: 20px; }
+    .axis-corner { width: var(--axis-size); height: var(--axis-size); }
     .axis-x {
-      width: 40px;
-      height: 20px;
+      width: var(--cell-size);
+      height: var(--axis-size);
       text-align: center;
       font-size: 10px;
       color: #3d3466;
-      line-height: 20px;
+      line-height: var(--axis-size);
     }
     .axis-y {
-      width: 20px;
-      height: 40px;
+      width: var(--axis-size);
+      height: var(--cell-size);
       text-align: right;
       font-size: 10px;
       color: #3d3466;
-      line-height: 40px;
+      line-height: var(--cell-size);
       padding-right: 3px;
     }
 
-    /* ===================== 右侧面板 ===================== */
+    /* ===================== 地图下方信息区 ===================== */
     .info-panel {
-      flex: 1;
       display: flex;
       flex-direction: column;
       gap: 10px;
+      width: 100%;
       min-width: 0;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      align-items: start;
     }
 
     .panel-card {
@@ -299,7 +343,7 @@
     /* 统计数据 */
     .stats-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 8px;
     }
     .stat-item {
@@ -445,8 +489,8 @@
     /* 图例 */
     .legend-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 5px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px 12px;
     }
     .legend-item {
       display: flex;
@@ -467,6 +511,24 @@
       flex-shrink: 0;
     }
 
+    .command-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px 16px;
+    }
+    .command-item {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 8px;
+      color: #5a4a88;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+    .command-item span:first-child {
+      color: #9980cc;
+      white-space: nowrap;
+    }
+
     /* 底栏 */
     .footer {
       margin-top: 12px;
@@ -475,55 +537,595 @@
       color: #2e2550;
       letter-spacing: 1px;
     }
+
+    /* ===================== 山河秘卷正式主题 ===================== */
+    body {
+      --canvas: #dce5e6;
+      --paper: #f8f4e6;
+      --paper-soft: #e8e4d7;
+      --ink: #25343a;
+      --muted: #5d7077;
+      --faint: #8b999d;
+      --gold: #8f6818;
+      --gold-bright: #d0ae50;
+      --jade: #2f6d70;
+      --jade-pale: #cfe9df;
+      --cinnabar: #a74431;
+      --cinnabar-pale: #f2ddd6;
+      --sky: #466985;
+      --sky-pale: #dce9ef;
+      --violet: #6e5d83;
+      --violet-pale: #e8e1ec;
+      --line: rgb(143 104 24 / 30%);
+      --line-soft: rgb(42 75 85 / 16%);
+      --shadow: rgb(44 71 78 / 22%);
+      width: min(900px, 100%);
+      min-height: 100vh;
+      min-height: 100dvh;
+      padding: 32px 28px;
+      overflow-x: hidden;
+      color: var(--ink);
+      background:
+        linear-gradient(rgb(242 246 244 / 66%), rgb(211 222 222 / 90%)),
+        url('{{pluResPath}}/img/state/背景图.jpg') center top / 1024px auto no-repeat,
+        var(--canvas);
+      font-family: 'ZhongSong', 'Microsoft YaHei', 'PingFang SC', serif;
+      letter-spacing: 0;
+    }
+
+    .artifact {
+      position: relative;
+      width: 100%;
+      padding: 24px 22px;
+      isolation: isolate;
+    }
+
+    .scroll-rod {
+      position: absolute;
+      z-index: 3;
+      left: 0;
+      width: 100%;
+      height: 28px;
+      border: 1px solid #6e6040;
+      background: linear-gradient(180deg, #465b5d 0%, #9aa7a0 22%, #d0b76d 49%, #637476 72%, #35494d 100%);
+      box-shadow: 0 5px 12px rgb(50 69 72 / 24%), inset 0 1px 0 rgb(244 230 172 / 68%);
+    }
+
+    .scroll-rod::before,
+    .scroll-rod::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      width: 44px;
+      height: 40px;
+      border: 1px solid #66583a;
+      border-radius: 4px;
+      background: linear-gradient(180deg, #35494d, #ccb66f 44%, #4d6264 100%);
+      box-shadow: inset 0 1px 0 rgb(245 232 177 / 54%), 0 3px 9px rgb(46 62 64 / 22%);
+      transform: translateY(-50%);
+    }
+
+    .scroll-rod::before { left: -18px; }
+    .scroll-rod::after { right: -18px; }
+    .scroll-rod-top { top: 0; }
+    .scroll-rod-bottom { bottom: 0; }
+
+    .scroll-paper {
+      position: relative;
+      overflow: hidden;
+      padding: 166px 38px 42px;
+      border: 1px solid #8f793f;
+      background:
+        linear-gradient(180deg, rgb(247 244 231 / 18%) 0 142px, rgb(247 244 231 / 88%) 258px, var(--paper-soft) 100%),
+        url('{{pluResPath}}/img/state/背景图.jpg') center top / 100% auto no-repeat,
+        var(--paper);
+      box-shadow:
+        0 28px 62px var(--shadow),
+        inset 0 0 0 4px rgb(250 248 235 / 54%),
+        inset 0 0 0 5px rgb(79 103 108 / 22%);
+    }
+
+    .scroll-paper::after {
+      content: '';
+      position: absolute;
+      inset: 14px;
+      pointer-events: none;
+      border: 1px solid rgb(47 91 99 / 26%);
+    }
+
+    .header {
+      position: relative;
+      display: grid;
+      grid-template-columns: 58px minmax(0, 1fr) minmax(180px, auto);
+      align-items: center;
+      gap: 18px;
+      min-height: 94px;
+      margin-bottom: 0;
+      padding: 16px 20px;
+      border: 1px solid var(--line);
+      border-radius: 0;
+      background: rgb(249 246 232 / 84%);
+      box-shadow: 0 12px 32px rgb(49 75 79 / 14%);
+    }
+
+    .brand-seal {
+      display: grid;
+      width: 52px;
+      height: 52px;
+      place-items: center;
+      border: 1px solid var(--cinnabar);
+      color: var(--cinnabar);
+      background: rgb(248 244 230 / 90%);
+      box-shadow: inset 0 0 0 3px rgb(167 68 49 / 10%);
+      font-family: 'Dongfang', 'ZhongSong', serif;
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .header-left { min-width: 0; }
+
+    .header-left h1 {
+      color: var(--ink);
+      font-family: 'Dongfang', 'ZhongSong', serif;
+      font-size: 33px;
+      font-weight: 500;
+      line-height: 1.15;
+      letter-spacing: 0;
+      text-shadow: none;
+    }
+
+    .header-left .sub {
+      margin-top: 7px;
+      color: var(--sky);
+      font-size: 13px;
+      line-height: 1.5;
+      letter-spacing: 0;
+    }
+
+    .header-right {
+      min-width: 0;
+      padding-left: 18px;
+      border-left: 1px solid var(--line);
+      text-align: right;
+    }
+
+    .player-name {
+      overflow: hidden;
+      color: var(--ink);
+      font-family: 'Dongfang', 'ZhongSong', serif;
+      font-size: 20px;
+      text-overflow: ellipsis;
+      text-shadow: none;
+      white-space: nowrap;
+    }
+
+    .player-realm {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .main-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      margin-top: 26px;
+    }
+
+    .map-panel {
+      position: relative;
+      width: 100%;
+      padding: 28px 30px 24px;
+      border: 1px solid rgb(47 91 99 / 32%);
+      border-radius: 0;
+      background: rgb(248 246 232 / 82%);
+      box-shadow: 0 18px 42px rgb(52 76 79 / 13%), inset 0 0 30px rgb(74 111 116 / 7%);
+    }
+
+    .map-panel::before,
+    .map-panel::after {
+      content: '';
+      position: absolute;
+      width: 46px;
+      height: 46px;
+      pointer-events: none;
+    }
+
+    .map-panel::before {
+      top: 8px;
+      left: 8px;
+      border-top: 2px solid var(--gold-bright);
+      border-left: 2px solid var(--gold-bright);
+    }
+
+    .map-panel::after {
+      right: 8px;
+      bottom: 8px;
+      border-right: 2px solid var(--gold-bright);
+      border-bottom: 2px solid var(--gold-bright);
+    }
+
+    .map-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      width: min(650px, 100%);
+      margin: 0 auto 18px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgb(47 91 99 / 20%);
+      text-align: left;
+      letter-spacing: 0;
+    }
+
+    .map-title .frag-name {
+      color: var(--ink);
+      font-family: 'Dongfang', 'ZhongSong', serif;
+      font-size: 23px;
+      font-weight: 500;
+    }
+
+    .map-title .frag-zone {
+      margin-top: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+      text-align: right;
+    }
+
+    .map-stage { overflow: hidden; }
+
+    .grid-container {
+      border: 1px solid #56777c;
+      border-radius: 0;
+      background: var(--paper);
+      box-shadow: 0 12px 30px rgb(52 76 79 / 13%);
+    }
+
+    .cell {
+      display: grid;
+      place-items: center;
+      color: var(--ink);
+      border: 0;
+      border-right: 1px solid var(--line-soft);
+      border-bottom: 1px solid var(--line-soft);
+      font-family: 'Dongfang', 'ZhongSong', serif;
+      font-size: 14px;
+      line-height: 1;
+      transition: none;
+    }
+
+    .cell-fog {
+      color: var(--faint);
+      background: repeating-linear-gradient(135deg, rgb(86 74 55 / 8%) 0 2px, transparent 2px 8px), #dcd6c8;
+    }
+    .cell-fog::after { content: '雾'; color: #918879; font-size: 13px; opacity: 0.58; }
+    .cell-wall { background: #ddd0ae; }
+    .cell-wall::after { content: '山'; color: #756b52; font-size: 14px; }
+    .cell-empty { background: rgb(255 250 233 / 82%); }
+    .cell-empty-explored { background: #f0e6ca; }
+    .cell-player { background: #f6e6aa; box-shadow: inset 0 0 0 2px var(--gold-bright); }
+    .cell-player::after {
+      content: '我';
+      display: grid;
+      width: 25px;
+      height: 25px;
+      place-items: center;
+      border-radius: 50%;
+      color: #fff9e8;
+      background: var(--gold);
+      box-shadow: 0 3px 8px rgb(91 61 10 / 24%);
+    }
+    .cell-rival { background: var(--sky-pale); }
+    .cell-rival::after { content: '修'; color: var(--sky); font-size: 14px; text-shadow: none; }
+    .cell-treasure { background: var(--violet-pale); }
+    .cell-treasure::after { content: '缘'; color: var(--violet); font-size: 14px; text-shadow: none; }
+    .cell-danger { background: var(--cinnabar-pale); }
+    .cell-danger::after { content: '危'; color: var(--cinnabar); font-size: 14px; text-shadow: none; }
+    .cell-npc { background: #f4e8bd; }
+    .cell-npc::after { content: '人'; color: #8b641b; font-size: 14px; text-shadow: none; }
+    .cell-exit { background: var(--jade-pale); }
+    .cell-exit::after { content: '门'; color: var(--jade); font-size: 14px; text-shadow: none; }
+    .cell-void { background: #dbe4ed; }
+    .cell-void::after { content: '隙'; color: #315b7b; font-size: 14px; text-shadow: none; }
+    .cell-unique { background: #f7e8a3; box-shadow: inset 0 0 0 2px #c59220; }
+    .cell-unique::after { content: '极'; color: #8c5d08; font-size: 16px; text-shadow: none; }
+    .cell-pool { background: var(--jade-pale); box-shadow: none; }
+    .cell-pool::after { content: '泉'; color: #237366; font-size: 14px; text-shadow: none; }
+    .cell-echo-1 { box-shadow: inset 0 0 0 2px rgb(185 135 28 / 68%); }
+    .cell-echo-2 { box-shadow: inset 0 0 0 1px rgb(185 135 28 / 44%); }
+    .cell-echo-3 { background-image: linear-gradient(rgb(230 196 100 / 10%), rgb(230 196 100 / 10%)); }
+
+    .axis-x,
+    .axis-y {
+      color: var(--faint);
+      font-family: 'tttgb', 'ZhongSong', serif;
+      font-size: 10px;
+    }
+
+    .info-panel { gap: 22px; }
+
+    .panel-card {
+      min-width: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .panel-card h3 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      padding: 0;
+      border: 0;
+      color: var(--gold);
+      font-family: 'Dongfang', 'ZhongSong', serif;
+      font-size: 18px;
+      font-weight: 500;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    .panel-card h3::after {
+      content: '';
+      height: 1px;
+      flex: 1;
+      background: var(--line);
+    }
+
+    .info-panel > .panel-card:first-child {
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .info-panel > .panel-card:first-child h3 { display: none; }
+
+    .stats-grid { gap: 0; }
+
+    .stat-item {
+      position: relative;
+      min-width: 0;
+      padding: 17px 12px 15px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+    }
+
+    .stat-item + .stat-item::before {
+      content: '';
+      position: absolute;
+      top: 18%;
+      bottom: 18%;
+      left: 0;
+      width: 1px;
+      background: var(--line-soft);
+    }
+
+    .stat-value,
+    .stat-value.gold,
+    .stat-value.cyan {
+      overflow: hidden;
+      color: var(--gold);
+      font-size: 27px;
+      line-height: 1;
+      text-overflow: ellipsis;
+      text-shadow: none;
+      white-space: nowrap;
+    }
+
+    .stat-label {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .progress-wrap { width: min(650px, 100%); margin: 18px auto 0 !important; }
+    .progress-label { color: var(--muted); font-size: 12px; }
+    .progress-bar { height: 2px; border-radius: 0; background: rgb(47 91 99 / 14%); }
+    .progress-fill { border-radius: 0; background: var(--gold-bright); box-shadow: none; }
+
+    .detail-grid { gap: 28px; }
+    .detail-grid > .panel-card:only-child { grid-column: 1 / -1; }
+    .frag-list,
+    .exit-list { gap: 8px; }
+
+    .frag-item,
+    .exit-item {
+      min-width: 0;
+      padding: 10px 12px;
+      border: 0;
+      border-left: 2px solid var(--line);
+      border-radius: 0;
+      background: rgb(255 251 238 / 48%);
+      font-size: 12px;
+    }
+
+    .frag-item.current {
+      border-color: var(--gold);
+      background: rgb(240 223 160 / 22%);
+      box-shadow: none;
+    }
+
+    .frag-dot {
+      width: 4px;
+      height: 30px;
+      margin-right: 10px;
+      border-radius: 0;
+      background: var(--line);
+    }
+    .frag-dot.current { background: var(--gold); box-shadow: none; }
+    .frag-name-text,
+    .frag-item.current .frag-name-text { color: var(--ink); font-size: 13px; }
+    .frag-meta { color: var(--muted); font-size: 10px; }
+    .frag-risk { color: var(--cinnabar); font-size: 11px; }
+
+    .exit-item { border-left-color: var(--jade); }
+    .exit-item.locked { border-color: var(--faint); background: rgb(255 251 238 / 36%); opacity: 0.66; }
+    .exit-arrow { color: var(--jade); font-family: 'Dongfang', 'ZhongSong', serif; font-size: 14px; }
+    .exit-item.locked .exit-arrow { color: var(--muted); }
+    .exit-dir { color: var(--jade); font-family: 'Dongfang', 'ZhongSong', serif; }
+    .exit-target { color: var(--ink); font-size: 13px; }
+    .exit-item.locked .exit-target { color: var(--muted); }
+    .exit-req { color: var(--muted); font-size: 10px; }
+
+    .legend-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 14px; }
+    .legend-item { min-width: 0; color: var(--muted); gap: 8px; }
+    .legend-swatch { width: 27px; height: 27px; flex: 0 0 27px; border-radius: 0; border-color: var(--line-soft); }
+    .legend-swatch::after { font-size: 11px; }
+    .legend-swatch.cell-player::after { width: 20px; height: 20px; }
+
+    .command-grid { gap: 8px 20px; }
+    .command-item {
+      grid-template-columns: minmax(118px, auto) minmax(0, 1fr);
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line-soft);
+      color: var(--muted);
+    }
+    .command-item span:first-child { color: var(--gold); }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 28px;
+      color: var(--faint);
+      letter-spacing: 0;
+    }
+
+    .footer::before,
+    .footer::after {
+      content: '';
+      width: 72px;
+      height: 1px;
+      background: var(--line);
+    }
+
+    @media (max-width: 820px) {
+      body {
+        --cell-size: min(7.1vw, 43px);
+        --axis-size: 20px;
+        padding: 20px 8px;
+      }
+      .artifact { padding-right: 12px; padding-left: 12px; }
+      .scroll-rod::before { left: 0; }
+      .scroll-rod::after { right: 0; }
+      .scroll-paper { padding: 126px 18px 36px; }
+      .scroll-paper::after { inset: 8px; }
+      .header { grid-template-columns: 52px minmax(0, 1fr); gap: 12px; padding-right: 12px; padding-left: 12px; }
+      .header-right {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 0 0;
+        border-top: 1px solid var(--line-soft);
+        border-left: 0;
+        text-align: left;
+      }
+      .player-name { max-width: 55%; }
+      .player-realm { margin-top: 0; text-align: right; }
+      .map-panel { padding-right: 10px; padding-left: 10px; }
+      .map-title { align-items: flex-start; flex-direction: column; gap: 5px; }
+      .map-title .frag-zone { text-align: left; }
+      .detail-grid,
+      .command-grid { grid-template-columns: 1fr; }
+      .legend-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 520px) {
+      body { --cell-size: min(7vw, 34px); --axis-size: 18px; }
+      .artifact { padding-right: 8px; padding-left: 8px; }
+      .scroll-paper { padding: 110px 10px 32px; }
+      .brand-seal { width: 42px; height: 42px; font-size: 18px; }
+      .header { grid-template-columns: 42px minmax(0, 1fr); gap: 10px; padding-right: 8px; padding-left: 8px; }
+      .header-left h1 { font-size: 25px; }
+      .header-left .sub { font-size: 11px; }
+      .player-name { max-width: 100%; font-size: 17px; }
+      .player-realm { width: 100%; text-align: left; }
+      .map-panel { padding: 22px 4px 18px; }
+      .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .stat-item:nth-child(3),
+      .stat-item:nth-child(4) { border-top: 1px solid var(--line-soft); }
+      .stat-item:nth-child(3)::before { display: none; }
+      .legend-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .command-item { grid-template-columns: 1fr; gap: 3px; }
+      .footer::before,
+      .footer::after { width: 30px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
   </style>
 </head>
 <body>
+  <article class="artifact">
+    <div class="scroll-rod scroll-rod-top" aria-hidden="true"></div>
+    <div class="scroll-paper">
 
-  <!-- 顶部标题栏 -->
-  <div class="header">
-    <div class="header-left">
-      <h1>仙古秘境·神识开图</h1>
-      <div class="sub">混沌未判，先天道韵，方知吉凶</div>
-    </div>
-    <div class="header-right">
-      <div class="player-name">{{playerName}}</div>
-      <div class="player-realm">{{playerTitle}} · 道韵 {{daoyun}}</div>
-    </div>
-  </div>
+      <!-- 顶部标题栏 -->
+      <div class="header">
+        <div class="brand-seal" aria-hidden="true">古</div>
+        <div class="header-left">
+          <h1>仙古秘境</h1>
+          <div class="sub">神识所至，山河显形</div>
+        </div>
+        <div class="header-right">
+          <div class="player-name">{{playerName}}</div>
+          <div class="player-realm">{{playerTitle}} / 道韵 {{daoyun}}</div>
+        </div>
+      </div>
 
-  <!-- 主体两栏 -->
+  <!-- 地图置顶，探索信息置底 -->
   <div class="main-layout">
 
-    <!-- 左侧地图区 -->
+    <!-- 地图区 -->
     <div class="map-panel">
       <div class="map-title">
         <div class="frag-name">{{fragmentName}}</div>
         <div class="frag-zone">{{fragmentZone}} · {{fragmentSize}} · 危险等级 {{fragmentRiskStars}}</div>
       </div>
 
-      <!-- 坐标轴 X -->
-      <div class="axis-row">
-        <div class="axis-corner"></div>
-        {{each axisX col}}
-        <div class="axis-x">{{col}}</div>
-        {{/each}}
-      </div>
-
-      <!-- 网格主体 -->
-      <div style="display:flex;">
-        <div>
-          {{each axisY row}}
-          <div class="axis-y">{{row}}</div>
-          {{/each}}
-        </div>
-        <div class="grid-container">
-          {{each cells row rowIdx}}
-          <div class="grid-row">
-            {{each row cell colIdx}}
-            <div class="cell {{cell.cls}} {{cell.echo}}"></div>
+      <div class="map-stage">
+        <div class="map-board">
+          <!-- 坐标轴 X -->
+          <div class="axis-row">
+            <div class="axis-corner"></div>
+            {{each axisX col}}
+            <div class="axis-x">{{col}}</div>
             {{/each}}
           </div>
-          {{/each}}
+
+          <!-- 网格主体 -->
+          <div class="map-body">
+            <div>
+              {{each axisY row}}
+              <div class="axis-y">{{row}}</div>
+              {{/each}}
+            </div>
+            <div class="grid-container">
+              {{each cells row rowIdx}}
+              <div class="grid-row">
+                {{each row cell colIdx}}
+                <div class="cell {{cell.cls}} {{cell.echo}}"></div>
+                {{/each}}
+              </div>
+              {{/each}}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -539,7 +1141,7 @@
       </div>
     </div>
 
-    <!-- 右侧信息面板 -->
+    <!-- 地图下方信息面板 -->
     <div class="info-panel">
 
       <!-- 统计 -->
@@ -548,23 +1150,24 @@
         <div class="stats-grid">
           <div class="stat-item">
             <div class="stat-value gold">{{daoyun}}</div>
-            <div class="stat-label">💎 道韵</div>
+            <div class="stat-label">道韵</div>
           </div>
           <div class="stat-item">
             <div class="stat-value">{{steps}}</div>
-            <div class="stat-label">👣 探索步数</div>
+            <div class="stat-label">探索步数</div>
           </div>
           <div class="stat-item">
             <div class="stat-value cyan">{{fragmentCount}}</div>
-            <div class="stat-label">🗺️ 已发现碎片</div>
+            <div class="stat-label">已发现碎片</div>
           </div>
           <div class="stat-item">
             <div class="stat-value">{{senseRange}}</div>
-            <div class="stat-label">👁️ 神识范围</div>
+            <div class="stat-label">神识范围</div>
           </div>
         </div>
       </div>
 
+      <div class="detail-grid">
       <!-- 已发现碎片 -->
       {{if discoveredFragments.length > 0}}
       <div class="panel-card">
@@ -591,7 +1194,7 @@
         <div class="exit-list">
           {{each exits ex}}
           <div class="exit-item {{ex.locked ? 'locked' : ''}}">
-            <span class="exit-arrow">{{ex.locked ? '🔒' : '⊕'}}</span>
+            <span class="exit-arrow">{{ex.locked ? '禁' : '门'}}</span>
             <span class="exit-dir">{{ex.direction}}</span>
             <span class="exit-target">{{ex.target}}</span>
             {{if ex.locked}}<span class="exit-req">需{{ex.levelRequired}}</span>{{/if}}
@@ -601,6 +1204,8 @@
       </div>
       {{/if}}
 
+      </div>
+
       <!-- 图例 -->
       <div class="panel-card">
         <h3>图 例</h3>
@@ -608,6 +1213,10 @@
           <div class="legend-item">
             <div class="legend-swatch cell-player" style="border-radius:50%;"></div>
             <span>你（当前位置）</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-swatch cell-rival"></div>
+            <span>同图修士</span>
           </div>
           <div class="legend-item">
             <div class="legend-swatch cell-treasure"></div>
@@ -647,18 +1256,21 @@
       <!-- 快捷命令 -->
       <div class="panel-card">
         <h3>快捷指令</h3>
-        <div style="font-size:11px; color:#5a4a88; line-height:1.8;">
-          <div><span style="color:#9980cc;">#上 #下 #左 #右</span> — 四方向移动</div>
-          <div><span style="color:#9980cc;">#左上 #右上</span> — 斜向移动</div>
-          <div><span style="color:#9980cc;">#秘境探索</span> — 神识感知周围</div>
-          <div><span style="color:#9980cc;">#秘境推演</span> — 消耗5道韵推演前方</div>
+        <div class="command-grid">
+          <div class="command-item"><span>#上 #下 #左 #右</span><span>四方向移动</span></div>
+          <div class="command-item"><span>#左上 #右上</span><span>斜向移动</span></div>
+          <div class="command-item"><span>#秘境探索</span><span>神识感知周围</span></div>
+          <div class="command-item"><span>#秘境推演</span><span>消耗5道韵推演前方</span></div>
         </div>
       </div>
 
     </div>
   </div>
 
-  <div class="footer">大道三千 · 仙古开辟 · 机缘自取</div>
+      <div class="footer">仙古法则 / 神识显图 / 机缘自取</div>
+    </div>
+    <div class="scroll-rod scroll-rod-bottom" aria-hidden="true"></div>
+  </article>
 
 </body>
 </html>

@@ -5,6 +5,7 @@ import {
   acquireRedisLock,
   commitClaimWithRollback,
   migrateDropToBaodi,
+  refreshRedisLock,
   releaseRedisLock,
 } from '../apps/SecretPlace/xianyiBaodiState.js';
 
@@ -18,6 +19,7 @@ function createLockRedis() {
     },
     async eval(_script, { keys, arguments: args }) {
       if (locks.get(keys[0]) !== args[0]) return 0;
+      if (args.length > 1) return 1;
       locks.delete(keys[0]);
       return 1;
     },
@@ -32,6 +34,8 @@ test('仙遗宝地锁只允许一个操作进入且只能由持有者释放', as
   assert.equal(await acquireRedisLock(redis, key, 'token-b'), false);
   assert.equal(await releaseRedisLock(redis, key, 'token-b'), 0);
   assert.equal(await acquireRedisLock(redis, key, 'token-b'), false);
+  assert.equal(await refreshRedisLock(redis, key, 'token-a', 60), true);
+  assert.equal(await refreshRedisLock(redis, key, 'token-b', 60), false);
   assert.equal(await releaseRedisLock(redis, key, 'token-a'), 1);
   assert.equal(await acquireRedisLock(redis, key, 'token-b'), true);
 });

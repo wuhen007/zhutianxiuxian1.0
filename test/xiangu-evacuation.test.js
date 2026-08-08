@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -24,6 +25,12 @@ function makeNajie(extra = {}) {
     ...extra,
   };
 }
+
+test('撤离结算读取纳戒失败时保留秘境背包且禁止覆盖写入', () => {
+  const source = fs.readFileSync(new URL('../apps/SecretPlace/xianguPlace.js', import.meta.url), 'utf8');
+  assert.match(source, /readXianguNajie\(player_qq, \{ required: true \}\)/);
+  assert.match(source, /if \(required\) \{[\s\S]*?秘境背包已保留，请稍后重试/);
+});
 
 function makePlayer(extra = {}) {
   return {
@@ -241,6 +248,33 @@ test('本局总结以进入时快照计算增量并保留有符号凶名变化',
   assert.equal(summary.lootUnits, 6);
 });
 
+test('启用秘境背包后总结以暂存收获计算，尚未写入纳戒也能撤离', () => {
+  const player = makePlayer({
+    xiangu_bag: {
+      xiuwei: 1000,
+      xueqi: 2000,
+      sourceStone: 14_000_000,
+      items: [{ name: '仙古矿材', type: '材料', quantity: 3 }],
+      seeds: [{ 名称: '世界树幼苗' }],
+      techniques: ['真龙宝术'],
+      potential: 50,
+    },
+  });
+  createXianguRun(player, makeNajie(), 1000, () => 0);
+
+  const summary = buildXianguRunSummary(player, makeNajie(), 2000);
+
+  assert.equal(summary.najieDelta, 3);
+  assert.equal(summary.seedCount, 1);
+  assert.deepEqual(summary.seedNames, ['世界树幼苗']);
+  assert.equal(summary.xiuwei, 1000);
+  assert.equal(summary.xueqi, 2000);
+  assert.equal(summary.sourceStone, 14_000_000);
+  assert.equal(summary.potential, 50);
+  assert.equal(summary.techniqueCount, 1);
+  assert.equal(summary.lootUnits, 9);
+});
+
 test('清理仅移除秘境会话字段并保存最后一局总结', () => {
   const summary = { runId: 'run-1', daoyun: 8, seedNames: ['世界树幼苗'] };
   const player = makePlayer({
@@ -255,6 +289,10 @@ test('清理仅移除秘境会话字段并保存最后一局总结', () => {
     xiangu_teammate_data: { 当前血量: 100 },
     xiangu_teammate_betray_chance: 0.3,
     xiangu_last_npc_tick: 123,
+    xiangu_npc_interactions: { npc_a: { count: 1 } },
+    xiangu_bag: { sourceStone: 14_000_000 },
+    xiangu_defeated_npc_ids: ['npc-1'],
+    xiangu_world_seed: 'open-100',
     xiangu_last_team_time: 456,
     xiangu_seeds: [{ 名称: '世界树幼苗' }],
     xiangu_shenhuo: { 状态: '已点燃' },
@@ -283,6 +321,10 @@ test('清理仅移除秘境会话字段并保存最后一局总结', () => {
     'xiangu_teammate_data',
     'xiangu_teammate_betray_chance',
     'xiangu_last_npc_tick',
+    'xiangu_npc_interactions',
+    'xiangu_bag',
+    'xiangu_defeated_npc_ids',
+    'xiangu_world_seed',
   ]) {
     assert.equal(Object.hasOwn(player, field), false, `${field} 应被清理`);
   }

@@ -257,11 +257,82 @@
             "source": "era",
             "interaction": "generic",
             "participantQqs": []
+        },
+        {
+            "type": "forbiddenZone",
+            "zone": {
+                "name": "轮回海",
+                "locationId": "lunhuihai",
+                "desc": "传说可以让人进入轮回的诡异之地",
+                "danger": "极高"
+            },
+            "phenomenon": "冲出一道贯穿星河的魔光",
+            "plane": "遮天位面",
+            "location": "轮回海",
+            "coordinate": {
+                "x": 107,
+                "y": 583
+            },
+            "timestamp": 1786114801637,
+            "expiresAt": 1786201201636,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": [],
+            "tianjiaoTrace": {
+                "name": "金翅小鹏王",
+                "plane": "遮天位面",
+                "location": "轮回海",
+                "coordinate": {
+                    "x": 107,
+                    "y": 583
+                },
+                "source": "位面事件",
+                "reincarnation": 0,
+                "traceVersion": 0,
+                "foundAt": 1786114801636,
+                "expiresAt": 1786201201636
+            }
         }
     ],
-    "lastEventTime": 9000,
-    "lastEventWorldYear": 39000,
-    "activeEvents": [],
+    "lastEventTime": 1000,
+    "lastEventWorldYear": 41000,
+    "activeEvents": [
+        {
+            "type": "forbiddenZone",
+            "zone": {
+                "name": "轮回海",
+                "locationId": "lunhuihai",
+                "desc": "传说可以让人进入轮回的诡异之地",
+                "danger": "极高"
+            },
+            "phenomenon": "冲出一道贯穿星河的魔光",
+            "plane": "遮天位面",
+            "location": "轮回海",
+            "coordinate": {
+                "x": 107,
+                "y": 583
+            },
+            "timestamp": 1786114801637,
+            "expiresAt": 1786201201636,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": [],
+            "tianjiaoTrace": {
+                "name": "金翅小鹏王",
+                "plane": "遮天位面",
+                "location": "轮回海",
+                "coordinate": {
+                    "x": 107,
+                    "y": 583
+                },
+                "source": "位面事件",
+                "reincarnation": 0,
+                "traceVersion": 0,
+                "foundAt": 1786114801636,
+                "expiresAt": 1786201201636
+            }
+        }
+    ],
     "eventCooldown": 2000,
     "enableEvents": true,
     "eraTriggerChance": 0.35,

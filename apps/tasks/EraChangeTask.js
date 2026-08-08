@@ -19,6 +19,14 @@ import { formatRealmEventLocation } from '../../model/realmEventLocation.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { triggerPeriodicRiftsForEra } from '../../model/planeRiftFestival.js';
 import {
+  XIANGU_LIFECYCLE,
+  advanceXianguLifecycle,
+  getXianguOpeningAttemptProbability,
+  setXianguOpeningProbability,
+  shouldCheckXianguBloom,
+  startXianguPreparation,
+} from './xianguLifecycle.js';
+import {
   advanceSpecialTianjiaoEvolution,
   attemptTianjiaoBreakthrough,
   ensureTianjiaoInitialTemplate,
@@ -119,9 +127,17 @@ export class EraChangeTask extends plugin {
       config.setConfig(this.configKey, 'xiuxian', set);
     }
     
-    // 确保有累计年数（兼容旧配置）
-    if (typeof set.Era.current.totalYears !== 'number') {
-      set.Era.current.totalYears = set.Era.current.years || 0;
+    // 确保有累计年数（兼容旧配置，并跨时代/纪元保持单调）
+    const inferredWorldYear = getRealmEventWorldYear(
+      set.Era.current.index,
+      set.Era.current.years,
+      set.Era.current.epoch,
+    );
+    if (
+      typeof set.Era.current.totalYears !== 'number' ||
+      set.Era.current.totalYears < inferredWorldYear
+    ) {
+      set.Era.current.totalYears = inferredWorldYear;
       config.setConfig(this.configKey, 'xiuxian', set);
     }
     
@@ -155,6 +171,87 @@ export class EraChangeTask extends plugin {
     } catch (e) {
       console.error("设置时代定时任务失败:", e);
     }
+  }
+
+  async processXianguLifecycle(weimianData, {
+    previousWorldYear,
+    worldYear,
+    save,
+  }) {
+    let lifecycle = advanceXianguLifecycle(weimianData, { worldYear });
+    let changed = lifecycle.changed;
+    let notice = null;
+
+    // A just-closed round must never roll into another round in the same tick.
+    if (
+      lifecycle.transition === null &&
+      lifecycle.stage === 'closed' &&
+      shouldCheckXianguBloom(previousWorldYear, worldYear)
+    ) {
+      const attemptProbability = getXianguOpeningAttemptProbability(weimianData);
+      if (Math.random() < attemptProbability) {
+        lifecycle = startXianguPreparation(weimianData, { worldYear });
+        setXianguOpeningProbability(weimianData, 0);
+        changed = true;
+        notice = 'preparing';
+      } else {
+        const previousProbability = weimianData.仙古秘境开启概率;
+        setXianguOpeningProbability(weimianData, attemptProbability);
+        changed ||= previousProbability !== weimianData.仙古秘境开启概率;
+      }
+    } else if (lifecycle.transition) {
+      notice = lifecycle.transition;
+    }
+
+    // Persist the transition before notifying groups. A broadcast failure must
+    // not repeat a world event on the next clock tick.
+    if (changed) save?.();
+
+    if (lifecycle.clearManualRound) {
+      try {
+        await redis.del('xiuxian:xiangu:manual-round');
+      } catch (error) {
+        console.error('[仙古秘境] 清理手动轮次标记失败:', error);
+      }
+    }
+
+    if (!notice) return lifecycle;
+
+    const realmNames = ['三千道州', '无量天', '九幽地'];
+    const randomRealm = realmNames[Math.floor(Math.random() * realmNames.length)];
+    let message;
+
+    if (notice === 'preparing') {
+      message = [
+        '【仙古花蕾现世·大世将启】',
+        `${randomRealm}上空，一枚仙古花蕾自虚无中显化。`,
+        '混沌雾霭缠绕花瓣，古老道音传遍三千道州。',
+        '花蕾尚未完全绽放，秘境门户仍受仙古法则封锁。',
+        `约${XIANGU_LIFECYCLE.PREPARATION_YEARS}年后，花开之时，年轻天骄方可入内争夺机缘。`,
+        '诸修可趁此整备法器、结伴探路；也当提防旧敌趁大世将临清算因果。',
+      ].join('\n');
+    } else if (notice === 'opened') {
+      message = [
+        '【仙古花蕾绽放·秘境开启】',
+        `${randomRealm}上空，仙古花蕾终于绽放！`,
+        '秘境壁垒破碎，仙古纪元气息弥漫九天十地！',
+        '「仙古秘境开启了！」',
+        '年轻天骄们，速速前往探索！',
+        '使用 #进入仙古秘境 命令尝试进入',
+        '（需铭文境至至尊者境，位于九天十地位面）',
+      ].join('\n');
+    } else {
+      message = [
+        '【仙古花蕾凋零·秘境关闭】',
+        `${randomRealm}上空，仙古花蕾凋零。`,
+        '秘境壁垒闭合，仙古气息消散！',
+        '「仙古秘境关闭了！」',
+        '尚未撤离的修士将无法继续探索，请使用 #紧急撤离；已进入撤离流程者仍可完成结算。',
+      ].join('\n');
+    }
+
+    await this.broadcastMessage(message);
+    return lifecycle;
   }
   async releaseJuelingSuppression(e) {
   // 权限检查：只有机器人管理员或修仙管理员可以使用
@@ -799,6 +896,7 @@ async checkJuelingLoss(e) {
       const era = this.set.Era;
       let { index, years, epoch } = era.current;
       const advanceYears = era.yearlyAdvance || 1000;
+      const previousWorldYear = getRealmEventWorldYear(index, years, epoch);
       
       // 记录旧时代索引
       const oldIndex = index;
@@ -809,7 +907,11 @@ async checkJuelingLoss(e) {
       
       // ==== 位面自我修复机制：累计年数推进 ====
       const repairInterval = era.weimianRepairInterval || 2000;
-      const totalYearsBefore = era.current.totalYears || 0;
+      const configuredTotalYears = Number(era.current.totalYears);
+      const totalYearsBefore = Math.max(
+        Number.isFinite(configuredTotalYears) ? configuredTotalYears : 0,
+        previousWorldYear,
+      );
       const totalYearsAfter = totalYearsBefore + advanceYears;
       
       // 计算本轮跨过的修复节点（处理一次 tick 跨多节点的边界情况）
@@ -958,80 +1060,6 @@ if (index === 4) { // 当前是绝灵时代
           await this.broadcastMessage(message);
         }
       }
-// ==== 仙古秘境开启机制 ====
-if (years % 2000 === 0 && weimianData.仙古秘境 !== 1) {
-  // 获取当前开启概率
-  let currentProbability = weimianData.仙古秘境开启概率 || 0.05;
-  currentProbability = Math.min(currentProbability + 0.1, 1.0); // 每2000年增加10%概率
-  
-  // 尝试开启
-  if (Math.random() < currentProbability) {
-    // 开启秘境
-    weimianData.仙古秘境 = 1;
-    weimianData.仙古秘境开启时间 = years; // 记录开启时间
-    weimianData.仙古秘境开启概率 = 0; // 重置概率
-    
-    // 开启文案
-    const realmNames = ["三千道州", "无量天", "九幽地"];
-    const randomRealm = realmNames[Math.floor(Math.random() * realmNames.length)];
-    
-    const openMsg = [
-      `【仙古花蕾绽放·秘境开启】`,
-      `${randomRealm}上空，仙古花蕾绽放！`,
-      `秘境壁垒破碎，仙古纪元气息弥漫九天十地！`,
-      `「仙古秘境开启了！」`,
-      `年轻天骄们，速速前往探索！`,
-      `使用 #进入仙古秘境 命令尝试进入`,
-      `（需铭文境至尊者境，位于九天十地位面）`
-    ].join('\n');
-    
-    await this.broadcastMessage(openMsg);
-  } else {
-    // 未开启，更新概率
-    weimianData.仙古秘境开启概率 = currentProbability;
-    
-  }
-  
-  // 保存位面数据
-  saveWeimianData(weimianData);
-}
-
-// ==== 仙古秘境关闭机制 ====
-if (weimianData.仙古秘境 === 1) {
-  let openTime = weimianData.仙古秘境开启时间 || years;
-  openTime +=1000;
-  // 检查是否开启超过10000年
-  if (openTime >= 10000) {
-    // 关闭秘境
-    weimianData.仙古秘境 = 0;
-    weimianData.仙古秘境开启时间 = 0;
-    
-    // 关闭文案
-    const realmNames = ["三千道州", "无量天", "九幽地"];
-    const randomRealm = realmNames[Math.floor(Math.random() * realmNames.length)];
-    
-    const closeMsg = [
-      `【仙古花蕾凋零·秘境关闭】`,
-      `${randomRealm}上空，仙古花蕾凋零！`,
-      `秘境壁垒闭合，仙古气息消散！`,
-      `「仙古秘境关闭了！」`,
-      `未及时离开者将永世困于秘境碎片！`,
-      `天骄们，等待下一次花蕾绽放吧！`
-    ].join('\n');
-    
-    await this.broadcastMessage(closeMsg);
-    saveWeimianData(weimianData);
-  }
-}
-
-// 辅助函数：保存位面数据
-function saveWeimianData(data) {
-  try {
-    fs.writeFileSync(weimianPath, JSON.stringify(data, null, 4), 'utf8');
-  } catch (err) {
-    console.error('保存位面数据失败:', err);
-  }
-}
       // 修复核心：统一处理年份溢出
       const totalEras = this.eras.length;
       let eraPass = 0; // 跳过的时代数量
@@ -1062,8 +1090,21 @@ function saveWeimianData(data) {
       }
       
       // 更新配置
-      era.current = { index, years, epoch, totalYears: era.current.totalYears || 0 };
+      era.current = { index, years, epoch, totalYears };
       config.setConfig(this.configKey, 'xiuxian', this.set);
+
+      const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
+      await this.processXianguLifecycle(weimianData, {
+        previousWorldYear,
+        worldYear: currentWorldYear,
+        save: () => {
+          try {
+            fs.writeFileSync(weimianPath, JSON.stringify(weimianData, null, 4), 'utf8');
+          } catch (err) {
+            console.error('保存位面数据失败:', err);
+          }
+        },
+      });
       
       // 每千年发送进度通知
       if (era.pushNotice && years % 1000 === 0) {
@@ -1707,6 +1748,7 @@ function saveWeimianData(data) {
       const era = this.set.Era;
       let { index, years, epoch } = era.current;
       const advanceYears = 1000;
+      const previousWorldYear = getRealmEventWorldYear(index, years, epoch);
       
       const oldIndex = index;
       const oldEraName = this.eras[index].name;
@@ -1766,8 +1808,21 @@ function saveWeimianData(data) {
         epochIncreased = fullCycles > 0;
       }
       
-      era.current = { index, years, epoch, totalYears: era.current.totalYears || 0 };
+      const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
+      era.current = { index, years, epoch, totalYears: currentWorldYear };
       config.setConfig(this.configKey, 'xiuxian', this.set);
+
+      await this.processXianguLifecycle(weimianData, {
+        previousWorldYear,
+        worldYear: currentWorldYear,
+        save: () => {
+          try {
+            fs.writeFileSync(weimianPath, JSON.stringify(weimianData, null, 4), 'utf8');
+          } catch (err) {
+            console.error('保存位面数据失败:', err);
+          }
+        },
+      });
       
       const currentEra = this.eras[index];
       let message = [
@@ -1942,6 +1997,7 @@ function saveWeimianData(data) {
       
       const era = this.set.Era;
       let { index, years, epoch } = era.current;
+      const previousWorldYear = getRealmEventWorldYear(index, years, epoch);
       
       // 记录旧时代索引
       const oldIndex = index;
@@ -1957,8 +2013,30 @@ function saveWeimianData(data) {
       }
       
       // 更新配置
-      era.current = { index, years, epoch, totalYears: era.current.totalYears || 0 };
+      const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
+      era.current = { index, years, epoch, totalYears: currentWorldYear };
       config.setConfig(this.configKey, 'xiuxian', this.set);
+
+      let weimianData = {};
+      const weimianPath = data.filePathMap.weimianList;
+      try {
+        if (fs.existsSync(weimianPath)) {
+          weimianData = JSON.parse(fs.readFileSync(weimianPath, 'utf8'));
+        }
+      } catch (err) {
+        console.error('读取位面数据失败:', err);
+      }
+      await this.processXianguLifecycle(weimianData, {
+        previousWorldYear,
+        worldYear: currentWorldYear,
+        save: () => {
+          try {
+            fs.writeFileSync(weimianPath, JSON.stringify(weimianData, null, 4), 'utf8');
+          } catch (err) {
+            console.error('保存位面数据失败:', err);
+          }
+        },
+      });
       
       const newEraName = this.eras[index].name;
       

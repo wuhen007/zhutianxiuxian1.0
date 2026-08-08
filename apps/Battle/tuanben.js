@@ -1,5 +1,5 @@
 import { plugin, config ,data} from '../../api/api.js';
-import { existplayer, Read_player, Write_player, Add_najie_thing, channel ,calculateHarm, ensureNumber, bigNumberTransform, exist_najie_thing, get_fight_img, initActionBar, advanceUnitBars, getReadyUnits, boostActionBar, pushBackActionBar, ACTION_BAR_MAX} from '../../model/xiuxian.js';
+import { existplayer, Read_player, Write_player, Add_najie_thing, channel ,calculateHarm, ensureNumber, bigNumberTransform, exist_najie_thing, get_fight_img, initActionBar, advanceUnitBars, getReadyUnits, boostActionBar, pushBackActionBar, ACTION_BAR_MAX, applyXianguTurnRecovery, calcDamage, getSeedSkillEntry } from '../../model/xiuxian.js';
 import { segment } from "icqq"
 import {
  checkEmperorAwareness,
@@ -1659,10 +1659,20 @@ async disbandTeamInternal(teamId, team) {
   
   // 计算攻击伤害
   async calculateAttack(attacker, defender, cnt, jineng1, jineng2, addBattleLog) {
-      const safeAttacker = this.sanitizeCombatant(attacker);
-    const safeDefender = this.sanitizeCombatant(defender);
     const msgs = [];
-        // 数据消毒
+    applyXianguTurnRecovery(attacker, msgs);
+    const seedSkill = getSeedSkillEntry(attacker.xiangu_shenhuo?.专属技能);
+    if (!attacker._先天禁疗 && seedSkill?.技能分类 === '治疗' && seedSkill.回复比例 && attacker.当前血量 < attacker.血量上限) {
+      const healingMultiplier = 1 - Math.min(1, Math.max(0, Number(attacker.禁疗) || 0));
+      const amount = Math.trunc(attacker.血量上限 * seedSkill.回复比例 * (1 + (Number(attacker.治疗效果加成) || 0)) * healingMultiplier);
+      const before = attacker.当前血量;
+      attacker.当前血量 = Math.min(attacker.血量上限, attacker.当前血量 + amount);
+      const actual = attacker.当前血量 - before;
+      if (actual > 0) msgs.push(`${attacker.名号}的「${seedSkill.name}」生机涌动，恢复${bigNumberTransform(actual)}点生命！`);
+    }
+
+    const safeAttacker = this.sanitizeCombatant(attacker);
+    const safeDefender = this.sanitizeCombatant(defender);
 
        let jieziTriggered = false;
     let originalAttack, originalDefense, originalHp;
@@ -1884,10 +1894,15 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
   基础伤害 = ensureNumber(基础伤害, 0);
   法球伤害 = ensureNumber(法球伤害, 0);
   伤害 = ensureNumber(伤害, 0);
+  const _基础伤害 = 伤害;
+  const 类型桶 = { 神通: _基础伤害 };
     
     // 技能触发
     let count = 0; // 限制次数
     let cnt2 = Math.trunc(cnt / 2);
+    let 不可防御 = false;
+    let 无视减伤 = false;
+    let 斩杀阈值 = 0;
      // 定义九秘功法列表（全局常量）
   const 九秘功法列表 = [
     "临字秘", "兵字秘", "斗字秘", "者字秘", 
@@ -1915,6 +1930,10 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
         (jineng1[i].class == '灵根' &&
           hasSupremeInnate(safeAttacker, jineng1[i].name) &&
           (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) &&
+          Math.random() < jineng1[i].pr) ||
+        (jineng1[i].class == '道种专属' &&
+          safeAttacker.xiangu_shenhuo?.专属技能 === jineng1[i].name &&
+          (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) &&
           Math.random() < jineng1[i].pr)
       ) {
         // 构建技能消息
@@ -1925,7 +1944,27 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
         msgs.push(skillMsg);
         
         // 应用技能效果
+        if (jineng1[i].不可防御 === 1) 不可防御 = true;
+        if (jineng1[i].无视减伤) 无视减伤 = true;
+        if (jineng1[i].斩杀阈值) 斩杀阈值 = jineng1[i].斩杀阈值;
+        const beforeSkillDamage = 伤害;
         伤害 = 伤害 * jineng1[i].beilv + jineng1[i].other;
+        const skillDamage = 伤害 - beforeSkillDamage;
+        const damageType = jineng1[i].攻击类型 || '神通';
+        类型桶[damageType] = (类型桶[damageType] || 0) + skillDamage;
+
+        if (jineng1[i].控制 === 1) {
+          if ((Number(defender.免疫控制) || 0) > 0) {
+            msgs.push(`${defender.名号}受道种护体庇佑，免疫了控制！`);
+          } else {
+            defender.dongjie = true;
+          }
+        }
+        if (jineng1[i].负面效果) {
+          defender._fumianhuihe = jineng1[i].负面回合;
+          defender._fumian_damage = Math.trunc(skillDamage * jineng1[i].beilv + jineng1[i].other);
+          defender._fumian_type = jineng1[i].负面类型;
+        }
 
         if (jineng1[i].拉条) {
           boostActionBar(attacker, jineng1[i].拉条);
@@ -1944,8 +1983,9 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
         if (count == 2) break; // 最多触发3个技能
       }
     }
+    const 伤害_技能结束 = 伤害;
     
-    for (var i = 0; i < jineng2.length; i++) {
+    if (!不可防御) for (var i = 0; i < jineng2.length; i++) {
       if (
         (safeDefender.学习的功法 &&
           jineng2[i].class == '功法' &&
@@ -1954,6 +1994,10 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
           Math.random() < jineng2[i].pr) ||
         (jineng2[i].class == '灵根' &&
           hasSupremeInnate(safeDefender, jineng2[i].name) &&
+          (cnt2 == jineng2[i].cnt || jineng2[i].cnt == -1) &&
+          Math.random() < jineng2[i].pr) ||
+        (jineng2[i].class == '道种专属' &&
+          safeDefender.xiangu_shenhuo?.专属技能 === jineng2[i].name &&
           (cnt2 == jineng2[i].cnt || jineng2[i].cnt == -1) &&
           Math.random() < jineng2[i].pr)
       ) {
@@ -1966,6 +2010,18 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
         
         // 应用技能效果
         伤害 = 伤害 * jineng2[i].beilv + jineng2[i].other;
+        if (jineng2[i].class == '道种专属') {
+          if (jineng2[i].护盾值 > 0) {
+            const shield = Math.trunc((Number(defender.血量上限) || 0) * jineng2[i].护盾值);
+            defender.护盾值 = (Number(defender.护盾值) || 0) + shield;
+            msgs.push(`${defender.名号}凝聚道种护盾，获得${bigNumberTransform(shield)}点护盾！`);
+          }
+          if (jineng2[i].免控回合 > 0) defender.免疫控制 = Math.max(defender.免疫控制 || 0, jineng2[i].免控回合);
+          if (jineng2[i].持续减伤 > 0 && jineng2[i].持续减伤回合 > 0) {
+            defender._持续减伤比例 = jineng2[i].持续减伤;
+            defender._持续减伤回合 = jineng2[i].持续减伤回合;
+          }
+        }
       }
     }
     
@@ -1988,7 +2044,31 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
     }
     
     伤害 = Math.trunc(伤害 * buff);
-    伤害 = ensureNumber(伤害, 0); // 再次确保不是NaN
+    const damageResult = calcDamage(
+      safeAttacker,
+      safeDefender,
+      伤害,
+      { buckets: 类型桶, baseRaw: 伤害_技能结束 },
+      不可防御,
+      无视减伤
+    );
+    伤害 = ensureNumber(damageResult.actual_damage, 0);
+    msgs.push(...damageResult.msgs);
+    if (safeDefender._首次闪避已触发) defender._首次闪避已触发 = true;
+    if (Number.isFinite(safeDefender._逍遥仙袍闪避次数)) defender._逍遥仙袍闪避次数 = safeDefender._逍遥仙袍闪避次数;
+    if (!无视减伤 && defender._持续减伤回合 > 0 && defender._持续减伤比例 > 0) {
+      const before = 伤害;
+      伤害 = Math.trunc(伤害 * (1 - defender._持续减伤比例));
+      defender._持续减伤回合--;
+      if (defender._持续减伤回合 <= 0) defender._持续减伤比例 = 0;
+      msgs.push(`${defender.名号}的道种厚土之力抵消了${bigNumberTransform(before - 伤害)}点伤害！`);
+    }
+    if (!attacker._先天禁疗 && attacker.吸血率 > 0 && 伤害 > 0) {
+      const before = attacker.当前血量;
+      attacker.当前血量 = Math.min(attacker.血量上限, attacker.当前血量 + Math.trunc(伤害 * attacker.吸血率));
+      const actual = attacker.当前血量 - before;
+      if (actual > 0) msgs.push(`${attacker.名号}汲取了${bigNumberTransform(actual)}点生命！`);
+    }
      // 在函数结束前恢复属性
     if (jieziTriggered) {
         attacker.攻击 = originalAttack;
@@ -1999,7 +2079,8 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
     return {
       damage: 伤害,
       msgs: msgs,
-      isCritical: isCritical
+      isCritical: isCritical,
+      斩杀阈值
     };
   }
   
@@ -2331,6 +2412,33 @@ if (bossCopy.名号 === '帝尊') {
     for (const activeUnit of readyUnits) {
       if (activeUnit.当前血量 <= 0 || activeUnit._actionBar < ACTION_BAR_MAX) continue;
       activeUnit._actionBar -= ACTION_BAR_MAX;
+
+      if (activeUnit._fumianhuihe > 0 && activeUnit._fumian_damage > 0) {
+        const effectDamage = ensureNumber(activeUnit._fumian_damage, 0);
+        activeUnit.当前血量 = Math.max(0, activeUnit.当前血量 - effectDamage);
+        activeUnit._fumianhuihe--;
+        await addBattleLog(`${activeUnit.名号}受到${activeUnit._fumian_type || '道种余威'}侵蚀，损失${bigNumberTransform(effectDamage)}点生命！`);
+        if (activeUnit._fumianhuihe <= 0) {
+          activeUnit._fumian_damage = 0;
+          activeUnit._fumian_type = null;
+        }
+        if (activeUnit.当前血量 <= 0) {
+          if (activeUnit === bossCopy) {
+            await addBattleLog(`${bossCopy.名号}被道种余威磨灭！`);
+            break;
+          }
+          const revival = await this.checkPlayerRevival(activeUnit);
+          if (revival.success) {
+            activeUnit.已复活 = true;
+            activeUnit.已死亡 = false;
+            await addBattleLog(...revival.message);
+          } else {
+            activeUnit.已死亡 = true;
+            await addBattleLog(`${activeUnit.名号}被道种余威击溃！`);
+            continue;
+          }
+        }
+      }
 
     if (activeUnit !== bossCopy) {
     // ---------- 玩家阶段 ----------
@@ -2758,6 +2866,10 @@ if (player.分身 && player.分身.length > 0) {
       
       // 更新BOSS血量
       bossCopy.当前血量 = Math.max(0, ensureNumber(bossCopy.当前血量 - damage));
+      if (result.斩杀阈值 > 0 && bossCopy.当前血量 > 0 && bossCopy.当前血量 <= result.斩杀阈值 * bossCopy.血量上限) {
+        bossCopy.当前血量 = 0;
+        await addBattleLog(`${player.名号}以草字剑意斩断真我，触发斩杀！`);
+      }
       
       // 更新仇恨值（伤害越高仇恨越高）
       hatred[i] += damage;
@@ -3278,6 +3390,10 @@ if (targetPlayer.分身 && targetPlayer.分身.length > 0) {
 }
       // 更新玩家血量
       targetPlayer.当前血量 = Math.max(0, ensureNumber(targetPlayer.当前血量 - damage));
+      if (result.斩杀阈值 > 0 && targetPlayer.当前血量 > 0 && targetPlayer.当前血量 <= result.斩杀阈值 * targetPlayer.血量上限) {
+        targetPlayer.当前血量 = 0;
+        await addBattleLog(`${bossCopy.名号}以草字剑意斩断真我，触发斩杀！`);
+      }
       
       await addBattleLog(`${bossCopy.名号}攻击${targetPlayer.名号}，造成${bigNumberTransform(damage)}点伤害，${targetPlayer.名号}剩余血量：${bigNumberTransform(targetPlayer.当前血量)}`);
       

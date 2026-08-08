@@ -1,3 +1,5 @@
+import { getXianguBagSummary } from './xianguBag.js';
+
 export const XIANGU_EVACUATION_MODES = Object.freeze({
   NORMAL: 'normal',
   EMERGENCY: 'emergency',
@@ -350,7 +352,10 @@ export function buildXianguRunSummary(player = {}, najie = {}, now = Date.now())
 
   const najieStartCount = toNonNegativeInteger(run.startNajieCount ?? run.startInventoryCount);
   const najieEndCount = countNajieItems(najie);
-  const najieDelta = Math.max(0, najieEndCount - najieStartCount);
+  const legacyNajieDelta = Math.max(0, najieEndCount - najieStartCount);
+  const hasBag = Object.hasOwn(player, 'xiangu_bag');
+  const bag = getXianguBagSummary(player.xiangu_bag);
+  const najieDelta = hasBag ? bag.itemCount : legacyNajieDelta;
 
   const seeds = Array.isArray(player.xiangu_seeds) ? player.xiangu_seeds : [];
   const seedStartCount = toNonNegativeInteger(run.startSeedCount);
@@ -358,8 +363,15 @@ export function buildXianguRunSummary(player = {}, najie = {}, now = Date.now())
   const trackedSeeds = Array.isArray(run.获得道种) ? run.获得道种 : [];
   const trackedSeedNames = trackedSeeds.map(getSeedName).filter(Boolean);
   const derivedSeedNames = seeds.slice(seedStartCount).map(getSeedName).filter(Boolean);
-  const seedNames = trackedSeedNames.length > 0 ? trackedSeedNames : derivedSeedNames;
-  const seedCount = trackedSeedNames.length > 0 ? trackedSeedNames.length : currentSeedDelta;
+  const bagSeedNames = bag.seeds.map(seed =>
+    typeof seed === 'string' ? seed : String(seed?.名称 || seed?.name || '')
+  ).filter(Boolean);
+  const seedNames = hasBag
+    ? bagSeedNames
+    : trackedSeedNames.length > 0 ? trackedSeedNames : derivedSeedNames;
+  const seedCount = hasBag
+    ? bag.seedCount
+    : trackedSeedNames.length > 0 ? trackedSeedNames.length : currentSeedDelta;
 
   const killsStart = toNonNegativeInteger(run.startKills);
   const killsEnd = toNonNegativeInteger(player.xiangu_kills);
@@ -376,7 +388,7 @@ export function buildXianguRunSummary(player = {}, najie = {}, now = Date.now())
     !['daoyun', 'xiongmng', 'debuff', 'unique_found'].includes(key) &&
     toFiniteNumber(gains[key], 0) > 0
   );
-  const lootUnits = najieDelta + seedCount + uniqueFound;
+  const lootUnits = hasBag ? bag.lootUnits : najieDelta + seedCount + uniqueFound;
 
   return {
     version: 1,
@@ -404,6 +416,11 @@ export function buildXianguRunSummary(player = {}, najie = {}, now = Date.now())
     infamyDelta,
     infamyGained: infamyDelta,
     daoyun,
+    xiuwei: hasBag ? bag.xiuwei : 0,
+    xueqi: hasBag ? bag.xueqi : 0,
+    sourceStone: hasBag ? bag.sourceStone : 0,
+    potential: hasBag ? bag.potential : 0,
+    techniqueCount: hasBag ? bag.techniqueCount : 0,
     uniqueFound,
     gainNames,
     lootUnits,
@@ -423,6 +440,10 @@ export function clearXianguSessionState(player = {}, summary = {}) {
     'xiangu_teammate_data',
     'xiangu_teammate_betray_chance',
     'xiangu_last_npc_tick',
+    'xiangu_npc_interactions',
+    'xiangu_bag',
+    'xiangu_defeated_npc_ids',
+    'xiangu_world_seed',
   ];
 
   for (const field of temporaryFields) delete player[field];

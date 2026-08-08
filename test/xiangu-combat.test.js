@@ -3,6 +3,8 @@ import test from 'node:test';
 
 import {
   XIANGU_HEAVY_INJURY_MS,
+  areXianguPlayersInSameInstance,
+  areXianguPlayersNearby,
   applyXianguHeavyInjury,
   buildXianguArenaRewardPlan,
   buildXianguBattleSides,
@@ -10,6 +12,7 @@ import {
   getXianguExploreEfficiency,
   recordXianguArenaWin,
   resolveXianguLeaderWinner,
+  transferXianguDaoyun,
 } from '../apps/SecretPlace/xianguCombat.js';
 
 test('仙古战斗单位保留完整状态并规范战斗字段', () => {
@@ -196,4 +199,60 @@ test('擂台奖励按当前名次覆盖冠军、前三和参与奖且不修改�
   assert.deepEqual(participants, original);
   assert.notEqual(plan, participants);
   assert.notEqual(plan[0], participants[0]);
+});
+
+test('玩家只有在同一碎片近距离内才会相遇', () => {
+  const player = {
+    in_xiangu: true,
+    xiangulevel_id: 5,
+    xiangu_realm_map: { fragmentId: 'edge_camp', instanceId: 'run-1', playerPos: { x: 3, y: 3 } },
+  };
+  const nearby = {
+    in_xiangu: true,
+    xiangulevel_id: 7,
+    xiangu_realm_map: { fragmentId: 'edge_camp', instanceId: 'run-1', playerPos: { x: 4, y: 3 } },
+  };
+
+  assert.equal(areXianguPlayersInSameInstance(player, nearby), true);
+  assert.equal(areXianguPlayersNearby(player, nearby), true, '共同区域内不同境界玩家也应相遇');
+  assert.equal(areXianguPlayersNearby(player, nearby), true);
+  assert.equal(areXianguPlayersNearby(player, {
+    ...nearby,
+    xiangu_realm_map: { fragmentId: 'edge_camp', instanceId: 'run-1', playerPos: { x: 5, y: 3 } },
+  }), false);
+  assert.equal(areXianguPlayersNearby(player, {
+    ...nearby,
+    xiangu_realm_map: { fragmentId: 'spirit_lake', instanceId: 'run-1', playerPos: { x: 3, y: 3 } },
+  }), false);
+  assert.equal(areXianguPlayersNearby(player, {
+    ...nearby,
+    xiangu_realm_map: { fragmentId: 'edge_camp', instanceId: 'run-2', playerPos: { x: 4, y: 3 } },
+  }), false);
+  assert.equal(areXianguPlayersInSameInstance(player, {
+    ...nearby,
+    xiangu_realm_map: { fragmentId: 'edge_camp', playerPos: { x: 4, y: 3 } },
+  }), false);
+  assert.equal(areXianguPlayersNearby(player, { ...nearby, in_xiangu: false }), false);
+
+  const legacyPlayer = {
+    in_xiangu: true,
+    xiangu_realm_map: { fragmentId: 'edge_camp', playerPos: { x: 3, y: 3 } },
+  };
+  assert.equal(areXianguPlayersInSameInstance(legacyPlayer, {
+    ...legacyPlayer,
+    xiangu_realm_map: { fragmentId: 'edge_camp', playerPos: { x: 4, y: 3 } },
+  }), true);
+});
+
+test('击败玩家或天骄会守恒转移其携带道韵', () => {
+  const winner = { xiangu_gains: { daoyun: 5 } };
+  const player = { xiangu_gains: { daoyun: 80 }, xiangulevel_id: 7 };
+  assert.equal(transferXianguDaoyun(winner, player), 80);
+  assert.equal(winner.xiangu_gains.daoyun, 85);
+  assert.equal(player.xiangu_gains.daoyun, 0);
+
+  const canonNpc = { isCanon: true, level_id: 7 };
+  assert.equal(transferXianguDaoyun(winner, canonNpc), 210);
+  assert.equal(canonNpc.daoyun, 0);
+  assert.equal(transferXianguDaoyun(winner, canonNpc), 0, '同一目标不能重复掠夺道韵');
 });

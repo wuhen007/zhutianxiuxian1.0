@@ -55,6 +55,7 @@ import {
   ENDLESS_TOKEN,
   FUSION_ITEM,
   findEndlessProduct,
+  formatTreasureClue,
   mergeSetEquipment,
 } from '../model/endlessShop.js';
 import {
@@ -62,11 +63,7 @@ import {
   getEndlessBattleTemplateModel,
   normalizeEndlessBattleTemplate,
 } from '../model/endlessBattleTemplate.js';
-import {
-  CONTESTABLE_INNATE_TREASURE_NAMES,
-  INNATE_TREASURE_CATALOG,
-  readInnateTreasureState,
-} from '../model/innateTreasure.js';
+import RealmEvents from './tasks/RealmEvents.js';
 import {
   getEndlessMetaView,
   resetEndlessMeta,
@@ -1068,24 +1065,6 @@ export class EndlessRealm extends plugin {
     return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
   }
 
-  createTreasureClue() {
-    const state = readInnateTreasureState();
-    const unclaimed = CONTESTABLE_INNATE_TREASURE_NAMES.filter(name => !state.owners?.[name]);
-    const pool = unclaimed.length ? unclaimed : CONTESTABLE_INNATE_TREASURE_NAMES;
-    const name = pool[Math.floor(Math.random() * pool.length)];
-    const profile = INNATE_TREASURE_CATALOG[name];
-    const owner = state.owners?.[name];
-    return [
-      '【先天灵宝天机】',
-      `天机所指：${name}·${profile?.title || '先天至宝'}`,
-      `权能：${profile?.summary || '大道权柄尚在混沌中'}`,
-      owner
-        ? `认主状态：已认主（${owner.ownerName || owner.ownerId || '天机遮蔽'}）`
-        : '认主状态：尚未认主，可关注先天至宝择主事件。',
-      '可发送 #先天至宝图鉴 查询完整权柄。',
-    ];
-  }
-
   async buyEndlessItem(e) {
     const userId = await this.checkPlayer(e);
     if (!userId) return false;
@@ -1124,13 +1103,31 @@ export class EndlessRealm extends plugin {
         return e.reply('购买失败，消耗的劫境道痕已经退还');
       }
 
+      let treasureEvent = null;
+      if (product.action === 'clue') {
+        treasureEvent = await RealmEvents.triggerTreasureFromTianji({
+          qq: userId,
+          name: player.名号 || userId,
+        });
+        if (!treasureEvent.ok) {
+          await Write_player(userId, original);
+          const reasons = {
+            disabled: '位面事件尚未开启',
+            all_claimed: '诸天先天至宝均已认主',
+            all_manifested: '所有未认主至宝都已显化',
+          };
+          return e.reply(`${reasons[treasureEvent.reason] || '天机未能引动至宝'}，本次购买未消耗劫境道痕`);
+        }
+        await RealmEvents.broadcastEvent(treasureEvent.message);
+      }
+
       const lines = [
         '【无尽商店·购买成功】',
         `${product.name}×${amount}`,
         `消耗${ENDLESS_TOKEN}：${cost}`,
         `剩余${ENDLESS_TOKEN}：${player[ENDLESS_TOKEN]}`,
       ];
-      if (product.action === 'clue') lines.push('', ...this.createTreasureClue());
+      if (treasureEvent) lines.push('', ...formatTreasureClue(treasureEvent.eventData));
       return e.reply(lines.join('\n'));
     });
   }

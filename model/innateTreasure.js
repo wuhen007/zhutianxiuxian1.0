@@ -53,7 +53,7 @@ export const INNATE_TREASURE_CATALOG = Object.freeze({
     summary: '破除敌方防御，以开天余威强化讨伐与洗劫。',
     passives: ['PVE战斗中无视敌方30%防御。'],
     authorities: [
-      { command: '#开天', cooldownKey: '开天', effect: '下一场PVE令敌方防御归零，并斩去普通敌人30%、首领3%的初始气血；讨伐天骄成功后，下一次洗劫奖励翻倍。' },
+      { command: '#开天', cooldownKey: '开天', effect: '下一场PVE令敌方防御归零，并斩去普通敌人30%、首领3%的初始气血；讨伐天骄成功后，下一次洗劫奖励翻倍，并有30%概率打碎天骄本世的护身法宝。' },
     ],
   },
   诛仙四剑: {
@@ -176,6 +176,13 @@ export const AUTHORITY_COOLDOWNS = Object.freeze({
 });
 
 export const INNATE_TREASURE_PROJECTION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+export const PANGU_TALISMAN_SHATTER_CHANCE = 0.3;
+
+export function tryPanguShatterTalisman(status, active, random = Math.random) {
+  if (!active || status?.护身法宝已碎 || random() >= PANGU_TALISMAN_SHATTER_CHANCE) return false;
+  status.护身法宝已碎 = true;
+  return true;
+}
 
 const TREASURE_SET = new Set(INNATE_TREASURE_NAMES);
 const STATE_FILE = path.join(
@@ -296,6 +303,30 @@ export function releaseInnateTreasure(name, ownerId) {
   delete state.equipped[name];
   writeInnateTreasureState(state);
   return true;
+}
+
+/**
+ * 计算一次先天至宝发放方案（纯逻辑，不写任何文件）。
+ * 供管理员 #发 指令调用：先在此判定归属占用，再执行 IO。
+ * @param {string} name 至宝名称
+ * @param {string|number} ownerId 目标玩家QQ
+ * @param {{force?: boolean}} [options] force=true 允许覆盖已被他人认主的至宝
+ * @returns {{ok:boolean, reason?:string, ownerId?:string, name?:string, treasure?:object}}
+ */
+export function buildInnateTreasureGrant(name, ownerId, options = {}) {
+  const force = Boolean(options.force);
+  if (!isInnateTreasureName(name)) return { ok: false, reason: 'unknown' };
+  const state = readInnateTreasureState();
+  const existingOwner = state.owners?.[name]?.ownerId;
+  if (existingOwner && existingOwner !== String(ownerId) && !force) {
+    return { ok: false, reason: 'owned', ownerId: existingOwner };
+  }
+  return {
+    ok: true,
+    name,
+    ownerId: String(ownerId),
+    treasure: createInnateTreasure(name, ownerId),
+  };
 }
 
 export function updateEquippedInnateTreasure(ownerId, treasureName, sectName = '') {

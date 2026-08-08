@@ -13,6 +13,8 @@ import {
   get_player_img,
   Read_qinmidu,
   Write_qinmidu,
+  Read_najie,
+  Write_najie,
   channel
 } from '../../model/xiuxian.js';
 import { Read_player, __PATH } from '../../model/xiuxian.js';
@@ -22,6 +24,7 @@ import {
   WENXIAN_DAILY_TASK_TARGET,
 } from '../../model/wenxianling.js';
 import { deletePlayerDataBundle } from './playerDeletion.js';
+import { getDailyTaskDateKey } from '../../model/dailyTask.js';
 export class AdminSuper extends plugin {
   constructor() {
     super({
@@ -1521,6 +1524,21 @@ async relieveFashanAction(e) {
     await redis.del(`xiuxian:player:${targetQQ}:renwu_lingshi_jilu`);
 
     const player = await Read_player(targetQQ);
+    const rewardPrefix = `daily-task:${getDailyTaskDateKey()}:`;
+    if (player._rewardClaims) {
+      for (const key of Object.keys(player._rewardClaims)) {
+        if (key.startsWith(rewardPrefix)) delete player._rewardClaims[key];
+      }
+      await Write_player(targetQQ, player, { trackDailyTask: false });
+    }
+    const najie = await Read_najie(targetQQ);
+    if (najie?._rewardClaims) {
+      for (const key of Object.keys(najie._rewardClaims)) {
+        if (key.startsWith(rewardPrefix)) delete najie._rewardClaims[key];
+      }
+      await Write_najie(targetQQ, najie);
+    }
+    await redis.del(`xiuxian:player:${targetQQ}:wenxianling:task_exp:${getDailyTaskDateKey()}`);
     const playerName = player.名号 || targetQQ;
 
     if (lastTime) {
@@ -1663,7 +1681,6 @@ async function clearNajieThing(thingType, thingName) {
     })
     .filter(usrObj => usrObj);
 }
-
 
 
 

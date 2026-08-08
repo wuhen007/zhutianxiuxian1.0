@@ -84,6 +84,12 @@ const WEIMIAN_INITIAL_STATE = Object.freeze({
   往生系统: 1,
   仙古秘境开启概率: 0,
   仙古秘境开启时间: 0,
+  仙古秘境会话ID: '',
+  仙古秘境阶段: 'closed',
+  仙古秘境花蕾现世总年份: 0,
+  仙古秘境准备结束总年份: 0,
+  仙古秘境开启总年份: 0,
+  仙古秘境关闭总年份: 0,
 });
 
 const REALM_EVENTS_FILE = path.join(__PATH.data_path, 'weimian_events.json');

@@ -23,7 +23,6 @@ foundthing,
    Read_najie,
   exist_najie_thing,
   Add_修为,
-  Add_player_学习功法,
   bigNumberTransform,
   Add_血气,
   __PATH,
@@ -44,6 +43,61 @@ import {
   searchPlayerGongfa,
   TIANJI_COSTS,
 } from '../../model/tianjiSearch.js';
+import {
+  applySoulSearchKarmaTribulation,
+  calculateSoulSearchSuccessRate,
+  canUseSoulSearch,
+  getSoulSearchProfile,
+  pickSoulSearchGongfa,
+  WORLD_ENDING_TRIBULATION_DAMAGE,
+} from './soulSearchRules.js';
+import {
+  applyTeachingResult,
+  canTeachGongfa,
+  getGongfaLevel,
+  getTeachingCosts,
+  getTeachingSuccessRate,
+  reserveTeachingCosts,
+} from '../../model/gongfaTeaching.js';
+
+function formatSoulSearchTribulation(player, result) {
+  if (!result.triggered) return [];
+  const lines = [
+    `【业力清算·灭世雷劫】`,
+    `${player.名号}业力达到${result.karmaThreshold}点，十道灭世神雷轰然降临！`,
+    `每道基础劫威：${bigNumberTransform(WORLD_ENDING_TRIBULATION_DAMAGE)}`,
+  ];
+  for (const wave of result.waves) {
+    lines.push(
+      `第${wave.wave}道：承受${bigNumberTransform(wave.damage)}伤害，剩余气血${bigNumberTransform(wave.remainingHp)}`
+    );
+  }
+  if (result.survived) {
+    lines.push(`【渡劫成功】你扛过十道灭世雷劫，${result.karmaThreshold}点业力随劫消散。`);
+    return lines;
+  }
+
+  const penalty = result.penalty;
+  const labels = {
+    level_id: '练气',
+    Physique_id: '炼体',
+    mijinglevel_id: '秘境',
+    xiangulevel_id: '仙古',
+  };
+  lines.push(`【渡劫失败·道基崩裂】`);
+  for (const [field, label] of Object.entries(labels)) {
+    lines.push(`${label}：${penalty.oldRealms[field]} → ${penalty.newRealms[field]}`);
+  }
+  lines.push(
+    `元神上限：${bigNumberTransform(penalty.oldSoulLimit)} → ${bigNumberTransform(penalty.newSoulLimit)}（削减70%）`,
+    `资质：${penalty.oldAptitude} → ${penalty.newAptitude}`,
+    penalty.forgottenGongfa.length > 0
+      ? `遗忘功法：${penalty.forgottenGongfa.join('、')}`
+      : `遗忘功法：无`,
+    `${result.karmaThreshold}点业力随雷劫清算。`
+  );
+  return lines;
+}
 
 
 // 源石兑换表：源石道具 → 可兑换的源石数值（斤）
@@ -115,7 +169,7 @@ fnc: 'tianyi_yidao'
         dsc: '传授指定功法给目标玩家'
     },
     {
-        reg: '^#传授全部功法(?:@(\\d+))?$',
+        reg: '^#(?:传授全部功法|一键传授)(?:\\s*@(\\d+))?\\s*$',
         fnc: 'teachAllGongfa',
         dsc: '将自己所有功法传授给目标玩家'
     },
@@ -2622,35 +2676,11 @@ async createEverything(e) {
 
 // 传授指定功法
 async teachGongfa(e) {
-        if (!e.isGroup) {
-        e.reply('请在群聊中传授功法');
-        return true;
-    }
-
-    const casterQQ = e.user_id.toString().replace('qg_', '');
-    const caster = await Read_player(casterQQ);
-    
-    if (caster.mijinglevel_id<12&& caster.xiangulevel_id<10) {
-        e.reply('你的道行不够，还没有传道授业为别人指点修行的能力');
-         return true; // 确保返回true
-    }
     return this.handleTeach(e, false);
 }
 
 // 传授全部功法
 async teachAllGongfa(e) {
-    if (!e.isGroup) {
-        e.reply('请在群聊中传授功法');
-        return true;
-    }
-
-    const casterQQ = e.user_id.toString().replace('qg_', '');
-    const caster = await Read_player(casterQQ);
-    
-    if (caster.mijinglevel_id<12&& caster.xiangulevel_id<10) {
-        e.reply('你的道行不够，还没有传道授业为别人指点修行的能力');
-         return true; // 确保返回true
-    }
     return this.handleTeach(e, true);
 }
 
@@ -2670,7 +2700,7 @@ async handleTeach(e, isAll = false) {
         return true;
     }
     
-    if (caster.mijinglevel_id < 12 && caster.xiangulevel_id < 12) {
+    if (!canTeachGongfa(caster)) {
         e.reply('你的道行不够，还没有传道授业为别人指点修行的能力');
         return true;
     }
@@ -2698,13 +2728,6 @@ async handleTeach(e, isAll = false) {
         await redis.del(teachCountKey);
     }
 
-    // === 元神消耗公式（按功法难度平方递增） ===
-    // level 0(武学)=10万, 5(帝经)=360万, 8(仙帝法)=810万, 9(神慧者)=1000万
-    const spiritCostForLevel = (level) => 100000 * (level + 1) * (level + 1);
-
-    // === 传授者天资（当前只用于日志，不影响传授判断） ===
-    const casterAptitude = { grade: caster.天资等级 || '平庸之资' };
-    
     // === 获取目标玩家 ===
     const atItems = e.message.filter(item => item.type === "at");
     if (atItems.length === 0) {
@@ -2777,36 +2800,8 @@ async handleTeach(e, isAll = false) {
             `建议先为其寻找开智之法。`
         ].join('\n'));
         
-        // 询问是否继续
-        if (Math.random() < 0.3) { // 30%概率继续
-            e.reply(`但今日你运气不错，或许能强行传授...`);
-        } else {
-            return true;
-        }
+        e.reply(`传授仍将继续，但每门功法只有30%的领悟机会。`);
     }
-    
-    // === 定义功法层级映射（数字越大=越难学，与UserHome.js保持一致） ===
-    const gongfaHierarchy = {
-        "武学": 0,
-        "限定功法": 0,
-        "修炼功法": 1,
-        "炼器": 1,
-        "炼丹": 1,
-        "推演": 1,
-        "技能": 1,
-        "天魔法": 2,
-        "命运法": 2,
-        "天赋": 2,
-        "道与法": 3,
-        "宝术": 3,
-        "九秘": 4,
-        "盖世杀术": 4,
-        "帝经": 5,
-        "十凶宝术": 6,
-        "仙王法": 7,
-        "仙帝法": 8,
-        "神慧者": 9
-    };
     
     // 天资等级对应的最高可学习难度（值=能学的最高gongfaHierarchy，与UserHome.js保持一致）
     const aptitudeLevels = {
@@ -2828,7 +2823,7 @@ async handleTeach(e, isAll = false) {
     
     // === 传授指定功法 ===
     if (!isAll) {
-        const gongfaName = e.msg.replace(/^#传授功法(?:\s+|@\d+\s*)?/, '').trim();
+        const gongfaName = e.msg.replace(/^#传授功法/, '').replace(/@\d+/g, '').trim();
         
         if (!gongfaName) {
             e.reply('请指定要传授的功法名称');
@@ -2860,7 +2855,7 @@ async handleTeach(e, isAll = false) {
         }
         
         // 获取功法层级
-        const gongfaLevel = gongfaHierarchy[gongfaType] || 8;
+        const gongfaLevel = getGongfaLevel(gongfaType);
         
         // === 检查天资条件 ===
         if (targetMaxLevel < gongfaLevel) {
@@ -2949,17 +2944,14 @@ async handleTeach(e, isAll = false) {
         }
         
         // === 学习失败概率 ===
-        let successRate = 1.0;
+        const successRate = getTeachingSuccessRate(gongfaLevel, targetAptitude.grade);
         let failureReason = "";
         
         if (targetAptitude.grade === '生而愚痴') {
-            successRate = 0.3; // 生而愚痴只有30%成功率
             failureReason = "生而愚痴，灵智未开";
-        } else if (gongfaLevel <= 3) { // 十凶宝术及以上
-            successRate = 0.7;
+        } else if (gongfaLevel >= 6) {
             failureReason = "功法太过玄奥";
-        } else if (gongfaLevel <= 5) { // 帝经/九秘
-            successRate = 0.8;
+        } else if (gongfaLevel >= 4) {
             failureReason = "境界不足，领悟困难";
         }
         
@@ -2979,7 +2971,7 @@ async handleTeach(e, isAll = false) {
         }
         
         // === 施法者元神消耗（按功法难度递增） ===
-        const casterSpiritCost = spiritCostForLevel(gongfaLevel);
+        const { potential: potentialCost, spirit: casterSpiritCost } = getTeachingCosts(gongfaLevel);
         const casterYuanShen = caster.元神 || 0;
         if (casterYuanShen < casterSpiritCost) {
             e.reply([
@@ -2992,29 +2984,23 @@ async handleTeach(e, isAll = false) {
             return true;
         }
 
-        // === 仙道潜力检查（被传授方消耗） ===
-        {
-            const potentialCost = gongfaLevel + 1; // 难度越高消耗越多（武学1点，神慧者10点）
-            const currentPotential = target.仙道潜力 || 0;
-            if (currentPotential < potentialCost) {
-                e.reply([
-                    `〖仙道潜力不足·传授受阻〗`,
-                    `你向${target.名号}传授【${gongfaName}】，`,
-                    `然其识海中的仙道潜力已几近枯竭，无法承载这份传承！`,
-                    ``,
-                    `目标当前仙道潜力：${currentPotential} 点`,
-                    `学习所需潜力：${potentialCost} 点（${gongfaType}）`,
-                    `「请先为目标补足仙道潜力方可传授！」`
-                ].join('\n'));
-                return true;
-            }
-            // 扣除目标玩家仙道潜力
-            target.仙道潜力 = currentPotential - potentialCost;
-            await Write_player(targetQQ, target);
+        const currentPotential = target.仙道潜力 || 0;
+        if (currentPotential < potentialCost) {
+            e.reply([
+                `〖仙道潜力不足·传授受阻〗`,
+                `你向${target.名号}传授【${gongfaName}】，`,
+                `然其识海中的仙道潜力已几近枯竭，无法承载这份传承！`,
+                ``,
+                `目标当前仙道潜力：${currentPotential} 点`,
+                `学习所需潜力：${potentialCost} 点（${gongfaType}）`,
+                `「请先为目标补足仙道潜力方可传授！」`
+            ].join('\n'));
+            return true;
         }
 
         // === 传授成功 ===
-        await Add_player_学习功法(targetQQ, gongfaName);
+        applyTeachingResult(target, [gongfaName], currentPotential - potentialCost);
+        await Write_player(targetQQ, target);
         await player_efficiency(targetQQ);
 
         // 扣除施法者元神
@@ -3062,9 +3048,9 @@ async handleTeach(e, isAll = false) {
         
         if (targetAptitude.grade === '生而愚痴') {
             successMsg.push(`〖奇迹发生〗生而愚痴者竟能领悟此功法，实乃天意！`);
-        } else if (gongfaLevel <= 3) {
+        } else if (gongfaLevel >= 6) {
             successMsg.push(`〖天地共鸣〗${gongfaName}引发天地异象，道音轰鸣！`);
-        } else if (gongfaLevel <= 5) {
+        } else if (gongfaLevel >= 4) {
             successMsg.push(`〖道法天成〗功法真谛如醍醐灌顶，尽数领悟！`);
         } else {
             successMsg.push(`功法真谛融入心田，修为大进！`);
@@ -3084,9 +3070,10 @@ async handleTeach(e, isAll = false) {
     const failedBySpirit = []; // 元神不足跳过
     const specialSuccess = [];
     let remainingPotential = target.仙道潜力 || 0; // 实时追踪目标剩余潜力
-    let totalSpiritCost = 0; // 施法者元神总消耗（实时追踪）
+    let remainingSpirit = caster.元神 || 0;
+    let totalSpiritCost = 0;
     
-    for (const gongfaName of caster.学习的功法) {
+    for (const gongfaName of new Set(caster.学习的功法)) {
         // 检查目标是否已学习
         if (target.学习的功法 && target.学习的功法.includes(gongfaName)) {
             alreadyKnown.push(gongfaName);
@@ -3106,7 +3093,7 @@ async handleTeach(e, isAll = false) {
         }
         
         // 获取功法层级
-        const gongfaLevel = gongfaHierarchy[gongfaType] || 8;
+        const gongfaLevel = getGongfaLevel(gongfaType);
         
         // 检查天资条件
         if (targetMaxLevel < gongfaLevel) {
@@ -3162,37 +3149,25 @@ async handleTeach(e, isAll = false) {
         }
         
         // === 学习失败概率 ===
-        let successRate = 1.0;
-        
-        if (targetAptitude.grade === '生而愚痴') {
-            successRate = 0.3; // 生而愚痴只有30%成功率
-        } else if (gongfaLevel >= 6) { // 十凶宝术及以上（难度6+）
-            successRate = 0.7;
-        } else if (gongfaLevel >= 4) { // 帝经/九秘（难度4-5）
-            successRate = 0.8;
-        }
+        const successRate = getTeachingSuccessRate(gongfaLevel, targetAptitude.grade);
         
         if (Math.random() > successRate) {
-            failedByLuck.push(`${gongfaName}(${(successRate * 100).toFixed(0)}%失败)`);
+            failedByLuck.push(`${gongfaName}(成功率${(successRate * 100).toFixed(0)}%)`);
             continue;
         }
         
-        // === 仙道潜力检查（批量，实时追踪剩余潜力） ===
-        const potentialCost = gongfaLevel + 1;
-        if (remainingPotential < potentialCost) {
+        const reservation = reserveTeachingCosts({ remainingPotential, remainingSpirit }, gongfaLevel);
+        if (!reservation.ok && reservation.reason === 'potential') {
             failedByPotential.push(`${gongfaName}(潜力不足)`);
             continue;
         }
-        remainingPotential -= potentialCost; // 预扣，真正扣除在传授成功后统一处理
-
-        // === 施法者元神检查（批量，实时追踪剩余元神） ===
-        const spiritCost = spiritCostForLevel(gongfaLevel);
-        const casterYuanShenRemaining = (caster.元神 || 0) - totalSpiritCost;
-        if (casterYuanShenRemaining < spiritCost) {
+        if (!reservation.ok) {
             failedBySpirit.push(`${gongfaName}(元神不足)`);
             continue;
         }
-        totalSpiritCost += spiritCost; // 预扣，真正扣除在传授成功后统一处理
+        remainingPotential = reservation.remainingPotential;
+        remainingSpirit = reservation.remainingSpirit;
+        totalSpiritCost += reservation.costs.spirit;
 
         // 可以传授
         teachableGongfa.push(gongfaName);
@@ -3240,17 +3215,12 @@ async handleTeach(e, isAll = false) {
     }
     
     // === 批量传授 ===
-    for (const gongfaName of teachableGongfa) {
-        await Add_player_学习功法(targetQQ, gongfaName);
-    }
-    await player_efficiency(targetQQ);
-    
-    // 扣除目标玩家仙道潜力（统一结算：remainingPotential已是预扣后的值）
-    target.仙道潜力 = remainingPotential;
+    applyTeachingResult(target, teachableGongfa, remainingPotential);
     await Write_player(targetQQ, target);
+    await player_efficiency(targetQQ);
 
     // 扣除施法者元神
-    caster.元神 = (caster.元神 || 0) - totalSpiritCost;
+    caster.元神 = remainingSpirit;
 
     // 添加传授记录
     caster.传授记录 = caster.传授记录 || [];
@@ -5078,9 +5048,13 @@ async soulSearch(e) {
     e.reply('目标修士不存在，或已陨落在某个时空节点...');
     return false;
   }
+  if (executorQQ === targetQQ) {
+    e.reply('搜魂大法无法对自己施展！');
+    return false;
+  }
 
-  // 境界检查：搜魂大法至少需要斩道王者境界（秘境体系ID>=10）
-  if (executor.mijinglevel_id < 10) {
+  // 秘境体系达到原门槛，或仙古体系达到真一境，均可施展搜魂。
+  if (!canUseSoulSearch(executor)) {
     e.reply([
       `【境界不足·道则反噬】`,
       ``,
@@ -5088,8 +5062,9 @@ async soulSearch(e) {
       `刚欲凝聚神识，便感仙台欲裂！`,
       ``,
       `「搜魂之术，逆天而行！」`,
-      `需斩道王者以上方可承受因果反噬`,
-      `你当前境界：${executor.mijinglevel_id}（需≥10）`,
+      `需斩道王者或真一境以上方可承受因果反噬`,
+      `当前秘境等级：${executor.mijinglevel_id || 0}（需≥10）`,
+      `当前仙古等级：${executor.xiangulevel_id || 0}（真一境需≥9）`,
       ``,
       `强行施展必遭大道反噬，神魂俱灭！`
     ].join('\n'));
@@ -5152,8 +5127,10 @@ async soulSearch(e) {
 
   // 检查执行者是否已有目标的所有功法
   const targetGongfa = [...target.学习的功法];
-  const executorGongfa = executor.学习的功法 || [];
+  const executorGongfa = executor.学习的功法 ||= [];
   const missingGongfa = targetGongfa.filter(gongfa => !executorGongfa.includes(gongfa));
+  const soulSearchProfile = getSoulSearchProfile(executor);
+  const availableGongfaSlots = Math.max(0, soulSearchProfile.maxGongfa - executorGongfa.length);
   
   if (missingGongfa.length === 0) {
     e.reply([
@@ -5163,6 +5140,47 @@ async soulSearch(e) {
       `你早已融会贯通！`,
       ``,
       `再施展搜魂，只是徒增因果业力罢了。`
+    ].join('\n'));
+    return false;
+  }
+  if (availableGongfaSlots === 0) {
+    e.reply([
+      `【搜魂受限·功法满载】`,
+      `${executor.灵根?.name || '当前体质'}最多可承载${soulSearchProfile.maxGongfa}门功法。`,
+      `你已掌握${executorGongfa.length}门，无法继续截取新的功法烙印。`
+    ].join('\n'));
+    return false;
+  }
+
+  e.reply([
+    `【搜魂大法·武力镇压】`,
+    ``,
+    `${executor.名号}欲强取${target.名号}的元神记忆，`,
+    `${target.名号}奋起反抗，唯有先将其击败，方可继续搜魂！`
+  ].join('\n'));
+
+  executor.法球倍率 = executor.灵根?.法球倍率 ?? executor.法球倍率 ?? 1;
+  target.法球倍率 = target.灵根?.法球倍率 ?? target.法球倍率 ?? 1;
+  const battleResult = await zd_battle(executor, target);
+  if (Array.isArray(battleResult.msg) && battleResult.msg.length > 0) {
+    await ForwardMsg(e, battleResult.msg.slice(0, 35));
+    if (battleResult.msg.length > 35) e.reply('战斗过长，仅展示前35条战报。');
+  }
+
+  executor.当前血量 = Math.max(0, battleResult.A_hp);
+  target.当前血量 = Math.max(0, battleResult.B_hp);
+  await Promise.all([
+    Write_player(executorQQ, executor),
+    Write_player(targetQQ, target),
+    redis.set(`xiuxian:player:${executorQQ}:last_soul_search`, now.toString())
+  ]);
+
+  if (battleResult.winner !== 'A') {
+    e.reply([
+      `【搜魂中止·镇压失败】`,
+      ``,
+      `${executor.名号}未能击败${target.名号}，无法触及其元神！`,
+      `本次搜魂已进入冷却。`
     ].join('\n'));
     return false;
   }
@@ -5189,10 +5207,13 @@ async soulSearch(e) {
   // 等待3秒增加氛围
   await new Promise(resolve => setTimeout(resolve, 3000));
 
-  // 搜魂成功率判定（基础80%，境界差距修正）
-  const baseSuccessRate = 0.8;
-  const levelDiff = Math.max(0, executor.mijinglevel_id - target.mijinglevel_id) * 0.05;
-  const finalSuccessRate = Math.min(0.95, baseSuccessRate + levelDiff);
+  // 战斗胜利后进行元神判定，目标境界或元神等级更高时会降低成功率。
+  const finalSuccessRate = calculateSoulSearchSuccessRate(executor, target);
+  e.reply([
+    `【元神判定】`,
+    `搜魂成功率：${Math.round(finalSuccessRate * 100)}%`,
+    `境界差：${executor.mijinglevel_id - target.mijinglevel_id}｜元神等级差：${(executor.yuanshenlevel_id || 0) - (target.yuanshenlevel_id || 0)}`
+  ].join('\n'));
   
   const searchSuccess = Math.random() < finalSuccessRate;
   
@@ -5202,11 +5223,12 @@ async soulSearch(e) {
     executor.当前血量 -= backlashDamage;
     
     // 业力缠绕
-    executor.业力值 = (executor.业力值 || 0) + 100;
+    executor.业力值 = (Number(executor.业力值) || 0) + 100;
+    const tribulation = applySoulSearchKarmaTribulation(executor);
     
     await Write_player(executorQQ, executor);
     
-    e.reply([
+    await e.reply([
       `【搜魂失败·业力反噬】`,
       ``,
       `${target.名号}元神中竟有禁制守护！`,
@@ -5215,36 +5237,26 @@ async soulSearch(e) {
       `搜魂之术被强行弹开！`,
       `业力反噬，你损失了${Math.floor(backlashDamage)}点气血！`,
       ``,
-      `业力值+100，日后渡劫时将承受更恐怖的天罚！`
+      `业力值+100${tribulation.triggered
+        ? '，已触发灭世雷劫！'
+        : `（当前${tribulation.karma}/${tribulation.karmaThreshold}）`}`
     ].join('\n'));
-    
-    // 记录搜魂时间（即使失败也算使用）
-    await redis.set(`xiuxian:player:${executorQQ}:last_soul_search`, now.toString());
+    if (tribulation.triggered) {
+      await e.reply(formatSoulSearchTribulation(executor, tribulation).join('\n'));
+    }
     
     return false;
   }
 
   // 搜魂成功
-  const learnedGongfa = [];
-  const failedGongfa = [];
-  
-  // 逐个尝试学习功法
-  for (const gongfa of missingGongfa) {
-    // 每个功法有独立的领悟成功率
-    const gongfaSuccessRate = 0.85; // 单个功法学习成功率
-    
-    if (Math.random() < gongfaSuccessRate) {
-      // 成功学习
-      executor.学习的功法.push(gongfa);
-      learnedGongfa.push(gongfa);
-    } else {
-      // 领悟失败
-      failedGongfa.push(gongfa);
-    }
-  }
+  const learnedGongfa = pickSoulSearchGongfa(missingGongfa, availableGongfaSlots);
+  const learned = new Set(learnedGongfa);
+  const failedGongfa = missingGongfa.filter(gongfa => !learned.has(gongfa));
+  executor.学习的功法.push(...learnedGongfa);
 
   // 业力惩罚（搜魂有伤天和）
-  executor.业力值 = (executor.业力值 || 0) + 50;
+  executor.业力值 = (Number(executor.业力值) || 0) + 50;
+  const tribulation = applySoulSearchKarmaTribulation(executor);
   
   // 目标遭受元神创伤
   target.元神 = Math.max(100000, (target.元神 || 500000) * 0.7);
@@ -5253,9 +5265,6 @@ async soulSearch(e) {
   await Write_player(executorQQ, executor);
   await Write_player(targetQQ, target);
   
-  // 记录搜魂时间
-  await redis.set(`xiuxian:player:${executorQQ}:last_soul_search`, now.toString());
-
   // 构建结果消息
   const resultLines = [
     `【搜魂成功·记忆掠夺】`,
@@ -5274,20 +5283,24 @@ async soulSearch(e) {
   }
 
   if (failedGongfa.length > 0) {
-    resultLines.push(`❌ 领悟失败 ${failedGongfa.length} 门功法：`);
-    failedGongfa.forEach(gongfa => {
-      resultLines.push(`  · ${gongfa} - 记忆碎片过于残缺，无法参悟`);
-    });
+    resultLines.push(`⚠️ 其余 ${failedGongfa.length} 门功法未能截取；单次最多取得两到三门，总上限${soulSearchProfile.maxGongfa}门。`);
     resultLines.push(``);
   }
 
-  resultLines.push(`💀 业力惩罚：业力值+50`);
+  resultLines.push(`💀 业力惩罚：业力值+50${tribulation.triggered
+    ? '，已触发灭世雷劫'
+    : `（当前${tribulation.karma}/${tribulation.karmaThreshold}）`}`);
   resultLines.push(`💀 目标创伤：${target.名号}元神受损，道心蒙尘`);
   resultLines.push(``);
   resultLines.push(`「搜魂之术，虽能速成，却有伤天和」`);
-  resultLines.push(`「业力缠身，他日渡劫，必遭天谴！」`);
+  resultLines.push(tribulation.triggered
+    ? `「业力满百，灭世雷劫已至！」`
+    : `「业力缠身，满百之时，天罚必至！」`);
 
-  e.reply(resultLines.join('\n'));
+  await e.reply(resultLines.join('\n'));
+  if (tribulation.triggered) {
+    await e.reply(formatSoulSearchTribulation(executor, tribulation).join('\n'));
+  }
 
   return true;
 }

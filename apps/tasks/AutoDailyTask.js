@@ -15,6 +15,7 @@ import {
 } from '../../model/xiuxian.js';
 import schedule from 'node-schedule';
 import { getDailyTaskDateKey } from '../../model/dailyTask.js';
+import { reserveDailyAction, resetDailyAction } from '../../model/dailyAction.js';
 import { wasFactionRewardClaimedToday } from '../../model/factionSystem.js';
 // 问仙令：每日任务完成后 +50 经验
 import { WenXianLing } from '../WenXianLing/WenXianLing.js';
@@ -319,6 +320,10 @@ async isAutoTaskEnabled(usr_qq) {
                     return false;
                 }
             }
+            if (!await reserveDailyAction(redis, usr_qq, 'sign', today.getTime())) {
+                console.log(`玩家 ${usr_qq} 签到正在处理，跳过`);
+                return false;
+            }
 
             // 更新连续签到天数（先更新再计算奖励）
             const yesterday = new Date(today.getTime() - 86400000);
@@ -390,10 +395,25 @@ async isAutoTaskEnabled(usr_qq) {
                 console.log(`玩家 ${usr_qq} 未加入势力，跳过俸禄领取`);
                 return false;
             }
+            if (!['瑶池', '摇光圣地', '剑云海'].includes(player.势力)) {
+                console.log(`玩家 ${usr_qq} 当前势力没有自动俸禄，跳过`);
+                return false;
+            }
 
             const sharedSalaryDate = await redis.get(`xiuxian:player:${usr_qq}:faction_salary_date`);
             if (wasFactionRewardClaimedToday(sharedSalaryDate)) {
                 console.log(`玩家 ${usr_qq} 今日已领取势力俸禄，跳过自动俸禄`);
+                return false;
+            }
+            const salaryDate = this.getLocalDateStr();
+            const salaryClaimKey = `xiuxian:player:${usr_qq}:faction_salary_claim:${salaryDate}`;
+            const salaryReserved = await redis.set(
+                salaryClaimKey,
+                player.势力,
+                { NX: true, EX: 2 * 24 * 60 * 60 },
+            );
+            if (!salaryReserved) {
+                console.log(`玩家 ${usr_qq} 势力俸禄正在处理，跳过`);
                 return false;
             }
 
@@ -417,7 +437,7 @@ async isAutoTaskEnabled(usr_qq) {
                 if (lastClaimDate !== todayStr) {
                     // 计算俸禄
                     let salary = 0;
-                    const position = player.势力职位 || "记名弟子";
+                    const position = player.势力职位 || (player.势力 === '瑶池' ? '记名女弟子' : '记名弟子');
 
                     if (player.势力 === "瑶池") {
                         const salaryTable = {
@@ -584,6 +604,10 @@ async isAutoTaskEnabled(usr_qq) {
                     return false;
                 }
             }
+            if (!await reserveDailyAction(redis, usr_qq, 'tiandao', today.getTime())) {
+                console.log(`玩家 ${usr_qq} 天道赐福正在处理，跳过`);
+                return false;
+            }
 
             // 计算奖励
             let lastjiangli = Math.floor(player.level_id * 0.1);
@@ -670,6 +694,10 @@ async isAutoTaskEnabled(usr_qq) {
                     console.log(`玩家 ${usr_qq} 今日已道法赐福，跳过`);
                     return false;
                 }
+            }
+            if (!await reserveDailyAction(redis, usr_qq, 'daofa', today.getTime())) {
+                console.log(`玩家 ${usr_qq} 道法赐福正在处理，跳过`);
+                return false;
             }
 
             // 更新连续赐福天数
@@ -771,6 +799,10 @@ async isAutoTaskEnabled(usr_qq) {
                     return false;
                 }
             }
+            if (!await reserveDailyAction(redis, usr_qq, 'vein', now.getTime())) {
+                console.log(`玩家 ${usr_qq} 灵脉开采正在处理，跳过`);
+                return false;
+            }
 
             // 执行开采逻辑
             const 宗门灵石池上限 = [
@@ -856,6 +888,10 @@ async isAutoTaskEnabled(usr_qq) {
                     console.log(`玩家 ${usr_qq} 今日已接受神兽赐福，跳过`);
                     return false;
                 }
+            }
+            if (!await reserveDailyAction(redis, usr_qq, 'beast', now.getTime())) {
+                console.log(`玩家 ${usr_qq} 神兽赐福正在处理，跳过`);
+                return false;
             }
 
             // 执行赐福逻辑
@@ -1185,6 +1221,7 @@ async isAutoTaskEnabled(usr_qq) {
                 `xiuxian:player:${usr_qq}:daily_last_sign_time`,
                 `xiuxian:player:${usr_qq}:lastsign_time`,
             );
+            await resetDailyAction(redis, usr_qq, 'sign');
 
             // 删除签到详情消息（按模式清理整个 key 族，避免旧键永久堆积）
             await this._delMsgPattern(usr_qq, 'sign_msg');
@@ -1208,12 +1245,14 @@ async isAutoTaskEnabled(usr_qq) {
         try {
             // 删除瑶池俸禄记录
             await redis.del(`xiuxian:player:${usr_qq}:yaochi_salary_date`);
+            await redis.del(`xiuxian:player:${usr_qq}:faction_salary_date`);
             
             // 删除摇光圣地俸禄记录
             await redis.del(`xiuxian:player:${usr_qq}:yaoguang_salary_date`);
             
             // 删除剑云海秘库记录
             await redis.del(`xiuxian:player:${usr_qq}:jianyunhai_open_day`);
+            await redis.del(`xiuxian:player:${usr_qq}:faction_salary_claim:${this.getLocalDateStr()}`);
 
             // 删除剑云海秘库详情消息（按模式清理整个 key 族，防止永久堆积在 redis）
             await this._delMsgPattern(usr_qq, 'jianyunhai_msg');
@@ -1233,6 +1272,7 @@ async isAutoTaskEnabled(usr_qq) {
         try {
             // 删除天道赐福时间记录
             await redis.del(`xiuxian:player:${usr_qq}:lastCifuTime`);
+            await resetDailyAction(redis, usr_qq, 'tiandao');
 
             // 删除天道赐福详情消息（按模式清理整个 key 族）
             await this._delMsgPattern(usr_qq, 'tiandao_msg');
@@ -1249,6 +1289,7 @@ async isAutoTaskEnabled(usr_qq) {
         try {
             // 删除道法赐福时间记录
             await redis.del(`xiuxian:player:${usr_qq}:lastsign_time3`);
+            await resetDailyAction(redis, usr_qq, 'daofa');
             
             // 重置玩家道法赐福天数
             const player = await Read_player(usr_qq);
@@ -1272,6 +1313,7 @@ async isAutoTaskEnabled(usr_qq) {
         try {
             // 删除开采灵脉时间记录
             await redis.del(`xiuxian:player:${usr_qq}:getLastsign_Explor`);
+            await resetDailyAction(redis, usr_qq, 'vein');
             
             // 删除开采灵脉详情消息（按模式清理整个 key 族）
             await this._delMsgPattern(usr_qq, 'vein_msg');
@@ -1288,6 +1330,7 @@ async isAutoTaskEnabled(usr_qq) {
         try {
             // 删除神兽赐福时间记录
             await redis.del(`xiuxian:player:${usr_qq}:getLastsign_Bonus`);
+            await resetDailyAction(redis, usr_qq, 'beast');
             
             // 删除神兽赐福详情消息（按模式清理整个 key 族）
             await this._delMsgPattern(usr_qq, 'beast_msg');

@@ -1,6 +1,27 @@
 // 木之本樱灵根进阶系统
 // 基于《百变小樱》动画设定和修仙游戏框架
 
+import { plugin } from '../../api/api.js';
+import { channel, existplayer, Read_player, Write_player } from '../../model/xiuxian.js';
+
+function ensureClowCardSystem(player) {
+  player.库洛牌系统 ??= {
+    已封印库洛牌: [],
+    魔杖形态: "初始封印杖",
+    魔法熟练度: 0,
+    通过月之审判: false,
+    通过梦之试炼: false,
+    当前梦境进度: 0,
+    月之审判次数: 0,
+    总探索次数: 0
+  };
+}
+
+async function replyTrialResult(e, success, message) {
+  await e.reply(message);
+  return { success, message };
+}
+
 export class SakuraAdvancementSystem extends plugin {
   constructor() {
     super({
@@ -125,19 +146,7 @@ clowCards = [
     const player = await Read_player(usr_qq);
     const allMsgs = [];
 
-    // 初始化库洛牌系统
-    if (typeof player.库洛牌系统 === 'undefined') {
-      player.库洛牌系统 = {
-        已封印库洛牌: [],
-        魔杖形态: "初始封印杖",
-        魔法熟练度: 0,
-        通过月之审判: false,
-        通过梦之试炼: false,
-        当前梦境进度: 0,
-        月之审判次数: 0,
-        总探索次数: 0
-      };
-    }
+    ensureClowCardSystem(player);
 
     // 根据当前灵根类型进行不同的进阶判断
     switch (player.灵根.type) {
@@ -239,7 +248,7 @@ clowCards = [
 
     player.库洛牌系统.魔杖形态 = "星之杖";
     player.修为 += 1000;
-    player.魔法熟练度 += 100;
+    player.库洛牌系统.魔法熟练度 += 100;
 
     await Write_player(usr_qq, player);
 
@@ -347,7 +356,7 @@ clowCards = [
 
     player.库洛牌系统.魔杖形态 = "梦之杖";
     player.修为 += 5000;
-    player.魔法熟练度 += 300;
+    player.库洛牌系统.魔法熟练度 += 300;
     player.生命本源 = 100 + player.灵根.生命本源;
 
     await Write_player(usr_qq, player);
@@ -375,22 +384,32 @@ clowCards = [
    * 月之审判事件
    */
   async yueShenpan(e, player) {
-    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
     const allMsgs = [];
+
+    if (!player) {
+      if (!await existplayer(usr_qq)) {
+        return replyTrialResult(e, false, '玩家不存在，请先创建角色');
+      }
+      player = await Read_player(usr_qq);
+    }
+    ensureClowCardSystem(player);
     
     // 审判前提条件检查
     if (player.库洛牌系统.已封印库洛牌.length < 10) {
-      return {
-        success: false,
-        message: " 月之审判条件不足！\n需要至少封印10张库洛牌才能挑战审判者月。"
-      };
+      return replyTrialResult(
+        e,
+        false,
+        " 月之审判条件不足！\n需要至少封印10张库洛牌才能挑战审判者月。"
+      );
     }
     
     if (player.mijinglevel_id < 9) {
-      return {
-        success: false, 
-        message: ` 境界不足！\n需要通过月之审判，需达到「仙台秘境大能」境界。`
-      };
+      return replyTrialResult(
+        e,
+        false,
+        ` 境界不足！\n需要通过月之审判，需达到「仙台秘境大能」境界。`
+      );
     }
     
     allMsgs.push("【月之审判开启】");
@@ -416,10 +435,7 @@ clowCards = [
       
       await Write_player(usr_qq, player);
       
-      return {
-        success: true,
-        message: allMsgs.join('\n')
-      };
+      return replyTrialResult(e, true, allMsgs.join('\n'));
     } else {
       // 审判失败
       player.库洛牌系统.月之审判次数 += 1;
@@ -432,10 +448,7 @@ clowCards = [
       
       await Write_player(usr_qq, player);
       
-      return {
-        success: false,
-        message: allMsgs.join('\n')
-      };
+      return replyTrialResult(e, false, allMsgs.join('\n'));
     }
   }
 
@@ -443,22 +456,24 @@ clowCards = [
    * 梦之试炼事件
    */
   async mengShilian(e, player) {
-    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
     const allMsgs = [];
+
+    if (!player) {
+      if (!await existplayer(usr_qq)) {
+        return replyTrialResult(e, false, '玩家不存在，请先创建角色');
+      }
+      player = await Read_player(usr_qq);
+    }
+    ensureClowCardSystem(player);
     
     // 试炼前提条件
     if (!player.库洛牌系统.通过月之审判) {
-      return {
-        success: false,
-        message: " 需先通过月之审判，才能进入梦之试炼！"
-      };
+      return replyTrialResult(e, false, " 需先通过月之审判，才能进入梦之试炼！");
     }
     
     if (player.库洛牌系统.已封印库洛牌.length < 52) {
-      return {
-        success: false,
-        message: " 需收集全部52张库洛牌，才能开启最终试炼！"
-      };
+      return replyTrialResult(e, false, " 需收集全部52张库洛牌，才能开启最终试炼！");
     }
     
     allMsgs.push("【梦之试炼开启】");
@@ -523,20 +538,14 @@ clowCards = [
       player.库洛牌系统.魔法熟练度 += 50;
       await Write_player(usr_qq, player);
       
-      return {
-        success: progress >= 3,
-        message: allMsgs.join('\n')
-      };
+      return replyTrialResult(e, progress >= 3, allMsgs.join('\n'));
     } else {
       allMsgs.push(` 试炼暂停！需要满足条件：${currentEvent.requirement}`);
       allMsgs.push("在梦境中继续探索，下次将会继续...");
       
       await Write_player(usr_qq, player);
       
-      return {
-        success: false,
-        message: allMsgs.join('\n')
-      };
+      return replyTrialResult(e, false, allMsgs.join('\n'));
     }
   }
 
@@ -554,19 +563,7 @@ clowCards = [
 
     const player = await Read_player(usr_qq);
     
-    // 初始化库洛牌系统
-    if (typeof player.库洛牌系统 === 'undefined') {
-      player.库洛牌系统 = {
-        已封印库洛牌: [],
-        魔杖形态: "初始封印杖",
-        魔法熟练度: 0,
-        通过月之审判: false,
-        通过梦之试炼: false,
-        当前梦境进度: 0,
-        月之审判次数: 0,
-        总探索次数: 0
-      };
-    }
+    ensureClowCardSystem(player);
 
     // 随机获得一张库洛牌
     const availableCards = this.clowCards.filter(card => 

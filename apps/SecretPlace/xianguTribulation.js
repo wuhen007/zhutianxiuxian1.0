@@ -21,7 +21,7 @@
 
 import { sleep, bigNumberTransform } from '../../model/xiuxian.js';
 import { getXianqiStrands } from '../../model/xianguXianqi.js';
-import { config } from '../../api/api.js';
+import { config, data } from '../../api/api.js';
 import { consumeBlackEmperorTribulationFormation } from '../../model/blackEmperor.js';
 import { reduceTribulationDamageByDefense } from '../../model/tribulationDamage.js';
 import {
@@ -29,6 +29,11 @@ import {
   settleXianguWaveDamage,
   XIANGU_REALM_ROUTES,
 } from './xianguTribulationSettlement.js';
+import {
+  calcXianguTribulationPower,
+  LEIDI_TRIBULATION_CONVERSION_RATE,
+  LEIDI_TRIBULATION_CONVERSION_WAVES,
+} from '../User/zhetianTribulationRules.js';
 
 export { XIANGU_REALM_ROUTES } from './xianguTribulationSettlement.js';
 
@@ -108,6 +113,7 @@ export class XianguTribulation {
     this.revived = false; // 是否触发过功法复活 / 欺瞒天地
     this.dead = false;    // 是否道火吞没真我（渡劫失败）
     this._eraFactor = this._getEraFactor();
+    this._tribulationPower = null;
   }
 
   // 成功率（与原文公式一致；满极境 + 道韵>=500 即封顶 100%）
@@ -342,7 +348,11 @@ export class XianguTribulation {
 
     // 雷帝宝术（转化治疗）
     if (player.雷帝效果 && player.雷帝效果.剩余次数 > 0) {
-      const heal = Math.min(Math.floor(originalDamage * (player.雷帝效果.转化比例 || 0.6)), M - (player.当前血量 || 0));
+      const conversionRate = Math.max(0, Math.min(
+        Number(player.雷帝效果.转化比例) || LEIDI_TRIBULATION_CONVERSION_RATE,
+        LEIDI_TRIBULATION_CONVERSION_RATE
+      ));
+      const heal = Math.min(Math.floor(originalDamage * conversionRate), M - (player.当前血量 || 0));
       player.当前血量 = Math.min(M, (player.当前血量 || 0) + heal);
       player.雷帝效果.剩余次数--;
       msgs.push(`【雷帝宝术】转化治疗 ${bigNumberTransform(heal)}`);
@@ -403,6 +413,14 @@ export class XianguTribulation {
       player.生命本源 -= 50;
       player.当前血量 = Math.floor(M * 0.5);
       this.revived = true;
+      if (reviveGongfa === '雷帝宝术') {
+        player.雷帝效果 = {
+          转化比例: LEIDI_TRIBULATION_CONVERSION_RATE,
+          剩余次数: LEIDI_TRIBULATION_CONVERSION_WAVES,
+          抗性提升: 0.1,
+          当前抗性: 0,
+        };
+      }
       return `功法复活·${reviveGongfa}（消耗50生命本源，剩余 ${player.生命本源}）`;
     }
 
@@ -412,8 +430,10 @@ export class XianguTribulation {
   // ============ 一道劫：灵根减伤 → 濒死复活 → 功法减伤 → 真实扣血 ============
   _dealWave(player, frac, wave, note, opts = {}) {
     const M = this._M(player);
-    // 基础伤害公式与遮天渡劫对齐：血量上限 × 系数 × (1 + 0.03×wave)，不随时代缩放
-    const base = M * frac * (1 + 0.03 * wave);
+    // 上位冲关与遮天一致，使用理论攻击作为每道劫的伤害基准。
+    const attackBase = this._tribulationPower?.attack || M;
+    const eraFactor = this._tribulationPower ? this._eraFactor : 1;
+    const base = attackBase * frac * (1 + 0.03 * wave) * eraFactor;
     const { damage: bodyDamage, msgs: bodyMsgs } = this._applyBodyDefenses(player, base);
     const defendedDamage = this._applyThunderDefense(player, bodyDamage, bodyMsgs);
     const sourceName = opts.sourceName || '道火本源';
@@ -421,7 +441,10 @@ export class XianguTribulation {
 
     const lines = [];
     lines.push(`　第${wave}道劫｜${note}`);
-    lines.push(`　${sourceName} ${bigNumberTransform(base)}（不随时代缩放·与遮天同构）｜灵根减伤后 ${bigNumberTransform(bodyDamage)}`);
+    const damageModel = this._tribulationPower
+      ? '理论战力雷劫·与遮天同构'
+      : '血量基准·不随时代缩放';
+    lines.push(`　${sourceName} ${bigNumberTransform(base)}（${damageModel}）｜灵根减伤后 ${bigNumberTransform(bodyDamage)}`);
     for (const m of bodyMsgs) lines.push(`　　${m}`);
 
     const gongfaMsgs = [];
@@ -700,16 +723,21 @@ export class XianguTribulation {
     this.revived = false;
     this.dead = false;
 
-    const route = XIANGU_REALM_ROUTES[Number(ctx.fromLevelId ?? player.xiangulevel_id)];
+    const fromLevelId = Number(ctx.fromLevelId ?? player.xiangulevel_id);
+    const route = XIANGU_REALM_ROUTES[fromLevelId];
     if (!route || typeof this[route.tribulationMethod] !== 'function') {
       throw new Error('当前境界没有对应的仙古今世法渡劫');
     }
+    this._tribulationPower = fromLevelId >= 8 && fromLevelId <= 14
+      ? calcXianguTribulationPower({ ...player, xiangulevel_id: fromLevelId }, data)
+      : null;
     return this[route.tribulationMethod](e, player);
   }
 
   async runXianqiCondensation(e, player, targetStrand) {
     this.revived = false;
     this.dead = false;
+    this._tribulationPower = null;
 
     const current = getXianqiStrands(player);
     if (Number(player.xiangulevel_id) !== 8 || current === 0 || targetStrand !== current + 1) {

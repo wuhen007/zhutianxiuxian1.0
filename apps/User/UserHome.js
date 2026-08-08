@@ -5252,8 +5252,8 @@ if (thing_name === "爱莉希雅的赐福") {
     
     // 固定提升修为和血气
     const fixedBoost = 75000000; 
-    await Add_修为(usr_qq, fixedBoost);
-    await Add_血气(usr_qq, fixedBoost);
+    player.修为+=fixedBoost;
+    player.血气+=fixedBoost;
     
     let replyMessage = [];
     let newBlessing = player.爱莉希雅赐福等级 || '无';
@@ -6574,7 +6574,7 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
   const playerMaxLevel = aptitudeLevels[aptitudeLevel] ?? 2; // 默认为2（平庸之资）
   
   // 获取功法的层级
-  const gongfaLevel = gongfaHierarchy[thing_exist.type] || 8; // 默认为修炼功法层级
+  const gongfaLevel = gongfaHierarchy[thing_exist.type] ?? 8;
   
   // ==== 天资层级判断 ====
   if (gongfaLevel > playerMaxLevel) {

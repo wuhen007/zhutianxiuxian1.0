@@ -42,6 +42,18 @@
     - icon: help-icon_2
       title: '#冲关/冲关极境'
       desc: '在仙古今世法上迈入下一个境界，并且可以打磨极境' 
+    - icon: help-icon_2
+      title: '#天神书院 / #申请入院 / #我的院籍'
+      desc: '尊者境可在九天十地申请天神书院院籍'
+    - icon: help-icon_2
+      title: '#院籍晋升'
+      desc: '境界与源石满足要求后晋升院籍身份'
+    - icon: help-icon_2
+      title: '#选择仙院 / #选择圣院'
+      desc: '选择一次后续修行分院，当前不可更改'
+    - icon: help-icon_2
+      title: '#领取书院俸禄'
+      desc: '根据院籍身份每日领取源石俸禄'
 
 - group: 世家势力
   list:

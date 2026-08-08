@@ -1,4 +1,5 @@
 import { plugin, verc, data, config } from '../../api/api.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'fs';
 import path from 'path';
 
@@ -27,7 +28,7 @@ import {
   find_qinmidu,
   add_qinmidu,
   Goweizhi,
-  Write_player,
+  Write_player as writePlayerRecord,
   xunbaoweizhi,
   Go,
   channel,
@@ -44,9 +45,25 @@ import {
   grantXianqi,
 } from '../../model/xianguXianqi.js';
 import {
+  calculateMinggeGain,
+  calculateMinggeSourceGain,
   getMinggeEffects,
   grantMinggePotential,
 } from '../../model/mingge.js';
+import {
+  addXianguBagGrowth,
+  addXianguBagItem,
+  addXianguBagPotential,
+  addXianguBagSeed,
+  addXianguBagTechnique,
+  calculateXianguSourceStoneReward,
+  claimXianguBagItems,
+  clearXianguBag,
+  ensureXianguBag,
+  formatXianguBag,
+  getXianguBagSummary,
+  takeXianguUniqueBagItem,
+} from './xianguBag.js';
 import {
   drawXianguSeed,
   findXianguTopSeed,
@@ -73,6 +90,8 @@ import {
   createXianguExitPositions,
   ensureXianguExitConnectivity,
   getXianguMarrowPoolTrapChance,
+  getRevealedXianguExits,
+  isXianguExitUnlocked,
   pickDifferentXianguFragment,
   placeXianguMarrowPool,
   restoreXianguFragmentSnapshot,
@@ -81,18 +100,69 @@ import {
 } from './xianguMap.js';
 import {
   applyXianguHeavyInjury,
+  areXianguPlayersInSameInstance,
+  areXianguPlayersNearby,
   buildXianguArenaRewardPlan,
-  buildXianguBattleSides,
+  buildXianguBattleSides as buildRawXianguBattleSides,
   getXianguExploreEfficiency,
   recordXianguArenaWin,
   resolveXianguLeaderWinner,
+  transferXianguDaoyun,
 } from './xianguCombat.js';
 import {
   advanceXianguNpcState,
   bindXianguNpcLocations,
   getBoundXianguNpc,
   removeBoundXianguNpc,
+  strengthenXianguNpc,
 } from './xianguNpc.js';
+import {
+  claimXianguUniqueTreasure,
+  getXianguNpcDeath,
+  getXianguUniqueTreasureClaim,
+  markXianguNpcDead,
+  readXianguSharedDocument,
+  updateXianguSharedDocument,
+  XIANGU_SHARED_STATE_TTL_SECONDS,
+} from './xianguSharedState.js';
+import {
+  buildXianguSettlementReceiptId,
+  confirmXianguSettlementReceipt,
+  createXianguSettlementReceipt,
+  deliverXianguSettlementReceipt,
+  markXianguSettlementReceiptClaim,
+  recoverXianguSettlementReceipts,
+  XIANGU_SETTLEMENT_PLAYER_CLAIMS,
+} from './xianguSettlement.js';
+import {
+  getXianguInstancePresence,
+  getXianguPresenceSnapshot,
+  removeXianguPresence,
+  upsertXianguPresence,
+} from './xianguPresence.js';
+import {
+  XIANGU_CANON_GOALS,
+  XIANGU_LEGACY_EVENTS,
+  advanceXianguNpcGoal,
+  awardXianguCrown,
+  ensureXianguLegacy,
+  ensureXianguNpcGoals,
+  formatXianguLegacy,
+  formatXianguNpcGoals,
+  getXianguCrownTitle,
+  recordXianguLegacyResult,
+  resolveXianguCanonNpcId,
+} from './xianguLegacy.js';
+import { isXianguPlayerRoundCurrent } from '../tasks/xianguLifecycle.js';
+
+function getXianguNpcRealmData() {
+  return {
+    cultivation: data.Level_list,
+    physique: data.LevelMax_list,
+    secret: data.Levelmijing_list,
+    ancient: data.xiangujinshi_list,
+  };
+}
 
 const XIANGU_ACTIVE_PLAYERS_KEY = 'xiuxian:xiangu:player_set';
 const XIANGU_RELEASE_LOCK_SCRIPT = `
@@ -101,6 +171,41 @@ const XIANGU_RELEASE_LOCK_SCRIPT = `
   end
   return 0
 `;
+const XIANGU_RENEW_LOCK_SCRIPT = `
+  if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('expire', KEYS[1], ARGV[2])
+  end
+  return 0
+`;
+const XIANGU_ACTION_LOCK_TTL_SECONDS = 180;
+const XIANGU_ACTION_RENEW_INTERVAL_MS = 45_000;
+const xianguActionStorage = new AsyncLocalStorage();
+const XIANGU_ACTION_BUSY = Symbol('xiangu-action-busy');
+
+// These are the command roots that mutate one player's in-memory snapshot.
+// Read-only views deliberately stay outside this wrapper so they never block
+// a live action merely to render information.
+const XIANGU_SINGLE_PLAYER_MUTATION_METHODS = new Set([
+  'Goxiangu',
+  'XianguExplore',
+  'XianguExploreChoice',
+  'XianguRealmMove',
+  'XianguMove',
+  'XianguDivineScan',
+  'XianguJieZhuDaoZhong',
+  'XianguIgniteShenhuo',
+  'XianguFuYongDanYao',
+  'XianguJilianZhenwo',
+  'XianguArenaJoin',
+  'XianguNPCTalk',
+  'XianguNPCBuy',
+  'XianguNPCAttack',
+  'XianguOfferSeed',
+  'XianguSoulSearchNPC',
+  'XianguNPCTeam',
+  'XianguNPCTeamLeave',
+  'XianguFactionQuest',
+]);
 
 function xianguPlayerRedisKey(playerId, suffix) {
   return `xiuxian:player:${playerId}:${suffix}`;
@@ -114,6 +219,131 @@ function xianguEvacuationLockKey(playerId) {
   return xianguPlayerRedisKey(playerId, 'xiangu_evacuation_lock');
 }
 
+function getXianguActionContext(playerId) {
+  const context = xianguActionStorage.getStore();
+  if (!context || String(context.playerId) !== String(playerId)) return null;
+  return context;
+}
+
+/**
+ * Serialize every local player write against an in-flight action. The action
+ * context supplies the owner token to deeply nested reward/NPC helpers, while
+ * explicit callers (PvP and evacuation settlement) can still pass a token.
+ */
+async function Write_player(playerId, player, options = {}) {
+  const lockKey = xianguEvacuationLockKey(playerId);
+  const context = getXianguActionContext(playerId);
+  const owner = options?.xianguLockToken || context?.token || null;
+  if (context?.lockLost) {
+    console.warn(`拒绝玩家${playerId}写入：仙古动作锁租约已失效`);
+    return false;
+  }
+  try {
+    const holder = typeof redis?.get === 'function' ? await redis.get(lockKey) : null;
+    if ((owner && holder !== owner) || (!owner && holder)) {
+      console.warn(`跳过玩家${playerId}的旧仙古快照写入：当前动作锁仍由其他操作持有`);
+      return false;
+    }
+  } catch (error) {
+    // A lock check failure must fail closed; writing a stale snapshot here is
+    // worse than making the action retryable.
+    console.error('检查仙古动作锁失败，拒绝本次写入:', error);
+    return false;
+  }
+  const writeOptions = owner && !options?.xianguLockToken
+    ? { ...options, xianguLockToken: owner }
+    : options;
+  return writePlayerRecord(playerId, player, writeOptions);
+}
+
+async function acquireXianguActionLease(playerId) {
+  const lockKey = xianguEvacuationLockKey(playerId);
+  const token = `action:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+  const acquired = await redis.set(lockKey, token, {
+    EX: XIANGU_ACTION_LOCK_TTL_SECONDS,
+    NX: true,
+  });
+  if (!acquired) return null;
+
+  const context = {
+    playerId: String(playerId),
+    lockKey,
+    token,
+    lockLost: false,
+  };
+  let stopped = false;
+  let renewing = false;
+  const renew = async () => {
+    if (stopped || renewing || context.lockLost) return;
+    renewing = true;
+    try {
+      const renewed = await redis.eval(XIANGU_RENEW_LOCK_SCRIPT, {
+        keys: [lockKey],
+        arguments: [token, String(XIANGU_ACTION_LOCK_TTL_SECONDS)],
+      });
+      if (!Number(renewed)) {
+        context.lockLost = true;
+        console.warn(`仙古动作锁租约已失效(${playerId})`);
+      }
+    } catch (error) {
+      // Keep the current lease on transient Redis failures and retry on the
+      // next interval; writes fail closed if the lease is actually lost.
+      console.error(`续期仙古动作锁失败(${playerId}):`, error);
+    } finally {
+      renewing = false;
+    }
+  };
+  const timer = setInterval(renew, XIANGU_ACTION_RENEW_INTERVAL_MS);
+  timer.unref?.();
+
+  return {
+    context,
+    async release() {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(timer);
+      await releaseXianguEvacuationLock(lockKey, token);
+    },
+  };
+}
+
+async function withXianguActionLock(playerId, action) {
+  const inherited = getXianguActionContext(playerId);
+  if (inherited) {
+    if (inherited.lockLost) return XIANGU_ACTION_BUSY;
+    return action(inherited);
+  }
+
+  let lease;
+  try {
+    lease = await acquireXianguActionLease(playerId);
+  } catch (error) {
+    // Treat a transient Redis failure as a busy action. The command must not
+    // run without the lease, because its final snapshot could overwrite a
+    // concurrent evacuation or battle.
+    console.error(`获取仙古动作锁失败(${playerId}):`, error);
+    return XIANGU_ACTION_BUSY;
+  }
+  if (!lease) return XIANGU_ACTION_BUSY;
+  return xianguActionStorage.run(lease.context, async () => {
+    try {
+      return await action(lease.context);
+    } finally {
+      await lease.release();
+    }
+  });
+}
+
+function xianguNpcWorldTickKey(player) {
+  const map = player?.xiangu_realm_map || {};
+  const scope = [
+    player?.xiangu_world_seed || player?.xiangu_entry_time || 'legacy',
+    map.fragmentId || 'unknown',
+    map.instanceId || 'legacy',
+  ].join(':');
+  return `xiuxian:xiangu:npc_world_tick:${encodeURIComponent(scope)}`;
+}
+
 async function releaseXianguEvacuationLock(lockKey, token) {
   try {
     await redis.eval(XIANGU_RELEASE_LOCK_SCRIPT, {
@@ -125,11 +355,58 @@ async function releaseXianguEvacuationLock(lockKey, token) {
   }
 }
 
-async function readXianguNajie(playerId) {
+async function acquireXianguPlayerLocks(playerIds) {
+  const token = `pvp:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+  // A PvP battle takes snapshots of both player records and writes them only
+  // after the battle resolves. Hold the action/evacuation locks as well as the
+  // PvP locks for the full duration, otherwise movement, NPC actions, or an
+  // evacuation can write a newer snapshot underneath the battle.
+  const ids = [...new Set(playerIds.map(String))].sort();
+  const keys = ids
+    .flatMap(id => [
+      xianguPlayerRedisKey(id, 'xiangu_evacuation_lock'),
+      xianguPlayerRedisKey(id, 'xiangu_pvp_lock'),
+    ])
+    .sort();
+  const acquired = [];
+
   try {
-    return await Read_najie(playerId);
+    for (const key of keys) {
+      if (!await redis.set(key, token, { EX: 120, NX: true })) {
+        await Promise.allSettled(acquired.map(lockKey => releaseXianguEvacuationLock(lockKey, token)));
+        return null;
+      }
+      acquired.push(key);
+    }
+  } catch (error) {
+    // A Redis failure after partially acquiring the ordered set must not leave
+    // one participant blocked for the full TTL. The compare-and-delete Lua
+    // script only releases keys still owned by this token.
+    await Promise.allSettled(acquired.map(lockKey => releaseXianguEvacuationLock(lockKey, token)));
+    throw error;
+  }
+  return { keys: acquired, token };
+}
+
+async function releaseXianguPlayerLocks(lock) {
+  if (!lock) return;
+  await Promise.allSettled(
+    lock.keys.map(lockKey => releaseXianguEvacuationLock(lockKey, lock.token))
+  );
+}
+
+async function readXianguNajie(playerId, { required = false } = {}) {
+  try {
+    const najie = await Read_najie(playerId);
+    if (!najie || typeof najie !== 'object' || Array.isArray(najie)) {
+      throw new TypeError('纳戒数据格式无效');
+    }
+    return najie;
   } catch (error) {
     console.error(`读取玩家${playerId}的仙古秘境纳戒统计失败:`, error);
+    if (required) {
+      throw new Error('纳戒读取失败，本次撤离未结算；秘境背包已保留，请稍后重试。');
+    }
     return {};
   }
 }
@@ -145,6 +422,7 @@ async function clearXianguRedisSession(playerId, legacyId = playerId) {
   const operations = [
     ...ids.flatMap(id => suffixes.map(suffix => redis.del(xianguPlayerRedisKey(id, suffix)))),
     ...ids.map(id => redis.sRem(XIANGU_ACTIVE_PLAYERS_KEY, id)),
+    ...ids.map(id => removeXianguPresence(redis, id)),
   ];
   const results = await Promise.allSettled(operations);
   const failures = results.filter(result => result.status === 'rejected');
@@ -153,8 +431,154 @@ async function clearXianguRedisSession(playerId, legacyId = playerId) {
   }
 }
 
-async function cancelXianguEvacuation(playerId) {
+// Remove only live-presence indexes. This intentionally keeps an evacuation
+// record intact so a player can still finish a safe/emergency exit after the
+// world round closes.
+async function clearXianguLivePresence(playerId) {
+  await Promise.allSettled([
+    redis.sRem(XIANGU_ACTIVE_PLAYERS_KEY, String(playerId)),
+    removeXianguPresence(redis, playerId),
+  ]);
+}
+
+async function refreshXianguPresence(playerId, player) {
+  try {
+    const lifecycle = readXianguLifecycleState();
+    if (lifecycle.available && !isXianguPlayerRoundCurrent(player, lifecycle.data)) {
+      await clearXianguLivePresence(playerId);
+      return null;
+    }
+    const snapshot = getXianguPresenceSnapshot(player, playerId);
+    if (!snapshot) {
+      await removeXianguPresence(redis, playerId);
+      return null;
+    }
+    return await upsertXianguPresence(redis, snapshot);
+  } catch (error) {
+    console.error('刷新仙古秘境玩家坐标失败:', error);
+    return null;
+  }
+}
+
+async function getXianguPeerPlayersFromActiveSet(playerId, player, nearbyOnly = false) {
+  const ids = await redis.sMembers(XIANGU_ACTIVE_PLAYERS_KEY);
+  const peers = await Promise.allSettled(
+    ids
+      .filter(id => String(id) !== String(playerId))
+      .map(async id => ({ id, player: await Read_player(id) }))
+  );
+  return peers
+    .filter(result => result.status === 'fulfilled')
+    .map(result => result.value)
+    .filter(entry => {
+      if (!areXianguPlayersInSameInstance(player, entry.player)) return false;
+      return !nearbyOnly || areXianguPlayersNearby(player, entry.player);
+    });
+}
+
+async function getXianguPeerPlayers(playerId, player, nearbyOnly = false) {
+  const snapshot = getXianguPresenceSnapshot(player, playerId);
+  if (!snapshot) return [];
+  try {
+    const presences = await getXianguInstancePresence(redis, snapshot, {
+      excludeId: playerId,
+      ...(nearbyOnly ? { maxDistance: 1 } : {}),
+    });
+    const peers = await Promise.allSettled(
+      presences.map(async presence => {
+        const peer = await Read_player(presence.id);
+        if (!peer?.xiangu_realm_map) return { id: presence.id, player: peer, presence };
+        return {
+          id: presence.id,
+          presence,
+          player: {
+            ...peer,
+            xiangu_realm_map: {
+              ...peer.xiangu_realm_map,
+              playerPos: { x: presence.x, y: presence.y },
+            },
+          },
+        };
+      })
+    );
+    return peers
+      .filter(result => result.status === 'fulfilled')
+      .map(result => result.value)
+      .filter(entry => {
+        if (!areXianguPlayersInSameInstance(player, entry.player)) return false;
+        return !nearbyOnly || areXianguPlayersNearby(player, entry.player);
+      });
+  } catch (error) {
+    console.error('读取仙古秘境实时同图玩家失败，回退活动列表:', error);
+    try {
+      return await getXianguPeerPlayersFromActiveSet(playerId, player, nearbyOnly);
+    } catch (fallbackError) {
+      console.error('读取仙古秘境同图玩家失败:', fallbackError);
+      return [];
+    }
+  }
+}
+
+async function getXianguLiveNearbyTarget(playerId, player, targetId, targetPlayer) {
+  const snapshot = getXianguPresenceSnapshot(player, playerId);
+  if (!snapshot || !targetPlayer?.in_xiangu) return null;
+  try {
+    const presences = await getXianguInstancePresence(redis, snapshot, { maxDistance: 1 });
+    const presence = presences.find(entry => String(entry.id) === String(targetId));
+    if (!presence || !targetPlayer.xiangu_realm_map) return null;
+    return {
+      ...targetPlayer,
+      xiangu_realm_map: {
+        ...targetPlayer.xiangu_realm_map,
+        playerPos: { x: presence.x, y: presence.y },
+      },
+    };
+  } catch (error) {
+    console.error('读取仙古秘境实时交战目标失败:', error);
+    return null;
+  }
+}
+
+function formatXianguPlayerEncounter(peers) {
+  if (!Array.isArray(peers) || peers.length === 0) return [];
+  const names = peers.map(entry => entry.player?.名号 || `修士${entry.id}`).join('、');
+  return [
+    `⚔️【修士相遇】`,
+    `你在附近感应到${names}的气息。`,
+    `双方已进入可交战距离，可使用 #秘境攻击 @对方 或 #秘境切磋 @对方。`,
+  ];
+}
+
+function stripXianguMovementLocationLines(value) {
+  return String(value || '')
+    .split('\n')
+    .filter(line => !/(?:坐标|当前位置|新位置)\s*(?:[:：]|\[)/.test(line))
+    .filter(line => !/^\s*[（(]?区域\s*[:：]/.test(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function grantXianguExitDiscoveryDaoyun(player, map, unlockedBefore) {
+  const newlyUnlocked = Math.max(0, getRevealedXianguExits(map).length - unlockedBefore);
+  if (newlyUnlocked === 0) return 0;
+  const gain = newlyUnlocked * 5 * Math.max(1, Number(player.xiangulevel_id) || 1);
+  player.xiangu_gains ||= {};
+  player.xiangu_gains.daoyun = (Number(player.xiangu_gains.daoyun) || 0) + gain;
+  return gain;
+}
+
+async function cancelXianguEvacuation(playerId, { lockHeld = false } = {}) {
   const lockKey = xianguEvacuationLockKey(playerId);
+  const inherited = getXianguActionContext(playerId);
+  if (lockHeld || inherited) {
+    // The caller already owns the action lock (PvP or a serialized command).
+    // Do not try to acquire it again, which would report a false busy state
+    // and leave the evacuation marker in place.
+    if (inherited?.lockLost) return { busy: true, cancelled: false };
+    const cancelled = Boolean(await redis.del(xianguEvacuationKey(playerId)));
+    return { busy: false, cancelled };
+  }
   const lockToken = `action:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
   const lockAcquired = await redis.set(lockKey, lockToken, { EX: 10, NX: true });
   if (!lockAcquired) return { busy: true, cancelled: false };
@@ -167,8 +591,51 @@ async function cancelXianguEvacuation(playerId) {
   }
 }
 
-async function prepareXianguAction(playerId) {
-  const interruption = await cancelXianguEvacuation(playerId);
+/**
+ * Read the authoritative world-level Xiangu round marker. The gate is
+ * deliberately fail-open when the world file is unavailable so a transient
+ * filesystem problem cannot strand a player or block emergency evacuation.
+ */
+function readXianguLifecycleState() {
+  const weimianPath = data?.filePathMap?.weimianList;
+  if (!weimianPath || !fs.existsSync(weimianPath)) {
+    return { available: false, open: true, data: null };
+  }
+  try {
+    const rawData = fs.readFileSync(weimianPath, 'utf8');
+    const worldData = JSON.parse(rawData);
+    return {
+      available: true,
+      open: Number(worldData?.仙古秘境) === 1,
+      data: worldData,
+    };
+  } catch (error) {
+    console.error('读取仙古秘境生命周期状态失败，暂时放行当前动作:', error);
+    return { available: false, open: true, data: null };
+  }
+}
+
+async function prepareXianguAction(playerId, { lockHeld = false } = {}) {
+  const actionContext = getXianguActionContext(playerId);
+  lockHeld = lockHeld || Boolean(actionContext);
+  if (actionContext?.lockLost) return { busy: true, cancelled: false, player: null };
+  // Check lifecycle before cancelling an evacuation. A rejected post-closure
+  // action must not tear down the player's remaining safe exit route.
+  const initialPlayer = await Read_player(playerId);
+  if (initialPlayer?.in_xiangu) {
+    const lifecycle = readXianguLifecycleState();
+    if (lifecycle.available && !isXianguPlayerRoundCurrent(initialPlayer, lifecycle.data)) {
+      return {
+        busy: false,
+        cancelled: false,
+        player: null,
+        closed: true,
+        lifecycle,
+      };
+    }
+  }
+
+  const interruption = await cancelXianguEvacuation(playerId, { lockHeld });
   if (interruption.busy) return { ...interruption, player: null };
   return {
     ...interruption,
@@ -182,6 +649,10 @@ async function prepareXianguMutation(e, playerId, actionName) {
     await e.reply(`【撤离结算中】${actionName}未执行，请等待撤离结果。`);
     return null;
   }
+  if (actionState.closed) {
+    await e.reply(`【仙古秘境已闭合】${actionName}未执行，请使用 #紧急撤离 带出当前秘境背包。`);
+    return null;
+  }
   if (!actionState.player?.in_xiangu) {
     await e.reply(`【已离开仙古秘境】${actionName}未执行。`);
     return null;
@@ -189,15 +660,40 @@ async function prepareXianguMutation(e, playerId, actionName) {
   if (actionState.cancelled) {
     await e.reply(`【撤离中断】你选择${actionName}，撤离通道随之消散。`);
   }
+  if (await syncXianguSharedMapState(actionState.player)) {
+    const saved = await Write_player(playerId, actionState.player);
+    if (saved === false) {
+      await e.reply(`【秘境状态冲突】${actionName}未执行，请稍后重试。`);
+      return null;
+    }
+  }
   return actionState.player;
 }
 
 async function updateXianguPlayerUnderLock(playerId, updater) {
+  const inherited = getXianguActionContext(playerId);
+  if (inherited) {
+    if (inherited.lockLost) return false;
+    const player = await Read_player(playerId);
+    if (!player?.in_xiangu) return false;
+    const lifecycle = readXianguLifecycleState();
+    if (lifecycle.available && !isXianguPlayerRoundCurrent(player, lifecycle.data)) {
+      return false;
+    }
+    await updater(player);
+    return (await Write_player(playerId, player, {
+      xianguLockToken: inherited.token,
+    })) !== false;
+  }
+
   const lockKey = xianguEvacuationLockKey(playerId);
   const lockToken = `system:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
   let lockAcquired = false;
   for (let attempt = 0; attempt < 10 && !lockAcquired; attempt++) {
-    lockAcquired = Boolean(await redis.set(lockKey, lockToken, { EX: 10, NX: true }));
+    // NPC ticks and settlement callbacks may perform several Redis reads and
+    // writes. Keep the short action lock alive long enough to cover that
+    // critical section, while still allowing a crashed worker to recover.
+    lockAcquired = Boolean(await redis.set(lockKey, lockToken, { EX: 30, NX: true }));
     if (!lockAcquired) await sleep(50);
   }
   if (!lockAcquired) return false;
@@ -205,9 +701,13 @@ async function updateXianguPlayerUnderLock(playerId, updater) {
   try {
     const player = await Read_player(playerId);
     if (!player?.in_xiangu) return false;
+    const lifecycle = readXianguLifecycleState();
+    if (lifecycle.available && !isXianguPlayerRoundCurrent(player, lifecycle.data)) {
+      return false;
+    }
     await updater(player);
-    await Write_player(playerId, player);
-    return true;
+    const saved = await Write_player(playerId, player, { xianguLockToken: lockToken });
+    return saved !== false;
   } finally {
     await releaseXianguEvacuationLock(lockKey, lockToken);
   }
@@ -250,31 +750,974 @@ function getXianguSecretConfig() {
   }
 }
 
-async function grantXianguGrowthRewards(player, playerId, rewards = {}) {
-  const result = { xiuwei: 0, xueqi: 0, lingshi: 0 };
-  if (Number(rewards.xiuwei) > 0) {
-    result.xiuwei = await Add_修为(playerId, rewards.xiuwei);
-    player.修为 = (Number(player.修为) || 0) + result.xiuwei;
-  }
-  if (Number(rewards.xueqi) > 0) {
-    result.xueqi = Math.trunc(rewards.xueqi);
-    await Add_血气(playerId, result.xueqi);
-    player.血气 = (Number(player.血气) || 0) + result.xueqi;
-  }
-  if (Number(rewards.lingshi) > 0) {
-    result.lingshi = await Add_灵石(playerId, rewards.lingshi);
-    player.灵石 = (Number(player.灵石) || 0) + result.lingshi;
-  }
-  return result;
+function getXianguSharedScope(player, entityId, fragmentId = player?.xiangu_realm_map?.fragmentId) {
+  return {
+    worldSeed: String(player?.xiangu_world_seed || player?.xiangu_entry_time || 'legacy'),
+    fragmentId: String(fragmentId || 'unknown'),
+    entityId: String(entityId || ''),
+  };
 }
 
-async function addXianguSpoil(playerId, name, quantity = 1, desc = '仙古秘境战利品') {
-  const najie = await Read_najie(playerId);
-  najie.材料 ||= [];
-  const existing = najie.材料.find(item => item.name === name);
-  if (existing) existing.数量 = (Number(existing.数量) || 0) + quantity;
-  else najie.材料.push({ name, 数量: quantity, islockd: 0, desc });
-  await Write_najie(playerId, najie);
+function getXianguSharedClaimant(player, playerId) {
+  return {
+    id: String(playerId),
+    name: String(player?.名号 || playerId),
+  };
+}
+
+// A player may retry after the receipt was written but before the local map
+// snapshot was saved. Treat an existing claim owned by that same player as a
+// successful retry instead of turning the reward into a false loss.
+async function claimXianguRewardForPlayer(claimScope, player, playerId) {
+  const claim = await claimXianguUniqueTreasure(
+    redis,
+    claimScope,
+    getXianguSharedClaimant(player, playerId),
+  );
+  if (!claim.claimed && String(claim.record?.claimantId || '') === String(playerId)) {
+    return { ...claim, claimed: true, recovered: true };
+  }
+  return claim;
+}
+
+// NPC death uses a separate shared slot from treasure claims. The same-player
+// fast path makes a retry after a committed SETNX (but lost response) resume
+// the original loot receipt instead of treating it as a competing kill.
+async function claimXianguNpcDeathForPlayer(claimScope, player, playerId) {
+  const claimant = getXianguSharedClaimant(player, playerId);
+  try {
+    const death = await markXianguNpcDead(redis, claimScope, claimant);
+    if (!death.marked && String(death.death?.claimantId || '') === String(playerId)) {
+      return { ...death, marked: true, recovered: true };
+    }
+    return death;
+  } catch (error) {
+    // Redis wrappers can throw after the write reached the server. Probe the
+    // durable slot before deciding that the reward must remain pending.
+    const existing = await getXianguNpcDeath(redis, claimScope).catch(() => null);
+    if (existing && String(existing.claimantId || '') === String(playerId)) {
+      return { marked: true, recovered: true, death: existing };
+    }
+    throw error;
+  }
+}
+
+function snapshotXianguNpcLootSource(npc) {
+  const snapshot = {
+    inventory: cloneXianguSettlementData(npc?.inventory),
+    xiangu_gains: cloneXianguSettlementData(npc?.xiangu_gains),
+  };
+  for (const field of ['daoyun', '道韵']) {
+    if (Object.hasOwn(npc || {}, field)) snapshot[field] = cloneXianguSettlementData(npc[field]);
+  }
+  return snapshot;
+}
+
+function restoreXianguNpcLootSource(npc, snapshot) {
+  if (!npc || !snapshot) return;
+  if (snapshot.inventory === undefined) delete npc.inventory;
+  else npc.inventory = cloneXianguSettlementData(snapshot.inventory);
+  if (snapshot.xiangu_gains === undefined) delete npc.xiangu_gains;
+  else npc.xiangu_gains = cloneXianguSettlementData(snapshot.xiangu_gains);
+  for (const field of ['daoyun', '道韵']) {
+    if (Object.hasOwn(snapshot, field)) npc[field] = cloneXianguSettlementData(snapshot[field]);
+    else delete npc[field];
+  }
+}
+
+function snapshotXianguPlayerFields(player, fields = []) {
+  const snapshot = {};
+  for (const field of fields) {
+    if (typeof field === 'string' && field) snapshot[field] = cloneXianguSettlementData(player?.[field]);
+  }
+  return snapshot;
+}
+
+function restoreXianguPlayerFields(player, snapshot = {}) {
+  for (const [field, value] of Object.entries(snapshot)) {
+    if (value === undefined) delete player[field];
+    else player[field] = cloneXianguSettlementData(value);
+  }
+}
+
+async function finalizeXianguNpcDeath(player, npc, npcId) {
+  if (npc) npc.isAlive = false;
+  removeBoundXianguNpc(player?.xiangu_realm_map, npcId);
+  try {
+    await persistXianguNpcMapState(player);
+  } catch (error) {
+    // The shared death slot is already durable; map cleanup can be retried on
+    // the next interaction without reopening the NPC globally.
+    console.error('仙古NPC击杀地图清理持久化失败:', error);
+  }
+}
+
+function getXianguRoundId(player) {
+  return String(player?.xiangu_world_seed || player?.xiangu_entry_time || 'legacy');
+}
+
+function getXianguNpcEntityId(npc, fallback = '') {
+  return String(npc?.id || npc?.npcId || npc?.name || npc?.名号 || fallback || '');
+}
+
+function getXianguNpcSharedScope(player, npcId) {
+  const entityId = String(npcId || '');
+  const fragmentId = resolveXianguCanonNpcId(entityId) ? 'canon' : player?.xiangu_realm_map?.fragmentId;
+  return getXianguSharedScope(player, entityId, fragmentId);
+}
+
+function getXianguNpcWorldScope(player) {
+  return getXianguSharedScope(player, 'npc-world', 'world');
+}
+
+function getXianguNpcLegacyScope() {
+  return { worldSeed: 'all-rounds', fragmentId: 'canon', entityId: 'npc-legacy' };
+}
+
+function getXianguNpcInventoryKey(player, npcId) {
+  const id = String(npcId || '');
+  return resolveXianguCanonNpcId(id)
+    ? id
+    : `${player?.xiangu_realm_map?.fragmentId || 'unknown'}:${id}`;
+}
+
+const XIANGU_NPC_INTERACTION_REWARD_COOLDOWN_MS = 10 * 60 * 1000;
+const XIANGU_NPC_INTERACTION_REWARD_LIMIT = 2;
+
+function getXianguNpcInteractionRewardState(player, npcId, now = Date.now()) {
+  const roundId = getXianguRoundId(player);
+  const state = player.xiangu_npc_interactions && typeof player.xiangu_npc_interactions === 'object'
+    ? player.xiangu_npc_interactions
+    : {};
+  if (state.roundId !== roundId) {
+    state.roundId = roundId;
+    state.rewards = {};
+  }
+  state.rewards = state.rewards && typeof state.rewards === 'object' ? state.rewards : {};
+  const record = state.rewards[String(npcId)] || { count: 0, lastAt: 0 };
+  state.rewards[String(npcId)] = record;
+  player.xiangu_npc_interactions = state;
+  const count = Math.max(0, Math.trunc(Number(record.count) || 0));
+  const lastAt = Math.max(0, Math.trunc(Number(record.lastAt) || 0));
+  return {
+    state,
+    record,
+    canReward: count < XIANGU_NPC_INTERACTION_REWARD_LIMIT && now >= lastAt + XIANGU_NPC_INTERACTION_REWARD_COOLDOWN_MS,
+  };
+}
+
+function recordXianguNpcInteractionReward(state, now = Date.now()) {
+  state.record.count = Math.max(0, Math.trunc(Number(state.record.count) || 0)) + 1;
+  state.record.lastAt = Math.max(0, Math.trunc(Number(now) || Date.now()));
+  return state.record;
+}
+
+function cloneXianguItems(items) {
+  return (Array.isArray(items) ? items : []).map(item =>
+    item && typeof item === 'object' ? { ...item } : item
+  );
+}
+
+function cloneXianguNpcMapState(map) {
+  return {
+    version: 1,
+    npcEcology: { ...(map?.npcEcology || {}) },
+    npcLocations: (map?.npcLocations || []).map(spot => ({
+      x: Number(spot?.x),
+      y: Number(spot?.y),
+      npcId: String(spot?.npcId || spot?.npc?.id || ''),
+      underCell: spot?.underCell ?? CELL_TYPE.EMPTY,
+      nextEncounterAt: Number(spot?.nextEncounterAt) || 0,
+      npc: spot?.npc && typeof spot.npc === 'object'
+        ? JSON.parse(JSON.stringify(spot.npc))
+        : null,
+    })).filter(spot => spot.npc && spot.npcId),
+  };
+}
+
+function getXianguNpcMapStateKey(player) {
+  const map = player?.xiangu_realm_map || {};
+  return `${map.fragmentId || 'unknown'}:${map.instanceId || 'legacy'}`;
+}
+
+function isXianguNpcMapSpotValid(map, spot) {
+  return Number.isInteger(spot?.x) && Number.isInteger(spot?.y) &&
+    spot.y >= 0 && spot.y < (map?.grid?.length || 0) &&
+    spot.x >= 0 && spot.x < (map?.grid?.[spot.y]?.length || 0);
+}
+
+function applyXianguNpcMapState(map, state) {
+  if (!map?.grid || !state || state.version !== 1 || !Array.isArray(state.npcLocations)) return false;
+  const previous = Array.isArray(map.npcLocations) ? map.npcLocations : [];
+  const existing = new Map(previous.map(spot => [
+    String(spot?.npcId || spot?.npc?.id || ''),
+    spot,
+  ]).filter(([id]) => id));
+
+  for (const spot of previous) {
+    if (map.grid?.[spot?.y]?.[spot?.x] === CELL_TYPE.NPC) {
+      map.grid[spot.y][spot.x] = spot.underCell ?? CELL_TYPE.EMPTY;
+    }
+  }
+
+  const next = [];
+  for (const sharedSpot of state.npcLocations) {
+    if (!isXianguNpcMapSpotValid(map, sharedSpot)) continue;
+    const local = existing.get(String(sharedSpot.npcId));
+    const npc = {
+      ...(local?.npc || {}),
+      ...(sharedSpot.npc || {}),
+      id: String(sharedSpot.npcId),
+      inventory: cloneXianguItems(sharedSpot.npc?.inventory),
+    };
+    const spot = {
+      ...local,
+      x: sharedSpot.x,
+      y: sharedSpot.y,
+      npcId: String(sharedSpot.npcId),
+      underCell: sharedSpot.underCell ?? CELL_TYPE.EMPTY,
+      nextEncounterAt: Number(sharedSpot.nextEncounterAt) || 0,
+      npc,
+    };
+    map.grid[spot.y][spot.x] = CELL_TYPE.NPC;
+    next.push(spot);
+  }
+  map.npcLocations = next;
+  map.npcEcology = { ...(state.npcEcology || {}) };
+  return true;
+}
+
+async function syncXianguNpcMapState(player) {
+  const map = player?.xiangu_realm_map;
+  if (!map) return false;
+  const localState = cloneXianguNpcMapState(map);
+  const { value } = await updateXianguNpcWorldState(player, document => {
+    document.maps = document.maps && typeof document.maps === 'object' && !Array.isArray(document.maps)
+      ? document.maps
+      : {};
+    const mapKey = getXianguNpcMapStateKey(player);
+    if (!document.maps[mapKey]) document.maps[mapKey] = localState;
+    return document.maps[mapKey];
+  });
+  return applyXianguNpcMapState(map, value);
+}
+
+async function persistXianguNpcMapState(player) {
+  const map = player?.xiangu_realm_map;
+  if (!map) return;
+  const state = cloneXianguNpcMapState(map);
+  await updateXianguNpcWorldState(player, document => {
+    document.maps = document.maps && typeof document.maps === 'object' && !Array.isArray(document.maps)
+      ? document.maps
+      : {};
+    document.maps[getXianguNpcMapStateKey(player)] = state;
+    document.updatedAt = Date.now();
+  });
+}
+
+async function readXianguNpcWorldState(player) {
+  const document = await readXianguSharedDocument(redis, getXianguNpcWorldScope(player));
+  document.inventories = document.inventories && typeof document.inventories === 'object' && !Array.isArray(document.inventories)
+    ? document.inventories
+    : {};
+  ensureXianguNpcGoals(document, getXianguRoundId(player));
+  return document;
+}
+
+function updateXianguNpcWorldState(player, updater) {
+  return updateXianguSharedDocument(redis, getXianguNpcWorldScope(player), document => {
+    document.inventories = document.inventories && typeof document.inventories === 'object' && !Array.isArray(document.inventories)
+      ? document.inventories
+      : {};
+    const goals = ensureXianguNpcGoals(document, getXianguRoundId(player));
+    return updater(document, goals);
+  });
+}
+
+async function storeXianguNpcInventoryItem(player, npc, item, inventoryAlreadyIncludesItem = false) {
+  const npcId = getXianguNpcEntityId(npc);
+  if (!npcId || !item) return [];
+  const inventoryKey = getXianguNpcInventoryKey(player, npcId);
+  const localInventory = cloneXianguItems(npc.inventory);
+  const { value } = await updateXianguNpcWorldState(player, document => {
+    const sharedInventory = document.inventories[inventoryKey];
+    if (!Array.isArray(sharedInventory)) {
+      document.inventories[inventoryKey] = localInventory;
+      if (!inventoryAlreadyIncludesItem) document.inventories[inventoryKey].push({ ...item });
+    } else {
+      sharedInventory.push({ ...item });
+    }
+    return cloneXianguItems(document.inventories[inventoryKey]);
+  });
+  npc.inventory = cloneXianguItems(value);
+  return npc.inventory;
+}
+
+async function recordXianguCanonNpcEvent(player, npc, event = {}) {
+  const npcId = resolveXianguCanonNpcId(npc);
+  if (!npcId) return [];
+  const roundId = getXianguRoundId(player);
+  const at = Number(event.at) || Date.now();
+  const { value: progress } = await updateXianguNpcWorldState(player, (document, goals) => {
+    if (
+      [XIANGU_LEGACY_EVENTS.PLAYER_KILL, XIANGU_LEGACY_EVENTS.ARENA_WIN].includes(event.type) &&
+      event.victimId
+    ) {
+      document.goalVictims = document.goalVictims && typeof document.goalVictims === 'object' && !Array.isArray(document.goalVictims)
+        ? document.goalVictims
+        : {};
+      const victimKey = `${npcId}:${event.type}`;
+      const victims = document.goalVictims[victimKey] ||= [];
+      const victimId = String(event.victimId);
+      if (victims.includes(victimId)) return { duplicate: true };
+      victims.push(victimId);
+    }
+    return advanceXianguNpcGoal(goals, { ...event, actorId: npcId, at });
+  });
+  if (!progress || progress.duplicate || !progress.updated) return [];
+
+  const { value: legacyResult } = await updateXianguSharedDocument(
+    redis,
+    getXianguNpcLegacyScope(),
+    document => {
+      document.npcs = document.npcs && typeof document.npcs === 'object' && !Array.isArray(document.npcs)
+        ? document.npcs
+        : {};
+      const holder = document.npcs[npcId] ||= { id: npcId, name: progress.definition.name };
+      const result = recordXianguLegacyResult(holder, { roundId, type: event.type, amount: event.amount });
+      const crown = progress.completedNow ? awardXianguCrown(holder, { roundId, at }) : null;
+      return { result, crown };
+    },
+  );
+
+  const lines = [
+    `【古代怪胎目标】${progress.definition.name}：${progress.goal.progress}/${progress.definition.target}`,
+  ];
+  if (legacyResult?.crown?.awarded) {
+    lines.push(`${progress.definition.name}完成本轮执念，冠冕加身，成就${legacyResult.crown.title}！`);
+  }
+  return lines;
+}
+
+function recordXianguPlayerResult(player, type, amount = 1) {
+  return recordXianguLegacyResult(player, { roundId: getXianguRoundId(player), type, amount });
+}
+
+function getXianguNpcVictoryEventType(npc, victimId) {
+  const isTenCrownKing = resolveXianguCanonNpcId(npc) === 'shiguanwang_tianzi';
+  const arenaActive = XIANGU_EVENTS.activeEvent?.type === 'arena' &&
+    XIANGU_EVENTS.activeEvent.endTime > Date.now();
+  const victimJoined = XIANGU_EVENTS.arenaParticipants?.some(entry => String(entry.qq) === String(victimId));
+  return isTenCrownKing && arenaActive && victimJoined
+    ? XIANGU_LEGACY_EVENTS.ARENA_WIN
+    : XIANGU_LEGACY_EVENTS.PLAYER_KILL;
+}
+
+function transferXianguUniqueSpoil(winner, loser) {
+  const item = takeXianguUniqueBagItem(ensureXianguBag(loser));
+  if (!item) return null;
+  addXianguBagItem(ensureXianguBag(winner), item);
+  return item;
+}
+
+async function transferXianguUniqueSpoilToNpc(player, npc) {
+  const item = takeXianguUniqueBagItem(ensureXianguBag(player));
+  if (!item) return null;
+  try {
+    await storeXianguNpcInventoryItem(player, npc, item);
+    return item;
+  } catch (error) {
+    addXianguBagItem(ensureXianguBag(player), item);
+    throw error;
+  }
+}
+
+async function forceXianguPlayerExitAfterNpcDefeat(player, playerId) {
+  const maxHp = Number(player?.血量上限 || player?.血气上限) || 1;
+  const currentHp = Number(player?.当前血量) || maxHp;
+  if (currentHp >= maxHp * 0.1) return null;
+
+  const summary = buildXianguRunSummary(player, await readXianguNajie(playerId), Date.now());
+  summary.exitMode = 'forced';
+  summary.exitReason = 'npc_defeated';
+  summary.lostLootUnits = summary.lootUnits;
+  return summary;
+}
+
+async function syncXianguSharedMapState(player) {
+  const map = player?.xiangu_realm_map;
+  if (!map) return false;
+  let changed = false;
+
+  const treasures = Object.entries(map.uniqueTreasures || {})
+    .filter(([, treasure]) => treasure?.kind !== XIANGU_MARROW_POOL_KIND && !treasure?.claimed);
+  const claims = await Promise.all(treasures.map(([name]) =>
+    getXianguUniqueTreasureClaim(redis, getXianguSharedScope(player, name, 'unique'))
+  ));
+  for (let index = 0; index < treasures.length; index++) {
+    if (!claims[index]) continue;
+    const treasure = treasures[index][1];
+    treasure.claimed = true;
+    if (map.grid?.[treasure.pos?.y]?.[treasure.pos?.x] === CELL_TYPE.UNIQUE_TREASURE) {
+      map.grid[treasure.pos.y][treasure.pos.x] = CELL_TYPE.EXPLORED_EMPTY;
+    }
+    changed = true;
+  }
+
+  const ordinaryTreasures = [];
+  for (let y = 0; y < (map.grid?.length || 0); y++) {
+    for (let x = 0; x < (map.grid[y]?.length || 0); x++) {
+      if (map.grid[y][x] === CELL_TYPE.TREASURE) ordinaryTreasures.push({ x, y });
+    }
+  }
+  const ordinaryClaims = await Promise.all(ordinaryTreasures.map(({ x, y }) =>
+    getXianguUniqueTreasureClaim(redis, getXianguSharedScope(player, `cell:${x},${y}`))
+  ));
+  for (let index = 0; index < ordinaryTreasures.length; index++) {
+    if (!ordinaryClaims[index]) continue;
+    const { x, y } = ordinaryTreasures[index];
+    map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
+    changed = true;
+  }
+
+  ensureXianguMapNpcBindings(player);
+  const npcWorld = await readXianguNpcWorldState(player);
+  if (await syncXianguNpcMapState(player)) changed = true;
+  const npcEntries = (map.npcLocations || []).filter(spot => spot?.npc);
+  const deaths = await Promise.all(npcEntries.map(spot => {
+    const npcId = getXianguNpcEntityId(spot.npc, spot.npcId);
+    return getXianguNpcDeath(redis, getXianguNpcSharedScope(player, npcId));
+  }));
+  for (let index = 0; index < npcEntries.length; index++) {
+    const spot = npcEntries[index];
+    const npcId = getXianguNpcEntityId(spot.npc, spot.npcId);
+    if (deaths[index]) {
+      if (removeBoundXianguNpc(map, npcId)) changed = true;
+      continue;
+    }
+    const inventoryKey = getXianguNpcInventoryKey(player, npcId);
+    if (Array.isArray(npcWorld.inventories[inventoryKey])) {
+      spot.npc.inventory = cloneXianguItems(npcWorld.inventories[inventoryKey]);
+    }
+  }
+  if (changed) await persistXianguNpcMapState(player);
+  return changed;
+}
+
+async function grantXianguGrowthRewards(player, _playerId, rewards = {}) {
+  const result = {
+    xiuwei: Math.max(0, Math.trunc(Number(rewards.xiuwei) || 0)),
+    xueqi: Math.max(0, Math.trunc(Number(rewards.xueqi) || 0)),
+    sourceStone: 0,
+  };
+  if (Number(rewards.sourceStone) > 0 || Number(rewards.lingshi) > 0) {
+    result.sourceStone = calculateXianguSourceStoneReward(player, rewards.sourceStoneRolls);
+  }
+  addXianguBagGrowth(ensureXianguBag(player), result);
+  return { ...result, lingshi: result.sourceStone };
+}
+
+function cloneXianguSettlementData(value) {
+  if (value === undefined) return undefined;
+  if (typeof structuredClone === 'function') return structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
+function getXianguBagSettlementSnapshot(player) {
+  const bag = getXianguBagSummary(ensureXianguBag(player));
+  return {
+    xiuwei: bag.xiuwei,
+    xueqi: bag.xueqi,
+    sourceStone: bag.sourceStone,
+    potential: bag.potential,
+    items: cloneXianguSettlementData(bag.items),
+    seeds: cloneXianguSettlementData(bag.seeds),
+    techniques: cloneXianguSettlementData(bag.techniques),
+  };
+}
+
+function restoreXianguBagSettlementSnapshot(player, snapshot) {
+  player.xiangu_bag = cloneXianguSettlementData(snapshot);
+}
+
+function getXianguBagItemSettlementKey(item) {
+  return `${String(item?.name ?? item?.名称 ?? '')}\u0000${String(item?.type ?? item?.类型 ?? '')}`;
+}
+
+function getXianguNewBagEntries(before = [], after = []) {
+  const used = new Map();
+  for (const entry of before) {
+    const key = JSON.stringify(entry);
+    used.set(key, (used.get(key) || 0) + 1);
+  }
+  const added = [];
+  for (const entry of after) {
+    const key = JSON.stringify(entry);
+    const count = used.get(key) || 0;
+    if (count > 0) used.set(key, count - 1);
+    else added.push(cloneXianguSettlementData(entry));
+  }
+  return added;
+}
+
+function buildXianguBagSettlementPayload(before, after) {
+  const beforeItems = new Map();
+  for (const item of before.items || []) {
+    const key = getXianguBagItemSettlementKey(item);
+    beforeItems.set(key, (beforeItems.get(key) || 0) + Math.max(0, Number(item.quantity) || 0));
+  }
+  const items = [];
+  for (const item of after.items || []) {
+    const key = getXianguBagItemSettlementKey(item);
+    const prior = beforeItems.get(key) || 0;
+    const quantity = Math.max(0, Math.floor(Number(item.quantity) || 0) - prior);
+    if (quantity > 0) items.push({ ...cloneXianguSettlementData(item), quantity });
+    beforeItems.set(key, 0);
+  }
+  return {
+    bag: {
+      xiuwei: Math.max(0, Number(after.xiuwei) - Number(before.xiuwei) || 0),
+      xueqi: Math.max(0, Number(after.xueqi) - Number(before.xueqi) || 0),
+      sourceStone: Math.max(0, Number(after.sourceStone) - Number(before.sourceStone) || 0),
+      potential: Math.max(0, Number(after.potential) - Number(before.potential) || 0),
+      items,
+      seeds: getXianguNewBagEntries(before.seeds, after.seeds),
+      techniques: getXianguNewBagEntries(before.techniques, after.techniques),
+    },
+  };
+}
+
+function xianguSettlementValuesEqual(left, right) {
+  try {
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch {
+    return false;
+  }
+}
+
+function buildXianguPlayerStatePayload(beforePlayer, afterPlayer, fields = []) {
+  const before = {};
+  const after = {};
+  for (const field of fields) {
+    if (typeof field !== 'string' || !field) continue;
+    before[field] = cloneXianguSettlementData(beforePlayer?.[field]);
+    after[field] = cloneXianguSettlementData(afterPlayer?.[field]);
+  }
+  return { before, after };
+}
+
+function applyXianguPlayerStatePayload(player, payload = {}) {
+  const state = payload?.playerState;
+  if (!state || typeof state !== 'object') return;
+  const before = state.before && typeof state.before === 'object' ? state.before : {};
+  const after = state.after && typeof state.after === 'object' ? state.after : {};
+  for (const field of Object.keys(after)) {
+    // The action lock normally makes this an exact before/after replacement.
+    // If another writer touched the field, preserve it rather than erasing it.
+    if (player[field] === undefined || xianguSettlementValuesEqual(player[field], before[field])) {
+      player[field] = cloneXianguSettlementData(after[field]);
+    }
+  }
+}
+
+function applyXianguBagSettlementPayload(player, payload = {}) {
+  const reward = payload?.bag || {};
+  const bag = ensureXianguBag(player);
+  addXianguBagGrowth(bag, reward);
+  addXianguBagPotential(bag, reward.potential);
+  for (const item of Array.isArray(reward.items) ? reward.items : []) addXianguBagItem(bag, item);
+  for (const seed of Array.isArray(reward.seeds) ? reward.seeds : []) addXianguBagSeed(bag, seed);
+  for (const technique of Array.isArray(reward.techniques) ? reward.techniques : []) {
+    addXianguBagTechnique(bag, technique);
+  }
+  return getXianguBagSummary(bag);
+}
+
+function applyXianguMarrowPoolReceiptPayload(player, receipt = {}) {
+  const payload = receipt?.payload || {};
+  const bag = applyXianguBagSettlementPayload(player, payload);
+  const gains = player.xiangu_gains ||= {};
+  for (const [key, value] of Object.entries(payload.gains || {})) {
+    const amount = Math.max(0, Math.trunc(Number(value) || 0));
+    if (amount > 0) gains[key] = (Number(gains[key]) || 0) + amount;
+  }
+  const relationDelta = Math.trunc(Number(payload.relationDelta) || 0);
+  const invitedBy = String(payload.invitedBy || receipt?.source?.invitedBy || '');
+  if (invitedBy && relationDelta) {
+    player.xiangu_npc_relations ||= {};
+    player.xiangu_npc_relations[invitedBy] =
+      (Number(player.xiangu_npc_relations[invitedBy]) || 0) + relationDelta;
+  }
+  return { bag };
+}
+
+function copyXianguReceiptState(player, storedPlayer) {
+  if (!storedPlayer || typeof storedPlayer !== 'object') return false;
+  if (storedPlayer.xiangu_bag) player.xiangu_bag = cloneXianguSettlementData(storedPlayer.xiangu_bag);
+  else delete player.xiangu_bag;
+  if (storedPlayer[XIANGU_SETTLEMENT_PLAYER_CLAIMS]) {
+    player[XIANGU_SETTLEMENT_PLAYER_CLAIMS] = cloneXianguSettlementData(
+      storedPlayer[XIANGU_SETTLEMENT_PLAYER_CLAIMS],
+    );
+  }
+  for (const field of [
+    'xiangu_gains',
+    'xiangu_infamy',
+    'xiangu_kills',
+    'xiangu_faction_rep',
+    'xiangu_defeated_npc_ids',
+    'xiangu_soulsearch_target',
+    'xiangu_legacy',
+    'xiangu_npc_relations',
+  ]) {
+    if (Object.hasOwn(storedPlayer, field)) {
+      player[field] = cloneXianguSettlementData(storedPlayer[field]);
+    }
+  }
+  return true;
+}
+
+async function deliverXianguClaimBagReward(
+  player,
+  playerId,
+  claimScope,
+  kind,
+  beforeBag,
+  {
+    playerFields = [],
+    claim = null,
+    onClaimRejected = null,
+    onClaimError = null,
+  } = {},
+) {
+  const afterBag = getXianguBagSettlementSnapshot(player);
+  const payload = buildXianguBagSettlementPayload(beforeBag, afterBag);
+  if (playerFields.length > 0) {
+    let beforePlayer = null;
+    try {
+      beforePlayer = await Read_player(playerId);
+    } catch (error) {
+      console.error('读取仙古奖励附带状态失败，将保留当前写盘路径:', error);
+    }
+    if (beforePlayer) payload.playerState = buildXianguPlayerStatePayload(
+      beforePlayer,
+      player,
+      playerFields,
+    );
+  }
+  const receiptInput = {
+    worldSeed: claimScope.worldSeed,
+    playerId: String(playerId),
+    // Direct and ecology NPC victories can converge on the same shared death
+    // slot. Keep one canonical receipt for that slot even if both entry
+    // paths race before either one removes the NPC from its local map.
+    receiptId: buildXianguSettlementReceiptId(
+      ['npc-kill-loot', 'npc-ecology-loot'].includes(kind) ? 'npc-kill-loot' : kind,
+      claimScope,
+      playerId,
+    ),
+    kind,
+    payload,
+    source: {
+      claimScope,
+      sharedClaim: ['npc-kill-loot', 'npc-ecology-loot'].includes(kind)
+        ? 'npc-death'
+        : 'unique-treasure',
+    },
+  };
+
+  restoreXianguBagSettlementSnapshot(player, beforeBag);
+  let receipt = null;
+  try {
+    const created = await createXianguSettlementReceipt(redis, receiptInput);
+    receipt = created.receipt;
+
+    // Persist the reward intent before claiming a shared world slot. If the
+    // process stops after the claim, a retry can now deliver the same receipt
+    // instead of losing the reward permanently.
+    let claimResult = null;
+    if (typeof claim === 'function') {
+      try {
+        claimResult = await claim(receipt);
+      } catch (error) {
+        let recovery = null;
+        try {
+          if (typeof onClaimError === 'function') recovery = await onClaimError(error, receipt);
+        } catch (recoveryError) {
+          console.error('仙古机缘领取异常恢复探测失败:', recoveryError);
+        }
+
+        // A death/claim write may have committed even when its response was
+        // lost. Let the caller probe the durable slot and continue delivery.
+        if (recovery === true || recovery?.claimed === true || recovery?.marked === true) {
+          claimResult = recovery;
+        } else if (recovery?.pending === true || recovery?.retry === true) {
+          // Keep the receipt pending. The caller can retry the shared claim
+          // before delivering it; paying locally here would leave a live NPC
+          // with an already-looted reward.
+          restoreXianguBagSettlementSnapshot(player, beforeBag);
+          try {
+            if (typeof onClaimRejected === 'function') await onClaimRejected(recovery);
+          } catch (rollbackError) {
+            console.error('仙古机缘暂缓回滚附加状态失败:', rollbackError);
+          }
+          return { status: 'pending', receipt, claim: recovery, error };
+        } else {
+          // An unknown claim result is never safe to pay locally: the shared
+          // SETNX may have committed, or another claimant may still win.
+          // Keep the durable receipt pending and let recovery probe ownership
+          // before applying the payload.
+          restoreXianguBagSettlementSnapshot(player, beforeBag);
+          try {
+            if (typeof onClaimRejected === 'function') await onClaimRejected({ pending: true });
+          } catch (rollbackError) {
+            console.error('仙古机缘异常回滚附加状态失败:', rollbackError);
+          }
+          console.error('仙古机缘全局领取状态未知，收据保留待重试:', error);
+          return { status: 'pending', receipt, error };
+        }
+      }
+
+      const accepted = claimResult === true || claimResult?.claimed === true || claimResult?.marked === true;
+      if (!accepted) {
+        if (claimResult?.pending === true || claimResult?.retry === true) {
+          restoreXianguBagSettlementSnapshot(player, beforeBag);
+          try {
+            if (typeof onClaimRejected === 'function') await onClaimRejected(claimResult);
+          } catch (rollbackError) {
+            console.error('仙古机缘暂缓回滚附加状态失败:', rollbackError);
+          }
+          return { status: 'pending', receipt, claim: claimResult };
+        }
+        restoreXianguBagSettlementSnapshot(player, beforeBag);
+        try {
+          if (typeof onClaimRejected === 'function') await onClaimRejected(claimResult);
+        } catch (rollbackError) {
+          console.error('仙古机缘拒领回滚附加状态失败:', rollbackError);
+        }
+        try {
+          await confirmXianguSettlementReceipt(redis, receipt, {
+            result: {
+              rejected: true,
+              claimantId: claimResult?.record?.claimantId || '',
+              claimantName: claimResult?.record?.claimantName || '',
+            },
+          });
+        } catch (confirmError) {
+          // A rejected receipt must never be recovered as a payout. The local
+          // claim marker is a conservative fallback if Redis confirmation is
+          // temporarily unavailable.
+          markXianguSettlementReceiptClaim(player, receipt);
+          console.error('仙古机缘拒领收据确认失败:', confirmError);
+        }
+        return { status: 'rejected', receipt, claim: claimResult };
+      }
+    }
+
+    let savedPlayer = null;
+    const delivery = await deliverXianguSettlementReceipt(redis, receipt, {
+      loadPlayer: playerId => Read_player(playerId),
+      savePlayer: async (targetId, storedPlayer) => {
+        const saved = await Write_player(targetId, storedPlayer);
+        if (saved === false) {
+          throw new Error('仙古玩家档案正由其他动作写入，奖励收据待重试');
+        }
+        savedPlayer = cloneXianguSettlementData(storedPlayer);
+      },
+      apply: (storedPlayer, storedReceipt) => ({
+        bag: applyXianguBagSettlementPayload(storedPlayer, storedReceipt.payload),
+        state: applyXianguPlayerStatePayload(storedPlayer, storedReceipt.payload),
+      }),
+    });
+    if (['applied', 'recovered', 'already-applied'].includes(delivery.status)) {
+      const persisted = savedPlayer || await Read_player(playerId);
+      if (!copyXianguReceiptState(player, persisted)) restoreXianguBagSettlementSnapshot(player, afterBag);
+    } else if (['pending', 'busy'].includes(delivery.status) && (delivery.receipt || receipt)) {
+      // Preserve the reward for the caller's normal Write_player fallback. The
+      // claim marker makes a later receipt recovery recognize that this local
+      // snapshot already contains the increment and prevents double delivery.
+      restoreXianguBagSettlementSnapshot(player, afterBag);
+      markXianguSettlementReceiptClaim(player, delivery.receipt || receipt);
+      if (!delivery.receipt && receipt) delivery.receipt = receipt;
+    }
+    return claimResult ? { ...delivery, claim: claimResult } : delivery;
+  } catch (error) {
+    // Redis may be unavailable after a successful claim. Keep the local reward so the caller's
+    // normal Write_player path remains a last-resort delivery instead of silently destroying it.
+    restoreXianguBagSettlementSnapshot(player, afterBag);
+    if (receipt) markXianguSettlementReceiptClaim(player, receipt);
+    console.error('仙古秘境奖励收据写入失败，已回退到当前玩家写盘:', error);
+    return { status: 'fallback', receipt, error };
+  }
+}
+
+async function recoverXianguClaimBagRewards(
+  player,
+  playerId,
+  { writeOptions = {}, throwOnError = false } = {},
+) {
+  const worldSeed = String(player?.xiangu_world_seed || player?.xiangu_entry_time || 'recovery');
+  try {
+    let savedPlayer = null;
+    const results = await recoverXianguSettlementReceipts(redis, {
+      worldSeed,
+      playerId: String(playerId),
+    }, {
+      loadPlayer: targetId => Read_player(targetId),
+      savePlayer: async (targetId, storedPlayer) => {
+        const saved = await Write_player(targetId, storedPlayer, writeOptions);
+        if (saved === false) {
+          throw new Error('仙古玩家档案正由其他动作写入，奖励收据待重试');
+        }
+        savedPlayer = cloneXianguSettlementData(storedPlayer);
+      },
+      claim: async (storedPlayer, receipt) => {
+        const source = receipt?.source || {};
+        const claimScope = source.claimScope;
+        if (!claimScope || typeof claimScope !== 'object') {
+          return { pending: true };
+        }
+        if (receipt.kind === 'marrow-pool') {
+          if (source.worldUnique !== true && receipt.payload?.worldUnique !== true) {
+            return { claimed: true };
+          }
+          return claimXianguMarrowPoolWorldSlot(storedPlayer, playerId, { claimScope });
+        }
+        if (source.sharedClaim === 'npc-death' ||
+          receipt.kind === 'npc-kill-loot' || receipt.kind === 'npc-ecology-loot') {
+          return claimXianguNpcDeathForPlayer(claimScope, storedPlayer, playerId);
+        }
+        return claimXianguRewardForPlayer(claimScope, storedPlayer, playerId);
+      },
+      apply: (storedPlayer, receipt) => receipt.kind === 'marrow-pool'
+        ? applyXianguMarrowPoolReceiptPayload(storedPlayer, receipt)
+        : ({
+            bag: applyXianguBagSettlementPayload(storedPlayer, receipt.payload),
+            state: applyXianguPlayerStatePayload(storedPlayer, receipt.payload),
+          }),
+    }, {
+      // Evacuation owns the final transfer. The other reward receipts are
+      // incremental and must be recovered before that transfer clears the run.
+      kinds: ['treasure-cell', 'unique-treasure', 'npc-kill-loot', 'npc-ecology-loot', 'marrow-pool'],
+      // If an index document was unavailable when the receipt was created,
+      // rebuild candidates from the durable receipt keys during recovery.
+      rebuildIndex: true,
+    });
+    if (results.some(result => ['applied', 'recovered', 'already-applied', 'rejected'].includes(result.status))) {
+      copyXianguReceiptState(player, savedPlayer || await Read_player(playerId));
+    }
+    return results;
+  } catch (error) {
+    if (throwOnError) throw error;
+    console.error('恢复仙古秘境待结算奖励失败:', error);
+    return [];
+  }
+}
+
+async function addXianguSpoil(player, name, quantity = 1, desc = '仙古秘境战利品', type = '材料') {
+  addXianguBagItem(ensureXianguBag(player), { name, type, quantity, desc });
+}
+
+function grantXianguBagSeed(player, seed) {
+  addXianguBagSeed(ensureXianguBag(player), seed);
+  return seed;
+}
+
+function getXianguUsableSeedEntries(player) {
+  const permanentSeeds = Array.isArray(player.xiangu_seeds) ? player.xiangu_seeds : [];
+  const bagSeeds = player.in_xiangu ? ensureXianguBag(player).seeds : [];
+  return [
+    ...permanentSeeds.map((seed, index) => ({ seed, source: 'permanent', index })),
+    ...bagSeeds.map((seed, index) => ({ seed, source: 'bag', index })),
+  ];
+}
+
+function consumeXianguSeed(player, entry) {
+  if (!entry) return null;
+  const seeds = entry.source === 'bag'
+    ? ensureXianguBag(player).seeds
+    : (Array.isArray(player.xiangu_seeds) ? player.xiangu_seeds : []);
+  return seeds.splice(entry.index, 1)[0] || null;
+}
+
+function buildXianguEvacuationSettlementPayload(player, summary, receiptId) {
+  const bag = getXianguBagSummary(ensureXianguBag(player));
+  const effects = getMinggeEffects(player, data.minggeList);
+  // Probe the potential gain on a throwaway object. The real player is only
+  // mutated inside the receipt apply callback, after the receipt is durable.
+  const potentialProbe = { 仙道潜力: Number(player.仙道潜力) || 0 };
+  const settled = {
+    xiuwei: calculateMinggeGain(bag.xiuwei, effects, '修炼加成'),
+    xueqi: bag.xueqi,
+    sourceStone: calculateMinggeSourceGain(bag.sourceStone, effects),
+    potential: grantMinggePotential(potentialProbe, effects, bag.potential),
+    itemCount: bag.itemCount,
+    seedCount: bag.seedCount,
+    techniqueCount: bag.techniqueCount,
+  };
+
+  return {
+    settlement: settled,
+    bag: {
+      xiuwei: bag.xiuwei,
+      xueqi: bag.xueqi,
+      sourceStone: bag.sourceStone,
+      potential: bag.potential,
+      items: cloneXianguSettlementData(bag.items),
+      seeds: cloneXianguSettlementData(bag.seeds),
+      techniques: cloneXianguSettlementData(bag.techniques),
+    },
+    summary: cloneXianguSettlementData({ ...summary, settlement: settled }),
+    itemClaimId: `xiangu:${receiptId}:items`,
+  };
+}
+
+async function applyXianguEvacuationSettlement(player, playerId, receipt) {
+  const payload = receipt?.payload || {};
+  const reward = payload.bag && typeof payload.bag === 'object' ? payload.bag : {};
+  const settlement = payload.settlement && typeof payload.settlement === 'object'
+    ? payload.settlement
+    : {};
+
+  player.修为 = (Number(player.修为) || 0) + Math.max(0, Number(settlement.xiuwei) || 0);
+  player.血气 = (Number(player.血气) || 0) + Math.max(0, Number(settlement.xueqi) || 0);
+  player.源石 = (Number(player.源石) || 0) + Math.max(0, Number(settlement.sourceStone) || 0);
+  player.仙道潜力 = Math.max(
+    0,
+    (Number(player.仙道潜力) || 0) + Math.max(0, Number(settlement.potential) || 0),
+  );
+
+  const items = Array.isArray(reward.items) ? reward.items : [];
+  if (items.length > 0) {
+    const najie = await readXianguNajie(playerId, { required: true });
+    const claim = claimXianguBagItems(
+      najie,
+      { items },
+      payload.itemClaimId || `xiangu:${receipt.receiptId}:items`,
+    );
+    if (claim.claimed) await Write_najie(playerId, najie);
+  }
+
+  for (const seed of Array.isArray(reward.seeds) ? reward.seeds : []) grantXianguSeed(player, seed);
+  const techniques = Array.isArray(reward.techniques) ? reward.techniques : [];
+  if (Array.isArray(player.学习的功法)) {
+    for (const technique of techniques) {
+      const name = typeof technique === 'string' ? technique : technique.name || technique.名称;
+      if (name && !player.学习的功法.includes(name)) player.学习的功法.push(name);
+    }
+  } else {
+    const learned = player.学习的功法 && typeof player.学习的功法 === 'object'
+      ? player.学习的功法
+      : {};
+    for (const technique of techniques) {
+      const name = typeof technique === 'string' ? technique : technique.name || technique.名称;
+      if (name && !Object.hasOwn(learned, name)) learned[name] = {};
+    }
+    player.学习的功法 = learned;
+  }
+
+  clearXianguSessionState(player, payload.summary || {});
+  return cloneXianguSettlementData(settlement);
 }
 
 function getXianguCooldownHours(xianguConfig = getXianguSecretConfig()) {
@@ -282,6 +1725,46 @@ function getXianguCooldownHours(xianguConfig = getXianguSecretConfig()) {
     xianguConfig?.撤离配置?.冷却时间 ?? xianguConfig?.准入条件?.冷却时间
   );
   return Number.isFinite(hours) && hours > 0 ? hours : 12;
+}
+
+function shouldBypassXianguActionLock(methodName, e) {
+  // Opening the NPC shop without an item is a read-only query. Keep it usable
+  // while a different action is running; the purchase branch remains locked.
+  if (methodName === 'XianguNPCBuy') {
+    const itemName = String(e?.msg || '').replace('#向NPC购买', '').trim();
+    return !itemName;
+  }
+  return false;
+}
+
+function installXianguActionWrappers(instance) {
+  for (const methodName of XIANGU_SINGLE_PLAYER_MUTATION_METHODS) {
+    const original = instance[methodName];
+    if (typeof original !== 'function') continue;
+
+    instance[methodName] = async function xianguSerializedEntry(e, ...args) {
+      if (shouldBypassXianguActionLock(methodName, e)) {
+        return original.call(this, e, ...args);
+      }
+
+      const rawUserId = e?.user_id?.toString?.().replace('qg_', '');
+      if (!rawUserId) return original.call(this, e, ...args);
+      let playerId;
+      try {
+        playerId = await channel(rawUserId);
+      } catch (error) {
+        console.error(`解析仙古动作玩家身份失败(${rawUserId}):`, error);
+        return e.reply('【秘境动作暂不可用】玩家身份解析失败，请稍后重试。');
+      }
+      const result = await withXianguActionLock(playerId, () =>
+        original.call(this, e, ...args)
+      );
+      if (result === XIANGU_ACTION_BUSY) {
+        return e.reply('【交战结算中】该玩家已有秘境动作正在处理，请稍后再试。');
+      }
+      return result;
+    };
+  }
 }
 
 export class xianguPlace extends plugin {
@@ -312,6 +1795,10 @@ export class xianguPlace extends plugin {
     {
     reg: '^#秘境状态$',
     fnc: 'XianguStatus'
+    },
+    {
+    reg: '^#秘境背包$',
+    fnc: 'XianguBag'
     },
     {
     reg: '^#秘境地图$',
@@ -479,8 +1966,72 @@ export class xianguPlace extends plugin {
     }
       ],
     });
+    installXianguActionWrappers(this);
     // 启动动态事件定时器（模块加载时）
     startEventTimer();
+    this.task = [{
+      cron: '0 */1 * * * *',
+      name: '仙古秘境NPC世界推进',
+      fnc: () => this.XianguNpcWorldTick(),
+      log: false,
+    }];
+  }
+
+  async XianguNpcWorldTick() {
+    try {
+      const lifecycle = readXianguLifecycleState();
+      const ids = (await redis.sMembers(XIANGU_ACTIVE_PLAYERS_KEY)).map(String).sort();
+      if (lifecycle.available && !lifecycle.open) {
+        await Promise.allSettled(ids.map(playerId => clearXianguLivePresence(playerId)));
+        return;
+      }
+      const processedInstances = new Set();
+      for (const playerId of ids) {
+        const player = await Read_player(playerId);
+        // A foreground action owns the authoritative snapshot while this key
+        // exists. Skip all cleanup/presence work for that player until the
+        // next tick instead of touching state from the pre-battle read.
+        if (await redis.get(xianguEvacuationLockKey(playerId))) continue;
+        if (!player?.in_xiangu) {
+          await clearXianguRedisSession(playerId);
+          continue;
+        }
+        if (!player?.xiangu_realm_map) {
+          await clearXianguLivePresence(playerId);
+          continue;
+        }
+        if (lifecycle.available && !isXianguPlayerRoundCurrent(player, lifecycle.data)) {
+          await clearXianguLivePresence(playerId);
+          continue;
+        }
+        await refreshXianguPresence(playerId, player);
+        const instanceKey = xianguNpcWorldTickKey(player);
+        if (processedInstances.has(instanceKey)) continue;
+        processedInstances.add(instanceKey);
+        // Skip foreground action owners before claiming a background tick;
+        // updateXianguPlayerUnderLock below still closes the check/claim race.
+        if (await redis.get(xianguEvacuationLockKey(playerId))) continue;
+
+        // 多进程部署时也只允许一个实例推进该碎片，离线玩家不会被自动拉入战斗。
+        const claimed = await redis.set(instanceKey, String(Date.now()), { NX: true, EX: 55 });
+        if (!claimed) continue;
+        try {
+          // Re-read and mutate under the same action lock used by movement,
+          // evacuation, and PvP. A background tick must never write the
+          // snapshot it read before a live battle acquired its lock.
+          const updated = await updateXianguPlayerUnderLock(playerId, async lockedPlayer => {
+            await refreshXianguPresence(playerId, lockedPlayer);
+            await syncXianguSharedMapState(lockedPlayer);
+            await processNPCBehavior(lockedPlayer, playerId, { allowCombat: false });
+          });
+          if (!updated) continue;
+        } catch (error) {
+          console.error(`推进仙古秘境NPC世界状态失败(${playerId}):`, error);
+        }
+      }
+    } catch (error) {
+      console.error('读取仙古秘境NPC世界状态失败:', error);
+    }
   }
 
   async Goxiangu(e) {
@@ -490,6 +2041,7 @@ export class xianguPlace extends plugin {
     const player = await Read_player(player_qq);
 
     if (player.in_xiangu) {
+      await recoverXianguClaimBagRewards(player, player_qq);
       const fragmentName = REALM_FRAGMENTS[player.xiangu_realm_map?.fragmentId]?.name;
       return e.reply([
         `【已在仙古秘境】`,
@@ -574,8 +2126,8 @@ export class xianguPlace extends plugin {
     
     // 读取位面数据
     let weimianData = {};
+    const weimianPath = data.filePathMap.weimianList;
     try {
-      const weimianPath = data.filePathMap.weimianList;
       if (fs.existsSync(weimianPath)) {
         const rawData = fs.readFileSync(weimianPath, 'utf8');
         weimianData = JSON.parse(rawData);
@@ -585,6 +2137,18 @@ export class xianguPlace extends plugin {
     } catch (err) {
       console.error('读取位面数据失败:', err);
       return e.reply('读取位面数据失败，无法验证秘境状态');
+    }
+
+    if (
+      weimianData.仙古秘境 === 1 &&
+      !weimianData.仙古秘境开启时间 &&
+      !weimianData.仙古秘境会话ID
+    ) {
+      const manualRoundKey = 'xiuxian:xiangu:manual-round';
+      const candidate = `manual-${Date.now()}`;
+      await redis.set(manualRoundKey, candidate, { NX: true });
+      weimianData.仙古秘境会话ID = await redis.get(manualRoundKey) || candidate;
+      fs.writeFileSync(weimianPath, JSON.stringify(weimianData, null, 4), 'utf8');
     }
     
     // 检查秘境是否开启 - 完美世界设定
@@ -617,7 +2181,7 @@ export class xianguPlace extends plugin {
     const cooldownHours = getXianguCooldownHours();
     const cooldownMs = cooldownHours * 60 * 60 * 1000;
     
-    if (lastEntryTime && nowTime < parseInt(lastEntryTime) + cooldownMs) {
+    if (!e.isMaster&&lastEntryTime && nowTime < parseInt(lastEntryTime) + cooldownMs) {
       const remainingMs = parseInt(lastEntryTime) + cooldownMs - nowTime;
       const hours = Math.floor(remainingMs / (60 * 60 * 1000));
       const minutes = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000));
@@ -701,15 +2265,20 @@ export class xianguPlace extends plugin {
     clearXianguSessionState(player);
     player.in_xiangu = true;
     player.xiangu_entry_time = nowTime;
+    player.xiangu_world_seed = String(weimianData.仙古秘境开启时间 || weimianData.仙古秘境会话ID || 'manual-open');
     player.xiangu_gains = { daoyun: 0 };
     createXianguRun(player, najie, nowTime);
+    ensureXianguBag(player);
     initXianguRealmMap(player);
+    await syncXianguSharedMapState(player);
 
     await Write_player(player_qq, player);
+    await recoverXianguClaimBagRewards(player, player_qq);
 
     try {
       await clearXianguRedisSession(player_qq, usr_qq);
       await redis.sAdd(XIANGU_ACTIVE_PLAYERS_KEY, String(player_qq));
+      await refreshXianguPresence(player_qq, player);
       await setXianguCooldown(player_qq, usr_qq, nowTime);
     } catch (redisError) {
       console.error('初始化仙古秘境Redis会话失败:', redisError);
@@ -739,11 +2308,23 @@ export class xianguPlace extends plugin {
   }
 
   async BeginXianguEvacuation(e, mode) {
+    let evacuationLockKey = null;
+    let evacuationLockToken = null;
     try {
       const usr_qq = e.user_id.toString().replace('qg_', '');
       const player_qq = await channel(usr_qq);
-      const player = await Read_player(player_qq);
+      let player = await Read_player(player_qq);
       const evacuationKey = xianguEvacuationKey(player_qq);
+      evacuationLockKey = xianguEvacuationLockKey(player_qq);
+      evacuationLockToken = `evacuation:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+      if (!await redis.set(evacuationLockKey, evacuationLockToken, { EX: 30, NX: true })) {
+        return e.reply('【交战结算中】秘境法则正在处理战斗，请稍后再发起撤离。');
+      }
+
+      // The initial read only supports the quick path above. Re-read after
+      // acquiring the lock so the evacuation anchor and loot summary cannot
+      // be built from a snapshot that raced a completed action.
+      player = await Read_player(player_qq);
 
       if (!player.in_xiangu) {
         await clearXianguRedisSession(player_qq, usr_qq);
@@ -769,6 +2350,11 @@ export class xianguPlace extends plugin {
             `移动、探索或战斗会中断撤离。`
           ].join('\n'));
         }
+        // ConfirmLeaveXiangu acquires the same lock itself. Release this
+        // short-lived inspection lock before delegating so an already-started
+        // evacuation can continue normally.
+        await releaseXianguEvacuationLock(evacuationLockKey, evacuationLockToken);
+        evacuationLockToken = null;
         return this.ConfirmLeaveXiangu(e);
       }
       if (existingRaw) await redis.del(evacuationKey);
@@ -795,7 +2381,7 @@ export class xianguPlace extends plugin {
       const najie = await readXianguNajie(player_qq);
       if (!player.xiangu_run?.runId) {
         createXianguRun(player, najie, player.xiangu_entry_time || now);
-        await Write_player(player_qq, player);
+        await Write_player(player_qq, player, { xianguLockToken: evacuationLockToken });
       }
       const summary = buildXianguRunSummary(player, najie, now);
       const durationSeconds = calculateEvacuationDuration({
@@ -829,8 +2415,9 @@ export class xianguPlace extends plugin {
           ? `${player.名号}燃烧秘境印记，强行锚定外界坐标！`
           : `${player.名号}立于仙古花蕾核心，引动归途法则！`,
         ``,
-        `本轮新增纳戒物品：${summary.najieDelta}件`,
-        `本轮获得道种：${summary.seedCount}枚`,
+        `秘境背包物品：${summary.najieDelta}件`,
+        `秘境背包道种：${summary.seedCount}枚`,
+        `秘境背包源石：${summary.sourceStone.toLocaleString()}`,
         `撤离准备时间：${durationSeconds}秒`,
         ``,
         `等待结束后再次发送 ${command} 或 #确认撤离。`,
@@ -839,6 +2426,10 @@ export class xianguPlace extends plugin {
     } catch (error) {
       console.error('开始仙古秘境撤离失败:', error);
       return e.reply(`撤离失败：${error.message}`);
+    } finally {
+      if (evacuationLockKey && evacuationLockToken) {
+        await releaseXianguEvacuationLock(evacuationLockKey, evacuationLockToken);
+      }
     }
   }
 
@@ -900,13 +2491,16 @@ export class xianguPlace extends plugin {
       }
 
       const lockToken = `${state.runId}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
-      const lockAcquired = await redis.set(lockKey, lockToken, { EX: 30, NX: true });
+      const lockAcquired = await redis.set(lockKey, lockToken, {
+        EX: XIANGU_ACTION_LOCK_TTL_SECONDS,
+        NX: true,
+      });
       if (!lockAcquired) {
         return e.reply('【撤离结算中】本次撤离正在处理，请勿重复发送。');
       }
 
       try {
-        const latestPlayer = await Read_player(player_qq);
+        let latestPlayer = await Read_player(player_qq);
         const latestRawState = await redis.get(evacuationKey);
         const latestState = parseEvacuationState(latestRawState);
         const latestAnchor = getXianguEvacuationAnchor(latestPlayer);
@@ -927,8 +2521,24 @@ export class xianguPlace extends plugin {
           return e.reply(`【撤离未完成】${waitMessage}`);
         }
 
+        const recoveredRewards = await recoverXianguClaimBagRewards(latestPlayer, player_qq, {
+          writeOptions: { xianguLockToken: lockToken },
+          throwOnError: true,
+        });
+        const unsettledReward = recoveredRewards.find(result =>
+          !['applied', 'recovered', 'already-applied', 'rejected'].includes(result.status)
+        );
+        if (unsettledReward) {
+          return e.reply([
+            '【撤离结算等待】',
+            '尚有一笔秘境奖励正在恢复，本次不会清理背包与会话。',
+            '请稍后再次发送 #确认撤离。',
+          ].join('\n'));
+        }
+        latestPlayer = await Read_player(player_qq);
+
         const finishedAt = Date.now();
-        const najie = await readXianguNajie(player_qq);
+        const najie = await readXianguNajie(player_qq, { required: true });
         const summary = buildXianguRunSummary(latestPlayer, najie, finishedAt);
         if (summary.lootUnits > latestState.lootUnits) {
           await redis.del(evacuationKey);
@@ -946,8 +2556,47 @@ export class xianguPlace extends plugin {
         summary.exitMode = latestState.mode;
         summary.exitReason = latestState.mode === 'emergency' ? 'emergency' : 'evacuated';
         summary.finishedAt = finishedAt;
-        clearXianguSessionState(latestPlayer, summary);
-        await Write_player(player_qq, latestPlayer);
+        const worldSeed = getXianguRoundId(latestPlayer);
+        const runId = String(
+          latestPlayer.xiangu_run?.runId || latestState.runId || latestPlayer.xiangu_entry_time || finishedAt,
+        );
+        const claimScope = {
+          worldSeed,
+          fragmentId: 'evacuation',
+          entityId: runId,
+        };
+        const receiptId = buildXianguSettlementReceiptId('evacuation', claimScope, player_qq);
+        const draftPayload = buildXianguEvacuationSettlementPayload(latestPlayer, summary, receiptId);
+        const { receipt } = await createXianguSettlementReceipt(redis, {
+          worldSeed,
+          playerId: String(player_qq),
+          receiptId,
+          kind: 'evacuation',
+          payload: draftPayload,
+          source: { claimScope, mode: latestState.mode },
+        });
+        const delivery = await deliverXianguSettlementReceipt(redis, receipt, {
+          loadPlayer: targetId => Read_player(targetId),
+          savePlayer: async (targetId, storedPlayer) => {
+            const saved = await Write_player(targetId, storedPlayer, { xianguLockToken: lockToken });
+            if (saved === false) {
+              throw new Error('仙古撤离结算未取得玩家动作锁，收据待重试');
+            }
+          },
+          apply: (storedPlayer, storedReceipt) =>
+            applyXianguEvacuationSettlement(storedPlayer, player_qq, storedReceipt),
+        });
+        if (!['applied', 'recovered', 'already-applied'].includes(delivery.status)) {
+          return e.reply([
+            `【撤离结算暂存】`,
+            `本轮收获已写入安全收据，但玩家档案尚未完成提交。`,
+            `请稍后再次发送 #确认撤离，系统会继续结算且不会重复发放。`,
+          ].join('\n'));
+        }
+        const settlement = cloneXianguSettlementData(
+          delivery.receipt?.payload?.settlement || draftPayload.settlement,
+        );
+        summary.settlement = settlement;
 
         try {
           await clearXianguRedisSession(player_qq, usr_qq);
@@ -966,14 +2615,17 @@ export class xianguPlace extends plugin {
           ``,
           `【本轮记录】`,
           `- 探索时间：${totalExploreTime}分钟`,
-          `- 纳戒净增：${summary.najieDelta}件`,
+          `- 安全带出物品：${settlement.itemCount}件`,
           `- 获得道种：${summary.seedCount}枚${seedNames.length ? `（${seedNames.slice(0, 5).join('、')}${seedNames.length > 5 ? '等' : ''}）` : ''}`,
+          `- 源石：+${settlement.sourceStone.toLocaleString()}`,
+          `- 修为：+${settlement.xiuwei.toLocaleString()} | 血气：+${settlement.xueqi.toLocaleString()}`,
+          ...(settlement.potential > 0 ? [`- 仙道潜力：+${settlement.potential.toLocaleString()}`] : []),
           `- 道韵领悟：${summary.daoyun}点`,
           `- 击败修士：${summary.killDelta}人`,
           `- 凶名变化：${summary.infamyDelta >= 0 ? '+' : ''}${summary.infamyDelta}`,
           ``,
           `累计凶名：${savedInfamy} | 累计击杀：${savedKills}`,
-          `本轮奖励已在探索过程中实时入账。`,
+          `秘境背包已完成结算。`,
           `冷却时间：${cooldownHours}小时`
         ].join('\n'));
       } finally {
@@ -983,6 +2635,18 @@ export class xianguPlace extends plugin {
       console.error('确认仙古秘境撤离失败:', error);
       return e.reply(`确认撤离失败：${error.message}`);
     }
+  }
+
+  async XianguBag(e) {
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const player_qq = await channel(usr_qq);
+    const player = await Read_player(player_qq);
+    if (!player?.in_xiangu) return e.reply('【秘境背包】当前不在仙古秘境中。');
+    return e.reply([
+      formatXianguBag(ensureXianguBag(player)),
+      ``,
+      `背包内收获尚未入账，成功撤离后才会完整带出。`,
+    ].join('\n'));
   }
 
   // 秘境状态查询
@@ -1004,11 +2668,14 @@ export class xianguPlace extends plugin {
       console.error('读取位面数据失败:', err);
     }
 
+    const lifecycle = readXianguLifecycleState();
     const isXianguOpen = weimianData.仙古秘境 === 1;
+    const isCurrentRound = lifecycle.available && isXianguPlayerRoundCurrent(player, weimianData);
 
     // 检查是否在秘境中
     if (!player.in_xiangu) {
       await redis.sRem(XIANGU_ACTIVE_PLAYERS_KEY, String(player_qq));
+      await refreshXianguPresence(player_qq, player);
       // 不在秘境中的状态显示
       const lastEntryTime = await redis.get(xianguPlayerRedisKey(player_qq, 'xianguCD')) ||
         await redis.get(xianguPlayerRedisKey(usr_qq, 'xianguCD'));
@@ -1023,6 +2690,7 @@ export class xianguPlace extends plugin {
       } else {
         cooldownInfo = '冷却状态：可进入';
       }
+      const legacyText = formatXianguLegacy(player);
 
       return e.reply([
         `【仙古秘境·状态面板】`,
@@ -1041,6 +2709,8 @@ export class xianguPlace extends plugin {
         `"仙古秘境乃仙古纪元碎片，蕴含无上道则"`,
         `"每逢花蕾绽放之时，便是天骄崛起之机"`,
         ``,
+        legacyText,
+        ``,
         `${isXianguOpen ? 
           '【提示】使用 #进入仙古秘境 踏入秘境' : 
           '【提示】等待仙古花蕾绽放后再尝试进入'}`
@@ -1052,17 +2722,20 @@ export class xianguPlace extends plugin {
       Math.floor((Date.now() - player.xiangu_entry_time) / 1000 / 60) : 0;
     const xianguGains = player.xiangu_gains || {};
     const currentNajie = await readXianguNajie(player_qq);
-    if (!player.xiangu_run?.runId) {
-      createXianguRun(player, currentNajie, player.xiangu_entry_time || Date.now());
-      await Write_player(player_qq, player);
-    }
     const runSummary = buildXianguRunSummary(
       player,
       currentNajie,
       Date.now()
     );
+    const bagSummary = getXianguBagSummary(player.xiangu_bag);
+    const legacyText = formatXianguLegacy(player, getXianguRoundId(player));
     
-    await redis.sAdd(XIANGU_ACTIVE_PLAYERS_KEY, String(player_qq));
+    if (isCurrentRound) {
+      await redis.sAdd(XIANGU_ACTIVE_PLAYERS_KEY, String(player_qq));
+      await refreshXianguPresence(player_qq, player);
+    } else {
+      await clearXianguLivePresence(player_qq);
+    }
     const xianguPlayers = await redis.sCard(XIANGU_ACTIVE_PLAYERS_KEY);
     let evacuationState = parseEvacuationState(await redis.get(xianguEvacuationKey(player_qq)));
     if (evacuationState && Date.now() >= evacuationState.expiresAt) {
@@ -1080,7 +2753,7 @@ export class xianguPlace extends plugin {
     return e.reply([
       `【仙古秘境·状态面板】`,
       ``,
-      `秘境状态：${isXianguOpen ? '【开启】' : '【异常】'}`,
+      `秘境状态：${isXianguOpen && isCurrentRound ? '【开启】' : isXianguOpen ? '【轮次失效】' : '【关闭】'}`,
       `${player.名号}正处于秘境探索中`,
       ``,
       `【探索信息】`,
@@ -1092,19 +2765,30 @@ export class xianguPlace extends plugin {
       `【个人收获】`,
       `- 道韵领悟：${xianguGains.daoyun || 0}点`,
       `- 凶名值：${xianguGains.xiongmng || 0}`,
-      `- 纳戒净增：${runSummary.najieDelta}件`,
-      `- 获得道种：${runSummary.seedCount}枚`,
+      `- 秘境背包物品：${bagSummary.itemCount}件`,
+      `- 秘境背包源石：${bagSummary.sourceStone.toLocaleString()}`,
+      `- 获得道种：${bagSummary.seedCount}枚`,
       `- 唯一机缘：${runSummary.uniqueFound}处`,
       ``,
       `【秘境提示】`,
       `- 使用 #秘境地图 查看可探索区域`,
-      `- 使用 #离开仙古秘境 在核心区域撤离`,
-      `- 无法抵达核心时可使用 #紧急撤离`,
-      `- 秘境关闭前请务必安全撤离！`,
+      `- 使用 #秘境背包 查看尚未带出的收获`,
+      ...(isXianguOpen && isCurrentRound
+        ? [
+          `- 使用 #离开仙古秘境 在核心区域撤离`,
+          `- 无法抵达核心时可使用 #紧急撤离`,
+          `- 秘境关闭前请务必安全撤离！`,
+        ]
+        : [
+          `- 当前轮次已闭合，探索、移动与战斗均已停止`,
+          `- 使用 #紧急撤离 保留并带出可结算的秘境背包`,
+        ]),
+      ``,
+      legacyText,
       ``,
       `【古史警示】`,
       `撤离读条期间必须留在原地并避免受伤`,
-      `本轮奖励在探索过程中实时入账，撤离时生成收获记录`
+      `本轮收获暂存于秘境背包，成功撤离后统一入账`
     ].join('\n'));
 
   } catch (error) {
@@ -1135,6 +2819,13 @@ export class xianguPlace extends plugin {
       ].join('\n'));
     }
 
+    const mapLifecycle = readXianguLifecycleState();
+    const mapRoundCurrent = !mapLifecycle.available ||
+      isXianguPlayerRoundCurrent(player, mapLifecycle.data);
+    if (!mapRoundCurrent && !player.xiangu_realm_map) {
+      return e.reply('【仙古秘境已闭合】旧地图尚未保存，无法继续探索；请使用 #紧急撤离。');
+    }
+
     // 如果没有碎片地图，初始化
     if (!player.xiangu_realm_map) {
       const actionState = await prepareXianguAction(player_qq);
@@ -1145,16 +2836,33 @@ export class xianguPlace extends plugin {
         await e.reply('【撤离中断】重建秘境地图时，撤离通道随之消散。');
       }
       if (!player.xiangu_realm_map) {
-        initXianguRealmMap(player);
-        await Write_player(player_qq, player);
+        const initialized = await updateXianguPlayerUnderLock(player_qq, async lockedPlayer => {
+          if (!lockedPlayer.xiangu_realm_map) initXianguRealmMap(lockedPlayer);
+          player = lockedPlayer;
+        });
+        if (!initialized) return e.reply('【交战结算中】地图初始化未执行，请稍后再试。');
       }
     }
+
+    // Map rendering is read-only once a run already has a map. Shared-state
+    // reconciliation may update this in-memory snapshot for the image, but
+    // writing it here would let a query race a live PvP action and overwrite
+    // the battle's newer player record. Movement/action handlers persist the
+    // reconciled map while holding the action lock.
+    if (mapRoundCurrent) await syncXianguSharedMapState(player);
+    if (mapRoundCurrent) await refreshXianguPresence(player_qq, player);
+    else await clearXianguLivePresence(player_qq);
 
     const map = player.xiangu_realm_map;
     const fragment = REALM_FRAGMENTS[map.fragmentId];
     const daoyun = player.xiangu_gains?.daoyun || 0;
     const realmName = getRealmName(player.xiangulevel_id);
     const senseRange = getDivineSenseRange(player);
+    const peerPlayers = await getXianguPeerPlayers(player_qq, player);
+    const peerPositions = new Set(peerPlayers.map(({ player: peer }) => {
+      const pos = peer.xiangu_realm_map.playerPos;
+      return `${pos.x},${pos.y}`;
+    }));
 
     // ======== 构造 cells 二维数组用于 HTML 渲染 ========
     // 先计算唯一机缘位置（用于道韵共鸣光晕）
@@ -1177,12 +2885,15 @@ export class xianguPlace extends plugin {
       const row = [];
       for (let x = 0; x < map.width; x++) {
         const isPlayer = (x === map.playerPos.x && y === map.playerPos.y);
+        const isPeerPlayer = peerPositions.has(`${x},${y}`);
         const isRevealed = map.revealed[y]?.[x];
         const cellType = map.grid[y][x];
 
         let cls = 'cell-fog';
         if (isPlayer) {
           cls = 'cell-player';
+        } else if (isRevealed && isPeerPlayer) {
+          cls = 'cell-rival';
         } else if (isRevealed) {
           switch (cellType) {
             case CELL_TYPE.WALL:           cls = 'cell-wall'; break;
@@ -1245,16 +2956,18 @@ export class xianguPlace extends plugin {
     const exits = [];
     if (map.connectedFragments) {
       const dirNames = { top: '上方', bottom: '下方', left: '左方', right: '右方' };
+      const unlockedDirections = new Set(getRevealedXianguExits(map).map(exit => exit.direction));
       for (const [dir, connId] of Object.entries(map.connectedFragments)) {
         if (connId) {
           const connFrag = REALM_FRAGMENTS[connId];
           const levelReq = connFrag ? ZONE_LEVEL_REQUIREMENTS[connFrag.zone] : 5;
-          const canEnter = player.xiangulevel_id >= levelReq;
+          const discovered = unlockedDirections.has(dir);
+          const canEnter = discovered && player.xiangulevel_id >= levelReq;
           exits.push({
             direction: dirNames[dir] || dir,
-            target: connFrag ? connFrag.name : connId,
+            target: discovered ? (connFrag ? connFrag.name : connId) : '未探明',
             locked: !canEnter,
-            levelRequired: getRealmName(levelReq),
+            levelRequired: discovered ? getRealmName(levelReq) : '先探明出口',
           });
         }
       }
@@ -1313,10 +3026,12 @@ export class xianguPlace extends plugin {
       let row = '';
       for (let x = 0; x < map.width; x++) {
         const isP = (x === map.playerPos.x && y === map.playerPos.y);
+        const isPeer = peerPositions.has(`${x},${y}`);
         const rev = map.revealed[y]?.[x];
         const ct = map.grid[y][x];
         if (isP) { row += '你'; continue; }
         if (!rev) { row += '▓'; continue; }
+        if (isPeer) { row += '修'; continue; }
         switch (ct) {
           case CELL_TYPE.WALL: row += '█'; break;
           case CELL_TYPE.TREASURE: row += '◆'; break;
@@ -1331,7 +3046,7 @@ export class xianguPlace extends plugin {
       lines.push(' ' + row);
     }
     lines.push('');
-    lines.push(`图例：你=你 ◆机缘 ✦危险 人NPC ⊕出口 ∞裂缝 ♨${XIANGU_MARROW_POOL_NAME} ★唯一 ▓迷雾`);
+    lines.push(`图例：你=你 修=其他修士 ◆机缘 ✦危险 人NPC ⊕出口 ∞裂缝 ♨${XIANGU_MARROW_POOL_NAME} ★唯一 ▓迷雾`);
     return e.reply(lines.join('\n'));
 
   } catch (error) {
@@ -1339,7 +3054,18 @@ export class xianguPlace extends plugin {
     await e.reply(`查询秘境地图失败：${error.message}`);
     return false;
   }
-}
+  }
+
+  // 移动成功后，位置固定用地图图片回执，只有事件才补发文字。
+  async replyXianguMapWithEvents(e, eventLines = []) {
+    await this.XianguMap(e);
+    const messages = eventLines
+      .flatMap(line => Array.isArray(line) ? line : [line])
+      .map(stripXianguMovementLocationLines)
+      .filter(Boolean);
+    if (messages.length > 0) await e.reply(messages.join('\n\n'));
+    return true;
+  }
 
   // 秘境探索★终极版★ 神识开图
   async XianguExplore(e) {
@@ -1393,7 +3119,10 @@ export class xianguPlace extends plugin {
     if (!player.xiangu_realm_map) {
       initXianguRealmMap(player);
     }
+    await syncXianguSharedMapState(player);
+    await refreshXianguPresence(player_qq, player);
     const map = player.xiangu_realm_map;
+    const unlockedExitCount = getRevealedXianguExits(map).length;
 
     const poolConfig = resolveXianguMarrowPoolConfig(getXianguSecretConfig());
     const exploreEfficiency = getXianguExploreEfficiency(player);
@@ -1413,6 +3142,7 @@ export class xianguPlace extends plugin {
 
     // 揭示当前位置周围（神识范围）
     revealAdjacentCells(map, map.playerPos, getDivineSenseRange(player));
+    const exitDaoyunGain = grantXianguExitDiscoveryDaoyun(player, map, unlockedExitCount);
 
     // 混沌蚊湖特殊效果
     let mosquitoMsg = '';
@@ -1442,6 +3172,10 @@ export class xianguPlace extends plugin {
         `宝池坐标：[${poolDiscovery.position.x}, ${poolDiscovery.position.y}]，可按地图方向前往。`,
         ``,
       ].join('\n');
+    }
+
+    if (exitDaoyunGain > 0) {
+      msg += `⊕【出口悟道】新出口的空间法则显化，道韵 +${exitDaoyunGain}。\n\n`;
     }
 
     if (exploreEfficiency < 1) {
@@ -1539,6 +3273,9 @@ export class xianguPlace extends plugin {
       await Write_player(player_qq, player);
       return e.reply('秘境地图已生成，请重新输入移动命令。');
     }
+    if (await syncXianguSharedMapState(player)) {
+      await Write_player(player_qq, player);
+    }
 
     // 移动CD（2秒）
     const moveCD = await redis.get(`xiuxian:player:${usr_qq}:xianguMoveCD`);
@@ -1566,6 +3303,7 @@ export class xianguPlace extends plugin {
     await redis.set(`xiuxian:player:${usr_qq}:xianguMoveCD`, Date.now().toString());
 
     const map = player.xiangu_realm_map;
+    const unlockedExitCount = getRevealedXianguExits(map).length;
     const oldPos = map.playerPos;
     const nx = oldPos.x + dir.dx;
     const ny = oldPos.y + dir.dy;
@@ -1583,7 +3321,7 @@ export class xianguPlace extends plugin {
       const borderCell = map.grid[borderCellY][borderCellX];
 
       // 检查边界格子是否为出口
-      if (borderCell === CELL_TYPE.EXIT || borderCell === CELL_TYPE.EXPLORED_EMPTY) {
+      if (borderCell === CELL_TYPE.EXIT && isXianguExitUnlocked(map, borderCellX, borderCellY)) {
         // 边界是出口 → 尝试进入下一个碎片
         let connection = map.connectedFragments[dir.borderDir];
         if (!connection) {
@@ -1597,7 +3335,7 @@ export class xianguPlace extends plugin {
 
         // 兼容旧存档中的自环连接，避免同一碎片被当作新地图反复生成。
         if (connection === map.fragmentId) {
-          const repairedConnections = connectFragments(map.fragmentId, player.xiangulevel_id);
+          const repairedConnections = createXianguConnections(player, map.fragmentId);
           connection = pickDifferentXianguFragment(
             map.fragmentId,
             Object.values(repairedConnections),
@@ -1637,22 +3375,9 @@ export class xianguPlace extends plugin {
           delete player.xiangu_realm_history[connection];
         } else {
           // 首次进入时生成碎片，并保留通往上一碎片的返程出口。
-          const nextConnections = connectFragments(connection, player.xiangulevel_id);
+          const nextConnections = createXianguConnections(player, connection);
           nextConnections[dir.enterDir] = previousFragmentId;
-          const generated = generateFragmentGrid(connection, nextConnections);
-          nextFragmentState = {
-            width: nextFrag.size[0],
-            height: nextFrag.size[1],
-            grid: generated.grid,
-            revealed: generated.grid.map(row => row.map(() => false)),
-            playerPos: generated.playerPos,
-            connectedFragments: nextConnections,
-            uniqueTreasures: generated.specials.uniqueTreasures || {},
-            npcLocations: generated.specials.npcLocations || [],
-            npcEcology: {},
-            exitPositions: generated.specials.exitPositions || [],
-            generatedAt: Date.now(),
-          };
+          nextFragmentState = createXianguFragmentState(player, connection, nextConnections);
         }
 
         const previousSnapshot = createXianguFragmentSnapshot(map);
@@ -1660,6 +3385,7 @@ export class xianguPlace extends plugin {
 
         // 切换碎片
         map.fragmentId = connection;
+        map.instanceId = nextFragmentState.instanceId;
         map.width = nextFragmentState.width;
         map.height = nextFragmentState.height;
         map.grid = nextFragmentState.grid;
@@ -1683,23 +3409,19 @@ export class xianguPlace extends plugin {
         map.stepsTaken++;
 
         ensureXianguMapNpcBindings(player);
+        await syncXianguSharedMapState(player);
         const npcEvents = await processNPCBehavior(player, player_qq);
 
         await Write_player(player_qq, player);
+        await refreshXianguPresence(player_qq, player);
 
-        const gridRender = renderRealmGrid(player, map);
-        return e.reply([
-          `🚪【跨越碎片】`,
-          `${player.名号}穿过出口，踏入${nextFrag.name}！`,
-          ``,
-          `区域：${nextFrag.zone} | 危险：${'★'.repeat(Math.ceil(nextFrag.risk * 5))}`,
-          `描述：${nextFrag.desc}`,
-          ``,
-          gridRender,
-          ...(npcEvents.length > 0 ? [``, `【秘境动态】`, ...npcEvents] : []),
-          ``,
-          `可用命令：#秘境探索 | #秘境推演 | #上/#下/#左/#右/#左上/#右上`
-        ].join('\n'));
+        const playerEncounters = await getXianguPeerPlayers(player_qq, player, true);
+        const eventLines = [];
+        if (npcEvents.length > 0) eventLines.push(`【秘境动态】\n${npcEvents.join('\n')}`);
+        if (playerEncounters.length > 0) {
+          eventLines.push(formatXianguPlayerEncounter(playerEncounters).join('\n'));
+        }
+        return this.replyXianguMapWithEvents(e, eventLines);
       }
 
       // 边界不是出口 → 无法通行
@@ -1724,12 +3446,12 @@ export class xianguPlace extends plugin {
     }
 
     // 移动玩家
-    const oldX = oldPos.x, oldY = oldPos.y;
     map.playerPos = { x: nx, y: ny };
     map.stepsTaken++;
 
     // 揭示新位置周围
     revealAdjacentCells(map, map.playerPos, getDivineSenseRange(player));
+    grantXianguExitDiscoveryDaoyun(player, map, unlockedExitCount);
 
     // 更新快速字段
     player.xiangu_pos_x = nx;
@@ -1760,17 +3482,6 @@ export class xianguPlace extends plugin {
         }
         break;
 
-      case CELL_TYPE.EXIT:
-        // 踩到出口 → 提示
-        const frag = REALM_FRAGMENTS[map.fragmentId];
-        cellMsg = [
-          `🚪【秘境出口】`,
-          `${player.名号}来到一处空间薄弱点...`,
-          `从此处可离开${frag ? frag.name : '当前碎片'}，进入相邻碎片。`,
-          `再次向该方向移动即可穿越。`
-        ].join('\n');
-        break;
-
       case CELL_TYPE.VOID_RIFT:
         // 虚空裂缝
         cellMsg = await handleVoidRiftCell(e, player, player_qq, map, nx, ny);
@@ -1781,11 +3492,6 @@ export class xianguPlace extends plugin {
         cellMsg = await handleUniqueTreasureCell(e, player, player_qq, map, nx, ny);
         break;
 
-      case CELL_TYPE.EMPTY:
-      case CELL_TYPE.EXPLORED_EMPTY:
-        // 空地 → 有概率触发小事件
-        cellMsg = handleEmptyCell(player, map);
-        break;
     }
 
     // 混沌蚊湖效果
@@ -1800,32 +3506,18 @@ export class xianguPlace extends plugin {
     });
 
     await Write_player(player_qq, player);
+    await refreshXianguPresence(player_qq, player);
 
-    // 道韵共鸣检测
-    const echoes = checkTreasureEcho(player, map);
-
-    // 渲染
-    const gridRender = renderRealmGrid(player, map);
-    const fragment = REALM_FRAGMENTS[map.fragmentId];
-
-    let finalMsg = gridRender + '\n\n';
-    if (cellMsg) finalMsg += cellMsg + '\n\n';
-    if (npcEvents.length > 0) finalMsg += `【秘境动态】\n${npcEvents.join('\n')}\n\n`;
-    if (echoes && echoes.length > 0) {
-      finalMsg += `🔥【道韵共鸣】\n`;
-      for (const echo of echoes) {
-        finalMsg += `· ${echo.msg}\n`;
-      }
-      finalMsg += `\n`;
+    const playerEncounters = await getXianguPeerPlayers(player_qq, player, true);
+    const eventLines = [];
+    if (XIANGU_MOVEMENT_TEXT_CELL_TYPES.has(targetCell) && cellMsg) {
+      eventLines.push(cellMsg);
     }
-    finalMsg += [
-      `【移动信息】`,
-      `坐标：[${nx}, ${ny}] | 碎片：${fragment ? fragment.name : '未知'}`,
-      `步数：${map.stepsTaken} | 揭示：${map.revealed.flat().filter(Boolean).length}/${map.width * map.height}格`,
-      `可用：#秘境探索 | #秘境推演 | #秘境地图`
-    ].join('\n');
-
-    return e.reply(finalMsg);
+    if (npcEvents.length > 0) eventLines.push(`【秘境动态】\n${npcEvents.join('\n')}`);
+    if (playerEncounters.length > 0) {
+      eventLines.push(formatXianguPlayerEncounter(playerEncounters).join('\n'));
+    }
+    return this.replyXianguMapWithEvents(e, eventLines);
 
   } catch (error) {
     console.error('秘境移动失败:', error);
@@ -1884,12 +3576,12 @@ async XianguDivineScan(e) {
       await e.reply('【撤离中断】你转而推演天机，撤离通道随之消散。');
     }
 
-    // 消耗道韵
-    player.xiangu_gains.daoyun = Math.max(0, player.xiangu_gains.daoyun - 5);
-    await Write_player(player_qq, player);
-
     const map = player.xiangu_realm_map;
     const { playerPos, grid } = map;
+    const unlockedExitCount = getRevealedXianguExits(map).length;
+
+    // 消耗道韵；与本次揭图结果一并写盘，避免只扣费却丢失出口进度。
+    player.xiangu_gains.daoyun = Math.max(0, player.xiangu_gains.daoyun - 5);
 
     // 扫描 4 格范围内的详细信息
     const scanRange = Math.min(4, getDivineSenseRange(player) + 2);
@@ -1969,10 +3661,13 @@ async XianguDivineScan(e) {
     }
 
     msg.push(``);
-    msg.push(`剩余道韵：${player.xiangu_gains.daoyun} 💎`);
 
     // 也揭示扫描范围内的格子
     revealAdjacentCells(map, playerPos, scanRange);
+    const exitDaoyunGain = grantXianguExitDiscoveryDaoyun(player, map, unlockedExitCount);
+    if (exitDaoyunGain > 0) msg.push(`探明新出口，道韵回响 +${exitDaoyunGain}。`);
+    msg.push(`剩余道韵：${player.xiangu_gains.daoyun} 💎`);
+    await Write_player(player_qq, player);
 
     return e.reply(msg.join('\n'));
 
@@ -2135,6 +3830,21 @@ async XianguDivineScan(e) {
       ].join('\n'));
     }
 
+    const oldMap = player.xiangu_realm_map;
+    const targetExit = getRevealedXianguExits(oldMap).find(exit =>
+      REALM_FRAGMENTS[exit.target]?.zone === targetArea
+    );
+    if (!targetExit) {
+      return e.reply([
+        `【秘境移动·出口未探明】`,
+        `${player.名号}尚未找到通往${targetArea}的稳定出口。`,
+        `请先用神识揭示当前碎片边界的出口，再使用 #秘境移动。`,
+        `已解锁出口：${getRevealedXianguExits(oldMap).length}处`,
+      ].join('\n'));
+    }
+    const targetFragmentId = targetExit.target;
+    const targetFragment = REALM_FRAGMENTS[targetFragmentId];
+
     // 移动时间和风险
     const moveRisk = Math.abs(targetLevel - currentLevel) * 0.1;
     // 目标区域遭遇概率（跨区域越大越危险，深层区域本身更危险）
@@ -2188,12 +3898,6 @@ async XianguDivineScan(e) {
     }
 
     // 兼容旧版跨区命令时同步碎片地图，避免区域文字与真实地图脱节。
-    const targetPool = ZONE_FRAGMENT_POOLS[targetArea] || ZONE_FRAGMENT_POOLS['边缘区域'];
-    const targetFragmentId = targetArea === '核心区域'
-      ? 'xiangu_core'
-      : targetPool[Math.floor(Math.random() * targetPool.length)];
-    const oldMap = player.xiangu_realm_map;
-    const targetFragment = REALM_FRAGMENTS[targetFragmentId];
     player.xiangu_realm_history = player.xiangu_realm_history || {};
     const restoredFragment = restoreXianguFragmentSnapshot(
       player.xiangu_realm_history[targetFragmentId],
@@ -2204,22 +3908,15 @@ async XianguDivineScan(e) {
     if (restoredFragment) {
       delete player.xiangu_realm_history[targetFragmentId];
     } else {
-      const targetConnections = connectFragments(targetFragmentId, player.xiangulevel_id);
-      if (oldMap?.fragmentId) targetConnections.bottom = oldMap.fragmentId;
-      const generated = generateFragmentGrid(targetFragmentId, targetConnections);
-      targetFragmentState = {
-        width: targetFragment.size[0],
-        height: targetFragment.size[1],
-        grid: generated.grid,
-        revealed: generated.grid.map(row => row.map(() => false)),
-        playerPos: generated.playerPos,
-        connectedFragments: targetConnections,
-        uniqueTreasures: generated.specials.uniqueTreasures || {},
-        npcLocations: generated.specials.npcLocations || [],
-        npcEcology: {},
-        exitPositions: generated.specials.exitPositions || [],
-        generatedAt: Date.now(),
-      };
+      const targetConnections = createXianguConnections(player, targetFragmentId);
+      const returnDirection = {
+        top: 'bottom',
+        bottom: 'top',
+        left: 'right',
+        right: 'left',
+      }[targetExit.direction] || 'bottom';
+      if (oldMap?.fragmentId) targetConnections[returnDirection] = oldMap.fragmentId;
+      targetFragmentState = createXianguFragmentState(player, targetFragmentId, targetConnections);
     }
 
     if (oldMap?.fragmentId && oldMap.fragmentId !== targetFragmentId) {
@@ -2229,6 +3926,7 @@ async XianguDivineScan(e) {
 
     player.xiangu_realm_map = {
       fragmentId: targetFragmentId,
+      instanceId: targetFragmentState.instanceId,
       width: targetFragmentState.width,
       height: targetFragmentState.height,
       grid: targetFragmentState.grid,
@@ -2254,9 +3952,16 @@ async XianguDivineScan(e) {
     player.xiangu_location = targetFragment.zone;
 
     // === NPC生态系统：移动时处理NPC行为 ===
+    await syncXianguSharedMapState(player);
     const npcMoveEvents = await processNPCBehavior(player, player_qq);
 
     await Write_player(player_qq, player);
+    await refreshXianguPresence(player_qq, player);
+
+    const playerEncounters = await getXianguPeerPlayers(player_qq, player, true);
+    if (npcMoveEvents.length === 0 && playerEncounters.length === 0) {
+      return this.XianguMap(e);
+    }
 
     // 移动完成
     const dangerLevel = '★'.repeat(targetLevel);
@@ -2280,6 +3985,7 @@ async XianguDivineScan(e) {
       ``,
       (npcMoveEvents && npcMoveEvents.length > 0
         ? `【区域动态】\n${npcMoveEvents.join('\n')}\n\n` : ''),
+      ...(playerEncounters.length > 0 ? formatXianguPlayerEncounter(playerEncounters) : []),
       `提示：使用 #秘境探索 搜索机缘`
     ].join('\n'));
 
@@ -2317,7 +4023,7 @@ async XianguViewSeeds(e) {
     }
 
     // 获取道种列表
-    const seeds = player.xiangu_seeds || [];
+    const seeds = getXianguUsableSeedEntries(player).map(entry => entry.seed);
     
     if (seeds.length === 0) {
       return e.reply([
@@ -2463,7 +4169,8 @@ async XianguJieZhuDaoZhong(e) {
     }
 
     // 获取道种列表
-    const seeds = player.xiangu_seeds || [];
+    const seedEntries = getXianguUsableSeedEntries(player);
+    const seeds = seedEntries.map(entry => entry.seed);
     
     if (seeds.length === 0) {
       return e.reply([
@@ -2514,6 +4221,7 @@ async XianguJieZhuDaoZhong(e) {
     // 解析序号或道种名称
     let selectedSeed = null;
     let selectedIndex = -1;
+    let selectedEntry = null;
     
     const index = parseInt(msg) - 1;
     if (!isNaN(index) && index >= 0 && index < seeds.length) {
@@ -2527,6 +4235,7 @@ async XianguJieZhuDaoZhong(e) {
       );
       selectedSeed = selectedIndex >= 0 ? seeds[selectedIndex] : null;
     }
+    selectedEntry = selectedIndex >= 0 ? seedEntries[selectedIndex] : null;
 
     if (!selectedSeed) {
       return e.reply([
@@ -2643,8 +4352,7 @@ async XianguJieZhuDaoZhong(e) {
       ].join('\n'));
 
       // 移除损毁的道种
-      seeds.splice(selectedIndex, 1);
-      player.xiangu_seeds = seeds;
+      consumeXianguSeed(player, selectedEntry);
       await Write_player(player_qq, player);
 
       return true;
@@ -2677,8 +4385,7 @@ async XianguJieZhuDaoZhong(e) {
       ].join('\n'));
 
       // 移除损毁的道种
-      seeds.splice(selectedIndex, 1);
-      player.xiangu_seeds = seeds;
+      consumeXianguSeed(player, selectedEntry);
       await Write_player(player_qq, player);
 
       return true;
@@ -2726,8 +4433,7 @@ async XianguJieZhuDaoZhong(e) {
     }
 
     // 移除已融合的道种
-    seeds.splice(selectedIndex, 1);
-    player.xiangu_seeds = seeds;
+    consumeXianguSeed(player, selectedEntry);
 
     await Write_player(player_qq, player);
 
@@ -3241,6 +4947,10 @@ async XianguJilianZhenwo(e) {
 
     await Add_血气(player_qq, -baseEnergyNeed);
     await Add_修为(player_qq, -baseEnergyNeed);
+    // Both helpers persist through independent player reads. Reload the final
+    // snapshot before the tribulation so the later save cannot restore the
+    // pre-consumption cultivation and blood energy.
+    player = await Read_player(player_qq);
 
     // 满血进入渡劫（与遮天 enterTribulationState 行为一致：当前血量归 血量上限）
     if (player.血量上限) player.当前血量 = player.血量上限;
@@ -3442,23 +5152,31 @@ async XianguYiShenWeiZhong(e) {
         return e.reply(`【自戕无益】修行不易，何必自残？`);
       }
 
-      // 检查是否同一区域
+      await refreshXianguPresence(player_qq, player);
+      targetPlayer = await getXianguLiveNearbyTarget(player_qq, player, targetId, targetPlayer);
+      if (!targetPlayer) {
+        return e.reply('【PvP·目标气息消散】对方未在同一碎片保持活动，无法发起远程交战。');
+      }
+
+      // 只有同一碎片近距离内的修士才能交战。
       let location = player.xiangu_location || '边缘区域';
       const targetLocation = targetPlayer.xiangu_location || '边缘区域';
-      if (location !== targetLocation) {
+      if (!areXianguPlayersNearby(player, targetPlayer)) {
         return e.reply([
-          `【PvP·不在同一区域】`,
+          `【PvP·目标不在附近】`,
           `${player.名号}感应四周，未发现目标的气息...`,
           ``,
-          `【区域信息】`,
-          `当前位置：${location}`,
-          `目标位置：${targetLocation}`,
-          ``,
-          `提示：双方需在同一区域内才能交战`
+          `当前位置：${location} [${player.xiangu_realm_map?.playerPos?.x}, ${player.xiangu_realm_map?.playerPos?.y}]`,
+          `目标位置：${targetLocation}（尚未进入可交战距离）`,
+          `提示：双方需在同一碎片相邻一格内才能交战`
         ].join('\n'));
       }
 
-      const attackerAction = await prepareXianguAction(player_qq);
+      const pvpLock = await acquireXianguPlayerLocks([player_qq, targetId]);
+      if (!pvpLock) return e.reply('【交战结算中】双方已有战斗正在结算，请稍后再试。');
+
+      try {
+      const attackerAction = await prepareXianguAction(player_qq, { lockHeld: true });
       if (attackerAction.busy) {
         return e.reply('【撤离结算中】攻击方正在完成撤离，本次攻击未执行。');
       }
@@ -3484,7 +5202,7 @@ async XianguYiShenWeiZhong(e) {
         player.xiangu_gains.daoyun = Math.max(0, daoyun - 50);
       }
 
-      const defenderAction = await prepareXianguAction(targetId);
+      const defenderAction = await prepareXianguAction(targetId, { lockHeld: true });
       if (defenderAction.busy) {
         return e.reply('【目标正在撤离】对方已进入最终结算，本次攻击未执行。');
       }
@@ -3492,10 +5210,15 @@ async XianguYiShenWeiZhong(e) {
       if (!targetPlayer?.in_xiangu) {
         return e.reply('【目标已离开】对方已经完成撤离，本次攻击未执行。');
       }
+      await refreshXianguPresence(player_qq, player);
+      targetPlayer = await getXianguLiveNearbyTarget(player_qq, player, targetId, targetPlayer);
+      if (!targetPlayer) {
+        return e.reply('【位置变化】目标已不再实时同图，本次攻击未执行。');
+      }
       const currentLocation = player.xiangu_location || '边缘区域';
       const currentTargetLocation = targetPlayer.xiangu_location || '边缘区域';
-      if (currentLocation !== currentTargetLocation) {
-        return e.reply('【位置变化】交战双方已不在同一区域，本次攻击未执行。');
+      if (!areXianguPlayersNearby(player, targetPlayer)) {
+        return e.reply('【位置变化】交战双方已不在同一碎片的近距离内，本次攻击未执行。');
       }
       location = currentLocation;
       if (attackerAction.cancelled || defenderAction.cancelled) {
@@ -3529,11 +5252,11 @@ async XianguYiShenWeiZhong(e) {
         // 攻击方胜利
         const infamyGain = Math.floor(Math.random() * 20) + 10 + (location === '核心区域' ? 20 : location === '深层区域' ? 10 : 0);
         player.xiangu_infamy = (player.xiangu_infamy || 0) + infamyGain;
-        player.xiangu_kills = (player.xiangu_kills || 0) + 1;
         player.xiangu_gains = player.xiangu_gains || {};
         player.xiangu_gains.xiongmng = (player.xiangu_gains.xiongmng || 0) + infamyGain;
+        const daoyunLoot = transferXianguDaoyun(player, targetPlayer);
 
-        // 击杀奖励：灵石和修为
+        // 击杀奖励：源石和修为
         const killRewardLingshi = Math.floor(1000 * (1 + infamyGain / 10));
         const killRewardXiuwei = Math.floor(200 * infamyGain);
         const killRewards = await grantXianguGrowthRewards(player, player_qq, {
@@ -3541,44 +5264,58 @@ async XianguYiShenWeiZhong(e) {
           xiuwei: killRewardXiuwei,
         });
 
-        // 掉落判定 - 50%几率掠夺对方一件物品/道种
+        // 只有伤势跌破法则底线才算斩杀；普通战胜不会带走唯一造化。
+        const targetMaxHp = Number(targetPlayer.血量上限 || targetPlayer.血气上限) || 1;
+        const targetCurrentHp = Number(targetPlayer.当前血量) || targetMaxHp;
+        const hpLoss = Math.max(1, Math.floor(targetCurrentHp * 0.5));
+        targetPlayer.当前血量 = Math.max(1, targetCurrentHp - hpLoss);
+        applyXianguHeavyInjury(targetPlayer);
+        targetForcedExit = targetPlayer.当前血量 < targetMaxHp * 0.1;
+
+        // 掉落判定 - 只掠夺对方本轮秘境背包，不动其永久资产。
         let lootMsg = '';
-        if (Math.random() < 0.5) {
-          // 优先掠夺道种
-          if (targetPlayer.xiangu_seeds && targetPlayer.xiangu_seeds.length > 0) {
-            const stolenSeed = targetPlayer.xiangu_seeds.splice(Math.floor(Math.random() * targetPlayer.xiangu_seeds.length), 1)[0];
-            grantXianguSeed(player, stolenSeed);
-            lootMsg = `掠夺道种：${stolenSeed.名称} [${stolenSeed.品质}]`;
-          } else if (targetPlayer.纳戒 && targetPlayer.纳戒.length > 0) {
-            // 掠夺纳戒随机物品
-            const stolenItem = targetPlayer.纳戒.splice(Math.floor(Math.random() * targetPlayer.纳戒.length), 1)[0];
-            await addXianguSpoil(player_qq, stolenItem.名称 || stolenItem.name, 1);
-            lootMsg = `掠夺物品：${stolenItem.名称 || stolenItem.name}`;
+        const uniqueSpoil = targetForcedExit ? transferXianguUniqueSpoil(player, targetPlayer) : null;
+        if (uniqueSpoil) {
+          lootMsg = `夺得唯一造化：${uniqueSpoil.name}`;
+        } else if (Math.random() < 0.5) {
+          const targetBag = ensureXianguBag(targetPlayer);
+          if (targetBag.seeds.length > 0) {
+            const stolenSeed = targetBag.seeds.splice(Math.floor(Math.random() * targetBag.seeds.length), 1)[0];
+            grantXianguBagSeed(player, stolenSeed);
+            lootMsg = `掠夺道种：${stolenSeed.名称 || stolenSeed.name}${stolenSeed.品质 ? ` [${stolenSeed.品质}]` : ''}`;
+          } else if (targetBag.items.length > 0) {
+            const itemIndex = Math.floor(Math.random() * targetBag.items.length);
+            const stolenItem = targetBag.items[itemIndex];
+            addXianguBagItem(ensureXianguBag(player), stolenItem, 1);
+            stolenItem.quantity -= 1;
+            if (stolenItem.quantity <= 0) targetBag.items.splice(itemIndex, 1);
+            lootMsg = `掠夺物品：${stolenItem.name}`;
           }
         }
         if (lootMsg) resultMsg.push(lootMsg);
 
-        // 被击败者受损
-        const hpLoss = Math.floor(targetPlayer.当前血量 * 0.5);
-        targetPlayer.当前血量 = Math.max(1, targetPlayer.当前血量 - hpLoss);
-        applyXianguHeavyInjury(targetPlayer);
-
         const arenaWin = XIANGU_EVENTS.activeEvent?.type === 'arena' &&
           XIANGU_EVENTS.activeEvent.endTime > Date.now() &&
           recordXianguArenaWin(XIANGU_EVENTS.arenaParticipants, player_qq, targetId);
+        if (targetForcedExit) {
+          player.xiangu_kills = (player.xiangu_kills || 0) + 1;
+          recordXianguPlayerResult(player, XIANGU_LEGACY_EVENTS.PLAYER_KILL);
+        }
+        if (arenaWin) recordXianguPlayerResult(player, XIANGU_LEGACY_EVENTS.ARENA_WIN);
 
         resultMsg.push(
           `战斗结果：${player.名号}胜！`,
           `凶名值 +${infamyGain}（累计：${player.xiangu_infamy}）`,
-          `击杀数：${player.xiangu_kills}`,
-          `灵石奖励 +${killRewards.lingshi.toLocaleString()}`,
+          targetForcedExit
+            ? `斩杀数：${player.xiangu_kills}`
+            : `${targetPlayer.名号}重伤退去，尚未构成斩杀。`,
+          `掠夺道韵 +${daoyunLoot}`,
+          `源石奖励 +${killRewards.sourceStone.toLocaleString()}`,
           `修为奖励 +${killRewards.xiuwei.toLocaleString()}`,
           ...(arenaWin ? [`仙古擂台胜场 +1`] : [])
         );
 
-        // 检查是否需要强制撤离（生命值过低）
-        const targetMaxHp = Number(targetPlayer.血量上限 || targetPlayer.血气上限) || 1;
-        if (targetPlayer.当前血量 < targetMaxHp * 0.1) {
+        if (targetForcedExit) {
           resultMsg.push(``, `${targetPlayer.名号}伤势过重，被秘境法则强行送离！`);
           const targetSummary = buildXianguRunSummary(
             targetPlayer,
@@ -3587,12 +5324,14 @@ async XianguYiShenWeiZhong(e) {
           );
           targetSummary.exitMode = 'forced';
           targetSummary.exitReason = 'defeated';
+          targetSummary.lostLootUnits = targetSummary.lootUnits;
           clearXianguSessionState(targetPlayer, targetSummary);
+          resultMsg.push(`对方未能安全撤离，秘境背包中的${targetSummary.lootUnits}份收获全部遗失。`);
           targetForcedExit = true;
         }
 
-        await Write_player(player_qq, player);
-        await Write_player(targetId, targetPlayer);
+        await Write_player(player_qq, player, { xianguLockToken: pvpLock.token });
+        await Write_player(targetId, targetPlayer, { xianguLockToken: pvpLock.token });
         if (targetForcedExit) {
           const forcedExitTime = Date.now();
           try {
@@ -3609,23 +5348,34 @@ async XianguYiShenWeiZhong(e) {
         const daoyunGain = Math.floor(Math.random() * 20) + 5;
         targetPlayer.xiangu_gains = targetPlayer.xiangu_gains || {};
         targetPlayer.xiangu_gains.daoyun = (targetPlayer.xiangu_gains.daoyun || 0) + daoyunGain;
-
-        const hpLoss = Math.floor(player.当前血量 * 0.4);
-        player.当前血量 = Math.max(1, player.当前血量 - hpLoss);
+        const daoyunLoot = transferXianguDaoyun(targetPlayer, player);
+        const playerMaxHp = Number(player.血量上限 || player.血气上限) || 1;
+        const playerCurrentHp = Number(player.当前血量) || playerMaxHp;
+        const hpLoss = Math.max(1, Math.floor(playerCurrentHp * 0.4));
+        player.当前血量 = Math.max(1, playerCurrentHp - hpLoss);
         applyXianguHeavyInjury(player);
+        playerForcedExit = player.当前血量 < playerMaxHp * 0.1;
+        const uniqueSpoil = playerForcedExit ? transferXianguUniqueSpoil(targetPlayer, player) : null;
         const arenaWin = XIANGU_EVENTS.activeEvent?.type === 'arena' &&
           XIANGU_EVENTS.activeEvent.endTime > Date.now() &&
           recordXianguArenaWin(XIANGU_EVENTS.arenaParticipants, targetId, player_qq);
+        if (playerForcedExit) {
+          targetPlayer.xiangu_kills = (Number(targetPlayer.xiangu_kills) || 0) + 1;
+          recordXianguPlayerResult(targetPlayer, XIANGU_LEGACY_EVENTS.PLAYER_KILL);
+        }
+        if (arenaWin) recordXianguPlayerResult(targetPlayer, XIANGU_LEGACY_EVENTS.ARENA_WIN);
 
         resultMsg.push(
           `战斗结果：${targetPlayer.名号}胜！`,
-          `防御成功，道韵领悟 +${daoyunGain}`,
-          `攻击方${player.名号}负伤，血气 -${hpLoss.toLocaleString()}`,
+          `防御成功，道韵领悟 +${daoyunGain}，掠夺道韵 +${daoyunLoot}`,
+          ...(uniqueSpoil ? [`夺得唯一造化：${uniqueSpoil.name}`] : []),
+          playerForcedExit
+            ? `攻击方${player.名号}被斩出秘境，斩杀数：${targetPlayer.xiangu_kills}`
+            : `攻击方${player.名号}负伤退去，尚未构成斩杀。`,
           ...(arenaWin ? [`仙古擂台胜场 +1`] : [])
         );
 
-        const playerMaxHp = Number(player.血量上限 || player.血气上限) || 1;
-        if (player.当前血量 < playerMaxHp * 0.1) {
+        if (playerForcedExit) {
           resultMsg.push(``, `${player.名号}伤势过重，被秘境法则强行送离！`);
           const playerSummary = buildXianguRunSummary(
             player,
@@ -3634,12 +5384,14 @@ async XianguYiShenWeiZhong(e) {
           );
           playerSummary.exitMode = 'forced';
           playerSummary.exitReason = 'defeated';
+          playerSummary.lostLootUnits = playerSummary.lootUnits;
           clearXianguSessionState(player, playerSummary);
+          resultMsg.push(`你未能安全撤离，秘境背包中的${playerSummary.lootUnits}份收获全部遗失。`);
           playerForcedExit = true;
         }
 
-        await Write_player(player_qq, player);
-        await Write_player(targetId, targetPlayer);
+        await Write_player(player_qq, player, { xianguLockToken: pvpLock.token });
+        await Write_player(targetId, targetPlayer, { xianguLockToken: pvpLock.token });
         if (playerForcedExit) {
           const forcedExitTime = Date.now();
           try {
@@ -3654,13 +5406,16 @@ async XianguYiShenWeiZhong(e) {
         // 平局
         resultMsg.push(`战斗结果：双方不分胜负，各自退去`);
 
-        await Write_player(player_qq, player);
-        await Write_player(targetId, targetPlayer);
+        await Write_player(player_qq, player, { xianguLockToken: pvpLock.token });
+        await Write_player(targetId, targetPlayer, { xianguLockToken: pvpLock.token });
       }
 
       resultMsg.push(``, `【秘境法则】`, `弱肉强食，适者生存`);
 
       return e.reply(resultMsg.join('\n'));
+      } finally {
+        await releaseXianguPlayerLocks(pvpLock);
+      }
 
     } catch (error) {
       console.error('秘境PvP攻击失败:', error);
@@ -3696,17 +5451,26 @@ async XianguYiShenWeiZhong(e) {
         return e.reply(`【独修无益】与自身切磋并无寸进`);
       }
 
-      let location = player.xiangu_location || '边缘区域';
-      const targetLocation = targetPlayer.xiangu_location || '边缘区域';
-      if (location !== targetLocation) {
-        return e.reply(`双方不在同一区域，无法切磋！`);
+      await refreshXianguPresence(player_qq, player);
+      targetPlayer = await getXianguLiveNearbyTarget(player_qq, player, targetId, targetPlayer);
+      if (!targetPlayer) {
+        return e.reply('【切磋取消】对方未在同一碎片保持活动，无法进行远程切磋。');
       }
 
-      const attackerAction = await prepareXianguAction(player_qq);
+      let location = player.xiangu_location || '边缘区域';
+      if (!areXianguPlayersNearby(player, targetPlayer)) {
+        return e.reply(`双方需在同一碎片相邻一格内才能切磋！`);
+      }
+
+      const pvpLock = await acquireXianguPlayerLocks([player_qq, targetId]);
+      if (!pvpLock) return e.reply('【交战结算中】双方已有战斗正在结算，请稍后再试。');
+
+      try {
+      const attackerAction = await prepareXianguAction(player_qq, { lockHeld: true });
       if (attackerAction.busy) {
         return e.reply('【撤离结算中】发起方正在完成撤离，本次切磋未执行。');
       }
-      const defenderAction = await prepareXianguAction(targetId);
+      const defenderAction = await prepareXianguAction(targetId, { lockHeld: true });
       if (defenderAction.busy) {
         return e.reply('【目标正在撤离】对方已进入最终结算，本次切磋未执行。');
       }
@@ -3715,8 +5479,13 @@ async XianguYiShenWeiZhong(e) {
       if (!player?.in_xiangu || !targetPlayer?.in_xiangu) {
         return e.reply('【切磋取消】一方已经完成撤离。');
       }
-      if ((player.xiangu_location || '边缘区域') !== (targetPlayer.xiangu_location || '边缘区域')) {
-        return e.reply('【切磋取消】双方位置已经发生变化。');
+      await refreshXianguPresence(player_qq, player);
+      targetPlayer = await getXianguLiveNearbyTarget(player_qq, player, targetId, targetPlayer);
+      if (!targetPlayer) {
+        return e.reply('【切磋取消】对方已不在实时同图范围。');
+      }
+      if (!areXianguPlayersNearby(player, targetPlayer)) {
+        return e.reply('【切磋取消】双方已经离开彼此的近距离范围。');
       }
       location = player.xiangu_location || '边缘区域';
       if (attackerAction.cancelled || defenderAction.cancelled) {
@@ -3751,10 +5520,13 @@ async XianguYiShenWeiZhong(e) {
 
       resultMsg.push(``, `友情切磋，不伤和气`);
 
-      await Write_player(player_qq, player);
-      await Write_player(targetId, targetPlayer);
+      await Write_player(player_qq, player, { xianguLockToken: pvpLock.token });
+      await Write_player(targetId, targetPlayer, { xianguLockToken: pvpLock.token });
 
       return e.reply(resultMsg.join('\n'));
+      } finally {
+        await releaseXianguPlayerLocks(pvpLock);
+      }
 
     } catch (error) {
       console.error('秘境切磋失败:', error);
@@ -3986,6 +5758,10 @@ async XianguYiShenWeiZhong(e) {
       const player_qq = await channel(usr_qq);
       const player = await Read_player(player_qq);
       if (!player.in_xiangu) return e.reply(`【擂台·未入秘境】需先进入仙古秘境`);
+      const lifecycle = readXianguLifecycleState();
+      if (lifecycle.available && !isXianguPlayerRoundCurrent(player, lifecycle.data)) {
+        return e.reply('【仙古秘境已闭合】擂台操作未执行，请使用 #紧急撤离。');
+      }
       return XianguArenaFn(e, player, player_qq);
     } catch (error) {
       console.error('仙古擂台失败:', error);
@@ -4204,6 +5980,10 @@ async XianguYiShenWeiZhong(e) {
       const player_qq = await channel(usr_qq);
       const player = await Read_player(player_qq);
       if (!player.in_xiangu) return e.reply('需先进入仙古秘境！');
+      const lifecycle = readXianguLifecycleState();
+      if (lifecycle.available && !isXianguPlayerRoundCurrent(player, lifecycle.data)) {
+        return e.reply('【仙古秘境已闭合】目标进度已冻结，请使用 #紧急撤离结算本轮收获。');
+      }
       
       const daoyun = player.xiangu_gains?.daoyun || 0;
       const location = player.xiangu_location || '边缘区域';
@@ -4221,13 +6001,15 @@ async XianguYiShenWeiZhong(e) {
         const needDaoyun = Math.max(0, 100 - daoyun);
         goalText = `🔶 距点燃神火：还需${needDaoyun > 0 ? needDaoyun+'道韵' : '道韵已足！'}`;
       }
+      const npcWorld = await readXianguNpcWorldState(player);
+      const legacyText = formatXianguLegacy(player, getXianguRoundId(player));
       
       return e.reply([
         `【仙古秘境·探索目标】`,
         ``,
         `当前位置：${location}`,
         `当前道韵：${daoyun}点`,
-        `拥有道种：${player.xiangu_seeds?.length || 0}个`,
+        `可用道种：${getXianguUsableSeedEntries(player).length}个`,
         ``,
         `【目标进度】`,
         goalText,
@@ -4240,7 +6022,11 @@ async XianguYiShenWeiZhong(e) {
         ``,
         `【快捷提示】`,
         daoyun >= 500 ? `→ #祭炼真我 尝试最强路线（需六大极境·火道禁区）` : `→ 道韵不足（${daoyun}/500），继续探索`,
-        location !== '核心区域' ? `→ #秘境移动 核心区域（借助道种点燃需在核心区域）` : `→ 已在核心区域，可借助道种点燃神火！`
+        location !== '核心区域' ? `→ #秘境移动 核心区域（借助道种点燃需在核心区域）` : `→ 已在核心区域，可借助道种点燃神火！`,
+        ``,
+        formatXianguNpcGoals(npcWorld.xiangu_npc_goals),
+        ``,
+        legacyText,
       ].join('\n'));
     } catch (err) {
       console.error('探索目标查询失败:', err);
@@ -4252,13 +6038,33 @@ async XianguYiShenWeiZhong(e) {
     try {
       const usr_qq = e.user_id.toString().replace('qg_', '');
       const player_qq = await channel(usr_qq);
-      const player = await Read_player(player_qq);
+      let player = await Read_player(player_qq);
       if (!player.in_xiangu) return e.reply('需先进入仙古秘境！');
+      const lifecycle = readXianguLifecycleState();
+      if (lifecycle.available && !isXianguPlayerRoundCurrent(player, lifecycle.data)) {
+        return e.reply('【仙古秘境已闭合】无法继续搜寻 NPC，请使用 #紧急撤离。');
+      }
       
-      if (!player.xiangu_realm_map) initXianguRealmMap(player);
+      const needsMapInitialization = !player.xiangu_realm_map;
+      if (needsMapInitialization) {
+        const actionState = await prepareXianguAction(player_qq);
+        if (actionState.busy) return e.reply('【交战/撤离结算中】地图初始化未执行，请稍后再试。');
+        if (actionState.closed) return e.reply('【仙古秘境已闭合】无法初始化 NPC 地图，请使用 #紧急撤离。');
+        player = actionState.player;
+        if (!player?.in_xiangu) return e.reply('【已离开仙古秘境】无法初始化 NPC 地图。');
+        const initialized = await updateXianguPlayerUnderLock(player_qq, async lockedPlayer => {
+          if (!lockedPlayer.xiangu_realm_map) initXianguRealmMap(lockedPlayer);
+          player = lockedPlayer;
+        });
+        if (!initialized) return e.reply('【交战结算中】地图初始化未执行，请稍后再试。');
+      }
+      await syncXianguSharedMapState(player);
       const location = player.xiangu_location || '边缘区域';
       const npcEntries = getXianguMapNpcEntries(player);
-      await Write_player(player_qq, player);
+      const [npcWorld, npcLegacy] = await Promise.all([
+        readXianguNpcWorldState(player),
+        readXianguSharedDocument(redis, getXianguNpcLegacyScope()),
+      ]);
       if (npcEntries.length === 0) return e.reply(`【寻找NPC】在${location}没有发现任何修士的踪迹...`);
       
       const lines = [`【寻找NPC·${location}】`, '', `${player.名号}放出神识，搜索周围的修士...`, ''];
@@ -4273,6 +6079,15 @@ async XianguYiShenWeiZhong(e) {
         lines.push(`${tag} ${npc.name || npc.名号} ${tradeTag}`);
         lines.push(`  坐标：[${spot.x}, ${spot.y}]（${direction}）`);
         lines.push(`  ${npc.desc || npc.title || ''}`);
+        const canonId = resolveXianguCanonNpcId(npc);
+        const definition = XIANGU_CANON_GOALS[canonId];
+        if (definition) {
+          const goal = npcWorld.xiangu_npc_goals?.goals?.[canonId];
+          const holder = npcLegacy.npcs?.[canonId] || { id: canonId, name: definition.name };
+          const legacy = ensureXianguLegacy(holder);
+          lines.push(`  执念：${definition.objective}（${goal?.completed ? '已达成' : `${goal?.progress || 0}/${definition.target}`}）`);
+          lines.push(`  冠冕：${getXianguCrownTitle(legacy.crowns)}`);
+        }
         if (npc.dialogs && npc.dialogs.length > 0) lines.push(`  "${npc.dialogs[0]}"`);
         if (npc.trade) lines.push(`  出售：${npc.trade.items?.map(i => i.name).join('、') || '无'}`);
         lines.push('');
@@ -4330,10 +6145,45 @@ async XianguYiShenWeiZhong(e) {
 }
 // ====== 终极版：格子类型处理器（模块级别） ======
 
-// 处理机缘格子（增强版 — 道种/道具/灵石/道韵）
+// 处理机缘格子（增强版 — 道种/道具/源石/道韵）
 async function handleTreasureCell(e, player, player_qq, map, x, y) {
+  const claimScope = getXianguSharedScope(player, `cell:${x},${y}`);
   map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
   map.revealed[y][x] = true;
+  const beforeBag = getXianguBagSettlementSnapshot(player);
+  const beforeGains = cloneXianguSettlementData(player.xiangu_gains);
+  const settleClaim = async message => {
+    const delivery = await deliverXianguClaimBagReward(
+      player,
+      player_qq,
+      claimScope,
+      'treasure-cell',
+      beforeBag,
+      {
+        playerFields: ['xiangu_gains'],
+        claim: () => claimXianguRewardForPlayer(claimScope, player, player_qq),
+        onClaimRejected: () => {
+          if (beforeGains === undefined) delete player.xiangu_gains;
+          else player.xiangu_gains = cloneXianguSettlementData(beforeGains);
+        },
+      },
+    );
+    if (delivery.status === 'rejected') {
+      const claimant = delivery.claim?.record?.claimantName ||
+        delivery.claim?.record?.claimantId || '另一位天骄';
+      return `💨【机缘已失】此处造化已被${claimant}先一步搜走，只余残存道痕。`;
+    }
+    if (delivery.status === 'fallback' && !delivery.receipt) {
+      // No durable receipt means the world claim was never reserved. Restore
+      // the cell and local reward so a transient Redis outage can be retried.
+      map.grid[y][x] = CELL_TYPE.TREASURE;
+      restoreXianguBagSettlementSnapshot(player, beforeBag);
+      if (beforeGains === undefined) delete player.xiangu_gains;
+      else player.xiangu_gains = cloneXianguSettlementData(beforeGains);
+      return '【机缘暂存】秘境结算暂时不可用，机缘仍在原地，请稍后重试。';
+    }
+    return message;
+  };
   const fragment = REALM_FRAGMENTS[map.fragmentId];
   const riskMultiplier = 1 + (fragment ? fragment.risk : 0.2);
   const zone = fragment ? fragment.zone : '边缘区域';
@@ -4341,10 +6191,10 @@ async function handleTreasureCell(e, player, player_qq, map, x, y) {
 
   if (shouldDropXianguSeed(xianguConfig, zone, 'treasure')) {
     const seed = generateRandomSeed(zone, { fragmentId: map.fragmentId, source: 'treasure' });
-    grantXianguSeed(player, seed);
+    grantXianguBagSeed(player, seed);
     const { xiuwei, xueqi } = calcExploreRewards(player, riskMultiplier * 2);
     const reward = await grantXianguGrowthRewards(player, player_qq, { xiuwei, xueqi });
-    return [
+    return settleClaim([
       `💎🔥【机缘·道种现世·${seed.品质}】`,
       `${player.名号}在${fragment?.name || zone}深处感应到一枚道种，`,
       `${seed.顶级道种 ? '仙古法则齐鸣，神话仙种破土而出！' : '道种在残存的仙古法则中缓缓搏动...'}`, ``,
@@ -4352,7 +6202,7 @@ async function handleTreasureCell(e, player, player_qq, map, x, y) {
       `融合成功率：${(seed.融合成功率 * 100).toFixed(0)}%`,
       `修为 +${reward.xiuwei.toLocaleString()} | 血气 +${reward.xueqi.toLocaleString()}`,
       '', `提示：前往核心区域使用 #借助${seed.名称}点燃神火`
-    ].join('\n');
+    ].join('\n'));
   }
 
   const roll = Math.random();
@@ -4362,17 +6212,16 @@ async function handleTreasureCell(e, player, player_qq, map, x, y) {
     const items = getLocationItems(zone);
     if (items.length > 0) {
       const item = items[Math.floor(Math.random() * items.length)];
-      await Add_najie_thing(player_qq, item.name, item.type, 1);
-      await markUniqueItemObtained(item.name, player_qq);
+      addXianguBagItem(ensureXianguBag(player), { ...item, quantity: 1 });
       const { xiuwei, xueqi } = calcExploreRewards(player, riskMultiplier * 2);
       const reward = await grantXianguGrowthRewards(player, player_qq, { xiuwei, xueqi });
-      return [
+      return settleClaim([
         `💎✨【机缘·稀世宝物·${item.rarity || '稀有'}】`,
         `${player.名号}在${fragment.name}深处发现一件宝物...`,
         `${item.desc || '一件蕴含古老力量的宝物'}`, ``,
         `获得：${item.name} × 1`,
         `修为 +${reward.xiuwei.toLocaleString()} | 血气 +${reward.xueqi.toLocaleString()}`
-      ].join('\n');
+      ].join('\n'));
     }
   }
 
@@ -4386,11 +6235,11 @@ async function handleTreasureCell(e, player, player_qq, map, x, y) {
         const reward = await grantXianguGrowthRewards(player, player_qq, { xiuwei, xueqi });
         return `${player.名号}盘膝感悟道则...\n获得：${dg}道韵 | 修为 +${reward.xiuwei.toLocaleString()} | 血气 +${reward.xueqi.toLocaleString()}`;
       }},
-    { name: '灵石矿脉', weight: 0.3, handler: async () => {
+    { name: '源石矿脉', weight: 0.3, handler: async () => {
         const lg = Math.floor((500 + Math.random() * 3000) * riskMultiplier);
         const { xiuwei, xueqi } = calcExploreRewards(player, riskMultiplier);
         const reward = await grantXianguGrowthRewards(player, player_qq, { lingshi: lg, xiuwei, xueqi });
-        return `${player.名号}发现小型灵石矿脉！\n获得：${reward.lingshi.toLocaleString()}灵石 | 修为 +${reward.xiuwei.toLocaleString()} | 血气 +${reward.xueqi.toLocaleString()}`;
+        return `${player.名号}发现小型源石矿脉！\n秘境背包：${reward.sourceStone.toLocaleString()}源石 | 修为 +${reward.xiuwei.toLocaleString()} | 血气 +${reward.xueqi.toLocaleString()}`;
       }},
     { name: '古兽精血', weight: 0.2, handler: async () => {
         const xq = Math.floor((200 + Math.random() * 800) * riskMultiplier);
@@ -4403,7 +6252,7 @@ async function handleTreasureCell(e, player, player_qq, map, x, y) {
         const { xiuwei, xueqi } = calcExploreRewards(player, riskMultiplier);
         const sp = Math.floor((200 + Math.random() * 800) * riskMultiplier);
         const reward = await grantXianguGrowthRewards(player, player_qq, { lingshi: sp, xiuwei, xueqi });
-        return `${player.名号}挖出${fn}（可卖${reward.lingshi.toLocaleString()}灵石）\n修为 +${reward.xiuwei.toLocaleString()} | 血气 +${reward.xueqi.toLocaleString()}`;
+        return `${player.名号}挖出${fn}，源石矿脉同时喷薄！\n秘境背包：${reward.sourceStone.toLocaleString()}源石 | 修为 +${reward.xiuwei.toLocaleString()} | 血气 +${reward.xueqi.toLocaleString()}`;
       }},
     { name: '神识碎片', weight: 0.1, handler: async () => {
         if (!player.xiangu_gains) player.xiangu_gains = { daoyun: 0 };
@@ -4418,10 +6267,10 @@ async function handleTreasureCell(e, player, player_qq, map, x, y) {
   for (const t of treasurePool) { rnd -= t.weight; if (rnd <= 0) { chosen = t; break; } }
   const rewardMsg = await chosen.handler();
 
-  return [
+  return settleClaim([
     `💎【机缘搜刮】`, `${rewardMsg}`,
     `（区域：${fragment ? fragment.name : '未知'} | 加持 x${riskMultiplier.toFixed(2)}）`
-  ].join('\n');
+  ].join('\n'));
 }
 
 // 处理危险格子（增强版 — Boss/陷阱/守护兽/毒瘴/空间乱流）
@@ -4458,12 +6307,12 @@ async function handleDangerCell(e, player, player_qq, map, x, y) {
         player.xiangu_gains.daoyun = (player.xiangu_gains.daoyun || 0) + daoyunGain;
         player.xiangu_infamy = (player.xiangu_infamy || 0) + 10;
         map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
-        battleMsg += `\n\n⚔️【Boss击败】${player.名号}力战${bossName}！\n获得：${reward.lingshi.toLocaleString()}灵石 + ${daoyunGain}道韵 | 凶名+10`;
+        battleMsg += `\n\n⚔️【Boss击败】${player.名号}力战${bossName}！\n秘境背包：${reward.sourceStone.toLocaleString()}源石 + ${daoyunGain}道韵 | 凶名+10`;
 
         const xianguConfig = getXianguSecretConfig();
         if (shouldDropXianguSeed(xianguConfig, zone, 'boss')) {
           const seed = generateRandomSeed(zone, { fragmentId: map.fragmentId, source: 'boss' });
-          grantXianguSeed(player, seed);
+          grantXianguBagSeed(player, seed);
           battleMsg += `\n【Boss道种掉落】${seed.名称} [${seed.品质}]`;
         }
       } else {
@@ -4520,7 +6369,7 @@ async function handleVoidRiftCell(e, player, player_qq, map, x, y) {
     const tc = 500 + Math.floor(Math.random() * 2000);
     const reward = await grantXianguGrowthRewards(player, player_qq, { lingshi: tc });
     map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
-    return [`🌀【虚空宝藏】`, `裂缝中竟有宝物飘浮！`, `${player.名号}取出了${reward.lingshi}灵石。`].join('\n');
+    return [`🌀【虚空宝藏】`, `裂缝中竟有源石喷薄！`, `${player.名号}将${reward.sourceStone.toLocaleString()}源石收入秘境背包。`].join('\n');
   } else {
     const hl = Math.floor(500 + Math.random() * 2000);
     player.当前血量 = Math.max(1, (Number(player.当前血量) || 1) - hl);
@@ -4528,20 +6377,205 @@ async function handleVoidRiftCell(e, player, player_qq, map, x, y) {
   }
 }
 
-async function handleXianguMarrowPoolCell(player, player_qq, map, x, y, pool) {
-  pool.claimed = true;
-  map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
-  player.xiangu_gains ||= {};
-  player.xiangu_gains.unique_found = (Number(player.xiangu_gains.unique_found) || 0) + 1;
+const XIANGU_MARROW_POOL_INTENT_PREFIX = 'xiuxian:xiangu:marrow-intent';
+
+function getXianguMarrowPoolClaimScope(player, map, poolKey, x, y) {
+  return getXianguSharedScope(
+    player,
+    poolKey || `${XIANGU_MARROW_POOL_NAME}@${x},${y}`,
+    map?.fragmentId,
+  );
+}
+
+function getXianguMarrowPoolIntentKey(receiptId) {
+  return `${XIANGU_MARROW_POOL_INTENT_PREFIX}:${encodeURIComponent(String(receiptId))}`;
+}
+
+function parseXianguMarrowPoolIntent(raw) {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw);
+    if (!value?.receiptId || !value?.claimScope || !value?.payload?.bag) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+async function getOrCreateXianguMarrowPoolIntent(player, playerId, map, pool, poolKey, x, y, poolConfig) {
+  const claimScope = getXianguMarrowPoolClaimScope(player, map, poolKey, x, y);
+  const receiptId = buildXianguSettlementReceiptId('marrow-pool', claimScope, playerId);
+  const key = getXianguMarrowPoolIntentKey(receiptId);
+  const existing = parseXianguMarrowPoolIntent(await redis.get(key));
+  if (existing) return { ...existing, key };
+
+  const calculated = calculateXianguMarrowPoolRewards(player, {
+    rewardMultiplier: poolConfig.rewardMultiplier,
+  });
+  const intent = {
+    version: 1,
+    receiptId,
+    claimScope,
+    invitedBy: String(pool?.invitedBy || ''),
+    payload: {
+      invitedBy: String(pool?.invitedBy || ''),
+      worldUnique: Boolean(poolConfig.worldUnique),
+      bag: {
+        xiuwei: Math.max(0, Math.trunc(Number(calculated.xiuwei) || 0)),
+        xueqi: Math.max(0, Math.trunc(Number(calculated.xueqi) || 0)),
+        sourceStone: 0,
+        potential: Math.max(0, Math.trunc(Number(poolConfig.potentialGain) || 0)),
+        items: [],
+        seeds: [],
+        techniques: [],
+      },
+      gains: {
+        unique_found: 1,
+        '仙髓池浸泡': 1,
+      },
+      relationDelta: pool?.invitedBy ? 15 : 0,
+    },
+    createdAt: Date.now(),
+  };
+  const inserted = await redis.set(key, JSON.stringify(intent), {
+    NX: true,
+    EX: XIANGU_SHARED_STATE_TTL_SECONDS,
+  });
+  if (inserted) return { ...intent, key };
+
+  const raced = parseXianguMarrowPoolIntent(await redis.get(key));
+  return raced ? { ...raced, key } : { ...intent, key };
+}
+
+async function claimXianguMarrowPoolWorldSlot(player, playerId, intent) {
+  const claimant = getXianguSharedClaimant(player, playerId);
+  const existing = await getXianguUniqueTreasureClaim(redis, intent.claimScope);
+  if (existing?.claimantId && String(existing.claimantId) !== String(playerId)) {
+    return { claimed: false, record: existing };
+  }
+  if (existing?.claimantId && String(existing.claimantId) === String(playerId)) {
+    return { claimed: true, record: existing };
+  }
+  const claim = await claimXianguUniqueTreasure(redis, intent.claimScope, claimant);
+  const owner = String(claim.record?.claimantId || '');
+  return {
+    claimed: Boolean(claim.claimed || owner === String(playerId)),
+    record: claim.record,
+  };
+}
+
+function copyXianguMarrowPoolReceiptState(player, storedPlayer, intent) {
+  if (!copyXianguReceiptState(player, storedPlayer)) return false;
+  const storedGains = storedPlayer?.xiangu_gains;
+  if (storedGains && typeof storedGains === 'object') {
+    player.xiangu_gains ||= {};
+    for (const key of ['unique_found', '仙髓池浸泡']) {
+      if (storedGains[key] !== undefined) player.xiangu_gains[key] = storedGains[key];
+    }
+  }
+  const invitedBy = String(intent?.invitedBy || intent?.payload?.invitedBy || '');
+  if (invitedBy && storedPlayer?.xiangu_npc_relations?.[invitedBy] !== undefined) {
+    player.xiangu_npc_relations ||= {};
+    player.xiangu_npc_relations[invitedBy] = storedPlayer.xiangu_npc_relations[invitedBy];
+  }
+  return true;
+}
+
+async function deliverXianguMarrowPoolIntent(player, playerId, intent) {
+  const receiptInput = {
+    worldSeed: intent.claimScope.worldSeed,
+    playerId: String(playerId),
+    receiptId: intent.receiptId,
+    kind: 'marrow-pool',
+    payload: intent.payload,
+    source: {
+      claimScope: intent.claimScope,
+      invitedBy: intent.invitedBy,
+      worldUnique: Boolean(intent.payload?.worldUnique),
+    },
+  };
+  const { receipt } = await createXianguSettlementReceipt(redis, receiptInput);
+  let savedPlayer = null;
+  const delivery = await deliverXianguSettlementReceipt(redis, receipt, {
+    loadPlayer: targetId => Read_player(targetId),
+    savePlayer: async (targetId, storedPlayer) => {
+      const saved = await Write_player(targetId, storedPlayer);
+      if (saved === false) {
+        throw new Error('仙髓池奖励未取得玩家动作锁，收据待重试');
+      }
+      savedPlayer = cloneXianguSettlementData(storedPlayer);
+    },
+    apply: (storedPlayer, storedReceipt) =>
+      applyXianguMarrowPoolReceiptPayload(storedPlayer, storedReceipt),
+  });
+  if (['applied', 'recovered', 'already-applied'].includes(delivery.status)) {
+    const persisted = savedPlayer || await Read_player(playerId);
+    copyXianguMarrowPoolReceiptState(player, persisted, intent);
+    try {
+      await redis.set(intent.key, JSON.stringify({ ...intent, status: 'applied', appliedAt: Date.now() }), {
+        EX: 60 * 60,
+      });
+    } catch {
+      // Receipt and player claim remain the durable idempotency record.
+    }
+  }
+  return delivery;
+}
+
+async function handleXianguMarrowPoolCell(player, player_qq, map, x, y, pool, poolKey = '') {
+  if (pool.claimed) return `【${XIANGU_MARROW_POOL_NAME}】这方机缘已经被你浸取过了。`;
+  const poolConfig = resolveXianguMarrowPoolConfig(getXianguSecretConfig());
+  let intent = null;
+  if (!pool.isTrap) {
+    try {
+      intent = await getOrCreateXianguMarrowPoolIntent(
+        player,
+        player_qq,
+        map,
+        pool,
+        poolKey,
+        x,
+        y,
+        poolConfig,
+      );
+    } catch (error) {
+      console.error('仙髓池奖励意图写入失败:', error);
+      return `【${XIANGU_MARROW_POOL_NAME}】宝池法则暂未稳定，奖励尚未结算，请稍后重试。`;
+    }
+  }
+  if (poolConfig.worldUnique) {
+    const claim = pool.isTrap
+      ? await claimXianguUniqueTreasure(
+        redis,
+        getXianguMarrowPoolClaimScope(player, map, poolKey, x, y),
+        getXianguSharedClaimant(player, player_qq),
+      )
+      : await claimXianguMarrowPoolWorldSlot(player, player_qq, intent);
+    if (!claim.claimed) {
+      pool.claimed = true;
+      map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
+      if (intent?.key && typeof redis.del === 'function') await redis.del(intent.key);
+      const claimant = claim.record?.claimantName || claim.record?.claimantId || '另一位修士';
+      return `【${XIANGU_MARROW_POOL_NAME}】你赶到时，宝池已被${claimant}先行封存。`;
+    }
+  }
 
   if (pool.isTrap) {
-    const ambushers = Array.isArray(pool.ambushers) && pool.ambushers.length > 0
+    pool.claimed = true;
+    map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
+    player.xiangu_gains ||= {};
+    player.xiangu_gains.unique_found = (Number(player.xiangu_gains.unique_found) || 0) + 1;
+    const storedAmbushers = Array.isArray(pool.ambushers) && pool.ambushers.length > 0
       ? pool.ambushers
       : createXianguPoolAmbushers({
           name: '蒙面猎手',
           level_id: player.xiangulevel_id || 5,
           personality: 'hostile',
         });
+    const ambushers = storedAmbushers.map(ambusher =>
+      createXianguNpcBattleData(ambusher, ambusher.名号 || ambusher.name)
+    );
+    pool.ambushers = ambushers;
     const battleSides = buildXianguBattleSides(player, ambushers, { attackerId: player_qq });
     let battleResult;
     try {
@@ -4596,22 +6630,20 @@ async function handleXianguMarrowPoolCell(player, player_qq, map, x, y, pool) {
     ].join('\n');
   }
 
-  const poolConfig = resolveXianguMarrowPoolConfig(getXianguSecretConfig());
-  const calculated = calculateXianguMarrowPoolRewards(player, {
-    rewardMultiplier: poolConfig.rewardMultiplier,
-  });
-  const rewards = await grantXianguGrowthRewards(player, player_qq, calculated);
-  const potentialGain = grantMinggePotential(
-    player,
-    getMinggeEffects(player, data.minggeList),
-    poolConfig.potentialGain,
-  );
-  player.xiangu_gains.仙髓池浸泡 = (Number(player.xiangu_gains.仙髓池浸泡) || 0) + 1;
-  if (pool.invitedBy) {
-    player.xiangu_npc_relations ||= {};
-    player.xiangu_npc_relations[pool.invitedBy] =
-      (Number(player.xiangu_npc_relations[pool.invitedBy]) || 0) + 15;
+  let delivery;
+  try {
+    delivery = await deliverXianguMarrowPoolIntent(player, player_qq, intent);
+  } catch (error) {
+    console.error('仙髓池奖励结算失败:', error);
+    return `【${XIANGU_MARROW_POOL_NAME}】奖励已登记但尚未写入道基，请稍后重试。`;
   }
+  if (!['applied', 'recovered', 'already-applied'].includes(delivery.status)) {
+    return `【${XIANGU_MARROW_POOL_NAME}】奖励正在结算（${delivery.status}），请稍后重试。`;
+  }
+  pool.claimed = true;
+  map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
+  const rewards = (delivery.receipt?.payload || intent.payload).bag;
+  const potentialGain = rewards.potential;
 
   return [
     `💧【机缘·${XIANGU_MARROW_POOL_NAME}】`,
@@ -4636,24 +6668,70 @@ async function handleUniqueTreasureCell(e, player, player_qq, map, x, y) {
   }
   if (foundTreasure) {
     if (foundTreasure.kind === XIANGU_MARROW_POOL_KIND) {
-      return handleXianguMarrowPoolCell(player, player_qq, map, x, y, foundTreasure);
+      return handleXianguMarrowPoolCell(player, player_qq, map, x, y, foundTreasure, foundName);
     }
+    const claimScope = getXianguSharedScope(player, foundName, 'unique');
+    const beforeBag = getXianguBagSettlementSnapshot(player);
+    const beforeGains = cloneXianguSettlementData(player.xiangu_gains);
     foundTreasure.claimed = true;
+    map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
+
+    addXianguBagItem(ensureXianguBag(player), {
+      name: foundName,
+      type: '绝世机缘',
+      quantity: 1,
+      unique: true,
+      desc: foundTreasure.desc,
+    });
     if (!player.xiangu_gains) player.xiangu_gains = { daoyun: 0 };
     player.xiangu_gains.daoyun = (player.xiangu_gains.daoyun || 0) + 20;
     player.xiangu_gains.unique_found = (player.xiangu_gains.unique_found || 0) + 1;
     const reward = await grantXianguGrowthRewards(player, player_qq, { lingshi: 10000, xiuwei: 5000 });
-    map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
     let seedMessage = '';
     const fragment = REALM_FRAGMENTS[map.fragmentId];
     const zone = fragment?.zone || '核心区域';
     const xianguConfig = getXianguSecretConfig();
     if (shouldDropXianguSeed(xianguConfig, zone, 'unique')) {
       const seed = generateRandomSeed(zone, { fragmentId: map.fragmentId, source: 'unique' });
-      grantXianguSeed(player, seed);
+      grantXianguBagSeed(player, seed);
       seedMessage = `\n伴生道种：${seed.名称} [${seed.品质}]`;
     }
-    return [`✨✨✨【绝世机缘·${foundName}】✨✨✨`, `${player.名号}伸手触及${foundTreasure.desc}`, ``, `获得：${foundName} | ${reward.lingshi}灵石 | ${reward.xiuwei}修为 | 20道韵${seedMessage}`, ``, `此等造化，足以震动九天十地！`].join('\n');
+    const message = [`✨✨✨【绝世机缘·${foundName}】✨✨✨`, `${player.名号}伸手触及${foundTreasure.desc}`, ``, `秘境背包：${foundName} | ${reward.sourceStone.toLocaleString()}源石 | ${reward.xiuwei}修为 | 20道韵${seedMessage}`, ``, `此等造化，足以震动九天十地！`].join('\n');
+    const delivery = await deliverXianguClaimBagReward(
+      player,
+      player_qq,
+      claimScope,
+      'unique-treasure',
+      beforeBag,
+      {
+        playerFields: ['xiangu_gains'],
+        claim: () => claimXianguRewardForPlayer(claimScope, player, player_qq),
+        onClaimRejected: () => {
+          if (beforeGains === undefined) delete player.xiangu_gains;
+          else player.xiangu_gains = cloneXianguSettlementData(beforeGains);
+        },
+      },
+    );
+    if (delivery.status === 'fallback' && !delivery.receipt) {
+      // Keep the unique opportunity visible when no durable receipt was
+      // created; an existing receipt is intentionally left as an empty cell.
+      foundTreasure.claimed = false;
+      map.grid[y][x] = CELL_TYPE.UNIQUE_TREASURE;
+      restoreXianguBagSettlementSnapshot(player, beforeBag);
+      if (beforeGains === undefined) delete player.xiangu_gains;
+      else player.xiangu_gains = cloneXianguSettlementData(beforeGains);
+      return '【绝世机缘暂存】结算暂时不可用，机缘仍在原地，请稍后重试。';
+    }
+    if (delivery.status === 'rejected') {
+      const claimant = delivery.claim?.record?.claimantName ||
+        delivery.claim?.record?.claimantId || '另一位天骄';
+      return [
+        `✨【绝世机缘·失之交臂】`,
+        `${player.名号}触及${foundTreasure.desc}，却只见一道残留的法则烙印。`,
+        `${foundName}已被${claimant}先一步取走，本轮仙古不再现世。`,
+      ].join('\n');
+    }
+    return message;
   }
   return `✨ ${player.名号}感知到绝世机缘的存在，却无法触及...`;
 }
@@ -4700,37 +6778,6 @@ function getShenhuoBreakthroughBonus() {
   } catch (err) {
     console.error('读取仙古今世法等级数据失败:', err);
     return { 血气: 20000000, 攻击: 20000000, 防御: 20000000, 暴击率: 0.05 };
-  }
-}
-
-// 标记唯一性物品已被获取
-async function markUniqueItemObtained(itemName, playerQQ) {
-  try {
-    const configPath = data.filePathMap.xianguSecretPlace;
-    if (!fs.existsSync(configPath)) return;
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    const topCreations = config.顶级造化;
-    if (!topCreations) return;
-
-    let modified = false;
-    const categories = ['顶级仙种', '十凶宝术', '仙王经文'];
-    for (const cat of categories) {
-      const items = topCreations[cat] || [];
-      for (const item of items) {
-        if (item.名称 === itemName && !item.已获取) {
-          item.已获取 = true;
-          item.获取者 = playerQQ;
-          modified = true;
-          console.log(`【仙古秘境】唯一物品 "${itemName}" 已被 ${playerQQ} 获取`);
-        }
-      }
-    }
-
-    if (modified) {
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
-    }
-  } catch (err) {
-    console.error('标记唯一物品失败:', err);
   }
 }
 
@@ -4783,7 +6830,7 @@ async function handleFlameTrial(player, location, player_qq, trial) {
 
   // 试炼成功：奖励一枚神话品质火道道种（可用于道种孕育点燃神火）
   player.血气 = Math.floor(player.血气上限 * 0.2);
-  grantXianguSeed(player, trialData.reward);
+  grantXianguBagSeed(player, trialData.reward);
 
   const { xiuwei, xueqi } = calcExploreRewards(player, 3);
   const trialRewards = await grantXianguGrowthRewards(player, player_qq, { xiuwei, xueqi });
@@ -4846,7 +6893,7 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
   };
 
   // 根据偏向来调整概率权重
-  // 默认概率：道韵40%, 灵石30%, 道具15%, 战斗10%, 惊天发现5%
+  // 默认概率：道韵40%, 源石30%, 道具15%, 战斗10%, 惊天发现5%
   let thresholds = { daoyun: 0.40, lingshi: 0.30, item: 0.15, fight: 0.10, special: 0.05 };
   
   if (bias) {
@@ -4979,7 +7026,7 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
     if (eventMod.bonusMsg) result.message += eventMod.bonusMsg;
     
   } else if (findRandom < cumLingshi) {
-    // 获得灵石
+    // 获得源石
     const lingganBase = Math.floor(5000 * rewardMultiplier * eventRewardMult);
     const lingganGain = Math.floor(lingganBase * (0.8 + Math.random() * 0.4));
     
@@ -4992,23 +7039,23 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
     });
     
     result.message = [
-      `【探索·灵石矿脉】`,
+      `【探索·源石矿脉】`,
       ``,
-      `${player.名号}挖掘出一处小型灵石矿脉，`,
-      `晶莹剔透的灵石散落一地！`,
+      `${player.名号}挖掘出一处仙古源石矿脉，`,
+      `浓郁源气自裂隙间喷薄而出！`,
       ``,
       `【获得】`,
-      `灵石 +${lsReward.lingshi.toLocaleString()}`,
+      `源石 +${lsReward.sourceStone.toLocaleString()}（暂存秘境背包）`,
       `修为 +${lsReward.xiuwei.toLocaleString()}`,
       `血气 +${lsReward.xueqi.toLocaleString()}`,
       ``,
       `【探索统计】`,
       `- 当前位置：${location}`,
       `- 危险等级：${'★'.repeat(riskData.risk * 5 + 1)}`,
-      `- 探索结果：✓ 发现灵石`,
+      `- 探索结果：✓ 发现源石`,
       ``,
       `【古史记载】`,
-      `"仙古纪元，灵石乃修士修炼之基"`
+      `"仙古遗地源气沉积，矿脉中自有造化"`
     ].join('\n');
     
   } else if (findRandom < cumItem) {
@@ -5016,8 +7063,7 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
     const items = getLocationItems(location);
     if (items.length > 0) {
       const item = items[Math.floor(Math.random() * items.length)];
-      await Add_najie_thing(player_qq, item.name, item.type, 1);
-      await markUniqueItemObtained(item.name, player_qq);
+      addXianguBagItem(ensureXianguBag(player), { ...item, quantity: 1 });
       result.gains[item.name] = 1;
 
       // 境界修为/血气奖励
@@ -5110,7 +7156,9 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
         const battleRewards = await grantXianguGrowthRewards(player, player_qq, {
           xiuwei: expGain,
           xueqi: xueqiGain,
+          sourceStone: 1,
         });
+        const daoyunLoot = transferXianguDaoyun(player, B_enemy);
         
         result.message = [
           `【探索·遭遇·战斗】`,
@@ -5125,6 +7173,8 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
           `【获得】`,
           `修为 +${battleRewards.xiuwei.toLocaleString()}`,
           `血气 +${battleRewards.xueqi.toLocaleString()}`,
+          `源石 +${battleRewards.sourceStone.toLocaleString()}（暂存秘境背包）`,
+          `猎取道韵 +${daoyunLoot}`,
           `凶名值 +${xiongmngGain}`,
           ``,
           `【探索统计】`,
@@ -5136,7 +7186,7 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
         // 道种掉落
         if (shouldDropXianguSeed(xianguConfig, location, 'treasure')) {
           const seed = generateRandomSeed(location, { source: 'treasure' });
-          grantXianguSeed(player, seed);
+          grantXianguBagSeed(player, seed);
           await Write_player(player_qq, player);
 
           result.message += [
@@ -5215,8 +7265,7 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
       ].join('\n');
       
       // 添加到纳戒
-      await Add_najie_thing(player_qq, special.name, special.type, 1);
-      await markUniqueItemObtained(special.name, player_qq);
+      addXianguBagItem(ensureXianguBag(player), { ...special, quantity: 1 });
     }
   }
 
@@ -5231,14 +7280,14 @@ function getLocationItems(location) {
   const locationItems = {
     '边缘区域': [
       { name: '残破灵符', type: '道具', rarity: '普通', desc: '蕴含微弱灵力的符箓，可用于基础交易' },
-      { name: '下品灵石', type: '灵石', rarity: '普通', desc: '品质一般的灵石，可用于修炼' },
+      { name: '源石矿髓', type: '材料', rarity: '普通', desc: '仙古矿脉凝结的源石矿髓' },
       { name: '引气丹', type: '丹药', rarity: '优秀', desc: '帮助引气入体的丹药，效果微弱' },
       { name: '百断山碎片', type: '材料', rarity: '稀有', desc: '百断山崩碎后遗留的碎片，蕴藏古老符文' },
       { name: '原始骨文', type: '材料', rarity: '稀有', desc: '刻画在上古兽骨上的原始骨文' },
       { name: '灵血草', type: '丹药', rarity: '普通', desc: '可补充少量血气的常见灵草' }
     ],
     '中层区域': [
-      { name: '中品灵石', type: '灵石', rarity: '优秀', desc: '品质较好的灵石，蕴含更多灵气' },
+      { name: '神源石', type: '道具', rarity: '优秀', desc: '封存着浓郁源气的神源石' },
       { name: '破境丹', type: '丹药', rarity: '稀有', desc: '增加突破成功率的神秘丹药' },
       { name: '仙古遗种蛋', type: '宠物', rarity: '史诗', desc: '一枚沉睡的遗种之蛋，蕴含古老血脉' },
       { name: '十凶残魂', type: '材料', rarity: '稀有', desc: '十凶残留的一缕魂魄，可用于炼器' },
@@ -5247,7 +7296,7 @@ function getLocationItems(location) {
       { name: '柳神法残篇', type: '功法', rarity: '传说', desc: '柳神涅槃大法的残篇，蕴含生命真谛' }
     ],
     '深层区域': [
-      { name: '上品灵石', type: '灵石', rarity: '稀有', desc: '蕴含浓郁灵气的上品灵石' },
+      { name: '上品神源石', type: '道具', rarity: '稀有', desc: '源气近乎化液的上品神源石' },
       { name: '悟道古茶叶', type: '道具', rarity: '传说', desc: '蕴含大道道韵，可用于古茶悟道' },
       { name: '仙血精华', type: '材料', rarity: '传说', desc: '蕴含仙古纪元仙人血液的精华' },
       { name: '天角蚁宝术残篇', type: '功法', rarity: '传说', desc: '天角蚁一族的力之极尽奥义残篇' },
@@ -5257,7 +7306,7 @@ function getLocationItems(location) {
       { name: '黑暗物质样本', type: '材料', rarity: '史诗', desc: '黑暗牢笼中逸散的神秘物质' }
     ],
     '核心区域': [
-      { name: '极品灵石', type: '灵石', rarity: '传说', desc: '蕴含海量灵气的极品灵石' },
+      { name: '超品神源石', type: '道具', rarity: '传说', desc: '仙古矿脉核心孕育的超品神源石' },
       { name: '道韵碎片', type: '材料', rarity: '传说', desc: '蕴含完整道则的碎片，价值连城' },
       { name: '仙古真血', type: '材料', rarity: '史诗', desc: '一滴仙古纪元真仙的精血' },
       { name: '原始真解残篇', type: '功法', rarity: '神话', desc: '天地初开时的原始真解，可参悟大道本源' }
@@ -5406,8 +7455,7 @@ async function handleBossEncounter(player, location, player_qq, usr_qq) {
     for (const drop of bossDef.drops) {
       if (Math.random() < drop.chance) {
         rewards.push(drop);
-        await addXianguSpoil(player_qq, drop.name, 1);
-        await markUniqueItemObtained(drop.name, player_qq);
+        await addXianguSpoil(player, drop.name, 1);
       }
     }
     
@@ -5422,6 +7470,7 @@ async function handleBossEncounter(player, location, player_qq, usr_qq) {
     const bossRewards = await grantXianguGrowthRewards(player, player_qq, {
       xiuwei: expGain,
       xueqi: xueqiGain,
+      sourceStone: 1,
     });
     player.xiangu_infamy = (Number(player.xiangu_infamy) || 0) + xiongmngGain;
     player.xiangu_gains ||= {};
@@ -5431,6 +7480,7 @@ async function handleBossEncounter(player, location, player_qq, usr_qq) {
     let rewardMsg = [
       `修为 +${bossRewards.xiuwei.toLocaleString()}`,
       `血气 +${bossRewards.xueqi.toLocaleString()}`,
+      `源石 +${bossRewards.sourceStone.toLocaleString()}（暂存秘境背包）`,
       `凶名值 +${xiongmngGain}`,
       `道韵领悟 +${daoyunGain}`
     ];
@@ -5442,7 +7492,7 @@ async function handleBossEncounter(player, location, player_qq, usr_qq) {
     const xianguConfig = getXianguSecretConfig();
     if (shouldDropXianguSeed(xianguConfig, location, 'boss')) {
       const seed = generateRandomSeed(location, { source: 'boss' });
-      grantXianguSeed(player, seed);
+      grantXianguBagSeed(player, seed);
       await Write_player(player_qq, player);
 
       rewardMsg.push(`【道种掉落！】${seed.名称} [${seed.品质}]`);
@@ -5736,60 +7786,43 @@ const NPC_NAME_POOL = {
   称号: ['流浪剑客', '云游散修', '秘境猎手', '古道追寻者', '天骄争渡人', '秘境独行者', '道种寻访者', '仙古遗民', '散修奇人', '不世天骄', '隐世修士', '无名散人']
 };
 
-function generateRandomNPCName() {
-  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+function generateRandomNPCName(random = Math.random) {
+  const pick = (arr) => arr[Math.floor(random() * arr.length)];
   const 姓 = pick(NPC_NAME_POOL.姓);
-  const 单名 = Math.random() < 0.4; // 40%概率单名
+  const 单名 = random() < 0.4; // 40%概率单名
   const 名 = 单名 ? pick(NPC_NAME_POOL.名尾) : pick(NPC_NAME_POOL.名首) + pick(NPC_NAME_POOL.名尾);
   const 道号 = pick(NPC_NAME_POOL.道号前缀) + pick(['散人', '真人', '道人', '道人', '尊者', '居士', '老祖', '仙师']);
   const 称号 = pick(NPC_NAME_POOL.称号);
   return { 名号: 姓 + 名, 道号, 称号 };
 }
 
-// ====== 随机NPC属性按区域动态生成 ======
-const NPC_REALM_MAP = {
-  边缘区域: { minAtk: 5000, maxAtk: 20000, minHp: 50000, maxHp: 200000, realmRange: ['铭文境', '列阵境'] },
-  中层区域: { minAtk: 20000, maxAtk: 80000, minHp: 200000, maxHp: 800000, realmRange: ['列阵境', '尊者境'] },
-  深层区域: { minAtk: 80000, maxAtk: 300000, minHp: 800000, maxHp: 3000000, realmRange: ['尊者境', '神火境'] },
-  核心区域: { minAtk: 300000, maxAtk: 1000000, minHp: 3000000, maxHp: 10000000, realmRange: ['神火境', '真一境'] }
-};
-
 /** 按区域随机生成一个NPC */
-function generateRandomNPC(location, infamy) {
-  const cfg = NPC_REALM_MAP[location] || NPC_REALM_MAP['边缘区域'];
-  const { 名号, 道号, 称号 } = generateRandomNPCName();
-  const atk = Math.floor(cfg.minAtk + Math.random() * (cfg.maxAtk - cfg.minAtk));
-  const hp = Math.floor(cfg.minHp + Math.random() * (cfg.maxHp - cfg.minHp));
-  const speed = Math.floor(800 + Math.random() * 1200);
-  const realm = cfg.realmRange[Math.floor(Math.random() * cfg.realmRange.length)];
+function generateRandomNPC(location, infamy, { random = Math.random, id } = {}) {
+  const { 名号, 道号, 称号 } = generateRandomNPCName(random);
+  const speed = Math.floor(800 + random() * 1200);
 
   // 随机人格
   const personalities = ['proud', 'scheming', 'friendly', 'hostile', 'neutral'];
-  const personality = personalities[Math.floor(Math.random() * personalities.length)];
+  const personality = personalities[Math.floor(random() * personalities.length)];
 
   // 随机功法（从通用池中选1-2门）
   const commonGongfa = ['补天术', '狻猊宝术', '青天鹏宝术', '朱雀宝术', '青鳞鹰宝术', '剑道真解', '九天剑诀', '五行真解', '紫气东来', '天雷诀', '冰魄玄功', '丹霞神功'];
-  const gongfaCount = 1 + Math.floor(Math.random() * 2);
+  const gongfaCount = 1 + Math.floor(random() * 2);
   const gongfa = [];
   for (let i = 0; i < gongfaCount; i++) {
-    const g = commonGongfa[Math.floor(Math.random() * commonGongfa.length)];
+    const g = commonGongfa[Math.floor(random() * commonGongfa.length)];
     if (!gongfa.includes(g)) gongfa.push(g);
   }
 
-  return {
-    id: `random_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+  return strengthenXianguNpc({
+    id: id || `random_${Math.floor(random() * 1_000_000_000)}`,
     name: 名号,
     title: `${道号}·${称号}`,
     faction: personality === 'hostile' ? 'evil' : personality === 'friendly' ? 'good' : 'neutral',
-    desc: `${名号}，${realm}修士，${称号}。`,
-    境界: realm,
-    攻击: atk,
-    防御: Math.floor(atk * 0.4),
-    当前血量: hp,
-    血量上限: hp,
-    速度,
-    暴击率: 0.1 + Math.random() * 0.25,
-    暴击伤害: 1.5 + Math.random() * 2,
+    desc: `${名号}，在${location || '仙古秘境'}中磨砺至今的${称号}。`,
+    速度: speed,
+    暴击率: 0.1 + random() * 0.25,
+    暴击伤害: 1.5 + random() * 2,
     学习的功法: gongfa,
     dialogs: [
       personality === 'hostile' ? '哼，将你的东西交出来！' : '道友也是来寻机缘的？',
@@ -5802,7 +7835,7 @@ function generateRandomNPC(location, infamy) {
     inventory: [],
     isAlive: true,
     isCanon: false
-  };
+  }, getXianguNpcRealmData(), { random });
 }
 
 // NPC定义表（按区域分布）
@@ -6161,64 +8194,58 @@ async function broadcastToXianguPlayers(message) {
 }
 
 // ---- 辅助：获取当前活跃NPC（根据玩家位置和凶名） ----
-// 根据NPC的level_id动态计算战斗属性
-function getNPCScaledStats(npc, zoneFactor = 0.5) {
-  if (npc.level_id) {
-    const scaled = getBossScaledStats(npc.level_id, zoneFactor);
-    const mult = npc.isCanon ? 1.5 : 1.0;
-    return {
-      攻击: Math.floor(scaled.attack * mult * 0.3),
-      防御: Math.floor(scaled.defense * mult * 0.3),
-      当前血量: Math.floor(scaled.hp * mult * 0.5),
-    };
-  }
+function createXianguNpcBattleData(npc, name = npc.name || npc.名号) {
+  const strengthened = strengthenXianguNpc(npc, getXianguNpcRealmData());
+  const maxHp = Number(strengthened.血量上限) || 1;
   return {
-    攻击: npc.攻击 || 50000,
-    防御: npc.防御 || 20000,
-    当前血量: npc.当前血量 || npc.血量上限 || 500000,
+    ...strengthened,
+    id: undefined,
+    名号: name,
+    攻击: strengthened.攻击,
+    防御: strengthened.防御,
+    当前血量: maxHp,
+    血量上限: maxHp,
+    速度: Number(strengthened.速度) || 1000,
+    暴击率: Number(strengthened.暴击率) || 0.15,
+    暴击伤害: Number(strengthened.暴击伤害) || 2,
+    法球倍率: Number(strengthened.法球倍率 ?? strengthened.灵根?.法球倍率) || 1,
+    学习的功法: Array.isArray(strengthened.学习的功法)
+      ? strengthened.学习的功法
+      : Object.keys(strengthened.学习的功法 || {}),
+    灵根: strengthened.灵根 || { name: '无', type: '无', 法球倍率: 1 },
+    道心值: Number(strengthened.道心值) || 100,
+    元神: Number(strengthened.元神) || 500000,
   };
 }
 
-function createXianguNpcBattleData(npc, zoneFactor = 0.5, name = npc.name || npc.名号) {
-  const scaled = getNPCScaledStats(npc, zoneFactor);
-  const maxHp = Number(scaled.当前血量) || Number(npc.血量上限) || 500000;
-  return {
-    ...npc,
-    id: undefined,
-    名号: name,
-    攻击: scaled.攻击,
-    防御: scaled.防御,
-    当前血量: maxHp,
-    血量上限: maxHp,
-    速度: Number(npc.速度) || 1000,
-    暴击率: Number(npc.暴击率) || 0.15,
-    暴击伤害: Number(npc.暴击伤害) || 2,
-    法球倍率: Number(npc.法球倍率 ?? npc.灵根?.法球倍率) || 1,
-    学习的功法: Array.isArray(npc.学习的功法) ? npc.学习的功法 : Object.keys(npc.学习的功法 || {}),
-    xiangulevel_id: Number(npc.xiangulevel_id || npc.level_id) || 5,
-    mijinglevel_id: Number(npc.mijinglevel_id) || 0,
-    灵根: npc.灵根 || { name: '无', type: '无', 法球倍率: 1 },
-    道心值: Number(npc.道心值) || 100,
-    元神: Number(npc.元神) || 500000,
-  };
+function strengthenStoredXianguTeammate(owner) {
+  if (!owner?.xiangu_teammate_data) return;
+  owner.xiangu_teammate_data = createXianguNpcBattleData(
+    owner.xiangu_teammate_data,
+    owner.xiangu_teammate_data.名号 || owner.xiangu_teammate_name,
+  );
+}
+
+function buildXianguBattleSides(attacker, defender, options) {
+  strengthenStoredXianguTeammate(attacker);
+  if (!Array.isArray(defender)) strengthenStoredXianguTeammate(defender);
+  return buildRawXianguBattleSides(attacker, defender, options);
 }
 
 function createXianguPoolAmbushers(npc) {
-  const leader = createXianguNpcBattleData(npc, 0.6);
-  const accompliceHp = Math.max(1, Math.floor(leader.血量上限 * 0.75));
+  const leader = createXianguNpcBattleData(npc);
   const accomplice = {
     ...leader,
     id: undefined,
     名号: `${leader.名号}的伏兵`,
-    攻击: Math.max(1, Math.floor(leader.攻击 * 0.8)),
-    防御: Math.max(1, Math.floor(leader.防御 * 0.8)),
-    当前血量: accompliceHp,
-    血量上限: accompliceHp,
   };
   return [leader, accomplice];
 }
 
-function getNPCsForPlayer(location, infamy) {
+function getNPCsForPlayer(location, infamy, {
+  random = Math.random,
+  randomIdPrefix = 'random',
+} = {}) {
   // 基础NPC（静态）
   const baseNpcs = XIANGU_NPCS[location] || [];
   const npcs = [...baseNpcs];
@@ -6229,13 +8256,19 @@ function getNPCsForPlayer(location, infamy) {
     if (!canon.isAlive && Date.now() < canon.respawnTime) continue;
     // 敌对NPC需要检查凶名阈值
     if (canon.hostile && canon.hostileThreshold && infamy < canon.hostileThreshold) continue;
-    npcs.push(canon);
+    npcs.push({
+      ...canon,
+      xianguGoal: XIANGU_CANON_GOALS[resolveXianguCanonNpcId(canon)] || null,
+    });
   }
 
   // 随机Npc：每个区域随机生成1-2个
-  const randomCount = 1 + Math.floor(Math.random() * 2);
+  const randomCount = 1 + Math.floor(random() * 2);
   for (let i = 0; i < randomCount; i++) {
-    npcs.push(generateRandomNPC(location, infamy));
+    npcs.push(generateRandomNPC(location, infamy, {
+      random,
+      id: `${randomIdPrefix}_${i}`,
+    }));
   }
 
   return npcs.filter(npc => {
@@ -6244,12 +8277,18 @@ function getNPCsForPlayer(location, infamy) {
       return infamy >= npc.hostileThreshold;
     }
     return npc.hostile;
-  });
+  }).map(npc => strengthenXianguNpc(npc, getXianguNpcRealmData(), { random }));
 }
 
 function ensureXianguMapNpcBindings(player) {
   const map = player?.xiangu_realm_map;
   if (!map || !Array.isArray(map.npcLocations)) return [];
+  const random = createXianguSeededRandom(
+    `${player.xiangu_world_seed || 'legacy'}:${map.instanceId || map.fragmentId}:npc-bindings`,
+  );
+  bindXianguNpcLocations(map, [], {
+    excludedIds: player.xiangu_defeated_npc_ids || [],
+  });
   map.npcLocations = map.npcLocations.filter(spot =>
     map.grid?.[spot?.y]?.[spot?.x] === CELL_TYPE.NPC
   );
@@ -6261,6 +8300,14 @@ function ensureXianguMapNpcBindings(player) {
       }
     }
   }
+  for (const spot of map.npcLocations) {
+    if (!spot?.npc) continue;
+    const goal = XIANGU_CANON_GOALS[resolveXianguCanonNpcId(spot.npc)];
+    spot.npc = strengthenXianguNpc({
+      ...spot.npc,
+      ...(goal ? { xianguGoal: goal } : {}),
+    }, getXianguNpcRealmData(), { random });
+  }
   const missingCount = map.npcLocations.filter(spot => !spot?.npc).length;
   if (missingCount === 0) return map.npcLocations;
 
@@ -6270,12 +8317,27 @@ function ensureXianguMapNpcBindings(player) {
   const usedIds = new Set([...map.npcLocations, ...historicalSpots]
     .map(spot => spot?.npcId || spot?.npc?.id)
     .filter(Boolean));
-  const candidates = getNPCsForPlayer(location, player.xiangu_infamy || 0)
-    .filter(npc => !usedIds.has(npc.id || npc.name || npc.名号));
+  // 同一轮同一碎片的NPC池必须独立于观看者的凶名，否则会生成并不存在于公共地图的随机角色。
+  const candidates = getNPCsForPlayer(location, Number.POSITIVE_INFINITY, {
+    random,
+    randomIdPrefix: `random_${map.fragmentId}`,
+  })
+    .filter(npc => {
+      const npcId = String(npc.id || npc.name || npc.名号 || '');
+      return !usedIds.has(npcId) && !(player.xiangu_defeated_npc_ids || []).includes(npcId);
+    });
   while (candidates.length < missingCount) {
-    candidates.push(generateRandomNPC(location, player.xiangu_infamy || 0));
+    const npc = generateRandomNPC(location, Number.POSITIVE_INFINITY, {
+      random,
+      id: `random_${map.fragmentId}_extra_${candidates.length}`,
+    });
+    const npcId = String(npc.id || npc.name || npc.名号 || '');
+    if (!(player.xiangu_defeated_npc_ids || []).includes(npcId)) candidates.push(npc);
   }
-  return bindXianguNpcLocations(map, candidates);
+  return bindXianguNpcLocations(map, candidates, {
+    random,
+    excludedIds: player.xiangu_defeated_npc_ids || [],
+  });
 }
 
 function getCurrentXianguNpc(player) {
@@ -6379,7 +8441,8 @@ async function XianguArenaFn(e, player, player_qq) {
       startTime: now,
       endTime,
       desc: arenaDef.desc,
-      participants: [player_qq]
+      participants: [player_qq],
+      worldSeed: getXianguRoundId(player),
     };
     XIANGU_EVENTS.lastEventTime.arena = now;
     XIANGU_EVENTS.arenaParticipants = [{ qq: player_qq, name: player.名号, wins: 0 }];
@@ -6490,8 +8553,11 @@ async function XianguNPCTalkFn(e, player, player_qq) {
   // 阵营关系影响对话
   const faction = player.xiangu_faction_rep || { good: 0, neutral: 0, evil: 0 };
   const factionRep = faction[npc.faction] || 0;
+  const infamy = Number(player.xiangu_infamy) || 0;
   const npcId = npc.id || npc.name || npc.名号;
   const relation = Number(player.xiangu_npc_relations?.[npcId] ?? factionRep) || 0;
+  const interactionReward = getXianguNpcInteractionRewardState(player, npcId);
+  let rewarded = false;
   let relationDesc = '陌生人';
   if (relation >= 200) relationDesc = '信任';
   else if (relation >= 100) relationDesc = '友善';
@@ -6512,6 +8578,24 @@ async function XianguNPCTalkFn(e, player, player_qq) {
     `━━━━ 可交互操作 ━━━━`
   ];
 
+  const canonId = resolveXianguCanonNpcId(npc);
+  const definition = XIANGU_CANON_GOALS[canonId];
+  if (definition) {
+    const [npcWorld, npcLegacy] = await Promise.all([
+      readXianguNpcWorldState(player),
+      readXianguSharedDocument(redis, getXianguNpcLegacyScope()),
+    ]);
+    const goal = npcWorld.xiangu_npc_goals?.goals?.[canonId];
+    const holder = npcLegacy.npcs?.[canonId] || { id: canonId, name: definition.name };
+    const legacy = ensureXianguLegacy(holder);
+    lines.splice(lines.length - 1, 0,
+      `本轮执念：${definition.objective}`,
+      `进度：${goal?.completed ? '已达成' : `${goal?.progress || 0}/${definition.target}`}`,
+      `冠冕：${getXianguCrownTitle(legacy.crowns)}`,
+      ``,
+    );
+  }
+
   if (npc.trade) {
     lines.push(`· #向NPC购买 [物品名] — 购买物品`);
   }
@@ -6526,7 +8610,7 @@ async function XianguNPCTalkFn(e, player, player_qq) {
   }
 
   const poolConfig = resolveXianguMarrowPoolConfig(getXianguSecretConfig());
-  if (Math.random() < poolConfig.npcInviteChance) {
+  if (interactionReward.canReward && Math.random() < poolConfig.npcInviteChance) {
     if (!player.xiangu_realm_map) initXianguRealmMap(player);
     const trapChance = getXianguMarrowPoolTrapChance(npc, relation);
     const isTrap = Math.random() < trapChance;
@@ -6555,26 +8639,32 @@ async function XianguNPCTalkFn(e, player, player_qq) {
         `宝池坐标：[${invitation.position.x}, ${invitation.position.y}]`,
         `对方没有再作解释，这份邀请究竟是善意还是杀局，只能到场方知。`,
       );
-      await Write_player(player_qq, player);
+      rewarded = true;
     }
   }
 
   // 触发特殊效果
-  if (npc.id === 'ancient_guide' && Math.random() < 0.3) {
+  if (!rewarded && interactionReward.canReward && npc.id === 'ancient_guide' && Math.random() < 0.3) {
     player.xiangu_faction_rep = player.xiangu_faction_rep || { good: 0, neutral: 0, evil: 0 };
     player.xiangu_faction_rep.good = (player.xiangu_faction_rep.good || 0) + 5;
     
-    await Write_player(player_qq, player);
+    rewarded = true;
     lines.push(``, `古仙引路者感受到你的善念，善良阵营好感 +5`);
   }
 
-  if (npc.id === 'ancient_emperor_shadow' && factionRep >= 50) {
+  if (!rewarded && interactionReward.canReward && npc.id === 'ancient_emperor_shadow' && factionRep >= 50) {
     const daoyunGain = Math.floor(Math.random() * 100) + 50;
     player.xiangu_gains = player.xiangu_gains || {};
     player.xiangu_gains.daoyun = (player.xiangu_gains.daoyun || 0) + daoyunGain;
     
-    await Write_player(player_qq, player);
+    rewarded = true;
     lines.push(``, `古帝虚影赐下帝念，道韵领悟 +${daoyunGain}！`);
+  }
+
+  if (rewarded) {
+    recordXianguNpcInteractionReward(interactionReward);
+  } else if (!interactionReward.canReward) {
+    lines.push(``, `对方已给出本轮能给的机缘，只留下片语供你参悟。`);
   }
 
   await Write_player(player_qq, player);
@@ -6627,7 +8717,12 @@ async function XianguNPCBuyFn(e, player, player_qq) {
 
     
     await Add_灵石(player_qq, -finalPrice);
-    await Add_najie_thing(player_qq, itemName, '道具', 1);
+    // Add_灵石 persists through a fresh player read. Reload before saving the
+    // bag so this command does not overwrite the deducted balance with stale
+    // state from before the purchase.
+    player = await Read_player(player_qq);
+    addXianguBagItem(ensureXianguBag(player), { name: itemName, type: '道具', quantity: 1 });
+    await Write_player(player_qq, player);
 
     return e.reply([
       `【购买成功】`,
@@ -6647,6 +8742,21 @@ async function XianguNPCAttackFn(e, player, player_qq) {
   const current = getCurrentXianguNpc(player);
   if (!current) return e.reply(`此处没有可攻击的NPC，请先使用 #寻找NPC 并移动到目标所在格。`);
   const { npc } = current;
+  const npcId = String(npc.id || current.spot.npcId || npc.name || npc.名号);
+  const sharedScope = getXianguNpcSharedScope(player, npcId);
+  const existingDeath = await getXianguNpcDeath(redis, sharedScope);
+  if (existingDeath) {
+    removeBoundXianguNpc(player.xiangu_realm_map, npcId);
+    try {
+      await persistXianguNpcMapState(player);
+    } catch (error) {
+      console.error('仙古已陨NPC地图清理持久化失败:', error);
+    }
+    await recoverXianguClaimBagRewards(player, player_qq);
+    await Write_player(player_qq, player);
+    const killer = existingDeath.claimantName || existingDeath.claimantId || '另一位天骄';
+    return e.reply(`【NPC已陨】${npc.name || npc.名号}已被${killer}击杀，本轮仙古不会再次出现。`);
+  }
 
   // 攻击善良NPC — 警告不进入战斗
   if (npc.faction === 'good' && !npc.isCanon && !npc.personality) {
@@ -6673,6 +8783,19 @@ async function XianguNPCAttackFn(e, player, player_qq) {
 
     if (playerWon) {
       // === 玩家胜利 ===
+      const lootSourceSnapshot = snapshotXianguNpcLootSource(npc);
+      const playerFields = [
+        'xiangu_gains',
+        'xiangu_infamy',
+        'xiangu_faction_rep',
+        'xiangu_defeated_npc_ids',
+        'xiangu_soulsearch_target',
+        'xiangu_legacy',
+      ];
+      const beforePlayerFields = snapshotXianguPlayerFields(player, playerFields);
+      const beforeBag = getXianguBagSettlementSnapshot(player);
+      let death = null;
+      recordXianguPlayerResult(player, XIANGU_LEGACY_EVENTS.NPC_KILL);
       player.xiangu_infamy = (player.xiangu_infamy || 0) + (npc.faction === 'evil' ? 2 : 5);
       player.xiangu_faction_rep = player.xiangu_faction_rep || { good: 0, neutral: 0, evil: 0 };
       if (npc.faction === 'evil') {
@@ -6680,8 +8803,15 @@ async function XianguNPCAttackFn(e, player, player_qq) {
       }
 
       // 击杀掉落
-      const lootMsg = await processNPCKillLoot(player, player_qq, npc, location);
-
+      let lootMsg;
+      try {
+        lootMsg = await processNPCKillLoot(player, player_qq, npc, location);
+      } catch (lootError) {
+        restoreXianguBagSettlementSnapshot(player, beforeBag);
+        restoreXianguPlayerFields(player, beforePlayerFields);
+        restoreXianguNpcLootSource(npc, lootSourceSnapshot);
+        throw lootError;
+      }
       // 记录弥留之际状态（5分钟窗口可搜魂）
       player.xiangu_soulsearch_target = {
         name: npc.name || npc.名号,
@@ -6690,8 +8820,59 @@ async function XianguNPCAttackFn(e, player, player_qq) {
         expiresAt: Date.now() + 300000
       };
 
-      npc.isAlive = false;
-      removeBoundXianguNpc(player.xiangu_realm_map, npc.id || current.spot.npcId);
+      const delivery = await deliverXianguClaimBagReward(
+        player,
+        player_qq,
+        sharedScope,
+        'npc-kill-loot',
+        beforeBag,
+        {
+          playerFields,
+          // The receipt is durable before this callback reserves the NPC
+          // death slot. A retry owned by the same player is accepted.
+          claim: async () => {
+            death = await claimXianguNpcDeathForPlayer(sharedScope, player, player_qq);
+            return death;
+          },
+          onClaimRejected: () => {
+            restoreXianguPlayerFields(player, beforePlayerFields);
+            restoreXianguNpcLootSource(npc, lootSourceSnapshot);
+          },
+          onClaimError: async () => {
+            const existing = await getXianguNpcDeath(redis, sharedScope).catch(() => null);
+            if (existing && String(existing.claimantId || '') === String(player_qq)) {
+              death = { marked: true, recovered: true, death: existing };
+              return death;
+            }
+            return { pending: true };
+          },
+        },
+      );
+
+      if (!death?.marked) {
+        // Receipt creation can fail before the death claim runs. Never leave
+        // loot on a still-live NPC in that last-resort path.
+        restoreXianguBagSettlementSnapshot(player, beforeBag);
+        restoreXianguPlayerFields(player, beforePlayerFields);
+        restoreXianguNpcLootSource(npc, lootSourceSnapshot);
+        await Write_player(player_qq, player);
+        if (delivery.status === 'pending') {
+          return e.reply(`【NPC战利品待结算】${npc.name || npc.名号}的死亡名额尚未确认，战利品已封存，请稍后重试。`);
+        }
+        const killer = delivery.claim?.death?.claimantName ||
+          delivery.claim?.death?.claimantId ||
+          delivery.claim?.record?.claimantName ||
+          delivery.claim?.record?.claimantId || '另一位天骄';
+        return e.reply([
+          `【战场残影·未获战利品】`,
+          `${player.名号}击散了${npc.name || npc.名号}留下的法则残影，`,
+          `真身已被${killer}先一步击杀，本轮战利品归其所有。`,
+        ].join('\n'));
+      }
+
+      // The shared death slot is now durable; only now remove the NPC from
+      // this player's map snapshot. A failed map write is safe to retry.
+      await finalizeXianguNpcDeath(player, npc, npcId);
 
       await Write_player(player_qq, player);
 
@@ -6714,8 +8895,10 @@ async function XianguNPCAttackFn(e, player, player_qq) {
 
     } else {
       // === 玩家战败 ===
-      const hpLoss = Math.floor((player.当前血量 || 10000) * 0.25);
-      player.当前血量 = Math.max(1, (player.当前血量 || 10000) - hpLoss);
+      const playerMaxHp = Number(player.血量上限 || player.血气上限) || 10_000;
+      const playerCurrentHp = Number(player.当前血量) || playerMaxHp;
+      const hpLoss = Math.max(1, Math.floor(playerCurrentHp * 0.25));
+      player.当前血量 = Math.max(1, playerCurrentHp - hpLoss);
       player.xiangu_infamy = (player.xiangu_infamy || 0) - Math.max(0, (player.xiangu_infamy || 0) - 5);
 
       // NPC可能掠夺玩家
@@ -6725,7 +8908,35 @@ async function XianguNPCAttackFn(e, player, player_qq) {
         player.xiangu_npc_relations[npcId] = (player.xiangu_npc_relations[npcId] || 0) - 10;
       }
 
+      let uniqueSpoil = null;
+      let npcGoalLines = [];
+      const forcedSummary = await forceXianguPlayerExitAfterNpcDefeat(player, player_qq);
+      if (forcedSummary) {
+        try {
+          uniqueSpoil = await transferXianguUniqueSpoilToNpc(player, npc);
+        } catch (sharedError) {
+          console.error('记录仙古NPC夺宝状态失败:', sharedError);
+        }
+        try {
+          npcGoalLines = await recordXianguCanonNpcEvent(player, npc, {
+            type: getXianguNpcVictoryEventType(npc, player_qq),
+            victimId: player_qq,
+          });
+        } catch (sharedError) {
+          console.error('记录仙古NPC胜利状态失败:', sharedError);
+        }
+        clearXianguSessionState(player, forcedSummary);
+      }
+
       await Write_player(player_qq, player);
+      if (forcedSummary) {
+        try {
+          await clearXianguRedisSession(player_qq);
+          await setXianguCooldown(player_qq, player_qq, Date.now());
+        } catch (redisError) {
+          console.error('清理NPC战败玩家会话失败:', redisError);
+        }
+      }
 
       return e.reply([
         `【攻击NPC·战败】`,
@@ -6737,6 +8948,9 @@ async function XianguNPCAttackFn(e, player, player_qq) {
         `【损失】`,
         `当前血量 -${hpLoss.toLocaleString()}`,
         `凶名值减少`,
+        ...(forcedSummary ? [`伤势过重，被秘境法则送离，秘境背包中的${forcedSummary.lootUnits}份收获全部遗失。`] : []),
+        ...(uniqueSpoil ? [`唯一造化被${npc.name || npc.名号}夺走：${uniqueSpoil.name}`] : []),
+        ...npcGoalLines,
         ``,
         `"不自量力..." — ${npc.name || npc.名号}冷冷道。`
       ].join('\n'));
@@ -6750,18 +8964,33 @@ async function XianguNPCAttackFn(e, player, player_qq) {
 // ==== NPC击杀掉落处理 ====
 async function processNPCKillLoot(player, player_qq, npc, location) {
   const lines = [`【战利品搜刮】`];
-  let totalLingshi = 0;
+  let sourceStoneFinds = 0;
+  const npcId = String(npc.id || npc.name || npc.名号 || '');
+  player.xiangu_defeated_npc_ids ||= [];
+  if (npcId && !player.xiangu_defeated_npc_ids.includes(npcId)) {
+    player.xiangu_defeated_npc_ids.push(npcId);
+  }
+  const daoyunGain = transferXianguDaoyun(player, npc);
+  if (daoyunGain > 0) lines.push(`从${npc.name || npc.名号}残留的道则中夺得 ${daoyunGain} 道韵。`);
 
   // 纳戒搜刮
   if (npc.inventory && npc.inventory.length > 0) {
     lines.push(`从${npc.name || npc.名号}的纳戒中搜出：`);
     for (const item of npc.inventory) {
-      if (item.灵石) {
-        totalLingshi += item.灵石;
+      if (item.源石 || item.灵石) {
+        const rolls = Math.max(1, Math.floor(Number(item.数量) || 1));
+        sourceStoneFinds += rolls;
+        lines.push(`  · 源石机缘${rolls > 1 ? ` ×${rolls}` : ''}（按秘境公式结算）`);
       } else {
         const itemName = item.name || item.名称 || String(item);
-        const quantity = Number(item.数量) || 1;
-        await addXianguSpoil(player_qq, itemName, quantity, item.desc);
+        const quantity = Number(item.数量 ?? item.quantity) || 1;
+        addXianguBagItem(ensureXianguBag(player), {
+          ...(item && typeof item === 'object' ? item : {}),
+          name: itemName,
+          type: item.type || '材料',
+          quantity,
+          desc: item.desc || '仙古秘境战利品',
+        });
         lines.push(`  · ${itemName}${quantity > 1 ? ' ×' + quantity : ''}`);
       }
     }
@@ -6773,7 +9002,7 @@ async function processNPCKillLoot(player, player_qq, npc, location) {
     lines.push(npc.isCanon ? `【原著天骄·特殊掉落】` : `【随机掉落】`);
     for (const drop of npc.dropTable) {
       if (Math.random() < drop.chance) {
-        await addXianguSpoil(player_qq, drop.item, 1, drop.desc);
+        await addXianguSpoil(player, drop.item, 1, drop.desc);
         lines.push(`  ✅ ${drop.item} — ${drop.desc}`);
       }
     }
@@ -6781,8 +9010,12 @@ async function processNPCKillLoot(player, player_qq, npc, location) {
 
   // 功法掉落：从NPC学习的功法中随机选取1-2门
   if (npc.学习的功法 && npc.学习的功法.length > 0) {
-    const playerGongfa = player.学习的功法 || [];
-    const newGongfa = npc.学习的功法.filter(g => !playerGongfa.includes(g));
+    const playerGongfa = Array.isArray(player.学习的功法)
+      ? player.学习的功法
+      : Object.keys(player.学习的功法 || {});
+    const bagTechniques = getXianguBagSummary(ensureXianguBag(player)).techniques
+      .map(technique => typeof technique === 'string' ? technique : technique.name || technique.名称);
+    const newGongfa = npc.学习的功法.filter(g => !playerGongfa.includes(g) && !bagTechniques.includes(g));
     if (newGongfa.length > 0) {
       const count = Math.min(2, newGongfa.length);
       const dropped = [];
@@ -6790,19 +9023,18 @@ async function processNPCKillLoot(player, player_qq, npc, location) {
         const idx = Math.floor(Math.random() * newGongfa.length);
         dropped.push(newGongfa.splice(idx, 1)[0]);
       }
-      player.学习的功法 = [...playerGongfa, ...dropped];
+      dropped.forEach(g => addXianguBagTechnique(ensureXianguBag(player), g));
       lines.push(``, `【功法领悟】从战斗中领悟：`);
       dropped.forEach(g => lines.push(`  📖 ${g}`));
     }
   }
 
-  // 灵石奖励
-  const realmBonus = { '核心区域': 5, '深层区域': 3, '中层区域': 2, '边缘区域': 1 };
-  totalLingshi += Math.floor((getNPCScaledStats(npc, 0.5).当前血量) * 0.001 * (realmBonus[location] || 1));
-  if (totalLingshi > 0) {
-    const reward = await grantXianguGrowthRewards(player, player_qq, { lingshi: totalLingshi });
-    lines.push(``, `💰 灵石 +${reward.lingshi.toLocaleString()}`);
-  }
+  // 击败NPC必得一份源石，其纳戒中每份源石再追加一次统一结算。
+  const reward = await grantXianguGrowthRewards(player, player_qq, {
+    sourceStone: 1,
+    sourceStoneRolls: 1 + sourceStoneFinds,
+  });
+  lines.push(``, `💰 源石 +${reward.sourceStone.toLocaleString()}（暂存秘境背包）`);
 
   return lines;
 }
@@ -6847,8 +9079,12 @@ async function XianguSoulSearchNPCFn(e, player, player_qq) {
   }
 
   // 搜魂成功
-  const playerGongfa = player.学习的功法 || [];
-  const newGongfa = target.学习的功法.filter(g => !playerGongfa.includes(g));
+  const playerGongfa = Array.isArray(player.学习的功法)
+    ? player.学习的功法
+    : Object.keys(player.学习的功法 || {});
+  const bagTechniques = getXianguBagSummary(ensureXianguBag(player)).techniques
+    .map(technique => typeof technique === 'string' ? technique : technique.name || technique.名称);
+  const newGongfa = target.学习的功法.filter(g => !playerGongfa.includes(g) && !bagTechniques.includes(g));
   const count = Math.min(2, newGongfa.length);
   const learned = [];
 
@@ -6857,8 +9093,7 @@ async function XianguSoulSearchNPCFn(e, player, player_qq) {
       const idx = Math.floor(Math.random() * newGongfa.length);
       const g = newGongfa.splice(idx, 1)[0];
       learned.push(g);
-      if (!player.学习的功法) player.学习的功法 = [];
-      player.学习的功法.push(g);
+      addXianguBagTechnique(ensureXianguBag(player), g);
     }
   }
 
@@ -6918,23 +9153,88 @@ async function resolveXianguNpcEcologyBattle(player, player_qq, action) {
   const playerWon = resolveXianguLeaderWinner(battleResult) === 'A' ||
     (!battleResult?.winner && battleResult?.[0]?.result === 'win');
   if (playerWon) {
-    npc.isAlive = false;
-    const lootMsg = await processNPCKillLoot(
-      player,
-      player_qq,
-      npc,
-      player.xiangu_location || '边缘区域',
-    );
+    const npcId = getXianguNpcEntityId(npc, action.npcId);
+    const sharedScope = getXianguNpcSharedScope(player, npcId);
+    const lootSourceSnapshot = snapshotXianguNpcLootSource(npc);
+    const playerFields = [
+      'xiangu_gains',
+      'xiangu_defeated_npc_ids',
+      'xiangu_soulsearch_target',
+      'xiangu_legacy',
+    ];
+    const beforePlayerFields = snapshotXianguPlayerFields(player, playerFields);
+    const beforeBag = getXianguBagSettlementSnapshot(player);
+    let death = null;
+    recordXianguPlayerResult(player, XIANGU_LEGACY_EVENTS.NPC_KILL);
+    let lootMsg;
+    try {
+      lootMsg = await processNPCKillLoot(
+        player,
+        player_qq,
+        npc,
+        player.xiangu_location || '边缘区域',
+      );
+    } catch (lootError) {
+      restoreXianguBagSettlementSnapshot(player, beforeBag);
+      restoreXianguPlayerFields(player, beforePlayerFields);
+      restoreXianguNpcLootSource(npc, lootSourceSnapshot);
+      throw lootError;
+    }
     player.xiangu_soulsearch_target = {
       name: npcName,
       学习的功法: [...(npc.学习的功法 || [])],
       isCanon: npc.isCanon || false,
       expiresAt: Date.now() + 300000,
     };
-    removeBoundXianguNpc(player.xiangu_realm_map, action.npcId);
     const daoyunGain = isFraud ? 25 : 15;
     player.xiangu_gains ||= {};
     player.xiangu_gains.daoyun = (Number(player.xiangu_gains.daoyun) || 0) + daoyunGain;
+    const delivery = await deliverXianguClaimBagReward(
+      player,
+      player_qq,
+      sharedScope,
+      'npc-ecology-loot',
+      beforeBag,
+      {
+        playerFields,
+        claim: async () => {
+          death = await claimXianguNpcDeathForPlayer(sharedScope, player, player_qq);
+          return death;
+        },
+        onClaimRejected: () => {
+          restoreXianguPlayerFields(player, beforePlayerFields);
+          restoreXianguNpcLootSource(npc, lootSourceSnapshot);
+        },
+        onClaimError: async () => {
+          const existing = await getXianguNpcDeath(redis, sharedScope).catch(() => null);
+          if (existing && String(existing.claimantId || '') === String(player_qq)) {
+            death = { marked: true, recovered: true, death: existing };
+            return death;
+          }
+          return { pending: true };
+        },
+      },
+    );
+    if (!death?.marked) {
+      restoreXianguBagSettlementSnapshot(player, beforeBag);
+      restoreXianguPlayerFields(player, beforePlayerFields);
+      restoreXianguNpcLootSource(npc, lootSourceSnapshot);
+      if (delivery.status === 'pending') {
+        return [
+          `⚔️【NPC追猎·战利品待结算】${npcName}的死亡名额尚未确认。`,
+          `战利品已封存，请稍后再次触发追猎以重试。`,
+        ];
+      }
+      const killer = delivery.claim?.death?.claimantName ||
+        delivery.claim?.death?.claimantId ||
+        delivery.claim?.record?.claimantName ||
+        delivery.claim?.record?.claimantId || '另一位天骄';
+      return [
+        `⚔️【NPC追猎·法则残影】${npcName}的真身已被${killer}先一步击杀。`,
+        `${player.名号}击散残影，但没有获得重复战利品。`,
+      ];
+    }
+    await finalizeXianguNpcDeath(player, npc, npcId);
     return [
       `${isFraud ? '🩸【NPC骗局·反杀】' : '⚔️【NPC追猎·反杀】'}`,
       `${npcName}${isFraud ? '以假意结交为饵，伙同伏兵围杀' : '一路追踪而来，悍然出手'}！`,
@@ -6944,30 +9244,101 @@ async function resolveXianguNpcEcologyBattle(player, player_qq, action) {
     ];
   }
 
-  const hpLoss = Math.max(1, Math.floor((Number(player.当前血量) || 1) * 0.3));
-  player.当前血量 = Math.max(1, (Number(player.当前血量) || 1) - hpLoss);
+  const playerMaxHp = Number(player.血量上限 || player.血气上限) || 1;
+  const playerCurrentHp = Number(player.当前血量) || playerMaxHp;
+  const hpLoss = Math.max(1, Math.floor(playerCurrentHp * 0.3));
+  player.当前血量 = Math.max(1, playerCurrentHp - hpLoss);
   applyXianguHeavyInjury(player);
   player.xiangu_npc_relations ||= {};
   player.xiangu_npc_relations[action.npcId] =
     (Number(player.xiangu_npc_relations[action.npcId]) || 0) - 15;
+  let uniqueSpoil = null;
+  let npcGoalLines = [];
+  const forcedSummary = await forceXianguPlayerExitAfterNpcDefeat(player, player_qq);
+  if (forcedSummary) {
+    try {
+      uniqueSpoil = await transferXianguUniqueSpoilToNpc(player, npc);
+    } catch (sharedError) {
+      console.error('记录仙古NPC追猎夺宝失败:', sharedError);
+    }
+    try {
+      npcGoalLines = await recordXianguCanonNpcEvent(player, npc, {
+        type: getXianguNpcVictoryEventType(npc, player_qq),
+        victimId: player_qq,
+      });
+    } catch (sharedError) {
+      console.error('记录仙古NPC追猎胜利失败:', sharedError);
+    }
+    clearXianguSessionState(player, forcedSummary);
+    try {
+      await clearXianguRedisSession(player_qq);
+      await setXianguCooldown(player_qq, player_qq, Date.now());
+    } catch (redisError) {
+      console.error('清理NPC追猎战败玩家会话失败:', redisError);
+    }
+  }
   return [
     `${isFraud ? '🩸【NPC骗局·围杀】' : '⚔️【NPC追猎·战败】'}`,
     `${npcName}${isFraud ? '撕下伪装，伏兵同时现身' : '循着你的气息追杀而至'}！`,
     ...battleLog.slice(-8),
-    `${player.名号}负伤突围，当前血量 -${hpLoss.toLocaleString()}，陷入重伤。`,
+    forcedSummary
+      ? `${player.名号}伤势过重，被秘境法则送离，秘境背包中的${forcedSummary.lootUnits}份收获全部遗失。`
+      : `${player.名号}负伤突围，当前血量 -${hpLoss.toLocaleString()}，陷入重伤。`,
+    ...(uniqueSpoil ? [`${npcName}夺走了你的唯一造化：${uniqueSpoil.name}`] : []),
+    ...npcGoalLines,
   ];
 }
 
 // 行动驱动的懒更新：不建后台定时器，每次移动/探索最多推进一名NPC。
 async function processNPCBehavior(player, player_qq, { allowCombat = true } = {}) {
   ensureXianguMapNpcBindings(player);
+  try {
+  const arenaTarget = XIANGU_EVENTS.activeEvent?.type === 'arena' &&
+    XIANGU_EVENTS.activeEvent.endTime > Date.now() &&
+    XIANGU_EVENTS.arenaParticipants?.some(entry => String(entry.qq) === String(player_qq));
+  for (const spot of player.xiangu_realm_map?.npcLocations || []) {
+    if (resolveXianguCanonNpcId(spot?.npc) !== 'shiguanwang_tianzi') continue;
+    spot.npc.xianguGoal = {
+      ...XIANGU_CANON_GOALS.shiguanwang_tianzi,
+      action: arenaTarget ? 'hunt_player' : 'contest_arena',
+    };
+  }
   const action = advanceXianguNpcState(player.xiangu_realm_map, player, {
     allowEncounter: allowCombat,
   });
   const npcName = action.npc?.name || action.npc?.名号 || '神秘修士';
 
-  if (action.type === 'loot' && action.visible) {
-    return [`💨 ${npcName}抢先搜刮了坐标[${action.to.x}, ${action.to.y}]的机缘，所得已收入其纳戒。`];
+  if (action.type === 'loot') {
+    const npcId = getXianguNpcEntityId(action.npc, action.npcId);
+    const claim = await claimXianguUniqueTreasure(
+      redis,
+      getXianguSharedScope(player, `cell:${action.to.x},${action.to.y}`),
+      { id: `npc:${npcId}`, name: npcName },
+    );
+    if (!claim.claimed) {
+      const inventory = action.npc?.inventory;
+      const itemIndex = Array.isArray(inventory) ? inventory.lastIndexOf(action.item) : -1;
+      if (itemIndex >= 0) inventory.splice(itemIndex, 1);
+      if (!action.visible) return [];
+      const claimant = claim.record?.claimantName || claim.record?.claimantId || '另一位天骄';
+      return [`💨 ${npcName}赶到坐标[${action.to.x}, ${action.to.y}]时，机缘已被${claimant}搜走。`];
+    }
+
+    let goalLines = [];
+    try {
+      await storeXianguNpcInventoryItem(player, action.npc, action.item, true);
+      goalLines = await recordXianguCanonNpcEvent(player, action.npc, {
+        type: XIANGU_LEGACY_EVENTS.ITEM_OBTAINED,
+        itemName: action.item?.name || action.item?.名称,
+      });
+    } catch (sharedError) {
+      console.error('记录仙古NPC搜刮状态失败:', sharedError);
+    }
+    if (!action.visible) return [];
+    return [
+      `💨 ${npcName}抢先搜刮了坐标[${action.to.x}, ${action.to.y}]的机缘，所得已收入其纳戒。`,
+      ...goalLines,
+    ];
   }
   if (action.type === 'move' && action.visible && action.npc?.hostile) {
     return [`⚠️ ${npcName}正在向你的方向逼近，当前位置：[${action.to.x}, ${action.to.y}]。`];
@@ -6982,6 +9353,13 @@ async function processNPCBehavior(player, player_qq, { allowCombat = true } = {}
     return resolveXianguNpcEcologyBattle(player, player_qq, action);
   }
   return [];
+  } finally {
+    try {
+      await persistXianguNpcMapState(player);
+    } catch (error) {
+      console.error('持久化仙古NPC世界状态失败:', error);
+    }
+  }
 }
 
 // ==== 查看NPC好感度 ====
@@ -7087,18 +9465,10 @@ async function XianguNPCTeamFn(e, player, player_qq) {
   // 组队成功
   player.xiangu_teammate = npcId;
   player.xiangu_teammate_name = npc.name || npc.名号;
-  player.xiangu_teammate_data = { // 存NPC战斗数据供后续使用
-    名号: npc.name || npc.名号,
-    ...getNPCScaledStats(npc, 0.5),
-    血量上限: npc.血量上限 || 500000,
-    速度: npc.速度 || 1000,
-    暴击率: npc.暴击率 || 0.2,
-    暴击伤害: npc.暴击伤害 || 2.0,
-    学习的功法: [...(npc.学习的功法 || [])],
-    xiangulevel_id: 5,
-    mijinglevel_id: 0,
-    灵根: { name: '无', type: '无', 法球倍率: 1 }
-  };
+  player.xiangu_teammate_data = createXianguNpcBattleData(
+    npc,
+    npc.name || npc.名号,
+  );
   player.xiangu_last_team_time = now;
   relations[npcId] = rel + 20;
   player.xiangu_npc_relations = relations;
@@ -7208,7 +9578,8 @@ async function XianguOfferSeedFn(e, player, player_qq) {
   const location = player.xiangu_location || '边缘区域';
   const seedName = e.msg.replace('#献祭道种', '').trim();
 
-  const seeds = player.xiangu_seeds || [];
+  const seedEntries = getXianguUsableSeedEntries(player);
+  const seeds = seedEntries.map(entry => entry.seed);
   if (seeds.length === 0) {
     return e.reply(`【献祭道种·无道种】你目前没有可献祭的道种，先去探索获取道种`);
   }
@@ -7237,19 +9608,20 @@ async function XianguOfferSeedFn(e, player, player_qq) {
     '传说': { rep: 80, daoyun: 60, lingshi: 50000 },
     '神话': { rep: 200, daoyun: 150, lingshi: 200000 }
   };
-  const reward = rewards[targetSeed.品质] || rewards['普通'];
+  const baseReward = rewards[targetSeed.品质] || rewards['普通'];
+  const reward = {
+    ...baseReward,
+    daoyun: Math.floor(baseReward.daoyun * (player.xiangu_shenhuo?.已点燃 ? 2 : 1)),
+  };
 
   // 移除道种
-  player.xiangu_seeds.splice(targetIndex, 1);
+  consumeXianguSeed(player, seedEntries[targetIndex]);
   player.xiangu_faction_rep = player.xiangu_faction_rep || { good: 0, neutral: 0, evil: 0 };
   player.xiangu_faction_rep.good = (player.xiangu_faction_rep.good || 0) + reward.rep;
 
-  // 神火已燃的玩家回收道种获得额外道韵
-  if (player.xiangu_shenhuo?.已点燃) {
-    reward.daoyun = Math.floor(reward.daoyun * 2);
-    player.xiangu_gains = player.xiangu_gains || {};
-    player.xiangu_gains.daoyun = (player.xiangu_gains.daoyun || 0) + reward.daoyun;
-  }
+  // 神火已燃时双倍回收，但任何境界献祭都应实际获得面板所示道韵。
+  player.xiangu_gains = player.xiangu_gains || {};
+  player.xiangu_gains.daoyun = (player.xiangu_gains.daoyun || 0) + reward.daoyun;
   
   const grantedReward = await grantXianguGrowthRewards(player, player_qq, { lingshi: reward.lingshi });
   await Write_player(player_qq, player);
@@ -7263,7 +9635,7 @@ async function XianguOfferSeedFn(e, player, player_qq) {
     `【收益】`,
     `阵营声望 +${reward.rep}`,
     `道韵 +${reward.daoyun}`,
-    `灵石 +${grantedReward.lingshi.toLocaleString()}`,
+    `源石 +${grantedReward.sourceStone.toLocaleString()}（暂存秘境背包）`,
     player.xiangu_shenhuo?.已点燃 ? `（神火已燃，道韵双倍回收！）` : '',
     ``,
     `当前善良声望：${player.xiangu_faction_rep.good}`
@@ -7286,6 +9658,13 @@ function startEventTimer() {
 /** 主循环：检查事件结算 + 随机触发新事件 */
 async function autoTriggerEvents() {
   try {
+    const lifecycle = readXianguLifecycleState();
+    if (lifecycle.available && !lifecycle.open) {
+      // Events are round-scoped; never start or settle rewards after closure.
+      XIANGU_EVENTS.activeEvent = null;
+      XIANGU_EVENTS.arenaParticipants = [];
+      return;
+    }
     const now = Date.now();
     if (XIANGU_EVENTS.activeEvent && XIANGU_EVENTS.activeEvent.endTime <= now) {
       await settleCurrentEvent();
@@ -7408,6 +9787,8 @@ async function checkArenaSettlement() {
     return;
   }
 
+  // 先结束活动，避免定时轮询重入造成奖励或冠冕重复结算。
+  XIANGU_EVENTS.activeEvent = null;
   participants.sort((a, b) => b.wins - a.wins);
   const rewardPlan = buildXianguArenaRewardPlan(participants, arenaDef.rewards);
   const top3 = rewardPlan.slice(0, 3);
@@ -7418,15 +9799,21 @@ async function checkArenaSettlement() {
     const rewardDaoyun = p.daoyun;
     const desc = i === 0 ? arenaDef.rewards.winner.desc : arenaDef.rewards.top3.desc;
     let rewardGranted = false;
+    let crown = null;
     try {
       rewardGranted = await updateXianguPlayerUnderLock(p.qq, async player => {
         player.xiangu_gains = player.xiangu_gains || {};
         player.xiangu_gains.daoyun = (player.xiangu_gains.daoyun || 0) + rewardDaoyun;
+        if (i === 0) {
+          crown = awardXianguCrown(player, {
+            roundId: String(ev.worldSeed || ev.startTime),
+          });
+        }
       });
     } catch (err) { console.error('擂台奖励发放失败:', err); }
     const place = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
     lines.push(rewardGranted
-      ? `${place} ${p.name} — ${p.wins}胜 — 道韵+${rewardDaoyun}（${desc}）`
+      ? `${place} ${p.name} — ${p.wins}胜 — 道韵+${rewardDaoyun}（${desc}）${crown?.awarded ? ` — 晋为${crown.title}` : ''}`
       : `${place} ${p.name} — ${p.wins}胜 — 已离开秘境，未结算道韵`);
   }
 
@@ -7450,7 +9837,6 @@ async function checkArenaSettlement() {
     if (departed > 0) lines.push(`已有${departed}名参赛者离开秘境，未结算参与奖励。`);
   }
 
-  XIANGU_EVENTS.activeEvent = null;
   XIANGU_EVENTS.arenaParticipants = [];
   XIANGU_EVENTS.eventHistory.push({ name: '仙古擂台', time: Date.now(), type: 'arena' });
   await broadcastToXianguPlayers(lines.join('\n'));
@@ -7667,7 +10053,7 @@ const REALM_FRAGMENTS = {
     id: 'spirit_lake', name: '灵湖', zone: '边缘区域',
     size: resolveXianguFragmentSize(XIANGU_MAP_CONFIG, 'spirit_lake'), risk: 0.2,
     desc: '灵气浓郁成液，湖中可见灵鱼游弋',
-    features: ['灵药', '治愈', '灵石矿脉'],
+    features: ['灵药', '治愈', '源石矿脉'],
     npcDensity: 0.2, treasureDensity: 0.25
   },
   ancient_ruins: {
@@ -7775,6 +10161,15 @@ const CELL_TYPE = {
   UNIQUE_TREASURE: 8 // 唯一机缘（传说中的终极造化）
 };
 
+// 移动时需要单独文字说明的格子：位置本身仍由地图图片展示。
+const XIANGU_MOVEMENT_TEXT_CELL_TYPES = new Set([
+  CELL_TYPE.TREASURE,
+  CELL_TYPE.DANGER,
+  CELL_TYPE.NPC,
+  CELL_TYPE.VOID_RIFT,
+  CELL_TYPE.UNIQUE_TREASURE,
+]);
+
 function isXianguMarrowPoolPosition(map, x, y) {
   return Object.values(map?.uniqueTreasures || {}).some(treasure =>
     treasure?.kind === XIANGU_MARROW_POOL_KIND &&
@@ -7783,53 +10178,104 @@ function isXianguMarrowPoolPosition(map, x, y) {
   );
 }
 
+function createXianguSeededRandom(seed) {
+  let state = 2166136261;
+  for (const char of String(seed)) {
+    state = Math.imul(state ^ char.charCodeAt(0), 16777619);
+  }
+  return () => {
+    state += 0x6D2B79F5;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function createXianguConnections(player, fragmentId) {
+  const topologyLevel = Math.max(...Object.values(ZONE_LEVEL_REQUIREMENTS));
+  const seed = `${player.xiangu_world_seed || 'legacy'}:${fragmentId}:connections`;
+  const random = createXianguSeededRandom(seed);
+  const connections = connectFragments(fragmentId, topologyLevel, random);
+  if (
+    REALM_FRAGMENTS[fragmentId]?.zone === '边缘区域' &&
+    !Object.values(connections).some(target => REALM_FRAGMENTS[target]?.zone === '边缘区域')
+  ) {
+    const directions = ['top', 'bottom', 'left', 'right'];
+    const direction = directions[Math.floor(random() * directions.length)];
+    connections[direction] = pickDifferentXianguFragment(
+      fragmentId,
+      ZONE_FRAGMENT_POOLS['边缘区域'],
+      random,
+    );
+  }
+  return connections;
+}
+
+function getXianguMapInstanceId(player, fragmentId, connectedFragments = {}) {
+  const routes = ['top', 'bottom', 'left', 'right']
+    .map(direction => `${direction}=${connectedFragments[direction] || '-'}`)
+    .join(',');
+  return `${player.xiangu_world_seed || 'legacy'}:${fragmentId}:${routes}`;
+}
+
+function createXianguFragmentState(player, fragmentId, connectedFragments) {
+  const fragment = REALM_FRAGMENTS[fragmentId];
+  const instanceId = getXianguMapInstanceId(player, fragmentId, connectedFragments);
+  const generated = generateFragmentGrid(
+    fragmentId,
+    connectedFragments,
+    createXianguSeededRandom(`${instanceId}:grid`),
+  );
+  return {
+    instanceId,
+    width: fragment.size[0],
+    height: fragment.size[1],
+    grid: generated.grid,
+    revealed: generated.grid.map(row => row.map(() => false)),
+    playerPos: generated.playerPos,
+    connectedFragments,
+    uniqueTreasures: generated.specials.uniqueTreasures || {},
+    npcLocations: generated.specials.npcLocations || [],
+    npcEcology: {},
+    exitPositions: generated.specials.exitPositions || [],
+    generatedAt: Date.now(),
+  };
+}
+
 // ====== 地图初始化 ======
 function initXianguRealmMap(player) {
-  const level = player.xiangulevel_id || 5;
+  const entryRandom = createXianguSeededRandom(
+    `${player.xiangu_world_seed || 'legacy'}:entry`,
+  );
   
-  // 根据境界选择起始碎片区域
-  let startZone = '边缘区域';
-  if (level >= 8) startZone = Math.random() < 0.5 ? '边缘区域' : '中层区域';
-  
+  // 同一轮花蕾共享入口地图；境界只限制出口通行，不隔离共同区域的玩家。
+  const startZone = '边缘区域';
   const pool = ZONE_FRAGMENT_POOLS[startZone] || ZONE_FRAGMENT_POOLS['边缘区域'];
-  const startFragId = pool[Math.floor(Math.random() * pool.length)];
-  const fragment = REALM_FRAGMENTS[startFragId];
-  
-  const connectedFragments = connectFragments(startFragId, level);
-
-  // 生成网格
-  const { grid, playerPos, specials } = generateFragmentGrid(startFragId, connectedFragments);
+  const startFragId = pool[Math.floor(entryRandom() * pool.length)];
+  const connectedFragments = createXianguConnections(player, startFragId);
+  const state = createXianguFragmentState(player, startFragId, connectedFragments);
   
   // 初始化地图数据
   player.xiangu_realm_map = {
     fragmentId: startFragId,
-    width: fragment.size[0],
-    height: fragment.size[1],
-    grid: grid,
-    revealed: grid.map(row => row.map(() => false)),
-    playerPos: playerPos,
+    ...state,
     discoveredFragments: [startFragId],
-    connectedFragments,
-    uniqueTreasures: specials.uniqueTreasures || {},
-    npcLocations: specials.npcLocations || [],
-    npcEcology: {},
-    exitPositions: specials.exitPositions || [],
     stepsTaken: 0,
-    generatedAt: Date.now()
   };
   
   // 同步快速访问字段
-  player.xiangu_pos_x = playerPos.x;
-  player.xiangu_pos_y = playerPos.y;
-  player.xiangu_location = fragment.zone;
+  player.xiangu_pos_x = state.playerPos.x;
+  player.xiangu_pos_y = state.playerPos.y;
+  player.xiangu_location = REALM_FRAGMENTS[startFragId].zone;
   ensureXianguMapNpcBindings(player);
   
   // 揭示出生点周围
-  revealAdjacentCells(player.xiangu_realm_map, playerPos, 1);
+  revealAdjacentCells(player.xiangu_realm_map, state.playerPos, 1);
 }
 
 // ====== 生成碎片网格 ======
-function generateFragmentGrid(fragmentId, connectedFragments = {}) {
+function generateFragmentGrid(fragmentId, connectedFragments = {}, random = Math.random) {
   const fragment = REALM_FRAGMENTS[fragmentId];
   if (!fragment) return { grid: [[]], playerPos: { x: 0, y: 0 }, specials: {} };
   
@@ -7847,7 +10293,7 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}) {
   for (let y = 0; y < h; y++) { grid[y][0] = CELL_TYPE.WALL; grid[y][w - 1] = CELL_TYPE.WALL; }
   
   // 每个真实连接方向都生成对应出口，避免地图出口与碎片连接错位。
-  const exits = createXianguExitPositions(w, h, connectedFragments);
+  const exits = createXianguExitPositions(w, h, connectedFragments, random);
   for (const { x, y } of exits) {
     grid[y][x] = CELL_TYPE.EXIT;
   }
@@ -7855,8 +10301,8 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}) {
   // 内部生成障碍墙（根据碎片类型）
   const internalWallCount = Math.floor((w * h) * fragment.risk * 0.15);
   for (let i = 0; i < internalWallCount; i++) {
-    const wx = 1 + Math.floor(Math.random() * (w - 2));
-    const wy = 1 + Math.floor(Math.random() * (h - 2));
+    const wx = 1 + Math.floor(random() * (w - 2));
+    const wy = 1 + Math.floor(random() * (h - 2));
     if (grid[wy][wx] === CELL_TYPE.EMPTY) {
       grid[wy][wx] = CELL_TYPE.WALL;
     }
@@ -7866,8 +10312,8 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}) {
   if (['chaos_rift', 'dark_prison', 'void_rift'].includes(fragmentId)) {
     const riftCount = fragmentId === 'chaos_rift' ? 3 : 1;
     for (let i = 0; i < riftCount; i++) {
-      const rx = 1 + Math.floor(Math.random() * (w - 2));
-      const ry = 1 + Math.floor(Math.random() * (h - 2));
+      const rx = 1 + Math.floor(random() * (w - 2));
+      const ry = 1 + Math.floor(random() * (h - 2));
       if (grid[ry][rx] === CELL_TYPE.EMPTY) {
         grid[ry][rx] = CELL_TYPE.VOID_RIFT;
       }
@@ -7877,8 +10323,8 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}) {
   // 放置机缘点
   const treasureCount = Math.floor((w * h) * fragment.treasureDensity);
   for (let i = 0; i < treasureCount; i++) {
-    const tx = 1 + Math.floor(Math.random() * (w - 2));
-    const ty = 1 + Math.floor(Math.random() * (h - 2));
+    const tx = 1 + Math.floor(random() * (w - 2));
+    const ty = 1 + Math.floor(random() * (h - 2));
     if (grid[ty][tx] === CELL_TYPE.EMPTY) {
       grid[ty][tx] = CELL_TYPE.TREASURE;
     }
@@ -7887,8 +10333,8 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}) {
   // 放置危险点
   const dangerCount = Math.floor((w * h) * fragment.risk * 0.2);
   for (let i = 0; i < dangerCount; i++) {
-    const dx = 1 + Math.floor(Math.random() * (w - 2));
-    const dy = 1 + Math.floor(Math.random() * (h - 2));
+    const dx = 1 + Math.floor(random() * (w - 2));
+    const dy = 1 + Math.floor(random() * (h - 2));
     if (grid[dy][dx] === CELL_TYPE.EMPTY) {
       grid[dy][dx] = CELL_TYPE.DANGER;
     }
@@ -7898,8 +10344,8 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}) {
   const npcCount = Math.floor((w * h) * fragment.npcDensity);
   const npcLocations = [];
   for (let i = 0; i < npcCount; i++) {
-    const nx = 1 + Math.floor(Math.random() * (w - 2));
-    const ny = 1 + Math.floor(Math.random() * (h - 2));
+    const nx = 1 + Math.floor(random() * (w - 2));
+    const ny = 1 + Math.floor(random() * (h - 2));
     if (grid[ny][nx] === CELL_TYPE.EMPTY) {
       grid[ny][nx] = CELL_TYPE.NPC;
       npcLocations.push({ x: nx, y: ny });
@@ -7909,8 +10355,8 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}) {
   // 唯一机缘（仅核心区域和虚空夹层）
   const uniqueTreasures = {};
   if (fragmentId === 'xiangu_core') {
-    const ux = 1 + Math.floor(Math.random() * (w - 2));
-    const uy = 1 + Math.floor(Math.random() * (h - 2));
+    const ux = 1 + Math.floor(random() * (w - 2));
+    const uy = 1 + Math.floor(random() * (h - 2));
     if (grid[uy][ux] !== CELL_TYPE.WALL && grid[uy][ux] !== CELL_TYPE.EXIT) {
       grid[uy][ux] = CELL_TYPE.UNIQUE_TREASURE;
       uniqueTreasures['玉石匣·仙王经文'] = {
@@ -7928,8 +10374,8 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}) {
     }
     
     // 帝血（万物土下）
-    const cx = 1 + Math.floor(Math.random() * (w - 2));
-    const cy = 1 + Math.floor(Math.random() * (h - 2));
+    const cx = 1 + Math.floor(random() * (w - 2));
+    const cy = 1 + Math.floor(random() * (h - 2));
     if (grid[cy][cx] !== CELL_TYPE.WALL && grid[cy][cx] !== CELL_TYPE.EXIT && grid[cy][cx] !== CELL_TYPE.UNIQUE_TREASURE) {
       uniqueTreasures['一滴帝血'] = {
         pos: { x: cx, y: cy },
@@ -7946,8 +10392,8 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}) {
   }
   
   if (fragmentId === 'void_rift') {
-    const ax = 1 + Math.floor(Math.random() * (w - 2));
-    const ay = 1 + Math.floor(Math.random() * (h - 2));
+    const ax = 1 + Math.floor(random() * (w - 2));
+    const ay = 1 + Math.floor(random() * (h - 2));
     if (grid[ay][ax] !== CELL_TYPE.WALL) {
       grid[ay][ax] = CELL_TYPE.UNIQUE_TREASURE;
       uniqueTreasures['大罗剑胎'] = {
@@ -7969,8 +10415,8 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}) {
   let spawnPos = { x: Math.floor(w / 2), y: Math.floor(h / 2) };
   let spawnFound = false;
   for (let attempt = 0; attempt < 50; attempt++) {
-    const sx = 1 + Math.floor(Math.random() * (w - 2));
-    const sy = 1 + Math.floor(Math.random() * (h - 2));
+    const sx = 1 + Math.floor(random() * (w - 2));
+    const sy = 1 + Math.floor(random() * (h - 2));
     if (grid[sy][sx] === CELL_TYPE.EMPTY || grid[sy][sx] === CELL_TYPE.EXPLORED_EMPTY) {
       const neighborsDanger = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]]
         .filter(([dx, dy]) => {
@@ -7999,7 +10445,7 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}) {
         }
       }
     }
-    spawnPos = fallbackCells[Math.floor(Math.random() * fallbackCells.length)] || spawnPos;
+    spawnPos = fallbackCells[Math.floor(random() * fallbackCells.length)] || spawnPos;
     grid[spawnPos.y][spawnPos.x] = CELL_TYPE.EMPTY;
   }
 
@@ -8021,7 +10467,7 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}) {
 }
 
 // ====== 连接碎片（随机选择相邻碎片） ======
-function connectFragments(currentId, level) {
+function connectFragments(currentId, level, random = Math.random) {
   const current = REALM_FRAGMENTS[currentId];
   if (!current) return {};
   
@@ -8036,23 +10482,23 @@ function connectFragments(currentId, level) {
   if (accessibleZones.length === 0) accessibleZones.push('边缘区域');
   
   const pickTargetFragment = () => {
-    const candidateZones = accessibleZones.filter(z => z !== current.zone || Math.random() < 0.3);
-    const targetZone = candidateZones[Math.floor(Math.random() * candidateZones.length)] || '边缘区域';
+    const candidateZones = accessibleZones.filter(z => z !== current.zone || random() < 0.3);
+    const targetZone = candidateZones[Math.floor(random() * candidateZones.length)] || '边缘区域';
     const pool = ZONE_FRAGMENT_POOLS[targetZone] || ZONE_FRAGMENT_POOLS['边缘区域'];
-    const directTarget = pickDifferentXianguFragment(currentId, pool);
+    const directTarget = pickDifferentXianguFragment(currentId, pool, random);
     if (directTarget) return directTarget;
 
     const fallbackPool = accessibleZones.flatMap(zone => ZONE_FRAGMENT_POOLS[zone] || []);
-    return pickDifferentXianguFragment(currentId, fallbackPool);
+    return pickDifferentXianguFragment(currentId, fallbackPool, random);
   };
 
   for (const dir of directions) {
-    connections[dir] = Math.random() < 0.6 ? pickTargetFragment() : null;
+    connections[dir] = random() < 0.6 ? pickTargetFragment() : null;
   }
 
   // 极端随机结果下也必须至少有一个可离开的方向。
   if (!Object.values(connections).some(Boolean)) {
-    const fallbackDirection = directions[Math.floor(Math.random() * directions.length)];
+    const fallbackDirection = directions[Math.floor(random() * directions.length)];
     connections[fallbackDirection] = pickTargetFragment();
   }
   

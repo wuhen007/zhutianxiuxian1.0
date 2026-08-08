@@ -25,6 +25,7 @@ body {
 }
 
 body {
+  margin: 0 auto;
   padding: 24px;
   color: var(--ink);
   background: #c9cdca;
@@ -380,29 +381,3 @@ footer div span { color: #b7ab83; font-size: 8px; }
 footer div b { margin-top: 7px; overflow-wrap: anywhere; color: #ecd68f; font-size: 11px; }
 footer p { margin: 0; color: #aeb3ae; font-size: 9px; line-height: 1.5; }
 footer > strong { color: #d1b763; font: 16px/1 "STKaiti", "KaiTi", serif; }
-
-@media (max-width: 767px) {
-  html,
-  body { width: 100%; }
-  body { padding: 0; }
-  .realm-panel { width: 100%; }
-  .realm-hero { grid-template-columns: 76px 1fr; }
-  .hero-mark { grid-column: 1 / -1; text-align: left; }
-  .stat-band { grid-template-columns: 1fr 1fr; }
-  .command-group { padding-left: 35px; grid-template-columns: 1fr; }
-  .command-row,
-  .member-grid,
-  .choice-grid,
-  .choice-count-4,
-  .checkpoint-grid,
-  .meta-grid,
-  .puzzle-grid,
-  .treasury-grid { grid-template-columns: 1fr; }
-  .star-track { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-  .star-track::before { display: none; }
-  .seal-strip,
-  .star-option-grid,
-  .star-option-grid.option-count-2 { grid-template-columns: 1fr 1fr; }
-  .treasury-grid > div { grid-template-columns: 80px 1fr; }
-  footer { grid-template-columns: 1fr; }
-}

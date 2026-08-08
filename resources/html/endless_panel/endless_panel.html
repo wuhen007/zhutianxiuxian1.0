@@ -4,10 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="{{pluResPath}}/html/endless_panel/endless_panel.css" />
+    <style>
+      /* 内联保险：强制星轨始终 10 列，覆盖任何旧 CSS 或媒体查询缓存 */
+      .star-track { grid-template-columns: repeat(10, minmax(0, 1fr)) !important; }
+      @media (max-width: 767px) { .star-track { grid-template-columns: repeat(10, minmax(0, 1fr)) !important; } }
+      html, body { width: 1080px !important; }
+    </style>
     <title>{{title}}</title>
   </head>
   <body>
-    <main id="container" class="realm-panel mode-{{mode}}" style="zoom: {{renderScale || 1}}">
+    <main id="container" class="realm-panel mode-{{mode}}" style="transform: scale({{renderScale || 1}}); transform-origin: top left">
       <header class="realm-hero">
         <div class="realm-seal" aria-hidden="true"><span>无</span><b>尽</b></div>
         <div class="hero-copy">
@@ -262,5 +268,19 @@
         <strong>诸天无尽劫境</strong>
       </footer>
     </main>
+    <script>
+      (function () {
+        if (navigator.webdriver) return;
+        var DESIGN_WIDTH = 1080;
+        function fit() {
+          var w = window.innerWidth;
+          var scale = Math.min(1, w / DESIGN_WIDTH);
+          document.body.style.zoom = scale;
+        }
+        window.addEventListener('resize', fit);
+        if (document.readyState !== 'loading') fit();
+        else document.addEventListener('DOMContentLoaded', fit);
+      })();
+    </script>
   </body>
 </html>

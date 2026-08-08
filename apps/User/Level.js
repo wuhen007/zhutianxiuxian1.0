@@ -42,6 +42,7 @@ import {
 import {
   DAO_DAILY_LIMIT,
   DAO_REALM_RULES,
+  XIANGU_DAO_REALM_RULES,
   calculateWudaoResult,
   consumePlayerLifespan,
   ensureDaoPath,
@@ -51,9 +52,13 @@ import {
   getDaoStage,
   getShanghaiDateKey,
   getTechniqueWudaoProfile,
+  getWudaoResourceCosts,
+  ensureXianguDaoPath,
+  getXianguDaoRuleForRealm,
   recordDaoAttempt,
   refreshDaoDaily,
   unlockDaoRealm,
+  unlockXianguDaoRealm,
 } from './wudaoRules.js';
 import { findWudaoTeaItem } from './wudaoTea.js';
 import { clearInterval } from 'timers';
@@ -1659,21 +1664,29 @@ async hudao(e) {
       const player = await Read_player(usr_qq);
       if (!isNotNull(player.Physique_id)) return e.reply('请先#刷新信息');
 
-      const realmId = Number(player.mijinglevel_id) || 0;
-      if (realmId < 11) return this.legacyTeaWudao(e, usr_qq, player);
+      const mijingRealmId = Number(player.mijinglevel_id) || 0;
+      const xianguRealmId = Number(player.xiangulevel_id) || 0;
+      const isXiangu = mijingRealmId <= 1 && xianguRealmId >= 9;
+      const realmId = isXiangu ? xianguRealmId : mijingRealmId;
+      if (!isXiangu && realmId < 11) return this.legacyTeaWudao(e, usr_qq, player);
       if (realmId >= 16) {
         return e.reply([
-          '【帝道无缺】',
-          `${player.名号}已证无缺帝道，寻常悟道已无法再补益自身。`,
+          isXiangu ? '【仙道已成】' : '【帝道无缺】',
+          isXiangu
+            ? `${player.名号}已踏入仙道领域，当前人道法则皆已圆满。`
+            : `${player.名号}已证无缺帝道，寻常悟道已无法再补益自身。`,
           '可发送#我的道途查看昔日道果。'
         ].join('\n'));
       }
 
-      const rule = getDaoRuleForRealm(realmId);
+      const rule = isXiangu
+        ? getXianguDaoRuleForRealm(realmId)
+        : getDaoRuleForRealm(realmId);
       if (!rule) return e.reply('当前境界尚未开放对应的悟道阶段。');
 
-      const ensured = ensureDaoPath(player);
-      unlockDaoRealm(player, realmId);
+      const ensured = isXiangu ? ensureXianguDaoPath(player) : ensureDaoPath(player);
+      if (isXiangu) unlockXianguDaoRealm(player, realmId);
+      else unlockDaoRealm(player, realmId);
       const dateKey = getShanghaiDateKey();
       refreshDaoDaily(ensured.path, dateKey);
       const currentExp = Number(ensured.path.stages[rule.key]) || 0;
@@ -1682,7 +1695,7 @@ async hudao(e) {
         await Write_player(usr_qq, player);
         return e.reply([
           `【${rule.name}·圆满】`,
-          `${player.名号}的${rule.name}已臻圆满，可引动${rule.nextRealm}雷劫。`,
+          `${player.名号}的${rule.name}已臻圆满，可冲击${rule.nextRealm}。`,
           '当前法则不会在渡劫时消耗。'
         ].join('\n'));
       }
@@ -1694,7 +1707,6 @@ async hudao(e) {
           await Write_player(usr_qq, player);
           return e.reply(`今日悟道已达${DAO_DAILY_LIMIT}次上限，可服【大衍悟道丹】延续道途，再参一次大道。`);
         }
-        await Add_najie_thing(usr_qq, '大衍悟道丹', '丹药', -1);
         usedWudaoDan = true;
       }
 
@@ -1728,15 +1740,37 @@ async hudao(e) {
         minggeEffects,
         useTea,
       });
-      const lifespanCost = applyQuestionFortuneCost(player, result.lifespanCost);
+      const baseCosts = getWudaoResourceCosts(player.mijinglevel_id, player.xiangulevel_id);
+      const potentialCost = applyQuestionFortuneCost(player, baseCosts.potential);
+      const cultivationCost = applyQuestionFortuneCost(player, baseCosts.cultivation);
+      const bloodCost = applyQuestionFortuneCost(player, baseCosts.blood);
+      const lifespanCost = applyQuestionFortuneCost(
+        player,
+        Math.floor(baseCosts.lifespan * result.lifespanMultiplier)
+      );
+      const spiritCost = applyQuestionFortuneCost(player, baseCosts.spirit);
       const availableLifespan = getAvailableLifespan(player);
-      if (availableLifespan <= lifespanCost) {
+      const currentPotential = Number(player.仙道潜力) || 0;
+      const currentCultivation = Number(player.修为) || 0;
+      const currentBlood = Number(player.血气) || 0;
+      const currentSpirit = Number(player.元神) || 0;
+      if (
+        currentPotential < potentialCost ||
+        currentCultivation < cultivationCost ||
+        currentBlood < bloodCost ||
+        availableLifespan <= lifespanCost ||
+        currentSpirit < spiritCost
+      ) {
         await Write_player(usr_qq, player);
         return e.reply([
-          '【寿元不足·悟道中止】',
-          `${rule.name}单次悟道需消耗${lifespanCost.toLocaleString()}年寿元。`,
-          `当前真实寿元：${availableLifespan.toLocaleString()}年。`,
-          '悟道不会耗尽最后一缕寿元，请先寻得延寿机缘。'
+          '【资源不足·悟道中止】',
+          `${rule.name}按秘境${baseCosts.mijing}级、仙古${baseCosts.xiangu}级计算：`,
+          `仙道潜力：需${potentialCost.toLocaleString()}｜现有${currentPotential.toLocaleString()}`,
+          `修为：需${cultivationCost.toLocaleString()}｜现有${currentCultivation.toLocaleString()}`,
+          `血气：需${bloodCost.toLocaleString()}｜现有${currentBlood.toLocaleString()}`,
+          `寿元：需${lifespanCost.toLocaleString()}年｜现有${availableLifespan.toLocaleString()}年`,
+          `元神：需${spiritCost.toLocaleString()}｜现有${currentSpirit.toLocaleString()}`,
+          '悟道不会耗尽最后一缕寿元。'
         ].join('\n'));
       }
 
@@ -1748,11 +1782,16 @@ async hudao(e) {
         Math.floor(result.gain * (imperialWudao ? 1.5 : 1)),
         rule.targetExp - currentExp
       );
+      player.仙道潜力 = currentPotential - potentialCost;
+      player.修为 = currentCultivation - cultivationCost;
+      player.血气 = currentBlood - bloodCost;
+      player.元神 = currentSpirit - spiritCost;
       consumePlayerLifespan(player, lifespanCost);
       ensured.path.stages[rule.key] = currentExp + actualGain;
       const attemptCount = recordDaoAttempt(ensured.path, dateKey);
       const currentStage = getDaoStage(ensured.path.stages[rule.key], rule);
       await Write_player(usr_qq, player);
+      if (usedWudaoDan) await Add_najie_thing(usr_qq, '大衍悟道丹', '丹药', -1);
       if (teaItem) await Add_najie_thing(usr_qq, teaItem, '道具', -1);
 
       const factorLines = [
@@ -1770,7 +1809,8 @@ async hudao(e) {
         result.enlightened
           ? '灵光贯穿识海，你于刹那间顿悟，诸般道理豁然贯通！'
           : '你以自身之道印证天地万法，于枯坐中补全一缕道则。',
-        `消耗寿元：${lifespanCost.toLocaleString()}年`,
+        `消耗：潜力${potentialCost.toLocaleString()}｜修为${cultivationCost.toLocaleString()}｜血气${bloodCost.toLocaleString()}`,
+        `消耗：寿元${lifespanCost.toLocaleString()}年｜元神${spiritCost.toLocaleString()}`,
         `本次感悟：+${actualGain}${result.enlightened ? '（顿悟）' : ''}`,
         `道途进度：${ensured.path.stages[rule.key]}/${rule.targetExp}（${currentStage.name}）`,
         `收益倍率：×${result.multiplier.toFixed(2)}〔${factorLines.join('，')}〕`,
@@ -1782,7 +1822,7 @@ async hudao(e) {
         reply.push(`【境界精进】${rule.name}由${previousStage.name}迈入${currentStage.name}！`);
       }
       if (currentStage.name === '圆满') {
-        reply.push(`【${rule.completion}】己道圆满，可引动${rule.nextRealm}雷劫！`);
+        reply.push(`【${rule.completion}】己道圆满，可冲击${rule.nextRealm}！`);
       }
       if (usedWudaoDan) {
         reply.push('「服下大衍悟道丹，道途再续一程，今日可多参一道」');
@@ -1849,22 +1889,32 @@ async hudao(e) {
     if (!(await existplayer(usr_qq))) return e.reply('玩家不存在，请先创建角色');
 
     const player = await Read_player(usr_qq);
-    const realmId = Number(player.mijinglevel_id) || 0;
-    if (realmId < 11) {
+    const mijingRealmId = Number(player.mijinglevel_id) || 0;
+    const xianguRealmId = Number(player.xiangulevel_id) || 0;
+    const isXiangu = mijingRealmId <= 1 && xianguRealmId >= 9;
+    const realmId = isXiangu ? xianguRealmId : mijingRealmId;
+    if (!isXiangu && realmId < 11) {
+      if (xianguRealmId > 1) {
+        return e.reply('仙古今世法尚未进入真一境，达到真一境后方可开辟仙古道途。');
+      }
       return e.reply('你尚未斩道，需成就斩道王者后才能开创自身道途。');
     }
 
-    const ensured = ensureDaoPath(player);
-    const currentRule = getDaoRuleForRealm(realmId);
+    const ensured = isXiangu ? ensureXianguDaoPath(player) : ensureDaoPath(player);
+    const currentRule = isXiangu
+      ? getXianguDaoRuleForRealm(realmId)
+      : getDaoRuleForRealm(realmId);
     let changed = ensured.changed;
     if (currentRule && ensured.path.stages[currentRule.key] === undefined) {
-      unlockDaoRealm(player, realmId);
+      if (isXiangu) unlockXianguDaoRealm(player, realmId);
+      else unlockDaoRealm(player, realmId);
       changed = true;
     }
     if (refreshDaoDaily(ensured.path)) changed = true;
     if (changed) await Write_player(usr_qq, player);
 
-    const lines = DAO_REALM_RULES
+    const rules = isXiangu ? XIANGU_DAO_REALM_RULES : DAO_REALM_RULES;
+    const lines = rules
       .filter(rule => rule.realmId <= realmId || ensured.path.stages[rule.key] !== undefined)
       .map(rule => {
         const exp = Number(ensured.path.stages[rule.key]) || 0;
@@ -1876,8 +1926,9 @@ async hudao(e) {
 
     return e.reply([
       `【${player.名号}·我的道途】`,
+      isXiangu ? '仙古今世法道途：' : '遮天人体秘境道途：',
       ...lines,
-      realmId >= 16 ? `帝道道果：${ensured.path.result?.name || '无缺帝道'}` : '',
+      !isXiangu && realmId >= 16 ? `帝道道果：${ensured.path.result?.name || '无缺帝道'}` : '',
       `今日剩余悟道：${remaining}/${DAO_DAILY_LIMIT}`,
       `真实寿元：${getAvailableLifespan(player).toLocaleString()}年`
     ].filter(Boolean).join('\n'));

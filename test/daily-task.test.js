@@ -6,7 +6,10 @@ import {
   findDailyTaskIndex,
   getDailyTaskPotentialReward,
   getDailyTaskDateKey,
+  getDailyTaskLingshiProgress,
   isDailyTaskComplete,
+  resetDailyTaskLingshiProgress,
+  updateDailyTaskLingshiProgress,
   wasDailyTaskAcceptedToday,
 } from '../model/dailyTask.js';
 
@@ -34,4 +37,20 @@ test('每日任务潜力取两套体系较高等级的十倍', () => {
   assert.equal(getDailyTaskPotentialReward({ mijinglevel_id: 3, xiangulevel_id: 16 }), 160);
   assert.equal(getDailyTaskPotentialReward({}), 0);
   assert.equal(DAILY_TASK_WENXIAN_EXP, 50);
+});
+
+test('灵石任务分别累计收入和支出而不是余额净变化', () => {
+  const acceptedAt = Date.parse('2026-07-28T16:00:01Z');
+  const initial = { 灵石: 100 };
+  resetDailyTaskLingshiProgress(initial, acceptedAt);
+
+  const afterGain = { ...initial, 灵石: 300 };
+  updateDailyTaskLingshiProgress(initial, afterGain, acceptedAt);
+  const afterSpend = { ...afterGain, 灵石: 100 };
+  updateDailyTaskLingshiProgress(afterGain, afterSpend, acceptedAt);
+
+  assert.deepEqual(getDailyTaskLingshiProgress(afterSpend, acceptedAt), {
+    gained: 200,
+    spent: 200,
+  });
 });

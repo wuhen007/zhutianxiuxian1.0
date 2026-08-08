@@ -15,6 +15,7 @@ import {
   Go,
   channel
 } from '../../model/xiuxian.js';
+import { reserveDailyAction } from '../../model/dailyAction.js';
 const 宗门灵石池上限 = [
   2000000, 5000000, 8000000, 11000000, 15000000, 20000000,
 ];
@@ -240,6 +241,10 @@ export class BlessPlace extends plugin {
       Today.D == lastsign_time.D
     ) {
       e.reply(`今日已经开采过灵脉，不可以竭泽而渔哦，明天再来吧`);
+      return false;
+    }
+    if (!await reserveDailyAction(redis, usr_qq, 'vein', nowTime)) {
+      e.reply('今日灵脉开采正在处理或已经完成');
       return false;
     }
     //都通过了，可以进行开采了

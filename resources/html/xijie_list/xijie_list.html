@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{title}}</title>
+  <link rel="stylesheet" href="{{pluResPath}}/html/xijie_list/xijie_list.css" />
+</head>
+<body>
+  <main class="atlas">
+    <header class="hero">
+      <div class="hero-topline">
+        <span>{{eyebrow}}</span>
+        <span class="live-mark"><i></i>实时库存</span>
+      </div>
+      <div class="hero-content">
+        <div>
+          <p class="kicker">THE RAIDERS' LEDGER / 01</p>
+          <h1>{{title}}</h1>
+          <p class="subtitle">{{subtitle}}</p>
+        </div>
+        <div class="seal" aria-hidden="true">
+          <strong>劫</strong>
+          <span>录</span>
+        </div>
+      </div>
+      <div class="hero-bottomline">
+        <span>{{note}}</span>
+        <code>{{command}}</code>
+      </div>
+    </header>
+
+    <section class="stats" aria-label="洗劫概览">
+      <div class="stat">
+        <span class="stat-label">目标总数</span>
+        <strong>{{stats.locationCount}}</strong>
+        <small>处地点</small>
+      </div>
+      <div class="stat stat-ready">
+        <span class="stat-label">可洗劫</span>
+        <strong>{{stats.readyCount}}</strong>
+        <small>等待入场</small>
+      </div>
+      <div class="stat stat-guarded">
+        <span class="stat-label">已戒备</span>
+        <strong>{{stats.guardedCount}}</strong>
+        <small>暂不可取</small>
+      </div>
+      <div class="stat stat-empty">
+        <span class="stat-label">已搬空</span>
+        <strong>{{stats.emptyCount}}</strong>
+        <small>等待刷新</small>
+      </div>
+      <div class="stat">
+        <span class="stat-label">掉落分类</span>
+        <strong>{{stats.rewardTypeCount}}</strong>
+        <small>种物品类型</small>
+      </div>
+    </section>
+
+    <section class="legend" aria-label="戒备等级">
+      <div class="legend-title">戒备分级</div>
+      <div class="legend-item"><span class="legend-dot calm"></span><b>松懈</b><small>基础风险</small></div>
+      <div class="legend-item"><span class="legend-dot alert"></span><b>戒备</b><small>敌手更强</small></div>
+      <div class="legend-item"><span class="legend-dot danger"></span><b>恐慌</b><small>高危目标</small></div>
+      <div class="legend-rule"></div>
+      <div class="legend-item"><span class="legend-dot ready"></span><b>可洗劫</b><small>当前可入场</small></div>
+    </section>
+
+    <section class="atlas-grid" aria-label="洗劫地点列表">
+      {{if locations.length}}
+      {{each locations place}}
+      <article class="location-card tone-{{place.tone}} status-{{place.statusClass}}">
+        <header class="location-head">
+          <div class="location-mark"><span>{{place.ordinal}}</span><i></i></div>
+          <div class="location-title">
+            <h2>{{place.name}}</h2>
+            <div class="location-meta">
+              <span class="grade-pill">{{place.gradeLabel}}</span>
+              <span class="status-pill">{{place.status}}</span>
+            </div>
+          </div>
+          <div class="price">
+            <small>入场消耗</small>
+            <strong>{{place.priceLabel}}</strong>
+            <em>灵石</em>
+          </div>
+        </header>
+
+        <div class="card-rule"></div>
+        <div class="reward-head">
+          <span>搜刮掉落池</span>
+          <small>{{place.availableSlots}} / {{place.slotCount}} 槽位可用</small>
+        </div>
+        <div class="reward-list">
+          {{if place.rewards.length}}
+          {{each place.rewards reward}}
+          <span class="reward-chip {{reward.available ? '' : 'is-empty'}}">
+            <i></i>
+            <b>{{reward.name}}</b>
+            <em>{{reward.quantityLabel}}</em>
+            <small>{{reward.weightLabel}}</small>
+          </span>
+          {{/each}}
+          {{else}}
+          <span class="empty-copy">暂无可记录的掉落槽位</span>
+          {{/if}}
+        </div>
+
+        <footer class="location-foot">
+          <span>风险指数 {{place.grade}} / 3</span>
+          <span>图鉴编号 {{place.id}}</span>
+        </footer>
+      </article>
+      {{/each}}
+      {{else}}
+      <div class="atlas-empty">
+        <strong>暂无洗劫地点档案</strong>
+        <span>实时商店数据尚未同步</span>
+      </div>
+      {{/if}}
+    </section>
+
+    <footer class="page-foot">
+      <span>劫光档案 · 仅供修士决策</span>
+      <span>以当前服务器库存为准</span>
+    </footer>
+  </main>
+</body>
+</html>

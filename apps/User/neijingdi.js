@@ -79,6 +79,26 @@ class InnerWorldManager {
         return { exists: false };
     }
 
+    // 判定是否为百分比装备（atk/def/HP 以百分比加成形式存储，沿用 #赋名 资格判定标准）
+    isPercentEquipment(item) {
+        const atk = Number(item?.atk) || 0;
+        const def = Number(item?.def) || 0;
+        const hp = Number(item?.HP) || 0;
+        // 绝对值过大（几十亿级别）的不是百分比装备
+        if (atk >= 99 || def >= 99 || hp >= 99) return false;
+        return (
+            atk >= 1.5 ||
+            def >= 1.2 ||
+            (item?.type === '法宝' && (atk >= 1 || def >= 1)) ||
+            (atk + def) > 1.95
+        );
+    }
+
+    // 判定百分比装备是否已赋名（#赋名 流程会写入 owner_name 字段）
+    isNamedEquipment(item) {
+        return !!item?.owner_name;
+    }
+
     // 存入物品到内景地
     async storeToInnerWorld(e) {
         const parsed = this.parseCommand(e, '存');
@@ -117,6 +137,22 @@ class InnerWorldManager {
             }
             
             const category = itemCheck.category;
+
+            // ==== 2.5 百分比装备必须已赋名才能存入 ====
+            if (category === '装备') {
+                const unnamedPercentItems = itemCheck.items.filter(i =>
+                    this.isPercentEquipment(i) && !this.isNamedEquipment(i)
+                );
+                if (unnamedPercentItems.length > 0) {
+                    return this.showError(e, [
+                        ' 存放受限',
+                        `【${name}】为百分比装备`,
+                        '未赋名的百分比装备无法存入内景地',
+                        '请先使用 #赋名原装备名*新名字 为其命名',
+                        '赋名后可正常存入'
+                    ].join('\n'));
+                }
+            }
 
             // ==== 3. 获取物品详情 ====
             const item = await foundthing(name);
@@ -664,6 +700,15 @@ export class InnerWorld extends plugin {
             const storePlan = this.generateStorePlan(najie, innerWorld);
             
             if (storePlan.totalItems === 0) {
+                if (storePlan.skipped.length > 0) {
+                    return e.reply(await get_log_img([
+                        ' 未存入任何物品',
+                        '以下百分比装备未赋名，已自动跳过：',
+                        ...storePlan.skipped.slice(0, 10),
+                        storePlan.skipped.length > 10 ? `...共${storePlan.skipped.length}件` : '',
+                        '请先用 #赋名原装备名*新名字 命名后再存入'
+                    ]));
+                }
                 return e.reply(await get_log_img([
                     ' 无可存物品',
                     '纳戒中没有符合存储条件的物品',
@@ -741,12 +786,20 @@ export class InnerWorld extends plugin {
                 `【一键存入报告】✦${successCount}件`,
                 `◇ 存入物品: ${storePlan.totalItems}件`,
                 `◇ 成功数量: ${successCount}件`,
+                `◇ 跳过数量: ${storePlan.skipped.length}件`,
                 `◇ 释放空间: ${storePlan.totalSpace}格`,
                 `◇ 剩余容量: ${remainingSpace}格`,
                 '【操作详情】',
                 ...results.slice(0, 15), // 最多显示15条
                 results.length > 15 ? `...共${results.length}条记录` : ''
             ];
+
+            if (storePlan.skipped.length > 0) {
+                report.push('【已跳过（百分比装备未赋名）】');
+                report.push(...storePlan.skipped.slice(0, 10));
+                if (storePlan.skipped.length > 10) report.push(`...共${storePlan.skipped.length}件`);
+                report.push('提示: 先用 #赋名原装备名*新名字 命名后再存入');
+            }
 
             return e.reply(await get_log_img(report));
 
@@ -768,7 +821,8 @@ export class InnerWorld extends plugin {
             items: {},
             totalItems: 0,
             totalSpace: 0,
-            newUsedSpace: innerWorld.当前容量
+            newUsedSpace: innerWorld.当前容量,
+            skipped: []  // 记录因未赋名而被跳过的百分比装备
         };
 
         // 扫描纳戒
@@ -778,6 +832,12 @@ export class InnerWorld extends plugin {
             plan.items[category] = [];
             
             for (const item of najie[category]) {
+                // ==== 百分比装备必须已赋名才能存入内景地 ====
+                if (category === '装备' && this.manager.isPercentEquipment(item) && !this.manager.isNamedEquipment(item)) {
+                    plan.skipped.push(`${item.name}`);
+                    continue;
+                }
+
                 // ==== 计算空间 ====
                 const itemSize = this.getItemSize(item, category);
                 if (plan.newUsedSpace + itemSize > innerWorld.最大容量) continue;

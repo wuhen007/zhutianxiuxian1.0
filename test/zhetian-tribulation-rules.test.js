@@ -2,8 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  calcXianguTribulationPower,
   canUseClowWish,
   getReverseLifeTribulationWaves,
+  LEIDI_TRIBULATION_CONVERSION_RATE,
+  LEIDI_TRIBULATION_CONVERSION_WAVES,
   resetTribulationGongfaCooldowns,
   ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS,
 } from '../apps/User/zhetianTribulationRules.js';
@@ -50,4 +53,44 @@ test('每次重新渡劫时重置功法回合冷却', () => {
     柳神法: { 冷却回合: 0 },
     被动功法: { 层数: 3 },
   });
+});
+
+test('仙古上位雷劫按境界逐级提高装备与帝兵倍率', () => {
+  const levels = {
+    Level_list: [
+      { level_id: 1, 基础攻击: 100 },
+      { level_id: 64, 基础攻击: 300 },
+    ],
+    LevelMax_list: [
+      { level_id: 1, 基础攻击: 50 },
+      { level_id: 63, 基础攻击: 200 },
+    ],
+    Levelmijing_list: [{ level_id: 5, 基础攻击: 30 }],
+    xiangujinshi_list: [
+      { level_id: 8, 基础攻击: 70 },
+      { level_id: 9, 基础攻击: 90 },
+      { level_id: 14, 基础攻击: 190 },
+    ],
+  };
+
+  assert.deepEqual(calcXianguTribulationPower({ xiangulevel_id: 8, mijinglevel_id: 5 }, levels), {
+    attack: 11000,
+    equipmentMultiplier: 15,
+    imperialMultiplier: 20,
+  });
+  assert.deepEqual(calcXianguTribulationPower({ xiangulevel_id: 9, mijinglevel_id: 5 }, levels), {
+    attack: 23400,
+    equipmentMultiplier: 30,
+    imperialMultiplier: 40,
+  });
+  assert.deepEqual(calcXianguTribulationPower({ xiangulevel_id: 14, mijinglevel_id: 5 }, levels), {
+    attack: 106400,
+    equipmentMultiplier: 105,
+    imperialMultiplier: 140,
+  });
+});
+
+test('雷帝宝术转化率降至四成并延长到四道雷劫', () => {
+  assert.equal(LEIDI_TRIBULATION_CONVERSION_RATE, 0.4);
+  assert.equal(LEIDI_TRIBULATION_CONVERSION_WAVES, 4);
 });

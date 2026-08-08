@@ -20,6 +20,7 @@ import {
     WENXIAN_WEEKLY_TASK_GOALS,
     activateWenXianLing,
     addWenXianExp,
+    calculateWenXianWeeklyRewards,
     claimWenXianWeeklyTask,
     ensureWenXianState,
     ensureWenXianTaskState,
@@ -39,6 +40,7 @@ import {
     releaseRedisLock,
 } from '../SecretPlace/xianyiBaodiState.js';
 import { WENXIAN_ENDLESS_REWARDS } from '../../model/endlessAccess.js';
+import { getDailyTaskDateKey } from '../../model/dailyTask.js';
 import {
     WENDAO_PALACE_DESC,
     WENDAO_PALACE_NAME,
@@ -495,10 +497,14 @@ export class WenXianLing extends plugin {
         for (const [type, goal] of Object.entries(WENXIAN_WEEKLY_TASK_GOALS)) {
             lines.push(`${weekly.progress[type] >= goal ? '已完成' : '未完成'}｜${WEEKLY_TASK_LABELS[type]} ${weekly.progress[type]}/${goal}`);
         }
+        // 按玩家当前字段动态结算奖励预览：修为/血气带随机波动，显示区间；灵石/源石为确定值
+        const lo = calculateWenXianWeeklyRewards(player, () => 0);
+        const hi = calculateWenXianWeeklyRewards(player, () => 0.999);
+        const range = (min, max) => (min === max ? `+${fmtNum(min)}` : `+${fmtNum(min)}~${fmtNum(max)}`);
         lines.push(
             '',
             `状态：${weekly.claimed ? '本周奖励已领取' : ready ? '已完成，可发送 #领取每周任务' : '尚未完成'}`,
-            `奖励：问仙令经验${WENXIAN_WEEKLY_TASK_EXP}、寻宝公式修为/血气、境界源石/灵石、定神丹x5、超越宝盒x2、遣龙令x5`,
+            `奖励：问仙令经验${WENXIAN_WEEKLY_TASK_EXP}、修为 ${range(lo.xiuwei, hi.xiuwei)}、血气 ${range(lo.xueqi, hi.xueqi)}、灵石 +${fmtNum(lo.lingshi)}、源石 +${fmtNum(lo.yuanshi)}、定神丹x5、超越宝盒x2、遣龙令x5`,
         );
         return e.reply(lines.join('\n'));
     }
@@ -748,17 +754,11 @@ WenXianLing.addExp = async function (usr_qq, amount) {
     }
 };
 
-// 每日签到经验：手动签到和自动签到共用同一个幂等标记。
-WenXianLing.addDailySignExp = async function (usr_qq, amount = 50) {
+async function addDailyExpOnce(usr_qq, amount, type) {
     if (!usr_qq || amount <= 0) return { awarded: false, reason: 'invalid' };
 
-    const now = new Date();
-    const dateKey = [
-        now.getFullYear(),
-        String(now.getMonth() + 1).padStart(2, '0'),
-        String(now.getDate()).padStart(2, '0'),
-    ].join('-');
-    const key = `xiuxian:player:${usr_qq}:wenxianling:sign_exp:${dateKey}`;
+    const dateKey = getDailyTaskDateKey();
+    const key = `xiuxian:player:${usr_qq}:wenxianling:${type}_exp:${dateKey}`;
     let acquired = false;
 
     try {
@@ -778,7 +778,16 @@ WenXianLing.addDailySignExp = async function (usr_qq, amount = 50) {
                 await redis.del(key);
             } catch { /* 保留原始错误 */ }
         }
-        logger.warn(`[问仙令] 每日签到经验发放失败 usr_qq=${usr_qq}`, err);
+        logger.warn(`[问仙令] 每日${type}经验发放失败 usr_qq=${usr_qq}`, err);
         return { awarded: false, reason: 'failed' };
     }
+}
+
+// 手动与自动签到共用同一个幂等标记。
+WenXianLing.addDailySignExp = async function (usr_qq, amount = 50) {
+    return addDailyExpOnce(usr_qq, amount, 'sign');
+};
+
+WenXianLing.addDailyTaskExp = async function (usr_qq, amount = 50) {
+    return addDailyExpOnce(usr_qq, amount, 'task');
 };

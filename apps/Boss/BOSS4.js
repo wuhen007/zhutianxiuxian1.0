@@ -32,6 +32,7 @@ import {
   resetTianjiaoToInitialTemplate,
 } from '../../model/tianjiaoGrowth.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
+import { tryPanguShatterTalisman } from '../../model/innateTreasure.js';
 import {
   applyPveStatMultiplier,
   consumeSourceStoneField,
@@ -40,6 +41,7 @@ import {
 } from '../../model/tianjiTalismans.js';
 
 let WorldBOSSBattleCD = []; //CD
+let WorldBOSSBattleLockToken = 0;
 let WorldBOSSBattleLock = 0; //BOSS战斗锁，防止打架频率过高造成奖励多发
 let WorldBOSSBattleUnLockTimer = 0; //防止战斗锁因意外锁死
 
@@ -217,6 +219,14 @@ export class BOSS4 extends plugin {
     return `tianjiao:hatred_status:${tianjiaoName}`;
   }
 
+  getTianjiaoEscapeKey(tianjiaoName) {
+    return `tianjiao:global:escape:${tianjiaoName}`;
+  }
+
+  getTianjiaoRewardIdempotencyKey(tianjiaoName, settlementId, recipient, kind, index = '') {
+    return `tianjiao:${tianjiaoName}:${settlementId}:${kind}:${recipient}:${index}`;
+  }
+
   async addHatred(tianjiaoName, usr_qq, reason) {
     const hatredKey = this.getHatredKey(tianjiaoName, usr_qq);
     const currentHatred = parseInt(await redis.get(hatredKey) || '0');
@@ -350,6 +360,7 @@ export class BOSS4 extends plugin {
   // 护身法宝触发机制
   // ======================
   async triggerProtectiveTalisman(e, tianjiaoName, tianjiaoData, status) {
+    if (status.护身法宝已碎) return false;
     // 基础触发概率 30%
     const baseChance = 0.30;
     // 血量越低，触发概率越高（线性增加，最高到80%）
@@ -374,6 +385,7 @@ export class BOSS4 extends plugin {
     const recoverPercent = 10 + Math.floor(Math.random() * 11);
     const newHP = Math.min(100, status.currentHP + recoverPercent);
     status.currentHP = newHP;
+    status.护身法宝已碎 = true;
 
     let messages = [
       `【护身法宝触发】`,
@@ -388,17 +400,24 @@ export class BOSS4 extends plugin {
   }
 
   // ======================
-  // 护道人触发机制（基于血量的线性概率）
+  // 护道人触发机制（优先使用仇恨等级配置）
   // ======================
-  async triggerProtector(e, tianjiaoName, tianjiaoData, player, currentHP, sourceField = null) {
+  async triggerProtector(e, tianjiaoName, tianjiaoData, player, currentHP, sourceField = null, hatredLevel = '') {
     // 只有血量低于30%时才可能触发护道人
     if (currentHP > 30) {
       return { triggered: false, protectorWon: false };
     }
 
-    // 线性概率计算：血量越低，触发概率越高
-    // 30%血量时 10%概率，0%血量时 80%概率
-    const triggerChance = 0.10 + (30 - currentHP) / 30 * 0.70;
+    // 未配置仇恨等级时，保留原本的血量兜底概率。
+    const hatredConfig = this.HATRED_CONFIG.LEVELS[hatredLevel] || {};
+    const configuredChance = Number(hatredConfig.protectorChance);
+    const escapeChance = Number.isFinite(Number(hatredConfig.escapeChance))
+      ? Number(hatredConfig.escapeChance)
+      : 1;
+    const hpChance = 0.10 + (30 - currentHP) / 30 * 0.70;
+    const triggerChance = Number.isFinite(configuredChance)
+      ? Math.min(0.95, Math.max(0, configuredChance))
+      : hpChance;
 
     if (Math.random() > triggerChance) {
       return { triggered: false, protectorWon: false };
@@ -464,14 +483,21 @@ export class BOSS4 extends plugin {
       
       await this.addHatred(tianjiaoName, e.user_id.toString(), '护道失败');
       
-      messages.push("", `【天骄重伤遁走】`, `${tianjiaoName}的护道人被你击败，天骄趁乱重伤逃走！`);
+      const escaped = Math.random() < escapeChance;
+      messages.push(
+        "",
+        escaped ? `【天骄重伤遁走】` : `【天骄逃遁失败】`,
+        escaped
+          ? `${tianjiaoName}的护道人被你击败，天骄趁乱重伤逃走！`
+          : `${tianjiaoName}试图遁走，却被你截断退路！`
+      );
       
       await Add_灵石(e.user_id.toString(), 8000000);
       await Add_源石(e.user_id.toString(), 3000000);
       messages.push("额外奖励：灵石800万、源石300万");
       
       await ForwardMsg(e, messages);
-      return { triggered: true, protectorWon: false, escaped: true };
+      return { triggered: true, protectorWon: false, escaped };
       
     } else if (result.winner === 'B') {
       // 护道人击败玩家
@@ -490,6 +516,29 @@ export class BOSS4 extends plugin {
     return { triggered: false, protectorWon: false };
   }
 
+  async distributeNormalBattleDrops(e, tianjiaoName, tianjiaoData, qq, multiplier, settlementId) {
+    if (!Array.isArray(tianjiaoData.掉落物)) return;
+    for (let index = 0; index < tianjiaoData.掉落物.length; index++) {
+      const item = tianjiaoData.掉落物[index];
+      if (Math.random() >= item.概率) continue;
+      const amount = item.数量 * multiplier;
+      try {
+        await Add_najie_thing(
+          qq,
+          item.name,
+          item.class,
+          amount,
+          undefined,
+          1,
+          { idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoName, settlementId, qq, 'battle-drop', index) }
+        );
+        await e.reply(`获得掉落：${item.name} x${amount}`);
+      } catch (error) {
+        console.warn(`[天骄掉落] ${tianjiaoName}/${qq} 发放失败:`, error);
+      }
+    }
+  }
+
   // ========== 显示方法 ==========
 
   async ShowTianjiaoList(e) {
@@ -499,8 +548,9 @@ export class BOSS4 extends plugin {
     let msg = ['****位面天骄列表****'];
     for (const tianjiao of data.weimiantianjiao_list) {
       const trace = this.getAvailableTianjiaoTrace(player, tianjiao);
+      const realm = getTianjiaoRealmName(tianjiao, data.Levelmijing_list, data.xiangujinshi_list);
       msg.push(`名号: ${tianjiao.名号}`);
-      msg.push(`境界: ${tianjiao.境界}`);
+      msg.push(`境界: ${realm}`);
       msg.push(`踪迹: ${formatTianjiaoTrace(trace)}`);
       msg.push('-------------------');
     }
@@ -577,7 +627,10 @@ export class BOSS4 extends plugin {
         if (!reviveTime || now < reviveTime) continue;
 
         const announcedKey = `tianjiao:reincarnation:announced:${name}`;
-        if (await redis.get(announcedKey)) continue;
+        if (await redis.get(announcedKey)) {
+          await redis.del(reviveKey);
+          continue;
+        }
 
         const life = Math.max(1, Number(tianjiao.轮回世数) || 1);
         const title = tianjiao.轮回称号 || '轮回者';
@@ -595,8 +648,9 @@ export class BOSS4 extends plugin {
         delete status.养伤;
         delete status.下次自强倍率;
         delete status.下次证道阻断;
+        delete status.护身法宝已碎;
         await redis.set(statusKey, JSON.stringify(status));
-        await redis.set(announcedKey, '1');
+        if (!(await redis.set(announcedKey, '1', { NX: true }))) continue;
         await redis.del(reviveKey);
 
         const message = [
@@ -624,6 +678,10 @@ export class BOSS4 extends plugin {
 
   async CreateWorldBoss2(e) {
     if (!e || e.isMaster) {
+      if (WorldBOSSBattleLock === 1 || await redis.get('tianjiao:battle:lock')) {
+        e?.reply?.('天骄战斗正在进行，暂不能重置天骄状态。');
+        return false;
+      }
       await InitWorldBoss(e);
       return false;
     }
@@ -632,12 +690,17 @@ export class BOSS4 extends plugin {
   async DeleteWorldBoss2(e) {
     if (!verc({ e })) return false;
     if (e.isMaster) {
+      if (WorldBOSSBattleLock === 1 || await redis.get('tianjiao:battle:lock')) {
+        e.reply('天骄战斗正在进行，暂不能关闭天骄挑战。');
+        return false;
+      }
       if (await BossIsAlive()) {
         await redis.del('Xiuxian:WorldBossStatus2');
         await redis.del('zhutianxiuxian1.0Record2');
 
         for (const tianjiao of data.weimiantianjiao_list) {
           await redis.del(`tianjiao:global:revive:${tianjiao.名号}`);
+          await redis.del(`tianjiao:global:escape:${tianjiao.名号}`);
           await redis.del(`tianjiao:damage:${tianjiao.名号}`);
           await redis.del(`tianjiao:hatred_status:${tianjiao.名号}`);
           
@@ -672,16 +735,19 @@ export class BOSS4 extends plugin {
         status = JSON.parse(status || '{}');
 
         const globalReviveKey = `tianjiao:global:revive:${tianjiao.名号}`;
-        const globalReviveTime = await redis.get(globalReviveKey);
+        const globalReviveTime = Number(await redis.get(globalReviveKey)) || 0;
+        const escapeTime = Number(await redis.get(this.getTianjiaoEscapeKey(tianjiao.名号))) || 0;
+        const blockedUntil = Math.max(globalReviveTime, escapeTime);
+        const isUnavailable = blockedUntil > Date.now();
 
-        if (!status.currentHP || status.currentHP <= 0) {
+        if (!isUnavailable && (!status.isAlive || !status.currentHP || status.currentHP <= 0)) {
           status.currentHP = 100;
           status.isAlive = true;
           await redis.set(statusKey, JSON.stringify(status));
         }
 
-        if (globalReviveTime && Date.now() < parseInt(globalReviveTime)) {
-          const remainingMs = parseInt(globalReviveTime) - Date.now();
+        if (isUnavailable) {
+          const remainingMs = blockedUntil - Date.now();
           const hours = Math.floor(remainingMs / (60 * 60 * 1000));
           const minutes = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000));
 
@@ -689,7 +755,7 @@ export class BOSS4 extends plugin {
             `名号: ${tianjiao.名号}`,
             `境界: ${realm}`,
             `踪迹: ${formatTianjiaoTrace(trace)}`,
-            `状态: 已击败，${hours}小时${minutes}分钟后刷新`,
+            `状态: ${globalReviveTime >= escapeTime ? '已击败' : '已被护道人救走'}，${hours}小时${minutes}分钟后刷新`,
             ...(Number(tianjiao.轮回世数) > 0 ? [`转世: 第${tianjiao.轮回世数}世·${tianjiao.轮回称号 || ''}`] : []),
             '-------------------'
           );
@@ -721,13 +787,18 @@ export class BOSS4 extends plugin {
     const trace = this.getAvailableTianjiaoTrace(player, tianjiaoData);
 
     const globalReviveKey = `tianjiao:global:revive:${tianjiaoName}`;
-    const globalReviveTime = await redis.get(globalReviveKey);
+    const globalReviveTime = Number(await redis.get(globalReviveKey)) || 0;
+    const escapeTime = Number(await redis.get(this.getTianjiaoEscapeKey(tianjiaoName))) || 0;
+    const blockedUntil = Math.max(globalReviveTime, escapeTime);
+    const isUnavailable = blockedUntil > Date.now();
 
-    if (globalReviveTime && Date.now() < parseInt(globalReviveTime)) {
-      const remainingMs = parseInt(globalReviveTime) - Date.now();
+    if (isUnavailable) {
+      const remainingMs = blockedUntil - Date.now();
       const hours = Math.floor(remainingMs / (60 * 60 * 1000));
       const minutes = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000));
-      e.reply(`${tianjiaoName}已被击败，将在${hours}小时${minutes}分钟后刷新`);
+      e.reply(globalReviveTime >= escapeTime
+        ? `${tianjiaoName}已被击败，将在${hours}小时${minutes}分钟后刷新`
+        : `${tianjiaoName}已被护道人救走，将在${hours}小时${minutes}分钟后重新现身`);
       return false;
     }
 
@@ -735,7 +806,7 @@ export class BOSS4 extends plugin {
     let status = await redis.get(statusKey);
     status = JSON.parse(status || '{}');
 
-    if (!status.currentHP || status.currentHP <= 0) {
+    if (!isUnavailable && (!status.isAlive || !status.currentHP || status.currentHP <= 0)) {
       status.currentHP = 100;
       status.isAlive = true;
       await redis.set(statusKey, JSON.stringify(status));
@@ -941,6 +1012,87 @@ export class BOSS4 extends plugin {
 
   // ========== 核心战斗方法 ==========
 
+  async finalizeTianjiaoDefeat(e, options) {
+    const {
+      tianjiaoName,
+      tianjiaoData,
+      status,
+      statusKey,
+      globalReviveKey,
+      killerQQ,
+      rewardMultiplier = 1,
+    } = options;
+    const reviveTime = Date.now() + this.tianjiaoRefreshMs;
+    const settlementId = reviveTime.toString();
+
+    status.currentHP = 100;
+    status.isAlive = false;
+    delete status.本世败绩;
+    delete status.isHealing;
+    delete status.养伤;
+    delete status.下次自强倍率;
+    delete status.下次证道阻断;
+    delete status.护身法宝已碎;
+
+    await redis.set(globalReviveKey, settlementId);
+    await redis.del(`tianjiao:reincarnation:announced:${tianjiaoName}`);
+    await redis.del(this.getTianjiaoEscapeKey(tianjiaoName));
+    await redis.set(statusKey, JSON.stringify(status));
+
+    try {
+      await e.reply(`${tianjiaoName}道身崩灭，已入轮回！18小时后转世之身归来，届时全服公告。`);
+    } catch (error) {
+      console.warn(`[天骄轮回] ${tianjiaoName} 击杀提示发送失败:`, error);
+    }
+
+    if (Array.isArray(tianjiaoData.特殊掉落)) {
+      for (let index = 0; index < tianjiaoData.特殊掉落.length; index++) {
+        const special = tianjiaoData.特殊掉落[index];
+        if (Math.random() >= special.概率) continue;
+        const amount = special.数量 * rewardMultiplier;
+        try {
+          await Add_najie_thing(
+            killerQQ,
+            special.name,
+            special.class,
+            amount,
+            undefined,
+            1,
+            { idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoName, settlementId, killerQQ, 'special-drop', index) }
+          );
+          let dropMsg = `特殊掉落：${special.name} x${amount}`;
+          if (special.效果) dropMsg += `（${special.效果}）`;
+          await e.reply(dropMsg);
+        } catch (error) {
+          console.warn(`[天骄特殊掉落] ${tianjiaoName}/${killerQQ} 发放失败:`, error);
+        }
+      }
+    }
+
+    try {
+      await this.distributeContributionRewards(e, tianjiaoName, tianjiaoData, killerQQ, settlementId);
+    } catch (error) {
+      console.warn(`[天骄贡献奖励] ${tianjiaoName} 结算失败:`, error);
+    } finally {
+      try {
+        await redis.del(`tianjiao:damage:${tianjiaoName}`);
+      } catch (error) {
+        console.warn(`[天骄贡献奖励] ${tianjiaoName} 伤害榜清理失败:`, error);
+      }
+    }
+
+    let reincarnation = null;
+    try {
+      reincarnation = resetTianjiaoToInitialTemplate(tianjiaoData, this.getTianjiaoContext());
+      this.persistTianjiaoList();
+      await e.reply(`第${reincarnation.life}世·${reincarnation.title}，${tianjiaoName}轮回印记已定。`);
+    } catch (error) {
+      console.error(`[天骄轮回] ${tianjiaoName} 重置初始模板失败:`, error);
+    }
+
+    return { reviveTime, settlementId, reincarnation };
+  }
+
   async WorldBossBattle2(e) {
     if (!verc({ e })) return false;
     if (e.isPrivate) return false;
@@ -971,6 +1123,21 @@ export class BOSS4 extends plugin {
     }
     if (ensureTianjiaoInitialTemplate(tianjiaoData)) this.persistTianjiaoList();
 
+    const globalReviveKey = `tianjiao:global:revive:${tianjiaoName}`;
+    const escapeKey = this.getTianjiaoEscapeKey(tianjiaoName);
+    const globalReviveTime = Number(await redis.get(globalReviveKey)) || 0;
+    const escapeTime = Number(await redis.get(escapeKey)) || 0;
+    const blockedUntil = Math.max(globalReviveTime, escapeTime);
+    if (blockedUntil > Date.now()) {
+      const remainingMs = blockedUntil - Date.now();
+      const hours = Math.floor(remainingMs / (60 * 60 * 1000));
+      const minutes = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000));
+      e.reply(globalReviveTime >= escapeTime
+        ? `${tianjiaoName}已被击败，将在${hours}小时${minutes}分钟后轮回归来`
+        : `${tianjiaoName}已被护道人救走，将在${hours}小时${minutes}分钟后重新现身`);
+      return false;
+    }
+
     const trace = this.getAvailableTianjiaoTrace(player, tianjiaoData);
     const traceReach = getTianjiaoTraceReach(player, trace);
     const scentAccess = getTianjiaoScentAccess(player, tianjiaoName);
@@ -993,20 +1160,9 @@ export class BOSS4 extends plugin {
       return false;
     }
 
-    // 检查全局复活CD
-    const globalReviveKey = `tianjiao:global:revive:${tianjiaoName}`;
-    const globalReviveTime = await redis.get(globalReviveKey);
-
-    if (globalReviveTime && Date.now() < parseInt(globalReviveTime)) {
-      const remainingMs = parseInt(globalReviveTime) - Date.now();
-      const hours = Math.floor(remainingMs / (60 * 60 * 1000));
-      const minutes = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000));
-      e.reply(`${tianjiaoName}已被击败，将在${hours}小时${minutes}分钟后刷新`);
-      return false;
-    }
-
     // 检查CD时间
     const now_Time = Date.now();
+    const battleId = `${now_Time}:${usr_qq}`;
     const last_time = await redis.get(`xiuxian:player:${usr_qq}:BOSSCD`);
     const userCooldownMs = this.userCooldownMs;
 
@@ -1018,9 +1174,17 @@ export class BOSS4 extends plugin {
       return false;
     }
 
+    const distributedLockKey = 'tianjiao:battle:lock';
+    const distributedLockToken = `${process.pid}:${now_Time}:${usr_qq}:${Math.random()}`;
+    if (!(await redis.set(distributedLockKey, distributedLockToken, { EX: 30, NX: true }))) {
+      e.reply('天骄战斗正在进行中，请稍后再试！');
+      return false;
+    }
+
     // 设置战斗锁
     WorldBOSSBattleLock = 1;
-    SetWorldBOSSBattleUnLockTimer(e);
+    const lockToken = ++WorldBOSSBattleLockToken;
+    SetWorldBOSSBattleUnLockTimer(e, lockToken);
 
     try {
       // 创建玩家角色
@@ -1056,7 +1220,7 @@ export class BOSS4 extends plugin {
       let status = await redis.get(statusKey);
       status = JSON.parse(status || '{}');
 
-      if (!status.currentHP || status.currentHP <= 0) {
+      if (!status.isAlive || !status.currentHP || status.currentHP <= 0) {
         status.currentHP = 100;
         status.isAlive = true;
       }
@@ -1192,14 +1356,17 @@ export class BOSS4 extends plugin {
         return false;
       }
 
-      const wenxianTasks = recordWenXianTaskProgress(player, 'tianjiao');
+      const latestTaskPlayer = await Read_player(usr_qq);
+      const wenxianTasks = recordWenXianTaskProgress(latestTaskPlayer, 'tianjiao');
       if (wenxianTasks.changed || wenxianTasks.dailyCompleted) {
-        await Write_player(usr_qq, player);
+        await Write_player(usr_qq, latestTaskPlayer);
       }
+      Object.assign(player, latestTaskPlayer);
 
       // ========== 仇恨值与对话系统 ==========
 
       if (isWin) {
+        let rewardSettlementId = battleId;
         // 玩家胜利
         if (panguRewardMultiplier > 1) {
           player.先天权柄 ||= { 冷却: {} };
@@ -1208,6 +1375,7 @@ export class BOSS4 extends plugin {
           await Write_player(usr_qq, player);
         }
         
+        const panguTalismanShattered = tryPanguShatterTalisman(status, panguRewardMultiplier > 1);
         // 先检查是否触发护身法宝（不扣血）
         const talismanTriggered = await this.triggerProtectiveTalisman(e, tianjiaoName, tianjiaoData, status);
         
@@ -1250,36 +1418,30 @@ export class BOSS4 extends plugin {
 
         let winMsg = [
           `恭喜你战胜${tianjiaoName}！`,
+          panguTalismanShattered
+            ? `【盘古幡·开天碎宝】开天气刃斩碎${this.getEscapeTreasure(tianjiaoName)}，此宝本世无法再护体！`
+            : '',
           talismanTriggered 
             ? `护身法宝生效，天骄血量未减少，当前剩余${status.currentHP}%`
             : `天骄血量减少${zhuxianTianjiao ? 40 : 20}%，当前剩余${status.currentHP}%`,
           `仇恨值+${hatredResult.gain}（当前：${hatredResult.new}，关系：${newLevel}）`
-        ];
+        ].filter(Boolean);
         if (setbackLines.length > 0) winMsg.push(...setbackLines);
         await e.reply(winMsg.join('\n'));
-
-        // 普通掉落按每次战胜结算；特殊掉落仍只属于最终击杀。
-        if (tianjiaoData.掉落物) {
-          for (const item of tianjiaoData.掉落物) {
-            if (Math.random() < item.概率) {
-              const amount = item.数量 * panguRewardMultiplier;
-              await Add_najie_thing(usr_qq, item.name, item.class, amount);
-              await e.reply(`获得掉落：${item.name} x${amount}`);
-            }
-          }
-        }
 
         // 检查天骄是否被彻底击败
         if (status.currentHP <= 0) {
           // 先检查护道人触发（基于血量的线性概率）
-          const protectorResult = await this.triggerProtector(e, tianjiaoName, tianjiaoData, player, status.currentHP, sourceField);
+          const protectorResult = await this.triggerProtector(e, tianjiaoName, tianjiaoData, player, status.currentHP, sourceField, hatredLevel);
           
           if (protectorResult.triggered) {
             if (protectorResult.escaped) {
               // 天骄被护道人救走逃脱
+              status.currentHP = 100;
               status.isAlive = false;
               const shortReviveTime = Date.now() + this.escapeRefreshMs;
-              await redis.set(globalReviveKey, shortReviveTime.toString());
+              await redis.set(escapeKey, shortReviveTime.toString());
+              await redis.del(globalReviveKey);
               
               await redis.set(statusKey, JSON.stringify(status));
               await redis.set(`xiuxian:player:${usr_qq}:BOSSCD`, now_Time.toString());
@@ -1294,40 +1456,25 @@ export class BOSS4 extends plugin {
           }
           
           // 无护道人触发或护道人被击败，天骄彻底死亡
-          status.isAlive = false;
           tianjiaoDefeated = true;
-          const reviveTime = Date.now() + this.tianjiaoRefreshMs;
-          await redis.set(globalReviveKey, reviveTime.toString());
-          
-          await e.reply(`${tianjiaoName}道身崩灭，已入轮回！18小时后转世之身归来，届时全服公告。`);
-
-          // 特殊掉落
-          if (tianjiaoData.特殊掉落) {
-            for (const special of tianjiaoData.特殊掉落) {
-              if (Math.random() < special.概率) {
-                const amount = special.数量 * panguRewardMultiplier;
-                await Add_najie_thing(usr_qq, special.name, special.class, amount);
-                let dropMsg = `特殊掉落：${special.name} x${amount}`;
-                if (special.效果) {
-                  dropMsg += `（${special.效果}）`;
-                }
-                await e.reply(dropMsg);
-              }
-            }
+          await this.distributeNormalBattleDrops(e, tianjiaoName, tianjiaoData, usr_qq, panguRewardMultiplier, battleId);
+          const defeatSettlement = await this.finalizeTianjiaoDefeat(e, {
+            tianjiaoName,
+            tianjiaoData,
+            status,
+            statusKey,
+            globalReviveKey,
+            killerQQ: usr_qq,
+            rewardMultiplier: panguRewardMultiplier,
+          });
+          rewardSettlementId = defeatSettlement.settlementId;
+          try {
+            await this.addHatred(tianjiaoName, usr_qq, '击杀');
+          } catch (error) {
+            console.warn(`[天骄仇恨] ${tianjiaoName} 击杀仇恨记录失败:`, error);
           }
-
-          // 发放贡献榜奖励
-          await this.distributeContributionRewards(e, tianjiaoName, tianjiaoData, usr_qq);
-
-          const reincarnation = resetTianjiaoToInitialTemplate(tianjiaoData, this.getTianjiaoContext());
-          status.currentHP = 100;
-          status.isAlive = false;
-          delete status.本世败绩;
-          delete status.isHealing;
-          delete status.养伤;
-          delete status.下次自强倍率;
-          delete status.下次证道阻断;
-          await e.reply(`第${reincarnation.life}世·${reincarnation.title}，${tianjiaoName}轮回印记已定。`);
+        } else {
+          await this.distributeNormalBattleDrops(e, tianjiaoName, tianjiaoData, usr_qq, panguRewardMultiplier, battleId);
         }
 
         // 计算奖励
@@ -1335,10 +1482,27 @@ export class BOSS4 extends plugin {
         let zuizhong = (A_player.mijinglevel_id + A_player.xiangulevel_id) * A_player.level_id * A_player.Physique_id * reward * panguRewardMultiplier;
 
         // 发放胜利奖励
-        await Add_灵石(usr_qq, 15000000 * panguRewardMultiplier);
-        await Add_源石(usr_qq, 5000000 * panguRewardMultiplier);
-        await Add_修为(usr_qq, zuizhong);
-        await Add_血气(usr_qq, zuizhong);
+        const rewardCalls = [
+          () => Add_灵石(usr_qq, 15000000 * panguRewardMultiplier, {
+            idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoName, rewardSettlementId, usr_qq, 'victory', '灵石'),
+          }),
+          () => Add_源石(usr_qq, 5000000 * panguRewardMultiplier, {
+            idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoName, rewardSettlementId, usr_qq, 'victory', '源石'),
+          }),
+          () => Add_修为(usr_qq, zuizhong, {
+            idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoName, rewardSettlementId, usr_qq, 'victory', '修为'),
+          }),
+          () => Add_血气(usr_qq, zuizhong, {
+            idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoName, rewardSettlementId, usr_qq, 'victory', '血气'),
+          }),
+        ];
+        for (let index = 0; index < rewardCalls.length; index++) {
+          try {
+            await rewardCalls[index]();
+          } catch (error) {
+            console.warn(`[天骄奖励] ${tianjiaoName} 奖励${index}发放失败:`, error);
+          }
+        }
 
         let rewardMsg = [
           `成功战胜${tianjiaoName}！获得奖励：`,
@@ -1426,6 +1590,23 @@ export class BOSS4 extends plugin {
       } else {
         // 玩家失败
         status.currentHP = Math.max(0, status.currentHP - (zhuxianTianjiao ? 2 : 1));
+        if (status.currentHP <= 0) {
+          tianjiaoDefeated = true;
+          await this.finalizeTianjiaoDefeat(e, {
+            tianjiaoName,
+            tianjiaoData,
+            status,
+            statusKey,
+            globalReviveKey,
+            killerQQ: usr_qq,
+          });
+          try {
+            await this.addHatred(tianjiaoName, usr_qq, '击杀');
+          } catch (error) {
+            console.warn(`[天骄仇恨] ${tianjiaoName} 击杀仇恨记录失败:`, error);
+          }
+          await e.reply(`${tianjiaoName}在交战中耗尽最后一丝生机，已入轮回结算。`);
+        }
         const hatredResult = await this.addHatred(tianjiaoName, usr_qq, '挑战失败');
         const newLevel = this.getHatredLevel(hatredResult.new);
 
@@ -1444,10 +1625,27 @@ export class BOSS4 extends plugin {
         let reward = 10;
         let zuizhong = (A_player.mijinglevel_id + A_player.xiangulevel_id) * A_player.level_id * A_player.Physique_id * reward;
 
-        await Add_源石(usr_qq, 1000000);
-        await Add_灵石(usr_qq, 3000000);
-        await Add_修为(usr_qq, zuizhong);
-        await Add_血气(usr_qq, zuizhong);
+        const failureRewards = [
+          () => Add_源石(usr_qq, 1000000, {
+            idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoName, battleId, usr_qq, 'failure', '源石'),
+          }),
+          () => Add_灵石(usr_qq, 3000000, {
+            idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoName, battleId, usr_qq, 'failure', '灵石'),
+          }),
+          () => Add_修为(usr_qq, zuizhong, {
+            idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoName, battleId, usr_qq, 'failure', '修为'),
+          }),
+          () => Add_血气(usr_qq, zuizhong, {
+            idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoName, battleId, usr_qq, 'failure', '血气'),
+          }),
+        ];
+        for (let index = 0; index < failureRewards.length; index++) {
+          try {
+            await failureRewards[index]();
+          } catch (error) {
+            console.warn(`[天骄失败奖励] ${tianjiaoName} 奖励${index}发放失败:`, error);
+          }
+        }
 
         await e.reply([
           `你与${tianjiaoName}激战一番，获得奖励：`,
@@ -1468,7 +1666,15 @@ export class BOSS4 extends plugin {
       e.reply('战斗过程发生错误，请稍后再试！');
     } finally {
       // 释放战斗锁
+      clearWorldBOSSBattleUnlockTimer();
       WorldBOSSBattleLock = 0;
+      try {
+        if (await redis.get(distributedLockKey) === distributedLockToken) {
+          await redis.del(distributedLockKey);
+        }
+      } catch (error) {
+        console.warn('[天骄战斗锁] 分布式锁释放失败:', error);
+      }
     }
 
     return true;
@@ -1476,11 +1682,12 @@ export class BOSS4 extends plugin {
 
   // ========== 贡献榜奖励分发 ==========
 
-  async distributeContributionRewards(e, tianjiaoName, tianjiaoData, killerQQ) {
+  async distributeContributionRewards(e, tianjiaoName, tianjiaoData, killerQQ, settlementId = Date.now().toString()) {
     const damageKey = `tianjiao:damage:${tianjiaoName}`;
     const contributors = await this.getDamageRankings(damageKey);
 
     if (contributors.length === 0) {
+      await redis.del(damageKey);
       return;
     }
 
@@ -1498,7 +1705,7 @@ export class BOSS4 extends plugin {
         rewardCount = 1 + Math.floor(Math.random() * 3);
       }
 
-      const rewards = await this.giveRandomItems(contributor.qq, tianjiaoData, rewardCount);
+      const rewards = await this.giveRandomItems(contributor.qq, tianjiaoData, rewardCount, settlementId, 'contribution');
       const playerName = await this.getPlayerName(contributor.qq);
       const damageDisplay = this.bigNumberTransformBigInt(contributor.damageStr || contributor.damage.toString());
       let passTrialCompleted = false;
@@ -1525,7 +1732,7 @@ export class BOSS4 extends plugin {
 
     if (Math.random() < 0.5) {
       const extraRewardCount = 1 + Math.floor(Math.random() * 3);
-      const extraRewards = await this.giveRandomItems(killerQQ, tianjiaoData, extraRewardCount);
+      const extraRewards = await this.giveRandomItems(killerQQ, tianjiaoData, extraRewardCount, settlementId, 'killer-extra');
 
       if (extraRewards.length > 0) {
         const killerName = await this.getPlayerName(killerQQ);
@@ -1533,14 +1740,16 @@ export class BOSS4 extends plugin {
       }
     }
 
-    if (rewardMessages.length > 1) {
-      await ForwardMsg(e, rewardMessages);
+    try {
+      if (rewardMessages.length > 1) await ForwardMsg(e, rewardMessages);
+    } catch (error) {
+      console.warn(`[天骄贡献奖励] ${tianjiaoName} 奖励消息发送失败:`, error);
+    } finally {
+      await redis.del(damageKey);
     }
-
-    await redis.del(damageKey);
   }
 
-  async giveRandomItems(qq, tianjiaoData, count) {
+  async giveRandomItems(qq, tianjiaoData, count, settlementId = Date.now().toString(), rewardKind = 'random') {
     const rewards = [];
     
     // 先检查玩家是否存在
@@ -1562,8 +1771,9 @@ export class BOSS4 extends plugin {
     for (let i = 0; i < count; i++) {
       let itemPool = Math.random() < 0.7 ? rareItems : baseItems;
       if (itemPool.length === 0) {
-        itemPool = baseItems;
+        itemPool = rareItems.length > 0 ? rareItems : baseItems;
       }
+      if (itemPool.length === 0) continue;
 
       const randomIndex = Math.floor(Math.random() * itemPool.length);
       const item = itemPool[randomIndex];
@@ -1571,7 +1781,15 @@ export class BOSS4 extends plugin {
 
       try {
         if (Math.random() < actualProbability) {
-          await Add_najie_thing(qq, item.name, item.class, item.数量);
+          await Add_najie_thing(
+            qq,
+            item.name,
+            item.class,
+            item.数量,
+            undefined,
+            1,
+            { idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoData.名号 || 'unknown', settlementId, qq, rewardKind, i) }
+          );
           rewards.push(`${item.name}x${item.数量}`);
           hasDropped = true;
         }
@@ -1580,11 +1798,20 @@ export class BOSS4 extends plugin {
       }
     }
 
-    if (!hasDropped && baseItems.length > 0) {
-      const fallbackIndex = Math.floor(Math.random() * baseItems.length);
-      const fallbackItem = baseItems[fallbackIndex];
+    const fallbackItems = baseItems.length > 0 ? baseItems : rareItems;
+    if (!hasDropped && fallbackItems.length > 0) {
+      const fallbackIndex = Math.floor(Math.random() * fallbackItems.length);
+      const fallbackItem = fallbackItems[fallbackIndex];
       try {
-        await Add_najie_thing(qq, fallbackItem.name, fallbackItem.class, fallbackItem.数量);
+        await Add_najie_thing(
+          qq,
+          fallbackItem.name,
+          fallbackItem.class,
+          fallbackItem.数量,
+          undefined,
+          1,
+          { idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoData.名号 || 'unknown', settlementId, qq, `${rewardKind}-fallback`) }
+        );
         rewards.push(`${fallbackItem.name}x${fallbackItem.数量}（保底奖励）`);
       } catch (itemError) {
         console.warn(`发放保底物品失败: ${fallbackItem.name}`, itemError);
@@ -1605,6 +1832,7 @@ export class BOSS4 extends plugin {
 
   async ShowDamageList2(e) {
     if (!verc({ e })) return false;
+    await this.checkTianjiaoReincarnation();
 
     const match = e.msg.match(/^#天骄贡献榜(?:\s+(.*))?$/);
     const tianjiaoName = match[1] ? match[1].trim() : '';
@@ -1621,9 +1849,11 @@ export class BOSS4 extends plugin {
     }
 
     const globalReviveKey = `tianjiao:global:revive:${tianjiaoName}`;
-    const globalReviveTime = await redis.get(globalReviveKey);
+    const globalReviveTime = Number(await redis.get(globalReviveKey)) || 0;
+    const escapeTime = Number(await redis.get(this.getTianjiaoEscapeKey(tianjiaoName))) || 0;
+    const blockedUntil = Math.max(globalReviveTime, escapeTime);
 
-    if (globalReviveTime && Date.now() < parseInt(globalReviveTime)) {
+    if (blockedUntil && Date.now() < blockedUntil) {
       e.reply(`${tianjiaoName}已被击败，暂无贡献数据`);
       return false;
     }
@@ -1631,6 +1861,12 @@ export class BOSS4 extends plugin {
     const statusKey = `tianjiao:status:${tianjiaoName}`;
     let status = await redis.get(statusKey);
     status = JSON.parse(status || '{}');
+
+    if (!status.isAlive && escapeTime && escapeTime <= Date.now()) {
+      status.currentHP = 100;
+      status.isAlive = true;
+      await redis.set(statusKey, JSON.stringify(status));
+    }
 
     if (!status.isAlive) {
       e.reply(`${tianjiaoName}已被击败，暂无贡献数据`);
@@ -1675,6 +1911,7 @@ async function InitWorldBoss(e) {
     };
     await redis.set(statusKey, JSON.stringify(status));
     await redis.del(`tianjiao:global:revive:${tianjiao.名号}`);
+    await redis.del(`tianjiao:global:escape:${tianjiao.名号}`);
     await redis.del(`tianjiao:reincarnation:announced:${tianjiao.名号}`);
     await redis.del(`tianjiao:damage:${tianjiao.名号}`);
     await redis.del(`tianjiao:hatred_status:${tianjiao.名号}`);
@@ -1725,10 +1962,19 @@ async function SortPlayer(PlayerRecordJSON) {
   }
 }
 
-async function SetWorldBOSSBattleUnLockTimer(e) {
+function clearWorldBOSSBattleUnlockTimer() {
+  if (WorldBOSSBattleUnLockTimer) {
+    clearTimeout(WorldBOSSBattleUnLockTimer);
+    WorldBOSSBattleUnLockTimer = 0;
+  }
+}
+
+async function SetWorldBOSSBattleUnLockTimer(e, lockToken) {
+  clearWorldBOSSBattleUnlockTimer();
   WorldBOSSBattleUnLockTimer = setTimeout(() => {
-    if (WorldBOSSBattleLock == 1) {
+    if (WorldBOSSBattleLock === 1 && WorldBOSSBattleLockToken === lockToken) {
       WorldBOSSBattleLock = 0;
+      WorldBOSSBattleUnLockTimer = 0;
       e.reply('检测到战斗锁卡死，已自动修复');
       return false;
     }

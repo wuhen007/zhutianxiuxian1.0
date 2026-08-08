@@ -1876,13 +1876,8 @@ if (totalPotentialCost > 0) {
           let xf = -1;
         
             let A_player = {
-              名号: player.名号,
-              攻击: player.攻击,
-              防御: player.防御,
-              当前血量: player.当前血量,
-              暴击率: player.暴击率,
-              法球倍率: player.灵根.法球倍率,
-              仙宠: player.仙宠,
+              ...player,
+              法球倍率: player.灵根?.法球倍率 ?? player.法球倍率 ?? 0,
             };
             let buff = 1;
             let monster = getMonsterByLocation(weizhi, xf);
@@ -3951,12 +3946,8 @@ ${aptitudeEvaluations[newAptitude]}
               }
             }
             let A_player = {
-              名号: player.名号,
-              攻击: player.攻击,
-              防御: player.防御,
-              当前血量: player.当前血量,
-              暴击率: player.暴击率,
-              法球倍率: player.灵根.法球倍率,
+              ...player,
+              法球倍率: player.灵根?.法球倍率 ?? player.法球倍率 ?? 0,
             };
            let monster = getMonsterByLocation(weizhi);
             let B_player = {

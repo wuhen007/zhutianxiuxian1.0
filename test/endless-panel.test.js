@@ -148,7 +148,9 @@ test('面板使用稳定宽度并禁止视口字号缩放', () => {
 
 test('面板支持二倍原生像素渲染', () => {
   const output = template.render(html, { ...base, renderScale: 2 });
-  assert.match(output, /style="zoom: 2"/);
+  assert.match(output, /transform: scale\(2\)/);
+  assert.match(output, /transform-origin: top left/);
+  assert.doesNotMatch(output, /zoom:/);
   assert.match(appSource, /renderScale:\s*2/);
   assert.match(appSource, /imgType:\s*'png'/);
 });

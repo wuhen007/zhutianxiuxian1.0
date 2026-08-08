@@ -34,6 +34,8 @@ import {
   calcCoordinateShift,
   applyTribulationShift,
   TRIBULATION_BASE_ATK_SCALE,
+  LEIDI_TRIBULATION_CONVERSION_RATE,
+  LEIDI_TRIBULATION_CONVERSION_WAVES,
   canUseClowWish,
 } from './zhetianTribulationRules.js';
 import {
@@ -269,13 +271,13 @@ const tryResurrect = async (gongfaName, effectFunc) => {
             `「以劫养身，以雷续命！」道音与雷暴共鸣！`,
             `恢复血量：${healAmount}/${player.血量上限}`,
             `附加效果：`,
-            `1. 接下来3道雷劫伤害的60%转化为治疗`,
+            `1. 接下来${LEIDI_TRIBULATION_CONVERSION_WAVES}道雷劫伤害的${LEIDI_TRIBULATION_CONVERSION_RATE * 100}%转化为治疗`,
             `2. 每次转化提升10%雷系抗性`,
         ].join("\n"));
         
         player.雷帝效果 = {
-            转化比例: 0.6,
-            剩余次数: 3,
+            转化比例: LEIDI_TRIBULATION_CONVERSION_RATE,
+            剩余次数: LEIDI_TRIBULATION_CONVERSION_WAVES,
             抗性提升: 0.1,
             当前抗性: 0
         };
@@ -5452,7 +5454,11 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
     }
 
     if (this.isEffectActive(player, "雷帝宝术") && player.雷帝效果) {
-      const 吸收量 = originalDamage * (player.雷帝效果.转化比例 || 0.6);
+      const 转化比例 = Math.max(0, Math.min(
+        Number(player.雷帝效果.转化比例) || LEIDI_TRIBULATION_CONVERSION_RATE,
+        LEIDI_TRIBULATION_CONVERSION_RATE
+      ));
+      const 吸收量 = originalDamage * 转化比例;
       const 治疗量 = Math.min(吸收量, player.血量上限 - player.当前血量);
       
       player.当前血量 += 治疗量;
@@ -5714,5 +5720,3 @@ function getDivineAppellation() {
     const appellations = ["玄", "昊", "寰", "太初", "道衍", "星穹", "混元", "混沌"];
     return appellations[Math.floor(Math.random() * appellations.length)];
 }
-
-

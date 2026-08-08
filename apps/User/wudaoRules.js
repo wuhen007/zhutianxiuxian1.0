@@ -54,6 +54,39 @@ export const DAO_REALM_RULES = Object.freeze([
   }),
 ]);
 
+// 仙古今世法的悟道阶段独立于遮天道途，避免两个体系共用同名法则或进度。
+export const XIANGU_DAO_REALM_RULES = Object.freeze([
+  Object.freeze({ realmId: 9, key: 'trueGodLaw', name: '真神法则', targetExp: 600, baseGain: 20, lifespanCost: 200000, completion: '真神道果', nextRealm: '圣祭境' }),
+  Object.freeze({ realmId: 10, key: 'godKingPrinciple', name: '神王道则', targetExp: 1200, baseGain: 40, lifespanCost: 200000, completion: '神王道果', nextRealm: '天神境' }),
+  Object.freeze({ realmId: 11, key: 'heavenlyRule', name: '天规', targetExp: 2400, baseGain: 80, lifespanCost: 200000, completion: '天规初立', nextRealm: '虚道境' }),
+  Object.freeze({ realmId: 12, key: 'mysteriousVoid', name: '玄虚', targetExp: 4800, baseGain: 160, lifespanCost: 200000, completion: '玄虚道果', nextRealm: '斩我境' }),
+  Object.freeze({ realmId: 13, key: 'onlySelf', name: '唯我', targetExp: 9600, baseGain: 320, lifespanCost: 200000, completion: '真我独尊', nextRealm: '遁一境' }),
+  Object.freeze({ realmId: 14, key: 'originReturn', name: '归元', targetExp: 19200, baseGain: 640, lifespanCost: 200000, completion: '万法归元', nextRealm: '至尊境' }),
+  Object.freeze({ realmId: 15, key: 'supreme', name: '无上', targetExp: 38400, baseGain: 1280, lifespanCost: 200000, completion: '无上道果', nextRealm: '真仙境' }),
+]);
+
+export const XIANGU_DAO_PATH_VERSION = 1;
+
+/**
+ * 悟道资源成本。两套体系共用玩家身上的秘境等级与仙古等级，按合计等级计费。
+ * 修为、血气的“次方”按平方处理，避免把“次方”误解为线性加成。
+ */
+export function getWudaoResourceCosts(mijingLevel, xianguLevel) {
+  const mijing = Math.max(0, Math.trunc(Number(mijingLevel) || 0));
+  const xiangu = Math.max(0, Math.trunc(Number(xianguLevel) || 0));
+  const levelSum = mijing + xiangu;
+  return {
+    mijing,
+    xiangu,
+    levelSum,
+    potential: levelSum * 100,
+    cultivation: 2000000 * levelSum ** 2,
+    blood: 2000000 * levelSum ** 2,
+    lifespan: 200000 * levelSum,
+    spirit: 10000000 * levelSum,
+  };
+}
+
 const PHYSIQUE_BONUSES = Object.freeze({
   '小成·荒古圣体': 0.05,
   '大成·荒古圣体': 0.1,
@@ -102,6 +135,10 @@ function normalizeExp(value, targetExp) {
 
 export function getDaoRuleForRealm(realmId) {
   return DAO_REALM_RULES.find(rule => rule.realmId === Number(realmId)) || null;
+}
+
+export function getXianguDaoRuleForRealm(realmId) {
+  return XIANGU_DAO_REALM_RULES.find(rule => rule.realmId === Number(realmId)) || null;
 }
 
 export function getDaoStage(exp, rule) {
@@ -198,6 +235,67 @@ export function unlockDaoRealm(player, realmId) {
   if (!rule) return null;
   if (path.stages[rule.key] === undefined) path.stages[rule.key] = 0;
   return rule;
+}
+
+export function ensureXianguDaoPath(player) {
+  let changed = false;
+  if (!player.仙古道途 || typeof player.仙古道途 !== 'object' || Array.isArray(player.仙古道途)) {
+    player.仙古道途 = {};
+    changed = true;
+  }
+  const path = player.仙古道途;
+  if (!path.stages || typeof path.stages !== 'object' || Array.isArray(path.stages)) {
+    path.stages = {};
+    changed = true;
+  }
+  if (!path.daily || typeof path.daily !== 'object' || Array.isArray(path.daily)) {
+    path.daily = { date: '', count: 0 };
+    changed = true;
+  }
+  if (path.version !== XIANGU_DAO_PATH_VERSION) {
+    path.version = XIANGU_DAO_PATH_VERSION;
+    changed = true;
+  }
+  for (const rule of XIANGU_DAO_REALM_RULES) {
+    if (path.stages[rule.key] === undefined) continue;
+    const normalized = normalizeExp(path.stages[rule.key], rule.targetExp);
+    if (normalized !== path.stages[rule.key]) {
+      path.stages[rule.key] = normalized;
+      changed = true;
+    }
+  }
+  const count = Math.max(0, Math.floor(Number(path.daily.count) || 0));
+  if (count !== path.daily.count) {
+    path.daily.count = count;
+    changed = true;
+  }
+  if (typeof path.daily.date !== 'string') {
+    path.daily.date = '';
+    changed = true;
+  }
+  return { path, changed };
+}
+
+export function unlockXianguDaoRealm(player, realmId) {
+  const { path } = ensureXianguDaoPath(player);
+  const rule = getXianguDaoRuleForRealm(realmId);
+  if (!rule) return null;
+  if (path.stages[rule.key] === undefined) path.stages[rule.key] = 0;
+  return rule;
+}
+
+export function getXianguDaoGateState(player, realmId) {
+  const ensured = ensureXianguDaoPath(player);
+  const rule = getXianguDaoRuleForRealm(realmId);
+  if (!rule) return { ok: true, rule: null, exp: 0, stage: null, ...ensured };
+  const exp = normalizeExp(ensured.path.stages[rule.key] ?? 0, rule.targetExp);
+  return {
+    ok: exp >= rule.targetExp,
+    rule,
+    exp,
+    stage: getDaoStage(exp, rule),
+    ...ensured,
+  };
 }
 
 export function markDaoAsEmperor(player, method = '') {

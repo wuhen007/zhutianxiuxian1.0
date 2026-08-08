@@ -29,8 +29,10 @@ function withFixture(run) {
   }
 }
 
-test('玩家账号只接受纯数字，并兼容 qg_ 前缀', () => {
+test('玩家账号接受纯数字和十六进制 ID，并兼容 qg_ 前缀', () => {
   assert.equal(normalizePlayerId('qg_123456'), '123456');
+  assert.equal(normalizePlayerId('A38053E1C875EF67FC4F813B9202A15B'), 'A38053E1C875EF67FC4F813B9202A15B');
+  assert.equal(normalizePlayerId('qg_A38053E1C875EF67FC4F813B9202A15B'), 'A38053E1C875EF67FC4F813B9202A15B');
   assert.throws(() => normalizePlayerId('../123'), /账号格式无效/);
 });
 

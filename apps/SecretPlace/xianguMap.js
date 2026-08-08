@@ -1,16 +1,16 @@
 export const DEFAULT_XIANGU_FRAGMENT_SIZES = Object.freeze({
-  edge_camp: Object.freeze([7, 7]),
-  spirit_lake: Object.freeze([7, 6]),
-  ancient_ruins: Object.freeze([8, 7]),
-  true_dragon_nest: Object.freeze([7, 7]),
-  chaos_rift: Object.freeze([6, 5]),
-  dark_prison: Object.freeze([6, 6]),
-  immortal_podium: Object.freeze([8, 6]),
-  bone_forest: Object.freeze([7, 7]),
-  flame_abyss: Object.freeze([7, 7]),
-  xiangu_core: Object.freeze([6, 6]),
-  chaos_mosquito: Object.freeze([6, 5]),
-  void_rift: Object.freeze([5, 5]),
+  edge_camp: Object.freeze([11, 11]),
+  spirit_lake: Object.freeze([11, 11]),
+  ancient_ruins: Object.freeze([11, 11]),
+  true_dragon_nest: Object.freeze([11, 11]),
+  chaos_rift: Object.freeze([11, 11]),
+  dark_prison: Object.freeze([11, 11]),
+  immortal_podium: Object.freeze([11, 11]),
+  bone_forest: Object.freeze([11, 11]),
+  flame_abyss: Object.freeze([11, 11]),
+  xiangu_core: Object.freeze([11, 11]),
+  chaos_mosquito: Object.freeze([11, 11]),
+  void_rift: Object.freeze([11, 11]),
 });
 
 export const XIANGU_MARROW_POOL_NAME = '万道仙髓池';
@@ -20,9 +20,11 @@ export const DEFAULT_XIANGU_MARROW_POOL_CONFIG = Object.freeze({
   npcInviteChance: 0.18,
   potentialGain: 50,
   rewardMultiplier: 5,
+  // A pool belongs to the discovering player's map unless configured otherwise.
+  worldUnique: false,
 });
 
-const MIN_FRAGMENT_SIDE = 4;
+const MIN_FRAGMENT_SIDE = 11;
 const MAX_FRAGMENT_SIDE = 11;
 
 function clonePlainData(value) {
@@ -60,6 +62,16 @@ function normalizeNonNegative(value, fallback, integer = false) {
   return integer ? Math.floor(normalized) : normalized;
 }
 
+function normalizeBoolean(value, fallback = false) {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  const normalized = String(value).trim().toLowerCase();
+  if (['true', '1', 'yes', 'on', '\u662f', '\u771f'].includes(normalized)) return true;
+  if (['false', '0', 'no', 'off', '\u5426', '\u5047'].includes(normalized)) return false;
+  return fallback;
+}
+
 export function resolveXianguMarrowPoolConfig(config = {}) {
   const poolConfig = config?.万道仙髓池配置 ||
     config?.万道仙髓池 ||
@@ -84,6 +96,10 @@ export function resolveXianguMarrowPoolConfig(config = {}) {
     rewardMultiplier: normalizeNonNegative(
       poolConfig?.修血倍率 ?? poolConfig?.rewardMultiplier,
       DEFAULT_XIANGU_MARROW_POOL_CONFIG.rewardMultiplier,
+    ),
+    worldUnique: normalizeBoolean(
+      poolConfig?.['\u5168\u5c40\u552f\u4e00'] ?? poolConfig?.worldUnique,
+      DEFAULT_XIANGU_MARROW_POOL_CONFIG.worldUnique,
     ),
   };
 }
@@ -253,6 +269,40 @@ export function createXianguExitPositions(width, height, connections = {}, rando
   return positions;
 }
 
+export function getRevealedXianguExits(map, exitValue = 5) {
+  const size = getRectangularGridSize(map?.grid);
+  const revealedSize = getRectangularGridSize(map?.revealed);
+  if (!size || !revealedSize || size.width !== revealedSize.width || size.height !== revealedSize.height) {
+    return [];
+  }
+
+  const directions = [
+    ['top', point => point.y === 0],
+    ['bottom', point => point.y === size.height - 1],
+    ['left', point => point.x === 0],
+    ['right', point => point.x === size.width - 1],
+  ];
+
+  return (Array.isArray(map.exitPositions) ? map.exitPositions : [])
+    .filter(point =>
+      isPointInside(map.grid, point) &&
+      map.grid[point.y][point.x] === exitValue &&
+      map.revealed[point.y][point.x] === true
+    )
+    .map(point => {
+      const direction = directions.find(([, matches]) => matches(point))?.[0];
+      return direction && map.connectedFragments?.[direction]
+        ? { direction, target: map.connectedFragments[direction], position: { ...point } }
+        : null;
+    })
+    .filter(Boolean);
+}
+
+export function isXianguExitUnlocked(map, x, y, exitValue = 5) {
+  return getRevealedXianguExits(map, exitValue)
+    .some(exit => exit.position.x === x && exit.position.y === y);
+}
+
 function getRectangularGridSize(grid) {
   if (!Array.isArray(grid) || grid.length < 3 || !Array.isArray(grid[0]) || grid[0].length < 3) {
     return null;
@@ -273,6 +323,7 @@ export function createXianguFragmentSnapshot(map = {}) {
   return clonePlainData({
     version: 1,
     fragmentId: String(map.fragmentId || ''),
+    instanceId: map.instanceId,
     width: size.width,
     height: size.height,
     grid: map.grid,
@@ -303,6 +354,7 @@ export function restoreXianguFragmentSnapshot(snapshot, fragmentId) {
   }
 
   return clonePlainData({
+    instanceId: snapshot.instanceId,
     width: size.width,
     height: size.height,
     grid: snapshot.grid,

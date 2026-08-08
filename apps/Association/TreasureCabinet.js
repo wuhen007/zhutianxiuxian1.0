@@ -8,6 +8,7 @@ import {
   shijianc,
   channel
 } from '../../model/xiuxian.js';
+import { reserveDailyAction } from '../../model/dailyAction.js';
 export class TreasureCabinet extends plugin {
   constructor() {
     super({
@@ -162,6 +163,10 @@ export class TreasureCabinet extends plugin {
       Today.D == lastsign_time.D
     ) {
       e.reply(`今日已经接受过神兽赐福了，明天再来吧`);
+      return false;
+    }
+    if (!await reserveDailyAction(redis, usr_qq, 'beast', nowTime)) {
+      e.reply('今日神兽赐福正在处理或已经完成');
       return false;
     }
 

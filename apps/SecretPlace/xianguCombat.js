@@ -114,6 +114,54 @@ export function resolveXianguLeaderWinner(battleResult) {
   return Number(winningTeam?.[0]?.当前血量) > 0 ? winner : 'draw';
 }
 
+export function areXianguPlayersInSameInstance(player, target) {
+  const playerMap = player?.xiangu_realm_map;
+  const targetMap = target?.xiangu_realm_map;
+  if (!player?.in_xiangu || !target?.in_xiangu || !playerMap || !targetMap) return false;
+  if (String(playerMap.fragmentId || '') !== String(targetMap.fragmentId || '')) return false;
+  const playerHasInstance = playerMap.instanceId !== undefined && playerMap.instanceId !== null;
+  const targetHasInstance = targetMap.instanceId !== undefined && targetMap.instanceId !== null;
+  if (!playerHasInstance && !targetHasInstance) return true;
+  return playerHasInstance && targetHasInstance &&
+    String(playerMap.instanceId) === String(targetMap.instanceId);
+}
+
+export function areXianguPlayersNearby(player, target, maxDistance = 1) {
+  if (!areXianguPlayersInSameInstance(player, target)) return false;
+  const playerMap = player.xiangu_realm_map;
+  const targetMap = target.xiangu_realm_map;
+  if (!playerMap.playerPos || !targetMap.playerPos) return false;
+  const distance = Math.abs(playerMap.playerPos.x - targetMap.playerPos.x) +
+    Math.abs(playerMap.playerPos.y - targetMap.playerPos.y);
+  return distance <= Math.max(0, Number(maxDistance) || 0);
+}
+
+export function getXianguCarriedDaoyun(source = {}) {
+  if (source.xiangu_gains && typeof source.xiangu_gains === 'object') {
+    return Math.max(0, Math.floor(Number(source.xiangu_gains.daoyun) || 0));
+  }
+  const carried = source.daoyun ?? source.道韵;
+  if (carried !== undefined) return Math.max(0, Math.floor(Number(carried) || 0));
+  const level = Math.max(1, Number(source.xiangulevel_id || source.level_id) || 5);
+  return Math.floor(level * 10 * (source.isCanon ? 3 : 1));
+}
+
+export function transferXianguDaoyun(winner, defeated, rate = 1) {
+  const available = getXianguCarriedDaoyun(defeated);
+  const amount = Math.floor(available * Math.min(1, Math.max(0, Number(rate) || 0)));
+  if (amount <= 0) return 0;
+
+  winner.xiangu_gains ||= {};
+  winner.xiangu_gains.daoyun = (Number(winner.xiangu_gains.daoyun) || 0) + amount;
+  if (defeated.xiangu_gains && typeof defeated.xiangu_gains === 'object') {
+    defeated.xiangu_gains.daoyun = available - amount;
+  } else {
+    defeated.daoyun = available - amount;
+    if (Object.hasOwn(defeated, '道韵')) defeated.道韵 = available - amount;
+  }
+  return amount;
+}
+
 export function recordXianguArenaWin(participants, winnerId, loserId) {
   if (!Array.isArray(participants)) return false;
   const winner = participants.find(item => String(item.qq) === String(winnerId));

@@ -1,6 +1,7 @@
 import { plugin, puppeteer, verc, data, config,Show } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
 import { getTimedActionMultiplier } from '../../model/innateTreasure.js';
+import { buildXijieAtlasData } from '../../model/xijieAtlas.js';
 import {
   existplayer,
   Read_player,
@@ -22,6 +23,10 @@ export class Xijie extends plugin {
       event: 'message',
       rule: [
         {
+          reg: '^#洗劫(?:列表|图鉴|列表图鉴)$',
+          fnc: 'xijieList',
+        },
+        {
           reg: '^#洗劫.*$',
           fnc: 'xijie',
         },
@@ -36,6 +41,25 @@ export class Xijie extends plugin {
       ],
     });
   }
+
+  async xijieList(e) {
+    if (!verc({ e })) return false;
+
+    let shop;
+    try {
+      shop = await Read_shop();
+    } catch (error) {
+      logger.error(`[Xijie] 读取洗劫地点失败: ${error.message}`);
+      shop = data.shop_list;
+    }
+
+    const atlasData = buildXijieAtlasData(shop);
+    const templateData = await new Show(e).get_xijieListData(atlasData);
+    const image = await puppeteer.screenshot('xijie_list', templateData);
+    e.reply(image);
+    return false;
+  }
+
    // 检查玩家纳戒中是否有逆道令，并消耗它
         async CheckAndConsumeNiDaoLing(usr_qq) {
           // 检查逆道令是否存在

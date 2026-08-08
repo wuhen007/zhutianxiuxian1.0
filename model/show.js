@@ -35,6 +35,13 @@ export default class Game extends base {
       ...myData,
     };
   }
+  async get_endlessReincarnationData(myData) {
+    this.model = 'endless_reincarnation';
+    return {
+      ...this.screenData,
+      ...myData,
+    };
+  }
   async get_player_pindao_Data(myData) {
     this.model = 'player_pindao';
     return {
@@ -512,6 +519,15 @@ async get_jindi_placeData(myData) {
     return {
       ...this.screenData,
       saveId: 'shop',
+      ...myData,
+    };
+  }
+
+  async get_xijieListData(myData) {
+    this.model = 'xijie_list';
+    return {
+      ...this.screenData,
+      saveId: 'xijie_list',
       ...myData,
     };
   }

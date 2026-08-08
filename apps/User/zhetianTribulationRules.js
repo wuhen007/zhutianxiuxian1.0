@@ -14,6 +14,42 @@
  */
 export const TRIBULATION_BASE_ATK_SCALE = 1;
 
+export const LEIDI_TRIBULATION_CONVERSION_RATE = 0.4;
+export const LEIDI_TRIBULATION_CONVERSION_WAVES = 4;
+
+function getRealmAttack(list, levelId) {
+  return Number(list?.find(item => Number(item.level_id) === Number(levelId))?.基础攻击) || 0;
+}
+
+function getMaxRealmAttack(list) {
+  return Number(list?.reduce((max, item) => (
+    !max || Number(item.level_id) > Number(max.level_id) ? item : max
+  ), null)?.基础攻击) || 0;
+}
+
+/**
+ * 神火踏足真一至遁一踏足至尊的雷劫理论攻击。
+ * 神火为第一档；仙古境界每提升一级，装备倍率 +15、帝兵倍率 +20。
+ */
+export function calcXianguTribulationPower(player, levels = {}) {
+  const xianguLevel = Math.max(8, Math.trunc(Number(player?.xiangulevel_id) || 8));
+  const tier = xianguLevel - 7;
+  const equipmentMultiplier = tier * 15;
+  const imperialMultiplier = tier * 20;
+  const secretAttack = getRealmAttack(levels.Levelmijing_list, player?.mijinglevel_id);
+  const ancientAttack = getRealmAttack(levels.xiangujinshi_list, xianguLevel);
+  const realmAttack = secretAttack + ancientAttack;
+  const baseAttack = getMaxRealmAttack(levels.Level_list)
+    + getMaxRealmAttack(levels.LevelMax_list)
+    + realmAttack;
+
+  return {
+    attack: Math.trunc(baseAttack * equipmentMultiplier + realmAttack * imperialMultiplier),
+    equipmentMultiplier,
+    imperialMultiplier,
+  };
+}
+
 const SAKURA_ROOT_NAMES = new Set([
   '木之本樱',
   '星之杖·木之本樱',

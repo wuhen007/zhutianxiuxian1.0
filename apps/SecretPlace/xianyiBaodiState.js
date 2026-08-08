@@ -5,6 +5,13 @@ const RELEASE_LOCK_SCRIPT = `
   return 0
 `;
 
+const REFRESH_LOCK_SCRIPT = `
+  if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('expire', KEYS[1], ARGV[2])
+  end
+  return 0
+`;
+
 const MIGRATE_DROP_SCRIPT = `
   if redis.call('exists', KEYS[3]) == 0 then
     return { -1, '' }
@@ -36,6 +43,13 @@ export async function releaseRedisLock(redisClient, key, token) {
     keys: [key],
     arguments: [token],
   });
+}
+
+export async function refreshRedisLock(redisClient, key, token, ttlSeconds = 60) {
+  return Boolean(await redisClient.eval(REFRESH_LOCK_SCRIPT, {
+    keys: [key],
+    arguments: [token, String(ttlSeconds)],
+  }));
 }
 
 export async function migrateDropToBaodi(redisClient, {
@@ -88,4 +102,3 @@ export async function commitClaimWithRollback({
     throw error;
   }
 }
-

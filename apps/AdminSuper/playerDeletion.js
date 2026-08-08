@@ -16,7 +16,7 @@ const PLAYER_FILE_DEFINITIONS = [
 
 export function normalizePlayerId(playerId) {
   const normalized = String(playerId ?? '').replace(/^qg_/, '').trim();
-  if (!/^\d+$/.test(normalized)) {
+  if (!/^[0-9a-fA-F]+$/.test(normalized)) {
     throw new TypeError('玩家账号格式无效');
   }
   return normalized;

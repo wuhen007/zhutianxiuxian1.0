@@ -46,7 +46,7 @@ export class SuLing extends plugin {
     });
   }
 
-  async getContext(e) {
+  async getPlayerContext(e) {
     if (!verc({ e })) return null;
     let userId = e.user_id.toString().replace('qg_', '');
     userId = await channel(userId);
@@ -60,7 +60,7 @@ export class SuLing extends plugin {
   }
 
   async status(e) {
-    const context = await this.getContext(e);
+    const context = await this.getPlayerContext(e);
     if (!context) return true;
     const { player, character } = context;
     const favor = Math.max(0, Number(character.好感度) || 0);
@@ -81,7 +81,7 @@ export class SuLing extends plugin {
   }
 
   async interact(e) {
-    const context = await this.getContext(e);
+    const context = await this.getPlayerContext(e);
     if (!context) return true;
     const { userId, player, character } = context;
     const dateKey = shanghaiDateKey();
@@ -119,7 +119,7 @@ export class SuLing extends plugin {
   }
 
   async askForGuidance(e) {
-    const context = await this.getContext(e);
+    const context = await this.getPlayerContext(e);
     if (!context) return true;
     const { userId, player } = context;
     const result = advanceSuLingTeaching(player, shanghaiDateKey());

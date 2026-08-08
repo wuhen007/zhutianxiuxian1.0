@@ -6,13 +6,28 @@ const DEFAULT_CELL_TYPES = Object.freeze({
 });
 
 const NPC_LOOT = Object.freeze([
-  '灵石',
+  '源石',
   '普通道种碎片',
   '仙古矿材',
   '古兽残骨',
   '秘境灵药',
   '远古符纸',
 ]);
+
+const XIANGU_WORLD_UNIQUE_ITEMS = new Set([
+  '玉石匣·仙王经文', '玉石匣', '仙王经文',
+  '一滴帝血', '帝血', '大罗剑胎',
+]);
+
+export const XIANGU_NPC_POWER_CONFIG = Object.freeze({
+  minXianguLevel: 7,
+  maxXianguLevel: 9,
+  mijingLevel: 1,
+  equipmentMultiplier: 30,
+  imperialMultiplier: 50,
+  minExtraAttribute: 130_000_000,
+  maxExtraAttribute: 1_000_000_000,
+});
 
 function clonePlainData(value) {
   if (typeof structuredClone === 'function') return structuredClone(value);
@@ -22,6 +37,82 @@ function clonePlainData(value) {
 function randomIndex(length, random) {
   const roll = Math.min(1 - Number.EPSILON, Math.max(0, Number(random()) || 0));
   return Math.floor(roll * length);
+}
+
+function randomInteger(min, max, random) {
+  const roll = Math.min(1 - Number.EPSILON, Math.max(0, Number(random()) || 0));
+  return min + Math.floor(roll * (max - min + 1));
+}
+
+function maxRealm(levels) {
+  return (Array.isArray(levels) ? levels : []).reduce((highest, realm) =>
+    !highest || Number(realm?.level_id) > Number(highest?.level_id) ? realm : highest, null) || {};
+}
+
+function findRealm(levels, levelId) {
+  return (Array.isArray(levels) ? levels : [])
+    .find(realm => Number(realm?.level_id) === Number(levelId)) || {};
+}
+
+function realmStat(realm, field) {
+  return Number(realm?.[field]) || 0;
+}
+
+function clampInteger(value, min, max) {
+  return Math.min(max, Math.max(min, Math.trunc(value)));
+}
+
+/**
+ * 统一仙古地图 NPC 的四体系与战斗属性。返回新对象，旧地图重复迁移不会重掷属性。
+ */
+export function strengthenXianguNpc(
+  npc = {},
+  realms = {},
+  { random = Math.random } = {},
+) {
+  const config = XIANGU_NPC_POWER_CONFIG;
+  const cultivation = maxRealm(realms.cultivation);
+  const physique = maxRealm(realms.physique);
+  const legacyXianguLevel = Number(npc.xiangulevel_id) || Number(npc.level_id);
+  const xianguLevel = Number.isFinite(legacyXianguLevel) && legacyXianguLevel > 0
+    ? clampInteger(legacyXianguLevel, config.minXianguLevel, config.maxXianguLevel)
+    : randomInteger(config.minXianguLevel, config.maxXianguLevel, random);
+  const secret = findRealm(realms.secret, config.mijingLevel);
+  const ancient = findRealm(realms.ancient, xianguLevel);
+  const storedExtra = Number(npc.仙古额外全属性 ?? npc.额外属性加成);
+  const extraAttribute = Number.isFinite(storedExtra) && storedExtra > 0
+    ? clampInteger(storedExtra, config.minExtraAttribute, config.maxExtraAttribute)
+    : randomInteger(config.minExtraAttribute, config.maxExtraAttribute, random);
+
+  const baseStat = field => realmStat(cultivation, field) + realmStat(physique, field) +
+    realmStat(secret, field) + realmStat(ancient, field) + extraAttribute;
+  const imperialStat = field => realmStat(secret, field) + realmStat(ancient, field);
+  const finalStat = field => Math.max(1, Math.trunc(
+    baseStat(field) * config.equipmentMultiplier +
+    imperialStat(field) * config.imperialMultiplier
+  ));
+  const hp = finalStat('基础血量');
+
+  return {
+    ...npc,
+    level_id: Number(cultivation.level_id) || 0,
+    Physique_id: Number(physique.level_id) || 0,
+    mijinglevel_id: config.mijingLevel,
+    xiangulevel_id: xianguLevel,
+    境界: ancient.level || npc.境界 || '未知境界',
+    攻击: finalStat('基础攻击'),
+    防御: finalStat('基础防御'),
+    当前血量: hp,
+    血量上限: hp,
+    暴击率: realmStat(cultivation, '基础暴击') + realmStat(physique, '基础暴击'),
+    仙古额外全属性: extraAttribute,
+    额外属性加成: extraAttribute,
+    全属性加成: extraAttribute,
+    装备倍率: config.equipmentMultiplier,
+    帝兵倍率: config.imperialMultiplier,
+    装备描述: `仙古战装×${config.equipmentMultiplier}`,
+    帝兵描述: `本命帝兵×${config.imperialMultiplier}`,
+  };
 }
 
 function getNpcId(npc, map, spot) {
@@ -50,9 +141,25 @@ function pointKey(point) {
   return `${point.x},${point.y}`;
 }
 
-export function bindXianguNpcLocations(map, npcCandidates = [], { random = Math.random } = {}) {
+export function bindXianguNpcLocations(
+  map,
+  npcCandidates = [],
+  { random = Math.random, excludedIds = [] } = {},
+) {
   if (!Array.isArray(map?.npcLocations)) return [];
-  const available = npcCandidates.filter(Boolean).map(clonePlainData);
+  const excluded = new Set(excludedIds.map(String));
+  for (let index = map.npcLocations.length - 1; index >= 0; index--) {
+    const spot = map.npcLocations[index];
+    const npcId = String(spot?.npcId || spot?.npc?.id || spot?.npc?.name || spot?.npc?.名号 || '');
+    if (!npcId || !excluded.has(npcId)) continue;
+    map.npcLocations.splice(index, 1);
+    if (map.grid?.[spot.y]?.[spot.x] === DEFAULT_CELL_TYPES.NPC) {
+      map.grid[spot.y][spot.x] = spot.underCell ?? DEFAULT_CELL_TYPES.EMPTY;
+    }
+  }
+  const available = npcCandidates
+    .filter(npc => npc && !excluded.has(String(npc.id || npc.name || npc.名号 || '')))
+    .map(clonePlainData);
 
   for (const spot of map.npcLocations) {
     if (spot?.npc) {
@@ -139,9 +246,23 @@ function moveNpc(map, spot, next, cellTypes) {
 
 function rollNpcLoot(random) {
   const name = NPC_LOOT[randomIndex(NPC_LOOT.length, random)];
-  return name === '灵石'
-    ? { name, 灵石: 1000 + randomIndex(5001, random), 数量: 1 }
+  return name === '源石'
+    ? { name, 源石: 1, 数量: 1 }
     : { name, 数量: 1 };
+}
+
+function rollNpcGoalLoot(npc, map, random) {
+  const goal = npc?.xianguGoal;
+  const target = String(goal?.item || '').trim();
+  const uniqueNames = Object.entries(map?.uniqueTreasures || {}).flatMap(([name, treasure]) =>
+    [name, treasure?.name].filter(Boolean)
+  );
+  const isUnique = goal?.unique === true || goal?.worldUnique === true ||
+    XIANGU_WORLD_UNIQUE_ITEMS.has(target) || uniqueNames.includes(target);
+
+  return goal?.action === 'seek_item' && target && !isUnique
+    ? { name: target, 数量: 1 }
+    : rollNpcLoot(random);
 }
 
 function revealNearestTreasure(map, origin, cellTypes) {
@@ -166,7 +287,8 @@ function getEncounter(map, player, spot, now, random, cellTypes, allowEncounter)
   const npcId = spot.npcId || npc.id;
   const relations = player.xiangu_npc_relations ||= {};
   const relation = Number(relations[npcId] ?? player.xiangu_faction_rep?.[npc.faction]) || 0;
-  const hostile = npc.hostile === true || npc.personality === 'hostile' || relation <= -30;
+  const hostile = npc.xianguGoal?.action === 'hunt_player' ||
+    npc.hostile === true || npc.personality === 'hostile' || relation <= -30;
 
   if (hostile) {
     spot.nextEncounterAt = now + 300000;
@@ -247,7 +369,8 @@ export function advanceXianguNpcState(
   const relation = Number(
     player.xiangu_npc_relations?.[npcId] ?? player.xiangu_faction_rep?.[spot.npc.faction]
   ) || 0;
-  const hostile = spot.npc.hostile === true || spot.npc.personality === 'hostile' || relation <= -30;
+  const hostile = spot.npc.xianguGoal?.action === 'hunt_player' ||
+    spot.npc.hostile === true || spot.npc.personality === 'hostile' || relation <= -30;
   const occupied = new Set(active.filter(item => item !== spot).map(pointKey));
   const oldPos = { x: spot.x, y: spot.y };
 
@@ -288,7 +411,7 @@ export function advanceXianguNpcState(
     };
   }
 
-  const item = rollNpcLoot(random);
+  const item = rollNpcGoalLoot(spot.npc, map, random);
   spot.npc.inventory.push(item);
   return {
     type: 'loot',

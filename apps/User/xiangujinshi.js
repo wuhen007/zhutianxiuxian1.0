@@ -34,6 +34,11 @@ import {
   grantXianqi,
 } from '../../model/xianguXianqi.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
+import {
+  getXianguDaoGateState,
+  getXianguDaoRuleForRealm,
+  unlockXianguDaoRealm,
+} from './wudaoRules.js';
 
 export class xiangujinshi extends plugin {
   constructor() {
@@ -315,6 +320,7 @@ if (player.xiangulevel_id === 4) {
     ].join("\n"));
 
     player.xiangulevel_id = 2;
+    this.deductXianguPotential(player);
     await Write_player(usr_qq, player);
      let equipment = await Read_equipment(usr_qq);
         await Write_equipment(usr_qq, equipment);
@@ -455,7 +461,7 @@ if (player.xiangulevel_id === 4) {
     if (result.isBornEmperor) {
       player.至尊骨 = "初现";
     }
-    
+    this.deductXianguPotential(player);
     await Write_player(usr_qq, player);
      let equipment = await Read_equipment(usr_qq);
         await Write_equipment(usr_qq, equipment);
@@ -551,6 +557,7 @@ async breakthroughNormalDongtianRealm(e, usr_qq, player) {
 
     // 突破成功
     player.xiangulevel_id = 3; // 洞天境ID
+    this.deductXianguPotential(player);
     player.dongtian_count = 10; // 记录十口洞天
     await Write_player(usr_qq, player);
      let equipment = await Read_equipment(usr_qq);
@@ -628,6 +635,7 @@ async breakthroughExtremeDongtianRealm(e, usr_qq, player) {
     player.攻击加成 += 650000;
     player.防御加成 += 650000;
     player.生命加成 += 650000;
+    this.deductXianguPotential(player);
     await Write_player(usr_qq, player);
  let equipment = await Read_equipment(usr_qq);
         await Write_equipment(usr_qq, equipment);
@@ -680,6 +688,7 @@ async breakthroughNormalhualingRealm(e, usr_qq, player) {
     await Add_血气(usr_qq, -actualEnergyNeed);
     await Add_修为(usr_qq, -actualEnergyNeed);
     player.xiangulevel_id = 4; // 进入化灵境
+    this.deductXianguPotential(player);
     player.hualing_stage = 3;  // 直接完成三阶段（因根基完美）
 
     // 突破特效（阴阳交汇意象）[9](@ref)
@@ -738,6 +747,7 @@ async breakthroughExtremeHualingRealm(e, usr_qq, player) {
     player.攻击加成 += 1650000;
     player.防御加成 += 1650000; // 新增精神属性
     player.生命加成 += 1650000; // 洞天养灵强化
+    this.deductXianguPotential(player);
 
 
     const spiritWeapons = [
@@ -822,6 +832,7 @@ async breakthroughNormalMingwenRealm(e, usr_qq, player) {
     await Add_血气(usr_qq, -actualEnergyNeed);
     await Add_修为(usr_qq, -actualEnergyNeed);
     player.xiangulevel_id = 5; // 进入铭文境
+    this.deductXianguPotential(player);
     player.mingwen_count = userBaoshu.length; // 记录铭刻宝术数量
 
     // 突破特效（万符绕体）
@@ -881,6 +892,7 @@ async breakthroughExtremeMingwenRealm(e, usr_qq, player) {
     player.防御加成 += 1500000;
     player.生命加成 += 2000000;
     player.符文掌握 = "万符归一"; // 特殊属性
+    this.deductXianguPotential(player);
 
     // 随机生成至尊符文形态
     const supremeSymbols = ["鲲鹏", "真龙", "雷帝", "草剑", "轮回"];
@@ -955,6 +967,7 @@ async breakthroughNormalLiezhenRealm(e, usr_qq, player) {
     await Add_血气(usr_qq, -actualEnergyNeed);
     await Add_修为(usr_qq, -actualEnergyNeed);
     player.xiangulevel_id = 6; // 进入列阵境
+    this.deductXianguPotential(player);
     player.liezhen_type = "原始阵纹";
 
     // ==== 突破特效 ====
@@ -1013,6 +1026,7 @@ async breakthroughExtremeLiezhenRealm(e, usr_qq, player) {
     player.防御加成 += 2950000;
     player.生命加成 += 2950000;
     player.阵法掌握 = "诸天阵道"; // 特殊属性
+    this.deductXianguPotential(player);
 
 
     // 突破文案（万灵图演化诸天阵法）
@@ -1127,6 +1141,7 @@ async breakthroughZunzheRealm(e, usr_qq, player) {
 
     // 炼丹成功，突破到尊者境
     player.xiangulevel_id = 7; // 进入尊者境
+    this.deductXianguPotential(player);
     await Write_player(usr_qq, player);
  let equipment = await Read_equipment(usr_qq);
         await Write_equipment(usr_qq, equipment);
@@ -1336,6 +1351,7 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
     player.生命加成 += 6000000;
     player.五行抗性 = "圆满"; // 获得五行抗性
     player.法力免疫 = "初级"; // 获得短暂法力免疫能力
+    this.deductXianguPotential(player);
 
     // 随机获得一种五行神通
     const fiveElementsPowers = [
@@ -1423,6 +1439,7 @@ async breakthroughShenhuoRealm(e, usr_qq, player) {
     } : { 攻击: 6000000, 防御: 6000000, 血气: 6000000 };
 
     player.xiangulevel_id = 8;
+    this.deductXianguPotential(player);
     player.攻击 += diff.攻击;
     player.防御 += diff.防御;
     player.血气上限 += diff.血气;
@@ -1511,6 +1528,7 @@ async breakthroughXianqiExtreme(e, usr_qq, player) {
     if (trial.targetStrand === 3) {
         player.xiangu_xianqi_three_complete = true;
     }
+    this.deductXianguPotential(player);
     await Write_player(usr_qq, player);
 
     return e.reply([
@@ -1535,6 +1553,23 @@ async breakthroughUpperRealm(e, usr_qq, player) {
     const breakthrough = XIANGU_REALM_ROUTES[fromLevelId];
     if (!breakthrough) return e.reply('当前境界没有对应的仙古今世法渡劫');
     ensureXianqiState(player);
+
+    // 仙古上位冲关先圆满当前境界对应的独立法则，规则与遮天渡劫的道途门槛一致。
+    const daoRule = getXianguDaoRuleForRealm(fromLevelId);
+    if (daoRule) {
+      const gate = getXianguDaoGateState(player, fromLevelId);
+      unlockXianguDaoRealm(player, fromLevelId);
+      if (!gate.ok) {
+        await Write_player(usr_qq, player);
+        return e.reply([
+          `【${daoRule.name}未圆·冲关受阻】`,
+          `${player.名号}欲冲击${breakthrough.targetName}，却感${daoRule.name}尚有残缺。`,
+          `当前进度：${gate.exp}/${daoRule.targetExp}（${gate.stage.name}）`,
+          `需将${daoRule.name}修至【圆满】，方可继续前行。`,
+          '发送#悟道参悟仙古法则，#我的道途查看完整进度。',
+        ].join('\n'));
+      }
+    }
 
     const baseNeed = this.calculateBaseNeedExp(player);
     const actualNeed = this.calculateActualCost(baseNeed, player) * breakthrough.costMultiplier;
@@ -1580,6 +1615,7 @@ async breakthroughUpperRealm(e, usr_qq, player) {
     } : { 攻击: 20000000, 防御: 20000000, 血气: 20000000 };
 
     player.xiangulevel_id = breakthrough.targetLevelId;
+    this.deductXianguPotential(player);
     player.攻击 = (Number(player.攻击) || 0) + diff.攻击;
     player.防御 = (Number(player.防御) || 0) + diff.防御;
     player.血气上限 = (Number(player.血气上限) || 0) + diff.血气;
@@ -1693,6 +1729,11 @@ getPlaceName(power_place) {
   calculateActualCost(baseCost, player) {
     // 考虑各种修正因素后的实际消耗
     return applyQuestionFortuneCost(player, baseCost);
+  }
+
+  // 冲关成功时扣除仙道潜力（与 chongguan 门控检查保持一致：applyQuestionFortuneCost(player, 10)）
+  deductXianguPotential(player) {
+    player.仙道潜力 = Math.max(0, (Number(player.仙道潜力) || 0) - applyQuestionFortuneCost(player, 10));
   }
 
   hasRequiredGongfa(player, realm) {

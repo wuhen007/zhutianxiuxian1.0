@@ -2,6 +2,7 @@ import { plugin,  verc, data, config } from '../../api/api.js';
 import fs from 'fs';
 import {
   Read_player,
+  Write_player,
   existplayer,
   exist_najie_thing,
   foundthing,
@@ -16,8 +17,16 @@ import {
   Add_修为,
   Add_血气,
   channel,
-  buildAt
+  buildAt,
+  instead_equipment
 } from '../../model/xiuxian.js';
+import {
+  buildInnateTreasureGrant,
+  claimInnateTreasure,
+  isInnateTreasureName,
+  readInnateTreasureState,
+  releaseInnateTreasure,
+} from '../../model/innateTreasure.js';
 export class MoneyOperation extends plugin {
   constructor() {
     super({
@@ -167,6 +176,41 @@ export class MoneyOperation extends plugin {
       await Add_寿元(B_qq, thing_amount);
     } else if (thing_name == '血气') {
       await Add_血气(B_qq, thing_amount);
+    } else if (isInnateTreasureName(String(thing_name).trim())) {
+      // 先天至宝专属发放：普通 foundthing 路径不会设置认主/独立至宝位状态
+      const cleanName = String(thing_name).trim();
+      const force = code.slice(1).some(seg => /强制|force/i.test(String(seg)));
+      const grant = buildInnateTreasureGrant(cleanName, B_qq, { force });
+      if (!grant.ok) {
+        if (grant.reason === 'unknown') {
+          return e.reply(`这方世界没有先天至宝【${cleanName}】`);
+        }
+        if (grant.reason === 'owned') {
+          const ownerName = (await existplayer(grant.ownerId)) ? (await Read_player(grant.ownerId)).名号 : grant.ownerId;
+          return e.reply(`【${cleanName}】已被【${ownerName}】认主。\n如需强制转移，请附加 *强制：\n#发${cleanName}*强制@玩家`);
+        }
+      }
+      // 强制发放且原归属他人时，先释放旧归属，保证全局状态一致
+      if (force) {
+        const state = readInnateTreasureState();
+        const prevOwner = state.owners?.[cleanName]?.ownerId;
+        if (prevOwner && prevOwner !== String(B_qq)) {
+          releaseInnateTreasure(cleanName, prevOwner);
+        }
+      }
+      claimInnateTreasure(cleanName, B_qq);
+      await Add_najie_thing(B_qq, grant.treasure, '装备', 1, 6);
+      await instead_equipment(B_qq, { ...grant.treasure, type: '至宝' });
+      const player = await Read_player(B_qq);
+      if (!player.先天权柄 || typeof player.先天权柄 !== 'object') player.先天权柄 = {};
+      if (!player.先天权柄.冷却 || typeof player.先天权柄.冷却 !== 'object') player.先天权柄.冷却 = {};
+      await Write_player(B_qq, player);
+      const tip = force ? '（已强制转移原归属）' : '';
+      return e.reply([
+        `【管理员发放·先天至宝】`,
+        `已授予 ${player.名号} 先天至宝【${cleanName}】本体，并自动执掌至独立至宝位。${tip}`,
+        `发送 #先天至宝 可查看已显化的权柄与冷却。`,
+      ].join('\n'));
     } else {
       let thing_exist = await foundthing(thing_name);
       if (!thing_exist) {

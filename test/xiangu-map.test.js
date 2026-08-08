@@ -11,28 +11,15 @@ import {
   createXianguExitPositions,
   createXianguFragmentSnapshot,
   ensureXianguExitConnectivity,
+  getRevealedXianguExits,
   getXianguMarrowPoolTrapChance,
+  isXianguExitUnlocked,
   pickDifferentXianguFragment,
   placeXianguMarrowPool,
   restoreXianguFragmentSnapshot,
   resolveXianguMarrowPoolConfig,
   resolveXianguFragmentSize,
 } from '../apps/SecretPlace/xianguMap.js';
-
-const LEGACY_SIZES = {
-  edge_camp: [6, 6],
-  spirit_lake: [6, 5],
-  ancient_ruins: [7, 6],
-  true_dragon_nest: [6, 6],
-  chaos_rift: [5, 4],
-  dark_prison: [5, 5],
-  immortal_podium: [7, 5],
-  bone_forest: [6, 6],
-  flame_abyss: [6, 6],
-  xiangu_core: [5, 5],
-  chaos_mosquito: [5, 4],
-  void_rift: [4, 4],
-};
 
 function reachableCells(grid, start, wallValue = 1) {
   const seen = new Set([`${start.x},${start.y}`]);
@@ -54,12 +41,11 @@ function reachableCells(grid, start, wallValue = 1) {
   return seen;
 }
 
-test('12张碎片地图的长宽均比旧版增加1格', () => {
-  assert.deepEqual(Object.keys(DEFAULT_XIANGU_FRAGMENT_SIZES).sort(), Object.keys(LEGACY_SIZES).sort());
-  for (const [fragmentId, legacySize] of Object.entries(LEGACY_SIZES)) {
-    const currentSize = DEFAULT_XIANGU_FRAGMENT_SIZES[fragmentId];
-    assert.deepEqual(currentSize, [legacySize[0] + 1, legacySize[1] + 1], fragmentId);
-    assert.ok(currentSize[0] <= 11 && currentSize[1] <= 11, `${fragmentId} 超出地图模板上限`);
+test('12张碎片地图均不少于120格', () => {
+  assert.equal(Object.keys(DEFAULT_XIANGU_FRAGMENT_SIZES).length, 12);
+  for (const [fragmentId, [width, height]] of Object.entries(DEFAULT_XIANGU_FRAGMENT_SIZES)) {
+    assert.ok(width * height >= 120, `${fragmentId} 少于120格`);
+    assert.ok(width <= 11 && height <= 11, `${fragmentId} 超出地图模板上限`);
   }
 });
 
@@ -68,7 +54,7 @@ test('JSON地图尺寸配置与代码默认值保持一致', () => {
   assert.deepEqual(config.地图配置.碎片尺寸, DEFAULT_XIANGU_FRAGMENT_SIZES);
 });
 
-test('地图尺寸支持配置覆盖并限制在模板可渲染范围内', () => {
+test('地图尺寸配置始终归一化为至少120格', () => {
   const config = {
     地图配置: {
       碎片尺寸: {
@@ -79,10 +65,52 @@ test('地图尺寸支持配置覆盖并限制在模板可渲染范围内', () =>
     },
   };
 
-  assert.deepEqual(resolveXianguFragmentSize(config, 'edge_camp'), [10, 9]);
-  assert.deepEqual(resolveXianguFragmentSize(config, 'spirit_lake'), [11, 4]);
-  assert.deepEqual(resolveXianguFragmentSize(config, 'chaos_rift'), [6, 8]);
-  assert.deepEqual(resolveXianguFragmentSize(config, 'void_rift'), [5, 5]);
+  assert.deepEqual(resolveXianguFragmentSize(config, 'edge_camp'), [11, 11]);
+  assert.deepEqual(resolveXianguFragmentSize(config, 'spirit_lake'), [11, 11]);
+  assert.deepEqual(resolveXianguFragmentSize(config, 'chaos_rift'), [11, 11]);
+  assert.deepEqual(resolveXianguFragmentSize(config, 'void_rift'), [11, 11]);
+});
+
+test('神识地图模板先显示地图，再显示探索信息和图例', () => {
+  const html = fs.readFileSync(new URL('../resources/html/xiangu_map/xiangu_map.html', import.meta.url), 'utf8');
+  assert.ok(html.indexOf('class="map-panel"') < html.indexOf('class="info-panel"'));
+  assert.match(html, /\.main-layout\s*{[^}]*flex-direction:\s*column;/s);
+  assert.match(html, /class="map-stage"/);
+  assert.match(html, /class="detail-grid"/);
+  assert.match(html, /cell-rival/);
+  assert.match(html, /class="artifact"/);
+  assert.match(html, /class="scroll-paper"/);
+  assert.match(html, /class="scroll-rod scroll-rod-top"/);
+  assert.match(html, /img\/state\/背景图\.jpg/);
+  assert.doesNotMatch(html, /💎|👣|🗺️|👁️|🔒/);
+});
+
+test('仙古地图三版审稿页共享一套地图结构', () => {
+  const html = fs.readFileSync(new URL('../resources/html/xiangu_map/xiangu_map_review.html', import.meta.url), 'utf8');
+  assert.match(html, /data-theme-value="tianshu"/);
+  assert.match(html, /data-theme-value="xianting"/);
+  assert.match(html, /data-theme-value="shanhe"/);
+  assert.equal(html.match(/id="map-grid"/g)?.length, 1);
+  assert.match(html, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.doesNotMatch(html, /[—–]/);
+});
+
+test('方向移动使用图片回执且跨区移动必须经过已揭示出口', () => {
+  const source = fs.readFileSync(new URL('../apps/SecretPlace/xianguPlace.js', import.meta.url), 'utf8');
+  assert.match(source, /borderCell === CELL_TYPE\.EXIT && isXianguExitUnlocked\(map, borderCellX, borderCellY\)/);
+  assert.doesNotMatch(source, /borderCell === CELL_TYPE\.EXIT \|\| borderCell === CELL_TYPE\.EXPLORED_EMPTY/);
+  assert.match(source, /async replyXianguMapWithEvents\(e, eventLines = \[\]\)/);
+  assert.match(source, /XIANGU_MOVEMENT_TEXT_CELL_TYPES\.has\(targetCell\)/);
+  assert.match(source, /return this\.replyXianguMapWithEvents\(e, eventLines\);/);
+  assert.doesNotMatch(source, /`【移动信息】`/);
+  assert.match(source, /const targetExit = getRevealedXianguExits\(oldMap\)\.find/);
+  assert.match(source, /player\.xiangu_world_seed = String\(weimianData\.仙古秘境开启时间/);
+  assert.match(source, /createXianguSeededRandom\(`\$\{instanceId\}:grid`\)/);
+  assert.match(source, /instanceId: targetFragmentState\.instanceId/);
+  assert.match(source, /revealAdjacentCells\(map, playerPos, scanRange\);[\s\S]*?grantXianguExitDiscoveryDaoyun[\s\S]*?Write_player\(player_qq, player\)/);
+  assert.match(source, /delivery\.status === 'fallback' && !delivery\.receipt/);
+  assert.match(source, /map\.grid\[y\]\[x\] = CELL_TYPE\.TREASURE/);
+  assert.match(source, /foundTreasure\.claimed = false/);
 });
 
 test('只在实际连接方向生成对应边界出口', () => {
@@ -98,6 +126,38 @@ test('只在实际连接方向生成对应边界出口', () => {
     { x: 0, y: 3 },
     { x: 7, y: 3 },
   ]);
+});
+
+test('只有已经揭示的真实出口才能用于碎片移动', () => {
+  const map = {
+    grid: [
+      [1, 5, 1, 1],
+      [7, 0, 0, 5],
+      [1, 0, 0, 1],
+      [1, 1, 5, 1],
+    ],
+    revealed: [
+      [false, true, false, false],
+      [true, true, false, false],
+      [false, false, false, false],
+      [false, false, true, false],
+    ],
+    connectedFragments: {
+      top: 'spirit_lake',
+      left: 'ancient_ruins',
+      right: 'true_dragon_nest',
+      bottom: 'xiangu_core',
+    },
+    exitPositions: [{ x: 1, y: 0 }, { x: 3, y: 1 }, { x: 2, y: 3 }],
+  };
+
+  assert.deepEqual(getRevealedXianguExits(map), [
+    { direction: 'top', target: 'spirit_lake', position: { x: 1, y: 0 } },
+    { direction: 'bottom', target: 'xiangu_core', position: { x: 2, y: 3 } },
+  ]);
+  assert.equal(isXianguExitUnlocked(map, 1, 0), true);
+  assert.equal(isXianguExitUnlocked(map, 3, 1), false, '未揭示出口不能通行');
+  assert.equal(isXianguExitUnlocked(map, 0, 1), false, '已探索空地不能冒充出口');
 });
 
 test('碎片连接池不会选中当前碎片形成自环', () => {
@@ -129,6 +189,7 @@ test('随机墙体隔断时会打通出生点到所有出口的道路', () => {
 test('返程快照完整恢复地图进度和唯一机缘领取状态', () => {
   const map = {
     fragmentId: 'xiangu_core',
+    instanceId: 'run-1',
     width: 4,
     height: 4,
     grid: [
@@ -156,6 +217,8 @@ test('返程快照完整恢复地图进度和唯一机缘领取状态', () => {
   const snapshot = createXianguFragmentSnapshot(map);
   const restored = restoreXianguFragmentSnapshot(snapshot, 'xiangu_core');
 
+  assert.equal(snapshot.instanceId, 'run-1');
+  assert.equal(restored.instanceId, 'run-1');
   assert.equal(restored.uniqueTreasures['玉石匣·仙王经文'].claimed, true);
   assert.deepEqual(restored.playerPos, { x: 1, y: 0 });
   assert.deepEqual(restored.connectedFragments, { top: 'spirit_lake' });
@@ -178,6 +241,7 @@ test('marrow pool config uses defaults and normalizes overrides', () => {
     npcInviteChance: 0,
     potentialGain: 75,
     rewardMultiplier: 6,
+    worldUnique: false,
   });
   assert.deepEqual(resolveXianguMarrowPoolConfig({
     marrowPool: {
@@ -185,12 +249,14 @@ test('marrow pool config uses defaults and normalizes overrides', () => {
       npcInviteChance: 0.25,
       potentialGain: -10,
       rewardMultiplier: '',
+      worldUnique: 'true',
     },
   }), {
     exploreChance: 0.03,
     npcInviteChance: 0.25,
     potentialGain: 0,
     rewardMultiplier: 5,
+    worldUnique: true,
   });
 });
 

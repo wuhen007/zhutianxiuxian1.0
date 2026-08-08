@@ -19,6 +19,7 @@ import {
   hasReincarnationProtection,
   migrateLegacyInnateTreasureSlot,
   startAuthorityCooldown,
+  tryPanguShatterTalisman,
 } from '../model/innateTreasure.js';
 
 test('至宝图鉴完整覆盖全部先天至宝及真实冷却', () => {
@@ -97,6 +98,15 @@ test('不同权柄使用独立冷却', () => {
   startAuthorityCooldown(player, '混沌复制', 1000);
   assert.equal(getCooldownRemaining(player, '混沌复制', 1000), 12 * 60 * 60 * 1000);
   assert.equal(getCooldownRemaining(player, '混沌变幻', 1000), 0);
+});
+
+test('盘古幡开天有30%概率打碎天骄本世护身法宝', () => {
+  const status = {};
+  assert.equal(tryPanguShatterTalisman(status, false, () => 0), false);
+  assert.equal(tryPanguShatterTalisman(status, true, () => 0.3), false);
+  assert.equal(tryPanguShatterTalisman(status, true, () => 0.299), true);
+  assert.equal(status.护身法宝已碎, true);
+  assert.equal(tryPanguShatterTalisman(status, true, () => 0), false);
 });
 
 test('炼妖壶将寻宝下限改为60分钟、上限24小时并翻倍奖励', () => {

@@ -29,6 +29,7 @@ import {
   readInnateTreasureState,
   setKongtongDecree,
   startAuthorityCooldown,
+  PANGU_TALISMAN_SHATTER_CHANCE,
   writeInnateTreasureState,
 } from '../../model/innateTreasure.js';
 
@@ -441,7 +442,7 @@ export class InnateTreasureAuthorities extends plugin {
   }
 
   async preparePangu(e) {
-    return this.prepare(e, '盘古幡', '开天', '盘古开天待用', '开天气机已凝聚，下一场PVE或天骄讨伐将触发开天。');
+    return this.prepare(e, '盘古幡', '开天', '盘古开天待用', `开天气机已凝聚，下一场PVE或天骄讨伐将触发开天；战胜天骄时有${PANGU_TALISMAN_SHATTER_CHANCE * 100}%概率打碎其本世护身法宝。`);
   }
 
   async prepareZhuxian(e) {

@@ -5,6 +5,7 @@ import test from 'node:test';
 import {
   DAO_DAILY_LIMIT,
   DAO_REALM_RULES,
+  XIANGU_DAO_REALM_RULES,
   calculateWudaoResult,
   consumePlayerLifespan,
   ensureDaoPath,
@@ -12,6 +13,8 @@ import {
   getDaoGateState,
   getDaoStage,
   getTechniqueWudaoProfile,
+  getXianguDaoGateState,
+  getWudaoResourceCosts,
   recordDaoAttempt,
   refreshDaoDaily,
 } from '../apps/User/wudaoRules.js';
@@ -25,6 +28,37 @@ function sequenceRandom(values) {
   let index = 0;
   return () => values[Math.min(index++, values.length - 1)];
 }
+
+test('仙古悟道法则与两体系合计成本按配置计算', () => {
+  assert.deepEqual(
+    XIANGU_DAO_REALM_RULES.map(rule => [rule.realmId, rule.name]),
+    [
+      [9, '真神法则'],
+      [10, '神王道则'],
+      [11, '天规'],
+      [12, '玄虚'],
+      [13, '唯我'],
+      [14, '归元'],
+      [15, '无上'],
+    ],
+  );
+
+  assert.deepEqual(getWudaoResourceCosts(11, 1), {
+    mijing: 11,
+    xiangu: 1,
+    levelSum: 12,
+    potential: 1200,
+    cultivation: 288000000,
+    blood: 288000000,
+    lifespan: 2400000,
+    spirit: 120000000,
+  });
+
+  const player = { xiangulevel_id: 9 };
+  assert.equal(getXianguDaoGateState(player, 9).ok, false);
+  player.仙古道途.stages.trueGodLaw = 600;
+  assert.equal(getXianguDaoGateState(player, 9).ok, true);
+});
 
 test('五层己道的经验、单次收益与寿元消耗按境界递进', () => {
   assert.deepEqual(

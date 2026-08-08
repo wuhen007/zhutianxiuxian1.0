@@ -89,6 +89,9 @@
 - group: 君子爱财
   list:
     - icon: help-icon_10
+      title: '#洗劫列表 / #洗劫图鉴'
+      desc: '查看全部洗劫地点、实时戒备状态与掉落池'
+    - icon: help-icon_10
       title: '#洗劫+地点名'
       desc: '支持柠檬堂、金银坊、万宝楼、星阁、万仙盟'
     - icon: help-icon_10

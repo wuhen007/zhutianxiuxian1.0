@@ -13,6 +13,7 @@ import {
     channel
 } from '../../model/xiuxian.js';
 import { Add_灵石, Add_修为, Add_血气, Add_najie_thing } from '../../model/xiuxian.js';
+import { canTeachGongfa } from '../../model/gongfaTeaching.js';
 
 
 
@@ -107,7 +108,7 @@ async  xiuxianzhushou(e) {
     if (player.level_id >= 54) {
         unlockedFeatures.push("天道赐福：额外获得神域令牌*3(前往神域星宫)");
     }
-    if (player.mijinglevel_id >= 12 || player.xaingulevel_id >= 10) {
+    if (canTeachGongfa(player)) {
         unlockedFeatures.push("传授功法，传授全部功法:可以传授给他人功法");
     }
     
@@ -147,7 +148,7 @@ async  xiuxianzhushou(e) {
     if (player.五色祭坛 != 1) {
         upcomingFeatures.push("激活五色祭坛后解锁：穿梭遮天位面：穿梭位面（九龙拉棺，启程北斗）");
     }
-    if (player.mijinglevel_id < 12 || player.xaingulevel_id < 10) {
+    if (!canTeachGongfa(player)) {
         upcomingFeatures.push("人体秘境体系达到圣人或仙古今世法达到天神境后解锁：传授功法，传授全部功法");
     }
     

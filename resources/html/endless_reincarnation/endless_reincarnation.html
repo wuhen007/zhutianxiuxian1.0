@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="{{pluResPath}}/html/endless_reincarnation/endless_reincarnation.css" />
+    <title>{{title}}</title>
+  </head>
+  <body>
+    <main id="container" class="reincarnation-terminal mode-{{mode}}" style="transform: scale({{renderScale || 1}}); transform-origin: top left">
+      <header class="terminal-hero">
+        <div class="terminal-sigil" aria-hidden="true"><span>R</span><b>∞</b></div>
+        <div class="hero-copy">
+          <p>{{eyebrow}}</p>
+          <h1>{{title}}</h1>
+          <span>{{subtitle}}</span>
+        </div>
+        <div class="hero-mark"><strong>{{mark}}</strong><span>{{status}}</span></div>
+      </header>
+
+      {{if heroStats && heroStats.length}}
+      <section class="status-ribbon">
+        {{each heroStats stat}}
+        <div><span>{{stat.label}}</span><strong>{{stat.value}}</strong><small>{{stat.note}}</small></div>
+        {{/each}}
+      </section>
+      {{/if}}
+
+      {{if lastOutcome && mode === 'scene'}}
+      <section class="outcome {{lastOutcome.success ? 'is-success' : 'is-failure'}}">
+        <div><span>LAST DECISION</span><b>{{lastOutcome.success ? '判定成功' : '判定失败'}}</b><i>{{lastOutcome.checkLabel}}</i></div>
+        <p>{{lastOutcome.text}}</p>
+        {{if lastOutcome.encounter}}
+        <div class="encounter-result {{lastOutcome.encounter.success ? 'is-countered' : 'is-hit'}}">
+          <b>{{lastOutcome.encounter.name}} · {{lastOutcome.encounter.skill}}</b><span>{{lastOutcome.encounter.text}}</span>
+        </div>
+        {{/if}}
+        {{if lastOutcome.reaction}}
+        <blockquote><b>{{lastOutcome.reaction.speaker}}</b><span>“{{lastOutcome.reaction.text}}”</span></blockquote>
+        {{/if}}
+      </section>
+      {{/if}}
+
+      {{if encounter && (mode === 'scene' || mode === 'threat')}}
+      <section class="threat-file threat-{{encounter.status}}">
+        <div class="threat-code"><span>ACTIVE THREAT</span><b>{{encounter.rank}}</b><strong>{{encounter.statusLabel}}</strong></div>
+        <div class="threat-main">
+          <div class="threat-title"><div><span>{{encounter.type}}</span><h2>{{encounter.name}}</h2></div><b>{{encounter.skill}}</b></div>
+          <p>{{encounter.description}}</p>
+          <div class="threat-mechanic"><span>异常机制</span><b>{{encounter.mechanic}}</b></div>
+          <div class="threat-weakness"><span>已知弱点</span><b>{{encounter.weakness}}</b><small>{{encounter.weaknessTags}}</small></div>
+        </div>
+        <div class="threat-stats">
+          <div><span>生命</span><b>{{encounter.hp}} / {{encounter.maxHp}}</b><i class="meter hostile"><em style="width: {{encounter.hpPct}}%"></em></i></div>
+          <div><span>检定干扰</span><b>+{{encounter.difficulty}}</b></div>
+          <div><span>肉体伤害</span><b>{{encounter.attack}}</b></div>
+          <div><span>精神污染</span><b>{{encounter.terror}}</b></div>
+        </div>
+      </section>
+      {{/if}}
+
+      {{if mode === 'scene' && scene}}
+      <section class="world-state">
+        <div class="meter-block">
+          <span>轮回者生命</span><b>{{heroStats[1].value}}</b>
+          <i class="meter hp"><em style="width: {{hpPct}}%"></em></i>
+        </div>
+        <div class="meter-block">
+          <span>精神压力</span><b>{{heroStats[1].note}}</b>
+          <i class="meter stress"><em style="width: {{stressPct}}%"></em></i>
+        </div>
+        <div class="profession-file">
+          <span>{{profession.domain}}职业投影</span><b>{{profession.name}}</b><small>{{profession.item}}｜弱点：{{profession.flaw}}</small>
+        </div>
+      </section>
+
+      <section class="scene-file">
+        <div class="section-heading">
+          <div><span>WORLD SCENE · ACT {{scene.act}}</span><h2>{{scene.title}}</h2></div>
+          <b>{{scene.location}}</b>
+        </div>
+        <div class="narrative">
+          {{each scene.narrative paragraph paragraphIndex}}
+          <p><span>0{{paragraphIndex + 1}}</span>{{paragraph}}</p>
+          {{/each}}
+        </div>
+        {{if scene.dialogue && scene.dialogue.length}}
+        <div class="dialogue-list">
+          {{each scene.dialogue line}}
+          <blockquote><b>{{line.speaker}}</b><span>“{{line.text}}”</span></blockquote>
+          {{/each}}
+        </div>
+        {{/if}}
+      </section>
+
+      <section class="choice-section">
+        <div class="section-heading">
+          <div><span>CAUSAL INTERVENTION</span><h2>选择你的行动</h2></div>
+          <b>世界线将记住代价</b>
+        </div>
+        <div class="choice-grid choice-count-{{scene.choices.length}}">
+          {{each scene.choices choice}}
+          <article class="choice risk-{{choice.riskClass}}">
+            <div class="choice-index"><span>OPTION</span><b>0{{choice.index}}</b></div>
+            <div class="choice-copy"><h3>{{choice.text}}</h3><p>{{choice.checkText}}</p></div>
+            <strong>{{choice.risk}}</strong>
+          </article>
+          {{/each}}
+        </div>
+      </section>
+
+      <section class="squad-compact">
+        <div class="section-heading">
+          <div><span>ASSIGNED SQUAD</span><h2>同行者状态</h2></div>
+          <b>{{npcs.length}}名NPC已投放</b>
+        </div>
+        <div class="squad-row">
+          {{each npcs npc}}
+          <article class="squad-chip {{npc.active ? '' : 'is-inactive'}}">
+            <div><b>{{npc.name}}</b><span>{{npc.profession}}</span></div>
+            <strong>{{npc.stateLabel}}</strong>
+            <i class="meter hp"><em style="width: {{npc.hpPct}}%"></em></i>
+            <small>信任 {{npc.trust}} · {{npc.trustLabel}}｜压力 {{npc.stress}} · {{npc.stressLabel}}</small>
+          </article>
+          {{/each}}
+        </div>
+      </section>
+      {{/if}}
+
+      {{if mode === 'tasks'}}
+      <section class="task-ledger">
+        <div class="section-heading">
+          <div><span>MISSION LEDGER</span><h2>世界任务</h2></div>
+          <b>完成重要分支可获得支线权限</b>
+        </div>
+        {{each tasks task taskIndex}}
+        <article class="task task-{{task.status}}">
+          <span>0{{taskIndex + 1}}</span>
+          <div><small>{{task.kind}}</small><h3>{{task.title}}</h3><p>{{task.reward}}</p></div>
+          <b>{{task.statusLabel}}</b>
+        </article>
+        {{/each}}
+      </section>
+      {{/if}}
+
+      {{if mode === 'team'}}
+      <section class="squad-files">
+        <div class="section-heading">
+          <div><span>PERSONNEL STATUS</span><h2>临时小队名录</h2></div>
+          <b>NPC会独立判断并采取行动</b>
+        </div>
+        <div class="squad-grid">
+          {{each npcs npc npcIndex}}
+          <article class="npc-card {{npc.active ? '' : 'is-inactive'}}">
+            <div class="npc-top"><span>NPC-0{{npcIndex + 1}}</span><strong>{{npc.stateLabel}}</strong></div>
+            <h3>{{npc.name}}</h3><p>{{npc.profession}}｜{{npc.expertise}}</p>
+            <div class="npc-traits">{{each npc.traits trait}}<b>{{trait}}</b>{{/each}}</div>
+            <i class="meter hp"><em style="width: {{npc.hpPct}}%"></em></i>
+            <div class="npc-data"><span>生命 {{npc.hp}}/{{npc.maxHp}}</span><span>信任 {{npc.trust}}</span><span>压力 {{npc.stress}}</span></div>
+            <small>#轮回档案 {{npc.name}}</small>
+          </article>
+          {{/each}}
+        </div>
+      </section>
+      {{/if}}
+
+      {{if mode === 'dossier' && dossier}}
+      <section class="dossier">
+        <div class="dossier-id"><span>SUBJECT</span><b>{{dossier.name}}</b><strong>{{dossier.stateLabel}}</strong></div>
+        <div class="dossier-body">
+          <div><span>职业</span><b>{{dossier.profession}}</b></div>
+          <div><span>擅长领域</span><b>{{dossier.specialties.join(' · ')}}</b></div>
+          <div><span>人格特征</span><b>{{dossier.traits.join(' · ')}}</b></div>
+          <div><span>专业能力</span><b>{{dossier.expertise}}</b></div>
+          <div class="wide"><span>不可触碰的底线</span><p>{{dossier.bottomLine}}</p></div>
+          <div class="wide warning"><span>深层恐惧</span><p>{{dossier.fear}}</p></div>
+        </div>
+        <div class="dossier-vitals">
+          <span>生命 {{dossier.hp}}/{{dossier.maxHp}}</span><span>信任 {{dossier.trust}} · {{dossier.trustLabel}}</span><span>压力 {{dossier.stress}} · {{dossier.stressLabel}}</span>
+        </div>
+      </section>
+      {{/if}}
+
+      {{if mode === 'attributes' || mode === 'hub'}}
+      <section class="attribute-section">
+        <div class="section-heading">
+          <div><span>CAPABILITY MATRIX</span><h2>{{mode === 'hub' ? '永久能力增幅' : '四维十二项能力'}}</h2></div>
+          <b>{{mode === 'hub' ? '轮回中枢记录' : profession.name}}</b>
+        </div>
+        <div class="attribute-grid">
+          {{each attributeGroups group groupIndex}}
+          <article class="attribute-group">
+            <div class="attribute-title"><span>0{{groupIndex + 1}}</span><h3>{{group.name}}</h3><b>{{group.total}}</b></div>
+            {{each group.attributes attribute}}
+            <div class="attribute"><span>{{attribute.name}}</span><b>{{attribute.value >= 0 && mode === 'hub' ? '+' : ''}}{{attribute.value}}</b></div>
+            {{/each}}
+          </article>
+          {{/each}}
+        </div>
+      </section>
+      {{/if}}
+
+      {{if mode === 'hub' || mode === 'exchange'}}
+      <section class="rights-band">
+        <div><span>BRANCH RIGHTS</span><h2>支线权限</h2></div>
+        <div class="rights-list">
+          {{each rights right}}<span class="grade-{{right.grade}}"><b>{{right.grade}}</b><i>×{{right.count}}</i></span>{{/each}}
+        </div>
+      </section>
+      {{/if}}
+
+      {{if mode === 'hub'}}
+      {{if lastEnding}}
+      <section class="last-ending"><span>LAST RETURN</span><b>{{lastEnding.name}}</b><strong>{{lastEnding.evaluation}}</strong><small>{{lastEnding.worldName}}</small></section>
+      {{/if}}
+      <section class="command-ledger">
+        <div class="section-heading">
+          <div><span>TERMINAL ACCESS</span><h2>轮回中枢</h2></div>
+          <b>编号 R-01</b>
+        </div>
+        {{each hubCommands item itemIndex}}
+        <div class="command"><span>0{{itemIndex + 1}}</span><b>{{item.command}}</b><p>{{item.text}}</p></div>
+        {{/each}}
+      </section>
+      {{/if}}
+
+      {{if mode === 'exchange'}}
+      <section class="exchange-section">
+        <div class="section-heading">
+          <div><span>PERMANENT ENHANCEMENT</span><h2>强化兑换目录</h2></div>
+          <b>永久生效</b>
+        </div>
+        <div class="exchange-grid">
+          {{each products product}}
+          <article class="product {{product.maxed ? 'is-maxed' : ''}} {{product.affordable ? 'is-affordable' : ''}}">
+            <div class="product-head"><span>EX-{{product.id}}</span><b>Lv.{{product.bought}}/{{product.max}}</b></div>
+            <h3>{{product.name}}</h3><p>{{product.description}}</p>
+            <div class="product-cost"><strong>{{product.priceText}}</strong><span>轮回点</span></div>
+            <small>{{product.requirement}}</small>
+          </article>
+          {{/each}}
+        </div>
+      </section>
+      {{/if}}
+
+      {{if mode === 'ending' && settlement}}
+      <section class="settlement">
+        <div class="evaluation"><span>WORLD EVALUATION</span><b>{{settlement.evaluation}}</b><p>{{ending.description}}</p></div>
+        <div class="settlement-stats">
+          <div><span>获得轮回点</span><b>{{settlement.pointsText}}</b></div>
+          <div><span>世界线干涉</span><b>{{settlement.worldline}}</b></div>
+          <div><span>NPC归还</span><b>{{settlement.returnedNpcs}} / {{settlement.totalNpcs}}</b></div>
+          <div><span>基因锁</span><b>{{settlement.geneLockStage}}阶</b></div>
+        </div>
+        {{if settlement.rights.length}}
+        <div class="settlement-rights"><span>获得支线权限</span>{{each settlement.rights right}}<b>{{right.grade}} × {{right.count}}</b>{{/each}}</div>
+        {{/if}}
+        {{if settlement.defeatedMonsters}}
+        <div class="monster-settlement"><span>异常体清除记录</span><b>击破 {{settlement.defeatedMonsters.length}}</b><strong>额外轮回点 +{{settlement.monsterBonusText}}</strong></div>
+        {{/if}}
+        {{if branchEvents.length}}
+        <div class="branch-list">
+          <h2>已干涉的世界线</h2>
+          {{each branchEvents branch}}<div><b>{{branch.grade}}</b><span>{{branch.title}}</span></div>{{/each}}
+        </div>
+        {{/if}}
+      </section>
+      {{/if}}
+
+      <footer class="terminal-footer"><b>{{footerCommand}}</b><span>{{footerNote}}</span><i>REINCARNATION TERMINAL / 01</i></footer>
+    </main>
+  </body>
+</html>
