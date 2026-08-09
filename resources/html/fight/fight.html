@@ -436,6 +436,7 @@
     </style>
 </head>
 <body>
+    <script id="fight-data" type="application/json">{{@fightmsgJson}}</script>
     <div class="fight-container">
         <div class="fight-header">
             <div class="fight-title">诸天万界</div>
@@ -453,16 +454,28 @@
 
     <script>
         // 从页面标题获取所有消息
+        function normalizeMessage(message) {
+            return String(message ?? '')
+                .replace(/[\[\]]/g, "")
+                .replace(/[ \t]+/g, ' ')
+                .replace(/\\n/g, '\n')
+                .trim();
+        }
+
         function getAllMessages() {
+            const payload = document.getElementById('fight-data')?.textContent.trim();
+            if (payload) {
+                try {
+                    const messages = JSON.parse(payload);
+                    if (Array.isArray(messages)) return messages.map(normalizeMessage);
+                } catch (error) {
+                    console.warn('战斗日志数据解析失败，回退到标题兼容模式', error);
+                }
+            }
+
             const title = document.title;
             if (title) {
-                return title.split(',').map(msg => {
-                    return msg
-                        .replace(/[\[\]]/g, "")
-                        .replace(/[ \t]+/g, ' ')
-                        .replace(/\\n/g, '<br>')
-                        .trim();
-                });
+                return title.split(',').map(normalizeMessage);
             }
             return [];
         }
@@ -487,7 +500,13 @@
         
         // 高亮处理
         function highlightMessage(message) {
-            let text = message;
+            let text = String(message ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/\"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/\r?\n/g, '<br>');
             
             // 数字高亮
             text = text.replace(/(\d+(,\d+)*)/g, '<span class="damage-value">$1</span>');

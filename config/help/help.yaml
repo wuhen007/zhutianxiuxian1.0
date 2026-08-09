@@ -72,7 +72,7 @@
       desc: '查看所有合成'
     - icon: help-icon_13
       title: '#灵根图鉴'
-      desc: '查看所有灵根'
+      desc: '分页查看灵根；可用“#灵根图鉴 2”翻页或“#灵根图鉴 分类 真灵根”筛选'
     - icon: help-icon_13
       title: '#命格图鉴'
       desc: '查看所有命格词条与效果'

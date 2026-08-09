@@ -167,6 +167,17 @@
       "description": "与时光令共同用于一键完美开炉",
       "dailyLimit": 0,
       "action": "item"
+    },
+    {
+      "id": 16,
+      "name": "天骄位置天机",
+      "itemClass": "",
+      "category": "天机",
+      "rarity": "禁忌",
+      "price": 800,
+      "description": "强行推演天机，获知一位天骄的当前踪迹（24小时有效）",
+      "dailyLimit": 1,
+      "action": "tianjiao"
     }
   ]
 }
