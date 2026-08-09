@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>{{title}}</title>
+  <link rel="stylesheet" type="text/css" href="{{pluResPath}}/html/linggen/linggen-c.css" />
+  <link rel="preload" href="../../font/tttgbnumber.ttf" as="font" />
+</head>
+<body>
+  <div id="container" class="atlas atlas-c">
+    <div class="scroll-shell">
+      <div class="scroll-rod scroll-rod-left"><i></i><span>九</span><i></i></div>
+      <main class="paper">
+        <header class="titlebar">
+          <div class="seal"><span>道</span><i>錄</i></div>
+          <div class="heading">
+            <div class="kicker">NINE HEAVENS · ARCHIVE 09</div>
+            <h1>{{title}}</h1>
+            <p>九阙开卷，朱砂落名；每一根骨，皆有自己的天命。</p>
+          </div>
+          <div class="current-card">
+            <span>命格朱批</span>
+            <strong>{{current}}</strong>
+            <em>{{currentType}}</em>
+          </div>
+        </header>
+
+        <div class="ledger-line">
+          <div class="ledger-topic"><span>阅览</span><b>{{category}}</b></div>
+          <div class="ledger-count">本页 <b>{{entries.length}}</b> / 藏卷 <b>{{totalLinggens}}</b></div>
+          <div class="ledger-page">卷页 <b>{{page}}</b> / {{totalPages}}</div>
+        </div>
+
+        <div class="directory">
+          <span class="directory-label">九阙目录</span>
+          {{each categories item}}
+          <span class="directory-item">{{item}}</span>
+          {{/each}}
+        </div>
+
+        {{if empty}}
+        <section class="empty-state">
+          <div class="empty-seal">寂</div>
+          <h2>{{emptyMessage}}</h2>
+          <p>朱批未落，卷中暂缺其名。</p>
+        </section>
+        {{else}}
+        <section class="entry-grid">
+          {{each entries item}}
+          <article class="entry {{item.qualityClass}} {{if item.isCurrent}}is-current{{/if}}">
+            <div class="entry-meta">
+              <span class="entry-index">{{item.index}}</span>
+              <span class="entry-type">{{item.typeLabel}}</span>
+              <span class="quality-badge">{{item.qualityLabel}}</span>
+              {{if item.isCurrent}}<span class="current-mark">所持</span>{{/if}}
+            </div>
+            <h2 class="root-name">{{item.name}}</h2>
+            <div class="metrics">
+              <div><span>修</span><b>{{item.eff}}</b></div>
+              <div><span>球</span><b>{{item.法球倍率}}</b></div>
+              <div><span>攻</span><b>{{item.攻击加成}}</b></div>
+              <div><span>防</span><b>{{item.防御加成}}</b></div>
+              <div><span>命</span><b>{{item.生命加成}}</b></div>
+              <div><span>源</span><b>+{{item.生命本源}}</b></div>
+            </div>
+          </article>
+          {{/each}}
+        </section>
+        {{/if}}
+
+        <footer class="footer">
+          <span>九阙灵根总簿</span>
+          <span class="footer-divider">◆</span>
+          <span>卷 {{page}} / {{totalPages}}</span>
+          <span class="footer-seal">藏 {{totalLinggens}}</span>
+        </footer>
+      </main>
+      <div class="scroll-rod scroll-rod-right"><i></i><span>阙</span><i></i></div>
+    </div>
+  </div>
+</body>
+</html>

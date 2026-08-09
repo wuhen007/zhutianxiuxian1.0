@@ -100,7 +100,7 @@ export class Showningmeng extends plugin {
           fnc: 'show_jianyunhai',
         },
          {
-          reg: '^#灵根图鉴$',
+          reg: '^#灵根图鉴(?:\\s+.*)?$',
           fnc: 'show_linggen',
         },
         {

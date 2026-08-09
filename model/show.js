@@ -291,10 +291,14 @@ async get_jindi_placeData(myData) {
   }
   async get_linggenData(myData) {
     this.model = 'linggen';
+    const templateName = /^linggen-[abc]$/.test(myData?.templateName || '')
+      ? myData.templateName
+      : 'linggen';
     return {
       ...this.screenData,
       saveId: 'linggen',
       ...myData,
+      tplFile: this.screenData.tplFile.replace(/linggen\.html$/, `${templateName}.html`),
     };
   }
   async get_minggeData(myData) {
