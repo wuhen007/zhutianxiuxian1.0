@@ -1,6 +1,7 @@
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'path';
+import { ensureDaoPath } from './wudaoRules.js';
 import {
   existplayer,
   Write_player,
@@ -95,6 +96,161 @@ const aptitudeSequence = [
     '万古无双',     
     '无演无尽'      
 ];
+
+const OWN_WAY_CREATION_DURATION = 30 * 60 * 1000;
+const OWN_WAY_CREATION_CULTIVATION = 1e12;
+const OWN_WAY_CREATION_BLOOD = 1e12;
+const OWN_WAY_CREATION_SAINT_KING_LAW = 1000;
+const OWN_WAY_BASE_POTENTIAL_COST = 10;
+const OWN_WAY_BASE_CULTIVATION_COST = 150000000;
+
+// 自身之道的境界只允许在当前区间内修炼，达到上限后必须完成突破。
+const OWN_WAY_REALM_RULES = Object.freeze([
+    { index: 0, name: '道基·虚道', min: 0, max: 10, multiplier: 1, feature: '道基稳固' },
+    { index: 1, name: '斩我·分支', min: 11, max: 30, multiplier: 2, feature: '分支显化' },
+    { index: 2, name: '遁一·道域', min: 31, max: 60, multiplier: 4, feature: '自身道域' },
+    { index: 3, name: '至尊·真意', min: 61, max: 100, multiplier: 8, feature: '大道真意' },
+    { index: 4, name: '红尘仙·万世融道', min: 101, max: 150, multiplier: 16, feature: '万世融道' },
+    { index: 5, name: '仙王·开界称尊', min: 151, max: 220, multiplier: 32, feature: '开界称尊' },
+    { index: 6, name: '准仙帝·帝光映古', min: 221, max: 300, multiplier: 64, feature: '帝光映古' },
+    { index: 7, name: '仙帝·道源唯一', min: 301, max: 400, multiplier: 128, feature: '道源唯一' },
+    { index: 8, name: '祭道·祭尽诸我', min: 401, max: 500, multiplier: 256, feature: '祭尽诸我' },
+]);
+
+// 突破消耗按阶段翻倍；资源名称兼容法则表、遮天道途和仙古道途旧存档。
+const OWN_WAY_BREAKTHROUGH_RULES = Object.freeze([
+    { target: 1, requirements: [['虚道', 1000], ['圣王法则', 1000]] },
+    { target: 2, requirements: [['斩我', 2000], ['大圣法则', 2000]] },
+    { target: 3, requirements: [['遁一', 4000], ['准帝法则', 4000]] },
+    { target: 4, requirements: [['大帝法则', 8000]] },
+    { target: 5, requirements: [['仙王法则', 16000]] },
+    { target: 6, requirements: [['准仙帝法则', 32000]] },
+    { target: 7, requirements: [['仙帝法则', 64000]] },
+    { target: 8, requirements: [['祭道法则', 128000]] },
+]);
+
+// 无缺帝道是后五境的共同根基，真实修为境界也必须同步抵达。
+const OWN_WAY_LATE_REALM_GATES = Object.freeze([
+    { target: 4, name: '红尘仙境', mijingLevel: 17, xianguLevel: 16 },
+    { target: 5, name: '仙王境', mijingLevel: 18, xianguLevel: 18 },
+    { target: 6, name: '准仙帝境', mijingLevel: 20, xianguLevel: 20 },
+    { target: 7, name: '仙帝境', mijingLevel: 21, xianguLevel: 21 },
+    { target: 8, name: '祭道境', mijingLevel: 22, xianguLevel: 22 },
+]);
+
+const OWN_WAY_RESOURCE_ALIASES = Object.freeze({
+    '虚道': ['虚道', '虚道法则', 'mysteriousVoid'],
+    '斩我': ['斩我', '斩我法则', 'onlySelf'],
+    '遁一': ['遁一', '遁一法则', 'originReturn'],
+    '至尊': ['至尊', '至尊法则', 'supreme'],
+    '圣王法则': ['圣王法则', 'saintKingDao'],
+    '大圣法则': ['大圣法则', 'greatSaintDao'],
+    '准帝法则': ['准帝法则', 'quasiEmperorDao'],
+});
+
+function getOwnWayRealmRule(index) {
+    const normalized = Math.max(0, Math.min(OWN_WAY_REALM_RULES.length - 1, Math.trunc(Number(index) || 0)));
+    return OWN_WAY_REALM_RULES[normalized];
+}
+
+function getOwnWayRealmByCount(count) {
+    const normalized = Math.max(0, Math.trunc(Number(count) || 0));
+    return OWN_WAY_REALM_RULES.find(rule => normalized <= rule.max) ||
+        OWN_WAY_REALM_RULES[OWN_WAY_REALM_RULES.length - 1];
+}
+
+function getOwnWayCurrentRealm(player) {
+    const count = Math.max(0, Math.trunc(Number(player?.修炼次数) || 0));
+    const explicitIndex = Number(player?.自身之道阶段);
+    if (Number.isInteger(explicitIndex) && explicitIndex >= 0 && explicitIndex < OWN_WAY_REALM_RULES.length) {
+        const explicitRule = getOwnWayRealmRule(explicitIndex);
+        if (count >= explicitRule.min - 1 && count <= explicitRule.max) return explicitRule;
+    }
+    return getOwnWayRealmByCount(count);
+}
+
+function getOwnWayCultivationCosts(realm) {
+    const multiplier = Number(realm?.multiplier) || 1;
+    return {
+        potential: OWN_WAY_BASE_POTENTIAL_COST * multiplier,
+        cultivation: OWN_WAY_BASE_CULTIVATION_COST * multiplier,
+        blood: OWN_WAY_BASE_CULTIVATION_COST * multiplier,
+    };
+}
+
+function getOwnWayLateRealmGate(player, targetIndex) {
+    const gate = OWN_WAY_LATE_REALM_GATES.find(item => item.target === targetIndex);
+    if (!gate) return { ok: true, missing: [] };
+
+    const { path: daoPath } = ensureDaoPath(player);
+    const mijingLevel = Math.max(0, Math.trunc(Number(player?.mijinglevel_id) || 0));
+    const xianguLevel = Math.max(0, Math.trunc(Number(player?.xiangulevel_id) || 0));
+    const missing = [];
+    if (daoPath?.result?.name !== '无缺帝道') missing.push('先证得大帝境的无缺帝道');
+    if (mijingLevel < gate.mijingLevel && xianguLevel < gate.xianguLevel) {
+        missing.push(`真实境界达到${gate.name}（秘境≥${gate.mijingLevel}或仙古≥${gate.xianguLevel}）`);
+    }
+    return { ok: missing.length === 0, missing };
+}
+
+function getOwnWayResourceLocations(player, resourceName) {
+    const aliases = OWN_WAY_RESOURCE_ALIASES[resourceName] || [resourceName];
+    const locations = [];
+    const containers = [
+        { parent: player, keys: [resourceName] },
+        { parent: player?.法则, keys: aliases },
+        { parent: player?.道途?.stages, keys: aliases },
+        { parent: player?.仙古道途?.stages, keys: aliases },
+    ];
+    for (const container of containers) {
+        if (!container.parent || typeof container.parent !== 'object') continue;
+        for (const key of container.keys) {
+            if (!Object.prototype.hasOwnProperty.call(container.parent, key)) continue;
+            const value = Number(container.parent[key]);
+            if (Number.isFinite(value)) locations.push({ parent: container.parent, key, value: Math.max(0, value) });
+        }
+    }
+    return locations;
+}
+
+function getOwnWayResource(player, resourceName) {
+    return getOwnWayResourceLocations(player, resourceName)
+        .reduce((max, location) => Math.max(max, location.value), 0);
+}
+
+function consumeOwnWayResource(player, resourceName, amount) {
+    const location = getOwnWayResourceLocations(player, resourceName)
+        .sort((a, b) => b.value - a.value)[0];
+    if (!location || location.value < amount) return false;
+    location.parent[location.key] = location.value - amount;
+    return true;
+}
+
+function getOwnWayCreationCosts(player) {
+    const mijingLevel = Math.max(0, Math.trunc(Number(player?.mijinglevel_id) || 0));
+    const xianguLevel = Math.max(0, Math.trunc(Number(player?.xiangulevel_id) || 0));
+    return {
+        mijingLevel,
+        xianguLevel,
+        potential: 200 * (mijingLevel + xianguLevel),
+        cultivation: OWN_WAY_CREATION_CULTIVATION,
+        blood: OWN_WAY_CREATION_BLOOD,
+        saintKingLaw: OWN_WAY_CREATION_SAINT_KING_LAW,
+        lifeSource: 50,
+    };
+}
+
+function getOwnWaySaintKingLaw(player) {
+    const legacyValue = Number(player?.法则?.['圣王法则']);
+    const pathValue = Number(player?.道途?.stages?.saintKingDao);
+    const candidates = [];
+    if (Number.isFinite(legacyValue)) candidates.push({ value: Math.max(0, legacyValue), source: '法则' });
+    if (Number.isFinite(pathValue)) candidates.push({ value: Math.max(0, pathValue), source: '道途' });
+    if (candidates.length) return candidates.sort((a, b) => b.value - a.value)[0];
+
+    return { value: 0, source: null };
+}
+
 export class daofa extends plugin {
   constructor() {
     super({
@@ -105,13 +261,18 @@ export class daofa extends plugin {
       rule: [
 
                 {
-  reg: '^#创造自身之道\\s+(.*)$',  // 匹配 #创造自身之道 后跟任意字符
+  reg: '^#创造自身之道(?:\\s+(.*))?$',  // 支持发起创建与等待结束后的无参结算
   fnc: 'createOwnWay',         
 },
 {
   reg: '^#修炼自身之道(?:\\*(\\d+))?$',  // 支持可选*数字后缀
   fnc: 'cultivateOwnWay',
 }, 
+{
+  reg: '^#突破自身之道$',
+  fnc: 'breakthroughOwnWay',
+  dsc: '自身之道达到当前境界极限后进行突破',
+},
     {
                     reg: '^#轮回大道$',
                     fnc: 'viewReincarnationWay',
@@ -552,6 +713,52 @@ async  createOwnWay(e) {
 
         const usr_qq = e.user_id.toString().replace('qg_', '');
         const player = await Read_player(usr_qq);
+
+        const actionKey = `xiuxian:player:${usr_qq}:action`;
+        const actionRaw = await redis.get(actionKey);
+        let pendingCreation = null;
+        if (actionRaw) {
+            try {
+                const action = JSON.parse(actionRaw);
+                const storedEndTime = Number(action?.end_time) || (
+                    String(action?.Place_actionplus) === '0'
+                        ? (Number(action.start_time) || 0) + (Number(action.total_time) || 0) * 60000
+                        : 0
+                );
+                const actionEndTime = action?.action === '创造自身之道'
+                    ? Math.max(
+                        storedEndTime,
+                        (Number(action.start_time) || 0) + OWN_WAY_CREATION_DURATION
+                    )
+                    : storedEndTime;
+                if (action?.action === '创造自身之道') {
+                    const endTime = actionEndTime;
+                    if (endTime > Date.now()) {
+                        const remainingMs = endTime - Date.now();
+                        const minutes = Math.floor(remainingMs / 60000);
+                        const seconds = Math.floor((remainingMs % 60000) / 1000);
+                        return e.reply([
+                            `【自身之道·开创中】`,
+                            `你正在以${action.creation?.wayName || '未命名大道'}熔炼万法，尚需等待至少30分钟。`,
+                            `剩余时间：${minutes}分${seconds}秒`,
+                            '请等待修仙状态结束后再次发送#创造自身之道完成结算。'
+                        ].join('\n'));
+                    }
+
+                    pendingCreation = action.creation || null;
+                } else if (actionEndTime > Date.now()) {
+                    const remainingMs = actionEndTime - Date.now();
+                    const minutes = Math.floor(remainingMs / 60000);
+                    const seconds = Math.floor((remainingMs % 60000) / 1000);
+                    return e.reply([
+                        `你正在${action.action || '其他行动'}中，暂不能开创自身之道。`,
+                        `剩余时间：${minutes}分${seconds}秒`
+                    ].join('\n'));
+                }
+            } catch (error) {
+                console.warn(`[自身之道] 读取修仙状态失败：${error.message}`);
+            }
+        }
         
         // 检查冷却时间
         if (player.大道冷却时间 && player.大道冷却时间 > Date.now()) {
@@ -597,8 +804,8 @@ async  createOwnWay(e) {
         ];
         
         // 计算玩家掌握的顶级功法数量
-        const learnedTopGongfa = topGongfaList.filter(gongfa => 
-            player.学习的功法.includes(gongfa)
+        const learnedTopGongfa = topGongfaList.filter(gongfa =>
+            player.学习的功法?.includes(gongfa)
         );
         const learnedCount = learnedTopGongfa.length;
         
@@ -642,22 +849,32 @@ async  createOwnWay(e) {
             ].join('\n'));
         }
 
-        // 指令解析
-        const match = e.msg.match(/^#创造自身之道\s+(\S+)\s+(.*)$/);
-        if (!match) {
-            return e.reply([
-                '指令格式错误！',
-                '正确格式：#创造自身之道 [大道类型] [大道名称]',
-                '大道类型：攻伐、护体、涅槃',
-                '示例：#创造自身之道 攻伐 杀伐剑道'
-            ].join('\n'));
+        // 指令解析；等待结束后的结算优先使用行动中保存的参数。
+        let wayType;
+        let wayName;
+        if (pendingCreation) {
+            wayType = pendingCreation.wayType;
+            wayName = pendingCreation.wayName;
+        } else {
+            const match = String(e.msg || '').match(/^#创造自身之道\s+(\S+)\s+(.*)$/);
+            if (!match) {
+                return e.reply([
+                    '指令格式错误！',
+                    '正确格式：#创造自身之道 [大道类型] [大道名称]',
+                    '大道类型：攻伐、护体、涅槃、时空、轮回、因果、封禁',
+                    '示例：#创造自身之道 攻伐 杀伐剑道'
+                ].join('\n'));
+            }
+            wayType = match[1];
+            wayName = match[2].trim();
+        }
+
+        if (typeof wayType !== 'string' || typeof wayName !== 'string' || !wayName) {
+            return e.reply('自身之道行动数据异常，请重新发送完整指令：#创造自身之道 [大道类型] [大道名称]');
         }
         
-        const wayType = match[1];
-        const wayName = match[2].trim();
-        
         // 验证类型
-        const validTypes = ['攻伐', '护体', '涅槃'];
+        const validTypes = ['攻伐', '护体', '涅槃', '时空', '轮回', '因果', '封禁'];
         if (!validTypes.includes(wayType)) {
             return e.reply(`无效的大道类型！请选择：${validTypes.join('、')}`);
         }
@@ -672,22 +889,78 @@ async  createOwnWay(e) {
             return e.reply(`你已掌握【${wayName}】，无需再创`);
         }
         
-        // 检查修为是否足够
-        const requiredCultivation = 500e8; // 5亿修为
-        if (player.修为 < requiredCultivation) {
+        // 创建自身之道的资源门槛：修为、血气各1兆，仙道潜力按两套秘境等级合计计算。
+        const creationCosts = getOwnWayCreationCosts(player);
+        const saintKingLaw = getOwnWaySaintKingLaw(player);
+        const currentPotential = Number(player.仙道潜力) || 0;
+        const currentCultivation = Number(player.修为) || 0;
+        const currentBlood = Number(player.血气) || 0;
+        if (currentPotential < creationCosts.potential) {
+            return e.reply([
+                `开创自身大道需要大量仙道潜力！`,
+                `当前仙道潜力：${currentPotential.toLocaleString()}`,
+                `所需仙道潜力：${creationCosts.potential.toLocaleString()}（200×（秘境${creationCosts.mijingLevel}级＋仙古${creationCosts.xianguLevel}级））`,
+                `请继续积累仙道潜力再试`
+            ].join('\n'));
+        }
+        if (currentCultivation < creationCosts.cultivation) {
             return e.reply([
                 `开创大道需消耗海量修为！`,
-                `你当前修为：${bigNumberTransform(player.修为)}`,
-                `所需修为：${bigNumberTransform(requiredCultivation)}`,
+                `你当前修为：${bigNumberTransform(currentCultivation)}`,
+                `所需修为：${bigNumberTransform(creationCosts.cultivation)}`,
                 `请继续积累修为再试`
             ].join('\n'));
         }
-        if (player.血气 < requiredCultivation) {
+        if (currentBlood < creationCosts.blood) {
             return e.reply([
                 `开创大道需消耗海量血气！`,
-                `你当前血气：${bigNumberTransform(player.血气)}`,
-                `所需血气：${bigNumberTransform(requiredCultivation)}`,
+                `你当前血气：${bigNumberTransform(currentBlood)}`,
+                `所需血气：${bigNumberTransform(creationCosts.blood)}`,
                 `请继续积累血气再试`
+            ].join('\n'));
+        }
+        if (saintKingLaw.value < creationCosts.saintKingLaw) {
+            return e.reply([
+                `圣王法则不足，无法承载自身大道！`,
+                `当前圣王法则：${saintKingLaw.value.toLocaleString()}`,
+                `至少需要：${creationCosts.saintKingLaw.toLocaleString()}`,
+                `请先参悟并积累足够的圣王法则`
+            ].join('\n'));
+        }
+
+        // 首次执行只开启行动，等待结束后再次执行才会真正结算。
+        if (!pendingCreation) {
+            const now = Date.now();
+            const endTime = now + OWN_WAY_CREATION_DURATION;
+            const action = {
+                action: '创造自身之道',
+                start_time: now,
+                end_time: endTime,
+                time: OWN_WAY_CREATION_DURATION,
+                creation: {
+                    wayType,
+                    wayName,
+                    costs: creationCosts,
+                },
+                // 与统一修仙状态兼容：闭关状态开启，其他行动全部锁定。
+                plant: '1',
+                shutup: '0',
+                working: '1',
+                Place_action: '1',
+                Place_actionplus: '1',
+                power_up: '1',
+                mojie: '1',
+                xijie: '1',
+            };
+            if (e.isGroup) action.group_id = e.group_id;
+            await redis.set(actionKey, JSON.stringify(action));
+            return e.reply([
+                `【自身之道·开创开始】`,
+                `${player.名号}已开始熔炼万法，准备开创【${wayName}】。`,
+                `修仙状态：创造自身之道（至少30分钟）`,
+                `结算消耗：仙道潜力${creationCosts.potential.toLocaleString()}、修为与血气各${bigNumberTransform(creationCosts.cultivation)}、圣王法则${creationCosts.saintKingLaw}`,
+                `预计结束：${new Date(endTime).toLocaleString()}`,
+                `请等待状态结束后再次发送#创造自身之道完成结算。`
             ].join('\n'));
         }
         
@@ -740,37 +1013,32 @@ async  createOwnWay(e) {
                 `天资不足，未能证得大道真谛`,
                 ``,
                 `失败惩罚：`,
-                `- 修为损失：${bigNumberTransform(requiredCultivation * 0.5)}`,
-                `- 血气损失：${bigNumberTransform(requiredCultivation * 0.5)}`,
+                `- 修为损失：${bigNumberTransform(creationCosts.cultivation * 0.5)}`,
+                `- 血气损失：${bigNumberTransform(creationCosts.blood * 0.5)}`,
                 `- 3小时内无法再次尝试`
             ];
             
             // 扣除部分资源
-            player.修为 = Math.max(0, player.修为 - requiredCultivation * 0.5);
-            player.血气 = Math.max(0, player.血气 - requiredCultivation * 0.5);
+            player.修为 = Math.max(0, player.修为 - creationCosts.cultivation * 0.5);
+            player.血气 = Math.max(0, player.血气 - creationCosts.blood * 0.5);
             
             // 添加冷却时间（3小时）
             player.大道冷却时间 = Date.now() + 3 * 60 * 60 * 1000;
             
             // 保存玩家数据
             await Write_player(usr_qq, player);
+            await redis.del(actionKey);
             
             return e.reply(failureMessages.join('\n'));
         }
         
         // 根据类型创建技能对象
-        let newWaySkill;
-        switch (wayType) {
-            case '攻伐':
-                newWaySkill = this.createAttackSkill(wayName, player.名号);
-                break;
-            case '护体':
-                newWaySkill = this.createDefenseSkill(wayName, player.名号);
-                break;
-            case '涅槃':
-                newWaySkill = this.createSurvivalSkill(wayName, player.名号);
-                break;
+        const newWaySkill = this.createOwnWaySkill(wayType, wayName, player.名号);
+        if (!newWaySkill) {
+            return e.reply('未能生成对应的自身之道技能，请稍后重试');
         }
+        newWaySkill.自身之道阶段 = 0;
+        newWaySkill.自身之道境界 = OWN_WAY_REALM_RULES[0].name;
         
         // 创建对应的帝经对象
         const newSutra = {
@@ -787,18 +1055,7 @@ async  createOwnWay(e) {
         };
         
         // 根据类型保存到不同的技能列表
-        let saveResult;
-        switch (wayType) {
-            case '攻伐':
-                saveResult = await this.saveCustomSkill(newWaySkill, 1);
-                break;
-            case '护体':
-                saveResult = await this.saveCustomSkill(newWaySkill, 2);
-                break;
-            case '涅槃':
-                saveResult = await this.saveCustomSkill(newWaySkill, 3);
-                break;
-        }
+        const saveResult = await this.saveCustomSkill(newWaySkill, this.getListTypeByWayType(wayType));
         
         if (!saveResult) {
             return e.reply('保存大道失败，请稍后再试');
@@ -808,9 +1065,17 @@ async  createOwnWay(e) {
         await this.saveCustomSutra(newSutra);
         
         // 扣除资源
-        player.修为 -= requiredCultivation;
-        player.血气 -= requiredCultivation;
-        player.生命本源 -= 50; // 扣除生命本源
+        player.修为 -= creationCosts.cultivation;
+        player.血气 -= creationCosts.blood;
+        player.仙道潜力 = currentPotential - creationCosts.potential;
+        if (saintKingLaw.source === '法则') {
+            player.法则['圣王法则'] = saintKingLaw.value - creationCosts.saintKingLaw;
+        } else {
+            player.道途 = player.道途 || {};
+            player.道途.stages = player.道途.stages || {};
+            player.道途.stages.saintKingDao = saintKingLaw.value - creationCosts.saintKingLaw;
+        }
+        player.生命本源 -= creationCosts.lifeSource; // 扣除生命本源
         
         // 添加到玩家功法列表
         player.学习的功法 = player.学习的功法 || [];
@@ -822,16 +1087,23 @@ async  createOwnWay(e) {
             时间: new Date().toLocaleString(),
             大道名称: wayName,
             大道类型: wayType,
-            消耗修为: requiredCultivation,
-            消耗生命本源: 50
+            消耗修为: creationCosts.cultivation,
+            消耗血气: creationCosts.blood,
+            消耗仙道潜力: creationCosts.potential,
+            消耗圣王法则: creationCosts.saintKingLaw,
+            消耗生命本源: creationCosts.lifeSource
         });
         
         // 标记已创自身之道
         player.已创自身之道 = true;
         player.自身之道名称 = wayName;
         player.自身之道类型 = wayType;
-        
+        player.自身之道阶段 = 0;
+        player.自身之道境界 = OWN_WAY_REALM_RULES[0].name;
+        player.修炼次数 = Number(player.修炼次数) || 0;
+
         await Write_player(usr_qq, player);
+        await redis.del(actionKey);
         
         // 生成大道创造文案
         const creationText = this.generateWayCreationText(player.名号, wayName, wayType);
@@ -902,6 +1174,115 @@ createSurvivalSkill(name, creator) {
         攻击加成: 0,   // 初始攻击加成
         防御加成: 0,   // 初始防御加成
         生命加成: 0    // 初始生命加成
+    };
+}
+
+// 创建可复用的自身之道技能对象。轮回进入复活技能列表，其余类型进入攻击技能列表。
+createOwnWaySkill(wayType, name, creator) {
+    switch (wayType) {
+        case '攻伐':
+            return this.createAttackSkill(name, creator);
+        case '护体':
+            return this.createDefenseSkill(name, creator);
+        case '涅槃':
+            return this.createSurvivalSkill(name, creator);
+        case '时空':
+            return this.createSpaceTimeSkill(name, creator);
+        case '轮回':
+            return this.createReincarnationSkill(name, creator);
+        case '因果':
+            return this.createCausalitySkill(name, creator);
+        case '封禁':
+            return this.createSealSkill(name, creator);
+        default:
+            return null;
+    }
+}
+
+// 时空道：加速自身、推迟对手，形成行动顺序优势。
+createSpaceTimeSkill(name, creator) {
+    return {
+        name,
+        class: '功法',
+        pr: 0.05,
+        cnt: -1,
+        beilv: 1,
+        other: 0,
+        msg1: `展开【${name}】，时空长河在脚下倒卷！`,
+        msg2: `被时空乱流拖慢，攻势出现断层！`,
+        稀有度: 2,
+        创造者: creator,
+        创造时间: new Date().toLocaleString(),
+        效果类型: '时空',
+        拉条: 100,
+        推条: 80,
+        速度加成: 0.05
+    };
+}
+
+// 轮回道：以濒死复生为核心，沿用战斗引擎已有的自创复活判定。
+createReincarnationSkill(name, creator) {
+    return {
+        name,
+        class: '功法',
+        pr: 0.05,
+        cnt: -1,
+        msg1: `催动【${name}】，轮回门在身后缓缓开启！`,
+        msg2: `真灵坠入轮回又归来，重燃生机！`,
+        稀有度: 2,
+        创造者: creator,
+        创造时间: new Date().toLocaleString(),
+        效果类型: '轮回',
+        复活技能: 1,
+        恢复比例: 0.2,
+        免控: 1,
+        免控类型: ['轮回隔世'],
+        攻击加成: 0.15,
+        防御加成: 0.15,
+        生命加成: 0,
+        轮回印: 1
+    };
+}
+
+// 因果道：伤害落下时留下延迟反噬，强化“先种因、后收果”。
+createCausalitySkill(name, creator) {
+    return {
+        name,
+        class: '功法',
+        pr: 0.05,
+        cnt: -1,
+        beilv: 1.1,
+        other: 0,
+        msg1: `拨动【${name}】，因果丝线缠上对手命数！`,
+        msg2: `承受因果反噬，伤势将在未来回响！`,
+        稀有度: 2,
+        创造者: creator,
+        创造时间: new Date().toLocaleString(),
+        效果类型: '因果',
+        负面效果: true,
+        负面回合: 2,
+        负面类型: '因果反噬',
+        因果印记: 1
+    };
+}
+
+// 封禁道：以控制和推条为主，短暂截断对手施法节奏。
+createSealSkill(name, creator) {
+    return {
+        name,
+        class: '功法',
+        pr: 0.05,
+        cnt: -1,
+        beilv: 0.8,
+        other: 0,
+        msg1: `结出【${name}】，万道锁链封住虚空！`,
+        msg2: `周身法则被封，暂时无法行动！`,
+        稀有度: 2,
+        创造者: creator,
+        创造时间: new Date().toLocaleString(),
+        效果类型: '封禁',
+        控制: 1,
+        推条: 120
     };
 }
 
@@ -1058,6 +1439,94 @@ generateWayCreationText(playerName, wayName, wayType) {
                 `使用指令：#修炼自身之道 精进此无上大道`
             ];
             break;
+
+        case '时空':
+            typeSpecificText = [
+                ` 大道特性：`,
+                `- 时空折跃：提升自身行动进度并压制对手行动条`,
+                `- 时空加速：触发后短暂提升速度`,
+                `- 基础倍率：1倍（可随修炼提升）`,
+                `- 无冷却时间，先手与追击皆可演化`,
+                ``,
+                `「${wayName}一转，古今未来皆在掌中！」`,
+                `此乃时空交汇之道，未来可演化穿梭万古的禁忌神通！`,
+                ``
+            ];
+            finalText = [
+                ` 时间长河在菩提树下显化，无数支流映照同一尊身影！`,
+                `${playerName}一步踏出，前因后果皆被甩在身后，`,
+                `于刹那间横渡星海，截取属于自己的未来！`,
+                `「岁月不能束我，空间不能困我！」`,
+                ``,
+                `使用指令：#修炼自身之道 精进此无上大道`
+            ];
+            break;
+
+        case '轮回':
+            typeSpecificText = [
+                ` 大道特性：`,
+                `- 轮回归来：濒死时有概率从轮回中复生`,
+                `- 真灵回响：复生后恢复生命并获得攻防加成`,
+                `- 免控回合：1回合（可随修炼提升）`,
+                `- 自创复活技优先判定，生死只隔一念`,
+                ``,
+                `「${wayName}一转，黄泉也要让路！」`,
+                `此乃生死轮转之道，未来可演化逆转因果的轮回大术！`,
+                ``
+            ];
+            finalText = [
+                ` 六道轮盘在虚空中缓缓转动，万灵悲鸣又复归寂静！`,
+                `${playerName}从生死线上回眸，接引归来的真灵重入肉身，`,
+                `枯竭的气血重新奔涌，轮回印照亮九天十地！`,
+                `「生死由我定，轮回由我开！」`,
+                ``,
+                `使用指令：#修炼自身之道 精进此无上大道`
+            ];
+            break;
+
+        case '因果':
+            typeSpecificText = [
+                ` 大道特性：`,
+                `- 因果落印：命中后留下延迟反噬`,
+                `- 先因后果：反噬持续回合可随修炼提升`,
+                `- 基础伤害：110%（可随修炼提升）`,
+                `- 无冷却时间，越战越能积累命数`,
+                ``,
+                `「${wayName}一出，今日之果皆是昨日之因！」`,
+                `此乃因果牵引之道，未来可演化斩断宿命的无上秘术！`,
+                ``
+            ];
+            finalText = [
+                ` 因果丝线贯穿诸天，菩提叶上的露珠映出敌手一生！`,
+                `${playerName}抬手拨动命运琴弦，`,
+                `敌手今日所受的每一分伤势，都在未来化作更深的回响！`,
+                `「种什么因，便收什么果！」`,
+                ``,
+                `使用指令：#修炼自身之道 精进此无上大道`
+            ];
+            break;
+
+        case '封禁':
+            typeSpecificText = [
+                ` 大道特性：`,
+                `- 万道封禁：命中后冻结对手行动`,
+                `- 镇压遁光：额外推迟对手行动条`,
+                `- 基础倍率：80%（可随修炼提升）`,
+                `- 控场优先，适合打断强力神通`,
+                ``,
+                `「${wayName}一封，诸天法则皆寂！」`,
+                `此乃封锁万法之道，未来可演化封天绝地的无上禁术！`,
+                ``
+            ];
+            finalText = [
+                ` 菩提树下浮现万重禁制，星辰运行都为之停滞！`,
+                `${playerName}指尖落下一枚道印，`,
+                `敌手周身法则被层层锁死，只能眼睁睁看着杀机降临！`,
+                `「我言即禁，万法不许动！」`,
+                ``,
+                `使用指令：#修炼自身之道 精进此无上大道`
+            ];
+            break;
     }
     
     return [...baseText, ...typeSpecificText, ...finalText].join('\n');
@@ -1068,38 +1537,72 @@ async cultivateOwnWay(e) {
 
     // === 1. 解析倍数参数 ===
     const match = e.msg.match(/#修炼自身之道\*(\d+)/);
-    const batchTimes = match ? Math.min(parseInt(match[1]), 9999) : 1; // 限制最大9999次
+    const parsedBatchTimes = match ? Number.parseInt(match[1], 10) : 1;
+    const batchTimes = Math.max(1, Math.min(Number.isFinite(parsedBatchTimes) ? parsedBatchTimes : 1, 9999));
 
     // === 2. 前置条件检查 ===
     if (!player.已创自身之道) {
         return e.reply('你尚未开创自身之道，请先使用 #创造自身之道');
     }
 
-    // === 3. 计算总消耗 ===
-    const currentCultivationCount = player.修炼次数 || 0;
-    let totalCost = 0;
-    let cultivateCosts = []; // 存储每次修炼的消耗
-    
-    // 计算每次修炼的消耗（递增）
-    for (let i = 1; i <= batchTimes; i++) {
-        const costPerTime = 1e9 * (currentCultivationCount + i);
-        cultivateCosts.push(costPerTime);
-        totalCost += costPerTime;
-    }
-    
-    if (player.修为 < totalCost) {
+    // === 3. 当前境界封顶检查与阶段固定消耗 ===
+    const currentCultivationCount = Math.max(0, Math.trunc(Number(player.修炼次数) || 0));
+    const currentRealm = getOwnWayCurrentRealm(player);
+    const currentRealmGate = getOwnWayLateRealmGate(player, currentRealm.index);
+    if (!currentRealmGate.ok) {
         return e.reply([
-            `批量修炼需消耗 ${batchTimes}×递增修为！`,
-            `当前修为：${bigNumberTransform(player.修为)}`,
+            `【${currentRealm.name}·道途未至】`,
+            ...currentRealmGate.missing.map(item => `尚缺：${item}`)
+        ].join('\n'));
+    }
+    const remainingTimes = Math.max(0, currentRealm.max - currentCultivationCount);
+    if (remainingTimes <= 0) {
+        const isFinalRealm = currentRealm.index === OWN_WAY_REALM_RULES.length - 1;
+        return e.reply([
+            `【${currentRealm.name}·境界已满】`,
+            `当前修炼次数：${currentCultivationCount}/${currentRealm.max}`,
+            isFinalRealm
+                ? `自身之道已达到当前版本最高境界。`
+                : `已达到当前境界极限，请使用 #突破自身之道。`
+        ].join('\n'));
+    }
+    if (batchTimes > remainingTimes) {
+        return e.reply([
+            `【${currentRealm.name}·不可越境修炼】`,
+            `当前修炼次数：${currentCultivationCount}/${currentRealm.max}`,
+            `本阶段最多还可修炼：${remainingTimes}次`,
+            `请先修炼至${currentRealm.max}次，再使用 #突破自身之道。`
+        ].join('\n'));
+    }
+
+    const costPerTime = getOwnWayCultivationCosts(currentRealm);
+    const totalPotentialCost = costPerTime.potential * batchTimes;
+    const totalCost = costPerTime.cultivation * batchTimes;
+    const cultivateCosts = Array.from({ length: batchTimes }, () => costPerTime.cultivation);
+    const currentPotential = Number(player.仙道潜力) || 0;
+    const currentCultivation = Number(player.修为) || 0;
+    const currentBlood = Number(player.血气) || 0;
+
+    if (currentPotential < totalPotentialCost) {
+        return e.reply([
+            `批量修炼需消耗仙道潜力：${batchTimes}×${costPerTime.potential}`,
+            `当前仙道潜力：${currentPotential.toLocaleString()}`,
+            `所需仙道潜力：${totalPotentialCost.toLocaleString()}`
+        ].join('\n'));
+    }
+    if (currentCultivation < totalCost) {
+        return e.reply([
+            `批量修炼需消耗修为：${batchTimes}×${bigNumberTransform(costPerTime.cultivation)}`,
+            `当前修为：${bigNumberTransform(currentCultivation)}`,
             `所需修为：${bigNumberTransform(totalCost)}`,
             `(首单次消耗：${bigNumberTransform(cultivateCosts[0])})`,
             `(末单次消耗：${bigNumberTransform(cultivateCosts[batchTimes-1])})`
         ].join('\n'));
     }
-    if (player.血气 < totalCost) {
+    if (currentBlood < totalCost) {
         return e.reply([
-            `批量修炼需消耗 ${batchTimes}×递增血气！`,
-            `当前血气：${bigNumberTransform(player.血气)}`,
+            `批量修炼需消耗血气：${batchTimes}×${bigNumberTransform(costPerTime.blood)}`,
+            `当前血气：${bigNumberTransform(currentBlood)}`,
             `所需血气：${bigNumberTransform(totalCost)}`,
             `(首单次消耗：${bigNumberTransform(cultivateCosts[0])})`,
             `(末单次消耗：${bigNumberTransform(cultivateCosts[batchTimes-1])})`
@@ -1112,31 +1615,17 @@ async cultivateOwnWay(e) {
     let customSkill = await this.getCustomSkill(skillName, listType);
     
     if (!customSkill) {
-        // 如果找不到技能，创建一个默认技能
-        customSkill = {
+        // 兼容旧数据：技能文件缺失时按道途重新生成完整技能对象。
+        customSkill = this.createOwnWaySkill(player.自身之道类型, skillName, player.名号) || {
             name: skillName,
+            class: '功法',
             pr: 0.05,
+            cnt: -1,
             beilv: 1,
+            other: 0,
             msg1: `${skillName}发动效果`,
             msg2: ''
         };
-        
-        // 根据类型添加默认属性
-        switch (player.自身之道类型) {
-            case '攻伐':
-                customSkill.效果类型 = "攻伐";
-                break;
-            case '护体':
-                customSkill.效果类型 = "护体";
-                customSkill.beilv = -0.1;
-                customSkill.反弹伤害 = 0.1;
-                break;
-            case '涅槃':
-                customSkill.效果类型 = "涅槃";
-                customSkill.恢复比例 = 0.5;
-                customSkill.免控 = 1;
-                break;
-        }
     }
 
     // === 5. 根据大道类型进行不同的提升 ===
@@ -1145,16 +1634,17 @@ async cultivateOwnWay(e) {
     let specialEffects = [];
     
     // 临时变量用于计算
-    let tempPr = customSkill.pr;
-    let tempBeilv = customSkill.beilv;
+    let tempPr = Number(customSkill.pr) || 0.05;
+    let tempBeilv = Number.isFinite(Number(customSkill.beilv)) ? Number(customSkill.beilv) : 1;
     
     // 记录初始值（用于计算总增益）
     const initialPr = tempPr;
     const initialBeilv = tempBeilv;
     
     // 先扣除资源
-    player.修为 -= totalCost;
-    player.血气 -= totalCost;
+    player.修为 = currentCultivation - totalCost;
+    player.血气 = currentBlood - totalCost;
+    player.仙道潜力 = currentPotential - totalPotentialCost;
     
     // === 关键修复：改为循环处理每次修炼 ===
     for (let i = 0; i < batchTimes; i++) {
@@ -1222,27 +1712,80 @@ async cultivateOwnWay(e) {
                     customSkill[attr] = Math.min(0.5, customSkill[attr] + 0.005);
                 });
                 break;
+
+            case '时空':
+                // 时空大道：逐步提高触发率、行动条优势与速度。
+                tempPr = Math.min(0.75, tempPr + 0.005);
+                tempBeilv += 0.03;
+                totalPrGain += 0.005;
+                totalBeilvGain += 0.03;
+                customSkill.拉条 = Math.min(300, (Number(customSkill.拉条) || 100) + 5);
+                customSkill.推条 = Math.min(250, (Number(customSkill.推条) || 80) + 5);
+                customSkill.速度加成 = Math.min(0.3, (Number(customSkill.速度加成) || 0.05) + 0.002);
+                break;
+
+            case '轮回':
+                // 轮回大道：提高复生概率、复生后的恢复与反哺战力。
+                tempPr = Math.min(0.85, tempPr + 0.005);
+                totalPrGain += 0.005;
+                customSkill.恢复比例 = Math.min(0.65, (Number(customSkill.恢复比例) || 0.2) + 0.005);
+                customSkill.免控 = Math.min(5, (Number(customSkill.免控) || 1) + 0.1);
+                customSkill.攻击加成 = Math.min(1, (Number(customSkill.攻击加成) || 0.15) + 0.01);
+                customSkill.防御加成 = Math.min(1, (Number(customSkill.防御加成) || 0.15) + 0.01);
+                break;
+
+            case '因果':
+                // 因果大道：提升命中伤害，并延长因果反噬的持续回合。
+                tempPr = Math.min(0.85, tempPr + 0.005);
+                tempBeilv += 0.05;
+                totalPrGain += 0.005;
+                totalBeilvGain += 0.05;
+                customSkill.负面回合 = Math.min(5, Math.max(1, Number(customSkill.负面回合) || 2));
+                if (currentCount % 20 === 0) customSkill.负面回合 = Math.min(5, customSkill.负面回合 + 1);
+                break;
+
+            case '封禁':
+                // 封禁大道：强化控制触发率、封锁伤害与推条强度。
+                tempPr = Math.min(0.7, tempPr + 0.004);
+                tempBeilv += 0.02;
+                totalPrGain += 0.004;
+                totalBeilvGain += 0.02;
+                customSkill.推条 = Math.min(300, (Number(customSkill.推条) || 120) + 4);
+                customSkill.控制 = 1;
+                break;
         }
     }
     
     // 更新修炼次数
-    player.修炼次数 = (player.修炼次数 || 0) + batchTimes;
+    player.修炼次数 = currentCultivationCount + batchTimes;
+    player.自身之道阶段 = currentRealm.index;
+    player.自身之道境界 = currentRealm.name;
+    if (currentRealm.index >= 4) player.自身之道根基 = '无缺帝道';
 
     // === 6. 更新数据 ===
     const updatedSkill = {
         ...customSkill,
         pr: tempPr,
-        beilv: tempBeilv
+        beilv: tempBeilv,
+        自身之道阶段: currentRealm.index,
+        自身之道境界: currentRealm.name,
+        ...(currentRealm.index >= 4 ? { 道源根基: '无缺帝道' } : {}),
     };
 
     // === 7. 保存数据 ===
+    const skillSaveResult = await this.saveCustomSkill(
+        updatedSkill,
+        this.getListTypeByWayType(player.自身之道类型)
+    );
+    if (!skillSaveResult) return e.reply('保存自身之道修炼结果失败，本次资源未扣除');
     await Write_player(usr_qq, player);
-    await this.saveCustomSkill(updatedSkill, this.getListTypeByWayType(player.自身之道类型));
 
     // === 8. 构建反馈消息 ===
     let resultMessage = [
         `【大道精进·批量修炼】`,
-        `消耗 ${batchTimes}次递增修为与血气（总消耗：${bigNumberTransform(totalCost)}）`,
+        `消耗 ${batchTimes}次${currentRealm.name}修炼`,
+        `总消耗：仙道潜力${totalPotentialCost.toLocaleString()}，修为与血气各${bigNumberTransform(totalCost)}`,
+        `当前进度：${player.修炼次数}/${currentRealm.max}`,
         `「${skillName}」累计提升：`
     ];
     
@@ -1281,6 +1824,47 @@ async cultivateOwnWay(e) {
                 `└─ 生命加成：${(customSkill.生命加成 * 100).toFixed(1)}%`
             );
             break;
+
+        case '时空':
+            resultMessage.push(
+                `├─ 触发概率：+${prGainPercent.toFixed(1)}%`,
+                `├─ 当前概率：${(tempPr * 100).toFixed(1)}%/75.0%上限`,
+                `├─ 伤害倍率：+${beilvGain.toFixed(2)}`,
+                `├─ 当前拉条：${Math.round(Number(customSkill.拉条) || 0)}点`,
+                `├─ 当前推条：${Math.round(Number(customSkill.推条) || 0)}点`,
+                `└─ 速度加成：${((Number(customSkill.速度加成) || 0) * 100).toFixed(1)}%`
+            );
+            break;
+
+        case '轮回':
+            resultMessage.push(
+                `├─ 复生概率：+${prGainPercent.toFixed(1)}%`,
+                `├─ 当前概率：${(tempPr * 100).toFixed(1)}%/85.0%上限`,
+                `├─ 复生恢复：${((Number(customSkill.恢复比例) || 0) * 100).toFixed(1)}%`,
+                `├─ 复生免控：${(Number(customSkill.免控) || 0).toFixed(1)}回合`,
+                `├─ 复生攻击：+${((Number(customSkill.攻击加成) || 0) * 100).toFixed(1)}%`,
+                `└─ 复生防御：+${((Number(customSkill.防御加成) || 0) * 100).toFixed(1)}%`
+            );
+            break;
+
+        case '因果':
+            resultMessage.push(
+                `├─ 触发概率：+${prGainPercent.toFixed(1)}%`,
+                `├─ 当前概率：${(tempPr * 100).toFixed(1)}%/85.0%上限`,
+                `├─ 伤害倍率：+${beilvGain.toFixed(2)}`,
+                `├─ 当前倍率：${tempBeilv.toFixed(2)}`,
+                `└─ 反噬回合：${Math.round(Number(customSkill.负面回合) || 0)}回合`
+            );
+            break;
+
+        case '封禁':
+            resultMessage.push(
+                `├─ 控制概率：+${prGainPercent.toFixed(1)}%`,
+                `├─ 当前概率：${(tempPr * 100).toFixed(1)}%/70.0%上限`,
+                `├─ 封禁倍率：${tempBeilv.toFixed(2)}`,
+                `└─ 当前推条：${Math.round(Number(customSkill.推条) || 0)}点`
+            );
+            break;
     }
     
     // 添加特殊效果信息（去重）
@@ -1304,6 +1888,100 @@ async cultivateOwnWay(e) {
     resultMessage.push(`大道感悟愈发深邃！`);
     
     e.reply(resultMessage.join('\n'));
+}
+
+async breakthroughOwnWay(e) {
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const player = await Read_player(usr_qq);
+    if (!player.已创自身之道) {
+        return e.reply('你尚未开创自身之道，请先使用 #创造自身之道');
+    }
+
+    const cultivationCount = Math.max(0, Math.trunc(Number(player.修炼次数) || 0));
+    const currentRealm = getOwnWayCurrentRealm(player);
+    if (cultivationCount < currentRealm.max) {
+        return e.reply([
+            `【自身之道·积累不足】`,
+            `当前境界：${currentRealm.name}`,
+            `当前修炼次数：${cultivationCount}/${currentRealm.max}`,
+            `还需修炼：${currentRealm.max - cultivationCount}次`
+        ].join('\n'));
+    }
+
+    const nextRealm = OWN_WAY_REALM_RULES[currentRealm.index + 1];
+    if (!nextRealm) {
+        return e.reply([
+            `【自身之道·祭道圆满】`,
+            `你的自身之道已经达到${currentRealm.name}极限。`,
+            `当前修炼次数：${cultivationCount}/${currentRealm.max}`
+        ].join('\n'));
+    }
+
+    const realmGate = getOwnWayLateRealmGate(player, nextRealm.index);
+    if (!realmGate.ok) {
+        return e.reply([
+            `【${currentRealm.name}·道途未至】`,
+            `目标境界：${nextRealm.name}`,
+            ...realmGate.missing.map(item => `尚缺：${item}`)
+        ].join('\n'));
+    }
+
+    const breakthroughRule = OWN_WAY_BREAKTHROUGH_RULES.find(rule => rule.target === nextRealm.index);
+    const requirements = breakthroughRule?.requirements || [];
+    const missing = requirements
+        .map(([name, amount]) => ({ name, amount, current: getOwnWayResource(player, name) }))
+        .filter(requirement => requirement.current < requirement.amount);
+    if (missing.length) {
+        return e.reply([
+            `【${currentRealm.name}·突破资源不足】`,
+            `目标境界：${nextRealm.name}`,
+            ...missing.map(item => `${item.name}：${item.current.toLocaleString()}/${item.amount.toLocaleString()}`)
+        ].join('\n'));
+    }
+
+    const skillName = player.自身之道名称;
+    const listType = this.getListTypeByWayType(player.自身之道类型);
+    const customSkill = await this.getCustomSkill(skillName, listType) ||
+        this.createOwnWaySkill(player.自身之道类型, skillName, player.名号);
+    if (!customSkill) return e.reply('自身之道技能数据异常，无法完成突破');
+
+    const updatedSkill = {
+        ...customSkill,
+        pr: Math.min(1, (Number(customSkill.pr) || 0.05) + 0.01),
+        自身之道阶段: nextRealm.index,
+        自身之道境界: nextRealm.name,
+        道境特性: nextRealm.feature,
+        道境强度: nextRealm.multiplier,
+        ...(nextRealm.index >= 4 ? { 道源根基: '无缺帝道' } : {}),
+    };
+    const saveResult = await this.saveCustomSkill(updatedSkill, listType);
+    if (!saveResult) return e.reply('保存自身之道突破结果失败，请稍后再试');
+
+    for (const [name, amount] of requirements) {
+        consumeOwnWayResource(player, name, amount);
+    }
+    player.自身之道阶段 = nextRealm.index;
+    player.自身之道境界 = nextRealm.name;
+    if (nextRealm.index >= 4) player.自身之道根基 = '无缺帝道';
+    player.自身之道突破记录 = player.自身之道突破记录 || [];
+    player.自身之道突破记录.push({
+        时间: new Date().toLocaleString(),
+        原境界: currentRealm.name,
+        新境界: nextRealm.name,
+        消耗: Object.fromEntries(requirements),
+    });
+    await Write_player(usr_qq, player);
+
+    const nextCost = getOwnWayCultivationCosts(nextRealm);
+    return e.reply([
+        `【自身之道·突破成功】`,
+        `${player.名号}的【${skillName}】由${currentRealm.name}突破至${nextRealm.name}！`,
+        `解锁特性：${nextRealm.feature}`,
+        nextRealm.index >= 4 ? `道源根基：无缺帝道` : '',
+        `突破消耗：${requirements.map(([name, amount]) => `${name}${amount.toLocaleString()}`).join('、') || '无'}`,
+        `下一阶段：${cultivationCount + 1}～${nextRealm.max}次`,
+        `每次修炼消耗：仙道潜力${nextCost.potential}、修为与血气各${bigNumberTransform(nextCost.cultivation)}`
+    ].filter(Boolean).join('\n'));
 }
 
 // 获取自定义技能
@@ -1332,9 +2010,15 @@ async getCustomSkill(skillName, listType) {
 // 根据大道类型获取对应的技能列表类型
 getListTypeByWayType(wayType) {
     switch (wayType) {
-        case '攻伐': return 1;
+        case '攻伐':
+        case '时空':
+        case '因果':
+        case '封禁':
+            return 1;
         case '护体': return 2;
-        case '涅槃': return 3;
+        case '涅槃':
+        case '轮回':
+            return 3;
         default: return 1;
     }
 }
