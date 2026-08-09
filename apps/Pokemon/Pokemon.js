@@ -16,6 +16,7 @@ import {
 import {
   addInventoryPetVariant,
   createHabitatPetData,
+  findHabitatPetIndex,
   removeInventoryPetAt,
   restoreHabitatPetToInventory,
 } from './habitatPetTransfer.js';
@@ -24,6 +25,31 @@ import {
   getHabitatSlotBonus,
   getPetTreasureRules,
 } from '../../model/innateTreasure.js';
+
+async function acquirePetTransferLock(playerId) {
+  const client = globalThis.redis;
+  if (!client?.set) return { key: '', token: '' };
+  const key = `xiuxian:player:${playerId}:habitat_pet_transfer_lock`;
+  const token = `${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+  const acquired = await client.set(key, token, 'EX', 30, 'NX');
+  return acquired ? { key, token } : null;
+}
+
+async function releasePetTransferLock(lock) {
+  const client = globalThis.redis;
+  if (!lock?.key || !client?.get) return;
+  if ((await client.get(lock.key)) === lock.token) await client.del(lock.key);
+}
+
+async function runWithPetTransferLock(playerId, task) {
+  const lock = await acquirePetTransferLock(playerId);
+  if (!lock) return { locked: true };
+  try {
+    return { locked: false, result: await task() };
+  } finally {
+    await releasePetTransferLock(lock);
+  }
+}
 export class Pokemon extends plugin {
   constructor() {
     super({
@@ -589,7 +615,7 @@ if (!ifexist) {
     // 如果仙宠在小世界栖息地中，喂食恢复精力
     let energyMsg = '';
     if (data.xiaoshijie) {
-      const world = data.xiaoshijie.find(w => w.player_qq === usr_qq);
+      const world = data.xiaoshijie.find(w => String(w.player_qq) === String(usr_qq));
       if (world && world.栖息地) {
         const habitatPet = world.栖息地.find(p => p.name === player.仙宠.name);
         if (habitatPet) {
@@ -598,10 +624,12 @@ if (!ifexist) {
           if (habitatPet.特性 && habitatPet.特性.includes('贪吃')) {
             energyRecover = Math.floor(energyRecover * 1.5);
           }
-          habitatPet.精力 = Math.min(habitatPet.最大精力 || 100, (habitatPet.精力 || 100) + energyRecover);
-          const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === usr_qq);
+          const maxEnergy = Math.max(1, Number(habitatPet.最大精力 ?? 100) || 100);
+          const currentEnergy = Math.max(0, Number(habitatPet.精力 ?? 100) || 0);
+          habitatPet.精力 = Math.min(maxEnergy, currentEnergy + energyRecover);
+          const worldIndex = data.xiaoshijie.findIndex(w => String(w.player_qq) === String(usr_qq));
           data.xiaoshijie[worldIndex] = world;
-          const libPath = `${process.cwd()}/plugins/zhutianxiuxian1.0/resources/data/item/小世界列表.json`;
+          const libPath = `${data.filePathMap?.lib || data.lib_path}/小世界列表.json`;
           fs.writeFileSync(libPath, JSON.stringify(data.xiaoshijie, null, 2));
           energyMsg = `\n${player.仙宠.name}在小世界中的精力恢复了${energyRecover}点（当前${habitatPet.精力}/${habitatPet.最大精力}）`;
         }
@@ -628,6 +656,18 @@ if (!ifexist) {
       return false;
     }
 
+    const transfer = await runWithPetTransferLock(player_qq, () =>
+      this.settlePetToHabitatLocked(e, player_qq, name)
+    );
+    if (transfer.locked) {
+      e.reply('仙宠正在转移中，请稍后再试');
+      return false;
+    }
+    return transfer.result;
+  }
+
+  async settlePetToHabitatLocked(e, player_qq, name) {
+
     // 读取小世界数据
     // if (!data.xiaoshijie) data.xiaoshijie = [];
     let world = data.xiaoshijie.find(
@@ -642,7 +682,7 @@ if (!ifexist) {
 
     // 初始化栖息地
     if (!world.栖息地) world.栖息地 = [];
-    const maxSlots = (world.attributes.栖息地上限 || 1) + getHabitatSlotBonus(player);
+    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player);
     if (world.栖息地.length >= maxSlots) {
       e.reply(`你的小世界栖息地已满（${world.栖息地.length}/${maxSlots}），请先#召回仙宠 腾出位置`);
       return false;
@@ -671,12 +711,6 @@ if (!ifexist) {
       return false;
     }
 
-    // 不能安置出战的仙宠
-    if (player.仙宠 && player.仙宠.name === targetPet.name) {
-      e.reply(`${targetPet.name}正在出战，请先切换其他仙宠或召回后再安置`);
-      return false;
-    }
-
     const originalNajie = JSON.parse(JSON.stringify(najie));
     const originalHabitat = JSON.parse(JSON.stringify(world.栖息地));
     const petData = createHabitatPetData(targetPet);
@@ -686,7 +720,7 @@ if (!ifexist) {
     const worldIndex = data.xiaoshijie.findIndex(
       w => String(w.player_qq) === String(player_qq)
     );
-    const libPath = `${process.cwd()}/plugins/zhutianxiuxian1.0/resources/data/item/小世界列表.json`;
+    const libPath = `${data.filePathMap?.lib || data.lib_path}/小世界列表.json`;
     try {
       data.xiaoshijie[worldIndex] = world;
       fs.writeFileSync(libPath, JSON.stringify(data.xiaoshijie, null, 2));
@@ -719,6 +753,18 @@ if (!ifexist) {
       return false;
     }
 
+    const transfer = await runWithPetTransferLock(usr_qq, () =>
+      this.recallPetFromHabitatLocked(e, usr_qq, name)
+    );
+    if (transfer.locked) {
+      e.reply('仙宠正在转移中，请稍后再试');
+      return false;
+    }
+    return transfer.result;
+  }
+
+  async recallPetFromHabitatLocked(e, usr_qq, name) {
+
     if (!data.xiaoshijie) data.xiaoshijie = [];
     let world = data.xiaoshijie.find(
       w => String(w.player_qq) === String(usr_qq)
@@ -733,7 +779,7 @@ if (!ifexist) {
       return false;
     }
 
-    const petIndex = world.栖息地.findIndex(p => p.name === name);
+    const petIndex = findHabitatPetIndex(world.栖息地, name);
     if (petIndex === -1) {
       e.reply(`栖息地中找不到仙宠【${name}】`);
       return false;
@@ -752,7 +798,7 @@ if (!ifexist) {
     const worldIndex = data.xiaoshijie.findIndex(
       w => String(w.player_qq) === String(usr_qq)
     );
-    const libPath = `${process.cwd()}/plugins/zhutianxiuxian1.0/resources/data/item/小世界列表.json`;
+    const libPath = `${data.filePathMap?.lib || data.lib_path}/小世界列表.json`;
     try {
       await Write_najie(usr_qq, najie);
       world.栖息地.splice(petIndex, 1);
@@ -767,7 +813,8 @@ if (!ifexist) {
       return false;
     }
 
-    const maxSlots = world.attributes.栖息地上限 || 1;
+    const player = data.getData('player', usr_qq);
+    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player);
     e.reply(`${pet.name}已从栖息地召回（${world.栖息地.length}/${maxSlots}）`);
     return true;
   }

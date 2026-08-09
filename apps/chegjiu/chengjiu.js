@@ -283,9 +283,9 @@ async chengjiu1(e) {
                 const equipment = await Read_equipment(usr_qq);
                 conditionMet = equipment.帝兵 && equipment.帝兵.author_name === player.id;
                 break;
-            case 35: // 极道帝兵
+            case 35: // 极道帝兵（遮天）/至尊兵（仙古）
                 const equipment2 = await Read_equipment(usr_qq);
-                conditionMet = equipment2.帝兵 && equipment2.帝兵.品阶 === "极道帝兵";
+                conditionMet = equipment2.帝兵 && ["极道帝兵", "至尊兵"].includes(equipment2.帝兵.品阶);
                 break;
             // 可以继续添加其他成就的条件判断
             default:

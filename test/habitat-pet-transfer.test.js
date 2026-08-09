@@ -4,9 +4,11 @@ import test from 'node:test';
 
 import {
   createHabitatPetData,
+  findHabitatPetIndex,
   removeInventoryPetAt,
   restoreHabitatPetToInventory,
 } from '../apps/Pokemon/habitatPetTransfer.js';
+import { calculatePetEnergyPeriod } from '../apps/Garden/smallWorldPetEnergy.js';
 
 const petList = JSON.parse(
   fs.readFileSync(new URL('../resources/data/item/仙宠列表.json', import.meta.url), 'utf8')
@@ -123,4 +125,64 @@ test('旧版野外仙宠可由基础表重建且保留动态品质和特性', ()
   assert.equal(najie.仙宠[1].品级, '仙灵');
   assert.equal(najie.仙宠[1].等级上限, 100);
   assert.deepEqual(najie.仙宠[1].特性, ['强韧', '神速']);
+});
+
+test('仙宠转移会保留锁定、累倒和炼妖继承状态', () => {
+  const source = {
+    id: 8811,
+    name: '同名仙宠',
+    class: '仙宠',
+    type: '炼丹',
+    品级: '仙道',
+    等级: 18,
+    等级上限: 80,
+    特性: ['灵巧'],
+    islockd: 1,
+    小世界状态: { 精力: 0, 最大精力: 100, 累倒: true, 累倒_counter: 7 },
+    炼妖继承能力: { 能力: '火灵根', 强度: 0.4 },
+    数量: 1,
+  };
+  const habitatPet = createHabitatPetData(source);
+  assert.equal(habitatPet.精力, 0);
+  assert.equal(habitatPet.累倒, true);
+  assert.equal(habitatPet.累倒_counter, 7);
+  assert.equal(habitatPet.纳戒数据.islockd, 1);
+  assert.deepEqual(habitatPet.纳戒数据.炼妖继承能力, source.炼妖继承能力);
+
+  const otherVariant = {
+    ...source,
+    炼妖继承能力: { 能力: '冰灵根', 强度: 0.4 },
+  };
+  const najie = { 仙宠: [otherVariant] };
+  const result = restoreHabitatPetToInventory(najie, habitatPet, [source]);
+  assert.equal(result.ok, true);
+  assert.equal(result.merged, false);
+  assert.equal(najie.仙宠.length, 2);
+  assert.equal(najie.仙宠[1].islockd, 1);
+  assert.deepEqual(najie.仙宠[1].小世界状态, {
+    精力: 0,
+    最大精力: 100,
+    累倒: true,
+    累倒_counter: 7,
+  });
+  assert.deepEqual(najie.仙宠[1].炼妖继承能力, source.炼妖继承能力);
+});
+
+test('栖息地编号可以区分同名仙宠', () => {
+  const habitat = [{ name: '同名仙宠' }, { name: '同名仙宠' }];
+  assert.equal(findHabitatPetIndex(habitat, '1001'), 0);
+  assert.equal(findHabitatPetIndex(habitat, '1002'), 1);
+  assert.equal(findHabitatPetIndex(habitat, '同名仙宠'), 0);
+});
+
+test('精力结算按实际工作时长截断，零精力不会恢复成满值', () => {
+  const exhausted = calculatePetEnergyPeriod(0, 100, 10, 5);
+  assert.equal(exhausted.activeHours, 0);
+  assert.equal(exhausted.endEnergy, 0);
+  assert.equal(exhausted.exhausted, true);
+
+  const partial = calculatePetEnergyPeriod(20, 100, 10, 5);
+  assert.equal(partial.activeHours, 4);
+  assert.equal(partial.endEnergy, 0);
+  assert.equal(partial.averageEnergy, 10);
 });

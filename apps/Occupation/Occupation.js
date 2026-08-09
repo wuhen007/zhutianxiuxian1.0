@@ -743,13 +743,18 @@ if (
     
     const weapon = equipment.帝兵;
     
-    // 检查帝兵品阶是否达到要求
-    if (weapon.品阶 !== "圣兵") {
+    // 检查帝兵品阶是否达到要求（仙古线对应天神兵位，遮天线对应圣兵；仙古玩家旧档"圣兵"视作天神兵）
+    const isXianguPlayer = Number(player.xiangulevel_id) >= 8;
+    const neededRank = isXianguPlayer ? "天神兵" : "圣兵";
+    const rankOK = isXianguPlayer
+        ? (weapon.品阶 === "天神兵" || weapon.品阶 === "圣兵")
+        : (weapon.品阶 === "圣兵");
+    if (!rankOK) {
         return e.reply([
             `帝兵品阶不足！`,
             `当前品阶：${weapon.品阶}`,
-            `需要品阶：圣兵`,
-            `请先使用 #以雷劫洗礼帝兵 将帝兵提升至圣兵品阶`
+            `需要品阶：${neededRank}`,
+            `请先使用 #以雷劫洗礼帝兵 将帝兵提升至${neededRank}品阶`
         ].join('\n'));
     }
     
@@ -990,33 +995,50 @@ async upgradeEmperorWeapon(e) {
 
     const weapon = equipment.帝兵;
 
-    // 帝兵品阶体系
-    const DI_BING_RANKS = [
-        "雏形", "通灵", "铭刻道与理", "斩道王兵", 
-        "圣兵", "准帝兵", "极道帝兵", "仙器", 
+    // 帝兵品阶体系：仙古境界≥神火(8级)自动走仙古线，否则走遮天线
+    // 前 3 档（雏形/通灵/铭刻道与理）与后 5 档（仙器~祭道器）两系共用，中间 4 档按体系区分
+    const ZHETIAN_BING_RANKS = [
+        "雏形", "通灵", "铭刻道与理", "斩道王兵",
+        "圣兵", "准帝兵", "极道帝兵", "仙器",
         "仙王器", "准仙帝器", "仙帝器", "祭道器"
     ];
-    
+    const XIANGU_BING_RANKS = [
+        "雏形", "通灵", "铭刻道与理", "真神兵",
+        "天神兵", "遁一兵", "至尊兵", "仙器",
+        "仙王器", "准仙帝器", "仙帝器", "祭道器"
+    ];
+    // 遮天旧品阶 → 仙古品阶（仙古玩家旧存档自动对齐新体系档位）
+    const LEGACY_RANK_MAP = {
+        "斩道王兵": "真神兵", "圣兵": "天神兵",
+        "准帝兵": "遁一兵", "极道帝兵": "至尊兵"
+    };
+    const isXianguPath = Number(player.xiangulevel_id) >= 8;
+    const DI_BING_RANKS = isXianguPath ? XIANGU_BING_RANKS : ZHETIAN_BING_RANKS;
+    // 当前品阶（仙古玩家旧名映射到新体系，未进阶前存档仍保留旧名）
+    const currentRank = isXianguPath && LEGACY_RANK_MAP[weapon.品阶]
+        ? LEGACY_RANK_MAP[weapon.品阶]
+        : weapon.品阶;
+
     // 检查是否已达上限
-    if (weapon.品阶 === "祭道器") {
+    if (currentRank === "祭道器") {
         return e.reply([
             `帝兵已达终极境界！`,
             `「${weapon.name}」已进阶至最高品阶「祭道器」`,
             `无法再进行雷劫洗礼`
         ].join("\n"));
     }
-        if (weapon.品阶 === "铭刻道与理"&&!weapon.蕴养) {
+        if (currentRank === "铭刻道与理"&&!weapon.蕴养) {
         return e.reply([
             `你需要用自身道行和生命本源蕴养${weapon.name}才能使其更进一步承受住雷劫洗礼`,
         ].join("\n"));
     }
-            if (weapon.品阶 === "圣兵"&&!weapon.刻写之道) {
+            if (currentRank === (isXianguPath ? "天神兵" : "圣兵")&&!weapon.刻写之道) {
         return e.reply([
             `你需要将自身之道刻在${weapon.name}才能使其更进一步承受住雷劫洗礼`,
         ].join("\n"));
     }
-   // 极道帝兵检查
-    if (weapon.品阶 === "极道帝兵" ) {
+   // 至尊兵（仙古）/极道帝兵（遮天）检查
+    if (currentRank === (isXianguPath ? "至尊兵" : "极道帝兵") ) {
         // 检查是否融合了全部九种仙金
         const hasAllNineGolds = checkAllNineGoldsFused(weapon);
         
@@ -1068,7 +1090,7 @@ function getMissingGolds(weapon) {
 }
 
 
-    if (weapon.品阶 === "仙王器"&&!weapon.祭炼) {
+    if (currentRank === "仙王器"&&!weapon.祭炼) {
         return e.reply([
             `「${weapon.name}」需要用同品阶帝兵进行祭炼才能使其更进一步承受住雷劫洗礼`,
         ].join("\n"));
@@ -1080,13 +1102,25 @@ function getMissingGolds(weapon) {
             `当前潜力：${weapon.潜力}星`,
             `已成长次数：${weapon.成长次数}`,
             `可通过融合仙金提升潜力上限`,
-            `当前品阶：${weapon.品阶}`,
+            `当前品阶：${currentRank}`,
             `最高可进阶至：祭道器`
         ].join("\n"));
     }
-    
-    // 帝兵进阶体系
-    const EVOLUTION_STAGES = {
+
+    // 帝兵进阶体系（按体系自动切换：仙古线 真神兵→至尊兵，遮天线 斩道王兵→极道帝兵）
+    const EVOLUTION_STAGES = isXianguPath ? {
+        "雏形": { next: "通灵", power: 2, require: "无", addAllAttr: 1 },
+        "通灵": { next: "铭刻道与理", power: 2, require: "雷劫洗礼", addAllAttr: 2 },
+        "铭刻道与理": { next: "真神兵", power: 2, require: "真一境界", addAllAttr: 3 },
+        "真神兵": { next: "天神兵", power: 2, require: "天神境界", addAllAttr: 5 },
+        "天神兵": { next: "遁一兵", power: 2, require: "遁一境界", addAllAttr: 7 },
+        "遁一兵": { next: "至尊兵", power: 2, require: "至尊境界", addAllAttr: 10 },
+        "至尊兵": { next: "仙器", power: 2, require: "真仙境界", addAllAttr: 20 },
+        "仙器": { next: "仙王器", power: 2, require: "仙王境界", addAllAttr: 30 },
+        "仙王器": { next: "准仙帝器", power: 2, require: "准仙帝境界", addAllAttr: 50 },
+        "准仙帝器": { next: "仙帝器", power: 2, require: "仙帝境界", addAllAttr: 100 },
+        "仙帝器": { next: "祭道器", power: 2, require: "祭道境界", addAllAttr: 200 }
+    } : {
         "雏形": { next: "通灵", power: 2, require: "无", addAllAttr: 1 },
         "通灵": { next: "铭刻道与理", power: 2, require: "雷劫洗礼", addAllAttr: 2 },
         "铭刻道与理": { next: "斩道王兵", power: 2, require: "斩道境界", addAllAttr: 3 },
@@ -1100,7 +1134,7 @@ function getMissingGolds(weapon) {
         "仙帝器": { next: "祭道器", power: 2, require: "祭道境界", addAllAttr: 200 }
     };
     
-    const currentStage = weapon.品阶;
+    const currentStage = currentRank;
     const stageInfo = EVOLUTION_STAGES[currentStage];
     const nextStage = stageInfo.next;
     const powerBoost = stageInfo.power;
@@ -1113,6 +1147,16 @@ function getMissingGolds(weapon) {
         
         if (requireCondition === "雷劫洗礼") {
             conditionMet = true; // 雷劫洗礼本身就是条件
+        } else if (requireCondition === "真一境界") {
+            conditionMet = player.xiangulevel_id >= 9; // 仙古·真一境
+        } else if (requireCondition === "天神境界") {
+            conditionMet = player.xiangulevel_id >= 11; // 仙古·天神境
+        } else if (requireCondition === "遁一境界") {
+            conditionMet = player.xiangulevel_id >= 14; // 仙古·遁一境
+        } else if (requireCondition === "至尊境界") {
+            conditionMet = player.xiangulevel_id >= 15; // 仙古·至尊境
+        } else if (requireCondition === "真仙境界") {
+            conditionMet = player.xiangulevel_id >= 16; // 仙古·真仙境
         } else if (requireCondition === "斩道境界") {
             conditionMet = player.mijinglevel_id >= 11; // 斩道王者境界
         } else if (requireCondition === "圣人境界") {
@@ -1146,6 +1190,11 @@ function getMissingGolds(weapon) {
     // 添加辅助函数
     function getLevelName(condition) {
         const levelMap = {
+            "真一境界": "真一",
+            "天神境界": "天神",
+            "遁一境界": "遁一",
+            "至尊境界": "至尊",
+            "真仙境界": "真仙",
             "斩道境界": "斩道王者",
             "圣人境界": "圣人",
             "准帝境界": "准帝",
@@ -1190,21 +1239,28 @@ function getMissingGolds(weapon) {
     
     // 计算成功率
     let successRate = 0.75 - (weapon.成长次数 * 0.02);
-    
-    // 高品阶进阶更难
-    if (weapon.品阶 === "极道帝兵") successRate = 0.3;
-    if (weapon.品阶 === "仙器") successRate = 0.2;
-    if (weapon.品阶 === "仙王器") successRate = 0.1;
-    if (weapon.品阶 === "准仙帝器") successRate = 0.05;
-    if (weapon.品阶 === "仙帝器") successRate = 0.01;
-    
-    // 添加境界加成
-    if (player.mijinglevel_id >= 16) successRate += 0.2; // 大帝境界加成
-    if (player.mijinglevel_id >= 17) successRate += 0.3; // 红尘仙加成
-    if (player.mijinglevel_id >= 19) successRate += 0.4; // 准仙帝加成
-    if (player.mijinglevel_id >= 20) successRate += 0.5; // 仙帝加成
-    if (player.mijinglevel_id >= 21) successRate += 0.6; // 祭道加成
-    
+
+    // 高品阶进阶更难（仙古/遮天对应档位）
+    if (currentRank === "至尊兵" || currentRank === "极道帝兵") successRate = 0.3;
+    if (currentRank === "仙器") successRate = 0.2;
+    if (currentRank === "仙王器") successRate = 0.1;
+    if (currentRank === "准仙帝器") successRate = 0.05;
+    if (currentRank === "仙帝器") successRate = 0.01;
+
+    // 添加境界加成（按体系取对应境界）
+    if (isXianguPath) {
+        if (player.xiangulevel_id >= 16) successRate += 0.2; // 真仙加成
+        if (player.xiangulevel_id >= 18) successRate += 0.3; // 仙王加成
+        if (player.xiangulevel_id >= 20) successRate += 0.4; // 准仙帝加成
+        if (player.xiangulevel_id >= 21) successRate += 0.5; // 仙帝加成
+        if (player.xiangulevel_id >= 22) successRate += 0.6; // 祭道加成
+    } else {
+        if (player.mijinglevel_id >= 16) successRate += 0.2; // 大帝境界加成
+        if (player.mijinglevel_id >= 17) successRate += 0.3; // 红尘仙加成
+        if (player.mijinglevel_id >= 19) successRate += 0.4; // 准仙帝加成
+        if (player.mijinglevel_id >= 20) successRate += 0.5; // 仙帝加成
+        if (player.mijinglevel_id >= 21) successRate += 0.6; // 祭道加成
+    }
     // 限制成功率范围
     successRate = Math.max(0.01, Math.min(0.95, successRate));
     
@@ -1241,7 +1297,7 @@ function getMissingGolds(weapon) {
             `九天神雷劈落，帝兵遭受重创！`,
             `气血损失：${damage.toLocaleString()}`,
             `当前气血：${weapon.HP.toLocaleString()}`,
-            `帝兵品阶未提升，当前品阶：${weapon.品阶}`,
+            `帝兵品阶未提升，当前品阶：${currentStage}`,
             `距离${nextStage}还需努力！`
         ].join('\n'));
     }

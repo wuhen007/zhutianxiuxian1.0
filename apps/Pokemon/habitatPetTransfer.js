@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util';
+
 const QUALITY_LEVEL_CAPS = {
   仙胎: 20,
   仙仔: 40,
@@ -15,22 +17,12 @@ function normalizeTraits(traits) {
 }
 
 function samePetVariant(left, right) {
-  const fields = [
-    'name',
-    '等级',
-    'type',
-    '品级',
-    'atk',
-    'def',
-    'HP',
-    '初始加成',
-    '每级增加',
-  ];
-  if (fields.some(field => left?.[field] !== right?.[field])) return false;
-
-  const leftTraits = normalizeTraits(left?.特性).sort();
-  const rightTraits = normalizeTraits(right?.特性).sort();
-  return JSON.stringify(leftTraits) === JSON.stringify(rightTraits);
+  const normalize = pet => {
+    const value = clone(pet || {});
+    delete value.数量;
+    return value;
+  };
+  return isDeepStrictEqual(normalize(left), normalize(right));
 }
 
 export function addInventoryPetVariant(najie, pet) {
@@ -39,7 +31,7 @@ export function addInventoryPetVariant(najie, pet) {
 
   const inventoryPet = clone(pet);
   inventoryPet.数量 = 1;
-  inventoryPet.islockd = 0;
+  inventoryPet.islockd = Number(pet.islockd) || 0;
   const existingPet = najie.仙宠.find(item => samePetVariant(item, inventoryPet));
   if (existingPet) {
     existingPet.数量 = Math.max(0, Number(existingPet.数量) || 0) + 1;
@@ -53,7 +45,11 @@ export function addInventoryPetVariant(najie, pet) {
 export function createHabitatPetData(inventoryPet, settledAt = new Date().toLocaleString()) {
   const snapshot = clone(inventoryPet);
   snapshot.数量 = 1;
-  snapshot.islockd = 0;
+  snapshot.islockd = Number(inventoryPet.islockd) || 0;
+  const smallWorldState = inventoryPet.小世界状态 || {};
+  delete snapshot.小世界状态;
+  const maxEnergy = Math.max(1, Number(smallWorldState.最大精力) || 100);
+  const energy = Math.max(0, Math.min(maxEnergy, Number(smallWorldState.精力 ?? maxEnergy)));
 
   return {
     name: inventoryPet.name,
@@ -61,11 +57,12 @@ export function createHabitatPetData(inventoryPet, settledAt = new Date().toLoca
     品级: inventoryPet.品级,
     等级: inventoryPet.等级 || 1,
     等级上限: inventoryPet.等级上限,
-    精力: 100,
-    最大精力: 100,
+    精力: energy,
+    最大精力: maxEnergy,
     工坊: null,
     特性: normalizeTraits(inventoryPet.特性),
-    累倒: false,
+    累倒: smallWorldState.累倒 === true,
+    累倒_counter: Math.max(0, Number(smallWorldState.累倒_counter) || 0),
     守卫: false,
     安置时间: settledAt,
     产出累积: {},
@@ -86,6 +83,17 @@ export function removeInventoryPetAt(najie, petIndex) {
     najie.仙宠.splice(petIndex, 1);
   }
   return true;
+}
+
+export function findHabitatPetIndex(habitat, selector, codeOffset = 1001) {
+  if (!Array.isArray(habitat)) return -1;
+  const query = String(selector || '').trim();
+  const number = Number.parseInt(query, 10);
+  if (/^\d+$/.test(query) && number >= codeOffset) {
+    const index = number - codeOffset;
+    return index >= 0 && index < habitat.length ? index : -1;
+  }
+  return habitat.findIndex(pet => pet?.name === query);
 }
 
 export function restoreHabitatPetToInventory(najie, habitatPet, basePets = []) {
@@ -112,7 +120,13 @@ export function restoreHabitatPetToInventory(najie, habitatPet, basePets = []) {
     ),
     特性: normalizeTraits(habitatPet.特性 ?? template.特性),
     数量: 1,
-    islockd: 0,
+    islockd: Number(snapshot?.islockd ?? template.islockd) || 0,
+    小世界状态: {
+      精力: Math.max(0, Math.min(Number(habitatPet.最大精力) || 100, Number(habitatPet.精力 ?? 100))),
+      最大精力: Math.max(1, Number(habitatPet.最大精力) || 100),
+      累倒: habitatPet.累倒 === true,
+      累倒_counter: Math.max(0, Number(habitatPet.累倒_counter) || 0),
+    },
   };
 
   if (!snapshot) {
