@@ -10,9 +10,79 @@ import {
   zd_battle,
   channel, Add_najie_thing 
 } from '../../model/xiuxian.js';
+import {
+  DARK_REVOLT_SUPREMES,
+  DARK_REVOLT_CONSTANTS,
+  DARK_REVOLT_RESCUE_EVENTS,
+  applyDarkRevoltSuppression,
+  activateDachengShengtiCorpse,
+  allDarkRevoltBossesDefeated,
+  createDarkRevoltStatus,
+  damageDarkRevoltBoss,
+  getActiveDarkRevoltBoss,
+  isSaintBodyPlayer,
+  normalizeDarkRevoltStatus,
+  syncDarkRevoltLegacyFields,
+} from '../../model/darkRevolt.js';
+import { startWeimianDestruction, stopWeimianDestruction, rescuePlaneForPlayer } from './WeimianDestruction.js';
 let WorldBOSSBattleCD = []; //CD
 let WorldBOSSBattleLock = 0; //BOSS战斗锁，防止打架频率过高造成奖励多发
 let WorldBOSSBattleUnLockTimer = 0; //防止战斗锁因意外锁死
+const SHENGTI_CORPSE_RESCUE_KEY = 'Xiuxian:DarkRevolt:ShengtiCorpse:';
+
+function shengtiCorpseKey(qq) {
+  return `${SHENGTI_CORPSE_RESCUE_KEY}${String(qq)}`;
+}
+
+async function armDachengShengtiCorpse(qq, player, status) {
+  if (!isSaintBodyPlayer(player)) {
+    return { ok: false, reason: '只有圣体血脉才能驾驭大成圣体尸骸' };
+  }
+  const eventStartedAt = Number(status?.harvestStartedAt) || 0;
+  const key = shengtiCorpseKey(qq);
+  const existing = await redis.get(key);
+  if (existing) {
+    try {
+      const saved = JSON.parse(existing);
+      if (saved.eventStartedAt === eventStartedAt && Number(saved.usesRemaining) > 0) {
+        return { ok: false, reason: `尸骸真灵尚在战场，剩余${saved.usesRemaining}回合` };
+      }
+    } catch (e) {}
+  }
+  await redis.set(key, JSON.stringify({
+    eventStartedAt,
+    usesRemaining: DARK_REVOLT_CONSTANTS.corpseRescueRounds,
+    activatedAt: Date.now(),
+  }));
+  return { ok: true, usesRemaining: DARK_REVOLT_CONSTANTS.corpseRescueRounds };
+}
+
+async function consumeDachengShengtiCorpse(qq, player, boss, status) {
+  const key = shengtiCorpseKey(qq);
+  const raw = await redis.get(key);
+  if (!raw) return { active: false, player };
+  let saved;
+  try {
+    saved = JSON.parse(raw);
+  } catch (e) {
+    await redis.del(key);
+    return { active: false, player };
+  }
+  const eventStartedAt = Number(status?.harvestStartedAt) || 0;
+  const usesRemaining = Number(saved.usesRemaining) || 0;
+  if (saved.eventStartedAt !== eventStartedAt || usesRemaining <= 0) {
+    await redis.del(key);
+    return { active: false, player };
+  }
+  const empoweredPlayer = activateDachengShengtiCorpse(player, boss);
+  const nextUses = usesRemaining - 1;
+  if (nextUses > 0) {
+    await redis.set(key, JSON.stringify({ ...saved, usesRemaining: nextUses }));
+  } else {
+    await redis.del(key);
+  }
+  return { active: true, player: empoweredPlayer, usesRemaining: nextUses };
+}
 export class BOSS2 extends plugin {
   constructor() {
     super({
@@ -41,6 +111,14 @@ export class BOSS2 extends plugin {
           reg: '^#平定黑暗动乱$',
           fnc: 'WorldBossBattle',
         },
+        {
+          reg: '^#救场黑暗动乱$',
+          fnc: 'RescueDarkRevolt',
+        },
+        {
+          reg: '^#驾驭大成圣体尸骸$',
+          fnc: 'ControlDachengShengtiCorpse',
+        },
       ],
     });
     this.set = config.getConfig('task', 'task');
@@ -63,7 +141,7 @@ export class BOSS2 extends plugin {
         // 发送群消息通知
         const groupList = await redis.sMembers('xiuxian:AuctionofficialTask_GroupList');
         for (const group_id of groupList) {
-          Bot.pickGroup(group_id).sendMsg("禁区至尊感应到天地异变，提前苏醒！黑暗动乱已降临，诸天万界陷入浩劫！\n若有强者想要守护众生请输入 #平定黑暗动乱 参与帝战！");
+          Bot.pickGroup(group_id).sendMsg("禁区至尊感应到天地异变，提前苏醒！黑暗动乱已降临，诸天万界陷入浩劫！\n强者可输入 #平定黑暗动乱 参与帝战；大帝可输入 #救场黑暗动乱 护住一方位面；圣体可尝试 #驾驭大成圣体尸骸。");
         }
       }
       return true;
@@ -92,6 +170,11 @@ export class BOSS2 extends plugin {
       if (await BossIsAlive()) {
         await redis.del('Xiuxian:WorldBossStatus2');
         await redis.del('zhutianxiuxian1.0Record2');
+       try {
+         await stopWeimianDestruction();
+       } catch (error) {
+         console.error('[黑暗动乱] 位面毁灭系统停止失败:', error?.message || error);
+       }
        e.reply("恐怖的黑暗动乱气息惊扰到了如梦道祖，只见他睁眼望向诸天万界，眸光照耀永恒无垠的黑暗宇宙，划破了一切既定未定，截断了整片黑暗动乱的时空，将这段历史从古史的源头中直接抹去了，世间万灵都对这段过往失去了记忆！");
       } else e.reply('黑暗动乱早已结束');
     } else return false;
@@ -103,7 +186,9 @@ export class BOSS2 extends plugin {
       let WorldBossStatusStr = await redis.get('Xiuxian:WorldBossStatus2');
       let WorldBossStatus = JSON.parse(WorldBossStatusStr);
       if (WorldBossStatusStr) {
-        WorldBossStatusStr = JSON.parse(WorldBossStatusStr);
+        WorldBossStatus = normalizeDarkRevoltStatus(WorldBossStatus);
+        syncDarkRevoltLegacyFields(WorldBossStatus);
+        WorldBossStatusStr = WorldBossStatus;
         if (new Date().getTime() - WorldBossStatusStr.KilledTime < 86400000) {
           e.reply(`此刻未到仙域之门打开之时，禁区至尊还在蛰伏`);
           return false;
@@ -111,12 +196,19 @@ export class BOSS2 extends plugin {
           if ((await InitWorldBoss(e)) == 0) await this.LookUpWorldBossStatus(e);
           return false;
         }
-        let BOSSCurrentAttack = WorldBossStatus.isAngry ? Math.trunc(WorldBossStatus.Attack * 1.8) : WorldBossStatus.isWeak ? Math.trunc(WorldBossStatus.Attack * 0.6) : WorldBossStatus.Attack;
-                    let BOSSCurrentDefence = WorldBossStatus.isWeak ? Math.trunc(WorldBossStatus.Defence * 0.6) : WorldBossStatus.Defence;
-        let ReplyMsg = [`----长生天尊状态----\n血量:${WorldBossStatus.Health}\n基础攻击:${WorldBossStatus.Attack}\n基础防御:${WorldBossStatus.Defence}\n当前攻击:${BOSSCurrentAttack}\n当前防御:${BOSSCurrentDefence}\n当前状态:`];
-                    if (WorldBossStatus.isWeak) ReplyMsg.push(`虚弱(还剩${WorldBossStatus.isWeak}回合)\n温馨提示:给长生天尊最后一击的人可以随机获得八个物品`);
-                    else if (WorldBossStatus.isAngry) ReplyMsg.push(`狂暴(还剩${WorldBossStatus.isAngry}回合)\n温馨提示:给长生天尊最后一击的人可以随机获得八个物品`);
-                    else ReplyMsg.push("正常\n温馨提示:给长生天尊最后一击的人可以随机获得八个物品");
+        const activeBoss = getActiveDarkRevoltBoss(WorldBossStatus);
+        const ReplyMsg = [
+          `----黑暗动乱·六位至尊----`,
+          `阶段: ${WorldBossStatus.defeated || 0}/${WorldBossStatus.totalBosses || 6}`,
+          `已收割万灵精血: ${WorldBossStatus.harvestedLives || 0}`,
+          `已打爆位面: ${(WorldBossStatus.destroyedPlanes || []).join('、') || '位面毁灭法则正在蔓延'}`,
+        ];
+        for (const boss of WorldBossStatus.bosses) {
+          const currentAttack = boss.isAngry ? Math.trunc(boss.攻击 * 1.8) : boss.isWeak ? Math.trunc(boss.攻击 * 0.7) : boss.攻击;
+          const currentDefence = boss.isWeak ? Math.trunc(boss.防御 * 0.7) : boss.防御;
+          ReplyMsg.push(`【${boss.名号}·${boss.title}】${boss.defeated ? '已陨落' : boss === activeBoss ? '当前帝战' : '待战'}\n血量:${boss.Health}/${boss.Healthmax}\n攻击:${currentAttack}\n防御:${currentDefence}\n${boss.quote}`);
+        }
+        ReplyMsg.push('帝道/皇道规则：低于大帝境修士全属性削减70%；六位至尊均已极尽升华。');
         e.reply(ReplyMsg);
       }
     } else e.reply('金角大王未开启！');
@@ -127,8 +219,8 @@ export class BOSS2 extends plugin {
     async ShowDamageList(e) {
         if (await BossIsAlive()) {
             let PlayerRecord = await redis.get("zhutianxiuxian1.0Record2");
-            let WorldBossStatusStr = await redis.get("Xiuxian:WorldBossStatus");
-            let WorldBossStatus = JSON.parse(WorldBossStatusStr);
+            let WorldBossStatusStr = await redis.get("Xiuxian:WorldBossStatus2");
+            let WorldBossStatus = normalizeDarkRevoltStatus(JSON.parse(WorldBossStatusStr));
             if (WorldBossStatus == undefined) {
                 e.reply("WorldBossStatus Error");
                 return true;
@@ -157,7 +249,7 @@ export class BOSS2 extends plugin {
                     if (Reward > 1000000) {
                         Reward = 1000000
                     }
-                    msg.push("第" + `${i + 1}` + "名:\n" + `名号:${PlayerRecordJSON.Name[PlayerList[i]]}` + '\n' + `总伤害:${PlayerRecordJSON.TotalDamage[PlayerList[i]]}` + `\n${WorldBossStatus.Health == 0 ? `已得到灵石` : `预计得到灵石`}:${Reward}`);
+                    msg.push("第" + `${i + 1}` + "名:\n" + `名号:${PlayerRecordJSON.Name[PlayerList[i]]}` + '\n' + `总伤害:${PlayerRecordJSON.TotalDamage[PlayerList[i]]}` + `\n${WorldBossStatus.KilledTime !== -1 ? `已得到灵石` : `预计得到灵石`}:${Reward}`);
                 }
                 if (PlayerRecordJSON.QQ[PlayerList[i]] == e.user_id) CurrentQQ = i + 1;
             }
@@ -168,7 +260,58 @@ export class BOSS2 extends plugin {
         }
         else e.reply("黑暗动乱还未到来！");
         return true;
+  }
+  // 大帝救场：护住一个位面并撤离其中的低境界修士。
+  async RescueDarkRevolt(e) {
+    if (!verc({ e })) return false;
+    if (!(await BossIsAlive())) {
+      await e.reply('黑暗动乱尚未降临，无需施展救场帝术。');
+      return false;
     }
+    const usrQq = await channel(String(e.user_id).replace('qg_', ''));
+    const result = await rescuePlaneForPlayer(usrQq);
+    if (!result.ok) {
+      await e.reply(`【帝者救场失败】${result.reason}`);
+      return false;
+    }
+    await e.reply([
+      '【帝者救场·万灵西迁】',
+      `你以帝道撑开虚空通道，护住了「${result.plane.name}」。`,
+      `${result.evacuated} 名低境界修士已撤往凡间；此位面在本次动乱中受帝印庇护。`,
+      '「黑暗虽临，众生尚有一线生机。」',
+    ].join('\n'));
+    return true;
+  }
+  // 圣体血脉彩蛋：以尸骸真灵临时接管帝战镜像。
+  async ControlDachengShengtiCorpse(e) {
+    if (!verc({ e })) return false;
+    if (!(await BossIsAlive())) {
+      await e.reply('黑暗动乱尚未降临，大成圣体尸骸仍沉睡于荒古禁地。');
+      return false;
+    }
+    const usrQq = await channel(String(e.user_id).replace('qg_', ''));
+    const player = await data.getData('player', usrQq);
+    const rawStatus = await redis.get('Xiuxian:WorldBossStatus2');
+    const status = normalizeDarkRevoltStatus(rawStatus ? JSON.parse(rawStatus) : null);
+    if (!player || !status) {
+      await e.reply('帝战记录残缺，无法定位圣体尸骸。');
+      return false;
+    }
+    const result = await armDachengShengtiCorpse(usrQq, player, status);
+    if (!result.ok) {
+      await e.reply(`【尸骸驾驭失败】${result.reason}`);
+      return false;
+    }
+    await e.reply([
+      '【彩蛋·大成圣体尸骸】',
+      '荒古禁地深处，沉寂万古的大成圣体尸骸被圣体血脉唤醒。',
+      DARK_REVOLT_RESCUE_EVENTS.dachengShengti.quote,
+      '金色血气重燃，残躯短暂拥有叫板大帝的战力，且无视当前至尊的皇道法则压制。',
+      `本次可维持${result.usesRemaining}场帝战；尸骸只护道，不会改写你的永久修为。`,
+      '「纵然只剩一具尸骸，也要为后世众生再战一场！」',
+    ].join('\n'));
+    return true;
+  }
   //与金角大王战斗
   async WorldBossBattle(e) {
     if (!verc({ e })) return false;
@@ -300,16 +443,29 @@ export class BOSS2 extends plugin {
         }
       }
       let TotalDamage = 0;
-      let Boss = {
-        名号: '长生天尊',
-        攻击: parseInt(player.攻击 * (0.8 + 0.4 * Math.random())),
-        防御: parseInt(player.防御 * (0.8 + 0.4 * Math.random())),
-        当前血量: parseInt(player.血量上限 * (0.8 + 400000 * Math.random())),
-        暴击率: player.暴击率,
-        灵根: player.灵根,
-        法球倍率: player.灵根.法球倍率,
+      WorldBossStatus = normalizeDarkRevoltStatus(WorldBossStatus);
+      const activeBoss = getActiveDarkRevoltBoss(WorldBossStatus);
+      if (!activeBoss) {
+        WorldBossStatus.KilledTime = WorldBossStatus.KilledTime === -1 ? Date.now() : WorldBossStatus.KilledTime;
+        await redis.set('Xiuxian:WorldBossStatus2', JSON.stringify(WorldBossStatus));
+        e.reply('六位至尊皆已陨落，黑暗动乱正在结算。');
+        return false;
+      }
+      syncDarkRevoltLegacyFields(WorldBossStatus, activeBoss);
+      const supreme = DARK_REVOLT_SUPREMES.find(item => item.id === activeBoss.id) || DARK_REVOLT_SUPREMES[0];
+      const bossAttackMultiplier = activeBoss.isAngry ? 1.8 : activeBoss.isWeak ? 0.7 : 1;
+      const Boss = {
+        ...activeBoss,
+        名号: activeBoss.名号,
+        攻击: Math.trunc(activeBoss.攻击 * bossAttackMultiplier),
+        防御: Math.trunc(activeBoss.防御 * (activeBoss.isWeak ? 0.7 : 1)),
+        当前血量: activeBoss.Health,
+        暴击率: activeBoss.暴击率 || 3,
+        灵根: { ...supreme.root },
+        学习的功法: [...(activeBoss.techniques || supreme.techniques)],
+        法球倍率: activeBoss.法球倍率 || supreme.root.法球倍率,
       };
-      player.法球倍率 = player.灵根.法球倍率;
+      player.法球倍率 = player.灵根?.法球倍率 || 1;
       if (WorldBOSSBattleUnLockTimer) clearTimeout(WorldBOSSBattleUnLockTimer);
       SetWorldBOSSBattleUnLockTimer(e);
       if (WorldBOSSBattleLock != 0) {
@@ -319,8 +475,17 @@ export class BOSS2 extends plugin {
         return false;
       }
       WorldBOSSBattleLock = 1;
-      const A_player = { ...player };
+      const corpseRescue = await consumeDachengShengtiCorpse(usr_qq, player, Boss, WorldBossStatus);
+      const suppression = applyDarkRevoltSuppression(corpseRescue.player, supreme);
+      const A_player = suppression.player;
       const B_player = { ...Boss };
+      if (corpseRescue.active) {
+        e.reply([
+          '【圣体尸骸·帝战彩蛋】',
+          '大成圣体尸骸短暂接管战斗镜像，金血化拳，战力直逼大帝。',
+          `本场无视${supreme.lawType}压制，剩余尸骸真灵回合：${corpseRescue.usesRemaining}`,
+        ].join('\n'));
+      }
       const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_player);
       if (blackEmperorFormation.consumed) await Write_player(usr_qq, player);
       let Data_battle = await zd_battle(A_player, B_player);
@@ -334,48 +499,52 @@ export class BOSS2 extends plugin {
         e.reply('战斗过长，仅展示部分内容');
       }
       await sleep(1000);
-      if (!WorldBossStatus.Healthmax) {
+      if (!activeBoss.Healthmax) {
         e.reply('请联系管理员重新开启!');
         return false;
       }
       if (Data_battle.winner === 'A') {
         TotalDamage = Math.trunc(
-          WorldBossStatus.Healthmax * 0.76 +
-            Harm(player.攻击 * 0.85, Boss.防御) * 10
+          activeBoss.Healthmax * 0.16 +
+            Harm(A_player.攻击 * 0.85, Boss.防御) * 10
         );
-        WorldBossStatus.Health -= TotalDamage;
+        damageDarkRevoltBoss(WorldBossStatus, TotalDamage, activeBoss);
         e.reply(
-          `${player.名号}击败了[${Boss.名号}],重创[长生天尊],造成伤害${TotalDamage}`
+          `${player.名号}击败了[${Boss.名号}]，${supreme.lawType}被撼动，造成伤害${TotalDamage}`
         );
       } else if (Data_battle.winner === 'B') {
         TotalDamage = Math.trunc(
-          WorldBossStatus.Healthmax * 0.04 +
-            Harm(player.攻击 * 0.85, Boss.防御) * 6
+          activeBoss.Healthmax * 0.04 +
+            Harm(A_player.攻击 * 0.85, Boss.防御) * 6
         );
-        WorldBossStatus.Health -= TotalDamage;
+        damageDarkRevoltBoss(WorldBossStatus, TotalDamage, activeBoss);
         e.reply(
-          `${player.名号}被[${Boss.名号}]击败了,只对[长生天尊]造成了${TotalDamage}伤害`
+          `${player.名号}被[${Boss.名号}]击败了，只对其造成了${TotalDamage}伤害`
         );
-        player.当前血量 = 0 ;
+        player.当前血量 = corpseRescue.active
+          ? Math.max(1, Math.trunc((Number(player.血量上限) || 1) * 0.18))
+          : 0;
         await Write_player(usr_qq, player);
       }
       await sleep(1000);
-       let BOSSCurrentAttack = WorldBossStatus.isAngry ? Math.trunc(WorldBossStatus.Attack * 1.8) : WorldBossStatus.isWeak ? Math.trunc(WorldBossStatus.Attack * 0.7) : WorldBossStatus.Attack;
-            let BOSSCurrentDefence = WorldBossStatus.isWeak ? Math.trunc(WorldBossStatus.Defence * 0.7) : WorldBossStatus.Defence;
       let random = Math.random();
-       if (TotalDamage >= 0.1 * WorldBossStatus.OriginHealth && !WorldBossStatus.isWeak && !WorldBossStatus.isAngry) {
-                WorldBossStatus.isAngry = 30;
-                e.reply("这场战斗重创了长生天尊，但也令其暴怒不再留手并且极尽升华！\n长生天尊已经彻底恢复昔日极道至尊的实力，持续30回合");
+       if (TotalDamage >= 0.1 * activeBoss.OriginHealth && !activeBoss.hasAscended && !activeBoss.defeated) {
+                activeBoss.isAngry = 30;
+                activeBoss.hasAscended = true;
+                e.reply(`${supreme.quote}\n${activeBoss.名号}极尽升华，帝级本源全面复苏，狂暴持续30回合！`);
             }
-            if ( TotalDamage >= 0.15 * WorldBossStatus.OriginHealth && WorldBossStatus.isWeak && random <0.2) {
-                e.reply('长生天尊不惜一切代价施展出了者字秘,超越了极限，血量回复了30%');
-                WorldBossStatus.Health += Math.trunc(WorldBossStatus.Healthmax * 0.3);
+            if (!activeBoss.defeated && activeBoss.Health <= activeBoss.Healthmax * 0.25) {
+                activeBoss.isWeak = Math.max(activeBoss.isWeak || 0, 3);
+            }
+            if ( TotalDamage >= 0.15 * activeBoss.OriginHealth && activeBoss.isWeak && random <0.2) {
+                e.reply(`${activeBoss.名号}施展者字秘，极尽涅槃，血量回复30%！`);
+                activeBoss.Health = Math.min(activeBoss.Healthmax, activeBoss.Health + Math.trunc(activeBoss.Healthmax * 0.3));
             }
       if (player.当前血量 == 0) {
-                e.reply("很可惜您未能击败长生天尊，反而自身重伤，再接再厉！");
+                e.reply(`很可惜您未能击败${activeBoss.名号}，反而自身重伤，再接再厉！`);
                 if (random < 0.45) {
                     let ExpFormBOSS = 1000000 + data.Level_list.find(item => item.level_id === CurrentPlayerAttributes.level_id).level_id * 21000;
-                    e.reply(`你在与长生天尊的生死大战中忽然领悟到了大道真谛，修为提升${ExpFormBOSS}，血气提升${ExpFormBOSS}`);
+                    e.reply(`你在与${activeBoss.名号}的生死大战中忽然领悟到了大道真谛，修为提升${ExpFormBOSS}，血气提升${ExpFormBOSS}`);
                     CurrentPlayerAttributes.修为 += ExpFormBOSS;
                     CurrentPlayerAttributes.血气 += ExpFormBOSS;
                 }
@@ -387,22 +556,40 @@ export class BOSS2 extends plugin {
                     CurrentPlayerAttributes.当前血量 += HPFormBOSS;
                 }
                 if ( random  <0.1 ) {
-                    TotalDamage+= Math.trunc(WorldBossStatus.Health * 0.25);
-            WorldBossStatus.Health -= Math.trunc(WorldBossStatus.Health * 0.25);
+                    const assistDamage = Math.trunc(activeBoss.Health * 0.25);
+                    TotalDamage += assistDamage;
+            damageDarkRevoltBoss(WorldBossStatus, assistDamage, activeBoss);
             e.reply(
-              `就在这危及时刻,一位【大成圣体】出现，极尽升华后与长生天尊大战对【长生天尊】造成${Math.trunc(WorldBossStatus.Health * 0.25)}伤害，【长生天尊】剩余${WorldBossStatus.Health}，使长生天尊本源都受到了重创，战力大减似乎要跌落大帝果位，但那位大成圣体在下一刻消失了`);
+              `${DARK_REVOLT_RESCUE_EVENTS.dachengShengti.quote}\n${DARK_REVOLT_RESCUE_EVENTS.yellowEmperor.quote}\n${DARK_REVOLT_RESCUE_EVENTS.holyLandWeapons.quote}\n万器共鸣与大成圣体金血一同攻向${activeBoss.名号}，造成${assistDamage}伤害，${activeBoss.名号}剩余${activeBoss.Health}。`);
                 }
                 if (random >0.1&& random <  0.3) {
-                    TotalDamage += Math.trunc(WorldBossStatus.Health * 0.15);
-            WorldBossStatus.Health -= Math.trunc(WorldBossStatus.Health * 0.15);
+                    const assistDamage = Math.trunc(activeBoss.Health * 0.15);
+                    TotalDamage += assistDamage;
+            damageDarkRevoltBoss(WorldBossStatus, assistDamage, activeBoss);
             e.reply(
-              `帝战的可怕打爆了无数大星，宇宙各处都洒落帝血，整片天地尸山血海茫茫黑暗，就在这绝望之时，【太阳圣皇】的一缕真灵感应到众生的悲惨恸哭与呼唤，以一张人皮再现持极道帝兵【太阳石塔】对【长生天尊】造成${Math.trunc(WorldBossStatus.Health * 0.15)}伤害，【长生天尊】剩余${WorldBossStatus.Health}，但同时他交手上了光暗至尊，不宜分心，无力再插手诸天这边的战场`);
+              `帝战打爆无数大星，太阳圣皇真灵持极道帝兵降临；恒宇炉、虚空镜、太皇剑等圣地帝兵隔空齐鸣，对${activeBoss.名号}造成${assistDamage}伤害，${activeBoss.名号}剩余${activeBoss.Health}。`);
                 }
             }
-             WorldBossStatus.isAngry ? --WorldBossStatus.isAngry : 0;
-                    WorldBossStatus.isWeak ? --WorldBossStatus.isWeak : 0;
-                    if (!WorldBossStatus.isAngry && BOSSCurrentAttack > WorldBossStatus.Attack) BOSSCurrentAttack = WorldBossStatus.Attack;
-                    if (!WorldBossStatus.isWeak && BOSSCurrentDefence < WorldBossStatus.Defence) BOSSCurrentDefence = WorldBossStatus.Defence;
+             activeBoss.isAngry ? --activeBoss.isAngry : 0;
+             activeBoss.isWeak ? --activeBoss.isWeak : 0;
+             syncDarkRevoltLegacyFields(WorldBossStatus);
+             if (suppression.suppressed) {
+               e.reply(`${supreme.lawType}降临：你的境界不足大帝，帝道威压使全属性削减70%（当前保留30%）。`);
+             } else if (suppression.lawBypassed) {
+               e.reply(`圣体金血贯穿皇道法则：大成圣体尸骸护持之下，本场全属性不受${supreme.lawType}压制。`);
+             }
+             if (activeBoss.defeated) {
+               WorldBossStatus.harvestedLives = (Number(WorldBossStatus.harvestedLives) || 0) + Math.trunc(activeBoss.OriginHealth * 0.001);
+               if (!Array.isArray(WorldBossStatus.destroyedPlanes)) WorldBossStatus.destroyedPlanes = [];
+               const destroyedPlane = `${activeBoss.forbiddenZone}周边位面`;
+               if (!WorldBossStatus.destroyedPlanes.includes(destroyedPlane)) WorldBossStatus.destroyedPlanes.push(destroyedPlane);
+               e.reply(`${activeBoss.名号}陨落！其发动动乱时，${activeBoss.harvest}\n${activeBoss.battle}`);
+               const nextBoss = getActiveDarkRevoltBoss(WorldBossStatus);
+               if (nextBoss) {
+                 syncDarkRevoltLegacyFields(WorldBossStatus, nextBoss);
+                 e.reply(`下一阶段帝战开启：${nextBoss.名号}（${nextBoss.title}）\n${nextBoss.quote}`);
+               }
+             }
       await sleep(1000);
       PlayerRecordJSON.TotalDamage[Userid] += TotalDamage;
       redis.set('zhutianxiuxian1.0Record2', JSON.stringify(PlayerRecordJSON));
@@ -468,7 +655,7 @@ async function addItemsToNajie(playerId, items) {
   }
 }    // 分配奖励给击杀者（最后一击的玩家）
 // 分配奖励给击杀者（最后一击的玩家）
-if (WorldBossStatus.Health <= 0) {
+if (allDarkRevoltBossesDefeated(WorldBossStatus)) {
     // 记录击杀者
     const killerId = e.user_id;
     
@@ -481,7 +668,7 @@ if (WorldBossStatus.Health <= 0) {
     
     e.reply([
         segment.at(killerId),
-        `\n你终结了长生天尊的性命，平定了黑暗动乱，保护了诸天万界的芸芸众生，受到天道青睐，天地降下福泽你获得了10000000灵石与修为血气奖励！并且在还未破碎的帝战战场中找到了以下物品: ${killerItemsMsg}`
+        `\n你终结了六位至尊的最后一尊，平定了黑暗动乱，保护了诸天万界的芸芸众生，受到天道青睐，天地降下福泽你获得了10000000灵石与修为血气奖励！并且在还未破碎的帝战战场中找到了以下物品: ${killerItemsMsg}`
     ]);
     
     // 更新玩家属性
@@ -494,6 +681,11 @@ if (WorldBossStatus.Health <= 0) {
     // 保存击杀记录
     WorldBossStatus.KilledTime = new Date().getTime();
     redis.set('Xiuxian:WorldBossStatus2', JSON.stringify(WorldBossStatus));
+    try {
+      await stopWeimianDestruction();
+    } catch (error) {
+      console.error('[黑暗动乱] 位面毁灭系统停止失败:', error?.message || error);
+    }
     
     // 处理贡献排行榜奖励
     let PlayerList = await SortPlayer(PlayerRecordJSON);
@@ -557,44 +749,38 @@ if (WorldBossStatus.Health <= 0) {
 }
 
 
-//初始化长生天尊
+//初始化六位至尊：六条独立血条，阶段按禁区至尊出世顺序推进
 async function InitWorldBoss(e) {
+  const notify = (message) => e?.reply ? e.reply(message) : console.log(`[黑暗动乱] ${message}`);
   let AverageDamageStruct = await GetAverageDamage(e);
   let player_quantity = parseInt(AverageDamageStruct.player_quantity);
   let AverageDamage = parseInt(AverageDamageStruct.AverageDamage);
-  let Reward = 6000000;
   WorldBOSSBattleLock = 0;
   if (player_quantity == 0) {
-    e.reply("你们甚至没有斩道王者以上的高手，平定黑暗动乱不是你们能参与的，继续努力再来吧！");
+    notify("你们甚至没有斩道王者以上的高手，平定黑暗动乱不是你们能参与的，继续努力再来吧！");
     return - 1;
   }
-  if (player_quantity < 5) Reward = 3000000;
-  let X = AverageDamage * 0.01;
-  e.reply(`[长生天尊] 圣人玩家总数：${player_quantity}`);
-  e.reply(`[长生天尊] 生成基数:${X}`);
-  let Health = Math.trunc(X * 150 * player_quantity * 2); //血量要根据人数来
-  let random1 = Math.random() + 1
-    let Attack = Math.trunc(X *220*player_quantity * 2);
-    let Defence = Math.trunc(X * 220*player_quantity * 2);
-  let WorldBossStatus = {
-    Health: Health,
-    Healthmax: Health, // 初始血量最大值
-    OriginHealth: Health, // 原始血量，用于计算伤害比例
-    isAngry: 0,
-    isWeak: 0,
-    Attack: Attack,
-    Defence: Defence,
-    KilledTime: -1,
-    Reward: Reward * 5,
-};
+  notify(`【黑暗动乱】斩道王者以上玩家：${player_quantity}，六位至尊分别出世。`);
+  notify('属性基准：练气满级 + 炼体满级 + 秘境大帝 + 仙古一级 + 帝兵倍率120 + 装备100% + 额外加成10万亿。');
+  const WorldBossStatus = createDarkRevoltStatus({
+    averageDamage: AverageDamage,
+    playerQuantity: player_quantity,
+    levels: data,
+  });
+  WorldBossStatus.Reward = (player_quantity < 5 ? 3_000_000 : 6_000_000) * 5;
   let PlayerRecord = 0;
   await redis.set('Xiuxian:WorldBossStatus2', JSON.stringify(WorldBossStatus));
   await redis.set('zhutianxiuxian1.0Record2', JSON.stringify(PlayerRecord));
-  let msg = '【诸天位面公告】各大禁区至尊已经出世，发动了黑暗动乱，收割诸天万灵生命补充血气冲击成仙路，平定黑暗动乱的玩家会有天道赐予奖励';
+  let msg = '【诸天位面公告】成仙路失败后的六位至尊同时出世，发动最大规模黑暗动乱：收割万灵精血、打爆位面、以血气再叩成仙路。帝道规则与皇道法则降临，低境界修士全属性削减70%。\n圣体血脉可尝试输入 #驾驭大成圣体尸骸，触发短暂叫板大帝的救场彩蛋。';
   const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
   const groupList = await redis.sMembers(redisGlKey);
     for (const group_id of groupList) {
         await pushInfo(group_id, true, msg);
+    }
+    try {
+      await startWeimianDestruction();
+    } catch (error) {
+      console.error('[黑暗动乱] 位面毁灭系统启动失败:', error?.message || error);
     }
     return false;
 }
@@ -604,7 +790,7 @@ async function pushInfo(id, is_group, msg) {
     await Bot.pickGroup(id)
       .sendMsg(msg)
       .catch(err => {
-        e.reply(err);
+        console.error('[黑暗动乱] 全服公告发送失败:', err?.message || err);
       });
   } else {
     await common.relpyPrivate(id, msg);
@@ -669,7 +855,8 @@ async function GetAverageDamage(e) {
     let player = await data.getData('player', this_qq);
     if (player.mijinglevel_id > 12 && player.mijinglevel_id < 23 && player.lunhui == 0) {
       temp[TotalPlayer] = parseInt(player.攻击);
-      e.reply(`[长生天尊] ${this_qq}玩家攻击:${temp[TotalPlayer]}`);
+      if (e?.reply) e.reply(`[黑暗动乱] ${this_qq}玩家攻击:${temp[TotalPlayer]}`);
+      else console.log(`[黑暗动乱] ${this_qq}玩家攻击:${temp[TotalPlayer]}`);
       TotalPlayer++;
     }
   }
