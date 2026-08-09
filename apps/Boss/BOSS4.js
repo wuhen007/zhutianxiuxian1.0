@@ -9,12 +9,17 @@ import {
   ForwardMsg,
   Add_HP,
   Read_player,
+  Read_najie,
+  Read_equipment,
+  Write_equipment,
+  Write_najie,
   Add_najie_thing,
   Write_player,
   bigNumberTransform,
   Harm,
   __PATH,
   zd_battle,
+  get_fight_img,
 } from '../../model/xiuxian.js';
 import { recordWenXianTaskProgress, recordWenXianTrial } from '../../model/wenxianling.js';
 import { absorbTuntianSource } from '../../model/tuntianMagic.js';
@@ -32,7 +37,20 @@ import {
   resetTianjiaoToInitialTemplate,
 } from '../../model/tianjiaoGrowth.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
-import { tryPanguShatterTalisman } from '../../model/innateTreasure.js';
+import { claimInnateTreasure, createInnateTreasure, tryPanguShatterTalisman } from '../../model/innateTreasure.js';
+import { clearTianjiaoTreasure, rollTianjiaoTreasureRecovery } from '../../model/tianjiaoTreasure.js';
+import {
+  TAINTED_SLOTS,
+  applyEquipmentTaint,
+  applyTaintPenalty,
+  createImitation,
+  createImitationItem,
+  isTainted,
+  listPercentEquipSlots,
+  listTaintedSlots,
+  reimburseImitation,
+  repairTaint,
+} from '../../model/tianjiaoTaint.js';
 import {
   applyPveStatMultiplier,
   consumeSourceStoneField,
@@ -80,6 +98,18 @@ export class BOSS4 extends plugin {
         {
           reg: '^#天骄仇恨(?:\\s+(.*))?$',
           fnc: 'ShowHatredStatus',
+        },
+        {
+          reg: '^#查看污损$',
+          fnc: 'LookUpTaintStatus',
+        },
+        {
+          reg: '^#修复污损$',
+          fnc: 'RepairTaint',
+        },
+        {
+          reg: '^#反哺炼化\\s+(.*)$',
+          fnc: 'ReimburseImitation',
         },
       ],
     });
@@ -357,42 +387,67 @@ export class BOSS4 extends plugin {
   }
 
   // ======================
-  // 护身法宝触发机制
+  // 护体法宝触发机制（每日3次，第二个自然日刷新）
   // ======================
+  getTalismanDayKey(now = Date.now()) {
+    const d = new Date(now);
+    const pad = value => String(value).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
   async triggerProtectiveTalisman(e, tianjiaoName, tianjiaoData, status) {
     if (status.护身法宝已碎) return false;
-    // 基础触发概率 30%
-    const baseChance = 0.30;
-    // 血量越低，触发概率越高（线性增加，最高到80%）
+
+    // 每日触发次数：跨自然日自动清零
+    const todayKey = this.getTalismanDayKey();
+    if (status.护体法宝触发日 !== todayKey) {
+      status.护体法宝触发日 = todayKey;
+      status.护体法宝当日次数 = 0;
+    }
+    const usedToday = Math.max(0, Math.floor(Number(status.护体法宝当日次数) || 0));
+    if (usedToday >= 3) {
+      await ForwardMsg(e, [
+        `【护体法宝】${tianjiaoName}的护体法宝已经用尽（今日3/3），不再护体！`,
+      ]);
+      return false;
+    }
+
+    // 基础触发概率 10%，血量越低触发概率越高（线性增加，最高65%）
+    const baseChance = 0.10;
     const hpFactor = Math.max(0, (50 - status.currentHP) / 50);
-    const triggerChance = Math.min(0.80, baseChance + hpFactor * 0.50);
+    const triggerChance = Math.min(0.65, baseChance + hpFactor * 0.55);
 
     if (Math.random() > triggerChance) {
-      return false; // 未触发护身法宝
+      return false; // 未触发护体法宝
     }
 
     const treasureName = this.getEscapeTreasure(tianjiaoName);
     const treasureDialogues = [
       `${tianjiaoName}身上爆发出一道璀璨光华！`,
       `${treasureName}显化，护住${tianjiaoName}周身！`,
-      "护身法宝自动激发，天骄安然无恙！",
+      "护体法宝自动激发，天骄安然无恙！",
       "危急关头，神秘力量涌现..."
     ];
 
     const randomDialogue = treasureDialogues[Math.floor(Math.random() * treasureDialogues.length)];
-    
+
     // 恢复血量（恢复10%-20%，不超过100%）
     const recoverPercent = 10 + Math.floor(Math.random() * 11);
     const newHP = Math.min(100, status.currentHP + recoverPercent);
     status.currentHP = newHP;
-    status.护身法宝已碎 = true;
+    status.护体法宝当日次数 = usedToday + 1;
+
+    const remaining = Math.max(0, 3 - (usedToday + 1));
+    const usedLine = remaining > 0
+      ? `今日已触发${usedToday + 1}/3次，剩余${remaining}次`
+      : `今日已触发3/3次，护体法宝已经用尽`;
 
     let messages = [
-      `【护身法宝触发】`,
+      `【护体法宝触发】`,
       randomDialogue,
       `${treasureName}生效！`,
       `天骄血量恢复${recoverPercent}%，当前血量：${status.currentHP}%`,
-      `（法宝已耗尽，本次战斗不会再触发）`
+      `（${usedLine}）`
     ];
 
     await ForwardMsg(e, messages);
@@ -467,14 +522,8 @@ export class BOSS4 extends plugin {
     let battleMsg = result.msg;
     if (blackEmperorFormation.message && Array.isArray(battleMsg)) battleMsg.unshift(blackEmperorFormation.message);
 
-    if (battleMsg.length <= 20) {
-      messages = messages.concat(battleMsg);
-    } else {
-      messages.push("战斗过程过长，仅展示关键结果...");
-      messages.push(battleMsg[0]);
-      messages.push("...");
-      messages.push(battleMsg[battleMsg.length - 1]);
-    }
+    messages.push("━━━ 护道人之战 ━━━");
+    messages = messages.concat(Array.isArray(battleMsg) ? battleMsg : [battleMsg]);
 
     if (result.winner === 'A') {
       // 玩家击败护道人
@@ -496,7 +545,7 @@ export class BOSS4 extends plugin {
       await Add_源石(e.user_id.toString(), 3000000);
       messages.push("额外奖励：灵石800万、源石300万");
       
-      await ForwardMsg(e, messages);
+      await sendFightImages(e, messages);
       return { triggered: true, protectorWon: false, escaped };
       
     } else if (result.winner === 'B') {
@@ -508,11 +557,11 @@ export class BOSS4 extends plugin {
       
       await this.addHatred(tianjiaoName, e.user_id.toString(), '挑战失败');
       
-      await ForwardMsg(e, messages);
+      await sendFightImages(e, messages);
       return { triggered: true, protectorWon: true, escaped: false };
     }
 
-    await ForwardMsg(e, messages);
+    await sendFightImages(e, messages);
     return { triggered: false, protectorWon: false };
   }
 
@@ -757,6 +806,8 @@ export class BOSS4 extends plugin {
             `踪迹: ${formatTianjiaoTrace(trace)}`,
             `状态: ${globalReviveTime >= escapeTime ? '已击败' : '已被护道人救走'}，${hours}小时${minutes}分钟后刷新`,
             ...(Number(tianjiao.轮回世数) > 0 ? [`转世: 第${tianjiao.轮回世数}世·${tianjiao.轮回称号 || ''}`] : []),
+            ...(tianjiao.天骄夺宝 ? [`至宝: 【${tianjiao.当前先天至宝}】随其遁走，讨伐可夺回`] : []),
+            ...(tianjiao.参悟仿制 ? [`参悟: 已参悟【${tianjiao.参悟仿制.来源名号}】的「${tianjiao.参悟仿制.来源装备名}」，击杀可夺仿制`] : []),
             '-------------------'
           );
         } else {
@@ -769,6 +820,8 @@ export class BOSS4 extends plugin {
             `状态: ${status.isAlive ? (healing ? '存活（养伤中）' : '存活') : '已击败'}`,
             ...(healing ? [`养伤: ${status.养伤?.type || '疗伤中'}，至第${status.养伤?.untilWorldYear}年`] : []),
             ...(Number(tianjiao.轮回世数) > 0 ? [`转世: 第${tianjiao.轮回世数}世·${tianjiao.轮回称号 || ''}`] : []),
+            ...(tianjiao.天骄夺宝 ? [`至宝: 【${tianjiao.当前先天至宝}】携宝之躯，讨伐可夺回`] : []),
+            ...(tianjiao.参悟仿制 ? [`参悟: 已参悟【${tianjiao.参悟仿制.来源名号}】的「${tianjiao.参悟仿制.来源装备名}」，击杀可夺仿制`] : []),
             '-------------------'
           );
         }
@@ -822,6 +875,8 @@ export class BOSS4 extends plugin {
       `状态: ${status.isAlive ? (healing ? '存活（养伤中）' : '存活') : '已击败'}`,
       ...(healing ? [`养伤: ${status.养伤?.type || '疗伤中'}，至第${status.养伤?.untilWorldYear}年`] : []),
       ...(Number(tianjiaoData.轮回世数) > 0 ? [`转世: 第${tianjiaoData.轮回世数}世·${tianjiaoData.轮回称号 || ''}`] : []),
+      ...(tianjiaoData.天骄夺宝 ? [`至宝: 【${tianjiaoData.当前先天至宝}】天骄夺宝之器，讨伐该天骄可夺回`] : []),
+      ...(tianjiaoData.参悟仿制 ? [`参悟: 已参悟【${tianjiaoData.参悟仿制.来源名号}】的「${tianjiaoData.参悟仿制.来源装备名}」，击杀该天骄可夺仿制品`] : []),
     ];
 
     e.reply(ReplyMsg.join('\n'));
@@ -1069,6 +1124,61 @@ export class BOSS4 extends plugin {
       }
     }
 
+    // 污损修复：击杀天骄，曾被其污损的装备复原
+    try {
+      const killerEquip = await Read_equipment(killerQQ);
+      let repairedCount = 0;
+      for (const { slot, item, 天骄 } of listTaintedSlots(killerEquip)) {
+        if (天骄 === tianjiaoName && repairTaint(killerEquip, slot)) repairedCount++;
+      }
+      if (repairedCount > 0) {
+        await Write_equipment(killerQQ, killerEquip);
+        await e.reply(`【污损复原】${tianjiaoName}伏诛，你身上${repairedCount}件被污损的装备重焕灵光！`);
+      }
+    } catch (error) {
+      console.warn(`[天骄污损修复] ${tianjiaoName}/${killerQQ} 失败:`, error);
+    }
+
+    // 参悟仿制掉落：天骄参悟的装备仿制品随之坠落
+    if (tianjiaoData.参悟仿制) {
+      try {
+        const imitation = tianjiaoData.参悟仿制;
+        await Add_najie_thing(killerQQ, createImitationItem(imitation, killerQQ), '装备', 1, 6);
+        await e.reply(`【参悟掉落】${tianjiaoName}参悟的「${imitation.仿制名}」随之坠落，落入你手！发送 #反哺炼化 ${imitation.来源装备名} 可将道韵炼回本体。`);
+        delete tianjiaoData.参悟仿制;
+        this.persistTianjiaoList();
+      } catch (error) {
+        console.warn(`[天骄参悟掉落] ${tianjiaoName}/${killerQQ} 失败:`, error);
+      }
+    }
+
+    // 至宝夺回：天骄持宝被讨伐，击杀者高概率夺回至宝；未夺回则随转世释放，等待再出世
+    if (tianjiaoData?.天骄夺宝 && tianjiaoData.当前先天至宝) {
+      try {
+        const recovery = rollTianjiaoTreasureRecovery(tianjiaoData, Math.random, 0.8);
+        if (recovery.ok && recovery.recovered) {
+          const ownership = claimInnateTreasure(recovery.treasureName, killerQQ);
+          if (ownership.ok) {
+            const najie = await Read_najie(killerQQ);
+            const equipment = await Read_equipment(killerQQ);
+            const alreadyHas = equipment.至宝?.name === recovery.treasureName ||
+              najie.装备?.some(item => item.name === recovery.treasureName);
+            if (!alreadyHas) {
+              await Add_najie_thing(killerQQ, createInnateTreasure(recovery.treasureName, killerQQ), '装备', 1, 6);
+            }
+          }
+          this.persistTianjiaoList();
+          await e.reply(`【至宝夺回】${tianjiaoName}道身崩灭，掌中先天至宝【${recovery.treasureName}】坠入凡尘，被你拾获！`);
+        } else if (recovery.ok) {
+          this.persistTianjiaoList();
+          await e.reply(`【至宝蒙尘】${tianjiaoName}掌中的【${recovery.treasureName}】随其真灵一同没入轮回，未能夺回！`);
+          await this.announceTreasureRebirth(recovery.treasureName);
+        }
+      } catch (error) {
+        console.warn(`[天骄至宝夺回] ${tianjiaoName} 结算失败:`, error);
+      }
+    }
+
     try {
       await this.distributeContributionRewards(e, tianjiaoName, tianjiaoData, killerQQ, settlementId);
     } catch (error) {
@@ -1084,6 +1194,8 @@ export class BOSS4 extends plugin {
     let reincarnation = null;
     try {
       reincarnation = resetTianjiaoToInitialTemplate(tianjiaoData, this.getTianjiaoContext());
+      // 转世后至宝随旧身没入轮回（未被夺回则释放，等待再出世）
+      clearTianjiaoTreasure(tianjiaoData);
       this.persistTianjiaoList();
       await e.reply(`第${reincarnation.life}世·${reincarnation.title}，${tianjiaoName}轮回印记已定。`);
     } catch (error) {
@@ -1091,6 +1203,166 @@ export class BOSS4 extends plugin {
     }
 
     return { reviveTime, settlementId, reincarnation };
+  }
+
+  /** 至宝重出预告：夺回失败时全服公告该至宝已遁入诸天，等待再次出世 */
+  async announceTreasureRebirth(treasureName) {
+    try {
+      const message = [
+        '【至宝重出预告】',
+        `先天至宝【${treasureName}】随天骄真灵没入轮回，已重新遁入诸天！`,
+        '混沌未分，机缘待定——下一次出世，诸天修士皆可再争！',
+        '「灵宝有灵，自择其主」',
+      ].join('\n');
+      const groups = config.getConfig('xiuxian', 'xiuxian')?.Era?.notifyGroups || [];
+      for (const groupId of groups) {
+        try {
+          await Bot.sendGroupMsg(groupId, message);
+        } catch (error) {
+          console.error(`[至宝重出预告] 群 ${groupId} 公告失败:`, error);
+        }
+      }
+      console.log(`[至宝重出预告] ${treasureName} 待再次出世`);
+    } catch (error) {
+      console.error('[至宝重出预告] 发送失败:', error);
+    }
+  }
+
+  /** 败北触发：概率污损玩家百分比装备 / 天骄参悟玩家装备词条（温和可逆，仅针对百分比装备） */
+  async rollTianjiaoTaint(e, tianjiaoData, usr_qq, player) {
+    try {
+      const equip = await Read_equipment(usr_qq);
+      const percentSlots = listPercentEquipSlots(equip);
+      if (!percentSlots.length) return;
+      const msgs = [];
+      let changed = false;
+
+      // 污损：20% 概率选一件未污损的百分比装备
+      if (Math.random() < 0.2) {
+        const candidates = percentSlots.filter(({ item }) => !isTainted(item));
+        if (candidates.length) {
+          const target = candidates[Math.floor(Math.random() * candidates.length)];
+          applyEquipmentTaint(equip, target.slot, tianjiaoData.名号);
+          changed = true;
+          msgs.push(`【装备污损】你败退之际，${tianjiaoData.名号}以道痕污浊了你的【${target.item.name}】（对应属性-20%，击杀${tianjiaoData.名号}或 #修复污损 可复原）`);
+        }
+      }
+
+      // 参悟：12% 概率，天骄参悟玩家装备词条（对同一玩家每天限一次）
+      if (Math.random() < 0.12 && !tianjiaoData.参悟仿制) {
+        const dailyKey = `tianjiao:paramita:${tianjiaoData.名号}:${usr_qq}`;
+        if (!(await redis.get(dailyKey))) {
+          const target = percentSlots[Math.floor(Math.random() * percentSlots.length)];
+          tianjiaoData.参悟仿制 = createImitation(
+            tianjiaoData.名号,
+            usr_qq,
+            player.名号 || usr_qq,
+            target.slot,
+            target.item
+          );
+          this.persistTianjiaoList();
+          await redis.set(dailyKey, '1', { EX: 24 * 3600 });
+          msgs.push(`【天骄参悟】${tianjiaoData.名号}观摩你的【${target.item.name}】，悟出其中道韵，生成「${tianjiaoData.参悟仿制.仿制名}」！击杀${tianjiaoData.名号}可夺回，发送 #反哺炼化 可炼回本体`);
+        }
+      }
+
+      if (msgs.length) {
+        if (changed) await Write_equipment(usr_qq, equip);
+        await e.reply(msgs.join('\n'));
+      }
+    } catch (error) {
+      console.warn(`[天骄污损/参悟] ${tianjiaoData.名号}/${usr_qq} 结算失败:`, error);
+    }
+  }
+
+  /** #查看污损：展示玩家被污损的装备与修复途径 */
+  async LookUpTaintStatus(e) {
+    if (!verc({ e })) return false;
+    const usr_qq = e.user_id.toString();
+    try {
+      const equip = await Read_equipment(usr_qq);
+      const tainted = listTaintedSlots(equip);
+      if (!tainted.length) {
+        return e.reply('你身上没有被天骄污损的装备，道韵清朗。');
+      }
+      const lines = ['****你的装备污损状态****'];
+      for (const { slot, item, 天骄 } of tainted) {
+        const field = TAINTED_SLOTS[slot] || '属性';
+        lines.push(`【${item.name}】（${slot}）`);
+        lines.push(`  污损来源: ${天骄}`);
+        lines.push(`  影响: ${field} -20%`);
+        lines.push('-------------------');
+      }
+      lines.push('', '修复方式：击杀污损来源天骄自动复原，或发送 #修复污损（消耗灵石5000万+源石1000万/件）');
+      return e.reply(lines.join('\n'));
+    } catch (error) {
+      console.error('[天骄污损查看] 失败:', error);
+      return e.reply('查询污损状态时发生错误，请稍后再试。');
+    }
+  }
+
+  /** #修复污损：消耗灵石/源石修复全部污损装备 */
+  async RepairTaint(e) {
+    if (!verc({ e })) return false;
+    const usr_qq = e.user_id.toString();
+    try {
+      const equip = await Read_equipment(usr_qq);
+      const tainted = listTaintedSlots(equip);
+      if (!tainted.length) return e.reply('你身上没有污损装备，无需修复。');
+      const costLingshi = tainted.length * 50000000;
+      const costYuanshi = tainted.length * 10000000;
+      const player = await Read_player(usr_qq);
+      if ((Number(player.灵石) || 0) < costLingshi || (Number(player.源石) || 0) < costYuanshi) {
+        return e.reply(`修复${tainted.length}件污损装备需要灵石${bigNumberTransform(costLingshi)}与源石${bigNumberTransform(costYuanshi)}，家底不够，还是去击杀污损来源的天骄吧！`);
+      }
+      await Add_灵石(usr_qq, -costLingshi);
+      await Add_源石(usr_qq, -costYuanshi);
+      for (const { slot } of tainted) repairTaint(equip, slot);
+      await Write_equipment(usr_qq, equip);
+      return e.reply(`你以灵石${bigNumberTransform(costLingshi)}、源石${bigNumberTransform(costYuanshi)}为代价，洗去${tainted.length}件装备上的污损道痕，重焕灵光！`);
+    } catch (error) {
+      console.error('[天骄污损修复] 失败:', error);
+      return e.reply('修复时发生错误，请稍后再试。');
+    }
+  }
+
+  /** #反哺炼化 装备名：把天骄仿制品的道韵炼回本体装备（消耗仿制品） */
+  async ReimburseImitation(e) {
+    if (!verc({ e })) return false;
+    const match = e.msg.match(/^#反哺炼化\s+(.*)$/);
+    const equipName = match?.[1]?.trim();
+    const usr_qq = e.user_id.toString();
+    if (!equipName) return e.reply('请指定本体装备名，例如：#反哺炼化 太初镇世剑');
+    try {
+      const najie = await Read_najie(usr_qq);
+      const imitationItem = (najie.装备 || []).find(item =>
+        item?.参悟仿制 && item.参悟仿制.来源装备名 === equipName
+      ) || (najie.装备 || []).find(item =>
+        item?.参悟仿制 && item.name === `仿·${equipName}`
+      );
+      if (!imitationItem) {
+        return e.reply(`纳戒中未找到【${equipName}】对应的参悟仿制品，先击杀参悟天骄获取吧！`);
+      }
+      const equip = await Read_equipment(usr_qq);
+      const slots = ['武器', '护具', '法宝', '帝兵', '至宝'];
+      const origItem = slots.map(slot => equip[slot]).find(item => item?.name === equipName);
+      if (!origItem) return e.reply(`本体装备【${equipName}】不在身上，请先装备或确认名字无误。`);
+      const result = reimburseImitation(origItem, imitationItem);
+      if (!result.ok) {
+        if (result.reason === 'nothing_gained') return e.reply('仿制品中并无可炼化的道韵词条。');
+        return e.reply('反哺炼化失败，请确认仿制品与本体装备匹配。');
+      }
+      najie.装备 = (najie.装备 || []).filter(item => item !== imitationItem);
+      await Write_najie(usr_qq, najie);
+      await Write_equipment(usr_qq, equip);
+      const gainedText = Object.entries(result.gained)
+        .map(([key, value]) => `${key}+${(value * 100).toFixed(1)}%`)
+        .join('，');
+      return e.reply(`你将「${imitationItem.name}」中的天骄道韵炼化，反哺回【${equipName}】！\n本体词条提升：${gainedText}\n「参悟他人之道，亦是成就自身之路」`);
+    } catch (error) {
+      console.error('[天骄反哺炼化] 失败:', error);
+      return e.reply('反哺炼化时发生错误，请稍后再试。');
+    }
   }
 
   async WorldBossBattle2(e) {
@@ -1202,6 +1474,17 @@ export class BOSS4 extends plugin {
         学习的功法: player.学习的功法 || [],
       };
 
+      // 装备污损：天骄留下的污损道痕使对应装备属性本场战斗 -20%（实时结算，可击杀/材料修复）
+      try {
+        const taintEquip = await Read_equipment(usr_qq);
+        const taintPenalties = applyTaintPenalty(A_player, taintEquip);
+        if (taintPenalties.length) {
+          await e.reply(`【装备污损】${taintPenalties.map(p => `【${p.name}】`).join('')}被${taintPenalties[0].天骄}的污损道痕压制，本场战斗对应属性-20%！击杀该天骄或 #修复污损 可复原。`);
+        }
+      } catch (error) {
+        console.warn(`[天骄污损] ${tianjiaoName}/${usr_qq} 战斗扣减失败:`, error);
+      }
+
       // 检查玩家状态
       if (A_player.level_id < 32) {
         e.reply('你的练气境界至少达到法身境才能讨伐天骄');
@@ -1224,6 +1507,8 @@ export class BOSS4 extends plugin {
         status.currentHP = 100;
         status.isAlive = true;
       }
+      // 护体法宝碎毁状态仅影响本次战败，每场战斗开始时恢复
+      delete status.护身法宝已碎;
 
       // 获取仇恨值
       const currentHatred = await this.getPlayerHatred(tianjiaoName, usr_qq);
@@ -1329,14 +1614,8 @@ export class BOSS4 extends plugin {
       }
       if (blackEmperorFormation.message && Array.isArray(msg)) msg.unshift(blackEmperorFormation.message);
       
-      if (msg.length <= 30) {
-        await ForwardMsg(e, msg);
-      } else {
-        let msgg = JSON.parse(JSON.stringify(msg));
-        msgg.length = 30;
-        await ForwardMsg(e, msgg);
-        e.reply('战斗过长，仅展示部分内容');
-      }
+      // 按每张20条控制 fight.html 图片高度，完整保留战斗日志并按顺序发送。
+      await sendFightImages(e, msg);
 
       const damageKey = `tianjiao:damage:${tianjiaoName}`;
       let isWin = false;
@@ -1422,7 +1701,7 @@ export class BOSS4 extends plugin {
             ? `【盘古幡·开天碎宝】开天气刃斩碎${this.getEscapeTreasure(tianjiaoName)}，此宝本世无法再护体！`
             : '',
           talismanTriggered 
-            ? `护身法宝生效，天骄血量未减少，当前剩余${status.currentHP}%`
+            ? `护体法宝生效，天骄血量未减少，当前剩余${status.currentHP}%`
             : `天骄血量减少${zhuxianTianjiao ? 40 : 20}%，当前剩余${status.currentHP}%`,
           `仇恨值+${hatredResult.gain}（当前：${hatredResult.new}，关系：${newLevel}）`
         ].filter(Boolean);
@@ -1448,7 +1727,15 @@ export class BOSS4 extends plugin {
               WorldBOSSBattleLock = 0;
               return true;
             } else if (protectorResult.protectorWon) {
-              // 被护道人击败，结束战斗
+              // 被护道人击败：天骄恢复30%气血，本次讨伐结束
+              status.currentHP = Math.min(100, Math.max(0, Number(status.currentHP) || 0) + 30);
+              await redis.set(statusKey, JSON.stringify(status));
+              await e.reply([
+                `【护道人护主】`,
+                `${tianjiaoName}被护道人救下，服用秘药稳住伤势，恢复30%气血！`,
+                `当前剩余：${status.currentHP}%`,
+                `（下次讨伐需从 ${status.currentHP}% 血继续）`,
+              ].join('\n'));
               await redis.set(`xiuxian:player:${usr_qq}:BOSSCD`, now_Time.toString());
               WorldBOSSBattleLock = 0;
               return true;
@@ -1609,6 +1896,9 @@ export class BOSS4 extends plugin {
         }
         const hatredResult = await this.addHatred(tianjiaoName, usr_qq, '挑战失败');
         const newLevel = this.getHatredLevel(hatredResult.new);
+
+        // 天骄污损与参悟：败北时概率触发（仅针对百分比装备，温和可逆）
+        await this.rollTianjiaoTaint(e, tianjiaoData, usr_qq, player);
 
         // 发送胜利嘲讽
         const tauntDialogue = this.getRandomDialogue(tianjiaoData, '胜利嘲讽');
@@ -1985,4 +2275,16 @@ async function sleep(time) {
   return new Promise(resolve => {
     setTimeout(resolve, time);
   });
+}
+
+async function sendFightImages(e, messages) {
+  const pageSize = 20;
+  const battleMessages = (Array.isArray(messages) ? messages : [messages ?? ''])
+    .map(message => String(message ?? ''));
+
+  for (let start = 0; start < battleMessages.length; start += pageSize) {
+    const image = await get_fight_img(e, battleMessages.slice(start, start + pageSize));
+    if (image) await e.reply(image);
+    if (start + pageSize < battleMessages.length) await sleep(250);
+  }
 }
