@@ -54,6 +54,23 @@
     - icon: help-icon_58
       title: '#逐出+QQ'
       desc: '只有宗主、副宗主和长老可以噢'
+- group: 宗门弟子
+  list:
+    - icon: help-icon_52
+      title: '#宗门弟子招募'
+      desc: '消耗宗门灵石招募一名随机灵根弟子'
+    - icon: help-icon_60
+      title: '#宗门弟子名册'
+      desc: '查看弟子的灵根、天资、专长和仓库'
+    - icon: help-icon_58
+      title: '#培养宗门弟子1'
+      desc: '消耗宗门灵石提升弟子培养等级'
+    - icon: help-icon_58
+      title: '#任命宗门弟子1 炼丹'
+      desc: '安排弟子负责采药、炼丹、炼器、阵法、护山或外务'
+    - icon: help-icon_56
+      title: '#宗门运营'
+      desc: '结算每日维护费和弟子专长产出'
 - group: 宗门玩法
   list:
     - icon: help-icon_55
