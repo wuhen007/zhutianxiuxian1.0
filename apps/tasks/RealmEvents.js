@@ -31,6 +31,7 @@ import {
     createTreasureContest,
     getRevealedTreasureClues,
     getTreasureContestProfile,
+    injectTianjiaoContestants,
     joinTreasureContest,
     performTreasureTrial,
     placeTreasureDaoHeart,
@@ -349,7 +350,16 @@ export class RealmEvents {
         eventData.contest.profile = {
             omen: getTreasureContestProfile(treasure.name).omen
         };
-        
+
+        // 天骄入局：独立天骄闻讯赶来，成为择主之争的 AI 竞争者
+        const tianjiaoEntrants = injectTianjiaoContestants(
+            eventData.contest,
+            treasure.name,
+            data.weimiantianjiao_list || [],
+            { random }
+        );
+        eventData.tianjiaoEntrants = tianjiaoEntrants.map(entrant => entrant.name);
+
         const message = [
             `【逆天机缘·先天至宝出世】`,
             ``,
@@ -359,6 +369,9 @@ export class RealmEvents {
             ``,
             `各方势力纷纷感应，大批修士正向此地赶来！`,
             witnessMsg,
+            ...(tianjiaoEntrants.length
+                ? [`诸天震动！${tianjiaoEntrants.map(entrant => entrant.name).join('、')}等天骄亦闻讯赶来，欲与天下英豪一争此宝！`]
+                : []),
             `天象：${getTreasureContestProfile(treasure.name).omen}`,
             `「这是成道的契机！」`,
             `「先天灵宝，有德者居之！」`,

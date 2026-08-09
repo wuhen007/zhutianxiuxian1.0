@@ -110,3 +110,45 @@ test('购买天机生成的至宝会登记为新的活跃位面事件', () => {
   assert.equal(config.eventHistory[0].treasure.name, '混沌珠');
   assert.match(result.message, /令一件蛰伏于诸天的先天至宝显化/);
 });
+
+test('天机购买者在择主之争中凭信息差获得额外加分', () => {
+  const config = { eventHistory: [], activeEvents: [] };
+  const result = registerTianjiTreasureEvent(config, [], {
+    eventData: {
+      type: 'treasureAppear',
+      treasure: { name: '混沌珠' },
+      contest: createTreasureContest('混沌珠', 5000),
+      plane: '遮天位面',
+      coordinate: { x: 227, y: 116 },
+    },
+    message: '至宝出世',
+  }, { qq: '10001', name: '问道者' });
+
+  const contest = result.eventData.contest;
+  assert.equal(contest.tianjiBuyer.qq, '10001');
+
+  // 购买者与普通玩家执行完全相同的试炼
+  joinTreasureContest(contest, '10001', '问道者', 5001);
+  joinTreasureContest(contest, '10002', '路人甲', 5001);
+  for (const qq of ['10001', '10002']) {
+    performTreasureTrial(contest, '混沌珠', qq, 'battle', {
+      difficulty: '普通', healthRatio: 1, now: 5002,
+    }, () => 0);
+    performTreasureTrial(contest, '混沌珠', qq, 'insight', { choice: '归一', now: 5003 });
+    performTreasureTrial(contest, '混沌珠', qq, 'support', { contribution: 10, now: 5004 });
+    placeTreasureDaoHeart(contest, qq, '逍遥天地', 5005);
+  }
+
+  const rankings = rankTreasureContest(contest, '混沌珠', 5000);
+  const buyer = rankings.find(item => item.qq === '10001');
+  const other = rankings.find(item => item.qq === '10002');
+  assert.equal(buyer.tianjiBonus, 8);
+  assert.equal(other.tianjiBonus, 0);
+  // 相同试炼行动下，仅天机加分不同；运气按 QQ 哈希，两差值 = 8 + 运气差（最小仍为3，购买者必然领先）
+  assert.equal(buyer.trialScore, other.trialScore);
+  assert.equal(buyer.affinity, other.affinity);
+  assert.equal(buyer.contribution, other.contribution);
+  assert.equal(buyer.total - other.total, 8 + buyer.luck - other.luck);
+  assert.ok(buyer.total > other.total);
+  assert.equal(rankings[0].qq, '10001');
+});

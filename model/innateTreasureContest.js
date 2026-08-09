@@ -1,5 +1,7 @@
 export const TREASURE_TRIAL_LIMIT = 3;
 export const TREASURE_CONTEST_DURATION_MS = 24 * 60 * 60 * 1000;
+// 天机购买者的信息差优势加分：抢先获知至宝真名/权能/天象，夺宝时更有把握
+export const TIANJI_INFO_BONUS = 8;
 export const TREASURE_DAO_HEARTS = Object.freeze([
   '镇压诸天',
   '守护苍生',
@@ -115,6 +117,10 @@ export function registerTianjiTreasureEvent(config, activeEvents, result, invoke
     qq: String(invoker.qq || ''),
     name: String(invoker.name || invoker.qq || '一位无名修士'),
   };
+  // 天机购买者凭信息差参与择主之争可获额外加分
+  if (event.contest && typeof event.contest === 'object') {
+    event.contest.tianjiBuyer = event.awakenedBy;
+  }
   result.message = [
     '【先天灵宝天机·扰动诸天】',
     `${event.awakenedBy.name}以劫境道痕推演天机，令一件蛰伏于诸天的先天至宝显化！`,
@@ -246,6 +252,7 @@ export function placeTreasureDaoHeart(contest, qq, choice, now = Date.now()) {
 
 export function rankTreasureContest(contest, treasureName, eventSeed = '') {
   const profileData = getTreasureContestProfile(treasureName);
+  const buyerQq = String(contest?.tianjiBuyer?.qq || '');
   return Object.values(contest?.participants || {})
     .filter(player => Object.keys(player.trials || {}).length === TREASURE_TRIAL_LIMIT && player.daoHeart)
     .map(player => {
@@ -257,6 +264,8 @@ export function rankTreasureContest(contest, treasureName, eventSeed = '') {
       const luck = hashLuck(`${eventSeed}:${player.qq}`);
       const trialScore = Math.min(60, Number(player.trialScore) || 0);
       const contribution = Math.min(10, Number(player.contribution) || 0);
+      // 天机购买者的信息差优势：抢先知晓至宝真名与天象，试炼更有把握
+      const tianjiBonus = buyerQq && String(player.qq) === buyerQq ? TIANJI_INFO_BONUS : 0;
       return {
         qq: player.qq,
         name: player.name,
@@ -264,7 +273,8 @@ export function rankTreasureContest(contest, treasureName, eventSeed = '') {
         affinity,
         contribution,
         luck,
-        total: trialScore + affinity + contribution + luck,
+        tianjiBonus,
+        total: trialScore + affinity + contribution + luck + tianjiBonus,
         joinedAt: player.joinedAt,
       };
     })
@@ -280,4 +290,112 @@ export function settleTreasureContest(contest, treasureName, eventSeed, now = Da
   contest.rankings = rankings;
   contest.winner = rankings[0] || null;
   return { ok: true, rankings, winner: contest.winner };
+}
+
+/* ============ 天骄 AI 竞争者（择主之争） ============ */
+
+const ALL_TRIALS = Object.freeze(['battle', 'insight', 'support', 'fate']);
+
+function pickTianjiaoTrialTags(favoredTags, random) {
+  const favored = ALL_TRIALS.filter(tag => favoredTags.includes(TRIAL_TAGS[tag]));
+  const rest = ALL_TRIALS.filter(tag => !favored.includes(tag));
+  const ordered = [...favored, ...rest];
+  const result = [];
+  for (const tag of ordered) {
+    if (result.length >= 3) break;
+    if (!result.includes(tag)) result.push(tag);
+  }
+  if (result.length < 3) {
+    for (const tag of ALL_TRIALS) {
+      if (result.length >= 3) break;
+      if (!result.includes(tag)) result.push(tag);
+    }
+  }
+  return result;
+}
+
+function simulateTianjiaoTrial(tag, tianjiao, random) {
+  const completedAt = Date.now();
+  if (tag === 'battle') {
+    const pathLevel = Math.max(Number(tianjiao?.mijinglevel_id) || 1, Number(tianjiao?.xiangulevel_id) || 1);
+    const success = random() < Math.min(0.95, 0.55 + pathLevel * 0.02);
+    const score = success ? 16 + Math.floor(random() * 4) : 4 + Math.floor(random() * 4);
+    return { tag: TRIAL_TAGS.battle, score, detail: success ? '力压守护灵，势如破竹。' : '强攻守护灵，稍落下风。', completedAt };
+  }
+  if (tag === 'insight') {
+    const correct = random() < 0.65;
+    const score = correct ? 18 + Math.floor(random() * 2) : 9;
+    return { tag: TRIAL_TAGS.insight, score, detail: correct ? '一眼洞悉禁制真意。' : '参悟有失，仅得皮毛。', completedAt };
+  }
+  if (tag === 'support') {
+    const score = 16 + Math.floor(random() * 2);
+    return { tag: TRIAL_TAGS.support, score, detail: '以本源护住灵脉，泽被一方。', completedAt };
+  }
+  const roll = random();
+  const score = roll < 0.2 ? 6 : roll < 0.8 ? 14 : 20;
+  return {
+    tag: TRIAL_TAGS.fate,
+    score,
+    detail: score >= 20 ? '于命运乱流中夺得上苍机缘。' : score >= 14 ? '穿越破碎未来，截留道痕。' : '为命运乱流所扰，负伤而返。',
+    completedAt,
+  };
+}
+
+function pickTianjiaoDaoHeart(preferred, random) {
+  return random() < 0.55 ? preferred : TREASURE_DAO_HEARTS[Math.floor(random() * TREASURE_DAO_HEARTS.length)];
+}
+
+/**
+ * 为择主之争注入天骄 AI 竞争者。
+ * 天骄以 `tianjiao:名号` 作为参赛键，预生成完整参赛档案（3 次试炼 + 道心），
+ * 可被 rankTreasureContest 正常纳入排名，但结算发奖时因非真实玩家而自动跳过。
+ * 不推进 sealProgress（破封进度由真实玩家驱动）。
+ * @returns 注入的天骄参赛者数组
+ */
+export function injectTianjiaoContestants(contest, treasureName, tianjiaoList, options = {}, random = Math.random) {
+  if (!contest || contest.status !== 'open') return [];
+  const profileData = getTreasureContestProfile(treasureName);
+  const excluded = new Set(options.excludeNames || []);
+  const pool = (tianjiaoList || [])
+    .filter(tj => tj?.名号 && !excluded.has(tj.名号))
+    .filter(tj => Number(tj.位面) >= 2); // 仅独立天骄（位面 2 / 2.5）参与
+  if (pool.length === 0) return [];
+
+  const maxCount = Math.min(Number(options.count) || 3, pool.length);
+  const count = maxCount <= 2 ? maxCount : 2 + (random() < 0.6 ? 1 : 0);
+  const shuffled = [...pool].sort(() => random() - 0.5);
+  const selected = shuffled.slice(0, count);
+  const now = Number(options.now) || Date.now();
+  const entrants = [];
+
+  for (const tianjiao of selected) {
+    const key = `tianjiao:${tianjiao.名号}`;
+    if (contest.participants[key]) continue;
+    const tags = pickTianjiaoTrialTags(profileData.favoredTags, random);
+    const trials = {};
+    for (const tag of tags) {
+      trials[tag] = simulateTianjiaoTrial(tag, tianjiao, random);
+    }
+    const rawScore = Object.values(trials).reduce((sum, trial) => sum + trial.score, 0);
+    const trialScore = Math.max(40, Math.min(60, rawScore));
+    const participant = {
+      qq: key,
+      name: tianjiao.名号,
+      joinedAt: now,
+      trials,
+      trialScore,
+      contribution: 3 + Math.floor(random() * 6),
+      daoHeart: pickTianjiaoDaoHeart(profileData.daoHeart, random),
+      isTianjiao: true,
+      tianjiaoName: tianjiao.名号,
+    };
+    contest.participants[key] = participant;
+    entrants.push(participant);
+  }
+  return entrants;
+}
+
+/** 判断参赛者是否为天骄 AI 竞争者 */
+export function isTianjiaoContestant(qq) {
+  return String(qq || '').startsWith('tianjiao:');
 }
