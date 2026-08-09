@@ -2842,13 +2842,15 @@ async handleTeach(e, isAll = false) {
             return true;
         }
         
-        // 获取功法类型
+        // 获取功法类型与不可外传属性
         let gongfaType = "修炼功法";
+        let gongfaData = null;
         for (const category in data) {
             if (Array.isArray(data[category])) {
                 const found = data[category].find(item => item.name === gongfaName);
                 if (found) {
                     gongfaType = found.type || "修炼功法";
+                    gongfaData = found;
                     break;
                 }
             }
@@ -2856,6 +2858,21 @@ async handleTeach(e, isAll = false) {
         
         // 获取功法层级
         const gongfaLevel = getGongfaLevel(gongfaType);
+        
+        // === 不可外传拦截 ===
+        if (gongfaData && gongfaData.不可外传) {
+            e.reply([
+                `〖不传之秘·传授受阻〗`,
+                `你欲向${target.名号}传授【${gongfaName}】，`,
+                `却在功法触及识海的刹那被一道禁制震退！`,
+                ``,
+                `〖禁传之令〗`,
+                gongfaData.不可外传说明 || '此功法乃不传之秘，非经同意不得外传。',
+                ``,
+                `「纵你道行通天，亦无权将门派至宝私相授受！」`
+            ].join('\n'));
+            return true;
+        }
         
         // === 检查天资条件 ===
         if (targetMaxLevel < gongfaLevel) {
@@ -3080,13 +3097,15 @@ async handleTeach(e, isAll = false) {
             continue;
         }
         
-        // 获取功法类型
+        // 获取功法类型与不可外传属性
         let gongfaType = "修炼功法";
+        let gongfaData = null;
         for (const category in data) {
             if (Array.isArray(data[category])) {
                 const found = data[category].find(item => item.name === gongfaName);
                 if (found) {
                     gongfaType = found.type || "修炼功法";
+                    gongfaData = found;
                     break;
                 }
             }
@@ -3094,6 +3113,12 @@ async handleTeach(e, isAll = false) {
         
         // 获取功法层级
         const gongfaLevel = getGongfaLevel(gongfaType);
+        
+        // === 不可外传拦截 ===
+        if (gongfaData && gongfaData.不可外传) {
+            failedBySpecial.push(`${gongfaName}(不可外传)`);
+            continue;
+        }
         
         // 检查天资条件
         if (targetMaxLevel < gongfaLevel) {
@@ -3512,7 +3537,7 @@ async yingzhao(e) {
     }
 
     // ===== 映照位面（无@时匹配位面名）=====
-    const planeMatch = rawMsg.match(/^#映照(?:复活)?(凡间|仙界|下界八域|遮天位面|九天十地|界海)$/);
+    const planeMatch = rawMsg.match(/^#映照(?:复活)?(凡间|仙界|下界八域|遮天位面|九天十地|界海|仙域)$/);
     if (planeMatch) {
         return await this.handlePlaneYingzhao(e, caster, casterQQ, planeMatch[1]);
     }
@@ -4123,7 +4148,7 @@ async resurrectPlayer(targetQQ, caster) {
 async handlePlaneYingzhao(e, caster, casterQQ, planeName) {
     const PLANE_ID_MAP = {
         '凡间': 0, '仙界': 1, '下界八域': 1.5,
-        '遮天位面': 2, '九天十地': 2.5, '界海': 3,
+        '遮天位面': 2, '九天十地': 2.5, '界海': 3, '仙域': 6,
     };
     const planeId = PLANE_ID_MAP[planeName];
     if (planeId === undefined) {

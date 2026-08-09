@@ -224,6 +224,8 @@ export async function Writeit(custom) {
   let dir = path.join(__PATH.custom, `custom.json`);
   let new_ARR = JSON.stringify(custom, '', '\t');
   fs.writeFileSync(dir, new_ARR, 'utf8', err => {});
+  // XiuxianData caches custom equipment at startup; keep the in-memory source in sync.
+  data.namegive = custom;
   return;
 }
 export async function Read_it() {
