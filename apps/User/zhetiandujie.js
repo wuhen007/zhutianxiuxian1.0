@@ -63,6 +63,17 @@ import {
   get_log_img,
   channel
 } from '../../model/xiuxian.js';
+import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
+
+const TRIBULATION_METHODS = [
+  'duzhendaoLeijie',
+  'shengrenleijie',
+  'shengrenwangleijie',
+  'dashengleijie',
+  'zhundileijie',
+  'command_zhengdao',
+  'poWangChengDi',
+];
 
 export class zhetiandujie extends plugin {
   constructor() {
@@ -159,6 +170,18 @@ export class zhetiandujie extends plugin {
     }
     };
     this.minggeRevivalAttempts = new WeakSet();
+    for (const methodName of TRIBULATION_METHODS) {
+      const original = this[methodName];
+      if (typeof original !== 'function') continue;
+      this[methodName] = async function guardedTribulation(e, ...args) {
+        const playerId = String(e.user_id || '').replace('qg_', '');
+        const result = await withTribulationLock(playerId, () => original.call(this, e, ...args));
+        if (result === TRIBULATION_LOCK_BUSY) {
+          return e.reply('【渡劫中】你已有一场渡劫正在进行，请等待结算完成。');
+        }
+        return result;
+      };
+    }
   }
 
 // ==== 遮天风格功法复活逻辑（生命本源消耗版）====
@@ -587,7 +610,7 @@ async duzhendaoLeijie(e) {
           * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.斩道;
 
       /* ---- 功法/灵根/帝兵/时代 统一结算 ---- */
-      const { damage: finalDamage, messages } = this.applyGongfaEffects(player, base, equipment);
+      const { damage: finalDamage, messages } = await this.applyTribulationDamage(player, base, equipment);
       player.当前血量 = Math.max(1, player.当前血量 - finalDamage);
 
       /* ---- 日志 ---- */
@@ -885,7 +908,7 @@ for (let stageIndex = 0; stageIndex < stages.length; stageIndex++) {
     this.clearTempEffects(player);
     
     const baseDamage = stage.baseDamage * (1 + 0.02 * wave);
-    const { damage: finalDamage, messages } = this.applyGongfaEffects(player, baseDamage,equipment);
+    const { damage: finalDamage, messages } = await this.applyTribulationDamage(player, baseDamage,equipment);
     player.当前血量 = Math.max(1, player.当前血量 - finalDamage);
      // 在每道雷劫处理完毕后添加 ↓
     this.updateCooldowns(player); // 更新功法冷却
@@ -1280,7 +1303,7 @@ async shengrenwangleijie(e) {
           battleLog.push(specialEffect.message);
         }
         
-        const { damage: finalDamage, messages } = this.applyGongfaEffects(player, baseDamage,equipment);
+        const { damage: finalDamage, messages } = await this.applyTribulationDamage(player, baseDamage,equipment);
         player.当前血量 = Math.max(1, player.当前血量 - finalDamage);
         this.updateCooldowns(player);
 
@@ -1918,7 +1941,7 @@ async dashengleijie(e) {
           delete player.下次伤害倍率;
         }
         
-        const { damage: finalDamage, messages } = this.applyGongfaEffects(player, baseDamage,equipment);
+        const { damage: finalDamage, messages } = await this.applyTribulationDamage(player, baseDamage,equipment);
         player.当前血量 = Math.max(1, player.当前血量 - finalDamage);
         
         // 功法冷却延长效果
@@ -2636,7 +2659,7 @@ async zhundileijie(e) {
           delete player.下次伤害倍率;
         }
         
-        const { damage: finalDamage, messages } = this.applyGongfaEffects(player, baseDamage,equipment);
+        const { damage: finalDamage, messages } = await this.applyTribulationDamage(player, baseDamage,equipment);
         player.当前血量 = Math.max(1, player.当前血量 - finalDamage);
         
         // 功法冷却延长效果
@@ -3225,7 +3248,7 @@ let battleLog = [
                 delete player.下次伤害倍率;
             }
             
-            const { damage: finalDamage, messages } = this.applyGongfaEffects(player, baseDamage,equipment);
+            const { damage: finalDamage, messages } = await this.applyTribulationDamage(player, baseDamage,equipment);
             player.当前血量 = Math.max(1, player.当前血量 - finalDamage);
             
             // 功法冷却延长效果
@@ -3671,7 +3694,7 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
 
       /* 每道扣 55 % 当前血量的“道伤” */
       let raw = player.当前血量 * 0.55;
-      const { damage: dmg, messages } = this.applyGongfaEffects(player, raw, equipment);
+      const { damage: dmg, messages } = await this.applyTribulationDamage(player, raw, equipment);
       player.当前血量 = Math.max(1, player.当前血量 - dmg);
       broken++;
       player.神明枷锁--;
@@ -4581,6 +4604,31 @@ calcMaxAtkWithTribulationShifts(player, equipment = {}) {
   });
 
   return { maxAtk, formationShift, kuluoShift, qitianMessage };
+}
+
+/**
+ * 渡劫结算统一入口：applyGongfaEffects + 雷池真液·淬体护道
+ * 持有雷池真液时，本次渡劫按滴数减伤（每滴10%，上限50%，一次渡劫只扣一次）。
+ */
+async applyTribulationDamage(player, originalDamage, equipment = {}) {
+  const { damage, messages } = this.applyGongfaEffects(player, originalDamage, equipment);
+  if (player && !player._雷池真液已用) {
+    try {
+      const qq = String(player.id || player.qq || '');
+      const qty = await exist_najie_thing(qq, '雷池真液', '道具');
+      if (qty > 0) {
+        player._雷池真液已用 = true;
+        const use = Math.min(5, Number(qty));
+        await Add_najie_thing(qq, '雷池真液', '道具', -use);
+        const finalDamage = Math.max(1, Math.floor(damage * (1 - use * 0.1)));
+        messages.push(`【雷池真液】淬体护道，减免${use * 10}%雷劫伤害（消耗${use}滴）`);
+        return { damage: finalDamage, messages };
+      }
+    } catch (error) {
+      console.warn('[雷池真液] 渡劫减伤结算失败:', error);
+    }
+  }
+  return { damage, messages };
 }
 
 // ==== 功法特效应用函数 ====

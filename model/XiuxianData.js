@@ -2,6 +2,10 @@ import fs from 'fs';
 import Config from './Config.js';
 import path from 'path';
 import { AppName } from '../app.config.js';
+import {
+  assertTribulationSnapshotCurrentSync,
+  markTribulationSnapshot,
+} from './tribulationLock.js';
 
 /*
   数据封装
@@ -566,6 +570,9 @@ this.gongfa_list = JSON.parse(
     }
     //将字符串数据转变成json格式
     data = JSON.parse(data);
+    if (user_qq && ['player', 'equipment', 'najie'].includes(file_name)) {
+      return markTribulationSnapshot(user_qq, data);
+    }
     return data;
   }
   // 添加新的自创帝经
@@ -621,6 +628,9 @@ this.gongfa_list = JSON.parse(
    * @param data
    */
   setData(file_name, user_qq, data) {
+    if (user_qq && ['player', 'equipment', 'najie'].includes(file_name)) {
+      assertTribulationSnapshotCurrentSync(user_qq, data);
+    }
     let file_path;
     let dir;
     if (user_qq) {
