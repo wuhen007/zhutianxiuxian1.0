@@ -35,3 +35,11 @@ export function calculateEquippedStats(baseStats, slots = []) {
     血量上限: Math.trunc(baseHp * (1 + hpBonus) + fixedHp),
   };
 }
+
+export function getEquipmentAllAttributeMultiplier(player, slot) {
+  if (slot?.name !== '大罗剑胎') return 1;
+  const isSupremePhysique = String(player?.灵根?.type || '').includes('至尊体');
+  const field = isSupremePhysique ? '至尊体全属性倍率' : '其他灵根全属性倍率';
+  const fallback = isSupremePhysique ? 15 : 7.5;
+  return Math.max(1, Number(slot[field]) || fallback);
+}

@@ -1861,6 +1861,17 @@ if (func == "打开") {
             if (equipment.武器.name == "【极道帝兵】万物母气鼎"  &&  player.灵根.type == "大成圣体") {
                 e.reply("你为天帝，当镇压世间一切敌！");
             }
+            if (equipment.武器.name == "大罗剑胎") {
+                const isSupremePhysique = String(player.灵根?.type || '').includes('至尊体');
+                e.reply([
+                    '【大罗剑胎·古船苏醒】',
+                    '黑色剑胎入手，无锋无刃，整片虚空却自行裂开。',
+                    isSupremePhysique
+                        ? '至尊血脉与剑胎共鸣，沉睡的无上剑意尽数复苏，全属性提升至十五倍！'
+                        : '剑胎未曾完全认主，却仍借出半分万古锋芒，全属性提升至七点五倍！',
+                    '一缕剑鸣越过岁月长河：此剑尚未完成，前路却已无人敢挡。'
+                ].join('\n'));
+            }
             if (equipment.武器.name == "仙帝器·大罗仙剑"  ) {
                 e.reply("谁在称无敌，哪个敢言不败，帝落时代都不见！此刻你已然能独断万古，横推古今未来所有敌手！");
             }
@@ -7197,6 +7208,10 @@ async Sell_comodities(e) {
     let thing_exist = await foundthing(thing_name);
     if (!thing_exist) {
         e.reply(`这方世界没有[${thing_name}]`);
+        return false;
+    }
+    if (thing_exist.不可交易 === true || Number(thing_exist.不可交易) > 0) {
+        e.reply(`【${thing_name}】属于不可交易的唯一造化，不能出售。`);
         return false;
     }
     

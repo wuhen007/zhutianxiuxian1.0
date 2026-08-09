@@ -99,10 +99,6 @@ export class Level extends plugin {
           fnc: 'fate_up',
         },
         {
-          reg: '^#服用$',
-          fnc: 'Useitems',
-        },
-        {
           reg: '^#登仙$',
           fnc: 'Level_up_Max',
         },
@@ -1778,6 +1774,17 @@ async hudao(e) {
       const kongtong = getKongtongModifiers(player);
       const imperialWudao = kongtong.decree?.type === '修炼' &&
         kongtong.decree.plane === getPlayerPlaneName(player);
+
+      // 先天道痕·道韵加持：消耗道痕提升本次悟道收益（每道痕+0.6%，单次上限50道痕/+30%）
+      const daoTraces = Math.max(0, Math.floor(Number(player.先天道痕) || 0));
+      const tracesUsed = Math.min(50, daoTraces);
+      if (tracesUsed > 0) {
+        player.先天道痕 = daoTraces - tracesUsed;
+        result.bonuses.traces = tracesUsed * 0.006;
+        result.gain = Math.floor(Number(result.gain) * (1 + tracesUsed * 0.006));
+        result.multiplier = Number(result.multiplier) + tracesUsed * 0.006;
+      }
+
       const actualGain = Math.min(
         Math.floor(result.gain * (imperialWudao ? 1.5 : 1)),
         rule.targetExp - currentExp
@@ -1802,6 +1809,7 @@ async hudao(e) {
         `命格 ${formatSignedPercent(result.bonuses.mingge)}`,
       ];
       if (useTea) factorLines.push(`悟道古茶 ${formatSignedPercent(result.bonuses.tea)}`);
+      if (tracesUsed > 0) factorLines.push(`先天道痕 ${formatSignedPercent(result.bonuses.traces)}`);
       if (imperialWudao) factorLines.push('人皇敕令 +50%');
 
       const reply = [
