@@ -21,7 +21,8 @@ import {
   isWorldStealProtected,
   recordCropSteal,
 } from './smallWorldSteal.js';
-import { addInventoryPetVariant } from '../Pokemon/habitatPetTransfer.js';
+import { addInventoryPetVariant, findHabitatPetIndex } from '../Pokemon/habitatPetTransfer.js';
+import { calculatePetEnergyPeriod } from './smallWorldPetEnergy.js';
 import { WUDAO_TEA_ITEM, isWudaoTeaItem } from '../User/wudaoTea.js';
 import {
   formatCooldown,
@@ -461,7 +462,7 @@ function migrateWorldData(world) {
 // ══════════════════════════════════════
 
 // 计算仙宠在指定工坊的工作效率
-function calculateWorkEfficiency(pet, workshop, world) {
+function calculateWorkEfficiency(pet, workshop, world, energyOverride) {
   if (!pet || !workshop) return 1.0;
 
   // 基础倍率
@@ -478,7 +479,7 @@ function calculateWorkEfficiency(pet, workshop, world) {
   }
 
   // 精力倍率
-  const energy = pet.精力 || 100;
+  const energy = Number(energyOverride ?? pet.精力 ?? 100);
   if (energy >= 30) {
     efficiency *= 1.0;
   } else if (energy >= 10) {
@@ -538,7 +539,7 @@ function calculateEnergyCost(pet, workshop) {
 function getWorkDescription(pet, hoursWorked) {
   const petName = pet.name;
   const workshop = pet.工坊 || null;
-  const energy = pet.精力 || 100;
+  const energy = Number(pet.精力 ?? 100);
 
   // 在栖息地休息/玩耍
   if (!workshop) {
@@ -904,7 +905,7 @@ async forceRipenAllCrops(e) {
     const player_qq = await channel(usr_qq);
     
     // 获取玩家小世界
-    const world = data.xiaoshijie.find(w => w.player_qq === player_qq);
+    const world = data.xiaoshijie.find(w => String(w.player_qq) === String(player_qq));
     if (!world) {
         e.reply('请先开辟小世界');
         return true;
@@ -1067,7 +1068,9 @@ async forceRipenCrops(e) {
     const player_qq = await channel(usr_qq);
     
     // 获取玩家小世界
-    const world = data.xiaoshijie.find(w => w.player_qq === player_qq);
+    const world = data.xiaoshijie.find(
+      w => String(w.player_qq) === String(player_qq)
+    );
     if (!world) {
         e.reply('你尚未开辟小世界');
         return true;
@@ -1619,11 +1622,18 @@ async showEnvironmentHelp(e) {
       return true;
     }
 
-    const pet = (world.栖息地 || []).find(item => item.name === petName);
-    if (!pet) {
+    const petIndex = findHabitatPetIndex(world.栖息地 || [], petName);
+    if (petIndex < 0) {
       e.reply(`栖息地中找不到仙宠【${petName}】`);
       return true;
     }
+    const player = data.getData('player', player_qq) || {};
+    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player);
+    if (petIndex >= maxSlots) {
+      e.reply(`这只仙宠当前位于超出上限的栖息地位置（${petIndex + 1}/${maxSlots}），请先装备扩容道具或召回前面的仙宠`);
+      return true;
+    }
+    const pet = world.栖息地[petIndex];
     if (pet.累倒) {
       e.reply(`${pet.name}正在休养，暂时不能担任守卫`);
       return true;
@@ -1688,7 +1698,9 @@ async showEnvironmentHelp(e) {
     }
 
     migrateWorldData(world);
-    const guard = (world.栖息地 || []).find(pet => pet.守卫);
+    const player = data.getData('player', player_qq) || {};
+    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player);
+    const guard = (world.栖息地 || []).slice(0, maxSlots).find(pet => pet.守卫);
     if (!guard) {
       e.reply('当前没有仙宠守卫，可使用 #设置仙宠守卫[仙宠名称]');
       return true;
@@ -1815,7 +1827,10 @@ async showEnvironmentHelp(e) {
     thiefWorld.偷菜状态 = { 上次偷菜时间: now };
     target.world.上次被偷菜时间 = now;
 
-    const guard = (target.world.栖息地 || []).find(pet => (
+    const targetPlayer = data.getData('player', target.world.player_qq) || {};
+    const targetMaxSlots = (Number(target.world.attributes?.栖息地上限) || 1)
+      + getHabitatSlotBonus(targetPlayer);
+    const guard = (target.world.栖息地 || []).slice(0, targetMaxSlots).find(pet => (
       pet.守卫 && !pet.累倒 && !pet.工坊 && Number(pet.精力 ?? 100) > 0
     ));
     let guardResult = '';
@@ -1874,7 +1889,9 @@ async showEnvironmentHelp(e) {
     const innateYieldMultiplier = getSmallWorldYieldMultiplier(player);
     
     // 获取玩家小世界
-    const world = data.xiaoshijie.find(w => w.player_qq === player_qq);
+    const world = data.xiaoshijie.find(
+      w => String(w.player_qq) === String(player_qq)
+    );
     if (!world) {
       e.reply('请先使用 #开辟小世界 创建你的小世界');
       return true;
@@ -1917,17 +1934,28 @@ async showEnvironmentHelp(e) {
     // ==== 栖息地结算（工坊劳作 + 栖息地休息恢复精力） ====
     let habitatResults = [];
     let workDescriptions = [];
+    const activeHabitatCount = Math.max(
+      0,
+      (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player)
+    );
     if (world.栖息地 && world.栖息地.length > 0) {
-      for (const pet of world.栖息地) {
+      for (let petIndex = 0; petIndex < world.栖息地.length; petIndex++) {
+        const pet = world.栖息地[petIndex];
+        if (petIndex >= activeHabitatCount) {
+          workDescriptions.push(`${pet.name}当前超出栖息地上限，本次未参与工作结算`);
+          continue;
+        }
         const workshop = pet.工坊 || null; // null = 在栖息地休息
         const pinjiRate = PINJI_RATE[pet.品级] || 1;
 
         // 累倒恢复检查（在栖息地休养）
         if (pet.累倒) {
-          pet.累倒_counter = (pet.累倒_counter || 12) - harvestHours;
+          const recoveryHours = Math.max(0, Number(pet.累倒_counter ?? 12) || 0);
+          const restHours = Math.max(0, harvestHours - recoveryHours);
+          pet.累倒_counter = recoveryHours - harvestHours;
           if (pet.累倒_counter <= 0) {
             pet.累倒 = false;
-            pet.精力 = Math.min(100, (pet.精力 || 0) + 30);
+            pet.精力 = Math.min(Number(pet.最大精力 ?? 100), Number(pet.精力 ?? 0) + 30 + restHours * 8);
             habitatResults.push(`💤 ${pet.name}已从累倒中恢复，精神抖擞！`);
           } else {
             habitatResults.push(`💤 ${pet.name}还在栖息地休养中（还需${Math.ceil(pet.累倒_counter)}小时恢复）…`);
@@ -1936,42 +1964,39 @@ async showEnvironmentHelp(e) {
           continue;
         }
 
-        // 精力消耗/恢复
-        const energyChange = calculateEnergyCost(pet, workshop) * harvestHours;
-        pet.精力 = Math.max(0, Math.min(pet.最大精力 || 100, (pet.精力 || 100) - energyChange));
-
-        // 累倒检查：精力归零且正在工作
-        if (pet.精力 <= 0 && workshop) {
-          pet.累倒 = true;
-          pet.累倒_counter = 12;
-          pet.工坊 = null; // 自动送回栖息地
-          habitatResults.push(`💥 ${pet.name}精疲力尽累倒了！已被仙童抬回栖息地休养…`);
-          workDescriptions.push(getWorkDescription(pet, harvestHours));
-          if (!world.事件记录) world.事件记录 = [];
-          world.事件记录.push(`【${new Date().toLocaleString()}】${pet.name}在${workshop}累倒，被送回栖息地`);
-          continue;
-        }
-
         // 在栖息地休息：不产生资源，只恢复精力
         if (!workshop) {
+          const restState = calculatePetEnergyPeriod(
+            pet.精力,
+            pet.最大精力,
+            harvestHours,
+            calculateEnergyCost(pet, workshop)
+          );
+          pet.精力 = restState.endEnergy;
           habitatResults.push(`🏠 ${pet.name}在栖息地休憩玩耍，精力恢复至 ${pet.精力}/${pet.最大精力}（${getEnergyIcon(pet.精力)}）`);
           workDescriptions.push(getWorkDescription(pet, harvestHours));
           continue;
         }
 
+        const energyState = calculatePetEnergyPeriod(
+          pet.精力,
+          pet.最大精力,
+          harvestHours,
+          calculateEnergyCost(pet, workshop)
+        );
+        pet.精力 = energyState.endEnergy;
+
         // 计算工作效率
-        const workEfficiency = calculateWorkEfficiency(pet, workshop, world);
+        const workEfficiency = calculateWorkEfficiency(pet, workshop, world, energyState.averageEnergy);
+        const workedHours = energyState.activeHours;
 
         // 工坊产出（使用新的产出体系）
         const wsOutput = HABITAT_OUTPUT[pet.type];
-        if (!wsOutput) {
+        if (!wsOutput || workedHours <= 0) {
           workDescriptions.push(getWorkDescription(pet, harvestHours));
-          continue;
-        }
-
-        for (const [resName, baseRate] of Object.entries(wsOutput)) {
+        } else for (const [resName, baseRate] of Object.entries(wsOutput)) {
           const amount = Math.floor(
-            baseRate * harvestHours * pinjiRate * workEfficiency * innateYieldMultiplier
+            baseRate * workedHours * pinjiRate * workEfficiency * innateYieldMultiplier
           );
           if (amount <= 0) continue;
 
@@ -2033,6 +2058,15 @@ async showEnvironmentHelp(e) {
               habitatResults.push(`${energyIcon} ${pet.name}在符台制符：符纸x${amount}${efficiencyStr}`);
               break;
           }
+        }
+
+        if (energyState.exhausted) {
+          pet.累倒 = true;
+          pet.累倒_counter = 12;
+          pet.工坊 = null;
+          habitatResults.push(`💥 ${pet.name}精疲力尽累倒了！已被仙童抬回栖息地休养…`);
+          if (!world.事件记录) world.事件记录 = [];
+          world.事件记录.push(`【${new Date().toLocaleString()}】${pet.name}在${workshop}累倒，被送回栖息地`);
         }
 
         // 记录工作状态描述
@@ -3022,7 +3056,9 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
     const usr_qq = e.user_id;
     const player_qq = await channel(usr_qq);
 
-    let world = data.xiaoshijie.find(w => w.player_qq === player_qq);
+    let world = data.xiaoshijie.find(
+      w => String(w.player_qq) === String(player_qq)
+    );
     if (!world) {
       e.reply('请先使用 #开辟小世界 创建你的小世界');
       return true;
@@ -3058,11 +3094,18 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
       return true;
     }
 
-    const pet = world.栖息地.find(p => p.name === targetPetName);
-    if (!pet) {
+    const petIndex = findHabitatPetIndex(world.栖息地, targetPetName);
+    if (petIndex < 0) {
       e.reply(`栖息地中找不到仙宠【${targetPetName}】`);
       return true;
     }
+    const player = data.getData('player', player_qq) || {};
+    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player);
+    if (petIndex >= maxSlots) {
+      e.reply(`这只仙宠当前位于超出上限的栖息地位置（${petIndex + 1}/${maxSlots}），不能分配到工坊`);
+      return true;
+    }
+    const pet = world.栖息地[petIndex];
 
     // 检查是否已累倒
     if (pet.累倒) {
@@ -3077,7 +3120,10 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
     // 检查工坊容量
     const wsLevel = world.工坊[workshopName]?.level || 1;
     const wsCapacity = WORKSHOP_LEVEL_EFFECTS[wsLevel]?.capacity || 1;
-    const currentAssign = world.栖息地.filter(p => p.工坊 === workshopName && !p.累倒).length;
+    const currentAssign = world.栖息地
+      .slice(0, maxSlots)
+      .filter(p => p.工坊 === workshopName && !p.累倒)
+      .length;
     if (currentAssign >= wsCapacity) {
       e.reply(`${workshopName}已满（${currentAssign}/${wsCapacity}），请先 #召回休息 腾出位置或升级工坊`);
       return true;
@@ -3092,7 +3138,9 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
     pet.工坊 = workshopName;
 
     // 保存
-    const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
+    const worldIndex = data.xiaoshijie.findIndex(
+      w => String(w.player_qq) === String(player_qq)
+    );
     data.xiaoshijie[worldIndex] = world;
     const libPath = `${data.lib_path}/小世界列表.json`;
     fs.writeFileSync(libPath, JSON.stringify(data.xiaoshijie, null, 2));
@@ -3115,7 +3163,9 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
     const usr_qq = e.user_id;
     const player_qq = await channel(usr_qq);
 
-    let world = data.xiaoshijie.find(w => w.player_qq === player_qq);
+    let world = data.xiaoshijie.find(
+      w => String(w.player_qq) === String(player_qq)
+    );
     if (!world) {
       e.reply('请先使用 #开辟小世界 创建你的小世界');
       return true;
@@ -3136,17 +3186,20 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
       return true;
     }
 
-    const pet = world.栖息地.find(p => p.name === petName);
-    if (!pet) {
+    const petIndex = findHabitatPetIndex(world.栖息地, petName);
+    if (petIndex < 0) {
       e.reply(`栖息地中找不到仙宠【${petName}】`);
       return true;
     }
+    const pet = world.栖息地[petIndex];
 
     const oldWs = pet.工坊 ? `【${pet.工坊}】` : '栖息地';
     pet.工坊 = null; // 回栖息地休息玩耍
 
     // 保存
-    const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
+    const worldIndex = data.xiaoshijie.findIndex(
+      w => String(w.player_qq) === String(player_qq)
+    );
     data.xiaoshijie[worldIndex] = world;
     const libPath = `${data.lib_path}/小世界列表.json`;
     fs.writeFileSync(libPath, JSON.stringify(data.xiaoshijie, null, 2));
@@ -3161,7 +3214,9 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
     const usr_qq = e.user_id;
     const player_qq = await channel(usr_qq);
 
-    let world = data.xiaoshijie.find(w => w.player_qq === player_qq);
+    let world = data.xiaoshijie.find(
+      w => String(w.player_qq) === String(player_qq)
+    );
     if (!world) {
       e.reply('请先使用 #开辟小世界 创建你的小世界');
       return true;
@@ -3180,15 +3235,18 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
       return true;
     }
 
-    const pet = world.栖息地.find(p => p.name === petName);
-    if (!pet) {
+    const petIndex = findHabitatPetIndex(world.栖息地, petName);
+    if (petIndex < 0) {
       e.reply(`栖息地中找不到仙宠【${petName}】`);
       return true;
     }
+    const pet = world.栖息地[petIndex];
 
     pet.工坊 = null; // 回栖息地
 
-    const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
+    const worldIndex = data.xiaoshijie.findIndex(
+      w => String(w.player_qq) === String(player_qq)
+    );
     data.xiaoshijie[worldIndex] = world;
     const libPath = `${data.lib_path}/小世界列表.json`;
     fs.writeFileSync(libPath, JSON.stringify(data.xiaoshijie, null, 2));
@@ -3203,7 +3261,9 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
     const usr_qq = e.user_id;
     const player_qq = await channel(usr_qq);
 
-    let world = data.xiaoshijie.find(w => w.player_qq === player_qq);
+    let world = data.xiaoshijie.find(
+      w => String(w.player_qq) === String(player_qq)
+    );
     if (!world) {
       e.reply('请先使用 #开辟小世界 创建你的小世界');
       return true;
@@ -3213,17 +3273,20 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
 
     if (!world.工坊) world.工坊 = JSON.parse(JSON.stringify(DEFAULT_WORKSHOPS));
 
-    const lines = [`【${world.world_name}】工坊总览`];
+    const player = data.getData('player', player_qq) || {};
+    const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player);
+    const lines = [`【${world.world_name}】工坊总览（有效栖息地：${maxSlots}格）`];
 
     for (const [wsName, wsData] of Object.entries(world.工坊)) {
       const wsConfig = WORKSHOP_CONFIG[wsName];
       if (!wsConfig) continue; // 跳过已删除的工坊类型（如兽栏）
       const level = wsData.level || 1;
       const capacity = WORKSHOP_LEVEL_EFFECTS[level]?.capacity || 1;
-      const assignedPets = world.栖息地?.filter(p => p.工坊 === wsName) || [];
+      const assignedPets = world.栖息地?.slice(0, maxSlots).filter(p => p.工坊 === wsName) || [];
       const pets = assignedPets.map(p => {
+        const petIndex = world.栖息地.indexOf(p);
         const traits = (p.特性 && p.特性.length > 0) ? ` [${p.特性.join(',')}]` : '';
-        return `  ${getEnergyIcon(p.精力 ?? 100)} ${p.name}（${p.type}·${p.品级}·Lv.${p.等级 || 1}）${traits}`;
+        return `  [${1001 + petIndex}] ${getEnergyIcon(p.精力 ?? 100)} ${p.name}（${p.type}·${p.品级}·Lv.${p.等级 || 1}）${traits}`;
       }).join('\n');
 
       lines.push(`${wsConfig.icon} ${wsName} Lv.${level}（${assignedPets.length}/${capacity}）`);
@@ -3231,23 +3294,34 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
     }
 
     // 在栖息地休息玩耍的仙宠
-    const restingPets = world.栖息地?.filter(p => !p.工坊 && !p.累倒) || [];
+    const restingPets = world.栖息地?.slice(0, maxSlots).filter(p => !p.工坊 && !p.累倒) || [];
     if (restingPets.length > 0) {
       lines.push(`🏠 栖息地（休息/守卫）：`);
       for (const p of restingPets) {
         const status = p.守卫
           ? `守卫中（拦截率${Math.round(calculateGuardInterceptChance(p) * 100)}%）`
           : getWorkDescription(p, 0);
-        lines.push(`  ${getEnergyIcon(p.精力 ?? 100)} ${p.name} — ${status}`);
+        const petIndex = world.栖息地.indexOf(p);
+        lines.push(`  [${1001 + petIndex}] ${getEnergyIcon(p.精力 ?? 100)} ${p.name} — ${status}`);
       }
     }
 
     // 累倒休养中的仙宠
-    const collapsedPets = world.栖息地?.filter(p => p.累倒) || [];
+    const collapsedPets = world.栖息地?.slice(0, maxSlots).filter(p => p.累倒) || [];
     if (collapsedPets.length > 0) {
       lines.push(`💤 休养中：`);
       for (const p of collapsedPets) {
-        lines.push(`  ${p.name} — ${getWorkDescription(p, 0)}`);
+        const petIndex = world.栖息地.indexOf(p);
+        lines.push(`  [${1001 + petIndex}] ${p.name} — ${getWorkDescription(p, 0)}`);
+      }
+    }
+
+    const inactivePets = world.栖息地?.slice(maxSlots) || [];
+    if (inactivePets.length > 0) {
+      lines.push(`⚠️ 超出上限（${inactivePets.length}只，暂不工作/守卫）：`);
+      for (const p of inactivePets) {
+        const petIndex = world.栖息地.indexOf(p);
+        lines.push(`  [${1001 + petIndex}] ${p.name} — 请装备扩容道具或召回`);
       }
     }
 
