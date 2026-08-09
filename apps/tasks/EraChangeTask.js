@@ -17,6 +17,7 @@ import {
 import RealmEvents from './RealmEvents.js';
 import { formatRealmEventLocation } from '../../model/realmEventLocation.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import { repairAllDestroyedPlanes } from '../Boss/WeimianDestruction.js';
 import { triggerPeriodicRiftsForEra } from '../../model/planeRiftFestival.js';
 import {
   XIANGU_LIFECYCLE,
@@ -924,7 +925,7 @@ async checkJuelingLoss(e) {
       
       // 先处理修复（后续 era.current 重新赋值时再统一持久化）
       for (let i = 0; i < pendingRepairs; i++) {
-        await this.repairWeimian();
+        await this.repairWeimian(totalYears);
       }
       
       // ==== 关键修改：统一读取位面数据 ====
@@ -1249,7 +1250,7 @@ if (index === 4) { // 当前是绝灵时代
    * 每累计 weimianRepairInterval 年触发一次：诸天位面 +1（上限 10）
    * 三档文案：普通修复(5→8) / 高位修复(8→10) / 完全修复(10·诸天重光)
    */
-  async repairWeimian() {
+  async repairWeimian(worldYear) {
     const weimianPath = data.filePathMap.weimianList;
     let weimianData = {};
     
@@ -1266,6 +1267,19 @@ if (index === 4) { // 当前是绝灵时代
     }
     
     const oldLevel = weimianData["诸天位面"] || 5;
+
+    // 位面等级与毁灭/修复共用 Era.current.totalYears 这条诸天纪年。
+    const repairResult = await repairAllDestroyedPlanes({
+      source: '诸天位面纪年自愈',
+      worldYear,
+    });
+    if (repairResult.repairedCount > 0) {
+      await this.broadcastMessage([
+        '【诸天位面·岁月回流】',
+        `诸天纪年抵达修复节点，${repairResult.repairedCount} 个崩灭位面的法则重新闭合。`,
+        `当前诸天纪年：${repairResult.worldYear}年`,
+      ].join('\n'));
+    }
     
     // 已达顶峰，不再修复
     if (oldLevel >= 10) return;

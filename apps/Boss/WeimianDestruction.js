@@ -8,7 +8,7 @@
  * 唯准仙帝及以上境界，方能在这灭世浩劫中存活。
  * 
  * 机制：
- * - 诡异大祭开启后，每N分钟随机破坏1个位面
+ * - 诡异大祭开启后保留一次开场预警，后续按诸天纪年节点随机破坏位面
  * - 该位面所有低于准仙帝的玩家 → 入永寂（存档备份到永寂者列表，正式数据清除）
  * - 准仙帝及以上玩家 → 存活，传送至凡间
  * - 被破坏的位面在大祭期间不可再次进入
@@ -20,7 +20,7 @@ import path from 'path';
 import { data, config } from '../../api/api.js';
 import { Write_player } from '../../model/xiuxian.js';
 import { sendToYongJi } from './YongJiList.js';
-import schedule from 'node-schedule';
+import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 
 // ==================== 位面.json 工具函数 ====================
 
@@ -97,8 +97,13 @@ function markAllPlanesRepaired() {
 
 // ==================== 配置常量 ====================
 
-/** 位面破坏间隔（毫秒），默认3分钟 */
-const DESTRUCTION_INTERVAL = 3 * 60 * 1000;
+/**
+ * 位面毁灭跟随诸天位面的纪年推进。
+ * EraChangeTask 默认每次推进 1000 年，因此每两个推进节点触发一轮毁灭。
+ */
+const DESTRUCTION_WORLD_YEAR_INTERVAL = 2000;
+const CLOCK_POLL_INTERVAL = 30 * 1000;
+const FIRST_WAVE_DELAY = 10 * 1000;
 
 /** 存活最低境界：准仙帝 = mijinglevel_id >= 20 */
 const ZHUNXIAN_THRESHOLD = 20;
@@ -130,7 +135,253 @@ const PLANE_NAMES = {
 // ==================== 运行时状态 ====================
 
 let destructionTimer = null;
+let firstWaveTimer = null;
+let destructionInProgress = false;
 let destroyedPlanes = new Set();
+let protectedPlanes = new Set();
+let nextDestructionWorldYear = 0;
+
+const DESTRUCTION_REDIS_KEYS = {
+  destroyed: 'xiuxian:weimian_destruction:destroyed',
+  protected: 'xiuxian:weimian_destruction:protected',
+  rescueUsed: 'xiuxian:weimian_destruction:rescue_used',
+  currentTargets: 'xiuxian:weimian_destruction:current_targets',
+  nextWorldYear: 'xiuxian:weimian_destruction:next_world_year',
+  lastRepairWorldYear: 'xiuxian:weimian_destruction:last_repair_world_year',
+  timerActive: 'xiuxian:weimian_destruction:timer_active',
+};
+
+function currentWorldYear() {
+  try {
+    const era = config.getConfig('xiuxian', 'xiuxian')?.Era || {};
+    const current = era.current || {};
+    const totalYears = Number(current.totalYears);
+    if (Number.isFinite(totalYears)) return Math.max(0, totalYears);
+    return getRealmEventWorldYear(current.index, current.years, current.epoch);
+  } catch (e) {
+    return 0;
+  }
+}
+
+function currentPlaneLevel() {
+  const obj = readWeiMianJson();
+  const level = Number(obj?.['诸天位面']);
+  return Number.isFinite(level) ? Math.max(1, level) : 1;
+}
+
+function destructionWorldYearInterval() {
+  try {
+    const configured = Number(config.getConfig('xiuxian', 'xiuxian')?.Era?.weimianRepairInterval);
+    if (Number.isFinite(configured) && configured > 0) return configured;
+  } catch (e) {}
+  return DESTRUCTION_WORLD_YEAR_INTERVAL;
+}
+
+function persistDestructionState() {
+  return Promise.all([
+    redis.set(DESTRUCTION_REDIS_KEYS.destroyed, JSON.stringify([...destroyedPlanes])),
+    redis.set(DESTRUCTION_REDIS_KEYS.protected, JSON.stringify([...protectedPlanes])),
+    redis.set(DESTRUCTION_REDIS_KEYS.nextWorldYear, String(nextDestructionWorldYear)),
+  ]);
+}
+
+function cancelDestructionTimer(timer) {
+  if (!timer) return;
+  if (typeof timer.cancel === 'function') timer.cancel();
+  else clearInterval(timer);
+}
+
+function readActiveEvent() {
+  return Promise.all([
+    redis.get('guiyishizu'),
+    redis.get('Xiuxian:WorldBossStatus2'),
+  ]).then(([dajie, revolt]) => ({ dajie, revolt }));
+}
+
+async function loadDestructionState() {
+  try {
+    const [saved, savedProtected, savedNext] = await Promise.all([
+      redis.get(DESTRUCTION_REDIS_KEYS.destroyed),
+      redis.get(DESTRUCTION_REDIS_KEYS.protected),
+      redis.get(DESTRUCTION_REDIS_KEYS.nextWorldYear),
+    ]);
+    destroyedPlanes = saved ? new Set(JSON.parse(saved)) : new Set();
+    protectedPlanes = savedProtected ? new Set(JSON.parse(savedProtected)) : new Set();
+    const parsedNext = Number(savedNext);
+    nextDestructionWorldYear = Number.isFinite(parsedNext) && parsedNext > 0
+      ? parsedNext
+      : currentWorldYear() + destructionWorldYearInterval();
+  } catch (e) {
+    destroyedPlanes = new Set();
+    protectedPlanes = new Set();
+    nextDestructionWorldYear = currentWorldYear() + destructionWorldYearInterval();
+  }
+}
+
+async function startWorldClockDestruction() {
+  await loadDestructionState();
+  cancelDestructionTimer(destructionTimer);
+  destructionTimer = null;
+  if (firstWaveTimer) clearTimeout(firstWaveTimer);
+  firstWaveTimer = setTimeout(async () => {
+    firstWaveTimer = null;
+    await destroyRandomPlane();
+  }, FIRST_WAVE_DELAY);
+  destructionTimer = setInterval(async () => {
+    if (destructionInProgress) return;
+    const year = currentWorldYear();
+    if (year < nextDestructionWorldYear) return;
+    await destroyRandomPlane();
+    if (!destructionTimer) return;
+    nextDestructionWorldYear = Math.max(nextDestructionWorldYear + destructionWorldYearInterval(), year + 1);
+    try {
+      await redis.set(DESTRUCTION_REDIS_KEYS.nextWorldYear, String(nextDestructionWorldYear));
+    } catch (e) {}
+  }, CLOCK_POLL_INTERVAL);
+  await redis.set(DESTRUCTION_REDIS_KEYS.timerActive, 'true');
+  logger.info(`[诡异大祭] 诸天纪年时钟启动 | 当前:${currentWorldYear()} | 下一轮:${nextDestructionWorldYear}`);
+}
+
+async function getWorldClockDestructionStatus() {
+  let destroyedList = [...destroyedPlanes];
+  let protectedList = [...protectedPlanes];
+  let savedNext = nextDestructionWorldYear;
+  let active = false;
+  let rescueUsed = false;
+  let lastRepairWorldYear = null;
+  try {
+    const [timer, destroyed, protectedValue, next, used, lastRepair] = await Promise.all([
+      redis.get(DESTRUCTION_REDIS_KEYS.timerActive),
+      redis.get(DESTRUCTION_REDIS_KEYS.destroyed),
+      redis.get(DESTRUCTION_REDIS_KEYS.protected),
+      redis.get(DESTRUCTION_REDIS_KEYS.nextWorldYear),
+      redis.get(DESTRUCTION_REDIS_KEYS.rescueUsed),
+      redis.get(DESTRUCTION_REDIS_KEYS.lastRepairWorldYear),
+    ]);
+    active = timer === 'true';
+    if (destroyed) destroyedList = JSON.parse(destroyed);
+    if (protectedValue) protectedList = JSON.parse(protectedValue);
+    const parsedNext = Number(next);
+    if (Number.isFinite(parsedNext) && parsedNext > 0) savedNext = parsedNext;
+    rescueUsed = Boolean(used);
+    lastRepairWorldYear = Number(lastRepair);
+  } catch (e) {}
+
+  const remaining = DESTROYABLE_PLANES.filter(p => !destroyedList.includes(p.id));
+  const immune = Object.keys(IMMUNE_PLANES).map(Number).map(id => IMMUNE_PLANES[id]);
+  return {
+    active,
+    destroyed: destroyedList.map(id => PLANE_NAMES[id] || `未知(${id})`),
+    remaining: remaining.map(p => p.name),
+    protected: protectedList.map(id => PLANE_NAMES[id] || `未知(${id})`),
+    immune,
+    totalDestroyable: DESTROYABLE_PLANES.length,
+    destroyedCount: destroyedList.length,
+    interval: destructionWorldYearInterval(),
+    intervalUnit: 'world-year',
+    worldYear: currentWorldYear(),
+    nextWorldYear: savedNext,
+    planeLevel: currentPlaneLevel(),
+    rescueUsed,
+    lastRepairWorldYear: Number.isFinite(lastRepairWorldYear) ? lastRepairWorldYear : null,
+    threshold: ZHUNXIAN_THRESHOLD,
+  };
+}
+
+async function isDestructionEventActive() {
+  const { dajie, revolt } = await readActiveEvent();
+  if (dajie) {
+    try {
+      if (!JSON.parse(dajie).isEternallyDefeated) return true;
+    } catch (e) {
+      return true;
+    }
+  }
+  if (!revolt) return false;
+  try {
+    const status = JSON.parse(revolt);
+    return !(status.KilledTime !== -1 && Number(status.defeated) >= Number(status.totalBosses || 6));
+  } catch (e) {
+    return true;
+  }
+}
+
+async function recordBlackRevoltPlaneDestruction(plane) {
+  try {
+    const saved = await redis.get('Xiuxian:WorldBossStatus2');
+    if (!saved) return;
+    const status = JSON.parse(saved);
+    if (status.KilledTime !== -1 || !Array.isArray(status.bosses)) return;
+    status.destroyedPlanes = Array.isArray(status.destroyedPlanes) ? status.destroyedPlanes : [];
+    if (!status.destroyedPlanes.includes(plane.name)) status.destroyedPlanes.push(plane.name);
+    await redis.set('Xiuxian:WorldBossStatus2', JSON.stringify(status));
+  } catch (e) {
+    logger.warn('[黑暗动乱] 记录位面崩灭失败:', e.message);
+  }
+}
+
+/**
+ * 帝境修士可以在一次位面毁灭波次前救场：封住一个位面并撤离其中低境界修士。
+ */
+export async function rescuePlaneForPlayer(qq) {
+  const playerId = String(qq).replace('qg_', '');
+  if (!(await isDestructionEventActive())) {
+    return { ok: false, reason: '黑暗动乱尚未降临' };
+  }
+  const player = await data.getData('player', playerId);
+  if (!player) return { ok: false, reason: '角色不存在' };
+  if (Math.max(Number(player.mijinglevel_id) || 0, Number(player.xiangulevel_id) || 0) < 16) {
+    return { ok: false, reason: '至少需要大帝境界才能撑开救援通道' };
+  }
+  if (await redis.get(DESTRUCTION_REDIS_KEYS.rescueUsed)) {
+    return { ok: false, reason: '本次黑暗动乱的救场帝印已经用尽' };
+  }
+
+  await loadDestructionState();
+  const remaining = DESTROYABLE_PLANES.filter(p => !destroyedPlanes.has(p.id) && !protectedPlanes.has(p.id));
+  const ownPlane = remaining.find(p => p.id === Number(player.power_place));
+  const target = ownPlane || remaining[0];
+  if (!target) return { ok: false, reason: '所有可救援位面均已毁灭或受到保护' };
+
+  const evacuatedNames = [];
+  try {
+    const playerDir = data.filePathMap.player;
+    const files = fs.existsSync(playerDir) ? fs.readdirSync(playerDir).filter(file => file.endsWith('.json')) : [];
+    for (const file of files) {
+      const targetQq = file.replace('.json', '');
+      const targetPlayer = await data.getData('player', targetQq);
+      if (!targetPlayer || Number(targetPlayer.power_place) !== Number(target.id)) continue;
+      if ((Number(targetPlayer.mijinglevel_id) || 0) >= ZHUNXIAN_THRESHOLD) continue;
+      targetPlayer.power_place = 0;
+      targetPlayer.位面救援记录 = {
+        rescuer: player.名号 || playerId,
+        source: target.name,
+        worldYear: currentWorldYear(),
+      };
+      await Write_player(targetQq, targetPlayer);
+      evacuatedNames.push(targetPlayer.名号 || targetQq);
+    }
+  } catch (e) {
+    logger.error('[诡异大祭] 救场撤离失败:', e.message);
+  }
+
+  protectedPlanes.add(target.id);
+  await redis.set(DESTRUCTION_REDIS_KEYS.rescueUsed, JSON.stringify({
+    qq: playerId,
+    name: player.名号 || playerId,
+    planeId: target.id,
+    worldYear: currentWorldYear(),
+  }));
+  await persistDestructionState();
+
+  const groups = await getGroupList();
+  await sendToAllGroups(groups, [
+    '【帝者救场·万灵西迁】',
+    `${player.名号 || playerId}撕开帝道裂缝，护住「${target.name}」。`,
+    `低境界修士已撤离 ${evacuatedNames.length} 人；此位面将在本次黑暗动乱中免于毁灭。`,
+  ].join('\n'));
+  return { ok: true, plane: target, evacuated: evacuatedNames.length, evacuatedNames };
+}
 
 // ==================== 公开接口 ====================
 
@@ -139,40 +390,7 @@ let destroyedPlanes = new Set();
  * 在诡异大祭开启时由BOSS3.js调用
  */
 export async function startWeimianDestruction() {
-  // 从redis恢复已破坏的位面（防止重启丢失）
-  try {
-    const saved = await redis.get('xiuxian:weimian_destruction:destroyed');
-    if (saved) {
-      destroyedPlanes = new Set(JSON.parse(saved));
-    } else {
-      destroyedPlanes = new Set();
-    }
-  } catch (e) {
-    destroyedPlanes = new Set();
-  }
-
-  if (destructionTimer) {
-    destructionTimer.cancel();
-    destructionTimer = null;
-  }
-
-  logger.info(`[诡异大祭] 位面破坏系统启动 | 间隔:${DESTRUCTION_INTERVAL / 1000}s | 准仙帝门槛:mijinglevel>=${ZHUNXIAN_THRESHOLD}`);
-
-  // 首次破坏：10秒缓冲，给玩家反应时间
-  setTimeout(async () => {
-    await destroyRandomPlane();
-  }, 10000);
-
-  // 使用 node-schedule 定时任务，替代 setInterval
-  // cron表达式：每N分钟执行一次（N = DESTRUCTION_INTERVAL / 60000）
-  const intervalMin = Math.round(DESTRUCTION_INTERVAL / 60000);
-  const cronExpr = `*/${intervalMin} * * * *`;
-  destructionTimer = schedule.scheduleJob(cronExpr, async () => {
-    await destroyRandomPlane();
-  });
-  logger.info(`[诡异大祭] 定时任务已注册 | cron: ${cronExpr}`);
-
-  await redis.set('xiuxian:weimian_destruction:timer_active', 'true');
+  await startWorldClockDestruction();
 }
 
 /**
@@ -180,16 +398,28 @@ export async function startWeimianDestruction() {
  * 诡异大祭结束时由BOSS3.js调用
  */
 export async function stopWeimianDestruction() {
-  if (destructionTimer) {
-    destructionTimer.cancel();
-    destructionTimer = null;
-  }
+  cancelDestructionTimer(destructionTimer);
+  destructionTimer = null;
+  if (firstWaveTimer) clearTimeout(firstWaveTimer);
+  firstWaveTimer = null;
+  destructionInProgress = false;
   destroyedPlanes = new Set();
+  protectedPlanes = new Set();
+  nextDestructionWorldYear = 0;
+  markAllPlanesRepaired();
   try {
-    await redis.del('xiuxian:weimian_destruction:destroyed');
-    await redis.del('xiuxian:weimian_destruction:timer_active');
+    await redis.del(
+      DESTRUCTION_REDIS_KEYS.destroyed,
+      DESTRUCTION_REDIS_KEYS.protected,
+      DESTRUCTION_REDIS_KEYS.rescueUsed,
+      DESTRUCTION_REDIS_KEYS.currentTargets,
+      DESTRUCTION_REDIS_KEYS.nextWorldYear,
+      DESTRUCTION_REDIS_KEYS.lastRepairWorldYear,
+      DESTRUCTION_REDIS_KEYS.timerActive,
+    );
   } catch (e) {}
-  logger.info('[诡异大祭] 位面破坏系统停止');
+  logger.info('[诡异大祭] 位面破坏系统停止，所有位面标记已恢复');
+  return true;
 }
 
 /**
@@ -197,29 +427,7 @@ export async function stopWeimianDestruction() {
  * 供 #位面毁灭状态 命令使用
  */
 export async function getDestructionStatus() {
-  let timerActive = false;
-  let destroyedList = [];
-  try {
-    timerActive = (await redis.get('xiuxian:weimian_destruction:timer_active')) === 'true';
-    const saved = await redis.get('xiuxian:weimian_destruction:destroyed');
-    destroyedList = saved ? JSON.parse(saved) : [];
-  } catch (e) {}
-
-  const remaining = DESTROYABLE_PLANES.filter(p => !destroyedList.includes(p.id));
-  const immuneNames = DESTROYABLE_PLANES.map(p => p.id).concat(Object.keys(IMMUNE_PLANES).map(Number))
-    .filter(id => IMMUNE_PLANES[id])
-    .map(id => IMMUNE_PLANES[id]);
-
-  return {
-    active: timerActive,
-    destroyed: destroyedList.map(id => PLANE_NAMES[id] || `未知(${id})`),
-    remaining: remaining.map(p => p.name),
-    immune: immuneNames,
-    totalDestroyable: DESTROYABLE_PLANES.length,
-    destroyedCount: destroyedList.length,
-    interval: Math.round(DESTRUCTION_INTERVAL / 1000),
-    threshold: ZHUNXIAN_THRESHOLD,
-  };
+  return getWorldClockDestructionStatus();
 }
 
 /**
@@ -233,13 +441,34 @@ export function isPlaneDestroyed(planeId) {
  * 修复所有被破坏的位面（映照诸天后调用）
  * 清除内存状态、Redis记录、位面.json三处同步
  */
-export async function repairAllDestroyedPlanes() {
+export async function repairAllDestroyedPlanes(options = {}) {
+  if (!destroyedPlanes.size) {
+    try {
+      const saved = await redis.get(DESTRUCTION_REDIS_KEYS.destroyed);
+      if (saved) destroyedPlanes = new Set(JSON.parse(saved));
+    } catch (e) {}
+  }
+  const repaired = [...destroyedPlanes];
+  const requestedWorldYear = Number(options.worldYear);
+  const repairWorldYear = Number.isFinite(requestedWorldYear)
+    ? Math.max(0, requestedWorldYear)
+    : currentWorldYear();
   destroyedPlanes.clear();
+  protectedPlanes.clear();
+  nextDestructionWorldYear = repairWorldYear + destructionWorldYearInterval();
   try {
-    await redis.del('xiuxian:weimian_destruction:destroyed');
+    await redis.del(
+      DESTRUCTION_REDIS_KEYS.destroyed,
+      DESTRUCTION_REDIS_KEYS.protected,
+      DESTRUCTION_REDIS_KEYS.rescueUsed,
+      DESTRUCTION_REDIS_KEYS.currentTargets,
+    );
+    await redis.set(DESTRUCTION_REDIS_KEYS.nextWorldYear, String(nextDestructionWorldYear));
+    await redis.set(DESTRUCTION_REDIS_KEYS.lastRepairWorldYear, String(repairWorldYear));
   } catch (e) {}
-  markAllPlanesRepaired(); // 位面.json全部置回1
-  logger.info('[诡异大祭] 映照诸天——所有被毁位面已修复');
+  markAllPlanesRepaired();
+  logger.info(`[诡异大祭] 位面修复完成 | 修复:${repaired.length} | 纪年:${repairWorldYear}`);
+  return { repaired, repairedCount: repaired.length, worldYear: repairWorldYear };
 }
 
 /**
@@ -248,18 +477,24 @@ export async function repairAllDestroyedPlanes() {
  * @returns {boolean} 是否成功修复（false表示该位面未被破坏）
  */
 export async function repairSinglePlane(planeId) {
-  if (!destroyedPlanes.has(planeId)) {
-    return false;
+  planeId = Number(planeId);
+  if (!destroyedPlanes.size) {
+    try {
+      const saved = await redis.get(DESTRUCTION_REDIS_KEYS.destroyed);
+      if (saved) destroyedPlanes = new Set(JSON.parse(saved));
+    } catch (e) {}
   }
+  if (!destroyedPlanes.has(planeId)) return false;
   destroyedPlanes.delete(planeId);
+  protectedPlanes.delete(planeId);
   try {
-    await redis.set('xiuxian:weimian_destruction:destroyed',
-      JSON.stringify([...destroyedPlanes]));
+    await redis.set(DESTRUCTION_REDIS_KEYS.destroyed, JSON.stringify([...destroyedPlanes]));
+    await redis.set(DESTRUCTION_REDIS_KEYS.protected, JSON.stringify([...protectedPlanes]));
+    await redis.set(DESTRUCTION_REDIS_KEYS.lastRepairWorldYear, String(currentWorldYear()));
   } catch (e) {}
-  // 位面.json对应位面置回1
-  const planeName = PLANE_NAMES[planeId];
-  if (planeName) markPlaneRepaired(planeName);
-  logger.info(`[诡异大祭] 仙帝映照——位面「${planeName || planeId}」已修复`);
+  const repairedPlaneName = PLANE_NAMES[planeId];
+  if (repairedPlaneName) markPlaneRepaired(repairedPlaneName);
+  logger.info(`[诡异大祭] 仙帝映照——位面「${repairedPlaneName || planeId}」已修复`);
   return true;
 }
 
@@ -268,72 +503,52 @@ export async function repairSinglePlane(planeId) {
 /**
  * 随机选择一个可破坏位面并执行破坏
  */
-async function destroyRandomPlane() {
+async function destroyWorldClockPlane() {
+  if (destructionInProgress) return;
+  destructionInProgress = true;
   try {
-    // 检查大祭是否仍在进行
-    const bossAlive = await redis.get('guiyishizu');
-    if (!bossAlive) {
+    if (!(await isDestructionEventActive())) {
       await stopWeimianDestruction();
       return;
     }
-    // 检查是否已被彻底终结
-    try {
-      const bossData = JSON.parse(bossAlive);
-      if (bossData.isEternallyDefeated) {
-        await stopWeimianDestruction();
-        return;
-      }
-    } catch (e) {}
 
-    // 获取剩余可破坏的位面
-    const remaining = DESTROYABLE_PLANES.filter(p => !destroyedPlanes.has(p.id));
-
+    const remaining = DESTROYABLE_PLANES.filter(
+      plane => !destroyedPlanes.has(plane.id) && !protectedPlanes.has(plane.id),
+    );
     if (remaining.length === 0) {
-      logger.info('[诡异大祭] 所有可破坏位面已毁灭');
-      await sendFinalWarning();
-      await stopWeimianDestruction();
+      logger.info('[诡异大祭] 本轮可毁位面均已被毁或受到帝者保护');
       return;
     }
 
-    // ========== 厄土仙帝破坏力极大，一次毁灭2个位面 ==========
-    // 从剩余位面中随机取2个（不足2个时取全部）
-    const shuffled = remaining.sort(() => Math.random() - 0.5);
-    const targets = shuffled.slice(0, Math.min(2, shuffled.length));
+    const targets = [...remaining]
+      .sort(() => Math.random() - 0.5)
+      .slice(0, Math.min(2, remaining.length));
+    await redis.set(DESTRUCTION_REDIS_KEYS.currentTargets, JSON.stringify(targets.map(target => target.id)));
 
-    logger.info(`[诡异大祭] 厄土仙帝出手，本轮破坏 ${targets.length} 个位面: ${targets.map(t => t.name).join('、')}`);
-
-    for (const target of targets) {
-      logger.info(`[诡异大祭] 破坏位面: ${target.name} (ID:${target.id})`);
-
-      // 执行破坏
+    for (let index = 0; index < targets.length; index++) {
+      const target = targets[index];
       const result = await destroyPlane(target);
-
-      // 标记已破坏（内存+Redis+位面.json三处同步）
       destroyedPlanes.add(target.id);
-      markPlaneDestroyed(target.name); // 位面.json对应位面置0，穿梭/副本系统据此拦截
-
-      // 全服广播（每个位面单独广播）
+      markPlaneDestroyed(target.name);
+      await recordBlackRevoltPlaneDestruction(target);
       await broadcastDestruction(target, result);
-
-      // 两次广播之间间隔1.5秒，避免NT QQ同时发送超时
-      if (targets.length > 1 && target !== targets[targets.length - 1]) {
-        await new Promise(r => setTimeout(r, 1500));
-      }
+      if (index < targets.length - 1) await new Promise(resolve => setTimeout(resolve, 1500));
     }
 
-    // Redis统一更新一次
-    await redis.set('xiuxian:weimian_destruction:destroyed',
-      JSON.stringify([...destroyedPlanes]));
-
-    // 剩余位面不足1个时发出最终警告
-    const nowRemaining = DESTROYABLE_PLANES.filter(p => !destroyedPlanes.has(p.id));
-    if (nowRemaining.length <= 0) {
-      await sendFinalWarning();
-    }
-
+    await persistDestructionState();
+    if (destroyedPlanes.size >= DESTROYABLE_PLANES.length) await sendFinalWarning();
   } catch (err) {
     logger.error('[诡异大祭] 位面破坏失败:', err);
+  } finally {
+    destructionInProgress = false;
+    try {
+      await redis.del(DESTRUCTION_REDIS_KEYS.currentTargets);
+    } catch (e) {}
   }
+}
+
+async function destroyRandomPlane() {
+  return destroyWorldClockPlane();
 }
 
 /**
@@ -366,7 +581,7 @@ async function destroyPlane(planeInfo) {
         if (!playerData) continue;
 
         // 检查是否在目标位面
-        if (playerData.power_place !== planeInfo.id) continue;
+        if (Number(playerData.power_place) !== Number(planeInfo.id)) continue;
 
         // 检查寂灭状态——如果玩家正在寂灭中，视为已在厄土高原（不在本位面）
         let inOblivion = false;
@@ -438,7 +653,7 @@ async function broadcastDestruction(planeInfo, result) {
   const quote = ancestorQuotes[Math.floor(Math.random() * ancestorQuotes.length)];
 
   const totalCount = result.yongji + result.survived;
-  const intervalSec = Math.round(DESTRUCTION_INTERVAL / 1000);
+  const intervalSec = destructionWorldYearInterval();
 
   // 分3段发送，每段简短清晰，避免特殊Unicode字符导致NT内核超时
   const part1 = [
@@ -475,7 +690,7 @@ async function broadcastDestruction(planeInfo, result) {
     `「大祭的祭品，从来就不是一界一域。」`,
     `「而是这——整个诸天万界！」`,
     ``,
-    `【下一位面将在${intervalSec}秒后被破坏】`,
+    `【下一位面将在诸天纪年推进${intervalSec}年后被破坏】`,
   ].join('\n');
 
   // 分段发送，每段间隔800ms
@@ -651,7 +866,9 @@ export async function handleDestructionStatusCommand(e) {
     `\n══════ 诡异大祭 · 位面毁灭状态 ══════`,
     ``,
     `毁灭进度：${progressBar}`,
-    `毁灭间隔：每${status.interval}秒破坏1个位面`,
+    `毁灭时钟：诸天纪年每${status.interval}年一轮（当前${status.worldYear}年，下一轮${status.nextWorldYear}年）`,
+    `诸天位面等级：${status.planeLevel} | 帝者救场：${status.rescueUsed ? '本次已用' : '可由大帝施展一次'}`,
+    `上次法则修复纪年：${status.lastRepairWorldYear ?? '尚未记录'}`,
     `存活门槛：秘境等级≥${status.threshold}（准仙帝及以上）`,
     ``,
     `已崩灭位面（${status.destroyedCount}/${status.totalDestroyable}）：`,
@@ -661,6 +878,7 @@ export async function handleDestructionStatusCommand(e) {
     ``,
     `幸存位面（${status.remaining.length}）：`,
     ...status.remaining.map(n => `  ◇ ${n}`),
+    ...(status.protected.length > 0 ? [``, `帝者守护位面：${status.protected.join('、')}`] : []),
     ``,
     `终局位面（不可破坏）：`,
     ...status.immune.map(n => `  ◎ ${n}`),

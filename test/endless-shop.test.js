@@ -34,7 +34,7 @@ test('无尽商店商品可按编号和名称查找', () => {
 });
 
 test('无尽商店实体商品都存在于物品目录', () => {
-  const catalogs = ['丹药列表.json', '炼丹师丹药.json', '道具列表.json']
+  const catalogs = ['丹药列表.json', '炼丹师丹药.json', '道具列表.json', '盒子列表.json']
     .flatMap(file => JSON.parse(fs.readFileSync(`${itemDir}${file}`, 'utf8')));
   for (const product of ENDLESS_SHOP.filter(item => item.action === 'item')) {
     assert.ok(

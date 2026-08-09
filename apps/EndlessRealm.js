@@ -65,6 +65,11 @@ import {
 } from '../model/endlessBattleTemplate.js';
 import RealmEvents from './tasks/RealmEvents.js';
 import {
+  createTianjiaoTrace,
+  formatTianjiaoTrace,
+  getTianjiaoRealmName,
+} from '../model/tianjiaoGrowth.js';
+import {
   getEndlessMetaView,
   resetEndlessMeta,
   toggleEndlessPuzzle,
@@ -1121,6 +1126,16 @@ export class EndlessRealm extends plugin {
         await RealmEvents.broadcastEvent(treasureEvent.message);
       }
 
+      let tianjiaoClue = null;
+      if (product.action === 'tianjiao') {
+        tianjiaoClue = this.resolveTianjiaoTianji(player, userId);
+        if (!tianjiaoClue.ok) {
+          await Write_player(userId, original);
+          return e.reply(`${tianjiaoClue.message}，本次购买未消耗劫境道痕`);
+        }
+        await Write_player(userId, player);
+      }
+
       const lines = [
         '【无尽商店·购买成功】',
         `${product.name}×${amount}`,
@@ -1128,8 +1143,42 @@ export class EndlessRealm extends plugin {
         `剩余${ENDLESS_TOKEN}：${player[ENDLESS_TOKEN]}`,
       ];
       if (treasureEvent) lines.push('', ...formatTreasureClue(treasureEvent.eventData));
+      if (tianjiaoClue?.ok) {
+        lines.push(
+          '',
+          '【天骄位置天机·显化】',
+          `天机锁定：${tianjiaoClue.tianjiao.名号}`,
+          `当前境界：${tianjiaoClue.realm || tianjiaoClue.tianjiao.境界 || '未知'}`,
+          `当前位置：${formatTianjiaoTrace(tianjiaoClue.trace)}`,
+          '踪迹24小时内有效，抵达后可发送 #讨伐天骄 ' + tianjiaoClue.tianjiao.名号,
+        );
+      }
       return e.reply(lines.join('\n'));
     });
+  }
+
+  // 无尽商店「天骄位置天机」：随机锁定一位天骄的当前踪迹（24小时有效）
+  resolveTianjiaoTianji(player, userId) {
+    const list = Array.isArray(data.weimiantianjiao_list)
+      ? data.weimiantianjiao_list.filter(item => item && item.名号)
+      : [];
+    if (list.length === 0) return { ok: false, message: '诸天暂无可查探的天骄踪迹' };
+    const tianjiao = list[Math.floor(Math.random() * list.length)];
+    player.天骄踪迹 ||= {};
+    player.天骄踪迹[tianjiao.名号] = createTianjiaoTrace(tianjiao, {
+      source: '无尽商店·天机',
+      now: Date.now(),
+    });
+    return {
+      ok: true,
+      tianjiao,
+      trace: player.天骄踪迹[tianjiao.名号],
+      realm: getTianjiaoRealmName(
+        tianjiao,
+        data.Levelmijing_list || [],
+        data.xiangujinshi_list || [],
+      ),
+    };
   }
 
   async mergeEquipment(e) {
