@@ -20,6 +20,29 @@ git clone https://gitee.com/mo-wuming/zhutianxiuxian1.0.git ./plugins/zhutianxiu
 ```
 pnpm i    
 ```
+
+## 一键安全更新
+
+机器人主人可直接发送：
+
+```text
+#修仙更新
+```
+
+该指令会先完整备份 `resources/data` 和修仙 Redis 状态，备份失败时中止更新；拉取成功后自动退出当前进程，由 PM2 或 systemd 守护进程重新拉起 Yunzai。为防止硬重置覆盖存档和本地源码，聊天内强制更新已禁用。
+
+也可以在云服务器的 Yunzai 根目录执行：
+
+```bash
+bash plugins/zhutianxiuxian1.0/scripts/update.sh
+```
+
+脚本会备份数据、配置和本地源码补丁到 `plugins/zhutianxiuxian1.0/_backups/update/`，默认保留最近 14 份，并自动识别常见 PM2 进程名。自定义 PM2 进程名时使用：
+
+```bash
+YUNZAI_PM2_NAME=你的进程名 bash plugins/zhutianxiuxian1.0/scripts/update.sh
+```
+
 ## 小问题
 如在运行该修仙插件时遇到以下报错不必惊慌，是我写的时候一个失误，不过此类报错不影响插件正常运行，如果有强迫症可以到云崽根目录的lib/plugins/loader.js中改动定时任务（大概在490行的样子）
 ![解决报错](pic/photo6.jpg)

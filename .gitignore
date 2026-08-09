@@ -36,3 +36,7 @@ plugins/
 # Word 文档导出的临时媒体资源（不入库）
 .docx_media/
 
+# Runtime snapshots and administrator operation backups
+resources/backup/
+_backups/
+

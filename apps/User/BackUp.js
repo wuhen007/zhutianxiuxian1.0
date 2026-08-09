@@ -5,6 +5,81 @@ import { __PATH, channel, existplayer, Read_player } from '../../model/xiuxian.j
 
 /** 自动备份保留份数，超过则删除最旧的 */
 const KEEP_BACKUP_COUNT = 30;
+const FULL_DATA_SNAPSHOT = 'data';
+const REDIS_KEY_PATTERNS = [
+  'xiuxian:*',
+  'Xiuxian:*',
+  'tianjiao:*',
+  'yuanshen:*',
+  'shenyou:*',
+  'wuxiangta:*',
+  'xutian:*',
+  'zhutianxiuxian1.0:*',
+  'zhutianxiuxian1.0Record*',
+  'guiyishizu*',
+  'gaoyuan',
+];
+
+async function listBackupRedisKeys() {
+  const keyLists = await Promise.all(REDIS_KEY_PATTERNS.map(pattern => redis.keys(pattern)));
+  return [...new Set(keyLists.flat())];
+}
+
+async function readRedisSnapshot() {
+  const snapshot = {};
+  const keys = await listBackupRedisKeys();
+
+  for (const key of keys) {
+    const type = await redis.type(key);
+    const ttl = await redis.ttl(key);
+    const expiresAt = ttl >= 0 ? Date.now() + ttl * 1000 : null;
+    let value;
+
+    switch (type) {
+      case 'string': value = await redis.get(key); break;
+      case 'set': value = await redis.sMembers(key); break;
+      case 'hash': value = await redis.hGetAll(key); break;
+      case 'list': value = await redis.lRange(key, 0, -1); break;
+      case 'zset': value = await redis.zRangeWithScores(key, 0, -1); break;
+      default:
+        logger.warn(`[BackUp] Skipping unsupported Redis key type: ${type} (${key})`);
+        continue;
+    }
+
+    snapshot[key] = { type, value, expiresAt };
+  }
+
+  return snapshot;
+}
+
+async function restoreRedisSnapshot(snapshot) {
+  const currentKeys = await listBackupRedisKeys();
+  if (currentKeys.length) await Promise.all(currentKeys.map(key => redis.del(key)));
+
+  for (const [key, entry] of Object.entries(snapshot)) {
+    const legacyEntry = Array.isArray(entry);
+    const type = legacyEntry ? entry[0] : entry.type;
+    const value = legacyEntry ? entry[1] : entry.value;
+    const ttl = legacyEntry || !entry.expiresAt
+      ? null
+      : Math.floor((entry.expiresAt - Date.now()) / 1000);
+
+    if (ttl !== null && ttl <= 0) continue;
+
+    switch (type) {
+      case 'string': await redis.set(key, value); break;
+      case 'set': if (value.length) await redis.sAdd(key, value); break;
+      case 'hash': if (Object.keys(value).length) await redis.hSet(key, value); break;
+      case 'list': if (value.length) await redis.rPush(key, value); break;
+      case 'zset': if (value.length) await redis.zAdd(key, value); break;
+      default:
+        logger.warn(`[BackUp] Skipping unsupported Redis snapshot type: ${type} (${key})`);
+        continue;
+    }
+
+    if (ttl !== null) await redis.expire(key, ttl);
+  }
+}
 
 export class BackUp extends plugin {
   constructor() {
@@ -40,90 +115,23 @@ export class BackUp extends plugin {
     };
   }
 
-  async saveBackUp(e) {
+  async saveBackUp(e, cleanOld = true) {
     let opentime = new Date().getTime();
-    if (e && !e.isMaster) {
-      e.reply('只有主人可以执行操作');
-      return false;
+    let pendingFolder = '';
+    if (e) {
+      const masterList = config.getConfig('xiuxian', 'xiuxian').Master || [];
+      const userQQ = e.user_id.toString().replace('qg_', '');
+      if (!e.isMaster && !masterList.includes(userQQ)) {
+        e.reply('只有主人可以执行操作');
+        return false;
+      }
     }
     try {
       logger.info("修仙：备份存档");
       await e?.reply('开始备份喵~');
 
-      // 修正后的路径键名列表（确保与__PATH完全一致）
-      const needSave = [
-        'player_path',    // 玩家数据
-        'najie_path',     // 纳戒数据
-        'equipment_path', // 装备数据
-        'danyao_path',    // 丹药数据
-        'association',    // 宗门数据
-        'Exchange',       // 冲水堂
-        'qinmidu',       // 亲密度
-        'duanlu',        // 煅炉
-        'shitu',         // 师徒
-        'tiandibang',    // 天地榜
-        'custom',        // 命名装备
-        'shop',          // 洗劫
-        'temp_path',     // 缓存
-        'renwu',         // 每日任务
-        'mijing',        // 秘境
-        'inner_world_path' // 小世界
-      ].filter(key => {
-        if (!__PATH[key]) {
-          logger.warn(`配置中缺少路径定义: ${key}`);
-          return false;
-        }
-        return true;
-      });
-
-      if (needSave.length === 0) {
-        e?.reply('没有有效的备份路径配置');
-        return false;
-      }
-
-      // 收集文件数据
-      const dataFname = [];
-      const dataProm = [];
-      for (let i = 0; i < needSave.length; i++) {
-        const currentPath = __PATH[needSave[i]];
-        if (!fs.existsSync(currentPath)) {
-          logger.warn(`路径不存在: ${currentPath}`);
-          dataFname.push([]);
-          dataProm.push([]);
-          continue;
-        }
-
-        let mingzi = fs.readdirSync(currentPath).filter(fn => fn.endsWith('.json'));
-        dataFname.push(mingzi);
-        
-        let shujv = [];
-        for (let j = 0; j < mingzi.length; j++) {
-          shujv[j] = fs.promises.readFile(`${currentPath}/${mingzi[j]}`);
-          if (j % 100 === 99) shujv = await Promise.all(shujv);
-        }
-        shujv = await Promise.all(shujv);
-        dataProm.push(shujv);
-      }
-
       // redis备份
-      const redisObj = {};
-      const redisKeys = await redis.keys('xiuxian:*');
-      const redisTypes = await Promise.all(
-        redisKeys.map(key => redis.type(key))
-      );
-      const redisValues = await Promise.all(
-        redisKeys.map((key, i) => {
-          switch (redisTypes[i]) {
-            case 'string':
-              return redis.get(key);
-            case 'set':
-              return redis.sMembers(key);
-          }
-        })
-      );
-      redisKeys.forEach(
-        (key, i) => (redisObj[key] = [redisTypes[i], redisValues[i]])
-      );
+      const redisObj = await readRedisSnapshot();
 
       // 检查备份目录
       if (!fs.existsSync(__PATH.backup)) {
@@ -132,43 +140,34 @@ export class BackUp extends plugin {
 
       const nowTimeStamp = Date.now();
       const saveFolder = `${__PATH.backup}/${nowTimeStamp}`;
-      if (fs.existsSync(saveFolder)) {
+      pendingFolder = `${saveFolder}.tmp`;
+      if (fs.existsSync(saveFolder) || fs.existsSync(pendingFolder)) {
         e?.reply('备份目录已存在，可能是系统时间问题');
-        return;
+        return false;
       }
-      fs.mkdirSync(saveFolder);
+      fs.mkdirSync(pendingFolder);
 
-      // 执行备份写入
-      const finishTask = [];
-      for (let i = 0; i < needSave.length; i++) {
-        if (dataFname[i].length === 0) continue;
-        
-        fs.mkdirSync(`${saveFolder}/${needSave[i]}`, { recursive: true });
-        for (let j = 0; j < dataFname[i].length; j++) {
-          let b = fs.promises.writeFile(
-            `${saveFolder}/${needSave[i]}/${dataFname[i][j]}`,
-            dataProm[i][j]
-          );
-          finishTask.push(b);
-          if (j % 100 === 99) await Promise.all(finishTask);
-        }
-      }
+      // Keep a recursive snapshot so nested directories and root-level data files are included.
+      await fs.promises.cp(__PATH.data_path, path.join(pendingFolder, FULL_DATA_SNAPSHOT), {
+        recursive: true,
+        force: true,
+      });
 
       // 写入redis备份
-      fs.writeFileSync(`${saveFolder}/redis.json`, JSON.stringify(redisObj));
-
-      // 等待所有任务完成
-      await Promise.all(finishTask);
+      fs.writeFileSync(`${pendingFolder}/redis.json`, JSON.stringify(redisObj));
+      fs.renameSync(pendingFolder, saveFolder);
+      pendingFolder = '';
 
       // 清理旧备份，仅保留最近 KEEP_BACKUP_COUNT 份
-      await this.cleanOldBackups(KEEP_BACKUP_COUNT);
+      if (cleanOld) await this.cleanOldBackups(KEEP_BACKUP_COUNT);
 
       const timeStr = this.getTimeStr(nowTimeStamp);
       e?.reply(`存档备份成功喵~\n${timeStr}`);
       console.log("备份存档耗时：", new Date().getTime() - opentime);
 
-      return false;
+      return true;
     } catch (err) {
+      if (pendingFolder) fs.rmSync(pendingFolder, { recursive: true, force: true });
       e?.reply(`备份失败惹喵...\n${err.message}`);
       logger.error('备份存档出错:', err);
       return false;
@@ -227,10 +226,6 @@ export class BackUp extends plugin {
     }
 
     try {
-      await e.reply('正在自动备份当前存档...');
-      await this.saveBackUp(e);
-
-      await e.reply('开始读取存档...');
       let backUpList = fs.readdirSync(__PATH.backup).filter(folderName => {
         const stat = fs.statSync(`${__PATH.backup}/${folderName}`);
         return folderName === `${Number(folderName)}` && stat.isDirectory();
@@ -246,6 +241,22 @@ export class BackUp extends plugin {
       if (!fs.existsSync(backUpPath)) {
         e.reply('该存档已损坏');
         return false;
+      }
+
+      await e.reply('正在自动备份当前存档...');
+      if (!await this.saveBackUp(e, false)) {
+        await e.reply('当前存档备份失败，已中止读取，避免无法回退。');
+        return false;
+      }
+      await e.reply('开始读取存档...');
+
+      const fullDataSnapshot = path.join(backUpPath, FULL_DATA_SNAPSHOT);
+      if (fs.existsSync(fullDataSnapshot)) {
+        await fs.promises.rm(__PATH.data_path, { recursive: true, force: true });
+        await fs.promises.cp(fullDataSnapshot, __PATH.data_path, {
+          recursive: true,
+          force: true,
+        });
       }
 
       const needLoad = [
@@ -296,19 +307,11 @@ export class BackUp extends plugin {
       const redisBackupPath = `${backUpPath}/redis.json`;
       if (fs.existsSync(redisBackupPath)) {
         const redisData = JSON.parse(fs.readFileSync(redisBackupPath, 'utf8'));
-        const redisKeys = await redis.keys('xiuxian:*');
-        await Promise.all(redisKeys.map(key => redis.del(key)));
-
-        for (const [key, [type, value]] of Object.entries(redisData)) {
-          if (type === 'string') {
-            await redis.set(key, value);
-          } else if (type === 'set') {
-            await redis.sAdd(key, value);
-          }
-        }
+        await restoreRedisSnapshot(redisData);
       }
 
       await Promise.all(restoreTasks);
+      await this.cleanOldBackups(KEEP_BACKUP_COUNT);
       const timeStr = this.getTimeStr(backUpList[saveDataNum - 1]);
       e.reply(`存档已读取：${timeStr}`);
 
