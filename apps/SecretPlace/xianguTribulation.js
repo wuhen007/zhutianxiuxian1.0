@@ -13,9 +13,9 @@
 // 每一阶段每一道伤害都真实扣减 player.当前血量，并接入：
 //   ① 时代系数 difficultyRate（神话/太古/天命/末法/绝灵，由全局 Era 配置读取）
 //   ② 灵根/体质减伤（bodyEffects 表，与遮天同源）
-//   ③ 欺天阵纹与玩家防御（防御×0.3）
+//   ③ 欺天阵纹与本命帝兵护主
 //   ④ 功法/生命本源复活（真凰/万化免死、生命本源≥50 且习有复活功法）
-//   ⑤ 功法减伤（者字秘/不灭经/真凰/柳神/涅槃/雷帝/万化/凰劫 等，复活后再结算）
+//   ⑤ 复活后功法被动（从下一道劫开始生效）
 // 让玩家切实体会到「血条崩落、假死、复苏、濒死被功法救回」的艰难，且修炼成果（减伤/复活）真实生效。
 // 本模块负责原著劫难编排与统一伤害结算，实际境界、属性和奖励仍由调用方写入。
 
@@ -23,8 +23,8 @@ import { sleep, bigNumberTransform } from '../../model/xiuxian.js';
 import { getXianqiStrands } from '../../model/xianguXianqi.js';
 import { config, data } from '../../api/api.js';
 import { consumeBlackEmperorTribulationFormation } from '../../model/blackEmperor.js';
-import { reduceTribulationDamageByDefense } from '../../model/tribulationDamage.js';
 import {
+  applyXianguImperialWeaponDefense,
   hasXianguGongfa,
   settleXianguWaveDamage,
   XIANGU_REALM_ROUTES,
@@ -35,7 +35,7 @@ import {
   LEIDI_TRIBULATION_CONVERSION_WAVES,
 } from '../User/zhetianTribulationRules.js';
 
-export { XIANGU_REALM_ROUTES } from './xianguTribulationSettlement.js';
+export { XIANGU_REALM_ROUTES, calcXianguCarryDaoFlaw } from './xianguTribulationSettlement.js';
 
 // ============ 灵根/体质减伤表（与遮天渡劫 applyGongfaEffects 同源，保证「灵根减伤」生效）============
 // 本插件 player.灵根.name 取值体系（圣体/神体/命运神道体/天魔 等）与遮天一致，可直接复用。
@@ -114,6 +114,7 @@ export class XianguTribulation {
     this.dead = false;    // 是否道火吞没真我（渡劫失败）
     this._eraFactor = this._getEraFactor();
     this._tribulationPower = null;
+    this._equipment = {};
   }
 
   // 成功率（与原文公式一致；满极境 + 道韵>=500 即封顶 100%）
@@ -149,32 +150,34 @@ export class XianguTribulation {
     return `剩余血量：${bigNumberTransform(player.当前血量 || 0)}/${bigNumberTransform(this._M(player))}（肉身完整度 ${this._pct(player)}%）`;
   }
 
-  // ============ 统一伤害结算：灵根减伤 → 欺天阵纹 → 防御 → 功法减伤 ============
+  // ============ 常规伤害结算：灵根减伤 → 欺天阵纹 → 本命帝兵护主 ============
   applyDefenses(player, base) {
     const { damage: bodyDamage, msgs } = this._applyBodyDefenses(player, base);
-    const defendedDamage = this._applyThunderDefense(player, bodyDamage, msgs);
-    const finalDamage = this._gongfaReduce(player, base, defendedDamage, msgs);
-
-    return { damage: Math.max(1, Math.floor(finalDamage)), msgs };
+    const defendedDamage = this._applyNormalDefenses(player, bodyDamage, msgs);
+    return { damage: Math.max(1, Math.floor(defendedDamage)), msgs };
   }
 
-  _applyThunderDefense(player, damage, msgs) {
+  _applyNormalDefenses(player, damage, msgs) {
     const formation = consumeBlackEmperorTribulationFormation(player);
     if (formation.message && !formation.announced) {
       msgs.push(formation.message);
       formation.announced = true;
     }
-    const defended = reduceTribulationDamageByDefense(
-      damage * formation.damageMultiplier,
-      player.防御
+    const defended = applyXianguImperialWeaponDefense(
+      player,
+      this._equipment,
+      damage * formation.damageMultiplier
     );
-    if (defended.reduction > 0) {
-      msgs.push(`【道躯防御】防御×0.3抵消 ${bigNumberTransform(defended.reduction)} 点劫伤`);
+    if (defended.triggered) {
+      msgs.push(
+        `【本命帝兵护主·${defended.rank}】${defended.name}自主复苏，减免 `
+        + `${Math.round(defended.reductionRate * 100)}% 劫伤（${bigNumberTransform(defended.reduction)}）`
+      );
     }
     return defended.damage;
   }
 
-  // 灵根防御必须单独结算，供致死判定先触发复活，再应用功法减伤。
+  // 灵根/体质属于常规减伤，不要求先触发功法复活。
   _applyBodyDefenses(player, base) {
     let finalDamage = base;
     const msgs = [];
@@ -281,7 +284,6 @@ export class XianguTribulation {
   _gongfaReduce(player, originalDamage, runningDamage, msgs) {
     let finalDamage = runningDamage;
     const M = this._M(player);
-    const learned = (g) => this._hasGongfa(player, g);
 
     // 者字秘（含时代系数，参考遮天）
     if (player.者字秘效果 && player.者字秘效果.剩余次数 > 0) {
@@ -291,10 +293,6 @@ export class XianguTribulation {
       player.当前血量 = Math.min(M, (player.当前血量 || 0) + heal);
       player.者字秘效果.剩余次数--;
       msgs.push(`【者字秘】减伤 ${bigNumberTransform(r)}，回血 ${bigNumberTransform(heal)}`);
-    } else if (learned('者字秘')) {
-      const r = originalDamage * 0.25 * this._eraFactor;
-      finalDamage -= r;
-      msgs.push(`【者字秘】向死而生·减伤 ${bigNumberTransform(r)}`);
     }
 
     // 不灭经
@@ -305,20 +303,13 @@ export class XianguTribulation {
       player.当前血量 = Math.min(M, (player.当前血量 || 0) + heal);
       player.不灭经效果.剩余次数--;
       msgs.push(`【不灭经】减伤 ${bigNumberTransform(r)}，回血 ${bigNumberTransform(heal)}`);
-    } else if (learned('不灭经')) {
-      const r = originalDamage * 0.25;
-      finalDamage -= r;
-      msgs.push(`【不灭经】肉身不朽·减伤 ${bigNumberTransform(r)}`);
     }
 
     // 真凰宝术（阶段减伤）
     if (player.真凰效果 && player.真凰效果.阶段减伤 > 0) {
       const r = finalDamage * player.真凰效果.阶段减伤;
       finalDamage -= r;
-      msgs.push(`【真凰宝术】减伤 ${bigNumberTransform(r)}`);
-    } else if (learned('真凰宝术')) {
-      const r = finalDamage * 0.20;
-      finalDamage -= r;
+      player.真凰效果.阶段减伤 = 0;
       msgs.push(`【真凰宝术】减伤 ${bigNumberTransform(r)}`);
     }
 
@@ -328,10 +319,6 @@ export class XianguTribulation {
       finalDamage -= r;
       player.柳神效果.庇护层数--;
       msgs.push(`【柳神法】庇护·减伤 ${bigNumberTransform(r)}`);
-    } else if (learned('柳神法')) {
-      const r = finalDamage * 0.15;
-      finalDamage -= r;
-      msgs.push(`【柳神法】减伤 ${bigNumberTransform(r)}`);
     }
 
     // 涅槃仙功
@@ -339,10 +326,6 @@ export class XianguTribulation {
       const r = originalDamage * (player.涅槃仙功效果.减伤比例 || 0.2);
       finalDamage -= r;
       player.涅槃仙功效果.剩余次数--;
-      msgs.push(`【涅槃仙功】减伤 ${bigNumberTransform(r)}`);
-    } else if (learned('涅槃仙功')) {
-      const r = finalDamage * 0.15;
-      finalDamage -= r;
       msgs.push(`【涅槃仙功】减伤 ${bigNumberTransform(r)}`);
     }
 
@@ -356,26 +339,11 @@ export class XianguTribulation {
       player.当前血量 = Math.min(M, (player.当前血量 || 0) + heal);
       player.雷帝效果.剩余次数--;
       msgs.push(`【雷帝宝术】转化治疗 ${bigNumberTransform(heal)}`);
-    } else if (learned('雷帝宝术')) {
-      const heal = Math.floor(M * 0.10);
-      player.当前血量 = Math.min(M, (player.当前血量 || 0) + heal);
-      msgs.push(`【雷帝宝术】劫力转化·回血 ${bigNumberTransform(heal)}`);
-    }
-
-    // 万化圣诀（免死在 _tryRevive 处理，这里给常驻减伤）
-    if (learned('万化圣诀') && !(player.万化圣诀效果)) {
-      const r = finalDamage * 0.10;
-      finalDamage -= r;
-      msgs.push(`【万化圣诀】化死为生·减伤 ${bigNumberTransform(r)}`);
     }
 
     // 凰劫再生术
     if (player.凰劫效果 && player.凰劫效果.阶段减伤 > 0) {
       const r = finalDamage * player.凰劫效果.阶段减伤;
-      finalDamage -= r;
-      msgs.push(`【凰劫再生术】减伤 ${bigNumberTransform(r)}`);
-    } else if (learned('凰劫再生术')) {
-      const r = finalDamage * 0.15;
       finalDamage -= r;
       msgs.push(`【凰劫再生术】减伤 ${bigNumberTransform(r)}`);
     }
@@ -411,15 +379,49 @@ export class XianguTribulation {
     const reviveGongfa = REVIVE_GONGFA.find((g) => this._hasGongfa(player, g));
     if (player.生命本源 >= 50 && reviveGongfa) {
       player.生命本源 -= 50;
-      player.当前血量 = Math.floor(M * 0.5);
       this.revived = true;
-      if (reviveGongfa === '雷帝宝术') {
-        player.雷帝效果 = {
-          转化比例: LEIDI_TRIBULATION_CONVERSION_RATE,
-          剩余次数: LEIDI_TRIBULATION_CONVERSION_WAVES,
-          抗性提升: 0.1,
-          当前抗性: 0,
-        };
+      switch (reviveGongfa) {
+        case '者字秘':
+          player.当前血量 = Math.floor(M * 0.7);
+          player.者字秘效果 = { 减伤比例: 0.25, 剩余次数: 3, 恢复比例: 0.05 };
+          break;
+        case '真凰宝术':
+          player.当前血量 = M;
+          player.真凰效果 = { 免死: true, 阶段减伤: 0.5 };
+          break;
+        case '雷帝宝术':
+          player.当前血量 = Math.floor(M * 0.4);
+          player.雷帝效果 = {
+            转化比例: LEIDI_TRIBULATION_CONVERSION_RATE,
+            剩余次数: LEIDI_TRIBULATION_CONVERSION_WAVES,
+            抗性提升: 0.1,
+            当前抗性: 0,
+          };
+          break;
+        case '柳神法':
+          player.当前血量 = Math.floor(M * 0.6);
+          player.柳神效果 = {
+            庇护层数: 3,
+            减伤比例: 0.2,
+            持续恢复: { 回合数: 5, 治疗量: Math.floor(M * 0.08) },
+          };
+          break;
+        case '不灭经':
+          player.当前血量 = M;
+          player.不灭经效果 = { 减伤比例: 0.4, 剩余次数: 5, 恢复比例: 0.3 };
+          break;
+        case '补天术':
+          player.当前血量 = Math.floor(M * 0.8);
+          player.补天术效果 = { 冷却缩减: 0.2, 持续时间: 3 };
+          break;
+        case '万化圣诀':
+          player.当前血量 = Math.floor(M * 0.5);
+          player.万化圣诀效果 = { 剩余次数: 3, 免死: true };
+          break;
+        case '涅槃仙功':
+          player.当前血量 = Math.floor(M * 0.3);
+          player.涅槃仙功效果 = { 减伤比例: 0.2, 剩余次数: 2 };
+          break;
       }
       return `功法复活·${reviveGongfa}（消耗50生命本源，剩余 ${player.生命本源}）`;
     }
@@ -427,7 +429,7 @@ export class XianguTribulation {
     return null;
   }
 
-  // ============ 一道劫：灵根减伤 → 濒死复活 → 功法减伤 → 真实扣血 ============
+  // ============ 一道劫：常规防御 → 已激活功法被动 → 致死复活并避开本劫 ============
   _dealWave(player, frac, wave, note, opts = {}) {
     const M = this._M(player);
     // 上位冲关与遮天一致，使用理论攻击作为每道劫的伤害基准。
@@ -435,7 +437,7 @@ export class XianguTribulation {
     const eraFactor = this._tribulationPower ? this._eraFactor : 1;
     const base = attackBase * frac * (1 + 0.03 * wave) * eraFactor;
     const { damage: bodyDamage, msgs: bodyMsgs } = this._applyBodyDefenses(player, base);
-    const defendedDamage = this._applyThunderDefense(player, bodyDamage, bodyMsgs);
+    const defendedDamage = this._applyNormalDefenses(player, bodyDamage, bodyMsgs);
     const sourceName = opts.sourceName || '道火本源';
     const fatalName = opts.fatalName || '劫力';
 
@@ -448,17 +450,27 @@ export class XianguTribulation {
     for (const m of bodyMsgs) lines.push(`　　${m}`);
 
     const gongfaMsgs = [];
+    const gongfaActive = this.revived;
     const settlement = settleXianguWaveDamage({
       player,
       bodyDamage: defendedDamage,
       tryRevive: () => this._tryRevive(player),
+      gongfaActive,
       applyGongfaReduction: () => this._gongfaReduce(player, base, defendedDamage, gongfaMsgs),
     });
     if (settlement.revival) {
-      lines.push(`　${fatalName}致死！先触发${settlement.revival}｜血量回升至 ${bigNumberTransform(settlement.revivedHp)}`);
+      lines.push(
+        `　${fatalName}致死！触发${settlement.revival}｜血量回升至 `
+        + `${bigNumberTransform(settlement.revivedHp)}，并避开本道劫数`
+      );
     }
     for (const m of gongfaMsgs) lines.push(`　　${m}`);
-    lines.push(`　功法减伤后实受 ${bigNumberTransform(settlement.damage)}`);
+    if (!settlement.avoided) {
+      lines.push(
+        `　${gongfaActive ? '复活被动结算后' : '常规防御后'}实受 `
+        + `${bigNumberTransform(settlement.damage)}`
+      );
+    }
 
     if (settlement.dead) {
       this.dead = true;
@@ -521,7 +533,8 @@ export class XianguTribulation {
   }
 
   // ============ 主流程 ============
-  async run(e, player, ctx) {
+  async run(e, player, ctx = {}) {
+    this._equipment = ctx.equipment || {};
     const name = player.名号 || '修士';
     const successRate = this.calcSuccessRate(ctx.completed, ctx.daoyun);
 
@@ -535,8 +548,7 @@ export class XianguTribulation {
       `"以天地为炉，以万道为火，焚肉身，烧元神，筑真我。"`,
       `——这条路，古来走者多形神俱灭。`,
       ``,
-      `仙古渡劫基础伤害不随时代缩放（与遮天一致）｜者字秘减伤仍随时代（与遮天一致）`,
-      `结算顺序：灵根减伤 / 功法复活 / 功法减伤`,
+      `结算顺序：灵根减伤 / 本命帝兵护主 / 致死复活 / 复活后功法被动`,
       ``,
       this._bar(player)
     ].join('\n'));
@@ -722,6 +734,7 @@ export class XianguTribulation {
   async runRealmBreakthrough(e, player, ctx = {}) {
     this.revived = false;
     this.dead = false;
+    this._equipment = ctx.equipment || {};
 
     const fromLevelId = Number(ctx.fromLevelId ?? player.xiangulevel_id);
     const route = XIANGU_REALM_ROUTES[fromLevelId];
@@ -734,10 +747,11 @@ export class XianguTribulation {
     return this[route.tribulationMethod](e, player);
   }
 
-  async runXianqiCondensation(e, player, targetStrand) {
+  async runXianqiCondensation(e, player, targetStrand, equipment = {}) {
     this.revived = false;
     this.dead = false;
     this._tribulationPower = null;
+    this._equipment = equipment;
 
     const current = getXianqiStrands(player);
     if (Number(player.xiangulevel_id) !== 8 || current === 0 || targetStrand !== current + 1) {
@@ -746,6 +760,54 @@ export class XianguTribulation {
     if (targetStrand === 2) return this._runSecondXianqiTrial(e, player);
     if (targetStrand === 3) return this._runThirdXianqiTrial(e, player);
     throw new Error('不存在对应的仙气试炼');
+  }
+
+  // ============ 虚道极境·九天十地劫入口（境界内试炼，不晋升境界）============
+  async runJiutianShidiTrial(e, player, equipment = {}) {
+    this.revived = false;
+    this.dead = false;
+    this._equipment = equipment;
+    if (Number(player.xiangulevel_id) !== 12) {
+      throw new Error('九天十地劫只能在虚道境挑战');
+    }
+    if (player.xiangu_jiutian_shidi) {
+      throw new Error('九天十地劫已经渡过，虚道极境无需再试');
+    }
+    this._tribulationPower = calcXianguTribulationPower({ ...player, xiangulevel_id: 12 }, data);
+    const result = await this._runJiutianShidiTribulation(e, player);
+    return {
+      success: result.success,
+      revived: this.revived,
+      targetLevelId: 12,
+      path: '九天十地劫',
+      reward: result.reward,
+      niFaZhanWo: result.niFaZhanWo,
+      routeText: result.routeText,
+    };
+  }
+
+  // ============ 斩我极境·斩仙铡刀劫入口（境界内试炼，不晋升境界）============
+  async runZhanxianZhandaoTrial(e, player, equipment = {}) {
+    this.revived = false;
+    this.dead = false;
+    this._equipment = equipment;
+    if (Number(player.xiangulevel_id) !== 13) {
+      throw new Error('斩仙铡刀劫只能在斩我境挑战');
+    }
+    if (player.xiangu_zhanxian_zhadao) {
+      throw new Error('斩仙铡刀劫已经渡过，斩我极境无需再试');
+    }
+    this._tribulationPower = calcXianguTribulationPower({ ...player, xiangulevel_id: 13 }, data);
+    const result = await this._runZhanxianZhandaoTribulation(e, player);
+    return {
+      success: result.success,
+      revived: this.revived,
+      targetLevelId: 13,
+      path: '斩仙铡刀',
+      reward: result.reward,
+      zhanwoPeak: result.zhanwoPeak,
+      routeText: result.routeText,
+    };
   }
 
   async _runSecondXianqiTrial(e, player) {
@@ -1109,35 +1171,35 @@ export class XianguTribulation {
       `【斩我绝巅·遁去其一】`,
       ``,
       `${name}补全斩我境的最后道痕，以完整法则叩问遁一。`,
-      `本关先重现斩我阶段的斩仙铡刀淬炼，再承受原著明确记载的遁一天劫。`
+      `原著中石昊与帝族强者皓丰血战时直接在战场上突破：一边承受雷霆洗礼，一边与强敌厮杀。`
     ].join('\n'));
     await sleep(1500);
 
     let dead = await this._stageWaves(e, player, [
-      `【第一关·斩仙铡刀】`,
-      `雷池古台升起，铡刀针对境界显化，号称难以熬过的必死之劫。`
+      `【第一关·战场血战】`,
+      `帝族强者皓丰率众压境，斩我巅峰的杀伐之力席卷战场。`,
+      `要破遁一，唯有在血战中引动天劫，将战场化作渡劫之地。`
     ], [
-      { frac: 0.04, note: '千百雷光磨灭斩我道痕' },
-      { frac: 0.045, note: '雷池古台锁定肉身与元神' },
-      { frac: 0.055, note: '斩仙铡刀落下，斩开元神印记' },
-      { frac: 0.07, note: '不朽印记连同旧日束缚一并斩断' }
+      { frac: 0.04, note: '与帝族强者皓丰血战，战至大道轰鸣' },
+      { frac: 0.05, note: '战斗中主动牵引天劫，雷霆降临战场' },
+      { frac: 0.06, note: '一边承受雷霆洗礼，一边与帝族强者厮杀' }
     ], [
-      `${name}没有避开铡刀，反借刀锋斩下体内不朽印记。`,
-      `外来束缚既除，自身大道终于完整无缺。`
+      `${name}浑身浴血，气息却在雷霆中不断暴涨。`,
+      `战场天劫已至，遁一境壁垒开始松动。`
     ], {
-      reportTitle: '——斩我前置淬炼·雷池古台——',
-      sourceName: '铡刀劫光',
-      fatalName: '斩仙铡刀',
-      summaryText: '【印记斩落】借必死之劫斩除外来不朽印记'
+      reportTitle: '——战场破境·血战引劫——',
+      sourceName: '战场劫力',
+      fatalName: '遁一雷罚',
+      summaryText: '【战场引劫】血战之中，遁一天劫遮蔽天宇'
     });
     if (dead) return { success: false, revived: this.revived, targetLevelId: 14 };
 
     const healed = this._restoreToFull(player);
     await e.reply([
-      `【道基圆满·遁一天劫】`,
+      `【战场喘息·遁一天劫】`,
       ``,
       `${name}以雷池真液修复残躯，恢复 ${bigNumberTransform(healed)} 点血量。`,
-      `境界壁垒松动，真正的遁一天劫遮蔽天宇。原著只以“可怕无边、满身是血、九死一生”概括此战。`,
+      `境界壁垒彻底松动，完整的遁一天劫镇压而下。原著只以"可怕无边、满身是血、九死一生"概括此战。`,
       ``,
       this._bar(player)
     ].join('\n'));
@@ -1145,7 +1207,7 @@ export class XianguTribulation {
 
     dead = await this._stageWaves(e, player, [
       `【第二关·遁一大劫】`,
-      `完整大道与天地规则正面碰撞，一线生机藏在无边毁灭之中。`
+      `完整大道与天地规则正面碰撞，帝族强者的杀招仍在雷霆中伺机而动，一线生机藏在无边毁灭之中。`
     ], [
       { frac: 0.045, note: '万道雷霆压落，斩我道果开始蜕变' },
       { frac: 0.05, note: '法则汪洋冲刷，血肉片片剥落' },
@@ -1157,11 +1219,11 @@ export class XianguTribulation {
       `${name}满身是血地走出雷海，取到价值惊人的雷池真液。`,
       `大道遁去其一，道行超然物外，正式踏入遁一境。`
     ], {
-      waveOffset: 4,
+      waveOffset: 3,
       reportTitle: '——遁一境·可怕无边之劫——',
       sourceName: '遁一劫力',
       fatalName: '遁一雷罚',
-      summaryText: '【遁去其一】九死一生渡过遁一天劫'
+      summaryText: '【遁去其一】战场之上九死一生渡过遁一天劫'
     });
 
     return {
@@ -1170,7 +1232,142 @@ export class XianguTribulation {
       targetLevelId: 14,
       path: '遁去其一',
       reward: '雷池真液',
-      routeText: '斩仙铡刀斩去外来印记，继而九死一生渡过遁一天劫。'
+      routeText: '与帝族强者皓丰血战中引动天劫，边战边渡，九死一生踏出斩我境最后一步，正式迈入遁一。'
+    };
+  }
+
+  // ============ 虚道极境·九天十地劫（第1409章）============
+  // 境界内独立试炼：渡后仍是虚道境，但已可逆伐斩我境强者。
+  // 对应原著：天劫演化九天十地，各层出现古代强者、异域大军与帝族年轻至尊烙印，
+  // 近似重现昔日九天十地与异域的大战；其后还有隐藏的最后一层天，石昊闯入雷池降服劫雷之力。
+  async _runJiutianShidiTribulation(e, player) {
+    const name = player.名号 || '修士';
+
+    let dead = await this._stageWaves(e, player, [
+      `【第一关·九天十地演化】`,
+      `天劫化为一方宏大的世界，九天在上、十地在下，古代强者的烙印相继显化。`
+    ], [
+      { frac: 0.035, note: '异域大军自地平线压来，杀伐气冲霄' },
+      { frac: 0.04, note: '古代强者烙印复苏，同境围杀' },
+      { frac: 0.045, note: '帝族年轻至尊烙印齐出，至尊气息弥漫' },
+      { frac: 0.05, note: '九天十地齐震，重现昔日两界大战' },
+      { frac: 0.06, note: '万道轰鸣，大道古器显化镇压' }
+    ], [
+      `${name}杀穿十地、踏破九天，却发现劫云深处还有一座隐藏的最后一层天。`,
+      `渡过此劫不会晋阶，却会让虚道境的极限再被撑开一线。`
+    ], {
+      reportTitle: '——九天十地劫·两界大战——',
+      sourceName: '九天十地劫力',
+      fatalName: '大劫磨灭',
+      summaryText: '【九天十地渡尽】虚道极限被再度撑开'
+    });
+    if (dead) return { success: false, revived: this.revived, targetLevelId: 12 };
+
+    const healed = this._restoreToFull(player);
+    await e.reply([
+      `【最后一层天·雷池降服】`,
+      ``,
+      `${name}短暂复苏，恢复 ${bigNumberTransform(healed)} 点血量。`,
+      `最后一层天中雷池翻涌，劫雷不再是天罚，而是可以降服的造化。`,
+      ``,
+      this._bar(player)
+    ].join('\n'));
+    await sleep(2500);
+
+    dead = await this._stageWaves(e, player, [
+      `【第二关·隐藏的最后一层天】`,
+      `毁灭与生机并存，唯有杀入雷池、降服劫雷之力，方能圆满此劫。`
+    ], [
+      { frac: 0.05, note: '最后一层天合拢，劫威再涨' },
+      { frac: 0.06, note: '雷池翻涌，毁灭本源灌入道躯' },
+      { frac: 0.07, note: '万雷归一，轰击体内道种' },
+      { frac: 0.085, note: '雷池之巅，逆伐斩我之力凝聚' }
+    ], [
+      `${name}在雷池之巅站定，劫雷之力被其降服、化为己用。`,
+      `境界仍是虚道，战力却已跨过斩我门槛——可逆伐斩我境强者。`
+    ], {
+      waveOffset: 5,
+      reportTitle: '——九天十地劫·最后一层天——',
+      sourceName: '雷池本源',
+      fatalName: '大劫磨灭',
+      summaryText: '【劫毕·逆伐斩我】虚道极限圆满，战力可伐斩我'
+    });
+
+    return {
+      success: !dead,
+      revived: this.revived,
+      targetLevelId: 12,
+      path: '九天十地劫',
+      reward: dead ? null : '雷池真液',
+      niFaZhanWo: !dead,
+      routeText: dead ? null : '九天十地劫渡尽，境界仍是虚道，却已可逆伐斩我境强者。'
+    };
+  }
+
+  // ============ 斩我极境·斩仙铡刀劫（第1632章）============
+  // 境界内独立试炼：渡后仍斩我，却已斩去体内外来不朽印记、臻至斩我境巅峰。
+  // 对应原著：葬地雷渊大劫，斩仙铡刀比大道铡刀更恐怖；
+  // 石昊借铡刀斩去体内六位真仙留下的不朽印记，肉身被铡断而元神不灭，
+  // 以雷劫液修复后达到斩我境巅峰，当时已可突破遁一却主动压制。
+  async _runZhanxianZhandaoTribulation(e, player) {
+    const name = player.名号 || '修士';
+
+    let dead = await this._stageWaves(e, player, [
+      `【第一关·葬地雷渊】`,
+      `雷渊古台自虚无中升起，斩仙铡刀针对境界显化——它比大道铡刀更恐怖，号称难以熬过的必死之劫。`
+    ], [
+      { frac: 0.04, note: '雷渊万劫齐发，斩我道痕被逐一磨灭' },
+      { frac: 0.045, note: '雷池古台锁定肉身与元神' },
+      { frac: 0.055, note: '斩仙铡刀落下，斩开元神印记' },
+      { frac: 0.07, note: '不朽印记连同旧日束缚一并斩断' }
+    ], [
+      `${name}没有避开铡刀，反借刀锋斩下体内外来印记。`,
+      `这一劫不为晋阶，只为让斩我境走到真正的巅峰。`
+    ], {
+      reportTitle: '——斩我极境·葬地雷渊——',
+      sourceName: '铡刀劫光',
+      fatalName: '斩仙铡刀',
+      summaryText: '【印记斩落】借必死之劫斩除外来不朽印记'
+    });
+    if (dead) return { success: false, revived: this.revived, targetLevelId: 13 };
+
+    const healed = this._restoreToFull(player);
+    await e.reply([
+      `【雷劫液修复·肉身铡断】`,
+      ``,
+      `${name}以雷劫液修复残躯，恢复 ${bigNumberTransform(healed)} 点血量。`,
+      `斩仙铡刀之劫仍有余波，体内最后一缕不朽印记正在崩解。`,
+      ``,
+      this._bar(player)
+    ].join('\n'));
+    await sleep(2500);
+
+    dead = await this._stageWaves(e, player, [
+      `【第二关·斩去不朽印记】`,
+      `铡刀再落，这一刀要斩尽外来印记，让真我彻底独立于天地。`
+    ], [
+      { frac: 0.05, note: '肉身被铡刀斩断，元神不灭' },
+      { frac: 0.06, note: '六位真仙留下的不朽印记崩解' },
+      { frac: 0.075, note: '雷劫液重塑道躯，斩我道基再凝' }
+    ], [
+      `${name}自雷渊中站起，外来束缚尽去，斩我境圆满无缺。`,
+      `分明已可踏入遁一，却主动压制境界，以斩我巅峰的姿态继续打磨自身之道。`
+    ], {
+      waveOffset: 4,
+      reportTitle: '——斩仙铡刀·不朽印记——',
+      sourceName: '铡刀劫光',
+      fatalName: '斩仙铡刀',
+      summaryText: '【斩我巅峰】不朽印记尽斩，压制境界不晋遁一'
+    });
+
+    return {
+      success: !dead,
+      revived: this.revived,
+      targetLevelId: 13,
+      path: '斩仙铡刀',
+      reward: dead ? null : '雷池真液',
+      zhanwoPeak: !dead,
+      routeText: dead ? null : '斩仙铡刀斩去外来不朽印记，臻至斩我境巅峰，主动压制不晋遁一。'
     };
   }
 
@@ -1256,8 +1453,8 @@ export class XianguTribulation {
       { frac: 0.085, note: '大道本源拷问：成道是否顺其自然' },
       { frac: 0.10, note: '九天九夜最后一击，只余残骨与真血' }
     ], [
-      `${name}借大天地载道，强行走完至尊路；急于求成也在道基中留下了一丝隐患。`,
-      `尸骨路散去，人道天堑被越过，至尊威压席卷天地！`
+      `${name}强行走完至尊路，尸骨路散去，人道天堑被越过。`,
+      `然而成道之考尚未结束——天地大道已悄然降临，要收走这条逆天之路。`
     ], {
       waveOffset: 9,
       reportTitle: '——至尊尸骨路·最终考验——',
@@ -1265,14 +1462,63 @@ export class XianguTribulation {
       fatalName: '大道磨灭',
       summaryText: '【人道绝巅】九天九夜拷问结束，至尊道果功成'
     });
+    if (dead) return { success: false, revived: this.revived, targetLevelId: 15 };
+
+    healed = this._restoreToFull(player);
+    await e.reply([
+      `【载道之劫·天地同化】`,
+      ``,
+      `${name}短暂复苏，恢复 ${bigNumberTransform(healed)} 点血量。`,
+      `至尊威压未落，天地大道自虚无中显化，试图反过来同化修士——`,
+      `"顺我者，承道统；逆我者，化飞灰。"`,
+      ``,
+      this._bar(player)
+    ].join('\n'));
+    await sleep(2500);
+
+    dead = await this._stageWaves(e, player, [
+      `【第四关·载道】`,
+      `这是最后一道考验：天地大道试图将成道者化为自身傀儡，只留两条路——借道载道，或以我为根。`
+    ], [
+      { frac: 0.055, note: '天地大道垂落，欲将道躯同化为大道傀儡' },
+      { frac: 0.065, note: '道音贯脑，自身之道被层层侵蚀' },
+      { frac: 0.085, note: '大天地意志压顶，逼问成道者：顺天，还是立己？' }
+    ], [], {
+      waveOffset: 14,
+      reportTitle: '——至尊路·载道之劫——',
+      sourceName: '载道之力',
+      fatalName: '大道同化',
+      summaryText: '【载道抉择】自身之道与天地大道正面相抗'
+    });
+
+    const { externalDaoFlaw, ownWayStrong } = calcXianguCarryDaoFlaw(player);
+    const finalFlaw = !dead && externalDaoFlaw;
+
+    if (!dead) {
+      await e.reply(ownWayStrong ? [
+        `${name}以己身为种、以我为根，将天地大道尽数归入自身之道！`,
+        `"天地不仁，我自成道。"——自身之道与至尊道果彼此印证，圆满无缺。`,
+        ``,
+        `【载道渡尽】以我为根，借道而不失本我`
+      ].join('\n') : [
+        `${name}最终选择借大天地载道，至尊道果得以稳固，却也在道基中留下了一丝隐患。`,
+        `日后需重走以身为种之路，方能补全这一线残缺。`,
+        ``,
+        `【载道渡尽】借道载道，道基留有一丝隐患`
+      ].join('\n'));
+    }
 
     return {
       success: !dead,
       revived: this.revived,
       targetLevelId: 15,
       path: '至尊路',
-      externalDaoFlaw: !dead,
-      routeText: '红尘业火、天地意志与九天九夜尸骨路尽数渡过；此番借外道载道留下隐患，日后仍需重走以身为种之路。'
+      externalDaoFlaw: finalFlaw,
+      routeText: dead
+        ? null
+        : ownWayStrong
+          ? '红尘业火、天地意志、九天九夜尸骨路与载道之劫尽数渡过；以身为种、以我为根，自身之道圆满无缺。'
+          : '红尘业火、天地意志与九天九夜尸骨路尽数渡过；载道之劫中借外道载道留下隐患，日后仍需重走以身为种之路。'
     };
   }
 }

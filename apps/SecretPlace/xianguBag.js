@@ -28,6 +28,121 @@ function getEntryName(entry) {
   return String(entry.name ?? entry.名称 ?? '').trim();
 }
 
+// Keep rewards already sitting in an open or pending secret-place bag aligned
+// with the current item catalogue before they are displayed or settled.
+const XIANGU_ITEM_MIGRATIONS = Object.freeze({
+  '柳神法残篇': { class: '材料', type: '材料' },
+  '补天术残篇': { class: '材料', type: '材料' },
+  '真龙宝术': { class: '功法', type: '功法' },
+  '六道轮回天功': { class: '功法', type: '功法' },
+  '真龙精血': { class: '丹药', type: '丹药' },
+  '仙古遗种蛋': { class: '道具', type: '道具' },
+  '雷池液': { class: '道具', type: '道具' },
+  '龙鳞': { name: '真龙龙鳞', class: '道具', type: '道具' },
+  '世界树残叶': { class: '道具', type: '道具' },
+  '天子印碎片': { class: '材料', type: '材料' },
+  '天角蚁宝术残卷': { class: '材料', type: '材料' },
+  '真凰精血': { class: '丹药', type: '丹药' },
+  '凶巢阵纹碎片': { class: '材料', type: '材料' },
+  '轮回印记': { class: '材料', type: '材料' },
+  '六道轮回残卷': { class: '材料', type: '材料' },
+  '神魂结晶': { class: '材料', type: '材料' },
+  '剑谷剑意碎片': { class: '材料', type: '材料' },
+  '天晶剑芒': { class: '材料', type: '材料' },
+  '古剑残躯': { class: '材料', type: '材料' },
+  '仙殿秘术残页': { class: '材料', type: '材料' },
+  '不死鸟精血': { class: '丹药', type: '丹药' },
+  '人仙印碎片': { class: '材料', type: '材料' },
+  '真凰翎羽': { class: '道具', type: '道具' },
+  '涅槃精血': { class: '丹药', type: '丹药' },
+  '凤凰泪': { class: '道具', type: '道具' },
+  '一滴帝血': { name: '帝血', class: '道具', type: '道具', 不可交易: 1 },
+  '帝血': { class: '道具', type: '道具', 不可交易: 1 },
+  '玉石匣·仙王经文': { name: '玉石匣', class: '道具', type: '道具', 不可交易: 1 },
+  '玉石匣': { class: '道具', type: '道具', 不可交易: 1 },
+  '大罗剑胎': {
+    class: '装备',
+    type: '武器',
+    atk: 3_000_000_000,
+    def: 3_000_000_000,
+    HP: 3_000_000_000,
+    bao: 0.2,
+    pinji: 6,
+    至尊体全属性倍率: 15,
+    其他灵根全属性倍率: 7.5,
+    不可交易: 1,
+  },
+});
+
+const XIANGU_EXIT_REFINEMENT_ITEMS = Object.freeze(new Set([
+  '残破战戟',
+  '断裂古剑',
+  '破碎神甲碎片',
+  '古盾残片',
+  '仙古符骨',
+]));
+
+const XIANGU_EXIT_CURRENCY_ITEMS = Object.freeze(new Set([
+  '普通道种碎片',
+  '仙古矿材',
+  '古兽残骨',
+  '秘境灵药',
+  '远古符纸',
+]));
+
+export const XIANGU_EXIT_ITEM_VALUE = 1_000_000;
+
+function migrateXianguItem(source) {
+  if (!isRecord(source)) return source;
+  const name = getEntryName(source);
+  const migration = XIANGU_ITEM_MIGRATIONS[name];
+  if (!migration) return source;
+  return { ...source, ...migration };
+}
+
+// Convert only once, while building the immutable evacuation receipt payload.
+// The receipt layer then makes retries idempotent even if the process crashes
+// after writing the receipt but before saving the player.
+export function convertXianguEvacuationItems(items = []) {
+  const normalized = createXianguBag({ items }).items;
+  const output = [];
+  let sourceStone = 0;
+  let lingshi = 0;
+  let refinedCount = 0;
+  let currencyItemCount = 0;
+
+  for (const item of normalized) {
+    const name = String(item?.name || '').trim();
+    const quantity = toNonNegativeInteger(item?.quantity);
+    if (!name || quantity <= 0) continue;
+
+    if (XIANGU_EXIT_REFINEMENT_ITEMS.has(name)) {
+      const existing = output.find(entry => entry.name === '庚金玄土');
+      if (existing) existing.quantity = addInteger(existing.quantity, quantity);
+      else output.push({
+        name: '庚金玄土',
+        type: '材料',
+        quantity,
+        desc: '以仙古战场残兵碎片熔炼出的庚金玄土，可用于锻造与祭炼。',
+      });
+      refinedCount = addInteger(refinedCount, quantity);
+      continue;
+    }
+
+    if (XIANGU_EXIT_CURRENCY_ITEMS.has(name)) {
+      const value = quantity * XIANGU_EXIT_ITEM_VALUE;
+      sourceStone = addInteger(sourceStone, value);
+      lingshi = addInteger(lingshi, value);
+      currencyItemCount = addInteger(currencyItemCount, quantity);
+      continue;
+    }
+
+    output.push(clonePlainData(item));
+  }
+
+  return { items: output, sourceStone, lingshi, refinedCount, currencyItemCount };
+}
+
 function requireBag(bag) {
   if (!isRecord(bag)) throw new TypeError('仙古秘境背包无效');
   bag.items = Array.isArray(bag.items) ? bag.items : [];
@@ -64,14 +179,18 @@ export function claimXianguBagItems(najie, bag, claimId, claimedAt = Date.now())
 
   const normalized = createXianguBag(bag);
   for (const item of normalized.items) {
-    const category = Array.isArray(najie[item.type]) ? item.type : '材料';
+    const category = Array.isArray(najie[item.class])
+      ? item.class
+      : Array.isArray(najie[item.type]) ? item.type : '材料';
     najie[category] ||= [];
     const existing = najie[category].find(entry => entry?.name === item.name);
     if (existing) {
       existing.数量 = addInteger(existing.数量, item.quantity);
     } else {
       const { quantity, type, ...saved } = item;
-      najie[category].push({ ...saved, class: saved.class || type, 数量: quantity, islockd: 0 });
+      const stored = { ...saved, class: saved.class || category, 数量: quantity, islockd: 0 };
+      if (category === '装备') stored.type = type;
+      najie[category].push(stored);
     }
   }
 
@@ -107,8 +226,9 @@ export function addXianguBagItem(bag, item, quantity) {
     : isRecord(item) ? item : null;
   if (!source) return bag;
 
-  const name = String(source.name ?? source.名称 ?? '').trim();
-  const type = String(source.type ?? source.类型 ?? '道具').trim() || '道具';
+  const migratedSource = migrateXianguItem(source);
+  const name = String(migratedSource.name ?? migratedSource.名称 ?? '').trim();
+  const type = String(migratedSource.type ?? migratedSource.类型 ?? '道具').trim() || '道具';
   const amount = toNonNegativeInteger(
     quantity ?? source.quantity ?? source.数量 ?? source.count ?? 1,
   );
@@ -117,11 +237,11 @@ export function addXianguBagItem(bag, item, quantity) {
   const existing = bag.items.find(entry => entry.name === name && entry.type === type);
   if (existing) {
     existing.quantity = addInteger(existing.quantity, amount);
-    if (source.unique === true) existing.unique = true;
+    if (migratedSource.unique === true) existing.unique = true;
     return bag;
   }
 
-  const saved = clonePlainData(source);
+  const saved = clonePlainData(migratedSource);
   delete saved.name;
   delete saved.名称;
   delete saved.type;

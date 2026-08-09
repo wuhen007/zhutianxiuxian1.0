@@ -13,6 +13,7 @@
  *   0.5   → 雷劫强度减半
  */
 export const TRIBULATION_BASE_ATK_SCALE = 1;
+export const XIANGU_TRIBULATION_BASE_ATK_SCALE = 10;
 
 export const LEIDI_TRIBULATION_CONVERSION_RATE = 0.4;
 export const LEIDI_TRIBULATION_CONVERSION_WAVES = 4;
@@ -44,7 +45,10 @@ export function calcXianguTribulationPower(player, levels = {}) {
     + realmAttack;
 
   return {
-    attack: Math.trunc(baseAttack * equipmentMultiplier + realmAttack * imperialMultiplier),
+    attack: Math.trunc(
+      (baseAttack * equipmentMultiplier + realmAttack * imperialMultiplier)
+      * XIANGU_TRIBULATION_BASE_ATK_SCALE
+    ),
     equipmentMultiplier,
     imperialMultiplier,
   };

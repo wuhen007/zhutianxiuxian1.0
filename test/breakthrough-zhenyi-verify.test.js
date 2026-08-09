@@ -14,6 +14,10 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const levelDataPath = path.join(__dirname, '..', 'resources', 'data', 'Level', '仙古今世法.json');
 const levelData = JSON.parse(fs.readFileSync(levelDataPath, 'utf8'));
+const breakthroughSource = fs.readFileSync(
+  path.join(__dirname, '..', 'apps', 'User', 'xiangujinshi.js'),
+  'utf8',
+);
 
 // 复刻 breakthroughUpperRealm 的“成功分支”逻辑（与 src 中编辑后的代码一致）
 function simulateBreakthroughUpperRealm(player) {
@@ -62,6 +66,25 @@ test('神火极境冲关真一境：路由指向真一境(targetLevelId=9)', () 
   const route = XIANGU_REALM_ROUTES[8];
   assert.equal(route.targetLevelId, 9);
   assert.equal(route.targetName, '真一境');
+});
+
+test('真实神火→真一成功分支复用境界配置并立即重算装备属性', () => {
+  assert.doesNotMatch(
+    breakthroughSource,
+    /path\.join\(__PATH\.data_path,\s*'\.\.',\s*'resources',\s*'data'/,
+  );
+
+  const functionStart = breakthroughSource.indexOf('async breakthroughUpperRealm');
+  const start = breakthroughSource.indexOf('player.xiangulevel_id = breakthrough.targetLevelId;', functionStart);
+  const end = breakthroughSource.indexOf('const routeLine =', start);
+  const breakthroughFunction = breakthroughSource.slice(functionStart, end);
+  const successSettlement = breakthroughSource.slice(start, end);
+
+  assert.ok(functionStart >= 0 && start >= 0 && end > start, '应能定位真实的上位境界成功结算分支');
+  assert.match(breakthroughFunction, /const equipment = await Read_equipment\(usr_qq\);/);
+  assert.match(breakthroughFunction, /runRealmBreakthrough\(e, player, \{ fromLevelId, equipment \}\)/);
+  assert.match(successSettlement, /await Write_equipment\(usr_qq, equipment\);/);
+  assert.match(successSettlement, /refreshedPlayer\.当前血量 = refreshedPlayer\.血量上限;/);
 });
 
 test('神火→真一：冲关后正确达到真一境，属性增量=2000万', () => {
@@ -140,4 +163,3 @@ test('普通冲关与极境冲关扣除口径一致（均为 applyQuestionFortun
   assert.equal(normal.仙道潜力, 90);
   assert.equal(extreme.仙道潜力, 90);
 });
-

@@ -1,6 +1,5 @@
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
-import path from 'path';
 import {
   existplayer,
   Write_player,
@@ -15,10 +14,10 @@ import {
   zd_battle,
   exist_najie_thing,
   Add_修为,
+  Add_灵石,
   Add_player_学习功法,
   bigNumberTransform,
   Add_血气,
-  __PATH,
   Add_寿元,
   Add_najie_thing,
   dujie,
@@ -39,6 +38,31 @@ import {
   getXianguDaoRuleForRealm,
   unlockXianguDaoRealm,
 } from './wudaoRules.js';
+import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
+
+const XIANGU_THUNDER_LIQUID_NAMES = ['雷池真液', '雷池液'];
+
+async function getXianguThunderLiquidQuantity(userId) {
+  let quantity = 0;
+  for (const name of XIANGU_THUNDER_LIQUID_NAMES) {
+    quantity += Number(await exist_najie_thing(userId, name, '道具')) || 0;
+  }
+  return quantity;
+}
+
+async function consumeXianguThunderLiquid(userId, amount) {
+  let remaining = Math.max(0, Math.floor(Number(amount) || 0));
+  for (const name of XIANGU_THUNDER_LIQUID_NAMES) {
+    if (remaining <= 0) break;
+    const available = Number(await exist_najie_thing(userId, name, '道具')) || 0;
+    const used = Math.min(available, remaining);
+    if (used > 0) {
+      await Add_najie_thing(userId, name, '道具', -used);
+      remaining -= used;
+    }
+  }
+  return remaining === 0;
+}
 
 export class xiangujinshi extends plugin {
   constructor() {
@@ -51,9 +75,99 @@ export class xiangujinshi extends plugin {
         {
           reg: '^#冲关(极境)?$',
           fnc: 'chongguan'
+        },
+        {
+          reg: '^#道基重塑$',
+          fnc: 'DaoJiReshape'
+        },
+        {
+          reg: '^#炼化雷帝甲胄$',
+          fnc: 'RefineLeidiArmor'
         }
       ],
     });
+    const original = this.chongguan;
+    this.chongguan = async function guardedXianguBreakthrough(e, ...args) {
+      const playerId = String(e.user_id || '').replace('qg_', '');
+      const result = await withTribulationLock(playerId, () => original.call(this, e, ...args));
+      if (result === TRIBULATION_LOCK_BUSY) {
+        return e.reply('【渡劫中】你已有一场仙古冲关正在进行，请等待结算完成。');
+      }
+      return result;
+    };
+  }
+
+  /** #道基重塑：消耗五行本源与灵石，重塑道基，祛除一道道伤 */
+  async DaoJiReshape(e) {
+    if (!verc({ e })) return false;
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    if (!await existplayer(usr_qq)) return e.reply('玩家不存在，请先创建角色');
+    try {
+      const player = await Read_player(usr_qq);
+      const daoshang = Math.max(0, Number(player.道伤) || 0);
+      if (daoshang <= 0) return e.reply('你的道基稳固无伤，无需重塑。（当前道伤为0）');
+      const benyuan = Number(await exist_najie_thing(usr_qq, '五行本源', '道具')) || 0;
+      if (benyuan < 5) return e.reply(`重塑道基需 5 枚五行本源，你目前只有 ${benyuan} 枚。前往九天十地·五行州可得。`);
+      const costLingshi = 50000000;
+      if ((Number(player.灵石) || 0) < costLingshi) return e.reply(`重塑道基还需灵石${bigNumberTransform(costLingshi)}，家底不够。`);
+      await Add_najie_thing(usr_qq, '五行本源', '道具', -5);
+      await Add_灵石(usr_qq, -costLingshi);
+      player.道伤 = Math.max(0, Number(player.道伤) - 1);
+      await Write_player(usr_qq, player);
+      return e.reply([
+        '【道基重塑】',
+        `你以 5 枚五行本源为薪柴，引动五行大道之力重铸道基！`,
+        `五行流转，道伤弥合——道伤 -1（当前：${player.道伤}）`,
+        '「五行本源，重塑根基，补全修行缺陷」',
+      ].join('\n'));
+    } catch (error) {
+      console.error('[道基重塑] 失败:', error);
+      return e.reply('道基重塑时发生错误，请稍后再试。');
+    }
+  }
+
+  /** #炼化雷帝甲胄：以雷池真液与雷帝宝术残篇重铸破碎甲胄（共3层，满层为雷帝战衣） */
+  async RefineLeidiArmor(e) {
+    if (!verc({ e })) return false;
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    if (!await existplayer(usr_qq)) return e.reply('玩家不存在，请先创建角色');
+    try {
+      const equipment = await Read_equipment(usr_qq);
+      const armor = equipment.护具;
+      if (armor?.name !== '破碎·雷帝甲胄') {
+        return e.reply('你身上未装备「破碎·雷帝甲胄」，无法炼化。');
+      }
+      const layers = Math.max(0, Math.floor(Number(armor.雷帝炼化) || 0));
+      if (layers >= 3) return e.reply('「破碎·雷帝甲胄」已重铸圆满，雷帝战衣大成！');
+      const liquid = Number(await exist_najie_thing(usr_qq, '雷池真液', '道具')) || 0;
+      const fragments = Number(await exist_najie_thing(usr_qq, '雷帝宝术残篇', '材料')) || 0;
+      if (liquid < 10) return e.reply(`炼化需要 10 滴雷池真液（现有${liquid}），九天十地雷劫中可得。`);
+      if (fragments < 5) return e.reply(`炼化需要 5 份雷帝宝术残篇（现有${fragments}）。`);
+      const costLingshi = 50000000;
+      const player = await Read_player(usr_qq);
+      if ((Number(player.灵石) || 0) < costLingshi) return e.reply(`炼化还需灵石${bigNumberTransform(costLingshi)}，家底不够。`);
+      await Add_najie_thing(usr_qq, '雷池真液', '道具', -10);
+      await Add_najie_thing(usr_qq, '雷帝宝术残篇', '材料', -5);
+      await Add_灵石(usr_qq, -costLingshi);
+      const next = layers + 1;
+      armor.雷帝炼化 = next;
+      armor.atk = Math.floor((Number(armor.atk) || 0) + 30000000);
+      armor.def = Math.floor((Number(armor.def) || 0) + 30000000);
+      armor.HP = Math.floor((Number(armor.HP) || 0) + 40000000);
+      armor.bao = Math.min(1, (Number(armor.bao) || 0) + 0.05);
+      if (next >= 3) armor.name = '完整·雷帝甲胄';
+      else if (next >= 2) armor.name = '残缺·雷帝甲胄';
+      await Write_equipment(usr_qq, equipment);
+      return e.reply([
+        '【雷帝重铸】',
+        `你引雷池真液淬炼甲胄，雷帝宝术残篇化作雷纹烙印其上！`,
+        `「破碎·雷帝甲胄」炼化 ${layers}/3 → ${next}/3（攻防+3000万·生命+4000万·暴击+5%）`,
+        next >= 3 ? '「雷帝战衣铸成，雷霆万钧加身！」' : '雷光流转，甲胄上的裂痕正在弥合……',
+      ].join('\n'));
+    } catch (error) {
+      console.error('[雷帝甲胄炼化] 失败:', error);
+      return e.reply('炼化时发生错误，请稍后再试。');
+    }
   }
 
   async chongguan(e) {
@@ -250,7 +364,19 @@ if (player.xiangulevel_id === 4) {
     if (player.xiangulevel_id === 11) {
         return await this.breakthroughUpperRealm(e, usr_qq, player);
     }
-    if ([12, 13, 14].includes(Number(player.xiangulevel_id))) {
+    if (player.xiangulevel_id === 12) {
+        if (isExtreme) {
+            return await this.breakthroughJiutianShidiExtreme(e, usr_qq, player);
+        }
+        return await this.breakthroughUpperRealm(e, usr_qq, player);
+    }
+    if (player.xiangulevel_id === 13) {
+        if (isExtreme) {
+            return await this.breakthroughZhanxianExtreme(e, usr_qq, player);
+        }
+        return await this.breakthroughUpperRealm(e, usr_qq, player);
+    }
+    if (player.xiangulevel_id === 14) {
         return await this.breakthroughUpperRealm(e, usr_qq, player);
     }
     return e.reply("后续内容还在更新");
@@ -1194,14 +1320,16 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
 
     // 检查渡劫资源
     const thunderResources = [
-        { name: "雷池真液", class: "道具", quantity: 3 },
+        { name: "雷池真液", liquidAlias: true, class: "道具", quantity: 3 },
         { name: "血魂草", class: "草药", quantity: 1 },
         { name: "五行本源", class: "道具", quantity: 5 }
     ];
 
     const missingResources = [];
     for (const resource of thunderResources) {
-        const currentQty = await exist_najie_thing(usr_qq, resource.name, resource.class);
+        const currentQty = resource.liquidAlias
+            ? await getXianguThunderLiquidQuantity(usr_qq)
+            : await exist_najie_thing(usr_qq, resource.name, resource.class);
         if (currentQty < resource.quantity) {
             missingResources.push({
                 name: resource.name,
@@ -1264,9 +1392,9 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
     const defReduction = Math.min(DEF_REDUCTION_CAP, playerDef / (playerDef + DEF_K));
 
     for (const stage of thunderStages) {
-        // 消耗雷池真液减轻伤害
-        const thunderLiquidQty = await exist_najie_thing(usr_qq, "雷池真液", "道具");
-        const damageReduction = Math.min(0.5, thunderLiquidQty * 0.1); // 每滴雷池真液减少10%伤害，最多50%
+        // 仙古秘境掉落的“雷池液”与渡劫产物共享雷池减伤效果。
+        const thunderLiquidQty = await getXianguThunderLiquidQuantity(usr_qq);
+        const damageReduction = Math.min(0.5, thunderLiquidQty * 0.1); // 每滴雷池液减少10%伤害，最多50%
         
         const actualDamage = stage.damage * (1 - damageReduction) * (1 - defReduction);
         const damageAmount = Math.floor(player.血量上限 * actualDamage);
@@ -1274,20 +1402,21 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
         // 应用伤害
         let currentHP = await Add_HP(usr_qq, -damageAmount, `${stage.name}伤害`);
         
-        // 消耗雷池真液
+        // 优先消耗雷池真液，数量不足时再消耗仙古秘境的雷池液。
         if (thunderLiquidQty > 0) {
             const usedLiquid = Math.min(thunderLiquidQty, 5); // 最多使用5滴
-            await Add_najie_thing(usr_qq, "雷池真液", "道具", -usedLiquid);
+            await consumeXianguThunderLiquid(usr_qq, usedLiquid);
         }
 
-        // 血魂草激发潜能（只在生命低于30%时触发）
+        // 血魂草激发潜能（只在生命低于30%时触发）：濒死回血 + 短暂法力免疫
         if (currentHP / player.血量上限 < 0.3) {
             const bloodGrassQty = await exist_najie_thing(usr_qq, "血魂草", "草药");
             if (bloodGrassQty > 0) {
                 await Add_najie_thing(usr_qq, "血魂草", "草药", -1);
                 const recoverAmount = Math.floor(player.血量上限 * 0.4);
                 currentHP = await Add_HP(usr_qq, recoverAmount, "血魂草激发潜能");
-                e.reply(`血魂草激发潜能，恢复${bigNumberTransform(recoverAmount)}点生命值`);
+                player.法力免疫 = "初级"; // 濒死边缘获得短暂法力免疫（desc 兑现）
+                e.reply(`血魂草激发潜能，恢复${bigNumberTransform(recoverAmount)}点生命值，并暂时免疫下一次伤害！`);
             }
         }
 
@@ -1429,7 +1558,7 @@ async breakthroughShenhuoRealm(e, usr_qq, player) {
     }
 
     // 成功
-    const levelData = JSON.parse(fs.readFileSync(path.join(__PATH.data_path, '..', 'resources', 'data', 'Level', '仙古今世法.json'), 'utf8'));
+    const levelData = data.xiangujinshi_list;
     const lv7 = levelData.find(l => l.level_id === 7);
     const lv8 = levelData.find(l => l.level_id === 8);
     const diff = lv8 && lv7 ? {
@@ -1498,6 +1627,7 @@ async breakthroughXianqiExtreme(e, usr_qq, player) {
         ].join('\n'));
     }
 
+    const equipment = await Read_equipment(usr_qq);
     await Add_血气(usr_qq, -actualNeed);
     await Add_修为(usr_qq, -actualNeed);
     player.血气 = Math.max(0, (Number(player.血气) || 0) - actualNeed);
@@ -1508,7 +1638,7 @@ async breakthroughXianqiExtreme(e, usr_qq, player) {
     player.当前血量 = currentMaxHp;
 
     const tribulation = new XianguTribulation();
-    const result = await tribulation.runXianqiCondensation(e, player, trial.targetStrand);
+    const result = await tribulation.runXianqiCondensation(e, player, trial.targetStrand, equipment);
     if (!result.success) {
         player.当前血量 = Math.max(1, Math.floor(currentMaxHp * 0.1));
         await Write_player(usr_qq, player);
@@ -1539,6 +1669,127 @@ async breakthroughXianqiExtreme(e, usr_qq, player) {
             ? `三道仙气圆满，神火境绝巅道果已成！`
             : `可再次使用 #冲关极境，挑战第三道仙气。`,
         `也可使用 #冲关，放弃继续打磨并突破真一境。`
+    ].join('\n'));
+}
+
+// 虚道极境·九天十地劫（境界内独立试炼：渡后仍虚道，可逆伐斩我）
+async breakthroughJiutianShidiExtreme(e, usr_qq, player) {
+    if (player.xiangu_jiutian_shidi) {
+        return e.reply([
+            `【虚道极境】九天十地劫已经渡过。`,
+            `境界仍是虚道，却已可逆伐斩我。`,
+            `可随时使用 #冲关 冲击斩我境。`
+        ].join('\n'));
+    }
+    const actualNeed = this.calculateActualCost(this.calculateBaseNeedExp(player), player) * 30;
+    if (player.血气 < actualNeed || player.修为 < actualNeed) {
+        return e.reply([
+            `【本源不足·九天十地劫难成】`,
+            `引动九天十地劫需磅礴本源，`,
+            `缺血气：${bigNumberTransform(Math.max(0, actualNeed - player.血气))}`,
+            `缺修为：${bigNumberTransform(Math.max(0, actualNeed - player.修为))}`
+        ].join('\n'));
+    }
+
+    const equipment = await Read_equipment(usr_qq);
+    await Add_血气(usr_qq, -actualNeed);
+    await Add_修为(usr_qq, -actualNeed);
+    player.血气 = Math.max(0, (Number(player.血气) || 0) - actualNeed);
+    player.修为 = Math.max(0, (Number(player.修为) || 0) - actualNeed);
+
+    const currentMaxHp = Number(player.血量上限 || player.血气上限) || 1;
+    player.血量上限 = currentMaxHp;
+    player.当前血量 = currentMaxHp;
+
+    const tribulation = new XianguTribulation();
+    const result = await tribulation.runJiutianShidiTrial(e, player, equipment);
+    if (!result.success) {
+        player.当前血量 = Math.max(1, Math.floor(currentMaxHp * 0.1));
+        await Write_player(usr_qq, player);
+        return e.reply([
+            `【虚道极境·冲击失败】`,
+            `九天十地劫未能渡过，境界得以保住，道躯却遭重创。`,
+            `本次修为、血气已经消耗，当前血量仅余一成。`
+        ].join('\n'));
+    }
+
+    player.xiangu_jiutian_shidi = true;
+    player.xiangu_nifa_zhanwo = true;
+    if (result.reward === '雷池真液') {
+        await Add_najie_thing(usr_qq, '雷池真液', '道具', 1);
+    }
+    this.deductXianguPotential(player);
+    await Write_player(usr_qq, player);
+
+    return e.reply([
+        `【虚道极境·九天十地劫渡尽！】`,
+        ``,
+        `${player.名号}仍立于虚道境，却已可逆伐斩我境强者。`,
+        result.routeText || '',
+        ``,
+        `雷池真液精粹 +1`,
+        `可继续使用 #冲关 冲击斩我境；`,
+        `踏入斩我境后还可 #冲关极境 挑战斩仙铡刀劫。`
+    ].join('\n'));
+}
+
+// 斩我极境·斩仙铡刀劫（境界内独立试炼：渡后仍斩我，臻至斩我巅峰）
+async breakthroughZhanxianExtreme(e, usr_qq, player) {
+    if (player.xiangu_zhanxian_zhadao) {
+        return e.reply([
+            `【斩我极境】斩仙铡刀劫已经渡过。`,
+            `外来不朽印记尽斩，臻至斩我境巅峰。`,
+            `可随时使用 #冲关 冲击遁一境。`
+        ].join('\n'));
+    }
+    const actualNeed = this.calculateActualCost(this.calculateBaseNeedExp(player), player) * 30;
+    if (player.血气 < actualNeed || player.修为 < actualNeed) {
+        return e.reply([
+            `【本源不足·斩仙铡刀劫难成】`,
+            `引动葬地雷渊的斩仙铡刀劫需磅礴本源，`,
+            `缺血气：${bigNumberTransform(Math.max(0, actualNeed - player.血气))}`,
+            `缺修为：${bigNumberTransform(Math.max(0, actualNeed - player.修为))}`
+        ].join('\n'));
+    }
+
+    const equipment = await Read_equipment(usr_qq);
+    await Add_血气(usr_qq, -actualNeed);
+    await Add_修为(usr_qq, -actualNeed);
+    player.血气 = Math.max(0, (Number(player.血气) || 0) - actualNeed);
+    player.修为 = Math.max(0, (Number(player.修为) || 0) - actualNeed);
+
+    const currentMaxHp = Number(player.血量上限 || player.血气上限) || 1;
+    player.血量上限 = currentMaxHp;
+    player.当前血量 = currentMaxHp;
+
+    const tribulation = new XianguTribulation();
+    const result = await tribulation.runZhanxianZhandaoTrial(e, player, equipment);
+    if (!result.success) {
+        player.当前血量 = Math.max(1, Math.floor(currentMaxHp * 0.1));
+        await Write_player(usr_qq, player);
+        return e.reply([
+            `【斩我极境·冲击失败】`,
+            `斩仙铡刀劫未能渡过，境界得以保住，道躯却遭重创。`,
+            `本次修为、血气已经消耗，当前血量仅余一成。`
+        ].join('\n'));
+    }
+
+    player.xiangu_zhanxian_zhadao = true;
+    player.xiangu_zhanwo_peak = true;
+    if (result.reward === '雷池真液') {
+        await Add_najie_thing(usr_qq, '雷池真液', '道具', 1);
+    }
+    this.deductXianguPotential(player);
+    await Write_player(usr_qq, player);
+
+    return e.reply([
+        `【斩我极境·斩仙铡刀劫渡尽！】`,
+        ``,
+        `${player.名号}臻至斩我境巅峰，已可踏入遁一却主动压制。`,
+        result.routeText || '',
+        ``,
+        `雷池真液精粹 +1`,
+        `可继续使用 #冲关 在战场血战中冲击遁一境。`
     ].join('\n'));
 }
 
@@ -1583,6 +1834,7 @@ async breakthroughUpperRealm(e, usr_qq, player) {
         ].join('\n'));
     }
 
+    const equipment = await Read_equipment(usr_qq);
     await Add_血气(usr_qq, -actualNeed);
     await Add_修为(usr_qq, -actualNeed);
     // Add_* 会独立写档；同步本地对象，避免后续 Write_player 把消耗覆盖回去。
@@ -1593,7 +1845,7 @@ async breakthroughUpperRealm(e, usr_qq, player) {
     player.血量上限 = currentMaxHp;
     player.当前血量 = currentMaxHp;
     const tribulation = new XianguTribulation();
-    const result = await tribulation.runRealmBreakthrough(e, player, { fromLevelId });
+    const result = await tribulation.runRealmBreakthrough(e, player, { fromLevelId, equipment });
     if (!result.success) {
         const maxHp = Number(player.血量上限 || player.血气上限) || 1;
         player.当前血量 = Math.max(1, Math.floor(maxHp * 0.1));
@@ -1605,7 +1857,7 @@ async breakthroughUpperRealm(e, usr_qq, player) {
         ].join('\n'));
     }
 
-    const levelData = JSON.parse(fs.readFileSync(path.join(__PATH.data_path, '..', 'resources', 'data', 'Level', '仙古今世法.json'), 'utf8'));
+    const levelData = data.xiangujinshi_list;
     const currentLevel = levelData.find(l => Number(l.level_id) === fromLevelId);
     const targetLevel = levelData.find(l => Number(l.level_id) === breakthrough.targetLevelId);
     const diff = currentLevel && targetLevel ? {
@@ -1642,6 +1894,10 @@ async breakthroughUpperRealm(e, usr_qq, player) {
     }
 
     await Write_player(usr_qq, player);
+    await Write_equipment(usr_qq, equipment);
+    const refreshedPlayer = await Read_player(usr_qq);
+    refreshedPlayer.当前血量 = refreshedPlayer.血量上限;
+    await Write_player(usr_qq, refreshedPlayer);
 
     const routeLine = result.routeText || (result.noTribulation
         ? '此次晋阶没有雷劫，积蓄的劫力延后至以身为种时爆发。'
@@ -1662,7 +1918,7 @@ async breakthroughUpperRealm(e, usr_qq, player) {
     ];
     if (result.thunderSpirits) lines.push(`雷灵：${player.xiangu_leiling}头`);
     if (rewardLine) lines.push(rewardLine);
-    if (result.revived) lines.push('本次渡劫曾触发功法复活；每一道劫均在复活后继续结算功法减伤。');
+    if (result.revived) lines.push('本次渡劫曾触发功法复活；致死劫数被避开，后续劫数才会触发功法被动。');
     return e.reply(lines.join('\n'));
 }
 

@@ -639,7 +639,7 @@ if (weizhi.name === "万龙巢") {
             
             // 30%概率获得真龙精血
             if (Math.random() < 0.3) {
-                await Add_najie_thing(player_id, '真龙精血', '神药', 1);
+                await Add_najie_thing(player_id, '真龙精血', '丹药', 1);
             }
         }
     } else {

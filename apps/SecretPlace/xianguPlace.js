@@ -39,6 +39,7 @@ import {
 import Show from "../../model/show.js";
 import puppeteer from "../../../../lib/puppeteer/puppeteer.js";
 import { XianguTribulation } from "./xianguTribulation.js";
+import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
 import {
   ensureXianqiState,
   getXianqiStrands,
@@ -59,6 +60,7 @@ import {
   calculateXianguSourceStoneReward,
   claimXianguBagItems,
   clearXianguBag,
+  convertXianguEvacuationItems,
   ensureXianguBag,
   formatXianguBag,
   getXianguBagSummary,
@@ -205,6 +207,8 @@ const XIANGU_SINGLE_PLAYER_MUTATION_METHODS = new Set([
   'XianguNPCTeam',
   'XianguNPCTeamLeave',
   'XianguFactionQuest',
+  'XianguBegForMercy',
+  'XianguSlaughterChoice',
 ]);
 
 function xianguPlayerRedisKey(playerId, suffix) {
@@ -1120,28 +1124,201 @@ function transferXianguUniqueSpoil(winner, loser) {
   return item;
 }
 
-async function transferXianguUniqueSpoilToNpc(player, npc) {
-  const item = takeXianguUniqueBagItem(ensureXianguBag(player));
-  if (!item) return null;
-  try {
-    await storeXianguNpcInventoryItem(player, npc, item);
-    return item;
-  } catch (error) {
-    addXianguBagItem(ensureXianguBag(player), item);
-    throw error;
-  }
+// ==== 被 NPC 击败后的生死抉择 ====
+const XIANGU_DEFEAT_CHOICE_WINDOW_MS = 60 * 1000; // 抉择窗口：60秒
+const XIANGU_DAOHEART_TARNISH_MS = 24 * 60 * 60 * 1000; // 道心蒙尘时长：24小时
+const XIANGU_DAOHEART_TARNISH_MULT = 0.5; // 道心蒙尘期间道韵收益减半
+
+function resolveXianguNpcFaction(npc) {
+  const faction = npc && typeof npc === 'object' ? npc.faction : null;
+  if (faction === 'good' || faction === 'neutral' || faction === 'evil') return faction;
+  const name = String(npc?.name || npc?.名号 || '');
+  if (/守卫|修士|道童|童子/.test(name)) return 'neutral';
+  if (/遗种|怨灵|凶|魔|妖|孽/.test(name)) return 'evil';
+  return 'neutral';
 }
 
-async function forceXianguPlayerExitAfterNpcDefeat(player, playerId) {
-  const maxHp = Number(player?.血量上限 || player?.血气上限) || 1;
-  const currentHp = Number(player?.当前血量) || maxHp;
-  if (currentHp >= maxHp * 0.1) return null;
+function armXianguDefeatChoice(player, npc, scene) {
+  const name = String(npc?.name || npc?.名号 || '秘境存在');
+  player.xiangu_pending_defeat = {
+    npcName: name,
+    npcId: String(npc?.id || npc?.name || name),
+    faction: resolveXianguNpcFaction(npc),
+    scene,
+    expiresAt: Date.now() + XIANGU_DEFEAT_CHOICE_WINDOW_MS,
+  };
+  return player.xiangu_pending_defeat;
+}
 
-  const summary = buildXianguRunSummary(player, await readXianguNajie(playerId), Date.now());
+function buildXianguDefeatChoiceMenu(pending) {
+  const factionText = { evil: '邪恶', good: '善良', neutral: '中立' }[pending?.faction] || '中立';
+  return [
+    `【身陷绝境·生死抉择】`,
+    ``,
+    `你被「${pending?.npcName || '秘境存在'}」重创倒地，生死悬于一线！`,
+    `对方缓缓逼近，杀意与怜悯只在其一念之间——`,
+    ``,
+    `【对方阵营】${factionText}`,
+    ``,
+    `① #求饶 —— 向对方乞求一线生机，听凭发落`,
+    `   ▸ 邪恶存在：搜刮尽你身上所有收获，将你杀死逐出秘境`,
+    `   ▸ 善良存在：收取部分收获后放你离去，但道心蒙尘，道韵收益减半`,
+    `② #任凭鱼肉 —— 不做任何反抗，任由对方处置`,
+    `   ▸ 必死无疑，身上收获尽失，被逐出秘境`,
+    ``,
+    `⏳ 请在60秒内做出抉择，逾期视为「任凭鱼肉」！`,
+  ].join('\n');
+}
+
+async function ejectXianguPlayerKilled(player, player_qq, reason, victim = null) {
+  // 原著NPC胜利剧情记录需在清理会话之前完成
+  if (victim?.npcId) {
+    try {
+      const npcRef = { id: String(victim.npcId), name: victim.npcName || String(victim.npcId) };
+      await recordXianguCanonNpcEvent(player, npcRef, {
+        type: getXianguNpcVictoryEventType(npcRef, player_qq),
+        victimId: player_qq,
+      });
+    } catch (sharedError) {
+      console.error('记录仙古NPC胜利状态失败:', sharedError);
+    }
+  }
+  // 搜刮干净 + 杀死 + 踢出秘境
+  clearXianguBag(player);
+  player.当前血量 = 1;
+  const summary = buildXianguRunSummary(player, await readXianguNajie(player_qq), Date.now());
   summary.exitMode = 'forced';
-  summary.exitReason = 'npc_defeated';
+  summary.exitReason = reason || 'npc_slaughter';
   summary.lostLootUnits = summary.lootUnits;
+  clearXianguSessionState(player, summary);
+  await Write_player(player_qq, player);
+  try {
+    await clearXianguRedisSession(player_qq);
+    await setXianguCooldown(player_qq, player_qq, Date.now());
+  } catch (redisError) {
+    console.error('清理被击杀玩家会话失败:', redisError);
+  }
   return summary;
+}
+
+async function settleXianguDefeatChoice(player, player_qq, choice) {
+  const pending = player.xiangu_pending_defeat;
+  if (!pending || typeof pending !== 'object') {
+    return { settled: false, message: '【风平浪静】你此刻并未身陷绝境，无需抉择。' };
+  }
+  const now = Date.now();
+  const overdue = Number(pending.expiresAt) < now;
+  delete player.xiangu_pending_defeat;
+
+  const effectiveChoice = overdue ? 'slaughter' : choice;
+  const npcName = pending.npcName || '秘境存在';
+  const faction = pending.faction || 'neutral';
+  const factionText = { evil: '邪恶', good: '善良', neutral: '中立' }[faction] || '中立';
+
+  if (effectiveChoice === 'beg') {
+    if (faction === 'evil') {
+      // 邪恶：搜刮干净 + 杀死踢出
+      await ejectXianguPlayerKilled(player, player_qq, 'npc_begged_evil', { npcId: pending.npcId, npcName: pending.npcName });
+      return {
+        settled: true,
+        message: [
+          `【求饶·自投罗网】`,
+          ``,
+          `${player.名号}伏地求饶，却只换来${npcName}残忍的狞笑——`,
+          `"落在本座手里，还想活着走出去？"`,
+          ``,
+          `【后果】`,
+          `秘境背包中的全部收获被搜刮一空`,
+          `被${npcName}当场击杀，逐出秘境`,
+          `气血尽散，仅余一息尚存`,
+          ``,
+          `秘境界限：冷却中（伤愈后方可再入）`,
+        ].join('\n'),
+      };
+    }
+
+    // 善良/中立：交出部分收获后放走
+    const bag = ensureXianguBag(player);
+    const taken = {};
+    for (const key of ['sourceStone', 'xiuwei', 'xueqi', 'potential']) {
+      const cur = Number(bag[key]) || 0;
+      if (cur > 0) {
+        const cut = Math.max(1, Math.floor(cur * 0.4));
+        bag[key] = Math.max(0, cur - cut);
+        taken[key] = cut;
+      }
+    }
+    const kept = [];
+    for (const item of bag.items || []) {
+      if (Math.random() < 0.4) taken.items = (taken.items || 0) + Math.max(1, Number(item.quantity) || 1);
+      else kept.push(item);
+    }
+    bag.items = kept;
+
+    player.xiangu_gains = player.xiangu_gains || {};
+    const daoyun = Number(player.xiangu_gains.daoyun) || 0;
+    if (daoyun > 0) {
+      const daoyunCut = Math.max(1, Math.floor(daoyun * 0.2));
+      player.xiangu_gains.daoyun = Math.max(0, daoyun - daoyunCut);
+      taken.daoyun = daoyunCut;
+    }
+
+    const tarnished = faction === 'good';
+    if (tarnished) {
+      player.xiangu_daoheart_tarnish_until = now + XIANGU_DAOHEART_TARNISH_MS;
+    }
+    await Write_player(player_qq, player);
+
+    const lossLines = [];
+    if (taken.sourceStone) lossLines.push(`源石 -${taken.sourceStone.toLocaleString()}`);
+    if (taken.xiuwei) lossLines.push(`修为 -${taken.xiuwei.toLocaleString()}`);
+    if (taken.xueqi) lossLines.push(`血气 -${taken.xueqi.toLocaleString()}`);
+    if (taken.potential) lossLines.push(`仙道潜力 -${taken.potential.toLocaleString()}`);
+    if (taken.items) lossLines.push(`物品 -${taken.items} 件`);
+    if (taken.daoyun) lossLines.push(`道韵 -${taken.daoyun}`);
+
+    return {
+      settled: true,
+      message: [
+        `【求饶·死里逃生】`,
+        ``,
+        `${player.名号}伏地乞饶，${npcName}（${factionText}）沉默片刻，`,
+        faction === 'good'
+          ? `终究不忍赶尽杀绝，取走部分收获后拂袖而去："此乃薄惩，好自为之。"`
+          : `无意为难，取走部分收获后放你离去。`,
+        ``,
+        `【交出】`,
+        ...(lossLines.length ? lossLines : ['（身上并无多少收获，对方悻悻离去）']),
+        ...(tarnished ? [
+          ``,
+          `【道心蒙尘】`,
+          `经此一役，道心蒙上阴翳，`,
+          `24小时内探索道韵收益减半！`,
+        ] : []),
+        ``,
+        `你保住一命，仍可在秘境中继续历练。`,
+      ].join('\n'),
+    };
+  }
+
+  // 任凭鱼肉（含逾期兜底）
+  await ejectXianguPlayerKilled(player, player_qq, overdue ? 'npc_slaughter_overdue' : 'npc_slaughter', { npcId: pending.npcId, npcName: pending.npcName });
+  return {
+    settled: true,
+    message: [
+      overdue ? '【犹豫不决·身死道消】' : '【任凭鱼肉·任人宰割】',
+      ``,
+      `${player.名号}不做反抗，任由${npcName}处置——`,
+      overdue ? '犹豫之间，杀机已至！' : '"倒是有几分自知之明..."',
+      ``,
+      `【后果】`,
+      `秘境背包中的全部收获被夺走`,
+      `被${npcName}击杀，逐出秘境`,
+      `气血尽散，仅余一息尚存`,
+      ``,
+      `秘境界限：冷却中（伤愈后方可再入）`,
+    ].join('\n'),
+  };
 }
 
 async function syncXianguSharedMapState(player) {
@@ -1642,6 +1819,7 @@ function consumeXianguSeed(player, entry) {
 
 function buildXianguEvacuationSettlementPayload(player, summary, receiptId) {
   const bag = getXianguBagSummary(ensureXianguBag(player));
+  const converted = convertXianguEvacuationItems(bag.items);
   const effects = getMinggeEffects(player, data.minggeList);
   // Probe the potential gain on a throwaway object. The real player is only
   // mutated inside the receipt apply callback, after the receipt is durable.
@@ -1649,11 +1827,14 @@ function buildXianguEvacuationSettlementPayload(player, summary, receiptId) {
   const settled = {
     xiuwei: calculateMinggeGain(bag.xiuwei, effects, '修炼加成'),
     xueqi: bag.xueqi,
-    sourceStone: calculateMinggeSourceGain(bag.sourceStone, effects),
+    sourceStone: calculateMinggeSourceGain(bag.sourceStone, effects) + converted.sourceStone,
+    lingshi: converted.lingshi,
     potential: grantMinggePotential(potentialProbe, effects, bag.potential),
-    itemCount: bag.itemCount,
+    itemCount: converted.items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0),
     seedCount: bag.seedCount,
     techniqueCount: bag.techniqueCount,
+    refinedCount: converted.refinedCount,
+    convertedCurrencyCount: converted.currencyItemCount,
   };
 
   return {
@@ -1663,7 +1844,7 @@ function buildXianguEvacuationSettlementPayload(player, summary, receiptId) {
       xueqi: bag.xueqi,
       sourceStone: bag.sourceStone,
       potential: bag.potential,
-      items: cloneXianguSettlementData(bag.items),
+      items: cloneXianguSettlementData(converted.items),
       seeds: cloneXianguSettlementData(bag.seeds),
       techniques: cloneXianguSettlementData(bag.techniques),
     },
@@ -1682,6 +1863,7 @@ async function applyXianguEvacuationSettlement(player, playerId, receipt) {
   player.修为 = (Number(player.修为) || 0) + Math.max(0, Number(settlement.xiuwei) || 0);
   player.血气 = (Number(player.血气) || 0) + Math.max(0, Number(settlement.xueqi) || 0);
   player.源石 = (Number(player.源石) || 0) + Math.max(0, Number(settlement.sourceStone) || 0);
+  player.灵石 = (Number(player.灵石) || 0) + Math.max(0, Number(settlement.lingshi) || 0);
   player.仙道潜力 = Math.max(
     0,
     (Number(player.仙道潜力) || 0) + Math.max(0, Number(settlement.potential) || 0),
@@ -1928,45 +2110,62 @@ export class xianguPlace extends plugin {
     fnc: 'XianguFactionQuest'
     },
     {
-    reg: '^#阵营商店$',
-    fnc: 'XianguFactionShop'
-    },
-    {
     reg: '^#阵营排行$',
     fnc: 'XianguFactionRank'
     },
-    // ====== 终极版：六方向移动 + 神识推演 ======
+    // ====== 终极版：六方向移动（支持 #左5 多步）+ 神识推演 ======
     {
-    reg: '^#上$',
+    reg: '^#上\\d*$',
     fnc: 'XianguRealmMove'
     },
     {
-    reg: '^#下$',
+    reg: '^#下\\d*$',
     fnc: 'XianguRealmMove'
     },
     {
-    reg: '^#左$',
+    reg: '^#左\\d*$',
     fnc: 'XianguRealmMove'
     },
     {
-    reg: '^#右$',
+    reg: '^#右\\d*$',
     fnc: 'XianguRealmMove'
     },
     {
-    reg: '^#左上$',
+    reg: '^#左上\\d*$',
     fnc: 'XianguRealmMove'
     },
     {
-    reg: '^#右上$',
+    reg: '^#右上\\d*$',
     fnc: 'XianguRealmMove'
     },
     {
     reg: '^#秘境推演$',
     fnc: 'XianguDivineScan'
+    },
+    {
+    reg: '^#求饶$',
+    fnc: 'XianguBegForMercy'
+    },
+    {
+    reg: '^#任凭鱼肉$',
+    fnc: 'XianguSlaughterChoice'
     }
       ],
     });
     installXianguActionWrappers(this);
+    for (const methodName of ['XianguJilianZhenwo', 'XianguYiShenWeiZhong']) {
+      const original = this[methodName];
+      if (typeof original !== 'function') continue;
+      this[methodName] = async function guardedXianguTribulation(e, ...args) {
+        const rawId = String(e.user_id || '').replace('qg_', '');
+        const playerId = await channel(rawId);
+        const result = await withTribulationLock(playerId, () => original.call(this, e, ...args));
+        if (result === TRIBULATION_LOCK_BUSY) {
+          return e.reply('【渡劫中】当前玩家已有一场仙古渡劫正在进行，请等待结算完成。');
+        }
+        return result;
+      };
+    }
     // 启动动态事件定时器（模块加载时）
     startEventTimer();
     this.task = [{
@@ -2263,6 +2462,7 @@ export class xianguPlace extends plugin {
 
     // 每次进入都建立全新会话，避免沿用上一次的地图、选项或撤离状态。
     clearXianguSessionState(player);
+    delete player.xiangu_pending_defeat; // 上一次的战败抉择作废，重新开始
     player.in_xiangu = true;
     player.xiangu_entry_time = nowTime;
     player.xiangu_world_seed = String(weimianData.仙古秘境开启时间 || weimianData.仙古秘境会话ID || 'manual-open');
@@ -2618,6 +2818,9 @@ export class xianguPlace extends plugin {
           `- 安全带出物品：${settlement.itemCount}件`,
           `- 获得道种：${summary.seedCount}枚${seedNames.length ? `（${seedNames.slice(0, 5).join('、')}${seedNames.length > 5 ? '等' : ''}）` : ''}`,
           `- 源石：+${settlement.sourceStone.toLocaleString()}`,
+          ...(settlement.lingshi > 0 ? [`- 灵石：+${settlement.lingshi.toLocaleString()}`] : []),
+          ...(settlement.refinedCount > 0 ? [`- 残兵熔炼：庚金玄土 ×${settlement.refinedCount}`] : []),
+          ...(settlement.convertedCurrencyCount > 0 ? [`- 基础战利品转化：${settlement.convertedCurrencyCount}件`] : []),
           `- 修为：+${settlement.xiuwei.toLocaleString()} | 血气：+${settlement.xueqi.toLocaleString()}`,
           ...(settlement.potential > 0 ? [`- 仙道潜力：+${settlement.potential.toLocaleString()}`] : []),
           `- 道韵领悟：${summary.daoyun}点`,
@@ -2788,7 +2991,8 @@ export class xianguPlace extends plugin {
       ``,
       `【古史警示】`,
       `撤离读条期间必须留在原地并避免受伤`,
-      `本轮收获暂存于秘境背包，成功撤离后统一入账`
+      `本轮收获暂存于秘境背包，成功撤离后统一入账`,
+      `离境时残兵熔为庚金玄土；普通道种碎片等基础战利品按每件100万同时兑换源石与灵石`
     ].join('\n'));
 
   } catch (error) {
@@ -3285,8 +3489,16 @@ export class xianguPlace extends plugin {
         return e.reply(`${player.名号}刚移动过，请稍等${remaining}秒再行动。`);
       }
     }
-    // 解析方向
+    // 解析方向（支持 #左5 多步移动，最多20步）
     const msg = e.msg.trim();
+    const moveMatch = msg.match(/^#(上|下|左|右|左上|右上)(\d*)$/);
+    if (!moveMatch) {
+      return e.reply(`未知的方向：${msg}，请使用 #上/#下/#左/#右/#左上/#右上（可带步数，如 #左5）`);
+    }
+    const dirKey = '#' + moveMatch[1];
+    const steps = moveMatch[2]
+      ? Math.max(1, Math.min(20, parseInt(moveMatch[2], 10) || 1))
+      : 1;
     const directionMap = {
       '#上':  { dx: 0,  dy: -1, name: '上方', borderDir: 'top',    enterDir: 'bottom' },
       '#下':  { dx: 0,  dy: 1,  name: '下方', borderDir: 'bottom', enterDir: 'top' },
@@ -3295,12 +3507,91 @@ export class xianguPlace extends plugin {
       '#左上': { dx: -1, dy: -1, name: '左上方', borderDir: 'top',  enterDir: 'bottom' },
       '#右上': { dx: 1,  dy: -1, name: '右上方', borderDir: 'top',  enterDir: 'bottom' }
     };
-    const dir = directionMap[msg];
+    const dir = directionMap[dirKey];
     if (!dir) {
       return e.reply(`未知的方向：${msg}，请使用 #上/#下/#左/#右/#左上/#右上`);
     }
 
     await redis.set(`xiuxian:player:${usr_qq}:xianguMoveCD`, Date.now().toString());
+
+    // ====== 多步移动：连续走 N 格，遇墙/事件/边界停止 ======
+    if (steps > 1) {
+      const map = player.xiangu_realm_map;
+      const eventCellText = {
+        [CELL_TYPE.TREASURE]: '机缘之地',
+        [CELL_TYPE.DANGER]: '危险区域',
+        [CELL_TYPE.NPC]: '有修士驻足',
+        [CELL_TYPE.VOID_RIFT]: '虚空裂缝',
+        [CELL_TYPE.UNIQUE_TREASURE]: '唯一机缘',
+        [CELL_TYPE.EXIT]: '碎片出口',
+      };
+      let moved = 0;
+      let stopReason = null;
+      while (moved < steps) {
+        const oldPos = map.playerPos;
+        const nx = oldPos.x + dir.dx;
+        const ny = oldPos.y + dir.dy;
+        // 越界：多步移动不跨界，遇出口/边界即停
+        if (ny < 0 || ny >= map.height || nx < 0 || nx >= map.width) {
+          const bX = Math.min(Math.max(nx, 0), map.width - 1);
+          const bY = Math.min(Math.max(ny, 0), map.height - 1);
+          const borderCell = map.grid[bY][bX];
+          stopReason = borderCell === CELL_TYPE.EXIT && isXianguExitUnlocked(map, bX, bY)
+            ? { title: '【出口在前】', text: `前方是碎片出口，多步移动不会跨界，请单步移动（#${moveMatch[1]}）穿越。` }
+            : { title: '【边界受阻】', text: `${player.名号}连续前行，却撞上了一面无形的空间壁垒，只能停下。` };
+          break;
+        }
+        const cell = map.grid[ny][nx];
+        // 墙壁阻挡
+        if (cell === CELL_TYPE.WALL) {
+          stopReason = { title: '【道则壁垒】', text: `${player.名号}连续前行，被一道古老的道则屏障挡住去路，只能停下。` };
+          break;
+        }
+        // 事件格阻挡（特殊格子不自动触发）
+        if (cell === CELL_TYPE.EXIT || XIANGU_MOVEMENT_TEXT_CELL_TYPES.has(cell)) {
+          stopReason = {
+            title: '【前路有变】',
+            text: `${player.名号}行至${eventCellText[cell] || '一处特殊之地'}前，止步观望。\n如需进入请单步移动（#${moveMatch[1]}）触发。`,
+          };
+          break;
+        }
+        map.playerPos = { x: nx, y: ny };
+        map.stepsTaken++;
+        moved++;
+      }
+
+      if (moved === 0) {
+        return e.reply([stopReason.title, stopReason.text].join('\n'));
+      }
+
+      // 揭示新位置周围
+      revealAdjacentCells(map, map.playerPos, getDivineSenseRange(player));
+      grantXianguExitDiscoveryDaoyun(player, map, getRevealedXianguExits(map).length);
+      player.xiangu_pos_x = map.playerPos.x;
+      player.xiangu_pos_y = map.playerPos.y;
+      player.xiangu_location = gridPosToZone(map);
+      if (!player.xiangu_gains) player.xiangu_gains = { daoyun: 0 };
+      if (isInMosquitoLake(map)) {
+        const mosquito = getMosquitoDrainEffect(player);
+        player.血气 = Math.max(1, player.血气 - mosquito.drain);
+      }
+      ensureXianguMapNpcBindings(player);
+      await syncXianguSharedMapState(player);
+      const npcEvents = await processNPCBehavior(player, player_qq);
+      await Write_player(player_qq, player);
+      await refreshXianguPresence(player_qq, player);
+
+      const playerEncounters = await getXianguPeerPlayers(player_qq, player, true);
+      const eventLines = [];
+      eventLines.push(`【连续移动】${player.名号}向${dir.name}连续前行${moved}格${moved < steps ? `（目标${steps}格，中途止步）` : ''}`);
+      if (stopReason) eventLines.push(`${stopReason.title}\n${stopReason.text}`);
+      if (npcEvents.length > 0) eventLines.push(`【秘境动态】\n${npcEvents.join('\n')}`);
+      if (playerEncounters.length > 0) {
+        eventLines.push(formatXianguPlayerEncounter(playerEncounters).join('\n'));
+      }
+      return this.replyXianguMapWithEvents(e, eventLines);
+    }
+
 
     const map = player.xiangu_realm_map;
     const unlockedExitCount = getRevealedXianguExits(map).length;
@@ -4945,12 +5236,18 @@ async XianguJilianZhenwo(e) {
       return e.reply(`【祭炼真我·本源不足】需${baseEnergyNeed.toLocaleString()}修为和血气`);
     }
 
+    const tribulationEquipment = await Read_equipment(player_qq);
     await Add_血气(player_qq, -baseEnergyNeed);
     await Add_修为(player_qq, -baseEnergyNeed);
     // Both helpers persist through independent player reads. Reload the final
     // snapshot before the tribulation so the later save cannot restore the
     // pre-consumption cultivation and blood energy.
     player = await Read_player(player_qq);
+    player.xiangu_gains ||= {};
+    player.xiangu_gains.daoyun = Math.max(
+      0,
+      (Number(player.xiangu_gains.daoyun) || daoyun) - 500,
+    );
 
     // 满血进入渡劫（与遮天 enterTribulationState 行为一致：当前血量归 血量上限）
     if (player.血量上限) player.当前血量 = player.血量上限;
@@ -4958,7 +5255,11 @@ async XianguJilianZhenwo(e) {
     // —— 祭炼真我·三千道火演出（道火洗礼，不是以身为种天谴）——
     // 文本演出与成功/失败判定在 XianguTribulation 中完成，本函数只负责最终状态写入
     const trib = new XianguTribulation();
-    const tribResult = await trib.run(e, player, { completed, daoyun });
+    const tribResult = await trib.run(e, player, {
+      completed,
+      daoyun,
+      equipment: tribulationEquipment,
+    });
 
     if (!tribResult.success) {
       // 理论上的失败（当前置要求变更或成功率被调低时）——道火未能归一，境界跌落
@@ -5061,6 +5362,7 @@ async XianguJilianZhenwo(e) {
       ``,
       `【渡劫造化】`,
       `道火精粹液 ×1（万道火精炼，可日后淬体）`,
+      `道韵消耗：500`,
       ``,
       `【称号】`,
       `祭炼真我`,
@@ -5847,6 +6149,44 @@ async XianguYiShenWeiZhong(e) {
     }
   }
 
+  // 身陷绝境时向对方求饶
+  async XianguBegForMercy(e) {
+    try {
+      const usr_qq = e.user_id.toString().replace('qg_', '');
+      const player_qq = await channel(usr_qq);
+      let player = await Read_player(player_qq);
+      const actionState = await prepareXianguAction(player_qq);
+      if (actionState.busy) {
+        return e.reply('【结算繁忙】你此刻的处境暂无法结算，请稍后再试。');
+      }
+      player = actionState.player;
+      const outcome = await settleXianguDefeatChoice(player, player_qq, 'beg');
+      return e.reply(outcome.message);
+    } catch (error) {
+      console.error('求饶结算失败:', error);
+      return e.reply(`求饶结算失败: ${error.message}`);
+    }
+  }
+
+  // 身陷绝境时任凭鱼肉
+  async XianguSlaughterChoice(e) {
+    try {
+      const usr_qq = e.user_id.toString().replace('qg_', '');
+      const player_qq = await channel(usr_qq);
+      let player = await Read_player(player_qq);
+      const actionState = await prepareXianguAction(player_qq);
+      if (actionState.busy) {
+        return e.reply('【结算繁忙】你此刻的处境暂无法结算，请稍后再试。');
+      }
+      player = actionState.player;
+      const outcome = await settleXianguDefeatChoice(player, player_qq, 'slaughter');
+      return e.reply(outcome.message);
+    } catch (error) {
+      console.error('任凭鱼肉结算失败:', error);
+      return e.reply(`任凭鱼肉结算失败: ${error.message}`);
+    }
+  }
+
   // 查看阵营
   async XianguFaction(e) {
     try {
@@ -5944,19 +6284,6 @@ async XianguYiShenWeiZhong(e) {
     } catch (error) {
       console.error('阵营任务失败:', error);
       return e.reply(`阵营任务失败: ${error.message}`);
-    }
-  }
-  // 阵营商店
-  async XianguFactionShop(e) {
-    try {
-      const usr_qq = e.user_id.toString().replace('qg_', '');
-      const player_qq = await channel(usr_qq);
-      const player = await Read_player(player_qq);
-      if (!player.in_xiangu) return e.reply(`需先进入仙古秘境`);
-      return XianguFactionShopFn(e, player, player_qq);
-    } catch (error) {
-      console.error('阵营商店失败:', error);
-      return e.reply(`阵营商店失败: ${error.message}`);
     }
   }
   // 阵营排行
@@ -6132,7 +6459,9 @@ async XianguYiShenWeiZhong(e) {
           else player.xiangu_gains[key] = (player.xiangu_gains[key] || 0) + value;
         }
       }
-      const npcEvents = await processNPCBehavior(player, player_qq);
+      const npcEvents = player.in_xiangu && !player.xiangu_pending_defeat
+        ? await processNPCBehavior(player, player_qq)
+        : [];
       if (npcEvents && npcEvents.length > 0) exploreResult.message += '\n\n【秘境动态】\n' + npcEvents.join('\n');
       await redis.del(`xiuxian:player:${usr_qq}:xianguOptions`);
       await Write_player(player_qq, player);
@@ -6249,6 +6578,12 @@ async function handleTreasureCell(e, player, player_qq, map, x, y) {
     { name: '残破法器', weight: 0.15, handler: async () => {
         const faqiNames = ['残破战戟', '断裂古剑', '破碎神甲碎片', '古盾残片', '仙古符骨'];
         const fn = faqiNames[Math.floor(Math.random() * faqiNames.length)];
+        addXianguBagItem(ensureXianguBag(player), {
+          name: fn,
+          type: '材料',
+          quantity: 1,
+          desc: '仙古宝池中出土的残破法器遗片',
+        });
         const { xiuwei, xueqi } = calcExploreRewards(player, riskMultiplier);
         const sp = Math.floor((200 + Math.random() * 800) * riskMultiplier);
         const reward = await grantXianguGrowthRewards(player, player_qq, { lingshi: sp, xiuwei, xueqi });
@@ -6671,14 +7006,17 @@ async function handleUniqueTreasureCell(e, player, player_qq, map, x, y) {
       return handleXianguMarrowPoolCell(player, player_qq, map, x, y, foundTreasure, foundName);
     }
     const claimScope = getXianguSharedScope(player, foundName, 'unique');
+    const rewardName = foundTreasure.name || foundName;
     const beforeBag = getXianguBagSettlementSnapshot(player);
     const beforeGains = cloneXianguSettlementData(player.xiangu_gains);
     foundTreasure.claimed = true;
     map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
 
     addXianguBagItem(ensureXianguBag(player), {
-      name: foundName,
-      type: '绝世机缘',
+      name: rewardName,
+      type: foundTreasure.type || '绝世机缘',
+      ...(foundTreasure.class ? { class: foundTreasure.class } : {}),
+      ...(foundTreasure.stats || {}),
       quantity: 1,
       unique: true,
       desc: foundTreasure.desc,
@@ -6696,7 +7034,7 @@ async function handleUniqueTreasureCell(e, player, player_qq, map, x, y) {
       grantXianguBagSeed(player, seed);
       seedMessage = `\n伴生道种：${seed.名称} [${seed.品质}]`;
     }
-    const message = [`✨✨✨【绝世机缘·${foundName}】✨✨✨`, `${player.名号}伸手触及${foundTreasure.desc}`, ``, `秘境背包：${foundName} | ${reward.sourceStone.toLocaleString()}源石 | ${reward.xiuwei}修为 | 20道韵${seedMessage}`, ``, `此等造化，足以震动九天十地！`].join('\n');
+    const message = [`✨✨✨【绝世机缘·${foundName}】✨✨✨`, `${player.名号}伸手触及${foundTreasure.desc}`, ``, `秘境背包：${rewardName} | ${reward.sourceStone.toLocaleString()}源石 | ${reward.xiuwei}修为 | 20道韵${seedMessage}`, ``, `此等造化，足以震动九天十地！`].join('\n');
     const delivery = await deliverXianguClaimBagReward(
       player,
       player_qq,
@@ -6892,6 +7230,22 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
     gains: {}
   };
 
+  // 若上次战败抉择未决：逾期自动结算为「任凭鱼肉」，未逾期则提醒先抉择
+  const pendingDefeat = player.xiangu_pending_defeat;
+  if (pendingDefeat && typeof pendingDefeat === 'object') {
+    if (Number(pendingDefeat.expiresAt) < Date.now()) {
+      const outcome = await settleXianguDefeatChoice(player, player_qq, 'slaughter');
+      result.message = outcome.message;
+    } else {
+      result.message = [
+        `【身陷绝境】你正被「${pendingDefeat.npcName || '秘境存在'}」压制，生死未卜！`,
+        ``,
+        `请先发送 #求饶 或 #任凭鱼肉 做出抉择。`,
+      ].join('\n');
+    }
+    return result;
+  }
+
   // 根据偏向来调整概率权重
   // 默认概率：道韵40%, 源石30%, 道具15%, 战斗10%, 惊天发现5%
   let thresholds = { daoyun: 0.40, lingshi: 0.30, item: 0.15, fight: 0.10, special: 0.05 };
@@ -6992,9 +7346,13 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
   let rewardType, rewardName, rewardDesc;
   
   if (findRandom < thresholds.daoyun) {
-    // 获得道韵
+    // 获得道韵（道心蒙尘期间收益减半）
     const daoyunGain = Math.floor(riskData.baseReward * (0.8 + Math.random() * 0.4) * eventRewardMult);
-    result.gains.daoyun = daoyunGain;
+    const tarnished = Number(player.xiangu_daoheart_tarnish_until) > Date.now();
+    const finalDaoyunGain = tarnished
+      ? Math.max(1, Math.floor(daoyunGain * XIANGU_DAOHEART_TARNISH_MULT))
+      : daoyunGain;
+    result.gains.daoyun = finalDaoyunGain;
 
     // 境界修为/血气奖励
     const { xiuwei: dyXw, xueqi: dyXq } = calcExploreRewards(player, rewardMultiplier);
@@ -7009,7 +7367,8 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
       `玄妙的气息流淌而过，道韵加深！`,
       ``,
       `【获得】`,
-      `道韵领悟 +${daoyunGain}`,
+      `道韵领悟 +${finalDaoyunGain}`,
+      ...(tarnished ? [`（道心蒙尘，道韵收益减半，剩余${Math.ceil((Number(player.xiangu_daoheart_tarnish_until) - Date.now()) / 3600000)}小时）`] : []),
       `修为 +${dyReward.xiuwei.toLocaleString()}`,
       `血气 +${dyReward.xueqi.toLocaleString()}`,
       ``,
@@ -7017,7 +7376,7 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
       `- 当前位置：${location}`,
       `- 危险等级：${'★'.repeat(riskData.risk * 5 + 1)}`,
       `- 探索结果：✓ 发现道韵`,
-      `- 当前道韵：${player.xiangu_gains?.daoyun || 0} + ${daoyunGain}`,
+      `- 当前道韵：${player.xiangu_gains?.daoyun || 0} + ${finalDaoyunGain}`,
       ``,
       `【古史记载】`,
       `"道韵无形，却可积少成多，汇聚成河"`
@@ -7199,10 +7558,11 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
           ].join('\n');
         }
       } else {
-        // 战败或平局
+        // 战败或平局：不再直接了断，进入生死抉择
         const hpLoss = Math.floor((Number(player.血量上限 || player.血气上限) || 1) * 0.25);
         player.当前血量 = Math.max(1, (Number(player.当前血量) || 1) - hpLoss);
         applyXianguHeavyInjury(player);
+        const pending = armXianguDefeatChoice(player, { name: enemyName, faction: resolveXianguNpcFaction({ name: enemyName }) }, 'explore');
         await Write_player(player_qq, player);
 
         result.message = [
@@ -7213,10 +7573,14 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
           `━━━ 战斗过程 ━━━`,
           ...msg.slice(-6),
           `━━━ 战斗结果 ━━━`,
-          `${player.名号}力战不敌（或平局收场），被迫撤退！`,
+          `${player.名号}力战不敌（或平局收场），重伤倒地！`,
           ``,
           `【损失】`,
-          `血气 -${hpLoss.toLocaleString()}`
+          `血气 -${hpLoss.toLocaleString()}`,
+          `状态：重伤（30分钟内探索效率降低50%）`,
+          ``,
+          ``,
+          buildXianguDefeatChoiceMenu(pending),
         ].join('\n');
       }
     }
@@ -7289,11 +7653,11 @@ function getLocationItems(location) {
     '中层区域': [
       { name: '神源石', type: '道具', rarity: '优秀', desc: '封存着浓郁源气的神源石' },
       { name: '破境丹', type: '丹药', rarity: '稀有', desc: '增加突破成功率的神秘丹药' },
-      { name: '仙古遗种蛋', type: '宠物', rarity: '史诗', desc: '一枚沉睡的遗种之蛋，蕴含古老血脉' },
+      { name: '仙古遗种蛋', type: '道具', rarity: '史诗', desc: '一枚沉睡的遗种之蛋，蕴含古老血脉' },
       { name: '十凶残魂', type: '材料', rarity: '稀有', desc: '十凶残留的一缕魂魄，可用于炼器' },
       { name: '鲲鹏羽', type: '材料', rarity: '稀有', desc: '鲲鹏脱落的一根羽毛，蕴含极速道则' },
-      { name: '雷池液', type: '材料', rarity: '史诗', desc: '雷帝沐浴的雷池遗液，可淬炼肉身' },
-      { name: '柳神法残篇', type: '功法', rarity: '传说', desc: '柳神涅槃大法的残篇，蕴含生命真谛' }
+      { name: '雷池液', type: '道具', rarity: '史诗', desc: '雷帝沐浴的雷池遗液，可淬炼肉身' },
+      { name: '柳神法残篇', type: '材料', rarity: '传说', desc: '柳神涅槃大法的残篇，蕴含生命真谛' }
     ],
     '深层区域': [
       { name: '上品神源石', type: '道具', rarity: '稀有', desc: '源气近乎化液的上品神源石' },
@@ -7302,14 +7666,13 @@ function getLocationItems(location) {
       { name: '天角蚁宝术残篇', type: '功法', rarity: '传说', desc: '天角蚁一族的力之极尽奥义残篇' },
       { name: '仙火髓', type: '材料', rarity: '传说', desc: '仙域神火燃尽后留下的精髓，蕴含至高火焰法则' },
       { name: '折仙咒碎片', type: '材料', rarity: '传说', desc: '折仙咒碑碎裂脱落的碎片，蕴含诅咒之力' },
-      { name: '补天术残篇', type: '功法', rarity: '传说', desc: '女娲补天之术的残篇，可修补道基缺陷' },
+      { name: '补天术残篇', type: '材料', rarity: '传说', desc: '女娲补天之术的残篇，可修补道基缺陷' },
       { name: '黑暗物质样本', type: '材料', rarity: '史诗', desc: '黑暗牢笼中逸散的神秘物质' }
     ],
     '核心区域': [
       { name: '超品神源石', type: '道具', rarity: '传说', desc: '仙古矿脉核心孕育的超品神源石' },
       { name: '道韵碎片', type: '材料', rarity: '传说', desc: '蕴含完整道则的碎片，价值连城' },
       { name: '仙古真血', type: '材料', rarity: '史诗', desc: '一滴仙古纪元真仙的精血' },
-      { name: '原始真解残篇', type: '功法', rarity: '神话', desc: '天地初开时的原始真解，可参悟大道本源' }
     ],
     '火道禁区': [
       { name: '万火深渊', type: '试炼', rarity: '传说', desc: '万火深渊深处——祭炼真我者感悟大道的试炼地，渡过者可得火道道种', trial: true },
@@ -7324,7 +7687,6 @@ function getLocationItems(location) {
 function getSpecialDiscovery(location) {
   const specialItems = {
     '边缘区域': [
-      { name: '狻猊宝术拓印', type: '功法', rarity: '稀有', desc: '狻猊遗留下的宝术拓印，蕴含雷电之力' }
     ],
     '中层区域': [
       { name: '仙药园令牌', type: '道具', rarity: '稀有', desc: '可召唤一处临时仙药园的令牌' },
@@ -7334,8 +7696,6 @@ function getSpecialDiscovery(location) {
     ],
     '深层区域': [
       { name: '仙王讲道录', type: '传承', rarity: '传说', desc: '记载仙王讲道的玉简，蕴含无上道法' },
-      { name: '折仙咒刻图', type: '功法', rarity: '传说', desc: '折仙咒的修炼法门，威力巨大但有风险' },
-      { name: '真凰宝术拓印', type: '功法', rarity: '传说', desc: '真凰涅槃之术的拓印，可浴火重生' },
       { name: '黑暗牢笼钥匙', type: '道具', rarity: '史诗', desc: '传说可开启黑暗牢笼深处秘藏的钥匙' },
       { name: '三千道火', type: '试炼', rarity: '传说', desc: '触及三千道火试炼——三千种大道之火汇聚成的火海，熬过去可淬炼出三千道火种！', trial: true }
     ],
@@ -7390,13 +7750,13 @@ async function handleBossEncounter(player, location, player_qq, usr_qq) {
   const bossDefs = {
     '中层区域': [
       { name: '真龙残魂', skills: ['龙吟九天', '真龙摆尾', '龙战于野'],
-        drops: [{ name: '真龙宝术', chance: 0.1, rarity: '史诗' }, { name: '龙鳞', chance: 0.5, rarity: '稀有' }] },
+        drops: [{ name: '真龙宝术', type: '功法', chance: 0.1, rarity: '史诗' }, { name: '真龙龙鳞', type: '道具', chance: 0.5, rarity: '稀有' }] },
       { name: '仙药守护兽', skills: ['守护之怒', '药香迷惑', '灵根护体'],
         drops: [{ name: '不死神药幼苗', chance: 0.05, rarity: '传说' }, { name: '守护兽内丹', chance: 0.4, rarity: '稀有' }] }
     ],
     '深层区域': [
       { name: '仙王残念', skills: ['轮回印', '无终一击', '仙王道则'],
-        drops: [{ name: '六道轮回天功', chance: 0.08, rarity: '传说' }, { name: '仙王精血', chance: 0.3, rarity: '传说' }] },
+        drops: [{ name: '六道轮回天功', type: '功法', chance: 0.08, rarity: '传说' }, { name: '仙王精血', chance: 0.3, rarity: '传说' }] },
       { name: '黑暗古祖', skills: ['黑暗侵蚀', '不朽之触', '黑暗牢笼'],
         drops: [{ name: '黑暗物质样本', chance: 0.4, rarity: '稀有' }, { name: '折仙咒原本', chance: 0.15, rarity: '传说' }] }
     ],
@@ -7455,7 +7815,7 @@ async function handleBossEncounter(player, location, player_qq, usr_qq) {
     for (const drop of bossDef.drops) {
       if (Math.random() < drop.chance) {
         rewards.push(drop);
-        await addXianguSpoil(player, drop.name, 1);
+        await addXianguSpoil(player, drop.name, 1, drop.desc, drop.type);
       }
     }
     
@@ -7696,8 +8056,8 @@ const XIANGU_FACTIONS = {
     npcTypes: ['古仙引路者', '古老传承者', '古帝虚影'],
     desc: '仙古秘境中守护传承、引渡有缘人的存在',
     ranks: [
-      { name: '崇拜', min: 500, effects: ['NPC可赐予帝念碎片', '秘境探索发现率+20%', '解锁阵营商店传说级商品'] },
-      { name: '信任', min: 200, effects: ['NPC可传授秘法', '交易优惠15%', '解锁阵营商店稀有级商品'] },
+      { name: '崇拜', min: 500, effects: ['NPC可赐予帝念碎片', '秘境探索发现率+20%', '可触发传说级隐藏机缘'] },
+      { name: '信任', min: 200, effects: ['NPC可传授秘法', '交易优惠15%', '可触发稀有级隐藏机缘'] },
       { name: '友善', min: 100, effects: ['NPC交易优惠10%', '可接取阵营每日任务'] },
       { name: '熟识', min: 50,  effects: ['NPC态度友善，交谈有额外对话'] },
       { name: '陌生', min: 0,   effects: ['NPC正常交互'] },
@@ -7711,12 +8071,6 @@ const XIANGU_FACTIONS = {
       { name: '秘境巡礼', desc: '探索5次秘境区域', target: 'explore', count: 5, reward: { daoyun: 60, rep: 25 }, icon: '🗺️' },
       { name: '灵物供奉', desc: '献祭1枚道种', target: 'offer_seed', count: 1, reward: { daoyun: 100, rep: 40 }, icon: '🔥' }
     ],
-    shop: [
-      { name: '古帝念碎片', price: 300, requireRep: 500, desc: '一丝古之大帝的意志碎片，可增强元神', icon: '💠', type: 'consumable' },
-      { name: '仙道真解残卷', price: 200, requireRep: 200, desc: '记录仙古修炼法门的残卷', icon: '📜', type: 'skill' },
-      { name: '天心印记', price: 150, requireRep: 100, desc: '秘境天心之印，提升道种觉醒几率', icon: '🌟', type: 'consumable' },
-      { name: '古境灵露', price: 50, requireRep: 50, desc: '秘境灵脉凝聚的甘露，恢复大量血气', icon: '💧', type: 'consumable' }
-    ]
   },
   neutral: {
     name: '中立阵营',
@@ -7725,7 +8079,7 @@ const XIANGU_FACTIONS = {
     npcTypes: ['流浪修士', '道种贩者', '仙古兽灵'],
     desc: '在秘境中独善其身的存在，讲究等价交换',
     ranks: [
-      { name: '知己', min: 200, effects: ['NPC可提供隐藏机缘线索', '解锁阵营商店稀有商品'] },
+      { name: '知己', min: 200, effects: ['NPC可提供隐藏机缘线索', '可触发稀有级隐藏机缘'] },
       { name: '信赖', min: 100, effects: ['可接取阵营每日任务', '交易优惠10%'] },
       { name: '友好', min: 50,  effects: ['NPC偶尔共享情报'] },
       { name: '陌生', min: 0,   effects: ['正常交互'] },
@@ -7733,16 +8087,9 @@ const XIANGU_FACTIONS = {
       { name: '排斥', min: -150,effects: ['NPC拒绝交谈'] }
     ],
     questPool: [
-      { name: '互通有无', desc: '向NPC购买3次商品', target: 'npc_buy', count: 3, reward: { daoyun: 50, rep: 20 }, icon: '💰' },
       { name: '秘境见闻', desc: '探索中触发3次NPC交谈', target: 'npc_talk', count: 3, reward: { daoyun: 40, rep: 15 }, icon: '💬' },
       { name: '道种交易', desc: '收集2枚普通道种', target: 'collect_seed', count: 2, reward: { daoyun: 70, rep: 25 }, icon: '💎' }
     ],
-    shop: [
-      { name: '秘境情报·核心', price: 200, requireRep: 200, desc: '指引一处核心区域隐藏机缘', icon: '📜', type: 'map' },
-      { name: '道种鉴定符', price: 100, requireRep: 100, desc: '鉴定一枚道种的隐藏属性', icon: '🔍', type: 'consumable' },
-      { name: '纳戒扩容符', price: 80, requireRep: 50, desc: '增加纳戒容量', icon: '💍', type: 'consumable' },
-      { name: '秘境灵药包', price: 40, requireRep: 0, desc: '一包秘境采摘的灵药，恢复中等血气', icon: '🌿', type: 'consumable' }
-    ]
   },
   evil: {
     name: '邪恶阵营',
@@ -7753,7 +8100,7 @@ const XIANGU_FACTIONS = {
     ranks: [
       { name: '魔王', min: 500, effects: ['邪恶NPC俯首称臣', '可驱使邪恶NPC攻击其他修士', '解锁黑市传说级商品'] },
       { name: '霸主', min: 200, effects: ['黑市交易优惠30%', '邪恶NPC不主动招惹', '解锁黑市稀有商品'] },
-      { name: '恶客', min: 100, effects: ['邪恶NPC不主动攻击', '可接取黑市任务'] },
+      { name: '恶客', min: 100, effects: ['邪恶NPC不主动攻击', '可接取高风险任务'] },
       { name: '猎物', min: 0,   effects: ['邪恶NPC保持警惕'] },
       { name: '仇敌', min: -50, effects: ['邪恶NPC主动攻击概率+30%'] }
     ],
@@ -7762,12 +8109,6 @@ const XIANGU_FACTIONS = {
       { name: '巧取豪夺', desc: '击败任意NPC并从纳戒获取战利品', target: 'npc_loot', count: 1, reward: { daoyun: 50, rep: 20 }, icon: '💰' },
       { name: '搜魂猎手', desc: '对NPC搜魂1次', target: 'soul_search', count: 1, reward: { daoyun: 100, rep: 40 }, icon: '👻' }
     ],
-    shop: [
-      { name: '噬道魔种', price: 300, requireRep: 500, desc: '吞噬后可大幅提升修为，但有副作用', icon: '🖤', type: 'consumable' },
-      { name: '夺魂血炼术', price: 250, requireRep: 200, desc: '邪恶功法，击杀敌人时额外恢复血气', icon: '📕', type: 'skill' },
-      { name: '暗杀烙印', price: 150, requireRep: 100, desc: '给目标修士打上烙印，击杀后可获得额外掉落', icon: '🎯', type: 'consumable' },
-      { name: '黑市灵石袋', price: 60, requireRep: 0, desc: '一袋来路不明的灵石', icon: '💰', type: 'consumable' }
-    ]
   }
 };
 
@@ -7885,7 +8226,7 @@ const XIANGU_NPCS = {
       ],
       trade: {
         items: [
-          { name: '普通道种碎片', price: 5000, currency: '灵石' },
+          { name: '普通道种碎片', price: 2000000, currency: '灵石' },
           { name: '稀有道种碎片', price: 20000, currency: '灵石' },
           { name: '传说道种碎片', price: 80000, currency: '灵石' }
         ]
@@ -7992,9 +8333,9 @@ const XIANGU_CANON_NPCS = {
       isAlive: true,
       isCanon: true,
       dropTable: [
-        { item: '世界树残叶', chance: 0.3, desc: '一片蕴含世界之力的树叶' },
-        { item: '真龙精血', chance: 0.15, desc: '真龙一族的精血，蕴含无上龙威' },
-        { item: '天子印碎片', chance: 0.25, desc: '十冠王天子印的碎片' }
+        { item: '世界树残叶', type: '道具', chance: 0.3, desc: '一片蕴含世界之力的树叶' },
+        { item: '真龙精血', type: '丹药', chance: 0.15, desc: '真龙一族的精血，蕴含无上龙威' },
+        { item: '天子印碎片', type: '材料', chance: 0.25, desc: '十冠王天子印的碎片' }
       ]
     },
     {
@@ -8023,9 +8364,9 @@ const XIANGU_CANON_NPCS = {
       isAlive: true,
       isCanon: true,
       dropTable: [
-        { item: '天角蚁宝术残卷', chance: 0.3, desc: '十凶天角蚁宝术的残卷' },
-        { item: '真凰精血', chance: 0.2, desc: '蕴含真凰血脉的精血' },
-        { item: '凶巢阵纹碎片', chance: 0.2, desc: '凶巢杀阵的阵纹碎片' }
+        { item: '天角蚁宝术残卷', type: '材料', chance: 0.3, desc: '十凶天角蚁宝术的残卷' },
+        { item: '真凰精血', type: '丹药', chance: 0.2, desc: '蕴含真凰血脉的精血' },
+        { item: '凶巢阵纹碎片', type: '材料', chance: 0.2, desc: '凶巢杀阵的阵纹碎片' }
       ]
     }
   ],
@@ -8056,9 +8397,9 @@ const XIANGU_CANON_NPCS = {
       isAlive: true,
       isCanon: true,
       dropTable: [
-        { item: '轮回印记', chance: 0.3, desc: '一道轮回印记，蕴含六世记忆碎片' },
-        { item: '六道轮回残卷', chance: 0.2, desc: '六道轮回天功的残卷' },
-        { item: '神魂结晶', chance: 0.25, desc: '六世修士的神魂凝晶' }
+        { item: '轮回印记', type: '材料', chance: 0.3, desc: '一道轮回印记，蕴含六世记忆碎片' },
+        { item: '六道轮回残卷', type: '材料', chance: 0.2, desc: '六道轮回天功的残卷' },
+        { item: '神魂结晶', type: '材料', chance: 0.25, desc: '六世修士的神魂凝晶' }
       ]
     },
     {
@@ -8087,9 +8428,9 @@ const XIANGU_CANON_NPCS = {
       isAlive: true,
       isCanon: true,
       dropTable: [
-        { item: '剑谷剑意碎片', chance: 0.3, desc: '一缕纯粹的剑谷剑意' },
-        { item: '天晶剑芒', chance: 0.25, desc: '一缕天晶剑术凝聚的剑芒' },
-        { item: '古剑残躯', chance: 0.15, desc: '一柄断裂的远古神剑残躯' }
+        { item: '剑谷剑意碎片', type: '材料', chance: 0.3, desc: '一缕纯粹的剑谷剑意' },
+        { item: '天晶剑芒', type: '材料', chance: 0.25, desc: '一缕天晶剑术凝聚的剑芒' },
+        { item: '古剑残躯', type: '材料', chance: 0.15, desc: '一柄断裂的远古神剑残躯' }
       ]
     },
     {
@@ -8118,9 +8459,9 @@ const XIANGU_CANON_NPCS = {
       isAlive: true,
       isCanon: true,
       dropTable: [
-        { item: '仙殿秘术残页', chance: 0.3, desc: '仙殿不传之秘的残缺书页' },
-        { item: '不死鸟精血', chance: 0.2, desc: '九头不死鸟的精血，蕴含涅槃之力' },
-        { item: '人仙印碎片', chance: 0.15, desc: '人仙印的残缺碎片' }
+        { item: '仙殿秘术残页', type: '材料', chance: 0.3, desc: '仙殿不传之秘的残缺书页' },
+        { item: '不死鸟精血', type: '丹药', chance: 0.2, desc: '九头不死鸟的精血，蕴含涅槃之力' },
+        { item: '人仙印碎片', type: '材料', chance: 0.15, desc: '人仙印的残缺碎片' }
       ]
     }
   ],
@@ -8151,9 +8492,9 @@ const XIANGU_CANON_NPCS = {
       isAlive: true,
       isCanon: true,
       dropTable: [
-        { item: '真凰翎羽', chance: 0.3, desc: '一根燃烧着火焰的真凰翎羽' },
-        { item: '涅槃精血', chance: 0.2, desc: '一枚蕴含生机的涅槃精血' },
-        { item: '凤凰泪', chance: 0.25, desc: '一滴凤凰之泪，蕴含生机' }
+        { item: '真凰翎羽', type: '道具', chance: 0.3, desc: '一根燃烧着火焰的真凰翎羽' },
+        { item: '涅槃精血', type: '丹药', chance: 0.2, desc: '一枚蕴含生机的涅槃精血' },
+        { item: '凤凰泪', type: '道具', chance: 0.25, desc: '一滴凤凰之泪，蕴含生机' }
       ]
     }
   ]
@@ -8894,7 +9235,7 @@ async function XianguNPCAttackFn(e, player, player_qq) {
       return e.reply(resultLines.join('\n'));
 
     } else {
-      // === 玩家战败 ===
+      // === 玩家战败：进入生死抉择，不再直接了断 ===
       const playerMaxHp = Number(player.血量上限 || player.血气上限) || 10_000;
       const playerCurrentHp = Number(player.当前血量) || playerMaxHp;
       const hpLoss = Math.max(1, Math.floor(playerCurrentHp * 0.25));
@@ -8908,49 +9249,22 @@ async function XianguNPCAttackFn(e, player, player_qq) {
         player.xiangu_npc_relations[npcId] = (player.xiangu_npc_relations[npcId] || 0) - 10;
       }
 
-      let uniqueSpoil = null;
-      let npcGoalLines = [];
-      const forcedSummary = await forceXianguPlayerExitAfterNpcDefeat(player, player_qq);
-      if (forcedSummary) {
-        try {
-          uniqueSpoil = await transferXianguUniqueSpoilToNpc(player, npc);
-        } catch (sharedError) {
-          console.error('记录仙古NPC夺宝状态失败:', sharedError);
-        }
-        try {
-          npcGoalLines = await recordXianguCanonNpcEvent(player, npc, {
-            type: getXianguNpcVictoryEventType(npc, player_qq),
-            victimId: player_qq,
-          });
-        } catch (sharedError) {
-          console.error('记录仙古NPC胜利状态失败:', sharedError);
-        }
-        clearXianguSessionState(player, forcedSummary);
-      }
-
+      const pending = armXianguDefeatChoice(player, npc, 'attack');
       await Write_player(player_qq, player);
-      if (forcedSummary) {
-        try {
-          await clearXianguRedisSession(player_qq);
-          await setXianguCooldown(player_qq, player_qq, Date.now());
-        } catch (redisError) {
-          console.error('清理NPC战败玩家会话失败:', redisError);
-        }
-      }
 
       return e.reply([
         `【攻击NPC·战败】`,
         ``,
         `${player.名号}主动挑衅${npc.name || npc.名号}，`,
         ...battleSides.messages,
-        `却低估了对方的实力，被反手重创！`,
+        `却低估了对方的实力，被反手重创，重伤倒地！`,
         ``,
         `【损失】`,
         `当前血量 -${hpLoss.toLocaleString()}`,
         `凶名值减少`,
-        ...(forcedSummary ? [`伤势过重，被秘境法则送离，秘境背包中的${forcedSummary.lootUnits}份收获全部遗失。`] : []),
-        ...(uniqueSpoil ? [`唯一造化被${npc.name || npc.名号}夺走：${uniqueSpoil.name}`] : []),
-        ...npcGoalLines,
+        ``,
+        ``,
+        buildXianguDefeatChoiceMenu(pending),
         ``,
         `"不自量力..." — ${npc.name || npc.名号}冷冷道。`
       ].join('\n'));
@@ -9002,7 +9316,7 @@ async function processNPCKillLoot(player, player_qq, npc, location) {
     lines.push(npc.isCanon ? `【原著天骄·特殊掉落】` : `【随机掉落】`);
     for (const drop of npc.dropTable) {
       if (Math.random() < drop.chance) {
-        await addXianguSpoil(player, drop.item, 1, drop.desc);
+        await addXianguSpoil(player, drop.item, 1, drop.desc, drop.type);
         lines.push(`  ✅ ${drop.item} — ${drop.desc}`);
       }
     }
@@ -9252,40 +9566,17 @@ async function resolveXianguNpcEcologyBattle(player, player_qq, action) {
   player.xiangu_npc_relations ||= {};
   player.xiangu_npc_relations[action.npcId] =
     (Number(player.xiangu_npc_relations[action.npcId]) || 0) - 15;
-  let uniqueSpoil = null;
-  let npcGoalLines = [];
-  const forcedSummary = await forceXianguPlayerExitAfterNpcDefeat(player, player_qq);
-  if (forcedSummary) {
-    try {
-      uniqueSpoil = await transferXianguUniqueSpoilToNpc(player, npc);
-    } catch (sharedError) {
-      console.error('记录仙古NPC追猎夺宝失败:', sharedError);
-    }
-    try {
-      npcGoalLines = await recordXianguCanonNpcEvent(player, npc, {
-        type: getXianguNpcVictoryEventType(npc, player_qq),
-        victimId: player_qq,
-      });
-    } catch (sharedError) {
-      console.error('记录仙古NPC追猎胜利失败:', sharedError);
-    }
-    clearXianguSessionState(player, forcedSummary);
-    try {
-      await clearXianguRedisSession(player_qq);
-      await setXianguCooldown(player_qq, player_qq, Date.now());
-    } catch (redisError) {
-      console.error('清理NPC追猎战败玩家会话失败:', redisError);
-    }
-  }
+  // 被伏击击败：进入生死抉择，不再直接了断
+  const pending = armXianguDefeatChoice(player, npc, isFraud ? 'fraud' : 'hunt');
+  await Write_player(player_qq, player);
   return [
     `${isFraud ? '🩸【NPC骗局·围杀】' : '⚔️【NPC追猎·战败】'}`,
     `${npcName}${isFraud ? '撕下伪装，伏兵同时现身' : '循着你的气息追杀而至'}！`,
     ...battleLog.slice(-8),
-    forcedSummary
-      ? `${player.名号}伤势过重，被秘境法则送离，秘境背包中的${forcedSummary.lootUnits}份收获全部遗失。`
-      : `${player.名号}负伤突围，当前血量 -${hpLoss.toLocaleString()}，陷入重伤。`,
-    ...(uniqueSpoil ? [`${npcName}夺走了你的唯一造化：${uniqueSpoil.name}`] : []),
-    ...npcGoalLines,
+    `${player.名号}负伤突围，当前血量 -${hpLoss.toLocaleString()}，陷入重伤。`,
+    '',
+    '',
+    buildXianguDefeatChoiceMenu(pending),
   ];
 }
 
@@ -9951,34 +10242,6 @@ async function updateFactionQuestProgress(player_qq, factionKey, actionType, cou
   return null;
 }
 
-/** 阵营商店 */
-async function XianguFactionShopFn(e, player, player_qq) {
-  const rep = player.xiangu_faction_rep || { good: 0, neutral: 0, evil: 0 };
-  const lines = [`🏪【仙古秘境·阵营商店】`, ``];
-
-  for (const [key, def] of Object.entries(XIANGU_FACTIONS)) {
-    const val = rep[key] || 0;
-    const rank = getFactionRankName(key, val);
-    lines.push(`${def.icon} ${def.name} — ${rank}（${val >= 0 ? '+' : ''}${val}）`);
-
-    let count = 0;
-    for (const item of def.shop) {
-      const locked = val < (item.requireRep || 0);
-      const lockStr = locked ? '🔒' : '✅';
-      const priceStr = locked ? `需声望${item.requireRep}` : `💰${item.price}灵石`;
-      lines.push(`  ${lockStr} ${item.icon} ${item.name} — ${priceStr}`);
-      lines.push(`     ${item.desc}`);
-      count++;
-    }
-    if (count === 0) lines.push(`  无可用商品`);
-    lines.push(``);
-  }
-
-  lines.push(`━━━━ 购买方式 ━━━━`);
-  lines.push(`#阵营购买 善良/中立/邪恶 商品名`);
-  return e.reply(lines.join('\n'));
-}
-
 /** 阵营排行 */
 async function XianguFactionRankFn(e, player) {
   const now = Date.now();
@@ -10364,7 +10627,8 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}, random = Math
         distEcho: 3,
         claimed: false,
         name: '玉石匣',
-        desc: '玉石制成的古匣，内含仙王经文，万年后方可开启',
+        type: '道具',
+        desc: '仙古神玉凿成的无缝古匣，匣面道纹随岁月明灭，内封一卷仙王经文；时机未至，强开只会令经文化为流光。',
         echoMsg: {
           3: '心神不宁，似有大道在远方共鸣...',
           2: '一股浩瀚道韵从前方传来，令你体内功法自行运转！',
@@ -10382,7 +10646,8 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}, random = Math
         distEcho: 2,
         claimed: false,
         name: '帝血',
-        desc: '万物土下封存的一滴大帝精血，蕴含无上力量',
+        type: '道具',
+        desc: '一位无上存在跨越万古时空留下的一滴精血，万古岁月也未能磨灭其中的帝道意志。',
         echoMsg: {
           2: '脚下大地隐隐传来温热...似有沉睡的力量在苏醒',
           1: '万物土在震动！一滴璀璨的金色血液缓缓浮出地面！'
@@ -10401,7 +10666,19 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}, random = Math
         distEcho: 3,
         claimed: false,
         name: '大罗剑胎',
-        desc: '黑色古船内的无上剑器，半成品的仙王法器',
+        class: '装备',
+        type: '武器',
+        stats: {
+          atk: 3_000_000_000,
+          def: 3_000_000_000,
+          HP: 3_000_000_000,
+          bao: 0.2,
+          pinji: 6,
+          至尊体全属性倍率: 15,
+          其他灵根全属性倍率: 7.5,
+          不可交易: 1,
+        },
+        desc: '黑色古船横渡虚空而来，剑胎无锋无饰，却承载着斩开岁月长河的杀机。至尊血脉可令其彻底复苏，其他修士亦只能借来半分锋芒。',
         echoMsg: {
           3: '远方似有剑鸣传来，古老而深邃...',
           2: '剑意越来越强！这是来自超越仙王的力量...',

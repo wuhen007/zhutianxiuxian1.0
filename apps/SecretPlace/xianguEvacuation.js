@@ -444,6 +444,7 @@ export function clearXianguSessionState(player = {}, summary = {}) {
     'xiangu_bag',
     'xiangu_defeated_npc_ids',
     'xiangu_world_seed',
+    'xiangu_pending_defeat',
   ];
 
   for (const field of temporaryFields) delete player[field];

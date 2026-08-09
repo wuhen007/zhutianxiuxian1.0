@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import { plugin, verc, data, config } from '../../api/api.js';
 
 import {
@@ -16,6 +17,7 @@ import {
 
 import {
   Add_灵石,
+  Add_源石,
   Add_修为,
    Add_血气,
   Add_寿元,
@@ -24,6 +26,8 @@ import {
   add_qinmidu,
   Goweizhi,
   Write_player,
+  Write_equipment,
+  bigNumberTransform,
   xunbaoweizhi,
   xunbaoCategoryData,
   Go,
@@ -37,6 +41,7 @@ import {
 import Show from "../../model/show.js";
 import puppeteer from "../../../../lib/puppeteer/puppeteer.js";
 import RealmEvents from '../tasks/RealmEvents.js';
+import { mountTianjiaoTreasure } from '../../model/tianjiaoTreasure.js';
 import {
   applyInnateTravelReduction,
   claimInnateTreasure,
@@ -49,6 +54,7 @@ import {
 import {
   TREASURE_DAO_HEARTS,
   TREASURE_TRIAL_LIMIT,
+  TIANJI_INFO_BONUS,
   createTreasureGuardian,
   getRevealedTreasureClues,
   getTreasureContestProfile,
@@ -419,6 +425,10 @@ export class SecretPlace extends plugin {
 {
   reg: '^#(?:观摩灵宝|查看夺宝进度|灵宝择主榜)$',
   fnc: 'treasureContestInfo'
+},
+{
+  reg: '^#熔炼灵宝\\s+.+$',
+  fnc: 'MeltInnateTreasure'
 },
 {
   reg: '^#挑战守护灵\\s+(?:普通|凶险|绝境)$',
@@ -4397,7 +4407,7 @@ async treasureContestInfo(e) {
         rankings.slice(0, 10).forEach((item, index) => {
             lines.push(`${index + 1}. ${item.name} ${item.total}分`);
             if (event.contest?.status === 'settled') {
-                lines.push(`试炼${item.trialScore}｜契合${item.affinity}｜贡献${item.contribution}｜天运${item.luck}`);
+                lines.push(`试炼${item.trialScore}｜契合${item.affinity}｜贡献${item.contribution}｜天运${item.luck}${item.tianjiBonus ? `｜天机${item.tianjiBonus}` : ''}`);
             }
         });
         if (event.contest?.status !== 'settled') {
@@ -4436,6 +4446,9 @@ async treasureContestInfo(e) {
         lines.push('', `你的天机行动：${completed}/${TREASURE_TRIAL_LIMIT}`);
         lines.push(`已完成：${Object.keys(mine.trials || {}).map(key => ({ battle: '守护灵', insight: '先天禁制', support: '天地灵脉', fate: '命运乱流' })[key]).join('、') || '无'}`);
         lines.push(`当前试炼分：${mine.trialScore || 0}｜破封贡献：${mine.contribution || 0}｜道心：${mine.daoHeart || '未立'}`);
+        if (String(ctx.qq) === String(contest.tianjiBuyer?.qq)) {
+            lines.push(`天机在握：你已提前窥见至宝真名与天象，结算时额外 +${TIANJI_INFO_BONUS} 分`);
+        }
     }
     lines.push(
         '',
@@ -4813,6 +4826,12 @@ async settleTreasureEventRewards(event) {
         const settlement = RealmEvents.settleTreasureEvent(event.timestamp);
         if (!settlement.ok) return settlement;
         event = settlement.event;
+
+        // 天骄夺宝：择主冠军为天骄 AI 竞争者时，至宝落入天骄之手，全服公告
+        const winner = settlement.winner || event.contest?.winner;
+        if (winner && String(winner.qq || '').startsWith('tianjiao:')) {
+            await this.handleTianjiaoTreasureSeized(event, winner);
+        }
         const rankings = event.contest?.rankings || [];
         const rankByQq = new Map(rankings.map((item, index) => [String(item.qq), index + 1]));
         const rewarded = new Set((event.contest?.rewardedQqs || []).map(String));
@@ -4890,6 +4909,91 @@ async settleTreasureEventRewards(event) {
         treasureSettlementLocks.delete(lockKey);
     }
 }
+
+/**
+ * 天骄夺得先天至宝：挂载至宝（战斗引擎自动生效，战力飙升）并全服公告。
+ * 玩家随后可通过讨伐该天骄高概率夺回（见 BOSS4 finalizeTianjiaoDefeat）。
+ */
+async handleTianjiaoTreasureSeized(event, winner) {
+    try {
+        const tianjiaoName = String(winner.name || '');
+        const treasureName = event.treasure?.name;
+        const tianjiao = (data.weimiantianjiao_list || []).find(tj => tj?.名号 === tianjiaoName);
+        if (!tianjiao || !treasureName) return;
+        mountTianjiaoTreasure(tianjiao, treasureName);
+
+        const bossListPath = path.join(data.filePathMap?.lib || '', '位面boss列表.json');
+        if (bossListPath) {
+            try {
+                fs.writeFileSync(bossListPath, JSON.stringify(data.weimiantianjiao_list, null, 2), 'utf8');
+            } catch (error) {
+                console.error(`[天骄夺宝] 保存天骄列表失败:`, error);
+            }
+        }
+
+        const message = [
+            '【至宝易主·天骄夺宝】',
+            `「${treasureName}」择主之争尘埃落定——${tianjiaoName}力压群雄，夺得先天至宝【${treasureName}】！`,
+            '天骄持宝，实力陡增，诸天修士皆可前往讨伐夺回！',
+            '「先天灵宝，有德者居之——今日当归我！」',
+        ].join('\n');
+        const groups = config.getConfig('xiuxian', 'xiuxian')?.Era?.notifyGroups || [];
+        for (const groupId of groups) {
+            try {
+                await Bot.sendGroupMsg(groupId, message);
+            } catch (error) {
+                console.error(`[天骄夺宝] 群 ${groupId} 公告失败:`, error);
+            }
+        }
+        console.log(`[天骄夺宝] ${tianjiaoName} 夺得先天至宝【${treasureName}】`);
+    } catch (error) {
+        console.error('[天骄夺宝] 结算失败:', error);
+    }
+}
+
+  /** #熔炼灵宝 至宝名：消耗灵宝残片温养至宝，叠熔炼层数并提升全属性 */
+  async MeltInnateTreasure(e) {
+    if (!verc({ e })) return false;
+    const match = e.msg.match(/^#熔炼灵宝\s+(.*)$/);
+    const treasureName = match?.[1]?.trim();
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    if (!treasureName) return e.reply('请指定要熔炼的至宝名，例如：#熔炼灵宝 混沌珠');
+    try {
+      const player = await Read_player(usr_qq);
+      const fragments = Number(player.灵宝残片?.[treasureName]) || 0;
+      if (fragments < 20) {
+        return e.reply(`「${treasureName}」灵宝残片不足（${fragments}/20），多参与择主之争收集吧。`);
+      }
+      const equipment = await Read_equipment(usr_qq);
+      const treasure = equipment.至宝;
+      if (treasure?.name !== treasureName) {
+        return e.reply(`你尚未执掌「${treasureName}」本体，无法熔炼。`);
+      }
+      const layers = Math.max(0, Math.floor(Number(treasure.灵宝熔炼) || 0));
+      if (layers >= 10) return e.reply(`「${treasureName}」已熔炼至极限（10/10），灵性圆满。`);
+      const costLingshi = 100000000;
+      const costYuanshi = 20000000;
+      if ((Number(player.灵石) || 0) < costLingshi || (Number(player.源石) || 0) < costYuanshi) {
+        return e.reply(`熔炼需要灵石${bigNumberTransform(costLingshi)}与源石${bigNumberTransform(costYuanshi)}，家底不够。`);
+      }
+      player.灵宝残片[treasureName] = fragments - 20;
+      await Add_灵石(usr_qq, -costLingshi);
+      await Add_源石(usr_qq, -costYuanshi);
+      treasure.灵宝熔炼 = layers + 1;
+      treasure.全属性 = Math.max(0, Math.floor(Number(treasure.全属性) || 0) + 8);
+      await Write_player(usr_qq, player);
+      await Write_equipment(usr_qq, equipment);
+      return e.reply([
+        '【灵宝熔炼】',
+        `你以 20 枚「${treasureName}」灵宝残片为薪，引灵焰温养至宝，${treasureName}灵性渐复！`,
+        `熔炼层数 ${layers} → ${layers + 1}（全属性 +8，当前 ${treasure.全属性}）`,
+        '「残片归元，至宝通灵」',
+      ].join('\n'));
+    } catch (error) {
+      console.error('[灵宝熔炼] 失败:', error);
+      return e.reply('熔炼时发生错误，请稍后再试。');
+    }
+  }
 
 async participateRealmEvent(e) {
     if (!verc({ e })) return false;

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -11,6 +12,7 @@ import {
   claimXianguBagItems,
   clearXianguBag,
   cloneXianguBag,
+  convertXianguEvacuationItems,
   createXianguBag,
   ensureXianguBag,
   formatXianguBag,
@@ -60,6 +62,100 @@ test('物品按名称和类型合并，并克隆来源数据', () => {
     { meta: { age: 1 }, name: '仙古矿材', type: '材料', quantity: 5 },
     { name: '仙古矿材', type: '道具', quantity: 4 },
   ]);
+});
+
+test('旧秘境奖励会按新目录名称和分类归一后结算', () => {
+  const bag = createXianguBag({
+    items: [
+      { name: '柳神法残篇', type: '功法', quantity: 1 },
+      { name: '补天术残篇', type: '功法', quantity: 1 },
+      { name: '真龙宝术', type: '材料', quantity: 1 },
+      { name: '六道轮回天功', type: '材料', quantity: 1 },
+      { name: '真龙精血', type: '材料', quantity: 1 },
+      { name: '龙鳞', type: '材料', quantity: 1 },
+      { name: '雷池液', type: '材料', quantity: 1 },
+      { name: '仙古遗种蛋', type: '宠物', quantity: 1 },
+    ],
+  });
+  const najie = { 材料: [], 功法: [], 丹药: [], 道具: [] };
+
+  claimXianguBagItems(najie, bag, 'xiangu:migration-test');
+
+  assert.deepEqual(najie.材料.map(item => item.name).sort(), ['柳神法残篇', '补天术残篇']);
+  assert.deepEqual(najie.功法.map(item => item.name).sort(), ['六道轮回天功', '真龙宝术']);
+  assert.deepEqual(najie.丹药.map(item => item.name), ['真龙精血']);
+  assert.deepEqual(najie.道具.map(item => item.name).sort(), ['仙古遗种蛋', '真龙龙鳞', '雷池液']);
+});
+
+test('撤离时残兵熔成庚金玄土，基础战利品按每件一百万兑换双货币', () => {
+  const result = convertXianguEvacuationItems([
+    { name: '残破战戟', type: '材料', quantity: 2 },
+    { name: '仙古符骨', type: '材料', quantity: 1 },
+    { name: '普通道种碎片', type: '材料', quantity: 3 },
+    { name: '远古符纸', type: '材料', quantity: 2 },
+    { name: '真凰精血', type: '材料', quantity: 1 },
+  ]);
+
+  assert.equal(result.refinedCount, 3);
+  assert.equal(result.currencyItemCount, 5);
+  assert.equal(result.sourceStone, 5_000_000);
+  assert.equal(result.lingshi, 5_000_000);
+  assert.deepEqual(result.items, [
+    {
+      name: '庚金玄土',
+      type: '材料',
+      quantity: 3,
+      desc: '以仙古战场残兵碎片熔炼出的庚金玄土，可用于锻造与祭炼。',
+    },
+    { class: '丹药', name: '真凰精血', type: '丹药', quantity: 1 },
+  ]);
+});
+
+test('大罗剑胎按装备武器落入纳戒并保留完整属性', () => {
+  const bag = createXianguBag({
+    items: [{ name: '大罗剑胎', type: '绝世机缘', quantity: 1, unique: true }],
+  });
+  const najie = { 材料: [], 装备: [] };
+
+  claimXianguBagItems(najie, bag, 'xiangu:daluo-test');
+
+  assert.equal(najie.装备.length, 1);
+  assert.equal(najie.装备[0].type, '武器');
+  assert.equal(najie.装备[0].atk, 3_000_000_000);
+  assert.equal(najie.装备[0].def, 3_000_000_000);
+  assert.equal(najie.装备[0].HP, 3_000_000_000);
+  assert.equal(najie.装备[0].bao, 0.2);
+  assert.equal(najie.装备[0].至尊体全属性倍率, 15);
+  assert.equal(najie.装备[0].其他灵根全属性倍率, 7.5);
+});
+
+test('原著天骄掉落均已进入可消费的全局物品目录', () => {
+  const load = name => JSON.parse(fs.readFileSync(
+    new URL(`../resources/data/item/${name}`, import.meta.url),
+    'utf8',
+  ));
+  const materials = new Map(load('材料列表.json').map(item => [item.name, item]));
+  const pills = new Map(load('丹药列表.json').map(item => [item.name, item]));
+  const props = new Map(load('道具列表.json').map(item => [item.name, item]));
+  const equipment = new Map(load('装备列表.json').map(item => [item.name, item]));
+
+  for (const name of [
+    '庚金玄土', '天子印碎片', '天角蚁宝术残卷', '凶巢阵纹碎片',
+    '轮回印记', '六道轮回残卷', '神魂结晶', '剑谷剑意碎片',
+    '天晶剑芒', '古剑残躯', '仙殿秘术残页', '人仙印碎片',
+  ]) {
+    assert.equal(materials.get(name)?.class, '材料', `${name}应进入材料目录`);
+  }
+  for (const name of ['真龙精血', '真凰精血', '不死鸟精血', '涅槃精血']) {
+    assert.equal(pills.get(name)?.class, '丹药', `${name}应进入丹药目录`);
+    assert.ok(Number(pills.get(name)?.exp) > 0 && Number(pills.get(name)?.xueqi) > 0);
+  }
+  for (const name of ['帝血', '玉石匣', '世界树残叶', '真凰翎羽', '凤凰泪']) {
+    assert.equal(props.get(name)?.class, '道具', `${name}应进入道具目录`);
+  }
+  assert.equal(equipment.get('大罗剑胎')?.type, '武器');
+  assert.equal(equipment.get('大罗剑胎')?.atk, 3_000_000_000);
+  assert.equal(equipment.get('大罗剑胎')?.bao, 0.2);
 });
 
 test('唯一物标记在合并时不会被普通同名条目冲掉', () => {
@@ -177,13 +273,15 @@ test('唯一造化从战败者背包取出时保持数量守恒', () => {
   });
 
   const first = takeXianguUniqueBagItem(bag);
-  assert.deepEqual(first, {
-    name: '大罗剑胎',
-    type: '武器',
-    quantity: 1,
-    unique: true,
-    treasureKey: 'void:1,1',
-  });
+  assert.equal(first.name, '大罗剑胎');
+  assert.equal(first.type, '武器');
+  assert.equal(first.class, '装备');
+  assert.equal(first.quantity, 1);
+  assert.equal(first.unique, true);
+  assert.equal(first.treasureKey, 'void:1,1');
+  assert.equal(first.atk, 3_000_000_000);
+  assert.equal(first.def, 3_000_000_000);
+  assert.equal(first.HP, 3_000_000_000);
   assert.equal(bag.items.find(item => item.name === '大罗剑胎').quantity, 1);
 
   assert.equal(takeXianguUniqueBagItem(bag).name, '大罗剑胎');
