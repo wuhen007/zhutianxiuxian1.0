@@ -13,10 +13,10 @@ import {
     Add_najie_thing,
     channel
 } from '../../model/xiuxian.js';
-import schedule from 'node-schedule';
 import { getDailyTaskDateKey } from '../../model/dailyTask.js';
 import { reserveDailyAction, resetDailyAction } from '../../model/dailyAction.js';
 import { wasFactionRewardClaimedToday } from '../../model/factionSystem.js';
+import { runTaskOnce } from '../../utils/taskGuard.js';
 // 问仙令：每日任务完成后 +50 经验
 import { WenXianLing } from '../WenXianLing/WenXianLing.js';
 
@@ -69,11 +69,12 @@ export class AutoDailyTask extends plugin {
         // 读取配置
         this.set = config.getConfig('xiuxian', 'xiuxian');
         
-        // 无Yunzai定时任务（使用node-schedule），防止loader报undefined.cron
-        this.task = [];
-        
-        // 初始化定时任务
-        this.initAutoTask();
+        const cron = this.set.AutoDailyTask?.cron || '0 5 0 * * *';
+        this.task = {
+            cron,
+            name: 'AutoDailyTask',
+            fnc: () => runTaskOnce('AutoDailyTask', () => this.executeAutoTask())
+        };
     }
 
     /**
@@ -93,35 +94,6 @@ export class AutoDailyTask extends plugin {
         if (keys.length > 0) {
             await redis.del(...keys);
         }
-    }
-
-    /**
-     * 初始化自动任务
-     */
-    initAutoTask() {
-        // 防止热重载重复注册：
-        // 旧模块实例注册的 job 引用存到 globalThis，跨模块重载保留，
-        // 每次初始化先 cancel 旧定时器再重建，避免同一天重复发放奖励
-        if (globalThis.__AUTODAILY_TASK_JOB__) {
-            try {
-                globalThis.__AUTODAILY_TASK_JOB__.cancel();
-                console.log('[AutoDailyTask] 已取消旧定时器（防止热重载重复）');
-            } catch (e) {
-                console.warn('[AutoDailyTask] 取消旧定时器异常:', e);
-            }
-        }
-
-        // 从配置读取cron表达式，默认每天00:05执行
-        const cronExpr = this.set.AutoDailyTask?.cron || '0 5 0 * * *';
-        const job = schedule.scheduleJob(cronExpr, async () => {
-            console.log('[AutoDailyTask] 开始执行自动每日任务');
-            await this.executeAutoTask();
-            console.log('[AutoDailyTask] 自动每日任务执行完成');
-        });
-        AutoDailyTask._scheduleJob = job;
-        globalThis.__AUTODAILY_TASK_JOB__ = job;
-
-        console.log(`自动每日任务定时器已设置 - cron: ${cronExpr}`);
     }
 
     /**

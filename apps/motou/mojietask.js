@@ -11,6 +11,7 @@ import {
   Write_temp,
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
+import { runTaskOnce } from '../../utils/taskGuard.js';
 
 export class mojietask extends plugin {
   constructor() {
@@ -25,7 +26,7 @@ export class mojietask extends plugin {
     this.task = {
       cron: this.set.mojie_task,
       name: 'mojietask',
-      fnc: () => this.mojietask(),
+      fnc: () => runTaskOnce('mojietask', () => this.mojietask()),
     };
   }
   async mojietask() {

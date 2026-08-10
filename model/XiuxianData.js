@@ -6,6 +6,7 @@ import {
   assertTribulationSnapshotCurrentSync,
   markTribulationSnapshot,
 } from './tribulationLock.js';
+import { writeJsonAtomically } from '../utils/atomicJson.js';
 
 /*
   数据封装
@@ -421,7 +422,7 @@ this.gongfa_list = JSON.parse(
   saveDaofaList(list) {
     const filePath = this.filePathMap.daofaList;
     try {
-      fs.writeFileSync(filePath, JSON.stringify(list, null, 2), 'utf8');
+      writeJsonAtomically(filePath, list);
     } catch (error) {
       console.error('保存道法仙术列表失败:', error);
     }
@@ -535,10 +536,7 @@ this.gongfa_list = JSON.parse(
     writelist(list, path, data) {
     try {
     const filePath = `${path}/${list}`;
-    const jsonData = JSON.stringify(data);
-    fs.writeFileSync(filePath, jsonData, 'utf8', err => {
-      console.log('写入成功', err);
-    });
+    writeJsonAtomically(filePath, data);
             } catch (error) {
               console.error('写入文件错误：' + error);
             }
@@ -614,7 +612,7 @@ this.gongfa_list = JSON.parse(
   saveCustomDiJing(customSutras) {
     const filePath = path.join(this.lib_path, '玩家自创帝经.json');
     try {
-      fs.writeFileSync(filePath, JSON.stringify(customSutras, null, 2), 'utf8');
+      writeJsonAtomically(filePath, customSutras);
     } catch (error) {
       console.error('保存玩家自创帝经失败:', error);
       throw error; // 抛出异常，由调用者处理
@@ -640,11 +638,8 @@ this.gongfa_list = JSON.parse(
       file_path = this.filePathMap.lib;
       dir = path.join(file_path + '/' + file_name + '.json');
     }
-    let new_ARR = JSON.stringify(data, '', '\t'); //json转string
     if (fs.existsSync(dir)) {
-      fs.writeFileSync(dir, new_ARR, 'utf-8', err => {
-        console.log('写入成功', err);
-      });
+      writeJsonAtomically(dir, data);
     }
     return;
   }
@@ -680,10 +675,7 @@ this.gongfa_list = JSON.parse(
     let dir;
     file_path = this.filePathMap.association;
     dir = path.join(file_path + '/' + file_name + '.json');
-    let new_ARR = JSON.stringify(data, '', '\t'); //json转string
-    fs.writeFileSync(dir, new_ARR, 'utf-8', err => {
-      console.log('写入成功', err);
-    });
+    writeJsonAtomically(dir, data);
     return;
   }
 

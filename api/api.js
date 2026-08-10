@@ -7,6 +7,20 @@ import config from '../model/Config.js';
 import data from '../model/XiuxianData.js';
 import Show from '../model/show.js';
 
+const screenshotQueueGuard = Symbol.for('zhutianxiuxian.puppeteerQueueGuard');
+if (!puppeteer[screenshotQueueGuard]) {
+    const screenshot = puppeteer.screenshot.bind(puppeteer);
+    puppeteer.screenshot = async (...args) => {
+        const result = await screenshot(...args);
+        if (result === false && Array.isArray(puppeteer.shoting)) {
+            const index = puppeteer.shoting.lastIndexOf(args[0]);
+            if (index >= 0) puppeteer.shoting.splice(index, 1);
+        }
+        return result;
+    };
+    puppeteer[screenshotQueueGuard] = true;
+}
+
 // 获取资源文件路径
 const getResourcePath = (relativePath) => {
     return path.join(process.cwd(), 'plugins', 'zhutianxiuxian1.0', 'resources', 'data', relativePath);

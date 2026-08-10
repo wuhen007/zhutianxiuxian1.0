@@ -12,6 +12,7 @@ import {
   Write_player,
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
+import { runTaskOnce } from '../../utils/taskGuard.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 export class Xijietask extends plugin {
   constructor() {
@@ -25,7 +26,7 @@ export class Xijietask extends plugin {
     this.task = {
       cron: this.set.xijie_task,
       name: 'Xijietask',
-      fnc: () => this.Xijietask(),
+      fnc: () => runTaskOnce('Xijietask', () => this.Xijietask()),
     };
   }
 

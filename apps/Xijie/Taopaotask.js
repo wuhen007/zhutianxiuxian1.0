@@ -9,6 +9,7 @@ import {
   buildAt
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
+import { runTaskOnce } from '../../utils/taskGuard.js';
 
 export class Taopaotask extends plugin {
   constructor() {
@@ -22,7 +23,7 @@ export class Taopaotask extends plugin {
     this.task = {
       cron: this.set.taopao_task,
       name: 'Taopaotask',
-      fnc: () => this.Taopaotask(),
+      fnc: () => runTaskOnce('Taopaotask', () => this.Taopaotask()),
     };
   }
   async Taopaotask() {

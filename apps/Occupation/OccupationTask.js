@@ -5,6 +5,7 @@ import { isNotNull } from '../../model/xiuxian.js';
 import { Add_najie_thing, Add_职业经验,get_log_img } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
 import { InitWorldBoss } from '../TeamBoss/TeamBoss.js'
+import { runTaskOnce } from '../../utils/taskGuard.js';
 
 export class OccupationTask extends plugin {
   constructor() {
@@ -19,7 +20,7 @@ export class OccupationTask extends plugin {
     this.task = {
       cron: this.set.action_task,
       name: 'OccupationTask',
-      fnc: () => this.OccupationTask(),
+      fnc: () => runTaskOnce('OccupationTask', () => this.OccupationTask()),
     };
   }
 

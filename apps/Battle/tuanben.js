@@ -103,8 +103,6 @@ export class tuanben extends plugin {
     this.CD_DURATION = 16 * 3600 * 1000; // 12小时CD（毫秒）
     // 初始化系统状态
     this.initSystemStatus();
-    // 初始化定时清理
-    this.initCleanJob();
   }
  
   // 获取今日日期字符串（YYYYMMDD）
@@ -185,30 +183,6 @@ async checkPlayerCD(userId) {
   return (now - cdTime) < this.CD_DURATION;
 }
   
-  /*========== 修改定时任务 ==========*/
-  
-  initCleanJob() {
-    // 每小时清理一次过期数据
-    setInterval(async () => {
-      try {
-        // 检查日期更新
-        if (this.checkDateUpdate()) {
-          console.log(`[系统] 日期已更新至 ${this.today}`);
-        }
-        
-        // ...其他清理逻辑...
-      } catch (err) {
-        console.error('定时清理任务出错:', err);
-      }
-    }, 3600000); // 每小时执行一次
-    
-    // 添加午夜检查任务（确保每日重置）
-    schedule.scheduleJob('0 0 * * *', () => {
-      if (this.checkDateUpdate()) {
-        console.log(`[系统] 日期已更新至 ${this.today}（午夜检查）`);
-      }
-    });
-  }
 async resetAllPlayerCD(e) {
   // 如果是第一次发送指令，要求确认
 
@@ -1583,46 +1557,6 @@ async disbandTeamInternal(teamId, team) {
       defeated: '失败'
     };
     return map[status] || status;
-  }
-  
-  initCleanJob() {
-    // 每小时清理一次过期数据
-    setInterval(async () => {
-      try {
-        // 清理过期队伍
-        const teamKeys = await redis.keys(this.redisKeys.team('*'));
-        await Promise.all(
-          teamKeys.map(async key => {
-            if (await redis.ttl(key) === -2) {
-              const teamId = key.split(':').pop();
-              // 清理关联的玩家记录
-              const team = JSON.parse(await redis.get(key));
-              if (team?.members) {
-                await Promise.all(
-                  team.members.map(id => 
-                    redis.del(this.redisKeys.player(id))
-                  )
-                );
-              }
-              await redis.del(key);
-            }
-          })
-        );
-        
-        // 清理过期玩家关联
-        const playerKeys = await redis.keys(this.redisKeys.player('*'));
-        await Promise.all(
-          playerKeys.map(async key => {
-            if (await redis.ttl(key) === -2) {
-              await redis.del(key);
-            }
-          })
-        );
-        
-      } catch (err) {
-        console.error('定时清理任务出错:', err);
-      }
-    }, 3600000); // 每小时执行一次
   }
   
   /*========== 战斗核心逻辑 ==========*/

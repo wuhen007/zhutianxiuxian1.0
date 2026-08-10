@@ -2,6 +2,7 @@ import { plugin, verc, data, config } from '../../api/api.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'fs';
 import path from 'path';
+import { runTaskOnce } from '../../utils/taskGuard.js';
 
 import {
   Read_player,
@@ -2166,14 +2167,20 @@ export class xianguPlace extends plugin {
         return result;
       };
     }
-    // 启动动态事件定时器（模块加载时）
-    startEventTimer();
-    this.task = [{
-      cron: '0 */1 * * * *',
-      name: '仙古秘境NPC世界推进',
-      fnc: () => this.XianguNpcWorldTick(),
-      log: false,
-    }];
+    this.task = [
+      {
+        cron: '0 */1 * * * *',
+        name: '仙古秘境NPC世界推进',
+        fnc: () => runTaskOnce('XianguNpcWorldTick', () => this.XianguNpcWorldTick()),
+        log: false,
+      },
+      {
+        cron: '*/30 * * * * *',
+        name: '仙古秘境动态事件推进',
+        fnc: () => runTaskOnce('XianguEventTick', () => autoTriggerEvents()),
+        log: false,
+      },
+    ];
   }
 
   async XianguNpcWorldTick() {
@@ -9936,15 +9943,6 @@ async function XianguOfferSeedFn(e, player, player_qq) {
 // ==============================
 //  5.1 动态事件系统（自动触发）
 // ==============================
-
-let eventTimer = null;
-
-/** 启动事件自动触发定时器 */
-function startEventTimer() {
-  if (eventTimer) return;
-  eventTimer = setInterval(autoTriggerEvents, 30000);
-  console.log('[仙古秘境] 事件定时器已启动（30秒轮询）');
-}
 
 /** 主循环：检查事件结算 + 随机触发新事件 */
 async function autoTriggerEvents() {

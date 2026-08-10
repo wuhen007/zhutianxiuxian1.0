@@ -10,6 +10,7 @@ import {
   Write_temp,
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
+import { runTaskOnce } from '../../utils/taskGuard.js';
 export class shenjietask extends plugin {
   constructor() {
     super({
@@ -23,7 +24,7 @@ export class shenjietask extends plugin {
 this.task = {
   cron: this.set.shenjie_task, // 改为读取专属的配置项 'shenjietask_task'
   name: 'shenjietask',
-  fnc: () => this.shenjietask(),
+  fnc: () => runTaskOnce('shenjietask', () => this.shenjietask()),
 };
   }
   async shenjietask() {
