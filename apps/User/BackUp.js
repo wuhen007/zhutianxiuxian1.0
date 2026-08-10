@@ -153,6 +153,13 @@ export class BackUp extends plugin {
         force: true,
       });
 
+      // 显式备份小世界列表（xiaoshijie.js 运行时写入 resources/data/item/小世界列表.json），
+      // 独立落一份在备份根目录，兼容旧格式备份点与 data 快照双保险
+      const xiaoshijieListSrc = path.join(__PATH.lib_path, '小世界列表.json');
+      if (fs.existsSync(xiaoshijieListSrc)) {
+        fs.copyFileSync(xiaoshijieListSrc, `${pendingFolder}/xiaoshijie_list.json`);
+      }
+
       // 写入redis备份
       fs.writeFileSync(`${pendingFolder}/redis.json`, JSON.stringify(redisObj));
       fs.renameSync(pendingFolder, saveFolder);
@@ -308,6 +315,14 @@ export class BackUp extends plugin {
       if (fs.existsSync(redisBackupPath)) {
         const redisData = JSON.parse(fs.readFileSync(redisBackupPath, 'utf8'));
         await restoreRedisSnapshot(redisData);
+      }
+
+      // 恢复小世界列表（xiaoshijie_list.json，独立备份文件；新备份的 data 快照内亦含同名文件，此处再覆盖一次保持一致）
+      const xiaoshijieListBackup = `${backUpPath}/xiaoshijie_list.json`;
+      if (fs.existsSync(xiaoshijieListBackup)) {
+        const xiaoshijieListDst = path.join(__PATH.lib_path, '小世界列表.json');
+        fs.mkdirSync(__PATH.lib_path, { recursive: true });
+        fs.copyFileSync(xiaoshijieListBackup, xiaoshijieListDst);
       }
 
       await Promise.all(restoreTasks);
