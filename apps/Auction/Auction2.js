@@ -8,7 +8,6 @@ import { __PATH } from '../../model/xiuxian.js';
 import {
   existplayer,
   Read_player,
-  Add_源石,
   Write_player,
   Read_najie,
   isNotNull,
@@ -17,6 +16,9 @@ import {
   channel
 } from '../../model/xiuxian.js';
 import { Add_najie_thing,convert2integer} from '../../model/xiuxian.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { compareAndSetRedisJson } from '../../utils/redisJsonCas.js';
+import { createAuctionId } from '../../model/auctionSettlement.js';
 
 // const intervalTime = 7 * 24 * 60 * 60 * 1000;
 
@@ -85,20 +87,19 @@ export class Auction2 extends plugin {
         return;
     }
     
-    let player = await Read_player(usr_qq);
-    // 检查是否已是贵宾
-    if (player.星阁内场 && player.星阁内场 === 1) {
-        e.reply('您已是星阁内场贵宾，无需再次验资');
-        return;
-    }
-    if (player.源石 < 12000000) {
-      e.reply('你的资产实在少的可怜，请积累到一千二百万源石再来内场拍卖行验资吧');
-      return;
-    }
-    player.星阁内场 =1;
-    await Write_player(usr_qq, player);
-    await Add_源石(usr_qq, -5000000);
-   return e.reply('你花费了五百万源石获得了星阁内场贵宾身份');
+    return withPlayerMutationLock(usr_qq, async () => {
+      const player = await Read_player(usr_qq);
+      if (player.星阁内场 === 1) {
+        return e.reply('您已是星阁内场贵宾，无需再次验资');
+      }
+      if (player.源石 < 12000000) {
+        return e.reply('你的资产实在少的可怜，请积累到一千二百万源石再来内场拍卖行验资吧');
+      }
+      player.星阁内场 = 1;
+      player.源石 -= 5000000;
+      await Write_player(usr_qq, player);
+      return e.reply('你花费了五百万源石获得了星阁内场贵宾身份');
+    });
 
   }
  async xingGE2(e) {
@@ -177,7 +178,9 @@ export class Auction2 extends plugin {
     const closeTime = todayTime + closeHour * 60 * 60 * 1000;
     if (nowTime > openTime && nowTime < closeTime) {
       // 如果在拍卖时间，随机一个物品来开启
+      await redis.sAdd(redisGlKey, String(e.group_id));
       const auction = await openAU();
+      if (!auction) return e.reply('内场拍卖已开启，本群已加入星阁体系');
       let msg = `___[星阁内场]___\n目前正在拍卖【${auction.thing.name}x${auction.amount}】\n`;
       if (auction.last_offer_player === 0) {
         msg += '暂无人出价';
@@ -195,9 +198,6 @@ export class Auction2 extends plugin {
     // );
 
     // await redis.set('xiuxian:AuctionofficialTask_E', e.group_id); NOTE: 过时的
-    try {
-      await redis.del(redisGlKey);
-    } catch (_) {}
     await redis.sAdd(redisGlKey, String(e.group_id));
     return e.reply('星阁内场体系在本群开启！');
   }
@@ -257,8 +257,8 @@ export class Auction2 extends plugin {
     const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList2';
     if (!(await redis.sIsMember(redisGlKey, String(e.group_id)))) return;
     // 是否到拍卖时间
-    let auction = await redis.get('xiuxian:AuctionofficialTask2');
-    if (!isNotNull(auction)) {
+    const auctionJson = await redis.get('xiuxian:AuctionofficialTask2');
+    if (!isNotNull(auctionJson)) {
       const { openHour, closeHour } = config.getConfig(
         'xiuxian',
         'xiuxian'
@@ -268,7 +268,10 @@ export class Auction2 extends plugin {
     }
 
     let player = await Read_player(usr_qq);
-    auction = JSON.parse(auction);
+    const auction = JSON.parse(auctionJson);
+    if (auction.status && auction.status !== 'active') {
+      return e.reply('拍卖正在结算，请稍后查看');
+    }
     // let start_price = auction.start_price;
     let last_price = auction.last_price;
     let new_price = e.msg.replace('#星阁内场出价', '');
@@ -297,14 +300,15 @@ export class Auction2 extends plugin {
     // await redis.sAdd(redisGlKey, String(e.group_id));
     auction.groupList = await redis.sMembers(redisGlKey);
 
-    const msg = `${player.名号}叫价${new_price} `;
-    auction.groupList.forEach(group_id => pushInfo(group_id, true, msg));
-    // ↑新的：RetuEase
-
     auction.last_price = new_price;
     auction.last_offer_player = usr_qq;
     auction.last_offer_price = new Date().getTime(); // NOTE: Big SB
-    await redis.set('xiuxian:AuctionofficialTask2', JSON.stringify(auction));
+    if (!await compareAndSetRedisJson(redis, 'xiuxian:AuctionofficialTask2', auctionJson, auction)) {
+      return e.reply('价格已被其他玩家更新，请重新出价');
+    }
+
+    const msg = `${player.名号}叫价${new_price} `;
+    await Promise.all(auction.groupList.map(group_id => pushInfo(group_id, true, msg)));
   }
 
   async show_auction2(e) {
@@ -361,13 +365,16 @@ export class Auction2 extends plugin {
     if (!ifexistplay) {
       return;
     }
-    let auction = await redis.get('xiuxian:auction2');
-    if (!isNotNull(auction)) {
+    const auctionJson = await redis.get('xiuxian:auction2');
+    if (!isNotNull(auctionJson)) {
       e.reply(`没有拍卖正在进行`);
       return;
     }
     let player = await Read_player(usr_qq);
-    auction = JSON.parse(auction);
+    const auction = JSON.parse(auctionJson);
+    if (auction.status && auction.status !== 'active') {
+      return e.reply('拍卖正在结算，请稍后查看');
+    }
     if (usr_qq == auction.qq) {
       e.reply('禁止自娱自乐！');
       return;
@@ -399,11 +406,13 @@ export class Auction2 extends plugin {
     if (auction.group_id.indexOf(e.group_id) < 0) {
       auction.group_id += '|' + e.group_id;
     }
-    e.reply(`${player.名号}叫价${new_price} `);
     auction.last_price = new_price;
     auction.last_offer_player = usr_qq;
     auction.last_offer_price = new Date().getTime();
-    await redis.set('xiuxian:auction2', JSON.stringify(auction));
+    if (!await compareAndSetRedisJson(redis, 'xiuxian:auction2', auctionJson, auction)) {
+      return e.reply('价格已被其他玩家更新，请重新出价');
+    }
+    return e.reply(`${player.名号}叫价${new_price} `);
   }
 }
 
@@ -447,6 +456,8 @@ export async function openAU() {
   const groupList = await redis.sMembers(redisGlKey);
 
   const wupin = {
+    auctionId: createAuctionId('official-inner-auction'),
+    status: 'active',
     thing: thing_data,
     start_price: thing_value,
     last_price: thing_value,
@@ -455,8 +466,12 @@ export async function openAU() {
     last_offer_player: 0,
     groupList,
   };
-  await redis.set('xiuxian:AuctionofficialTask2', JSON.stringify(wupin));
-  return wupin;
+  const created = await redis.set(
+    'xiuxian:AuctionofficialTask2',
+    JSON.stringify(wupin),
+    { NX: true }
+  );
+  return created ? wupin : null;
 }
 
 /**

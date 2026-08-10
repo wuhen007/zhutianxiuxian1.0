@@ -13,7 +13,13 @@ import {
   Locked_najie_thing,
   channel
 } from '../../model/xiuxian.js';
-import { Add_najie_thing,convert2integer} from '../../model/xiuxian.js';
+import { convert2integer } from '../../model/xiuxian.js';
+import { compareAndSetRedisJson } from '../../utils/redisJsonCas.js';
+import {
+  createAuctionId,
+  reserveAuctionItem,
+} from '../../model/auctionSettlement.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 // const intervalTime = 7 * 24 * 60 * 60 * 1000;
 
@@ -135,7 +141,9 @@ export class Auction extends plugin {
     const closeTime = todayTime + closeHour * 60 * 60 * 1000;
     if (nowTime > openTime && nowTime < closeTime) {
       // 如果在拍卖时间，随机一个物品来开启
+      await redis.sAdd(redisGlKey, String(e.group_id));
       const auction = await openAU();
+      if (!auction) return e.reply('拍卖已开启，本群已加入星阁体系');
       let msg = `___[星阁]___\n目前正在拍卖【${auction.thing.name}】\n`;
       if (auction.last_offer_player === 0) {
         msg += '暂无人出价';
@@ -153,9 +161,6 @@ export class Auction extends plugin {
     // );
 
     // await redis.set('xiuxian:AuctionofficialTask_E', e.group_id); NOTE: 过时的
-    try {
-      await redis.del(redisGlKey);
-    } catch (_) {}
     await redis.sAdd(redisGlKey, String(e.group_id));
     return e.reply('星阁体系在本群开启！');
   }
@@ -222,8 +227,8 @@ export class Auction extends plugin {
     const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
     if (!(await redis.sIsMember(redisGlKey, String(e.group_id)))) return;
     // 是否到拍卖时间
-    let auction = await redis.get('xiuxian:AuctionofficialTask');
-    if (!isNotNull(auction)) {
+    const auctionJson = await redis.get('xiuxian:AuctionofficialTask');
+    if (!isNotNull(auctionJson)) {
       const { openHour, closeHour } = config.getConfig(
         'xiuxian',
         'xiuxian'
@@ -233,7 +238,10 @@ export class Auction extends plugin {
     }
 
     let player = await Read_player(usr_qq);
-    auction = JSON.parse(auction);
+    const auction = JSON.parse(auctionJson);
+    if (auction.status && auction.status !== 'active') {
+      return e.reply('拍卖正在结算，请稍后查看');
+    }
     // let start_price = auction.start_price;
     let last_price = auction.last_price;
     let new_price = e.msg.replace('#星阁出价', '');
@@ -258,14 +266,15 @@ export class Auction extends plugin {
     // await redis.sAdd(redisGlKey, String(e.group_id));
     auction.groupList = await redis.sMembers(redisGlKey);
 
-    const msg = `${player.名号}叫价${new_price} `;
-    auction.groupList.forEach(group_id => pushInfo(group_id, true, msg));
-    // ↑新的：RetuEase
-
     auction.last_price = new_price;
     auction.last_offer_player = usr_qq;
     auction.last_offer_price = new Date().getTime(); // NOTE: Big SB
-    await redis.set('xiuxian:AuctionofficialTask', JSON.stringify(auction));
+    if (!await compareAndSetRedisJson(redis, 'xiuxian:AuctionofficialTask', auctionJson, auction)) {
+      return e.reply('价格已被其他玩家更新，请重新出价');
+    }
+
+    const msg = `${player.名号}叫价${new_price} `;
+    await Promise.all(auction.groupList.map(group_id => pushInfo(group_id, true, msg)));
   }
 
   async show_auction(e) {
@@ -321,6 +330,7 @@ export class Auction extends plugin {
     if (!ifexistplay) {
       return;
     }
+    return withPlayerMutationLock(usr_qq, async () => {
     let auction = await redis.get('xiuxian:auction');
     if (isNotNull(auction)) {
       e.reply(`已有拍卖正在进行`);
@@ -408,6 +418,8 @@ export class Auction extends plugin {
     // whole = Math.trunc(whole);
     // let time = 10;//分钟
     let wupin = {
+      auctionId: createAuctionId('player-auction'),
+      status: 'reserving',
       qq: usr_qq,
       thing: thing_data,
       start_price: thing_value,
@@ -417,15 +429,31 @@ export class Auction extends plugin {
       last_offer_player: 0,
       group_id: `${e.group_id} `,
     };
-    await Add_najie_thing(usr_qq, thing_name, thing_data.class, -thing_amount);
-    await redis.set('xiuxian:auction', JSON.stringify(wupin));
+    const wupinJson = JSON.stringify(wupin);
+    if (!await redis.set('xiuxian:auction', wupinJson, { NX: true })) {
+      return e.reply('已有拍卖正在进行');
+    }
+    await reserveAuctionItem(wupin);
+    const activeAuction = { ...wupin, status: 'active', reservedAt: Date.now() };
+    const activated = await compareAndSetRedisJson(
+      redis,
+      'xiuxian:auction',
+      wupinJson,
+      activeAuction
+    );
+    if (!activated) {
+      const current = JSON.parse(await redis.get('xiuxian:auction') || 'null');
+      if (current?.auctionId !== wupin.auctionId || current.status !== 'active') {
+        return e.reply('拍卖上架正在确认，请稍后查看');
+      }
+    }
     await redis.set('xiuxian:player:' + usr_qq + ':last_auction', now_time);
     //
     // Exchange.push(wupin);
     //写入
     // await Write_Exchange(Exchange);
-    e.reply('开始拍卖！');
-    return;
+    return e.reply('开始拍卖！');
+    });
   }
 
   /*竞价10000 */
@@ -445,13 +473,16 @@ export class Auction extends plugin {
     if (!ifexistplay) {
       return;
     }
-    let auction = await redis.get('xiuxian:auction');
-    if (!isNotNull(auction)) {
+    const auctionJson = await redis.get('xiuxian:auction');
+    if (!isNotNull(auctionJson)) {
       e.reply(`没有拍卖正在进行`);
       return;
     }
     let player = await Read_player(usr_qq);
-    auction = JSON.parse(auction);
+    const auction = JSON.parse(auctionJson);
+    if (auction.status && auction.status !== 'active') {
+      return e.reply('拍卖正在结算，请稍后查看');
+    }
     if (usr_qq == auction.qq) {
       e.reply('禁止自娱自乐！');
       return;
@@ -479,11 +510,13 @@ export class Auction extends plugin {
     if (auction.group_id.indexOf(e.group_id) < 0) {
       auction.group_id += '|' + e.group_id;
     }
-    e.reply(`${player.名号}叫价${new_price} `);
     auction.last_price = new_price;
     auction.last_offer_player = usr_qq;
     auction.last_offer_price = new Date().getTime();
-    await redis.set('xiuxian:auction', JSON.stringify(auction));
+    if (!await compareAndSetRedisJson(redis, 'xiuxian:auction', auctionJson, auction)) {
+      return e.reply('价格已被其他玩家更新，请重新出价');
+    }
+    return e.reply(`${player.名号}叫价${new_price} `);
   }
 }
 
@@ -587,6 +620,8 @@ export async function openAU() {
   const groupList = await redis.sMembers(redisGlKey);
 
   const wupin = {
+    auctionId: createAuctionId('official-auction'),
+    status: 'active',
     thing: thing_data,
     start_price: thing_value,
     last_price: thing_value,
@@ -595,8 +630,12 @@ export async function openAU() {
     last_offer_player: 0,
     groupList,
   };
-  await redis.set('xiuxian:AuctionofficialTask', JSON.stringify(wupin));
-  return wupin;
+  const created = await redis.set(
+    'xiuxian:AuctionofficialTask',
+    JSON.stringify(wupin),
+    { NX: true }
+  );
+  return created ? wupin : null;
 }
 
 /**

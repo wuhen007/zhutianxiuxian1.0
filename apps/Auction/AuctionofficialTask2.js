@@ -2,14 +2,21 @@ import plugin from '../../../../lib/plugins/plugin.js';
 import common from '../../../../lib/common/common.js';
 import config from '../../model/Config.js';
 import {
-  Add_najie_thing,
-  Add_灵石,
-  Add_源石,
   Read_player,
-  sleep,
   get_auction_img
 } from '../../model/xiuxian.js';
 import { openAU } from '../Auction/Auction2.js';
+import {
+  createSettlingAuction,
+  settleAuctionPurchase,
+} from '../../model/auctionSettlement.js';
+import {
+  compareAndDeleteRedisJson,
+  compareAndSetRedisJson,
+} from '../../utils/redisJsonCas.js';
+import { runTaskOnce } from '../../utils/taskGuard.js';
+
+const SETTLEMENT_LEASE_MS = 60_000;
 
 /**
  * 定时任务 - 星阁内场拍卖（图片版 + NPC）
@@ -55,6 +62,10 @@ export class AuctionofficialTask2 extends plugin {
   }
 
   async AuctionofficialTask2() {
+    return runTaskOnce('AuctionofficialTask2', () => this.processOfficialAuction());
+  }
+
+  async processOfficialAuction() {
     const wupinStr = await redis.get('xiuxian:AuctionofficialTask2');
 
     /* ================= 未开拍 ================= */
@@ -70,6 +81,7 @@ export class AuctionofficialTask2 extends plugin {
       if (nowTime < openTime || nowTime > closeTime) return;
 
       const auction = await openAU();
+      if (!auction) return;
 
       const msgArr = [
         "📦 拍品：【" + auction.thing.name + "】x" + auction.amount,
@@ -86,17 +98,40 @@ export class AuctionofficialTask2 extends plugin {
 
     /* ================= 正在拍卖 ================= */
     const wupin = JSON.parse(wupinStr);
+    if (wupin.status === 'settling') {
+      if (Date.now() - Number(wupin.settlingAt || 0) < SETTLEMENT_LEASE_MS) return;
+      const resumed = { ...wupin, settlingAt: Date.now() };
+      if (!await compareAndSetRedisJson(
+        redis,
+        'xiuxian:AuctionofficialTask2',
+        wupinStr,
+        resumed
+      )) return;
+      return this.finishOfficialAuction(resumed, JSON.stringify(resumed));
+    }
     const group_ids = wupin.groupList;
     const interMinu = this.set.Auction2.interval;
     const nowTime = Date.now();
 
-    let timeToEnd =
+    const timeToEnd =
       wupin.last_offer_price + interMinu * 60 * 1000 - nowTime;
 
     /* ================= NPC 竞价 ================= */
     if (timeToEnd > 0 && wupin.last_offer_player > 0) {
       if (Math.random() < 0.3) {
         const npcBidResult = await this.npcBid(wupin);
+        const npcAuction = {
+          ...wupin,
+          last_price: npcBidResult.newPrice,
+          last_offer_player: -1,
+          last_offer_price: nowTime,
+        };
+        if (!await compareAndSetRedisJson(
+          redis,
+          'xiuxian:AuctionofficialTask2',
+          wupinStr,
+          npcAuction
+        )) return;
 
         const npcMsgArr = [
           "📦 拍品：【" + wupin.thing.name + "】x" + wupin.amount,
@@ -108,19 +143,7 @@ export class AuctionofficialTask2 extends plugin {
         for (const group_id of group_ids) {
           await this.sendAuctionImg(group_id, npcMsgArr);
         }
-
-        wupin.last_price = npcBidResult.newPrice;
-        wupin.last_offer_player = -1;
-        wupin.last_offer_price = nowTime;
-
-        await redis.set(
-          'xiuxian:AuctionofficialTask2',
-          JSON.stringify(wupin)
-        );
-
-        await sleep(2000 + Math.random() * 3000);
-        timeToEnd =
-          wupin.last_offer_price + interMinu * 60 * 1000 - nowTime;
+        return;
       }
     }
 
@@ -148,53 +171,72 @@ export class AuctionofficialTask2 extends plugin {
         await this.sendAuctionImg(group_id, msgArr);
       }
     } else {
-      /* ================= 拍卖结束 ================= */
-      if (wupin.last_offer_player === 0) {
-        const msgArr = [
-          "📦 拍品：【" + wupin.thing.name + "】x" + wupin.amount,
-          "流拍",
-          "无人出价，已退回神秘人纳戒"
-        ];
+      const resolution = wupin.last_offer_player === 0
+        ? 'unsold'
+        : wupin.last_offer_player < 0 ? 'npc' : 'buyer';
+      const settling = createSettlingAuction(wupin, resolution);
+      if (!await compareAndSetRedisJson(
+        redis,
+        'xiuxian:AuctionofficialTask2',
+        wupinStr,
+        settling
+      )) return;
+      return this.finishOfficialAuction(settling, JSON.stringify(settling));
+    }
+  }
 
-        for (const group_id of group_ids) {
-          await this.sendAuctionImg(group_id, msgArr);
-        }
-      } else if (wupin.last_offer_player < 0) {
-        const msgArr = [
-          "📦 拍品：【" + wupin.thing.name + "】x" + wupin.amount,
-          "成交！",
-          "最终价格：" + wupin.last_price + " 源石",
-          "得主：神秘NPC"
-        ];
-
-        for (const group_id of group_ids) {
-          await this.sendAuctionImg(group_id, msgArr);
-        }
-      } else {
-        await Add_源石(wupin.last_offer_player, -wupin.last_price);
-        await Add_najie_thing(
-          wupin.last_offer_player,
-          wupin.thing.name,
-          wupin.thing.class,
-          wupin.amount,
-          wupin.thing.pinji
-        );
-
-        const player = await Read_player(wupin.last_offer_player);
-
-        const msgArr = [
-          "📦 拍品：【" + wupin.thing.name + "】x" + wupin.amount,
-          "成交！",
-          "最终价格：" + wupin.last_price + " 源石",
-          "得主：" + player.名号
-        ];
-
-        for (const group_id of group_ids) {
-          await this.sendAuctionImg(group_id, msgArr);
-        }
+  async finishOfficialAuction(auction, auctionJson) {
+    if (auction.resolution === 'buyer') {
+      const result = await settleAuctionPurchase(auction, { currency: '源石' });
+      if (!result.ok) {
+        const defaulted = { ...auction, resolution: 'defaulted' };
+        if (!await compareAndSetRedisJson(
+          redis,
+          'xiuxian:AuctionofficialTask2',
+          auctionJson,
+          defaulted
+        )) return;
+        auction = defaulted;
+        auctionJson = JSON.stringify(defaulted);
       }
+    }
 
-      await redis.del('xiuxian:AuctionofficialTask2');
+    if (!await compareAndDeleteRedisJson(
+      redis,
+      'xiuxian:AuctionofficialTask2',
+      auctionJson
+    )) return;
+
+    let msgArr;
+    if (auction.resolution === 'buyer') {
+      const player = await Read_player(auction.last_offer_player);
+      msgArr = [
+        `📦 拍品：【${auction.thing.name}】x${auction.amount}`,
+        '成交！',
+        `最终价格：${auction.last_price} 源石`,
+        `得主：${player.名号}`,
+      ];
+    } else if (auction.resolution === 'npc') {
+      msgArr = [
+        `📦 拍品：【${auction.thing.name}】x${auction.amount}`,
+        '成交！',
+        `最终价格：${auction.last_price} 源石`,
+        '得主：神秘NPC',
+      ];
+    } else if (auction.resolution === 'defaulted') {
+      msgArr = [
+        `📦 拍品：【${auction.thing.name}】x${auction.amount}`,
+        '竞拍者余额不足，交易取消',
+      ];
+    } else {
+      msgArr = [
+        `📦 拍品：【${auction.thing.name}】x${auction.amount}`,
+        '流拍',
+        '无人出价，已退回神秘人纳戒',
+      ];
+    }
+    for (const groupId of auction.groupList || []) {
+      await this.sendAuctionImg(groupId, msgArr);
     }
   }
 
