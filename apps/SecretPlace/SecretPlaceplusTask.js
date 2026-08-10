@@ -24,8 +24,9 @@ import {
   get_log_img,
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
+import { runTaskOnce } from '../../utils/taskGuard.js';
 import { rollDailyDungeonCoordinate } from '../../model/weimianTravel.js';
-import { consumeBlackEmperorBattleFormation, rollBlackEmperorDungeonEncounter } from '../../model/blackEmperor.js';
+import { consumeBlackEmperorBattleFormation, rollBlackEmperorDungeonEncounter, rollDuanDeEncounter } from '../../model/blackEmperor.js';
 import { rollSuLingDungeonEncounter } from '../../model/suLing.js';
 import { tryNpcProtectorIntervention } from '../../model/npcProtector.js';
 import {
@@ -39,6 +40,10 @@ import {
 } from '../../model/redDustFortune.js';
 import RealmEvents from '../tasks/RealmEvents.js';
 import { getInnateDungeonRewardMultiplier } from '../../model/innateTreasure.js';
+import {
+  awardDungeonGongfaProficiency,
+  formatGongfaProficiency,
+} from '../../model/gongfaProficiency.js';
 import { normalizeLegacySecretPlaceAddictionAction } from '../../model/secretPlaceAddiction.js';
 import { rollDahuangPupilEncounter } from '../../model/supremePath.js';
 export class SecretPlaceplusTask extends plugin {
@@ -54,7 +59,7 @@ export class SecretPlaceplusTask extends plugin {
     this.task = {
       cron: this.set.actionplus_task,
       name: 'SecretPlaceplusTask',
-      fnc: () => this.Secretplaceplustask(),
+      fnc: () => runTaskOnce('SecretPlaceplusTask', () => this.Secretplaceplustask()),
     };
   }
 
@@ -124,6 +129,8 @@ export class SecretPlaceplusTask extends plugin {
               灵根: player.灵根,
               法球倍率: player.灵根.法球倍率,
               学习的功法: player.学习的功法,
+              功法熟练度: player.功法熟练度,
+              功法熟练度每日: player.功法熟练度每日,
               命运终章已领悟: player.命运终章已领悟,
               速度: player.速度,
               mijinglevel_id: player.mijinglevel_id,
@@ -140,8 +147,11 @@ export class SecretPlaceplusTask extends plugin {
             };
             const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_player);
             let Data_battle = await zd_battle(A_player, B_player);
+            player.功法熟练度 = A_player.功法熟练度;
+            player.功法熟练度每日 = A_player.功法熟练度每日;
+            const proficiencyGains = awardDungeonGongfaProficiency(player);
             player.当前血量 = await Set_HP(player_id, Data_battle.A_hp);
-            if (blackEmperorFormation.consumed) await Write_player(player_id, player);
+            await Write_player(player_id, player);
             let msgg = Data_battle.msg;
             var thing_name;
             var thing_class;
@@ -1779,6 +1789,13 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
                 last_msg += blackEmperorEncounter.message;
                 await Write_player(player_id, player);
               }
+              const duandeEncounter = rollDuanDeEncounter(player, {
+                plane: player.power_place,
+              });
+              if (duandeEncounter.encountered) {
+                await Add_najie_thing(player_id, duandeEncounter.item.name, duandeEncounter.item.class, duandeEncounter.item.amount);
+                last_msg += duandeEncounter.message;
+              }
               const seekingMultipliers = getSeekingFortuneMultipliers(player);
               const coordinateDrop = rollDailyDungeonCoordinate(player, {
                 chanceMultiplier: seekingMultipliers.coordinate,
@@ -2241,6 +2258,9 @@ ${aptitudeEvaluations[newAptitude]}
               xiuwei *= dungeonFortuneMultiplier;
               qixue *= dungeonFortuneMultiplier;
               last_msg += ` 红尘历练签显化，最终获得修为${xiuwei}、血气${qixue}。`;
+            }
+            for (const [name, gained] of Object.entries(proficiencyGains)) {
+              last_msg += ` 功法参悟：${formatGongfaProficiency(player, name)}（+${gained}）。`;
             }
             msg.push(player.名号 + last_msg+fyd_msg);
 

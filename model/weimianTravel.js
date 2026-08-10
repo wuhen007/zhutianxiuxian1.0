@@ -1,3 +1,5 @@
+import { getGongfaNumericMultiplier } from './gongfaProficiency.js';
+
 export const PLACE_LOCATION_MAP = Object.freeze({
   '凡间': 0,
   '仙界': 1,
@@ -430,7 +432,7 @@ export function getKunpengReduction(player) {
   let reduction = 3;
   if (mijing >= 15 || xiangu >= 13) reduction++;
   if (mijing >= 18 || xiangu >= 16) reduction++;
-  return reduction;
+  return Number((reduction * getGongfaNumericMultiplier(player, '鲲鹏宝术')).toFixed(2));
 }
 
 export function getBodyTravelQuote(player, fromLocation, toLocation) {

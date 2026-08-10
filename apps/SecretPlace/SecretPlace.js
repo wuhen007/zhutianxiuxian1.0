@@ -47,6 +47,7 @@ import {
   claimInnateTreasure,
   createInnateTreasure,
   createInnateTreasureProjection,
+  getDungeonTimedActionMultiplier,
   getTimedActionMultiplier,
   hasEquippedInnateTreasure,
   readInnateTreasureState,
@@ -135,6 +136,14 @@ const treasureSettlementLocks = new Set();
 const sectWarSettlementLocks = new Set();
 const sectWarShopLocks = new Set();
 const bingziSettlementLocks = new Set();
+
+function setPendingJieyin(targetQQ, request) {
+    const now = Date.now();
+    for (const [qq, pending] of pendingJieyinMap) {
+        if (Number(pending.expire) <= now) pendingJieyinMap.delete(qq);
+    }
+    pendingJieyinMap.set(targetQQ, { ...request, expire: now + 60000 });
+}
 
 const SECT_WAR_SIDE_LABELS = {
     attacker: '攻方',
@@ -1376,7 +1385,7 @@ async Gojiehaiplace(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: `探索界海`,
-        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -1642,7 +1651,7 @@ async Gosecretplace(e) {
             const arr = {
                 action: '秘境探索',
                 isFashan: true,
-                end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
+                end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
                 time: action_time,
                 shutup: '1',
                 working: '1',
@@ -1703,7 +1712,7 @@ async Gosecretplace(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '秘境历练',
-        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -1831,7 +1840,7 @@ async Goxiajie(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '下界八域历练',
-        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -1954,7 +1963,7 @@ async Gojiutianshidi(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '九天十地历练',
-        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -2077,7 +2086,7 @@ async Gozhetian(e) {
                 const arr = {
                     action: '法身探索遮天位面',
                     isFashan: true,
-                    end_time: nowTime + Math.floor(action_time * getTimedActionMultiplier(player)),
+                    end_time: nowTime + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
                     time: action_time,
                     shutup: '1',
                     working: '1',
@@ -2283,7 +2292,7 @@ async Gozhetian(e) {
     const action_time = 60000 * time;
     const arr = {
         action: '遮天位面历练',
-        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -2398,7 +2407,7 @@ async Goforbiddenarea(e) {
             const arr = {
                 action: '法身探索禁地',
                 isFashan: true, // 标记为法身行动
-                end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
+                end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
                 time: action_time,
                 shutup: '1',
                 working: '1',
@@ -2519,7 +2528,7 @@ async Goforbiddenarea(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '禁地历练',
-        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -2687,7 +2696,7 @@ async GoTimeplace(e) {
             const arr = {
                 action: '法身探索仙府',
                 isFashan: true, // 标记为法身行动
-                end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
+                end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
                 time: action_time,
                 shutup: '1',
                 working: '1',
@@ -2797,7 +2806,7 @@ async GoTimeplace(e) {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '探索仙府', // 动作
-        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -3105,7 +3114,7 @@ if (didian === "往世星海") {
                 const arr = {
                     action: '法身镇守仙境',
                     isFashan: true,
-                    end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
+                    end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
                     time: action_time,
                     shutup: '1',
                     working: '1',
@@ -3150,7 +3159,7 @@ if (didian === "往世星海") {
     const action_time = 60000 * time; // 持续时间，单位毫秒
     const arr = {
         action: '镇守仙境',
-        end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),
+        end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
         time: action_time,
         shutup: '1',
         working: '1',
@@ -3495,12 +3504,11 @@ async jieyinPlayer(e) {
   }
 
   // 锁2：发起请求，等待目标 #同意接引 确认（60秒）
-  pendingJieyinMap.set(targetQQ, {
+  setPendingJieyin(targetQQ, {
     fromQQ: usr_qq,
     fromName: player.名号 || usr_qq,
     type: 'jieyin',
-    locationName: targetLocationName,
-    expire: Date.now() + 60000
+    locationName: targetLocationName
   });
 
   return e.reply([
@@ -3603,12 +3611,11 @@ async sendPlayerToLocation(e) {
   }
 
   // 锁2：发起请求，等待目标 #同意接引 确认（60秒）
-  pendingJieyinMap.set(targetQQ, {
+  setPendingJieyin(targetQQ, {
     fromQQ: usr_qq,
     fromName: player.名号 || usr_qq,
     type: 'songwang',
-    locationName: location,
-    expire: Date.now() + 60000
+    locationName: location
   });
 
   return e.reply([

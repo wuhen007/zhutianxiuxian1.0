@@ -33,6 +33,10 @@ import {
   resolveRiftRewardBonus,
 } from '../../model/lingjieRift.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
+import {
+  awardDungeonGongfaProficiency,
+  formatGongfaProficiency,
+} from '../../model/gongfaProficiency.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
 import {
   getLocationByCoord,
@@ -428,6 +432,9 @@ export class LingjieRift extends plugin {
     const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_player);
     if (blackEmperorFormation.consumed) await Write_player(task.qq, player);
     const battle = await zd_battle(A_player, B_player);
+    player.功法熟练度 = A_player.功法熟练度;
+    player.功法熟练度每日 = A_player.功法熟练度每日;
+    const proficiencyGains = awardDungeonGongfaProficiency(player);
     player.当前血量 = battle.winner === 'A' ? Math.max(1, Math.trunc(battle.A_hp)) : 1;
     await Write_player(task.qq, player);
 
@@ -439,6 +446,9 @@ export class LingjieRift extends plugin {
       ...battleExcerpt(battle.msg),
       ...(blackEmperorFormation.message ? ['', blackEmperorFormation.message] : []),
     ];
+    for (const [name, gained] of Object.entries(proficiencyGains)) {
+      lines.push(`功法参悟：${formatGongfaProficiency(player, name)}（+${gained}）`);
+    }
 
     if (battle.winner !== 'A') {
       lines.push('', '【探索失败】你被裂缝生灵重创，拼尽全力逃回凡间，当前血量降至1。');

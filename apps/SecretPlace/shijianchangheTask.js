@@ -24,6 +24,11 @@ import {
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
+import { getRealmAuthorityLevel, hasRealmAuthority } from '../../model/realmAuthority.js';
+import {
+  awardDungeonGongfaProficiency,
+  formatGongfaProficiency,
+} from '../../model/gongfaProficiency.js';
 
 export class ShijianChangheTask extends plugin {
   constructor() {
@@ -109,8 +114,11 @@ async checkTimeRiverActions() {
       灵根: player.灵根,
       法球倍率: player.灵根.法球倍率,
       学习的功法: player.学习的功法,
+      功法熟练度: player.功法熟练度,
+      功法熟练度每日: player.功法熟练度每日,
       仙宠: player.仙宠,
-      mijinglevel_id: player.mijinglevel_id
+      mijinglevel_id: player.mijinglevel_id,
+      xiangulevel_id: player.xiangulevel_id
     };
     
     // 随机选择敌人
@@ -118,7 +126,7 @@ async checkTimeRiverActions() {
     const enemyTemplate = data.shijianchanghe_list[enemyIndex];
     
     // 计算缩放因子
-    const scaleFactor = this.calculateScaleFactor(player.mijinglevel_id);
+    const scaleFactor = this.calculateScaleFactor(getRealmAuthorityLevel(player));
     
     // 构建战斗角色
     const B_player = {
@@ -143,11 +151,15 @@ async checkTimeRiverActions() {
     if (blackEmperorFormation.consumed) await Write_player(usr_qq, player);
     // 进行战斗
     const battleResult = await zd_battle(A_player, B_player);
+    player.功法熟练度 = A_player.功法熟练度;
+    player.功法熟练度每日 = A_player.功法熟练度每日;
+    const proficiencyGains = awardDungeonGongfaProficiency(player);
     if (blackEmperorFormation.message && Array.isArray(battleResult.msg)) battleResult.msg.unshift(blackEmperorFormation.message);
     
     const playerHp = battleResult.A_hp;
     const enemyHp = battleResult.B_hp;
     player.当前血量 = await Set_HP(usr_qq, playerHp);
+    await Write_player(usr_qq, player);
     
     // 确定战斗结果
     let outcome;
@@ -155,7 +167,7 @@ async checkTimeRiverActions() {
     if (enemyHp <= 0) {
       outcome = 'victory';
        // 99%概率触发厄土仙帝推演惩罚 (只针对仙帝以下玩家)
-      if (Math.random() < 0.35 && player.mijinglevel_id < 21) {
+      if (Math.random() < 0.35 && !hasRealmAuthority(player, 21)) {
         specialEvents.pastBodyExposed = true;
               const suppressionTime = 30 * 60 * 1000;
   const endTime = Date.now() + suppressionTime;
@@ -174,7 +186,7 @@ async checkTimeRiverActions() {
       outcome = 'defeat';
       
       // 30%概率触发厄土仙帝推演惩罚 (只针对仙帝以下玩家)
-      if (Math.random() < 0.8 && player.mijinglevel_id < 21) {
+      if (Math.random() < 0.8 && !hasRealmAuthority(player, 21)) {
         specialEvents.pastBodyExposed = true;
               const suppressionTime = 30 * 60 * 1000;
   const endTime = Date.now() + suppressionTime;
@@ -248,6 +260,7 @@ if (specialEvents.pastBodyExposed && specialEvents.darkSuppression) {
         outcome,
         specialEvents,
         penalties,
+        proficiencyGains,
         eraAccumulationChange,
         newEraAccumulation: player.纪元积累
       }
@@ -354,7 +367,7 @@ async handleDarkSuppression(usr_qq, action) {
   await redis.set(`xiuxian:player:${usr_qq}:suppression_end`, endTime);
   await redis.set(`xiuxian:player:${usr_qq}:suppression_data`, JSON.stringify({
     group_id: action.group_id,
-    original_level: player.mijinglevel_id
+    original_level: getRealmAuthorityLevel(player)
   }));
   
   // 设置玩家动作状态
@@ -541,13 +554,16 @@ async sendEncounterMessage(usr_qq, action, message) {
       }
 
       // 仙帝豁免提示
-      if (player.mijinglevel_id >= 21) {
+      if (hasRealmAuthority(player, 21)) {
         message.push('【仙帝之威】');
         message.push('你身为诸天至高的路尽级仙帝，早已超越永恒凌驾诸世间，一证永证，统御了自身所有的时间线');
         message.push('厄土仙帝根本无法探寻你的跟脚，更谈何推演并打灭你的过去身呢？');
       }
     } else {
       message.push(this.getDrawMessage(enemy));
+    }
+    for (const [name, gained] of Object.entries(battleResult.proficiencyGains || {})) {
+      message.push(`功法参悟：${formatGongfaProficiency(player, name)}（+${gained}）`);
     }
     
     // 添加特殊事件详细描述

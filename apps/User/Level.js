@@ -63,6 +63,11 @@ import {
 import { findWudaoTeaItem } from './wudaoTea.js';
 import { clearInterval } from 'timers';
 import { getRedDustDaoFruit, getRedDustPath, getRedDustVow } from '../../model/redDustPath.js';
+import {
+  awardWudaoGongfaProficiency,
+  formatGongfaProficiency,
+  getWudaoGongfaReduction,
+} from '../../model/gongfaProficiency.js';
 
 function consumeBreakthroughPill(player) {
   if (player.breakthrough !== true) return 0;
@@ -1737,14 +1742,16 @@ async hudao(e) {
         useTea,
       });
       const baseCosts = getWudaoResourceCosts(player.mijinglevel_id, player.xiangulevel_id);
-      const potentialCost = applyQuestionFortuneCost(player, baseCosts.potential);
-      const cultivationCost = applyQuestionFortuneCost(player, baseCosts.cultivation);
-      const bloodCost = applyQuestionFortuneCost(player, baseCosts.blood);
+      const wudaoGongfa = getWudaoGongfaReduction(player);
+      const wudaoCostMultiplier = 1 - wudaoGongfa.rate;
+      const potentialCost = applyQuestionFortuneCost(player, Math.ceil(baseCosts.potential * wudaoCostMultiplier));
+      const cultivationCost = applyQuestionFortuneCost(player, Math.ceil(baseCosts.cultivation * wudaoCostMultiplier));
+      const bloodCost = applyQuestionFortuneCost(player, Math.ceil(baseCosts.blood * wudaoCostMultiplier));
       const lifespanCost = applyQuestionFortuneCost(
         player,
-        Math.floor(baseCosts.lifespan * result.lifespanMultiplier)
+        Math.floor(baseCosts.lifespan * Math.max(0.5, result.lifespanMultiplier * wudaoCostMultiplier))
       );
-      const spiritCost = applyQuestionFortuneCost(player, baseCosts.spirit);
+      const spiritCost = applyQuestionFortuneCost(player, Math.ceil(baseCosts.spirit * wudaoCostMultiplier));
       const availableLifespan = getAvailableLifespan(player);
       const currentPotential = Number(player.仙道潜力) || 0;
       const currentCultivation = Number(player.修为) || 0;
@@ -1796,6 +1803,7 @@ async hudao(e) {
       consumePlayerLifespan(player, lifespanCost);
       ensured.path.stages[rule.key] = currentExp + actualGain;
       const attemptCount = recordDaoAttempt(ensured.path, dateKey);
+      const proficiencyGains = awardWudaoGongfaProficiency(player, 5, { dateKey });
       const currentStage = getDaoStage(ensured.path.stages[rule.key], rule);
       await Write_player(usr_qq, player);
       if (usedWudaoDan) await Add_najie_thing(usr_qq, '大衍悟道丹', '丹药', -1);
@@ -1826,6 +1834,12 @@ async hudao(e) {
           ? `今日悟道：${attemptCount}（服大衍悟道丹·续道）/${DAO_DAILY_LIMIT}`
           : `今日悟道：${attemptCount}/${DAO_DAILY_LIMIT}`,
       ];
+      if (wudaoGongfa.rate > 0) {
+        reply.push(`功法减耗：「${wudaoGongfa.name}」-${Math.round(wudaoGongfa.rate * 100)}%`);
+      }
+      for (const [name, gained] of Object.entries(proficiencyGains)) {
+        reply.push(`功法熟练度：${formatGongfaProficiency(player, name)}（+${gained}）`);
+      }
       if (previousStage.name !== currentStage.name) {
         reply.push(`【境界精进】${rule.name}由${previousStage.name}迈入${currentStage.name}！`);
       }

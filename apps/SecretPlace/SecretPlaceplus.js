@@ -2,6 +2,7 @@ import fs from 'fs';
 import { plugin, verc, data } from '../../api/api.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
 import { isDaofaActive } from '../../model/daofa.js';
+import { getDungeonGongfaReduction } from '../../model/gongfaProficiency.js';
 import {
   Read_player,
   isNotNull,
@@ -245,7 +246,7 @@ async Gosecretplace(e) {
     
     // 统一计算时间缩减效果
     const { timeReduction, msgs } = await calculateTimeReductionForAddiction(player, i);
-    let time = baseTime - timeReduction;
+    let time = applyAddictionGongfaReduction(player, baseTime, baseTime - timeReduction, allMsgs);
     allMsgs.push(...msgs);
     
     // 应用时间减少
@@ -425,7 +426,7 @@ async Goxiajie(e) {
     
     // 统一计算时间缩减效果
     const { timeReduction, msgs } = await calculateTimeReductionForAddiction(player, i);
-    let time = baseTime - timeReduction;
+    let time = applyAddictionGongfaReduction(player, baseTime, baseTime - timeReduction, allMsgs);
     allMsgs.push(...msgs);
     
 
@@ -601,7 +602,7 @@ async Gojiutianshidi(e) {
     
     // 统一计算时间缩减效果
     const { timeReduction, msgs } = await calculateTimeReductionForAddiction(player, i);
-    let time = baseTime - timeReduction;
+    let time = applyAddictionGongfaReduction(player, baseTime, baseTime - timeReduction, allMsgs);
     allMsgs.push(...msgs);
     
 
@@ -852,7 +853,7 @@ async Gozhetian(e) {
     
     // 应用时间减少
     
-     let time = baseTime - timeReduction;
+     let time = applyAddictionGongfaReduction(player, baseTime, baseTime - timeReduction, allMsgs);
     // 添加时间减少汇总
     if (timeReduction > 0) {
         allMsgs.push([
@@ -1035,7 +1036,7 @@ async Goforbiddenarea(e) {
     
     // 计算基础时间
     let baseTime = i * 10 * 7; // 基础时间（分钟）
-    let time = baseTime - timeReduction;
+    let time = applyAddictionGongfaReduction(player, baseTime, baseTime - timeReduction, allMsgs);
     
     // 添加时间减少汇总
     if (timeReduction > 0) {
@@ -1318,7 +1319,7 @@ if (didian === "往世星海") {
 
     // 统一计算时间缩减效果
     const { timeReduction, msgs } = await calculateTimeReductionForAddiction(player, i);
-    let time = baseTime - timeReduction;
+    let time = applyAddictionGongfaReduction(player, baseTime, baseTime - timeReduction, messages);
     messages.push(...msgs);
     
     // 计算每次结算的时间间隔（分钟）
@@ -1505,6 +1506,22 @@ if (didian === "往世星海") {
     return false;
   }
 }
+function applyAddictionGongfaReduction(player, baseTime, time, messages) {
+    const minimumTime = baseTime * 0.5;
+    const currentTime = Math.max(minimumTime, time);
+    const technique = getDungeonGongfaReduction(player);
+    if (technique.rate <= 0) {
+        return currentTime;
+    }
+
+    const reduction = Math.min(currentTime - minimumTime, currentTime * technique.rate);
+    if (reduction <= 0) {
+        return currentTime;
+    }
+    messages.push(`【功法火候】${technique.name}额外缩短${reduction.toFixed(1)}分钟`);
+    return currentTime - reduction;
+}
+
 /**
  * 统一计算时间缩减效果（沉迷版本）
  * @param {Object} player 玩家对象

@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getPlayerPlaneName } from './planeCoords.js';
+import { getDungeonGongfaReduction } from './gongfaProficiency.js';
 
 export const INNATE_TREASURE_NAMES = Object.freeze([
   '混沌珠',
@@ -372,6 +373,11 @@ export function getTimedActionMultiplier(player) {
   if (hasEquippedInnateTreasure(player, '混沌钟')) return 0.7;
   if (hasEquippedInnateTreasure(player, '东皇钟')) return 0.8;
   return 1;
+}
+
+export function getDungeonTimedActionMultiplier(player) {
+  const technique = getDungeonGongfaReduction(player);
+  return Math.max(0.5, getTimedActionMultiplier(player) * (1 - technique.rate));
 }
 
 export function applyInnateTravelReduction(player, travelTime, random = Math.random) {

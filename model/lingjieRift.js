@@ -1,4 +1,5 @@
 import { isDaofaActive } from './daofa.js';
+import { getDungeonGongfaReduction } from './gongfaProficiency.js';
 
 export const RIFT_DURATION_MS = 6 * 60 * 60 * 1000;
 export const RIFT_EXPLORE_MS = 15 * 60 * 1000;
@@ -110,6 +111,13 @@ export function calculateRiftExploreDuration(player, minggeReductionMs = 0) {
   } else if (skills.includes('天璇步法')) {
     reductionMs += 60 * 1000;
     messages.push('天璇步法踏过乱流：-1分钟');
+  }
+
+  const proficiencyReduction = getDungeonGongfaReduction(player);
+  if (proficiencyReduction.rate > 0) {
+    const amount = Math.floor(RIFT_EXPLORE_MS * proficiencyReduction.rate);
+    reductionMs += amount;
+    messages.push(`${proficiencyReduction.name}火候加速：-${Math.round(amount / 1000)}秒`);
   }
 
   if (isDaofaActive(player)) {
