@@ -1,0 +1,1882 @@
+@font-face {
+  font-family: "Celestial Display";
+  src: url("../../font/AlimamaDongFangDaKai-Regular.ttf");
+}
+
+@font-face {
+  font-family: "Celestial Sans";
+  src: url("../../font/HYWenHei-55W.ttf");
+}
+
+@font-face {
+  font-family: "Celestial Number";
+  src: url("../../font/tttgbnumber.ttf");
+}
+
+:root {
+  --page: #05080b;
+  --surface: #0b1116;
+  --surface-strong: #101a20;
+  --surface-soft: #121b20;
+  --ink: #edf2ef;
+  --muted: #8e9ca2;
+  --quiet: #64727a;
+  --line: rgba(178, 198, 202, 0.2);
+  --line-strong: rgba(208, 173, 92, 0.52);
+  --gold: #d8b25d;
+  --gold-bright: #f4db91;
+  --cyan: #62c9d8;
+  --jade: #6ec0a0;
+  --red: #d96655;
+  --danger: #ee775d;
+  --sheet-shadow: rgba(0, 0, 0, 0.55);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  padding: 36px 24px 80px;
+  color: var(--ink);
+  background-color: var(--page);
+  background-image:
+    radial-gradient(circle at 12px 18px, rgba(255, 255, 255, 0.28) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 55px 72px, rgba(98, 201, 216, 0.2) 0 1px, transparent 1.5px);
+  background-size: 94px 112px, 138px 154px;
+  font-family: "Celestial Sans", "Microsoft YaHei", sans-serif;
+  letter-spacing: 0;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  letter-spacing: 0;
+}
+
+.review-nav {
+  position: relative;
+  z-index: 20;
+  width: min(1080px, 100%);
+  min-height: 62px;
+  margin: 0 auto 18px;
+  padding: 10px 12px 10px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(8, 12, 15, 0.94);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+}
+
+.review-nav > span {
+  color: #b7c2c5;
+  font-size: 13px;
+}
+
+.review-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.review-actions button {
+  min-width: 142px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 4px;
+  color: #9faeb2;
+  background: #11171b;
+  cursor: pointer;
+}
+
+.review-actions button b {
+  margin-right: 7px;
+  color: #d8b25d;
+  font-family: "Celestial Number", sans-serif;
+}
+
+.review-actions button[aria-pressed="true"] {
+  border-color: #d8b25d;
+  color: #f2e6c5;
+  background: #252219;
+}
+
+.attribute-sheet {
+  position: relative;
+  width: min(1080px, 100%);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-top: 5px solid var(--gold);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 34px 90px var(--sheet-shadow);
+}
+
+.cosmos-art {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 0;
+  height: 370px;
+  background-image: url("../../img/help/zhutian.jpg");
+  background-position: center 27%;
+  background-size: cover;
+}
+
+.cosmos-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(5, 9, 12, 0.94) 0 34%, rgba(6, 11, 14, 0.34) 63%, rgba(7, 10, 12, 0.56)), linear-gradient(180deg, rgba(5, 9, 12, 0.08) 0 57%, var(--surface));
+}
+
+.coordinate-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.22;
+  background-image:
+    linear-gradient(rgba(111, 173, 181, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(111, 173, 181, 0.09) 1px, transparent 1px);
+  background-size: 54px 54px;
+}
+
+.identity-band,
+.realm-track,
+.primary-stats,
+.attribute-ledger,
+.sheet-footer {
+  position: relative;
+  z-index: 1;
+}
+
+.identity-band {
+  min-height: 260px;
+  padding: 44px 48px 36px;
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr) 228px;
+  align-items: center;
+  gap: 28px;
+}
+
+.realm-seal {
+  width: 76px;
+  height: 136px;
+  padding: 13px 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--gold);
+  box-shadow: inset 0 0 0 6px rgba(6, 10, 12, 0.75), inset 0 0 0 7px rgba(216, 178, 93, 0.36);
+  color: var(--gold-bright);
+  background: rgba(8, 13, 16, 0.76);
+  font: 32px/1 "Celestial Display", "KaiTi", serif;
+}
+
+.realm-seal span,
+.realm-seal b {
+  font-weight: 400;
+}
+
+.identity-copy {
+  min-width: 0;
+}
+
+.concept-kicker {
+  color: var(--cyan);
+  font: 12px/1 "Celestial Number", sans-serif;
+}
+
+.identity-copy h1 {
+  margin: 12px 0 9px;
+  overflow-wrap: anywhere;
+  color: #fff9e9;
+  font: 58px/1.08 "Celestial Display", "STKaiti", serif;
+  letter-spacing: 0;
+}
+
+.identity-copy p {
+  margin: 0;
+  color: #b9c4c6;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.identity-copy p i {
+  width: 3px;
+  height: 3px;
+  margin: 0 8px;
+  display: inline-block;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--gold);
+}
+
+.power-signature {
+  min-width: 0;
+  padding: 19px 0;
+  border-top: 1px solid var(--gold);
+  border-bottom: 1px solid rgba(216, 178, 93, 0.45);
+  text-align: right;
+}
+
+.power-signature span,
+.power-signature strong,
+.power-signature em {
+  display: block;
+}
+
+.power-signature span {
+  color: #aeb9bc;
+  font-size: 10px;
+}
+
+.power-signature strong {
+  margin: 8px 0 6px;
+  color: var(--gold-bright);
+  font: 46px/1 "Celestial Number", sans-serif;
+}
+
+.power-signature strong small {
+  margin-left: 5px;
+  font: 20px/1 "Celestial Display", serif;
+}
+
+.power-signature em {
+  color: #7fd4dd;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.realm-track {
+  min-height: 112px;
+  display: grid;
+  grid-template-columns: 190px repeat(4, 1fr);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-strong);
+  background: rgba(9, 15, 19, 0.92);
+}
+
+.realm-track-label,
+.realm-node {
+  min-width: 0;
+  padding: 24px 20px;
+  border-left: 1px solid var(--line);
+}
+
+.realm-track-label {
+  border-left: 0;
+  background: rgba(216, 178, 93, 0.08);
+}
+
+.realm-track-label span,
+.realm-track-label strong,
+.realm-node span,
+.realm-node b,
+.realm-node small {
+  display: block;
+}
+
+.realm-track-label span {
+  color: var(--gold);
+  font: 10px/1 "Celestial Number", sans-serif;
+}
+
+.realm-track-label strong {
+  margin-top: 12px;
+  color: #f0e5c8;
+  font: 22px/1 "Celestial Display", serif;
+}
+
+.realm-node span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.realm-node b {
+  margin: 10px 0 7px;
+  overflow-wrap: anywhere;
+  color: #e8efed;
+  font: 17px/1.15 "Celestial Display", serif;
+}
+
+.realm-node small {
+  color: var(--quiet);
+  font-size: 9px;
+}
+
+.realm-node.is-primary {
+  box-shadow: inset 0 3px var(--cyan);
+  background: rgba(98, 201, 216, 0.06);
+}
+
+.primary-stats {
+  display: grid;
+  grid-template-columns: 1.18fr repeat(3, 1fr);
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--surface-strong);
+}
+
+.section-intro {
+  grid-row: span 2;
+  padding: 30px 28px;
+  border-right: 1px solid var(--line);
+  background: #111a20;
+}
+
+.section-intro span,
+.section-intro h2,
+.section-intro p,
+.prime-stat span,
+.prime-stat strong,
+.prime-stat small,
+.secondary-stat span,
+.secondary-stat b,
+.secondary-stat small {
+  display: block;
+}
+
+.section-intro span,
+.section-heading > span {
+  color: var(--gold);
+  font: 10px/1 "Celestial Number", sans-serif;
+}
+
+.section-intro h2 {
+  margin: 13px 0 12px;
+  color: #f1e8d4;
+  font: 25px/1.14 "Celestial Display", serif;
+}
+
+.section-intro p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.65;
+}
+
+.prime-stat,
+.secondary-stat {
+  min-width: 0;
+  border-left: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.prime-stat {
+  min-height: 128px;
+  padding: 25px 22px;
+}
+
+.prime-stat span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.prime-stat strong {
+  margin: 12px 0 8px;
+  overflow-wrap: anywhere;
+  color: var(--gold-bright);
+  font: 23px/1 "Celestial Number", sans-serif;
+}
+
+.prime-stat small,
+.secondary-stat small {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.secondary-stat {
+  min-height: 93px;
+  padding: 17px 19px;
+}
+
+.secondary-stat span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.secondary-stat b {
+  margin: 7px 0 5px;
+  color: #dce6e3;
+  font: 18px/1 "Celestial Number", sans-serif;
+}
+
+.attribute-ledger {
+  background: var(--surface);
+}
+
+.data-section {
+  position: relative;
+  padding: 32px 38px 36px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.data-section:nth-child(even) {
+  background: var(--surface-soft);
+}
+
+.section-heading {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 108px 1fr auto;
+  align-items: baseline;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.section-heading > div {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.section-heading h2,
+.section-heading p {
+  margin: 0;
+}
+
+.section-heading h2 {
+  color: #f0e7d3;
+  font: 25px/1 "Celestial Display", serif;
+}
+
+.section-heading p {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.section-heading > strong {
+  max-width: 330px;
+  overflow-wrap: anywhere;
+  color: var(--cyan);
+  text-align: right;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.limit-table {
+  margin-top: 18px;
+}
+
+.limit-row {
+  min-height: 78px;
+  display: grid;
+  grid-template-columns: 176px 1fr 260px 86px;
+  align-items: center;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.limit-row > div:first-child span,
+.limit-row > div:first-child b,
+.limit-values span {
+  display: block;
+}
+
+.limit-row > div:first-child span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.limit-row > div:first-child b {
+  margin-top: 7px;
+  color: #e6eeeb;
+  font: 17px/1 "Celestial Number", sans-serif;
+}
+
+.limit-rail {
+  height: 6px;
+  display: flex;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.limit-rail i,
+.limit-rail em {
+  display: block;
+  height: 100%;
+}
+
+.limit-rail i {
+  background: var(--cyan);
+}
+
+.limit-rail em {
+  background: var(--danger);
+}
+
+.limit-values {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.limit-values span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.limit-row > strong {
+  color: var(--jade);
+  text-align: right;
+  font-size: 10px;
+}
+
+.limit-row.is-over > strong,
+.limit-row.is-over .limit-values span:last-child {
+  color: var(--danger);
+}
+
+.limit-row.is-max > strong {
+  color: var(--gold-bright);
+}
+
+.section-note {
+  min-height: 54px;
+  margin-top: 17px;
+  padding: 13px 16px;
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  align-items: center;
+  gap: 16px;
+  border-left: 3px solid var(--gold);
+  background: rgba(216, 178, 93, 0.08);
+}
+
+.section-note b {
+  color: var(--gold-bright);
+  font: 15px/1 "Celestial Display", serif;
+}
+
+.section-note span,
+.section-note em {
+  color: #a9b5b6;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.section-note em {
+  color: var(--cyan);
+  font-style: normal;
+  text-align: right;
+}
+
+.source-grid {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr 1fr;
+  gap: 10px;
+}
+
+.source-column {
+  min-width: 0;
+  min-height: 370px;
+  padding: 20px;
+  border-top: 3px solid var(--gold);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.source-title {
+  min-height: 68px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--line);
+}
+
+.source-title span,
+.source-title b,
+.source-title em,
+.artifact-name span,
+.artifact-name strong,
+.artifact-name small {
+  display: block;
+}
+
+.source-title span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.source-title b {
+  margin: 7px 0 5px;
+  color: #eee6d3;
+  font: 20px/1 "Celestial Display", serif;
+}
+
+.source-title em {
+  color: var(--cyan);
+  font-size: 9px;
+  font-style: normal;
+}
+
+.source-item {
+  min-height: 67px;
+  padding: 13px 0;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 7px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.source-item strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #dfe8e5;
+  font: 15px/1.15 "Celestial Display", serif;
+}
+
+.source-item span,
+.source-item small {
+  color: #a7b2b3;
+  font-size: 8px;
+}
+
+.source-item small {
+  grid-column: 1 / -1;
+  color: var(--quiet);
+}
+
+.source-total {
+  padding-top: 14px;
+}
+
+.source-total span,
+.source-total b {
+  display: block;
+}
+
+.source-total span {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.source-total b {
+  margin-top: 7px;
+  color: var(--gold-bright);
+  font-size: 10px;
+}
+
+.imperial-source {
+  border-top-color: var(--red);
+}
+
+.treasure-source {
+  border-top-color: var(--cyan);
+}
+
+.artifact-name {
+  padding: 19px 0 16px;
+}
+
+.artifact-name span {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.artifact-name strong {
+  margin: 7px 0;
+  color: var(--gold-bright);
+  font: 24px/1 "Celestial Display", serif;
+}
+
+.artifact-name small {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.artifact-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.artifact-stats div {
+  min-width: 0;
+  padding: 11px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.artifact-stats span,
+.artifact-stats b {
+  display: block;
+}
+
+.artifact-stats span {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.artifact-stats b {
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  color: #dae5e2;
+  font: 13px/1 "Celestial Number", sans-serif;
+}
+
+.source-column > p {
+  margin: 15px 0 0;
+  color: var(--quiet);
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.resistance-layout {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 28px;
+}
+
+.resistance-chart {
+  display: grid;
+}
+
+.resistance-row {
+  min-height: 66px;
+  display: grid;
+  grid-template-columns: 92px 1fr 48px;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.resistance-row > span {
+  color: #dbe5e2;
+  font-size: 10px;
+}
+
+.resistance-row > i {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.resistance-row > i em {
+  display: block;
+  height: 100%;
+  background: var(--cyan);
+}
+
+.resistance-row > b {
+  color: var(--gold-bright);
+  text-align: right;
+  font: 14px/1 "Celestial Number", sans-serif;
+}
+
+.resistance-row > small {
+  grid-column: 2 / -1;
+  margin-top: -17px;
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.damage-matrix {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.damage-matrix > div {
+  min-width: 0;
+  min-height: 91px;
+  padding: 16px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.damage-matrix span,
+.damage-matrix b,
+.damage-matrix small {
+  display: block;
+}
+
+.damage-matrix span {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.damage-matrix b {
+  margin: 8px 0 7px;
+  color: #e5eee9;
+  font: 17px/1 "Celestial Number", sans-serif;
+}
+
+.damage-matrix small {
+  color: var(--quiet);
+  font-size: 7px;
+}
+
+.insight-layout {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: 0.92fr 1.55fr;
+  gap: 18px;
+}
+
+.cost-board {
+  min-height: 306px;
+  padding: 24px;
+  border: 1px solid var(--line-strong);
+  background: rgba(216, 178, 93, 0.07);
+}
+
+.board-label {
+  color: var(--gold);
+  font-size: 9px;
+}
+
+.cost-main {
+  margin-top: 26px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.cost-main > div {
+  padding: 8px 13px 18px 0;
+  border-right: 1px solid var(--line);
+}
+
+.cost-main > div:last-child {
+  padding-left: 18px;
+  border-right: 0;
+}
+
+.cost-main span,
+.cost-main b,
+.cost-sub span {
+  display: block;
+}
+
+.cost-main span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.cost-main b {
+  margin-top: 11px;
+  color: var(--gold-bright);
+  font: 30px/1 "Celestial Number", sans-serif;
+}
+
+.cost-sub {
+  margin-top: 23px;
+  padding-top: 17px;
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.cost-sub span {
+  color: #aab6b5;
+  font-size: 9px;
+}
+
+.factor-ledger {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.factor-group {
+  min-width: 0;
+  border-top: 3px solid var(--red);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.factor-group.factor-gain {
+  border-top-color: var(--jade);
+}
+
+.factor-title {
+  min-height: 62px;
+  padding: 15px;
+  border-bottom: 1px solid var(--line);
+}
+
+.factor-title span,
+.factor-title b {
+  display: block;
+}
+
+.factor-title span {
+  color: #e1e9e6;
+  font: 16px/1 "Celestial Display", serif;
+}
+
+.factor-title b {
+  margin-top: 7px;
+  color: var(--red);
+  font-size: 8px;
+}
+
+.factor-gain .factor-title b {
+  color: var(--jade);
+}
+
+.factor-group > div:not(.factor-title) {
+  min-height: 51px;
+  padding: 11px 14px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.factor-group > div:not(.factor-title) strong {
+  color: #dce6e3;
+  font-size: 10px;
+}
+
+.factor-group > div:not(.factor-title) span {
+  grid-column: 1;
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.factor-group > div:not(.factor-title) b {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: var(--gold-bright);
+  font: 12px/1 "Celestial Number", sans-serif;
+}
+
+.compact-note {
+  grid-template-columns: 80px 1fr;
+}
+
+.time-formula {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: 1fr 24px 1.28fr 24px 1.15fr 24px 1fr;
+  align-items: stretch;
+}
+
+.time-formula > i {
+  display: grid;
+  place-items: center;
+  color: var(--gold);
+  font: 20px/1 "Celestial Number", sans-serif;
+  font-style: normal;
+}
+
+.formula-stage {
+  min-width: 0;
+  min-height: 125px;
+  padding: 22px 18px;
+  border-top: 2px solid var(--quiet);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.formula-stage span,
+.formula-stage b,
+.formula-stage small {
+  display: block;
+}
+
+.formula-stage span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.formula-stage b {
+  margin: 12px 0 10px;
+  color: #e2ebe8;
+  font: 25px/1 "Celestial Number", sans-serif;
+}
+
+.formula-stage small {
+  color: var(--quiet);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.formula-stage.is-result {
+  border-top-color: var(--cyan);
+  background: rgba(98, 201, 216, 0.08);
+}
+
+.formula-stage.is-result b {
+  color: var(--gold-bright);
+}
+
+.time-rule {
+  margin: 15px 0 0;
+  color: var(--muted);
+  text-align: right;
+  font-size: 9px;
+}
+
+.resource-layout {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: 0.86fr 0.86fr 2fr;
+  gap: 10px;
+}
+
+.resource-balance {
+  min-width: 0;
+  min-height: 230px;
+  padding: 23px;
+  border-top: 3px solid var(--gold);
+  background: rgba(216, 178, 93, 0.07);
+}
+
+.resource-balance span,
+.resource-balance strong,
+.resource-balance small {
+  display: block;
+}
+
+.resource-balance span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.resource-balance strong {
+  margin: 28px 0 22px;
+  overflow-wrap: anywhere;
+  color: var(--gold-bright);
+  font: 42px/1 "Celestial Number", sans-serif;
+}
+
+.resource-balance strong em {
+  margin-left: 5px;
+  font: 16px/1 "Celestial Display", serif;
+  font-style: normal;
+}
+
+.resource-balance small {
+  color: var(--quiet);
+  font-size: 8px;
+  line-height: 1.6;
+}
+
+.life-balance {
+  border-top-color: var(--jade);
+  background: rgba(110, 192, 160, 0.06);
+}
+
+.expense-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.expense-list > div {
+  min-width: 0;
+  min-height: 114px;
+  padding: 17px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.expense-list span,
+.expense-list b,
+.expense-list small {
+  display: block;
+}
+
+.expense-list span {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.expense-list b {
+  margin: 9px 0 7px;
+  color: #e4ece9;
+  font: 15px/1 "Celestial Number", sans-serif;
+}
+
+.expense-list small {
+  color: var(--quiet);
+  font-size: 7px;
+}
+
+.origin-strip {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.origin-strip > div {
+  min-width: 0;
+  min-height: 130px;
+  padding: 20px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.origin-strip span,
+.origin-strip b,
+.origin-strip small {
+  display: block;
+}
+
+.origin-strip span {
+  color: var(--gold);
+  font-size: 8px;
+}
+
+.origin-strip b {
+  min-height: 36px;
+  margin: 11px 0 8px;
+  overflow-wrap: anywhere;
+  color: #e5ece9;
+  font: 15px/1.2 "Celestial Display", serif;
+}
+
+.origin-strip small {
+  color: var(--quiet);
+  font-size: 8px;
+  line-height: 1.55;
+}
+
+.sheet-footer {
+  min-height: 112px;
+  padding: 24px 38px;
+  display: grid;
+  grid-template-columns: 1fr 1.5fr auto;
+  align-items: center;
+  gap: 30px;
+  color: #cdd8d5;
+  background: #05090b;
+}
+
+.sheet-footer div span,
+.sheet-footer div b {
+  display: block;
+}
+
+.sheet-footer div span {
+  color: var(--gold);
+  font: 9px/1 "Celestial Number", sans-serif;
+}
+
+.sheet-footer div b {
+  margin-top: 8px;
+  font-size: 10px;
+}
+
+.sheet-footer p {
+  margin: 0;
+  color: var(--quiet);
+  text-align: center;
+  font-size: 9px;
+}
+
+.sheet-footer > strong {
+  color: var(--gold-bright);
+  font: 19px/1 "Celestial Display", serif;
+}
+
+.sheet-footer > strong em {
+  font-family: "Celestial Number", sans-serif;
+  font-style: normal;
+}
+
+/* 方案二：万界天碑，明石纸面、墨金栏线与纵向碑铭。 */
+body[data-theme="2"] {
+  --page: #1c201e;
+  --surface: #e8e9e4;
+  --surface-strong: #f2f1eb;
+  --surface-soft: #dfe3df;
+  --ink: #232926;
+  --muted: #68706b;
+  --quiet: #858c87;
+  --line: rgba(62, 71, 66, 0.18);
+  --line-strong: rgba(133, 105, 48, 0.55);
+  --gold: #91702f;
+  --gold-bright: #6f511c;
+  --cyan: #277b75;
+  --jade: #3d7562;
+  --red: #9b4338;
+  --danger: #a9483c;
+  --sheet-shadow: rgba(0, 0, 0, 0.38);
+  background-color: #262b28;
+  background-image: repeating-linear-gradient(132deg, transparent 0 86px, rgba(234, 228, 207, 0.025) 86px 87px);
+}
+
+body[data-theme="2"] .attribute-sheet {
+  border-top-width: 9px;
+  border-left: 13px solid #252b28;
+}
+
+body[data-theme="2"] .cosmos-art {
+  height: 310px;
+  filter: grayscale(0.58) saturate(0.7) contrast(1.08);
+  background-position: center 63%;
+}
+
+body[data-theme="2"] .cosmos-art::after {
+  background: linear-gradient(90deg, rgba(237, 235, 225, 0.96) 0 48%, rgba(234, 232, 220, 0.66) 75%, rgba(26, 31, 29, 0.25)), linear-gradient(180deg, rgba(232, 233, 228, 0.1), var(--surface));
+}
+
+body[data-theme="2"] .coordinate-grid {
+  opacity: 0.3;
+  background-image: repeating-linear-gradient(132deg, transparent 0 74px, rgba(68, 75, 69, 0.06) 74px 75px);
+  background-size: auto;
+}
+
+body[data-theme="2"] .identity-band {
+  min-height: 278px;
+  padding: 36px 42px;
+  grid-template-columns: 118px minmax(0, 1fr) 245px;
+}
+
+body[data-theme="2"] .realm-seal {
+  width: 98px;
+  height: 174px;
+  border: 2px solid #8f7137;
+  box-shadow: inset 0 0 0 8px #e7e4d9, inset 0 0 0 9px rgba(113, 83, 30, 0.45);
+  color: #f1dfae;
+  background: #8c3f35;
+  font-size: 36px;
+}
+
+body[data-theme="2"] .concept-kicker,
+body[data-theme="2"] .power-signature em {
+  color: var(--red);
+}
+
+body[data-theme="2"] .identity-copy h1 {
+  color: #242a27;
+  font-size: 64px;
+}
+
+body[data-theme="2"] .identity-copy p {
+  color: #606964;
+}
+
+body[data-theme="2"] .power-signature {
+  padding: 22px;
+  border: 1px solid rgba(113, 83, 30, 0.48);
+  color: #ece7d5;
+  background: rgba(33, 39, 36, 0.9);
+}
+
+body[data-theme="2"] .power-signature strong {
+  color: #efd990;
+}
+
+body[data-theme="2"] .realm-track {
+  grid-template-columns: 210px 1fr 1fr;
+  background: #252b28;
+}
+
+body[data-theme="2"] .realm-track-label {
+  grid-row: span 2;
+  display: grid;
+  align-content: center;
+  color: #f0ead7;
+  background: #1f2422;
+}
+
+body[data-theme="2"] .realm-node {
+  color: #e9ece6;
+  background: #2d3430;
+}
+
+body[data-theme="2"] .realm-node:nth-child(even) {
+  background: #353c38;
+}
+
+body[data-theme="2"] .realm-node b {
+  color: #f2eee2;
+}
+
+body[data-theme="2"] .realm-node span,
+body[data-theme="2"] .realm-node small {
+  color: #acb7b1;
+}
+
+body[data-theme="2"] .realm-node.is-primary {
+  box-shadow: inset 4px 0 var(--red);
+}
+
+body[data-theme="2"] .primary-stats {
+  grid-template-columns: 260px repeat(3, 1fr);
+  background: var(--surface-strong);
+}
+
+body[data-theme="2"] .section-intro {
+  grid-row: span 3;
+  background: #d8dcd7;
+}
+
+body[data-theme="2"] .section-intro h2,
+body[data-theme="2"] .section-heading h2 {
+  color: #232926;
+}
+
+body[data-theme="2"] .prime-stat strong,
+body[data-theme="2"] .secondary-stat b,
+body[data-theme="2"] .limit-row > div:first-child b,
+body[data-theme="2"] .source-item strong,
+body[data-theme="2"] .artifact-stats b,
+body[data-theme="2"] .damage-matrix b,
+body[data-theme="2"] .factor-group > div:not(.factor-title) strong,
+body[data-theme="2"] .formula-stage b,
+body[data-theme="2"] .expense-list b,
+body[data-theme="2"] .origin-strip b {
+  color: #28302c;
+}
+
+body[data-theme="2"] .section-heading {
+  grid-template-columns: 92px 1fr auto;
+  border-bottom: 2px solid #8f7137;
+}
+
+body[data-theme="2"] .source-column,
+body[data-theme="2"] .factor-group,
+body[data-theme="2"] .formula-stage,
+body[data-theme="2"] .resource-balance {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+body[data-theme="2"] .source-title b,
+body[data-theme="2"] .artifact-name strong,
+body[data-theme="2"] .factor-title span {
+  color: #2a302d;
+}
+
+body[data-theme="2"] .cost-board {
+  background: #292f2c;
+}
+
+body[data-theme="2"] .cost-board .cost-main b {
+  color: #f0d986;
+}
+
+body[data-theme="2"] .cost-board .board-label,
+body[data-theme="2"] .cost-board .cost-main span,
+body[data-theme="2"] .cost-board .cost-sub span {
+  color: #bfc7c1;
+}
+
+body[data-theme="2"] .section-note {
+  background: rgba(145, 112, 47, 0.09);
+}
+
+body[data-theme="2"] .section-note span,
+body[data-theme="2"] .section-note em {
+  color: #5f6863;
+}
+
+body[data-theme="2"] .sheet-footer {
+  color: #d8dfda;
+  background: #252b28;
+}
+
+/* 方案三：天机观测台，以星图仪器和高密度坐标读数为核心。 */
+body[data-theme="3"] {
+  --page: #060909;
+  --surface: #0c1211;
+  --surface-strong: #101817;
+  --surface-soft: #121b19;
+  --ink: #e8eee8;
+  --muted: #92a39b;
+  --quiet: #607069;
+  --line: rgba(132, 181, 159, 0.2);
+  --line-strong: rgba(128, 181, 156, 0.47);
+  --gold: #d5ad52;
+  --gold-bright: #edd58d;
+  --cyan: #67d6c5;
+  --jade: #8ac681;
+  --red: #d75b4e;
+  --danger: #ef705e;
+  --sheet-shadow: rgba(0, 0, 0, 0.58);
+  background-color: #050807;
+  background-image:
+    linear-gradient(rgba(103, 214, 197, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103, 214, 197, 0.045) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+body[data-theme="3"] .attribute-sheet {
+  border-top-color: var(--cyan);
+}
+
+body[data-theme="3"] .cosmos-art {
+  height: 410px;
+  opacity: 0.82;
+  filter: saturate(0.65) hue-rotate(25deg) contrast(1.12);
+  background-position: center 10%;
+}
+
+body[data-theme="3"] .cosmos-art::after {
+  background: linear-gradient(90deg, rgba(5, 10, 9, 0.88), rgba(7, 15, 13, 0.45) 57%, rgba(4, 9, 8, 0.92)), linear-gradient(180deg, transparent 42%, var(--surface));
+}
+
+body[data-theme="3"] .coordinate-grid {
+  opacity: 0.54;
+  background-image:
+    linear-gradient(rgba(98, 201, 181, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(98, 201, 181, 0.07) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+
+body[data-theme="3"] .identity-band {
+  min-height: 330px;
+  padding: 44px 48px;
+  grid-template-columns: 210px minmax(0, 1fr) 230px;
+}
+
+body[data-theme="3"] .realm-seal {
+  position: relative;
+  width: 186px;
+  height: 186px;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--cyan);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 13px rgba(4, 12, 10, 0.85), inset 0 0 0 14px rgba(103, 214, 197, 0.35), 0 0 0 8px rgba(3, 9, 8, 0.5), 0 0 0 9px rgba(213, 173, 82, 0.46);
+  background-image: url("../../img/help/zhutian.jpg");
+  background-position: center 34%;
+  background-size: 260%;
+  font-size: 35px;
+}
+
+body[data-theme="3"] .realm-seal::before,
+body[data-theme="3"] .realm-seal::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -20px;
+  width: 1px;
+  height: 226px;
+  background: rgba(103, 214, 197, 0.3);
+}
+
+body[data-theme="3"] .realm-seal::after {
+  transform: rotate(90deg);
+}
+
+body[data-theme="3"] .concept-kicker {
+  color: var(--gold);
+}
+
+body[data-theme="3"] .identity-copy h1 {
+  font-size: 54px;
+}
+
+body[data-theme="3"] .power-signature {
+  padding: 18px;
+  border: 1px solid rgba(103, 214, 197, 0.45);
+  background: rgba(4, 12, 10, 0.72);
+}
+
+body[data-theme="3"] .power-signature strong {
+  color: var(--cyan);
+}
+
+body[data-theme="3"] .realm-track {
+  background: rgba(7, 15, 13, 0.94);
+}
+
+body[data-theme="3"] .realm-track-label {
+  box-shadow: inset 0 3px var(--gold);
+}
+
+body[data-theme="3"] .realm-node.is-primary {
+  box-shadow: inset 0 3px var(--red);
+}
+
+body[data-theme="3"] .primary-stats {
+  grid-template-columns: repeat(6, 1fr);
+}
+
+body[data-theme="3"] .section-intro {
+  grid-column: span 2;
+  grid-row: span 2;
+  box-shadow: inset 4px 0 var(--gold);
+  background: #0b1412;
+}
+
+body[data-theme="3"] .prime-stat {
+  min-height: 126px;
+  grid-column: span 2;
+}
+
+body[data-theme="3"] .prime-stat strong {
+  font-size: 19px;
+}
+
+body[data-theme="3"] .secondary-stat {
+  min-height: 95px;
+}
+
+body[data-theme="3"] .section-heading {
+  grid-template-columns: 112px 1fr auto;
+  border-bottom-color: rgba(103, 214, 197, 0.42);
+}
+
+body[data-theme="3"] .section-heading > span {
+  color: var(--cyan);
+}
+
+body[data-theme="3"] .limit-row {
+  grid-template-columns: 176px 1fr 260px 100px;
+}
+
+body[data-theme="3"] .source-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+body[data-theme="3"] .equipment-source {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 180px repeat(3, 1fr);
+  grid-template-rows: auto auto;
+  gap: 0 18px;
+}
+
+body[data-theme="3"] .equipment-source .source-title {
+  grid-row: 1 / span 2;
+  padding-right: 18px;
+  border-right: 1px solid var(--line);
+  border-bottom: 0;
+}
+
+body[data-theme="3"] .equipment-source .source-item {
+  grid-template-columns: 1fr;
+}
+
+body[data-theme="3"] .equipment-source .source-total {
+  grid-column: 2 / -1;
+}
+
+body[data-theme="3"] .source-column {
+  min-height: 0;
+  border-top-color: var(--cyan);
+  box-shadow: inset 0 0 0 1px rgba(103, 214, 197, 0.08);
+  background: rgba(103, 214, 197, 0.025);
+}
+
+body[data-theme="3"] .imperial-source {
+  border-top-color: var(--red);
+}
+
+body[data-theme="3"] .treasure-source {
+  border-top-color: var(--gold);
+}
+
+body[data-theme="3"] .resistance-layout {
+  grid-template-columns: 1fr 1.18fr;
+}
+
+body[data-theme="3"] .resistance-row > i em {
+  background: var(--jade);
+  box-shadow: 0 0 10px rgba(138, 198, 129, 0.36);
+}
+
+body[data-theme="3"] .cost-board {
+  border-color: rgba(103, 214, 197, 0.52);
+  background: rgba(103, 214, 197, 0.055);
+}
+
+body[data-theme="3"] .factor-group,
+body[data-theme="3"] .formula-stage,
+body[data-theme="3"] .resource-balance {
+  background: rgba(103, 214, 197, 0.025);
+}
+
+body[data-theme="3"] .formula-stage {
+  border-top-color: var(--cyan);
+}
+
+body[data-theme="3"] .formula-stage.is-result {
+  border-top-color: var(--red);
+}
+
+body[data-theme="3"] .sheet-footer {
+  border-top: 1px solid var(--cyan);
+  background: #050a08;
+}
+
+.capture-mode {
+  padding: 0;
+  background: transparent;
+}
+
+.capture-mode .review-nav {
+  display: none;
+}
+
+.capture-mode .attribute-sheet {
+  width: 1080px;
+  margin: 0;
+  box-shadow: none;
+}
+
+@media (max-width: 760px) {
+  body {
+    padding: 14px 10px 40px;
+  }
+
+  .review-nav {
+    padding: 12px;
+    display: block;
+  }
+
+  .review-nav > span {
+    display: block;
+    margin-bottom: 10px;
+  }
+
+  .review-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .review-actions button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .identity-band,
+  body[data-theme="2"] .identity-band,
+  body[data-theme="3"] .identity-band {
+    min-height: 0;
+    padding: 30px 22px;
+    grid-template-columns: 66px 1fr;
+    gap: 20px;
+  }
+
+  .realm-seal,
+  body[data-theme="2"] .realm-seal,
+  body[data-theme="3"] .realm-seal {
+    width: 62px;
+    height: 112px;
+    border-radius: 0;
+    box-shadow: inset 0 0 0 5px rgba(6, 10, 12, 0.75), inset 0 0 0 6px rgba(216, 178, 93, 0.36);
+    background: rgba(8, 13, 16, 0.76);
+    font-size: 27px;
+  }
+
+  body[data-theme="3"] .realm-seal::before,
+  body[data-theme="3"] .realm-seal::after {
+    display: none;
+  }
+
+  .identity-copy h1,
+  body[data-theme="2"] .identity-copy h1,
+  body[data-theme="3"] .identity-copy h1 {
+    font-size: 40px;
+  }
+
+  .power-signature,
+  body[data-theme="2"] .power-signature,
+  body[data-theme="3"] .power-signature {
+    grid-column: 1 / -1;
+    width: 100%;
+    text-align: left;
+  }
+
+  .realm-track,
+  body[data-theme="2"] .realm-track,
+  body[data-theme="3"] .realm-track {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .realm-track-label,
+  body[data-theme="2"] .realm-track-label {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  .realm-node {
+    border-top: 1px solid var(--line);
+  }
+
+  .primary-stats,
+  body[data-theme="2"] .primary-stats,
+  body[data-theme="3"] .primary-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .section-intro,
+  body[data-theme="2"] .section-intro,
+  body[data-theme="3"] .section-intro {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  .prime-stat strong {
+    font-size: 17px;
+  }
+
+  .data-section {
+    padding: 28px 20px 31px;
+  }
+
+  .section-heading,
+  body[data-theme="2"] .section-heading,
+  body[data-theme="3"] .section-heading {
+    padding-bottom: 15px;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .section-heading > div {
+    display: block;
+  }
+
+  .section-heading p {
+    margin-top: 8px;
+  }
+
+  .section-heading > strong {
+    max-width: none;
+    text-align: left;
+  }
+
+  .limit-row,
+  body[data-theme="3"] .limit-row {
+    padding: 15px 0;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+  }
+
+  .limit-rail,
+  .limit-values {
+    grid-column: 1 / -1;
+  }
+
+  .limit-row > strong {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .section-note,
+  .compact-note {
+    grid-template-columns: 1fr;
+  }
+
+  .section-note em {
+    text-align: left;
+  }
+
+  .source-grid,
+  body[data-theme="3"] .source-grid,
+  .resistance-layout,
+  body[data-theme="3"] .resistance-layout,
+  .insight-layout,
+  .factor-ledger,
+  .resource-layout {
+    grid-template-columns: 1fr;
+  }
+
+  body[data-theme="3"] .equipment-source {
+    grid-column: auto;
+    display: block;
+  }
+
+  body[data-theme="3"] .equipment-source .source-title {
+    padding-right: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .source-column {
+    min-height: 0;
+  }
+
+  .time-formula {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .time-formula > i {
+    height: 20px;
+  }
+
+  .time-rule {
+    text-align: left;
+    line-height: 1.6;
+  }
+
+  .origin-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sheet-footer {
+    grid-template-columns: 1fr auto;
+  }
+
+  .sheet-footer p {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    text-align: left;
+  }
+}
+
+@media (max-width: 420px) {
+  .identity-band,
+  body[data-theme="2"] .identity-band,
+  body[data-theme="3"] .identity-band {
+    grid-template-columns: 1fr;
+  }
+
+  .realm-seal,
+  body[data-theme="2"] .realm-seal,
+  body[data-theme="3"] .realm-seal {
+    width: 54px;
+    height: 88px;
+  }
+
+  .identity-copy h1,
+  body[data-theme="2"] .identity-copy h1,
+  body[data-theme="3"] .identity-copy h1 {
+    font-size: 36px;
+  }
+
+  .primary-stats,
+  body[data-theme="2"] .primary-stats,
+  body[data-theme="3"] .primary-stats,
+  .realm-track,
+  body[data-theme="2"] .realm-track,
+  body[data-theme="3"] .realm-track,
+  .damage-matrix,
+  .expense-list,
+  .origin-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .realm-track-label,
+  body[data-theme="2"] .realm-track-label {
+    grid-column: auto;
+  }
+
+  .section-intro,
+  body[data-theme="2"] .section-intro,
+  body[data-theme="3"] .section-intro {
+    grid-column: auto;
+  }
+
+  .resistance-row {
+    grid-template-columns: 84px 1fr 44px;
+  }
+
+  .resource-balance strong {
+    font-size: 34px;
+  }
+
+  .sheet-footer {
+    padding: 22px 20px;
+  }
+}
