@@ -357,7 +357,7 @@ export class EndlessReincarnation extends plugin {
   async replyPanel(e, view, fallback) {
     try {
       const renderData = await new Show(e).get_endlessReincarnationData({
-        saveId: `endless_reincarnation_${Date.now()}`,
+        saveId: `endless_reincarnation_${e.user_id}`,
         ...view,
         renderScale: 2,
         imgType: 'png',

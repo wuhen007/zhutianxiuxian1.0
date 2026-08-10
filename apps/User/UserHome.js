@@ -72,19 +72,6 @@ import {
   activateTianjiaoScent,
   calculateTianjiTrainingReward,
 } from '../../model/tianjiTalismans.js';
-// 在文件顶部新增全局映射和优先级定义
-const talentSelectionMap = new Map(); // 存储玩家洗髓状态
-const talentPriorityMap = {
-    '圣体道胎': 9,
-    '大道体': 8,
-    '圣体': 7,
-    '神体': 6,
-    '天灵根': 5,
-    '变异灵根': 4,
-    '体质': 3,
-    '真灵根': 2,
-    '伪灵根': 1
-};
 /**
  * 全局变量
  */
@@ -177,11 +164,6 @@ export class UserHome extends plugin {
 {
     reg: '^#使用锁灵仙符$',
     fnc: 'useLockLinggenToken'
-},
-        {
-    reg: '^#(保留原灵根|替换新灵根)$',
-    fnc: 'handleTalentChoice',
-
 },
 {
     reg: '^#修复道伤$',
@@ -7322,57 +7304,6 @@ function getDaysUntilNextGift(currentGiftType,daysRounded) {
       return -1;
   }
 }
-// 灵根比较函数
-function compareTalent(a, b) {
-    const priorityA = talentPriorityMap[a.type] || 0;
-    const priorityB = talentPriorityMap[b.type] || 0;
-    if (priorityA > priorityB) return 1;
-    if (priorityA < priorityB) return -1;
-    return 0;
-}
-async function handleTalentChoice(e) {
-    const user_id = e.user_id;
-    const choice = e.msg.replace('#', '');
-    const state = talentSelectionMap.get(user_id);
-
-    // 验证选择状态
-    if (!state || Date.now() - state.timestamp > 30000) {
-        return "无生效中的灵根选择";
-    }
-
-    // 清除超时定时器
-    clearTimeout(state.timer);
-    talentSelectionMap.delete(user_id);
-
-    const player = data.getData('player', user_id);
-    let resultMsg = [];
-
-    if (choice === '替换新灵根') {
-        player.灵根 = state.bestTalent;
-        resultMsg = [
-            segment.at(user_id),
-            '✅ 已替换为最佳灵根',
-            `新灵根：${state.bestTalent.type}·${state.bestTalent.name}`
-        ];
-    } else {
-        resultMsg = [
-            segment.at(user_id),
-            'ℹ️ 已保留原始灵根',
-            `当前灵根：${state.oldTalent.type}·${state.oldTalent.name}`
-        ];
-    }
-
-    // 更新数据
-    data.setData('player', user_id, player);
-    await player_efficiency(user_id);
-    
-    // 添加物品数量提示
-    resultMsg.push(`剩余${state.baseName}: ${state.newCount}个`);
-    
-    await e.reply(resultMsg);
-    return true;
-}
-
 // 添加这个辅助函数到文件合适位置
 function formatTime(ms) {
     const totalSeconds = Math.floor(ms / 1000);

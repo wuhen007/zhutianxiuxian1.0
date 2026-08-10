@@ -25,6 +25,8 @@ import {
 } from '../../model/xiuxian.js';
 import { Read_player, __PATH, Read_danyao } from '../../model/xiuxian.js';
 
+const gayCooldowns = new Map();
+
 
 export class Garden extends plugin {
   constructor() {
@@ -251,10 +253,9 @@ export class Garden extends plugin {
     let ifexistplay1 = data.existData('player', qq);
     if (!ifexistplay) return false;
     if (!ifexistplay1) return false;
-    var GayCD = {};
     const cd = 2; //设置冷却时间，单位为分钟
-    let id = e.group_id + usr_qq;
-    if (GayCD[id]) {
+    const id = `${e.group_id}:${usr_qq}`;
+    if (gayCooldowns.has(id)) {
       e.reply(`残云封天剑有${cd}分钟冷却时间!`);
       return false;
     }
@@ -302,13 +303,9 @@ export class Garden extends plugin {
         e.group.muteMember(qq, num2);
       }
 
-      GayCD[id] = true;
-
-      GayCD[id] = setTimeout(() => {
-        if (GayCD[id]) {
-          delete GayCD[id];
-        }
-      }, cd * 60 * 1000);
+      gayCooldowns.set(id, setTimeout(() => {
+        gayCooldowns.delete(id);
+      }, cd * 60 * 1000));
       //执行的逻辑功能
 
       return false;

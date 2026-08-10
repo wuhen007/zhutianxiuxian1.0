@@ -582,7 +582,7 @@ export class EndlessRealm extends plugin {
   async replyEndlessPanel(e, view, fallback) {
     try {
       const renderData = await new Show(e).get_endlessPanelData({
-        saveId: `endless_panel_${view.mode}_${Date.now()}`,
+        saveId: `endless_panel_${e.user_id}_${view.mode}`,
         ...view,
         renderScale: 2,
         imgType: 'png',
@@ -1034,7 +1034,7 @@ export class EndlessRealm extends plugin {
     const catalogProducts = products.filter(item => item !== featured);
     try {
       const renderData = await new Show(e).get_endlessShopData({
-        saveId: `endless_shop_${userId}_${Date.now()}`,
+        saveId: `endless_shop_${userId}`,
         playerName: player.名号 || `无名修士${String(userId).slice(-4)}`,
         tokenAmount: this.formatAmount(player[ENDLESS_TOKEN]),
         date: day,
@@ -1955,7 +1955,7 @@ export class EndlessRealm extends plugin {
     const routeStart = Math.floor((Math.max(1, result.layer) - 1) / 10) * 10 + 1;
 
     return {
-      saveId: `endless_${run.teamId}_${result.layer}_${Date.now()}`,
+      saveId: `endless_${run.teamId}_${result.layer}`,
       layer: result.layer,
       world: result.world,
       stage: result.stage,

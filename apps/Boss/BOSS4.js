@@ -122,7 +122,7 @@ export class BOSS4 extends plugin {
         log: true,
       },
     ];
-    this.userCooldownMs = 30 * 60 * 1000; // 30分钟个人冷却
+    this.userCooldownMs = 90 * 60 * 1000; // 90分钟个人冷却
     this.tianjiaoRefreshMs = 18 * 60 * 60 * 1000; // 18小时天骄刷新时间
     this.escapeRefreshMs = 6 * 60 * 60 * 1000; // 逃脱后6小时复活
 

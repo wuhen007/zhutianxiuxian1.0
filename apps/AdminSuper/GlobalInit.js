@@ -418,7 +418,11 @@ export class GlobalInit extends plugin {
     }
 
     const userQQ = e.user_id.toString().replace('qg_', '');
-    pendingConfirm.set(userQQ, Date.now());
+    const now = Date.now();
+    for (const [qq, startedAt] of pendingConfirm) {
+      if (now - startedAt > CONFIRM_TIMEOUT) pendingConfirm.delete(qq);
+    }
+    pendingConfirm.set(userQQ, now);
 
     await e.reply(
       [

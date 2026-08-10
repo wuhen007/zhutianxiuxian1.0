@@ -1505,7 +1505,7 @@ async Couple(e) {
             await Write_player(A, playerA); await Write_player(B, playerB);
             e.reply(guaMsg.join("\n"));
             await setFailCnt(A, 0); await setFailCnt(B, 0);
-        }else {e.reply(`两种凡体历经二十次磨合，仍无缘蜕变，大道难成……\n【${'▱'.repeat(width)}】20/20（无契合路线）`);
+        }else {e.reply(`双方历经二十次磨合，仍无缘蜕变，大道难成……\n【${'▱'.repeat(width)}】20/20（无契合路线）`);
   }
     }
 
@@ -1546,10 +1546,12 @@ if (!fusionHit) {
         failText = `混沌雾霭与圣体道光微微交融，又被天道法则强行抚平……\n` +
                    `进度 [${bar}] ${next}/20（混沌·圣体道胎）`;
     }
-    // ⑤ 其余未列出的稀有组合（预留）
+    // ⑤ 不契合的组合——如实描述双方灵根，不吹捧
     else {
-        failText = `两种无上体质互相吸引，却终究欠缺一丝契机……\n` +
-                   `进度 [${bar}] ${next}/20（未知交融）`;
+        const lgA_name = playerA.灵根?.name || '未知体质';
+        const lgB_name = playerB.灵根?.name || '未知体质';
+        failText = `${lgA_name}与${lgB_name}气机难以共鸣，道不同不相为谋……\n` +
+                   `进度 [${bar}] ${next}/20（无契合交融）`;
     }
 
     e.reply(failText);

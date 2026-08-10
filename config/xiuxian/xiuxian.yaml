@@ -108,7 +108,7 @@ Era:
     index: 3
     years: 6000
     epoch: 1
-    totalYears: 4000
+    totalYears: 36000
   yearlyAdvance: 1000
   weimianRepairInterval: 2000
 BotType: onebot
