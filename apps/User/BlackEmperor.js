@@ -80,10 +80,13 @@ export class BlackEmperor extends plugin {
     const learned = Boolean(player.黑皇阵道传承);
     const unlocked = BLACK_EMPEROR_FORMATIONS.filter(item => favor >= item.favor).map(item => item.name);
     const next = BLACK_EMPEROR_FORMATIONS.find(item => favor < item.favor);
+    const dateKey = shanghaiDateKey();
+    const 今日刻阵 = character.刻阵日期 === dateKey ? Number(character.今日刻阵) || 0 : 0;
     await e.reply([
       '【剧情人物·黑皇】',
       `关系：${relation.name}（${favor}好感度）`,
       `阵道传承：${learned ? '已获传承' : favor >= BLACK_EMPEROR_TEACHING_FAVOR ? '可发送 #黑皇传授阵道' : `尚需${BLACK_EMPEROR_TEACHING_FAVOR - favor}好感度`}`,
+      `今日刻阵：${今日刻阵}/${relation.level}次`,
       `已解锁阵法：${unlocked.length ? unlocked.join('、') : '暂无'}`,
       ...formatBattleFormations(player),
       next ? `下一阵法：${next.name}（${next.favor}好感度）` : '全部阵法均已解锁',
@@ -179,7 +182,10 @@ export class BlackEmperor extends plugin {
       const materialPart = item.engraveMaterial
         ? ` + ${item.engraveMaterial.name}×${item.engraveMaterial.count}`
         : '';
-      return `${favor >= item.favor ? '已解锁' : `${item.favor}好感`}｜${item.name}｜${item.cost.toLocaleString()}灵石\n${item.description}${selfPart}${materialPart}`;
+      const costPart = item.costMaterials
+        ? `；刻阵需${item.costMaterials.map(mat => `${mat.name}×${mat.count}`).join('、')}`
+        : '';
+      return `${favor >= item.favor ? '已解锁' : `${item.favor}好感`}｜${item.name}｜${item.cost.toLocaleString()}灵石\n${item.description}${selfPart}${materialPart}${costPart}`;
     });
     await e.reply([
       '【黑皇阵图】',
@@ -209,6 +215,27 @@ export class BlackEmperor extends plugin {
     if (favor < formation.favor) {
       await e.reply(`刻画「${name}」需要${formation.favor}好感度，当前${favor}。`);
       return true;
+    }
+
+    // 每日刻阵次数（按好感度等级 1~5 → 每日 1~5 次，自然日刷新）
+    const dateKey = shanghaiDateKey();
+    if (character.刻阵日期 !== dateKey) {
+      character.刻阵日期 = dateKey;
+      character.今日刻阵 = 0;
+    }
+    const dailyLimit = getBlackEmperorRelation(favor).level;
+    if ((Number(character.今日刻阵) || 0) >= dailyLimit) {
+      await e.reply(`黑皇懒洋洋地甩了甩尾巴：「今日已替你刻了${dailyLimit}次阵，改日再来吧。」`);
+      return true;
+    }
+    // 刻阵材料（欺天阵纹需混沌源石×5 + 欺天石×1）
+    const costMaterials = formation.costMaterials || [];
+    for (const mat of costMaterials) {
+      const has = Number(await exist_najie_thing(userId, mat.name, '材料')) || 0;
+      if (has < mat.count) {
+        await e.reply(`刻画「${name}」还缺材料【${mat.name}】×${mat.count}（当前${has}）。`);
+        return true;
+      }
     }
     if (formation.type === 'training' && player.occupation !== '阵法师') {
       await e.reply('聚灵道阵需由阵法师亲自主持。请先获得传承并转职为阵法师。');
@@ -242,6 +269,10 @@ export class BlackEmperor extends plugin {
     }
 
     player.灵石 = Number(player.灵石) - formation.cost;
+    for (const mat of costMaterials) {
+      await Add_najie_thing(userId, mat.name, '材料', -mat.count);
+    }
+    character.今日刻阵 = (Number(character.今日刻阵) || 0) + 1;
     if (formation.type === 'tribulation') {
       player.黑皇待用阵纹 = formation.name;
     } else if (formation.type === 'battle') {
@@ -269,7 +300,9 @@ export class BlackEmperor extends plugin {
     await e.reply([
       `【黑皇刻阵·${formation.name}】`,
       `灵石-${formation.cost.toLocaleString()}`,
+      ...costMaterials.map(mat => `${mat.name}-${mat.count}`),
       effect,
+      `今日刻阵：${character.今日刻阵}/${dailyLimit}次（好感度${getBlackEmperorRelation(favor).name}）`,
     ].join('\n'));
     return true;
   }

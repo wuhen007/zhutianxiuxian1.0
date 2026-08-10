@@ -15,6 +15,10 @@ export const BLACK_EMPEROR_FORMATIONS = Object.freeze([
     cost: 15_000_000,
     type: 'tribulation',
     description: '下次渡劫偏移天机区间，阵纹随机向安全或凶险端偏移',
+    costMaterials: [
+      { name: '混沌源石', count: 5 },
+      { name: '欺天石', count: 1 },
+    ],
   },
   {
     name: '山河困龙阵',
@@ -92,6 +96,22 @@ function recordEvent(character, event) {
   if (!Array.isArray(character.事件记录)) character.事件记录 = [];
   character.事件记录.push(event);
   if (character.事件记录.length > 20) character.事件记录.splice(0, character.事件记录.length - 20);
+}
+
+// 段德遭遇：遮天位面下本时 0.1% 概率遇到盗墓被雷劈的段德，捡到欺天石
+// 纯逻辑：仅返回结果，掉落物品由调用方 Add_najie_thing 发放
+export function rollDuanDeEncounter(player, options = {}) {
+  if (!player || typeof player !== 'object') return { encountered: false };
+  const plane = options.plane ?? player.power_place;
+  if (Number(plane) !== 2) return { encountered: false }; // 仅遮天位面
+  const random = options.random || Math.random;
+  const chance = options.chance ?? 0.001; // 0.1%
+  if (random() >= chance) return { encountered: false };
+  return {
+    encountered: true,
+    item: { name: '欺天石', class: '材料', amount: 1 },
+    message: ' 一声惊天雷响，前方坟丘炸出焦黑大坑，一个灰头土脸的身影被天雷劈得骂骂咧咧——正是盗墓狂人段德！他怀里滚落一块奇石，恰好滚到你脚下。你顺手捡起【欺天石】×1，段德骂骂咧咧扒开焦土，头也不回地跑了。',
+  };
 }
 
 export function rollBlackEmperorDungeonEncounter(player, options = {}) {

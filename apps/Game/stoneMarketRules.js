@@ -85,6 +85,13 @@ const GROUND_OUTCOMES = [
     clues: ['纸页般的道痕层层叠合，可能封有古经残页', '羽化道韵被石皮遮蔽，切石时须格外谨慎'],
     anomaly: '洁白光羽绕石而生，一角古老经页若隐若现。',
   },
+  {
+    id: 'qitian_stone', name: '欺天石', tier: 5, weight: 15, ratio: 0,
+    item: { name: '欺天石', class: '材料', amount: 1 },
+    surfaces: ['石皮布满龟壳般的道痕，纹路隐隐向石心游走', '石中似有天机流转，靠近时神识微微发麻'],
+    clues: ['道痕游走不定，石中似封着一缕天机', '石心气息飘忽，像在刻意掩藏自身'],
+    anomaly: '一道灰白雷光自石缝迸出，恍若曾被天雷劈过的痕迹。',
+  },
 ];
 
 const SKY_OUTCOMES = [
@@ -131,6 +138,12 @@ const SKY_OUTCOMES = [
     item: { name: '羽化仙经残页', class: '材料', amount: 1 }, fragile: true,
     surfaces: GROUND_OUTCOMES[6].surfaces, clues: GROUND_OUTCOMES[6].clues,
     anomaly: GROUND_OUTCOMES[6].anomaly,
+  },
+  {
+    id: 'qitian_stone', name: '欺天石', tier: 5, weight: 40, ratio: 0,
+    item: { name: '欺天石', class: '材料', amount: 1 },
+    surfaces: GROUND_OUTCOMES[7].surfaces, clues: GROUND_OUTCOMES[7].clues,
+    anomaly: GROUND_OUTCOMES[7].anomaly,
   },
 ];
 

@@ -19,6 +19,7 @@ const BLACK_UTILITY_PRICES = {
   大位面传送阵: 1_800_000_000,
   星图: 800_000_000,
   界隙锚符: 1_200_000_000,
+  欺天石: 25_000_000,
 };
 
 const BLACK_POTENTIAL_PRICES = {

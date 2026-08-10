@@ -39,7 +39,7 @@ import { getMinggeEffects, getMinggeDirectMultiplier } from '../../model/mingge.
 import { rollDailyDungeonCoordinate } from '../../model/weimianTravel.js';
 import { recordWenXianTaskProgress } from '../../model/wenxianling.js';
 import { formatTianjiaoTrace, rollDungeonTianjiaoTrace } from '../../model/tianjiaoGrowth.js';
-import { consumeBlackEmperorBattleFormation, rollBlackEmperorDungeonEncounter } from '../../model/blackEmperor.js';
+import { consumeBlackEmperorBattleFormation, rollBlackEmperorDungeonEncounter, rollDuanDeEncounter } from '../../model/blackEmperor.js';
 import { AppName } from '../../app.config.js';
 import {
   dataall,
@@ -3460,6 +3460,14 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
                 await Write_player(player_id, player);
               }
 
+              const duandeEncounter = rollDuanDeEncounter(player, {
+                plane: player.power_place,
+              });
+              if (duandeEncounter.encountered) {
+                await Add_najie_thing(player_id, duandeEncounter.item.name, duandeEncounter.item.class, duandeEncounter.item.amount);
+                last_msg += duandeEncounter.message;
+              }
+
               const coordinateDrop = rollDailyDungeonCoordinate(player);
               if (coordinateDrop.attempted) {
                 await Write_player(player_id, player);
@@ -5544,6 +5552,14 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
               if (blackEmperorEncounter.encountered) {
                 last_msg += blackEmperorEncounter.message;
                 await Write_player(player_id, player);
+              }
+
+              const duandeEncounter = rollDuanDeEncounter(player, {
+                plane: player.power_place,
+              });
+              if (duandeEncounter.encountered) {
+                await Add_najie_thing(player_id, duandeEncounter.item.name, duandeEncounter.item.class, duandeEncounter.item.amount);
+                last_msg += duandeEncounter.message;
               }
               const coordinateDrop = rollDailyDungeonCoordinate(player);
               if (coordinateDrop.attempted) {

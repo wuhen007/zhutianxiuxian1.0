@@ -88,7 +88,7 @@ test('黑衣神秘人出售五至七件现有物品且绝不出现天命轮回�
     assert.ok(stock.filter(item => item.category === '丹药神药').length >= 2);
     assert.ok(stock.some(item => item.category === '诸天奇物'));
     assert.ok(stock.every(item => item.price > 0 && item.price <= BLACK_MARKET_MAX_PRICE));
-    assert.ok(stock.every(item => ['丹药', '道具'].includes(item.item.class)));
+    assert.ok(stock.every(item => ['丹药', '道具', '材料'].includes(item.item.class)));
     assert.ok(stock.every(item => item.displayName !== '天命轮回丹'));
   }
 });
