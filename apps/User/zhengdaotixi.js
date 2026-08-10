@@ -59,6 +59,12 @@ import {
   getTeachingSuccessRate,
   reserveTeachingCosts,
 } from '../../model/gongfaTeaching.js';
+import {
+  getRealmAuthorityLevel,
+  getRealmAuthorityName,
+  hasRealmAuthority,
+  lowerRealmAuthority,
+} from '../../model/realmAuthority.js';
 
 function formatSoulSearchTribulation(player, result) {
   if (!result.triggered) return [];
@@ -264,7 +270,7 @@ async addProtector(e) {
     return e.reply('目标当前并未处于破王成帝/渡劫阶段，无需护法');
 
   // 护法者境界检查
-  if (protector.mijinglevel_id < target.mijinglevel_id - 1)
+  if (getRealmAuthorityLevel(protector) < getRealmAuthorityLevel(target) - 1)
     return e.reply('你的境界不足以为该玩家护法（需 ≥ 目标境界 −1）');
 
   // 一人只能同时给一个人护法
@@ -274,7 +280,7 @@ async addProtector(e) {
   // 快照护法血量（×3 倍，一次性）
   const protectorSnap = {
     名字: protector.名号,
-    境界: protector.mijinglevel_id,
+      境界: getRealmAuthorityName(protector, data.Levelmijing_list, data.xiangujinshi_list),
     当前血量: Math.floor(protector.当前血量 * 3),
     血量上限: Math.floor(protector.当前血量 * 3)
   };
@@ -334,10 +340,10 @@ async removeProtector(e) {
     const player = await Read_player(usr_qq);
     
     // ==== 境界检查 ====
-    if (player.mijinglevel_id < 21) { // 需达到圣人境界
+    if (!hasRealmAuthority(player, 21)) {
       return e.reply([
         `「欲创仙宠，先入仙帝境！」`,
-        `${player.名号}当前境界仅为${player.mijinglevel_id}，`,
+        `${player.名号}当前境界为${getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list)}，`,
         `需突破至仙帝境方可创造仙宠`
       ].join('\n'));
     }
@@ -525,7 +531,8 @@ async removeProtector(e) {
   let player = await Read_player(usr_qq);
   
   // 检查玩家境界是否大于20
-  if (player.mijinglevel_id <= 20) {
+  const authorityLevel = getRealmAuthorityLevel(player);
+  if (authorityLevel <= 20) {
     e.reply("你尚未达到仙帝之境，无法修复破碎的位面");
     return;
   }
@@ -573,7 +580,7 @@ async removeProtector(e) {
   player.血气 -= requiredBlood;
   
   // 修复位面 - 同时增加现世承受力和诸天位面
-  const repairAmount = player.mijinglevel_id * 10000;
+  const repairAmount = authorityLevel * 10000;
   weimianData.现世承受力 += repairAmount;
   
   // 增加诸天位面数量
@@ -658,8 +665,8 @@ async jiyuanjilei(e) {
 
   // 计算奖励（优化后的公式）
   const baseReward = 100000;
-  const reward = baseReward * 
-   player.mijinglevel_id * 
+  const reward = baseReward *
+    Math.max(1, getRealmAuthorityLevel(player)) *
     player.level_id  * 
     player.Physique_id ;
 
@@ -692,7 +699,7 @@ async hongjiChengxianlu(e) {
     const player = await Read_player(player_qq);
 
     // 检查境界 - 必须大于16（红尘仙境界）
-    if (player.mijinglevel_id <= 16) {
+    if (!hasRealmAuthority(player, 17)) {
       return e.reply([
         `【境界不足·无法轰击成仙路】`,
         ,
@@ -700,7 +707,7 @@ async hongjiChengxianlu(e) {
         `欲轰击成仙路，却感力不从心！`,
         ,
         `「红尘仙境界方可撼动仙路壁垒！」`,
-        `当前境界: ${player.mijinglevel_id}（需 > 16）`,
+        `当前境界: ${getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list)}（需红尘仙或真仙）`,
         ,
         `继续苦修，待境界足够再来尝试！`
       ].join('\n'));
@@ -890,7 +897,8 @@ async changeAptitude(e) {
   
   // 检查施法者境界
   const invoker = await Read_player(invokerQQ);
-  if (invoker.mijinglevel_id < 21) {
+  const authorityLevel = getRealmAuthorityLevel(invoker);
+  if (authorityLevel < 21) {
     e.reply(`你当前境界不足，唯有仙帝方可掌控命运！`);
     return false;
   }
@@ -1001,9 +1009,9 @@ async changeAptitude(e) {
   
   // 构建仙帝威势消息
   let emperorRealmDesc = "";
-  if (invoker.mijinglevel_id === 23) {
+  if (authorityLevel >= 23) {
     emperorRealmDesc = `〖祭道之上〗${invoker.名号}周身缭绕不灭道光，祭道之力席卷八荒，诸世在他面前颤抖，时空概念为之扭曲`;
-  } else if (invoker.mijinglevel_id === 22) {
+  } else if (authorityLevel === 22) {
     emperorRealmDesc = `〖祭道〗${invoker.名号}帝威浩荡，眸中映照万界生灭，一念间诸天星辰皆成尘埃，时间长河在脚下臣服`;
   } else {
     emperorRealmDesc = `〖仙帝〗${invoker.名号}仙帝气机震动时间长河，掌指间流淌着毁灭万物的能量，天道法则为之让路`;
@@ -1314,11 +1322,11 @@ async hongjiTiandao(e) {
     }
 
     // 境界校验（需准仙帝）
-    if (executor.mijinglevel_id < 16) {
+    if (!hasRealmAuthority(executor, 16)) {
         e.reply([
             `「帝威不足！」`,
-            `${executor.名号}当前境界：${executor.境界}`,
-            `轰穿万道需大帝之境（境界ID≥16）`
+            `${executor.名号}当前境界：${getRealmAuthorityName(executor, data.Levelmijing_list, data.xiangujinshi_list)}`,
+            `轰穿万道需大帝或至尊之境`
         ].join('\n'));
         return true;
     }
@@ -2260,9 +2268,10 @@ async createEverything(e) {
     const usr_qq = e.user_id.toString().replace('qg_','');
     const player_qq = await channel(usr_qq);
     const player = await Read_player(player_qq);
+    const authorityLevel = getRealmAuthorityLevel(player);
 
     // 检查境界 - 仙帝及以上（境界ID >= 21）
-    if (player.mijinglevel_id < 21) {
+    if (authorityLevel < 21) {
         e.reply([
             `【境界不足】`,
             `造化万物乃仙帝伟力！`,
@@ -2283,7 +2292,7 @@ async createEverything(e) {
 
     // 检查物品是否存在
     const itemExist = await foundthing(itemName);
-        if (itemExist.不可创造) {
+    if (itemExist?.不可创造) {
         e.reply(`此等物品涉及的力量哪怕是仙帝也无法造化！`);
         return true;
     }
@@ -2313,11 +2322,11 @@ async createEverything(e) {
     let costPerItem = 0;
     let costDescription = "";
     
-    if (player.mijinglevel_id === 22) {
+    if (authorityLevel === 22) {
         // 祭道境界：每10000出售价消耗1点承受力
         costPerItem = Math.ceil(itemExist.出售价 / 10000);
         costDescription = `每10000出售价消耗1点承受力`;
-    } else if (player.mijinglevel_id === 23) {
+    } else if (authorityLevel >= 23) {
         // 祭道之上境界：不消耗任何承受力
         costPerItem = 0;
         costDescription = `祭道之上，言出法随，不染因果`;
@@ -2330,7 +2339,7 @@ async createEverything(e) {
     const totalCost = costPerItem * amount;
 
     // 检查承受力是否足够（祭道之上除外）
-    if (player.mijinglevel_id <24 && weimianData.现世承受力 < totalCost) {
+    if (authorityLevel < 23 && weimianData.现世承受力 < totalCost) {
         const realmNames = [
             "上苍之上",
             "魂河尽头",
@@ -2358,7 +2367,7 @@ async createEverything(e) {
     }
 
     // 扣除承受力（祭道之上除外）
-    if (player.mijinglevel_id <24) {
+    if (authorityLevel < 23) {
         weimianData.现世承受力 -= totalCost;
         
         // 保存位面数据
@@ -2371,13 +2380,11 @@ async createEverything(e) {
 
     // 添加物品到纳戒
     await Add_najie_thing(player_qq, itemName, itemExist.class, amount);
- if (player.mijinglevel_id < 22 && weimianData.现世承受力 < 1000000) {
+ if (authorityLevel < 22 && weimianData.现世承受力 < 1000000) {
         // 40%概率触发始祖扼杀
         if (Math.random() < 0.4) {
-            isKilledByAncestor = true;
-            
             // 境界跌落
-            player.mijinglevel_id -= 1;
+            lowerRealmAuthority(player);
             await Write_player(player_qq, player);
             
             // 构建始祖扼杀文案
@@ -2397,7 +2404,7 @@ async createEverything(e) {
                 `"噗——"`,
                 `${player.名号}的仙帝之躯在黑暗天刀下寸寸瓦解！`,
                 `大道根基被十股始祖之力联手斩断！`,
-                `境界永恒跌落至${getRealmName(player.mijinglevel_id)}！`,
+                `境界永恒跌落至${getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list)}！`,
                 ,
                 `十大始祖的冰冷道音回荡诸天：`,
                 `"自此之后，万古再无此变数！"`,
@@ -2440,7 +2447,7 @@ async createEverything(e) {
     ];
 
     // 祭道境界文案（境界22）
-    if (player.mijinglevel_id === 22) {
+    if (authorityLevel === 22) {
         createTexts.splice(4, 0, 
             `祭道符文照亮了永恒未知之地！`
         );
@@ -2457,7 +2464,7 @@ async createEverything(e) {
         );
     }
     // 祭道之上境界文案（境界23）
-    else if (player.mijinglevel_id >= 23) {
+    else if (authorityLevel >= 23) {
         createTexts.splice(4, 0,
             `「眸光所至，枯竭所有，重现所有！」`,
             `诸天万界，无量宇宙，所有生灵心头莫名悸动，`,
@@ -2510,7 +2517,7 @@ async createEverything(e) {
     }
 
     // 承受力接近枯竭时的警告（祭道之上除外）
-    if (player.mijinglevel_id <24 && weimianData.现世承受力 < 1000000) {
+    if (authorityLevel < 23 && weimianData.现世承受力 < 1000000) {
         createTexts.splice(createTexts.length, 0,
             
             `「警告！」`,
@@ -3368,9 +3375,10 @@ async handleTeach(e, isAll = false) {
     // 获取施法者信息
     const casterQQ = e.user_id.toString().replace('qg_', '');
     const caster = await Read_player(casterQQ);
+    const authorityLevel = getRealmAuthorityLevel(caster);
     
     // 检查施法者境界（仙帝及以上）
-    if (caster.mijinglevel_id < 21) {
+    if (authorityLevel < 21) {
         e.reply([
             `【境界不足】`,
             `镇压诸天、令万灵永寂乃仙帝伟力！`,
@@ -3421,7 +3429,8 @@ async setPlayerToYongji(targetQQ, caster) {
         state: 'yongji',
         caster: caster.名号,
         time: new Date().toLocaleString(),
-        casterLevel: caster.mijinglevel_id
+        casterLevel: getRealmAuthorityLevel(caster),
+        casterRealm: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list)
     };
       // 设置永寂行动状态
         let arr = {
@@ -3450,7 +3459,7 @@ async setPlayerToYongji(targetQQ, caster) {
     player.镇压记录.push({
         时间: new Date().toLocaleString(),
         施法者: caster.名号,
-        施法者境界: data.Levelmijing_list.find(l => l.level_id === caster.mijinglevel_id)?.level || '未知'
+        施法者境界: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list)
     });
     await Write_player(targetQQ, player);
 }
@@ -3458,9 +3467,10 @@ async setPlayerToYongji(targetQQ, caster) {
 /** 生成镇压文案（根据施法者境界） */
 generateSuppressionMessage(caster, target) {
     const messages = [];
+    const authorityLevel = getRealmAuthorityLevel(caster);
 
-    // 仙帝级镇压文案（21-22级）
-    if (caster.mijinglevel_id <= 22) {
+    // 仙帝级镇压文案
+    if (authorityLevel < 22) {
         messages.push(
             `【仙帝镇世·万灵永寂】`,
             `${caster.名号}眸光开阖，整部古史都在颤栗！`,
@@ -3472,8 +3482,8 @@ generateSuppressionMessage(caster, target) {
             `真灵被投入永寂之地，万世不得超生！`,
         );
     }
-    // 祭道级镇压文案（23级）
-    else if (caster.mijinglevel_id === 23) {
+    // 祭道级镇压文案
+    else if (authorityLevel === 22) {
         messages.push(
             `【祭道镇世·诸天同寂】`,
             `轰！！！`,
@@ -3521,7 +3531,7 @@ async yingzhao(e) {
     const caster = await Read_player(casterQQ);
     
     // 只有仙帝级以上才能使用映照复活
-    if (caster.mijinglevel_id < 21) {
+    if (!hasRealmAuthority(caster, 21)) {
         e.reply([
             `【境界不足】`,
             `映照诸天、逆转生死乃仙帝伟力！`,
@@ -3593,6 +3603,7 @@ async yingzhao(e) {
 
 /** 处理永寂复活（整合 YongJiList 新系统 + 旧永寂兼容） */
 async handleYongjiResurrection(e, caster, target, targetQQ) {
+    const authorityLevel = getRealmAuthorityLevel(caster);
     // ===== 步骤1：查 YongJiList（诡异大祭·位面破坏产生的永寂者）=====
     const yongjiResult = await findYongJiByNameOrQQ(targetQQ);
     
@@ -3683,7 +3694,7 @@ async handleYongjiResurrection(e, caster, target, targetQQ) {
     
     if (oblivionLevel >= 24) {
         // 祭道之上永寂 - 需要祭道之上(24+)才能救
-        if (caster.mijinglevel_id >= 24) {
+        if (authorityLevel >= 24) {
             canRescue = true;
         } else {
             rescueRequireMsg = `此为祭道之上级别的永寂，唯有同层次的至高存在方能映照逆转！`;
@@ -3691,21 +3702,21 @@ async handleYongjiResurrection(e, caster, target, targetQQ) {
     } else if (oblivionLevel === 23) {
         // 终极始祖永寂 - 超越祭道但非完全超脱，需要祭道之上(24+)才能救
         // 祭道境(22-23)无法救终极始祖永寂，因为终极始祖已超越祭道
-        if (caster.mijinglevel_id >= 24) {
+        if (authorityLevel >= 24) {
             canRescue = true;
         } else {
             rescueRequireMsg = `此为终极始祖的永寂——已超越祭道领域！祭道之下的存在无法触及此等层面的湮灭！`;
         }
     } else if (oblivionLevel === 22) {
         // 祭道永寂 - 需要祭道(22+)才能救
-        if (caster.mijinglevel_id >= 22) {
+        if (authorityLevel >= 22) {
             canRescue = true;
         } else {
             rescueRequireMsg = `此为祭道级别的永寂，唯有祭道境以上的存在方能映照逆转！`;
         }
     } else {
         // 仙帝永寂 - 需要仙帝(21+)才能救
-        if (caster.mijinglevel_id >= 21) {
+        if (authorityLevel >= 21) {
             canRescue = true;
         } else {
             rescueRequireMsg = `此为仙帝级别的永寂，需达仙帝境方可映照逆转！`;
@@ -3763,11 +3774,11 @@ async handleYongjiResurrection(e, caster, target, targetQQ) {
     // 祭道之上(23-24)：消耗修为10%
     // 祭道之上(25+)：消耗修为5%
     let costRate = 0.2;
-    if (caster.mijinglevel_id >= 25) {
+    if (authorityLevel >= 24) {
         costRate = 0.05;
-    } else if (caster.mijinglevel_id >= 23) {
+    } else if (authorityLevel >= 23) {
         costRate = 0.1;
-    } else if (caster.mijinglevel_id >= 22) {
+    } else if (authorityLevel >= 22) {
         costRate = 0.15;
     }
     
@@ -3851,7 +3862,7 @@ async handleYongjiResurrection(e, caster, target, targetQQ) {
             `【致寂者】${obliteratorName}`,
             `【永寂等级】${this.getOblivionLevelName(oblivionLevel)}`
         );
-    } else if (caster.mijinglevel_id >= 22) {
+    } else if (authorityLevel >= 22) {
         // 祭道映照
         messages.push(
             `【祭道映照·逆转生死】`,
@@ -3927,7 +3938,7 @@ async handleTianlaoRelease(e, caster, target, targetQQ) {
     player.解放记录.push({
         时间: new Date().toLocaleString(),
         施法者: caster.名号,
-        施法者境界: data.Levelmijing_list.find(l => l.level_id === caster.mijinglevel_id)?.level || '未知'
+        施法者境界: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list)
     });
 
     await Write_player(targetQQ, player);
@@ -3952,6 +3963,7 @@ async handleTianlaoRelease(e, caster, target, targetQQ) {
 
 /** 处理黑暗牢笼解救 */
 async handleHeianlaolongRescue(e, caster, target, targetQQ) {
+    const authorityLevel = getRealmAuthorityLevel(caster);
     // 解除黑暗牢笼状态
     await redis.del(`xiuxian:player:${targetQQ}:action`);
     
@@ -3966,7 +3978,7 @@ async handleHeianlaolongRescue(e, caster, target, targetQQ) {
     player.解救记录.push({
         时间: new Date().toLocaleString(),
         施法者: caster.名号,
-        施法者境界: data.Levelmijing_list.find(l => l.level_id === caster.mijinglevel_id)?.level || '未知'
+        施法者境界: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list)
     });
 
     await Write_player(targetQQ, player);
@@ -3975,7 +3987,7 @@ async handleHeianlaolongRescue(e, caster, target, targetQQ) {
     let messages = [];
     
     // 普通仙帝级解救文案（21级）
-    if (caster.mijinglevel_id === 21) {
+    if (authorityLevel === 21) {
         messages = [
             `【映照诸天·破灭黑暗】`,
             `${caster.名号}于永恒未知之地睁开仙帝之眸，`,
@@ -3995,7 +4007,7 @@ async handleHeianlaolongRescue(e, caster, target, targetQQ) {
         ];
     }
     // 祭道级解救文案（22-23级）
-    else if (caster.mijinglevel_id >= 22 && caster.mijinglevel_id <= 23) {
+    else if (authorityLevel >= 22 && authorityLevel <= 23) {
         messages = [
             `【祭道映照·焚尽黑暗】`,
             `${caster.名号}立于时光长河之上，祭道符文在眸中流转，`,
@@ -4015,7 +4027,7 @@ async handleHeianlaolongRescue(e, caster, target, targetQQ) {
         ];
     }
     // 祭道之上解救文案（24级+）
-    else if (caster.mijinglevel_id >= 24) {
+    else if (authorityLevel >= 24) {
         messages = [
             `【永恒映照·湮灭黑暗】`,
             `「眸光所至，枯竭所有，重现所有！」`,
@@ -4065,7 +4077,7 @@ async handleSelfRecovery(e, caster, targetQQ) {
     player.恢复记录 = player.恢复记录 || [];
     player.恢复记录.push({
         时间: new Date().toLocaleString(),
-        境界: data.Levelmijing_list.find(l => l.level_id === player.mijinglevel_id)?.level || '未知'
+        境界: getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list)
     });
 
     await Write_player(targetQQ, player);
@@ -4100,7 +4112,7 @@ async handleNormalRecovery(e, caster, target, targetQQ) {
     player.恢复记录.push({
         时间: new Date().toLocaleString(),
         施法者: caster.名号,
-        施法者境界: data.Levelmijing_list.find(l => l.level_id === caster.mijinglevel_id)?.level || '未知'
+        施法者境界: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list)
     });
 
     await Write_player(targetQQ, player);
@@ -4136,7 +4148,7 @@ async resurrectPlayer(targetQQ, caster) {
     target.复活记录.push({
         时间: new Date().toLocaleString(),
         施法者: caster.名号,
-        施法者境界: data.Levelmijing_list.find(l => l.level_id === caster.mijinglevel_id)?.level || '未知'
+        施法者境界: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list)
     });
 
     await Write_player(targetQQ, target);
@@ -4228,7 +4240,7 @@ async handlePlaneYingzhao(e, caster, casterQQ, planeName) {
  *    祭道之上(23+)：无消耗，无CD，无任何代价
  */
 async handleZhuTianYingzhao(e, caster, casterQQ) {
-    const level = caster.mijinglevel_id;
+    const level = getRealmAuthorityLevel(caster);
     const cdKey = `xiuxian:player:${casterQQ}:yingzhao_cd`;
 
     // ===== 祭道之上：无视一切代价 =====
@@ -4673,9 +4685,10 @@ async reshapeLinggen(e) {
    // 获取操作者信息
    const invokerQQ = e.user_id;
    const invoker = await Read_player(invokerQQ);
+   const authorityLevel = getRealmAuthorityLevel(invoker);
    
    // 检查操作者境界
-   if (invoker.mijinglevel_id < 21) {
+   if (authorityLevel < 21) {
      return e.reply("你尚未达到仙帝境界，无法重塑他人灵根！");
    }
    
@@ -4707,7 +4720,7 @@ async reshapeLinggen(e) {
      "如梦本尊"
    ];
    
-   if (forbiddenLinggens.includes(linggenName)&&invoker.mijinglevel_id <23) {
+   if (forbiddenLinggens.includes(linggenName) && authorityLevel < 23) {
      return e.reply([
        `【仙帝伟力·不可重塑】`,
        `${invoker.名号}欲重塑灵根为【${linggenName}】，却感天地法则剧烈震荡！`,
@@ -4798,7 +4811,7 @@ async tuiyanTianji(e) {
   const masterList = xiuxianConfig.Master || [];
   const userQQ = e.user_id.toString().replace('qg_', '');
   // 检查玩家境界是否足够推演天机
-  if (!e.isMaster && !masterList.includes(userQQ)&&player.mijinglevel_id < 16) {
+  if (!e.isMaster && !masterList.includes(userQQ) && !hasRealmAuthority(player, 16)) {
     e.reply('你境界不足，无法推演天机！');
     return;
   }
@@ -4907,7 +4920,7 @@ async tuiyanTianji(e) {
             }
             let player = await Read_player(usr_qq);
           // 检查玩家mijinglevelid是否大于20
-          if (player.mijinglevel_id <= 20) {
+          if (!hasRealmAuthority(player, 21)) {
               e.reply("你并非超越诸天极限的生灵，没有这种伟力");
               return;
           }
@@ -4920,7 +4933,7 @@ async tuiyanTianji(e) {
               let this_qq = File[i].replace(".json", '');
               let player = await Read_player(this_qq);
               // 将除mijinglevelid为21以下的全部玩家修为和血气清为0
-              if (player.mijinglevel_id < 7) {
+              if (getRealmAuthorityLevel(player) < 7) {
                   player.血气 = 0;
                   player.修为 = 0;
                   await Write_player(this_qq, player);
@@ -4957,7 +4970,8 @@ async ciyujingjie(e) {
         Read_player(user_qq),
         Read_player(targetQQ)
     ]);
-    if (invoker.mijinglevel_id < 21) {
+    const authorityLevel = getRealmAuthorityLevel(invoker);
+    if (authorityLevel < 21) {
         return e.reply(`需仙帝境(21重)以上才可赐予境界`);
     }
     if (!target) return e.reply('目标玩家不存在');
@@ -5023,9 +5037,9 @@ async ciyujingjie(e) {
     // ==== 消息构建 ====
     const realmName = data.Level_list.find(l => l.level_id === newLevel)?.level || '未知境界';
     let invokerAction = '';
-    if (invoker.mijinglevel_id >= 23) {
+    if (authorityLevel >= 23) {
         invokerAction = `\n${invoker.名号}眸光开合间，命运因果时空随之明灭：\n"大道不过泡影，念起则境界生..."`;
-    } else if (invoker.mijinglevel_id === 22) {
+    } else if (authorityLevel === 22) {
         invokerAction = `\n${invoker.名号}祭道伟力贯通古今：\n"因果改写，大道重铸！"`;
     } else {
         invokerAction = `\n${invoker.名号}仙帝之威撼动万古：\n"赐汝道果，续写传奇！"`;
@@ -5344,9 +5358,10 @@ async guanding(e) {
         Read_player(user_qq),
         Read_player(targetQQ)
     ]);
+    const authorityLevel = getRealmAuthorityLevel(invoker);
     
     // 检查操作者境界是否足够
-    if (invoker.mijinglevel_id < 21) {
+    if (authorityLevel < 21) {
         return e.reply(`需仙帝境(21重)以上才可灌顶`);
     }
     if (!target) return e.reply('目标玩家不存在');
@@ -5365,8 +5380,8 @@ async guanding(e) {
 
     // ==== 灌顶限制检查 ====
     // 1. 不能超过操作者自身境界
-    if (targetLevel > invoker.mijinglevel_id) {
-        return e.reply(`无法灌顶至超过自身境界（你当前为${invoker.mijinglevel_id}重天）`);
+    if (targetLevel > authorityLevel) {
+        return e.reply(`无法灌顶至超过自身权柄境界（当前等效为${authorityLevel}重天）`);
     }
     
     // 2. 不能低于目标当前境界
@@ -5399,9 +5414,9 @@ async guanding(e) {
     
     // ==== 消息构建 ====
     let invokerAction = '';
-    if (invoker.mijinglevel_id >= 23) {
+    if (authorityLevel >= 23) {
         invokerAction = `\n${invoker.名号}眸光开合间，命运长河为之倒流：\n"今日助你破境，他日共踏仙路！"`;
-    } else if (invoker.mijinglevel_id === 22) {
+    } else if (authorityLevel === 22) {
         invokerAction = `\n${invoker.名号}祭道伟力倾泻而下：\n"以我道果，铸你根基！"`;
     } else {
         invokerAction = `\n${invoker.名号}仙帝之威笼罩四方：\n"灌顶传功，助你登天！"`;

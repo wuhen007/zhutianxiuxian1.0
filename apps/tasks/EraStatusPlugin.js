@@ -12,6 +12,7 @@ import {
   Write_player,
   Write_najie,
 } from '../../model/xiuxian.js';
+import { hasRealmAuthority } from '../../model/realmAuthority.js';
 
 export class EraStatusPlugin extends plugin {
   constructor() {
@@ -107,7 +108,7 @@ export class EraStatusPlugin extends plugin {
     const player = await Read_player(usr_qq);
     
     // 只有仙帝级玩家才能使用
-    if (player.mijinglevel_id < 21) {
+    if (!hasRealmAuthority(player, 21)) {
       return e.reply("你尚未达到仙帝境界，无法重塑古今未来！");
     }
     
@@ -367,7 +368,7 @@ export class EraStatusPlugin extends plugin {
     const player = await Read_player(usr_qq);
     
     // 只有准仙帝级玩家才能使用
-    if (player.mijinglevel_id <= 19) {
+    if (!hasRealmAuthority(player, 20)) {
       return e.reply("你尚未达到准仙帝境界，无法重塑天地大道！");
     }
     

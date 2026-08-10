@@ -19,6 +19,7 @@ import {
   exist_najie_thing
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
+import { getRealmAuthorityName, lowerRealmAuthority } from '../../model/realmAuthority.js';
 
 export class DarkSuppressionTask extends plugin {
   constructor() {
@@ -121,9 +122,10 @@ export class DarkSuppressionTask extends plugin {
       const suppressionData = await redis.get(`xiuxian:player:${playerId}:suppression_data`);
       const { group_id } = JSON.parse(suppressionData || '{}');
       
-      // 境界跌落一层（至少保留1层）
-      const originalLevel = player.mijinglevel_id;
-      player.mijinglevel_id = Math.max(1, originalLevel - 1);
+      // 境界跌落一层（按实际主修路线结算）
+      const originalRealm = getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list);
+      lowerRealmAuthority(player);
+      const currentRealm = getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list);
       
       // 保存玩家数据
       await Write_player(playerId, player);
@@ -133,7 +135,7 @@ export class DarkSuppressionTask extends plugin {
         `【镇压解除·道果受损】`,
         `黑暗准仙帝的镇压已解除！`,
         `你的道果被炼化部分，境界跌落一层！`,
-        `境界变化: ${originalLevel} → ${player.mijinglevel_id}`,
+        `境界变化: ${originalRealm} → ${currentRealm}`,
         `建议立即调息恢复，稳固道基！`
       ].join('\n');
       

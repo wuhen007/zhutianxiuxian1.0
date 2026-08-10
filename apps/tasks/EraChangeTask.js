@@ -17,6 +17,7 @@ import {
 import RealmEvents from './RealmEvents.js';
 import { formatRealmEventLocation } from '../../model/realmEventLocation.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import { getRealmAuthorityLevel, hasRealmAuthority } from '../../model/realmAuthority.js';
 import { repairAllDestroyedPlanes } from '../Boss/WeimianDestruction.js';
 import { triggerPeriodicRiftsForEra } from '../../model/planeRiftFestival.js';
 import {
@@ -297,7 +298,7 @@ export class EraChangeTask extends plugin {
         const player = await Read_player(qq);
         
         // 检查是否低于仙王境界
-        if (player.mijinglevel_id < 18) {
+        if (!hasRealmAuthority(player, 18)) {
           // 检查是否已经压制过
           if (!player.压制寿元) {
             // 记录原始寿元
@@ -412,7 +413,7 @@ export class EraChangeTask extends plugin {
             const player = await Read_player(targetQQ);
             
             // 仙王及以上境界不损失物品
-            if (player.mijinglevel_id >= 19) {
+            if (hasRealmAuthority(player, 19)) {
                 return { 
                     success: false, 
                     message: `玩家 ${player.名号} 已达到仙王境界，免疫绝灵时代影响` 
@@ -436,7 +437,7 @@ export class EraChangeTask extends plugin {
             const player = await Read_player(qq);
             
             // 仙王及以上境界不损失物品
-            if (player.mijinglevel_id >= 19) continue;
+            if (hasRealmAuthority(player, 19)) continue;
             
             const najie = await Read_najie(qq);
             
@@ -573,7 +574,7 @@ async handleJuelingEraLoss() {
             }
             
             // 仙王及以上境界不损失物品
-            if (player.mijinglevel_id >= 19) continue;
+            if (hasRealmAuthority(player, 19)) continue;
 
             // === 星宇护身符：绝灵免疫护盾（消耗一层挡下本次纳戒损失）===
             const immuneKey = `jueling_loss_immune:${qq}`;
@@ -1004,7 +1005,7 @@ if (index === 4) { // 当前是绝灵时代
       if (years % 2000 === 0) {
         // 获取高境界玩家（红尘仙及以上）
         const highLevelPlayers = await this.checkHighLevelPlayers();
-        const eligiblePlayers = highLevelPlayers.filter(p => p.mijinglevel_id >= 16);
+        const eligiblePlayers = highLevelPlayers.filter(p => p.authorityLevel >= 16);
         
         // 计算开启概率
         const baseProbability = 0.3; // 基础概率30%
@@ -1159,7 +1160,7 @@ if (index === 4) { // 当前是绝灵时代
             `忽然感应到似乎有一道变数崛起了！`,
             `此一世有了大帝么？`,
             `感应到的高境界修士：`,
-            ...highLevelPlayers.map(p => `- ${p.名号}（境界: ${p.mijinglevel_id}）`)
+          ...highLevelPlayers.map(p => `- ${p.名号}（权柄等级: ${p.authorityLevel}）`)
           ].join('\n');
           
           await this.broadcastMessage(message);
@@ -1446,12 +1447,14 @@ if (index === 4) { // 当前是绝灵时代
         const qq = file.replace(".json", "");
         const player = await Read_player(qq);
         
-        // 检查境界是否大于15
-        if (player.mijinglevel_id > 15) {
+        const authorityLevel = getRealmAuthorityLevel(player);
+        if (authorityLevel > 15) {
           highLevelPlayers.push({
             qq: qq,
             名号: player.名号,
-            mijinglevel_id: player.mijinglevel_id
+            mijinglevel_id: player.mijinglevel_id,
+            xiangulevel_id: player.xiangulevel_id,
+            authorityLevel,
           });
         }
       }
@@ -1910,7 +1913,7 @@ if (index === 4) { // 当前是绝灵时代
             `忽然感应到似乎有一道变数崛起了！`,
             `此一世有了大帝么？`,
             `感应到的高境界修士：`,
-            ...highLevelPlayers.map(p => `- ${p.名号}（境界: ${p.mijinglevel_id}）`)
+            ...highLevelPlayers.map(p => `- ${p.名号}（权柄等级: ${p.authorityLevel}）`)
           ].join('\n');
           
           message += '\n\n' + highPlayerMsg;

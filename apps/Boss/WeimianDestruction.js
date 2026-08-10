@@ -21,6 +21,8 @@ import { data, config } from '../../api/api.js';
 import { Write_player } from '../../model/xiuxian.js';
 import { sendToYongJi } from './YongJiList.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import { hasRealmAuthority } from '../../model/realmAuthority.js';
+import { writeJsonAtomically } from '../../utils/atomicJson.js';
 
 // ==================== 位面.json 工具函数 ====================
 
@@ -46,7 +48,7 @@ function readWeiMianJson() {
 function writeWeiMianJson(obj) {
   try {
     const filePath = data.filePathMap.weimianList;
-    fs.writeFileSync(filePath, JSON.stringify(obj, null, 4), 'utf-8');
+    writeJsonAtomically(filePath, obj);
   } catch (e) {
     logger.error('[诡异大祭] 写入位面.json失败:', e.message);
   }
@@ -105,7 +107,7 @@ const DESTRUCTION_WORLD_YEAR_INTERVAL = 2000;
 const CLOCK_POLL_INTERVAL = 30 * 1000;
 const FIRST_WAVE_DELAY = 10 * 1000;
 
-/** 存活最低境界：准仙帝 = mijinglevel_id >= 20 */
+/** 存活最低权柄：等效准仙帝 = 权柄等级 >= 20 */
 const ZHUNXIAN_THRESHOLD = 20;
 
 /** 可被破坏的位面（按圣墟原著，越底层越先遭殃；仙域虽是终局，诡异大祭期间厄土仙帝亦能染指） */
@@ -134,8 +136,10 @@ const PLANE_NAMES = {
 
 // ==================== 运行时状态 ====================
 
-let destructionTimer = null;
-let firstWaveTimer = null;
+const timerState = globalThis[Symbol.for('zhutianxiuxian.weimianDestructionTimers')] ??= {
+  destructionTimer: null,
+  firstWaveTimer: null,
+};
 let destructionInProgress = false;
 let destroyedPlanes = new Set();
 let protectedPlanes = new Set();
@@ -220,24 +224,30 @@ async function loadDestructionState() {
 
 async function startWorldClockDestruction() {
   await loadDestructionState();
-  cancelDestructionTimer(destructionTimer);
-  destructionTimer = null;
-  if (firstWaveTimer) clearTimeout(firstWaveTimer);
-  firstWaveTimer = setTimeout(async () => {
-    firstWaveTimer = null;
+  cancelDestructionTimer(timerState.destructionTimer);
+  timerState.destructionTimer = null;
+  if (timerState.firstWaveTimer) clearTimeout(timerState.firstWaveTimer);
+  const firstWaveTimer = setTimeout(async () => {
+    if (timerState.firstWaveTimer !== firstWaveTimer) return;
+    timerState.firstWaveTimer = null;
     await destroyRandomPlane();
   }, FIRST_WAVE_DELAY);
-  destructionTimer = setInterval(async () => {
+  timerState.firstWaveTimer = firstWaveTimer;
+  firstWaveTimer.unref?.();
+
+  const destructionTimer = setInterval(async () => {
     if (destructionInProgress) return;
     const year = currentWorldYear();
     if (year < nextDestructionWorldYear) return;
     await destroyRandomPlane();
-    if (!destructionTimer) return;
+    if (timerState.destructionTimer !== destructionTimer) return;
     nextDestructionWorldYear = Math.max(nextDestructionWorldYear + destructionWorldYearInterval(), year + 1);
     try {
       await redis.set(DESTRUCTION_REDIS_KEYS.nextWorldYear, String(nextDestructionWorldYear));
     } catch (e) {}
   }, CLOCK_POLL_INTERVAL);
+  timerState.destructionTimer = destructionTimer;
+  destructionTimer.unref?.();
   await redis.set(DESTRUCTION_REDIS_KEYS.timerActive, 'true');
   logger.info(`[诡异大祭] 诸天纪年时钟启动 | 当前:${currentWorldYear()} | 下一轮:${nextDestructionWorldYear}`);
 }
@@ -330,7 +340,7 @@ export async function rescuePlaneForPlayer(qq) {
   }
   const player = await data.getData('player', playerId);
   if (!player) return { ok: false, reason: '角色不存在' };
-  if (Math.max(Number(player.mijinglevel_id) || 0, Number(player.xiangulevel_id) || 0) < 16) {
+  if (!hasRealmAuthority(player, 16)) {
     return { ok: false, reason: '至少需要大帝境界才能撑开救援通道' };
   }
   if (await redis.get(DESTRUCTION_REDIS_KEYS.rescueUsed)) {
@@ -351,7 +361,7 @@ export async function rescuePlaneForPlayer(qq) {
       const targetQq = file.replace('.json', '');
       const targetPlayer = await data.getData('player', targetQq);
       if (!targetPlayer || Number(targetPlayer.power_place) !== Number(target.id)) continue;
-      if ((Number(targetPlayer.mijinglevel_id) || 0) >= ZHUNXIAN_THRESHOLD) continue;
+      if (hasRealmAuthority(targetPlayer, ZHUNXIAN_THRESHOLD)) continue;
       targetPlayer.power_place = 0;
       targetPlayer.位面救援记录 = {
         rescuer: player.名号 || playerId,
@@ -398,10 +408,10 @@ export async function startWeimianDestruction() {
  * 诡异大祭结束时由BOSS3.js调用
  */
 export async function stopWeimianDestruction() {
-  cancelDestructionTimer(destructionTimer);
-  destructionTimer = null;
-  if (firstWaveTimer) clearTimeout(firstWaveTimer);
-  firstWaveTimer = null;
+  cancelDestructionTimer(timerState.destructionTimer);
+  timerState.destructionTimer = null;
+  if (timerState.firstWaveTimer) clearTimeout(timerState.firstWaveTimer);
+  timerState.firstWaveTimer = null;
   destructionInProgress = false;
   destroyedPlanes = new Set();
   protectedPlanes = new Set();
@@ -598,7 +608,7 @@ async function destroyPlane(planeInfo) {
 
         const playerName = playerData.名号 || qq;
 
-        if (playerData.mijinglevel_id >= ZHUNXIAN_THRESHOLD) {
+        if (hasRealmAuthority(playerData, ZHUNXIAN_THRESHOLD)) {
           // ✅ 准仙帝及以上：存活，传送至凡间
           playerData.power_place = 0;
           await Write_player(qq, playerData);

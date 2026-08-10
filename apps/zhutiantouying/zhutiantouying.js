@@ -8,6 +8,7 @@ import {
     Add_血气,
     Add_灵石 
 } from '../../model/xiuxian.js';
+import { getRealmAuthorityLevel, hasRealmAuthority } from '../../model/realmAuthority.js';
 
 // ========== 诸天投影世界配置 ==========
 const PROJECTION_WORLDS = {
@@ -849,10 +850,11 @@ export class touyingzhutian extends plugin {
       if (!player.道化之身) player.道化之身 = [];
 
       // 道化之身上限 = 境界决定
-      const daohuaMax = player.mijinglevel_id >= 23 ? 999 :  // 祭道之上无上限
-                       player.mijinglevel_id >= 18 ? 15 :
-                       player.mijinglevel_id >= 12 ? 10 :
-                       player.mijinglevel_id >= 8  ? 5  : 3;
+      const authorityLevel = getRealmAuthorityLevel(player);
+      const daohuaMax = authorityLevel >= 23 ? 999 :  // 祭道之上无上限
+                       authorityLevel >= 18 ? 15 :
+                       authorityLevel >= 12 ? 10 :
+                       authorityLevel >= 8  ? 5  : 3;
 
       // 检查同世界是否已有
       const existing = player.道化之身.find(d => d.world === world.name);
@@ -906,10 +908,11 @@ export class touyingzhutian extends plugin {
       return `🌐 ${d.world} Lv.${d.level} | 速率：${d.rate}/时${teShu} | ${d.created}`;
     });
 
-    const daohuaMax = player.mijinglevel_id >= 23 ? '无上限' :
-                     player.mijinglevel_id >= 18 ? 15 :
-                     player.mijinglevel_id >= 12 ? 10 :
-                     player.mijinglevel_id >= 8  ? 5  : 3;
+    const authorityLevel = getRealmAuthorityLevel(player);
+    const daohuaMax = authorityLevel >= 23 ? '无上限' :
+                     authorityLevel >= 18 ? 15 :
+                     authorityLevel >= 12 ? 10 :
+                     authorityLevel >= 8  ? 5  : 3;
 
     e.reply([
       `【道化之身·诸天印记】(${player.道化之身.length}/${daohuaMax})`,
@@ -933,7 +936,7 @@ export class touyingzhutian extends plugin {
       return e.reply('你尚未在任何世界留下道化之身。');
     }
 
-    if (player.mijinglevel_id < 18) {
+    if (!hasRealmAuthority(player, 18)) {
       return e.reply('万身归真需要至少仙王境界才能承受诸天万界的道韵回流。');
     }
 
