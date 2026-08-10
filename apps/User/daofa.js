@@ -28,6 +28,7 @@ foundthing,
   channel,
   ForwardMsg
 } from '../../model/xiuxian.js';
+import { hasRealmAuthority } from '../../model/realmAuthority.js';
 // 在玩家数据结构中添加轮回大道相关字段
 const playerTemplate = {
     // ...其他字段
@@ -427,7 +428,7 @@ async  checkGongfaRequirements(player) {
         const player = await Read_player(usr_qq);
         
         // 检查境界是否足够（准帝以上）
-        if (player.mijinglevel_id < 15) {
+        if (!hasRealmAuthority(player, 15)) {
             return e.reply([
                 `欲修轮回大道，需先登临准帝之境！`,
                 `你当前境界仅为${player.mijinglevel_id}，`,
@@ -841,7 +842,7 @@ async  createOwnWay(e) {
         }
         
         // 境界检查（准帝以上）
-        if (player.mijinglevel_id < 13) {
+        if (!hasRealmAuthority(player, 13)) {
             return e.reply([
                 `欲创自身大道，需先登临圣人王之境！`,
                 `你当前境界仅为${player.境界}，`,
@@ -2041,7 +2042,7 @@ async createEmperorSutra(e) {
     }
     
     // 检查玩家是否达到大帝境界
-    if (player.mijinglevel_id < 16) {
+    if (!hasRealmAuthority(player, 16)) {
         return e.reply([
             `欲创帝经，需先证道成帝！`,
             `你当前境界仅为${player.level}，`,

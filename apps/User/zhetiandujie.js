@@ -3682,6 +3682,7 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
 
   /* ====== 枷锁循环（30 道，30 s 一道） ====== */
   let broken = 0;
+  let checkDone = null;
   const lockInterval = setInterval(async () => {
     try {
           /* ------ 新增：护法血量同步（防止护法者中途回血/受伤） ------ */
@@ -3723,6 +3724,7 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
         const resurrected = await this.checkGongfaResurrection(e, player);
         if (!resurrected) {
           clearInterval(lockInterval);
+          if (checkDone) clearInterval(checkDone);
           /* 失败惩罚 */
           player.生命本源 -= 50;
           player.修为 *= 0.7;
@@ -3746,14 +3748,16 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
       }
     } catch (err) {
       clearInterval(lockInterval);
+      if (checkDone) clearInterval(checkDone);
       console.error('枷锁阶段出错：', err);
     }
   }, 30000);
 
   /* ====== 突破完成检查 ====== */
-  const checkDone = setInterval(async () => {
+  checkDone = setInterval(async () => {
     if (broken >= totalShackles && player.当前血量 > 1) {
       clearInterval(checkDone);
+      clearInterval(lockInterval);
       player.mijinglevel_id = 20;        // 准仙帝
       player.神明枷锁 = 0;
       player.神明之光 = 3;

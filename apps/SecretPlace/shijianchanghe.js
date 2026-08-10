@@ -1,5 +1,6 @@
 import { plugin, verc, data, config } from '../../api/api.js';
-import { getTimedActionMultiplier } from '../../model/innateTreasure.js';
+import { getDungeonTimedActionMultiplier } from '../../model/innateTreasure.js';
+import { hasRealmAuthority } from '../../model/realmAuthority.js';
 
 import {
   Read_player,
@@ -57,7 +58,7 @@ export class shijianchanghe extends plugin {
         now_level_id = data.Level_list.find(
         item => item.level_id == player.level_id
       ).level_id;
-  if (player.mijinglevel_id < 20) {
+  if (!hasRealmAuthority(player, 20)) {
       const replyMsg = [
           `【时间长河·禁忌之地】`,
           `时间长河！任何低阶生灵都不能遥望的古史禁忌！`,
@@ -84,7 +85,7 @@ export class shijianchanghe extends plugin {
       let action_time = 60000 * time; //持续时间，单位毫秒
       let arr = {
         action: '遨游时间长河', //动作
-       end_time: new Date().getTime() + Math.floor(action_time * getTimedActionMultiplier(player)),//结束时间
+       end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),//结束时间
         time: action_time, //持续时间
         shutup: '1', //闭关
         working: '1', //降妖
