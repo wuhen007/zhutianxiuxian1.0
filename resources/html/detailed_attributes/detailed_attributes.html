@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>详细属性 · {{themeMeta.name}}</title>
+    <link rel="stylesheet" href="{{pluResPath}}/html/detailed_attributes_samples/samples.css" />
+  </head>
+  <body class="formal-mode" data-theme="{{theme}}">
+    <article class="attribute-sheet" id="container">
+      <div class="cosmos-art" aria-hidden="true"></div>
+      <div class="coordinate-grid" aria-hidden="true"></div>
+
+      <header class="identity-band">
+        <div class="realm-seal" aria-hidden="true"><span>诸</span><b>天</b></div>
+        <div class="identity-copy">
+          <div class="concept-kicker">{{themeMeta.kicker}}</div>
+          <h1>{{view.identity.name}}</h1>
+          <p>{{view.identity.subtitle}}</p>
+        </div>
+        <div class="power-signature">
+          <span>诸天战力</span>
+          <strong>{{view.power.value}}<small>{{view.power.unit}}</small></strong>
+          <em>{{view.identity.archive}}</em>
+        </div>
+      </header>
+
+      <section class="realm-track" aria-label="四体系境界">
+        <div class="realm-track-label">
+          <span>REALM MATRIX</span>
+          <strong>四境同证</strong>
+        </div>
+        {{each view.realms realm realmIndex}}
+        <div class="realm-node {{realmIndex === 0 ? 'is-primary' : ''}}">
+          <span>{{realm.label}}</span><b>{{realm.name}}</b><small>{{realm.note}}</small>
+        </div>
+        {{/each}}
+      </section>
+
+      <section class="primary-stats" aria-label="最终战斗属性">
+        <div class="section-intro">
+          <span>FINAL ATTRIBUTE</span>
+          <h2>最终战斗属性</h2>
+          <p>已计入灵根、装备、套装、帝兵、至宝与固定加算</p>
+        </div>
+        {{each view.primaryStats stat}}
+        <div class="prime-stat">
+          <span>{{stat.label}}</span><strong>{{stat.value}}</strong><small>{{stat.note}}</small>
+        </div>
+        {{/each}}
+        {{each view.secondaryStats stat}}
+        <div class="secondary-stat">
+          <span>{{stat.label}}</span><b>{{stat.value}}</b><small>{{stat.note}}</small>
+        </div>
+        {{/each}}
+      </section>
+
+      <main class="attribute-ledger">
+        <section class="data-section extra-section">
+          <div class="section-heading">
+            <span>01 / LIMIT</span>
+            <div><h2>额外属性上限与稀释</h2><p>当前总阈值 {{view.extra.total}}</p></div>
+            <strong>{{view.extra.summary}}</strong>
+          </div>
+          <div class="limit-table">
+            {{each view.extra.rows item}}
+            <div class="limit-row {{item.tone}}">
+              <div><span>{{item.label}}</span><b>{{item.raw}}</b></div>
+              <div class="limit-rail"><i style="width: {{item.withinPercent}}%"></i><em style="width: {{item.dilutedPercent}}%"></em></div>
+              <div class="limit-values"><span>{{item.within}}</span><span>{{item.remainder}}</span></div>
+              <strong>{{item.status}}</strong>
+            </div>
+            {{/each}}
+          </div>
+          <div class="section-note">
+            <b>稀释规则</b>
+            <span>阈外部分仍固定加算，但不再受到灵根、装备和套装倍率放大。</span>
+            <em>{{view.extra.exemption}}</em>
+          </div>
+        </section>
+
+        <section class="data-section source-section">
+          <div class="section-heading">
+            <span>02 / SOURCE</span>
+            <div><h2>装备与至宝来源</h2><p>按实际生效顺序拆分</p></div>
+            <strong>普通装备 → 帝兵 → 先天至宝</strong>
+          </div>
+          <div class="source-grid">
+            <article class="source-column equipment-source">
+              <div class="source-title"><span>凡兵三相</span><b>普通装备</b><em>武器 / 护具 / 法宝</em></div>
+              {{each view.equipment.slots slot}}
+              <div class="source-item"><strong>{{slot.name}}</strong><span>{{slot.primary}}</span><span>{{slot.secondary}}</span><small>{{slot.slot}} · {{slot.note}}</small></div>
+              {{/each}}
+              <div class="source-total"><span>词条合计</span><b>{{view.equipment.total}}</b></div>
+            </article>
+            <article class="source-column imperial-source">
+              <div class="source-title"><span>帝道权柄</span><b>帝兵加成</b><em>{{view.equipment.imperial.status}}</em></div>
+              <div class="artifact-name"><span>{{view.equipment.imperial.kind}}</span><strong>{{view.equipment.imperial.name}}</strong><small>{{view.equipment.imperial.subtitle}}</small></div>
+              <div class="artifact-stats">
+                {{each view.equipment.imperial.stats stat}}<div><span>{{stat.label}}</span><b>{{stat.value}}</b></div>{{/each}}
+              </div>
+              <p>{{view.equipment.imperial.note}}</p>
+            </article>
+            <article class="source-column treasure-source">
+              <div class="source-title"><span>先天投影</span><b>至宝加成</b><em>{{view.equipment.treasure.status}}</em></div>
+              <div class="artifact-name"><span>{{view.equipment.treasure.kind}}</span><strong>{{view.equipment.treasure.name}}</strong><small>{{view.equipment.treasure.subtitle}}</small></div>
+              <div class="artifact-stats">
+                {{each view.equipment.treasure.stats stat}}<div><span>{{stat.label}}</span><b>{{stat.value}}</b></div>{{/each}}
+              </div>
+              <p>{{view.equipment.treasure.note}}</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="data-section resistance-section">
+          <div class="section-heading">
+            <span>03 / RESIST</span>
+            <div><h2>伤害、抗性与恢复</h2><p>全类型减免已并入各项最终值</p></div>
+            <strong>全伤 {{view.resistance.universalDamage}} · 全减免 {{view.resistance.universalReduction}}</strong>
+          </div>
+          <div class="resistance-layout">
+            <div class="resistance-chart">
+              {{each view.resistance.rows item}}
+              <div class="resistance-row"><span>{{item.label}}</span><i><em style="width: {{item.width}}%"></em></i><b>{{item.value}}</b><small>{{item.note}}</small></div>
+              {{/each}}
+            </div>
+            <div class="damage-matrix">
+              {{each view.resistance.matrix item}}
+              <div><span>{{item.label}}</span><b>{{item.value}}</b><small>{{item.note}}</small></div>
+              {{/each}}
+            </div>
+          </div>
+        </section>
+
+        <section class="data-section insight-section">
+          <div class="section-heading">
+            <span>04 / INSIGHT</span>
+            <div><h2>悟道消耗与影响来源</h2><p>当前悟道「{{view.wudao.name}}」</p></div>
+            <strong>收益倍率 {{view.wudao.gainMultiplier}}</strong>
+          </div>
+          <div class="insight-layout">
+            <div class="cost-board">
+              <span class="board-label">{{view.wudao.status}}</span>
+              <div class="cost-main">
+                {{each view.wudao.mainCosts item}}<div><span>{{item.label}}</span><b>{{item.value}}</b></div>{{/each}}
+              </div>
+              <div class="cost-sub">{{each view.wudao.subCosts item}}<span>{{item}}</span>{{/each}}</div>
+            </div>
+            <div class="factor-ledger">
+              <div class="factor-group factor-cost">
+                <div class="factor-title"><span>影响消耗</span><b>最终资源倍率 {{view.wudao.costMultiplier}}</b></div>
+                {{each view.wudao.costFactors item}}
+                <div><strong>{{item.name}}</strong><span>{{item.source}}</span><b>{{item.value}}</b></div>
+                {{/each}}
+              </div>
+              <div class="factor-group factor-gain">
+                <div class="factor-title"><span>只影响收益</span><b>不减少本次消耗</b></div>
+                {{each view.wudao.gainFactors item}}
+                <div><strong>{{item.name}}</strong><span>{{item.source}}</span><b>{{item.value}}</b></div>
+                {{/each}}
+              </div>
+            </div>
+          </div>
+          <div class="section-note compact-note"><b>判定口径</b><span>减耗功法与问道签影响资源；悟道寿元命格只改寿元；灵根、天资、时代和收益功法只改悟道收益。</span></div>
+        </section>
+
+        <section class="data-section time-section">
+          <div class="section-heading">
+            <span>05 / TIME</span>
+            <div><h2>副本时间减少</h2><p>以 60 分钟普通副本为例</p></div>
+            <strong>预计用时 {{view.dungeon.result}}</strong>
+          </div>
+          <div class="time-formula">
+            {{each view.dungeon.stages stage}}
+            <div class="formula-stage {{stage.result ? 'is-result' : ''}}"><span>{{stage.label}}</span><b>{{stage.value}}</b><small>{{stage.note}}</small></div>
+            {{if stage.operator}}<i>{{stage.operator}}</i>{{/if}}
+            {{/each}}
+          </div>
+          <p class="time-rule">普通副本先扣固定时间，再乘最终倍率；沉迷副本中的步法 / 道法固定减时按次数扩大。</p>
+        </section>
+
+        <section class="data-section resource-section">
+          <div class="section-heading">
+            <span>06 / COST</span>
+            <div><h2>仙道潜力与寿元消耗</h2><p>当前资源与下一次关键支出</p></div>
+            <strong>可用寿元 {{view.resources.availableLifespan}} 年</strong>
+          </div>
+          <div class="resource-layout">
+            <div class="resource-balance"><span>仙道潜力</span><strong>{{view.resources.potential}}</strong><small>{{view.resources.potentialNote}}</small></div>
+            <div class="resource-balance life-balance"><span>当前寿元</span><strong>{{view.resources.lifespan}}<em>年</em></strong><small>{{view.resources.lifespanNote}}</small></div>
+            <div class="expense-list">
+              {{each view.resources.expenses item}}
+              <div><span>{{item.label}}</span><b>{{item.value}}</b><small>{{item.note}}</small></div>
+              {{/each}}
+            </div>
+          </div>
+        </section>
+
+        <section class="data-section identity-source-section">
+          <div class="section-heading">
+            <span>07 / ORIGIN</span>
+            <div><h2>根骨、命格与道基</h2><p>常驻影响摘要</p></div>
+            <strong>往生难度 · {{view.resources.difficulty}}</strong>
+          </div>
+          <div class="origin-strip">
+            {{each view.origins item}}
+            <div><span>{{item.label}}</span><b>{{item.value}}</b><small>{{item.note}}</small></div>
+            {{/each}}
+          </div>
+        </section>
+      </main>
+
+      <footer class="sheet-footer">
+        <div><span>ATTRIBUTE ARCHIVE</span><b>全属性来源校验完成</b></div>
+        <p>诸天万界 · 亿万星海 · 当前投影数据</p>
+        <strong>样式 <em class="footer-index">0{{theme}}</em></strong>
+      </footer>
+    </article>
+  </body>
+</html>

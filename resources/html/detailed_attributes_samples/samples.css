@@ -1608,16 +1608,19 @@ body[data-theme="3"] .sheet-footer {
   background: #050a08;
 }
 
-.capture-mode {
+.capture-mode,
+.formal-mode {
   padding: 0;
   background: transparent;
 }
 
-.capture-mode .review-nav {
+.capture-mode .review-nav,
+.formal-mode .review-nav {
   display: none;
 }
 
-.capture-mode .attribute-sheet {
+.capture-mode .attribute-sheet,
+.formal-mode .attribute-sheet {
   width: 1080px;
   margin: 0;
   box-shadow: none;

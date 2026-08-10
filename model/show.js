@@ -14,6 +14,14 @@ export default class Game extends base {
       ...myData,
     };
   }
+  async get_detailedAttributesData(myData) {
+    this.model = 'detailed_attributes';
+    return {
+      ...this.screenData,
+      saveId: `detailed_attributes_${myData?.theme || '1'}`,
+      ...myData,
+    };
+  }
   async get_endlessBattleData(myData, model = 'endless_battle') {
     this.model = model;
     return {
