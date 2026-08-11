@@ -1,154 +1,173 @@
 [
   {
     "name": "符笔",
-     "class": "道具",
+    "class": "道具",
     "type": "制符",
     "materials": [
-    { 
-       "name": "灵兽毫毛", 
-      "class":"道具",
-      "amount": 2 
-    },  
+      {
+        "name": "灵兽毫毛",
+        "class": "道具",
+        "amount": 2
+      },
       {
         "name": "千年灵木",
-        "class":"草药",
+        "class": "草药",
         "amount": 5
       }
     ],
     "rate": 1,
     "level_limit": 0,
-    "exp": [20, 20]
+    "exp": [
+      20,
+      20
+    ],
+    "稀有度": 1
   },
   {
     "name": "锁灵仙符",
-     "class": "道具",
+    "class": "道具",
     "type": "锁灵",
     "materials": [
       {
         "name": "静心草",
-         "class":"草药",
+        "class": "草药",
         "amount": 5
       },
       {
         "name": "定魂草",
-         "class":"草药",
+        "class": "草药",
         "amount": 5
       },
-       {
+      {
         "name": "灵墨汁",
-        "class":"草药",
+        "class": "草药",
         "amount": 5
       },
       {
         "name": "符纸",
-        "class":"道具",
+        "class": "道具",
         "amount": 1
       },
       {
         "name": "符笔",
-        "class":"道具",
+        "class": "道具",
         "amount": 1
       }
     ],
     "rate": 1,
     "level_limit": 0,
-    "exp": [100, 300]
+    "exp": [
+      100,
+      300
+    ],
+    "稀有度": 5
   },
   {
     "name": "引灵仙符",
-     "class": "道具",
+    "class": "道具",
     "type": "引灵",
     "materials": [
       {
         "name": "固元花",
-        "class":"草药",
+        "class": "草药",
         "amount": 5
       },
-      
-       { 
-        "name": "聚灵藤", 
-         "class":"草药",
-       "amount": 5 
-    }, 
-     {
+      {
+        "name": "聚灵藤",
+        "class": "草药",
+        "amount": 5
+      },
+      {
         "name": "灵墨汁",
-        "class":"草药",
+        "class": "草药",
         "amount": 5
       },
-            {
+      {
         "name": "符纸",
-        "class":"道具",
+        "class": "道具",
         "amount": 1
       },
       {
         "name": "符笔",
-        "class":"道具",
+        "class": "道具",
         "amount": 1
       }
     ],
     "rate": 1,
     "level_limit": 0,
-    "exp": [250, 500]
+    "exp": [
+      250,
+      500
+    ],
+    "稀有度": 4
   },
   {
     "name": "替命仙符",
-     "class": "道具",
+    "class": "道具",
     "type": "替命",
     "materials": [
-       { 
-        "name": "轮回果", 
-         "class":"草药",
-       "amount": 5 
-    }, 
-     {
-        "name": "灵墨汁",
-        "class":"草药",
+      {
+        "name": "轮回果",
+        "class": "草药",
         "amount": 5
       },
-            {
+      {
+        "name": "灵墨汁",
+        "class": "草药",
+        "amount": 5
+      },
+      {
         "name": "符纸",
-        "class":"道具",
+        "class": "道具",
         "amount": 1
       },
       {
         "name": "符笔",
-        "class":"道具",
+        "class": "道具",
         "amount": 1
       }
     ],
     "rate": 0.5,
     "level_limit": 8,
-    "exp": [7250, 12500]
+    "exp": [
+      7250,
+      12500
+    ],
+    "稀有度": 5
   },
   {
     "name": "天机历练符",
-     "class": "道具",
+    "class": "道具",
     "type": "历练",
     "materials": [
       {
         "name": "天机仙水",
-        "class":"道具",
+        "class": "道具",
         "amount": 5
       },
-     {
+      {
         "name": "灵墨汁",
-        "class":"草药",
+        "class": "草药",
         "amount": 5
       },
-        {
+      {
         "name": "符纸",
-        "class":"道具",
+        "class": "道具",
         "amount": 1
       },
       {
         "name": "符笔",
-        "class":"道具",
+        "class": "道具",
         "amount": 1
       }
     ],
     "rate": 0.5,
     "level_limit": 10,
-    "exp": [12250, 25500]
+    "exp": [
+      12250,
+      25500
+    ],
+    "稀有度": 4
   },
   {
     "name": "万里定位符",
@@ -183,6 +202,10 @@
     ],
     "rate": 0.4,
     "level_limit": 12,
-    "exp": [15500, 30000]
+    "exp": [
+      15500,
+      30000
+    ],
+    "稀有度": 5
   }
 ]

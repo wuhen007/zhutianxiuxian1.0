@@ -383,6 +383,20 @@
             </div>
         </div>
         {{/if}}
+
+        {{if placeData.inheritance}}
+        <div class="card_box">
+            <div class="section-title">祖地传承</div>
+            <div class="wupin">
+                <div class="item">
+                    <div class="item_title">{{placeData.inheritance.scripture}}</div>
+                    <div class="item_int">传承：{{placeData.inheritance.name}}</div>
+                    <div class="item_int">条件：{{placeData.inheritance.desc}}</div>
+                    <div class="item_int">进度：<span class="highlight">{{placeData.inheritance.progress}}次</span></div>
+                </div>
+            </div>
+        </div>
+        {{/if}}
         
         <!-- 底部提示 -->
         <div class="card_box">

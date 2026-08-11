@@ -3,6 +3,7 @@
 <head>
   <meta http-equiv="content-type" content="text/html;charset=utf-8" />
   <link rel="stylesheet" type="text/css" href="{{pluResPath}}/html/najie/najie_css" />
+  <link rel="stylesheet" type="text/css" href="{{pluResPath}}/html/najie/rarity.css?v=20260811" />
   <link rel="preload" href="../../font/tttgbnumber.ttf" as="font" />
   <link rel="shortcut icon" href="#" />
   <style type="text/css">
@@ -333,7 +334,7 @@
       <div class="items-grid">
         {{if current_category == '丹药' && najie_丹药.length > 0}}
           {{each najie_丹药 item}}
-          <div class="item-card">
+          <div class="item-card rarity-{{item.稀有度 || 1}}">
             <div class="item-header">
               <div class="item-name">{{item.name}}</div>
               <div class="item-status {{item.islockd ? 'status-locked' : 'status-unlocked'}}">
@@ -384,7 +385,7 @@
           {{/each}}
         {{else if current_category == '装备' && najie_装备.length > 0}}
           {{each najie_装备 item}}
-          <div class="item-card">
+          <div class="item-card rarity-{{item.稀有度 || 1}}">
             <div class="item-header">
               <div class="item-name">【{{item.type}}】{{item.name}}</div>
               <div class="item-status {{item.islockd ? 'status-locked' : 'status-unlocked'}}">
@@ -444,7 +445,7 @@
           {{/each}}
         {{else if current_category == '功法' && najie_功法.length > 0}}
           {{each najie_功法 item}}
-          <div class="item-card">
+          <div class="item-card rarity-{{item.稀有度 || 1}}">
             <div class="item-header">
               <div class="item-name">{{item.name}}</div>
               <div class="item-status {{item.islockd ? 'status-locked' : 'status-unlocked'}}">
@@ -471,7 +472,7 @@
           {{/each}}
         {{else if current_category == '道具' && najie_道具.length > 0}}
           {{each najie_道具 item}}
-          <div class="item-card">
+          <div class="item-card rarity-{{item.稀有度 || 1}}">
             <div class="item-header">
               <div class="item-name">{{item.name}}</div>
               <div class="item-status {{item.islockd ? 'status-locked' : 'status-unlocked'}}">
@@ -496,7 +497,7 @@
           {{/each}}
         {{else if current_category == '草药' && najie_草药.length > 0}}
           {{each najie_草药 item}}
-          <div class="item-card">
+          <div class="item-card rarity-{{item.稀有度 || 1}}">
             <div class="item-header">
               <div class="item-name">{{item.name}}</div>
               <div class="item-status {{item.islockd ? 'status-locked' : 'status-unlocked'}}">
@@ -517,7 +518,7 @@
           {{/each}}
         {{else if current_category == '材料' && najie_材料.length > 0}}
           {{each najie_材料 item}}
-          <div class="item-card">
+          <div class="item-card rarity-{{item.稀有度 || 1}}">
             <div class="item-header">
               <div class="item-name">{{item.name}}</div>
               <div class="item-status {{item.islockd ? 'status-locked' : 'status-unlocked'}}">
@@ -538,7 +539,7 @@
           {{/each}}
         {{else if current_category == '食材' && najie_食材.length > 0}}
           {{each najie_食材 item}}
-          <div class="item-card">
+          <div class="item-card rarity-{{item.稀有度 || 1}}">
             <div class="item-header">
               <div class="item-name">{{item.name}}</div>
               <div class="item-status {{item.islockd ? 'status-locked' : 'status-unlocked'}}">
@@ -559,7 +560,7 @@
           {{/each}}
         {{else if current_category == '盒子' && najie_盒子.length > 0}}
           {{each najie_盒子 item}}
-          <div class="item-card">
+          <div class="item-card rarity-{{item.稀有度 || 1}}">
             <div class="item-header">
               <div class="item-name">{{item.name}}</div>
               <div class="item-status {{item.islockd ? 'status-locked' : 'status-unlocked'}}">

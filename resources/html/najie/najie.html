@@ -7,6 +7,11 @@
       type="text/css"
       href="{{pluResPath}}/html/najie/najie.css"
     />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="{{pluResPath}}/html/najie/rarity.css?v=20260811"
+    />
     <link rel="preload" href="../../font/tttgbnumber.ttf" as="font" />
     <link rel="shortcut icon" href="#" />
     <style type="text/css">
@@ -64,7 +69,7 @@
         <div class="user_font user_font_title">【装备】</div>
         <div class="user_font wupin">
           {{each najie.装备 item}}
-          <div class="item">
+          <div class="item rarity-{{item.稀有度 || 1}}">
             <div class="item_title">
               【{{item.type}}】{{item.name}}({{['劣','普','优','精','极','绝','顶'][item.pinji]}})({{['未锁定','已锁定'][item.islockd]}})
             </div>
@@ -98,7 +103,7 @@
     <div class="user_font user_font_title">【丹药】</div>
     <div class="user_font wupin">
       {{each najie.丹药 item}}
-      <div class="item">
+      <div class="item rarity-{{item.稀有度 || 1}}">
         <div class="item_title">
           {{item.name}}({{['未锁定','已锁定'][item.islockd]}})
         </div>
@@ -139,7 +144,7 @@
         <div class="user_font user_font_title">【道具】</div>
         <div class="user_font wupin">
           {{each najie.道具 item}}
-          <div class="item">
+          <div class="item rarity-{{item.稀有度 || 1}}">
             <div class="item_title">
               {{item.name}}({{['未锁定','已锁定'][item.islockd]}})
             </div>
@@ -159,7 +164,7 @@
         <div class="user_font user_font_title">【功法】</div>
         <div class="user_font wupin">
           {{each najie.功法 item}}
-          <div class="item">
+          <div class="item rarity-{{item.稀有度 || 1}}">
             <div class="item_title">
               {{item.name}}({{['未锁定','已锁定'][item.islockd]}})
             </div>
@@ -183,7 +188,7 @@
         <div class="user_font user_font_title">【草药】</div>
         <div class="user_font wupin">
           {{each najie.草药 item}}
-          <div class="item">
+          <div class="item rarity-{{item.稀有度 || 1}}">
             <div class="item_title">
               {{item.name}}({{['未锁定','已锁定'][item.islockd]}})
             </div>
@@ -200,7 +205,7 @@
         <div class="user_font user_font_title">【材料】</div>
         <div class="user_font wupin">
           {{each najie.材料 item}}
-          <div class="item">
+          <div class="item rarity-{{item.稀有度 || 1}}">
             <div class="item_title">
               {{item.name}}({{['未锁定','已锁定'][item.islockd]}})
             </div>
@@ -217,7 +222,7 @@
             <div class="user_font user_font_title">【食材】</div>
             <div class="user_font  wupin">
                 {{each najie.食材 item}}
-                <div class="item">
+                <div class="item rarity-{{item.稀有度 || 1}}">
                     <div class="item_title">{{item.name}}</div>
                     <div class="item_int">数量：{{item.数量}}</div>
                     <div class="item_int">出售价：{{item.出售价}}灵石</div>
@@ -234,7 +239,7 @@
             <div class="user_font user_font_title">【盒子】</div>
             <div class="user_font  wupin">
                 {{each najie.盒子 item}}
-                <div class="item">
+                <div class="item rarity-{{item.稀有度 || 1}}">
                     <div class="item_title">{{item.name}}</div>
                     <div class="item_int">数量：{{item.数量}}</div>
                     <div class="item_int">出售价：{{item.出售价}}灵石</div>
@@ -250,7 +255,7 @@
         <div class="user_font user_font_title">【宝石】</div>
         <div class="user_font wupin">
           {{each najie.宝石 item}}
-          <div class="item">
+          <div class="item rarity-{{item.稀有度 || 1}}">
             <div class="item_title">
               {{item.name}}({{['未锁定','已锁定'][item.islockd]}})
             </div>
@@ -272,7 +277,7 @@
         <div class="user_font user_font_title">【仙宠】</div>
         <div class="user_font wupin">
           {{each najie.仙宠 item}}
-          <div class="item">
+          <div class="item rarity-{{item.稀有度 || 1}}">
             <div class="item_title">
               【{{item.品级}}】{{item.name}}({{['未锁定','已锁定'][item.islockd]}})
               {{if item.灵魂绑定==1}}
@@ -303,7 +308,7 @@
         <div class="user_font user_font_title">【仙宠口粮】</div>
         <div class="user_font wupin">
           {{each najie.仙宠口粮 item}}
-          <div class="item">
+          <div class="item rarity-{{item.稀有度 || 1}}">
             <div class="item_title">
               {{item.name}}({{['未锁定','已锁定'][item.islockd]}})
             </div>
