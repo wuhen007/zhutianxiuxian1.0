@@ -44,6 +44,7 @@ export function deletePlayerDataBundle({
   smallWorlds,
   smallWorldFile,
   fileSystem = fs,
+  fileTransaction = null,
 }) {
   const normalizedId = normalizePlayerId(playerId);
   const targets = PLAYER_FILE_DEFINITIONS.map(([label, pathKey]) => {
@@ -65,7 +66,8 @@ export function deletePlayerDataBundle({
     normalizedId,
     smallWorlds
   );
-  const transaction = new FileRollbackTransaction(fileSystem);
+  const transaction = fileTransaction ?? new FileRollbackTransaction(fileSystem);
+  const managesTransaction = fileTransaction === null;
   const removedFiles = [];
   const missingFiles = [];
 
@@ -90,8 +92,9 @@ export function deletePlayerDataBundle({
       writeJsonAtomically(smallWorldFile, remainingSmallWorlds, fileSystem);
     }
 
-    transaction.commit();
+    if (managesTransaction) transaction.commit();
   } catch (error) {
+    if (!managesTransaction) throw error;
     try {
       transaction.rollback();
     } catch (rollbackError) {

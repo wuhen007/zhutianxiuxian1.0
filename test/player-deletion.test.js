@@ -9,6 +9,7 @@ import {
   normalizePlayerId,
   removePlayerSmallWorlds,
 } from '../apps/AdminSuper/playerDeletion.js';
+import { FileRollbackTransaction } from '../apps/SecretPlace/rebirthTransaction.js';
 
 function withFixture(run) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'player-deletion-'));
@@ -116,6 +117,38 @@ test('删除过程失败时会恢复此前删除的全部文件', () => {
     for (const directory of Object.values(paths)) {
       const filePath = path.join(directory, `${playerId}.json`);
       assert.equal(fs.existsSync(filePath), true);
+      assert.equal(fs.readFileSync(filePath, 'utf8'), '{"alive":true}');
+    }
+    assert.deepEqual(JSON.parse(fs.readFileSync(smallWorldFile, 'utf8')), worlds);
+  });
+});
+
+test('轮回事务可以回滚完整删档及小世界变更', () => {
+  withFixture(({ paths, smallWorldFile }) => {
+    const playerId = '10001';
+    for (const directory of Object.values(paths)) {
+      fs.writeFileSync(path.join(directory, `${playerId}.json`), '{"alive":true}', 'utf8');
+    }
+    const worlds = [
+      { player_qq: playerId, world_name: '前世小世界' },
+      { player_qq: '20002', world_name: '他人小世界' },
+    ];
+    fs.writeFileSync(smallWorldFile, JSON.stringify(worlds), 'utf8');
+
+    const transaction = new FileRollbackTransaction();
+    deletePlayerDataBundle({
+      playerId,
+      paths,
+      smallWorlds: worlds,
+      smallWorldFile,
+      fileTransaction: transaction,
+    });
+
+    assert.deepEqual(JSON.parse(fs.readFileSync(smallWorldFile, 'utf8')), [worlds[1]]);
+    transaction.rollback();
+
+    for (const directory of Object.values(paths)) {
+      const filePath = path.join(directory, `${playerId}.json`);
       assert.equal(fs.readFileSync(filePath, 'utf8'), '{"alive":true}');
     }
     assert.deepEqual(JSON.parse(fs.readFileSync(smallWorldFile, 'utf8')), worlds);

@@ -52,6 +52,19 @@ import {
   formatOpeningOmenMessage,
 } from '../../model/openingOmen.js';
 import { reserveDailyAction } from '../../model/dailyAction.js';
+import { deletePlayerDataBundle } from '../AdminSuper/playerDeletion.js';
+
+function deleteRebirthData(playerId) {
+  const deletion = deletePlayerDataBundle({
+    playerId,
+    paths: __PATH,
+    smallWorlds: data.xiaoshijie ?? [],
+    smallWorldFile: `${data.lib_path}/小世界列表.json`,
+  });
+  data.xiaoshijie = deletion.remainingSmallWorlds;
+  return deletion;
+}
+
 export class UserStart extends plugin {
   constructor() {
     super({
@@ -888,9 +901,6 @@ async force_reCreate_player(e) {
   if (!ifexistplay) {
     e.reply('没有存档，无法强制重开！');
     return false;
-  } else {
-    // 确保初始化重生次数
-    await redis.set('xiuxian:player:' + usr_qq + ':reCreate_acount', 1);
   }
   
   // 获取重生次数
@@ -1010,27 +1020,9 @@ async force_reCreate_player(e) {
     }
   }
   
-  // 删除所有存档文件（带安全检查）
+  // 清除本世全部存档，避免内景地、小世界等数据带入新角色。
   try {
-    const playerFile = `${__PATH.player_path}/${usr_qq}.json`;
-    const equipFile = `${__PATH.equipment_path}/${usr_qq}.json`;
-    const najieFile = `${__PATH.najie_path}/${usr_qq}.json`;
-    
-    if (fs.existsSync(playerFile)) {
-      fs.rmSync(playerFile);
-      console.log(`已删除玩家存档: ${playerFile}`);
-    }
-    
-    if (fs.existsSync(equipFile)) {
-      fs.rmSync(equipFile);
-      console.log(`已删除装备存档: ${equipFile}`);
-    }
-    
-    if (fs.existsSync(najieFile)) {
-      fs.rmSync(najieFile);
-      console.log(`已删除纳戒存档: ${najieFile}`);
-    }
-    
+    deleteRebirthData(usr_qq);
   } catch (error) {
     console.error('删除存档文件时出错:', error);
     e.reply('删除存档文件时出现错误，请检查文件权限！');
@@ -1074,15 +1066,13 @@ async force_reCreate_player(e) {
     if (!ifexistplay) {
       e.reply('没存档你转世个锤子!');
       return false;
-    } else {
-      //没有存档，初始化次数
-      await redis.set('xiuxian:player:' + usr_qq + ':reCreate_acount', 1);
     }
     let acount = await redis.get(
       'xiuxian:player:' + usr_qq + ':reCreate_acount'
     );
-    if (acount == undefined || acount == null || acount == NaN || acount <= 0) {
+    if (acount == undefined || acount == null || isNaN(Number(acount)) || acount <= 0) {
       await redis.set('xiuxian:player:' + usr_qq + ':reCreate_acount', 1);
+      acount = 1;
     }
     let player = await data.getData('player', usr_qq);
     //重生之前先看状态
@@ -1196,9 +1186,14 @@ async force_reCreate_player(e) {
           }
         }
       }
-      fs.rmSync(`${__PATH.player_path}/${usr_qq}.json`);
-      fs.rmSync(`${__PATH.equipment_path}/${usr_qq}.json`);
-      fs.rmSync(`${__PATH.najie_path}/${usr_qq}.json`);
+      try {
+        deleteRebirthData(usr_qq);
+      } catch (error) {
+        console.error('删除重生存档时出错:', error);
+        await e.reply('清理本世存档失败，已回滚文件改动，请联系管理员！');
+        this.finish('RE_xiuxian');
+        return false;
+      }
       e.reply([segment.at(usr_qq), '当前存档已清空!开始重生']);
       e.reply([
         segment.at(usr_qq),
@@ -1645,4 +1640,3 @@ async function recordMonthlySignData(player, year, month, day) {
         }
     }
 }
-

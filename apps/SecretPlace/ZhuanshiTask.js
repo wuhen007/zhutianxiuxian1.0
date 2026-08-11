@@ -964,6 +964,7 @@ async function forceRebirthPlayer(
   ];
   let redisBefore = new Map();
   let dropInfo = null;
+  let deletion = null;
   let committed = false;
 
   try {
@@ -1063,6 +1064,14 @@ async function forceRebirthPlayer(
       throw err;
     }
 
+    deletion = deletePlayerDataBundle({
+      playerId: player_id,
+      paths: __PATH,
+      smallWorlds: data.xiaoshijie ?? [],
+      smallWorldFile: `${data.lib_path}/小世界列表.json`,
+      fileTransaction,
+    });
+
     // 关键修复：必须走 Write_equipment 重算并写回 攻击/防御/生命/暴击/暴伤 等基础属性。
     // 直接 writeJsonAtomically(new_player) 不会触发属性计算（属性计算在 Write_equipment 内部完成），
     // 会导致重生后玩家存档缺 攻击/防御/血量上限/暴击率 → 战力面板算成 NaN → 战力 0。
@@ -1078,6 +1087,7 @@ async function forceRebirthPlayer(
       .exec();
 
     fileTransaction.commit();
+    data.xiaoshijie = deletion.remainingSmallWorlds;
     committed = true;
 
     let effectMsg = '';
