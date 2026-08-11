@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { plugin, verc, config, data } from '../../api/api.js';
 import {
   Add_修为,
@@ -8,12 +9,15 @@ import {
   Read_player,
   Write_najie,
   Write_player,
+  __PATH,
   channel,
   existplayer,
   instead_equipment,
   player_efficiency,
 } from '../../model/xiuxian.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
 import {
   AUTHORITY_COOLDOWNS,
   INNATE_TREASURE_CATALOG,
@@ -22,6 +26,8 @@ import {
   formatCooldown,
   getAuthorityState,
   getCooldownRemaining,
+  getChaosItemRarity,
+  getChaosItemRestriction,
   getInnateTreasureProjectionName,
   getKongtongModifiers,
   hasEquippedInnateTreasure,
@@ -34,15 +40,7 @@ import {
 } from '../../model/innateTreasure.js';
 
 const COPYABLE_CLASSES = ['丹药', '道具', '草药', '材料', '食材', '仙宠口粮', '盒子'];
-const RARITY_RANK = {
-  普通: 0, 锻造: 0, 稀有: 1, 珍贵: 2, 史诗: 3, 传说: 4,
-  顶级: 5, 神级: 6, 仙级: 7, 先天: 8,
-};
-
-function rarityOf(item) {
-  if (Number.isFinite(Number(item?.稀有度))) return Number(item.稀有度);
-  return RARITY_RANK[item?.type] ?? RARITY_RANK[item?.品级] ?? 0;
-}
+const CHAOS_INSPECTABLE_CLASSES = [...COPYABLE_CLASSES, '装备'];
 
 function parseItemAmount(message, command) {
   const match = String(message || '').match(new RegExp(`^#${command}\\s+(.+?)\\*(\\d+)$`));
@@ -82,6 +80,24 @@ function nativePool(itemClass) {
   return (pools[itemClass] || []).filter((item, index, list) =>
     item?.name && list.findIndex(other => other.name === item.name) === index
   );
+}
+
+async function persistChaosState(qq, najie, player) {
+  const transaction = new FileRollbackTransaction();
+  transaction.capture(path.join(__PATH.najie_path, `${qq}.json`));
+  transaction.capture(path.join(__PATH.player_path, `${qq}.json`));
+  try {
+    await Write_najie(qq, najie);
+    await Write_player(qq, player);
+    transaction.commit();
+  } catch (error) {
+    try {
+      transaction.rollback();
+    } catch (rollbackError) {
+      throw new AggregateError([error, rollbackError], '混沌珠状态写入及回滚均失败');
+    }
+    throw error;
+  }
 }
 
 export class InnateTreasureAuthorities extends plugin {
@@ -266,46 +282,58 @@ export class InnateTreasureAuthorities extends plugin {
   }
 
   async chaosCopy(e) {
-    const ctx = await this.context(e, '混沌珠', '混沌复制');
-    if (!ctx) return false;
-    const input = parseItemAmount(e.msg, '混沌复制');
-    if (!input || input.amount < 1) return e.reply('用法：#混沌复制 物品*数量');
-    const najie = await Read_najie(ctx.qq);
-    const found = findInventoryItem(najie, input.name);
-    if (!found || Number(found.item.数量) < input.amount) return e.reply('纳戒中没有足够的该物品。');
-    const rank = rarityOf(found.item);
-    const cap = rank >= 6 ? 9 : rank >= 3 ? 99 : 999;
-    if (input.amount > cap) return e.reply(`该品阶单次最多复制${cap}个。`);
-    found.item.数量 = Number(found.item.数量) + input.amount;
-    startAuthorityCooldown(ctx.player, '混沌复制');
-    await Write_najie(ctx.qq, najie);
-    await Write_player(ctx.qq, ctx.player);
-    return e.reply(`混沌气翻涌，【${input.name}】复制成功，数量+${input.amount}。`);
+    const lockId = await channel(String(e.user_id).replace('qg_', ''));
+    return withPlayerMutationLock(lockId, async () => {
+      const ctx = await this.context(e, '混沌珠', '混沌复制');
+      if (!ctx) return false;
+      const input = parseItemAmount(e.msg, '混沌复制');
+      if (!input || input.amount < 1) return e.reply('用法：#混沌复制 物品*数量');
+      const najie = await Read_najie(ctx.qq);
+      const found = findInventoryItem(najie, input.name, CHAOS_INSPECTABLE_CLASSES);
+      if (!found) return e.reply('纳戒中没有该物品。');
+      const restriction = getChaosItemRestriction(found.item);
+      if (restriction) return e.reply(restriction);
+      if (!COPYABLE_CLASSES.includes(found.itemClass)) return e.reply('混沌复制暂不支持装备。');
+      if (Number(found.item.数量) < input.amount) return e.reply('纳戒中没有足够的该物品。');
+      const rank = getChaosItemRarity(found.item);
+      const cap = rank >= 6 ? 9 : rank >= 3 ? 99 : 999;
+      if (input.amount > cap) return e.reply(`该品阶单次最多复制${cap}个。`);
+      found.item.数量 = Number(found.item.数量) + input.amount;
+      startAuthorityCooldown(ctx.player, '混沌复制');
+      await persistChaosState(ctx.qq, najie, ctx.player);
+      return e.reply(`混沌气翻涌，【${input.name}】复制成功，数量+${input.amount}。`);
+    });
   }
 
   async chaosEvolve(e) {
-    const ctx = await this.context(e, '混沌珠', '混沌演化');
-    if (!ctx) return false;
-    const input = parseItemAmount(e.msg, '混沌演化');
-    if (!input || input.amount < 1) return e.reply('用法：#混沌演化 材料*数量');
-    const najie = await Read_najie(ctx.qq);
-    const found = findInventoryItem(najie, input.name, ['材料']);
-    if (!found || Number(found.item.数量) < input.amount) return e.reply('纳戒中没有足够的该材料。');
-    const pool = nativePool('材料');
-    const currentRank = rarityOf(found.item);
-    const maxRank = Math.max(currentRank, ...pool.map(rarityOf));
-    const targetRank = currentRank < maxRank && Math.random() < 0.5 ? currentRank + 1 : currentRank;
-    const candidates = pool.filter(item => rarityOf(item) === targetRank && item.name !== input.name);
-    const fallback = pool.filter(item => rarityOf(item) === currentRank && item.name !== input.name);
-    const targets = candidates.length ? candidates : fallback;
-    if (!targets.length) return e.reply('混沌中没有可供演化的同阶材料。');
-    const target = targets[Math.floor(Math.random() * targets.length)];
-    removeInventoryItem(najie, '材料', found.item, input.amount);
-    mergeInventoryItem(najie, '材料', target, input.amount);
-    startAuthorityCooldown(ctx.player, '混沌演化');
-    await Write_najie(ctx.qq, najie);
-    await Write_player(ctx.qq, ctx.player);
-    return e.reply(`【${input.name}】在混沌中演化为【${target.name}】x${input.amount}。`);
+    const lockId = await channel(String(e.user_id).replace('qg_', ''));
+    return withPlayerMutationLock(lockId, async () => {
+      const ctx = await this.context(e, '混沌珠', '混沌演化');
+      if (!ctx) return false;
+      const input = parseItemAmount(e.msg, '混沌演化');
+      if (!input || input.amount < 1) return e.reply('用法：#混沌演化 材料*数量');
+      const najie = await Read_najie(ctx.qq);
+      const found = findInventoryItem(najie, input.name, CHAOS_INSPECTABLE_CLASSES);
+      if (!found) return e.reply('纳戒中没有该物品。');
+      const restriction = getChaosItemRestriction(found.item);
+      if (restriction) return e.reply(restriction);
+      if (found.itemClass !== '材料') return e.reply('混沌演化仅支持材料。');
+      if (Number(found.item.数量) < input.amount) return e.reply('纳戒中没有足够的该材料。');
+      const pool = nativePool('材料').filter(item => !getChaosItemRestriction(item));
+      const currentRank = getChaosItemRarity(found.item);
+      const maxRank = Math.max(currentRank, ...pool.map(getChaosItemRarity));
+      const targetRank = currentRank < maxRank && Math.random() < 0.5 ? currentRank + 1 : currentRank;
+      const candidates = pool.filter(item => getChaosItemRarity(item) === targetRank && item.name !== input.name);
+      const fallback = pool.filter(item => getChaosItemRarity(item) === currentRank && item.name !== input.name);
+      const targets = candidates.length ? candidates : fallback;
+      if (!targets.length) return e.reply('混沌中没有可供演化的同阶材料。');
+      const target = targets[Math.floor(Math.random() * targets.length)];
+      removeInventoryItem(najie, '材料', found.item, input.amount);
+      mergeInventoryItem(najie, '材料', target, input.amount);
+      startAuthorityCooldown(ctx.player, '混沌演化');
+      await persistChaosState(ctx.qq, najie, ctx.player);
+      return e.reply(`【${input.name}】在混沌中演化为【${target.name}】x${input.amount}。`);
+    });
   }
 
   async chaosTransform(e) {
@@ -317,8 +345,8 @@ export class InnateTreasureAuthorities extends plugin {
     const found = findInventoryItem(najie, input.name);
     if (!found || Number(found.item.数量) < input.amount) return e.reply('纳戒中没有足够的该物品。');
     const pool = nativePool(found.itemClass);
-    const rank = rarityOf(found.item);
-    const candidates = pool.filter(item => rarityOf(item) === rank && item.name !== input.name);
+    const rank = getChaosItemRarity(found.item);
+    const candidates = pool.filter(item => getChaosItemRarity(item) === rank && item.name !== input.name);
     if (!candidates.length) return e.reply('该类别与品阶暂时没有可变幻的其他物品。');
     const target = candidates[Math.floor(Math.random() * candidates.length)];
     removeInventoryItem(najie, found.itemClass, found.item, input.amount);
@@ -346,6 +374,10 @@ export class InnateTreasureAuthorities extends plugin {
       type: secondary.type,
       加成: Number(((Number(secondary.加成) || 0) * 0.5).toFixed(6)),
     };
+    // 若主宠即当前出战宠，立即把继承的幸运反映到 player.幸运，避免需等下次数据同步才生效
+    if (main.name === ctx.player.仙宠?.name) {
+      ctx.player.幸运 += Number(main.炼妖继承能力.加成) || 0;
+    }
     removeInventoryItem(najie, '仙宠', secondary, 1);
     startAuthorityCooldown(ctx.player, '炼妖融合');
     await Write_najie(ctx.qq, najie);

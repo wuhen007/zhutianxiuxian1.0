@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getPlayerPlaneName } from './planeCoords.js';
 import { getDungeonGongfaReduction } from './gongfaProficiency.js';
+import { hasPercentageStats } from './tianjiaoTaint.js';
 
 export const INNATE_TREASURE_NAMES = Object.freeze([
   '混沌珠',
@@ -23,6 +24,46 @@ export const CONTESTABLE_INNATE_TREASURE_NAMES = Object.freeze(
   INNATE_TREASURE_NAMES.filter(name => name !== '虚天舟')
 );
 
+export const CHAOS_PROTECTED_RARITY = 7;
+
+const LEGACY_RARITY_RANK = Object.freeze({
+  普通: 0, 锻造: 0, 稀有: 1, 珍贵: 2, 史诗: 3, 传说: 4,
+  顶级: 5, 神级: 6, 仙级: 7, 先天: 8,
+});
+const PERCENT_EQUIPMENT_TYPES = new Set(['武器', '护具', '法宝']);
+
+export function getChaosItemRarity(item) {
+  const rarity = Number(item?.稀有度);
+  if (Number.isFinite(rarity)) return rarity;
+  return LEGACY_RARITY_RANK[item?.type] ?? LEGACY_RARITY_RANK[item?.品级] ?? 0;
+}
+
+function hasLegacyPercentageStats(item) {
+  if (item?.class !== '装备' && !PERCENT_EQUIPMENT_TYPES.has(item?.type)) return false;
+  const atk = Number(item?.atk) || 0;
+  const def = Number(item?.def) || 0;
+  const hp = Number(item?.HP) || 0;
+  if (atk >= 99 || def >= 99 || hp >= 99) return false;
+  return atk >= 1.5 || def >= 1.2 ||
+    (item?.type === '法宝' && (atk >= 1 || def >= 1)) || atk + def > 1.95;
+}
+
+export function getChaosItemRestriction(item) {
+  const name = item?.name || '该物品';
+  if (name === '圣法碎片') return '【圣法碎片】具有唯一性，不可进行混沌复制或演化。';
+  if (item?.type === '帝兵' && item?.author_name) {
+    return `【${name}】是炼制帝兵，受本命烙印保护，不可进行混沌复制或演化。`;
+  }
+  if (hasPercentageStats(item) || hasLegacyPercentageStats(item)) {
+    return `【${name}】是百分比装备，不可进行混沌复制或演化。`;
+  }
+  const rarity = getChaosItemRarity(item);
+  if (rarity >= CHAOS_PROTECTED_RARITY) {
+    return `【${name}】稀有度为${rarity}，达到保护线${CHAOS_PROTECTED_RARITY}，不可进行混沌复制或演化。`;
+  }
+  return '';
+}
+
 export const INNATE_TREASURE_CATALOG = Object.freeze({
   混沌珠: {
     title: '万象之源',
@@ -30,8 +71,8 @@ export const INNATE_TREASURE_CATALOG = Object.freeze({
     summary: '复制物品、演化材料，并变幻同类同阶物品。',
     passives: [],
     authorities: [
-      { command: '#混沌复制 物品*数量', cooldownKey: '混沌复制', effect: '复制纳戒中的一组物品；品阶越高，单次复制上限越低。' },
-      { command: '#混沌演化 材料*数量', cooldownKey: '混沌演化', effect: '将材料演化为同阶或更高一阶材料，顶级材料也可参与。' },
+      { command: '#混沌复制 物品*数量', cooldownKey: '混沌复制', effect: '复制纳戒中的一组物品；稀有度越高，单次上限越低，稀有度7及以上与受保护物品不可复制。' },
+      { command: '#混沌演化 材料*数量', cooldownKey: '混沌演化', effect: '将材料演化为同阶或更高一阶材料；最高可演化至稀有度6，受保护物品不可参与。' },
       { command: '#混沌变幻 物品*数量', cooldownKey: '混沌变幻', effect: '将物品随机变为同类别、同品阶的另一种物品。' },
     ],
   },
