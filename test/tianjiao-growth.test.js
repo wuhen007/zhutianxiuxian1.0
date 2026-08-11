@@ -86,11 +86,12 @@ test('天骄展示境界取秘境与仙古字段中的最高者', () => {
   ), '无妄真劫境');
 });
 
-test('天骄每五千年尝试证道、每三千年尝试自强', () => {
+test('天骄每三千年尝试证道与自强', () => {
   assert.equal(isTianjiaoBreakthroughYear(0), false);
   assert.equal(isTianjiaoBreakthroughYear(2000), false);
-  assert.equal(isTianjiaoBreakthroughYear(5000), true);
-  assert.equal(isTianjiaoBreakthroughYear(10000), true);
+  assert.equal(isTianjiaoBreakthroughYear(5000), false);
+  assert.equal(isTianjiaoBreakthroughYear(3000), true);
+  assert.equal(isTianjiaoBreakthroughYear(6000), true);
   assert.equal(isTianjiaoImprovementYear(0), false);
   assert.equal(isTianjiaoImprovementYear(1000), false);
   assert.equal(isTianjiaoImprovementYear(3000), true);
@@ -171,8 +172,8 @@ test('每三千年自强保持高概率，单次最多完成四种行为', () =>
   applyTianjiaoImprovement(tianjiao, 'imperialWeapon', context, () => 0);
   assert.equal(tianjiao.装备.帝兵.name, imperialName);
   assert.equal(tianjiao.装备.帝兵.洗礼次数, 2);
-  assert.ok(tianjiao.装备.帝兵.atk > imperialAttack);
-  assert.ok(tianjiao.装备.帝兵.全属性 > imperialAll);
+  assert.equal(tianjiao.装备.帝兵.atk, imperialAttack * 2);
+  assert.equal(tianjiao.装备.帝兵.全属性, imperialAll + 2);
 
   tianjiao.装备.武器.name = '测试天骄祭炼的武器';
   tianjiao.装备.帝兵.name = '测试天骄·本命道兵';
@@ -201,6 +202,7 @@ test('副本和位面事件会刷新限时踪迹，特殊位面不会成为天�
   }, { chance: 1, now, random: () => 0 });
   assert.equal(publicTrace.plane, '九天十地');
   assert.equal(tianjiao.公开踪迹, publicTrace);
+  assert.equal(getKnownTianjiaoTrace({}, tianjiao, now), null);
 
   const forbidden = createTianjiaoTrace(
     { 名号: '迷路天骄', 位面: 5 },

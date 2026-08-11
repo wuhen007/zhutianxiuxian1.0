@@ -155,6 +155,11 @@ test('面板支持二倍原生像素渲染', () => {
   assert.match(appSource, /imgType:\s*'png'/);
 });
 
+test('帮助面板使用分页截图，其他面板仍保持单图', () => {
+  assert.match(appSource, /view\.mode === 'help'[\s\S]*puppeteer\.screenshots\('endless_panel'/);
+  assert.match(appSource, /puppeteer\.screenshot\('endless_panel'/);
+});
+
 test('劫途星图群聊指令与处理方法完整注册', () => {
   assert.ok(appSource.includes("{ reg: '^#劫途星图$', fnc: 'showStarMap' }"));
   assert.ok(appSource.includes("{ reg: '^#星图建议\\\\s*[1-3]$', fnc: 'suggestStarRoute' }"));

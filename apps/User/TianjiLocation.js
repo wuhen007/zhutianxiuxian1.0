@@ -1,6 +1,4 @@
 ﻿import { plugin, verc, data } from '../../api/api.js';
-import fs from 'fs';
-import path from 'path';
 import {
   existplayer,
   Read_player,
@@ -31,6 +29,7 @@ export class TianjiLocation extends plugin {
       priority: 615,
       rule: [
         { reg: '^#打听天机\\s+[^\\s]+位置', fnc: 'searchTianjiao' },
+        { reg: '^#神识共享天骄位置\\s+[^\\s@]+', fnc: 'shareTianjiaoTrace' },
       ],
     });
   }
@@ -81,7 +80,6 @@ export class TianjiLocation extends plugin {
       now: Date.now(),
     });
     await Write_player(usrQQ, player);
-    this.persistTianjiaoTrace(tianjiao);
 
     const trace = player.天骄踪迹[tianjiao.名号];
     return e.reply([
@@ -93,19 +91,39 @@ export class TianjiLocation extends plugin {
     ].join('\n'));
   }
 
-  persistTianjiaoTrace(tianjiao) {
-    try {
-      const listPath = path.join(data.filePathMap.lib, '位面boss列表.json');
-      const list = JSON.parse(fs.readFileSync(listPath, 'utf8'));
-      const index = list.findIndex(item => item.名号 === tianjiao.名号);
-      if (index >= 0) {
-        list[index] = { ...list[index], 公开踪迹: tianjiao.公开踪迹 };
-        fs.writeFileSync(listPath, JSON.stringify(list, null, 2), 'utf8');
-      }
-    } catch (error) {
-      console.error('[天机寻踪] 保存天骄踪迹失败:', error);
-    }
-  }
+  async shareTianjiaoTrace(e) {
+    if (!e.isGroup) return e.reply('修仙游戏请在群聊中游玩');
+    if (!verc({ e })) return false;
 
+    const atTarget = e.message?.find(item => item.type === 'at');
+    const name = e.msg.match(/^#神识共享天骄位置\s+([^\s@]+)/)?.[1];
+    if (!atTarget || !name) return e.reply('用法：#神识共享天骄位置 天骄名 @玩家');
+
+    const usrQQ = await channel(e.user_id.toString().replace('qg_', ''));
+    const targetQQ = await channel(atTarget.qq.toString().replace('qg_', ''));
+    if (usrQQ === targetQQ) return e.reply('无需向自己共享神识。');
+    if (!await existplayer(usrQQ) || !await existplayer(targetQQ)) {
+      return e.reply('共享双方都需要先创建角色。');
+    }
+
+    const tianjiao = findTianjiaoByName(data.weimiantianjiao_list, name);
+    if (!tianjiao) return e.reply(`未找到名为「${name}」的天骄。`);
+
+    const player = await Read_player(usrQQ);
+    const trace = getKnownTianjiaoTrace(player, tianjiao);
+    if (!trace) return e.reply(`你尚未知晓${tianjiao.名号}的有效踪迹。`);
+
+    const target = await Read_player(targetQQ);
+    target.天骄踪迹 ||= {};
+    target.天骄踪迹[tianjiao.名号] = {
+      ...trace,
+      coordinate: { ...trace.coordinate },
+      source: `神识共享·${player.名号 || usrQQ}`,
+      sharedBy: usrQQ,
+      sharedAt: Date.now(),
+    };
+    await Write_player(targetQQ, target);
+    return e.reply(`你已将${tianjiao.名号}的踪迹以神识传给${target.名号 || targetQQ}。`);
+  }
 
 }

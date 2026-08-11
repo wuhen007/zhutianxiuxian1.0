@@ -5,7 +5,7 @@ import { PLACE_LOCATION_MAP, SPECIAL_LOCATIONS } from './weimianTravel.js';
 
 export const TIANJIAO_PLANES = Object.freeze([2, 2.5]);
 export const HUAYUNFEI_DEVOUR_CHANCE = 0.4;
-export const TIANJIAO_BREAKTHROUGH_INTERVAL = 5000;
+export const TIANJIAO_BREAKTHROUGH_INTERVAL = 3000;
 export const TIANJIAO_IMPROVEMENT_INTERVAL = 3000;
 export const TIANJIAO_TRACE_DURATION_MS = 24 * 60 * 60 * 1000;
 export const TIANJIAO_DUNGEON_TRACE_CHANCE = 0.1;
@@ -15,6 +15,7 @@ export const TIANJIAO_HEALING_RECOVERY = 20;
 
 const ERA_FACTORS = Object.freeze([1, 0.75, 0.5, 0.08, 0.02]);
 const IMPROVEMENT_CHANCES = Object.freeze([0.9, 0.85, 0.8, 0.7, 0.6]);
+const IMPERIAL_WEAPON_ALL_ATTRIBUTE_GAINS = Object.freeze([1, 2, 3, 5, 7, 10, 20, 30, 50, 100, 200]);
 const REALM_LIMITS = Object.freeze({ mijinglevel_id: 24, xiangulevel_id: 25 });
 const STARTER_NAMES = Object.freeze({
   武器: '烂铁匕首',
@@ -180,8 +181,8 @@ export function getKnownTianjiaoTrace(player, tianjiao, now = Date.now()) {
     Number(trace?.reincarnation || 0) === currentLife &&
     Number(trace?.traceVersion || 0) === currentTraceVersion;
   if (personal && Number(personal.expiresAt) > now && isCurrent(personal)) return personal;
-  const publicTrace = tianjiao?.公开踪迹;
-  return publicTrace && Number(publicTrace.expiresAt) > now && isCurrent(publicTrace) ? publicTrace : null;
+  // 公开踪迹只由位面事件广播流程消费，不能成为个人天机查询的结果。
+  return null;
 }
 
 export function getTianjiaoTraceReach(player, trace) {
@@ -497,7 +498,6 @@ function improveEquipment(tianjiao, context, random) {
 
 function forgeImperialWeapon(tianjiao, context, random) {
   const equipment = ensureTianjiaoEquipment(tianjiao, context);
-  const realm = getTianjiaoRealmStats(tianjiao, context);
   const oldWeapon = equipment.帝兵;
   const pathLevel = Math.max(Number(tianjiao.mijinglevel_id) || 1, Number(tianjiao.xiangulevel_id) || 1);
   const wasForged = oldWeapon?.author_name === tianjiao.名号 && oldWeapon?.name !== STARTER_NAMES.帝兵;
@@ -505,8 +505,11 @@ function forgeImperialWeapon(tianjiao, context, random) {
   const weaponName = !wasForged || oldWeapon.name === legacyName
     ? randomArtifactName('帝兵', random)
     : oldWeapon.name;
-  const gain = Number((0.1 + Math.max(0, pathLevel - 8) * 0.05 + random() * 0.1).toFixed(2));
-  const fixedRate = (0.003 + random() * 0.002) * Math.max(1, pathLevel - 8);
+  const washCount = Math.max(0, Math.floor(Number(oldWeapon?.洗礼次数) || 0));
+  // 帝兵洗礼沿用玩家的进阶规则：三攻属性翻倍，全属性按阶段固定增加。
+  const gain = IMPERIAL_WEAPON_ALL_ATTRIBUTE_GAINS[
+    Math.min(washCount, IMPERIAL_WEAPON_ALL_ATTRIBUTE_GAINS.length - 1)
+  ];
   equipment.帝兵 = {
     ...cloneItem(oldWeapon),
     name: weaponName,
@@ -516,11 +519,11 @@ function forgeImperialWeapon(tianjiao, context, random) {
     author_name: tianjiao.名号,
     天骄本命: true,
     洗礼次数: Math.max(0, Math.floor(Number(oldWeapon?.洗礼次数) || 0)) + 1,
-    atk: (Number(oldWeapon?.atk) || 0) + Math.max(1, Math.trunc(realm.laterRealms.攻击 * fixedRate)),
-    def: (Number(oldWeapon?.def) || 0) + Math.max(1, Math.trunc(realm.laterRealms.防御 * fixedRate)),
-    HP: (Number(oldWeapon?.HP) || 0) + Math.max(1, Math.trunc(realm.laterRealms.血量上限 * fixedRate)),
+    atk: Math.max(1, Math.round((Number(oldWeapon?.atk) || 0) * 2)),
+    def: Math.max(1, Math.round((Number(oldWeapon?.def) || 0) * 2)),
+    HP: Math.max(1, Math.round((Number(oldWeapon?.HP) || 0) * 2)),
     bao: Math.min(1, Math.max(Number(oldWeapon?.bao) || 0, pathLevel * 0.03) + 0.01),
-    全属性: Number((Number(oldWeapon?.全属性) + gain).toFixed(2)),
+    全属性: (Number(oldWeapon?.全属性) || 0) + gain,
   };
   const action = wasForged ? `第${equipment.帝兵.洗礼次数}次洗礼` : '炼成';
   return `${action}本命帝兵【${equipment.帝兵.name}】（全属性+${gain}）`;

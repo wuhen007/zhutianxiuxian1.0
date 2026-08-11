@@ -49,7 +49,7 @@ export class XianguAcademy extends plugin {
   }
 
   async resolveContext(e) {
-    if (!verc({ e })) return null;
+    if (!e || !verc({ e })) return null;
     const usrQq = (
       await channel(e.user_id.toString().replace('qg_', ''))
     ).toString();

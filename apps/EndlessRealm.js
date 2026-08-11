@@ -587,7 +587,9 @@ export class EndlessRealm extends plugin {
         renderScale: 2,
         imgType: 'png',
       });
-      const image = await puppeteer.screenshot('endless_panel', renderData);
+      const image = view.mode === 'help'
+        ? await puppeteer.screenshots('endless_panel', renderData)
+        : await puppeteer.screenshot('endless_panel', renderData);
       if (image) return e.reply(image);
     } catch (error) {
       logger.error(`[无尽劫境] ${view.title}面板生成失败`, error);

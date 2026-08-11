@@ -3,10 +3,59 @@ import test from 'node:test';
 
 import {
   buildPlayerAttributeReport,
+  buildPlayerAttributeView,
   calculateAllAttributeSlotBonuses,
   calculateExtraAttributeLimit,
   calculateWudaoCosts,
 } from '../model/playerAttributeReport.js';
+
+function createViewFixture() {
+  return {
+    player: {
+      id: '10001',
+      名号: '测试道君',
+      level_id: 42,
+      Physique_id: 41,
+      mijinglevel_id: 11,
+      xiangulevel_id: 1,
+      灵根: { type: '体质', name: '先天道胎', 攻击: 0.1, 防御: 0.08, 生命: 0.12 },
+      天资等级: '天纵之资',
+      学习的功法: [],
+      攻击: 1_000_000,
+      防御: 800_000,
+      血量上限: 10_000_000,
+      当前血量: 9_000_000,
+      暴击率: 0.5,
+      暴击伤害: 2,
+      攻击加成: 260_000_000,
+      防御加成: 200_000_000,
+      生命加成: 257_000_000,
+      仙道潜力: 5000,
+      寿元: 1_000_000,
+      当前先天至宝: '',
+      光阴加成: { 攻: 100, 防: 200, 生: 300 },
+    },
+    equipment: {
+      武器: { name: '测试剑', atk: 0.1, def: 0, HP: 0, bao: 0.05 },
+      护具: {},
+      法宝: {},
+      帝兵: {},
+      至宝: {},
+    },
+    data: {
+      Level_list: [{ level_id: 42, level: '练气四十二层' }],
+      LevelMax_list: [{ level_id: 41, level: '炼体四十一层' }],
+      Levelmijing_list: [{ level_id: 11, level: '斩道王者', 基础攻击: 10, 基础防御: 10, 基础血量: 10 }],
+      xiangujinshi_list: [{ level_id: 1, level: '搬血境', 基础攻击: 1, 基础防御: 1, 基础血量: 1 }],
+      minggeList: [],
+      gongfa_list: [],
+      timegongfa_list: [],
+      dijingList: [],
+    },
+    difficulty: { name: '普通', drainsLifespan: true, reincarnatesOnExhaustion: false },
+    now: Date.UTC(2026, 7, 10),
+  };
+}
 
 test('额外属性上限在42级后按每级一千万增长', () => {
   assert.deepEqual(calculateExtraAttributeLimit({
@@ -119,4 +168,20 @@ test('悟道消耗依次应用功法、命格寿元倍率与问道签', () => {
   assert.equal(report.costs.potential, 816);
   assert.equal(report.costs.cultivation, 195_840_000);
   assert.equal(report.costs.lifespan, 1_305_600);
+});
+
+test('HTML属性视图完整输出真实分区与稀释状态', () => {
+  const view = buildPlayerAttributeView(createViewFixture());
+  assert.equal(view.identity.name, '测试道君');
+  assert.equal(view.realms.length, 4);
+  assert.equal(view.primaryStats.length, 3);
+  assert.equal(view.secondaryStats.length, 6);
+  assert.equal(view.extra.rows[0].status, '已超上限');
+  assert.equal(view.extra.rows[2].status, '已达上限');
+  assert.equal(view.equipment.slots[0].name, '测试剑');
+  assert.equal(view.resistance.rows.some(item => item.label === '神通抗性'), true);
+  assert.equal(view.wudao.costFactors.length, 3);
+  assert.equal(view.dungeon.stages.length, 4);
+  assert.equal(view.resources.expenses.length, 6);
+  assert.doesNotMatch(JSON.stringify(view), /NaN|undefined/);
 });

@@ -11,10 +11,13 @@ import {
   getGongfaNumericMultiplier,
   getGongfaProficiencyProfile,
   getGongfaTriggerChance,
+  getJieziDurationRounds,
   getJieziExhaustionRounds,
+  getLinzDurationRounds,
   getReviveRecoveryRatio,
   getWudaoGongfaReduction,
   rollLinzRealmLevel,
+  getYiqihuaConfig,
 } from '../model/gongfaProficiency.js';
 
 test('功法熟练度按六档计算概率与威能', () => {
@@ -87,6 +90,30 @@ test('浑源悟道减耗、皆字秘力竭和临字秘圆满特效随档位变�
   };
 
   assert.deepEqual(getWudaoGongfaReduction(player), { name: '浑源法门·悟道', rate: 0.15 });
+  assert.equal(getJieziDurationRounds({ ...player, 功法熟练度: { 皆字秘: 0 } }), 1);
+  assert.equal(getJieziDurationRounds(player), 2);
+  assert.equal(getJieziDurationRounds({ ...player, 功法熟练度: { 皆字秘: 750 } }), 3);
+  assert.equal(getJieziDurationRounds({ ...player, 功法熟练度: { 皆字秘: 1000 } }), 4);
   assert.equal(getJieziExhaustionRounds(player), 1);
+  assert.equal(getLinzDurationRounds(6), 1);
+  assert.equal(getLinzDurationRounds(7), 2);
+  assert.equal(getLinzDurationRounds(8), 2);
+  assert.equal(getLinzDurationRounds(9), 3);
   assert.equal(rollLinzRealmLevel(player, () => 0), 9);
+});
+
+test('一气化三清按熟练度配置道身数量、全属性倍率和存续时间', () => {
+  const player = { 学习的功法: ['一气化三清'] };
+  assert.deepEqual(getYiqihuaConfig({ ...player, 功法熟练度: { 一气化三清: 0 } }), {
+    count: 1, ratio: 0.45, duration: 2,
+  });
+  assert.deepEqual(getYiqihuaConfig({ ...player, 功法熟练度: { 一气化三清: 500 } }), {
+    count: 2, ratio: 0.55, duration: 2,
+  });
+  assert.deepEqual(getYiqihuaConfig({ ...player, 功法熟练度: { 一气化三清: 750 } }), {
+    count: 2, ratio: 0.7, duration: 3,
+  });
+  assert.deepEqual(getYiqihuaConfig({ ...player, 功法熟练度: { 一气化三清: 1000 } }), {
+    count: 2, ratio: 0.9, duration: -1,
+  });
 });

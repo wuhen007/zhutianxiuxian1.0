@@ -174,3 +174,8 @@ test('应用暴露完整的第一版群聊指令', () => {
   assert.ok(appSource.includes("puppeteer.screenshot('endless_reincarnation'"));
   assert.ok(appSource.includes('renderScale: 2'));
 });
+
+test('轮回中枢使用分页截图，其他面板仍保持单图', () => {
+  assert.match(appSource, /view\.mode === 'hub'[\s\S]*puppeteer\.screenshots\('endless_reincarnation'/);
+  assert.match(appSource, /puppeteer\.screenshot\('endless_reincarnation'/);
+});

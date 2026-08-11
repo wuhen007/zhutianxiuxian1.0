@@ -440,6 +440,9 @@ export class Pokemon extends plugin {
     if (player.仙宠.type == '幸运') {
       player.幸运 = player.幸运 - player.仙宠.加成;
     }
+    if (player.仙宠.炼妖继承能力 && player.仙宠.炼妖继承能力.type === '幸运') {
+      player.幸运 -= Number(player.仙宠.炼妖继承能力.加成) || 0;
+    }
     if (player.仙宠.type == '制符') {
       player.制符成功率 = (player.制符成功率 || 0) - player.仙宠.加成;
     }
@@ -447,6 +450,9 @@ export class Pokemon extends plugin {
     player.仙宠.加成 = player.仙宠.等级 * player.仙宠.每级增加;
     if (last.type == '幸运') {
       player.幸运 = player.幸运 + last.加成;
+    }
+    if (last.炼妖继承能力 && last.炼妖继承能力.type === '幸运') {
+      player.幸运 += Number(last.炼妖继承能力.加成) || 0;
     }
     if (last.type == '修炼') {
       player.修炼效率提升 = player.修炼效率提升 + last.加成;

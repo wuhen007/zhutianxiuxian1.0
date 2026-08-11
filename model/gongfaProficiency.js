@@ -211,6 +211,29 @@ export function getJieziExhaustionRounds(player) {
   return 2;
 }
 
+export function getJieziDurationRounds(player) {
+  const index = getGongfaProficiencyProfile(player, '皆字秘').index;
+  if (index >= 5) return 4;
+  if (index >= 4) return 3;
+  if (index >= 3) return 2;
+  return 1;
+}
+
+export function getLinzDurationRounds(realmLevel) {
+  const level = Math.floor(clamp(realmLevel, 1, 9));
+  if (level >= 9) return 3;
+  if (level >= 7) return 2;
+  return 1;
+}
+
+export function getYiqihuaConfig(player) {
+  const index = getGongfaProficiencyProfile(player, '一气化三清').index;
+  if (index >= 5) return { count: 2, ratio: 0.9, duration: -1 };
+  if (index >= 4) return { count: 2, ratio: 0.7, duration: 3 };
+  if (index >= 3) return { count: 2, ratio: 0.55, duration: 2 };
+  return { count: 1, ratio: 0.45, duration: 2 };
+}
+
 export function rollLinzRealmLevel(player, random = Math.random) {
   if (getGongfaProficiencyProfile(player, '临字秘').index >= 5) return 9;
   const roll = Math.floor(clamp(random(), 0, 1 - Number.EPSILON) * 9) + 1;

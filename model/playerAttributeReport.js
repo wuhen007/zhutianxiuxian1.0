@@ -38,7 +38,7 @@ function integer(value) {
 
 function signedInteger(value) {
   const amount = Math.trunc(number(value));
-  return `${amount >= 0 ? '+' : ''}${amount.toLocaleString('zh-CN')}`;
+  return `${amount > 0 ? '+' : ''}${amount.toLocaleString('zh-CN')}`;
 }
 
 function percent(value, signed = false) {

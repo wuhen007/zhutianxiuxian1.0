@@ -362,7 +362,9 @@ export class EndlessReincarnation extends plugin {
         renderScale: 2,
         imgType: 'png',
       });
-      const image = await puppeteer.screenshot('endless_reincarnation', renderData);
+      const image = view.mode === 'hub'
+        ? await puppeteer.screenshots('endless_reincarnation', renderData)
+        : await puppeteer.screenshot('endless_reincarnation', renderData);
       if (image) return e.reply(image);
     } catch (error) {
       logger.error('[无尽轮回] 图片生成失败', error);
