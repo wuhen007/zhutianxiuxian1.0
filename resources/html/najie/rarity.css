@@ -1,0 +1,190 @@
+.item[class*='rarity-'],
+.item-card[class*='rarity-'] {
+  --najie-rarity-width: 2px;
+  --najie-rarity-glow: 0.18;
+  position: relative;
+  isolation: isolate;
+  border-color: transparent;
+  
+}
+
+.item[class*='rarity-'] > *,
+.item-card[class*='rarity-'] > * {
+  position: relative;
+  z-index: 1;
+}
+
+.item[class*='rarity-']::before,
+.item-card[class*='rarity-']::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  z-index: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, rgba(var(--najie-rarity-rgb), 0.55), transparent) left 4px top 4px / 30px 1px no-repeat,
+    linear-gradient(180deg, rgba(var(--najie-rarity-rgb), 0.55), transparent) left 4px top 4px / 1px 22px no-repeat,
+    linear-gradient(270deg, rgba(var(--najie-rarity-rgb), 0.55), transparent) right 4px top 4px / 30px 1px no-repeat,
+    linear-gradient(180deg, rgba(var(--najie-rarity-rgb), 0.55), transparent) right 4px top 4px / 1px 22px no-repeat,
+    linear-gradient(90deg, rgba(var(--najie-rarity-rgb), 0.55), transparent) left 4px bottom 4px / 30px 1px no-repeat,
+    linear-gradient(0deg, rgba(var(--najie-rarity-rgb), 0.55), transparent) left 4px bottom 4px / 1px 22px no-repeat,
+    linear-gradient(270deg, rgba(var(--najie-rarity-rgb), 0.55), transparent) right 4px bottom 4px / 30px 1px no-repeat,
+    linear-gradient(0deg, rgba(var(--najie-rarity-rgb), 0.55), transparent) right 4px bottom 4px / 1px 22px no-repeat,
+    radial-gradient(circle at 12% 10%, rgba(var(--najie-rarity-rgb), 0.16), transparent 34%),
+    radial-gradient(circle at 88% 90%, rgba(var(--najie-rarity-rgb), 0.13), transparent 36%),
+    radial-gradient(circle at 50% 50%, transparent 0 25px, rgba(var(--najie-rarity-rgb), 0.055) 26px 27px, transparent 28px),
+    repeating-linear-gradient(135deg, transparent 0 20px, rgba(var(--najie-rarity-rgb), 0.032) 21px 22px, transparent 23px 42px);
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--najie-rarity-rgb), 0.24),
+    inset 0 0 18px rgba(var(--najie-rarity-rgb), 0.08);
+  pointer-events: none;
+}
+
+.item[class*='rarity-']::after,
+.item-card[class*='rarity-']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: var(--najie-rarity-width);
+  border-radius: inherit;
+  background: var(--najie-rarity-border);
+  filter: drop-shadow(0 0 4px rgba(var(--najie-rarity-rgb), var(--najie-rarity-glow)));
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.item.rarity-1,
+.item-card.rarity-1 {
+  --najie-rarity-rgb: 228, 232, 238;
+  --najie-rarity-border: linear-gradient(135deg, #ffffff, #c8ced7 42%, #f8fafc 68%, #aab2bf);
+}
+
+.item.rarity-2,
+.item-card.rarity-2 {
+  --najie-rarity-rgb: 57, 185, 107;
+  --najie-rarity-border: linear-gradient(135deg, #9be8b5, #229953 40%, #69d993 68%, #176f3c);
+}
+
+.item.rarity-3,
+.item-card.rarity-3 {
+  --najie-rarity-rgb: 242, 212, 71;
+  --najie-rarity-border: linear-gradient(135deg, #fff5a6, #d4b019 40%, #ffe875 68%, #a88300);
+}
+
+.item.rarity-4,
+.item-card.rarity-4 {
+  --najie-rarity-rgb: 169, 107, 232;
+  --najie-rarity-border: linear-gradient(135deg, #d9adff, #7d3fbe 40%, #c77cff 68%, #5c278e);
+}
+
+.item.rarity-5,
+.item-card.rarity-5 {
+  --najie-rarity-rgb: 255, 215, 0;
+  --najie-rarity-glow: 0.26;
+  --najie-rarity-border: linear-gradient(135deg, #fff4aa, #b87900 32%, #ffd700 56%, #fff0a0 76%, #986000);
+}
+
+.item.rarity-6,
+.item-card.rarity-6 {
+  --najie-rarity-rgb: 255, 138, 43;
+  --najie-rarity-glow: 0.26;
+  --najie-rarity-border: linear-gradient(135deg, #ffd09a, #d96500 38%, #ff9b3d 68%, #a94400);
+}
+
+.item.rarity-7,
+.item-card.rarity-7 {
+  --najie-rarity-rgb: 239, 63, 79;
+  --najie-rarity-glow: 0.3;
+  --najie-rarity-border: linear-gradient(135deg, #ff9da5, #b8192a 38%, #ff5362 68%, #800e1b);
+}
+
+.item.rarity-8,
+.item-card.rarity-8 {
+  --najie-rarity-width: 3px;
+  --najie-rarity-glow: 0.36;
+  --najie-rarity-rgb: 93, 118, 210;
+  --najie-rarity-border: linear-gradient(115deg, #ef4050, #f1c232, #38a169, #3182ce, #9f5fca);
+}
+
+.item.rarity-9,
+.item-card.rarity-9,
+.item.rarity-10,
+.item-card.rarity-10 {
+  --najie-rarity-width: 3px;
+  --najie-rarity-glow: 0.42;
+  --najie-rarity-rgb: 180, 93, 192;
+  --najie-rarity-border: linear-gradient(115deg, #ef4050, #ff8a2b, #f2d447, #39b96b, #3182ce, #6657c7, #c84fb2);
+}
+
+.item.rarity-10,
+.item-card.rarity-10 {
+  --najie-rarity-rgb: 225, 186, 72;
+}
+
+.item.rarity-10::after,
+.item-card.rarity-10::after {
+  background-size: 200% 100%;
+  animation: najie-rarity-border-flow 3s linear infinite;
+}
+
+@keyframes najie-rarity-border-flow {
+  to {
+    background-position: 200% center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item.rarity-10::after,
+  .item-card.rarity-10::after {
+    animation: none;
+  }
+}
+
+/* ===== 纳戒物品内部配色（模板一·同色浸润，已采用） ===== */
+/* 卡片内部用稀有度同色系浅色浸润，文字保持深色，与图二等级框配色一致 */
+
+.item.rarity-1 {
+  background: radial-gradient(at top left, rgba(228, 232, 238, 0.62), rgba(200, 206, 215, 0.4));
+}
+
+.item.rarity-2 {
+  background: radial-gradient(at top left, rgba(155, 232, 181, 0.5), rgba(34, 153, 83, 0.26));
+}
+
+.item.rarity-3 {
+  background: radial-gradient(at top left, rgba(255, 245, 166, 0.58), rgba(212, 176, 25, 0.32));
+}
+
+.item.rarity-4 {
+  background: radial-gradient(at top left, rgba(217, 173, 255, 0.5), rgba(125, 63, 190, 0.28));
+}
+
+.item.rarity-5 {
+  background: radial-gradient(at top left, rgba(255, 244, 170, 0.6), rgba(184, 121, 0, 0.32));
+}
+
+.item.rarity-6 {
+  background: radial-gradient(at top left, rgba(255, 208, 154, 0.55), rgba(217, 101, 0, 0.3));
+}
+
+.item.rarity-7 {
+  background: radial-gradient(at top left, rgba(255, 157, 165, 0.5), rgba(184, 25, 42, 0.3));
+}
+
+.item.rarity-8 {
+  background: radial-gradient(at top left, rgba(120, 140, 230, 0.5), rgba(49, 130, 206, 0.3));
+}
+
+.item.rarity-9,
+.item.rarity-10 {
+  background: radial-gradient(at top left, rgba(230, 180, 235, 0.5), rgba(180, 93, 192, 0.45));
+}
+
+.item.rarity-10 {
+  background: radial-gradient(at top left, rgba(255, 240, 160, 0.62), rgba(225, 186, 72, 0.34));
+}
