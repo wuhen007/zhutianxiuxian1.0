@@ -28,6 +28,16 @@ import {
   isTianmoHuashengPhysique,
 } from "../../model/tianmoHuasheng.js";
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
+import {
+  FORBIDDEN_COOLDOWN_MS,
+  forbiddenCooldownKey,
+  getForbiddenProtection,
+  protectForbiddenTarget,
+} from '../../model/forbiddenSoul.js';
+import {
+  WANHUA_BANNER_NAME,
+  formatWanhuaBannerStatus,
+} from '../../model/wanhuaBanner.js';
 
 const activeRefinements = new Set();
 
@@ -83,8 +93,28 @@ export class TianmoHuasheng extends plugin {
         { reg: "^#进入万相魔冢$", fnc: "enterWanxiangTomb" },
         { reg: "^#天魔炼化.*$", fnc: "refinePlayer" },
         { reg: "^#天魔化生$", fnc: "showProgress" },
+        { reg: "^#(万灵魔幡|魔幡状态)$", fnc: "showWanhuaBanner" },
       ],
     });
+  }
+
+  async showWanhuaBanner(e) {
+    if (!verc({ e })) return false;
+    let qq = e.user_id.toString().replace("qg_", "");
+    qq = await channel(qq);
+    if (!(await existplayer(qq))) return false;
+
+    const [player, equipment] = await Promise.all([
+      Read_player(qq),
+      Read_equipment(qq),
+    ]);
+    if (player.灵根?.name !== WANHUA_TIANMO_PHYSIQUE) {
+      return e.reply("只有【无相·万化天魔体】能够承载万灵魔幡中的无尽怨魂。");
+    }
+    const resonance = equipment?.法宝?.name === WANHUA_BANNER_NAME
+      ? "已装备，万灵魔域可在战斗中展开"
+      : `未装备${WANHUA_BANNER_NAME}，炼魂效果暂不生效`;
+    return e.reply(`${formatWanhuaBannerStatus(player)}\n当前共鸣：${resonance}`);
   }
 
   async enterWanxiangTomb(e) {
@@ -245,6 +275,7 @@ export class TianmoHuasheng extends plugin {
         Read_player(executorQQ),
         Read_player(targetQQ),
       ]);
+      const now = Date.now();
 
       if (!isTianmoHuashengPhysique(executor)) {
         return e.reply("只有【极道天魔】一脉能够施展天魔化生功。");
@@ -256,7 +287,7 @@ export class TianmoHuasheng extends plugin {
       const availability = getRefinementAvailability(
         executor,
         targetQQ,
-        Date.now(),
+        now,
         target
       );
       if (!availability.ok) {
@@ -268,6 +299,14 @@ export class TianmoHuasheng extends plugin {
       }
       if (isProtectedWeakTarget(executor, target)) {
         return e.reply("天魔亦有傲骨，不可炼化境界相差过大的弱小修士。");
+      }
+      const protection = getForbiddenProtection(target, now);
+      if (protection.protected) {
+        return e.reply(`目标仍受禁忌侵害保护，还需${formatDuration(protection.waitMs)}。`);
+      }
+      const sharedCooldownUntil = Number(await redis.get(forbiddenCooldownKey(executorQQ))) || 0;
+      if (sharedCooldownUntil > now) {
+        return e.reply(`禁术因果尚未消散，还需${formatDuration(sharedCooldownUntil - now)}。`);
       }
 
       const [executorAction, targetAction] = await Promise.all([
@@ -290,6 +329,15 @@ export class TianmoHuasheng extends plugin {
       if (targetHealth <= 0)
         return e.reply(`${target.名号}本源沉寂，暂时无法炼化。`);
 
+      const sharedCooldownReserved = await redis.set(
+        forbiddenCooldownKey(executorQQ),
+        String(now + FORBIDDEN_COOLDOWN_MS),
+        { EX: Math.ceil(FORBIDDEN_COOLDOWN_MS / 1000), NX: true }
+      );
+      if (sharedCooldownReserved !== "OK") {
+        return e.reply("禁术因果刚被触发，请稍后查看冷却。");
+      }
+
       executor.法球倍率 = Number(executor.灵根.法球倍率) || 0;
       target.法球倍率 = Number(target.灵根?.法球倍率) || 0;
       const battle = await zd_battle(executor, target);
@@ -307,8 +355,9 @@ export class TianmoHuasheng extends plugin {
 
       const result = applyTianmoRefinement(executor, target, {
         targetId: targetQQ,
-        now: Date.now(),
+        now,
       });
+      protectForbiddenTarget(target, now);
       executor.法球倍率 = executor.灵根.法球倍率;
       target.当前血量 = 0;
 
