@@ -65,6 +65,7 @@ import { calculateMinggeGain, getMinggeEffects, getMinggeSecretPlaceReductionMs 
 import { isDaofaActive } from '../../model/daofa.js';
 import { getPlayerPlaneCoordinate } from '../../model/planeCoords.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
+import { getZhetianInheritanceEntryBlock } from '../../model/zhetianInheritance.js';
 import {
     formatRealmEventLocation,
     formatRealmEventTravel,
@@ -2043,6 +2044,12 @@ async Gozhetian(e) {
                     allMsgs.push(`未找到地点：${didian}`);
                     return e.reply(allMsgs.join('\n'));
                 }
+
+                const inheritanceBlock = getZhetianInheritanceEntryBlock(player, didian);
+                if (inheritanceBlock) {
+                    allMsgs.push(inheritanceBlock);
+                    return e.reply(allMsgs.join('\n'));
+                }
                 
                 // ==== 时间计算 ====
                 let time = 12; // 基础时间（分钟）
@@ -2116,6 +2123,12 @@ async Gozhetian(e) {
     
     if (!weizhi) {
         allMsgs.push(`未找到地点：${didian}`);
+        return e.reply(allMsgs.join('\n'));
+    }
+
+    const inheritanceBlock = getZhetianInheritanceEntryBlock(player, didian);
+    if (inheritanceBlock) {
+        allMsgs.push(inheritanceBlock);
         return e.reply(allMsgs.join('\n'));
     }
     
@@ -5679,7 +5692,8 @@ async handleDungeonDrop(e) {
             one: foundPlace.one || [],
             two: foundPlace.two || [],
             three: foundPlace.three || [],
-            four: foundPlace.four || []
+            four: foundPlace.four || [],
+            inheritance: foundPlace.inheritance || null
         }
     };
 

@@ -34,6 +34,11 @@ import {
   repairSupremeBoneManifestation,
 } from '../../model/supremePath.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
+import {
+  applyZhetianAwakening,
+  getZhetianAwakeningStage,
+  inspectZhetianAwakening,
+} from '../../model/zhetianPhysiquePath.js';
 export class linggenjuexing extends plugin {
   constructor() {
     super({
@@ -65,6 +70,18 @@ export class linggenjuexing extends plugin {
             {
             reg: '^#妖体觉醒$',
             fnc: 'yaotijuexing'
+            },
+            {
+            reg: '^#(?:太阳体觉醒|太阳神体觉醒|太阳圣皇体成就)$',
+            fnc: 'taiyangjuexing'
+            },
+            {
+            reg: '^#(?:太阴体觉醒|太阴神体觉醒|太阴圣皇体成就)$',
+            fnc: 'taiyinjuexing'
+            },
+            {
+            reg: '^#(?:神王体觉醒|小成神王体|大成神王体)$',
+            fnc: 'shenwangjuexing'
             },
             {
             reg: '^#至尊之路$',
@@ -833,6 +850,74 @@ async yaotijuexing(e) {
     else {
         e.reply(` 觉醒条件不足！需达到更高境界。`);
     }
+}
+
+async taiyangjuexing(e) {
+    return this.awakenZhetianPhysique(e, '太阳');
+}
+
+async taiyinjuexing(e) {
+    return this.awakenZhetianPhysique(e, '太阴');
+}
+
+async shenwangjuexing(e) {
+    return this.awakenZhetianPhysique(e, '神王');
+}
+
+async awakenZhetianPhysique(e, routeKey) {
+    if (!e.isGroup) return e.reply('修仙游戏请在群聊中游玩');
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    if (!await existplayer(usr_qq)) return e.reply('玩家不存在，请先创建角色');
+
+    const game_action = await redis.get(`xiuxian:player:${usr_qq}:game_action`);
+    if (game_action == 0) return e.reply('修仙：游戏进行中...');
+
+    const player = await Read_player(usr_qq);
+    if (!isNotNull(player.Physique_id)) return e.reply('请先#刷新信息');
+
+    const state = getZhetianAwakeningStage(player, routeKey);
+    if (state.status === 'complete') {
+        return e.reply(`你的${state.route.label}已经修至大成，无需再次觉醒。`);
+    }
+    if (state.status === 'wrong-lineage') {
+        return e.reply(`血脉不符！你当前并非${state.route.label}一脉。`);
+    }
+    if (state.status !== 'ready') return e.reply('未知的遮天体质进阶路线。');
+
+    const itemCounts = {};
+    if (state.stage.item) {
+        itemCounts[state.stage.item.name] = Number(
+            await exist_najie_thing(usr_qq, state.stage.item.name, state.stage.item.class) || 0
+        );
+    }
+    const result = inspectZhetianAwakening(player, routeKey, itemCounts);
+    if (!result.ok) {
+        return e.reply([
+            `【${result.stage.title}条件不足】`,
+            ...result.missing.map(entry => `- ${entry}`),
+        ].join('\n'));
+    }
+
+    const targetTalent = data.talent_list.find(entry => entry.name === result.stage.to);
+    if (!targetTalent) return e.reply(`灵根配置缺失：${result.stage.to}，请联系管理员。`);
+
+    if (result.stage.item) {
+        await Add_najie_thing(
+            usr_qq,
+            result.stage.item.name,
+            result.stage.item.class,
+            -result.stage.item.amount
+        );
+    }
+    applyZhetianAwakening(player, result, [targetTalent]);
+    await Write_player(usr_qq, player);
+    await player_efficiency(usr_qq);
+
+    return e.reply([
+        `【${result.stage.title}】`,
+        result.stage.description,
+        `灵根蜕变：${result.stage.from} → ${result.stage.to}`,
+    ].join('\n'));
 }
 
 async getSupremeContext(e) {

@@ -81,6 +81,7 @@ class XiuxianData {
         this.monster_list14 = JSON.parse(fs.readFileSync(`${this.lib_path}/怪物/太初古矿怪物列表.json`));
         this.monster_list15 = JSON.parse(fs.readFileSync(`${this.lib_path}/怪物/北斗星紫山怪物列表.json`));
         this.monster_list16 = JSON.parse(fs.readFileSync(`${this.lib_path}/怪物/神域怪物列表.json`));
+        this.monster_list_wangjia = JSON.parse(fs.readFileSync(`${this.lib_path}/怪物/王家古地怪物列表.json`));
         this.monster_list_huodong = JSON.parse(fs.readFileSync(`${this.lib_path}/怪物/界海怪物列表.json`));
         this.monster_list_jieyin = JSON.parse(fs.readFileSync(`${this.lib_path}/怪物/接引古殿怪物列表.json`));
          this.yaochishangdian = JSON.parse(fs.readFileSync(`${this.lib_path}/势力商店/瑶池商店.json`));

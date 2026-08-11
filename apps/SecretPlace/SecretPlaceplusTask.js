@@ -46,6 +46,7 @@ import {
 } from '../../model/gongfaProficiency.js';
 import { normalizeLegacySecretPlaceAddictionAction } from '../../model/secretPlaceAddiction.js';
 import { rollDahuangPupilEncounter } from '../../model/supremePath.js';
+import { resolveZhetianDungeonVictory } from '../../model/zhetianInheritance.js';
 export class SecretPlaceplusTask extends plugin {
   constructor() {
     super({
@@ -408,35 +409,6 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
                             last_msg += '菩提道韵勾动残碑，仙泪绿金映照万古道痕。忽有冥雾翻涌，西皇母虚影拈花而叹："遍访成仙路，唯见血与骨！"道宫真义随雾霭消散，唯留道心震颤。';
                         }
                     }}
-                                // 火域探索事件 - 恒宇经获取
-                    if (weizhi.name === "火域") {
-                        let random = Math.random();
-                        let huoyu_jing = await exist_najie_thing(usr_qq, "七彩火晶", "道具");
-                        
-                        if (!huoyu_jing || huoyu_jing < 1) {
-                            last_msg += '你立于九重火域边缘，混沌火焰焚天煮海。石壁刻痕如龙蛇游走，恒宇大道真义隐于火海深处，然神火滔天，无引路之物难窥真容。';
-                        } else { 
-                            if (random < 0.05) {
-                                // 检查全服是否已有人习得恒宇经·四极卷
-                                const isLearned = await checkGongfaInServer('恒宇经·四极卷');
-                                
-                                if (isLearned) {
-                                    last_msg += '七彩火晶映照石壁，恒宇虚影显化！帝影抚炉轻叹："道火唯一，不可复燃"，壁刻经文在烈焰中化为飞灰！';
-                                } else {
-                                    last_msg += '七彩火晶迸发神光，引动混沌火共鸣！石壁浮现恒宇大帝虚影，四极道图铺展天地：左臂青龙啸，右臂白虎踞...帝经真义如熔岩贯体！';
-                                    player.学习的功法 = player.学习的功法 || [];
-                        player.学习的功法.push('恒宇经·四极卷');
-                        await recordItemToHistory(player_id, '恒宇经·四极卷', '功法', 1);
-                        await Write_player(usr_qq, player);
-                                }
-                                // 消耗七彩火晶
-                                await Add_najie_thing(usr_qq, "七彩火晶", "道具", -1);
-                            } else {
-                                last_msg += '七彩火晶与混沌火共鸣，石壁浮现四极道图！然帝影突然睁目："非我血脉，也敢窃经？"一道帝火将你震出火域核心！';
-                            }
-                        }
-                    }
-                    
                     // 大夏祖庙探索事件 - 太皇经获取
                     if (weizhi.name === "大夏祖庙") {
                         let random = Math.random();
@@ -1766,6 +1738,24 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
               }],经过一番战斗，击败对手,获得修为${xiuwei},气血${qixue},剩余血量${
     Data_battle.A_hp
               },剩余次数${action.total_count - action.settled_count - 1}`;
+              const zhetianResult = resolveZhetianDungeonVictory(player, {
+                dungeon: weizhi?.name,
+                hasCrystal: weizhi?.name === '火域'
+                  ? Number(await exist_najie_thing(player_id, '七彩火晶', '道具')) > 0
+                  : false,
+              });
+              if (zhetianResult.consumeCrystal) {
+                await Add_najie_thing(player_id, '七彩火晶', '道具', -1);
+              }
+              for (const learned of zhetianResult.learned) {
+                await recordItemToHistory(player_id, learned, '功法', 1);
+              }
+              if (zhetianResult.changed) {
+                await Write_player(player_id, player);
+              }
+              if (zhetianResult.message) {
+                last_msg += `\n${zhetianResult.message}`;
+              }
               const pupilOpponent = rollDahuangPupilEncounter(player, {
                 dungeon: weizhi?.name,
                 hasSource: Boolean(await exist_najie_thing(player_id, '重瞳本源', '材料')),

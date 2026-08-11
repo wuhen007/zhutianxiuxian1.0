@@ -65,6 +65,12 @@ import {
   hasRealmAuthority,
   lowerRealmAuthority,
 } from '../../model/realmAuthority.js';
+import {
+  FORBIDDEN_COOLDOWN_MS,
+  forbiddenCooldownKey,
+  getForbiddenProtection,
+  protectForbiddenTarget,
+} from '../../model/forbiddenSoul.js';
 
 function formatSoulSearchTribulation(player, result) {
   if (!result.triggered) return [];
@@ -385,7 +391,7 @@ async removeProtector(e) {
       获取难度: Math.floor(bonus * 1e9),
       等级上限: 100,
       出售价: Math.floor(bonus * 1e8),
-      稀有度: Math.min(4, Math.floor(bonus * 100))
+      稀有度: Math.max(1, Math.min(10, Math.ceil(bonus / 0.015)))
     };
 
     // ==== 保存到仙宠列表 ====
@@ -1465,8 +1471,8 @@ async jingxue(e) {
         if (amount <= 0) {
             return e.reply('凝聚数量需为正整数！');
         }
-        if (amount > 999) {
-            return e.reply('单次最多凝聚999滴精血！');
+        if (amount > 99999999) {
+            return e.reply('单次最多凝聚99999999滴精血！');
         }
     }
     
@@ -4878,7 +4884,6 @@ async tuiyanTianji(e) {
       now: Date.now(),
     });
     await Write_player(e.user_id.toString().replace('qg_', ''), player);
-    this.persistTianjiaoPosition(tianjiao);
     const trace = player.天骄踪迹[tianjiao.名号];
     e.reply([
       '【天机推演·天骄位置】',
@@ -4886,20 +4891,6 @@ async tuiyanTianji(e) {
       '当前位置：' + formatTianjiaoTrace(trace),
       '踪迹24小时内有效，抵达后可发送 #讨伐天骄 ' + tianjiao.名号,
     ].join('\n'));
-  }
-
-  persistTianjiaoPosition(tianjiao) {
-    try {
-      const listPath = path.join(data.filePathMap.lib, '位面boss列表.json');
-      const list = JSON.parse(fs.readFileSync(listPath, 'utf8'));
-      const index = list.findIndex(item => item.名号 === tianjiao.名号);
-      if (index >= 0) {
-        list[index] = { ...list[index], 公开踪迹: tianjiao.公开踪迹 };
-        fs.writeFileSync(listPath, JSON.stringify(list, null, 2), 'utf8');
-      }
-    } catch (error) {
-      console.error('[天机推演] 保存天骄踪迹失败:', error);
-    }
   }
 
   async tianyi_yidao(e) {
@@ -5071,8 +5062,10 @@ async soulSearch(e) {
     return false;
   }
 
-  const executorQQ = e.user_id.toString().replace('qg_', '');
-  const targetQQ = atTarget.qq.toString().replace('qg_', '');
+  let executorQQ = e.user_id.toString().replace('qg_', '');
+  let targetQQ = atTarget.qq.toString().replace('qg_', '');
+  executorQQ = await channel(executorQQ);
+  targetQQ = await channel(targetQQ);
   
   // 检查执行者
   const executor = await Read_player(executorQQ);
@@ -5110,28 +5103,40 @@ async soulSearch(e) {
     return false;
   }
 
-  // 检查目标是否在黑暗牢笼中（无法被搜魂）
-  const targetAction = await redis.get(`xiuxian:player:${targetQQ}:action`);
-  if (targetAction) {
-    const actionObj = JSON.parse(targetAction);
-    if (actionObj.heianlaolong === '1') {
-      e.reply([
-        `【搜魂失败·目标迷失】`,
-        ``,
-        `${target.名号}的元神被囚禁在接引古殿的黑暗牢笼中，`,
-        `其神魂被永恒的黑暗物质侵蚀，`,
-        `搜魂之术无法穿透那万古不变的黑暗！`,
-        ``,
-        `需等待其从黑暗牢笼中归来，方可施展搜魂。`
-      ].join('\n'));
-      return false;
-    }
-  }
-
   // 检查冷却时间（搜魂大法有伤天和，需间隔24小时）
   const lastSoulSearch = await redis.get(`xiuxian:player:${executorQQ}:last_soul_search`);
   const cooldown = 24 * 60 * 60 * 1000; // 24小时
   const now = Date.now();
+  const [executorActionRaw, targetActionRaw] = await Promise.all([
+    redis.get(`xiuxian:player:${executorQQ}:action`),
+    redis.get(`xiuxian:player:${targetQQ}:action`),
+  ]);
+  for (const [owner, raw] of [[executor.名号, executorActionRaw], [target.名号, targetActionRaw]]) {
+    if (!raw) continue;
+    try {
+      const action = JSON.parse(raw);
+      if (action.heianlaolong === '1' || Number(action.end_time) >= now) {
+        e.reply(`${owner}正在${action.action || '进行其他行动'}，无法参与搜魂。`);
+        return false;
+      }
+    } catch {
+      // 损坏或过期的行动数据不阻止本次校验。
+    }
+  }
+
+  const protection = getForbiddenProtection(target, now);
+  if (protection.protected) {
+    const remainingHours = Math.ceil(protection.waitMs / 3_600_000);
+    e.reply(`目标仍受禁忌侵害保护，还需约${remainingHours}小时。`);
+    return false;
+  }
+
+  const sharedCooldownUntil = Number(await redis.get(forbiddenCooldownKey(executorQQ))) || 0;
+  if (sharedCooldownUntil > now) {
+    const remainingHours = Math.ceil((sharedCooldownUntil - now) / 3_600_000);
+    e.reply(`你发动其他禁术留下的因果尚未消散，还需约${remainingHours}小时。`);
+    return false;
+  }
   
   if (lastSoulSearch && (now - parseInt(lastSoulSearch)) < cooldown) {
     const remainingHours = Math.ceil((cooldown - (now - parseInt(lastSoulSearch))) / (1000 * 60 * 60));
@@ -5188,6 +5193,16 @@ async soulSearch(e) {
       `${executor.灵根?.name || '当前体质'}最多可承载${soulSearchProfile.maxGongfa}门功法。`,
       `你已掌握${executorGongfa.length}门，无法继续截取新的功法烙印。`
     ].join('\n'));
+    return false;
+  }
+
+  const sharedCooldownReserved = await redis.set(
+    forbiddenCooldownKey(executorQQ),
+    String(now + FORBIDDEN_COOLDOWN_MS),
+    { EX: Math.ceil(FORBIDDEN_COOLDOWN_MS / 1000), NX: true }
+  );
+  if (sharedCooldownReserved !== 'OK') {
+    e.reply('禁术因果刚被触发，请稍后查看冷却。');
     return false;
   }
 
@@ -5300,6 +5315,7 @@ async soulSearch(e) {
   // 目标遭受元神创伤
   target.元神 = Math.max(100000, (target.元神 || 500000) * 0.7);
   target.道心值 = Math.max(1, (target.道心值 || 100) - 20);
+  protectForbiddenTarget(target, Date.now());
   
   await Write_player(executorQQ, executor);
   await Write_player(targetQQ, target);

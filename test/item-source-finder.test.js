@@ -61,6 +61,12 @@ test('现有遮天副本和星阁物品可被寻物纸检索', () => {
   assert.ok(
     findItemSources(data, '神纹锤炼法').includes('遮天位面·灵墟洞天')
   );
+  assert.ok(
+    findItemSources(data, '虚空经').includes('遮天位面·姬家祖地·传承')
+  );
+  assert.ok(
+    findItemSources(data, '恒宇经').includes('遮天位面·姜家祖地·传承')
+  );
   assert.ok(findItemSources(data, xingge[0].name).includes('星阁拍卖行'));
 });
 

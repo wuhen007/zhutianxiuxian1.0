@@ -71,6 +71,9 @@ export function findItemSources(data, itemName) {
       if (DROP_FIELDS.some(field => hasNamedItem(place?.[field], target))) {
         sources.add(formatPlace(label, place?.name));
       }
+      if (place?.inheritance?.scripture === target) {
+        sources.add(`${formatPlace(label, place?.name)}·传承`);
+      }
     }
   }
 
