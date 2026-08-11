@@ -1,11 +1,18 @@
 import fs from 'fs';
 import path from 'path';
-import { plugin, config } from '../../api/api.js';
+import { plugin, config, data } from '../../api/api.js';
 import { __PATH, channel, existplayer, Read_player } from '../../model/xiuxian.js';
 
 /** 自动备份保留份数，超过则删除最旧的 */
 const KEEP_BACKUP_COUNT = 30;
 const FULL_DATA_SNAPSHOT = 'data';
+const ROOT_DATA_SNAPSHOT = 'root_data';
+const RUNTIME_CONFIG_SNAPSHOT = 'runtime_config';
+const PLUGIN_ROOT = path.resolve(__PATH.data_path, '..', '..');
+const YUNZAI_ROOT = path.resolve(PLUGIN_ROOT, '..', '..');
+const ROOT_DATA_PATH = path.join(PLUGIN_ROOT, 'data');
+const XIUXIAN_CONFIG_PATH = path.join(PLUGIN_ROOT, 'config', 'xiuxian');
+const ANNOUNCE_GROUPS_PATH = path.join(YUNZAI_ROOT, 'config', 'announceGroups.json');
 const REDIS_KEY_PATTERNS = [
   'xiuxian:*',
   'Xiuxian:*',
@@ -18,6 +25,9 @@ const REDIS_KEY_PATTERNS = [
   'zhutianxiuxian1.0Record*',
   'guiyishizu*',
   'gaoyuan',
+  'jueling_loss:*',
+  'jueling_loss_immune:*',
+  'tianjige2:*',
 ];
 
 async function listBackupRedisKeys() {
@@ -53,7 +63,11 @@ async function readRedisSnapshot() {
 }
 
 async function restoreRedisSnapshot(snapshot) {
-  const currentKeys = await listBackupRedisKeys();
+  const entries = Object.values(snapshot);
+  const legacySnapshot = entries.length > 0 && entries.every(Array.isArray);
+  const currentKeys = legacySnapshot
+    ? await redis.keys('xiuxian:*')
+    : await listBackupRedisKeys();
   if (currentKeys.length) await Promise.all(currentKeys.map(key => redis.del(key)));
 
   for (const [key, entry] of Object.entries(snapshot)) {
@@ -67,11 +81,11 @@ async function restoreRedisSnapshot(snapshot) {
     if (ttl !== null && ttl <= 0) continue;
 
     switch (type) {
-      case 'string': await redis.set(key, value); break;
-      case 'set': if (value.length) await redis.sAdd(key, value); break;
-      case 'hash': if (Object.keys(value).length) await redis.hSet(key, value); break;
-      case 'list': if (value.length) await redis.rPush(key, value); break;
-      case 'zset': if (value.length) await redis.zAdd(key, value); break;
+      case 'string': if (value !== null && value !== undefined) await redis.set(key, value); break;
+      case 'set': if (Array.isArray(value) && value.length) await redis.sAdd(key, value); break;
+      case 'hash': if (value && Object.keys(value).length) await redis.hSet(key, value); break;
+      case 'list': if (Array.isArray(value) && value.length) await redis.rPush(key, value); break;
+      case 'zset': if (Array.isArray(value) && value.length) await redis.zAdd(key, value); break;
       default:
         logger.warn(`[BackUp] Skipping unsupported Redis snapshot type: ${type} (${key})`);
         continue;
@@ -153,6 +167,27 @@ export class BackUp extends plugin {
         force: true,
       });
 
+      // 仙古秘境配置等数据位于插件根 data 目录，不在 resources/data 快照中。
+      if (fs.existsSync(ROOT_DATA_PATH)) {
+        await fs.promises.cp(ROOT_DATA_PATH, path.join(pendingFolder, ROOT_DATA_SNAPSHOT), {
+          recursive: true,
+          force: true,
+        });
+      }
+
+      // 纪元进度会写入 config/xiuxian；公告群是另一个运行时配置文件。
+      const runtimeConfigSnapshot = path.join(pendingFolder, RUNTIME_CONFIG_SNAPSHOT);
+      fs.mkdirSync(runtimeConfigSnapshot, { recursive: true });
+      if (fs.existsSync(XIUXIAN_CONFIG_PATH)) {
+        await fs.promises.cp(XIUXIAN_CONFIG_PATH, path.join(runtimeConfigSnapshot, 'xiuxian'), {
+          recursive: true,
+          force: true,
+        });
+      }
+      if (fs.existsSync(ANNOUNCE_GROUPS_PATH)) {
+        fs.copyFileSync(ANNOUNCE_GROUPS_PATH, path.join(runtimeConfigSnapshot, 'announceGroups.json'));
+      }
+
       // 显式备份小世界列表（xiaoshijie.js 运行时写入 resources/data/item/小世界列表.json），
       // 独立落一份在备份根目录，兼容旧格式备份点与 data 快照双保险
       const xiaoshijieListSrc = path.join(__PATH.lib_path, '小世界列表.json');
@@ -198,7 +233,11 @@ export class BackUp extends plugin {
       if (backUpList.length > 80) backUpList = backUpList.slice(0, 80);
 
       const messageList = backUpList.map((folder, index) => ({
-        message: `${index + 1}：${this.getTimeStr(folder)}`,
+        message: `${index + 1}：${this.getTimeStr(folder)}${
+          fs.existsSync(path.join(__PATH.backup, folder, FULL_DATA_SNAPSHOT))
+            ? ''
+            : ' [旧格式：不含小世界/内景地/位面]'
+        }`,
         nickname: Bot.nickname,
         user_id: Bot.uin,
       }));
@@ -249,6 +288,9 @@ export class BackUp extends plugin {
         e.reply('该存档已损坏');
         return false;
       }
+      if (!fs.existsSync(path.join(backUpPath, FULL_DATA_SNAPSHOT))) {
+        await e.reply('警告：这是旧格式存档，不含小世界、内景地、位面及位面事件，只会回滚当时已备份的基础数据。');
+      }
 
       await e.reply('正在自动备份当前存档...');
       if (!await this.saveBackUp(e, false)) {
@@ -264,6 +306,34 @@ export class BackUp extends plugin {
           recursive: true,
           force: true,
         });
+      }
+
+      const rootDataSnapshot = path.join(backUpPath, ROOT_DATA_SNAPSHOT);
+      if (fs.existsSync(rootDataSnapshot)) {
+        await fs.promises.rm(ROOT_DATA_PATH, { recursive: true, force: true });
+        await fs.promises.cp(rootDataSnapshot, ROOT_DATA_PATH, {
+          recursive: true,
+          force: true,
+        });
+      }
+
+      const runtimeConfigSnapshot = path.join(backUpPath, RUNTIME_CONFIG_SNAPSHOT);
+      if (fs.existsSync(runtimeConfigSnapshot)) {
+        const xiuxianConfigSnapshot = path.join(runtimeConfigSnapshot, 'xiuxian');
+        if (fs.existsSync(xiuxianConfigSnapshot)) {
+          await fs.promises.rm(XIUXIAN_CONFIG_PATH, { recursive: true, force: true });
+          await fs.promises.cp(xiuxianConfigSnapshot, XIUXIAN_CONFIG_PATH, {
+            recursive: true,
+            force: true,
+          });
+        }
+
+        const announceGroupsSnapshot = path.join(runtimeConfigSnapshot, 'announceGroups.json');
+        await fs.promises.rm(ANNOUNCE_GROUPS_PATH, { force: true });
+        if (fs.existsSync(announceGroupsSnapshot)) {
+          fs.mkdirSync(path.dirname(ANNOUNCE_GROUPS_PATH), { recursive: true });
+          fs.copyFileSync(announceGroupsSnapshot, ANNOUNCE_GROUPS_PATH);
+        }
       }
 
       const needLoad = [
@@ -326,9 +396,11 @@ export class BackUp extends plugin {
       }
 
       await Promise.all(restoreTasks);
+      // XiuxianData caches small worlds, plane bosses, custom sutras and pets at startup.
+      data.ensureDirsExist();
       await this.cleanOldBackups(KEEP_BACKUP_COUNT);
       const timeStr = this.getTimeStr(backUpList[saveDataNum - 1]);
-      e.reply(`存档已读取：${timeStr}`);
+      e.reply(`存档已读取：${timeStr}\n配置与定时任务将在重启机器人后完全生效。`);
 
       return false;
     } catch (err) {
