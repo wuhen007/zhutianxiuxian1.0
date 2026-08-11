@@ -71,18 +71,7 @@ async newsThing(e) {
            catch{
              zongmen='(无门无派)'
            }
-           let pinji=''
-           if(news.稀有度==1){
-              pinji='仙品'
-           }else if(news.稀有度==2){
-              pinji='圣品'
-           }else if(news.稀有度==3){
-            pinji='古品'
-           }else if(news.稀有度==4){
-            pinji='孤品'
-           }else{
-            pinji='垃圾'
-           }
+           const pinji=['','仙品','圣品','古品','孤品','珍品','绝品','传说','圣物','唯一','至宝'][Number(news.稀有度)] || '未知'
             let new1={
                    名号: player.名号+'('+zongmen+')',
                    TIME:`${time1}时,${time2}分`,

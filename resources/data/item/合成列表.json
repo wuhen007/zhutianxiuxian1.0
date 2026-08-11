@@ -333,7 +333,7 @@
       }
     ]
   },
-    {
+  {
     "name": "铂金镐",
     "class": "道具",
     "amount": 1,
@@ -452,7 +452,6 @@
       }
     ]
   },
-
   {
     "name": "未点燃的火把",
     "class": "道具",
@@ -555,7 +554,7 @@
       }
     ]
   },
-    {
+  {
     "name": "草薙",
     "class": "装备",
     "amount": 1,
@@ -572,7 +571,7 @@
       }
     ]
   },
-      {
+  {
     "name": "火山",
     "class": "装备",
     "amount": 1,
@@ -584,7 +583,7 @@
       }
     ]
   },
-        {
+  {
     "name": "魔光剑",
     "class": "装备",
     "amount": 1,
@@ -596,7 +595,7 @@
       }
     ]
   },
-          {
+  {
     "name": "永夜刃",
     "class": "装备",
     "amount": 1,
@@ -605,22 +604,25 @@
         "name": "火山",
         "class": "装备",
         "amount": 1
-      },  {
+      },
+      {
         "name": "草薙",
         "class": "装备",
         "amount": 1
-      }, {
+      },
+      {
         "name": "魔光剑",
         "class": "装备",
         "amount": 1
-      },{
+      },
+      {
         "name": "妖刀村正",
         "class": "装备",
         "amount": 1
       }
     ]
   },
-            {
+  {
     "name": "原版永夜刃",
     "class": "装备",
     "amount": 1,
@@ -629,22 +631,25 @@
         "name": "永夜刃",
         "class": "装备",
         "amount": 1
-      },  {
+      },
+      {
         "name": "视域之魂",
         "class": "材料",
         "amount": 20
-      }, {
+      },
+      {
         "name": "力量之魂",
         "class": "材料",
         "amount": 20
-      },{
+      },
+      {
         "name": "恐惧之魂",
         "class": "材料",
         "amount": 20
       }
     ]
   },
-              {
+  {
     "name": "断钢剑",
     "class": "装备",
     "amount": 1,
@@ -656,7 +661,7 @@
       }
     ]
   },
-            {
+  {
     "name": "原版断钢剑",
     "class": "装备",
     "amount": 1,
@@ -665,14 +670,15 @@
         "name": "断钢剑",
         "class": "装备",
         "amount": 1
-      },  {
+      },
+      {
         "name": "叶绿锭",
         "class": "材料",
         "amount": 24
       }
     ]
   },
-              {
+  {
     "name": "泰拉刃",
     "class": "装备",
     "amount": 1,
@@ -681,20 +687,20 @@
         "name": "原版断钢剑",
         "class": "装备",
         "amount": 1
-      }, 
-       {
+      },
+      {
         "name": "原版永夜刃",
         "class": "装备",
         "amount": 1
       },
-       {
+      {
         "name": "断裂英雄剑",
         "class": "材料",
         "amount": 1
       }
     ]
   },
-                {
+  {
     "name": "天顶剑",
     "class": "装备",
     "amount": 1,
@@ -703,48 +709,48 @@
         "name": "铜短剑",
         "class": "装备",
         "amount": 1
-      }, 
-       {
+      },
+      {
         "name": "泰拉刃",
         "class": "装备",
         "amount": 1
       },
-       {
+      {
         "name": "彩虹猫之刃",
         "class": "装备",
         "amount": 1
-      }, 
-             {
+      },
+      {
         "name": "狂星之怒",
         "class": "装备",
         "amount": 1
-      }, 
-       {
+      },
+      {
         "name": "星怒",
         "class": "装备",
         "amount": 1
       },
-       {
+      {
         "name": "附魔剑",
         "class": "装备",
         "amount": 1
-      }, 
-       {
+      },
+      {
         "name": "养蜂人",
         "class": "装备",
         "amount": 1
       },
-       {
+      {
         "name": "种子弯刀",
         "class": "装备",
         "amount": 1
-      }, 
-       {
+      },
+      {
         "name": "无头骑士剑",
         "class": "装备",
         "amount": 1
       },
-       {
+      {
         "name": "波涌之刃",
         "class": "装备",
         "amount": 1
@@ -917,7 +923,6 @@
       }
     ]
   },
-
   {
     "name": "纸",
     "class": "材料",
@@ -930,7 +935,6 @@
       }
     ]
   },
-
   {
     "name": "书架",
     "class": "材料",
@@ -977,7 +981,7 @@
       }
     ]
   },
-   {
+  {
     "name": "仙泪绿金",
     "class": "材料",
     "amount": 1,
@@ -989,7 +993,7 @@
       }
     ]
   },
-   {
+  {
     "name": "神痕紫金",
     "class": "材料",
     "amount": 1,
@@ -1058,14 +1062,14 @@
         "class": "材料",
         "amount": 1
       },
-     {
+      {
         "name": "大罗银精",
         "class": "材料",
         "amount": 1
       }
     ]
   },
-   {
+  {
     "name": "吞天魔功",
     "class": "功法",
     "amount": 1,
@@ -1077,7 +1081,7 @@
       }
     ]
   },
-     {
+  {
     "name": "太皇经",
     "class": "功法",
     "amount": 1,
@@ -1101,7 +1105,7 @@
       }
     ]
   },
-     {
+  {
     "name": "前字秘",
     "class": "功法",
     "amount": 1,
@@ -1113,7 +1117,7 @@
       }
     ]
   },
-       {
+  {
     "name": "临字秘",
     "class": "功法",
     "amount": 1,
@@ -1125,7 +1129,7 @@
       }
     ]
   },
-       {
+  {
     "name": "兵字秘",
     "class": "功法",
     "amount": 1,
@@ -1149,7 +1153,7 @@
       }
     ]
   },
-    {
+  {
     "name": "真龙宝术",
     "class": "功法",
     "amount": 1,
@@ -1161,7 +1165,7 @@
       }
     ]
   },
-      {
+  {
     "name": "雷帝宝术",
     "class": "功法",
     "amount": 1,
@@ -1185,7 +1189,7 @@
       }
     ]
   },
-      {
+  {
     "name": "不灭经",
     "class": "功法",
     "amount": 1,
@@ -1197,7 +1201,7 @@
       }
     ]
   },
-    {
+  {
     "name": "仙劫剑诀",
     "class": "功法",
     "amount": 1,
@@ -1243,10 +1247,22 @@
         "class": "功法",
         "amount": 1
       },
-       {
+      {
         "name": "青鳞鹰宝术",
         "class": "功法",
         "amount": 1
+      }
+    ]
+  },
+  {
+    "name": "平乱诀",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "平乱诀残页",
+        "class": "材料",
+        "amount": 10
       }
     ]
   },
@@ -1260,19 +1276,19 @@
         "class": "功法",
         "amount": 1
       },
-       {
+      {
         "name": "草字剑诀",
         "class": "功法",
         "amount": 1
       },
-       {
+      {
         "name": "仙劫剑诀",
         "class": "功法",
         "amount": 1
       }
     ]
   },
-    {
+  {
     "name": "原始真解超脱篇",
     "class": "功法",
     "amount": 1,
@@ -1282,31 +1298,31 @@
         "class": "道具",
         "amount": 1
       },
-       {
+      {
         "name": "至尊山宝",
         "class": "道具",
         "amount": 1
       }
     ]
   },
-    {
+  {
     "name": "涅槃法门",
     "class": "功法",
     "amount": 1,
     "materials": [
-       {
+      {
         "name": "涅槃法门·残缺",
         "class": "功法",
         "amount": 10
       }
     ]
   },
-      {
+  {
     "name": "柳神法",
     "class": "功法",
     "amount": 1,
     "materials": [
-       {
+      {
         "name": "柳神法残篇",
         "class": "材料",
         "amount": 10
@@ -1323,19 +1339,19 @@
         "class": "材料",
         "amount": 1
       },
-       {
+      {
         "name": "万灵图残骨二",
         "class": "材料",
         "amount": 1
       },
-       {
+      {
         "name": "万灵图残骨三",
         "class": "材料",
         "amount": 1
       }
     ]
   },
-    {
+  {
     "name": "万灵天图",
     "class": "装备",
     "amount": 1,
@@ -1345,7 +1361,7 @@
         "class": "道具",
         "amount": 1
       },
-       {
+      {
         "name": "原始宝骨",
         "class": "道具",
         "amount": 1
@@ -1362,17 +1378,17 @@
         "class": "装备",
         "amount": 1
       },
-       {
+      {
         "name": "鲲鹏原始真羽",
         "class": "材料",
         "amount": 1
       },
-       {
+      {
         "name": "太阴天金",
         "class": "材料",
         "amount": 1
       },
-       {
+      {
         "name": "太阳天金",
         "class": "材料",
         "amount": 1
@@ -1384,7 +1400,7 @@
     "class": "道具",
     "amount": 1,
     "materials": [
-       {
+      {
         "name": "霸血凝晶",
         "class": "材料",
         "amount": 5
@@ -1424,9 +1440,21 @@
     "amount": 1,
     "传承要求": "虚天之主传承",
     "materials": [
-      { "name": "天外清风", "class": "材料", "amount": 3 },
-      { "name": "世界石", "class": "材料", "amount": 1 },
-      { "name": "符纸", "class": "道具", "amount": 10 }
+      {
+        "name": "天外清风",
+        "class": "材料",
+        "amount": 3
+      },
+      {
+        "name": "世界石",
+        "class": "材料",
+        "amount": 1
+      },
+      {
+        "name": "符纸",
+        "class": "道具",
+        "amount": 10
+      }
     ]
   },
   {
@@ -1435,10 +1463,26 @@
     "amount": 1,
     "传承要求": "无尽秘钥配方",
     "materials": [
-      { "name": "世界石", "class": "材料", "amount": 3 },
-      { "name": "天外清风", "class": "材料", "amount": 8 },
-      { "name": "星图", "class": "道具", "amount": 1 },
-      { "name": "符纸", "class": "道具", "amount": 20 }
+      {
+        "name": "世界石",
+        "class": "材料",
+        "amount": 3
+      },
+      {
+        "name": "天外清风",
+        "class": "材料",
+        "amount": 8
+      },
+      {
+        "name": "星图",
+        "class": "道具",
+        "amount": 1
+      },
+      {
+        "name": "符纸",
+        "class": "道具",
+        "amount": 20
+      }
     ]
   },
   {
@@ -1447,10 +1491,26 @@
     "amount": 1,
     "传承要求": "时光令配方",
     "materials": [
-      { "name": "光阴石", "class": "道具", "amount": 2 },
-      { "name": "世界石", "class": "材料", "amount": 1 },
-      { "name": "天外清风", "class": "材料", "amount": 1 },
-      { "name": "符纸", "class": "道具", "amount": 10 }
+      {
+        "name": "光阴石",
+        "class": "道具",
+        "amount": 2
+      },
+      {
+        "name": "世界石",
+        "class": "材料",
+        "amount": 1
+      },
+      {
+        "name": "天外清风",
+        "class": "材料",
+        "amount": 1
+      },
+      {
+        "name": "符纸",
+        "class": "道具",
+        "amount": 10
+      }
     ]
   }
 ]

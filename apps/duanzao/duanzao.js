@@ -718,6 +718,7 @@ export class duanzao extends plugin {
           bao: Math.floor(jiuwei[3] * craftedEquipmentMultiplier * 1000) / 1000,
           author_name: player.id,
           出售价: Math.floor(1000000 * sum),
+          稀有度: Math.max(1, Math.min(10, Number(newwupin[new1].稀有度) || 1)),
         };
 
         await Add_najie_thing(user_qq, zhuangbei, '装备', 1);
@@ -1347,7 +1348,8 @@ export class duanzao extends plugin {
             item.HP=Math.round(item.HP*100)/100
             item.name = new_name;
             item.owner_name=user_qq;
-            item.稀有度=2;
+            const namedRarity = Math.max(1, Math.min(10, Number(item.稀有度) || 2));
+            item.稀有度=namedRarity;
             A.push(item);
             await Write_najie(user_qq, thingall);
             await Writeit(A);
@@ -1369,14 +1371,14 @@ export class duanzao extends plugin {
       author_name: item.author_name || '匿名',  // 制作者
       owner_name: user_qq,          // 当前持有者
       出售价: item.出售价 || 0,   // 出售价格
-      rarity: 2, 
-      islockd: 0,              // 稀有度（1-5星）
+      rarity: namedRarity,
+      islockd: 0,
       pinji: item.pinji || 1, // 品质等级
     timestamp: Date.now()      // 赋名时间
   },
   num:1,   
    Time:Time,
-   稀有度:2 ,           // 数量
+   稀有度:namedRarity,
   logs: [{
     event: "赋名",
     time: Date.now(),
@@ -1386,7 +1388,6 @@ export class duanzao extends plugin {
 };
             allThing.push(newThing)
             await dataall(allThing,'传闻系统')
-             await Add_najie_thing(user_qq,new_name,item.class,1,item.pinji)
             e.reply(`附名成功,您的${thing_name}更名为${new_name}`);
             return false;
           }

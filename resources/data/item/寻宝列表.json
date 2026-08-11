@@ -4,7 +4,11 @@
       "id": 257,
       "name": "天臂池",
       "grade": "寻宝经验本",
-      "bestRewards": ["经验瓶", "经验球", "血气瓶"],
+      "bestRewards": [
+        "经验瓶",
+        "经验球",
+        "血气瓶"
+      ],
       "price": 1000,
       "requirements": {
         "map": [
@@ -78,7 +82,9 @@
       "id": 257,
       "name": "星落湖",
       "grade": "寻宝经验本",
-      "bestRewards": ["钓鱼掉上来的奇怪盒子"],
+      "bestRewards": [
+        "钓鱼掉上来的奇怪盒子"
+      ],
       "price": "1000,仙人",
       "requirements": {
         "map": [
@@ -132,7 +138,10 @@
       "id": 257,
       "name": "沉沦之海",
       "grade": "寻宝经验本",
-      "bestRewards": ["利维坦之心", "海神之血"],
+      "bestRewards": [
+        "利维坦之心",
+        "海神之血"
+      ],
       "price": "5000,仙人",
       "requirements": {
         "map": [
@@ -206,7 +215,10 @@
       "id": 257,
       "name": "低语森林",
       "grade": "寻宝砍树本",
-      "bestRewards": ["水天丛林地图", "苹果"],
+      "bestRewards": [
+        "水天丛林地图",
+        "苹果"
+      ],
       "price": 500,
       "requirements": {
         "map": [
@@ -265,7 +277,10 @@
       "id": 257,
       "name": "水天丛林",
       "grade": "寻宝砍树本",
-      "bestRewards": ["深渊地图", "西瓜"],
+      "bestRewards": [
+        "深渊地图",
+        "西瓜"
+      ],
       "price": 1000,
       "requirements": {
         "map": [
@@ -319,7 +334,12 @@
       "id": 257,
       "name": "恒那兰那",
       "grade": "寻宝食物本",
-      "bestRewards": ["铁矿", "煤炭", "轻策庄", "书架"],
+      "bestRewards": [
+        "铁矿",
+        "煤炭",
+        "轻策庄",
+        "书架"
+      ],
       "price": 100,
       "requirements": {
         "map": [
@@ -403,7 +423,13 @@
       "id": 257,
       "name": "轻策庄",
       "grade": "寻宝食物本",
-      "bestRewards": ["书架", "书本", "黑曜石", "深渊", "甘蔗"],
+      "bestRewards": [
+        "书架",
+        "书本",
+        "黑曜石",
+        "深渊",
+        "甘蔗"
+      ],
       "price": 100,
       "requirements": {
         "map": [
@@ -477,7 +503,11 @@
       "id": 257,
       "name": "天衡山",
       "grade": "寻宝挖矿本",
-      "bestRewards": ["煤炭", "铁矿", "魔山地图"],
+      "bestRewards": [
+        "煤炭",
+        "铁矿",
+        "魔山地图"
+      ],
       "price": 1000,
       "requirements": {
         "map": [
@@ -540,7 +570,11 @@
       "id": 257,
       "name": "降诸魔山",
       "grade": "寻宝挖矿本",
-      "bestRewards": ["星荧洞窟地图", "腐肉", "骨头"],
+      "bestRewards": [
+        "星荧洞窟地图",
+        "腐肉",
+        "骨头"
+      ],
       "price": 2000,
       "requirements": {
         "map": [
@@ -630,7 +664,12 @@
       "id": 257,
       "name": "星荧洞窟",
       "grade": "寻宝挖矿本",
-      "bestRewards": ["层岩洞窟地图", "腐肉", "骨头", "红石"],
+      "bestRewards": [
+        "层岩洞窟地图",
+        "腐肉",
+        "骨头",
+        "红石"
+      ],
       "price": "3000,仙人",
       "requirements": {
         "map": [
@@ -724,7 +763,12 @@
       "id": 257,
       "name": "层岩洞窟",
       "grade": "寻宝挖矿本",
-      "bestRewards": ["深渊地图", "腐肉", "骨头", "红石"],
+      "bestRewards": [
+        "深渊地图",
+        "腐肉",
+        "骨头",
+        "红石"
+      ],
       "price": "5000,仙人",
       "requirements": {
         "map": [
@@ -824,7 +868,10 @@
       "id": 257,
       "name": "深渊",
       "grade": "寻宝中的旧神界",
-      "bestRewards": ["七星海棠丹", "岩浆"],
+      "bestRewards": [
+        "七星海棠丹",
+        "岩浆"
+      ],
       "price": "10000,仙人",
       "experience": 15000000,
       "requirements": {
@@ -966,7 +1013,9 @@
       "id": 257,
       "name": "末地",
       "grade": "寻宝中的神界",
-      "bestRewards": ["七星海棠丹"],
+      "bestRewards": [
+        "七星海棠丹"
+      ],
       "price": "20000,仙人",
       "experience": 25000000,
       "requirements": {
@@ -1078,7 +1127,9 @@
       "id": 257,
       "name": "泰拉肉前丛林",
       "grade": "异世界",
-      "bestRewards": ["大自然的恩赐"],
+      "bestRewards": [
+        "大自然的恩赐"
+      ],
       "price": "15000,仙人",
       "experience": 15000000,
       "requirements": {
@@ -1178,17 +1229,55 @@
     }
   },
   "mapCategories": {
-    "fishing": ["天臂池", "星落湖", "沉沦之海"],
-    "logging": ["低语森林", "水天丛林"],
-    "farming": ["恒那兰那", "轻策庄"],
-    "mining": ["天衡山", "降诸魔山", "星荧洞窟", "层岩洞窟", "深渊", "末地"],
-    "special": ["泰拉肉前丛林"]
+    "fishing": [
+      "天臂池",
+      "星落湖",
+      "沉沦之海"
+    ],
+    "logging": [
+      "低语森林",
+      "水天丛林"
+    ],
+    "farming": [
+      "恒那兰那",
+      "轻策庄"
+    ],
+    "mining": [
+      "天衡山",
+      "降诸魔山",
+      "星荧洞窟",
+      "层岩洞窟",
+      "深渊",
+      "末地"
+    ],
+    "special": [
+      "泰拉肉前丛林"
+    ]
   },
   "toolTypes": {
-    "fishing": ["钓鱼竿"],
-    "logging": ["木斧", "石斧", "铁斧"],
-    "farming": ["木铲", "石铲", "铁铲", "金铲", "钻石铲"],
-    "mining": ["木镐", "石镐", "铁镐", "金镐", "钻石镐", "下界合金镐"]
+    "fishing": [
+      "钓鱼竿"
+    ],
+    "logging": [
+      "木斧",
+      "石斧",
+      "铁斧"
+    ],
+    "farming": [
+      "木铲",
+      "石铲",
+      "铁铲",
+      "金铲",
+      "钻石铲"
+    ],
+    "mining": [
+      "木镐",
+      "石镐",
+      "铁镐",
+      "金镐",
+      "钻石镐",
+      "下界合金镐"
+    ]
   },
   "foodRequirements": {
     "天臂池": 1000,

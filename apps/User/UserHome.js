@@ -5,6 +5,7 @@ import {
   createPlayerMingge,
   drawMingge,
   formatMinggeDrawMessage,
+  formatMinggeEffectValue,
   getMinggeDirectMultiplier,
   getMinggeEffects,
   grantMinggePotential,
@@ -72,6 +73,7 @@ import {
   activateTianjiaoScent,
   calculateTianjiTrainingReward,
 } from '../../model/tianjiTalismans.js';
+import { resetIneligibleShengtiCultivation } from '../../model/shengtiCultivation.js';
 /**
  * 全局变量
  */
@@ -176,6 +178,14 @@ export class UserHome extends plugin {
 {
     reg: '^#切换重抽命格(\\s+\\d+|\\*\\d+)?$',
     fnc: 'switchRerollFate'
+},
+{
+    reg: '^#选择轮回命签\\*(\\d+)$',
+    fnc: 'chooseBatchRerollFate'
+},
+{
+    reg: '^#保留轮回命签$',
+    fnc: 'chooseBatchRerollFate'
 }
       ],
     });
@@ -489,6 +499,139 @@ async switchRerollFate(e) {
         `已将重抽目标切换为第${requested}条命格：${fates[requested - 1]?.name || '无名命格'}。\n` +
         `发送 #消耗轮回命签 即可重抽该命格（也可 #消耗轮回命签*序号 直接指定）。`
     );
+    return true;
+}
+
+// 批量重抽：消耗 count 枚轮回命签，对第 requested 条命格重抽 count 次，
+// 只统计分布、不改变玩家命格，结果暂存于 player.轮回命签暂存，等待玩家抉择。
+async batchRerollFate(e, player, usr_qq, requested, count, data) {
+    if (!verc({ e })) return false;
+    count = Math.max(1, Math.min(999, Math.trunc(Number(count) || 0)));
+    if (!count) {
+        e.reply('重抽次数必须为正整数。');
+        return true;
+    }
+    const fates = [player?.命格, ...(Array.isArray(player?.附加命格) ? player.附加命格 : [])].filter(Boolean);
+    if (requested < 1 || requested > fates.length) {
+        e.reply(`命格词条序号应为 1 至 ${fates.length}。`);
+        return true;
+    }
+    const have = await exist_najie_thing(usr_qq, '轮回命签', '道具');
+    if (have < count) {
+        e.reply(`你的【轮回命签】不足，需要 ${count} 枚，当前仅 ${have} 枚。`);
+        return true;
+    }
+    if (!Array.isArray(player.附加命格)) player.附加命格 = [];
+    // 与单抽保持一致：排除其它已占用命格与自身，避免重抽回同一条
+    const occupied = new Set(fates.filter((_, index) => index !== requested - 1).map(item => item.id));
+    let pool = data.minggeList.filter(item => !occupied.has(item.id) && item.id !== fates[requested - 1]?.id);
+    if (!pool.length) pool = data.minggeList;
+
+    // 批量重抽，仅统计每种命格出现次数
+    const tally = new Map(); // id -> { mingge, count }
+    for (let i = 0; i < count; i++) {
+        const mingge = drawMingge(pool);
+        const entry = tally.get(mingge.id);
+        if (entry) entry.count++;
+        else tally.set(mingge.id, { mingge, count: 1 });
+    }
+    // 排序：稀有度降序（传说>稀有>普通），同稀有度按出现次数降序，便于择优
+    const candidates = [...tally.values()].sort((a, b) => {
+        const ra = Number(b.mingge.rarity) - Number(a.mingge.rarity);
+        if (ra !== 0) return ra;
+        return b.count - a.count;
+    }).map(c => ({
+        id: c.mingge.id,
+        name: c.mingge.name,
+        count: c.count,
+        isNegative: c.mingge.isNegative === true,
+        rarityName: c.mingge.rarityName,
+    }));
+
+    // 扣除命签，暂存候选，等待玩家抉择（此时尚未改动玩家命格）
+    await Add_najie_thing(usr_qq, '轮回命签', '道具', -count);
+    player.轮回命签暂存 = {
+        序号: requested,
+        次数: count,
+        候选: candidates,
+        旧命格名: fates[requested - 1]?.name || '无名命格',
+        旧命格id: fates[requested - 1]?.id,
+    };
+    await Write_player(usr_qq, player);
+
+    const list = candidates.map((c, i) => {
+        const m = data.minggeList.find(x => x.id === c.id);
+        const eff = m ? Object.entries(m.effects || {}).map(([k, v]) => `${k}${formatMinggeEffectValue(k, v)}`).join('，') : '';
+        return `${i + 1}. ${c.name}（${c.rarityName || ''}${c.isNegative ? '·厄' : ''}） ×${c.count}${eff ? `\n    ${eff}` : ''}`;
+    }).join('\n');
+
+    e.reply(
+        `【轮回命签·批量重抽】\n` +
+        `对第${requested}命格【${player.轮回命签暂存.旧命格名}】重抽了 ${count} 次，消耗轮回命签 ${count} 枚。\n\n` +
+        `本次抽中命格分布：\n${list}\n\n` +
+        `请抉择（命签已消耗，二选一）：\n` +
+        `· 发送 #选择轮回命签*序号 保留重抽结果中你想要的那条（如 #选择轮回命签*1）\n` +
+        `· 发送 #保留轮回命签 则保留现有命格不变`
+    );
+    return true;
+}
+
+// 玩家对批量重抽结果的最终抉择：保留某条重抽命格，或保留现有命格不变。
+async chooseBatchRerollFate(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_','');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) {
+        e.reply('请先创建修仙角色');
+        return true;
+    }
+    const player = await Read_player(usr_qq);
+    const temp = player.轮回命签暂存;
+    if (!temp) {
+        e.reply('当前没有待抉择的轮回命签重抽结果，请先 #消耗轮回命签*序号*次数 进行批量重抽。');
+        return true;
+    }
+    // 玩家选择保留现有命格
+    if (/保留/.test(e.msg)) {
+        delete player.轮回命签暂存;
+        await Write_player(usr_qq, player);
+        e.reply(`【轮回命签·纹丝不动】你选择保留现有第${temp.序号}命格【${temp.旧命格名}】，重抽结果已舍弃（命签已消耗）。`);
+        return true;
+    }
+    // 玩家选择保留重抽结果中的某一条
+    const pick = Number(e.msg.match(/\*(\d+)/)?.[1]);
+    if (!pick || pick < 1 || pick > temp.候选.length) {
+        e.reply(`请发送 #选择轮回命签*序号（1 至 ${temp.候选.length}）来选择要保留的重抽命格，或 #保留轮回命签 保留现有。`);
+        return true;
+    }
+    const fates = [player?.命格, ...(Array.isArray(player?.附加命格) ? player.附加命格 : [])].filter(Boolean);
+    if (temp.序号 < 1 || temp.序号 > fates.length) {
+        delete player.轮回命签暂存;
+        await Write_player(usr_qq, player);
+        e.reply('原重抽目标已失效（命格数量发生变动），暂存已清除，请重新批量重抽。');
+        return true;
+    }
+    const chosen = temp.候选[pick - 1];
+    const mingge = data.minggeList.find(m => m.id === chosen.id);
+    if (!mingge) {
+        delete player.轮回命签暂存;
+        await Write_player(usr_qq, player);
+        e.reply('所选命格已不在命盘之中，暂存已清除。');
+        return true;
+    }
+    if (!Array.isArray(player.附加命格)) player.附加命格 = [];
+    // 与单抽一致：先回滚旧命格「获得时」一次性效果，再写入并重算新命格
+    const oldMingge = data.minggeList.find(m => m.id === temp.旧命格id);
+    rollbackInitialMinggeEffects(player, oldMingge?.effects);
+    const stored = createPlayerMingge(mingge);
+    stored.初始效果已应用 = true;
+    if (temp.序号 === 1) player.命格 = stored;
+    else player.附加命格[temp.序号 - 2] = stored;
+    applyInitialMinggeEffectsRaw(player, mingge.effects);
+    delete player.重抽命格序号;
+    delete player.轮回命签暂存;
+    await Write_player(usr_qq, player);
+    e.reply(`【轮回命签·重定命数】\n第${temp.序号}命格：${temp.旧命格名} → ${mingge.name}\n\n${formatMinggeDrawMessage(mingge, player.名号)}`);
     return true;
 }
 
@@ -3947,13 +4090,29 @@ if (thing_exist.type == '神药') {
                     e.reply('你尚未抽取命格词条，请先发送 #抽取命格词条。');
                     return;
                 }
-                const inlineIdx = Number(e.msg.match(/\*(\d+)$/)?.[1]);
-                const requested = inlineIdx || Number(player.重抽命格序号) || 1;
+                // 解析参数：
+                //   #消耗轮回命签            → 单抽（目标取 #切换重抽命格 已选或默认第1条）
+                //   #消耗轮回命签*序号        → 单抽该条
+                //   #消耗轮回命签*序号*次数   → 批量重抽该条（消耗次数枚，重抽次数次，再抉择）
+                const segs = e.msg.split('*'); // ['#消耗轮回命签', '序号', '次数']
+                let requested, batchCount = null;
+                if (segs.length >= 3) {
+                    requested = Number(segs[1]);
+                    batchCount = Number(segs[2]);
+                } else if (segs.length === 2) {
+                    requested = Number(segs[1]); // 单抽指定条
+                } else {
+                    requested = Number(player.重抽命格序号) || 1;
+                }
                 if (requested < 1 || requested > fates.length) {
                     e.reply(`命格词条序号应为 1 至 ${fates.length}。`);
                     return;
                 }
                 if (!Array.isArray(player.附加命格)) player.附加命格 = [];
+                // 批量重抽分支：消耗 count 枚命签，重抽 count 次并展示分布，由玩家后续 #选择轮回命签 / #保留轮回命签 抉择
+                if (batchCount && batchCount >= 1) {
+                    return await this.batchRerollFate(e, player, usr_qq, requested, batchCount, data);
+                }
                 const occupied = new Set(fates.filter((_, index) => index !== requested - 1).map(item => item.id));
                 let pool = data.minggeList.filter(item => !occupied.has(item.id) && item.id !== fates[requested - 1]?.id);
                 if (!pool.length) pool = data.minggeList;
@@ -5826,7 +5985,7 @@ if (thing_exist.type == '洗髓') {
     player.next_linggen_target_type = null;
     player.next_linggen_keep_best = false;
     
-    const wasRemoved = await checkAndRemoveShengtiMishu(player, usr_qq);
+    await checkAndRemoveShengtiMishu(player, usr_qq);
     const newMaxLifeSource = 100 + (player.灵根?.生命本源 || 0);
     player.生命本源 = newMaxLifeSource; // 洗髓后恢复满生命本源
     player.洗根次数+= quantity ;
@@ -7331,64 +7490,27 @@ function isValueEquipment(item) {
  * @returns {Promise<boolean>} 是否执行了移除操作
  */
 async function checkAndRemoveShengtiMishu(player, usr_qq) {
-    // 定义圣体类型
-    const shengtiTypes = ['圣体', '小成圣体', '大成圣体'];
-    const mishuName = "圣体秘术";
     let removed = false;
+    const level = data.Level_list.find(item => item.level_id == player.level_id);
+    const cleanup = resetIneligibleShengtiCultivation(player, {
+        攻击: level?.基础攻击,
+        防御: level?.基础防御,
+        血量上限: level?.基础血量,
+    });
 
-    // 检查是否学习了圣体秘术
-    if (player.学习的功法?.includes(mishuName)) {
-        // 检查当前灵根是否为圣体类型
-        const currentIsShengti = shengtiTypes.includes(player.灵根?.type);
-        
-        // 如果不是圣体类型，执行移除操作
-        if (!currentIsShengti) {
-            // 1. 从功法列表中移除圣体秘术
-            player.学习的功法 = player.学习的功法.filter(name => name !== mishuName);
-            
-            // 2. 计算并移除圣体秘术的加成
-            let totalDeduction = 0;
-            const mijingTypes = ['轮海', '道宫', '四极', '化龙'];
-            
-            // 2.1 计算总加成并清零圣体秘境加成
-            if (player.圣体秘境加成) {
-                mijingTypes.forEach(mijing => {
-                    if (player.圣体秘境加成[mijing]) {
-                        totalDeduction += player.圣体秘境加成[mijing];
-                        player.圣体秘境加成[mijing] = 0;
-                    }
-                });
-            }
-
-            // 2.2 扣除属性加成
-            if (totalDeduction > 0) {
-                // 扣除加成属性
-                player.攻击加成 -= totalDeduction;
-                player.防御加成 -= totalDeduction;
-                player.生命加成 -= totalDeduction;
-                
-                // 重新计算基础属性（确保不低于最小值）
-                const baseAttack = data.Level_list.find(item => item.level_id == player.level_id).基础攻击;
-                const baseDefense = data.Level_list.find(item => item.level_id == player.level_id).基础防御;
-                const baseHP = data.Level_list.find(item => item.level_id == player.level_id).基础血量;
-                
-                player.攻击 = Math.max(baseAttack, player.攻击 - totalDeduction);
-                player.防御 = Math.max(baseDefense, player.防御 - totalDeduction);
-                player.血量上限 = Math.max(baseHP, player.血量上限 - totalDeduction);
-                
-                // 调整当前血量
-                player.当前血量 = Math.min(player.当前血量, player.血量上限);
-            }
-
-            // 3. 移除纳戒中的圣体秘术功法
-            const najieCount = await exist_najie_thing(usr_qq, mishuName, "功法");
-            if (najieCount > 0) {
-                await Add_najie_thing(usr_qq, mishuName, "功法", -najieCount);
-            }
-
-            console.log(`[圣体检查] ${usr_qq} 移除了圣体秘术及加成，共扣除属性: ${totalDeduction}`);
-            removed = true;
+    for (const mishuName of cleanup.removedTechniques) {
+        const najieCount = await exist_najie_thing(usr_qq, mishuName, "功法");
+        if (najieCount > 0) {
+            await Add_najie_thing(usr_qq, mishuName, "功法", -najieCount);
         }
+    }
+
+    if (cleanup.changed) {
+        console.log(
+            `[圣体检查] ${usr_qq} 移除了${cleanup.removedTechniques.join('、')}及加成，` +
+            `普通秘术扣除: ${cleanup.normalDeduction}，终极秘术扣除: ${cleanup.ultimateDeduction}`
+        );
+        removed = true;
     }
     
     // 新增：检查并移除光阴加成
