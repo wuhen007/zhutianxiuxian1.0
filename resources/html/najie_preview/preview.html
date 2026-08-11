@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="content-type" content="text/html;charset=utf-8" />
+    <title>纳戒内部配色模板预览</title>
+    <link rel="stylesheet" type="text/css" href="../najie/najie.css" />
+    <link rel="stylesheet" type="text/css" href="../najie/rarity.css?v=20260811" />
+    <link rel="preload" href="../../font/tttgbnumber.ttf" as="font" />
+    <link rel="preload" href="../../font/NZBZ.ttf" as="font" />
+    <link rel="shortcut icon" href="#" />
+    <style>
+      body {
+        width: 100%;
+        text-align: center;
+        margin: 0;
+        padding: 0 0 60px;
+        background: #1a1a24;
+        font-family: 'tttgbnumber', 'Microsoft YaHei', sans-serif;
+      }
+
+      .preview-header {
+        padding: 30px 20px 10px;
+        color: #ffcc80;
+        font-size: 34px;
+        font-family: 'NZBZ', 'Microsoft YaHei', sans-serif;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+      }
+
+      .preview-subtitle {
+        color: #c8c8d0;
+        font-size: 18px;
+        margin-bottom: 30px;
+      }
+
+      .template-section {
+        margin: 30px auto;
+        width: 800px;
+        padding: 20px 0 30px;
+        background: radial-gradient(ellipse at top, #2a2a38 0%, #1f1f2a 100%);
+        border-radius: 24px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      }
+
+      .template-title {
+        color: #ffffff;
+        font-size: 26px;
+        font-family: 'NZBZ', 'Microsoft YaHei', sans-serif;
+        margin-bottom: 8px;
+      }
+
+      .template-desc {
+        color: #a0a0b0;
+        font-size: 16px;
+        margin-bottom: 20px;
+      }
+
+      .card_box {
+        margin: 0 auto;
+        width: 740px;
+      }
+
+      .wupin {
+        justify-content: flex-start;
+      }
+
+      .item {
+        min-height: 140px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="preview-header">纳戒内部配色方案预览</div>
+    <div class="preview-subtitle">下方为三套模板，每套展示 1~10 级稀有度物品的内外配色效果</div>
+
+    <!-- 模板一：同色浸润 -->
+    <section class="template-section" id="template-1">
+      <link rel="stylesheet" type="text/css" href="template-1-soft-fill.css" />
+      <div class="template-title">模板一 · 同色浸润</div>
+      <div class="template-desc">卡片内部用稀有度同色系浅色浸润，整体清新透亮，文字保持深色。</div>
+      <div class="card_box">
+        <div class="use_data">
+          <div class="user_font user_font_title">【装备】</div>
+          <div class="user_font wupin" id="template-1-items"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 模板二：深色质感 -->
+    <section class="template-section" id="template-2">
+      <link rel="stylesheet" type="text/css" href="template-2-dark-glass.css" />
+      <div class="template-title">模板二 · 深色质感</div>
+      <div class="template-desc">卡片内部用稀有度深色渐变填充，标题与属性文字反白，整体高端沉稳。</div>
+      <div class="card_box">
+        <div class="use_data">
+          <div class="user_font user_font_title">【装备】</div>
+          <div class="user_font wupin" id="template-2-items"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 模板三：光晕渐变 -->
+    <section class="template-section" id="template-3">
+      <link rel="stylesheet" type="text/css" href="template-3-glow-gradient.css" />
+      <div class="template-title">模板三 · 光晕渐变</div>
+      <div class="template-desc">卡片四角透出稀有度光晕，中心保留浅色可读区，整体更有灵气。</div>
+      <div class="card_box">
+        <div class="use_data">
+          <div class="user_font user_font_title">【装备】</div>
+          <div class="user_font wupin" id="template-3-items"></div>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      const rarityNames = ['白框', '绿框', '黄框', '紫框', '金框', '橙框', '红框', '五彩框', '七彩框', '流光框'];
+      const pinjiNames = ['劣', '普', '优', '精', '极', '绝', '顶'];
+
+      function makeItem(rarity) {
+        return `
+          <div class="item rarity-${rarity}">
+            <div class="item_title">【武器】示例装备(${pinjiNames[(rarity - 1) % 7]})(未锁定)</div>
+            <div class="item_int">属性:金</div>
+            <div class="item_int">攻击：${100 + rarity * 50}%</div>
+            <div class="item_int">防御：${20 + rarity * 10}%</div>
+            <div class="item_int">血量：${30 + rarity * 15}%</div>
+            <div class="item_int">暴击：${rarity * 5}%</div>
+            <div class="item_int">数量：${rarity}</div>
+            <div class="item_int">出售价：${rarity * 10000}灵石</div>
+            <div class="item_int">稀有度：${rarity}级·${rarityNames[rarity - 1]}</div>
+          </div>
+        `;
+      }
+
+      for (let t = 1; t <= 3; t++) {
+        document.getElementById(`template-${t}-items`).innerHTML = Array.from(
+          { length: 10 },
+          (_, i) => makeItem(i + 1)
+        ).join('');
+      }
+    </script>
+  </body>
+</html>

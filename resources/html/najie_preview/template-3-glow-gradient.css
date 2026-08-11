@@ -1,0 +1,80 @@
+/* 纳戒物品内部配色模板三：光晕渐变 */
+/* 设计理念：卡片中心保留浅色可读区域，四角透出稀有度光晕，整体更有灵气 */
+
+.item[class*='rarity-'] {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(var(--najie-rarity-rgb), 0.55) 0%, transparent 38%),
+    radial-gradient(circle at 100% 100%, rgba(var(--najie-rarity-rgb), 0.42) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(255, 250, 240, 0.72) 0%, rgba(255, 248, 235, 0.58) 100%);
+}
+
+.item.rarity-1 {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(228, 232, 238, 0.7) 0%, transparent 38%),
+    radial-gradient(circle at 100% 100%, rgba(228, 232, 238, 0.5) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78) 0%, rgba(248, 250, 252, 0.62) 100%);
+}
+
+.item.rarity-2 {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(57, 185, 107, 0.55) 0%, transparent 38%),
+    radial-gradient(circle at 100% 100%, rgba(57, 185, 107, 0.4) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(245, 255, 248, 0.72) 0%, rgba(238, 250, 242, 0.58) 100%);
+}
+
+.item.rarity-3 {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(242, 212, 71, 0.6) 0%, transparent 38%),
+    radial-gradient(circle at 100% 100%, rgba(242, 212, 71, 0.42) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(255, 252, 235, 0.74) 0%, rgba(255, 250, 225, 0.6) 100%);
+}
+
+.item.rarity-4 {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(169, 107, 232, 0.55) 0%, transparent 38%),
+    radial-gradient(circle at 100% 100%, rgba(169, 107, 232, 0.38) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(250, 245, 255, 0.72) 0%, rgba(245, 238, 255, 0.58) 100%);
+}
+
+.item.rarity-5 {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(255, 215, 0, 0.62) 0%, transparent 38%),
+    radial-gradient(circle at 100% 100%, rgba(255, 215, 0, 0.42) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(255, 252, 230, 0.74) 0%, rgba(255, 250, 220, 0.6) 100%);
+}
+
+.item.rarity-6 {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(255, 138, 43, 0.55) 0%, transparent 38%),
+    radial-gradient(circle at 100% 100%, rgba(255, 138, 43, 0.38) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(255, 247, 240, 0.72) 0%, rgba(255, 242, 230, 0.58) 100%);
+}
+
+.item.rarity-7 {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(239, 63, 79, 0.55) 0%, transparent 38%),
+    radial-gradient(circle at 100% 100%, rgba(239, 63, 79, 0.38) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(255, 242, 243, 0.72) 0%, rgba(255, 236, 238, 0.58) 100%);
+}
+
+.item.rarity-8 {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(93, 118, 210, 0.55) 0%, transparent 38%),
+    radial-gradient(circle at 100% 100%, rgba(93, 118, 210, 0.38) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(243, 245, 255, 0.72) 0%, rgba(236, 240, 255, 0.58) 100%);
+}
+
+.item.rarity-9,
+.item.rarity-10 {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(180, 93, 192, 0.58) 0%, transparent 38%),
+    radial-gradient(circle at 100% 100%, rgba(180, 93, 192, 0.4) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(255, 243, 255, 0.72) 0%, rgba(255, 238, 255, 0.58) 100%);
+}
+
+.item.rarity-10 {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(225, 186, 72, 0.62) 0%, transparent 38%),
+    radial-gradient(circle at 100% 100%, rgba(225, 186, 72, 0.42) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(255, 252, 238, 0.74) 0%, rgba(255, 250, 228, 0.6) 100%);
+}

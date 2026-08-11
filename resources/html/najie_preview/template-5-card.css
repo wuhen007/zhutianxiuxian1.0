@@ -1,0 +1,153 @@
+/* 纳戒物品内部纹理模板五（卡片感·低透明度版） */
+/* 调整：底色 alpha 由 0.18~0.62 提升到 0.85~0.95，山峦/墨纹/纸纹略提对比，加投影+内高光 */
+
+.item[class*='rarity-'] {
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  background:
+    /* 底部山峦剪影 */
+    linear-gradient(170deg, transparent 70%, rgba(40, 35, 30, 0.34) 70.5%, rgba(60, 55, 50, 0.22) 78%, transparent 83%),
+    linear-gradient(160deg, transparent 75%, rgba(40, 35, 30, 0.26) 76%, transparent 83%),
+    /* 云纹墨点 */
+    radial-gradient(ellipse 60px 30px at 20% 25%, rgba(255, 255, 255, 0.12) 0%, transparent 70%),
+    radial-gradient(ellipse 50px 28px at 75% 35%, rgba(255, 255, 255, 0.1) 0%, transparent 70%),
+    radial-gradient(ellipse 40px 22px at 60% 15%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 45px 25px at 15% 65%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    /* 纸纹噪感 */
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 255, 255, 0.04) 2px 3px, transparent 3px 8px),
+    repeating-linear-gradient(0deg, transparent 0 2px, rgba(255, 255, 255, 0.04) 2px 3px, transparent 3px 8px),
+    /* 稀有度底色（高不透明） */
+    radial-gradient(at top left, rgba(var(--najie-rarity-rgb), 0.95), rgba(var(--najie-rarity-rgb), 0.85));
+}
+
+.item.rarity-1 {
+  background:
+    linear-gradient(170deg, transparent 70%, rgba(80, 85, 90, 0.32) 70.5%, rgba(120, 125, 130, 0.2) 78%, transparent 83%),
+    linear-gradient(160deg, transparent 75%, rgba(80, 85, 90, 0.24) 76%, transparent 83%),
+    radial-gradient(ellipse 60px 30px at 20% 25%, rgba(255, 255, 255, 0.12) 0%, transparent 70%),
+    radial-gradient(ellipse 50px 28px at 75% 35%, rgba(255, 255, 255, 0.1) 0%, transparent 70%),
+    radial-gradient(ellipse 40px 22px at 60% 15%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 45px 25px at 15% 65%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 255, 255, 0.04) 2px 3px, transparent 3px 8px),
+    repeating-linear-gradient(0deg, transparent 0 2px, rgba(255, 255, 255, 0.04) 2px 3px, transparent 3px 8px),
+    radial-gradient(at top left, rgba(236, 240, 246, 0.97), rgba(190, 197, 208, 0.88));
+}
+
+.item.rarity-2 {
+  background:
+    linear-gradient(170deg, transparent 70%, rgba(20, 60, 35, 0.36) 70.5%, rgba(30, 90, 50, 0.24) 78%, transparent 83%),
+    linear-gradient(160deg, transparent 75%, rgba(20, 60, 35, 0.28) 76%, transparent 83%),
+    radial-gradient(ellipse 60px 30px at 20% 25%, rgba(255, 255, 255, 0.12) 0%, transparent 70%),
+    radial-gradient(ellipse 50px 28px at 75% 35%, rgba(255, 255, 255, 0.1) 0%, transparent 70%),
+    radial-gradient(ellipse 40px 22px at 60% 15%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 45px 25px at 15% 65%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 255, 255, 0.04) 2px 3px, transparent 3px 8px),
+    repeating-linear-gradient(0deg, transparent 0 2px, rgba(255, 255, 255, 0.04) 2px 3px, transparent 3px 8px),
+    radial-gradient(at top left, rgba(168, 236, 192, 0.96), rgba(34, 153, 83, 0.86));
+}
+
+.item.rarity-3 {
+  background:
+    linear-gradient(170deg, transparent 70%, rgba(80, 65, 10, 0.36) 70.5%, rgba(120, 100, 15, 0.24) 78%, transparent 83%),
+    linear-gradient(160deg, transparent 75%, rgba(80, 65, 10, 0.28) 76%, transparent 83%),
+    radial-gradient(ellipse 60px 30px at 20% 25%, rgba(255, 255, 255, 0.13) 0%, transparent 70%),
+    radial-gradient(ellipse 50px 28px at 75% 35%, rgba(255, 255, 255, 0.1) 0%, transparent 70%),
+    radial-gradient(ellipse 40px 22px at 60% 15%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 45px 25px at 15% 65%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 255, 255, 0.05) 2px 3px, transparent 3px 8px),
+    repeating-linear-gradient(0deg, transparent 0 2px, rgba(255, 255, 255, 0.05) 2px 3px, transparent 3px 8px),
+    radial-gradient(at top left, rgba(255, 247, 178, 0.97), rgba(212, 176, 25, 0.88));
+}
+
+.item.rarity-4 {
+  background:
+    linear-gradient(170deg, transparent 70%, rgba(50, 20, 70, 0.36) 70.5%, rgba(80, 35, 110, 0.24) 78%, transparent 83%),
+    linear-gradient(160deg, transparent 75%, rgba(50, 20, 70, 0.28) 76%, transparent 83%),
+    radial-gradient(ellipse 60px 30px at 20% 25%, rgba(255, 255, 255, 0.13) 0%, transparent 70%),
+    radial-gradient(ellipse 50px 28px at 75% 35%, rgba(255, 255, 255, 0.1) 0%, transparent 70%),
+    radial-gradient(ellipse 40px 22px at 60% 15%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 45px 25px at 15% 65%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 255, 255, 0.05) 2px 3px, transparent 3px 8px),
+    repeating-linear-gradient(0deg, transparent 0 2px, rgba(255, 255, 255, 0.05) 2px 3px, transparent 3px 8px),
+    radial-gradient(at top left, rgba(223, 181, 255, 0.96), rgba(125, 63, 190, 0.86));
+}
+
+.item.rarity-5 {
+  background:
+    linear-gradient(170deg, transparent 70%, rgba(90, 65, 5, 0.4) 70.5%, rgba(140, 100, 10, 0.28) 78%, transparent 83%),
+    linear-gradient(160deg, transparent 75%, rgba(90, 65, 5, 0.32) 76%, transparent 83%),
+    radial-gradient(ellipse 60px 30px at 20% 25%, rgba(255, 255, 255, 0.14) 0%, transparent 70%),
+    radial-gradient(ellipse 50px 28px at 75% 35%, rgba(255, 255, 255, 0.1) 0%, transparent 70%),
+    radial-gradient(ellipse 40px 22px at 60% 15%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 45px 25px at 15% 65%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 255, 255, 0.05) 2px 3px, transparent 3px 8px),
+    repeating-linear-gradient(0deg, transparent 0 2px, rgba(255, 255, 255, 0.05) 2px 3px, transparent 3px 8px),
+    radial-gradient(at top left, rgba(255, 246, 184, 0.97), rgba(184, 121, 0, 0.88));
+}
+
+.item.rarity-6 {
+  background:
+    linear-gradient(170deg, transparent 70%, rgba(90, 40, 5, 0.36) 70.5%, rgba(140, 60, 10, 0.24) 78%, transparent 83%),
+    linear-gradient(160deg, transparent 75%, rgba(90, 40, 5, 0.28) 76%, transparent 83%),
+    radial-gradient(ellipse 60px 30px at 20% 25%, rgba(255, 255, 255, 0.13) 0%, transparent 70%),
+    radial-gradient(ellipse 50px 28px at 75% 35%, rgba(255, 255, 255, 0.1) 0%, transparent 70%),
+    radial-gradient(ellipse 40px 22px at 60% 15%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 45px 25px at 15% 65%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 255, 255, 0.04) 2px 3px, transparent 3px 8px),
+    repeating-linear-gradient(0deg, transparent 0 2px, rgba(255, 255, 255, 0.04) 2px 3px, transparent 3px 8px),
+    radial-gradient(at top left, rgba(255, 212, 166, 0.97), rgba(217, 101, 0, 0.88));
+}
+
+.item.rarity-7 {
+  background:
+    linear-gradient(170deg, transparent 70%, rgba(80, 10, 15, 0.4) 70.5%, rgba(130, 15, 25, 0.28) 78%, transparent 83%),
+    linear-gradient(160deg, transparent 75%, rgba(80, 10, 15, 0.32) 76%, transparent 83%),
+    radial-gradient(ellipse 60px 30px at 20% 25%, rgba(255, 255, 255, 0.13) 0%, transparent 70%),
+    radial-gradient(ellipse 50px 28px at 75% 35%, rgba(255, 255, 255, 0.1) 0%, transparent 70%),
+    radial-gradient(ellipse 40px 22px at 60% 15%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 45px 25px at 15% 65%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 255, 255, 0.05) 2px 3px, transparent 3px 8px),
+    repeating-linear-gradient(0deg, transparent 0 2px, rgba(255, 255, 255, 0.05) 2px 3px, transparent 3px 8px),
+    radial-gradient(at top left, rgba(255, 170, 178, 0.96), rgba(184, 25, 42, 0.86));
+}
+
+.item.rarity-8 {
+  background:
+    linear-gradient(170deg, transparent 70%, rgba(15, 25, 70, 0.4) 70.5%, rgba(25, 45, 120, 0.28) 78%, transparent 83%),
+    linear-gradient(160deg, transparent 75%, rgba(15, 25, 70, 0.32) 76%, transparent 83%),
+    radial-gradient(ellipse 60px 30px at 20% 25%, rgba(255, 255, 255, 0.13) 0%, transparent 70%),
+    radial-gradient(ellipse 50px 28px at 75% 35%, rgba(255, 255, 255, 0.1) 0%, transparent 70%),
+    radial-gradient(ellipse 40px 22px at 60% 15%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 45px 25px at 15% 65%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 255, 255, 0.05) 2px 3px, transparent 3px 8px),
+    repeating-linear-gradient(0deg, transparent 0 2px, rgba(255, 255, 255, 0.05) 2px 3px, transparent 3px 8px),
+    radial-gradient(at top left, rgba(140, 160, 234, 0.96), rgba(49, 130, 206, 0.86));
+}
+
+.item.rarity-9,
+.item.rarity-10 {
+  background:
+    linear-gradient(170deg, transparent 70%, rgba(60, 15, 65, 0.4) 70.5%, rgba(100, 30, 110, 0.28) 78%, transparent 83%),
+    linear-gradient(160deg, transparent 75%, rgba(60, 15, 65, 0.32) 76%, transparent 83%),
+    radial-gradient(ellipse 60px 30px at 20% 25%, rgba(255, 255, 255, 0.13) 0%, transparent 70%),
+    radial-gradient(ellipse 50px 28px at 75% 35%, rgba(255, 255, 255, 0.1) 0%, transparent 70%),
+    radial-gradient(ellipse 40px 22px at 60% 15%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 45px 25px at 15% 65%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 255, 255, 0.05) 2px 3px, transparent 3px 8px),
+    repeating-linear-gradient(0deg, transparent 0 2px, rgba(255, 255, 255, 0.05) 2px 3px, transparent 3px 8px),
+    radial-gradient(at top left, rgba(236, 188, 240, 0.96), rgba(180, 93, 192, 0.86));
+}
+
+.item.rarity-10 {
+  background:
+    linear-gradient(170deg, transparent 70%, rgba(90, 65, 10, 0.4) 70.5%, rgba(140, 100, 15, 0.28) 78%, transparent 83%),
+    linear-gradient(160deg, transparent 75%, rgba(90, 65, 10, 0.32) 76%, transparent 83%),
+    radial-gradient(ellipse 60px 30px at 20% 25%, rgba(255, 255, 255, 0.14) 0%, transparent 70%),
+    radial-gradient(ellipse 50px 28px at 75% 35%, rgba(255, 255, 255, 0.1) 0%, transparent 70%),
+    radial-gradient(ellipse 40px 22px at 60% 15%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 45px 25px at 15% 65%, rgba(255, 255, 255, 0.09) 0%, transparent 70%),
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 255, 255, 0.05) 2px 3px, transparent 3px 8px),
+    repeating-linear-gradient(0deg, transparent 0 2px, rgba(255, 255, 255, 0.05) 2px 3px, transparent 3px 8px),
+    radial-gradient(at top left, rgba(255, 244, 178, 0.98), rgba(225, 186, 72, 0.9));
+}

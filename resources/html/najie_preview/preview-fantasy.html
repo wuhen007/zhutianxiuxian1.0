@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="content-type" content="text/html;charset=utf-8" />
+    <title>纳戒玄幻纹理模板预览</title>
+    <link rel="stylesheet" type="text/css" href="../najie/najie.css" />
+    <link rel="stylesheet" type="text/css" href="../najie/rarity.css?v=20260811" />
+    <link rel="preload" href="../../font/tttgbnumber.ttf" as="font" />
+    <link rel="preload" href="../../font/NZBZ.ttf" as="font" />
+    <link rel="shortcut icon" href="#" />
+    <style>
+      body {
+        width: 100%;
+        text-align: center;
+        margin: 0;
+        padding: 0 0 60px;
+        background: #1a1a24;
+        font-family: 'tttgbnumber', 'Microsoft YaHei', sans-serif;
+      }
+
+      .preview-header {
+        padding: 30px 20px 10px;
+        color: #ffcc80;
+        font-size: 34px;
+        font-family: 'NZBZ', 'Microsoft YaHei', sans-serif;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+      }
+
+      .preview-subtitle {
+        color: #c8c8d0;
+        font-size: 18px;
+        margin-bottom: 20px;
+      }
+
+      .template-section {
+        margin: 30px auto;
+        width: 800px;
+        padding: 20px 0 30px;
+        background: radial-gradient(ellipse at top, #2a2a38 0%, #1f1f2a 100%);
+        border-radius: 24px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      }
+
+      .template-title {
+        color: #ffffff;
+        font-size: 26px;
+        font-family: 'NZBZ', 'Microsoft YaHei', sans-serif;
+        margin-bottom: 8px;
+      }
+
+      .template-desc {
+        color: #a0a0b0;
+        font-size: 16px;
+        margin-bottom: 20px;
+      }
+
+      .card_box {
+        margin: 0 auto;
+        width: 740px;
+      }
+
+      .wupin {
+        justify-content: flex-start;
+      }
+
+      .item {
+        min-height: 140px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="preview-header">纳戒玄幻纹理模板预览</div>
+    <div class="preview-subtitle">三套带纹理/修饰的升级方案，均保留 1~10 级稀有度配色</div>
+
+    <!-- 模板四：玄纹织锦 -->
+    <section class="template-section" id="template-4">
+      <link rel="stylesheet" type="text/css" href="template-4-mystic-rune.css" />
+      <div class="template-title">模板四 · 玄纹织锦</div>
+      <div class="template-desc">对角织线 + 四角符文光点 + 中心微晕，像法器卷轴。</div>
+      <div class="card_box">
+        <div class="use_data">
+          <div class="user_font user_font_title">【装备】</div>
+          <div class="user_font wupin" id="template-4-items"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 模板五：山水墨韵 -->
+    <section class="template-section" id="template-5">
+      <link rel="stylesheet" type="text/css" href="template-5-ink-wash.css" />
+      <div class="template-title">模板五 · 山水墨韵</div>
+      <div class="template-desc">淡墨云纹 + 底部山峦剪影 + 纸纹噪感，东方玄幻卷轴感。</div>
+      <div class="card_box">
+        <div class="use_data">
+          <div class="user_font user_font_title">【装备】</div>
+          <div class="user_font wupin" id="template-5-items"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 模板六：星辰光纹 -->
+    <section class="template-section template-starlight" id="template-6">
+      <link rel="stylesheet" type="text/css" href="template-6-starlight.css" />
+      <div class="template-title">模板六 · 星辰光纹</div>
+      <div class="template-desc">星空暗底 + 散落星点 + 中心光晕 + 光束，最炫酷。</div>
+      <div class="card_box">
+        <div class="use_data">
+          <div class="user_font user_font_title">【装备】</div>
+          <div class="user_font wupin" id="template-6-items"></div>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      const rarityNames = ['白框', '绿框', '黄框', '紫框', '金框', '橙框', '红框', '五彩框', '七彩框', '流光框'];
+      const pinjiNames = ['劣', '普', '优', '精', '极', '绝', '顶'];
+
+      function makeItem(rarity) {
+        return `
+          <div class="item rarity-${rarity}">
+            <div class="item_title">【武器】示例装备(${pinjiNames[(rarity - 1) % 7]})(未锁定)</div>
+            <div class="item_int">属性:金</div>
+            <div class="item_int">攻击：${100 + rarity * 50}%</div>
+            <div class="item_int">防御：${20 + rarity * 10}%</div>
+            <div class="item_int">血量：${30 + rarity * 15}%</div>
+            <div class="item_int">暴击：${rarity * 5}%</div>
+            <div class="item_int">数量：${rarity}</div>
+            <div class="item_int">出售价：${rarity * 10000}灵石</div>
+            <div class="item_int">稀有度：${rarity}级·${rarityNames[rarity - 1]}</div>
+          </div>
+        `;
+      }
+
+      for (let t = 4; t <= 6; t++) {
+        document.getElementById(`template-${t}-items`).innerHTML = Array.from(
+          { length: 10 },
+          (_, i) => makeItem(i + 1)
+        ).join('');
+      }
+    </script>
+  </body>
+</html>

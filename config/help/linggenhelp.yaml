@@ -7,6 +7,42 @@
       title: '#使用引灵仙符 [灵根类型]'
       desc: '可以使下一次洗根（允许批量）保留自己想要的灵根'      
 
+- group: 万化天魔·万灵魔幡
+  list:
+    - icon: help-icon_2
+      title: '#万灵魔幡 / #魔幡状态'
+      desc: '查看生魂、天骄主魂数量及下一重万灵幡域'
+
+- group: 万化天魔套·万相无相路
+  list:
+    - icon: help-icon_2
+      title: '#万化天魔路'
+      desc: '查看万相夺道、无相蜕生与万灵幡祭的专属套装进度'
+    - icon: help-icon_2
+      title: '#万相夺道'
+      desc: '炼尽九种魔相，铸成【万化】万相天魔刃'
+    - icon: help-icon_2
+      title: '#无相蜕生 化万相/归无相'
+      desc: '选择攻守魔相闯过七次蜕生，织成【万化】无相魔神袍'
+    - icon: help-icon_2
+      title: '#万灵幡祭'
+      desc: '完成三重认主幡祭，取得可炼9999生魂的【万化】万灵魔幡'
+
+- group: 终焉神魔套·诸世终焉路
+  list:
+    - icon: help-icon_2
+      title: '#终焉神魔路'
+      desc: '查看诸神黄昏、太古魔土与诸世归墟的专属套装进度'
+    - icon: help-icon_2
+      title: '#黄昏神国'
+      desc: '挑战十二旧神与最后神王，铸成【终焉】诸神黄昏'
+    - icon: help-icon_2
+      title: '#太古魔土 吞噬魔血/保持本心'
+      desc: '以连续生命闯过九重魔土，织成【终焉】神魔葬天衣'
+    - icon: help-icon_2
+      title: '#诸世归墟'
+      desc: '击败六个时间线自我，炼成【终焉】万劫归墟轮'
+
 - group: 至尊体[天生至尊→涅槃·至尊→终极涅槃·至尊，可兼修重瞳与仙骨]
   list:
     - icon: help-icon_2
@@ -70,49 +106,22 @@
       title: '#终极圣体秘术'
       desc: '当四大秘境修炼圆满后，可再更进一步修炼仙台秘境！'      
 - group: 太阳之体[至阳体质，拥有太阳真火之力]
-#   list:
-#     - icon: help-icon_2
-#       title: '#激活太阳本源'
-#       desc: '消耗太阳精石激活太阳之体，获得太阳真火'
-#     - icon: help-icon_2
-#       title: '#太阳神体觉醒'
-#       desc: '进阶为太阳神体，掌握更强大的太阳真火'
-#     - icon: help-icon_2
-#       title: '#太阳圣皇体成就'
-#       desc: '最终成就太阳圣皇体，可比肩古之圣皇'
-#     - icon: help-icon_2
-#       title: '#太阳真经'
-#       desc: '修炼太阳圣皇传承的无上经文'
+  list:
+    - icon: help-icon_2
+      title: '#太阳体觉醒'
+      desc: '四极境以太阳真经和扶桑神枝觉醒神体；准帝境参悟仙台卷与大日涅槃诀后修至大成'
 
-- group: 太阴之体[至阴体质，拥有太阴真水之力]
-#   list:
-#     - icon: help-icon_2
-#       title: '#激活太阴本源'
-#       desc: '消耗太阴玄石激活太阴之体，获得太阴真水'
-#     - icon: help-icon_2
-#       title: '#太阴神体觉醒'
-#       desc: '进阶为太阴神体，掌握更强大的太阴真水'
-#     - icon: help-icon_2
-#       title: '#太阴圣皇体成就'
-#       desc: '最终成就太阴圣皇体，可比肩古之圣皇'
-#     - icon: help-icon_2
-#       title: '#太阴真经'
-#       desc: '修炼太阴圣皇传承的无上经文'
+- group: 太阴之体[至阴体质，拥有太阴圣力]
+  list:
+    - icon: help-icon_2
+      title: '#太阴体觉醒'
+      desc: '四极境以太阴真经和地命果化解本源反噬；准帝境参悟仙台卷后修至大成'
 
 - group: 神王体[拥有神王血脉，战力惊人]
-#   list:
-#     - icon: help-icon_2
-#       title: '#激活神王血脉'
-#       desc: '消耗神王血晶激活神王体，获得神王传承'
-#     - icon: help-icon_2
-#       title: '#小成神王体'
-#       desc: '神王血脉初步觉醒，战力大幅提升'
-#     - icon: help-icon_2
-#       title: '#大成神王体'
-#       desc: '神王血脉完全觉醒，可获得神王完整传承'
-#     - icon: help-icon_2
-#       title: '#神王秘术'
-#       desc: '修炼神王一脉的专属秘术'
+  list:
+    - icon: help-icon_2
+      title: '#神王体觉醒'
+      desc: '四极境展开神王净土；准帝境掌握斗字秘并完成姜家祖地传承后修至大成'
 
 - group: 天妖体[妖族至尊体质，拥有妖皇血脉]
   list:
@@ -199,6 +208,27 @@
     - icon: help-icon_2
       title: "#消耗光阴火/光阴石/光阴水"
       desc: "在成为极道天魔后额外增加自身的攻防生上限" 
+
+- group: 邪道镇魂[神魂烙印、人傀与外来道果]
+  list:
+    - icon: help-icon_2
+      title: "#镇魂 @目标 / #处置 烙印|灭魂|夺果"
+      desc: "战胜目标后在10分钟内选择一种邪道处置"
+    - icon: help-icon_2
+      title: "#我的邪道 / #召唤魂奴 / #冲击魂印"
+      desc: "查询邪道状态、役使魂奴或尝试破除魂印"
+    - icon: help-icon_2
+      title: "#斩断魂印 @目标"
+      desc: "援助其他修士破除魂印"
+    - icon: help-icon_2
+      title: "#炼制人傀 / #我的人傀 / #驱使人傀"
+      desc: "将灭魂遗蜕炼成人傀并加入下一场战斗"
+    - icon: help-icon_2
+      title: "#修复人傀 / #毁去人傀 确认"
+      desc: "恢复耐久或销毁当前人傀"
+    - icon: help-icon_2
+      title: "#炼化道果 / #熔去外来道果 / #闭关化杂"
+      desc: "管理唯一外来道果槽与道果杂质"
 
 - group: 终焉神魔体[命运神道体和极道天魔双修有概率使双方成就该体质]
   list:
