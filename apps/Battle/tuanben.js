@@ -7,6 +7,7 @@ import {
  setEmperorAwareness,
 } from '../tasks/EraChangeTask.js';
 import { hasSupremeInnate } from '../../model/supremePath.js';
+import { getGodDemonStealRule } from '../../model/realmAuthority.js';
 export class tuanben extends plugin {
   constructor() {
     super({
@@ -2443,25 +2444,34 @@ if (bossCopy.名号 === '帝尊') {
           `右眼翻涌魔性黑炎！`,
           `终焉神魔体完全觉醒！`
         ];
-        
-        // 三维夺取效果
-        if (Math.random() > 0.1) {
-          // 计算夺取比例（25%-35%）
-          const 夺取比例 = 0.25 + (Math.random() * 0.1);
+
+        const stealRule = getGodDemonStealRule(player, bossCopy);
+        const stealBlockedByChance = stealRule.chance < 1 && Math.random() >= stealRule.chance;
+        if (!stealRule.allowed) {
+          godDemonMsg.push(`【等级森严】${stealRule.reason}，${bossCopy.名号}的全属性不可被夺取！`);
+        } else if (stealBlockedByChance) {
+          godDemonMsg.push(`【帝境压制】${stealRule.reason}，本次夺取未能撼动${bossCopy.名号}的本源！`);
+        } else if (Math.random() > 0.1) {
+          // 三维夺取效果
+          // 计算夺取比例（25%-35%），帝境目标按规则折损。
+          const 夺取比例 = (0.25 + (Math.random() * 0.1)) * stealRule.ratioMultiplier;
           
           // 计算夺取数值
           const 夺取攻击 = Math.floor(bossCopy.攻击 * 夺取比例);
           const 夺取防御 = Math.floor(bossCopy.防御 * 夺取比例);
-          const 夺取血量 = Math.floor(bossCopy.当前血量 * 夺取比例);
+          const 夺取血量上限 = Math.floor((bossCopy.血量上限 || bossCopy.当前血量) * 夺取比例);
+          const 夺取当前血量 = Math.floor(bossCopy.当前血量 * 夺取比例);
           
           // 执行夺取
           bossCopy.攻击 = Math.max(bossCopy.攻击 - 夺取攻击, 0);
           bossCopy.防御 = Math.max(bossCopy.防御 - 夺取防御, 0);
-          bossCopy.当前血量 = Math.max(bossCopy.当前血量 - 夺取血量, 0);
+          if (bossCopy.血量上限) bossCopy.血量上限 = Math.max(1, bossCopy.血量上限 - 夺取血量上限);
+          bossCopy.当前血量 = Math.min(bossCopy.血量上限 || Infinity, Math.max(bossCopy.当前血量 - 夺取当前血量, 0));
           
           player.攻击 += 夺取攻击;
           player.防御 += 夺取防御;
-          player.当前血量 += 夺取血量;
+          if (player.血量上限) player.血量上限 += 夺取血量上限;
+          player.当前血量 = Math.min(player.血量上限 || Infinity, player.当前血量 + 夺取当前血量);
           
           godDemonMsg.push(
             `${player.名号}掌心浮现神魔轮盘，`,
@@ -2469,12 +2479,13 @@ if (bossCopy.名号 === '帝尊') {
             `诸天法则被改写，${bossCopy.名号}本源被强行剥夺！`,
             `攻击：${bossCopy.名号}-${bigNumberTransform(夺取攻击)} → ${player.名号}+${bigNumberTransform(夺取攻击)}`,
             `防御：${bossCopy.名号}-${bigNumberTransform(夺取防御)} → ${player.名号}+${bigNumberTransform(夺取防御)}`,
-            `生命：${bossCopy.名号}-${bigNumberTransform(夺取血量)} → ${player.名号}+${bigNumberTransform(夺取血量)}`
+            `生命上限：${bossCopy.名号}-${bigNumberTransform(夺取血量上限)} → ${player.名号}+${bigNumberTransform(夺取血量上限)}`,
+            `当前生命：${bossCopy.名号}-${bigNumberTransform(夺取当前血量)} → ${player.名号}+${bigNumberTransform(夺取当前血量)}`
           );
           
           // 终焉之力效果
           if (Math.random() > 0.1) {
-            const 终焉伤害 = Math.floor(夺取攻击 + 夺取防御 + 夺取血量);
+            const 终焉伤害 = Math.floor(夺取攻击 + 夺取防御 + 夺取当前血量);
             bossCopy.当前血量 = Math.max(bossCopy.当前血量 - 终焉伤害, 0);
             godDemonMsg.push(
               `${player.名号}将夺取的本源转化为终焉之力，`,

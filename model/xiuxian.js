@@ -6,6 +6,7 @@ import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 
 import data from './XiuxianData.js';
 import { buildLinggenAtlasData, parseLinggenAtlasCommand } from './linggenAtlas.js';
+import { enrichNajieDisplayRarity } from './najieRarity.js';
 // 道种专属技能全局池别名：战斗函数内 `data` 常被玩家参数遮蔽，故用 SKILL_DB 稳定引用 XiuxianData 单例
 const SKILL_DB = data;
 
@@ -60,8 +61,11 @@ import {
   getGongfaNumericMultiplier,
   getGongfaProficiencyProfile,
   getGongfaTriggerChance,
+  getJieziDurationRounds,
   getJieziExhaustionRounds,
+  getLinzDurationRounds,
   getReviveRecoveryRatio,
+  getYiqihuaConfig,
   hasLearnedGongfa,
   recordGongfaCombatTrigger,
   rollLinzRealmLevel,
@@ -97,6 +101,7 @@ import {
 } from './weimianTravel.js';
 import { calculateEquippedStats, getEquipmentAllAttributeMultiplier } from './equipmentStats.js';
 import { hasSupremeInnate } from './supremePath.js';
+import { getGodDemonStealRule } from './realmAuthority.js';
 import { getTianjiaoRealmName } from './tianjiaoGrowth.js';
 import {
   consumeDeletedFateAction,
@@ -105,6 +110,27 @@ import {
 } from './suLing.js';
 import { updateDailyTaskLingshiProgress } from './dailyTask.js';
 import { calculateExtraAttributeLimit } from './attributeCaps.js';
+import {
+  SUMMON_TTL_SECONDS,
+  applyForbiddenBattleModifiers,
+  buildForbiddenCompanion,
+  ensureForbiddenState,
+  forbiddenSummonClaimKey,
+  forbiddenSummonKey,
+  getChinaDateKey,
+  getForbiddenCultivationMultiplier,
+} from './forbiddenSoul.js';
+import {
+  applyWanhuaBannerOpening,
+  ensureWanhuaBannerState,
+  isWanhuaBannerUser,
+  recordWanhuaKill,
+  rollWanhuaBannerActiveAttack,
+} from './wanhuaBanner.js';
+import {
+  applyExclusiveSetOpening,
+  rewriteBeyondDefeat,
+} from './exclusiveEquipmentSets.js';
 
 /**
  * 获取机器人类型
@@ -300,6 +326,8 @@ export async function Read_player(usr_qq) {
   player = JSON.parse(player);
   ensureGongfaProficiency(player);
   ensureGongfaDailyGain(player);
+  ensureForbiddenState(player);
+  ensureWanhuaBannerState(player);
   if (player.先天至宝失效时间 && Number(player.先天至宝失效时间) <= Date.now()) {
     player.当前先天至宝 = '';
     player.先天至宝失效时间 = 0;
@@ -1281,6 +1309,18 @@ export async function Write_equipment(usr_qq, equipment) {
   // 邪神套
   if (equipment.武器.name == "【邪神】斩仙灭神剑" && equipment.法宝.name == "【邪神】魔渊的凝视" && equipment.护具.name == "【邪神】冥王真祖甲" && player.魔道值 > 9999 && player.灵根.type == "天魔") {
     套装增益.攻 += 3; 套装增益.血 += 1; 套装增益.防 += 1.5;
+  }
+  // 终焉神魔套
+  if (equipment.武器.name == "【终焉】诸神黄昏" && equipment.法宝.name == "【终焉】万劫归墟轮" && equipment.护具.name == "【终焉】神魔葬天衣" && player.灵根.name == "终焉神魔体") {
+    套装增益.攻 += 4; 套装增益.血 += 4; 套装增益.防 += 3;
+  }
+  // 万化天魔套；万灵魔幡的成长效果在战斗开场独立结算
+  if (equipment.武器.name == "【万化】万相天魔刃" && equipment.法宝.name == "【万化】万灵魔幡" && equipment.护具.name == "【万化】无相魔神袍" && player.灵根.name == "无相·万化天魔体") {
+    套装增益.攻 += 3.5; 套装增益.血 += 3.5; 套装增益.防 += 2.5;
+  }
+  // 彼岸命运神道套
+  if (equipment.武器.name == "【彼岸】万古皆空·命运枪" && equipment.法宝.name == "【彼岸】诸天命运轮" && equipment.护具.name == "【彼岸】万劫不坠天衣" && player.灵根.name == "彼岸·命运神道体") {
+    套装增益.攻 += 5; 套装增益.血 += 5; 套装增益.防 += 4;
   }
   // 光阴套（命运）
   if (equipment.武器.name == "【光阴】天道之剑" && equipment.法宝.name == "【光阴】命运之心" && equipment.护具.name == "【光阴】主宰之甲" && player.灵根.type == "命运") {
@@ -3706,6 +3746,7 @@ export async function get_najie_category_img(e, category) {
   // 获取玩家和纳戒数据
   let player = await data.getData('player', usr_qq);
   let najie = await Read_najie(usr_qq);
+  najie = await enrichNajieDisplayRarity(najie, foundthing);
 
   const lingshi = Math.trunc(najie.灵石);
   const lingshi2 = Math.trunc(najie.灵石上限);
@@ -3767,6 +3808,7 @@ export async function get_najie_img(e) {
   }
   let player = await data.getData('player', usr_qq);
   let najie = await Read_najie(usr_qq);
+  najie = await enrichNajieDisplayRarity(najie, foundthing);
   const lingshi = Math.trunc(najie.灵石);
   const lingshi2 = Math.trunc(najie.灵石上限);
   let strand_hp = Strand(player.当前血量, player.血量上限);
@@ -3814,6 +3856,7 @@ export async function get_najie_chouchou_img(e) {
   }
   let player = await data.getData('player', usr_qq);
   let najie = await Read_najie(usr_qq);
+  najie = await enrichNajieDisplayRarity(najie, foundthing);
   const lingshi = Math.trunc(najie.灵石);
   const lingshi2 = Math.trunc(najie.灵石上限);
   let strand_hp = Strand(player.当前血量, player.血量上限);
@@ -5189,12 +5232,14 @@ export async function player_efficiency(usr_qq) {
     player.修炼效率提升 = 0;
   }
 
-  player.修炼效率提升 =
+  const baseCultivationMultiplier = 1 +
     linggen_efficiency +
     Assoc_efficiency +
     gongfa_efficiency +
     xianchong_efficiency +
-    bgdan; //修炼效率综合
+    bgdan;
+  player.修炼效率提升 =
+    baseCultivationMultiplier * getForbiddenCultivationMultiplier(player) - 1;
   data.setData('player', usr_qq, player);
   return;
   });
@@ -5893,6 +5938,8 @@ export function getMonsterByLocation(weizhi, xf = -1) {
     monster_list = data.monster_list11;
   } else if (
     weizhi.name == '荒古禁地' ||
+    weizhi.name == '姬家祖地' ||
+    weizhi.name == '姜家祖地' ||
     weizhi.name == '青铜仙殿' ||
     weizhi.name == '万龙巢'||
     weizhi.name == '圣崖'
@@ -5906,6 +5953,8 @@ export function getMonsterByLocation(weizhi, xf = -1) {
     monster_list = data.monster_list15;
   } else if (weizhi.name == '神域星宫') {
     monster_list = data.monster_list16;
+  } else if (weizhi.name == '王家古地·平乱剑界') {
+    monster_list = data.monster_list_wangjia;
   } else if (
     weizhi.name == '蓬莱岛' ||
     weizhi.name == '昆仑山' ||
@@ -7083,10 +7132,10 @@ function calcMijueTriggerProb(attacker, name) {
   return getGongfaTriggerChance(attacker, { name, class: '功法', pr: base }, base);
 }
 
-// 皆字秘：十倍战力（爆发持续 2 回合，力竭 2 回合）。返回 true 表示触发了
+// 皆字秘：十倍战力，持续时间随熟练度提升。返回 true 表示触发了
 // 削弱：不再增幅生命；倍率到期除法还原；力竭期攻防 ×0.7（呼应原著"虚弱期致命"）
 function tryJieziMijue(attacker, msgs) {
-  if (!attacker.学习的功法?.includes("皆字秘") || attacker.皆字秘触发) return false;
+  if (!attacker.学习的功法?.includes("皆字秘") || attacker.皆字秘触发 || attacker._皆字秘力竭 > 0) return false;
   if (Math.random() >= calcMijueTriggerProb(attacker, '皆字秘')) return false;
 
   const originalAttack = attacker.攻击;
@@ -7095,7 +7144,9 @@ function tryJieziMijue(attacker, msgs) {
   attacker.攻击 = Math.trunc(attacker.攻击 * 10);
   attacker.防御 = Math.trunc(attacker.防御 * 10);
   attacker.皆字秘触发 = true;
-  attacker.皆字秘剩余 = 2;        // 爆发持续 2 个行动回合（触发回合计入）
+  const duration = getJieziDurationRounds(attacker);
+  const exhaustionRounds = getJieziExhaustionRounds(attacker);
+  attacker.皆字秘剩余 = duration;
   attacker._皆字秘倍率 = 10;
   recordGongfaCombatTrigger(attacker, '皆字秘');
 
@@ -7105,12 +7156,14 @@ function tryJieziMijue(attacker, msgs) {
   msgs.push(`攻击：${bigNumberTransform(originalAttack)} → ${bigNumberTransform(attacker.攻击)}`);
   msgs.push(`防御：${bigNumberTransform(originalDefense)} → ${bigNumberTransform(attacker.防御)}`);
   msgs.push(`生命：${bigNumberTransform(attacker.当前血量)}（皆字秘不增幅生命）`);
-  msgs.push(`爆发仅持续 2 回合，力竭后陷入短暂虚弱！`);
+  msgs.push(exhaustionRounds > 0
+    ? `爆发持续${duration}回合，随后力竭${exhaustionRounds}回合（攻击、防御降低30%）！`
+    : `爆发持续${duration}回合，收发由心，结束后不会力竭！`);
   return true;
 }
 
 // 临字秘：禁忌领域。linziState 是按引用对象，isA 表示攻方是 A 队
-// 削弱：领域持续有限回合（神禁 5 / 其他 3），到期属性除法还原；不再增幅生命；守方已有领域/压制时跳过压制（防属性交叉）
+// 削弱：一至六禁 1 回合、七至八禁 2 回合、神禁 3 回合；到期属性除法还原
 function tryLinzMijue(attacker, defender, msgs, linziState, isA) {
   if (!attacker.学习的功法?.includes("临字秘")) return false;
   const 已触发 = isA ? linziState.A_触发 : linziState.B_触发;
@@ -7137,7 +7190,7 @@ function tryLinzMijue(attacker, defender, msgs, linziState, isA) {
     5: "五禁领域", 6: "六禁领域", 7: "七禁领域", 8: "八禁领域", 9: "神禁领域"
   };
 
-  const duration = realmLevel >= 9 ? 5 : 3; // 神禁领域可稍持久
+  const duration = getLinzDurationRounds(realmLevel);
   const suppressionRate = realmLevel * 0.05;
 
   // 攻方加成（纯乘法，到期 ÷realmLevel 还原）
@@ -7381,7 +7434,7 @@ if (context !== "fenshen") {
                 
                 // 计算属性提升（纯乘法，到期 ÷倍率 还原）
                 const gongfa = realmLevel * 4;
-                const duration = realmLevel >= 9 ? 5 : 3; // 神禁领域可稍持久
+                const duration = getLinzDurationRounds(realmLevel);
                 
                 // 保存原始属性（仅用于文案展示）
                 const originalAttack = attacker.攻击;
@@ -7507,35 +7560,50 @@ const 技能效果处理 = {
     let processedMsg2 = skill.msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
     godDemonMsg.push(processedMsg1);
     godDemonMsg.push(processedMsg2);
+
+    const stealRule = getGodDemonStealRule(attacker, defender);
+    if (!stealRule.allowed) {
+      godDemonMsg.push(`【等级森严】${stealRule.reason}，${defender.名号}的全属性不可被夺取！`);
+      msg.push(...godDemonMsg);
+      return;
+    }
+    if (stealRule.chance < 1 && Math.random() >= stealRule.chance) {
+      godDemonMsg.push(`【帝境压制】${stealRule.reason}，本次夺取未能撼动${defender.名号}的本源！`);
+      msg.push(...godDemonMsg);
+      return;
+    }
     
-    // 三维夺取效果
+    // 全属性夺取效果。大帝及以上目标的夺取比例按规则打七成五折。
     if (Math.random() > 0.1) {
-      // 计算夺取比例
-      let 夺取比例 = skill.全属性夺取 || 0.25;
+      let 夺取比例 = (skill.全属性夺取 || 0.25) * stealRule.ratioMultiplier;
       
       // 计算夺取数值
       let 夺取攻击 = Math.floor(defender.攻击 * 夺取比例);
       let 夺取防御 = Math.floor(defender.防御 * 夺取比例);
-      let 夺取血量 = Math.floor(defender.当前血量 * 夺取比例);
+      let 夺取血量上限 = Math.floor((defender.血量上限 || defender.当前血量) * 夺取比例);
+      let 夺取当前血量 = Math.floor(defender.当前血量 * 夺取比例);
       
       // 执行夺取
       defender.攻击 = Math.max(defender.攻击 - 夺取攻击, 0);
       defender.防御 = Math.max(defender.防御 - 夺取防御, 0);
-      defender.当前血量 = Math.max(defender.当前血量 - 夺取血量, 0);
+      if (defender.血量上限) defender.血量上限 = Math.max(defender.血量上限 - 夺取血量上限, 1);
+      defender.当前血量 = Math.min(defender.血量上限 || Infinity, Math.max(defender.当前血量 - 夺取当前血量, 0));
       
       attacker.攻击 += 夺取攻击;
       attacker.防御 += 夺取防御;
-      attacker.当前血量 += 夺取血量;
+      if (attacker.血量上限) attacker.血量上限 += 夺取血量上限;
+      attacker.当前血量 = Math.min(attacker.血量上限 || Infinity, attacker.当前血量 + 夺取当前血量);
       
       godDemonMsg.push(`${attacker.名号}发动「神魔终焉劫」，掌心浮现神魔轮盘`);
-      godDemonMsg.push(`诸天法则被改写，${defender.名号}的三维属性被强行剥夺`);
+      godDemonMsg.push(`诸天法则被改写，${defender.名号}的全属性被强行剥夺（夺取比例${Math.round(夺取比例 * 100)}%）`);
       godDemonMsg.push(`攻击：${defender.名号}-${bigNumberTransform(夺取攻击)} → ${attacker.名号}+${bigNumberTransform(夺取攻击)}`);
       godDemonMsg.push(`防御：${defender.名号}-${bigNumberTransform(夺取防御)} → ${attacker.名号}+${bigNumberTransform(夺取防御)}`);
-      godDemonMsg.push(`生命：${defender.名号}-${bigNumberTransform(夺取血量)} → ${attacker.名号}+${bigNumberTransform(夺取血量)}`);
+      godDemonMsg.push(`生命上限：${defender.名号}-${bigNumberTransform(夺取血量上限)} → ${attacker.名号}+${bigNumberTransform(夺取血量上限)}`);
+      godDemonMsg.push(`当前生命：${defender.名号}-${bigNumberTransform(夺取当前血量)} → ${attacker.名号}+${bigNumberTransform(夺取当前血量)}`);
       
       // 终焉之力效果
       if (Math.random() > 0.1) {
-        let 终焉伤害 = Math.floor(夺取攻击 + 夺取防御 + 夺取血量);
+        let 终焉伤害 = Math.floor(夺取攻击 + 夺取防御 + 夺取当前血量);
         defender.当前血量 = Math.max(defender.当前血量 - 终焉伤害, 0);
         godDemonMsg.push(`${attacker.名号}将夺取的三维属性转化为终焉之力，对${defender.名号}造成额外${bigNumberTransform(终焉伤害)}点伤害`);
       }
@@ -7875,6 +7943,8 @@ export async function zd_battle(A_input, B_input, options = {}) {
   // 深拷贝
   const A_copy = A_team.map(p => JSON.parse(JSON.stringify(p)));
   const B_copy = B_team.map(p => JSON.parse(JSON.stringify(p)));
+  A_copy.forEach(p => applyForbiddenBattleModifiers(p));
+  B_copy.forEach(p => applyForbiddenBattleModifiers(p));
   A_copy.forEach(p => { if (p?._困龙封印) { p.dongjie = true; delete p._困龙封印; } });
   B_copy.forEach(p => { if (p?._困龙封印) { p.dongjie = true; delete p._困龙封印; } });
 
@@ -7926,6 +7996,34 @@ async function settleBattleGongfaProficiency(pairs) {
     else await apply();
   }
   return allGains;
+}
+
+async function settleWanhuaBannerHarvest(ownerSource, defeatedSource) {
+  if (!ownerSource || !defeatedSource || defeatedSource._万灵魔幡主魂 || defeatedSource._万灵魔幡不可炼化) return null;
+  const ownerId = ownerSource.id == null ? '' : String(ownerSource.id).replace('qg_', '');
+  const playerFile = ownerId && path.join(__PATH.player_path, `${ownerId}.json`);
+  if (!playerFile || !fs.existsSync(playerFile)) return null;
+
+  let harvest = null;
+  await withPlayerMutationLock(ownerId, async () => {
+    const [stored, equipment] = await Promise.all([
+      Read_player(ownerId),
+      Read_equipment(ownerId),
+    ]);
+    if (!isWanhuaBannerUser(stored, equipment)) return;
+    harvest = recordWanhuaKill(stored, defeatedSource);
+    await Write_player(ownerId, stored, { trackDailyTask: false });
+    ownerSource.万灵魔幡 = JSON.parse(JSON.stringify(stored.万灵魔幡));
+  });
+
+  if (!harvest) return null;
+  const soulText = harvest.addedSoul > 0
+    ? `万灵魔魂+1（${harvest.state.生魂}/9999）`
+    : '万灵魔魂已达9999上限';
+  const mainSoulText = harvest.addedMainSoul
+    ? `，并将天骄「${harvest.addedMainSoul.sourceName}」炼为主魂（${harvest.state.主魂.length}/10）`
+    : '';
+  return `【万灵炼魂】${ownerSource.名号}以魔幡吞没败者生魂，${soulText}${mainSoulText}。`;
 }
 
 async function zd_battle_1v1(AA_player, BB_player, options = {}) {
@@ -7993,6 +8091,56 @@ let B_speed = (B_player.速度 ?? 100)
   let cnt2;
   let t;
   let msg = [];
+  msg.push(
+    ...applyForbiddenBattleModifiers(A_player),
+    ...applyForbiddenBattleModifiers(B_player)
+  );
+
+  const forbiddenPlayerId = A_player?.id == null
+    ? ''
+    : String(A_player.id).replace('qg_', '');
+  if (forbiddenPlayerId) {
+    const summonKey = forbiddenSummonKey(forbiddenPlayerId);
+    const rawSummon = await redis.get(summonKey);
+    if (rawSummon) {
+      try {
+        const summon = JSON.parse(rawSummon);
+        const claimed = await redis.set(
+          forbiddenSummonClaimKey(summon.id),
+          '1',
+          { EX: SUMMON_TTL_SECONDS, NX: true }
+        );
+        if (claimed === 'OK') {
+          let companion = null;
+          await withPlayerMutationLock(forbiddenPlayerId, async () => {
+            const stored = await Read_player(forbiddenPlayerId);
+            ensureForbiddenState(stored);
+            const type = summon.type === '人傀' ? '人傀' : '魂奴';
+            const dateField = type === '人傀' ? '人傀出战日期' : '魂奴召唤日期';
+            const dateKey = getChinaDateKey();
+            const source = type === '人傀' ? stored.邪道.人傀 : stored.邪道.魂奴;
+            if (!source || stored.邪道[dateField] === dateKey) return;
+            if (type === '人傀' && (Number(source.durability) || 0) < 20) return;
+
+            stored.邪道[dateField] = dateKey;
+            if (type === '人傀') stored.邪道.人傀.durability -= 20;
+            await Write_player(forbiddenPlayerId, stored);
+            A_player.邪道 = JSON.parse(JSON.stringify(stored.邪道));
+            companion = buildForbiddenCompanion(A_player, type);
+          });
+          if (companion) {
+            A_player.分身 = Array.isArray(A_player.分身) ? A_player.分身 : [];
+            A_player.分身.push(companion);
+            msg.push(`【邪道役使】${companion.名号}加入战斗。`);
+          }
+          await redis.del(summonKey);
+        }
+      } catch (error) {
+        console.error(`[邪道役使] 读取召唤失败 player=${forbiddenPlayerId}`, error?.message);
+        await redis.del(summonKey);
+      }
+    }
+  }
   let jineng1 = data.jineng1;
   let jineng2 = data.jineng2;
   let jineng3 = data.jineng3;
@@ -8013,6 +8161,8 @@ let B_speed = (B_player.速度 ?? 100)
   let B_tahua_entities = [];
   let A_tahua_triggered = false;
   let B_tahua_triggered = false;
+  let A_yiqihua_triggered = false;
+  let B_yiqihua_triggered = false;
   let emperorFieldTriggered = { value: false };
   let emperorWeaponTriggered = false;
   let 轮回诸天拳触发 = false;
@@ -8033,6 +8183,21 @@ let B_speed = (B_player.速度 ?? 100)
     }
   }
 
+  const A_equipment = await getEquipment(A_player);
+  const B_equipment = await getEquipment(B_player);
+  const A_setOpening = applyExclusiveSetOpening(A_player, A_equipment);
+  const B_setOpening = applyExclusiveSetOpening(B_player, B_equipment);
+  msg.push(...A_setOpening.messages, ...B_setOpening.messages);
+  const A_wanhuaOpening = applyWanhuaBannerOpening(A_player, B_player, A_equipment);
+  const B_wanhuaOpening = applyWanhuaBannerOpening(B_player, A_player, B_equipment);
+  msg.push(...A_wanhuaOpening.messages, ...B_wanhuaOpening.messages);
+  A_speed = (A_player.速度 ?? 100)
+    + (A_player.mijinglevel_id ?? 0) * 50
+    + (A_player.xiangulevel_id ?? 0) * 50;
+  B_speed = (B_player.速度 ?? 100)
+    + (B_player.mijinglevel_id ?? 0) * 50
+    + (B_player.xiangulevel_id ?? 0) * 50;
+
   async function consumeAuthorityFlag(player, flag) {
     if (!player?.先天权柄?.[flag]) return false;
     delete player.先天权柄[flag];
@@ -8049,12 +8214,13 @@ let B_speed = (B_player.速度 ?? 100)
     return true;
   }
 
+  let wanhuaHarvestSettled = false;
   async function build1v1BattleResult(extra = {}) {
     const proficiencyGains = await settleBattleGongfaProficiency([
       { source: AA_player, combatant: A_player },
       { source: BB_player, combatant: B_player },
     ]);
-    return create1v1BattleResult({
+    const result = create1v1BattleResult({
       msg,
       A_player,
       B_player,
@@ -8063,6 +8229,16 @@ let B_speed = (B_player.速度 ?? 100)
       B_speed,
       extra: { ...extra, proficiencyGains }
     });
+    if (!wanhuaHarvestSettled) {
+      wanhuaHarvestSettled = true;
+      const harvestMessage = result.winner === 'A' && result.B_hp <= 0
+        ? await settleWanhuaBannerHarvest(AA_player, BB_player)
+        : result.winner === 'B' && result.A_hp <= 0
+          ? await settleWanhuaBannerHarvest(BB_player, AA_player)
+          : null;
+      if (harvestMessage) msg.push(harvestMessage);
+    }
+    return result;
   }
 
   // ==================== 他化自在法·行者化身库 ====================
@@ -8268,6 +8444,31 @@ let B_speed = (B_player.速度 ?? 100)
     }
 
     applyXianguTurnRecovery(attacker, msg);
+
+    if (context === 'main') {
+      const bannerAttack = rollWanhuaBannerActiveAttack(attacker, defender);
+      if (bannerAttack) {
+        const bannerDamage = calcDamage(attacker, defender, bannerAttack.rawDamage, '元神');
+        const applied = applyDamage(defender, bannerDamage.actual_damage, 'main', attacker);
+        pushBackActionBar(
+          attacker === A_player ? 'B' : 'A',
+          bannerAttack.actionBarReduction
+        );
+        msg.push(bannerAttack.message, ...bannerDamage.msgs);
+        msg.push(
+          `${defender.名号}元神受创，损失${bigNumberTransform(applied.actual_damage)}点生命，行动值-${bannerAttack.actionBarReduction}！`
+        );
+        if (defender.当前血量 <= 0 && !applied.revived) {
+          return {
+            伤害: 0,
+            isCritical: false,
+            baoji: 1,
+            battleEnded: true,
+            winner: attacker === A_player ? 'A' : 'B',
+          };
+        }
+      }
+    }
 
     // —— 道种·治疗技：回合起手持续回血（生生不息/乙木逢春）——
     if (attacker.xiangu_shenhuo && attacker.xiangu_shenhuo.专属技能) {
@@ -8984,6 +9185,12 @@ let B_speed = (B_player.速度 ?? 100)
 
   // ==================== 复活检查函数 ====================
   function checkRevival(player, context = "main") {
+    if (context !== 'fenshen') {
+      const rewritten = rewriteBeyondDefeat(player);
+      if (rewritten.revived) {
+        return { revived: true, message: rewritten.messages.join('\n') };
+      }
+    }
     const 可复活 = 
       context !== "fenshen" &&
       player.当前血量 <= 0 &&
@@ -9520,25 +9727,52 @@ msg.push(bSpeedMsg);
             }
           }
         }
-        // 一气化三清（保持独立机制，加入同一实体数组）
-        else if (attacker.学习的功法?.includes("一气化三清") && Math.random() < 0.9) {
-          const entity = JSON.parse(JSON.stringify(attacker));
-          entity.名号 = `${attacker.名号}·道身`;
-          entity.攻击 = Math.trunc(entity.攻击 * 0.6);
-          entity.防御 = Math.trunc(entity.防御 * 0.6);
-          entity._tahua_type = "yiqihua";
-          entity._tahua_duration = 4;
-          entity._tahua_master = attacker === A_player ? "A" : "B";
-          entity.avatarSkill = null;
-          entity.当前血量 = entity.血量上限;
-          
-          if (attacker === A_player) {
-            A_tahua_entities.push(entity);
-          } else {
-            B_tahua_entities.push(entity);
+        // 一气化三清：每方一局仅能触发一次，按熟练度生成道身。
+        if (attacker.学习的功法?.includes("一气化三清")) {
+          const isA = attacker === A_player;
+          const isTriggered = isA ? A_yiqihua_triggered : B_yiqihua_triggered;
+          const config = getYiqihuaConfig(attacker);
+          if (!isTriggered && Math.random() < 0.9) {
+            if (isA) A_yiqihua_triggered = true;
+            else B_yiqihua_triggered = true;
+
+            const tahuaEntities = isA ? A_tahua_entities : B_tahua_entities;
+            const integerFields = ['攻击', '防御', '血量上限', '当前血量', '速度', '元神', '元神上限', '神识'];
+            const ratioFields = [
+              '暴击率', '法球倍率', '吸血率', '闪避率', '穿透',
+              '元神伤害加成', '元神伤害减免', '神通伤害加成', '神通伤害减免',
+              '近战伤害加成', '近战伤害减免', '全伤害类型加成', '全类型减免',
+              '治疗效果加成', '每回合恢复', '血上限加成', '减伤',
+            ];
+            for (let index = 0; index < config.count; index++) {
+              const entity = JSON.parse(JSON.stringify(attacker));
+              entity.名号 = `${attacker.名号}·道身${config.count > 1 ? `(${index + 1})` : ''}`;
+              for (const field of integerFields) {
+                if (Number.isFinite(Number(entity[field]))) entity[field] = Math.trunc(entity[field] * config.ratio);
+              }
+              for (const field of ratioFields) {
+                if (Number.isFinite(Number(entity[field]))) entity[field] *= config.ratio;
+              }
+              if (Number.isFinite(Number(entity.暴击伤害))) {
+                entity.暴击伤害 = 1 + Math.max(0, entity.暴击伤害 - 1) * config.ratio;
+              }
+              entity.血量上限 = Math.max(1, entity.血量上限 || 1);
+              entity.当前血量 = entity.血量上限;
+              entity._tahua_type = "yiqihua";
+              entity._tahua_duration = config.duration;
+              entity._tahua_master = isA ? "A" : "B";
+              entity.avatarSkill = null;
+              entity.皆字秘触发 = false;
+              delete entity._皆字秘倍率;
+              delete entity._皆字秘力竭;
+              delete entity._临字秘加成倍率;
+              delete entity._临字秘压制比例;
+              tahuaEntities.push(entity);
+            }
+
+            const durationText = config.duration < 0 ? '永驻战场，除非被击杀' : `可存续${config.duration}回合`;
+            msg.push(`${attacker.名号}施展「一气化三清」，凝聚${config.count}道道身（全属性${Math.round(config.ratio * 100)}%），${durationText}！`);
           }
-          
-          msg.push(`${attacker.名号}施展「一气化三清」，三花聚顶凝聚出道身！`);
         }
       }
 
@@ -9749,7 +9983,7 @@ msg.push(bSpeedMsg);
     for (const entity of [...A_tahua_entities]) {
       if (entity.当前血量 > 0 && entity._tahua_duration === 0) {
         if (entity._tahua_type === "yiqihua") {
-          msg.push(`${entity.名号}化作一缕清气，重归天地之间！`);
+          msg.push(`${entity.名号}存续时间已尽，化作一缕清气消散，回归本体体内！`);
         } else {
           msg.push(`${entity.名号}持续时间结束，伟岸身影渐趋虚淡，回归时间长河...`);
         }
@@ -9760,7 +9994,7 @@ msg.push(bSpeedMsg);
     for (const entity of [...B_tahua_entities]) {
       if (entity.当前血量 > 0 && entity._tahua_duration === 0) {
         if (entity._tahua_type === "yiqihua") {
-          msg.push(`${entity.名号}化作一缕清气，重归天地之间！`);
+          msg.push(`${entity.名号}存续时间已尽，化作一缕清气消散，回归本体体内！`);
         } else {
           msg.push(`${entity.名号}持续时间结束，伟岸身影渐趋虚淡，回归时间长河...`);
         }
@@ -9799,6 +10033,9 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   let B_帝兵触发 = false;
   let 轮回诸天拳触发 = false;
   let 命运神道体触发 = {};
+  const teamGodDemonSkill = data.teshujineng?.find(skill => skill.name === '终焉神魔体');
+  const A_yiqihua_entities = [];
+  const B_yiqihua_entities = [];
 
   function initTeam(team, teamName) {
     for (let p of team) {
@@ -9817,6 +10054,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       p._immune_type = null;
       p._fenshen = null;
       p._fenshen_duration = 0;
+      p._yiqihua_triggered = false;
       p._护盾值 = p.护盾值 || 0;
       p._减伤比例 = p._减伤比例 || 0;
       p._反弹比例 = 0;
@@ -9834,6 +10072,36 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
   initTeam(A_team, 'A');
   initTeam(B_team, 'B');
+
+  async function applyTeamWanhuaOpening(team, enemies, teamName) {
+    const holders = [...team];
+    for (const holder of holders) {
+      if (!holder?.id) continue;
+      try {
+        const equipment = await Read_equipment(holder.id);
+        const setOpening = applyExclusiveSetOpening(holder, equipment);
+        msg.push(...setOpening.messages);
+        const opening = applyWanhuaBannerOpening(
+          holder,
+          enemies,
+          equipment
+        );
+        if (!opening.active) continue;
+        msg.push(...opening.messages);
+        holder._护盾值 = Math.max(Number(holder._护盾值) || 0, Number(holder.护盾值) || 0);
+        if (opening.companions.length > 0) {
+          holder.分身 = holder.分身.filter(unit => !unit._万灵魔幡主魂);
+          team.push(...opening.companions);
+          initTeam(opening.companions, teamName);
+        }
+      } catch (error) {
+        console.error(`[万灵魔幡] 团队开场失败 player=${holder.id}`, error?.message);
+      }
+    }
+  }
+
+  await applyTeamWanhuaOpening(A_team, B_team, 'A');
+  await applyTeamWanhuaOpening(B_team, A_team, 'B');
 
   async function consumeTeamAuthority(holder, flag) {
     if (!holder?.先天权柄?.[flag]) return false;
@@ -10129,6 +10397,25 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     applyXianguTurnRecovery(attacker, attackMsgs);
 
+    const bannerAttack = rollWanhuaBannerActiveAttack(attacker, defender);
+    if (bannerAttack) {
+      const bannerDamage = calcDamage(attacker, defender, bannerAttack.rawDamage, '元神');
+      let actualDamage = bannerDamage.actual_damage;
+      const shield = Math.max(0, Number(defender._护盾值) || 0);
+      const absorbed = Math.min(shield, actualDamage);
+      defender._护盾值 = shield - absorbed;
+      actualDamage -= absorbed;
+      defender.当前血量 = Math.max(0, defender.当前血量 - actualDamage);
+      defender._actionBar = Math.max(0, (Number(defender._actionBar) || 0) - bannerAttack.actionBarReduction);
+      attackMsgs.push(bannerAttack.message, ...bannerDamage.msgs);
+      attackMsgs.push(
+        `${defender.名号}元神受创，损失${bigNumberTransform(actualDamage)}点生命，行动值-${bannerAttack.actionBarReduction}！`
+      );
+      if (defender.当前血量 <= 0) {
+        return { msgs: attackMsgs, damage: actualDamage, killed: true, aoeKilled: [] };
+      }
+    }
+
     // —— 道种·治疗技：回合起手持续回血（生生不息/乙木逢春）——
     if (attacker.xiangu_shenhuo && attacker.xiangu_shenhuo.专属技能) {
       const 治疗条目 = getSeedSkillEntry(attacker.xiangu_shenhuo.专属技能);
@@ -10146,6 +10433,13 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     if (!innateSilenced) {
       // 帝之场域 + 九秘 + 命运神道体
       handleTeamControlEffects(attacker, defender, round, attackMsgs);
+      if (
+        teamGodDemonSkill &&
+        hasSupremeInnate(attacker, teamGodDemonSkill.name) &&
+        Math.random() < teamGodDemonSkill.pr
+      ) {
+        技能效果处理['神魔夺取'](attacker, defender, attackMsgs, teamGodDemonSkill);
+      }
 
       // 帝兵处理
       await handleTeamEmperorWeapon(attacker, defender, attackMsgs);
@@ -10612,6 +10906,8 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
   // 检查复活（简化版）
   function checkTeamRevival(player) {
+    const rewritten = rewriteBeyondDefeat(player);
+    if (rewritten.revived) return { revived: true, message: rewritten.messages };
     if (player.当前血量 > 0 || player._revived || !player.学习的功法) return { revived: false };
 
     const reviveSkills = data.jineng3?.filter(j => j.复活技能 === 1) || [];
@@ -10661,6 +10957,73 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       }
     }
     return { revived: false };
+  }
+
+  function summonTeamYiqihua(attacker) {
+    if (attacker?._yiqihua_entity || attacker?._yiqihua_triggered || !attacker.学习的功法?.includes('一气化三清')) return [];
+    if (Math.random() >= 0.9) return [];
+
+    attacker._yiqihua_triggered = true;
+    const config = getYiqihuaConfig(attacker);
+    const entities = attacker._team === 'A' ? A_yiqihua_entities : B_yiqihua_entities;
+    const integerFields = ['攻击', '防御', '血量上限', '当前血量', '速度', '元神', '元神上限', '神识'];
+    const ratioFields = [
+      '暴击率', '法球倍率', '吸血率', '闪避率', '穿透',
+      '元神伤害加成', '元神伤害减免', '神通伤害加成', '神通伤害减免',
+      '近战伤害加成', '近战伤害减免', '全伤害类型加成', '全类型减免',
+      '治疗效果加成', '每回合恢复', '血上限加成', '减伤',
+    ];
+    for (let index = 0; index < config.count; index++) {
+      const entity = JSON.parse(JSON.stringify(attacker));
+      entity.名号 = `${attacker.名号}·道身${config.count > 1 ? `(${index + 1})` : ''}`;
+      for (const field of integerFields) {
+        if (Number.isFinite(Number(entity[field]))) entity[field] = Math.trunc(entity[field] * config.ratio);
+      }
+      for (const field of ratioFields) {
+        if (Number.isFinite(Number(entity[field]))) entity[field] *= config.ratio;
+      }
+      if (Number.isFinite(Number(entity.暴击伤害))) {
+        entity.暴击伤害 = 1 + Math.max(0, entity.暴击伤害 - 1) * config.ratio;
+      }
+      entity.血量上限 = Math.max(1, entity.血量上限 || 1);
+      entity.当前血量 = entity.血量上限;
+      entity._yiqihua_entity = true;
+      entity._revived = true;
+      entity._tahua_duration = config.duration;
+      entity.皆字秘触发 = false;
+      delete entity._皆字秘倍率;
+      delete entity._皆字秘力竭;
+      delete entity._临字秘加成倍率;
+      delete entity._临字秘压制比例;
+      entities.push(entity);
+    }
+    const durationText = config.duration < 0 ? '永驻战场，除非被击杀' : `可存续${config.duration}回合`;
+    msg.push(`${attacker.名号}施展「一气化三清」，凝聚${config.count}道道身（全属性${Math.round(config.ratio * 100)}%），${durationText}！`);
+    return entities.slice(-config.count);
+  }
+
+  async function processTeamYiqihua(entities, enemyTeam, round) {
+    for (const entity of entities.filter(item => item.当前血量 > 0)) {
+      const enemies = enemyTeam.filter(item => item.当前血量 > 0);
+      if (!enemies.length) return;
+      const target = enemies[Math.floor(Math.random() * enemies.length)];
+      const result = await performTeamAttack(entity, target, round, enemies);
+      msg.push(...result.msgs);
+      if (result.killed) msg.push(`${entity.名号}击败了${target.名号}`);
+      for (const aoeTarget of result.aoeKilled || []) msg.push(`${entity.名号}的群攻击杀了${aoeTarget.名号}`);
+    }
+  }
+
+  function tickTeamYiqihua(entities) {
+    for (const entity of entities) {
+      if (entity._tahua_duration > 0) entity._tahua_duration--;
+      if (entity.当前血量 > 0 && entity._tahua_duration === 0) {
+        msg.push(`${entity.名号}存续时间已尽，化作一缕清气消散，回归本体体内！`);
+      }
+    }
+    for (let index = entities.length - 1; index >= 0; index--) {
+      if (entities[index].当前血量 <= 0 || entities[index]._tahua_duration === 0) entities.splice(index, 1);
+    }
   }
 
   // 主战斗循环
@@ -10805,6 +11168,14 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       }
     }
 
+    const summonedEntities = summonTeamYiqihua(readyUnit);
+    const activeEntities = readyUnit._team === 'A' ? A_yiqihua_entities : B_yiqihua_entities;
+    if (summonedEntities.length > 0 || activeEntities.length > 0) {
+      const enemyTeam = readyUnit._team === 'A' ? B_team : A_team;
+      await processTeamYiqihua(activeEntities, enemyTeam, roundIndex);
+      tickTeamYiqihua(activeEntities);
+    }
+
     // 检查攻击者是否被反弹致死
     if (readyUnit.当前血量 <= 0) {
       const reviveResult = checkTeamRevival(readyUnit);
@@ -10846,7 +11217,28 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     ...A_team.map((combatant, index) => ({ source: options._sourceATeam?.[index], combatant })),
     ...B_team.map((combatant, index) => ({ source: options._sourceBTeam?.[index], combatant })),
   ]);
-  return { ...createTeamBattleResult({ msg, A_team, B_team }), proficiencyGains };
+  const result = createTeamBattleResult({ msg, A_team, B_team });
+  const winnerSources = result.winner === 'A'
+    ? (options._sourceATeam || [])
+    : result.winner === 'B'
+      ? (options._sourceBTeam || [])
+      : [];
+  const defeatedCombatants = result.winner === 'A'
+    ? B_team.filter(unit => unit.当前血量 <= 0 && !unit._万灵魔幡主魂)
+    : result.winner === 'B'
+      ? A_team.filter(unit => unit.当前血量 <= 0 && !unit._万灵魔幡主魂)
+      : [];
+  const defeatedSources = result.winner === 'A' ? options._sourceBTeam : options._sourceATeam;
+  for (const owner of winnerSources) {
+    for (const defeated of defeatedCombatants) {
+      const source = defeatedSources?.find(unit =>
+        String(unit?.id || unit?.名号) === String(defeated?.id || defeated?.名号)
+      ) || defeated;
+      const harvestMessage = await settleWanhuaBannerHarvest(owner, source);
+      if (harvestMessage) msg.push(harvestMessage);
+    }
+  }
+  return { ...result, proficiencyGains };
 }
 
 // 团本战斗逻辑
@@ -12161,6 +12553,11 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
       // 非幸运类型仙宠
       else {
         player.幸运 = player.addluckyNo;
+      }
+      // 炼妖融合继承的幸运加成（type 匹配才生效，主宠自身是否幸运均可）
+      const inheritLucky = pet?.炼妖继承能力;
+      if (inheritLucky && inheritLucky.type === '幸运') {
+        player.幸运 += Number(inheritLucky.加成) || 0;
       }
     } else {
       player.幸运 = player.addluckyNo;

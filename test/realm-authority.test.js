@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   getRealmAuthorityLevel,
   getRealmAuthorityName,
+  getGodDemonStealRule,
   hasRealmAuthority,
   lowerRealmAuthority,
 } from '../model/realmAuthority.js';
@@ -65,5 +66,43 @@ test('authority realm names follow the active path', () => {
       xianguLevels
     ),
     'xiangu emperor'
+  );
+});
+
+test('终焉神魔体按九秘领域和帝境等级限制夺取', () => {
+  const saintKing = { mijinglevel_id: 13, 皆字秘触发: true, _临字秘加成倍率: 9 };
+  const emperor = { mijinglevel_id: 16 };
+  assert.equal(getGodDemonStealRule(saintKing, emperor).allowed, false);
+
+  const quasiEmperor = { mijinglevel_id: 15, 皆字秘触发: true, _临字秘加成倍率: 9 };
+  const exception = getGodDemonStealRule(quasiEmperor, emperor);
+  assert.equal(exception.allowed, true);
+  assert.equal(exception.chance, 0.2);
+  assert.equal(exception.ratioMultiplier, 0.25);
+
+  assert.equal(
+    getGodDemonStealRule(
+      { mijinglevel_id: 12, 皆字秘触发: true },
+      { mijinglevel_id: 13 }
+    ).allowed,
+    true
+  );
+  assert.equal(
+    getGodDemonStealRule(
+      { mijinglevel_id: 12, _临字秘加成倍率: 9 },
+      { mijinglevel_id: 14 }
+    ).allowed,
+    true
+  );
+  assert.equal(
+    getGodDemonStealRule(
+      { mijinglevel_id: 12, 皆字秘触发: true, _临字秘加成倍率: 9 },
+      { mijinglevel_id: 15 }
+    ).allowed,
+    true
+  );
+  assert.equal(
+    getGodDemonStealRule({ mijinglevel_id: 12 }, { mijinglevel_id: 13 }).allowed,
+    false
   );
 });
