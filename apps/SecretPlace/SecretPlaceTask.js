@@ -48,6 +48,7 @@ import {
 } from '../../model/gongfaProficiency.js';
 import { rollDahuangPupilEncounter } from '../../model/supremePath.js';
 import { resolveZhetianDungeonVictory } from '../../model/zhetianInheritance.js';
+import { rollShengfaDungeonEncounter } from '../../model/shengfaFragment.js';
 import { runTaskOnce } from '../../utils/taskGuard.js';
 export class SecretPlaceTask extends plugin {
   constructor() {
@@ -191,6 +192,7 @@ export class SecretPlaceTask extends plugin {
           let xf = action.XF ?? -1;
              
 let A_player = {
+  id: player.id || player_id,
   名号: player.名号,
   攻击: player.攻击,
   防御: player.防御,
@@ -204,6 +206,8 @@ let A_player = {
   功法熟练度: player.功法熟练度,
   功法熟练度每日: player.功法熟练度每日,
   命运终章已领悟: player.命运终章已领悟,
+  神慧: player.神慧,
+  圣法碎片: player.圣法碎片,
   速度: player.速度,
   mijinglevel_id: player.mijinglevel_id,
   xiangulevel_id: player.xiangulevel_id,
@@ -1811,6 +1815,12 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
               if (duandeEncounter.encountered) {
                 await Add_najie_thing(player_id, duandeEncounter.item.name, duandeEncounter.item.class, duandeEncounter.item.amount);
                 last_msg += duandeEncounter.message;
+              }
+              const shengfaEncounter = rollShengfaDungeonEncounter(player);
+              if (shengfaEncounter.encountered) {
+                await Add_najie_thing(player_id, '圣法碎片', '道具', 1);
+                await Write_player(player_id, player);
+                last_msg += ` ${shengfaEncounter.message}`;
               }
               const seekingMultipliers = getSeekingFortuneMultipliers(player);
               const coordinateDrop = rollDailyDungeonCoordinate(player, {
