@@ -1,5 +1,6 @@
 import { plugin, puppeteer, verc, data, config } from '../../api/api.js';
 import fs from 'fs';
+import path from 'path';
 import Show from '../../model/show.js';
 import { calculateCropGrowthState } from './smallWorldGrowth.js';
 import {
@@ -10,6 +11,7 @@ import {
   MAX_WORLD_ACCUMULATION_HOURS,
   calculateElapsedEventChance,
   calculateWorldAccumulation,
+  settleResourceRemainders,
 } from './smallWorldAccumulation.js';
 import {
   SMALL_WORLD_GUARD_ENERGY_COST,
@@ -57,6 +59,24 @@ import {
   Write_najie
 } from '../../model/xiuxian.js';
 import { Read_player, __PATH, Read_danyao } from '../../model/xiuxian.js';
+import {
+  BAITIAN_TEMPLE_NAME,
+  BAITIAN_TEMPLE_INSIGHT_PER_INTERVAL,
+  BAITIAN_TEMPLE_INTERVAL_HOURS,
+  BAITIAN_TEMPLE_MAX_HOURS,
+  BAITIAN_TEMPLE_SOURCE_PER_INTERVAL,
+  BAITIAN_TEMPLE_SOURCE_COST,
+  BAITIAN_TEMPLE_WORLD_STONE_COST,
+  buildBaitianTemple,
+  settleBaitianTemple,
+} from '../../model/baitianTemple.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
+import {
+  ascendSuperdimensionalStarRealm,
+  hasShengfaPower,
+  settleSuperdimensionalStarRealm,
+} from '../../model/shengfaFragment.js';
 
 const WORLD_LEVELS = {
   1: {
@@ -405,6 +425,17 @@ const SHENYAO_SEEDS = {
       灵气浓度: 10000,
       特殊环境: ["仙坟","仙泉"]
     }
+  },
+  "九转天药幼苗": {
+    id: 900436,
+    name: "九转天药幼苗",
+    class: "草药",
+    type: "神药种子",
+    harvest: "九转天药",
+    requirements: {
+      灵气浓度: 12000,
+      特殊环境: ["仙坟", "仙泉"]
+    }
   }
 };
 
@@ -457,12 +488,49 @@ function migrateWorldData(world) {
   return migrated;
 }
 
+async function collectBaitianTempleRewards(player_qq, world, now = new Date()) {
+  if (!world?.败天神殿) return { cycles: 0, hours: 0, sourceStone: 0, insight: 0 };
+  return withPlayerMutationLock(player_qq, async () => {
+    const previousSettlement = world.败天神殿.上次结算时间;
+    const rewards = settleBaitianTemple(world, now);
+    if (!rewards.hours) {
+      if (world.败天神殿.上次结算时间 !== previousSettlement) {
+        try {
+          fs.writeFileSync(path.join(data.lib_path, '小世界列表.json'), JSON.stringify(data.xiaoshijie, null, 2));
+        } catch (error) {
+          world.败天神殿.上次结算时间 = previousSettlement;
+          throw error;
+        }
+      }
+      return rewards;
+    }
+
+    const player = await Read_player(player_qq);
+    player.源石 = Math.max(0, Number(player.源石) || 0) + rewards.sourceStone;
+    player.功法感悟值 = Math.max(0, Number(player.功法感悟值) || 0) + rewards.insight;
+    const worldFile = path.join(data.lib_path, '小世界列表.json');
+    const transaction = new FileRollbackTransaction();
+    transaction.capture(path.join(__PATH.player_path, `${player_qq}.json`));
+    transaction.capture(worldFile);
+    try {
+      await Write_player(player_qq, player);
+      fs.writeFileSync(worldFile, JSON.stringify(data.xiaoshijie, null, 2));
+      transaction.commit();
+      return rewards;
+    } catch (error) {
+      transaction.rollback();
+      world.败天神殿.上次结算时间 = previousSettlement;
+      throw error;
+    }
+  });
+}
+
 // ══════════════════════════════════════
 // 🔧 辅助计算函数
 // ══════════════════════════════════════
 
 // 计算仙宠在指定工坊的工作效率
-function calculateWorkEfficiency(pet, workshop, world, energyOverride) {
+function calculateWorkEfficiency(pet, workshop, world) {
   if (!pet || !workshop) return 1.0;
 
   // 基础倍率
@@ -476,18 +544,6 @@ function calculateWorkEfficiency(pet, workshop, world, energyOverride) {
     } else {
       efficiency *= 0.5; // 不匹配
     }
-  }
-
-  // 精力倍率
-  const energy = Number(energyOverride ?? pet.精力 ?? 100);
-  if (energy >= 30) {
-    efficiency *= 1.0;
-  } else if (energy >= 10) {
-    efficiency *= 0.6;
-  } else if (energy > 0) {
-    efficiency *= 0.2;
-  } else {
-    efficiency *= 0; // 精力归零无产出
   }
 
   // 工坊等级加成
@@ -646,6 +702,10 @@ export class xiaoshijie extends plugin {
         {
           reg: '^#收获小世界资源$',
           fnc: 'harvestResources'
+        },
+        {
+          reg: '^#(?:建立|建造)败天神殿$',
+          fnc: 'buildBaitianTemple'
         },
         {
           reg: '^#图中巡游$',
@@ -1313,6 +1373,7 @@ async showEnvironmentHelp(e) {
       栖息地上限: 1,
       工坊: JSON.parse(JSON.stringify(DEFAULT_WORKSHOPS)) // 初始化工坊
     };
+    if (hasShengfaPower(player)) ascendSuperdimensionalStarRealm(newWorld);
     
     // 添加到小世界列表
     data.xiaoshijie.push(newWorld);
@@ -1500,7 +1561,7 @@ async showEnvironmentHelp(e) {
     // 创建分身
     world.avatar = {
       created_time: new Date().toLocaleString(),
-      last_harvest_time: new Date().toLocaleString(),
+      last_harvest_time: new Date().toISOString(),
       resources: {}
     };
     
@@ -1509,13 +1570,13 @@ async showEnvironmentHelp(e) {
     data.xiaoshijie[worldIndex] = world;
     fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
     
-    e.reply(`你消耗${cultivationCost}点修为，化出一道分身进入【${world.world_name}】！\n分身将自动收集资源，最多积累${MAX_WORLD_ACCUMULATION_HOURS}小时的资源`);
+    e.reply(`你消耗${cultivationCost}点修为，化出一道分身进入【${world.world_name}】！\n分身将自动收集资源，最多积累${MAX_WORLD_ACCUMULATION_HOURS}个现实小时`);
     
     return true;
   }
   
   // 资源计算函数
-  calculateResources(world, hours) {
+  calculateResources(world, hours, yieldMultiplier = 1) {
     // 基础资源产量（根据小世界等级）
     const baseProduction = {
       1: { '灵石': 100000, '仙馐果': 50 },
@@ -1527,29 +1588,31 @@ async showEnvironmentHelp(e) {
     
     // 获取基础产量
     const base = baseProduction[world.level] || baseProduction[1];
-    const resources = {};
+    const rawResources = {};
     for (const [res, amount] of Object.entries(base)) {
-      resources[res] = Math.floor(amount * hours);
+      rawResources[res] = amount * hours * yieldMultiplier;
     }
     
     // 特殊资源加成
     if (world.attributes.特殊资源.includes('先天灵泉')) {
-      resources['仙馐果'] = Math.floor(resources['仙馐果'] * 15);
+      rawResources['仙馐果'] = (rawResources['仙馐果'] || 0) * 15;
     }
     if (world.attributes.特殊资源.includes('星辰矿脉')) {
-      resources['灵矿'] = Math.floor(resources['灵矿'] * 15);
+      rawResources['灵矿'] = (rawResources['灵矿'] || 0) * 15;
     }
     if (world.attributes.特殊资源.includes('混沌灵根')) {
-      resources['混沌元液'] = Math.floor((resources['混沌元液'] || 0) * 15);
+      rawResources['混沌元液'] = (rawResources['混沌元液'] || 0) * 15;
     }
     if (world.attributes.特殊资源.includes('太初神木')) {
-      resources['仙果'] = Math.floor(resources['仙果'] * 15);
+      rawResources['仙果'] = (rawResources['仙果'] || 0) * 15;
     }
     if (world.attributes.特殊资源.includes('虚空晶石')) {
-      resources['灵石'] = Math.floor(resources['灵石'] * 15);
+      rawResources['灵石'] = (rawResources['灵石'] || 0) * 15;
     }
-    
-    return resources;
+
+    const settled = settleResourceRemainders(rawResources, world.avatar?.资源余量);
+    if (world.avatar) world.avatar.资源余量 = settled.remainders;
+    return settled.amounts;
   }
 
   // ========== 神药收获时间计算 ==========
@@ -1600,6 +1663,56 @@ async showEnvironmentHelp(e) {
       data.xiaoshijie[worldIndex] = world;
       fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
     }
+  }
+
+  async buildBaitianTemple(e) {
+    if (!e.isGroup) return false;
+    const player_qq = await channel(e.user_id);
+    return withPlayerMutationLock(player_qq, async () => {
+      const player = await Read_player(player_qq);
+      const najie = await Read_najie(player_qq);
+      const world = data.xiaoshijie.find(w => String(w.player_qq) === String(player_qq));
+      if (!world) return e.reply('请先使用 #开辟小世界 创建你的小世界。');
+
+      const worldSnapshot = structuredClone(world);
+      const result = buildBaitianTemple(player, najie, world);
+      if (result.reason === 'locked') return e.reply('败天神殿尚未解锁，需先消耗【玉石匣】承接败天遗法。');
+      if (result.reason === 'built') return e.reply(`你的【${BAITIAN_TEMPLE_NAME}】早已建成。`);
+      if (result.reason === 'materials') {
+        return e.reply([
+          `建立【${BAITIAN_TEMPLE_NAME}】所需材料不足：`,
+          `源石：${result.sourceStone}/${BAITIAN_TEMPLE_SOURCE_COST}`,
+          `世界石：${result.worldStone}/${BAITIAN_TEMPLE_WORLD_STONE_COST}`,
+        ].join('\n'));
+      }
+
+      const worldFile = path.join(data.lib_path, '小世界列表.json');
+      const worldIndex = data.xiaoshijie.indexOf(world);
+      const transaction = new FileRollbackTransaction();
+      transaction.capture(path.join(__PATH.player_path, `${player_qq}.json`));
+      transaction.capture(path.join(__PATH.najie_path, `${player_qq}.json`));
+      transaction.capture(worldFile);
+      try {
+        await Write_player(player_qq, player);
+        await Write_najie(player_qq, najie);
+        fs.writeFileSync(worldFile, JSON.stringify(data.xiaoshijie, null, 2));
+        transaction.commit();
+      } catch (error) {
+        transaction.rollback();
+        data.xiaoshijie[worldIndex] = worldSnapshot;
+        throw error;
+      }
+
+      return e.reply([
+        `【${BAITIAN_TEMPLE_NAME}·落成】`,
+        '你以十五枚世界石镇住八方界脉，又引两千万源石化作不灭神基。',
+        '万丈神殿拔地而起，殿中无塑像、无香火，唯有一道背对众生的伟岸身影，独立于破碎天穹之下。',
+        '八道逆乱神痕绕殿而行，自此为你汇聚诸界源气，推演万法真意。',
+        '',
+        `每${BAITIAN_TEMPLE_INTERVAL_HOURS}个现实小时产出：${BAITIAN_TEMPLE_SOURCE_PER_INTERVAL / 10_000}万源石、${BAITIAN_TEMPLE_INSIGHT_PER_INTERVAL}点功法感悟`,
+        `发送 #收获小世界资源 一并领取（最多积累${BAITIAN_TEMPLE_MAX_HOURS}小时）`,
+      ].join('\n'));
+    });
   }
 
   async setSmallWorldGuard(e) {
@@ -1882,9 +1995,35 @@ async showEnvironmentHelp(e) {
   // 收获资源
   async harvestResources(e) {
     if (!e.isGroup) return;
-    
-    const usr_qq = e.user_id;
-    const player_qq = await channel(usr_qq);
+
+    const player_qq = await channel(e.user_id);
+    return withPlayerMutationLock(player_qq, async () => {
+      const worldFile = path.join(data.lib_path, '小世界列表.json');
+      const worldIndex = data.xiaoshijie.findIndex(w => String(w.player_qq) === String(player_qq));
+      const worldSnapshot = worldIndex >= 0 ? structuredClone(data.xiaoshijie[worldIndex]) : null;
+      const transaction = new FileRollbackTransaction();
+      transaction.capture(path.join(__PATH.player_path, `${player_qq}.json`));
+      transaction.capture(path.join(__PATH.najie_path, `${player_qq}.json`));
+      transaction.capture(worldFile);
+      try {
+        const result = await this.harvestResourcesLocked(e, player_qq);
+        transaction.commit();
+        return result;
+      } catch (error) {
+        let rollbackError;
+        try {
+          transaction.rollback();
+        } catch (caught) {
+          rollbackError = caught;
+        }
+        if (worldSnapshot) data.xiaoshijie[worldIndex] = worldSnapshot;
+        if (rollbackError) throw new AggregateError([error, rollbackError], '小世界收获失败且回滚不完整');
+        throw error;
+      }
+    });
+  }
+
+  async harvestResourcesLocked(e, player_qq) {
     const player = await Read_player(player_qq);
     const innateYieldMultiplier = getSmallWorldYieldMultiplier(player);
     
@@ -1900,19 +2039,55 @@ async showEnvironmentHelp(e) {
     // 数据迁移：自动升级旧数据到新版本
     migrateWorldData(world);
 
+    const now = new Date();
+    const templeRewards = await collectBaitianTempleRewards(player_qq, world, now);
+    let superdimensionalRewards = { hours: 0 };
+    const latestPlayer = await Read_player(player_qq);
+    if (hasShengfaPower(latestPlayer)) {
+      const ascended = ascendSuperdimensionalStarRealm(world);
+      superdimensionalRewards = settleSuperdimensionalStarRealm(latestPlayer, world, { now: now.getTime() });
+      if (superdimensionalRewards.hours > 0) await Write_player(player_qq, latestPlayer);
+      if (ascended || superdimensionalRewards.hours > 0) fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
+    }
+    const superdimensionalLine = superdimensionalRewards.hours > 0
+      ? `【超维星界】${superdimensionalRewards.hours}小时：修为+${superdimensionalRewards.cultivation.toLocaleString()}、血气+${superdimensionalRewards.blood.toLocaleString()}、超维之力+${superdimensionalRewards.power.toFixed(2)}`
+      : '';
+
     // 检查是否有分身
     if (!world.avatar) {
+      if (templeRewards.hours > 0 || superdimensionalLine) {
+        e.reply([
+          templeRewards.hours > 0 ? `【${BAITIAN_TEMPLE_NAME}】` : '',
+          templeRewards.hours > 0
+            ? `供奉${templeRewards.hours}个现实小时（${templeRewards.cycles}轮）：源石x${templeRewards.sourceStone}、功法感悟x${templeRewards.insight}`
+            : '',
+          superdimensionalLine,
+          '小世界分身尚未化入，其他资源本次未结算。',
+        ].filter(Boolean).join('\n'));
+        return true;
+      }
       e.reply('请先使用 #将分身化入小世界 创建分身');
       return true;
     }
     
     // 解析时间流速
-    const timeFlow = world.attributes.时间流速.split(':');
-    const timeRatio = parseInt(timeFlow[1]) / parseInt(timeFlow[0]);
+    const timeFlow = String(world.attributes.时间流速 || '1:1').split(':');
+    const configuredTimeRatio = Number(timeFlow[1]) / Number(timeFlow[0]);
+    const timeRatio = Number.isFinite(configuredTimeRatio) && configuredTimeRatio > 0
+      ? configuredTimeRatio
+      : 1;
     
     // 计算可收获资源
-    const now = new Date();
     const lastHarvest = new Date(world.avatar.last_harvest_time);
+    if (!Number.isFinite(lastHarvest.getTime()) || lastHarvest > now) {
+      world.avatar.last_harvest_time = now.toISOString();
+      await this.saveWorld(player_qq, world);
+      const templeMessage = templeRewards.hours > 0
+        ? `；败天神殿已结算${templeRewards.cycles}轮，获得源石x${templeRewards.sourceStone}、功法感悟x${templeRewards.insight}`
+        : '';
+      const superdimensionalMessage = superdimensionalLine ? `；${superdimensionalLine}` : '';
+      return e.reply(`分身收获时间异常，已校准为当前时间，分身资源本次未结算${templeMessage}${superdimensionalMessage}。`);
+    }
     const hoursPassed = (now - lastHarvest) / (1000 * 60 * 60);
     
     // 先按现实时间封顶，再应用小世界时间流速
@@ -1921,15 +2096,21 @@ async showEnvironmentHelp(e) {
     const harvestHours = accumulation.effectiveHours;
     
     if (harvestHours <= 0) {
-      e.reply('距离上次收获时间太短，暂无资源可收获');
+      e.reply(templeRewards.hours > 0 || superdimensionalLine
+        ? [
+          templeRewards.hours > 0
+            ? `【${BAITIAN_TEMPLE_NAME}】供奉${templeRewards.hours}个现实小时（${templeRewards.cycles}轮）：源石x${templeRewards.sourceStone}、功法感悟x${templeRewards.insight}`
+            : '',
+          superdimensionalLine,
+          '分身资源距离上次收获时间太短，本次未结算。',
+        ].filter(Boolean).join('\n')
+        : '距离上次收获时间太短，暂无资源可收获'
+      );
       return true;
     }
     
     // 计算资源产量
-    const resources = this.calculateResources(world, harvestHours);
-    for (const resource of Object.keys(resources)) {
-      resources[resource] = Math.floor(resources[resource] * innateYieldMultiplier);
-    }
+    const resources = this.calculateResources(world, harvestHours, innateYieldMultiplier);
 
     // ==== 栖息地结算（工坊劳作 + 栖息地休息恢复精力） ====
     let habitatResults = [];
@@ -1987,17 +2168,20 @@ async showEnvironmentHelp(e) {
         pet.精力 = energyState.endEnergy;
 
         // 计算工作效率
-        const workEfficiency = calculateWorkEfficiency(pet, workshop, world, energyState.averageEnergy);
         const workedHours = energyState.activeHours;
+        const energyEfficiency = workedHours > 0 ? energyState.weightedWorkHours / workedHours : 0;
+        const workEfficiency = calculateWorkEfficiency(pet, workshop, world) * energyEfficiency;
 
         // 工坊产出（使用新的产出体系）
         const wsOutput = HABITAT_OUTPUT[pet.type];
         if (!wsOutput || workedHours <= 0) {
           workDescriptions.push(getWorkDescription(pet, harvestHours));
         } else for (const [resName, baseRate] of Object.entries(wsOutput)) {
-          const amount = Math.floor(
-            baseRate * workedHours * pinjiRate * workEfficiency * innateYieldMultiplier
-          );
+          const settled = settleResourceRemainders({
+            [resName]: baseRate * workedHours * pinjiRate * workEfficiency * innateYieldMultiplier,
+          }, pet.产出余量);
+          pet.产出余量 = settled.remainders;
+          const amount = settled.amounts[resName];
           if (amount <= 0) continue;
 
           pet.产出累积 = pet.产出累积 || {};
@@ -2061,10 +2245,18 @@ async showEnvironmentHelp(e) {
         }
 
         if (energyState.exhausted) {
-          pet.累倒 = true;
-          pet.累倒_counter = 12;
+          const recoveryElapsed = Math.max(0, harvestHours - energyState.activeHours);
+          const recoveryRemaining = Math.max(0, 12 - recoveryElapsed);
+          pet.累倒 = recoveryRemaining > 0;
+          pet.累倒_counter = recoveryRemaining;
           pet.工坊 = null;
-          habitatResults.push(`💥 ${pet.name}精疲力尽累倒了！已被仙童抬回栖息地休养…`);
+          if (pet.累倒) {
+            habitatResults.push(`💥 ${pet.name}精疲力尽累倒了！已被仙童抬回栖息地，还需休养${Math.ceil(recoveryRemaining)}小时…`);
+          } else {
+            const recoveredHours = Math.max(0, recoveryElapsed - 12);
+            pet.精力 = Math.min(Number(pet.最大精力 ?? 100), 30 + recoveredHours * 8);
+            habitatResults.push(`💤 ${pet.name}曾在劳作中累倒，现已完成休养，精力恢复至 ${pet.精力}/${pet.最大精力}。`);
+          }
           if (!world.事件记录) world.事件记录 = [];
           world.事件记录.push(`【${new Date().toLocaleString()}】${pet.name}在${workshop}累倒，被送回栖息地`);
         }
@@ -2155,7 +2347,7 @@ async showEnvironmentHelp(e) {
    }
     
     // 更新收获时间
-    world.avatar.last_harvest_time = now.toLocaleString();
+    world.avatar.last_harvest_time = now.toISOString();
     
     // 保存小世界数据
     const worldIndex = data.xiaoshijie.findIndex(w => w.player_qq === player_qq);
@@ -2175,6 +2367,9 @@ async showEnvironmentHelp(e) {
       `成功收获分身收集的资源：${resourceList}`,
       timeFlowInfo
     ];
+    if (superdimensionalRewards.hours > 0) {
+      replyMsg.push(superdimensionalLine);
+    }
     
     // 添加神药收获信息
     if (shenyaoResults.harvested.length > 0) {
@@ -2219,6 +2414,11 @@ async showEnvironmentHelp(e) {
       replyMsg.push(...workDescriptions);
     }
 
+    if (templeRewards.hours > 0) {
+      replyMsg.push(`【${BAITIAN_TEMPLE_NAME}】`);
+      replyMsg.push(`供奉${templeRewards.hours}个现实小时（${templeRewards.cycles}轮）：源石x${templeRewards.sourceStone}、功法感悟x${templeRewards.insight}`);
+    }
+
     // 野外驯服事件：每24现实小时约8%，按本次积累时长连续计算
     let tameEventMsg = null;
     const tameEventChance = calculateElapsedEventChance(harvestRealHours);
@@ -2260,17 +2460,23 @@ async showEnvironmentHelp(e) {
   async tourLandscape(e) {
     if (!e.isGroup) return false;
     const player_qq = await channel(e.user_id);
+    return withPlayerMutationLock(player_qq, () => this.tourLandscapeLocked(e, player_qq));
+  }
+
+  async tourLandscapeLocked(e, player_qq) {
     const player = await Read_player(player_qq);
     if (!hasEquippedInnateTreasure(player, '山河社稷图')) {
       return e.reply('需先执掌【山河社稷图】才能进入图中巡游。');
     }
+
     const remaining = getCooldownRemaining(player, '图中巡游');
     if (remaining > 0) return e.reply(`图中巡游尚在冷却，还需${formatCooldown(remaining)}。`);
     const world = data.xiaoshijie.find(w => String(w.player_qq) === String(player_qq));
     if (!world?.avatar) return e.reply('需先开辟小世界并将分身化入其中。');
 
     const lastHarvest = new Date(world.avatar.last_harvest_time);
-    world.avatar.last_harvest_time = new Date(lastHarvest.getTime() - 6 * 60 * 60 * 1000).toLocaleString();
+    if (!Number.isFinite(lastHarvest.getTime())) return e.reply('分身收获时间异常，请先发送 #收获小世界资源 校准。');
+    world.avatar.last_harvest_time = new Date(lastHarvest.getTime() - 6 * 60 * 60 * 1000).toISOString();
     const worldIndex = data.xiaoshijie.findIndex(w => String(w.player_qq) === String(player_qq));
     data.xiaoshijie[worldIndex] = world;
     fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
@@ -3277,6 +3483,10 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
     const maxSlots = (Number(world.attributes?.栖息地上限) || 1) + getHabitatSlotBonus(player);
     const lines = [`【${world.world_name}】工坊总览（有效栖息地：${maxSlots}格）`];
 
+    if (world.败天神殿) {
+      lines.push(`🏛️ ${BAITIAN_TEMPLE_NAME}（每${BAITIAN_TEMPLE_INTERVAL_HOURS}小时${BAITIAN_TEMPLE_SOURCE_PER_INTERVAL / 10_000}万源石、${BAITIAN_TEMPLE_INSIGHT_PER_INTERVAL}点功法感悟）`);
+    }
+
     for (const [wsName, wsData] of Object.entries(world.工坊)) {
       const wsConfig = WORKSHOP_CONFIG[wsName];
       if (!wsConfig) continue; // 跳过已删除的工坊类型（如兽栏）
@@ -3538,11 +3748,13 @@ export async function get_xiaoshijie_img(e) {
 
 // 生成特殊资源HTML
 function generateSpecialResourcesHTML(world) {
-    if (!world.attributes.特殊资源 || world.attributes.特殊资源.length === 0) {
+    const resources = [...(world.attributes.特殊资源 || [])];
+    if (world.败天神殿) resources.unshift(BAITIAN_TEMPLE_NAME);
+    if (resources.length === 0) {
         return '<div class="no-content"><i class="fas fa-box-open"></i>暂无特殊资源</div>';
     }
     
-    return world.attributes.特殊资源.map(res => {
+    return resources.map(res => {
         const iconClass = getResourceIcon(res);
         return `
             <div class="resource-chip">
@@ -3896,13 +4108,13 @@ function calculateResources(world, hours) {
         resources['仙馐果'] = Math.floor(resources['仙馐果'] * 15);
     }
     if (world.attributes.特殊资源.includes('星辰矿脉')) {
-        resources['灵矿'] = Math.floor(resources['灵矿'] * 15);
+        resources['灵矿'] = Math.floor((resources['灵矿'] || 0) * 15);
     }
     if (world.attributes.特殊资源.includes('混沌灵根')) {
         resources['混沌元液'] = Math.floor((resources['混沌元液'] || 0) * 15);
     }
     if (world.attributes.特殊资源.includes('太初神木')) {
-        resources['仙果'] = Math.floor(resources['仙果'] * 15);
+        resources['仙果'] = Math.floor((resources['仙果'] || 0) * 15);
     }
     if (world.attributes.特殊资源.includes('虚空晶石')) {
         resources['灵石'] = Math.floor(resources['灵石'] * 15);

@@ -49,6 +49,7 @@ import {
   isNotNull,
   Read_equipment,
   Write_equipment,
+  Write_najie,
   foundthing,
   convert2integer,
   get_equipment_img,
@@ -74,6 +75,35 @@ import {
   calculateTianjiTrainingReward,
 } from '../../model/tianjiTalismans.js';
 import { resetIneligibleShengtiCultivation } from '../../model/shengtiCultivation.js';
+import { openJadeCasket } from '../../model/baitianTemple.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
+import {
+  isShengfaClaimed,
+  SHENGFA_REFINING,
+  SHENGFA_REFINE_MS,
+  startShengfaRefinement,
+} from '../../model/shengfaFragment.js';
+import {
+  getImmortalFishingCooldown,
+  getImmortalBaitConfig,
+  parseImmortalBait,
+  rollImmortalBaitReward,
+  rollPlaneFishingEvent,
+  rollWishScaleAmount,
+} from '../../model/immortalFishing.js';
+import { getPlayerPlaneName } from '../../model/planeCoords.js';
+import { isCultivatingExtraPath } from '../../model/extraCultivation.js';
+import { isHighRealmConsumableRestricted } from '../../model/realmAuthority.js';
+
+const FLOWER_BREATHING_METHODS = new Set([
+  '基础呼吸法',
+  '形意呼吸法',
+  '太极呼吸法',
+  '大雷音呼吸法',
+  '道引呼吸法',
+  '盗引呼吸法',
+]);
 /**
  * 全局变量
  */
@@ -151,7 +181,7 @@ export class UserHome extends plugin {
           fnc: 'gonglue',
         },
          {
-          reg: '^#垂钓众生$',
+          reg: '^#垂钓众生(?:\\s+.*)?$',
           fnc: 'chuidiao',
         },
         {
@@ -204,7 +234,8 @@ async shengmingbenyuan(e) {
     
     // 2. 获取玩家数据
     const player = await Read_player(usr_qq);
-    const maxLifeBase = 100 + (player.灵根?.生命本源 || 0);
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
+    const maxLifeBase = 100 + (player.灵根?.生命本源 || 0) + (minggeEffects?.生命本源额外 || 0);
     
     // 3. 检查是否需要修复
     if (player.生命本源 >= maxLifeBase) {
@@ -252,6 +283,15 @@ async shengmingbenyuan(e) {
     // 9. 境界加成系数
     const realmFactor = 1 + (player.mijinglevel_id + player.xiangulevel_id) * 0.1;
     totalCost = Math.floor(totalCost * realmFactor);
+    // 9.1 命格·修复本源代价影响（代价减少/增加）
+    const originalRepairCost = totalCost;
+    totalCost = calculateMinggeCost(
+      originalRepairCost,
+      minggeEffects,
+      '修复本源代价减少',
+      '修复本源代价增加',
+      { minimum: 1 }
+    );
 
     // 10. 资源检查
     if (player.修为 < totalCost || player.血气 < totalCost) {
@@ -275,6 +315,9 @@ async shengmingbenyuan(e) {
     await Write_player(usr_qq, player);
 
     // 13. 结果反馈
+    const minggeLine = totalCost === originalRepairCost
+      ? ''
+      : `命格影响：修复代价${totalCost < originalRepairCost ? '减少' : '增加'}${Math.abs(originalRepairCost - totalCost).toLocaleString()}`;
     return e.reply([
         `【生命本源修复完成】`,
         `修复阶数：${actualTiers}阶`,
@@ -282,9 +325,10 @@ async shengmingbenyuan(e) {
         `当前状态：${player.生命本源}/${maxLifeBase}`,
         `消耗修为：${totalCost.toLocaleString()}`,
         `消耗血气：${totalCost.toLocaleString()}`,
+        minggeLine,
         `「本源修复，道基渐固」`,
         actualTiers < maxTiers ? `可继续修复剩余${maxTiers - actualTiers}阶` : `本源已完全恢复`
-    ].join("\n"));
+    ].filter(Boolean).join("\n"));
 }
 async repairDaoshang(e) {
     if (!verc({ e })) return false;
@@ -768,7 +812,16 @@ async useLinggenToken(e) {
    async  chuidiao (e){
     let usr_qq = e.user_id; // 获取玩家的QQ号
     usr_qq = await channel(usr_qq); // 调用lianjie函数连接并获取玩家信息
+    return withPlayerMutationLock(usr_qq, () => this.chuidiaoLocked(e, usr_qq));
+   }
+
+   async chuidiaoLocked(e, usr_qq) {
     let player = await Read_player(usr_qq); // 读取玩家数据
+    const baitName = parseImmortalBait(e.msg);
+    if (baitName && !getImmortalBaitConfig(baitName)) {
+        e.reply(` 未知仙饵【${baitName}】，发送【#众生仙饵】查看可用仙饵。`);
+        return;
+    }
        // 检查是否可以前往
     const flag = await Go(e);
     if (!flag) {
@@ -780,6 +833,18 @@ async useLinggenToken(e) {
         e.reply(" 无众生仙钓也敢窥探轮回？可笑！");
         return;
     }
+    if (baitName) {
+        const hasBait = await exist_najie_thing(usr_qq, baitName, "道具");
+        if (!hasBait) {
+            e.reply(` 纳戒中没有【${baitName}】，无法以此饵垂钓众生。`);
+            return;
+        }
+    }
+    const hasTideLamp = (await exist_najie_thing(
+        usr_qq,
+        "万界引潮灯",
+        "道具"
+    )) > 0;
  // 检查血量
     if (player.当前血量 < 200) {
         e.reply(" 道伤未愈还敢强提真元？速速退去疗伤！");
@@ -795,11 +860,11 @@ async useLinggenToken(e) {
   
     allaction = false;
     
-    // 垂钓CD处理（道法仙术减半）
-    let baseCD = 20 * 60 * 1000; // 20分钟基础CD
-    if (player.daofaxianshu == 2) {
-        baseCD = 10 * 60 * 1000; // 道法仙术减半为10分钟
-    }
+    // 引潮灯先将基础冷却缩短10分钟，道法仙术再减半。
+    const baseCD = getImmortalFishingCooldown({
+        hasTideLamp,
+        hasDaoArt: player.daofaxianshu == 2,
+    });
     
     let now_Time = new Date().getTime();
     let last_fishing = await redis.get("xiuxian:player:" + usr_qq + "diaocd");
@@ -810,8 +875,9 @@ async useLinggenToken(e) {
         let remain_m = Math.floor(remain / 60000);
         let remain_s = Math.floor((remain % 60000) / 1000);
         
-        // 道法仙术特效用词
-        if (player.daofaxianshu == 2) {
+        if (hasTideLamp) {
+            e.reply(` 【万界引潮灯】正在聚拢界潮，还需${remain_m}分${remain_s}秒方可再钓`);
+        } else if (player.daofaxianshu == 2) {
             e.reply(` 【道法仙术】流转不息，还需${remain_m}分${remain_s}秒方能圆满`);
         } else {
             e.reply(` 乾坤未定，还需${remain_m}分${remain_s}秒方可再探轮回`);
@@ -863,9 +929,30 @@ if (isLucky || player.灵根.type === "圆环之理") {
     if (player.daofaxianshu == 2) {
         rewardMsg += " 道法仙术运转周天，本次垂钓时空凝滞减半！\n";
     }
+    if (hasTideLamp) {
+        rewardMsg += " 万界引潮灯照彻众生海，垂钓冷却缩短10分钟，愿鳞数量翻倍！\n";
+    }
     
-    // 奖励概率分布
-    if (random < 50) {
+    // 特殊仙饵使用独立奖池；不带仙饵时沿用原奖池。
+    if (baitName) {
+        const coordinateCount = await exist_najie_thing(
+            usr_qq,
+            "仙武界坐标",
+            "道具"
+        );
+        const reward = rollImmortalBaitReward(baitName, {
+            ownsXianwuCoordinate:
+                Boolean(player.仙武界坐标已获得) || coordinateCount > 0,
+        });
+        const amount = reward.scalable ? reward.amount * n : reward.amount;
+        await Add_najie_thing(usr_qq, reward.name, reward.class, amount);
+        if (reward.uniqueFlag) {
+            player[reward.uniqueFlag] = true;
+            await Write_player(usr_qq, player);
+        }
+        rewardMsg += `\n 【${baitName}】牵动诸天水脉，钓得【${reward.name}】x${amount}`;
+    }
+    else if (random < 50) {
         await Add_najie_thing(usr_qq, "仙晶矿", "道具", 100 * n);
         rewardMsg += `\n 钓起仙晶矿脉！获得【仙晶矿】x${100 * n}`;
     } 
@@ -903,16 +990,43 @@ if (isLucky || player.灵根.type === "圆环之理") {
         await Add_najie_thing(usr_qq, "超越宝盒", "盒子", 10 * n);
         rewardMsg += `\n 海浪翻涌！钓起诸天至宝【超越宝盒】x${10 * n}`;
     }
+
+    const wishScaleAmount = rollWishScaleAmount(hasTideLamp);
+    await Add_najie_thing(usr_qq, "众生愿鳞", "道具", wishScaleAmount);
+    rewardMsg += `\n 众生愿力凝成鳞光，获得【众生愿鳞】x${wishScaleAmount}`;
+
+    const planeEvent = rollPlaneFishingEvent(getPlayerPlaneName(player));
+    if (planeEvent) {
+        for (const item of planeEvent.items || []) {
+            await Add_najie_thing(usr_qq, item.name, item.class, item.amount);
+        }
+        for (const [field, amount] of Object.entries(planeEvent.playerAdds || {})) {
+            player[field] = (Number(player[field]) || 0) + amount;
+        }
+        for (const [field, value] of Object.entries(planeEvent.playerFlags || {})) {
+            player[field] = value;
+        }
+        if (planeEvent.playerAdds || planeEvent.playerFlags) {
+            await Write_player(usr_qq, player);
+        }
+        if (planeEvent.sourceStone) {
+            await Add_源石(usr_qq, planeEvent.sourceStone);
+        }
+        rewardMsg += `\n\n${planeEvent.message}`;
+    }
     
     // 附加修为/血气奖励
     let xiuwei = Math.trunc(500  * 3*player.mijinglevel_id*player.level_id*player.Physique_id) * n;
     let xueqi = Math.trunc(800  * 4*player.mijinglevel_id*player.level_id*player.Physique_id) * n;
     await Add_修为(usr_qq, xiuwei);
     await Add_血气(usr_qq, xueqi);
+    if (baitName) {
+        await Add_najie_thing(usr_qq, baitName, "道具", -1);
+    }
     await  Add_najie_thing(usr_qq, "众生仙钓", "道具", -1);
     // 最终总结
     await sleep(1000);
-    e.reply(` 本次垂钓后需修养：${baseCD/60000}分钟（道法仙术减半）`);
+    e.reply(` 本次垂钓后需修养：${baseCD/60000}分钟`);
     e.reply(rewardMsg);
     e.reply(` 感悟天道：修为+${xiuwei} │ 淬炼体魄：血气+${xueqi}`);
     e.reply(" 众生钓竿回归沉寂，等待下一次出山...");
@@ -1617,6 +1731,42 @@ async broadcastToAll(player,message) {
     let quantity = code[1];
     quantity = await convert2integer(quantity);
 
+    if ((func == '打开' || func == '消耗') && thing_name === '玉石匣') {
+      if (quantity !== 1) return e.reply('玉石匣乃唯一传承，一次只能开启一个。');
+      return withPlayerMutationLock(usr_qq, async () => {
+        const lockedPlayer = await Read_player(usr_qq);
+        const lockedNajie = await Read_najie(usr_qq);
+        const result = openJadeCasket(lockedPlayer, lockedNajie);
+        if (result.reason === 'opened') return e.reply('玉石匣中的传承早已烙印于你的识海，匣中再无余物。');
+        if (!result.ok) return e.reply('你的纳戒中没有【玉石匣】。');
+
+        const transaction = new FileRollbackTransaction();
+        transaction.capture(path.join(__PATH.player_path, `${usr_qq}.json`));
+        transaction.capture(path.join(__PATH.najie_path, `${usr_qq}.json`));
+        try {
+          await Write_player(usr_qq, lockedPlayer);
+          await Write_najie(usr_qq, lockedNajie);
+          await player_efficiency(usr_qq);
+          transaction.commit();
+        } catch (error) {
+          transaction.rollback();
+          throw error;
+        }
+
+        return e.reply([
+          '【玉石匣·败天遗法】',
+          '你缓缓启开玉石匣，刹那间金光四溢，照彻山河。',
+          '一卷仙王级经文自匣中显化，字字如大道神金，越过岁月与界壁，尽数烙印于你的识海。',
+          '那竟是不属于此界的无上禁法——独孤败天大神所创【逆乱八式】！',
+          '昔年，他曾凭此法孤身逆战天道；而今八式真意沉入你的神魂，只待你在一次次征伐中参悟其锋芒。',
+          '',
+          '已领悟仙王法【逆乱八式】',
+          '已解锁小世界建筑【败天神殿】',
+          '发送 #建立败天神殿（需2000万源石、15枚世界石）',
+        ].join('\n'));
+      });
+    }
+
      if (func == "合成") {
     let wupin = data.hecheng_list.find(item => item.name == thing_name);
      if (thing_name === "图鉴") {
@@ -1846,6 +1996,32 @@ if (func == "打开") {
     }
     if (!x) {
       e.reply(`你没有【${thing_name}】这样的【${thing_exist.class}】`);
+      return false;
+    }
+    if (func == '消耗' && thing_name === '神主触屏') {
+      if (quantity !== 1) {
+        e.reply('神主触屏一次只能消耗一个。');
+        return false;
+      }
+      const currentName = player.灵根?.name;
+      if (!['门矢士', '帝骑'].includes(currentName)) {
+        e.reply('神主触屏只会回应帝骑之力，需先拥有【门矢士】或【帝骑】灵根。');
+        return false;
+      }
+      const godMaster = data.talent_list.find(item => item.name === '帝骑·神主');
+      if (!godMaster) {
+        e.reply('帝骑·神主灵根数据缺失，请联系管理员。');
+        return false;
+      }
+      await Add_najie_thing(usr_qq, thing_name, '道具', -1);
+      player.灵根 = { ...godMaster };
+      player.生命本源 = 100 + (Number(player.灵根.生命本源) || 0);
+      await checkAndRemoveShengtiMishu(player, usr_qq);
+      await Write_player(usr_qq, player);
+      const equipment = await Read_equipment(usr_qq);
+      await Write_equipment(usr_qq, equipment);
+      await player_efficiency(usr_qq);
+      e.reply('十枚碎片凝成的神主触屏依次亮起骑士图纹，你的灵根晋升为【帝骑·神主】！');
       return false;
     }
       if (thing_name === "终古剑之主") {
@@ -2108,7 +2284,7 @@ if (equipment.帝兵.name == "终古剑之主") {
         return false;
       }
       if (thing_exist.type == '修为') {
-          if (player.mijinglevel_id > 19 || player.xiangulevel_id > 19) {
+          if (isHighRealmConsumableRestricted(player)) {
         e.reply(`「自荒古岁月至今...」
 「本座早已不需要这等外物了」`);
         return false;
@@ -2124,6 +2300,14 @@ if (equipment.帝兵.name == "终古剑之主") {
         await Write_player(usr_qq, player);
         await Add_najie_thing(usr_qq, thing_name, '丹药', -quantity);
         e.reply(`服用成功，仙道潜力增加${gain}点，当前共有${player.仙道潜力}点`);
+        return false;
+      }
+      if (thing_exist.type == '功法感悟') {
+        const insight = Math.max(1, Number(thing_exist.insight) || 0) * quantity;
+        player.功法感悟值 = Math.max(0, Number(player.功法感悟值) || 0) + insight;
+        await Write_player(usr_qq, player);
+        await Add_najie_thing(usr_qq, thing_name, '丹药', -quantity);
+        e.reply(`服用成功，获得${insight}点可自由分配的功法感悟，当前共有${player.功法感悟值}点`);
         return false;
       }
       if (thing_exist.type == '心神恢复') {
@@ -2372,7 +2556,7 @@ if (equipment.帝兵.name == "终古剑之主") {
             return false;
           }
       if (thing_exist.type == '血气') {
-          if (player.mijinglevel_id > 19 || player.xiangulevel_id > 19) {
+          if (isHighRealmConsumableRestricted(player)) {
         e.reply(`「自荒古岁月至今...」
 「本座早已不需要这等外物了」`);
         return false;
@@ -2387,7 +2571,7 @@ if (thing_exist.type == '神药') {
     const player = await Read_player(usr_qq);
     
     // 检查玩家境界是否过高
-    if (player.mijinglevel_id > 19 || player.xiangulevel_id > 19) {
+    if (isHighRealmConsumableRestricted(player)) {
         e.reply(`「自荒古岁月至今...」
 「本座早已不需要这等外物了」`);
         return false;
@@ -4395,8 +4579,8 @@ if (thing_name == "轮回道果") {
 
  // 处理武祖权柄道具
 if (thing_name == "武祖权柄") {
-    // 检查玩家灵根是否为命运神道体
-    if (player.灵根 && player.灵根.name === "命运神道体") {
+    if (player.武祖叶萧认可) {
+        const previousRoot = player.灵根?.name || '无名灵根';
         // 从玩家的道具中移除一个武祖权柄
         await Add_najie_thing(usr_qq, thing_name, "道具", -1);
         
@@ -4433,7 +4617,7 @@ if (thing_name == "武祖权柄") {
             `"无始无终？今日我便为武道立下始终！"`,
             `"无古无今？此刻我便定义古今轮回！"`,
             `彼岸神光贯穿时空，命运长河为你改道：`,
-            `- 灵根极致蜕变：【命运神道体】→【彼岸·命运神道体】`,
+            `- 灵根极致蜕变：【${previousRoot}】→【彼岸·命运神道体】`,
             `- 执掌武祖权柄，为武道立心，为神通立命`,
             `- 超脱命运长河，登临彼岸，成就万劫不磨之躯`,
             `天无明骇然失色，声音颤抖：`,
@@ -4445,15 +4629,10 @@ if (thing_name == "武祖权柄") {
         
         e.reply(replyMsg.join("\n"));
     } else {
-        // 如果灵根不是命运神道体，不能使用武祖权柄
         e.reply([
             `【权柄反噬·天命难承】`,
-            `你试图执掌「武祖权柄」，却引发恐怖反噬！`,
-            `天无明的声音冰冷响起：`,
-            `"武祖权柄岂是凡俗可觊觎？天命不在你身！"`,
-            `武祖权柄绽放无量神光，却与你灵根相斥，`,
-            `终究无缘承载这天命之重！`,
-            `需先成就「命运神道体」，方可执掌武祖权柄！`
+            `武祖权柄尚未承认你的武道真意。`,
+            `需先持仙武界坐标发送【#寻找武祖】，得到武祖叶萧认可。`
         ].join("\n"));
     }
     return;
@@ -6201,99 +6380,56 @@ if (thing_name == '荒古源血晶') {
     return false;
 }
 if (thing_name == '圣法碎片') {
-    // 检查全服是否已有玩家拥有圣法碎片
     let hasShengfaInServer = false;
-    
-    // 遍历所有玩家
     let File = fs.readdirSync(__PATH.player_path);
     File = File.filter(file => file.endsWith(".json"));
-    
     for (let i = 0; i < File.length; i++) {
         let this_qq = File[i].replace(".json", '');
         let otherPlayer = await Read_player(this_qq);
-        
-        // 检查其他玩家是否拥有神慧属性
-        if (otherPlayer.神慧 && otherPlayer.神慧 >= 1) {
+        if (isShengfaClaimed(otherPlayer)) {
             hasShengfaInServer = true;
             break;
         }
     }
-    
-    // 如果全服已有玩家拥有圣法碎片
     if (hasShengfaInServer) {
         e.reply([
-            "【圣法碎片已被炼化】",
-            "此圣法碎片蕴含的星灭圣法真意已被他人炼化",
+            "【圣法碎片已有归属】",
+            "此超脱至宝已被他人炼化或正在炼化",
             "诸天万界中，圣法碎片具有唯一性",
             "无法再次炼化",
         ].join("\n"));
         return false;
     }
-    
-    // 当前玩家炼化圣法碎片
-    await Add_najie_thing(usr_qq, thing_name, '道具', -1);
-    
-    // 直接添加全部三个功法
-    const gongfaList = ["维宙星灭诀", "星指维宇崩", "击宇碎维"];
-    let newGongfaCount = 0;
-    let message = "";
-    
-    // 检查并添加功法
-    for (const gongfa of gongfaList) {
-        if (!player.学习的功法.includes(gongfa)) {
-            player.学习的功法.push(gongfa);
-            newGongfaCount++;
-            message += `一道贯穿维宙的残缺星灭圣法真意涌入识海：【${gongfa}】\n`;
-        } else {
-            message += `功法【${gongfa}】已臻至大圆满！\n`;
-        }
+
+    const actionRaw = await redis.get(`xiuxian:player:${usr_qq}:action`);
+    const oldAction = actionRaw ? JSON.parse(actionRaw) : null;
+    if (oldAction?.end_time > Date.now()) {
+        e.reply(`你正在${oldAction.action}，暂时无法炼化圣法碎片`);
+        return false;
     }
-    
-    // 提升玩家境界
-    player.level_id = 64;
-    player.Physique_id = 63;
-    player.mijinglevel_id = 24;
-    player.天资等级 = "无演无尽";
-    player.天资评价 = "亘古绝今从未有，演尽诸天万界，此等天资已超脱天道束缚";
-    // 大幅提升属性
-    player.攻击加成 += 10000000;
-    player.防御加成 += 10000000;
-    player.生命加成 += 10000000;
-    
-    // 赋予特殊灵根
-    player.灵根 = {"id":7010015,"name":"无演无尽者","type":"神慧者","eff":300,"法球倍率":4,"攻击":5,"防御":5,"生命":5,"生命本源":150};
-    
-    // 标记为圣法碎片拥有者
-    player.神慧 = 1;
-    
-    // 保存玩家数据
+
+    const started = startShengfaRefinement(player, { groupId: e.group_id });
+    if (!started.ok) {
+        e.reply(started.message);
+        return false;
+    }
+
+    // await Add_najie_thing(usr_qq, thing_name, '道具', -1); // 按设定保留圣法碎片，不执行原消耗逻辑
     await Write_player(usr_qq, player);
-    
-    // 更新装备数据
-    let equipment = await Read_equipment(usr_qq);
-    await Write_equipment(usr_qq, equipment);
-    
-    // 重新读取玩家数据确保一致性
-    player = await Read_player(usr_qq);
-    await data.setData("player", usr_qq, player);
-    
-    // 构建最终消息
-    message += `\n你炼化了圣法碎片，无法想象的滔天伟力灌注进你的道躯，庞大海量的记忆信息如山崩海啸般倒卷进你的识海中，登时间你整个人散发出一股超脱永恒，有我无敌的大气魄！万界音声如群臣朝贡般涌来，你感觉命运时空因果大道，包括此界的一切概念对你而言犹如掌上观纹般没有了任何秘密\n\n`;
-    message += `但你也了解到了一段秘辛，这片天地乃至整个多元宇宙都只是低维世界，在这片维度之上还有上百个维宙，每个维宙都囊括了无穷无尽的低维世界，而在百维之上的神维宇宙曾出现过一位惊艳万古的强者！\n\n`;
-    message += `没有人知道祂的真名，他们都称祂为星灭，星灭主帝！祂创造出了足以颠覆神维宇宙的星灭圣法，其展现出的经天纬地之才也招致了万维梵宇界的忌惮，出动了数十位极其强大的主帝将其围困熬杀拘禁神慧折磨，而星灭圣法也在这场围剿中被打碎，散落在多个维宙中，大多都被主帝打灭了无穷低维世界找寻到，却偏偏遗漏了最渺小不起眼的碎片，它似乎蛰伏轮回了不知多少个纪元，但今日终被你所得，你的资质已然是无演无尽，亘古绝今第一人！`;
-    
-    // 添加全服公告
-    const serverMsg = [
-        "【诸天震动·圣法现世】",
-        `诸天万界剧烈震荡！${player.名号}成功炼化唯一圣法碎片！`,
-        "星灭圣法重现世间，似乎惊扰到了万维梵宇界的主帝强者！",
-    ].join("\n");
-    
-    // 发送全服公告
-    e.reply(serverMsg);
-    
-    // 发送玩家专属消息
-    e.reply(message);
+    await redis.set(`xiuxian:player:${usr_qq}:action`, JSON.stringify({
+        action: SHENGFA_REFINING,
+        start_time: Date.now(),
+        end_time: started.endTime,
+        time: SHENGFA_REFINE_MS,
+        working: '1',
+        Place_action: '1',
+        Place_actionplus: '1',
+    }));
+    e.reply([
+        '【超脱至宝·圣法碎片】',
+        `你开始炼化圣法碎片，进入「${SHENGFA_REFINING}」状态。`,
+        '炼化需480分钟，期间不会直接提升任何境界。',
+    ].join('\n'));
     return false;
 }
       if (thing_name == "圆神终极本源") {
@@ -6589,6 +6725,11 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
   if (func == '学习') {
   let player = await Read_player(usr_qq);
   let islearned = player.学习的功法.find(item => item == thing_name);
+
+  if (FLOWER_BREATHING_METHODS.has(thing_name) && !isCultivatingExtraPath(player, 'huafen')) {
+    e.reply('呼吸法只与花粉进化路相合，你当前修炼的额外体系无法承载此法。');
+    return false;
+  }
   
   // 定义功法层级映射（数字越大 = 越难学）
   const gongfaHierarchy = {
