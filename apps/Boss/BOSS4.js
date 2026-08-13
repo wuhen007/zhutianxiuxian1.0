@@ -20,6 +20,7 @@ import {
   __PATH,
   zd_battle,
   get_fight_img,
+  player_efficiency,
 } from '../../model/xiuxian.js';
 import { recordWenXianTaskProgress, recordWenXianTrial } from '../../model/wenxianling.js';
 import { absorbTuntianSource } from '../../model/tuntianMagic.js';
@@ -57,6 +58,8 @@ import {
   consumeTianjiaoScent,
   getTianjiaoScentAccess,
 } from '../../model/tianjiTalismans.js';
+import { getDouziMimicChance, tryLearnTianjiaoGongfa } from '../../model/gongfaProficiency.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 let WorldBOSSBattleCD = []; //CD
 let WorldBOSSBattleLockToken = 0;
@@ -1683,6 +1686,7 @@ export class BOSS4 extends plugin {
         const hatredResult = await this.addHatred(tianjiaoName, usr_qq, '挑战成功');
         if (zhuxianTianjiao) {
           hatredResult.new = Math.max(0, hatredResult.new - 50);
+          hatredResult.gain = hatredResult.new - hatredResult.old; // 同步展示用增量（含-50减免）
           await redis.set(this.getHatredKey(tianjiaoName, usr_qq), hatredResult.new.toString());
           await redis.set(`tianjiao:fear:${tianjiaoName}:${usr_qq}`, (Date.now() + 8 * 60 * 60 * 1000).toString());
           await this.updateTianjiaoHatredStatus(tianjiaoName);
@@ -1703,7 +1707,7 @@ export class BOSS4 extends plugin {
           talismanTriggered 
             ? `护体法宝生效，天骄血量未减少，当前剩余${status.currentHP}%`
             : `天骄血量减少${zhuxianTianjiao ? 40 : 20}%，当前剩余${status.currentHP}%`,
-          `仇恨值+${hatredResult.gain}（当前：${hatredResult.new}，关系：${newLevel}）`
+          `仇恨值${hatredResult.gain >= 0 ? '+' : ''}${hatredResult.gain}（当前：${hatredResult.new}，关系：${newLevel}）`
         ].filter(Boolean);
         if (setbackLines.length > 0) winMsg.push(...setbackLines);
         await e.reply(winMsg.join('\n'));
@@ -1799,56 +1803,53 @@ export class BOSS4 extends plugin {
           `血气：${bigNumberTransform(zuizhong)}`
         ];
 
-        // 斗字秘学习功法功能
-        if (player.学习的功法.includes("斗字秘") && Math.random() < 0.01) {
-          player.学习的功法 = player.学习的功法 || [];
-          const playerLearnedSkills = player.学习的功法;
-          const learnableSkills = tianjiaoData.学习的功法.filter(skill => !playerLearnedSkills.includes(skill));
-
-          if (learnableSkills.length > 0) {
-            const randomIndex = Math.floor(Math.random() * learnableSkills.length);
-            const newSkill = learnableSkills[randomIndex];
-            player.学习的功法.push(newSkill);
-            await Write_player(usr_qq, player);
-
-            let skillDescription = "";
-            if (newSkill.includes("拳") || newSkill.includes("掌")) {
+        // 斗字秘随熟练度提升推演概率，成功后从最新存档写入，避免覆盖本场奖励。
+        const registeredGongfa = new Set([
+          ...(data.gongfa_list || []),
+          ...(data.timegongfa_list || []),
+          ...(data.dijingList || []),
+          ...(data.jineng1 || []).filter(skill => skill.class === '功法'),
+          ...(data.jineng2 || []).filter(skill => skill.class === '功法'),
+          ...(data.jineng_heal || []).filter(skill => skill.class === '功法'),
+          ...(data.jineng3 || []).filter(skill => skill.class === '功法'),
+        ].map(item => item.name));
+        const targetGongfa = (tianjiaoData.学习的功法 || [])
+          .filter(name => registeredGongfa.has(name));
+        const mimic = await withPlayerMutationLock(usr_qq, async () => {
+          const douziPlayer = await Read_player(usr_qq);
+          const result = tryLearnTianjiaoGongfa(douziPlayer, targetGongfa);
+          if (result.ok) {
+            await Write_player(usr_qq, douziPlayer);
+            await player_efficiency(usr_qq);
+          }
+          return result;
+        });
+        const mimicChance = mimic.chance;
+        if (mimicChance > 0) {
+          rewardMsg.push(`斗字秘推演概率：${(mimicChance * 100).toFixed(2)}%`);
+          if (mimic.ok) {
+            const newSkill = mimic.name;
+            let skillDescription = '';
+            if (newSkill.includes('拳') || newSkill.includes('掌')) {
               skillDescription = `拳掌交锋间，斗字秘运转到极致，演化出${newSkill}的无上奥义！`;
-            } else if (newSkill.includes("剑") || newSkill.includes("刀")) {
+            } else if (newSkill.includes('剑') || newSkill.includes('刀')) {
               skillDescription = `兵器碰撞的刹那，斗字秘捕捉到${newSkill}的剑意道痕，将其烙印在识海！`;
-            } else if (newSkill.includes("秘") || newSkill.includes("诀")) {
+            } else if (newSkill.includes('秘') || newSkill.includes('诀')) {
               skillDescription = `斗字秘推演万法，在生死搏杀中洞悉${newSkill}的运转轨迹！`;
-            } else if (newSkill.includes("经") || newSkill.includes("法")) {
+            } else if (newSkill.includes('经') || newSkill.includes('法')) {
               skillDescription = `古经轰鸣，道音阵阵，斗字秘逆推${newSkill}的完整传承！`;
             } else {
               skillDescription = `斗战圣法演化到极致，在战斗中领悟${newSkill}的真谛！`;
             }
-
-            const douziMiMsg = [
-              "【斗字秘】触发",
-              "九秘之【斗字秘】运转，斗战圣法演化诸天万法！",
-              "",
+            rewardMsg.push([
+              '【斗字秘·演化万法】',
+              '九秘之斗字秘自行运转，将交战中捕捉到的道痕层层拆解。',
               skillDescription,
-              "",
-              `领悟功法：${newSkill}`,
-              "【斗字秘】不愧为战斗第一圣法，可演化一切攻伐之术！",
-              "在生死搏杀中，你的战斗经验与道行同步精进！"
-            ].join('\n');
-
-            rewardMsg.push(douziMiMsg);
-          } else {
-            const douziMiMsg = [
-              "【斗字秘】触发",
-              "九秘之【斗字秘】运转，斗战圣法演化诸天万法！",
-              "",
-              `在与${tianjiaoName}的激战中，【斗字秘】推演其所有功法，`,
-              `然你已尽数掌握${tianjiaoName}的传承，无法再演化新的功法。`,
-              "",
-              "【斗字秘】虽未演化出新法，但战斗经验与道行依旧精进！",
-              "万法归宗，殊途同归，你的战斗技艺已达化境！"
-            ].join('\n');
-
-            rewardMsg.push(douziMiMsg);
+              `领悟功法：【${newSkill}】（熟练度0）`,
+              '此法初得其形，仍需在战斗或功法参悟中修至圆满。',
+            ].join('\n'));
+          } else if (mimic.reason === 'mastered') {
+            rewardMsg.push(`你已掌握${tianjiaoName}当前所有可演化功法，斗字秘无新法可参。`);
           }
         }
 
@@ -1908,7 +1909,7 @@ export class BOSS4 extends plugin {
 
         await e.reply([
           `你未能战胜${tianjiaoName}，天骄血量减少${zhuxianTianjiao ? 2 : 1}%，当前剩余${status.currentHP}%`,
-          `仇恨值+${hatredResult.gain}（当前：${hatredResult.new}，关系：${newLevel}）`
+          `仇恨值${hatredResult.gain >= 0 ? '+' : ''}${hatredResult.gain}（当前：${hatredResult.new}，关系：${newLevel}）`
         ].join('\n'));
 
         // 计算失败奖励

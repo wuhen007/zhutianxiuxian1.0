@@ -26,11 +26,15 @@ function loadGetReadyUnits() {
 }
 
 function loadBoostActionBar() {
+  const maxSource = xiuxianSource.match(
+    /export const ACTION_BAR_MAX = \d+;/
+  )?.[0];
   const source = xiuxianSource.match(
     /export function boostActionBar\([\s\S]*?\n\}/
   )?.[0];
+  assert.ok(maxSource, "未找到 ACTION_BAR_MAX");
   assert.ok(source, "未找到 boostActionBar");
-  return Function(`${source.replace("export ", "")}; return boostActionBar;`)();
+  return Function(`${maxSource.replace("export ", "")} ${source.replace("export ", "")}; return boostActionBar;`)();
 }
 
 

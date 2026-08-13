@@ -1,5 +1,10 @@
 export const GONGFA_PROFICIENCY_MAX = 1000;
 export const GONGFA_DAILY_GAIN_MAX = 20;
+export const DOUZI_MIMIC_BASE_CHANCE = 0.02;
+export const DOUZI_MIMIC_MAX_CHANCE = 0.1;
+
+const ZHEZI_HEAL_RATES = Object.freeze([0.1, 0.1, 0.15, 0.2, 0.25, 0.35]);
+const BUMIE_HEAL_RATES = Object.freeze([0.12, 0.12, 0.2, 0.3, 0.4, 0.55]);
 
 export const GONGFA_PROFICIENCY_STAGES = Object.freeze([
   Object.freeze({ name: '初窥门径', min: 0, trigger: 1, combat: 1, numeric: 1 }),
@@ -94,15 +99,86 @@ export function getGongfaProficiencyProfile(player, name) {
   return { ...stage, exp, index, nextExp: next.min };
 }
 
+export function getDouziMimicChance(player) {
+  if (!hasLearnedGongfa(player, '斗字秘')) return 0;
+  const progress = getGongfaProficiency(player, '斗字秘') / GONGFA_PROFICIENCY_MAX;
+  return DOUZI_MIMIC_BASE_CHANCE
+    + (DOUZI_MIMIC_MAX_CHANCE - DOUZI_MIMIC_BASE_CHANCE) * progress;
+}
+
+export function getVitalityRecoveryRate(player, name) {
+  const rates = name === '者字秘'
+    ? ZHEZI_HEAL_RATES
+    : name === '不灭经'
+      ? BUMIE_HEAL_RATES
+      : null;
+  if (!rates || !hasLearnedGongfa(player, name)) return 0;
+  return rates[getGongfaProficiencyProfile(player, name).index] || 0;
+}
+
+export function getZheziReviveConfig(player) {
+  if (!hasLearnedGongfa(player, '者字秘')) return { maxRevives: 0, recoveryRatios: [] };
+  const mastered = getGongfaProficiencyProfile(player, '者字秘').index >= 5;
+  return mastered
+    ? { maxRevives: 2, recoveryRatios: [1, 0.55] }
+    : { maxRevives: 1, recoveryRatios: [1] };
+}
+
+export function tryVitalityRecovery(player, skill, timing, random = Math.random, healingMultiplier = 1) {
+  const name = skill?.熟练度归属 || skill?.name;
+  const expectedTiming = name === '者字秘' ? '受击后' : name === '不灭经' ? '行动前' : '';
+  if (!expectedTiming || timing !== expectedTiming || !hasLearnedGongfa(player, name)) {
+    return { triggered: false, reason: 'unavailable' };
+  }
+  const maxHp = Math.max(0, Number(player?.血量上限) || 0);
+  const currentHp = Math.max(0, Number(player?.当前血量) || 0);
+  if (!maxHp || currentHp <= 0 || currentHp >= maxHp) return { triggered: false, reason: 'health' };
+  const chance = getGongfaTriggerChance(player, skill);
+  if (random() >= chance) return { triggered: false, reason: 'missed', chance };
+
+  const rate = getVitalityRecoveryRate(player, name);
+  const multiplier = clamp(healingMultiplier, 0, 1);
+  const amount = Math.min(maxHp - currentHp, Math.trunc(maxHp * rate * multiplier));
+  if (amount <= 0) return { triggered: false, reason: 'health', chance };
+  player.当前血量 = currentHp + amount;
+  recordGongfaCombatTrigger(player, name);
+  return { triggered: true, name, rate, amount, chance };
+}
+
+export function tryLearnTianjiaoGongfa(player, targetGongfa, random = Math.random) {
+  const chance = getDouziMimicChance(player);
+  if (!chance) return { ok: false, reason: 'unlearned', chance };
+
+  const learned = new Set(getLearnedGongfaNames(player));
+  const learnable = [...new Set(
+    (Array.isArray(targetGongfa) ? targetGongfa : [])
+      .map(name => String(name || '').trim())
+      .filter(name => name && !learned.has(name))
+  )];
+  if (!learnable.length) return { ok: false, reason: 'mastered', chance };
+  if (random() >= chance) return { ok: false, reason: 'missed', chance };
+
+  const roll = Math.max(0, Math.min(1 - Number.EPSILON, Number(random()) || 0));
+  const name = learnable[Math.floor(roll * learnable.length)];
+  player.学习的功法 = Array.isArray(player.学习的功法)
+    ? player.学习的功法
+    : getLearnedGongfaNames(player);
+  player.学习的功法.push(name);
+  ensureGongfaProficiency(player)[name] = 0;
+  return { ok: true, name, chance };
+}
+
 export function getSkillProficiencyOwner(skill) {
   return String(skill?.熟练度归属 || skill?.name || '').trim();
 }
 
-export function getGongfaTriggerChance(player, skill, chance = skill?.pr) {
+export function getGongfaTriggerChance(player, skill, chance = skill?.pr, random = Math.random) {
   const base = clamp(chance, 0, 1);
   if (skill?.class !== '功法') return base;
   const owner = getSkillProficiencyOwner(skill);
   if (!hasLearnedGongfa(player, owner)) return base;
+  const suppression = Math.min(1, Math.max(0, Number(player?._功法压制概率) || 0));
+  if (suppression > 0 && random() < suppression) return 0;
   return clamp(base * getGongfaProficiencyProfile(player, owner).trigger, 0, 1);
 }
 
@@ -155,6 +231,37 @@ export function addGongfaProficiency(player, name, amount, options = {}) {
   proficiency[name] = current + actual;
   daily[name] = gainedToday + actual;
   return actual;
+}
+
+export function allocateGongfaInsight(player, name, amount) {
+  const requested = Math.max(0, Math.floor(Number(amount) || 0));
+  if (!requested) return { ok: false, reason: 'amount' };
+  if (!hasLearnedGongfa(player, name)) return { ok: false, reason: 'unlearned' };
+
+  const balance = Math.max(0, Math.floor(Number(player?.功法感悟值) || 0));
+  if (balance < requested) return { ok: false, reason: 'balance', balance };
+  const current = getGongfaProficiency(player, name);
+  const spent = Math.min(requested, GONGFA_PROFICIENCY_MAX - current);
+  if (!spent) return { ok: false, reason: 'max', balance };
+
+  ensureGongfaProficiency(player)[name] = current + spent;
+  player.功法感悟值 = balance - spent;
+  return {
+    ok: true,
+    spent,
+    proficiency: current + spent,
+    balance: player.功法感悟值,
+  };
+}
+
+export function resolveGongfaCombatSkill(player, skill, random = Math.random) {
+  if (skill?.class !== '功法' || !Array.isArray(skill.招式) || !skill.招式.length) return skill;
+  const proficiency = getGongfaProficiency(player, getSkillProficiencyOwner(skill));
+  const moves = skill.招式.filter(move => proficiency >= Math.max(0, Number(move?.最低熟练度) || 0));
+  if (!moves.length) return skill;
+  const roll = Math.max(0, Math.min(1 - Number.EPSILON, Number(random()) || 0));
+  const { name: moveName, ...effect } = moves[Math.floor(roll * moves.length)];
+  return { ...skill, ...effect, 招式名: moveName };
 }
 
 export function awardRecordedCombatProficiency(player, amount = 1, options = {}) {

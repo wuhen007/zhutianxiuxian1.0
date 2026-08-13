@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>战斗技能谱</title>
+    <link rel="stylesheet" href="{{pluResPath}}/html/combat_skill/combat_skill.css" />
+  </head>
+  <body>
+    <main class="skill-sheet" id="container">
+      <header class="sheet-header">
+        <div class="title-seal" aria-hidden="true"><span>战</span><b>法</b></div>
+        <div class="title-copy">
+          <p>COMBAT ARTS CODEX</p>
+          <h1>战斗技能谱</h1>
+          <strong>{{panel.playerName}}</strong>
+        </div>
+        <div class="loadout-summary">
+          <span>已配置</span>
+          <strong>{{panel.totalEquipped}}<small>/ {{panel.totalLimit}}</small></strong>
+          <em>功法感悟 {{panel.insight}}</em>
+        </div>
+      </header>
+
+      {{each panel.sections section}}
+      <section class="skill-section section-{{section.key}}">
+        <header class="section-header">
+          <div>
+            <span>{{section.note}}</span>
+            <h2>{{section.label}}</h2>
+          </div>
+          <strong>{{section.equippedCount}} / {{section.limit}}</strong>
+        </header>
+
+        {{if section.items.length}}
+        <div class="skill-grid">
+          {{each section.items item}}
+          <article class="skill-card {{item.equipped ? 'is-equipped' : ''}}">
+            <header class="skill-title">
+              <span class="skill-index">{{item.index}}</span>
+              <div>
+                <h3>{{item.name}}</h3>
+                <p>{{item.stage}}{{if item.moveProgress}} · 已参悟{{item.moveProgress}}{{/if}}</p>
+              </div>
+              <b>{{item.equipped ? '已装备' : '未装备'}}</b>
+            </header>
+
+            <div class="proficiency-row">
+              <span>当前熟练度</span>
+              <i><em style="width: {{item.progress}}%"></em></i>
+              <strong>{{item.proficiency}} / 1000</strong>
+            </div>
+
+            <div class="boost-row">
+              <span>触发 {{item.triggerBoost}}</span>
+              <span>威能 {{item.combatBoost}}</span>
+              <span>效果 {{item.effectBoost}}</span>
+            </div>
+
+            <div class="trigger-table">
+              {{each item.triggers trigger}}
+              <div class="trigger-row">
+                <div class="trigger-meta">
+                  <span>{{trigger.when}}</span>
+                  <strong>{{trigger.chance}}</strong>
+                </div>
+                <p>{{trigger.effect}}</p>
+                <b>{{trigger.multiplier}}</b>
+              </div>
+              {{/each}}
+            </div>
+          </article>
+          {{/each}}
+        </div>
+        {{else}}
+        <div class="empty-state"><span>未掌握此类功法</span><b>暂无可配置技能</b></div>
+        {{/if}}
+      </section>
+      {{/each}}
+
+      <footer class="sheet-footer">
+        <span>诸天万界 · 战法归档</span>
+        <strong>分类序号 · 实战数据</strong>
+      </footer>
+    </main>
+  </body>
+</html>
