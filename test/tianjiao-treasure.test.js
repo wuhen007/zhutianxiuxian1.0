@@ -11,6 +11,7 @@ import {
 } from '../model/innateTreasureContest.js';
 import {
   clearTianjiaoTreasure,
+  getTianjiaoHeldTreasureNames,
   mountTianjiaoTreasure,
   rollTianjiaoTreasureRecovery,
 } from '../model/tianjiaoTreasure.js';
@@ -93,6 +94,15 @@ test('clearTianjiaoTreasure 清理持宝状态', () => {
   assert.equal(tianjiao.当前先天至宝, undefined);
   assert.equal(tianjiao.天骄夺宝, undefined);
   assert.equal(clearTianjiaoTreasure(tianjiao), false, '无持宝状态时应返回 false');
+});
+
+test('至宝出世候选池排除天骄仍持有的至宝', () => {
+  const held = getTianjiaoHeldTreasureNames([
+    { 当前先天至宝: '混沌珠', 天骄夺宝: { 至宝名: '混沌珠' } },
+    { 当前先天至宝: '盘古幡' },
+    { 当前先天至宝: '太极图', 天骄夺宝: { 至宝名: '东皇钟' } },
+  ]);
+  assert.deepEqual([...held], ['混沌珠']);
 });
 
 test('rollTianjiaoTreasureRecovery：未持宝拒绝 / 概率夺回 / 失败保留', () => {

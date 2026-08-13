@@ -49,11 +49,24 @@ test('时光令只能在参悟配方后用既有材料合成', () => {
   const recipe = recipes.find(item => item.name === '时光令');
   assert.equal(recipe.传承要求, '时光令配方');
   assert.deepEqual(recipe.materials, [
-    { name: '光阴石', class: '道具', amount: 2 },
+    { name: '时光石', class: '材料', amount: 2 },
     { name: '世界石', class: '材料', amount: 1 },
     { name: '天外清风', class: '材料', amount: 1 },
     { name: '符纸', class: '道具', amount: 10 },
   ]);
   assert.match(forgeSource, /#参悟时光令配方/);
   assert.doesNotMatch(forgeSource, /xishu = 1\.1/);
+});
+
+test('造化仙炉为顶级独立锻炉且不再支持升阶指令', () => {
+  const furnace = furnaces.find(item => item.name === '造化仙炉');
+  assert.deepEqual(furnace, {
+    name: '造化仙炉',
+    阶位: 5,
+    容纳量: 34,
+    xishu: 0.35,
+    稀有度: 10,
+  });
+  assert.doesNotMatch(forgeSource, /#升阶锻炉/);
+  assert.doesNotMatch(forgeSource, /async upgradeFurnace/);
 });

@@ -116,10 +116,6 @@ export class duanzao extends plugin {
           fnc: 'showFurnace',
         },
         {
-          reg: '^#升阶锻炉$',
-          fnc: 'upgradeFurnace',
-        },
-        {
           reg: '^#安装锻炉.*$',
           fnc: 'installFurnace',
         },
@@ -676,6 +672,7 @@ export class duanzao extends plugin {
         }
         max = await getxuanze(shuzu, player.隐藏灵根.type);
         let fangyuxuejian = 0;
+        let fangyuJiaceng = 0; // 防御专属加成层（仅增加防御倍率，不动攻/血/暴击）
         if (qianzhui == 5) {
           houzhui = '五行杂灵';
           xishu += 0.1;
@@ -694,11 +691,18 @@ export class duanzao extends plugin {
           }
         } else if (qianzhui == 1) {
           const mu = await mainyuansu(wuwei);
-          houzhui = '纯' + mu;
-          xishu += 0.15;
+          if (mu === '土') {
+            // 土行专精：防御词缀「玄龟镇海」，防御大幅加成、攻/血保持中庸
+            houzhui = '玄龟镇海';
+            xishu += 0.15;
+            fangyuJiaceng += 0.5;
+          } else {
+            houzhui = '纯' + mu;
+            xishu += 0.15;
+          }
         }if (qianzhui == 0) {
   houzhui = '终极至宝';
-  xishu += 0.2;
+  xishu += 0.35;
 }
 
         const newtime1 = Date.now() - Math.floor(Date.now() / 1000) * 1000;
@@ -713,7 +717,7 @@ export class duanzao extends plugin {
           class: '装备',
           type: wehizhi1,
           atk: Math.floor(jiuwei[0] * xishu * craftedEquipmentMultiplier * 1000) / 1000,
-          def: Math.floor(jiuwei[1] * (xishu - fangyuxuejian) * craftedEquipmentMultiplier * 1000) / 1000,
+          def: Math.floor(jiuwei[1] * (xishu - fangyuxuejian + fangyuJiaceng) * craftedEquipmentMultiplier * 1000) / 1000,
           HP: Math.floor(jiuwei[2] * xishu * craftedEquipmentMultiplier * 1000) / 1000,
           bao: Math.floor(jiuwei[3] * craftedEquipmentMultiplier * 1000) / 1000,
           author_name: player.id,
@@ -1067,8 +1071,6 @@ export class duanzao extends plugin {
     const furnaceName = a.炉阶 || '凡铁炉';
     const furnace = await readthat(furnaceName, '炼器炉');
     const allFurnace = await readall('炼器炉');
-    const idx = allFurnace.findIndex(x => x.name === furnaceName);
-    const next = idx >= 0 && idx + 1 < allFurnace.length ? allFurnace[idx + 1] : null;
     const owned = [];
     for (const candidate of allFurnace) {
       if (candidate.name === '凡铁炉' || candidate.name === furnaceName || Number(await exist_najie_thing(user_qq, candidate.name, '道具')) > 0) {
@@ -1081,45 +1083,8 @@ export class duanzao extends plugin {
       b += `  容纳量：${furnace.容纳量}\n`;
     }
     b += `  当前拥有：${owned.join('、')}\n`;
-    if (next) {
-      b += `\n【下一阶】${next.name}（xishu+${next.xishu}，容纳量${next.容纳量}）\n`;
-      b += Number(await exist_najie_thing(user_qq, next.name, '道具')) > 0
-        ? `  已拥有，使用 #升阶锻炉 安装`
-        : `  尚未拥有，可前往 #战功商店 兑换`;
-    } else {
-      b += `\n已是最高阶煅炉`;
-    }
     b += `\n使用 #安装锻炉 <名称> 可在已拥有的锻炉间自由切换`;
     e.reply(b);
-    return false;
-  }
-
-  async upgradeFurnace(e) {
-    if (!verc({ e })) return false;
-    let user_qq = e.user_id.toString().replace('qg_', '');
-    user_qq = await channel(user_qq);
-    if (!(await existplayer(user_qq))) return false;
-    const A = await looktripod(user_qq);
-    if (A != 1) { e.reply(`请先去#炼器师能力评测,再来煅炉吧`); return false; }
-    let newtripod;
-    try { newtripod = await Read_tripod(); } catch { await Write_duanlu([]); newtripod = await Read_tripod(); }
-    let target;
-    for (let item of newtripod) { if (user_qq == item.qq) { target = item; break; } }
-    if (!target) return false;
-    if (target.状态 == 1) { e.reply(`炼制中不能更换锻炉`); return false; }
-    const furnaceName = target.炉阶 || '凡铁炉';
-    const allFurnace = await readall('炼器炉');
-    const idx = allFurnace.findIndex(x => x.name === furnaceName);
-    if (idx < 0 || idx + 1 >= allFurnace.length) { e.reply(`已是最高阶煅炉，无法继续升阶`); return false; }
-    const next = allFurnace[idx + 1];
-    if (Number(await exist_najie_thing(user_qq, next.name, '道具')) < 1) {
-      e.reply(`你尚未拥有【${next.name}】，请先前往 #战功商店 兑换`);
-      return false;
-    }
-    target.炉阶 = next.name;
-    target.容纳量 = next.容纳量;
-    await Write_duanlu(newtripod);
-    e.reply(`安装成功！当前锻炉为【${next.name}】\n  系数加成 xishu+${next.xishu}，容纳量 ${next.容纳量}`);
     return false;
   }
 
@@ -1225,7 +1190,7 @@ export class duanzao extends plugin {
       b += `· ${g.name}（${g.品级}｜xishu+${g.xishu}` +
         (g.windowBonus ? `｜窗口+${g.windowBonus}` : '') +
         (g.timeCut ? `｜缩时${Math.round(g.timeCut * 100)}%` : '') +
-        `）修炼需 ${g.cost} 灵石\n`;
+        `）修炼需功法本体或 ${g.cost} 灵石\n`;
     }
     b += `\n使用 #修炼功法 <功法名> 进行修炼`;
     e.reply(b);
@@ -1248,18 +1213,23 @@ export class duanzao extends plugin {
     if (gongfa.type !== '炼器' || typeof gongfa.xishu !== 'number') { e.reply(`【${name}】暂未配置炼器属性，无法作为炼器功法修炼`); return false; }
     const player = await data.getData('player', user_qq);
     const cost = gongfa.cost || 0;
-    if ((player.灵石 || 0) < cost) {
-      e.reply(`灵石不足，修炼【${gongfa.name}】需 ${cost} 灵石，当前 ${player.灵石 || 0}`);
+    const ownsManual = Number(await exist_najie_thing(user_qq, gongfa.name, '功法')) > 0;
+    if (!ownsManual && (player.灵石 || 0) < cost) {
+      e.reply(`修炼【${gongfa.name}】需功法本体或 ${cost} 灵石，当前灵石 ${player.灵石 || 0}`);
       return false;
     }
-    player.灵石 = (Number(player.灵石) || 0) - cost;
+    if (ownsManual) {
+      await Add_najie_thing(user_qq, gongfa.name, '功法', -1);
+    } else {
+      player.灵石 = (Number(player.灵石) || 0) - cost;
+    }
     player.炼器功法 = gongfa.name;
     player.炼器功法熟练度 = 0;
     await Write_player(user_qq, player);
     e.reply(`修炼成功！已习得炼器功法【${gongfa.name}】（品级${gongfa.品级}，xishu+${gongfa.xishu}` +
       (gongfa.windowBonus ? `，完美窗口+${gongfa.windowBonus}分` : '') +
       (gongfa.timeCut ? `，缩时${Math.round(gongfa.timeCut * 100)}%` : '') +
-      `）\n消耗灵石 ${cost}，熟练度已重置为 0（每次开炉 +1，满 100 额外 +0.1 系数）`);
+      `）\n${ownsManual ? '已消耗功法本体' : `消耗灵石 ${cost}`}，熟练度已重置为 0（每次开炉 +1，满 100 额外 +0.1 系数）`);
     return false;
   }
 
@@ -1289,7 +1259,7 @@ export class duanzao extends plugin {
     }
     e.reply([
       '【时光令配方已参悟】',
-      '每枚时光令需要：光阴石×2、世界石×1、天外清风×1、符纸×10',
+      '每枚时光令需要：时光石×2、世界石×1、天外清风×1、符纸×10',
       '发送 #合成时光令*数量 即可制作。'
     ].join('\n'));
     return false;

@@ -253,28 +253,28 @@ async chengjiu1(e) {
                 conditionMet = player.power_place == 1.5;
                 break;
             case 9: // 诸法加身
-                conditionMet = player.mijinglevel_id > 1 || player.xiangulevel_id > 1;
+                conditionMet = player.mijinglevel_id > 1 || player.xiangulevel_id > 1 || player.huafenlevel_id > 1;
                 break;
             case 10: // 宇宙共尊
-                conditionMet = player.mijinglevel_id > 15 || player.xiangulevel_id > 13;
+                conditionMet = player.mijinglevel_id > 15 || player.xiangulevel_id > 13 || player.huafenlevel_id > 14;
                 break;
             case 11: // 红尘为仙
-                conditionMet = player.mijinglevel_id > 16 || player.xiangulevel_id > 14;
+                conditionMet = player.mijinglevel_id > 16 || player.xiangulevel_id > 14 || player.huafenlevel_id > 16;
                 break;
             case 12: // 天难葬地难灭
-                conditionMet = player.mijinglevel_id > 17 || player.xiangulevel_id > 15;
+                conditionMet = player.mijinglevel_id > 17 || player.xiangulevel_id > 15 || player.huafenlevel_id > 17;
                 break;
             case 13: // 诸天终极生命体
-                conditionMet = player.mijinglevel_id > 19 || player.xiangulevel_id > 19;
+                conditionMet = player.mijinglevel_id > 19 || player.xiangulevel_id > 19 || player.huafenlevel_id > 20;
                 break;
             case 14: // 诸天至高
-                conditionMet = player.mijinglevel_id > 20 || player.xiangulevel_id > 20;
+                conditionMet = player.mijinglevel_id > 20 || player.xiangulevel_id > 20 || player.huafenlevel_id > 21;
                 break;
             case 15: // 超越永恒与终极
-                conditionMet = player.mijinglevel_id > 21 || player.xiangulevel_id > 21;
+                conditionMet = player.mijinglevel_id > 21 || player.xiangulevel_id > 21 || player.huafenlevel_id > 22;
                 break;
             case 16: // 超脱一切者
-                conditionMet = player.mijinglevel_id > 22 || player.xiangulevel_id > 22;
+                conditionMet = player.mijinglevel_id > 22 || player.xiangulevel_id > 22 || player.huafenlevel_id > 23;
                 break;
             case 22: // 轮回诸天
                 conditionMet = player.使用过诸天镜 === true;

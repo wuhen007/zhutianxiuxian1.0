@@ -11,6 +11,21 @@ export function calculateWorldAccumulation(hoursPassed, timeRatio) {
   };
 }
 
+export function settleResourceRemainders(rawAmounts, previousRemainders = {}) {
+  const amounts = {};
+  const remainders = { ...previousRemainders };
+  for (const [name, rawAmount] of Object.entries(rawAmounts || {})) {
+    const total = Math.max(0, Number(rawAmount) || 0)
+      + Math.max(0, Number(previousRemainders?.[name]) || 0);
+    const amount = Math.floor(total + 1e-9);
+    amounts[name] = amount;
+    const remainder = Math.max(0, total - amount);
+    if (remainder > 1e-9) remainders[name] = remainder;
+    else delete remainders[name];
+  }
+  return { amounts, remainders };
+}
+
 export function calculateElapsedEventChance(
   elapsedHours,
   periodChance = 0.08,

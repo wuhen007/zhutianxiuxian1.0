@@ -9,6 +9,16 @@ import { INNATE_TREASURE_NAMES } from './innateTreasure.js';
 /** 讨伐天骄夺回至宝的基础概率 */
 export const TIANJIAO_TREASURE_RECOVERY_CHANCE = 0.8;
 
+/** 返回仍被天骄实际持有的至宝名，供至宝出世候选池排重。 */
+export function getTianjiaoHeldTreasureNames(tianjiaoList = []) {
+  return new Set((Array.isArray(tianjiaoList) ? tianjiaoList : [])
+    .filter(tianjiao => {
+      const treasureName = tianjiao?.天骄夺宝?.至宝名;
+      return INNATE_TREASURE_NAMES.includes(treasureName) && tianjiao.当前先天至宝 === treasureName;
+    })
+    .map(tianjiao => tianjiao.天骄夺宝.至宝名));
+}
+
 /**
  * 天骄夺得至宝：挂载 `当前先天至宝`（战斗引擎据此自动生效至宝被动/权柄，战力飙升）
  * 并记录夺宝凭证（含轮回世数，用于转世校验）。

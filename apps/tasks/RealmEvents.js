@@ -26,6 +26,7 @@ import {
     INNATE_TREASURE_NAMES,
     readInnateTreasureState
 } from '../../model/innateTreasure.js';
+import { getTianjiaoHeldTreasureNames } from '../../model/tianjiaoTreasure.js';
 import {
     TREASURE_CONTEST_DURATION_MS,
     createTreasureContest,
@@ -306,7 +307,10 @@ export class RealmEvents {
     /** 先天灵宝出世事件 */
     async treasureAppearEvent(eraIndex, options = {}) {
         const random = options.random || Math.random;
-        const excludedNames = new Set(options.excludeNames || []);
+        const excludedNames = new Set([
+            ...(options.excludeNames || []),
+            ...getTianjiaoHeldTreasureNames(data.weimiantianjiao_list)
+        ]);
         const treasureDefinitions = [
             { name: "混沌珠", desc: "内含混沌，可开天辟地", rarity: "至宝", power: 15 },
             { name: "太极图", desc: "阴阳轮转，道法自然", rarity: "至宝", power: 15 },
@@ -1088,7 +1092,10 @@ export class RealmEvents {
             const owners = readInnateTreasureState().owners || {};
             const unclaimed = CONTESTABLE_INNATE_TREASURE_NAMES.filter(name => !owners[name]);
             if (!unclaimed.length) return { ok: false, reason: 'all_claimed' };
-            if (unclaimed.every(name => activeTreasureNames.has(name))) {
+            const tianjiaoHeldNames = getTianjiaoHeldTreasureNames(data.weimiantianjiao_list);
+            const available = unclaimed.filter(name => !tianjiaoHeldNames.has(name));
+            if (!available.length) return { ok: false, reason: 'all_held' };
+            if (available.every(name => activeTreasureNames.has(name))) {
                 return { ok: false, reason: 'all_manifested' };
             }
 

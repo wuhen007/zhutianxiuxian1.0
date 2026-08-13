@@ -624,6 +624,9 @@ export class EndlessRealm extends plugin {
             { command: '#加入无尽队伍 123456', description: '凭六位队伍编号加入同行者' },
             { command: '#无尽队伍', description: '查看成员、层数、命火与待选能力' },
             { command: '#开启无尽劫境', description: '队长消耗全队秘钥与心神并开启远征' },
+            { command: '#离开无尽队伍', description: '离开尚未开启的远征队伍' },
+            { command: '#解散无尽队伍', description: '由队长解散尚未开启的远征队伍' },
+            { command: '#无尽网页', description: '打开无尽劫境网页面板' },
           ],
         },
         {
@@ -648,6 +651,9 @@ export class EndlessRealm extends plugin {
             { command: '#参悟道碑 攻击', description: '消耗劫境道痕提升局外传承' },
             { command: '#装配厉鬼拼图 八音盒', description: '切换已参悟拼图，获得鬼眼后生效' },
             { command: '#无尽商店', description: '以劫境道痕购买诸天遗珍' },
+            { command: '#无尽购买 商品名*数量', description: '按商品名或编号购买诸天遗珍' },
+            { command: '#重置万劫道碑 / #确认重置万劫道碑', description: '二次确认后返还道痕并重置传承' },
+            { command: '#万象归一 武器/护具/法宝*装备名', description: '消耗归一神符融合百分比装备' },
           ],
         },
         {
@@ -1121,6 +1127,7 @@ export class EndlessRealm extends plugin {
           const reasons = {
             disabled: '位面事件尚未开启',
             all_claimed: '诸天先天至宝均已认主',
+            all_held: '所有未认主至宝均被天骄持有',
             all_manifested: '所有未认主至宝都已显化',
           };
           return e.reply(`${reasons[treasureEvent.reason] || '天机未能引动至宝'}，本次购买未消耗劫境道痕`);

@@ -175,14 +175,23 @@ test('栖息地编号可以区分同名仙宠', () => {
   assert.equal(findHabitatPetIndex(habitat, '同名仙宠'), 0);
 });
 
-test('精力结算按实际工作时长截断，零精力不会恢复成满值', () => {
+test('精力结算按实际工作时长和精力档位加权，零精力不会恢复成满值', () => {
   const exhausted = calculatePetEnergyPeriod(0, 100, 10, 5);
   assert.equal(exhausted.activeHours, 0);
+  assert.equal(exhausted.weightedWorkHours, 0);
   assert.equal(exhausted.endEnergy, 0);
   assert.equal(exhausted.exhausted, true);
 
   const partial = calculatePetEnergyPeriod(20, 100, 10, 5);
   assert.equal(partial.activeHours, 4);
   assert.equal(partial.endEnergy, 0);
-  assert.equal(partial.averageEnergy, 10);
+  assert.equal(partial.weightedWorkHours, 1.6);
+
+  const crossedThresholds = calculatePetEnergyPeriod(40, 100, 10, 5);
+  assert.equal(crossedThresholds.activeHours, 8);
+  assert.ok(Math.abs(crossedThresholds.weightedWorkHours - 4.8) < 1e-9);
+
+  const zeroEnergyFreeWork = calculatePetEnergyPeriod(0, 100, 10, 0);
+  assert.equal(zeroEnergyFreeWork.activeHours, 0);
+  assert.equal(zeroEnergyFreeWork.weightedWorkHours, 0);
 });
