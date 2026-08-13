@@ -16,6 +16,9 @@ export const FACTION_POSITION_ORDER = {
     "圣女",
   ],
   剑云海: ["传人"],
+  菩提基因: ["外勤进化者"],
+  大梦净土: ["外门弟子"],
+  阳间第一山: ["记名门徒"],
 };
 
 const ELITE_POSITIONS = new Set(["圣子", "圣女", "传人"]);
