@@ -40,6 +40,11 @@ import {
   isTianjiaoImprovementYear,
   recoverTianjiaoFromSetback,
 } from '../../model/tianjiaoGrowth.js';
+import {
+  DAO_TREASURE_GUARD_TARGET,
+  DAO_TREASURE_STAGES,
+  advanceDaoTreasureProject,
+} from '../../model/daoTreasure.js';
 
 export class EraChangeTask extends plugin {
   constructor() {
@@ -1096,6 +1101,7 @@ if (index === 4) { // 当前是绝灵时代
       config.setConfig(this.configKey, 'xiuxian', this.set);
 
       const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
+      await this.processDaoTreasureLifecycle(currentWorldYear, epoch);
       await this.processXianguLifecycle(weimianData, {
         previousWorldYear,
         worldYear: currentWorldYear,
@@ -1659,6 +1665,45 @@ if (index === 4) { // 当前是绝灵时代
     
     await this.broadcastMessage(message);
   }
+
+  async processDaoTreasureLifecycle(worldYear, epoch) {
+    try {
+      const daoAdvance = await advanceDaoTreasureProject(worldYear, epoch);
+      for (const event of daoAdvance.events || []) {
+        if (event.type === 'stage-closed') {
+          const stage = DAO_TREASURE_STAGES[event.stageIndex];
+          await this.broadcastMessage([
+            `【大道炉·${stage.name}终章】`,
+            `一个时代的炉火已经燃尽，留下镇守道痕${event.guardians}/${DAO_TREASURE_GUARD_TARGET}。`,
+            event.stage.complete
+              ? `${stage.authority ? `【${stage.authority}】权柄` : '大道器胚'}完整成形。`
+              : `${stage.authority ? `【${stage.authority}】权柄` : '大道器胚'}留下残缺，成器后可献祭材料修复。`,
+          ].join('\n'));
+        }
+        if (event.type === 'stage-opened') {
+          const stage = DAO_TREASURE_STAGES[event.stageIndex];
+          await this.broadcastMessage([
+            `【大道炉·${stage.name}】`,
+            stage.lore,
+            event.stageIndex === 4
+              ? '第五时代器劫降临，使用 #渡大道器劫 击败大道化身，留下渡劫道痕。'
+              : '每位修士可使用 #镇守大道炉 留下一道文明道痕。',
+          ].join('\n'));
+        }
+        if (event.type === 'completed') {
+          await this.broadcastMessage([
+            '【大道器成·诸界重排】',
+            `一个纪元的文明薪火于今日燃尽，【${event.treasure.name}】自大道熔炉中出世。`,
+            `器主：${event.treasure.ownerName}｜完整度：${event.treasure.integrity}%`,
+            '自此，生死有了可以删改的文字，命运有了可以重新落下的笔锋。',
+            '至宝将在器主下一次使用 #大道至宝 时发放至纳戒。',
+          ].join('\n'));
+        }
+      }
+    } catch (error) {
+      console.error('大道至宝纪元推进失败:', error);
+    }
+  }
   
   /** 设置时代进度（管理员命令） */
   async setEraProgress(e) {
@@ -1707,8 +1752,10 @@ if (index === 4) { // 当前是绝灵时代
     const oldIndex = this.set.Era.current.index;
     
     // 更新配置
-    this.set.Era.current = { index: eraIndex, years, epoch };
+    const worldYear = getRealmEventWorldYear(eraIndex, years, epoch);
+    this.set.Era.current = { index: eraIndex, years, epoch, totalYears: worldYear };
     config.setConfig(this.configKey, 'xiuxian', this.set);
+    await this.processDaoTreasureLifecycle(worldYear, epoch);
     
     const era = this.eras[eraIndex];
     
@@ -1828,6 +1875,7 @@ if (index === 4) { // 当前是绝灵时代
       const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
       era.current = { index, years, epoch, totalYears: currentWorldYear };
       config.setConfig(this.configKey, 'xiuxian', this.set);
+      await this.processDaoTreasureLifecycle(currentWorldYear, epoch);
 
       await this.processXianguLifecycle(weimianData, {
         previousWorldYear,
@@ -2033,6 +2081,7 @@ if (index === 4) { // 当前是绝灵时代
       const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
       era.current = { index, years, epoch, totalYears: currentWorldYear };
       config.setConfig(this.configKey, 'xiuxian', this.set);
+      await this.processDaoTreasureLifecycle(currentWorldYear, epoch);
 
       let weimianData = {};
       const weimianPath = data.filePathMap.weimianList;
