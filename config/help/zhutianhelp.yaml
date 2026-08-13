@@ -241,3 +241,36 @@
     - icon: help-icon_53
       title: "#天机阁"
       desc: "天机阁商店"
+
+- group: 诸天无尽远征
+  list:
+    - icon: help-icon_44
+      title: '#无尽劫境帮助'
+      desc: '查看组队入境、劫途星图、构筑和局外传承的完整帮助'
+    - icon: help-icon_44
+      title: '#无尽轮回帮助'
+      desc: '查看无尽轮回的剧情、任务、强化与基因锁'
+    - icon: help-icon_44
+      title: '#劫途星图'
+      desc: '查看本轮十层劫环、天象与因果路线'
+    - icon: help-icon_44
+      title: '#万劫道碑'
+      desc: '查看永久强化路线与厉鬼拼图装配'
+
+- group: 众生仙钓
+  list:
+    - icon: help-icon_44
+      title: '#众生仙饵'
+      desc: '查看五种仙饵及对应的定向渔获'
+    - icon: help-icon_44
+      title: '#垂钓众生 仙饵名'
+      desc: '消耗众生仙钓与指定仙饵垂钓，获得愿鳞并可能触发位面奇遇'
+    - icon: help-icon_44
+      title: '#愿鳞兑换 / #愿鳞兑换 物品名'
+      desc: '查看愿鳞兑换表，换取仙钓、仙饵、炼器材料与万界引潮灯'
+    - icon: help-icon_44
+      title: '#寻找武祖'
+      desc: '持仙武界坐标及十枚彼岸轮回果、十缕纪元之力求见武祖叶萧'
+    - icon: help-icon_44
+      title: '#合成神主触屏 / #消耗神主触屏'
+      desc: '十枚碎片合一，使门矢士或帝骑晋升帝骑·神主'

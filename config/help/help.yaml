@@ -92,6 +92,20 @@
       title: '#练气皮肤图鉴'
       desc: '查看所有练气皮肤'                                    
 
+- group: 外观玄影
+  list:
+    - icon: help-icon_13
+      title: '#自选存档皮肤<皮肤ID>*<练气|装备|纳戒>'
+      desc: '从已有皮肤中设置练气、装备或纳戒存档皮肤'
+    - icon: help-icon_13
+      title: '#上传练气皮肤 <皮肤ID> + 图片'
+      desc: '上传新的练气皮肤并立即应用，ID仅限字母、数字和下划线'
+    - icon: help-icon_13
+      title: '#预览练气皮肤 <皮肤ID>'
+      desc: '预览指定ID的练气皮肤'
+    - icon: help-icon_13
+      title: '#上传纳戒皮肤 <皮肤ID> + 横版JPG'
+      desc: '上传宽度大于高度的纳戒皮肤并立即应用，图片不超过10MB'
 
 - group: 逆天改命
   list:
@@ -253,6 +267,12 @@
     - icon: help-icon_14
       title: '#诸天帮助'
       desc: '查看诸天指令'
+    - icon: help-icon_14
+      title: '#活动帮助'
+      desc: '汇总查看星海之缘、巡界司与无尽劫境活动指令'
+    - icon: help-icon_14
+      title: '#无尽轮回帮助'
+      desc: '查看无尽轮回剧情、任务、强化和基因锁指令'
     - icon: help-icon_14
       title: '#职业帮助'
       desc: '查看职业详情以及指令'
