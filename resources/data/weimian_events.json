@@ -292,45 +292,52 @@
                 "foundAt": 1786114801636,
                 "expiresAt": 1786201201636
             }
+        },
+        {
+            "type": "forbiddenZone",
+            "zone": {
+                "name": "太初古矿",
+                "locationId": "taichugukuang",
+                "desc": "太古年间开采神源之地，传闻有至尊蛰伏",
+                "danger": "极高"
+            },
+            "phenomenon": "大道法则出现短暂扭曲",
+            "plane": "遮天位面",
+            "location": "太初古矿",
+            "coordinate": {
+                "x": 262,
+                "y": 41
+            },
+            "timestamp": 1786600802718,
+            "expiresAt": 1786687202717,
+            "source": "era",
+            "interaction": "generic",
+            "participantQqs": []
         }
     ],
-    "lastEventTime": 1000,
-    "lastEventWorldYear": 41000,
+    "lastEventTime": 3000,
+    "lastEventWorldYear": 43000,
     "activeEvents": [
         {
             "type": "forbiddenZone",
             "zone": {
-                "name": "轮回海",
-                "locationId": "lunhuihai",
-                "desc": "传说可以让人进入轮回的诡异之地",
+                "name": "太初古矿",
+                "locationId": "taichugukuang",
+                "desc": "太古年间开采神源之地，传闻有至尊蛰伏",
                 "danger": "极高"
             },
-            "phenomenon": "冲出一道贯穿星河的魔光",
+            "phenomenon": "大道法则出现短暂扭曲",
             "plane": "遮天位面",
-            "location": "轮回海",
+            "location": "太初古矿",
             "coordinate": {
-                "x": 107,
-                "y": 583
+                "x": 262,
+                "y": 41
             },
-            "timestamp": 1786114801637,
-            "expiresAt": 1786201201636,
+            "timestamp": 1786600802718,
+            "expiresAt": 1786687202717,
             "source": "era",
             "interaction": "generic",
-            "participantQqs": [],
-            "tianjiaoTrace": {
-                "name": "金翅小鹏王",
-                "plane": "遮天位面",
-                "location": "轮回海",
-                "coordinate": {
-                    "x": 107,
-                    "y": 583
-                },
-                "source": "位面事件",
-                "reincarnation": 0,
-                "traceVersion": 0,
-                "foundAt": 1786114801636,
-                "expiresAt": 1786201201636
-            }
+            "participantQqs": []
         }
     ],
     "eventCooldown": 2000,

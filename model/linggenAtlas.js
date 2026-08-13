@@ -81,26 +81,25 @@ export function parseLinggenAtlasCommand(command = '') {
 
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
+    if (/^(?:第)?\d+页?$/.test(token)) {
+      page = toPage(token.replace(/^第/, '').replace(/页$/, ''));
+      continue;
+    }
+
     const templateToken = parseTemplateToken(token);
     if (templateToken) {
       template = templateToken;
       continue;
     }
 
-    if (/^(?:第)?\d+页?$/.test(token)) {
-      page = toPage(token.replace(/^第/, '').replace(/页$/, ''));
-      continue;
-    }
-
     if (/^(?:分类|类别|类型|type)$/i.test(token)) {
       for (const restToken of tokens.slice(index + 1)) {
-        const restTemplate = parseTemplateToken(restToken);
-        if (restTemplate) {
-          template = restTemplate;
-        } else if (/^(?:第)?\d+页?$/.test(restToken)) {
+        if (/^(?:第)?\d+页?$/.test(restToken)) {
           page = toPage(restToken.replace(/^第/, '').replace(/页$/, ''));
         } else {
-          categoryParts.push(restToken);
+          const restTemplate = parseTemplateToken(restToken);
+          if (restTemplate) template = restTemplate;
+          else categoryParts.push(restToken);
         }
       }
       break;

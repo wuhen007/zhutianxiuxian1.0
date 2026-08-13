@@ -26,6 +26,7 @@ import { Read_player, __PATH, Read_danyao } from '../../model/xiuxian.js';
 import {
   getMinggeBonusMultiplier,
   getMinggeEffects,
+  calculateMinggeYield,
 } from '../../model/mingge.js';
 import { getPetAbilityBonus, getTimedActionMultiplier } from '../../model/innateTreasure.js';
 import {

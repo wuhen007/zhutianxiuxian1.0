@@ -1,5 +1,19 @@
 const DROP_FIELDS = ['one', 'two', 'three', 'four'];
 
+const SHENGXU_SOURCES = Object.freeze({
+  普通进化花粉: ['花粉路·感应异变', '圣墟副本·昆仑山', '圣墟势力·菩提基因'],
+  灵性进化花粉: ['花粉路·感应异变', '圣墟副本·龙虎山', '圣墟副本·大雷音寺遗址', '圣墟势力·大梦净土'],
+  神性进化花粉: ['花粉路·感应异变', '圣墟副本·小阴间星路', '圣墟副本·阳间名山', '圣墟势力·阳间第一山'],
+  无暇进化花粉: ['花粉路·感应异变', '圣墟副本·魂河古地'],
+  净化花露: ['花粉路·感应异变', '圣墟势力俸禄'],
+  形意呼吸法: ['圣墟副本·昆仑山'],
+  太极呼吸法: ['圣墟副本·龙虎山'],
+  大雷音呼吸法: ['圣墟副本·大雷音寺遗址'],
+  道引呼吸法: ['圣墟副本·小阴间星路', '圣墟副本·阳间名山'],
+  盗引呼吸法: ['圣墟副本·魂河古地'],
+  神秘石罐: ['全服唯一机缘·追寻石罐'],
+});
+
 const PLACE_SOURCES = [
   ['didian_list', '秘境'],
   ['guildSecrets_list', '宗门秘境'],
@@ -66,6 +80,7 @@ export function findItemSources(data, itemName) {
   if (!target) return [];
 
   const sources = new Set();
+  for (const source of SHENGXU_SOURCES[target] || []) sources.add(source);
   for (const [key, label] of PLACE_SOURCES) {
     for (const place of Array.isArray(data?.[key]) ? data[key] : []) {
       if (DROP_FIELDS.some(field => hasNamedItem(place?.[field], target))) {

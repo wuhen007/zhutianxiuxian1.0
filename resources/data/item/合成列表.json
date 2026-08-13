@@ -1492,8 +1492,8 @@
     "传承要求": "时光令配方",
     "materials": [
       {
-        "name": "光阴石",
-        "class": "道具",
+        "name": "时光石",
+        "class": "材料",
         "amount": 2
       },
       {
@@ -1511,6 +1511,114 @@
         "class": "道具",
         "amount": 10
       }
+    ]
+  },
+  {
+    "name": "神藏仙饵",
+    "class": "道具",
+    "amount": 1,
+    "materials": [
+      { "name": "天药", "class": "丹药", "amount": 3 },
+      { "name": "仙馐果", "class": "食材", "amount": 10 },
+      { "name": "群星之沙", "class": "道具", "amount": 1 }
+    ]
+  },
+  {
+    "name": "矿髓沉饵",
+    "class": "道具",
+    "amount": 1,
+    "materials": [
+      { "name": "仙晶矿", "class": "道具", "amount": 500 },
+      { "name": "七彩流晶矿", "class": "道具", "amount": 30 },
+      { "name": "欺天石", "class": "材料", "amount": 1 }
+    ]
+  },
+  {
+    "name": "百草香饵",
+    "class": "道具",
+    "amount": 1,
+    "materials": [
+      { "name": "鱼肉", "class": "食材", "amount": 50 },
+      { "name": "仙馐果", "class": "食材", "amount": 20 },
+      { "name": "轮回果", "class": "草药", "amount": 1 }
+    ]
+  },
+  {
+    "name": "因果道饵",
+    "class": "道具",
+    "amount": 1,
+    "materials": [
+      { "name": "世界石", "class": "材料", "amount": 1 },
+      { "name": "群星之沙", "class": "道具", "amount": 10 },
+      { "name": "天外清风", "class": "材料", "amount": 3 }
+    ]
+  },
+  {
+    "name": "轮回冥饵",
+    "class": "道具",
+    "amount": 1,
+    "materials": [
+      { "name": "轮回果", "class": "草药", "amount": 3 },
+      { "name": "轮回印", "class": "材料", "amount": 1 },
+      { "name": "群星之沙", "class": "道具", "amount": 5 }
+    ]
+  },
+  {
+    "name": "神主触屏",
+    "class": "道具",
+    "amount": 1,
+    "materials": [
+      { "name": "神主触屏碎片", "class": "道具", "amount": 10 }
+    ]
+  },
+  {
+    "name": "造化仙炉",
+    "class": "道具",
+    "amount": 1,
+    "materials": [
+      { "name": "罗天晶", "class": "材料", "amount": 5 },
+      { "name": "道衍晶", "class": "材料", "amount": 7 },
+      { "name": "造化仙晶", "class": "材料", "amount": 3 }
+    ]
+  },
+  {
+    "name": "百炼诀",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      { "name": "百炼诀残页", "class": "材料", "amount": 10 }
+    ]
+  },
+  {
+    "name": "九转炼器诀",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      { "name": "九转炼器诀残页", "class": "材料", "amount": 10 }
+    ]
+  },
+  {
+    "name": "乾坤炼器经",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      { "name": "乾坤炼器经残页", "class": "材料", "amount": 10 }
+    ]
+  },
+  {
+    "name": "无上炼器道",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      { "name": "无上炼器道残页", "class": "材料", "amount": 10 }
+    ]
+  },
+  {
+    "name": "渡劫天功",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      { "name": "渡劫天功残页", "class": "材料", "amount": 10 }
     ]
   }
 ]

@@ -1,22 +1,22 @@
 {
-  "lastCheckWorldYear": 42000,
+  "lastCheckWorldYear": 44000,
   "pity": {
-    "仙界": 0,
-    "太初星墟": 3
+    "仙界": 1,
+    "太初星墟": 0
   },
   "activeRifts": [
     {
-      "id": "42000-仙界",
-      "plane": "仙界",
-      "name": "天河兵冢",
-      "location": "永恒之花",
+      "id": "44000-太初星墟",
+      "plane": "太初星墟",
+      "name": "无光观测站",
+      "location": "无光观测站",
       "coordinate": {
-        "x": 625,
-        "y": 720
+        "x": 820,
+        "y": 180
       },
-      "worldYear": 42000,
-      "openedAt": 1786464002260,
-      "expiresAt": 1786478402260,
+      "worldYear": 44000,
+      "openedAt": 1786604401554,
+      "expiresAt": 1786618801554,
       "anchor": 0,
       "contribution": {},
       "expeditions": {}
@@ -113,6 +113,13 @@
       "name": "天河兵冢",
       "worldYear": 42000,
       "openedAt": 1786464002260
+    },
+    {
+      "id": "44000-太初星墟",
+      "plane": "太初星墟",
+      "name": "无光观测站",
+      "worldYear": 44000,
+      "openedAt": 1786604401554
     }
   ]
 }

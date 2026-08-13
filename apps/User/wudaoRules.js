@@ -417,6 +417,7 @@ export function calculateWudaoResult(options) {
     eraIndex = 2,
     aptitudeName = '',
     techniqueBonus = 0,
+    worldBonus = 0,
     minggeEffects = {},
     useTea = false,
     random = Math.random,
@@ -429,11 +430,14 @@ export function calculateWudaoResult(options) {
     era: era.bonus,
     aptitude: getAptitudeWudaoBonus(aptitudeName),
     technique: clamp(techniqueBonus, -0.5, 0.5),
+    world: clamp(worldBonus, 0, 0.5),
     mingge: clamp(minggeEffects.悟道收益, -0.5, 1),
     tea: useTea ? 0.5 : 0,
   };
-  const totalBonus = Object.values(bonuses).reduce((sum, value) => sum + value, 0);
-  const multiplier = clamp(1 + totalBonus, 0.5, 2.5);
+  const totalBonus = Object.entries(bonuses)
+    .filter(([name]) => name !== 'world')
+    .reduce((sum, [, value]) => sum + value, 0);
+  const multiplier = clamp(1 + totalBonus, 0.5, 2.5) * (1 + bonuses.world);
   const randomFactor = 0.9 + safeRandom(random) * 0.2;
   const enlightenmentChance = clamp(
     0.02 + (Number(minggeEffects.顿悟概率) || 0) + (useTea ? 0.1 : 0),
