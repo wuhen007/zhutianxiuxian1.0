@@ -158,14 +158,16 @@ export function getDaoTreasureAuthorityStatus(authority, state = readDaoTreasure
 export function applyDaoTreasureBattleOpening(holder, opponent, options = {}) {
   const messages = [];
   if (!holder?.当前大道至宝 || !DAO_TREASURE_AUTHORITIES.includes(holder?.大道主权柄)) {
-    return { active: false, messages };
+    return { active: false, holderSpeedMultiplier: 1, opponentSpeedMultiplier: 1, messages };
   }
   const state = options.state || readDaoTreasureState();
-  if (!isDaoTreasureOwner(holder.id, state)) return { active: false, messages };
+  if (!isDaoTreasureOwner(holder.id, state)) {
+    return { active: false, holderSpeedMultiplier: 1, opponentSpeedMultiplier: 1, messages };
+  }
   const authority = holder.大道主权柄;
   if (getDaoTreasureAuthorityStatus(authority, state) !== '完整') {
     messages.push(`【大道残缺】${holder.当前大道至宝}的${authority}权柄尚未修复，本战无法敕令。`);
-    return { active: false, messages };
+    return { active: false, holderSpeedMultiplier: 1, opponentSpeedMultiplier: 1, messages };
   }
 
   if (authority === '生死') {

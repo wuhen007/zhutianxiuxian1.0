@@ -8303,8 +8303,12 @@ let B_speed = (B_player.速度 ?? 100)
     + (B_player.mijinglevel_id ?? 0) * 50
     + (B_player.xiangulevel_id ?? 0) * 50
     + Math.max(0, (B_player.huafenlevel_id ?? 1) - 1) * 50;
-  A_speed = Math.max(1, Math.floor(A_speed * A_daoOpening.holderSpeedMultiplier * B_daoOpening.opponentSpeedMultiplier));
-  B_speed = Math.max(1, Math.floor(B_speed * B_daoOpening.holderSpeedMultiplier * A_daoOpening.opponentSpeedMultiplier));
+  A_speed = Math.max(1, Math.floor(A_speed
+    * (Number(A_daoOpening.holderSpeedMultiplier) || 1)
+    * (Number(B_daoOpening.opponentSpeedMultiplier) || 1)));
+  B_speed = Math.max(1, Math.floor(B_speed
+    * (Number(B_daoOpening.holderSpeedMultiplier) || 1)
+    * (Number(A_daoOpening.opponentSpeedMultiplier) || 1)));
 
   async function consumeAuthorityFlag(player, flag) {
     if (!player?.先天权柄?.[flag]) return false;
