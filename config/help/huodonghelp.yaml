@@ -1,0 +1,116 @@
+- group: '#星海之缘活动'
+  list:
+    - icon: help-icon_35
+      title: '#仙境 / #镇守仙境 归真之地|往世星海'
+      desc: '查看仙境并进入归真之地或往世星海活动副本'
+    - icon: help-icon_35
+      title: '#沉迷仙境归真之地|往世星海*n'
+      desc: '连续进行n次对应的星海活动副本探索'
+    - icon: help-icon_35
+      title: '#星海之缘签到'
+      desc: '领取修为、血气、群星秘钥与活动召唤次数'
+    - icon: help-icon_20
+      title: '#召唤爱莉希雅 / #疯狂召唤爱莉希雅'
+      desc: '进行单次召唤或消耗剩余次数连续召唤'
+    - icon: help-icon_20
+      title: '#奏响往世乐土之章 / #真我觉醒'
+      desc: '完成爱莉希雅进阶与真我觉醒'
+    - icon: help-icon_20
+      title: '#创建讨伐队伍 boss名称'
+      desc: '创建九幽魔君、狠人大帝或尸骸仙帝讨伐队伍'
+    - icon: help-icon_20
+      title: '#加入讨伐队伍 队伍ID / #发起讨伐'
+      desc: '加入团本队伍，队长集结成员后发起讨伐'
+    - icon: help-icon_20
+      title: '#离开队伍 / #解散队伍'
+      desc: '离开当前讨伐队伍，或由队长解散队伍'
+    - icon: help-icon_20
+      title: '#结算团本奖励 / #结算魔君奖励*n'
+      desc: '结算团本全队奖励，魔君奖励可按讨伐令数量批量结算'
+
+- group: '#巡界帮助'
+  list:
+    - icon: help-icon_35
+      title: '#巡界活动 / #太初星墟'
+      desc: '查看巡界司活动规则、裂界路线与界源奖励'
+    - icon: help-icon_35
+      title: '#巡界签到 / #太初签到'
+      desc: '每日领取巡界玉符，首次签到记录太初星墟坐标'
+    - icon: help-icon_35
+      title: '#裂界副本 / #进入裂界'
+      desc: '查看当前限时裂界，抵达入口后消耗巡界玉符进入'
+    - icon: help-icon_35
+      title: '#裂界探索'
+      desc: '查看稳阵、寻宝和强攻三种探索路线说明'
+    - icon: help-icon_35
+      title: '#裂界稳阵 / #裂界寻宝 / #裂界强攻'
+      desc: '选择低风险稳阵、均衡寻宝或正面击溃守卫的强攻路线'
+    - icon: help-icon_35
+      title: '#撤离裂界'
+      desc: '提前结束当前探索并带出已经获得的界源'
+    - icon: help-icon_35
+      title: '#界源兑换 / #界源兑换 物品名'
+      desc: '查看并兑换秘境之匙、星图、巡界玉符、真我宝盒等物品'
+
+- group: '#无尽劫境帮助'
+  list:
+    - icon: help-icon_44
+      title: '#无尽劫境'
+      desc: '查看无尽劫境的完整玩法规则'
+    - icon: help-icon_44
+      title: '#创建无尽队伍 / #加入无尽队伍 123456'
+      desc: '创建远征队伍或通过六位队伍编号加入'
+    - icon: help-icon_44
+      title: '#无尽队伍'
+      desc: '查看队员、层数、命火和当前待选能力'
+    - icon: help-icon_44
+      title: '#离开无尽队伍 / #解散无尽队伍'
+      desc: '离开未开启的队伍，或由队长解散队伍'
+    - icon: help-icon_44
+      title: '#开启无尽劫境 / #无尽网页'
+      desc: '由队长开启远征，或打开无尽劫境网页面板'
+    - icon: help-icon_44
+      title: '#劫途星图'
+      desc: '查看十层劫环、天象、路线与当前投票'
+    - icon: help-icon_44
+      title: '#星图建议 1/2/3 / #星图情报 1/2/3'
+      desc: '为路线提出建议，或查看路线代价与奖励情报'
+    - icon: help-icon_44
+      title: '#星图定途 1/2/3'
+      desc: '由队长锁定下一层的因果路线'
+    - icon: help-icon_44
+      title: '#无尽选择 1/2/3/4'
+      desc: '选择当前层的一项诸天能力'
+    - icon: help-icon_44
+      title: '#劫后抉择 1/2/3'
+      desc: 'Boss战后选择归息、机缘或升华'
+    - icon: help-icon_44
+      title: '#无尽下一关 / #无尽下一层 / #无尽挑战'
+      desc: '全员完成选择后由队长推进远征'
+    - icon: help-icon_44
+      title: '#无尽构筑'
+      desc: '查看队伍属性、能力、机缘与共鸣'
+    - icon: help-icon_44
+      title: '#无尽战斗模版 1/2/3/4'
+      desc: '切换无尽战斗图片的叙事模板'
+    - icon: help-icon_44
+      title: '#无尽撤离 / #退出无尽劫境'
+      desc: '由队长主动结算并保留本次全部所得'
+    - icon: help-icon_44
+      title: '#扫荡无尽劫境 / #参悟无尽秘钥配方'
+      desc: '扫荡已解锁层数，或学习无尽秘钥制作资格'
+    - icon: help-icon_44
+      title: '#无尽商店 / #无尽购买 商品名*数量'
+      desc: '查看并使用劫境道痕购买诸天遗珍'
+    - icon: help-icon_44
+      title: '#万劫道碑 / #参悟道碑 项目'
+      desc: '查看并提升永久强化路线'
+    - icon: help-icon_44
+      title: '#装配厉鬼拼图 拼图名'
+      desc: '装配或卸下已经参悟的厉鬼拼图'
+    - icon: help-icon_44
+      title: '#重置万劫道碑 / #确认重置万劫道碑'
+      desc: '二次确认后返还九成道痕并重置传承'
+    - icon: help-icon_44
+      title: '#万象归一 武器/护具/法宝*装备名'
+      desc: '消耗归一神符融合百分比装备'

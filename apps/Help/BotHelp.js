@@ -2,7 +2,10 @@ import { plugin, puppeteer, verc } from '../../api/api.js';
 import Help from '../../model/help.js';
 import Help2 from '../../model/shituhelp.js';
 import Help3 from '../../model/zhutianhelp.js';
+import ActivityHelp from '../../model/huodonghelp.js';
 import md5 from 'md5';
+
+const HELP_TEMPLATE = 'celestial-codex';
 let helpData = {
   md5: '',
   img: '',
@@ -67,6 +70,10 @@ export class BotHelp extends plugin {
           reg: '^#星海之缘活动$',
           fnc: 'xinghai',
         },
+        {
+          reg: '^#活动帮助$',
+          fnc: 'activityHelp',
+        },
       ],
     });
   }
@@ -79,6 +86,11 @@ export class BotHelp extends plugin {
   async xinghai(e) {
     let data = await Help.get_xinghai(e);
 
+    let img = await this.cache(data);
+    await e.reply(img);
+  }
+  async activityHelp(e) {
+    let data = await ActivityHelp.huodonghelp(e);
     let img = await this.cache(data);
     await e.reply(img);
   }
@@ -159,6 +171,7 @@ async xiaoshijiehelp(e) {
   }
 
   async cache(data) {
+    data.tplFile = `./plugins/zhutianxiuxian1.0/resources/html/help-variants/${HELP_TEMPLATE}.html`;
     let tmp = md5(JSON.stringify(data));
     if (helpData.md5 == tmp) return helpData.img;
     helpData.img = await puppeteer.screenshots('help', data);

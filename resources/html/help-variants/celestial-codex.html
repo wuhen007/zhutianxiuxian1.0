@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="{{pluResPath}}/html/help/icons.css" />
+    <link rel="stylesheet" href="{{pluResPath}}/html/help-variants/celestial-codex.css" />
+  </head>
+  <body>
+    <main id="container" class="celestial-codex">
+      <header class="codex-hero">
+        <div class="hero-meta"><span>THE CELESTIAL ARCHIVE</span><b>天字 · 壹号玉册</b></div>
+        <div class="hero-copy">
+          <p>诸天有序 · 万法归藏</p>
+          <h1>诸天万界</h1>
+          <div class="hero-subtitle">玄门指令玉册 <span>V{{version}}</span></div>
+        </div>
+        <div class="hero-seal"><span>万</span><span>界</span></div>
+        <div class="hero-rule"><i></i><b>大道三千皆入册</b><i></i></div>
+      </header>
+
+      <section class="codex-body">
+        {{each helpData val groupIndex}}
+        <article class="realm-section">
+          <header class="realm-heading">
+            <div class="realm-index">{{groupIndex < 9 ? '0' + (groupIndex + 1) : groupIndex + 1}}</div>
+            <div><small>CELESTIAL DOMAIN</small><h2>{{val.group}}</h2></div>
+            <span>录入 {{val.list.length}} 道法旨</span>
+          </header>
+          <div class="command-grid">
+            {{each val.list item itemIndex}}
+            <div class="command-cell">
+              <span class="help-icon {{item.icon}}"></span>
+              <div class="command-copy">
+                <strong>{{item.title}}</strong>
+                <p>{{item.desc}}</p>
+              </div>
+              <em>{{groupIndex + 1}}.{{itemIndex + 1}}</em>
+            </div>
+            {{/each}}
+          </div>
+        </article>
+        {{/each}}
+      </section>
+
+      <footer class="codex-footer"><span>YUNZAI · ZHUTIAN XIUXIAN</span><b>一念诸天开 · 万法此中寻</b><span>ARCHIVE V{{version}}</span></footer>
+    </main>
+  </body>
+</html>
