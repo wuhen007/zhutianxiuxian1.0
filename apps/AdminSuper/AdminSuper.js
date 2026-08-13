@@ -25,6 +25,7 @@ import {
 } from '../../model/wenxianling.js';
 import { deletePlayerDataBundle } from './playerDeletion.js';
 import { getDailyTaskDateKey } from '../../model/dailyTask.js';
+import { buildUniqueItemRarityMap } from '../../model/najieRaritySync.js';
 export class AdminSuper extends plugin {
   constructor() {
     super({
@@ -1137,6 +1138,7 @@ async relieveFashanAction(e) {
 
     // 构建 名称 -> 唯一正确类别 的权威映射（来自主物品表）
     const nameClassMap = this._buildNajieNameClassMap();
+    const nameRarityMap = this._buildNajieRarityMap();
 
     // 备份目录（写盘前统一备份，便于回滚）
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -1152,6 +1154,7 @@ async relieveFashanAction(e) {
     let fieldFixed = 0;     // 关联字段（数量/锁定/售价）修正数
     let missingArrFixed = 0; // 缺失数组补齐数
     let renamedCount = 0;     // 历史物品更名数
+    let rarityFixed = 0;      // 按标准物品表同步稀有度
     const samples = [];     // 预览样本
 
     for (const file of files) {
@@ -1230,6 +1233,15 @@ async relieveFashanAction(e) {
               movedCount++;
               playerChanged = true;
               if (log.length < 8) log.push('归位[' + (name || '?') + '] ' + cat + '→' + target);
+            }
+
+            const standardRarity = name ? nameRarityMap.get(name) : undefined;
+            if (typeof standardRarity !== 'undefined' && item.稀有度 !== standardRarity) {
+              const old = item.稀有度;
+              item.稀有度 = standardRarity;
+              rarityFixed++;
+              playerChanged = true;
+              if (log.length < 8) log.push('稀有度[' + name + ']=' + (old ?? '缺失') + '→' + standardRarity);
             }
 
             // 关联字段卫生
@@ -1318,12 +1330,14 @@ async relieveFashanAction(e) {
       out += 'class 修正：' + classFixed + ' 处\n';
       out += '错放归位：' + movedCount + ' 件（同名合并 ' + mergedCount + ' 次）\n';
       out += '关联字段修正（数量/锁定/售价）：' + fieldFixed + ' 处\n';
+      out += '稀有度同步：' + rarityFixed + ' 处\n';
       out += '缺失数组补齐：' + missingArrFixed + ' 处\n';
       if (backupMade) out += '备份目录：_backups/' + backupName + '\n';
     } else {
       out += '预计 class 修正：' + classFixed + ' 处\n';
       out += '预计错放归位：' + movedCount + ' 件（同名合并 ' + mergedCount + ' 次）\n';
       out += '预计关联字段修正：' + fieldFixed + ' 处\n';
+      out += '预计稀有度同步：' + rarityFixed + ' 处\n';
       out += '预计缺失数组补齐：' + missingArrFixed + ' 处\n';
     }
     if (renamedCount > 0) out += '物品更名：' + renamedCount + ' 处（雷劫液→雷池真液/雷帝道液）\n';
@@ -1375,6 +1389,20 @@ async relieveFashanAction(e) {
       if (set.size === 1) single.set(name, [...set][0]);
     }
     return single;
+  }
+
+  _buildNajieRarityMap() {
+    const lists = [
+      'equipment_list', 'dibing_list', 'tszb_list', 'timeequipmen_list',
+      'duanzhaowuqi', 'duanzhaohuju', 'duanzhaobaowu', 'namegive',
+      'xianchon', 'baoshi_list', 'danyao_list', 'newdanyao_list',
+      'timedanyao_list', 'daoju_list', 'gongfa_list', 'timegongfa_list',
+      'caoyao_list', 'shicai_list', 'hecheng_list', 'cailiao_list',
+      'jingshenyuzhou_drop_list', 'hezi_list', 'dijingList', 'fuhua_list',
+      'jiagong_list', 'xianchonkouliang', 'xianchonkouliang2',
+      'duanzhaocailiao', 'kamian', 'kamian3'
+    ];
+    return buildUniqueItemRarityMap(lists.map(list => data[list]));
   }
 
   // 🎁 发放拉新奖励（4档可选）
@@ -1681,6 +1709,5 @@ async function clearNajieThing(thingType, thingName) {
     })
     .filter(usrObj => usrObj);
 }
-
 
 

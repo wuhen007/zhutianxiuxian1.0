@@ -39,6 +39,7 @@ import { getMinggeEffects, getMinggeDirectMultiplier } from '../../model/mingge.
 import { rollDailyDungeonCoordinate } from '../../model/weimianTravel.js';
 import { resolveZhetianDungeonVictory } from '../../model/zhetianInheritance.js';
 import { recordWenXianTaskProgress } from '../../model/wenxianling.js';
+import { isHighRealmConsumableRestricted } from '../../model/realmAuthority.js';
 import { formatTianjiaoTrace, rollDungeonTianjiaoTrace } from '../../model/tianjiaoGrowth.js';
 import { consumeBlackEmperorBattleFormation, rollBlackEmperorDungeonEncounter, rollDuanDeEncounter } from '../../model/blackEmperor.js';
 import { AppName } from '../../app.config.js';
@@ -494,7 +495,7 @@ async quickSettleDungeon(e) {
     //检索方法
     let najie = await data.getData('najie', usr_qq);
     let xueqi = 0;
-     if (player.mijinglevel_id > 19 || player.xiangulevel_id > 19) {
+     if (isHighRealmConsumableRestricted(player)) {
         e.reply(`「自荒古岁月至今...」
 「本座早已不需要这等外物了」`);
         return false;
@@ -1602,7 +1603,7 @@ padLeft(str, length) {
     //检索方法
     let najie = await data.getData('najie', usr_qq);
     let xiuwei = 0;
-          if (player.mijinglevel_id > 19 || player.xiangulevel_id > 19) {
+          if (isHighRealmConsumableRestricted(player)) {
         e.reply(`「自荒古岁月至今...」
 「本座早已不需要这等外物了」`);
         return false;

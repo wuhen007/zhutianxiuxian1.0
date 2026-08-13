@@ -2,6 +2,7 @@ import plugin from '../../../../lib/plugins/plugin.js'
 import data from '../../model/XiuxianData.js'
 import config from "../../model/Config.js"
 import axios from 'axios';
+import probeImageSize from 'probe-image-size';
 import fs from "fs"
 import path from 'path';
 import { Read_player, existplayer,sleep,exist_najie_thing, Add_修为,Add_血气, getxinghailastsign_time,getLastsign2 } from '../../model/xiuxian.js'
@@ -91,6 +92,10 @@ export class Anniversary extends plugin {
                  {
     reg: '^#上传练气皮肤\\s+\\w+$', 
     fnc: 'upload_pifu'
+},
+                 {
+    reg: '^#上传纳戒皮肤(?:\\s+.*)?$',
+    fnc: 'upload_najie_pifu'
 },
 
                  {
@@ -744,7 +749,8 @@ async lianqipifu(e) {
         return;
     }
     
-    const usr_qq = e.user_id;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
     const command = e.msg.replace('#自选存档皮肤', '').trim();
     
     // 解析命令
@@ -758,9 +764,9 @@ async lianqipifu(e) {
     const skinType = parts[1].trim();
     
     // 验证类型
-    const validTypes = ["练气", "装备"];
+    const validTypes = ["练气", "装备", "纳戒"];
     if (!validTypes.includes(skinType)) {
-        e.reply(`无效的类型：${skinType}，请使用"练气"或"装备"`);
+        e.reply(`无效的类型：${skinType}，请使用"练气"、"装备"或"纳戒"`);
         return;
     }
     
@@ -768,8 +774,10 @@ async lianqipifu(e) {
     let dirPath;
     if (skinType === "练气") {
         dirPath = __PATH.player_pifu_path;
-    } else {
+    } else if (skinType === "装备") {
         dirPath = __PATH.equipment_pifu_path;
+    } else {
+        dirPath = __PATH.najie_pifu_path;
     }
     
     // 检查目录是否存在
@@ -803,8 +811,10 @@ async lianqipifu(e) {
         
         if (skinType === "练气") {
             player.练气皮肤 = skinId;
-        } else {
+        } else if (skinType === "装备") {
             player.装备皮肤 = skinId;
+        } else {
+            player.纳戒皮肤 = skinId;
         }
         
         await Write_player(usr_qq, player);
@@ -820,7 +830,8 @@ async upload_pifu(e) {
         return true;
     }
     
-    const usr_qq = e.user_id;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
     
     // 解析指令格式 #上传练气皮肤 <皮肤ID>
     const commandParts = e.msg.split(/\s+/);
@@ -917,6 +928,93 @@ async upload_pifu(e) {
         e.reply("上传皮肤失败，请稍后重试或联系管理员");
     }
     
+    return true;
+}
+
+async upload_najie_pifu(e) {
+    if (!e.isGroup) {
+        e.reply("此功能仅在群聊中可用");
+        return true;
+    }
+
+    const skinId = e.msg.replace(/^#上传纳戒皮肤\s*/, '').trim();
+    if (!skinId) {
+        e.reply("指令格式错误，请发送：#上传纳戒皮肤 <皮肤ID> + 横版JPG图片");
+        return true;
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(skinId)) {
+        e.reply("皮肤ID只能包含字母、数字和下划线");
+        return true;
+    }
+
+    const imageUrl = Array.isArray(e.message)
+        ? e.message.find(item => item.type === 'image')?.url
+        : null;
+    if (!imageUrl) {
+        e.reply("请随指令发送一张横版JPG图片");
+        return true;
+    }
+
+    const dirPath = __PATH.najie_pifu_path;
+    const filePath = path.join(dirPath, `${skinId}.jpg`);
+    if (fs.existsSync(filePath)) {
+        e.reply(`皮肤ID ${skinId} 已被使用，请选择其他ID`);
+        return true;
+    }
+
+    let fileWritten = false;
+    try {
+        e.reply("正在校验并上传纳戒皮肤，请稍候...");
+        const response = await axios.get(imageUrl, {
+            responseType: 'arraybuffer',
+            timeout: 15000,
+            maxContentLength: 10 * 1024 * 1024,
+            maxBodyLength: 10 * 1024 * 1024
+        });
+        const imageBuffer = Buffer.from(response.data);
+        const isJpeg = imageBuffer[0] === 0xff && imageBuffer[1] === 0xd8;
+        let dimensions = null;
+        try {
+            dimensions = probeImageSize.sync(imageBuffer);
+        } catch {}
+
+        if (!isJpeg || dimensions?.type !== 'jpg') {
+            e.reply("上传失败：纳戒皮肤必须是JPG格式");
+            return true;
+        }
+        if (dimensions.width <= dimensions.height) {
+            e.reply(`上传失败：纳戒皮肤必须是横版图片（当前 ${dimensions.width}×${dimensions.height}）`);
+            return true;
+        }
+
+        let usr_qq = e.user_id.toString().replace('qg_', '');
+        usr_qq = await channel(usr_qq);
+        const player = await Read_player(usr_qq);
+        await fs.promises.mkdir(dirPath, { recursive: true });
+        try {
+            await fs.promises.writeFile(filePath, imageBuffer, { flag: 'wx' });
+            fileWritten = true;
+        } catch (error) {
+            if (error.code === 'EEXIST') {
+                e.reply(`皮肤ID ${skinId} 已被使用，请选择其他ID`);
+                return true;
+            }
+            throw error;
+        }
+
+        player.纳戒皮肤 = skinId;
+        await Write_player(usr_qq, player);
+        fileWritten = false;
+        e.reply([
+            `成功上传并设置纳戒皮肤为：${skinId}（${dimensions.width}×${dimensions.height}）`,
+            segment.image(`file://${filePath}`)
+        ]);
+    } catch (err) {
+        if (fileWritten) await fs.promises.unlink(filePath).catch(() => {});
+        console.error("上传纳戒皮肤失败:", err);
+        e.reply("上传纳戒皮肤失败，请稍后重试或联系管理员");
+    }
+
     return true;
 }
 

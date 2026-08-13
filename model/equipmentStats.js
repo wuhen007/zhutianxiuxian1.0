@@ -29,6 +29,12 @@ export function calculateEquippedStats(baseStats, slots = []) {
     hpBonus += HP;
   }
 
+  // 百分比装备单属性加成上限：最高 5000%（即加成 ≤ 50，总倍率 ≤ 51 倍）
+  const MAX_PERCENT_BONUS = 50;
+  attackBonus = Math.min(attackBonus, MAX_PERCENT_BONUS);
+  defenseBonus = Math.min(defenseBonus, MAX_PERCENT_BONUS);
+  hpBonus = Math.min(hpBonus, MAX_PERCENT_BONUS);
+
   return {
     攻击: Math.trunc(baseAttack * (1 + attackBonus) + fixedAttack),
     防御: Math.trunc(baseDefense * (1 + defenseBonus) + fixedDefense),

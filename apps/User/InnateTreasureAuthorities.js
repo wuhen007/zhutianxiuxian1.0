@@ -12,6 +12,7 @@ import {
   __PATH,
   channel,
   existplayer,
+  foundthing,
   instead_equipment,
   player_efficiency,
 } from '../../model/xiuxian.js';
@@ -291,11 +292,12 @@ export class InnateTreasureAuthorities extends plugin {
       const najie = await Read_najie(ctx.qq);
       const found = findInventoryItem(najie, input.name, CHAOS_INSPECTABLE_CLASSES);
       if (!found) return e.reply('纳戒中没有该物品。');
-      const restriction = getChaosItemRestriction(found.item);
+      const catalogItem = await foundthing(found.item.name);
+      const restriction = getChaosItemRestriction(found.item, catalogItem || null);
       if (restriction) return e.reply(restriction);
       if (!COPYABLE_CLASSES.includes(found.itemClass)) return e.reply('混沌复制暂不支持装备。');
       if (Number(found.item.数量) < input.amount) return e.reply('纳戒中没有足够的该物品。');
-      const rank = getChaosItemRarity(found.item);
+      const rank = getChaosItemRarity(found.item, catalogItem || null);
       const cap = rank >= 6 ? 9 : rank >= 3 ? 99 : 999;
       if (input.amount > cap) return e.reply(`该品阶单次最多复制${cap}个。`);
       found.item.数量 = Number(found.item.数量) + input.amount;
@@ -315,12 +317,13 @@ export class InnateTreasureAuthorities extends plugin {
       const najie = await Read_najie(ctx.qq);
       const found = findInventoryItem(najie, input.name, CHAOS_INSPECTABLE_CLASSES);
       if (!found) return e.reply('纳戒中没有该物品。');
-      const restriction = getChaosItemRestriction(found.item);
+      const catalogItem = await foundthing(found.item.name);
+      const restriction = getChaosItemRestriction(found.item, catalogItem || null);
       if (restriction) return e.reply(restriction);
       if (found.itemClass !== '材料') return e.reply('混沌演化仅支持材料。');
       if (Number(found.item.数量) < input.amount) return e.reply('纳戒中没有足够的该材料。');
       const pool = nativePool('材料').filter(item => !getChaosItemRestriction(item));
-      const currentRank = getChaosItemRarity(found.item);
+      const currentRank = getChaosItemRarity(found.item, catalogItem || null);
       const maxRank = Math.max(currentRank, ...pool.map(getChaosItemRarity));
       const targetRank = currentRank < maxRank && Math.random() < 0.5 ? currentRank + 1 : currentRank;
       const candidates = pool.filter(item => getChaosItemRarity(item) === targetRank && item.name !== input.name);
@@ -369,10 +372,16 @@ export class InnateTreasureAuthorities extends plugin {
     const secondary = najie.仙宠?.find(pet => pet.name === secondaryName);
     if (!main || !secondary) return e.reply('主宠与副宠都必须在纳戒中。');
     if (main.炼妖继承能力) return e.reply('这只主宠已经进行过炼妖融合。');
+    // 副宠加成优先用已重算的 加成；若其为常驻纳戒、从未出战导致 加成 为 0/缺失，
+    // 则用其基础成长（初始加成 + 每级增加*等级）推导，避免继承的 50% 能力直接归零。
+    const secondaryStoredBonus = Number(secondary.加成) || 0;
+    const secondaryDerivedBonus = (Number(secondary.初始加成) || 0)
+      + (Number(secondary.每级增加) || 0) * (Number(secondary.等级) || 1);
+    const secondaryEffectiveBonus = secondaryStoredBonus > 0 ? secondaryStoredBonus : secondaryDerivedBonus;
     main.炼妖继承能力 = {
       来源: secondary.name,
       type: secondary.type,
-      加成: Number(((Number(secondary.加成) || 0) * 0.5).toFixed(6)),
+      加成: Number((secondaryEffectiveBonus * 0.5).toFixed(6)),
     };
     // 若主宠即当前出战宠，立即把继承的幸运反映到 player.幸运，避免需等下次数据同步才生效
     if (main.name === ctx.player.仙宠?.name) {

@@ -32,12 +32,19 @@ test('混沌稀有度兼容旧物品品阶字段', () => {
   assert.match(getChaosItemRestriction({ name: '旧仙材', 品级: '仙级' }), /保护线7/);
 });
 
+test('旧纳戒缺少稀有度时以标准物品目录为准', () => {
+  const oldInventoryItem = { name: '极道丹', class: '丹药', 数量: 1 };
+  const catalogItem = { name: '极道丹', class: '丹药', 稀有度: 10 };
+  assert.equal(getChaosItemRarity(oldInventoryItem, catalogItem), 10);
+  assert.match(getChaosItemRestriction(oldInventoryItem, catalogItem), /稀有度为10/);
+});
+
 test('复制和演化共用保护校验，演化池不会产出受保护材料', () => {
   const source = fs.readFileSync(
     new URL('../apps/User/InnateTreasureAuthorities.js', import.meta.url),
     'utf8'
   );
-  assert.equal(source.match(/getChaosItemRestriction\(found\.item\)/g)?.length, 2);
+  assert.equal(source.match(/getChaosItemRestriction\(found\.item, catalogItem \|\| null\)/g)?.length, 2);
   assert.match(source, /nativePool\('材料'\)\.filter\(item => !getChaosItemRestriction\(item\)\)/);
   assert.equal(source.match(/withPlayerMutationLock\(lockId/g)?.length, 2);
   assert.equal(source.match(/await persistChaosState\(ctx\.qq, najie, ctx\.player\)/g)?.length, 2);

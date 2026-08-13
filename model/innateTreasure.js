@@ -32,10 +32,14 @@ const LEGACY_RARITY_RANK = Object.freeze({
 });
 const PERCENT_EQUIPMENT_TYPES = new Set(['武器', '护具', '法宝']);
 
-export function getChaosItemRarity(item) {
+function readChaosItemRarity(item) {
   const rarity = Number(item?.稀有度);
   if (Number.isFinite(rarity)) return rarity;
   return LEGACY_RARITY_RANK[item?.type] ?? LEGACY_RARITY_RANK[item?.品级] ?? 0;
+}
+
+export function getChaosItemRarity(item, catalogItem = null) {
+  return Math.max(readChaosItemRarity(item), readChaosItemRarity(catalogItem));
 }
 
 function hasLegacyPercentageStats(item) {
@@ -48,16 +52,18 @@ function hasLegacyPercentageStats(item) {
     (item?.type === '法宝' && (atk >= 1 || def >= 1)) || atk + def > 1.95;
 }
 
-export function getChaosItemRestriction(item) {
+export function getChaosItemRestriction(item, catalogItem = null) {
+  const inspected = catalogItem ? { ...catalogItem, ...item } : item;
   const name = item?.name || '该物品';
+  if (item?.全服唯一 || catalogItem?.全服唯一) return `【${name}】具有全服唯一性，不可进行混沌复制或演化。`;
   if (name === '圣法碎片') return '【圣法碎片】具有唯一性，不可进行混沌复制或演化。';
-  if (item?.type === '帝兵' && item?.author_name) {
+  if (inspected?.type === '帝兵' && inspected?.author_name) {
     return `【${name}】是炼制帝兵，受本命烙印保护，不可进行混沌复制或演化。`;
   }
-  if (hasPercentageStats(item) || hasLegacyPercentageStats(item)) {
+  if (hasPercentageStats(inspected) || hasLegacyPercentageStats(inspected)) {
     return `【${name}】是百分比装备，不可进行混沌复制或演化。`;
   }
-  const rarity = getChaosItemRarity(item);
+  const rarity = getChaosItemRarity(item, catalogItem);
   if (rarity >= CHAOS_PROTECTED_RARITY) {
     return `【${name}】稀有度为${rarity}，达到保护线${CHAOS_PROTECTED_RARITY}，不可进行混沌复制或演化。`;
   }

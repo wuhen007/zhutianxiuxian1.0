@@ -17,13 +17,15 @@ test('装备百分比统一加算后只乘一次基础属性', () => {
     calculateEquippedStats(base, [{ atk: 1 }, { atk: 1 }, { atk: 1 }]).攻击,
     4000
   );
+  // 三件各 +9900% 的百分比装备：先加算（29700%）后乘一次基础属性，
+  // 但受「百分比装备单属性加成上限 5000%」钳制，最终倍率为 51 倍
   assert.deepEqual(
     calculateEquippedStats(base, [
       { atk: 99, def: 99, HP: 99 },
       { atk: 99, def: 99, HP: 99 },
       { atk: 99, def: 99, HP: 99 },
     ]),
-    { 攻击: 298000, 防御: 298000, 血量上限: 298000 }
+    { 攻击: 51000, 防御: 51000, 血量上限: 51000 }
   );
   assert.deepEqual(
     calculateEquippedStats(base, [{ atk: 0.5 }, { atk: 100, def: 200, HP: 300 }]),
@@ -37,6 +39,25 @@ test('装备百分比统一加算后只乘一次基础属性', () => {
       归一属性: { 百分比: { atk: 0.5, def: 0.25, HP: 1 } },
     }]),
     { 攻击: 1600, 防御: 1450, 血量上限: 2300 }
+  );
+});
+
+test('百分比装备单属性加成上限为 5000%', () => {
+  const base = { 攻击: 1000, 防御: 1000, 血量上限: 1000 };
+  // 6000% 应被钳制到 5000%（51 倍）
+  assert.equal(
+    calculateEquippedStats(base, [{ 归一属性: { 百分比: { atk: 60 } } }]).攻击,
+    51000
+  );
+  // 恰好 5000% 不触发钳制（51 倍）
+  assert.equal(
+    calculateEquippedStats(base, [{ 归一属性: { 百分比: { atk: 50 } } }]).攻击,
+    51000
+  );
+  // 4900% 正常生效（50 倍）
+  assert.equal(
+    calculateEquippedStats(base, [{ 归一属性: { 百分比: { atk: 49 } } }]).攻击,
+    50000
   );
 });
 

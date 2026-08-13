@@ -13,7 +13,7 @@ test('任一修炼体系达到准仙帝后均不能一键服用修为丹或血�
     assert.notEqual(start, -1, `未找到 ${method}`);
     assert.match(
       source.slice(start, start + 800),
-      /if\s*\(\s*player\.mijinglevel_id\s*>\s*19\s*\|\|\s*player\.xiangulevel_id\s*>\s*19\s*\)/
+      /if\s*\(\s*isHighRealmConsumableRestricted\(player\)\s*\)/
     );
   }
 });
