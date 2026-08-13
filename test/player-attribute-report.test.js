@@ -18,6 +18,7 @@ function createViewFixture() {
       Physique_id: 41,
       mijinglevel_id: 11,
       xiangulevel_id: 1,
+      huafenlevel_id: 1,
       灵根: { type: '体质', name: '先天道胎', 攻击: 0.1, 防御: 0.08, 生命: 0.12 },
       天资等级: '天纵之资',
       学习的功法: [],
@@ -47,6 +48,7 @@ function createViewFixture() {
       LevelMax_list: [{ level_id: 41, level: '炼体四十一层' }],
       Levelmijing_list: [{ level_id: 11, level: '斩道王者', 基础攻击: 10, 基础防御: 10, 基础血量: 10 }],
       xiangujinshi_list: [{ level_id: 1, level: '搬血境', 基础攻击: 1, 基础防御: 1, 基础血量: 1 }],
+      huafen_list: [{ level_id: 1, level: '普通人', 基础攻击: 0, 基础防御: 0, 基础血量: 0 }],
       minggeList: [],
       gongfa_list: [],
       timegongfa_list: [],
@@ -68,6 +70,16 @@ test('额外属性上限在42级后按每级一千万增长', () => {
     secret: 150_000_000,
     total: 242_000_000,
   });
+});
+
+test('花粉境界按对应权限提高额外属性上限', () => {
+  assert.equal(calculateExtraAttributeLimit({
+    level_id: 42,
+    Physique_id: 41,
+    mijinglevel_id: 1,
+    xiangulevel_id: 1,
+    huafenlevel_id: 10,
+  }).secret, 165_000_000);
 });
 
 test('完整属性报告稳定输出八个分区且不泄漏无效数值', () => {
@@ -173,7 +185,7 @@ test('悟道消耗依次应用功法、命格寿元倍率与问道签', () => {
 test('HTML属性视图完整输出真实分区与稀释状态', () => {
   const view = buildPlayerAttributeView(createViewFixture());
   assert.equal(view.identity.name, '测试道君');
-  assert.equal(view.realms.length, 4);
+  assert.equal(view.realms.length, 5);
   assert.equal(view.primaryStats.length, 3);
   assert.equal(view.secondaryStats.length, 6);
   assert.equal(view.extra.rows[0].status, '已超上限');

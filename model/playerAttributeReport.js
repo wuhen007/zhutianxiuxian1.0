@@ -21,6 +21,7 @@ import {
 import { applyQuestionFortuneCost, hasRedDustFortune } from './redDustFortune.js';
 import { isDaofaActive } from './daofa.js';
 import { calculateExtraAttributeLimit } from './attributeCaps.js';
+import { getRealmAuthorityLevel } from './realmAuthority.js';
 
 export { calculateExtraAttributeLimit } from './attributeCaps.js';
 
@@ -120,18 +121,18 @@ function formatSlot(slotName, slot) {
 export function calculateAllAttributeSlotBonuses(player, equipment, levels) {
   const secret = findLevel(levels?.secret, player?.mijinglevel_id) || {};
   const ancient = findLevel(levels?.ancient, player?.xiangulevel_id || 1) || {};
+  const flower = findLevel(levels?.flower, player?.huafenlevel_id || 1) || {};
   const realmBase = {
-    attack: number(secret.基础攻击) + number(ancient.基础攻击),
-    defense: number(secret.基础防御) + number(ancient.基础防御),
-    health: number(secret.基础血量) + number(ancient.基础血量),
+    attack: number(secret.基础攻击) + number(ancient.基础攻击) + number(flower.基础攻击),
+    defense: number(secret.基础防御) + number(ancient.基础防御) + number(flower.基础防御),
+    health: number(secret.基础血量) + number(ancient.基础血量) + number(flower.基础血量),
   };
   const imperial = equipment?.帝兵 || {};
   let imperialScale = 0;
   if (String(imperial.author_name || '') === String(player?.id || '')) imperialScale += 1;
   if (
     SPECIAL_IMPERIAL_WEAPONS.has(imperial.name) &&
-    number(player?.mijinglevel_id) < 12 &&
-    number(player?.xiangulevel_id || 1) < 12
+    getRealmAuthorityLevel(player) < 12
   ) {
     imperialScale += 0.1;
   } else if (!imperial.author_name) {
@@ -248,6 +249,7 @@ function buildRealmSection(player, levels) {
     `炼体：${nameOf(findLevel(levels.body, player?.Physique_id))}（${number(player?.Physique_id)}）`,
     `秘境：${nameOf(findLevel(levels.secret, player?.mijinglevel_id))}（${number(player?.mijinglevel_id)}）`,
     `仙古：${nameOf(findLevel(levels.ancient, player?.xiangulevel_id || 1))}（${number(player?.xiangulevel_id || 1)}）`,
+    `花粉：${nameOf(findLevel(levels.flower, player?.huafenlevel_id || 1))}（${number(player?.huafenlevel_id || 1)}）`,
     `灵根：${player?.灵根?.type || '无'}·${player?.灵根?.name || '无'}｜天资：${player?.天资等级 || '无'}`,
     `命格：${player?.命格?.name || player?.命格 || '无'}${player?.附加命格?.length ? `｜附加${player.附加命格.length}条` : ''}`,
   ].join('\n');
@@ -310,7 +312,7 @@ function buildEquipmentSection(player, equipment, levels) {
     '',
     '【帝兵加成】',
     formatSlot('帝兵', equipment?.帝兵),
-    `全属性：${integer(imperial.allAttribute)} × 后两体系基础 × ${imperial.scale}｜实际攻${integer(imperial.attack)} 防${integer(imperial.defense)} 血${integer(imperial.health)}`,
+    `全属性：${integer(imperial.allAttribute)} × 额外体系基础 × ${imperial.scale}｜实际攻${integer(imperial.attack)} 防${integer(imperial.defense)} 血${integer(imperial.health)}`,
     '',
     '【至宝加成】',
     formatSlot('至宝', equipment?.至宝),
@@ -448,6 +450,7 @@ function attributeContext({ player, data, eraIndex, now }) {
     body: data?.LevelMax_list,
     secret: data?.Levelmijing_list,
     ancient: data?.xiangujinshi_list,
+    flower: data?.huafen_list,
   };
   const minggeEffects = getMinggeEffects(player, data?.minggeList);
   const technique = getTechniqueWudaoProfile(player?.学习的功法, {
@@ -569,6 +572,7 @@ export function buildPlayerAttributeView({ player, equipment, data, eraIndex = 2
       { label: '炼体', name: nameOf(findLevel(levels.body, player?.Physique_id)), note: `体魄序列 ${integer(player?.Physique_id)}` },
       { label: '秘境', name: nameOf(findLevel(levels.secret, player?.mijinglevel_id)), note: `秘境序列 ${integer(player?.mijinglevel_id)}` },
       { label: '仙古', name: nameOf(findLevel(levels.ancient, player?.xiangulevel_id || 1)), note: `今世法序列 ${integer(player?.xiangulevel_id || 1)}` },
+      { label: '花粉', name: nameOf(findLevel(levels.flower, player?.huafenlevel_id || 1)), note: `进化序列 ${integer(player?.huafenlevel_id || 1)}` },
     ],
     primaryStats: [
       { label: '攻击', value: integer(player?.攻击), note: `额外加成 ${signedInteger(player?.攻击加成)}` },
@@ -594,7 +598,7 @@ export function buildPlayerAttributeView({ player, equipment, data, eraIndex = 2
       total: `攻 ${percent(ordinary.atkRate, true)} / ${signedInteger(ordinary.atkFixed)} · 防 ${percent(ordinary.defRate, true)} / ${signedInteger(ordinary.defFixed)} · 血 ${percent(ordinary.hpRate, true)} / ${signedInteger(ordinary.hpFixed)} · 暴击 ${percent(ordinary.critical, true)}`,
       imperial: {
         ...artifactView('帝兵', equipment?.帝兵, allAttribute.imperial, `归属倍率 ${allAttribute.imperial.scale.toFixed(2)}×`),
-        note: `${integer(allAttribute.imperial.allAttribute)} × 后两体系基础 × ${allAttribute.imperial.scale.toFixed(2)}，按当前归属与境界结算。`,
+        note: `${integer(allAttribute.imperial.allAttribute)} × 额外体系基础 × ${allAttribute.imperial.scale.toFixed(2)}，按当前归属与境界结算。`,
       },
       treasure: {
         ...artifactView('至宝', equipment?.至宝, allAttribute.treasure, player?.当前先天至宝 ? '先天投影已激活' : '按当前槽位结算'),

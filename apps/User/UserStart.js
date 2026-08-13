@@ -297,7 +297,8 @@ async draw_player_mingge(e) {
       level_id: 1, //练气境界
       Physique_id: 1, //练体境界
       mijinglevel_id: 1,//秘境体系境界 
-      xianggulevel_id: 1,//仙古今世法境界 
+      xiangulevel_id: 1,//仙古今世法境界
+      huafenlevel_id: 1,//花粉进化路境界
       神识: 0, //神识
       元神: 0, //元神
       元神上限: 0, //元神上限
@@ -747,6 +748,7 @@ async daily_lottery(e) {
       Physique_id: 1, //练体境界
       mijinglevel_id: 1,//秘境体系境界 
       xiangulevel_id: 1,//仙古今世法境界 
+      huafenlevel_id: 1,//花粉进化路境界
       神识: 0, //神识
       元神: 0, //元神
       元神上限: 0, //元神上限

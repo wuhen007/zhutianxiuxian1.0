@@ -1,4 +1,5 @@
 import { getGongfaNumericMultiplier } from './gongfaProficiency.js';
+import { getRealmAuthorityLevel } from './realmAuthority.js';
 
 export const PLACE_LOCATION_MAP = Object.freeze({
   '凡间': 0,
@@ -366,7 +367,11 @@ export function getTokenTier(player) {
 }
 
 export function calcRealmReducePct(player) {
-  const realm = Math.max(level(player, 'mijinglevel_id'), level(player, 'xiangulevel_id'));
+  const realm = Math.max(
+    level(player, 'mijinglevel_id'),
+    level(player, 'xiangulevel_id'),
+    getRealmAuthorityLevel({ huafenlevel_id: player?.huafenlevel_id })
+  );
   return Math.min(TRAVEL_REDUCE_MAX, (realm / TRAVEL_MAX_REALM) * TRAVEL_REDUCE_MAX);
 }
 
@@ -383,41 +388,42 @@ export function getBaseTravelThreshold(player) {
 export function getLocationThreshold(player, location) {
   const mijing = level(player, 'mijinglevel_id');
   const xiangu = level(player, 'xiangulevel_id');
+  const huafen = level(player, 'huafenlevel_id');
   const cultivation = level(player, 'level_id');
   let code = null;
   let checks = [];
 
   if (location === '时间长河') {
-    const met = mijing >= 20 || xiangu >= 20;
+    const met = mijing >= 20 || xiangu >= 20 || huafen >= 21;
     code = met ? null : 'time-river';
-    checks = [{ label: '准仙帝境界', display: `秘境 ${mijing}/20 或仙古 ${xiangu}/20`, met }];
+    checks = [{ label: '准仙帝境界', display: `秘境 ${mijing}/20、仙古 ${xiangu}/20或花粉 ${huafen}/21`, met }];
   } else if (location === '永恒未知之地') {
-    const met = mijing >= 21 || xiangu >= 21;
+    const met = mijing >= 21 || xiangu >= 21 || huafen >= 22;
     code = met ? null : 'eternal-land';
-    checks = [{ label: '仙帝境界', display: `秘境 ${mijing}/21 或仙古 ${xiangu}/21`, met }];
+    checks = [{ label: '仙帝境界', display: `秘境 ${mijing}/21、仙古 ${xiangu}/21或花粉 ${huafen}/22`, met }];
   } else if (location === '仙界') {
     const met = cultivation >= 42 || (Number(player?.lunhui) || 0) !== 0;
     code = met ? null : 'immortal-realm';
     checks = [{ label: '成仙条件', display: met ? '已成仙' : '需地仙境或轮回', met }];
   } else if (location === '遮天位面') {
     const altarActive = Number(player?.五色祭坛激活) === 1;
-    const met = mijing >= 12 || xiangu > 10 || altarActive;
+    const met = mijing >= 12 || xiangu > 10 || huafen >= 11 || altarActive;
     code = met ? null : 'zhetian';
     checks = [{
       label: '星海通行',
-      display: `秘境 ${mijing}/12、仙古 ${xiangu}/11或五色祭坛${altarActive ? '已激活' : '未激活'}`,
+      display: `秘境 ${mijing}/12、仙古 ${xiangu}/11、花粉 ${huafen}/11或五色祭坛${altarActive ? '已激活' : '未激活'}`,
       met,
     }];
   } else if (location === '仙域') {
-    const met = mijing >= 18 || xiangu >= 16;
+    const met = mijing >= 18 || xiangu >= 16 || huafen >= 18;
     code = met ? null : 'immortal-domain';
-    checks = [{ label: '仙王境界', display: `秘境 ${mijing}/18 或仙古 ${xiangu}/16`, met }];
+    checks = [{ label: '仙王境界', display: `秘境 ${mijing}/18、仙古 ${xiangu}/16或花粉 ${huafen}/18`, met }];
   } else if (location === '太初星墟') {
-    const met = mijing >= 16 || xiangu >= 16;
+    const met = mijing >= 16 || xiangu >= 16 || huafen >= 15;
     code = met ? null : 'primordial-ruins';
-    checks = [{ label: '裂界承载', display: `秘境 ${mijing}/16 或仙古 ${xiangu}/16`, met }];
+    checks = [{ label: '裂界承载', display: `秘境 ${mijing}/16、仙古 ${xiangu}/16或花粉 ${huafen}/15`, met }];
   } else if (location === '凡间') {
-    const met = mijing <= 20 && xiangu <= 20;
+    const met = mijing <= 20 && xiangu <= 20 && huafen <= 21;
     code = met ? null : 'mortal-realm';
     checks = [{ label: '天地承载', display: met ? '可下凡' : '仙帝威压过强', met }];
   }
@@ -429,9 +435,10 @@ export function getKunpengReduction(player) {
   if (!player?.学习的功法?.includes('鲲鹏宝术')) return 0;
   const mijing = level(player, 'mijinglevel_id');
   const xiangu = level(player, 'xiangulevel_id');
+  const huafen = level(player, 'huafenlevel_id');
   let reduction = 3;
-  if (mijing >= 15 || xiangu >= 13) reduction++;
-  if (mijing >= 18 || xiangu >= 16) reduction++;
+  if (mijing >= 15 || xiangu >= 13 || huafen >= 14) reduction++;
+  if (mijing >= 18 || xiangu >= 16 || huafen >= 17) reduction++;
   return Number((reduction * getGongfaNumericMultiplier(player, '鲲鹏宝术')).toFixed(2));
 }
 

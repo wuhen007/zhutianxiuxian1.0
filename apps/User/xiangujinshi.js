@@ -39,6 +39,8 @@ import {
   unlockXianguDaoRealm,
 } from './wudaoRules.js';
 import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
+import { canCultivateExtraPath, getActiveExtraCultivationPaths, getExtraCultivationPathName, selectExtraCultivationPath } from '../../model/extraCultivation.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 const XIANGU_THUNDER_LIQUID_NAMES = ['雷池真液', '雷池液'];
 
@@ -89,7 +91,9 @@ export class xiangujinshi extends plugin {
     const original = this.chongguan;
     this.chongguan = async function guardedXianguBreakthrough(e, ...args) {
       const playerId = String(e.user_id || '').replace('qg_', '');
-      const result = await withTribulationLock(playerId, () => original.call(this, e, ...args));
+      const result = await withPlayerMutationLock(playerId, () =>
+        withTribulationLock(playerId, () => original.call(this, e, ...args))
+      );
       if (result === TRIBULATION_LOCK_BUSY) {
         return e.reply('【渡劫中】你已有一场仙古冲关正在进行，请等待结算完成。');
       }
@@ -203,10 +207,11 @@ export class xiangujinshi extends plugin {
          e.reply(messages);
         return;
     }
-     if (player.mijinglevel_id > 1) {
+     if (!canCultivateExtraPath(player, 'xiangu')) {
         // 辰东风格文案
+        const activePath = getActiveExtraCultivationPaths(player).map(getExtraCultivationPathName).join('、');
         const messages = [
-            `仙古今世法与人体秘境体系不可兼修！`,
+            `你已踏上${activePath}，人体秘境、仙古今世法与花粉进化路不可兼修！`,
         ];
          e.reply(messages);
         return;
@@ -445,6 +450,7 @@ if (player.xiangulevel_id === 4) {
       `搬血境——成！`,
     ].join("\n"));
 
+    selectExtraCultivationPath(player, 'xiangu');
     player.xiangulevel_id = 2;
     this.deductXianguPotential(player);
     await Write_player(usr_qq, player);
@@ -574,6 +580,7 @@ if (player.xiangulevel_id === 4) {
   }
 
   async updatePlayerForExtreme(usr_qq, player, result) {
+    selectExtraCultivationPath(player, 'xiangu');
     player.xiangulevel_id = 2;
         if (!player.极境.includes("2")) {
       player.极境.push("2");

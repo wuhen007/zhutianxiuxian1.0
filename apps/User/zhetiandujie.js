@@ -4195,13 +4195,13 @@ async command_datitingtianji(e) {
   const 位面列表 = [
     { name: '仙界',         要求: '地仙境或轮回',           需: (p) => Number(p.level_id) >= 42 || (Number(p?.lunhui) || 0) !== 0, 坐标字段: '仙界坐标' },
     { name: '下界八域',     要求: '默认通行',               需: () => true,                                                            坐标字段: '下界八域坐标' },
-    { name: '遮天位面',     要求: '秘境≥12(圣人) / 五色祭坛', 需: (p) => p.mijinglevel_id >= 12 || p.xiangulevel_id > 10 || Number(p?.五色祭坛激活) === 1, 坐标字段: '遮天位面坐标' },
+    { name: '遮天位面',     要求: '秘境≥12 / 仙古≥11 / 花粉≥11 / 五色祭坛', 需: (p) => p.mijinglevel_id >= 12 || p.xiangulevel_id > 10 || p.huafenlevel_id >= 11 || Number(p?.五色祭坛激活) === 1, 坐标字段: '遮天位面坐标' },
     { name: '九天十地',     要求: '默认通行',               需: () => true,                                                            坐标字段: '九天十地坐标' },
-    { name: '界海',         要求: '仙王巨头(秘境≥19)',        需: (p) => p.mijinglevel_id >= 19 || p.xiangulevel_id >= 19,            坐标字段: '界海坐标' },
-    { name: '太初星墟',     要求: '秘境≥16(大帝) / 仙古≥16',  需: (p) => p.mijinglevel_id >= 16 || p.xiangulevel_id >= 16,            坐标字段: '太初星墟坐标' },
-    { name: '仙域',         要求: '红尘仙(秘境≥17) / 仙古≥16', 需: (p) => p.mijinglevel_id >= 17 || p.xiangulevel_id >= 16,            坐标字段: '仙域坐标' },
-    { name: '时间长河',     要求: '准仙帝(秘境≥20)',           需: (p) => p.mijinglevel_id >= 20 || p.xiangulevel_id >= 20,            坐标字段: '时间长河坐标' },
-    { name: '永恒未知之地', 要求: '仙帝(秘境≥21)',             需: (p) => p.mijinglevel_id >= 21 || p.xiangulevel_id >= 21,            坐标字段: '永恒未知之地坐标' }
+    { name: '界海',         要求: '仙王巨头（秘境≥19 / 仙古≥19 / 花粉≥20）', 需: (p) => p.mijinglevel_id >= 19 || p.xiangulevel_id >= 19 || p.huafenlevel_id >= 20, 坐标字段: '界海坐标' },
+    { name: '太初星墟',     要求: '帝境（秘境≥16 / 仙古≥16 / 花粉≥15）', 需: (p) => p.mijinglevel_id >= 16 || p.xiangulevel_id >= 16 || p.huafenlevel_id >= 15, 坐标字段: '太初星墟坐标' },
+    { name: '仙域',         要求: '仙王（秘境≥18 / 仙古≥16 / 花粉≥18）', 需: (p) => p.mijinglevel_id >= 18 || p.xiangulevel_id >= 16 || p.huafenlevel_id >= 18, 坐标字段: '仙域坐标' },
+    { name: '时间长河',     要求: '准仙帝（秘境≥20 / 仙古≥20 / 花粉≥21）', 需: (p) => p.mijinglevel_id >= 20 || p.xiangulevel_id >= 20 || p.huafenlevel_id >= 21, 坐标字段: '时间长河坐标' },
+    { name: '永恒未知之地', 要求: '仙帝（秘境≥21 / 仙古≥21 / 花粉≥22）', 需: (p) => p.mijinglevel_id >= 21 || p.xiangulevel_id >= 21 || p.huafenlevel_id >= 22, 坐标字段: '永恒未知之地坐标' }
   ];
   const 位面状态 = 位面列表.map(p => {
     const 可去 = p.需(player);
@@ -4210,7 +4210,7 @@ async command_datitingtianji(e) {
     return {
       ...p,
       可去,
-      差值: 可去 || !所需 ? 0 : Math.max(0, 所需 - Math.max(mijing, xiangu)),
+      差值: 可去 || !所需 ? 0 : Math.max(0, 所需 - Math.max(mijing, xiangu, Number(player.huafenlevel_id) || 1)),
       坐标: 可去 ? getPlayerPlaneCoordinate(player, p.name) : null
     };
   });

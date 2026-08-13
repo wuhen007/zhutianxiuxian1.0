@@ -109,6 +109,8 @@ class XiuxianData {
           //仙古今世法
       this.xiangujinshi_list = JSON.parse(
       fs.readFileSync(`${this.Level}/仙古今世法.json`));
+      this.huafen_list = JSON.parse(
+      fs.readFileSync(`${this.Level}/花粉进化路体系.json`));
 
     //练体境界
     this.LevelMax_list = JSON.parse(

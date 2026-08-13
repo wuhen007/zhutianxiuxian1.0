@@ -23,6 +23,8 @@ import {
   getMinggeDirectMultiplier,
   getMinggeEffectNumber,
 } from '../../model/mingge.js';
+import { getExtraCultivationLevelSum } from '../../model/extraCultivation.js';
+import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import {
   SPIRIT_HEART_ENTRY_COST,
   consumeSpiritHeartEntry,
@@ -428,7 +430,7 @@ export class yuanshentixi extends plugin {
 
     if (p.内景地 == 1) return e.reply(`你的内景地已然开启`);
 
-    let 要求 = 15000000 * (p.mijinglevel_id + p.xiangulevel_id);
+    let 要求 = 15000000 * getExtraCultivationLevelSum(p);
 
     // ==== 命格消费层：内景地消耗倍率（direct-multiplier，默认 1）====
     const minggeEffects = getMinggeEffects(p, data.minggeList);
@@ -529,29 +531,14 @@ export class yuanshentixi extends plugin {
     }
 
     if (p.yuanshenlevel_id >= 0) {
-      if (p.xiangulevel_id == 1 && p.mijinglevel_id == 1) {
-        return e.reply(`你尚未开始修炼人体秘境体系或仙古今世法无法再继续凝练元神！`);
+      const requiredAuthority = 10 + p.yuanshenlevel_id;
+      const authority = getRealmAuthorityLevel(p);
+      if (authority <= 1) {
+        return e.reply('你尚未开始修炼额外体系，无法再继续凝练元神！');
       }
-      let 秘境要求 = 10 + p.yuanshenlevel_id;
-      if (p.mijinglevel_id > 1 && p.mijinglevel_id < 秘境要求) {
-        let 目标秘境等级数据 = data.Levelmijing_list.find(item => item.level_id == 秘境要求);
-        if (目标秘境等级数据) {
-          return e.reply(`你的秘境体系道果不够强大，需先达到${目标秘境等级数据.level}！`);
-        } else {
-          return e.reply(`你的秘境体系道果不够强大，需先达到秘境等级${秘境要求}！`);
-        }
-      }
-    }
-
-    if (p.yuanshenlevel_id >= 0) {
-      let 仙古要求 = 8 + p.yuanshenlevel_id;
-      if (p.xiangulevel_id > 1 && p.xiangulevel_id < 仙古要求) {
-        let 目标仙古今世法等级数据 = data.xiangujinshi_list.find(item => item.level_id == 仙古要求);
-        if (目标仙古今世法等级数据) {
-          return e.reply(`你的仙古今世法道果不够强大，需先达到${目标仙古今世法等级数据.level}！`);
-        } else {
-          return e.reply(`你的仙古今世法道果不够强大，需先达到仙古今世法等级${秘境要求}！`);
-        }
+      if (authority < requiredAuthority) {
+        const target = data.Levelmijing_list.find(item => item.level_id == requiredAuthority)?.level;
+        return e.reply(`你的额外体系道果不够强大，需达到${target || `权限等级${requiredAuthority}`}！`);
       }
     }
 
@@ -573,7 +560,7 @@ export class yuanshentixi extends plugin {
     if (v.err) return e.reply(v.err);
     const { usr_qq, player: p } = v;
 
-    if (p.mijinglevel_id > 19 || p.xiangulevel_id > 19) {
+    if (getRealmAuthorityLevel(p) > 19) {
       const eraNames = ["神话时代", "乱古纪元", "仙古纪元", "末法时代"];
       const randomEra = eraNames[Math.floor(Math.random() * eraNames.length)];
       return e.reply([
@@ -595,14 +582,14 @@ export class yuanshentixi extends plugin {
     }
 
     let reward = 500000;
-    let zuizhong = (p.mijinglevel_id + p.xiangulevel_id) * p.level_id * p.Physique_id * reward;
+    let zuizhong = getExtraCultivationLevelSum(p) * p.level_id * p.Physique_id * reward;
     // ==== 命格消费层：内景地收益（bonus-rate，×1.3 并期望取整）====
     zuizhong = calculateMinggeYield(zuizhong, getMinggeEffects(p, data.minggeList), '内景地收益');
     zuizhong = Math.floor(zuizhong * getInnerWorldYieldMultiplier(p));
     p.修为 += zuizhong;
     p.血气 += zuizhong;
     p.神识 += zuizhong;
-    let zuizhong2 = 0.1 * p.mijinglevel_id + p.xiangulevel_id;
+    let zuizhong2 = 0.1 * getExtraCultivationLevelSum(p);
     p.道伤 = Math.max(0, p.道伤 - zuizhong2);
     p.内景地 = 0;
     await Write_player(usr_qq, p);
@@ -642,7 +629,7 @@ export class yuanshentixi extends plugin {
     let successCnt = 0, failCnt = 0, totalCost = 0;
     const msgs = [];
 
-    if (player.mijinglevel_id > 19 || player.xiangulevel_id > 19) {
+    if (getRealmAuthorityLevel(player) > 19) {
       const eraNames = ["神话时代", "乱古纪元", "仙古纪元", "末法时代"];
       const randomEra = eraNames[Math.floor(Math.random() * eraNames.length)];
       return e.reply([
@@ -662,7 +649,7 @@ export class yuanshentixi extends plugin {
       await Write_player(usr_qq, player);
       const 要求 = applyQuestionFortuneCost(
         player,
-        Math.floor(15000000 * (player.mijinglevel_id + player.xiangulevel_id) * batchCostMult)
+        Math.floor(15000000 * getExtraCultivationLevelSum(player) * batchCostMult)
       );
       if (player.元神 < 要求) {
         msgs.push(`【中止】第${i + 1}次：元神不足（需${bigNumberTransform(要求)}，仅剩${bigNumberTransform(player.元神)}）`);
@@ -686,14 +673,14 @@ export class yuanshentixi extends plugin {
         await Write_player(usr_qq, player);
 
         const reward = 500000;
-        let zuizhong = (player.mijinglevel_id + player.xiangulevel_id) * player.level_id * player.Physique_id * reward;
+        let zuizhong = getExtraCultivationLevelSum(player) * player.level_id * player.Physique_id * reward;
         // ==== 命格消费层：内景地收益（bonus-rate，×1.3 并期望取整）====
         zuizhong = calculateMinggeYield(zuizhong, getMinggeEffects(player, data.minggeList), '内景地收益');
         zuizhong = Math.floor(zuizhong * getInnerWorldYieldMultiplier(player));
         player.修为 += zuizhong;
         player.血气 += zuizhong;
         player.神识 += zuizhong;
-        const zuizhong2 = 0.1 * (player.mijinglevel_id + player.xiangulevel_id);
+        const zuizhong2 = 0.1 * getExtraCultivationLevelSum(player);
         player.道伤 = Math.max(0, player.道伤 - zuizhong2);
         player.内景地 = 0;
         msgs.push(`第${i + 1}次：开启成功，已进入内景地，获得修为/血气/神识 +${bigNumberTransform(zuizhong)}，道伤 -${zuizhong2.toFixed(1)}`);

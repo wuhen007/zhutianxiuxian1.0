@@ -16,6 +16,28 @@ const XIANGU_AUTHORITY_MAP = Object.freeze([
   [8, 10],  // 神火
 ]);
 
+const HUAFEN_AUTHORITY_MAP = Object.freeze([
+  [25, 24], // 唯一道之上
+  [24, 23], // 祭道之上
+  [23, 22], // 祭道
+  [22, 21], // 路尽级仙帝
+  [21, 20], // 道祖、准仙帝
+  [20, 19], // 仙王巨头
+  [18, 18], // 宇究
+  [17, 17], // 大宇、究极
+  [15, 16], // 天尊及混元
+  [14, 15], // 神王、恒王
+  [13, 14], // 神将
+  [12, 13], // 神祇
+  [11, 12], // 映照诸天
+  [10, 11], // 圣者、大圣
+  [8, 10],  // 金身、亚圣
+  [7, 9],   // 塑形
+  [6, 8],   // 餐霞
+  [5, 7],   // 观想
+  [4, 6],   // 逍遥
+]);
+
 function levelId(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
@@ -26,15 +48,27 @@ function xianguAuthorityLevel(value) {
   return XIANGU_AUTHORITY_MAP.find(([required]) => xianguLevel >= required)?.[1] || xianguLevel;
 }
 
+function huafenAuthorityLevel(value) {
+  const huafenLevel = levelId(value);
+  return HUAFEN_AUTHORITY_MAP.find(([required]) => huafenLevel >= required)?.[1] || huafenLevel;
+}
+
 export function getRealmAuthorityLevel(player) {
   return Math.max(
     levelId(player?.mijinglevel_id),
-    xianguAuthorityLevel(player?.xiangulevel_id)
+    xianguAuthorityLevel(player?.xiangulevel_id),
+    huafenAuthorityLevel(player?.huafenlevel_id)
   );
 }
 
 export function hasRealmAuthority(player, requiredLevel) {
   return getRealmAuthorityLevel(player) >= levelId(requiredLevel);
+}
+
+export function isHighRealmConsumableRestricted(player) {
+  return levelId(player?.mijinglevel_id) > 19
+    || levelId(player?.xiangulevel_id) > 19
+    || huafenAuthorityLevel(player?.huafenlevel_id) > 19;
 }
 
 export function getGodDemonStealRule(attacker, defender) {
@@ -77,21 +111,25 @@ export function getGodDemonStealRule(attacker, defender) {
 export function getRealmAuthorityPath(player) {
   const mijingLevel = levelId(player?.mijinglevel_id);
   const xianguLevel = xianguAuthorityLevel(player?.xiangulevel_id);
+  const huafenLevel = huafenAuthorityLevel(player?.huafenlevel_id);
+  if (huafenLevel >= Math.max(mijingLevel, xianguLevel) && levelId(player?.huafenlevel_id) > 1) return 'huafen';
   return xianguLevel > mijingLevel ? 'xiangu' : 'mijing';
 }
 
-export function getRealmAuthorityName(player, mijingLevels = [], xianguLevels = []) {
+export function getRealmAuthorityName(player, mijingLevels = [], xianguLevels = [], huafenLevels = []) {
   const path = getRealmAuthorityPath(player);
-  const levels = path === 'xiangu' ? xianguLevels : mijingLevels;
-  const currentLevel = path === 'xiangu'
-    ? levelId(player?.xiangulevel_id)
-    : levelId(player?.mijinglevel_id);
-  return levels.find(item => levelId(item?.level_id) === currentLevel)?.level || '未知境界';
+  const levels = path === 'xiangu' ? xianguLevels : path === 'huafen' ? huafenLevels : mijingLevels;
+  const currentLevel = path === 'xiangu' ? levelId(player?.xiangulevel_id)
+    : path === 'huafen' ? levelId(player?.huafenlevel_id)
+      : levelId(player?.mijinglevel_id);
+  return levels.find(item => levelId(item?.level_id) === currentLevel)?.level ||
+    (path === 'huafen' ? '花粉进化路第' + currentLevel + '阶' : '未知境界');
 }
 
 export function lowerRealmAuthority(player, amount = 1) {
   const path = getRealmAuthorityPath(player);
-  const field = path === 'xiangu' ? 'xiangulevel_id' : 'mijinglevel_id';
+  const field = path === 'xiangu' ? 'xiangulevel_id'
+    : path === 'huafen' ? 'huafenlevel_id' : 'mijinglevel_id';
   player[field] = Math.max(1, levelId(player?.[field]) - Math.max(1, levelId(amount)));
   return path;
 }

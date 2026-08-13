@@ -34,6 +34,7 @@ import { getBreakthroughPotentialCost } from './breakthroughPotential.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
 import { getKongtongModifiers } from '../../model/innateTreasure.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
+import { canCultivateExtraPath, getActiveExtraCultivationPaths, getExtraCultivationPathName, selectExtraCultivationPath } from '../../model/extraCultivation.js';
 import { zhetiandujie } from './zhetiandujie.js';
 import {
   getReverseLifeTribulationWaves,
@@ -61,6 +62,7 @@ import {
   unlockXianguDaoRealm,
 } from './wudaoRules.js';
 import { findWudaoTeaItem } from './wudaoTea.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { clearInterval } from 'timers';
 import { getRedDustDaoFruit, getRedDustPath, getRedDustVow } from '../../model/redDustPath.js';
 import {
@@ -153,7 +155,11 @@ export class Level extends plugin {
 }
       ],
     });
-    
+    const originalZhengdao = this.zhengdao;
+    this.zhengdao = async function guardedMijingBreakthrough(e, ...args) {
+      const playerId = String(e.user_id || '').replace('qg_', '');
+      return withPlayerMutationLock(playerId, () => originalZhengdao.call(this, e, ...args));
+    };
   }
    // 定义getEraInfo方法
   getEraInfo() {
@@ -578,10 +584,11 @@ async zhengdao(e) {
          e.reply(messages);
         return;
     }
-     if (player.xiangulevel_id > 1) {
+     if (!canCultivateExtraPath(player, 'mijing')) {
         // 辰东风格文案
+        const activePath = getActiveExtraCultivationPaths(player).map(getExtraCultivationPathName).join('、');
         const messages = [
-            `仙古今世法与人体秘境体系不可兼修！`,
+            `你已踏上${activePath}，人体秘境、仙古今世法与花粉进化路不可兼修！`,
         ];
         
          e.reply(messages);
@@ -679,6 +686,7 @@ const gongfaName = getRequiredGongfaName(player, "轮海");
     ].join("\n"));
     
     // 境界提升
+    selectExtraCultivationPath(player, 'mijing');
     player.mijinglevel_id = 2;
     await Write_player(usr_qq, player);
     return;
@@ -1738,6 +1746,7 @@ async hudao(e) {
         eraIndex,
         aptitudeName: player.天资等级,
         techniqueBonus: technique.bonus,
+        worldBonus: Number(player.超维星界悟道加成) || 0,
         minggeEffects,
         useTea,
       });

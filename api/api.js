@@ -58,6 +58,8 @@ export const calculatorData = async (e) => {
             mijingData: readJsonFile('Level/秘境体系.json') || [],
             // 仙古今世法
             xianguData: readJsonFile('Level/仙古今世法.json') || [],
+            // 花粉进化路
+            huafenData: readJsonFile('Level/花粉进化路体系.json') || [],
             // 灵根列表
             linggenData: readJsonFile('item/灵根列表.json') || [],
             // 装备列表

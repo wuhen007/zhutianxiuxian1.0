@@ -65,11 +65,19 @@ import {
   getJieziExhaustionRounds,
   getLinzDurationRounds,
   getReviveRecoveryRatio,
+  getZheziReviveConfig,
   getYiqihuaConfig,
   hasLearnedGongfa,
   recordGongfaCombatTrigger,
+  resolveGongfaCombatSkill,
   rollLinzRealmLevel,
+  tryVitalityRecovery,
 } from './gongfaProficiency.js';
+import {
+  ensureCombatSkillLoadout,
+  filterEquippedCombatSkills,
+  filterEquippedVitalitySkills,
+} from './combatSkillLoadout.js';
 import {
   buildMinggeAtlasData,
   calculateMinggeCurrencyGain,
@@ -79,6 +87,10 @@ import {
   getMinggeEffects,
 } from './mingge.js';
 import { getXianqiSuppressMultiplier } from './xianguXianqi.js';
+import {
+  applySuperdimensionalOpening,
+  suppressEmperorWeaponInBattle,
+} from './shengfaFragment.js';
 import {
   getPetAbilityBonus,
   isInnateTreasureName,
@@ -101,7 +113,10 @@ import {
 } from './weimianTravel.js';
 import { calculateEquippedStats, getEquipmentAllAttributeMultiplier } from './equipmentStats.js';
 import { hasSupremeInnate } from './supremePath.js';
-import { getGodDemonStealRule } from './realmAuthority.js';
+import { getGodDemonStealRule, getRealmAuthorityLevel } from './realmAuthority.js';
+import { ensureExtraCultivationState } from './extraCultivation.js';
+import { calculateFlowerExtremeBonus, ensureFlowerPollenState } from './flowerPollenPath.js';
+import { STONE_JAR_OPPORTUNITY, getShengxuOpportunityOwner } from './shengxuOpportunity.js';
 import { getTianjiaoRealmName } from './tianjiaoGrowth.js';
 import {
   consumeDeletedFateAction,
@@ -131,6 +146,19 @@ import {
   applyExclusiveSetOpening,
   rewriteBeyondDefeat,
 } from './exclusiveEquipmentSets.js';
+import {
+  DAO_TREASURE_ALL_ATTRIBUTE_BONUS,
+  applyDaoTreasureBattleOpening,
+  applyDaoTreasureDomainReduction,
+  applyDaoTreasureLawDeduction,
+  consumeDaoTreasureRevivalBlock,
+  createDaoTreasureItem,
+  isDaoTreasureItem,
+  readDaoTreasureState,
+  resolveDaoTreasureCritical,
+  tickDaoTreasureDomain,
+  tryDaoTreasureDeathRewrite,
+} from './daoTreasure.js';
 
 /**
  * 获取机器人类型
@@ -210,6 +238,7 @@ export const __PATH = {
   qinmidu: path.join(__dirname, '/resources/data/qinmidu'),
   backup: path.join(__dirname, '/resources/backup'),
   player_pifu_path: path.join(__dirname, '/resources/img/player_pifu'),
+  najie_pifu_path: path.join(__dirname, '/resources/img/najie_pifu'),
   shitu: path.join(__dirname, '/resources/data/shitu'),
   equipment_pifu_path: path.join(__dirname, '/resources/img/equipment_pifu'),
   duanlu: path.join(__dirname, '/resources/data/duanlu'),
@@ -326,8 +355,16 @@ export async function Read_player(usr_qq) {
   player = JSON.parse(player);
   ensureGongfaProficiency(player);
   ensureGongfaDailyGain(player);
+  ensureCombatSkillLoadout(player, {
+    attack: data.jineng1,
+    defense: data.jineng2,
+    healing: data.jineng_heal,
+    revival: data.jineng3,
+  });
   ensureForbiddenState(player);
   ensureWanhuaBannerState(player);
+  ensureExtraCultivationState(player);
+  ensureFlowerPollenState(player);
   if (player.先天至宝失效时间 && Number(player.先天至宝失效时间) <= Date.now()) {
     player.当前先天至宝 = '';
     player.先天至宝失效时间 = 0;
@@ -1190,7 +1227,11 @@ export async function Write_equipment(usr_qq, equipment) {
   const innateTreasureName = projectionName || (isInnateTreasureName(equipment.至宝?.name)
     ? equipment.至宝.name
     : '');
+  const daoTreasureEquipped = isDaoTreasureItem(equipment.至宝) &&
+    String(equipment.至宝.绑定者 || equipment.至宝.author_name) === String(usr_qq);
   player.当前先天至宝 = innateTreasureName;
+  player.当前大道至宝 = daoTreasureEquipped ? equipment.至宝.name : '';
+  if (!daoTreasureEquipped) player.大道主权柄 = '';
   player.先天至宝失效时间 = projectionName
     ? Number(equipment.至宝.先天投影截止)
     : 0;
@@ -1204,10 +1245,8 @@ export async function Write_equipment(usr_qq, equipment) {
     );
   }
 
-   // 新增逻辑：如果仙古今世法等级是undefined，则赋值为1
-  if (player.xiangulevel_id === undefined) {
-    player.xiangulevel_id = 1;
-  }
+  ensureExtraCultivationState(player);
+  ensureFlowerPollenState(player);
   if (!player.光阴加成) player.光阴加成 = { 攻: 0, 防: 0, 生: 0 };
 
   // ===== 额外加成阈值拆分 =====
@@ -1239,28 +1278,30 @@ export async function Write_equipment(usr_qq, equipment) {
   const 超出防 = Math.max(额外防 - 额外上限, 0);
   const 超出血 = Math.max(额外血 - 额外上限, 0);
 
-  // ===== 阶段1：命格倍率仅作用于练气、炼体、秘境、仙古四体系基础总和 =====
+  // ===== 阶段1：命格倍率作用于基础境界属性总和 =====
   const 四体系境界 = {
     练气: data.Level_list.find(item => item.level_id == player.level_id),
     炼体: data.LevelMax_list.find(item => item.level_id == player.Physique_id),
     秘境: data.Levelmijing_list.find(item => item.level_id == player.mijinglevel_id),
     仙古: data.xiangujinshi_list.find(item => item.level_id == player.xiangulevel_id),
+    花粉: data.huafen_list.find(item => item.level_id == player.huafenlevel_id),
   };
+  const 花粉极境加成 = calculateFlowerExtremeBonus(player, 四体系境界.花粉);
   const 四体系基础 = {
     攻击: 四体系境界.练气.基础攻击 + 四体系境界.炼体.基础攻击 +
-      四体系境界.秘境.基础攻击 + 四体系境界.仙古.基础攻击,
+      四体系境界.秘境.基础攻击 + 四体系境界.仙古.基础攻击 + 四体系境界.花粉.基础攻击,
     防御: 四体系境界.练气.基础防御 + 四体系境界.炼体.基础防御 +
-      四体系境界.秘境.基础防御 + 四体系境界.仙古.基础防御,
+      四体系境界.秘境.基础防御 + 四体系境界.仙古.基础防御 + 四体系境界.花粉.基础防御,
     血量: 四体系境界.练气.基础血量 + 四体系境界.炼体.基础血量 +
-      四体系境界.秘境.基础血量 + 四体系境界.仙古.基础血量,
+      四体系境界.秘境.基础血量 + 四体系境界.仙古.基础血量 + 四体系境界.花粉.基础血量,
   };
   const 命格效果 = getMinggeEffects(player, data.minggeList);
   const 命格四体系加成 = calculateMinggeFourRealmBonus(四体系基础, 命格效果);
 
   // 先按原公式结算，命格产生的四体系增量留到最后，避免被其他乘区二次放大。
-  player.攻击 = 四体系基础.攻击 + 仙古极境加成.攻击 + 阈内攻 + 光阴攻;
-  player.防御 = 四体系基础.防御 + 仙古极境加成.防御 + 阈内防 + 光阴防;
-  player.血量上限 = 四体系基础.血量 + 仙古极境加成.血量 + 阈内血 + 光阴血;
+  player.攻击 = 四体系基础.攻击 + 仙古极境加成.攻击 + 花粉极境加成.攻击 + 阈内攻 + 光阴攻;
+  player.防御 = 四体系基础.防御 + 仙古极境加成.防御 + 花粉极境加成.防御 + 阈内防 + 光阴防;
+  player.血量上限 = 四体系基础.血量 + 仙古极境加成.血量 + 花粉极境加成.血量 + 阈内血 + 光阴血;
   player.暴击率 =
     四体系境界.练气.基础暴击 + 四体系境界.炼体.基础暴击 +
     (Number(命格效果.暴击加成) || 0);
@@ -1387,6 +1428,12 @@ export async function Write_equipment(usr_qq, equipment) {
     套装增益.防 += bonus;
     套装增益.血 += bonus;
   }
+  if (daoTreasureEquipped) {
+    const multiplier = Number(equipment.至宝.全属性倍率加成) || DAO_TREASURE_ALL_ATTRIBUTE_BONUS;
+    套装增益.攻 += multiplier;
+    套装增益.防 += multiplier;
+    套装增益.血 += multiplier;
+  }
   // 统一应用套装增益（增益相加，不再乘法叠加）
   player.攻击 = Math.trunc(player.攻击 * (1 + 套装增益.攻));
   player.防御 = Math.trunc(player.防御 * (1 + 套装增益.防));
@@ -1431,12 +1478,13 @@ export async function Write_equipment(usr_qq, equipment) {
   }
   player._道种战斗属性 = nextDaozhongCombat;
 
-  // ===== 阶段6：帝兵全属性（只乘秘境基础+仙古基础，不再乘最终属性） =====
+  // ===== 阶段6：帝兵全属性（只乘三条额外体系基础，不再乘最终属性） =====
   const 秘境基础数据 = data.Levelmijing_list.find(item => item.level_id == player.mijinglevel_id);
   const 仙古基础数据 = data.xiangujinshi_list.find(item => item.level_id == player.xiangulevel_id);
-  const 后两层攻 = (秘境基础数据?.基础攻击 || 0) + (仙古基础数据?.基础攻击 || 0);
-  const 后两层防 = (秘境基础数据?.基础防御 || 0) + (仙古基础数据?.基础防御 || 0);
-  const 后两层血 = (秘境基础数据?.基础血量 || 0) + (仙古基础数据?.基础血量 || 0);
+  const 花粉基础数据 = data.huafen_list.find(item => item.level_id == player.huafenlevel_id);
+  const 后两层攻 = (秘境基础数据?.基础攻击 || 0) + (仙古基础数据?.基础攻击 || 0) + (花粉基础数据?.基础攻击 || 0);
+  const 后两层防 = (秘境基础数据?.基础防御 || 0) + (仙古基础数据?.基础防御 || 0) + (花粉基础数据?.基础防御 || 0);
+  const 后两层血 = (秘境基础数据?.基础血量 || 0) + (仙古基础数据?.基础血量 || 0) + (花粉基础数据?.基础血量 || 0);
   // 自己铸造的帝兵 → 全额
   if (equipment.帝兵.author_name == player.id) {
     player.攻击 += Math.trunc(equipment.帝兵.全属性 * 后两层攻);
@@ -1444,7 +1492,7 @@ export async function Write_equipment(usr_qq, equipment) {
     player.防御 += Math.trunc(equipment.帝兵.全属性 * 后两层防);
   }
   // 特殊帝兵且境界不足 → 1/10
-  if ((equipment.帝兵.name == "封神榜" || equipment.帝兵.name == "神女炉" || equipment.帝兵.name == "天庭权杖") && player.mijinglevel_id < 12 && player.xiangulevel_id < 12) {
+  if ((equipment.帝兵.name == "封神榜" || equipment.帝兵.name == "神女炉" || equipment.帝兵.name == "天庭权杖") && getRealmAuthorityLevel(player) < 12) {
     player.攻击 += Math.trunc(equipment.帝兵.全属性 * 后两层攻 / 10);
     player.血量上限 += Math.trunc(equipment.帝兵.全属性 * 后两层血 / 10);
     player.防御 += Math.trunc(equipment.帝兵.全属性 * 后两层防 / 10);
@@ -1466,6 +1514,12 @@ export async function Write_equipment(usr_qq, equipment) {
   player.攻击 = Math.max(1, player.攻击 + 超出攻 + 命格四体系加成.攻击);
   player.防御 = Math.max(1, player.防御 + 超出防 + 命格四体系加成.防御);
   player.血量上限 = Math.max(1, player.血量上限 + 超出血 + 命格四体系加成.血量);
+  if (daoTreasureEquipped) {
+    const fixed = Math.max(0, Number(equipment.至宝.固定全属性) || 0);
+    player.攻击 += fixed;
+    player.防御 += fixed;
+    player.血量上限 += fixed;
+  }
     await Write_player(usr_qq, player);
     await Add_HP(usr_qq, 0);
     let dir = path.join(__PATH.equipment_path, `${usr_qq}.json`);
@@ -5212,6 +5266,11 @@ export async function player_efficiency(usr_qq) {
     }
   }
   linggen_efficiency = player.灵根.eff; //灵根修炼速率
+  const combatGongfaNames = new Set(
+    [...(data.jineng1 || []), ...(data.jineng2 || []), ...(data.jineng_heal || []), ...(data.jineng3 || [])]
+      .filter(skill => skill?.class === '功法')
+      .map(skill => skill.熟练度归属 || skill.name)
+  );
   label1: for (let i in player.学习的功法) {
     //存在功法，遍历功法加成
     let gongfa = ['gongfa_list', 'timegongfa_list', 'dijingList'];
@@ -5223,6 +5282,7 @@ export async function player_efficiency(usr_qq) {
         continue label1;
       }
     }
+    if (combatGongfaNames.has(player.学习的功法[i])) continue;
     player.学习的功法.splice(i, 1);
   }
   xianchong_efficiency = getPetAbilityBonus(player.仙宠, '修炼');
@@ -5352,6 +5412,12 @@ export async function Add_najie_thing(
 ) {
   return withPlayerMutationLock(usr_qq, async () => {
 
+  const itemName = typeof name === 'object' ? name?.name : name;
+  if (x > 0 && itemName === '神秘石罐' && getShengxuOpportunityOwner(STONE_JAR_OPPORTUNITY) !== String(usr_qq)) {
+    console.warn(`[圣墟唯一机缘] 拒绝向非持有者 ${usr_qq} 发放神秘石罐`);
+    return 0;
+  }
+
   let wupin = null;
   if (x > 0) {
     // foundthing also reads custom.json, so newly named equipment works without a restart.
@@ -5359,6 +5425,9 @@ export async function Add_najie_thing(
   }
   if (x == 0) return;
   let najie = await Read_najie(usr_qq);
+  if (x > 0 && itemName === '神秘石罐' && (najie.道具 || []).some(item => item.name === itemName && Number(item.数量) > 0)) {
+    return 0;
+  }
   const idempotencyKey = options?.idempotencyKey;
   if (idempotencyKey && najie._rewardClaims?.[idempotencyKey]) return 0;
   const persistNajie = async () => {
@@ -5406,7 +5475,7 @@ export async function Add_najie_thing(
       } else {
         if (!name.pinji) name.pinji = pinji;
         name.数量 = x;
-        name.islockd = 0;
+        name.islockd = name.大道至宝本体 ? 1 : 0;
         najie[thing_class].push(name);
         await persistNajie();
         return;
@@ -5515,7 +5584,7 @@ export async function Add_najie_thing(
       if (thing) {
         najie[thing_class].push(thing);
         najie[thing_class].find(item => item.name == name).数量 = x;
-        najie[thing_class].find(item => item.name == name).islockd = 0;
+        najie[thing_class].find(item => item.name == name).islockd = thing.不可交易 || thing.全服唯一 ? 1 : 0;
         await persistNajie();
         return;
       }
@@ -6952,7 +7021,7 @@ export async function existshop(didian) {
  * @returns {boolean} 是否触发了帝兵效果
  */
 export async function handleEmperorWeapon(attacker, defender, msg, emperorWeaponTriggered, preloadedEquipment = null) {
-    if (emperorWeaponTriggered || !isNotNull(attacker.id)|| !isNotNull(defender.id)) return false;
+    if (attacker?._帝兵失效 || emperorWeaponTriggered || !isNotNull(attacker.id)|| !isNotNull(defender.id)) return false;
 
     // 优先使用预加载的装备（减少 IO），否则 fallback 到 await
     const equipment = preloadedEquipment || await Read_equipment(attacker.id);
@@ -8049,6 +8118,8 @@ async function zd_battle_1v1(AA_player, BB_player, options = {}) {
   delete B_player._临字秘加成倍率;
   delete A_player._临字秘压制比例;
   delete B_player._临字秘压制比例;
+  A_player._者字秘复活次数 = 0;
+  B_player._者字秘复活次数 = 0;
   if (AA_player?._困龙封印) {
     A_player.dongjie = true;
     delete AA_player._困龙封印;
@@ -8067,11 +8138,13 @@ async function zd_battle_1v1(AA_player, BB_player, options = {}) {
   
 let A_speed = (A_player.速度 ?? 100)
   + (A_player.mijinglevel_id ?? 0) * 50
-  + (A_player.xiangulevel_id ?? 0) * 50;
+  + (A_player.xiangulevel_id ?? 0) * 50
+  + Math.max(0, (A_player.huafenlevel_id ?? 1) - 1) * 50;
 
 let B_speed = (B_player.速度 ?? 100)
   + (B_player.mijinglevel_id ?? 0) * 50
-  + (B_player.xiangulevel_id ?? 0) * 50;
+  + (B_player.xiangulevel_id ?? 0) * 50
+  + Math.max(0, (B_player.huafenlevel_id ?? 1) - 1) * 50;
 
   if (
     (hasLearnedGongfa(A_player, '行字秘') && getGongfaProficiencyProfile(A_player, '行字秘').index >= 5) ||
@@ -8155,7 +8228,6 @@ let B_speed = (B_player.速度 ?? 100)
   let A_revived = false;
   let B_revived = false;
   let fenshen = ["【仙帝】他化自在法", "一气化三清"];
-  let huifu = ["者字秘"];
   let healMessages = [];
   let A_tahua_entities = [];
   let B_tahua_entities = [];
@@ -8183,20 +8255,56 @@ let B_speed = (B_player.速度 ?? 100)
     }
   }
 
+  function triggerVitalityRecovery(player, timing) {
+    const skill = filterEquippedVitalitySkills(player, data.jineng_heal)
+      .find(item => item.触发时机 === timing && hasLearnedGongfa(player, item.熟练度归属 || item.name));
+    if (!skill) return false;
+    const healingMultiplier = player._先天禁疗
+      ? 0
+      : 1 - Math.min(1, Math.max(0, Number(player.禁疗) || 0));
+    const result = tryVitalityRecovery(player, skill, timing, Math.random, healingMultiplier);
+    if (!result.triggered) return false;
+    msg.push(`${player.名号}${skill.msg1}恢复${bigNumberTransform(result.amount)}点生命（最大生命${Math.round(result.rate * 100)}%）！`);
+    return true;
+  }
+
   const A_equipment = await getEquipment(A_player);
   const B_equipment = await getEquipment(B_player);
+  const A_superdimensional = applySuperdimensionalOpening(A_player, [B_player]);
+  const B_superdimensional = applySuperdimensionalOpening(B_player, [A_player]);
+  if (A_superdimensional.active) {
+    A_actionBar = ACTION_BAR_MAX;
+    msg.push(`【超维之光】${A_player.名号}超越行动序列，开局获得绝对先手。`);
+  }
+  if (B_superdimensional.active) {
+    B_actionBar = ACTION_BAR_MAX;
+    msg.push(`【超维之光】${B_player.名号}超越行动序列，开局获得绝对先手。`);
+  }
+  if (B_player._帝兵失效) suppressEmperorWeaponInBattle(B_player, B_equipment, { mijingList: data.Levelmijing_list, xianguList: data.xiangujinshi_list });
+  if (A_player._帝兵失效) suppressEmperorWeaponInBattle(A_player, A_equipment, { mijingList: data.Levelmijing_list, xianguList: data.xiangujinshi_list });
+  for (const target of [...A_superdimensional.suppressed, ...B_superdimensional.suppressed]) {
+    msg.push(`【超维压制】${target.名号}的灵根被削除，帝兵失效，功法有五成概率无法释放。`);
+  }
   const A_setOpening = applyExclusiveSetOpening(A_player, A_equipment);
   const B_setOpening = applyExclusiveSetOpening(B_player, B_equipment);
   msg.push(...A_setOpening.messages, ...B_setOpening.messages);
   const A_wanhuaOpening = applyWanhuaBannerOpening(A_player, B_player, A_equipment);
   const B_wanhuaOpening = applyWanhuaBannerOpening(B_player, A_player, B_equipment);
   msg.push(...A_wanhuaOpening.messages, ...B_wanhuaOpening.messages);
+  const daoState = readDaoTreasureState();
+  const A_daoOpening = applyDaoTreasureBattleOpening(A_player, B_player, { state: daoState });
+  const B_daoOpening = applyDaoTreasureBattleOpening(B_player, A_player, { state: daoState });
+  msg.push(...A_daoOpening.messages, ...B_daoOpening.messages);
   A_speed = (A_player.速度 ?? 100)
     + (A_player.mijinglevel_id ?? 0) * 50
-    + (A_player.xiangulevel_id ?? 0) * 50;
+    + (A_player.xiangulevel_id ?? 0) * 50
+    + Math.max(0, (A_player.huafenlevel_id ?? 1) - 1) * 50;
   B_speed = (B_player.速度 ?? 100)
     + (B_player.mijinglevel_id ?? 0) * 50
-    + (B_player.xiangulevel_id ?? 0) * 50;
+    + (B_player.xiangulevel_id ?? 0) * 50
+    + Math.max(0, (B_player.huafenlevel_id ?? 1) - 1) * 50;
+  A_speed = Math.max(1, Math.floor(A_speed * A_daoOpening.holderSpeedMultiplier * B_daoOpening.opponentSpeedMultiplier));
+  B_speed = Math.max(1, Math.floor(B_speed * B_daoOpening.holderSpeedMultiplier * A_daoOpening.opponentSpeedMultiplier));
 
   async function consumeAuthorityFlag(player, flag) {
     if (!player?.先天权柄?.[flag]) return false;
@@ -8370,7 +8478,11 @@ let B_speed = (B_player.速度 ?? 100)
     const B_ready = B_actionBar >= ACTION_BAR_MAX;
     
     if (A_ready && B_ready) {
-      if (A_realSpeed >= B_realSpeed) {
+      if (A_player._超维绝对先手 !== B_player._超维绝对先手) {
+        return A_player._超维绝对先手
+          ? { attacker: A_player, defender: B_player, attackerBar: 'A', defenderBar: 'B' }
+          : { attacker: B_player, defender: A_player, attackerBar: 'B', defenderBar: 'A' };
+      } else if (A_realSpeed >= B_realSpeed) {
         return { attacker: A_player, defender: B_player, attackerBar: 'A', defenderBar: 'B' };
       } else {
         return { attacker: B_player, defender: A_player, attackerBar: 'B', defenderBar: 'A' };
@@ -8444,6 +8556,7 @@ let B_speed = (B_player.速度 ?? 100)
     }
 
     applyXianguTurnRecovery(attacker, msg);
+    if (context === 'main') triggerVitalityRecovery(attacker, '行动前');
 
     if (context === 'main') {
       const bannerAttack = rollWanhuaBannerActiveAttack(attacker, defender);
@@ -8485,6 +8598,9 @@ let B_speed = (B_player.速度 ?? 100)
     }
 
     let baoji = baojishanghai(attacker.暴击率, attacker.暴击伤害);
+    const daoCritical = resolveDaoTreasureCritical(attacker, baoji);
+    baoji = daoCritical.multiplier;
+    if (daoCritical.message) msg.push(daoCritical.message);
     let isCritical = baoji > 1;
 
     if (!innateSilenced) {
@@ -8676,51 +8792,53 @@ let B_speed = (B_player.速度 ?? 100)
     const _基础伤害 = 伤害; // 基础普攻伤害（归为神通类型）
     let 类型桶 = { '神通': _基础伤害 }; // 分类型伤害桶：每个技能按自身攻击类型累加增量
     let 功法威能系数 = 1;
-    for (var i = 0; !innateSilenced && i < jineng1.length; i++) {
-      if (context === "fenshen" && fenshen.includes(jineng1[i].name)) {
+    const attackerSkills = filterEquippedCombatSkills(attacker, jineng1, '攻击');
+    for (var i = 0; !innateSilenced && i < attackerSkills.length; i++) {
+      const skill = resolveGongfaCombatSkill(attacker, attackerSkills[i]);
+      if (context === "fenshen" && fenshen.includes(skill.name)) {
         continue;
       }
       
-      let actualPr = getGongfaTriggerChance(attacker, jineng1[i]);
+      let actualPr = getGongfaTriggerChance(attacker, skill);
       if (attacker === A_player) {
         actualPr += linziState.A_加成;
       } else {
         actualPr += linziState.B_加成;
       }
       
-      if ((jineng1[i].class == '常驻' && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < actualPr) ||
-          (attacker.学习的功法 && jineng1[i].class == '功法' && attacker.学习的功法.indexOf(jineng1[i].name) > -1 && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < actualPr) ||
-          (jineng1[i].class == '灵根' && hasSupremeInnate(attacker, jineng1[i].name) && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < actualPr) ||
-          (attacker.xiangu_shenhuo && jineng1[i].class == '道种专属' && attacker.xiangu_shenhuo.专属技能 === jineng1[i].name && (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < actualPr)) {
-          攻击方技能 = jineng1[i]; // 在这里赋值
-          if (jineng1[i].class === '功法') {
-            recordGongfaCombatTrigger(attacker, jineng1[i]);
-            功法威能系数 = Math.max(功法威能系数, getGongfaCombatMultiplier(attacker, jineng1[i]));
+      if ((skill.class == '常驻' && (cnt2 == skill.cnt || skill.cnt == -1) && Random < actualPr) ||
+          (skill.class == '功法' && hasLearnedGongfa(attacker, skill.熟练度归属 || skill.name) && (cnt2 == skill.cnt || skill.cnt == -1) && Random < actualPr) ||
+          (skill.class == '灵根' && hasSupremeInnate(attacker, skill.name) && (cnt2 == skill.cnt || skill.cnt == -1) && Random < actualPr) ||
+          (attacker.xiangu_shenhuo && skill.class == '道种专属' && attacker.xiangu_shenhuo.专属技能 === skill.name && (cnt2 == skill.cnt || skill.cnt == -1) && Random < actualPr)) {
+          攻击方技能 = skill;
+          if (skill.class === '功法') {
+            recordGongfaCombatTrigger(attacker, skill);
+            功法威能系数 = Math.max(功法威能系数, getGongfaCombatMultiplier(attacker, skill));
           }
-          if (jineng1[i].无视减伤) 无视减伤 = true; // 草字剑诀·斩真我
-          if (jineng1[i].斩杀阈值) 斩杀阈值 = jineng1[i].斩杀阈值; // 草字剑诀·斩真我
-        let processedMsg1 = jineng1[i].msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
-        let processedMsg2 = jineng1[i].msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+          if (skill.无视减伤) 无视减伤 = true;
+          if (skill.斩杀阈值) 斩杀阈值 = skill.斩杀阈值;
+        let processedMsg1 = skill.msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+        let processedMsg2 = skill.msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
         
-        if (jineng1[i].msg2 == '') {
+        if (skill.msg2 == '') {
           msg.push(attacker.名号 + processedMsg1);
         } else {
           msg.push(attacker.名号 + processedMsg1 + defender.名号 + processedMsg2);
         }
         
-        if (jineng1[i].不可防御 === 1) {
+        if (skill.不可防御 === 1) {
           不可防御 = true;
         }
-        if (jineng1[i].不可复活 === 1) {
+        if (skill.不可复活 === 1) {
           不可复活 = true;
           defender.不可复活 = true;
         }
-        if (jineng1[i].控制 === 1) {
+        if (skill.控制 === 1) {
           defender.dongjie = true;
         }
         
-        if (jineng1[i].拉条) {
-          const 拉条值 = Math.round(jineng1[i].拉条 * getGongfaNumericMultiplier(attacker, jineng1[i]));
+        if (skill.拉条) {
+          const 拉条值 = Math.round(skill.拉条 * getGongfaNumericMultiplier(attacker, skill));
           const bar = attacker === A_player ? 'A' : 'B';
           const boosted = boostActionBar(bar, 拉条值);
           if (boosted) {
@@ -8729,14 +8847,14 @@ let B_speed = (B_player.速度 ?? 100)
             msg.push(`${attacker.名号}体内气血翻涌，元神燃烧，行动条跃进${拉条值}点！`);
           }
         }
-        if (jineng1[i].推条) {
-          const 推条值 = Math.round(jineng1[i].推条 * getGongfaNumericMultiplier(attacker, jineng1[i]));
+        if (skill.推条) {
+          const 推条值 = Math.round(skill.推条 * getGongfaNumericMultiplier(attacker, skill));
           const bar = defender === A_player ? 'A' : 'B';
           pushBackActionBar(bar, 推条值);
           msg.push(`${defender.名号}被无上伟力镇压，遁光受阻，行动条被压制${推条值}点！`);
         }
-        if (jineng1[i].速度加成) {
-          const 速度效果 = jineng1[i].速度加成 * getGongfaNumericMultiplier(attacker, jineng1[i]);
+        if (skill.速度加成) {
+          const 速度效果 = skill.速度加成 * getGongfaNumericMultiplier(attacker, skill);
           if (attacker === A_player) A_speedBoost += 速度效果;
           else B_speedBoost += 速度效果;
           msg.push(`${attacker.名号}体内道则轰鸣，速度暴涨${Math.round(速度效果 * 100)}%！`);
@@ -8744,15 +8862,15 @@ let B_speed = (B_player.速度 ?? 100)
 
         // —— 每个技能按自身攻击类型单独结算：基础连乘保留，增量归入对应类型桶 ——
         const _旧伤害 = 伤害;
-        伤害 = 伤害 * jineng1[i].beilv + jineng1[i].other;
+        伤害 = 伤害 * skill.beilv + skill.other;
         const 该技能增量 = 伤害 - _旧伤害;
-        const _t = jineng1[i].攻击类型 || '神通';
+        const _t = skill.攻击类型 || '神通';
         类型桶[_t] = (类型桶[_t] || 0) + 该技能增量;
 
-        if (jineng1[i].负面效果) {
-          defender.fumianhuihe = jineng1[i].负面回合;
-          defender.fumian_damage = Math.trunc((该技能增量 * jineng1[i].beilv + jineng1[i].other) * getGongfaCombatMultiplier(attacker, jineng1[i]));
-          defender.fumian_type = jineng1[i].负面类型;
+        if (skill.负面效果) {
+          defender.fumianhuihe = skill.负面回合;
+          defender.fumian_damage = Math.trunc((该技能增量 * skill.beilv + skill.other) * getGongfaCombatMultiplier(attacker, skill));
+          defender.fumian_type = skill.负面类型;
         }
 
         count++;
@@ -8786,13 +8904,13 @@ let B_speed = (B_player.速度 ?? 100)
       let 反击技能伤害 = 0;
       
       // 筛选防御方可以用于反击的攻击技能
-      const 可用反击技能 = jineng1.filter(skill => {
+      const 可用反击技能 = filterEquippedCombatSkills(defender, jineng1, '攻击').filter(skill => {
         // 必须是攻击类技能
         if (skill.控制 === 1) return false;
         if (skill.负面效果) return false;
         
         // 检查防御方是否满足触发条件
-        if (skill.class === '功法' && defender.学习的功法 && defender.学习的功法.includes(skill.name)) {
+        if (skill.class === '功法' && hasLearnedGongfa(defender, skill.熟练度归属 || skill.name)) {
           return true;
         }
         if (skill.class === '灵根' && hasSupremeInnate(defender, skill.name)) {
@@ -8888,7 +9006,8 @@ let B_speed = (B_player.速度 ?? 100)
       let random = Math.random();
       let 已触发技能 = false;
       
-      const sortedSkills = [...jineng2].sort((a, b) => (a.优先级 || 999) - (b.优先级 || 999));
+      const sortedSkills = filterEquippedCombatSkills(defender, jineng2, '防御')
+        .sort((a, b) => (a.优先级 || 999) - (b.优先级 || 999));
       
       for (var i = 0; i < sortedSkills.length; i++) {
         const skill = sortedSkills[i];
@@ -8900,7 +9019,7 @@ let B_speed = (B_player.速度 ?? 100)
           actualPr += linziState.B_加成;
         }
         
-        if ((defender.学习的功法 && skill.class == '功法' && defender.学习的功法.indexOf(skill.name) > -1 && (cnt2 == skill.cnt || skill.cnt == -1) && random < actualPr) ||
+        if ((skill.class == '功法' && hasLearnedGongfa(defender, skill.熟练度归属 || skill.name) && (cnt2 == skill.cnt || skill.cnt == -1) && random < actualPr) ||
             (skill.class == '灵根' && hasSupremeInnate(defender, skill.name) && (cnt2 == skill.cnt || skill.cnt == -1) && random < actualPr) ||
             (defender.xiangu_shenhuo && skill.class == '道种专属' && defender.xiangu_shenhuo.专属技能 === skill.name && (cnt2 == skill.cnt || skill.cnt == -1) && random < actualPr)) {
           if (skill.class === '功法') recordGongfaCombatTrigger(defender, skill);
@@ -9017,6 +9136,11 @@ let B_speed = (B_player.速度 ?? 100)
         const before = 伤害;
         伤害 = Math.trunc(伤害 * (1 - defender._持续减伤比例));
         msg.push(`${defender.名号}的「厚土无敌」大地之力护体，抵消了${bigNumberTransform(before - 伤害)}点伤害！`);
+      }
+      if (defender._大道世界领域回合 > 0 && defender._大道世界减伤 > 0) {
+        const before = 伤害;
+        伤害 = applyDaoTreasureDomainReduction(defender, 伤害);
+        msg.push(`【大道界壁】${defender.名号}以一界法则抵消了${bigNumberTransform(before - 伤害)}点伤害！`);
       }
     } else {
       msg.push(`${attacker.名号}的攻击斩落真我本源，无视了${defender.名号}的一切护体减伤！`);
@@ -9149,6 +9273,10 @@ let B_speed = (B_player.速度 ?? 100)
     defender.当前血量 -= actual_damage;
     if (defender.当前血量 < 0) defender.当前血量 = 0;
 
+    if (context === 'main' && actual_damage > 0 && defender.当前血量 > 0) {
+      triggerVitalityRecovery(defender, '受击后');
+    }
+
     // P0-2: 致死时立即检查复活（不让主循环漏掉涅槃仙功/圆神复活机会）
     if (context !== "fenshen" && defender.当前血量 <= 0) {
       const 复活结果 = checkRevival(defender, context);
@@ -9186,16 +9314,21 @@ let B_speed = (B_player.速度 ?? 100)
   // ==================== 复活检查函数 ====================
   function checkRevival(player, context = "main") {
     if (context !== 'fenshen') {
+      const daoRewrite = tryDaoTreasureDeathRewrite(player);
+      if (daoRewrite.revived) return { revived: true, message: daoRewrite.messages.join('\n') };
+      if (consumeDaoTreasureRevivalBlock(player)) {
+        const message = `【生死删改】${player.名号}的一次复生结局已被大道抹去。`;
+        msg.push(message);
+        return { revived: false, message };
+      }
+    }
+    if (context !== 'fenshen') {
       const rewritten = rewriteBeyondDefeat(player);
       if (rewritten.revived) {
         return { revived: true, message: rewritten.messages.join('\n') };
       }
     }
-    const 可复活 = 
-      context !== "fenshen" &&
-      player.当前血量 <= 0 &&
-      player.学习的功法 &&
-      ((player === A_player && !A_revived) || (player === B_player && !B_revived));
+    const 可复活 = context !== "fenshen" && player.当前血量 <= 0 && player.学习的功法;
 
     if (!可复活 || player.不可复活) {
       return { revived: false };
@@ -9205,16 +9338,22 @@ let B_speed = (B_player.速度 ?? 100)
     let playerReviveSkills = [];
     let builtInReviveSkills = [];
 
-    for (var i = 0; i < jineng3.length; i++) {
-      if (jineng3[i].复活技能 !== 1) continue;
+    const availableReviveSkills = filterEquippedVitalitySkills(player, jineng3);
+    for (var i = 0; i < availableReviveSkills.length; i++) {
+      if (availableReviveSkills[i].复活技能 !== 1) continue;
 
-      if (player.学习的功法 && player.学习的功法.indexOf(jineng3[i].name) > -1) {
-        if (jineng3[i].稀有度 === 2) {
+      if (player.学习的功法 && player.学习的功法.indexOf(availableReviveSkills[i].name) > -1) {
+        const skill = availableReviveSkills[i];
+        const alreadyRevived = player === A_player ? A_revived : B_revived;
+        const zheziLimit = getZheziReviveConfig(player).maxRevives;
+        const reviveCount = Math.max(0, Number(player._者字秘复活次数) || 0);
+        if (skill.name === '者字秘' ? reviveCount >= zheziLimit : alreadyRevived) continue;
+        if (skill.稀有度 === 2) {
           // 玩家自创的复活功法 - 优先级最高··
-          playerReviveSkills.push(jineng3[i]);
+          playerReviveSkills.push(skill);
         } else {
           // 内置复活功法
-          builtInReviveSkills.push(jineng3[i]);
+          builtInReviveSkills.push(skill);
         }
       }
     }
@@ -9251,18 +9390,25 @@ let B_speed = (B_player.速度 ?? 100)
   // 复活执行函数
   function performRevival(player, skill) {
     const 最大血量 = player.血量上限;
-    const 恢复比例 = getReviveRecoveryRatio(player, skill);
+    const zheziConfig = getZheziReviveConfig(player);
+    const zheziCount = Math.max(0, Number(player._者字秘复活次数) || 0);
+    const 恢复比例 = skill.name === '者字秘'
+      ? (zheziConfig.recoveryRatios[zheziCount] || 0)
+      : getReviveRecoveryRatio(player, skill);
     const 恢复血量 = Math.trunc(最大血量 * 恢复比例);
     recordGongfaCombatTrigger(player, skill);
     player.当前血量 = 恢复血量;
     player.dongjie = false;
 
     const 免控回合 = Math.round(skill.免控 || 0);
+    if (skill.name === '者字秘') {
+      player._者字秘复活次数 = zheziCount + 1;
+    }
     if (player === A_player) {
-      A_revived = true;
+      if (skill.name !== '者字秘' || player._者字秘复活次数 >= zheziConfig.maxRevives) A_revived = true;
       if (免控回合 > 0) A_immune_control = 免控回合;
     } else {
-      B_revived = true;
+      if (skill.name !== '者字秘' || player._者字秘复活次数 >= zheziConfig.maxRevives) B_revived = true;
       if (免控回合 > 0) B_immune_control = 免控回合;
     }
 
@@ -9281,6 +9427,9 @@ let B_speed = (B_player.速度 ?? 100)
     const 消息 = [];
     if (skill.msg1) 消息.push(player.名号 + skill.msg1);
     if (skill.msg2) 消息.push(player.名号 + skill.msg2);
+    if (skill.name === '者字秘' && player._者字秘复活次数 === 2) {
+      消息.push(`${player.名号}强燃精气神，再度逆转生死；本次仅恢复55%最大生命！`);
+    }
     
     const 实际免控回合 = Math.round(免控回合);
     if (实际免控回合 > 0 && skill.免控类型 && skill.免控类型.length > 0) {
@@ -9873,6 +10022,11 @@ msg.push(bSpeedMsg);
         msg.push(`【仙气压制】${attacker.名号}仙气加身，碾压${defender.名号}，本击伤害 ×${xianqiMul.toFixed(2)}！`);
       }
       if (defender._诛仙易伤 > 0) 伤害 = Math.floor(伤害 * (1 + defender._诛仙易伤));
+      const daoDeduction = applyDaoTreasureLawDeduction(attacker, defender, 伤害, {
+        isBoss: isBossOpponent(defender),
+      });
+      伤害 = daoDeduction.damage;
+      if (daoDeduction.message) msg.push(daoDeduction.message);
       const { actual_damage, fenshen_blocked } = applyDamage(defender, 伤害, "main", attacker);
       // 吸血（批次1：基于实际造成伤害回复，封顶血量上限）
       if (!attacker._先天禁疗 && attacker.吸血率 > 0 && actual_damage > 0) {
@@ -9899,22 +10053,13 @@ msg.push(bSpeedMsg);
         msg.push(`${attacker.名号}一剑「草字剑诀」斩落真我，${defender.名号}气血已衰竭至极，本源被当场斩断！`);
       }
 
-      // 者字秘恢复（保持原样）
-      if (!attacker._先天禁疗 && attacker.学习的功法?.some(gongfa => huifu.includes(gongfa))) {
-        const 最大血量 = attacker.血量上限;
-        const 恢复量 = Math.trunc(最大血量 * 0.1 * getGongfaNumericMultiplier(attacker, '者字秘'));
-        if (attacker.当前血量 < 最大血量) {
-          attacker.当前血量 = Math.min(attacker.当前血量 + 恢复量, 最大血量);
-          recordGongfaCombatTrigger(attacker, '者字秘');
-          msg.push(`${attacker.名号}周身泛起赤色霞光，「者字秘」燃烧生命精气，恢复${bigNumberTransform(恢复量)}点气血！`);
-        }
-      }
-
       // 检查复活（保持原样）
       const 复活结果 = checkRevival(defender, "main");
       if (复活结果.revived) {
         msg.push(复活结果.message);
       }
+      const domainMessage = tickDaoTreasureDomain(attacker);
+      if (domainMessage) msg.push(domainMessage);
     }
 
     // 分身协同攻击（保持原样）
@@ -10044,12 +10189,14 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         (hasLearnedGongfa(p, '行字秘') && getGongfaProficiencyProfile(p, '行字秘').index >= 5) ||
         (hasLearnedGongfa(p, '鲲鹏宝术') && getGongfaProficiencyProfile(p, '鲲鹏宝术').index >= 5)
       ) ? ACTION_BAR_MAX : 0;
-      p._speed = (p.速度 ?? 100) + (p.mijinglevel_id ?? 0) * 50 + (p.xiangulevel_id ?? 0) * 50;
+      p._speed = (p.速度 ?? 100) + (p.mijinglevel_id ?? 0) * 50 + (p.xiangulevel_id ?? 0) * 50
+        + Math.max(0, (p.huafenlevel_id ?? 1) - 1) * 50;
       p._speedBoost = 1.0;
       p._fumianhuihe = 0;
       p._fumian_damage = 0;
       p._fumian_type = null;
       p._revived = false;
+      p._者字秘复活次数 = 0;
       p._immune_control = 0;
       p._immune_type = null;
       p._fenshen = null;
@@ -10073,12 +10220,15 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   initTeam(A_team, 'A');
   initTeam(B_team, 'B');
 
+  const teamEquipment = new Map();
+
   async function applyTeamWanhuaOpening(team, enemies, teamName) {
     const holders = [...team];
     for (const holder of holders) {
       if (!holder?.id) continue;
       try {
         const equipment = await Read_equipment(holder.id);
+        teamEquipment.set(holder, equipment);
         const setOpening = applyExclusiveSetOpening(holder, equipment);
         msg.push(...setOpening.messages);
         const opening = applyWanhuaBannerOpening(
@@ -10102,6 +10252,43 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
   await applyTeamWanhuaOpening(A_team, B_team, 'A');
   await applyTeamWanhuaOpening(B_team, A_team, 'B');
+
+  for (const [team, enemies] of [[A_team, B_team], [B_team, A_team]]) {
+    for (const holder of team) {
+      const opening = applySuperdimensionalOpening(holder, enemies);
+      if (!opening.active) continue;
+      holder._actionBar = ACTION_BAR_MAX;
+      msg.push(`【超维之光】${holder.名号}超越行动序列，开局获得绝对先手。`);
+      for (const target of opening.suppressed) {
+        suppressEmperorWeaponInBattle(target, teamEquipment.get(target), { mijingList: data.Levelmijing_list, xianguList: data.xiangujinshi_list });
+        msg.push(`【超维压制】${target.名号}的灵根被削除，帝兵失效，功法有五成概率无法释放。`);
+      }
+    }
+  }
+
+  const teamDaoState = readDaoTreasureState();
+  function applyTeamDaoOpening(holder, enemies) {
+    if (!holder?.当前大道至宝 || !enemies?.length) return;
+    const primary = enemies[0];
+    const opening = applyDaoTreasureBattleOpening(holder, primary, { state: teamDaoState });
+    if (!opening.active) {
+      msg.push(...opening.messages);
+      return;
+    }
+    holder._speed = Math.max(1, Math.floor(holder._speed * opening.holderSpeedMultiplier));
+    if (opening.authority === '世界') {
+      for (const enemy of enemies) enemy._speed = Math.max(1, Math.floor(enemy._speed * opening.opponentSpeedMultiplier));
+    }
+    if (opening.authority === '生死') {
+      for (const enemy of enemies) enemy._大道生死断轮回 = true;
+    }
+    if (opening.authority === '命运') {
+      for (const enemy of enemies) enemy._大道命运阻断暴击 = true;
+    }
+    msg.push(...opening.messages);
+  }
+  for (const holder of A_team) applyTeamDaoOpening(holder, B_team);
+  for (const holder of B_team) applyTeamDaoOpening(holder, A_team);
 
   async function consumeTeamAuthority(holder, flag) {
     if (!holder?.先天权柄?.[flag]) return false;
@@ -10191,8 +10378,10 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     let speedMsg = `${p.名号} 遁光速度：${p._speed}`;
     let mijing = (p.mijinglevel_id ?? 0) * 50;
     let xiangu = (p.xiangulevel_id ?? 0) * 50;
+    let huafen = Math.max(0, (p.huafenlevel_id ?? 1) - 1) * 50;
     if (mijing > 0) speedMsg += `，秘境体系加成：${mijing}`;
     if (xiangu > 0) speedMsg += `，仙古今世法加成：${xiangu}`;
+    if (huafen > 0) speedMsg += `，花粉进化路加成：${huafen}`;
     msg.push(speedMsg);
   }
 
@@ -10267,7 +10456,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     const isA = attacker._team === 'A';
     const 帝兵已触发 = isA ? A_帝兵触发 : B_帝兵触发;
     
-    if (帝兵已触发 || !isNotNull(attacker.id) || !isNotNull(defender.id)) return false;
+    if (attacker?._帝兵失效 || 帝兵已触发 || !isNotNull(attacker.id) || !isNotNull(defender.id)) return false;
     
     try {
       const equipment = await Read_equipment(attacker.id);
@@ -10370,6 +10559,19 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   }
 
   // 简化的团队版攻击
+  function triggerTeamVitalityRecovery(player, timing, messages) {
+    const skill = filterEquippedVitalitySkills(player, data.jineng_heal)
+      .find(item => item.触发时机 === timing && hasLearnedGongfa(player, item.熟练度归属 || item.name));
+    if (!skill) return false;
+    const healingMultiplier = player._先天禁疗
+      ? 0
+      : 1 - Math.min(1, Math.max(0, Number(player.禁疗) || 0));
+    const result = tryVitalityRecovery(player, skill, timing, Math.random, healingMultiplier);
+    if (!result.triggered) return false;
+    messages.push(`${player.名号}${skill.msg1}恢复${bigNumberTransform(result.amount)}点生命（最大生命${Math.round(result.rate * 100)}%）！`);
+    return true;
+  }
+
   async function performTeamAttack(attacker, defender, round, allEnemies) {
     let attackMsgs = [];
     const isA = attacker._team === 'A';
@@ -10396,6 +10598,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     }
 
     applyXianguTurnRecovery(attacker, attackMsgs);
+    triggerTeamVitalityRecovery(attacker, '行动前', attackMsgs);
 
     const bannerAttack = rollWanhuaBannerActiveAttack(attacker, defender);
     if (bannerAttack) {
@@ -10453,6 +10656,9 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     let baoji = baojishanghai(attacker.暴击率, attacker.暴击伤害);
     if (临字秘加成 > 0) baoji = Math.min(baoji + 临字秘加成, 5);
+    const daoCritical = resolveDaoTreasureCritical(attacker, baoji);
+    baoji = daoCritical.multiplier;
+    if (daoCritical.message) attackMsgs.push(daoCritical.message);
     let isCritical = baoji > 1;
 
     // 小成圣体特殊处理
@@ -10608,44 +10814,46 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     let 类型桶 = { '神通': _基础伤害 }; // 分类型伤害桶：每个技能按自身攻击类型累加增量
     let 功法威能系数 = 1;
 
-    for (var i = 0; !innateSilenced && i < jineng1.length; i++) {
-      let actualPr = getGongfaTriggerChance(attacker, jineng1[i]);
+    const attackerSkills = filterEquippedCombatSkills(attacker, jineng1, '攻击');
+    for (var i = 0; !innateSilenced && i < attackerSkills.length; i++) {
+      const skill = resolveGongfaCombatSkill(attacker, attackerSkills[i]);
+      let actualPr = getGongfaTriggerChance(attacker, skill);
 
-      if ((jineng1[i].class == '常驻' && (round == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < actualPr) ||
-          (attacker.学习的功法 && jineng1[i].class == '功法' && attacker.学习的功法.indexOf(jineng1[i].name) > -1 && (round == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < actualPr) ||
-          (jineng1[i].class == '灵根' && hasSupremeInnate(attacker, jineng1[i].name) && (round == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < actualPr) ||
-          (attacker.xiangu_shenhuo && jineng1[i].class == '道种专属' && attacker.xiangu_shenhuo.专属技能 === jineng1[i].name && (round == jineng1[i].cnt || jineng1[i].cnt == -1) && Random < actualPr)) {
-        攻击方技能列表.push(jineng1[i]);
-        if (jineng1[i].class === '功法') {
-          recordGongfaCombatTrigger(attacker, jineng1[i]);
-          功法威能系数 = Math.max(功法威能系数, getGongfaCombatMultiplier(attacker, jineng1[i]));
+      if ((skill.class == '常驻' && (round == skill.cnt || skill.cnt == -1) && Random < actualPr) ||
+          (skill.class == '功法' && hasLearnedGongfa(attacker, skill.熟练度归属 || skill.name) && (round == skill.cnt || skill.cnt == -1) && Random < actualPr) ||
+          (skill.class == '灵根' && hasSupremeInnate(attacker, skill.name) && (round == skill.cnt || skill.cnt == -1) && Random < actualPr) ||
+          (attacker.xiangu_shenhuo && skill.class == '道种专属' && attacker.xiangu_shenhuo.专属技能 === skill.name && (round == skill.cnt || skill.cnt == -1) && Random < actualPr)) {
+        攻击方技能列表.push(skill);
+        if (skill.class === '功法') {
+          recordGongfaCombatTrigger(attacker, skill);
+          功法威能系数 = Math.max(功法威能系数, getGongfaCombatMultiplier(attacker, skill));
         }
-        if (jineng1[i].无视减伤) 无视减伤 = true; // 草字剑诀·斩真我
-        if (jineng1[i].斩杀阈值) 斩杀阈值 = jineng1[i].斩杀阈值; // 草字剑诀·斩真我
-        let processedMsg1 = jineng1[i].msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
-        let processedMsg2 = jineng1[i].msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+        if (skill.无视减伤) 无视减伤 = true;
+        if (skill.斩杀阈值) 斩杀阈值 = skill.斩杀阈值;
+        let processedMsg1 = skill.msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+        let processedMsg2 = skill.msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
 
-        if (jineng1[i].msg2 == '') {
+        if (skill.msg2 == '') {
           attackMsgs.push(attacker.名号 + processedMsg1);
         } else {
           attackMsgs.push(attacker.名号 + processedMsg1 + defender.名号 + processedMsg2);
         }
 
-        if (jineng1[i].不可防御 === 1) 不可防御 = true;
-        if (jineng1[i].不可复活 === 1) defender.不可复活 = true;
-        if (jineng1[i].控制 === 1) defender.dongjie = true;
+        if (skill.不可防御 === 1) 不可防御 = true;
+        if (skill.不可复活 === 1) defender.不可复活 = true;
+        if (skill.控制 === 1) defender.dongjie = true;
 
         // —— 每个技能按自身攻击类型单独结算：基础连乘保留，增量归入对应类型桶 ——
         const _旧伤害 = 伤害;
-        伤害 = 伤害 * jineng1[i].beilv + jineng1[i].other;
+        伤害 = 伤害 * skill.beilv + skill.other;
         const 该技能增量 = 伤害 - _旧伤害;
-        const _t = jineng1[i].攻击类型 || '神通';
+        const _t = skill.攻击类型 || '神通';
         类型桶[_t] = (类型桶[_t] || 0) + 该技能增量;
 
-        if (jineng1[i].负面效果) {
-          defender._fumianhuihe = jineng1[i].负面回合;
-          defender._fumian_damage = Math.trunc((该技能增量 * jineng1[i].beilv + jineng1[i].other) * getGongfaCombatMultiplier(attacker, jineng1[i]));
-          defender._fumian_type = jineng1[i].负面类型;
+        if (skill.负面效果) {
+          defender._fumianhuihe = skill.负面回合;
+          defender._fumian_damage = Math.trunc((该技能增量 * skill.beilv + skill.other) * getGongfaCombatMultiplier(attacker, skill));
+          defender._fumian_type = skill.负面类型;
         }
 
         count++;
@@ -10664,13 +10872,14 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     // 防御技能
     if (!不可防御) {
       let random = Math.random();
-      const sortedSkills = [...data.jineng2].sort((a, b) => (a.优先级 || 999) - (b.优先级 || 999));
+      const sortedSkills = filterEquippedCombatSkills(defender, data.jineng2, '防御')
+        .sort((a, b) => (a.优先级 || 999) - (b.优先级 || 999));
 
       for (var i = 0; i < sortedSkills.length; i++) {
         const skill = sortedSkills[i];
         const skillPr = getGongfaTriggerChance(defender, skill);
 
-        if ((defender.学习的功法 && skill.class == '功法' && defender.学习的功法.indexOf(skill.name) > -1 && (round == skill.cnt || skill.cnt == -1) && random < skillPr) ||
+        if ((skill.class == '功法' && hasLearnedGongfa(defender, skill.熟练度归属 || skill.name) && (round == skill.cnt || skill.cnt == -1) && random < skillPr) ||
             (skill.class == '灵根' && hasSupremeInnate(defender, skill.name) && (round == skill.cnt || skill.cnt == -1) && random < skill.pr) ||
             (defender.xiangu_shenhuo && skill.class == '道种专属' && defender.xiangu_shenhuo.专属技能 === skill.name && (round == skill.cnt || skill.cnt == -1) && random < skill.pr)) {
           if (skill.class === '功法') recordGongfaCombatTrigger(defender, skill);
@@ -10759,6 +10968,11 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         伤害 = Math.trunc(伤害 * (1 - defender._持续减伤比例));
         attackMsgs.push(`${defender.名号}的「厚土无敌」大地之力护体，抵消了${bigNumberTransform(before - 伤害)}点伤害！`);
       }
+      if (defender._大道世界领域回合 > 0 && defender._大道世界减伤 > 0) {
+        const before = 伤害;
+        伤害 = applyDaoTreasureDomainReduction(defender, 伤害);
+        attackMsgs.push(`【大道界壁】${defender.名号}以一界法则抵消了${bigNumberTransform(before - 伤害)}点伤害！`);
+      }
     } else {
       attackMsgs.push(`${attacker.名号}的攻击斩落真我本源，无视了${defender.名号}的一切护体减伤！`);
     }
@@ -10787,6 +11001,9 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
         for (let t of targets) {
           let 群攻伤害 = Math.trunc(伤害 * 群攻比例);
+          if (!无视减伤 && t._大道世界领域回合 > 0 && t._大道世界减伤 > 0) {
+            群攻伤害 = applyDaoTreasureDomainReduction(t, 群攻伤害);
+          }
           if (t._护盾值 > 0) {
             if (t._护盾值 >= 群攻伤害) {
               t._护盾值 -= 群攻伤害;
@@ -10801,6 +11018,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
           群攻伤害 = aoeFate.damage;
           t.当前血量 -= 群攻伤害;
           if (t.当前血量 < 0) t.当前血量 = 0;
+          if (群攻伤害 > 0 && t.当前血量 > 0) triggerTeamVitalityRecovery(t, '受击后', attackMsgs);
           attackMsgs.push(`【群攻】${attacker.名号}的余波扫中${t.名号}，造成${bigNumberTransform(群攻伤害)}伤害`);
           if (t.当前血量 <= 0) {
             // P0-7: 群攻击杀也走复活检查（与主目标保持一致）
@@ -10824,6 +11042,11 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     // 应用伤害
     if (defender._诛仙易伤 > 0) 伤害 = Math.floor(伤害 * (1 + defender._诛仙易伤));
+    const daoDeduction = applyDaoTreasureLawDeduction(attacker, defender, 伤害, {
+      isBoss: defender.boss === true || defender.type === 'boss' || /BOSS|Boss|首领|天骄/.test(String(defender.名号 || '')),
+    });
+    伤害 = daoDeduction.damage;
+    if (daoDeduction.message) attackMsgs.push(daoDeduction.message);
     let actual_damage = 伤害;
     // 法力免疫：渡劫奖励/血魂草激发的短暂免疫，免疫本次伤害后消散
     if (defender.法力免疫) {
@@ -10885,6 +11108,10 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       }
     }
 
+    if (actual_damage > 0 && defender.当前血量 > 0) {
+      triggerTeamVitalityRecovery(defender, '受击后', attackMsgs);
+    }
+
     // 吸血（批次1：基于实际造成伤害回复，封顶血量上限）
     if (!attacker._先天禁疗 && attacker.吸血率 > 0 && actual_damage > 0) {
       const _heal = Math.trunc(actual_damage * attacker.吸血率);
@@ -10906,24 +11133,41 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
   // 检查复活（简化版）
   function checkTeamRevival(player) {
+    const daoRewrite = tryDaoTreasureDeathRewrite(player);
+    if (daoRewrite.revived) return { revived: true, message: daoRewrite.messages };
+    if (consumeDaoTreasureRevivalBlock(player)) {
+      const message = `【生死删改】${player.名号}的一次复生结局已被大道抹去。`;
+      msg.push(message);
+      return { revived: false, message: [message] };
+    }
     const rewritten = rewriteBeyondDefeat(player);
     if (rewritten.revived) return { revived: true, message: rewritten.messages };
-    if (player.当前血量 > 0 || player._revived || !player.学习的功法) return { revived: false };
+    if (player.当前血量 > 0 || !player.学习的功法) return { revived: false };
 
-    const reviveSkills = data.jineng3?.filter(j => j.复活技能 === 1) || [];
+    const zheziConfig = getZheziReviveConfig(player);
+    const zheziCount = Math.max(0, Number(player._者字秘复活次数) || 0);
+    const reviveSkills = filterEquippedVitalitySkills(player, data.jineng3)
+      .filter(j => j.复活技能 === 1);
     for (let skill of reviveSkills) {
-      if (player.学习的功法.indexOf(skill.name) > -1) {
+      if (hasLearnedGongfa(player, skill.熟练度归属 || skill.name)) {
+        if (skill.name === '者字秘' ? zheziCount >= zheziConfig.maxRevives : player._revived) continue;
         if (Math.random() < getGongfaTriggerChance(player, skill, skill.pr || 1)) {
-          const 恢复比例 = getReviveRecoveryRatio(player, skill);
+          const 恢复比例 = skill.name === '者字秘'
+            ? (zheziConfig.recoveryRatios[zheziCount] || 0)
+            : getReviveRecoveryRatio(player, skill);
           const 恢复血量 = Math.trunc(player.血量上限 * 恢复比例);
           recordGongfaCombatTrigger(player, skill);
           player.当前血量 = 恢复血量;
           player.dongjie = false;
-          player._revived = true;
+          if (skill.name === '者字秘') player._者字秘复活次数 = zheziCount + 1;
+          player._revived = skill.name !== '者字秘' || player._者字秘复活次数 >= zheziConfig.maxRevives;
 
           const msgs = [];
           if (skill.msg1) msgs.push(player.名号 + skill.msg1);
           if (skill.msg2) msgs.push(player.名号 + skill.msg2);
+          if (skill.name === '者字秘' && player._者字秘复活次数 === 2) {
+            msgs.push(`${player.名号}强燃精气神，再度逆转生死；本次仅恢复55%最大生命！`);
+          }
 
           const 免控回合 = Math.round(skill.免控 || 0);
           if (免控回合 > 0) {
@@ -11051,6 +11295,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       const readyList = allUnits.filter(u => u.当前血量 > 0 && u._actionBar >= ACTION_BAR_MAX);
       if (readyList.length > 0) {
         readyList.sort((a, b) => {
+          if (Boolean(b._超维绝对先手) !== Boolean(a._超维绝对先手)) return b._超维绝对先手 ? 1 : -1;
           if (b._speed !== a._speed) return b._speed - a._speed;
           return b._actionBar - a._actionBar;
         });
@@ -11145,6 +11390,8 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     const roundIndex = Math.trunc(cnt / 2);
     const attackResult = await performTeamAttack(readyUnit, target, roundIndex, enemies);
     msg.push(...attackResult.msgs);
+    const domainMessage = tickDaoTreasureDomain(readyUnit);
+    if (domainMessage) msg.push(domainMessage);
 
     // 检查目标死亡
     if (attackResult.killed) {
@@ -11183,17 +11430,6 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         msg.push(...reviveResult.message);
       } else {
         msg.push(`${readyUnit.名号}被反弹之力击溃！`);
-      }
-    }
-
-    // 者字秘恢复
-    if (readyUnit.学习的功法?.some(gongfa => ["者字秘"].includes(gongfa))) {
-      const 最大血量 = readyUnit.血量上限;
-      const 恢复量 = Math.trunc(最大血量 * 0.1 * getGongfaNumericMultiplier(readyUnit, '者字秘'));
-      if (readyUnit.当前血量 < 最大血量 && readyUnit.当前血量 > 0) {
-        readyUnit.当前血量 = Math.min(readyUnit.当前血量 + 恢复量, 最大血量);
-        recordGongfaCombatTrigger(readyUnit, '者字秘');
-        msg.push(`${readyUnit.名号}周身泛起赤色霞光，「者字秘」燃烧生命精气，恢复${bigNumberTransform(恢复量)}点气血！`);
       }
     }
 
@@ -11543,46 +11779,47 @@ async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
   let 功法威能系数 = 1;
 
   for (var i = 0; i < jineng1.length; i++) {
+    const skill = resolveGongfaCombatSkill(attacker, jineng1[i]);
     if (
-      (jineng1[i].class == '常驻' &&
-        (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) &&
-        Math.random() < getGongfaTriggerChance(attacker, jineng1[i])) ||
+      (skill.class == '常驻' &&
+        (cnt2 == skill.cnt || skill.cnt == -1) &&
+        Math.random() < getGongfaTriggerChance(attacker, skill)) ||
       (attacker.学习的功法 &&
-        jineng1[i].class == '功法' &&
-        attacker.学习的功法.indexOf(jineng1[i].name) > -1 &&
-        (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) &&
-        Math.random() < getGongfaTriggerChance(attacker, jineng1[i])) ||
-      (jineng1[i].class == '灵根' &&
-        hasSupremeInnate(attacker, jineng1[i].name) &&
-        (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) &&
-        Math.random() < jineng1[i].pr) ||
+        skill.class == '功法' &&
+        attacker.学习的功法.indexOf(skill.name) > -1 &&
+        (cnt2 == skill.cnt || skill.cnt == -1) &&
+        Math.random() < getGongfaTriggerChance(attacker, skill)) ||
+      (skill.class == '灵根' &&
+        hasSupremeInnate(attacker, skill.name) &&
+        (cnt2 == skill.cnt || skill.cnt == -1) &&
+        Math.random() < skill.pr) ||
       (attacker.xiangu_shenhuo &&
-        jineng1[i].class == '道种专属' &&
-        attacker.xiangu_shenhuo.专属技能 === jineng1[i].name &&
-        (cnt2 == jineng1[i].cnt || jineng1[i].cnt == -1) &&
-        Math.random() < jineng1[i].pr)
+        skill.class == '道种专属' &&
+        attacker.xiangu_shenhuo.专属技能 === skill.name &&
+        (cnt2 == skill.cnt || skill.cnt == -1) &&
+        Math.random() < skill.pr)
     ) {
-      if (jineng1[i].class === '功法') {
-        recordGongfaCombatTrigger(attacker, jineng1[i]);
-        功法威能系数 = Math.max(功法威能系数, getGongfaCombatMultiplier(attacker, jineng1[i]));
+      if (skill.class === '功法') {
+        recordGongfaCombatTrigger(attacker, skill);
+        功法威能系数 = Math.max(功法威能系数, getGongfaCombatMultiplier(attacker, skill));
       }
       // 构建技能消息
-      let skillMsg = attacker.名号 + jineng1[i].msg1;
-      if (jineng1[i].msg2 !== '') {
-        skillMsg += defender.名号 + jineng1[i].msg2;
+      let skillMsg = attacker.名号 + skill.msg1;
+      if (skill.msg2 !== '') {
+        skillMsg += defender.名号 + skill.msg2;
       }
       msgs.push(skillMsg);
 
-      if (jineng1[i].无视减伤) 无视减伤 = true; // 草字剑诀·斩真我
-      if (jineng1[i].斩杀阈值) 斩杀阈值 = jineng1[i].斩杀阈值; // 草字剑诀·斩真我
+      if (skill.无视减伤) 无视减伤 = true;
+      if (skill.斩杀阈值) 斩杀阈值 = skill.斩杀阈值;
 
       // 应用技能效果（按自身攻击类型单独结算：基础连乘保留，增量归入对应类型桶）
       const _旧伤害 = 伤害;
-      伤害 = 伤害 * jineng1[i].beilv + jineng1[i].other;
+      伤害 = 伤害 * skill.beilv + skill.other;
       const 该技能增量 = 伤害 - _旧伤害;
-      const _t = jineng1[i].攻击类型 || '神通';
+      const _t = skill.攻击类型 || '神通';
       类型桶[_t] = (类型桶[_t] || 0) + 该技能增量;
-      攻击类型 = jineng1[i].攻击类型 || 攻击类型;
+      攻击类型 = skill.攻击类型 || 攻击类型;
 
       count++;
       if (count == 2) break; // 最多触发3个技能
@@ -12667,6 +12904,8 @@ export async function channel(usr_qq) {
  */
 //遍历物品
 export async function foundthing(thing_name) {
+  const daoState = readDaoTreasureState();
+  if (daoState.treasure?.name === thing_name) return createDaoTreasureItem(daoState.treasure);
   let thing = [
     'equipment_list',
     'danyao_list',
@@ -13448,12 +13687,13 @@ export  function getTargetQQFromEvent(e, selfQQ = '') {
 export const ACTION_BAR_MAX = 3000;
 
 // 初始化单位的行动条字段：_actionBar / _speed / _speedBoost
-// 速度算法：传入 speed 则直接作为最终速度（不再叠加）；否则用 基础速度 + 秘境*50 + 仙古*50
+// 速度算法：传入 speed 则直接作为最终速度；否则叠加三条额外体系境界速度。
 export function initActionBar(unit, { speed, boost = 1.0 } = {}) {
   unit._actionBar = unit._actionBar || 0;
   const base = (speed != null)
     ? speed
-    : (unit.速度 ?? 100) + (unit.mijinglevel_id ?? 0) * 50 + (unit.xiangulevel_id ?? 0) * 50;
+    : (unit.速度 ?? 100) + (unit.mijinglevel_id ?? 0) * 50 + (unit.xiangulevel_id ?? 0) * 50
+      + Math.max(0, (unit.huafenlevel_id ?? 1) - 1) * 50;
   unit._speed = Math.floor(base);
   unit._speedBoost = boost;
   return unit;
@@ -13473,6 +13713,7 @@ export function getReadyUnits(units, max = ACTION_BAR_MAX) {
   return units
     .filter(u => u.当前血量 > 0 && (u._actionBar || 0) >= max)
     .sort((a, b) =>
+      (Number(Boolean(b._超维绝对先手)) - Number(Boolean(a._超维绝对先手))) ||
       ((b._speed || 0) - (a._speed || 0)) ||
       ((b._actionBar || 0) - (a._actionBar || 0))
     );

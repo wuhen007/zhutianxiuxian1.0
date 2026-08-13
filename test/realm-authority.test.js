@@ -38,6 +38,7 @@ test('either cultivation path can satisfy an authority requirement', () => {
   assert.equal(hasRealmAuthority({ mijinglevel_id: 21, xiangulevel_id: 1 }, 21), true);
   assert.equal(hasRealmAuthority({ mijinglevel_id: 1, xiangulevel_id: 22 }, 21), true);
   assert.equal(hasRealmAuthority({ mijinglevel_id: 20, xiangulevel_id: 21 }, 21), false);
+  assert.equal(hasRealmAuthority({ huafenlevel_id: 22 }, 21), true);
 });
 
 test('the stronger path determines the effective authority', () => {
@@ -53,6 +54,10 @@ test('realm loss applies to the path providing the authority', () => {
   const mijingPlayer = { mijinglevel_id: 21, xiangulevel_id: 1 };
   assert.equal(lowerRealmAuthority(mijingPlayer), 'mijing');
   assert.deepEqual(mijingPlayer, { mijinglevel_id: 20, xiangulevel_id: 1 });
+
+  const huafenPlayer = { mijinglevel_id: 1, xiangulevel_id: 1, huafenlevel_id: 22 };
+  assert.equal(lowerRealmAuthority(huafenPlayer), 'huafen');
+  assert.deepEqual(huafenPlayer, { mijinglevel_id: 1, xiangulevel_id: 1, huafenlevel_id: 21 });
 });
 
 test('authority realm names follow the active path', () => {
@@ -67,6 +72,24 @@ test('authority realm names follow the active path', () => {
     ),
     'xiangu emperor'
   );
+
+  const huafenLevels = [{ level_id: 17, level: 'flower ultimate' }];
+  assert.equal(
+    getRealmAuthorityName(
+      { mijinglevel_id: 1, xiangulevel_id: 1, huafenlevel_id: 17 },
+      mijingLevels,
+      xianguLevels,
+      huafenLevels
+    ),
+    'flower ultimate'
+  );
+});
+
+test('flower pollen realms map to matching authority tiers', () => {
+  const pairs = [[4, 6], [8, 10], [10, 11], [17, 17], [18, 18], [21, 20], [25, 24]];
+  for (const [huafen, expected] of pairs) {
+    assert.equal(getRealmAuthorityLevel({ huafenlevel_id: huafen }), expected);
+  }
 });
 
 test('终焉神魔体按九秘领域和帝境等级限制夺取', () => {

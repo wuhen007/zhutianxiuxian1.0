@@ -40,7 +40,7 @@ test('基础穿梭门槛读取存档中的 Physique_id', () => {
   assert.equal(getBaseTravelThreshold({ ...traveler, Physique_id: undefined, physiquelevel_id: 99 }).ok, false);
 });
 
-test('高位面门槛采用秘境或仙古任一体系', () => {
+test('高位面门槛采用三种额外体系中的当前体系', () => {
   assert.equal(getLocationThreshold({ mijinglevel_id: 20 }, '时间长河').ok, true);
   assert.equal(getLocationThreshold({ xiangulevel_id: 20 }, '时间长河').ok, true);
   assert.equal(getLocationThreshold({ mijinglevel_id: 19, xiangulevel_id: 19 }, '时间长河').ok, false);
@@ -48,12 +48,18 @@ test('高位面门槛采用秘境或仙古任一体系', () => {
   assert.equal(getLocationThreshold({ xiangulevel_id: 16 }, '仙域').ok, true);
   assert.equal(getLocationThreshold({ mijinglevel_id: 16 }, '太初星墟').ok, true);
   assert.equal(getLocationThreshold({ xiangulevel_id: 15 }, '太初星墟').ok, false);
+  assert.equal(getLocationThreshold({ huafenlevel_id: 21 }, '时间长河').ok, true);
+  assert.equal(getLocationThreshold({ huafenlevel_id: 22 }, '永恒未知之地').ok, true);
+  assert.equal(getLocationThreshold({ huafenlevel_id: 17 }, '仙域').ok, false);
+  assert.equal(getLocationThreshold({ huafenlevel_id: 18 }, '仙域').ok, true);
+  assert.equal(getLocationThreshold({ huafenlevel_id: 15 }, '太初星墟').ok, true);
 });
 
 test('遮天位面支持境界或五色祭坛三种通行方式', () => {
   assert.equal(getLocationThreshold({ mijinglevel_id: 12 }, '遮天位面').ok, true);
   assert.equal(getLocationThreshold({ xiangulevel_id: 11 }, '遮天位面').ok, true);
   assert.equal(getLocationThreshold({ 五色祭坛激活: 1 }, '遮天位面').ok, true);
+  assert.equal(getLocationThreshold({ huafenlevel_id: 11 }, '遮天位面').ok, true);
   assert.equal(getLocationThreshold({ mijinglevel_id: 11, xiangulevel_id: 10 }, '遮天位面').ok, false);
 });
 
