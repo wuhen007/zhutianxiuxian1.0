@@ -33,6 +33,12 @@ import {
   SOURCE_STONE_FIELD_CONFIG,
   prepareSourceStoneField as createSourceStoneField,
 } from '../../model/tianjiTalismans.js';
+import {
+  normalizeOccupationCollection,
+  saveOccupation,
+  snapshotOccupation,
+  takeOccupation,
+} from '../../model/occupationCollection.js';
 
 // 材料稀有度
 const MATERIAL_RARITY = {
@@ -69,11 +75,15 @@ export class Occupation extends plugin {
       priority: 600,
       rule: [
         {
+          reg: '^#我的职业$',
+          fnc: 'show_occupations',
+        },
+        {
           reg: '^#转职.*$',
           fnc: 'chose_occupation',
         },
         {
-          reg: '^#转换副职$',
+          reg: '^#转换副职.*$',
           fnc: 'chose_occupation2',
         },
         {
@@ -2520,11 +2530,54 @@ async shoulie_back(e) {
       e.reply(`没有[${occupation}]这项职业`);
       return false;
     }
+    if (occupation === player.occupation) {
+      e.reply(`你当前已经是[${occupation}]`);
+      return false;
+    }
+    const stored = normalizeOccupationCollection(
+      await redis.get('xiuxian:player:' + usr_qq + ':fuzhi')
+    );
+    const { occupation: target, remaining } = takeOccupation(stored, occupation);
+    const occupations = saveOccupation(remaining, snapshotOccupation(player));
     player.occupation = occupation;
+    player.occupation_level = target?.职业等级 || 1;
+    player.occupation_exp = target?.职业经验 || 0;
+    await redis.set(
+      'xiuxian:player:' + usr_qq + ':fuzhi',
+      JSON.stringify(occupations)
+    );
     await Write_player(usr_qq, player);
     e.reply(`恭喜${player.名号}转职为[${occupation}]`);
     return false;
   }
+
+  async show_occupations(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_','');
+    usr_qq = await channel(usr_qq);
+    if (!(await existplayer(usr_qq))) return false;
+
+    const player = await Read_player(usr_qq);
+    const current = snapshotOccupation(player);
+    const stored = normalizeOccupationCollection(
+      await redis.get('xiuxian:player:' + usr_qq + ':fuzhi')
+    ).filter(item => item.职业名 !== current?.职业名);
+    const format = (label, occupation) => {
+      const level = data.occupation_exp_list.find(item => item.id == occupation.职业等级);
+      const rank = level?.name ? `（${level.name}）` : '';
+      const progress = level
+        ? `${bigNumberTransform(occupation.职业经验)}/${bigNumberTransform(level.experience)}`
+        : bigNumberTransform(occupation.职业经验);
+      return `${label}：${occupation.职业名}｜${occupation.职业等级}级${rank}｜经验 ${progress}`;
+    };
+    const lines = [`【${player.名号}的职业】`];
+    if (current) lines.push(format('主职', current));
+    stored.forEach((occupation, index) => lines.push(format(`副职${index + 1}`, occupation)));
+    if (stored.length === 0) lines.push('副职：暂无');
+    e.reply(lines.join('\n'));
+    return false;
+  }
+
   async chose_occupation(e) {
     if (!verc({ e })) return false;
     let usr_qq = e.user_id.toString().replace('qg_','');
@@ -2556,6 +2609,17 @@ async shoulie_back(e) {
             e.reply("就你这点修为做猎户？怕不是光头强砍不到树来转的？")
             return
         }
+    if (player_occupation == occupation) {
+      e.reply(`你当前已经是[${player_occupation}]`);
+      return false;
+    }
+    const stored = normalizeOccupationCollection(
+      await redis.get('xiuxian:player:' + usr_qq + ':fuzhi')
+    );
+    if (stored.some(item => item.职业名 === occupation)) {
+      e.reply(`你已经拥有[${occupation}]，请使用#转换副职${occupation}`);
+      return false;
+    }
     let thing_name = occupation + '转职凭证';
     let thing_class = '道具';
     let n = -1;
@@ -2569,12 +2633,8 @@ async shoulie_back(e) {
       e.reply(`你没有【${thing_name}】`);
       return false;
     }
-    if (player_occupation == occupation) {
-      e.reply(`你已经是[${player_occupation}]了，可使用[职业转化凭证]重新转职`);
-      return false;
-    }
     await Add_najie_thing(usr_qq, thing_name, thing_class, n);
-    if (player.occupation.length == 0) {
+    if (!player.occupation) {
       player.occupation = occupation;
       player.occupation_level = 1;
       player.occupation_exp = 0;
@@ -2582,26 +2642,16 @@ async shoulie_back(e) {
       e.reply(`恭喜${player.名号}转职为[${occupation}]`);
       return false;
     }
-    let action = await redis.get('xiuxian:player:' + usr_qq + ':fuzhi'); //副职
-    action = await JSON.parse(action);
-    if (action == null) {
-      action = [];
-    }
-    var arr = {
-      职业名: player.occupation,
-      职业经验: player.occupation_exp,
-      职业等级: player.occupation_level,
-    };
-    action = arr;
+    const occupations = saveOccupation(stored, snapshotOccupation(player));
     await redis.set(
       'xiuxian:player:' + usr_qq + ':fuzhi',
-      JSON.stringify(action)
+      JSON.stringify(occupations)
     );
     player.occupation = occupation;
     player.occupation_level = 1;
     player.occupation_exp = 0;
     await Write_player(usr_qq, player);
-    e.reply(`恭喜${player.名号}转职为[${occupation}],您的副职为${arr.职业名}`);
+    e.reply(`恭喜${player.名号}转职为[${occupation}]，已拥有${occupations.length + 1}个职业`);
     return false;
   }
   async chose_occupation2(e) {
@@ -2616,31 +2666,34 @@ async shoulie_back(e) {
     if (!ifexistplay) return false;
 
     let player = await Read_player(usr_qq);
-    let action = await redis.get('xiuxian:player:' + usr_qq + ':fuzhi'); //副职
-    action = await JSON.parse(action);
-    if (action == null) {
-      action = [];
+    const stored = normalizeOccupationCollection(
+      await redis.get('xiuxian:player:' + usr_qq + ':fuzhi')
+    ).filter(item => item.职业名 !== player.occupation);
+    if (stored.length === 0) {
       e.reply(`您还没有副职哦`);
       return false;
     }
-    let a, b, c;
-    a = action.职业名;
-    b = action.职业经验;
-    c = action.职业等级;
-    action.职业名 = player.occupation;
-    action.职业经验 = player.occupation_exp;
-    action.职业等级 = player.occupation_level;
-    player.occupation = a;
-    player.occupation_exp = b;
-    player.occupation_level = c;
+    let targetName = e.msg.replace('#转换副职', '').trim();
+    if (!targetName && stored.length > 1) {
+      e.reply(`你有多个副职，请发送#转换副职职业名\n可选：${stored.map(item => item.职业名).join('、')}`);
+      return false;
+    }
+    if (!targetName) targetName = stored[0].职业名;
+    const { occupation: target, remaining } = takeOccupation(stored, targetName);
+    if (!target) {
+      e.reply(`你还没有[${targetName}]职业，可发送#我的职业查看`);
+      return false;
+    }
+    const occupations = saveOccupation(remaining, snapshotOccupation(player));
+    player.occupation = target.职业名;
+    player.occupation_exp = target.职业经验;
+    player.occupation_level = target.职业等级;
     await redis.set(
       'xiuxian:player:' + usr_qq + ':fuzhi',
-      JSON.stringify(action)
+      JSON.stringify(occupations)
     );
     await Write_player(usr_qq, player);
-    e.reply(
-      `恭喜${player.名号}转职为[${player.occupation}],您的副职为${action.职业名}`
-    );
+    e.reply(`恭喜${player.名号}切换为[${player.occupation}]，该职业为${player.occupation_level}级`);
     return false;
   }
 
@@ -3616,6 +3669,9 @@ async zhizuo_fu(e) {
         当前血量: parseInt(player.血量上限 * buff),
         暴击率: player.暴击率,
         学习的功法: player.学习的功法,
+        功法熟练度: player.功法熟练度,
+        功法熟练度每日: player.功法熟练度每日,
+        战斗技能配置: player.战斗技能配置,
         魔道值: player.魔道值,
         灵根: player.灵根,
         法球倍率: player.灵根.法球倍率,
@@ -3623,6 +3679,8 @@ async zhizuo_fu(e) {
         神石: player.神石,
       };
       let Data_battle = await zd_battle(player_A, player_B);
+      player.功法熟练度 = player_A.功法熟练度;
+      player.功法熟练度每日 = player_A.功法熟练度每日;
       let msg = Data_battle.msg;
       if (Data_battle.winner === 'A') {
         player_B.魔道值 -= 50;
@@ -3856,6 +3914,9 @@ async zhizuo_fu(e) {
       当前血量: parseInt(player.血量上限),
       暴击率: player.暴击率,
       学习的功法: player.学习的功法,
+      功法熟练度: player.功法熟练度,
+      功法熟练度每日: player.功法熟练度每日,
+      战斗技能配置: player.战斗技能配置,
       灵根: player.灵根,
       魔道值: player.魔道值,
       神石: player.神石,
@@ -3863,6 +3924,8 @@ async zhizuo_fu(e) {
       仙宠: player.仙宠,
     };
     let Data_battle = await zd_battle(player_A, player_B);
+    player.功法熟练度 = player_A.功法熟练度;
+    player.功法熟练度每日 = player_A.功法熟练度每日;
     let msg = Data_battle.msg;
     let 赏金_2=action[num].赏金/2
     if (Data_battle.winner === 'A') {
