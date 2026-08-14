@@ -52,6 +52,7 @@ import {
   Write_najie,
   foundthing,
   convert2integer,
+  GetPower,
   get_equipment_img,
   channel
 } from '../../model/xiuxian.js';
@@ -85,14 +86,20 @@ import {
   startShengfaRefinement,
 } from '../../model/shengfaFragment.js';
 import {
+  FISHING_EVENT_CHOICE_MS,
+  getFishingTide,
   getImmortalFishingCooldown,
   getImmortalBaitConfig,
   parseImmortalBait,
+  recordFishCatch,
   rollImmortalBaitReward,
+  rollPlaneFish,
   rollPlaneFishingEvent,
   rollWishScaleAmount,
 } from '../../model/immortalFishing.js';
+import { tryCreateFishKing } from '../../model/immortalFishKing.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
+import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { isCultivatingExtraPath } from '../../model/extraCultivation.js';
 import { isHighRealmConsumableRestricted } from '../../model/realmAuthority.js';
 
@@ -860,7 +867,7 @@ async useLinggenToken(e) {
   
     allaction = false;
     
-    // 引潮灯先将基础冷却缩短10分钟，道法仙术再减半。
+    // 基础40分钟：引潮灯先减半，道法仙术再减少10分钟。
     const baseCD = getImmortalFishingCooldown({
         hasTideLamp,
         hasDaoArt: player.daofaxianshu == 2,
@@ -896,6 +903,7 @@ async useLinggenToken(e) {
     let random = Math.random() * 100;
     let rewardMsg = "";
     let n = 1; // 奖励倍数
+    let playerChanged = false;
     
     // 幸运加成（基础概率+玩家幸运值）
     const luckChance =player.幸运 || 0;
@@ -927,10 +935,10 @@ if (isLucky || player.灵根.type === "圆环之理") {
     
     // 道法仙术提示
     if (player.daofaxianshu == 2) {
-        rewardMsg += " 道法仙术运转周天，本次垂钓时空凝滞减半！\n";
+        rewardMsg += " 道法仙术运转周天，本次垂钓冷却减少10分钟！\n";
     }
     if (hasTideLamp) {
-        rewardMsg += " 万界引潮灯照彻众生海，垂钓冷却缩短10分钟，愿鳞数量翻倍！\n";
+        rewardMsg += " 万界引潮灯照彻众生海，垂钓冷却缩短一半，愿鳞数量翻倍！\n";
     }
     
     // 特殊仙饵使用独立奖池；不带仙饵时沿用原奖池。
@@ -948,7 +956,7 @@ if (isLucky || player.灵根.type === "圆环之理") {
         await Add_najie_thing(usr_qq, reward.name, reward.class, amount);
         if (reward.uniqueFlag) {
             player[reward.uniqueFlag] = true;
-            await Write_player(usr_qq, player);
+            playerChanged = true;
         }
         rewardMsg += `\n 【${baitName}】牵动诸天水脉，钓得【${reward.name}】x${amount}`;
     }
@@ -995,24 +1003,73 @@ if (isLucky || player.灵根.type === "圆环之理") {
     await Add_najie_thing(usr_qq, "众生愿鳞", "道具", wishScaleAmount);
     rewardMsg += `\n 众生愿力凝成鳞光，获得【众生愿鳞】x${wishScaleAmount}`;
 
-    const planeEvent = rollPlaneFishingEvent(getPlayerPlaneName(player));
-    if (planeEvent) {
-        for (const item of planeEvent.items || []) {
-            await Add_najie_thing(usr_qq, item.name, item.class, item.amount);
+    const planeName = getPlayerPlaneName(player);
+    const eraCurrent = config.getConfig('xiuxian', 'xiuxian')?.Era?.current || {};
+    const configuredWorldYear = Number(eraCurrent.totalYears);
+    const worldYear = Number.isFinite(configuredWorldYear)
+        ? configuredWorldYear
+        : getRealmEventWorldYear(eraCurrent.index, eraCurrent.years, eraCurrent.epoch);
+    const tide = getFishingTide(worldYear);
+    let fishCatch = rollPlaneFish(planeName, { tide });
+    if (fishCatch?.type === 'king') {
+        const created = e.isGroup && e.group_id
+            ? await tryCreateFishKing({
+                groupId: e.group_id,
+                ownerId: usr_qq,
+                ownerName: player.名号,
+                plane: planeName,
+                king: fishCatch,
+                ownerPower: GetPower(
+                    player.攻击,
+                    player.防御,
+                    player.血量上限,
+                    player.暴击率
+                ),
+            })
+            : null;
+        if (created) {
+            rewardMsg += [
+                "",
+                `【位面鱼王·${fishCatch.name}】`,
+                `钓线骤然绷直，${planeName}水脉随之翻覆！你钓起的不是鱼，而是一尊鱼王！`,
+                `本体血量：${created.healthMax.toLocaleString('zh-CN')}`,
+                "你已自动成为垂钓者，群友可发送 #加入鱼王讨伐，随后 #讨伐鱼王。",
+            ].join("\n");
+        } else {
+            fishCatch = rollPlaneFish(planeName, { tide, allowFishKing: false });
         }
-        for (const [field, amount] of Object.entries(planeEvent.playerAdds || {})) {
-            player[field] = (Number(player[field]) || 0) + amount;
+    }
+    if (fishCatch?.type === 'fish') {
+        const count = recordFishCatch(player, planeName, fishCatch.name);
+        playerChanged = true;
+        rewardMsg += `\n 【${planeName}鱼谱】钓得${fishCatch.name}，图鉴累计x${count}${fishCatch.tideBoosted ? "（万界潮汐加持）" : ""}`;
+    }
+
+    const pendingEvent = player.垂钓位面奇遇;
+    if (pendingEvent && Number(pendingEvent.expiresAt) <= Date.now()) {
+        delete player.垂钓位面奇遇;
+        playerChanged = true;
+    }
+    if (!player.垂钓位面奇遇) {
+        const planeEvent = rollPlaneFishingEvent(planeName);
+        if (planeEvent) {
+            player.垂钓位面奇遇 = {
+                eventId: planeEvent.id,
+                plane: planeName,
+                expiresAt: Date.now() + FISHING_EVENT_CHOICE_MS,
+            };
+            playerChanged = true;
+            rewardMsg += [
+                "",
+                `【${planeEvent.title}】`,
+                planeEvent.intro,
+                ...planeEvent.choices.map((choice, index) => `${index + 1}. ${choice.label}`),
+                "十分钟内发送 #垂钓奇遇 1/2/3 作出选择。",
+            ].join("\n");
         }
-        for (const [field, value] of Object.entries(planeEvent.playerFlags || {})) {
-            player[field] = value;
-        }
-        if (planeEvent.playerAdds || planeEvent.playerFlags) {
-            await Write_player(usr_qq, player);
-        }
-        if (planeEvent.sourceStone) {
-            await Add_源石(usr_qq, planeEvent.sourceStone);
-        }
-        rewardMsg += `\n\n${planeEvent.message}`;
+    }
+    if (playerChanged) {
+        await Write_player(usr_qq, player);
     }
     
     // 附加修为/血气奖励

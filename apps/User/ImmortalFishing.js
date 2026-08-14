@@ -1,5 +1,5 @@
 import path from "path";
-import { plugin } from "../../api/api.js";
+import { config, plugin } from "../../api/api.js";
 import {
   Add_najie_thing,
   Read_player,
@@ -11,25 +11,149 @@ import { __PATH } from "../../model/xiuxian.js";
 import { withPlayerMutationLock } from "../../utils/playerMutationLock.js";
 import { FileRollbackTransaction } from "../SecretPlace/rebirthTransaction.js";
 import {
+  FISHING_PLANE_NAMES,
   IMMORTAL_BAIT_NAMES,
+  TIDE_DURATION_YEARS,
   WISH_SCALE_EXCHANGE_NAMES,
+  getFishingTide,
   getImmortalBaitConfig,
+  getPlaneFishAtlas,
+  getPlaneFishingEventById,
+  getPlaneFishingEventChoice,
   getWishScaleExchangeConfig,
   parseWishScaleExchange,
 } from "../../model/immortalFishing.js";
+import { getPlayerPlaneName } from "../../model/planeCoords.js";
+import { getRealmEventWorldYear } from "../../model/realmEventClock.js";
+
+function getCurrentWorldYear() {
+  const current = config.getConfig("xiuxian", "xiuxian")?.Era?.current || {};
+  const totalYears = Number(current.totalYears);
+  return Number.isFinite(totalYears)
+    ? totalYears
+    : getRealmEventWorldYear(current.index, current.years, current.epoch);
+}
 
 export class ImmortalFishing extends plugin {
   constructor() {
     super({
       name: "诸天仙饵与仙武界",
-      dsc: "查看众生仙饵、兑换愿鳞并寻找武祖叶萧",
+      dsc: "查看众生仙饵、鱼谱潮汐、位面奇遇并兑换愿鳞",
       event: "message",
       priority: 600,
       rule: [
         { reg: "^#众生仙饵$", fnc: "showBaits" },
+        { reg: "^#众生鱼图鉴(?:\\s+.*)?$", fnc: "showFishAtlas" },
+        { reg: "^#万界潮汐$", fnc: "showFishingTide" },
+        { reg: "^#垂钓奇遇(?:\\s*[1-3])?$", fnc: "chooseFishingEvent" },
         { reg: "^#愿鳞兑换(?:\\s+.*)?$", fnc: "wishScaleExchange" },
         { reg: "^#寻找武祖$", fnc: "seekWuzu" },
       ],
+    });
+  }
+
+  async showFishAtlas(e) {
+    const usr_qq = await channel(e.user_id.toString().replace("qg_", ""));
+    const player = await Read_player(usr_qq);
+    if (!player) return true;
+    const query = String(e.msg).replace(/^#众生鱼图鉴\s*/, "").trim();
+    if (query === "全部") {
+      const atlases = FISHING_PLANE_NAMES.map(plane => getPlaneFishAtlas(player, plane));
+      return e.reply([
+        "【众生鱼图鉴·诸天总览】",
+        ...atlases.map(atlas => `${atlas.plane}：${atlas.collected}/${atlas.total}`),
+        `总进度：${atlases.reduce((sum, atlas) => sum + atlas.collected, 0)}/${atlases.reduce((sum, atlas) => sum + atlas.total, 0)}`,
+      ].join("\n"));
+    }
+    const plane = query || getPlayerPlaneName(player);
+    const atlas = getPlaneFishAtlas(player, plane);
+    if (!atlas) return e.reply(`【${plane || "当前位面"}】尚未收录众生鱼谱。`);
+    return e.reply([
+      `【众生鱼图鉴·${plane}】${atlas.collected}/${atlas.total}`,
+      ...atlas.entries.map(entry =>
+        `${entry.king ? "鱼王" : "渔获"}｜${entry.name}：${entry.count > 0 ? `x${entry.count}` : "未发现"}`
+      ),
+    ].join("\n"));
+  }
+
+  async showFishingTide(e) {
+    const worldYear = getCurrentWorldYear();
+    const tide = getFishingTide(worldYear);
+    if (!tide.active) {
+      return e.reply([
+        "【万界潮汐·沉寂期】",
+        `当前世界年份：${worldYear}`,
+        `下一轮潮汐将在${tide.remainingYears}年后刷新，持续${TIDE_DURATION_YEARS}年。`,
+      ].join("\n"));
+    }
+    return e.reply([
+      `【万界潮汐·${tide.name}】`,
+      `当前世界年份：${worldYear}`,
+      `旺潮位面：${tide.planes.join("、")}`,
+      `剩余时间：${tide.remainingYears}年`,
+      "旺潮位面的珍稀鱼概率提高，鱼王出现率由1%提升至2%。",
+    ].join("\n"));
+  }
+
+  async chooseFishingEvent(e) {
+    const usr_qq = await channel(e.user_id.toString().replace("qg_", ""));
+    return withPlayerMutationLock(usr_qq, async () => {
+      const player = await Read_player(usr_qq);
+      if (!player) return true;
+      const pending = player.垂钓位面奇遇;
+      if (!pending || Number(pending.expiresAt) <= Date.now()) {
+        if (pending) {
+          delete player.垂钓位面奇遇;
+          await Write_player(usr_qq, player);
+        }
+        await e.reply("当前没有等待选择的垂钓奇遇。");
+        return true;
+      }
+
+      const event = getPlaneFishingEventById(pending.eventId);
+      if (!event) {
+        delete player.垂钓位面奇遇;
+        await Write_player(usr_qq, player);
+        return e.reply("这段垂钓奇遇已经随界潮消散。");
+      }
+      const choiceNumber = Number(String(e.msg).match(/[1-3]$/)?.[0]);
+      if (!choiceNumber) {
+        await e.reply([
+          `【${event.title}】`,
+          event.intro,
+          ...event.choices.map((choice, index) => `${index + 1}. ${choice.label}`),
+          "发送 #垂钓奇遇 1/2/3 作出选择。",
+        ].join("\n"));
+        return true;
+      }
+
+      const choice = getPlaneFishingEventChoice(pending.eventId, choiceNumber);
+      if (!choice) return e.reply("这条奇遇没有对应选择。");
+      const transaction = new FileRollbackTransaction();
+      transaction.capture(path.join(__PATH.player_path, `${usr_qq}.json`));
+      transaction.capture(path.join(__PATH.najie_path, `${usr_qq}.json`));
+      try {
+        for (const item of choice.items || []) {
+          await Add_najie_thing(usr_qq, item.name, item.class, item.amount);
+        }
+        for (const [field, amount] of Object.entries(choice.playerAdds || {})) {
+          player[field] = (Number(player[field]) || 0) + amount;
+        }
+        for (const [field, value] of Object.entries(choice.playerFlags || {})) {
+          player[field] = value;
+        }
+        if (choice.sourceStone) {
+          player.源石 = (Number(player.源石) || 0) + choice.sourceStone;
+        }
+        delete player.垂钓位面奇遇;
+        await Write_player(usr_qq, player);
+        transaction.commit();
+      } catch (error) {
+        transaction.rollback();
+        throw error;
+      }
+      await e.reply(`【${event.title}·${choice.label}】\n${choice.message}`);
+      return true;
     });
   }
 

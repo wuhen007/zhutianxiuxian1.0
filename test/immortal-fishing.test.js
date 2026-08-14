@@ -3,20 +3,40 @@ import fs from 'node:fs';
 import test from 'node:test';
 
 import {
+  FISHING_PLANE_NAMES,
+  FISH_KING_CHANCE,
   IMMORTAL_BAIT_NAMES,
   IMMORTAL_FISHING_EVENT_CHANCE,
   OTHER_SHORE_FRUIT_CHANCE,
+  TIDE_DURATION_YEARS,
+  TIDE_INTERVAL_YEARS,
   WISH_SCALE_EXCHANGE_NAMES,
   XIANWU_COORD_CHANCE,
+  getFishingTide,
   getImmortalFishingCooldown,
   getImmortalBaitConfig,
+  getPlaneFishAtlas,
+  getPlaneFishConfig,
+  getPlaneFishingEventChoice,
   getWishScaleExchangeConfig,
   parseImmortalBait,
   parseWishScaleExchange,
+  recordFishCatch,
   rollImmortalBaitReward,
+  rollPlaneFish,
   rollPlaneFishingEvent,
   rollWishScaleAmount,
 } from '../model/immortalFishing.js';
+import {
+  calculateFishKingDamage,
+  createFishKingBattleAvatar,
+  createFishKingRewardAssignments,
+  createFishKingState,
+  FISH_KING_BATTLE_CD_SECONDS,
+  FISH_KING_DAMAGE_CAP_RATIO,
+  getFishKingBattleCooldown,
+  rollFishKingChestReward,
+} from '../model/immortalFishKing.js';
 
 const readJson = path => JSON.parse(fs.readFileSync(new URL(path, import.meta.url), 'utf8'));
 const itemLists = [
@@ -27,6 +47,11 @@ const itemLists = [
   readJson('../resources/data/item/食材列表.json'),
   readJson('../resources/data/item/盒子列表.json'),
 ].flat();
+const combatSkillNames = new Set([
+  ...readJson('../resources/data/item/技能组/攻击技能.json'),
+  ...readJson('../resources/data/item/技能组/防御技能.json'),
+  ...readJson('../resources/data/item/技能组/治疗技能.json'),
+].map(skill => skill.name));
 const recipes = readJson('../resources/data/item/合成列表.json');
 const forgingMaterials = readJson('../resources/data/item/锻造材料.json');
 
@@ -133,13 +158,13 @@ test('愿鳞兑换档位、数量及绑定引潮灯符合设定', () => {
   assert.equal(lamp.不可交易, 1);
 });
 
-test('引潮灯缩短冷却并把愿鳞产量从1至5提升为2至10', () => {
-  assert.equal(getImmortalFishingCooldown(), 20 * 60 * 1000);
-  assert.equal(getImmortalFishingCooldown({ hasTideLamp: true }), 10 * 60 * 1000);
-  assert.equal(getImmortalFishingCooldown({ hasDaoArt: true }), 10 * 60 * 1000);
+test('垂钓基础四十分钟，引潮灯先减半，道法仙术再减十分钟', () => {
+  assert.equal(getImmortalFishingCooldown(), 40 * 60 * 1000);
+  assert.equal(getImmortalFishingCooldown({ hasTideLamp: true }), 20 * 60 * 1000);
+  assert.equal(getImmortalFishingCooldown({ hasDaoArt: true }), 30 * 60 * 1000);
   assert.equal(
     getImmortalFishingCooldown({ hasTideLamp: true, hasDaoArt: true }),
-    5 * 60 * 1000
+    10 * 60 * 1000
   );
   assert.equal(rollWishScaleAmount(false, () => 0), 1);
   assert.equal(rollWishScaleAmount(false, () => 0.999999), 5);
@@ -153,8 +178,109 @@ test('七个位面均有8%额外垂钓奇遇且不触发时返回空', () => {
   for (const plane of ['凡间', '仙界', '遮天位面', '九天十地', '下界八域', '太初星墟', '仙域']) {
     const event = rollPlaneFishingEvent(plane, () => 0.079999);
     assert.ok(event?.id, `${plane}缺少垂钓奇遇`);
+    assert.equal(event.choices.length, 3, `${plane}奇遇不是三选一`);
   }
-  assert.equal(rollPlaneFishingEvent('遮天位面', () => 0).playerFlags.古地府秘辛, true);
+  assert.equal(getPlaneFishingEventChoice('duan-de', 1).playerFlags.古地府秘辛, true);
+});
+
+test('七个位面各有三种普通鱼与一只专属鱼王', () => {
+  assert.deepEqual(FISHING_PLANE_NAMES, [
+    '凡间', '仙界', '遮天位面', '下界八域', '九天十地', '太初星墟', '仙域',
+  ]);
+  for (const plane of FISHING_PLANE_NAMES) {
+    const config = getPlaneFishConfig(plane);
+    assert.equal(config.fish.length, 3);
+    assert.equal(config.fish.reduce((sum, fish) => sum + fish.weight, 0), 100);
+    assert.ok(config.king.name);
+    assert.ok(config.king.speedMultiplier > 0);
+    assert.ok(config.king.skills.length >= 2);
+    assert.ok(config.king.skills.every(name => combatSkillNames.has(name)));
+  }
+  assert.equal(new Set(FISHING_PLANE_NAMES.map(
+    plane => getPlaneFishConfig(plane).king.speedMultiplier
+  )).size, FISHING_PLANE_NAMES.length);
+});
+
+test('万界潮汐每五千年刷新并持续两千年', () => {
+  assert.equal(TIDE_INTERVAL_YEARS, 5000);
+  assert.equal(TIDE_DURATION_YEARS, 2000);
+  assert.equal(getFishingTide(1999).active, true);
+  assert.equal(getFishingTide(2000).active, false);
+  assert.equal(getFishingTide(4999).active, false);
+  assert.equal(getFishingTide(5000).active, true);
+  assert.deepEqual(getFishingTide(5000).planes, getFishingTide(6999).planes);
+  assert.notEqual(getFishingTide(5000).planes[0], getFishingTide(5000).planes[1]);
+});
+
+test('鱼王基础概率为1%，旺潮位面提升至2%', () => {
+  assert.equal(FISH_KING_CHANCE, 0.01);
+  const normalTide = { active: false, planes: [] };
+  const boostedTide = { active: true, planes: ['凡间'] };
+  assert.equal(rollPlaneFish('凡间', { tide: normalTide }, () => 0.009).type, 'king');
+  assert.equal(rollPlaneFish('凡间', { tide: normalTide }, () => 0.01).type, 'fish');
+  assert.equal(rollPlaneFish('凡间', { tide: boostedTide }, () => 0.019).type, 'king');
+});
+
+test('普通鱼与鱼王击杀都能登记图鉴', () => {
+  const player = {};
+  recordFishCatch(player, '凡间', '青灵鲤');
+  recordFishCatch(player, '凡间', '青灵鲤');
+  recordFishCatch(player, '凡间', '吞舟玄龟');
+  const atlas = getPlaneFishAtlas(player, '凡间');
+  assert.equal(atlas.collected, 2);
+  assert.equal(atlas.entries.find(entry => entry.name === '青灵鲤').count, 2);
+  assert.equal(atlas.entries.find(entry => entry.king).count, 1);
+});
+
+test('鱼王状态、伤害和三份随机分配奖励符合设定', () => {
+  const state = createFishKingState({
+    groupId: 1,
+    ownerId: 2,
+    ownerName: '垂钓者',
+    plane: '凡间',
+    king: { name: '吞舟玄龟', speedMultiplier: 0.75, skills: ['真龙宝术', '不灭经'] },
+    ownerPower: 100000,
+    now: 1000,
+  });
+  assert.equal(state.healthMax, 2000000);
+  assert.equal(FISH_KING_BATTLE_CD_SECONDS, 30 * 60);
+  assert.equal(getFishKingBattleCooldown(), 30 * 60);
+  assert.equal(getFishKingBattleCooldown({ hasDaoArt: true }), 20 * 60);
+  assert.equal(FISH_KING_DAMAGE_CAP_RATIO, 0.2);
+  assert.equal(calculateFishKingDamage(state, true), 300000);
+  assert.equal(calculateFishKingDamage(state, true, state.healthMax * 10), 400000);
+  const avatar = createFishKingBattleAvatar({
+    攻击: 1000,
+    防御: 800,
+    血量上限: 5000,
+    速度: 200,
+    暴击率: 0.2,
+    灵根: { 法球倍率: 2 },
+  }, state, () => 0);
+  assert.equal(avatar.攻击, 800);
+  assert.equal(avatar.防御, 640);
+  assert.equal(avatar.血量上限, 4000);
+  assert.equal(avatar.速度, 150);
+  assert.deepEqual(avatar.学习的功法, ['真龙宝术', '不灭经']);
+  const rewards = createFishKingRewardAssignments(state.members, () => 0);
+  assert.deepEqual(rewards.map(reward => [reward.name, reward.amount]), [
+    ['遣龙令', 10], ['遣虎令', 10], ['超越宝盒', 1],
+  ]);
+  assert.ok(rewards.every(reward => reward.recipient.id === '2'));
+});
+
+test('鱼王宝箱遵循80%愿鳞、15%仙钓、5%大额愿鳞', () => {
+  const sequence = values => () => values.shift();
+  assert.deepEqual(rollFishKingChestReward(sequence([0.79, 0.999])), {
+    name: '众生愿鳞', class: '道具', amount: 10,
+  });
+  assert.deepEqual(rollFishKingChestReward(sequence([0.8])), {
+    name: '众生仙钓', class: '道具', amount: 5,
+  });
+  assert.deepEqual(rollFishKingChestReward(sequence([0.95, 0.999])), {
+    name: '众生愿鳞', class: '道具', amount: 20,
+  });
+  assert.ok(itemLists.some(item => item.name === '鱼王宝箱' && item.class === '盒子'));
 });
 
 test('渡劫天功由十张残页合成并登记为帝经', () => {
