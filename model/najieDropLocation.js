@@ -17,7 +17,7 @@ const LEGACY_PLANE_ALIASES = Object.freeze({
 
 export function getNajieDropPlanes() {
   return listMappedPlanes()
-    .filter(name => Object.hasOwn(PLACE_LOCATION_MAP, name))
+    .filter(name => name !== '圣墟位面' && Object.hasOwn(PLACE_LOCATION_MAP, name))
     .map(name => ({ id: PLACE_LOCATION_MAP[name], name }));
 }
 

@@ -16,7 +16,7 @@ function pickRandom(items, random) {
 export function createRealmEventLocation(options = {}) {
   const random = options.random || Math.random;
   const mappedPlanes = listMappedPlanes().filter((name) =>
-    Object.hasOwn(PLACE_LOCATION_MAP, name)
+    name !== '圣墟位面' && Object.hasOwn(PLACE_LOCATION_MAP, name)
   );
   const plane = mappedPlanes.includes(options.plane)
     ? options.plane

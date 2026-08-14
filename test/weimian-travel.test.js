@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   COORDINATE_CLUE_COST,
+  PLACE_LOCATION_MAP,
   FORBIDDEN_SUPREME_ALL_ATTRIBUTE,
   FORBIDDEN_SUPREMES,
   applyForbiddenSupremePlunder,
@@ -53,6 +54,19 @@ test('高位面门槛采用三种额外体系中的当前体系', () => {
   assert.equal(getLocationThreshold({ huafenlevel_id: 17 }, '仙域').ok, false);
   assert.equal(getLocationThreshold({ huafenlevel_id: 18 }, '仙域').ok, true);
   assert.equal(getLocationThreshold({ huafenlevel_id: 15 }, '太初星墟').ok, true);
+});
+
+test('圣墟位面只向觉醒境以上的花粉路修士开放', () => {
+  assert.equal(PLACE_LOCATION_MAP.圣墟位面, 7);
+  const flowerPlayer = {
+    额外体系: 'huafen', mijinglevel_id: 1, xiangulevel_id: 1, huafenlevel_id: 2,
+  };
+  assert.equal(getLocationThreshold(flowerPlayer, '圣墟位面').ok, true);
+  assert.equal(hasCoordinate(flowerPlayer, '圣墟位面'), true);
+  assert.equal(rememberCoordinate(flowerPlayer, '圣墟位面'), false);
+  assert.equal(purchaseCoordinateClue({ 灵石: COORDINATE_CLUE_COST }, '圣墟位面').reason, 'invalid');
+  assert.equal(getLocationThreshold({ mijinglevel_id: 20, xiangulevel_id: 1 }, '圣墟位面').ok, false);
+  assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 1 }, '圣墟位面').ok, false);
 });
 
 test('遮天位面支持境界或五色祭坛三种通行方式', () => {
