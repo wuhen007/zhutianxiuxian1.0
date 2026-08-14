@@ -29,7 +29,7 @@ export const COORDINATE_DUNGEON_CHANCE = 0.1;
 export const COORDINATE_CLUE_COST = 300_000_000;
 export const COORDINATE_EVENT_DURATION_MS = 24 * 60 * 60 * 1000;
 export const TIANWAI_WIND_REDUCTION_MINUTES = 5;
-export const FORBIDDEN_SUPREME_ATTENTION_THRESHOLD = 3;
+export const FORBIDDEN_SUPREME_ATTENTION_THRESHOLD = 10;
 export const FORBIDDEN_SUPREME_ALL_ATTRIBUTE = 75_000_000_000;
 export const FORBIDDEN_SUPREME_EQUIPMENT_MULTIPLIER = 150;
 
@@ -212,6 +212,13 @@ export const LOCAL_POWER_GROUPS = Object.freeze({
     warnings: {
       1: '虚空深处似有一道冰冷眸光扫过，位面阵纹已被某位禁区至尊记住。',
       2: '北斗生命禁区传来帝兵复苏之音，那道目光再次锁定了你的穿梭轨迹。',
+      3: '禁区方向垂落一缕杀意，星路上被推演的气息越来越重。',
+      4: '不死山与光暗禁区同时亮起，注视已如附骨之疽。',
+      5: '你的每一次穿梭都在禁区眼中留下痕迹，有至尊开始推算你的落脚点。',
+      6: '帝兵锋芒隔着星域遥遥锁定，虚空深处的杀机已凝成实质。',
+      7: '数道至尊神念交织成网，你每一次跨界都要穿过他们的视线。',
+      8: '禁区震颤，有古皇在沉睡中睁眼——留给你的时间不多了。',
+      9: '最后一次警告：下一次穿梭，禁区至尊将横断星路截杀于界壁之间！',
     },
   },
   '下界八域': {

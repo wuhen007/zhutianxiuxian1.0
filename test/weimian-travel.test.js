@@ -197,18 +197,22 @@ test('天地无拘任务只记录有效的跨位面抵达', () => {
   assert.equal(recordUnfetteredJourney(player), 0);
 });
 
-test('触及遮天位面三次后触发禁区至尊堵截', () => {
+test('触及遮天位面十次后触发禁区至尊堵截', () => {
   const player = {};
   const task = { from_location: 0, to_location: 2 };
   const alwaysHit = { random: () => 0 };
-  assert.equal(registerForbiddenSupremeAttention(player, task, alwaysHit).intercept, false);
-  assert.equal(registerForbiddenSupremeAttention(player, task, alwaysHit).count, 2);
-  assert.equal(registerForbiddenSupremeAttention(player, task, alwaysHit).intercept, true);
-  assert.equal(player.禁区至尊注视, 3);
+  for (let i = 1; i <= 9; i++) {
+    const result = registerForbiddenSupremeAttention(player, task, alwaysHit);
+    assert.equal(result.intercept, false, `第 ${i} 次注视不应拦截`);
+    assert.equal(player.禁区至尊注视, i);
+  }
+  const final = registerForbiddenSupremeAttention(player, task, alwaysHit);
+  assert.equal(final.intercept, true, '第 10 次注视应触发堵截');
+  assert.equal(player.禁区至尊注视, 10);
 
   const unrelated = registerForbiddenSupremeAttention(player, { from_location: 0, to_location: 1 }, alwaysHit);
   assert.equal(unrelated.relevant, false);
-  assert.equal(player.禁区至尊注视, 3);
+  assert.equal(player.禁区至尊注视, 10);
 });
 
 test('大帝境界无视禁区至尊注视', () => {
