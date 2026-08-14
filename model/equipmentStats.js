@@ -17,7 +17,7 @@ export function calculateEquippedStats(baseStats, slots = []) {
     const atk = Number(slot?.atk) || 0;
     const def = Number(slot?.def) || 0;
     const HP = Number(slot?.HP) || 0;
-    if (atk > 99 || def > 99 || HP > 99) {
+    if (atk > 499 || def > 499 || HP > 499) {
       fixedAttack += atk;
       fixedDefense += def;
       fixedHp += HP;
@@ -30,7 +30,7 @@ export function calculateEquippedStats(baseStats, slots = []) {
   }
 
   // 百分比装备单属性加成上限：最高 5000%（即加成 ≤ 50，总倍率 ≤ 51 倍）
-  const MAX_PERCENT_BONUS = 50;
+  const MAX_PERCENT_BONUS = 500;
   attackBonus = Math.min(attackBonus, MAX_PERCENT_BONUS);
   defenseBonus = Math.min(defenseBonus, MAX_PERCENT_BONUS);
   hpBonus = Math.min(hpBonus, MAX_PERCENT_BONUS);

@@ -4197,6 +4197,7 @@ async command_datitingtianji(e) {
     { name: '下界八域',     要求: '默认通行',               需: () => true,                                                            坐标字段: '下界八域坐标' },
     { name: '遮天位面',     要求: '秘境≥12 / 仙古≥11 / 花粉≥11 / 五色祭坛', 需: (p) => p.mijinglevel_id >= 12 || p.xiangulevel_id > 10 || p.huafenlevel_id >= 11 || Number(p?.五色祭坛激活) === 1, 坐标字段: '遮天位面坐标' },
     { name: '九天十地',     要求: '默认通行',               需: () => true,                                                            坐标字段: '九天十地坐标' },
+    { name: '圣墟位面',     要求: '花粉进化路≥觉醒境',       需: (p) => p.额外体系 === 'huafen' && p.huafenlevel_id >= 2,              坐标字段: '圣墟位面坐标' },
     { name: '界海',         要求: '仙王巨头（秘境≥19 / 仙古≥19 / 花粉≥20）', 需: (p) => p.mijinglevel_id >= 19 || p.xiangulevel_id >= 19 || p.huafenlevel_id >= 20, 坐标字段: '界海坐标' },
     { name: '太初星墟',     要求: '帝境（秘境≥16 / 仙古≥16 / 花粉≥15）', 需: (p) => p.mijinglevel_id >= 16 || p.xiangulevel_id >= 16 || p.huafenlevel_id >= 15, 坐标字段: '太初星墟坐标' },
     { name: '仙域',         要求: '仙王（秘境≥18 / 仙古≥16 / 花粉≥18）', 需: (p) => p.mijinglevel_id >= 18 || p.xiangulevel_id >= 16 || p.huafenlevel_id >= 18, 坐标字段: '仙域坐标' },

@@ -205,6 +205,7 @@ let A_player = {
   学习的功法: player.学习的功法,
   功法熟练度: player.功法熟练度,
   功法熟练度每日: player.功法熟练度每日,
+  战斗技能配置: player.战斗技能配置,
   命运终章已领悟: player.命运终章已领悟,
   神慧: player.神慧,
   圣法碎片: player.圣法碎片,

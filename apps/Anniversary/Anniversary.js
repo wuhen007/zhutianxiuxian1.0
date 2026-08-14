@@ -180,6 +180,10 @@ async preview_pifu(e) {
                 e.reply(`今日已经签到过了`);
                 return;
             }
+            if (player.level_id < 42 ) {
+            e.reply('成仙以后才能签到');
+            return true;
+            }
             let Sign_Yesterday;        //昨日日是否签到
             if (Yesterday.Y == lastsign_time.Y && Yesterday.M == lastsign_time.M && Yesterday.D == lastsign_time.D) {
                 Sign_Yesterday = true;

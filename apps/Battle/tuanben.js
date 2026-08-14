@@ -1,5 +1,5 @@
 import { plugin, config ,data} from '../../api/api.js';
-import { existplayer, Read_player, Write_player, Add_najie_thing, channel ,calculateHarm, ensureNumber, bigNumberTransform, exist_najie_thing, get_fight_img, initActionBar, advanceUnitBars, getReadyUnits, boostActionBar, pushBackActionBar, ACTION_BAR_MAX, applyXianguTurnRecovery, calcDamage, getSeedSkillEntry } from '../../model/xiuxian.js';
+import { existplayer, Read_player, Write_player, Add_najie_thing, channel ,calculateHarm, ensureNumber, bigNumberTransform, exist_najie_thing, get_fight_img, initActionBar, advanceUnitBars, getReadyUnits, boostActionBar, pushBackActionBar, ACTION_BAR_MAX, applyXianguTurnRecovery, calcDamage, getSeedSkillEntry, settleBattleGongfaProficiency } from '../../model/xiuxian.js';
 import { segment } from "icqq"
 import {
  checkEmperorAwareness,
@@ -24,6 +24,7 @@ import {
   filterEquippedVitalitySkills,
 } from '../../model/combatSkillLoadout.js';
 import { applySuperdimensionalOpening } from '../../model/shengfaFragment.js';
+import { applyRelicBattleOpening } from '../../model/relicSystem.js';
 export class tuanben extends plugin {
   constructor() {
     super({
@@ -117,7 +118,7 @@ export class tuanben extends plugin {
     this.today = this.getTodayString();
       // ==== 新增系统状态管理 ====
     this.systemStatusKey = 'Xiuxian:Tuanben:System:Status';
-    this.CD_DURATION = 16 * 3600 * 1000; // 12小时CD（毫秒）
+    this.CD_DURATION = 24 * 3600 * 1000; // 狠人大帝、尸骸仙帝讨伐CD
     // 初始化系统状态
     this.initSystemStatus();
   }
@@ -182,8 +183,7 @@ export class tuanben extends plugin {
 // 修改setPlayerCD方法
 async setPlayerCD(userId) {
   const cdKey = `Xiuxian:Battle:PlayerCD:${userId}`;
-  // 存储当前时间戳，过期时间设为13小时（确保覆盖12小时）
-  await redis.set(cdKey, Date.now(), 'EX', 17 * 3600);
+  await redis.set(cdKey, Date.now(), 'EX', this.CD_DURATION / 1000);
 }
   
 // 修改checkPlayerCD方法
@@ -196,7 +196,7 @@ async checkPlayerCD(userId) {
   const cdTime = parseInt(cdTimestamp);
   const now = Date.now();
   
-  // 检查是否在12小时CD内
+  // 检查是否在讨伐CD内
   return (now - cdTime) < this.CD_DURATION;
 }
   
@@ -408,6 +408,9 @@ async createEmperorTeam(e) {
             p.已复活 = false;
             p.免疫控制 = 0;
             p.已死亡 = false;
+            p.护盾值 = 0;
+            delete p._遗珍开战护盾已应用;
+            applyRelicBattleOpening(p);
             
             return p;
         })
@@ -555,7 +558,7 @@ if (battleResult.result === "玩家胜利") {
     
     return e.reply([
       `您正处于讨伐冷却时间！`,
-      `上次参与讨伐后需等待16小时后才能再次参与`,
+      `上次参与讨伐后需等待${this.CD_DURATION / 3600000}小时后才能再次参与`,
       `剩余冷却时间: ${hours}小时${minutes}分钟`,
       `冷却结束后才能创建队伍`
     ].join('\n'));
@@ -665,7 +668,7 @@ async joinBossTeam(e) {
 
     return e.reply([
       `您正处于讨伐冷却时间！`,
-      `上次参与讨伐后需等待16小时后才能再次参与`,
+      `上次参与讨伐后需等待${this.CD_DURATION / 3600000}小时后才能再次参与`,
       `剩余冷却时间: ${hours}小时${minutes}分钟`,
       `冷却结束后才能加入队伍`
     ].join('\n'));
@@ -779,6 +782,8 @@ const playersData = await Promise.all(
         // 新增圆神相关状态
         p.分身 = [];         // 分身数组
         p.护盾值 = 0;        // 当前护盾值
+        delete p._遗珍开战护盾已应用;
+        applyRelicBattleOpening(p);
         p.减伤比例 = 0;      // 减伤比例（0表示无减伤）
         p.圆环之理激活 = false; // 是否已激活圆环之理（首次释放特殊效果）
         
@@ -1902,7 +1907,7 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
           (cnt2 == skill.cnt || skill.cnt == -1) &&
           Math.random() < skill.pr)
       ) {
-        if (skill.class === '功法') recordGongfaCombatTrigger(safeAttacker, skill);
+        if (skill.class === '功法') recordGongfaCombatTrigger(attacker, skill);
         // 构建技能消息
         let skillMsg = safeAttacker.名号 + skill.msg1;
         if (skill.msg2 !== '') {
@@ -1972,7 +1977,7 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
           (cnt2 == skill.cnt || skill.cnt == -1) &&
           Math.random() < skill.pr)
       ) {
-        if (skill.class === '功法') recordGongfaCombatTrigger(safeDefender, skill);
+        if (skill.class === '功法') recordGongfaCombatTrigger(defender, skill);
         // 构建技能消息
         let skillMsg = safeDefender.名号 + skill.msg1;
         if (skill.msg2 !== '') {
@@ -3467,6 +3472,15 @@ if (targetPlayer.分身 && targetPlayer.分身.length > 0) {
   const result = bossCopy.当前血量 <= 0 ? "玩家胜利" : "BOSS胜利";
   await addBattleLog(`战斗结束`);
   await addBattleLog(`结果：${result}`);
+
+  // 团本战斗使用副本对象，结束时将本场触发记录结算回真实玩家。
+  const proficiencyGains = await settleBattleGongfaProficiency(
+    playersData.map((combatant, index) => ({ source: players[index], combatant }))
+  );
+  for (const [playerId, gains] of Object.entries(proficiencyGains)) {
+    const playerName = players.find(player => String(player?.id ?? '').replace('qg_', '') === playerId)?.名号 || playerId;
+    await addBattleLog(`${playerName}本场功法熟练度：${Object.entries(gains).map(([name, amount]) => `${name}+${amount}`).join('、')}`);
+  }
   
   // 重置玩家状态
   this.resetPlayersStatus(playersData);
@@ -3482,7 +3496,8 @@ if (targetPlayer.分身 && targetPlayer.分身.length > 0) {
     msg: [],
     players_hp_change: playersHpChange,
     boss_hp_change: bossHpChange,
-    result: result
+    result: result,
+    proficiencyGains,
   };
 }
 

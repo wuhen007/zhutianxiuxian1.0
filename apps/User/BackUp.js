@@ -13,7 +13,7 @@ const YUNZAI_ROOT = path.resolve(PLUGIN_ROOT, '..', '..');
 const ROOT_DATA_PATH = path.join(PLUGIN_ROOT, 'data');
 const XIUXIAN_CONFIG_PATH = path.join(PLUGIN_ROOT, 'config', 'xiuxian');
 const ANNOUNCE_GROUPS_PATH = path.join(YUNZAI_ROOT, 'config', 'announceGroups.json');
-const REDIS_KEY_PATTERNS = [
+export const REDIS_KEY_PATTERNS = Object.freeze([
   'xiuxian:*',
   'Xiuxian:*',
   'tianjiao:*',
@@ -28,16 +28,28 @@ const REDIS_KEY_PATTERNS = [
   'jueling_loss:*',
   'jueling_loss_immune:*',
   'tianjige2:*',
-];
+]);
 
-async function listBackupRedisKeys() {
-  const keyLists = await Promise.all(REDIS_KEY_PATTERNS.map(pattern => redis.keys(pattern)));
+async function listRedisKeys(pattern) {
+  if (typeof redis.scanIterator !== 'function') return redis.keys(pattern);
+
+  const keys = [];
+  for await (const page of redis.scanIterator({ MATCH: pattern, COUNT: 500 })) {
+    if (Array.isArray(page)) keys.push(...page);
+    else keys.push(page);
+  }
+  return keys;
+}
+
+export async function listPluginRedisKeys() {
+  const keyLists = [];
+  for (const pattern of REDIS_KEY_PATTERNS) keyLists.push(await listRedisKeys(pattern));
   return [...new Set(keyLists.flat())];
 }
 
 async function readRedisSnapshot() {
   const snapshot = {};
-  const keys = await listBackupRedisKeys();
+  const keys = await listPluginRedisKeys();
 
   for (const key of keys) {
     const type = await redis.type(key);
@@ -67,7 +79,7 @@ async function restoreRedisSnapshot(snapshot) {
   const legacySnapshot = entries.length > 0 && entries.every(Array.isArray);
   const currentKeys = legacySnapshot
     ? await redis.keys('xiuxian:*')
-    : await listBackupRedisKeys();
+    : await listPluginRedisKeys();
   if (currentKeys.length) await Promise.all(currentKeys.map(key => redis.del(key)));
 
   for (const [key, entry] of Object.entries(snapshot)) {
@@ -207,7 +219,7 @@ export class BackUp extends plugin {
       e?.reply(`存档备份成功喵~\n${timeStr}`);
       console.log("备份存档耗时：", new Date().getTime() - opentime);
 
-      return true;
+      return saveFolder;
     } catch (err) {
       if (pendingFolder) fs.rmSync(pendingFolder, { recursive: true, force: true });
       e?.reply(`备份失败惹喵...\n${err.message}`);

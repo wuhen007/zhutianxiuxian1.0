@@ -106,16 +106,19 @@ async checkTimeRiverActions() {
 
     // 构建玩家战斗数据
     const A_player = {
+      id: player.id || usr_qq,
       名号: player.名号,
       攻击: player.攻击,
       防御: player.防御,
       当前血量: player.当前血量,
+      血量上限: player.血量上限,
       暴击率: player.暴击率,
       灵根: player.灵根,
       法球倍率: player.灵根.法球倍率,
       学习的功法: player.学习的功法,
       功法熟练度: player.功法熟练度,
       功法熟练度每日: player.功法熟练度每日,
+      战斗技能配置: player.战斗技能配置,
       仙宠: player.仙宠,
       mijinglevel_id: player.mijinglevel_id,
       xiangulevel_id: player.xiangulevel_id
