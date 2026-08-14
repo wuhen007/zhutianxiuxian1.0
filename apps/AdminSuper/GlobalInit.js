@@ -10,7 +10,7 @@
  * - #诸天初始化      发起灭维之战（需二次确认，60秒内有效）
  * - #确认诸天初始化  执行：清空玩家/纳戒/装备/丹药/内景地/小世界/
  *                    宗门/交易/任务/榜单/亲密度/师徒/若陀龙王，清理全部修仙redis，
- *                    重置时代、位面状态与位面事件
+ *                    重置时代、位面状态与位面事件，再入仙途冷却设为24小时
  * - #取消诸天初始化  取消本次灭维
  * - #同步公告群      将指令所在群设为唯一公告群
  * - #查看公告群      查看当前公告群列表
@@ -21,13 +21,21 @@
  *
  * 安全机制：
  * - 执行前自动备份所有受影响数据至 插件根/_backups/global_init_<时间戳>/
- * - 分步执行，单步失败不中断整体流程，最终汇总失败项
+ * - 执行期间持有全局初始化锁（globalInitGuard），阻断全部玩家/全局数据写入，
+ *   防止并发指令把刚清掉的数据写回；重复执行也会被锁拒绝。
+ * - 分步执行，单步失败不中断整体流程，最终汇总失败项；整体异常有兜底回复。
  */
 
 import fs from 'fs';
 import path from 'path';
 import { plugin, common, data, config } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
+import {
+  beginGlobalInit,
+  endGlobalInit,
+  isGlobalInitRunning,
+} from '../../utils/globalInitGuard.js';
+import { getDefaultRiftState } from '../../model/planeRiftFestival.js';
 import {
   SHOUYUAN_DIFFICULTIES,
   resolveShouyuanDifficulty,
@@ -96,9 +104,16 @@ const REALM_EVENTS_FILE = path.join(__PATH.data_path, 'weimian_events.json');
 
 /** 需要清理的 redis key 前缀模式（本插件专属前缀，不会波及其他插件） */
 const REDIS_PATTERNS = [
-  'xiuxian:*',        // 玩家动作锁/签到CD/宗门战CD/拍卖等
+  'xiuxian:*',        // 玩家动作锁/签到CD/宗门战CD/拍卖/永寂名单等
   'Xiuxian:*',        // 若陀龙王团本状态等
   'jueling_loss:*',   // 绝灵时代寿元损失
+  'jueling_loss_immune:*', // 绝灵免疫名单（与备份功能保持一致）
+  'tianjige2:*',      // 天机阁二楼缓存
+  'tianjiao:*',       // 天骄仇恨/伤害/恐惧/复活记录
+  'dao:rewrite:*',    // 大道至宝重写缓存
+  'guiyishizu*',      // 归一世祖状态（含 _ancestors）
+  'gaoyuan',          // 大劫（高原）记录
+  'zhutianxiuxian1.0Record2', // 世界 Boss 记录
 ];
 
 // ==================== 工具函数 ====================
@@ -442,6 +457,7 @@ export class GlobalInit extends plugin {
         '　自创功法帝经　玩家所创仙宠',
         '　时代年份归零　位面秩序重演',
         '　旧纪元位面事件全部抹去',
+        '　再入仙途冷却设为24小时',
         '',
         '执行前将自动备份至 _backups/ 目录。',
         `修仙公告群 已设为当前群：${groupId}。`,
@@ -491,9 +507,16 @@ export class GlobalInit extends plugin {
 
     pendingConfirm.delete(userQQ);
 
+    if (isGlobalInitRunning()) {
+      await e.reply('灭维之战已在执行中，不可重复祭天；请稍候再试。');
+      return true;
+    }
+    beginGlobalInit();
+
     const failures = [];
     const stats = {};
 
+    try {
     // ---------- 序章 ----------
     await e.reply(
       [
@@ -514,7 +537,7 @@ export class GlobalInit extends plugin {
         .toISOString()
         .replace(/[-:T]/g, '')
         .slice(0, 14);
-      const backupDir = path.join(__PATH.data_path, '../../_backups', `global_init_${ts}`);
+      const backupDir = path.join(__PATH.data_path, '..', '..', '_backups', `global_init_${ts}`);
       fs.mkdirSync(backupDir, { recursive: true });
 
       for (const [, getDir] of PLAYER_DIRS) backupIfExist(getDir(), backupDir);
@@ -527,6 +550,9 @@ export class GlobalInit extends plugin {
       backupIfExist(path.join(__PATH.lib_path, '仙宠列表.json'), backupDir);
       backupIfExist(data.filePathMap.weimianList, backupDir);
       backupIfExist(REALM_EVENTS_FILE, backupDir);
+      backupIfExist(path.join(__PATH.data_path, 'foreign_imperial_pass.json'), backupDir);
+      backupIfExist(path.join(__PATH.data_path, 'innate_treasure_state.json'), backupDir);
+      backupIfExist(path.join(__PATH.data_path, 'plane_rift_festival.json'), backupDir);
       stats.backup = backupDir;
       logger.mark(`[诸天初始化] 数据已备份至: ${backupDir}`);
     } catch (err) {
@@ -586,6 +612,57 @@ export class GlobalInit extends plugin {
     } catch (err) {
       failures.push('小世界列表');
       logger.error('[诸天初始化] 清理小世界失败', err);
+    }
+
+    // 异域远征（帝关叩关）状态归零
+    try {
+      const fipFile = path.join(__PATH.data_path, 'foreign_imperial_pass.json');
+      writeJson(fipFile, {
+        version: 1,
+        status: 'dormant',
+        campaign: 0,
+        wave: 0,
+        lastCheckedWorldYear: null,
+        nextWaveYear: null,
+        active: null,
+        prestige: {},
+        prisoners: [],
+        history: [],
+      });
+    } catch (err) {
+      failures.push('异域远征');
+      logger.error('[诸天初始化] 清理异域远征状态失败', err);
+    }
+
+    // 先天至宝全局状态归零（owners/equipped/decree/landscapeRealms）
+    try {
+      const itsFile = path.join(__PATH.data_path, 'innate_treasure_state.json');
+      writeJson(itsFile, {
+        owners: {},
+        equipped: {},
+        decree: null,
+        landscapeRealms: [],
+      });
+    } catch (err) {
+      failures.push('先天至宝状态');
+      logger.error('[诸天初始化] 清理先天至宝状态失败', err);
+    }
+
+    // 位面裂隙庆典状态归零（pity/activeRifts/history）
+    try {
+      const prfFile = path.join(__PATH.data_path, 'plane_rift_festival.json');
+      writeJson(prfFile, getDefaultRiftState());
+    } catch (err) {
+      failures.push('位面裂隙庆典');
+      logger.error('[诸天初始化] 清理位面裂隙庆典失败', err);
+    }
+
+    // 命名装备内存缓存同步归零（custom.json 已由 PLAYER_JSON_FILES 覆写为空数组）
+    try {
+      if (Array.isArray(data.namegive)) data.namegive = [];
+    } catch (err) {
+      failures.push('命名装备缓存');
+      logger.error('[诸天初始化] 清理命名装备缓存失败', err);
     }
 
     await e.reply(
@@ -652,6 +729,8 @@ export class GlobalInit extends plugin {
 
     try {
       const set = config.getConfig('xiuxian', 'xiuxian') || {};
+      set.CD = set.CD || {};
+      set.CD.reborn = 24 * 60;
       set.Era = set.Era || {};
       set.Era.current = { index: 0, years: 0, epoch: 1 };
       config.setConfig('xiuxian', 'xiuxian', set);
@@ -681,6 +760,7 @@ export class GlobalInit extends plugin {
         '',
         `${stats.redis ?? 0} 道天地烙印（redis）被原初之主一并祭去。`,
         '时光长河倒卷，岁月归零——神话时代 · 第一纪元 · 元年。',
+        '再入仙途冷却重定为 24 小时。',
         '诸天位面恢复完整，帝尊归来，成仙路与仙古秘境重归沉寂。',
         `${stats['位面事件'] ?? 0} 条旧纪元位面事件自史河中抹去。`,
       ].join('\n')
@@ -719,6 +799,25 @@ export class GlobalInit extends plugin {
     logger.mark(
       `[诸天初始化] 灭维之战完成 by ${userQQ}，统计: ${JSON.stringify(stats)}，失败项: ${failures.join(',') || '无'}`
     );
+    } catch (err) {
+      // 整体兜底：任一步骤外抛错（如 e.reply 被风控）时中止并提示恢复入口，避免"半清空"
+      logger.error('[诸天初始化] 灭维之战执行中断', err);
+      try {
+        await e.reply(
+          [
+            '【万维梵宇 · 灭维中断】',
+            '',
+            '灭维之战在执行中遭遇未知反噬，流程已中止。',
+            `旧界烙印封存于：${stats.backup || '（备份未完成，请查看后台日志）'}`,
+            '建议重启机器人，并从备份目录手动恢复受影响数据。',
+          ].join('\n')
+        );
+      } catch {
+        // 回复失败不阻塞锁释放
+      }
+    } finally {
+      endGlobalInit();
+    }
     return true;
   }
 }

@@ -7,6 +7,7 @@ import {
   markTribulationSnapshot,
 } from './tribulationLock.js';
 import { writeJsonAtomically } from '../utils/atomicJson.js';
+import { assertGlobalInitIdle } from '../utils/globalInitGuard.js';
 
 /*
   数据封装
@@ -423,6 +424,7 @@ this.gongfa_list = JSON.parse(
    * @param {Object} list 道法仙术玩家列表
    */
   saveDaofaList(list) {
+    assertGlobalInitIdle();
     const filePath = this.filePathMap.daofaList;
     try {
       writeJsonAtomically(filePath, list);
@@ -537,13 +539,14 @@ this.gongfa_list = JSON.parse(
  * @param data  getlist函数
  */
     writelist(list, path, data) {
-    try {
-    const filePath = `${path}/${list}`;
-    writeJsonAtomically(filePath, data);
-            } catch (error) {
-              console.error('写入文件错误：' + error);
-            }
-          }
+      assertGlobalInitIdle();
+      try {
+        const filePath = `${path}/${list}`;
+        writeJsonAtomically(filePath, data);
+      } catch (error) {
+        console.error('写入文件错误：' + error);
+      }
+    }
 
   /**
    * 获取文件数据(user_qq为空查询item下的file_name文件)
@@ -613,6 +616,7 @@ this.gongfa_list = JSON.parse(
 
   // 保存自创帝经列表到文件
   saveCustomDiJing(customSutras) {
+    assertGlobalInitIdle();
     const filePath = path.join(this.lib_path, '玩家自创帝经.json');
     try {
       writeJsonAtomically(filePath, customSutras);
@@ -629,6 +633,7 @@ this.gongfa_list = JSON.parse(
    * @param data
    */
   setData(file_name, user_qq, data) {
+    assertGlobalInitIdle();
     if (user_qq && ['player', 'equipment', 'najie'].includes(file_name)) {
       assertTribulationSnapshotCurrentSync(user_qq, data);
     }
@@ -674,6 +679,7 @@ this.gongfa_list = JSON.parse(
    * @param data
    */
   setAssociation(file_name, data) {
+    assertGlobalInitIdle();
     let file_path;
     let dir;
     file_path = this.filePathMap.association;
