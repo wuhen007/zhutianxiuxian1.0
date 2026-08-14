@@ -256,6 +256,16 @@ async draw_player_mingge(e) {
     let atItem = e.message.find((item) => item.type === "at"); 
     let B_qq = atItem.qq;
     
+    // ===== QQBot 被帮助者未绑定拦截 =====
+    if (String(atItem?.qqbot_user_id || '').trim() && atItem.qqbot_user_id == atItem.qq) {
+      const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+      if (xiuxianConfig?.switch?.requireQQBotBind !== false) {
+        e.reply('对方尚未绑定 QQ 账号，无法为其踏入仙途。\n请让对方先发送 #绑定QQ 你的QQ号 完成绑定。');
+        return;
+      }
+    }
+    // ===== 被帮助者未绑定拦截 End =====
+    
     if (B_qq == usr_qq) {
         e.reply("不能帮助自己，请使用#踏入仙途");
         return;
@@ -722,6 +732,16 @@ async daily_lottery(e) {
   //#踏入仙途
   async Create_player(e, isInitialEntry = true) {
     if (!verc({ e })) return false;
+    // ===== QQBot 未绑定拦截 =====
+    // 官方QQBot事件：qqbot_user_id 为 openid，绑定后 user_id 会被映射成 QQ 号
+    if (String(e?.qqbot_user_id || '').trim() && e.qqbot_user_id == e.user_id) {
+      const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+      if (xiuxianConfig?.switch?.requireQQBotBind !== false) {
+        e.reply('仙途非儿戏，须先有凡尘身份。\n你尚未绑定 QQ 账号，无法踏入仙途。\n请在私聊或群内发送 #绑定QQ 你的QQ号 完成绑定后再来。');
+        return false;
+      }
+    }
+    // ===== QQBot 未绑定拦截 End =====
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);
     //判断是否为匿名创建存档
