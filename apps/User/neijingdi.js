@@ -1,10 +1,16 @@
 import { plugin, verc, data, config } from '../../api/api.js';
 import {
-    Read_najie, Read_player, Write_player, exist_najie_thing, Add_najie_thing,
-    get_neijingdi_img, foundthing, get_log_img, Write_inner_world, Read_inner_world
+    Read_najie, Read_player, Write_player, Write_najie,
+    get_neijingdi_img, get_log_img, Write_inner_world, Read_inner_world, __PATH
 } from '../../model/xiuxian.js';
 import { getMinggeEffects } from '../../model/mingge.js';
 import { recordWenXianTrial } from '../../model/wenxianling.js';
+import {
+    moveNamedItemStacks,
+    requiresInnerWorldNaming
+} from '../../model/innerWorldTransfer.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -79,24 +85,27 @@ class InnerWorldManager {
         return { exists: false };
     }
 
-    // 判定是否为百分比装备（atk/def/HP 以百分比加成形式存储，沿用 #赋名 资格判定标准）
-    isPercentEquipment(item) {
-        const atk = Number(item?.atk) || 0;
-        const def = Number(item?.def) || 0;
-        const hp = Number(item?.HP) || 0;
-        // 绝对值过大（几十亿级别）的不是百分比装备
-        if (atk >= 99 || def >= 99 || hp >= 99) return false;
-        return (
-            atk >= 1.5 ||
-            def >= 1.2 ||
-            (item?.type === '法宝' && (atk >= 1 || def >= 1)) ||
-            (atk + def) > 1.95
-        );
+    requiresNaming(item, usr_qq) {
+        return requiresInnerWorldNaming(item, usr_qq);
     }
 
-    // 判定百分比装备是否已赋名（#赋名 流程会写入 owner_name 字段）
-    isNamedEquipment(item) {
-        return !!item?.owner_name;
+    async commitTransfer(usr_qq, najie, innerWorld) {
+        const transaction = new FileRollbackTransaction();
+        transaction.capture(path.join(__PATH.najie_path, `${usr_qq}.json`));
+        transaction.capture(path.join(__PATH.inner_world_path, `${usr_qq}.json`));
+
+        try {
+            await Write_najie(usr_qq, najie);
+            await Write_inner_world(usr_qq, innerWorld);
+            transaction.commit();
+        } catch (error) {
+            try {
+                transaction.rollback();
+            } catch (rollbackError) {
+                throw new AggregateError([error, rollbackError], '内景地存取失败且回滚不完整');
+            }
+            throw error;
+        }
     }
 
     // 存入物品到内景地
@@ -138,154 +147,36 @@ class InnerWorldManager {
             
             const category = itemCheck.category;
 
-            // ==== 2.5 百分比装备必须已赋名才能存入 ====
-            if (category === '装备') {
-                const unnamedPercentItems = itemCheck.items.filter(i =>
-                    this.isPercentEquipment(i) && !this.isNamedEquipment(i)
-                );
-                if (unnamedPercentItems.length > 0) {
-                    return this.showError(e, [
-                        ' 存放受限',
-                        `【${name}】为百分比装备`,
-                        '未赋名的百分比装备无法存入内景地',
-                        '请先使用 #赋名原装备名*新名字 为其命名',
-                        '赋名后可正常存入'
-                    ].join('\n'));
-                }
-            }
-
-            // ==== 3. 获取物品详情 ====
-            const item = await foundthing(name);
-            if (!item) {
+            // ==== 2.5 仅拦截当前玩家自己炼制且未赋名的百分比装备 ====
+            const restrictedItems = category === '装备'
+                ? itemCheck.items.filter(item => this.requiresNaming(item, usr_qq))
+                : [];
+            const eligibleItems = category === '装备'
+                ? itemCheck.items.filter(item => !this.requiresNaming(item, usr_qq))
+                : itemCheck.items;
+            if (eligibleItems.length === 0) {
                 return this.showError(e, [
-                    ' 物品不存在',
-                    `名称: ${name}`,
-                    '请检查:',
-                    '1. 名称是否完全匹配',
-                    '2. 是否已获得该物品'
+                    ' 存放受限',
+                    `【${name}】为你炼制的百分比装备`,
+                    '自己炼制且未赋名的百分比装备无法存入内景地',
+                    '请先使用 #赋名原装备名*新名字 为其命名'
                 ].join('\n'));
             }
 
-            // ==== 4. 计算存入数量 ====
-            let storeQty;
-            let itemPinji = 0; // 默认品级为0
-            
-            if (isStoreAll) {
-                const najie = await Read_najie(usr_qq);
-                // 对于装备，需要找到具体的品级
-                if (category === '装备') {
-                    const najieItems = najie[category]?.filter(i => i.name === name);
-                    if (najieItems && najieItems.length > 0) {
-                        // 检查是否有品级
-                        const hasPinjiItems = najieItems.filter(i => i.pinji !== undefined && i.pinji !== null);
-                        const noPinjiItems = najieItems.filter(i => i.pinji === undefined || i.pinji === null);
-                        
-                        if (hasPinjiItems.length > 0) {
-                            // 有品级的装备，按品级分组存储
-                            itemPinji = hasPinjiItems[0].pinji || 0;
-                            storeQty = hasPinjiItems.reduce((sum, i) => sum + i.数量, 0);
-                        } else {
-                            // 没有品级的装备，统一存储
-                            itemPinji = -1; // 标记为无品级
-                            storeQty = noPinjiItems.reduce((sum, i) => sum + i.数量, 0);
-                        }
-                    } else {
-                        storeQty = 0;
-                    }
-                } else if (category === '仙宠') {
-                    // 仙宠没有品级，直接累加数量
-                    const najieItems = najie[category]?.filter(i => i.name === name);
-                    if (najieItems && najieItems.length > 0) {
-                        storeQty = najieItems.reduce((sum, i) => sum + i.数量, 0);
-                    } else {
-                        storeQty = 0;
-                    }
-                } else {
-                    const najieItem = najie[category]?.find(i => i.name === name);
-                    storeQty = najieItem ? najieItem.数量 : 0;
-                }
-            } else {
-    storeQty = parseInt(quantity);
-    
-    // 对于装备，需要确定品级
-    if (category === '装备') {
-        const najie = await Read_najie(usr_qq);
-        const najieItems = najie[category]?.filter(i => i.name === name);
-        if (najieItems && najieItems.length > 0) {
-            // 检查是否有品级
-            const hasPinjiItems = najieItems.filter(i => i.pinji !== undefined && i.pinji !== null);
-            const noPinjiItems = najieItems.filter(i => i.pinji === undefined || i.pinji === null);
-            
-            if (hasPinjiItems.length > 0) {
-                // 有品级的装备，取品级最高的
-                const highestPinjiItem = hasPinjiItems.reduce((prev, current) => 
-                    (prev.pinji > current.pinji) ? prev : current
-                );
-                itemPinji = highestPinjiItem.pinji || 0;
-                
-                // 检查有品级装备的数量是否足够
-                const totalAvailable = hasPinjiItems.reduce((sum, i) => sum + i.数量, 0);
-                if (storeQty > totalAvailable) {
-                    return this.showError(e, [
-                        ' 数量不足',
-                        `请求数量: ${storeQty}`,
-                        `可用数量: ${totalAvailable}`,
-                        `装备: ${name} (有品级)`,
-                        '提示: 使用 #查看纳戒 确认数量'
-                    ].join('\n'));
-                }
-            } else {
-                // 没有品级的装备
-                itemPinji = -1; // 标记为无品级
-                
-                // 检查无品级装备的数量是否足够
-                const totalAvailable = noPinjiItems.reduce((sum, i) => sum + i.数量, 0);
-                if (storeQty > totalAvailable) {
-                    return this.showError(e, [
-                        ' 数量不足',
-                        `请求数量: ${storeQty}`,
-                        `可用数量: ${totalAvailable}`,
-                        `装备: ${name} (无品级)`,
-                        '提示: 使用 #查看纳戒 确认数量'
-                    ].join('\n'));
-                }
+            // ==== 3. 按纳戒中的实际实例计算可存数量 ====
+            const item = eligibleItems[0];
+            const availableQty = eligibleItems.reduce((sum, current) => sum + current.数量, 0);
+            const storeQty = isStoreAll ? availableQty : parseInt(quantity);
+            const itemPinji = item.pinji ?? -1;
+            if (storeQty > availableQty) {
+                return this.showError(e, [
+                    ' 数量不足',
+                    `请求数量: ${storeQty}`,
+                    `可用数量: ${availableQty}`,
+                    restrictedItems.length > 0 ? '其余自炼百分比装备需赋名后才能存入' : '',
+                    '提示: 使用 #查看纳戒 确认数量'
+                ].filter(Boolean).join('\n'));
             }
-        } else {
-            return this.showError(e, [
-                ' 物品不存在',
-                `名称: ${name}`,
-                '提示: 使用 #查看纳戒 确认物品'
-            ].join('\n'));
-        }
-    } else {
-        // 对于非装备物品，进行数量检查
-        const najie = await Read_najie(usr_qq);
-        let availableQty = 0;
-        
-        if (category === '仙宠') {
-            // 仙宠可能有多个同名的，累加数量
-            const najieItems = najie[category]?.filter(i => i.name === name);
-            if (najieItems && najieItems.length > 0) {
-                availableQty = najieItems.reduce((sum, i) => sum + i.数量, 0);
-            }
-        } else {
-            // 其他类别，直接查找
-            const najieItem = najie[category]?.find(i => i.name === name);
-            availableQty = najieItem ? najieItem.数量 : 0;
-        }
-        
-        if (storeQty > availableQty) {
-            return this.showError(e, [
-                ' 数量不足',
-                `请求数量: ${storeQty}`,
-                `可用数量: ${availableQty}`,
-                `物品: ${name}`,
-                `类别: ${category}`,
-                '提示: 使用 #查看纳戒 确认数量'
-            ].join('\n'));
-        }
-    }
-}
 
 
             if (storeQty <= 0) {
@@ -312,92 +203,32 @@ class InnerWorldManager {
                 ].join('\n'));
             }
 
-            // ==== 6. 执行存入操作 ====
-            // 从纳戒扣除（考虑品级）
-            if (category === '装备') {
-                if (itemPinji === -1) {
-                    // 无品级装备，不传递品级参数
-                    await Add_najie_thing(usr_qq, name, category, -storeQty);
-                } else {
-                    // 有品级装备，传递品级参数
-                    await Add_najie_thing(usr_qq, name, category, -storeQty, itemPinji);
-                }
-            } else {
-                // 仙宠和其他物品不需要品级
-                await Add_najie_thing(usr_qq, name, category, -storeQty);
-            }
-            
-            // 添加到内景地
+            // ==== 6. 原样搬运物品实例并同时提交纳戒、内景地 ====
+            const najie = await Read_najie(usr_qq);
             if (!innerWorld[category]) innerWorld[category] = [];
-            
-            // 对于装备，需要按品级分开存储
-            if (category === '装备') {
-                const existing = innerWorld[category].find(i => 
-                    i.name === name && 
-                    i.pinji === itemPinji
-                );
-                
-                if (existing) {
-                    existing.数量 += storeQty;
-                } else {
-                    const newItem = {
-                        ...item,
-                        数量: storeQty,
-                        存入时间: Date.now()
-                    };
-                    
-                    // 只有有品级的装备才设置pinji属性
-                    if (itemPinji !== -1) {
-                        newItem.pinji = itemPinji;
-                    }
-                    
-                    innerWorld[category].push(newItem);
-                }
-            } else if (category === '仙宠') {
-                // 仙宠没有品级，按名称存储
-                const existing = innerWorld[category].find(i => i.name === name);
-                
-                if (existing) {
-                    existing.数量 += storeQty;
-                } else {
-                    innerWorld[category].push({
-                        ...item,
-                        数量: storeQty,
-                        存入时间: Date.now()
-                    });
-                }
-            } else {
-                const existing = innerWorld[category].find(i => i.name === name);
-                
-                if (existing) {
-                    existing.数量 += storeQty;
-                } else {
-                    innerWorld[category].push({
-                        ...item,
-                        数量: storeQty,
-                        存入时间: Date.now()
-                    });
-                }
-            }
+            const transfer = moveNamedItemStacks(najie[category], innerWorld[category], {
+                name,
+                quantity: storeQty,
+                filter: current => category !== '装备' || !this.requiresNaming(current, usr_qq),
+                toInnerWorld: true
+            });
+            if (transfer.moved !== storeQty) throw new Error('纳戒物品数量在存入前发生变化');
             
             innerWorld.当前容量 += itemSize;
             innerWorld.最后更新时间 = Date.now();
-            await Write_inner_world(usr_qq, innerWorld);
+            await this.commitTransfer(usr_qq, najie, innerWorld);
 
             // ==== 7. 返回操作结果 ====
             const nowCount = innerWorld[category].reduce((sum, i) => {
-                if (category === '装备') {
-                    return i.name === name && i.pinji === itemPinji ? sum + i.数量 : sum;
-                } else if (category === '仙宠') {
-                    return i.name === name ? sum + i.数量 : sum;
-                } else {
-                    return i.name === name ? sum + i.数量 : sum;
-                }
+                return i.name === name ? sum + i.数量 : sum;
             }, 0);
             
             let pinjiText = '';
             if (category === '装备') {
-                if (itemPinji === -1) {
+                const pinji = [...new Set(transfer.movedItems.map(i => i.pinji).filter(i => i != null))];
+                if (pinji.length > 1) {
+                    pinjiText = '品级: 多品级';
+                } else if (itemPinji === -1) {
                     pinjiText = '品级: 无品级';
                 } else {
                     pinjiText = `品级: ${this.PINJI_MAP[itemPinji] || itemPinji}`;
@@ -412,6 +243,7 @@ class InnerWorldManager {
                 `当前总量: ${nowCount}`,
                 `占用空间: ${itemSize}格`,
                 `剩余容量: ${innerWorld.最大容量 - innerWorld.当前容量}格`,
+                restrictedItems.length > 0 ? `已跳过 ${restrictedItems.length} 组自炼未赋名装备` : '',
                 `取出指令: #取${name}*数量`
             ].filter(line => line !== '').join('\n'));
 
@@ -494,49 +326,18 @@ class InnerWorldManager {
                 }
             }
 
-            // ==== 4. 执行取出操作 ====
-            let remaining = takeQty;
-            const updatedItems = [];
-            let releasedSpace = 0;
-
-            // 先进先出原则（按存入时间排序）
-            targetItems.sort((a, b) => a.存入时间 - b.存入时间);
-            
-            for (const item of targetItems) {
-                if (remaining <= 0) break;
-                
-                const takeFromThis = Math.min(remaining, item.数量);
-                item.数量 -= takeFromThis;
-                remaining -= takeFromThis;
-                releasedSpace += this.getItemSize({...item, 数量: takeFromThis}, targetCategory);
-
-                // 对于装备，需要传递品级信息
-                if (targetCategory === '装备' ) {
-                    if (item.pinji !== undefined && item.pinji !== null) {
-                        // 有品级的装备，传递品级参数
-                        await Add_najie_thing(usr_qq, item.name, targetCategory, takeFromThis, item.pinji);
-                    } else {
-                        // 无品级的装备，不传递品级参数
-                        await Add_najie_thing(usr_qq, item.name, targetCategory, takeFromThis);
-                    }
-                } else {
-                    await Add_najie_thing(usr_qq, item.name, targetCategory, takeFromThis);
-                }
-
-                if (item.数量 > 0) {
-                    updatedItems.push(item);
-                }
-            }
-
-            // 更新内景地数据
-            innerWorld[targetCategory] = [
-                ...innerWorld[targetCategory].filter(i => !targetItems.includes(i)),
-                ...updatedItems
-            ].filter(i => i.数量 > 0);
-
-            innerWorld.当前容量 -= releasedSpace;
+            // ==== 4. 原样搬运物品实例并同时提交纳戒、内景地 ====
+            const najie = await Read_najie(usr_qq);
+            if (!najie[targetCategory]) najie[targetCategory] = [];
+            const transfer = moveNamedItemStacks(innerWorld[targetCategory], najie[targetCategory], {
+                name,
+                quantity: takeQty
+            });
+            if (transfer.moved !== takeQty) throw new Error('内景地物品数量在取出前发生变化');
+            const releasedSpace = this.getItemSize({ 数量: takeQty }, targetCategory);
+            innerWorld.当前容量 = Math.max(0, innerWorld.当前容量 - releasedSpace);
             innerWorld.最后更新时间 = Date.now();
-            await Write_inner_world(usr_qq, innerWorld);
+            await this.commitTransfer(usr_qq, najie, innerWorld);
 
             // ==== 5. 返回操作结果 ====
             const remainingTotal = innerWorld[targetCategory]
@@ -680,6 +481,11 @@ export class InnerWorld extends plugin {
 
     async storeAllToInnerWorld(e) {
         const usr_qq = e.user_id.toString().replace('qg_','');
+        return withPlayerMutationLock(usr_qq, () => this.storeAllToInnerWorldLocked(e));
+    }
+
+    async storeAllToInnerWorldLocked(e) {
+        const usr_qq = e.user_id.toString().replace('qg_','');
         
         try {
             // ==== 1. 基础验证 ====
@@ -697,13 +503,13 @@ export class InnerWorld extends plugin {
             }
 
             // ==== 2. 智能筛选物品 ====
-            const storePlan = this.generateStorePlan(najie, innerWorld);
+            const storePlan = this.generateStorePlan(najie, innerWorld, usr_qq);
             
             if (storePlan.totalItems === 0) {
                 if (storePlan.skipped.length > 0) {
                     return e.reply(await get_log_img([
                         ' 未存入任何物品',
-                        '以下百分比装备未赋名，已自动跳过：',
+                        '以下自己炼制的百分比装备未赋名，已自动跳过：',
                         ...storePlan.skipped.slice(0, 10),
                         storePlan.skipped.length > 10 ? `...共${storePlan.skipped.length}件` : '',
                         '请先用 #赋名原装备名*新名字 命名后再存入'
@@ -725,60 +531,23 @@ export class InnerWorld extends plugin {
             
             for (const category in storePlan.items) {
                 for (const item of storePlan.items[category]) {
-                    try {
-                        // 从纳戒移除（考虑品级）
-                        if (category === '装备' ) {
-                            if (item.pinji !== undefined && item.pinji !== null) {
-                                await Add_najie_thing(usr_qq, item.name, category, -item.count, item.pinji);
-                            } else {
-                                await Add_najie_thing(usr_qq, item.name, category, -item.count);
-                            }
-                        } else {
-                            await Add_najie_thing(usr_qq, item.name, category, -item.count);
-                        }
-                        
-                        // 添加到内景地
-                        const existing = innerWorld[category]?.find(i => 
-                            i.name === item.name && 
-                            (category === '装备' ? i.pinji === item.pinji : true)
-                        );
-                        
-                        if (existing) {
-                            existing.数量 += item.count;
-                        } else {
-                            if (!innerWorld[category]) innerWorld[category] = [];
-                            
-                            const itemData = await foundthing(item.name);
-                            if (itemData) {
-                                const newItem = {
-                                    ...itemData,
-                                    数量: item.count,
-                                    存入时间: Date.now()
-                                };
-                                
-                                if (category === '装备') {
-                                    if (item.pinji !== undefined && item.pinji !== null) {
-                                        newItem.pinji = item.pinji;
-                                    }
-                                }
-                                // 仙宠没有品级，不设置pinji
-                                
-                                innerWorld[category].push(newItem);
-                            }
-                        }
-                        
-                        successCount++;
-                        results.push(`✔ ${item.name} ×${item.count}`);
-                    } catch (err) {
-                        results.push(`✘ ${item.name} (失败: ${err.message})`);
-                    }
+                    if (!innerWorld[category]) innerWorld[category] = [];
+                    const transfer = moveNamedItemStacks(najie[category], innerWorld[category], {
+                        name: item.name,
+                        quantity: item.count,
+                        template: item.data,
+                        toInnerWorld: true
+                    });
+                    if (transfer.moved !== item.count) throw new Error(`${item.name}数量在存入前发生变化`);
+                    successCount += transfer.moved;
+                    results.push(`✔ ${item.name} ×${item.count}`);
                 }
             }
 
             // ==== 4. 更新空间数据 ====
             innerWorld.当前容量 = storePlan.newUsedSpace;
             innerWorld.最后更新时间 = Date.now();
-            await Write_inner_world(usr_qq, innerWorld);
+            await this.manager.commitTransfer(usr_qq, najie, innerWorld);
 
             // ==== 5. 生成报告 ====
             const remainingSpace = innerWorld.最大容量 - innerWorld.当前容量;
@@ -787,7 +556,7 @@ export class InnerWorld extends plugin {
                 `◇ 存入物品: ${storePlan.totalItems}件`,
                 `◇ 成功数量: ${successCount}件`,
                 `◇ 跳过数量: ${storePlan.skipped.length}件`,
-                `◇ 释放空间: ${storePlan.totalSpace}格`,
+                `◇ 占用空间: ${storePlan.totalSpace}格`,
                 `◇ 剩余容量: ${remainingSpace}格`,
                 '【操作详情】',
                 ...results.slice(0, 15), // 最多显示15条
@@ -795,7 +564,7 @@ export class InnerWorld extends plugin {
             ];
 
             if (storePlan.skipped.length > 0) {
-                report.push('【已跳过（百分比装备未赋名）】');
+                report.push('【已跳过（自炼百分比装备未赋名）】');
                 report.push(...storePlan.skipped.slice(0, 10));
                 if (storePlan.skipped.length > 10) report.push(`...共${storePlan.skipped.length}件`);
                 report.push('提示: 先用 #赋名原装备名*新名字 命名后再存入');
@@ -816,13 +585,13 @@ export class InnerWorld extends plugin {
     }
 
     // 生成智能存储方案
-    generateStorePlan(najie, innerWorld) {
+    generateStorePlan(najie, innerWorld, usr_qq) {
         const plan = {
             items: {},
             totalItems: 0,
             totalSpace: 0,
             newUsedSpace: innerWorld.当前容量,
-            skipped: []  // 记录因未赋名而被跳过的百分比装备
+            skipped: []  // 记录因未赋名而被跳过的自炼百分比装备
         };
 
         // 扫描纳戒
@@ -832,8 +601,8 @@ export class InnerWorld extends plugin {
             plan.items[category] = [];
             
             for (const item of najie[category]) {
-                // ==== 百分比装备必须已赋名才能存入内景地 ====
-                if (category === '装备' && this.manager.isPercentEquipment(item) && !this.manager.isNamedEquipment(item)) {
+                // ==== 自己炼制的百分比装备必须已赋名 ====
+                if (category === '装备' && this.manager.requiresNaming(item, usr_qq)) {
                     plan.skipped.push(`${item.name}`);
                     continue;
                 }
@@ -866,6 +635,11 @@ export class InnerWorld extends plugin {
     }
 // 添加按类别取出的方法
 async takeCategoryFromInnerWorld(e) {
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    return withPlayerMutationLock(usr_qq, () => this.takeCategoryFromInnerWorldLocked(e));
+}
+
+async takeCategoryFromInnerWorldLocked(e) {
     const usr_qq = e.user_id.toString().replace('qg_', '');
     
     // 提取类别名称
@@ -902,36 +676,26 @@ async takeCategoryFromInnerWorld(e) {
         let totalTaken = 0;
         let releasedSpace = 0;
         const results = [];
+        const najie = await Read_najie(usr_qq);
+        if (!najie[category]) najie[category] = [];
 
-        for (const item of categoryItems) {
-            try {
-                // 计算物品占用空间
-                const itemSize = this.getItemSize(item, category);
-                
-                // 添加到纳戒（考虑品级）
-                if (category === '装备') {
-                    if (item.pinji !== undefined && item.pinji !== null) {
-                        await Add_najie_thing(usr_qq, item.name, category, item.数量, item.pinji);
-                    } else {
-                        await Add_najie_thing(usr_qq, item.name, category, item.数量);
-                    }
-                } else {
-                    await Add_najie_thing(usr_qq, item.name, category, item.数量);
-                }
-                
-                totalTaken += item.数量;
-                releasedSpace += itemSize;
-                results.push(`✔ ${item.name} ×${item.数量}`);
-            } catch (err) {
-                results.push(`✘ ${item.name} (失败: ${err.message})`);
-            }
+        for (const item of [...categoryItems]) {
+            const count = item.数量;
+            const transfer = moveNamedItemStacks(categoryItems, najie[category], {
+                name: item.name,
+                quantity: count,
+                template: item
+            });
+            if (transfer.moved !== count) throw new Error(`${item.name}数量在取出前发生变化`);
+            totalTaken += count;
+            releasedSpace += this.getItemSize({ 数量: count }, category);
+            results.push(`✔ ${item.name} ×${count}`);
         }
 
         // === 4. 更新内景地数据 ===
-        innerWorld[category] = []; // 清空该类别
-        innerWorld.当前容量 -= releasedSpace;
+        innerWorld.当前容量 = Math.max(0, innerWorld.当前容量 - releasedSpace);
         innerWorld.最后更新时间 = Date.now();
-        await Write_inner_world(usr_qq, innerWorld);
+        await this.manager.commitTransfer(usr_qq, najie, innerWorld);
 
         // === 5. 返回操作结果 ===
         const remainingSpace = innerWorld.最大容量 - innerWorld.当前容量;
@@ -1071,14 +835,21 @@ async takeCategoryFromInnerWorld(e) {
     }
 
     async handleStore(e) {
-        return await this.manager.storeToInnerWorld(e);
+        const usr_qq = e.user_id.toString().replace('qg_', '');
+        return withPlayerMutationLock(usr_qq, () => this.manager.storeToInnerWorld(e));
     }
     
     async handleTake(e) {
-        return await this.manager.takeFromInnerWorld(e);
+        const usr_qq = e.user_id.toString().replace('qg_', '');
+        return withPlayerMutationLock(usr_qq, () => this.manager.takeFromInnerWorld(e));
     }
 
     async takeAllFromInnerWorld(e) {
+        const usr_qq = e.user_id.toString().replace('qg_', '');
+        return withPlayerMutationLock(usr_qq, () => this.takeAllFromInnerWorldLocked(e));
+    }
+
+    async takeAllFromInnerWorldLocked(e) {
         const usr_qq = e.user_id.toString().replace('qg_', '');
         const categoryFilter = e.msg.match(/^#(?:一键取出|全部取出)内景地\s+(.*)/)?.[1]?.trim();
 
@@ -1098,6 +869,7 @@ async takeCategoryFromInnerWorld(e) {
             let totalTaken = 0;
             let releasedSpace = 0;
             const resultMessages = [];
+            const najie = await Read_najie(usr_qq);
             
             // === 3. 确定操作范围 ===
             const targetCategories = categoryFilter 
@@ -1124,36 +896,31 @@ async takeCategoryFromInnerWorld(e) {
                 const categoryItems = innerWorld[category];
                 let categoryTaken = 0;
                 let categorySpace = 0;
+                if (!najie[category]) najie[category] = [];
 
-                for (const item of categoryItems) {
-                    // 添加到纳戒（考虑品级）
-                    if (category === '装备') {
-                        if (item.pinji !== undefined && item.pinji !== null) {
-                            await Add_najie_thing(usr_qq, item.name, category, item.数量, item.pinji);
-                        } else {
-                            await Add_najie_thing(usr_qq, item.name, category, item.数量);
-                        }
-                    } else {
-                        await Add_najie_thing(usr_qq, item.name, category, item.数量);
-                    }
-                    
-                    categoryTaken += item.数量;
-                    categorySpace += this.getItemSize(item, category);
+                for (const item of [...categoryItems]) {
+                    const count = item.数量;
+                    const transfer = moveNamedItemStacks(categoryItems, najie[category], {
+                        name: item.name,
+                        quantity: count,
+                        template: item
+                    });
+                    if (transfer.moved !== count) throw new Error(`${item.name}数量在取出前发生变化`);
+                    categoryTaken += count;
+                    categorySpace += this.getItemSize({ 数量: count }, category);
                 }
 
                 totalTaken += categoryTaken;
                 releasedSpace += categorySpace;
                 resultMessages.push(`[${category}] 取出 ${categoryTaken}件`);
 
-                // 清空该分类
-                innerWorld[category] = [];
             }
 
             // === 5. 更新数据 ===
             if (totalTaken > 0) {
-                innerWorld.当前容量 -= releasedSpace;
+                innerWorld.当前容量 = Math.max(0, innerWorld.当前容量 - releasedSpace);
                 innerWorld.最后更新时间 = Date.now();
-                await Write_inner_world(usr_qq, innerWorld);
+                await this.manager.commitTransfer(usr_qq, najie, innerWorld);
             }
 
             // === 6. 返回结果 ===
