@@ -29,13 +29,17 @@ import {
   recordFactionJoin,
   wasFactionRewardClaimedToday,
 } from '../../model/factionSystem.js';
-import { getShanghaiDateKey } from '../../model/weimianTravel.js';
+import { PLACE_LOCATION_MAP, getShanghaiDateKey } from '../../model/weimianTravel.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 function battleExcerpt(messages) {
   if (!Array.isArray(messages)) return [];
   if (messages.length <= 12) return messages;
   return [...messages.slice(0, 3), '……战斗过程过长，仅展示末段……', ...messages.slice(-8)];
+}
+
+function isInShengxuPlane(player) {
+  return Number(player?.power_place) === PLACE_LOCATION_MAP.圣墟位面;
 }
 
 function stoneJarRequirements(player) {
@@ -45,7 +49,7 @@ function stoneJarRequirements(player) {
   const missingExtremes = ['无敌画卷', '观想真形'].filter(name => !extremes.includes(name));
   const reasons = [];
   if (Number(player?.huafenlevel_id) < 11) reasons.push('境界需达到映照诸天');
-  if (cleared < 4) reasons.push(`需踏破4处不同圣墟副本（当前${cleared}）`);
+  if (cleared < 6) reasons.push(`需踏破6处不同圣墟副本（当前${cleared}）`);
   if (clues < STONE_JAR_CLUE_REQUIREMENT) reasons.push(`需石罐线索${STONE_JAR_CLUE_REQUIREMENT}枚（当前${clues}）`);
   if (missingExtremes.length) reasons.push(`需极境：${missingExtremes.join('、')}`);
   if (Number(player?.花粉隐患) > 50) reasons.push(`花粉隐患需不高于50（当前${player.花粉隐患}）`);
@@ -81,9 +85,9 @@ export class ShengxuContent extends plugin {
   async dungeons(e) {
     if (!verc({ e })) return false;
     const lines = SHENGXU_DUNGEONS.map(dungeon =>
-      `${dungeon.name}｜需${dungeon.requiredLevel}阶花粉境界｜${dungeon.monster}｜${dungeon.medium}`
+      `【${dungeon.chapter}】${dungeon.name}｜花粉${dungeon.requiredLevel}阶｜${dungeon.monster}｜${dungeon.medium}`
     );
-    return e.reply(['【圣墟副本】', ...lines, '探索：#探索圣墟 地点名（每处每日一次）'].join('\n'));
+    return e.reply(['【圣墟位面副本】', '需先发送 #穿梭圣墟位面', ...lines, '探索：#探索圣墟 地点名（每处每日一次）'].join('\n'));
   }
 
   async explore(e) {
@@ -96,6 +100,7 @@ export class ShengxuContent extends plugin {
     return withPlayerMutationLock(userId, async () => {
       let player = await Read_player(userId);
       if (!isCultivatingExtraPath(player, 'huafen')) return e.reply('只有花粉进化路修士可以进入圣墟副本。');
+      if (!isInShengxuPlane(player)) return e.reply('圣墟副本只存在于圣墟位面，请先发送 #穿梭圣墟位面。');
       if (Number(player.huafenlevel_id) < dungeon.requiredLevel) {
         return e.reply(`探索${dungeon.name}需花粉进化序列达到${dungeon.requiredLevel}，当前为${player.huafenlevel_id}。`);
       }
@@ -159,6 +164,7 @@ export class ShengxuContent extends plugin {
     return withPlayerMutationLock(context.userId, async () => {
       const player = await Read_player(context.userId);
       if (!isCultivatingExtraPath(player, 'huafen')) return e.reply('该势力只接引花粉进化路修士。');
+      if (!isInShengxuPlane(player)) return e.reply('这些势力扎根于圣墟位面，请先穿梭至圣墟位面。');
       if (Number(player.huafenlevel_id) < faction.requiredLevel) return e.reply(`加入${factionName}需花粉进化序列达到${faction.requiredLevel}。`);
       const block = getFactionJoinBlock(player);
       if (!block.ok) return e.reply(block.reason === 'member' ? `你已加入${block.faction}。` : '你尚处于脱离势力冷却期。');
@@ -202,7 +208,7 @@ export class ShengxuContent extends plugin {
     const lines = [
       '【石罐唯一机缘】',
       owner ? `全服归属：已被修士 ${owner} 认主` : '全服归属：尚未认主',
-      `你的线索：${requirements.clues}/${STONE_JAR_CLUE_REQUIREMENT}｜不同副本：${requirements.cleared}/4`,
+      `你的线索：${requirements.clues}/${STONE_JAR_CLUE_REQUIREMENT}｜不同副本：${requirements.cleared}/6`,
       requirements.ok ? '你已满足追寻条件，可发送 #追寻石罐。' : `尚缺：${requirements.reasons.join('；')}`,
       '石罐本体全服唯一，不可交易、复制或重复获取。',
     ];
@@ -216,6 +222,7 @@ export class ShengxuContent extends plugin {
     return withPlayerMutationLock(context.userId, async () => {
       const player = await Read_player(context.userId);
       if (!isCultivatingExtraPath(player, 'huafen')) return e.reply('只有花粉进化路修士能追寻石罐。');
+      if (!isInShengxuPlane(player)) return e.reply('石罐本体隐没在圣墟位面，请先穿梭至圣墟位面。');
       const currentOwner = getShengxuOpportunityOwner(STONE_JAR_OPPORTUNITY);
       if (currentOwner === context.userId || player.圣墟唯一机缘?.石罐本体) {
         player.圣墟唯一机缘 ??= {};

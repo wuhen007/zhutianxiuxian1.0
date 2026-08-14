@@ -219,5 +219,28 @@
       { "id": "posuobianyuan", "name": "破碎边缘", "type": "region", "parent": null, "source": "完美世界", "bounds": { "x1": 340, "y1": 670, "x2": 660, "y2": 999 }, "desc": "仙古大战留下的裂痕，残破仙土漂浮，界海之水倒灌" },
       { "id": "xianyuliefeng", "name": "仙域裂缝", "type": "site", "parent": "posuobianyuan", "source": "完美世界", "bounds": { "x1": 430, "y1": 700, "x2": 570, "y2": 830 }, "desc": "贯穿仙域的巨大裂缝" }
     ]
+  },
+  "圣墟位面": {
+    "planeId": 7,
+    "source": "圣墟",
+    "desc": "天地异变，名山复苏；花粉进化者从地球踏上星路，最终遥望阳间与魂河。",
+    "locations": [
+      { "id": "shengxu_diqiu", "name": "地球", "type": "region", "parent": null, "source": "圣墟·地球篇", "bounds": { "x1": 0, "y1": 0, "x2": 499, "y2": 499 }, "desc": "异花绽放、折叠空间开启，诸多名山成为进化者与兽王争夺的洞天福地。" },
+      { "id": "taihangshan", "name": "太行山", "type": "site", "parent": "shengxu_diqiu", "source": "圣墟·地球篇", "bounds": { "x1": 20, "y1": 20, "x2": 130, "y2": 120 }, "desc": "楚风归乡之路，苍狼与异兽在山林间苏醒。" },
+      { "id": "kunlunshan_shengxu", "name": "昆仑山", "type": "site", "parent": "shengxu_diqiu", "source": "圣墟·地球篇", "bounds": { "x1": 150, "y1": 20, "x2": 270, "y2": 120 }, "desc": "万神之乡，地球复苏后最重要的造化地之一。" },
+      { "id": "wudangshan", "name": "武当山", "type": "site", "parent": "shengxu_diqiu", "source": "圣墟·地球篇", "bounds": { "x1": 300, "y1": 20, "x2": 420, "y2": 120 }, "desc": "金顶紫气与异花共生，太极呼吸法的道韵尚存。" },
+      { "id": "longhushan_shengxu", "name": "龙虎山", "type": "site", "parent": "shengxu_diqiu", "source": "圣墟·地球篇", "bounds": { "x1": 20, "y1": 160, "x2": 130, "y2": 270 }, "desc": "道教祖庭复苏，枷锁境异兽占据山门。" },
+      { "id": "songshan_shengxu", "name": "嵩山", "type": "site", "parent": "shengxu_diqiu", "source": "圣墟·地球篇", "bounds": { "x1": 150, "y1": 160, "x2": 270, "y2": 270 }, "desc": "古刹钟声穿过折叠空间，老猿守着山中异果。" },
+      { "id": "zhongnanshan_shengxu", "name": "终南山", "type": "site", "parent": "shengxu_diqiu", "source": "圣墟·地球篇", "bounds": { "x1": 300, "y1": 160, "x2": 420, "y2": 270 }, "desc": "异树盘根、道观隐现，山腹藏有复苏前的古老遗迹。" },
+      { "id": "taishan_shengxu", "name": "泰山", "type": "site", "parent": "shengxu_diqiu", "source": "圣墟·地球篇", "bounds": { "x1": 20, "y1": 310, "x2": 130, "y2": 430 }, "desc": "历代封禅之地，天地异变后祭坛与折叠空间同时苏醒。" },
+      { "id": "shuntian_yuxugong", "name": "顺天玉虚宫", "type": "site", "parent": "shengxu_diqiu", "source": "圣墟·地球篇", "bounds": { "x1": 180, "y1": 310, "x2": 340, "y2": 430 }, "desc": "人类进化者的重要据点，负责应对名山兽潮与失控异变体。" },
+      { "id": "huoxing_yinghuo", "name": "荧惑古星", "type": "region", "parent": null, "source": "圣墟·地球篇", "bounds": { "x1": 500, "y1": 0, "x2": 749, "y2": 499 }, "desc": "枯寂火星深处留有佛门旧土与星空古路遗迹。" },
+      { "id": "daleiyinsi_shengxu", "name": "大雷音寺遗址", "type": "site", "parent": "huoxing_yinghuo", "source": "圣墟·地球篇", "bounds": { "x1": 550, "y1": 120, "x2": 700, "y2": 300 }, "desc": "雷音已寂，残存呼吸法与尸魔共同盘踞废墟。" },
+      { "id": "xiaoyinjian", "name": "小阴间", "type": "region", "parent": null, "source": "圣墟·星路篇", "bounds": { "x1": 0, "y1": 500, "x2": 499, "y2": 999 }, "desc": "地球所在残破宇宙，星路争锋将进化者推向诸天视野。" },
+      { "id": "xiaoyinjian_xinglu", "name": "小阴间星路", "type": "site", "parent": "xiaoyinjian", "source": "圣墟·星路篇", "bounds": { "x1": 120, "y1": 620, "x2": 360, "y2": 850 }, "desc": "诸族猎手横行的试炼星路，弱者会被当作进化资粮。" },
+      { "id": "yangjian", "name": "阳间", "type": "region", "parent": null, "source": "圣墟·阳间篇", "bounds": { "x1": 500, "y1": 500, "x2": 749, "y2": 999 }, "desc": "完整天地法则汇聚的大界，名山神祇与古老道统并立。" },
+      { "id": "yangjian_mingshan", "name": "阳间名山", "type": "site", "parent": "yangjian", "source": "圣墟·阳间篇", "bounds": { "x1": 540, "y1": 620, "x2": 710, "y2": 850 }, "desc": "名山深处沉睡着神祇、古洞府与高阶进化媒介。" },
+      { "id": "hunhe", "name": "魂河古地", "type": "region", "parent": null, "source": "圣墟·诡异篇", "bounds": { "x1": 750, "y1": 0, "x2": 999, "y2": 999 }, "desc": "诸天魂光汇聚的诡异源头之一，接引者在黑暗中守望河道。" }
+    ]
   }
 }

@@ -1,5 +1,6 @@
 import { getGongfaNumericMultiplier } from './gongfaProficiency.js';
 import { getRealmAuthorityLevel } from './realmAuthority.js';
+import { isCultivatingExtraPath } from './extraCultivation.js';
 
 export const PLACE_LOCATION_MAP = Object.freeze({
   '凡间': 0,
@@ -12,10 +13,11 @@ export const PLACE_LOCATION_MAP = Object.freeze({
   '时间长河': 4,
   '永恒未知之地': 5,
   '仙域': 6,
+  '圣墟位面': 7,
 });
 
 export const DEFAULT_KNOWN_LOCATIONS = Object.freeze(['凡间']);
-export const SPECIAL_LOCATIONS = Object.freeze(['仙域', '时间长河', '永恒未知之地']);
+export const SPECIAL_LOCATIONS = Object.freeze(['仙域', '时间长河', '永恒未知之地', '圣墟位面']);
 
 export const TRAVEL_BASE_MIN_PER_LEVEL = 15;
 export const TRAVEL_REDUCE_MAX = 0.7;
@@ -297,11 +299,14 @@ export function ensureDefaultCoordinates(player) {
 export function hasCoordinate(player, location) {
   if (DEFAULT_KNOWN_LOCATIONS.includes(location)) return true;
   if (location === '遮天位面' && Number(player?.五色祭坛激活) === 1) return true;
+  if (location === '圣墟位面' && isCultivatingExtraPath(player, 'huafen')) return true;
   return Array.isArray(player?.记忆坐标) && player.记忆坐标.includes(location);
 }
 
 export function getCoordinateLocations() {
-  return Object.keys(PLACE_LOCATION_MAP).filter(location => !DEFAULT_KNOWN_LOCATIONS.includes(location));
+  return Object.keys(PLACE_LOCATION_MAP).filter(location =>
+    location !== '圣墟位面' && !DEFAULT_KNOWN_LOCATIONS.includes(location)
+  );
 }
 
 export function getUnknownCoordinates(player) {
@@ -309,7 +314,7 @@ export function getUnknownCoordinates(player) {
 }
 
 export function rememberCoordinate(player, location) {
-  if (!Object.hasOwn(PLACE_LOCATION_MAP, location) || DEFAULT_KNOWN_LOCATIONS.includes(location)) return false;
+  if (location === '圣墟位面' || !Object.hasOwn(PLACE_LOCATION_MAP, location) || DEFAULT_KNOWN_LOCATIONS.includes(location)) return false;
   if (!Array.isArray(player.记忆坐标)) player.记忆坐标 = [];
   if (player.记忆坐标.includes(location)) return false;
   player.记忆坐标.push(location);
@@ -345,7 +350,7 @@ export function rollDailyDungeonCoordinate(player, options = {}) {
 }
 
 export function purchaseCoordinateClue(player, location, cost = COORDINATE_CLUE_COST) {
-  if (!Object.hasOwn(PLACE_LOCATION_MAP, location) || DEFAULT_KNOWN_LOCATIONS.includes(location)) {
+  if (location === '圣墟位面' || !Object.hasOwn(PLACE_LOCATION_MAP, location) || DEFAULT_KNOWN_LOCATIONS.includes(location)) {
     return { ok: false, reason: 'invalid' };
   }
   if (hasCoordinate(player, location)) return { ok: false, reason: 'known' };
@@ -393,7 +398,11 @@ export function getLocationThreshold(player, location) {
   let code = null;
   let checks = [];
 
-  if (location === '时间长河') {
+  if (location === '圣墟位面') {
+    const met = isCultivatingExtraPath(player, 'huafen') && huafen >= 2;
+    code = met ? null : 'shengxu';
+    checks = [{ label: '花粉进化路', display: `花粉 ${huafen}/2，且未兼修其他额外体系`, met }];
+  } else if (location === '时间长河') {
     const met = mijing >= 20 || xiangu >= 20 || huafen >= 21;
     code = met ? null : 'time-river';
     checks = [{ label: '准仙帝境界', display: `秘境 ${mijing}/20、仙古 ${xiangu}/20或花粉 ${huafen}/21`, met }];

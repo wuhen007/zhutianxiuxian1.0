@@ -325,7 +325,7 @@ export class SecretPlace extends plugin {
           fnc: 'handleDungeonDrop',
         },
        {
-  reg: '^#穿梭(凡间|仙界|下界八域|仙域|遮天位面|九天十地|界海|太初星墟|时间长河|永恒未知之地)$',
+  reg: '^#穿梭(凡间|仙界|下界八域|仙域|遮天位面|九天十地|界海|太初星墟|时间长河|永恒未知之地|圣墟位面)$',
   fnc: 'goToLocation'
 },
 {
@@ -550,7 +550,7 @@ async goToLocation(e) {
     const player = await Read_player(usr_qq);
     
     // 解析目标地点
-    const location = e.msg.match(/^#穿梭(凡间|仙界|下界八域|九天十地|遮天位面|界海|太初星墟|时间长河|永恒未知之地|仙域)$/)[1];
+    const location = e.msg.match(/^#穿梭(凡间|仙界|下界八域|九天十地|遮天位面|界海|太初星墟|时间长河|永恒未知之地|仙域|圣墟位面)$/)[1];
     
     // 地点映射表（统一引用模块级 PLACE_LOCATION_MAP，避免多处分散硬编码）
     const LOCATION_MAP = PLACE_LOCATION_MAP;
@@ -3644,6 +3644,13 @@ async sendPlayerToLocation(e) {
 // 位面准入门槛检查（与 goToLocation 完全一致的判定逻辑，单一真相源）
 async checkLocationThreshold(player, location) {
     const threshold = getLocationThreshold(player, location);
+    if (location === '圣墟位面' && threshold.code === 'shengxu') {
+        return { ok: false, msgs: [
+            `【圣墟位面·进化坐标未显】`,
+            `这片天地只响应花粉进化路的生命波动。`,
+            `需先以 #踏上花粉路 选择体系，并至少进化至觉醒境。`
+        ] };
+    }
     // 时间长河：准仙帝
     if (location === '时间长河') {
         if (threshold.code === 'time-river') {
