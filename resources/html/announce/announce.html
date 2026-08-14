@@ -18,18 +18,14 @@
         }
 
         :root {
-            --ink-950: #05090a;
-            --ink-900: #091012;
-            --ink-850: #0d1719;
-            --ink-800: #122024;
-            --ink-700: #203337;
-            --paper: #f2f5f1;
-            --muted: #a9b8b6;
-            --faint: #718481;
-            --gold: #e8bd62;
-            --gold-soft: rgba(232, 189, 98, 0.16);
-            --line: rgba(232, 189, 98, 0.22);
-            --radius: 6px;
+            --bg: #eef1f4;
+            --surface: #ffffff;
+            --ink: #171a1f;
+            --muted: #64707b;
+            --line: #d8dde3;
+            --accent: #2259d6;
+            --night: #121820;
+            --radius: 4px;
         }
 
         * {
@@ -39,596 +35,420 @@
         }
 
         html {
-            background: var(--ink-950);
+            background: var(--bg);
+            scroll-behavior: smooth;
         }
 
         body {
             min-width: 320px;
-            min-height: 100vh;
-            padding: 22px;
-            color: var(--paper);
-            background-color: var(--ink-950);
+            padding: 20px;
+            color: var(--ink);
+            background: var(--bg);
             font-family: "Zhutian Text", "Microsoft YaHei", "PingFang SC", sans-serif;
+            letter-spacing: 0;
             -webkit-font-smoothing: antialiased;
         }
 
         .container {
-            width: min(1080px, 100%);
+            width: min(1120px, 100%);
             margin: 0 auto;
             overflow: hidden;
-            background: var(--ink-900);
-            border: 1px solid rgba(232, 189, 98, 0.18);
+            background: var(--bg);
+            border: 1px solid var(--line);
             border-radius: var(--radius);
-            box-shadow: 0 26px 70px rgba(0, 0, 0, 0.48);
+            box-shadow: 0 18px 50px rgba(25, 36, 48, 0.1);
         }
 
         .masthead {
             position: relative;
-            min-height: 420px;
+            min-height: 440px;
             display: flex;
             align-items: flex-end;
-            overflow: hidden;
             isolation: isolate;
+            overflow: hidden;
+            color: #fff;
             background-image:
-                linear-gradient(90deg, rgba(4, 9, 10, 0.97) 0%, rgba(4, 9, 10, 0.8) 48%, rgba(4, 9, 10, 0.18) 100%),
-                linear-gradient(0deg, rgba(4, 9, 10, 0.98) 0%, rgba(4, 9, 10, 0) 42%),
+                linear-gradient(90deg, rgba(12, 18, 24, 0.96) 0%, rgba(12, 18, 24, 0.76) 48%, rgba(12, 18, 24, 0.2) 100%),
+                linear-gradient(0deg, rgba(12, 18, 24, 0.34), transparent 65%),
                 url("{{pluResPath}}/img/help/zhutian.jpg");
-            background-position: center, center, center 43%;
+            background-position: center, center, center 42%;
             background-size: cover;
-            border-bottom: 1px solid var(--line);
-        }
-
-        .masthead::before,
-        .masthead::after {
-            content: "";
-            position: absolute;
-            z-index: -1;
-            pointer-events: none;
-        }
-
-        .masthead::before {
-            inset: 18px;
-            border: 1px solid rgba(232, 189, 98, 0.32);
-        }
-
-        .masthead::after {
-            top: 0;
-            left: 0;
-            width: 46%;
-            height: 3px;
-            background: var(--gold);
         }
 
         .masthead-archive {
-            min-height: 280px;
+            min-height: 310px;
         }
 
         .masthead-content {
             width: 100%;
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) 280px;
-            gap: 42px;
-            align-items: end;
-            padding: 64px 58px 52px;
+            padding: 60px 56px 50px;
         }
 
-        .edition {
-            margin-bottom: 16px;
-            color: var(--gold);
-            font-size: 14px;
-            font-weight: 700;
+        .release-line {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            color: #c8d3dc;
+            font-size: 13px;
+        }
+
+        .release-line strong {
+            color: #91b4ff;
+        }
+
+        .release-line i {
+            width: 36px;
+            height: 1px;
+            background: currentColor;
+            opacity: 0.55;
         }
 
         .brand-title {
-            max-width: 680px;
+            max-width: 760px;
             color: #fff;
             font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
             font-size: 62px;
             font-weight: 400;
-            line-height: 1.02;
-            text-shadow: 0 4px 24px rgba(0, 0, 0, 0.58);
+            line-height: 1.08;
+            letter-spacing: 0;
+            text-shadow: 0 3px 24px rgba(0, 0, 0, 0.52);
         }
 
-        .brand-title span {
-            display: block;
-            margin-top: 8px;
-            color: var(--gold);
-            font-family: "Zhutian Text", "Microsoft YaHei", sans-serif;
-            font-size: 23px;
-            font-weight: 700;
+        .masthead-archive .brand-title {
+            font-size: 48px;
         }
 
         .brand-note {
-            max-width: 620px;
-            margin-top: 18px;
-            color: #d8e0dc;
+            max-width: 720px;
+            margin-top: 20px;
+            color: #d2dbe2;
             font-size: 16px;
-            line-height: 1.75;
-        }
-
-        .meta-panel {
-            border-left: 1px solid rgba(232, 189, 98, 0.42);
-            padding-left: 24px;
-        }
-
-        .meta-item {
-            display: grid;
-            grid-template-columns: 56px minmax(0, 1fr);
-            gap: 12px;
-            padding: 11px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-        }
-
-        .meta-item:last-child {
-            border-bottom: 0;
-        }
-
-        .meta-label {
-            color: var(--faint);
-            font-size: 12px;
-        }
-
-        .meta-value {
-            min-width: 0;
-            overflow-wrap: anywhere;
-            color: var(--paper);
-            font-size: 14px;
-            font-weight: 700;
-        }
-
-        .meta-value.gold {
-            color: var(--gold);
-        }
-
-        main {
-            background-image: linear-gradient(rgba(232, 189, 98, 0.035) 1px, transparent 1px);
-            background-size: 100% 44px;
-        }
-
-        .release-intro {
-            display: grid;
-            grid-template-columns: 200px minmax(0, 1fr);
-            gap: 44px;
-            margin: 0 48px;
-            padding: 36px 10px 34px;
-            border-bottom: 1px solid var(--line);
-        }
-
-        .release-count {
-            display: flex;
-            align-items: baseline;
-            gap: 10px;
-            color: var(--gold);
-        }
-
-        .release-count strong {
-            font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
-            font-size: 58px;
-            font-weight: 400;
-            line-height: 1;
-        }
-
-        .release-count span {
-            color: var(--muted);
-            font-size: 13px;
-        }
-
-        .release-copy {
-            color: #d8e0dc;
-            font-size: 17px;
             line-height: 1.8;
         }
 
-        .release-copy strong {
-            color: var(--gold);
-            font-weight: 700;
+        .chapter-nav {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            padding: 0 56px;
+            color: #fff;
+            background: var(--night);
         }
 
-        .section {
-            padding: 48px;
+        .chapter-link {
+            min-width: 0;
+            padding: 18px 24px 17px 0;
+            border-bottom: 3px solid transparent;
         }
 
-        .section + .section {
-            border-top: 1px solid rgba(232, 189, 98, 0.12);
+        .chapter-link strong,
+        .chapter-link span {
+            display: block;
         }
 
-        .section-head {
-            display: flex;
-            align-items: baseline;
-            gap: 18px;
-            margin-bottom: 26px;
+        .chapter-link strong {
+            font-size: 14px;
         }
 
-        .section-head h2 {
-            flex: 0 0 auto;
-            color: var(--paper);
-            font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
-            font-size: 30px;
-            font-weight: 400;
-            line-height: 1.2;
-        }
-
-        .section-head span {
-            color: var(--faint);
+        .chapter-link span {
+            margin-top: 5px;
+            color: #9da9b3;
             font-size: 12px;
         }
 
-        .section-head::after {
-            content: "";
-            height: 1px;
-            flex: 1;
-            background: linear-gradient(90deg, var(--gold), rgba(232, 189, 98, 0));
-            opacity: 0.48;
-        }
-
-        .update-list {
+        .overview {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 14px;
-            counter-reset: update;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 18px;
+            padding: 46px 56px 0;
         }
 
-        .update-card {
+        .stat {
             position: relative;
-            min-width: 0;
-            padding: 24px 24px 24px 72px;
-            overflow: hidden;
-            background: rgba(13, 23, 25, 0.94);
-            border: 1px solid rgba(255, 255, 255, 0.09);
+            min-height: 108px;
+            padding: 22px 24px 20px 88px;
+            background: var(--surface);
+            border: 1px solid var(--line);
             border-radius: var(--radius);
-            counter-increment: update;
         }
 
-        .update-card::before {
-            content: "0" counter(update);
+        .stat strong {
             position: absolute;
-            top: 24px;
-            left: 20px;
-            color: var(--gold);
+            top: 22px;
+            left: 22px;
+            color: var(--accent);
             font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
-            font-size: 26px;
+            font-size: 46px;
+            font-weight: 400;
             line-height: 1;
         }
 
-        .update-card::after {
-            content: "";
-            position: absolute;
-            top: 0;
-            left: 52px;
-            width: 1px;
-            height: 100%;
-            background: rgba(232, 189, 98, 0.18);
+        .stat span {
+            display: block;
+            padding-top: 10px;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.55;
         }
 
-        .update-card:first-child {
-            grid-column: 1 / -1;
-            min-height: 230px;
-            display: grid;
-            grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.2fr);
-            grid-template-rows: auto 1fr;
-            column-gap: 42px;
-            align-items: start;
-            background-image:
-                linear-gradient(90deg, rgba(13, 23, 25, 0.99) 0%, rgba(13, 23, 25, 0.9) 56%, rgba(13, 23, 25, 0.6) 100%),
-                url("{{pluResPath}}/img/help/zhutian.jpg");
-            background-position: center, center 58%;
-            background-size: cover;
+        main {
+            padding: 72px 56px 84px;
         }
 
-        .update-card:first-child .point-list {
-            grid-column: 2;
-            grid-row: 1 / span 2;
+        .module-group + .module-group {
+            margin-top: 78px;
         }
 
-        .update-head {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 12px;
+        .group-heading {
+            max-width: 760px;
+            padding-bottom: 22px;
+            border-bottom: 4px solid var(--accent);
         }
 
-        .tag {
-            flex: 0 0 auto;
-            padding: 4px 8px;
-            color: var(--gold);
-            background: var(--gold-soft);
-            border: 1px solid rgba(232, 189, 98, 0.42);
-            border-radius: 3px;
+        .group-heading span {
+            display: block;
+            color: var(--accent);
             font-size: 12px;
             font-weight: 700;
         }
 
-        .update-title {
-            min-width: 0;
-            color: #fff;
-            font-size: 20px;
-            font-weight: 700;
-            line-height: 1.4;
+        .group-heading h2 {
+            margin-top: 8px;
+            font-size: 34px;
+            line-height: 1.25;
+            letter-spacing: 0;
         }
 
-        .update-summary {
+        .group-heading p {
+            margin-top: 12px;
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.75;
+        }
+
+        .module-list {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+            margin-top: 18px;
+        }
+
+        .module {
+            position: relative;
+            display: grid;
+            grid-template-columns: 44px minmax(0, 1fr);
+            gap: 14px 12px;
+            min-width: 0;
+            padding: 24px;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+        }
+
+        .module-featured,
+        .module:only-child {
+            grid-column: 1 / -1;
+            grid-template-columns: 44px minmax(220px, 0.65fr) minmax(0, 1.35fr);
+            gap: 24px;
+        }
+
+        .module-no {
+            display: grid;
+            width: 36px;
+            height: 36px;
+            place-items: center;
+            color: #fff;
+            background: var(--ink);
+            font-family: "Consolas", "Courier New", monospace;
+            font-size: 12px;
+        }
+
+        .module-tag {
+            display: block;
+            color: var(--accent);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .module-title {
+            margin-top: 7px;
+            font-size: 21px;
+            line-height: 1.4;
+            letter-spacing: 0;
+        }
+
+        .module-summary {
+            margin-top: 10px;
             color: var(--muted);
             font-size: 14px;
             line-height: 1.7;
         }
 
         .point-list {
+            grid-column: 1 / -1;
             list-style: none;
+        }
+
+        .module-featured .point-list,
+        .module:only-child .point-list {
+            grid-column: auto;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0 22px;
         }
 
         .point-list li {
             position: relative;
-            padding: 9px 0 9px 18px;
-            color: #d4ddda;
+            padding: 13px 0 13px 16px;
+            color: #535e68;
+            border-top: 1px solid var(--line);
             font-size: 14px;
-            line-height: 1.65;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        }
-
-        .point-list li:last-child {
-            border-bottom: 0;
+            line-height: 1.75;
+            overflow-wrap: anywhere;
         }
 
         .point-list li::before {
             content: "";
             position: absolute;
-            top: 18px;
+            top: 23px;
             left: 0;
-            width: 7px;
-            height: 1px;
-            background: var(--gold);
+            width: 6px;
+            height: 2px;
+            background: var(--accent);
         }
 
-        .changelog-wrap {
-            display: flex;
-            flex-direction: column;
-            gap: 30px;
+        .signal {
+            display: inline;
+            padding: 0;
+            color: var(--accent);
+            background: transparent;
+            font: inherit;
+            font-weight: 700;
         }
 
-        .cl-group {
+        .history {
+            margin-top: 84px;
+            padding-top: 58px;
+            border-top: 1px solid var(--line);
+        }
+
+        .history:first-child {
+            margin-top: 0;
+            padding-top: 0;
+            border-top: 0;
+        }
+
+        .history-heading {
+            max-width: 720px;
+            margin-bottom: 32px;
+        }
+
+        .history-heading span {
+            color: var(--accent);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .history-heading h2 {
+            margin-top: 8px;
+            font-size: 30px;
+            line-height: 1.35;
+            letter-spacing: 0;
+        }
+
+        .history-heading p {
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.75;
+        }
+
+        .history-group + .history-group {
+            margin-top: 34px;
+        }
+
+        .history-date {
+            margin-bottom: 12px;
+            color: var(--accent);
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .history-item {
+            padding: 24px;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+        }
+
+        .history-item + .history-item {
+            margin-top: 12px;
+        }
+
+        .history-head {
             display: grid;
-            grid-template-columns: 120px minmax(0, 1fr);
-            gap: 28px;
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 14px;
+            align-items: start;
         }
 
-        .cl-date {
-            align-self: start;
-            padding-top: 4px;
-            color: var(--gold);
-            font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
-            font-size: 19px;
-            line-height: 1.25;
-        }
-
-        .cl-items {
-            border-left: 1px solid rgba(232, 189, 98, 0.26);
-            padding-left: 28px;
-        }
-
-        .cl-item {
-            position: relative;
-            padding: 0 0 22px;
-            margin-bottom: 22px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-        }
-
-        .cl-item:last-child {
-            margin-bottom: 0;
-        }
-
-        .cl-item::before {
-            content: "";
-            position: absolute;
-            top: 7px;
-            left: -33px;
-            width: 9px;
-            height: 9px;
-            background: var(--ink-900);
-            border: 2px solid var(--gold);
-            transform: rotate(45deg);
-        }
-
-        .cl-head {
-            display: flex;
-            align-items: flex-start;
-            gap: 12px;
-            margin-bottom: 8px;
-        }
-
-        .cl-hash {
-            flex: 0 0 auto;
-            padding: 3px 7px;
-            color: var(--gold);
-            background: rgba(232, 189, 98, 0.08);
-            border: 1px solid rgba(232, 189, 98, 0.3);
-            border-radius: 3px;
+        .history-hash {
+            padding-top: 3px;
+            color: var(--accent);
             font-family: "Consolas", "Courier New", monospace;
             font-size: 12px;
         }
 
-        .cl-msg {
-            min-width: 0;
-            color: var(--paper);
-            font-size: 16px;
-            font-weight: 700;
-            line-height: 1.5;
+        .history-title {
+            font-size: 17px;
+            line-height: 1.55;
+            letter-spacing: 0;
         }
 
-        .cl-detail {
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 22px 26px;
+            margin-top: 24px;
+        }
+
+        .detail-block {
+            min-width: 0;
+            padding-top: 14px;
+            border-top: 1px solid var(--line);
+        }
+
+        .detail-block strong {
+            display: block;
+            margin-bottom: 7px;
+            color: var(--ink);
+            font-size: 13px;
+        }
+
+        .detail-block p {
             color: var(--muted);
             font-size: 13px;
             line-height: 1.75;
-        }
-
-        .tj-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-        }
-
-        .tj-card {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) 230px;
-            gap: 20px;
-            align-items: center;
-            min-width: 0;
-            padding: 18px;
-            background: var(--ink-850);
-            border: 1px solid rgba(255, 255, 255, 0.09);
-            border-radius: var(--radius);
-        }
-
-        .tj-head {
-            display: flex;
-            align-items: center;
-            min-width: 0;
-            gap: 13px;
-        }
-
-        .tj-avatar {
-            width: 44px;
-            height: 52px;
-            flex: 0 0 auto;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--gold);
-            background: rgba(232, 189, 98, 0.08);
-            border: 1px solid rgba(232, 189, 98, 0.36);
-            border-radius: 3px;
-            font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
-            font-size: 24px;
-        }
-
-        .tj-meta {
-            min-width: 0;
-        }
-
-        .tj-name {
-            overflow: hidden;
-            color: var(--paper);
-            font-size: 17px;
-            font-weight: 700;
-            line-height: 1.45;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .tj-realm {
-            margin-top: 3px;
-            overflow: hidden;
-            color: var(--faint);
-            font-size: 12px;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .tj-stats {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-        }
-
-        .tj-stat {
-            min-width: 0;
-            padding: 2px 8px;
-            text-align: center;
-            border-left: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .tj-stat .lab {
-            margin-bottom: 4px;
-            color: var(--faint);
-            font-size: 11px;
-        }
-
-        .tj-stat .val {
-            display: block;
-            overflow: hidden;
-            color: var(--gold);
-            font-family: "Consolas", "Microsoft YaHei", sans-serif;
-            font-size: 16px;
-            font-weight: 700;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .character-band {
-            display: grid;
-            grid-template-columns: 280px minmax(0, 1fr);
-            gap: 36px;
-            align-items: center;
-            padding: 28px 32px;
-            background: #101a1c;
-            border: 1px solid rgba(232, 189, 98, 0.18);
-            border-radius: var(--radius);
-        }
-
-        .character-title {
-            color: var(--paper);
-            font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
-            font-size: 24px;
-            line-height: 1.25;
-        }
-
-        .character-count {
-            margin-top: 7px;
-            color: var(--muted);
-            font-size: 13px;
-        }
-
-        .character-count strong {
-            color: var(--gold);
-            font-size: 18px;
-        }
-
-        .progress-track {
-            position: relative;
-            height: 12px;
-            overflow: hidden;
-            background: #05090a;
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 2px;
-        }
-
-        .progress-fill {
-            min-width: 28px;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            padding-right: 5px;
-            color: #061012;
-            background: var(--gold);
-            font-size: 8px;
-            font-weight: 700;
-        }
-
-        .character-note {
-            margin-top: 10px;
-            color: var(--faint);
-            font-size: 12px;
-            line-height: 1.65;
+            overflow-wrap: anywhere;
         }
 
         .footer {
             display: grid;
             grid-template-columns: minmax(0, 1fr) auto;
             gap: 24px;
-            align-items: center;
-            padding: 24px 48px;
-            color: var(--faint);
-            background: #060b0c;
-            border-top: 1px solid var(--line);
+            align-items: end;
+            padding: 32px 56px;
+            color: #9da9b3;
+            background: #171d23;
             font-size: 12px;
             line-height: 1.7;
         }
 
         .footer strong {
-            color: var(--gold);
+            color: #8eb1ff;
         }
 
         .footer-nav {
-            color: var(--muted);
             text-align: right;
         }
 
@@ -640,166 +460,122 @@
             .container {
                 border: 0;
                 border-radius: 0;
+                box-shadow: none;
             }
 
             .masthead {
-                min-height: 430px;
+                min-height: 470px;
                 background-image:
-                    linear-gradient(0deg, rgba(4, 9, 10, 0.98) 0%, rgba(4, 9, 10, 0.38) 70%, rgba(4, 9, 10, 0.12) 100%),
+                    linear-gradient(0deg, rgba(12, 18, 24, 0.96), rgba(12, 18, 24, 0.3)),
                     url("{{pluResPath}}/img/help/zhutian.jpg");
                 background-position: center, center 30%;
             }
 
-            .masthead::before {
-                inset: 10px;
+            .masthead-archive {
+                min-height: 340px;
             }
 
             .masthead-content {
-                grid-template-columns: 1fr;
-                gap: 24px;
-                padding: 48px 28px 34px;
+                padding: 48px 24px 38px;
             }
 
-            .brand-title {
+            .brand-title,
+            .masthead-archive .brand-title {
                 font-size: 42px;
-            }
-
-            .brand-title span {
-                font-size: 19px;
             }
 
             .brand-note {
                 font-size: 14px;
+                line-height: 1.75;
             }
 
-            .meta-panel {
-                display: grid;
-                grid-template-columns: repeat(3, minmax(0, 1fr));
-                padding: 0;
-                border-top: 1px solid rgba(232, 189, 98, 0.42);
-                border-left: 0;
+            .chapter-nav {
+                overflow-x: auto;
+                padding: 0 14px;
             }
 
-            .meta-item {
+            .chapter-link {
+                min-width: 138px;
+                padding: 16px 18px 14px 0;
+            }
+
+            .overview {
                 grid-template-columns: 1fr;
-                gap: 4px;
-                padding: 10px 8px 0 0;
-                border-bottom: 0;
+                gap: 10px;
+                padding: 36px 16px 0;
             }
 
-            .release-intro {
-                grid-template-columns: 1fr;
-                gap: 16px;
-                margin: 0 24px;
-                padding: 28px 0;
+            .stat {
+                min-height: 78px;
+                padding: 16px 18px 14px 72px;
             }
 
-            .release-count strong {
-                font-size: 44px;
+            .stat strong {
+                top: 15px;
+                left: 18px;
+                font-size: 36px;
             }
 
-            .release-copy {
-                font-size: 15px;
+            .stat span {
+                padding-top: 3px;
             }
 
-            .section {
-                padding: 38px 24px;
+            main {
+                padding: 52px 16px 64px;
             }
 
-            .section-head {
-                align-items: flex-end;
-                margin-bottom: 20px;
+            .module-group + .module-group {
+                margin-top: 62px;
             }
 
-            .section-head h2 {
-                font-size: 25px;
+            .group-heading h2 {
+                font-size: 28px;
             }
 
-            .section-head span {
-                display: none;
-            }
-
-            .update-list,
-            .tj-grid {
+            .module-list {
                 grid-template-columns: 1fr;
             }
 
-            .update-card,
-            .update-card:first-child {
+            .module,
+            .module-featured,
+            .module:only-child {
                 grid-column: auto;
-                display: block;
-                min-height: 0;
-                padding: 22px 18px 22px 62px;
+                grid-template-columns: 42px minmax(0, 1fr);
+                gap: 14px 10px;
+                padding: 20px 16px;
             }
 
-            .update-card::before {
-                left: 16px;
-            }
-
-            .update-card::after {
-                left: 46px;
-            }
-
-            .update-card:first-child .point-list {
-                margin-top: 12px;
-            }
-
-            .update-head {
-                align-items: flex-start;
-                flex-direction: column;
-                gap: 8px;
-            }
-
-            .update-title {
-                font-size: 18px;
-            }
-
-            .cl-group {
+            .module-featured .point-list,
+            .module:only-child .point-list {
+                grid-column: 1 / -1;
                 grid-template-columns: 1fr;
-                gap: 12px;
             }
 
-            .cl-date {
-                font-size: 17px;
+            .history {
+                margin-top: 64px;
+                padding-top: 46px;
             }
 
-            .cl-items {
-                margin-left: 5px;
-                padding-left: 22px;
+            .history-heading h2 {
+                font-size: 26px;
             }
 
-            .cl-item::before {
-                left: -27px;
+            .history-item {
+                padding: 20px 16px;
             }
 
-            .cl-head {
-                flex-direction: column;
-                gap: 8px;
-            }
-
-            .tj-card {
+            .history-head,
+            .detail-grid {
                 grid-template-columns: 1fr;
+            }
+
+            .detail-grid {
                 gap: 16px;
-            }
-
-            .tj-stats {
-                border-top: 1px solid rgba(255, 255, 255, 0.1);
-                padding-top: 12px;
-            }
-
-            .tj-stat:first-child {
-                border-left: 0;
-            }
-
-            .character-band {
-                grid-template-columns: 1fr;
-                gap: 20px;
-                padding: 24px;
             }
 
             .footer {
                 grid-template-columns: 1fr;
-                padding: 22px 24px;
+                padding: 26px 20px;
             }
 
             .footer-nav {
@@ -807,13 +583,322 @@
             }
         }
 
+        /* 天道卷宗：正式采用方案 B 的暗色长卷布局。 */
+        :root {
+            color-scheme: dark;
+            --bg: #0c1210;
+            --surface: #111916;
+            --ink: #e7e3d4;
+            --muted: #99a39c;
+            --line: #303b35;
+            --accent: #d1ae59;
+            --night: #0c1210;
+        }
+
+        html,
+        body {
+            background: var(--night);
+        }
+
+        body {
+            color: var(--ink);
+        }
+
+        .container {
+            background: var(--night);
+            border-color: var(--line);
+            box-shadow: 0 26px 70px rgba(0, 0, 0, 0.42);
+        }
+
+        .masthead {
+            min-height: 520px;
+            background-image:
+                linear-gradient(90deg, rgba(7, 12, 10, 0.98) 0%, rgba(7, 12, 10, 0.7) 52%, rgba(7, 12, 10, 0.28) 100%),
+                linear-gradient(0deg, var(--night), transparent 45%),
+                url("{{pluResPath}}/img/help/zhutian.jpg");
+            border-bottom: 1px solid var(--line);
+        }
+
+        .masthead-archive {
+            min-height: 350px;
+        }
+
+        .masthead-content {
+            padding-bottom: 66px;
+        }
+
+        .release-line {
+            color: #c5cec8;
+        }
+
+        .release-line strong,
+        .brand-title,
+        .masthead-archive .brand-title {
+            color: #f3edda;
+        }
+
+        .release-line strong {
+            color: var(--accent);
+        }
+
+        .brand-note {
+            color: #c5cec8;
+        }
+
+        .chapter-nav {
+            border-bottom: 1px solid var(--line);
+            background: var(--night);
+        }
+
+        .chapter-link {
+            position: relative;
+            padding: 22px 24px 20px 38px;
+            border-right: 1px solid var(--line);
+        }
+
+        .chapter-link::before {
+            content: "";
+            position: absolute;
+            top: 28px;
+            left: 20px;
+            width: 6px;
+            height: 6px;
+            background: var(--accent);
+            transform: rotate(45deg);
+        }
+
+        .chapter-link:last-child {
+            border-right: 0;
+        }
+
+        .chapter-link span {
+            color: var(--muted);
+        }
+
+        .overview {
+            gap: 0;
+            padding-top: 62px;
+        }
+
+        .stat {
+            display: grid;
+            grid-template-columns: 76px minmax(0, 1fr);
+            align-items: baseline;
+            min-height: 0;
+            padding: 0 28px 20px 0;
+            background: transparent;
+            border: 0;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .stat + .stat {
+            padding-left: 28px;
+            border-left: 1px solid var(--line);
+        }
+
+        .stat strong {
+            position: static;
+            color: var(--accent);
+            font-size: 52px;
+        }
+
+        .stat span {
+            padding-top: 0;
+            color: var(--muted);
+        }
+
+        main {
+            padding-top: 84px;
+        }
+
+        .group-heading {
+            position: relative;
+            padding: 0 0 26px 34px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .group-heading::before {
+            content: "";
+            position: absolute;
+            top: 2px;
+            bottom: 26px;
+            left: 0;
+            width: 3px;
+            background: var(--accent);
+        }
+
+        .group-heading h2 {
+            color: #f0ead8;
+            font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
+            font-size: 40px;
+            font-weight: 400;
+        }
+
+        .group-heading p {
+            color: var(--muted);
+        }
+
+        .module-list {
+            grid-template-columns: 1fr;
+            gap: 0;
+            margin-top: 0;
+        }
+
+        .module,
+        .module-featured,
+        .module:only-child {
+            grid-column: auto;
+            grid-template-columns: 88px minmax(220px, 0.68fr) minmax(0, 1.42fr);
+            gap: 34px;
+            align-items: start;
+            padding: 38px 0;
+            background: transparent;
+            border: 0;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .module-no {
+            display: block;
+            width: auto;
+            height: auto;
+            color: #526059;
+            background: transparent;
+            font-family: "Zhutian Display", "Microsoft YaHei", sans-serif;
+            font-size: 48px;
+            line-height: 1;
+        }
+
+        .module-tag,
+        .signal {
+            color: var(--accent);
+        }
+
+        .module-title {
+            color: #f0ecdf;
+            font-size: 23px;
+        }
+
+        .module-summary {
+            color: var(--muted);
+        }
+
+        .point-list,
+        .module-featured .point-list,
+        .module:only-child .point-list {
+            grid-column: auto;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 24px 30px;
+        }
+
+        .point-list li {
+            padding: 0 0 0 18px;
+            color: #b7c0ba;
+            border-top: 0;
+        }
+
+        .point-list li::before {
+            top: 7px;
+            width: 6px;
+            height: 6px;
+            background: transparent;
+            border: 1px solid var(--accent);
+            transform: rotate(45deg);
+        }
+
+        .history {
+            border-top-color: var(--line);
+        }
+
+        .history-heading h2,
+        .history-title,
+        .detail-block strong {
+            color: var(--ink);
+        }
+
+        .history-heading p,
+        .detail-block p {
+            color: var(--muted);
+        }
+
+        .history-item {
+            background: var(--surface);
+            border-color: var(--line);
+        }
+
+        .detail-block {
+            border-top-color: var(--line);
+        }
+
+        .footer {
+            color: var(--muted);
+            background: #080d0b;
+            border-top: 1px solid var(--line);
+        }
+
+        .footer strong {
+            color: var(--accent);
+        }
+
+        @media (max-width: 760px) {
+            .masthead {
+                min-height: 500px;
+                background-image:
+                    linear-gradient(0deg, var(--night) 0%, rgba(7, 12, 10, 0.52) 78%, rgba(7, 12, 10, 0.2) 100%),
+                    url("{{pluResPath}}/img/help/zhutian.jpg");
+            }
+
+            .masthead-archive {
+                min-height: 340px;
+            }
+
+            .chapter-nav {
+                width: 100%;
+            }
+
+            .overview {
+                padding-top: 40px;
+            }
+
+            .stat,
+            .stat + .stat {
+                grid-template-columns: 58px minmax(0, 1fr);
+                padding: 14px 0;
+                border-left: 0;
+            }
+
+            .stat strong {
+                font-size: 38px;
+            }
+
+            .group-heading {
+                padding-left: 20px;
+            }
+
+            .module,
+            .module-featured,
+            .module:only-child {
+                grid-template-columns: 48px minmax(0, 1fr);
+                gap: 18px 12px;
+                padding: 28px 0;
+            }
+
+            .module-no {
+                font-size: 32px;
+            }
+
+            .point-list,
+            .module-featured .point-list,
+            .module:only-child .point-list {
+                grid-column: 1 / -1;
+                grid-template-columns: 1fr;
+                gap: 18px;
+            }
+        }
+
         @media (prefers-reduced-motion: reduce) {
-            *,
-            *::before,
-            *::after {
-                scroll-behavior: auto !important;
-                animation-duration: 0.01ms !important;
-                animation-iteration-count: 1 !important;
+            html {
+                scroll-behavior: auto;
             }
         }
     </style>
@@ -822,152 +907,108 @@
     <div class="container">
         <header class="masthead {{if showOverview}}masthead-main{{else}}masthead-archive{{/if}}">
             <div class="masthead-content">
-                <div class="brand-lockup">
-                    <div class="edition">诸天纪元 · 天道诏令</div>
-                    <h1 class="brand-title">诸天修仙<span>更新天书</span></h1>
-                    <p class="brand-note">
-                        诸界法则重新编定，新机缘、新征途与新敌手已落入天书。此卷记载本期全部大道变迁。
-                    </p>
+                <div class="release-line">
+                    <strong>{{if showOverview}}本期更新{{else}}历史归档{{/if}}</strong>
+                    <i></i>
+                    <span>{{date}} · {{nickname}}</span>
                 </div>
-                <div class="meta-panel">
-                    <div class="meta-item">
-                        <span class="meta-label">版本</span>
-                        <span class="meta-value gold">{{version}}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">发布</span>
-                        <span class="meta-value">{{date}}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">阅卷</span>
-                        <span class="meta-value">{{nickname}}</span>
-                    </div>
-                </div>
+                <h1 class="brand-title">{{if showOverview}}{{edition}}{{else}}大道留痕{{/if}}</h1>
+                <p class="brand-note">
+                    {{if showOverview}}{{intro}}{{else}}这里收录过往版本记录，按日期和模块拆开呈现。{{/if}}
+                </p>
             </div>
         </header>
 
+        {{if showOverview}}
+        <nav class="chapter-nav" aria-label="公告分类">
+            {{each updateGroups group index}}
+            <div class="chapter-link">
+                <strong>{{group.label}}</strong>
+                <span>{{group.modules.length}} 个模块</span>
+            </div>
+            {{/each}}
+        </nav>
+
+        <section class="overview" aria-label="版本概览">
+            {{each overviewStats stat}}
+            <div class="stat">
+                <strong>{{stat.value}}</strong>
+                <span>{{stat.label}}</span>
+            </div>
+            {{/each}}
+        </section>
+        {{/if}}
+
         <main>
             {{if showOverview}}
-            <section class="release-intro" aria-label="本期概览">
-                <div class="release-count">
-                    <strong>{{updates.length}}</strong>
-                    <span>条核心更新</span>
-                </div>
-                <p class="release-copy">
-                    本期围绕<strong>炼器火种锻炉、圣地战功、劫途星图、问仙令任务与天机证道</strong>展开。
-                    从炉火装配到一键开炉，从战功兑换到十层星轨，所有改动均已接入正式玩法。
-                </p>
-            </section>
+            <div class="update-groups">
+                {{each updateGroups group}}
+                <section class="module-group">
+                    <header class="group-heading">
+                        <span>{{group.modules.length}} 个模块</span>
+                        <h2>{{group.label}}</h2>
+                        <p>{{group.description}}</p>
+                    </header>
+                    <div class="module-list">
+                        {{each group.modules u}}
+                        <article class="module {{if u.featured}}module-featured{{/if}}">
+                            <span class="module-no">{{u.no}}</span>
+                            <header class="module-heading">
+                                <span class="module-tag">{{u.tag}}</span>
+                                <h3 class="module-title">{{u.title}}</h3>
+                                <p class="module-summary">{{u.summary}}</p>
+                            </header>
+                            <ul class="point-list">
+                                {{each u.points point}}
+                                <li>{{each point.segments segment}}{{if segment.signal}}<mark class="signal">{{segment.text}}</mark>{{else}}{{segment.text}}{{/if}}{{/each}}</li>
+                                {{/each}}
+                            </ul>
+                        </article>
+                        {{/each}}
+                    </div>
+                </section>
+                {{/each}}
+            </div>
+            {{/if}}
 
-            <section class="section update-section">
-                <div class="section-head">
-                    <h2>天书新章</h2>
-                    <span>本期核心内容</span>
-                </div>
-                <div class="update-list">
-                    {{each updates u}}
-                    <article class="update-card">
-                        <div class="update-head">
-                            <span class="tag tag-{{u.tag}}">{{u.tag}}</span>
-                            <h3 class="update-title">{{u.title}}</h3>
+            <section class="history">
+                <header class="history-heading">
+                    <span>{{if showOverview}}版本落款{{else}}历史更新{{/if}}</span>
+                    <h2>{{if showOverview}}本期提交记录{{else}}往期版本归档{{/if}}</h2>
+                    <p>{{if showOverview}}技术提交只保留标题与编号，玩家改动以上方模块说明为准。{{else}}长说明已经按模块拆开，可以逐段查阅。{{/if}}</p>
+                </header>
+                {{each changelog group}}
+                <div class="history-group">
+                    <div class="history-date">{{group.date}}</div>
+                    {{each group.items item}}
+                    <article class="history-item">
+                        <div class="history-head">
+                            <span class="history-hash">{{item.hash}}</span>
+                            <h3 class="history-title">{{item.msg}}</h3>
                         </div>
-                        <p class="update-summary">{{u.summary}}</p>
-                        <ul class="point-list">
-                            {{each u.points p}}
-                            <li>{{p}}</li>
+                        {{if !showOverview && item.detailSections.length}}
+                        <div class="detail-grid">
+                            {{each item.detailSections detail}}
+                            <div class="detail-block">
+                                <strong>{{detail.title}}</strong>
+                                <p>{{detail.text}}</p>
+                            </div>
                             {{/each}}
-                        </ul>
+                        </div>
+                        {{/if}}
                     </article>
                     {{/each}}
                 </div>
+                {{/each}}
             </section>
-            {{/if}}
-
-            <section class="section changelog-section">
-                <div class="section-head">
-                    <h2>大道刻录</h2>
-                    <span>更新日志 · 提交记录</span>
-                </div>
-                <div class="changelog-wrap">
-                    {{each changelog g}}
-                    <div class="cl-group">
-                        <div class="cl-date">{{g.date}}</div>
-                        <div class="cl-items">
-                            {{each g.items it}}
-                            <article class="cl-item">
-                                <div class="cl-head">
-                                    <span class="cl-hash">{{it.hash}}</span>
-                                    <h3 class="cl-msg">{{it.msg}}</h3>
-                                </div>
-                                {{if it.detail}}
-                                <p class="cl-detail">{{it.detail}}</p>
-                                {{/if}}
-                            </article>
-                            {{/each}}
-                        </div>
-                    </div>
-                    {{/each}}
-                </div>
-            </section>
-
-            {{if showOverview}}
-            <section class="section tianjiao-section">
-                <div class="section-head">
-                    <h2>诸界天骄</h2>
-                    <span>独立成长档案</span>
-                </div>
-                <div class="tj-grid">
-                    {{each tianjiaoItems t}}
-                    <article class="tj-card">
-                        <div class="tj-head">
-                            <div class="tj-avatar">{{t.avatar}}</div>
-                            <div class="tj-meta">
-                                <h3 class="tj-name">{{t.名号}}</h3>
-                                <div class="tj-realm">{{t.境界}}</div>
-                            </div>
-                        </div>
-                        <div class="tj-stats">
-                            <div class="tj-stat">
-                                <div class="lab">速度</div>
-                                <div class="val speed">{{t.速度}}</div>
-                            </div>
-                            <div class="tj-stat">
-                                <div class="lab">秘境</div>
-                                <div class="val mijing">{{t.秘境}}</div>
-                            </div>
-                            <div class="tj-stat">
-                                <div class="lab">仙古</div>
-                                <div class="val xiangu">{{t.仙古}}</div>
-                            </div>
-                        </div>
-                    </article>
-                    {{/each}}
-                </div>
-            </section>
-
-            <section class="section character-section">
-                <div class="character-band">
-                    <div>
-                        <h2 class="character-title">诸天人物志</h2>
-                        <p class="character-count">已结识 <strong>{{unlockedCount}}</strong> / {{totalCharacters}} 位</p>
-                    </div>
-                    <div>
-                        <div class="progress-track" aria-label="剧情人物收集进度">
-                            <div class="progress-fill" style="width: {{progressPercentage}}%;">{{progressPercentage}}%</div>
-                        </div>
-                        <p class="character-note">游历诸天万界并完成对应奇遇，可解锁人物关系与专属好感剧情。</p>
-                    </div>
-                </div>
-            </section>
-            {{/if}}
         </main>
 
         <footer class="footer">
-            <div>诸天修仙 · 大道无情，唯勤者得之</div>
+            <div><strong>{{version}}</strong> · 更新内容按玩家实际体验归档</div>
             <div class="footer-nav">
                 第 <strong>{{page}}</strong> / <strong>{{totalPages}}</strong> 页
                 {{if hasMore}} · 发送 <strong>#更新公告{{page+1}}</strong> 查看过往{{/if}}
-                {{if page>1}} · 发送 <strong>#更新公告1</strong> 回到最新{{/if}}
+                {{if page>1}} · 发送 <strong>#更新公告1</strong> 返回最新{{/if}}
             </div>
         </footer>
     </div>

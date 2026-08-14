@@ -3,10 +3,12 @@ import path from 'path';
 import puppeteer from '../../../lib/puppeteer/puppeteer.js';
 import { writeJsonAtomically } from '../utils/atomicJson.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
+import { assertGlobalInitIdle } from '../utils/globalInitGuard.js';
 
 import data from './XiuxianData.js';
 import { buildLinggenAtlasData, parseLinggenAtlasCommand } from './linggenAtlas.js';
 import { enrichNajieDisplayRarity } from './najieRarity.js';
+import { buildAnnouncePresentation, splitAnnounceDetail } from './announcePresentation.js';
 // 道种专属技能全局池别名：战斗函数内 `data` 常被玩家参数遮蔽，故用 SKILL_DB 稳定引用 XiuxianData 单例
 const SKILL_DB = data;
 
@@ -112,6 +114,11 @@ import {
   hasEngravedCoordinate,
 } from './weimianTravel.js';
 import { calculateEquippedStats, getEquipmentAllAttributeMultiplier } from './equipmentStats.js';
+import {
+  applyRelicBattleOpening,
+  applyRelicEffectsToPlayer,
+  normalizeRelicState,
+} from './relicSystem.js';
 import { hasSupremeInnate } from './supremePath.js';
 import { getGodDemonStealRule, getRealmAuthorityLevel } from './realmAuthority.js';
 import { ensureExtraCultivationState } from './extraCultivation.js';
@@ -353,6 +360,8 @@ export async function Read_player(usr_qq) {
   });
   //将字符串数据转变成数组格式
   player = JSON.parse(player);
+  // 老存档可能没有身份字段；战斗熟练度结算依赖该字段回写原玩家。
+  if (player.id == null || player.id === '') player.id = String(usr_qq).replace('qg_', '');
   ensureGongfaProficiency(player);
   ensureGongfaDailyGain(player);
   ensureCombatSkillLoadout(player, {
@@ -1038,6 +1047,7 @@ export async function dujie(user_qq) {
 }
 //写入存档信息,第二个参数是一个JavaScript对象
 export async function Write_player(usr_qq, player, options = {}) {
+  assertGlobalInitIdle();
   await assertTribulationWriteAllowed(usr_qq, player);
   let dir = path.join(__PATH.player_path, `${usr_qq}.json`);
   if (options.trackDailyTask !== false && fs.existsSync(dir)) {
@@ -1075,6 +1085,7 @@ function normalizeEquipment(equipment) {
     法宝: normalizeEquipmentSlot(current.法宝),
     帝兵: normalizeEquipmentSlot(current.帝兵),
     至宝: normalizeEquipmentSlot(current.至宝),
+    遗珍: normalizeRelicState(current.遗珍),
   };
 }
 
@@ -1218,6 +1229,7 @@ export function calculateXianguExtremeBonus(player, levels = data.xiangujinshi_l
 
 //写入装备信息,第二个参数是一个JavaScript对象
 export async function Write_equipment(usr_qq, equipment) {
+  assertGlobalInitIdle();
   return withPlayerMutationLock(usr_qq, async () => {
   await assertTribulationWriteAllowed(usr_qq, equipment);
   let player = await Read_player(usr_qq);
@@ -1520,6 +1532,7 @@ export async function Write_equipment(usr_qq, equipment) {
     player.防御 += fixed;
     player.血量上限 += fixed;
   }
+  applyRelicEffectsToPlayer(player, equipment, { rebuiltCombatStats: true });
     await Write_player(usr_qq, player);
     await Add_HP(usr_qq, 0);
     let dir = path.join(__PATH.equipment_path, `${usr_qq}.json`);
@@ -2786,19 +2799,26 @@ export async function get_announce_img(e) {
         const ann = loadAnnounce();
         const updates = ann.updates || [];
         const rawGroups = ann.changelog || [];
+        const presentation = buildAnnouncePresentation(updates, ann.currentUpdateCount);
 
         // 3. 扁平化提交日志（已是时间倒序），用于分页
         const allEntries = [];
         for (const g of rawGroups) {
             for (const it of (g.items || [])) {
-                allEntries.push({ date: g.date, hash: it.hash, msg: it.msg, detail: it.detail || '' });
+                allEntries.push({
+                    date: g.date,
+                    hash: it.hash,
+                    msg: it.msg,
+                    detail: it.detail || '',
+                    detailSections: splitAnnounceDetail(it.detail || '')
+                });
             }
         }
 
         // 4. 解析页码（#更新公告=1，#更新公告2=2...）并切片
         const pageMatch = e.msg.match(/#更新公告\s*(\d+)/);
         const requestedPage = pageMatch ? parseInt(pageMatch[1], 10) : 1;
-        const PAGE_SIZE = 8;
+        const PAGE_SIZE = 4;
         const totalPages = Math.max(1, Math.ceil(allEntries.length / PAGE_SIZE));
         const page = Math.min(Math.max(requestedPage, 1), totalPages);
         const segStart = (page - 1) * PAGE_SIZE;
@@ -2813,52 +2833,32 @@ export async function get_announce_img(e) {
                 last = { date: entry.date, items: [] };
                 changelog.push(last);
             }
-            last.items.push({ hash: entry.hash, msg: entry.msg, detail: entry.detail });
+            last.items.push({
+                hash: entry.hash,
+                msg: entry.msg,
+                detail: entry.detail,
+                detailSections: entry.detailSections
+            });
         }
 
-        // 6. 天骄属性一览（动态拉取，仅首页展示）
-        const tianjiaoItems = showOverview
-            ? (data.weimiantianjiao_list || []).map(t => ({
-                名号: t.名号,
-                avatar: (t.名号 || '修').substr(0, 1),
-                境界: t.境界 || '未知',
-                速度: t.速度 ?? 100,
-                秘境: t.mijinglevel_id ?? 1,
-                仙古: t.xiangulevel_id ?? 1
-            }))
-            : [];
-
-        // 7. 剧情人物收集进度（动态拉取，仅首页展示）
-        const characters = data.juqingrenwu_list || [];
-        const unlockedCharacters = player.剧情人物 || [];
-        const unlockedMap = {};
-        unlockedCharacters.forEach(char => {
-            const charKey = Object.keys(char).find(key =>
-                key !== '关系' && key !== '好感度' && key !== '解锁时间' && key !== '事件记录'
-            );
-            if (charKey) unlockedMap[charKey] = true;
-        });
-        const unlockedCount = showOverview ? Object.keys(unlockedMap).length : 0;
-        const totalCharacters = showOverview ? characters.length : 0;
-        const progressPercentage = totalCharacters > 0 ? Math.round((unlockedCount / totalCharacters) * 100) : 0;
-
-        // 8. 构建模板数据
+        // 6. 构建模板数据
         const renderData = {
             nickname: player.名号 || '无名修士',
             version: ann.version || 'v1.0 诸天修仙',
             date: ann.date || '2026.08',
-            updates: showOverview ? updates : [],
+            edition: ann.edition || '诸天修仙更新公告',
+            intro: ann.intro || '本期新增玩法、数值调整与问题修复已按模块整理。',
+            updateGroups: showOverview ? presentation.groups : [],
+            overviewStats: showOverview ? presentation.stats : [],
+            updateCount: presentation.count,
             changelog,
-            tianjiaoItems,
-            unlockedCount,
-            totalCharacters,
-            progressPercentage,
+            showOverview,
             page,
             totalPages,
             hasMore: page < totalPages
         };
 
-        // 9. 渲染并截图
+        // 7. 渲染并截图
         const templateData = await new Show(e).get_announceData(renderData);
         return await puppeteer.screenshot('announce', templateData);
 
@@ -4668,6 +4668,7 @@ export async function Read_Boss_List() {
 
 //写Boss表
 export async function Write_Boss_List(wupin) {
+  assertGlobalInitIdle();
   let dir = path.join(__PATH.Exchange, `Boss_list.json`);
   writeJsonAtomically(dir, wupin);
   return;
@@ -5002,6 +5003,7 @@ export async function datachange(data) {
 }
 //写入纳戒信息,第二个参数是一个JavaScript对象
 export async function Write_najie(usr_qq, najie) {
+  assertGlobalInitIdle();
   await assertTribulationWriteAllowed(usr_qq, najie);
   let dir = path.join(__PATH.najie_path, `${usr_qq}.json`);
   writeJsonAtomically(dir, najie);
@@ -6324,6 +6326,7 @@ export async function Read_qinmidu() {
 }
 
 export async function Write_qinmidu(qinmidu) {
+  assertGlobalInitIdle();
   let dir = path.join(__PATH.qinmidu, `qinmidu.json`);
   writeJsonAtomically(dir, qinmidu);
   return;
@@ -6343,6 +6346,7 @@ export async function Read_channel() {
 }
 
 export async function Write_channel(channel) {
+  assertGlobalInitIdle();
   let dir = path.join(__PATH.channel, `channel.json`);
   writeJsonAtomically(dir, channel);
   return;
@@ -6511,6 +6515,7 @@ export async function exist_hunyin(A) {
 }
 
 export async function Write_shitu(shitu) {
+  assertGlobalInitIdle();
   let dir = path.join(__PATH.shitu, `shitu.json`);
   writeJsonAtomically(dir, shitu);
   return;
@@ -6636,6 +6641,7 @@ export async function Read_danyao(usr_qq) {
 }
 
 export async function Write_danyao(usr_qq, danyao) {
+  assertGlobalInitIdle();
   let dir = path.join(__PATH.danyao_path, `${usr_qq}.json`);
   writeJsonAtomically(dir, danyao);
   return;
@@ -6677,11 +6683,13 @@ export async function Read_temp() {
 }
 
 export async function Write_temp(temp) {
+  assertGlobalInitIdle();
   let dir = path.join(__PATH.temp_path, `temp.json`);
   writeJsonAtomically(dir, temp);
   return;
 }
 export async function Write_renwu(renwu) {
+  assertGlobalInitIdle();
   let dir = path.join(__PATH.renwu, `renwu.json`);
   const temp = `${dir}.${process.pid}.${Date.now()}.tmp`;
   let new_ARR = JSON.stringify(renwu, "", "\t");
@@ -6974,6 +6982,7 @@ export async function Go(e) {
 
 
 export async function Write_shop(shop) {
+  assertGlobalInitIdle();
   let dir = path.join(__PATH.shop, `shop.json`);
   writeJsonAtomically(dir, shop);
   return;
@@ -8024,7 +8033,7 @@ export async function zd_battle(A_input, B_input, options = {}) {
   });
 }
 
-async function settleBattleGongfaProficiency(pairs) {
+export async function settleBattleGongfaProficiency(pairs) {
   const groups = new Map();
   let anonymousIndex = 0;
   for (const { source, combatant } of pairs) {
@@ -8059,6 +8068,16 @@ async function settleBattleGongfaProficiency(pairs) {
       const targetDaily = ensureGongfaDailyGain(target);
       sourceDaily.日期 = targetDaily.日期;
       sourceDaily.收益 = { ...targetDaily.收益 };
+      for (const pair of pairs) {
+        const pairId = pair.source?.id == null ? '' : String(pair.source.id).replace('qg_', '');
+        if (!group.id || pair.source === group.source || pairId !== group.id) continue;
+        const pairProficiency = ensureGongfaProficiency(pair.source);
+        for (const name of Object.keys(pairProficiency)) delete pairProficiency[name];
+        Object.assign(pairProficiency, sourceProficiency);
+        const pairDaily = ensureGongfaDailyGain(pair.source);
+        pairDaily.日期 = sourceDaily.日期;
+        pairDaily.收益 = { ...sourceDaily.收益 };
+      }
       if (Object.keys(gains).length > 0) allGains[group.id || group.source.名号 || 'unknown'] = gains;
     };
     if (persist) await withPlayerMutationLock(group.id, apply);
@@ -8168,6 +8187,12 @@ let B_speed = (B_player.速度 ?? 100)
     ...applyForbiddenBattleModifiers(A_player),
     ...applyForbiddenBattleModifiers(B_player)
   );
+  delete A_player._遗珍开战护盾已应用;
+  delete B_player._遗珍开战护盾已应用;
+  const A_relicOpening = applyRelicBattleOpening(A_player);
+  const B_relicOpening = applyRelicBattleOpening(B_player);
+  if (A_relicOpening.message) msg.push(A_relicOpening.message);
+  if (B_relicOpening.message) msg.push(B_relicOpening.message);
 
   const forbiddenPlayerId = A_player?.id == null
     ? ''
@@ -10207,6 +10232,9 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       p._fenshen_duration = 0;
       p._yiqihua_triggered = false;
       p._护盾值 = p.护盾值 || 0;
+      delete p._遗珍开战护盾已应用;
+      const relicOpening = applyRelicBattleOpening(p, '_护盾值');
+      if (relicOpening.message) msg.push(relicOpening.message);
       p._减伤比例 = p._减伤比例 || 0;
       p._反弹比例 = 0;
       p.dongjie = p.dongjie || false;
@@ -12146,6 +12174,7 @@ export function ifbaoji(baoji) {
 }
 //写入交易表
 export async function Write_Exchange(wupin) {
+  assertGlobalInitIdle();
   let dir = path.join(__PATH.Exchange, `Exchange.json`);
   writeJsonAtomically(dir, wupin);
   return;
@@ -12153,6 +12182,7 @@ export async function Write_Exchange(wupin) {
 
 //写入交易表
 export async function Write_Forum(wupin) {
+  assertGlobalInitIdle();
   let dir = path.join(__PATH.Exchange, `Forum.json`);
   writeJsonAtomically(dir, wupin);
   return;
@@ -13536,6 +13566,7 @@ export {
 
 // 创建内景地空间
 export async function Create_inner_world(usr_qq) {
+  assertGlobalInitIdle();
   const dir = path.join(__PATH.inner_world_path, `${usr_qq}.json`);
 
   if (!fs.existsSync(__PATH.inner_world_path)) {
@@ -13579,6 +13610,7 @@ export async function Read_inner_world(usr_qq) {
 
 // 写入内景地空间
 export async function Write_inner_world(usr_qq, data) {
+  assertGlobalInitIdle();
   const dir = path.join(__PATH.inner_world_path, `${usr_qq}.json`);
   writeJsonAtomically(dir, data);
 }
