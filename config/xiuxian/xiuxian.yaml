@@ -105,10 +105,9 @@ Era:
     - C63D35605BF41FD1313B815E64CB6DFD
   Master: null
   current:
-    index: 4
-    years: 2000
+    index: 0
+    years: 0
     epoch: 1
-    totalYears: 42000
   yearlyAdvance: 1000
   weimianRepairInterval: 2000
 BotType: onebot
