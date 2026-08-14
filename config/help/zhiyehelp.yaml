@@ -4,8 +4,11 @@
       title: '#转职+职业名'
       desc: '炼丹师|采药师|炼器师|采矿师|侠客|猎户|源师|符师|阵法师'
     - icon: help-icon_59
-      title: '#转换副职'
-      desc: '切换到副职业'
+      title: '#我的职业'
+      desc: '查看主职与所有副职的等级和经验'
+    - icon: help-icon_59
+      title: '#转换副职+职业名'
+      desc: '从已拥有的职业中切换主职'
     - icon: help-icon_13
       title: '#职业等级'
       desc: '查看所有等级'      

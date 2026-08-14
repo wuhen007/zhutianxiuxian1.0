@@ -55,6 +55,33 @@
       title: '#领取书院俸禄'
       desc: '根据院籍身份每日领取源石俸禄'
 
+- group: 花粉进化路
+  list:
+    - icon: help-icon_2
+      title: '#踏上花粉路 / #花粉路'
+      desc: '选择花粉路为唯一额外体系，或查看当前进化状态'
+    - icon: help-icon_2
+      title: '#感应异变 / #进化 [花粉名]'
+      desc: '每日寻找进化媒介，并消耗修为、血气完成生命跃迁'
+    - icon: help-icon_2
+      title: '#极尽蜕变 / #净化隐患'
+      desc: '以积淀冲击当前境界极境，或用净化花露清除进化隐患'
+    - icon: help-icon_2
+      title: '#花粉境界'
+      desc: '查看花粉进化路完整境界顺序'
+    - icon: help-icon_2
+      title: '#穿梭圣墟位面 / #圣墟副本'
+      desc: '觉醒境后进入花粉路独占位面，查看地球、星路、阳间与诡异篇副本'
+    - icon: help-icon_2
+      title: '#探索圣墟 地点'
+      desc: '挑战异变怪物，获取进化花粉、积淀、呼吸法与石罐线索'
+    - icon: help-icon_2
+      title: '#圣墟势力 / #领取圣墟俸禄'
+      desc: '加入菩提基因、大梦净土或阳间第一山，领取每日进化资源'
+    - icon: help-icon_2
+      title: '#石罐 / #追寻石罐'
+      desc: '查看并争夺全服唯一石罐本体，归属先到先得且不可交易'
+      
 - group: 世家势力
   list:
     - icon: help-icon_2
@@ -257,20 +284,3 @@
       title: '#万劫道碑'
       desc: '查看永久强化路线与厉鬼拼图装配'
 
-- group: 众生仙钓
-  list:
-    - icon: help-icon_44
-      title: '#众生仙饵'
-      desc: '查看五种仙饵及对应的定向渔获'
-    - icon: help-icon_44
-      title: '#垂钓众生 仙饵名'
-      desc: '消耗众生仙钓与指定仙饵垂钓，获得愿鳞并可能触发位面奇遇'
-    - icon: help-icon_44
-      title: '#愿鳞兑换 / #愿鳞兑换 物品名'
-      desc: '查看愿鳞兑换表，换取仙钓、仙饵、炼器材料与万界引潮灯'
-    - icon: help-icon_44
-      title: '#寻找武祖'
-      desc: '持仙武界坐标及十枚彼岸轮回果、十缕纪元之力求见武祖叶萧'
-    - icon: help-icon_44
-      title: '#合成神主触屏 / #消耗神主触屏'
-      desc: '十枚碎片合一，使门矢士或帝骑晋升帝骑·神主'
