@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 import {
   createTreasureContest,
   createTreasureGuardian,
+  getManifestedTreasureNames,
   getRevealedTreasureClues,
   joinTreasureContest,
   performTreasureTrial,
@@ -12,6 +14,20 @@ import {
   registerTianjiTreasureEvent,
   settleTreasureContest,
 } from '../model/innateTreasureContest.js';
+
+test('显化中及结算待落盘的至宝都继续占用同名至宝', () => {
+  const names = getManifestedTreasureNames([
+    { type: 'treasureAppear', treasure: { name: '混沌珠' }, contest: { status: 'open' } },
+    { type: 'treasureAppear', treasure: { name: '盘古幡' }, contest: { status: 'settled' } },
+    { type: 'sectWar' },
+  ]);
+  assert.deepEqual([...names], ['混沌珠', '盘古幡']);
+});
+
+test('随机事件与天机购买共用至宝事件登记锁', () => {
+  const source = fs.readFileSync(new URL('../apps/tasks/RealmEvents.js', import.meta.url), 'utf8');
+  assert.equal(source.match(/withPlayerMutationLock\(REALM_EVENT_REGISTRATION_LOCK/g)?.length, 2);
+});
 
 test('守护灵按难度动态缩放且不继承玩家技能与至宝', () => {
   const player = {

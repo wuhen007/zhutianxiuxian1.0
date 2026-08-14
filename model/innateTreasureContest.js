@@ -2,6 +2,13 @@ export const TREASURE_TRIAL_LIMIT = 3;
 export const TREASURE_CONTEST_DURATION_MS = 24 * 60 * 60 * 1000;
 // 天机购买者的信息差优势加分：抢先获知至宝真名/权能/天象，夺宝时更有把握
 export const TIANJI_INFO_BONUS = 8;
+
+export function getManifestedTreasureNames(events = []) {
+  return new Set((Array.isArray(events) ? events : [])
+    .filter(event => event?.type === 'treasureAppear' && event.treasure?.name)
+    .map(event => event.treasure.name));
+}
+
 export const TREASURE_DAO_HEARTS = Object.freeze([
   '镇压诸天',
   '守护苍生',

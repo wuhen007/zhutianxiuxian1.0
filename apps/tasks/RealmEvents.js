@@ -30,6 +30,7 @@ import { getTianjiaoHeldTreasureNames } from '../../model/tianjiaoTreasure.js';
 import {
     TREASURE_CONTEST_DURATION_MS,
     createTreasureContest,
+    getManifestedTreasureNames,
     getRevealedTreasureClues,
     getTreasureContestProfile,
     injectTianjiaoContestants,
@@ -39,6 +40,7 @@ import {
     registerTianjiTreasureEvent,
     settleTreasureContest
 } from '../../model/innateTreasureContest.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import {
     BINGZI_DURATION_MS,
     createBingziLegacy,
@@ -56,6 +58,7 @@ const DEFAULT_ERA_TRIGGER_CHANCE = 0.35;
 const DEFAULT_DUNGEON_TRIGGER_CHANCE = 0.002;
 const DEFAULT_EVENT_DURATION_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_ACTIVE_EVENTS = 3;
+const REALM_EVENT_REGISTRATION_LOCK = 'realm-event:registration';
 const SECT_WAR_MAX_ACTIONS = 5;
 const SECT_WAR_MAX_SUPPORTS = 3;
 
@@ -902,6 +905,7 @@ export class RealmEvents {
     
     /** 触发位面大事件 */
     async triggerRandomEvent(eraIndex, currentYears, epoch = 1, options = {}) {
+        return withPlayerMutationLock(REALM_EVENT_REGISTRATION_LOCK, async () => {
         try {
             const config = this.readEventConfig();
             const currentWorldYear = getRealmEventWorldYear(eraIndex, currentYears, epoch);
@@ -1049,6 +1053,7 @@ export class RealmEvents {
             console.error("触发位面大事件失败:", e);
             return null;
         }
+        });
     }
 
     /** 副本胜利结算时以极低概率引动一个位面大事件。 */
@@ -1076,6 +1081,7 @@ export class RealmEvents {
 
     /** 购买先天灵宝天机后，强行唤醒一件仍在蛰伏的未认主至宝。 */
     async triggerTreasureFromTianji(invoker = {}, options = {}) {
+        return withPlayerMutationLock(REALM_EVENT_REGISTRATION_LOCK, async () => {
         try {
             const random = options.random || Math.random;
             const config = this.readEventConfig();
@@ -1085,10 +1091,7 @@ export class RealmEvents {
             const activeEvents = (config.activeEvents || []).filter(event =>
                 !event.expiresAt || Number(event.expiresAt) > now || hasPendingEventSettlement(event)
             );
-            const activeTreasureNames = new Set(activeEvents
-                .filter(event => event.type === 'treasureAppear' && event.contest?.status !== 'settled')
-                .map(event => event.treasure?.name)
-                .filter(Boolean));
+            const activeTreasureNames = getManifestedTreasureNames(activeEvents);
             const owners = readInnateTreasureState().owners || {};
             const unclaimed = CONTESTABLE_INNATE_TREASURE_NAMES.filter(name => !owners[name]);
             if (!unclaimed.length) return { ok: false, reason: 'all_claimed' };
@@ -1115,6 +1118,7 @@ export class RealmEvents {
             console.error('先天灵宝天机引动至宝失败:', error);
             return { ok: false, reason: 'failed' };
         }
+        });
     }
 
     async broadcastEvent(message) {
