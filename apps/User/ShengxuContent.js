@@ -23,6 +23,12 @@ import {
   synthesizeBreathingMethod,
 } from '../../model/shengxuContent.js';
 import {
+  FLOWER_POLLEN_SKILLS,
+  getLearnedFlowerPollenSkills,
+  getSevenTreasureProgress,
+  rollFlowerPollenSkill,
+} from '../../model/flowerPollenSkill.js';
+import {
   STONE_JAR_CLUE_REQUIREMENT,
   STONE_JAR_OPPORTUNITY,
   claimShengxuOpportunity,
@@ -80,6 +86,7 @@ export class ShengxuContent extends plugin {
         { reg: '^#(?:石罐|石罐机缘)$', fnc: 'stoneJar' },
         { reg: '^#追寻石罐$', fnc: 'claimStoneJar' },
         { reg: '^#合成呼吸法\\s+\\S+$', fnc: 'synthesizeBreathing' },
+        { reg: '^#(?:神术|神术列表)$', fnc: 'flowerSkills' },
       ],
     });
     // 探索定时结算：每 20 秒检查一次到期的圣墟探索
@@ -243,6 +250,12 @@ export class ShengxuContent extends plugin {
     fresh.圣墟副本通关[dungeon.name] = (Number(fresh.圣墟副本通关[dungeon.name]) || 0) + 1;
     // 呼吸法残页：刷副本集页，5 张合成一本呼吸法
     const page = collectBreathingPage(fresh, dungeon.gongfa);
+    // 神术/异术：副本技能池概率参悟（战斗中有概率自动施展）
+    const skillName = rollFlowerPollenSkill(dungeon);
+    if (skillName) {
+      fresh.学习的功法 ??= [];
+      if (!fresh.学习的功法.includes(skillName)) fresh.学习的功法.push(skillName);
+    }
     await Write_player(userId, fresh);
     lines.push(
       '【探索胜利】',
@@ -254,6 +267,7 @@ export class ShengxuContent extends plugin {
       if (page.learned) lines.push(`呼吸法残页折现：进化积淀+${page.reward}（已掌握${page.gongfa}）`);
       else lines.push(`拾取【${page.gongfa}·残页】${page.count}/${page.need}，集齐可 #合成呼吸法 ${page.gongfa}`);
     }
+    if (skillName) lines.push(`参悟神术：【${skillName}】（战斗中概率自动施展）`);
     lines.push(reward.gongfa ? `获得传承：【${reward.gongfa}】` : '本次未直接寻得呼吸法传承。');
     return this.sendExploreResult(task, lines.join('\n'));
   }
@@ -265,6 +279,25 @@ export class ShengxuContent extends plugin {
     } catch (error) {
       console.error(`[圣墟副本] 玩家 ${task.qq} 结算消息发送失败:`, error);
     }
+  }
+
+  async flowerSkills(e) {
+    if (!verc({ e })) return false;
+    const context = await this.getPlayer(e);
+    if (!context) return e.reply('玩家不存在，请先创建角色。');
+    const learned = getLearnedFlowerPollenSkills(context.player);
+    const seven = getSevenTreasureProgress(context.player);
+    const lines = ['【花粉路·神术/异术】'];
+    if (learned.length) {
+      lines.push('已参悟：');
+      lines.push(...learned.map(skill => `【${skill.name}】${skill.desc}`));
+      if (seven > 0) lines.push(`七妙宝术进度：${seven}/7（每多一宝，七妙伤害+15%；七宝圆满+60%）`);
+    } else {
+      lines.push('尚未参悟任何神术。探索圣墟副本可概率参悟神术传承。');
+    }
+    lines.push('', '神术名录（副本掉落）：');
+    lines.push(...FLOWER_POLLEN_SKILLS.map(skill => `${skill.name}｜花粉${skill.realm}阶｜${skill.desc}`));
+    return e.reply(lines.join('\n'));
   }
 
   async synthesizeBreathing(e) {

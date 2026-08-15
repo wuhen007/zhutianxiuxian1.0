@@ -123,6 +123,7 @@ import { hasSupremeInnate } from './supremePath.js';
 import { getGodDemonStealRule, getRealmAuthorityLevel } from './realmAuthority.js';
 import { ensureExtraCultivationState } from './extraCultivation.js';
 import { calculateFlowerExtremeBonus, ensureFlowerPollenState } from './flowerPollenPath.js';
+import { handleFlowerPollenSkills } from './flowerPollenSkill.js';
 import { STONE_JAR_OPPORTUNITY, getShengxuOpportunityOwner } from './shengxuOpportunity.js';
 import { getTianjiaoRealmName } from './tianjiaoGrowth.js';
 import {
@@ -8639,6 +8640,7 @@ let B_speed = (B_player.速度 ?? 100)
       }
       handleCircularGod(attacker, defender, msg, context);
       handleSpecialSkills(attacker, defender, msg, teshujineng,emperorFieldTriggered);
+      handleFlowerPollenSkills(attacker, defender, msg);
     }
 
     if (attacker.灵根 && attacker.灵根.name === "彼岸·命运神道体" && 轮回诸天拳触发 == false) {
