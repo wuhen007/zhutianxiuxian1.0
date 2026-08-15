@@ -76,7 +76,7 @@ export class ImmortalFishKing extends plugin {
     });
   }
 
-  async getContext(e) {
+  async getPlayerContext(e) {
     if (!e.isGroup) {
       await e.reply("鱼王讨伐仅在群聊中进行。");
       return null;
@@ -88,7 +88,7 @@ export class ImmortalFishKing extends plugin {
   }
 
   async status(e) {
-    const context = await this.getContext(e);
+    const context = await this.getPlayerContext(e);
     if (!context) return true;
     const state = await readActiveFishKing(context.groupId);
     if (!state) return e.reply("本群当前没有被钓起的位面鱼王。");
@@ -149,7 +149,7 @@ export class ImmortalFishKing extends plugin {
   }
 
   async damageList(e) {
-    const context = await this.getContext(e);
+    const context = await this.getPlayerContext(e);
     if (!context) return true;
     const state = await readActiveFishKing(context.groupId);
     if (!state) return e.reply("本群当前没有鱼王伤害记录。");
@@ -165,7 +165,7 @@ export class ImmortalFishKing extends plugin {
   }
 
   async join(e) {
-    const context = await this.getContext(e);
+    const context = await this.getPlayerContext(e);
     if (!context) return true;
     const result = await withFishKingLock(context.groupId, async () => {
       const state = await readActiveFishKing(context.groupId);
@@ -187,7 +187,7 @@ export class ImmortalFishKing extends plugin {
   }
 
   async leave(e) {
-    const context = await this.getContext(e);
+    const context = await this.getPlayerContext(e);
     if (!context) return true;
     const result = await withFishKingLock(context.groupId, async () => {
       const state = await readActiveFishKing(context.groupId);
@@ -205,7 +205,7 @@ export class ImmortalFishKing extends plugin {
   }
 
   async battle(e) {
-    const context = await this.getContext(e);
+    const context = await this.getPlayerContext(e);
     if (!context) return true;
     if (!await Go(e)) return false;
     if (Number(context.player.当前血量) <= Number(context.player.血量上限) * 0.1) {
