@@ -1518,9 +1518,21 @@
     "class": "道具",
     "amount": 1,
     "materials": [
-      { "name": "天药", "class": "丹药", "amount": 3 },
-      { "name": "仙馐果", "class": "食材", "amount": 10 },
-      { "name": "群星之沙", "class": "道具", "amount": 1 }
+      {
+        "name": "天药",
+        "class": "丹药",
+        "amount": 3
+      },
+      {
+        "name": "仙馐果",
+        "class": "食材",
+        "amount": 10
+      },
+      {
+        "name": "群星之沙",
+        "class": "道具",
+        "amount": 1
+      }
     ]
   },
   {
@@ -1528,9 +1540,21 @@
     "class": "道具",
     "amount": 1,
     "materials": [
-      { "name": "仙晶矿", "class": "道具", "amount": 500 },
-      { "name": "七彩流晶矿", "class": "道具", "amount": 30 },
-      { "name": "欺天石", "class": "材料", "amount": 1 }
+      {
+        "name": "仙晶矿",
+        "class": "道具",
+        "amount": 500
+      },
+      {
+        "name": "七彩流晶矿",
+        "class": "道具",
+        "amount": 30
+      },
+      {
+        "name": "欺天石",
+        "class": "材料",
+        "amount": 1
+      }
     ]
   },
   {
@@ -1538,9 +1562,21 @@
     "class": "道具",
     "amount": 1,
     "materials": [
-      { "name": "鱼肉", "class": "食材", "amount": 50 },
-      { "name": "仙馐果", "class": "食材", "amount": 20 },
-      { "name": "轮回果", "class": "草药", "amount": 1 }
+      {
+        "name": "鱼肉",
+        "class": "食材",
+        "amount": 50
+      },
+      {
+        "name": "仙馐果",
+        "class": "食材",
+        "amount": 20
+      },
+      {
+        "name": "轮回果",
+        "class": "草药",
+        "amount": 1
+      }
     ]
   },
   {
@@ -1548,9 +1584,21 @@
     "class": "道具",
     "amount": 1,
     "materials": [
-      { "name": "世界石", "class": "材料", "amount": 1 },
-      { "name": "群星之沙", "class": "道具", "amount": 10 },
-      { "name": "天外清风", "class": "材料", "amount": 3 }
+      {
+        "name": "世界石",
+        "class": "材料",
+        "amount": 1
+      },
+      {
+        "name": "群星之沙",
+        "class": "道具",
+        "amount": 10
+      },
+      {
+        "name": "天外清风",
+        "class": "材料",
+        "amount": 3
+      }
     ]
   },
   {
@@ -1558,9 +1606,21 @@
     "class": "道具",
     "amount": 1,
     "materials": [
-      { "name": "轮回果", "class": "草药", "amount": 3 },
-      { "name": "轮回印", "class": "材料", "amount": 1 },
-      { "name": "群星之沙", "class": "道具", "amount": 5 }
+      {
+        "name": "轮回果",
+        "class": "草药",
+        "amount": 3
+      },
+      {
+        "name": "轮回印",
+        "class": "材料",
+        "amount": 1
+      },
+      {
+        "name": "群星之沙",
+        "class": "道具",
+        "amount": 5
+      }
     ]
   },
   {
@@ -1568,7 +1628,11 @@
     "class": "道具",
     "amount": 1,
     "materials": [
-      { "name": "神主触屏碎片", "class": "道具", "amount": 10 }
+      {
+        "name": "神主触屏碎片",
+        "class": "道具",
+        "amount": 10
+      }
     ]
   },
   {
@@ -1576,9 +1640,21 @@
     "class": "道具",
     "amount": 1,
     "materials": [
-      { "name": "罗天晶", "class": "材料", "amount": 5 },
-      { "name": "道衍晶", "class": "材料", "amount": 7 },
-      { "name": "造化仙晶", "class": "材料", "amount": 3 }
+      {
+        "name": "罗天晶",
+        "class": "材料",
+        "amount": 5
+      },
+      {
+        "name": "道衍晶",
+        "class": "材料",
+        "amount": 7
+      },
+      {
+        "name": "造化仙晶",
+        "class": "材料",
+        "amount": 3
+      }
     ]
   },
   {
@@ -1586,7 +1662,11 @@
     "class": "功法",
     "amount": 1,
     "materials": [
-      { "name": "百炼诀残页", "class": "材料", "amount": 10 }
+      {
+        "name": "百炼诀残页",
+        "class": "材料",
+        "amount": 10
+      }
     ]
   },
   {
@@ -1594,7 +1674,11 @@
     "class": "功法",
     "amount": 1,
     "materials": [
-      { "name": "九转炼器诀残页", "class": "材料", "amount": 10 }
+      {
+        "name": "九转炼器诀残页",
+        "class": "材料",
+        "amount": 10
+      }
     ]
   },
   {
@@ -1602,7 +1686,11 @@
     "class": "功法",
     "amount": 1,
     "materials": [
-      { "name": "乾坤炼器经残页", "class": "材料", "amount": 10 }
+      {
+        "name": "乾坤炼器经残页",
+        "class": "材料",
+        "amount": 10
+      }
     ]
   },
   {
@@ -1610,7 +1698,11 @@
     "class": "功法",
     "amount": 1,
     "materials": [
-      { "name": "无上炼器道残页", "class": "材料", "amount": 10 }
+      {
+        "name": "无上炼器道残页",
+        "class": "材料",
+        "amount": 10
+      }
     ]
   },
   {
@@ -1618,7 +1710,72 @@
     "class": "功法",
     "amount": 1,
     "materials": [
-      { "name": "渡劫天功残页", "class": "材料", "amount": 10 }
+      {
+        "name": "渡劫天功残页",
+        "class": "材料",
+        "amount": 10
+      }
+    ]
+  },
+  {
+    "name": "一叶轻舟",
+    "class": "道具",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "群星之沙",
+        "class": "道具",
+        "amount": 20
+      },
+      {
+        "name": "众生愿鳞",
+        "class": "道具",
+        "amount": 50
+      }
+    ]
+  },
+  {
+    "name": "界河灵舟",
+    "class": "道具",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "一叶轻舟",
+        "class": "道具",
+        "amount": 1
+      },
+      {
+        "name": "彼岸星砂",
+        "class": "材料",
+        "amount": 10
+      },
+      {
+        "name": "众生愿鳞",
+        "class": "道具",
+        "amount": 100
+      }
+    ]
+  },
+  {
+    "name": "诸天仙舟",
+    "class": "道具",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "界河灵舟",
+        "class": "道具",
+        "amount": 1
+      },
+      {
+        "name": "纪元之力",
+        "class": "材料",
+        "amount": 5
+      },
+      {
+        "name": "众生愿鳞",
+        "class": "道具",
+        "amount": 200
+      }
     ]
   }
 ]

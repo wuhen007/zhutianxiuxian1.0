@@ -3,6 +3,14 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 globalThis.Bot = { makeLog() {} };
+globalThis.logger = {
+  log() {},
+  mark() {},
+  info() {},
+  warn() {},
+  error() {},
+  debug() {},
+};
 process.chdir(fileURLToPath(new URL('../../..', import.meta.url)));
 
 const { SakuraAdvancementSystem } = await import('../apps/zhutianjing/mokashaonv.js');

@@ -34,7 +34,6 @@ switch:
   couple: true
   Xiuianplay_key: true
   StoneMarket: true
-  # 官方QQBot用户未绑定QQ号时，禁止 #踏入仙途 创建角色（true=开启限制, false=关闭）
   requireQQBotBind: true
 StoneMarket:
   stone_levels:
@@ -110,6 +109,7 @@ Era:
     index: 0
     years: 0
     epoch: 1
+    totalYears: 0
   yearlyAdvance: 1000
   weimianRepairInterval: 2000
 BotType: onebot
