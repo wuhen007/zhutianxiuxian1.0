@@ -29,7 +29,7 @@ import {
   dj_players
 } from '../../model/xiuxian.js';
 import { tryInterceptAscension } from '../../model/TianLuoDiWang.js';
-import { getMinggeEffects } from '../../model/mingge.js';
+import { getMinggeEffects, calculateMinggePotentialCost } from '../../model/mingge.js';
 import { getBreakthroughPotentialCost } from './breakthroughPotential.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
 import { getKongtongModifiers } from '../../model/innateTreasure.js';
@@ -108,10 +108,6 @@ export class Level extends plugin {
         {
           reg: '^#登仙$',
           fnc: 'Level_up_Max',
-        },
-        {
-          reg: '^#自动突破$',
-          fnc: 'auto_up',
         },
 { reg: '^#一键(幸运)?突破$', fnc: 'OneKeyLevelUp' },
 { reg: '^#一键(幸运)?破体$', fnc: 'OneKeyMaxUp' },
@@ -2198,6 +2194,7 @@ async OneKeyMaxUp(e) {
     const era = eras[currentEra.index];
 
     const player = await Read_player(usr_qq);
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
     const startLevelInfo = data.LevelMax_list.find(i => i.level_id === player.Physique_id); // ←补上
     const talent = this.getTalentBreakthroughInfo(player);
 
@@ -2226,7 +2223,7 @@ async OneKeyMaxUp(e) {
         const nextInfo = data.LevelMax_list.find(i => i.level_id === player.Physique_id + 1);
         if (!nextInfo) break;
 
-        const potentialCost = getBreakthroughPotentialCost(player.Physique_id);
+        const potentialCost = calculateMinggePotentialCost(getBreakthroughPotentialCost(player.Physique_id), minggeEffects);
         if ((player.仙道潜力 || 0) < potentialCost) {
             msg.push(`仙道潜力不足！本次破体需要 ${potentialCost} 点，当前 ${player.仙道潜力 || 0} 点`);
             break;
@@ -2242,13 +2239,14 @@ async OneKeyMaxUp(e) {
         }
 
         const baseProb = Math.max(0.01, 1 - player.Physique_id / 60);
+        const breakthroughBonus = minggeEffects?.['境界突破成功率'] || 0; // 命格·可正可负
         const breakthroughPillBonus = consumeBreakthroughPill(player);
-        let prob = baseProb + era.breakthrough.bodySuccessRate / 100 + talent.probBonus + breakthroughPillBonus;
+        let prob = baseProb + era.breakthrough.bodySuccessRate / 100 + talent.probBonus + breakthroughBonus + breakthroughPillBonus;
         if (prob < 0.01) prob = 0.01;
 
         msg.push(`突破：${nowInfo.level} → ${nextInfo.level}`);
         msg.push(`基础消耗: ${base} → 体质后: ${afterTalent} → 时代后: ${cost} (×${era.breakthrough.bodyCostFactor})`);
-        msg.push(`突破成功率: ${Math.round(prob * 100)}%（基础:${Math.round(baseProb * 100)}% +时代:${Math.round(era.breakthrough.bodySuccessRate)}% +体质:${Math.round(talent.probBonus * 100)}%${breakthroughPillBonus ? ` +破境丹:${Math.round(breakthroughPillBonus * 100)}%` : ''}）`);
+        msg.push(`突破成功率: ${Math.round(prob * 100)}%（基础:${Math.round(baseProb * 100)}% +时代:${Math.round(era.breakthrough.bodySuccessRate)}% +体质:${Math.round(talent.probBonus * 100)}%${breakthroughBonus !== 0 ? ` +命格:${Math.round(breakthroughBonus * 100)}%` : ''}${breakthroughPillBonus ? ` +破境丹:${Math.round(breakthroughPillBonus * 100)}%` : ''}）`);
 
         /* 使用幸运草 */
         if (luck) {
@@ -2474,7 +2472,8 @@ const luck = e.msg.includes('幸运');
             break;
         }
 
-        const potentialCost = getBreakthroughPotentialCost(player.level_id);
+        const minggeEffects = getMinggeEffects(player, data.minggeList);
+        const potentialCost = calculateMinggePotentialCost(getBreakthroughPotentialCost(player.level_id), minggeEffects);
         if ((player.仙道潜力 || 0) < potentialCost) {
             msg.push(`仙道潜力不足！本次突破需要 ${potentialCost} 点，当前 ${player.仙道潜力 || 0} 点`);
             break;
@@ -2494,7 +2493,6 @@ const luck = e.msg.includes('幸运');
         const eraBaseProb = currentEraData.breakthrough.qiSuccessRate / 100;
         // ==== 命格消费层：境界突破成功率 ====
         // 「破障通玄」类命格引动道则，使破境之时少一分天妒、多一分契机。
-        const minggeEffects = getMinggeEffects(player, data.minggeList);
         const breakthroughBonus = minggeEffects?.['境界突破成功率'] || 0; // 可正可负
         const breakthroughPillBonus = consumeBreakthroughPill(player);
         let prob = baseProb + eraBaseProb + probBonus + breakthroughBonus + breakthroughPillBonus;
@@ -2764,10 +2762,11 @@ async LevelMax_up(e, luck) {
     
     // 读取玩家信息
     let player = await Read_player(usr_qq);
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
     
     // ========== 仙道潜力检查（炼体破体） ==========
     {
-        const potentialCost = getBreakthroughPotentialCost(player.Physique_id);
+        const potentialCost = calculateMinggePotentialCost(getBreakthroughPotentialCost(player.Physique_id), minggeEffects);
         const currentPotential = player.仙道潜力 || 0;
         if (currentPotential < potentialCost) {
             e.reply([
@@ -2883,12 +2882,13 @@ async LevelMax_up(e, luck) {
     
     // 计算突破概率（时代基础成功率 + 体质加成）
     const eraBaseProb = currentEraData.breakthrough.bodySuccessRate / 100;
+    const breakthroughBonus = minggeEffects?.['境界突破成功率'] || 0; // 命格·可正可负
     const breakthroughPillBonus = consumeBreakthroughPill(player);
-    let prob = baseProb + eraBaseProb + probBonus + breakthroughPillBonus;
+    let prob = baseProb + eraBaseProb + probBonus + breakthroughBonus + breakthroughPillBonus;
     
     if (prob < 0.01) prob = 0.01; // 下限1%
     
-    msg.push(`突破成功率: ${Math.round(prob * 100)}%（基础境界成功率：${Math.round(baseProb * 100)}% + 时代基础:${Math.round(eraBaseProb * 100)}% + 体质加成:${Math.round(probBonus * 100)}%${breakthroughPillBonus ? ` +破境丹:${Math.round(breakthroughPillBonus * 100)}%` : ''}）`);
+    msg.push(`突破成功率: ${Math.round(prob * 100)}%（基础境界成功率：${Math.round(baseProb * 100)}% + 时代基础:${Math.round(eraBaseProb * 100)}% + 体质加成:${Math.round(probBonus * 100)}%${breakthroughBonus !== 0 ? ` +命格:${Math.round(breakthroughBonus * 100)}%` : ''}${breakthroughPillBonus ? ` +破境丹:${Math.round(breakthroughPillBonus * 100)}%` : ''}）`);
     
     // 应用幸运草效果（如果有可用）
     let luckGrassUsed = 0;
@@ -2994,7 +2994,7 @@ async LevelMax_up(e, luck) {
         
         // 扣除仙道潜力（破体成功后扣除）
         {
-            const potentialCost = getBreakthroughPotentialCost(nextLevelId - 1);
+            const potentialCost = calculateMinggePotentialCost(getBreakthroughPotentialCost(nextLevelId - 1), minggeEffects);
             player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - potentialCost);
         }
         
@@ -3089,10 +3089,11 @@ async Level_up(e, luck) {
     
     // 读取玩家信息
     let player = await Read_player(usr_qq);
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
     
     // ========== 仙道潜力检查（练气突破） ==========
     {
-        const potentialCost = getBreakthroughPotentialCost(player.level_id);
+        const potentialCost = calculateMinggePotentialCost(getBreakthroughPotentialCost(player.level_id), minggeEffects);
         const currentPotential = player.仙道潜力 || 0;
         if (currentPotential < potentialCost) {
             e.reply([
@@ -3271,7 +3272,6 @@ async Level_up(e, luck) {
     
     // 计算最终成功率
     // ==== 命格消费层：境界突破成功率 ====
-    const minggeEffects = getMinggeEffects(player, data.minggeList);
     const breakthroughBonus = minggeEffects?.['境界突破成功率'] || 0; // 可正可负
     const breakthroughPillBonus = consumeBreakthroughPill(player);
     let prob = baseProb + eraBonus + talentBonus + breakthroughBonus + breakthroughPillBonus;
@@ -3445,7 +3445,7 @@ async Level_up(e, luck) {
 
         // 扣除仙道潜力（突破成功后扣除）
         {
-            const potentialCost = getBreakthroughPotentialCost(newLevelId - 1);
+            const potentialCost = calculateMinggePotentialCost(getBreakthroughPotentialCost(newLevelId - 1), minggeEffects);
             player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - potentialCost);
         }
         

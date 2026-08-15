@@ -59,7 +59,7 @@ function generateLevelRewards(level) {
     const xiuweiBase = 8000000;
     const xueqiBase = 4000000;
     const lingshiBase = 15000000;
-    const yuanshiBase = 1;
+    const yuanshiBase = 15000000;
 
     // 每级增长系数
     const mult = 1 + level * 0.12;
@@ -74,7 +74,7 @@ function generateLevelRewards(level) {
         xiuwei: Math.floor(xiuweiBase * mult * s1),
         xueqi: Math.floor(xueqiBase * mult * s2),
         lingshi: Math.floor(lingshiBase * mult * s3),
-        yuanshi: Math.max(1, Math.floor(yuanshiBase + level * 0.15 + s4 * 2)),
+        yuanshi: Math.max(1, Math.floor(yuanshiBase * mult * s4)),
     };
 }
 
@@ -275,7 +275,7 @@ export class WenXianLing extends plugin {
                 xiuwei: fmtNum(baseReward.xiuwei),
                 xueqi: fmtNum(baseReward.xueqi),
                 lingshi: fmtNum(baseReward.lingshi),
-                yuanshi: baseReward.yuanshi,
+                yuanshi: fmtNum(baseReward.yuanshi),
                 hasBonus: !!bonus,
                 bonusName: bonus ? bonus.name : '',
                 bonusLabel: bonus ? bonus.rewards.map(r => r.label).join(' ') : '',
@@ -627,7 +627,7 @@ export class WenXianLing extends plugin {
             player.灵石 = (Number(player.灵石) || 0) + baseReward.lingshi;
             player.源石 = (Number(player.源石) || 0) + baseReward.yuanshi;
 
-            rewardLines.push(`【第${lv}级】修为+${fmtNum(baseReward.xiuwei)}  血气+${fmtNum(baseReward.xueqi)}  灵石+${fmtNum(baseReward.lingshi)}  源石+${baseReward.yuanshi}`);
+            rewardLines.push(`【第${lv}级】修为+${fmtNum(baseReward.xiuwei)}  血气+${fmtNum(baseReward.xueqi)}  灵石+${fmtNum(baseReward.lingshi)}  源石+${fmtNum(baseReward.yuanshi)}`);
 
             // 发放额外奖励
             if (bonus) {
