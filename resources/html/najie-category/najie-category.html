@@ -397,7 +397,7 @@
                 <span class="property-name">品阶</span>
                 <span class="property-value">{{['劣','普','优','精','极','绝','顶'][item.pinji]}}</span>
               </div>
-              {{if item.atk>10 || item.def>10 || item.HP>10}}
+              {{if item.atk>499 || item.def>499 || item.HP>499}}
               <div class="item-property">
                 <span class="property-name">攻击</span>
                 <span class="property-value">{{(item.atk).toFixed(0)}}</span>
@@ -417,15 +417,15 @@
               </div>
               <div class="item-property">
                 <span class="property-name">攻击</span>
-                <span class="property-value">{{(item.atk*100).toFixed(0)}}%</span>
+                <span class="property-value">{{(item.atk>=1?item.atk:item.atk*100).toFixed(0)}}%</span>
               </div>
               <div class="item-property">
                 <span class="property-name">防御</span>
-                <span class="property-value">{{(item.def*100).toFixed(0)}}%</span>
+                <span class="property-value">{{(item.def>=1?item.def:item.def*100).toFixed(0)}}%</span>
               </div>
               <div class="item-property">
                 <span class="property-name">血量</span>
-                <span class="property-value">{{(item.HP*100).toFixed(0)}}%</span>
+                <span class="property-value">{{(item.HP>=1?item.HP:item.HP*100).toFixed(0)}}%</span>
               </div>
               {{/if}}
               <div class="item-property">
