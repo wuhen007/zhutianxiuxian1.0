@@ -1,0 +1,13 @@
+{
+  "name": "zhutian-worldchat-server",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "修仙插件·世界聊天频道 - 云端中转(留言板模型)",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

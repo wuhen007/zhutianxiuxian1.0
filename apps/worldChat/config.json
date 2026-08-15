@@ -1,0 +1,9 @@
+{
+  "enable": true,
+  "url": "ws://127.0.0.1:8080",
+  "secret": "zhutian-worldchat-dev-secret-change-me",
+  "server_id": "sv_0ef5c3c92e66",
+  "name": "区服-0ef5c3",
+  "query_default": 10,
+  "expose_group": false
+}

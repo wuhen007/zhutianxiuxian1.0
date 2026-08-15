@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>诸天世界频道 · 管理面板</title>
+<style>
+  :root { --bg:#f7f8fa; --card:#ffffff; --line:#e6e8eb; --text:#1f2329; --sub:#646a73;
+          --red:#e54545; --green:#2ba471; --blue:#3370ff; --amber:#ff8800; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+         background:var(--bg); color:var(--text); padding:24px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--sub); font-size:13px; margin-bottom:16px; }
+  .bar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:10px;
+          padding:12px 16px; font-size:13px; }
+  .stat b { font-size:18px; }
+  input { padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:13px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); }
+  th { background:#fafbfc; color:var(--sub); font-weight:600; }
+  tr:last-child td { border-bottom:none; }
+  .tag { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; }
+  .tag.off { background:#f0f1f3; color:var(--sub); }
+  .tag.admin { background:#fff3e0; color:var(--amber); }
+  .tag.public { background:#e8f7f0; color:var(--green); }
+  .tag.ban { background:#fdeaea; color:var(--red); }
+  button { border:none; border-radius:8px; padding:6px 12px; font-size:12px; cursor:pointer; }
+  .btn-ban { background:var(--red); color:#fff; }
+  .btn-unban { background:var(--blue); color:#fff; }
+  .muted { color:var(--sub); }
+  .empty { padding:24px; text-align:center; color:var(--sub); }
+  code { background:#f0f1f3; padding:1px 6px; border-radius:5px; }
+</style>
+</head>
+<body>
+  <h1>诸天世界频道 · 管理面板</h1>
+  <div class="sub">云端中转服务器 · 在线区服 / 昵称 / 群号 / 封禁管理</div>
+
+  <div class="bar">
+    <div class="stat">在线区服 <b id="s-online">-</b></div>
+    <div class="stat">已加入 <b id="s-joined">-</b></div>
+    <div class="stat">留言总数 <b id="s-msg">-</b></div>
+    <div class="stat">已封禁 <b id="s-ban">-</b></div>
+    <input id="token" placeholder="管理员令牌 (WC_ADMIN_TOKEN)" style="min-width:240px" />
+    <span class="muted">封禁操作需要令牌</span>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>区服昵称</th><th>server_id</th><th>群号</th><th>公开级别</th><th>状态</th><th>操作</th></tr>
+      </thead>
+      <tbody id="rows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+    </table>
+  </div>
+
+  <p class="muted" style="margin-top:14px;font-size:12px">
+    面板地址可带令牌访问：<code>/admin?token=你的令牌</code>。封禁后该服握手即被拒绝、已连接会被断开；
+    解封即时恢复。令牌缺失时仅可查看，不可操作。
+  </p>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const tokenEl = $('token');
+// 从 URL 取 token
+const up = new URL(location.href);
+const urlToken = up.searchParams.get('token');
+if (urlToken) tokenEl.value = urlToken;
+
+function getToken() { return tokenEl.value.trim(); }
+
+function fmtTime(ts) {
+  if (!ts) return '-';
+  const d = new Date(ts);
+  return d.toLocaleString('zh-CN', { hour12: false });
+}
+
+async function load() {
+  try {
+    const r = await fetch('/api/status');
+    const d = await r.json();
+    $('s-online').textContent = d.online;
+    $('s-joined').textContent = d.joined;
+    $('s-msg').textContent = d.totalMessages;
+    $('s-ban').textContent = (d.banned || []).length;
+    const rows = $('rows');
+    if (!d.servers.length) {
+      rows.innerHTML = '<tr><td colspan="6" class="empty">暂无在线区服</td></tr>';
+      return;
+    }
+    rows.innerHTML = d.servers.map((s) => {
+      const lvl = s.expose_level || 'off';
+      const lvlCls = lvl === 'public' ? 'public' : lvl === 'admin' ? 'admin' : 'off';
+      const lvlText = lvl === 'public' ? '全员公开' : lvl === 'admin' ? '仅管理员' : '不公开';
+      const groups = (s.groups && s.groups.length) ? s.groups.join('、') : '-';
+      const isBan = s.banned;
+      const btn = isBan
+        ? `<button class="btn-unban" data-act="unban" data-id="${s.server_id}">解封</button>`
+        : `<button class="btn-ban" data-act="ban" data-id="${s.server_id}">封禁</button>`;
+      return `<tr>
+        <td>${escapeHtml(s.name || s.server_id)}</td>
+        <td class="muted">${s.server_id}</td>
+        <td>${groups}</td>
+        <td><span class="tag ${lvlCls}">${lvlText}</span></td>
+        <td>${s.joined ? '已加入' : '在线未加入'}</td>
+        <td>${btn}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    $('rows').innerHTML = '<tr><td colspan="6" class="empty">加载失败：' + e.message + '</td></tr>';
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+document.addEventListener('click', async (ev) => {
+  const t = ev.target;
+  if (t.dataset && t.dataset.act) {
+    const token = getToken();
+    if (!token) { alert('请先填写管理员令牌'); return; }
+    const act = t.dataset.act;
+    const id = t.dataset.id;
+    const reason = act === 'ban' ? prompt('封禁原因(可选)：') || '' : '';
+    t.disabled = true;
+    const r = await fetch('/api/' + act, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, server_id: id, reason })
+    });
+    const j = await r.json();
+    if (!j.ok) alert('操作失败：' + (j.reason || r.status));
+    load();
+  }
+});
+
+load();
+setInterval(load, 10000);
+</script>
+</body>
+</html>
