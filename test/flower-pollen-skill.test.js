@@ -11,11 +11,19 @@ import {
 } from '../model/flowerPollenSkill.js';
 import { getShengxuDungeon } from '../model/shengxuContent.js';
 
-test('skill tree covers 11 skills including the seven treasures', () => {
-  assert.equal(FLOWER_POLLEN_SKILLS.length, 11);
+test('skill tree covers 19 skills including the seven treasures', () => {
+  assert.equal(FLOWER_POLLEN_SKILLS.length, 19);
   assert.ok(getFlowerPollenSkill('大力牛魔拳'));
+  assert.ok(getFlowerPollenSkill('终极拳'));
   assert.ok(getFlowerPollenSkill('闪电拳'));
+  assert.ok(getFlowerPollenSkill('火眼金睛'));
+  assert.ok(getFlowerPollenSkill('不灭经·护身'));
   assert.ok(getFlowerPollenSkill('大日如来拳'));
+  assert.ok(getFlowerPollenSkill('寒霜覆地'));
+  assert.ok(getFlowerPollenSkill('场域法·镇'));
+  assert.ok(getFlowerPollenSkill('一身化七圣'));
+  assert.ok(getFlowerPollenSkill('金色符文秘术'));
+  assert.ok(getFlowerPollenSkill('时间妙术'));
   assert.ok(getFlowerPollenSkill('时光术'));
   assert.equal(FLOWER_POLLEN_SKILLS.filter(s => s.name.startsWith('七妙宝术')).length, 7);
 });
@@ -34,8 +42,35 @@ test('dungeon skill drop rolls from its pool', () => {
   assert.equal(rollFlowerPollenSkill(taishan, () => 0), '大力牛魔拳'); // 必中
   assert.equal(rollFlowerPollenSkill(taishan, () => 1), ''); // 必不中
   const hunhe = getShengxuDungeon('魂河古地');
-  assert.deepEqual(hunhe.skills.map(s => s.name), ['七妙宝术·阴', '七妙宝术·阳', '时光术']);
+  assert.deepEqual(hunhe.skills.map(s => s.name), ['七妙宝术·水', '七妙宝术·木', '七妙宝术·阴', '七妙宝术·阳', '时间妙术', '时光术']);
   assert.equal(rollFlowerPollenSkill({}, () => 0), ''); // 无技能池
+});
+
+test('weaken skill lowers defender attack', () => {
+  const attacker = { 名号: '楚风', 攻击: 1000, 当前血量: 5000, 血量上限: 5000, 学习的功法: ['场域法·镇'] };
+  const defender = { 名号: '敌', 攻击: 5000, 当前血量: 9999 };
+  const msg = [];
+  handleFlowerPollenSkills(attacker, defender, msg, () => 0);
+  assert.equal(defender.攻击, 5000 - Math.floor(5000 * 0.12));
+  assert.ok(msg.some(line => line.includes('场域法·镇')));
+});
+
+test('multi skill deals several hits', () => {
+  const attacker = { 名号: '楚风', 攻击: 1000, 当前血量: 5000, 血量上限: 5000, 学习的功法: ['一身化七圣'] };
+  const defender = { 名号: '敌', 当前血量: 100000 };
+  const msg = [];
+  handleFlowerPollenSkills(attacker, defender, msg, () => 0);
+  const expected = 3 * Math.floor(1000 * 0.7); // 3 段 × 700
+  assert.equal(100000 - defender.当前血量, expected);
+});
+
+test('time skill damages and stuns', () => {
+  const attacker = { 名号: '楚风', 攻击: 1000, 当前血量: 5000, 血量上限: 5000, 学习的功法: ['时间妙术'] };
+  const defender = { 名号: '敌', 当前血量: 100000 };
+  const msg = [];
+  handleFlowerPollenSkills(attacker, defender, msg, () => 0);
+  assert.equal(100000 - defender.当前血量, Math.floor(1000 * 2.8));
+  assert.equal(defender.dongjie, true);
 });
 
 test('battle skill deals damage on trigger', () => {
