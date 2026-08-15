@@ -106,9 +106,12 @@ function applySkillEffect(attacker, defender, msg, skill, sevenBonus) {
     return;
   }
   if (skill.effect === 'weaken') {
-    const reduced = Math.floor((defender.攻击 || 0) * (skill.multiplier || 0.1));
+    // 场域支脉联动：场域境界越高，领域压制越强（每重天 +4%）
+    const stage = Math.max(0, Math.min(9, Math.trunc(Number(attacker.场域境界) || 0)));
+    const multiplier = (skill.multiplier || 0.1) * (1 + stage * 0.04);
+    const reduced = Math.floor((defender.攻击 || 0) * multiplier);
     defender.攻击 = Math.max(0, (defender.攻击 || 0) - reduced);
-    msg.push(`【${skill.name}】${attacker.名号}以领域压制${defender.名号}，其攻击降低${formatNum(reduced)}！`);
+    msg.push(`【${skill.name}】${attacker.名号}以场域镇压${defender.名号}（场域${stage}重天），其攻击降低${formatNum(reduced)}！`);
     return;
   }
   if (skill.effect === 'multi') {

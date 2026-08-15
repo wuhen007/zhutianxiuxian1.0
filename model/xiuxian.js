@@ -123,6 +123,7 @@ import { hasSupremeInnate } from './supremePath.js';
 import { getGodDemonStealRule, getRealmAuthorityLevel } from './realmAuthority.js';
 import { ensureExtraCultivationState } from './extraCultivation.js';
 import { calculateFlowerExtremeBonus, ensureFlowerPollenState } from './flowerPollenPath.js';
+import { calculateFlowerFieldBonus } from './flowerPollenField.js';
 import { handleFlowerPollenSkills } from './flowerPollenSkill.js';
 import { STONE_JAR_OPPORTUNITY, getShengxuOpportunityOwner } from './shengxuOpportunity.js';
 import { getTianjiaoRealmName } from './tianjiaoGrowth.js';
@@ -1300,6 +1301,7 @@ export async function Write_equipment(usr_qq, equipment) {
     花粉: data.huafen_list.find(item => item.level_id == player.huafenlevel_id),
   };
   const 花粉极境加成 = calculateFlowerExtremeBonus(player, 四体系境界.花粉);
+  const 场域加成 = calculateFlowerFieldBonus(player, 四体系境界.花粉);
   const 四体系基础 = {
     攻击: 四体系境界.练气.基础攻击 + 四体系境界.炼体.基础攻击 +
       四体系境界.秘境.基础攻击 + 四体系境界.仙古.基础攻击 + 四体系境界.花粉.基础攻击,
@@ -1312,9 +1314,9 @@ export async function Write_equipment(usr_qq, equipment) {
   const 命格四体系加成 = calculateMinggeFourRealmBonus(四体系基础, 命格效果);
 
   // 先按原公式结算，命格产生的四体系增量留到最后，避免被其他乘区二次放大。
-  player.攻击 = 四体系基础.攻击 + 仙古极境加成.攻击 + 花粉极境加成.攻击 + 阈内攻 + 光阴攻;
-  player.防御 = 四体系基础.防御 + 仙古极境加成.防御 + 花粉极境加成.防御 + 阈内防 + 光阴防;
-  player.血量上限 = 四体系基础.血量 + 仙古极境加成.血量 + 花粉极境加成.血量 + 阈内血 + 光阴血;
+  player.攻击 = 四体系基础.攻击 + 仙古极境加成.攻击 + 花粉极境加成.攻击 + 场域加成.攻击 + 阈内攻 + 光阴攻;
+  player.防御 = 四体系基础.防御 + 仙古极境加成.防御 + 花粉极境加成.防御 + 场域加成.防御 + 阈内防 + 光阴防;
+  player.血量上限 = 四体系基础.血量 + 仙古极境加成.血量 + 花粉极境加成.血量 + 场域加成.血量 + 阈内血 + 光阴血;
   player.暴击率 =
     四体系境界.练气.基础暴击 + 四体系境界.炼体.基础暴击 +
     (Number(命格效果.暴击加成) || 0);

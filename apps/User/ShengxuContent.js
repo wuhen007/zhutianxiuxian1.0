@@ -29,6 +29,11 @@ import {
   rollFlowerPollenSkill,
 } from '../../model/flowerPollenSkill.js';
 import {
+  advanceFlowerField,
+  collectFlowerFieldPage,
+  getFlowerFieldProfile,
+} from '../../model/flowerPollenField.js';
+import {
   STONE_JAR_CLUE_REQUIREMENT,
   STONE_JAR_OPPORTUNITY,
   claimShengxuOpportunity,
@@ -87,6 +92,8 @@ export class ShengxuContent extends plugin {
         { reg: '^#追寻石罐$', fnc: 'claimStoneJar' },
         { reg: '^#合成呼吸法\\s+\\S+$', fnc: 'synthesizeBreathing' },
         { reg: '^#(?:神术|神术列表)$', fnc: 'flowerSkills' },
+        { reg: '^#(?:场域|场域状态)$', fnc: 'flowerField' },
+        { reg: '^#参悟场域$', fnc: 'advanceField' },
       ],
     });
     // 探索定时结算：每 20 秒检查一次到期的圣墟探索
@@ -256,6 +263,8 @@ export class ShengxuContent extends plugin {
       fresh.学习的功法 ??= [];
       if (!fresh.学习的功法.includes(skillName)) fresh.学习的功法.push(skillName);
     }
+    // 场域残图：星路篇起副本胜利必得（场域支脉成长）
+    const field = dungeon.fieldPage ? collectFlowerFieldPage(fresh) : null;
     await Write_player(userId, fresh);
     lines.push(
       '【探索胜利】',
@@ -268,6 +277,10 @@ export class ShengxuContent extends plugin {
       else lines.push(`拾取【${page.gongfa}·残页】${page.count}/${page.need}，集齐可 #合成呼吸法 ${page.gongfa}`);
     }
     if (skillName) lines.push(`参悟神术：【${skillName}】（战斗中概率自动施展）`);
+    if (field && field.ok) {
+      if (field.canAdvance) lines.push(`拾取【场域残图】${field.pages}/${field.pageRequire}，可 #参悟场域 升阶！`);
+      else lines.push(`拾取【场域残图】（共${field.pages}张，${field.pageRequire}张可 #参悟场域）`);
+    }
     lines.push(reward.gongfa ? `获得传承：【${reward.gongfa}】` : '本次未直接寻得呼吸法传承。');
     return this.sendExploreResult(task, lines.join('\n'));
   }
@@ -298,6 +311,44 @@ export class ShengxuContent extends plugin {
     lines.push('', '神术名录（副本掉落）：');
     lines.push(...FLOWER_POLLEN_SKILLS.map(skill => `${skill.name}｜花粉${skill.realm}阶｜${skill.desc}`));
     return e.reply(lines.join('\n'));
+  }
+
+  async flowerField(e) {
+    if (!verc({ e })) return false;
+    const context = await this.getPlayer(e);
+    if (!context) return e.reply('玩家不存在，请先创建角色。');
+    const profile = getFlowerFieldProfile(context.player);
+    const lines = [
+      '【场域·花粉路支脉】',
+      `场域境界：${profile.stage}/${profile.maxStage} 重天`,
+      `全属性加成：+${Math.round(profile.attrBonus * 100)}%（基于花粉境界基础三维）`,
+      `场域法·镇压制强化：×${(1 + profile.stage * 0.04).toFixed(2)}`,
+      `场域残图：${profile.pages}/${profile.pageRequire}（星路篇及以上副本探索胜利必得）`,
+    ];
+    if (profile.stage < profile.maxStage) lines.push('集满 5 张后发送 #参悟场域 升阶。');
+    else lines.push('场域已臻九重天，以身立道，领域无双。');
+    return e.reply(lines.join('\n'));
+  }
+
+  async advanceField(e) {
+    if (!verc({ e })) return false;
+    const context = await this.getPlayer(e);
+    if (!context) return e.reply('玩家不存在，请先创建角色。');
+    return withPlayerMutationLock(context.userId, async () => {
+      const player = await Read_player(context.userId);
+      if (!isCultivatingExtraPath(player, 'huafen')) return e.reply('只有花粉进化路修士可以参悟场域。');
+      const result = advanceFlowerField(player);
+      if (!result.ok) {
+        if (result.reason === 'max') return e.reply('你的场域已臻九重天，无上领域已然圆满。');
+        return e.reply(`【残图不足】场域残图 ${result.pages}/${result.need}，探索星路篇及以上副本拾取。`);
+      }
+      await Write_player(context.userId, player);
+      return e.reply([
+        '【场域升阶】',
+        `你拼合残图，场域境界踏入 ${result.stage} 重天！`,
+        `全属性加成提升至 +${Math.round(result.stage * 3)}%，领域威压愈发凝实。`,
+      ].join('\n'));
+    });
   }
 
   async synthesizeBreathing(e) {
