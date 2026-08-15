@@ -40,6 +40,10 @@ plugins/
 resources/backup/
 _backups/
 
+# 世界聊天运行时数据（禁言名单/留言缓存，不入库）
+banned.json
+messages.json
+
 # 开发期临时验证脚本与设计草稿（不入库，本地保留）
 temp/
 
