@@ -28,6 +28,7 @@ import {
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
 import {
+  FORBIDDEN_SUPREME_ATTENTION_THRESHOLD,
   applyForbiddenSupremePlunder,
   buildForbiddenSupreme,
   recordUnfetteredJourney,
@@ -990,7 +991,7 @@ this.FORMATION_NAMES = [
         ...(supremeAttention.exempt
           ? ['', `【禁区至尊·${supremeAttention.exemptLevel === 'emperor' ? '大帝极忌' : '至尊重忌'}】`, supremeAttention.warning]
           : supremeAttention.warning
-            ? ['', `【禁区至尊注视 ${supremeAttention.count}/3】`, supremeAttention.warning]
+            ? ['', `【禁区至尊注视 ${supremeAttention.count}/${FORBIDDEN_SUPREME_ATTENTION_THRESHOLD}】`, supremeAttention.warning]
             : []),
         ...accidentMsgs,
         ...(unfetteredJourneyProgress ? [`【天地无拘】横渡位面：${unfetteredJourneyProgress}/3`] : []),
