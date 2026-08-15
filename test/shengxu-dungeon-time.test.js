@@ -9,7 +9,7 @@ import {
 } from '../model/shengxuContent.js';
 
 test('shengxu dungeons all carry explore duration increasing by chapter', () => {
-  const byChapter = { '地球篇': 15, '星路篇': 30, '阳间篇': 60, '诡异篇': 120 };
+  const byChapter = { '地球篇': 7, '星路篇': 10, '阳间篇': 15, '诡异篇': 20 };
   for (const dungeon of SHENGXU_DUNGEONS) {
     assert.equal(dungeon.duration, byChapter[dungeon.chapter], `${dungeon.name} 时长`);
   }
@@ -18,18 +18,18 @@ test('shengxu dungeons all carry explore duration increasing by chapter', () => 
 test('breathing method reduces explore duration', () => {
   const base = getShengxuDungeon('太行山');
   const none = getShengxuExploreDuration({ 学习的功法: [] }, base);
-  assert.equal(none, 15);
+  assert.equal(none, 7);
   const xingyi = getShengxuExploreDuration({ 学习的功法: ['基础呼吸法', '形意呼吸法'] }, base);
-  assert.equal(xingyi, 14); // 15 - 1
+  assert.equal(xingyi, 6); // 7 - 1
   const daoyin = getShengxuExploreDuration({ 学习的功法: ['道引呼吸法'] }, base);
-  assert.equal(daoyin, 11); // 15 - 4
+  assert.equal(daoyin, 5); // 7 - 4，触底下限 5
   const daoyinStar = getShengxuExploreDuration({ 学习的功法: ['道引呼吸法'] }, getShengxuDungeon('小阴间星路'));
-  assert.equal(daoyinStar, 26); // 30 - 4
+  assert.equal(daoyinStar, 6); // 10 - 4
 });
 
 test('explore duration has a floor of 5 minutes', () => {
   const herb = getShengxuExploreDuration({ 学习的功法: ['盗引呼吸法'] }, getShengxuDungeon('太行山'));
-  assert.equal(herb, 10); // 15 - 5
+  assert.equal(herb, 5); // 7 - 5，触底下限
   const floor = getShengxuExploreDuration({ 学习的功法: ['盗引呼吸法'] }, { name: 'x', duration: 4 });
   assert.equal(floor, 5); // 下限 5 分钟
 });
