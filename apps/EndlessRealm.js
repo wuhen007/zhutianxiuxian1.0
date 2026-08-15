@@ -99,6 +99,7 @@ export class EndlessRealm extends plugin {
         { reg: '^#离开无尽队伍$', fnc: 'leaveTeam' },
         { reg: '^#解散无尽队伍$', fnc: 'disbandTeam' },
         { reg: '^#开启无尽劫境$', fnc: 'startRun' },
+        { reg: '^#使用他化自在体验卡$', fnc: 'useFreeTransformationCard' },
         { reg: '^#无尽网页$', fnc: 'openEndlessWeb' },
         { reg: '^#劫途星图$', fnc: 'showStarMap' },
         { reg: '^#星图建议\\s*[1-3]$', fnc: 'suggestStarRoute' },
@@ -1402,6 +1403,31 @@ export class EndlessRealm extends plugin {
     });
   }
 
+  // ════════════════ 他化自在体验卡 ════════════════
+  // 使用后给玩家打标记，下一次 #开启无尽劫境 时必定自带1级他化自在法（残缺映照）
+  async useFreeTransformationCard(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const ITEM = '他化自在体验卡';
+    if (Number(await exist_najie_thing(userId, ITEM, '道具')) < 1)
+      return e.reply(`你的纳戒中没有【${ITEM}】，无法激活他化自在体验。`);
+    await Add_najie_thing(userId, ITEM, '道具', -1);
+    const player = await Read_player(userId);
+    player.无尽劫境_他化自在体验 = 1;
+    await Write_player(userId, player);
+    return e.reply([
+      '【他化自在体验卡·激活】',
+      '',
+      '一缕残缺的道印自岁月长河浮现，没入你的元神。',
+      '你隐约听见时空深处传来一声轻笑：',
+      '　「下一次……让我看看你的锋芒。」',
+      '',
+      '效果：下一次开启无尽劫境时，必定自带 1 级他化自在法（残缺映照）。',
+      '（开局未使用将保留标记，直至某次无尽劫境消耗）',
+      '',
+    ].join('\n'));
+  }
+
   async startRun(e) {
     const userId = await this.checkPlayer(e);
     if (!userId) return false;
@@ -1452,6 +1478,7 @@ export class EndlessRealm extends plugin {
         players.map(({ id, player }) => [id, structuredClone(player)])
       );
       const deducted = [];
+      const voucherActive = [];
       try {
         for (const entry of players) {
           const { id, player, heartCost } = entry;
@@ -1462,6 +1489,10 @@ export class EndlessRealm extends plugin {
             heartCost
           );
           if (!heart.ok) throw new Error(`player=${id} 心神状态发生变化`);
+          if (Number(player.无尽劫境_他化自在体验) > 0) {
+            voucherActive.push(id);
+            player.无尽劫境_他化自在体验 = 0;
+          }
           await Write_player(id, player);
         }
         team.status = 'running';
@@ -1518,6 +1549,14 @@ export class EndlessRealm extends plugin {
           `首个世界：${world.name}`,
           `世界规则：${world.rule}`,
           `共享命火：${run.lifeFire}/${run.maxLifeFire}`,
+          ...(voucherActive.length
+            ? [
+                '',
+                `【他化自在·体验激活】${voucherActive
+                  .map((id) => team.memberNames[id] || id)
+                  .join('、')}开局自带1级他化自在法（残缺映照），第一回合便有一尊自在身踏出岁月长河！`,
+              ]
+            : []),
           ...(webLink ? ['', '【网页入口·两分钟内有效】', webLink] : []),
           '',
           ...this.formatAllChoices(run),

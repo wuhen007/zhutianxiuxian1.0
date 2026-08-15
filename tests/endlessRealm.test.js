@@ -482,7 +482,12 @@ assert.ok(
 );
 assert.ok(
   incompleteFreeBattle.roundDetails.every(round =>
-    round.members.every(member => member.freeBodies.length === 0)
+    round.members.every(member => member.freeBodies.length <= 1)
+  )
+);
+assert.ok(
+  incompleteFreeBattle.roundDetails.some(round =>
+    round.members.some(member => member.freeBodies.length === 1)
   )
 );
 

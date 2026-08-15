@@ -29,8 +29,15 @@ test('无尽商店商品可按编号和名称查找', () => {
   );
   assert.equal(ENDLESS_SHOP[0].name, shopData.products[0].name);
   assert.equal(findEndlessProduct('1').name, '大衍悟道丹');
-  assert.equal(findEndlessProduct(FUSION_ITEM).price, 8000);
-  assert.equal(findEndlessProduct('造化本源').price, 3000);
+  // 价格以无尽商店.json 数据为准，避免配置调整后测试硬编码过期
+  assert.equal(
+    findEndlessProduct(FUSION_ITEM).price,
+    shopData.products.find(p => p.name === FUSION_ITEM).price
+  );
+  assert.equal(
+    findEndlessProduct('造化本源').price,
+    shopData.products.find(p => p.name === '造化本源').price
+  );
 });
 
 test('无尽商店实体商品都存在于物品目录', () => {

@@ -75,7 +75,7 @@
       "itemClass": "道具",
       "category": "破界",
       "rarity": "绝品",
-      "price": 500,
+      "price": 1500,
       "description": "进行一次位面传送",
       "dailyLimit": 0,
       "action": "item"
@@ -86,7 +86,7 @@
       "itemClass": "",
       "category": "天机",
       "rarity": "禁忌",
-      "price": 5000,
+      "price": 20000,
       "description": "强行推演天机，令一件尚未认主且仍在蛰伏的先天至宝显化，并获知其精确坐标",
       "dailyLimit": 1,
       "action": "clue"
@@ -97,7 +97,7 @@
       "itemClass": "道具",
       "category": "熔铸",
       "rarity": "禁忌",
-      "price": 8000,
+      "price": 12000,
       "description": "熔铸一件百分比装备与已穿戴套装部件",
       "dailyLimit": 1,
       "action": "item"
@@ -163,7 +163,7 @@
       "itemClass": "道具",
       "category": "炼器",
       "rarity": "禁忌",
-      "price": 3000,
+      "price": 7000,
       "description": "与时光令共同用于一键完美开炉",
       "dailyLimit": 0,
       "action": "item"

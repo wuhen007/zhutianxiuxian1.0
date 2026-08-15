@@ -242,29 +242,48 @@
       "name": "至尊骨",
       "world": "perfect",
       "rarity": "稀有",
-      "tags": ["肉身", "生存"],
+      "tags": [
+        "肉身",
+        "生存"
+      ],
       "description": "生命上限提高，首次致命伤可涅槃归来。",
       "maxLevel": 3,
-      "effect": { "hpPct": 0.12, "revivePct": 0.18 }
+      "effect": {
+        "hpPct": 0.12,
+        "revivePct": 0.18
+      }
     },
     {
       "id": "perfect_thunder_emperor",
       "name": "雷帝宝术",
       "world": "perfect",
       "rarity": "核心",
-      "tags": ["雷霆", "爆发"],
+      "tags": [
+        "雷霆",
+        "爆发"
+      ],
       "description": "每三回合降下雷罚，追加一次雷霆伤害。",
       "maxLevel": 3,
-      "effect": { "attackPct": 0.06 },
-      "proc": { "everyRounds": 3, "damagePct": 0.35, "label": "雷帝宝术" }
+      "effect": {
+        "attackPct": 0.06
+      },
+      "proc": {
+        "everyRounds": 3,
+        "damagePct": 0.35,
+        "label": "雷帝宝术"
+      }
     },
     {
       "id": "perfect_free_transformation",
       "name": "他化自在法",
       "world": "perfect",
       "rarity": "禁忌",
-      "tags": ["召唤", "时间", "规则"],
-      "description": "Boss级机缘。残缺级自在身仅存在一回合；仙帝级可常驻两尊；祭道级开场映照两尊、上限四尊，并可能召来古今未来与异界至强者。",
+      "tags": [
+        "召唤",
+        "时间",
+        "规则"
+      ],
+      "description": "Boss级机缘。残缺级自在身仅存在三回合；仙帝级可常驻两尊；祭道级开场映照两尊、上限四尊，并可能召来古今未来与异界至强者。",
       "maxLevel": 3,
       "bossOnly": true
     },
@@ -273,48 +292,75 @@
       "name": "皆字秘",
       "world": "zhetian",
       "rarity": "核心",
-      "tags": ["爆发", "秘术"],
+      "tags": [
+        "爆发",
+        "秘术"
+      ],
       "description": "提高攻击与暴击率，偶发极境爆发。",
       "maxLevel": 3,
-      "effect": { "attackPct": 0.08, "critChance": 0.05 }
+      "effect": {
+        "attackPct": 0.08,
+        "critChance": 0.05
+      }
     },
     {
       "id": "zhetian_healer_secret",
       "name": "者字秘",
       "world": "zhetian",
       "rarity": "稀有",
-      "tags": ["生存", "恢复", "秘术"],
+      "tags": [
+        "生存",
+        "恢复",
+        "秘术"
+      ],
       "description": "每回合结束恢复生命，禁疗环境下效果减半。",
       "maxLevel": 3,
       "choiceWeight": 0.22,
-      "effect": { "regenPct": 0.025 }
+      "effect": {
+        "regenPct": 0.025
+      }
     },
     {
       "id": "zhetian_fight_secret",
       "name": "斗字秘",
       "world": "zhetian",
       "rarity": "普通",
-      "tags": ["战技", "爆发", "秘术"],
+      "tags": [
+        "战技",
+        "爆发",
+        "秘术"
+      ],
       "description": "演化万法，稳定提高所有直接攻击伤害。",
       "maxLevel": 3,
-      "effect": { "attackPct": 0.12 }
+      "effect": {
+        "attackPct": 0.12
+      }
     },
     {
       "id": "flame_fenjue",
       "name": "焚诀",
       "world": "flame",
       "rarity": "核心",
-      "tags": ["火焰", "成长"],
+      "tags": [
+        "火焰",
+        "成长"
+      ],
       "description": "火焰能力越多，攻击提升越高。",
       "maxLevel": 3,
-      "effect": { "attackPct": 0.08, "fireScalingPct": 0.025 }
+      "effect": {
+        "attackPct": 0.08,
+        "fireScalingPct": 0.025
+      }
     },
     {
       "id": "flame_lotus",
       "name": "佛怒火莲",
       "world": "flame",
       "rarity": "禁忌",
-      "tags": ["火焰", "爆发"],
+      "tags": [
+        "火焰",
+        "爆发"
+      ],
       "description": "每四回合引爆火莲重创敌人，同时反噬自身。",
       "maxLevel": 3,
       "proc": {
@@ -329,17 +375,26 @@
       "name": "吞噬祖符",
       "world": "flame",
       "rarity": "稀有",
-      "tags": ["吞噬", "成长"],
+      "tags": [
+        "吞噬",
+        "成长"
+      ],
       "description": "每次胜利吞噬残余力量，永久提高本局攻击。",
       "maxLevel": 3,
-      "effect": { "onWinAttackPct": 0.012 }
+      "effect": {
+        "onWinAttackPct": 0.012
+      }
     },
     {
       "id": "saintking_elephant",
       "name": "神象镇狱劲",
       "world": "saintking",
       "rarity": "核心",
-      "tags": ["肉身", "生存", "成长"],
+      "tags": [
+        "肉身",
+        "生存",
+        "成长"
+      ],
       "description": "提高生命与防御，承伤后觉醒巨象微粒增强攻击。",
       "maxLevel": 3,
       "effect": {
@@ -353,37 +408,60 @@
       "name": "地狱熔炉",
       "world": "saintking",
       "rarity": "稀有",
-      "tags": ["吞噬", "火焰", "生存"],
+      "tags": [
+        "吞噬",
+        "火焰",
+        "生存"
+      ],
       "description": "降低所受伤害，胜利后炼化敌人恢复生命。",
       "maxLevel": 3,
-      "effect": { "damageReduction": 0.07, "victoryHealPct": 0.06 }
+      "effect": {
+        "damageReduction": 0.07,
+        "victoryHealPct": 0.06
+      }
     },
     {
       "id": "saintking_pure_land",
       "name": "诸神净土",
       "world": "saintking",
       "rarity": "禁忌",
-      "tags": ["领域", "生存", "团队"],
+      "tags": [
+        "领域",
+        "生存",
+        "团队"
+      ],
       "description": "战斗开始时为全队展开净土护盾。",
       "maxLevel": 3,
-      "effect": { "teamShieldPct": 0.06 }
+      "effect": {
+        "teamShieldPct": 0.06
+      }
     },
     {
       "id": "multi_speed_force",
       "name": "速度力残响",
       "world": "multiverse",
       "rarity": "核心",
-      "tags": ["速度", "时间"],
+      "tags": [
+        "速度",
+        "时间"
+      ],
       "description": "提高闪避，并有概率在行动后留下残影再次攻击。",
       "maxLevel": 3,
-      "effect": { "dodgeChance": 0.035, "extraActionChance": 0.09 }
+      "effect": {
+        "dodgeChance": 0.035,
+        "extraActionChance": 0.09
+      }
     },
     {
       "id": "multi_vector_control",
       "name": "矢量操纵",
       "world": "multiverse",
       "rarity": "禁忌",
-      "tags": ["规则", "防御", "速度"],
+      "tags": [
+        "规则",
+        "防御",
+        "速度"
+      ],
       "description": "概率反射来袭伤害，但无法完全解析未知规则。",
       "maxLevel": 3,
       "effect": {
@@ -397,27 +475,45 @@
       "name": "凤凰之力",
       "world": "multiverse",
       "rarity": "禁忌",
-      "tags": ["火焰", "复活", "精神"],
+      "tags": [
+        "火焰",
+        "复活",
+        "精神"
+      ],
       "description": "提高攻击，首次致命伤浴火重生。",
       "maxLevel": 3,
-      "effect": { "attackPct": 0.05, "revivePct": 0.25 }
+      "effect": {
+        "attackPct": 0.05,
+        "revivePct": 0.25
+      }
     },
     {
       "id": "anime_sun_breath",
       "name": "日之呼吸",
       "world": "anime",
       "rarity": "核心",
-      "tags": ["火焰", "战技", "连段"],
+      "tags": [
+        "火焰",
+        "战技",
+        "连段"
+      ],
       "description": "连续行动使伤害逐回合提高，倒下会令连段中断。",
       "maxLevel": 3,
-      "effect": { "attackPct": 0.07, "comboAttackPct": 0.012 }
+      "effect": {
+        "attackPct": 0.07,
+        "comboAttackPct": 0.012
+      }
     },
     {
       "id": "anime_transparent_world",
       "name": "通透世界",
       "world": "anime",
       "rarity": "稀有",
-      "tags": ["感知", "斩杀", "战技"],
+      "tags": [
+        "感知",
+        "斩杀",
+        "战技"
+      ],
       "description": "提高暴击与闪避，对濒死敌人造成斩杀伤害。",
       "maxLevel": 3,
       "effect": {
@@ -431,20 +527,34 @@
       "name": "暗影君王",
       "world": "anime",
       "rarity": "禁忌",
-      "tags": ["召唤", "成长", "领域"],
+      "tags": [
+        "召唤",
+        "成长",
+        "领域"
+      ],
       "description": "暗影军团每回合协同攻击，胜利后扩充军势。",
       "maxLevel": 3,
-      "effect": { "summonPct": 0.17, "onWinAttackPct": 0.008 }
+      "effect": {
+        "summonPct": 0.17,
+        "onWinAttackPct": 0.008
+      }
     },
     {
       "id": "anime_one_cut_shura",
       "name": "一刀修罗",
       "world": "anime",
       "rarity": "核心",
-      "tags": ["剑道", "爆发", "反噬"],
+      "tags": [
+        "剑道",
+        "爆发",
+        "反噬"
+      ],
       "description": "解除肉身限制斩出极限一刀；每次升级都会增强斩击并降低反噬，升至2级后可遇见一刀罗刹。",
       "maxLevel": 3,
-      "effect": { "attackPct": 0.12, "critChance": 0.05 },
+      "effect": {
+        "attackPct": 0.12,
+        "critChance": 0.05
+      },
       "proc": {
         "everyRounds": 4,
         "damagePct": 0.95,
@@ -461,11 +571,22 @@
       "name": "一刀罗刹",
       "world": "anime",
       "rarity": "禁忌",
-      "tags": ["剑道", "爆发", "斩杀", "反噬"],
+      "tags": [
+        "剑道",
+        "爆发",
+        "斩杀",
+        "反噬"
+      ],
       "description": "一刀修罗的进阶形态；每次升级都会让罗刹斩更强、反噬更低。",
       "maxLevel": 3,
-      "requires": { "anime_one_cut_shura": 2 },
-      "effect": { "attackPct": 0.2, "critChance": 0.08, "executePct": 0.08 },
+      "requires": {
+        "anime_one_cut_shura": 2
+      },
+      "effect": {
+        "attackPct": 0.2,
+        "critChance": 0.08,
+        "executePct": 0.08
+      },
       "proc": {
         "everyRounds": 3,
         "damagePct": 1.45,
@@ -482,10 +603,18 @@
       "name": "鬼眼",
       "world": "neutral",
       "rarity": "稀有",
-      "tags": ["瞳术", "洞察", "斩杀"],
+      "tags": [
+        "瞳术",
+        "洞察",
+        "斩杀"
+      ],
       "description": "窥见魂魄裂隙与死亡之线；获得后按万劫道碑已参悟的最高鬼域层级与已装配拼图生效。",
       "maxLevel": 1,
-      "effect": { "critChance": 0.055, "dodgeChance": 0.025, "executePct": 0.045 },
+      "effect": {
+        "critChance": 0.055,
+        "dodgeChance": 0.025,
+        "executePct": 0.045
+      },
       "proc": {
         "everyRounds": 3,
         "damagePct": 0.5,
@@ -499,10 +628,18 @@
       "name": "春秋蝉",
       "world": "neutral",
       "rarity": "禁忌",
-      "tags": ["光阴", "重生", "规则"],
+      "tags": [
+        "光阴",
+        "重生",
+        "规则"
+      ],
       "description": "每场战斗遭受致命伤时尝试逆流光阴；升级可提高回溯概率与回溯后的生命。",
       "maxLevel": 3,
-      "effect": { "timeRewindChance": 0.12, "timeRewindHealPct": 0.15, "extraActionChance": 0.025 },
+      "effect": {
+        "timeRewindChance": 0.12,
+        "timeRewindHealPct": 0.15,
+        "extraActionChance": 0.025
+      },
       "proc": {
         "everyRounds": 6,
         "damagePct": 0.42,
@@ -516,10 +653,18 @@
       "name": "六道轮回拳",
       "world": "zhetian",
       "rarity": "核心",
-      "tags": ["拳法", "轮回", "爆发"],
+      "tags": [
+        "拳法",
+        "轮回",
+        "爆发"
+      ],
       "description": "拳开六道，轮回虚影同时镇压现世，兼具持续增伤与低血线斩杀。",
       "maxLevel": 3,
-      "effect": { "attackPct": 0.09, "critChance": 0.035, "executePct": 0.04 },
+      "effect": {
+        "attackPct": 0.09,
+        "critChance": 0.035,
+        "executePct": 0.04
+      },
       "proc": {
         "everyRounds": 3,
         "damagePct": 0.76,
@@ -533,10 +678,19 @@
       "name": "帝骑腰带",
       "world": "anime",
       "rarity": "禁忌",
-      "tags": ["骑士", "变身", "斩杀"],
+      "tags": [
+        "骑士",
+        "变身",
+        "斩杀"
+      ],
       "description": "变身假面骑士Decade，全面提高生命、攻击与防御；敌人低于30%生命时有概率发动最终骑士驾驭处决。",
       "maxLevel": 3,
-      "effect": { "attackPct": 0.1, "hpPct": 0.1, "defensePct": 0.1, "riderKickChance": 0.08 },
+      "effect": {
+        "attackPct": 0.1,
+        "hpPct": 0.1,
+        "defensePct": 0.1,
+        "riderKickChance": 0.08
+      },
       "proc": {
         "everyRounds": 4,
         "damagePct": 0.68,
@@ -550,10 +704,17 @@
       "name": "恶魔果实",
       "world": "anime",
       "rarity": "核心",
-      "tags": ["异能", "规则", "爆发"],
+      "tags": [
+        "异能",
+        "规则",
+        "爆发"
+      ],
       "description": "每四回合随机觉醒一种果实权能，发动岩浆、震动或闪光攻击。",
       "maxLevel": 3,
-      "effect": { "attackPct": 0.08, "hpPct": 0.04 },
+      "effect": {
+        "attackPct": 0.08,
+        "hpPct": 0.04
+      },
       "proc": {
         "everyRounds": 4,
         "damagePct": 0.5,
@@ -585,10 +746,16 @@
       "name": "螺旋丸",
       "world": "anime",
       "rarity": "稀有",
-      "tags": ["查克拉", "战技", "爆发"],
+      "tags": [
+        "查克拉",
+        "战技",
+        "爆发"
+      ],
       "description": "每三回合凝聚高速旋转的查克拉球，近身粉碎敌人的防御。",
       "maxLevel": 3,
-      "effect": { "attackPct": 0.05 },
+      "effect": {
+        "attackPct": 0.05
+      },
       "proc": {
         "everyRounds": 3,
         "damagePct": 0.45,
@@ -602,10 +769,17 @@
       "name": "影分身之术",
       "world": "anime",
       "rarity": "稀有",
-      "tags": ["召唤", "查克拉", "连段"],
+      "tags": [
+        "召唤",
+        "查克拉",
+        "连段"
+      ],
       "description": "影分身每回合协同攻击，并周期性发动多重围攻。",
       "maxLevel": 3,
-      "effect": { "summonPct": 0.14, "comboAttackPct": 0.008 },
+      "effect": {
+        "summonPct": 0.14,
+        "comboAttackPct": 0.008
+      },
       "proc": {
         "everyRounds": 4,
         "damagePct": 0.3,
@@ -619,10 +793,18 @@
       "name": "龙珠超·自在极意",
       "world": "anime",
       "rarity": "禁忌",
-      "tags": ["武道", "速度", "规则"],
+      "tags": [
+        "武道",
+        "速度",
+        "规则"
+      ],
       "description": "身体脱离意识自行攻防，提高闪避、攻击并追加行动。",
       "maxLevel": 3,
-      "effect": { "attackPct": 0.09, "dodgeChance": 0.055, "extraActionChance": 0.07 },
+      "effect": {
+        "attackPct": 0.09,
+        "dodgeChance": 0.055,
+        "extraActionChance": 0.07
+      },
       "proc": {
         "everyRounds": 5,
         "damagePct": 0.7,
@@ -636,10 +818,17 @@
       "name": "虚空之泪",
       "world": "anime",
       "rarity": "核心",
-      "tags": ["空间", "规则", "爆发"],
+      "tags": [
+        "空间",
+        "规则",
+        "爆发"
+      ],
       "description": "以银色泪滴切开空间，提高闪避并周期性造成虚空斩击。",
       "maxLevel": 3,
-      "effect": { "attackPct": 0.07, "dodgeChance": 0.035 },
+      "effect": {
+        "attackPct": 0.07,
+        "dodgeChance": 0.035
+      },
       "proc": {
         "everyRounds": 4,
         "damagePct": 0.58,
@@ -653,11 +842,18 @@
       "name": "纯质阳炎",
       "world": "anime",
       "rarity": "核心",
-      "tags": ["火焰", "净化", "爆发"],
+      "tags": [
+        "火焰",
+        "净化",
+        "爆发"
+      ],
       "description": "至阳神火焚灭邪祟，强化攻击、恢复并周期性灼烧敌人。",
       "maxLevel": 3,
       "choiceWeight": 0.35,
-      "effect": { "attackPct": 0.08, "regenPct": 0.018 },
+      "effect": {
+        "attackPct": 0.08,
+        "regenPct": 0.018
+      },
       "proc": {
         "everyRounds": 3,
         "damagePct": 0.48,
@@ -671,30 +867,45 @@
       "name": "无尽战意",
       "world": "neutral",
       "rarity": "普通",
-      "tags": ["成长", "爆发"],
+      "tags": [
+        "成长",
+        "爆发"
+      ],
       "description": "稳定提高本局攻击，可重复强化。",
       "maxLevel": 999,
-      "effect": { "attackPct": 0.04 }
+      "effect": {
+        "attackPct": 0.04
+      }
     },
     {
       "id": "neutral_health",
       "name": "不灭血气",
       "world": "neutral",
       "rarity": "普通",
-      "tags": ["成长", "生存"],
+      "tags": [
+        "成长",
+        "生存"
+      ],
       "description": "稳定提高本局生命上限，可重复强化。",
       "maxLevel": 999,
-      "effect": { "hpPct": 0.05 }
+      "effect": {
+        "hpPct": 0.05
+      }
     },
     {
       "id": "neutral_defense",
       "name": "归墟护体",
       "world": "neutral",
       "rarity": "普通",
-      "tags": ["成长", "防御"],
+      "tags": [
+        "成长",
+        "防御"
+      ],
       "description": "稳定提高本局防御，可重复强化。",
       "maxLevel": 999,
-      "effect": { "defensePct": 0.05 }
+      "effect": {
+        "defensePct": 0.05
+      }
     }
   ],
   "checkpointBoons": [
@@ -704,7 +915,10 @@
       "kind": "诸天神器",
       "origin": "西游",
       "description": "定海神珍随心变化，重击与连段会不断抬高战势。",
-      "effect": { "attackPct": 0.18, "comboAttackPct": 0.012 },
+      "effect": {
+        "attackPct": 0.18,
+        "comboAttackPct": 0.012
+      },
       "proc": {
         "everyRounds": 4,
         "damagePct": 0.9,
@@ -719,7 +933,10 @@
       "kind": "诸天神器",
       "origin": "型月",
       "description": "将光汇聚为斩断城塞的洪流，强化暴击与周期爆发。",
-      "effect": { "attackPct": 0.15, "critChance": 0.05 },
+      "effect": {
+        "attackPct": 0.15,
+        "critChance": 0.05
+      },
       "proc": {
         "everyRounds": 5,
         "damagePct": 1.15,
@@ -734,7 +951,10 @@
       "kind": "诸天神器",
       "origin": "刺客伍六七",
       "description": "千枚碎刃只攻不防，从所有死角连续切割目标。",
-      "effect": { "attackPct": 0.12, "dodgeChance": 0.035 },
+      "effect": {
+        "attackPct": 0.12,
+        "dodgeChance": 0.035
+      },
       "proc": {
         "everyRounds": 3,
         "damagePct": 0.58,
@@ -795,7 +1015,10 @@
       "kind": "无上道法",
       "origin": "咒术回战",
       "description": "展开无限信息灌入的领域，迟滞敌人并创造无防备窗口。",
-      "effect": { "dodgeChance": 0.1, "extraActionChance": 0.1 },
+      "effect": {
+        "dodgeChance": 0.1,
+        "extraActionChance": 0.1
+      },
       "proc": {
         "everyRounds": 4,
         "damagePct": 0.88,
@@ -810,7 +1033,10 @@
       "kind": "无上道法",
       "origin": "神墓",
       "description": "以生命为薪连续逆斩天道，伤害极高但会反噬自身。",
-      "effect": { "attackPct": 0.17, "executePct": 0.1 },
+      "effect": {
+        "attackPct": 0.17,
+        "executePct": 0.1
+      },
       "proc": {
         "everyRounds": 4,
         "damagePct": 1.25,
@@ -839,7 +1065,9 @@
       "kind": "诸天神器",
       "origin": "型月",
       "description": "旋开天地未分前的洪荒气流，以创世断层撕裂战场。",
-      "effect": { "attackPct": 0.18 },
+      "effect": {
+        "attackPct": 0.18
+      },
       "proc": {
         "everyRounds": 6,
         "damagePct": 1.5,
@@ -854,7 +1082,10 @@
       "kind": "诸天神器",
       "origin": "死神",
       "description": "万象一切皆归灰烬，火焰构筑越多威力越强。",
-      "effect": { "attackPct": 0.14, "fireScalingPct": 0.03 },
+      "effect": {
+        "attackPct": 0.14,
+        "fireScalingPct": 0.03
+      },
       "proc": {
         "everyRounds": 4,
         "damagePct": 0.8,
@@ -869,7 +1100,11 @@
       "kind": "诸天神器",
       "origin": "漫威",
       "description": "驾驭多重宇宙规则，全面强化并周期性改写局部现实。",
-      "effect": { "attackPct": 0.15, "hpPct": 0.1, "damageReduction": 0.05 },
+      "effect": {
+        "attackPct": 0.15,
+        "hpPct": 0.1,
+        "damageReduction": 0.05
+      },
       "proc": {
         "everyRounds": 5,
         "damagePct": 0.95,
@@ -884,7 +1119,10 @@
       "kind": "无上道法",
       "origin": "洪荒",
       "description": "清气化出三尊道身，与本体共同推演神通。",
-      "effect": { "summonPct": 0.32, "extraActionChance": 0.08 },
+      "effect": {
+        "summonPct": 0.32,
+        "extraActionChance": 0.08
+      },
       "proc": {
         "everyRounds": 3,
         "damagePct": 0.95,
@@ -899,7 +1137,10 @@
       "kind": "无上道法",
       "origin": "遮天",
       "description": "每一朵仙葩都化出真身，万化圣诀同时镇杀诸敌。",
-      "effect": { "attackPct": 0.14, "summonPct": 0.2 },
+      "effect": {
+        "attackPct": 0.14,
+        "summonPct": 0.2
+      },
       "proc": {
         "everyRounds": 4,
         "damagePct": 0.75,
@@ -914,7 +1155,10 @@
       "kind": "无上道法",
       "origin": "完美世界",
       "description": "一株草可斩尽日月星辰，极大强化暴击与斩杀。",
-      "effect": { "critChance": 0.08, "executePct": 0.12 },
+      "effect": {
+        "critChance": 0.08,
+        "executePct": 0.12
+      },
       "proc": {
         "everyRounds": 4,
         "damagePct": 0.85,
@@ -929,7 +1173,11 @@
       "kind": "无上道法",
       "origin": "火影忍者",
       "description": "生命与查克拉完成六道蜕变，持续恢复并庇护全队。",
-      "effect": { "hpPct": 0.15, "regenPct": 0.03, "teamShieldPct": 0.08 }
+      "effect": {
+        "hpPct": 0.15,
+        "regenPct": 0.03,
+        "teamShieldPct": 0.08
+      }
     },
     {
       "id": "art_serious_punch",
@@ -937,7 +1185,10 @@
       "kind": "无上道法",
       "origin": "一拳超人",
       "description": "舍弃复杂变化，将绝对力量集中在极少数决定性攻击中。",
-      "effect": { "attackPct": 0.2, "critChance": 0.06 },
+      "effect": {
+        "attackPct": 0.2,
+        "critChance": 0.06
+      },
       "proc": {
         "everyRounds": 7,
         "damagePct": 1.65,
@@ -971,7 +1222,11 @@
       "kind": "无上道法",
       "origin": "遮天",
       "description": "唯有十层天关后的诸天垂青才会显化；一拳汇聚天帝万道，镇压古今未来。",
-      "effect": { "attackPct": 0.22, "critChance": 0.08, "executePct": 0.1 },
+      "effect": {
+        "attackPct": 0.22,
+        "critChance": 0.08,
+        "executePct": 0.1
+      },
       "proc": {
         "everyRounds": 4,
         "damagePct": 1.3,
@@ -1000,7 +1255,11 @@
       "attackMultiplier": 1.38,
       "defenseMultiplier": 1.08,
       "damageMultiplier": 1.18,
-      "skills": ["佛怒火莲·帝炎", "异火恒古尺", "焚诀·万火归一"],
+      "skills": [
+        "佛怒火莲·帝炎",
+        "异火恒古尺",
+        "焚诀·万火归一"
+      ],
       "narration": "帝炎化作万火之主，毁灭火莲在掌中压缩至极限"
     },
     {
@@ -1011,7 +1270,11 @@
       "attackMultiplier": 1.32,
       "defenseMultiplier": 1.2,
       "damageMultiplier": 1.16,
-      "skills": ["星辰塔镇封", "一念宇宙", "弑吴羽翼·时空绞杀"],
+      "skills": [
+        "星辰塔镇封",
+        "一念宇宙",
+        "弑吴羽翼·时空绞杀"
+      ],
       "narration": "一念宇宙降临，星辰塔携无尽镇封之力贯穿战场"
     },
     {
@@ -1022,7 +1285,11 @@
       "attackMultiplier": 1.28,
       "defenseMultiplier": 1.26,
       "damageMultiplier": 1.2,
-      "skills": ["鬼眼复苏·无间鬼域", "诡影替死", "灵异长枪·必死诅咒"],
+      "skills": [
+        "鬼眼复苏·无间鬼域",
+        "诡影替死",
+        "灵异长枪·必死诅咒"
+      ],
       "narration": "猩红鬼眼层层睁开，现实被无间鬼域强行改写"
     },
     {
@@ -1033,7 +1300,11 @@
       "attackMultiplier": 1.3,
       "defenseMultiplier": 1.18,
       "damageMultiplier": 1.24,
-      "skills": ["春秋蝉·逆流光阴", "万我第一式", "逆流河护身印"],
+      "skills": [
+        "春秋蝉·逆流光阴",
+        "万我第一式",
+        "逆流河护身印"
+      ],
       "narration": "光阴长河逆卷，万我虚影从既定败局中夺回胜机"
     },
     {
@@ -1044,7 +1315,11 @@
       "attackMultiplier": 1.46,
       "defenseMultiplier": 1.3,
       "damageMultiplier": 1.28,
-      "skills": ["他化自在·他化万古", "草字剑诀", "荒芜剑诀"],
+      "skills": [
+        "他化自在·他化万古",
+        "草字剑诀",
+        "荒芜剑诀"
+      ],
       "narration": "独断万古的帝者踏出岁月长河，一剑斩开古今未来"
     },
     {
@@ -1055,7 +1330,11 @@
       "attackMultiplier": 1.4,
       "defenseMultiplier": 1.3,
       "damageMultiplier": 1.22,
-      "skills": ["天帝拳", "万物母气鼎", "九秘合一"],
+      "skills": [
+        "天帝拳",
+        "万物母气鼎",
+        "九秘合一"
+      ],
       "narration": "圣体金血照亮星海，天帝拳裹挟万物母气镇压而下"
     },
     {
@@ -1066,7 +1345,11 @@
       "attackMultiplier": 1.44,
       "defenseMultiplier": 1.2,
       "damageMultiplier": 1.3,
-      "skills": ["一念花开·君临天下", "吞天魔功", "飞仙诀"],
+      "skills": [
+        "一念花开·君临天下",
+        "吞天魔功",
+        "飞仙诀"
+      ],
       "narration": "仙葩开遍虚空，每一片花瓣都化作斩灭大道的飞仙之光"
     },
     {
@@ -1077,7 +1360,11 @@
       "attackMultiplier": 1.3,
       "defenseMultiplier": 1.42,
       "damageMultiplier": 1.16,
-      "skills": ["柳神法·万界生灭", "祭灵之火", "三千神国"],
+      "skills": [
+        "柳神法·万界生灭",
+        "祭灵之火",
+        "三千神国"
+      ],
       "narration": "亿万柳枝贯穿虚空，三千神国在枝叶间生灭轮转"
     },
     {
@@ -1088,7 +1375,11 @@
       "attackMultiplier": 1.36,
       "defenseMultiplier": 1.22,
       "damageMultiplier": 1.22,
-      "skills": ["轮回路镇杀", "场域天书", "小阴间究极拳"],
+      "skills": [
+        "轮回路镇杀",
+        "场域天书",
+        "小阴间究极拳"
+      ],
       "narration": "轮回路轰鸣开启，诸天场域化作一座绝杀天地"
     },
     {
@@ -1099,7 +1390,11 @@
       "attackMultiplier": 1.38,
       "defenseMultiplier": 1.28,
       "damageMultiplier": 1.26,
-      "skills": ["圆环之理", "因果律改写", "终焉神弓"],
+      "skills": [
+        "圆环之理",
+        "因果律改写",
+        "终焉神弓"
+      ],
       "narration": "跨越无数时间线的因果汇聚成光箭，从概念层面抹去灾厄"
     },
     {
@@ -1110,7 +1405,11 @@
       "attackMultiplier": 1.48,
       "defenseMultiplier": 1.04,
       "damageMultiplier": 1.28,
-      "skills": ["日之呼吸·十三型", "通透世界", "赫刀·斩尽再生"],
+      "skills": [
+        "日之呼吸·十三型",
+        "通透世界",
+        "赫刀·斩尽再生"
+      ],
       "narration": "日轮十三型首尾相连，赫刀在一息间斩过所有要害"
     },
     {
@@ -1121,7 +1420,11 @@
       "attackMultiplier": 1.4,
       "defenseMultiplier": 1.34,
       "damageMultiplier": 1.24,
-      "skills": ["无量空处", "术式反转·赫", "虚式·茈"],
+      "skills": [
+        "无量空处",
+        "术式反转·赫",
+        "虚式·茈"
+      ],
       "narration": "无下限术式扭曲距离，虚式茈将路径上的一切归于虚无"
     }
   ],
@@ -1144,14 +1447,24 @@
     {
       "id": "fusion_all_furnace",
       "name": "万道焚天炉",
-      "requires": ["saintking_furnace", "flame_fenjue", "flame_devour_symbol"],
+      "requires": [
+        "saintking_furnace",
+        "flame_fenjue",
+        "flame_devour_symbol"
+      ],
       "description": "全队伤害提高，胜利后额外炼化恢复。",
-      "effect": { "attackPct": 0.14, "victoryHealPct": 0.08 }
+      "effect": {
+        "attackPct": 0.14,
+        "victoryHealPct": 0.08
+      }
     },
     {
       "id": "fusion_thunder_lotus",
       "name": "混沌雷火莲",
-      "requires": ["flame_lotus", "perfect_thunder_emperor"],
+      "requires": [
+        "flame_lotus",
+        "perfect_thunder_emperor"
+      ],
       "description": "每四回合引爆覆盖全场的混沌雷火。",
       "proc": {
         "everyRounds": 4,
@@ -1163,14 +1476,22 @@
     {
       "id": "fusion_eternal_shadow",
       "name": "万古影朝",
-      "requires": ["perfect_free_transformation", "anime_shadow_monarch"],
+      "requires": [
+        "perfect_free_transformation",
+        "anime_shadow_monarch"
+      ],
       "description": "诸世投影加入暗影军团，全队召唤伤害提高。",
-      "effect": { "summonPct": 0.3 }
+      "effect": {
+        "summonPct": 0.3
+      }
     },
     {
       "id": "fusion_absolute_motion",
       "name": "绝对运动领域",
-      "requires": ["multi_speed_force", "multi_vector_control"],
+      "requires": [
+        "multi_speed_force",
+        "multi_vector_control"
+      ],
       "description": "全队重新分配运动矢量，获得闪避、反射与追加行动。",
       "effect": {
         "dodgeChance": 0.08,
@@ -1182,14 +1503,23 @@
     {
       "id": "fusion_solar_rebirth",
       "name": "恒星涅槃",
-      "requires": ["anime_sun_breath", "multi_phoenix"],
+      "requires": [
+        "anime_sun_breath",
+        "multi_phoenix"
+      ],
       "description": "日轮与凤凰共鸣，提高攻击并赋予全队一次微弱涅槃。",
-      "effect": { "attackPct": 0.12, "revivePct": 0.16 }
+      "effect": {
+        "attackPct": 0.12,
+        "revivePct": 0.16
+      }
     },
     {
       "id": "fusion_clone_rasengan",
       "name": "仙法·超大玉螺旋多连丸",
-      "requires": ["anime_rasengan", "anime_shadow_clone"],
+      "requires": [
+        "anime_rasengan",
+        "anime_shadow_clone"
+      ],
       "description": "影分身共同凝聚螺旋丸，每三回合降下覆盖战场的查克拉风暴。",
       "proc": {
         "everyRounds": 3,
@@ -1202,14 +1532,25 @@
     {
       "id": "fusion_rakshasa_instinct",
       "name": "无念罗刹",
-      "requires": ["anime_one_cut_rakshasa", "anime_ultra_instinct"],
+      "requires": [
+        "anime_one_cut_rakshasa",
+        "anime_ultra_instinct"
+      ],
       "description": "自在极意接管燃尽极限的肉身，使罗刹之刀更快，并额外削减65%反噬。",
-      "effect": { "attackPct": 0.2, "critChance": 0.08, "dodgeChance": 0.07, "recoilReduction": 0.65 }
+      "effect": {
+        "attackPct": 0.2,
+        "critChance": 0.08,
+        "dodgeChance": 0.07,
+        "recoilReduction": 0.65
+      }
     },
     {
       "id": "fusion_void_yang",
       "name": "虚空阳炎界",
-      "requires": ["anime_void_tears", "anime_pure_yang_flame"],
+      "requires": [
+        "anime_void_tears",
+        "anime_pure_yang_flame"
+      ],
       "description": "空间断层填满至阳神火，每四回合从敌人体内焚毁其存在。",
       "proc": {
         "everyRounds": 4,
@@ -1222,9 +1563,17 @@
     {
       "id": "fusion_fruit_flame",
       "name": "果实觉醒·焚天领域",
-      "requires": ["anime_devil_fruit", "flame_fenjue", "anime_pure_yang_flame"],
+      "requires": [
+        "anime_devil_fruit",
+        "flame_fenjue",
+        "anime_pure_yang_flame"
+      ],
       "description": "恶魔果实规则与焚诀、纯质阳炎共鸣，大幅强化火焰与持续成长。",
-      "effect": { "attackPct": 0.16, "fireScalingPct": 0.035, "onWinAttackPct": 0.006 }
+      "effect": {
+        "attackPct": 0.16,
+        "fireScalingPct": 0.035,
+        "onWinAttackPct": 0.006
+      }
     }
   ]
 }

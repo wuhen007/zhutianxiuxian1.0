@@ -277,6 +277,11 @@ function createProjection(id, player) {
     speed: 100,
   };
   const endlessMeta = normalizeEndlessMeta(player);
+  // 他化自在体验卡：使用后下一次进入无尽劫境必定自带1级他化自在法（残缺映照）
+  const abilities = {};
+  if (Number(player.无尽劫境_他化自在体验) > 0) {
+    abilities.perfect_free_transformation = 1;
+  }
   return {
     id,
     name: player.名号 || `无名修士${String(id).slice(-4)}`,
@@ -292,7 +297,7 @@ function createProjection(id, player) {
     hp: base.hp,
     maxHp: base.hp,
     alive: true,
-    abilities: {},
+    abilities,
     blessings: [],
     growthAttackPct: 0,
     endlessMeta,
@@ -1245,7 +1250,7 @@ function interceptWithFreeTransformationBody(run, member, amount, logs, source) 
   );
   const damage = Math.min(body.hp, incoming);
   body.hp -= incoming;
-  const disappears = body.temporary || body.hp <= 0;
+  const disappears = body.hp <= 0;
   if (disappears)
     member.freeTransformationBodies = member.freeTransformationBodies.filter(
       candidate => candidate.id !== body.id
@@ -1275,14 +1280,15 @@ function interceptWithFreeTransformationBody(run, member, amount, logs, source) 
   return true;
 }
 
-function expireTemporaryFreeTransformationBodies(run, logs) {
+function expireTemporaryFreeTransformationBodies(run, round, logs) {
   for (const member of Object.values(run.members)) {
     const expired = (member.freeTransformationBodies || []).filter(
-      body => body.temporary
+      body =>
+        body.temporary && round - (body.summonedRound || 0) >= 3
     );
     if (!expired.length) continue;
     member.freeTransformationBodies = member.freeTransformationBodies.filter(
-      body => !body.temporary
+      body => !body.temporary || round - (body.summonedRound || 0) < 3
     );
     for (const body of expired) {
       addBattleAction(run, {
@@ -1291,9 +1297,9 @@ function expireTemporaryFreeTransformationBodies(run, logs) {
         actor: body.name,
         skill: '残缺自在身·岁月耗尽',
         target: member.name,
-        note: '仅可存在一回合',
+        note: '仅可存在三回合',
       });
-      addBattleLog(logs, `${body.name}存在的一回合耗尽，重新归于岁月长河。`);
+      addBattleLog(logs, `${body.name}存在的三回合耗尽，重新归于岁月长河。`);
     }
   }
 }
@@ -2087,7 +2093,7 @@ function enemyTurn(run, enemy, round, logs) {
   bossPackFollowUp(run, enemy, logs);
 }
 
-function endRound(run, enemy, logs) {
+function endRound(run, enemy, round, logs) {
   if (enemy.trait === '再生' && enemy.hp > 0) {
     const before = enemy.hp;
     enemy.hp = Math.min(enemy.maxHp, enemy.hp + Math.round(enemy.maxHp * 0.02));
@@ -2126,7 +2132,7 @@ function endRound(run, enemy, logs) {
   }
   if (enemy.trait === '再生')
     addBattleLog(logs, `${enemy.name}不断再生，必须尽快结束战斗。`);
-  expireTemporaryFreeTransformationBodies(run, logs);
+  expireTemporaryFreeTransformationBodies(run, round, logs);
 }
 
 function prepareBattle(run) {
@@ -2498,7 +2504,7 @@ export function resolveEndlessLayer(run) {
       enemy.hp > 0 &&
       Object.values(run.members).some((member) => member.alive)
     )
-      endRound(run, enemy, logs);
+      endRound(run, enemy, round, logs);
     const attacks = Object.keys(run.members)
       .map((id) => ({
         id,
