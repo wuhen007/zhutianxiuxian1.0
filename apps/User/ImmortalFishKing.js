@@ -20,6 +20,10 @@ import {
 import { getPlayerPlaneName } from "../../model/planeCoords.js";
 import { recordFishCatch } from "../../model/immortalFishing.js";
 import {
+  consumeFishAtlasSets,
+  markFishAtlasRewardsClaimed,
+} from "../../model/immortalFishingProgress.js";
+import {
   addRelicToBag,
   createFishKingRelic,
   normalizeRelicState,
@@ -30,6 +34,7 @@ import {
   createFishKingBattleAvatar,
   createFishKingRewardAssignments,
   deleteActiveFishKing,
+  findFishKingByTeamId,
   getFishKingBattleCooldown,
   readActiveFishKing,
   rollFishKingChestReward,
@@ -68,7 +73,7 @@ export class ImmortalFishKing extends plugin {
       rule: [
         { reg: "^#鱼王状态$", fnc: "status" },
         { reg: "^#鱼王榜$", fnc: "damageList" },
-        { reg: "^#加入鱼王讨伐$", fnc: "join" },
+        { reg: "^#加入鱼王讨伐(?:\\s*(\\d+))?$", fnc: "join" },
         { reg: "^#退出鱼王讨伐$", fnc: "leave" },
         { reg: "^#讨伐鱼王$", fnc: "battle" },
         { reg: "^#打开鱼王宝箱(?:\\*\\d+)?$", fnc: "openChest" },
@@ -76,7 +81,7 @@ export class ImmortalFishKing extends plugin {
     });
   }
 
-  async getContext(e) {
+  async resolveFishKingContext(e) {
     if (!e.isGroup) {
       await e.reply("鱼王讨伐仅在群聊中进行。");
       return null;
@@ -88,7 +93,7 @@ export class ImmortalFishKing extends plugin {
   }
 
   async status(e) {
-    const context = await this.getContext(e);
+    const context = await this.resolveFishKingContext(e);
     if (!context) return true;
     const state = await readActiveFishKing(context.groupId);
     if (!state) return e.reply("本群当前没有被钓起的位面鱼王。");
@@ -98,9 +103,10 @@ export class ImmortalFishKing extends plugin {
     const lines = state.members.map((member, index) =>
       `${index === 0 ? "垂钓者" : "成员"}：${member.name}｜伤害 ${formatNumber(state.damage[member.id])}`
     );
+    const ownerLabel = state.ownerName || "无名修士";
     return e.reply([
-      `【${state.plane}鱼王·${state.name}】`,
-      `本体血量：${formatNumber(state.health)}/${formatNumber(state.healthMax)}`,
+      `【${ownerLabel}的${state.name}讨伐队伍】（编号${state.teamId || "?"}）`,
+      `位面：${state.plane} ｜ 本体血量：${formatNumber(state.health)}/${formatNumber(state.healthMax)}`,
       `速度倍率：${Number(state.speedMultiplier) || 1}倍`,
       `鱼王秘术：${state.skills?.join("、") || "潮汐冲击"}`,
       "遗珍掉落：必定1件，讨伐队员随机获得",
@@ -149,15 +155,16 @@ export class ImmortalFishKing extends plugin {
   }
 
   async damageList(e) {
-    const context = await this.getContext(e);
+    const context = await this.resolveFishKingContext(e);
     if (!context) return true;
     const state = await readActiveFishKing(context.groupId);
     if (!state) return e.reply("本群当前没有鱼王伤害记录。");
     const members = [...state.members].sort(
       (a, b) => (Number(state.damage[b.id]) || 0) - (Number(state.damage[a.id]) || 0)
     );
+    const ownerLabel = state.ownerName || "无名修士";
     return e.reply([
-      `【${state.name}伤害榜】`,
+      `【${ownerLabel}的${state.name}伤害榜】`,
       ...members.map((member, index) =>
         `${index + 1}. ${member.name}：${formatNumber(state.damage[member.id])}`
       ),
@@ -165,33 +172,51 @@ export class ImmortalFishKing extends plugin {
   }
 
   async join(e) {
-    const context = await this.getContext(e);
+    const context = await this.resolveFishKingContext(e);
     if (!context) return true;
+    const teamNumber = String(e.msg || "").match(/^#加入鱼王讨伐\s*(\d+)?$/)?.[1] || null;
     const result = await withFishKingLock(context.groupId, async () => {
-      const state = await readActiveFishKing(context.groupId);
-      if (!state) return { message: "本群当前没有可加入的鱼王讨伐。" };
+      let state;
+      if (teamNumber) {
+        state = await findFishKingByTeamId(teamNumber);
+        if (!state) return { message: `没有找到编号 ${teamNumber} 的鱼王讨伐队伍。` };
+        if (state.groupId !== context.groupId) {
+          return { message: `编号 ${teamNumber} 的讨伐队伍不在本群，无法加入。` };
+        }
+      } else {
+        state = await readActiveFishKing(context.groupId);
+        if (!state) return { message: "本群当前没有可加入的鱼王讨伐。" };
+      }
+      if (state.status !== "active" || Number(state.health) <= 0) {
+        return { message: "鱼王已经击杀，当前正在结算，暂时不能加入讨伐队。" };
+      }
       if (getPlayerPlaneName(context.player) !== state.plane) {
         return { message: `鱼王出现在【${state.plane}】，你需要先抵达该位面。` };
       }
       if (state.members.some(member => member.id === context.playerId)) {
-        return { message: `你已经在${state.name}讨伐队中。` };
+        const ownerLabel = state.ownerName || "无名修士";
+        return { message: `你已经在${ownerLabel}的${state.name}讨伐队伍中。` };
       }
       if (state.members.length >= FISH_KING_MAX_MEMBERS) {
         return { message: "鱼王讨伐队已经满员。" };
       }
       state.members.push({ id: context.playerId, name: context.player.名号 });
       await saveActiveFishKing(state);
-      return { message: `你加入了【${state.name}】讨伐，当前${state.members.length}/${FISH_KING_MAX_MEMBERS}人。` };
+      const ownerLabel = state.ownerName || "无名修士";
+      return { message: `你加入了【${ownerLabel}的${state.name}讨伐队伍】（编号${state.teamId}），当前${state.members.length}/${FISH_KING_MAX_MEMBERS}人。` };
     });
     return e.reply(result.busy ? "鱼王正在翻动界潮，请稍后再试。" : result.message);
   }
 
   async leave(e) {
-    const context = await this.getContext(e);
+    const context = await this.resolveFishKingContext(e);
     if (!context) return true;
     const result = await withFishKingLock(context.groupId, async () => {
       const state = await readActiveFishKing(context.groupId);
       if (!state) return { message: "本群当前没有鱼王讨伐。" };
+      if (state.status !== "active" || Number(state.health) <= 0) {
+        return { message: "鱼王已经击杀，当前正在结算，暂时不能退出讨伐队。" };
+      }
       const index = state.members.findIndex(member => member.id === context.playerId);
       if (index < 0) return { message: "你没有加入鱼王讨伐。" };
       if (context.playerId === state.ownerId) {
@@ -199,13 +224,14 @@ export class ImmortalFishKing extends plugin {
       }
       state.members.splice(index, 1);
       await saveActiveFishKing(state);
-      return { message: `你退出了【${state.name}】讨伐。` };
+      const ownerLabel = state.ownerName || "无名修士";
+      return { message: `你退出了【${ownerLabel}的${state.name}讨伐队伍】（编号${state.teamId || "?"}）。` };
     });
     return e.reply(result.busy ? "鱼王正在翻动界潮，请稍后再试。" : result.message);
   }
 
   async battle(e) {
-    const context = await this.getContext(e);
+    const context = await this.resolveFishKingContext(e);
     if (!context) return true;
     if (!await Go(e)) return false;
     if (Number(context.player.当前血量) <= Number(context.player.血量上限) * 0.1) {
@@ -344,11 +370,28 @@ export class ImmortalFishKing extends plugin {
       };
     }
 
+    let atlasRewards = [];
     await withPlayerMutationLock(state.ownerId, async () => {
       const owner = await Read_player(state.ownerId);
+      if (!owner) throw new Error("鱼王垂钓者存档不存在");
       owner.众生鱼王战绩 ||= [];
       if (!owner.众生鱼王战绩.includes(state.id)) {
         recordFishCatch(owner, state.plane, state.name);
+        atlasRewards = getPendingFishAtlasRewards(owner);
+        for (const reward of atlasRewards) {
+          await Add_najie_thing(
+            state.ownerId,
+            reward.name,
+            reward.class,
+            reward.amount,
+            undefined,
+            1,
+            { idempotencyKey: "fish-atlas:" + state.ownerId + ":" + reward.key + ":" + reward.name }
+          );
+        }
+        // 套装奖励消耗对应位面每种渔获各1条，防止集齐后无限重复领取
+        consumeFishAtlasSets(owner, atlasRewards);
+        markFishAtlasRewardsClaimed(owner, atlasRewards);
         owner.众生鱼王战绩.push(state.id);
         owner.众生鱼王战绩 = owner.众生鱼王战绩.slice(-100);
         await Write_player(state.ownerId, owner);
@@ -365,6 +408,9 @@ export class ImmortalFishKing extends plugin {
         `【${state.name}伏诛】鱼王终于被拖出众生海！`,
         ...lines,
         `${state.relicReward.recipient.name}获得【${relic.品质}·${relic.套装}遗珍】x1。`,
+        ...(atlasRewards.length > 0
+          ? ["鱼谱收集奖励：" + atlasRewards.map(reward => "【" + reward.name + "】x" + reward.amount).join("、")]
+          : []),
         `${state.ownerName}作为垂钓者，额外获得【鱼王宝箱】x1。`,
       ].join("\n"),
     };

@@ -25,6 +25,12 @@ import {
 } from "../../model/immortalFishing.js";
 import { getPlayerPlaneName } from "../../model/planeCoords.js";
 import { getRealmEventWorldYear } from "../../model/realmEventClock.js";
+import {
+  claimImmortalFishingSign,
+  consumeFishAtlasSets,
+  getPendingFishAtlasRewards,
+  markFishAtlasRewardsClaimed,
+} from "../../model/immortalFishingProgress.js";
 
 function getCurrentWorldYear() {
   const current = config.getConfig("xiuxian", "xiuxian")?.Era?.current || {};
@@ -43,7 +49,9 @@ export class ImmortalFishing extends plugin {
       priority: 600,
       rule: [
         { reg: "^#众生仙饵$", fnc: "showBaits" },
+        { reg: "^#(?:垂纶|众生仙钓签到|仙钓签到|垂钓签到)$", fnc: "fishingSign" },
         { reg: "^#众生鱼图鉴(?:\\s+.*)?$", fnc: "showFishAtlas" },
+        { reg: "^#(?:领取鱼图鉴奖励|领取众生鱼谱奖励)$", fnc: "claimFishAtlasRewards" },
         { reg: "^#万界潮汐$", fnc: "showFishingTide" },
         { reg: "^#垂钓奇遇(?:\\s*[1-3])?$", fnc: "chooseFishingEvent" },
         { reg: "^#愿鳞兑换(?:\\s+.*)?$", fnc: "wishScaleExchange" },
@@ -52,6 +60,120 @@ export class ImmortalFishing extends plugin {
     });
   }
 
+  async fishingSign(e) {
+    const usr_qq = await channel(e.user_id.toString().replace("qg_", ""));
+    return withPlayerMutationLock(usr_qq, async () => {
+      const player = await Read_player(usr_qq);
+      if (!player) return e.reply("你还未踏入修仙界，请先发送【#踏入仙途】。");
+      const result = claimImmortalFishingSign(player);
+      if (!result.claimed) {
+        return e.reply("今日已垂纶于诸天界河，机缘已定，明日再来。已连续垂纶" + result.streak + "日。");
+      }
+
+      const rewards = result.rewards || { hookAmount: result.amount, baits: [] };
+      const transaction = new FileRollbackTransaction();
+      transaction.capture(path.join(__PATH.player_path, usr_qq + ".json"));
+      transaction.capture(path.join(__PATH.najie_path, usr_qq + ".json"));
+      try {
+        await Add_najie_thing(
+          usr_qq,
+          "众生仙钓",
+          "道具",
+          rewards.hookAmount,
+          undefined,
+          1,
+          { idempotencyKey: "immortal-fishing-sign:" + usr_qq + ":" + result.date }
+        );
+        for (const bait of rewards.baits) {
+          await Add_najie_thing(
+            usr_qq,
+            bait.name,
+            "道具",
+            bait.amount,
+            undefined,
+            1,
+            { idempotencyKey: "immortal-fishing-sign-bait:" + usr_qq + ":" + result.date + ":" + bait.name }
+          );
+        }
+        await Write_player(usr_qq, player);
+        transaction.commit();
+      } catch (error) {
+        transaction.rollback();
+        throw error;
+      }
+
+      const bonus = result.amount > 1 ? "，第" + result.streak + "日潮头加赠" : "";
+      const lines = [
+        "【垂纶·第" + result.streak + "日】",
+        "一纶垂入诸天界河，潮声裹挟着机缘而来——",
+        "众生仙钓 x" + rewards.hookAmount,
+        ...rewards.baits.map(bait => bait.name + " x" + bait.amount),
+        "连续垂纶" + result.streak + "日" + bonus + "。",
+      ];
+      return e.reply(lines.join("\n"));
+    });
+  }
+
+  async claimFishAtlasRewards(e) {
+    const usr_qq = await channel(e.user_id.toString().replace("qg_", ""));
+    return withPlayerMutationLock(usr_qq, async () => {
+      const player = await Read_player(usr_qq);
+      if (!player) return e.reply("你还未踏入修仙界，请先发送【#踏入仙途】。");
+      const rewards = getPendingFishAtlasRewards(player);
+      if (rewards.length === 0) {
+        return e.reply("当前没有可领取的鱼谱奖励，先去垂钓众生收集鱼谱吧。");
+      }
+
+      const transaction = new FileRollbackTransaction();
+      transaction.capture(path.join(__PATH.player_path, usr_qq + ".json"));
+      transaction.capture(path.join(__PATH.najie_path, usr_qq + ".json"));
+      try {
+        for (const reward of rewards) {
+          await Add_najie_thing(
+            usr_qq,
+            reward.name,
+            reward.class,
+            reward.amount,
+            undefined,
+            1,
+            { idempotencyKey: "fish-atlas:" + usr_qq + ":" + reward.key + ":" + reward.name }
+          );
+        }
+        // 套装奖励会消耗对应位面每种渔获各1条，防止无限重复兑换
+        consumeFishAtlasSets(player, rewards);
+        markFishAtlasRewardsClaimed(player, rewards);
+        await Write_player(usr_qq, player);
+        transaction.commit();
+      } catch (error) {
+        transaction.rollback();
+        throw error;
+      }
+
+      const grouped = new Map();
+      for (const reward of rewards) {
+        const key = reward.class + ":" + reward.name;
+        const current = grouped.get(key) || { ...reward, amount: 0 };
+        current.amount += reward.amount;
+        grouped.set(key, current);
+      }
+      const consumed = new Map();
+      for (const reward of rewards) {
+        if (!reward.consume) continue;
+        const plane = reward.consume.plane;
+        consumed.set(plane, (consumed.get(plane) || 0) + (Number(reward.consume.amount) || 0));
+      }
+      const consumedLines = [...consumed.entries()]
+        .map(([plane, amount]) => plane + "渔获各" + amount + "条");
+      return e.reply([
+        "鱼谱奖励领取成功：",
+        ...[...grouped.values()].map(reward => "【" + reward.name + "】x" + reward.amount),
+        "共" + rewards.length + "项收集奖励已到账。",
+        ...(consumedLines.length > 0
+          ? ["兑换套装已消耗：" + consumedLines.join("，") + "。"]
+          : []),
+      ].join("\n"));
+    });
+  }
   async showFishAtlas(e) {
     const usr_qq = await channel(e.user_id.toString().replace("qg_", ""));
     const player = await Read_player(usr_qq);

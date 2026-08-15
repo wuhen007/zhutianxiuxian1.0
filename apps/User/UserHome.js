@@ -99,6 +99,10 @@ import {
 } from '../../model/immortalFishing.js';
 import { tryCreateFishKing } from '../../model/immortalFishKing.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
+import {
+  consumeFishAtlasSets,
+  markFishAtlasRewardsClaimed,
+} from '../../model/immortalFishingProgress.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { isCultivatingExtraPath } from '../../model/extraCultivation.js';
 import { isHighRealmConsumableRestricted } from '../../model/realmAuthority.js';
@@ -1032,8 +1036,9 @@ if (isLucky || player.灵根.type === "圆环之理") {
                 "",
                 `【位面鱼王·${fishCatch.name}】`,
                 `钓线骤然绷直，${planeName}水脉随之翻覆！你钓起的不是鱼，而是一尊鱼王！`,
+                `讨伐队伍编号：${created.teamId}`,
                 `本体血量：${created.healthMax.toLocaleString('zh-CN')}`,
-                "你已自动成为垂钓者，群友可发送 #加入鱼王讨伐，随后 #讨伐鱼王。",
+                `你已自动成为垂钓者，群友可发送 #加入鱼王讨伐 ${created.teamId}，随后 #讨伐鱼王。`,
             ].join("\n");
         } else {
             fishCatch = rollPlaneFish(planeName, { tide, allowFishKing: false });
@@ -1041,6 +1046,37 @@ if (isLucky || player.灵根.type === "圆环之理") {
     }
     if (fishCatch?.type === 'fish') {
         const count = recordFishCatch(player, planeName, fishCatch.name);
+        const atlasRewards = getPendingFishAtlasRewards(player);
+        if (atlasRewards.length > 0) {
+            for (const reward of atlasRewards) {
+                await Add_najie_thing(
+                    usr_qq,
+                    reward.name,
+                    reward.class,
+                    reward.amount,
+                    undefined,
+                    1,
+                    { idempotencyKey: "fish-atlas:" + usr_qq + ":" + reward.key + ":" + reward.name }
+                );
+            }
+            // 套装奖励消耗对应位面每种渔获各1条，防止集齐后无限重复领取
+            consumeFishAtlasSets(player, atlasRewards);
+            markFishAtlasRewardsClaimed(player, atlasRewards);
+            const consumedAmounts = new Map();
+            for (const reward of atlasRewards) {
+                if (!reward.consume) continue;
+                const plane = reward.consume.plane;
+                consumedAmounts.set(plane, (consumedAmounts.get(plane) || 0) + reward.consume.amount);
+            }
+            rewardMsg += "\n 鱼谱收集奖励：" + atlasRewards
+                .map(reward => "【" + reward.name + "】x" + reward.amount)
+                .join("、");
+            if (consumedAmounts.size > 0) {
+                rewardMsg += "\n 兑换套装消耗：" + [...consumedAmounts]
+                    .map(([plane, amount]) => `${plane}渔获各${amount}条`)
+                    .join("、");
+            }
+        }
         playerChanged = true;
         rewardMsg += `\n 【${planeName}鱼谱】钓得${fishCatch.name}，图鉴累计x${count}${fishCatch.tideBoosted ? "（万界潮汐加持）" : ""}`;
     }

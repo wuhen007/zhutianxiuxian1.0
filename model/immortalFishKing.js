@@ -6,6 +6,7 @@ export const FISH_KING_DAMAGE_CAP_RATIO = 0.2;
 
 const statePrefix = "xiuxian:immortal-fish-king:active:";
 const lockPrefix = "xiuxian:immortal-fish-king:lock:";
+const teamPrefix = "xiuxian:immortal-fish-king:team:";
 
 function stateKey(groupId) {
   return `${statePrefix}${String(groupId)}`;
@@ -13,6 +14,10 @@ function stateKey(groupId) {
 
 function lockKey(groupId) {
   return `${lockPrefix}${String(groupId)}`;
+}
+
+function teamIndexKey(teamId) {
+  return `${teamPrefix}${String(teamId)}`;
 }
 
 function boundedIndex(length, random) {
@@ -31,6 +36,7 @@ export function createFishKingState({
   const healthMax = Math.max(1_000_000, Math.trunc((Number(ownerPower) || 0) * 20));
   return {
     id: `${now}-${ownerId}`,
+    teamId: null,
     groupId: String(groupId),
     ownerId: String(ownerId),
     ownerName,
@@ -57,10 +63,22 @@ export async function readActiveFishKing(groupId, now = Date.now()) {
   if (!raw) return null;
   try {
     const state = JSON.parse(raw);
-    if (Number(state.expiresAt) <= now) {
+    const expiresAt = Number(state?.expiresAt);
+    const valid = state && Number.isFinite(expiresAt)
+      && expiresAt > now
+      && Array.isArray(state.members)
+      && state.members.length > 0
+      && state.damage && typeof state.damage === "object";
+    if (!valid) {
+      if (state?.teamId) await redis.del(teamIndexKey(state.teamId));
       await redis.del(key);
       return null;
     }
+    state.groupId = String(state.groupId);
+    state.ownerId = String(state.ownerId);
+    state.health = Math.max(0, Number(state.health) || 0);
+    state.healthMax = Math.max(1, Number(state.healthMax) || 1);
+    state.status = state.status === "settling" ? "settling" : "active";
     return state;
   } catch {
     await redis.del(key);
@@ -68,30 +86,74 @@ export async function readActiveFishKing(groupId, now = Date.now()) {
   }
 }
 
+async function generateUniqueTeamId(groupId) {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const candidate = String(Math.floor(100000 + Math.random() * 900000));
+    const token = "pending:" + String(groupId) + ":" + Date.now() + ":" + Math.random();
+    const reserved = await redis.set(teamIndexKey(candidate), token, {
+      EX: FISH_KING_TTL_SECONDS,
+      NX: true,
+    });
+    if (reserved) return { id: candidate, token };
+  }
+  return null;
+}
+
 export async function tryCreateFishKing(input) {
   if (input.groupId === undefined || input.groupId === null) return null;
   const state = createFishKingState(input);
+  const team = await generateUniqueTeamId(input.groupId);
+  if (!team) return null;
+  state.teamId = team.id;
   const created = await redis.set(stateKey(input.groupId), JSON.stringify(state), {
     EX: FISH_KING_TTL_SECONDS,
     NX: true,
   });
-  return created ? state : null;
+  if (!created) {
+    if (await redis.get(teamIndexKey(team.id)) === team.token) {
+      await redis.del(teamIndexKey(team.id));
+    }
+    return null;
+  }
+  await redis.set(teamIndexKey(team.id), String(state.groupId), {
+    EX: FISH_KING_TTL_SECONDS,
+  });
+  return state;
 }
 
 export async function saveActiveFishKing(state, now = Date.now()) {
-  const ttl = Math.max(1, Math.ceil((Number(state.expiresAt) - now) / 1000));
+  if (!state || state.groupId === undefined || state.groupId === null) return null;
+  const expiresAt = Number(state.expiresAt);
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+    await deleteActiveFishKing(state.groupId);
+    return null;
+  }
+  const ttl = Math.max(1, Math.ceil((expiresAt - now) / 1000));
   await redis.set(stateKey(state.groupId), JSON.stringify(state), { EX: ttl });
+  if (state.teamId) {
+    await redis.set(teamIndexKey(state.teamId), String(state.groupId), { EX: ttl });
+  }
   return state;
 }
 
 export async function deleteActiveFishKing(groupId) {
+  const state = await readActiveFishKing(groupId);
+  if (state?.teamId) await redis.del(teamIndexKey(state.teamId));
   await redis.del(stateKey(groupId));
+}
+
+export async function findFishKingByTeamId(teamId) {
+  const id = String(teamId || "");
+  if (!/^\d{3,6}$/.test(id)) return null;
+  const groupId = await redis.get(teamIndexKey(id));
+  if (!groupId) return null;
+  return readActiveFishKing(groupId);
 }
 
 export async function withFishKingLock(groupId, task) {
   const key = lockKey(groupId);
   const token = `${process.pid}:${Date.now()}:${Math.random()}`;
-  if (!await redis.set(key, token, { EX: 120, NX: true })) return { busy: true };
+  if (!await redis.set(key, token, { EX: 300, NX: true })) return { busy: true };
   try {
     return await task();
   } finally {
