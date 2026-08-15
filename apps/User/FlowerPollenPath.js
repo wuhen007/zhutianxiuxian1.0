@@ -1,4 +1,5 @@
 import { plugin, verc, data } from '../../api/api.js';
+import config from '../../model/Config.js';
 import {
   Add_najie_thing,
   Read_equipment,
@@ -20,15 +21,21 @@ import {
 } from '../../model/extraCultivation.js';
 import {
   FLOWER_POLLEN_MEDIA,
+  applyAncestorCall,
+  checkGongfaGate,
   completeFlowerExtremeTrial,
   ensureFlowerPollenState,
   getBestBreathingMethod,
   getFlowerEvolutionChance,
   getFlowerEvolutionCost,
+  getFlowerEraProfile,
   getNextFlowerExtremeTrial,
+  getPollenPollutionState,
   getRequiredPollenQuality,
+  purifyPollution,
   resolveFlowerEvolution,
 } from '../../model/flowerPollenPath.js';
+import { checkPlaneRealmLaw } from '../../model/planeRealmLaw.js';
 import { getShanghaiDateKey } from '../../model/weimianTravel.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
@@ -37,6 +44,11 @@ const MEDIA_BY_QUALITY = Object.entries(FLOWER_POLLEN_MEDIA)
 
 function realmName(levelId) {
   return data.huafen_list.find(item => Number(item.level_id) === Number(levelId))?.level || '未知境界';
+}
+
+function getCurrentEraIndex() {
+  const set = config.getConfig?.('xiuxian', 'xiuxian');
+  return set?.Era?.current?.index ?? 2;
 }
 
 function selectedFlowerPath(player) {
@@ -87,16 +99,24 @@ export class FlowerPollenPath extends plugin {
     const nextRealm = data.huafen_list.find(item => Number(item.level_id) === player.huafenlevel_id + 1);
     const [breathing] = getBestBreathingMethod(player);
     const trial = getNextFlowerExtremeTrial(player);
+    const era = getFlowerEraProfile(getCurrentEraIndex());
+    const pollution = getPollenPollutionState(player);
     const lines = [
       '【花粉进化路】',
       `境界：${realmName(player.huafenlevel_id)}${player.花粉路分支 ? `（${player.花粉路分支}）` : ''}`,
       `进化积淀：${player.进化积淀}｜花粉隐患：${player.花粉隐患}/200`,
+      `始祖污染：${pollution.pollution}/100${pollution.polluted ? '（污染期·始祖低语）' : ''}${pollution.marked ? '（始祖印记·成功率-20%）' : ''}`,
       `呼吸法：${breathing || '尚未掌握'}`,
       `极境：${player.花粉极境.length ? player.花粉极境.join('、') : '无'}`,
+      `时代：${era.name}（成本×${era.costRate}，成功率${era.chanceShift >= 0 ? '+' : ''}${Math.round(era.chanceShift * 100)}%）`,
     ];
     if (nextRealm) {
       const required = getRequiredPollenQuality(nextRealm.level_id);
-      lines.push(`下一境：${nextRealm.level}｜需${required}阶进化媒介｜修为、血气各${bigNumberTransform(getFlowerEvolutionCost(player.huafenlevel_id))}`);
+      const gate = checkGongfaGate(player, nextRealm.level_id);
+      const planeLaw = checkPlaneRealmLaw(player, nextRealm.level_id);
+      lines.push(`下一境：${nextRealm.level}｜需${required}阶进化媒介｜修为、血气各${bigNumberTransform(getFlowerEvolutionCost(player.huafenlevel_id, era.index))}`);
+      if (gate && !gate.ok) lines.push(`⚠ 突破${nextRealm.level}需掌握【${gate.gate.gongfa}】`);
+      if (planeLaw && !planeLaw.ok) lines.push(`⚠ 此界法则不全，${nextRealm.level}需前往更高位面方可突破`);
     } else {
       lines.push('你已走到当前花粉进化路的尽头。');
     }
@@ -180,7 +200,21 @@ export class FlowerPollenPath extends plugin {
       if (await redis.get(`xiuxian:player:${userId}:game_action`) == 0) return e.reply('修仙：游戏进行中...');
       if (player.huafenlevel_id >= data.huafen_list.length) return e.reply('你已走到当前花粉进化路的尽头。');
 
-      const requiredQuality = getRequiredPollenQuality(player.huafenlevel_id + 1);
+      const targetLevelId = player.huafenlevel_id + 1;
+      const eraIndex = getCurrentEraIndex();
+
+      // 功法卡：突破指定大境界需对应呼吸法
+      const gate = checkGongfaGate(player, targetLevelId);
+      if (!gate.ok) {
+        return e.reply(`【功法未成】突破${realmName(targetLevelId)}需先掌握【${gate.gate.gongfa}】，可前往圣墟相关副本寻找机缘。`);
+      }
+      // 位面法则卡：当前位面法则不全则无法继续进化
+      const planeLaw = checkPlaneRealmLaw(player, targetLevelId);
+      if (!planeLaw.ok) {
+        return e.reply(`【法则不全】此界最多容纳至「${realmName(planeLaw.max)}」，${realmName(planeLaw.max)}已是当前位面的进化绝巅，需前往更高位面方能再进一步。`);
+      }
+
+      const requiredQuality = getRequiredPollenQuality(targetLevelId);
       const requested = e.msg.match(/^#进化(?:\s+(.+))?$/)?.[1]?.trim();
       let mediumName = requested;
       if (mediumName && !FLOWER_POLLEN_MEDIA[mediumName]) {
@@ -199,33 +233,61 @@ export class FlowerPollenPath extends plugin {
         return e.reply(`缺少${requiredQuality}阶以上进化媒介，可先发送 #感应异变。`);
       }
 
-      const cost = getFlowerEvolutionCost(player.huafenlevel_id);
+      const cost = getFlowerEvolutionCost(player.huafenlevel_id, eraIndex);
       if (Number(player.修为) < cost || Number(player.血气) < cost) {
-        return e.reply(`进化需修为、血气各${bigNumberTransform(cost)}。`);
+        return e.reply(`进化需修为、血气各${bigNumberTransform(cost)}（含时代影响）。`);
       }
       const ancestorSeed = Number(await exist_najie_thing(userId, '花粉路祖种', '道具')) > 0;
-      const chance = getFlowerEvolutionChance(player, mediumName, { ancestorSeed });
+      const chance = getFlowerEvolutionChance(player, mediumName, { ancestorSeed, eraIndex });
       const beforeRealm = realmName(player.huafenlevel_id);
-      const result = resolveFlowerEvolution(player, mediumName, Math.random, { ancestorSeed });
+      const result = resolveFlowerEvolution(player, mediumName, Math.random, { ancestorSeed, eraIndex });
       if (result.reason === 'quality') return e.reply(`该媒介品阶不足，此次进化至少需要${result.requiredQuality}阶花粉。`);
 
       player.修为 -= cost;
       player.血气 -= cost;
       await Add_najie_thing(userId, mediumName, '道具', -1);
+
+      // 失败惩罚结算：常规失败扣 30% 当前修为血气；异变若污染度满则触发始祖接引
+      let ancestorCall = null;
+      if (!result.ok && result.reason === 'failed') {
+        player.修为 = Math.max(0, Math.floor(Number(player.修为) * 0.7));
+        player.血气 = Math.max(0, Math.floor(Number(player.血气) * 0.7));
+      } else if (!result.ok && result.reason === 'mutated' && player.始祖污染度 >= 100) {
+        ancestorCall = applyAncestorCall(player);
+      }
       await Write_player(userId, player);
       await refreshAttributes(userId);
+
+      if (!result.ok && result.reason === 'mutated') {
+        const lines = [
+          '【始祖异变】',
+          `成功率：${(chance * 100).toFixed(1)}%｜${mediumName}已消耗｜异变率：${(result.mutationChance * 100).toFixed(1)}%`,
+          `始祖污染度 +${result.pollutionGain}（${player.始祖污染度}/100），境界仍为${beforeRealm}，积淀${player.进化积淀}，隐患${player.花粉隐患}。`,
+        ];
+        if (ancestorCall) {
+          lines.push(
+            '',
+            '【始祖接引】',
+            `始祖的意志自花粉深处降临，夺走你修为${bigNumberTransform(ancestorCall.seizedCultivation)}、血气${bigNumberTransform(ancestorCall.seizedBlood)}！`,
+            '你被烙下始祖印记（24h 内进化成功率-20%），始祖污染度回落至 60。',
+            '速以净化花露或石罐清洗本源，驱散始祖的注视！',
+          );
+        }
+        return e.reply(lines.join('\n'));
+      }
       if (!result.ok) {
         return e.reply([
-          '【进化受阻】',
+          '【进化受阻·道基受损】',
           `成功率：${(chance * 100).toFixed(1)}%｜${mediumName}已消耗`,
-          ancestorSeed ? '花粉路祖种与你共鸣，进化稳定性提高。' : '',
-          `境界仍为${beforeRealm}，积淀增至${player.进化积淀}，隐患增至${player.花粉隐患}。`,
+          `境界仍为${beforeRealm}，修为、血气各损失 30%。`,
+          `积淀增至${player.进化积淀}，隐患增至${player.花粉隐患}。`,
         ].filter(Boolean).join('\n'));
       }
+      const era = getFlowerEraProfile(eraIndex);
       return e.reply([
         '【生命跃迁】',
         `${beforeRealm} → ${realmName(player.huafenlevel_id)}${result.branch ? `（${result.branch}路）` : ''}`,
-        `成功率：${(chance * 100).toFixed(1)}%｜积淀${player.进化积淀}｜隐患${player.花粉隐患}`,
+        `成功率：${(chance * 100).toFixed(1)}%｜积淀${player.进化积淀}｜隐患${player.花粉隐患}｜${era.name}`,
         ancestorSeed ? '花粉路祖种与你共鸣，进化稳定性提高。' : '',
         getNextFlowerExtremeTrial(player) ? '当前境界存在极境，可发送 #极尽蜕变 查看并尝试。' : '你的生命层次完成了一次跃迁。',
       ].filter(Boolean).join('\n'));
@@ -256,14 +318,31 @@ export class FlowerPollenPath extends plugin {
     return withPlayerMutationLock(userId, async () => {
       const player = await Read_player(userId);
       if (!selectedFlowerPath(player)) return e.reply('你尚未踏上花粉进化路。');
-      if (player.花粉隐患 <= 0) return e.reply('你的进化根基澄澈，没有需要净化的隐患。');
-      if (Number(await exist_najie_thing(userId, '净化花露', '道具')) <= 0) return e.reply('净化隐患需要净化花露，可通过 #感应异变 获得。');
-      const before = player.花粉隐患;
-      const purification = player.圣墟唯一机缘?.石罐本体 ? 60 : 30;
-      player.花粉隐患 = Math.max(0, before - purification);
-      await Add_najie_thing(userId, '净化花露', '道具', -1);
+      const pollution = getPollenPollutionState(player);
+      if (player.花粉隐患 <= 0 && pollution.pollution <= 0) {
+        return e.reply('你的进化根基澄澈，没有需要净化的隐患与污染。');
+      }
+      const hasDew = Number(await exist_najie_thing(userId, '净化花露', '道具')) > 0;
+      const hasHerb = Number(await exist_najie_thing(userId, '本源圣药', '道具')) > 0;
+      if (!hasDew && !hasHerb) return e.reply('净化需要净化花露（#感应异变 获得）或本源圣药（阳间名山机缘），先寻来再净。');
+      const herbUsed = hasHerb;
+      const stoneJar = Boolean(player.圣墟唯一机缘?.石罐本体);
+      const riskPurification = herbUsed ? 60 : (stoneJar ? 60 : 30);
+      const beforeRisk = player.花粉隐患;
+      player.花粉隐患 = Math.max(0, beforeRisk - riskPurification);
+      const pollutionPurification = herbUsed ? 60 : (stoneJar ? 40 : 20);
+      const result = purifyPollution(player, pollutionPurification);
+      await Add_najie_thing(userId, herbUsed ? '本源圣药' : '净化花露', '道具', -1);
       await Write_player(userId, player);
-      return e.reply(`你以净化花露洗炼生命本源，花粉隐患 ${before} → ${player.花粉隐患}。`);
+      const lines = [
+        '【本源净化】',
+        `花粉隐患 ${beforeRisk} → ${player.花粉隐患}${herbUsed ? '｜本源圣药洗涤神魂' : '｜净化花露洗涤本源'}`,
+      ];
+      if (pollution.pollution > 0) {
+        lines.push(`始祖污染度 ${result.before} → ${result.after}`);
+      }
+      if (result.cleared) lines.push(`破而后立！始祖的注视消散，进化积淀 +${result.reward}。`);
+      return e.reply(lines.join('\n'));
     });
   }
 }

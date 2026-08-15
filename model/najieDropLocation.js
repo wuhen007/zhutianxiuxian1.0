@@ -5,7 +5,7 @@ import {
   getPlayerPlaneName,
   listMappedPlanes,
 } from './planeCoords.js';
-import { PLACE_LOCATION_MAP } from './weimianTravel.js';
+import { isShengxuPlane, PLACE_LOCATION_MAP } from './weimianTravel.js';
 
 const LEGACY_PLANE_ALIASES = Object.freeze({
   禁地: '遮天位面',
@@ -17,7 +17,7 @@ const LEGACY_PLANE_ALIASES = Object.freeze({
 
 export function getNajieDropPlanes() {
   return listMappedPlanes()
-    .filter(name => name !== '圣墟位面' && Object.hasOwn(PLACE_LOCATION_MAP, name))
+    .filter(name => !isShengxuPlane(name) && Object.hasOwn(PLACE_LOCATION_MAP, name))
     .map(name => ({ id: PLACE_LOCATION_MAP[name], name }));
 }
 

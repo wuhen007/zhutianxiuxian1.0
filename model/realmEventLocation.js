@@ -6,7 +6,7 @@ import {
   listMappedPlanes,
   randomCoordIn,
 } from "./planeCoords.js";
-import { PLACE_LOCATION_MAP } from "./weimianTravel.js";
+import { isShengxuPlane, PLACE_LOCATION_MAP } from "./weimianTravel.js";
 
 function pickRandom(items, random) {
   return items[Math.floor(random() * items.length)];
@@ -16,7 +16,7 @@ function pickRandom(items, random) {
 export function createRealmEventLocation(options = {}) {
   const random = options.random || Math.random;
   const mappedPlanes = listMappedPlanes().filter((name) =>
-    name !== '圣墟位面' && Object.hasOwn(PLACE_LOCATION_MAP, name)
+    !isShengxuPlane(name) && Object.hasOwn(PLACE_LOCATION_MAP, name)
   );
   const plane = mappedPlanes.includes(options.plane)
     ? options.plane

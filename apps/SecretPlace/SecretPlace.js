@@ -325,7 +325,7 @@ export class SecretPlace extends plugin {
           fnc: 'handleDungeonDrop',
         },
        {
-  reg: '^#穿梭(凡间|仙界|下界八域|仙域|遮天位面|九天十地|界海|太初星墟|时间长河|永恒未知之地|圣墟位面)$',
+  reg: '^#穿梭(凡间|仙界|下界八域|仙域|遮天位面|九天十地|界海|太初星墟|时间长河|永恒未知之地|小阴间|大阴间|阳间)$',
   fnc: 'goToLocation'
 },
 {
@@ -550,7 +550,7 @@ async goToLocation(e) {
     const player = await Read_player(usr_qq);
     
     // 解析目标地点
-    const location = e.msg.match(/^#穿梭(凡间|仙界|下界八域|九天十地|遮天位面|界海|太初星墟|时间长河|永恒未知之地|仙域|圣墟位面)$/)[1];
+    const location = e.msg.match(/^#穿梭(凡间|仙界|下界八域|九天十地|遮天位面|界海|太初星墟|时间长河|永恒未知之地|仙域|小阴间|大阴间|阳间)$/)[1];
     
     // 地点映射表（统一引用模块级 PLACE_LOCATION_MAP，避免多处分散硬编码）
     const LOCATION_MAP = PLACE_LOCATION_MAP;
@@ -829,7 +829,7 @@ async goToLocation(e) {
                     `前方混沌气散开，露出仙域的一角`
                 ];
             } 
-            else if (player.power_place === 4) { // 从时间长河→仙域
+            else if (player.power_place === 3.6) { // 从时间长河→仙域
                 startMsg = [
                     `你逆溯时间长河，寻找仙域在乱古的坐标`,
                     `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
@@ -899,7 +899,7 @@ async goToLocation(e) {
             ];
             break;
             
-        case player.power_place === 3 && targetLocation === 4: // 界海→时间长河
+        case player.power_place === 3 && targetLocation === 3.6: // 界海→时间长河
             startMsg = [
                 `你以无上伟力击穿时空壁垒`,
                 `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
@@ -913,7 +913,7 @@ async goToLocation(e) {
             ];
             break;
             
-        case player.power_place === 4 && targetLocation === 5: // 时间长河→永恒未知之地
+        case player.power_place === 3.6 && targetLocation === 6.5: // 时间长河→永恒未知之地
             startMsg = [
                 `你超脱诸天万界，向永恒未知之地进发`,
                 `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
@@ -924,6 +924,34 @@ async goToLocation(e) {
                 `这里连时间都不存在，只有绝对的虚无`,
                 `你的存在本身就在改写周围的规则`,
                 `前方出现一片绝对寂静的领域，目的地将至`
+            ];
+            break;
+
+        case player.power_place === 4 && targetLocation === 5: // 小阴间→大阴间
+            startMsg = [
+                `你循着残破宇宙深处飘来的堕落气息前行`,
+                `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
+                `穿过层层崩坏的世界壁垒`,
+                `预计需要${travelTime}分钟抵达大阴间`
+            ];
+            travelMsg = [
+                `大阴间的法则比小阴间完整，却弥漫着神祇陨落的悲凉`,
+                `堕落之地与混沌残破宇宙在远方沉浮`,
+                `前方神道气息愈发浓郁，目的地将至`
+            ];
+            break;
+
+        case player.power_place === 5 && targetLocation === 7: // 大阴间→阳间
+            startMsg = [
+                `你仰望虚空尽头，那里有完整天地法则的璀璨大界`,
+                `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
+                `斩开阴阳两界的朦胧壁垒`,
+                `预计需要${travelTime}分钟抵达阳间`
+            ];
+            travelMsg = [
+                `阳间法则完整如金玉，天地坚固远超阴间诸界`,
+                `名山神祇与古老道统的气息扑面而来`,
+                `前方出现阳间的一角，目的地将至`
             ];
             break;
             
@@ -3644,11 +3672,25 @@ async sendPlayerToLocation(e) {
 // 位面准入门槛检查（与 goToLocation 完全一致的判定逻辑，单一真相源）
 async checkLocationThreshold(player, location) {
     const threshold = getLocationThreshold(player, location);
-    if (location === '圣墟位面' && threshold.code === 'shengxu') {
+    if (location === '小阴间' && threshold.code === 'shengxu') {
         return { ok: false, msgs: [
-            `【圣墟位面·进化坐标未显】`,
+            `【小阴间·进化坐标未显】`,
             `这片天地只响应花粉进化路的生命波动。`,
             `需先以 #踏上花粉路 选择体系，并至少进化至觉醒境。`
+        ] };
+    }
+    if (location === '大阴间' && threshold.code === 'dayinjian') {
+        return { ok: false, msgs: [
+            `【大阴间·境界不足】`,
+            `大阴间的堕落气息会侵蚀未至神祇境的生命。`,
+            `需花粉路进化至神祇境（12级）方可深入。`
+        ] };
+    }
+    if (location === '阳间' && threshold.code === 'yangjian') {
+        return { ok: false, msgs: [
+            `【阳间·境界不足】`,
+            `阳间法则完整而狂暴，神王境之下难以立足。`,
+            `需花粉路进化至神王境（14级）方可踏足。`
         ] };
     }
     // 时间长河：准仙帝

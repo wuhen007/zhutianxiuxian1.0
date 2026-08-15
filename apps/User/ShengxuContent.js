@@ -39,7 +39,9 @@ function battleExcerpt(messages) {
 }
 
 function isInShengxuPlane(player) {
-  return Number(player?.power_place) === PLACE_LOCATION_MAP.圣墟位面;
+  // 圣墟位面三级：小阴间 4 / 大阴间 5 / 阳间 7
+  return [PLACE_LOCATION_MAP.小阴间, PLACE_LOCATION_MAP.大阴间, PLACE_LOCATION_MAP.阳间]
+    .includes(Number(player?.power_place));
 }
 
 function stoneJarRequirements(player) {
@@ -87,7 +89,7 @@ export class ShengxuContent extends plugin {
     const lines = SHENGXU_DUNGEONS.map(dungeon =>
       `【${dungeon.chapter}】${dungeon.name}｜花粉${dungeon.requiredLevel}阶｜${dungeon.monster}｜${dungeon.medium}`
     );
-    return e.reply(['【圣墟位面副本】', '需先发送 #穿梭圣墟位面', ...lines, '探索：#探索圣墟 地点名（每处每日一次）'].join('\n'));
+    return e.reply(['【圣墟位面副本】', '需先发送 #穿梭小阴间 进入圣墟诸界', ...lines, '探索：#探索圣墟 地点名（每处每日一次）'].join('\n'));
   }
 
   async explore(e) {
@@ -100,7 +102,7 @@ export class ShengxuContent extends plugin {
     return withPlayerMutationLock(userId, async () => {
       let player = await Read_player(userId);
       if (!isCultivatingExtraPath(player, 'huafen')) return e.reply('只有花粉进化路修士可以进入圣墟副本。');
-      if (!isInShengxuPlane(player)) return e.reply('圣墟副本只存在于圣墟位面，请先发送 #穿梭圣墟位面。');
+      if (!isInShengxuPlane(player)) return e.reply('圣墟副本只存在于圣墟诸界（小阴间/大阴间/阳间），请先发送 #穿梭小阴间。');
       if (Number(player.huafenlevel_id) < dungeon.requiredLevel) {
         return e.reply(`探索${dungeon.name}需花粉进化序列达到${dungeon.requiredLevel}，当前为${player.huafenlevel_id}。`);
       }
@@ -164,7 +166,7 @@ export class ShengxuContent extends plugin {
     return withPlayerMutationLock(context.userId, async () => {
       const player = await Read_player(context.userId);
       if (!isCultivatingExtraPath(player, 'huafen')) return e.reply('该势力只接引花粉进化路修士。');
-      if (!isInShengxuPlane(player)) return e.reply('这些势力扎根于圣墟位面，请先穿梭至圣墟位面。');
+      if (!isInShengxuPlane(player)) return e.reply('这些势力扎根于圣墟诸界，请先穿梭至小阴间。');
       if (Number(player.huafenlevel_id) < faction.requiredLevel) return e.reply(`加入${factionName}需花粉进化序列达到${faction.requiredLevel}。`);
       const block = getFactionJoinBlock(player);
       if (!block.ok) return e.reply(block.reason === 'member' ? `你已加入${block.faction}。` : '你尚处于脱离势力冷却期。');
@@ -222,7 +224,7 @@ export class ShengxuContent extends plugin {
     return withPlayerMutationLock(context.userId, async () => {
       const player = await Read_player(context.userId);
       if (!isCultivatingExtraPath(player, 'huafen')) return e.reply('只有花粉进化路修士能追寻石罐。');
-      if (!isInShengxuPlane(player)) return e.reply('石罐本体隐没在圣墟位面，请先穿梭至圣墟位面。');
+      if (!isInShengxuPlane(player)) return e.reply('石罐本体隐没在圣墟诸界，请先穿梭至小阴间。');
       const currentOwner = getShengxuOpportunityOwner(STONE_JAR_OPPORTUNITY);
       if (currentOwner === context.userId || player.圣墟唯一机缘?.石罐本体) {
         player.圣墟唯一机缘 ??= {};

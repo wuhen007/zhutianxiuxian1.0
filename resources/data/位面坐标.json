@@ -220,10 +220,10 @@
       { "id": "xianyuliefeng", "name": "仙域裂缝", "type": "site", "parent": "posuobianyuan", "source": "完美世界", "bounds": { "x1": 430, "y1": 700, "x2": 570, "y2": 830 }, "desc": "贯穿仙域的巨大裂缝" }
     ]
   },
-  "圣墟位面": {
-    "planeId": 7,
-    "source": "圣墟",
-    "desc": "天地异变，名山复苏；花粉进化者从地球踏上星路，最终遥望阳间与魂河。",
+  "小阴间": {
+    "planeId": 4,
+    "source": "圣墟·星路篇",
+    "desc": "地球所在残破宇宙，法则残缺，映照诸天已是此界进化绝巅；星路争锋将进化者推向诸天视野。",
     "locations": [
       { "id": "shengxu_diqiu", "name": "地球", "type": "region", "parent": null, "source": "圣墟·地球篇", "bounds": { "x1": 0, "y1": 0, "x2": 499, "y2": 499 }, "desc": "异花绽放、折叠空间开启，诸多名山成为进化者与兽王争夺的洞天福地。" },
       { "id": "taihangshan", "name": "太行山", "type": "site", "parent": "shengxu_diqiu", "source": "圣墟·地球篇", "bounds": { "x1": 20, "y1": 20, "x2": 130, "y2": 120 }, "desc": "楚风归乡之路，苍狼与异兽在山林间苏醒。" },
@@ -236,11 +236,33 @@
       { "id": "shuntian_yuxugong", "name": "顺天玉虚宫", "type": "site", "parent": "shengxu_diqiu", "source": "圣墟·地球篇", "bounds": { "x1": 180, "y1": 310, "x2": 340, "y2": 430 }, "desc": "人类进化者的重要据点，负责应对名山兽潮与失控异变体。" },
       { "id": "huoxing_yinghuo", "name": "荧惑古星", "type": "region", "parent": null, "source": "圣墟·地球篇", "bounds": { "x1": 500, "y1": 0, "x2": 749, "y2": 499 }, "desc": "枯寂火星深处留有佛门旧土与星空古路遗迹。" },
       { "id": "daleiyinsi_shengxu", "name": "大雷音寺遗址", "type": "site", "parent": "huoxing_yinghuo", "source": "圣墟·地球篇", "bounds": { "x1": 550, "y1": 120, "x2": 700, "y2": 300 }, "desc": "雷音已寂，残存呼吸法与尸魔共同盘踞废墟。" },
-      { "id": "xiaoyinjian", "name": "小阴间", "type": "region", "parent": null, "source": "圣墟·星路篇", "bounds": { "x1": 0, "y1": 500, "x2": 499, "y2": 999 }, "desc": "地球所在残破宇宙，星路争锋将进化者推向诸天视野。" },
-      { "id": "xiaoyinjian_xinglu", "name": "小阴间星路", "type": "site", "parent": "xiaoyinjian", "source": "圣墟·星路篇", "bounds": { "x1": 120, "y1": 620, "x2": 360, "y2": 850 }, "desc": "诸族猎手横行的试炼星路，弱者会被当作进化资粮。" },
-      { "id": "yangjian", "name": "阳间", "type": "region", "parent": null, "source": "圣墟·阳间篇", "bounds": { "x1": 500, "y1": 500, "x2": 749, "y2": 999 }, "desc": "完整天地法则汇聚的大界，名山神祇与古老道统并立。" },
-      { "id": "yangjian_mingshan", "name": "阳间名山", "type": "site", "parent": "yangjian", "source": "圣墟·阳间篇", "bounds": { "x1": 540, "y1": 620, "x2": 710, "y2": 850 }, "desc": "名山深处沉睡着神祇、古洞府与高阶进化媒介。" },
-      { "id": "hunhe", "name": "魂河古地", "type": "region", "parent": null, "source": "圣墟·诡异篇", "bounds": { "x1": 750, "y1": 0, "x2": 999, "y2": 999 }, "desc": "诸天魂光汇聚的诡异源头之一，接引者在黑暗中守望河道。" }
+      { "id": "xiaoyinjian_xinglu", "name": "小阴间星路", "type": "site", "parent": "shengxu_diqiu", "source": "圣墟·星路篇", "bounds": { "x1": 120, "y1": 620, "x2": 360, "y2": 850 }, "desc": "诸族猎手横行的试炼星路，弱者会被当作进化资粮。" }
+    ]
+  },
+  "大阴间": {
+    "planeId": 5,
+    "source": "圣墟·星路篇",
+    "desc": "阴间更深处，法则比小阴间完整却仍残破；堕落之地、混沌残破宇宙与阴间星海在此交汇，神祇与神将林立。",
+    "locations": [
+      { "id": "duoluozhidi", "name": "堕落之地", "type": "region", "parent": null, "source": "圣墟·神祇篇", "bounds": { "x1": 0, "y1": 0, "x2": 499, "y2": 499 }, "desc": "神明坠落之地，神魔与古神遗迹沉眠，堕落的气息侵蚀来者。" },
+      { "id": "shenmingyiji", "name": "神明遗迹", "type": "site", "parent": "duoluozhidi", "source": "圣墟·神祇篇", "bounds": { "x1": 60, "y1": 60, "x2": 220, "y2": 200 }, "desc": "上古神明遗留的洞府与道兵碎片，仍有神性流转。" },
+      { "id": "luoshenyuan", "name": "落神渊", "type": "site", "parent": "duoluozhidi", "source": "圣墟·神祇篇", "bounds": { "x1": 260, "y1": 260, "x2": 460, "y2": 460 }, "desc": "神祇喋血坠落之地，渊底传出古老的低语。" },
+      { "id": "hunthuncanku", "name": "混沌残破宇宙", "type": "region", "parent": null, "source": "圣墟·神祇篇", "bounds": { "x1": 500, "y1": 0, "x2": 999, "y2": 499 }, "desc": "残破的混沌宇宙碎片，神祇与混沌神魔在其中征战。" },
+      { "id": "huntunshenmoyuan", "name": "混沌神魔渊", "type": "site", "parent": "hunthuncanku", "source": "圣墟·神祇篇", "bounds": { "x1": 560, "y1": 80, "x2": 820, "y2": 320 }, "desc": "混沌神魔沉睡的深渊，魔气与神性交织。" },
+      { "id": "canpozhengdaotai", "name": "残破证道台", "type": "site", "parent": "hunthuncanku", "source": "圣墟·神祇篇", "bounds": { "x1": 600, "y1": 360, "x2": 900, "y2": 480 }, "desc": "神祇证道之地，台基已残，道痕仍镇压虚空。" },
+      { "id": "yinxianxinghai", "name": "阴间星海", "type": "region", "parent": null, "source": "圣墟·星路篇", "bounds": { "x1": 0, "y1": 500, "x2": 499, "y2": 999 }, "desc": "阴间深处的星海，神将级猎手在此追逐残破宇宙的遗产。" },
+      { "id": "xingluochuanwu", "name": "星罗船坞", "type": "site", "parent": "yinxianxinghai", "source": "圣墟·星路篇", "bounds": { "x1": 80, "y1": 600, "x2": 300, "y2": 780 }, "desc": "横渡阴间星海的古船坞，船主以神祇血为酬。" },
+      { "id": "zhongyuangu", "name": "中渊古城", "type": "region", "parent": null, "source": "圣墟·诡异篇", "bounds": { "x1": 500, "y1": 500, "x2": 999, "y2": 999 }, "desc": "大阴间深处的一座古域，神王级存在坐镇，通往阳间的门户隐现。" }
+    ]
+  },
+  "阳间": {
+    "planeId": 7,
+    "source": "圣墟·阳间篇",
+    "desc": "完整天地法则汇聚的大界，名山神祇与古老道统并立；魂河古地横亘，诡异源头在黑暗中守望。",
+    "locations": [
+      { "id": "yangjian", "name": "阳间", "type": "region", "parent": null, "source": "圣墟·阳间篇", "bounds": { "x1": 0, "y1": 0, "x2": 499, "y2": 499 }, "desc": "法则完整、天地坚固的大界，神王坐镇，天尊开教。" },
+      { "id": "yangjian_mingshan", "name": "阳间名山", "type": "site", "parent": "yangjian", "source": "圣墟·阳间篇", "bounds": { "x1": 60, "y1": 60, "x2": 260, "y2": 300 }, "desc": "名山深处沉睡着神祇、古洞府与高阶进化媒介。" },
+      { "id": "hunhe", "name": "魂河古地", "type": "region", "parent": null, "source": "圣墟·诡异篇", "bounds": { "x1": 500, "y1": 0, "x2": 999, "y2": 999 }, "desc": "诸天魂光汇聚的诡异源头之一，接引者在黑暗中守望河道。" }
     ]
   }
 }
