@@ -36,7 +36,7 @@ export class TerminalGodDemonSet extends plugin {
     });
   }
 
-  async resolveContext(e) {
+  async resolveGodDemonContext(e) {
     if (!e) return null;
     if (!verc({ e })) return null;
     let qq = String(e.user_id).replace('qg_', '');
@@ -46,7 +46,7 @@ export class TerminalGodDemonSet extends plugin {
   }
 
   async showPath(e) {
-    const ctx = await this.resolveContext(e);
+    const ctx = await this.resolveGodDemonContext(e);
     if (!ctx) return false;
     const eligibility = getTerminalTrialEligibility(ctx.player);
     if (!eligibility.ok) return e.reply(eligibility.reason);
@@ -89,7 +89,7 @@ export class TerminalGodDemonSet extends plugin {
   }
 
   async runTrial(e, route, choice = '') {
-    const ctx = await this.resolveContext(e);
+    const ctx = await this.resolveGodDemonContext(e);
     if (!ctx) return false;
     if (activeTrials.has(ctx.qq)) return e.reply('你的上一场终焉试炼尚未结束。');
 

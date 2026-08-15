@@ -48,7 +48,7 @@ export class XianguAcademy extends plugin {
     });
   }
 
-  async resolveContext(e) {
+  async resolveAcademyContext(e) {
     if (!e || !verc({ e })) return null;
     const usrQq = (
       await channel(e.user_id.toString().replace('qg_', ''))
@@ -58,7 +58,7 @@ export class XianguAcademy extends plugin {
   }
 
   async showAcademy(e) {
-    const context = await this.resolveContext(e);
+    const context = await this.resolveAcademyContext(e);
     if (!context) return false;
     const { player } = context;
     const record = player.仙古院籍;
@@ -79,7 +79,7 @@ export class XianguAcademy extends plugin {
   }
 
   async applyAcademy(e) {
-    const context = await this.resolveContext(e);
+    const context = await this.resolveAcademyContext(e);
     if (!context) return false;
     const admission = getAcademyAdmission(context.player);
     if (!admission.ok) return e.reply(admission.message);
@@ -98,7 +98,7 @@ export class XianguAcademy extends plugin {
   }
 
   async showMyAcademy(e) {
-    const context = await this.resolveContext(e);
+    const context = await this.resolveAcademyContext(e);
     if (!context) return false;
     const record = context.player.仙古院籍;
     if (!record?.学院)
@@ -131,7 +131,7 @@ export class XianguAcademy extends plugin {
   }
 
   async promoteAcademy(e) {
-    const context = await this.resolveContext(e);
+    const context = await this.resolveAcademyContext(e);
     if (!context) return false;
     const record = context.player.仙古院籍;
     if (!record?.学院) return e.reply('你尚未加入天神书院。');
@@ -154,7 +154,7 @@ export class XianguAcademy extends plugin {
   }
 
   async chooseBranch(e) {
-    const context = await this.resolveContext(e);
+    const context = await this.resolveAcademyContext(e);
     if (!context) return false;
     const record = context.player.仙古院籍;
     if (!record?.学院) return e.reply('请先使用 #申请入院 加入天神书院。');
@@ -176,7 +176,7 @@ export class XianguAcademy extends plugin {
   }
 
   async claimSalary(e) {
-    const context = await this.resolveContext(e);
+    const context = await this.resolveAcademyContext(e);
     if (!context) return false;
     const record = context.player.仙古院籍;
     if (!record?.学院) return e.reply('你尚无天神书院院籍，无法领取俸禄。');

@@ -171,6 +171,7 @@ async preview_pifu(e) {
             if (!ifexistplay) {
                 return;
             }
+            let player = await data.getData("player", usr_qq);
             let now = new Date();
             let nowTime = now.getTime(); //获取当前日期的时间戳
             let Yesterday = await shijianc(nowTime - 24 * 60 * 60 * 1000);//获得昨天日期
@@ -192,7 +193,6 @@ async preview_pifu(e) {
                 Sign_Yesterday = false;
             }
             await redis.set("xiuxian:player:" + usr_qq + ":xinghailastsign_time", nowTime);//redis设置签到时间
-            let player = await data.getData("player", usr_qq);
             if(!isNotNull(player.星海之缘签到天数)){
                 player.周年签到天数=0
             }

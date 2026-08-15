@@ -36,7 +36,7 @@ export class WanhuaTianmoSet extends plugin {
     });
   }
 
-  async resolveContext(e) {
+  async resolveWanhuaContext(e) {
     if (!e || !verc({ e })) return null;
     let qq = String(e.user_id).replace('qg_', '');
     qq = await channel(qq);
@@ -45,7 +45,7 @@ export class WanhuaTianmoSet extends plugin {
   }
 
   async showPath(e) {
-    const ctx = await this.resolveContext(e);
+    const ctx = await this.resolveWanhuaContext(e);
     if (!ctx) return false;
     const eligibility = getWanhuaSetEligibility(ctx.player);
     if (!eligibility.ok) return e.reply(eligibility.reason);
@@ -82,7 +82,7 @@ export class WanhuaTianmoSet extends plugin {
   }
 
   async runTrial(e, route, choice = '') {
-    const ctx = await this.resolveContext(e);
+    const ctx = await this.resolveWanhuaContext(e);
     if (!ctx) return false;
     if (activeTrials.has(ctx.qq)) return e.reply('你的上一场万化试炼尚未结束。');
 
