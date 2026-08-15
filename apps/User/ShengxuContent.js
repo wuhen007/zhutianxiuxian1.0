@@ -14,6 +14,7 @@ import {
   SHENGXU_FACTIONS,
   createShengxuMonster,
   getShengxuDungeon,
+  getShengxuExploreDuration,
   resolveShengxuDungeonReward,
 } from '../../model/shengxuContent.js';
 import {
@@ -75,6 +76,13 @@ export class ShengxuContent extends plugin {
         { reg: '^#追寻石罐$', fnc: 'claimStoneJar' },
       ],
     });
+    // 探索定时结算：每 20 秒检查一次到期的圣墟探索
+    this.task = [{
+      cron: '*/20 * * * * *',
+      name: 'ShengxuExploreTask',
+      fnc: () => this.tick(),
+    }];
+    this.ticking = false;
   }
 
   async getPlayer(e) {
@@ -87,9 +95,9 @@ export class ShengxuContent extends plugin {
   async dungeons(e) {
     if (!verc({ e })) return false;
     const lines = SHENGXU_DUNGEONS.map(dungeon =>
-      `【${dungeon.chapter}】${dungeon.name}｜花粉${dungeon.requiredLevel}阶｜${dungeon.monster}｜${dungeon.medium}`
+      `【${dungeon.chapter}】${dungeon.name}｜花粉${dungeon.requiredLevel}阶｜${dungeon.monster}｜${dungeon.medium}｜耗时${dungeon.duration}分钟`
     );
-    return e.reply(['【圣墟位面副本】', '需先发送 #穿梭小阴间 进入圣墟诸界', ...lines, '探索：#探索圣墟 地点名（每处每日一次）'].join('\n'));
+    return e.reply(['【圣墟位面副本】', '需先发送 #穿梭小阴间 进入圣墟诸界', ...lines, '探索：#探索圣墟 地点名（每处每日一次，探索耗时结束后自动归来结算）'].join('\n'));
   }
 
   async explore(e) {
@@ -100,52 +108,145 @@ export class ShengxuContent extends plugin {
     if (!dungeon) return e.reply(`未知地点。可用：${SHENGXU_DUNGEONS.map(item => item.name).join('、')}`);
     const { userId } = context;
     return withPlayerMutationLock(userId, async () => {
-      let player = await Read_player(userId);
+      const player = await Read_player(userId);
       if (!isCultivatingExtraPath(player, 'huafen')) return e.reply('只有花粉进化路修士可以进入圣墟副本。');
       if (!isInShengxuPlane(player)) return e.reply('圣墟副本只存在于圣墟诸界（小阴间/大阴间/阳间），请先发送 #穿梭小阴间。');
       if (Number(player.huafenlevel_id) < dungeon.requiredLevel) {
         return e.reply(`探索${dungeon.name}需花粉进化序列达到${dungeon.requiredLevel}，当前为${player.huafenlevel_id}。`);
       }
       if (await redis.get(`xiuxian:player:${userId}:game_action`) == 0) return e.reply('修仙：游戏进行中...');
+
+      // 探索中检查：同一时间只能探索一处圣墟副本
+      const exploreKey = `xiuxian:shengxu:explore:${userId}`;
+      const activeRaw = await redis.get(exploreKey);
+      if (activeRaw) {
+        try {
+          const active = JSON.parse(activeRaw);
+          const remainMs = Number(active.end_time) - Date.now();
+          if (remainMs > 0) {
+            const m = Math.floor(remainMs / 60000);
+            const s = Math.floor((remainMs % 60000) / 1000);
+            return e.reply(`你正在探索【${active.dungeonName}】，剩余 ${m} 分 ${s} 秒后归来。`);
+          }
+          await redis.del(exploreKey);
+        } catch {
+          // 坏数据直接覆盖
+        }
+      }
+
+      // 每处每日一次（探索开始日占位）
       const dailyKey = `xiuxian:shengxu:dungeon:${getShanghaiDateKey()}:${dungeon.name}:${userId}`;
       if (!(await redis.set(dailyKey, '1', { EX: 2 * 24 * 60 * 60, NX: true }))) {
         return e.reply(`你今日已经探索过${dungeon.name}。`);
       }
 
-      const attacker = structuredClone(player);
-      attacker.当前血量 = Math.max(1, Number(player.血量上限 || player.当前血量) || 1);
-      const monster = createShengxuMonster(player, dungeon);
-      const battle = await zd_battle(attacker, monster, { battleType: 'shengxu_dungeon' });
-      const lines = [
-        `【${dungeon.name}】遭遇${monster.名号}`,
-        ...battleExcerpt(battle.msg),
-      ];
-      // 战斗可能持久化消耗型权柄，结算奖励前重新读取，避免旧快照覆盖它们。
-      player = await Read_player(userId);
-      player.当前血量 = battle.winner === 'A' ? Math.max(1, Math.trunc(battle.A_hp)) : 1;
-      player.功法熟练度 = attacker.功法熟练度;
-      player.功法熟练度每日 = attacker.功法熟练度每日;
-      if (battle.winner !== 'A') {
-        await Write_player(userId, player);
-        lines.push('【探索失败】你被异变生灵重创，当前血量降至1。');
-        return e.reply(lines.join('\n'));
-      }
-
-      const reward = resolveShengxuDungeonReward(dungeon);
-      await Add_najie_thing(userId, reward.medium, '道具', reward.amount);
-      if (reward.gongfa) await Add_najie_thing(userId, reward.gongfa, '功法', 1);
-      player.进化积淀 = Math.max(0, Number(player.进化积淀) || 0) + reward.accumulation;
-      player.圣墟机缘线索 = Math.max(0, Number(player.圣墟机缘线索) || 0) + 1;
-      player.圣墟副本通关 ??= {};
-      player.圣墟副本通关[dungeon.name] = (Number(player.圣墟副本通关[dungeon.name]) || 0) + 1;
-      await Write_player(userId, player);
-      lines.push(
-        '【探索胜利】',
-        `${reward.medium}×${reward.amount}｜进化积淀+${reward.accumulation}｜石罐线索+1`,
-        reward.gongfa ? `获得传承：【${reward.gongfa}】` : '本次未寻得呼吸法传承。'
-      );
-      return e.reply(lines.join('\n'));
+      const durationMin = getShengxuExploreDuration(player, dungeon);
+      const now = Date.now();
+      const endTime = now + durationMin * 60 * 1000;
+      const task = {
+        qq: userId,
+        playerName: player.名号 || userId,
+        groupId: e.isGroup ? e.group_id : null,
+        dungeonName: dungeon.name,
+        start_time: now,
+        end_time: endTime,
+      };
+      await redis.set(exploreKey, JSON.stringify(task), { EX: 24 * 60 * 60 });
+      const endLabel = new Date(endTime).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+      return e.reply([
+        `【${dungeon.name}·开始探索】`,
+        `${player.名号 || userId}踏入${dungeon.name}，${dungeon.monster}的气息在深处隐现。`,
+        `探索耗时：${durationMin} 分钟`,
+        `预计归来：${endLabel}`,
+        '探索结束后将自动结算收获。',
+      ].join('\n'));
     });
+  }
+
+  async tick() {
+    if (this.ticking) return;
+    this.ticking = true;
+    try {
+      await this.settleExplorations();
+    } catch (error) {
+      console.error('[圣墟副本] 探索结算定时任务失败:', error);
+    } finally {
+      this.ticking = false;
+    }
+  }
+
+  async settleExplorations() {
+    const now = Date.now();
+    const keys = await redis.keys('xiuxian:shengxu:explore:*');
+    for (const key of keys) {
+      const raw = await redis.get(key);
+      if (!raw) continue;
+      let task;
+      try {
+        task = JSON.parse(raw);
+      } catch {
+        await redis.del(key);
+        continue;
+      }
+      if (now < Number(task.end_time)) continue;
+      try {
+        await this.settleExplore(task);
+        await redis.del(key);
+      } catch (error) {
+        console.error(`[圣墟副本] 玩家 ${task.qq} 探索结算失败:`, error);
+      }
+    }
+  }
+
+  async settleExplore(task) {
+    const userId = String(task.qq);
+    const player = await Read_player(userId);
+    if (!player) return;
+    const dungeon = getShengxuDungeon(task.dungeonName);
+    if (!dungeon) return;
+
+    const attacker = structuredClone(player);
+    attacker.当前血量 = Math.max(1, Number(player.血量上限 || player.当前血量) || 1);
+    const monster = createShengxuMonster(player, dungeon);
+    const battle = await zd_battle(attacker, monster, { battleType: 'shengxu_dungeon' });
+    const lines = [
+      `【${dungeon.name}·探索归来】`,
+      `${task.playerName}在${dungeon.name}深处遭遇【${monster.名号}】！`,
+      ...battleExcerpt(battle.msg),
+    ];
+    const fresh = await Read_player(userId);
+    fresh.当前血量 = battle.winner === 'A' ? Math.max(1, Math.trunc(battle.A_hp)) : 1;
+    fresh.功法熟练度 = attacker.功法熟练度;
+    fresh.功法熟练度每日 = attacker.功法熟练度每日;
+    if (battle.winner !== 'A') {
+      await Write_player(userId, fresh);
+      lines.push('【探索失败】你被异变生灵重创，当前血量降至1。');
+      return this.sendExploreResult(task, lines.join('\n'));
+    }
+
+    const reward = resolveShengxuDungeonReward(dungeon);
+    await Add_najie_thing(userId, reward.medium, '道具', reward.amount);
+    if (reward.gongfa) await Add_najie_thing(userId, reward.gongfa, '功法', 1);
+    fresh.进化积淀 = Math.max(0, Number(fresh.进化积淀) || 0) + reward.accumulation;
+    fresh.圣墟机缘线索 = Math.max(0, Number(fresh.圣墟机缘线索) || 0) + 1;
+    fresh.圣墟副本通关 ??= {};
+    fresh.圣墟副本通关[dungeon.name] = (Number(fresh.圣墟副本通关[dungeon.name]) || 0) + 1;
+    await Write_player(userId, fresh);
+    lines.push(
+      '【探索胜利】',
+      `${reward.medium}×${reward.amount}｜进化积淀+${reward.accumulation}｜石罐线索+1`,
+      reward.gongfa ? `获得传承：【${reward.gongfa}】` : '本次未寻得呼吸法传承。'
+    );
+    return this.sendExploreResult(task, lines.join('\n'));
+  }
+
+  async sendExploreResult(task, message) {
+    try {
+      if (task.groupId) return await this.pushInfo(task.groupId, true, [segment.at(Number(task.qq)), message]);
+      return await this.pushInfo(task.qq, false, message);
+    } catch (error) {
+      console.error(`[圣墟副本] 玩家 ${task.qq} 结算消息发送失败:`, error);
+    }
   }
 
   async factions(e) {

@@ -1,17 +1,39 @@
 export const SHENGXU_DUNGEONS = Object.freeze([
-  Object.freeze({ chapter: '地球篇', name: '太行山', requiredLevel: 2, monster: '太行苍狼', scale: 0.68, medium: '普通进化花粉', amount: 2, accumulation: 6, gongfa: '形意呼吸法', gongfaChance: 0.12 }),
-  Object.freeze({ chapter: '地球篇', name: '昆仑山', requiredLevel: 2, monster: '昆仑兽王', scale: 0.72, medium: '普通进化花粉', amount: 2, accumulation: 8, gongfa: '形意呼吸法', gongfaChance: 0.18 }),
-  Object.freeze({ chapter: '地球篇', name: '武当山', requiredLevel: 3, monster: '金顶异禽王', scale: 0.78, medium: '普通进化花粉', amount: 3, accumulation: 8, gongfa: '太极呼吸法', gongfaChance: 0.18 }),
-  Object.freeze({ chapter: '地球篇', name: '龙虎山', requiredLevel: 4, monster: '枷锁古猿', scale: 0.86, medium: '灵性进化花粉', amount: 1, accumulation: 10, gongfa: '太极呼吸法', gongfaChance: 0.14 }),
-  Object.freeze({ chapter: '地球篇', name: '嵩山', requiredLevel: 4, monster: '嵩山老猿', scale: 0.88, medium: '灵性进化花粉', amount: 1, accumulation: 10, gongfa: '大雷音呼吸法', gongfaChance: 0.06 }),
-  Object.freeze({ chapter: '地球篇', name: '终南山', requiredLevel: 5, monster: '异树守卫', scale: 0.92, medium: '灵性进化花粉', amount: 1, accumulation: 11, gongfa: '道引呼吸法', gongfaChance: 0.04 }),
-  Object.freeze({ chapter: '地球篇', name: '泰山', requiredLevel: 5, monster: '封禅异禽王', scale: 0.95, medium: '灵性进化花粉', amount: 2, accumulation: 11, gongfa: '道引呼吸法', gongfaChance: 0.05 }),
-  Object.freeze({ chapter: '地球篇', name: '顺天玉虚宫', requiredLevel: 6, monster: '失控异变体', scale: 0.98, medium: '灵性进化花粉', amount: 2, accumulation: 12, gongfa: '形意呼吸法', gongfaChance: 0.1 }),
-  Object.freeze({ chapter: '地球篇', name: '大雷音寺遗址', requiredLevel: 6, monster: '雷音尸魔', scale: 1, medium: '灵性进化花粉', amount: 2, accumulation: 12, gongfa: '大雷音呼吸法', gongfaChance: 0.1 }),
-  Object.freeze({ chapter: '星路篇', name: '小阴间星路', requiredLevel: 8, monster: '星路猎杀者', scale: 1.1, medium: '神性进化花粉', amount: 1, accumulation: 16, gongfa: '道引呼吸法', gongfaChance: 0.07 }),
-  Object.freeze({ chapter: '阳间篇', name: '阳间名山', requiredLevel: 11, monster: '阳间神祇', scale: 1.22, medium: '神性进化花粉', amount: 2, accumulation: 20, gongfa: '道引呼吸法', gongfaChance: 0.1 }),
-  Object.freeze({ chapter: '诡异篇', name: '魂河古地', requiredLevel: 17, monster: '魂河接引者', scale: 1.38, medium: '无暇进化花粉', amount: 1, accumulation: 28, gongfa: '盗引呼吸法', gongfaChance: 0.03 }),
+  Object.freeze({ chapter: '地球篇', name: '太行山', requiredLevel: 2, monster: '太行苍狼', scale: 0.68, medium: '普通进化花粉', amount: 2, accumulation: 6, gongfa: '形意呼吸法', gongfaChance: 0.12, duration: 15 }),
+  Object.freeze({ chapter: '地球篇', name: '昆仑山', requiredLevel: 2, monster: '昆仑兽王', scale: 0.72, medium: '普通进化花粉', amount: 2, accumulation: 8, gongfa: '形意呼吸法', gongfaChance: 0.18, duration: 15 }),
+  Object.freeze({ chapter: '地球篇', name: '武当山', requiredLevel: 3, monster: '金顶异禽王', scale: 0.78, medium: '普通进化花粉', amount: 3, accumulation: 8, gongfa: '太极呼吸法', gongfaChance: 0.18, duration: 15 }),
+  Object.freeze({ chapter: '地球篇', name: '龙虎山', requiredLevel: 4, monster: '枷锁古猿', scale: 0.86, medium: '灵性进化花粉', amount: 1, accumulation: 10, gongfa: '太极呼吸法', gongfaChance: 0.14, duration: 15 }),
+  Object.freeze({ chapter: '地球篇', name: '嵩山', requiredLevel: 4, monster: '嵩山老猿', scale: 0.88, medium: '灵性进化花粉', amount: 1, accumulation: 10, gongfa: '大雷音呼吸法', gongfaChance: 0.06, duration: 15 }),
+  Object.freeze({ chapter: '地球篇', name: '终南山', requiredLevel: 5, monster: '异树守卫', scale: 0.92, medium: '灵性进化花粉', amount: 1, accumulation: 11, gongfa: '道引呼吸法', gongfaChance: 0.04, duration: 15 }),
+  Object.freeze({ chapter: '地球篇', name: '泰山', requiredLevel: 5, monster: '封禅异禽王', scale: 0.95, medium: '灵性进化花粉', amount: 2, accumulation: 11, gongfa: '道引呼吸法', gongfaChance: 0.05, duration: 15 }),
+  Object.freeze({ chapter: '地球篇', name: '顺天玉虚宫', requiredLevel: 6, monster: '失控异变体', scale: 0.98, medium: '灵性进化花粉', amount: 2, accumulation: 12, gongfa: '形意呼吸法', gongfaChance: 0.1, duration: 15 }),
+  Object.freeze({ chapter: '地球篇', name: '大雷音寺遗址', requiredLevel: 6, monster: '雷音尸魔', scale: 1, medium: '灵性进化花粉', amount: 2, accumulation: 12, gongfa: '大雷音呼吸法', gongfaChance: 0.1, duration: 15 }),
+  Object.freeze({ chapter: '星路篇', name: '小阴间星路', requiredLevel: 8, monster: '星路猎杀者', scale: 1.1, medium: '神性进化花粉', amount: 1, accumulation: 16, gongfa: '道引呼吸法', gongfaChance: 0.07, duration: 30 }),
+  Object.freeze({ chapter: '阳间篇', name: '阳间名山', requiredLevel: 11, monster: '阳间神祇', scale: 1.22, medium: '神性进化花粉', amount: 2, accumulation: 20, gongfa: '道引呼吸法', gongfaChance: 0.1, duration: 60 }),
+  Object.freeze({ chapter: '诡异篇', name: '魂河古地', requiredLevel: 17, monster: '魂河接引者', scale: 1.38, medium: '无暇进化花粉', amount: 1, accumulation: 28, gongfa: '盗引呼吸法', gongfaChance: 0.03, duration: 120 }),
 ]);
+
+// 呼吸法下本提速：呼吸法越精深，圣墟探索归来越快
+export const BREATHING_TIME_REDUCTION = Object.freeze({
+  基础呼吸法: 0,
+  形意呼吸法: 1,
+  太极呼吸法: 2,
+  大雷音呼吸法: 3,
+  道引呼吸法: 4,
+  盗引呼吸法: 5,
+});
+
+export const SHENGXU_EXPLORE_MIN_DURATION_MIN = 5;
+
+/** 圣墟探索耗时 = 副本基础时长 − 呼吸法提速（下限 5 分钟） */
+export function getShengxuExploreDuration(player, dungeon) {
+  const base = Math.max(1, Math.trunc(Number(dungeon?.duration) || 15));
+  const learned = Array.isArray(player?.学习的功法) ? player.学习的功法 : [];
+  const reduction = Object.entries(BREATHING_TIME_REDUCTION)
+    .filter(([name]) => learned.includes(name))
+    .reduce((max, [, value]) => Math.max(max, value), 0);
+  return Math.max(SHENGXU_EXPLORE_MIN_DURATION_MIN, base - reduction);
+}
 
 export const SHENGXU_FACTIONS = Object.freeze({
   菩提基因: Object.freeze({ position: '外勤进化者', requiredLevel: 2, medium: '普通进化花粉', amount: 3, dew: 0, accumulation: 5 }),
