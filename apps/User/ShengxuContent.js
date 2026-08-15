@@ -3,6 +3,7 @@ import {
   Add_najie_thing,
   Read_player,
   Write_player,
+  bigNumberTransform,
   channel,
   exist_najie_thing,
   existplayer,
@@ -12,10 +13,14 @@ import { isCultivatingExtraPath } from '../../model/extraCultivation.js';
 import {
   SHENGXU_DUNGEONS,
   SHENGXU_FACTIONS,
+  BREATHING_PAGE_REQUIRE,
+  collectBreathingPage,
   createShengxuMonster,
+  ensureBreathingPages,
   getShengxuDungeon,
   getShengxuExploreDuration,
   resolveShengxuDungeonReward,
+  synthesizeBreathingMethod,
 } from '../../model/shengxuContent.js';
 import {
   STONE_JAR_CLUE_REQUIREMENT,
@@ -74,6 +79,7 @@ export class ShengxuContent extends plugin {
         { reg: '^#领取圣墟俸禄$', fnc: 'salary' },
         { reg: '^#(?:石罐|石罐机缘)$', fnc: 'stoneJar' },
         { reg: '^#追寻石罐$', fnc: 'claimStoneJar' },
+        { reg: '^#合成呼吸法\\s+\\S+$', fnc: 'synthesizeBreathing' },
       ],
     });
     // 探索定时结算：每 20 秒检查一次到期的圣墟探索
@@ -227,16 +233,28 @@ export class ShengxuContent extends plugin {
     const reward = resolveShengxuDungeonReward(dungeon);
     await Add_najie_thing(userId, reward.medium, '道具', reward.amount);
     if (reward.gongfa) await Add_najie_thing(userId, reward.gongfa, '功法', 1);
+    if (reward.herb) await Add_najie_thing(userId, reward.herb, '道具', 1);
     fresh.进化积淀 = Math.max(0, Number(fresh.进化积淀) || 0) + reward.accumulation;
+    fresh.修为 = Math.max(0, (Number(fresh.修为) || 0) + reward.xiuwei);
+    fresh.血气 = Math.max(0, (Number(fresh.血气) || 0) + reward.xueqi);
+    fresh.灵石 = Math.max(0, (Number(fresh.灵石) || 0) + reward.lingshi);
     fresh.圣墟机缘线索 = Math.max(0, Number(fresh.圣墟机缘线索) || 0) + 1;
     fresh.圣墟副本通关 ??= {};
     fresh.圣墟副本通关[dungeon.name] = (Number(fresh.圣墟副本通关[dungeon.name]) || 0) + 1;
+    // 呼吸法残页：刷副本集页，5 张合成一本呼吸法
+    const page = collectBreathingPage(fresh, dungeon.gongfa);
     await Write_player(userId, fresh);
     lines.push(
       '【探索胜利】',
       `${reward.medium}×${reward.amount}｜进化积淀+${reward.accumulation}｜石罐线索+1`,
-      reward.gongfa ? `获得传承：【${reward.gongfa}】` : '本次未寻得呼吸法传承。'
+      `修为+${bigNumberTransform(reward.xiuwei)}｜血气+${bigNumberTransform(reward.xueqi)}｜灵石+${bigNumberTransform(reward.lingshi)}`,
     );
+    if (reward.herb) lines.push(`【本源圣药】灵性惊人，可净化始祖污染度−60。`);
+    if (page.ok) {
+      if (page.learned) lines.push(`呼吸法残页折现：进化积淀+${page.reward}（已掌握${page.gongfa}）`);
+      else lines.push(`拾取【${page.gongfa}·残页】${page.count}/${page.need}，集齐可 #合成呼吸法 ${page.gongfa}`);
+    }
+    lines.push(reward.gongfa ? `获得传承：【${reward.gongfa}】` : '本次未直接寻得呼吸法传承。');
     return this.sendExploreResult(task, lines.join('\n'));
   }
 
@@ -247,6 +265,28 @@ export class ShengxuContent extends plugin {
     } catch (error) {
       console.error(`[圣墟副本] 玩家 ${task.qq} 结算消息发送失败:`, error);
     }
+  }
+
+  async synthesizeBreathing(e) {
+    if (!verc({ e })) return false;
+    const context = await this.getPlayer(e);
+    if (!context) return e.reply('玩家不存在，请先创建角色。');
+    const gongfa = e.msg.replace(/^#合成呼吸法\s+/, '').trim();
+    return withPlayerMutationLock(context.userId, async () => {
+      const player = await Read_player(context.userId);
+      if (!isCultivatingExtraPath(player, 'huafen')) return e.reply('只有花粉进化路修士可以参悟呼吸法。');
+      const result = synthesizeBreathingMethod(player, gongfa);
+      if (!result.ok) {
+        const pages = ensureBreathingPages(player);
+        return e.reply(`【残页不足】${gongfa}残页 ${Number(pages[gongfa]) || 0}/${BREATHING_PAGE_REQUIRE}，探索对应圣墟副本拾取残页。`);
+      }
+      await Write_player(context.userId, player);
+      return e.reply([
+        '【呼吸法参悟】',
+        `你以${BREATHING_PAGE_REQUIRE}张残页拼合残缺古碑，参悟【${gongfa}】！`,
+        '进化成功率与下本速度随之提升。',
+      ].join('\n'));
+    });
   }
 
   async factions(e) {
