@@ -33,7 +33,8 @@ import {
   isNotNull,
   Write_player,
   channel,
-  buildAt
+  buildAt,
+  GetPower
 } from '../../model/xiuxian.js';
 import { getMinggeEffects, getMinggeDirectMultiplier } from '../../model/mingge.js';
 import { rollDailyDungeonCoordinate } from '../../model/weimianTravel.js';
@@ -42,6 +43,7 @@ import { recordWenXianTaskProgress } from '../../model/wenxianling.js';
 import { isHighRealmConsumableRestricted } from '../../model/realmAuthority.js';
 import { formatTianjiaoTrace, rollDungeonTianjiaoTrace } from '../../model/tianjiaoGrowth.js';
 import { consumeBlackEmperorBattleFormation, rollBlackEmperorDungeonEncounter, rollDuanDeEncounter } from '../../model/blackEmperor.js';
+import { rollRuthlessDestinyEncounter } from '../../model/ruthlessEmperor.js';
 import { AppName } from '../../app.config.js';
 import {
   dataall,
@@ -1845,6 +1847,7 @@ if (totalPotentialCost > 0) {
   return false;
 }
     async regression(e){
+      let ruthlessDestinyChecked = false;
       let player_id=e.user_id.toString().replace('qg_','')
       let ifexistplay = await existplayer(player_id);
       if (!ifexistplay){;
@@ -3448,6 +3451,11 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
               if (blackEmperorEncounter.encountered) {
                 last_msg += blackEmperorEncounter.message;
                 await Write_player(player_id, player);
+              }
+
+              if (!ruthlessDestinyChecked) {
+                ruthlessDestinyChecked = true;
+                await tryRuthlessDungeonEncounter(e, player_id, player, weizhi?.name);
               }
 
               const duandeEncounter = rollDuanDeEncounter(player, {
@@ -5531,6 +5539,11 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
                 await Write_player(player_id, player);
               }
 
+              if (!ruthlessDestinyChecked) {
+                ruthlessDestinyChecked = true;
+                await tryRuthlessDungeonEncounter(e, player_id, player, weizhi?.name);
+              }
+
               const duandeEncounter = rollDuanDeEncounter(player, {
                 plane: player.power_place,
               });
@@ -6109,4 +6122,34 @@ function getPropertyName(prop) {
         'xiangulevel_id': '仙古今世法'
     };
     return names[prop] || prop;
+}
+
+async function isGlobalPowerLeader(playerId, player) {
+  const ownPower = GetPower(player.攻击, player.防御, player.血量上限, player.暴击率);
+  if (!Number.isFinite(ownPower)) return false;
+
+  const files = fs.readdirSync(__PATH.player_path).filter(file => file.endsWith('.json'));
+  for (const file of files) {
+    const otherId = file.replace('.json', '');
+    if (String(otherId) === String(playerId)) continue;
+    try {
+      const other = await Read_player(otherId);
+      const otherPower = GetPower(other.攻击, other.防御, other.血量上限, other.暴击率);
+      if (Number.isFinite(otherPower) && otherPower > ownPower) return false;
+    } catch (error) {
+      console.error('[狠人宿命事件] 读取玩家' + otherId + '战力失败', error);
+    }
+  }
+  return true;
+}
+
+async function tryRuthlessDungeonEncounter(e, playerId, player, dungeon) {
+  if (player.狠人大帝宿命事件已触发) return { encountered: false, reason: 'once' };
+  const isGlobalFirst = await isGlobalPowerLeader(playerId, player);
+  const encounter = rollRuthlessDestinyEncounter(player, { isGlobalFirst, dungeon });
+  if (!encounter.encountered) return encounter;
+
+  await Write_player(playerId, player);
+  await e.reply([buildAt(playerId), '\n' + encounter.message]);
+  return encounter;
 }

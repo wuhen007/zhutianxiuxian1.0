@@ -50,29 +50,35 @@ export const NPC_PROTECTORS = Object.freeze({
   },
   狠人大帝: {
     name: '狠人大帝',
-    requirement: '同时持有或学会不灭天功、万化圣诀、飞仙诀',
+    requirement: '与狠人大帝好感度达到480（护道之约）',
     intro: '青铜面具自时间长河尽头浮现，万千仙葩同时绽放。狠人大帝一步落在你身前。',
     combatant: {
       名号: '狠人大帝·红尘仙身',
       level_id: 64,
       Physique_id: 64,
-      mijinglevel_id: 17,
+      mijinglevel_id: 20,
       xiangulevel_id: 16,
-      攻击: 1_050_000_000_000,
-      防御: 800_000_000_000,
-      当前血量: 1_100_000_000_000,
-      血量上限: 1_100_000_000_000,
+      攻击: 1_500_000_000_000_000_000_000,
+      防御: 1_500_000_000_000_000_000_000,
+      当前血量: 1_500_000_000_000_000_000_000,
+      血量上限: 1_500_000_000_000_000_000_000,
       暴击率: 1,
       暴击伤害: 3.5,
-      速度: 100,
+      速度: 1800,
       灵根: { name: '混沌吞天仙体', type: '红尘仙体', 法球倍率: 3.2, 攻击: 8, 防御: 5.5, 生命: 7 },
       法球倍率: 3.2,
-      学习的功法: ['一念花开·君临天下', '飞仙诀', '吞天魔功·魂吞'],
+      学习的功法: ['不灭天功', '万化圣诀', '吞天魔功', '飞仙', '飞仙诀', '一念花开，君临天下'],
+      功法熟练度: {
+        不灭天功: 1000,
+        万化圣诀: 1000,
+        吞天魔功: 1000,
+        飞仙: 1000,
+        飞仙诀: 1000,
+        '一念花开，君临天下': 1000,
+      },
     },
   },
 });
-
-const RUTHLESS_INHERITANCE = Object.freeze(['不灭天功', '万化圣诀', '飞仙诀']);
 
 export function isNpcProtector(name) {
   return Object.hasOwn(NPC_PROTECTORS, name);
@@ -104,15 +110,14 @@ export function getNpcProtectorEligibility(player, najie, name) {
   }
 
   if (name === '狠人大帝') {
-    const owned = new Set(Array.isArray(player?.学习的功法) ? player.学习的功法 : []);
-    for (const item of Array.isArray(najie?.功法) ? najie.功法 : []) {
-      if ((Number(item?.数量) || 0) > 0 && item?.name) owned.add(item.name);
-    }
-    const missing = RUTHLESS_INHERITANCE.filter(technique => !owned.has(technique));
+    const relation = Array.isArray(player?.剧情人物)
+      ? player.剧情人物.find(character => character?.狠人大帝)
+      : null;
+    const favor = Math.max(0, Number(relation?.好感度) || 0);
     return {
-      ok: missing.length === 0,
-      progress: `${RUTHLESS_INHERITANCE.length - missing.length}/${RUTHLESS_INHERITANCE.length}部传承`,
-      missing,
+      ok: favor >= 480,
+      progress: `${favor}/480好感度`,
+      missing: favor >= 480 ? [] : [`还需${480 - favor}好感度`],
     };
   }
 
