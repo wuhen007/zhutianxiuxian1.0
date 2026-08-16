@@ -118,6 +118,7 @@ const wishScaleExchangeConfigs = {
     reward: { name: "万界引潮灯", class: "道具", amount: 1 },
     unique: true,
   },
+  轮回命签: { cost: 50, reward: { name: "轮回命签", class: "道具", amount: 50 } },
 };
 
 const planeFishingEvents = {
@@ -420,6 +421,12 @@ export function rollWishScaleAmount(hasTideLamp = false, random = Math.random) {
   return hasTideLamp ? amount * 2 : amount;
 }
 
+/** 仙饵钓物数量：随机 1~5，拥有万界引潮灯时翻倍为 2~10（与愿鳞规则一致） */
+export function rollBaitRewardAmount(hasTideLamp = false, random = Math.random) {
+  const amount = 1 + Math.floor(Math.max(0, Math.min(0.999999999, random())) * 5);
+  return hasTideLamp ? amount * 2 : amount;
+}
+
 export function rollPlaneFishingEvent(planeName, random = Math.random) {
   if (random() >= IMMORTAL_FISHING_EVENT_CHANCE) return null;
   const event = planeFishingEvents[planeName] || genericPlaneFishingEvent;
@@ -464,7 +471,8 @@ const baitConfigs = {
   神藏仙饵: {
     effect: "专钓神药、潜力、心神与功法参悟类宝物",
     rewards: [
-      { name: "天药", class: "丹药", amount: 5, weight: 25, scalable: true },
+      { name: "天药", class: "丹药", amount: 5, weight: 20, scalable: true },
+      { name: "群星秘钥", class: "道具", amount: 1, weight: 5 },
       { name: "九转天药", class: "丹药", amount: 1, weight: 8 },
       { name: "煌天造化丹", class: "丹药", amount: 1, weight: 4 },
       { name: "潜力丹", class: "丹药", amount: 1, weight: 20 },

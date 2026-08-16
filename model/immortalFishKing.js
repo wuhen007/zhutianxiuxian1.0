@@ -3,6 +3,7 @@ export const FISH_KING_TTL_SECONDS = 24 * 60 * 60;
 export const FISH_KING_BATTLE_CD_SECONDS = 30 * 60;
 export const FISH_KING_DAO_ART_REDUCTION_SECONDS = 10 * 60;
 export const FISH_KING_DAMAGE_CAP_RATIO = 0.2;
+export const FISH_KING_RESCUE_CHANCE = 0.03;
 
 const statePrefix = "xiuxian:immortal-fish-king:active:";
 const lockPrefix = "xiuxian:immortal-fish-king:lock:";
@@ -150,6 +151,34 @@ export async function findFishKingByTeamId(teamId) {
   return readActiveFishKing(groupId);
 }
 
+export async function listActiveFishKings(now = Date.now()) {
+  const pattern = statePrefix + "*";
+  let keys = [];
+  if (typeof redis.scanIterator === "function") {
+    for await (const page of redis.scanIterator({ MATCH: pattern, COUNT: 100 })) {
+      if (Array.isArray(page)) keys.push(...page.map(String));
+      else keys.push(String(page));
+    }
+  } else if (typeof redis.keys === "function") {
+    keys = (await redis.keys(pattern)).map(String);
+  }
+  const states = await Promise.all(
+    [...new Set(keys)].map(key => readActiveFishKing(key.slice(statePrefix.length), now))
+  );
+  return states
+    .filter(Boolean)
+    .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+}
+
+export async function findFishKingByMemberId(memberId, now = Date.now()) {
+  const id = String(memberId || "");
+  if (!id) return null;
+  const states = await listActiveFishKings(now);
+  return states.find(state =>
+    state.members.some(member => String(member.id) === id)
+  ) || null;
+}
+
 export async function withFishKingLock(groupId, task) {
   const key = lockKey(groupId);
   const token = `${process.pid}:${Date.now()}:${Math.random()}`;
@@ -204,6 +233,26 @@ export function calculateFishKingDamage(state, won, bonusDamage = 0) {
   return Math.min(cap, damage);
 }
 
+export function rollFishKingRescue(random = Math.random) {
+  const roll = Math.max(0, Math.min(0.999999999, Number(random()) || 0));
+  if (roll < FISH_KING_RESCUE_CHANCE / 2) {
+    return { id: "rumeng", name: "如梦", damageRatio: FISH_KING_DAMAGE_CAP_RATIO };
+  }
+  if (roll < FISH_KING_RESCUE_CHANCE) {
+    return { id: "moxiaoyu", name: "莫晓羽", damageRatio: FISH_KING_DAMAGE_CAP_RATIO };
+  }
+  return null;
+}
+
+export function calculateFishKingRescueDamage(state, rescue) {
+  const healthMax = Math.max(1, Number(state?.healthMax) || 1);
+  const ratio = Math.max(0, Number(rescue?.damageRatio) || FISH_KING_DAMAGE_CAP_RATIO);
+  return Math.min(
+    Math.max(0, Number(state?.health) || 0),
+    Math.max(1, Math.trunc(healthMax * ratio))
+  );
+}
+
 export function createFishKingRewardAssignments(members, random = Math.random) {
   if (!Array.isArray(members) || members.length === 0) return [];
   const drops = [
@@ -221,10 +270,10 @@ export function createFishKingRewardAssignments(members, random = Math.random) {
 export function rollFishKingChestReward(random = Math.random) {
   const roll = random();
   if (roll < 0.8) {
-    return { name: "众生愿鳞", class: "道具", amount: 1 + boundedIndex(10, random) };
+    return { name: "众生愿鳞", class: "道具", amount: 10 + boundedIndex(21, random) };
   }
   if (roll < 0.95) {
     return { name: "众生仙钓", class: "道具", amount: 5 };
   }
-  return { name: "众生愿鳞", class: "道具", amount: 10 + boundedIndex(11, random) };
+  return { name: "众生愿鳞", class: "道具", amount: 10 + boundedIndex(21, random) };
 }

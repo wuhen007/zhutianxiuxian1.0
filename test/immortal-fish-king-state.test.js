@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  calculateFishKingRescueDamage,
+  FISH_KING_RESCUE_CHANCE,
+  rollFishKingRescue,
   deleteActiveFishKing,
+  findFishKingByMemberId,
+  listActiveFishKings,
   findFishKingByTeamId,
   readActiveFishKing,
   tryCreateFishKing,
@@ -20,6 +25,10 @@ function createRedisMock() {
       if (options.NX && values.has(key)) return null;
       values.set(key, String(value));
       return 'OK';
+    },
+    async keys(pattern) {
+      const prefix = String(pattern).replace(/\*$/, "");
+      return [...values.keys()].filter(key => key.startsWith(prefix));
     },
     async del(key) {
       return values.delete(String(key)) ? 1 : 0;
@@ -75,4 +84,49 @@ test('损坏或缺少有效期的鱼王状态会连同队伍索引一起清理',
   } finally {
     globalThis.redis = previousRedis;
   }
+});
+test('鱼王列表可以枚举跨群队伍并按队员定位', async () => {
+  const previousRedis = globalThis.redis;
+  const mock = createRedisMock();
+  globalThis.redis = mock;
+  try {
+    const first = await tryCreateFishKing({
+      groupId: '10001',
+      ownerId: '20001',
+      ownerName: '甲',
+      plane: '凡间',
+      king: { name: '甲鱼王' },
+      ownerPower: 100000,
+    });
+    const second = await tryCreateFishKing({
+      groupId: '10002',
+      ownerId: '20002',
+      ownerName: '乙',
+      plane: '仙界',
+      king: { name: '乙鱼王' },
+      ownerPower: 100000,
+    });
+    second.members.push({ id: '30001', name: '队员' });
+    await mock.set('xiuxian:immortal-fish-king:active:10002', JSON.stringify(second));
+
+    const states = await listActiveFishKings();
+    assert.deepEqual(states.map(state => state.groupId).sort(), ['10001', '10002']);
+    assert.equal((await findFishKingByMemberId('30001')).teamId, second.teamId);
+    assert.equal((await findFishKingByMemberId('99999')), null);
+  } finally {
+    globalThis.redis = previousRedis;
+  }
+});
+
+test('讨伐失败救场合计3%且两人各占一半，伤害为最大生命20%', () => {
+  assert.equal(FISH_KING_RESCUE_CHANCE, 0.03);
+  assert.equal(rollFishKingRescue(() => 0).id, 'rumeng');
+  assert.equal(rollFishKingRescue(() => 0.014999).id, 'rumeng');
+  assert.equal(rollFishKingRescue(() => 0.015).id, 'moxiaoyu');
+  assert.equal(rollFishKingRescue(() => 0.029999).id, 'moxiaoyu');
+  assert.equal(rollFishKingRescue(() => 0.03), null);
+
+  const state = { health: 900000, healthMax: 1000000 };
+  assert.equal(calculateFishKingRescueDamage(state, rollFishKingRescue(() => 0)), 200000);
+  assert.equal(calculateFishKingRescueDamage({ health: 50000, healthMax: 1000000 }, { damageRatio: 0.2 }), 50000);
 });

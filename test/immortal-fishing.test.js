@@ -22,6 +22,7 @@ import {
   parseImmortalBait,
   parseWishScaleExchange,
   recordFishCatch,
+  rollBaitRewardAmount,
   rollImmortalBaitReward,
   rollPlaneFish,
   rollPlaneFishingEvent,
@@ -139,7 +140,7 @@ test('愿鳞兑换档位、数量及绑定引潮灯符合设定', () => {
   assert.equal(parseWishScaleExchange('#愿鳞兑换 宇宙核心'), '宇宙核心');
   assert.deepEqual(WISH_SCALE_EXCHANGE_NAMES, [
     '众生仙钓', '百草香饵', '神藏仙饵', '矿髓沉饵', '因果道饵', '轮回冥饵',
-    '宇宙核心', '界核', '鸿蒙道火', '三千弱水', '万界引潮灯',
+    '宇宙核心', '界核', '鸿蒙道火', '三千弱水', '万界引潮灯', '轮回命签',
   ]);
   assert.deepEqual(
     WISH_SCALE_EXCHANGE_NAMES.map(name => [name, getWishScaleExchangeConfig(name).cost]),
@@ -147,13 +148,17 @@ test('愿鳞兑换档位、数量及绑定引潮灯符合设定', () => {
       ['众生仙钓', 5], ['百草香饵', 30], ['神藏仙饵', 30],
       ['矿髓沉饵', 40], ['因果道饵', 50], ['轮回冥饵', 50],
       ['宇宙核心', 80], ['界核', 80], ['鸿蒙道火', 80],
-      ['三千弱水', 80], ['万界引潮灯', 120],
+      ['三千弱水', 80], ['万界引潮灯', 120], ['轮回命签', 50],
     ]
   );
   for (const name of ['宇宙核心', '界核', '鸿蒙道火', '三千弱水']) {
     assert.ok(forgingMaterials.some(item => item.name === name && item.class === '材料'));
     assert.equal(getWishScaleExchangeConfig(name).reward.amount, 5);
   }
+  const sign = getWishScaleExchangeConfig('轮回命签');
+  assert.equal(sign.reward.name, '轮回命签');
+  assert.equal(sign.reward.amount, 50);
+  assert.ok(itemLists.some(item => item.name === '轮回命签' && item.class === '道具'));
   const lamp = itemLists.find(item => item.name === '万界引潮灯');
   assert.equal(lamp.不可交易, 1);
 });
@@ -170,6 +175,13 @@ test('垂钓基础四十分钟，引潮灯先减半，道法仙术再减十分�
   assert.equal(rollWishScaleAmount(false, () => 0.999999), 5);
   assert.equal(rollWishScaleAmount(true, () => 0), 2);
   assert.equal(rollWishScaleAmount(true, () => 0.999999), 10);
+});
+
+test('仙饵钓物数量随机1~5，引潮灯翻倍为2~10', () => {
+  assert.equal(rollBaitRewardAmount(false, () => 0), 1);
+  assert.equal(rollBaitRewardAmount(false, () => 0.999999), 5);
+  assert.equal(rollBaitRewardAmount(true, () => 0), 2);
+  assert.equal(rollBaitRewardAmount(true, () => 0.999999), 10);
 });
 
 test('七个位面均有8%额外垂钓奇遇且不触发时返回空', () => {
@@ -269,16 +281,19 @@ test('鱼王状态、伤害和三份随机分配奖励符合设定', () => {
   assert.ok(rewards.every(reward => reward.recipient.id === '2'));
 });
 
-test('鱼王宝箱遵循80%愿鳞、15%仙钓、5%大额愿鳞', () => {
+test('鱼王宝箱遵循80%愿鳞10~30、15%仙钓、5%大额愿鳞10~30', () => {
   const sequence = values => () => values.shift();
   assert.deepEqual(rollFishKingChestReward(sequence([0.79, 0.999])), {
-    name: '众生愿鳞', class: '道具', amount: 10,
+    name: '众生愿鳞', class: '道具', amount: 30,
   });
   assert.deepEqual(rollFishKingChestReward(sequence([0.8])), {
     name: '众生仙钓', class: '道具', amount: 5,
   });
   assert.deepEqual(rollFishKingChestReward(sequence([0.95, 0.999])), {
-    name: '众生愿鳞', class: '道具', amount: 20,
+    name: '众生愿鳞', class: '道具', amount: 30,
+  });
+  assert.deepEqual(rollFishKingChestReward(sequence([0.79, 0])), {
+    name: '众生愿鳞', class: '道具', amount: 10,
   });
   assert.ok(itemLists.some(item => item.name === '鱼王宝箱' && item.class === '盒子'));
 });

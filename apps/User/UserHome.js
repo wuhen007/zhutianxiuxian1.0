@@ -92,6 +92,7 @@ import {
   getImmortalBaitConfig,
   parseImmortalBait,
   recordFishCatch,
+  rollBaitRewardAmount,
   rollImmortalBaitReward,
   rollPlaneFish,
   rollPlaneFishingEvent,
@@ -101,6 +102,7 @@ import { tryCreateFishKing } from '../../model/immortalFishKing.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
 import {
   consumeFishAtlasSets,
+  getPendingFishAtlasRewards,
   markFishAtlasRewardsClaimed,
 } from '../../model/immortalFishingProgress.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
@@ -942,7 +944,7 @@ if (isLucky || player.灵根.type === "圆环之理") {
         rewardMsg += " 道法仙术运转周天，本次垂钓冷却减少10分钟！\n";
     }
     if (hasTideLamp) {
-        rewardMsg += " 万界引潮灯照彻众生海，垂钓冷却缩短一半，愿鳞数量翻倍！\n";
+        rewardMsg += " 万界引潮灯照彻众生海，垂钓冷却缩短一半，愿鳞与仙饵收获翻倍！\n";
     }
     
     // 特殊仙饵使用独立奖池；不带仙饵时沿用原奖池。
@@ -956,7 +958,7 @@ if (isLucky || player.灵根.type === "圆环之理") {
             ownsXianwuCoordinate:
                 Boolean(player.仙武界坐标已获得) || coordinateCount > 0,
         });
-        const amount = reward.scalable ? reward.amount * n : reward.amount;
+        const amount = rollBaitRewardAmount(hasTideLamp);
         await Add_najie_thing(usr_qq, reward.name, reward.class, amount);
         if (reward.uniqueFlag) {
             player[reward.uniqueFlag] = true;
