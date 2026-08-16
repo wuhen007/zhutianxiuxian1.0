@@ -16,11 +16,13 @@ test('dungeon reward includes resources scaling with level', () => {
   assert.equal(reward.xiuwei, 5000000 * 2); // requiredLevel 2
   assert.equal(reward.xueqi, 5000000 * 2);
   assert.equal(reward.lingshi, 2000000 * 2);
+  assert.equal(reward.fruit, ''); // random=1 不触发
   assert.equal(reward.herb, ''); // random=1 不触发
   assert.equal(reward.gongfa, ''); // random=1 不触发
 
   const high = resolveShengxuDungeonReward(getShengxuDungeon('魂河古地'), () => 0);
   assert.equal(high.xiuwei, 5000000 * 17);
+  assert.equal(high.fruit, '祖种异果'); // 高阶副本掉落高阶异果
   assert.equal(high.herb, '本源圣药'); // random=0 触发 10%
   assert.equal(high.gongfa, '盗引呼吸法'); // random=0 触发 3%
 });

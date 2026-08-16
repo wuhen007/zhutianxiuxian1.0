@@ -248,6 +248,7 @@ export class ShengxuContent extends plugin {
     await Add_najie_thing(userId, reward.medium, '道具', reward.amount);
     if (reward.gongfa) await Add_najie_thing(userId, reward.gongfa, '功法', 1);
     if (reward.herb) await Add_najie_thing(userId, reward.herb, '道具', 1);
+    if (reward.fruit) await Add_najie_thing(userId, reward.fruit, '道具', 1);
     fresh.进化积淀 = Math.max(0, Number(fresh.进化积淀) || 0) + reward.accumulation;
     fresh.修为 = Math.max(0, (Number(fresh.修为) || 0) + reward.xiuwei);
     fresh.血气 = Math.max(0, (Number(fresh.血气) || 0) + reward.xueqi);
@@ -272,6 +273,7 @@ export class ShengxuContent extends plugin {
       `修为+${bigNumberTransform(reward.xiuwei)}｜血气+${bigNumberTransform(reward.xueqi)}｜灵石+${bigNumberTransform(reward.lingshi)}`,
     );
     if (reward.herb) lines.push(`【本源圣药】灵性惊人，可净化始祖污染度−60。`);
+    if (reward.fruit) lines.push('【异果机缘】获得' + reward.fruit + '×1，可服用换取进化积淀。');
     if (page.ok) {
       if (page.learned) lines.push(`呼吸法残页折现：进化积淀+${page.reward}（已掌握${page.gongfa}）`);
       else lines.push(`拾取【${page.gongfa}·残页】${page.count}/${page.need}，集齐可 #合成呼吸法 ${page.gongfa}`);

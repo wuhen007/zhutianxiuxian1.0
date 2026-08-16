@@ -76,6 +76,10 @@ export function resolveShengxuDungeonReward(dungeon, random = Math.random) {
     xiuwei: 5000000 * level,
     xueqi: 5000000 * level,
     lingshi: 2000000 * level,
+    // 异果是副本中的额外机缘，副本越深，掉落品质越高。
+    fruit: Number(random()) < Math.min(0.28, 0.08 + level * 0.01)
+      ? (level >= 14 ? '祖种异果' : level >= 7 ? '本源异果' : '进化异果')
+      : '',
     // 本源圣药：阳间名山/魂河古地概率掉落（净化始祖污染度 −60）
     herb: Number(random()) < (dungeon.herbChance || 0) ? '本源圣药' : '',
     // 呼吸法传承：概率直接获得；另走残页收集（5 张合成，见下方）
