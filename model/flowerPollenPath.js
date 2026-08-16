@@ -104,8 +104,8 @@ export const FLOWER_TRIBULATION_RULES = Object.freeze({
   23: Object.freeze({ name: '祭道焚因果劫', stages: Object.freeze(['焚尽旧道', '祭掉因果', '新道重燃', '祭道定形']), baseChance: 0.42, costRate: 0.14, failureRisk: 26, failurePollution: 20, rewardAccumulation: 300, riskRelief: 30, pollutionRelief: 20 }),
   24: Object.freeze({ name: '超脱离尘劫', stages: Object.freeze(['诸世剥离', '唯一真形', '超脱定锚', '彼岸回望']), baseChance: 0.38, costRate: 0.15, failureRisk: 28, failurePollution: 22, rewardAccumulation: 360, riskRelief: 32, pollutionRelief: 22 }),
 });
-// ==== 进化成本（用户定档：2^等级 × 1250000，受时代影响）====
-export const EVOLUTION_BASE_COST = 1250000;
+// ==== 进化成本（用户定档：15000万 × 5^等级，受时代影响）====
+export const EVOLUTION_BASE_COST = 150000000;
 
 // 时代消耗系数：与 Level.js 时代口径保持一致（神话-25% / 太古-20% / 天命 / 末法×2 / 绝灵×3）
 export const ERA_COST_RATES = Object.freeze([0.75, 0.8, 1.0, 2.0, 3.0]);
@@ -238,11 +238,11 @@ export function getFlowerEraProfile(eraIndex = 2) {
   };
 }
 
-/** 进化成本 = 125万 × 2^等级 × 时代成本系数（用户定档公式） */
+/** 进化成本 = 15000万 × 5^等级 × 时代成本系数（用户定档公式） */
 export function getFlowerEvolutionCost(currentLevelId, eraIndex = 2) {
   const level = Math.max(1, Math.min(25, Math.trunc(number(currentLevelId, 1))));
   const { costRate } = getFlowerEraProfile(eraIndex);
-  return Math.trunc(EVOLUTION_BASE_COST * 2 ** level * costRate);
+  return Math.trunc(EVOLUTION_BASE_COST * 5 ** level * costRate);
 }
 
 export function getBestBreathingMethod(player) {

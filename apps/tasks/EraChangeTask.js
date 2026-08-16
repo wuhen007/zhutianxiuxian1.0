@@ -20,6 +20,7 @@ import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { getRealmAuthorityLevel, hasRealmAuthority } from '../../model/realmAuthority.js';
 import { repairAllDestroyedPlanes } from '../Boss/WeimianDestruction.js';
 import { triggerPeriodicRiftsForEra } from '../../model/planeRiftFestival.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import {
   XIANGU_LIFECYCLE,
   advanceXianguLifecycle,
@@ -608,6 +609,7 @@ async handleJuelingEraLoss() {
                 continue; // 护身符挡下，跳过本次纳戒损失
             }
 
+            await withPlayerMutationLock(qq, async () => {
             const najie = await Read_najie(qq);
             
             // 计算损失组数 (基础3-5组 + 每千年增加2组)
@@ -621,7 +623,7 @@ async handleJuelingEraLoss() {
                 '丹药','道具', '功法','草药', '材料', '食材', '仙宠','仙宠口粮','盒子'
             ].filter(cat => najie[cat]?.length > 0);
             
-            if (lossCategories.length === 0) continue;
+            if (lossCategories.length === 0) return;
             
             let playerLossCount = 0;
             let playerLossItems = [];
@@ -713,6 +715,7 @@ async handleJuelingEraLoss() {
                     eraYears: eraYears
                 });
             }
+            });
         }
         
         return { totalLossCount, lossReports, sealedCount, immuneCount }; // 返回被封印玩家数量与星宇护身符免疫数量
