@@ -215,7 +215,7 @@ export class ImmortalFishKing extends plugin {
     return e.reply([
       `【${ownerLabel}的${state.name}讨伐队伍】（编号${state.teamId || "?"}）`,
       `位面：${state.plane} ｜ 本体血量：${formatNumber(state.health)}/${formatNumber(state.healthMax)}`,
-      `速度倍率：${Number(state.speedMultiplier) || 1}倍`,
+      `固定速度：${Number(state.speed) || 100} ｜ 灵根：${state.灵根?.name || "潮汐灵根"}`,
       `鱼王秘术：${state.skills?.join("、") || "潮汐冲击"}`,
       "遗珍掉落：必定1件，讨伐队员随机获得",
       `队伍：${state.members.length}/${FISH_KING_MAX_MEMBERS}`,

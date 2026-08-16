@@ -43,7 +43,8 @@ export function createFishKingState({
     ownerName,
     plane,
     name: king.name,
-    speedMultiplier: Number(king.speedMultiplier) || 1,
+    speed: Number(king.speed) || 100,
+    灵根: king.灵根 || null,
     skills: Array.isArray(king.skills) ? [...king.skills] : [],
     health: healthMax,
     healthMax,
@@ -200,27 +201,31 @@ export function createFishKingBattleAvatar(player, state, random = Math.random) 
     1,
     Math.trunc((Number(value) || 1) * (0.8 + 0.6 * random()))
   );
-  const playerSpeed = (Number(player.速度) || 100)
-    + (Number(player.mijinglevel_id) || 0) * 50
-    + (Number(player.xiangulevel_id) || 0) * 50
-    + Math.max(0, (Number(player.huafenlevel_id) || 1) - 1) * 50;
-  const skills = Array.isArray(state.skills) ? state.skills : [];
+  const kingRoot = (state && typeof state.灵根 === "object" && state.灵根) || {
+    type: "真灵根",
+    name: "水灵根",
+    法球倍率: 1,
+    攻击: 0,
+    防御: 0,
+    生命: 0,
+  };
+  const skills = Array.isArray(state?.skills) ? state.skills : [];
   const health = ruotuoScale(player.血量上限);
   return {
-    名号: `${state.name}·潮汐化身`,
+    名号: `${state?.name || "鱼王"}·潮汐化身`,
     boss: true,
     type: "boss",
     攻击: ruotuoScale(player.攻击),
     防御: ruotuoScale(player.防御),
     当前血量: health,
     血量上限: health,
-    速度: Math.max(1, Math.trunc(playerSpeed * (Number(state.speedMultiplier) || 1))),
-    暴击率: Number(player.暴击率) || 0,
-    暴击伤害: Number(player.暴击伤害) || 1.5,
-    灵根: player.灵根,
-    法球倍率: Number(player?.灵根?.法球倍率) || 1,
+    速度: Math.max(1, Math.trunc(Number(state?.speed) || 100)),
+    暴击率: 0.1,
+    暴击伤害: 1.5,
+    灵根: kingRoot,
+    法球倍率: Number(kingRoot.法球倍率) || 1,
     学习的功法: [...skills],
-    功法熟练度: Object.fromEntries(skills.map(name => [name, 1000])),
+    功法熟练度: Object.fromEntries(skills.map(name => [name, 200])),
     hun_Num: 5,
   };
 }

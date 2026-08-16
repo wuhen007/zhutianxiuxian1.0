@@ -15,8 +15,9 @@ const planeFishConfigs = {
     ],
     king: {
       name: "吞舟玄龟",
-      speedMultiplier: 0.75,
+      speed: 80,
       skills: ["真龙宝术", "不灭经"],
+      灵根: { type: "真灵根", name: "水灵根", 法球倍率: 0.08, 攻击: 0, 防御: 0, 生命: 0 },
     },
   },
   仙界: {
@@ -27,8 +28,9 @@ const planeFishConfigs = {
     ],
     king: {
       name: "沧溟仙鲲",
-      speedMultiplier: 0.95,
+      speed: 110,
       skills: ["鲲鹏宝术", "不灭经"],
+      灵根: { type: "变异灵根", name: "冰灵根", 法球倍率: 0.1, 攻击: 0, 防御: 0, 生命: 0 },
     },
   },
   遮天位面: {
@@ -39,8 +41,9 @@ const planeFishConfigs = {
     ],
     king: {
       name: "葬帝星龙鳅",
-      speedMultiplier: 1.15,
+      speed: 150,
       skills: ["行字秘", "吞天魔功"],
+      灵根: { type: "变异灵根", name: "暗灵根", 法球倍率: 0.1, 攻击: 0, 防御: 0, 生命: 0 },
     },
   },
   下界八域: {
@@ -51,8 +54,9 @@ const planeFishConfigs = {
     ],
     king: {
       name: "纯血太古鱼龙",
-      speedMultiplier: 1.05,
+      speed: 130,
       skills: ["真龙宝术", "六道轮回天功"],
+      灵根: { type: "变异灵根", name: "蛮荒", 法球倍率: 0.17, 攻击: 0, 防御: 0, 生命: 0 },
     },
   },
   九天十地: {
@@ -63,8 +67,9 @@ const planeFishConfigs = {
     ],
     king: {
       name: "界河鲲鹏残灵",
-      speedMultiplier: 1.25,
+      speed: 180,
       skills: ["鲲鹏宝术", "六道轮回天功"],
+      灵根: { type: "变异灵根", name: "风灵根", 法球倍率: 0.1, 攻击: 0, 防御: 0, 生命: 0 },
     },
   },
   太初星墟: {
@@ -75,8 +80,9 @@ const planeFishConfigs = {
     ],
     king: {
       name: "噬界星鲸",
-      speedMultiplier: 1.4,
+      speed: 220,
       skills: ["吞天魔功", "六道轮回天功"],
+      灵根: { type: "变异灵根", name: "雷灵根", 法球倍率: 0.1, 攻击: 0, 防御: 0, 生命: 0 },
     },
   },
   仙域: {
@@ -87,8 +93,9 @@ const planeFishConfigs = {
     ],
     king: {
       name: "界海古鲲",
-      speedMultiplier: 1.6,
+      speed: 260,
       skills: ["鲲鹏宝术", "不灭经", "行字秘"],
+      灵根: { type: "天灵根", name: "纯阳体", 法球倍率: 0.3, 攻击: 0, 防御: 0, 生命: 0 },
     },
   },
 };
