@@ -6,6 +6,16 @@ import {
   normalizeEndlessMeta,
 } from './endlessMeta.js';
 import {
+  getTreasureAntiHeal,
+  getTreasureBattleEntries,
+  getTreasureById,
+  getTreasureEffects,
+  getTreasureRunSummary,
+  HEISEI_RIDERS,
+  normalizePlayerTreasures,
+} from './endlessTreasure.js';
+import { getTitleEffects } from './titleSystem.js';
+import {
   autoSelectEndlessStarRoute,
   completeEndlessStarNode,
   ensureEndlessStarMap,
@@ -159,6 +169,19 @@ function countTeamTags(run) {
   return counts;
 }
 
+/** 重算各成员按世界分组的能力数量（供至宝按世界觉醒条件使用） */
+function computeWorldAbilityCounts(run) {
+  for (const member of Object.values(run.members)) {
+    const counts = {};
+    for (const [abilityId, level] of Object.entries(member.abilities || {})) {
+      if (asNumber(level) <= 0) continue;
+      const world = ABILITIES.get(abilityId)?.world;
+      if (world) counts[world] = (counts[world] || 0) + 1;
+    }
+    member.__worldAbilityCounts = counts;
+  }
+}
+
 function collectEffects(member, run) {
   const effects = {};
   mergeEffect(effects, member.endlessMetaEffects);
@@ -170,6 +193,10 @@ function collectEffects(member, run) {
   for (const boonId of member.blessings || []) {
     mergeEffect(effects, CHECKPOINT_BOONS.get(boonId)?.effect);
   }
+  // 称号加成：无尽劫境天尊 → 局内全属性+25%
+  if (member.titleBuffs) mergeEffect(effects, member.titleBuffs);
+  // 无尽至宝加成（基础 + 中间形态 + 觉醒形态）
+  mergeEffect(effects, getTreasureEffects(member, run));
   effects.teamShieldPct = Object.values(run.members).reduce(
     (total, current) => {
       return (
@@ -282,9 +309,31 @@ function createProjection(id, player) {
   if (Number(player.无尽劫境_他化自在体验) > 0) {
     abilities.perfect_free_transformation = 1;
   }
+  // 无尽至宝：开局自带专属能力（始终按 baseLevel 起手，觉醒需局内自行收集/升级）
+  const treasureOwned = normalizePlayerTreasures(player);
+  const treasureIds = treasureOwned.map(({ id, level }) => ({ id, level }));
+  for (const { id } of treasureIds) {
+    const treasure = getTreasureById(id);
+    if (!treasure?.baseAbility) continue;
+    abilities[treasure.baseAbility] = Math.max(
+      asNumber(abilities[treasure.baseAbility]),
+      Math.max(asNumber(treasure.baseLevel, 1), 1)
+    );
+  }
+  // 称号：无尽劫境天尊 → 局内全属性+25%、道痕收益+25%
+  const titleEffects = getTitleEffects(player);
+  const titleAttrPct = asNumber(titleEffects.attrPct);
+  const titleBuffs = titleAttrPct > 0
+    ? { attackPct: titleAttrPct, hpPct: titleAttrPct, defensePct: titleAttrPct }
+    : null;
   return {
     id,
     name: player.名号 || `无名修士${String(id).slice(-4)}`,
+    titleId: player.当前称号 || null,
+    titleBuffs,
+    titleTokenPct: asNumber(titleEffects.tokenPct),
+    treasureIds,
+    treasureBurns: [],
     rewardRealms: {
       level: asNumber(player.level_id),
       physique: asNumber(player.Physique_id),
@@ -489,6 +538,16 @@ export function createEndlessRun({
   );
   for (const entry of players)
     run.members[entry.id] = createProjection(entry.id, entry.player);
+  // 称号：任意成员佩戴「无尽劫境天尊」→ 全队道痕收益+25%
+  run.titleTokenBoost =
+    1 +
+    Math.max(
+      0,
+      ...Object.values(run.members).map(
+        (member) => asNumber(member.titleTokenPct)
+      )
+    );
+  computeWorldAbilityCounts(run);
   ensureEndlessStarMap(run, CONTENT.worlds, 1);
   setPendingChoices(run, 1);
   return run;
@@ -544,6 +603,7 @@ export function applyEndlessChoice(run, memberId, choiceNumber) {
   run.fusions = detectFusions(run);
   const newFusions = run.fusions.filter((id) => !previousFusions.has(id));
   refreshMemberVitals(run, oldMaximums);
+  computeWorldAbilityCounts(run);
   if (!Object.keys(run.pendingChoices).length) run.phase = 'ready';
 
   return {
@@ -668,6 +728,7 @@ export function applyCheckpointChoice(run, choiceNumber) {
   }
 
   run.fusions = detectFusions(run);
+  computeWorldAbilityCounts(run);
 
   run.lastCheckpoint = {
     layer: run.checkpoint.layer,
@@ -851,8 +912,14 @@ function damageEnemy(enemy, amount) {
 function healEnemy(run, enemy, amount, logs, skill, note = '') {
   if (enemy.hp <= 0) return 0;
   const before = enemy.hp;
-  enemy.hp = Math.min(enemy.maxHp, enemy.hp + Math.max(0, Math.round(amount)));
-  const healing = enemy.hp - before;
+  const antiHeal = getTreasureAntiHeal(run);
+  let healing = Math.max(0, Math.round(amount));
+  if (antiHeal > 0) {
+    healing = Math.round(healing * (1 - antiHeal));
+    note = note ? `${note}｜受禁疗压制` : '受禁疗压制';
+  }
+  enemy.hp = Math.min(enemy.maxHp, enemy.hp + healing);
+  healing = enemy.hp - before;
   if (!healing) return 0;
   addBattleAction(run, {
     side: 'enemy',
@@ -1481,6 +1548,372 @@ function damageMember(run, member, amount, logs, source = {}) {
   return handleLethal(run, member, logs);
 }
 
+/* ================= 无尽至宝·战斗技能 ================= */
+
+function treasureApplyBurn(run, member, enemy, burn, logs) {
+  member.treasureBurns ||= [];
+  member.treasureBurns.push({
+    ...burn,
+    remaining: Math.max(1, Math.floor(asNumber(burn.rounds, 3))),
+  });
+  addBattleLog(
+    logs,
+    `${member.name}的「${burn.label}」附着在${enemy.name}身上，将持续${asNumber(burn.rounds, 3)}回合${
+      burn.antiHeal ? '，并禁绝其一切疗愈' : ''
+    }！`
+  );
+}
+
+function treasureHitDamage(stats, entry, enemy) {
+  const defense =
+    entry.ignoreDefense ? enemy.defense * 0.15 : enemy.defense * 0.62;
+  return Math.max(1, Math.round(stats.attack * asNumber(entry.damagePct, 1) - defense));
+}
+
+function treasureNarration(entry, member, enemy) {
+  return (entry.narration || '')
+    .replace(/\{member\}/g, member.name)
+    .replace(/\{enemy\}/g, enemy.name);
+}
+
+function runTreasureMultiHit(run, member, enemy, round, logs, damageByMember, entry, stats) {
+  if (round % asNumber(entry.every, 4) !== 0) return;
+  const hits = Math.max(1, Math.floor(asNumber(entry.hits, 1)));
+  let dealt = 0;
+  for (let index = 0; index < hits; index++) {
+    if (enemy.hp <= 0) break;
+    const result = damageEnemy(enemy, treasureHitDamage(stats, entry, enemy));
+    dealt += result.dealt;
+    damageByMember[member.id] += result.dealt;
+  }
+  const narration = treasureNarration(entry, member, enemy);
+  addBattleAction(run, {
+    side: 'player',
+    actor: member.name,
+    skill: entry.label,
+    verb: entry.verb || '发动',
+    target: enemy.name,
+    damage: dealt,
+    narration: narration || undefined,
+  });
+  addBattleLog(
+    logs,
+    `${narration || `${member.name}发动${entry.label}`}，共造成${dealt}点伤害！`
+  );
+  if (entry.burn && enemy.hp > 0)
+    treasureApplyBurn(run, member, enemy, entry.burn, logs);
+}
+
+function runTreasureBigProc(run, member, enemy, round, logs, damageByMember, entry, stats) {
+  if (round % asNumber(entry.every, 4) !== 0) return;
+  const result = damageEnemy(enemy, treasureHitDamage(stats, entry, enemy));
+  damageByMember[member.id] += result.dealt;
+  const narration = treasureNarration(entry, member, enemy);
+  addBattleAction(run, {
+    side: 'player',
+    actor: member.name,
+    skill: entry.label,
+    verb: entry.verb || '释放',
+    target: enemy.name,
+    damage: result.damage,
+    absorbed: result.absorbed,
+    narration: narration || undefined,
+  });
+  addBattleLog(
+    logs,
+    `${narration || `${member.name}释放${entry.label}`}，造成${result.dealt}点伤害！`
+  );
+  if (entry.burn && enemy.hp > 0)
+    treasureApplyBurn(run, member, enemy, entry.burn, logs);
+}
+
+function runTreasureExecute(run, member, enemy, round, logs, damageByMember, entry, stats) {
+  if (enemy.hp <= 0 || enemy.hp / enemy.maxHp > asNumber(entry.threshold, 0.3))
+    return;
+  if (entry.once) {
+    member.__treasureExecuteUsed ||= {};
+    if (member.__treasureExecuteUsed[entry.label]) return;
+    member.__treasureExecuteUsed[entry.label] = true;
+  }
+  if (asNumber(entry.chance, 1) < 1 && random(run) >= asNumber(entry.chance, 1))
+    return;
+  const absorbed = enemy.shield || 0;
+  const killDamage = Math.max(1, Math.round(enemy.hp + absorbed));
+  enemy.hp = 0;
+  enemy.shield = 0;
+  damageByMember[member.id] += killDamage;
+  const narration = treasureNarration(entry, member, enemy);
+  addBattleAction(run, {
+    side: 'player',
+    actor: member.name,
+    skill: entry.label,
+    verb: '发动',
+    target: enemy.name,
+    damage: killDamage,
+    absorbed,
+    execute: true,
+    narration: narration || undefined,
+    note: '敌方生命低于30%，处决成功',
+  });
+  addBattleLog(
+    logs,
+    `${narration || `${member.name}发动${entry.label}`}，一击终结${enemy.name}！`
+  );
+}
+
+function runTreasureOnePunch(run, member, enemy, round, logs, damageByMember, entry, stats) {
+  if (enemy.hp <= 0 || random(run) >= asNumber(entry.chance, 0.12)) return;
+  const isBoss = enemy.stage === 'boss';
+  let dealt = 0;
+  let absorbed = 0;
+  let critical = false;
+  if (isBoss) {
+    const result = damageEnemy(
+      enemy,
+      Math.max(1, Math.round(stats.attack * asNumber(entry.bossMultiplier, 3)))
+    );
+    dealt = result.dealt;
+    absorbed = result.absorbed;
+    damageByMember[member.id] += result.dealt;
+    addBattleLog(
+      logs,
+      `${member.name}轰出${entry.label}，对Boss${enemy.name}造成${result.dealt}点伤害！`
+    );
+  } else {
+    absorbed = enemy.shield || 0;
+    dealt = Math.max(1, Math.round(enemy.hp + absorbed));
+    enemy.hp = 0;
+    enemy.shield = 0;
+    damageByMember[member.id] += dealt;
+    critical = true;
+    addBattleLog(logs, `${member.name}轰出${entry.label}，${enemy.name}被一拳轰杀！`);
+  }
+  const narration = treasureNarration(entry, member, enemy);
+  addBattleAction(run, {
+    side: 'player',
+    actor: member.name,
+    skill: entry.label,
+    verb: entry.verb || '轰出',
+    target: enemy.name,
+    damage: dealt,
+    absorbed,
+    execute: critical,
+    critical,
+    narration: narration || undefined,
+    note: isBoss ? '认真一拳·重创Boss' : '一拳必杀·非Boss目标',
+  });
+}
+
+function createDecadeRider(run, member, rider, round, logs, first) {
+  const stats = calculateMemberStats(member, run, round);
+  const body = {
+    riderId: rider.id,
+    name: `${rider.name}·${rider.form}`,
+    attack: Math.round(stats.attack * asNumber(rider.attack, 1.2)),
+    hp: Math.max(1, Math.round(stats.maxHp * asNumber(rider.hp, 1.1))),
+    maxHp: Math.max(1, Math.round(stats.maxHp * asNumber(rider.hp, 1.1))),
+    critChance: clamp(stats.critChance + asNumber(rider.crit, 0.1), 0.05, 0.85),
+    damageMultiplier: 1,
+    hits: Math.max(1, Math.floor(asNumber(rider.hits, 1))),
+    burnChance: asNumber(rider.burnChance, 0),
+    healPct: asNumber(rider.healPct, 0),
+    skills: rider.skills || [],
+    flavor: rider.flavor || '',
+  };
+  member.decadeRiders ||= [];
+  member.decadeRiders.push(body);
+  addBattleAction(run, {
+    side: 'player',
+    kind: 'summon',
+    actor: member.name,
+    skill: first ? '神主帝骑·历代骑士召唤' : '神主帝骑·追加召唤',
+    verb: '召唤',
+    target: body.name,
+    healing: body.maxHp,
+    narration: `${rider.name}以${rider.form}降临，构筑：${rider.flavor}`,
+    note: `生命${body.maxHp}`,
+  });
+  addBattleLog(
+    logs,
+    `${member.name}召唤${rider.name}（${rider.form}）降临战场，${rider.flavor}！`
+  );
+  if (run.__counters)
+    run.__counters.treasureRiderSummoned =
+      (run.__counters.treasureRiderSummoned || 0) + 1;
+}
+
+function summonDecadeRiders(run, member, round, logs) {
+  if (round === 1) {
+    member.decadeRiders = [];
+    const first = shuffle(run, [...HEISEI_RIDERS]).slice(0, 2);
+    for (const rider of first)
+      createDecadeRider(run, member, rider, round, logs, true);
+    addBattleLog(
+      logs,
+      `${member.name}刷过神主牌，${first.map(rider => rider.name).join('、')}踏出世界夹缝！`
+    );
+  } else if (round % 3 === 0) {
+    if ((member.decadeRiders || []).length >= HEISEI_RIDERS.length) return;
+    const have = new Set((member.decadeRiders || []).map((rider) => rider.riderId));
+    const pick = shuffle(
+      run,
+      HEISEI_RIDERS.filter((rider) => !have.has(rider.id))
+    )[0];
+    if (pick) createDecadeRider(run, member, pick, round, logs, false);
+  }
+}
+
+function attackWithDecadeRiders(run, member, enemy, logs, damageByMember) {
+  for (const rider of member.decadeRiders || []) {
+    if (enemy.hp <= 0) break;
+    let dealt = 0;
+    for (let index = 0; index < rider.hits; index++) {
+      if (enemy.hp <= 0) break;
+      let damage = Math.max(1, rider.attack - enemy.defense * 0.62);
+      const critical = random(run) < rider.critChance;
+      if (critical) damage *= 1.7;
+      damage *= rider.damageMultiplier;
+      if (rider.burnChance > 0 && random(run) < rider.burnChance) damage *= 1.35;
+      const result = damageEnemy(enemy, damage);
+      dealt += result.dealt;
+      damageByMember[member.id] += result.dealt;
+    }
+    if (rider.healPct > 0 && dealt > 0 && member.alive) {
+      const healed = Math.round(dealt * rider.healPct);
+      member.hp = Math.min(
+        calculateMemberStats(member, run).maxHp,
+        member.hp + healed
+      );
+      addBattleLog(logs, `${rider.name}浴火吸取${healed}点生命回馈${member.name}。`);
+    }
+    const skill = rider.skills[Math.floor(random(run) * rider.skills.length)];
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'summon',
+      actor: rider.name,
+      skill,
+      verb: '自主施展',
+      target: enemy.name,
+      damage: dealt,
+      narration: rider.flavor || undefined,
+      note: `构筑：${rider.flavor}`,
+    });
+    addBattleLog(logs, `${rider.name}自主施展《${skill}》，轰出${dealt}点伤害！`);
+    if (run.__counters)
+      run.__counters.treasureRiderAttacks =
+        (run.__counters.treasureRiderAttacks || 0) + 1;
+  }
+}
+
+function runTreasureTransformRider(run, member, enemy, round, logs, damageByMember, entry, stats) {
+  if (enemy.hp <= 0 || random(run) >= asNumber(entry.chance, 0.25)) return;
+  const rider = HEISEI_RIDERS[Math.floor(random(run) * HEISEI_RIDERS.length)];
+  const damage = Math.max(
+    1,
+    Math.round(stats.attack * asNumber(rider.attack, 1.3) - enemy.defense * 0.5)
+  );
+  const result = damageEnemy(enemy, damage);
+  damageByMember[member.id] += result.dealt;
+  addBattleAction(run, {
+    side: 'player',
+    actor: member.name,
+    skill: `${entry.label}·${rider.name}`,
+    verb: '变身',
+    target: enemy.name,
+    damage: result.damage,
+    absorbed: result.absorbed,
+    narration: `刷过${rider.name}的驾驭卡，${rider.flavor}`,
+    note: `形态：${rider.form}`,
+  });
+  addBattleLog(
+    logs,
+    `${member.name}刷过${rider.name}（${rider.form}）的驾驭卡，${rider.flavor}，轰出${result.dealt}点伤害！`
+  );
+}
+
+/** 至宝觉醒技能（多段/大技能/处决/一拳/召唤/形态驾驭） */
+function runTreasureCombat(run, member, enemy, round, logs, damageByMember) {
+  if (!member.alive || enemy.hp <= 0) return;
+  const entries = getTreasureBattleEntries(member, run);
+  if (!entries.length) return;
+  const stats = calculateMemberStats(member, run, round);
+  for (const entry of entries) {
+    if (enemy.hp <= 0) break;
+    switch (entry.type) {
+      case 'multiHit':
+        runTreasureMultiHit(run, member, enemy, round, logs, damageByMember, entry, stats);
+        break;
+      case 'bigProc':
+        runTreasureBigProc(run, member, enemy, round, logs, damageByMember, entry, stats);
+        break;
+      case 'execute':
+        runTreasureExecute(run, member, enemy, round, logs, damageByMember, entry, stats);
+        break;
+      case 'onePunch':
+        runTreasureOnePunch(run, member, enemy, round, logs, damageByMember, entry, stats);
+        break;
+      case 'summonRiders':
+        summonDecadeRiders(run, member, round, logs);
+        break;
+      case 'transformRider':
+        runTreasureTransformRider(run, member, enemy, round, logs, damageByMember, entry, stats);
+        break;
+      case 'domain':
+        // 领域持续伤害在 endRound 结算
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+/** 回合结束阶段的至宝效果：领域侵蚀 + 灼烧结算 */
+function runTreasureEndRound(run, enemy, round, logs, damageByMember) {
+  if (enemy.hp <= 0) return;
+  for (const member of Object.values(run.members)) {
+    if (!member.alive) continue;
+    for (const entry of getTreasureBattleEntries(member, run)) {
+      if (entry.type !== 'domain') continue;
+      const result = damageEnemy(
+        enemy,
+        Math.max(1, Math.round(enemy.maxHp * asNumber(entry.damagePct, 0.02)))
+      );
+      damageByMember[member.id] += result.dealt;
+      const narration = treasureNarration(entry, member, enemy);
+      addBattleAction(run, {
+        side: 'player',
+        actor: member.name,
+        skill: entry.label,
+        verb: '侵蚀',
+        target: enemy.name,
+        damage: result.damage,
+        absorbed: result.absorbed,
+        narration: narration || undefined,
+      });
+      addBattleLog(
+        logs,
+        `${narration || `${member.name}的${entry.label}`}，造成${result.dealt}点伤害！`
+      );
+    }
+    const burns = member.treasureBurns || [];
+    for (let index = burns.length - 1; index >= 0; index--) {
+      if (enemy.hp <= 0) break;
+      const burn = burns[index];
+      const result = damageEnemy(
+        enemy,
+        Math.max(1, Math.round(enemy.maxHp * asNumber(burn.pct, 0.02)))
+      );
+      damageByMember[member.id] += result.dealt;
+      burn.remaining -= 1;
+      addBattleLog(
+        logs,
+        `${member.name}的「${burn.label}」灼烧${enemy.name}，造成${result.dealt}点伤害！`
+      );
+      if (burn.remaining <= 0) burns.splice(index, 1);
+    }
+  }
+}
+
 function playerAttack(run, member, enemy, round, logs, damageByMember) {
   if (!member.alive || enemy.hp <= 0) return;
   const stats = calculateMemberStats(member, run, round);
@@ -1658,6 +2091,9 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
     logs,
     damageByMember
   );
+  // 无尽至宝：觉醒技能（不受大道沉寂影响）
+  runTreasureCombat(run, member, enemy, round, logs, damageByMember);
+  attackWithDecadeRiders(run, member, enemy, logs, damageByMember);
 
   if (enemy.trait === '反射' && dealt > 0 && member.alive) {
     damageMember(
@@ -2093,7 +2529,7 @@ function enemyTurn(run, enemy, round, logs) {
   bossPackFollowUp(run, enemy, logs);
 }
 
-function endRound(run, enemy, round, logs) {
+function endRound(run, enemy, round, logs, damageByMember) {
   if (enemy.trait === '再生' && enemy.hp > 0) {
     const before = enemy.hp;
     enemy.hp = Math.min(enemy.maxHp, enemy.hp + Math.round(enemy.maxHp * 0.02));
@@ -2132,6 +2568,8 @@ function endRound(run, enemy, round, logs) {
   }
   if (enemy.trait === '再生')
     addBattleLog(logs, `${enemy.name}不断再生，必须尽快结束战斗。`);
+  // 无尽至宝回合末效果：领域侵蚀 + 灼烧
+  runTreasureEndRound(run, enemy, round, logs, damageByMember);
   expireTemporaryFreeTransformationBodies(run, round, logs);
 }
 
@@ -2148,6 +2586,10 @@ function prepareBattle(run) {
     member.battleGhostSelfRestarted = false;
     member.battleCoffinNailUsed = false;
     delete member.silencedUntilRound;
+    // 至宝战斗状态：每场战斗重置灼烧/召唤/斩杀标记
+    member.treasureBurns = [];
+    member.decadeRiders = [];
+    delete member.__treasureExecuteUsed;
     const stats = calculateMemberStats(member, run);
     member.maxHp = stats.maxHp;
     member.hp = clamp(member.hp, 0, stats.maxHp);
@@ -2280,6 +2722,8 @@ export function getEndlessSweepReward(
     secret: asNumber(player?.mijinglevel_id),
     ancient: asNumber(player?.xiangulevel_id),
   };
+  const sweepTitleBoost =
+    1 + asNumber(getTitleEffects(player).tokenPct);
   const reward = {
     startLayer,
     endLayer,
@@ -2294,7 +2738,7 @@ export function getEndlessSweepReward(
     const currency = getEndlessLayerCurrencyReward(layer);
     reward.lingshi += currency.lingshi;
     reward.sourceStone += currency.sourceStone;
-    reward.tokens += currency.tokens;
+    reward.tokens += currency.tokens * sweepTitleBoost;
     reward.cultivation += treasureRewardFromRealms(
       rewardRealms,
       'level',
@@ -2343,7 +2787,9 @@ function finishVictory(run, enemy, layer) {
   const layerReward = {
     lingshi: Math.round(currencyReward.lingshi * rewardMultiplier),
     sourceStone: Math.round(currencyReward.sourceStone * rewardMultiplier),
-    tokens: Math.round(currencyReward.tokens * rewardMultiplier),
+    tokens: Math.round(
+      currencyReward.tokens * rewardMultiplier * (run.titleTokenBoost || 1)
+    ),
     members: {},
     starRoute: encounter ? {
       name: encounter.name,
@@ -2441,6 +2887,8 @@ export function resolveEndlessLayer(run) {
     freeBodyGuards: 0,
     ghostRestarts: 0,
     ghostInterrupts: 0,
+    treasureRiderSummoned: 0,
+    treasureRiderAttacks: 0,
   };
   prepareBattle(run);
   run.__damageTakenByMember = damageTakenByMember;
@@ -2504,7 +2952,7 @@ export function resolveEndlessLayer(run) {
       enemy.hp > 0 &&
       Object.values(run.members).some((member) => member.alive)
     )
-      endRound(run, enemy, round, logs);
+      endRound(run, enemy, round, logs, damageByMember);
     const attacks = Object.keys(run.members)
       .map((id) => ({
         id,
@@ -2632,6 +3080,8 @@ export function resolveEndlessLayer(run) {
     freeBodyGuards: counters.freeBodyGuards,
     ghostRestarts: counters.ghostRestarts,
     ghostInterrupts: counters.ghostInterrupts,
+    treasureRiderSummoned: counters.treasureRiderSummoned,
+    treasureRiderAttacks: counters.treasureRiderAttacks,
     analysis: analysis || null,
   };
 

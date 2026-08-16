@@ -157,6 +157,16 @@
             {{if member.blessings && member.blessings.length}}
             <div class="boon-line">{{each member.blessings boon}}<span>{{boon.kind}} · {{boon.name}}</span>{{/each}}</div>
             {{/if}}
+            {{if member.titleId}}
+            <div class="title-line">👑 称号·{{member.titleId}}</div>
+            {{/if}}
+            {{if member.treasures && member.treasures.length}}
+            <div class="treasure-line">
+              {{each member.treasures treasure}}
+              <span>{{treasure.icon}} {{treasure.name}} <b>Lv.{{treasure.level}}</b>{{if treasure.awakened}}·{{treasure.formName}}{{/if}}</span>
+              {{/each}}
+            </div>
+            {{/if}}
           </article>
           {{/each}}
         </div>

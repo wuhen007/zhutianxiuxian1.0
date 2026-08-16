@@ -128,6 +128,7 @@ body {
 .notice span { color: #616761; font-size: 10px; line-height: 1.5; }
 .notice-danger b { color: var(--cinnabar); }
 .notice-jade b { color: var(--jade); }
+.notice-gold b { color: var(--gold); }
 
 .star-map-section {
   position: relative;
@@ -302,6 +303,10 @@ body {
 .ability-tags span { padding: 4px 6px; border: 1px solid #c2b991; color: #525a54; background: rgba(255, 255, 255, .38); font-size: 9px; }
 .ability-tags b { color: var(--gold); }
 .boon-line span { padding: 4px 6px; color: #8b4439; border-left: 2px solid var(--cinnabar); background: #ece5df; font-size: 8px; }
+.title-line { margin-top: 8px; padding: 4px 8px; color: #7a5b1e; border-left: 2px solid var(--gold); background: linear-gradient(90deg, #f3e9c9, rgba(243, 233, 201, .25)); font-size: 9px; font-weight: 700; }
+.treasure-line { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px; }
+.treasure-line span { padding: 4px 6px; color: #5d4a8a; border: 1px solid #b9a8e0; background: rgba(238, 232, 255, .65); font-size: 8px; }
+.treasure-line b { color: var(--gold); }
 .empty-line { margin-top: 13px; color: #929791; font-size: 9px; }
 
 .fusion-band { position: relative; z-index: 1; padding: 22px 38px; display: grid; grid-template-columns: 190px 1fr; gap: 28px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #e2e6e1; }

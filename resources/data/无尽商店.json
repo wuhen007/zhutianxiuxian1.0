@@ -178,6 +178,17 @@
       "description": "强行推演天机，获知一位天骄的当前踪迹（24小时有效）",
       "dailyLimit": 1,
       "action": "tianjiao"
+    },
+        {
+      "id": 6,
+      "name": "轮回命签",
+      "itemClass": "道具",
+      "category": "仙途",
+      "rarity": "禁忌",
+      "price": 50,
+      "description": "沾染轮回气息的残签，可用 #消耗轮回命签 重抽指定命格词条，追加 *序号 可选择词条",
+      "dailyLimit": 100,
+      "action": "item"
     }
   ]
 }

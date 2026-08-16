@@ -40,7 +40,25 @@ import {
   ENDLESS_KEY_RECIPE_ITEM,
   ENDLESS_SPIRIT_HEART_COST,
   ENDLESS_SWEEP_ITEM,
+  WEEKEND_FREE_FIELD,
+  getWeekendFreeWeekKey,
+  isWeekendNow,
 } from '../model/endlessAccess.js';
+import {
+  ENDLESS_TREASURE_UNLOCK_LAYER,
+  getPlayerTreasureViews,
+  getTreasureAbilityName,
+  getTreasureRunSummary,
+  grantRandomEndlessTreasure,
+} from '../model/endlessTreasure.js';
+import {
+  equipTitle,
+  getTitleViews,
+  grantTitle,
+  normalizeTitles,
+} from '../model/titleSystem.js';
+import fs from 'node:fs';
+import { AppName } from '../app.config.js';
 import {
   consumeSpiritHeart,
   getSpiritHeartCost,
@@ -121,6 +139,11 @@ export class EndlessRealm extends plugin {
         { reg: '^#重置万劫道碑$', fnc: 'requestResetEndlessMeta' },
         { reg: '^#确认重置万劫道碑$', fnc: 'confirmResetEndlessMeta' },
         { reg: '^#万象归一\\s+(?:武器|护具|法宝)\\*.+$', fnc: 'mergeEquipment' },
+        { reg: '^#无尽至宝$', fnc: 'showTreasures' },
+        { reg: '^#无尽排名$', fnc: 'showEndlessRank' },
+        { reg: '^#周末免费$', fnc: 'weekendStatus' },
+        { reg: '^#(?:我的称号|称号列表|称号)$', fnc: 'viewTitles' },
+        { reg: '^#(?:佩戴|切换|更换)称号\\s*.+$', fnc: 'equipTitleCmd' },
       ],
     });
   }
@@ -365,11 +388,12 @@ export class EndlessRealm extends plugin {
           alive: true,
           abilities: [],
           blessings: [],
+          treasures: [],
         };
       const stats = getMemberStats(run, id);
       const abilities = Object.entries(member.abilities || {})
         .map(([abilityId, level]) => ({
-          name: getAbility(abilityId)?.name || abilityId,
+          name: getAbility(abilityId)?.name || getTreasureAbilityName(abilityId) || abilityId,
           level,
         }));
       return {
@@ -387,6 +411,8 @@ export class EndlessRealm extends plugin {
           .map(boonId => getCheckpointBoon(boonId))
           .filter(Boolean)
           .map(boon => ({ kind: boon.kind, name: boon.name })),
+        treasures: getTreasureRunSummary(member, run),
+        titleId: member.titleId || null,
       };
     });
   }
@@ -608,13 +634,15 @@ export class EndlessRealm extends plugin {
       status: '第一纪元 · 劫境已开启',
       heroStats: [
         { label: '远征人数', value: `1—${MAX_TEAM_SIZE}`, note: '支持单人或组队投影' },
-        { label: '入境代价', value: '秘钥 × 1', note: `基础心神 ${ENDLESS_SPIRIT_HEART_COST}` },
+        { label: '入境代价', value: '秘钥 × 1', note: `基础心神 ${ENDLESS_SPIRIT_HEART_COST}｜周末免费一次` },
         { label: '天关循环', value: '10 层', note: '第5层精英 · 第10层Boss' },
-        { label: '团灭保留', value: '30%', note: 'Boss前未封存战利品' },
+        { label: '至宝解锁', value: `第${ENDLESS_TREASURE_UNLOCK_LAYER}关`, note: '每趟解锁一件随机至宝' },
       ],
       notices: [
         { tone: 'jade', title: '构筑法则', text: '每层独立选择能力；衍算天机可增加选项，一念双悟可在每个十层循环额外参悟一次。' },
         { tone: 'danger', title: '劫境警示', text: '主动撤离可带回全部战利品；团灭仅保留已封存奖励和30%未封存奖励。' },
+        { tone: 'gold', title: '无尽至宝', text: `每趟打到第${ENDLESS_TREASURE_UNLOCK_LAYER}关解锁一件永久随机至宝；至宝开局自带1级专属能力，局内满足条件可觉醒更高形态（如K触屏练满帝骑腰带3级觉醒神主帝骑）。` },
+        { tone: 'jade', title: '无尽劫境天尊', text: '打穿第三十关且全服排名第一的队伍成员，将获得专属称号：无尽劫境内全属性+25%、道痕收益+25%，可自由佩戴与更换。' },
       ],
       commandGroups: [
         {
@@ -653,8 +681,19 @@ export class EndlessRealm extends plugin {
             { command: '#装配厉鬼拼图 八音盒', description: '切换已参悟拼图，获得鬼眼后生效' },
             { command: '#无尽商店', description: '以劫境道痕购买诸天遗珍' },
             { command: '#无尽购买 商品名*数量', description: '按商品名或编号购买诸天遗珍' },
+            { command: '#无尽至宝', description: `查看已解锁的永久至宝与觉醒条件` },
             { command: '#重置万劫道碑 / #确认重置万劫道碑', description: '二次确认后返还道痕并重置传承' },
             { command: '#万象归一 武器/护具/法宝*装备名', description: '消耗归一神符融合百分比装备' },
+          ],
+        },
+        {
+          kicker: 'HONOR',
+          title: '周末·排名·称号',
+          items: [
+            { command: '#周末免费', description: '查询周末免费入场额度（每周末一次）' },
+            { command: '#无尽排名', description: '查看万界劫榜与你的全服排名' },
+            { command: '#称号 / #我的称号', description: '查看已拥有称号与当前佩戴' },
+            { command: '#佩戴称号 无尽劫境天尊', description: '佩戴/更换称号，局内加成立即生效' },
           ],
         },
         {
@@ -1443,27 +1482,35 @@ export class EndlessRealm extends plugin {
 
       const missing = [];
       const players = [];
+      const weekendFree = isWeekendNow();
+      const freeWeekKey = getWeekendFreeWeekKey();
       for (const id of team.members) {
         if (!(await existplayer(id))) {
           missing.push(`${team.memberNames[id]}（角色存档缺失）`);
           continue;
         }
-        const amount =
-          Number(await exist_najie_thing(id, ENDLESS_ENTRY_ITEM, '道具')) || 0;
-        if (amount < 1)
-          missing.push(`${team.memberNames[id]}（缺少${ENDLESS_ENTRY_ITEM}）`);
         const player = await Read_player(id);
-        const heart = refreshSpiritHeart(player);
-        const heartCost = getSpiritHeartCost(
-          ENDLESS_SPIRIT_HEART_COST,
-          getMinggeEffects(player, data.minggeList)
-        );
-        if (heart.current < heartCost) {
-          missing.push(
-            `${team.memberNames[id]}（心神不足：${heart.current}/${heart.max}，需要${heartCost}）`
+        // 周末免费入场：每周末一次，无需秘钥与心神
+        const freeAvailable =
+          weekendFree && player[WEEKEND_FREE_FIELD] !== freeWeekKey;
+        let heartCost = 0;
+        if (!freeAvailable) {
+          const amount =
+            Number(await exist_najie_thing(id, ENDLESS_ENTRY_ITEM, '道具')) || 0;
+          if (amount < 1)
+            missing.push(`${team.memberNames[id]}（缺少${ENDLESS_ENTRY_ITEM}）`);
+          const heart = refreshSpiritHeart(player);
+          heartCost = getSpiritHeartCost(
+            ENDLESS_SPIRIT_HEART_COST,
+            getMinggeEffects(player, data.minggeList)
           );
+          if (heart.current < heartCost) {
+            missing.push(
+              `${team.memberNames[id]}（心神不足：${heart.current}/${heart.max}，需要${heartCost}）`
+            );
+          }
         }
-        players.push({ id, player, heartCost });
+        players.push({ id, player, heartCost, freeAvailable });
       }
       if (missing.length)
         return e.reply(['【无法开启无尽劫境】', ...missing].join('\n'));
@@ -1479,9 +1526,21 @@ export class EndlessRealm extends plugin {
       );
       const deducted = [];
       const voucherActive = [];
+      const freeMembers = [];
       try {
         for (const entry of players) {
-          const { id, player, heartCost } = entry;
+          const { id, player, heartCost, freeAvailable } = entry;
+          if (freeAvailable) {
+            // 周末免费：不扣秘钥与心神，仅标记本周额度已用
+            player[WEEKEND_FREE_FIELD] = freeWeekKey;
+            freeMembers.push(id);
+            if (Number(player.无尽劫境_他化自在体验) > 0) {
+              voucherActive.push(id);
+              player.无尽劫境_他化自在体验 = 0;
+            }
+            await Write_player(id, player);
+            continue;
+          }
           await Add_najie_thing(id, ENDLESS_ENTRY_ITEM, '道具', -1);
           deducted.push(id);
           const heart = consumeSpiritHeart(
@@ -1546,6 +1605,14 @@ export class EndlessRealm extends plugin {
         [
           '【诸天无尽劫境开启】',
           `全队消耗【${ENDLESS_ENTRY_ITEM}】×1、心神按各自命格结算`,
+          ...(freeMembers.length
+            ? [
+                '',
+                `【周末免费·额度已用】${freeMembers
+                  .map((id) => team.memberNames[id] || id)
+                  .join('、')}本周末免费入场，不消耗秘钥与心神！`,
+              ]
+            : []),
           `首个世界：${world.name}`,
           `世界规则：${world.rule}`,
           `共享命火：${run.lifeFire}/${run.maxLifeFire}`,
@@ -2276,6 +2343,9 @@ export class EndlessRealm extends plugin {
           )} / ${ENDLESS_TOKEN}${this.formatAmount(settlement.reward.lostTokens)}`
         : '全部战利品已经安全带出。',
       `抵达层数：${settlement.layer}`,
+      ...(Array.isArray(settlement.extras) && settlement.extras.length
+        ? ['', ...settlement.extras.map(line => `✨ ${line}`)]
+        : []),
     ];
   }
 
@@ -2303,6 +2373,9 @@ export class EndlessRealm extends plugin {
         lostBlood: 0,
       }])
     );
+    run.settlement.extras ||= [];
+    // 全服最高层（磁盘快照，供「打穿30关且全服第一」判定）
+    const serverMaxLayer = await this.getServerMaxEndlessLayer();
 
     for (const id of team.members) {
       if (run.settlement.paidMembers.includes(id)) continue;
@@ -2335,6 +2408,32 @@ export class EndlessRealm extends plugin {
           );
           player.无尽劫境次数 = (Number(player.无尽劫境次数) || 0) + 1;
           player.无尽劫境结算记录 = [...records, run.settlement.id].slice(-30);
+          // 无尽至宝：本趟打到第25关 → 解锁一件永久随机至宝（已全收集则升级）
+          if (highestClearedLayer >= ENDLESS_TREASURE_UNLOCK_LAYER) {
+            const gain = grantRandomEndlessTreasure(player, Math.random);
+            if (gain) {
+              run.settlement.extras.push(
+                `${team.memberNames?.[id] || id}解锁无尽至宝【${gain.name}】${
+                  gain.upgraded ? `（已收集齐，升级至Lv.${gain.level}）` : ''
+                }！`
+              );
+            }
+          }
+          // 无尽劫境天尊：打穿第30关且全服排名第一
+          if (highestClearedLayer >= 30) {
+            const effectiveServerMax = Math.max(
+              serverMaxLayer,
+              highestClearedLayer
+            );
+            if (
+              player.无尽劫境最高层 >= effectiveServerMax &&
+              grantTitle(player, '无尽劫境天尊')
+            ) {
+              run.settlement.extras.push(
+                `${team.memberNames?.[id] || id}登临全服第一，获得专属称号【无尽劫境天尊】！`
+              );
+            }
+          }
           await Write_player(id, player);
         }
         run.settlement.paidMembers.push(id);
@@ -2359,6 +2458,7 @@ export class EndlessRealm extends plugin {
       reward: run.settlement.reward,
       layer: run.layer,
       memberNames: team.memberNames,
+      extras: run.settlement.extras || [],
     };
     await this.clearTeam(team);
     return result;
@@ -2546,5 +2646,172 @@ export class EndlessRealm extends plugin {
         this.formatSettlement(settlement, '全队主动撤离').join('\n')
       );
     });
+  }
+
+  /* ==================== 无尽至宝 ==================== */
+
+  async showTreasures(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const player = await Read_player(userId);
+    const views = getPlayerTreasureViews(player);
+    const lines = ['【无尽至宝】', `打穿第${ENDLESS_TREASURE_UNLOCK_LAYER}关解锁一件永久随机至宝；每趟抵达第${ENDLESS_TREASURE_UNLOCK_LAYER}关均可再解锁。`, ''];
+    if (!views.length) {
+      lines.push('尚未获得任何至宝。', '发送 #无尽劫境帮助 了解玩法，努力冲击第25关吧！');
+      return e.reply(lines.join('\n'));
+    }
+    for (const treasure of views) {
+      lines.push(
+        `${treasure.icon} 【${treasure.name}】Lv.${treasure.level} · ${treasure.rarity}`,
+        `　${treasure.desc}`,
+        treasure.awakenName
+          ? `　觉醒条件：${treasure.awakenCondition || '未知'}`
+          : null,
+        ''
+      );
+    }
+    lines.push('所有至宝会在每次开启无尽劫境时自动生效（开局自带1级专属能力）。');
+    return e.reply(lines.filter(Boolean).join('\n'));
+  }
+
+  /* ==================== 全服排名 ==================== */
+
+  async getServerMaxEndlessLayer() {
+    try {
+      const dir = `./plugins/${AppName}/resources/data/xiuxian_player`;
+      const files = fs.readdirSync(dir).filter((file) => file.endsWith('.json'));
+      let maxLayer = 0;
+      for (const file of files) {
+        try {
+          const player = JSON.parse(
+            fs.readFileSync(`${dir}/${file}`, 'utf8')
+          );
+          maxLayer = Math.max(maxLayer, Number(player.无尽劫境最高层) || 0);
+        } catch (error) {
+          // 单个存档损坏不影响排名
+        }
+      }
+      return maxLayer;
+    } catch (error) {
+      logger.error('[无尽劫境] 全服最高层统计失败', error);
+      return 0;
+    }
+  }
+
+  async showEndlessRank(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    let rankings = [];
+    try {
+      const dir = `./plugins/${AppName}/resources/data/xiuxian_player`;
+      const files = fs.readdirSync(dir).filter((file) => file.endsWith('.json'));
+      for (const file of files) {
+        const id = file.replace('.json', '');
+        try {
+          const player = JSON.parse(fs.readFileSync(`${dir}/${file}`, 'utf8'));
+          const layer = Number(player.无尽劫境最高层) || 0;
+          if (!layer) continue;
+          rankings.push({
+            qq: id,
+            name: player.名号 || id,
+            layer,
+            runs: Number(player.无尽劫境次数) || 0,
+          });
+        } catch (error) {
+          // 忽略损坏存档
+        }
+      }
+    } catch (error) {
+      logger.error('[无尽劫境] 排名读取失败', error);
+    }
+    rankings.sort(
+      (a, b) => b.layer - a.layer || a.runs - b.runs || a.qq.localeCompare(b.qq)
+    );
+    const top = rankings.slice(0, 10);
+    const lines = [
+      '【无尽劫境·万界劫榜】',
+      '按「无尽劫境最高层」排序（同层取通关次数少者优先）',
+      '',
+      ...top.map((entry, index) => {
+        const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
+        const isFirst = index === 0 && entry.layer >= 30;
+        return `${medal} ${entry.name}｜第${entry.layer}层｜通关${entry.runs}次${isFirst ? '｜【无尽劫境天尊】' : ''}`;
+      }),
+    ];
+    const myRank = rankings.findIndex((entry) => entry.qq === userId) + 1;
+    if (myRank > 0) {
+      const mine = rankings[myRank - 1];
+      lines.push('', `你的排名：第${myRank}名｜第${mine.layer}层｜通关${mine.runs}次`);
+    } else {
+      lines.push('', '你还未进入劫榜，打穿第1关即可上榜。');
+    }
+    const serverMax = rankings[0]?.layer || 0;
+    if (serverMax >= 30)
+      lines.push('', `当前全服最高纪录：第${serverMax}层。`);
+    return e.reply(lines.join('\n'));
+  }
+
+  /* ==================== 周末免费 ==================== */
+
+  async weekendStatus(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const player = await Read_player(userId);
+    const today = new Date();
+    const isWeekend = isWeekendNow(today);
+    const weekKey = getWeekendFreeWeekKey(today);
+    const used = player[WEEKEND_FREE_FIELD] === weekKey;
+    const lines = [
+      '【周末免费·无尽劫境】',
+      `今天${isWeekend ? '是' : '不是'}周末（周六/周日）。`,
+      isWeekend
+        ? used
+          ? `本周末（${weekKey}）免费入场额度已使用，下次开启需正常消耗秘钥与心神。`
+          : `本周末（${weekKey}）免费入场额度尚未使用！开启无尽劫境时不消耗秘钥与心神。`
+        : '周末（周六00:00至周日24:00）开放每人一次免费入场，无需秘钥与心神。',
+    ];
+    return e.reply(lines.join('\n'));
+  }
+
+  /* ==================== 称号系统 ==================== */
+
+  async viewTitles(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const player = await Read_player(userId);
+    const view = getTitleViews(player);
+    const lines = [
+      '【称号】',
+      view.equippedTitle
+        ? `当前佩戴：${view.equippedTitle.name}`
+        : '当前佩戴：无',
+      '',
+    ];
+    if (!view.list.length) {
+      lines.push('尚未获得任何称号。', '称号为玩法里程碑奖励，请留意对应玩法公告。');
+      return e.reply(lines.join('\n'));
+    }
+    for (const title of view.list) {
+      lines.push(
+        `${title.equipped ? '✔' : '○'} 【${title.name}】${title.source || ''}`,
+        `　${title.desc}`,
+        `　${title.equipped ? '（佩戴中，发送 #更换称号 其他称号 可切换）' : `发送 #佩戴称号 ${title.name} 佩戴`}`
+      );
+    }
+    return e.reply(lines.join('\n'));
+  }
+
+  async equipTitleCmd(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const titleName = e.msg.replace(/^#(?:佩戴|切换|更换)称号\s*/, '').trim();
+    if (!titleName) return e.reply('请发送 #佩戴称号 称号名，如 #佩戴称号 无尽劫境天尊');
+    const player = await Read_player(userId);
+    if (!normalizeTitles(player).includes(titleName))
+      return e.reply(`你尚未拥有称号【${titleName}】，发送 #称号 查看已拥有称号`);
+    if (!equipTitle(player, titleName))
+      return e.reply(`称号【${titleName}】不存在或无法佩戴`);
+    await Write_player(userId, player);
+    return e.reply(`已佩戴称号【${titleName}】！在无尽劫境中全属性与道痕收益加成已生效。`);
   }
 }

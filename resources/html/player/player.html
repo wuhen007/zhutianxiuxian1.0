@@ -65,6 +65,7 @@
         <!--右-->
         <div class="user_top_right">
           <div class="user_top_font_right">道号：{{player.名号}}</div>
+          <div class="user_top_font_right">称号：{{if player.当前称号 && player.称号列表 && player.称号列表.indexOf(player.当前称号) !== -1}}【{{player.当前称号}}】{{else}}无{{/if}}{{if player.称号列表 && player.称号列表.length}}（拥有{{player.称号列表.length}}个，发送 #称号 查看/佩戴）{{/if}}</div>
           <div class="user_top_font_right">QQ：{{user_id}}</div>
           <div class="user_top_font_right">
             性别：({{['未知','女','男','扶她'][player.sex]}})
