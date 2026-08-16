@@ -15,6 +15,7 @@ import { getRealmEventWorldYear } from "../../model/realmEventClock.js";
 import {
   SEA_BOAT_NAMES,
   SEA_BOAT_TIERS,
+  SEA_DAILY_VOYAGE_LIMIT,
   SEA_EVENT_IDS,
   SEA_FIRST_BOAT_MATERIALS,
   SEA_ROUTE_NAMES,
@@ -131,7 +132,7 @@ export class SeaVoyage extends plugin {
         transaction.rollback();
         throw error;
       }
-      return e.reply("舟身一阵轰鸣，【" + upgrade.name + "】铸成！收益倍率提升至 x" + getBoatTier(upgrade.name).multiplier + "，出海更快。");
+      return e.reply("舟身一阵轰鸣，【" + upgrade.name + "】铸成！收益倍率提升至 x" + getBoatTier(upgrade.name).multiplier + "。");
     });
   }
 
@@ -247,6 +248,14 @@ export class SeaVoyage extends plugin {
         return this.settleVoyage(e, usr_qq, player, routeName);
       }
 
+      // 每日出海次数限制（Redis，25h 防跨日漂移）
+      const today = new Date().toISOString().slice(0, 10);
+      const dailyKey = `xiuxian:sea_voyage_daily:${usr_qq}:${today}`;
+      const usedToday = Number(await redis.get(dailyKey)) || 0;
+      if (usedToday >= SEA_DAILY_VOYAGE_LIMIT) {
+        return e.reply(`今日已出海 ${usedToday} 次（上限 ${SEA_DAILY_VOYAGE_LIMIT} 次），明日再启航吧。`);
+      }
+
       // 扣消耗：1 仙钓 + （指定仙饵 1 或 愿鳞 10）
       const rodCount = await exist_najie_thing(usr_qq, SEA_VOYAGE_COST.fishingRod.name, SEA_VOYAGE_COST.fishingRod.class);
       if (rodCount < SEA_VOYAGE_COST.fishingRod.amount) {
@@ -290,10 +299,12 @@ export class SeaVoyage extends plugin {
         transaction.rollback();
         throw error;
       }
+      // 出海次数 +1（每日上限 SEA_DAILY_VOYAGE_LIMIT）
+      await redis.set(dailyKey, String(usedToday + 1), 'EX', 60 * 60 * 25);
       return e.reply([
         "【" + routeName + "·启航】",
         "你乘【" + currentBoat + "】出港，消耗" + costDesc + "。",
-        "约" + tier.voyageMinutes + "分钟后回港，届时发送【#出海】领取渔获。",
+        "约" + tier.voyageMinutes + "分钟后回港（今日第" + (usedToday + 1) + "次，每日上限" + SEA_DAILY_VOYAGE_LIMIT + "次），届时发送【#出海】领取渔获。",
       ].join("\n"));
     });
   }
@@ -307,7 +318,8 @@ export class SeaVoyage extends plugin {
         "【万舟争渡】",
         "航线：#出海 凡间河 / 遮天渊 / 界海",
         "消耗：众生仙钓x1 + 愿鳞x10（或指定仙饵替代）",
-        "收益：愿鳞、海域材料，随机记录见闻；集齐见闻可 #领取见闻奖励。",
+        "时长：120 分钟回港；每日限 3 次",
+        "收益：愿鳞（满级舟约等于投入两倍）、海域材料与见闻；集齐见闻可 #领取见闻奖励。",
       ].join("\n"));
     }
     if (Number(task.endAt) > Date.now()) {

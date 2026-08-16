@@ -6,12 +6,12 @@
  * 世界观：凡间河 / 遮天渊 / 界海 三条航线，对应现有位面分组；潮汐旺潮位面航线收益提升。
  */
 
-/** 舟品阶：multiplier 收益倍率，voyageMinutes 出海耗时（舟越好越快） */
+/** 舟品阶：multiplier 收益倍率；统一 120 分钟出海，舟越好收益越高 */
 export const SEA_BOAT_TIERS = Object.freeze([
   {
     name: '一叶轻舟',
     multiplier: 1,
-    voyageMinutes: 30,
+    voyageMinutes: 120,
     upgrade: {
       name: '界河灵舟',
       materials: [
@@ -24,7 +24,7 @@ export const SEA_BOAT_TIERS = Object.freeze([
   {
     name: '界河灵舟',
     multiplier: 1.5,
-    voyageMinutes: 20,
+    voyageMinutes: 120,
     upgrade: {
       name: '诸天仙舟',
       materials: [
@@ -37,7 +37,7 @@ export const SEA_BOAT_TIERS = Object.freeze([
   {
     name: '诸天仙舟',
     multiplier: 2,
-    voyageMinutes: 12,
+    voyageMinutes: 120,
     upgrade: null,
   },
 ]);
@@ -55,6 +55,9 @@ export const SEA_VOYAGE_COST = Object.freeze({
   fishingRod: { name: '众生仙钓', class: '道具', amount: 1 },
   wishScales: { name: '众生愿鳞', class: '道具', amount: 10 },
 });
+
+/** 每日出海次数上限 */
+export const SEA_DAILY_VOYAGE_LIMIT = 3;
 
 /** 航线：按现有位面分组，bait 为集齐兑换特产 */
 export const SEA_ROUTES = Object.freeze([
@@ -214,9 +217,9 @@ function rollWeighted(entries, randomValue) {
 
 /**
  * 出海基础收益：
- * - wishScales：2~5 × 舟倍率（旺潮 ×1.5，向下取整）
+ * - wishScales：10~20 × 舟倍率（旺潮 ×1.5，向下取整），满级仙舟均值≈投入2倍
  * - materials：按权重掉材料（旺潮概率翻倍）
- * - sighting：15% 记一条见闻（传说概率旺潮 30% / 平时 15%）
+ * - sighting：50% 记一条见闻（传说概率旺潮 30% / 平时 15%）
  */
 export function rollSeaVoyageBaseReward(
   routeName,
@@ -224,7 +227,7 @@ export function rollSeaVoyageBaseReward(
 ) {
   const scales = Math.max(
     1,
-    Math.trunc((2 + Math.floor(clamp01(random()) * 4)) * boatMultiplier * (tideBoosted ? 1.5 : 1))
+    Math.trunc((10 + Math.floor(clamp01(random()) * 11)) * boatMultiplier * (tideBoosted ? 1.5 : 1))
   );
   const materialRoll = random();
   const route = getSeaRoute(routeName);
@@ -245,7 +248,7 @@ export function rollSeaVoyageBaseReward(
         { name: baitName, class: '道具', weight: 5 },
       ];
   const material = rollWeighted(materialTable, materialRoll);
-  const sighting = random() < 0.15 ? rollSeaSighting(routeName, { tideBoosted, random }) : null;
+  const sighting = random() < 0.5 ? rollSeaSighting(routeName, { tideBoosted, random }) : null;
   return {
     wishScales: scales,
     materials: material?.name ? [{ name: material.name, class: material.class, amount: 1 }] : [],

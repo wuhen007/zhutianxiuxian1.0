@@ -6,6 +6,7 @@ import {
   SEA_ATLAS,
   SEA_BOAT_NAMES,
   SEA_BOAT_TIERS,
+  SEA_DAILY_VOYAGE_LIMIT,
   SEA_EVENT_CHANCE,
   SEA_EVENT_IDS,
   SEA_EVENTS,
@@ -47,7 +48,7 @@ const itemLists = [
 const recipes = readJson('../resources/data/item/合成列表.json');
 const sequence = values => () => values.shift();
 
-test('三阶舟：倍率递增、耗时递减、升级链闭环', () => {
+test('三阶舟：倍率递增、统一120分钟出海、升级链闭环', () => {
   assert.deepEqual(SEA_BOAT_NAMES, ['一叶轻舟', '界河灵舟', '诸天仙舟']);
   for (let index = 0; index < SEA_BOAT_TIERS.length; index++) {
     const tier = SEA_BOAT_TIERS[index];
@@ -55,7 +56,7 @@ test('三阶舟：倍率递增、耗时递减、升级链闭环', () => {
     assert.equal(getBoatTierIndex(tier.name), index);
     assert.ok(tier.multiplier >= 1);
     if (index > 0) assert.ok(tier.multiplier > SEA_BOAT_TIERS[index - 1].multiplier);
-    assert.ok(tier.voyageMinutes > 0);
+    assert.equal(tier.voyageMinutes, 120, `${tier.name}出海应为120分钟`);
     if (index < SEA_BOAT_TIERS.length - 1) {
       assert.equal(tier.upgrade.name, SEA_BOAT_TIERS[index + 1].name);
       assert.ok(tier.upgrade.materials.length > 0);
@@ -123,28 +124,28 @@ test('三个海域事件均为三选一，选项字段合法', () => {
 });
 
 test('出海基础收益：愿鳞随舟阶与潮汐递增，材料按权重', () => {
-  // 轻舟：愿鳞 2~5（第3次随机 0.2 不触发见闻）
-  assert.equal(rollSeaVoyageBaseReward('凡间河', { boatMultiplier: 1, random: sequence([0, 0, 0.2]) }).wishScales, 2);
-  assert.equal(rollSeaVoyageBaseReward('凡间河', { boatMultiplier: 1, random: sequence([0.999, 0, 0.2]) }).wishScales, 5);
-  // 仙舟：2~5 × 2 = 4~10
-  assert.equal(rollSeaVoyageBaseReward('界海', { boatMultiplier: 2, random: sequence([0.999, 0, 0.2]) }).wishScales, 10);
-  // 旺潮：轻舟 2~5 × 1.5 = 3~7
-  assert.equal(rollSeaVoyageBaseReward('凡间河', { boatMultiplier: 1, tideBoosted: true, random: sequence([0.999, 0, 0.2]) }).wishScales, 7);
+  // 轻舟：愿鳞 10~20（第3次随机 0.6 不触发见闻）
+  assert.equal(rollSeaVoyageBaseReward('凡间河', { boatMultiplier: 1, random: sequence([0, 0, 0.6]) }).wishScales, 10);
+  assert.equal(rollSeaVoyageBaseReward('凡间河', { boatMultiplier: 1, random: sequence([0.999, 0, 0.6]) }).wishScales, 20);
+  // 仙舟：10~20 × 2 = 20~40（满级舟期望≈投入2倍）
+  assert.equal(rollSeaVoyageBaseReward('界海', { boatMultiplier: 2, random: sequence([0.999, 0, 0.6]) }).wishScales, 40);
+  // 旺潮：轻舟 10~20 × 1.5 = 15~30
+  assert.equal(rollSeaVoyageBaseReward('凡间河', { boatMultiplier: 1, tideBoosted: true, random: sequence([0.999, 0, 0.6]) }).wishScales, 30);
   // 无材料：roll=0.2（cursor 20 < 40 权重）
   assert.deepEqual(
-    rollSeaVoyageBaseReward('凡间河', { boatMultiplier: 1, random: sequence([0, 0.2, 0.2]) }).materials,
+    rollSeaVoyageBaseReward('凡间河', { boatMultiplier: 1, random: sequence([0, 0.2, 0.6]) }).materials,
     []
   );
   // 群星之沙：roll=0.5（cursor 50 落 40~65 区间）
   assert.deepEqual(
-    rollSeaVoyageBaseReward('凡间河', { boatMultiplier: 1, random: sequence([0, 0.5, 0.2]) }).materials,
+    rollSeaVoyageBaseReward('凡间河', { boatMultiplier: 1, random: sequence([0, 0.5, 0.6]) }).materials,
     [{ name: '群星之沙', class: '道具', amount: 1 }]
   );
-  // 见闻：第3次随机 0.05 < 0.15 → 触发，wantLegend=1 → 普通 → 渔火渡口
+  // 见闻：第3次随机 0.05 < 0.5 → 触发，wantLegend=1 → 普通 → 渔火渡口
   const withSighting = rollSeaVoyageBaseReward('凡间河', { boatMultiplier: 1, random: sequence([0, 0, 0.05, 1, 0]) });
   assert.equal(withSighting.sighting, '渔火渡口');
-  // 见闻不触发：0.2 >= 0.15
-  assert.equal(rollSeaVoyageBaseReward('凡间河', { boatMultiplier: 1, random: sequence([0, 0, 0.2]) }).sighting, null);
+  // 见闻不触发：0.6 >= 0.5
+  assert.equal(rollSeaVoyageBaseReward('凡间河', { boatMultiplier: 1, random: sequence([0, 0, 0.6]) }).sighting, null);
 });
 
 test('见闻 roll 分普通与传说，旺潮传说概率提升', () => {
@@ -199,9 +200,10 @@ test('见闻记录、首次发现奖励与集齐套装兑换闭环', () => {
   assert.equal(getPendingSeaVoyageRewards(player).length, 0, '见闻耗尽后无可领奖励');
 });
 
-test('出海消耗为1仙钓+10愿鳞', () => {
+test('出海消耗为1仙钓+10愿鳞，每日限3次', () => {
   assert.equal(SEA_VOYAGE_COST.fishingRod.name, '众生仙钓');
   assert.equal(SEA_VOYAGE_COST.fishingRod.amount, 1);
   assert.equal(SEA_VOYAGE_COST.wishScales.name, '众生愿鳞');
   assert.equal(SEA_VOYAGE_COST.wishScales.amount, 10);
+  assert.equal(SEA_DAILY_VOYAGE_LIMIT, 3);
 });
