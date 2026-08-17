@@ -3,7 +3,19 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getAbility, getCheckpointBoon, getFusion, getMemberStats } from './endlessRealm.js';
+import {
+  ensureEndlessStarMapState,
+  getAbility,
+  getCheckpointBoon,
+  getFusion,
+  getMemberStats,
+} from './endlessRealm.js';
+import {
+  getEndlessStarMapView,
+  getEndlessStarOptions,
+  getEndlessStarVotes,
+  getSelectedEndlessStarNode,
+} from './endlessStarMap.js';
 
 const pluginRoot = fileURLToPath(new URL('..', import.meta.url));
 const webRoot = path.join(pluginRoot, 'resources', 'web', 'endless');
@@ -12,6 +24,11 @@ const TICKET_PREFIX = 'Xiuxian:Endless:Web:Ticket:';
 const SESSION_PREFIX = 'Xiuxian:Endless:Web:Session:';
 const ACTION_PREFIX = 'Xiuxian:Endless:Web:Action:';
 const BODY_LIMIT = 16 * 1024;
+const CONSUME_TICKET_SCRIPT = `
+local value = redis.call('GET', KEYS[1])
+if value then redis.call('DEL', KEYS[1]) end
+return value
+`;
 
 let activeServer = null;
 let serverPromise = null;
@@ -90,9 +107,21 @@ export async function issueEndlessWebTicket(redisClient, config, identity) {
 
 export async function consumeEndlessWebTicket(redisClient, token) {
   const key = ticketKey(token);
-  let raw;
-  if (typeof redisClient.getDel === 'function') raw = await redisClient.getDel(key);
-  else {
+  let raw = null;
+  if (typeof redisClient.getDel === 'function') {
+    try {
+      raw = await redisClient.getDel(key);
+    } catch (error) {
+      // redis v4 exposes getDel even when the server predates Redis 6.2.
+      if (!/unknown command/i.test(String(error?.message || error))) throw error;
+    }
+  }
+  if (raw === null && typeof redisClient.eval === 'function') {
+    raw = await redisClient.eval(CONSUME_TICKET_SCRIPT, {
+      keys: [key],
+      arguments: [],
+    });
+  } else if (raw === null) {
     raw = await redisClient.get(key);
     if (raw) await redisClient.del(key);
   }
@@ -201,6 +230,7 @@ function battleView(run, userId) {
     world: battle.world,
     stage: battle.stage,
     enemy: battle.enemy,
+    starRoute: battle.starRoute || null,
     trait: battle.trait,
     victory: battle.victory,
     rounds: battle.rounds,
@@ -215,6 +245,85 @@ function battleView(run, userId) {
           blood: amount(memberReward.blood),
         }
       : null,
+  };
+}
+
+function starMapView(team, run) {
+  const ended = ['settling', 'defeated'].includes(run.phase);
+  const targetLayer = run.phase === 'checkpoint' || ended ? Math.max(1, Number(run.layer) || 1) : Math.max(1, (Number(run.layer) || 0) + 1);
+  ensureEndlessStarMapState(run, targetLayer);
+  const map = getEndlessStarMapView(run);
+  if (!map) return null;
+  const options = run.phase === 'checkpoint' || ended ? [] : getEndlessStarOptions(run, targetLayer);
+  const selected = getSelectedEndlessStarNode(run, targetLayer);
+  const votes = new Map(getEndlessStarVotes(run).map(item => [item.nodeId, item.votes]));
+  const revealUntil = Math.min(map.startLayer + 9, targetLayer + 2);
+  return {
+    cycle: map.cycle,
+    targetLayer,
+    sky: {
+      name: map.sky?.name || '无名劫象',
+      omen: map.sky?.omen || '',
+      rewardMultiplier: Number(map.sky?.rewardMultiplier) || 1,
+    },
+    selected: selected
+      ? { id: selected.id, name: selected.name, shortName: selected.shortName, worldName: selected.worldName }
+      : null,
+    rows: map.rows.map(row => ({
+      layer: row.layer,
+      current: row.layer === targetLayer,
+      nodes: row.nodes.map(node => {
+        const visible = node.layer <= revealUntil || node.typeId === 'heaven_gate' || node.status !== 'future';
+        return {
+          id: node.id,
+          status: visible ? node.status : 'hidden',
+          visible,
+          symbol: visible ? node.symbol : '?',
+          shortName: visible ? node.shortName : '迷雾',
+          worldName: visible ? node.worldName : '因果迷雾',
+        };
+      }),
+    })),
+    options: options.map((node, index) => ({
+      index: index + 1,
+      id: node.id,
+      name: node.name,
+      shortName: node.shortName,
+      worldName: node.worldName,
+      risk: node.risk,
+      description: node.description,
+      rewardText: node.rewardText,
+      votes: votes.get(node.id) || 0,
+      selected: node.id === selected?.id,
+    })),
+    seals: { ...(map.seals || {}) },
+    commandRange: options.map((_, index) => index + 1).join('/'),
+    canSuggest: Boolean(options.length && !selected),
+    canSelect: Boolean(options.length && !selected),
+  };
+}
+
+function settlementView(run, userId) {
+  const settlement = run.settlement;
+  if (!settlement?.reward) return null;
+  const reward = settlement.reward;
+  const member = reward.members?.[userId] || {};
+  return {
+    reason: settlement.reason || 'defeat',
+    complete: settlement.paidMembers?.length >= Object.keys(run.members || {}).length,
+    layer: Number(run.layer) || 0,
+    lingshi: amount(reward.lingshi),
+    sourceStone: amount(reward.sourceStone),
+    tokens: amount(reward.tokens),
+    lostLingshi: amount(reward.lostLingshi),
+    lostSourceStone: amount(reward.lostSourceStone),
+    lostTokens: amount(reward.lostTokens),
+    member: {
+      cultivation: amount(member.cultivation),
+      blood: amount(member.blood),
+      lostCultivation: amount(member.lostCultivation),
+      lostBlood: amount(member.lostBlood),
+    },
   };
 }
 
@@ -246,7 +355,8 @@ export function serializeEndlessWebState(realm, team, run, userId) {
           description: choice.description,
         })),
       }
-    : null;
+      : null;
+  const starMap = starMapView(team, run);
   return {
     team: {
       id: team.id,
@@ -278,11 +388,16 @@ export function serializeEndlessWebState(realm, team, run, userId) {
     choices,
     checkpoint,
     battle: battleView(run, userId),
+    starMap,
+    settlement: settlementView(run, userId),
+    ended: ['settling', 'defeated'].includes(run.phase),
     permissions: {
       choose: choices.length > 0,
-      advance: team.leader === userId && ['ready', 'settling'].includes(run.phase),
+      advance: team.leader === userId && run.phase === 'ready',
       checkpoint: team.leader === userId && run.phase === 'checkpoint',
       withdraw: team.leader === userId,
+      suggestRoute: Boolean(starMap?.canSuggest),
+      selectRoute: Boolean(starMap?.canSelect && team.leader === userId),
     },
   };
 }
@@ -293,6 +408,8 @@ function webEvent(session, msg) {
     user_id: session.rawUserId,
     group_id: session.groupId,
     isGroup: true,
+    isEndlessWeb: true,
+    endlessTerminalState: null,
     msg,
     messages,
     async reply(payload) {
@@ -326,15 +443,21 @@ async function performAction(realm, session, action, value) {
   const definitions = {
     choose: ['chooseAbility', `#无尽选择${Number(value)}`],
     checkpoint: ['chooseCheckpoint', `#劫后抉择${Number(value)}`],
+    suggest: ['suggestStarRoute', `#星图建议${Number(value)}`],
+    selectRoute: ['selectStarRoute', `#星图定途${Number(value)}`],
     advance: ['nextLayer', '#无尽下一关'],
     withdraw: ['withdrawRun', '#退出无尽劫境'],
   };
   const selected = definitions[action];
-  if (!selected || ((action === 'choose' || action === 'checkpoint') && !Number.isInteger(Number(value)))) throw new Error('未知操作');
+  const indexedActions = new Set(['choose', 'checkpoint', 'suggest', 'selectRoute']);
+  if (!selected || (indexedActions.has(action) && !Number.isInteger(Number(value)))) throw new Error('未知操作');
   const [method, msg] = selected;
   const event = webEvent(session, msg);
   await realm[method](event);
-  return event.messages.at(-1) || '劫境状态已更新';
+  return {
+    message: event.messages.at(-1) || '劫境状态已更新',
+    terminalState: event.endlessTerminalState,
+  };
 }
 
 export function createEndlessWebHttpServer({ realm, redisClient, config }) {
@@ -412,13 +535,13 @@ export function createEndlessWebHttpServer({ realm, redisClient, config }) {
             });
           }
           try {
-            const message = await performAction(realm, session, body.action, body.value);
-            const state = await currentState(realm, session);
-            const result = { ok: true, message, state, ended: !state };
+            const actionResult = await performAction(realm, session, body.action, body.value);
+            const state = actionResult.terminalState || (await currentState(realm, session));
+            const result = { ok: true, message: actionResult.message, state, ended: Boolean(actionResult.terminalState) || !state };
             await redisClient.set(operationKey, JSON.stringify(result), {
               EX: config.sessionTtlSeconds,
             });
-            if (!state) await redisClient.del(sessionKey(session.token));
+            if (result.ended) await redisClient.del(sessionKey(session.token));
             return sendJson(res, 200, result);
           } catch (error) {
             await redisClient.del(operationKey);

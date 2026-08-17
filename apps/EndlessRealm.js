@@ -98,6 +98,7 @@ import {
 import {
   createEndlessWebLink,
   getEndlessWebConfig,
+  serializeEndlessWebState,
 } from '../model/endlessWebServer.js';
 
 const STATE_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -2229,6 +2230,8 @@ export class EndlessRealm extends plugin {
               ];
           return e.reply(nextStep.join('\n'));
         }
+        if (settlement)
+          return e.reply(this.formatSettlement(settlement, '团灭结算').join('\n'));
         return true;
       }
     } catch (error) {
@@ -2295,6 +2298,22 @@ export class EndlessRealm extends plugin {
       let settlement = null;
       if (!result.victory) {
         settlement = await this.settleRun(team, run, 0.3, 'defeat');
+        if (e.isEndlessWeb) {
+          const group = globalThis.Bot?.pickGroup?.(e.group_id);
+          if (group?.sendMsg) {
+            try {
+              await group.sendMsg(
+                ['【无尽劫境·网页战败通知】', ...this.formatSettlement(settlement, '战败结算')].join('\n')
+              );
+            } catch (error) {
+              logger.warn('[无尽劫境] 网页战败群通知发送失败', error);
+            }
+          }
+          e.endlessTerminalState = {
+            ...serializeEndlessWebState(this, team, run, userId),
+            ended: true,
+          };
+        }
       }
       return this.replyBattleReport(e, run, result, settlement);
     });

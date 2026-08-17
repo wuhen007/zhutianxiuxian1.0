@@ -5,6 +5,8 @@ const toast = $('#toast');
 let currentState = null;
 let busy = false;
 let toastTimer = null;
+let refreshTimer = null;
+let terminal = false;
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -195,6 +197,77 @@ function renderTreasury(state) {
   setText('#unbanked-token', `劫境道痕 ${formatAmount(unbanked.tokens)}`);
 }
 
+function renderTerminalSummary(state) {
+  const box = $('#terminal-summary');
+  box.hidden = !state.ended;
+  if (!state.ended) return;
+  const settlement = state.settlement;
+  setText('#terminal-title', settlement?.reason === 'defeat' ? '战败 · 劫境投影已破碎' : '本次远征已结束');
+  setText(
+    '#terminal-message',
+    settlement
+      ? (() => {
+          const lost = settlement.lostLingshi || settlement.lostSourceStone || settlement.lostTokens || settlement.member.lostCultivation || settlement.member.lostBlood;
+          return `已带回：灵石 ${formatAmount(settlement.lingshi)} · 源石 ${formatAmount(settlement.sourceStone)} · 劫境道痕 ${formatAmount(settlement.tokens)}；个人修为 ${formatAmount(settlement.member.cultivation)}、血气 ${formatAmount(settlement.member.blood)}。${lost ? `未带回部分：灵石 ${formatAmount(settlement.lostLingshi)} · 源石 ${formatAmount(settlement.lostSourceStone)} · 劫境道痕 ${formatAmount(settlement.lostTokens)} · 修为 ${formatAmount(settlement.member.lostCultivation)} · 血气 ${formatAmount(settlement.member.lostBlood)}。` : '全部战利品已经安全带回。'}`;
+        })()
+      : '战斗记录已经保留在本页。'
+  );
+}
+
+function renderStarMap(state) {
+  const panel = $('#star-map-panel');
+  const map = state.starMap;
+  panel.hidden = !map;
+  if (!map) return;
+  setText('#star-map-cycle', `第 ${map.cycle} 轮劫环`);
+  setText('#star-map-sky', `${map.sky.name} · 奖励×${Number(map.sky.rewardMultiplier || 1).toFixed(2)}`);
+  setText('#star-map-omen-text', map.sky.omen || '因果回响尚未显化');
+  setText('#star-map-selected', map.selected ? `已锁定：${map.selected.name}` : `目标第${map.targetLayer}层 · 尚未定途`);
+
+  const track = $('#star-map-track');
+  track.replaceChildren();
+  for (const row of map.rows) {
+    const rowNode = element('div', `star-map-row${row.current ? ' is-current' : ''}`);
+    rowNode.append(element('b', 'star-map-layer', String(row.layer).padStart(2, '0')));
+    const nodes = element('div', 'star-map-nodes');
+    for (const node of row.nodes) {
+      const nodeView = element('span', `star-map-node is-${node.status}`);
+      nodeView.title = `${node.worldName} · ${node.shortName}`;
+      nodeView.append(element('i', '', node.symbol), element('small', '', node.shortName));
+      nodes.append(nodeView);
+    }
+    rowNode.append(nodes);
+    track.append(rowNode);
+  }
+
+  const options = $('#star-map-options');
+  options.replaceChildren();
+  if (!map.options.length) {
+    options.append(element('p', 'star-map-empty', state.run.phase === 'checkpoint' ? '本轮劫环已走完，请完成劫后抉择。' : '当前没有可定途的路线。'));
+  } else {
+    for (const route of map.options) {
+      const card = element('article', `star-route-card${route.selected ? ' is-selected' : ''}`);
+      const top = element('div', 'star-route-top');
+      top.append(element('span', '', `路线 ${route.index} · ${route.risk}`), element('b', '', `${route.votes} 票`));
+      card.append(top, element('h3', '', route.name), element('p', '', route.description), element('small', '', route.rewardText));
+      const actions = element('div', 'star-route-actions');
+      if (state.permissions.suggestRoute && !route.selected) actions.append(actionButton('提出建议', 'suggest', route.index, 'is-quiet'));
+      if (state.permissions.selectRoute && !route.selected) actions.append(actionButton('星图定途', 'selectRoute', route.index));
+      if (route.selected) actions.append(element('b', 'star-route-locked', '本层因果已锁定'));
+      card.append(actions);
+      options.append(card);
+    }
+  }
+
+  const seals = $('#star-map-seals');
+  seals.replaceChildren();
+  const sealNames = { slaughter: '杀伐印', cause: '因果印', boundary: '破界印', defiance: '逆命印' };
+  for (const [id, value] of Object.entries(map.seals || {})) {
+    const item = element('span', '', `${sealNames[id] || id} ${value}`);
+    seals.append(item);
+  }
+}
+
 function actionButton(label, action, value, tone = '') {
   const button = element('button', `command-button ${tone}`.trim(), label);
   button.type = 'button';
@@ -208,6 +281,11 @@ function renderActions(state) {
   const commands = $('#command-bar');
   choices.replaceChildren();
   commands.replaceChildren();
+  if (state.ended) {
+    setText('#action-title', state.settlement?.reason === 'defeat' ? '战败结算' : '远征已结束');
+    setText('#action-note', '本页保留最后一场战斗日志');
+    return;
+  }
   if (state.choices.length) {
     setText('#action-title', '本层能力推演');
     setText('#action-note', `${state.choices.length}道投影 · 择一铭刻`);
@@ -272,6 +350,8 @@ function render(state) {
   renderBuild(state);
   renderBattle(state);
   renderTreasury(state);
+  renderStarMap(state);
+  renderTerminalSummary(state);
   renderActions(state);
 }
 
@@ -279,7 +359,10 @@ async function submitAction(action, value) {
   if (busy) return;
   if (action === 'withdraw' && !window.confirm('确认结束本次远征并结算全部战利品？')) return;
   busy = true;
-  if (currentState) renderActions(currentState);
+  if (currentState) {
+    renderStarMap(currentState);
+    renderActions(currentState);
+  }
   setConnection('loading', '劫境推演中');
   try {
     const payload = await api('/api/endless/action', {
@@ -287,24 +370,32 @@ async function submitAction(action, value) {
       body: JSON.stringify({
         action,
         value,
-        operationId: crypto.randomUUID(),
+        operationId: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       }),
     });
     notify(payload.message);
     if (payload.state) render(payload.state);
-    else showGate('本次远征已经结束', payload.message || '战利品已经完成结算', false);
+    if (payload.ended) {
+      terminal = true;
+      if (refreshTimer) clearInterval(refreshTimer);
+      setConnection('online', '战报已保留');
+    } else if (!payload.state) {
+      showGate('本次远征已经结束', payload.message || '战利品已经完成结算', false);
+    }
   } catch (error) {
     notify(error.message);
     setConnection('error', '操作未完成');
   } finally {
     busy = false;
-    if (currentState && !gate.hidden) return;
-    if (currentState) renderActions(currentState);
+    if (currentState && !gate.hidden) {
+      renderStarMap(currentState);
+      renderActions(currentState);
+    }
   }
 }
 
 async function refresh() {
-  if (busy) return;
+  if (busy || terminal) return;
   try {
     const payload = await api('/api/endless/state');
     render(payload.state);
@@ -327,7 +418,7 @@ async function boot() {
       history.replaceState(null, '', '/endless');
     }
     await refresh();
-    setInterval(refresh, 2500);
+    refreshTimer = setInterval(refresh, 2500);
   } catch (error) {
     setConnection('error', '入口失效');
     showGate('入口已经消散', error.message, true);

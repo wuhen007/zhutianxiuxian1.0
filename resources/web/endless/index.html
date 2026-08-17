@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light" />
     <title>诸天无尽劫境</title>
-    <link rel="stylesheet" href="/endless/style.css?v=1" />
+    <link rel="stylesheet" href="/endless/style.css?v=2" />
   </head>
   <body>
     <div id="app" class="app-shell is-loading">
@@ -72,6 +72,22 @@
           </aside>
         </div>
 
+        <section id="star-map-panel" class="star-map-panel panel-section" hidden>
+          <div class="section-title">
+            <span>CALAMITY STAR ATLAS</span>
+            <h2>劫途星图</h2>
+            <b id="star-map-cycle">第 -- 轮劫环</b>
+          </div>
+          <div class="star-map-omen">
+            <div><span>本轮天象</span><strong id="star-map-sky">--</strong></div>
+            <p id="star-map-omen-text">正在观测因果回响</p>
+            <b id="star-map-selected">尚未定途</b>
+          </div>
+          <div id="star-map-track" class="star-map-track" aria-label="十层劫途星轨"></div>
+          <div id="star-map-options" class="star-map-options"></div>
+          <div id="star-map-seals" class="star-map-seals"></div>
+        </section>
+
         <section class="treasury-band">
           <div class="section-title"><span>TREASURY</span><h2>劫境所得</h2><b>Boss层自动封存</b></div>
           <div class="treasury-grid">
@@ -84,6 +100,10 @@
           <div class="section-title"><span>ROGUELIKE DRAFT</span><h2 id="action-title">等待劫境响应</h2><b id="action-note"></b></div>
           <div id="choice-grid" class="choice-grid"></div>
           <div id="command-bar" class="command-bar"></div>
+          <div id="terminal-summary" class="terminal-summary" hidden>
+            <strong id="terminal-title">本次远征已结束</strong>
+            <p id="terminal-message"></p>
+          </div>
         </section>
       </main>
 
@@ -97,6 +117,6 @@
       <button id="retry-button" type="button" hidden>重新连接</button>
     </div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/endless/app.js?v=1"></script>
+    <script src="/endless/app.js?v=2"></script>
   </body>
 </html>
