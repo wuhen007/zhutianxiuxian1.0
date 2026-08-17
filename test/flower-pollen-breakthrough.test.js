@@ -7,6 +7,8 @@ import {
   ensureFlowerPollenState,
   getFlowerDaoAttemptCost,
   getFlowerDaoGateState,
+  getFlowerDaoWoundState,
+  getFlowerEvolutionChance,
   getFlowerPathAttributeMultiplier,
   recordFlowerDaoAttempt,
   resolveFlowerBreakthrough,
@@ -20,7 +22,7 @@ test('花粉道则使用独立状态并限制每日悟道次数', () => {
   assert.deepEqual(player.花粉道途.daily, { date: '', count: 0 });
 
   const cost = getFlowerDaoAttemptCost(player, 9, 2);
-  assert.equal(cost.cultivation, 51200000);
+  assert.equal(cost.cultivation, 23437500000000);
   const gain = calculateFlowerDaoGain(player, 9, () => 0.5, { eraIndex: 2 });
   assert.ok(gain.gain > 0);
 
@@ -79,4 +81,24 @@ test('大宇与究极分支提供不同战斗侧重点，污染只压低花粉�
   assert.equal(getFlowerPathAttributeMultiplier(neutral), 1);
   const polluted = ensureFlowerPollenState({ huafenlevel_id: 17, 花粉路分支: '大宇', 始祖污染度: 70 });
   assert.equal(getFlowerPathAttributeMultiplier(polluted), 0.9);
+});
+
+test('道伤同时压低花粉属性、悟道与进化稳定性', () => {
+  const healthy = ensureFlowerPollenState({ huafenlevel_id: 9, 道伤: 0 });
+  const wounded = ensureFlowerPollenState({ huafenlevel_id: 9, 道伤: 2 });
+  assert.deepEqual(getFlowerDaoWoundState(wounded), {
+    wounds: 2,
+    chancePenalty: 0.16,
+    daoMultiplier: 0.8,
+    attrMultiplier: 0.9,
+  });
+  assert.ok(getFlowerPathAttributeMultiplier(wounded) < getFlowerPathAttributeMultiplier(healthy));
+  assert.ok(
+    calculateFlowerDaoGain(wounded, 9, () => 0.5, { eraIndex: 2 }).gain
+      < calculateFlowerDaoGain(healthy, 9, () => 0.5, { eraIndex: 2 }).gain
+  );
+  assert.ok(
+    getFlowerEvolutionChance(wounded, '无暇进化花粉', { eraIndex: 2 })
+      < getFlowerEvolutionChance(healthy, '无暇进化花粉', { eraIndex: 2 })
+  );
 });

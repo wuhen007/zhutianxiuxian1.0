@@ -290,6 +290,16 @@ export function getPollenPollutionState(player, now = Date.now()) {
   };
 }
 
+export function getFlowerDaoWoundState(player) {
+  const wounds = Math.max(0, number(player?.道伤));
+  return {
+    wounds,
+    chancePenalty: Math.min(0.4, wounds * 0.08),
+    daoMultiplier: Math.max(0.5, 1 - wounds * 0.1),
+    attrMultiplier: Math.max(0.7, 1 - wounds * 0.05),
+  };
+}
+
 /** 异变率：基础 3% + 隐患加成 + 境界因子 */
 export function getMutationChance(player) {
   ensureFlowerPollenState(player);
@@ -367,7 +377,13 @@ export function calculateFlowerDaoGain(player, realmId, random = Math.random, op
   const branch = getFlowerBranchProfile(player);
   const [, breathing] = getBestBreathingMethod(player);
   const era = getFlowerEraProfile(options.eraIndex);
-  const multiplier = clamp(1 + breathing * 2 + branch.daoBonus + era.chanceShift - pollution.successPenalty, 0.5, 2.5);
+  const wound = getFlowerDaoWoundState(player);
+  const multiplier = clamp(
+    (1 + breathing * 2 + branch.daoBonus + era.chanceShift - pollution.successPenalty)
+      * wound.daoMultiplier,
+    0.5,
+    2.5
+  );
   const randomFactor = 0.9 + clamp(number(random()), 0, 1) * 0.2;
   return { gain: Math.max(1, Math.trunc(rule.baseGain * multiplier * randomFactor)), rule, multiplier };
 }
@@ -426,6 +442,7 @@ export function getFlowerTribulationChance(player, realmId = player?.huafenlevel
   const riskPenalty = Math.min(0.2, player.花粉隐患 * 0.001);
   const failureProtection = Math.min(0.15, gate.failures * 0.03);
   const stoneJarBonus = options.stoneJar ? 0.08 : 0;
+  const wound = getFlowerDaoWoundState(player);
   return clamp(
     gate.rule.baseChance
       + breathing * pollution.breathingMultiplier
@@ -435,7 +452,8 @@ export function getFlowerTribulationChance(player, realmId = player?.huafenlevel
       + stoneJarBonus
       - riskPenalty
       - pollution.successPenalty
-      - pollution.markSuccessPenalty,
+      - pollution.markSuccessPenalty
+      - wound.chancePenalty,
     0.15,
     0.95
   );
@@ -515,6 +533,7 @@ export function getFlowerEvolutionChance(player, mediumName, options = {}) {
   const branch = getFlowerBranchProfile(player);
   const root = getFlowerRootState(player);
   const rootDamagePenalty = Math.min(0.25, root.damage * 0.0025);
+  const wound = getFlowerDaoWoundState(player);
   return Math.max(0.1, Math.min(0.95,
     base
     + medium.chance
@@ -527,6 +546,7 @@ export function getFlowerEvolutionChance(player, mediumName, options = {}) {
     - rootDamagePenalty
     - pollution.successPenalty
     - pollution.markSuccessPenalty
+    - wound.chancePenalty
   ));
 }
 
@@ -662,7 +682,8 @@ export function calculateFlowerExtremeBonus(player, realm = {}) {
 }
 
 export function getFlowerPathAttributeMultiplier(player) {
-  return getPollenPollutionState(player).attrMultiplier;
+  return getPollenPollutionState(player).attrMultiplier
+    * getFlowerDaoWoundState(player).attrMultiplier;
 }
 
 export { BREATHING_BONUSES };

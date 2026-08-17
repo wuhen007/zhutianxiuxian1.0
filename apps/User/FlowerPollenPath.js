@@ -29,6 +29,7 @@ import {
   getBestBreathingMethod,
   getFlowerEvolutionChance,
   getFlowerEvolutionCost,
+  getFlowerDaoWoundState,
   getFlowerEraProfile,
   getNextFlowerExtremeTrial,
   getPollenPollutionState,
@@ -124,6 +125,7 @@ export class FlowerPollenPath extends plugin {
     const trial = getNextFlowerExtremeTrial(player);
     const era = getFlowerEraProfile(getCurrentEraIndex());
     const pollution = getPollenPollutionState(player);
+    const wound = getFlowerDaoWoundState(player);
     const daoGate = getFlowerDaoGateState(player, player.huafenlevel_id);
     const branchProfile = getFlowerBranchProfile(player);
     const breakthrough = getFlowerBreakthroughRule(player.huafenlevel_id);
@@ -140,6 +142,7 @@ export class FlowerPollenPath extends plugin {
       `等效权柄：${authorityLevel}重天${authorities.length ? `｜已解锁：${authorities.join('、')}` : ''}`,
       `进化积淀：${player.进化积淀}｜花粉隐患：${player.花粉隐患}/200`,
       `始祖污染：${pollution.pollution}/100${pollution.polluted ? '（污染期·始祖低语）' : ''}${pollution.marked ? '（始祖印记·成功率-20%）' : ''}`,
+      `道伤：${wound.wounds}（花粉属性-${Math.round((1 - wound.attrMultiplier) * 100)}%，进化/渡劫-${Math.round(wound.chancePenalty * 100)}%）`,
       `分支倾向：${branchProfile.name}｜${branchProfile.description}`,
       daoGate.rule ? `花粉道则：${daoGate.rule.name} ${daoGate.exp}/${daoGate.rule.targetExp}（${daoGate.stage.name}，今日悟道${daoDailyCount}/3）` : '花粉道则：当前境界尚未开启',
       tribulationGate.rule ? `专属渡劫：${tribulationGate.rule.name}（${tribulationGate.completed ? '已渡过' : `待渡，失败${tribulationGate.failures}次`}）` : '专属渡劫：当前境界无需渡劫',
