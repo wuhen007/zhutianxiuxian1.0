@@ -1,0 +1,11 @@
+{
+  "enable": true,
+  "url": "ws://127.0.0.1:8080",
+  "secret": "",
+  "server_id": "",
+  "name": "",
+  "query_default": 10,
+  "expose_group": false,
+  "joined_groups": [],
+  "last_seen_seq": 0
+}

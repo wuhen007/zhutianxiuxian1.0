@@ -1,145 +1,315 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>诸天世界频道 · 管理面板</title>
-<style>
-  :root { --bg:#f7f8fa; --card:#ffffff; --line:#e6e8eb; --text:#1f2329; --sub:#646a73;
-          --red:#e54545; --green:#2ba471; --blue:#3370ff; --amber:#ff8800; }
-  * { box-sizing:border-box; }
-  body { margin:0; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
-         background:var(--bg); color:var(--text); padding:24px; }
-  h1 { font-size:20px; margin:0 0 4px; }
-  .sub { color:var(--sub); font-size:13px; margin-bottom:16px; }
-  .bar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
-  .stat { background:var(--card); border:1px solid var(--line); border-radius:10px;
-          padding:12px 16px; font-size:13px; }
-  .stat b { font-size:18px; }
-  input { padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:13px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th,td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); }
-  th { background:#fafbfc; color:var(--sub); font-weight:600; }
-  tr:last-child td { border-bottom:none; }
-  .tag { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; }
-  .tag.off { background:#f0f1f3; color:var(--sub); }
-  .tag.admin { background:#fff3e0; color:var(--amber); }
-  .tag.public { background:#e8f7f0; color:var(--green); }
-  .tag.ban { background:#fdeaea; color:var(--red); }
-  button { border:none; border-radius:8px; padding:6px 12px; font-size:12px; cursor:pointer; }
-  .btn-ban { background:var(--red); color:#fff; }
-  .btn-unban { background:var(--blue); color:#fff; }
-  .muted { color:var(--sub); }
-  .empty { padding:24px; text-align:center; color:var(--sub); }
-  code { background:#f0f1f3; padding:1px 6px; border-radius:5px; }
-</style>
-</head>
-<body>
-  <h1>诸天世界频道 · 管理面板</h1>
-  <div class="sub">云端中转服务器 · 在线区服 / 昵称 / 群号 / 封禁管理</div>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>诸天世界频道 · 管理</title>
+    <style>
+      :root {
+        --bg: #f5f6f8;
+        --card: #fff;
+        --line: #dfe2e6;
+        --text: #202124;
+        --sub: #687076;
+        --red: #c93737;
+        --green: #247a52;
+        --blue: #245dcc;
+        --amber: #a75b00;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        color: var(--text);
+        background: var(--bg);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
+          'Microsoft YaHei', sans-serif;
+      }
+      main {
+        width: min(1120px, 100%);
+        margin: auto;
+      }
+      h1 {
+        margin: 0;
+        font-size: 22px;
+        letter-spacing: 0;
+      }
+      .sub {
+        margin: 5px 0 18px;
+        color: var(--sub);
+        font-size: 13px;
+      }
+      .bar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+      }
+      .stat {
+        min-width: 120px;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--card);
+        font-size: 13px;
+      }
+      .stat b {
+        display: block;
+        margin-top: 2px;
+        font-size: 18px;
+      }
+      .auth {
+        display: flex;
+        gap: 8px;
+        margin-left: auto;
+      }
+      input {
+        width: min(280px, 55vw);
+        padding: 9px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        font-size: 13px;
+      }
+      button {
+        min-height: 34px;
+        padding: 7px 12px;
+        border: 0;
+        border-radius: 6px;
+        color: #fff;
+        background: var(--blue);
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .table-wrap {
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--card);
+      }
+      table {
+        width: 100%;
+        min-width: 820px;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      th,
+      td {
+        padding: 11px 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        white-space: nowrap;
+      }
+      th {
+        color: var(--sub);
+        background: #fafafa;
+        font-weight: 600;
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      .tag {
+        display: inline-block;
+        padding: 2px 7px;
+        border-radius: 5px;
+        background: #eef0f2;
+        color: var(--sub);
+      }
+      .tag.public {
+        background: #e7f5ed;
+        color: var(--green);
+      }
+      .tag.admin {
+        background: #fff0dc;
+        color: var(--amber);
+      }
+      .tag.ban {
+        background: #fbe7e7;
+        color: var(--red);
+      }
+      .danger {
+        background: var(--red);
+      }
+      .empty {
+        padding: 28px;
+        text-align: center;
+        color: var(--sub);
+      }
+      @media (max-width: 720px) {
+        body {
+          padding: 16px;
+        }
+        .auth {
+          width: 100%;
+          margin-left: 0;
+        }
+        input {
+          flex: 1;
+          width: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>诸天世界频道</h1>
+      <div class="sub">总机管理</div>
+      <div class="bar">
+        <div class="stat">在线区服<b id="s-online">-</b></div>
+        <div class="stat">已加入<b id="s-joined">-</b></div>
+        <div class="stat">消息总数<b id="s-msg">-</b></div>
+        <div class="stat">已封禁<b id="s-ban">-</b></div>
+        <div class="auth">
+          <input
+            id="token"
+            type="password"
+            autocomplete="current-password"
+            placeholder="管理员令牌"
+          />
+          <button id="refresh" type="button">刷新</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>区服</th>
+              <th>server_id</th>
+              <th>群号</th>
+              <th>公开级别</th>
+              <th>连接</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr>
+              <td colspan="6" class="empty">请输入管理员令牌</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+    <script>
+      const byId = (id) => document.getElementById(id);
+      const token = () => byId('token').value.trim();
+      const textCell = (value, className) => {
+        const td = document.createElement('td');
+        td.textContent = value;
+        if (className) td.className = className;
+        return td;
+      };
 
-  <div class="bar">
-    <div class="stat">在线区服 <b id="s-online">-</b></div>
-    <div class="stat">已加入 <b id="s-joined">-</b></div>
-    <div class="stat">留言总数 <b id="s-msg">-</b></div>
-    <div class="stat">已封禁 <b id="s-ban">-</b></div>
-    <input id="token" placeholder="管理员令牌 (WC_ADMIN_TOKEN)" style="min-width:240px" />
-    <span class="muted">封禁操作需要令牌</span>
-  </div>
+      function setEmpty(message) {
+        const td = textCell(message, 'empty');
+        td.colSpan = 6;
+        const tr = document.createElement('tr');
+        tr.append(td);
+        byId('rows').replaceChildren(tr);
+      }
 
-  <div class="card">
-    <table>
-      <thead>
-        <tr><th>区服昵称</th><th>server_id</th><th>群号</th><th>公开级别</th><th>状态</th><th>操作</th></tr>
-      </thead>
-      <tbody id="rows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
-    </table>
-  </div>
+      function render(data) {
+        byId('s-online').textContent = data.online;
+        byId('s-joined').textContent = data.joined;
+        byId('s-msg').textContent = data.totalMessages;
+        byId('s-ban').textContent = data.banned.length;
+        if (!data.servers.length) return setEmpty('暂无区服');
 
-  <p class="muted" style="margin-top:14px;font-size:12px">
-    面板地址可带令牌访问：<code>/admin?token=你的令牌</code>。封禁后该服握手即被拒绝、已连接会被断开；
-    解封即时恢复。令牌缺失时仅可查看，不可操作。
-  </p>
+        const rows = data.servers.map((server) => {
+          const tr = document.createElement('tr');
+          tr.append(textCell(server.name || server.server_id));
+          tr.append(textCell(server.server_id));
+          tr.append(
+            textCell(server.groups?.length ? server.groups.join('、') : '-')
+          );
 
-<script>
-const $ = (id) => document.getElementById(id);
-const tokenEl = $('token');
-// 从 URL 取 token
-const up = new URL(location.href);
-const urlToken = up.searchParams.get('token');
-if (urlToken) tokenEl.value = urlToken;
+          const levelCell = document.createElement('td');
+          const level = document.createElement('span');
+          level.className = `tag ${server.expose_level || ''}`;
+          level.textContent =
+            server.expose_level === 'public'
+              ? '全员公开'
+              : server.expose_level === 'admin'
+              ? '仅管理员'
+              : '不公开';
+          levelCell.append(level);
+          tr.append(levelCell);
 
-function getToken() { return tokenEl.value.trim(); }
+          const stateCell = document.createElement('td');
+          const state = document.createElement('span');
+          state.className = `tag ${server.banned ? 'ban' : ''}`;
+          state.textContent = server.banned
+            ? '已封禁'
+            : server.online
+            ? server.joined
+              ? '在线'
+              : '在线未加入'
+            : '离线';
+          stateCell.append(state);
+          tr.append(stateCell);
 
-function fmtTime(ts) {
-  if (!ts) return '-';
-  const d = new Date(ts);
-  return d.toLocaleString('zh-CN', { hour12: false });
-}
+          const actionCell = document.createElement('td');
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.dataset.action = server.banned ? 'unban' : 'ban';
+          button.dataset.serverId = server.server_id;
+          button.textContent = server.banned ? '解封' : '封禁';
+          if (!server.banned) button.className = 'danger';
+          actionCell.append(button);
+          tr.append(actionCell);
+          return tr;
+        });
+        byId('rows').replaceChildren(...rows);
+      }
 
-async function load() {
-  try {
-    const r = await fetch('/api/status');
-    const d = await r.json();
-    $('s-online').textContent = d.online;
-    $('s-joined').textContent = d.joined;
-    $('s-msg').textContent = d.totalMessages;
-    $('s-ban').textContent = (d.banned || []).length;
-    const rows = $('rows');
-    if (!d.servers.length) {
-      rows.innerHTML = '<tr><td colspan="6" class="empty">暂无在线区服</td></tr>';
-      return;
-    }
-    rows.innerHTML = d.servers.map((s) => {
-      const lvl = s.expose_level || 'off';
-      const lvlCls = lvl === 'public' ? 'public' : lvl === 'admin' ? 'admin' : 'off';
-      const lvlText = lvl === 'public' ? '全员公开' : lvl === 'admin' ? '仅管理员' : '不公开';
-      const groups = (s.groups && s.groups.length) ? s.groups.join('、') : '-';
-      const isBan = s.banned;
-      const btn = isBan
-        ? `<button class="btn-unban" data-act="unban" data-id="${s.server_id}">解封</button>`
-        : `<button class="btn-ban" data-act="ban" data-id="${s.server_id}">封禁</button>`;
-      return `<tr>
-        <td>${escapeHtml(s.name || s.server_id)}</td>
-        <td class="muted">${s.server_id}</td>
-        <td>${groups}</td>
-        <td><span class="tag ${lvlCls}">${lvlText}</span></td>
-        <td>${s.joined ? '已加入' : '在线未加入'}</td>
-        <td>${btn}</td>
-      </tr>`;
-    }).join('');
-  } catch (e) {
-    $('rows').innerHTML = '<tr><td colspan="6" class="empty">加载失败：' + e.message + '</td></tr>';
-  }
-}
+      async function load() {
+        if (!token()) return setEmpty('请输入管理员令牌');
+        try {
+          const response = await fetch('/api/admin/status', {
+            headers: { 'X-Admin-Token': token() },
+          });
+          const data = await response.json();
+          if (!response.ok)
+            throw new Error(data.reason || `HTTP ${response.status}`);
+          render(data);
+        } catch (error) {
+          setEmpty(`加载失败：${error.message}`);
+        }
+      }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-}
-
-document.addEventListener('click', async (ev) => {
-  const t = ev.target;
-  if (t.dataset && t.dataset.act) {
-    const token = getToken();
-    if (!token) { alert('请先填写管理员令牌'); return; }
-    const act = t.dataset.act;
-    const id = t.dataset.id;
-    const reason = act === 'ban' ? prompt('封禁原因(可选)：') || '' : '';
-    t.disabled = true;
-    const r = await fetch('/api/' + act, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, server_id: id, reason })
-    });
-    const j = await r.json();
-    if (!j.ok) alert('操作失败：' + (j.reason || r.status));
-    load();
-  }
-});
-
-load();
-setInterval(load, 10000);
-</script>
-</body>
+      byId('refresh').addEventListener('click', load);
+      byId('token').addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') load();
+      });
+      document.addEventListener('click', async (event) => {
+        const button = event.target.closest('button[data-action]');
+        if (!button) return;
+        button.disabled = true;
+        try {
+          const response = await fetch(`/api/admin/${button.dataset.action}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Admin-Token': token(),
+            },
+            body: JSON.stringify({ server_id: button.dataset.serverId }),
+          });
+          const data = await response.json();
+          if (!response.ok)
+            throw new Error(data.reason || `HTTP ${response.status}`);
+          await load();
+        } catch (error) {
+          alert(`操作失败：${error.message}`);
+          button.disabled = false;
+        }
+      });
+      setInterval(() => {
+        if (token()) load();
+      }, 10000);
+    </script>
+  </body>
 </html>

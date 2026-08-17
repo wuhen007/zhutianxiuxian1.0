@@ -1,252 +1,429 @@
-// 世界频道 · 云端中转客户端(留言板/拉取模型)
-// 单例:整个 Yunzai 进程只维持一条到云端的总连接(对应一个"区服")。
-// 依赖 ws(随 Yunzai 安装,无需额外安装)。
+// 世界频道客户端：单连接、请求匹配、实时收取与断线补拉。
 import WebSocket from 'ws';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CONFIG_PATH = path.join(__dirname, 'config.json');
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+export const DEFAULT_CONFIG_PATH = path.join(MODULE_DIR, 'config.local.json');
+const LEGACY_CONFIG_PATH = path.join(MODULE_DIR, 'config.json');
+const DEV_SECRET = 'zhutian-worldchat-dev-secret-change-me';
 
-function loadConfig() {
-  let cfg = {};
+function atomicWriteJson(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temp = `${file}.${process.pid}.${crypto
+    .randomBytes(4)
+    .toString('hex')}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(value, null, 2), 'utf8');
+  fs.renameSync(temp, file);
+}
+
+function readConfig(file) {
   try {
-    cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch {
-    cfg = {};
+    return null;
   }
+}
+
+function normalizeConfig(input = {}) {
+  const cfg = { ...input };
   cfg.enable = cfg.enable !== false;
   cfg.url = cfg.url || 'ws://127.0.0.1:8080';
-  cfg.secret = cfg.secret || 'zhutian-worldchat-dev-secret-change-me';
-  cfg.query_default = Number(cfg.query_default) || 10;
-  // 群号公开级别: false(不公开) | 'admin'(仅其他服管理员可见) | 'public'(对全员公开)
-  // 默认不公开,需管理员显式两步确认开启。
-  cfg.expose_group = cfg.expose_group || false;
-  // 稳定的区服标识:首次运行自动生成并持久化到 config.json
-  if (!cfg.server_id) {
-    cfg.server_id = 'sv_' + crypto.randomBytes(6).toString('hex');
+  cfg.query_default = Math.min(
+    100,
+    Math.max(1, Number(cfg.query_default) || 10)
+  );
+  cfg.expose_group = ['admin', 'public'].includes(cfg.expose_group)
+    ? cfg.expose_group
+    : false;
+  cfg.joined_groups = [
+    ...new Set(
+      (cfg.joined_groups || [])
+        .map(String)
+        .filter((id) => /^[\w-]{1,64}$/.test(id))
+    ),
+  ];
+  cfg.last_seen_seq = Math.max(0, Number(cfg.last_seen_seq) || 0);
+  if (!/^[A-Za-z0-9_-]{3,64}$/.test(String(cfg.server_id || ''))) {
+    cfg.server_id = `sv_${crypto.randomBytes(8).toString('hex')}`;
   }
-  cfg.name = cfg.name || '区服-' + cfg.server_id.slice(3, 9);
-  try {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
-  } catch {
-    /* 只读环境忽略 */
+  if (
+    typeof cfg.secret !== 'string' ||
+    cfg.secret.length < 32 ||
+    cfg.secret === DEV_SECRET
+  ) {
+    cfg.secret = crypto.randomBytes(32).toString('hex');
   }
+  cfg.name = String(cfg.name || `区服-${cfg.server_id.slice(3, 9)}`)
+    .trim()
+    .slice(0, 30);
   return cfg;
 }
 
-class WorldChatClient {
-  constructor() {
-    this.cfg = loadConfig();
+export function loadConfig(configPath = DEFAULT_CONFIG_PATH) {
+  const legacy =
+    configPath === DEFAULT_CONFIG_PATH ? readConfig(LEGACY_CONFIG_PATH) : null;
+  const cfg = normalizeConfig(readConfig(configPath) || legacy || {});
+  atomicWriteJson(configPath, cfg);
+  return cfg;
+}
+
+function helloPayload(serverId, ts, nonce) {
+  return JSON.stringify(['HELLO', serverId, Number(ts), String(nonce)]);
+}
+
+function publishPayload(serverId, message) {
+  return JSON.stringify([
+    'PUB',
+    serverId,
+    String(message.request_id),
+    Number(message.ts),
+    String(message.sender_name),
+    String(message.sender_tag),
+    String(message.msg),
+  ]);
+}
+
+export class WorldChatClient {
+  constructor(options = {}) {
+    this.configPath = options.configPath || DEFAULT_CONFIG_PATH;
+    this.cfg = options.config
+      ? normalizeConfig(options.config)
+      : loadConfig(this.configPath);
+    this.persist = options.persist !== false;
+    this.WebSocket = options.WebSocket || WebSocket;
     this.ws = null;
     this.connected = false;
     this.authed = false;
+    this.lastError = null;
     this.reconnectDelay = 1000;
-    this.maxDelay = 60000;
+    this.maxDelay = 60_000;
     this.pingTimer = null;
-    this._reconnectTimer = null;
-    this._queryCb = null; // 仅支持一个挂起的查询(本场景足够)
+    this.reconnectTimer = null;
+    this.pending = new Map();
+    this.seenMessageIds = new Set();
+    this.messageHandler = null;
+    this.backfillPromise = null;
+    this.deliveryChain = Promise.resolve();
+  }
+
+  saveConfig() {
+    if (this.persist) atomicWriteJson(this.configPath, this.cfg);
   }
 
   hmac(payload) {
-    return crypto.createHmac('sha256', this.cfg.secret).update(payload).digest('hex');
+    return crypto
+      .createHmac('sha256', this.cfg.secret)
+      .update(payload)
+      .digest('hex');
+  }
+
+  userTag(userId) {
+    return this.hmac(`USER\n${String(userId)}`).slice(0, 16);
+  }
+
+  setMessageHandler(handler) {
+    this.messageHandler = typeof handler === 'function' ? handler : null;
   }
 
   connect() {
     if (!this.cfg.enable) return;
     if (
       this.ws &&
-      (this.ws.readyState === WebSocket.OPEN ||
-        this.ws.readyState === WebSocket.CONNECTING)
+      (this.ws.readyState === this.WebSocket.OPEN ||
+        this.ws.readyState === this.WebSocket.CONNECTING)
     ) {
       return;
     }
+
     let ws;
     try {
-      ws = new WebSocket(this.cfg.url);
-    } catch {
-      this._scheduleReconnect();
+      ws = new this.WebSocket(this.cfg.url, { maxPayload: 16 * 1024 });
+    } catch (error) {
+      this.lastError = error.message;
+      this.scheduleReconnect();
       return;
     }
     this.ws = ws;
 
     ws.on('open', () => {
       this.connected = true;
+      const ts = Date.now();
+      const nonce = crypto.randomBytes(16).toString('hex');
       ws.send(
         JSON.stringify({
           type: 'HELLO',
           server_id: this.cfg.server_id,
           name: this.cfg.name,
-          joined: true,
-          token: this.hmac(String(this.cfg.server_id)),
-          // 群号公开:仅当 expose_group 开启才上报本服群号
-          groups: this.cfg.expose_group ? this.groups() : [],
-          expose_level: this.cfg.expose_group || undefined
+          ...this.presence(),
+          ts,
+          nonce,
+          token: this.hmac(helloPayload(this.cfg.server_id, ts, nonce)),
         })
       );
     });
-
-    ws.on('message', (raw) => this._onMessage(raw));
-
+    ws.on('message', (raw) => this.onMessage(raw));
     ws.on('close', () => {
       this.connected = false;
       this.authed = false;
-      this._stopPing();
-      this._scheduleReconnect();
+      this.stopPing();
+      this.rejectPending('disconnected');
+      this.scheduleReconnect();
     });
-
-    ws.on('error', () => {
-      /* error 后通常会触发 close */
+    ws.on('error', (error) => {
+      this.lastError = error.message;
     });
   }
 
-  _onMessage(raw) {
-    let msg;
+  presence() {
+    const groups = this.groups();
+    return {
+      joined: groups.length > 0,
+      groups: this.cfg.expose_group ? groups : [],
+      expose_level: this.cfg.expose_group || undefined,
+    };
+  }
+
+  onMessage(raw) {
+    let message;
     try {
-      msg = JSON.parse(raw.toString());
+      message = JSON.parse(raw.toString());
     } catch {
       return;
     }
-    if (msg.type === 'WELCOME' && msg.ok) {
+
+    if (message.type === 'WELCOME') {
+      if (!message.ok) {
+        this.lastError = message.reason || 'auth_failed';
+        return;
+      }
       this.authed = true;
+      this.lastError = null;
+      this.serverLastSeq = Math.max(0, Number(message.last_seq) || 0);
+      if (this.cfg.start_from_now) {
+        this.cfg.last_seen_seq = this.serverLastSeq;
+        delete this.cfg.start_from_now;
+        this.saveConfig();
+      }
       this.reconnectDelay = 1000;
-      this._startPing();
-    } else if (msg.type === 'QUERY_RESULT' && this._queryCb) {
-      const cb = this._queryCb;
-      this._queryCb = null;
-      cb(msg);
+      this.startPing();
+      this.syncPresence();
+      this.backfill().catch(() => {});
+      return;
+    }
+
+    if (message.type === 'MESSAGE') {
+      this.enqueueDelivery(message.message).catch(
+        (error) => (this.lastError = error.message)
+      );
+      return;
+    }
+
+    if (message.type === 'SYNC_ACK' && this.cfg.start_from_now) {
+      this.cfg.last_seen_seq = Math.max(0, Number(message.last_seq) || 0);
+      delete this.cfg.start_from_now;
+      this.saveConfig();
+      return;
+    }
+
+    if (message.request_id) {
+      const pending = this.pending.get(message.request_id);
+      if (pending && pending.type === message.type) {
+        clearTimeout(pending.timer);
+        this.pending.delete(message.request_id);
+        pending.resolve(message);
+      }
     }
   }
 
-  _startPing() {
-    this._stopPing();
+  startPing() {
+    this.stopPing();
     this.pingTimer = setInterval(() => {
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      if (this.ws?.readyState === this.WebSocket.OPEN) {
         this.ws.send(JSON.stringify({ type: 'PING' }));
       }
-    }, 30000);
+    }, 25_000);
+    this.pingTimer.unref?.();
   }
 
-  _stopPing() {
-    if (this.pingTimer) {
-      clearInterval(this.pingTimer);
-      this.pingTimer = null;
-    }
+  stopPing() {
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = null;
   }
 
-  _scheduleReconnect() {
-    if (this._reconnectTimer) return;
-    this._reconnectTimer = setTimeout(() => {
-      this._reconnectTimer = null;
+  scheduleReconnect() {
+    if (!this.cfg.enable || this.reconnectTimer) return;
+    const delay = this.reconnectDelay + Math.floor(Math.random() * 250);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       this.connect();
-    }, this.reconnectDelay);
+    }, delay);
+    this.reconnectTimer.unref?.();
     this.reconnectDelay = Math.min(this.maxDelay, this.reconnectDelay * 2);
   }
 
-  // 上送一条留言,返回 { ok, reason? }
-  pub(text) {
+  rejectPending(reason) {
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.resolve({ ok: false, reason });
+    }
+    this.pending.clear();
+  }
+
+  request(type, responseType, body = {}, timeout = 5000) {
     return new Promise((resolve) => {
-      if (!this.authed || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      if (!this.authed || this.ws?.readyState !== this.WebSocket.OPEN) {
         resolve({ ok: false, reason: 'disconnected' });
         return;
       }
-      const ts = Date.now();
-      const sig = this.hmac(`${this.cfg.server_id}:${ts}:${text}`);
-      let settled = false;
-      const handler = (raw) => {
-        if (settled) return;
-        let m;
-        try {
-          m = JSON.parse(raw.toString());
-        } catch {
-          return;
-        }
-        if (m.type === 'PUB_ACK') {
-          settled = true;
-          clearTimeout(guard);
-          this.ws.off('message', handler);
-          resolve(m);
-        }
-      };
-      const guard = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        if (this.ws) this.ws.off('message', handler);
+      const requestId = crypto.randomUUID();
+      const timer = setTimeout(() => {
+        this.pending.delete(requestId);
         resolve({ ok: false, reason: 'timeout' });
-      }, 5000);
-      this.ws.on('message', handler);
-      this.ws.send(JSON.stringify({ type: 'PUB', ts, msg: text, sig }));
+      }, timeout);
+      timer.unref?.();
+      this.pending.set(requestId, { type: responseType, resolve, timer });
+      this.ws.send(JSON.stringify({ type, request_id: requestId, ...body }));
     });
   }
 
-  // 拉取最近 limit 条,返回 { ok, messages?, total?, reason? }
-  query(limit) {
+  pub(text, sender = {}) {
+    if (!this.authed || this.ws?.readyState !== this.WebSocket.OPEN) {
+      return Promise.resolve({ ok: false, reason: 'disconnected' });
+    }
+    const requestId = crypto.randomUUID();
+    const message = {
+      type: 'PUB',
+      request_id: requestId,
+      ts: Date.now(),
+      msg: String(text),
+      sender_name: String(sender.name || '无名道友')
+        .trim()
+        .slice(0, 30),
+      sender_tag: String(sender.tag || ''),
+    };
+    message.sig = this.hmac(publishPayload(this.cfg.server_id, message));
     return new Promise((resolve) => {
-      if (!this.authed || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
-        resolve({ ok: false, reason: 'disconnected' });
-        return;
-      }
-      this._queryCb = (m) => resolve({ ok: true, messages: m.messages, total: m.total });
-      const guard = setTimeout(() => {
-        this._queryCb = null;
+      const timer = setTimeout(() => {
+        this.pending.delete(requestId);
         resolve({ ok: false, reason: 'timeout' });
       }, 5000);
-      // 让 guard 在回调中清除
-      const prev = this._queryCb;
-      this._queryCb = (m) => {
-        clearTimeout(guard);
-        prev(m);
-      };
-      this.ws.send(JSON.stringify({ type: 'QUERY', limit: limit || this.cfg.query_default }));
+      timer.unref?.();
+      this.pending.set(requestId, { type: 'PUB_ACK', resolve, timer });
+      this.ws.send(JSON.stringify(message));
     });
   }
 
-  // 记录本实例服务的 QQ 群号(仅本地使用,绝不向云端上报)
-  observeGroup(groupId) {
-    if (!groupId) return;
-    if (!this._groups) this._groups = new Set();
-    this._groups.add(String(groupId));
+  async query(limit = this.cfg.query_default, afterSeq) {
+    const body = {
+      limit: Math.min(
+        100,
+        Math.max(1, Number(limit) || this.cfg.query_default)
+      ),
+    };
+    if (Number.isSafeInteger(afterSeq) && afterSeq >= 0)
+      body.after_seq = afterSeq;
+    const result = await this.request('QUERY', 'QUERY_RESULT', body);
+    return result.type === 'QUERY_RESULT' ? { ...result, ok: true } : result;
+  }
+
+  enqueueDelivery(message) {
+    const delivery = this.deliveryChain.then(() => this.deliver(message));
+    this.deliveryChain = delivery.catch(() => {});
+    return delivery;
+  }
+
+  async deliver(message) {
+    if (
+      !message?.id ||
+      !Number.isSafeInteger(message.seq) ||
+      this.seenMessageIds.has(message.id)
+    )
+      return;
+    if (this.messageHandler) await this.messageHandler(message);
+    this.seenMessageIds.add(message.id);
+    if (this.seenMessageIds.size > 2000) {
+      this.seenMessageIds.delete(this.seenMessageIds.values().next().value);
+    }
+    if (message.seq > this.cfg.last_seen_seq) {
+      this.cfg.last_seen_seq = message.seq;
+      this.saveConfig();
+    }
+  }
+
+  async backfill() {
+    if (this.backfillPromise || !this.groups().length)
+      return this.backfillPromise;
+    this.backfillPromise = (async () => {
+      let cursor = this.cfg.last_seen_seq;
+      for (;;) {
+        const result = await this.query(100, cursor);
+        if (!result.ok || !Array.isArray(result.messages)) break;
+        for (const message of result.messages) {
+          await this.enqueueDelivery(message);
+          cursor = Math.max(cursor, Number(message.seq) || 0);
+        }
+        if (result.messages.length < 100) break;
+      }
+    })().finally(() => (this.backfillPromise = null));
+    return this.backfillPromise;
+  }
+
+  syncPresence() {
+    if (this.authed && this.ws?.readyState === this.WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'SYNC', ...this.presence() }));
+    }
   }
 
   groups() {
-    return this._groups ? [...this._groups] : [];
+    return [...this.cfg.joined_groups];
   }
 
-  // 修改本服昵称(会持久化并重新握手,使云端刷新展示名)
-  setName(name) {
-    name = String(name || '').trim().slice(0, 30);
-    if (!name) return false;
-    this.cfg.name = name;
-    try {
-      fs.writeFileSync(CONFIG_PATH, JSON.stringify(this.cfg, null, 2));
-    } catch {
-      /* 只读环境忽略 */
-    }
-    // 重连以便云端刷新昵称
-    try {
-      if (this.ws) this.ws.close();
-    } catch {
-      /* ignore */
-    }
+  isGroupJoined(groupId) {
+    return this.cfg.joined_groups.includes(String(groupId));
+  }
+
+  joinGroup(groupId) {
+    const id = String(groupId || '');
+    if (!/^[\w-]{1,64}$/.test(id) || this.isGroupJoined(id)) return false;
+    if (!this.cfg.joined_groups.length) this.cfg.start_from_now = true;
+    this.cfg.joined_groups.push(id);
+    this.saveConfig();
+    this.syncPresence();
     return true;
   }
 
-  // 修改群号公开级别(false | 'admin' | 'public'),持久化并重新握手使云端刷新
+  leaveGroup(groupId) {
+    const id = String(groupId || '');
+    const before = this.cfg.joined_groups.length;
+    this.cfg.joined_groups = this.cfg.joined_groups.filter(
+      (group) => group !== id
+    );
+    if (this.cfg.joined_groups.length === before) return false;
+    this.saveConfig();
+    this.syncPresence();
+    return true;
+  }
+
+  setName(name) {
+    const value = String(name || '')
+      .trim()
+      .slice(0, 30);
+    if (!value) return false;
+    this.cfg.name = value;
+    this.saveConfig();
+    this.ws?.close();
+    return true;
+  }
+
   setExpose(level) {
-    if (level !== false && level !== 'admin' && level !== 'public') return false;
+    if (level !== false && level !== 'admin' && level !== 'public')
+      return false;
     this.cfg.expose_group = level;
-    try {
-      fs.writeFileSync(CONFIG_PATH, JSON.stringify(this.cfg, null, 2));
-    } catch {
-      /* 只读环境忽略 */
-    }
-    try {
-      if (this.ws) this.ws.close();
-    } catch {
-      /* ignore */
-    }
+    this.saveConfig();
+    this.syncPresence();
     return true;
   }
 
@@ -258,32 +435,40 @@ class WorldChatClient {
       url: this.cfg.url,
       server_id: this.cfg.server_id,
       name: this.cfg.name,
-      expose_group: this.cfg.expose_group
+      expose_group: this.cfg.expose_group,
+      joined_groups: this.groups(),
+      last_seen_seq: this.cfg.last_seen_seq,
+      last_error: this.lastError,
     };
   }
 
-  setEnable(v) {
-    this.cfg.enable = !!v;
-    try {
-      fs.writeFileSync(CONFIG_PATH, JSON.stringify(this.cfg, null, 2));
-    } catch {
-      /* ignore */
-    }
+  setEnable(value) {
+    this.cfg.enable = Boolean(value);
+    this.saveConfig();
     if (!this.cfg.enable) {
-      try {
-        if (this.ws) this.ws.close();
-      } catch {
-        /* ignore */
-      }
+      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+      this.ws?.close();
       this.ws = null;
       this.connected = false;
       this.authed = false;
-      this._stopPing();
+      this.stopPing();
     } else {
       this.connect();
     }
   }
+
+  close() {
+    this.cfg.enable = false;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.stopPing();
+    this.rejectPending('closed');
+    this.ws?.terminate?.();
+    this.ws = null;
+    this.connected = false;
+    this.authed = false;
+  }
 }
 
 export const worldChatClient = new WorldChatClient();
-export { WorldChatClient };

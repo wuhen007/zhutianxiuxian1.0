@@ -1,248 +1,266 @@
-// 世界聊天频道 · 插件指令层(留言板/拉取模型)
-// 指令:
-//   #世界 说 <内容>      -> 上送一条留言到云端(跨服可见)
-//   #世界 留言 <内容>    -> 同"说"
-//   #世界 查看 [n]       -> 拉取最近 n 条(默认 config.query_default)
-//   #世界 改名 <昵称>    -> 管理员设置本服展示昵称(会显示在所有服的留言里)
-//   #世界 公开群号       -> 管理员两步确认:向其他服【管理员】公开本服真实群号
-//   #世界 群号全员公开   -> 二次确认:群号对全员公开(普通成员也可见)
-//   #世界 关闭群号       -> 管理员关闭群号公开
-//   #世界 状态           -> 显示本服连接状态 + 本服群号(仅本地可见)
-//   #世界 开关           -> 管理员开/关本服世界频道(默认开,明示可控)
+// 诸天世界频道：群管理员显式加入后实时收发。
 import { plugin } from '../../api/api.js';
 import { worldChatClient as client } from './client.js';
 import { clientFilter } from './filter.js';
+
+const USER_COOLDOWN_MS = 5_000;
+
+function senderName(e) {
+  return String(
+    e.sender?.card || e.sender?.nickname || e.nickname || '无名道友'
+  )
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .trim()
+    .slice(0, 30);
+}
 
 export class WorldChat extends plugin {
   constructor() {
     super({
       name: 'WorldChat',
-      dsc: '诸天世界聊天频道(跨服留言板)',
+      dsc: '诸天世界聊天频道',
       event: 'message',
       priority: 9000,
       rule: [
         { reg: '^#世界\\s*(?:说|留言)\\s*([\\s\\S]+)$', fnc: 'say' },
         { reg: '^#世界\\s*查看\\s*(\\d+)?$', fnc: 'view' },
+        { reg: '^#世界\\s*加入$', fnc: 'join' },
+        { reg: '^#世界\\s*退出$', fnc: 'leave' },
         { reg: '^#世界\\s*改名\\s*([\\s\\S]+)$', fnc: 'rename' },
         { reg: '^#世界\\s*公开群号$', fnc: 'exposeAdmin' },
         { reg: '^#世界\\s*群号全员公开$', fnc: 'exposePublic' },
         { reg: '^#世界\\s*关闭群号$', fnc: 'exposeOff' },
         { reg: '^#世界\\s*状态$', fnc: 'stat' },
-        { reg: '^#世界\\s*开关$', fnc: 'toggle' }
-      ]
+        { reg: '^#世界\\s*开关$', fnc: 'toggle' },
+      ],
     });
-    // 启动即尝试连接云端(配置 enable=true 时)。用 setTimeout 避免阻塞插件注册。
+    this.cooldowns = new Map();
+    this.pendingConfirmations = new Map();
+    client.setMessageHandler((message) => this.broadcast(message));
     setTimeout(() => client.connect(), 0);
-    // 群号公开两步确认状态: { admin: 时间戳, public: 时间戳 }
-    this._pending = { admin: 0, public: 0 };
   }
 
-  // 两步确认是否仍在有效期(60s)
-  _pendingValid(key) {
-    return Date.now() - this._pending[key] < 60000;
+  async broadcast(message) {
+    const time = new Date(message.ts).toLocaleString('zh-CN', {
+      hour12: false,
+    });
+    let output = `【诸天世界 · ${message.name}】\n${
+      message.sender_name
+    }：${clientFilter(message.msg)}\n${time}`;
+    if (message.expose_level === 'public' && message.groups?.length) {
+      output += `\n来源群：${message.groups.join('、')}`;
+    }
+    const results = await Promise.allSettled(
+      client.groups().map((groupId) => Bot.pickGroup(groupId).sendMsg(output))
+    );
+    for (const result of results) {
+      if (result.status === 'rejected')
+        Bot.logger?.warn?.(`[worldchat] 群推送失败: ${result.reason}`);
+    }
+  }
+
+  requireJoinedGroup(e) {
+    if (!e.isGroup) {
+      e.reply('世界频道仅限群聊使用');
+      return false;
+    }
+    if (!client.isGroupJoined(e.group_id)) {
+      e.reply('本群尚未加入世界频道，请让机器人管理员发送「#世界 加入」');
+      return false;
+    }
+    return true;
   }
 
   async say(e) {
-    if (!e.isGroup) {
-      e.reply('世界频道仅限群聊使用');
-      return true;
-    }
-    client.observeGroup(e.group_id);
+    if (!this.requireJoinedGroup(e)) return true;
     if (!client.cfg.enable) {
-      e.reply('本服世界频道已关闭,管理员可用「#世界 开关」开启');
+      e.reply('本服世界频道已关闭，管理员可用「#世界 开关」开启');
       return true;
     }
-    const m = e.msg.match(/^#世界\s*(?:说|留言)\s*([\s\S]+)$/);
-    const text = (m && m[1] ? m[1] : '').trim();
-    if (!text) {
-      e.reply('说点什么吧,例如:#世界 说 道友们,今日遮天位面可有人?');
+    const match = e.msg.match(/^#世界\s*(?:说|留言)\s*([\s\S]+)$/);
+    const text = (match?.[1] || '').trim();
+    if (!text) return true;
+
+    const cooldownKey = String(e.user_id);
+    const wait =
+      USER_COOLDOWN_MS - (Date.now() - (this.cooldowns.get(cooldownKey) || 0));
+    if (wait > 0) {
+      e.reply(`世界频道传音尚在回响，请等待 ${Math.ceil(wait / 1000)} 秒`);
       return true;
     }
-    const clean = clientFilter(text);
-    const res = await client.pub(clean);
-    if (res.ok) {
-      e.reply('✅ 留言已上送诸天世界频道');
-    } else if (!client.connected) {
-      e.reply('⚠️ 尚未连接到云端,稍后自动重试中…(可用「#世界 状态」查看)');
-    } else {
-      e.reply('⚠️ 上送失败:' + (res.reason || '未知'));
+    this.cooldowns.set(cooldownKey, Date.now());
+
+    const result = await client.pub(clientFilter(text), {
+      name: senderName(e),
+      tag: client.userTag(e.user_id),
+    });
+    if (!result.ok) {
+      const reasons = {
+        disconnected: '尚未连接到世界频道总机，正在自动重连',
+        timeout: '总机响应超时，请稍后再试',
+        user_cooldown: '发送过快，请稍后再试',
+        rate_limited: '本服发送过于频繁，请稍后再试',
+        auth_failed: '本服凭据未在总机登记，请联系管理员',
+      };
+      e.reply(
+        `世界传音失败：${reasons[result.reason] || result.reason || '未知错误'}`
+      );
     }
     return true;
   }
 
   async view(e) {
-    if (!e.isGroup) {
-      e.reply('世界频道仅限群聊使用');
+    if (!this.requireJoinedGroup(e)) return true;
+    const match = e.msg.match(/^#世界\s*查看\s*(\d+)?$/);
+    const limit = match?.[1]
+      ? Math.min(50, Number(match[1]))
+      : client.cfg.query_default;
+    const result = await client.query(limit);
+    if (!result.ok) {
+      e.reply('世界频道暂时无法查询，请稍后再试');
       return true;
     }
-    client.observeGroup(e.group_id);
-    const m = e.msg.match(/^#世界\s*查看\s*(\d+)?$/);
-    const limit = m && m[1] ? Math.min(50, Number(m[1])) : client.cfg.query_default;
-    const res = await client.query(limit);
-    if (!res.ok) {
-      e.reply(
-        client.connected
-          ? '⚠️ 查询超时,请稍后再试'
-          : '⚠️ 尚未连接到云端,稍后自动重试中…(可用「#世界 状态」查看)'
-      );
+    if (!result.messages?.length) {
+      e.reply('诸天世界频道暂无消息');
       return true;
     }
-    if (!res.messages || !res.messages.length) {
-      e.reply('🌿 诸天世界频道暂无留言,快来抢占第一楼!');
-      return true;
-    }
-    const lines = res.messages.map((x) => {
-      const t = new Date(x.ts).toLocaleString('zh-CN', { hour12: false });
-      let line = `[${x.name} · ${t}]\n${clientFilter(x.msg)}`;
-      // 群号可见性:public=全员可见;admin=仅本服管理员可见;其他不显示
-      if (x.expose_level === 'public' && Array.isArray(x.groups) && x.groups.length) {
-        line += `\n[群:${x.groups.join('、')}]`;
+    const lines = result.messages.map((message) => {
+      const time = new Date(message.ts).toLocaleString('zh-CN', {
+        hour12: false,
+      });
+      let line = `[${message.name} · ${
+        message.sender_name
+      } · ${time}]\n${clientFilter(message.msg)}`;
+      if (message.expose_level === 'public' && message.groups?.length) {
+        line += `\n[群：${message.groups.join('、')}]`;
       } else if (
-        x.expose_level === 'admin' &&
+        message.expose_level === 'admin' &&
         e.isMaster &&
-        Array.isArray(x.groups) &&
-        x.groups.length
+        message.groups?.length
       ) {
-        line += `\n[群:${x.groups.join('、')}](仅管理员可见)`;
+        line += `\n[群：${message.groups.join('、')}，仅管理员可见]`;
       }
       return line;
     });
     e.reply(
-      `【诸天世界频道 · 共 ${res.total} 条,显示最近 ${res.messages.length} 条】\n` +
-        lines.join('\n\n')
+      `【诸天世界频道 · 最近 ${result.messages.length} 条】\n${lines.join(
+        '\n\n'
+      )}`
     );
+    return true;
+  }
+
+  async join(e) {
+    if (!e.isGroup) return e.reply('请在需要加入世界频道的群里发送该指令');
+    if (!e.isMaster) return e.reply('仅机器人管理员可让群聊加入世界频道');
+    if (!client.joinGroup(e.group_id)) return e.reply('本群已经加入世界频道');
+    e.reply('本群已加入诸天世界频道，之后将实时收取跨服消息');
+    return true;
+  }
+
+  async leave(e) {
+    if (!e.isGroup) return e.reply('请在需要退出世界频道的群里发送该指令');
+    if (!e.isMaster) return e.reply('仅机器人管理员可让群聊退出世界频道');
+    if (!client.leaveGroup(e.group_id)) return e.reply('本群尚未加入世界频道');
+    e.reply('本群已退出诸天世界频道');
     return true;
   }
 
   async stat(e) {
-    const s = client.status();
-    const conn = s.connected ? (s.authed ? '已连接云端' : '握手中…') : '未连接(自动重连中)';
-    const groups = client.groups();
-    const exposeText =
-      s.expose_group === 'public'
-        ? '对全员公开'
-        : s.expose_group === 'admin'
-          ? '仅其他服管理员可见'
-          : '不公开';
-    e.reply(
-      [
-        '【世界频道状态】',
-        `开关:${s.enable ? '已开启' : '已关闭'}`,
-        `连接:${conn}`,
-        `云端:${s.url}`,
-        `本服标识:${s.server_id}`,
-        `区服昵称:${s.name}(对所有服可见)`,
-        `群号公开:${exposeText}`,
-        `本服群号:${groups.length ? groups.join('、') : '(该实例尚未在此群收发过世界指令)'}`
-      ].join('\n')
-    );
+    const status = client.status();
+    const connection = status.connected
+      ? status.authed
+        ? '已连接'
+        : '鉴权中'
+      : '未连接，自动重连中';
+    const lines = [
+      '【世界频道状态】',
+      `开关：${status.enable ? '已开启' : '已关闭'}`,
+      `连接：${connection}`,
+      `当前群：${
+        e.isGroup && client.isGroupJoined(e.group_id) ? '已加入' : '未加入'
+      }`,
+      `已收取序号：${status.last_seen_seq}`,
+    ];
+    if (e.isMaster && !e.isGroup) {
+      lines.push(
+        `总机：${status.url}`,
+        `本服标识：${status.server_id}`,
+        `区服昵称：${status.name}`,
+        `已加入群：${
+          status.joined_groups.length ? status.joined_groups.join('、') : '无'
+        }`,
+        `最近错误：${status.last_error || '无'}`
+      );
+    }
+    e.reply(lines.join('\n'));
     return true;
   }
 
   async rename(e) {
-    if (!e.isMaster) {
-      e.reply('仅管理员可修改本服昵称');
-      return true;
-    }
-    const m = e.msg.match(/^#世界\s*改名\s*([\s\S]+)$/);
-    const name = (m && m[1] ? m[1] : '').trim().slice(0, 30);
-    if (!name) {
-      e.reply('用法:#世界 改名 <区服昵称>\n例如:#世界 改名 遮天·莫无铭的群');
-      return true;
-    }
-    if (client.setName(name)) {
-      e.reply(`✅ 本服昵称已设为「${name}」(重连云端后对所有服生效)`);
-    } else {
-      e.reply('⚠️ 昵称设置失败');
-    }
+    if (!e.isMaster) return e.reply('仅机器人管理员可修改本服昵称');
+    const name = (e.msg.match(/^#世界\s*改名\s*([\s\S]+)$/)?.[1] || '')
+      .trim()
+      .slice(0, 30);
+    if (!name) return true;
+    client.setName(name);
+    e.reply(`本服昵称已设为「${name}」，重连后生效`);
     return true;
   }
 
+  confirmationKey(type, e) {
+    return `${type}:${e.user_id}:${e.group_id || 'private'}`;
+  }
+
+  confirmed(type, e) {
+    const key = this.confirmationKey(type, e);
+    const timestamp = this.pendingConfirmations.get(key) || 0;
+    if (Date.now() - timestamp < 30_000) {
+      this.pendingConfirmations.delete(key);
+      return true;
+    }
+    this.pendingConfirmations.set(key, Date.now());
+    return false;
+  }
+
   async exposeAdmin(e) {
-    if (!e.isMaster) {
-      e.reply('仅管理员可操作群号公开');
-      return true;
+    if (!e.isMaster) return e.reply('仅机器人管理员可操作群号公开');
+    if (client.cfg.expose_group === 'admin')
+      return e.reply('当前已设为仅其他服管理员可见');
+    if (!this.confirmed('admin', e)) {
+      return e.reply(
+        '确认后，已加入世界频道的群号会提供给其他服管理员。30 秒内再次发送本指令确认。'
+      );
     }
-    const cur = client.cfg.expose_group;
-    if (cur === 'public') {
-      e.reply('当前已对全员公开。如需改为仅管理员可见,请先「#世界 关闭群号」再重新设置。');
-      return true;
-    }
-    if (cur === 'admin') {
-      e.reply('已设为「仅其他服管理员可见」,普通成员看不到你的群号。\n如需对全员公开,发送:#世界 群号全员公开');
-      return true;
-    }
-    // cur === false
-    if (this._pendingValid('admin')) {
-      this._pending.admin = 0;
-      if (client.setExpose('admin')) {
-        e.reply('✅ 已开启:你的真实群号将对其他服【管理员】可见(普通成员不可见)。重连云端后生效。');
-      } else {
-        e.reply('⚠️ 设置失败');
-      }
-      return true;
-    }
-    this._pending.admin = Date.now();
-    e.reply(
-      '⚠️ 确认公开群号?\n开启后你的真实 QQ 群号将显示给其他服的【管理员】(普通成员看不到)。\n30秒内再次发送「#世界 公开群号」以确认。'
-    );
+    client.setExpose('admin');
+    e.reply('群号已设为仅其他服管理员可见');
     return true;
   }
 
   async exposePublic(e) {
-    if (!e.isMaster) {
-      e.reply('仅管理员可操作群号公开');
-      return true;
+    if (!e.isMaster) return e.reply('仅机器人管理员可操作群号公开');
+    if (!this.confirmed('public', e)) {
+      return e.reply(
+        '确认后，已加入世界频道的群号会对所有成员公开。30 秒内再次发送本指令确认。'
+      );
     }
-    const cur = client.cfg.expose_group;
-    if (cur === false) {
-      e.reply('请先发送「#世界 公开群号」开启群号展示,再决定是否需要全员公开。');
-      return true;
-    }
-    if (cur === 'public') {
-      e.reply('当前已对【全员】公开,所有服成员查看世界频道都能看到你的群号。');
-      return true;
-    }
-    // cur === 'admin' -> 二次确认
-    if (this._pendingValid('public')) {
-      this._pending.public = 0;
-      if (client.setExpose('public')) {
-        e.reply('✅ 群号已对【全员】公开,所有服成员查看世界频道都能看到你的真实群号。重连云端后生效。');
-      } else {
-        e.reply('⚠️ 设置失败');
-      }
-      return true;
-    }
-    this._pending.public = Date.now();
-    e.reply(
-      '⚠️ 二次确认:对全员公开后,所有服【普通成员】也能看到你的真实群号。\n30秒内再次发送「#世界 群号全员公开」以确认。'
-    );
+    client.setExpose('public');
+    e.reply('群号已对所有世界频道成员公开');
     return true;
   }
 
   async exposeOff(e) {
-    if (!e.isMaster) {
-      e.reply('仅管理员可操作群号公开');
-      return true;
-    }
-    this._pending.admin = 0;
-    this._pending.public = 0;
-    if (client.setExpose(false)) {
-      e.reply('✅ 已关闭群号公开,他人世界频道不再显示你的群号。');
-    } else {
-      e.reply('⚠️ 设置失败');
-    }
+    if (!e.isMaster) return e.reply('仅机器人管理员可操作群号公开');
+    client.setExpose(false);
+    e.reply('已关闭群号公开');
     return true;
   }
 
   async toggle(e) {
-    if (!e.isMaster) {
-      e.reply('仅管理员可操作世界频道开关');
-      return true;
-    }
-    const now = !client.cfg.enable;
-    client.setEnable(now);
-    e.reply(`诸天世界频道已${now ? '开启' : '关闭'}`);
+    if (!e.isMaster) return e.reply('仅机器人管理员可操作世界频道开关');
+    const enabled = !client.cfg.enable;
+    client.setEnable(enabled);
+    e.reply(`诸天世界频道已${enabled ? '开启' : '关闭'}`);
     return true;
   }
 }
