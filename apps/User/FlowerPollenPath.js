@@ -11,6 +11,7 @@ import {
   exist_najie_thing,
   existplayer,
   player_efficiency,
+  sleep,
 } from '../../model/xiuxian.js';
 import {
   canCultivateExtraPath,
@@ -22,7 +23,13 @@ import {
 import {
   FLOWER_POLLEN_MEDIA,
   FLOWER_FRUITS,
+  FLOWER_TRIBULATION_WAVES_PER_STAGE,
+  FLOWER_TRIBULATION_WAVE_INTERVAL_MS,
+  FLOWER_TRIBULATION_ERA_DIFFICULTY,
   applyAncestorCall,
+  applyFlowerTribulationOutcome,
+  calcFlowerTribulationMitigation,
+  calculateFlowerTribulationWave,
   checkGongfaGate,
   completeFlowerExtremeTrial,
   ensureFlowerPollenState,
@@ -31,6 +38,7 @@ import {
   getFlowerEvolutionCost,
   getFlowerDaoWoundState,
   getFlowerEraProfile,
+  getFlowerTribulationBaseAtk,
   getNextFlowerExtremeTrial,
   getPollenPollutionState,
   getRequiredPollenQuality,
@@ -45,12 +53,12 @@ import {
   resolveFlowerBreakthrough,
   getFlowerTribulationCost,
   getFlowerTribulationGateState,
-  resolveFlowerTribulation,
   getFlowerRootState,
   consumeFlowerFruit,
   repairFlowerRoot,
   recordFlowerBreathingPractice,
 } from '../../model/flowerPollenPath.js';
+import { cooldownRevivalGongfas, resolveGongfaRevival } from '../../model/tribulationRevival.js';
 import { checkPlaneRealmLaw } from '../../model/planeRealmLaw.js';
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import { getShanghaiDateKey } from '../../model/weimianTravel.js';
@@ -501,7 +509,7 @@ export class FlowerPollenPath extends plugin {
     const userId = await resolveUserId(e);
     if (!(await existplayer(userId))) return e.reply('玩家不存在，请先创建角色。');
     const run = () => withPlayerMutationLock(userId, async () => {
-      const player = await Read_player(userId);
+      let player = await Read_player(userId);
       if (!selectedFlowerPath(player)) return e.reply('你尚未踏上花粉进化路。');
       if (await redis.get(`xiuxian:player:${userId}:game_action`) == 0) return e.reply('修仙：游戏进行中...');
       const realmId = Number(player.huafenlevel_id) || 1;
@@ -515,28 +523,106 @@ export class FlowerPollenPath extends plugin {
       if (Number(player.修为) < cost.cultivation || Number(player.血气) < cost.blood) {
         return e.reply(`渡劫需修为、血气各${bigNumberTransform(cost.cultivation)}（时代影响），当前本源不足。`);
       }
+
+      // 刷新属性后重读（拿到最新血量/防御）
+      await player_efficiency(userId);
+      player = await Read_player(userId);
+
       const stoneJar = Boolean(player.圣墟唯一机缘?.石罐本体);
+      // 可选护道资源：本源圣药优先，其次净化花露（一次性减伤）
+      const hasDew = Number(await exist_najie_thing(userId, '净化花露', '道具')) > 0;
+      const hasHerb = Number(await exist_najie_thing(userId, '本源圣药', '道具')) > 0;
+      const useHerb = hasHerb;
+      const useDew = hasDew && !useHerb;
+      if (useHerb) await Add_najie_thing(userId, '本源圣药', '道具', -1);
+      if (useDew) await Add_najie_thing(userId, '净化花露', '道具', -1);
+
       player.修为 -= cost.cultivation;
       player.血气 -= cost.blood;
-      const result = resolveFlowerTribulation(player, Math.random, { eraIndex, stoneJar });
-      if (result.reason === 'dao') return e.reply(`【道则未圆】请先完成${daoGate.rule.name}，再引动专属渡劫。`);
+
+      const levels = {
+        Level_list: data.Level_list,
+        LevelMax_list: data.LevelMax_list,
+        Levelmijing_list: data.Levelmijing_list,
+        xiangujinshi_list: data.xiangujinshi_list,
+        huafen_list: data.huafen_list,
+      };
+      const baseAtk = getFlowerTribulationBaseAtk(player, levels);
+      const mitigation = calcFlowerTribulationMitigation(player, { realmId, stoneJar, dew: useDew, herb: useHerb });
+      const defense = Number(player.防御) || 0;
+      player.当前血量 = Number(player.血量上限) || 1;
+      delete player._命格复活已判;
+
+      await e.reply([
+        `【${gate.rule.name}·引劫】`,
+        `雷劫基准攻击：${bigNumberTransform(baseAtk)}（四体系境界，天道不认外物）`,
+        `时代难度：${getFlowerEraProfile(eraIndex).name}×${FLOWER_TRIBULATION_ERA_DIFFICULTY[eraIndex] ?? 1}`,
+        `雷劫总数：${gate.rule.stages.length * FLOWER_TRIBULATION_WAVES_PER_STAGE} 道（每阶段 ${FLOWER_TRIBULATION_WAVES_PER_STAGE} 道）`,
+        `满血迎劫：${bigNumberTransform(player.当前血量)}${mitigation.rate > 0 ? `｜减伤链合计 ${(mitigation.rate * 100).toFixed(0)}%` : ''}`,
+        stoneJar ? '石罐本体微光流转，随时准备护体。' : '',
+        useHerb ? '本源圣药涤荡神魂，本次渡劫雷劫伤害 -25%。' : useDew ? '净化花露洗炼本源，本次渡劫雷劫伤害 -15%。' : '',
+      ].filter(Boolean).join('\n'));
+
+      // ===== 逐阶段逐道雷劫（每阶段至少 10 道）=====
+      let outcome = { ok: true, failedStage: null };
+      let diedAt = null;
+      outer: for (let stageIndex = 0; stageIndex < gate.rule.stages.length; stageIndex++) {
+        const stageName = gate.rule.stages[stageIndex];
+        await e.reply(`【第${stageIndex + 1}阶段：${stageName}】`);
+        for (let wave = 1; wave <= FLOWER_TRIBULATION_WAVES_PER_STAGE; wave++) {
+          cooldownRevivalGongfas(player);
+          const waveResult = calculateFlowerTribulationWave(baseAtk, gate.rule, realmId, stageIndex, wave, {
+            eraIndex,
+            defense,
+            mitigationRate: mitigation.rate,
+          });
+          player.当前血量 = Math.max(0, player.当前血量 - waveResult.damage);
+          const lines = [
+            `第${stageIndex + 1}阶段·第${wave}道雷劫`,
+            `劫伤：${bigNumberTransform(waveResult.damage)}${waveResult.reduction ? `（防御减免 ${bigNumberTransform(waveResult.reduction)}）` : ''}`,
+            `剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`,
+          ];
+          await e.reply(lines.join('\n'));
+          if (player.当前血量 <= 0) {
+            const revival = resolveGongfaRevival(player, { minggeList: data.minggeList });
+            if (revival.revived) {
+              await e.reply(revival.messages.join('\n'));
+              await Write_player(userId, player);
+              await sleep(FLOWER_TRIBULATION_WAVE_INTERVAL_MS);
+              continue;
+            }
+            await e.reply(revival.messages.join('\n'));
+            player.当前血量 = 1;
+            outcome = { ok: false, failedStage: stageName };
+            diedAt = { stageIndex, wave };
+            break outer;
+          }
+          await Write_player(userId, player);
+          await sleep(FLOWER_TRIBULATION_WAVE_INTERVAL_MS);
+        }
+      }
+
+      // ===== 奖惩结算 =====
+      const settlement = applyFlowerTribulationOutcome(player, outcome, Math.random, { realmId, stoneJar, now: Date.now() });
       await Write_player(userId, player);
       await refreshAttributes(userId);
 
-      if (!result.ok) {
+      if (!settlement.ok) {
         return e.reply([
-          `【${result.rule.name}${result.reason === 'mutated' ? '·始祖异变' : '·渡劫失败'}】`,
-          `在「${result.failedStage}」阶段，花粉潮汐反噬本源。`,
-          `成功率：${(result.chance * 100).toFixed(1)}%｜失败保护：${result.failures}次`,
-          `始祖污染度 +${result.pollutionGain}（当前${player.始祖污染度}/100），隐患${player.花粉隐患}。`,
-          '渡劫消耗已结算，可净化隐患后再次发送 #花粉渡劫。',
+          `【${gate.rule.name}·${settlement.mutated ? '始祖异变' : '渡劫失败'}】`,
+          `在第${(diedAt?.stageIndex ?? 0) + 1}阶段·第${diedAt?.wave ?? 1}道雷劫时，生命真形被劈碎！`,
+          `修为 -${bigNumberTransform(settlement.punishment.cultivationLoss)}、血气 -${bigNumberTransform(settlement.punishment.bloodLoss)}｜道伤 +1`,
+          `始祖污染度 +${settlement.pollutionGain}（当前${player.始祖污染度}/100），花粉隐患 ${player.花粉隐患}。`,
+          `失败保护：下次渡劫雷劫伤害 -${Math.min(15, Math.trunc(settlement.failures * 3))}%。`,
+          '可净化隐患与污染后，再次发送 #花粉渡劫。',
         ].join('\n'));
       }
       return e.reply([
-        `【${result.rule.name}·渡劫成功】`,
-        `你渡过：${result.stages.map(stage => `${stage.name}✓`).join(' → ')}`,
-        `进化积淀 +${result.rewardAccumulation}｜隐患 -${result.riskRelief}｜始祖污染 -${result.pollutionRelief}`,
-        '专属渡劫印记已留下，发送 #进化继续冲击下一境。',
+        `【${gate.rule.name}·渡劫成功】`,
+        `你扛过全部 ${gate.rule.stages.length * FLOWER_TRIBULATION_WAVES_PER_STAGE} 道雷劫，生命层次完成跃迁！`,
+        `剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`,
+        `进化积淀 +${settlement.rewardAccumulation}｜隐患 -${settlement.riskRelief}｜始祖污染 -${settlement.pollutionRelief}`,
+        '专属渡劫印记已留下，发送 #进化 继续冲击下一境。',
       ].join('\n'));
     });
     const result = await withTribulationLock(userId, run);

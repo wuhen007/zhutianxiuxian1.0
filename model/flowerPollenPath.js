@@ -1,4 +1,5 @@
 import { addGongfaProficiency, getGongfaProficiencyProfile } from './gongfaProficiency.js';
+import { reduceTribulationDamageByDefense } from './tribulationDamage.js';
 
 export const FLOWER_POLLEN_MEDIA = Object.freeze({
   普通进化花粉: Object.freeze({ quality: 1, chance: 0.05, risk: 12, accumulation: 10 }),
@@ -104,8 +105,32 @@ export const FLOWER_TRIBULATION_RULES = Object.freeze({
   23: Object.freeze({ name: '祭道焚因果劫', stages: Object.freeze(['焚尽旧道', '祭掉因果', '新道重燃', '祭道定形']), baseChance: 0.42, costRate: 0.14, failureRisk: 26, failurePollution: 20, rewardAccumulation: 300, riskRelief: 30, pollutionRelief: 20 }),
   24: Object.freeze({ name: '超脱离尘劫', stages: Object.freeze(['诸世剥离', '唯一真形', '超脱定锚', '彼岸回望']), baseChance: 0.38, costRate: 0.15, failureRisk: 28, failurePollution: 22, rewardAccumulation: 360, riskRelief: 32, pollutionRelief: 22 }),
 });
-// ==== 进化成本（用户定档：15000万 × 5^等级，受时代影响）====
-export const EVOLUTION_BASE_COST = 150000000;
+// ==== 花粉渡劫·伤害模型（对标遮天渡劫）====
+// 雷劫基准总缩放：调平衡只改这一个数（对标 TRIBULATION_BASE_ATK_SCALE）
+export const FLOWER_TRIBULATION_ATK_SCALE = 1;
+// 每阶段雷劫道数（用户定档：每个阶段至少 10 道）
+export const FLOWER_TRIBULATION_WAVES_PER_STAGE = 10;
+// 每道雷劫间隔（毫秒）：对标遮天 10 秒，QQ 群取 3 秒平衡节奏
+export const FLOWER_TRIBULATION_WAVE_INTERVAL_MS = 3000;
+// 劫难倍率（对标 ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS，按花粉路数值规模标定）
+// 校准基准：9级圣者花劫 四体系基础攻 7200万 下，倍率3 → 无装备必死/中配需复活搏/高配稳过。
+// 全局再缩放用 FLOWER_TRIBULATION_ATK_SCALE。
+export const FLOWER_TRIBULATION_DAMAGE_MULTIPLIERS = Object.freeze({
+  5: 2, 7: 3, 9: 3, 11: 4, 14: 5, 16: 6, 17: 5, 19: 7, 21: 8, 22: 9, 23: 11, 24: 13,
+});
+// 阶段伤害系数（对标遮天 0.05→0.15→0.4→1.0 阶梯，按阶段数取表）
+export const FLOWER_TRIBULATION_STAGE_RATIOS = Object.freeze({
+  3: Object.freeze([0.25, 0.6, 1.0]),
+  4: Object.freeze([0.2, 0.45, 0.75, 1.0]),
+});
+// 时代难度系数：神话/太古/天命/末法/绝灵（与时代成功率偏移同向，时代越差天劫越凶）
+export const FLOWER_TRIBULATION_ERA_DIFFICULTY = Object.freeze([0.8, 0.85, 1.0, 1.3, 1.6]);
+// 失败保护：每失败 1 次，下次渡劫雷劫伤害 -3%，上限 -15%（伤害模型保底）
+export const FLOWER_TRIBULATION_FAILURE_PROTECTION = 0.03;
+export const FLOWER_TRIBULATION_FAILURE_PROTECTION_CAP = 0.15;
+
+// ==== 进化成本（用户定档：1亿 × 2^等级，受时代影响）====
+export const EVOLUTION_BASE_COST = 100000000;
 
 // 时代消耗系数：与 Level.js 时代口径保持一致（神话-25% / 太古-20% / 天命 / 末法×2 / 绝灵×3）
 export const ERA_COST_RATES = Object.freeze([0.75, 0.8, 1.0, 2.0, 3.0]);
@@ -238,11 +263,11 @@ export function getFlowerEraProfile(eraIndex = 2) {
   };
 }
 
-/** 进化成本 = 15000万 × 5^等级 × 时代成本系数（用户定档公式） */
+/** 进化成本 = 1亿 × 2^等级 × 时代成本系数（用户定档公式） */
 export function getFlowerEvolutionCost(currentLevelId, eraIndex = 2) {
   const level = Math.max(1, Math.min(25, Math.trunc(number(currentLevelId, 1))));
   const { costRate } = getFlowerEraProfile(eraIndex);
-  return Math.trunc(EVOLUTION_BASE_COST * 5 ** level * costRate);
+  return Math.trunc(EVOLUTION_BASE_COST * 2 ** level * costRate);
 }
 
 export function getBestBreathingMethod(player) {
@@ -432,6 +457,98 @@ export function getFlowerTribulationCost(currentLevelId, eraIndex = 2) {
   return { cultivation: amount, blood: amount, rule };
 }
 
+/**
+ * 雷劫基准攻击：四体系基础攻击之和（练气+炼体+秘境+仙古+花粉×属性倍率）。
+ * 天道只认境界、不认外物——装备/帝兵/至宝/额外加成一律不计入，杜绝"越肝装备天雷越猛"的反向激励。
+ */
+export function getFlowerTribulationBaseAtk(player, levels = {}) {
+  ensureFlowerPollenState(player);
+  const get = (list, id) => Number(list?.find(item => Number(item.level_id) === Number(id))?.基础攻击) || 0;
+  const 练气 = get(levels.Level_list, player.level_id);
+  const 炼体 = get(levels.LevelMax_list, player.Physique_id);
+  const 秘境 = get(levels.Levelmijing_list, player.mijinglevel_id);
+  const 仙古 = get(levels.xiangujinshi_list, player.xiangulevel_id);
+  const 花粉 = get(levels.huafen_list, player.huafenlevel_id);
+  const 倍率 = getFlowerPathAttributeMultiplier(player);
+  return Math.trunc((练气 + 炼体 + 秘境 + 仙古 + 花粉 * 倍率) * FLOWER_TRIBULATION_ATK_SCALE);
+}
+
+/**
+ * 减伤链汇总：呼吸法/分支/污染期/始祖印记/石罐/净化资源/失败保护。
+ * 返回总减免率（上限 70%）与分项明细，供渡劫结算与战报展示。
+ */
+export function calcFlowerTribulationMitigation(player, options = {}) {
+  ensureFlowerPollenState(player);
+  const pollution = getPollenPollutionState(player);
+  const [, breathing] = getBestBreathingMethod(player);
+  const branch = getFlowerBranchProfile(player);
+  const realmId = Math.trunc(number(options.realmId, player.huafenlevel_id));
+  const failures = Math.max(0, Math.trunc(number(player.花粉渡劫?.failures?.[realmId])));
+  const protection = Math.min(FLOWER_TRIBULATION_FAILURE_PROTECTION_CAP, failures * FLOWER_TRIBULATION_FAILURE_PROTECTION);
+  const breathingRate = breathing * pollution.breathingMultiplier * 0.5;
+  const branchRate = branch.name === '究极' ? 0.08 : branch.name === '宇究' ? 0.06 : branch.name === '大宇' ? -0.03 : 0;
+  const pollutedRate = pollution.polluted ? 0.05 : 0;
+  const markedRate = pollution.marked ? 0.1 : 0;
+  const stoneJarRate = options.stoneJar ? 0.08 : 0;
+  const herbRate = options.herb ? 0.25 : options.dew ? 0.15 : 0;
+  const rate = Math.min(0.7, Math.max(0, breathingRate + branchRate + pollutedRate + markedRate + stoneJarRate + herbRate + protection));
+  return { rate, breathingRate, branchRate, pollutedRate, markedRate, stoneJarRate, herbRate, protection };
+}
+
+/**
+ * 单道雷劫伤害 = 基准攻 × 阶段系数 × 劫难倍率 × 时代难度 × 递增系数(1+0.02×(wave-1))，
+ * 再经防御减免（防御×0.3 抵扣）与减伤链总减免，最低 1 点。
+ */
+export function calculateFlowerTribulationWave(baseAtk, rule, realmId, stageIndex, wave, options = {}) {
+  const stageCount = Math.max(1, Math.trunc(number(rule?.stages?.length, 3)));
+  const ratios = FLOWER_TRIBULATION_STAGE_RATIOS[stageCount] || FLOWER_TRIBULATION_STAGE_RATIOS[3];
+  const stageRatio = ratios[Math.min(Math.max(0, Math.trunc(number(stageIndex, 0))), ratios.length - 1)] || 1;
+  const multiplier = FLOWER_TRIBULATION_DAMAGE_MULTIPLIERS[Math.trunc(number(realmId, 9))] || 10;
+  const eraDifficulty = FLOWER_TRIBULATION_ERA_DIFFICULTY[Math.max(0, Math.min(4, Math.trunc(number(options.eraIndex, 2))))] || 1;
+  const waveFactor = 1 + 0.02 * (Math.max(1, Math.trunc(number(wave, 1))) - 1);
+  const raw = Math.max(1, Math.trunc(baseAtk * stageRatio * multiplier * eraDifficulty * waveFactor));
+  const { damage: afterDefense, reduction } = reduceTribulationDamageByDefense(raw, Math.max(0, number(options.defense)));
+  const mitigationRate = clamp(number(options.mitigationRate), 0, 0.7);
+  const damage = Math.max(1, Math.trunc(afterDefense * (1 - mitigationRate)));
+  return { raw, reduction, damage, stageRatio, multiplier, eraDifficulty, waveFactor, mitigationRate };
+}
+
+/**
+ * 整场花粉渡劫·伤害模拟（纯同步，供测试与战报预览）。
+ * 每阶段 FLOWER_TRIBULATION_WAVES_PER_STAGE 道雷劫，血量归零即中断。
+ * options: { realmId, eraIndex, defense, maxHp, levels, stoneJar, dew, herb }
+ */
+export function simulateFlowerTribulation(player, options = {}) {
+  ensureFlowerPollenState(player);
+  const realmId = Math.trunc(number(options.realmId, player.huafenlevel_id));
+  const gate = getFlowerTribulationGateState(player, realmId);
+  if (!gate.rule) return { ok: false, reason: 'no-rule', gate };
+  if (gate.completed) return { ok: false, reason: 'complete', gate };
+  const daoGate = getFlowerDaoGateState(player, realmId);
+  if (!daoGate.ok) return { ok: false, reason: 'dao', daoGate, gate };
+
+  const baseAtk = getFlowerTribulationBaseAtk(player, options.levels);
+  const mitigation = calcFlowerTribulationMitigation(player, { realmId, stoneJar: options.stoneJar, dew: options.dew, herb: options.herb });
+  let hp = Math.max(0, number(options.maxHp, number(player.血量上限)));
+  if (hp <= 0) hp = Math.max(1, number(options.currentHp, 1));
+  const defense = Math.max(0, number(options.defense));
+
+  const stages = gate.rule.stages.map((name, stageIndex) => {
+    const waves = [];
+    for (let wave = 1; wave <= FLOWER_TRIBULATION_WAVES_PER_STAGE; wave++) {
+      const waveResult = calculateFlowerTribulationWave(baseAtk, gate.rule, realmId, stageIndex, wave, {
+        eraIndex: options.eraIndex, defense, mitigationRate: mitigation.rate,
+      });
+      hp = Math.max(0, hp - waveResult.damage);
+      waves.push({ wave, damage: waveResult.damage, hp });
+      if (hp <= 0) break;
+    }
+    return { name, waves, survived: hp > 0 };
+  });
+  const failed = stages.find(stage => !stage.survived);
+  return { ok: !failed, reason: failed ? 'failed' : 'ok', baseAtk, mitigation, stages, hp, failedStage: failed?.name || null, gate, rule: gate.rule };
+}
+
 export function getFlowerTribulationChance(player, realmId = player?.huafenlevel_id, options = {}) {
   const gate = getFlowerTribulationGateState(player, realmId);
   if (!gate.rule) return 0;
@@ -459,6 +576,65 @@ export function getFlowerTribulationChance(player, realmId = player?.huafenlevel
   );
 }
 
+/**
+ * 花粉渡劫奖惩结算（单点维护，供 resolveFlowerTribulation 与指令层复用）。
+ * outcome: { ok, failedStage }；失败追加：修为血气各 -15%（当前总量）+ 道伤 +1。
+ */
+export function applyFlowerTribulationOutcome(player, outcome, random = Math.random, options = {}) {
+  ensureFlowerPollenState(player);
+  const realmId = Math.trunc(number(options.realmId, player.huafenlevel_id));
+  const gate = getFlowerTribulationGateState(player, realmId);
+  if (!gate.rule) return { ok: false, reason: 'no-rule' };
+  const now = Math.trunc(number(options.now, Date.now()));
+
+  if (outcome.ok) {
+    const record = { name: gate.rule.name, completedAt: now };
+    gate.path.completed[realmId] = record;
+    player.花粉隐患 = Math.max(0, player.花粉隐患 - gate.rule.riskRelief);
+    player.始祖污染度 = Math.max(0, player.始祖污染度 - gate.rule.pollutionRelief);
+    player.进化积淀 += gate.rule.rewardAccumulation;
+    gate.path.history.push({ realmId, name: gate.rule.name, ok: true, at: now });
+    gate.path.history = gate.path.history.slice(-20);
+    return {
+      ok: true,
+      rule: gate.rule,
+      rewardAccumulation: gate.rule.rewardAccumulation,
+      riskRelief: gate.rule.riskRelief,
+      pollutionRelief: gate.rule.pollutionRelief,
+      record,
+    };
+  }
+
+  gate.path.failures[realmId] = gate.failures + 1;
+  player.花粉隐患 = Math.min(200, player.花粉隐患 + gate.rule.failureRisk);
+  const mutated = number(random()) < getMutationChance(player);
+  const stoneJarRate = options.stoneJar ? 0.5 : 1;
+  const pollutionGain = Math.max(1, Math.trunc(gate.rule.failurePollution * stoneJarRate)) + (mutated ? 6 : 0);
+  player.始祖污染度 = Math.min(POLLUTION_MAX, player.始祖污染度 + pollutionGain);
+  player.进化积淀 += Math.max(6, Math.trunc(gate.rule.rewardAccumulation * 0.2));
+  const cultivationLoss = Math.max(0, Math.floor(Number(player.修为 || 0) * 0.15));
+  const bloodLoss = Math.max(0, Math.floor(Number(player.血气 || 0) * 0.15));
+  player.修为 = Math.max(0, Number(player.修为 || 0) - cultivationLoss);
+  player.血气 = Math.max(0, Number(player.血气 || 0) - bloodLoss);
+  player.道伤 = Math.max(0, Math.trunc(number(player.道伤)) + 1);
+  gate.path.history.push({ realmId, name: gate.rule.name, ok: false, failedStage: outcome.failedStage || '', at: now });
+  gate.path.history = gate.path.history.slice(-20);
+  return {
+    ok: false,
+    reason: mutated ? 'mutated' : 'failed',
+    rule: gate.rule,
+    pollutionGain,
+    mutated,
+    failures: gate.failures + 1,
+    punishment: { cultivationLoss, bloodLoss, wounds: 1 },
+  };
+}
+
+/**
+ * 花粉专属渡劫结算（伤害模型）：逐道雷劫扣血，血量归零即失败。
+ * 保留契约：道则前置(dao)/失败惩罚(failures+隐患+污染)/成功奖励(印记+净化+积淀)/history 记录。
+ * options: { now, stoneJar, eraIndex, defense, maxHp, levels, dew, herb }
+ */
 export function resolveFlowerTribulation(player, random = Math.random, options = {}) {
   ensureFlowerPollenState(player);
   const realmId = Math.trunc(number(options.realmId, player.huafenlevel_id));
@@ -468,54 +644,15 @@ export function resolveFlowerTribulation(player, random = Math.random, options =
   const daoGate = getFlowerDaoGateState(player, realmId);
   if (!daoGate.ok) return { ok: false, reason: 'dao', daoGate, gate };
 
-  const chance = getFlowerTribulationChance(player, realmId, options);
-  const stageAdjustments = [0.05, 0.02, 0, -0.05];
-  const stages = gate.rule.stages.map((name, index) => {
-    const stageChance = clamp(chance + (stageAdjustments[index] || 0), 0.15, 0.95);
-    return { name, chance: stageChance, ok: number(random()) < stageChance };
-  });
-  const failed = stages.find(stage => !stage.ok);
-  const now = Math.trunc(number(options.now, Date.now()));
-
-  if (failed) {
-    gate.path.failures[realmId] = gate.failures + 1;
-    player.花粉隐患 = Math.min(200, player.花粉隐患 + gate.rule.failureRisk);
-    const mutated = number(random()) < getMutationChance(player);
-    const stoneJarRate = options.stoneJar ? 0.5 : 1;
-    const pollutionGain = Math.max(1, Math.trunc(gate.rule.failurePollution * stoneJarRate)) + (mutated ? 6 : 0);
-    player.始祖污染度 = Math.min(POLLUTION_MAX, player.始祖污染度 + pollutionGain);
-    player.进化积淀 += Math.max(6, Math.trunc(gate.rule.rewardAccumulation * 0.2));
-    gate.path.history.push({ realmId, name: gate.rule.name, ok: false, failedStage: failed.name, at: now });
-    gate.path.history = gate.path.history.slice(-20);
-    return {
-      ok: false,
-      reason: mutated ? 'mutated' : 'failed',
-      rule: gate.rule,
-      chance,
-      stages,
-      failedStage: failed.name,
-      pollutionGain,
-      mutated,
-      failures: gate.failures + 1,
-    };
-  }
-
-  const record = { name: gate.rule.name, completedAt: now };
-  gate.path.completed[realmId] = record;
-  player.花粉隐患 = Math.max(0, player.花粉隐患 - gate.rule.riskRelief);
-  player.始祖污染度 = Math.max(0, player.始祖污染度 - gate.rule.pollutionRelief);
-  player.进化积淀 += gate.rule.rewardAccumulation;
-  gate.path.history.push({ realmId, name: gate.rule.name, ok: true, at: now });
-  gate.path.history = gate.path.history.slice(-20);
+  const simulation = simulateFlowerTribulation(player, options);
+  const outcome = applyFlowerTribulationOutcome(player, { ok: simulation.ok, failedStage: simulation.failedStage }, random, options);
   return {
-    ok: true,
-    rule: gate.rule,
-    chance,
-    stages,
-    rewardAccumulation: gate.rule.rewardAccumulation,
-    riskRelief: gate.rule.riskRelief,
-    pollutionRelief: gate.rule.pollutionRelief,
-    record,
+    ...outcome,
+    failedStage: simulation.failedStage,
+    chance: 0,
+    stages: simulation.stages,
+    hp: simulation.hp,
+    baseAtk: simulation.baseAtk,
   };
 }
 
