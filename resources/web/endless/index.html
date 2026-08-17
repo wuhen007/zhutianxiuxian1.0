@@ -53,8 +53,15 @@
               </div>
               <p id="enemy-trait" class="enemy-trait"></p>
               <div id="battle-reward" class="battle-reward" hidden></div>
-              <div id="damage-board" class="damage-board"></div>
-              <ol id="battle-logs" class="battle-logs"></ol>
+              <details id="damage-board" class="damage-board">
+                <summary>伤害榜</summary>
+                <div class="damage-rows"></div>
+              </details>
+              <div id="battle-logs-wrap" class="battle-logs-wrap">
+                <ol id="battle-logs" class="battle-logs"></ol>
+                <div id="logs-fade" class="logs-fade" hidden>↓ 下滑查看完整战报</div>
+                <button id="logs-drawer-open" class="logs-drawer-btn" type="button" hidden>查看完整战报（<span id="logs-total-count">0</span>条）</button>
+              </div>
             </div>
           </section>
 
@@ -117,6 +124,29 @@
       <button id="retry-button" type="button" hidden>重新连接</button>
     </div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <div id="mobile-status-bar" class="mobile-status-bar" hidden>
+      <span class="m-bar-layer"><b id="mobile-layer">--</b><i>层</i></span>
+      <span class="m-bar-divider"></span>
+      <span class="m-bar-phase" id="mobile-phase">--</span>
+      <span class="m-bar-divider"></span>
+      <span class="m-bar-life">命火 <b id="mobile-life">--</b></span>
+      <span class="m-bar-divider m-bar-hide-mobile"></span>
+      <span class="m-bar-party m-bar-hide-mobile">同行 <b id="mobile-party">--</b></span>
+    </div>
+
+    <div id="logs-drawer" class="logs-drawer" hidden>
+      <div class="logs-drawer-mask" id="logs-drawer-mask"></div>
+      <div class="logs-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="logs-drawer-title">
+        <div class="logs-drawer-head">
+          <strong id="logs-drawer-title">第 -- 层战报</strong>
+          <small id="logs-drawer-sub">完整战斗记录</small>
+          <button id="logs-drawer-close" type="button" aria-label="关闭">×</button>
+        </div>
+        <ol id="logs-drawer-list" class="logs-drawer-list"></ol>
+      </div>
+    </div>
+
     <script src="/endless/app.js?v=2"></script>
   </body>
 </html>

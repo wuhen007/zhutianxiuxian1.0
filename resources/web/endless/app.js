@@ -163,10 +163,12 @@ function renderBattle(state) {
     for (const [name, value] of rewards) reward.append(element('b', '', `${name} +${formatAmount(value)}`));
   }
   const damage = $('#damage-board');
-  damage.replaceChildren();
+  const damageRows = $('.damage-rows');
+  damageRows.replaceChildren();
   const entries = Object.entries(battle.damageByMember || {})
     .filter(([id, value]) => id !== '_fusion' && Number(value) > 0)
     .sort((a, b) => b[1] - a[1]);
+  damage.hidden = !entries.length;
   const maximum = Math.max(1, ...entries.map(([, value]) => Number(value) || 0));
   for (const [id, value] of entries) {
     const row = element('div', 'damage-row');
@@ -175,11 +177,44 @@ function renderBattle(state) {
     fill.style.width = `${Math.max(3, Math.round((Number(value) / maximum) * 100))}%`;
     track.append(fill);
     row.append(element('span', '', state.team.memberNames[id] || id), track, element('b', '', formatAmount(value)));
-    damage.append(row);
+    damageRows.append(row);
   }
+  if (damage.open && !damageRows.children.length) damage.open = false;
+
   const logs = $('#battle-logs');
+  const logsWrap = $('#battle-logs-wrap');
   logs.replaceChildren();
-  for (const line of battle.logs || []) logs.append(element('li', '', line));
+  const allLogs = battle.logs || [];
+  // 手机端：超过 4 条时仅保留前 3 + 末 1，其余加 is-folded 隐藏；用"查看完整战报"按钮唤起抽屉
+  const FOLD_THRESHOLD = 4;
+  const FOLD_HEAD = 3;
+  const showFold = allLogs.length > FOLD_THRESHOLD;
+  for (let index = 0; index < allLogs.length; index++) {
+    const li = element('li', '', allLogs[index]);
+    if (showFold && index >= FOLD_HEAD && index < allLogs.length - 1) {
+      li.classList.add('is-folded');
+    }
+    logs.append(li);
+  }
+  const drawerBtn = $('#logs-drawer-open');
+  drawerBtn.hidden = !showFold;
+  setText('#logs-total-count', String(allLogs.length));
+  // 每关清空：新战报强制回到顶部，重新评估渐隐遮罩
+  logs.scrollTop = 0;
+  updateLogsFade();
+}
+
+function updateLogsFade() {
+  const logs = $('#battle-logs');
+  const fade = $('#logs-fade');
+  if (!logs || !fade) return;
+  const scrollable = logs.scrollHeight > logs.clientHeight + 2;
+  const atBottom = logs.scrollTop + logs.clientHeight >= logs.scrollHeight - 2;
+  fade.hidden = !scrollable || atBottom;
+  if (scrollable && !logs.dataset.fadeBound) {
+    logs.dataset.fadeBound = '1';
+    logs.addEventListener('scroll', updateLogsFade, { passive: true });
+  }
 }
 
 function renderTreasury(state) {
@@ -345,6 +380,12 @@ function render(state) {
   setText('#life-fire', `${state.run.lifeFire} / ${state.run.maxLifeFire}`);
   setText('#cycle-number', `第${Math.floor((Math.max(1, state.run.layer) - 1) / 10) + 1}劫`);
   setText('#footer-status', `${state.team.memberNames[state.team.viewer] || ''} · ${phaseName(state.run.phase)}`);
+  // 手机端吸顶状态条
+  setText('#mobile-layer', Math.max(1, Number(state.run.layer) || 1));
+  setText('#mobile-phase', phaseName(state.run.phase));
+  setText('#mobile-life', `${state.run.lifeFire}/${state.run.maxLifeFire}`);
+  setText('#mobile-party', `${state.members.length}/4`);
+  setText('#footer-status', `${state.team.memberNames[state.team.viewer] || ''} · ${phaseName(state.run.phase)}`);
   renderRoute(state);
   renderParty(state);
   renderBuild(state);
@@ -426,4 +467,32 @@ async function boot() {
 }
 
 $('#retry-button').addEventListener('click', () => location.reload());
+
+function openLogsDrawer() {
+  if (!currentState?.battle?.logs?.length) return;
+  const list = $('#logs-drawer-list');
+  list.replaceChildren();
+  for (const line of currentState.battle.logs) {
+    list.append(element('li', '', line));
+  }
+  setText('#logs-drawer-title', `第 ${currentState.run.layer} 层战报`);
+  setText('#logs-drawer-sub', `完整战报 · 共 ${currentState.battle.logs.length} 条`);
+  const drawer = $('#logs-drawer');
+  drawer.hidden = false;
+  list.scrollTop = 0;
+  document.body.style.overflow = 'hidden';
+}
+
+function closeLogsDrawer() {
+  $('#logs-drawer').hidden = true;
+  document.body.style.overflow = '';
+}
+
+$('#logs-drawer-open').addEventListener('click', openLogsDrawer);
+$('#logs-drawer-close').addEventListener('click', closeLogsDrawer);
+$('#logs-drawer-mask').addEventListener('click', closeLogsDrawer);
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !$('#logs-drawer').hidden) closeLogsDrawer();
+});
+
 boot();

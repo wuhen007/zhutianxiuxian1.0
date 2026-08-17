@@ -234,7 +234,8 @@ function battleView(run, userId) {
     trait: battle.trait,
     victory: battle.victory,
     rounds: battle.rounds,
-    logs: (battle.logs || []).slice(-36),
+    // 完整战报：返回本场全部日志（上限 400 条防极端超长），前端滚动查看
+    logs: (battle.logs || []).slice(-400),
     damageByMember: battle.damageByMember || {},
     reward: reward
       ? {

@@ -1,12 +1,12 @@
 {
-    "version": 1,
-    "status": "dormant",
-    "campaign": 0,
-    "wave": 0,
-    "lastCheckedWorldYear": null,
-    "nextWaveYear": null,
-    "active": null,
-    "prestige": {},
-    "prisoners": [],
-    "history": []
+  "version": 1,
+  "status": "dormant",
+  "campaign": 0,
+  "wave": 0,
+  "lastCheckedWorldYear": 1000,
+  "nextWaveYear": null,
+  "active": null,
+  "prestige": {},
+  "prisoners": [],
+  "history": []
 }
