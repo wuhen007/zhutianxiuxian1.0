@@ -12,6 +12,7 @@ import { withPlayerMutationLock } from "../../utils/playerMutationLock.js";
 import { FileRollbackTransaction } from "../SecretPlace/rebirthTransaction.js";
 import { getFishingTide } from "../../model/immortalFishing.js";
 import { getRealmEventWorldYear } from "../../model/realmEventClock.js";
+import { getShanghaiDateKey } from "../../model/weimianTravel.js";
 import {
   SEA_BOAT_NAMES,
   SEA_BOAT_TIERS,
@@ -84,6 +85,7 @@ export class SeaVoyage extends plugin {
         { reg: "^#造舟(?:\\s+升级)?$", fnc: "buildBoat" },
         { reg: "^#舟仓(?:\\s+拆解)?$", fnc: "boatShed" },
         { reg: "^#出海(?:\\s+[^\\s]+(?:\\s+[^\\s]+)?)?$", fnc: "setSail" },
+        { reg: "^#出海[1-3]$", fnc: "setSail" },
         { reg: "^#海域见闻$", fnc: "showSeaAtlas" },
         { reg: "^#领取见闻奖励$", fnc: "claimSeaAtlasRewards" },
       ],
@@ -186,7 +188,9 @@ export class SeaVoyage extends plugin {
           const remaining = Number(task.endAt) - Date.now();
           lines.push(remaining > 0
             ? "出海进行中：【" + task.route + "】约" + formatMinutes(remaining) + "分钟后回港。"
-            : "舟已回港，发送【#出海】领取渔获。");
+            : task.settled
+              ? "海域奇遇待选择，发送【#出海1】、【#出海2】或【#出海3】。"
+              : "舟已回港，发送【#出海】领取渔获。");
         } else {
           lines.push("舟停泊港中，发送【#出海 航线名】启航。");
         }
@@ -258,6 +262,7 @@ export class SeaVoyage extends plugin {
 
       // 无参数：查状态或结算回港
       if (!routeName) {
+        await ensurePlayerBoat(player, usr_qq);
         return this.settleVoyage(e, usr_qq, player, null);
       }
 
@@ -276,7 +281,7 @@ export class SeaVoyage extends plugin {
       }
 
       // 每日出海次数限制（Redis，25h 防跨日漂移）
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getShanghaiDateKey();
       const dailyKey = `xiuxian:sea_voyage_daily:${usr_qq}:${today}`;
       const usedToday = Number(await redis.get(dailyKey)) || 0;
       if (usedToday >= SEA_DAILY_VOYAGE_LIMIT) {
@@ -339,6 +344,9 @@ export class SeaVoyage extends plugin {
   /** 回港结算：发放基础收益，60% 触发海域事件三选一 */
   async settleVoyage(e, usr_qq, player, startRoute) {
     const task = player.出海任务;
+    if (task?.settled && task.eventId && !startRoute) {
+      return e.reply("海域奇遇待选择，请发送【#出海1】、【#出海2】或【#出海3】。");
+    }
     if (!task || task.settled) {
       if (startRoute) return this.setSailStart(e, usr_qq, player, startRoute);
       return e.reply([
@@ -378,6 +386,10 @@ export class SeaVoyage extends plugin {
       for (const material of base.materials) {
         await Add_najie_thing(usr_qq, material.name, material.class, material.amount, undefined, 1, { idempotencyKey: settleKey + ":mat:" + material.name });
       }
+      task.pendingCargo = [
+        { name: "众生愿鳞", class: "道具", amount: base.wishScales },
+        ...base.materials.map(material => ({ ...material })),
+      ];
       if (base.sighting) {
         recordSeaSighting(player, task.route, base.sighting);
       }
@@ -513,16 +525,36 @@ export class SeaVoyage extends plugin {
         }
       }
       if (branch.loseCargoRatio) {
-        lines.push("（风暴卷走部分货物）");
+        const losses = await this.reducePendingCargo(usr_qq, player, branch.loseCargoRatio, settleKey);
+        if (losses.length) lines.push("损失：" + losses.map(item => item.name + "x" + item.amount).join("、"));
       }
       lines.push(branch.message);
       return lines.join("\n");
     }
     if (choice.loseCargoRatio) {
-      lines.push("（部分货物被卷走）");
+      const losses = await this.reducePendingCargo(usr_qq, player, choice.loseCargoRatio, settleKey);
+      if (losses.length) lines.push("损失：" + losses.map(item => item.name + "x" + item.amount).join("、"));
     }
     lines.push(choice.message);
     return lines.join("\n");
+  }
+
+  async reducePendingCargo(usr_qq, player, ratio, settleKey) {
+    const cargo = player.出海任务?.pendingCargo;
+    const rate = Math.max(0, Math.min(1, Number(ratio) || 0));
+    if (!rate || !Array.isArray(cargo)) return [];
+    const losses = [];
+    for (const item of cargo) {
+      const owned = Math.max(0, Math.trunc(Number(item.amount) || 0));
+      const amount = Math.min(owned, Math.max(1, Math.floor(owned * rate)));
+      if (!amount) continue;
+      await Add_najie_thing(usr_qq, item.name, item.class, -amount, undefined, 1, {
+        idempotencyKey: settleKey + ":cargo-loss:" + item.name,
+      });
+      losses.push({ name: item.name, amount });
+    }
+    delete player.出海任务.pendingCargo;
+    return losses;
   }
 
   /** 领取全部可领取的见闻奖励（发现 + 集齐套装，含消耗） */
