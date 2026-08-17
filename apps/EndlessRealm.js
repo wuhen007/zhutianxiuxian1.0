@@ -23,6 +23,7 @@ import {
   getSettlement,
   getEndlessSweepReward,
   getWorldForLayer,
+  rerollEndlessChoices,
   resolveEndlessLayer,
 } from '../model/endlessRealm.js';
 import {
@@ -74,6 +75,7 @@ import {
   FUSION_ITEM,
   findEndlessProduct,
   formatTreasureClue,
+  getEndlessProductRewardAmount,
   mergeSetEquipment,
 } from '../model/endlessShop.js';
 import {
@@ -124,6 +126,7 @@ export class EndlessRealm extends plugin {
         { reg: '^#星图情报\\s*[1-3]$', fnc: 'showStarIntel' },
         { reg: '^#星图定途\\s*[1-3]$', fnc: 'selectStarRoute' },
         { reg: '^#无尽选择\\s*[1-4]$', fnc: 'chooseAbility' },
+        { reg: '^#(?:刷新|重置)无尽能力$', fnc: 'rerollAbilityChoices' },
         { reg: '^#劫后(?:抉择|选择)\\s*[1-3]$', fnc: 'chooseCheckpoint' },
         { reg: '^#无尽(?:下一关|下一层|挑战)$', fnc: 'nextLayer' },
         { reg: '^#无尽构筑$', fnc: 'showBuild' },
@@ -302,6 +305,9 @@ export class EndlessRealm extends plugin {
           ability.description
         }`;
       }),
+      ...(member.choiceRerollsRemaining > 0 && member.pendingDoubleChoiceCycle == null
+        ? [`${member.name}还可发送 #刷新无尽能力 重演本次选项`]
+        : []),
       `${member.name}发送 #无尽选择${choices.map((_, index) => index + 1).join('/')}`,
     ];
   }
@@ -309,10 +315,13 @@ export class EndlessRealm extends plugin {
   formatEndlessMeta(view) {
     const equipped = new Set(view.meta.equippedPuzzles);
     const nodeLines = view.nodes.map(node => {
-      const next = node.rank >= node.maxRank
-        ? '已圆满'
-        : `下一级${node.nextCost}道痕${node.nextGate ? `，需最高通过${node.nextGate}层` : ''}`;
-      return `${node.puzzle ? '[拼图]' : '[道碑]'} ${node.name} Lv.${node.rank}/${node.maxRank} · ${next}\n  ${node.description}`;
+      const next = node.branchLocked
+        ? `已锁定${view.effects.branchName}流派`
+        : node.rank >= node.maxRank
+          ? '已圆满'
+          : `下一级${node.nextCost}道痕${node.nextGate ? `，需最高通过${node.nextGate}层` : ''}`;
+      const type = node.branch ? '[流派]' : node.puzzle ? '[拼图]' : '[道碑]';
+      return `${type} ${node.name} Lv.${node.rank}/${node.maxRank} · ${next}\n  ${node.description}`;
     });
     const equippedNames = view.nodes
       .filter(node => equipped.has(node.id))
@@ -320,6 +329,7 @@ export class EndlessRealm extends plugin {
     return [
       '【万劫道碑·局外传承】',
       `劫境道痕：${view.balance}｜最高通过：${view.highestLayer}层`,
+      `当前流派：${view.effects.branchName || '未选择（首次参悟后锁定）'}`,
       `厉鬼拼图：${equipped.size}/${view.puzzleSlots}（${equippedNames.join('、') || '未装配'}）`,
       'Boss前未封存的道痕在团灭时仅保留30%，主动撤离全额保留。',
       '',
@@ -663,6 +673,7 @@ export class EndlessRealm extends plugin {
           title: '劫境行动',
           items: [
             { command: '#无尽选择1', description: '铭刻当前层的一项诸天能力' },
+            { command: '#刷新无尽能力', description: '参悟劫机重演后，每局可重演一次当前选项' },
             { command: '#无尽下一关', description: '全员完成抉择后由队长推进' },
             { command: '#劫后抉择1', description: 'Boss战后选择归息、机缘或升华' },
             { command: '#无尽构筑', description: '检视队伍属性、能力、机缘与共鸣' },
@@ -807,11 +818,13 @@ export class EndlessRealm extends plugin {
       index: String(index + 1).padStart(2, '0'),
       progress: Math.round(node.rank / node.maxRank * 100),
       maxed: node.rank >= node.maxRank,
-      locked: node.rank < node.maxRank && view.highestLayer < node.nextGate,
+      locked: node.branchLocked || (node.rank < node.maxRank && view.highestLayer < node.nextGate),
       equipped: equipped.has(node.id),
-      next: node.rank >= node.maxRank
-        ? '已参悟圆满'
-        : view.highestLayer < node.nextGate
+      next: node.branchLocked
+        ? `已锁定${view.effects.branchName}流派`
+        : node.rank >= node.maxRank
+          ? '已参悟圆满'
+          : view.highestLayer < node.nextGate
           ? `需最高通过${node.nextGate}层`
           : `下一级消耗${node.nextCost}道痕`,
     });
@@ -831,6 +844,7 @@ export class EndlessRealm extends plugin {
         { label: '已耗道痕', value: this.formatAmount(view.meta.spent), note: '重置返还其中90%' },
       ],
       notices: [
+        { tone: 'jade', title: '流派抉择', text: `当前：${view.effects.branchName || '未选择'}。治疗师、破阵师、守护者三选一，整碑重置后才可改换。` },
         { tone: 'jade', title: '厉鬼拼图', text: '局外装配后，仍需在本局获得【鬼眼】才会激活拼图属性与机制。' },
         { tone: 'danger', title: '死亡代价', text: 'Boss前未封存道痕在团灭时只保留30%；主动撤离可以全额带回。' },
       ],
@@ -1010,6 +1024,7 @@ export class EndlessRealm extends plugin {
         '#劫途星图 / #星图情报1',
         '#星图建议1 / #星图定途1',
         '#无尽选择1',
+        '#刷新无尽能力',
         '#万劫道碑 / #参悟道碑 攻击',
         '#装配厉鬼拼图 八音盒',
         '#劫后抉择1',
@@ -1140,6 +1155,7 @@ export class EndlessRealm extends plugin {
       if (product.dailyLimit && bought + amount > product.dailyLimit)
         return e.reply(`【${product.name}】每日限购${product.dailyLimit}件，你今天已购买${bought}件`);
       const cost = product.price * amount;
+      const rewardAmount = getEndlessProductRewardAmount(product, amount);
       if ((Number(player[ENDLESS_TOKEN]) || 0) < cost)
         return e.reply(`${ENDLESS_TOKEN}不足：需要${cost}，当前${Number(player[ENDLESS_TOKEN]) || 0}`);
 
@@ -1149,7 +1165,7 @@ export class EndlessRealm extends plugin {
       try {
         await Write_player(userId, player);
         if (product.action === 'item')
-          await Add_najie_thing(userId, product.name, product.itemClass, amount);
+          await Add_najie_thing(userId, product.name, product.itemClass, rewardAmount);
       } catch (error) {
         await Write_player(userId, original);
         logger.error(`[无尽商店] 购买失败 player=${userId} item=${product.name}`, error);
@@ -1187,7 +1203,7 @@ export class EndlessRealm extends plugin {
 
       const lines = [
         '【无尽商店·购买成功】',
-        `${product.name}×${amount}`,
+        `${product.name}×${rewardAmount}`,
         `消耗${ENDLESS_TOKEN}：${cost}`,
         `剩余${ENDLESS_TOKEN}：${player[ENDLESS_TOKEN]}`,
       ];
@@ -1840,6 +1856,33 @@ export class EndlessRealm extends plugin {
           `仍有${Object.keys(run.pendingChoices).length}名成员尚未选择`
         );
       return e.reply(lines.join('\n'));
+    });
+  }
+
+  async rerollAbilityChoices(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const current = await this.getPlayerTeam(userId);
+    if (!current || current.status !== 'running')
+      return e.reply('你当前不在无尽劫境中');
+    if (!this.isTeamGroup(e, current))
+      return e.reply('请回到无尽队伍所在群进行操作');
+    return this.withLock(e, `team:${current.id}`, async () => {
+      const run = await this.getRun(current.id);
+      if (!run) return e.reply('无尽劫境状态已经失效');
+      let result;
+      try {
+        result = rerollEndlessChoices(run, userId);
+      } catch (error) {
+        return e.reply(error.message);
+      }
+      await this.saveRun(run);
+      return e.reply([
+        '【万劫道碑·劫机重演】',
+        `因果回卷，本局刷新次数剩余：${result.remaining}`,
+        '',
+        ...this.formatChoices(run, userId),
+      ].join('\n'));
     });
   }
 

@@ -180,11 +180,11 @@ teamScaleRun.worldOrder = [...soloScaleRun.worldOrder];
 const soloEnemy = createEndlessEnemy(soloScaleRun, 1);
 const teamEnemy = createEndlessEnemy(teamScaleRun, 1);
 assert.equal(soloEnemy.teamScale, 1);
-assert.equal(teamEnemy.teamScale, 1.3);
+assert.equal(teamEnemy.teamScale, 1.27); // 队伍缩放 1+(人数-1)×0.27
 assert.equal(teamEnemy.unitName, soloEnemy.unitName);
-assert.equal(teamEnemy.unitMaxHp, Math.round(soloEnemy.unitMaxHp * 1.3));
-assert.equal(teamEnemy.attack, Math.round(soloEnemy.attack * 1.3));
-assert.equal(teamEnemy.defense, Math.round(soloEnemy.defense * 1.3));
+assert.equal(teamEnemy.unitMaxHp, Math.round(soloEnemy.unitMaxHp * 1.27));
+assert.equal(teamEnemy.attack, Math.round(soloEnemy.attack * 1.27));
+assert.equal(teamEnemy.defense, Math.round(soloEnemy.defense * 1.27));
 
 for (const [layer, expectedCount] of [[11, 2], [21, 3]]) {
   const waveRun = createOnePlayerRun(20260803);

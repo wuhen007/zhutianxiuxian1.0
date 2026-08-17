@@ -48,6 +48,12 @@ export function findEndlessProduct(selector) {
   return ENDLESS_SHOP.find(item => String(item.id) === text || item.name === text) || null;
 }
 
+export function getEndlessProductRewardAmount(product, purchases = 1) {
+  const count = Math.max(0, Math.trunc(Number(purchases) || 0));
+  const quantity = Math.max(1, Math.trunc(Number(product?.quantity) || 1));
+  return count * quantity;
+}
+
 export function formatTreasureClue(event, now = Date.now()) {
   if (!event) return [];
   const name = event.treasure?.name || '未知先天至宝';

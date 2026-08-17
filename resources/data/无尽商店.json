@@ -179,8 +179,8 @@
       "dailyLimit": 1,
       "action": "tianjiao"
     },
-        {
-      "id": 6,
+    {
+      "id": 17,
       "name": "轮回命签",
       "itemClass": "道具",
       "category": "仙途",
@@ -188,6 +188,30 @@
       "price": 50,
       "description": "沾染轮回气息的残签，可用 #消耗轮回命签 重抽指定命格词条，追加 *序号 可选择词条",
       "dailyLimit": 100,
+      "action": "item"
+    },
+    {
+      "id": 18,
+      "name": "鸿蒙道火",
+      "itemClass": "材料",
+      "category": "鸿蒙",
+      "rarity": "禁忌",
+      "price": 5000,
+      "quantity": 10,
+      "description": "每份兑换获得10枚鸿蒙道火",
+      "dailyLimit": 0,
+      "action": "item"
+    },
+    {
+      "id": 19,
+      "name": "三千弱水",
+      "itemClass": "材料",
+      "category": "鸿蒙",
+      "rarity": "禁忌",
+      "price": 5000,
+      "quantity": 10,
+      "description": "每份兑换获得10滴三千弱水",
+      "dailyLimit": 0,
       "action": "item"
     }
   ]

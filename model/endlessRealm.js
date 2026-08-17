@@ -214,9 +214,14 @@ function collectEffects(member, run) {
           (sum, boonId) =>
             sum + asNumber(CHECKPOINT_BOONS.get(boonId)?.effect?.teamShieldPct),
           0
-        )
+        ) +
+        asNumber(current.endlessMetaEffects?.teamShieldPct)
       );
     },
+    0
+  );
+  effects.regenPct = asNumber(effects.regenPct) + Object.values(run.members).reduce(
+    (sum, current) => sum + asNumber(current.endlessMetaEffects?.teamRegenPct),
     0
   );
   for (const fusionId of run.fusions || []) {
@@ -304,6 +309,7 @@ function createProjection(id, player) {
     speed: 100,
   };
   const endlessMeta = normalizeEndlessMeta(player);
+  const endlessMetaEffects = getEndlessMetaEffects(endlessMeta);
   // 他化自在体验卡：使用后下一次进入无尽劫境必定自带1级他化自在法（残缺映照）
   const abilities = {};
   if (Number(player.无尽劫境_他化自在体验) > 0) {
@@ -349,8 +355,9 @@ function createProjection(id, player) {
     abilities,
     blessings: [],
     growthAttackPct: 0,
+    choiceRerollsRemaining: Math.max(0, Math.floor(asNumber(endlessMetaEffects.choiceRerolls))),
     endlessMeta,
-    endlessMetaEffects: getEndlessMetaEffects(endlessMeta),
+    endlessMetaEffects,
   };
 }
 
@@ -373,11 +380,11 @@ function pickUnique(run, pool, member, picked) {
   return selected;
 }
 
-function createChoices(run, memberId, layer = Math.max(1, run.layer + 1)) {
+function createChoices(run, memberId, layer = Math.max(1, run.layer + 1), excluded = []) {
   const member = run.members[memberId];
   if (!member?.alive) return [];
   const world = getWorldForLayer(run, layer);
-  const picked = new Set();
+  const picked = new Set(excluded);
   const choicePool = CONTENT.abilities.filter(ability => !ability.bossOnly);
   const related = choicePool.filter(
     (ability) => ability.world === world.id
@@ -551,6 +558,33 @@ export function createEndlessRun({
   ensureEndlessStarMap(run, CONTENT.worlds, 1);
   setPendingChoices(run, 1);
   return run;
+}
+
+export function rerollEndlessChoices(run, memberId) {
+  if (run.phase !== 'choice') throw new Error('当前不是选择能力阶段');
+  const current = run.pendingChoices?.[memberId];
+  if (!current) throw new Error('你本层已经完成选择，或当前无法刷新能力');
+  const member = run.members?.[memberId];
+  if (!member?.alive) throw new Error('当前投影无法刷新能力');
+  if (member.pendingDoubleChoiceCycle != null)
+    throw new Error('一念双悟的追加选择不能刷新');
+  if (member.choiceRerollsRemaining == null)
+    member.choiceRerollsRemaining = Math.max(
+      0,
+      Math.floor(asNumber(member.endlessMetaEffects?.choiceRerolls))
+    );
+  if (member.choiceRerollsRemaining < 1)
+    throw new Error('本次无尽劫境的能力刷新次数已经用尽');
+  const choices = createChoices(
+    run,
+    memberId,
+    Math.max(1, asNumber(run.pendingChoiceLayer, run.layer + 1)),
+    current
+  );
+  if (!choices.length) throw new Error('当前没有可供重演的新能力');
+  member.choiceRerollsRemaining -= 1;
+  run.pendingChoices[memberId] = choices;
+  return { choices: [...choices], remaining: member.choiceRerollsRemaining };
 }
 
 export function applyEndlessChoice(run, memberId, choiceNumber) {
@@ -789,7 +823,7 @@ export function createEndlessEnemy(run, layer) {
   const pool = world[stage];
   const template = pool[Math.floor(random(run) * pool.length)];
   const teamSize = Object.keys(run.members).length;
-  const teamScale = 1 + Math.max(0, teamSize - 1) * 0.3;
+  const teamScale = 1 + Math.max(0, teamSize - 1) * 0.27;
   const bossCycle = stage === 'boss' ? Math.floor(layer / 10) : 0;
   const monsterCount = (stage === 'boss'
     ? getBossCount(layer)
@@ -800,11 +834,11 @@ export function createEndlessEnemy(run, layer) {
     ? createBossRoster(run, world, template, monsterCount)
     : [];
   const hpScale =
-    Math.pow(1.105, layer - 1) * teamScale * (encounter?.enemyHpMultiplier || 1);
+    Math.pow(1.1, layer - 1) * teamScale * (encounter?.enemyHpMultiplier || 1);
   const attackScale =
-    Math.pow(1.05, layer - 1) * teamScale * (encounter?.enemyAttackMultiplier || 1);
+    Math.pow(1.047, layer - 1) * teamScale * (encounter?.enemyAttackMultiplier || 1);
   const defenseScale =
-    Math.pow(1.035, layer - 1) * teamScale * (encounter?.enemyDefenseMultiplier || 1);
+    Math.pow(1.032, layer - 1) * teamScale * (encounter?.enemyDefenseMultiplier || 1);
   const baseHp = bossRoster.length
     ? bossRoster.reduce((sum, boss) => sum + boss.hp * boss.count, 0)
     : template.hp * monsterCount;
