@@ -1,8 +1,8 @@
 {
-  "enabled": false,
-  "host": "0.0.0.0",
+  "enabled": true,
+  "host": "127.0.0.1",
   "port": 3000,
-  "publicUrl": "http://103.236.98.220:3000",
+  "publicUrl": "https://endless.ameng2027.xyz",
   "ticketTtlSeconds": 120,
-  "sessionTtlSeconds": 21600
+  "sessionTtlSeconds": 7200
 }

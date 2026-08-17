@@ -25,13 +25,17 @@ function formatAmount(value) {
 }
 
 function phaseName(phase) {
-  return {
-    choice: '等待能力抉择',
-    ready: '可以挑战下一关',
-    checkpoint: '十层天关 · 劫后问道',
-    settling: '战利品结算中',
-    defeated: '本次投影已经破碎',
-  }[phase] || phase || '未知劫境';
+  return (
+    {
+      choice: '等待能力抉择',
+      ready: '可以挑战下一关',
+      checkpoint: '十层天关 · 劫后问道',
+      settling: '战利品结算中',
+      defeated: '本次投影已经破碎',
+    }[phase] ||
+    phase ||
+    '未知劫境'
+  );
 }
 
 function stageName(stage) {
@@ -92,10 +96,7 @@ function renderParty(state) {
     const card = element('article', 'member-card');
     card.classList.toggle('is-fallen', !member.alive);
     const nameLine = element('div', 'member-name');
-    nameLine.append(
-      element('strong', '', member.name),
-      element('span', '', member.id === state.team.leader ? '队长' : member.alive ? '同行' : '残魂')
-    );
+    nameLine.append(element('strong', '', member.name), element('span', '', member.id === state.team.leader ? '队长' : member.alive ? '同行' : '残魂'));
     const hp = element('div', 'hp-track');
     const fill = element('i');
     fill.style.width = `${Math.min(100, Math.max(0, member.hpPct))}%`;
@@ -106,8 +107,7 @@ function renderParty(state) {
       element('span', '', `攻 ${formatAmount(member.attack)} · 防 ${formatAmount(member.defense)}`)
     );
     const skills = element('div', 'member-skills');
-    for (const ability of member.abilities.slice(-4))
-      skills.append(element('span', '', `${ability.name} Lv.${ability.level}`));
+    for (const ability of member.abilities.slice(-4)) skills.append(element('span', '', `${ability.name} Lv.${ability.level}`));
     card.append(nameLine, hp, meta, skills);
     list.append(card);
   }
@@ -158,8 +158,7 @@ function renderBattle(state) {
       ['血气', battle.reward.blood],
       ['劫境道痕', battle.reward.tokens],
     ];
-    for (const [name, value] of rewards)
-      reward.append(element('b', '', `${name} +${formatAmount(value)}`));
+    for (const [name, value] of rewards) reward.append(element('b', '', `${name} +${formatAmount(value)}`));
   }
   const damage = $('#damage-board');
   damage.replaceChildren();
@@ -171,13 +170,9 @@ function renderBattle(state) {
     const row = element('div', 'damage-row');
     const track = element('i');
     const fill = element('em');
-    fill.style.width = `${Math.max(3, Math.round(Number(value) / maximum * 100))}%`;
+    fill.style.width = `${Math.max(3, Math.round((Number(value) / maximum) * 100))}%`;
     track.append(fill);
-    row.append(
-      element('span', '', state.team.memberNames[id] || id),
-      track,
-      element('b', '', formatAmount(value))
-    );
+    row.append(element('span', '', state.team.memberNames[id] || id), track, element('b', '', formatAmount(value)));
     damage.append(row);
   }
   const logs = $('#battle-logs');
@@ -289,7 +284,11 @@ async function submitAction(action, value) {
   try {
     const payload = await api('/api/endless/action', {
       method: 'POST',
-      body: JSON.stringify({ action, value }),
+      body: JSON.stringify({
+        action,
+        value,
+        operationId: crypto.randomUUID(),
+      }),
     });
     notify(payload.message);
     if (payload.state) render(payload.state);
