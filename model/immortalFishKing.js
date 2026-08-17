@@ -1,9 +1,56 @@
+import { createFishKingRelic } from './relicSystem.js';
+
 export const FISH_KING_MAX_MEMBERS = 5;
 export const FISH_KING_TTL_SECONDS = 24 * 60 * 60;
 export const FISH_KING_BATTLE_CD_SECONDS = 30 * 60;
 export const FISH_KING_DAO_ART_REDUCTION_SECONDS = 10 * 60;
 export const FISH_KING_DAMAGE_CAP_RATIO = 0.2;
 export const FISH_KING_RESCUE_CHANCE = 0.03;
+
+/* ===== 击杀奖励（每人必得） ===== */
+/** 每人发放的完整奖励组数（每组含下方全部物品，数量按范围随机） */
+export const FISH_KING_KILL_GROUPS = 3;
+/** 击杀奖励：每组物品清单（遗珍由 createFishKingRelicRewards 单独发放） */
+export const FISH_KING_KILL_REWARD_ITEMS = Object.freeze([
+  Object.freeze({ name: '遣龙令', class: '道具', min: 1, max: 5 }),
+  Object.freeze({ name: '超越宝盒', class: '盒子', min: 1, max: 5 }),
+  Object.freeze({ name: '遣虎令', class: '道具', min: 1, max: 5 }),
+  Object.freeze({ name: '遗珍', special: 'relic', amount: 1 }),
+  Object.freeze({ name: '随机饵料', special: 'bait', min: 1, max: 3 }),
+  Object.freeze({ name: '一叶轻舟', class: '道具', amount: 1 }),
+  Object.freeze({ name: '群星秘钥', class: '道具', min: 1, max: 3 }),
+  Object.freeze({ name: '仙舟', class: '道具', min: 1, max: 5 }),
+]);
+/** 击杀奖励货币：每人灵石/源石 */
+export const FISH_KING_KILL_LINGSHI = 25_000_000;
+export const FISH_KING_KILL_SOURCE_STONE = 25_000_000;
+/** 击杀奖励修为/血气：2000万 × 五维等级乘积 */
+export const FISH_KING_KILL_CULTIVATION_BASE = 20_000_000;
+
+/* ===== 鱼王宝箱（概率掉落 + 愿鳞保底） ===== */
+/** 宝箱内每项物品的独立掉落概率 */
+export const FISH_KING_CHEST_REWARD_CHANCE = 0.55;
+export const FISH_KING_CHEST_ITEMS = Object.freeze([
+  Object.freeze({ name: '无尽扫荡券', class: '道具', min: 1, max: 3 }),
+  Object.freeze({ name: '定神丹', class: '丹药', min: 1, max: 5 }),
+  Object.freeze({ name: '群星秘钥', class: '道具', min: 1, max: 6 }),
+  Object.freeze({ name: '超越宝盒', class: '盒子', min: 3, max: 10 }),
+  Object.freeze({ name: '众生仙钓', class: '道具', min: 2, max: 10 }),
+  Object.freeze({ name: '随机饵料', special: 'bait', min: 2, max: 10 }),
+  Object.freeze({ name: '一叶轻舟', class: '道具', min: 1, max: 3 }),
+  Object.freeze({ name: '界河灵舟', class: '道具', amount: 1 }),
+  Object.freeze({ name: '仙舟', class: '道具', min: 3, max: 5 }),
+]);
+/** 宝箱保底：众生愿鳞 15~30 */
+export const FISH_KING_CHEST_WISH_SCALE = Object.freeze({ min: 15, max: 30 });
+/** 随机饵料池（位面仙饵） */
+export const FISH_KING_BAIT_POOL = Object.freeze([
+  '神藏仙饵',
+  '矿髓沉饵',
+  '百草香饵',
+  '因果道饵',
+  '轮回冥饵',
+]);
 
 const statePrefix = "xiuxian:immortal-fish-king:active:";
 const lockPrefix = "xiuxian:immortal-fish-king:lock:";
@@ -23,6 +70,102 @@ function teamIndexKey(teamId) {
 
 function boundedIndex(length, random) {
   return Math.min(length - 1, Math.floor(Math.max(0, Math.min(0.999999999, random())) * length));
+}
+
+/** 闭区间随机整数 [min, max]，random() 归一到 [0,1) */
+function randInt(min, max, random) {
+  const low = Math.min(min, max);
+  const high = Math.max(min, max);
+  return low + Math.floor(Math.max(0, Math.min(0.999999999, random())) * (high - low + 1));
+}
+
+/** 随机品质遗珍的发放对象：每名成员每组 1 件（共 FISH_KING_KILL_GROUPS 件/人） */
+export function createFishKingRelicRewards(state, random = Math.random) {
+  const members = Array.isArray(state?.members) ? state.members : [];
+  const rewards = [];
+  for (const member of members) {
+    for (let group = 0; group < FISH_KING_KILL_GROUPS; group++) {
+      rewards.push({
+        recipient: { ...member },
+        group,
+        relic: createFishKingRelic({
+          plane: state?.plane,
+          id: `fish-king-relic:${state?.id}:${member.id}:${group}`,
+          random,
+        }),
+      });
+    }
+  }
+  return rewards;
+}
+
+/**
+ * 击杀奖励：每名成员获得 FISH_KING_KILL_GROUPS 组完整清单。
+ * 返回 [{ dropIndex, recipient, name, class, amount }]；遗珍走 createFishKingRelicRewards。
+ */
+export function createFishKingRewardAssignments(members, random = Math.random) {
+  if (!Array.isArray(members) || members.length === 0) return [];
+  const assignments = [];
+  let dropIndex = 0;
+  for (const member of members) {
+    for (let group = 0; group < FISH_KING_KILL_GROUPS; group++) {
+      for (const item of FISH_KING_KILL_REWARD_ITEMS) {
+        if (item.special === 'relic') continue; // 遗珍由 createFishKingRelicRewards 发放
+        if (item.special === 'bait') {
+          const baitName =
+            FISH_KING_BAIT_POOL[boundedIndex(FISH_KING_BAIT_POOL.length, random)];
+          assignments.push({
+            dropIndex: dropIndex++,
+            recipient: { ...member },
+            name: baitName,
+            class: '道具',
+            amount: randInt(item.min, item.max, random),
+          });
+          continue;
+        }
+        assignments.push({
+          dropIndex: dropIndex++,
+          recipient: { ...member },
+          name: item.name,
+          class: item.class,
+          amount: item.amount ?? randInt(item.min, item.max, random),
+        });
+      }
+    }
+  }
+  return assignments;
+}
+
+/**
+ * 鱼王宝箱：9 项物品独立概率掉落（FISH_KING_CHEST_REWARD_CHANCE），
+ * 保底【众生愿鳞】15~30 必出。返回奖励数组。
+ */
+export function rollFishKingChestReward(random = Math.random) {
+  const rewards = [];
+  for (const item of FISH_KING_CHEST_ITEMS) {
+    if (random() >= FISH_KING_CHEST_REWARD_CHANCE) continue;
+    if (item.special === 'bait') {
+      const baitName =
+        FISH_KING_BAIT_POOL[boundedIndex(FISH_KING_BAIT_POOL.length, random)];
+      rewards.push({
+        name: baitName,
+        class: '道具',
+        amount: randInt(item.min, item.max, random),
+      });
+      continue;
+    }
+    rewards.push({
+      name: item.name,
+      class: item.class,
+      amount: item.amount ?? randInt(item.min, item.max, random),
+    });
+  }
+  rewards.push({
+    name: '众生愿鳞',
+    class: '道具',
+    amount: randInt(FISH_KING_CHEST_WISH_SCALE.min, FISH_KING_CHEST_WISH_SCALE.max, random),
+  });
+  return rewards;
 }
 
 export function createFishKingState({
@@ -55,6 +198,7 @@ export function createFishKingState({
     expiresAt: now + FISH_KING_TTL_SECONDS * 1000,
     rewardAssignments: null,
     relicReward: null,
+    relicRewards: null,
   };
 }
 
@@ -258,27 +402,13 @@ export function calculateFishKingRescueDamage(state, rescue) {
   );
 }
 
-export function createFishKingRewardAssignments(members, random = Math.random) {
-  if (!Array.isArray(members) || members.length === 0) return [];
-  const drops = [
-    { name: "遣龙令", class: "道具", amount: 10 },
-    { name: "遣虎令", class: "道具", amount: 10 },
-    { name: "超越宝盒", class: "盒子", amount: 1 + boundedIndex(10, random) },
-  ];
-  return drops.map((drop, index) => ({
-    ...drop,
-    dropIndex: index,
-    recipient: { ...members[boundedIndex(members.length, random)] },
-  }));
-}
-
-export function rollFishKingChestReward(random = Math.random) {
-  const roll = random();
-  if (roll < 0.8) {
-    return { name: "众生愿鳞", class: "道具", amount: 10 + boundedIndex(21, random) };
-  }
-  if (roll < 0.95) {
-    return { name: "众生仙钓", class: "道具", amount: 5 };
-  }
-  return { name: "众生愿鳞", class: "道具", amount: 10 + boundedIndex(21, random) };
+/** 修为/血气奖励：2000万 × 练气 × 炼体 × 秘境 × 仙古 × 花粉 */
+export function calculateFishKingCultivationReward(player) {
+  const multiplier =
+    Math.max(1, Math.trunc(Number(player?.level_id) || 1)) *
+    Math.max(1, Math.trunc(Number(player?.Physique_id) || 1)) *
+    Math.max(1, Math.trunc(Number(player?.mijinglevel_id) || 1)) *
+    Math.max(1, Math.trunc(Number(player?.xiangulevel_id) || 1)) *
+    Math.max(1, Math.trunc(Number(player?.huafenlevel_id) || 1));
+  return Math.max(1, Math.trunc(FISH_KING_KILL_CULTIVATION_BASE * multiplier));
 }

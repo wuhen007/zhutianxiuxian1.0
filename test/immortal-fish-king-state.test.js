@@ -46,7 +46,7 @@ test('鱼王队伍编号原子预占且创建失败不会遗留索引', async ()
       ownerId: '20001',
       ownerName: '垂钓者',
       plane: '凡间',
-      king: { name: '吞舟玄龟', speedMultiplier: 0.75, skills: ['真龙宝术', '不灭经'] },
+      king: { name: '吞舟玄龟', speed: 150, skills: ['真龙宝术', '不灭经'] },
       ownerPower: 100000,
     };
     const created = await tryCreateFishKing(input);

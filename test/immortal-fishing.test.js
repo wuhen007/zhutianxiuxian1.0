@@ -29,12 +29,18 @@ import {
   rollWishScaleAmount,
 } from '../model/immortalFishing.js';
 import {
+  calculateFishKingCultivationReward,
   calculateFishKingDamage,
   createFishKingBattleAvatar,
+  createFishKingRelicRewards,
   createFishKingRewardAssignments,
   createFishKingState,
   FISH_KING_BATTLE_CD_SECONDS,
+  FISH_KING_CHEST_REWARD_CHANCE,
   FISH_KING_DAMAGE_CAP_RATIO,
+  FISH_KING_BAIT_POOL,
+  FISH_KING_KILL_GROUPS,
+  FISH_KING_KILL_REWARD_ITEMS,
   getFishKingBattleCooldown,
   rollFishKingChestReward,
 } from '../model/immortalFishKing.js';
@@ -204,12 +210,12 @@ test('七个位面各有三种普通鱼与一只专属鱼王', () => {
     assert.equal(config.fish.length, 3);
     assert.equal(config.fish.reduce((sum, fish) => sum + fish.weight, 0), 100);
     assert.ok(config.king.name);
-    assert.ok(config.king.speedMultiplier > 0);
+    assert.ok(config.king.speed > 0);
     assert.ok(config.king.skills.length >= 2);
     assert.ok(config.king.skills.every(name => combatSkillNames.has(name)));
   }
   assert.equal(new Set(FISHING_PLANE_NAMES.map(
-    plane => getPlaneFishConfig(plane).king.speedMultiplier
+    plane => getPlaneFishConfig(plane).king.speed
   )).size, FISHING_PLANE_NAMES.length);
 });
 
@@ -244,13 +250,13 @@ test('普通鱼与鱼王击杀都能登记图鉴', () => {
   assert.equal(atlas.entries.find(entry => entry.king).count, 1);
 });
 
-test('鱼王状态、伤害和三份随机分配奖励符合设定', () => {
+test('鱼王状态、伤害与击杀奖励：每人3组完整清单', () => {
   const state = createFishKingState({
     groupId: 1,
     ownerId: 2,
     ownerName: '垂钓者',
     plane: '凡间',
-    king: { name: '吞舟玄龟', speedMultiplier: 0.75, skills: ['真龙宝术', '不灭经'] },
+    king: { name: '吞舟玄龟', speed: 150, skills: ['真龙宝术', '不灭经'] },
     ownerPower: 100000,
     now: 1000,
   });
@@ -274,28 +280,88 @@ test('鱼王状态、伤害和三份随机分配奖励符合设定', () => {
   assert.equal(avatar.血量上限, 4000);
   assert.equal(avatar.速度, 150);
   assert.deepEqual(avatar.学习的功法, ['真龙宝术', '不灭经']);
+  // 击杀奖励：每人 FISH_KING_KILL_GROUPS 组，每组 7 项普通物品（遗珍单发）
   const rewards = createFishKingRewardAssignments(state.members, () => 0);
-  assert.deepEqual(rewards.map(reward => [reward.name, reward.amount]), [
-    ['遣龙令', 10], ['遣虎令', 10], ['超越宝盒', 1],
-  ]);
+  const itemCountPerGroup = FISH_KING_KILL_REWARD_ITEMS.filter(item => item.special !== 'relic').length;
+  assert.equal(rewards.length, FISH_KING_KILL_GROUPS * itemCountPerGroup);
   assert.ok(rewards.every(reward => reward.recipient.id === '2'));
+  // random=0 → 数量取区间下限；饵料固定取池首
+  const byName = {};
+  for (const reward of rewards) {
+    byName[reward.name] = (byName[reward.name] || 0) + reward.amount;
+  }
+  assert.equal(byName['遣龙令'], FISH_KING_KILL_GROUPS * 1);
+  assert.equal(byName['超越宝盒'], FISH_KING_KILL_GROUPS * 1);
+  assert.equal(byName['遣虎令'], FISH_KING_KILL_GROUPS * 1);
+  assert.equal(byName[FISH_KING_BAIT_POOL[0]], FISH_KING_KILL_GROUPS * 1);
+  assert.equal(byName['一叶轻舟'], FISH_KING_KILL_GROUPS);
+  assert.equal(byName['群星秘钥'], FISH_KING_KILL_GROUPS * 1);
+  assert.equal(byName['仙舟'], FISH_KING_KILL_GROUPS * 1);
+  // 遗珍：每人 FISH_KING_KILL_GROUPS 件，随机品质、位面套装、id 互异
+  const relicRewards = createFishKingRelicRewards(state, () => 0);
+  assert.equal(relicRewards.length, FISH_KING_KILL_GROUPS);
+  assert.equal(new Set(relicRewards.map(r => r.relic.id)).size, FISH_KING_KILL_GROUPS);
+  assert.ok(relicRewards.every(r => r.recipient.id === '2' && r.relic.品质 === '凡耀' && r.relic.套装 === '玄黄不灭'));
 });
 
-test('鱼王宝箱遵循80%愿鳞10~30、15%仙钓、5%大额愿鳞10~30', () => {
-  const sequence = values => () => values.shift();
-  assert.deepEqual(rollFishKingChestReward(sequence([0.79, 0.999])), {
-    name: '众生愿鳞', class: '道具', amount: 30,
-  });
-  assert.deepEqual(rollFishKingChestReward(sequence([0.8])), {
-    name: '众生仙钓', class: '道具', amount: 5,
-  });
-  assert.deepEqual(rollFishKingChestReward(sequence([0.95, 0.999])), {
-    name: '众生愿鳞', class: '道具', amount: 30,
-  });
-  assert.deepEqual(rollFishKingChestReward(sequence([0.79, 0])), {
-    name: '众生愿鳞', class: '道具', amount: 10,
-  });
+test('鱼王宝箱：9项独立概率掉落 + 愿鳞15~30保底', () => {
+  // random=0：9 项全部命中（0 < 0.55），数量取下限，饵料取池首，愿鳞 15
+  const all = rollFishKingChestReward(() => 0);
+  assert.equal(all.length, 10); // 9 项 + 保底愿鳞
+  assert.equal(all[all.length - 1].name, '众生愿鳞');
+  assert.equal(all[all.length - 1].amount, 15);
+  assert.ok(all.some(item => item.name === '无尽扫荡券' && item.amount === 1));
+  assert.ok(all.some(item => item.name === '定神丹' && item.amount === 1));
+  assert.ok(all.some(item => item.name === '群星秘钥' && item.amount === 1));
+  assert.ok(all.some(item => item.name === '超越宝盒' && item.amount === 3));
+  assert.ok(all.some(item => item.name === '众生仙钓' && item.amount === 2));
+  assert.ok(all.some(item => item.name === FISH_KING_BAIT_POOL[0] && item.amount === 2));
+  assert.ok(all.some(item => item.name === '一叶轻舟' && item.amount === 1));
+  assert.ok(all.some(item => item.name === '界河灵舟' && item.amount === 1));
+  assert.ok(all.some(item => item.name === '仙舟' && item.amount === 3));
+  // random=0.999：9 项全部落空（0.999 >= 0.55），仅剩保底愿鳞（范围 15~30）
+  const none = rollFishKingChestReward(() => 0.999);
+  assert.equal(none.length, 1);
+  assert.equal(none[0].name, '众生愿鳞');
+  assert.ok(none[0].amount >= 15 && none[0].amount <= 30);
+  // 概率阈值与愿鳞上限
+  assert.equal(FISH_KING_CHEST_REWARD_CHANCE, 0.55);
+  assert.ok(rollFishKingChestReward(() => 0.999).every(item => item.amount <= 30));
   assert.ok(itemLists.some(item => item.name === '鱼王宝箱' && item.class === '盒子'));
+});
+
+test('击杀修为血气 = 2000万 × 五维等级乘积', () => {
+  const player = {
+    level_id: 10,
+    Physique_id: 10,
+    mijinglevel_id: 5,
+    xiangulevel_id: 3,
+    huafenlevel_id: 2,
+  };
+  // 2000万 × (10×10×5×3×2=3000) = 600亿
+  assert.equal(calculateFishKingCultivationReward(player), 60_000_000_000);
+  assert.equal(calculateFishKingCultivationReward({}), 20_000_000); // 缺失字段按 1
+});
+
+test('多人讨伐：每名成员独立获得3组奖励与3件遗珍', () => {
+  const members = [
+    { id: '2', name: '垂钓者' },
+    { id: '3', name: '甲' },
+    { id: '4', name: '乙' },
+  ];
+  const rewards = createFishKingRewardAssignments(members, () => 0.5);
+  const itemCountPerGroup = FISH_KING_KILL_REWARD_ITEMS.filter(item => item.special !== 'relic').length;
+  assert.equal(rewards.length, members.length * FISH_KING_KILL_GROUPS * itemCountPerGroup);
+  for (const member of members) {
+    const mine = rewards.filter(reward => reward.recipient.id === member.id);
+    assert.equal(mine.length, FISH_KING_KILL_GROUPS * itemCountPerGroup);
+    assert.ok(mine.every(reward => reward.amount >= 1));
+  }
+  const state = { id: 's1', plane: '仙界', members };
+  const relicRewards = createFishKingRelicRewards(state, () => 0.5);
+  assert.equal(relicRewards.length, members.length * FISH_KING_KILL_GROUPS);
+  assert.equal(new Set(relicRewards.map(r => r.relic.id)).size, members.length * FISH_KING_KILL_GROUPS);
+  assert.ok(relicRewards.every(r => r.relic.品质 === '灵玄' && r.relic.套装 === '万法天章'));
 });
 
 test('渡劫天功由十张残页合成并登记为帝经', () => {

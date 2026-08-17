@@ -29,14 +29,17 @@ import {
 } from "../../model/immortalFishingProgress.js";
 import {
   addRelicToBag,
-  createFishKingRelic,
   normalizeRelicState,
 } from "../../model/relicSystem.js";
 import {
   FISH_KING_MAX_MEMBERS,
+  FISH_KING_KILL_LINGSHI,
+  FISH_KING_KILL_SOURCE_STONE,
+  calculateFishKingCultivationReward,
   calculateFishKingDamage,
   calculateFishKingRescueDamage,
   createFishKingBattleAvatar,
+  createFishKingRelicRewards,
   createFishKingRewardAssignments,
   deleteActiveFishKing,
   findFishKingByMemberId,
@@ -83,14 +86,8 @@ function getFishKingRescueLines(rescue, state, damage) {
 }
 
 function createRelicReward(state) {
-  const recipient = state.members[Math.floor(Math.random() * state.members.length)];
-  return {
-    recipient: { ...recipient },
-    relic: createFishKingRelic({
-      plane: state.plane,
-      id: `fish-king-relic:${state.id}`,
-    }),
-  };
+  // 每名成员 3 件随机品质遗珍（id 按成员+组序区分，可安全去重）
+  return createFishKingRelicRewards(state, Math.random);
 }
 
 export class ImmortalFishKing extends plugin {
@@ -217,7 +214,8 @@ export class ImmortalFishKing extends plugin {
       `位面：${state.plane} ｜ 本体血量：${formatNumber(state.health)}/${formatNumber(state.healthMax)}`,
       `固定速度：${Number(state.speed) || 100} ｜ 灵根：${state.灵根?.name || "潮汐灵根"}`,
       `鱼王秘术：${state.skills?.join("、") || "潮汐冲击"}`,
-      "遗珍掉落：必定1件，讨伐队员随机获得",
+      "遗珍掉落：每名队员3件随机品质",
+      "击杀奖励：每人3组物品+灵石/源石2500w+修为血气（2000w×五维等级）",
       `队伍：${state.members.length}/${FISH_KING_MAX_MEMBERS}`,
       `你的讨伐冷却：${cooldownMinutes}分钟${context.player.daofaxianshu == 2 ? "（道法仙术）" : ""}`,
       ...lines,
@@ -236,11 +234,13 @@ export class ImmortalFishKing extends plugin {
 
       const rewards = new Map();
       for (let index = 0; index < amount; index++) {
-        const reward = rollFishKingChestReward();
-        const key = `${reward.class}:${reward.name}`;
-        const current = rewards.get(key) || { ...reward, amount: 0 };
-        current.amount += reward.amount;
-        rewards.set(key, current);
+        const chestRewards = rollFishKingChestReward();
+        for (const reward of chestRewards) {
+          const key = `${reward.class}:${reward.name}`;
+          const current = rewards.get(key) || { ...reward, amount: 0 };
+          current.amount += reward.amount;
+          rewards.set(key, current);
+        }
       }
 
       const transaction = new FileRollbackTransaction();
@@ -433,7 +433,7 @@ export class ImmortalFishKing extends plugin {
 
   async settleFishKing(state) {
     state.rewardAssignments ||= createFishKingRewardAssignments(state.members);
-    state.relicReward ||= createRelicReward(state);
+    state.relicRewards ||= createRelicReward(state);
     await saveActiveFishKing(state);
 
     for (const drop of state.rewardAssignments) {
@@ -457,35 +457,39 @@ export class ImmortalFishKing extends plugin {
       { idempotencyKey: `fish-king:${state.id}:owner-chest` }
     );
 
+    // 遗珍：每名成员 3 件随机品质（id 去重，重跑安全）
     let relicBagFull = false;
     let relicGrantFailed = false;
-    try {
-      await withPlayerMutationLock(state.relicReward.recipient.id, async () => {
-        const equipment = await Read_equipment(state.relicReward.recipient.id);
-        const relicState = normalizeRelicState(equipment.遗珍);
-        const allRelics = [
-          ...relicState.背包,
-          ...Object.values(relicState.铭刻).flat().filter(Boolean),
-        ];
-        if (allRelics.some(relic => relic.id === state.relicReward.relic.id)) return;
-        try {
-          equipment.遗珍 = addRelicToBag(relicState, state.relicReward.relic);
-        } catch (error) {
-          if (error.message !== "遗珍背包已满") throw error;
-          relicBagFull = true;
-          return;
-        }
-        await Write_equipment(state.relicReward.recipient.id, equipment);
-      });
-    } catch (error) {
-      relicGrantFailed = true;
-      logger.error(`[鱼王遗珍] 结算失败 fishKing=${state.id}`, error);
+    for (const reward of state.relicRewards) {
+      if (relicBagFull || relicGrantFailed) break;
+      try {
+        await withPlayerMutationLock(reward.recipient.id, async () => {
+          const equipment = await Read_equipment(reward.recipient.id);
+          const relicState = normalizeRelicState(equipment.遗珍);
+          const allRelics = [
+            ...relicState.背包,
+            ...Object.values(relicState.铭刻).flat().filter(Boolean),
+          ];
+          if (allRelics.some(relic => relic.id === reward.relic.id)) return;
+          try {
+            equipment.遗珍 = addRelicToBag(relicState, reward.relic);
+          } catch (error) {
+            if (error.message !== "遗珍背包已满") throw error;
+            relicBagFull = true;
+            return;
+          }
+          await Write_equipment(reward.recipient.id, equipment);
+        });
+      } catch (error) {
+        relicGrantFailed = true;
+        logger.error(`[鱼王遗珍] 结算失败 fishKing=${state.id}`, error);
+      }
     }
     if (relicBagFull) {
       return {
         message: [
           `【${state.name}遗珍结算暂缓】`,
-          `${state.relicReward.recipient.name}被随机选中获得遗珍，但其遗珍背包已满。`,
+          "部分队员的遗珍背包已满。",
           "常规奖励已锁定；请清理遗珍背包后发送 #讨伐鱼王 继续结算。",
         ].join("\n"),
       };
@@ -494,7 +498,41 @@ export class ImmortalFishKing extends plugin {
       return {
         message: [
           `【${state.name}遗珍结算暂缓】`,
-          `${state.relicReward.recipient.name}的装备状态暂时无法写入。`,
+          "部分队员的装备状态暂时无法写入。",
+          "常规奖励已锁定；请稍后发送 #讨伐鱼王 继续结算。",
+        ].join("\n"),
+      };
+    }
+
+    // 货币与修为血气：每人灵石/源石 2500w，修为血气 = 2000w × 五维等级乘积
+    const currencyLines = [];
+    let currencyFailed = false;
+    try {
+      for (const member of state.members) {
+        const player = await Read_player(member.id);
+        if (!player) {
+          currencyFailed = true;
+          break;
+        }
+        const cultivation = calculateFishKingCultivationReward(player);
+        player.灵石 = (Number(player.灵石) || 0) + FISH_KING_KILL_LINGSHI;
+        player.源石 = (Number(player.源石) || 0) + FISH_KING_KILL_SOURCE_STONE;
+        player.修为 = (Number(player.修为) || 0) + cultivation;
+        player.血气 = (Number(player.血气) || 0) + cultivation;
+        await Write_player(member.id, player);
+        currencyLines.push(
+          `${member.name}获得灵石x${formatNumber(FISH_KING_KILL_LINGSHI)}、源石x${formatNumber(FISH_KING_KILL_SOURCE_STONE)}、修为x${formatNumber(cultivation)}、血气x${formatNumber(cultivation)}`
+        );
+      }
+    } catch (error) {
+      currencyFailed = true;
+      logger.error(`[鱼王货币] 结算失败 fishKing=${state.id}`, error);
+    }
+    if (currencyFailed) {
+      return {
+        message: [
+          `【${state.name}货币结算暂缓】`,
+          "部分队员的存档暂时无法写入。",
           "常规奖励已锁定；请稍后发送 #讨伐鱼王 继续结算。",
         ].join("\n"),
       };
@@ -528,16 +566,33 @@ export class ImmortalFishKing extends plugin {
       }
     });
 
-    const lines = state.rewardAssignments.map(drop =>
-      `${drop.recipient.name}获得【${drop.name}】x${drop.amount}`
-    );
-    const relic = state.relicReward.relic;
+    // 按成员聚合普通物品，逐人展示
+    const rewardLines = state.members.map(member => {
+      const byName = new Map();
+      for (const drop of state.rewardAssignments) {
+        if (drop.recipient.id !== member.id) continue;
+        const current = byName.get(drop.name) || { name: drop.name, amount: 0 };
+        current.amount += drop.amount;
+        byName.set(drop.name, current);
+      }
+      const parts = [...byName.values()]
+        .map(item => `【${item.name}】x${item.amount}`)
+        .join("、");
+      return `${member.name}获得：${parts}`;
+    });
+    const relicLines = state.members.map(member => {
+      const relics = state.relicRewards.filter(reward => reward.recipient.id === member.id);
+      return `${member.name}获得遗珍：${relics
+        .map(reward => `【${reward.relic.品质}·${reward.relic.套装}】x1`)
+        .join("、")}`;
+    });
     await deleteActiveFishKing(state.groupId);
     return {
       message: [
         `【${state.name}伏诛】鱼王终于被拖出众生海！`,
-        ...lines,
-        `${state.relicReward.recipient.name}获得【${relic.品质}·${relic.套装}遗珍】x1。`,
+        ...rewardLines,
+        ...relicLines,
+        ...currencyLines,
         ...(atlasRewards.length > 0
           ? ["鱼谱收集奖励：" + atlasRewards.map(reward => "【" + reward.name + "】x" + reward.amount).join("、")]
           : []),

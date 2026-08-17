@@ -16,16 +16,20 @@ import {
   SEA_BOAT_NAMES,
   SEA_BOAT_TIERS,
   SEA_DAILY_VOYAGE_LIMIT,
+  SEA_DISASTER_CHANCE,
   SEA_EVENT_IDS,
   SEA_FIRST_BOAT_MATERIALS,
   SEA_ROUTE_NAMES,
   SEA_VOYAGE_COST,
+  damagePlayerBoat,
   getBoatTier,
   getBoatTierIndex,
   getSeaEventById,
   getSeaEventChoice,
   getSeaRoute,
   isSeaRouteTideBoosted,
+  resolveEffectiveBoat,
+  rollSeaDisaster,
   rollSeaEvent,
   rollSeaSighting,
   rollSeaVoyageBaseReward,
@@ -50,6 +54,23 @@ function getCurrentWorldYear() {
 
 function formatMinutes(ms) {
   return Math.max(1, Math.ceil(ms / 60000));
+}
+
+/**
+ * 懒装配：奖励获得的舟道具（鱼王/无尽商店/团本等）无需造舟即可生效。
+ * 当前出海舟无效时，自动启用纳戒中阶位最高的舟并写入 player.出海舟。
+ */
+async function ensurePlayerBoat(player, usr_qq) {
+  const owned = [];
+  for (const name of SEA_BOAT_NAMES) {
+    if (Number(await exist_najie_thing(usr_qq, name, "道具")) > 0) owned.push(name);
+  }
+  const effective = resolveEffectiveBoat(player.出海舟, owned);
+  if (effective && player.出海舟 !== effective) {
+    player.出海舟 = effective;
+    await Write_player(usr_qq, player);
+  }
+  return effective;
 }
 
 export class SeaVoyage extends plugin {
@@ -77,7 +98,7 @@ export class SeaVoyage extends plugin {
       const player = await Read_player(usr_qq);
       if (!player) return e.reply("你还未踏入修仙界，请先发送【#踏入仙途】。");
       const upgrading = /升级/.test(e.msg);
-      const currentBoat = player.出海舟;
+      const currentBoat = await ensurePlayerBoat(player, usr_qq);
 
       if (!upgrading) {
         if (currentBoat) return e.reply("你已有【" + currentBoat + "】，发送【#舟仓 拆解】可返还材料降阶。");
@@ -141,7 +162,7 @@ export class SeaVoyage extends plugin {
     return withPlayerMutationLock(usr_qq, async () => {
       const player = await Read_player(usr_qq);
       if (!player) return e.reply("你还未踏入修仙界，请先发送【#踏入仙途】。");
-      const currentBoat = player.出海舟;
+      const currentBoat = await ensurePlayerBoat(player, usr_qq);
 
       if (!/拆解/.test(e.msg)) {
         if (!currentBoat) {
@@ -175,6 +196,7 @@ export class SeaVoyage extends plugin {
           lines.push("此舟已是至巅，无可升级。");
         }
         if (getBoatTierIndex(currentBoat) > 0) lines.push("拆解：#舟仓 拆解（返还部分材料降阶）");
+        lines.push("风险：回港有" + Math.round(SEA_DISASTER_CHANCE * 100) + "%概率遭遇恶性事件损坏舟体（降一阶，轻舟会沉没）。");
         return e.reply(lines.join("\n"));
       }
 
@@ -198,7 +220,12 @@ export class SeaVoyage extends plugin {
         await Add_najie_thing(usr_qq, lowerTier.name, "道具", 1, undefined, 1, {
           idempotencyKey: "sea-boat:" + usr_qq + ":" + lowerTier.name,
         });
-        player.出海舟 = lowerTier.name;
+        // 拆解后：忽略原出海舟（其道具已扣除），按纳戒现存舟重算（奖励舟更高阶则自动上位）
+        const remaining = [];
+        for (const name of SEA_BOAT_NAMES) {
+          if (Number(await exist_najie_thing(usr_qq, name, "道具")) > 0) remaining.push(name);
+        }
+        player.出海舟 = resolveEffectiveBoat(null, remaining);
         await Write_player(usr_qq, player);
         transaction.commit();
       } catch (error) {
@@ -207,7 +234,7 @@ export class SeaVoyage extends plugin {
       }
       return e.reply("你拆解【" + currentBoat + "】，返还" + (refunds.length > 0
         ? refunds.map(r => r.name + "x" + r.amount).join("、")
-        : "无") + "，舟降为【" + lowerTier.name + "】。");
+        : "无") + (player.出海舟 ? "，当前出海舟为【" + player.出海舟 + "】。" : "，你现在没有可用的出海舟。"));
     });
   }
 
@@ -240,7 +267,7 @@ export class SeaVoyage extends plugin {
       if (baitName && !IMMORTAL_BAIT_NAMES.includes(baitName)) {
         return e.reply("仙饵必须是：百草香饵/神藏仙饵/矿髓沉饵/因果道饵/轮回冥饵。");
       }
-      const currentBoat = player.出海舟;
+      const currentBoat = await ensurePlayerBoat(player, usr_qq);
       if (!currentBoat) return e.reply("你没有舟，先【#造舟】。");
       if (player.出海任务) {
         const remaining = Number(player.出海任务.endAt) - Date.now();
@@ -362,6 +389,47 @@ export class SeaVoyage extends plugin {
         lines.push(material.name + " x" + material.amount);
       }
       if (base.sighting) lines.push("见闻：「" + base.sighting + "」已记录");
+
+      // 恶性事件：回港途中舟体损坏（收益已结算，舟降阶/沉没）
+      const disaster = rollSeaDisaster();
+      if (disaster && player.出海舟) {
+        const damage = damagePlayerBoat(player.出海舟);
+        if (damage) {
+          await Add_najie_thing(usr_qq, damage.boat, "道具", -1, undefined, 1, {
+            idempotencyKey: settleKey + ":disaster:" + damage.boat,
+          });
+          let damageLine;
+          if (damage.sunk) {
+            for (const refund of damage.refunds) {
+              await Add_najie_thing(usr_qq, refund.name, refund.class, refund.amount, undefined, 1, {
+                idempotencyKey: settleKey + ":disaster-refund:" + refund.name,
+              });
+            }
+            // 沉没后：若纳戒还有其他舟则自动上位
+            const remaining = [];
+            for (const name of SEA_BOAT_NAMES) {
+              if (Number(await exist_najie_thing(usr_qq, name, "道具")) > 0) remaining.push(name);
+            }
+            player.出海舟 = resolveEffectiveBoat(null, remaining);
+            damageLine = "【" + damage.boat + "】在风暴中沉没，只捞回" + (damage.refunds.map(r => r.name + "x" + r.amount).join("、") || "零星残骸") + (player.出海舟 ? "，你换乘【" + player.出海舟 + "】返航。" : "，只能泅渡回岸。");
+          } else {
+            await Add_najie_thing(usr_qq, damage.demoted, "道具", 1, undefined, 1, {
+              idempotencyKey: settleKey + ":disaster-demote:" + damage.demoted,
+            });
+            player.出海舟 = damage.demoted;
+            damageLine = "【" + damage.boat + "】严重受损，残骸重组成【" + damage.demoted + "】。";
+          }
+          delete player.出海任务;
+          await Write_player(usr_qq, player);
+          transaction.commit();
+          lines.push("—— 回港途中，祸从天降 ——");
+          lines.push("【" + disaster.title + "】");
+          lines.push(disaster.intro);
+          lines.push(damageLine);
+          lines.push("舟体受损后收益倍率下降；可用 #造舟 升级 或重新铸造修复。");
+          return e.reply(lines.join("\n"));
+        }
+      }
 
       const event = rollSeaEvent();
       if (event) {

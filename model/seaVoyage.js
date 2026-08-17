@@ -172,6 +172,95 @@ export function getBoatTierIndex(boatName) {
   return SEA_BOAT_TIERS.findIndex(tier => tier.name === boatName);
 }
 
+/**
+ * 确定玩家当前生效的舟（取阶位最高者）：
+ * - 当前出海舟有效 + 纳戒舟道具 → 取两者中阶位最高者
+ * - 使奖励获得的舟（含高于当前舟的）即时生效；拆解后取现存最高阶
+ * @param {string|null} currentBoat player.出海舟
+ * @param {string[]} ownedBoatNames 纳戒中持有的舟道具名（一叶轻舟/界河灵舟/诸天仙舟）
+ * @returns {string|null} 应生效的舟名
+ */
+export function resolveEffectiveBoat(currentBoat, ownedBoatNames = []) {
+  let best = currentBoat && getBoatTierIndex(currentBoat) >= 0 ? currentBoat : null;
+  let bestIndex = best ? getBoatTierIndex(best) : -1;
+  for (const name of ownedBoatNames) {
+    const index = getBoatTierIndex(name);
+    if (index >= 0 && index > bestIndex) {
+      best = name;
+      bestIndex = index;
+    }
+  }
+  return best;
+}
+
+/* ===== 出海恶性事件：舟体损坏 ===== */
+
+/** 回港时遭遇恶性事件的概率 */
+export const SEA_DISASTER_CHANCE = 0.12;
+
+/** 恶性事件池（舟体损坏，不进入正事件三选一） */
+export const SEA_DISASTERS = Object.freeze([
+  Object.freeze({
+    id: 'disaster-storm',
+    title: '灭世风暴',
+    intro: '回港途中天穹骤然压黑，灭世风暴拔海而起，浪墙如山，雷霆劈碎桅杆。',
+  }),
+  Object.freeze({
+    id: 'disaster-behemoth',
+    title: '海渊巨兽',
+    intro: '一头沉睡万古的海渊巨兽被舟影惊醒，怒尾横扫，整艘舟被掀入浪底又抛回天际。',
+  }),
+  Object.freeze({
+    id: 'disaster-riptide',
+    title: '界潮倒卷',
+    intro: '界海潮汐毫无征兆地倒卷，暗流绞缠舟身，龙骨发出濒临断裂的呻吟。',
+  }),
+]);
+
+/**
+ * 回港判定：是否遭遇恶性事件（舟体损坏）。
+ * @returns {object|null} { id, title, intro } 或 null
+ */
+export function rollSeaDisaster(random = Math.random) {
+  const roll = Math.max(0, Math.min(0.999999999, Number(random()) || 0));
+  if (roll >= SEA_DISASTER_CHANCE) return null;
+  const index = Math.min(
+    SEA_DISASTERS.length - 1,
+    Math.floor((roll / SEA_DISASTER_CHANCE) * SEA_DISASTERS.length)
+  );
+  return SEA_DISASTERS[index];
+}
+
+/**
+ * 舟体受损结算：
+ * - 仙舟/灵舟 → 残骸重组为低一阶的舟（damaged.demoted）
+ * - 一叶轻舟 → 沉没（sunk），返还首舟材料 70% 作为残骸保底
+ * @param {string} currentBoat 当前出海舟（须为有效三阶舟名）
+ * @returns {object|null} { boat, demoted, sunk, refunds }
+ */
+export function damagePlayerBoat(currentBoat) {
+  const index = getBoatTierIndex(currentBoat);
+  if (index < 0) return null;
+  if (index === 0) {
+    return {
+      boat: SEA_BOAT_TIERS[0].name,
+      demoted: null,
+      sunk: true,
+      refunds: SEA_FIRST_BOAT_MATERIALS.map(material => ({
+        name: material.name,
+        class: material.class,
+        amount: Math.max(1, Math.trunc(material.amount * 0.7)),
+      })),
+    };
+  }
+  return {
+    boat: SEA_BOAT_TIERS[index].name,
+    demoted: SEA_BOAT_TIERS[index - 1].name,
+    sunk: false,
+    refunds: [],
+  };
+}
+
 export function getSeaRoute(routeName) {
   return SEA_ROUTES.find(route => route.name === routeName) || null;
 }

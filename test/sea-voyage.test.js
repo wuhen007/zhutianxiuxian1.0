@@ -20,9 +20,14 @@ import {
   getSeaEventChoice,
   getSeaRoute,
   isSeaRouteTideBoosted,
+  resolveEffectiveBoat,
+  rollSeaDisaster,
   rollSeaEvent,
   rollSeaSighting,
   rollSeaVoyageBaseReward,
+  SEA_DISASTER_CHANCE,
+  SEA_DISASTERS,
+  damagePlayerBoat,
 } from '../model/seaVoyage.js';
 import {
   FISHING_PLANE_NAMES,
@@ -47,6 +52,57 @@ const itemLists = [
 ].flat();
 const recipes = readJson('../resources/data/item/合成列表.json');
 const sequence = values => () => values.shift();
+
+test('奖励获得的舟自动生效：取当前舟与纳戒舟中阶位最高者', () => {
+  // 无舟 + 纳戒无舟道具 → 无舟
+  assert.equal(resolveEffectiveBoat(null, []), null);
+  assert.equal(resolveEffectiveBoat(undefined, []), null);
+  // 无舟 + 纳戒有舟道具 → 自动启用（取阶位最高）
+  assert.equal(resolveEffectiveBoat(null, ['一叶轻舟']), '一叶轻舟');
+  assert.equal(resolveEffectiveBoat(null, ['界河灵舟', '一叶轻舟']), '界河灵舟');
+  assert.equal(resolveEffectiveBoat(null, ['一叶轻舟', '诸天仙舟', '界河灵舟']), '诸天仙舟');
+  // 已有低阶舟 + 奖励高阶舟 → 奖励高阶舟生效
+  assert.equal(resolveEffectiveBoat('一叶轻舟', ['诸天仙舟']), '诸天仙舟');
+  assert.equal(resolveEffectiveBoat('界河灵舟', ['诸天仙舟']), '诸天仙舟');
+  assert.equal(resolveEffectiveBoat('一叶轻舟', ['界河灵舟']), '界河灵舟');
+  // 当前已是最高阶 → 保持
+  assert.equal(resolveEffectiveBoat('诸天仙舟', ['一叶轻舟']), '诸天仙舟');
+  assert.equal(resolveEffectiveBoat('诸天仙舟', ['诸天仙舟', '界河灵舟']), '诸天仙舟');
+  // 非法舟名 + 非舟体系道具（如瑞泽云海"仙舟"）→ 不生效
+  assert.equal(resolveEffectiveBoat('仙舟', []), null);
+  assert.equal(resolveEffectiveBoat(null, ['仙舟']), null);
+  assert.equal(resolveEffectiveBoat('乱写的舟', ['一叶轻舟']), '一叶轻舟');
+});
+
+test('出海恶性事件：12%概率触发舟体损坏（降阶/沉没返还残骸）', () => {
+  // 概率边界：<12% 触发，>=12% 不触发
+  assert.equal(SEA_DISASTER_CHANCE, 0.12);
+  assert.ok(rollSeaDisaster(() => 0.11));
+  assert.equal(rollSeaDisaster(() => 0.12), null);
+  assert.equal(rollSeaDisaster(() => 0.999), null);
+  assert.ok(rollSeaDisaster(() => 0));
+  // 事件池 id 唯一且都有标题/引言
+  assert.equal(new Set(SEA_DISASTERS.map(d => d.id)).size, SEA_DISASTERS.length);
+  assert.ok(SEA_DISASTERS.every(d => d.id && d.title && d.intro));
+  // 舟体受损：仙舟→灵舟、灵舟→轻舟（残骸重组，不沉没）
+  assert.deepEqual(damagePlayerBoat('诸天仙舟'), {
+    boat: '诸天仙舟', demoted: '界河灵舟', sunk: false, refunds: [],
+  });
+  assert.deepEqual(damagePlayerBoat('界河灵舟'), {
+    boat: '界河灵舟', demoted: '一叶轻舟', sunk: false, refunds: [],
+  });
+  // 轻舟沉没：返还首舟材料70%（群星之沙x20→14、愿鳞x50→35）
+  const sunk = damagePlayerBoat('一叶轻舟');
+  assert.equal(sunk.sunk, true);
+  assert.equal(sunk.demoted, null);
+  assert.deepEqual(sunk.refunds, [
+    { name: '群星之沙', class: '道具', amount: 14 },
+    { name: '众生愿鳞', class: '道具', amount: 35 },
+  ]);
+  // 非舟体系道具（瑞泽云海"仙舟"）不受影响
+  assert.equal(damagePlayerBoat('仙舟'), null);
+  assert.equal(damagePlayerBoat(null), null);
+});
 
 test('三阶舟：倍率递增、统一120分钟出海、升级链闭环', () => {
   assert.deepEqual(SEA_BOAT_NAMES, ['一叶轻舟', '界河灵舟', '诸天仙舟']);
