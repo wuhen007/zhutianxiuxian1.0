@@ -24,7 +24,7 @@ import {
   getMinggeEffectNumber,
 } from '../../model/mingge.js';
 import { getExtraCultivationLevelSum } from '../../model/extraCultivation.js';
-import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
+import { getRealmAuthorityLevel, getYuanshenAdvancement } from '../../model/realmAuthority.js';
 import {
   SPIRIT_HEART_ENTRY_COST,
   consumeSpiritHeartEntry,
@@ -531,25 +531,23 @@ export class yuanshentixi extends plugin {
     }
 
     if (p.yuanshenlevel_id >= 0) {
-      const requiredAuthority = 10 + p.yuanshenlevel_id;
+      const advancement = getYuanshenAdvancement(data.Levelyuanshen_list, p.yuanshenlevel_id);
+      if (advancement.atMax) return e.reply('你的元神已凝练至当前最高境界！');
+      const requiredAuthority = advancement.requiredAuthority;
       const authority = getRealmAuthorityLevel(p);
       if (authority <= 1) {
         return e.reply('你尚未开始修炼额外体系，无法再继续凝练元神！');
       }
       if (authority < requiredAuthority) {
-        const target = data.Levelmijing_list.find(item => item.level_id == requiredAuthority)?.level;
-        return e.reply(`你的额外体系道果不够强大，需达到${target || `权限等级${requiredAuthority}`}！`);
+        return e.reply(`你的额外体系道果不够强大，主修境界需达到${requiredAuthority}重天，方可凝练${advancement.next.level}！`);
       }
-    }
 
-    p.元神 -= baseexp;
-    p.凝练次数 += 1;
-    p.yuanshenlevel_id += 1;
-    let 元神等级 = data.Levelyuanshen_list.find(
-      item => item.level_id == p.yuanshenlevel_id
-    ).level;
-    await Write_player(usr_qq, p);
-    return e.reply(`你成功凝练了元神，你目前的元神级别是${元神等级}！`);
+      p.元神 -= baseexp;
+      p.凝练次数 += 1;
+      p.yuanshenlevel_id = Number(advancement.next.level_id);
+      await Write_player(usr_qq, p);
+      return e.reply(`你成功凝练了元神，你目前的元神级别是${advancement.next.level}！`);
+    }
   }
 
   /* =========================================================

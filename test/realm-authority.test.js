@@ -6,6 +6,7 @@ import {
   getRealmAuthorityLevel,
   getRealmAuthorityName,
   getGodDemonStealRule,
+  getYuanshenAdvancement,
   hasRealmAuthority,
   lowerRealmAuthority,
 } from '../model/realmAuthority.js';
@@ -59,6 +60,20 @@ test('realm loss applies to the path providing the authority', () => {
   const huafenPlayer = { mijinglevel_id: 1, xiangulevel_id: 1, huafenlevel_id: 22 };
   assert.equal(lowerRealmAuthority(huafenPlayer), 'huafen');
   assert.deepEqual(huafenPlayer, { mijinglevel_id: 1, xiangulevel_id: 1, huafenlevel_id: 21 });
+});
+
+test('元神凝练按境界表前进并在最高阶停止', () => {
+  const levels = [
+    { level_id: 13, level: '祭道级元神' },
+    { level_id: 14, level: '祭道之上级元神' },
+    { level_id: 15, level: '唯一道之上级元神' },
+  ];
+  assert.deepEqual(getYuanshenAdvancement(levels, 14), {
+    next: levels[2],
+    atMax: false,
+    requiredAuthority: 24,
+  });
+  assert.equal(getYuanshenAdvancement(levels, 15).atMax, true);
 });
 
 test('authority realm names follow the active path', () => {

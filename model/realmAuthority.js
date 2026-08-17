@@ -65,6 +65,17 @@ export function hasRealmAuthority(player, requiredLevel) {
   return getRealmAuthorityLevel(player) >= levelId(requiredLevel);
 }
 
+export function getYuanshenAdvancement(levels, currentLevel) {
+  const current = levelId(currentLevel);
+  const next = (Array.isArray(levels) ? levels : [])
+    .find((item) => levelId(item?.level_id) === current + 1) || null;
+  return {
+    next,
+    atMax: !next,
+    requiredAuthority: next ? 10 + current : null,
+  };
+}
+
 export function isHighRealmConsumableRestricted(player) {
   return levelId(player?.mijinglevel_id) > 19
     || levelId(player?.xiangulevel_id) > 19
