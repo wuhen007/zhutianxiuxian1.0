@@ -1,6 +1,8 @@
 {
   "enable": true,
-  "url": "ws://127.0.0.1:8080",
+  "url": "wss://worldchat.ameng2027.xyz",
+  "auto_register": true,
+  "enrollment_token": "",
   "secret": "",
   "server_id": "",
   "name": "",

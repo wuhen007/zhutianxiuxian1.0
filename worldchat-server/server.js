@@ -60,6 +60,16 @@ function safeHexEqual(left, right) {
   );
 }
 
+function safeTokenEqual(left, right) {
+  const leftBuffer = Buffer.from(String(left || ''));
+  const rightBuffer = Buffer.from(String(right || ''));
+  return (
+    leftBuffer.length > 0 &&
+    leftBuffer.length === rightBuffer.length &&
+    crypto.timingSafeEqual(leftBuffer, rightBuffer)
+  );
+}
+
 function helloPayload(serverId, ts, nonce) {
   return JSON.stringify(['HELLO', serverId, Number(ts), String(nonce)]);
 }
@@ -161,6 +171,7 @@ export function createWorldChatServer(options = {}) {
   const usedNonces = new Map();
   const publishWindows = new Map();
   const userLastPublish = new Map();
+  const registrationWindows = new Map();
   let publishedRequests = new Map();
 
   function rebuildDedupe() {
@@ -220,6 +231,26 @@ export function createWorldChatServer(options = {}) {
     );
   }
 
+  function registrationAllowed(req) {
+    const forwarded = String(req.headers['x-forwarded-for'] || '')
+      .split(',')[0]
+      .trim();
+    const key = forwarded || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const window = registrationWindows.get(key) || {
+      startedAt: now,
+      count: 0,
+    };
+    if (now - window.startedAt >= 60_000) {
+      window.startedAt = now;
+      window.count = 0;
+    }
+    if (window.count >= cfg.MAX_REGISTRATIONS_PER_MINUTE) return false;
+    window.count += 1;
+    registrationWindows.set(key, window);
+    return true;
+  }
+
   function buildAdminStatus() {
     const clients = loadClients();
     const ids = new Set([...clients.keys(), ...online.keys(), ...banned]);
@@ -270,6 +301,62 @@ export function createWorldChatServer(options = {}) {
         joined: [...online.values()].filter((connection) => connection.joined)
           .length,
         totalMessages: messages.length,
+      });
+      return;
+    }
+
+    if (pathname === '/api/register' && req.method === 'POST') {
+      if (!cfg.ENROLLMENT_TOKEN)
+        return sendJson(res, 503, {
+          ok: false,
+          reason: 'registration_disabled',
+        });
+      if (!registrationAllowed(req))
+        return sendJson(res, 429, {
+          ok: false,
+          reason: 'registration_rate_limited',
+        });
+      let body;
+      try {
+        body = await readBody(req, cfg.MAX_PAYLOAD_BYTES);
+      } catch (error) {
+        if (!res.headersSent)
+          sendJson(res, error.statusCode || 400, {
+            ok: false,
+            reason: error.message,
+          });
+        return;
+      }
+      if (!safeTokenEqual(body.enrollment_token, cfg.ENROLLMENT_TOKEN))
+        return sendJson(res, 401, {
+          ok: false,
+          reason: 'enrollment_invalid',
+        });
+      const requestedName = cleanLabel(body.name);
+
+      const clients = readJson(clientsFile, {});
+      let serverId;
+      do {
+        serverId = `sv_${crypto.randomBytes(8).toString('hex')}`;
+      } while (clients[serverId]);
+      const name =
+        requestedName && requestedName !== '区服-待登记'
+          ? requestedName
+          : `区服-${serverId.slice(3, 9)}`;
+      const secret = crypto.randomBytes(32).toString('hex');
+      clients[serverId] = { name, secret, enabled: true };
+      try {
+        atomicWriteJson(clientsFile, clients);
+      } catch (error) {
+        logger.error('[worldchat] client registration persistence failed', error);
+        return sendJson(res, 500, { ok: false, reason: 'storage_error' });
+      }
+      logger.info(`[worldchat] REGISTER ${name} (${serverId})`);
+      sendJson(res, 201, {
+        ok: true,
+        server_id: serverId,
+        secret,
+        name,
       });
       return;
     }

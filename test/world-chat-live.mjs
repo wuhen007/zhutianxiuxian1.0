@@ -1,23 +1,24 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { WorldChatClient } from '../apps/worldChat/client.js';
+import {
+  DEFAULT_ENROLLMENT_PATH,
+  WorldChatClient,
+  loadConfig,
+} from '../apps/worldChat/client.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const configPath = path.join(
-  repoRoot,
-  'apps',
-  'worldChat',
-  'config.local.json'
-);
+const configPath = process.env.WORLDCHAT_CONFIG_PATH
+  ? path.resolve(process.env.WORLDCHAT_CONFIG_PATH)
+  : path.join(repoRoot, 'apps', 'worldChat', 'config.local.json');
 const url = process.env.WORLDCHAT_LIVE_URL;
 
 if (!url) throw new Error('WORLDCHAT_LIVE_URL is required');
 
-const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+const config = loadConfig(configPath, DEFAULT_ENROLLMENT_PATH);
 const client = new WorldChatClient({
+  configPath,
   config: { ...config, enable: true, url },
-  persist: false,
+  persist: true,
 });
 
 client.connect();
@@ -31,7 +32,7 @@ const result = {
   connected: client.connected,
   authed: client.authed,
   url,
-  server_id: config.server_id,
+  server_id: client.cfg.server_id,
   error: client.lastError,
 };
 client.close();

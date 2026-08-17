@@ -7,8 +7,13 @@ import { fileURLToPath } from 'node:url';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_CONFIG_PATH = path.join(MODULE_DIR, 'config.local.json');
+export const DEFAULT_ENROLLMENT_PATH = path.join(
+  MODULE_DIR,
+  'enrollment.local.json'
+);
 const LEGACY_CONFIG_PATH = path.join(MODULE_DIR, 'config.json');
 const DEV_SECRET = 'zhutian-worldchat-dev-secret-change-me';
+const DEFAULT_WORLDCHAT_URL = 'wss://worldchat.ameng2027.xyz';
 
 function atomicWriteJson(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -27,10 +32,20 @@ function readConfig(file) {
   }
 }
 
+function hasUsableIdentity(config = {}) {
+  return (
+    /^[A-Za-z0-9_-]{3,64}$/.test(String(config.server_id || '')) &&
+    /^[a-f0-9]{64}$/i.test(String(config.secret || ''))
+  );
+}
+
 function normalizeConfig(input = {}) {
   const cfg = { ...input };
   cfg.enable = cfg.enable !== false;
-  cfg.url = cfg.url || 'ws://127.0.0.1:8080';
+  cfg.url = cfg.url || DEFAULT_WORLDCHAT_URL;
+  cfg.enrollment_token = String(cfg.enrollment_token || '');
+  cfg.auto_register =
+    cfg.auto_register === true || Boolean(cfg.enrollment_token);
   cfg.query_default = Math.min(
     100,
     Math.max(1, Number(cfg.query_default) || 10)
@@ -46,27 +61,52 @@ function normalizeConfig(input = {}) {
     ),
   ];
   cfg.last_seen_seq = Math.max(0, Number(cfg.last_seen_seq) || 0);
-  if (!/^[A-Za-z0-9_-]{3,64}$/.test(String(cfg.server_id || ''))) {
-    cfg.server_id = `sv_${crypto.randomBytes(8).toString('hex')}`;
+  const hasServerId = /^[A-Za-z0-9_-]{3,64}$/.test(
+    String(cfg.server_id || '')
+  );
+  const hasSecret =
+    typeof cfg.secret === 'string' &&
+    cfg.secret.length >= 32 &&
+    cfg.secret !== DEV_SECRET;
+  if (cfg.auto_register && (!hasServerId || !hasSecret)) {
+    cfg.server_id = '';
+    cfg.secret = '';
+  } else {
+    if (!hasServerId) {
+      cfg.server_id = `sv_${crypto.randomBytes(8).toString('hex')}`;
+    }
+    if (!hasSecret) cfg.secret = crypto.randomBytes(32).toString('hex');
   }
-  if (
-    typeof cfg.secret !== 'string' ||
-    cfg.secret.length < 32 ||
-    cfg.secret === DEV_SECRET
-  ) {
-    cfg.secret = crypto.randomBytes(32).toString('hex');
-  }
-  cfg.name = String(cfg.name || `区服-${cfg.server_id.slice(3, 9)}`)
+  cfg.name = String(cfg.name || `区服-${cfg.server_id.slice(3, 9) || '待登记'}`)
     .trim()
     .slice(0, 30);
   return cfg;
 }
 
-export function loadConfig(configPath = DEFAULT_CONFIG_PATH) {
+export function loadConfig(
+  configPath = DEFAULT_CONFIG_PATH,
+  enrollmentPath =
+    configPath === DEFAULT_CONFIG_PATH ? DEFAULT_ENROLLMENT_PATH : null
+) {
   const legacy =
     configPath === DEFAULT_CONFIG_PATH ? readConfig(LEGACY_CONFIG_PATH) : null;
-  const cfg = normalizeConfig(readConfig(configPath) || legacy || {});
-  atomicWriteJson(configPath, cfg);
+  const source = readConfig(configPath) || legacy || {};
+  const enrollment = source.identity_verified || !enrollmentPath
+    ? null
+    : readConfig(enrollmentPath);
+  const externalToken = String(
+    process.env.WORLDCHAT_ENROLLMENT_TOKEN ||
+      enrollment?.enrollment_token ||
+      ''
+  );
+  const cfg = normalizeConfig({
+    ...source,
+    enrollment_token: source.enrollment_token || externalToken,
+    url: source.url || enrollment?.url,
+  });
+  const persisted = { ...cfg };
+  if (!source.enrollment_token) delete persisted.enrollment_token;
+  atomicWriteJson(configPath, persisted);
   return cfg;
 }
 
@@ -107,6 +147,7 @@ export class WorldChatClient {
     this.messageHandler = null;
     this.backfillPromise = null;
     this.deliveryChain = Promise.resolve();
+    this.identityPromise = null;
   }
 
   saveConfig() {
@@ -128,8 +169,80 @@ export class WorldChatClient {
     this.messageHandler = typeof handler === 'function' ? handler : null;
   }
 
+  hasIdentity() {
+    return hasUsableIdentity(this.cfg);
+  }
+
+  registrationUrl() {
+    const url = new URL(this.cfg.url);
+    url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+    url.pathname = '/api/register';
+    url.search = '';
+    url.hash = '';
+    return url;
+  }
+
+  async registerIdentity() {
+    if (this.hasIdentity()) return true;
+    if (!this.cfg.auto_register || !this.cfg.enrollment_token) {
+      throw new Error('enrollment_required');
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
+    timer.unref?.();
+    let response;
+    try {
+      response = await fetch(this.registrationUrl(), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: this.cfg.name,
+          enrollment_token: this.cfg.enrollment_token,
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    let body = null;
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+    if (!response.ok || !body?.ok) {
+      throw new Error(body?.reason || `register_http_${response.status}`);
+    }
+    if (
+      !/^[A-Za-z0-9_-]{3,64}$/.test(String(body.server_id || '')) ||
+      !/^[a-f0-9]{64}$/i.test(String(body.secret || ''))
+    ) {
+      throw new Error('invalid_registration_response');
+    }
+    this.cfg.server_id = body.server_id;
+    this.cfg.secret = body.secret;
+    this.cfg.name = String(body.name || this.cfg.name).slice(0, 30);
+    this.cfg.identity_verified = true;
+    delete this.cfg.enrollment_token;
+    this.saveConfig();
+    return true;
+  }
+
   connect() {
     if (!this.cfg.enable) return;
+    if (!this.hasIdentity()) {
+      if (this.identityPromise) return;
+      this.identityPromise = this.registerIdentity()
+        .catch((error) => {
+          this.lastError = error.message;
+          this.scheduleReconnect();
+        })
+        .finally(() => {
+          this.identityPromise = null;
+          if (this.cfg.enable && this.hasIdentity()) this.connect();
+        });
+      return;
+    }
     if (
       this.ws &&
       (this.ws.readyState === this.WebSocket.OPEN ||
@@ -165,7 +278,10 @@ export class WorldChatClient {
       );
     });
     ws.on('message', (raw) => this.onMessage(raw));
-    ws.on('close', () => {
+    ws.on('close', (code, reason) => {
+      const closeReason = reason?.toString?.().trim();
+      if (closeReason) this.lastError = closeReason;
+      else if (code !== 1000) this.lastError = `connection_closed_${code}`;
       this.connected = false;
       this.authed = false;
       this.stopPing();
@@ -197,10 +313,24 @@ export class WorldChatClient {
     if (message.type === 'WELCOME') {
       if (!message.ok) {
         this.lastError = message.reason || 'auth_failed';
+        if (
+          this.lastError === 'auth_failed' &&
+          this.cfg.auto_register &&
+          this.cfg.enrollment_token
+        ) {
+          this.cfg.server_id = '';
+          this.cfg.secret = '';
+          this.ws?.close();
+        }
         return;
       }
       this.authed = true;
       this.lastError = null;
+      if (this.cfg.enrollment_token) {
+        this.cfg.identity_verified = true;
+        delete this.cfg.enrollment_token;
+        this.saveConfig();
+      }
       this.serverLastSeq = Math.max(0, Number(message.last_seq) || 0);
       if (this.cfg.start_from_now) {
         this.cfg.last_seen_seq = this.serverLastSeq;
@@ -435,6 +565,8 @@ export class WorldChatClient {
       url: this.cfg.url,
       server_id: this.cfg.server_id,
       name: this.cfg.name,
+      auto_register: this.cfg.auto_register,
+      registered: this.hasIdentity(),
       expose_group: this.cfg.expose_group,
       joined_groups: this.groups(),
       last_seen_seq: this.cfg.last_seen_seq,

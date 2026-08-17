@@ -14,6 +14,32 @@ function senderName(e) {
     .slice(0, 30);
 }
 
+function canManageGroup(e) {
+  const role = String(e.sender?.role || e.member?.role || '').toLowerCase();
+  return (
+    e.isMaster ||
+    role === 'owner' ||
+    role === 'admin' ||
+    e.member?.is_owner === true ||
+    e.member?.is_admin === true
+  );
+}
+
+function readableConnectionError(error) {
+  return (
+    {
+      replaced: '同一本服标识已在另一台机器登录',
+      auth_failed: '本服凭据未登记或不匹配',
+      banned: '本服已被总机禁用',
+      enrollment_required: '未配置总机登记令牌',
+      enrollment_invalid: '总机登记令牌无效',
+      registration_rate_limited: '总机登记过于频繁，请稍后再试',
+    }[error] ||
+    error ||
+    '无'
+  );
+}
+
 export class WorldChat extends plugin {
   constructor() {
     super({
@@ -152,7 +178,8 @@ export class WorldChat extends plugin {
 
   async join(e) {
     if (!e.isGroup) return e.reply('请在需要加入世界频道的群里发送该指令');
-    if (!e.isMaster) return e.reply('仅机器人管理员可让群聊加入世界频道');
+    if (!canManageGroup(e))
+      return e.reply('仅机器人主人、群主或群管理员可让群聊加入世界频道');
     if (!client.joinGroup(e.group_id)) return e.reply('本群已经加入世界频道');
     e.reply('本群已加入诸天世界频道，之后将实时收取跨服消息');
     return true;
@@ -160,7 +187,8 @@ export class WorldChat extends plugin {
 
   async leave(e) {
     if (!e.isGroup) return e.reply('请在需要退出世界频道的群里发送该指令');
-    if (!e.isMaster) return e.reply('仅机器人管理员可让群聊退出世界频道');
+    if (!canManageGroup(e))
+      return e.reply('仅机器人主人、群主或群管理员可让群聊退出世界频道');
     if (!client.leaveGroup(e.group_id)) return e.reply('本群尚未加入世界频道');
     e.reply('本群已退出诸天世界频道');
     return true;
@@ -182,16 +210,21 @@ export class WorldChat extends plugin {
       }`,
       `已收取序号：${status.last_seen_seq}`,
     ];
-    if (e.isMaster && !e.isGroup) {
-      lines.push(
-        `总机：${status.url}`,
-        `本服标识：${status.server_id}`,
-        `区服昵称：${status.name}`,
-        `已加入群：${
-          status.joined_groups.length ? status.joined_groups.join('、') : '无'
-        }`,
-        `最近错误：${status.last_error || '无'}`
-      );
+    if (e.isMaster) {
+      if (!e.isGroup) {
+        lines.push(
+          `总机：${status.url}`,
+          `本服标识：${status.server_id}`,
+          `区服昵称：${status.name}`,
+          `身份登记：${status.registered ? '已登记' : '待自动登记'}`,
+          `已加入群：${
+            status.joined_groups.length
+              ? status.joined_groups.join('、')
+              : '无'
+          }`
+        );
+      }
+      lines.push(`最近错误：${readableConnectionError(status.last_error)}`);
     }
     e.reply(lines.join('\n'));
     return true;
