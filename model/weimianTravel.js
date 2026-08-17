@@ -30,6 +30,7 @@ export function isShengxuPlane(location) {
 
 export const TRAVEL_BASE_MIN_PER_LEVEL = 15;
 export const TRAVEL_REDUCE_MAX = 0.7;
+export const ZHETIAN_ENTRY_AUTHORITY_LEVEL = 12;
 export const TOKEN_HIGH_MIN_PER_LEVEL = 3;
 export const TOKEN_LOW_MIN_PER_LEVEL = 12;
 export const ACCIDENT_BASE = Object.freeze({ high: 0.05, low: 0.4 });
@@ -423,9 +424,10 @@ export function getLocationThreshold(player, location) {
     code = met ? null : 'dayinjian';
     checks = [{ label: '花粉·神祇境', display: `花粉 ${huafen}/12`, met }];
   } else if (location === '阳间') {
-    const met = isCultivatingExtraPath(player, 'huafen') && huafen >= 14;
+    // 神将（13）即可入阳间，于法则完整之地冲击神王（14）
+    const met = isCultivatingExtraPath(player, 'huafen') && huafen >= 13;
     code = met ? null : 'yangjian';
-    checks = [{ label: '花粉·神王境', display: `花粉 ${huafen}/14`, met }];
+    checks = [{ label: '花粉·神将境', display: `花粉 ${huafen}/13`, met }];
   } else if (location === '时间长河') {
     const met = mijing >= 20 || xiangu >= 20 || huafen >= 21;
     code = met ? null : 'time-river';
@@ -440,11 +442,12 @@ export function getLocationThreshold(player, location) {
     checks = [{ label: '成仙条件', display: met ? '已成仙' : '需地仙境或轮回', met }];
   } else if (location === '遮天位面') {
     const altarActive = Number(player?.五色祭坛激活) === 1;
-    const met = mijing >= 12 || xiangu > 10 || huafen >= 11 || altarActive;
+    const authority = getRealmAuthorityLevel(player);
+    const met = authority >= ZHETIAN_ENTRY_AUTHORITY_LEVEL || altarActive;
     code = met ? null : 'zhetian';
     checks = [{
-      label: '星海通行',
-      display: `秘境 ${mijing}/12、仙古 ${xiangu}/11、花粉 ${huafen}/11或五色祭坛${altarActive ? '已激活' : '未激活'}`,
+      label: '圣人级星海通行',
+      display: `等效权柄 ${authority}/${ZHETIAN_ENTRY_AUTHORITY_LEVEL}（秘境 ${mijing}/12、仙古 ${xiangu}/11、花粉 ${huafen}/11）或五色祭坛${altarActive ? '已激活' : '未激活'}`,
       met,
     }];
   } else if (location === '仙域') {

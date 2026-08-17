@@ -43,7 +43,13 @@ export function getExtraCultivationPathName(path) {
 
 export function getExtraCultivationLevelSum(player) {
   ensureExtraCultivationState(player);
+  // 保持旧公式“秘境 + 仙古”的初始值为 2，并加入花粉路的实际境界贡献。
   return player.mijinglevel_id + player.xiangulevel_id + player.huafenlevel_id - 1;
+}
+
+export function getExtraCultivationLevelProduct(player) {
+  ensureExtraCultivationState(player);
+  return player.mijinglevel_id * player.xiangulevel_id * player.huafenlevel_id;
 }
 
 export function canCultivateExtraPath(player, targetPath) {

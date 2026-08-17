@@ -5,6 +5,7 @@ import {
   applyAncestorCall,
   checkGongfaGate,
   ensureFlowerPollenState,
+  EVOLUTION_BASE_COST,
   getFlowerEvolutionCost,
   getFlowerEraProfile,
   getMutationChance,
@@ -18,13 +19,13 @@ import {
   getPlaneRealmLaw,
 } from '../model/planeRealmLaw.js';
 
-test('evolution cost follows 1250000 × 2^level with era multiplier', () => {
-  assert.equal(getFlowerEvolutionCost(1, 2), 2500000); // 125万×2^1×1.0
-  assert.equal(getFlowerEvolutionCost(5, 2), 40000000); // 125万×32
-  assert.equal(getFlowerEvolutionCost(11, 2), 1250000 * 2048); // 2^11
-  assert.equal(getFlowerEvolutionCost(1, 0), 1875000); // 神话 0.75
-  assert.equal(getFlowerEvolutionCost(1, 4), 7500000); // 绝灵 3.0
-  assert.equal(getFlowerEvolutionCost(0, 2), getFlowerEvolutionCost(1, 2)); // 等级下限 1
+test('evolution cost follows 150000000 × 5^level with era multiplier', () => {
+  assert.equal(getFlowerEvolutionCost(1, 2), EVOLUTION_BASE_COST * 5);
+  assert.equal(getFlowerEvolutionCost(5, 2), EVOLUTION_BASE_COST * 5 ** 5);
+  assert.equal(getFlowerEvolutionCost(11, 2), EVOLUTION_BASE_COST * 5 ** 11);
+  assert.equal(getFlowerEvolutionCost(1, 0), EVOLUTION_BASE_COST * 5 * 0.75);
+  assert.equal(getFlowerEvolutionCost(1, 4), EVOLUTION_BASE_COST * 5 * 3);
+  assert.equal(getFlowerEvolutionCost(0, 2), getFlowerEvolutionCost(1, 2));
 });
 
 test('era profile exposes cost rate and chance shift', () => {
@@ -116,5 +117,9 @@ test('plane realm law caps pollen path by plane', () => {
   assert.equal(checkPlaneRealmLaw({ power_place: 5 }, 14).ok, false);
   assert.equal(checkPlaneRealmLaw({ power_place: 7 }, 17).ok, true); // 阳间容到 17
   assert.equal(checkPlaneRealmLaw({ power_place: 7 }, 18).ok, false);
-  assert.equal(checkPlaneRealmLaw({ power_place: 2 }, 24).ok, true); // 遮天不卡
+  // 未列位面（遮天等）：13 级以下不卡，神王（14）以上需入阳间（防绕行）
+  assert.equal(checkPlaneRealmLaw({ power_place: 2 }, 13).ok, true); // 遮天容神将
+  assert.equal(checkPlaneRealmLaw({ power_place: 2 }, 14).ok, false); // 遮天不卡神王 → 需入阳间
+  assert.equal(checkPlaneRealmLaw({ power_place: 2 }, 14).needYangJian, true);
+  assert.equal(checkPlaneRealmLaw({ power_place: 7 }, 14).ok, true); // 阳间可突破神王
 });

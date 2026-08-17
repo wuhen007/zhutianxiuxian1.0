@@ -46,6 +46,7 @@ import {
     WENDAO_PALACE_NAME,
     grantWendaoPalace,
 } from '../../model/spiritUniverse.js';
+import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 
 /**
  * 问仙令 - 战令系统 v2
@@ -336,7 +337,7 @@ export class WenXianLing extends plugin {
 
     _getAcquisitionStatus(player) {
         const state = ensureWenXianState(player);
-        const realm = Math.max(Number(player.mijinglevel_id) || 0, Number(player.xiangulevel_id) || 0);
+        const realm = getRealmAuthorityLevel(player);
         const lines = [
             '【问仙令·传承未启】',
             `问仙道痕：${state.pendingExp}/${WENXIAN_PENDING_EXP_CAP}`,
@@ -344,8 +345,8 @@ export class WenXianLing extends plugin {
 
         if (!isWenXianEligible(player)) {
             lines.push(
-                `问仙资格：未达到（秘境或仙古今世法需达到${WENXIAN_REQUIRED_REALM_LEVEL}级）`,
-                `当前最高等级：${realm}`,
+                `问仙资格：未达到（三大体系等效权柄需达到${WENXIAN_REQUIRED_REALM_LEVEL}重天）`,
+                `当前等效权柄：${realm}重天`,
             );
             return lines;
         }
@@ -394,7 +395,7 @@ export class WenXianLing extends plugin {
             const player = await Read_player(usr_qq);
             const result = purchaseWenXianClue(player);
             if (result.reason === 'ineligible') {
-                return e.reply(`秘境或仙古今世法任一体系达到${WENXIAN_REQUIRED_REALM_LEVEL}级，才有资格求取问仙线索。`);
+                return e.reply(`三大体系等效权柄达到${WENXIAN_REQUIRED_REALM_LEVEL}重天，才有资格求取问仙线索。`);
             }
             if (result.reason === 'unlocked') return e.reply('你已经激活问仙令，无需求取线索。');
             if (result.reason === 'known') return e.reply('你已经获得问仙线索，无需重复求取。');
@@ -668,7 +669,7 @@ export class WenXianLing extends plugin {
             WENDAO_PALACE_DESC,
             ``,
             `【获取方式】`,
-            `秘境或仙古今世法任一体系达到${WENXIAN_REQUIRED_REALM_LEVEL}级后，取得问仙线索并完成试炼。`,
+            `人体秘境、仙古今世法或花粉进化路的等效权柄达到${WENXIAN_REQUIRED_REALM_LEVEL}重天后，取得问仙线索并完成试炼。`,
             `每日首次成功副本1%概率发现线索，${WENXIAN_DUNGEON_CLUE_PITY}次保底。`,
             `也可参悟问仙古碑，或消耗${WENXIAN_CLUE_COST.toLocaleString('zh-CN')}源石重金求取。`,
             `试炼：7次每日任务、开辟内景地、参与击败位面天骄、探索最终坐标。`,

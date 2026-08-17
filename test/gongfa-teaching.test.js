@@ -10,9 +10,11 @@ import {
   reserveTeachingCosts,
 } from '../model/gongfaTeaching.js';
 
-test('圣人或天神境解锁功法传授', () => {
+test('圣人、天神或映照诸天境解锁功法传授', () => {
   assert.equal(canTeachGongfa({ mijinglevel_id: 12 }), true);
   assert.equal(canTeachGongfa({ xiangulevel_id: 11 }), true);
+  assert.equal(canTeachGongfa({ huafenlevel_id: 11 }), true);
+  assert.equal(canTeachGongfa({ huafenlevel_id: 10 }), false);
   assert.equal(canTeachGongfa({ mijinglevel_id: 11, xiangulevel_id: 10 }), false);
 });
 

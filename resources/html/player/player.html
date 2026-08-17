@@ -44,18 +44,14 @@
               {{/if}}
   {{if player.xiangulevel_id > 1}}
     <div class="user_top_font_left">
-        仙古今世法：【
-        {{if player.极境 && player.极境.includes('2') && player.xiangulevel_id == 2}}搬血极境·十万八千斤
-        {{else if player.极境 && player.极境.includes('3') && player.xiangulevel_id == 3}}洞天极境·洞天神环
-        {{else if player.极境 && player.极境.includes('4') && player.xiangulevel_id == 4}}化灵极境·灵性极致
-        {{else if player.极境 && player.极境.includes('5') && player.xiangulevel_id == 5}}铭文极境·万法源流
-        {{else if player.极境 && player.极境.includes('6') && player.xiangulevel_id == 6}}列阵极境·体刻万灵
-        {{else}}{{rank_xiangujinshi}}
-        {{/if}}
-        】
+      仙古今世法：【{{rank_xiangujinshi}}】
     </div>
-   
-{{/if}}
+  {{/if}}
+  {{if player.huafenlevel_id > 1}}
+    <div class="user_top_font_left">
+      花粉进化路：【{{rank_huafen}}】
+    </div>
+  {{/if}}
           <!-- 帝位信息 - 放在左右部分之间 -->
           <div class="user_top_font_left">
             帝号:【{{if player.di_wei == '天帝'}}{{player.帝号}}{{else}}无{{/if}}】

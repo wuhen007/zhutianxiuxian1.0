@@ -48,7 +48,7 @@ function xianguAuthorityLevel(value) {
   return XIANGU_AUTHORITY_MAP.find(([required]) => xianguLevel >= required)?.[1] || xianguLevel;
 }
 
-function huafenAuthorityLevel(value) {
+export function getFlowerPollenAuthorityLevel(value) {
   const huafenLevel = levelId(value);
   return HUAFEN_AUTHORITY_MAP.find(([required]) => huafenLevel >= required)?.[1] || huafenLevel;
 }
@@ -57,7 +57,7 @@ export function getRealmAuthorityLevel(player) {
   return Math.max(
     levelId(player?.mijinglevel_id),
     xianguAuthorityLevel(player?.xiangulevel_id),
-    huafenAuthorityLevel(player?.huafenlevel_id)
+    getFlowerPollenAuthorityLevel(player?.huafenlevel_id)
   );
 }
 
@@ -68,7 +68,7 @@ export function hasRealmAuthority(player, requiredLevel) {
 export function isHighRealmConsumableRestricted(player) {
   return levelId(player?.mijinglevel_id) > 19
     || levelId(player?.xiangulevel_id) > 19
-    || huafenAuthorityLevel(player?.huafenlevel_id) > 19;
+    || getFlowerPollenAuthorityLevel(player?.huafenlevel_id) > 19;
 }
 
 export function getGodDemonStealRule(attacker, defender) {
@@ -111,7 +111,7 @@ export function getGodDemonStealRule(attacker, defender) {
 export function getRealmAuthorityPath(player) {
   const mijingLevel = levelId(player?.mijinglevel_id);
   const xianguLevel = xianguAuthorityLevel(player?.xiangulevel_id);
-  const huafenLevel = huafenAuthorityLevel(player?.huafenlevel_id);
+  const huafenLevel = getFlowerPollenAuthorityLevel(player?.huafenlevel_id);
   if (huafenLevel >= Math.max(mijingLevel, xianguLevel) && levelId(player?.huafenlevel_id) > 1) return 'huafen';
   return xianguLevel > mijingLevel ? 'xiangu' : 'mijing';
 }

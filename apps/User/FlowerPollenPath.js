@@ -51,6 +51,7 @@ import {
   recordFlowerBreathingPractice,
 } from '../../model/flowerPollenPath.js';
 import { checkPlaneRealmLaw } from '../../model/planeRealmLaw.js';
+import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import { getShanghaiDateKey } from '../../model/weimianTravel.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
@@ -127,10 +128,16 @@ export class FlowerPollenPath extends plugin {
     const branchProfile = getFlowerBranchProfile(player);
     const breakthrough = getFlowerBreakthroughRule(player.huafenlevel_id);
     const tribulationGate = getFlowerTribulationGateState(player, player.huafenlevel_id);
+    const authorityLevel = getRealmAuthorityLevel(player);
+    const authorities = [];
+    if (authorityLevel >= 12) authorities.push('传授功法');
+    if (authorityLevel >= 21) authorities.push('造化万物');
+    if (authorityLevel >= 22) authorities.push('开铸大道至宝');
     const daoDailyCount = daoGate.path.daily.date === getShanghaiDateKey() ? daoGate.path.daily.count : 0;
     const lines = [
       '【花粉进化路】',
       `境界：${realmName(player.huafenlevel_id)}${player.花粉路分支 ? `（${player.花粉路分支}）` : ''}`,
+      `等效权柄：${authorityLevel}重天${authorities.length ? `｜已解锁：${authorities.join('、')}` : ''}`,
       `进化积淀：${player.进化积淀}｜花粉隐患：${player.花粉隐患}/200`,
       `始祖污染：${pollution.pollution}/100${pollution.polluted ? '（污染期·始祖低语）' : ''}${pollution.marked ? '（始祖印记·成功率-20%）' : ''}`,
       `分支倾向：${branchProfile.name}｜${branchProfile.description}`,

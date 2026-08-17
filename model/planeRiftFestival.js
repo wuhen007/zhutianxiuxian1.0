@@ -463,12 +463,13 @@ export function withdrawRift(state, riftId, qq, now = Date.now()) {
 export function calculateRiftPayout(rift, secured, realm = {}) {
   const multiplier = 1 + Math.min(100, Math.max(0, Number(rift?.anchor) || 0)) / 200;
   const source = Math.floor(Math.max(0, Number(secured) || 0) * multiplier);
-  // 境界乘区：练气境界 × 炼体境界 × 仙古境界 × 秘境境界，任一为 0/缺失按 1 计，保证新玩家不归零。
+  // 境界乘区：练气 × 炼体 × 三条额外体系；三路互斥，未修路线按 1 计。
   const level = Math.max(1, Number(realm.level) || 1);
   const physique = Math.max(1, Number(realm.physique) || 1);
   const xiangu = Math.max(1, Number(realm.xiangu) || 1);
   const mijing = Math.max(1, Number(realm.mijing) || 1);
-  const realmMult = level * physique * xiangu * mijing;
+  const huafen = Math.max(1, Number(realm.huafen) || 1);
+  const realmMult = level * physique * xiangu * mijing * huafen;
   return {
     multiplier,
     source,

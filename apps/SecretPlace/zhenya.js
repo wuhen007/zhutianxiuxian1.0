@@ -123,9 +123,9 @@ export class DarkSuppressionTask extends plugin {
       const { group_id } = JSON.parse(suppressionData || '{}');
       
       // 境界跌落一层（按实际主修路线结算）
-      const originalRealm = getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list);
+      const originalRealm = getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list);
       lowerRealmAuthority(player);
-      const currentRealm = getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list);
+      const currentRealm = getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list);
       
       // 保存玩家数据
       await Write_player(playerId, player);

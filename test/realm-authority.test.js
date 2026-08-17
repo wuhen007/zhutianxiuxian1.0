@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  getFlowerPollenAuthorityLevel,
   getRealmAuthorityLevel,
   getRealmAuthorityName,
   getGodDemonStealRule,
@@ -86,8 +87,14 @@ test('authority realm names follow the active path', () => {
 });
 
 test('flower pollen realms map to matching authority tiers', () => {
-  const pairs = [[4, 6], [8, 10], [10, 11], [17, 17], [18, 18], [21, 20], [25, 24]];
+  const pairs = [
+    [1, 1], [2, 2], [3, 3], [4, 6], [5, 7], [6, 8], [7, 9],
+    [8, 10], [9, 10], [10, 11], [11, 12], [12, 13], [13, 14],
+    [14, 15], [15, 16], [16, 16], [17, 17], [18, 18], [19, 18],
+    [20, 19], [21, 20], [22, 21], [23, 22], [24, 23], [25, 24],
+  ];
   for (const [huafen, expected] of pairs) {
+    assert.equal(getFlowerPollenAuthorityLevel(huafen), expected);
     assert.equal(getRealmAuthorityLevel({ huafenlevel_id: huafen }), expected);
   }
 });

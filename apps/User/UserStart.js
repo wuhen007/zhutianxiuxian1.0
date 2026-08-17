@@ -52,6 +52,10 @@ import {
   formatOpeningOmenMessage,
 } from '../../model/openingOmen.js';
 import { reserveDailyAction } from '../../model/dailyAction.js';
+import {
+  getExtraCultivationLevelProduct,
+  getExtraCultivationLevelSum,
+} from '../../model/extraCultivation.js';
 import { deletePlayerDataBundle } from '../AdminSuper/playerDeletion.js';
 
 function deleteRebirthData(playerId) {
@@ -1452,7 +1456,7 @@ async daily_gift(e) {
       '签到奖励倍率'
     );
     let baseMultiplier = (isDaofaPlayer ? 2 : 1) * signMultiplier;
-    let 加成 = player.level_id * player.Physique_id + (player.mijinglevel_id*player.xiangulevel_id)
+    let 加成 = player.level_id * player.Physique_id + getExtraCultivationLevelProduct(player)
     // 简化奖励计算，避免过大数值
     let gift_xiuwei = player.连续签到天数 * 10000 * baseMultiplier*加成;
     const cf = config.getConfig('xiuxian', 'xiuxian');
@@ -1570,7 +1574,7 @@ async daofa_gift(e) {
   // 计算奖励
   const cf = config.getConfig('xiuxian', 'xiuxian');
 
-        let gift_xiuwei = Math.floor(player.道法赐福天数 * 10000*player.level_id*player.Physique_id*(player.mijinglevel_id+player.xiangulevel_id) * signMult_df);
+        let gift_xiuwei = Math.floor(player.道法赐福天数 * 10000*player.level_id*player.Physique_id*getExtraCultivationLevelSum(player) * signMult_df);
         // 添加道具奖励（命格·签到奖励倍率）
         const tickets = Math.floor(player.道法赐福天数*2 * signMult_df)
         const tickets3 = Math.floor(player.道法赐福天数*2 * signMult_df)

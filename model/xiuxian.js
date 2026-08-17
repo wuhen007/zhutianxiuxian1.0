@@ -9,6 +9,8 @@ import data from './XiuxianData.js';
 import { buildLinggenAtlasData, parseLinggenAtlasCommand } from './linggenAtlas.js';
 import { enrichNajieDisplayRarity } from './najieRarity.js';
 import { buildAnnouncePresentation, splitAnnounceDetail } from './announcePresentation.js';
+import { refreshDaofaStatus } from './daofa.js';
+import { getFlowerRealmDisplay, getXianguRealmDisplay } from './playerRealmDisplay.js';
 // 道种专属技能全局池别名：战斗函数内 `data` 常被玩家参数遮蔽，故用 SKILL_DB 稳定引用 XiuxianData 单例
 const SKILL_DB = data;
 
@@ -3029,6 +3031,7 @@ export async function get_player_img(e) {
     return;
   }
   let player = await data.getData('player', usr_qq);
+  refreshDaofaStatus(player);
   let equipment = await data.getData('equipment', usr_qq);
   let player_status = await getPlayerAction(usr_qq);
   let status = '空闲';
@@ -3205,13 +3208,8 @@ export async function get_player_img(e) {
    let rank_xiuliantixi = data.Levelmijing_list.find(
     item => item.level_id == player.mijinglevel_id
   ).level;
-     let rank_xiangujinshi = data.xiangujinshi_list.find(
-    item => item.level_id == player.xiangulevel_id
-  ).level;
-    let 极境名称 = (player.xiangu_shenhuo && player.xiangu_shenhuo.极境名称)
-    || data.xiangujinshi_list.find(
-    item => item.level_id == player.xiangulevel_id
-  )?.极境名称;
+  let rank_xiangujinshi = getXianguRealmDisplay(player, data.xiangujinshi_list);
+  let rank_huafen = getFlowerRealmDisplay(player, data.huafen_list);
 let 元神等级数据 = data.Levelyuanshen_list.find(
           item => item.level_id == player.yuanshenlevel_id
       );
@@ -3401,7 +3399,7 @@ const exp2 = bigNumberTransform(player.血气);
     expmax_llianti, // 炼体需求经验
     rank_xiuliantixi,
     rank_xiangujinshi,
-    极境名称,
+    rank_huafen,
     元神等级数据,
     rank_liandan, // 炼丹境界
     expmax_liandan, // 炼丹需求经验
@@ -3502,7 +3500,7 @@ const exp2 = bigNumberTransform(player.血气);
       expmax_llianti, // 炼体需求经验
       rank_xiuliantixi,
       rank_xiangujinshi,
-      极境名称,
+      rank_huafen,
       元神等级数据,
       rank_liandan, // 炼丹境界
       expmax_liandan, // 炼丹需求经验

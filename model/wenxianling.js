@@ -1,5 +1,10 @@
 import { createRealmEventLocation } from './realmEventLocation.js';
 import {
+  getExtraCultivationLevelProduct,
+  getExtraCultivationLevelSum,
+} from './extraCultivation.js';
+import { getRealmAuthorityLevel } from './realmAuthority.js';
+import {
   getCoordinateLocations,
   getShanghaiDateKey,
   hasCoordinate,
@@ -119,12 +124,11 @@ export function recordWenXianTaskProgress(player, type, amount = 1, options = {}
 export function calculateWenXianWeeklyRewards(player, random = Math.random) {
   const level = toNonNegativeInteger(player?.level_id);
   const physique = toNonNegativeInteger(player?.Physique_id);
-  const mijing = toNonNegativeInteger(player?.mijinglevel_id);
-  const xiangu = toNonNegativeInteger(player?.xiangulevel_id);
-  const realmTotal = mijing + xiangu;
+  const realmMultiplier = getExtraCultivationLevelProduct(player);
+  const realmTotal = getExtraCultivationLevelSum(player);
   return {
-    xiuwei: Math.floor(2000 + 10000 * level * level * mijing * xiangu * (2 + random())),
-    xueqi: Math.floor(2000 + 10000 * physique * physique * mijing * xiangu * (2 + random())),
+    xiuwei: Math.floor(2000 + 10000 * level * level * realmMultiplier * (2 + random())),
+    xueqi: Math.floor(2000 + 10000 * physique * physique * realmMultiplier * (2 + random())),
     lingshi: 10_000_000 * realmTotal,
     yuanshi: 10_000_000 * realmTotal,
     wenxianExp: WENXIAN_WEEKLY_TASK_EXP,
@@ -150,10 +154,7 @@ export function claimWenXianWeeklyTask(player, options = {}) {
 }
 
 export function isWenXianEligible(player) {
-  return Math.max(
-    toNonNegativeInteger(player?.mijinglevel_id),
-    toNonNegativeInteger(player?.xiangulevel_id),
-  ) >= WENXIAN_REQUIRED_REALM_LEVEL;
+  return getRealmAuthorityLevel(player) >= WENXIAN_REQUIRED_REALM_LEVEL;
 }
 
 export function ensureWenXianState(player) {

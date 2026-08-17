@@ -7,10 +7,12 @@ import {
   WENXIAN_WEEKLY_TASK_EXP,
   activateWenXianLing,
   addWenXianExp,
+  calculateWenXianWeeklyRewards,
   claimWenXianWeeklyTask,
   ensureWenXianState,
   ensureWenXianTaskState,
   grantWenXianClue,
+  isWenXianEligible,
   isWenXianTrialComplete,
   purchaseWenXianClue,
   recordWenXianTaskProgress,
@@ -36,6 +38,13 @@ test('空白问仙令保持锁定，已有等级或领取记录的旧玩家自�
   assert.equal(ensureWenXianState(legacyClaim).unlocked, true);
   assert.equal(legacyClaim.问仙令.level, 1);
   assert.equal(addWenXianExp(legacyClaim, 50).newLevel, 1);
+});
+
+test('问仙资格按三条体系的等效权柄动态判断', () => {
+  assert.equal(isWenXianEligible({ mijinglevel_id: 5 }), true);
+  assert.equal(isWenXianEligible({ xiangulevel_id: 5 }), true);
+  assert.equal(isWenXianEligible({ huafenlevel_id: 3 }), false);
+  assert.equal(isWenXianEligible({ huafenlevel_id: 4 }), true);
 });
 
 test('重金求取问仙线索准确扣除30亿源石且已有内景地直接计入试炼', () => {
@@ -134,6 +143,15 @@ test('问仙令每日任务逐项奖励200经验并在上海日期变化后重�
   recordWenXianTaskProgress(player, 'tianjiao', 1, { now: tomorrow });
   assert.equal(player.问仙令.exp, WENXIAN_DAILY_QUEST_EXP * 4);
   assert.equal(ensureWenXianTaskState(player, { now: tomorrow }).daily.progress.dungeon, 0);
+});
+
+test('问仙周奖励对三条额外体系采用相同境界乘区', () => {
+  const common = { level_id: 2, Physique_id: 3 };
+  const mijing = calculateWenXianWeeklyRewards({ ...common, mijinglevel_id: 5 }, () => 0);
+  const xiangu = calculateWenXianWeeklyRewards({ ...common, xiangulevel_id: 5 }, () => 0);
+  const huafen = calculateWenXianWeeklyRewards({ ...common, huafenlevel_id: 5 }, () => 0);
+  assert.deepEqual(mijing, xiangu);
+  assert.deepEqual(xiangu, huafen);
 });
 
 test('每周五项任务达标后只可领取一次完整奖励', () => {

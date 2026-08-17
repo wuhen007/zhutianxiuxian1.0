@@ -286,7 +286,7 @@ async addProtector(e) {
   // 快照护法血量（×3 倍，一次性）
   const protectorSnap = {
     名字: protector.名号,
-      境界: getRealmAuthorityName(protector, data.Levelmijing_list, data.xiangujinshi_list),
+      境界: getRealmAuthorityName(protector, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list),
     当前血量: Math.floor(protector.当前血量 * 3),
     血量上限: Math.floor(protector.当前血量 * 3)
   };
@@ -349,7 +349,7 @@ async removeProtector(e) {
     if (!hasRealmAuthority(player, 21)) {
       return e.reply([
         `「欲创仙宠，先入仙帝境！」`,
-        `${player.名号}当前境界为${getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list)}，`,
+        `${player.名号}当前境界为${getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list)}，`,
         `需突破至仙帝境方可创造仙宠`
       ].join('\n'));
     }
@@ -713,7 +713,7 @@ async hongjiChengxianlu(e) {
         `欲轰击成仙路，却感力不从心！`,
         ,
         `「红尘仙境界方可撼动仙路壁垒！」`,
-        `当前境界: ${getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list)}（需红尘仙或真仙）`,
+        `当前境界: ${getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list)}（需红尘仙或真仙）`,
         ,
         `继续苦修，待境界足够再来尝试！`
       ].join('\n'));
@@ -1331,7 +1331,7 @@ async hongjiTiandao(e) {
     if (!hasRealmAuthority(executor, 16)) {
         e.reply([
             `「帝威不足！」`,
-            `${executor.名号}当前境界：${getRealmAuthorityName(executor, data.Levelmijing_list, data.xiangujinshi_list)}`,
+            `${executor.名号}当前境界：${getRealmAuthorityName(executor, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list)}`,
             `轰穿万道需大帝或至尊之境`
         ].join('\n'));
         return true;
@@ -2410,7 +2410,7 @@ async createEverything(e) {
                 `"噗——"`,
                 `${player.名号}的仙帝之躯在黑暗天刀下寸寸瓦解！`,
                 `大道根基被十股始祖之力联手斩断！`,
-                `境界永恒跌落至${getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list)}！`,
+                `境界永恒跌落至${getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list)}！`,
                 ,
                 `十大始祖的冰冷道音回荡诸天：`,
                 `"自此之后，万古再无此变数！"`,
@@ -3436,7 +3436,7 @@ async setPlayerToYongji(targetQQ, caster) {
         caster: caster.名号,
         time: new Date().toLocaleString(),
         casterLevel: getRealmAuthorityLevel(caster),
-        casterRealm: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list)
+        casterRealm: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list)
     };
       // 设置永寂行动状态
         let arr = {
@@ -3465,7 +3465,7 @@ async setPlayerToYongji(targetQQ, caster) {
     player.镇压记录.push({
         时间: new Date().toLocaleString(),
         施法者: caster.名号,
-        施法者境界: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list)
+        施法者境界: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list)
     });
     await Write_player(targetQQ, player);
 }
@@ -3944,7 +3944,7 @@ async handleTianlaoRelease(e, caster, target, targetQQ) {
     player.解放记录.push({
         时间: new Date().toLocaleString(),
         施法者: caster.名号,
-        施法者境界: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list)
+        施法者境界: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list)
     });
 
     await Write_player(targetQQ, player);
@@ -3984,7 +3984,7 @@ async handleHeianlaolongRescue(e, caster, target, targetQQ) {
     player.解救记录.push({
         时间: new Date().toLocaleString(),
         施法者: caster.名号,
-        施法者境界: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list)
+        施法者境界: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list)
     });
 
     await Write_player(targetQQ, player);
@@ -4083,7 +4083,7 @@ async handleSelfRecovery(e, caster, targetQQ) {
     player.恢复记录 = player.恢复记录 || [];
     player.恢复记录.push({
         时间: new Date().toLocaleString(),
-        境界: getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list)
+        境界: getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list)
     });
 
     await Write_player(targetQQ, player);
@@ -4118,7 +4118,7 @@ async handleNormalRecovery(e, caster, target, targetQQ) {
     player.恢复记录.push({
         时间: new Date().toLocaleString(),
         施法者: caster.名号,
-        施法者境界: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list)
+        施法者境界: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list)
     });
 
     await Write_player(targetQQ, player);
@@ -4154,7 +4154,7 @@ async resurrectPlayer(targetQQ, caster) {
     target.复活记录.push({
         时间: new Date().toLocaleString(),
         施法者: caster.名号,
-        施法者境界: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list)
+        施法者境界: getRealmAuthorityName(caster, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list)
     });
 
     await Write_player(targetQQ, target);

@@ -71,18 +71,23 @@ test('圣墟三级位面只向花粉路修士开放且按境界分档', () => {
   assert.equal(purchaseCoordinateClue({ 灵石: COORDINATE_CLUE_COST }, '小阴间').reason, 'invalid');
   assert.equal(getLocationThreshold({ mijinglevel_id: 20, xiangulevel_id: 1 }, '小阴间').ok, false);
   assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 1 }, '小阴间').ok, false);
-  // 大阴间需神祇境(12)、阳间需神王境(14)
+  // 大阴间需神祇境(12)、阳间需神将境(13)——神将入阳间冲击神王
   assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 12 }, '大阴间').ok, true);
   assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 11 }, '大阴间').ok, false);
   assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 14 }, '阳间').ok, true);
-  assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 13 }, '阳间').ok, false);
+  assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 13 }, '阳间').ok, true);
+  assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 12 }, '阳间').ok, false);
 });
 
-test('遮天位面支持境界或五色祭坛三种通行方式', () => {
+test('遮天位面支持三体系圣人等效权柄或五色祭坛通行', () => {
   assert.equal(getLocationThreshold({ mijinglevel_id: 12 }, '遮天位面').ok, true);
   assert.equal(getLocationThreshold({ xiangulevel_id: 11 }, '遮天位面').ok, true);
   assert.equal(getLocationThreshold({ 五色祭坛激活: 1 }, '遮天位面').ok, true);
-  assert.equal(getLocationThreshold({ huafenlevel_id: 11 }, '遮天位面').ok, true);
+  const flowerSaint = getLocationThreshold({ huafenlevel_id: 11 }, '遮天位面');
+  assert.equal(flowerSaint.ok, true);
+  assert.match(flowerSaint.checks[0].display, /等效权柄 12\/12/);
+  assert.equal(getLocationThreshold({ xiangulevel_id: 10 }, '遮天位面').ok, false);
+  assert.equal(getLocationThreshold({ huafenlevel_id: 10 }, '遮天位面').ok, false);
   assert.equal(getLocationThreshold({ mijinglevel_id: 11, xiangulevel_id: 10 }, '遮天位面').ok, false);
 });
 

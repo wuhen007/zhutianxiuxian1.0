@@ -24,7 +24,8 @@ import { calculateEquippedStats } from '../../model/equipmentStats.js';
 import { consumeBlackEmperorTribulationFormation } from '../../model/blackEmperor.js';
 import { reduceTribulationDamageByDefense } from '../../model/tribulationDamage.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
-import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
+import { PLACE_LOCATION_MAP, ZHETIAN_ENTRY_AUTHORITY_LEVEL } from '../../model/weimianTravel.js';
+import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import { getPlayerPlaneCoordinate } from '../../model/planeCoords.js';
 import {
   resetTribulationGongfaCooldowns,
@@ -4195,11 +4196,11 @@ async command_datitingtianji(e) {
   const 位面列表 = [
     { name: '仙界',         要求: '地仙境或轮回',           需: (p) => Number(p.level_id) >= 42 || (Number(p?.lunhui) || 0) !== 0, 坐标字段: '仙界坐标' },
     { name: '下界八域',     要求: '默认通行',               需: () => true,                                                            坐标字段: '下界八域坐标' },
-    { name: '遮天位面',     要求: '秘境≥12 / 仙古≥11 / 花粉≥11 / 五色祭坛', 需: (p) => p.mijinglevel_id >= 12 || p.xiangulevel_id > 10 || p.huafenlevel_id >= 11 || Number(p?.五色祭坛激活) === 1, 坐标字段: '遮天位面坐标' },
+    { name: '遮天位面',     要求: `圣人等效权柄≥${ZHETIAN_ENTRY_AUTHORITY_LEVEL} / 五色祭坛`, 需: (p) => getRealmAuthorityLevel(p) >= ZHETIAN_ENTRY_AUTHORITY_LEVEL || Number(p?.五色祭坛激活) === 1, 所需权柄: ZHETIAN_ENTRY_AUTHORITY_LEVEL, 坐标字段: '遮天位面坐标' },
     { name: '九天十地',     要求: '默认通行',               需: () => true,                                                            坐标字段: '九天十地坐标' },
     { name: '小阴间',     要求: '花粉进化路≥觉醒境',       需: (p) => p.额外体系 === 'huafen' && p.huafenlevel_id >= 2,              坐标字段: '小阴间坐标' },
     { name: '大阴间',     要求: '花粉≥神祇境(12)',        需: (p) => p.额外体系 === 'huafen' && p.huafenlevel_id >= 12,              坐标字段: '大阴间坐标' },
-    { name: '阳间',       要求: '花粉≥神王境(14)',        需: (p) => p.额外体系 === 'huafen' && p.huafenlevel_id >= 14,              坐标字段: '阳间坐标' },
+    { name: '阳间',       要求: '花粉≥神将境(13)',        需: (p) => p.额外体系 === 'huafen' && p.huafenlevel_id >= 13,              坐标字段: '阳间坐标' },
     { name: '界海',         要求: '仙王巨头（秘境≥19 / 仙古≥19 / 花粉≥20）', 需: (p) => p.mijinglevel_id >= 19 || p.xiangulevel_id >= 19 || p.huafenlevel_id >= 20, 坐标字段: '界海坐标' },
     { name: '太初星墟',     要求: '帝境（秘境≥16 / 仙古≥16 / 花粉≥15）', 需: (p) => p.mijinglevel_id >= 16 || p.xiangulevel_id >= 16 || p.huafenlevel_id >= 15, 坐标字段: '太初星墟坐标' },
     { name: '仙域',         要求: '仙王（秘境≥18 / 仙古≥16 / 花粉≥18）', 需: (p) => p.mijinglevel_id >= 18 || p.xiangulevel_id >= 16 || p.huafenlevel_id >= 18, 坐标字段: '仙域坐标' },
@@ -4209,11 +4210,12 @@ async command_datitingtianji(e) {
   const 位面状态 = 位面列表.map(p => {
     const 可去 = p.需(player);
     const 差值 = p.要求.match(/秘境≥(\d+)/);
-    const 所需 = 差值 ? Number(差值[1]) : 0;
+    const 所需 = Number(p.所需权柄) || (差值 ? Number(差值[1]) : 0);
+    const 当前 = p.所需权柄 ? getRealmAuthorityLevel(player) : Math.max(mijing, xiangu, Number(player.huafenlevel_id) || 1);
     return {
       ...p,
       可去,
-      差值: 可去 || !所需 ? 0 : Math.max(0, 所需 - Math.max(mijing, xiangu, Number(player.huafenlevel_id) || 1)),
+      差值: 可去 || !所需 ? 0 : Math.max(0, 所需 - 当前),
       坐标: 可去 ? getPlayerPlaneCoordinate(player, p.name) : null
     };
   });

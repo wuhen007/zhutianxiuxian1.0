@@ -16,6 +16,10 @@ import {
 import { getDailyTaskDateKey } from '../../model/dailyTask.js';
 import { reserveDailyAction, resetDailyAction } from '../../model/dailyAction.js';
 import { wasFactionRewardClaimedToday } from '../../model/factionSystem.js';
+import {
+    getExtraCultivationLevelProduct,
+    getExtraCultivationLevelSum,
+} from '../../model/extraCultivation.js';
 import { runTaskOnce } from '../../utils/taskGuard.js';
 // 问仙令：每日任务完成后 +50 经验
 import { WenXianLing } from '../WenXianLing/WenXianLing.js';
@@ -321,10 +325,8 @@ async isAutoTaskEnabled(usr_qq) {
             // 确保所有属性都有默认值
             const levelId = player.level_id || 1;
             const physiqueId = player.Physique_id || 1;
-            const mijinLevelId = player.mijinglevel_id || 1;
-            const xiangulevelId = player.xiangulevel_id || 1;
             
-            let 加成 = levelId * physiqueId + (mijinLevelId * xiangulevelId);
+            let 加成 = levelId * physiqueId + getExtraCultivationLevelProduct(player);
             
             let gift_xiuwei = player.连续签到天数 * 10000 * baseMultiplier * 加成;
             let ticketCount = 5 * baseMultiplier;
@@ -697,7 +699,7 @@ async isAutoTaskEnabled(usr_qq) {
             }
 
             // 计算奖励
-            let gift_xiuwei = player.道法赐福天数 * 10000 * player.level_id * player.Physique_id * (player.mijinglevel_id + player.xiangulevel_id);
+            let gift_xiuwei = player.道法赐福天数 * 10000 * player.level_id * player.Physique_id * getExtraCultivationLevelSum(player);
             const tickets = player.道法赐福天数 * 2;
 
             // 先保存连续赐福状态，避免后续奖励写档后又被旧 player 覆盖。

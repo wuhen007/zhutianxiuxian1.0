@@ -1,5 +1,8 @@
+import { hasRealmAuthority } from './realmAuthority.js';
+
 export const TEACH_MIN_MIJING_LEVEL = 12;
 export const TEACH_MIN_XIANGU_LEVEL = 11;
+export const TEACH_MIN_AUTHORITY_LEVEL = 12;
 
 const GONGFA_HIERARCHY = Object.freeze({
   武学: 0,
@@ -25,10 +28,7 @@ const GONGFA_HIERARCHY = Object.freeze({
 });
 
 export function canTeachGongfa(player) {
-  return (
-    Number(player?.mijinglevel_id || 0) >= TEACH_MIN_MIJING_LEVEL ||
-    Number(player?.xiangulevel_id || 0) >= TEACH_MIN_XIANGU_LEVEL
-  );
+  return hasRealmAuthority(player, TEACH_MIN_AUTHORITY_LEVEL);
 }
 
 export function getGongfaLevel(type) {

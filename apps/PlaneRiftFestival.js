@@ -12,6 +12,7 @@ import {
   existplayer,
 } from '../model/xiuxian.js';
 import { getPlayerPlaneCoordinate, getPlayerPlaneName } from '../model/planeCoords.js';
+import { getRealmAuthorityLevel } from '../model/realmAuthority.js';
 import { getShanghaiDateKey, rememberCoordinate } from '../model/weimianTravel.js';
 import {
   FESTIVAL_PLANE,
@@ -273,7 +274,7 @@ export class PlaneRiftFestival extends plugin {
       : null;
 
     const result = exploreRift(state, current.rift.id, qq, route, {
-      realmLevel: Math.max(Number(player.mijinglevel_id) || 0, Number(player.xiangulevel_id) || 0),
+      realmLevel: getRealmAuthorityLevel(player),
       signStreak: Number(player.巡界签到?.streak) || 0,
       guardian,
       combatPower: playerPower,
@@ -298,7 +299,7 @@ export class PlaneRiftFestival extends plugin {
         `第${result.expedition.depth + 1}层探索失败（本次成功率${chance}%）。`,
         hpLost ? `激战损耗气血${formatPower(hpLost)}，当前气血余${formatPower(player.当前血量)}。` : null,
         `你舍弃大半战利品遁出裂界，保住界源${payout.source}。`,
-        `境界乘区×${payout.realmMult}（${player.level_id}×${player.Physique_id}×${player.xiangulevel_id}×${player.mijinglevel_id}），获得修为与血气各${formatPower(payout.cultivation)}。`,
+        `境界乘区×${payout.realmMult}（练气${player.level_id}×炼体${player.Physique_id}×秘境${player.mijinglevel_id}×仙古${player.xiangulevel_id}×花粉${player.huafenlevel_id || 1}），获得修为与血气各${formatPower(payout.cultivation)}。`,
       ].filter(Boolean).join('\n'));
     }
     if (result.completed) {
@@ -364,6 +365,7 @@ export class PlaneRiftFestival extends plugin {
       physique: player.Physique_id,
       xiangu: player.xiangulevel_id,
       mijing: player.mijinglevel_id,
+      huafen: player.huafenlevel_id,
     });
     player.太初界源 = (Number(player.太初界源) || 0) + payout.source;
     player.修为 = (Number(player.修为) || 0) + payout.cultivation;

@@ -75,19 +75,29 @@ test('探索三层可全额带出，主动撤离保留当前战利品', () => {
   assert.equal(withdrawRift(state, rift.id, '2', 100).secured, 3);
 });
 
-test('境界乘区：修为血气按 练气×炼体×仙古×秘境 放大', () => {
+test('境界乘区：修为血气按 练气×炼体×秘境×仙古×花粉 放大', () => {
   const rift = { anchor: 0 };
   const base = calculateRiftPayout(rift, 2, { level: 1, physique: 1, xiangu: 1, mijing: 1 });
-  const boosted = calculateRiftPayout(rift, 2, { level: 50, physique: 40, xiangu: 3, mijing: 2 });
+  const boosted = calculateRiftPayout(rift, 2, { level: 50, physique: 40, xiangu: 3, mijing: 2, huafen: 4 });
   // 锚定 0、secured 2 时 source=2；base 修为=2*500000*1=1,000,000
   assert.equal(base.source, 2);
   assert.equal(base.realmMult, 1);
   assert.equal(base.cultivation, 1_000_000);
   assert.equal(base.blood, 1_000_000);
-  // boosted: realmMult = 50*40*3*2 = 12000
-  assert.equal(boosted.realmMult, 12000);
-  assert.equal(boosted.cultivation, 2 * 500000 * 12000);
-  assert.equal(boosted.blood, 2 * 500000 * 12000);
+  // boosted: realmMult = 50*40*3*2*4 = 48000
+  assert.equal(boosted.realmMult, 48000);
+  assert.equal(boosted.cultivation, 2 * 500000 * 48000);
+  assert.equal(boosted.blood, 2 * 500000 * 48000);
+});
+
+test('花粉路与另外两路在同境界获得相同裂界乘区', () => {
+  const rift = { anchor: 0 };
+  const common = { level: 30, physique: 30 };
+  const mijing = calculateRiftPayout(rift, 1, { ...common, mijing: 12 });
+  const xiangu = calculateRiftPayout(rift, 1, { ...common, xiangu: 12 });
+  const huafen = calculateRiftPayout(rift, 1, { ...common, huafen: 12 });
+  assert.equal(mijing.realmMult, xiangu.realmMult);
+  assert.equal(xiangu.realmMult, huafen.realmMult);
 });
 
 test('境界缺失时按 1 兜底，修为血气不退化为零', () => {
