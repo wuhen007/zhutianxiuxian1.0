@@ -1,7 +1,13 @@
 // 诸天世界频道：群管理员显式加入后实时收发。
 import { plugin } from '../../api/api.js';
+import { segment } from 'icqq';
 import { worldChatClient as client } from './client.js';
 import { clientFilter } from './filter.js';
+import {
+  readyWorldChatBot,
+  sendWorldGroupMessage,
+  extractWorldImageUrls,
+} from './runtime.js';
 
 const USER_COOLDOWN_MS = 5_000;
 
@@ -34,6 +40,7 @@ function readableConnectionError(error) {
       enrollment_required: '未配置总机登记令牌',
       enrollment_invalid: '总机登记令牌无效',
       registration_rate_limited: '总机登记过于频繁，请稍后再试',
+      bot_not_ready: '机器人账号尚未上线，等待恢复群消息转发',
     }[error] ||
     error ||
     '无'
@@ -48,7 +55,7 @@ export class WorldChat extends plugin {
       event: 'message',
       priority: 9000,
       rule: [
-        { reg: '^#世界\\s*(?:说|留言)\\s*([\\s\\S]+)$', fnc: 'say' },
+        { reg: '^#世界\\s*(?:发言|留言)(?:\\s*[\\s\\S]*)?$', fnc: 'say' },
         { reg: '^#世界\\s*查看\\s*(\\d+)?$', fnc: 'view' },
         { reg: '^#世界\\s*加入$', fnc: 'join' },
         { reg: '^#世界\\s*退出$', fnc: 'leave' },
@@ -63,10 +70,34 @@ export class WorldChat extends plugin {
     this.cooldowns = new Map();
     this.pendingConfirmations = new Map();
     client.setMessageHandler((message) => this.broadcast(message));
-    setTimeout(() => client.connect(), 0);
+    this.connectWhenBotReady();
+  }
+
+  readyBot() {
+    return readyWorldChatBot();
+  }
+
+  connectWhenBotReady() {
+    if (this.readyBot()) {
+      client.connect();
+      return;
+    }
+    const timer = setTimeout(() => this.connectWhenBotReady(), 1000);
+    timer.unref?.();
+  }
+
+  async waitForBot(timeout = 30_000) {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      const bot = this.readyBot();
+      if (bot) return bot;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    throw new Error('bot_not_ready');
   }
 
   async broadcast(message) {
+    const bot = await this.waitForBot();
     const time = new Date(message.ts).toLocaleString('zh-CN', {
       hour12: false,
     });
@@ -76,12 +107,17 @@ export class WorldChat extends plugin {
     if (message.expose_level === 'public' && message.groups?.length) {
       output += `\n来源群：${message.groups.join('、')}`;
     }
+    const payload = message.images?.length
+      ? [output, ...message.images.map((url) => segment.image(url))]
+      : output;
     const results = await Promise.allSettled(
-      client.groups().map((groupId) => Bot.pickGroup(groupId).sendMsg(output))
+      client
+        .groups()
+        .map((groupId) => sendWorldGroupMessage(bot, groupId, payload))
     );
     for (const result of results) {
       if (result.status === 'rejected')
-        Bot.logger?.warn?.(`[worldchat] 群推送失败: ${result.reason}`);
+        globalThis.logger?.warn?.(`[worldchat] 群推送失败: ${result.reason}`);
     }
   }
 
@@ -103,9 +139,10 @@ export class WorldChat extends plugin {
       e.reply('本服世界频道已关闭，管理员可用「#世界 开关」开启');
       return true;
     }
-    const match = e.msg.match(/^#世界\s*(?:说|留言)\s*([\s\S]+)$/);
+    const match = e.msg.match(/^#世界\s*(?:发言|留言)(?:\s*([\s\S]*))?$/);
     const text = (match?.[1] || '').trim();
-    if (!text) return true;
+    const images = extractWorldImageUrls(e.message);
+    if (!text && !images.length) return e.reply('请输入发言内容或附带图片');
 
     const cooldownKey = String(e.user_id);
     const wait =
@@ -119,7 +156,7 @@ export class WorldChat extends plugin {
     const result = await client.pub(clientFilter(text), {
       name: senderName(e),
       tag: client.userTag(e.user_id),
-    });
+    }, images);
     if (!result.ok) {
       const reasons = {
         disconnected: '尚未连接到世界频道总机，正在自动重连',
@@ -156,7 +193,7 @@ export class WorldChat extends plugin {
       });
       let line = `[${message.name} · ${
         message.sender_name
-      } · ${time}]\n${clientFilter(message.msg)}`;
+      } · ${time}]\n${clientFilter(message.msg) || '[图片]'}`;
       if (message.expose_level === 'public' && message.groups?.length) {
         line += `\n[群：${message.groups.join('、')}]`;
       } else if (
@@ -168,11 +205,11 @@ export class WorldChat extends plugin {
       }
       return line;
     });
-    e.reply(
-      `【诸天世界频道 · 最近 ${result.messages.length} 条】\n${lines.join(
-        '\n\n'
-      )}`
-    );
+    const reply = [`【诸天世界频道 · 最近 ${result.messages.length} 条】\n${lines.join('\n\n')}`];
+    for (const message of result.messages) {
+      for (const url of message.images || []) reply.push(segment.image(url));
+    }
+    e.reply(reply);
     return true;
   }
 

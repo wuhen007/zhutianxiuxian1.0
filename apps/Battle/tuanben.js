@@ -7,7 +7,9 @@ import {
  setEmperorAwareness,
 } from '../tasks/EraChangeTask.js';
 import { hasSupremeInnate } from '../../model/supremePath.js';
-import { getGodDemonStealRule } from '../../model/realmAuthority.js';
+import { getGodDemonStealRule, getRealmAuthorityLevel } from '../../model/realmAuthority.js';
+import { worldChatClient } from '../worldChat/client.js';
+import { createCrossRaidAvatar, hydrateCrossRaidAvatar } from '../worldChat/raid.js';
 import {
   getDefenseSkillMultiplier,
   getGongfaCombatMultiplier,
@@ -61,6 +63,18 @@ export class tuanben extends plugin {
         {
           reg: '^#发起讨伐$',
           fnc: 'startBossBattle',
+        },
+        {
+          reg: '^#发布跨服团本$',
+          fnc: 'publishCrossServerRaid',
+        },
+        {
+          reg: '^#跨服团本列表$',
+          fnc: 'listCrossServerRaids',
+        },
+        {
+          reg: '^#化身跨服加入团本\\s*([A-Fa-f0-9]{8})$',
+          fnc: 'joinCrossServerRaid',
         },
         {
           reg: '^#查看队伍信息$',
@@ -536,6 +550,89 @@ if (battleResult.result === "玩家胜利") {
   };
 
   // 创建队伍
+  async publishCrossServerRaid(e) {
+    if (!await this.checkSystemStatus(e) || !await this.checkBasic(e)) return true;
+    const userId = await this.getUserId(e);
+    const teamId = await this.getPlayerTeamId(userId);
+    if (!teamId) return e.reply('请先创建本服讨伐队伍');
+    const team = await this.getTeam(teamId);
+    if (!team || team.leader !== userId) return e.reply('只有队长可以发布跨服团本');
+    if (team.status !== 'recruiting') return e.reply('只有招募中的队伍可以发布跨服团本');
+    if (team.members.length >= 5) return e.reply('本服队伍已经满员，无需发布跨服招募');
+
+    const result = await worldChatClient.openRaid({
+      team_id: team.id,
+      boss: team.boss,
+      local_members: team.members.length,
+    });
+    if (!result.ok) return e.reply('世界总机暂不可用，跨服团本发布失败');
+    team.crossRaidCode = result.raid.code;
+    await this.saveTeam(teamId, team);
+
+    const player = await Read_player(userId);
+    await worldChatClient.pub(
+      `【跨服团本招募】${player.名号}正在讨伐${team.boss}，尚缺${5 - team.members.length}位化身。团本码：${result.raid.code}，发送「#化身跨服加入团本 ${result.raid.code}」加入。`,
+      { name: player.名号, tag: worldChatClient.userTag(userId) }
+    );
+    return e.reply([
+      '【跨服团本已发布】',
+      `目标：${team.boss}`,
+      `世界团本码：${result.raid.code}`,
+      `当前本服成员：${team.members.length}/5`,
+      `其他服使用：#化身跨服加入团本 ${result.raid.code}`,
+      '跨服化身参与战斗，但不参与房主区服的奖励结算。',
+    ].join('\n'));
+  }
+
+  async listCrossServerRaids(e) {
+    const result = await worldChatClient.listRaids();
+    if (!result.ok) return e.reply('世界总机暂不可用');
+    const raids = (result.raids || []).filter((raid) => raid.status === 'recruiting');
+    if (!raids.length) return e.reply('当前没有招募中的跨服团本');
+    return e.reply([
+      '【跨服团本列表】',
+      ...raids.map((raid) =>
+        `${raid.code}｜${raid.host_name}｜${raid.boss}｜${raid.local_members + raid.members.length}/5`
+      ),
+      '加入：#化身跨服加入团本 团本码',
+    ].join('\n'));
+  }
+
+  async joinCrossServerRaid(e) {
+    if (!await this.checkSystemStatus(e) || !await this.checkBasic(e)) return true;
+    const userId = await this.getUserId(e);
+    if (await this.getPlayerTeamId(userId)) return e.reply('你已在本服队伍中，不能同时投影跨服化身');
+    const code = e.msg.match(/([A-Fa-f0-9]{8})$/)?.[1]?.toUpperCase();
+    const raidResult = await worldChatClient.getRaid(code);
+    if (!raidResult.ok) return e.reply('世界团本码不存在或已经失效');
+    if (await this.checkPlayerCD(userId) && raidResult.raid.boss !== '九幽魔君') {
+      return e.reply('你仍处于讨伐冷却，暂时无法投影跨服化身');
+    }
+    const player = await Read_player(userId);
+    const result = await worldChatClient.joinRaid(
+      code,
+      createCrossRaidAvatar(player),
+      worldChatClient.userTag(userId)
+    );
+    if (!result.ok) {
+      const reasons = {
+        raid_not_found: '世界团本码不存在或已经失效',
+        raid_closed: '该跨服团本已经开战',
+        raid_full: '该跨服团本已经满员',
+        same_server: '同服玩家请直接使用本服加入队伍指令',
+        already_joined: '你的化身已经加入该团本',
+        already_in_raid: '你的化身已经加入其他跨服团本',
+      };
+      return e.reply(reasons[result.reason] || '跨服化身加入失败');
+    }
+    return e.reply([
+      '【跨服化身投影成功】',
+      `${player.名号}的战斗化身已加入 ${result.raid.host_name} 的${result.raid.boss}团本。`,
+      `当前人数：${result.raid.local_members + result.raid.members.length}/5`,
+      '化身不会迁移本体存档，也不会领取房主区服的奖励。',
+    ].join('\n'));
+  }
+
   async createBossTeam(e) {
     if (!await this.checkSystemStatus(e)) return true;
     if (!await this.checkBasic(e)) return true;
@@ -598,7 +695,8 @@ if (battleResult.result === "玩家胜利") {
       ` 成功创建讨伐【${bossName}】的队伍！`,
       ` 队伍ID: ${teamId}`,
       ` 当前成员: 1/5`,
-      ` 其他成员使用: #加入讨伐队伍 ${teamId}`
+      ` 其他成员使用: #加入讨伐队伍 ${teamId}`,
+      ` 跨服招募使用: #发布跨服团本`
     ].join('\n'));
     return true;
   }
@@ -790,6 +888,33 @@ const playersData = await Promise.all(
         return p;
     })
 );
+
+    if (team.crossRaidCode) {
+      const crossResult = await worldChatClient.getRaid(team.crossRaidCode);
+      if (crossResult.ok) {
+        await worldChatClient.closeRaid(team.crossRaidCode, 'in_battle');
+        const slots = Math.max(0, 5 - playersData.length);
+        const avatars = crossResult.raid.members.slice(0, slots).map((member) =>
+          hydrateCrossRaidAvatar(member.avatar, {
+            serverId: member.server_id,
+            serverName: member.server_name,
+            memberTag: member.member_tag,
+          })
+        );
+        for (const avatar of avatars) {
+          avatar.初始血量 = avatar.当前血量;
+          avatar.dongjie = false;
+          avatar.已复活 = false;
+          avatar.免疫控制 = 0;
+          avatar.已死亡 = false;
+          avatar.分身 = [];
+          avatar.护盾值 = 0;
+          avatar.减伤比例 = 0;
+          avatar.圆环之理激活 = false;
+          playersData.push(avatar);
+        }
+      }
+    }
     
     // 更新队伍状态
     team.status = 'inBattle';
@@ -818,7 +943,7 @@ const playersData = await Promise.all(
     // 构建战斗结果总结
     const resultSummary = [
       `===== ${team.boss}讨伐战报 =====`,
-      `队伍成员: ${team.members.map(id => playersData.find(p => p.user_id === id)?.名号).join(', ')}`,
+      `队伍成员: ${playersData.map(player => player.名号).join(', ')}`,
       battleResult.result === "玩家胜利" 
         ? `恭喜队伍成功击败${team.boss}！请队长使用 #结算团本奖励 领取奖励` 
         : `很遗憾，队伍未能击败${team.boss}...`,
@@ -1251,6 +1376,7 @@ async generatePlayerRewards(playerId, rewardPool, rewardCount) {
 }
 // 内部解散队伍方法
 async disbandTeamInternal(teamId, team) {
+  if (team.crossRaidCode) await worldChatClient.closeRaid(team.crossRaidCode, 'closed');
   // 清理所有成员关联
   await Promise.all(
     team.members.map(id => redis.del(this.redisKeys.player(id)))
@@ -1275,16 +1401,23 @@ async disbandTeamInternal(teamId, team) {
     
     const members = await this.getMemberDetails(team.members);
     const leader = members.find(m => m.id === team.leader);
+    const crossResult = team.crossRaidCode
+      ? await worldChatClient.getRaid(team.crossRaidCode)
+      : null;
+    const crossMembers = crossResult?.ok ? crossResult.raid.members : [];
     
     const message = [
       `队伍信息 [${teamId}]`,
       `目标: ${team.boss}`,
       `队长: ${leader?.name || '未知'}`,
       `状态: ${this.getStatusText(team.status)}`,
-      `成员 (${team.members.length}/5):`,
+      `成员 (${team.members.length + crossMembers.length}/5):`,
       ...members.map(m => 
         `${m.id === team.leader ? '[队长] ' : ''}${m.name} ` +
         `(战力: ${this.formatPower(m.power)})`
+      ),
+      ...crossMembers.map(member =>
+        `[跨服化身] ${member.avatar.名号}（${member.server_name}）`
       ),
       team.battleLog.length > 0 ? 
         `最近战况: ${team.battleLog[0].result}` : 
@@ -1318,6 +1451,7 @@ async disbandTeamInternal(teamId, team) {
     );
     
     // 删除队伍数据
+    if (team.crossRaidCode) await worldChatClient.closeRaid(team.crossRaidCode, 'closed');
     await redis.del(this.redisKeys.team(teamId));
     
     e.reply(` 队伍 ${teamId} 已解散`);
@@ -1516,7 +1650,7 @@ async disbandTeamInternal(teamId, team) {
     }
     
     const player = await Read_player(usr_qq);
-    if (player.level_id < 42 && player.lunhui == 0) {
+    if (player.level_id < 42 && player.lunhui == 0 && getRealmAuthorityLevel(player) < 10) {
       e.reply('需达到仙界境界才可参与讨伐');
       return false;
     }

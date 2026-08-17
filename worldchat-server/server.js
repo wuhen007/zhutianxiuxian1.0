@@ -75,7 +75,7 @@ function helloPayload(serverId, ts, nonce) {
 }
 
 function publishPayload(serverId, message) {
-  return JSON.stringify([
+  const payload = [
     'PUB',
     serverId,
     String(message.request_id),
@@ -83,7 +83,26 @@ function publishPayload(serverId, message) {
     String(message.sender_name),
     String(message.sender_tag),
     String(message.msg),
-  ]);
+  ];
+  if (Object.hasOwn(message, 'images')) payload.push(JSON.stringify(message.images));
+  return JSON.stringify(payload);
+}
+
+function cleanImageUrls(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(String).filter((item) => {
+    try {
+      const url = new URL(item);
+      const host = url.hostname.toLowerCase();
+      return url.protocol === 'https:'
+        && host !== 'localhost'
+        && !host.endsWith('.local')
+        && !/^(?:127|10|0|169\.254|192\.168)\./.test(host)
+        && !/^172\.(?:1[6-9]|2\d|3[01])\./.test(host);
+    } catch {
+      return false;
+    }
+  }))].slice(0, 3);
 }
 
 function cleanLabel(value, max = 30) {
@@ -146,6 +165,7 @@ export function createWorldChatServer(options = {}) {
   const logger = options.logger || console;
   const baseDir = options.baseDir || process.cwd();
   const storageFile = path.resolve(baseDir, cfg.STORAGE_FILE);
+  const raidsFile = path.resolve(baseDir, cfg.RAIDS_FILE);
   const bannedFile = path.resolve(baseDir, cfg.BANNED_FILE);
   const clientsFile = path.resolve(baseDir, cfg.CLIENTS_FILE);
   const fixedClients = options.clients
@@ -162,6 +182,12 @@ export function createWorldChatServer(options = {}) {
     .slice(-cfg.MESSAGE_LIMIT);
   let nextSeq =
     messages.reduce((max, message) => Math.max(max, message.seq), 0) + 1;
+
+  const raids = new Map(
+    (Array.isArray(readJson(raidsFile, [])) ? readJson(raidsFile, []) : [])
+      .filter((raid) => raid?.code && raid.expires_at > Date.now())
+      .map((raid) => [raid.code, raid])
+  );
 
   const bannedData = readJson(bannedFile, []);
   const banned = new Set(
@@ -193,6 +219,31 @@ export function createWorldChatServer(options = {}) {
     messages = messages.slice(-cfg.MESSAGE_LIMIT);
     atomicWriteJson(storageFile, messages);
     if (publishedRequests.size > cfg.MESSAGE_LIMIT * 2) rebuildDedupe();
+  }
+
+  function saveRaids() {
+    atomicWriteJson(raidsFile, [...raids.values()]);
+  }
+
+  function raidForClient(raid) {
+    return raid ? JSON.parse(JSON.stringify(raid)) : null;
+  }
+
+  function cleanRaidAvatar(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    try {
+      const json = JSON.stringify(value);
+      return Buffer.byteLength(json) <= 12_000 ? JSON.parse(json) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function newRaidCode() {
+    let code;
+    do code = crypto.randomBytes(4).toString('hex').toUpperCase();
+    while (raids.has(code));
+    return code;
   }
 
   function filterText(text) {
@@ -506,6 +557,101 @@ export function createWorldChatServer(options = {}) {
         return send(ws, { type: 'SYNC_ACK', ok: true, last_seq: nextSeq - 1 });
       }
 
+      if (message.type === 'RAID_OPEN') {
+        const requestId = String(message.request_id || '');
+        const teamId = cleanLabel(message.team_id, 80);
+        const boss = cleanLabel(message.boss, 50);
+        const localMembers = Math.max(1, Math.min(5, Math.trunc(Number(message.local_members) || 1)));
+        if (!/^[A-Za-z0-9_-]{8,80}$/.test(requestId) || !teamId || !boss) {
+          return send(ws, { type: 'RAID_OPEN_RESULT', request_id: requestId, ok: false, reason: 'invalid_raid' });
+        }
+        let raid = [...raids.values()].find((item) =>
+          item.host_server_id === connection.serverId
+          && item.team_id === teamId
+          && item.status === 'recruiting'
+          && item.expires_at > Date.now()
+        );
+        if (!raid) {
+          raid = {
+            code: newRaidCode(),
+            host_server_id: connection.serverId,
+            host_name: connection.name,
+            team_id: teamId,
+            boss,
+            local_members: localMembers,
+            members: [],
+            status: 'recruiting',
+            created_at: Date.now(),
+            expires_at: Date.now() + cfg.RAID_TTL_MS,
+          };
+          raids.set(raid.code, raid);
+        } else {
+          raid.local_members = localMembers;
+          raid.boss = boss;
+        }
+        saveRaids();
+        return send(ws, { type: 'RAID_OPEN_RESULT', request_id: requestId, ok: true, raid: raidForClient(raid) });
+      }
+
+      if (message.type === 'RAID_LIST') {
+        const requestId = String(message.request_id || '');
+        const result = [...raids.values()]
+          .filter((raid) => raid.status === 'recruiting' && raid.expires_at > Date.now())
+          .map(raidForClient);
+        return send(ws, { type: 'RAID_LIST_RESULT', request_id: requestId, ok: true, raids: result });
+      }
+
+      if (message.type === 'RAID_GET') {
+        const requestId = String(message.request_id || '');
+        const raid = raids.get(String(message.code || '').toUpperCase());
+        const active = Boolean(raid && raid.expires_at > Date.now());
+        return send(ws, {
+          type: 'RAID_GET_RESULT',
+          request_id: requestId,
+          ok: active,
+          reason: active ? undefined : 'raid_not_found',
+          raid: active ? raidForClient(raid) : null,
+        });
+      }
+
+      if (message.type === 'RAID_JOIN') {
+        const requestId = String(message.request_id || '');
+        const code = String(message.code || '').toUpperCase();
+        const memberTag = String(message.member_tag || '');
+        const avatar = cleanRaidAvatar(message.avatar);
+        const raid = raids.get(code);
+        let reason = null;
+        if (!raid || raid.expires_at <= Date.now()) reason = 'raid_not_found';
+        else if (raid.status !== 'recruiting') reason = 'raid_closed';
+        else if (raid.host_server_id === connection.serverId) reason = 'same_server';
+        else if (!/^[a-f0-9]{12,32}$/i.test(memberTag) || !avatar) reason = 'invalid_avatar';
+        else if (raid.local_members + raid.members.length >= 5) reason = 'raid_full';
+        else if (raid.members.some((item) => item.server_id === connection.serverId && item.member_tag === memberTag)) reason = 'already_joined';
+        else if ([...raids.values()].some((item) => item.status === 'recruiting' && item.members?.some((member) => member.server_id === connection.serverId && member.member_tag === memberTag))) reason = 'already_in_raid';
+        if (reason) return send(ws, { type: 'RAID_JOIN_RESULT', request_id: requestId, ok: false, reason });
+        raid.members.push({
+          server_id: connection.serverId,
+          server_name: connection.name,
+          member_tag: memberTag,
+          avatar,
+          joined_at: Date.now(),
+        });
+        saveRaids();
+        return send(ws, { type: 'RAID_JOIN_RESULT', request_id: requestId, ok: true, raid: raidForClient(raid) });
+      }
+
+      if (message.type === 'RAID_CLOSE') {
+        const requestId = String(message.request_id || '');
+        const raid = raids.get(String(message.code || '').toUpperCase());
+        if (!raid || raid.host_server_id !== connection.serverId) {
+          return send(ws, { type: 'RAID_CLOSE_RESULT', request_id: requestId, ok: false, reason: 'raid_not_found' });
+        }
+        raid.status = cleanLabel(message.status, 20) || 'closed';
+        raid.closed_at = Date.now();
+        saveRaids();
+        return send(ws, { type: 'RAID_CLOSE_RESULT', request_id: requestId, ok: true });
+      }
+
       if (message.type === 'PUB') {
         const requestId = String(message.request_id || '');
         const dedupeKey = `${connection.serverId}:${requestId}`;
@@ -524,6 +670,7 @@ export function createWorldChatServer(options = {}) {
 
         const timestamp = Number(message.ts);
         const text = String(message.msg || '');
+        const images = cleanImageUrls(message.images || []);
         const senderName = cleanLabel(message.sender_name);
         const senderTag = String(message.sender_tag || '');
         const expected = hmac(
@@ -542,10 +689,12 @@ export function createWorldChatServer(options = {}) {
         else if (
           !senderName ||
           !/^[a-f0-9]{12,32}$/i.test(senderTag) ||
-          !text.trim() ||
+          (!text.trim() && !images.length) ||
           text.length > 500
         )
           reason = 'invalid_message';
+        else if (!Array.isArray(message.images || []) || images.length !== (message.images || []).length)
+          reason = 'invalid_images';
         if (reason)
           return send(ws, {
             type: 'PUB_ACK',
@@ -591,6 +740,7 @@ export function createWorldChatServer(options = {}) {
           sender_name: senderName,
           sender_tag: senderTag,
           msg: filterText(text.trim()),
+          images,
           ts: now,
           groups: connection.exposeLevel ? connection.groups : [],
           expose_level: connection.exposeLevel,
@@ -671,6 +821,14 @@ export function createWorldChatServer(options = {}) {
         ws.ping();
       }
     }
+    let raidsChanged = false;
+    for (const [code, raid] of raids) {
+      if (raid.expires_at <= Date.now()) {
+        raids.delete(code);
+        raidsChanged = true;
+      }
+    }
+    if (raidsChanged) saveRaids();
   }, 30_000);
   heartbeat.unref();
 
@@ -694,7 +852,14 @@ export function createWorldChatServer(options = {}) {
     await new Promise((resolve) => httpServer.close(resolve));
   }
 
-  return { httpServer, wss, start, stop, getMessages: () => [...messages] };
+  return {
+    httpServer,
+    wss,
+    start,
+    stop,
+    getMessages: () => [...messages],
+    getRaids: () => [...raids.values()],
+  };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === SERVER_FILE) {

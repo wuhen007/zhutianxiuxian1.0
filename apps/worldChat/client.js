@@ -11,6 +11,15 @@ export const DEFAULT_ENROLLMENT_PATH = path.join(
   MODULE_DIR,
   'enrollment.local.json'
 );
+export const DEFAULT_INSTALLATION_PATH =
+  process.env.WORLDCHAT_INSTALLATION_PATH ||
+  path.resolve(
+    MODULE_DIR,
+    '../../../..',
+    'data',
+    'zhutian-worldchat',
+    'installation.id'
+  );
 const LEGACY_CONFIG_PATH = path.join(MODULE_DIR, 'config.json');
 const DEV_SECRET = 'zhutian-worldchat-dev-secret-change-me';
 const DEFAULT_WORLDCHAT_URL = 'wss://worldchat.ameng2027.xyz';
@@ -30,6 +39,22 @@ function readConfig(file) {
   } catch {
     return null;
   }
+}
+
+function loadInstallationId(file) {
+  if (!file) return '';
+  try {
+    const value = fs.readFileSync(file, 'utf8').trim();
+    if (/^[a-f0-9]{32}$/i.test(value)) return value;
+  } catch {}
+  const value = crypto.randomBytes(16).toString('hex');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temp = `${file}.${process.pid}.${crypto
+    .randomBytes(4)
+    .toString('hex')}.tmp`;
+  fs.writeFileSync(temp, `${value}\n`, { encoding: 'utf8', mode: 0o600 });
+  fs.renameSync(temp, file);
+  return value;
 }
 
 function hasUsableIdentity(config = {}) {
@@ -86,12 +111,25 @@ function normalizeConfig(input = {}) {
 export function loadConfig(
   configPath = DEFAULT_CONFIG_PATH,
   enrollmentPath =
-    configPath === DEFAULT_CONFIG_PATH ? DEFAULT_ENROLLMENT_PATH : null
+    configPath === DEFAULT_CONFIG_PATH ? DEFAULT_ENROLLMENT_PATH : null,
+  installationPath =
+    configPath === DEFAULT_CONFIG_PATH ? DEFAULT_INSTALLATION_PATH : null
 ) {
   const legacy =
     configPath === DEFAULT_CONFIG_PATH ? readConfig(LEGACY_CONFIG_PATH) : null;
-  const source = readConfig(configPath) || legacy || {};
-  const enrollment = source.identity_verified || !enrollmentPath
+  const source = { ...(readConfig(configPath) || legacy || {}) };
+  const installationId = loadInstallationId(installationPath);
+  const trustedIdentity =
+    hasUsableIdentity(source) &&
+    source.identity_verified === true &&
+    (!installationId || source.installation_id === installationId);
+  if (!trustedIdentity && installationId) {
+    source.server_id = '';
+    source.secret = '';
+    source.identity_verified = false;
+    source.installation_id = installationId;
+  }
+  const enrollment = trustedIdentity || !enrollmentPath
     ? null
     : readConfig(enrollmentPath);
   const externalToken = String(
@@ -123,7 +161,25 @@ function publishPayload(serverId, message) {
     String(message.sender_name),
     String(message.sender_tag),
     String(message.msg),
+    JSON.stringify(message.images || []),
   ]);
+}
+
+function normalizeImageUrls(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(String).filter((item) => {
+    try {
+      const url = new URL(item);
+      const host = url.hostname.toLowerCase();
+      return url.protocol === 'https:'
+        && host !== 'localhost'
+        && !host.endsWith('.local')
+        && !/^(?:127|10|0|169\.254|192\.168)\./.test(host)
+        && !/^172\.(?:1[6-9]|2\d|3[01])\./.test(host);
+    } catch {
+      return false;
+    }
+  }))].slice(0, 3);
 }
 
 export class WorldChatClient {
@@ -419,7 +475,7 @@ export class WorldChatClient {
     });
   }
 
-  pub(text, sender = {}) {
+  pub(text, sender = {}, images = []) {
     if (!this.authed || this.ws?.readyState !== this.WebSocket.OPEN) {
       return Promise.resolve({ ok: false, reason: 'disconnected' });
     }
@@ -429,6 +485,7 @@ export class WorldChatClient {
       request_id: requestId,
       ts: Date.now(),
       msg: String(text),
+      images: normalizeImageUrls(images),
       sender_name: String(sender.name || '无名道友')
         .trim()
         .slice(0, 30),
@@ -457,6 +514,30 @@ export class WorldChatClient {
       body.after_seq = afterSeq;
     const result = await this.request('QUERY', 'QUERY_RESULT', body);
     return result.type === 'QUERY_RESULT' ? { ...result, ok: true } : result;
+  }
+
+  openRaid(body) {
+    return this.request('RAID_OPEN', 'RAID_OPEN_RESULT', body);
+  }
+
+  listRaids() {
+    return this.request('RAID_LIST', 'RAID_LIST_RESULT');
+  }
+
+  getRaid(code) {
+    return this.request('RAID_GET', 'RAID_GET_RESULT', { code });
+  }
+
+  joinRaid(code, avatar, memberTag) {
+    return this.request('RAID_JOIN', 'RAID_JOIN_RESULT', {
+      code,
+      avatar,
+      member_tag: memberTag,
+    });
+  }
+
+  closeRaid(code, status = 'closed') {
+    return this.request('RAID_CLOSE', 'RAID_CLOSE_RESULT', { code, status });
   }
 
   enqueueDelivery(message) {

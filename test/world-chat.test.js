@@ -53,6 +53,61 @@ test('首次配置为每个安装生成独立且稳定的区服凭据', () => {
   }
 });
 
+test('复制到另一安装的运行凭据会自动换领独立身份', async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'worldchat-copy-'));
+  const enrollmentPath = path.join(directory, 'enrollment.local.json');
+  const firstPath = path.join(directory, 'first.json');
+  const secondPath = path.join(directory, 'second.json');
+  const firstInstall = path.join(directory, 'first-install.id');
+  const secondInstall = path.join(directory, 'second-install.id');
+  const enrollmentToken = secret();
+  const server = createWorldChatServer({
+    baseDir: directory,
+    logger: silentLogger,
+    config: {
+      HOST: '127.0.0.1',
+      PORT: 0,
+      ENROLLMENT_TOKEN: enrollmentToken,
+      MAX_REGISTRATIONS_PER_MINUTE: 20,
+    },
+  });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}`;
+  fs.writeFileSync(
+    enrollmentPath,
+    JSON.stringify({ url, enrollment_token: enrollmentToken })
+  );
+
+  const first = new WorldChatClient({
+    configPath: firstPath,
+    config: loadConfig(firstPath, enrollmentPath, firstInstall),
+  });
+  let second;
+  t.after(async () => {
+    first.close();
+    second?.close();
+    await server.stop();
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+  first.connect();
+  await waitFor(() => first.authed, '第一安装未完成自动登记');
+  fs.copyFileSync(firstPath, secondPath);
+
+  const copiedConfig = loadConfig(secondPath, enrollmentPath, secondInstall);
+  assert.equal(copiedConfig.server_id, '');
+  assert.equal(copiedConfig.secret, '');
+  assert.notEqual(copiedConfig.installation_id, first.cfg.installation_id);
+  second = new WorldChatClient({
+    configPath: secondPath,
+    config: copiedConfig,
+  });
+  second.connect();
+  await waitFor(() => second.authed, '第二安装未换领独立身份');
+  assert.notEqual(second.cfg.server_id, first.cfg.server_id);
+  assert.notEqual(second.cfg.secret, first.cfg.secret);
+  assert.equal(first.authed, true);
+});
+
 test('两个区服实时广播、并发请求匹配并在断线后补拉', async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'worldchat-e2e-'));
   const secretA = secret();
@@ -100,7 +155,9 @@ test('两个区服实时广播、并发请求匹配并在断线后补拉', async
   await waitFor(() => clientA.authed && clientB.authed, '两个区服未完成鉴权');
 
   const [ackA, ackB] = await Promise.all([
-    clientA.pub('甲服传音', { name: '甲修士', tag: 'a'.repeat(16) }),
+    clientA.pub('甲服传音', { name: '甲修士', tag: 'a'.repeat(16) }, [
+      'https://example.com/world.jpg',
+    ]),
     clientB.pub('乙服传音', { name: '乙修士', tag: 'b'.repeat(16) }),
   ]);
   assert.equal(ackA.ok, true);
@@ -114,6 +171,10 @@ test('两个区服实时广播、并发请求匹配并在断线后补拉', async
     '乙服传音',
     '甲服传音',
   ]);
+  assert.deepEqual(
+    receivedA.find((message) => message.msg === '甲服传音').images,
+    ['https://example.com/world.jpg']
+  );
 
   const [oneMessage, twoMessages] = await Promise.all([
     clientA.query(1),
