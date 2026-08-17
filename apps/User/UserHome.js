@@ -888,7 +888,9 @@ async useLinggenToken(e) {
         let remain_m = Math.floor(remain / 60000);
         let remain_s = Math.floor((remain % 60000) / 1000);
         
-        if (hasTideLamp) {
+        if (hasTideLamp && player.daofaxianshu == 2) {
+            e.reply(` 【引潮灯】聚潮、【道法仙术】流转，还需${remain_m}分${remain_s}秒方可再钓`);
+        } else if (hasTideLamp) {
             e.reply(` 【万界引潮灯】正在聚拢界潮，还需${remain_m}分${remain_s}秒方可再钓`);
         } else if (player.daofaxianshu == 2) {
             e.reply(` 【道法仙术】流转不息，还需${remain_m}分${remain_s}秒方能圆满`);
@@ -922,7 +924,7 @@ if (isLucky || player.灵根.type === "圆环之理") {
         n = 5; // 圆环之理五倍奖励
         rewardMsg += "「全ての魔女は、生まれる前に消滅させておく」\n";
         rewardMsg += " 法则重构！圆环之理显现，钓竿化作因果之线！\n";
-        rewardMsg += " 神明垂钓！众生愿力奔涌而出，获得五倍恩赐！\n";
+        rewardMsg += " 神明垂钓！法则加持，本次钓获五倍珍宝！\n";
     } else {
         n = 2;
         if (player.灵根.type === "魔卡少女") {
@@ -939,12 +941,12 @@ if (isLucky || player.灵根.type === "圆环之理") {
     }
 }
     
-    // 道法仙术提示
-    if (player.daofaxianshu == 2) {
-        rewardMsg += " 道法仙术运转周天，本次垂钓冷却减少10分钟！\n";
-    }
+    // 道法仙术提示（顺序与 CD 实际计算一致：先引潮灯减半，再道法-10）
     if (hasTideLamp) {
         rewardMsg += " 万界引潮灯照彻众生海，垂钓冷却缩短一半，愿鳞与仙饵收获翻倍！\n";
+    }
+    if (player.daofaxianshu == 2) {
+        rewardMsg += " 道法仙术运转周天，本次垂钓冷却再减少10分钟！\n";
     }
     
     // 特殊仙饵使用独立奖池；不带仙饵时沿用原奖池。
@@ -1121,7 +1123,7 @@ if (isLucky || player.灵根.type === "圆环之理") {
     await  Add_najie_thing(usr_qq, "众生仙钓", "道具", -1);
     // 最终总结
     await sleep(1000);
-    e.reply(` 本次垂钓后需修养：${baseCD/60000}分钟`);
+    e.reply(` 本次垂钓后需修养：${Math.trunc(baseCD/60000)}分钟`);
     e.reply(rewardMsg);
     e.reply(` 感悟天道：修为+${xiuwei} │ 淬炼体魄：血气+${xueqi}`);
     e.reply(" 众生钓竿回归沉寂，等待下一次出山...");
