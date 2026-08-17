@@ -26,3 +26,7 @@ export async function withPlayerMutationLock(playerId, task) {
     if (queues.get(key) === current) queues.delete(key);
   }
 }
+
+export function withAssociationMutationLock(associationName, task) {
+  return withPlayerMutationLock(`association:${associationName}`, task);
+}

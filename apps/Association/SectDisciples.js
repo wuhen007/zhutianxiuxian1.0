@@ -1,5 +1,6 @@
 import { plugin, verc, data } from '../../api/api.js';
 import { channel } from '../../model/xiuxian.js';
+import { withAssociationMutationLock } from '../../utils/playerMutationLock.js';
 import {
   DISCIPLE_MANAGE_POSITIONS,
   DISCIPLE_SPECIALTIES,
@@ -8,6 +9,8 @@ import {
   formatDisciple,
   getDiscipleCapacity,
   getRecruitCost,
+  parseAssignDiscipleCommand,
+  parseTrainDiscipleCommand,
   recruitDisciple,
   settleSectOperations,
   trainDisciple,
@@ -58,22 +61,37 @@ export class SectDisciples extends plugin {
     await data.setAssociation(context.association.宗门名称, context.association);
   }
 
-  async recruit(e) {
+  async mutate(e, action) {
     const context = await this.context(e, true);
     if (!context) return false;
-    const { association } = context;
-    const cost = getRecruitCost(association);
-    if (Number(association.灵石池) < cost) {
-      return e.reply(`宗门灵石池不足，招募一名弟子需要${cost}灵石。`);
-    }
-    const result = recruitDisciple(association, { talentList: data.talent_list || [] });
-    if (!result.ok) return e.reply(result.message);
-    association.灵石池 -= cost;
-    await this.save(context);
-    return e.reply([
-      `招募成功：${formatDisciple(result.disciple)}`,
-      `消耗宗门灵石${cost}，当前弟子${association.宗门弟子.length}/${getDiscipleCapacity(association)}人。`,
-    ].join('\n'));
+    const associationName = context.association.宗门名称;
+    return withAssociationMutationLock(associationName, async () => {
+      const association = data.getAssociation(associationName);
+      if (!association || association === 'error') {
+        await e.reply('宗门档案不存在，请先发送 #同步信息。');
+        return false;
+      }
+      ensureSectDisciples(association);
+      return action({ ...context, association });
+    });
+  }
+
+  async recruit(e) {
+    return this.mutate(e, async context => {
+      const { association } = context;
+      const cost = getRecruitCost(association);
+      if (Number(association.灵石池) < cost) {
+        return e.reply(`宗门灵石池不足，招募一名弟子需要${cost}灵石。`);
+      }
+      const result = recruitDisciple(association, { talentList: data.talent_list || [] });
+      if (!result.ok) return e.reply(result.message);
+      association.灵石池 -= cost;
+      await this.save(context);
+      return e.reply([
+        `招募成功：${formatDisciple(result.disciple)}`,
+        `消耗宗门灵石${cost}，当前弟子${association.宗门弟子.length}/${getDiscipleCapacity(association)}人。`,
+      ].join('\n'));
+    });
   }
 
   async list(e) {
@@ -89,43 +107,44 @@ export class SectDisciples extends plugin {
   }
 
   async train(e) {
-    const context = await this.context(e, true);
-    if (!context) return false;
-    const id = String(e.msg).replace(/^#培养宗门弟子\\s*/, '');
-    const result = trainDisciple(context.association, id);
-    if (!result.ok) return e.reply(result.message);
-    await this.save(context);
-    return e.reply(`培养成功：${formatDisciple(result.disciple)}，消耗宗门灵石${result.cost}。`);
+    const id = parseTrainDiscipleCommand(e.msg);
+    if (!id) return false;
+    return this.mutate(e, async context => {
+      const result = trainDisciple(context.association, id);
+      if (!result.ok) return e.reply(result.message);
+      await this.save(context);
+      return e.reply(`培养成功：${formatDisciple(result.disciple)}，消耗宗门灵石${result.cost}。`);
+    });
   }
 
   async assign(e) {
-    const context = await this.context(e, true);
-    if (!context) return false;
-    const match = String(e.msg).match(/^#任命宗门弟子\\s*(\\d+)\\s*(采药|炼丹|炼器|阵法|护山|外务)$/);
-    if (!match || !DISCIPLE_SPECIALTIES.includes(match[2])) return false;
-    const result = assignDisciple(context.association, match[1], match[2]);
-    if (!result.ok) return e.reply(result.message);
-    await this.save(context);
-    return e.reply(`任命成功：${formatDisciple(result.disciple)}。发送 #宗门运营 查看每日结算。`);
+    const command = parseAssignDiscipleCommand(e.msg);
+    if (!command || !DISCIPLE_SPECIALTIES.includes(command.specialty)) return false;
+    return this.mutate(e, async context => {
+      const result = assignDisciple(context.association, command.id, command.specialty);
+      if (!result.ok) return e.reply(result.message);
+      await this.save(context);
+      return e.reply(`任命成功：${formatDisciple(result.disciple)}。发送 #宗门运营 查看每日结算。`);
+    });
   }
 
   async operate(e) {
-    const context = await this.context(e, true);
-    if (!context) return false;
-    const result = settleSectOperations(context.association);
-    await this.save(context);
-    const warehouse = context.association.宗门仓库;
-    if (!result.days) {
-      return e.reply(`【宗门运营】${result.message}\n当前灵石池：${context.association.灵石池}，声望：${context.association.宗门声望}`);
-    }
-    if (!result.ok) {
-      return e.reply(`【宗门运营】${result.message}\n请先捐献灵石或减少任职弟子。`);
-    }
-    return e.reply([
-      `【宗门运营结算】${result.days}天`,
-      `维护消耗：${result.upkeep}灵石`,
-      `产出：灵石${result.produced.灵石}、药材${result.produced.药材}、丹药${result.produced.丹药}、法器${result.produced.法器}`,
-      `仓库累计：药材${warehouse.药材}、丹药${warehouse.丹药}、法器${warehouse.法器}｜声望${context.association.宗门声望}`,
-    ].join('\n'));
+    return this.mutate(e, async context => {
+      const result = settleSectOperations(context.association);
+      await this.save(context);
+      const warehouse = context.association.宗门仓库;
+      if (!result.days) {
+        return e.reply(`【宗门运营】${result.message}\n当前灵石池：${context.association.灵石池}，声望：${context.association.宗门声望}`);
+      }
+      if (!result.ok) {
+        return e.reply(`【宗门运营】${result.message}\n请先捐献灵石或减少任职弟子。`);
+      }
+      return e.reply([
+        `【宗门运营结算】${result.days}天`,
+        `维护消耗：${result.upkeep}灵石`,
+        `产出：灵石${result.produced.灵石}、药材${result.produced.药材}、丹药${result.produced.丹药}、法器${result.produced.法器}`,
+        `仓库累计：药材${warehouse.药材}、丹药${warehouse.丹药}、法器${warehouse.法器}｜声望${context.association.宗门声望}`,
+      ].join('\n'));
+    });
   }
 }

@@ -76,6 +76,15 @@ export function getDiscipleAffinity(root, specialty) {
   return (SPECIALTY_ROOT_KEYS[specialty] || []).some((key) => rootName.includes(key)) ? 1.25 : 1;
 }
 
+export function parseTrainDiscipleCommand(message) {
+  return String(message).match(/^#培养宗门弟子\s*(\d+)$/)?.[1] || null;
+}
+
+export function parseAssignDiscipleCommand(message) {
+  const match = String(message).match(/^#任命宗门弟子\s*(\d+)\s*(采药|炼丹|炼器|阵法|护山|外务)$/);
+  return match ? { id: match[1], specialty: match[2] } : null;
+}
+
 export function ensureSectDisciples(association) {
   if (!Array.isArray(association.宗门弟子)) association.宗门弟子 = [];
   association.宗门弟子序号 = Math.max(
@@ -163,6 +172,7 @@ export function assignDisciple(association, id, specialty) {
   const disciple = association.宗门弟子.find((item) => item.id === Number(id));
   if (!disciple) return { ok: false, message: "找不到这名宗门弟子。" };
   disciple.专长 = specialty;
+  disciple.灵根契合度 = getDiscipleAffinity(disciple.灵根, specialty);
   disciple.状态 = "任职";
   return { ok: true, disciple };
 }

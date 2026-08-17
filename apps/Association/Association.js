@@ -16,6 +16,7 @@ import {
   setFileValue,
   channel
 } from '../../model/xiuxian.js';
+import { withAssociationMutationLock } from '../../utils/playerMutationLock.js';
 const 宗门人数上限 = [6, 9, 12, 15, 18, 21, 24, 27];
 const 宗门灵石池上限 = [
   2000000, 5000000, 8000000, 11000000, 15000000, 20000000, 25000000, 30000000,
@@ -297,51 +298,57 @@ export class Association extends plugin {
     if (!isNotNull(player.宗门)) {
       return false;
     }
-    //获取灵石数量
-    var reg = new RegExp(/#宗门(上交|上缴|捐赠)灵石/);
-    let lingshi = e.msg.replace(reg, '');
-    lingshi = lingshi.trim(); //去掉空格
-    if (!isNaN(parseFloat(lingshi)) && isFinite(lingshi)) {
-    } else {
-      return false;
-    }
-    //校验输入灵石数
-    if (parseInt(lingshi) == parseInt(lingshi) && parseInt(lingshi) > 0) {
-      lingshi = parseInt(lingshi);
-    } else {
-      return false;
-    }
-    if (player.灵石 < lingshi) {
-      e.reply(`你身上只有${player.灵石}灵石,数量不足`);
-      return false;
-    }
-    let ass = data.getAssociation(player.宗门.宗门名称);
-    let xf = 1;
-    if (ass.power == 1) {
-      xf = 10;
-    }
-    if (ass.灵石池 + lingshi > 宗门灵石池上限[ass.宗门等级 - 1] * xf) {
+    const associationName = player.宗门.宗门名称;
+    return withAssociationMutationLock(associationName, async () => {
+      player = data.getData('player', usr_qq);
+      if (player?.宗门?.宗门名称 !== associationName) return false;
+
+      //获取灵石数量
+      var reg = new RegExp(/#宗门(上交|上缴|捐赠)灵石/);
+      let lingshi = e.msg.replace(reg, '');
+      lingshi = lingshi.trim(); //去掉空格
+      if (!isNaN(parseFloat(lingshi)) && isFinite(lingshi)) {
+      } else {
+        return false;
+      }
+      //校验输入灵石数
+      if (parseInt(lingshi) == parseInt(lingshi) && parseInt(lingshi) > 0) {
+        lingshi = parseInt(lingshi);
+      } else {
+        return false;
+      }
+      if (player.灵石 < lingshi) {
+        e.reply(`你身上只有${player.灵石}灵石,数量不足`);
+        return false;
+      }
+      let ass = data.getAssociation(associationName);
+      let xf = 1;
+      if (ass.power == 1) {
+        xf = 10;
+      }
+      if (ass.灵石池 + lingshi > 宗门灵石池上限[ass.宗门等级 - 1] * xf) {
+        e.reply(
+          `${ass.宗门名称}的灵石池最多还能容纳${
+            宗门灵石池上限[ass.宗门等级 - 1] * xf - ass.灵石池
+          }灵石,请重新捐赠`
+        );
+        return false;
+      }
+      ass.灵石池 += lingshi;
+      if (!isNotNull(player.宗门.lingshi_donate)) {
+        player.宗门.lingshi_donate = 0; //未定义捐赠数量则为0
+      }
+      player.宗门.lingshi_donate += lingshi;
+      data.setData('player', usr_qq, player);
+      data.setAssociation(ass.宗门名称, ass);
+      await setFileValue(usr_qq, -lingshi, '灵石');
       e.reply(
-        `${ass.宗门名称}的灵石池最多还能容纳${
-          宗门灵石池上限[ass.宗门等级 - 1] * xf - ass.灵石池
-        }灵石,请重新捐赠`
+        `捐赠成功,你身上还有${player.灵石 - lingshi}灵石,宗门灵石池目前有${
+          ass.灵石池
+        }灵石`
       );
       return false;
-    }
-    ass.灵石池 += lingshi;
-    if (!isNotNull(player.宗门.lingshi_donate)) {
-      player.宗门.lingshi_donate = 0; //未定义捐赠数量则为0
-    }
-    player.宗门.lingshi_donate += lingshi;
-    data.setData('player', usr_qq, player);
-    data.setAssociation(ass.宗门名称, ass);
-    await setFileValue(usr_qq, -lingshi, '灵石');
-    e.reply(
-      `捐赠成功,你身上还有${player.灵石 - lingshi}灵石,宗门灵石池目前有${
-        ass.灵石池
-      }灵石`
-    );
-    return false;
+    });
   }
 
   //宗门捐献记录

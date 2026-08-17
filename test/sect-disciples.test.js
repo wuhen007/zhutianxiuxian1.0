@@ -5,6 +5,8 @@ import {
   ensureSectDisciples,
   getDiscipleAffinity,
   getDiscipleCapacity,
+  parseAssignDiscipleCommand,
+  parseTrainDiscipleCommand,
   recruitDisciple,
   settleSectOperations,
   trainDisciple,
@@ -41,6 +43,18 @@ test('招募、培养、任命形成弟子管理闭环', () => {
 test('灵根与专长存在可读的契合加成', () => {
   assert.equal(getDiscipleAffinity({ name: '木灵根' }, '采药'), 1.25);
   assert.equal(getDiscipleAffinity({ name: '金灵根' }, '采药'), 1);
+
+  const ass = association();
+  recruitDisciple(ass, { talentList: talent, random: () => 0 });
+  assignDisciple(ass, 1, '炼器');
+  assert.equal(ass.宗门弟子[0].灵根契合度, 1.25);
+});
+
+test('培养与任命命令可解析连续或空格分隔的参数', () => {
+  assert.equal(parseTrainDiscipleCommand('#培养宗门弟子1'), '1');
+  assert.equal(parseTrainDiscipleCommand('#培养宗门弟子 12'), '12');
+  assert.deepEqual(parseAssignDiscipleCommand('#任命宗门弟子1炼丹'), { id: '1', specialty: '炼丹' });
+  assert.deepEqual(parseAssignDiscipleCommand('#任命宗门弟子 12 炼器'), { id: '12', specialty: '炼器' });
 });
 
 test('运营结算扣除维护并按专长产出', () => {
