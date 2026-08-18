@@ -20,7 +20,10 @@ $tokenPath = Join-Path $dataDir 'token'
 $downloadUrl = 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe'
 
 New-Item -ItemType Directory -Force -Path $installDir, $dataDir | Out-Null
-Invoke-WebRequest -UseBasicParsing -Uri $downloadUrl -OutFile $exePath
+& curl.exe --fail --location --retry 5 --retry-all-errors --retry-delay 2 --output $exePath $downloadUrl
+if ($LASTEXITCODE -ne 0) {
+  throw "cloudflared download failed with curl exit code $LASTEXITCODE"
+}
 Set-Content -LiteralPath $tokenPath -Value $Token.Trim() -NoNewline -Encoding ascii
 
 & icacls.exe $tokenPath /inheritance:r /grant:r 'SYSTEM:F' 'Administrators:F' | Out-Null
