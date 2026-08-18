@@ -50,6 +50,8 @@ temp/
 # IDE project metadata
 .idea/
 apps/worldChat/config.local.json
+apps/worldChat/config.json
+apps/worldChat/installation.id
 worldchat-server/clients.json
 worldchat-server/*.tmp
 apps/worldChat/*.tmp

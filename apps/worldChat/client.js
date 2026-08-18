@@ -6,20 +6,23 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
-export const DEFAULT_CONFIG_PATH = path.join(MODULE_DIR, 'config.local.json');
+const DATA_DIR = path.resolve(
+  MODULE_DIR,
+  '../../../..',
+  'data',
+  'zhutian-worldchat'
+);
+export const DEFAULT_CONFIG_PATH =
+  process.env.WORLDCHAT_CONFIG_PATH ||
+  path.join(DATA_DIR, 'config.local.json');
 export const DEFAULT_ENROLLMENT_PATH = path.join(
   MODULE_DIR,
   'enrollment.local.json'
 );
 export const DEFAULT_INSTALLATION_PATH =
   process.env.WORLDCHAT_INSTALLATION_PATH ||
-  path.resolve(
-    MODULE_DIR,
-    '../../../..',
-    'data',
-    'zhutian-worldchat',
-    'installation.id'
-  );
+  path.join(DATA_DIR, 'installation.id');
+const LEGACY_LOCAL_CONFIG_PATH = path.join(MODULE_DIR, 'config.local.json');
 const LEGACY_CONFIG_PATH = path.join(MODULE_DIR, 'config.json');
 const DEV_SECRET = 'zhutian-worldchat-dev-secret-change-me';
 const DEFAULT_WORLDCHAT_URL = 'wss://worldchat.ameng2027.xyz';
@@ -115,9 +118,16 @@ export function loadConfig(
   installationPath =
     configPath === DEFAULT_CONFIG_PATH ? DEFAULT_INSTALLATION_PATH : null
 ) {
-  const legacy =
-    configPath === DEFAULT_CONFIG_PATH ? readConfig(LEGACY_CONFIG_PATH) : null;
-  const source = { ...(readConfig(configPath) || legacy || {}) };
+  const current = readConfig(configPath);
+  let migratedPath = '';
+  let legacy = null;
+  if (!current && configPath === DEFAULT_CONFIG_PATH) {
+    migratedPath = [LEGACY_LOCAL_CONFIG_PATH, LEGACY_CONFIG_PATH].find(
+      (file) => readConfig(file)
+    ) || '';
+    legacy = migratedPath ? readConfig(migratedPath) : null;
+  }
+  const source = { ...(current || legacy || {}) };
   const installationId = loadInstallationId(installationPath);
   const trustedIdentity =
     hasUsableIdentity(source) &&
@@ -145,6 +155,11 @@ export function loadConfig(
   const persisted = { ...cfg };
   if (!source.enrollment_token) delete persisted.enrollment_token;
   atomicWriteJson(configPath, persisted);
+  if (migratedPath) {
+    try {
+      fs.rmSync(migratedPath);
+    } catch {}
+  }
   return cfg;
 }
 

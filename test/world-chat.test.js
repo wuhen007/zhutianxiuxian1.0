@@ -5,7 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { WorldChatClient, loadConfig } from '../apps/worldChat/client.js';
+import {
+  DEFAULT_CONFIG_PATH,
+  DEFAULT_INSTALLATION_PATH,
+  WorldChatClient,
+  loadConfig,
+} from '../apps/worldChat/client.js';
 import { createWorldChatServer } from '../worldchat-server/server.js';
 
 const silentLogger = { info() {}, warn() {}, error() {} };
@@ -33,6 +38,11 @@ function clientConfig(url, serverId, clientSecret, groupId) {
     last_seen_seq: 0,
   };
 }
+
+test('默认身份配置存放在插件目录外的独立数据目录', () => {
+  assert.equal(path.dirname(DEFAULT_CONFIG_PATH), path.dirname(DEFAULT_INSTALLATION_PATH));
+  assert.equal(path.basename(path.dirname(DEFAULT_CONFIG_PATH)), 'zhutian-worldchat');
+});
 
 test('首次配置为每个安装生成独立且稳定的区服凭据', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'worldchat-config-'));
