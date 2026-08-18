@@ -1,13 +1,17 @@
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
+import path from 'node:path';
 import {
+  __PATH,
   existplayer,
   Write_player,
   Write_equipment,
+  Write_najie,
   isNotNull,
   player_efficiency,
   get_random_fromARR,
   Read_player,
+  Read_najie,
   foundthing,
   Read_equipment,
   Add_HP,
@@ -41,30 +45,15 @@ import {
 import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
 import { canCultivateExtraPath, getActiveExtraCultivationPaths, getExtraCultivationPathName, selectExtraCultivationPath } from '../../model/extraCultivation.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
-
-const XIANGU_THUNDER_LIQUID_NAMES = ['雷池真液', '雷池液'];
-
-async function getXianguThunderLiquidQuantity(userId) {
-  let quantity = 0;
-  for (const name of XIANGU_THUNDER_LIQUID_NAMES) {
-    quantity += Number(await exist_najie_thing(userId, name, '道具')) || 0;
-  }
-  return quantity;
-}
-
-async function consumeXianguThunderLiquid(userId, amount) {
-  let remaining = Math.max(0, Math.floor(Number(amount) || 0));
-  for (const name of XIANGU_THUNDER_LIQUID_NAMES) {
-    if (remaining <= 0) break;
-    const available = Number(await exist_najie_thing(userId, name, '道具')) || 0;
-    const used = Math.min(available, remaining);
-    if (used > 0) {
-      await Add_najie_thing(userId, name, '道具', -used);
-      remaining -= used;
-    }
-  }
-  return remaining === 0;
-}
+import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
+import {
+  ZUNZHE_EXTREME_RESOURCES,
+  ZUNZHE_THUNDER_STAGES,
+  calculateZunzheDefenseReduction,
+  calculateZunzheThunderStage,
+  normalizeXianguExtremeRealms,
+  prepareZunzheExtremeTrial,
+} from '../../model/zunzheExtreme.js';
 
 export class xiangujinshi extends plugin {
   constructor() {
@@ -276,9 +265,7 @@ export class xiangujinshi extends plugin {
     // ========== 仙道潜力检查结束 ==========
 
     const isExtreme = e.msg.includes("极境");
-if (!player.极境 || !Array.isArray(player.极境)) {
-    player.极境 = [];
-}
+    normalizeXianguExtremeRealms(player);
     // 搬血境突破逻辑
     if (player.xiangulevel_id === 1) {
 
@@ -1302,20 +1289,22 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
 
     // 前置检查
     if (player.xiangulevel_id !== 7) return e.reply("需先突破至尊者境");
+    normalizeXianguExtremeRealms(player);
     if (player.极境.includes("7")) return e.reply("已臻至尊者极境");
 
     // 核心检查1：必须学习五行涅槃法
-    if (!player.学习的功法.includes("五行涅槃法")) {
+    const learnedSkills = Array.isArray(player.学习的功法) ? player.学习的功法 : [];
+    if (!learnedSkills.includes("五行涅槃法")) {
         return e.reply([
             `【涅槃未成·极境无门】`,
             `尊者极境需以五行涅槃法重塑根基，补全缺陷`,
-            `当前掌握：${player.学习的功法.includes("五行涅槃法") ? "已掌握" : "未掌握"}`,
+            `当前掌握：未掌握`,
             `需先寻得五行涅槃法并参悟，方可重修境界`
         ].join("\n"));
     }
 
     // 核心检查2：位面必须是九天十地（power_place等于2.5）
-    if (player.power_place !== 2.5) {
+    if (Number(player.power_place) !== 2.5) {
         return e.reply([
             `【天地有缺·大道不全】`,
             `当前位面：${this.getPlaceName(player.power_place)}`,
@@ -1325,32 +1314,12 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
         ].join("\n"));
     }
 
-    // 检查渡劫资源
-    const thunderResources = [
-        { name: "雷池真液", liquidAlias: true, class: "道具", quantity: 3 },
-        { name: "血魂草", class: "草药", quantity: 1 },
-        { name: "五行本源", class: "道具", quantity: 5 }
-    ];
-
-    const missingResources = [];
-    for (const resource of thunderResources) {
-        const currentQty = resource.liquidAlias
-            ? await getXianguThunderLiquidQuantity(usr_qq)
-            : await exist_najie_thing(usr_qq, resource.name, resource.class);
-        if (currentQty < resource.quantity) {
-            missingResources.push({
-                name: resource.name,
-                required: resource.quantity,
-                current: currentQty
-            });
-        }
-    }
-
-    if (missingResources.length > 0) {
-        const resourceList = missingResources.map(r => 
-            `${r.name}：需${r.required}，现有${r.current}`
+    const najie = await Read_najie(usr_qq);
+    const prepared = prepareZunzheExtremeTrial(player, najie, actualEnergyNeed);
+    if (prepared.missingResources?.length > 0) {
+        const resourceList = prepared.missingResources.map(resource =>
+            `${resource.name}：需${resource.quantity}，现有${resource.current}`
         ).join("\n");
-        
         return e.reply([
             `【资源不足·雷劫难渡】`,
             `渡最强雷劫需以下资源：`,
@@ -1360,159 +1329,123 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
     }
 
     // 检查能量是否足够
-    if (player.血气 < actualEnergyNeed || player.修为 < actualEnergyNeed) {
-        const missingBlood = Math.max(0, actualEnergyNeed - player.血气);
-        const missingCultivation = Math.max(0, actualEnergyNeed - player.修为);
+    if (!prepared.ok) {
         return e.reply([
             `【本源不足·涅槃难继】`,
             `五行涅槃需海量本源支撑：`,
-            `尚缺血气：${bigNumberTransform(missingBlood)}`,
-            `缺修为：${bigNumberTransform(missingCultivation)}`
+            `尚缺血气：${bigNumberTransform(prepared.missingBlood)}`,
+            `缺修为：${bigNumberTransform(prepared.missingCultivation)}`
         ].join("\n"));
     }
 
-    // 开始渡劫过程
-    e.reply([
-        `【五行涅槃·雷劫降临】`,
-        `你运转五行涅槃法，引动五行本源重塑道基`,
-        `金木水火土五行轮回，补全昔日缺陷`,
-        `轰！！！九天雷劫感应而至，万里黑云压境`,
-        `九重灭世神雷降临，显化真龙、仙凰、雷帝虚影`,
-        `第一重雷劫：五行雷罚`
-    ].join("\n"));
+    const transaction = new FileRollbackTransaction();
+    transaction.capture(path.join(__PATH.player_path, `${usr_qq}.json`));
+    transaction.capture(path.join(__PATH.najie_path, `${usr_qq}.json`));
+    transaction.capture(path.join(__PATH.equipment_path, `${usr_qq}.json`));
 
-    // 模拟雷劫伤害（分阶段）
-    const thunderStages = [
-        { name: "五行雷罚", damage: 0.1, desc: "五行神雷轰击，肉身几近崩解" },
-        { name: "仙道虚影", damage: 0.15, desc: "真龙、仙凰、雷帝虚影联手攻伐" },
-        { name: "心魔劫", damage: 0.2, desc: "内心魔障显现，道心震颤" },
-        { name: "终极雷海", damage: 0.3, desc: "雷海淹没天地，万物俱灭" }
-    ];
-
-    let survive = true;
-    let thunderPower = 0;
-
-    // 防御减免：雷劫具穿透性，减免率随防御平滑增长，封顶 60%
-    const DEF_K = 500000; // 约 50 万防御时减免 50%
-    const DEF_REDUCTION_CAP = 0.6;
-    const playerDef = Number(player.防御) || 0;
-    const defReduction = Math.min(DEF_REDUCTION_CAP, playerDef / (playerDef + DEF_K));
-
-    for (const stage of thunderStages) {
-        // 仙古秘境掉落的“雷池液”与渡劫产物共享雷池减伤效果。
-        const thunderLiquidQty = await getXianguThunderLiquidQuantity(usr_qq);
-        const damageReduction = Math.min(0.5, thunderLiquidQty * 0.1); // 每滴雷池液减少10%伤害，最多50%
-        
-        const actualDamage = stage.damage * (1 - damageReduction) * (1 - defReduction);
-        const damageAmount = Math.floor(player.血量上限 * actualDamage);
-        
-        // 应用伤害
-        let currentHP = await Add_HP(usr_qq, -damageAmount, `${stage.name}伤害`);
-        
-        // 优先消耗雷池真液，数量不足时再消耗仙古秘境的雷池液。
-        if (thunderLiquidQty > 0) {
-            const usedLiquid = Math.min(thunderLiquidQty, 5); // 最多使用5滴
-            await consumeXianguThunderLiquid(usr_qq, usedLiquid);
-        }
-
-        // 血魂草激发潜能（只在生命低于30%时触发）：濒死回血 + 短暂法力免疫
-        if (currentHP / player.血量上限 < 0.3) {
-            const bloodGrassQty = await exist_najie_thing(usr_qq, "血魂草", "草药");
-            if (bloodGrassQty > 0) {
-                await Add_najie_thing(usr_qq, "血魂草", "草药", -1);
-                const recoverAmount = Math.floor(player.血量上限 * 0.4);
-                currentHP = await Add_HP(usr_qq, recoverAmount, "血魂草激发潜能");
-                player.法力免疫 = "初级"; // 濒死边缘获得短暂法力免疫（desc 兑现）
-                e.reply(`血魂草激发潜能，恢复${bigNumberTransform(recoverAmount)}点生命值，并暂时免疫下一次伤害！`);
-            }
-        }
-
-        thunderPower += actualDamage;
-        
-        const reduceInfo = defReduction > 0
-            ? `（雷池减伤${Math.round(damageReduction * 100)}% · 防御减免${Math.round(defReduction * 100)}%）`
-            : `（雷池减伤${Math.round(damageReduction * 100)}%）`;
-        e.reply([
-            `${stage.desc}`,
-            `造成${bigNumberTransform(damageAmount)}点伤害${reduceInfo}`,
-            currentHP <= 0 ? "生命垂危！" : `当前生命：${bigNumberTransform(currentHP)}/${bigNumberTransform(player.血量上限)}`
-        ].join("\n"));
-
-        // 检查是否死亡
-        if (currentHP <= 0) {
-            survive = false;
-            break;
-        }
-
-        // 阶段之间间隔
-        await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-
-    // 渡劫结果处理
-    if (!survive) {
-        // 渡劫失败，重伤并损失资源
-        await Add_HP(usr_qq, -player.血量上限, "雷劫失败重伤");
-        
-        // 随机损失一种功法境界
-        if (player.学习的功法.length > 0) {
-            const lostSkill = player.学习的功法[Math.floor(Math.random() * player.学习的功法.length)];
-            player.学习的功法 = player.学习的功法.filter(skill => skill !== lostSkill);
-            
-            e.reply([
-                `【渡劫失败·道基受损】`,
-                `你在雷劫中重伤垂死，侥幸保得性命`,
-                `但道基受损，失去了对《${lostSkill}》的领悟`,
-                `所有渡劫资源已消耗，需重新准备后再尝试`
-            ].join("\n"));
-        }
-        
+    try {
+        player = prepared.player;
+        await Write_najie(usr_qq, prepared.najie);
         await Write_player(usr_qq, player);
-        return;
+
+        await e.reply([
+            `【五行涅槃·雷劫降临】`,
+            `你运转五行涅槃法，引动五行本源重塑道基`,
+            `金木水火土五行轮回，补全昔日缺陷`,
+            `轰！！！九天雷劫感应而至，万里黑云压境`,
+            `四重灭世神雷降临，显化真龙、仙凰、雷帝虚影`,
+            `第一重雷劫：五行雷罚`
+        ].join("\n"));
+
+        const liquidReduction = ZUNZHE_EXTREME_RESOURCES[0].quantity * 0.1;
+        const defReduction = calculateZunzheDefenseReduction(player.防御);
+        let bloodGrassReady = true;
+        let immuneNextStage = false;
+
+        for (const stage of ZUNZHE_THUNDER_STAGES) {
+            const immune = immuneNextStage;
+            immuneNextStage = false;
+            const result = calculateZunzheThunderStage({
+                currentHP: player.当前血量,
+                maxHP: player.血量上限,
+                damageRate: stage.damage,
+                liquidReduction,
+                defenseReduction: defReduction,
+                immune,
+            });
+            player.当前血量 = result.currentHP;
+
+            if (bloodGrassReady && player.当前血量 / player.血量上限 < 0.3) {
+                bloodGrassReady = false;
+                const recoverAmount = Math.floor(player.血量上限 * 0.4);
+                player.当前血量 = Math.min(player.血量上限, player.当前血量 + recoverAmount);
+                immuneNextStage = true;
+                await e.reply(`血魂草激发潜能，恢复${bigNumberTransform(recoverAmount)}点生命值，并暂时免疫下一次伤害！`);
+            }
+
+            const reduceInfo = defReduction > 0
+                ? `（雷池减伤${Math.round(liquidReduction * 100)}% · 防御减免${Math.round(defReduction * 100)}%）`
+                : `（雷池减伤${Math.round(liquidReduction * 100)}%）`;
+            await e.reply([
+                `${stage.desc}`,
+                immune
+                    ? `血魂草护持生效，本重雷劫伤害免疫`
+                    : `造成${bigNumberTransform(result.damageAmount)}点伤害${reduceInfo}`,
+                player.当前血量 <= 0 ? "生命垂危！" : `当前生命：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`
+            ].join("\n"));
+
+            if (player.当前血量 <= 0) {
+                const lostSkill = learnedSkills[Math.floor(Math.random() * learnedSkills.length)];
+                player.学习的功法 = learnedSkills.filter(skill => skill !== lostSkill);
+                await Write_player(usr_qq, player);
+                transaction.commit();
+                return e.reply([
+                    `【渡劫失败·道基受损】`,
+                    `你在雷劫中重伤垂死，侥幸保得性命`,
+                    `但道基受损，失去了对《${lostSkill}》的领悟`,
+                    `所有渡劫资源已消耗，需重新准备后再尝试`
+                ].join("\n"));
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+
+        player.极境.push("7");
+        player.五行抗性 = "圆满";
+        player.法力免疫 = "初级";
+        this.deductXianguPotential(player);
+
+        const fiveElementsPowers = [
+            "庚金剑气", "乙木回春", "玄水真罡", "离火神焰", "戊土圣盾"
+        ];
+        const acquiredPower = fiveElementsPowers[Math.floor(Math.random() * fiveElementsPowers.length)];
+        player.五行神通 = acquiredPower;
+
+        await Write_player(usr_qq, player);
+        const equipment = await Read_equipment(usr_qq);
+        await Write_equipment(usr_qq, equipment);
+        transaction.commit();
+
+        const realm = data.xiangujinshi_list.find(item => Number(item.level_id) === 7);
+        const bonus = realm?.极境加成 || {};
+        return e.reply([
+            `【极境成就·万古唯一】`,
+            `你熬过四重雷劫，五行涅槃法圆满功成`,
+            `肉身无瑕，道基完美，远超古人定义的极境`,
+            `血液中符文自生，每一滴血都孕育神曦`,
+            `获得尊者极境属性：`,
+            `攻击+${bigNumberTransform(Number(bonus.攻击加成) || 0)}`,
+            `防御+${bigNumberTransform(Number(bonus.防御加成) || 0)}`,
+            `生命+${bigNumberTransform(Number(bonus.血量加成) || 0)}`,
+            `五行抗性：圆满`,
+            `法力免疫：初级（抵消下一次伤害）`,
+            `五行神通：${acquiredPower}`,
+            `尊者极境——打破极限，成就万古最强尊者！`
+        ].join("\n"));
+    } catch (error) {
+        transaction.rollback();
+        throw error;
     }
-
-    // 渡劫成功，消耗资源
-    await Add_血气(usr_qq, -actualEnergyNeed);
-    await Add_修为(usr_qq, -actualEnergyNeed);
-    
-    for (const resource of thunderResources) {
-        await Add_najie_thing(usr_qq, resource.name, resource.class, -resource.quantity);
-    }
-
-    // 突破成功，获得极境加成
-    player.极境.push("7");
-    
-    // 五行涅槃法带来的全面加成
-    player.攻击加成 += 5000000;
-    player.防御加成 += 4500000;
-    player.生命加成 += 6000000;
-    player.五行抗性 = "圆满"; // 获得五行抗性
-    player.法力免疫 = "初级"; // 获得短暂法力免疫能力
-    this.deductXianguPotential(player);
-
-    // 随机获得一种五行神通
-    const fiveElementsPowers = [
-        "庚金剑气", "乙木回春", "玄水真罡", "离火神焰", "戊土圣盾"
-    ];
-    const acquiredPower = fiveElementsPowers[Math.floor(Math.random() * fiveElementsPowers.length)];
-    player.五行神通 = acquiredPower;
-
-    await Write_player(usr_qq, player);
-
-    // 突破成功文案
-    e.reply([
-        `【极境成就·万古唯一】`,
-        `你熬过九重雷劫，五行涅槃法圆满功成`,
-        `肉身无瑕，道基完美，远超古人定义的极境`,
-        `血液中符文自生，每一滴血都孕育神曦`,
-        `获得尊者极境属性：`,
-        `攻击+${bigNumberTransform(5000000)}`,
-        `防御+${bigNumberTransform(4500000)}`,
-        `生命+${bigNumberTransform(6000000)}`,
-        `五行抗性：圆满（免疫50%五行伤害）`,
-        `法力免疫：初级（短暂无视同阶法术）`,
-        `五行神通：${acquiredPower}`,
-        `尊者极境——打破极限，成就万古最强尊者！`
-    ].join("\n"));
 }
 
 // 尊者→神火 普通突破（自身修炼方式）

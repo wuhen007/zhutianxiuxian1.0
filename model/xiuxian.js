@@ -11,6 +11,8 @@ import { enrichNajieDisplayRarity } from './najieRarity.js';
 import { buildAnnouncePresentation, splitAnnounceDetail } from './announcePresentation.js';
 import { refreshDaofaStatus } from './daofa.js';
 import { getFlowerRealmDisplay, getXianguRealmDisplay } from './playerRealmDisplay.js';
+import { swapEquipmentState } from './equipmentSwap.js';
+import { FileRollbackTransaction } from '../apps/SecretPlace/rebirthTransaction.js';
 // 道种专属技能全局池别名：战斗函数内 `data` 常被玩家参数遮蔽，故用 SKILL_DB 稳定引用 XiuxianData 单例
 const SKILL_DB = data;
 
@@ -5602,85 +5604,30 @@ export async function Add_najie_thing(
 }
 
 //替换装备
-export async function instead_equipment(usr_qq, equipment_data) {
+export async function instead_equipment(usr_qq, equipment_data, options = {}) {
   return withPlayerMutationLock(usr_qq, async () => {
-  //装备name
-  await Add_najie_thing(
-    usr_qq,
-    equipment_data,
-    '装备',
-    -1,
-    equipment_data.pinji
-  );
-  let equipment = await Read_equipment(usr_qq);
-  if (equipment_data.type == '武器') {
-    //把读取装备，把武器放回戒指
-    await Add_najie_thing(
-      usr_qq,
-      equipment.武器,
-      '装备',
-      1,
-      equipment.武器.pinji
-    );
-    //根据名字找武器
-    equipment.武器 = equipment_data;
-    //武器写入装备
-    await Write_equipment(usr_qq, equipment);
-    return;
-  }
-  if (equipment_data.type == '护具') {
-    await Add_najie_thing(
-      usr_qq,
-      equipment.护具,
-      '装备',
-      1,
-      equipment.护具.pinji
-    );
-    equipment.护具 = equipment_data;
-    await Write_equipment(usr_qq, equipment);
-    return;
-  }
-  if (equipment_data.type == '法宝') {
-    await Add_najie_thing(
-      usr_qq,
-      equipment.法宝,
-      '装备',
-      1,
-      equipment.法宝.pinji
-    );
-    equipment.法宝 = equipment_data;
-    await Write_equipment(usr_qq, equipment);
-    return;
-  }
-  if (equipment_data.type == '帝兵') {
-    if (equipment.帝兵?.name) {
-      await Add_najie_thing(
-        usr_qq,
-        equipment.帝兵,
-        '装备',
-        1,
-        equipment.帝兵.pinji
-      );
+    const najie = await Read_najie(usr_qq);
+    const equipment = await Read_equipment(usr_qq);
+    const result = swapEquipmentState(najie, equipment, equipment_data, options);
+    if (!result.ok) return result;
+
+    const transaction = new FileRollbackTransaction();
+    transaction.capture(path.join(__PATH.player_path, `${usr_qq}.json`));
+    transaction.capture(path.join(__PATH.najie_path, `${usr_qq}.json`));
+    transaction.capture(path.join(__PATH.equipment_path, `${usr_qq}.json`));
+    try {
+      await Write_najie(usr_qq, result.najie);
+      await Write_equipment(usr_qq, result.equipment);
+      transaction.commit();
+      return { ok: true, item: result.item };
+    } catch (error) {
+      try {
+        transaction.rollback();
+      } finally {
+        invalidateBattleEquipmentCache(usr_qq);
+      }
+      throw error;
     }
-    equipment.帝兵 = equipment_data;
-    await Write_equipment(usr_qq, equipment);
-    return;
-  }
-  if (equipment_data.type == '至宝') {
-    if (equipment.至宝?.name) {
-      await Add_najie_thing(
-        usr_qq,
-        equipment.至宝,
-        '装备',
-        1,
-        equipment.至宝.pinji
-      );
-    }
-    equipment.至宝 = equipment_data;
-    await Write_equipment(usr_qq, equipment);
-    return;
-  }
-  return;
   });
 }
 //发送转发消息

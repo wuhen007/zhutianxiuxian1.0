@@ -99,6 +99,8 @@ import {
   createEndlessWebLink,
   getEndlessWebConfig,
   serializeEndlessWebState,
+  shouldAutoIssueEndlessWebTicket,
+  startEndlessWebServer,
 } from '../model/endlessWebServer.js';
 
 const STATE_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -150,6 +152,9 @@ export class EndlessRealm extends plugin {
         { reg: '^#(?:佩戴|切换|更换)称号\\s*.+$', fnc: 'equipTitleCmd' },
       ],
     });
+    startEndlessWebServer(this).catch((error) =>
+      logger.error('[无尽网页] 服务启动失败', error)
+    );
   }
 
   teamKey(id) {
@@ -1617,7 +1622,12 @@ export class EndlessRealm extends plugin {
       }
 
       const world = getWorldForLayer(run, 1);
-      const webLink = await this.issueEndlessWebLink(e, userId, team);
+      const webEnabled = getEndlessWebConfig().enabled;
+      const autoIssueWebTicket = shouldAutoIssueEndlessWebTicket(team);
+      const webLink =
+        webEnabled && autoIssueWebTicket
+          ? await this.issueEndlessWebLink(e, userId, team)
+          : null;
       return e.reply(
         [
           '【诸天无尽劫境开启】',
@@ -1641,7 +1651,16 @@ export class EndlessRealm extends plugin {
                   .join('、')}开局自带1级他化自在法（残缺映照），第一回合便有一尊自在身踏出岁月长河！`,
               ]
             : []),
-          ...(webLink ? ['', '【网页入口·两分钟内有效】', webLink] : []),
+          ...(webEnabled && !autoIssueWebTicket
+            ? [
+                '',
+                '【网页入口·成员专属】',
+                `本队共${team.members.length}人，请每位成员各自发送「#无尽网页」领取入口。`,
+                '入口绑定本人的能力选择与奖励，不能共用。',
+              ]
+            : webLink
+              ? ['', '【网页入口·两分钟内有效】', webLink]
+              : []),
           '',
           ...this.formatAllChoices(run),
           '',
@@ -1679,7 +1698,14 @@ export class EndlessRealm extends plugin {
     const link = await this.issueEndlessWebLink(e, userId, team);
     return e.reply(
       link
-        ? ['【无尽劫境网页入口】', link, '入口两分钟内有效，首次打开后立即失效。'].join('\n')
+        ? [
+            `【${team.memberNames[userId] || userId}的无尽劫境网页入口】`,
+            link,
+            '专属入口两分钟内有效，仅限本人首次打开。',
+            ...(team.members.length > 1
+              ? ['其他队员请各自发送「#无尽网页」领取自己的入口。']
+              : []),
+          ].join('\n')
         : '网页入口生成失败，请检查 config/endless-web.json 与服务器端口'
     );
   }

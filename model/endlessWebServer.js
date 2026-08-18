@@ -58,6 +58,10 @@ export function getEndlessWebConfig() {
   };
 }
 
+export function shouldAutoIssueEndlessWebTicket(team) {
+  return team?.members?.length === 1;
+}
+
 function randomToken(size = 32) {
   return randomBytes(size).toString('base64url');
 }
@@ -581,12 +585,20 @@ async function ensureServer(realm, redisClient, config) {
   return serverPromise;
 }
 
+export async function startEndlessWebServer(realm) {
+  const config = getEndlessWebConfig();
+  if (!config.enabled) return null;
+  const redisClient = globalThis.redis;
+  if (!redisClient) throw new Error('Redis 尚未就绪');
+  return ensureServer(realm, redisClient, config);
+}
+
 export async function createEndlessWebLink(realm, identity) {
   const config = getEndlessWebConfig();
   if (!config.enabled) throw new Error('无尽网页功能尚未开启');
   const redisClient = globalThis.redis;
   if (!redisClient) throw new Error('Redis 尚未就绪');
-  await ensureServer(realm, redisClient, config);
+  await startEndlessWebServer(realm);
   const token = await issueEndlessWebTicket(redisClient, config, identity);
   return `${config.publicUrl}/endless?t=${encodeURIComponent(token)}`;
 }

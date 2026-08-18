@@ -108,6 +108,7 @@ import {
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { isCultivatingExtraPath } from '../../model/extraCultivation.js';
 import { isHighRealmConsumableRestricted } from '../../model/realmAuthority.js';
+import { selectEquipmentByCode } from '../../model/equipmentSwap.js';
 
 const FLOWER_BREATHING_METHODS = new Set([
   '基础呼吸法',
@@ -1825,6 +1826,7 @@ async broadcastToAll(player,message) {
     let code = msg.split('*');
     let thing_name = code[0];
     code[0] = parseInt(code[0]);
+    let equipmentIndex = null;
     let quantity = code[1];
     quantity = await convert2integer(quantity);
 
@@ -2067,14 +2069,14 @@ if (func == "打开") {
         }
     //装备优化
     if (func == '装备' && code[0] && code[0] > 100) {
-      try {
-        thing_name = najie.装备[code[0] - 101].name;
-        code[1] = najie.装备[code[0] - 101].pinji;  
-    } catch {
+      const selected = selectEquipmentByCode(najie, code[0]);
+      if (!selected) {
         e.reply('装备代号输入有误!');
         return false;
+      }
+      equipmentIndex = selected.index;
+      thing_name = selected.item.name;
     }
-}
     //看看物品名称有没有设定,是不是瞎说的
     let thing_exist = await foundthing(thing_name);
     let pj = {
@@ -2188,7 +2190,10 @@ if (func == "打开") {
                 return;
             }
             let equ;
-            if (code[1] == undefined) {
+            if (equipmentIndex !== null) {
+                equ = najie.装备[equipmentIndex];
+                x = Number(equ?.数量) || 0;
+            } else if (code[1] == undefined) {
                 equ = najie.装备.find(item => item.name == thing_name);
                 for (var i = 0; i < najie.装备.length; i++) {//遍历列表有没有比那把强的
                     if (
@@ -2211,7 +2216,8 @@ if (func == "打开") {
                     player.幸运 += equipment.项链.加成
                 }
             }
-            await instead_equipment(usr_qq, equ);
+            const swapped = await instead_equipment(usr_qq, equ, { inventoryIndex: equipmentIndex });
+            if (!swapped?.ok) return e.reply(swapped?.message || '装备更换失败，请重新查看纳戒后再试。');
             let img = await get_equipment_img(e);
             equipment = await Read_equipment(usr_qq);
             if (equipment.武器.name == "灭仙剑" && equipment.法宝.name == "灭仙符" && equipment.护具.name == "灭仙衣" && player.魔道值 > 999 && player.灵根.type == "魔头") {
