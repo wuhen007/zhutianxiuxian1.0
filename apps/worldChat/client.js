@@ -218,6 +218,10 @@ export class WorldChatClient {
     this.messageHandler = null;
     this.backfillPromise = null;
     this.deliveryChain = Promise.resolve();
+    this.deliveryRetryBaseMs = Math.max(
+      10,
+      Number(options.deliveryRetryBaseMs) || 1_000
+    );
     this.identityPromise = null;
   }
 
@@ -556,9 +560,32 @@ export class WorldChatClient {
   }
 
   enqueueDelivery(message) {
-    const delivery = this.deliveryChain.then(() => this.deliver(message));
+    const delivery = this.deliveryChain.then(() =>
+      this.deliverWithRetry(message)
+    );
     this.deliveryChain = delivery.catch(() => {});
     return delivery;
+  }
+
+  async deliverWithRetry(message) {
+    let delay = this.deliveryRetryBaseMs;
+    for (;;) {
+      try {
+        await this.deliver(message);
+        if (this.lastError?.startsWith('delivery_failed:')) {
+          this.lastError = null;
+        }
+        return;
+      } catch (error) {
+        this.lastError = `delivery_failed:${error.message}`;
+        if (!this.cfg.enable) throw error;
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, delay);
+          timer.unref?.();
+        });
+        delay = Math.min(60_000, delay * 2);
+      }
+    }
   }
 
   async deliver(message) {

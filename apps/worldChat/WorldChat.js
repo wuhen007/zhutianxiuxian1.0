@@ -32,6 +32,9 @@ function canManageGroup(e) {
 }
 
 function readableConnectionError(error) {
+  if (String(error || '').startsWith('delivery_failed:')) {
+    return `群消息转发失败，正在重试：${String(error).slice(16)}`;
+  }
   return (
     {
       replaced: '同一本服标识已在另一台机器登录',
@@ -69,6 +72,8 @@ export class WorldChat extends plugin {
     });
     this.cooldowns = new Map();
     this.pendingConfirmations = new Map();
+    this.groupSenders = new Map();
+    this.deliveredGroups = new Map();
     client.setMessageHandler((message) => this.broadcast(message));
     client.connect();
   }
@@ -101,15 +106,41 @@ export class WorldChat extends plugin {
     const payload = message.images?.length
       ? [output, ...message.images.map((url) => segment.image(url))]
       : output;
+    const delivered = this.deliveredGroups.get(message.id) || new Set();
+    const groups = client
+      .groups()
+      .filter((groupId) => !delivered.has(String(groupId)));
     const results = await Promise.allSettled(
-      client
-        .groups()
-        .map((groupId) => sendWorldGroupMessage(bot, groupId, payload))
+      groups.map((groupId) =>
+        sendWorldGroupMessage(
+          bot,
+          groupId,
+          payload,
+          this.groupSenders.get(String(groupId))
+        )
+      )
     );
-    for (const result of results) {
-      if (result.status === 'rejected')
+    const failures = [];
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        delivered.add(String(groups[index]));
+      } else {
+        failures.push(result.reason);
         globalThis.logger?.warn?.(`[worldchat] 群推送失败: ${result.reason}`);
+      }
+    });
+    if (failures.length) {
+      this.deliveredGroups.set(message.id, delivered);
+      throw failures[0];
     }
+    this.deliveredGroups.delete(message.id);
+  }
+
+  rememberGroupSender(e) {
+    if (!e?.isGroup || !e.group_id || typeof e.reply !== 'function') return;
+    this.groupSenders.set(String(e.group_id), (message) =>
+      e.reply(message, false)
+    );
   }
 
   requireJoinedGroup(e) {
@@ -117,6 +148,7 @@ export class WorldChat extends plugin {
       e.reply('世界频道仅限群聊使用');
       return false;
     }
+    this.rememberGroupSender(e);
     if (!client.isGroupJoined(e.group_id)) {
       e.reply('本群尚未加入世界频道，请让机器人管理员发送「#世界 加入」');
       return false;
@@ -206,6 +238,7 @@ export class WorldChat extends plugin {
 
   async join(e) {
     if (!e.isGroup) return e.reply('请在需要加入世界频道的群里发送该指令');
+    this.rememberGroupSender(e);
     if (!canManageGroup(e))
       return e.reply('仅机器人主人、群主或群管理员可让群聊加入世界频道');
     if (!client.joinGroup(e.group_id)) return e.reply('本群已经加入世界频道');
@@ -218,11 +251,13 @@ export class WorldChat extends plugin {
     if (!canManageGroup(e))
       return e.reply('仅机器人主人、群主或群管理员可让群聊退出世界频道');
     if (!client.leaveGroup(e.group_id)) return e.reply('本群尚未加入世界频道');
+    this.groupSenders.delete(String(e.group_id));
     e.reply('本群已退出诸天世界频道');
     return true;
   }
 
   async stat(e) {
+    this.rememberGroupSender(e);
     const status = client.status();
     const connection = status.connected
       ? status.authed

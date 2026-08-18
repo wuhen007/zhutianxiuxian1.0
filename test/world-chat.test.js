@@ -11,6 +11,7 @@ import {
   WorldChatClient,
   loadConfig,
 } from '../apps/worldChat/client.js';
+import { sendWorldGroupMessage } from '../apps/worldChat/runtime.js';
 import { createWorldChatServer } from '../worldchat-server/server.js';
 
 const silentLogger = { info() {}, warn() {}, error() {} };
@@ -316,4 +317,69 @@ test('独立凭据拒绝冒充且首次加入不会灌入旧消息', async (t) =
   assert.equal(newAck.ok, true);
   await waitFor(() => received.length === 1, '首次入群后未收到新消息');
   assert.equal(received[0].msg, '加入后新消息');
+});
+
+test('群适配器返回失败对象时使用事件回复通道', async () => {
+  let fallbackCalls = 0;
+  const bot = {
+    pickGroup() {
+      return { sendMsg: async () => ({ status: 'failed', message: '需要消息上下文' }) };
+    },
+  };
+  const result = await sendWorldGroupMessage(
+    bot,
+    'group_a',
+    '世界消息',
+    async () => {
+      fallbackCalls += 1;
+      return { status: 'ok' };
+    }
+  );
+  assert.equal(result.status, 'ok');
+  assert.equal(fallbackCalls, 1);
+});
+
+test('实时投递失败会自动重试且不提前收取序号', async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'worldchat-retry-'));
+  const clientSecret = secret();
+  const server = createWorldChatServer({
+    baseDir: directory,
+    logger: silentLogger,
+    clients: { retry_client: { secret: clientSecret } },
+    config: { HOST: '127.0.0.1', PORT: 0, USER_COOLDOWN_MS: 0 },
+  });
+  const address = await server.start();
+  const client = new WorldChatClient({
+    config: clientConfig(
+      `ws://127.0.0.1:${address.port}`,
+      'retry_client',
+      clientSecret,
+      'group_retry'
+    ),
+    persist: false,
+    deliveryRetryBaseMs: 10,
+  });
+  let attempts = 0;
+  const received = [];
+  client.setMessageHandler((message) => {
+    attempts += 1;
+    if (attempts === 1) throw new Error('群发送失败');
+    received.push(message);
+  });
+  t.after(async () => {
+    client.close();
+    await server.stop();
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+
+  client.connect();
+  await waitFor(() => client.authed, '重试客户端未完成鉴权');
+  const ack = await client.pub('需要重试的消息', {
+    name: '重试道友',
+    tag: 'f'.repeat(16),
+  });
+  assert.equal(ack.ok, true);
+  await waitFor(() => received.length === 1, '失败消息未自动重试');
+  assert.equal(attempts, 2);
+  assert.equal(client.cfg.last_seen_seq, 1);
 });
