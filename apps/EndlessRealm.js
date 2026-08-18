@@ -152,9 +152,16 @@ export class EndlessRealm extends plugin {
         { reg: '^#(?:佩戴|切换|更换)称号\\s*.+$', fnc: 'equipTitleCmd' },
       ],
     });
-    startEndlessWebServer(this).catch((error) =>
-      logger.error('[无尽网页] 服务启动失败', error)
-    );
+    const startWebServer = () =>
+      startEndlessWebServer(this).catch((error) => {
+        if (error?.message === 'Redis 尚未就绪') {
+          const timer = setTimeout(startWebServer, 5000);
+          timer.unref?.();
+          return;
+        }
+        logger.error('[无尽网页] 服务启动失败', error);
+      });
+    startWebServer();
   }
 
   teamKey(id) {
