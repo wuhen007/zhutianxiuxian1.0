@@ -70,20 +70,11 @@ export class WorldChat extends plugin {
     this.cooldowns = new Map();
     this.pendingConfirmations = new Map();
     client.setMessageHandler((message) => this.broadcast(message));
-    this.connectWhenBotReady();
+    client.connect();
   }
 
   readyBot() {
     return readyWorldChatBot();
-  }
-
-  connectWhenBotReady() {
-    if (this.readyBot()) {
-      client.connect();
-      return;
-    }
-    const timer = setTimeout(() => this.connectWhenBotReady(), 1000);
-    timer.unref?.();
   }
 
   async waitForBot(timeout = 30_000) {
