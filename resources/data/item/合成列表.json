@@ -1777,5 +1777,173 @@
         "amount": 200
       }
     ]
-  }
+  },
+      {
+    "name": "草字剑诀",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "草字剑经残卷",
+        "class": "材料",
+        "amount": 10
+      }
+    ]
+  },
+    {
+    "name": "经天纬地",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "经天纬地残卷",
+        "class": "材料",
+        "amount": 10
+      }
+    ]
+  },
+    {
+    "name": "八九天功",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "八九天功残卷",
+        "class": "材料",
+        "amount": 10
+      }
+    ]
+  },
+    {
+    "name": "蛄之宝术",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "蛄之宝术残篇",
+        "class": "材料",
+        "amount": 10
+      }
+    ]
+  },
+    {
+    "name": "麒麟宝术",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "麒麟宝术残篇",
+        "class": "材料",
+        "amount": 10
+      }
+    ]
+  },
+    {
+    "name": "天角蚁宝术",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "天角蚁宝术残篇",
+        "class": "材料",
+        "amount": 30
+      }
+    ]
+  },
+    {
+    "name": "太阴一转十万年",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "太阴一转十万年残卷",
+        "class": "材料",
+        "amount": 30
+      }
+    ]
+  },
+    {
+    "name": "组字秘",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "组字秘残卷",
+        "class": "材料",
+        "amount": 10
+      }
+    ]
+  },
+  {
+    "name": "数字秘",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "数字秘残卷",
+        "class": "材料",
+        "amount": 10
+      }
+    ]
+  },
+  {
+    "name": "天衍唯一",
+    "class": "材料",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "万物源金",
+        "class": "材料",
+        "amount": 2
+      },
+      {
+        "name": "混沌母金",
+        "class": "材料",
+        "amount": 2
+      },
+      {
+        "name": "太初源金",
+        "class": "材料",
+        "amount": 2
+      },
+      {
+        "name": "万物母气",
+        "class": "材料",
+        "amount": 10
+      },
+      {
+        "name": "九彩神金",
+        "class": "材料",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "name": "圣法碎片",
+    "class": "道具",
+    "amount": 1,
+    "materials": [
+       {
+        "name": "圣法残片",
+        "class": "材料",
+        "amount": 1000
+      }
+    ]
+  },
+  {
+  "name": "九秘合一",
+  "class": "功法",
+  "amount": 1,
+  "materials": [
+    { "name": "者字秘", "class": "功法", "amount": 1 },
+    { "name": "皆字秘", "class": "功法", "amount": 1 },
+    { "name": "斗字秘", "class": "功法", "amount": 1 },
+    { "name": "行字秘", "class": "功法", "amount": 1 },
+    { "name": "临字秘", "class": "功法", "amount": 1 },
+    { "name": "兵字秘", "class": "功法", "amount": 1 },
+    { "name": "数字秘", "class": "功法", "amount": 1 },
+    { "name": "组字秘", "class": "功法", "amount": 1 },
+    { "name": "前字秘", "class": "功法", "amount": 1 }
+  ]
+}
 ]

@@ -1006,17 +1006,27 @@ async upgradeEmperorWeapon(e) {
 
     const weapon = equipment.帝兵;
 
-    // 帝兵品阶体系：仙古境界≥神火(8级)自动走仙古线，否则走遮天线
-    // 前 3 档（雏形/通灵/铭刻道与理）与后 5 档（仙器~祭道器）两系共用，中间 4 档按体系区分
+    // 帝兵品阶体系：仙古境界≥神火(8级)自动走仙古线，否则走遮天线。
+    // 前 3 档、中间 4 档和祭道后的 27 档按体系共用，后 5 档两系共用。
+    const POST_SACRIFICE_BING_RANKS = [
+        "道器（一阶）", "道器（二阶）", "道器（三阶）", "道器（四阶）", "道器（五阶）",
+        "道器（六阶）", "道器（七阶）", "道器（八阶）", "道器（九阶）",
+        "鸿蒙器（一阶）", "鸿蒙器（二阶）", "鸿蒙器（三阶）", "鸿蒙器（四阶）", "鸿蒙器（五阶）",
+        "鸿蒙器（六阶）", "鸿蒙器（七阶）", "鸿蒙器（八阶）", "鸿蒙器（九阶）",
+        "唯一器（一阶）", "唯一器（二阶）", "唯一器（三阶）", "唯一器（四阶）", "唯一器（五阶）",
+        "唯一器（六阶）", "唯一器（七阶）", "唯一器（八阶）", "唯一器（九阶）"
+    ];
     const ZHETIAN_BING_RANKS = [
         "雏形", "通灵", "铭刻道与理", "斩道王兵",
         "圣兵", "准帝兵", "极道帝兵", "仙器",
-        "仙王器", "准仙帝器", "仙帝器", "祭道器"
+        "仙王器", "准仙帝器", "仙帝器", "祭道器",
+        ...POST_SACRIFICE_BING_RANKS
     ];
     const XIANGU_BING_RANKS = [
         "雏形", "通灵", "铭刻道与理", "真神兵",
         "天神兵", "遁一兵", "至尊兵", "仙器",
-        "仙王器", "准仙帝器", "仙帝器", "祭道器"
+        "仙王器", "准仙帝器", "仙帝器", "祭道器",
+        ...POST_SACRIFICE_BING_RANKS
     ];
     // 遮天旧品阶 → 仙古品阶（仙古玩家旧存档自动对齐新体系档位）
     const LEGACY_RANK_MAP = {
@@ -1030,11 +1040,11 @@ async upgradeEmperorWeapon(e) {
         ? LEGACY_RANK_MAP[weapon.品阶]
         : weapon.品阶;
 
-    // 检查是否已达上限
-    if (currentRank === "祭道器") {
+    // 唯一器九阶是帝兵终极上限；祭道器之后仍可在更高境界继续进阶。
+    if (currentRank === "唯一器（九阶）") {
         return e.reply([
-            `帝兵已达终极境界！`,
-            `「${weapon.name}」已进阶至最高品阶「祭道器」`,
+            `帝兵已达终极圆满！`,
+            `「${weapon.name}」已进阶至最高品阶「唯一器（九阶）」`,
             `无法再进行雷劫洗礼`
         ].join("\n"));
     }
@@ -1114,12 +1124,45 @@ function getMissingGolds(weapon) {
             `已成长次数：${weapon.成长次数}`,
             `可通过融合仙金提升潜力上限`,
             `当前品阶：${currentRank}`,
-            `最高可进阶至：祭道器`
+            `最高可进阶至：唯一器（九阶）`
         ].join("\n"));
     }
 
+    // 祭道之后的三段高阶链路：道器 → 鸿蒙器 → 唯一器。
+    // 道器、鸿蒙器需要祭道之上；唯一器需要唯一道之上。
+    const POST_SACRIFICE_EVOLUTION_STAGES = {
+        "祭道器": { next: "道器（一阶）", power: 2.2, require: "祭道之上境界", addAllAttr: 300 },
+        "道器（一阶）": { next: "道器（二阶）", power: 2.2, require: "祭道之上境界", addAllAttr: 350 },
+        "道器（二阶）": { next: "道器（三阶）", power: 2.2, require: "祭道之上境界", addAllAttr: 400 },
+        "道器（三阶）": { next: "道器（四阶）", power: 2.3, require: "祭道之上境界", addAllAttr: 450 },
+        "道器（四阶）": { next: "道器（五阶）", power: 2.3, require: "祭道之上境界", addAllAttr: 500 },
+        "道器（五阶）": { next: "道器（六阶）", power: 2.3, require: "祭道之上境界", addAllAttr: 550 },
+        "道器（六阶）": { next: "道器（七阶）", power: 2.4, require: "祭道之上境界", addAllAttr: 600 },
+        "道器（七阶）": { next: "道器（八阶）", power: 2.4, require: "祭道之上境界", addAllAttr: 650 },
+        "道器（八阶）": { next: "道器（九阶）", power: 2.4, require: "祭道之上境界", addAllAttr: 700 },
+        "道器（九阶）": { next: "鸿蒙器（一阶）", power: 2.5, require: "祭道之上境界", addAllAttr: 750 },
+        "鸿蒙器（一阶）": { next: "鸿蒙器（二阶）", power: 2.5, require: "祭道之上境界", addAllAttr: 800 },
+        "鸿蒙器（二阶）": { next: "鸿蒙器（三阶）", power: 2.5, require: "祭道之上境界", addAllAttr: 850 },
+        "鸿蒙器（三阶）": { next: "鸿蒙器（四阶）", power: 2.6, require: "祭道之上境界", addAllAttr: 900 },
+        "鸿蒙器（四阶）": { next: "鸿蒙器（五阶）", power: 2.6, require: "祭道之上境界", addAllAttr: 950 },
+        "鸿蒙器（五阶）": { next: "鸿蒙器（六阶）", power: 2.6, require: "祭道之上境界", addAllAttr: 1000 },
+        "鸿蒙器（六阶）": { next: "鸿蒙器（七阶）", power: 2.7, require: "祭道之上境界", addAllAttr: 1050 },
+        "鸿蒙器（七阶）": { next: "鸿蒙器（八阶）", power: 2.7, require: "祭道之上境界", addAllAttr: 1100 },
+        "鸿蒙器（八阶）": { next: "鸿蒙器（九阶）", power: 2.7, require: "祭道之上境界", addAllAttr: 1150 },
+        "鸿蒙器（九阶）": { next: "唯一器（一阶）", power: 2.8, require: "唯一道之上境界", addAllAttr: 1200 },
+        "唯一器（一阶）": { next: "唯一器（二阶）", power: 2.8, require: "唯一道之上境界", addAllAttr: 1250 },
+        "唯一器（二阶）": { next: "唯一器（三阶）", power: 2.8, require: "唯一道之上境界", addAllAttr: 1300 },
+        "唯一器（三阶）": { next: "唯一器（四阶）", power: 2.9, require: "唯一道之上境界", addAllAttr: 1350 },
+        "唯一器（四阶）": { next: "唯一器（五阶）", power: 2.9, require: "唯一道之上境界", addAllAttr: 1400 },
+        "唯一器（五阶）": { next: "唯一器（六阶）", power: 2.9, require: "唯一道之上境界", addAllAttr: 1450 },
+        "唯一器（六阶）": { next: "唯一器（七阶）", power: 3.0, require: "唯一道之上境界", addAllAttr: 1500 },
+        "唯一器（七阶）": { next: "唯一器（八阶）", power: 3.0, require: "唯一道之上境界", addAllAttr: 1550 },
+        "唯一器（八阶）": { next: "唯一器（九阶）", power: 3.0, require: "唯一道之上境界", addAllAttr: 1600 }
+    };
+
     // 帝兵进阶体系（按体系自动切换：仙古线 真神兵→至尊兵，遮天线 斩道王兵→极道帝兵）
-    const EVOLUTION_STAGES = isXianguPath ? {
+    const EVOLUTION_STAGES = {
+      ...(isXianguPath ? {
         "雏形": { next: "通灵", power: 2, require: "无", addAllAttr: 1 },
         "通灵": { next: "铭刻道与理", power: 2, require: "雷劫洗礼", addAllAttr: 2 },
         "铭刻道与理": { next: "真神兵", power: 2, require: "真一境界", addAllAttr: 3 },
@@ -1131,7 +1174,7 @@ function getMissingGolds(weapon) {
         "仙王器": { next: "准仙帝器", power: 2, require: "准仙帝境界", addAllAttr: 50 },
         "准仙帝器": { next: "仙帝器", power: 2, require: "仙帝境界", addAllAttr: 100 },
         "仙帝器": { next: "祭道器", power: 2, require: "祭道境界", addAllAttr: 200 }
-    } : {
+      } : {
         "雏形": { next: "通灵", power: 2, require: "无", addAllAttr: 1 },
         "通灵": { next: "铭刻道与理", power: 2, require: "雷劫洗礼", addAllAttr: 2 },
         "铭刻道与理": { next: "斩道王兵", power: 2, require: "斩道境界", addAllAttr: 3 },
@@ -1143,10 +1186,15 @@ function getMissingGolds(weapon) {
         "仙王器": { next: "准仙帝器", power: 2, require: "准仙帝境界", addAllAttr: 50 },
         "准仙帝器": { next: "仙帝器", power: 2, require: "仙帝境界", addAllAttr: 100 },
         "仙帝器": { next: "祭道器", power: 2, require: "祭道境界", addAllAttr: 200 }
+      }),
+      ...POST_SACRIFICE_EVOLUTION_STAGES
     };
     
     const currentStage = currentRank;
     const stageInfo = EVOLUTION_STAGES[currentStage];
+    if (!stageInfo) {
+        return e.reply(`「${weapon.name}」当前品阶无进阶路径，请联系管理员检查帝兵数据`);
+    }
     const nextStage = stageInfo.next;
     const powerBoost = stageInfo.power;
     const requireCondition = stageInfo.require;
@@ -1179,13 +1227,29 @@ function getMissingGolds(weapon) {
         } else if (requireCondition === "红尘仙境界") {
             conditionMet = player.mijinglevel_id >= 17; // 红尘仙境界
         } else if (requireCondition === "仙王境界") {
-            conditionMet = player.mijinglevel_id >= 18; // 仙王境界
+            conditionMet = isXianguPath
+                ? Number(player.xiangulevel_id) >= 18
+                : Number(player.mijinglevel_id) >= 18; // 仙王境界
         } else if (requireCondition === "准仙帝境界") {
-            conditionMet = player.mijinglevel_id >= 20; // 准仙帝境界
+            conditionMet = isXianguPath
+                ? Number(player.xiangulevel_id) >= 20
+                : Number(player.mijinglevel_id) >= 20; // 准仙帝境界
         } else if (requireCondition === "仙帝境界") {
-            conditionMet = player.mijinglevel_id >= 21; // 仙帝境界
+            conditionMet = isXianguPath
+                ? Number(player.xiangulevel_id) >= 21
+                : Number(player.mijinglevel_id) >= 21; // 仙帝境界
         } else if (requireCondition === "祭道境界") {
-            conditionMet = player.mijinglevel_id >= 22; // 祭道境界
+            conditionMet = isXianguPath
+                ? Number(player.xiangulevel_id) >= 22
+                : Number(player.mijinglevel_id) >= 22; // 祭道境界
+        } else if (requireCondition === "祭道之上境界") {
+            conditionMet = isXianguPath
+                ? Number(player.xiangulevel_id) >= 24
+                : Number(player.mijinglevel_id) >= 23;
+        } else if (requireCondition === "唯一道之上境界") {
+            conditionMet = isXianguPath
+                ? Number(player.xiangulevel_id) >= 25
+                : Number(player.mijinglevel_id) >= 24;
         }
         
         if (!conditionMet) {
@@ -1214,7 +1278,9 @@ function getMissingGolds(weapon) {
             "仙王境界": "仙王",
             "准仙帝境界": "准仙帝",
             "仙帝境界": "仙帝",
-            "祭道境界": "祭道"
+            "祭道境界": "祭道",
+            "祭道之上境界": "祭道之上",
+            "唯一道之上境界": "唯一道之上"
         };
         return levelMap[condition] || condition;
     }
@@ -1257,6 +1323,10 @@ function getMissingGolds(weapon) {
     if (currentRank === "仙王器") successRate = 0.1;
     if (currentRank === "准仙帝器") successRate = 0.05;
     if (currentRank === "仙帝器") successRate = 0.01;
+    if (currentRank === "祭道器") successRate = 0.005;
+    if (currentRank.startsWith("道器（")) successRate = 0.08;
+    if (currentRank.includes("鸿蒙器")) successRate = 0.03;
+    if (currentRank.includes("唯一器")) successRate = 0.01;
 
     // 添加境界加成（按体系取对应境界）
     if (isXianguPath) {
@@ -1265,12 +1335,16 @@ function getMissingGolds(weapon) {
         if (player.xiangulevel_id >= 20) successRate += 0.4; // 准仙帝加成
         if (player.xiangulevel_id >= 21) successRate += 0.5; // 仙帝加成
         if (player.xiangulevel_id >= 22) successRate += 0.6; // 祭道加成
+        if (player.xiangulevel_id >= 24) successRate += 0.7; // 祭道之上加成
+        if (player.xiangulevel_id >= 25) successRate += 0.8; // 唯一道之上加成
     } else {
         if (player.mijinglevel_id >= 16) successRate += 0.2; // 大帝境界加成
         if (player.mijinglevel_id >= 17) successRate += 0.3; // 红尘仙加成
         if (player.mijinglevel_id >= 19) successRate += 0.4; // 准仙帝加成
         if (player.mijinglevel_id >= 20) successRate += 0.5; // 仙帝加成
         if (player.mijinglevel_id >= 21) successRate += 0.6; // 祭道加成
+        if (player.mijinglevel_id >= 23) successRate += 0.7; // 祭道之上加成
+        if (player.mijinglevel_id >= 24) successRate += 0.8; // 唯一道之上加成
     }
     // 限制成功率范围
     successRate = Math.max(0.01, Math.min(0.95, successRate));
@@ -1328,20 +1402,23 @@ function getMissingGolds(weapon) {
      weapon.全属性 += stageInfo.addAllAttr;
     
 
-    // 暴击率提升
-    if (nextStage === "极道帝兵") {
-        weapon.bao += 0.05;
-    } else if (nextStage === "仙器") {
-        weapon.bao += 0.1;
-    } else if (nextStage === "仙王器") {
-        weapon.bao += 0.15;
-    } else if (nextStage === "准仙帝器") {
-        weapon.bao += 0.2;
-    } else if (nextStage === "仙帝器") {
-        weapon.bao += 0.25;
-    } else if (nextStage === "祭道器") {
-        weapon.bao += 0.5;
+    // 暴击率提升：高阶三大体系沿用2.5周目的阶段增幅，唯一器九阶额外圆满+10%。
+    const baoIncreaseMap = {
+        "极道帝兵": 0.05,
+        "仙器": 0.1,
+        "仙王器": 0.15,
+        "准仙帝器": 0.2,
+        "仙帝器": 0.25,
+        "祭道器": 0.5
+    };
+    for (const stage of POST_SACRIFICE_BING_RANKS) {
+        if (stage.includes("道器")) baoIncreaseMap[stage] = 0.03;
+        else if (stage.includes("鸿蒙器")) baoIncreaseMap[stage] = 0.05;
+        else if (stage === "唯一器（九阶）") baoIncreaseMap[stage] = 0.18;
+        else if (stage.includes("唯一器")) baoIncreaseMap[stage] = 0.08;
     }
+    const baoIncrease = baoIncreaseMap[nextStage] || 0;
+    if (baoIncrease > 0) weapon.bao = (weapon.bao || 0) + baoIncrease;
     
     // 保存帝兵
     equipment.帝兵 = weapon;
@@ -1358,7 +1435,11 @@ function getMissingGolds(weapon) {
             "仙王器": 15,
             "准仙帝器": 20,
             "仙帝器": 25,
-            "祭道器": 50
+            "祭道器": 50,
+            ...Object.fromEntries(POST_SACRIFICE_BING_RANKS.map(stage => [
+                stage,
+                stage.includes("道器") ? 3 : stage.includes("鸿蒙器") ? 5 : stage === "唯一器（九阶）" ? 18 : 8
+            ]))
         };
         return increaseMap[stage] || 0;
     }
@@ -1367,7 +1448,19 @@ function getMissingGolds(weapon) {
     let specialTitle = "";
     let specialDesc = "";
     
-    if (nextStage === "准仙帝器") {
+    if (nextStage === "唯一器（九阶）") {
+        specialTitle = "【帝兵圆满·大道唯一】";
+        specialDesc = `祭道之上，唯一独尊，万古不朽！`;
+    } else if (nextStage.includes("唯一器")) {
+        specialTitle = "【唯一器现世·独尊万古】";
+        specialDesc = `唯一之道烙印，万兵皆为蝼蚁！`;
+    } else if (nextStage.includes("鸿蒙器")) {
+        specialTitle = "【鸿蒙器显化·混沌初开】";
+        specialDesc = `鸿蒙紫气萦绕，重塑帝兵本源！`;
+    } else if (nextStage.includes("道器")) {
+        specialTitle = "【道器降世·万法归宗】";
+        specialDesc = `道则共鸣，天地臣服！`;
+    } else if (nextStage === "准仙帝器") {
         specialTitle = "【准仙帝器出世·纪元更迭】";
         specialDesc = `时间长河倒流，纪元更迭！`;
     } else if (nextStage === "仙帝器") {
@@ -1389,7 +1482,7 @@ function getMissingGolds(weapon) {
         `全属性加成：${weapon.全属性.toLocaleString()}`,
         nextStage === "极道帝兵" || nextStage === "仙器" || 
         nextStage === "仙王器" || nextStage === "准仙帝器" || 
-        nextStage === "仙帝器" || nextStage === "祭道器" ? 
+        nextStage === "仙帝器" || nextStage === "祭道器" || baoIncrease > 0 ?
         `暴击率：+${getBaoIncrease(nextStage)}% → ${Math.round(weapon.bao * 100)}%` : "",
         `当前成长次数：${weapon.成长次数}/${weapon.潜力}`,
         weapon.成长次数 < weapon.潜力 ? 
@@ -1540,10 +1633,10 @@ async fuseEmperorWeapon(e) {
     const weapon = equipment.帝兵;
     
     // 检查是否已达上限
-    if (weapon.品阶 === "仙帝器") {
+    if (weapon.品阶 === "唯一器（九阶）") {
         return e.reply([
             `帝兵已达上限！`,
-            `「${weapon.name}」已进阶至最高品阶「仙帝器」`,
+            `「${weapon.name}」已进阶至最高品阶「唯一器（九阶）」`,
             `无法再融合新的仙金材料`
         ].join("\n"));
     }
