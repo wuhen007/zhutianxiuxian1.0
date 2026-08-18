@@ -1,9 +1,17 @@
 param(
   [Parameter(Mandatory = $true)]
-  [string]$Token
+  [ValidatePattern('^[0-9a-fA-F]+$')]
+  [string]$TokenHex
 )
 
 $ErrorActionPreference = 'Stop'
+if ($TokenHex.Length % 2 -ne 0) {
+  throw 'TokenHex must contain an even number of characters.'
+}
+$tokenBytes = for ($index = 0; $index -lt $TokenHex.Length; $index += 2) {
+  [Convert]::ToByte($TokenHex.Substring($index, 2), 16)
+}
+$Token = [Text.Encoding]::ASCII.GetString($tokenBytes)
 $serviceName = 'Cloudflared'
 $installDir = 'C:\Cloudflared\bin'
 $dataDir = 'C:\ProgramData\cloudflared'
