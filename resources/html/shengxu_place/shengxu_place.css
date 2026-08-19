@@ -1,0 +1,170 @@
+@font-face {
+  font-family: "tttgbnumber";
+  src: url("../../font/tttgbnumber.ttf");
+  font-weight: normal;
+  font-style: normal;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 900px;
+  margin: 0;
+  color: #f5f1e8;
+  background: #151914 url("../../img/secret_place/secret_place.jpg") top center /
+    100% auto repeat-y;
+  font-family: "tttgbnumber", "Microsoft YaHei", sans-serif;
+  letter-spacing: 0;
+}
+
+.page {
+  min-height: 100vh;
+  padding: 34px;
+  background: rgba(11, 15, 12, 0.7);
+}
+
+.hero {
+  min-height: 250px;
+  padding: 36px 40px;
+  border: 1px solid rgba(221, 190, 104, 0.58);
+  border-radius: 8px;
+  background: rgba(18, 24, 19, 0.88);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.28);
+}
+
+.eyebrow,
+.chapter {
+  margin: 0 0 8px;
+  color: #d9b963;
+  font-size: 18px;
+}
+
+h1 {
+  margin: 0 0 20px;
+  color: #fff8dc;
+  font-size: 48px;
+  font-weight: 700;
+}
+
+.identity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  color: #dce6db;
+  font-size: 22px;
+}
+
+.command {
+  margin: 24px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  color: #b7cbb9;
+  font-size: 18px;
+}
+
+.dungeon-list {
+  display: grid;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.dungeon {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-left: 6px solid #7a6650;
+  border-radius: 8px;
+  background: rgba(238, 235, 220, 0.94) url("../../img/secret_place/card.jpg")
+    center / cover;
+  color: #252b24;
+}
+
+.dungeon.ready {
+  border-left-color: #3c8a5d;
+}
+
+.dungeon-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px 16px;
+  background: rgba(22, 28, 23, 0.9);
+  color: #fff;
+}
+
+.dungeon-head h2 {
+  margin: 0;
+  font-size: 31px;
+}
+
+.state {
+  max-width: 290px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 6px;
+  color: #f2d789;
+  font-size: 16px;
+  text-align: right;
+}
+
+.ready .state {
+  border-color: rgba(115, 211, 151, 0.5);
+  color: #91e0ae;
+}
+
+.encounter {
+  display: grid;
+  grid-template-columns: 110px 1fr 120px 120px;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 24px;
+  border-bottom: 1px solid rgba(32, 42, 34, 0.16);
+  font-size: 18px;
+}
+
+.encounter strong {
+  font-size: 22px;
+}
+
+.costs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  padding: 18px 24px;
+}
+
+.costs div {
+  min-width: 0;
+  padding: 8px 12px;
+  border-left: 1px solid rgba(43, 61, 48, 0.18);
+}
+
+.costs div:first-child {
+  border-left: 0;
+}
+
+.costs span,
+.costs strong {
+  display: block;
+}
+.costs span {
+  color: #667067;
+  font-size: 15px;
+}
+.costs strong {
+  margin-top: 5px;
+  color: #423d2d;
+  font-size: 20px;
+}
+
+footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 24px;
+  background: rgba(51, 68, 55, 0.12);
+  color: #4b564c;
+  font-size: 16px;
+}

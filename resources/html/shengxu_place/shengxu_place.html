@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link
+      rel="stylesheet"
+      href="{{pluResPath}}/html/shengxu_place/shengxu_place.css"
+    />
+    <link rel="preload" href="{{pluResPath}}/font/tttgbnumber.ttf" as="font" />
+    <title>圣墟位面副本</title>
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <p class="eyebrow">花粉进化路 · 诸界试炼</p>
+        <h1>圣墟位面副本</h1>
+        <div class="identity">
+          <span>{{playerName}}</span>
+          <span>当前：{{currentPlane}}</span>
+          <span>花粉序列：{{flowerLevel}}阶</span>
+        </div>
+        <p class="command">探索指令：#探索圣墟 地点名 · 每处每日一次</p>
+      </header>
+
+      <section class="dungeon-list">
+        {{each dungeons item}}
+        <article class="dungeon {{if item.ready}}ready{{else}}locked{{/if}}">
+          <div class="dungeon-head">
+            <div>
+              <p class="chapter">{{item.chapter}} · {{item.plane}}</p>
+              <h2>{{item.name}}</h2>
+            </div>
+            <span class="state">{{item.status}}</span>
+          </div>
+          <div class="encounter">
+            <span>镇守生灵</span>
+            <strong>{{item.monster}}</strong>
+            <span>花粉{{item.requiredLevel}}阶</span>
+            <span>耗时{{item.durationActual}}分钟</span>
+          </div>
+          <div class="costs">
+            <div><span>修为</span><strong>{{item.xiuweiCost}}</strong></div>
+            <div><span>血气</span><strong>{{item.xueqiCost}}</strong></div>
+            <div><span>灵石</span><strong>{{item.lingshiCost}}</strong></div>
+            <div><span>寿元</span><strong>{{item.shouyuanCost}}年</strong></div>
+          </div>
+          <footer>
+            <span>主要产出：{{item.medium}} × {{item.amount}}</span>
+            <span>呼吸法：{{item.gongfa}}</span>
+          </footer>
+        </article>
+        {{/each}}
+      </section>
+    </main>
+  </body>
+</html>

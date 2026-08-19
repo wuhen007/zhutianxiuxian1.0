@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 
 import {
   createShengxuMonster,
   getShengxuDungeon,
+  getShengxuDungeonPlane,
+  getShengxuExploreCost,
+  getShengxuExploreShortages,
   resolveShengxuDungeonReward,
 } from '../model/shengxuContent.js';
 import {
@@ -11,6 +15,7 @@ import {
   claimShengxuOpportunityState,
   defaultShengxuOpportunityState,
 } from '../model/shengxuOpportunity.js';
+import Show from '../model/show.js';
 
 test('shengxu dungeons scale monsters from player attributes', () => {
   const dungeon = getShengxuDungeon('昆仑山');
@@ -18,6 +23,42 @@ test('shengxu dungeons scale monsters from player attributes', () => {
   assert.equal(monster.名号, '昆仑兽王');
   assert.equal(monster.攻击, 720);
   assert.equal(monster.当前血量, 3600);
+  assert.equal(monster.level_id, 1);
+  assert.equal(monster.Physique_id, 1);
+  assert.equal(monster._万灵魔幡不可炼化, true);
+});
+
+test('shengxu entry cost and plane follow dungeon difficulty', () => {
+  const kunlun = getShengxuDungeon('昆仑山');
+  const cost = getShengxuExploreCost(kunlun);
+  assert.deepEqual(cost, { xiuwei: 1440000, xueqi: 1440000, lingshi: 720000, shouyuan: 2 });
+  assert.equal(getShengxuDungeonPlane(kunlun), '小阴间');
+  assert.equal(getShengxuDungeonPlane(getShengxuDungeon('魂河古地')), '阳间');
+  assert.deepEqual(
+    getShengxuExploreShortages({ 修为: 1439999, 血气: 1440000, 灵石: 720000, 寿元: 2 }, cost),
+    ['修为需1,440,000，现有1,439,999'],
+  );
+});
+
+test('shengxu dungeon panel exposes image and four entry costs', () => {
+  const html = fs.readFileSync(new URL('../resources/html/shengxu_place/shengxu_place.html', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('../resources/html/shengxu_place/shengxu_place.css', import.meta.url), 'utf8');
+  for (const label of ['修为', '血气', '灵石', '寿元']) assert.match(html, new RegExp(label));
+  assert.match(css, /secret_place\.jpg/);
+  assert.match(css, /card\.jpg/);
+});
+
+test('shengxu show model resolves its dedicated template', async () => {
+  const view = await new Show({ user_id: '10001' }).get_shengxu_placeData({ dungeons: [] });
+  assert.match(view.tplFile, /shengxu_place\/shengxu_place\.html$/);
+  assert.equal(view.saveId, 'shengxu_place');
+});
+
+test('shengxu settlement is claimed and recorded idempotently', () => {
+  const source = fs.readFileSync(new URL('../apps/User/ShengxuContent.js', import.meta.url), 'utf8');
+  assert.match(source, /xiuxian:shengxu:settling:/);
+  assert.match(source, /圣墟副本最近结算/);
+  assert.match(source, /idempotencyKey: `shengxu:/);
 });
 
 test('earth chapter contains a complete early-game dungeon route', () => {

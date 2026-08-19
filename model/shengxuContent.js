@@ -25,6 +25,34 @@ export const BREATHING_TIME_REDUCTION = Object.freeze({
 
 export const SHENGXU_EXPLORE_MIN_DURATION_MIN = 5;
 
+export function getShengxuDungeonPlane(dungeon) {
+  return ['阳间篇', '诡异篇'].includes(dungeon?.chapter) ? '阳间' : '小阴间';
+}
+
+/** 入场成本随花粉境界与怪物强度增长，寿元成本随基础探索时长增长。 */
+export function getShengxuExploreCost(dungeon) {
+  const level = Math.max(1, Math.trunc(Number(dungeon?.requiredLevel) || 1));
+  const scale = Math.max(0.1, Number(dungeon?.scale) || 1);
+  return {
+    xiuwei: Math.max(1, Math.round(1000000 * level * scale)),
+    xueqi: Math.max(1, Math.round(1000000 * level * scale)),
+    lingshi: Math.max(1, Math.round(500000 * level * scale)),
+    shouyuan: Math.max(1, Math.ceil((Number(dungeon?.duration) || 5) / 5)),
+  };
+}
+
+export function getShengxuExploreShortages(player, cost) {
+  const fields = [
+    ['修为', 'xiuwei'],
+    ['血气', 'xueqi'],
+    ['灵石', 'lingshi'],
+    ['寿元', 'shouyuan'],
+  ];
+  return fields
+    .filter(([field, key]) => (Number(player?.[field]) || 0) < cost[key])
+    .map(([field, key]) => `${field}需${cost[key].toLocaleString()}，现有${Math.max(0, Number(player?.[field]) || 0).toLocaleString()}`);
+}
+
 /** 圣墟探索耗时 = 副本基础时长 − 呼吸法提速（下限 5 分钟） */
 export function getShengxuExploreDuration(player, dungeon) {
   const base = Math.max(1, Math.trunc(Number(dungeon?.duration) || 15));
@@ -59,9 +87,16 @@ export function createShengxuMonster(player, dungeon) {
     速度: Math.max(100, Math.trunc((Number(player?.速度) || 100) * scale)),
     灵根: { name: '异变血脉', type: '妖体', 法球倍率: 1 },
     学习的功法: [],
+    level_id: Math.max(1, Math.trunc(Number(player?.level_id) || 1)),
+    Physique_id: Math.max(1, Math.trunc(Number(player?.Physique_id) || 1)),
     mijinglevel_id: 1,
     xiangulevel_id: 1,
     huafenlevel_id: dungeon?.requiredLevel || 1,
+    修为: 0,
+    血气: 0,
+    元神: 0,
+    神识: 0,
+    _万灵魔幡不可炼化: true,
   };
 }
 

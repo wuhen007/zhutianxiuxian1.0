@@ -1,4 +1,4 @@
-import { plugin, verc } from '../../api/api.js';
+import { plugin, puppeteer, Show, verc } from '../../api/api.js';
 import {
   Add_najie_thing,
   Read_player,
@@ -18,7 +18,10 @@ import {
   createShengxuMonster,
   ensureBreathingPages,
   getShengxuDungeon,
+  getShengxuDungeonPlane,
+  getShengxuExploreCost,
   getShengxuExploreDuration,
+  getShengxuExploreShortages,
   resolveShengxuDungeonReward,
   synthesizeBreathingMethod,
 } from '../../model/shengxuContent.js';
@@ -114,10 +117,36 @@ export class ShengxuContent extends plugin {
 
   async dungeons(e) {
     if (!verc({ e })) return false;
-    const lines = SHENGXU_DUNGEONS.map(dungeon =>
-      `【${dungeon.chapter}】${dungeon.name}｜花粉${dungeon.requiredLevel}阶｜${dungeon.monster}｜${dungeon.medium}｜耗时${dungeon.duration}分钟`
-    );
-    return e.reply(['【圣墟位面副本】', '需先发送 #穿梭小阴间 进入圣墟诸界', ...lines, '探索：#探索圣墟 地点名（每处每日一次，探索耗时结束后自动归来结算）'].join('\n'));
+    const context = await this.getPlayer(e);
+    if (!context) return e.reply('玩家不存在，请先创建角色。');
+    const { player } = context;
+    const dungeons = SHENGXU_DUNGEONS.map(dungeon => {
+      const cost = getShengxuExploreCost(dungeon);
+      const plane = getShengxuDungeonPlane(dungeon);
+      const shortages = getShengxuExploreShortages(player, cost);
+      const realmReady = Number(player.huafenlevel_id) >= dungeon.requiredLevel;
+      const planeReady = Number(player.power_place) === PLACE_LOCATION_MAP[plane];
+      return {
+        ...dungeon,
+        plane,
+        durationActual: getShengxuExploreDuration(player, dungeon),
+        xiuweiCost: bigNumberTransform(cost.xiuwei),
+        xueqiCost: bigNumberTransform(cost.xueqi),
+        lingshiCost: bigNumberTransform(cost.lingshi),
+        shouyuanCost: cost.shouyuan,
+        ready: realmReady && planeReady && shortages.length === 0,
+        status: !realmReady ? `花粉序列不足（需${dungeon.requiredLevel}阶）`
+          : !planeReady ? `需身处${plane}`
+            : shortages.length ? shortages[0] : '可探索',
+      };
+    });
+    const view = await new Show(e).get_shengxu_placeData({
+      playerName: player.名号 || context.userId,
+      currentPlane: Object.keys(PLACE_LOCATION_MAP).find(name => PLACE_LOCATION_MAP[name] === Number(player.power_place)) || '未知之地',
+      flowerLevel: Number(player.huafenlevel_id) || 1,
+      dungeons,
+    });
+    return puppeteer.screenshot('shengxu_place', { ...view });
   }
 
   async explore(e) {
@@ -131,6 +160,10 @@ export class ShengxuContent extends plugin {
       const player = await Read_player(userId);
       if (!isCultivatingExtraPath(player, 'huafen')) return e.reply('只有花粉进化路修士可以进入圣墟副本。');
       if (!isInShengxuPlane(player)) return e.reply('圣墟副本只存在于圣墟诸界（小阴间/大阴间/阳间），请先发送 #穿梭小阴间。');
+      const dungeonPlane = getShengxuDungeonPlane(dungeon);
+      if (Number(player.power_place) !== PLACE_LOCATION_MAP[dungeonPlane]) {
+        return e.reply(`【位面不符】${dungeon.name}位于${dungeonPlane}，请先穿梭至${dungeonPlane}。`);
+      }
       if (Number(player.huafenlevel_id) < dungeon.requiredLevel) {
         return e.reply(`探索${dungeon.name}需花粉进化序列达到${dungeon.requiredLevel}，当前为${player.huafenlevel_id}。`);
       }
@@ -154,6 +187,10 @@ export class ShengxuContent extends plugin {
         }
       }
 
+      const cost = getShengxuExploreCost(dungeon);
+      const shortages = getShengxuExploreShortages(player, cost);
+      if (shortages.length) return e.reply(['【圣墟探索·资源不足】', ...shortages].join('\n'));
+
       // 每处每日一次（探索开始日占位）
       const dailyKey = `xiuxian:shengxu:dungeon:${getShanghaiDateKey()}:${dungeon.name}:${userId}`;
       if (!(await redis.set(dailyKey, '1', { EX: 2 * 24 * 60 * 60, NX: true }))) {
@@ -164,18 +201,32 @@ export class ShengxuContent extends plugin {
       const now = Date.now();
       const endTime = now + durationMin * 60 * 1000;
       const task = {
+        taskId: `${userId}:${dungeon.name}:${now}`,
         qq: userId,
         playerName: player.名号 || userId,
         groupId: e.isGroup ? e.group_id : null,
         dungeonName: dungeon.name,
         start_time: now,
         end_time: endTime,
+        cost,
       };
-      await redis.set(exploreKey, JSON.stringify(task), { EX: 24 * 60 * 60 });
+      player.修为 -= cost.xiuwei;
+      player.血气 -= cost.xueqi;
+      player.灵石 -= cost.lingshi;
+      player.寿元 -= cost.shouyuan;
+      try {
+        await redis.set(exploreKey, JSON.stringify(task), { EX: 24 * 60 * 60 });
+        await Write_player(userId, player);
+      } catch (error) {
+        await redis.del(exploreKey);
+        await redis.del(dailyKey);
+        throw error;
+      }
       const endLabel = new Date(endTime).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' });
       return e.reply([
         `【${dungeon.name}·开始探索】`,
         `${player.名号 || userId}踏入${dungeon.name}，${dungeon.monster}的气息在深处隐现。`,
+        `入场消耗：修为${bigNumberTransform(cost.xiuwei)}｜血气${bigNumberTransform(cost.xueqi)}｜灵石${bigNumberTransform(cost.lingshi)}｜寿元${cost.shouyuan}年`,
         `探索耗时：${durationMin} 分钟`,
         `预计归来：${endLabel}`,
         '探索结束后将自动结算收获。',
@@ -209,11 +260,17 @@ export class ShengxuContent extends plugin {
         continue;
       }
       if (now < Number(task.end_time)) continue;
+      const settleKey = `xiuxian:shengxu:settling:${task.qq}`;
+      const token = `${process.pid}:${Date.now()}:${Math.random()}`;
+      if (!(await redis.set(settleKey, token, { EX: 120, NX: true }))) continue;
       try {
+        if ((await redis.get(key)) !== raw) continue;
         await this.settleExplore(task);
         await redis.del(key);
       } catch (error) {
         console.error(`[圣墟副本] 玩家 ${task.qq} 探索结算失败:`, error);
+      } finally {
+        if ((await redis.get(settleKey)) === token) await redis.del(settleKey);
       }
     }
   }
@@ -224,6 +281,8 @@ export class ShengxuContent extends plugin {
     if (!player) return;
     const dungeon = getShengxuDungeon(task.dungeonName);
     if (!dungeon) return;
+    const settlementId = task.taskId || `${userId}:${dungeon.name}:${task.start_time}`;
+    if (player.圣墟副本最近结算?.[dungeon.name] === settlementId) return;
 
     const attacker = structuredClone(player);
     attacker.当前血量 = Math.max(1, Number(player.血量上限 || player.当前血量) || 1);
@@ -234,57 +293,65 @@ export class ShengxuContent extends plugin {
       `${task.playerName}在${dungeon.name}深处遭遇【${monster.名号}】！`,
       ...battleExcerpt(battle.msg),
     ];
-    const fresh = await Read_player(userId);
-    fresh.当前血量 = battle.winner === 'A' ? Math.max(1, Math.trunc(battle.A_hp)) : 1;
-    fresh.功法熟练度 = attacker.功法熟练度;
-    fresh.功法熟练度每日 = attacker.功法熟练度每日;
-    if (battle.winner !== 'A') {
-      await Write_player(userId, fresh);
-      lines.push('【探索失败】你被异变生灵重创，当前血量降至1。');
-      return this.sendExploreResult(task, lines.join('\n'));
-    }
+    let message = '';
+    await withPlayerMutationLock(userId, async () => {
+      const fresh = await Read_player(userId);
+      fresh.圣墟副本最近结算 ??= {};
+      if (fresh.圣墟副本最近结算[dungeon.name] === settlementId) return;
+      fresh.当前血量 = battle.winner === 'A' ? Math.max(1, Math.trunc(battle.A_hp)) : 1;
+      fresh.功法熟练度 = attacker.功法熟练度;
+      fresh.功法熟练度每日 = attacker.功法熟练度每日;
+      fresh.圣墟副本最近结算[dungeon.name] = settlementId;
+      if (battle.winner !== 'A') {
+        await Write_player(userId, fresh);
+        lines.push('【探索失败】你被异变生灵重创，当前血量降至1。');
+        message = lines.join('\n');
+        return;
+      }
 
-    const reward = resolveShengxuDungeonReward(dungeon);
-    await Add_najie_thing(userId, reward.medium, '道具', reward.amount);
-    if (reward.gongfa) await Add_najie_thing(userId, reward.gongfa, '功法', 1);
-    if (reward.herb) await Add_najie_thing(userId, reward.herb, '道具', 1);
-    if (reward.fruit) await Add_najie_thing(userId, reward.fruit, '道具', 1);
-    fresh.进化积淀 = Math.max(0, Number(fresh.进化积淀) || 0) + reward.accumulation;
-    fresh.修为 = Math.max(0, (Number(fresh.修为) || 0) + reward.xiuwei);
-    fresh.血气 = Math.max(0, (Number(fresh.血气) || 0) + reward.xueqi);
-    fresh.灵石 = Math.max(0, (Number(fresh.灵石) || 0) + reward.lingshi);
-    fresh.圣墟机缘线索 = Math.max(0, Number(fresh.圣墟机缘线索) || 0) + 1;
-    fresh.圣墟副本通关 ??= {};
-    fresh.圣墟副本通关[dungeon.name] = (Number(fresh.圣墟副本通关[dungeon.name]) || 0) + 1;
-    // 呼吸法残页：刷副本集页，5 张合成一本呼吸法
-    const page = collectBreathingPage(fresh, dungeon.gongfa);
-    // 神术/异术：副本技能池概率参悟（战斗中有概率自动施展）
-    const skillName = rollFlowerPollenSkill(dungeon);
-    if (skillName) {
-      fresh.学习的功法 ??= [];
-      if (!fresh.学习的功法.includes(skillName)) fresh.学习的功法.push(skillName);
-    }
-    // 场域残图：星路篇起副本胜利必得（场域支脉成长）
-    const field = dungeon.fieldPage ? collectFlowerFieldPage(fresh) : null;
-    await Write_player(userId, fresh);
-    lines.push(
-      '【探索胜利】',
-      `${reward.medium}×${reward.amount}｜进化积淀+${reward.accumulation}｜石罐线索+1`,
-      `修为+${bigNumberTransform(reward.xiuwei)}｜血气+${bigNumberTransform(reward.xueqi)}｜灵石+${bigNumberTransform(reward.lingshi)}`,
-    );
-    if (reward.herb) lines.push(`【本源圣药】灵性惊人，可净化始祖污染度−60。`);
-    if (reward.fruit) lines.push('【异果机缘】获得' + reward.fruit + '×1，可服用换取进化积淀。');
-    if (page.ok) {
-      if (page.learned) lines.push(`呼吸法残页折现：进化积淀+${page.reward}（已掌握${page.gongfa}）`);
-      else lines.push(`拾取【${page.gongfa}·残页】${page.count}/${page.need}，集齐可 #合成呼吸法 ${page.gongfa}`);
-    }
-    if (skillName) lines.push(`参悟神术：【${skillName}】（战斗中概率自动施展）`);
-    if (field && field.ok) {
-      if (field.canAdvance) lines.push(`拾取【场域残图】${field.pages}/${field.pageRequire}，可 #参悟场域 升阶！`);
-      else lines.push(`拾取【场域残图】（共${field.pages}张，${field.pageRequire}张可 #参悟场域）`);
-    }
-    lines.push(reward.gongfa ? `获得传承：【${reward.gongfa}】` : '本次未直接寻得呼吸法传承。');
-    return this.sendExploreResult(task, lines.join('\n'));
+      const reward = resolveShengxuDungeonReward(dungeon);
+      const addReward = (name, type, amount, slot) => Add_najie_thing(
+        userId, name, type, amount, undefined, 1, { idempotencyKey: `shengxu:${settlementId}:${slot}` }
+      );
+      await addReward(reward.medium, '道具', reward.amount, 'medium');
+      if (reward.gongfa) await addReward(reward.gongfa, '功法', 1, 'gongfa');
+      if (reward.herb) await addReward(reward.herb, '道具', 1, 'herb');
+      if (reward.fruit) await addReward(reward.fruit, '道具', 1, 'fruit');
+      fresh.进化积淀 = Math.max(0, Number(fresh.进化积淀) || 0) + reward.accumulation;
+      fresh.修为 = Math.max(0, (Number(fresh.修为) || 0) + reward.xiuwei);
+      fresh.血气 = Math.max(0, (Number(fresh.血气) || 0) + reward.xueqi);
+      fresh.灵石 = Math.max(0, (Number(fresh.灵石) || 0) + reward.lingshi);
+      fresh.圣墟机缘线索 = Math.max(0, Number(fresh.圣墟机缘线索) || 0) + 1;
+      fresh.圣墟副本通关 ??= {};
+      fresh.圣墟副本通关[dungeon.name] = (Number(fresh.圣墟副本通关[dungeon.name]) || 0) + 1;
+      const page = collectBreathingPage(fresh, dungeon.gongfa);
+      const skillName = rollFlowerPollenSkill(dungeon);
+      if (skillName) {
+        fresh.学习的功法 ??= [];
+        if (!fresh.学习的功法.includes(skillName)) fresh.学习的功法.push(skillName);
+      }
+      const field = dungeon.fieldPage ? collectFlowerFieldPage(fresh) : null;
+      await Write_player(userId, fresh);
+      lines.push(
+        '【探索胜利】',
+        `${reward.medium}×${reward.amount}｜进化积淀+${reward.accumulation}｜石罐线索+1`,
+        `修为+${bigNumberTransform(reward.xiuwei)}｜血气+${bigNumberTransform(reward.xueqi)}｜灵石+${bigNumberTransform(reward.lingshi)}`,
+      );
+      if (reward.herb) lines.push('【本源圣药】灵性惊人，可净化始祖污染度−60。');
+      if (reward.fruit) lines.push('【异果机缘】获得' + reward.fruit + '×1，可服用换取进化积淀。');
+      if (page.ok) {
+        if (page.learned) lines.push(`呼吸法残页折现：进化积淀+${page.reward}（已掌握${page.gongfa}）`);
+        else lines.push(`拾取【${page.gongfa}·残页】${page.count}/${page.need}，集齐可 #合成呼吸法 ${page.gongfa}`);
+      }
+      if (skillName) lines.push(`参悟神术：【${skillName}】（战斗中概率自动施展）`);
+      if (field?.ok) {
+        if (field.canAdvance) lines.push(`拾取【场域残图】${field.pages}/${field.pageRequire}，可 #参悟场域 升阶！`);
+        else lines.push(`拾取【场域残图】（共${field.pages}张，${field.pageRequire}张可 #参悟场域）`);
+      }
+      lines.push(reward.gongfa ? `获得传承：【${reward.gongfa}】` : '本次未直接寻得呼吸法传承。');
+      message = lines.join('\n');
+    });
+    if (message) return this.sendExploreResult(task, message);
   }
 
   async sendExploreResult(task, message) {

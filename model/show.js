@@ -137,6 +137,14 @@ async get_zhetian_placeData(myData) {
     ...myData,
   };
 }
+async get_shengxu_placeData(myData) {
+  this.model = 'shengxu_place';
+  return {
+    ...this.screenData,
+    saveId: 'shengxu_place',
+    ...myData,
+  };
+}
 async get_shangcang_placeData(myData) {
   this.model = 'shangcang_place';
   return {
