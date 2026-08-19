@@ -91,6 +91,7 @@ import {
   calculateXianguMarrowPoolRewards,
   createXianguFragmentSnapshot,
   createXianguExitPositions,
+  ensureXianguRequiredConnections,
   ensureXianguExitConnectivity,
   getXianguMarrowPoolTrapChance,
   getRevealedXianguExits,
@@ -3055,11 +3056,21 @@ export class xianguPlace extends plugin {
       }
     }
 
-    // Map rendering is read-only once a run already has a map. Shared-state
-    // reconciliation may update this in-memory snapshot for the image, but
-    // writing it here would let a query race a live PvP action and overwrite
-    // the battle's newer player record. Movement/action handlers persist the
-    // reconciled map while holding the action lock.
+    // Map rendering is read-only once a run already has a map. The sole
+    // exception is a one-time topology migration for old two-fragment loops;
+    // it re-reads and writes through the player lock so a map query cannot
+    // overwrite a live PvP/action snapshot.
+    if (mapRoundCurrent && player.xiangu_realm_map &&
+        needsXianguFragmentTopologyRepair(player, player.xiangu_realm_map.fragmentId, player.xiangu_realm_map)) {
+      let repairedPlayer = null;
+      const repaired = await updateXianguPlayerUnderLock(player_qq, async lockedPlayer => {
+        if (lockedPlayer.xiangu_realm_map &&
+            repairXianguFragmentTopology(lockedPlayer, lockedPlayer.xiangu_realm_map.fragmentId, lockedPlayer.xiangu_realm_map)) {
+          repairedPlayer = lockedPlayer;
+        }
+      });
+      if (repaired && repairedPlayer) player = repairedPlayer;
+    }
     if (mapRoundCurrent) await syncXianguSharedMapState(player);
     if (mapRoundCurrent) await refreshXianguPresence(player_qq, player);
     else await clearXianguLivePresence(player_qq);
@@ -3487,6 +3498,10 @@ export class xianguPlace extends plugin {
     if (await syncXianguSharedMapState(player)) {
       await Write_player(player_qq, player);
     }
+    if (repairXianguFragmentTopology(player, player.xiangu_realm_map.fragmentId, player.xiangu_realm_map)) {
+      const savedTopology = await Write_player(player_qq, player);
+      if (savedTopology === false) return e.reply('【秘境状态冲突】地图出口修复未保存，请稍后重试。');
+    }
 
     // 移动CD（2秒）
     const moveCD = await redis.get(`xiuxian:player:${usr_qq}:xianguMoveCD`);
@@ -3631,17 +3646,13 @@ export class xianguPlace extends plugin {
           ].join('\n'));
         }
 
-        // 兼容旧存档中的自环连接，避免同一碎片被当作新地图反复生成。
+        // 兼容旧存档中的自环连接；统一走拓扑修复，不能再随机覆盖主线出口。
         if (connection === map.fragmentId) {
-          const repairedConnections = createXianguConnections(player, map.fragmentId);
-          connection = pickDifferentXianguFragment(
-            map.fragmentId,
-            Object.values(repairedConnections),
-          );
+          repairXianguFragmentTopology(player, map.fragmentId, map);
+          connection = map.connectedFragments[dir.borderDir];
           if (!connection) {
             return e.reply('【碎片连接修复失败】当前出口暂时无法稳定，请尝试其他方向。');
           }
-          map.connectedFragments[dir.borderDir] = connection;
         }
 
         const nextFrag = REALM_FRAGMENTS[connection];
@@ -3671,10 +3682,16 @@ export class xianguPlace extends plugin {
 
         if (restoredFragment) {
           delete player.xiangu_realm_history[connection];
+          repairXianguFragmentTopology(player, connection, restoredFragment);
         } else {
           // 首次进入时生成碎片，并保留通往上一碎片的返程出口。
-          const nextConnections = createXianguConnections(player, connection);
-          nextConnections[dir.enterDir] = previousFragmentId;
+          const nextConnections = bindXianguReturnConnection(
+            player,
+            connection,
+            createXianguConnections(player, connection),
+            dir.enterDir,
+            previousFragmentId,
+          );
           nextFragmentState = createXianguFragmentState(player, connection, nextConnections);
         }
 
@@ -4129,6 +4146,10 @@ async XianguDivineScan(e) {
     }
 
     const oldMap = player.xiangu_realm_map;
+    if (repairXianguFragmentTopology(player, oldMap.fragmentId, oldMap)) {
+      const savedTopology = await Write_player(player_qq, player);
+      if (savedTopology === false) return e.reply('【秘境状态冲突】地图出口修复未保存，请稍后重试。');
+    }
     const targetExit = getRevealedXianguExits(oldMap).find(exit =>
       REALM_FRAGMENTS[exit.target]?.zone === targetArea
     );
@@ -4205,15 +4226,23 @@ async XianguDivineScan(e) {
 
     if (restoredFragment) {
       delete player.xiangu_realm_history[targetFragmentId];
+      repairXianguFragmentTopology(player, targetFragmentId, restoredFragment);
     } else {
-      const targetConnections = createXianguConnections(player, targetFragmentId);
       const returnDirection = {
         top: 'bottom',
         bottom: 'top',
         left: 'right',
         right: 'left',
       }[targetExit.direction] || 'bottom';
-      if (oldMap?.fragmentId) targetConnections[returnDirection] = oldMap.fragmentId;
+      const targetConnections = oldMap?.fragmentId
+        ? bindXianguReturnConnection(
+          player,
+          targetFragmentId,
+          createXianguConnections(player, targetFragmentId),
+          returnDirection,
+          oldMap.fragmentId,
+        )
+        : createXianguConnections(player, targetFragmentId);
       targetFragmentState = createXianguFragmentState(player, targetFragmentId, targetConnections);
     }
 
@@ -10409,6 +10438,17 @@ const ZONE_LEVEL_REQUIREMENTS = {
   '隐藏区域': 8    // 神火境
 };
 
+// 主线连接必须逐层向内，随机侧路仍保留。这样边缘图不会只形成两图回环，
+// 中层/深层也始终能找到通往核心的出口；核心再把隐藏区域作为高境界支线。
+const XIANGU_PROGRESS_TARGET_ZONES = {
+  '边缘区域': ['边缘区域', '中层区域'],
+  '中层区域': ['深层区域'],
+  '深层区域': ['火道禁区', '核心区域'],
+  '火道禁区': ['核心区域'],
+  '核心区域': ['隐藏区域'],
+  '隐藏区域': ['核心区域'],
+};
+
 // 格子类型编码
 const CELL_TYPE = {
   EMPTY: 0,          // 空地（可通过）
@@ -10453,24 +10493,204 @@ function createXianguSeededRandom(seed) {
   };
 }
 
+function getXianguRequiredConnectionTargets(player, fragmentId) {
+  const fragment = REALM_FRAGMENTS[fragmentId];
+  if (!fragment) return [];
+  const zones = XIANGU_PROGRESS_TARGET_ZONES[fragment.zone] || [];
+  const random = createXianguSeededRandom(
+    `${player?.xiangu_world_seed || 'legacy'}:${fragmentId}:required-connections`,
+  );
+  const used = new Set();
+  const targets = [];
+  for (const zone of zones) {
+    const pool = (ZONE_FRAGMENT_POOLS[zone] || []).filter(target => !used.has(target));
+    const target = pickDifferentXianguFragment(fragmentId, pool, random);
+    if (target) {
+      targets.push(target);
+      used.add(target);
+    }
+  }
+  return targets;
+}
+
+function bindXianguReturnConnection(player, fragmentId, connections, returnDirection, previousFragmentId) {
+  const requiredTargets = getXianguRequiredConnectionTargets(player, fragmentId);
+  const random = createXianguSeededRandom(
+    `${player?.xiangu_world_seed || 'legacy'}:${fragmentId}:return-connections`,
+  );
+  const result = ensureXianguRequiredConnections(
+    fragmentId,
+    connections,
+    requiredTargets,
+    random,
+    returnDirection,
+  );
+  const displaced = result[returnDirection];
+  for (const direction of ['top', 'bottom', 'left', 'right']) {
+    if (direction !== returnDirection && result[direction] === previousFragmentId) {
+      result[direction] = null;
+    }
+  }
+  result[returnDirection] = previousFragmentId;
+
+  // 返程方向可能原本承载主线目标；迁移它到空槽，避免绑定返程时吃掉唯一进阶路。
+  if (displaced && requiredTargets.includes(displaced) &&
+      !Object.values(result).some(target => target === displaced)) {
+    const spare = ['top', 'bottom', 'left', 'right']
+      .find(direction => direction !== returnDirection && !result[direction]) ||
+      ['top', 'bottom', 'left', 'right']
+        .find(direction => direction !== returnDirection && !requiredTargets.includes(result[direction]));
+    if (spare) result[spare] = displaced;
+  }
+  return result;
+}
+
+function getXianguExitDirection(point, width, height) {
+  if (!point) return null;
+  if (point.y === 0) return 'top';
+  if (point.y === height - 1) return 'bottom';
+  if (point.x === 0) return 'left';
+  if (point.x === width - 1) return 'right';
+  return null;
+}
+
+function findXianguExitPosition(map, direction) {
+  const width = Number(map?.width) || map?.grid?.[0]?.length || 0;
+  const height = Number(map?.height) || map?.grid?.length || 0;
+  const listed = Array.isArray(map?.exitPositions) ? map.exitPositions : [];
+  const listedPosition = listed.find(point =>
+    getXianguExitDirection(point, width, height) === direction &&
+    map.grid?.[point.y]?.[point.x] === CELL_TYPE.EXIT
+  );
+  if (listedPosition) return { ...listedPosition };
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (map.grid?.[y]?.[x] !== CELL_TYPE.EXIT) continue;
+      if (getXianguExitDirection({ x, y }, width, height) === direction) return { x, y };
+    }
+  }
+  return null;
+}
+
+function repairXianguFragmentTopology(player, fragmentId, map) {
+  if (!map?.grid?.length || !map?.grid?.[0]?.length || !REALM_FRAGMENTS[fragmentId]) return false;
+  const width = Number(map.width) || map.grid[0].length;
+  const height = Number(map.height) || map.grid.length;
+  const requiredTargets = getXianguRequiredConnectionTargets(player, fragmentId);
+  const currentConnections = map.connectedFragments || {};
+  const playerDirection = getXianguExitDirection(map.playerPos, width, height);
+  const repairedConnections = ensureXianguRequiredConnections(
+    fragmentId,
+    currentConnections,
+    requiredTargets,
+    createXianguSeededRandom(`${player?.xiangu_world_seed || 'legacy'}:${fragmentId}:repair`),
+    playerDirection,
+  );
+  // 旧存档可能把玩家正站的边界出口写成自环；救援时优先把主线目标放回
+  // 这个方向，避免清理自环后把脚下的出口变成一块无法再次穿越的墙。
+  if (playerDirection && !repairedConnections[playerDirection]) {
+    const rescueTarget = requiredTargets.find(target =>
+      !Object.values(repairedConnections).includes(target)
+    );
+    if (rescueTarget) {
+      for (const direction of ['top', 'bottom', 'left', 'right']) {
+        if (repairedConnections[direction] === rescueTarget) repairedConnections[direction] = null;
+      }
+      repairedConnections[playerDirection] = rescueTarget;
+    }
+  }
+  let changed = ['top', 'bottom', 'left', 'right'].some(direction =>
+    String(currentConnections[direction] || '') !== String(repairedConnections[direction] || '')
+  );
+
+  const keptPositions = [];
+  const seenPositions = new Set();
+  const oldPositions = Array.isArray(map.exitPositions) ? map.exitPositions : [];
+  for (const point of oldPositions) {
+    const direction = getXianguExitDirection(point, width, height);
+    const key = `${point?.x},${point?.y}`;
+    if (!direction || !repairedConnections[direction] || seenPositions.has(key)) {
+      if (map.grid?.[point?.y]?.[point?.x] === CELL_TYPE.EXIT &&
+          (point?.x !== map.playerPos?.x || point?.y !== map.playerPos?.y)) {
+        map.grid[point.y][point.x] = CELL_TYPE.WALL;
+      }
+      changed = true;
+      continue;
+    }
+    seenPositions.add(key);
+    keptPositions.push({ x: point.x, y: point.y });
+  }
+
+  for (const direction of ['top', 'bottom', 'left', 'right']) {
+    if (!repairedConnections[direction]) continue;
+    let position = findXianguExitPosition({ ...map, exitPositions: keptPositions }, direction);
+    if (!position) {
+      position = createXianguExitPositions(
+        width,
+        height,
+        { [direction]: repairedConnections[direction] },
+        createXianguSeededRandom(`${player?.xiangu_world_seed || 'legacy'}:${fragmentId}:repair-exit:${direction}`),
+      )[0];
+      if (!position) continue;
+      map.grid[position.y][position.x] = CELL_TYPE.EXIT;
+      keptPositions.push(position);
+      changed = true;
+    } else if (!keptPositions.some(point => point.x === position.x && point.y === position.y)) {
+      keptPositions.push(position);
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    map.connectedFragments = repairedConnections;
+    map.exitPositions = keptPositions;
+    ensureXianguExitConnectivity(map.grid, map.playerPos, keptPositions, {
+      wallValue: CELL_TYPE.WALL,
+      emptyValue: CELL_TYPE.EMPTY,
+    });
+  }
+  return changed;
+}
+
+function needsXianguFragmentTopologyRepair(player, fragmentId, map) {
+  if (!map?.grid?.length || !REALM_FRAGMENTS[fragmentId]) return false;
+  const requiredTargets = getXianguRequiredConnectionTargets(player, fragmentId);
+  const width = Number(map.width) || map.grid[0].length;
+  const height = Number(map.height) || map.grid.length;
+  const repaired = ensureXianguRequiredConnections(
+    fragmentId,
+    map.connectedFragments || {},
+    requiredTargets,
+    createXianguSeededRandom(`${player?.xiangu_world_seed || 'legacy'}:${fragmentId}:repair-check`),
+    getXianguExitDirection(map.playerPos, width, height),
+  );
+  const protectedDirection = getXianguExitDirection(map.playerPos, width, height);
+  if (protectedDirection && !repaired[protectedDirection]) {
+    const rescueTarget = requiredTargets.find(target => !Object.values(repaired).includes(target));
+    if (rescueTarget) repaired[protectedDirection] = rescueTarget;
+  }
+  if (['top', 'bottom', 'left', 'right'].some(direction =>
+    String(map.connectedFragments?.[direction] || '') !== String(repaired[direction] || '')
+  )) return true;
+  return ['top', 'bottom', 'left', 'right'].some(direction =>
+    repaired[direction] && !map.exitPositions?.some(point =>
+      getXianguExitDirection(point, width, height) === direction &&
+      map.grid?.[point.y]?.[point.x] === CELL_TYPE.EXIT
+    )
+  );
+}
+
 function createXianguConnections(player, fragmentId) {
   const topologyLevel = Math.max(...Object.values(ZONE_LEVEL_REQUIREMENTS));
   const seed = `${player.xiangu_world_seed || 'legacy'}:${fragmentId}:connections`;
   const random = createXianguSeededRandom(seed);
   const connections = connectFragments(fragmentId, topologyLevel, random);
-  if (
-    REALM_FRAGMENTS[fragmentId]?.zone === '边缘区域' &&
-    !Object.values(connections).some(target => REALM_FRAGMENTS[target]?.zone === '边缘区域')
-  ) {
-    const directions = ['top', 'bottom', 'left', 'right'];
-    const direction = directions[Math.floor(random() * directions.length)];
-    connections[direction] = pickDifferentXianguFragment(
-      fragmentId,
-      ZONE_FRAGMENT_POOLS['边缘区域'],
-      random,
-    );
-  }
-  return connections;
+  return ensureXianguRequiredConnections(
+    fragmentId,
+    connections,
+    getXianguRequiredConnectionTargets(player, fragmentId),
+    random,
+  );
 }
 
 function getXianguMapInstanceId(player, fragmentId, connectedFragments = {}) {

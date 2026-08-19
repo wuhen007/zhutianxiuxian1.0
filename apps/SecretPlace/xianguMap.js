@@ -246,6 +246,61 @@ export function pickDifferentXianguFragment(currentFragmentId, candidates, rando
   return available.length > 0 ? available[randomIndex(available.length, random)] : null;
 }
 
+export function ensureXianguRequiredConnections(
+  currentFragmentId,
+  connections = {},
+  requiredTargets = [],
+  random = Math.random,
+  protectedDirection = null,
+) {
+  const directions = ['top', 'bottom', 'left', 'right'];
+  const currentKey = String(currentFragmentId || '');
+  const protectedKey = directions.includes(protectedDirection) ? protectedDirection : null;
+  const result = Object.fromEntries(directions.map(direction => {
+    const target = connections?.[direction];
+    return [direction, target && String(target) !== currentKey ? target : null];
+  }));
+  const required = [...new Set(Array.isArray(requiredTargets) ? requiredTargets : [])]
+    .filter(target => target && String(target) !== currentKey);
+  const requiredKeys = new Set(required.map(String));
+
+  for (const target of required) {
+    const targetKey = String(target);
+    if (directions.some(direction => String(result[direction] || '') === targetKey)) continue;
+
+    let candidates = directions.filter(direction => direction !== protectedKey && !result[direction]);
+    if (candidates.length === 0) {
+      const counts = new Map();
+      for (const direction of directions) {
+        if (direction === protectedKey) continue;
+        const key = String(result[direction]);
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+      candidates = directions.filter(direction =>
+        direction !== protectedKey && counts.get(String(result[direction])) > 1
+      );
+    }
+    if (candidates.length === 0) {
+      candidates = directions.filter(direction =>
+        direction !== protectedKey && !requiredKeys.has(String(result[direction]))
+      );
+    }
+    if (candidates.length === 0) break;
+    result[candidates[randomIndex(candidates.length, random)]] = target;
+  }
+
+  const seen = new Set();
+  if (protectedKey && result[protectedKey]) seen.add(String(result[protectedKey]));
+  for (const direction of directions) {
+    if (direction === protectedKey) continue;
+    const target = result[direction];
+    const key = String(target || '');
+    if (!target || key === currentKey || seen.has(key)) result[direction] = null;
+    else seen.add(key);
+  }
+  return result;
+}
+
 export function createXianguExitPositions(width, height, connections = {}, random = Math.random) {
   const w = Math.max(3, Math.floor(Number(width) || 0));
   const h = Math.max(3, Math.floor(Number(height) || 0));

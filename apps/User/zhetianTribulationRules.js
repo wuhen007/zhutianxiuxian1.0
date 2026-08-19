@@ -54,6 +54,60 @@ export function calcXianguTribulationPower(player, levels = {}) {
   };
 }
 
+// 天神踏入虚道后，仙古今世法遭受的天地排斥逐境加深。
+// 这是叠加在既有理论战力雷劫之上的威能倍率；低境界仍沿用原结算。
+export const XIANGU_UPPER_TRIBULATION_HORROR_MULTIPLIERS = Object.freeze({
+  11: 15,
+  12: 20,
+  13: 25,
+  14: 30,
+});
+
+export function getXianguUpperTribulationHorrorMultiplier(fromLevelId) {
+  const levelId = Math.trunc(Number(fromLevelId) || 0);
+  if (levelId >= 14) return XIANGU_UPPER_TRIBULATION_HORROR_MULTIPLIERS[14];
+  return XIANGU_UPPER_TRIBULATION_HORROR_MULTIPLIERS[levelId] || 1;
+}
+
+/**
+ * 保留 15~30 倍原始劫威，同时将单道肉身承压平滑压入可渡区间。
+ * 普通道上限随境界从 18% 提升至 45%，阶段终结道从 55% 提升至 85%。
+ * 上限在灵根、帝兵等减伤之前应用，渡劫准备仍会直接决定生死。
+ */
+export function calculateXianguHorrorWavePower({
+  baseDamage,
+  maxHp,
+  multiplier = 1,
+  finalWave = false,
+}) {
+  const normalizedMultiplier = Math.max(1, Number(multiplier) || 1);
+  const rawDamage = Math.max(1, Number(baseDamage) || 1) * normalizedMultiplier;
+  if (normalizedMultiplier <= 1) {
+    return {
+      multiplier: 1,
+      rawDamage,
+      damage: rawDamage,
+      capRate: null,
+      capped: false,
+    };
+  }
+
+  const progress = Math.max(0, Math.min(1, (normalizedMultiplier - 15) / 15));
+  const capRate = finalWave
+    ? 0.55 + progress * 0.30
+    : 0.18 + progress * 0.27;
+  const cap = Math.max(1, Number(maxHp) || 1) * capRate;
+  const damage = cap * (1 - Math.exp(-rawDamage / cap));
+
+  return {
+    multiplier: normalizedMultiplier,
+    rawDamage,
+    damage: Math.max(1, damage),
+    capRate,
+    capped: rawDamage > damage,
+  };
+}
+
 const SAKURA_ROOT_NAMES = new Set([
   '木之本樱',
   '星之杖·木之本樱',

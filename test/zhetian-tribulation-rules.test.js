@@ -5,9 +5,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  calculateXianguHorrorWavePower,
   calcXianguTribulationPower,
   canUseClowWish,
+  getXianguUpperTribulationHorrorMultiplier,
   getReverseLifeTribulationWaves,
+  XIANGU_UPPER_TRIBULATION_HORROR_MULTIPLIERS,
   XIANGU_TRIBULATION_BASE_ATK_SCALE,
   LEIDI_TRIBULATION_CONVERSION_RATE,
   LEIDI_TRIBULATION_CONVERSION_WAVES,
@@ -102,6 +105,90 @@ test('仙古上位雷劫按境界逐级提高装备与帝兵倍率', () => {
     equipmentMultiplier: 105,
     imperialMultiplier: 140,
   });
+});
+
+test('天神破虚道起的仙古雷劫逐境叠加15至30倍恐怖威能', () => {
+  assert.deepEqual(XIANGU_UPPER_TRIBULATION_HORROR_MULTIPLIERS, {
+    11: 15,
+    12: 20,
+    13: 25,
+    14: 30,
+  });
+  assert.deepEqual(
+    [10, 11, 12, 13, 14, 15].map(getXianguUpperTribulationHorrorMultiplier),
+    [1, 15, 20, 25, 30, 30],
+  );
+});
+
+test('恐怖劫威按血量软限形成险死承压，终结道与后续境界更凶', () => {
+  const ordinary = calculateXianguHorrorWavePower({
+    baseDamage: 1_000_000,
+    maxHp: 1_000,
+    multiplier: 15,
+  });
+  const final = calculateXianguHorrorWavePower({
+    baseDamage: 1_000_000,
+    maxHp: 1_000,
+    multiplier: 30,
+    finalWave: true,
+  });
+  const legacy = calculateXianguHorrorWavePower({
+    baseDamage: 123,
+    maxHp: 1_000,
+    multiplier: 1,
+  });
+
+  assert.equal(ordinary.rawDamage, 15_000_000);
+  assert.equal(ordinary.capRate, 0.18);
+  assert.ok(ordinary.damage > 179 && ordinary.damage <= 180);
+  assert.equal(final.rawDamage, 30_000_000);
+  assert.ok(Math.abs(final.capRate - 0.85) < 1e-12);
+  assert.ok(Math.abs(final.damage - 850) < 1e-9);
+  assert.ok(final.damage > ordinary.damage);
+  assert.deepEqual(legacy, {
+    multiplier: 1,
+    rawDamage: 123,
+    damage: 123,
+    capRate: null,
+    capped: false,
+  });
+});
+
+test('生产数据下仙古上位劫原始峰值不低于遮天对标境界', () => {
+  const levels = {
+    Level_list: readLevelData('练气境界.json'),
+    LevelMax_list: readLevelData('炼体境界.json'),
+    Levelmijing_list: readLevelData('秘境体系.json'),
+    xiangujinshi_list: readLevelData('仙古今世法.json'),
+  };
+  const maxAttack = list => Math.max(...list.map(level => Number(level.基础攻击) || 0));
+  const commonBase = maxAttack(levels.Level_list) + maxAttack(levels.LevelMax_list);
+  const profiles = [
+    { from: 11, companion: 1, xianguPeak: 0.1452, zhetian: 11, zhetianPeak: 9.525 },
+    { from: 12, companion: 5, xianguPeak: 0.0975, zhetian: 12, zhetianPeak: 53.1 },
+    { from: 13, companion: 6, xianguPeak: 0.10795, zhetian: 13, zhetianPeak: 182.88 },
+    { from: 14, companion: 7, xianguPeak: 0.142, zhetian: 14, zhetianPeak: 945 },
+  ];
+
+  for (const profile of profiles) {
+    const xianguPower = calcXianguTribulationPower({
+      xiangulevel_id: profile.from,
+      mijinglevel_id: profile.companion,
+    }, levels).attack;
+    const zhetianRealm = levels.Levelmijing_list.find(
+      level => Number(level.level_id) === profile.zhetian
+    );
+    const xianguRawPeak = xianguPower
+      * profile.xianguPeak
+      * getXianguUpperTribulationHorrorMultiplier(profile.from);
+    const zhetianRawPeak = (commonBase + Number(zhetianRealm.基础攻击))
+      * profile.zhetianPeak;
+
+    assert.ok(
+      xianguRawPeak >= zhetianRawPeak,
+      `仙古${profile.from}级峰值 ${xianguRawPeak} 低于遮天${profile.zhetian}级 ${zhetianRawPeak}`,
+    );
+  }
 });
 
 test('生产配置下神火档最弱时代的第一道雷劫也达到千亿', () => {

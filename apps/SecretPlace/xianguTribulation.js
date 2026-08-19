@@ -30,7 +30,9 @@ import {
   XIANGU_REALM_ROUTES,
 } from './xianguTribulationSettlement.js';
 import {
+  calculateXianguHorrorWavePower,
   calcXianguTribulationPower,
+  getXianguUpperTribulationHorrorMultiplier,
   LEIDI_TRIBULATION_CONVERSION_RATE,
   LEIDI_TRIBULATION_CONVERSION_WAVES,
 } from '../User/zhetianTribulationRules.js';
@@ -114,6 +116,7 @@ export class XianguTribulation {
     this.dead = false;    // 是否道火吞没真我（渡劫失败）
     this._eraFactor = this._getEraFactor();
     this._tribulationPower = null;
+    this._horrorMultiplier = 1;
     this._equipment = {};
   }
 
@@ -279,7 +282,7 @@ export class XianguTribulation {
     return finalDamage;
   }
 
-  // 功法减伤（与遮天 applyGongfaEffects 同源；originalDamage 用于「者字秘/不灭经/雷帝/涅槃」比例，runningDamage 用于「真凰/柳神/凰劫/万化」）
+  // 功法减伤按剩余伤害逐层乘算，避免体质/帝兵减伤后再减原始值而跌成固定1点。
   // 兼容战斗态 player.功法 与长期存档 player.学习的功法。
   _gongfaReduce(player, originalDamage, runningDamage, msgs) {
     let finalDamage = runningDamage;
@@ -287,7 +290,7 @@ export class XianguTribulation {
 
     // 者字秘（含时代系数，参考遮天）
     if (player.者字秘效果 && player.者字秘效果.剩余次数 > 0) {
-      const r = originalDamage * (player.者字秘效果.减伤比例 || 0.25) * this._eraFactor;
+      const r = finalDamage * (player.者字秘效果.减伤比例 || 0.25) * this._eraFactor;
       finalDamage -= r;
       const heal = Math.floor(M * (player.者字秘效果.恢复比例 || 0.05));
       player.当前血量 = Math.min(M, (player.当前血量 || 0) + heal);
@@ -297,7 +300,7 @@ export class XianguTribulation {
 
     // 不灭经
     if (player.不灭经效果 && player.不灭经效果.剩余次数 > 0) {
-      const r = originalDamage * (player.不灭经效果.减伤比例 || 0.4);
+      const r = finalDamage * (player.不灭经效果.减伤比例 || 0.4);
       finalDamage -= r;
       const heal = Math.floor(M * (player.不灭经效果.恢复比例 || 0.3));
       player.当前血量 = Math.min(M, (player.当前血量 || 0) + heal);
@@ -323,7 +326,7 @@ export class XianguTribulation {
 
     // 涅槃仙功
     if (player.涅槃仙功效果 && player.涅槃仙功效果.剩余次数 > 0) {
-      const r = originalDamage * (player.涅槃仙功效果.减伤比例 || 0.2);
+      const r = finalDamage * (player.涅槃仙功效果.减伤比例 || 0.2);
       finalDamage -= r;
       player.涅槃仙功效果.剩余次数--;
       msgs.push(`【涅槃仙功】减伤 ${bigNumberTransform(r)}`);
@@ -349,6 +352,40 @@ export class XianguTribulation {
     }
 
     return finalDamage;
+  }
+
+  _getTransientTribulationEffectKeys() {
+    return [
+      '者字秘效果',
+      '真凰效果',
+      '雷帝效果',
+      '柳神效果',
+      '不灭经效果',
+      '补天术效果',
+      '万化圣诀效果',
+      '涅槃仙功效果',
+      '凰劫效果',
+    ];
+  }
+
+  _resetTransientTribulationEffects(player) {
+    for (const key of this._getTransientTribulationEffectKeys()) {
+      delete player[key];
+    }
+  }
+
+  async _withTransientTribulationEffects(player, action) {
+    const snapshot = new Map();
+    for (const key of this._getTransientTribulationEffectKeys()) {
+      if (Object.prototype.hasOwnProperty.call(player, key)) snapshot.set(key, player[key]);
+      delete player[key];
+    }
+    try {
+      return await action();
+    } finally {
+      this._resetTransientTribulationEffects(player);
+      for (const [key, value] of snapshot) player[key] = value;
+    }
   }
 
   // ============ 功法复活（与遮天 checkGongfaResurrection 同源，作用于 player.当前血量 池）============
@@ -435,7 +472,14 @@ export class XianguTribulation {
     // 上位冲关与遮天一致，使用理论攻击作为每道劫的伤害基准。
     const attackBase = this._tribulationPower?.attack || M;
     const eraFactor = this._tribulationPower ? this._eraFactor : 1;
-    const base = attackBase * frac * (1 + 0.03 * wave) * eraFactor;
+    const ordinaryBase = attackBase * frac * (1 + 0.03 * wave) * eraFactor;
+    const horror = calculateXianguHorrorWavePower({
+      baseDamage: ordinaryBase,
+      maxHp: M,
+      multiplier: this._horrorMultiplier,
+      finalWave: opts.finalWave,
+    });
+    const base = horror.damage;
     const { damage: bodyDamage, msgs: bodyMsgs } = this._applyBodyDefenses(player, base);
     const defendedDamage = this._applyNormalDefenses(player, bodyDamage, bodyMsgs);
     const sourceName = opts.sourceName || '道火本源';
@@ -446,7 +490,18 @@ export class XianguTribulation {
     const damageModel = this._tribulationPower
       ? '理论战力雷劫·与遮天同构'
       : '血量基准·不随时代缩放';
-    lines.push(`　${sourceName} ${bigNumberTransform(base)}（${damageModel}）｜灵根减伤后 ${bigNumberTransform(bodyDamage)}`);
+    if (horror.multiplier > 1) {
+      lines.push(
+        `　${sourceName} ${bigNumberTransform(ordinaryBase)} × ${horror.multiplier}倍 = `
+        + `${bigNumberTransform(horror.rawDamage)}（${damageModel}）`
+      );
+      lines.push(
+        `　险死承压 ${bigNumberTransform(base)}（单道上限约${Math.round(horror.capRate * 100)}%）`
+        + `｜灵根减伤后 ${bigNumberTransform(bodyDamage)}`
+      );
+    } else {
+      lines.push(`　${sourceName} ${bigNumberTransform(base)}（${damageModel}）｜灵根减伤后 ${bigNumberTransform(bodyDamage)}`);
+    }
     for (const m of bodyMsgs) lines.push(`　　${m}`);
 
     const gongfaMsgs = [];
@@ -504,13 +559,24 @@ export class XianguTribulation {
     const stageInterval = opts.stageInterval || 3000; // 阶段间间隔
 
     // 阶段 intro 一次性推播
-    await e.reply([...introLines, '', opts.reportTitle || '——道火劫报——'].join('\n'));
+    const horrorLine = this._horrorMultiplier > 1
+      ? `【极境天威】本劫原始威能提升至旧劫的 ${this._horrorMultiplier} 倍，肉身承压已达险死还生之境。`
+      : null;
+    await e.reply([
+      ...introLines,
+      ...(horrorLine ? ['', horrorLine] : []),
+      '',
+      opts.reportTitle || '——道火劫报——',
+    ].join('\n'));
     await sleep(1500);
 
     // 每道劫独立推播：与遮天 `await broadcastToAll + battleLog=[] + sleep` 同构
     for (let i = 0; i < waves.length; i++) {
       const wave = (opts.waveOffset || 0) + i + 1;
-      const r = this._dealWave(player, waves[i].frac, wave, waves[i].note, opts);
+      const r = this._dealWave(player, waves[i].frac, wave, waves[i].note, {
+        ...opts,
+        finalWave: i === waves.length - 1,
+      });
       const waveLines = [...r.lines, '', this._bar(player)];
       await e.reply(waveLines.join('\n'));
       if (r.dead) {
@@ -534,6 +600,11 @@ export class XianguTribulation {
 
   // ============ 主流程 ============
   async run(e, player, ctx = {}) {
+    return this._withTransientTribulationEffects(player, () => this._run(e, player, ctx));
+  }
+
+  async _run(e, player, ctx = {}) {
+    this._horrorMultiplier = 1;
     this._equipment = ctx.equipment || {};
     const name = player.名号 || '修士';
     const successRate = this.calcSuccessRate(ctx.completed, ctx.daoyun);
@@ -732,6 +803,13 @@ export class XianguTribulation {
   }
 
   async runRealmBreakthrough(e, player, ctx = {}) {
+    return this._withTransientTribulationEffects(
+      player,
+      () => this._runRealmBreakthrough(e, player, ctx)
+    );
+  }
+
+  async _runRealmBreakthrough(e, player, ctx = {}) {
     this.revived = false;
     this.dead = false;
     this._equipment = ctx.equipment || {};
@@ -744,13 +822,22 @@ export class XianguTribulation {
     this._tribulationPower = fromLevelId >= 8 && fromLevelId <= 14
       ? calcXianguTribulationPower({ ...player, xiangulevel_id: fromLevelId }, data)
       : null;
+    this._horrorMultiplier = getXianguUpperTribulationHorrorMultiplier(fromLevelId);
     return this[route.tribulationMethod](e, player);
   }
 
   async runXianqiCondensation(e, player, targetStrand, equipment = {}) {
+    return this._withTransientTribulationEffects(
+      player,
+      () => this._runXianqiCondensation(e, player, targetStrand, equipment)
+    );
+  }
+
+  async _runXianqiCondensation(e, player, targetStrand, equipment = {}) {
     this.revived = false;
     this.dead = false;
     this._tribulationPower = null;
+    this._horrorMultiplier = 1;
     this._equipment = equipment;
 
     const current = getXianqiStrands(player);
@@ -764,6 +851,13 @@ export class XianguTribulation {
 
   // ============ 虚道极境·九天十地劫入口（境界内试炼，不晋升境界）============
   async runJiutianShidiTrial(e, player, equipment = {}) {
+    return this._withTransientTribulationEffects(
+      player,
+      () => this._runJiutianShidiTrial(e, player, equipment)
+    );
+  }
+
+  async _runJiutianShidiTrial(e, player, equipment = {}) {
     this.revived = false;
     this.dead = false;
     this._equipment = equipment;
@@ -774,6 +868,7 @@ export class XianguTribulation {
       throw new Error('九天十地劫已经渡过，虚道极境无需再试');
     }
     this._tribulationPower = calcXianguTribulationPower({ ...player, xiangulevel_id: 12 }, data);
+    this._horrorMultiplier = getXianguUpperTribulationHorrorMultiplier(12);
     const result = await this._runJiutianShidiTribulation(e, player);
     return {
       success: result.success,
@@ -788,6 +883,13 @@ export class XianguTribulation {
 
   // ============ 斩我极境·斩仙铡刀劫入口（境界内试炼，不晋升境界）============
   async runZhanxianZhandaoTrial(e, player, equipment = {}) {
+    return this._withTransientTribulationEffects(
+      player,
+      () => this._runZhanxianZhandaoTrial(e, player, equipment)
+    );
+  }
+
+  async _runZhanxianZhandaoTrial(e, player, equipment = {}) {
     this.revived = false;
     this.dead = false;
     this._equipment = equipment;
@@ -798,6 +900,7 @@ export class XianguTribulation {
       throw new Error('斩仙铡刀劫已经渡过，斩我极境无需再试');
     }
     this._tribulationPower = calcXianguTribulationPower({ ...player, xiangulevel_id: 13 }, data);
+    this._horrorMultiplier = getXianguUpperTribulationHorrorMultiplier(13);
     const result = await this._runZhanxianZhandaoTribulation(e, player);
     return {
       success: result.success,

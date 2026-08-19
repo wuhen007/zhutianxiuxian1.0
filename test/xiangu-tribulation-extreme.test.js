@@ -54,6 +54,21 @@ test('仙古渡劫新增斩我极境·斩仙铡刀劫独立试炼', () => {
   assert.match(src, /zhanwoPeak/);
 });
 
+test('天神破虚道与后续主线、极境试炼统一接入恐怖威能结算', () => {
+  const src = readSource('apps/SecretPlace/xianguTribulation.js');
+  assert.match(src, /calculateXianguHorrorWavePower\s*\(/);
+  assert.match(src, /getXianguUpperTribulationHorrorMultiplier\(fromLevelId\)/);
+  assert.match(src, /getXianguUpperTribulationHorrorMultiplier\(12\)/);
+  assert.match(src, /getXianguUpperTribulationHorrorMultiplier\(13\)/);
+  assert.match(src, /finalWave:\s*i === waves\.length - 1/);
+  assert.match(src, /_withTransientTribulationEffects\s*\(player, action\)/);
+  assert.match(src, /finally\s*\{\s*this\._resetTransientTribulationEffects\(player\)/);
+  assert.match(src, /_resetTransientTribulationEffects\s*\(player\)/);
+  assert.doesNotMatch(src, /const r = originalDamage \* \(player\.者字秘效果/);
+  assert.doesNotMatch(src, /const r = originalDamage \* \(player\.不灭经效果/);
+  assert.doesNotMatch(src, /const r = originalDamage \* \(player\.涅槃仙功效果/);
+});
+
 test('遁一破境改为战场血战中渡劫，斩仙铡刀不再作为遁一前置', () => {
   const src = readSource('apps/SecretPlace/xianguTribulation.js');
   assert.match(src, /第一关·战场血战/);

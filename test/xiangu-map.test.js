@@ -10,6 +10,7 @@ import {
   calculateXianguMarrowPoolRewards,
   createXianguExitPositions,
   createXianguFragmentSnapshot,
+  ensureXianguRequiredConnections,
   ensureXianguExitConnectivity,
   getRevealedXianguExits,
   getXianguMarrowPoolTrapChance,
@@ -166,6 +167,83 @@ test('碎片连接池不会选中当前碎片形成自环', () => {
     'flame_abyss',
   );
   assert.equal(pickDifferentXianguFragment('xiangu_core', ['xiangu_core']), null);
+});
+
+test('旧边缘碎片重复返程出口会补成唯一推进路线', () => {
+  const legacyConnections = {
+    top: null,
+    bottom: 'edge_camp',
+    left: 'void_rift',
+    right: 'edge_camp',
+  };
+  const repaired = ensureXianguRequiredConnections(
+    'spirit_lake',
+    legacyConnections,
+    ['edge_camp', 'ancient_ruins'],
+    () => 0,
+  );
+
+  assert.deepEqual(repaired, {
+    top: 'ancient_ruins',
+    bottom: 'edge_camp',
+    left: 'void_rift',
+    right: null,
+  });
+  assert.deepEqual(legacyConnections, {
+    top: null,
+    bottom: 'edge_camp',
+    left: 'void_rift',
+    right: 'edge_camp',
+  }, '纯函数不应改写旧存档连接');
+  assert.deepEqual(
+    ensureXianguRequiredConnections('spirit_lake', repaired, ['edge_camp', 'ancient_ruins'], () => 0.9),
+    repaired,
+    '已修复的连接应保持幂等',
+  );
+});
+
+test('必需连接在无空方向时只替换重复目标', () => {
+  const repaired = ensureXianguRequiredConnections('spirit_lake', {
+    top: 'edge_camp',
+    bottom: 'edge_camp',
+    left: 'void_rift',
+    right: 'xiangu_core',
+  }, ['ancient_ruins'], () => 0);
+
+  assert.deepEqual(new Set(Object.values(repaired).filter(Boolean)), new Set([
+    'ancient_ruins',
+    'edge_camp',
+    'void_rift',
+    'xiangu_core',
+  ]));
+});
+
+test('必需连接会清理自环并忽略当前碎片目标', () => {
+  const repaired = ensureXianguRequiredConnections('spirit_lake', {
+    top: 'spirit_lake',
+    bottom: 'edge_camp',
+    left: 'edge_camp',
+    right: null,
+  }, ['spirit_lake', 'ancient_ruins'], () => 0);
+  const targets = Object.values(repaired).filter(Boolean);
+
+  assert.ok(targets.includes('ancient_ruins'));
+  assert.ok(!targets.includes('spirit_lake'));
+  assert.equal(new Set(targets).size, targets.length);
+});
+
+test('返程方向受保护时不会被主线修复替换', () => {
+  const repaired = ensureXianguRequiredConnections('ancient_ruins', {
+    top: 'spirit_lake',
+    bottom: 'dark_prison',
+    left: null,
+    right: 'dark_prison',
+  }, ['dark_prison', 'xiangu_core'], () => 0, 'top');
+
+  assert.equal(repaired.top, 'spirit_lake');
+  assert.ok(Object.values(repaired).includes('xiangu_core'));
+  assert.equal(new Set(Object.values(repaired).filter(Boolean)).size,
+    Object.values(repaired).filter(Boolean).length);
 });
 
 test('随机墙体隔断时会打通出生点到所有出口的道路', () => {
