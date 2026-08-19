@@ -263,6 +263,26 @@ export function createWorldChatServer(options = {}) {
     return raid ? JSON.parse(JSON.stringify(raid)) : null;
   }
 
+  function raidListView(raid) {
+    return {
+      code: raid.code,
+      host_server_id: raid.host_server_id,
+      host_name: raid.host_name,
+      boss: raid.boss,
+      local_members: raid.local_members,
+      max_members: raid.max_members || 5,
+      members: (raid.members || []).map((member) => ({
+        server_id: member.server_id,
+        server_name: member.server_name,
+        member_tag: member.member_tag,
+      })),
+      watcher_count: raid.watchers?.length || 0,
+      status: raid.status,
+      created_at: raid.created_at,
+      expires_at: raid.expires_at,
+    };
+  }
+
   function newTradeCode() {
     let code;
     do code = `T${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
@@ -300,11 +320,38 @@ export function createWorldChatServer(options = {}) {
     if (peer) send(peer.ws, { type, trade: publicTradeView(trade), ...extra });
   }
 
+  function sendRaidEvent(serverId, type, raid, extra = {}) {
+    const peer = online.get(serverId);
+    if (peer) send(peer.ws, { type, raid: raidForClient(raid), ...extra });
+  }
+
+  function raidAudience(raid) {
+    return new Set([
+      raid.host_server_id,
+      ...(raid.members || []).map((member) => member.server_id),
+      ...(raid.watchers || []).map((watcher) => watcher.server_id),
+    ]);
+  }
+
+  function broadcastRaidEvent(raid, type, extra = {}) {
+    for (const serverId of raidAudience(raid)) sendRaidEvent(serverId, type, raid, extra);
+  }
+
   function cleanRaidAvatar(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     try {
       const json = JSON.stringify(value);
       return Buffer.byteLength(json) <= 12_000 ? JSON.parse(json) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function cleanRaidPayload(value, maxBytes = 12_000) {
+    if (!value || typeof value !== 'object') return null;
+    try {
+      const json = JSON.stringify(value);
+      return Buffer.byteLength(json) <= maxBytes ? JSON.parse(json) : null;
     } catch {
       return null;
     }
@@ -802,7 +849,8 @@ export function createWorldChatServer(options = {}) {
         const requestId = String(message.request_id || '');
         const teamId = cleanLabel(message.team_id, 80);
         const boss = cleanLabel(message.boss, 50);
-        const localMembers = Math.max(1, Math.min(5, Math.trunc(Number(message.local_members) || 1)));
+        const maxMembers = Math.max(2, Math.min(5, Math.trunc(Number(message.max_members) || 5)));
+        const localMembers = Math.max(1, Math.min(maxMembers, Math.trunc(Number(message.local_members) || 1)));
         if (!/^[A-Za-z0-9_-]{8,80}$/.test(requestId) || !teamId || !boss) {
           return send(ws, { type: 'RAID_OPEN_RESULT', request_id: requestId, ok: false, reason: 'invalid_raid' });
         }
@@ -820,14 +868,22 @@ export function createWorldChatServer(options = {}) {
             team_id: teamId,
             boss,
             local_members: localMembers,
+            max_members: maxMembers,
             members: [],
+            watchers: [],
+            settlements: [],
+            chat: [],
             status: 'recruiting',
             created_at: Date.now(),
             expires_at: Date.now() + cfg.RAID_TTL_MS,
           };
           raids.set(raid.code, raid);
         } else {
+          if (raid.members.length + localMembers > maxMembers) {
+            return send(ws, { type: 'RAID_OPEN_RESULT', request_id: requestId, ok: false, reason: 'raid_full' });
+          }
           raid.local_members = localMembers;
+          raid.max_members = maxMembers;
           raid.boss = boss;
         }
         saveRaids();
@@ -838,7 +894,7 @@ export function createWorldChatServer(options = {}) {
         const requestId = String(message.request_id || '');
         const result = [...raids.values()]
           .filter((raid) => raid.status === 'recruiting' && raid.expires_at > Date.now())
-          .map(raidForClient);
+          .map(raidListView);
         return send(ws, { type: 'RAID_LIST_RESULT', request_id: requestId, ok: true, raids: result });
       }
 
@@ -866,9 +922,9 @@ export function createWorldChatServer(options = {}) {
         else if (raid.status !== 'recruiting') reason = 'raid_closed';
         else if (raid.host_server_id === connection.serverId) reason = 'same_server';
         else if (!/^[a-f0-9]{12,32}$/i.test(memberTag) || !avatar) reason = 'invalid_avatar';
-        else if (raid.local_members + raid.members.length >= 5) reason = 'raid_full';
+        else if (raid.local_members + raid.members.length >= (raid.max_members || 5)) reason = 'raid_full';
         else if (raid.members.some((item) => item.server_id === connection.serverId && item.member_tag === memberTag)) reason = 'already_joined';
-        else if ([...raids.values()].some((item) => item.status === 'recruiting' && item.members?.some((member) => member.server_id === connection.serverId && member.member_tag === memberTag))) reason = 'already_in_raid';
+        else if ([...raids.values()].some((item) => ['recruiting', 'in_battle'].includes(item.status) && item.members?.some((member) => member.server_id === connection.serverId && member.member_tag === memberTag))) reason = 'already_in_raid';
         if (reason) return send(ws, { type: 'RAID_JOIN_RESULT', request_id: requestId, ok: false, reason });
         raid.members.push({
           server_id: connection.serverId,
@@ -878,7 +934,157 @@ export function createWorldChatServer(options = {}) {
           joined_at: Date.now(),
         });
         saveRaids();
+        sendRaidEvent(raid.host_server_id, 'RAID_MEMBER_JOINED', raid, {
+          member: raid.members.at(-1),
+        });
         return send(ws, { type: 'RAID_JOIN_RESULT', request_id: requestId, ok: true, raid: raidForClient(raid) });
+      }
+
+      if (message.type === 'RAID_LEAVE') {
+        const requestId = String(message.request_id || '');
+        const code = String(message.code || '').toUpperCase();
+        const memberTag = String(message.member_tag || '');
+        const raid = raids.get(code);
+        const index = raid?.members?.findIndex((member) =>
+          member.server_id === connection.serverId && member.member_tag === memberTag
+        ) ?? -1;
+        if (!raid || raid.status !== 'recruiting' || index < 0) {
+          return send(ws, { type: 'RAID_LEAVE_RESULT', request_id: requestId, ok: false, reason: 'raid_not_found' });
+        }
+        const [member] = raid.members.splice(index, 1);
+        saveRaids();
+        sendRaidEvent(raid.host_server_id, 'RAID_MEMBER_LEFT', raid, { member });
+        return send(ws, { type: 'RAID_LEAVE_RESULT', request_id: requestId, ok: true, raid: raidForClient(raid) });
+      }
+
+      if (message.type === 'RAID_WATCH') {
+        const requestId = String(message.request_id || '');
+        const code = String(message.code || '').toUpperCase();
+        const watcherTag = String(message.watcher_tag || '');
+        const raid = raids.get(code);
+        if (!raid || raid.expires_at <= Date.now()) {
+          return send(ws, { type: 'RAID_WATCH_RESULT', request_id: requestId, ok: false, reason: 'raid_not_found' });
+        }
+        if (!/^[a-f0-9]{12,32}$/i.test(watcherTag)) {
+          return send(ws, { type: 'RAID_WATCH_RESULT', request_id: requestId, ok: false, reason: 'invalid_watcher' });
+        }
+        raid.watchers ||= [];
+        const existing = raid.watchers.find((watcher) =>
+          watcher.server_id === connection.serverId && watcher.watcher_tag === watcherTag
+        );
+        if (!existing && raid.watchers.length >= 50) {
+          return send(ws, { type: 'RAID_WATCH_RESULT', request_id: requestId, ok: false, reason: 'watcher_full' });
+        }
+        if (existing) existing.name = cleanLabel(message.name, 30) || existing.name;
+        else raid.watchers.push({
+          server_id: connection.serverId,
+          server_name: connection.name,
+          watcher_tag: watcherTag,
+          name: cleanLabel(message.name, 30) || '无名观战者',
+          joined_at: Date.now(),
+        });
+        saveRaids();
+        return send(ws, { type: 'RAID_WATCH_RESULT', request_id: requestId, ok: true, raid: raidForClient(raid) });
+      }
+
+      if (message.type === 'RAID_UNWATCH') {
+        const requestId = String(message.request_id || '');
+        const code = String(message.code || '').toUpperCase();
+        const watcherTag = String(message.watcher_tag || '');
+        const raid = raids.get(code);
+        if (!raid) return send(ws, { type: 'RAID_UNWATCH_RESULT', request_id: requestId, ok: true });
+        raid.watchers = (raid.watchers || []).filter((watcher) =>
+          watcher.server_id !== connection.serverId || watcher.watcher_tag !== watcherTag
+        );
+        saveRaids();
+        return send(ws, { type: 'RAID_UNWATCH_RESULT', request_id: requestId, ok: true });
+      }
+
+      if (message.type === 'RAID_ACTION') {
+        const requestId = String(message.request_id || '');
+        const code = String(message.code || '').toUpperCase();
+        const memberTag = String(message.member_tag || '');
+        const action = String(message.action || '');
+        const raid = raids.get(code);
+        const member = raid?.members?.find((item) =>
+          item.server_id === connection.serverId && item.member_tag === memberTag
+        );
+        if (!raid || raid.status !== 'in_battle' || !member) {
+          return send(ws, { type: 'RAID_ACTION_RESULT', request_id: requestId, ok: false, reason: 'raid_not_found' });
+        }
+        if (!['choose', 'suggest', 'reroll'].includes(action)) {
+          return send(ws, { type: 'RAID_ACTION_RESULT', request_id: requestId, ok: false, reason: 'invalid_action' });
+        }
+        if (!online.has(raid.host_server_id)) {
+          return send(ws, { type: 'RAID_ACTION_RESULT', request_id: requestId, ok: false, reason: 'host_offline' });
+        }
+        sendRaidEvent(raid.host_server_id, 'RAID_ACTION', raid, {
+          server_id: connection.serverId,
+          member_tag: memberTag,
+          action,
+          value: Math.trunc(Number(message.value) || 0),
+        });
+        return send(ws, { type: 'RAID_ACTION_RESULT', request_id: requestId, ok: true });
+      }
+
+      if (message.type === 'RAID_CHAT') {
+        const requestId = String(message.request_id || '');
+        const code = String(message.code || '').toUpperCase();
+        const memberTag = String(message.member_tag || '');
+        const raid = raids.get(code);
+        const isHost = raid?.host_server_id === connection.serverId;
+        const isMember = raid?.members?.some((member) =>
+          member.server_id === connection.serverId && member.member_tag === memberTag
+        );
+        const text = cleanLabel(message.text, 300);
+        const name = cleanLabel(message.name, 30);
+        if (!raid || !['recruiting', 'in_battle'].includes(raid.status) || (!isHost && !isMember) || !text || !name) {
+          return send(ws, { type: 'RAID_CHAT_RESULT', request_id: requestId, ok: false, reason: 'raid_not_found' });
+        }
+        const chat = {
+          id: crypto.randomUUID(),
+          server_id: connection.serverId,
+          server_name: connection.name,
+          member_tag: memberTag,
+          name,
+          text,
+          ts: Date.now(),
+        };
+        raid.chat = [...(raid.chat || []), chat].slice(-30);
+        saveRaids();
+        broadcastRaidEvent(raid, 'RAID_CHAT', { chat });
+        return send(ws, { type: 'RAID_CHAT_RESULT', request_id: requestId, ok: true, chat });
+      }
+
+      if (message.type === 'RAID_UPDATE') {
+        const requestId = String(message.request_id || '');
+        const raid = raids.get(String(message.code || '').toUpperCase());
+        const snapshot = cleanRaidPayload(message.snapshot);
+        if (!raid || raid.host_server_id !== connection.serverId || !snapshot) {
+          return send(ws, { type: 'RAID_UPDATE_RESULT', request_id: requestId, ok: false, reason: 'raid_not_found' });
+        }
+        raid.snapshot = snapshot;
+        if (['recruiting', 'in_battle'].includes(message.status)) raid.status = message.status;
+        raid.updated_at = Date.now();
+        saveRaids();
+        broadcastRaidEvent(raid, 'RAID_STATE');
+        return send(ws, { type: 'RAID_UPDATE_RESULT', request_id: requestId, ok: true });
+      }
+
+      if (message.type === 'RAID_SETTLE') {
+        const requestId = String(message.request_id || '');
+        const raid = raids.get(String(message.code || '').toUpperCase());
+        const settlements = cleanRaidPayload(message.settlements, 10_000);
+        if (!raid || raid.host_server_id !== connection.serverId || !Array.isArray(settlements)) {
+          return send(ws, { type: 'RAID_SETTLE_RESULT', request_id: requestId, ok: false, reason: 'raid_not_found' });
+        }
+        raid.settlements = settlements.slice(0, raid.max_members || 5);
+        raid.status = ['settled', 'defeated'].includes(message.status) ? message.status : 'settled';
+        raid.closed_at = Date.now();
+        raid.updated_at = Date.now();
+        saveRaids();
+        broadcastRaidEvent(raid, 'RAID_SETTLEMENT');
+        return send(ws, { type: 'RAID_SETTLE_RESULT', request_id: requestId, ok: true });
       }
 
       if (message.type === 'RAID_CLOSE') {
@@ -890,6 +1096,7 @@ export function createWorldChatServer(options = {}) {
         raid.status = cleanLabel(message.status, 20) || 'closed';
         raid.closed_at = Date.now();
         saveRaids();
+        broadcastRaidEvent(raid, raid.status === 'in_battle' ? 'RAID_STATE' : 'RAID_CLOSED');
         return send(ws, { type: 'RAID_CLOSE_RESULT', request_id: requestId, ok: true });
       }
 
