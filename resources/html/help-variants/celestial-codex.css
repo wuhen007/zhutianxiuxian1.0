@@ -9,33 +9,32 @@ body { width: 1200px; color: #e9eee9; background: #0c1415; font-family: CodexTex
 .codex-hero { position: relative; min-height: 390px; padding: 42px 58px 38px; overflow: hidden; border-bottom: 3px solid #b9954b; background-color: #102022; background-image: linear-gradient(90deg, rgba(9, 18, 19, .97) 0%, rgba(9, 18, 19, .82) 45%, rgba(9, 18, 19, .28) 100%), url("../../img/help/xiuxian.jpg"); background-position: center, center 52%; background-size: cover; }
 .codex-hero::before { content: ""; position: absolute; inset: 18px; border: 1px solid rgba(210, 181, 111, .42); pointer-events: none; }
 .codex-hero::after { content: "天 · 地 · 玄 · 黄 · 宇 · 宙 · 洪 · 荒"; position: absolute; right: 44px; bottom: 48px; color: rgba(229, 211, 158, .62); font: 13px CodexText, sans-serif; writing-mode: vertical-rl; }
-.hero-meta { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; color: #98b8b2; font: 13px CodexNumber, sans-serif; }
+.hero-meta { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; color: #98b8b2; font: 15px CodexNumber, sans-serif; }
 .hero-meta b { color: #d8bd76; font-weight: 400; }
 .hero-copy { position: relative; z-index: 1; margin-top: 62px; width: 650px; }
-.hero-copy p { margin: 0 0 8px; color: #95bbb3; font-size: 15px; }
+.hero-copy p { margin: 0 0 8px; color: #95bbb3; font-size: 18px; }
 .hero-copy h1 { margin: 0; color: #f5e7bd; font: 78px/1 CodexDisplay, CodexText, sans-serif; text-shadow: 0 2px 18px rgba(0, 0, 0, .75); }
-.hero-subtitle { margin-top: 18px; padding-left: 3px; color: #dce8e5; font-size: 22px; }
-.hero-subtitle span { margin-left: 12px; color: #d9bc72; font: 15px CodexNumber, sans-serif; }
+.hero-subtitle { margin-top: 18px; padding-left: 3px; color: #dce8e5; font-size: 25px; }
+.hero-subtitle span { margin-left: 12px; color: #d9bc72; font: 17px CodexNumber, sans-serif; }
 .hero-seal { position: absolute; z-index: 1; top: 112px; right: 120px; width: 98px; height: 98px; display: grid; place-content: center; border: 2px solid #c74f42; outline: 1px solid rgba(199, 79, 66, .7); outline-offset: 5px; color: #f0c4b8; background: rgba(85, 25, 24, .76); transform: rotate(4deg); }
 .hero-seal span { display: block; font: 34px/.92 CodexDisplay, serif; }
-.hero-rule { position: absolute; z-index: 1; left: 58px; right: 58px; bottom: 26px; display: flex; align-items: center; gap: 18px; color: #c7d8d4; font-size: 12px; }
+.hero-rule { position: absolute; z-index: 1; left: 58px; right: 58px; bottom: 26px; display: flex; align-items: center; gap: 18px; color: #c7d8d4; font-size: 14px; }
 .hero-rule i { height: 1px; flex: 1; background: rgba(199, 216, 212, .4); }
 .hero-rule b { font-weight: 400; }
 .codex-body { padding: 20px 34px 34px; background-color: #111b1c; background-image: linear-gradient(rgba(196, 173, 112, .045) 1px, transparent 1px), linear-gradient(90deg, rgba(196, 173, 112, .045) 1px, transparent 1px); background-size: 28px 28px; }
 .realm-section { margin-top: 18px; border: 1px solid #566663; background: rgba(20, 31, 31, .96); box-shadow: 0 12px 28px rgba(2, 8, 9, .24); }
 .realm-heading { min-height: 76px; display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: 15px; padding: 12px 18px; border-bottom: 1px solid #61716d; background: #172526; }
 .realm-index { color: #d6b66d; font: 23px CodexNumber, sans-serif; text-align: center; border-right: 1px solid #52615e; }
-.realm-heading small { color: #749089; font: 9px CodexNumber, sans-serif; }
-.realm-heading h2 { margin: 4px 0 0; color: #eef3ef; font-size: 21px; font-weight: 400; }
-.realm-heading > span { color: #8fa39e; font-size: 11px; }
+.realm-heading small { color: #749089; font: 11px CodexNumber, sans-serif; }
+.realm-heading h2 { margin: 4px 0 0; color: #eef3ef; font-size: 25px; font-weight: 400; }
+.realm-heading > span { color: #8fa39e; font-size: 14px; }
 .command-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.command-cell { position: relative; min-width: 0; min-height: 120px; display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 10px; padding: 17px 13px 16px; border-right: 1px solid #384847; border-bottom: 1px solid #384847; background: rgba(15, 26, 27, .9); }
+.command-cell { position: relative; min-width: 0; min-height: 148px; display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 10px; padding: 17px 13px 16px; border-right: 1px solid #384847; border-bottom: 1px solid #384847; background: rgba(15, 26, 27, .9); }
 .command-cell:nth-child(4n) { border-right: 0; }
 .command-cell .help-icon { width: 40px; height: 40px; display: block; transform: scale(.76); transform-origin: top left; filter: saturate(.72) sepia(.14); }
 .command-copy { min-width: 0; }
-.command-copy strong { display: block; padding-right: 18px; color: #ead596; font-size: 14px; line-height: 1.45; font-weight: 600; overflow-wrap: anywhere; }
-.command-copy p { margin: 7px 0 0; color: #aebdba; font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
-.command-cell em { position: absolute; right: 8px; top: 8px; color: #526764; font: 8px CodexNumber, sans-serif; font-style: normal; }
-.codex-footer { min-height: 68px; display: flex; align-items: center; justify-content: space-between; padding: 0 48px; border-top: 1px solid #c19a52; color: #78908a; background: #0b1314; font: 10px CodexNumber, sans-serif; }
-.codex-footer b { color: #d5c18b; font: 14px CodexText, sans-serif; font-weight: 400; }
-
+.command-copy strong { display: block; padding-right: 18px; color: #ead596; font-size: 18px; line-height: 1.45; font-weight: 600; overflow-wrap: anywhere; }
+.command-copy p { margin: 7px 0 0; color: #aebdba; font-size: 15px; line-height: 1.55; overflow-wrap: anywhere; }
+.command-cell em { position: absolute; right: 8px; top: 8px; color: #526764; font: 10px CodexNumber, sans-serif; font-style: normal; }
+.codex-footer { min-height: 68px; display: flex; align-items: center; justify-content: space-between; padding: 0 48px; border-top: 1px solid #c19a52; color: #78908a; background: #0b1314; font: 12px CodexNumber, sans-serif; }
+.codex-footer b { color: #d5c18b; font: 16px CodexText, sans-serif; font-weight: 400; }

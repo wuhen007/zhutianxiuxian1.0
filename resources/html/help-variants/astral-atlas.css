@@ -8,11 +8,11 @@ body { width: 1200px; color: #e9f5f5; background: #07171c; font-family: AtlasTex
 .astral-atlas { width: 1200px; min-height: 1000px; overflow: hidden; background: #07171c; }
 .atlas-hero { position: relative; min-height: 420px; overflow: hidden; padding: 36px 54px; border-bottom: 1px solid #2e7d81; background-color: #07171c; background-image: linear-gradient(90deg, rgba(4, 19, 24, .98) 0%, rgba(4, 19, 24, .75) 48%, rgba(4, 19, 24, .15) 100%), url("../../img/help/zhutian.jpg"); background-size: cover; background-position: center, center 43%; }
 .atlas-hero::after { content: ""; position: absolute; inset: 0; opacity: .32; background-image: linear-gradient(rgba(94, 190, 191, .16) 1px, transparent 1px), linear-gradient(90deg, rgba(94, 190, 191, .12) 1px, transparent 1px); background-size: 44px 44px; }
-.atlas-kicker { position: relative; z-index: 2; display: flex; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid rgba(114, 209, 207, .34); color: #7bafb0; font: 11px AtlasNumber, sans-serif; }
+.atlas-kicker { position: relative; z-index: 2; display: flex; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid rgba(114, 209, 207, .34); color: #7bafb0; font: 14px AtlasNumber, sans-serif; }
 .atlas-copy { position: relative; z-index: 2; margin-top: 77px; width: 700px; }
-.atlas-copy small { color: #e9a45c; font-size: 14px; }
+.atlas-copy small { color: #e9a45c; font-size: 17px; }
 .atlas-copy h1 { margin: 10px 0 0; color: #ecffff; font: 76px/.98 AtlasDisplay, AtlasText, sans-serif; text-shadow: 0 0 28px rgba(57, 192, 193, .3); }
-.atlas-copy p { margin: 17px 0 0; color: #8fcaca; font-size: 20px; }
+.atlas-copy p { margin: 17px 0 0; color: #8fcaca; font-size: 23px; }
 .atlas-orbit { position: absolute; z-index: 2; right: 106px; top: 94px; width: 210px; height: 210px; display: grid; place-items: center; border: 1px solid rgba(105, 214, 213, .38); border-radius: 50%; color: #e9a45c; }
 .atlas-orbit::before, .atlas-orbit::after, .atlas-orbit i { content: ""; position: absolute; border: 1px solid rgba(99, 203, 203, .3); border-radius: 50%; }
 .atlas-orbit::before { width: 148px; height: 148px; }
@@ -22,27 +22,26 @@ body { width: 1200px; color: #e9f5f5; background: #07171c; font-family: AtlasTex
 .atlas-orbit i:nth-child(3) { width: 5px; height: 5px; left: 55px; bottom: 23px; background: #d8eeee; }
 .atlas-orbit b { font: 46px AtlasDisplay, sans-serif; font-weight: 400; }
 .atlas-coordinates { position: absolute; z-index: 2; right: 54px; bottom: 45px; display: grid; grid-template-columns: auto auto; gap: 2px 12px; align-items: end; text-align: right; }
-.atlas-coordinates span { color: #91bdbe; font-size: 11px; }
+.atlas-coordinates span { color: #91bdbe; font-size: 13px; }
 .atlas-coordinates b { grid-row: span 2; color: #ecffff; font: 38px AtlasNumber, sans-serif; }
-.atlas-coordinates small { color: #4f8588; font: 8px AtlasNumber, sans-serif; }
-.atlas-axis { position: absolute; z-index: 2; left: 54px; right: 410px; bottom: 38px; display: flex; align-items: center; gap: 10px; color: #679597; font-size: 9px; }
+.atlas-coordinates small { color: #4f8588; font: 10px AtlasNumber, sans-serif; }
+.atlas-axis { position: absolute; z-index: 2; left: 54px; right: 410px; bottom: 38px; display: flex; align-items: center; gap: 10px; color: #679597; font-size: 11px; }
 .atlas-axis i { height: 1px; flex: 1; background: rgba(98, 180, 181, .36); }
 .atlas-body { padding: 20px 34px 36px; background-color: #07171c; background-image: radial-gradient(circle at 15% 18%, rgba(55, 165, 166, .16) 0 1px, transparent 2px), radial-gradient(circle at 80% 62%, rgba(230, 150, 70, .14) 0 1px, transparent 2px); background-size: 34px 34px, 53px 53px; }
 .sector { margin-top: 20px; border: 1px solid #225259; background: rgba(7, 25, 30, .96); }
 .sector-heading { min-height: 72px; display: grid; grid-template-columns: 145px 1fr auto; align-items: center; gap: 20px; padding: 12px 18px; border-bottom: 1px solid #28626a; background: #0a242b; }
-.sector-code { color: #e4984f; font: 9px AtlasNumber, sans-serif; }
-.sector-heading h2 { margin: 0; color: #dff5f5; font: 24px AtlasDisplay, AtlasText, sans-serif; font-weight: 400; }
-.sector-heading span { color: #5d9295; font-size: 10px; }
+.sector-code { color: #e4984f; font: 11px AtlasNumber, sans-serif; }
+.sector-heading h2 { margin: 0; color: #dff5f5; font: 27px AtlasDisplay, AtlasText, sans-serif; font-weight: 400; }
+.sector-heading span { color: #5d9295; font-size: 13px; }
 .route-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.route { position: relative; min-width: 0; min-height: 120px; display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 11px; padding: 17px 13px 15px; border-right: 1px solid #173c43; border-bottom: 1px solid #173c43; background: rgba(7, 27, 33, .92); }
+.route { position: relative; min-width: 0; min-height: 148px; display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 11px; padding: 17px 13px 15px; border-right: 1px solid #173c43; border-bottom: 1px solid #173c43; background: rgba(7, 27, 33, .92); }
 .route:nth-child(4n) { border-right: 0; }
 .route::after { content: ""; position: absolute; left: 0; bottom: 0; width: 28px; height: 2px; background: #d7833e; }
 .route-icon { width: 34px; height: 34px; overflow: hidden; border: 1px solid #2c656b; background: #0c2b31; }
 .route-icon .help-icon { width: 40px; height: 40px; display: block; transform: scale(.68); transform-origin: 0 0; margin: 3px; filter: hue-rotate(128deg) saturate(.76); }
 .route-copy { min-width: 0; }
-.route-copy strong { display: block; padding-right: 17px; color: #aee5e3; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
-.route-copy p { margin: 7px 0 0; color: #87aeb0; font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
-.route-mark { position: absolute; right: 9px; top: 8px; color: #315c60; font: 8px AtlasNumber, sans-serif; }
-.atlas-footer { min-height: 64px; display: flex; align-items: center; justify-content: space-between; padding: 0 44px; border-top: 1px solid #2b696e; color: #4d7d80; background: #051216; font: 9px AtlasNumber, sans-serif; }
-.atlas-footer b { color: #dd9550; font: 13px AtlasText, sans-serif; font-weight: 400; }
-
+.route-copy strong { display: block; padding-right: 17px; color: #aee5e3; font-size: 18px; line-height: 1.45; overflow-wrap: anywhere; }
+.route-copy p { margin: 7px 0 0; color: #87aeb0; font-size: 15px; line-height: 1.55; overflow-wrap: anywhere; }
+.route-mark { position: absolute; right: 9px; top: 8px; color: #315c60; font: 10px AtlasNumber, sans-serif; }
+.atlas-footer { min-height: 64px; display: flex; align-items: center; justify-content: space-between; padding: 0 44px; border-top: 1px solid #2b696e; color: #4d7d80; background: #051216; font: 12px AtlasNumber, sans-serif; }
+.atlas-footer b { color: #dd9550; font: 16px AtlasText, sans-serif; font-weight: 400; }

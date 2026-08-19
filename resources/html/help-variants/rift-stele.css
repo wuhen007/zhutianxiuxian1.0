@@ -9,35 +9,35 @@ body { width: 1200px; color: #f0eee8; background: #121313; font-family: SteleTex
 .stele-hero { position: relative; min-height: 430px; overflow: hidden; border-bottom: 8px solid #9e382e; background-color: #17191a; background-image: linear-gradient(90deg, rgba(16, 18, 18, .97) 0%, rgba(16, 18, 18, .83) 46%, rgba(16, 18, 18, .2) 100%), url("../../img/help/zhutian.jpg"); background-size: cover; background-position: center, center 73%; }
 .stele-hero::before { content: ""; position: absolute; left: 440px; top: -120px; width: 2px; height: 720px; background: #b13b30; box-shadow: 0 0 22px rgba(184, 58, 47, .75); transform: rotate(17deg); }
 .stele-hero::after { content: ""; position: absolute; inset: 22px; border: 1px solid rgba(230, 224, 210, .24); }
-.stele-meta { position: absolute; z-index: 2; left: 46px; right: 46px; top: 35px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 18px; color: #9c9e9a; font: 10px SteleNumber, sans-serif; }
-.stele-meta b { color: #e8e1d1; font: 17px SteleText, sans-serif; font-weight: 400; }
+.stele-meta { position: absolute; z-index: 2; left: 46px; right: 46px; top: 35px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 18px; color: #9c9e9a; font: 13px SteleNumber, sans-serif; }
+.stele-meta b { color: #e8e1d1; font: 19px SteleText, sans-serif; font-weight: 400; }
 .stele-meta span { padding-left: 18px; border-left: 1px solid #686966; }
 .stele-meta em { color: #d4685c; font-style: normal; }
 .stele-title { position: absolute; z-index: 2; left: 70px; top: 112px; }
-.stele-title small { color: #c45e53; font-size: 13px; }
+.stele-title small { color: #c45e53; font-size: 16px; }
 .stele-title h1 { margin: 9px 0 0; color: #f0ece2; font: 82px/.83 SteleDisplay, SteleText, sans-serif; text-shadow: 0 5px 22px rgba(0, 0, 0, .7); }
-.stele-title p { margin: 16px 0 0; padding-left: 5px; color: #b7b7b0; font-size: 19px; }
-.stele-verse { position: absolute; z-index: 2; left: 390px; top: 158px; padding-left: 18px; border-left: 2px solid #a93e34; color: #d6d0c3; font-size: 15px; line-height: 1.8; }
+.stele-title p { margin: 16px 0 0; padding-left: 5px; color: #b7b7b0; font-size: 22px; }
+.stele-verse { position: absolute; z-index: 2; left: 390px; top: 158px; padding-left: 18px; border-left: 2px solid #a93e34; color: #d6d0c3; font-size: 18px; line-height: 1.8; }
 .stele-gate { position: absolute; z-index: 2; right: 64px; bottom: 43px; width: 130px; height: 72px; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; border: 1px solid rgba(236, 225, 207, .5); color: #e6ded0; background: rgba(18, 20, 20, .72); }
 .stele-gate span { font: 23px SteleDisplay, sans-serif; }
-.stele-gate b { color: #c85a4f; font: 9px SteleNumber, sans-serif; }
+.stele-gate b { color: #c85a4f; font: 11px SteleNumber, sans-serif; }
 .stele-body { padding: 16px 28px 34px; background-color: #151616; background-image: linear-gradient(90deg, transparent 0 49%, rgba(183, 177, 163, .035) 50%, transparent 51%); background-size: 18px 18px; }
 .realm-record { margin-top: 18px; border: 1px solid #51524f; background: #1a1c1c; }
 .record-heading { min-height: 78px; display: grid; grid-template-columns: 88px 1fr 70px; align-items: center; border-bottom: 1px solid #65645f; background: #202222; }
-.record-no { height: 100%; display: grid; place-items: center; border-right: 5px solid #a43e34; color: #d66b60; font: 12px SteleNumber, sans-serif; }
-.record-heading h2 { margin: 0; padding-left: 22px; color: #eee9dc; font: 25px SteleDisplay, SteleText, sans-serif; font-weight: 400; }
+.record-no { height: 100%; display: grid; place-items: center; border-right: 5px solid #a43e34; color: #d66b60; font: 14px SteleNumber, sans-serif; }
+.record-heading h2 { margin: 0; padding-left: 22px; color: #eee9dc; font: 28px SteleDisplay, SteleText, sans-serif; font-weight: 400; }
 .record-count { height: 44px; display: flex; align-items: end; justify-content: center; gap: 5px; border-left: 1px solid #4e504e; color: #9b9c96; }
 .record-count b { color: #e2d9c8; font: 27px SteleNumber, sans-serif; }
-.record-count span { padding-bottom: 5px; font-size: 10px; }
+.record-count span { padding-bottom: 5px; font-size: 12px; }
 .edict-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.edict { min-width: 0; min-height: 126px; padding: 12px 13px 15px; border-right: 1px solid #3b3d3c; border-bottom: 1px solid #3b3d3c; background: #1b1d1d; }
+.edict { min-width: 0; min-height: 154px; padding: 12px 13px 15px; border-right: 1px solid #3b3d3c; border-bottom: 1px solid #3b3d3c; background: #1b1d1d; }
 .edict:nth-child(4n) { border-right: 0; }
-.edict-top { display: flex; align-items: center; gap: 7px; color: #6f7370; font: 8px SteleNumber, sans-serif; }
+.edict-top { display: flex; align-items: center; gap: 7px; color: #6f7370; font: 10px SteleNumber, sans-serif; }
 .edict-top i { height: 1px; flex: 1; background: #3f4140; }
 .edict-top em { color: #93453f; font-style: normal; }
 .edict-main { min-width: 0; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 9px; align-items: start; margin-top: 10px; }
 .edict-main .help-icon { width: 40px; height: 40px; display: block; transform: scale(.68); transform-origin: top left; filter: grayscale(.72) sepia(.24) saturate(.8); }
-.edict-main strong { min-width: 0; color: #e4d4b1; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
-.edict > p { margin: 7px 0 0 43px; color: #aaa9a2; font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
-.stele-footer { min-height: 68px; display: flex; align-items: center; justify-content: space-between; padding: 0 45px; border-top: 1px solid #a33e34; color: #737572; background: #101111; font: 9px SteleNumber, sans-serif; }
-.stele-footer b { color: #d5cbbb; font: 15px SteleText, sans-serif; font-weight: 400; }
+.edict-main strong { min-width: 0; color: #e4d4b1; font-size: 18px; line-height: 1.45; overflow-wrap: anywhere; }
+.edict > p { margin: 7px 0 0 43px; color: #aaa9a2; font-size: 15px; line-height: 1.55; overflow-wrap: anywhere; }
+.stele-footer { min-height: 68px; display: flex; align-items: center; justify-content: space-between; padding: 0 45px; border-top: 1px solid #a33e34; color: #737572; background: #101111; font: 12px SteleNumber, sans-serif; }
+.stele-footer b { color: #d5cbbb; font: 17px SteleText, sans-serif; font-weight: 400; }
