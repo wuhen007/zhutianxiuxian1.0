@@ -240,6 +240,7 @@ export class WorldChatClient {
     this.seenMessageIds = new Set();
     this.messageHandler = null;
     this.tradeHandler = null;
+    this.raidHandler = null;
     this.backfillPromise = null;
     this.deliveryChain = Promise.resolve();
     this.deliveryRetryBaseMs = Math.max(
@@ -270,6 +271,10 @@ export class WorldChatClient {
 
   setTradeHandler(handler) {
     this.tradeHandler = typeof handler === 'function' ? handler : null;
+  }
+
+  setRaidHandler(handler) {
+    this.raidHandler = typeof handler === 'function' ? handler : null;
   }
 
   hasIdentity() {
@@ -356,7 +361,7 @@ export class WorldChatClient {
 
     let ws;
     try {
-      ws = new this.WebSocket(this.cfg.url, { maxPayload: 16 * 1024 });
+      ws = new this.WebSocket(this.cfg.url, { maxPayload: 256 * 1024 });
     } catch (error) {
       this.lastError = error.message;
       this.scheduleReconnect();
@@ -460,6 +465,11 @@ export class WorldChatClient {
 
     if (['TRADE_OFFER', 'TRADE_CANCELLED', 'TRADE_SETTLE', 'TRADE_ROLLBACK', 'TRADE_COMPLETED'].includes(message.type)) {
       this.tradeHandler?.({ type: message.type, ...message });
+      return;
+    }
+
+    if (['RAID_MEMBER_JOINED', 'RAID_MEMBER_LEFT', 'RAID_ACTION', 'RAID_CHAT', 'RAID_STATE', 'RAID_SETTLEMENT', 'RAID_CLOSED'].includes(message.type)) {
+      this.raidHandler?.({ type: message.type, ...message });
       return;
     }
 
@@ -626,6 +636,62 @@ export class WorldChatClient {
       code,
       avatar,
       member_tag: memberTag,
+    });
+  }
+
+  leaveRaid(code, memberTag) {
+    return this.request('RAID_LEAVE', 'RAID_LEAVE_RESULT', {
+      code,
+      member_tag: memberTag,
+    });
+  }
+
+  watchRaid(code, watcherTag, name) {
+    return this.request('RAID_WATCH', 'RAID_WATCH_RESULT', {
+      code,
+      watcher_tag: watcherTag,
+      name,
+    });
+  }
+
+  unwatchRaid(code, watcherTag) {
+    return this.request('RAID_UNWATCH', 'RAID_UNWATCH_RESULT', {
+      code,
+      watcher_tag: watcherTag,
+    });
+  }
+
+  raidAction(code, memberTag, action, value) {
+    return this.request('RAID_ACTION', 'RAID_ACTION_RESULT', {
+      code,
+      member_tag: memberTag,
+      action,
+      value,
+    });
+  }
+
+  raidChat(code, memberTag, name, text) {
+    return this.request('RAID_CHAT', 'RAID_CHAT_RESULT', {
+      code,
+      member_tag: memberTag,
+      name,
+      text,
+    });
+  }
+
+  updateRaid(code, snapshot, status) {
+    return this.request('RAID_UPDATE', 'RAID_UPDATE_RESULT', {
+      code,
+      snapshot,
+      status,
+    });
+  }
+
+  settleRaid(code, settlements, status = 'settled') {
+    return this.request('RAID_SETTLE', 'RAID_SETTLE_RESULT', {
+      code,
+      settlements,
+      status,
     });
   }
 

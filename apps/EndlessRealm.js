@@ -62,6 +62,7 @@ import fs from 'node:fs';
 import { AppName } from '../app.config.js';
 import {
   consumeSpiritHeart,
+  getSpiritHeartMax,
   getSpiritHeartCost,
   refreshSpiritHeart,
 } from '../model/spiritUniverse.js';
@@ -102,6 +103,13 @@ import {
   shouldAutoIssueEndlessWebTicket,
   startEndlessWebServer,
 } from '../model/endlessWebServer.js';
+import { worldChatClient } from './worldChat/client.js';
+import {
+  buildCrossRaidSnapshot,
+  createCrossRaidAvatar,
+  formatCrossRaidSnapshot,
+  hydrateCrossRaidAvatar,
+} from './worldChat/raid.js';
 
 const STATE_TTL_SECONDS = 7 * 24 * 60 * 60;
 const LOCK_TTL_SECONDS = 12;
@@ -121,6 +129,17 @@ export class EndlessRealm extends plugin {
         { reg: '^#无尽队伍$', fnc: 'showTeam' },
         { reg: '^#离开无尽队伍$', fnc: 'leaveTeam' },
         { reg: '^#解散无尽队伍$', fnc: 'disbandTeam' },
+        { reg: '^#发布跨服无尽$', fnc: 'publishCrossEndless' },
+        { reg: '^#跨服无尽队伍$', fnc: 'listCrossEndless' },
+        { reg: '^#化身跨服加入无尽\\s*[A-Fa-f0-9]{8}$', fnc: 'joinCrossEndless' },
+        { reg: '^#退出跨服无尽$', fnc: 'leaveCrossEndless' },
+        { reg: '^#跨服无尽状态$', fnc: 'showCrossEndless' },
+        { reg: '^#跨服队伍发言\\s+.+$', fnc: 'crossEndlessChat' },
+        { reg: '^#观战无尽\\s*[A-Fa-f0-9]{8}$', fnc: 'watchCrossEndless' },
+        { reg: '^#退出无尽观战$', fnc: 'unwatchCrossEndless' },
+        { reg: '^#跨服无尽选择\\s*[1-4]$', fnc: 'crossEndlessChoose' },
+        { reg: '^#跨服星图建议\\s*[1-3]$', fnc: 'crossEndlessSuggest' },
+        { reg: '^#跨服(?:刷新|重置)无尽能力$', fnc: 'crossEndlessReroll' },
         { reg: '^#开启无尽劫境$', fnc: 'startRun' },
         { reg: '^#使用他化自在体验卡$', fnc: 'useFreeTransformationCard' },
         { reg: '^#无尽网页$', fnc: 'openEndlessWeb' },
@@ -152,6 +171,11 @@ export class EndlessRealm extends plugin {
         { reg: '^#(?:佩戴|切换|更换)称号\\s*.+$', fnc: 'equipTitleCmd' },
       ],
     });
+    worldChatClient.setRaidHandler((message) =>
+      this.handleCrossRaidEvent(message).catch((error) =>
+        logger.error('[跨服无尽] 事件处理失败', error)
+      )
+    );
     const startWebServer = () =>
       startEndlessWebServer(this).catch((error) => {
         if (error?.message === 'Redis 尚未就绪') {
@@ -178,6 +202,22 @@ export class EndlessRealm extends plugin {
 
   lockKey(scope) {
     return `Xiuxian:Endless:Lock:${scope}`;
+  }
+
+  crossRaidHostKey(code) {
+    return `Xiuxian:Endless:CrossHost:${String(code).toUpperCase()}`;
+  }
+
+  crossRaidMemberKey(userId) {
+    return `Xiuxian:Endless:CrossMember:${userId}`;
+  }
+
+  crossRaidTagKey(code, tag) {
+    return `Xiuxian:Endless:CrossTag:${String(code).toUpperCase()}:${tag}`;
+  }
+
+  crossRaidWatchKey(userId) {
+    return `Xiuxian:Endless:CrossWatch:${userId}`;
   }
 
   metaResetKey(id) {
@@ -228,6 +268,19 @@ export class EndlessRealm extends plugin {
     await redis.set(this.runKey(run.teamId), JSON.stringify(run), {
       EX: STATE_TTL_SECONDS,
     });
+    const team = await this.getTeam(run.teamId);
+    if (team?.crossRaidCode && run.phase !== 'settling') {
+      worldChatClient
+        .updateRaid(
+          team.crossRaidCode,
+          buildCrossRaidSnapshot(team, run, {
+            resolveAbility: getAbility,
+            starOptions: getEndlessStarOptions(run),
+          }),
+          'in_battle'
+        )
+        .catch((error) => logger.warn('[跨服无尽] 战况同步失败', error?.message || error));
+    }
   }
 
   async getRun(teamId) {
@@ -273,6 +326,12 @@ export class EndlessRealm extends plugin {
   }
 
   async clearTeam(team) {
+    if (team.crossRaidCode) {
+      if (team.status === 'lobby') {
+        worldChatClient.closeRaid(team.crossRaidCode, 'closed').catch(() => {});
+      }
+      await redis.del(this.crossRaidHostKey(team.crossRaidCode));
+    }
     await Promise.all([
       redis.del(this.teamKey(team.id)),
       redis.del(this.runKey(team.id)),
@@ -1033,6 +1092,13 @@ export class EndlessRealm extends plugin {
         '#创建无尽队伍',
         '#加入无尽队伍 123456',
         '#无尽队伍',
+        '#发布跨服无尽 / #跨服无尽队伍',
+        '#化身跨服加入无尽 房间码',
+        '#跨服无尽状态 / #退出跨服无尽',
+        '#跨服队伍发言 内容',
+        '#观战无尽 房间码 / #退出无尽观战',
+        '#跨服无尽选择1 / #跨服星图建议1',
+        '#跨服刷新无尽能力',
         '#开启无尽劫境',
         '#劫途星图 / #星图情报1',
         '#星图建议1 / #星图定途1',
@@ -1297,12 +1363,497 @@ export class EndlessRealm extends plugin {
     });
   }
 
+  async readCrossJson(key) {
+    const raw = await redis.get(key);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      await redis.del(key);
+      return null;
+    }
+  }
+
+  async writeCrossJson(key, value) {
+    await redis.set(key, JSON.stringify(value), { EX: STATE_TTL_SECONDS });
+  }
+
+  async withInternalLock(scope, action) {
+    const key = this.lockKey(scope);
+    const token = `${Date.now()}:${Math.random()}`;
+    if (!(await redis.set(key, token, { EX: LOCK_TTL_SECONDS, NX: true }))) return false;
+    try {
+      await action();
+      return true;
+    } finally {
+      if ((await redis.get(key)) === token) await redis.del(key);
+    }
+  }
+
+  async consumeCrossEndlessEntry(userId) {
+    const player = await Read_player(userId);
+    const original = structuredClone(player);
+    const freeWeekKey = getWeekendFreeWeekKey();
+    const freeAvailable = isWeekendNow() && player[WEEKEND_FREE_FIELD] !== freeWeekKey;
+    let heartCost = 0;
+    let keyDeducted = false;
+    if (!freeAvailable) {
+      const amount = Number(await exist_najie_thing(userId, ENDLESS_ENTRY_ITEM, '道具')) || 0;
+      if (amount < 1) return { ok: false, reason: `缺少【${ENDLESS_ENTRY_ITEM}】` };
+      const heart = refreshSpiritHeart(player);
+      heartCost = getSpiritHeartCost(
+        ENDLESS_SPIRIT_HEART_COST,
+        getMinggeEffects(player, data.minggeList)
+      );
+      if (heart.current < heartCost)
+        return { ok: false, reason: `心神不足：${heart.current}/${heart.max}，需要${heartCost}` };
+    }
+    try {
+      if (freeAvailable) player[WEEKEND_FREE_FIELD] = freeWeekKey;
+      else {
+        await Add_najie_thing(userId, ENDLESS_ENTRY_ITEM, '道具', -1);
+        keyDeducted = true;
+        const consumed = consumeSpiritHeart(player, heartCost);
+        if (!consumed.ok) throw new Error('spirit_changed');
+      }
+      await Write_player(userId, player);
+      return {
+        ok: true,
+        player,
+        charge: { freeAvailable, freeWeekKey, heartCost, keyDeducted, refunded: false },
+      };
+    } catch (error) {
+      if (keyDeducted) await Add_najie_thing(userId, ENDLESS_ENTRY_ITEM, '道具', 1).catch(() => {});
+      await Write_player(userId, original).catch(() => {});
+      throw error;
+    }
+  }
+
+  async refundCrossEndlessEntry(ledger) {
+    if (!ledger?.charge || ledger.charge.refunded) return true;
+    const player = await Read_player(ledger.userId);
+    refreshSpiritHeart(player);
+    if (ledger.charge.freeAvailable && player[WEEKEND_FREE_FIELD] === ledger.charge.freeWeekKey)
+      delete player[WEEKEND_FREE_FIELD];
+    if (ledger.charge.heartCost)
+      player.心神 = Math.min(
+        getSpiritHeartMax(player),
+        Math.max(0, Number(player.心神) || 0) + ledger.charge.heartCost
+      );
+    if (ledger.charge.keyDeducted)
+      await Add_najie_thing(ledger.userId, ENDLESS_ENTRY_ITEM, '道具', 1);
+    await Write_player(ledger.userId, player);
+    ledger.charge.refunded = true;
+    ledger.status = 'left';
+    await this.writeCrossJson(this.crossRaidMemberKey(ledger.userId), ledger);
+    return true;
+  }
+
+  async publishCrossEndless(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const team = await this.getPlayerTeam(userId);
+    if (!team || team.leader !== userId) return e.reply('只有队长可以发布跨服无尽招募');
+    if (!this.isTeamGroup(e, team)) return e.reply('请回到无尽队伍所在群进行操作');
+    if (team.status !== 'lobby') return e.reply('队伍已进入劫境');
+    if (team.members.length >= MAX_TEAM_SIZE) return e.reply('本服队伍已满员');
+    if (!worldChatClient.authed) return e.reply('世界总机仍在重连，请稍后再试');
+    const result = await worldChatClient.openRaid({
+      team_id: `endless_${team.id}`,
+      boss: '无尽劫境',
+      local_members: team.members.length,
+      max_members: MAX_TEAM_SIZE,
+    });
+    if (!result.ok) return e.reply('跨服无尽招募发布失败，请稍后再试');
+    team.crossRaidCode = result.raid.code;
+    team.localMembers = [...team.members];
+    await this.saveTeam(team);
+    await redis.set(this.crossRaidHostKey(result.raid.code), team.id, { EX: STATE_TTL_SECONDS });
+    const leader = await Read_player(userId);
+    worldChatClient.pub(
+      `【跨服无尽招募】${team.memberNames[userId]}正在召集诸天化身，房间码：${result.raid.code}，发送「#化身跨服加入无尽 ${result.raid.code}」加入，或「#观战无尽 ${result.raid.code}」观战。`,
+      { name: leader.名号 || team.memberNames[userId], tag: worldChatClient.userTag(userId) }
+    ).catch(() => {});
+    return e.reply([
+      '【跨服无尽招募已发布】',
+      `房间码：${result.raid.code}`,
+      `当前人数：${team.members.length}/${MAX_TEAM_SIZE}`,
+      `加入：#化身跨服加入无尽 ${result.raid.code}`,
+      `观战：#观战无尽 ${result.raid.code}`,
+    ].join('\n'));
+  }
+
+  async listCrossEndless(e) {
+    if (!worldChatClient.authed) return e.reply('世界总机仍在重连，请稍后再试');
+    const result = await worldChatClient.listRaids();
+    const raids = (result.raids || []).filter((raid) =>
+      raid.boss === '无尽劫境' && raid.status === 'recruiting'
+    );
+    if (!raids.length) return e.reply('当前没有招募中的跨服无尽队伍');
+    return e.reply([
+      '【跨服无尽队伍】',
+      ...raids.map((raid) =>
+        `${raid.code}｜${raid.host_name}｜${raid.local_members + raid.members.length}/${raid.max_members || MAX_TEAM_SIZE}`
+      ),
+      '加入：#化身跨服加入无尽 房间码',
+      '观战：#观战无尽 房间码',
+    ].join('\n'));
+  }
+
+  async joinCrossEndless(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    if (await this.getPlayerTeam(userId)) return e.reply('你已在本服无尽队伍中');
+    const previous = await this.readCrossJson(this.crossRaidMemberKey(userId));
+    if (previous && ['joined', 'in_battle'].includes(previous.status))
+      return e.reply('你的化身已在跨服无尽队伍中');
+    if (previous?.code && previous?.memberTag)
+      await redis.del(this.crossRaidTagKey(previous.code, previous.memberTag));
+    const code = e.msg.match(/([A-Fa-f0-9]{8})/)?.[1]?.toUpperCase();
+    const raidResult = await worldChatClient.getRaid(code);
+    if (!raidResult.ok || raidResult.raid?.boss !== '无尽劫境')
+      return e.reply('该跨服无尽房间已失效');
+    const entry = await this.consumeCrossEndlessEntry(userId);
+    if (!entry.ok) return e.reply(`跨服投影入场条件未满足：${entry.reason}`);
+    const memberTag = worldChatClient.userTag(userId);
+    const joined = await worldChatClient.joinRaid(
+      code,
+      createCrossRaidAvatar(entry.player),
+      memberTag
+    );
+    if (!joined.ok) {
+      const ledger = { userId, code, memberTag, charge: entry.charge };
+      await this.refundCrossEndlessEntry(ledger);
+      const reasons = {
+        raid_closed: '该队伍已经开战',
+        raid_full: '该队伍已经满员',
+        already_joined: '你的化身已经加入该队伍',
+        already_in_raid: '你的化身已经加入其他跨服队伍',
+      };
+      return e.reply(reasons[joined.reason] || '跨服化身投影失败');
+    }
+    const ledger = {
+      userId,
+      code,
+      memberTag,
+      groupId: String(e.group_id),
+      status: 'joined',
+      charge: entry.charge,
+      snapshot: joined.raid.snapshot || null,
+      joinedAt: Date.now(),
+    };
+    await Promise.all([
+      this.writeCrossJson(this.crossRaidMemberKey(userId), ledger),
+      redis.set(this.crossRaidTagKey(code, memberTag), String(userId), { EX: STATE_TTL_SECONDS }),
+    ]);
+    return e.reply([
+      '【跨服化身投影成功】',
+      `已加入 ${joined.raid.host_name} 的无尽劫境。`,
+      `当前人数：${joined.raid.local_members + joined.raid.members.length}/${joined.raid.max_members || MAX_TEAM_SIZE}`,
+      '开战后使用 #跨服无尽状态 查看战况。',
+    ].join('\n'));
+  }
+
+  async leaveCrossEndless(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const ledger = await this.readCrossJson(this.crossRaidMemberKey(userId));
+    if (!ledger || ledger.status !== 'joined') return e.reply('你当前没有待开战的跨服无尽化身');
+    const result = await worldChatClient.leaveRaid(ledger.code, ledger.memberTag);
+    if (!result.ok && result.reason !== 'raid_not_found') return e.reply('退出请求未完成，请稍后再试');
+    await this.refundCrossEndlessEntry(ledger);
+    await redis.del(this.crossRaidTagKey(ledger.code, ledger.memberTag));
+    return e.reply(`已退出跨服无尽，入场消耗已退回。`);
+  }
+
+  async watchCrossEndless(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const code = e.msg.match(/([A-Fa-f0-9]{8})/)?.[1]?.toUpperCase();
+    const player = await Read_player(userId);
+    const watcherTag = worldChatClient.userTag(`watch:${userId}`);
+    const previous = await this.readCrossJson(this.crossRaidWatchKey(userId));
+    if (previous) {
+      await worldChatClient.unwatchRaid(previous.code, previous.watcherTag);
+      await redis.del(this.crossRaidTagKey(previous.code, previous.watcherTag));
+    }
+    const result = await worldChatClient.watchRaid(code, watcherTag, player.名号);
+    if (!result.ok || result.raid?.boss !== '无尽劫境') return e.reply('该跨服无尽房间已失效');
+    const watch = { userId, code, watcherTag, groupId: String(e.group_id), snapshot: result.raid.snapshot || null };
+    await Promise.all([
+      this.writeCrossJson(this.crossRaidWatchKey(userId), watch),
+      redis.set(this.crossRaidTagKey(code, watcherTag), String(userId), { EX: STATE_TTL_SECONDS }),
+    ]);
+    return e.reply([...formatCrossRaidSnapshot(result.raid), '', '观战模式只读，不参与操作与奖励。'].join('\n'));
+  }
+
+  async unwatchCrossEndless(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const watch = await this.readCrossJson(this.crossRaidWatchKey(userId));
+    if (!watch) return e.reply('你当前没有观战中的无尽房间');
+    await worldChatClient.unwatchRaid(watch.code, watch.watcherTag);
+    await Promise.all([
+      redis.del(this.crossRaidWatchKey(userId)),
+      redis.del(this.crossRaidTagKey(watch.code, watch.watcherTag)),
+    ]);
+    return e.reply('已退出无尽观战');
+  }
+
+  async showCrossEndless(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const ledger = await this.readCrossJson(this.crossRaidMemberKey(userId));
+    const watch = await this.readCrossJson(this.crossRaidWatchKey(userId));
+    const localTeam = await this.getPlayerTeam(userId);
+    const hostRecord = localTeam?.crossRaidCode ? { code: localTeam.crossRaidCode } : null;
+    const current = ['joined', 'in_battle'].includes(ledger?.status)
+      ? ledger
+      : hostRecord || watch || (ledger?.status === 'settled' ? ledger : null);
+    if (!current) return e.reply('你当前没有跨服无尽记录');
+    const result = await worldChatClient.getRaid(current.code);
+    if (!result.ok) {
+      if (ledger?.code === current.code && ledger.status === 'joined')
+        await this.refundCrossEndlessEntry(ledger);
+      return e.reply('该跨服无尽房间已结束；待开战的入场消耗已核对退回');
+    }
+    if (ledger?.code === current.code && Array.isArray(result.raid.settlements))
+      await this.applyCrossRaidSettlement(result.raid);
+    const updated = ledger?.code === current.code
+      ? await this.readCrossJson(this.crossRaidMemberKey(userId))
+      : null;
+    const reward = updated?.settlement;
+    return e.reply([
+      ...formatCrossRaidSnapshot(result.raid),
+      ...(reward ? [
+        '',
+        '【本服结算已入账】',
+        `灵石${this.formatAmount(reward.reward.lingshi)}｜源石${this.formatAmount(reward.reward.sourceStone)}｜${ENDLESS_TOKEN}${this.formatAmount(reward.reward.tokens)}`,
+        `修为${this.formatAmount(reward.reward.cultivation)}｜血气${this.formatAmount(reward.reward.blood)}`,
+      ] : []),
+    ].join('\n'));
+  }
+
+  async crossEndlessChat(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const text = String(e.msg || '').replace(/^#跨服队伍发言\s+/, '').trim().slice(0, 300);
+    if (!text) return e.reply('请输入传音内容');
+    const localTeam = await this.getPlayerTeam(userId);
+    const ledger = await this.readCrossJson(this.crossRaidMemberKey(userId));
+    const code = localTeam?.crossRaidCode || (['joined', 'in_battle'].includes(ledger?.status) ? ledger.code : '');
+    if (!code) return e.reply('你当前不在跨服无尽房间中');
+    if (localTeam && !this.isTeamGroup(e, localTeam)) return e.reply('请回到无尽队伍所在群进行操作');
+    const player = await Read_player(userId);
+    const result = await worldChatClient.raidChat(
+      code,
+      ledger?.memberTag || worldChatClient.userTag(userId),
+      player.名号 || `无名修士${String(userId).slice(-4)}`,
+      text
+    );
+    if (!result.ok) return e.reply('本次跨服传音未送达，请刷新房间状态');
+    return e.reply('跨服传音已送达');
+  }
+
+  async sendCrossEndlessAction(e, action) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const ledger = await this.readCrossJson(this.crossRaidMemberKey(userId));
+    if (!ledger || ledger.status !== 'in_battle') return e.reply('你的跨服化身尚未进入战斗');
+    const value = Number(e.msg.match(/([1-4])\s*$/)?.[1]) || 0;
+    const result = await worldChatClient.raidAction(ledger.code, ledger.memberTag, action, value);
+    if (!result.ok) return e.reply('本次跨服指令未送达，请刷新状态后重试');
+    return e.reply('指令已送达队长位面，发送 #跨服无尽状态 查看同步结果');
+  }
+
+  crossEndlessChoose(e) {
+    return this.sendCrossEndlessAction(e, 'choose');
+  }
+
+  crossEndlessSuggest(e) {
+    return this.sendCrossEndlessAction(e, 'suggest');
+  }
+
+  crossEndlessReroll(e) {
+    return this.sendCrossEndlessAction(e, 'reroll');
+  }
+
+  async syncCrossRaidMembers(team) {
+    if (!team.crossRaidCode) return team;
+    const result = await worldChatClient.getRaid(team.crossRaidCode);
+    if (!result.ok || result.raid.status !== 'recruiting') throw new Error('cross_raid_closed');
+    const localMembers = team.localMembers || team.members.filter((id) => !team.crossMembers?.[id]);
+    const slots = Math.max(0, MAX_TEAM_SIZE - localMembers.length);
+    const remote = result.raid.members.slice(0, slots);
+    const previousCrossIds = Object.keys(team.crossMembers || {});
+    for (const id of previousCrossIds) {
+      delete team.memberNames[id];
+      await redis.del(this.playerKey(id));
+    }
+    team.localMembers = [...localMembers];
+    team.crossMembers = {};
+    for (const member of remote) {
+      const avatar = hydrateCrossRaidAvatar(member.avatar, {
+        serverId: member.server_id,
+        serverName: member.server_name,
+        memberTag: member.member_tag,
+      });
+      team.crossMembers[avatar.id] = {
+        serverId: member.server_id,
+        serverName: member.server_name,
+        memberTag: member.member_tag,
+        avatar,
+      };
+      team.memberNames[avatar.id] = avatar.名号;
+    }
+    team.members = [...localMembers, ...Object.keys(team.crossMembers)];
+    await this.saveTeam(team);
+    return team;
+  }
+
+  async updateCrossRaidLocalCount(team, count) {
+    if (!team.crossRaidCode) return { ok: true };
+    return worldChatClient.openRaid({
+      team_id: `endless_${team.id}`,
+      boss: '无尽劫境',
+      local_members: count,
+      max_members: MAX_TEAM_SIZE,
+    });
+  }
+
+  async applyCrossRaidSettlement(raid) {
+    for (const settlement of raid.settlements || []) {
+      if (settlement.server_id !== worldChatClient.cfg.server_id) continue;
+      const userId = await redis.get(this.crossRaidTagKey(raid.code, settlement.member_tag));
+      if (!userId) continue;
+      const ledger = await this.readCrossJson(this.crossRaidMemberKey(userId));
+      if (!ledger || ledger.code !== raid.code) continue;
+      const player = await Read_player(userId);
+      const records = Array.isArray(player.无尽劫境结算记录) ? player.无尽劫境结算记录 : [];
+      if (!records.includes(settlement.id)) {
+        const reward = settlement.reward || {};
+        player.灵石 = (Number(player.灵石) || 0) + (Number(reward.lingshi) || 0);
+        player.源石 = (Number(player.源石) || 0) + (Number(reward.sourceStone) || 0);
+        player[ENDLESS_TOKEN] = (Number(player[ENDLESS_TOKEN]) || 0) + (Number(reward.tokens) || 0);
+        player.修为 = (Number(player.修为) || 0) + (Number(reward.cultivation) || 0);
+        player.血气 = (Number(player.血气) || 0) + (Number(reward.blood) || 0);
+        player.无尽劫境最高层 = Math.max(Number(player.无尽劫境最高层) || 0, Number(settlement.highestLayer) || 0);
+        player.无尽劫境次数 = (Number(player.无尽劫境次数) || 0) + 1;
+        player.无尽劫境结算记录 = [...records, settlement.id].slice(-30);
+        if (Number(settlement.highestLayer) >= ENDLESS_TREASURE_UNLOCK_LAYER)
+          grantRandomEndlessTreasure(player, Math.random);
+        if (Number(settlement.highestLayer) >= 30) {
+          const serverMax = await this.getServerMaxEndlessLayer();
+          if (player.无尽劫境最高层 >= Math.max(serverMax, Number(settlement.highestLayer)))
+            grantTitle(player, '无尽劫境天尊');
+        }
+        await Write_player(userId, player);
+      }
+      ledger.status = 'settled';
+      ledger.settlement = settlement;
+      ledger.snapshot = raid.snapshot || ledger.snapshot;
+      await this.writeCrossJson(this.crossRaidMemberKey(userId), ledger);
+    }
+  }
+
+  async pushCrossRaidUpdate(record, raid, title) {
+    const battle = raid.snapshot?.battle;
+    const signature = `${raid.status}:${battle?.layer || 0}:${battle?.victory ?? ''}`;
+    if (!battle && !['settled', 'defeated', 'closed'].includes(raid.status)) return;
+    if (record.lastPushSignature === signature) return;
+    const group = globalThis.Bot?.pickGroup?.(record.groupId);
+    if (!group?.sendMsg) return;
+    try {
+      await group.sendMsg([`【${title}】`, ...formatCrossRaidSnapshot(raid)].join('\n'));
+      record.lastPushSignature = signature;
+    } catch (error) {
+      logger.warn('[跨服无尽] 群内战况推送失败', error?.message || error);
+    }
+  }
+
+  async handleCrossRaidEvent(message) {
+    const raid = message.raid;
+    if (!raid || raid.boss !== '无尽劫境') return;
+    if (message.type === 'RAID_CHAT') {
+      const groupIds = new Set();
+      const hostTeamId = await redis.get(this.crossRaidHostKey(raid.code));
+      const hostTeam = hostTeamId ? await this.getTeam(hostTeamId) : null;
+      if (hostTeam?.groupId) groupIds.add(hostTeam.groupId);
+      for (const member of raid.members || []) {
+        if (member.server_id !== worldChatClient.cfg.server_id) continue;
+        const userId = await redis.get(this.crossRaidTagKey(raid.code, member.member_tag));
+        const ledger = userId ? await this.readCrossJson(this.crossRaidMemberKey(userId)) : null;
+        if (ledger?.groupId) groupIds.add(ledger.groupId);
+      }
+      for (const watcher of raid.watchers || []) {
+        if (watcher.server_id !== worldChatClient.cfg.server_id) continue;
+        const userId = await redis.get(this.crossRaidTagKey(raid.code, watcher.watcher_tag));
+        const watch = userId ? await this.readCrossJson(this.crossRaidWatchKey(userId)) : null;
+        if (watch?.groupId) groupIds.add(watch.groupId);
+      }
+      const line = `【跨服队伍传音｜${message.chat.server_name}】${message.chat.name}：${message.chat.text}`;
+      for (const groupId of groupIds) {
+        const group = globalThis.Bot?.pickGroup?.(groupId);
+        if (group?.sendMsg) await group.sendMsg(line).catch(() => {});
+      }
+      return;
+    }
+    if (message.type === 'RAID_ACTION') {
+      const teamId = await redis.get(this.crossRaidHostKey(raid.code));
+      if (!teamId) return;
+      await this.withInternalLock(`team:${teamId}`, async () => {
+        const team = await this.getTeam(teamId);
+        const run = await this.getRun(teamId);
+        const entry = Object.entries(team?.crossMembers || {}).find(([, member]) =>
+          member.serverId === message.server_id && member.memberTag === message.member_tag
+        );
+        if (!entry || !run) return;
+        const memberId = entry[0];
+        if (message.action === 'choose') applyEndlessChoice(run, memberId, message.value);
+        else if (message.action === 'suggest') suggestEndlessStarRoute(run, memberId, message.value);
+        else if (message.action === 'reroll') rerollEndlessChoices(run, memberId);
+        await this.saveRun(run);
+      });
+      return;
+    }
+    if (message.type === 'RAID_SETTLEMENT') await this.applyCrossRaidSettlement(raid);
+    for (const member of raid.members || []) {
+      if (member.server_id !== worldChatClient.cfg.server_id) continue;
+      const userId = await redis.get(this.crossRaidTagKey(raid.code, member.member_tag));
+      if (!userId) continue;
+      const ledger = await this.readCrossJson(this.crossRaidMemberKey(userId));
+      if (!ledger || ledger.code !== raid.code) continue;
+      ledger.snapshot = raid.snapshot || ledger.snapshot;
+      if (raid.status === 'in_battle') ledger.status = 'in_battle';
+      if (message.type === 'RAID_CLOSED' && ledger.status === 'joined')
+        await this.refundCrossEndlessEntry(ledger);
+      else {
+        await this.pushCrossRaidUpdate(ledger, raid, '跨服无尽战报');
+        await this.writeCrossJson(this.crossRaidMemberKey(userId), ledger);
+      }
+    }
+    for (const watcher of raid.watchers || []) {
+      if (watcher.server_id !== worldChatClient.cfg.server_id) continue;
+      const userId = await redis.get(this.crossRaidTagKey(raid.code, watcher.watcher_tag));
+      if (!userId) continue;
+      const watch = await this.readCrossJson(this.crossRaidWatchKey(userId));
+      if (watch?.code === raid.code) {
+        watch.snapshot = raid.snapshot || watch.snapshot;
+        await this.pushCrossRaidUpdate(watch, raid, '无尽观战播报');
+        await this.writeCrossJson(this.crossRaidWatchKey(userId), watch);
+      }
+    }
+  }
+
   async createTeam(e) {
     const userId = await this.checkPlayer(e);
     if (!userId) return false;
     return this.withLock(e, `player:${userId}`, async () => {
       if (await this.getPlayerTeam(userId))
         return e.reply('你已经在一个无尽队伍中');
+      const cross = await this.readCrossJson(this.crossRaidMemberKey(userId));
+      if (['joined', 'in_battle'].includes(cross?.status))
+        return e.reply('你的跨服化身仍在无尽劫境中');
       const id = await this.generateTeamId();
       const player = await Read_player(userId);
       const team = {
@@ -1338,16 +1889,23 @@ export class EndlessRealm extends plugin {
     return this.withLock(e, `team:${teamId}`, async () => {
       if (await this.getPlayerTeam(userId))
         return e.reply('你已经在一个无尽队伍中');
+      const cross = await this.readCrossJson(this.crossRaidMemberKey(userId));
+      if (['joined', 'in_battle'].includes(cross?.status))
+        return e.reply('你的跨服化身仍在无尽劫境中');
       const team = await this.getTeam(teamId);
       if (!team) return e.reply('该无尽队伍不存在或已经过期');
       if (team.groupId !== String(e.group_id))
         return e.reply('只能加入本群创建的无尽队伍');
       if (team.status !== 'lobby') return e.reply('该队伍已经进入无尽劫境');
-      if (team.members.length >= MAX_TEAM_SIZE)
+      if (!team.crossRaidCode && team.members.length >= MAX_TEAM_SIZE)
         return e.reply('该无尽队伍已经满员');
 
       const player = await Read_player(userId);
+      const nextLocalCount = (team.localMembers || team.members).length + 1;
+      const crossUpdate = await this.updateCrossRaidLocalCount(team, nextLocalCount);
+      if (!crossUpdate.ok) return e.reply('跨服队伍席位已满，本服暂时不能再补位');
       team.members.push(userId);
+      if (team.crossRaidCode) team.localMembers = [...(team.localMembers || team.members.slice(0, -1)), userId];
       team.memberNames[userId] =
         player.名号 || `无名修士${String(userId).slice(-4)}`;
       await this.saveTeam(team);
@@ -1367,13 +1925,23 @@ export class EndlessRealm extends plugin {
 
   async replyTeamStatus(e, team, userId) {
     const run = team.status === 'running' ? await this.getRun(team.id) : null;
+    const crossRaid = team.status === 'lobby' && team.crossRaidCode
+      ? await worldChatClient.getRaid(team.crossRaidCode)
+      : null;
+    const remoteMembers = crossRaid?.ok ? crossRaid.raid.members || [] : [];
+    const displayedMembers = team.status === 'lobby' && team.localMembers
+      ? team.localMembers
+      : team.members;
     const lines = [
       `【无尽队伍·${team.id}】`,
       `状态：${this.statusText(team.status)}`,
-      `成员：${team.members.length}/${MAX_TEAM_SIZE}`,
-      ...team.members.map(
+      `成员：${displayedMembers.length + remoteMembers.length}/${MAX_TEAM_SIZE}`,
+      ...displayedMembers.map(
         (id) =>
           `${id === team.leader ? '[队长] ' : ''}${team.memberNames[id] || id}`
+      ),
+      ...remoteMembers.map((member) =>
+        `[跨服] ${member.avatar?.名号 || '无名化身'}（${member.server_name}）`
       ),
     ];
     if (run) {
@@ -1439,14 +2007,17 @@ export class EndlessRealm extends plugin {
       if (team.status !== 'lobby')
         return e.reply('进入劫境后不能单独离队，请由队长使用 #无尽撤离');
       team.members = team.members.filter((id) => id !== userId);
+      if (team.localMembers) team.localMembers = team.localMembers.filter((id) => id !== userId);
       delete team.memberNames[userId];
       await redis.del(this.playerKey(userId));
-      if (!team.members.length) {
+      const localMembers = team.localMembers || team.members;
+      if (!localMembers.length) {
         await this.clearTeam(team);
         return e.reply('你已离队，空队伍自动解散');
       }
-      if (team.leader === userId) team.leader = team.members[0];
+      if (team.leader === userId) team.leader = localMembers[0];
       await this.saveTeam(team);
+      await this.updateCrossRaidLocalCount(team, localMembers.length);
       return e.reply(
         `你已离开无尽队伍，新队长为${team.memberNames[team.leader]}`
       );
@@ -1508,12 +2079,24 @@ export class EndlessRealm extends plugin {
       if (!team) return e.reply('队伍已经不存在');
       if (team.leader !== userId) return e.reply('只有队长可以开启无尽劫境');
       if (team.status !== 'lobby') return e.reply('队伍已经进入无尽劫境');
+      if (team.crossRaidCode) {
+        try {
+          await this.syncCrossRaidMembers(team);
+        } catch {
+          return e.reply('跨服房间状态已变化，请重新发布招募');
+        }
+      }
 
       const missing = [];
       const players = [];
       const weekendFree = isWeekendNow();
       const freeWeekKey = getWeekendFreeWeekKey();
       for (const id of team.members) {
+        const cross = team.crossMembers?.[id];
+        if (cross) {
+          players.push({ id, player: cross.avatar, heartCost: 0, freeAvailable: false, cross: true });
+          continue;
+        }
         if (!(await existplayer(id))) {
           missing.push(`${team.memberNames[id]}（角色存档缺失）`);
           continue;
@@ -1551,14 +2134,15 @@ export class EndlessRealm extends plugin {
         seed: Date.now() ^ Number(team.id),
       });
       const originalPlayers = new Map(
-        players.map(({ id, player }) => [id, structuredClone(player)])
+        players.filter((entry) => !entry.cross).map(({ id, player }) => [id, structuredClone(player)])
       );
       const deducted = [];
       const voucherActive = [];
       const freeMembers = [];
       try {
         for (const entry of players) {
-          const { id, player, heartCost, freeAvailable } = entry;
+          const { id, player, heartCost, freeAvailable, cross } = entry;
+          if (cross) continue;
           if (freeAvailable) {
             // 周末免费：不扣秘钥与心神，仅标记本周额度已用
             player[WEEKEND_FREE_FIELD] = freeWeekKey;
@@ -2471,9 +3055,16 @@ export class EndlessRealm extends plugin {
     run.settlement.extras ||= [];
     // 全服最高层（磁盘快照，供「打穿30关且全服第一」判定）
     const serverMaxLayer = await this.getServerMaxEndlessLayer();
+    const highestClearedLayer = Math.max(
+      0,
+      Number(run.highestClearedLayer) ||
+        (run.lastBattle?.victory ? Number(run.layer) : Number(run.layer) - 1) ||
+        0
+    );
 
     for (const id of team.members) {
       if (run.settlement.paidMembers.includes(id)) continue;
+      if (team.crossMembers?.[id]) continue;
       try {
         const player = await Read_player(id);
         const records = Array.isArray(player.无尽劫境结算记录)
@@ -2491,12 +3082,6 @@ export class EndlessRealm extends plugin {
             (Number(player.修为) || 0) + (Number(memberReward.cultivation) || 0);
           player.血气 =
             (Number(player.血气) || 0) + (Number(memberReward.blood) || 0);
-          const highestClearedLayer = Math.max(
-            0,
-            Number(run.highestClearedLayer) ||
-              (run.lastBattle?.victory ? Number(run.layer) : Number(run.layer) - 1) ||
-              0
-          );
           player.无尽劫境最高层 = Math.max(
             Number(player.无尽劫境最高层) || 0,
             highestClearedLayer
@@ -2544,6 +3129,48 @@ export class EndlessRealm extends plugin {
           memberNames: team.memberNames,
         };
       }
+    }
+
+    const remoteSettlements = Object.entries(team.crossMembers || {})
+      .filter(([id]) => !run.settlement.paidMembers.includes(id))
+      .map(([id, member]) => {
+        const memberReward = run.settlement.reward.members?.[id] || {};
+        return {
+          id: `${run.settlement.id}:${member.memberTag}`,
+          server_id: member.serverId,
+          member_tag: member.memberTag,
+          highestLayer: highestClearedLayer,
+          reward: {
+            lingshi: Number(run.settlement.reward.lingshi) || 0,
+            sourceStone: Number(run.settlement.reward.sourceStone) || 0,
+            tokens: Number(run.settlement.reward.tokens) || 0,
+            cultivation: Number(memberReward.cultivation) || 0,
+            blood: Number(memberReward.blood) || 0,
+          },
+        };
+      });
+    if (remoteSettlements.length) {
+      const crossResult = await worldChatClient.settleRaid(
+        team.crossRaidCode,
+        remoteSettlements,
+        reason === 'defeat' ? 'defeated' : 'settled'
+      );
+      if (!crossResult.ok) {
+        return {
+          complete: false,
+          paid: run.settlement.paidMembers.length,
+          total: team.members.length,
+          reward: run.settlement.reward,
+          layer: run.layer,
+          memberNames: team.memberNames,
+        };
+      }
+      run.settlement.paidMembers.push(
+        ...Object.keys(team.crossMembers).filter((id) =>
+          remoteSettlements.some((settlement) => settlement.member_tag === team.crossMembers[id].memberTag)
+        )
+      );
+      await this.saveRun(run);
     }
 
     const result = {
