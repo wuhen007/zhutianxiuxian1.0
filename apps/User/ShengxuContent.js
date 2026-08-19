@@ -146,7 +146,9 @@ export class ShengxuContent extends plugin {
       flowerLevel: Number(player.huafenlevel_id) || 1,
       dungeons,
     });
-    return puppeteer.screenshot('shengxu_place', { ...view });
+    const img = await puppeteer.screenshot('shengxu_place', { ...view });
+    // TRSS-Yunzai 不自动发送插件返回值，需显式 e.reply 出图
+    return e.reply(img);
   }
 
   async explore(e) {
