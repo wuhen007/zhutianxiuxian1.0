@@ -141,7 +141,7 @@ const rebirthPhenomena = [
 
 // 判断能否硬扛阴阳大磨盘
 function canWithstandYinYangGrind(player) {
-  return (player.mijinglevel_id >= 11) || (player.xiangulevel_id >= 9);
+  return getAuthority(player).canRescue;
 }
 
 // ==================== 轮回转世输出模式（简略/完整） ====================
@@ -226,7 +226,8 @@ function getAuthority(player) {
   return getReincarnationAuthority(
     player,
     data.Levelmijing_list,
-    data.xiangujinshi_list
+    data.xiangujinshi_list,
+    data.huafen_list
   );
 }
 
@@ -1710,7 +1711,7 @@ class ReincarnationRoad extends plugin {
       if (!invoker.authority.canRescue) {
         const required = invoker.authority.thresholds.rescue;
         return e.reply(
-          `境界不足，至少需要达到${required.mijingName}或${required.xianguName}，` +
+          `境界不足，至少需要达到${required.mijingName}、${required.xianguName}或花粉${required.huafenName}，` +
           `方可强闯轮回往生路救人。`
         );
       }
@@ -1747,7 +1748,7 @@ class ReincarnationRoad extends plugin {
       if (!invoker.authority.canControl) {
         const required = invoker.authority.thresholds.control;
         return e.reply(
-          `只有达到${required.mijingName}或仙古${required.xianguName}（极道至尊层次），` +
+          `只有达到${required.mijingName}、仙古${required.xianguName}或花粉${required.huafenName}，` +
           `才能强行执掌轮回路。`
         );
       }
@@ -1756,13 +1757,15 @@ class ReincarnationRoad extends plugin {
       const realms = getPlayerRealmNames(
         invoker.player,
         data.Levelmijing_list,
-        data.xiangujinshi_list
+        data.xiangujinshi_list,
+        data.huafen_list
       );
       const record = {
         player_id: invoker.player_id,
         player_name: invoker.player_name,
         mijing_realm: realms.mijing,
         xiangu_realm: realms.xiangu,
+        huafen_realm: realms.huafen,
         controlled_at: Date.now(),
       };
       await redis.set(REINCARNATION_CONTROLLER_KEY, JSON.stringify(record));

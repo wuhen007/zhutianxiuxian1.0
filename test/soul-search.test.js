@@ -11,9 +11,14 @@ import {
 } from '../apps/User/soulSearchRules.js';
 
 test('斩道王者或仙古真一境均可使用搜魂', () => {
-  assert.equal(canUseSoulSearch({ mijinglevel_id: 10 }), true);
+  assert.equal(canUseSoulSearch({ mijinglevel_id: 11 }), true);
   assert.equal(canUseSoulSearch({ mijinglevel_id: 1, xiangulevel_id: 9 }), true);
-  assert.equal(canUseSoulSearch({ mijinglevel_id: 9, xiangulevel_id: 8 }), false);
+  assert.equal(canUseSoulSearch({ mijinglevel_id: 10, xiangulevel_id: 8 }), false);
+});
+
+test('花粉路达到斩道对标权柄后可使用搜魂', () => {
+  assert.equal(canUseSoulSearch({ huafenlevel_id: 10 }), true);
+  assert.equal(canUseSoulSearch({ huafenlevel_id: 9 }), false);
 });
 
 test('搜魂基础成功率为80%', () => {

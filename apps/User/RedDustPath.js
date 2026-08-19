@@ -12,6 +12,7 @@ import {
   getRedDustLifeInfo,
   getRedDustVow,
 } from "../../model/redDustPath.js";
+import { canStartRedDustPath } from "../../model/extraCultivation.js";
 
 const RED_DUST_TIANJI_COST = 5_000_000;
 
@@ -42,8 +43,8 @@ export class RedDustPath extends plugin {
     const context = await this.getPlayer(e);
     if (!context) return false;
     const { usrQQ, player } = context;
-    if ((player.mijinglevel_id || 0) < 16) {
-      return e.reply("只有大帝境，才有资格向天机老人追问红尘仙法。");
+    if (!canStartRedDustPath(player)) {
+      return e.reply("只有秘境大帝或仙古至尊，才有资格向天机老人追问红尘仙法。");
     }
     if (player.mijinglevel_id >= 17) {
       return e.reply("你已九世圆满、红尘为仙，无须再向天机追问此法。");

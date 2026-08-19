@@ -34,7 +34,16 @@ import { getBreakthroughPotentialCost } from './breakthroughPotential.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
 import { getKongtongModifiers } from '../../model/innateTreasure.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
-import { canCultivateExtraPath, getActiveExtraCultivationPaths, getExtraCultivationPathName, selectExtraCultivationPath } from '../../model/extraCultivation.js';
+import {
+  canStartRedDustPath,
+  canCultivateExtraPath,
+  getActiveExtraCultivationPaths,
+  getExtraCultivationPathName,
+  reforgeExtraCultivationState,
+  selectExtraCultivationPath,
+  syncXianguCompanionMijing,
+} from '../../model/extraCultivation.js';
+import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import { zhetiandujie } from './zhetiandujie.js';
 import {
   getReverseLifeTribulationWaves,
@@ -137,9 +146,13 @@ export class Level extends plugin {
                   reg:'^#逆活九世$',
                   fnc:'nihuojiushi'
                 },
-   {
+{
   reg: '^#为其护道$',
   fnc: 'giveEmperorProtection'
+},
+{
+  reg: '^#回炉重造$',
+  fnc: 'reforgeExtraCultivation'
 },
 {
     reg: '^#自封帝号(.*)$', 
@@ -263,13 +276,13 @@ async nihuojiushi(e) {
     const eraNames = ["神话时代", "太古时代", "天命时代", "末法时代", "绝灵时代"];
     
     // 前置检查
-    if (player.mijinglevel_id < 16) {
+    if (!canStartRedDustPath(player)) {
         const requiredLevel = data.Levelmijing_list.find(l => l.level_id === 16).level;
-        e.reply(`只有达到${requiredLevel}才能尝试逆活九世`);
+        e.reply(`只有达到${requiredLevel}，或以仙古今世法踏入至尊境，才能尝试逆活九世`);
         return;
     }
     
-    if (player.mijinglevel_id >= 17) {
+    if (player.mijinglevel_id >= 17 || Number(player.nihuo_count) >= 10) {
       e.reply(`你已成就红尘仙，无需再行逆活`);
       return;
     }
@@ -464,6 +477,10 @@ async nihuojiushi(e) {
     
     // 逆活成功
     player.nihuo_count = currentLife + 1;
+    const companionMijing = syncXianguCompanionMijing(player);
+    const companionMijingName = data.Levelmijing_list.find(
+      level => Number(level.level_id) === Number(companionMijing.targetLevelId)
+    )?.level;
 
     redDustPath.seals = [
       ...redDustPath.seals,
@@ -502,6 +519,7 @@ async nihuojiushi(e) {
         await e.reply([
             `九世圆满！红尘为仙！`,
             `九世所行汇聚为：【${player.红尘道果}】`,
+            ...(companionMijing.changed ? [`人体秘境同步圆满：${companionMijingName}`] : []),
             `跳出生死轮回，超脱岁月长河`,
             `掌缘生灭，万古长存`,
             `《葬仙纪元》记载：`,
@@ -514,6 +532,7 @@ async nihuojiushi(e) {
             `  攻击 +${bigNumberTransform(powerGain)}`,
             `  防御 +${bigNumberTransform(powerGain)}`,
             `  生命 +${bigNumberTransform(powerGain)}`,
+            ...(companionMijing.changed ? [`人体秘境同步突破：${companionMijingName}`] : []),
             `距红尘仙还需：${9 - currentLife}世蜕变`,
             `当前仙基：${currentLife}/9`,
             `下次逆活需等待：5000年后`
@@ -1557,8 +1576,8 @@ async giveEmperorProtection(e) {
   const receiver = await Read_player(receiverQQ);
   const att = await Read_player(giverQQ);
    // 检查接收者是否存在
-  if (att.mijinglevel_id <11&&att.mijinglevel_id <9) {
-    e.reply('只有秘境体系达到斩道王者或仙古今世法达到真神境才有能力做别人的护道人！');
+  if (getRealmAuthorityLevel(att) < 11) {
+    e.reply('只有秘境斩道、仙古真一或花粉路对标斩道后，才有能力做别人的护道人！');
     return true;
   }
 // // 检查接收者是否存在
@@ -1590,6 +1609,35 @@ async giveEmperorProtection(e) {
   ].join('\n'));
 
   return true;
+}
+
+async reforgeExtraCultivation(e) {
+  const usr_qq = String(e.user_id || '').replace('qg_', '');
+  if (!(await existplayer(usr_qq))) {
+    return e.reply('你还没有修仙角色，请先创建角色。');
+  }
+
+  return withPlayerMutationLock(usr_qq, async () => {
+    const player = await Read_player(usr_qq);
+    const result = reforgeExtraCultivationState(player);
+    if (!result.changed) {
+      return e.reply('三条额外体系都已处于初始等级1，当前没有可回炉的境界。');
+    }
+
+    await Write_player(usr_qq, player);
+    const equipment = await Read_equipment(usr_qq);
+    await Write_equipment(usr_qq, equipment);
+    const changed = result.changedPaths
+      .map(path => `${getExtraCultivationPathName(path)} ${result.previousLevels[path]}级→${result.nextLevels[path]}级`)
+      .join('、');
+    return e.reply([
+      '【回炉重造·道基重铸】',
+      `已回退：${changed}`,
+      '人体秘境、仙古今世法与花粉进化路的已达成极境均已封存。',
+      '旧极境加成已清除，战斗属性已经重算，可重新追求当前境界的极境。',
+      `当前额外体系：${getActiveExtraCultivationPaths(player).map(getExtraCultivationPathName).join('、') || '尚未选择'}`,
+    ].join('\n'));
+  });
 }
 
 async hudao(e) {
@@ -1979,8 +2027,13 @@ async jijinshenghua(e) {
     
     let player = await Read_player(usr_qq);
     
-      // 检查境界是否足够
-    if (player.mijinglevel_id < 16) {
+      // 伴生秘境由仙古主境界自动派生，不能用于支付永久掉境代价。
+    const activePaths = getActiveExtraCultivationPaths(player);
+    if (
+      player.mijinglevel_id < 16
+      || activePaths.length !== 1
+      || activePaths[0] !== 'mijing'
+    ) {
         e.reply([
             `【极尽升华·境界不足】`,
            
@@ -1989,7 +2042,7 @@ async jijinshenghua(e) {
             `才有资格点燃元神之光，进行终极一跃。`,
            
             `当前境界：${player.mijinglevel_id}级`,
-            `最低要求：16级`
+            `最低要求：独立秘境体系16级`
         ].join('\n'));
         return true;
     }

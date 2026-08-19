@@ -5085,7 +5085,7 @@ async soulSearch(e) {
     return false;
   }
 
-  // 秘境体系达到原门槛，或仙古体系达到真一境，均可施展搜魂。
+  // 秘境斩道、仙古真一或花粉路对标斩道后，均可施展搜魂。
   if (!canUseSoulSearch(executor)) {
     e.reply([
       `【境界不足·道则反噬】`,
@@ -5094,9 +5094,10 @@ async soulSearch(e) {
       `刚欲凝聚神识，便感仙台欲裂！`,
       ``,
       `「搜魂之术，逆天而行！」`,
-      `需斩道王者或真一境以上方可承受因果反噬`,
-      `当前秘境等级：${executor.mijinglevel_id || 0}（需≥10）`,
-      `当前仙古等级：${executor.xiangulevel_id || 0}（真一境需≥9）`,
+      `需斩道王者、真一境或对应花粉权柄方可承受因果反噬`,
+      `当前秘境等级：${executor.mijinglevel_id || 0}（对标权柄：${getRealmAuthorityLevel(executor)}）`,
+      `当前仙古等级：${executor.xiangulevel_id || 0}，花粉等级：${executor.huafenlevel_id || 0}`,
+      `需达到斩道/真一对标权柄（≥11）`,
       ``,
       `强行施展必遭大道反噬，神魂俱灭！`
     ].join('\n'));

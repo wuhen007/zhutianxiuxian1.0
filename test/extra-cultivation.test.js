@@ -2,12 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  canStartRedDustPath,
   canCultivateExtraPath,
   ensureExtraCultivationState,
   getActiveExtraCultivationPaths,
   getExtraCultivationLevelProduct,
   getExtraCultivationLevelSum,
+  getXianguCompanionMijingTarget,
+  reforgeExtraCultivationState,
   selectExtraCultivationPath,
+  syncXianguCompanionMijing,
 } from '../model/extraCultivation.js';
 
 test('legacy player extra realms are normalized and inferred', () => {
@@ -45,4 +49,120 @@ test('conflicting legacy saves cannot progress another path', () => {
   assert.deepEqual(getActiveExtraCultivationPaths(player).sort(), ['mijing', 'xiangu']);
   assert.equal(canCultivateExtraPath(player, 'mijing'), false);
   assert.equal(canCultivateExtraPath(player, 'huafen'), false);
+});
+
+test('仙古上位境界只升不降地同步轮海至化龙秘境', () => {
+  const player = {
+    额外体系: 'xiangu',
+    mijinglevel_id: 1,
+    xiangulevel_id: 12,
+    huafenlevel_id: 1,
+  };
+
+  ensureExtraCultivationState(player);
+  assert.equal(player.mijinglevel_id, 5);
+  for (const [xianguLevel, mijingLevel] of [[13, 6], [14, 7], [15, 8]]) {
+    player.xiangulevel_id = xianguLevel;
+    assert.equal(syncXianguCompanionMijing(player).targetLevelId, mijingLevel);
+    assert.equal(player.mijinglevel_id, mijingLevel);
+  }
+
+  player.mijinglevel_id = 8;
+  assert.equal(syncXianguCompanionMijing(player).changed, false);
+  assert.equal(player.mijinglevel_id, 8);
+  assert.deepEqual(getActiveExtraCultivationPaths(player), ['xiangu']);
+  assert.equal(canCultivateExtraPath(player, 'xiangu'), true);
+  assert.equal(canCultivateExtraPath(player, 'mijing'), false);
+
+  player.mijinglevel_id = 18;
+  assert.deepEqual(getActiveExtraCultivationPaths(player), ['mijing', 'xiangu']);
+  assert.equal(canCultivateExtraPath(player, 'xiangu'), false);
+});
+
+test('仙古至尊逆活每成功一世推进一个秘境并于第九世成就红尘仙', () => {
+  const player = {
+    额外体系: 'xiangu',
+    mijinglevel_id: 8,
+    xiangulevel_id: 15,
+    huafenlevel_id: 1,
+    nihuo_count: 1,
+  };
+
+  assert.equal(canStartRedDustPath(player), true);
+  for (let completedLife = 1; completedLife <= 9; completedLife++) {
+    player.nihuo_count = completedLife + 1;
+    assert.equal(getXianguCompanionMijingTarget(player), 8 + completedLife);
+    syncXianguCompanionMijing(player);
+    assert.equal(player.mijinglevel_id, 8 + completedLife);
+  }
+  assert.equal(player.mijinglevel_id, 17);
+  assert.equal(canStartRedDustPath({ mijinglevel_id: 16 }), true);
+  assert.equal(canStartRedDustPath({ mijinglevel_id: 8, xiangulevel_id: 1 }), false);
+  assert.equal(canStartRedDustPath({
+    额外体系: 'mijing',
+    mijinglevel_id: 8,
+    xiangulevel_id: 15,
+  }), false);
+});
+
+test('旧档仙古至尊会识别化龙伴生境界并恢复九世同步', () => {
+  const player = {
+    mijinglevel_id: 8,
+    xiangulevel_id: 15,
+    huafenlevel_id: 1,
+    nihuo_count: 4,
+  };
+  ensureExtraCultivationState(player);
+  assert.equal(player.额外体系, 'xiangu');
+  assert.equal(player.mijinglevel_id, 11);
+  assert.deepEqual(getActiveExtraCultivationPaths(player), ['xiangu']);
+});
+
+test('仙古回炉后按主境界重新派生伴生秘境', () => {
+  const player = {
+    额外体系: 'xiangu',
+    mijinglevel_id: 11,
+    xiangulevel_id: 15,
+    huafenlevel_id: 1,
+    nihuo_count: 4,
+  };
+
+  reforgeExtraCultivationState(player);
+  assert.equal(player.xiangulevel_id, 14);
+  assert.equal(player.mijinglevel_id, 7);
+  assert.deepEqual(getActiveExtraCultivationPaths(player), ['xiangu']);
+});
+
+test('回炉重造让高于1级的额外体系各降一级并清除极境', () => {
+  const player = {
+    mijinglevel_id: 8,
+    xiangulevel_id: 6,
+    huafenlevel_id: 1,
+    极境: ['2', '6'],
+    花粉极境: ['本源觉醒'],
+    花粉路分支: '宇究',
+    花粉路前身分支: '究极',
+    xiangu_shenhuo: { 极境达成: true, 极境名称: '神火极境·某道种' },
+    xiangu_xianqi: { strands: 3, max: 3 },
+    xiangu_xianqi_three_complete: true,
+    xiangu_jiutian_shidi: true,
+    xiangu_zhanxian_zhadao: true,
+  };
+
+  const result = reforgeExtraCultivationState(player);
+  assert.equal(result.changed, true);
+  assert.deepEqual(
+    [player.mijinglevel_id, player.xiangulevel_id, player.huafenlevel_id],
+    [7, 5, 1]
+  );
+  assert.deepEqual(player.极境, []);
+  assert.deepEqual(player.花粉极境, []);
+  assert.equal(player.花粉路分支, undefined);
+  assert.equal(player.花粉路前身分支, undefined);
+  assert.equal(player.xiangu_shenhuo.极境达成, false);
+  assert.equal(player.xiangu_shenhuo.极境名称, undefined);
+  assert.deepEqual(player.xiangu_xianqi, { strands: 0, max: 3 });
+  assert.equal(player.xiangu_xianqi_three_complete, undefined);
+  assert.equal(player.xiangu_jiutian_shidi, undefined);
+  assert.equal(player.xiangu_zhanxian_zhadao, undefined);
 });

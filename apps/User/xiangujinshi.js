@@ -43,7 +43,13 @@ import {
   unlockXianguDaoRealm,
 } from './wudaoRules.js';
 import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
-import { canCultivateExtraPath, getActiveExtraCultivationPaths, getExtraCultivationPathName, selectExtraCultivationPath } from '../../model/extraCultivation.js';
+import {
+  canCultivateExtraPath,
+  getActiveExtraCultivationPaths,
+  getExtraCultivationPathName,
+  selectExtraCultivationPath,
+  syncXianguCompanionMijing,
+} from '../../model/extraCultivation.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
 import {
@@ -1807,6 +1813,7 @@ async breakthroughUpperRealm(e, usr_qq, player) {
     } : { 攻击: 20000000, 防御: 20000000, 血气: 20000000 };
 
     player.xiangulevel_id = breakthrough.targetLevelId;
+    const companionMijing = syncXianguCompanionMijing(player);
     this.deductXianguPotential(player);
     player.攻击 = (Number(player.攻击) || 0) + diff.攻击;
     player.防御 = (Number(player.防御) || 0) + diff.防御;
@@ -1845,6 +1852,12 @@ async breakthroughUpperRealm(e, usr_qq, player) {
             ? '以身为种成功，体内众门开启，上苍天谴未能抹去真我。'
             : `劫难渡尽，${breakthrough.targetName}道果稳固。`);
     const rewardLine = result.reward === '雷池真液' ? '雷池真液精粹 +1' : null;
+    const companionMijingLevel = data.Levelmijing_list.find(
+      level => Number(level.level_id) === Number(companionMijing.targetLevelId)
+    );
+    const companionMijingLine = companionMijing.changed
+      ? `人体秘境同步开启：${companionMijingLevel?.level || `秘境 ${companionMijing.targetLevelId}`}`
+      : null;
     const lines = [
         `【突破·${breakthrough.targetName}·成功！】`,
         `${player.名号}正式踏入${breakthrough.targetName}！`,
@@ -1856,6 +1869,7 @@ async breakthroughUpperRealm(e, usr_qq, player) {
         ``,
         `仙气数：${getXianqiStrands(player)}道`
     ];
+    if (companionMijingLine) lines.push(companionMijingLine);
     if (result.thunderSpirits) lines.push(`雷灵：${player.xiangu_leiling}头`);
     if (rewardLine) lines.push(rewardLine);
     if (result.revived) lines.push('本次渡劫曾触发功法复活；致死劫数被避开，后续劫数才会触发功法被动。');

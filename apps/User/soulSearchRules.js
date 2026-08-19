@@ -1,5 +1,6 @@
 import { resolveReincarnationAptitudeLoss } from '../../model/reincarnationAptitude.js';
 import { reduceTribulationDamageByDefense } from '../../model/tribulationDamage.js';
+import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 
 export const SOUL_SEARCH_KARMA_THRESHOLD = 100;
 export const WORLD_ENDING_TRIBULATION_WAVES = 10;
@@ -37,12 +38,11 @@ function pickRandom(items, count, random) {
 }
 
 export function canUseSoulSearch(player) {
-  return (Number(player?.mijinglevel_id) || 0) >= 10 ||
-    (Number(player?.xiangulevel_id) || 0) >= 9;
+  return getRealmAuthorityLevel(player) >= 11;
 }
 
 export function calculateSoulSearchSuccessRate(executor, target) {
-  const realmDiff = (Number(executor?.mijinglevel_id) || 0) - (Number(target?.mijinglevel_id) || 0);
+  const realmDiff = getRealmAuthorityLevel(executor) - getRealmAuthorityLevel(target);
   const soulDiff = (Number(executor?.yuanshenlevel_id) || 0) - (Number(target?.yuanshenlevel_id) || 0);
   const rate = 0.8 + (realmDiff + soulDiff) * 0.05;
   return Math.round(Math.min(0.95, Math.max(0.1, rate)) * 100) / 100;

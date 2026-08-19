@@ -39,6 +39,7 @@ import {
   snapshotOccupation,
   takeOccupation,
 } from '../../model/occupationCollection.js';
+import { getFlowerPollenAuthorityLevel, getRealmAuthorityPath } from '../../model/realmAuthority.js';
 
 // 材料稀有度
 const MATERIAL_RARITY = {
@@ -1033,7 +1034,9 @@ async upgradeEmperorWeapon(e) {
         "斩道王兵": "真神兵", "圣兵": "天神兵",
         "准帝兵": "遁一兵", "极道帝兵": "至尊兵"
     };
-    const isXianguPath = Number(player.xiangulevel_id) >= 8;
+    const isFlowerPath = Number(player.huafenlevel_id) > 1 && getRealmAuthorityPath(player) === 'huafen';
+    const isXianguPath = Number(player.xiangulevel_id) >= 8 || isFlowerPath;
+    const flowerAuthority = getFlowerPollenAuthorityLevel(player.huafenlevel_id);
     const DI_BING_RANKS = isXianguPath ? XIANGU_BING_RANKS : ZHETIAN_BING_RANKS;
     // 当前品阶（仙古玩家旧名映射到新体系，未进阶前存档仍保留旧名）
     const currentRank = isXianguPath && LEGACY_RANK_MAP[weapon.品阶]
@@ -1207,49 +1210,49 @@ function getMissingGolds(weapon) {
         if (requireCondition === "雷劫洗礼") {
             conditionMet = true; // 雷劫洗礼本身就是条件
         } else if (requireCondition === "真一境界") {
-            conditionMet = player.xiangulevel_id >= 9; // 仙古·真一境
+            conditionMet = Number(player.xiangulevel_id) >= 9 || flowerAuthority >= 11; // 仙古·真一 / 花粉对标
         } else if (requireCondition === "天神境界") {
-            conditionMet = player.xiangulevel_id >= 11; // 仙古·天神境
+            conditionMet = Number(player.xiangulevel_id) >= 11 || flowerAuthority >= 12; // 仙古·天神 / 花粉对标
         } else if (requireCondition === "遁一境界") {
-            conditionMet = player.xiangulevel_id >= 14; // 仙古·遁一境
+            conditionMet = Number(player.xiangulevel_id) >= 14 || flowerAuthority >= 15; // 仙古·遁一 / 花粉对标
         } else if (requireCondition === "至尊境界") {
-            conditionMet = player.xiangulevel_id >= 15; // 仙古·至尊境
+            conditionMet = Number(player.xiangulevel_id) >= 15 || flowerAuthority >= 16; // 仙古·至尊 / 花粉对标
         } else if (requireCondition === "真仙境界") {
-            conditionMet = player.xiangulevel_id >= 16; // 仙古·真仙境
+            conditionMet = Number(player.xiangulevel_id) >= 16 || flowerAuthority >= 17; // 仙古·真仙 / 花粉对标
         } else if (requireCondition === "斩道境界") {
-            conditionMet = player.mijinglevel_id >= 11; // 斩道王者境界
+            conditionMet = Number(player.mijinglevel_id) >= 11 || flowerAuthority >= 11; // 斩道王者 / 花粉对标
         } else if (requireCondition === "圣人境界") {
-            conditionMet = player.mijinglevel_id >= 12; // 圣人境界
+            conditionMet = Number(player.mijinglevel_id) >= 12 || flowerAuthority >= 12; // 圣人 / 花粉对标
         } else if (requireCondition === "准帝境界") {
-            conditionMet = player.mijinglevel_id >= 15; // 准帝境界
+            conditionMet = Number(player.mijinglevel_id) >= 15 || flowerAuthority >= 15; // 准帝 / 花粉对标
         } else if (requireCondition === "大帝境界") {
-            conditionMet = player.mijinglevel_id >= 16; // 大帝境界
+            conditionMet = Number(player.mijinglevel_id) >= 16 || flowerAuthority >= 16; // 大帝 / 花粉对标
         } else if (requireCondition === "红尘仙境界") {
-            conditionMet = player.mijinglevel_id >= 17; // 红尘仙境界
+            conditionMet = Number(player.mijinglevel_id) >= 17 || flowerAuthority >= 17; // 红尘仙 / 花粉对标
         } else if (requireCondition === "仙王境界") {
             conditionMet = isXianguPath
-                ? Number(player.xiangulevel_id) >= 18
-                : Number(player.mijinglevel_id) >= 18; // 仙王境界
+                ? Number(player.xiangulevel_id) >= 18 || flowerAuthority >= 18
+                : Number(player.mijinglevel_id) >= 18 || flowerAuthority >= 18; // 仙王境界
         } else if (requireCondition === "准仙帝境界") {
             conditionMet = isXianguPath
-                ? Number(player.xiangulevel_id) >= 20
-                : Number(player.mijinglevel_id) >= 20; // 准仙帝境界
+                ? Number(player.xiangulevel_id) >= 20 || flowerAuthority >= 20
+                : Number(player.mijinglevel_id) >= 20 || flowerAuthority >= 20; // 准仙帝境界
         } else if (requireCondition === "仙帝境界") {
             conditionMet = isXianguPath
-                ? Number(player.xiangulevel_id) >= 21
-                : Number(player.mijinglevel_id) >= 21; // 仙帝境界
+                ? Number(player.xiangulevel_id) >= 21 || flowerAuthority >= 21
+                : Number(player.mijinglevel_id) >= 21 || flowerAuthority >= 21; // 仙帝境界
         } else if (requireCondition === "祭道境界") {
             conditionMet = isXianguPath
-                ? Number(player.xiangulevel_id) >= 22
-                : Number(player.mijinglevel_id) >= 22; // 祭道境界
+                ? Number(player.xiangulevel_id) >= 22 || flowerAuthority >= 22
+                : Number(player.mijinglevel_id) >= 22 || flowerAuthority >= 22; // 祭道境界
         } else if (requireCondition === "祭道之上境界") {
             conditionMet = isXianguPath
-                ? Number(player.xiangulevel_id) >= 24
-                : Number(player.mijinglevel_id) >= 23;
+                ? Number(player.xiangulevel_id) >= 24 || flowerAuthority >= 23
+                : Number(player.mijinglevel_id) >= 23 || flowerAuthority >= 23;
         } else if (requireCondition === "唯一道之上境界") {
             conditionMet = isXianguPath
-                ? Number(player.xiangulevel_id) >= 25
-                : Number(player.mijinglevel_id) >= 24;
+                ? Number(player.xiangulevel_id) >= 25 || flowerAuthority >= 24
+                : Number(player.mijinglevel_id) >= 24 || flowerAuthority >= 24;
         }
         
         if (!conditionMet) {
@@ -1329,7 +1332,15 @@ function getMissingGolds(weapon) {
     if (currentRank.includes("唯一器")) successRate = 0.01;
 
     // 添加境界加成（按体系取对应境界）
-    if (isXianguPath) {
+    if (isFlowerPath) {
+        if (flowerAuthority >= 17) successRate += 0.2; // 真仙对标
+        if (flowerAuthority >= 18) successRate += 0.3; // 仙王对标
+        if (flowerAuthority >= 20) successRate += 0.4; // 准仙帝对标
+        if (flowerAuthority >= 21) successRate += 0.5; // 仙帝对标
+        if (flowerAuthority >= 22) successRate += 0.6; // 祭道对标
+        if (flowerAuthority >= 23) successRate += 0.7; // 祭道之上对标
+        if (flowerAuthority >= 24) successRate += 0.8; // 唯一道之上对标
+    } else if (isXianguPath) {
         if (player.xiangulevel_id >= 16) successRate += 0.2; // 真仙加成
         if (player.xiangulevel_id >= 18) successRate += 0.3; // 仙王加成
         if (player.xiangulevel_id >= 20) successRate += 0.4; // 准仙帝加成

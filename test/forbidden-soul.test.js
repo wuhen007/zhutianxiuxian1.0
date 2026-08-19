@@ -65,6 +65,13 @@ test('镇魂使用统一境界权柄并保护低两个层级的目标', () => {
 
   const xiangu = player('xiangu', { mijinglevel_id: 1, xiangulevel_id: 14 });
   assert.equal(getForbiddenTargetEligibility(xiangu, player('target', { mijinglevel_id: 14 })).ok, true);
+
+  const huafen = player('huafen', {
+    mijinglevel_id: 1,
+    xiangulevel_id: 1,
+    huafenlevel_id: 10,
+  });
+  assert.equal(getForbiddenTargetEligibility(huafen, player('target', { mijinglevel_id: 10 })).ok, true);
 });
 
 test('三种处置按境界、元神与目标道果开放', () => {
