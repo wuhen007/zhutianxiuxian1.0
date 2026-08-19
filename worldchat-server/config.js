@@ -5,6 +5,7 @@ export const CONFIG = {
   CLIENTS_FILE: process.env.WC_CLIENTS_FILE || './clients.json',
   STORAGE_FILE: process.env.WC_STORAGE_FILE || './messages.json',
   RAIDS_FILE: process.env.WC_RAIDS_FILE || './raids.json',
+  TRADES_FILE: process.env.WC_TRADES_FILE || './trades.json',
   BANNED_FILE: process.env.WC_BANNED_FILE || './banned.json',
   ADMIN_TOKEN: process.env.WC_ADMIN_TOKEN || '',
   ENROLLMENT_TOKEN: process.env.WC_ENROLLMENT_TOKEN || '',
@@ -17,5 +18,7 @@ export const CONFIG = {
   USER_COOLDOWN_MS: 5_000,
   MAX_REGISTRATIONS_PER_MINUTE: 20,
   RAID_TTL_MS: 24 * 60 * 60 * 1000,
+  TRADE_TTL_MS: 30 * 60 * 1000,
+  TRADE_MAX_ACTIVE_PER_SERVER: 20,
   SENSITIVE_WORDS: ['法轮', '违规示例词'],
 };

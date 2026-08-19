@@ -67,6 +67,10 @@ export function provisionClient(options = {}) {
     name,
     query_default: 10,
     expose_group: false,
+    trade_enabled: false,
+    trade_allow_servers: [],
+    trade_deny_servers: [],
+    realm_stats: { players: 0, max_mijing: 0, max_xiangu: 0, max_huafen: 0 },
     joined_groups: [],
     last_seen_seq: 0,
   };

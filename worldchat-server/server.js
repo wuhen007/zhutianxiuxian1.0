@@ -6,6 +6,13 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
 import { CONFIG } from './config.js';
+import {
+  TRADE_LIMITS,
+  cleanTradeLabel,
+  publicTradeView,
+  tradePolicyAllows,
+  validateTradeOffer,
+} from '../apps/worldChat/trade.js';
 
 const SERVER_FILE = fileURLToPath(import.meta.url);
 const SERVER_DIR = path.dirname(SERVER_FILE);
@@ -122,6 +129,22 @@ function cleanGroups(value) {
   ].slice(0, 20);
 }
 
+function cleanServerIds(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(String).filter((id) => id === '*' || /^[A-Za-z0-9_-]{3,64}$/.test(id)))].slice(0, 200);
+}
+
+function cleanRealmStats(value) {
+  const stats = value && typeof value === 'object' ? value : {};
+  return {
+    players: Math.max(0, Math.min(1_000_000, Math.trunc(Number(stats.players) || 0))),
+    max_mijing: Math.max(0, Math.min(999, Math.trunc(Number(stats.max_mijing) || 0))),
+    max_xiangu: Math.max(0, Math.min(999, Math.trunc(Number(stats.max_xiangu) || 0))),
+    max_huafen: Math.max(0, Math.min(999, Math.trunc(Number(stats.max_huafen) || 0))),
+    updated_at: Date.now(),
+  };
+}
+
 function sendJson(res, status, body) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -166,6 +189,7 @@ export function createWorldChatServer(options = {}) {
   const baseDir = options.baseDir || process.cwd();
   const storageFile = path.resolve(baseDir, cfg.STORAGE_FILE);
   const raidsFile = path.resolve(baseDir, cfg.RAIDS_FILE);
+  const tradesFile = path.resolve(baseDir, cfg.TRADES_FILE);
   const bannedFile = path.resolve(baseDir, cfg.BANNED_FILE);
   const clientsFile = path.resolve(baseDir, cfg.CLIENTS_FILE);
   const fixedClients = options.clients
@@ -187,6 +211,12 @@ export function createWorldChatServer(options = {}) {
     (Array.isArray(readJson(raidsFile, [])) ? readJson(raidsFile, []) : [])
       .filter((raid) => raid?.code && raid.expires_at > Date.now())
       .map((raid) => [raid.code, raid])
+  );
+
+  const trades = new Map(
+    (Array.isArray(readJson(tradesFile, [])) ? readJson(tradesFile, []) : [])
+      .filter((trade) => trade?.code && trade.expires_at > Date.now())
+      .map((trade) => [trade.code, trade])
   );
 
   const bannedData = readJson(bannedFile, []);
@@ -225,8 +255,49 @@ export function createWorldChatServer(options = {}) {
     atomicWriteJson(raidsFile, [...raids.values()]);
   }
 
+  function saveTrades() {
+    atomicWriteJson(tradesFile, [...trades.values()]);
+  }
+
   function raidForClient(raid) {
     return raid ? JSON.parse(JSON.stringify(raid)) : null;
+  }
+
+  function newTradeCode() {
+    let code;
+    do code = `T${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    while (trades.has(code));
+    return code;
+  }
+
+  function tradePeerAllowed(left, right) {
+    return Boolean(
+      left &&
+        right &&
+        left.tradeEnabled &&
+        right.tradeEnabled &&
+        tradePolicyAllows(
+          {
+            enabled: left.tradeEnabled,
+            allow_servers: left.tradeAllow,
+            deny_servers: left.tradeDeny,
+          },
+          right.serverId
+        ) &&
+        tradePolicyAllows(
+          {
+            enabled: right.tradeEnabled,
+            allow_servers: right.tradeAllow,
+            deny_servers: right.tradeDeny,
+          },
+          left.serverId
+        )
+    );
+  }
+
+  function sendTradeEvent(serverId, type, trade, extra = {}) {
+    const peer = online.get(serverId);
+    if (peer) send(peer.ws, { type, trade: publicTradeView(trade), ...extra });
   }
 
   function cleanRaidAvatar(value) {
@@ -272,6 +343,10 @@ export function createWorldChatServer(options = {}) {
     connection.exposeLevel = ['admin', 'public'].includes(message.expose_level)
       ? message.expose_level
       : null;
+    connection.tradeEnabled = message.trade_enabled === true;
+    connection.tradeAllow = cleanServerIds(message.trade_allow_servers);
+    connection.tradeDeny = cleanServerIds(message.trade_deny_servers);
+    connection.realmStats = cleanRealmStats(message.realm_stats);
     connection.lastSeen = Date.now();
   }
 
@@ -310,6 +385,7 @@ export function createWorldChatServer(options = {}) {
       joined: [...online.values()].filter((connection) => connection.joined)
         .length,
       totalMessages: messages.length,
+      trades: trades.size,
       lastSeq: nextSeq - 1,
       banned: [...banned],
       servers: [...ids].map((serverId) => {
@@ -321,6 +397,10 @@ export function createWorldChatServer(options = {}) {
           joined: Boolean(connection?.joined),
           expose_level: connection?.exposeLevel || null,
           groups: connection?.groups || [],
+          trade_enabled: Boolean(connection?.tradeEnabled),
+          trade_allow_servers: connection?.tradeAllow || [],
+          trade_deny_servers: connection?.tradeDeny || [],
+          realm_stats: connection?.realmStats || null,
           banned: banned.has(serverId),
           lastSeen: connection?.lastSeen || null,
         };
@@ -555,6 +635,167 @@ export function createWorldChatServer(options = {}) {
       if (message.type === 'SYNC') {
         syncPresence(connection, message);
         return send(ws, { type: 'SYNC_ACK', ok: true, last_seq: nextSeq - 1 });
+      }
+
+      if (message.type === 'REALM_LIST') {
+        const requestId = String(message.request_id || '');
+        const realms = [...online.values()].map((peer) => ({
+          server_id: peer.serverId,
+          name: peer.name,
+          online: true,
+          joined: Boolean(peer.joined),
+          trade_enabled: Boolean(peer.tradeEnabled),
+          realm_stats: peer.realmStats || null,
+        }));
+        return send(ws, { type: 'REALM_LIST_RESULT', request_id: requestId, ok: true, realms });
+      }
+
+      if (message.type === 'TRADE_CREATE') {
+        const requestId = String(message.request_id || '');
+        const targetServerId = String(message.target_server_id || '');
+        const target = online.get(targetServerId);
+        const offer = validateTradeOffer(message.give, message.want);
+        let reason = null;
+        if (!/^[A-Za-z0-9_-]{8,80}$/.test(requestId)) reason = 'invalid_request_id';
+        else if (!/^[A-Za-z0-9_-]{3,64}$/.test(targetServerId)) reason = 'invalid_target';
+        else if (!connection.tradeEnabled) reason = 'trade_disabled';
+        else if (!target) reason = 'target_offline';
+        else if (!tradePeerAllowed(connection, target)) reason = 'trade_not_allowed';
+        else if (!offer.ok) reason = offer.reason;
+        else if ([...trades.values()].filter((trade) =>
+          trade.status === 'open' &&
+          (trade.seller_server_id === connection.serverId || trade.target_server_id === connection.serverId)
+        ).length >= cfg.TRADE_MAX_ACTIVE_PER_SERVER) reason = 'too_many_trades';
+        if (reason) return send(ws, { type: 'TRADE_CREATE_RESULT', request_id: requestId, ok: false, reason });
+
+        const trade = {
+          code: newTradeCode(),
+          status: 'open',
+          seller_server_id: connection.serverId,
+          seller_name: connection.name,
+          seller_tag: String(message.seller_tag || ''),
+          target_server_id: target.serverId,
+          target_name: target.name,
+          give: offer.give,
+          want: offer.want,
+          created_at: Date.now(),
+          expires_at: Date.now() + (cfg.TRADE_TTL_MS || TRADE_LIMITS.ttlMs),
+          settlement: { seller: false, buyer: false },
+        };
+        if (!/^[a-f0-9]{12,32}$/i.test(trade.seller_tag)) {
+          return send(ws, { type: 'TRADE_CREATE_RESULT', request_id: requestId, ok: false, reason: 'invalid_member_tag' });
+        }
+        trades.set(trade.code, trade);
+        saveTrades();
+        send(ws, { type: 'TRADE_CREATE_RESULT', request_id: requestId, ok: true, trade: publicTradeView(trade) });
+        sendTradeEvent(target.serverId, 'TRADE_OFFER', trade);
+        return;
+      }
+
+      if (message.type === 'TRADE_LIST') {
+        const requestId = String(message.request_id || '');
+        const result = [...trades.values()]
+          .filter((trade) => trade.status === 'open' && trade.target_server_id === connection.serverId && trade.expires_at > Date.now())
+          .map(publicTradeView);
+        return send(ws, { type: 'TRADE_LIST_RESULT', request_id: requestId, ok: true, trades: result });
+      }
+
+      if (message.type === 'TRADE_GET') {
+        const requestId = String(message.request_id || '');
+        const code = String(message.code || '').toUpperCase();
+        const trade = trades.get(code);
+        const participant = trade && (
+          trade.seller_server_id === connection.serverId ||
+          trade.buyer_server_id === connection.serverId ||
+          trade.target_server_id === connection.serverId
+        );
+        return send(ws, {
+          type: 'TRADE_GET_RESULT',
+          request_id: requestId,
+          ok: Boolean(participant),
+          reason: participant ? undefined : 'trade_not_found',
+          trade: participant ? publicTradeView(trade) : null,
+        });
+      }
+
+      if (message.type === 'TRADE_CANCEL') {
+        const requestId = String(message.request_id || '');
+        const trade = trades.get(String(message.code || '').toUpperCase());
+        if (!trade || trade.seller_server_id !== connection.serverId || trade.status !== 'open') {
+          return send(ws, { type: 'TRADE_CANCEL_RESULT', request_id: requestId, ok: false, reason: 'trade_not_found' });
+        }
+        trade.status = 'cancelled';
+        trade.closed_at = Date.now();
+        saveTrades();
+        send(ws, { type: 'TRADE_CANCEL_RESULT', request_id: requestId, ok: true, trade: publicTradeView(trade) });
+        sendTradeEvent(trade.target_server_id, 'TRADE_CANCELLED', trade);
+        return;
+      }
+
+      if (message.type === 'TRADE_ACCEPT') {
+        const requestId = String(message.request_id || '');
+        const code = String(message.code || '').toUpperCase();
+        const trade = trades.get(code);
+        const buyerTag = String(message.buyer_tag || '');
+        const seller = trade ? online.get(trade.seller_server_id) : null;
+        let reason = null;
+        if (!trade || trade.expires_at <= Date.now()) reason = 'trade_not_found';
+        else if (trade.status !== 'open') reason = 'trade_closed';
+        else if (trade.target_server_id !== connection.serverId) reason = 'wrong_target';
+        else if (!seller || !tradePeerAllowed(connection, seller)) reason = 'trade_not_allowed';
+        else if (!/^[a-f0-9]{12,32}$/i.test(buyerTag)) reason = 'invalid_member_tag';
+        if (reason) return send(ws, { type: 'TRADE_ACCEPT_RESULT', request_id: requestId, ok: false, reason });
+
+        trade.status = 'settling';
+        trade.buyer_server_id = connection.serverId;
+        trade.buyer_name = connection.name;
+        trade.buyer_tag = buyerTag;
+        trade.settlement = { seller: false, buyer: false };
+        trade.accepted_at = Date.now();
+        saveTrades();
+        send(ws, { type: 'TRADE_ACCEPT_RESULT', request_id: requestId, ok: true, trade: publicTradeView(trade) });
+        sendTradeEvent(trade.seller_server_id, 'TRADE_SETTLE', trade, {
+          role: 'seller',
+          member_tag: trade.seller_tag,
+        });
+        sendTradeEvent(trade.buyer_server_id, 'TRADE_SETTLE', trade, {
+          role: 'buyer',
+          member_tag: trade.buyer_tag,
+        });
+        return;
+      }
+
+      if (message.type === 'TRADE_SETTLE_ACK') {
+        const requestId = String(message.request_id || '');
+        const trade = trades.get(String(message.code || '').toUpperCase());
+        const role = message.role === 'buyer' ? 'buyer' : message.role === 'seller' ? 'seller' : '';
+        if (!role) {
+          return send(ws, { type: 'TRADE_SETTLE_ACK_RESULT', request_id: requestId, ok: false, reason: 'invalid_role' });
+        }
+        const expectedServer = role === 'buyer' ? trade?.buyer_server_id : trade?.seller_server_id;
+        const expectedTag = role === 'buyer' ? trade?.buyer_tag : trade?.seller_tag;
+        if (!trade || trade.status !== 'settling' || expectedServer !== connection.serverId || expectedTag !== String(message.member_tag || '')) {
+          return send(ws, { type: 'TRADE_SETTLE_ACK_RESULT', request_id: requestId, ok: false, reason: 'trade_not_found' });
+        }
+        if (message.ok !== true) {
+          trade.status = 'failed';
+          trade.failure_reason = cleanTradeLabel(message.reason, 120) || 'local_settlement_failed';
+          saveTrades();
+          sendTradeEvent(trade.seller_server_id, 'TRADE_ROLLBACK', trade);
+          sendTradeEvent(trade.buyer_server_id, 'TRADE_ROLLBACK', trade);
+          return send(ws, { type: 'TRADE_SETTLE_ACK_RESULT', request_id: requestId, ok: false, reason: trade.failure_reason });
+        }
+        trade.settlement[role] = true;
+        if (trade.settlement.seller && trade.settlement.buyer) {
+          trade.status = 'completed';
+          trade.completed_at = Date.now();
+          saveTrades();
+          sendTradeEvent(trade.seller_server_id, 'TRADE_COMPLETED', trade);
+          sendTradeEvent(trade.buyer_server_id, 'TRADE_COMPLETED', trade);
+        } else {
+          saveTrades();
+        }
+        return send(ws, { type: 'TRADE_SETTLE_ACK_RESULT', request_id: requestId, ok: true, status: trade.status });
       }
 
       if (message.type === 'RAID_OPEN') {
@@ -829,6 +1070,17 @@ export function createWorldChatServer(options = {}) {
       }
     }
     if (raidsChanged) saveRaids();
+    let tradesChanged = false;
+    for (const [code, trade] of trades) {
+      if (trade.expires_at <= Date.now() && ['open', 'settling'].includes(trade.status)) {
+        trade.status = 'expired';
+        trade.failure_reason = 'trade_expired';
+        tradesChanged = true;
+        sendTradeEvent(trade.seller_server_id, 'TRADE_ROLLBACK', trade);
+        if (trade.buyer_server_id) sendTradeEvent(trade.buyer_server_id, 'TRADE_ROLLBACK', trade);
+      }
+    }
+    if (tradesChanged) saveTrades();
   }, 30_000);
   heartbeat.unref();
 
@@ -859,6 +1111,7 @@ export function createWorldChatServer(options = {}) {
     stop,
     getMessages: () => [...messages],
     getRaids: () => [...raids.values()],
+    getTrades: () => [...trades.values()],
   };
 }
 

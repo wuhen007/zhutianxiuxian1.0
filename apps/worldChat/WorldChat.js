@@ -1,8 +1,24 @@
 // 诸天世界频道：群管理员显式加入后实时收发。
 import { plugin } from '../../api/api.js';
 import { segment } from 'icqq';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {
+  Add_najie_thing,
+  Add_灵石,
+  Add_源石,
+  Read_najie,
+  Read_player,
+  __PATH,
+} from '../../model/xiuxian.js';
 import { worldChatClient as client } from './client.js';
 import { clientFilter } from './filter.js';
+import { formatWorldChatMessage } from './presentation.js';
+import {
+  cleanTradeLabel,
+  parseTradeBundle,
+  validateTradeOffer,
+} from './trade.js';
 import {
   readyWorldChatBot,
   sendWorldGroupMessage,
@@ -20,6 +36,51 @@ function senderName(e) {
     .slice(0, 30);
 }
 
+// 世界频道发言称号：秘境 / 仙古 / 花粉三体系任一达仙王级，取最高主阶梯前缀。
+// 主阶梯统一为 仙王 / 准仙帝 / 仙帝 / 祭道 / 祭道之上 / 唯一道之上（细分境界归入最近主阶梯）。
+const WORLD_TITLE_RANK = {
+  仙王: 1,
+  准仙帝: 2,
+  仙帝: 3,
+  祭道: 4,
+  祭道之上: 5,
+  唯一道之上: 6,
+};
+const MIJING_TITLE = { 18: '仙王', 19: '仙王', 20: '准仙帝', 21: '仙帝', 22: '祭道', 23: '祭道之上', 24: '唯一道之上' };
+const XIANGU_TITLE = { 17: '仙王', 18: '仙王', 19: '仙王', 20: '仙王', 21: '准仙帝', 22: '仙帝', 23: '祭道', 24: '祭道之上', 25: '唯一道之上' };
+const HUAFEN_TITLE = { 19: '仙王', 20: '仙王', 21: '准仙帝', 22: '仙帝', 23: '祭道', 24: '祭道之上', 25: '唯一道之上' };
+function titleFromTable(table, levelId) {
+  const id = Number(levelId) || 0;
+  const keys = Object.keys(table).map(Number);
+  const max = Math.max(...keys);
+  if (id > max) return table[max];
+  return table[id] || null;
+}
+function getWorldChatTitle(player) {
+  if (!player) return null;
+  let best = null;
+  let bestRank = 0;
+  for (const [table, id] of [
+    [MIJING_TITLE, player.mijinglevel_id],
+    [XIANGU_TITLE, player.xiangulevel_id],
+    [HUAFEN_TITLE, player.huafenlevel_id],
+  ]) {
+    const t = titleFromTable(table, id);
+    if (t && WORLD_TITLE_RANK[t] > bestRank) {
+      best = t;
+      bestRank = WORLD_TITLE_RANK[t];
+    }
+  }
+  return best;
+}
+function buildWorldChatSenderName(e, player, title) {
+  const qqName = senderName(e);
+  const gameName = player?.名号 ? String(player.名号).trim().slice(0, 12) : '';
+  if (title && gameName) return `${qqName}『【${title}】${gameName}』`;
+  if (gameName) return `${qqName}『${gameName}』`;
+  return qqName;
+}
+
 function canManageGroup(e) {
   const role = String(e.sender?.role || e.member?.role || '').toLowerCase();
   return (
@@ -29,6 +90,60 @@ function canManageGroup(e) {
     e.member?.is_owner === true ||
     e.member?.is_admin === true
   );
+}
+
+function tradeSummary(items = []) {
+  return items
+    .map((item) =>
+      item.kind === 'currency'
+        ? `${item.name}×${item.amount.toLocaleString()}`
+        : `${item.type}:${item.name}×${item.amount}`
+    )
+    .join('、');
+}
+
+function tradeLedgerPath() {
+  return path.join(path.dirname(client.configPath), 'trades.local.json');
+}
+
+async function readTradeLedger() {
+  try {
+    const value = JSON.parse(await fs.readFile(tradeLedgerPath(), 'utf8'));
+    return value && typeof value === 'object' ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeTradeLedger(value) {
+  const file = tradeLedgerPath();
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  const temp = `${file}.${process.pid}.tmp`;
+  await fs.writeFile(temp, JSON.stringify(value, null, 2), 'utf8');
+  await fs.rename(temp, file);
+}
+
+async function localRealmStats() {
+  let files = [];
+  try {
+    files = (await fs.readdir(__PATH.player_path)).filter((file) => /\.json$/i.test(file));
+  } catch {
+    return { players: 0, max_mijing: 0, max_xiangu: 0, max_huafen: 0 };
+  }
+  let max_mijing = 0;
+  let max_xiangu = 0;
+  let max_huafen = 0;
+  await Promise.all(
+    files.map(async (file) => {
+      try {
+        const player = JSON.parse(await fs.readFile(path.join(__PATH.player_path, file), 'utf8'));
+        max_mijing = Math.max(max_mijing, Number(player.mijinglevel_id) || 0);
+        max_xiangu = Math.max(max_xiangu, Number(player.xiangulevel_id) || 0);
+        max_huafen = Math.max(max_huafen, Number(player.huafenlevel_id) || 0);
+      } catch {}
+    })
+  );
+  return { players: files.length, max_mijing, max_xiangu, max_huafen };
 }
 
 function readableConnectionError(error) {
@@ -68,14 +183,25 @@ export class WorldChat extends plugin {
         { reg: '^#世界\\s*关闭群号$', fnc: 'exposeOff' },
         { reg: '^#世界\\s*状态$', fnc: 'stat' },
         { reg: '^#世界\\s*开关$', fnc: 'toggle' },
+        { reg: '^#跨服交易(?:\\s+[\\s\\S]*)?$', fnc: 'tradeCommand' },
       ],
     });
     this.cooldowns = new Map();
     this.pendingConfirmations = new Map();
     this.groupSenders = new Map();
     this.deliveredGroups = new Map();
+    this.tradeUsers = new Map();
+    this.tradeLocks = new Map();
+    this.tradeLedger = null;
     client.setMessageHandler((message) => this.broadcast(message));
+    client.setTradeHandler((event) => this.handleTradeEvent(event));
     client.connect();
+    this.refreshRealmStats();
+    this.realmStatsTimer = setInterval(() => {
+      this.refreshRealmStats();
+      this.reconcileTradeLedger();
+    }, 60_000);
+    this.realmStatsTimer.unref?.();
   }
 
   readyBot() {
@@ -94,15 +220,7 @@ export class WorldChat extends plugin {
 
   async broadcast(message) {
     const bot = await this.waitForBot();
-    const time = new Date(message.ts).toLocaleString('zh-CN', {
-      hour12: false,
-    });
-    let output = `【诸天世界 · ${message.name}】\n${
-      message.sender_name
-    }：${clientFilter(message.msg)}\n${time}`;
-    if (message.expose_level === 'public' && message.groups?.length) {
-      output += `\n来源群：${message.groups.join('、')}`;
-    }
+    const output = formatWorldChatMessage(message);
     const payload = message.images?.length
       ? [output, ...message.images.map((url) => segment.image(url))]
       : output;
@@ -134,6 +252,194 @@ export class WorldChat extends plugin {
       throw failures[0];
     }
     this.deliveredGroups.delete(message.id);
+  }
+
+  async refreshRealmStats() {
+    try {
+      client.setRealmStats(await localRealmStats());
+    } catch (error) {
+      globalThis.logger?.debug?.(`[worldchat] 位面统计刷新失败: ${error.message}`);
+    }
+  }
+
+  async withTradeLock(userId, task) {
+    const key = String(userId);
+    const previous = this.tradeLocks.get(key) || Promise.resolve();
+    let current;
+    current = previous
+      .catch(() => {})
+      .then(task)
+      .finally(() => {
+        if (this.tradeLocks.get(key) === current) this.tradeLocks.delete(key);
+      });
+    this.tradeLocks.set(key, current);
+    return current;
+  }
+
+  async ledger() {
+    if (!this.tradeLedger) this.tradeLedger = await readTradeLedger();
+    return this.tradeLedger;
+  }
+
+  async saveLedger() {
+    await writeTradeLedger(this.tradeLedger || {});
+  }
+
+  async reconcileTradeLedger() {
+    if (!client.authed) return;
+    const ledger = await this.ledger();
+    for (const code of Object.keys(ledger)) {
+      const result = await client.getTrade(code).catch(() => ({ ok: false }));
+      if (
+        (result.reason === 'trade_not_found' ||
+          ['cancelled', 'failed', 'expired'].includes(result.trade?.status))
+      ) {
+        await this.rollbackLocalTrade(code);
+      }
+    }
+  }
+
+  rememberTradeUser(e) {
+    const userId = String(e.user_id || '');
+    const tag = client.userTag(userId);
+    this.tradeUsers.set(tag, userId);
+    return { userId, tag };
+  }
+
+  async assetBalance(userId, asset) {
+    if (asset.kind === 'currency') {
+      const player = await Read_player(userId);
+      return Math.max(0, Number(player?.[asset.name]) || 0);
+    }
+    const najie = await Read_najie(userId);
+    const list = Array.isArray(najie?.[asset.type]) ? najie[asset.type] : [];
+    return Math.max(0, Number(list.find((item) => item?.name === asset.name)?.数量) || 0);
+  }
+
+  async adjustAsset(userId, asset, delta) {
+    if (asset.kind === 'currency') {
+      if (asset.name === '灵石') return Add_灵石(userId, delta, { applyMingge: false });
+      return Add_源石(userId, delta, { applyMingge: false });
+    }
+    return Add_najie_thing(userId, asset.name, asset.type, delta);
+  }
+
+  async reserveAssets(userId, assets) {
+    for (const asset of assets) {
+      if ((await this.assetBalance(userId, asset)) < asset.amount) {
+        throw new Error(`${asset.name}_insufficient`);
+      }
+    }
+    const changed = [];
+    try {
+      for (const asset of assets) {
+        await this.adjustAsset(userId, asset, -asset.amount);
+        changed.push(asset);
+      }
+    } catch (error) {
+      for (const asset of changed.reverse()) {
+        await this.adjustAsset(userId, asset, asset.amount).catch(() => {});
+      }
+      throw error;
+    }
+  }
+
+  async prepareTradeEscrow(code, userId, role, ownAssets, incomingAssets) {
+    const offer = validateTradeOffer(ownAssets, incomingAssets);
+    if (!offer.ok) throw new Error(offer.reason);
+    const ledger = await this.ledger();
+    if (ledger[code]) return ledger[code];
+    return this.withTradeLock(userId, async () => {
+      if (ledger[code]) return ledger[code];
+      await this.reserveAssets(userId, offer.give);
+      ledger[code] = {
+        code,
+        user_id: String(userId),
+        role,
+        reserved: offer.give,
+        incoming: offer.want,
+        credited: false,
+        created_at: Date.now(),
+      };
+      await this.saveLedger();
+      return ledger[code];
+    });
+  }
+
+  async rollbackLocalTrade(code) {
+    const ledger = await this.ledger();
+    const entry = ledger[code];
+    if (!entry) return;
+    await this.withTradeLock(entry.user_id, async () => {
+      if (entry.credited) {
+        for (const asset of entry.incoming || []) {
+          await this.adjustAsset(entry.user_id, asset, -asset.amount).catch(() => {});
+        }
+      }
+      for (const asset of entry.reserved || []) {
+        await this.adjustAsset(entry.user_id, asset, asset.amount).catch(() => {});
+      }
+      delete ledger[code];
+      await this.saveLedger();
+    });
+  }
+
+  async settleLocalTrade(event) {
+    const trade = event.trade;
+    const code = String(trade?.code || '').toUpperCase();
+    const ledger = await this.ledger();
+    const entry = ledger[code];
+    if (!entry) {
+      await client.settleTrade(code, event.role, '', false, 'local_escrow_missing');
+      return;
+    }
+    try {
+      await this.withTradeLock(entry.user_id, async () => {
+        if (!entry.credited) {
+          for (const asset of entry.incoming || []) {
+            await this.adjustAsset(entry.user_id, asset, asset.amount);
+          }
+          entry.credited = true;
+          await this.saveLedger();
+        }
+      });
+      await client.settleTrade(code, event.role, event.member_tag, true);
+    } catch (error) {
+      await client.settleTrade(code, event.role, event.member_tag, false, cleanTradeLabel(error.message, 120));
+    }
+  }
+
+  async handleTradeEvent(event) {
+    const trade = event?.trade;
+    if (!trade?.code) return;
+    const code = String(trade.code).toUpperCase();
+    if (event.type === 'TRADE_SETTLE') return this.settleLocalTrade(event);
+    if (event.type === 'TRADE_COMPLETED') {
+      const ledger = await this.ledger();
+      delete ledger[code];
+      await this.saveLedger();
+      return;
+    }
+    if (event.type === 'TRADE_ROLLBACK' || event.type === 'TRADE_CANCELLED') {
+      return this.rollbackLocalTrade(code);
+    }
+    if (event.type === 'TRADE_OFFER') {
+      const bot = await this.waitForBot().catch(() => null);
+      if (!bot) return;
+      const text = [
+        '【🌐 跨服交易邀请】',
+        `交易码：${code}`,
+        `对方位面：${trade.seller_name}（${trade.seller_server_id}）`,
+        `对方提供：${tradeSummary(trade.give)}`,
+        `对方需求：${tradeSummary(trade.want)}`,
+        '确认后发送：#跨服交易 接受 交易码',
+      ].join('\n');
+      await Promise.allSettled(
+        client.groups().map((groupId) =>
+          sendWorldGroupMessage(bot, groupId, text, this.groupSenders.get(String(groupId)))
+        )
+      );
+    }
   }
 
   rememberGroupSender(e) {
@@ -176,8 +482,11 @@ export class WorldChat extends plugin {
     }
     this.cooldowns.set(cooldownKey, Date.now());
 
+    const player = await Read_player(e.user_id).catch(() => null);
+    const title = getWorldChatTitle(player);
+    const displayName = buildWorldChatSenderName(e, player, title);
     const result = await client.pub(clientFilter(text), {
-      name: senderName(e),
+      name: displayName,
       tag: client.userTag(e.user_id),
     }, images);
     if (!result.ok) {
@@ -211,29 +520,177 @@ export class WorldChat extends plugin {
       return true;
     }
     const lines = result.messages.map((message) => {
-      const time = new Date(message.ts).toLocaleString('zh-CN', {
-        hour12: false,
-      });
-      let line = `[${message.name} · ${
-        message.sender_name
-      } · ${time}]\n${clientFilter(message.msg) || '[图片]'}`;
-      if (message.expose_level === 'public' && message.groups?.length) {
-        line += `\n[群：${message.groups.join('、')}]`;
-      } else if (
+      const line = formatWorldChatMessage(message);
+      if (
         message.expose_level === 'admin' &&
         e.isMaster &&
         message.groups?.length
       ) {
-        line += `\n[群：${message.groups.join('、')}，仅管理员可见]`;
+        line += `\n群号（仅管理员可见）：${message.groups.join('、')}`;
       }
       return line;
     });
-    const reply = [`【诸天世界频道 · 最近 ${result.messages.length} 条】\n${lines.join('\n\n')}`];
-    for (const message of result.messages) {
-      for (const url of message.images || []) reply.push(segment.image(url));
-    }
-    e.reply(reply);
+    const historyPayload = [
+      `【🌐 跨服世界频道 · 最近 ${result.messages.length} 条】\n${lines.join('\n\n')}`,
+      ...result.messages.flatMap((message) =>
+        (message.images || []).map((url) => segment.image(url))
+      ),
+    ];
+    e.reply(historyPayload);
     return true;
+  }
+
+  async tradeCommand(e) {
+    if (!this.requireJoinedGroup(e)) return true;
+    const raw = e.msg.replace(/^#跨服交易\s*/, '').trim();
+    if (!raw || raw === '规则') {
+      return e.reply([
+        '【跨服交易规则】',
+        '允许：灵石、源石、普通纳戒物品，以物易物或货币交换。',
+        '禁止：圣法碎片、至宝、帝兵及超出单笔上限的数量。',
+        '发布：#跨服交易 发布 sv_x 给=物品|道具|名称|数量 换=灵石|数量',
+        '查看：#跨服交易 位面 / #跨服交易 列表',
+        '成交：#跨服交易 接受 交易码；撤销：#跨服交易 取消 交易码',
+        '服主先执行「#跨服交易 开启」，再用「#跨服交易 同意 sv_x」开放指定位面。',
+      ].join('\n'));
+    }
+
+    if (raw === '开启' || raw === '关闭') {
+      if (!e.isMaster) return e.reply('仅机器人管理员可设置本服跨服交易开关');
+      client.setTradeEnabled(raw === '开启');
+      return e.reply(`本服跨服交易已${raw === '开启' ? '开启' : '关闭'}，仍需单独同意交易位面`);
+    }
+
+    const allowMatch = raw.match(/^(同意|拒绝)\s+([A-Za-z0-9_-]{3,64})$/i);
+    if (allowMatch) {
+      if (!e.isMaster) return e.reply('仅机器人管理员可设置位面交易许可');
+      const serverId = allowMatch[2];
+      const current = new Set(client.cfg.trade_allow_servers || []);
+      const denied = new Set(client.cfg.trade_deny_servers || []);
+      if (allowMatch[1] === '同意') {
+        current.add(serverId);
+        denied.delete(serverId);
+      } else if (current.has('*')) {
+        denied.add(serverId);
+      } else {
+        current.delete(serverId);
+      }
+      client.setTradeAllowServers([...current]);
+      client.setTradeDenyServers([...denied]);
+      return e.reply(`已${allowMatch[1] === '同意' ? '允许' : '拒绝'}与位面 ${serverId} 进行跨服交易`);
+    }
+
+    if (raw === '允许全部') {
+      if (!e.isMaster) return e.reply('仅机器人管理员可设置位面交易许可');
+      client.setTradeAllowServers(['*']);
+      client.setTradeDenyServers([]);
+      return e.reply('已允许与所有开启跨服交易的位面进行交易');
+    }
+
+    if (raw === '位面') {
+      await this.refreshRealmStats();
+      const result = await client.listRealms();
+      if (!result.ok) return e.reply(`位面查询失败：${result.reason || '总机未连接'}`);
+      const lines = result.realms.map((realm) => {
+        const stats = realm.realm_stats || {};
+        return [
+          `${realm.name}（${realm.server_id}）`,
+          `玩家：${stats.players ?? 0}人`,
+          `最高境界：秘境${stats.max_mijing ?? 0} / 仙古${stats.max_xiangu ?? 0} / 花粉${stats.max_huafen ?? 0}`,
+          `交易：${realm.trade_enabled ? '已开启' : '未开启'}`,
+        ].join('｜');
+      });
+      return e.reply(`【诸天位面概况】\n${lines.join('\n') || '暂无在线位面'}`);
+    }
+
+    if (raw === '列表') {
+      const result = await client.listTrades();
+      if (!result.ok) return e.reply(`交易列表获取失败：${result.reason || '总机未连接'}`);
+      if (!result.trades?.length) return e.reply('当前没有发给本位面的跨服交易');
+      return e.reply([
+        '【跨服交易列表】',
+        ...result.trades.map((trade) => [
+          `交易码：${trade.code}`,
+          `来自：${trade.seller_name}（${trade.seller_server_id}）`,
+          `提供：${tradeSummary(trade.give)}`,
+          `需求：${tradeSummary(trade.want)}`,
+        ].join('\n')),
+      ].join('\n\n'));
+    }
+
+    const publishMatch = raw.match(/^发布\s+([A-Za-z0-9_-]{3,64})\s+给[=:]([\s\S]+?)\s+换[=:]([\s\S]+)$/i);
+    if (publishMatch) {
+      const targetServerId = publishMatch[1];
+      const give = parseTradeBundle(publishMatch[2]);
+      const want = parseTradeBundle(publishMatch[3]);
+      if (!give.ok || !want.ok) return e.reply(`报价格式错误：${give.ok ? want.reason : give.reason}`);
+      const validation = validateTradeOffer(give.items, want.items);
+      if (!validation.ok) return e.reply(`报价被诸天规则拦截：${validation.reason}`);
+      const { userId, tag } = this.rememberTradeUser(e);
+      const pending = `P_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      try {
+        await this.prepareTradeEscrow(pending, userId, 'seller', validation.give, validation.want);
+        const result = await client.createTrade({
+          target_server_id: targetServerId,
+          seller_tag: tag,
+          give: validation.give,
+          want: validation.want,
+        });
+        if (!result.ok) {
+          if (result.reason !== 'timeout') await this.rollbackLocalTrade(pending);
+          return e.reply(`跨服交易发布失败：${result.reason || '未知错误'}`);
+        }
+        await this.migrateTradeEscrow(pending, result.trade.code);
+        return e.reply(`跨服交易已发布，交易码：${result.trade.code}\n提供：${tradeSummary(validation.give)}\n需求：${tradeSummary(validation.want)}`);
+      } catch (error) {
+        await this.rollbackLocalTrade(pending);
+        return e.reply(`跨服交易发布失败：${error.message}`);
+      }
+    }
+
+    const acceptMatch = raw.match(/^接受\s+([A-Za-z0-9_-]{6,80})$/i);
+    if (acceptMatch) {
+      const code = acceptMatch[1].toUpperCase();
+      const list = await client.listTrades();
+      const trade = list.trades?.find((item) => item.code === code);
+      if (!list.ok || !trade) return e.reply(`找不到交易 ${code}，请先发送「#跨服交易 列表」`);
+      const { userId, tag } = this.rememberTradeUser(e);
+      const pending = `P_${code}_${tag}`;
+      try {
+        await this.prepareTradeEscrow(pending, userId, 'buyer', trade.want, trade.give);
+        const result = await client.acceptTrade(code, tag);
+        if (!result.ok) {
+          await this.rollbackLocalTrade(pending);
+          return e.reply(`接受交易失败：${result.reason || '未知错误'}`);
+        }
+        await this.migrateTradeEscrow(pending, code);
+        return e.reply(`已接受交易 ${code}，双方资产正在结算`);
+      } catch (error) {
+        await this.rollbackLocalTrade(pending);
+        return e.reply(`接受交易失败：${error.message}`);
+      }
+    }
+
+    const cancelMatch = raw.match(/^取消\s+([A-Za-z0-9_-]{6,80})$/i);
+    if (cancelMatch) {
+      const code = cancelMatch[1].toUpperCase();
+      const result = await client.cancelTrade(code);
+      if (!result.ok) return e.reply(`撤销交易失败：${result.reason || '未知错误'}`);
+      await this.rollbackLocalTrade(code);
+      return e.reply(`交易 ${code} 已撤销，预留资产已返还`);
+    }
+
+    return e.reply('未识别跨服交易指令，发送「#跨服交易 规则」查看用法');
+  }
+
+  async migrateTradeEscrow(fromCode, toCode) {
+    const ledger = await this.ledger();
+    const entry = ledger[fromCode];
+    if (!entry) throw new Error('local_escrow_missing');
+    delete ledger[fromCode];
+    entry.code = toCode;
+    ledger[toCode] = entry;
+    await this.saveLedger();
   }
 
   async join(e) {
@@ -288,6 +745,12 @@ export class WorldChat extends plugin {
         );
       }
       lines.push(`最近错误：${readableConnectionError(status.last_error)}`);
+      lines.push(
+        `跨服交易：${status.trade_enabled ? '已开启' : '未开启'}，许可位面：${
+          status.trade_allow_servers?.length ? status.trade_allow_servers.join('、') : '无'
+        }${status.trade_deny_servers?.length ? `，拒绝位面：${status.trade_deny_servers.join('、')}` : ''}`,
+        `本位面概况：${status.realm_stats.players}人，最高秘境${status.realm_stats.max_mijing}/仙古${status.realm_stats.max_xiangu}/花粉${status.realm_stats.max_huafen}`
+      );
     }
     e.reply(lines.join('\n'));
     return true;

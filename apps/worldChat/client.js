@@ -81,6 +81,29 @@ function normalizeConfig(input = {}) {
   cfg.expose_group = ['admin', 'public'].includes(cfg.expose_group)
     ? cfg.expose_group
     : false;
+  cfg.trade_enabled = cfg.trade_enabled === true;
+  cfg.trade_allow_servers = [
+    ...new Set(
+      (cfg.trade_allow_servers || [])
+        .map(String)
+        .filter((id) => id === '*' || /^[A-Za-z0-9_-]{3,64}$/.test(id))
+    ),
+  ].slice(0, 200);
+  cfg.trade_deny_servers = [
+    ...new Set(
+      (cfg.trade_deny_servers || [])
+        .map(String)
+        .filter((id) => /^[A-Za-z0-9_-]{3,64}$/.test(id))
+    ),
+  ].slice(0, 200);
+  cfg.realm_stats = cfg.realm_stats && typeof cfg.realm_stats === 'object'
+    ? {
+        players: Math.max(0, Math.trunc(Number(cfg.realm_stats.players) || 0)),
+        max_mijing: Math.max(0, Math.trunc(Number(cfg.realm_stats.max_mijing) || 0)),
+        max_xiangu: Math.max(0, Math.trunc(Number(cfg.realm_stats.max_xiangu) || 0)),
+        max_huafen: Math.max(0, Math.trunc(Number(cfg.realm_stats.max_huafen) || 0)),
+      }
+    : { players: 0, max_mijing: 0, max_xiangu: 0, max_huafen: 0 };
   cfg.joined_groups = [
     ...new Set(
       (cfg.joined_groups || [])
@@ -216,6 +239,7 @@ export class WorldChatClient {
     this.pending = new Map();
     this.seenMessageIds = new Set();
     this.messageHandler = null;
+    this.tradeHandler = null;
     this.backfillPromise = null;
     this.deliveryChain = Promise.resolve();
     this.deliveryRetryBaseMs = Math.max(
@@ -242,6 +266,10 @@ export class WorldChatClient {
 
   setMessageHandler(handler) {
     this.messageHandler = typeof handler === 'function' ? handler : null;
+  }
+
+  setTradeHandler(handler) {
+    this.tradeHandler = typeof handler === 'function' ? handler : null;
   }
 
   hasIdentity() {
@@ -374,6 +402,10 @@ export class WorldChatClient {
       joined: groups.length > 0,
       groups: this.cfg.expose_group ? groups : [],
       expose_level: this.cfg.expose_group || undefined,
+      trade_enabled: this.cfg.trade_enabled,
+      trade_allow_servers: this.cfg.trade_allow_servers,
+      trade_deny_servers: this.cfg.trade_deny_servers,
+      realm_stats: this.cfg.realm_stats,
     };
   }
 
@@ -423,6 +455,11 @@ export class WorldChatClient {
       this.enqueueDelivery(message.message).catch(
         (error) => (this.lastError = error.message)
       );
+      return;
+    }
+
+    if (['TRADE_OFFER', 'TRADE_CANCELLED', 'TRADE_SETTLE', 'TRADE_ROLLBACK', 'TRADE_COMPLETED'].includes(message.type)) {
+      this.tradeHandler?.({ type: message.type, ...message });
       return;
     }
 
@@ -507,7 +544,7 @@ export class WorldChatClient {
       images: normalizeImageUrls(images),
       sender_name: String(sender.name || '无名道友')
         .trim()
-        .slice(0, 30),
+        .slice(0, 60),
       sender_tag: String(sender.tag || ''),
     };
     message.sig = this.hmac(publishPayload(this.cfg.server_id, message));
@@ -533,6 +570,43 @@ export class WorldChatClient {
       body.after_seq = afterSeq;
     const result = await this.request('QUERY', 'QUERY_RESULT', body);
     return result.type === 'QUERY_RESULT' ? { ...result, ok: true } : result;
+  }
+
+  listRealms() {
+    return this.request('REALM_LIST', 'REALM_LIST_RESULT');
+  }
+
+  createTrade(body) {
+    return this.request('TRADE_CREATE', 'TRADE_CREATE_RESULT', body);
+  }
+
+  listTrades() {
+    return this.request('TRADE_LIST', 'TRADE_LIST_RESULT');
+  }
+
+  getTrade(code) {
+    return this.request('TRADE_GET', 'TRADE_GET_RESULT', { code });
+  }
+
+  cancelTrade(code) {
+    return this.request('TRADE_CANCEL', 'TRADE_CANCEL_RESULT', { code });
+  }
+
+  acceptTrade(code, buyerTag) {
+    return this.request('TRADE_ACCEPT', 'TRADE_ACCEPT_RESULT', {
+      code,
+      buyer_tag: buyerTag,
+    });
+  }
+
+  settleTrade(code, role, memberTag, ok, reason = '') {
+    return this.request('TRADE_SETTLE_ACK', 'TRADE_SETTLE_ACK_RESULT', {
+      code,
+      role,
+      member_tag: memberTag,
+      ok: Boolean(ok),
+      reason,
+    });
   }
 
   openRaid(body) {
@@ -694,7 +768,52 @@ export class WorldChatClient {
       joined_groups: this.groups(),
       last_seen_seq: this.cfg.last_seen_seq,
       last_error: this.lastError,
+      trade_enabled: this.cfg.trade_enabled,
+      trade_allow_servers: [...this.cfg.trade_allow_servers],
+      trade_deny_servers: [...this.cfg.trade_deny_servers],
+      realm_stats: { ...this.cfg.realm_stats },
     };
+  }
+
+  setTradeEnabled(value) {
+    this.cfg.trade_enabled = Boolean(value);
+    this.saveConfig();
+    this.syncPresence();
+  }
+
+  setTradeAllowServers(value) {
+    this.cfg.trade_allow_servers = [
+      ...new Set(
+        (Array.isArray(value) ? value : [])
+          .map(String)
+          .filter((id) => id === '*' || /^[A-Za-z0-9_-]{3,64}$/.test(id))
+      ),
+    ].slice(0, 200);
+    this.saveConfig();
+    this.syncPresence();
+  }
+
+  setTradeDenyServers(value) {
+    this.cfg.trade_deny_servers = [
+      ...new Set(
+        (Array.isArray(value) ? value : [])
+          .map(String)
+          .filter((id) => /^[A-Za-z0-9_-]{3,64}$/.test(id))
+      ),
+    ].slice(0, 200);
+    this.saveConfig();
+    this.syncPresence();
+  }
+
+  setRealmStats(value) {
+    this.cfg.realm_stats = {
+      players: Math.max(0, Math.trunc(Number(value?.players) || 0)),
+      max_mijing: Math.max(0, Math.trunc(Number(value?.max_mijing) || 0)),
+      max_xiangu: Math.max(0, Math.trunc(Number(value?.max_xiangu) || 0)),
+      max_huafen: Math.max(0, Math.trunc(Number(value?.max_huafen) || 0)),
+    };
+    this.saveConfig();
+    this.syncPresence();
   }
 
   setEnable(value) {
