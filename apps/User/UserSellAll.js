@@ -44,6 +44,15 @@ import { isHighRealmConsumableRestricted } from '../../model/realmAuthority.js';
 import { formatTianjiaoTrace, rollDungeonTianjiaoTrace } from '../../model/tianjiaoGrowth.js';
 import { consumeBlackEmperorBattleFormation, rollBlackEmperorDungeonEncounter, rollDuanDeEncounter } from '../../model/blackEmperor.js';
 import { rollRuthlessDestinyEncounter } from '../../model/ruthlessEmperor.js';
+import { SecretPlaceTask } from '../SecretPlace/SecretPlaceTask.js';
+import { SecretPlaceplusTask } from '../SecretPlace/SecretPlaceplusTask.js';
+import {
+  accelerateSecretPlaceAction,
+  getSecretPlaceActionEndTime,
+  recordSecretPlaceItemToHistory,
+  SECRET_PLACE_SETTLEMENT_BUSY,
+  withSecretPlaceSettlementLock,
+} from '../../model/secretPlaceAddiction.js';
 import { AppName } from '../../app.config.js';
 import {
   dataall,
@@ -135,7 +144,7 @@ export class UserSellAll extends plugin {
                     fnc: 'all_huixue'
                 },
                           {
-            reg:"^#秘境结算|副本结算$",
+            reg:"^(#秘境结算|副本结算)$",
             fnc:'regression',
           },
                 {
@@ -150,224 +159,109 @@ async quickSettleDungeon(e) {
     if (!verc({ e })) return false;
     const usr_qq = e.user_id.toString().replace('qg_', '');
     const processed_qq = await channel(usr_qq);
-    
-    // 检查玩家是否存在
-    if (!await existplayer(processed_qq)) {
-        e.reply("当前位面无存档");
-        return false;
-    }
-    
-    // 检查玩家是否有进行中的探索
-    let action = await redis.get('xiuxian:player:' + processed_qq + ':action');
-    if (!action) {
-        e.reply("没有进行中的副本探索");
-        return false;
-    }
-    
-    action = JSON.parse(action);
-    const now_time = new Date().getTime();
-    
-    // 检查是否在探索状态
-    const inAction = action.Place_action === '0' || action.Place_actionplus === '0';
-    if (!inAction) {
-        e.reply("当前不在副本探索中，无法结算");
-        return false;
-    }
-    
-    // 确定结束时间
-    let end_time;
-    if (action.end_time) {
-        // 普通副本（禁地历练）结构
-        end_time = action.end_time;
-    } else if (action.Place_actionplus === '0' && action.start_time && action.total_time) {
-        // 沉迷副本（秘境历练）结构
-        end_time = action.start_time + action.total_time * 60 * 1000;
-    } else {
-        console.error("无法确定结束时间:", action);
-        e.reply("探索状态异常，无法结算");
-        return false;
-    }
-    
-    // 确保结束时间是有效数字
-    if (isNaN(end_time)) {
-        console.error("无效的结束时间:", end_time);
-        e.reply("探索状态异常，无法结算");
-        return false;
-    }
-    
-    // 检查探索是否已结束
-    if (now_time >= end_time) {
-        e.reply("副本探索已结束，无需结算");
-        return false;
-    }
-    
-    // 计算剩余时间（毫秒）
-    const remainingTime = end_time - now_time;
-    
-    // 确保剩余时间是有效数字
-    if (isNaN(remainingTime) || remainingTime <= 0) {
-        console.error("无效的剩余时间:", remainingTime);
-        e.reply("探索状态异常，无法结算");
-        return false;
-    }
-    
-    // 定义结算卡映射表（按价值从低到高排序）
-    const settlementCards = [
-        {name: "凡品秘境结算卡", value: 30000},       // 0.5分钟
-        {name: "玄品秘境结算卡", value: 60000},       // 1分钟
-        {name: "灵品秘境结算卡", value: 180000},      // 3分钟
-        {name: "仙品秘境结算卡", value: 300000},      // 5分钟
-        {name: "圣品秘境结算卡", value: 600000},      // 10分钟
-        {name: "帝品秘境结算卡", value: 1800000}      // 30分钟
-    ];
-    
-    let totalReduce = 0;
-    let usedCards = {};
-    let remaining = remainingTime;
-    
-    // 智能使用结算卡 - 优先使用低价值卡片
-    for (const card of settlementCards) {
-        if (remaining <= 0) break; // 剩余时间为0，停止使用卡片
-        
-        try {
-            // 获取该卡片在背包中的数量
-            const cardCount = await exist_najie_thing(processed_qq, card.name, "道具");
-            
-            // 确保卡片数量是有效数字
-            const validCardCount = safeNumber(cardCount);
-            if (validCardCount <= 0) continue;
-            
-            // 确保卡片价值是有效数字
-            if (isNaN(card.value) || card.value <= 0) {
-                console.error(`无效的卡片价值: ${card.name} = ${card.value}`);
-                continue;
-            }
-            
-            // 计算需要使用的卡片数量
-            const cardsNeeded = Math.min(
-                validCardCount, // 背包中有的数量
-                Math.floor(remaining / card.value) // 需要覆盖剩余时间的数量
-            );
-            
-            // 如果没有需要使用的卡片，跳过
-            if (cardsNeeded <= 0) continue;
-            
-            // 计算实际减少的时间
-            const cardReduce = Math.min(remaining, cardsNeeded * card.value);
-            
-            // 更新剩余时间
-            remaining -= cardReduce;
-            totalReduce += cardReduce;
-            
-            // 记录使用的卡片
-            usedCards[card.name] = cardsNeeded;
-            
-            // 消耗卡片
-            await Add_najie_thing(processed_qq, card.name, "道具", -cardsNeeded);
-        } catch (err) {
-            console.error(`处理卡片 ${card.name} 时出错:`, err);
+    let result;
+    try {
+      result = await withSecretPlaceSettlementLock(processed_qq, async () => {
+        if (!await existplayer(processed_qq)) {
+          e.reply("当前位面无存档");
+          return false;
         }
-    }
-    
-    // 如果没有使用任何结算卡
-    if (totalReduce === 0) {
-        e.reply("背包中没有可用的秘境结算卡");
-        return false;
-    }
-    
-    // 确保减少的时间是有效数字
-    if (isNaN(totalReduce) || totalReduce <= 0) {
-        console.error("无效的减少时间:", totalReduce);
-        e.reply("结算失败，请重试");
-        return false;
-    }
-    
-    // 根据副本类型处理时间减少
-    if (action.Place_actionplus === '0') {
-        // 沉迷副本：减少总时间（分钟）
-        const reduceMinutes = totalReduce / (60 * 1000);
-        action.total_time -= reduceMinutes;
-        
-        // 重新计算结束时间
-        end_time = action.start_time + action.total_time * 60 * 1000;
-        
-        // 重新计算下一次结算时间
-        if (action.next_settle_time) {
-            // 确保结算间隔不低于1分钟
-            const minInterval = 60 * 1000; // 1分钟
-            const calculatedInterval = action.total_time * 60 * 1000 / action.total_count;
-            const interval = Math.max(minInterval, calculatedInterval);
-            
-            action.interval = interval;
-            action.next_settle_time = now_time + interval;
-        }
-        
-        // 添加惩罚计数器，用于统计结算时的惩罚次数
-        action.penalty_count = 0;
-    } else {
-        // 普通副本：直接减少结束时间
-        action.end_time -= totalReduce;
-        end_time = action.end_time;
-    }
-    
-    // 更新Redis
-    await redis.set('xiuxian:player:' + processed_qq + ':action', JSON.stringify(action));
-    
-    // 计算减少的时间（分钟）
-    const reduceMinutes = (totalReduce / 60000).toFixed(1);
-    
-    // 构建回复消息
-    let msg = "【秘境结算·仙力催动】\n";
-    msg += "你祭出秘境结算卡，引发时空波动，加速副本探索！\n\n";
-    
-    // 列出使用的卡片
-    if (Object.keys(usedCards).length > 0) {
-        msg += " 使用结算卡：\n";
-        for (const [cardName, quantity] of Object.entries(usedCards)) {
-            // 确保数量是有效数字
-            const validQuantity = safeNumber(quantity);
-            if (validQuantity > 0) {
-                msg += `▸ ${cardName} x${validQuantity}\n`;
-            }
-        }
-    }
-    
-    // 添加时间减少信息
-    msg += `\n 时间加速：${reduceMinutes}分钟`;
-    
-    // 添加剩余时间
-    const newRemaining = end_time - now_time;
-    const formattedTime = formatTime(newRemaining);
-    
-    msg += `\n\n 剩余探索时间：${formattedTime}`;
-    
-    // 仙侠风格提示
-    if (totalReduce >= remainingTime) {
-        msg += `\n\n 仙力浩荡！副本探索已完成！`;
-    } else if (totalReduce / remainingTime > 0.7) {
-        msg += `\n\n 仙力澎湃！副本探索进程已大幅推进！`;
-    } else if (totalReduce / remainingTime > 0.3) {
-        msg += `\n\n 仙力流转！副本探索进程稳步推进！`;
-    } else {
-        msg += `\n\n 时空涟漪荡漾，秘境探索加速进行`;
-    }
-    
-    // 如果完全结算完成，显示惩罚次数并清除计数器
-    if (totalReduce >= remainingTime && action.penalty_count !== undefined) {
-        const penaltyCount = action.penalty_count;
-        delete action.penalty_count;
-        await redis.set('xiuxian:player:' + processed_qq + ':action', JSON.stringify(action));
-        
-        // 如果有惩罚次数，添加到消息中
-        if (penaltyCount > 0) {
-            msg += `
 
- ⚠️ 结算期间触发古地府惩罚 ${penaltyCount} 次`;
+        const actionKey = 'xiuxian:player:' + processed_qq + ':action';
+        const rawAction = await redis.get(actionKey);
+        if (!rawAction) {
+          e.reply("没有进行中的副本探索");
+          return false;
         }
+
+        const action = JSON.parse(rawAction);
+        const nowTime = Date.now();
+        if (action.Place_action !== '0' && action.Place_actionplus !== '0') {
+          e.reply("当前不在副本探索中，无法结算");
+          return false;
+        }
+
+        const endTime = getSecretPlaceActionEndTime(action);
+        if (!Number.isFinite(endTime) || nowTime >= endTime) {
+          e.reply("副本探索已结束，无需结算");
+          return false;
+        }
+
+        const remainingTime = endTime - nowTime;
+        const settlementCards = [
+          { name: "凡品秘境结算卡", value: 30000 },
+          { name: "玄品秘境结算卡", value: 60000 },
+          { name: "灵品秘境结算卡", value: 180000 },
+          { name: "仙品秘境结算卡", value: 300000 },
+          { name: "圣品秘境结算卡", value: 600000 },
+          { name: "帝品秘境结算卡", value: 1800000 },
+        ];
+        const usedCards = {};
+        let totalReduce = 0;
+        let remaining = remainingTime;
+
+        for (const card of settlementCards) {
+          const cardCount = safeNumber(await exist_najie_thing(processed_qq, card.name, "道具"));
+          const cardsNeeded = Math.min(cardCount, Math.floor(remaining / card.value));
+          if (cardsNeeded <= 0) continue;
+          try {
+            await Add_najie_thing(processed_qq, card.name, "道具", -cardsNeeded);
+          } catch (error) {
+            console.error(`处理卡片 ${card.name} 时出错:`, error);
+            continue;
+          }
+          const cardReduce = cardsNeeded * card.value;
+          usedCards[card.name] = cardsNeeded;
+          totalReduce += cardReduce;
+          remaining -= cardReduce;
+        }
+
+        if (totalReduce <= 0) {
+          e.reply("背包中没有可用的秘境结算卡");
+          return false;
+        }
+
+        const acceleration = accelerateSecretPlaceAction(action, totalReduce, nowTime);
+        const nextAction = acceleration.action;
+        const penaltyCount = acceleration.actualReduceMs >= remainingTime
+          ? Number(nextAction.penalty_count) || 0
+          : 0;
+        if (acceleration.actualReduceMs >= remainingTime) delete nextAction.penalty_count;
+
+        try {
+          await redis.set(actionKey, JSON.stringify(nextAction));
+        } catch (error) {
+          for (const [cardName, quantity] of Object.entries(usedCards)) {
+            await Add_najie_thing(processed_qq, cardName, "道具", quantity);
+          }
+          throw error;
+        }
+
+        const reduceMinutes = (acceleration.actualReduceMs / 60000).toFixed(1);
+        let msg = "【秘境结算·仙力催动】\n你祭出秘境结算卡，引发时空波动，加速副本探索！\n\n 使用结算卡：\n";
+        for (const [cardName, quantity] of Object.entries(usedCards)) {
+          msg += `▸ ${cardName} x${quantity}\n`;
+        }
+        msg += `\n 时间加速：${reduceMinutes}分钟`;
+        msg += `\n\n 剩余探索时间：${formatTime(acceleration.endTime - nowTime)}`;
+        if (acceleration.actualReduceMs >= remainingTime) msg += `\n\n 仙力浩荡！副本探索已完成！`;
+        else if (acceleration.actualReduceMs / remainingTime > 0.7) msg += `\n\n 仙力澎湃！副本探索进程已大幅推进！`;
+        else if (acceleration.actualReduceMs / remainingTime > 0.3) msg += `\n\n 仙力流转！副本探索进程稳步推进！`;
+        else msg += `\n\n 时空涟漪荡漾，秘境探索加速进行`;
+        if (penaltyCount > 0) msg += `\n\n结算期间触发古地府惩罚 ${penaltyCount} 次`;
+        e.reply(msg);
+        return true;
+      });
+    } catch (error) {
+      console.error('一键消耗结算卡失败:', error);
+      e.reply('结算失败，请稍后重试');
+      return false;
     }
-    
-    e.reply(msg);
-    return true;
+    if (result === SECRET_PLACE_SETTLEMENT_BUSY) {
+      e.reply('秘境正在结算，请稍后重试');
+      return false;
+    }
+    return result;
 }
 
 
@@ -1846,9 +1740,12 @@ if (totalPotentialCost > 0) {
   e.reply(replyMsg);
   return false;
 }
-    async regression(e){
+    async regressionLegacy(e){
       let ruthlessDestinyChecked = false;
       let player_id=e.user_id.toString().replace('qg_','')
+      let settlementResult;
+      try {
+      settlementResult = await withSecretPlaceSettlementLock(player_id, async () => {
       let ifexistplay = await existplayer(player_id);
       if (!ifexistplay){;
           e.reply("当前位面无存档")
@@ -1875,10 +1772,9 @@ if (totalPotentialCost > 0) {
      end_time = end_time - 60000 * 1;
      
           //时间过了
-          if (now_time > end_time 
-            || player_id=='4909071520328015562') {
+          if (now_time > end_time) {
             let weizhi = action.Place_address;
-          let xf = -1;
+          let xf = action.XF ?? -1;
         
             let A_player = {
               ...player,
@@ -2106,7 +2002,7 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
                         '【获得仙宠：白毫（制符·仙胎）】'
                     ].join('\n');
                     await Add_najie_thing(player_id, "白毫", "仙宠", 1);
-                    await recordItemToHistory(player_id, "白毫", "仙宠", 1);
+                    await recordSecretPlaceItemToHistory(redis, player_id, "白毫", "仙宠", 1);
                 } else if (random < 0.08) {
                     last_msg += '你在云海深处瞥见一道雪白身影，眉心墨色一闪而逝。白泽幼兽似乎察觉了你的气息，回头望了你一眼便消失在祥云之中。白毫似在等待……但道缘未至。';
                 }
@@ -2617,7 +2513,7 @@ if (weizhi.name === "紫薇星域") {
                                 last_msg += ' 「天璇步法」——脱胎自行字秘的无上极速残篇，踏光阴、缩山河，一步踏出星月倒转！';
                                 last_msg += ' 待你回神，老人已化流光遁入宇宙，唯留残缺行字秘之道韵在神魂中流转不息。';
                                 player.学习的功法.push('天璇步法');
-                                await recordItemToHistory(player_id, '天璇步法', '功法', 1);
+                                await recordSecretPlaceItemToHistory(redis, player_id, '天璇步法', '功法', 1);
                                 await Write_player(usr_qq, player);
                             }
                         }
@@ -3295,7 +3191,7 @@ if (weizhi.name === "石村") {
             
             // 额外奖励（根据原著柳神赐福）
             const rewardExp = Math.floor(player.修为 * 0.1); // 修为提升10%
-            await Add_修为(usr_qq, rewardExp);
+            player.修为 = (Number(player.修为) || 0) + rewardExp;
             
             last_msg += '柳神指尖轻点，一缕生命精气没入你体内，修为暴涨！';
             last_msg += `获得修为：${bigNumberTransform(rewardExp)}`;
@@ -3927,7 +3823,7 @@ ${aptitudeEvaluations[newAptitude]}
           //时间过了
    // 计算总结束时间
         const totalEndTime = action.start_time + (action.total_time * 60 * 1000);
-          if (now_time > totalEndTime || player_id=='4909071520328015562') {
+          if (now_time > totalEndTime) {
 
              // 计算剩余次数
         const remainingCount = action.total_count - action.settled_count;
@@ -4183,7 +4079,7 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
                         '【获得仙宠：白毫（制符·仙胎）】'
                     ].join('\n');
                     await Add_najie_thing(player_id, "白毫", "仙宠", 1);
-                    await recordItemToHistory(player_id, "白毫", "仙宠", 1);
+                    await recordSecretPlaceItemToHistory(redis, player_id, "白毫", "仙宠", 1);
                 } else if (random < 0.08) {
                     last_msg += '你在云海深处瞥见一道雪白身影，眉心墨色一闪而逝。白泽幼兽似乎察觉了你的气息，回头望了你一眼便消失在祥云之中。白毫似在等待……但道缘未至。';
                 }
@@ -4748,7 +4644,7 @@ if (weizhi.name === "紫薇星域") {
                                 last_msg += ' 「天璇步法」——脱胎自行字秘的无上极速残篇，踏光阴、缩山河，一步踏出星月倒转！';
                                 last_msg += ' 待你回神，老人已化流光遁入宇宙，唯留残缺行字秘之道韵在神魂中流转不息。';
                                 player.学习的功法.push('天璇步法');
-                                await recordItemToHistory(player_id, '天璇步法', '功法', 1);
+                                await recordSecretPlaceItemToHistory(redis, player_id, '天璇步法', '功法', 1);
                                 await Write_player(usr_qq, player);
                             }
                         }
@@ -5373,7 +5269,7 @@ if (weizhi.name === "石村") {
             
             // 额外奖励（根据原著柳神赐福）
             const rewardExp = Math.floor(player.修为 * 0.1); // 修为提升10%
-            await Add_修为(usr_qq, rewardExp);
+            player.修为 = (Number(player.修为) || 0) + rewardExp;
             
             last_msg += '柳神指尖轻点，一缕生命精气没入你体内，修为暴涨！';
             last_msg += `获得修为：${bigNumberTransform(rewardExp)}`;
@@ -5984,6 +5880,7 @@ ${aptitudeEvaluations[newAptitude]}
               //先完结再结算
               await Add_血气(player_id, qixue);
               await Add_修为(player_id, xiuwei);
+              player = await Read_player(player_id);
            // 每次结算后，更新已结算次数
     action.settled_count++;
 }
@@ -6039,7 +5936,71 @@ let arr = action;
         e.reply("无状态")
         return
       }
+      });
+      } catch (error) {
+        console.error(`玩家${player_id}秘境结算失败:`, error);
+        e.reply('秘境结算失败，请稍后重试');
+        return false;
+      }
+      if (settlementResult === SECRET_PLACE_SETTLEMENT_BUSY) {
+        e.reply('秘境正在结算，请稍后重试');
+        return false;
+      }
+      return settlementResult;
     }
+
+  async regression(e) {
+    const playerId = e.user_id.toString().replace('qg_', '');
+    if (!await existplayer(playerId)) {
+      e.reply('当前位面无存档');
+      return false;
+    }
+
+    const rawAction = await redis.get(`xiuxian:player:${playerId}:action`);
+    if (!rawAction) {
+      e.reply('无状态');
+      return false;
+    }
+    const action = JSON.parse(rawAction);
+    const now = Date.now();
+
+    if (action.Place_action == '0') {
+      if (now <= Number(action.end_time) - 60 * 1000) {
+        e.reply('未到时候');
+        return false;
+      }
+      const result = await new SecretPlaceTask().Secretplacetask(playerId);
+      if (result === SECRET_PLACE_SETTLEMENT_BUSY) {
+        e.reply('秘境正在结算，请稍后重试');
+        return false;
+      }
+      return true;
+    }
+
+    if (action.Place_actionplus == '0') {
+      const endTime = getSecretPlaceActionEndTime(action);
+      if (!Number.isFinite(endTime) || now <= endTime) {
+        e.reply('未到时候');
+        return false;
+      }
+      const remainingCount = Math.max(
+        0,
+        Math.trunc(Number(action.total_count) || 0) - Math.trunc(Number(action.settled_count) || 0),
+      );
+      const task = new SecretPlaceplusTask();
+      for (let index = 0; index < remainingCount; index++) {
+        const result = await task.Secretplaceplustask(playerId);
+        if (result === SECRET_PLACE_SETTLEMENT_BUSY) {
+          e.reply('秘境正在结算，请稍后重试');
+          return false;
+        }
+      }
+      return true;
+    }
+
+    e.reply('无状态');
+    return false;
+  }
 
   /**
    * 推送消息，群消息推送群，或者推送私人

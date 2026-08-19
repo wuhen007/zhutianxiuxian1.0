@@ -78,6 +78,12 @@ import {
 import { resetIneligibleShengtiCultivation } from '../../model/shengtiCultivation.js';
 import { openJadeCasket } from '../../model/baitianTemple.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import {
+  accelerateSecretPlaceAction,
+  getSecretPlaceActionEndTime,
+  SECRET_PLACE_SETTLEMENT_BUSY,
+  withSecretPlaceSettlementLock,
+} from '../../model/secretPlaceAddiction.js';
 import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
 import {
   isShengfaClaimed,
@@ -4776,123 +4782,78 @@ if (thing_name == "邪神道果") {
 }
 
 if (thing_exist.type === "秘境结算") {
-    // 检查玩家是否有进行中的探索
-    const player_id = e.user_id.toString().replace('qg_', '');
-    let action = await redis.get('xiuxian:player:' + player_id + ':action');
-    
-    if (!action) {
-        e.reply("没有进行中的探索，无法使用结算卡");
+    const player_id = String(usr_qq);
+    const reduceByCard = {
+        "帝品秘境结算卡": 1800000,
+        "圣品秘境结算卡": 600000,
+        "仙品秘境结算卡": 300000,
+        "灵品秘境结算卡": 180000,
+        "玄品秘境结算卡": 60000,
+        "凡品秘境结算卡": 30000,
+    };
+    const singleReduce = reduceByCard[thing_exist.name];
+    if (!singleReduce) {
+        e.reply(`无效的秘境结算卡：${thing_exist.name}`);
         return;
     }
-    
-    action = JSON.parse(action);
-    const now_time = new Date().getTime();
-    
-    // 检查是否在探索状态
-    const inAction = action.Place_action === '0' || action.Place_actionplus === '0';
-    if (!inAction) {
-        e.reply("当前不在探索中，无法使用结算卡");
+
+    let result;
+    try {
+        result = await withSecretPlaceSettlementLock(player_id, async () => {
+            const actionKey = 'xiuxian:player:' + player_id + ':action';
+            const rawAction = await redis.get(actionKey);
+            if (!rawAction) {
+                e.reply("没有进行中的探索，无法使用结算卡");
+                return false;
+            }
+            const action = JSON.parse(rawAction);
+            if (action.Place_action !== '0' && action.Place_actionplus !== '0') {
+                e.reply("当前不在探索中，无法使用结算卡");
+                return false;
+            }
+
+            const nowTime = Date.now();
+            const endTime = getSecretPlaceActionEndTime(action);
+            if (!Number.isFinite(endTime) || nowTime >= endTime) {
+                e.reply("探索已结束，无法使用结算卡");
+                return false;
+            }
+
+            const remaining = endTime - nowTime;
+            const usableQuantity = Math.min(quantity, Math.floor(remaining / singleReduce));
+            if (usableQuantity <= 0) {
+                e.reply("剩余探索时间不足一张结算卡，请等待自然结算");
+                return false;
+            }
+
+            const acceleration = accelerateSecretPlaceAction(
+                action,
+                singleReduce * usableQuantity,
+                nowTime,
+            );
+            await Add_najie_thing(usr_qq, thing_exist.name, "道具", -usableQuantity);
+            try {
+                await redis.set(actionKey, JSON.stringify(acceleration.action));
+            } catch (error) {
+                await Add_najie_thing(usr_qq, thing_exist.name, "道具", usableQuantity);
+                throw error;
+            }
+
+            e.reply([
+                `成功使用${usableQuantity}张【${thing_exist.name}】！`,
+                `探索进程缩减${(acceleration.actualReduceMs / 60000).toFixed(1)}分钟`,
+                `探索剩余时间: ${formatTime(acceleration.endTime - nowTime)}`
+            ].join("\n"));
+            return true;
+        });
+    } catch (error) {
+        console.error(`玩家${player_id}使用秘境结算卡失败:`, error);
+        e.reply("结算卡使用失败，请稍后重试");
         return;
     }
-    
-    // 检查探索是否已结束
-    let end_time;
-    if (action.end_time) {
-        // 普通副本（禁地历练）结构
-        end_time = action.end_time;
-    } else if (action.Place_actionplus === '0') {
-        // 沉迷副本（秘境历练）结构
-        end_time = action.start_time + action.total_time * 60 * 1000;
-    } else {
-        e.reply("探索状态异常，无法使用结算卡");
-        return;
+    if (result === SECRET_PLACE_SETTLEMENT_BUSY) {
+        e.reply("秘境正在结算，请稍后重试");
     }
-    
-    if (now_time >= end_time) {
-        e.reply("探索已结束，无法使用结算卡");
-        return;
-    }
-    
-    // 根据结算卡品质确定减少时间
-    let singleReduce = 0;
-    
-    switch(thing_exist.name) {
-        case "帝品秘境结算卡":
-            singleReduce = 1800000; // 30分钟
-            break;
-        case "圣品秘境结算卡":
-            singleReduce = 600000;  // 10分钟
-            break;
-        case "仙品秘境结算卡":
-            singleReduce = 300000;  // 5分钟
-            break;
-        case "灵品秘境结算卡":
-            singleReduce = 180000;  // 3分钟
-            break;
-        case "玄品秘境结算卡":
-            singleReduce = 60000;   // 1分钟
-            break;
-        case "凡品秘境结算卡":
-            singleReduce = 30000;   // 0.5分钟
-            break;
-        default:
-            e.reply(`无效的秘境结算卡：${thing_exist.name}`);
-            return;
-    }
-    
-    // 计算总减少时间
-    let totalReduce = singleReduce * quantity;
-    
-    // 检查减少时间是否超过剩余时间
-    const remaining = end_time - now_time;
-    if (totalReduce > remaining) {
-        // 计算实际可减少的数量
-        const maxQuantity = Math.floor(remaining / singleReduce);
-       
-        // 使用最大可用的数量
-        quantity = maxQuantity;
-        totalReduce = singleReduce * quantity;
-    }
-    
-    // 根据副本类型处理时间减少
-    if (action.Place_actionplus === '0') {
-        // 沉迷副本：减少总时间（分钟）
-        const reduceMinutes = totalReduce / (60 * 1000);
-        action.total_time -= reduceMinutes;
-        
-        // 重新计算结束时间
-        end_time = action.start_time + action.total_time * 60 * 1000;
-        
-        // 重新计算下一次结算时间
-        if (action.next_settle_time) {
-            const interval = action.total_time * 60 * 1000 / action.total_count;
-            action.interval = interval;
-            action.next_settle_time = now_time + interval;
-        }
-    } else {
-        // 普通副本：直接减少结束时间
-        action.end_time -= totalReduce;
-        end_time = action.end_time;
-    }
-    
-    // 更新Redis
-    await redis.set('xiuxian:player:' + player_id + ':action', JSON.stringify(action));
-    
-    // 消耗结算卡
-    await Add_najie_thing(usr_qq, thing_exist.name, "道具", -quantity);
-    
-    // 计算减少的分钟数（带小数）
-    const reduceMinutes = (totalReduce / 60000).toFixed(1);
-    
-    // 计算新的剩余时间
-    const newRemaining = end_time - now_time;
-    
-    e.reply([
-        `成功使用${quantity}张【${thing_exist.name}】！`,
-        `探索进程缩减${reduceMinutes}分钟`,
-        `探索剩余时间: ${formatTime(newRemaining)}`
-    ].join("\n"));
-    
     return;
 }
 
@@ -7723,7 +7684,7 @@ function formatTime(ms) {
 }
 // 判断是否为数值装备
 function isValueEquipment(item) {
-    return item.atk > 99 || item.def > 99 || item.HP > 99;
+    return item.atk > 499 || item.def > 499 || item.HP > 499;
 }
 
 

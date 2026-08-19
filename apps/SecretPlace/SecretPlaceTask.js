@@ -50,6 +50,10 @@ import { rollDahuangPupilEncounter } from '../../model/supremePath.js';
 import { resolveZhetianDungeonVictory } from '../../model/zhetianInheritance.js';
 import { rollShengfaDungeonEncounter } from '../../model/shengfaFragment.js';
 import { runTaskOnce } from '../../utils/taskGuard.js';
+import {
+  recordSecretPlaceItemToHistory,
+  withSecretPlaceSettlementLock,
+} from '../../model/secretPlaceAddiction.js';
 export class SecretPlaceTask extends plugin {
   constructor() {
     super({
@@ -82,17 +86,21 @@ export class SecretPlaceTask extends plugin {
 
 
   }
-  async Secretplacetask() {
+  async Secretplacetask(targetPlayerId = null) {
     //获取缓存中人物列表
-    let playerList = [];
-    let files = fs
-      .readdirSync('./plugins/zhutianxiuxian1.0/resources/data/xiuxian_player')
-      .filter(file => file.endsWith('.json'));
-    for (let file of files) {
-      file = file.replace('.json', '');
-      playerList.push(file);
+    let playerList = targetPlayerId == null ? [] : [String(targetPlayerId)];
+    if (targetPlayerId == null) {
+      let files = fs
+        .readdirSync('./plugins/zhutianxiuxian1.0/resources/data/xiuxian_player')
+        .filter(file => file.endsWith('.json'));
+      for (let file of files) {
+        file = file.replace('.json', '');
+        playerList.push(file);
+      }
     }
+    let targetResult;
     for (let player_id of playerList) {
+      const result = await withSecretPlaceSettlementLock(player_id, async () => {
       let log_mag = ''; //查询当前人物动作日志信息
       log_mag = log_mag + '查询' + player_id + '是否有动作,';
       //得到动作
@@ -147,7 +155,7 @@ export class SecretPlaceTask extends plugin {
             // 清除法身行动状态
             await redis.del('xiuxian:player:' + player_id + ':action:fashan');
             
-            continue; // 跳过后续处理
+            return; // 跳过该玩家后续处理
         }
     }
 }
@@ -717,7 +725,7 @@ if (weizhi.name === "万龙巢") {
                         '【获得仙宠：白毫（制符·仙胎）】'
                     ].join('\n');
                     await Add_najie_thing(player_id, "白毫", "仙宠", 1);
-                    await recordItemToHistory(player_id, "白毫", "仙宠", 1);
+                    await recordSecretPlaceItemToHistory(redis, player_id, "白毫", "仙宠", 1);
                 } else if (random < 0.08) {
                     last_msg += '你在云海深处瞥见一道雪白身影，眉心墨色一闪而逝。白泽幼兽似乎察觉了你的气息，回头望了你一眼便消失在祥云之中。白毫似在等待……但道缘未至。';
                 }
@@ -952,7 +960,7 @@ if (player.power_place == 2 && Math.random() < 0.01) {
                                 last_msg += ' 「天璇步法」——脱胎自行字秘的无上极速残篇，踏光阴、缩山河，一步踏出星月倒转！';
                                 last_msg += ' 待你回神，老人已化流光遁入宇宙，唯留残缺行字秘之道韵在神魂中流转不息。';
                                 player.学习的功法.push('天璇步法');
-                                await recordItemToHistory(player_id, '天璇步法', '功法', 1);
+                                await recordSecretPlaceItemToHistory(redis, player_id, '天璇步法', '功法', 1);
                                 await Write_player(usr_qq, player);
                             }
                         }
@@ -1631,7 +1639,7 @@ if (weizhi.name === "石村") {
             
             // 额外奖励（根据原著柳神赐福）
             const rewardExp = Math.floor(player.修为 * 0.1); // 修为提升10%
-            await Add_修为(usr_qq, rewardExp);
+            player.修为 = (Number(player.修为) || 0) + rewardExp;
             
             last_msg += '柳神指尖轻点，一缕生命精气没入你体内，修为暴涨！';
             last_msg += `获得修为：${bigNumberTransform(rewardExp)}`;
@@ -2321,7 +2329,10 @@ ${aptitudeEvaluations[newAptitude]}
           }
         }
       }
+      });
+      if (targetPlayerId != null) targetResult = result;
     }
+    return targetResult;
   }
 
 

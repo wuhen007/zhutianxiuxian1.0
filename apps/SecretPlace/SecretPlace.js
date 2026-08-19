@@ -2503,24 +2503,12 @@ async Goforbiddenarea(e) {
     const allMsgs = [];
 
     
-    // 特殊玩家处理
-    const isSpecialPlayer = usr_qq == '4909071520328015562';
-    if (isSpecialPlayer) {
-        allMsgs.push([
-            `【无上存在·巡视禁地】`,
-            `${player.名号}为诸天共尊的无上存在，`,
-            `此刻巡视禁地，万道臣服，邪祟避退！`,
-        ].join('\n'));
-    }
-    
     // 检查资源是否足够
-    if (!isSpecialPlayer) {
-        if (player.灵石 < weizhi.Price) {
-            return e.reply(`没有灵石寸步难行，攒到${weizhi.Price}灵石才够哦~`);
-        }
-        if (player.修为 < weizhi.experience) {
-            return e.reply(`你需要积累${weizhi.experience}修为，才能抵抗禁地魔气！`);
-        }
+    if (player.灵石 < weizhi.Price) {
+        return e.reply(`没有灵石寸步难行，攒到${weizhi.Price}灵石才够哦~`);
+    }
+    if (player.修为 < weizhi.experience) {
+        return e.reply(`你需要积累${weizhi.experience}修为，才能抵抗禁地魔气！`);
     }
     
     if (player.寿元 < weizhi.shouyuan) {
@@ -2535,16 +2523,11 @@ async Goforbiddenarea(e) {
     await Write_player(usr_qq, player);
     // 扣除资源
     await Add_寿元(usr_qq, -weizhi.shouyuan);
-    if (!isSpecialPlayer) {
-        await Add_灵石(usr_qq, -weizhi.Price);
-        await Add_修为(usr_qq, -weizhi.experience); 
-    }
+    await Add_灵石(usr_qq, -weizhi.Price);
+    await Add_修为(usr_qq, -weizhi.experience);
     
     // 添加消耗信息
-    let costInfo = `消耗：${weizhi.shouyuan}寿元`;
-    if (!isSpecialPlayer) {
-        costInfo += `，${weizhi.Price}灵石，${weizhi.experience}修为`;
-    }
+    const costInfo = `消耗：${weizhi.shouyuan}寿元，${weizhi.Price}灵石，${weizhi.experience}修为`;
     allMsgs.push(`${player.名号}${costInfo}`);
     
     // 获取基础时间

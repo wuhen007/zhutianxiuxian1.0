@@ -44,7 +44,10 @@ import {
   awardDungeonGongfaProficiency,
   formatGongfaProficiency,
 } from '../../model/gongfaProficiency.js';
-import { normalizeLegacySecretPlaceAddictionAction } from '../../model/secretPlaceAddiction.js';
+import {
+  normalizeLegacySecretPlaceAddictionAction,
+  withSecretPlaceSettlementLock,
+} from '../../model/secretPlaceAddiction.js';
 import { rollDahuangPupilEncounter } from '../../model/supremePath.js';
 import { resolveZhetianDungeonVictory } from '../../model/zhetianInheritance.js';
 import { rollShengfaDungeonEncounter } from '../../model/shengfaFragment.js';
@@ -65,17 +68,21 @@ export class SecretPlaceplusTask extends plugin {
     };
   }
 
-  async Secretplaceplustask() {
+  async Secretplaceplustask(targetPlayerId = null) {
     //获取缓存中人物列表
-    let playerList = [];
-    let files = fs
-      .readdirSync('./plugins/zhutianxiuxian1.0/resources/data/xiuxian_player')
-      .filter(file => file.endsWith('.json'));
-    for (let file of files) {
-      file = file.replace('.json', '');
-      playerList.push(file);
+    let playerList = targetPlayerId == null ? [] : [String(targetPlayerId)];
+    if (targetPlayerId == null) {
+      let files = fs
+        .readdirSync('./plugins/zhutianxiuxian1.0/resources/data/xiuxian_player')
+        .filter(file => file.endsWith('.json'));
+      for (let file of files) {
+        file = file.replace('.json', '');
+        playerList.push(file);
+      }
     }
+    let targetResult;
     for (let player_id of playerList) {
+      const result = await withSecretPlaceSettlementLock(player_id, async () => {
       let log_mag = ''; //查询当前人物动作日志信息
       log_mag = log_mag + '查询' + player_id + '是否有动作,';
       //得到动作
@@ -109,8 +116,9 @@ export class SecretPlaceplusTask extends plugin {
         if (action.Place_actionplus == '0') {
         let now_time = new Date().getTime();
          const settleTime = action.next_settle_time - (60 * 1000); // 提前1分钟
+         const totalEndTime = Number(action.start_time) + Number(action.total_time) * 60 * 1000;
         // 检查是否到达结算时间
-        if (now_time > settleTime) {
+        if (now_time > settleTime || now_time >= totalEndTime) {
             let weizhi = action.Place_address;
           let xf = action.XF ?? -1;
 
@@ -1600,7 +1608,7 @@ if (weizhi.name === "石村") {
             
             // 额外奖励（根据原著柳神赐福）
             const rewardExp = Math.floor(player.修为 * 0.1); // 修为提升10%
-            await Add_修为(usr_qq, rewardExp);
+            player.修为 = (Number(player.修为) || 0) + rewardExp;
             
             last_msg += '柳神指尖轻点，一缕生命精气没入你体内，修为暴涨！';
             last_msg += `获得修为：${bigNumberTransform(rewardExp)}`;
@@ -2325,10 +2333,10 @@ if (action.settled_count >= action.total_count) {
         'xiuxian:player:' + player_id + ':action',
         JSON.stringify(action)
     );
-    // 结算属性
+    // 先保存本轮事件状态，再追加结算属性，避免旧快照覆盖增量奖励
+    await Write_player(player_id, player);
     await Add_血气(player_id, qixue);
     await Add_修为(player_id, xiuwei);
-    await Write_player(player_id, player);
        // 构建最终消息
     let finalMsg = [
         segment.at(Number(player_id)), // 艾特玩家
@@ -2349,14 +2357,15 @@ if (action.settled_count >= action.total_count) {
     }
 } else {
     // 还有下一次结算，设置新的结算时间
-    action.next_settle_time = now_time + action.interval;
+    action.next_settle_time = Number(action.next_settle_time) + action.interval;
     
     // 保存更新后的动作状态
     await redis.set(
         'xiuxian:player:' + player_id + ':action',
         JSON.stringify(action)
     );
-              //先完结再结算
+              // 先保存本轮事件状态，再追加增量奖励
+              await Write_player(player_id, player);
               await Add_血气(player_id, qixue);
               await Add_修为(player_id, xiuwei);
               await Add_寿元(player_id,-Math.max(x,1))
@@ -2384,7 +2393,10 @@ if (action.settled_count >= action.total_count) {
           }
         }
       }
+      });
+      if (targetPlayerId != null) targetResult = result;
     }
+    return targetResult;
   }
 
   /**
