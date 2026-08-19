@@ -15,6 +15,8 @@ import {
   Write_qinmidu,
   Read_najie,
   Write_najie,
+  Add_灵石,
+  Add_源石,
   channel
 } from '../../model/xiuxian.js';
 import { Read_player, __PATH } from '../../model/xiuxian.js';
@@ -314,9 +316,9 @@ async sendToRebirth(e) {
       `- 经历阴阳大磨盘考验`,
       `- 30%概率灵魂磨损，变得痴傻`,
       `- 70%概率熬过考验，天资降低一级`,
-      `- 斩道王者（秘境11级）或真一境（仙古9级）以上可硬扛阴阳大磨盘`,
+      `- 斩道王者（秘境11级）、真一境（仙古9级）或圣者境（花粉10级）以上可硬扛阴阳大磨盘`,
       `- 达到上述境界者可使用 #轮回救人 @目标 强闯轮回路救人`,
-      `- 大帝或仙古至尊境可执掌轮回，裁定所有魂魄是否往生`,
+      `- 大帝、仙古至尊境或花粉天尊境可执掌轮回，裁定所有魂魄是否往生`,
       `- 强制再入仙途`,
       `"轮回之门已开启，前尘往事尽成空..."`
     ];
@@ -1457,6 +1459,7 @@ async relieveFashanAction(e) {
     // ===== 基础奖励（所有档位共有） =====
     await Add_najie_thing(targetQQ, '超越宝盒', '盒子', 5);
     await Add_najie_thing(targetQQ, '位面传送阵', '道具', 3);
+    await Add_najie_thing(targetQQ, '轮回命签', '道具', 50);
     await Add_灵石(targetQQ, 100000000);
     await Add_源石(targetQQ, 5000000, { applyMingge: false });
 
@@ -1464,10 +1467,11 @@ async relieveFashanAction(e) {
     let bonusText = '';
     switch (pkg) {
       case 1:
-        // 50轮回命签
-        await Add_najie_thing(targetQQ, '轮回命签', '道具', 50);
-        bonusText = '轮回命签 ×50\n';
-        break;
+        // 500洗根水 + 1锁灵仙符
+        await Add_najie_thing(targetQQ, '洗根水', '道具', 500);
+        await Add_najie_thing(targetQQ, '定灵仙符', '道具', 1);
+        bonusText = '洗根水 ×500\n定灵仙符 ×1\n';
+        break
       case 2:
         // 25叩仙丹 + 50天药
         await Add_najie_thing(targetQQ, '叩仙丹', '丹药', 25);
@@ -1480,16 +1484,11 @@ async relieveFashanAction(e) {
         await Add_najie_thing(targetQQ, '众生仙钓', '道具', 3);
         bonusText = '超越宝盒 ×10（共15）\n众生仙钓 ×3\n';
         break;
-      case 4:
-        // 500洗根水 + 1锁灵仙符
-        await Add_najie_thing(targetQQ, '洗根水', '道具', 500);
-        await Add_najie_thing(targetQQ, '锁灵仙符', '道具', 1);
-        bonusText = '洗根水 ×500\n锁灵仙符 ×1\n';
-        break;
+;
     }
 
     e.reply([
-      `🌟 拉新奖励（档${pkg}）已发放至玩家 ${targetQQ}！\n`,
+      `拉新奖励（档${pkg}）已发放至玩家 ${targetQQ}！\n`,
       '超越宝盒 ×5\n',
       `${bonusText}`,
       '位面传送阵 ×3\n',
@@ -1709,5 +1708,4 @@ async function clearNajieThing(thingType, thingName) {
     })
     .filter(usrObj => usrObj);
 }
-
 
