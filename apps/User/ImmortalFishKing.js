@@ -39,8 +39,7 @@ import {
   calculateFishKingDamage,
   calculateFishKingRescueDamage,
   createFishKingBattleAvatar,
-  createFishKingRelicRewards,
-  createFishKingRewardAssignments,
+  createFishKingKillRewardBundle,
   deleteActiveFishKing,
   findFishKingByMemberId,
   findFishKingByTeamId,
@@ -85,9 +84,11 @@ function getFishKingRescueLines(rescue, state, damage) {
   ];
 }
 
-function createRelicReward(state) {
-  // 每名成员 3 件随机品质遗珍（id 按成员+组序区分，可安全去重）
-  return createFishKingRelicRewards(state, Math.random);
+function ensureFishKingKillRewards(state) {
+  if (Array.isArray(state.rewardAssignments) && Array.isArray(state.relicRewards)) return;
+  const rewards = createFishKingKillRewardBundle(state);
+  state.rewardAssignments = rewards.assignments;
+  state.relicRewards = rewards.relicRewards;
 }
 
 export class ImmortalFishKing extends plugin {
@@ -214,8 +215,8 @@ export class ImmortalFishKing extends plugin {
       `位面：${state.plane} ｜ 本体血量：${formatNumber(state.health)}/${formatNumber(state.healthMax)}`,
       `固定速度：${Number(state.speed) || 100} ｜ 灵根：${state.灵根?.name || "潮汐灵根"}`,
       `鱼王秘术：${state.skills?.join("、") || "潮汐冲击"}`,
-      "遗珍掉落：每名队员3件随机品质",
-      "击杀奖励：每人3组物品+灵石/源石2500w+修为血气（2000w×五维等级）",
+      "击杀奖池：每人不重复抽3组（奖池含随机品质遗珍）",
+      "固定奖励：灵石/源石各2500w+修为血气（2000w×五维等级）",
       `队伍：${state.members.length}/${FISH_KING_MAX_MEMBERS}`,
       `你的讨伐冷却：${cooldownMinutes}分钟${context.player.daofaxianshu == 2 ? "（道法仙术）" : ""}`,
       ...lines,
@@ -413,7 +414,7 @@ export class ImmortalFishKing extends plugin {
       let settlement = null;
       if (state.health <= 0) {
         state.status = "settling";
-        state.rewardAssignments ||= createFishKingRewardAssignments(state.members);
+        ensureFishKingKillRewards(state);
         await saveActiveFishKing(state);
         settlement = await this.settleFishKing(state);
       } else {
@@ -432,8 +433,7 @@ export class ImmortalFishKing extends plugin {
   }
 
   async settleFishKing(state) {
-    state.rewardAssignments ||= createFishKingRewardAssignments(state.members);
-    state.relicRewards ||= createRelicReward(state);
+    ensureFishKingKillRewards(state);
     await saveActiveFishKing(state);
 
     for (const drop of state.rewardAssignments) {
@@ -457,7 +457,7 @@ export class ImmortalFishKing extends plugin {
       { idempotencyKey: `fish-king:${state.id}:owner-chest` }
     );
 
-    // 遗珍：每名成员 3 件随机品质（id 去重，重跑安全）
+    // 遗珍是击杀奖池中的一组，id 去重，重跑安全。
     let relicBagFull = false;
     let relicGrantFailed = false;
     for (const reward of state.relicRewards) {
@@ -509,17 +509,27 @@ export class ImmortalFishKing extends plugin {
     let currencyFailed = false;
     try {
       for (const member of state.members) {
-        const player = await Read_player(member.id);
-        if (!player) {
-          currencyFailed = true;
-          break;
-        }
-        const cultivation = calculateFishKingCultivationReward(player);
-        player.灵石 = (Number(player.灵石) || 0) + FISH_KING_KILL_LINGSHI;
-        player.源石 = (Number(player.源石) || 0) + FISH_KING_KILL_SOURCE_STONE;
-        player.修为 = (Number(player.修为) || 0) + cultivation;
-        player.血气 = (Number(player.血气) || 0) + cultivation;
-        await Write_player(member.id, player);
+        const cultivation = await withPlayerMutationLock(member.id, async () => {
+          const player = await Read_player(member.id);
+          if (!player) throw new Error(`鱼王队员存档不存在：${member.id}`);
+          player.众生鱼王奖励记录 = Array.isArray(player.众生鱼王奖励记录)
+            ? player.众生鱼王奖励记录
+            : [];
+          const settled = player.众生鱼王奖励记录.find(record =>
+            String(typeof record === "string" ? record : record?.id) === String(state.id)
+          );
+          const amount = Number(settled?.cultivation) || calculateFishKingCultivationReward(player);
+          if (!settled) {
+            player.灵石 = (Number(player.灵石) || 0) + FISH_KING_KILL_LINGSHI;
+            player.源石 = (Number(player.源石) || 0) + FISH_KING_KILL_SOURCE_STONE;
+            player.修为 = (Number(player.修为) || 0) + amount;
+            player.血气 = (Number(player.血气) || 0) + amount;
+            player.众生鱼王奖励记录.push({ id: state.id, cultivation: amount });
+            player.众生鱼王奖励记录 = player.众生鱼王奖励记录.slice(-100);
+            await Write_player(member.id, player);
+          }
+          return amount;
+        });
         currencyLines.push(
           `${member.name}获得灵石x${formatNumber(FISH_KING_KILL_LINGSHI)}、源石x${formatNumber(FISH_KING_KILL_SOURCE_STONE)}、修为x${formatNumber(cultivation)}、血气x${formatNumber(cultivation)}`
         );
@@ -567,7 +577,7 @@ export class ImmortalFishKing extends plugin {
     });
 
     // 按成员聚合普通物品，逐人展示
-    const rewardLines = state.members.map(member => {
+    const rewardLines = state.members.flatMap(member => {
       const byName = new Map();
       for (const drop of state.rewardAssignments) {
         if (drop.recipient.id !== member.id) continue;
@@ -578,13 +588,14 @@ export class ImmortalFishKing extends plugin {
       const parts = [...byName.values()]
         .map(item => `【${item.name}】x${item.amount}`)
         .join("、");
-      return `${member.name}获得：${parts}`;
+      return parts ? [`${member.name}获得：${parts}`] : [];
     });
-    const relicLines = state.members.map(member => {
+    const relicLines = state.members.flatMap(member => {
       const relics = state.relicRewards.filter(reward => reward.recipient.id === member.id);
-      return `${member.name}获得遗珍：${relics
+      if (relics.length === 0) return [];
+      return [`${member.name}获得遗珍：${relics
         .map(reward => `【${reward.relic.品质}·${reward.relic.套装}】x1`)
-        .join("、")}`;
+        .join("、")}`];
     });
     await deleteActiveFishKing(state.groupId);
     return {

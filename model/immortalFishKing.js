@@ -8,9 +8,9 @@ export const FISH_KING_DAMAGE_CAP_RATIO = 0.2;
 export const FISH_KING_RESCUE_CHANCE = 0.03;
 
 /* ===== 击杀奖励（每人必得） ===== */
-/** 每人发放的完整奖励组数（每组含下方全部物品，数量按范围随机） */
+/** 每人从下方奖池中不放回抽取的奖励组数 */
 export const FISH_KING_KILL_GROUPS = 3;
-/** 击杀奖励：每组物品清单（遗珍由 createFishKingRelicRewards 单独发放） */
+/** 击杀奖励池：每个抽中的条目算一组奖励 */
 export const FISH_KING_KILL_REWARD_ITEMS = Object.freeze([
   Object.freeze({ name: '遣龙令', class: '道具', min: 1, max: 5 }),
   Object.freeze({ name: '超越宝盒', class: '盒子', min: 1, max: 5 }),
@@ -27,9 +27,11 @@ export const FISH_KING_KILL_SOURCE_STONE = 25_000_000;
 /** 击杀奖励修为/血气：2000万 × 五维等级乘积 */
 export const FISH_KING_KILL_CULTIVATION_BASE = 20_000_000;
 
-/* ===== 鱼王宝箱（概率掉落 + 愿鳞保底） ===== */
-/** 宝箱内每项物品的独立掉落概率 */
+/* ===== 鱼王宝箱（概率触发五组奖励 + 愿鳞保底） ===== */
+/** 宝箱额外奖池的触发概率 */
 export const FISH_KING_CHEST_REWARD_CHANCE = 0.55;
+/** 触发后从奖池中不放回抽取的奖励组数 */
+export const FISH_KING_CHEST_GROUPS = 5;
 export const FISH_KING_CHEST_ITEMS = Object.freeze([
   Object.freeze({ name: '无尽扫荡券', class: '道具', min: 1, max: 3 }),
   Object.freeze({ name: '定神丹', class: '丹药', min: 1, max: 5 }),
@@ -79,76 +81,85 @@ function randInt(min, max, random) {
   return low + Math.floor(Math.max(0, Math.min(0.999999999, random())) * (high - low + 1));
 }
 
-/** 随机品质遗珍的发放对象：每名成员每组 1 件（共 FISH_KING_KILL_GROUPS 件/人） */
-export function createFishKingRelicRewards(state, random = Math.random) {
-  const members = Array.isArray(state?.members) ? state.members : [];
-  const rewards = [];
-  for (const member of members) {
-    for (let group = 0; group < FISH_KING_KILL_GROUPS; group++) {
-      rewards.push({
-        recipient: { ...member },
-        group,
-        relic: createFishKingRelic({
-          plane: state?.plane,
-          id: `fish-king-relic:${state?.id}:${member.id}:${group}`,
-          random,
-        }),
-      });
-    }
+function sampleWithoutReplacement(items, count, random) {
+  const pool = [...items];
+  const selected = [];
+  while (pool.length > 0 && selected.length < count) {
+    selected.push(pool.splice(boundedIndex(pool.length, random), 1)[0]);
   }
-  return rewards;
+  return selected;
 }
 
-/**
- * 击杀奖励：每名成员获得 FISH_KING_KILL_GROUPS 组完整清单。
- * 返回 [{ dropIndex, recipient, name, class, amount }]；遗珍走 createFishKingRelicRewards。
- */
-export function createFishKingRewardAssignments(members, random = Math.random) {
-  if (!Array.isArray(members) || members.length === 0) return [];
+/** 每名成员从击杀奖池不放回抽 3 组；遗珍和普通物品共用同一次抽取结果。 */
+export function createFishKingKillRewardBundle(state, random = Math.random) {
+  const members = Array.isArray(state?.members) ? state.members : [];
   const assignments = [];
+  const relicRewards = [];
   let dropIndex = 0;
   for (const member of members) {
-    for (let group = 0; group < FISH_KING_KILL_GROUPS; group++) {
-      for (const item of FISH_KING_KILL_REWARD_ITEMS) {
-        if (item.special === 'relic') continue; // 遗珍由 createFishKingRelicRewards 发放
-        if (item.special === 'bait') {
-          const baitName =
-            FISH_KING_BAIT_POOL[boundedIndex(FISH_KING_BAIT_POOL.length, random)];
-          assignments.push({
-            dropIndex: dropIndex++,
-            recipient: { ...member },
-            name: baitName,
-            class: '道具',
-            amount: randInt(item.min, item.max, random),
-          });
-          continue;
-        }
+    const selected = sampleWithoutReplacement(
+      FISH_KING_KILL_REWARD_ITEMS,
+      FISH_KING_KILL_GROUPS,
+      random
+    );
+    for (let group = 0; group < selected.length; group++) {
+      const item = selected[group];
+      if (item.special === 'relic') {
+        relicRewards.push({
+          recipient: { ...member },
+          group,
+          relic: createFishKingRelic({
+            plane: state?.plane,
+            id: `fish-king-relic:${state?.id}:${member.id}:${group}`,
+            random,
+          }),
+        });
+        continue;
+      }
+      if (item.special === 'bait') {
         assignments.push({
           dropIndex: dropIndex++,
           recipient: { ...member },
-          name: item.name,
-          class: item.class,
-          amount: item.amount ?? randInt(item.min, item.max, random),
+          name: FISH_KING_BAIT_POOL[boundedIndex(FISH_KING_BAIT_POOL.length, random)],
+          class: '道具',
+          amount: randInt(item.min, item.max, random),
         });
+        continue;
       }
+      assignments.push({
+        dropIndex: dropIndex++,
+        recipient: { ...member },
+        name: item.name,
+        class: item.class,
+        amount: item.amount ?? randInt(item.min, item.max, random),
+      });
     }
   }
-  return assignments;
+  return { assignments, relicRewards };
+}
+
+/** 兼容旧调用：仅返回本次抽取中的普通物品。 */
+export function createFishKingRewardAssignments(members, random = Math.random) {
+  return createFishKingKillRewardBundle({ members }, random).assignments;
+}
+
+/** 兼容旧调用：仅返回本次抽取中的遗珍。 */
+export function createFishKingRelicRewards(state, random = Math.random) {
+  return createFishKingKillRewardBundle(state, random).relicRewards;
 }
 
 /**
- * 鱼王宝箱：9 项物品独立概率掉落（FISH_KING_CHEST_REWARD_CHANCE），
- * 保底【众生愿鳞】15~30 必出。返回奖励数组。
+ * 鱼王宝箱：额外奖池触发后不放回抽 5 组，保底【众生愿鳞】15~30 必出。
  */
 export function rollFishKingChestReward(random = Math.random) {
   const rewards = [];
-  for (const item of FISH_KING_CHEST_ITEMS) {
-    if (random() >= FISH_KING_CHEST_REWARD_CHANCE) continue;
+  const selected = random() < FISH_KING_CHEST_REWARD_CHANCE
+    ? sampleWithoutReplacement(FISH_KING_CHEST_ITEMS, FISH_KING_CHEST_GROUPS, random)
+    : [];
+  for (const item of selected) {
     if (item.special === 'bait') {
-      const baitName =
-        FISH_KING_BAIT_POOL[boundedIndex(FISH_KING_BAIT_POOL.length, random)];
       rewards.push({
-        name: baitName,
+        name: FISH_KING_BAIT_POOL[boundedIndex(FISH_KING_BAIT_POOL.length, random)],
         class: '道具',
         amount: randInt(item.min, item.max, random),
       });

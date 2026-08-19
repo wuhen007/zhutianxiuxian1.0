@@ -9,6 +9,7 @@ import {
   channel
 } from '../../model/xiuxian.js';
 import { reserveDailyAction } from '../../model/dailyAction.js';
+import { pickDivineBeastReward } from '../../model/divineBeastReward.js';
 export class TreasureCabinet extends plugin {
   constructor() {
     super({
@@ -185,71 +186,11 @@ export class TreasureCabinet extends plugin {
     }
     await Write_danyao(usr_qq, dy);
     if (random > 0.7) {
-      let location;
-      let item_name;
-      let item_class;
       //获得奖励
       let randomB = Math.random();
-      if (ass.宗门神兽 == '麒麟') {
-        if (randomB > 0.9) {
-          location = Math.floor(Math.random() * data.qilin.length);
-          item_name = data.qilin[location].name;
-          item_class = data.qilin[location].class;
-        } else {
-          location = Math.floor(Math.random() * data.danyao_list.length);
-          item_name = data.danyao_list[location].name;
-          item_class = data.danyao_list[location].class;
-        }
-        await Add_najie_thing(usr_qq, item_name, item_class, 1);
-      } else if (ass.宗门神兽 == '青龙') {
-        //给功法，赐福加修为
-        if (randomB > 0.9) {
-          location = Math.floor(Math.random() * data.qinlong.length);
-          item_name = data.qinlong[location].name;
-          item_class = data.qinlong[location].class;
-        } else {
-          location = Math.floor(Math.random() * data.gongfa_list.length);
-          item_name = data.gongfa_list[location].name;
-          item_class = data.gongfa_list[location].class;
-        }
-        await Add_najie_thing(usr_qq, item_name, item_class, 1);
-      } else if (ass.宗门神兽 == '玄武') {
-        //给护具，赐福加气血
-        if (randomB > 0.9) {
-          location = Math.floor(Math.random() * data.xuanwu.length);
-          item_name = data.xuanwu[location].name;
-          item_class = data.xuanwu[location].class;
-        } else {
-          location = Math.floor(Math.random() * data.equipment_list.length);
-          item_name = data.equipment_list[location].name;
-          item_class = data.equipment_list[location].class;
-        }
-        await Add_najie_thing(usr_qq, item_name, item_class, 1);
-      } else if (ass.宗门神兽 == '朱雀') {
-        //给法宝，赐福加修
-        if (randomB > 0.9) {
-          location = Math.floor(Math.random() * data.xuanwu.length);
-          item_name = data.xuanwu[location].name;
-          item_class = data.xuanwu[location].class;
-        } else {
-          location = Math.floor(Math.random() * data.equipment_list.length);
-          item_name = data.equipment_list[location].name;
-          item_class = data.equipment_list[location].class;
-        }
-        await Add_najie_thing(usr_qq, item_name, item_class, 1);
-      } else {
-        //白虎给武器 赐福加气血
-        if (randomB > 0.9) {
-          location = Math.floor(Math.random() * data.xuanwu.length);
-          item_name = data.xuanwu[location].name;
-          item_class = data.xuanwu[location].class;
-        } else {
-          location = Math.floor(Math.random() * data.equipment_list.length);
-          item_name = data.equipment_list[location].name;
-          item_class = data.equipment_list[location].class;
-        }
-        await Add_najie_thing(usr_qq, item_name, item_class, 1);
-      }
+      const item = pickDivineBeastReward(ass.宗门神兽, randomB > 0.9, data);
+      const item_name = item.name;
+      await Add_najie_thing(usr_qq, item_name, item.class, 1);
       if (randomB > 0.9) {
         e.reply(`看见你来了,${ass.宗门神兽}很高兴，仔细挑选了${item_name}给你`);
       } else {

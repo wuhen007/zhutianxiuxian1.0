@@ -2,8 +2,19 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  calculateFishKingCultivationReward,
   calculateFishKingRescueDamage,
+  createFishKingKillRewardBundle,
+  FISH_KING_CHEST_GROUPS,
+  FISH_KING_CHEST_ITEMS,
+  FISH_KING_CHEST_REWARD_CHANCE,
+  FISH_KING_CHEST_WISH_SCALE,
+  FISH_KING_KILL_CULTIVATION_BASE,
+  FISH_KING_KILL_LINGSHI,
+  FISH_KING_KILL_REWARD_ITEMS,
+  FISH_KING_KILL_SOURCE_STONE,
   FISH_KING_RESCUE_CHANCE,
+  rollFishKingChestReward,
   rollFishKingRescue,
   deleteActiveFishKing,
   findFishKingByMemberId,
@@ -12,6 +23,90 @@ import {
   readActiveFishKing,
   tryCreateFishKing,
 } from '../model/immortalFishKing.js';
+
+test('鱼王击杀与宝箱奖励配置符合设定', () => {
+  assert.equal(FISH_KING_KILL_LINGSHI, 25_000_000);
+  assert.equal(FISH_KING_KILL_SOURCE_STONE, 25_000_000);
+  assert.equal(FISH_KING_KILL_CULTIVATION_BASE, 20_000_000);
+  assert.deepEqual(FISH_KING_KILL_REWARD_ITEMS, [
+    { name: '遣龙令', class: '道具', min: 1, max: 5 },
+    { name: '超越宝盒', class: '盒子', min: 1, max: 5 },
+    { name: '遣虎令', class: '道具', min: 1, max: 5 },
+    { name: '遗珍', special: 'relic', amount: 1 },
+    { name: '随机饵料', special: 'bait', min: 1, max: 3 },
+    { name: '一叶轻舟', class: '道具', amount: 1 },
+    { name: '群星秘钥', class: '道具', min: 1, max: 3 },
+    { name: '仙舟', class: '道具', min: 1, max: 5 },
+  ]);
+  assert.equal(FISH_KING_CHEST_REWARD_CHANCE, 0.55);
+  assert.deepEqual(FISH_KING_CHEST_ITEMS, [
+    { name: '无尽扫荡券', class: '道具', min: 1, max: 3 },
+    { name: '定神丹', class: '丹药', min: 1, max: 5 },
+    { name: '群星秘钥', class: '道具', min: 1, max: 6 },
+    { name: '超越宝盒', class: '盒子', min: 3, max: 10 },
+    { name: '众生仙钓', class: '道具', min: 2, max: 10 },
+    { name: '随机饵料', special: 'bait', min: 2, max: 10 },
+    { name: '一叶轻舟', class: '道具', min: 1, max: 3 },
+    { name: '界河灵舟', class: '道具', amount: 1 },
+    { name: '仙舟', class: '道具', min: 3, max: 5 },
+  ]);
+  assert.deepEqual(FISH_KING_CHEST_WISH_SCALE, { min: 15, max: 30 });
+});
+
+test('鱼王击杀奖池为每人不放回抽取三组', () => {
+  const state = {
+    id: 'reward-test',
+    plane: '凡间',
+    members: [{ id: '1', name: '甲' }, { id: '2', name: '乙' }],
+  };
+  const rewards = createFishKingKillRewardBundle(state, () => 0);
+  assert.equal(rewards.assignments.length + rewards.relicRewards.length, 6);
+  assert.deepEqual(
+    rewards.assignments.map(item => [item.recipient.id, item.name, item.amount]),
+    [
+      ['1', '遣龙令', 1],
+      ['1', '超越宝盒', 1],
+      ['1', '遣虎令', 1],
+      ['2', '遣龙令', 1],
+      ['2', '超越宝盒', 1],
+      ['2', '遣虎令', 1],
+    ]
+  );
+});
+
+test('鱼王击杀抽到遗珍时仍只占一组奖励', () => {
+  const rewards = createFishKingKillRewardBundle({
+    id: 'relic-test',
+    plane: '仙域',
+    members: [{ id: '1', name: '甲' }],
+  }, () => 0.45);
+  assert.equal(rewards.assignments.length + rewards.relicRewards.length, 3);
+  assert.equal(rewards.relicRewards.length, 1);
+  assert.match(rewards.relicRewards[0].relic.id, /^fish-king-relic:relic-test:1:/);
+});
+
+test('鱼王宝箱触发时抽五组且愿鳞保底，未触发时仍有愿鳞', () => {
+  const hit = rollFishKingChestReward(() => 0);
+  assert.equal(hit.length, FISH_KING_CHEST_GROUPS + 1);
+  assert.deepEqual(hit.slice(0, 5).map(item => item.name), [
+    '无尽扫荡券', '定神丹', '群星秘钥', '超越宝盒', '众生仙钓',
+  ]);
+  assert.deepEqual(hit.at(-1), { name: '众生愿鳞', class: '道具', amount: 15 });
+
+  const miss = rollFishKingChestReward(() => 1);
+  assert.deepEqual(miss, [{ name: '众生愿鳞', class: '道具', amount: 30 }]);
+});
+
+test('鱼王修为血气奖励按五体系等级乘积计算且缺失等级按一计算', () => {
+  assert.equal(calculateFishKingCultivationReward({
+    level_id: 2,
+    Physique_id: 3,
+    mijinglevel_id: 4,
+    xiangulevel_id: 5,
+    huafenlevel_id: 6,
+  }), 14_400_000_000);
+  assert.equal(calculateFishKingCultivationReward({}), 20_000_000);
+});
 
 function createRedisMock() {
   const values = new Map();
