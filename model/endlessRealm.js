@@ -911,8 +911,13 @@ export function createEndlessEnemy(run, layer) {
   return enemy;
 }
 
+const MAX_BATTLE_LOGS = 600;
+
 function addBattleLog(logs, message) {
-  if (logs.length < 20 && !logs.includes(message)) logs.push(message);
+  if (!message || logs.length >= MAX_BATTLE_LOGS) return;
+  // 同一事件连续重复时合并，跨回合的同名事件仍完整保留。
+  if (logs.at(-1) === message) return;
+  logs.push(message);
 }
 
 function addBattleAction(run, action) {

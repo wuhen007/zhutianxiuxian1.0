@@ -123,6 +123,57 @@ button { font: inherit; }
 
 main { background: var(--paper); }
 
+.view-nav {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  min-height: 52px;
+  padding: 7px 40px;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(248, 248, 244, .96);
+  box-shadow: 0 5px 18px rgba(32, 38, 34, .08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.view-nav button {
+  min-width: 70px;
+  padding: 5px 11px 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--muted);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+}
+.view-nav button span {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  color: var(--jade);
+  border: 1px solid #9eb7ad;
+  font: 700 11px/1 "STKaiti", "KaiTi", serif;
+}
+.view-nav button b { font-weight: 700; }
+.view-nav button:hover { color: var(--ink); background: var(--jade-soft); }
+.view-nav button.is-active { color: #70551e; border-color: #b9a668; background: #f3eedf; }
+.view-nav button.is-active span { color: #70551e; border-color: #b9a668; background: #fbf8ec; }
+
+.app-shell[data-focus="battle"] .optional-section,
+.app-shell[data-focus="party"] .optional-section:not([data-optional-section="chat"]),
+.app-shell[data-focus="chat"] .optional-section:not([data-optional-section="chat"]),
+.app-shell[data-focus="build"] .optional-section:not([data-optional-section="build"]),
+.app-shell[data-focus="star"] .optional-section:not([data-optional-section="star"]),
+.app-shell[data-focus="treasury"] .optional-section:not([data-optional-section="treasury"]) { display: none !important; }
+
+.panel-section, .treasury-band, .action-deck { scroll-margin-top: 96px; }
+
 .campaign-grid {
   display: grid;
   grid-template-columns: 330px minmax(420px, 1fr) 340px;
@@ -162,6 +213,12 @@ main { background: var(--paper); }
 .enemy-line h3 { margin: 7px 0 0; overflow-wrap: anywhere; font: 700 25px/1.1 "STKaiti", "KaiTi", serif; }
 .enemy-line > b { color: var(--gold); font: 14px/1 realm-number, sans-serif; }
 .enemy-trait { margin: 14px 0; padding: 8px 10px; color: #804139; background: var(--cinnabar-soft); border-left: 3px solid var(--cinnabar); font-size: 11px; }
+.battle-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 12px 0; }
+.battle-summary-item { min-width: 0; padding: 8px 9px; border: 1px solid #d0d2ca; background: #f4f5f0; }
+.battle-summary-item span, .battle-summary-item b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.battle-summary-item span { color: var(--muted); font-size: 9px; }
+.battle-summary-item b { margin-top: 5px; color: var(--gold); font: 700 12px/1 realm-number, sans-serif; }
+.battle-analysis { grid-column: 1 / -1; margin: 2px 0 0; padding: 8px 10px; color: #626b64; border-left: 2px solid var(--jade); background: var(--jade-soft); font-size: 10px; line-height: 1.55; }
 .battle-reward { display: flex; flex-wrap: wrap; gap: 5px; padding-bottom: 12px; }
 .battle-reward[hidden] { display: none; }
 .battle-reward b { padding: 5px 7px; color: #6d5928; border: 1px solid #c7b87d; background: #f3f0e3; font-size: 9px; }
@@ -175,7 +232,32 @@ main { background: var(--paper); }
 .damage-row i { height: 4px; background: #d0d4d0; }
 .damage-row em { display: block; height: 100%; background: var(--gold); }
 .damage-row b { text-align: right; color: var(--gold); font: 10px/1 realm-number, sans-serif; }
+.battle-timeline { margin: 11px 0 12px; border: 1px solid var(--line); background: #f8f8f4; }
+.battle-timeline summary { padding: 9px 11px; color: #5c654f; cursor: pointer; font-size: 10px; list-style: none; user-select: none; }
+.battle-timeline summary::-webkit-details-marker { display: none; }
+.battle-timeline summary::before { content: "▸"; display: inline-block; margin-right: 7px; color: var(--gold); transition: transform .15s ease; }
+.battle-timeline[open] summary::before { transform: rotate(90deg); }
+.battle-timeline summary span { margin-left: 6px; color: var(--muted); font: 9px/1 realm-number, sans-serif; }
+.battle-rounds-list { max-height: 420px; padding: 5px 9px 10px; overflow-y: auto; border-top: 1px solid var(--line); }
+.round-card { border-bottom: 1px solid #dfe1da; }
+.round-card:last-child { border-bottom: 0; }
+.round-card summary { padding: 8px 3px; display: grid; grid-template-columns: 72px 1fr auto; gap: 8px; align-items: center; color: #545d57; font-size: 9px; list-style: none; cursor: pointer; }
+.round-card summary::-webkit-details-marker { display: none; }
+.round-card summary b { color: var(--gold); font: 10px/1 realm-number, sans-serif; }
+.round-card summary span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.round-card summary em { color: var(--muted); font: 9px/1 realm-number, sans-serif; font-style: normal; }
+.round-card-body { padding: 0 3px 8px 72px; }
+.round-attacks { margin: 0 0 7px; color: #6d5928; font-size: 9px; }
+.round-action { display: grid; grid-template-columns: 72px 1fr auto; gap: 6px; padding: 3px 0; font-size: 9px; }
+.round-action span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.round-action b { color: #4d625b; font-weight: 700; }
+.round-action small { color: #7a827b; text-align: right; }
+.round-action.is-enemy b { color: var(--cinnabar); }
+.round-event { margin: 4px 0 0; color: #626b64; font-size: 9px; line-height: 1.45; }
+.timeline-empty { margin: 7px 2px; color: var(--muted); font-size: 10px; }
 .battle-logs-wrap { position: relative; margin-top: 12px; }
+.battle-log-heading { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; color: var(--muted); font-size: 9px; }
+.battle-log-heading b { color: var(--gold); font: 9px/1 realm-number, sans-serif; }
 .battle-logs { max-height: 300px; margin: 0; padding: 0; overflow-y: auto; scrollbar-color: #b2a46f transparent; list-style: none; overscroll-behavior: contain; }
 .battle-logs li { padding: 6px 5px 6px 13px; color: #5b645e; border-left: 1px solid #c9ccc8; font-size: 11px; line-height: 1.5; }
 .logs-fade {
@@ -186,8 +268,9 @@ main { background: var(--paper); }
 }
 .logs-fade[hidden] { display: none; }
 
-/* 完整战报抽屉按钮：默认隐藏（手机端启用） */
-.logs-drawer-btn { display: none; width: 100%; margin-top: 8px; padding: 8px 12px; color: #4d5f55; border: 1px solid #b3c4bb; background: #f3f5f3; font-size: 10px; cursor: pointer; }
+/* 完整战报抽屉按钮 */
+.logs-drawer-btn { display: block; width: 100%; margin-top: 8px; padding: 8px 12px; color: #4d5f55; border: 1px solid #b3c4bb; background: #f3f5f3; font-size: 10px; cursor: pointer; }
+.logs-drawer-btn[hidden] { display: none; }
 .logs-drawer-btn:hover { background: #e7ece8; }
 
 /* 完整战报抽屉 */
@@ -259,6 +342,24 @@ main { background: var(--paper); }
 .star-map-seals { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 6px; }
 .star-map-seals span { padding: 5px 7px; color: #6d5928; border: 1px solid #c7b87d; background: #f3f0e3; font: 10px/1 realm-number, sans-serif; }
 
+.team-chat-panel { padding: 24px 40px 27px; border-bottom: 1px solid var(--line); background: #f1f3ef; }
+.team-chat-list { min-height: 76px; max-height: 230px; margin-top: 13px; padding: 8px 11px; overflow-y: auto; border: 1px solid var(--line); background: var(--paper-strong); }
+.team-chat-message { max-width: min(760px, 86%); margin: 0 0 9px; padding: 8px 10px; border-left: 2px solid #aebbb3; background: #eef2ee; }
+.team-chat-message:last-child { margin-bottom: 0; }
+.team-chat-message.is-self { margin-left: auto; border-left: 0; border-right: 2px solid var(--gold); background: #f4f0e3; }
+.team-chat-meta { display: flex; justify-content: space-between; gap: 12px; color: var(--jade); font-size: 9px; }
+.team-chat-meta time { color: var(--muted); font: 9px/1 realm-number, sans-serif; }
+.team-chat-message p { margin: 5px 0 0; color: #4e5a53; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; line-height: 1.55; }
+.team-chat-empty { margin: 11px 0; color: var(--muted); font-size: 10px; }
+.team-chat-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 10px; }
+.team-chat-form input { min-width: 0; min-height: 40px; padding: 0 11px; color: var(--ink); border: 1px solid #b8c1ba; outline: none; background: #fbfbf7; font-size: 11px; }
+.team-chat-form input:focus { border-color: var(--jade); box-shadow: 0 0 0 2px rgba(53, 109, 99, .12); }
+.team-chat-form button { min-width: 84px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: #f8f5eb; border: 1px solid #846521; background: var(--gold); cursor: pointer; font-size: 11px; }
+.team-chat-form button span { font-size: 16px; line-height: 1; }
+.team-chat-form button:hover { background: #84611e; }
+.team-chat-form button:disabled { cursor: wait; opacity: .6; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
 .treasury-band { padding: 25px 40px 28px; border-bottom: 1px solid var(--line); background: var(--paper-dim); }
 .treasury-grid { display: grid; grid-template-columns: 1fr 1fr; margin-top: 15px; }
 .treasury-grid > div { min-width: 0; padding: 15px 18px; display: grid; grid-template-columns: 84px repeat(5, 1fr); gap: 10px; border-left: 1px solid var(--line); }
@@ -321,7 +422,7 @@ main { background: var(--paper); }
   .realm-header { background: none; border-top: 0; min-height: 0; }
 
   /* 吸顶状态条 */
-  .mobile-status-bar { display: flex; position: sticky; top: 0; z-index: 5; align-items: center; gap: 8px; padding: 8px 14px; background: linear-gradient(180deg, #1c211e, #14191b); border-bottom: 1px solid var(--gold-bright); color: #f4f1e8; font: 10px/1 realm-number, sans-serif; box-shadow: 0 4px 14px rgba(0, 0, 0, .25); }
+  .mobile-status-bar { display: flex; position: sticky; top: 53px; z-index: 7; align-items: center; gap: 8px; padding: 8px 14px; background: linear-gradient(180deg, #1c211e, #14191b); border-bottom: 1px solid var(--gold-bright); color: #f4f1e8; font: 10px/1 realm-number, sans-serif; box-shadow: 0 4px 14px rgba(0, 0, 0, .25); }
   .m-bar-layer { color: #efd681; }
   .m-bar-layer b { font: 700 18px/1 realm-number, sans-serif; }
   .m-bar-layer i { font-style: normal; margin-left: 1px; color: #d8ba67; font-size: 9px; }
@@ -329,6 +430,12 @@ main { background: var(--paper); }
   .m-bar-phase { color: #d9bd6c; }
   .m-bar-life, .m-bar-party { color: #cdd2ce; }
   .m-bar-life b, .m-bar-party b { color: #efd681; font: 700 12px/1 realm-number, sans-serif; }
+
+  .view-nav { top: 0; min-height: 48px; padding: 5px 8px; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+  .view-nav::-webkit-scrollbar { display: none; }
+  .view-nav button { min-width: 54px; padding: 3px 5px; display: grid; grid-template-columns: 1fr; gap: 2px; font-size: 9px; }
+  .view-nav button span { width: 20px; height: 20px; margin: 0 auto; font-size: 10px; }
+  .view-nav button b { font-size: 9px; }
 
   /* 主区 */
   main { background: var(--paper); }
@@ -355,6 +462,9 @@ main { background: var(--paper); }
   .enemy-line h3 { font-size: 18px; }
   .enemy-line > b { font-size: 10px; }
   .enemy-trait { margin: 8px 0; padding: 6px 9px; font-size: 10px; }
+  .battle-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin: 8px 0; }
+  .battle-summary-item { padding: 7px 8px; }
+  .battle-summary-item b { font-size: 11px; }
   .battle-reward { gap: 4px; padding-bottom: 8px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .battle-reward::-webkit-scrollbar { display: none; }
   .battle-reward b { font-size: 9px; padding: 3px 5px; flex-shrink: 0; }
@@ -362,6 +472,13 @@ main { background: var(--paper); }
   .damage-board summary { padding: 7px 10px; font-size: 9px; }
   .damage-rows { padding: 4px 10px 10px; gap: 5px; }
   .damage-row { font-size: 9px; grid-template-columns: 70px 1fr 60px; gap: 7px; }
+  .battle-timeline { margin: 7px 0 9px; }
+  .battle-rounds-list { max-height: 300px; padding-inline: 7px; }
+  .round-card summary { grid-template-columns: 58px 1fr; gap: 5px; padding: 7px 2px; }
+  .round-card summary em { grid-column: 2; text-align: left; }
+  .round-card-body { padding-left: 58px; }
+  .round-action { grid-template-columns: 58px 1fr; gap: 5px; }
+  .round-action small { grid-column: 2; text-align: left; }
 
   /* 战斗日志：手机端仅显示前 3 + 末 1，渐隐提示隐藏，改用抽屉按钮 */
   .battle-logs-wrap { margin-top: 10px; }
@@ -384,6 +501,15 @@ main { background: var(--paper); }
   .fusion-list { gap: 4px; }
   .fusion-list span { font-size: 10px; padding: 4px 5px; }
   .archive-empty { font-size: 9px; }
+
+  .team-chat-panel { padding: 14px 14px 18px; border-top: 1px solid var(--line); }
+  .team-chat-list { max-height: 210px; margin-top: 9px; padding: 7px 8px; }
+  .team-chat-message { max-width: 92%; padding: 7px 8px; }
+  .team-chat-message p { font-size: 10px; }
+  .team-chat-form { grid-template-columns: 1fr 64px; gap: 5px; }
+  .team-chat-form input, .team-chat-form button { min-height: 38px; }
+  .team-chat-form button { min-width: 64px; padding: 0 7px; }
+  .team-chat-form button b { font-size: 10px; }
 
   /* 星图：仅 checkpoint 时显示，padding 收缩 */
   .star-map-panel { padding: 14px 14px 18px; border-top: 1px solid var(--line); }

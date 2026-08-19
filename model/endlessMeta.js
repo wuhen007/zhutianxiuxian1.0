@@ -6,15 +6,15 @@ const BRANCH_COSTS = Object.freeze([400, 800, 1400, 2200, 3200]);
 const BRANCH_GATES = Object.freeze([10, 20, 30, 40, 50]);
 
 export const ENDLESS_META_NODES = Object.freeze([
-  Object.freeze({ id: 'attack', name: '征伐道痕', aliases: ['攻击', '征伐'], maxRank: 10, costs: BASE_COSTS, description: '每级永久提高1.5%攻击。' }),
-  Object.freeze({ id: 'hp', name: '劫体道痕', aliases: ['生命', '劫体'], maxRank: 10, costs: BASE_COSTS, description: '每级永久提高2%生命。' }),
-  Object.freeze({ id: 'defense', name: '守御道痕', aliases: ['防御', '守御'], maxRank: 10, costs: BASE_COSTS, description: '每级永久提高2%防御。' }),
+  Object.freeze({ id: 'attack', name: '征伐道痕', aliases: ['攻击', '征伐'], maxRank: 10, costs: BASE_COSTS, description: '每级永久提高5%攻击。' }),
+  Object.freeze({ id: 'hp', name: '劫体道痕', aliases: ['生命', '劫体'], maxRank: 10, costs: BASE_COSTS, description: '每级永久提高6%生命。' }),
+  Object.freeze({ id: 'defense', name: '守御道痕', aliases: ['防御', '守御'], maxRank: 10, costs: BASE_COSTS, description: '每级永久提高6%防御。' }),
   Object.freeze({ id: 'choice', name: '衍算天机', aliases: ['四选一', '选项'], maxRank: 1, costs: [800], gates: [20], description: '每次能力选择由三个增加至四个。' }),
   Object.freeze({ id: 'double', name: '一念双悟', aliases: ['双选', '多选'], maxRank: 1, costs: [1600], gates: [40], description: '每十层循环可额外选择一次能力。' }),
   Object.freeze({ id: 'reroll', name: '劫机重演', aliases: ['刷新', '刷新能力', '重置能力'], maxRank: 1, costs: [1000], gates: [20], description: '每次进入无尽劫境，可刷新一次当前能力奖励。' }),
-  Object.freeze({ id: 'branch_healer', name: '治疗师', aliases: ['治疗', '医者'], branch: 'healer', maxRank: 5, costs: BRANCH_COSTS, gates: BRANCH_GATES, description: '每级使全队每回合恢复0.6%最大生命。首次参悟后锁定流派。' }),
-  Object.freeze({ id: 'branch_vanguard', name: '破阵师', aliases: ['输出', '攻伐'], branch: 'vanguard', maxRank: 5, costs: BRANCH_COSTS, gates: BRANCH_GATES, description: '每级提高自身4%攻击与1%暴击。首次参悟后锁定流派。' }),
-  Object.freeze({ id: 'branch_guardian', name: '守护者', aliases: ['坦克', '守护'], branch: 'guardian', maxRank: 5, costs: BRANCH_COSTS, gates: BRANCH_GATES, description: '每级提高自身3%生命、4%防御，并为全队增加1.2%开战护盾。首次参悟后锁定流派。' }),
+  Object.freeze({ id: 'branch_healer', name: '治疗师', aliases: ['治疗', '医者'], branch: 'healer', maxRank: 5, costs: BRANCH_COSTS, gates: BRANCH_GATES, description: '每级使全队每回合恢复16%最大生命。首次参悟后锁定流派。' }),
+  Object.freeze({ id: 'branch_vanguard', name: '破阵师', aliases: ['输出', '攻伐'], branch: 'vanguard', maxRank: 5, costs: BRANCH_COSTS, gates: BRANCH_GATES, description: '每级提高自身16%攻击与8%暴击率。首次参悟后锁定流派。' }),
+  Object.freeze({ id: 'branch_guardian', name: '守护者', aliases: ['坦克', '守护'], branch: 'guardian', maxRank: 5, costs: BRANCH_COSTS, gates: BRANCH_GATES, description: '每级提高自身12%生命、16%防御，并为全队增加10%开战护盾。首次参悟后锁定流派。' }),
   Object.freeze({ id: 'ghost_domain', name: '鬼域复苏', aliases: ['鬼域', '鬼眼'], maxRank: 4, costs: [300, 800, 1800, 4000], gates: [20, 40, 70, 100], description: '依次解锁六层、七层、八层、九层鬼域。' }),
   Object.freeze({ id: 'ghost_shadow', name: '鬼影', aliases: [], maxRank: 1, costs: [350], gates: [20], puzzle: true, description: '提高生命与减伤，鬼影会替本体削弱致命伤害。' }),
   Object.freeze({ id: 'ghost_cleaver', name: '鬼柴刀', aliases: ['柴刀'], maxRank: 1, costs: [900], gates: [30], puzzle: true, description: '强化攻击与斩杀，周期性沿媒介斩击目标。' }),
@@ -84,17 +84,17 @@ export function getEndlessMetaEffects(value) {
   const meta = normalizeEndlessMeta(value);
   const equipped = new Set(meta.equippedPuzzles);
   return {
-    attackPct: meta.nodes.attack * 0.015 + meta.nodes.branch_vanguard * 0.04,
-    hpPct: meta.nodes.hp * 0.02 + meta.nodes.branch_guardian * 0.03,
-    defensePct: meta.nodes.defense * 0.02 + meta.nodes.branch_guardian * 0.04,
-    critChance: meta.nodes.branch_vanguard * 0.01,
+    attackPct: meta.nodes.attack * 0.05 + meta.nodes.branch_vanguard * 0.16,
+    hpPct: meta.nodes.hp * 0.06 + meta.nodes.branch_guardian * 0.12,
+    defensePct: meta.nodes.defense * 0.06 + meta.nodes.branch_guardian * 0.16,
+    critChance: meta.nodes.branch_vanguard * 0.08,
     choiceCount: meta.nodes.choice ? 4 : 3,
     doubleChoice: meta.nodes.double > 0,
     choiceRerolls: meta.nodes.reroll ? 1 : 0,
     branch: meta.branch,
     branchName: ENDLESS_META_NODES.find(node => node.branch === meta.branch)?.name || '',
-    teamRegenPct: meta.nodes.branch_healer * 0.006,
-    teamShieldPct: meta.nodes.branch_guardian * 0.012,
+    teamRegenPct: meta.nodes.branch_healer * 0.16,
+    teamShieldPct: meta.nodes.branch_guardian * 0.1,
     ghostDomainLevel: 5 + meta.nodes.ghost_domain,
     equippedPuzzles: [...equipped],
     puzzleEffects: {

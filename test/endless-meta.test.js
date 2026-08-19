@@ -19,10 +19,24 @@ for (const name of ['鬼影', '鬼柴刀', '许愿鬼', '八音盒', '棺材钉'
   upgradeEndlessMeta(player, name);
 
 const effects = getEndlessMetaEffects(player);
-assert.equal(effects.attackPct, 0.015);
+assert.equal(effects.attackPct, 0.05);
 assert.equal(effects.choiceCount, 4);
 assert.equal(effects.doubleChoice, true);
 assert.equal(effects.ghostDomainLevel, 9);
+
+const healer = getEndlessMetaEffects({ 无尽道碑: { nodes: { branch_healer: 1 }, branch: 'healer' } });
+assert.equal(healer.teamRegenPct, 0.16);
+const vanguard = getEndlessMetaEffects({ 无尽道碑: { nodes: { branch_vanguard: 1 }, branch: 'vanguard' } });
+assert.equal(vanguard.attackPct, 0.16);
+assert.equal(vanguard.critChance, 0.08);
+const guardian = getEndlessMetaEffects({ 无尽道碑: { nodes: { branch_guardian: 1 }, branch: 'guardian' } });
+assert.equal(guardian.hpPct, 0.12);
+assert.equal(guardian.defensePct, 0.16);
+assert.equal(guardian.teamShieldPct, 0.1);
+const baseTraces = getEndlessMetaEffects({ 无尽道碑: { nodes: { attack: 1, hp: 1, defense: 1 } } });
+assert.equal(baseTraces.attackPct, 0.05);
+assert.equal(baseTraces.hpPct, 0.06);
+assert.equal(baseTraces.defensePct, 0.06);
 
 for (const name of ['鬼影', '鬼柴刀', '许愿鬼'])
   assert.equal(toggleEndlessPuzzle(player, name).equipped, true);

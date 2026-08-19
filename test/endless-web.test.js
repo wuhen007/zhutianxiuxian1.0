@@ -235,6 +235,18 @@ test('HTTP 会话可读取状态并提交能力选择', async t => {
   assert.equal(state.status, 200);
   assert.equal((await state.json()).state.choices.length, 3);
 
+  const chat = await fetch(`${base}/api/endless/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: base, Cookie: cookie },
+    body: JSON.stringify({ text: '先看星图，再推进下一层。' }),
+  });
+  assert.equal(chat.status, 200);
+  const chatPayload = await chat.json();
+  assert.equal(chatPayload.messages.at(-1).text, '先看星图，再推进下一层。');
+  const chatRead = await fetch(`${base}/api/endless/chat`, { headers: { Cookie: cookie } });
+  assert.equal(chatRead.status, 200);
+  assert.equal((await chatRead.json()).messages.length, 1);
+
   const suggestion = await fetch(`${base}/api/endless/action`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: base, Cookie: cookie },

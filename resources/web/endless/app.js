@@ -7,6 +7,9 @@ let busy = false;
 let toastTimer = null;
 let refreshTimer = null;
 let terminal = false;
+let chatTimer = null;
+let activeView = 'overview';
+let chatMessages = [];
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -42,6 +45,62 @@ function phaseName(phase) {
 
 function stageName(stage) {
   return { normal: '怪潮', elite: '精英', boss: '位面 Boss' }[stage] || stage || '怪潮';
+}
+
+function renderBattleSummary(battle) {
+  const box = $('#battle-summary');
+  box.replaceChildren();
+  const summary = battle.summary || {};
+  const items = [
+    ['总伤害', formatAmount(summary.totalDamage)],
+    ['队伍承伤', formatAmount(Object.values(battle.damageTakenByMember || {}).reduce((sum, value) => sum + (Number(value) || 0), 0))],
+    ['MVP', summary.mvpName || '未显化'],
+    ['关键触发', formatAmount((summary.fusionHits || 0) + (summary.bossRevive || 0) + (summary.revive || 0))],
+  ];
+  for (const [label, value] of items) {
+    const item = element('div', 'battle-summary-item');
+    item.append(element('span', '', label), element('b', '', value));
+    box.append(item);
+  }
+  if (summary.analysis) box.append(element('p', 'battle-analysis', summary.analysis));
+  box.hidden = !items.length;
+}
+
+function renderBattleTimeline(battle, state) {
+  const list = $('#battle-rounds-list');
+  list.replaceChildren();
+  const rounds = battle.roundDetails || [];
+  setText('#battle-round-total', `${rounds.length || battle.rounds || 0} 回合`);
+  if (!rounds.length) {
+    list.append(element('p', 'timeline-empty', '本场没有可展开的回合明细。'));
+    return;
+  }
+  for (const round of rounds) {
+    const details = element('details', 'round-card');
+    const summary = element('summary');
+    const attacks = (round.attacks || []).map(item => `${item.name || state.team.memberNames[item.id] || item.id} ${formatAmount(item.damage)}`).join(' · ');
+    summary.append(
+      element('b', '', `第 ${round.round} 回合`),
+      element('span', '', `敌方剩余 ${round.enemyHpPct}% · 全队 ${round.teamHpPct}%`),
+      element('em', '', `造成 ${formatAmount(round.enemyDamage)} · 承受 ${formatAmount(round.teamDamageTaken)}`)
+    );
+    const body = element('div', 'round-card-body');
+    if (attacks) body.append(element('p', 'round-attacks', attacks));
+    const actions = (round.actions || []).slice(0, 16);
+    for (const action of actions) {
+      const line = element('div', `round-action is-${action.side || 'system'}`);
+      const amountText = action.damage ? `伤害 ${formatAmount(action.damage)}` : action.healing ? `恢复 ${formatAmount(action.healing)}` : '';
+      line.append(
+        element('span', '', action.actor || '劫境'),
+        element('b', '', action.skill || action.verb || '行动'),
+        element('small', '', [action.target && `→ ${action.target}`, amountText, action.note].filter(Boolean).join(' · '))
+      );
+      body.append(line);
+    }
+    for (const event of round.events || []) body.append(element('p', 'round-event', event));
+    details.append(summary, body);
+    list.append(details);
+  }
 }
 
 function notify(message) {
@@ -142,6 +201,10 @@ function renderBattle(state) {
   $('#battle-content').hidden = !battle;
   if (!battle) {
     setText('#battle-result', '尚未交战');
+    $('#battle-summary').hidden = true;
+    $('#battle-rounds-list').replaceChildren();
+    setText('#battle-round-total', '0 回合');
+    setText('#battle-log-count', '0 条');
     return;
   }
   setText('#battle-result', battle.victory ? '怪潮覆灭' : '投影破碎');
@@ -149,6 +212,7 @@ function renderBattle(state) {
   setText('#enemy-name', battle.enemy);
   setText('#battle-rounds', `${battle.rounds || 0} 回合`);
   setText('#enemy-trait', battle.trait || '未知机制');
+  renderBattleSummary(battle);
   const reward = $('#battle-reward');
   reward.replaceChildren();
   reward.hidden = !battle.reward;
@@ -180,9 +244,9 @@ function renderBattle(state) {
     damageRows.append(row);
   }
   if (damage.open && !damageRows.children.length) damage.open = false;
+  renderBattleTimeline(battle, state);
 
   const logs = $('#battle-logs');
-  const logsWrap = $('#battle-logs-wrap');
   logs.replaceChildren();
   const allLogs = battle.logs || [];
   // 手机端：超过 4 条时仅保留前 3 + 末 1，其余加 is-folded 隐藏；用"查看完整战报"按钮唤起抽屉
@@ -199,6 +263,7 @@ function renderBattle(state) {
   const drawerBtn = $('#logs-drawer-open');
   drawerBtn.hidden = !showFold;
   setText('#logs-total-count', String(allLogs.length));
+  setText('#battle-log-count', `${allLogs.length} 条`);
   // 每关清空：新战报强制回到顶部，重新评估渐隐遮罩
   logs.scrollTop = 0;
   updateLogsFade();
@@ -368,6 +433,74 @@ function renderActions(state) {
   if (state.permissions.withdraw) commands.append(actionButton('退出无尽劫境', 'withdraw', null, 'is-danger'));
 }
 
+function formatChatTime(value) {
+  const date = new Date(Number(value) || Date.now());
+  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+
+function renderTeamChat(messages = []) {
+  chatMessages = Array.isArray(messages) ? messages.slice(-80) : [];
+  const list = $('#team-chat-list');
+  if (!list) return;
+  list.replaceChildren();
+  if (!chatMessages.length) {
+    list.append(element('p', 'team-chat-empty', '队伍还没有留下消息。战斗中报点、分配路线，都可以在这里说。'));
+  } else {
+    for (const message of chatMessages) {
+      const row = element('article', `team-chat-message${String(message.userId) === String(currentState?.team?.viewer) ? ' is-self' : ''}`);
+      const head = element('div', 'team-chat-meta');
+      head.append(element('b', '', message.name || '同行者'), element('time', '', formatChatTime(message.at)));
+      row.append(head, element('p', '', message.text || ''));
+      list.append(row);
+    }
+    list.scrollTop = list.scrollHeight;
+  }
+  setText('#team-chat-status', chatMessages.length ? `${chatMessages.length} 条 · 已同步` : '等待第一句');
+}
+
+function setActiveView(view, shouldScroll = true) {
+  const next = view || 'overview';
+  activeView = next;
+  app.dataset.focus = next;
+  document.querySelectorAll('#view-nav [data-view]').forEach(button => {
+    button.classList.toggle('is-active', button.dataset.view === next);
+  });
+  const targets = {
+    overview: '.campaign-grid',
+    battle: '[data-core-section="battle"]',
+    party: '[data-core-section="party"]',
+    chat: '#team-chat-panel',
+    build: '[data-optional-section="build"]',
+    star: '#star-map-panel',
+    treasury: '[data-optional-section="treasury"]',
+  };
+  const target = document.querySelector(targets[next] || targets.overview);
+  if (shouldScroll && target && !target.hidden) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function sendTeamChat(event) {
+  event.preventDefault();
+  const input = $('#team-chat-input');
+  const text = input.value.trim();
+  if (!text || input.disabled) return;
+  input.disabled = true;
+  setText('#team-chat-status', '发送中');
+  try {
+    const payload = await api('/api/endless/chat', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+    input.value = '';
+    renderTeamChat(payload.messages || [...chatMessages, payload.message]);
+  } catch (error) {
+    notify(error.message);
+    setText('#team-chat-status', '发送失败');
+  } finally {
+    input.disabled = false;
+    input.focus();
+  }
+}
+
 function render(state) {
   currentState = state;
   app.classList.remove('is-loading');
@@ -394,6 +527,7 @@ function render(state) {
   renderStarMap(state);
   renderTerminalSummary(state);
   renderActions(state);
+  renderTeamChat(state.teamChat || []);
 }
 
 async function submitAction(action, value) {
@@ -493,6 +627,15 @@ $('#logs-drawer-close').addEventListener('click', closeLogsDrawer);
 $('#logs-drawer-mask').addEventListener('click', closeLogsDrawer);
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !$('#logs-drawer').hidden) closeLogsDrawer();
+  if (event.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+    event.preventDefault();
+    $('#team-chat-input')?.focus();
+  }
 });
+
+document.querySelectorAll('#view-nav [data-view]').forEach(button => {
+  button.addEventListener('click', () => setActiveView(button.dataset.view));
+});
+$('#team-chat-form').addEventListener('submit', sendTeamChat);
 
 boot();

@@ -23,6 +23,9 @@ const configPath = path.join(pluginRoot, 'config', 'endless-web.json');
 const TICKET_PREFIX = 'Xiuxian:Endless:Web:Ticket:';
 const SESSION_PREFIX = 'Xiuxian:Endless:Web:Session:';
 const ACTION_PREFIX = 'Xiuxian:Endless:Web:Action:';
+const TEAM_CHAT_PREFIX = 'Xiuxian:Endless:Web:TeamChat:';
+const TEAM_CHAT_MAX_MESSAGES = 80;
+const TEAM_CHAT_TTL_SECONDS = 2 * 24 * 60 * 60;
 const BODY_LIMIT = 16 * 1024;
 const CONSUME_TICKET_SCRIPT = `
 local value = redis.call('GET', KEYS[1])
@@ -76,6 +79,63 @@ function sessionKey(token) {
 
 function actionKey(session, operationId) {
   return `${ACTION_PREFIX}${session}:${operationId}`;
+}
+
+function teamChatKey(teamId) {
+  return `${TEAM_CHAT_PREFIX}${teamId}`;
+}
+
+function cleanTeamChatText(value) {
+  return String(value ?? '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .trim()
+    .slice(0, 500);
+}
+
+function parseTeamChatMessage(raw) {
+  try {
+    const message = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!message || typeof message !== 'object' || !message.text) return null;
+    return {
+      id: String(message.id || `${Date.now()}-${randomToken(5)}`),
+      userId: String(message.userId || ''),
+      name: String(message.name || '同行者').slice(0, 40),
+      text: cleanTeamChatText(message.text),
+      at: Number(message.at) || Date.now(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function readTeamChat(redisClient, teamId) {
+  const key = teamChatKey(teamId);
+  if (typeof redisClient.lRange === 'function') {
+    const values = await redisClient.lRange(key, -TEAM_CHAT_MAX_MESSAGES, -1);
+    return (values || []).map(parseTeamChatMessage).filter(Boolean);
+  }
+  const raw = await redisClient.get(key);
+  if (!raw) return [];
+  try {
+    const values = JSON.parse(raw);
+    return (Array.isArray(values) ? values : []).map(parseTeamChatMessage).filter(Boolean).slice(-TEAM_CHAT_MAX_MESSAGES);
+  } catch {
+    return [];
+  }
+}
+
+async function appendTeamChat(redisClient, teamId, message) {
+  const key = teamChatKey(teamId);
+  const encoded = JSON.stringify(message);
+  if (typeof redisClient.rPush === 'function') {
+    await redisClient.rPush(key, encoded);
+    if (typeof redisClient.lTrim === 'function') await redisClient.lTrim(key, -TEAM_CHAT_MAX_MESSAGES, -1);
+    if (typeof redisClient.expire === 'function') await redisClient.expire(key, TEAM_CHAT_TTL_SECONDS);
+    return;
+  }
+  const messages = await readTeamChat(redisClient, teamId);
+  messages.push(message);
+  await redisClient.set(key, JSON.stringify(messages.slice(-TEAM_CHAT_MAX_MESSAGES)), { EX: TEAM_CHAT_TTL_SECONDS });
 }
 
 function cookieName(config) {
@@ -236,11 +296,34 @@ function battleView(run, userId) {
     enemy: battle.enemy,
     starRoute: battle.starRoute || null,
     trait: battle.trait,
+    baseTrait: battle.baseTrait || battle.trait,
+    mechanisms: Array.isArray(battle.mechanisms) ? battle.mechanisms : [],
+    bossRoster: Array.isArray(battle.bossRoster) ? battle.bossRoster : [],
     victory: battle.victory,
     rounds: battle.rounds,
-    // 完整战报：返回本场全部日志（上限 400 条防极端超长），前端滚动查看
-    logs: (battle.logs || []).slice(-400),
+    enemyRemainingHp: amount(battle.enemyRemainingHp),
+    enemyMaxHp: amount(battle.enemyMaxHp),
+    enemyRemainingShield: amount(battle.enemyRemainingShield),
+    enemyMaxShield: amount(battle.enemyMaxShield),
+    // 完整战报：返回本场全部日志；详细回合数据供网页按需展开。
+    logs: (battle.logs || []).slice(-600),
     damageByMember: battle.damageByMember || {},
+    damageTakenByMember: battle.damageTakenByMember || {},
+    summary: battle.summary || null,
+    roundDetails: (battle.roundDetails || []).slice(-60).map(round => ({
+      round: Number(round.round) || 0,
+      attacks: Array.isArray(round.attacks) ? round.attacks : [],
+      fusionDamage: amount(round.fusionDamage),
+      enemyDamage: amount(round.enemyDamage),
+      teamDamageTaken: amount(round.teamDamageTaken),
+      enemyHp: amount(round.enemyHp),
+      enemyShield: amount(round.enemyShield),
+      enemyHpPct: Math.max(0, Math.min(100, Number(round.enemyHpPct) || 0)),
+      teamHpPct: Math.max(0, Math.min(100, Number(round.teamHpPct) || 0)),
+      members: Array.isArray(round.members) ? round.members : [],
+      actions: Array.isArray(round.actions) ? round.actions : [],
+      events: Array.isArray(round.events) ? round.events : [],
+    })),
     reward: reward
       ? {
           lingshi: amount(reward.lingshi),
@@ -437,11 +520,13 @@ async function loadSession(redisClient, config, req) {
   }
 }
 
-async function currentState(realm, session) {
+async function currentState(realm, session, redisClient = null) {
   const team = await realm.getTeam(session.teamId);
   const run = team ? await realm.getRun(team.id) : null;
   if (!team || !run || !team.members.includes(session.userId)) return null;
-  return serializeEndlessWebState(realm, team, run, session.userId);
+  const state = serializeEndlessWebState(realm, team, run, session.userId);
+  state.teamChat = redisClient ? await readTeamChat(redisClient, team.id) : [];
+  return state;
 }
 
 async function performAction(realm, session, action, value) {
@@ -513,9 +598,32 @@ export function createEndlessWebHttpServer({ realm, redisClient, config }) {
             error: '会话已失效，请重新领取网页入口',
           });
         if (req.method === 'GET' && url.pathname === '/api/endless/state') {
-          const state = await currentState(realm, session);
+          const state = await currentState(realm, session, redisClient);
           if (!state) await redisClient.del(sessionKey(session.token));
           return state ? sendJson(res, 200, { ok: true, state }) : sendJson(res, 410, { error: '本次无尽劫境已经结束' });
+        }
+        if (url.pathname === '/api/endless/chat') {
+          const state = await currentState(realm, session, redisClient);
+          if (!state) return sendJson(res, 410, { error: '本次无尽劫境已经结束' });
+          if (req.method === 'GET') return sendJson(res, 200, { ok: true, messages: state.teamChat || [] });
+          if (req.method === 'POST') {
+            if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
+            if (!(await withinRateLimit(redisClient, `chat:${session.token}`, 60, 60)))
+              return sendJson(res, 429, { error: '队伍聊天过于频繁，请稍后再试' });
+            const body = await readJson(req);
+            const text = cleanTeamChatText(body.text);
+            if (!text) return sendJson(res, 400, { error: '消息内容不能为空' });
+            const team = await realm.getTeam(session.teamId);
+            const message = {
+              id: `${Date.now()}-${randomToken(6)}`,
+              userId: String(session.userId),
+              name: String(team?.memberNames?.[session.userId] || session.rawUserId || '同行者').slice(0, 40),
+              text,
+              at: Date.now(),
+            };
+            await appendTeamChat(redisClient, session.teamId, message);
+            return sendJson(res, 200, { ok: true, message, messages: await readTeamChat(redisClient, session.teamId) });
+          }
         }
         if (req.method === 'POST' && url.pathname === '/api/endless/action') {
           if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
@@ -523,7 +631,7 @@ export function createEndlessWebHttpServer({ realm, redisClient, config }) {
           const body = await readJson(req);
           const operationId = String(body.operationId || '');
           if (!/^[A-Za-z0-9-]{16,64}$/.test(operationId)) return sendJson(res, 400, { error: '操作标识无效' });
-          if (!(await currentState(realm, session))) {
+          if (!(await currentState(realm, session, redisClient))) {
             await redisClient.del(sessionKey(session.token));
             return sendJson(res, 410, { error: '本次无尽劫境已经结束' });
           }
@@ -541,7 +649,8 @@ export function createEndlessWebHttpServer({ realm, redisClient, config }) {
           }
           try {
             const actionResult = await performAction(realm, session, body.action, body.value);
-            const state = actionResult.terminalState || (await currentState(realm, session));
+            const state = actionResult.terminalState || (await currentState(realm, session, redisClient));
+            if (state && !state.teamChat) state.teamChat = await readTeamChat(redisClient, session.teamId);
             const result = { ok: true, message: actionResult.message, state, ended: Boolean(actionResult.terminalState) || !state };
             await redisClient.set(operationKey, JSON.stringify(result), {
               EX: config.sessionTtlSeconds,
