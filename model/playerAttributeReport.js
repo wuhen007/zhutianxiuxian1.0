@@ -80,7 +80,7 @@ export function calculateExtraAttributeState(player) {
 function getSlotStat(slot, field) {
   const merged = number(slot?.归一属性?.百分比?.[field]);
   const raw = number(slot?.[field]);
-  const fixedMode = ['atk', 'def', 'HP'].some(key => number(slot?.[key]) > 99);
+  const fixedMode = ['atk', 'def', 'HP'].some(key => number(slot?.[key]) > 499);
   return fixedMode
     ? { rate: merged, fixed: raw }
     : { rate: merged + raw, fixed: 0 };

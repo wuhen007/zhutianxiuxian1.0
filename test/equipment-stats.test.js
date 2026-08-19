@@ -17,6 +17,7 @@ test('装备百分比统一加算后只乘一次基础属性', () => {
     calculateEquippedStats(base, [{ atk: 1 }, { atk: 1 }, { atk: 1 }]).攻击,
     4000
   );
+  assert.equal(calculateEquippedStats(base, [{ atk: 1.6 }]).攻击, 2600);
   // 三件各 +9900% 的百分比装备：先加算（29700%）后乘一次基础属性，
   // 未达 50000% 上限，最终倍率为 298 倍
   assert.deepEqual(
@@ -28,17 +29,17 @@ test('装备百分比统一加算后只乘一次基础属性', () => {
     { 攻击: 298000, 防御: 298000, 血量上限: 298000 }
   );
   assert.deepEqual(
-    calculateEquippedStats(base, [{ atk: 0.5 }, { atk: 100, def: 200, HP: 300 }]),
-    { 攻击: 1600, 防御: 1200, 血量上限: 1300 }
+    calculateEquippedStats(base, [{ atk: 0.5 }, { atk: 1000, def: 2000, HP: 3000 }]),
+    { 攻击: 2500, 防御: 3000, 血量上限: 4000 }
   );
   assert.deepEqual(
     calculateEquippedStats(base, [{
-      atk: 100,
-      def: 200,
-      HP: 300,
+      atk: 1000,
+      def: 2000,
+      HP: 3000,
       归一属性: { 百分比: { atk: 0.5, def: 0.25, HP: 1 } },
     }]),
-    { 攻击: 1600, 防御: 1450, 血量上限: 2300 }
+    { 攻击: 2500, 防御: 3250, 血量上限: 5000 }
   );
 });
 

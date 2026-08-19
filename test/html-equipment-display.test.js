@@ -34,17 +34,17 @@ test('装备显示阈值与战斗计算一致：单属性 >499 为数值装备�
   }
 });
 
-test('百分比装备显示兼容两种数据格式：整数百分数值(100=100%) 与 小数(0.02=2%)', () => {
+test('百分比装备统一按倍率显示：1.6 显示为 160%', () => {
+  assert.equal(`${(1.6 * 100).toFixed(0)}%`, '160%');
+
   for (const file of EQUIPMENT_HTML_FILES) {
     const html = read(file);
-    const percentExprs = html.match(/\([\w$.\u4e00-\u9fa5]+\.(atk|def|HP)\*100\)\.toFixed\(0\)/g) || [];
-    assert.equal(
-      percentExprs.length,
-      0,
-      `${file} 存在未兼容双格式的百分比显示：${percentExprs.join(' | ')}`
+    assert.ok(
+      !/\.(atk|def|HP)>=\s*1\?/.test(html),
+      `${file} 仍残留 >=1 时不乘 100 的错误显示`
     );
-    const dualExprs = html.match(/\([\w$.\u4e00-\u9fa5]+\.(atk|def|HP)>=\s*1\?/g) || [];
-    assert.ok(dualExprs.length > 0, `${file} 缺少整数/小数双格式兼容显示`);
+    const percentExprs = html.match(/\.(atk|def|HP)\*100\)\.toFixed\(0\)/g) || [];
+    assert.ok(percentExprs.length > 0, `${file} 缺少倍率乘 100 的百分比显示`);
   }
 });
 

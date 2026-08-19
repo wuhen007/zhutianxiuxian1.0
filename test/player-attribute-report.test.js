@@ -131,7 +131,7 @@ test('混合高低装备词条按整件装备的固定值模式展示', () => {
   const report = buildPlayerAttributeReport({
     player: { id: '1', level_id: 1, Physique_id: 1, mijinglevel_id: 1, xiangulevel_id: 1, 灵根: {}, 学习的功法: [] },
     equipment: {
-      武器: { name: '混合武器', atk: 100, def: 2, HP: 3, bao: 0 },
+      武器: { name: '混合武器', atk: 1000, def: 2, HP: 3, bao: 0 },
       护具: {}, 法宝: {}, 帝兵: {}, 至宝: {},
     },
     data: {
@@ -143,7 +143,7 @@ test('混合高低装备词条按整件装备的固定值模式展示', () => {
     },
     difficulty: {},
   });
-  assert.match(report.join('\n'), /武器【混合武器】攻\+100｜防\+2｜血\+3/);
+  assert.match(report.join('\n'), /武器【混合武器】攻\+1,000｜防\+2｜血\+3/);
 });
 
 test('低境界自铸特殊帝兵按现有结算同时取得本命与十分之一加成', () => {
