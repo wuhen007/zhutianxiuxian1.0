@@ -48,6 +48,8 @@ import {
 import {
   ENDLESS_TREASURE_UNLOCK_LAYER,
   ENDLESS_TREASURE_EFFECT_RATE,
+  ENDLESS_TREASURE_EFFECT_PER_LEVEL,
+  ENDLESS_TREASURE_LEVEL_CAP,
   equipEndlessTreasure,
   getEndlessTreasureSlotCost,
   getEndlessTreasureSlotGate,
@@ -58,6 +60,7 @@ import {
   normalizeEndlessTreasureLoadout,
   unequipEndlessTreasure,
   unlockEndlessTreasureSlot,
+  upgradeEndlessTreasure,
 } from '../model/endlessTreasure.js';
 import {
   equipTitle,
@@ -180,6 +183,7 @@ export class EndlessRealm extends plugin {
         { reg: '^#确认重置万劫道碑$', fnc: 'confirmResetEndlessMeta' },
         { reg: '^#万象归一\\s+(?:武器|护具|法宝)\\*.+$', fnc: 'mergeEquipment' },
         { reg: '^#无尽至宝$', fnc: 'showTreasures' },
+        { reg: '^#升级无尽至宝\\s*.+$', fnc: 'upgradeTreasureCmd' },
         { reg: '^#装备无尽至宝\\s*.+$', fnc: 'equipTreasureCmd' },
         { reg: '^#卸下无尽至宝\\s*.+$', fnc: 'unequipTreasureCmd' },
         { reg: '^#拓展无尽至宝槽$', fnc: 'unlockTreasureSlotCmd' },
@@ -421,6 +425,7 @@ export class EndlessRealm extends plugin {
       `劫境道痕：${view.balance}｜最高通过：${view.highestLayer}层`,
       `当前流派：${view.effects.branchName || '未选择（首次参悟后锁定）'}`,
       `厉鬼拼图：${equipped.size}/${view.puzzleSlots}（${equippedNames.join('、') || '未装配'}）`,
+      '羁绊：鬼眼+鬼影提升15%全属性；六层与七层完整拼图会分别升华为25%和45%全属性共鸣。',
       'Boss前未封存的道痕在团灭时仅保留30%，主动撤离全额保留。',
       '',
       ...nodeLines,
@@ -746,7 +751,7 @@ export class EndlessRealm extends plugin {
       notices: [
         { tone: 'jade', title: '构筑法则', text: '每层独立选择能力；衍算天机可增加选项，一念双悟可在每个十层循环额外参悟一次。' },
         { tone: 'danger', title: '劫境警示', text: '主动撤离可带回全部战利品；团灭仅保留已封存奖励和30%未封存奖励。' },
-        { tone: 'gold', title: '无尽至宝', text: `第25层开放首个装配槽；此后每25层可消耗递增道痕拓展一槽。至宝属性按削弱后的效能结算，觉醒战斗机制保留。` },
+        { tone: 'gold', title: '无尽至宝', text: `第25层开放首个装配槽；至宝可消耗道痕升至Lv.${ENDLESS_TREASURE_LEVEL_CAP}，每级显著提高属性效能。` },
         { tone: 'danger', title: '因果岔路', text: '星图节点只连接部分后继道路；高层可能遭遇空劫、蚀痕、葬法与命血路税，选择后本轮无法反悔。' },
         { tone: 'jade', title: '无尽劫境天尊', text: '打穿第三十关且全服排名第一的队伍成员，将获得专属称号：无尽劫境内全属性+25%、道痕收益+25%，可自由佩戴与更换。' },
       ],
@@ -792,6 +797,7 @@ export class EndlessRealm extends plugin {
             { command: '#无尽商店', description: '以劫境道痕购买诸天遗珍' },
             { command: '#无尽购买 商品名*数量', description: '按商品名或编号购买诸天遗珍' },
             { command: '#无尽至宝', description: `查看已解锁的永久至宝与觉醒条件` },
+            { command: '#升级无尽至宝 名称', description: '消耗劫境道痕提升至宝等级与属性效能' },
             { command: '#装备无尽至宝 名称', description: '将持有至宝装入已开放槽位' },
             { command: '#拓展无尽至宝槽', description: '达到对应层数后消耗道痕开启下一槽' },
             { command: '#重置万劫道碑 / #确认重置万劫道碑', description: '二次确认后返还道痕并重置传承' },
@@ -947,6 +953,7 @@ export class EndlessRealm extends plugin {
       notices: [
         { tone: 'jade', title: '流派抉择', text: `当前：${view.effects.branchName || '未选择'}。治疗师、破阵师、守护者三选一，整碑重置后才可改换。` },
         { tone: 'jade', title: '厉鬼拼图', text: '局外装配后，仍需在本局获得【鬼眼】才会激活拼图属性与机制。' },
+        { tone: 'gold', title: '鬼眼羁绊', text: '鬼眼与鬼影可触发15%全属性；集齐鬼手、鬼柴刀等核心拼图后，六层与七层鬼域将升华为25%/45%全属性共鸣。' },
         { tone: 'danger', title: '死亡代价', text: 'Boss前未封存道痕在团灭时只保留30%；主动撤离可以全额带回。' },
       ],
       metaNodes,
@@ -1139,6 +1146,7 @@ export class EndlessRealm extends plugin {
         '#卸下厉鬼拼图 八音盒 / #更换厉鬼拼图 鬼影 八音盒',
         '#拓展厉鬼拼图槽',
         '#无尽至宝 / #装备无尽至宝 名称 / #卸下无尽至宝 名称',
+        '#升级无尽至宝 名称',
         '#拓展无尽至宝槽',
         '#劫后抉择1',
         '#无尽下一关',
@@ -3486,7 +3494,8 @@ export class EndlessRealm extends plugin {
     const lines = [
       '【无尽至宝】',
       `持有${views.length}件｜已装配${loadout.equipped.length}/${loadout.slots}件`,
-      `属性词条按${Math.round(ENDLESS_TREASURE_EFFECT_RATE * 100)}%基础效能结算，每级额外提高10%效能。`,
+      `劫境道痕：${Math.max(0, Math.floor(Number(player.劫境道痕) || 0))}`,
+      `Lv.1按${Math.round(ENDLESS_TREASURE_EFFECT_RATE * 100)}%效能结算，每级额外提高${Math.round(ENDLESS_TREASURE_EFFECT_PER_LEVEL * 100)}%，最高Lv.${ENDLESS_TREASURE_LEVEL_CAP}。`,
       loadout.slots
         ? `下一槽：最高通关${getEndlessTreasureSlotGate(nextSlot)}层，并消耗${getEndlessTreasureSlotCost(nextSlot)}道痕。`
         : `最高通关第${ENDLESS_TREASURE_UNLOCK_LAYER}层后开放第一个免费槽位。`,
@@ -3499,6 +3508,7 @@ export class EndlessRealm extends plugin {
     for (const treasure of views) {
       lines.push(
         `${treasure.icon} 【${treasure.name}】Lv.${treasure.level} · ${treasure.rarity}${treasure.equipped ? ' [已装配]' : ''}`,
+        `　当前属性效能：${Math.round(treasure.effectRate * 100)}%${treasure.nextCost === null ? '｜已满级' : `｜下级消耗：${treasure.nextCost}道痕`}`,
         `　${treasure.desc}`,
         treasure.awakenName
           ? `　觉醒条件：${treasure.awakenCondition || '未知'}`
@@ -3507,10 +3517,31 @@ export class EndlessRealm extends plugin {
       );
     }
     lines.push(
+      '#升级无尽至宝 名称',
       '#装备无尽至宝 名称｜#卸下无尽至宝 名称',
       '#拓展无尽至宝槽'
     );
     return e.reply(lines.filter(Boolean).join('\n'));
+  }
+
+  async upgradeTreasureCmd(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const input = String(e.msg || '').replace(/^#升级无尽至宝\s*/, '').trim();
+    return this.withLock(e, `treasure:${userId}`, async () => {
+      const player = await Read_player(userId);
+      try {
+        const result = upgradeEndlessTreasure(player, input);
+        await Write_player(userId, player);
+        return e.reply(
+          `【${result.treasure.name}】已提升至Lv.${result.level}\n` +
+          `消耗道痕：${result.cost}｜剩余：${result.balance}\n` +
+          (result.nextCost === null ? '至宝已经升至满级' : `下次升级需要：${result.nextCost}道痕`)
+        );
+      } catch (error) {
+        return e.reply(error.message);
+      }
+    });
   }
 
   async equipTreasureCmd(e) {

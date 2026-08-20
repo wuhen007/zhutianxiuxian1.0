@@ -18,6 +18,7 @@ export const ENDLESS_META_NODES = Object.freeze([
   Object.freeze({ id: 'branch_guardian', name: '守护者', aliases: ['坦克', '守护'], branch: 'guardian', maxRank: 5, costs: BRANCH_COSTS, gates: BRANCH_GATES, description: '每级提高自身12%生命、16%防御，并为全队增加10%开战护盾。首次参悟后锁定流派。' }),
   Object.freeze({ id: 'ghost_domain', name: '鬼域复苏', aliases: ['鬼域', '鬼眼'], maxRank: 4, costs: [300, 800, 1800, 4000], gates: [20, 40, 70, 100], description: '依次解锁六层、七层、八层、九层鬼域。' }),
   Object.freeze({ id: 'ghost_shadow', name: '鬼影', aliases: [], maxRank: 1, costs: [350], gates: [20], puzzle: true, description: '提高生命与减伤，鬼影会替本体削弱致命伤害。' }),
+  Object.freeze({ id: 'ghost_hand', name: '鬼手', aliases: ['鬼手压制'], maxRank: 1, costs: [650], gates: [25], puzzle: true, description: '鬼手从鬼域中探出，每四回合压制敌方整轮攻势。' }),
   Object.freeze({ id: 'ghost_cleaver', name: '鬼柴刀', aliases: ['柴刀'], maxRank: 1, costs: [900], gates: [30], puzzle: true, description: '强化攻击与斩杀，周期性沿媒介斩击目标。' }),
   Object.freeze({ id: 'wish_ghost', name: '许愿鬼', aliases: ['许愿'], maxRank: 1, costs: [1200], gates: [40], puzzle: true, description: '以愿债换取恢复、追击与胜后疗愈。' }),
   Object.freeze({ id: 'music_box', name: '八音盒', aliases: ['鬼八音盒'], maxRank: 1, costs: [1400], gates: [50], puzzle: true, description: '循环播放灵异旋律，周期性打断敌方行动。' }),
@@ -62,7 +63,7 @@ export function normalizeEndlessMeta(value) {
     if (node.branch !== branch) nodes[node.id] = 0;
   }
   return {
-    version: 3,
+    version: 4,
     nodes,
     branch,
     equippedPuzzles,

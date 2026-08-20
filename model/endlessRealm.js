@@ -190,8 +190,15 @@ function computeWorldAbilityCounts(run) {
 function collectEffects(member, run) {
   const effects = {};
   mergeEffect(effects, member.endlessMetaEffects);
-  if (getOwnedLevel(member, 'neutral_ghost_eye') > 0)
+  if (getOwnedLevel(member, 'neutral_ghost_eye') > 0) {
     mergeEffect(effects, member.endlessMetaEffects?.puzzleEffects);
+    const resonance = getGhostResonance(member);
+    if (resonance) {
+      effects.attackPct = asNumber(effects.attackPct) + resonance.attrPct;
+      effects.hpPct = asNumber(effects.hpPct) + resonance.attrPct;
+      effects.defensePct = asNumber(effects.defensePct) + resonance.attrPct;
+    }
+  }
   for (const [abilityId, level] of Object.entries(member.abilities || {})) {
     if (isAbilitySealed(member, abilityId)) continue;
     mergeEffect(effects, ABILITIES.get(abilityId)?.effect, level);
@@ -1055,13 +1062,49 @@ function hasGhostPuzzle(member, puzzleId) {
   );
 }
 
+function getGhostResonance(member) {
+  if (getOwnedLevel(member, 'neutral_ghost_eye') <= 0) return null;
+  const domain = getGhostDomainLevel(member);
+  const equipped = new Set(member.endlessMetaEffects?.equippedPuzzles || []);
+  const hasAll = ids => ids.every(id => equipped.has(id));
+  if (
+    domain >= 7 &&
+    hasAll(['ghost_shadow', 'ghost_hand', 'ghost_cleaver', 'music_box', 'wish_ghost'])
+  )
+    return {
+      tier: 3,
+      name: '七层鬼域·言出法随',
+      attrPct: 0.45,
+      ghostEyeDamageMultiplier: 2.4,
+    };
+  if (domain >= 6 && hasAll(['ghost_shadow', 'ghost_hand', 'ghost_cleaver']))
+    return {
+      tier: 2,
+      name: '六层鬼域·肢解共鸣',
+      attrPct: 0.25,
+      ghostEyeDamageMultiplier: 1.8,
+    };
+  if (equipped.has('ghost_shadow'))
+    return {
+      tier: 1,
+      name: '鬼眼·鬼影羁绊',
+      attrPct: 0.15,
+      ghostEyeDamageMultiplier: 1.35,
+    };
+  return null;
+}
+
 function abilityProcs(member) {
   const procs = [];
   for (const [abilityId, level] of Object.entries(member.abilities || {})) {
     if (isAbilitySealed(member, abilityId)) continue;
     const ability = ABILITIES.get(abilityId);
-    if (ability?.proc)
-      procs.push({ ...ability.proc, level, source: ability.name, abilityId });
+    if (ability?.proc) {
+      const proc = { ...ability.proc, level, source: ability.name, abilityId };
+      if (abilityId === 'neutral_ghost_eye')
+        proc.damagePct *= getGhostResonance(member)?.ghostEyeDamageMultiplier || 1;
+      procs.push(proc);
+    }
   }
   for (const boonId of member.blessings || []) {
     const boon = CHECKPOINT_BOONS.get(boonId);
@@ -1961,9 +2004,128 @@ function runTreasureEndRound(run, enemy, round, logs, damageByMember) {
   }
 }
 
+function payGhostRecoil(run, member, stats, rate, logs, skill) {
+  const cost = Math.max(1, Math.round(stats.maxHp * rate));
+  member.hp -= cost;
+  addBattleAction(run, {
+    side: 'system',
+    kind: 'recoil',
+    actor: member.name,
+    skill,
+    target: member.name,
+    damage: cost,
+    note: `消耗${Math.round(rate * 100)}%最大生命`,
+  });
+  addBattleLog(logs, `${member.name}承受${skill}，损失${cost}点生命！`);
+  handleLethal(run, member, logs);
+}
+
+function triggerGhostWish(run, member, enemy, round, logs, damageByMember, stats) {
+  const wishes = ['execute', 'invalid', 'defenseless', 'immobilize'];
+  const wish = wishes[Math.floor(random(run) * wishes.length)];
+  if (wish === 'execute') {
+    const result = damageEnemy(enemy, enemy.hp + enemy.shield);
+    damageByMember[member.id] += result.dealt;
+    addBattleAction(run, {
+      side: 'player',
+      actor: member.name,
+      skill: '许愿鬼·必杀之愿',
+      verb: '宣告',
+      target: enemy.name,
+      damage: result.damage,
+      absorbed: result.absorbed,
+      execute: true,
+      narration: `${member.name}以许愿鬼改写结果：我说，这一刀必将斩杀眼前之人`,
+      note: '代价：25%最大生命',
+    });
+    addBattleLog(logs, `${member.name}说道：“我说，这一刀必将斩杀眼前之人。”因果落定，${enemy.name}被当场斩杀！`);
+    payGhostRecoil(run, member, stats, 0.25, logs, '许愿鬼·巨大反噬');
+  } else if (wish === 'invalid') {
+    enemy.ghostAttackInvalidPending = true;
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'status',
+      actor: member.name,
+      skill: '许愿鬼·攻击无效',
+      verb: '宣告',
+      target: enemy.name,
+      note: '敌方下一轮攻击无法造成伤害',
+    });
+    addBattleLog(logs, `${member.name}说道：“我说，眼前之人的攻击无效。”愿望化作规则笼罩战场！`);
+  } else if (wish === 'defenseless') {
+    const broken = enemy.shield;
+    enemy.shield = 0;
+    if (enemy.__ghostOriginalDefense === undefined)
+      enemy.__ghostOriginalDefense = enemy.defense;
+    enemy.defense = 0;
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'status',
+      actor: member.name,
+      skill: '许愿鬼·防御剥夺',
+      verb: '宣告',
+      target: enemy.name,
+      absorbed: broken,
+      note: '本回合防御归零并粉碎全部护盾',
+    });
+    addBattleLog(logs, `${member.name}说道：“我说，眼前之人无法防御。”${enemy.name}的护盾与防御同时崩解！`);
+  } else {
+    enemy.ghostImmobilizedPending = true;
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'status',
+      actor: member.name,
+      skill: '许愿鬼·行动封绝',
+      verb: '宣告',
+      target: enemy.name,
+      note: '敌方下一轮无法行动',
+    });
+    addBattleLog(logs, `${member.name}说道：“我说，眼前之人无法动弹。”${enemy.name}被钉死在当前时空！`);
+  }
+  if (run.__counters) run.__counters.ghostWishes++;
+}
+
+function runGhostResonance(run, member, enemy, round, logs, damageByMember, stats) {
+  const resonance = getGhostResonance(member);
+  if (!resonance || round < 6 || enemy.hp <= 0) return;
+  if (resonance.tier >= 3 && random(run) < 0.05) {
+    triggerGhostWish(run, member, enemy, round, logs, damageByMember, stats);
+    return;
+  }
+  if (
+    resonance.tier >= 2 &&
+    !member.battleGhostDismembered &&
+    random(run) < 0.3
+  ) {
+    member.battleGhostDismembered = true;
+    const damage = Math.max(
+      Math.round(stats.attack * 12),
+      Math.round(enemy.maxHp * 0.22)
+    );
+    const result = damageEnemy(enemy, damage);
+    damageByMember[member.id] += result.dealt;
+    addBattleAction(run, {
+      side: 'player',
+      actor: member.name,
+      skill: '六层鬼域·肢解',
+      verb: '肢解',
+      target: enemy.name,
+      damage: result.damage,
+      absorbed: result.absorbed,
+      narration: `${member.name}低声道：“真不想走到这一步啊！”鬼手按住目标，鬼柴刀沿鬼眼锁定的死线肢解现实`,
+      note: '代价：20%最大生命',
+    });
+    addBattleLog(logs, `${member.name}低声道：“真不想走到这一步啊！”鬼柴刀沿死线肢解${enemy.name}，造成${result.dealt}点超巨额伤害！`);
+    payGhostRecoil(run, member, stats, 0.2, logs, '鬼域肢解反噬');
+    if (run.__counters) run.__counters.ghostDismemberments++;
+  }
+}
+
 function playerAttack(run, member, enemy, round, logs, damageByMember) {
   if (!member.alive || enemy.hp <= 0) return;
   const stats = calculateMemberStats(member, run, round);
+  runGhostResonance(run, member, enemy, round, logs, damageByMember, stats);
+  if (!member.alive || enemy.hp <= 0) return;
   let damage = Math.max(1, stats.attack - enemy.defense * 0.62);
   const isCrit = random(run) < stats.critChance;
   if (isCrit) damage *= 1.7;
@@ -2156,6 +2318,21 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
 
 function enemyHit(run, enemy, member, multiplier, logs, skill = '普通攻击') {
   if (!member.alive) return;
+  if (enemy.ghostAttackInvalidPending) {
+    if (!enemy.__ghostAttackInvalidLogged) {
+      enemy.__ghostAttackInvalidLogged = true;
+      addBattleAction(run, {
+        side: 'player',
+        kind: 'status',
+        actor: member.name,
+        skill: '许愿鬼·攻击无效',
+        target: enemy.name,
+        note: `《${skill}》被愿望规则抹除`,
+      });
+      addBattleLog(logs, `${enemy.name}施展《${skill}》，但攻击尚未落下便被许愿鬼判定为无效！`);
+    }
+    return;
+  }
   const stats = calculateMemberStats(member, run);
   if (random(run) < stats.dodgeChance) {
     addBattleLog(logs, `${member.name}看穿攻势，于毁灭降临前避开一击。`);
@@ -2176,6 +2353,7 @@ function enemyHit(run, enemy, member, multiplier, logs, skill = '普通攻击') 
     1,
     enemy.attack * multiplier * frenzy - stats.defense * defenseRate
   );
+  damage *= asNumber(enemy.ghostHandAttackRate, 1);
   damage *= 1 - stats.damageReduction;
   if (random(run) < stats.reflectChance) {
     const reflected = Math.max(1, Math.round(damage * stats.reflectPct));
@@ -2580,13 +2758,42 @@ function interruptEnemyTurn(run, enemy, round, logs) {
 function enemyTurn(run, enemy, round, logs) {
   const alive = Object.values(run.members).filter((member) => member.alive);
   if (!alive.length || enemy.hp <= 0) return;
+  if (enemy.ghostImmobilizedPending) {
+    delete enemy.ghostImmobilizedPending;
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'status',
+      actor: '许愿鬼',
+      skill: '言出法随·行动封绝',
+      target: enemy.name,
+      note: '敌方整轮行动被取消',
+    });
+    addBattleLog(logs, `${enemy.name}被“无法动弹”的愿望钉在原地，本轮行动彻底取消！`);
+    return;
+  }
   if (interruptEnemyTurn(run, enemy, round, logs)) return;
+  const ghostHandOwner = alive.find(member => hasGhostPuzzle(member, 'ghost_hand'));
+  if (ghostHandOwner && round % 4 === 0) {
+    enemy.ghostHandAttackRate = 0.65;
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'status',
+      actor: ghostHandOwner.name,
+      skill: '鬼手·灵异压制',
+      target: enemy.name,
+      note: '本轮敌方造成的伤害降低35%',
+    });
+    addBattleLog(logs, `${ghostHandOwner.name}的鬼手从鬼域深处探出，死死压住${enemy.name}，令其本轮攻势衰减35%！`);
+  }
   if (!triggerEnemyMechanic(run, enemy, round, logs)) {
     const target = alive[Math.floor(random(run) * alive.length)];
     enemyHit(run, enemy, target, 1, logs, '普通攻击');
   }
   monsterPackFollowUp(run, enemy, logs);
   bossPackFollowUp(run, enemy, logs);
+  delete enemy.ghostHandAttackRate;
+  delete enemy.ghostAttackInvalidPending;
+  delete enemy.__ghostAttackInvalidLogged;
 }
 
 function endRound(run, enemy, round, logs, damageByMember) {
@@ -2630,6 +2837,10 @@ function endRound(run, enemy, round, logs, damageByMember) {
     addBattleLog(logs, `${enemy.name}不断再生，必须尽快结束战斗。`);
   // 无尽至宝回合末效果：领域侵蚀 + 灼烧
   runTreasureEndRound(run, enemy, round, logs, damageByMember);
+  if (enemy.__ghostOriginalDefense !== undefined) {
+    enemy.defense = enemy.__ghostOriginalDefense;
+    delete enemy.__ghostOriginalDefense;
+  }
   expireTemporaryFreeTransformationBodies(run, round, logs);
 }
 
@@ -2646,6 +2857,7 @@ function prepareBattle(run, enemy, encounter, logs) {
     member.battleGhostShadowSaved = false;
     member.battleGhostSelfRestarted = false;
     member.battleCoffinNailUsed = false;
+    member.battleGhostDismembered = false;
     delete member.silencedUntilRound;
     // 至宝战斗状态：每场战斗重置灼烧/召唤/斩杀标记
     member.treasureBurns = [];
@@ -2675,6 +2887,12 @@ function prepareBattle(run, enemy, encounter, logs) {
     member.shield = member.alive
       ? Math.round(stats.maxHp * stats.teamShieldPct)
       : 0;
+    const resonance = getGhostResonance(member);
+    if (resonance)
+      addBattleLog(
+        logs,
+        `${member.name}触发【${resonance.name}】，全属性提升${Math.round(resonance.attrPct * 100)}%，鬼眼杀伤同步升华！`
+      );
   }
 }
 
@@ -2973,6 +3191,8 @@ export function resolveEndlessLayer(run) {
     freeBodyGuards: 0,
     ghostRestarts: 0,
     ghostInterrupts: 0,
+    ghostDismemberments: 0,
+    ghostWishes: 0,
     treasureRiderSummoned: 0,
     treasureRiderAttacks: 0,
   };
@@ -3138,6 +3358,7 @@ export function resolveEndlessLayer(run) {
       delete member.battleGhostShadowSaved;
       delete member.battleGhostSelfRestarted;
       delete member.battleCoffinNailUsed;
+      delete member.battleGhostDismembered;
       delete member.battleSealedAbilityIds;
       delete member.silencedUntilRound;
       delete member.shield;
@@ -3183,6 +3404,8 @@ export function resolveEndlessLayer(run) {
     freeBodyGuards: counters.freeBodyGuards,
     ghostRestarts: counters.ghostRestarts,
     ghostInterrupts: counters.ghostInterrupts,
+    ghostDismemberments: counters.ghostDismemberments,
+    ghostWishes: counters.ghostWishes,
     treasureRiderSummoned: counters.treasureRiderSummoned,
     treasureRiderAttacks: counters.treasureRiderAttacks,
     analysis: analysis || null,

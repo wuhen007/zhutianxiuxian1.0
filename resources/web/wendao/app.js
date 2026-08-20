@@ -16,6 +16,80 @@ const app = document.querySelector('#app');
 const overlayRoot = document.querySelector('#overlay-root');
 const toastRoot = document.querySelector('#toast-root');
 
+const AUDIO_PREF_KEY = 'endless-wendao-audio-v1';
+const AUDIO_SOURCES = Object.freeze({
+  battle: '/wendao/audio/battle.ogg',
+  swordSwing: '/wendao/audio/sword-swing.ogg',
+  swordImpact: '/wendao/audio/sword-impact.ogg',
+  magicCast: '/wendao/audio/magic-cast.ogg',
+  magicHeavy: '/wendao/audio/magic-heavy.ogg',
+  bossRoar: '/wendao/audio/boss-roar.ogg',
+});
+
+const sound = {
+  muted: false,
+  unlocked: false,
+  bgm: null,
+  init() {
+    try {
+      this.muted = JSON.parse(localStorage.getItem(AUDIO_PREF_KEY))?.muted === true;
+    } catch {}
+  },
+  ensure() {
+    if (this.bgm) return this.bgm;
+    this.bgm = document.querySelector('#wendao-bgm');
+    if (this.bgm) {
+      this.bgm.src = AUDIO_SOURCES.battle;
+      this.bgm.preload = 'auto';
+      this.bgm.loop = true;
+    }
+    return this.bgm;
+  },
+  unlock() {
+    this.unlocked = true;
+    this.ensure();
+    this.syncScreen(state?.screen);
+  },
+  syncScreen(screen) {
+    const bgm = this.ensure();
+    if (!bgm) return;
+    const shouldPlay = this.unlocked && !this.muted && screen && screen !== 'select' && screen !== 'victory' && screen !== 'defeat';
+    bgm.volume = screen === 'combat' ? 0.28 : 0.14;
+    if (shouldPlay) bgm.play().catch(() => {});
+    else if (!shouldPlay && !bgm.paused) bgm.pause();
+  },
+  playSfx(name, volume = 0.44) {
+    if (this.muted || !this.unlocked || !AUDIO_SOURCES[name]) return;
+    const clip = new Audio(AUDIO_SOURCES[name]);
+    clip.preload = 'auto';
+    clip.volume = volume;
+    clip.play().catch(() => {});
+    clip.addEventListener('ended', () => { clip.src = ''; }, { once: true });
+  },
+  playCard(card) {
+    const damaging = card?.effects?.some(effect => effect.type?.toLowerCase().includes('damage'));
+    if (damaging && card.owner === 'sword') {
+      this.playSfx('swordSwing', 0.34);
+      window.setTimeout(() => this.playSfx('swordImpact', 0.28), 115);
+      return;
+    }
+    if (damaging && card.owner === 'body') {
+      this.playSfx('swordImpact', 0.34);
+      return;
+    }
+    this.playSfx(card?.cost >= 2 || damaging ? 'magicHeavy' : 'magicCast', card?.cost >= 2 ? 0.34 : 0.3);
+  },
+  toggle() {
+    this.muted = !this.muted;
+    try { localStorage.setItem(AUDIO_PREF_KEY, JSON.stringify({ muted: this.muted })); } catch {}
+    this.syncScreen(state?.screen);
+    render();
+  },
+  isMuted() { return this.muted; },
+};
+
+sound.init();
+
 init();
 
 async function init() {
@@ -306,6 +380,7 @@ function startCombat(node) {
     log: [`第${state.act}境遭遇：${enemies.map(enemy => enemy.name).join('、')}`],
   };
   state.screen = 'combat';
+  sound.playSfx(kind === 'boss' ? 'bossRoar' : 'magicHeavy', kind === 'boss' ? 0.48 : 0.26);
   if (state.flags.battleStartHp < 0) state.hp = Math.max(1, state.hp + state.flags.battleStartHp);
   startPlayerTurn(true);
 }
@@ -390,6 +465,7 @@ function playCard(cardUid, fromEcho = false) {
   combat.hand.splice(index, 1);
   combat.cardsPlayed += 1;
   state.statistics.cardsPlayed += 1;
+  sound.playCard(card);
   combat.log.push(`你施展【${card.name}${instance.upgraded ? '+' : ''}】`);
   const pendingEcho = !fromEcho && combat.echo && cost <= combat.echo.maxCost;
   if (pendingEcho) combat.echo = null;
@@ -626,6 +702,8 @@ function enemyTurn() {
 
   for (const enemy of combat.enemies) {
     if (enemy.hp <= 0) continue;
+    const turnIntent = enemyIntent(enemy);
+    sound.playSfx(turnIntent?.type === 'attack' || turnIntent?.type === 'attackDebuff' ? 'swordImpact' : 'magicCast', 0.25);
     enemy.block = 0;
     if (enemy.delayedDamage > 0) {
       const value = enemy.delayedDamage;
@@ -689,6 +767,7 @@ function combatAlive() {
 function finishCombatVictory() {
   const combat = state.combat;
   if (!combat || state.screen !== 'combat') return;
+  sound.playSfx('magicHeavy', 0.34);
   const kind = combat.kind;
   state.statistics.enemies += combat.enemies.length;
   if (kind === 'elite') state.statistics.elites += 1;
@@ -986,6 +1065,8 @@ function finishRun(victory) {
 }
 
 function handleAction(action, data) {
+  sound.unlock();
+  if (action === 'toggle-audio') return sound.toggle();
   if (action === 'select-character') {
     ui.selectedCharacterId = data.id;
     return render();
@@ -1032,6 +1113,7 @@ function render() {
   if (!state) {
     const changed = ui.renderedScreen !== 'select';
     renderCharacterSelect();
+    sound.syncScreen('select');
     ui.renderedScreen = 'select';
     if (changed) requestAnimationFrame(() => window.scrollTo(0, 0));
     return;
@@ -1051,6 +1133,7 @@ function render() {
   };
   const body = (screens[state.screen] || renderMap)();
   app.innerHTML = `${renderTopbar()}${body}`;
+  sound.syncScreen(state.screen);
   if (ui.renderedScreen !== state.screen) requestAnimationFrame(() => window.scrollTo(0, 0));
   ui.renderedScreen = state.screen;
 }
@@ -1112,6 +1195,7 @@ function renderTopbar() {
       <button data-action="open-deck" title="查看牌组"><span>牌</span><small>${state.deck.length}</small></button>
       <button data-action="open-relics" title="查看法宝"><span>宝</span><small>${state.relics.length}</small></button>
       <button data-action="open-help" title="玩法说明"><span>?</span></button>
+      <button data-action="toggle-audio" class="audio-control ${sound.isMuted() ? 'is-muted' : ''}" title="${sound.isMuted() ? '开启声音' : '关闭声音'}" aria-label="${sound.isMuted() ? '开启声音' : '关闭声音'}"><span>${sound.isMuted() ? '静' : '声'}</span></button>
       <button data-action="request-reset" title="放弃本轮并重开"><span>↺</span></button>
     </nav>
     <img class="top-avatar" src="${character.portrait}" alt="" />

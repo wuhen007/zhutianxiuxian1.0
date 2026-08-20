@@ -58,10 +58,25 @@ test('无尽问道静态入口与视觉资源可由现有服务访问', async t 
     ['/wendao/content.json', '李青云'],
     ['/wendao/assets/battle.jpg', null],
     ['/wendao/assets/li-qingyun.jpg', null],
+    ['/wendao/audio/battle.ogg', null],
+    ['/wendao/audio/sword-swing.ogg', null],
+    ['/wendao/audio/sword-impact.ogg', null],
+    ['/wendao/audio/magic-cast.ogg', null],
+    ['/wendao/audio/magic-heavy.ogg', null],
+    ['/wendao/audio/boss-roar.ogg', null],
   ];
   for (const [url, marker] of assets) {
     const response = await fetch(`${base}${url}`);
     assert.equal(response.status, 200, url);
     if (marker) assert.match(await response.text(), new RegExp(marker));
   }
+
+  const audio = await fetch(`${base}/wendao/audio/battle.ogg`);
+  assert.match(audio.headers.get('content-type') || '', /^audio\/ogg/);
+  const audioBody = await audio.arrayBuffer();
+  assert.ok(audioBody.byteLength > 100_000);
+  assert.equal(Number(audio.headers.get('content-length')), audioBody.byteLength);
+
+  const unknownAudio = await fetch(`${base}/wendao/audio/not-listed.ogg`);
+  assert.equal(unknownAudio.status, 404);
 });

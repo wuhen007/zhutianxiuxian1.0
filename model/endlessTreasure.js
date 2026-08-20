@@ -6,16 +6,19 @@
  *  - 开局自带 1 级专属能力（可来自原有能力池，或专属合成能力）
  *  - 在局内满足「觉醒条件」（收集指定能力 / 达到指定能力等级 / 能力总数）后，
  *    觉醒为高阶形态，获得全属性加成与专属战斗技能
- *  - 至宝等级（1~3）随重复解锁提升，基础加成随等级成长
+ *  - 至宝等级（1~10）可消耗劫境道痕提升，基础加成随等级成长
  *
  * 本文件只负责数据与纯函数（状态判定/加成计算），战斗执行逻辑在 endlessRealm.js 中实现。
  */
 export const ENDLESS_TREASURE_FIELD = '无尽至宝列表';
 export const ENDLESS_TREASURE_EQUIPPED_FIELD = '无尽至宝装配';
 export const ENDLESS_TREASURE_SLOT_FIELD = '无尽至宝槽位';
-export const ENDLESS_TREASURE_LEVEL_CAP = 3;
+export const ENDLESS_TREASURE_LEVEL_CAP = 10;
 export const ENDLESS_TREASURE_UNLOCK_LAYER = 25;
 export const ENDLESS_TREASURE_EFFECT_RATE = 0.5;
+export const ENDLESS_TREASURE_EFFECT_PER_LEVEL = 0.15;
+export const ENDLESS_TREASURE_UPGRADE_BASE_COST = 1000;
+export const ENDLESS_TREASURE_UPGRADE_COST_STEP = 750;
 
 /* 至宝专属合成能力名（用于面板展示；这些能力不会进入选择池） */
 export const SYNTHETIC_ABILITY_NAMES = Object.freeze({
@@ -670,6 +673,14 @@ export function getEndlessTreasureSlotCost(slot) {
   return safeSlot === 1 ? 0 : 4000 + safeSlot * 500;
 }
 
+/** 当前等级升至下一级所需道痕。Lv.1→2 为1000，此后每级递增750。 */
+export function getEndlessTreasureUpgradeCost(level) {
+  const current = clamp(Math.floor(asNumber(level, 1)), 1, ENDLESS_TREASURE_LEVEL_CAP);
+  if (current >= ENDLESS_TREASURE_LEVEL_CAP) return null;
+  return ENDLESS_TREASURE_UPGRADE_BASE_COST +
+    (current - 1) * ENDLESS_TREASURE_UPGRADE_COST_STEP;
+}
+
 export function getEndlessTreasureSlotCount(player) {
   const highestLayer = Math.max(0, Math.floor(asNumber(player?.无尽劫境最高层)));
   // 旧存档没有最高层字段时，以已持有至宝反推第一槽资格。
@@ -750,9 +761,31 @@ export function unlockEndlessTreasureSlot(player) {
   return { slot: next, gate, cost, balance: player.劫境道痕 };
 }
 
+export function upgradeEndlessTreasure(player, input) {
+  const target = findOwnedTreasure(player, input);
+  if (!target) throw new Error('未找到这件无尽至宝');
+  const cost = getEndlessTreasureUpgradeCost(target.level);
+  if (cost === null) throw new Error(`【${target.name}】已经升至Lv.${ENDLESS_TREASURE_LEVEL_CAP}`);
+  const balance = Math.max(0, Math.floor(asNumber(player?.劫境道痕)));
+  if (balance < cost)
+    throw new Error(`升级【${target.name}】需要${cost}劫境道痕，当前${balance}`);
+  const level = target.level + 1;
+  player.劫境道痕 = balance - cost;
+  player[ENDLESS_TREASURE_FIELD] = normalizePlayerTreasures(player).map(item =>
+    item.id === target.id ? { ...item, level } : item
+  );
+  return {
+    treasure: TREASURE_MAP.get(target.id),
+    level,
+    cost,
+    nextCost: getEndlessTreasureUpgradeCost(level),
+    balance: player.劫境道痕,
+  };
+}
+
 /**
  * 第25关奖励：随机解锁一件永久至宝。
- * 优先从未拥有的至宝中抽取；全部拥有后，随机将一件已拥有至宝升级（上限3级）。
+ * 优先从未拥有的至宝中抽取；全部拥有后，随机将一件已拥有至宝升级（上限10级）。
  * @returns {{treasure:object, level:number, upgraded:boolean, name:string}|null}
  */
 export function grantRandomEndlessTreasure(player, randomizer = Math.random) {
@@ -825,7 +858,8 @@ function meetsRequirementGroup(member, group) {
  */
 export function getTreasureStates(member, run) {
   if (!member?.treasureIds?.length) return [];
-  const effectScale = (level) => ENDLESS_TREASURE_EFFECT_RATE + 0.1 * (level - 1);
+  const effectScale = (level) =>
+    ENDLESS_TREASURE_EFFECT_RATE + ENDLESS_TREASURE_EFFECT_PER_LEVEL * (level - 1);
   return member.treasureIds
     .map(({ id, level }) => {
       const treasure = TREASURE_MAP.get(id);
@@ -875,7 +909,7 @@ export function getTreasureEffects(member, run) {
       mergeEffect(
         effects,
         state.alternate.effect,
-        ENDLESS_TREASURE_EFFECT_RATE + 0.1 * (state.level - 1)
+        ENDLESS_TREASURE_EFFECT_RATE + ENDLESS_TREASURE_EFFECT_PER_LEVEL * (state.level - 1)
       );
   }
   return effects;
@@ -933,6 +967,8 @@ export function getPlayerTreasureViews(player) {
       icon: treasure.icon,
       rarity: treasure.rarity,
       level: item.level,
+      effectRate: ENDLESS_TREASURE_EFFECT_RATE + ENDLESS_TREASURE_EFFECT_PER_LEVEL * (item.level - 1),
+      nextCost: getEndlessTreasureUpgradeCost(item.level),
       equipped: equipped.has(item.id),
       desc: treasure.desc,
       awakenName: treasure.awaken?.name || null,

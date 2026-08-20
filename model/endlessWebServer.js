@@ -20,11 +20,15 @@ import {
 const pluginRoot = fileURLToPath(new URL('..', import.meta.url));
 const webRoot = path.join(pluginRoot, 'resources', 'web', 'endless');
 const wendaoWebRoot = path.join(pluginRoot, 'resources', 'web', 'wendao');
+const wendaoAudioRoot = path.join(wendaoWebRoot, 'audio');
+const worldWebRoot = path.join(pluginRoot, 'resources', 'web', 'world');
 const configPath = path.join(pluginRoot, 'config', 'endless-web.json');
 const TICKET_PREFIX = 'Xiuxian:Endless:Web:Ticket:';
 const SESSION_PREFIX = 'Xiuxian:Endless:Web:Session:';
 const ACTION_PREFIX = 'Xiuxian:Endless:Web:Action:';
 const TEAM_CHAT_PREFIX = 'Xiuxian:Endless:Web:TeamChat:';
+const WORLD_TICKET_PREFIX = 'Xiuxian:World:Web:Ticket:';
+const WORLD_SESSION_PREFIX = 'Xiuxian:World:Web:Session:';
 const TEAM_CHAT_MAX_MESSAGES = 80;
 const TEAM_CHAT_TTL_SECONDS = 2 * 24 * 60 * 60;
 const BODY_LIMIT = 16 * 1024;
@@ -37,6 +41,7 @@ return value
 let activeServer = null;
 let serverPromise = null;
 let activeRealm = null;
+let activeWorldController = null;
 
 const WENDAO_ASSETS = {
   'selection.jpg': path.join(pluginRoot, 'resources', 'img', 'state', '背景图.jpg'),
@@ -46,6 +51,21 @@ const WENDAO_ASSETS = {
   'qin-yang.jpg': path.join(pluginRoot, 'resources', 'img', 'player_pifu', '20.jpg'),
   'su-waner.jpg': path.join(pluginRoot, 'resources', 'img', 'player_pifu', '39.jpg'),
   'mu-yunxi.jpg': path.join(pluginRoot, 'resources', 'img', 'player_pifu', '38.jpg'),
+};
+
+const WENDAO_AUDIO = {
+  'battle.ogg': path.join(wendaoAudioRoot, 'battle.ogg'),
+  'sword-swing.ogg': path.join(wendaoAudioRoot, 'sword-swing.ogg'),
+  'sword-impact.ogg': path.join(wendaoAudioRoot, 'sword-impact.ogg'),
+  'magic-cast.ogg': path.join(wendaoAudioRoot, 'magic-cast.ogg'),
+  'magic-heavy.ogg': path.join(wendaoAudioRoot, 'magic-heavy.ogg'),
+  'boss-roar.ogg': path.join(wendaoAudioRoot, 'boss-roar.ogg'),
+};
+
+const WORLD_ASSETS = {
+  'zhutian.jpg': path.join(pluginRoot, 'resources', 'img', 'help', 'zhutian.jpg'),
+  'najie.jpg': path.join(pluginRoot, 'resources', 'img', 'najie', 'najie.jpg'),
+  'scroll.jpg': path.join(pluginRoot, 'resources', 'img', 'state', '背景图.jpg'),
 };
 
 function positiveInteger(value, fallback) {
@@ -86,6 +106,14 @@ function ticketKey(token) {
 
 function sessionKey(token) {
   return `${SESSION_PREFIX}${token}`;
+}
+
+function worldTicketKey(token) {
+  return `${WORLD_TICKET_PREFIX}${token}`;
+}
+
+function worldSessionKey(token) {
+  return `${WORLD_SESSION_PREFIX}${token}`;
 }
 
 function actionKey(session, operationId) {
@@ -153,6 +181,10 @@ function cookieName(config) {
   return config.publicUrl.startsWith('https://') ? '__Host-endless_session' : 'endless_session';
 }
 
+function worldCookieName(config) {
+  return config.publicUrl.startsWith('https://') ? '__Host-world_session' : 'world_session';
+}
+
 function sameOrigin(req, config) {
   try {
     return req.headers.origin === new URL(config.publicUrl).origin;
@@ -180,8 +212,7 @@ export async function issueEndlessWebTicket(redisClient, config, identity) {
   return token;
 }
 
-export async function consumeEndlessWebTicket(redisClient, token) {
-  const key = ticketKey(token);
+async function consumeTicket(redisClient, key) {
   let raw = null;
   if (typeof redisClient.getDel === 'function') {
     try {
@@ -206,6 +237,22 @@ export async function consumeEndlessWebTicket(redisClient, token) {
   } catch {
     return null;
   }
+}
+
+export async function consumeEndlessWebTicket(redisClient, token) {
+  return consumeTicket(redisClient, ticketKey(token));
+}
+
+export async function issueWorldWebTicket(redisClient, config, identity) {
+  const token = randomToken(24);
+  await redisClient.set(worldTicketKey(token), JSON.stringify(identity), {
+    EX: config.ticketTtlSeconds,
+  });
+  return token;
+}
+
+export async function consumeWorldWebTicket(redisClient, token) {
+  return consumeTicket(redisClient, worldTicketKey(token));
 }
 
 function parseCookies(header = '') {
@@ -242,7 +289,7 @@ function securityHeaders(contentType, cache = 'no-store') {
     'Content-Type': contentType,
     'Cache-Control': cache,
     'Content-Security-Policy':
-      "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      "default-src 'self'; img-src 'self' data: https:; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
     'Referrer-Policy': 'no-referrer',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
@@ -260,7 +307,10 @@ function sendJson(res, status, payload, extraHeaders = {}) {
 function sendFile(res, file, contentType) {
   try {
     const body = fs.readFileSync(file);
-    res.writeHead(200, securityHeaders(contentType, 'public, max-age=300'));
+    res.writeHead(200, {
+      ...securityHeaders(contentType, 'public, max-age=300'),
+      'Content-Length': body.length,
+    });
     res.end(body);
   } catch {
     sendJson(res, 404, { error: '资源不存在' });
@@ -531,6 +581,23 @@ async function loadSession(redisClient, config, req) {
   }
 }
 
+async function loadWorldSession(redisClient, config, req) {
+  const token = parseCookies(req.headers.cookie)[worldCookieName(config)];
+  if (!token) return null;
+  const raw = await redisClient.get(worldSessionKey(token));
+  if (!raw) return null;
+  try {
+    return { token, ...JSON.parse(raw) };
+  } catch {
+    await redisClient.del(worldSessionKey(token));
+    return null;
+  }
+}
+
+function currentWorldController(controller) {
+  return controller || activeWorldController;
+}
+
 async function currentState(realm, session, redisClient = null) {
   const team = await realm.getTeam(session.teamId);
   const run = team ? await realm.getRun(team.id) : null;
@@ -561,9 +628,10 @@ async function performAction(realm, session, action, value) {
   };
 }
 
-export function createEndlessWebHttpServer({ realm, redisClient, config }) {
+export function createEndlessWebHttpServer({ realm, redisClient, config, worldController = null }) {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://localhost');
+    const endlessRealm = activeRealm || realm;
     try {
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/endless')) {
         return sendFile(res, path.join(webRoot, 'index.html'), 'text/html; charset=utf-8');
@@ -585,9 +653,68 @@ export function createEndlessWebHttpServer({ realm, redisClient, config }) {
         return sendFile(res, path.join(wendaoWebRoot, 'content.json'), 'application/json; charset=utf-8');
       if (req.method === 'GET' && url.pathname === '/wendao/number.ttf')
         return sendFile(res, path.join(pluginRoot, 'resources', 'font', 'tttgbnumber.ttf'), 'font/ttf');
+      if (req.method === 'GET' && url.pathname.startsWith('/wendao/audio/')) {
+        const audio = WENDAO_AUDIO[url.pathname.slice('/wendao/audio/'.length)];
+        if (audio) return sendFile(res, audio, 'audio/ogg');
+      }
       if (req.method === 'GET' && url.pathname.startsWith('/wendao/assets/')) {
         const asset = WENDAO_ASSETS[url.pathname.slice('/wendao/assets/'.length)];
         if (asset) return sendFile(res, asset, 'image/jpeg');
+      }
+
+      if (req.method === 'GET' && (url.pathname === '/world' || url.pathname === '/world/'))
+        return sendFile(res, path.join(worldWebRoot, 'index.html'), 'text/html; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/world/app.js')
+        return sendFile(res, path.join(worldWebRoot, 'app.js'), 'text/javascript; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/world/lucide.min.js')
+        return sendFile(res, path.join(worldWebRoot, 'lucide.min.js'), 'text/javascript; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/world/style.css')
+        return sendFile(res, path.join(worldWebRoot, 'style.css'), 'text/css; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/world/number.ttf')
+        return sendFile(res, path.join(pluginRoot, 'resources', 'font', 'tttgbnumber.ttf'), 'font/ttf');
+      if (req.method === 'GET' && url.pathname.startsWith('/world/assets/')) {
+        const asset = WORLD_ASSETS[url.pathname.slice('/world/assets/'.length)];
+        if (asset) return sendFile(res, asset, 'image/jpeg');
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/world/session') {
+        if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
+        if (!(await withinRateLimit(redisClient, `world-session:${clientAddress(req)}`, 10, 60)))
+          return sendJson(res, 429, { error: '入口请求过于频繁，请稍后再试' });
+        const body = await readJson(req);
+        const identity = await consumeWorldWebTicket(redisClient, String(body.token || ''));
+        if (!identity) return sendJson(res, 401, { error: '入口已失效，请重新发送 #世界网页' });
+        const session = randomToken();
+        await redisClient.set(worldSessionKey(session), JSON.stringify(identity), {
+          EX: config.sessionTtlSeconds,
+        });
+        const secure = config.publicUrl.startsWith('https://') ? '; Secure' : '';
+        return sendJson(res, 200, { ok: true }, {
+          'Set-Cookie': `${worldCookieName(config)}=${encodeURIComponent(session)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${config.sessionTtlSeconds}${secure}`,
+        });
+      }
+
+      if (url.pathname.startsWith('/api/world/')) {
+        const session = await loadWorldSession(redisClient, config, req);
+        if (!session) return sendJson(res, 401, { error: '会话已失效，请重新发送 #世界网页' });
+        const controller = currentWorldController(worldController);
+        if (!controller) return sendJson(res, 503, { error: '世界频道服务尚未就绪' });
+        if (req.method === 'GET' && url.pathname === '/api/world/state') {
+          return sendJson(res, 200, { ok: true, state: await controller.getWorldWebState(session) });
+        }
+        if (req.method === 'POST') {
+          if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
+          if (!(await withinRateLimit(redisClient, `world-action:${session.token}`, 30, 10)))
+            return sendJson(res, 429, { error: '操作过于频繁，请稍后再试' });
+          const body = await readJson(req);
+          let result;
+          if (url.pathname === '/api/world/message') result = await controller.sendWorldWebMessage(session, body);
+          else if (url.pathname === '/api/world/trade') result = await controller.createWorldWebTrade(session, body);
+          else if (url.pathname === '/api/world/trade/accept') result = await controller.acceptWorldWebTrade(session, body);
+          else if (url.pathname === '/api/world/trade/cancel') result = await controller.cancelWorldWebTrade(session, body);
+          else return sendJson(res, 404, { error: '操作不存在' });
+          return sendJson(res, result?.ok === false ? 400 : 200, result || { ok: true });
+        }
       }
 
       if (req.method === 'POST' && url.pathname === '/api/endless/session') {
@@ -624,12 +751,12 @@ export function createEndlessWebHttpServer({ realm, redisClient, config }) {
             error: '会话已失效，请重新领取网页入口',
           });
         if (req.method === 'GET' && url.pathname === '/api/endless/state') {
-          const state = await currentState(realm, session, redisClient);
+          const state = await currentState(endlessRealm, session, redisClient);
           if (!state) await redisClient.del(sessionKey(session.token));
           return state ? sendJson(res, 200, { ok: true, state }) : sendJson(res, 410, { error: '本次无尽劫境已经结束' });
         }
         if (url.pathname === '/api/endless/chat') {
-          const state = await currentState(realm, session, redisClient);
+          const state = await currentState(endlessRealm, session, redisClient);
           if (!state) return sendJson(res, 410, { error: '本次无尽劫境已经结束' });
           if (req.method === 'GET') return sendJson(res, 200, { ok: true, messages: state.teamChat || [] });
           if (req.method === 'POST') {
@@ -639,7 +766,7 @@ export function createEndlessWebHttpServer({ realm, redisClient, config }) {
             const body = await readJson(req);
             const text = cleanTeamChatText(body.text);
             if (!text) return sendJson(res, 400, { error: '消息内容不能为空' });
-            const team = await realm.getTeam(session.teamId);
+            const team = await endlessRealm.getTeam(session.teamId);
             const message = {
               id: `${Date.now()}-${randomToken(6)}`,
               userId: String(session.userId),
@@ -657,7 +784,7 @@ export function createEndlessWebHttpServer({ realm, redisClient, config }) {
           const body = await readJson(req);
           const operationId = String(body.operationId || '');
           if (!/^[A-Za-z0-9-]{16,64}$/.test(operationId)) return sendJson(res, 400, { error: '操作标识无效' });
-          if (!(await currentState(realm, session, redisClient))) {
+          if (!(await currentState(endlessRealm, session, redisClient))) {
             await redisClient.del(sessionKey(session.token));
             return sendJson(res, 410, { error: '本次无尽劫境已经结束' });
           }
@@ -674,8 +801,8 @@ export function createEndlessWebHttpServer({ realm, redisClient, config }) {
             });
           }
           try {
-            const actionResult = await performAction(realm, session, body.action, body.value);
-            const state = actionResult.terminalState || (await currentState(realm, session, redisClient));
+            const actionResult = await performAction(endlessRealm, session, body.action, body.value);
+            const state = actionResult.terminalState || (await currentState(endlessRealm, session, redisClient));
             if (state && !state.teamChat) state.teamChat = await readTeamChat(redisClient, session.teamId);
             const result = { ok: true, message: actionResult.message, state, ended: Boolean(actionResult.terminalState) || !state };
             await redisClient.set(operationKey, JSON.stringify(result), {
@@ -698,7 +825,7 @@ export function createEndlessWebHttpServer({ realm, redisClient, config }) {
 }
 
 async function ensureServer(realm, redisClient, config) {
-  activeRealm = realm;
+  if (realm) activeRealm = realm;
   if (activeServer?.listening) return activeServer;
   if (serverPromise) return serverPromise;
   serverPromise = new Promise((resolve, reject) => {
@@ -736,6 +863,21 @@ export async function createEndlessWebLink(realm, identity) {
   await startEndlessWebServer(realm);
   const token = await issueEndlessWebTicket(redisClient, config, identity);
   return `${config.publicUrl}/endless?t=${encodeURIComponent(token)}`;
+}
+
+export function registerWorldWebController(controller) {
+  activeWorldController = controller || null;
+}
+
+export async function createWorldWebLink(controller, identity) {
+  const config = getEndlessWebConfig();
+  if (!config.enabled) throw new Error('世界网页功能尚未开启');
+  const redisClient = globalThis.redis;
+  if (!redisClient) throw new Error('Redis 尚未就绪');
+  registerWorldWebController(controller);
+  await ensureServer(activeRealm, redisClient, config);
+  const token = await issueWorldWebTicket(redisClient, config, identity);
+  return `${config.publicUrl}/world?t=${encodeURIComponent(token)}`;
 }
 
 export function createEndlessWendaoLink(config = getEndlessWebConfig()) {

@@ -18,7 +18,7 @@ assert.equal(upgradeEndlessMeta(player, '攻击').cost, 50);
 upgradeEndlessMeta(player, '衍算天机');
 upgradeEndlessMeta(player, '一念双悟');
 for (let rank = 0; rank < 4; rank++) upgradeEndlessMeta(player, '鬼域');
-for (const name of ['鬼影', '鬼柴刀', '许愿鬼', '八音盒', '棺材钉'])
+for (const name of ['鬼影', '鬼手', '鬼柴刀', '许愿鬼', '八音盒', '棺材钉'])
   upgradeEndlessMeta(player, name);
 
 const effects = getEndlessMetaEffects(player);
@@ -26,6 +26,7 @@ assert.equal(effects.attackPct, 0.05);
 assert.equal(effects.choiceCount, 4);
 assert.equal(effects.doubleChoice, true);
 assert.equal(effects.ghostDomainLevel, 9);
+assert.equal(getEndlessMetaView(player).nodes.find(node => node.name === '鬼手').rank, 1);
 assert.equal(getEndlessMetaView(player).puzzleSlots, 1);
 assert.equal(expandEndlessPuzzleSlots(player).cost, 2500);
 assert.equal(expandEndlessPuzzleSlots(player).slots, 3);

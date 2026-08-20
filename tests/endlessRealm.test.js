@@ -63,6 +63,32 @@ function grantGhostPath(member, domainLevel, equippedPuzzles = []) {
   };
 }
 
+function createGhostResonanceBattle(seed, domainLevel, equippedPuzzles, attack = 1) {
+  const run = createOnePlayerRun(seed);
+  chooseFirstForEveryone(run);
+  const member = run.members['10001'];
+  grantGhostPath(member, domainLevel, equippedPuzzles);
+  member.base.attack = attack;
+  member.base.hp = 1_000_000_000;
+  member.base.defense = 1_000_000_000;
+  return resolveEndlessLayer(run);
+}
+
+for (const [domainLevel, puzzles, expectedPct] of [
+  [5, ['ghost_shadow'], 0.15],
+  [6, ['ghost_shadow', 'ghost_hand', 'ghost_cleaver'], 0.25],
+  [7, ['ghost_shadow', 'ghost_hand', 'ghost_cleaver', 'music_box', 'wish_ghost'], 0.45],
+]) {
+  const run = createOnePlayerRun(60000 + domainLevel);
+  const member = run.members['10001'];
+  member.base = { attack: 1000, hp: 1000, defense: 1000, speed: 100 };
+  grantGhostPath(member, domainLevel, puzzles);
+  const stats = getMemberStats(run, member.id);
+  assert.equal(stats.attack, Math.round(1000 * (1 + expectedPct)));
+  assert.equal(stats.maxHp, Math.round(1000 * (1 + expectedPct)));
+  assert.equal(stats.defense, Math.round(1000 * (1 + expectedPct)));
+}
+
 const content = getEndlessContent();
 assert.equal(content.worlds.length, 6);
 assert.equal(content.abilities.length, 36);
@@ -671,6 +697,44 @@ assert.ok(
   ghostInterruptActions.some(action => action.skill === '六层鬼域·暂停现实')
 );
 assert.ok(ghostInterruptBattle.summary.ghostInterrupts >= 2);
+
+const ghostDismemberBattle = createGhostResonanceBattle(
+  1,
+  6,
+  ['ghost_shadow', 'ghost_hand', 'ghost_cleaver']
+);
+const ghostDismemberActions = ghostDismemberBattle.roundDetails.flatMap(
+  round => round.actions
+);
+assert.ok(ghostDismemberActions.some(action => action.skill === '鬼手·灵异压制'));
+assert.ok(ghostDismemberActions.some(action => action.skill === '六层鬼域·肢解'));
+assert.ok(ghostDismemberActions.some(action => action.skill === '鬼域肢解反噬'));
+assert.equal(ghostDismemberBattle.summary.ghostDismemberments, 1);
+
+const baseGhostEyeBattle = createGhostResonanceBattle(2, 5, [], 100);
+const shadowGhostEyeBattle = createGhostResonanceBattle(2, 5, ['ghost_shadow'], 100);
+const firstGhostEyeHit = battle => battle.roundDetails
+  .flatMap(round => round.actions)
+  .find(action => action.skill === '鬼眼·勘破死线')?.damage || 0;
+assert.ok(firstGhostEyeHit(shadowGhostEyeBattle) > firstGhostEyeHit(baseGhostEyeBattle));
+
+for (const [seed, skill] of [
+  [1, '许愿鬼·行动封绝'],
+  [3, '许愿鬼·攻击无效'],
+  [5, '许愿鬼·防御剥夺'],
+  [7, '许愿鬼·必杀之愿'],
+]) {
+  const battle = createGhostResonanceBattle(
+    seed,
+    7,
+    ['ghost_shadow', 'ghost_hand', 'ghost_cleaver', 'music_box', 'wish_ghost']
+  );
+  assert.ok(
+    battle.roundDetails.flatMap(round => round.actions).some(action => action.skill === skill),
+    `${skill}应在固定种子下触发`
+  );
+  assert.ok(battle.summary.ghostWishes >= 1);
+}
 
 const ghostShadowRun = createOnePlayerRun(66772);
 chooseFirstForEveryone(ghostShadowRun);

@@ -508,6 +508,16 @@ button:disabled {
   border-color: var(--gold);
 }
 
+.top-actions .audio-control {
+  color: var(--gold-pale);
+  border-color: rgba(212, 185, 104, 0.58);
+}
+
+.top-actions .audio-control.is-muted {
+  color: rgba(255, 255, 255, 0.45);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
 .top-actions small {
   position: absolute;
   right: 2px;

@@ -15,6 +15,8 @@ import {
   normalizeEndlessTreasureLoadout,
   unequipEndlessTreasure,
   unlockEndlessTreasureSlot,
+  upgradeEndlessTreasure,
+  getEndlessTreasureUpgradeCost,
 } from '../model/endlessTreasure.js';
 import {
   grantTitle,
@@ -58,7 +60,7 @@ test('全部收集后重复解锁升级至宝', () => {
   assert.ok(owned.some((o) => o.level === 2));
 });
 
-test('至宝等级上限3级，满级不再升级', () => {
+test('至宝等级上限10级，满级不再升级', () => {
   const player = {
     id: '3',
     无尽至宝列表: ENDLESS_TREASURES.map((t) => ({
@@ -69,6 +71,28 @@ test('至宝等级上限3级，满级不再升级', () => {
   };
   const gained = grantRandomEndlessTreasure(player, () => 0.99);
   assert.equal(gained, null);
+});
+
+test('至宝消耗道痕升级，费用从1000起每级递增750', () => {
+  const player = {
+    劫境道痕: 20_000,
+    无尽至宝列表: [
+      { id: 'treasure_decade', name: 'K触屏·帝骑驱动器', level: 1 },
+    ],
+  };
+  assert.equal(getEndlessTreasureUpgradeCost(1), 1000);
+  assert.equal(getEndlessTreasureUpgradeCost(2), 1750);
+  const first = upgradeEndlessTreasure(player, 'K触屏·帝骑驱动器');
+  assert.equal(first.level, 2);
+  assert.equal(first.cost, 1000);
+  assert.equal(first.nextCost, 1750);
+  assert.equal(player.劫境道痕, 19_000);
+  const second = upgradeEndlessTreasure(player, '1');
+  assert.equal(second.level, 3);
+  assert.equal(second.cost, 1750);
+  assert.equal(player.无尽至宝列表[0].level, 3);
+  player.无尽至宝列表[0].level = ENDLESS_TREASURE_LEVEL_CAP;
+  assert.throws(() => upgradeEndlessTreasure(player, '1'), /已经升至Lv\.10/);
 });
 
 test('K触屏：帝骑腰带1级未觉醒，3级觉醒神主形态', () => {

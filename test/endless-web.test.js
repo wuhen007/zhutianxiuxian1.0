@@ -6,8 +6,10 @@ import {
 } from '../model/endlessRealm.js';
 import {
   consumeEndlessWebTicket,
+  consumeWorldWebTicket,
   createEndlessWebHttpServer,
   issueEndlessWebTicket,
+  issueWorldWebTicket,
   serializeEndlessWebState,
 } from '../model/endlessWebServer.js';
 import {
@@ -156,6 +158,15 @@ test('旧版 Redis 不支持 GETDEL 时仍能原子消费网页票据', async ()
   assert.equal(await consumeEndlessWebTicket(redis, token), null);
 });
 
+test('世界网页票据只能兑换一次', async () => {
+  const redis = new LegacyRedis();
+  const config = { ticketTtlSeconds: 120 };
+  const identity = { userId: '10001', groupId: 'group-1', displayName: '荒古修士' };
+  const token = await issueWorldWebTicket(redis, config, identity);
+  assert.deepEqual(await consumeWorldWebTicket(redis, token), identity);
+  assert.equal(await consumeWorldWebTicket(redis, token), null);
+});
+
 test('网页状态只暴露当前队伍需要的战斗数据', () => {
   const { run, team, realm } = fixture();
   run.members['10001'].bankedRewards = { cultivation: 123000, blood: 456000 };
@@ -290,4 +301,82 @@ test('HTTP 会话可读取状态并提交能力选择', async t => {
 
   const endedState = await fetch(`${base}/api/endless/state`, { headers: { Cookie: cookie } });
   assert.equal(endedState.status, 401);
+});
+
+test('世界网页会话可读取状态并提交传音和交易操作', async t => {
+  const redis = new MemoryRedis();
+  const calls = [];
+  const worldController = {
+    async getWorldWebState(session) {
+      return { viewer: { id: session.userId }, messages: [], realms: [], inventory: [], catalog: [], trades: { incoming: [], outgoing: [] } };
+    },
+    async sendWorldWebMessage(_session, body) {
+      calls.push(['message', body.text]);
+      return { ok: true, message: '传音成功' };
+    },
+    async createWorldWebTrade(_session, body) {
+      calls.push(['trade', body.targetServerId]);
+      return { ok: true, message: '发布成功' };
+    },
+    async acceptWorldWebTrade(_session, body) {
+      calls.push(['accept', body.code]);
+      return { ok: true, message: '接受成功' };
+    },
+    async cancelWorldWebTrade(_session, body) {
+      calls.push(['cancel', body.code]);
+      return { ok: true, message: '撤回成功' };
+    },
+  };
+  const config = { publicUrl: 'http://127.0.0.1', ticketTtlSeconds: 120, sessionTtlSeconds: 3600 };
+  const server = createEndlessWebHttpServer({ realm: null, redisClient: redis, config, worldController });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  config.publicUrl = base;
+  const token = await issueWorldWebTicket(redis, config, { userId: '10001', groupId: 'group-1', displayName: '荒古修士' });
+
+  const page = await fetch(`${base}/world`);
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /诸天万界/);
+
+  const login = await fetch(`${base}/api/world/session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: base },
+    body: JSON.stringify({ token }),
+  });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get('set-cookie').split(';')[0];
+  const replay = await fetch(`${base}/api/world/session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: base },
+    body: JSON.stringify({ token }),
+  });
+  assert.equal(replay.status, 401);
+
+  const state = await fetch(`${base}/api/world/state`, { headers: { Cookie: cookie } });
+  assert.equal(state.status, 200);
+  assert.equal((await state.json()).state.viewer.id, '10001');
+
+  for (const [path, body] of [
+    ['/api/world/message', { text: '诸天可闻' }],
+    ['/api/world/trade', { targetServerId: 'realm-2', give: [], want: [] }],
+    ['/api/world/trade/accept', { code: 'TR-123456' }],
+    ['/api/world/trade/cancel', { code: 'TR-123456' }],
+  ]) {
+    const response = await fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: base, Cookie: cookie },
+      body: JSON.stringify(body),
+    });
+    assert.equal(response.status, 200);
+  }
+  assert.deepEqual(calls, [
+    ['message', '诸天可闻'],
+    ['trade', 'realm-2'],
+    ['accept', 'TR-123456'],
+    ['cancel', 'TR-123456'],
+  ]);
 });
