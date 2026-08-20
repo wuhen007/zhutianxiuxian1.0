@@ -44,8 +44,11 @@ test('shengxu dungeon panel exposes image and four entry costs', () => {
   const html = fs.readFileSync(new URL('../resources/html/shengxu_place/shengxu_place.html', import.meta.url), 'utf8');
   const css = fs.readFileSync(new URL('../resources/html/shengxu_place/shengxu_place.css', import.meta.url), 'utf8');
   for (const label of ['修为', '血气', '灵石', '寿元']) assert.match(html, new RegExp(label));
+  assert.match(html, /妙术秘术/);
   assert.match(css, /secret_place\.jpg/);
   assert.match(css, /card\.jpg/);
+  assert.match(css, /background-blend-mode:\s* multiply/);
+  assert.match(css, /color:\s*#f4f1e8/);
 });
 
 test('shengxu show model resolves its dedicated template', async () => {

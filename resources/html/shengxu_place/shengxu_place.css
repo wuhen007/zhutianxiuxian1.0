@@ -75,9 +75,12 @@ h1 {
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-left: 6px solid #7a6650;
   border-radius: 8px;
-  background: rgba(238, 235, 220, 0.94) url("../../img/secret_place/card.jpg")
-    center / cover;
-  color: #252b24;
+  background-color: rgba(14, 22, 18, 0.88);
+  background-image: url("../../img/secret_place/card.jpg");
+  background-position: center;
+  background-size: cover;
+  background-blend-mode: multiply;
+  color: #f4f1e8;
 }
 
 .dungeon.ready {
@@ -120,7 +123,7 @@ h1 {
   align-items: center;
   gap: 12px;
   padding: 18px 24px;
-  border-bottom: 1px solid rgba(32, 42, 34, 0.16);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
   font-size: 18px;
 }
 
@@ -138,7 +141,7 @@ h1 {
 .costs div {
   min-width: 0;
   padding: 8px 12px;
-  border-left: 1px solid rgba(43, 61, 48, 0.18);
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
 }
 
 .costs div:first-child {
@@ -150,21 +153,27 @@ h1 {
   display: block;
 }
 .costs span {
-  color: #667067;
+  color: #cbd8ce;
   font-size: 15px;
 }
 .costs strong {
   margin-top: 5px;
-  color: #423d2d;
+  color: #ffe9a6;
   font-size: 20px;
 }
 
 footer {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 18px;
   padding: 14px 24px;
-  background: rgba(51, 68, 55, 0.12);
-  color: #4b564c;
+  background: rgba(4, 10, 7, 0.7);
+  color: #e4ece5;
   font-size: 16px;
+}
+
+.inheritance {
+  grid-column: 1 / -1;
+  color: #f3d98c;
+  line-height: 1.5;
 }

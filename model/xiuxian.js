@@ -128,7 +128,7 @@ import { getGodDemonStealRule, getRealmAuthorityLevel } from './realmAuthority.j
 import { ensureExtraCultivationState } from './extraCultivation.js';
 import { calculateFlowerExtremeBonus, ensureFlowerPollenState, getFlowerPathAttributeMultiplier } from './flowerPollenPath.js';
 import { calculateFlowerFieldBonus } from './flowerPollenField.js';
-import { handleFlowerPollenSkills } from './flowerPollenSkill.js';
+import { FLOWER_POLLEN_SKILLS, handleFlowerPollenSkills } from './flowerPollenSkill.js';
 import { STONE_JAR_OPPORTUNITY, getShengxuOpportunityOwner } from './shengxuOpportunity.js';
 import { getTianjiaoRealmName } from './tianjiaoGrowth.js';
 import {
@@ -2973,7 +2973,8 @@ export async function get_power_img(e) {
             }
             
             // 在全局功法数据中查找匹配的功法
-            const gongfa = allGongfa.find(item => item.name === gongfaName);
+            const gongfa = allGongfa.find(item => item.name === gongfaName)
+              || FLOWER_POLLEN_SKILLS.find(item => item.name === gongfaName);
             
             if (gongfa && gongfa.type) {
                 // 检查功法类型是否在层级映射中

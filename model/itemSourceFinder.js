@@ -1,3 +1,5 @@
+import { SHENGXU_DUNGEONS } from './shengxuContent.js';
+
 const DROP_FIELDS = ['one', 'two', 'three', 'four'];
 
 const SHENGXU_SOURCES = Object.freeze({
@@ -81,6 +83,11 @@ export function findItemSources(data, itemName) {
 
   const sources = new Set();
   for (const source of SHENGXU_SOURCES[target] || []) sources.add(source);
+  for (const dungeon of SHENGXU_DUNGEONS) {
+    if (dungeon.skills?.some(skill => skill.name === target)) {
+      sources.add(`圣墟副本·${dungeon.name}`);
+    }
+  }
   for (const [key, label] of PLACE_SOURCES) {
     for (const place of Array.isArray(data?.[key]) ? data[key] : []) {
       if (DROP_FIELDS.some(field => hasNamedItem(place?.[field], target))) {

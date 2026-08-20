@@ -134,6 +134,7 @@ export class ShengxuContent extends plugin {
         xueqiCost: bigNumberTransform(cost.xueqi),
         lingshiCost: bigNumberTransform(cost.lingshi),
         shouyuanCost: cost.shouyuan,
+        skillsText: dungeon.skills.map(skill => skill.name).join('、'),
         ready: realmReady && planeReady && shortages.length === 0,
         status: !realmReady ? `花粉序列不足（需${dungeon.requiredLevel}阶）`
           : !planeReady ? `需身处${plane}`
@@ -371,16 +372,20 @@ export class ShengxuContent extends plugin {
     if (!context) return e.reply('玩家不存在，请先创建角色。');
     const learned = getLearnedFlowerPollenSkills(context.player);
     const seven = getSevenTreasureProgress(context.player);
-    const lines = ['【花粉路·神术/异术】'];
+    const lines = ['【花粉路·道法与杀术】'];
     if (learned.length) {
       lines.push('已参悟：');
-      lines.push(...learned.map(skill => `【${skill.name}】${skill.desc}`));
+      lines.push(...learned.map(skill => `【${skill.type}·${skill.name}】${skill.desc}`));
       if (seven > 0) lines.push(`七妙宝术进度：${seven}/7（每多一宝，七妙伤害+15%；七宝圆满+60%）`);
     } else {
       lines.push('尚未参悟任何神术。探索圣墟副本可概率参悟神术传承。');
     }
-    lines.push('', '神术名录（副本掉落）：');
-    lines.push(...FLOWER_POLLEN_SKILLS.map(skill => `${skill.name}｜花粉${skill.realm}阶｜${skill.desc}`));
+    for (const type of ['道与法', '盖世杀术']) {
+      lines.push('', `【${type}·副本传承】`);
+      lines.push(...FLOWER_POLLEN_SKILLS
+        .filter(skill => skill.type === type)
+        .map(skill => `${skill.name}｜花粉${skill.realm}阶｜${skill.desc}`));
+    }
     return e.reply(lines.join('\n'));
   }
 

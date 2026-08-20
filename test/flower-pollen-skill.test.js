@@ -9,10 +9,10 @@ import {
   handleFlowerPollenSkills,
   rollFlowerPollenSkill,
 } from '../model/flowerPollenSkill.js';
-import { getShengxuDungeon } from '../model/shengxuContent.js';
+import { SHENGXU_DUNGEONS, getShengxuDungeon } from '../model/shengxuContent.js';
 
-test('skill tree covers 19 skills including the seven treasures', () => {
-  assert.equal(FLOWER_POLLEN_SKILLS.length, 19);
+test('skill tree covers 28 skills including new arts and killing techniques', () => {
+  assert.equal(FLOWER_POLLEN_SKILLS.length, 28);
   assert.ok(getFlowerPollenSkill('大力牛魔拳'));
   assert.ok(getFlowerPollenSkill('终极拳'));
   assert.ok(getFlowerPollenSkill('闪电拳'));
@@ -25,7 +25,12 @@ test('skill tree covers 19 skills including the seven treasures', () => {
   assert.ok(getFlowerPollenSkill('金色符文秘术'));
   assert.ok(getFlowerPollenSkill('时间妙术'));
   assert.ok(getFlowerPollenSkill('时光术'));
+  assert.ok(getFlowerPollenSkill('共振术'));
+  assert.ok(getFlowerPollenSkill('魂钟精神攻杀术'));
+  assert.ok(getFlowerPollenSkill('小六道时光术'));
+  assert.ok(getFlowerPollenSkill('九宝妙术'));
   assert.equal(FLOWER_POLLEN_SKILLS.filter(s => s.name.startsWith('七妙宝术')).length, 7);
+  assert.ok(FLOWER_POLLEN_SKILLS.every(s => ['道与法', '盖世杀术'].includes(s.type)));
 });
 
 test('learned skills are matched from 学习的功法', () => {
@@ -38,11 +43,17 @@ test('learned skills are matched from 学习的功法', () => {
 
 test('dungeon skill drop rolls from its pool', () => {
   const taishan = getShengxuDungeon('太行山');
-  assert.deepEqual(taishan.skills, [{ name: '大力牛魔拳', chance: 0.15 }]);
+  assert.deepEqual(taishan.skills, [
+    { name: '大力牛魔拳', chance: 0.15 },
+    { name: '共振术', chance: 0.08 },
+  ]);
   assert.equal(rollFlowerPollenSkill(taishan, () => 0), '大力牛魔拳'); // 必中
   assert.equal(rollFlowerPollenSkill(taishan, () => 1), ''); // 必不中
   const hunhe = getShengxuDungeon('魂河古地');
-  assert.deepEqual(hunhe.skills.map(s => s.name), ['七妙宝术·水', '七妙宝术·木', '七妙宝术·阴', '七妙宝术·阳', '时间妙术', '时光术']);
+  assert.deepEqual(hunhe.skills.map(s => s.name), [
+    '七妙宝术·水', '七妙宝术·木', '七妙宝术·阴', '七妙宝术·阳',
+    '时间妙术', '时光术', '小六道时光术', '斩千秋', '九宝妙术',
+  ]);
   assert.equal(rollFlowerPollenSkill({}, () => 0), ''); // 无技能池
 });
 
@@ -119,7 +130,7 @@ test('no trigger when random misses', () => {
 
 test('dungeons reference only existing skills', () => {
   const names = new Set(FLOWER_POLLEN_SKILLS.map(s => s.name));
-  for (const dungeon of [getShengxuDungeon('太行山'), getShengxuDungeon('小阴间星路'), getShengxuDungeon('阳间名山'), getShengxuDungeon('魂河古地')]) {
+  for (const dungeon of SHENGXU_DUNGEONS) {
     for (const entry of dungeon.skills || []) {
       assert.ok(names.has(entry.name), `${dungeon.name} 引用未知技能 ${entry.name}`);
     }

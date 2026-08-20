@@ -101,4 +101,6 @@ test('圣墟动态奖励会显示玩法来源', () => {
   assert.ok(findItemSources({}, '盗引呼吸法').includes('圣墟副本·魂河古地'));
   assert.ok(findItemSources({}, '普通进化花粉').includes('花粉路·感应异变'));
   assert.ok(findItemSources({}, '太极呼吸法').includes('圣墟副本·武当山'));
+  assert.ok(findItemSources({}, '共振术').includes('圣墟副本·太行山'));
+  assert.ok(findItemSources({}, '九宝妙术').includes('圣墟副本·魂河古地'));
 });
