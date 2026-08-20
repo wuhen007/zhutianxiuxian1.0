@@ -54,6 +54,7 @@ import {
   recordSecretPlaceItemToHistory,
   withSecretPlaceSettlementLock,
 } from '../../model/secretPlaceAddiction.js';
+import { shouldTriggerDungeonMalignantEvent } from '../../model/dungeonMalignantEvent.js';
 export class SecretPlaceTask extends plugin {
   constructor() {
     super({
@@ -1184,7 +1185,7 @@ if (weizhi.name === "霸体祖星") {
      }
  }
  if (weizhi.name === "圣崖") {
-    if (player.mijinglevel_id < 12 && player.xiangulevel_id < 12 && Math.random() < 0.4) {
+    if (shouldTriggerDungeonMalignantEvent(player)) {
         try {
             // ==== 辰东风格文案 - 分三层意境 ====
             let penaltyMsg = [
@@ -1324,7 +1325,7 @@ if (weizhi.name === "霸体祖星") {
     }
 }
 if (weizhi.name === "北斗星紫山") {
-    if (player.mijinglevel_id < 12 && player.xiangulevel_id < 12&& Math.random() < 0.4) {
+    if (shouldTriggerDungeonMalignantEvent(player)) {
         try {
             // 三重惩罚
             player.当前血量 *= 0.5; // 血量减半
@@ -1369,7 +1370,7 @@ if (weizhi.name === "北斗星紫山") {
 }
 
 if (weizhi.name === "荒古禁地") {
-    if (player.mijinglevel_id < 12&& player.xiangulevel_id < 12 && Math.random() < 0.4) {
+    if (shouldTriggerDungeonMalignantEvent(player)) {
         try {
             // 基础惩罚
             const ageIncrease =  Math.floor(Math.random() * player.寿元); // 增加10-30岁
@@ -1413,7 +1414,7 @@ if (weizhi.name === "荒古禁地") {
     }
 }
 if (weizhi.name === "太初古矿") {
-    if (player.mijinglevel_id < 12&& player.xiangulevel_id < 12&& Math.random() < 0.4) {
+    if (shouldTriggerDungeonMalignantEvent(player)) {
         try {
             // 基础惩罚
             const lostPercent = 0.4 + Math.random() * 0.3; // 流失40%-70%修为和血气
@@ -1469,7 +1470,7 @@ if (weizhi.name === "太初古矿") {
     }
 }
 if (weizhi.name === "石国皇都") {
-    if (player.mijinglevel_id < 12 && player.xiangulevel_id < 12 && Math.random() < 0.4) {
+    if (shouldTriggerDungeonMalignantEvent(player)) {
         try {
             let penaltyMsg = [];
             let obtainedBone = false;
@@ -1538,7 +1539,7 @@ if (weizhi.name === "石国皇都") {
     }
 }
 if (weizhi.name === "西陵界") {
-    if (player.mijinglevel_id < 12 && player.xiangulevel_id < 12 && Math.random() < 0.4) {
+    if (shouldTriggerDungeonMalignantEvent(player)) {
         try {
             let penaltyMsg = [];
             let obtainedBone = false;

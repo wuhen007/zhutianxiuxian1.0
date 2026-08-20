@@ -115,6 +115,7 @@ import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { isCultivatingExtraPath } from '../../model/extraCultivation.js';
 import { isHighRealmConsumableRestricted } from '../../model/realmAuthority.js';
 import { selectEquipmentByCode } from '../../model/equipmentSwap.js';
+import { calculateLifeSourceRepairBaseCost } from '../../model/lifeSourceRepair.js';
 
 const FLOWER_BREATHING_METHODS = new Set([
   '基础呼吸法',
@@ -222,7 +223,7 @@ export class UserHome extends plugin {
     fnc: 'repairDaoshang'
 },
 {
-    reg: '^#修复生命本源(\\*\\d+)?$', // 支持 #修复生命本源 和 #修复生命本源*阶数
+    reg: '^#修复生命本源(\\*\\d+)?$', // 支持 #修复生命本源 和 #修复生命本源*点数
     fnc: 'shengmingbenyuan'
 },
 {
@@ -262,43 +263,23 @@ async shengmingbenyuan(e) {
         return e.reply("你的生命本源充盈无缺，无须修复");
     }
 
-    // 4. 解析命令参数（支持 #修复生命本源*阶数 格式）
+    // 4. 解析命令参数（支持 #修复生命本源*点数 格式）
     const args = e.msg.split('*');
-    let repairTiers = 0;
+    let requestedPoints = 0;
     
     if (args.length > 1 && !isNaN(parseInt(args[1]))) {
-        repairTiers = parseInt(args[1]);
+        requestedPoints = parseInt(args[1]);
     }
     
     // 5. 计算缺失的生命本源
     const missingLife = maxLifeBase - player.生命本源;
-    // 最大可修复点数（50的倍数），确保阶数为整数
-    const maxRepairPoints = Math.floor(missingLife / 50) * 50;
-    const maxTiers = maxRepairPoints / 50;  // 最大可修复阶数
-    
-    // 6. 如果没有指定阶数或指定为0，则修复全部
-    if (repairTiers <= 0) {
-        repairTiers = maxTiers;
-    } else if (repairTiers > maxTiers) {
-        // 不能超过最大可修复阶数
-        repairTiers = maxTiers;
-    }
-    
-    // 7. 计算实际修复的生命本源点数（50的倍数）
-    const repairPoints = Math.min(repairTiers * 50, maxRepairPoints);
-    const actualTiers = repairPoints / 50;  // 实际修复的阶数
-    
-    // 8. 阶梯式计算总消耗（基于绝对阶数索引）
-    const baseCost = 1500000000;
-    let totalCost = 0;
-    
-    // 计算当前生命本源所在的阶数索引（阶数从1开始）
-    const currentTierIndex = Math.floor(player.生命本源 / 50) + 1;
-    
-    // 成本 = 从当前阶数开始，连续修复N阶的成本之和
-    for (let i = 0; i < actualTiers; i++) {
-        totalCost += baseCost * (currentTierIndex + i);
-    }
+    // 未指定点数或指定为0时修复全部，超出的部分自动截到上限
+    const repairPoints = requestedPoints > 0
+      ? Math.min(requestedPoints, missingLife)
+      : missingLife;
+
+    // 保留原有每50点一阶的价格梯度，但允许逐点支付和修复
+    let totalCost = calculateLifeSourceRepairBaseCost(player.生命本源, repairPoints);
     
     // 9. 境界加成系数
     const realmFactor = 1 + (player.mijinglevel_id + player.xiangulevel_id) * 0.1;
@@ -317,7 +298,7 @@ async shengmingbenyuan(e) {
     if (player.修为 < totalCost || player.血气 < totalCost) {
         return e.reply([
             `「生命本源亏损，难以为继」`,
-            `修复${actualTiers}阶需消耗：`,
+            `修复${repairPoints}点需消耗：`,
             `修为：${totalCost.toLocaleString()}`,
             `血气：${totalCost.toLocaleString()}`,
             `当前不足：`,
@@ -340,14 +321,13 @@ async shengmingbenyuan(e) {
       : `命格影响：修复代价${totalCost < originalRepairCost ? '减少' : '增加'}${Math.abs(originalRepairCost - totalCost).toLocaleString()}`;
     return e.reply([
         `【生命本源修复完成】`,
-        `修复阶数：${actualTiers}阶`,
         `修复点数：${repairPoints}点`,
         `当前状态：${player.生命本源}/${maxLifeBase}`,
         `消耗修为：${totalCost.toLocaleString()}`,
         `消耗血气：${totalCost.toLocaleString()}`,
         minggeLine,
         `「本源修复，道基渐固」`,
-        actualTiers < maxTiers ? `可继续修复剩余${maxTiers - actualTiers}阶` : `本源已完全恢复`
+        player.生命本源 < maxLifeBase ? `可继续修复剩余${maxLifeBase - player.生命本源}点` : `本源已完全恢复`
     ].filter(Boolean).join("\n"));
 }
 async repairDaoshang(e) {
