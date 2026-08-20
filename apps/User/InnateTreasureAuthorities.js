@@ -235,6 +235,12 @@ export class InnateTreasureAuthorities extends plugin {
     qq = await channel(qq);
     if (!await existplayer(qq)) return null;
     const player = await Read_player(qq);
+    const sealedUntil = Number(player?.先天权柄?.违禁品清算封禁截止) || 0;
+    if (sealedUntil > Date.now()) {
+      const remaining = formatCooldown(sealedUntil - Date.now());
+      await e.reply(`【${treasureName}】的先天权柄正被道天清算封禁，还需${remaining}才能再次显化。`);
+      return null;
+    }
     if (!hasEquippedInnateTreasure(player, treasureName)) {
       await e.reply(`需先执掌【${treasureName}】才能动用此权柄。`);
       return null;
