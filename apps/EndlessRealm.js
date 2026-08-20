@@ -47,10 +47,17 @@ import {
 } from '../model/endlessAccess.js';
 import {
   ENDLESS_TREASURE_UNLOCK_LAYER,
+  ENDLESS_TREASURE_EFFECT_RATE,
+  equipEndlessTreasure,
+  getEndlessTreasureSlotCost,
+  getEndlessTreasureSlotGate,
   getPlayerTreasureViews,
   getTreasureAbilityName,
   getTreasureRunSummary,
   grantRandomEndlessTreasure,
+  normalizeEndlessTreasureLoadout,
+  unequipEndlessTreasure,
+  unlockEndlessTreasureSlot,
 } from '../model/endlessTreasure.js';
 import {
   equipTitle,
@@ -91,12 +98,16 @@ import {
   getTianjiaoRealmName,
 } from '../model/tianjiaoGrowth.js';
 import {
+  expandEndlessPuzzleSlots,
   getEndlessMetaView,
+  replaceEndlessPuzzle,
   resetEndlessMeta,
   toggleEndlessPuzzle,
+  unequipEndlessPuzzle,
   upgradeEndlessMeta,
 } from '../model/endlessMeta.js';
 import {
+  createEndlessWendaoLink,
   createEndlessWebLink,
   getEndlessWebConfig,
   serializeEndlessWebState,
@@ -143,6 +154,7 @@ export class EndlessRealm extends plugin {
         { reg: '^#开启无尽劫境$', fnc: 'startRun' },
         { reg: '^#使用他化自在体验卡$', fnc: 'useFreeTransformationCard' },
         { reg: '^#无尽网页$', fnc: 'openEndlessWeb' },
+        { reg: '^#无尽问道$', fnc: 'openEndlessWendao' },
         { reg: '^#劫途星图$', fnc: 'showStarMap' },
         { reg: '^#星图建议\\s*[1-3]$', fnc: 'suggestStarRoute' },
         { reg: '^#星图情报\\s*[1-3]$', fnc: 'showStarIntel' },
@@ -161,10 +173,16 @@ export class EndlessRealm extends plugin {
         { reg: '^#万劫道碑$', fnc: 'showEndlessMeta' },
         { reg: '^#参悟道碑\\s*.+$', fnc: 'upgradeEndlessMeta' },
         { reg: '^#装配厉鬼拼图\\s*.+$', fnc: 'toggleEndlessPuzzle' },
+        { reg: '^#卸下厉鬼拼图\\s*.+$', fnc: 'unequipEndlessPuzzleCmd' },
+        { reg: '^#更换厉鬼拼图\\s+\\S+\\s+\\S+$', fnc: 'replaceEndlessPuzzleCmd' },
+        { reg: '^#拓展厉鬼拼图槽$', fnc: 'expandEndlessPuzzleSlotsCmd' },
         { reg: '^#重置万劫道碑$', fnc: 'requestResetEndlessMeta' },
         { reg: '^#确认重置万劫道碑$', fnc: 'confirmResetEndlessMeta' },
         { reg: '^#万象归一\\s+(?:武器|护具|法宝)\\*.+$', fnc: 'mergeEquipment' },
         { reg: '^#无尽至宝$', fnc: 'showTreasures' },
+        { reg: '^#装备无尽至宝\\s*.+$', fnc: 'equipTreasureCmd' },
+        { reg: '^#卸下无尽至宝\\s*.+$', fnc: 'unequipTreasureCmd' },
+        { reg: '^#拓展无尽至宝槽$', fnc: 'unlockTreasureSlotCmd' },
         { reg: '^#无尽排名$', fnc: 'showEndlessRank' },
         { reg: '^#周末免费$', fnc: 'weekendStatus' },
         { reg: '^#(?:我的称号|称号列表|称号)$', fnc: 'viewTitles' },
@@ -408,7 +426,8 @@ export class EndlessRealm extends plugin {
       ...nodeLines,
       '',
       '#参悟道碑 名称',
-      '#装配厉鬼拼图 名称（重复发送可卸下）',
+      '#装配厉鬼拼图 名称｜#卸下厉鬼拼图 名称',
+      '#更换厉鬼拼图 旧名称 新名称｜#拓展厉鬼拼图槽（2500道痕）',
       '#重置万劫道碑',
     ];
   }
@@ -567,7 +586,7 @@ export class EndlessRealm extends plugin {
         lines.push(
           `${index + 1}. [${node.risk}] ${node.name}（建议${votes.get(node.id) || 0}票）`,
           `   ${node.description}`,
-          `   ${node.rewardText}`
+          `   ${node.rewardText}｜通往${node.nextNodeIds?.length || 0}条后继劫途`
         );
     }
     if (selected)
@@ -657,7 +676,11 @@ export class EndlessRealm extends plugin {
       notices: [
         { tone: 'jade', title: map.sky.name, text: `本轮奖励倍率×${Number(map.sky.rewardMultiplier || 1).toFixed(2)}；${map.sky.omen}` },
         selected
-          ? { tone: 'danger', title: '因果锁定', text: `队伍将踏入【${selected.name}】，定途后本层无法更改。` }
+          ? {
+              tone: 'danger',
+              title: selected.calamity?.name || '因果锁定',
+              text: selected.calamity?.description || `队伍将踏入【${selected.name}】，定途后本层无法更改。`,
+            }
           : { tone: 'normal', title: '众念归一', text: '队员可以提出路线建议；建议不消耗次数，最终因果仅由队长锁定。' },
       ],
       starMap: {
@@ -676,7 +699,7 @@ export class EndlessRealm extends plugin {
           : `#星图定途${commandRange}`,
       footerNote: run.phase === 'checkpoint'
         ? '十方天关已破，先完成劫后问道，下一轮劫环才会显化。'
-        : '使用 #星图情报1/2/3 查看细节；队员建议仅供参考，队长定途后无法反悔。',
+        : '每个节点只连接部分后继道路；定途后旁支熄灭，本轮无法折返或切换。',
     };
   }
 
@@ -723,7 +746,8 @@ export class EndlessRealm extends plugin {
       notices: [
         { tone: 'jade', title: '构筑法则', text: '每层独立选择能力；衍算天机可增加选项，一念双悟可在每个十层循环额外参悟一次。' },
         { tone: 'danger', title: '劫境警示', text: '主动撤离可带回全部战利品；团灭仅保留已封存奖励和30%未封存奖励。' },
-        { tone: 'gold', title: '无尽至宝', text: `每趟打到第${ENDLESS_TREASURE_UNLOCK_LAYER}关解锁一件永久随机至宝；至宝开局自带1级专属能力，局内满足条件可觉醒更高形态（如K触屏练满帝骑腰带3级觉醒神主帝骑）。` },
+        { tone: 'gold', title: '无尽至宝', text: `第25层开放首个装配槽；此后每25层可消耗递增道痕拓展一槽。至宝属性按削弱后的效能结算，觉醒战斗机制保留。` },
+        { tone: 'danger', title: '因果岔路', text: '星图节点只连接部分后继道路；高层可能遭遇空劫、蚀痕、葬法与命血路税，选择后本轮无法反悔。' },
         { tone: 'jade', title: '无尽劫境天尊', text: '打穿第三十关且全服排名第一的队伍成员，将获得专属称号：无尽劫境内全属性+25%、道痕收益+25%，可自由佩戴与更换。' },
       ],
       commandGroups: [
@@ -738,6 +762,7 @@ export class EndlessRealm extends plugin {
             { command: '#离开无尽队伍', description: '离开尚未开启的远征队伍' },
             { command: '#解散无尽队伍', description: '由队长解散尚未开启的远征队伍' },
             { command: '#无尽网页', description: '打开无尽劫境网页面板' },
+            { command: '#无尽问道', description: '进入修仙肉鸽卡牌玩法' },
           ],
         },
         {
@@ -761,10 +786,14 @@ export class EndlessRealm extends plugin {
           items: [
             { command: '#万劫道碑', description: '查看永久强化路线与厉鬼拼图' },
             { command: '#参悟道碑 攻击', description: '消耗劫境道痕提升局外传承' },
-            { command: '#装配厉鬼拼图 八音盒', description: '切换已参悟拼图，获得鬼眼后生效' },
+            { command: '#装配厉鬼拼图 八音盒', description: '装配已参悟拼图，获得鬼眼后生效' },
+            { command: '#拓展厉鬼拼图槽', description: '消耗2500道痕增加一个携带槽' },
+            { command: '#更换厉鬼拼图 鬼影 八音盒', description: '替换已装配拼图，也可单独卸下' },
             { command: '#无尽商店', description: '以劫境道痕购买诸天遗珍' },
             { command: '#无尽购买 商品名*数量', description: '按商品名或编号购买诸天遗珍' },
             { command: '#无尽至宝', description: `查看已解锁的永久至宝与觉醒条件` },
+            { command: '#装备无尽至宝 名称', description: '将持有至宝装入已开放槽位' },
+            { command: '#拓展无尽至宝槽', description: '达到对应层数后消耗道痕开启下一槽' },
             { command: '#重置万劫道碑 / #确认重置万劫道碑', description: '二次确认后返还道痕并重置传承' },
             { command: '#万象归一 武器/护具/法宝*装备名', description: '消耗归一神符融合百分比装备' },
           ],
@@ -912,7 +941,7 @@ export class EndlessRealm extends plugin {
       heroStats: [
         { label: '劫境道痕', value: this.formatAmount(view.balance), note: '可用于参悟道碑' },
         { label: '最高通过', value: `${view.highestLayer} 层`, note: '决定传承解锁门槛' },
-        { label: '拼图槽位', value: `${view.meta.equippedPuzzles.length} / ${view.puzzleSlots}`, note: '第50、100层增加槽位' },
+        { label: '拼图槽位', value: `${view.meta.equippedPuzzles.length} / ${view.puzzleSlots}`, note: '每次拓展消耗2500道痕' },
         { label: '已耗道痕', value: this.formatAmount(view.meta.spent), note: '重置返还其中90%' },
       ],
       notices: [
@@ -925,7 +954,7 @@ export class EndlessRealm extends plugin {
       puzzleEquipped: view.meta.equippedPuzzles.length,
       puzzleSlots: view.puzzleSlots,
       footerCommand: '#参悟道碑 名称',
-      footerNote: '使用 #装配厉鬼拼图 名称 切换拼图；使用 #重置万劫道碑 返还90%已消耗道痕。',
+      footerNote: '拼图支持装配、卸下与更换；#拓展厉鬼拼图槽 每次消耗2500道痕。',
     };
   }
 
@@ -1100,12 +1129,17 @@ export class EndlessRealm extends plugin {
         '#跨服无尽选择1 / #跨服星图建议1',
         '#跨服刷新无尽能力',
         '#开启无尽劫境',
+        '#无尽问道',
         '#劫途星图 / #星图情报1',
         '#星图建议1 / #星图定途1',
         '#无尽选择1',
         '#刷新无尽能力',
         '#万劫道碑 / #参悟道碑 攻击',
         '#装配厉鬼拼图 八音盒',
+        '#卸下厉鬼拼图 八音盒 / #更换厉鬼拼图 鬼影 八音盒',
+        '#拓展厉鬼拼图槽',
+        '#无尽至宝 / #装备无尽至宝 名称 / #卸下无尽至宝 名称',
+        '#拓展无尽至宝槽',
         '#劫后抉择1',
         '#无尽下一关',
         '#无尽构筑',
@@ -1360,6 +1394,57 @@ export class EndlessRealm extends plugin {
         `追加百分比：攻击${pct.atk} / 防御${pct.def} / 血量${pct.HP}`,
         '原数值属性与套装效果完整保留。',
       ].join('\n'));
+    });
+  }
+
+  async unequipEndlessPuzzleCmd(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const input = String(e.msg || '').replace(/^#卸下厉鬼拼图\s*/, '').trim();
+    return this.withLock(e, `meta:${userId}`, async () => {
+      const player = await Read_player(userId);
+      try {
+        const result = unequipEndlessPuzzle(player, input);
+        await Write_player(userId, player);
+        const view = getEndlessMetaView(player);
+        return e.reply(`已卸下【${result.node.name}】（${view.meta.equippedPuzzles.length}/${view.puzzleSlots}）`);
+      } catch (error) {
+        return e.reply(error.message);
+      }
+    });
+  }
+
+  async replaceEndlessPuzzleCmd(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const [from, to] = String(e.msg || '')
+      .replace(/^#更换厉鬼拼图\s*/, '')
+      .trim()
+      .split(/\s+/);
+    return this.withLock(e, `meta:${userId}`, async () => {
+      const player = await Read_player(userId);
+      try {
+        const result = replaceEndlessPuzzle(player, from, to);
+        await Write_player(userId, player);
+        return e.reply(`厉鬼拼图已由【${result.from.name}】更换为【${result.to.name}】`);
+      } catch (error) {
+        return e.reply(error.message);
+      }
+    });
+  }
+
+  async expandEndlessPuzzleSlotsCmd(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    return this.withLock(e, `meta:${userId}`, async () => {
+      const player = await Read_player(userId);
+      try {
+        const result = expandEndlessPuzzleSlots(player);
+        await Write_player(userId, player);
+        return e.reply(`厉鬼拼图槽已拓展至${result.slots}个\n消耗道痕：${result.cost}｜剩余：${result.balance}`);
+      } catch (error) {
+        return e.reply(error.message);
+      }
     });
   }
 
@@ -2299,6 +2384,25 @@ export class EndlessRealm extends plugin {
           ].join('\n')
         : '网页入口生成失败，请检查 config/endless-web.json 与服务器端口'
     );
+  }
+
+  async openEndlessWendao(e) {
+    const config = getEndlessWebConfig();
+    if (!config.enabled)
+      return e.reply('无尽问道网页入口尚未开启，请先在 config/endless-web.json 启用网页服务');
+    try {
+      await startEndlessWebServer(this);
+      return e.reply(
+        [
+          '【无尽问道·修仙卡牌肉鸽】',
+          createEndlessWendaoLink(config),
+          '四职业、四境天关、分支劫路、坊市、悟道融合与渡劫均已开放。存档保存在当前浏览器。',
+        ].join('\n')
+      );
+    } catch (error) {
+      logger.error('[无尽问道] 网页入口启动失败', error);
+      return e.reply('无尽问道入口启动失败，请检查网页服务端口与 Redis 状态');
+    }
   }
 
   async showStarMap(e) {
@@ -3376,15 +3480,25 @@ export class EndlessRealm extends plugin {
     const userId = await this.checkPlayer(e);
     if (!userId) return false;
     const player = await Read_player(userId);
+    const loadout = normalizeEndlessTreasureLoadout(player);
     const views = getPlayerTreasureViews(player);
-    const lines = ['【无尽至宝】', `打穿第${ENDLESS_TREASURE_UNLOCK_LAYER}关解锁一件永久随机至宝；每趟抵达第${ENDLESS_TREASURE_UNLOCK_LAYER}关均可再解锁。`, ''];
+    const nextSlot = loadout.slots + 1;
+    const lines = [
+      '【无尽至宝】',
+      `持有${views.length}件｜已装配${loadout.equipped.length}/${loadout.slots}件`,
+      `属性词条按${Math.round(ENDLESS_TREASURE_EFFECT_RATE * 100)}%基础效能结算，每级额外提高10%效能。`,
+      loadout.slots
+        ? `下一槽：最高通关${getEndlessTreasureSlotGate(nextSlot)}层，并消耗${getEndlessTreasureSlotCost(nextSlot)}道痕。`
+        : `最高通关第${ENDLESS_TREASURE_UNLOCK_LAYER}层后开放第一个免费槽位。`,
+      '',
+    ];
     if (!views.length) {
       lines.push('尚未获得任何至宝。', '发送 #无尽劫境帮助 了解玩法，努力冲击第25关吧！');
       return e.reply(lines.join('\n'));
     }
     for (const treasure of views) {
       lines.push(
-        `${treasure.icon} 【${treasure.name}】Lv.${treasure.level} · ${treasure.rarity}`,
+        `${treasure.icon} 【${treasure.name}】Lv.${treasure.level} · ${treasure.rarity}${treasure.equipped ? ' [已装配]' : ''}`,
         `　${treasure.desc}`,
         treasure.awakenName
           ? `　觉醒条件：${treasure.awakenCondition || '未知'}`
@@ -3392,8 +3506,58 @@ export class EndlessRealm extends plugin {
         ''
       );
     }
-    lines.push('所有至宝会在每次开启无尽劫境时自动生效（开局自带1级专属能力）。');
+    lines.push(
+      '#装备无尽至宝 名称｜#卸下无尽至宝 名称',
+      '#拓展无尽至宝槽'
+    );
     return e.reply(lines.filter(Boolean).join('\n'));
+  }
+
+  async equipTreasureCmd(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const input = String(e.msg || '').replace(/^#装备无尽至宝\s*/, '').trim();
+    return this.withLock(e, `treasure:${userId}`, async () => {
+      const player = await Read_player(userId);
+      try {
+        const result = equipEndlessTreasure(player, input);
+        await Write_player(userId, player);
+        return e.reply(`已装备【${result.treasure.name}】（${result.equipped.length}/${result.slots}）`);
+      } catch (error) {
+        return e.reply(error.message);
+      }
+    });
+  }
+
+  async unequipTreasureCmd(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const input = String(e.msg || '').replace(/^#卸下无尽至宝\s*/, '').trim();
+    return this.withLock(e, `treasure:${userId}`, async () => {
+      const player = await Read_player(userId);
+      try {
+        const result = unequipEndlessTreasure(player, input);
+        await Write_player(userId, player);
+        return e.reply(`已卸下【${result.treasure.name}】（${result.equipped.length}/${result.slots}）`);
+      } catch (error) {
+        return e.reply(error.message);
+      }
+    });
+  }
+
+  async unlockTreasureSlotCmd(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    return this.withLock(e, `treasure:${userId}`, async () => {
+      const player = await Read_player(userId);
+      try {
+        const result = unlockEndlessTreasureSlot(player);
+        await Write_player(userId, player);
+        return e.reply(`第${result.slot}个无尽至宝槽已经开启\n消耗道痕：${result.cost}｜剩余：${result.balance}`);
+      } catch (error) {
+        return e.reply(error.message);
+      }
+    });
   }
 
   /* ==================== 全服排名 ==================== */

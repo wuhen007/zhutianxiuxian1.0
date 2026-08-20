@@ -65,7 +65,7 @@ function grantGhostPath(member, domainLevel, equippedPuzzles = []) {
 
 const content = getEndlessContent();
 assert.equal(content.worlds.length, 6);
-assert.equal(content.abilities.length, 33);
+assert.equal(content.abilities.length, 36);
 assert.equal(content.fusions.length, 10);
 assert.equal(content.checkpointBoons.length, 20);
 assert.equal(content.freeTransformationHeroes.length, 12);
@@ -90,6 +90,9 @@ for (const id of [
   'neutral_spring_autumn_cicada',
   'zhetian_six_paths_reincarnation_fist',
   'anime_decade_driver',
+  'anime_fiery_eyes',
+  'anime_shura_armor',
+  'multi_spider_gene',
 ]) {
   assert.ok(content.abilities.some((ability) => ability.id === id));
 }
@@ -101,6 +104,8 @@ assert.equal(
 for (const world of content.worlds) {
   assert.ok(world.normal.length && world.elite.length && world.boss.length);
 }
+assert.ok(content.worlds.some(world => world.normal.some(enemy => enemy.trait === '蚀痕')));
+assert.ok(content.worlds.some(world => world.normal.some(enemy => enemy.trait === '封法')));
 const abilityIds = new Set(content.abilities.map((ability) => ability.id));
 for (const ability of content.abilities) {
   for (const requiredId of Object.keys(ability.requires || {}))

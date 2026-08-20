@@ -19,6 +19,13 @@
           "attack": 68,
           "defense": 24,
           "trait": "再生"
+        },
+        {
+          "name": "劫痕蠹虫",
+          "hp": 830,
+          "attack": 74,
+          "defense": 22,
+          "trait": "蚀痕"
         }
       ],
       "elite": [
@@ -58,6 +65,13 @@
           "attack": 72,
           "defense": 27,
           "trait": "禁疗"
+        },
+        {
+          "name": "葬法荒奴",
+          "hp": 880,
+          "attack": 76,
+          "defense": 28,
+          "trait": "封法"
         }
       ],
       "elite": [
@@ -97,6 +111,13 @@
           "attack": 70,
           "defense": 25,
           "trait": "吞噬"
+        },
+        {
+          "name": "食道炎魔",
+          "hp": 810,
+          "attack": 78,
+          "defense": 23,
+          "trait": "蚀痕"
         }
       ],
       "elite": [
@@ -136,6 +157,13 @@
           "attack": 69,
           "defense": 29,
           "trait": "再生"
+        },
+        {
+          "name": "无相禁法魔",
+          "hp": 920,
+          "attack": 75,
+          "defense": 31,
+          "trait": "封法"
         }
       ],
       "elite": [
@@ -175,6 +203,13 @@
           "attack": 71,
           "defense": 26,
           "trait": "再生"
+        },
+        {
+          "name": "世界线寄生体",
+          "hp": 840,
+          "attack": 82,
+          "defense": 24,
+          "trait": "蚀痕"
         }
       ],
       "elite": [
@@ -214,6 +249,13 @@
           "attack": 74,
           "defense": 25,
           "trait": "禁疗"
+        },
+        {
+          "name": "空劫咒灵",
+          "hp": 860,
+          "attack": 79,
+          "defense": 27,
+          "trait": "封法"
         }
       ],
       "elite": [
@@ -537,6 +579,81 @@
       "effect": {
         "summonPct": 0.17,
         "onWinAttackPct": 0.008
+      }
+    },
+    {
+      "id": "anime_fiery_eyes",
+      "name": "火眼金睛",
+      "world": "anime",
+      "rarity": "核心",
+      "tags": [
+        "瞳术",
+        "洞察",
+        "斩杀"
+      ],
+      "description": "看破变化、分身与虚妄，提高暴击、闪避与斩杀，并周期性锁定敌人的命门。",
+      "maxLevel": 3,
+      "effect": {
+        "critChance": 0.05,
+        "dodgeChance": 0.025,
+        "executePct": 0.035
+      },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.62,
+        "label": "火眼金睛·照破命门",
+        "verb": "照见",
+        "narration": "{member}双目燃起金焰，照破{enemy}所有变化，将攻势直指唯一命门"
+      }
+    },
+    {
+      "id": "anime_shura_armor",
+      "name": "修罗铠甲",
+      "world": "anime",
+      "rarity": "核心",
+      "tags": [
+        "铠甲",
+        "防御",
+        "爆发"
+      ],
+      "description": "召唤炎龙般的修罗战铠，强化生命、防御与减伤，并周期性发动修罗炼狱斩。",
+      "maxLevel": 3,
+      "effect": {
+        "hpPct": 0.08,
+        "defensePct": 0.12,
+        "damageReduction": 0.04
+      },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.68,
+        "label": "修罗炼狱斩",
+        "verb": "合铠",
+        "narration": "{member}召来修罗铠甲，赤红战刃劈开炼狱火海吞没{enemy}"
+      }
+    },
+    {
+      "id": "multi_spider_gene",
+      "name": "蜘蛛侠基因",
+      "world": "multiverse",
+      "rarity": "稀有",
+      "tags": [
+        "基因",
+        "感知",
+        "速度"
+      ],
+      "description": "获得蜘蛛感应、超凡反射与吸附能力，提高闪避、暴击和追加行动概率。",
+      "maxLevel": 3,
+      "effect": {
+        "dodgeChance": 0.04,
+        "critChance": 0.03,
+        "extraActionChance": 0.045
+      },
+      "proc": {
+        "everyRounds": 3,
+        "damagePct": 0.42,
+        "label": "蛛丝摆荡·感应反击",
+        "verb": "摆荡",
+        "narration": "{member}的蜘蛛感应骤然示警，借蛛丝折返至死角重击{enemy}"
       }
     },
     {

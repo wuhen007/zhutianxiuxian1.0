@@ -1,4 +1,27 @@
-const STAR_MAP_VERSION = 1;
+const STAR_MAP_VERSION = 2;
+
+export const ENDLESS_STAR_CALAMITIES = Object.freeze([
+  Object.freeze({
+    id: 'empty_way', name: '空劫迷途',
+    description: '因果被彻底掏空，本层胜利后不会显化能力选项。',
+    skipAbilityReward: true,
+  }),
+  Object.freeze({
+    id: 'trace_leech', name: '蚀痕寄生',
+    description: '食道虫伏在战利品中，本层劫境道痕产出降低55%。',
+    tokenMultiplier: 0.45,
+  }),
+  Object.freeze({
+    id: 'law_burial', name: '万法葬坑',
+    description: '最强的一部分构筑被葬法雾压制，本场随机封禁能力。',
+    sealedAbilityCount: 1,
+  }),
+  Object.freeze({
+    id: 'blood_toll', name: '命血路税',
+    description: '道路索取命血，全队入场额外损失18%最大生命。',
+    entryHpCostPct: 0.18,
+  }),
+]);
 
 export const ENDLESS_STAR_NODE_TYPES = Object.freeze({
   conquest: {
@@ -133,6 +156,50 @@ function pickOtherWorld(random, worldIds, excluded) {
   return pick(random, candidates.length ? candidates : worldIds);
 }
 
+function hashText(value) {
+  let hash = 2166136261;
+  for (const char of String(value || '')) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function calamityFor(run, node) {
+  if (node.stage === 'boss' || node.layer <= 10) return null;
+  const random = createRandom((number(run.rngState) ^ hashText(node.id)) >>> 0);
+  const dangerBonus = node.kind === 'danger' ? 0.1 : node.kind === 'resonant' ? 0.04 : 0;
+  const chance = Math.min(0.72, (node.layer - 10) * 0.012 + dangerBonus);
+  if (random() >= chance) return null;
+  const event = clone(pick(random, ENDLESS_STAR_CALAMITIES));
+  if (event.id === 'law_burial' && node.layer >= 60) event.sealedAbilityCount = 2;
+  event.chance = chance;
+  return event;
+}
+
+function connectRows(rows) {
+  for (let rowIndex = 0; rowIndex < rows.length - 1; rowIndex++) {
+    const current = rows[rowIndex].nodes;
+    const next = rows[rowIndex + 1].nodes;
+    for (const [index, node] of current.entries()) {
+      const center = current.length === 1
+        ? 0
+        : Math.round(index * (next.length - 1) / (current.length - 1));
+      const linked = new Set([center]);
+      if (next.length > 1)
+        linked.add(Math.max(0, Math.min(next.length - 1, center + (index % 2 ? -1 : 1))));
+      node.nextNodeIds = [...linked].map(slot => next[slot].id);
+    }
+    for (const target of next) {
+      if (current.some(node => node.nextNodeIds.includes(target.id))) continue;
+      const nearest = current.reduce((best, node) =>
+        Math.abs(node.slot - target.slot) < Math.abs(best.slot - target.slot) ? node : best
+      );
+      nearest.nextNodeIds.push(target.id);
+    }
+  }
+}
+
 function nodeTypeFor(random, rowOffset, slot, used) {
   if (rowOffset === 10) return 'heaven_gate';
   if (slot === 0 && rowOffset !== 9) return 'conquest';
@@ -190,6 +257,7 @@ function generateStarMap(run, worlds, targetLayer) {
     });
     return { layer, offset, nodes };
   });
+  connectRows(rows);
   return {
     version: STAR_MAP_VERSION,
     cycle,
@@ -221,7 +289,7 @@ export function ensureEndlessStarMap(run, worlds, targetLayer = run.layer + 1) {
 
 export function getEndlessStarOptions(run, layer = run.layer + 1) {
   const row = run.starMap?.rows?.find(entry => entry.layer === layer);
-  return row?.nodes || [];
+  return row?.nodes?.filter(node => node.status !== 'blocked') || [];
 }
 
 export function getSelectedEndlessStarNode(run, layer = run.layer + 1) {
@@ -242,6 +310,7 @@ function selectNode(run, choiceNumber, automatic = false, layer = run.layer + 1)
     current.status = current.id === node.id ? 'selected' : 'bypassed';
     current.automatic = current.id === node.id && automatic;
   }
+  node.calamity ||= calamityFor(run, node);
   return { ...clone(node), automatic };
 }
 
@@ -277,6 +346,7 @@ export function getEndlessStarEncounter(run, layer = run.layer + 1) {
   const node = getSelectedEndlessStarNode(run, layer);
   if (!node) return null;
   const type = ENDLESS_STAR_NODE_TYPES[node.typeId];
+  const calamity = node.calamity || null;
   const sky = run.starMap.sky || {};
   const legacyFallback = Boolean(node.automatic);
   const sealTotal = Object.values(run.starMap.seals || {}).reduce(
@@ -289,7 +359,13 @@ export function getEndlessStarEncounter(run, layer = run.layer + 1) {
   return {
     ...clone(node),
     monsterCountBonus: legacyFallback ? 0 : number(type.monsterCountBonus),
-    entryHpCostPct: legacyFallback ? 0 : number(type.entryHpCostPct),
+    entryHpCostPct: legacyFallback
+      ? 0
+      : number(type.entryHpCostPct) + number(calamity?.entryHpCostPct),
+    tokenMultiplier: legacyFallback ? 1 : number(calamity?.tokenMultiplier, 1),
+    skipAbilityReward: legacyFallback ? false : Boolean(calamity?.skipAbilityReward),
+    sealedAbilityCount: legacyFallback ? 0 : number(calamity?.sealedAbilityCount),
+    calamity: legacyFallback ? null : calamity,
     victoryEffect: legacyFallback ? null : type.victoryEffect || null,
     enemyHpMultiplier:
       legacyFallback ? 1 : number(type.enemyHpMultiplier, 1) * number(sky.enemyHpMultiplier, 1) * bossSealMultiplier,
@@ -329,6 +405,10 @@ export function completeEndlessStarNode(run, layer, victory) {
     }
   }
   if (layer % 10 !== 0) {
+    const nextRow = run.starMap.rows.find(entry => entry.layer === layer + 1);
+    const reachable = new Set(node.nextNodeIds || []);
+    for (const next of nextRow?.nodes || [])
+      next.status = reachable.has(next.id) ? 'future' : 'blocked';
     run.starMap.selectedNodeId = null;
     run.starMap.suggestions = {};
     const nextOptions = getEndlessStarOptions(run, layer + 1);

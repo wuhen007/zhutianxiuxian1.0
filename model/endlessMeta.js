@@ -1,5 +1,6 @@
 export const ENDLESS_META_FIELD = '无尽道碑';
 export const ENDLESS_META_TOKEN = '劫境道痕';
+export const GHOST_PUZZLE_SLOT_COST = 2500;
 
 const BASE_COSTS = Object.freeze([50, 100, 180, 300, 450, 650, 900, 1200, 1550, 1950]);
 const BRANCH_COSTS = Object.freeze([400, 800, 1400, 2200, 3200]);
@@ -44,9 +45,13 @@ export function normalizeEndlessMeta(value) {
       0,
       Math.min(node.maxRank, Math.floor(asNumber(source.nodes?.[node.id])))
     );
+  const puzzleSlots = Math.max(
+    1,
+    Math.min(GHOST_PUZZLES.length, Math.floor(asNumber(source.puzzleSlots)) || 1)
+  );
   const equippedPuzzles = [...new Set(source.equippedPuzzles || [])].filter(
     id => GHOST_PUZZLES.some(puzzle => puzzle.id === id) && nodes[id] > 0
-  );
+  ).slice(0, puzzleSlots);
   const activeBranches = ENDLESS_META_NODES.filter(
     node => node.branch && nodes[node.id] > 0
   );
@@ -57,10 +62,11 @@ export function normalizeEndlessMeta(value) {
     if (node.branch !== branch) nodes[node.id] = 0;
   }
   return {
-    version: 2,
+    version: 3,
     nodes,
     branch,
     equippedPuzzles,
+    puzzleSlots,
     spent: Math.max(0, Math.floor(asNumber(source.spent))),
   };
 }
@@ -75,9 +81,8 @@ export function getEndlessMetaNode(input) {
   ) || null;
 }
 
-export function getGhostPuzzleSlots(highestLayer) {
-  const layer = Math.max(0, Math.floor(asNumber(highestLayer)));
-  return layer >= 100 ? 3 : layer >= 50 ? 2 : 1;
+export function getGhostPuzzleSlots(value) {
+  return normalizeEndlessMeta(value).puzzleSlots;
 }
 
 export function getEndlessMetaEffects(value) {
@@ -120,7 +125,7 @@ export function getEndlessMetaView(player) {
     effects: getEndlessMetaEffects(meta),
     balance: Math.max(0, Math.floor(asNumber(player?.[ENDLESS_META_TOKEN]))),
     highestLayer,
-    puzzleSlots: getGhostPuzzleSlots(highestLayer),
+    puzzleSlots: getGhostPuzzleSlots(meta),
     nodes: ENDLESS_META_NODES.map(node => {
       const rank = meta.nodes[node.id];
       return {
@@ -177,7 +182,7 @@ export function toggleEndlessPuzzle(player, input) {
     meta.equippedPuzzles.splice(index, 1);
     equipped = false;
   } else {
-    const slots = getGhostPuzzleSlots(player?.无尽劫境最高层);
+    const slots = getGhostPuzzleSlots(meta);
     if (meta.equippedPuzzles.length >= slots)
       throw new Error(`厉鬼拼图槽已满（${slots}/${slots}）`);
     meta.equippedPuzzles.push(node.id);
@@ -185,6 +190,50 @@ export function toggleEndlessPuzzle(player, input) {
   }
   player[ENDLESS_META_FIELD] = meta;
   return { node: clone(node), equipped, meta: clone(meta) };
+}
+
+export function unequipEndlessPuzzle(player, input) {
+  const node = getEndlessMetaNode(input);
+  if (!node?.puzzle) throw new Error('未找到这块厉鬼拼图');
+  const meta = normalizeEndlessMeta(player);
+  const index = meta.equippedPuzzles.indexOf(node.id);
+  if (index < 0) throw new Error(`【${node.name}】尚未装配`);
+  meta.equippedPuzzles.splice(index, 1);
+  player[ENDLESS_META_FIELD] = meta;
+  return { node: clone(node), meta: clone(meta) };
+}
+
+export function replaceEndlessPuzzle(player, fromInput, toInput) {
+  const from = getEndlessMetaNode(fromInput);
+  const to = getEndlessMetaNode(toInput);
+  if (!from?.puzzle || !to?.puzzle) throw new Error('未找到需要更换的厉鬼拼图');
+  const meta = normalizeEndlessMeta(player);
+  const index = meta.equippedPuzzles.indexOf(from.id);
+  if (index < 0) throw new Error(`【${from.name}】尚未装配`);
+  if (!meta.nodes[to.id]) throw new Error(`尚未参悟【${to.name}】`);
+  if (meta.equippedPuzzles.includes(to.id)) throw new Error(`【${to.name}】已经装配`);
+  meta.equippedPuzzles[index] = to.id;
+  player[ENDLESS_META_FIELD] = meta;
+  return { from: clone(from), to: clone(to), meta: clone(meta) };
+}
+
+export function expandEndlessPuzzleSlots(player) {
+  const meta = normalizeEndlessMeta(player);
+  if (meta.puzzleSlots >= GHOST_PUZZLES.length)
+    throw new Error('厉鬼拼图槽已经拓展至上限');
+  const balance = Math.max(0, Math.floor(asNumber(player?.[ENDLESS_META_TOKEN])));
+  if (balance < GHOST_PUZZLE_SLOT_COST)
+    throw new Error(`拓展拼图槽需要${GHOST_PUZZLE_SLOT_COST}${ENDLESS_META_TOKEN}，当前${balance}`);
+  meta.puzzleSlots++;
+  meta.spent += GHOST_PUZZLE_SLOT_COST;
+  player[ENDLESS_META_TOKEN] = balance - GHOST_PUZZLE_SLOT_COST;
+  player[ENDLESS_META_FIELD] = meta;
+  return {
+    slots: meta.puzzleSlots,
+    cost: GHOST_PUZZLE_SLOT_COST,
+    balance: player[ENDLESS_META_TOKEN],
+    meta: clone(meta),
+  };
 }
 
 export function resetEndlessMeta(player) {

@@ -10,6 +10,11 @@ import {
   getTreasureBattleEntries,
   getPlayerTreasureViews,
   ENDLESS_TREASURE_LEVEL_CAP,
+  equipEndlessTreasure,
+  getEndlessTreasureSlotCount,
+  normalizeEndlessTreasureLoadout,
+  unequipEndlessTreasure,
+  unlockEndlessTreasureSlot,
 } from '../model/endlessTreasure.js';
 import {
   grantTitle,
@@ -75,8 +80,8 @@ test('K触屏：帝骑腰带1级未觉醒，3级觉醒神主形态', () => {
     __worldAbilityCounts: {},
   };
   const effects1 = getTreasureEffects(member, {});
-  // 基础0.08 + 未觉醒替代形态0.2
-  assert.ok(effects1.attackPct >= 0.28 - 1e-9);
+  // 削弱后：基础与未觉醒替代形态均按50%结算。
+  assert.ok(effects1.attackPct >= 0.14 - 1e-9);
   assert.equal(getTreasureBattleEntries(member, {}).some(e => e.type === 'transformRider'), true);
 
   member.abilities.anime_decade_driver = 3;
@@ -84,7 +89,7 @@ test('K触屏：帝骑腰带1级未觉醒，3级觉醒神主形态', () => {
   assert.equal(states[0].awaken.active, true);
   assert.equal(states[0].awaken.formName, '神主形态·帝骑');
   const effects = getTreasureEffects(member, {});
-  assert.equal(effects.attackPct >= 0.5, true);
+  assert.equal(effects.attackPct >= 0.29, true);
   const entries = getTreasureBattleEntries(member, {});
   assert.ok(entries.some(e => e.type === 'summonRiders'));
   assert.ok(entries.some(e => e.type === 'execute'));
@@ -103,9 +108,9 @@ test('缘一：集齐日之呼吸与通透世界后觉醒日呼传人', () => {
   const states = getTreasureStates(member, {});
   assert.equal(states[0].awaken.active, true);
   assert.equal(states[0].awaken.formName, '日呼传人');
-  // 2级觉醒效果缩放：0.35 * 1.15
+  // 2级觉醒效果缩放：0.35 * 0.6
   const effects = getTreasureEffects(member, {});
-  assert.ok(effects.attackPct >= 0.35);
+  assert.ok(effects.attackPct >= 0.28);
   const entries = getTreasureBattleEntries(member, {});
   assert.ok(entries.some(e => e.type === 'multiHit' && e.burn?.antiHeal));
 });
@@ -180,4 +185,24 @@ test('至宝面板视图', () => {
   assert.equal(views.length, 1);
   assert.equal(views[0].name, 'K触屏·帝骑驱动器');
   assert.ok(views[0].desc.length > 0);
+});
+
+test('至宝槽按25层循环并递增消耗道痕', () => {
+  const player = {
+    无尽劫境最高层: 75,
+    劫境道痕: 20_000,
+    无尽至宝列表: ENDLESS_TREASURES.slice(0, 3).map(treasure => ({
+      id: treasure.id,
+      name: treasure.name,
+      level: 1,
+    })),
+  };
+  assert.equal(getEndlessTreasureSlotCount(player), 1);
+  assert.equal(unlockEndlessTreasureSlot(player).cost, 5000);
+  assert.equal(unlockEndlessTreasureSlot(player).cost, 5500);
+  assert.equal(getEndlessTreasureSlotCount(player), 3);
+  assert.equal(equipEndlessTreasure(player, player.无尽至宝列表[1].name).equipped.length, 2);
+  unequipEndlessTreasure(player, player.无尽至宝列表[0].name);
+  unequipEndlessTreasure(player, player.无尽至宝列表[1].name);
+  assert.deepEqual(normalizeEndlessTreasureLoadout(player).equipped, []);
 });

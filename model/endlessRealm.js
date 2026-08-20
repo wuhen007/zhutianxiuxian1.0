@@ -11,8 +11,8 @@ import {
   getTreasureById,
   getTreasureEffects,
   getTreasureRunSummary,
+  getEquippedEndlessTreasures,
   HEISEI_RIDERS,
-  normalizePlayerTreasures,
 } from './endlessTreasure.js';
 import { getTitleEffects } from './titleSystem.js';
 import {
@@ -157,10 +157,15 @@ function getOwnedLevel(member, abilityId) {
   return Math.max(0, Math.floor(asNumber(member?.abilities?.[abilityId])));
 }
 
+function isAbilitySealed(member, abilityId) {
+  return member?.battleSealedAbilityIds?.includes(abilityId);
+}
+
 function countTeamTags(run) {
   const counts = {};
   for (const member of Object.values(run.members)) {
     for (const [abilityId, level] of Object.entries(member.abilities || {})) {
+      if (isAbilitySealed(member, abilityId)) continue;
       const ability = ABILITIES.get(abilityId);
       for (const tag of ability?.tags || [])
         counts[tag] = (counts[tag] || 0) + level;
@@ -188,6 +193,7 @@ function collectEffects(member, run) {
   if (getOwnedLevel(member, 'neutral_ghost_eye') > 0)
     mergeEffect(effects, member.endlessMetaEffects?.puzzleEffects);
   for (const [abilityId, level] of Object.entries(member.abilities || {})) {
+    if (isAbilitySealed(member, abilityId)) continue;
     mergeEffect(effects, ABILITIES.get(abilityId)?.effect, level);
   }
   for (const boonId of member.blessings || []) {
@@ -203,6 +209,7 @@ function collectEffects(member, run) {
         total +
         Object.entries(current.abilities || {}).reduce(
           (sum, [abilityId, level]) => {
+            if (isAbilitySealed(current, abilityId)) return sum;
             return (
               sum +
               asNumber(ABILITIES.get(abilityId)?.effect?.teamShieldPct) * level
@@ -315,9 +322,8 @@ function createProjection(id, player) {
   if (Number(player.无尽劫境_他化自在体验) > 0) {
     abilities.perfect_free_transformation = 1;
   }
-  // 无尽至宝：开局自带专属能力（始终按 baseLevel 起手，觉醒需局内自行收集/升级）
-  const treasureOwned = normalizePlayerTreasures(player);
-  const treasureIds = treasureOwned.map(({ id, level }) => ({ id, level }));
+  // 无尽至宝：只有局外已装配的至宝会投影入场。
+  const treasureIds = getEquippedEndlessTreasures(player).map(({ id, level }) => ({ id, level }));
   for (const { id } of treasureIds) {
     const treasure = getTreasureById(id);
     if (!treasure?.baseAbility) continue;
@@ -878,6 +884,7 @@ export function createEndlessEnemy(run, layer) {
     world: world.id,
     worldName: world.name,
     stage,
+    layer,
     monsterCount,
     unitMaxHp,
     teamScale,
@@ -1051,6 +1058,7 @@ function hasGhostPuzzle(member, puzzleId) {
 function abilityProcs(member) {
   const procs = [];
   for (const [abilityId, level] of Object.entries(member.abilities || {})) {
+    if (isAbilitySealed(member, abilityId)) continue;
     const ability = ABILITIES.get(abilityId);
     if (ability?.proc)
       procs.push({ ...ability.proc, level, source: ability.name, abilityId });
@@ -2444,6 +2452,19 @@ function triggerEnemyMechanic(run, enemy, round, logs) {
         return true;
       }
       break;
+    case '蚀痕':
+      if (round % 3 === 0) {
+        enemyAreaHit(run, enemy, 0.58, logs, '蚀道虫潮');
+        return true;
+      }
+      break;
+    case '封法':
+      if (round % 4 === 0) {
+        const target = alive[Math.floor(random(run) * alive.length)];
+        enemyHit(run, enemy, target, 1.26, logs, '万法葬送');
+        return true;
+      }
+      break;
   }
   return false;
 }
@@ -2612,10 +2633,11 @@ function endRound(run, enemy, round, logs, damageByMember) {
   expireTemporaryFreeTransformationBodies(run, round, logs);
 }
 
-function prepareBattle(run) {
+function prepareBattle(run, enemy, encounter, logs) {
   delete run.__ghostFieldRestarted;
   delete run.__ninthGhostDomainUsed;
   for (const member of Object.values(run.members)) {
+    delete member.battleSealedAbilityIds;
     member.battleRage = 0;
     member.battleRevived = false;
     member.battleTimeRewound = false;
@@ -2629,6 +2651,24 @@ function prepareBattle(run) {
     member.treasureBurns = [];
     member.decadeRiders = [];
     delete member.__treasureExecuteUsed;
+    const sealCount = Math.max(
+      0,
+      Math.floor(asNumber(encounter?.sealedAbilityCount)) +
+        (enemy?.trait === '封法' ? (enemy.layer >= 50 ? 2 : 1) : 0)
+    );
+    if (sealCount > 0 && member.alive) {
+      const candidates = Object.entries(member.abilities || {})
+        .filter(([id, level]) => asNumber(level) > 0 && ABILITIES.has(id))
+        .map(([id]) => id);
+      member.battleSealedAbilityIds = shuffle(run, candidates).slice(0, sealCount);
+      if (member.battleSealedAbilityIds.length)
+        addBattleLog(
+          logs,
+          `${enemy.name}以葬法污染压制${member.name}的【${member.battleSealedAbilityIds
+            .map(id => ABILITIES.get(id)?.name || id)
+            .join('、')}】，本场暂时失效！`
+        );
+    }
     const stats = calculateMemberStats(member, run);
     member.maxHp = stats.maxHp;
     member.hp = clamp(member.hp, 0, stats.maxHp);
@@ -2812,6 +2852,7 @@ function finishVictory(run, enemy, layer) {
     delete member.battleGhostShadowSaved;
     delete member.battleGhostSelfRestarted;
     delete member.battleCoffinNailUsed;
+    delete member.battleSealedAbilityIds;
     delete member.freeTransformationBodies;
     delete member.freeTransformationSerial;
     delete member.silencedUntilRound;
@@ -2822,12 +2863,16 @@ function finishVictory(run, enemy, layer) {
 
   const encounter = getEndlessStarEncounter(run, layer);
   const rewardMultiplier = Math.max(1, asNumber(encounter?.rewardMultiplier, 1));
+  const tokenMultiplier = Math.max(
+    0,
+    asNumber(encounter?.tokenMultiplier, 1) * (enemy.trait === '蚀痕' ? 0.5 : 1)
+  );
   const currencyReward = getEndlessLayerCurrencyReward(layer);
   const layerReward = {
     lingshi: Math.round(currencyReward.lingshi * rewardMultiplier),
     sourceStone: Math.round(currencyReward.sourceStone * rewardMultiplier),
     tokens: Math.round(
-      currencyReward.tokens * rewardMultiplier * (run.titleTokenBoost || 1)
+      currencyReward.tokens * rewardMultiplier * tokenMultiplier * (run.titleTokenBoost || 1)
     ),
     members: {},
     starRoute: encounter ? {
@@ -2836,6 +2881,8 @@ function finishVictory(run, enemy, layer) {
       risk: encounter.risk,
       skyName: encounter.skyName,
       rewardMultiplier,
+      tokenMultiplier,
+      calamity: encounter.calamity || null,
     } : null,
   };
   run.unbanked.lingshi += layerReward.lingshi;
@@ -2929,7 +2976,6 @@ export function resolveEndlessLayer(run) {
     treasureRiderSummoned: 0,
     treasureRiderAttacks: 0,
   };
-  prepareBattle(run);
   run.__damageTakenByMember = damageTakenByMember;
   run.__counters = counters;
   if (encounter) {
@@ -2937,6 +2983,14 @@ export function resolveEndlessLayer(run) {
       logs,
       `劫途锁定【${encounter.shortName}】，${encounter.skyName}笼罩战场；危险：${encounter.risk}，奖励倍率×${encounter.rewardMultiplier.toFixed(2)}。`
     );
+    if (encounter.calamity)
+      addBattleLog(
+        logs,
+        `随机灾厄【${encounter.calamity.name}】降临：${encounter.calamity.description}`
+      );
+  }
+  prepareBattle(run, enemy, encounter, logs);
+  if (encounter) {
     if (encounter.entryHpCostPct > 0) {
       for (const member of Object.values(run.members)) {
         if (!member.alive) continue;
@@ -2944,7 +2998,10 @@ export function resolveEndlessLayer(run) {
         const cost = Math.max(1, Math.round(maxHp * encounter.entryHpCostPct));
         member.hp = Math.max(1, member.hp - cost);
       }
-      addBattleLog(logs, '逆命祭坛吞噬全队10%最大生命，献祭已经无法撤回。');
+      addBattleLog(
+        logs,
+        `道路献祭吞噬全队${Math.round(encounter.entryHpCostPct * 100)}%最大生命，代价已经无法撤回。`
+      );
     }
   }
   addBattleLog(
@@ -3064,6 +3121,12 @@ export function resolveEndlessLayer(run) {
       addBattleLog(logs, `劫星回响：${layerReward.starReward.description}。`);
     completeEndlessStarNode(run, layer, true);
     if (enemy.stage === 'boss') beginCheckpoint(run, layer);
+    else if (encounter?.skipAbilityReward) {
+      run.pendingChoices = {};
+      run.pendingChoiceLayer = layer + 1;
+      run.phase = 'ready';
+      addBattleLog(logs, '空劫迷途吞没了此层回响，全队没有获得新的能力选择。');
+    }
     else setPendingChoices(run, layer + 1);
   } else {
     completeEndlessStarNode(run, layer, false);
@@ -3075,6 +3138,7 @@ export function resolveEndlessLayer(run) {
       delete member.battleGhostShadowSaved;
       delete member.battleGhostSelfRestarted;
       delete member.battleCoffinNailUsed;
+      delete member.battleSealedAbilityIds;
       delete member.silencedUntilRound;
       delete member.shield;
     }

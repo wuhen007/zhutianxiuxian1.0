@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import {
+  expandEndlessPuzzleSlots,
   getEndlessMetaEffects,
   getEndlessMetaView,
+  replaceEndlessPuzzle,
   resetEndlessMeta,
   toggleEndlessPuzzle,
+  unequipEndlessPuzzle,
   upgradeEndlessMeta,
 } from '../model/endlessMeta.js';
 
@@ -23,6 +26,9 @@ assert.equal(effects.attackPct, 0.05);
 assert.equal(effects.choiceCount, 4);
 assert.equal(effects.doubleChoice, true);
 assert.equal(effects.ghostDomainLevel, 9);
+assert.equal(getEndlessMetaView(player).puzzleSlots, 1);
+assert.equal(expandEndlessPuzzleSlots(player).cost, 2500);
+assert.equal(expandEndlessPuzzleSlots(player).slots, 3);
 
 const healer = getEndlessMetaEffects({ 无尽道碑: { nodes: { branch_healer: 1 }, branch: 'healer' } });
 assert.equal(healer.teamRegenPct, 0.16);
@@ -41,8 +47,9 @@ assert.equal(baseTraces.defensePct, 0.06);
 for (const name of ['鬼影', '鬼柴刀', '许愿鬼'])
   assert.equal(toggleEndlessPuzzle(player, name).equipped, true);
 assert.throws(() => toggleEndlessPuzzle(player, '八音盒'), /拼图槽已满/);
-assert.equal(toggleEndlessPuzzle(player, '鬼影').equipped, false);
-assert.equal(toggleEndlessPuzzle(player, '八音盒').equipped, true);
+assert.equal(replaceEndlessPuzzle(player, '鬼影', '八音盒').to.name, '八音盒');
+assert.equal(unequipEndlessPuzzle(player, '八音盒').node.name, '八音盒');
+assert.equal(toggleEndlessPuzzle(player, '棺材钉').equipped, true);
 
 const beforeReset = getEndlessMetaView(player);
 const reset = resetEndlessMeta(player);

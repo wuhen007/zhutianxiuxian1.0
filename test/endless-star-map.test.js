@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   applyEndlessChoice,
   createEndlessRun,
+  ensureEndlessStarMapState,
   getEndlessLayerCurrencyReward,
   resolveEndlessLayer,
 } from '../model/endlessRealm.js';
@@ -78,7 +79,8 @@ test('显式定途会启用天象、风险奖励与劫印累积', () => {
   completeEndlessStarNode(run, 1, true);
   assert.equal(run.starMap.rows[0].nodes[1].status, 'cleared');
   assert.equal(run.starMap.selectedNodeId, null);
-  assert.equal(getEndlessStarOptions(run, 2).length, 3);
+  assert.equal(getEndlessStarOptions(run, 2).length, 2);
+  assert.equal(run.starMap.rows[1].nodes.filter(node => node.status === 'blocked').length, 1);
   if (seal) assert.equal(run.starMap.seals[seal], 1);
 });
 
@@ -107,4 +109,32 @@ test('星图路线实际参与战斗并结算倍率奖励', () => {
   assert.ok(result.layerReward.lingshi > baseReward.lingshi);
   assert.ok(result.layerReward.starRoute);
   assert.match(result.logs.join('\n'), /劫途锁定/);
+});
+
+test('高层灾厄会空过能力奖励、削减道痕并临时封禁构筑', () => {
+  const run = createRun(8848);
+  for (const id of Object.keys(run.pendingChoices)) applyEndlessChoice(run, id, 1);
+  run.layer = 60;
+  ensureEndlessStarMapState(run, 61);
+  selectEndlessStarRoute(run, 1);
+  getSelectedEndlessStarNode(run, 61).calamity = {
+    id: 'combined_test',
+    name: '灾厄叠加',
+    description: '测试灾厄',
+    skipAbilityReward: true,
+    tokenMultiplier: 0.45,
+    sealedAbilityCount: 1,
+  };
+  for (const member of Object.values(run.members)) {
+    member.base.attack = 1e15;
+    member.base.hp = 1e15;
+    member.hp = 1e15;
+    member.maxHp = 1e15;
+  }
+  const result = resolveEndlessLayer(run);
+  assert.equal(result.victory, true);
+  assert.equal(run.phase, 'ready');
+  assert.deepEqual(run.pendingChoices, {});
+  assert.ok(result.layerReward.starRoute.tokenMultiplier <= 0.45);
+  assert.match(result.logs.join('\n'), /随机灾厄|本场暂时失效|空劫迷途/);
 });

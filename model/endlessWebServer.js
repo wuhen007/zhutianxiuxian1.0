@@ -19,6 +19,7 @@ import {
 
 const pluginRoot = fileURLToPath(new URL('..', import.meta.url));
 const webRoot = path.join(pluginRoot, 'resources', 'web', 'endless');
+const wendaoWebRoot = path.join(pluginRoot, 'resources', 'web', 'wendao');
 const configPath = path.join(pluginRoot, 'config', 'endless-web.json');
 const TICKET_PREFIX = 'Xiuxian:Endless:Web:Ticket:';
 const SESSION_PREFIX = 'Xiuxian:Endless:Web:Session:';
@@ -36,6 +37,16 @@ return value
 let activeServer = null;
 let serverPromise = null;
 let activeRealm = null;
+
+const WENDAO_ASSETS = {
+  'selection.jpg': path.join(pluginRoot, 'resources', 'img', 'state', '背景图.jpg'),
+  'realm.jpg': path.join(pluginRoot, 'resources', 'img', 'player_pifu', '0.jpg'),
+  'battle.jpg': path.join(pluginRoot, 'resources', 'img', 'help', 'zhutian.jpg'),
+  'li-qingyun.jpg': path.join(pluginRoot, 'resources', 'img', 'player_pifu', '16.jpg'),
+  'qin-yang.jpg': path.join(pluginRoot, 'resources', 'img', 'player_pifu', '20.jpg'),
+  'su-waner.jpg': path.join(pluginRoot, 'resources', 'img', 'player_pifu', '39.jpg'),
+  'mu-yunxi.jpg': path.join(pluginRoot, 'resources', 'img', 'player_pifu', '38.jpg'),
+};
 
 function positiveInteger(value, fallback) {
   const number = Math.floor(Number(value));
@@ -564,6 +575,21 @@ export function createEndlessWebHttpServer({ realm, redisClient, config }) {
       if (req.method === 'GET' && url.pathname === '/endless/number.ttf')
         return sendFile(res, path.join(pluginRoot, 'resources', 'font', 'tttgbnumber.ttf'), 'font/ttf');
 
+      if (req.method === 'GET' && (url.pathname === '/wendao' || url.pathname === '/wendao/'))
+        return sendFile(res, path.join(wendaoWebRoot, 'index.html'), 'text/html; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/wendao/app.js')
+        return sendFile(res, path.join(wendaoWebRoot, 'app.js'), 'text/javascript; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/wendao/style.css')
+        return sendFile(res, path.join(wendaoWebRoot, 'style.css'), 'text/css; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/wendao/content.json')
+        return sendFile(res, path.join(wendaoWebRoot, 'content.json'), 'application/json; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/wendao/number.ttf')
+        return sendFile(res, path.join(pluginRoot, 'resources', 'font', 'tttgbnumber.ttf'), 'font/ttf');
+      if (req.method === 'GET' && url.pathname.startsWith('/wendao/assets/')) {
+        const asset = WENDAO_ASSETS[url.pathname.slice('/wendao/assets/'.length)];
+        if (asset) return sendFile(res, asset, 'image/jpeg');
+      }
+
       if (req.method === 'POST' && url.pathname === '/api/endless/session') {
         if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
         if (!(await withinRateLimit(redisClient, `session:${clientAddress(req)}`, 10, 60)))
@@ -710,4 +736,8 @@ export async function createEndlessWebLink(realm, identity) {
   await startEndlessWebServer(realm);
   const token = await issueEndlessWebTicket(redisClient, config, identity);
   return `${config.publicUrl}/endless?t=${encodeURIComponent(token)}`;
+}
+
+export function createEndlessWendaoLink(config = getEndlessWebConfig()) {
+  return `${config.publicUrl}/wendao`;
 }

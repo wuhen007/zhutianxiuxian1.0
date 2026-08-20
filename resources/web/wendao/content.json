@@ -1,0 +1,201 @@
+{
+  "version": 1,
+  "realms": [
+    { "name": "练气", "act": 1, "damageScale": 1, "hpBonus": 0, "resourceBonus": 0 },
+    { "name": "筑基", "act": 2, "damageScale": 1.32, "hpBonus": 12, "resourceBonus": 1, "material": "筑基丹" },
+    { "name": "金丹", "act": 3, "damageScale": 1.78, "hpBonus": 22, "resourceBonus": 1, "material": "结金丹" },
+    { "name": "元婴", "act": 4, "damageScale": 2.4, "hpBonus": 36, "resourceBonus": 2, "material": "化婴露" }
+  ],
+  "characters": [
+    {
+      "id": "sword",
+      "name": "李青云",
+      "path": "剑修",
+      "epithet": "青萍孤剑",
+      "portrait": "/wendao/assets/li-qingyun.jpg",
+      "maxHp": 72,
+      "resource": { "name": "剑意", "max": 4, "recover": 3 },
+      "passive": { "name": "剑心通明", "text": "每回合打出的第一张攻击牌额外造成4点伤害；溢出的剑意转化为剑势。" },
+      "relic": "relic_sword_tassel",
+      "aptitudes": { "生命": 2, "战斗": 5, "智识": 3, "心神": 4 },
+      "background": "青云山覆灭那夜，他只带走一柄无锋木剑与半页残谱。十年后，诸宗都说李青云的剑太慢，只有他知道，那一剑尚在等一个值得出鞘的因果。",
+      "deck": ["sword_strike", "sword_strike", "sword_strike", "sword_strike", "sword_guard", "sword_guard", "sword_guard", "sword_guard", "sword_flow", "sword_heart"]
+    },
+    {
+      "id": "body",
+      "name": "秦阳",
+      "path": "体修",
+      "epithet": "赤骨镇岳",
+      "portrait": "/wendao/assets/qin-yang.jpg",
+      "maxHp": 92,
+      "resource": { "name": "体力", "max": 5, "recover": 3 },
+      "passive": { "name": "不灭烘炉", "text": "每场战斗首次降至半血时，获得12护体；以血换力造成的伤害提高25%。" },
+      "relic": "relic_iron_bone",
+      "aptitudes": { "生命": 5, "战斗": 4, "智识": 2, "心神": 3 },
+      "background": "北荒矿奴没有姓名，只有编号。秦阳砸碎锁骨钉时，替三百七十人挡下了监工的血雷。他不求长生，只想看看这副凡骨究竟能把天顶到多高。",
+      "deck": ["body_punch", "body_punch", "body_punch", "body_punch", "body_guard", "body_guard", "body_guard", "body_guard", "body_blood", "body_breath"]
+    },
+    {
+      "id": "mage",
+      "name": "苏婉儿",
+      "path": "法修",
+      "epithet": "照夜灵枢",
+      "portrait": "/wendao/assets/su-waner.jpg",
+      "maxHp": 64,
+      "resource": { "name": "法力", "max": 7, "recover": 4 },
+      "passive": { "name": "灵枢回响", "text": "每回合第三张牌返还1点法力，并使下一次术法伤害提高3点。" },
+      "relic": "relic_star_compass",
+      "aptitudes": { "生命": 2, "战斗": 3, "智识": 5, "心神": 4 },
+      "background": "苏氏天生看得见灵气的走向，却因此被认作不祥。她把二十四年流亡画成一卷星图，只差最后一笔，便能证明所谓天命，不过是可以重写的阵纹。",
+      "deck": ["mage_flame", "mage_flame", "mage_flame", "mage_flame", "mage_barrier", "mage_barrier", "mage_barrier", "mage_barrier", "mage_gather", "mage_frost"]
+    },
+    {
+      "id": "talisman",
+      "name": "牧云熙",
+      "path": "符修",
+      "epithet": "墨敕千机",
+      "portrait": "/wendao/assets/mu-yunxi.jpg",
+      "maxHp": 68,
+      "resource": { "name": "符墨", "max": 6, "recover": 3 },
+      "passive": { "name": "敕令留真", "text": "每回合第一张符箓会留下符印；积累3枚符印时，重演本回合最后一张牌。" },
+      "relic": "relic_vermilion_brush",
+      "aptitudes": { "生命": 3, "战斗": 3, "智识": 4, "心神": 5 },
+      "background": "牧云熙曾是王朝最年轻的敕符官，一纸诏令可镇百鬼。直到她发现每一道太平符下都压着活人的名字，于是烧掉官印，带着那支不肯再写谎言的朱笔踏入劫境。",
+      "deck": ["talisman_fire", "talisman_fire", "talisman_fire", "talisman_fire", "talisman_ward", "talisman_ward", "talisman_ward", "talisman_ward", "talisman_ink", "talisman_bind"]
+    }
+  ],
+  "cards": [
+    { "id": "sword_strike", "owner": "sword", "name": "青锋式", "cost": 1, "type": "攻击", "rarity": "基础", "text": "造成7点伤害。", "effects": [{ "type": "damage", "value": 7 }], "upgradeText": "造成10点伤害。", "upgrade": [{ "type": "damage", "value": 10 }] },
+    { "id": "sword_guard", "owner": "sword", "name": "横剑", "cost": 1, "type": "护持", "rarity": "基础", "text": "获得6点护体。", "effects": [{ "type": "block", "value": 6 }], "upgradeText": "获得9点护体。", "upgrade": [{ "type": "block", "value": 9 }] },
+    { "id": "sword_flow", "owner": "sword", "name": "剑气流转", "cost": 1, "type": "心法", "rarity": "普通", "text": "获得2层剑势，抽1张牌。", "effects": [{ "type": "swordIntent", "value": 2 }, { "type": "draw", "value": 1 }], "upgradeText": "获得3层剑势，抽1张牌。", "upgrade": [{ "type": "swordIntent", "value": 3 }, { "type": "draw", "value": 1 }] },
+    { "id": "sword_heart", "owner": "sword", "name": "听剑", "cost": 1, "type": "心法", "rarity": "普通", "text": "获得5点护体；下回合多抽1张牌。", "effects": [{ "type": "block", "value": 5 }, { "type": "nextDraw", "value": 1 }], "upgradeText": "获得8点护体；下回合多抽1张牌。", "upgrade": [{ "type": "block", "value": 8 }, { "type": "nextDraw", "value": 1 }] },
+    { "id": "sword_light", "owner": "sword", "name": "一线天光", "cost": 2, "type": "攻击", "rarity": "普通", "text": "造成14点伤害。若目标处于破绽，额外造成7点。", "effects": [{ "type": "damage", "value": 14, "vulnerableBonus": 7 }], "upgradeText": "造成19点伤害。破绽额外造成9点。", "upgrade": [{ "type": "damage", "value": 19, "vulnerableBonus": 9 }] },
+    { "id": "sword_echo", "owner": "sword", "name": "回风落雁", "cost": 1, "type": "攻击", "rarity": "精良", "text": "造成4点伤害2次；每层剑势令每段+1。", "effects": [{ "type": "damage", "value": 4, "hits": 2, "perSwordIntent": 1 }], "upgradeText": "造成5点伤害3次；每层剑势令每段+1。", "upgrade": [{ "type": "damage", "value": 5, "hits": 3, "perSwordIntent": 1 }] },
+    { "id": "sword_break", "owner": "sword", "name": "破妄", "cost": 1, "type": "攻击", "rarity": "精良", "text": "造成9点伤害，施加2层破绽。", "effects": [{ "type": "damage", "value": 9 }, { "type": "vulnerable", "value": 2 }], "upgradeText": "造成13点伤害，施加2层破绽。", "upgrade": [{ "type": "damage", "value": 13 }, { "type": "vulnerable", "value": 2 }] },
+    { "id": "sword_rain", "owner": "sword", "name": "万剑垂天", "cost": 3, "type": "攻击", "rarity": "稀世", "text": "对所有敌人造成18点伤害，消耗全部剑势，每层再造成3点。", "effects": [{ "type": "damageAll", "value": 18, "consumeSwordIntent": 3 }], "upgradeText": "对所有敌人造成24点伤害，每层剑势再造成4点。", "upgrade": [{ "type": "damageAll", "value": 24, "consumeSwordIntent": 4 }] },
+    { "id": "sword_domain", "owner": "sword", "name": "无锋剑域", "cost": 2, "type": "心法", "rarity": "稀世", "text": "获得2点锋锐。每回合开始获得1层剑势。消耗。", "effects": [{ "type": "strength", "value": 2 }, { "type": "swordGrowth", "value": 1 }], "exhaust": true, "upgradeText": "获得3点锋锐，每回合获得1层剑势。消耗。", "upgrade": [{ "type": "strength", "value": 3 }, { "type": "swordGrowth", "value": 1 }] },
+
+    { "id": "body_punch", "owner": "body", "name": "崩拳", "cost": 1, "type": "攻击", "rarity": "基础", "text": "造成8点伤害。", "effects": [{ "type": "damage", "value": 8 }], "upgradeText": "造成11点伤害。", "upgrade": [{ "type": "damage", "value": 11 }] },
+    { "id": "body_guard", "owner": "body", "name": "架势", "cost": 1, "type": "护持", "rarity": "基础", "text": "获得7点护体。", "effects": [{ "type": "block", "value": 7 }], "upgradeText": "获得10点护体。", "upgrade": [{ "type": "block", "value": 10 }] },
+    { "id": "body_blood", "owner": "body", "name": "燃血", "cost": 0, "type": "心法", "rarity": "普通", "text": "失去5点生命，获得2点体力与2点锋锐。消耗。", "effects": [{ "type": "selfDamage", "value": 5 }, { "type": "energy", "value": 2 }, { "type": "strength", "value": 2 }], "exhaust": true, "upgradeText": "失去3点生命，获得2点体力与3点锋锐。消耗。", "upgrade": [{ "type": "selfDamage", "value": 3 }, { "type": "energy", "value": 2 }, { "type": "strength", "value": 3 }] },
+    { "id": "body_breath", "owner": "body", "name": "吐纳", "cost": 1, "type": "心法", "rarity": "普通", "text": "回复4点生命，获得4点护体。", "effects": [{ "type": "heal", "value": 4 }, { "type": "block", "value": 4 }], "upgradeText": "回复7点生命，获得6点护体。", "upgrade": [{ "type": "heal", "value": 7 }, { "type": "block", "value": 6 }] },
+    { "id": "body_shock", "owner": "body", "name": "撼山靠", "cost": 2, "type": "攻击", "rarity": "普通", "text": "造成15点伤害并施加1层虚弱。", "effects": [{ "type": "damage", "value": 15 }, { "type": "weak", "value": 1 }], "upgradeText": "造成20点伤害并施加2层虚弱。", "upgrade": [{ "type": "damage", "value": 20 }, { "type": "weak", "value": 2 }] },
+    { "id": "body_iron", "owner": "body", "name": "金身不坏", "cost": 2, "type": "护持", "rarity": "精良", "text": "获得16点护体与3点荆棘。", "effects": [{ "type": "block", "value": 16 }, { "type": "thorns", "value": 3 }], "upgradeText": "获得22点护体与4点荆棘。", "upgrade": [{ "type": "block", "value": 22 }, { "type": "thorns", "value": 4 }] },
+    { "id": "body_counter", "owner": "body", "name": "见龙卸甲", "cost": 1, "type": "护持", "rarity": "精良", "text": "获得9点护体。若本回合护体被击破，下回合获得2点锋锐。", "effects": [{ "type": "block", "value": 9 }, { "type": "counterStrength", "value": 2 }], "upgradeText": "获得13点护体，护体被击破时获得3点锋锐。", "upgrade": [{ "type": "block", "value": 13 }, { "type": "counterStrength", "value": 3 }] },
+    { "id": "body_dragon", "owner": "body", "name": "真龙摆尾", "cost": 3, "type": "攻击", "rarity": "稀世", "text": "对所有敌人造成22点伤害。生命低于50%时费用-1。", "effects": [{ "type": "damageAll", "value": 22 }], "lowHpDiscount": 1, "upgradeText": "对所有敌人造成30点伤害，半血时费用-1。", "upgrade": [{ "type": "damageAll", "value": 30 }] },
+    { "id": "body_star", "owner": "body", "name": "只手托天", "cost": 3, "type": "护持", "rarity": "稀世", "text": "获得25点护体；将本回合失去的生命转为等量护体。", "effects": [{ "type": "block", "value": 25 }, { "type": "lostHpBlock", "value": 1 }], "upgradeText": "获得33点护体，并转化本回合失去生命。", "upgrade": [{ "type": "block", "value": 33 }, { "type": "lostHpBlock", "value": 1 }] },
+
+    { "id": "mage_flame", "owner": "mage", "name": "离火咒", "cost": 1, "type": "术法", "rarity": "基础", "text": "造成7点伤害。", "effects": [{ "type": "damage", "value": 7 }], "upgradeText": "造成10点伤害。", "upgrade": [{ "type": "damage", "value": 10 }] },
+    { "id": "mage_barrier", "owner": "mage", "name": "灵光障", "cost": 1, "type": "护持", "rarity": "基础", "text": "获得6点护体。", "effects": [{ "type": "block", "value": 6 }], "upgradeText": "获得9点护体。", "upgrade": [{ "type": "block", "value": 9 }] },
+    { "id": "mage_gather", "owner": "mage", "name": "聚灵", "cost": 0, "type": "心法", "rarity": "普通", "text": "获得2点法力，抽1张牌。消耗。", "effects": [{ "type": "energy", "value": 2 }, { "type": "draw", "value": 1 }], "exhaust": true, "upgradeText": "获得3点法力，抽1张牌。消耗。", "upgrade": [{ "type": "energy", "value": 3 }, { "type": "draw", "value": 1 }] },
+    { "id": "mage_frost", "owner": "mage", "name": "玄霜印", "cost": 1, "type": "术法", "rarity": "普通", "text": "造成5点伤害，施加2层虚弱。", "effects": [{ "type": "damage", "value": 5 }, { "type": "weak", "value": 2 }], "upgradeText": "造成8点伤害，施加3层虚弱。", "upgrade": [{ "type": "damage", "value": 8 }, { "type": "weak", "value": 3 }] },
+    { "id": "mage_thunder", "owner": "mage", "name": "掌心雷", "cost": 2, "type": "术法", "rarity": "普通", "text": "随机对敌人造成5点伤害3次。", "effects": [{ "type": "randomDamage", "value": 5, "hits": 3 }], "upgradeText": "随机造成6点伤害4次。", "upgrade": [{ "type": "randomDamage", "value": 6, "hits": 4 }] },
+    { "id": "mage_mirror", "owner": "mage", "name": "镜花水月", "cost": 1, "type": "护持", "rarity": "精良", "text": "获得8点护体；复制本回合下一张费用不高于2的牌。", "effects": [{ "type": "block", "value": 8 }, { "type": "echo", "value": 1 }], "upgradeText": "获得12点护体；复制下一张费用不高于3的牌。", "upgrade": [{ "type": "block", "value": 12 }, { "type": "echo", "value": 1, "maxCost": 3 }] },
+    { "id": "mage_array", "owner": "mage", "name": "九曜焚天阵", "cost": 3, "type": "术法", "rarity": "精良", "text": "对所有敌人造成16点伤害，施加2层破绽。", "effects": [{ "type": "damageAll", "value": 16 }, { "type": "vulnerableAll", "value": 2 }], "upgradeText": "对所有敌人造成22点伤害，施加3层破绽。", "upgrade": [{ "type": "damageAll", "value": 22 }, { "type": "vulnerableAll", "value": 3 }] },
+    { "id": "mage_void", "owner": "mage", "name": "袖里乾坤", "cost": 3, "type": "术法", "rarity": "稀世", "text": "造成28点伤害；若手牌不少于6张，伤害翻倍。消耗。", "effects": [{ "type": "damage", "value": 28, "largeHandDouble": 6 }], "exhaust": true, "upgradeText": "造成36点伤害；手牌不少于5张时翻倍。", "upgrade": [{ "type": "damage", "value": 36, "largeHandDouble": 5 }] },
+    { "id": "mage_stars", "owner": "mage", "name": "周天星斗", "cost": 2, "type": "心法", "rarity": "稀世", "text": "获得2点灵慧。此后术法牌额外造成2点伤害。消耗。", "effects": [{ "type": "dexterity", "value": 2 }, { "type": "spellPower", "value": 2 }], "exhaust": true, "upgradeText": "获得3点灵慧与3点术法威能。消耗。", "upgrade": [{ "type": "dexterity", "value": 3 }, { "type": "spellPower", "value": 3 }] },
+
+    { "id": "talisman_fire", "owner": "talisman", "name": "赤火符", "cost": 1, "type": "符箓", "rarity": "基础", "text": "造成6点伤害；敌方行动前再造成3点。", "effects": [{ "type": "damage", "value": 6 }, { "type": "delayedDamage", "value": 3 }], "upgradeText": "造成9点伤害，行动前再造成4点。", "upgrade": [{ "type": "damage", "value": 9 }, { "type": "delayedDamage", "value": 4 }] },
+    { "id": "talisman_ward", "owner": "talisman", "name": "金甲符", "cost": 1, "type": "符箓", "rarity": "基础", "text": "获得7点护体。", "effects": [{ "type": "block", "value": 7 }], "upgradeText": "获得10点护体。", "upgrade": [{ "type": "block", "value": 10 }] },
+    { "id": "talisman_ink", "owner": "talisman", "name": "研墨", "cost": 0, "type": "心法", "rarity": "普通", "text": "获得1点符墨，抽2张牌。消耗。", "effects": [{ "type": "energy", "value": 1 }, { "type": "draw", "value": 2 }], "exhaust": true, "upgradeText": "获得2点符墨，抽2张牌。消耗。", "upgrade": [{ "type": "energy", "value": 2 }, { "type": "draw", "value": 2 }] },
+    { "id": "talisman_bind", "owner": "talisman", "name": "缚灵符", "cost": 1, "type": "符箓", "rarity": "普通", "text": "施加2层虚弱与1层破绽。", "effects": [{ "type": "weak", "value": 2 }, { "type": "vulnerable", "value": 1 }], "upgradeText": "施加3层虚弱与2层破绽。", "upgrade": [{ "type": "weak", "value": 3 }, { "type": "vulnerable", "value": 2 }] },
+    { "id": "talisman_thunder", "owner": "talisman", "name": "五雷敕令", "cost": 2, "type": "符箓", "rarity": "普通", "text": "造成10点伤害；敌方行动前再造成8点。", "effects": [{ "type": "damage", "value": 10 }, { "type": "delayedDamage", "value": 8 }], "upgradeText": "造成14点伤害，行动前再造成11点。", "upgrade": [{ "type": "damage", "value": 14 }, { "type": "delayedDamage", "value": 11 }] },
+    { "id": "talisman_mirror", "owner": "talisman", "name": "替身纸人", "cost": 1, "type": "护持", "rarity": "精良", "text": "获得10点护体；下次受到的未格挡伤害减少6。", "effects": [{ "type": "block", "value": 10 }, { "type": "ward", "value": 6 }], "upgradeText": "获得14点护体，未格挡伤害减少9。", "upgrade": [{ "type": "block", "value": 14 }, { "type": "ward", "value": 9 }] },
+    { "id": "talisman_soldiers", "owner": "talisman", "name": "撒豆成兵", "cost": 2, "type": "符箓", "rarity": "精良", "text": "敌方每次行动前受到7点伤害，持续3回合。", "effects": [{ "type": "delayedRepeating", "value": 7, "turns": 3 }], "upgradeText": "每次行动前受到10点伤害，持续3回合。", "upgrade": [{ "type": "delayedRepeating", "value": 10, "turns": 3 }] },
+    { "id": "talisman_heaven", "owner": "talisman", "name": "代天封敕", "cost": 3, "type": "符箓", "rarity": "稀世", "text": "对所有敌人造成12点伤害，将其现有虚弱与破绽延长2回合。消耗。", "effects": [{ "type": "damageAll", "value": 12 }, { "type": "extendDebuffs", "value": 2 }], "exhaust": true, "upgradeText": "造成18点伤害，延长3回合。消耗。", "upgrade": [{ "type": "damageAll", "value": 18 }, { "type": "extendDebuffs", "value": 3 }] },
+    { "id": "talisman_seal", "owner": "talisman", "name": "万法归禁", "cost": 2, "type": "符箓", "rarity": "稀世", "text": "获得14点护体；所有敌人本回合失去锋锐。消耗。", "effects": [{ "type": "block", "value": 14 }, { "type": "silenceStrength", "value": 1 }], "exhaust": true, "upgradeText": "获得20点护体并封禁锋锐。消耗。", "upgrade": [{ "type": "block", "value": 20 }, { "type": "silenceStrength", "value": 1 }] },
+
+    { "id": "fusion_cloud_sword", "owner": "sword", "name": "青云问剑", "cost": 2, "type": "悟道", "rarity": "道成", "rewardOnly": true, "text": "造成13点伤害2次，获得2层剑势，抽1张牌。", "effects": [{ "type": "damage", "value": 13, "hits": 2 }, { "type": "swordIntent", "value": 2 }, { "type": "draw", "value": 1 }], "upgradeText": "造成17点伤害2次，获得3层剑势，抽1张牌。", "upgrade": [{ "type": "damage", "value": 17, "hits": 2 }, { "type": "swordIntent", "value": 3 }, { "type": "draw", "value": 1 }] },
+    { "id": "fusion_dragon_furnace", "owner": "body", "name": "真龙烘炉身", "cost": 2, "type": "悟道", "rarity": "道成", "rewardOnly": true, "text": "获得18点护体与3点锋锐，回复6点生命。", "effects": [{ "type": "block", "value": 18 }, { "type": "strength", "value": 3 }, { "type": "heal", "value": 6 }], "upgradeText": "获得25点护体、4点锋锐，回复9点生命。", "upgrade": [{ "type": "block", "value": 25 }, { "type": "strength", "value": 4 }, { "type": "heal", "value": 9 }] },
+    { "id": "fusion_frost_thunder", "owner": "mage", "name": "霜雷天劫", "cost": 3, "type": "悟道", "rarity": "道成", "rewardOnly": true, "text": "对所有敌人造成24点伤害，施加3层虚弱与破绽。", "effects": [{ "type": "damageAll", "value": 24 }, { "type": "weakAll", "value": 3 }, { "type": "vulnerableAll", "value": 3 }], "upgradeText": "造成32点伤害，施加4层虚弱与破绽。", "upgrade": [{ "type": "damageAll", "value": 32 }, { "type": "weakAll", "value": 4 }, { "type": "vulnerableAll", "value": 4 }] },
+    { "id": "fusion_heaven_talisman", "owner": "talisman", "name": "九天雷火箓", "cost": 2, "type": "悟道", "rarity": "道成", "rewardOnly": true, "text": "对所有敌人造成12点伤害；行动前再造成15点。", "effects": [{ "type": "damageAll", "value": 12 }, { "type": "delayedDamageAll", "value": 15 }], "upgradeText": "造成17点伤害，行动前再造成21点。", "upgrade": [{ "type": "damageAll", "value": 17 }, { "type": "delayedDamageAll", "value": 21 }] },
+
+    { "id": "curse_heart", "owner": "curse", "name": "心魔低语", "cost": 1, "type": "劫厄", "rarity": "诅咒", "unplayable": true, "text": "留在手中时，回合结束失去3点生命。", "effects": [] },
+    { "id": "curse_meridian", "owner": "curse", "name": "经脉逆乱", "cost": 1, "type": "劫厄", "rarity": "诅咒", "unplayable": true, "text": "抽到时失去1点资源。", "onDraw": [{ "type": "energy", "value": -1 }], "effects": [] }
+  ],
+  "fusions": [
+    { "needs": ["sword_flow", "sword_light"], "result": "fusion_cloud_sword", "insight": "剑流不息，天光自开。" },
+    { "needs": ["body_iron", "body_breath"], "result": "fusion_dragon_furnace", "insight": "骨为炉壁，血作真火。" },
+    { "needs": ["mage_frost", "mage_thunder"], "result": "fusion_frost_thunder", "insight": "霜凝雷意，一念成劫。" },
+    { "needs": ["talisman_fire", "talisman_thunder"], "result": "fusion_heaven_talisman", "insight": "朱砂引火，雷篆代天。" }
+  ],
+  "relics": [
+    { "id": "relic_sword_tassel", "name": "无锋剑穗", "grade": "本命物", "text": "每场战斗首次造成伤害时，获得2层剑势。", "effect": { "firstHitSword": 2 } },
+    { "id": "relic_iron_bone", "name": "镇岳骨", "grade": "本命物", "text": "每场战斗开始获得10点护体。", "effect": { "startBlock": 10 } },
+    { "id": "relic_star_compass", "name": "照夜星盘", "grade": "本命物", "text": "每场战斗第一回合多抽2张牌。", "effect": { "openingDraw": 2 } },
+    { "id": "relic_vermilion_brush", "name": "不妄朱笔", "grade": "本命物", "text": "每场战斗开始获得1枚符印与1点符墨。", "effect": { "startSeal": 1, "startEnergy": 1 } },
+    { "id": "relic_copper_mirror", "name": "照骨铜镜", "grade": "法宝", "text": "敌人的攻击意图显示最终总伤害。", "effect": { "exactIntent": true } },
+    { "id": "relic_blood_jade", "name": "温血古玉", "grade": "法宝", "text": "战斗胜利后回复6点生命。", "effect": { "healAfterCombat": 6 } },
+    { "id": "relic_thunder_wood", "name": "雷击木心", "grade": "法宝", "text": "每场战斗第一次受到未格挡伤害时，对所有敌人造成8点伤害。", "effect": { "retaliate": 8 } },
+    { "id": "relic_mountain_seal", "name": "搬山印", "grade": "古宝", "text": "所有护体牌额外提供2点护体。", "effect": { "blockBonus": 2 } },
+    { "id": "relic_dragon_coin", "name": "蜃龙钱", "grade": "古宝", "text": "坊市价格降低15%。", "effect": { "shopDiscount": 0.15 } },
+    { "id": "relic_empty_gourd", "name": "空空葫芦", "grade": "古宝", "text": "每三回合额外获得1点资源。", "effect": { "thirdTurnEnergy": 1 } },
+    { "id": "relic_lotus_lamp", "name": "青莲灯", "grade": "灵宝", "text": "每场战斗首次受到致命伤害时，以1点生命存活。", "effect": { "deathWard": 1 } },
+    { "id": "relic_heaven_ruler", "name": "量天尺残片", "grade": "灵宝", "text": "攻击伤害提高10%，但最大生命降低8。", "effect": { "attackRate": 0.1, "maxHpLoss": 8 } }
+  ],
+  "enemies": [
+    { "id": "spirit_rats", "name": "啮灵鼠群", "kind": "normal", "actMin": 1, "hp": 34, "lore": "它们不食血肉，只啃修士运转灵力时溢出的念头。", "intents": [{ "type": "attack", "name": "群噬", "value": 5, "hits": 2 }, { "type": "buff", "name": "啮灵", "strength": 2 }] },
+    { "id": "bone_slave", "name": "腐骨剑奴", "kind": "normal", "actMin": 1, "hp": 42, "lore": "死去百年的剑客，仍在重复最后一次出剑。", "intents": [{ "type": "attack", "name": "锈剑斩", "value": 10 }, { "type": "block", "name": "抱残守缺", "value": 8 }, { "type": "attackDebuff", "name": "腐骨剑气", "value": 7, "vulnerable": 1 }] },
+    { "id": "ink_demon", "name": "吞墨妖", "kind": "normal", "actMin": 1, "hp": 38, "lore": "被废弃符纸养出的精怪，喜欢吞走尚未说出口的术。", "intents": [{ "type": "debuff", "name": "污灵", "weak": 2 }, { "type": "attack", "name": "墨潮", "value": 12 }] },
+    { "id": "night_corpse", "name": "夜巡尸", "kind": "normal", "actMin": 2, "hp": 56, "lore": "巡夜铃还挂在腰间，铃响时，它会想起自己曾是人。", "intents": [{ "type": "attack", "name": "拘魂索", "value": 8, "hits": 2 }, { "type": "heal", "name": "吞灯", "value": 12 }] },
+    { "id": "rogue_furnace", "name": "失控丹炉", "kind": "normal", "actMin": 2, "hp": 62, "lore": "炉火已经熄灭，丹毒却学会了呼吸。", "intents": [{ "type": "block", "name": "炉壁闭合", "value": 14 }, { "type": "attackDebuff", "name": "炸炉", "value": 18, "weak": 1 }] },
+    { "id": "mirror_self", "name": "镜中修士", "kind": "normal", "actMin": 3, "hp": 74, "lore": "它比你更熟悉你的迟疑。", "intents": [{ "type": "attack", "name": "映招", "value": 13 }, { "type": "buff", "name": "照见破绽", "strength": 3 }, { "type": "attack", "name": "反演", "value": 9, "hits": 2 }] },
+    { "id": "sword_puppet", "name": "守关剑傀", "kind": "elite", "actMin": 1, "hp": 88, "lore": "九百道剑痕刻在同一具青铜躯壳上。", "intents": [{ "type": "attack", "name": "九刻连斩", "value": 5, "hits": 3 }, { "type": "block", "name": "铜山剑架", "value": 18 }, { "type": "attackDebuff", "name": "断脉", "value": 15, "vulnerable": 2 }] },
+    { "id": "possession_seed", "name": "夺舍魔种", "kind": "elite", "actMin": 2, "hp": 118, "lore": "它没有形体，只借用失败者最骄傲的模样。", "secondWind": 0.3, "intents": [{ "type": "debuff", "name": "种魔", "weak": 2, "vulnerable": 1 }, { "type": "attack", "name": "夺念", "value": 21 }, { "type": "heal", "name": "借壳生根", "value": 18 }] },
+    { "id": "thunder_dragon", "name": "雷泽孽龙", "kind": "elite", "actMin": 3, "hp": 148, "lore": "渡劫失败的蛟龙，把恨意盘在雷云里。", "intents": [{ "type": "attack", "name": "雷鳞冲撞", "value": 12, "hits": 2 }, { "type": "buff", "name": "蓄劫", "strength": 4 }, { "type": "attack", "name": "覆泽雷瀑", "value": 30 }] },
+    { "id": "hundred_eye", "name": "百眼道君", "kind": "boss", "actMin": 1, "hp": 178, "lore": "每一只眼睛都看见一种败法。唯有一只，仍紧闭着。", "secondWind": 0.25, "intents": [{ "type": "debuff", "name": "照见恐惧", "weak": 2 }, { "type": "attack", "name": "百目劫光", "value": 8, "hits": 3 }, { "type": "block", "name": "闭目藏真", "value": 24 }, { "type": "attackDebuff", "name": "天眼裁命", "value": 28, "vulnerable": 2 }] },
+    { "id": "red_prison", "name": "赤狱天魔", "kind": "boss", "actMin": 2, "hp": 265, "lore": "以众生恶念作甲，每受一创，甲中便多一声哭喊。", "secondWind": 0.35, "intents": [{ "type": "attack", "name": "狱火三叩", "value": 9, "hits": 3 }, { "type": "buff", "name": "万恶加身", "strength": 5 }, { "type": "attackDebuff", "name": "焚心", "value": 32, "weak": 2 }, { "type": "heal", "name": "众恶回流", "value": 28 }] },
+    { "id": "formless_mind", "name": "无相心尊", "kind": "boss", "actMin": 3, "hp": 348, "lore": "你越想战胜它，它便越像你。", "secondWind": 0.4, "intents": [{ "type": "debuff", "name": "无相心界", "weak": 2, "vulnerable": 2 }, { "type": "attack", "name": "念刃", "value": 18, "hits": 2 }, { "type": "block", "name": "我执为壁", "value": 42 }, { "type": "attack", "name": "万念归一", "value": 48 }] },
+    { "id": "outer_calamity", "name": "天外劫主", "kind": "boss", "actMin": 4, "hp": 470, "lore": "它不是来阻止你成道。它就是那条被无数人走坏的道。", "secondWind": 0.5, "intents": [{ "type": "attack", "name": "诸界坠落", "value": 14, "hits": 3 }, { "type": "debuff", "name": "道途尽头", "weak": 3, "vulnerable": 3 }, { "type": "block", "name": "万劫不磨", "value": 55 }, { "type": "attack", "name": "纪元归零", "value": 62 }, { "type": "heal", "name": "劫海回潮", "value": 45 }] }
+  ],
+  "events": [
+    {
+      "id": "broken_stele", "name": "无名残碑", "text": "碑上没有文字。你凝视得越久，越能听见另一个自己在背诵一门从未学过的经。",
+      "choices": [
+        { "label": "以神识临摹", "hint": "升级一张随机卡牌，失去8点生命", "effects": [{ "type": "upgradeRandom", "value": 1 }, { "type": "hp", "value": -8 }] },
+        { "label": "拓下碑影", "hint": "获得一张职业稀有牌，加入心魔低语", "effects": [{ "type": "randomRareCard", "value": 1 }, { "type": "addCard", "id": "curse_heart" }] },
+        { "label": "不留因果", "hint": "离开", "effects": [] }
+      ]
+    },
+    {
+      "id": "ancient_well", "name": "倒悬古井", "text": "井水映着白昼的星辰。井沿刻着：欲取一瓢，先留一物。",
+      "choices": [
+        { "label": "留下一段寿元", "hint": "最大生命-7，获得随机法宝", "effects": [{ "type": "maxHp", "value": -7 }, { "type": "artifact", "value": 1 }] },
+        { "label": "投下六十灵石", "hint": "灵石-60，回复至满生命", "requires": { "gold": 60 }, "effects": [{ "type": "gold", "value": -60 }, { "type": "healFull", "value": 1 }] },
+        { "label": "封井", "hint": "获得18灵石", "effects": [{ "type": "gold", "value": 18 }] }
+      ]
+    },
+    {
+      "id": "lost_cultivator", "name": "迷路老修", "text": "老人把地图拿反了，却准确说出了你接下来会遇见的三条路。",
+      "choices": [
+        { "label": "替他指路", "hint": "获得45灵石，下场战斗多抽1张牌", "effects": [{ "type": "gold", "value": 45 }, { "type": "nextBattleDraw", "value": 1 }] },
+        { "label": "买下假地图", "hint": "支付35灵石，获得随机稀有牌", "requires": { "gold": 35 }, "effects": [{ "type": "gold", "value": -35 }, { "type": "randomRareCard", "value": 1 }] },
+        { "label": "问他从何而来", "hint": "获得1点悟性，本局奖励牌更容易出现高品级", "effects": [{ "type": "luck", "value": 1 }] }
+      ]
+    },
+    {
+      "id": "robbed_caravan", "name": "破碎坊车", "text": "商队与劫修同归于尽。货箱仍在燃烧，远处已经传来兽群的脚步。",
+      "choices": [
+        { "label": "抢救丹药", "hint": "回复18点生命，获得当前境界突破材料", "effects": [{ "type": "hp", "value": 18 }, { "type": "realmMaterial", "value": 1 }] },
+        { "label": "搜刮灵石", "hint": "获得95灵石，加入经脉逆乱", "effects": [{ "type": "gold", "value": 95 }, { "type": "addCard", "id": "curse_meridian" }] },
+        { "label": "超度亡者", "hint": "最大生命+5", "effects": [{ "type": "maxHp", "value": 5 }] }
+      ]
+    },
+    {
+      "id": "demon_fetus", "name": "道胎还是魔种", "text": "石卵中传来与你相同的心跳。它许诺，只要带它同行，便会替你承受一次死亡。",
+      "choices": [
+        { "label": "收入识海", "hint": "获得一次替死，但每场战斗开始失去5点生命", "effects": [{ "type": "runDeathWard", "value": 1 }, { "type": "battleStartHp", "value": -5 }] },
+        { "label": "一掌击碎", "hint": "获得一张已升级的职业牌", "effects": [{ "type": "randomUpgradedCard", "value": 1 }] },
+        { "label": "封在原地", "hint": "获得30灵石", "effects": [{ "type": "gold", "value": 30 }] }
+      ]
+    },
+    {
+      "id": "cycle_tea", "name": "轮回茶摊", "text": "摊主没有脸，只问你：这一程走得不满意，要删掉哪一笔？",
+      "choices": [
+        { "label": "忘掉一式", "hint": "从牌组移除一张牌", "effects": [{ "type": "removeCard", "value": 1 }] },
+        { "label": "忘掉伤痛", "hint": "回复25%最大生命", "effects": [{ "type": "healRate", "value": 0.25 }] },
+        { "label": "忘掉退路", "hint": "最大生命+8，加入心魔低语", "effects": [{ "type": "maxHp", "value": 8 }, { "type": "addCard", "id": "curse_heart" }] }
+      ]
+    }
+  ]
+}

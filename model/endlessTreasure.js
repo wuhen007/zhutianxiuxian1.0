@@ -11,8 +11,11 @@
  * 本文件只负责数据与纯函数（状态判定/加成计算），战斗执行逻辑在 endlessRealm.js 中实现。
  */
 export const ENDLESS_TREASURE_FIELD = '无尽至宝列表';
+export const ENDLESS_TREASURE_EQUIPPED_FIELD = '无尽至宝装配';
+export const ENDLESS_TREASURE_SLOT_FIELD = '无尽至宝槽位';
 export const ENDLESS_TREASURE_LEVEL_CAP = 3;
 export const ENDLESS_TREASURE_UNLOCK_LAYER = 25;
+export const ENDLESS_TREASURE_EFFECT_RATE = 0.5;
 
 /* 至宝专属合成能力名（用于面板展示；这些能力不会进入选择池） */
 export const SYNTHETIC_ABILITY_NAMES = Object.freeze({
@@ -658,6 +661,95 @@ export function normalizePlayerTreasures(player) {
     }));
 }
 
+export function getEndlessTreasureSlotGate(slot) {
+  return Math.max(1, Math.floor(asNumber(slot, 1))) * 25;
+}
+
+export function getEndlessTreasureSlotCost(slot) {
+  const safeSlot = Math.max(1, Math.floor(asNumber(slot, 1)));
+  return safeSlot === 1 ? 0 : 4000 + safeSlot * 500;
+}
+
+export function getEndlessTreasureSlotCount(player) {
+  const highestLayer = Math.max(0, Math.floor(asNumber(player?.无尽劫境最高层)));
+  // 旧存档没有最高层字段时，以已持有至宝反推第一槽资格。
+  const legacyFirstSlot = Array.isArray(player?.[ENDLESS_TREASURE_FIELD]) &&
+    player[ENDLESS_TREASURE_FIELD].length > 0 ? 1 : 0;
+  const eligible = Math.max(legacyFirstSlot, Math.floor(highestLayer / 25));
+  if (!eligible) return 0;
+  return Math.min(eligible, Math.max(1, Math.floor(asNumber(player?.[ENDLESS_TREASURE_SLOT_FIELD]))));
+}
+
+/** 旧存档首次读取时自动装配第一件，后续只让装配中的至宝进入战斗。 */
+export function normalizeEndlessTreasureLoadout(player) {
+  const owned = normalizePlayerTreasures(player);
+  const ownedIds = new Set(owned.map(item => item.id));
+  const slots = getEndlessTreasureSlotCount(player);
+  const hasSavedLoadout = Array.isArray(player?.[ENDLESS_TREASURE_EQUIPPED_FIELD]);
+  const equipped = [...new Set(player?.[ENDLESS_TREASURE_EQUIPPED_FIELD] || [])]
+    .filter(id => ownedIds.has(id))
+    .slice(0, slots);
+  if (!hasSavedLoadout && slots > 0 && owned.length) equipped.push(owned[0].id);
+  if (player) {
+    player[ENDLESS_TREASURE_SLOT_FIELD] = slots;
+    player[ENDLESS_TREASURE_EQUIPPED_FIELD] = equipped;
+  }
+  return { owned, equipped, slots };
+}
+
+export function getEquippedEndlessTreasures(player) {
+  const { owned, equipped } = normalizeEndlessTreasureLoadout(player);
+  const equippedSet = new Set(equipped);
+  return owned.filter(item => equippedSet.has(item.id));
+}
+
+function findOwnedTreasure(player, input) {
+  const query = String(input || '').trim();
+  const owned = normalizePlayerTreasures(player);
+  const numeric = Number(query);
+  return owned.find(item => item.id === query || item.name === query) ||
+    (Number.isInteger(numeric) ? owned[numeric - 1] : null);
+}
+
+export function equipEndlessTreasure(player, input) {
+  const target = findOwnedTreasure(player, input);
+  if (!target) throw new Error('未找到这件无尽至宝');
+  const loadout = normalizeEndlessTreasureLoadout(player);
+  if (!loadout.slots) throw new Error('通关第25层后才能装配无尽至宝');
+  if (loadout.equipped.includes(target.id)) throw new Error(`【${target.name}】已经装配`);
+  if (loadout.equipped.length >= loadout.slots)
+    throw new Error(`无尽至宝槽已满（${loadout.slots}/${loadout.slots}）`);
+  loadout.equipped.push(target.id);
+  player[ENDLESS_TREASURE_EQUIPPED_FIELD] = loadout.equipped;
+  return { treasure: target, equipped: [...loadout.equipped], slots: loadout.slots };
+}
+
+export function unequipEndlessTreasure(player, input) {
+  const target = findOwnedTreasure(player, input);
+  if (!target) throw new Error('未找到这件无尽至宝');
+  const loadout = normalizeEndlessTreasureLoadout(player);
+  const index = loadout.equipped.indexOf(target.id);
+  if (index < 0) throw new Error(`【${target.name}】尚未装配`);
+  loadout.equipped.splice(index, 1);
+  player[ENDLESS_TREASURE_EQUIPPED_FIELD] = loadout.equipped;
+  return { treasure: target, equipped: [...loadout.equipped], slots: loadout.slots };
+}
+
+export function unlockEndlessTreasureSlot(player) {
+  const current = getEndlessTreasureSlotCount(player);
+  const next = current + 1;
+  const gate = getEndlessTreasureSlotGate(next);
+  const highestLayer = Math.max(0, Math.floor(asNumber(player?.无尽劫境最高层)));
+  if (highestLayer < gate) throw new Error(`第${next}个至宝槽需要最高通关第${gate}层`);
+  const cost = getEndlessTreasureSlotCost(next);
+  const balance = Math.max(0, Math.floor(asNumber(player?.劫境道痕)));
+  if (balance < cost) throw new Error(`开启第${next}个至宝槽需要${cost}劫境道痕，当前${balance}`);
+  player.劫境道痕 = balance - cost;
+  player[ENDLESS_TREASURE_SLOT_FIELD] = next;
+  normalizeEndlessTreasureLoadout(player);
+  return { slot: next, gate, cost, balance: player.劫境道痕 };
+}
+
 /**
  * 第25关奖励：随机解锁一件永久至宝。
  * 优先从未拥有的至宝中抽取；全部拥有后，随机将一件已拥有至宝升级（上限3级）。
@@ -733,18 +825,17 @@ function meetsRequirementGroup(member, group) {
  */
 export function getTreasureStates(member, run) {
   if (!member?.treasureIds?.length) return [];
-  const baseScale = (level) => 1 + 0.25 * (level - 1);
-  const awakenScale = (level) => 1 + 0.15 * (level - 1);
+  const effectScale = (level) => ENDLESS_TREASURE_EFFECT_RATE + 0.1 * (level - 1);
   return member.treasureIds
     .map(({ id, level }) => {
       const treasure = TREASURE_MAP.get(id);
       if (!treasure) return null;
       const baseEffect = {};
-      mergeEffect(baseEffect, treasure.baseEffect, baseScale(level));
+      mergeEffect(baseEffect, treasure.baseEffect, effectScale(level));
       const stageEffect = {};
       for (const stage of treasure.stages || []) {
         if (meetsRequirementGroup(member, stage))
-          mergeEffect(stageEffect, stage.effect);
+          mergeEffect(stageEffect, stage.effect, effectScale(level));
       }
       const awakenDef = treasure.awaken;
       const awakenActive = awakenDef && meetsRequirementGroup(member, awakenDef);
@@ -754,7 +845,7 @@ export function getTreasureStates(member, run) {
             formName: awakenDef.name,
             effect: (() => {
               const effect = {};
-              mergeEffect(effect, awakenDef.effect, awakenScale(level));
+              mergeEffect(effect, awakenDef.effect, effectScale(level));
               return effect;
             })(),
             combat: awakenDef.combat || [],
@@ -780,7 +871,12 @@ export function getTreasureEffects(member, run) {
     mergeEffect(effects, state.baseEffect);
     mergeEffect(effects, state.stageEffect);
     if (state.awaken.active) mergeEffect(effects, state.awaken.effect);
-    else if (state.alternate) mergeEffect(effects, state.alternate.effect);
+    else if (state.alternate)
+      mergeEffect(
+        effects,
+        state.alternate.effect,
+        ENDLESS_TREASURE_EFFECT_RATE + 0.1 * (state.level - 1)
+      );
   }
   return effects;
 }
@@ -827,7 +923,9 @@ export function getTreasureRunSummary(member, run) {
 
 /** 面板展示：玩家局外拥有的全部至宝 */
 export function getPlayerTreasureViews(player) {
-  return normalizePlayerTreasures(player).map((item) => {
+  const loadout = normalizeEndlessTreasureLoadout(player);
+  const equipped = new Set(loadout.equipped);
+  return loadout.owned.map((item) => {
     const treasure = TREASURE_MAP.get(item.id);
     return {
       id: item.id,
@@ -835,6 +933,7 @@ export function getPlayerTreasureViews(player) {
       icon: treasure.icon,
       rarity: treasure.rarity,
       level: item.level,
+      equipped: equipped.has(item.id),
       desc: treasure.desc,
       awakenName: treasure.awaken?.name || null,
       awakenCondition: formatAwakenCondition(treasure.awaken),
