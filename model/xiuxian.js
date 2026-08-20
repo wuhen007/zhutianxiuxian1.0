@@ -12469,61 +12469,45 @@ export async function Synchronization_ASS(e) {
   const masterList = xiuxianConfig.Master || [];
   const userQQ = e.user_id.toString().replace('qg_', '');
   if (!e.isMaster && !masterList.includes(userQQ)) {
-    return;
+    return { scanned: 0, succeeded: 0, failed: 0, errors: [], denied: true };
   }
-  e.reply('宗门开始同步');
-  let assList = [];
-  let files = fs
-    .readdirSync('./plugins/' + AppName + '/resources/data/association')
-    .filter(file => file.endsWith('.json'));
-  for (let file of files) {
-    file = file.replace('.json', '');
-    assList.push(file);
-  }
-  for (let ass_name of assList) {
-    let ass = await data.getAssociation(ass_name);
-    let player = data.getData('player', ass.宗主);
-    let now_level_id = data.Level_list.find(
-      item => item.level_id == player.level_id
-    ).level_id;
-    //补
-    if (!isNotNull(ass.power)) {
-      ass.power = 0;
-    }
-    if (now_level_id < 42) {
-      ass.power = 0; // 凡界
-    } else {
-      ass.power = 1; //  仙界
-    }
-    if (ass.power == 1) {
-      if (ass.大阵血量 == 114514) {
-        ass.大阵血量 = 1145140;
-      }
-      let level = ass.最低加入境界;
-      if (level < 42) {
-        ass.最低加入境界 = 42;
-      }
-    }
-    if (ass.power == 0 && ass.最低加入境界 > 41) {
-      ass.最低加入境界 = 41;
-    }
-    if (!isNotNull(ass.宗门驻地)) {
-      ass.宗门驻地 = 0;
-    }
-    if (!isNotNull(ass.宗门建设等级)) {
-      ass.宗门建设等级 = 0;
-    }
-    if (!isNotNull(ass.宗门神兽)) {
-      ass.宗门神兽 = 0;
-    }
-    if (!isNotNull(ass.副宗主)) {
-      ass.副宗主 = [];
-    }
-    await data.setAssociation(ass_name, ass);
-  }
+  const files = fs.readdirSync(__PATH.association).filter(file => file.endsWith('.json'));
+  const result = { scanned: files.length, succeeded: 0, failed: 0, errors: [] };
 
-  e.reply('宗门同步结束');
-  return;
+  for (const file of files) {
+    const associationName = file.replace('.json', '');
+    try {
+      const ass = await data.getAssociation(associationName);
+      if (!ass || typeof ass !== 'object' || Array.isArray(ass)) {
+        throw new Error('宗门存档结构无效');
+      }
+
+      const owner = await data.getData('player', ass.宗主);
+      const ownerLevel = Number(owner?.level_id);
+      if (!Number.isFinite(ownerLevel)) throw new Error('宗主存档或境界无效');
+
+      ass.power = ownerLevel < 42 ? 0 : 1;
+      if (ass.power === 1) {
+        if (ass.大阵血量 == 114514) ass.大阵血量 = 1145140;
+        if ((Number(ass.最低加入境界) || 0) < 42) ass.最低加入境界 = 42;
+      } else if ((Number(ass.最低加入境界) || 0) > 41) {
+        ass.最低加入境界 = 41;
+      }
+
+      if (!isNotNull(ass.宗门驻地)) ass.宗门驻地 = 0;
+      if (!isNotNull(ass.宗门建设等级)) ass.宗门建设等级 = 0;
+      if (!isNotNull(ass.宗门神兽)) ass.宗门神兽 = 0;
+      if (!Array.isArray(ass.副宗主)) ass.副宗主 = [];
+
+      await data.setAssociation(associationName, ass);
+      result.succeeded++;
+    } catch (error) {
+      result.failed++;
+      result.errors.push({ id: associationName, reason: error?.message || '未知错误' });
+      console.error(`[一键同步] 宗门 ${associationName} 同步失败:`, error);
+    }
+  }
+  return result;
 }
 
 export async function synchronization(e) {
@@ -12531,19 +12515,20 @@ export async function synchronization(e) {
   const masterList = xiuxianConfig.Master || [];
   const userQQ = e.user_id.toString().replace('qg_', '');
   if (!e.isMaster && !masterList.includes(userQQ)) {
-    return;
+    return { scanned: 0, succeeded: 0, failed: 0, errors: [], denied: true };
   }
-  e.reply('存档开始同步');
-  let playerList = [];
-  let files = fs
-    .readdirSync('./plugins/' + AppName + '/resources/data/xiuxian_player')
-    .filter(file => file.endsWith('.json'));
-  for (let file of files) {
-    file = file.replace('.json', '');
-    playerList.push(file);
-  }
-  for (let player_id of playerList) {
-    let usr_qq = player_id;
+  const files = fs.readdirSync(__PATH.player_path).filter(file => file.endsWith('.json'));
+  const result = { scanned: files.length, succeeded: 0, failed: 0, errors: [] };
+
+  for (const file of files) {
+    const usr_qq = file.replace('.json', '');
+    await withPlayerMutationLock(usr_qq, async () => {
+      const transaction = new FileRollbackTransaction();
+      try {
+    transaction.capture(path.join(__PATH.player_path, `${usr_qq}.json`));
+    transaction.capture(path.join(__PATH.najie_path, `${usr_qq}.json`));
+    transaction.capture(path.join(__PATH.equipment_path, `${usr_qq}.json`));
+    transaction.capture(path.join(__PATH.danyao_path, `${usr_qq}.json`));
     let player = await data.getData('player', usr_qq);
     let najie = await Read_najie(usr_qq);
     let equipment = await Read_equipment(usr_qq);
@@ -12557,10 +12542,10 @@ export async function synchronization(e) {
       );
       
       if (newTalent) {
-        // 合并新旧灵根数据，保留玩家已有的自定义属性
+        // 旧存档独有字段保留，标准字段以当前物品表为准。
         player.灵根 = {
-          ...newTalent,           // 新版本的属性
-          ...player.灵根          // 保留玩家已有的属性（如果有自定义的话）
+          ...player.灵根,
+          ...newTalent,
         };
         
         console.log(`玩家 ${usr_qq} 灵根已更新: ${player.灵根.name}`);
@@ -12568,49 +12553,37 @@ export async function synchronization(e) {
     }
     // ========== 灵根同步结束 ==========
     
-    // 扩展字段数组，添加新版本字段
-    let ziduan = [
-      '镇妖塔层数', '神魄段数', '魔道值', '饱食度', '热量', '师徒任务阶段', 
-      '师徒积分', 'favorability', '血气', 'lunhuiBH', 'lunhui', '攻击加成', 
-      '防御加成', '生命加成', '幸运', '练气皮肤', '装备皮肤', 'islucky', 'sex', 
-      'addluckyNo', '神石', '源石', '生命本源', '寿元', '道法赐福天数', 
-      'daofaxianshu', 'daofaxianshu_endtime', '抽奖次数', '出金率', '出金次数', 
-      '仙宠寻宝状态', '仙宠寻宝开始时间', '五色祭坛'
+    const playerDefaults = {
+      镇妖塔层数: 0, 神魄段数: 0, 魔道值: 0, 饱食度: 0, 热量: 0,
+      师徒任务阶段: 0, 师徒积分: 0, favorability: 0, 血气: 0,
+      lunhuiBH: 0, lunhui: 0, 攻击加成: 0, 防御加成: 0, 生命加成: 0,
+      幸运: 0, 练气皮肤: 0, 装备皮肤: 0, 纳戒皮肤: 0, islucky: 0,
+      sex: 0, addluckyNo: 0, 神石: 0, 源石: 0, 道法赐福天数: 0,
+      daofaxianshu: 0, daofaxianshu_endtime: 0, 抽奖次数: 0, 出金率: 0,
+      出金次数: 0, 仙宠寻宝状态: 0, 仙宠寻宝开始时间: 0, 五色祭坛: 0,
+      Physique_id: 1, mijinglevel_id: 1, xiangulevel_id: 1, huafenlevel_id: 1,
+      linggenshow: 1, power_place: 0, occupation_level: 1, 血量上限: 1,
+      当前血量: 1, 攻击: 1, 防御: 1, 速度: 100, 仙道潜力: 0,
+      命格词条上限: 1, 心神: 0, 心神额外上限: 0, 道心: 0,
+      元神伤害加成: 0, 元神伤害减免: 0, 神通伤害加成: 0, 神通伤害减免: 0,
+      近战伤害加成: 0, 近战伤害减免: 0, 闪避率: 0, 穿透: 0,
+      治疗效果加成: 0, 每回合恢复: 0, 血上限加成: 0,
+      全伤害类型加成: 0, 全类型减免: 0, 减伤: 0, 治疗加成: 0,
+      神通加成: 0, 暴击率加成: 0, 位面传送次数: 0, 高级传送次数: 0,
+      星图: 0, linggen: [], occupation: [], 仙宠: [], 学习的功法: [],
+      附加命格: [], 记忆坐标: ['凡间'], 传送阵坐标: [], 仙宠寻宝: '',
+      道途: { version: 1, stages: {}, daily: { date: '', count: 0 } },
+    };
+    for (const [key, defaultValue] of Object.entries(playerDefaults)) {
+      if (!isNotNull(player[key])) player[key] = defaultValue;
+    }
+
+    const najieCategories = [
+      '装备', '丹药', '道具', '功法', '草药', '食材',
+      '盒子', '材料', '仙宠', '仙宠口粮', '宝石',
     ];
-    
-    let ziduan2 = [
-      'Physique_id', 'mijinglevel_id', 'xiangulevel_id', 'linggenshow', 
-      'power_place', 'occupation_level', '血量上限', '当前血量', '攻击', '防御'
-    ];
-    let ziduan3 = ['linggen', 'occupation', '仙宠'];
-    let ziduan4 = ['材料', '草药', '仙宠', '仙宠口粮', '宝石', '食材', '盒子'];
-    
-    // 初始化数值字段为0
-    for (let k of ziduan) {
-      if (!isNotNull(player[k])) {
-        player[k] = 0;
-      }
-    }
-    
-    // 初始化数值字段为1
-    for (let k of ziduan2) {
-      if (!isNotNull(player[k])) {
-        player[k] = 1;
-      }
-    }
-    
-    // 初始化数组字段
-    for (let k of ziduan3) {
-      if (!isNotNull(player[k])) {
-        player[k] = [];
-      }
-    }
-    
-    // 初始化纳戒数组字段
-    for (let k of ziduan4) {
-      if (!isNotNull(najie[k])) {
-        najie[k] = [];
-      }
+    for (const category of najieCategories) {
+      if (!Array.isArray(najie[category])) najie[category] = [];
     }
     
     // ========== 元神和元神上限特殊处理 ==========
@@ -12711,7 +12684,7 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
       player.id = usr_qq;
     }
     if (!isNotNull(player.轮回点) || player.轮回点 > 10) {
-      player.轮回点 = 10 - player.lunhui;
+      player.轮回点 = Math.max(0, 10 - (Number(player.lunhui) || 0));
     }
     
     // 初始化丹药数据
@@ -12764,16 +12737,16 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
         pet.初始加成 = 0.002;
         pet.每级增加 = 0.002;
         pet.加成 = pet.每级增加 * (pet.等级 || 1);
-        player.幸运 = player.addluckyNo + pet.加成;
+        player.幸运 = (Number(player.addluckyNo) || 0) + (Number(pet.加成) || 0);
       }
       // 其他幸运仙宠（如麒麟、鲲鹏等，根据初始加成属性判断）
       else if (isNotNull(pet.初始加成) && isNotNull(pet.每级增加)) {
         pet.加成 = pet.初始加成 + pet.每级增加 * (pet.等级 || 1);
-        player.幸运 = player.addluckyNo + pet.加成;
+        player.幸运 = (Number(player.addluckyNo) || 0) + (Number(pet.加成) || 0);
       }
       // 非幸运类型仙宠
       else {
-        player.幸运 = player.addluckyNo;
+        player.幸运 = Number(player.addluckyNo) || 0;
       }
       // 炼妖融合继承的幸运加成（type 匹配才生效，主宠自身是否幸运均可）
       const inheritLucky = pet?.炼妖继承能力;
@@ -12781,7 +12754,7 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
         player.幸运 += Number(inheritLucky.加成) || 0;
       }
     } else {
-      player.幸运 = player.addluckyNo;
+      player.幸运 = Number(player.addluckyNo) || 0;
     }
     
     // 纳戒中仙宠的加成同步
@@ -12804,8 +12777,8 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
         if (j.name == wuqi[k]) {
           j.name = wuqi2[k];
         }
-        if (equipment.武器.name == wuqi[k]) equipment.武器.name = wuqi2[k];
-        if (equipment.法宝.name == wuqi[k]) equipment.法宝.name = wuqi2[k];
+        if (equipment.武器?.name == wuqi[k]) equipment.武器.name = wuqi2[k];
+        if (equipment.法宝?.name == wuqi[k]) equipment.法宝.name = wuqi2[k];
       }
     }
     
@@ -12814,27 +12787,26 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
       j.class = '仙宠口粮';
     }
     
-    // 灵根数据同步（使用新版本的灵根列表）
-    let linggeng = data.talent_list.find(item => item.name == player.灵根.name);
+    const linggeng = player.灵根?.name
+      ? data.talent_list.find(item => item.name == player.灵根.name)
+      : null;
     if (linggeng) {
-      // 合并灵根数据，保留玩家可能存在的自定义属性
       player.灵根 = {
+        ...player.灵根,
         ...linggeng,
-        ...player.灵根
       };
     }
 
-    // 隐藏灵根（保持不变）
     if (player.隐藏灵根) {
-      player.隐藏灵根 = data.yincang.find(
+      const hiddenTalent = data.yincang.find(
         item => item.name == player.隐藏灵根.name
       );
+      if (hiddenTalent) player.隐藏灵根 = { ...player.隐藏灵根, ...hiddenTalent };
     }
     
     // 重新根据id去重置仙门（保持不变）
-    let now_level_id = await data.Level_list.find(
-      item => item.level_id == player.level_id
-    ).level_id;
+    const levelEntry = data.Level_list.find(item => item.level_id == player.level_id);
+    const now_level_id = Number(levelEntry?.level_id ?? player.level_id) || 1;
     if (now_level_id < 42) {
       player.power_place = 0;
     }
@@ -12843,12 +12815,25 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
     await Write_najie(usr_qq, najie);
     await Write_player(usr_qq, player);
     await Write_equipment(usr_qq, equipment);
-    
-    // 记录同步信息（可选，用于调试）
-    console.log(`玩家 ${usr_qq} 同步完成：境界${level_id} 元神${player.元神} 生命本源${player.生命本源} 寿元${player.寿元}`);
+    transaction.commit();
+    result.succeeded++;
+
+    console.log(`[一键同步] 玩家 ${usr_qq} 同步完成：境界${level_id} 元神${player.元神} 生命本源${player.生命本源} 寿元${player.寿元}`);
+      } catch (error) {
+        try {
+          transaction.rollback();
+        } catch (rollbackError) {
+          console.error(`[一键同步] 玩家 ${usr_qq} 回滚失败:`, rollbackError);
+        } finally {
+          invalidateBattleEquipmentCache(usr_qq);
+        }
+        result.failed++;
+        result.errors.push({ id: usr_qq, reason: error?.message || '未知错误' });
+        console.error(`[一键同步] 玩家 ${usr_qq} 同步失败:`, error);
+      }
+    });
   }
-  e.reply('存档同步结束');
-  return;
+  return result;
 }
 
 export async function channel(usr_qq) {

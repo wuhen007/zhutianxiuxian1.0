@@ -1244,9 +1244,45 @@ async all_shenyao(e) {
 
   async all_tongbu(e) {
     if (!verc({ e })) return false;
-    await synchronization(e);
-    await Synchronization_ASS(e);
-    return false;
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    const masterList = config.getConfig('xiuxian', 'xiuxian').Master || [];
+    if (!e.isMaster && !masterList.includes(userQQ)) {
+      return e.reply('你没有权限执行一键同步');
+    }
+
+    const lockKey = `xiuxian:${AppName}:archive-sync`;
+    const lockToken = `${userQQ}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    if (!await redis.set(lockKey, lockToken, { EX: 3600, NX: true })) {
+      return e.reply('已有一键同步任务正在执行，请稍后再试');
+    }
+
+    try {
+      await e.reply('一键同步开始，正在校准玩家存档与宗门数据');
+      const playerResult = await synchronization(e);
+      const associationResult = await Synchronization_ASS(e);
+      const failureSamples = [
+        ...(playerResult.errors || []).map(item => `玩家 ${item.id}：${item.reason}`),
+        ...(associationResult.errors || []).map(item => `宗门 ${item.id}：${item.reason}`),
+      ].slice(0, 8);
+      const lines = [
+        '【一键同步完成】',
+        `玩家存档：成功 ${playerResult.succeeded}/${playerResult.scanned}，失败 ${playerResult.failed}`,
+        `宗门数据：成功 ${associationResult.succeeded}/${associationResult.scanned}，失败 ${associationResult.failed}`,
+      ];
+      if (failureSamples.length) lines.push('', '失败样本：', ...failureSamples);
+      await e.reply(lines.join('\n'));
+      return true;
+    } catch (error) {
+      console.error('[一键同步] 执行失败:', error);
+      await e.reply(`一键同步异常中止：${error?.message || '未知错误'}`);
+      return false;
+    } finally {
+      try {
+        if (await redis.get(lockKey) === lockToken) await redis.del(lockKey);
+      } catch (error) {
+        console.error('[一键同步] 释放互斥锁失败:', error);
+      }
+    }
   }
 //一键出售
 async Sell_all_comodities(e) {

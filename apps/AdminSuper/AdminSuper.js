@@ -1708,4 +1708,3 @@ async function clearNajieThing(thingType, thingName) {
     })
     .filter(usrObj => usrObj);
 }
-
