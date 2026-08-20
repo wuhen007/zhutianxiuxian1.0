@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <title>诸天世界 · 网页原型</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="prototype-page" data-theme="celestial" data-view="chat">
+  <a class="skip-link" href="#world-chat">跳到世界传音</a>
+  <div class="world-backdrop" aria-hidden="true"></div>
+
+  <header class="world-topbar">
+    <a class="world-brand" href="index.html" aria-label="返回模板选择">
+      <span class="brand-seal" aria-hidden="true">诸</span>
+      <span>
+        <b>诸天万界</b>
+        <small>WORLD NEXUS</small>
+      </span>
+    </a>
+
+    <nav class="primary-nav" aria-label="世界功能">
+      <button class="nav-command is-active" type="button" data-view-target="chat">
+        <i data-lucide="messages-square" aria-hidden="true"></i><span>世界传音</span>
+      </button>
+      <button class="nav-command" type="button" data-view-target="market">
+        <i data-lucide="arrow-left-right" aria-hidden="true"></i><span>跨服交易</span>
+      </button>
+      <button class="nav-command" type="button" data-view-target="realms">
+        <i data-lucide="orbit" aria-hidden="true"></i><span>诸天位面</span>
+      </button>
+      <button class="nav-command" type="button" data-view-target="raid">
+        <i data-lucide="swords" aria-hidden="true"></i><span>跨服团本</span>
+      </button>
+    </nav>
+
+    <div class="topbar-actions">
+      <label class="theme-select">
+        <span class="sr-only">切换模板</span>
+        <select id="theme-select" aria-label="切换模板">
+          <option value="celestial">星海天门</option>
+          <option value="forge">玄金界市</option>
+          <option value="scroll">太虚云笺</option>
+        </select>
+      </label>
+      <button class="icon-button" id="notification-button" type="button" title="世界通知" aria-label="世界通知">
+        <i data-lucide="bell" aria-hidden="true"></i><span class="notification-dot"></span>
+      </button>
+      <div class="realm-identity">
+        <span class="online-dot"></span>
+        <span><b>中央大宇宙</b><small>已连接 · 43 位道友</small></span>
+      </div>
+    </div>
+  </header>
+
+  <main class="world-shell">
+    <aside class="realm-rail panel" data-panel="realms" aria-label="诸天位面">
+      <header class="panel-head">
+        <div><span class="kicker">REALM PULSE</span><h2>诸天位面</h2></div>
+        <button class="icon-button subtle" type="button" title="刷新位面" aria-label="刷新位面">
+          <i data-lucide="refresh-cw" aria-hidden="true"></i>
+        </button>
+      </header>
+
+      <div class="realm-overview">
+        <span>在线位面</span><strong>08</strong>
+        <small>比昨日增加 2 个世界</small>
+      </div>
+
+      <div class="realm-list">
+        <button class="realm-row is-current" type="button">
+          <span class="realm-glyph">央</span>
+          <span><b>中央大宇宙</b><small>43 人 · 花粉路 7</small></span>
+          <i class="status-beacon"></i>
+        </button>
+        <button class="realm-row" type="button">
+          <span class="realm-glyph">多</span>
+          <span><b>多元宇宙</b><small>28 人 · 仙古 12</small></span>
+          <i class="status-beacon"></i>
+        </button>
+        <button class="realm-row" type="button">
+          <span class="realm-glyph">洪</span>
+          <span><b>洪荒古界</b><small>17 人 · 秘境 19</small></span>
+          <i class="status-beacon"></i>
+        </button>
+        <button class="realm-row" type="button">
+          <span class="realm-glyph">尘</span>
+          <span><b>九天尘域</b><small>11 人 · 花粉路 3</small></span>
+          <i class="status-beacon is-idle"></i>
+        </button>
+      </div>
+
+      <section class="raid-brief" data-panel="raid">
+        <div class="raid-brief-icon"><i data-lucide="swords" aria-hidden="true"></i></div>
+        <span>跨服团本</span>
+        <h3>葬仙古域</h3>
+        <p>已集结 4/5 · 还剩 08:32</p>
+        <button class="text-button" type="button">查看队伍 <i data-lucide="chevron-right" aria-hidden="true"></i></button>
+      </section>
+    </aside>
+
+    <section class="chat-stage panel" id="world-chat" data-panel="chat">
+      <header class="panel-head chat-head">
+        <div>
+          <span class="kicker">WORLD TRANSMISSION</span>
+          <h1>世界传音</h1>
+        </div>
+        <div class="channel-filters" role="group" aria-label="消息筛选">
+          <button class="is-active" type="button" data-filter="all">全部</button>
+          <button type="button" data-filter="trade">交易</button>
+          <button type="button" data-filter="raid">团本</button>
+        </div>
+      </header>
+
+      <div class="world-notice">
+        <i data-lucide="sparkles" aria-hidden="true"></i>
+        <p><b>诸天法旨</b>　本日跨服通道稳定，玄黄母气与圣法碎片仍受世界规则封禁。</p>
+        <time>15:32</time>
+      </div>
+
+      <div class="message-stream" id="message-stream" aria-live="polite">
+        <article class="message" data-message-kind="all">
+          <div class="sender-seal seal-jade">尘</div>
+          <div class="message-body">
+            <header><b>本尘&發財</b><span>中央大宇宙</span><time>15:41</time></header>
+            <p>葬仙古域还差一位主攻，有没有擅长元神镇压的道友？</p>
+            <div class="message-actions"><button type="button">回应</button><button type="button">查看道号</button></div>
+          </div>
+        </article>
+
+        <article class="message is-trade" data-message-kind="trade">
+          <div class="sender-seal seal-gold">商</div>
+          <div class="message-body">
+            <header><b>世蝣人</b><span>多元宇宙</span><time>15:39</time></header>
+            <p>发布了一份跨服交易委托</p>
+            <div class="inline-trade">
+              <div><small>对方提供</small><strong>秘境之匙 <em>× 1</em></strong></div>
+              <i data-lucide="arrow-right-left" aria-hidden="true"></i>
+              <div><small>对方需求</small><strong>灵石 <em>× 10,000</em></strong></div>
+              <button type="button" data-action="accept">查看委托</button>
+            </div>
+          </div>
+        </article>
+
+        <article class="message" data-message-kind="all">
+          <div class="sender-seal seal-cinnabar">烬</div>
+          <div class="message-body">
+            <header><b>赤霄客</b><span>洪荒古界</span><time>15:36</time></header>
+            <p>刚从无尽劫境出来，星图第三途的“倒悬天河”会压制恢复，后来的道友记得带净化。</p>
+            <figure class="message-image">
+              <img src="../../img/help/zhutian.jpg" alt="无尽星海中的位面通道">
+              <figcaption>无尽劫境 · 倒悬天河</figcaption>
+            </figure>
+          </div>
+        </article>
+
+        <article class="message is-raid" data-message-kind="raid">
+          <div class="sender-seal seal-blue">征</div>
+          <div class="message-body">
+            <header><b>跨服征召</b><span>诸天总机</span><time>15:33</time></header>
+            <div class="raid-call">
+              <span>团本征召</span><strong>葬仙古域 · 4/5</strong>
+              <p>队长：本尘&發財　要求：花粉路 3 以上</p>
+              <button type="button">化身入队</button><button class="quiet-button" type="button">进入观战</button>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <form class="chat-composer" id="chat-form">
+        <button class="icon-button subtle" type="button" title="添加图片" aria-label="添加图片"><i data-lucide="image-plus" aria-hidden="true"></i></button>
+        <label>
+          <span class="sr-only">世界发言内容</span>
+          <textarea id="chat-input" rows="1" maxlength="300" placeholder="向诸天万界传音…"></textarea>
+        </label>
+        <span class="composer-count"><b id="message-count">0</b>/300</span>
+        <button class="send-button" type="submit"><i data-lucide="send" aria-hidden="true"></i><span>传音</span></button>
+      </form>
+    </section>
+
+    <aside class="inventory-panel panel" data-panel="inventory">
+      <header class="panel-head">
+        <div><span class="kicker">SPATIAL RING</span><h2>我的纳戒</h2></div>
+        <span class="capacity">34 / 80</span>
+      </header>
+
+      <label class="inventory-search">
+        <i data-lucide="search" aria-hidden="true"></i>
+        <span class="sr-only">搜索纳戒</span>
+        <input id="inventory-search" type="search" placeholder="搜索物品">
+      </label>
+
+      <div class="currency-strip">
+        <div><span>灵石</span><b>1,280,000</b></div>
+        <div><span>源石</span><b>8,630</b></div>
+      </div>
+
+      <div class="inventory-list" id="inventory-list">
+        <button class="inventory-item is-selected" type="button" data-name="秘境之匙" data-count="8" data-type="道具">
+          <span class="item-rune">钥</span><span><b>秘境之匙</b><small>道具 · 可跨服</small></span><strong>8</strong>
+        </button>
+        <button class="inventory-item" type="button" data-name="悟道茶" data-count="12" data-type="道具">
+          <span class="item-rune">茶</span><span><b>悟道茶</b><small>道具 · 可跨服</small></span><strong>12</strong>
+        </button>
+        <button class="inventory-item" type="button" data-name="九转仙丹" data-count="3" data-type="丹药">
+          <span class="item-rune">丹</span><span><b>九转仙丹</b><small>丹药 · 可跨服</small></span><strong>3</strong>
+        </button>
+        <button class="inventory-item" type="button" data-name="玄玉髓" data-count="46" data-type="材料">
+          <span class="item-rune">玉</span><span><b>玄玉髓</b><small>材料 · 可跨服</small></span><strong>46</strong>
+        </button>
+        <button class="inventory-item is-locked" type="button" disabled data-name="圣法碎片" data-count="2">
+          <span class="item-rune"><i data-lucide="lock-keyhole" aria-hidden="true"></i></span><span><b>圣法碎片</b><small>世界规则封禁</small></span><strong>2</strong>
+        </button>
+      </div>
+
+      <form class="trade-maker" id="trade-form">
+        <div class="trade-maker-title"><span>创建委托</span><small>双方服主已互通</small></div>
+        <label><span>目标位面</span>
+          <select id="trade-realm">
+            <option>多元宇宙</option><option>洪荒古界</option><option>九天尘域</option>
+          </select>
+        </label>
+        <div class="trade-fields">
+          <label><span>我方提供</span><input id="offer-name" value="秘境之匙" readonly></label>
+          <label class="amount-field"><span>数量</span><input id="offer-count" type="number" min="1" max="8" value="1"></label>
+        </div>
+        <div class="trade-swap" aria-hidden="true"><i data-lucide="arrow-down" aria-hidden="true"></i><span>交换</span></div>
+        <div class="want-kind" role="group" aria-label="需求类型">
+          <button class="is-active" type="button" data-want-kind="currency">灵石 / 源石</button>
+          <button type="button" data-want-kind="item">以物易物</button>
+        </div>
+        <div class="trade-fields" id="currency-want-fields">
+          <label><span>我方需求</span><select id="want-name"><option>灵石</option><option>源石</option></select></label>
+          <label class="amount-field"><span>数量</span><input id="want-count" type="number" min="1" value="10000"></label>
+        </div>
+        <div class="trade-fields" id="item-want-fields" hidden>
+          <label><span>指定物品</span><input id="want-item-name" list="tradeable-items" placeholder="输入或选择物品"></label>
+          <label class="amount-field"><span>数量</span><input id="want-item-count" type="number" min="1" value="1"></label>
+          <datalist id="tradeable-items">
+            <option value="悟道茶"></option>
+            <option value="九转仙丹"></option>
+            <option value="玄玉髓"></option>
+            <option value="秘境之匙"></option>
+          </datalist>
+        </div>
+        <button class="primary-button" type="submit"><i data-lucide="send" aria-hidden="true"></i>发布跨服交易</button>
+      </form>
+    </aside>
+
+    <section class="market-panel panel" data-panel="market">
+      <header class="panel-head">
+        <div><span class="kicker">CROSS-REALM EXCHANGE</span><h2>跨服委托</h2></div>
+        <div class="market-tabs" role="group" aria-label="委托分类">
+          <button class="is-active" type="button">收到的</button><button type="button">我发布的</button>
+        </div>
+      </header>
+      <div class="trade-grid" id="trade-grid">
+        <article class="trade-card">
+          <header><span class="realm-glyph">多</span><div><b>多元宇宙</b><small>世蝣人 · 12 分钟后失效</small></div><code>TR-7K2A</code></header>
+          <div class="exchange-line"><span><small>获得</small><b>秘境之匙 ×1</b></span><i data-lucide="arrow-right-left" aria-hidden="true"></i><span><small>支付</small><b>灵石 ×10,000</b></span></div>
+          <footer><span>诸天规则校验通过</span><button type="button" data-action="accept">接受委托</button></footer>
+        </article>
+        <article class="trade-card">
+          <header><span class="realm-glyph">洪</span><div><b>洪荒古界</b><small>青冥子 · 21 分钟后失效</small></div><code>TR-3M9Q</code></header>
+          <div class="exchange-line"><span><small>获得</small><b>九转仙丹 ×2</b></span><i data-lucide="arrow-right-left" aria-hidden="true"></i><span><small>支付</small><b>玄玉髓 ×10</b></span></div>
+          <footer><span>诸天规则校验通过</span><button type="button" data-action="accept">接受委托</button></footer>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <nav class="mobile-nav" aria-label="手机端功能">
+    <button class="is-active" type="button" data-view-target="chat"><i data-lucide="messages-square" aria-hidden="true"></i><span>传音</span></button>
+    <button type="button" data-view-target="market"><i data-lucide="arrow-left-right" aria-hidden="true"></i><span>交易</span></button>
+    <button type="button" data-view-target="inventory"><i data-lucide="package-open" aria-hidden="true"></i><span>纳戒</span></button>
+    <button type="button" data-view-target="realms"><i data-lucide="orbit" aria-hidden="true"></i><span>位面</span></button>
+  </nav>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script src="prototype.js"></script>
+</body>
+</html>

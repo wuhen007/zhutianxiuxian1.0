@@ -3,6 +3,7 @@ import { plugin } from '../../api/api.js';
 import { segment } from 'icqq';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import data from '../../model/XiuxianData.js';
 import {
   Add_najie_thing,
   Add_灵石,
@@ -16,7 +17,10 @@ import { clientFilter } from './filter.js';
 import { formatWorldChatMessage } from './presentation.js';
 import {
   cleanTradeLabel,
+  extractTradeRealmPrefix,
+  parseCompactTradeBundle,
   parseTradeBundle,
+  resolveTradeRealm,
   validateTradeOffer,
 } from './trade.js';
 import {
@@ -26,6 +30,47 @@ import {
 } from './runtime.js';
 
 const USER_COOLDOWN_MS = 5_000;
+const TRADE_NAJIE_TYPES = [
+  '装备', '丹药', '道具', '功法', '草药', '食材', '盒子',
+  '材料', '仙宠', '仙宠口粮', '宝石',
+];
+const TRADE_ITEM_POOLS = [
+  ['道具', ['daoju_list']],
+  ['丹药', ['danyao_list', 'newdanyao_list', 'timedanyao_list']],
+  ['功法', ['gongfa_list', 'timegongfa_list', 'dijingList']],
+  ['草药', ['caoyao_list']],
+  ['食材', ['shicai_list']],
+  ['材料', ['cailiao_list', 'duanzhaocailiao', 'jingshenyuzhou_drop_list']],
+  ['盒子', ['hezi_list']],
+  ['仙宠口粮', ['xianchonkouliang', 'xianchonkouliang2']],
+  ['仙宠', ['xianchon', 'changzhuxianchon', 'tupoxianchon']],
+  ['宝石', ['baoshi_list']],
+  ['装备', ['equipment_list']],
+];
+
+function resolveTradeItemType(name, najie = {}) {
+  for (const type of TRADE_NAJIE_TYPES) {
+    if (Array.isArray(najie[type]) && najie[type].some((item) => item?.name === name)) {
+      return type;
+    }
+  }
+  for (const [type, pools] of TRADE_ITEM_POOLS) {
+    if (pools.some((pool) => Array.isArray(data[pool]) && data[pool].some((item) => item?.name === name))) {
+      return type;
+    }
+  }
+  return '';
+}
+
+function realmResolutionError(result, reference) {
+  if (result?.reason === 'realm_name_ambiguous') {
+    const choices = (result.matches || [])
+      .map((realm) => `${realm.name}（${realm.server_id}）`)
+      .join('\n');
+    return `位面名称「${reference}」有重复，请改用位面标识：\n${choices}`;
+  }
+  return `未找到在线位面「${reference}」，请先发送「#跨服交易 位面」查看`;
+}
 
 function senderName(e) {
   return String(
@@ -540,6 +585,39 @@ export class WorldChat extends plugin {
     return true;
   }
 
+  async publishTrade(e, targetServerId, give, want) {
+    const validation = validateTradeOffer(give, want);
+    if (!validation.ok) return e.reply(`报价被诸天规则拦截：${validation.reason}`);
+    const { userId, tag } = this.rememberTradeUser(e);
+    const pending = `P_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    try {
+      await this.prepareTradeEscrow(
+        pending,
+        userId,
+        'seller',
+        validation.give,
+        validation.want
+      );
+      const result = await client.createTrade({
+        target_server_id: targetServerId,
+        seller_tag: tag,
+        give: validation.give,
+        want: validation.want,
+      });
+      if (!result.ok) {
+        if (result.reason !== 'timeout') await this.rollbackLocalTrade(pending);
+        return e.reply(`跨服交易发布失败：${result.reason || '未知错误'}`);
+      }
+      await this.migrateTradeEscrow(pending, result.trade.code);
+      return e.reply(
+        `跨服交易已发布，交易码：${result.trade.code}\n提供：${tradeSummary(validation.give)}\n需求：${tradeSummary(validation.want)}`
+      );
+    } catch (error) {
+      await this.rollbackLocalTrade(pending);
+      return e.reply(`跨服交易发布失败：${error.message}`);
+    }
+  }
+
   async tradeCommand(e) {
     if (!this.requireJoinedGroup(e)) return true;
     const raw = e.msg.replace(/^#跨服交易\s*/, '').trim();
@@ -548,10 +626,13 @@ export class WorldChat extends plugin {
         '【跨服交易规则】',
         '允许：灵石、源石、普通纳戒物品，以物易物或货币交换。',
         '禁止：圣法碎片、至宝、帝兵及超出单笔上限的数量。',
-        '发布：#跨服交易 发布 sv_x 给=物品|道具|名称|数量 换=灵石|数量',
+        '发布：#跨服交易 位面名 秘境之匙*1 换 灵石*10000',
+        '位面名也可替换为 sv_x 标识；多项物品用逗号分隔',
+        '旧格式仍可用：#跨服交易 发布 sv_x 给=物品|道具|名称|数量 换=灵石|数量',
+        '许可：#跨服交易 同意 位面名',
         '查看：#跨服交易 位面 / #跨服交易 列表',
         '成交：#跨服交易 接受 交易码；撤销：#跨服交易 取消 交易码',
-        '服主先执行「#跨服交易 开启」，再用「#跨服交易 同意 sv_x」开放指定位面。',
+        '服主先执行「#跨服交易 开启」，再用「#跨服交易 同意 位面名或sv_x」开放指定位面。',
       ].join('\n'));
     }
 
@@ -561,10 +642,29 @@ export class WorldChat extends plugin {
       return e.reply(`本服跨服交易已${raw === '开启' ? '开启' : '关闭'}，仍需单独同意交易位面`);
     }
 
-    const allowMatch = raw.match(/^(同意|拒绝)\s+([A-Za-z0-9_-]{3,64})$/i);
+    const allowMatch = raw.match(/^(同意|拒绝)\s+([\s\S]+)$/i);
     if (allowMatch) {
       if (!e.isMaster) return e.reply('仅机器人管理员可设置位面交易许可');
-      const serverId = allowMatch[2];
+      const reference = allowMatch[2].trim();
+      const realms = await client.listRealms();
+      const resolved = realms.ok
+        ? resolveTradeRealm(realms.realms, reference)
+        : { ok: false, reason: 'realm_not_found' };
+      if (resolved.reason === 'realm_name_ambiguous') {
+        return e.reply(realmResolutionError(resolved, reference));
+      }
+      const serverId = resolved.ok
+        ? resolved.realm.server_id
+        : /^[A-Za-z0-9_-]{3,64}$/.test(reference)
+          ? reference
+          : '';
+      if (!serverId) {
+        return e.reply(
+          realms.ok
+            ? realmResolutionError(resolved, reference)
+            : `位面查询失败：${realms.reason || '总机未连接'}`
+        );
+      }
       const current = new Set(client.cfg.trade_allow_servers || []);
       const denied = new Set(client.cfg.trade_deny_servers || []);
       if (allowMatch[1] === '同意') {
@@ -618,34 +718,59 @@ export class WorldChat extends plugin {
       ].join('\n\n'));
     }
 
-    const publishMatch = raw.match(/^发布\s+([A-Za-z0-9_-]{3,64})\s+给[=:]([\s\S]+?)\s+换[=:]([\s\S]+)$/i);
+    const publishMatch = raw.match(/^发布\s+([\s\S]+?)\s+给[=:]([\s\S]+?)\s+换[=:]([\s\S]+)$/i);
     if (publishMatch) {
-      const targetServerId = publishMatch[1];
+      const reference = publishMatch[1].trim();
+      const realms = await client.listRealms();
+      const resolved = realms.ok
+        ? resolveTradeRealm(realms.realms, reference)
+        : { ok: false, reason: 'realm_not_found' };
+      if (resolved.reason === 'realm_name_ambiguous') {
+        return e.reply(realmResolutionError(resolved, reference));
+      }
+      const targetServerId = resolved.ok
+        ? resolved.realm.server_id
+        : /^[A-Za-z0-9_-]{3,64}$/.test(reference)
+          ? reference
+          : '';
+      if (!targetServerId) {
+        return e.reply(
+          realms.ok
+            ? realmResolutionError(resolved, reference)
+            : `位面查询失败：${realms.reason || '总机未连接'}`
+        );
+      }
       const give = parseTradeBundle(publishMatch[2]);
       const want = parseTradeBundle(publishMatch[3]);
       if (!give.ok || !want.ok) return e.reply(`报价格式错误：${give.ok ? want.reason : give.reason}`);
-      const validation = validateTradeOffer(give.items, want.items);
-      if (!validation.ok) return e.reply(`报价被诸天规则拦截：${validation.reason}`);
-      const { userId, tag } = this.rememberTradeUser(e);
-      const pending = `P_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-      try {
-        await this.prepareTradeEscrow(pending, userId, 'seller', validation.give, validation.want);
-        const result = await client.createTrade({
-          target_server_id: targetServerId,
-          seller_tag: tag,
-          give: validation.give,
-          want: validation.want,
-        });
-        if (!result.ok) {
-          if (result.reason !== 'timeout') await this.rollbackLocalTrade(pending);
-          return e.reply(`跨服交易发布失败：${result.reason || '未知错误'}`);
-        }
-        await this.migrateTradeEscrow(pending, result.trade.code);
-        return e.reply(`跨服交易已发布，交易码：${result.trade.code}\n提供：${tradeSummary(validation.give)}\n需求：${tradeSummary(validation.want)}`);
-      } catch (error) {
-        await this.rollbackLocalTrade(pending);
-        return e.reply(`跨服交易发布失败：${error.message}`);
+      return this.publishTrade(e, targetServerId, give.items, want.items);
+    }
+
+    const compactMatch = raw
+      .replace(/^发布\s+/i, '')
+      .match(/^([\s\S]+?)\s+换\s+([\s\S]+)$/i);
+    if (compactMatch) {
+      const realms = await client.listRealms();
+      if (!realms.ok) {
+        return e.reply(`位面查询失败：${realms.reason || '总机未连接'}`);
       }
+      const target = extractTradeRealmPrefix(realms.realms, compactMatch[1]);
+      if (!target.ok) {
+        return e.reply(realmResolutionError(target, compactMatch[1].trim()));
+      }
+      const najie = await Read_najie(e.user_id).catch(() => ({}));
+      const resolveItemType = (name) => resolveTradeItemType(name, najie);
+      const give = parseCompactTradeBundle(target.rest, resolveItemType);
+      const want = parseCompactTradeBundle(compactMatch[2], resolveItemType);
+      if (!give.ok || !want.ok) {
+        return e.reply(`报价格式错误：${give.ok ? want.reason : give.reason}`);
+      }
+      return this.publishTrade(
+        e,
+        target.realm.server_id,
+        give.items,
+        want.items
+      );
     }
 
     const acceptMatch = raw.match(/^接受\s+([A-Za-z0-9_-]{6,80})$/i);

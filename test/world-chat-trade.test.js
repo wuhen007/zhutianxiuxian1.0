@@ -8,8 +8,11 @@ import test from 'node:test';
 import { WorldChatClient } from '../apps/worldChat/client.js';
 import {
   TRADE_LIMITS,
+  extractTradeRealmPrefix,
   normalizeTradeAsset,
+  parseCompactTradeBundle,
   parseTradeBundle,
+  resolveTradeRealm,
   tradePolicyAllows,
   validateTradeOffer,
 } from '../apps/worldChat/trade.js';
@@ -61,6 +64,40 @@ test('跨服交易规则拦截禁售物品和超额数量', () => {
       { kind: 'currency', name: '灵石', amount: 1000 },
     ],
   });
+});
+
+test('跨服交易简写支持位面名称和星号数量', () => {
+  const realms = [
+    { server_id: 'sv_multi', name: '多元宇宙' },
+    { server_id: 'sv_central', name: '中央大宇宙' },
+  ];
+  assert.equal(resolveTradeRealm(realms, 'sv_multi').realm.name, '多元宇宙');
+  assert.equal(resolveTradeRealm(realms, '多元宇宙').realm.server_id, 'sv_multi');
+
+  const target = extractTradeRealmPrefix(realms, '多元宇宙秘境之匙**1');
+  assert.equal(target.ok, true);
+  assert.equal(target.realm.server_id, 'sv_multi');
+  assert.equal(target.rest, '秘境之匙**1');
+
+  const resolveType = (name) => name === '秘境之匙' ? '道具' : '';
+  assert.deepEqual(parseCompactTradeBundle('秘境之匙*1', resolveType), {
+    ok: true,
+    items: [{ kind: 'item', type: '道具', name: '秘境之匙', amount: 1 }],
+  });
+  assert.deepEqual(parseCompactTradeBundle('灵石×10000', resolveType), {
+    ok: true,
+    items: [{ kind: 'currency', name: '灵石', amount: 10000 }],
+  });
+});
+
+test('重名位面要求改用唯一标识', () => {
+  const result = resolveTradeRealm([
+    { server_id: 'sv_a', name: '同名位面' },
+    { server_id: 'sv_b', name: '同名位面' },
+  ], '同名位面');
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'realm_name_ambiguous');
+  assert.equal(result.matches.length, 2);
 });
 
 test('总机提供位面概况并完成双端跨服交易结算', async (t) => {

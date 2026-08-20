@@ -13,12 +13,12 @@ test('跨服世界消息使用醒目的固定信封格式', () => {
     groups: ['10001'],
   });
 
-  assert.match(output, /^【🌐 跨服世界发言】/);
+  assert.match(output, /^【诸天世界 🌐 跨服世界发言】/);
   assert.match(output, /区服：区服-甲/);
   assert.match(output, /发言人：道友甲/);
   assert.match(output, /内容：诸天见！/);
   assert.match(output, /来源群：10001/);
-  assert.equal(output.split('\n').at(-1), '━━━━━━━━━━━━━━━━━━━━');
+  assert.doesNotMatch(output, /━/);
 });
 
 test('只有图片时显示图片提示', () => {

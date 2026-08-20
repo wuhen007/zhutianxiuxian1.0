@@ -12,7 +12,7 @@ import {
   publicTradeView,
   tradePolicyAllows,
   validateTradeOffer,
-} from '../apps/worldChat/trade.js';
+} from './trade.js';
 
 const SERVER_FILE = fileURLToPath(import.meta.url);
 const SERVER_DIR = path.dirname(SERVER_FILE);
