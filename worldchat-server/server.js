@@ -320,6 +320,24 @@ export function createWorldChatServer(options = {}) {
     if (peer) send(peer.ws, { type, trade: publicTradeView(trade), ...extra });
   }
 
+  function redeliverTradeSettlements(serverId) {
+    for (const trade of trades.values()) {
+      if (trade.status !== 'settling') continue;
+      if (trade.seller_server_id === serverId && !trade.settlement?.seller) {
+        sendTradeEvent(serverId, 'TRADE_SETTLE', trade, {
+          role: 'seller',
+          member_tag: trade.seller_tag,
+        });
+      }
+      if (trade.buyer_server_id === serverId && !trade.settlement?.buyer) {
+        sendTradeEvent(serverId, 'TRADE_SETTLE', trade, {
+          role: 'buyer',
+          member_tag: trade.buyer_tag,
+        });
+      }
+    }
+  }
+
   function sendRaidEvent(serverId, type, raid, extra = {}) {
     const peer = online.get(serverId);
     if (peer) send(peer.ws, { type, raid: raidForClient(raid), ...extra });
@@ -668,6 +686,7 @@ export function createWorldChatServer(options = {}) {
           total: messages.length,
           last_seq: nextSeq - 1,
         });
+        redeliverTradeSettlements(serverId);
         logger.info(
           `[worldchat] HELLO ${connection.name} (${serverId}), online=${online.size}`
         );
@@ -681,7 +700,9 @@ export function createWorldChatServer(options = {}) {
         return send(ws, { type: 'PONG', ts: Date.now() });
       if (message.type === 'SYNC') {
         syncPresence(connection, message);
-        return send(ws, { type: 'SYNC_ACK', ok: true, last_seq: nextSeq - 1 });
+        send(ws, { type: 'SYNC_ACK', ok: true, last_seq: nextSeq - 1 });
+        redeliverTradeSettlements(connection.serverId);
+        return;
       }
 
       if (message.type === 'REALM_LIST') {
@@ -721,6 +742,10 @@ export function createWorldChatServer(options = {}) {
           seller_server_id: connection.serverId,
           seller_name: connection.name,
           seller_tag: String(message.seller_tag || ''),
+          seller_anonymous: message.seller_anonymous === true,
+          seller_player_name: message.seller_anonymous === true
+            ? ''
+            : cleanLabel(message.seller_player_name, 30) || '无名道友',
           target_server_id: target.serverId,
           target_name: target.name,
           give: offer.give,
@@ -797,6 +822,10 @@ export function createWorldChatServer(options = {}) {
         trade.buyer_server_id = connection.serverId;
         trade.buyer_name = connection.name;
         trade.buyer_tag = buyerTag;
+        trade.buyer_anonymous = message.buyer_anonymous === true;
+        trade.buyer_player_name = trade.buyer_anonymous
+          ? ''
+          : cleanLabel(message.buyer_player_name, 30) || '无名道友';
         trade.settlement = { seller: false, buyer: false };
         trade.accepted_at = Date.now();
         saveTrades();
@@ -837,8 +866,14 @@ export function createWorldChatServer(options = {}) {
           trade.status = 'completed';
           trade.completed_at = Date.now();
           saveTrades();
-          sendTradeEvent(trade.seller_server_id, 'TRADE_COMPLETED', trade);
-          sendTradeEvent(trade.buyer_server_id, 'TRADE_COMPLETED', trade);
+          sendTradeEvent(trade.seller_server_id, 'TRADE_COMPLETED', trade, {
+            role: 'seller',
+            member_tag: trade.seller_tag,
+          });
+          sendTradeEvent(trade.buyer_server_id, 'TRADE_COMPLETED', trade, {
+            role: 'buyer',
+            member_tag: trade.buyer_tag,
+          });
         } else {
           saveTrades();
         }

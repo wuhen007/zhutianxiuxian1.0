@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <title>诸天世界 · 世界枢纽</title>
+  <link rel="stylesheet" href="/world/style.css?v=20260820">
+</head>
+<body class="prototype-page" data-theme="celestial" data-view="chat">
+  <a class="skip-link" href="#world-chat">跳到世界传音</a>
+  <div class="world-backdrop" aria-hidden="true"></div>
+
+  <header class="world-topbar">
+    <a class="world-brand" href="/world" aria-label="刷新世界网页">
+      <span class="brand-seal" aria-hidden="true">诸</span>
+      <span><b>诸天万界</b><small>WORLD NEXUS</small></span>
+    </a>
+    <nav class="primary-nav" aria-label="世界功能">
+      <button class="nav-command is-active" type="button" data-view-target="chat"><i data-lucide="messages-square"></i><span>世界传音</span></button>
+      <button class="nav-command" type="button" data-view-target="market"><i data-lucide="arrow-left-right"></i><span>跨服交易</span></button>
+      <button class="nav-command" type="button" data-view-target="inventory"><i data-lucide="package-open"></i><span>我的纳戒</span></button>
+      <button class="nav-command" type="button" data-view-target="realms"><i data-lucide="orbit"></i><span>诸天位面</span></button>
+    </nav>
+    <div class="topbar-actions">
+      <label class="theme-select"><span class="sr-only">切换界面风格</span>
+        <select id="theme-select"><option value="celestial">星海天门</option><option value="forge">玄金界市</option><option value="scroll">太虚云笺</option></select>
+      </label>
+      <button class="icon-button" id="refresh-button" type="button" title="刷新世界状态" aria-label="刷新世界状态"><i data-lucide="refresh-cw"></i></button>
+      <div class="realm-identity"><span class="online-dot"></span><span><b id="current-realm">读取中</b><small id="connection-copy" class="connection-copy">连接诸天总机</small></span></div>
+    </div>
+  </header>
+
+  <main class="world-shell">
+    <aside class="realm-rail panel" data-panel="realms" aria-label="诸天位面">
+      <header class="panel-head"><div><span class="kicker">REALM PULSE</span><h2>诸天位面</h2></div></header>
+      <div class="realm-overview"><span>在线位面</span><strong id="realm-count">--</strong><small id="realm-summary">正在读取总机名录</small></div>
+      <div class="realm-list" id="realm-list"><div class="loading-state">位面星图展开中</div></div>
+      <section class="raid-brief">
+        <div class="raid-brief-icon"><i data-lucide="shield-check"></i></div>
+        <span>诸天交易规则</span><h3>位面互通许可</h3>
+        <p>仅展示已上线位面；交易仍由双方服主许可、禁售规则和本地资产托管共同校验。</p>
+      </section>
+    </aside>
+
+    <section class="chat-stage panel" id="world-chat" data-panel="chat">
+      <header class="panel-head chat-head">
+        <div><span class="kicker">WORLD TRANSMISSION</span><h1>世界传音</h1></div>
+        <div class="channel-filters" role="group" aria-label="消息筛选"><button class="is-active" type="button" data-filter="all">全部</button><button type="button" data-filter="image">图片</button></div>
+      </header>
+      <div class="world-notice"><i data-lucide="sparkles"></i><p>世界记录由诸天总机同步，页面每五秒自动刷新。</p><time id="last-sync">--:--</time></div>
+      <div id="world-errors" hidden></div>
+      <div class="message-stream" id="message-stream" aria-live="polite"><div class="loading-state">正在聆听诸天回响</div></div>
+      <form class="chat-composer" id="chat-form">
+        <button class="icon-button subtle" id="image-help" type="button" title="图片传音请在群聊中附图发送" aria-label="图片传音说明"><i data-lucide="image-plus"></i></button>
+        <label><span class="sr-only">世界发言内容</span><textarea id="chat-input" rows="1" maxlength="300" placeholder="向诸天万界传音..."></textarea></label>
+        <span class="composer-count"><b id="message-count">0</b>/300</span>
+        <button class="send-button" type="submit"><i data-lucide="send"></i><span>传音</span></button>
+      </form>
+    </section>
+
+    <aside class="inventory-panel panel" data-panel="inventory">
+      <header class="panel-head"><div><span class="kicker">SPATIAL RING</span><h2>我的纳戒</h2></div><span class="capacity" id="inventory-count">--</span></header>
+      <label class="inventory-search"><i data-lucide="search"></i><span class="sr-only">搜索纳戒</span><input id="inventory-search" type="search" placeholder="搜索物品"></label>
+      <div class="currency-strip"><button type="button" data-currency="灵石"><span>灵石</span><b id="lingshi">--</b></button><button type="button" data-currency="源石"><span>源石</span><b id="source-stone">--</b></button></div>
+      <div class="inventory-list" id="inventory-list"><div class="loading-state">纳戒清点中</div></div>
+      <form class="trade-maker" id="trade-form">
+        <div class="trade-maker-title"><span>创建委托</span><small>支持灵石、源石与以物易物</small></div>
+        <label><span>目标位面</span><select id="trade-realm" required><option value="">读取位面中</option></select></label>
+        <div class="trade-fields"><label><span>我方提供</span><input id="offer-name" readonly placeholder="先从纳戒选择"></label><label class="amount-field"><span>数量</span><input id="offer-count" type="number" min="1" value="1"></label></div>
+        <div class="trade-swap" aria-hidden="true"><i data-lucide="arrow-down"></i><span>交换</span></div>
+        <div class="want-kind" role="group" aria-label="需求类型"><button class="is-active" type="button" data-want-kind="currency">灵石 / 源石</button><button type="button" data-want-kind="item">以物易物</button></div>
+        <div class="trade-fields" id="currency-want-fields"><label><span>我方需求</span><select id="want-name"><option>灵石</option><option>源石</option></select></label><label class="amount-field"><span>数量</span><input id="want-count" type="number" min="1" value="10000"></label></div>
+        <div class="trade-fields" id="item-want-fields" hidden><label><span>指定物品</span><input id="want-item-name" list="tradeable-items" placeholder="输入或选择物品"></label><label class="amount-field"><span>数量</span><input id="want-item-count" type="number" min="1" value="1"></label><datalist id="tradeable-items"></datalist></div>
+        <label class="trade-identity"><input id="anonymous-publish" type="checkbox"><span>匿名发布</span><small>对方只会看到“匿名道友”</small></label>
+        <button class="primary-button" type="submit"><i data-lucide="send"></i>发布跨服交易</button>
+      </form>
+    </aside>
+
+    <section class="market-panel panel" data-panel="market">
+      <header class="panel-head"><div><span class="kicker">CROSS-REALM EXCHANGE</span><h2>跨服委托</h2></div><div class="market-tabs" role="group" aria-label="委托分类"><button class="is-active" type="button" data-trade-view="incoming">收到的</button><button type="button" data-trade-view="outgoing">我发布的</button></div></header>
+      <div class="trade-grid" id="trade-grid"><div class="loading-state">诸天契约载入中</div></div>
+    </section>
+  </main>
+
+  <nav class="mobile-nav" aria-label="手机端功能">
+    <button class="is-active" type="button" data-view-target="chat"><i data-lucide="messages-square"></i><span>传音</span></button>
+    <button type="button" data-view-target="market"><i data-lucide="arrow-left-right"></i><span>交易</span></button>
+    <button type="button" data-view-target="inventory"><i data-lucide="package-open"></i><span>纳戒</span></button>
+    <button type="button" data-view-target="realms"><i data-lucide="orbit"></i><span>位面</span></button>
+  </nav>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/world/lucide.min.js?v=20260820"></script>
+  <script src="/world/app.js?v=20260820"></script>
+</body>
+</html>

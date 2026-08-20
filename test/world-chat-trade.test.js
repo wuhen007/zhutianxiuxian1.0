@@ -118,14 +118,17 @@ test('总机提供位面概况并完成双端跨服交易结算', async (t) => {
   const clientA = new WorldChatClient({ config: config(url, 'sv_a', secretA, 'sv_b'), persist: false });
   const clientB = new WorldChatClient({ config: config(url, 'sv_b', secretB, 'sv_a'), persist: false });
   const settleEvents = [];
+  const completedRoles = [];
   clientA.setTradeHandler((event) => {
     settleEvents.push(['a', event.type]);
+    if (event.type === 'TRADE_COMPLETED') completedRoles.push(event.role);
     if (event.type === 'TRADE_SETTLE') {
       clientA.settleTrade(event.trade.code, event.role, event.member_tag, true);
     }
   });
   clientB.setTradeHandler((event) => {
     settleEvents.push(['b', event.type]);
+    if (event.type === 'TRADE_COMPLETED') completedRoles.push(event.role);
     if (event.type === 'TRADE_SETTLE') {
       clientB.settleTrade(event.trade.code, event.role, event.member_tag, true);
     }
@@ -149,19 +152,104 @@ test('总机提供位面概况并完成双端跨服交易结算', async (t) => {
   const created = await clientA.createTrade({
     target_server_id: 'sv_b',
     seller_tag: 'a'.repeat(16),
+    seller_player_name: '卖家甲',
+    seller_anonymous: false,
     give: [{ kind: 'item', type: '道具', name: '普通材料', amount: 1 }],
     want: [{ kind: 'currency', name: '灵石', amount: 1000 }],
   });
   assert.equal(created.ok, true);
+  assert.equal(created.trade.seller_player_name, '卖家甲');
+  assert.equal(created.trade.seller_anonymous, false);
   const listed = await clientB.listTrades();
   assert.equal(listed.trades.length, 1);
 
-  const accepted = await clientB.acceptTrade(created.trade.code, 'b'.repeat(16));
+  const accepted = await clientB.acceptTrade(created.trade.code, 'b'.repeat(16), {
+    displayName: '买家乙',
+    anonymous: false,
+  });
   assert.equal(accepted.ok, true);
+  assert.equal(accepted.trade.buyer_player_name, '买家乙');
+  assert.equal(accepted.trade.buyer_anonymous, false);
   await waitFor(() => settleEvents.filter(([, type]) => type === 'TRADE_SETTLE').length === 2, '双方未收到结算事件');
   await waitFor(() => server.getTrades()[0]?.status === 'completed', '交易未完成');
   assert.equal(server.getTrades()[0].settlement.seller, true);
   assert.equal(server.getTrades()[0].settlement.buyer, true);
+  await waitFor(() => completedRoles.length === 2, '双方未收到成交通知');
+  assert.deepEqual(completedRoles.sort(), ['buyer', 'seller']);
+
+  const anonymous = await clientA.createTrade({
+    target_server_id: 'sv_b',
+    seller_tag: 'a'.repeat(16),
+    seller_player_name: '卖家隐身',
+    seller_anonymous: true,
+    give: [{ kind: 'item', type: '道具', name: '普通材料', amount: 1 }],
+    want: [{ kind: 'currency', name: '灵石', amount: 1000 }],
+  });
+  assert.equal(anonymous.ok, true);
+  assert.equal(anonymous.trade.seller_player_name, '');
+  assert.equal(anonymous.trade.seller_anonymous, true);
+  const anonymousAccepted = await clientB.acceptTrade(anonymous.trade.code, 'b'.repeat(16), {
+    displayName: '买家隐身',
+    anonymous: true,
+  });
+  assert.equal(anonymousAccepted.ok, true);
+  assert.equal(anonymousAccepted.trade.buyer_player_name, '');
+  assert.equal(anonymousAccepted.trade.buyer_anonymous, true);
+  await waitFor(() => completedRoles.length === 4, '匿名交易未完成');
+});
+
+test('结算中的交易会在重连后重新下发', async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'worldchat-trade-redelivery-'));
+  const secretA = secret();
+  const secretB = secret();
+  const server = createWorldChatServer({
+    baseDir: directory,
+    logger: silentLogger,
+    clients: {
+      sv_a: { secret: secretA },
+      sv_b: { secret: secretB },
+    },
+    config: { HOST: '127.0.0.1', PORT: 0, TRADE_TTL_MS: 60_000 },
+  });
+  const address = await server.start();
+  const url = `ws://127.0.0.1:${address.port}`;
+  const clientA = new WorldChatClient({ config: config(url, 'sv_a', secretA, 'sv_b'), persist: false });
+  const clientB = new WorldChatClient({ config: config(url, 'sv_b', secretB, 'sv_a'), persist: false });
+  let firstBuyerEvent = true;
+  let buyerSettleEvents = 0;
+  clientA.setTradeHandler((event) => {
+    if (event.type === 'TRADE_SETTLE') clientA.settleTrade(event.trade.code, event.role, event.member_tag, true);
+  });
+  clientB.setTradeHandler((event) => {
+    if (event.type !== 'TRADE_SETTLE') return;
+    buyerSettleEvents += 1;
+    if (!firstBuyerEvent) clientB.settleTrade(event.trade.code, event.role, event.member_tag, true);
+    firstBuyerEvent = false;
+  });
+  t.after(async () => {
+    clientA.close();
+    clientB.close();
+    await server.stop();
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+  clientA.connect();
+  clientB.connect();
+  await waitFor(() => clientA.authed && clientB.authed, '重连测试客户端未就绪');
+  const created = await clientA.createTrade({
+    target_server_id: 'sv_b',
+    seller_tag: 'a'.repeat(16),
+    give: [{ kind: 'item', type: '道具', name: '普通材料', amount: 1 }],
+    want: [{ kind: 'currency', name: '灵石', amount: 1000 }],
+  });
+  assert.equal(created.ok, true);
+  const accepted = await clientB.acceptTrade(created.trade.code, 'b'.repeat(16));
+  assert.equal(accepted.ok, true);
+  await waitFor(() => buyerSettleEvents === 1, '买方未收到首次结算事件');
+  await waitFor(() => server.getTrades()[0]?.status === 'settling', '交易未进入结算状态');
+  clientB.ws?.terminate();
+  await waitFor(() => clientB.authed, '买方重连失败', 6000);
+  await waitFor(() => buyerSettleEvents >= 2, '重连后未重新下发结算事件', 6000);
+  await waitFor(() => server.getTrades()[0]?.status === 'completed', '重连后交易未完成', 6000);
 });
 
 test('未获得双方服主许可时总机拒绝交易', async (t) => {

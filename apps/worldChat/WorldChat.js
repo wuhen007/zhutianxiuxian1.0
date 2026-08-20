@@ -28,6 +28,10 @@ import {
   sendWorldGroupMessage,
   extractWorldImageUrls,
 } from './runtime.js';
+import {
+  createWorldWebLink,
+  registerWorldWebController,
+} from '../../model/endlessWebServer.js';
 
 const USER_COOLDOWN_MS = 5_000;
 const TRADE_NAJIE_TYPES = [
@@ -79,6 +83,14 @@ function senderName(e) {
     .replace(/[\u0000-\u001f\u007f]+/g, ' ')
     .trim()
     .slice(0, 30);
+}
+
+function tradeDisplayName(value) {
+  return String(value || '无名道友')
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 30) || '无名道友';
 }
 
 // 世界频道发言称号：秘境 / 仙古 / 花粉三体系任一达仙王级，取最高主阶梯前缀。
@@ -145,6 +157,54 @@ function tradeSummary(items = []) {
         : `${item.type}:${item.name}×${item.amount}`
     )
     .join('、');
+}
+
+function tradeFailureReason(reason) {
+  const messages = {
+    trade_not_allowed: '位面交易未获得双向许可：双方服主都需发送「#跨服交易 开启」，并分别发送「#跨服交易 同意 对方位面名或标识」',
+    trade_disabled: '本位面跨服交易尚未开启，请服主发送「#跨服交易 开启」',
+    target_offline: '目标位面当前离线，请等对方连接世界总机后重试',
+    too_many_trades: '双方当前挂单数量已达上限，请先完成或撤销部分交易',
+    invalid_target: '目标位面标识无效，请发送「#跨服交易 位面」重新选择',
+    timeout: '请求总机超时，请稍后查询交易列表再重试',
+  };
+  return messages[reason] || reason || '未知错误';
+}
+
+function worldInventory(najie = {}) {
+  const items = [];
+  for (const type of TRADE_NAJIE_TYPES) {
+    for (const item of Array.isArray(najie[type]) ? najie[type] : []) {
+      const name = String(item?.name || '').trim();
+      const count = Math.max(0, Math.trunc(Number(item?.数量) || 0));
+      if (!name || !count) continue;
+      const asset = { kind: 'item', type, name, amount: 1 };
+      items.push({
+        type,
+        name,
+        count,
+        locked: Number(item?.islockd) > 0 || !validateTradeOffer([asset], [{ kind: 'currency', name: '灵石', amount: 1 }]).ok,
+      });
+    }
+  }
+  return items.sort((left, right) => Number(left.locked) - Number(right.locked) || left.type.localeCompare(right.type, 'zh-CN'));
+}
+
+function worldTradeCatalog() {
+  const catalog = new Map();
+  for (const [type, pools] of TRADE_ITEM_POOLS) {
+    for (const pool of pools) {
+      for (const item of Array.isArray(data[pool]) ? data[pool] : []) {
+        const name = String(item?.name || '').trim();
+        if (!name || catalog.has(name)) continue;
+        const asset = { kind: 'item', type, name, amount: 1 };
+        if (validateTradeOffer([asset], [{ kind: 'currency', name: '灵石', amount: 1 }]).ok) {
+          catalog.set(name, { name, type });
+        }
+      }
+    }
+  }
+  return [...catalog.values()];
 }
 
 function tradeLedgerPath() {
@@ -218,6 +278,7 @@ export class WorldChat extends plugin {
       event: 'message',
       priority: 9000,
       rule: [
+        { reg: '^#世界\\s*网页$', fnc: 'web' },
         { reg: '^#世界\\s*(?:发言|留言)(?:\\s*[\\s\\S]*)?$', fnc: 'say' },
         { reg: '^#世界\\s*查看\\s*(\\d+)?$', fnc: 'view' },
         { reg: '^#世界\\s*加入$', fnc: 'join' },
@@ -238,8 +299,14 @@ export class WorldChat extends plugin {
     this.tradeUsers = new Map();
     this.tradeLocks = new Map();
     this.tradeLedger = null;
+    this.completedTradeNotices = new Set();
+    registerWorldWebController(this);
     client.setMessageHandler((message) => this.broadcast(message));
-    client.setTradeHandler((event) => this.handleTradeEvent(event));
+    client.setTradeHandler((event) => {
+      this.handleTradeEvent(event).catch((error) => {
+        globalThis.logger?.error?.('[worldchat] 跨服交易事件处理失败', error);
+      });
+    });
     client.connect();
     this.refreshRealmStats();
     this.realmStatsTimer = setInterval(() => {
@@ -334,14 +401,98 @@ export class WorldChat extends plugin {
     if (!client.authed) return;
     const ledger = await this.ledger();
     for (const code of Object.keys(ledger)) {
+      const entry = ledger[code];
+      if (code.startsWith('P_')) {
+        const pendingMatch = code.match(/^P_([A-Z0-9_-]{6,80})_([a-f0-9]{16})$/i);
+        if (pendingMatch) {
+          const formalCode = pendingMatch[1].toUpperCase();
+          const result = await client.getTrade(formalCode).catch(() => ({ ok: false }));
+          if (['settling', 'completed'].includes(result.trade?.status) && !ledger[formalCode]) {
+            delete ledger[code];
+            entry.code = formalCode;
+            ledger[formalCode] = entry;
+            await this.saveLedger();
+            if (result.trade.status === 'settling') {
+              await this.settleLocalTrade({
+                trade: result.trade,
+                role: entry.role,
+                member_tag: client.userTag(entry.user_id),
+              });
+            } else {
+              await this.completeLocalTrade(formalCode, result.trade);
+            }
+            continue;
+          }
+        }
+        if (Date.now() - Number(entry?.created_at || 0) > 10 * 60_000) {
+          await this.rollbackLocalTrade(code);
+        }
+        continue;
+      }
       const result = await client.getTrade(code).catch(() => ({ ok: false }));
       if (
         (result.reason === 'trade_not_found' ||
           ['cancelled', 'failed', 'expired'].includes(result.trade?.status))
       ) {
         await this.rollbackLocalTrade(code);
+      } else if (result.trade?.status === 'settling' && entry) {
+        await this.settleLocalTrade({
+          trade: result.trade,
+          role: entry.role,
+          member_tag: client.userTag(entry.user_id),
+        });
+      } else if (result.trade?.status === 'completed' && entry) {
+        await this.completeLocalTrade(code, result.trade);
       }
     }
+  }
+
+  async notifyTradeCompleted(trade) {
+    if (!trade || String(trade.seller_server_id) !== String(client.cfg.server_id)) return;
+    const code = String(trade.code || '').toUpperCase();
+    if (!code || this.completedTradeNotices.has(code)) return;
+    const bot = await this.waitForBot().catch(() => null);
+    if (!bot) return;
+    const text = [
+      '【🌐 跨服交易已成交】',
+      `交易码：${code}`,
+      `买家：${trade.buyer_player_name || '匿名道友'}`,
+      `买家位面：${trade.buyer_name || trade.buyer_server_id || '未知位面'}`,
+      `已被买家购得：${tradeSummary(trade.give) || '委托物品'}`,
+      `你获得：${tradeSummary(trade.want) || '交易对价'}`,
+      '双方资产已完成结算。',
+    ].join('\n');
+    const results = await Promise.allSettled(
+      client.groups().map((groupId) =>
+        sendWorldGroupMessage(bot, groupId, text, this.groupSenders.get(String(groupId)))
+      )
+    );
+    if (results.some((result) => result.status === 'fulfilled')) {
+      this.completedTradeNotices.add(code);
+      if (this.completedTradeNotices.size > 500) {
+        this.completedTradeNotices.delete(this.completedTradeNotices.values().next().value);
+      }
+    }
+  }
+
+  async completeLocalTrade(code, trade = null) {
+    const ledger = await this.ledger();
+    const entry = ledger[code];
+    if (!entry) {
+      await this.notifyTradeCompleted(trade);
+      return;
+    }
+    await this.withTradeLock(entry.user_id, async () => {
+      if (!entry.credited) {
+        for (const asset of entry.incoming || []) {
+          await this.adjustAsset(entry.user_id, asset, asset.amount);
+        }
+        entry.credited = true;
+      }
+      delete ledger[code];
+      await this.saveLedger();
+    });
+    await this.notifyTradeCompleted(trade);
   }
 
   rememberTradeUser(e) {
@@ -370,7 +521,15 @@ export class WorldChat extends plugin {
   }
 
   async reserveAssets(userId, assets) {
+    const najie = assets.some((asset) => asset.kind === 'item')
+      ? await Read_najie(userId)
+      : null;
     for (const asset of assets) {
+      if (asset.kind === 'item') {
+        const stored = (Array.isArray(najie?.[asset.type]) ? najie[asset.type] : [])
+          .find((item) => item?.name === asset.name);
+        if (Number(stored?.islockd) > 0) throw new Error(`${asset.name}_locked`);
+      }
       if ((await this.assetBalance(userId, asset)) < asset.amount) {
         throw new Error(`${asset.name}_insufficient`);
       }
@@ -435,7 +594,13 @@ export class WorldChat extends plugin {
     const ledger = await this.ledger();
     const entry = ledger[code];
     if (!entry) {
-      await client.settleTrade(code, event.role, '', false, 'local_escrow_missing');
+      await client.settleTrade(
+        code,
+        event.role,
+        event.member_tag,
+        false,
+        'local_escrow_missing'
+      );
       return;
     }
     try {
@@ -460,10 +625,7 @@ export class WorldChat extends plugin {
     const code = String(trade.code).toUpperCase();
     if (event.type === 'TRADE_SETTLE') return this.settleLocalTrade(event);
     if (event.type === 'TRADE_COMPLETED') {
-      const ledger = await this.ledger();
-      delete ledger[code];
-      await this.saveLedger();
-      return;
+      return this.completeLocalTrade(code, trade);
     }
     if (event.type === 'TRADE_ROLLBACK' || event.type === 'TRADE_CANCELLED') {
       return this.rollbackLocalTrade(code);
@@ -475,6 +637,7 @@ export class WorldChat extends plugin {
         '【🌐 跨服交易邀请】',
         `交易码：${code}`,
         `对方位面：${trade.seller_name}（${trade.seller_server_id}）`,
+        `卖家：${trade.seller_player_name || '匿名道友'}`,
         `对方提供：${tradeSummary(trade.give)}`,
         `对方需求：${tradeSummary(trade.want)}`,
         '确认后发送：#跨服交易 接受 交易码',
@@ -505,6 +668,140 @@ export class WorldChat extends plugin {
       return false;
     }
     return true;
+  }
+
+  async web(e) {
+    if (!this.requireJoinedGroup(e)) return true;
+    const player = await Read_player(e.user_id).catch(() => null);
+    if (!player) return e.reply('请先创建修仙存档后再打开世界网页');
+    const displayName = buildWorldChatSenderName(e, player, getWorldChatTitle(player));
+    try {
+      const link = await createWorldWebLink(this, {
+        userId: String(e.user_id),
+        groupId: String(e.group_id),
+        displayName,
+      });
+      return e.reply(`【诸天世界网页】\n${link}\n入口两分钟内有效，进入后可持续使用两小时。`);
+    } catch (error) {
+      globalThis.logger?.error?.('[世界网页] 入口生成失败', error);
+      return e.reply(`世界网页入口生成失败：${error.message}`);
+    }
+  }
+
+  assertWorldWebSession(session) {
+    if (!session?.userId || !client.isGroupJoined(session.groupId)) {
+      throw new Error('当前群已退出世界频道，请重新加入后领取入口');
+    }
+    return String(session.userId);
+  }
+
+  async getWorldWebState(session) {
+    const userId = this.assertWorldWebSession(session);
+    await this.reconcileTradeLedger().catch((error) => {
+      globalThis.logger?.warn?.(`[worldchat] 交易恢复检查失败: ${error.message}`);
+    });
+    const [player, najie, messageResult, realmResult, tradeResult, ledger] = await Promise.all([
+      Read_player(userId),
+      Read_najie(userId),
+      client.query(50),
+      client.listRealms(),
+      client.listTrades(),
+      this.ledger(),
+    ]);
+    const ownEntries = Object.values(ledger)
+      .filter((entry) => entry?.role === 'seller' && String(entry.user_id) === userId && !String(entry.code).startsWith('P_'))
+      .slice(-30);
+    const outgoing = await Promise.all(ownEntries.map(async (entry) => {
+      const result = await client.getTrade(entry.code).catch(() => ({ ok: false }));
+      return result.trade || {
+        code: entry.code,
+        status: 'pending',
+        seller_name: client.cfg.name,
+        give: entry.reserved,
+        want: entry.incoming,
+        created_at: entry.created_at,
+      };
+    }));
+    const status = client.status();
+    return {
+      viewer: {
+        id: userId,
+        name: session.displayName || player?.名号 || '无名道友',
+      },
+      status: {
+        connected: Boolean(status.connected && status.authed),
+        realmId: status.server_id,
+        realmName: status.name,
+        tradeEnabled: status.trade_enabled,
+        lastError: readableConnectionError(status.last_error),
+      },
+      currencies: {
+        灵石: Math.max(0, Math.trunc(Number(player?.灵石) || 0)),
+        源石: Math.max(0, Math.trunc(Number(player?.源石) || 0)),
+      },
+      inventory: worldInventory(najie),
+      catalog: worldTradeCatalog(),
+      messages: messageResult.ok ? messageResult.messages || [] : [],
+      realms: realmResult.ok ? realmResult.realms || [] : [],
+      trades: {
+        incoming: tradeResult.ok ? tradeResult.trades || [] : [],
+        outgoing,
+      },
+      errors: [
+        messageResult.ok ? '' : `世界记录：${messageResult.reason || '读取失败'}`,
+        realmResult.ok ? '' : `位面列表：${realmResult.reason || '读取失败'}`,
+        tradeResult.ok ? '' : `交易列表：${tradeResult.reason || '读取失败'}`,
+      ].filter(Boolean),
+    };
+  }
+
+  async sendWorldWebMessage(session, body) {
+    const userId = this.assertWorldWebSession(session);
+    const text = clientFilter(String(body?.text || '').trim()).slice(0, 300);
+    if (!text) return { ok: false, reason: '请输入世界发言内容' };
+    const cooldownKey = String(userId);
+    const wait = USER_COOLDOWN_MS - (Date.now() - (this.cooldowns.get(cooldownKey) || 0));
+    if (wait > 0) return { ok: false, reason: `世界传音尚在回响，请等待 ${Math.ceil(wait / 1000)} 秒` };
+    this.cooldowns.set(cooldownKey, Date.now());
+    const result = await client.pub(text, {
+      name: session.displayName || '无名道友',
+      tag: client.userTag(userId),
+    });
+    return result.ok
+      ? { ok: true, message: '世界传音已送往诸天总机' }
+      : { ok: false, reason: `世界传音失败：${result.reason || '总机未响应'}` };
+  }
+
+  async createWorldWebTrade(session, body) {
+    const userId = this.assertWorldWebSession(session);
+    const najie = await Read_najie(userId);
+    const normalize = (asset) => {
+      const name = String(asset?.name || '').trim();
+      const amount = Math.trunc(Number(asset?.amount) || 0);
+      if (asset?.kind === 'currency') return { kind: 'currency', name, amount };
+      return { kind: 'item', name, type: resolveTradeItemType(name, najie), amount };
+    };
+    const targetServerId = String(body?.targetServerId || '').trim();
+    if (!/^[A-Za-z0-9_-]{3,64}$/.test(targetServerId)) return { ok: false, reason: '目标位面无效' };
+    const give = (Array.isArray(body?.give) ? body.give : []).map(normalize);
+    const want = (Array.isArray(body?.want) ? body.want : []).map(normalize);
+    return this.createTradeForUser(userId, targetServerId, give, want, {
+      displayName: session.displayName,
+      anonymous: body?.anonymous === true,
+    });
+  }
+
+  async acceptWorldWebTrade(session, body) {
+    const userId = this.assertWorldWebSession(session);
+    return this.acceptTradeForUser(userId, body?.code, {
+      displayName: session.displayName,
+      anonymous: body?.anonymous === true,
+    });
+  }
+
+  async cancelWorldWebTrade(session, body) {
+    const userId = this.assertWorldWebSession(session);
+    return this.cancelTradeForUser(userId, body?.code);
   }
 
   async say(e) {
@@ -585,10 +882,11 @@ export class WorldChat extends plugin {
     return true;
   }
 
-  async publishTrade(e, targetServerId, give, want) {
+  async createTradeForUser(userId, targetServerId, give, want, options = {}) {
     const validation = validateTradeOffer(give, want);
-    if (!validation.ok) return e.reply(`报价被诸天规则拦截：${validation.reason}`);
-    const { userId, tag } = this.rememberTradeUser(e);
+    if (!validation.ok) return { ok: false, reason: `报价被诸天规则拦截：${validation.reason}` };
+    const tag = client.userTag(userId);
+    this.tradeUsers.set(tag, String(userId));
     const pending = `P_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     try {
       await this.prepareTradeEscrow(
@@ -601,37 +899,95 @@ export class WorldChat extends plugin {
       const result = await client.createTrade({
         target_server_id: targetServerId,
         seller_tag: tag,
+        seller_player_name: options.anonymous === true ? '' : tradeDisplayName(options.displayName),
+        seller_anonymous: options.anonymous === true,
         give: validation.give,
         want: validation.want,
       });
       if (!result.ok) {
         if (result.reason !== 'timeout') await this.rollbackLocalTrade(pending);
-        return e.reply(`跨服交易发布失败：${result.reason || '未知错误'}`);
+        return { ok: false, reason: `跨服交易发布失败：${tradeFailureReason(result.reason)}` };
       }
       await this.migrateTradeEscrow(pending, result.trade.code);
-      return e.reply(
-        `跨服交易已发布，交易码：${result.trade.code}\n提供：${tradeSummary(validation.give)}\n需求：${tradeSummary(validation.want)}`
-      );
+      return {
+        ok: true,
+        trade: result.trade,
+        message: `跨服交易已发布，交易码：${result.trade.code}\n提供：${tradeSummary(validation.give)}\n需求：${tradeSummary(validation.want)}`,
+      };
     } catch (error) {
       await this.rollbackLocalTrade(pending);
-      return e.reply(`跨服交易发布失败：${error.message}`);
+      return { ok: false, reason: `跨服交易发布失败：${error.message}` };
     }
+  }
+
+  async publishTrade(e, targetServerId, give, want, options = {}) {
+    const result = await this.createTradeForUser(String(e.user_id), targetServerId, give, want, {
+      displayName: options.displayName || senderName(e),
+      anonymous: options.anonymous === true,
+    });
+    return e.reply(result.ok ? `${result.message}${options.anonymous ? '\n发布身份：匿名道友' : `\n发布人：${tradeDisplayName(options.displayName || senderName(e))}`}` : result.reason);
+  }
+
+  async acceptTradeForUser(userId, code, options = {}) {
+    const normalizedCode = String(code || '').toUpperCase();
+    if (!/^[A-Z0-9_-]{6,80}$/.test(normalizedCode)) return { ok: false, reason: '交易码格式无效' };
+    const list = await client.listTrades();
+    const trade = list.trades?.find((item) => item.code === normalizedCode);
+    if (!list.ok || !trade) return { ok: false, reason: `找不到交易 ${normalizedCode}` };
+    const tag = client.userTag(userId);
+    this.tradeUsers.set(tag, String(userId));
+    try {
+      await this.prepareTradeEscrow(normalizedCode, userId, 'buyer', trade.want, trade.give);
+      const result = await client.acceptTrade(normalizedCode, tag, {
+        displayName: options.displayName,
+        anonymous: options.anonymous === true,
+      });
+      if (!result.ok) {
+        await this.rollbackLocalTrade(normalizedCode);
+        return { ok: false, reason: `接受交易失败：${result.reason || '未知错误'}` };
+      }
+      return {
+        ok: true,
+        trade: result.trade,
+        message: `已接受交易 ${normalizedCode}，双方资产正在结算（${options.anonymous ? '匿名购买' : `买家：${tradeDisplayName(options.displayName)}`}）`,
+      };
+    } catch (error) {
+      await this.rollbackLocalTrade(normalizedCode);
+      return { ok: false, reason: `接受交易失败：${error.message}` };
+    }
+  }
+
+  async cancelTradeForUser(userId, code) {
+    const normalizedCode = String(code || '').toUpperCase();
+    const ledger = await this.ledger();
+    const entry = ledger[normalizedCode];
+    if (!entry || entry.role !== 'seller' || String(entry.user_id) !== String(userId)) {
+      return { ok: false, reason: `这不是你发布的交易 ${normalizedCode}` };
+    }
+    const result = await client.cancelTrade(normalizedCode);
+    if (!result.ok) return { ok: false, reason: `撤销交易失败：${result.reason || '未知错误'}` };
+    await this.rollbackLocalTrade(normalizedCode);
+    return { ok: true, message: `交易 ${normalizedCode} 已撤销，预留资产已返还` };
   }
 
   async tradeCommand(e) {
     if (!this.requireJoinedGroup(e)) return true;
     const raw = e.msg.replace(/^#跨服交易\s*/, '').trim();
+    const anonymousPublish = /^匿名发布\s+/i.test(raw);
+    const anonymousPurchase = /^匿名购买\s+/i.test(raw);
+    const tradeInput = raw.replace(/^(?:匿名发布|匿名购买)\s+/i, '').trim();
     if (!raw || raw === '规则') {
       return e.reply([
         '【跨服交易规则】',
         '允许：灵石、源石、普通纳戒物品，以物易物或货币交换。',
         '禁止：圣法碎片、至宝、帝兵及超出单笔上限的数量。',
         '发布：#跨服交易 位面名 秘境之匙*1 换 灵石*10000',
+        '匿名发布：#跨服交易 匿名发布 位面名 秘境之匙*1 换 灵石*10000',
         '位面名也可替换为 sv_x 标识；多项物品用逗号分隔',
         '旧格式仍可用：#跨服交易 发布 sv_x 给=物品|道具|名称|数量 换=灵石|数量',
         '许可：#跨服交易 同意 位面名',
         '查看：#跨服交易 位面 / #跨服交易 列表',
-        '成交：#跨服交易 接受 交易码；撤销：#跨服交易 取消 交易码',
+        '成交：#跨服交易 接受 交易码（实名）或 #跨服交易 匿名购买 交易码；撤销：#跨服交易 取消 交易码',
         '服主先执行「#跨服交易 开启」，再用「#跨服交易 同意 位面名或sv_x」开放指定位面。',
       ].join('\n'));
     }
@@ -712,13 +1068,14 @@ export class WorldChat extends plugin {
         ...result.trades.map((trade) => [
           `交易码：${trade.code}`,
           `来自：${trade.seller_name}（${trade.seller_server_id}）`,
+          `卖家：${trade.seller_player_name || '匿名道友'}`,
           `提供：${tradeSummary(trade.give)}`,
           `需求：${tradeSummary(trade.want)}`,
         ].join('\n')),
       ].join('\n\n'));
     }
 
-    const publishMatch = raw.match(/^发布\s+([\s\S]+?)\s+给[=:]([\s\S]+?)\s+换[=:]([\s\S]+)$/i);
+    const publishMatch = tradeInput.match(/^发布\s+([\s\S]+?)\s+给[=:]([\s\S]+?)\s+换[=:]([\s\S]+)$/i);
     if (publishMatch) {
       const reference = publishMatch[1].trim();
       const realms = await client.listRealms();
@@ -743,10 +1100,10 @@ export class WorldChat extends plugin {
       const give = parseTradeBundle(publishMatch[2]);
       const want = parseTradeBundle(publishMatch[3]);
       if (!give.ok || !want.ok) return e.reply(`报价格式错误：${give.ok ? want.reason : give.reason}`);
-      return this.publishTrade(e, targetServerId, give.items, want.items);
+      return this.publishTrade(e, targetServerId, give.items, want.items, { anonymous: anonymousPublish });
     }
 
-    const compactMatch = raw
+    const compactMatch = tradeInput
       .replace(/^发布\s+/i, '')
       .match(/^([\s\S]+?)\s+换\s+([\s\S]+)$/i);
     if (compactMatch) {
@@ -769,40 +1126,26 @@ export class WorldChat extends plugin {
         e,
         target.realm.server_id,
         give.items,
-        want.items
+        want.items,
+        { anonymous: anonymousPublish }
       );
     }
 
-    const acceptMatch = raw.match(/^接受\s+([A-Za-z0-9_-]{6,80})$/i);
+    const acceptMatch = anonymousPurchase
+      ? tradeInput.match(/^([A-Za-z0-9_-]{6,80})$/i)
+      : tradeInput.match(/^接受\s+([A-Za-z0-9_-]{6,80})$/i);
     if (acceptMatch) {
-      const code = acceptMatch[1].toUpperCase();
-      const list = await client.listTrades();
-      const trade = list.trades?.find((item) => item.code === code);
-      if (!list.ok || !trade) return e.reply(`找不到交易 ${code}，请先发送「#跨服交易 列表」`);
-      const { userId, tag } = this.rememberTradeUser(e);
-      const pending = `P_${code}_${tag}`;
-      try {
-        await this.prepareTradeEscrow(pending, userId, 'buyer', trade.want, trade.give);
-        const result = await client.acceptTrade(code, tag);
-        if (!result.ok) {
-          await this.rollbackLocalTrade(pending);
-          return e.reply(`接受交易失败：${result.reason || '未知错误'}`);
-        }
-        await this.migrateTradeEscrow(pending, code);
-        return e.reply(`已接受交易 ${code}，双方资产正在结算`);
-      } catch (error) {
-        await this.rollbackLocalTrade(pending);
-        return e.reply(`接受交易失败：${error.message}`);
-      }
+      const result = await this.acceptTradeForUser(String(e.user_id), acceptMatch[1], {
+        displayName: senderName(e),
+        anonymous: anonymousPurchase,
+      });
+      return e.reply(result.ok ? result.message : result.reason);
     }
 
     const cancelMatch = raw.match(/^取消\s+([A-Za-z0-9_-]{6,80})$/i);
     if (cancelMatch) {
-      const code = cancelMatch[1].toUpperCase();
-      const result = await client.cancelTrade(code);
-      if (!result.ok) return e.reply(`撤销交易失败：${result.reason || '未知错误'}`);
-      await this.rollbackLocalTrade(code);
-      return e.reply(`交易 ${code} 已撤销，预留资产已返还`);
+      const result = await this.cancelTradeForUser(String(e.user_id), cancelMatch[1]);
+      return e.reply(result.ok ? result.message : result.reason);
     }
 
     return e.reply('未识别跨服交易指令，发送「#跨服交易 规则」查看用法');

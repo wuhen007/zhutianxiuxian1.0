@@ -228,5 +228,13 @@ export function publicTradeView(trade) {
     created_at: trade.created_at,
     expires_at: trade.expires_at,
     buyer_name: trade.buyer_name || '',
+    seller_player_name: trade.seller_anonymous ? '' : trade.seller_player_name || '',
+    buyer_player_name: trade.buyer_anonymous ? '' : trade.buyer_player_name || '',
+    seller_anonymous: Boolean(trade.seller_anonymous),
+    buyer_anonymous: Boolean(trade.buyer_anonymous),
+    settlement: {
+      seller: Boolean(trade.settlement?.seller),
+      buyer: Boolean(trade.settlement?.buyer),
+    },
   };
 }

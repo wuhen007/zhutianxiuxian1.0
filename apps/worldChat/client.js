@@ -602,10 +602,12 @@ export class WorldChatClient {
     return this.request('TRADE_CANCEL', 'TRADE_CANCEL_RESULT', { code });
   }
 
-  acceptTrade(code, buyerTag) {
+  acceptTrade(code, buyerTag, options = {}) {
     return this.request('TRADE_ACCEPT', 'TRADE_ACCEPT_RESULT', {
       code,
       buyer_tag: buyerTag,
+      buyer_player_name: String(options.displayName || '').slice(0, 30),
+      buyer_anonymous: options.anonymous === true,
     });
   }
 
