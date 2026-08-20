@@ -131,6 +131,37 @@ test('心神与源石命格配置完整，源石收益只放大正向奖励', ()
   assert.equal(calculateMinggeSourceGain(-1000, { 源石收益: 0.5 }), -1000);
 });
 
+test('空间道与涅槃真灵命格覆盖现有内景地、复活和修复消费层', () => {
+  const byId = new Map(configuredMinggeList.map(item => [item.id, item]));
+  const ids = [
+    'spatial_sense',
+    'cave_heaven_seed',
+    'world_in_palm',
+    'nirvana_ember',
+    'undying_true_spirit',
+    'fading_life_flame',
+  ];
+  for (const id of ids) {
+    const mingge = byId.get(id);
+    assert.ok(mingge, `缺少命格：${id}`);
+    assert.ok((mingge?.desc || '').length >= 20, `命格 ${id} 缺少图鉴描述`);
+  }
+
+  assert.equal(byId.get('spatial_sense')?.effects?.内景地开启概率, 0.08);
+  assert.equal(getMinggeDirectMultiplier(byId.get('cave_heaven_seed').effects, '内景地消耗倍率'), 0.90);
+  assert.equal(getMinggeBonusMultiplier(byId.get('world_in_palm').effects, '内景地收益'), 1.25);
+  assert.equal(calculateMinggeChance(0, byId.get('undying_true_spirit').effects, '复活概率'), 0.14);
+  assert.equal(
+    calculateMinggeCost(100, byId.get('nirvana_ember').effects, '修复本源代价减少', '修复本源代价增加'),
+    90
+  );
+  assert.equal(byId.get('fading_life_flame')?.isNegative, true);
+  assert.equal(
+    calculateMinggeCost(100, byId.get('fading_life_flame').effects, '修复本源代价减少', '修复本源代价增加'),
+    120
+  );
+});
+
 test('独立抽取命格时兼容识别新旧存档且空存档允许抽取', () => {
   assert.equal(hasPlayerMingge({}), false);
   assert.equal(hasPlayerMingge({ 命格: '' }), false);
