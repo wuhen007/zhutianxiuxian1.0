@@ -9,9 +9,9 @@
       "itemClass": "丹药",
       "category": "悟道",
       "rarity": "珍稀",
-      "price": 1000,
+      "price": 4500,
       "description": "增加悟道次数",
-      "dailyLimit": 0,
+      "dailyLimit": 3,
       "action": "item"
     },
     {
@@ -20,9 +20,9 @@
       "itemClass": "丹药",
       "category": "仙途",
       "rarity": "灵品",
-      "price": 80,
+      "price":100,
       "description": "仙道潜力+10",
-      "dailyLimit": 0,
+      "dailyLimit": 100,
       "action": "item"
     },
     {
@@ -31,9 +31,9 @@
       "itemClass": "丹药",
       "category": "仙途",
       "rarity": "珍稀",
-      "price": 180,
+      "price": 220,
       "description": "仙道潜力+25",
-      "dailyLimit": 0,
+      "dailyLimit": 100,
       "action": "item"
     },
     {
@@ -42,9 +42,9 @@
       "itemClass": "丹药",
       "category": "仙途",
       "rarity": "珍稀",
-      "price": 350,
+      "price": 550,
       "description": "仙道潜力+50",
-      "dailyLimit": 0,
+      "dailyLimit": 50,
       "action": "item"
     },
     {
@@ -53,9 +53,9 @@
       "itemClass": "丹药",
       "category": "仙途",
       "rarity": "绝品",
-      "price": 800,
+      "price": 1000,
       "description": "仙道潜力+100",
-      "dailyLimit": 0,
+      "dailyLimit": 30,
       "action": "item"
     },
     {
@@ -66,7 +66,7 @@
       "rarity": "禁忌",
       "price": 3000,
       "description": "仙道潜力+500",
-      "dailyLimit": 2,
+      "dailyLimit": 5,
       "action": "item"
     },
     {
