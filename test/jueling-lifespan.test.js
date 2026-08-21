@@ -62,4 +62,3 @@ test('时代入口和新玩家入口共用加锁后的绝灵寿元服务', () =>
   assert.match(serviceSource, /withPlayerLocks\(playerIds/);
   assert.match(serviceSource, /written\.reverse\(\)/);
 });
-

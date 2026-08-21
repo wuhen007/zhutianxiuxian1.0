@@ -65,4 +65,3 @@ export function suppressAllPlayerLifespans(afterApply) {
 export function restoreAllPlayerLifespans(afterApply) {
   return mutateAllPlayerLifespans(restoreJuelingLifespan, '寿元恢复', afterApply);
 }
-
