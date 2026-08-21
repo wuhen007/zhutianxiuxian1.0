@@ -67,7 +67,11 @@ import {
   allwupin,
   alluser
 } from '../../model/duanzaofu.js';
-import { DAO_HEART_FRUITS, adjustDaoHeart } from '../../model/daoHeart.js';
+import {
+  applyDaoHeartFruit,
+  DAO_HEART_FRUITS,
+  DAO_HEART_MAX,
+} from '../../model/daoHeart.js';
 export class UserSellAll extends plugin {
   constructor() {
     super({
@@ -473,6 +477,7 @@ async quickSettleDungeon(e) {
     if (!await existplayer(usr_qq)) return false;
 
     const najie = await data.getData('najie', usr_qq);
+    const player = await Read_player(usr_qq);
     const consumed = [];
     let gained = 0;
     for (const item of (najie?.丹药 || [])) {
@@ -481,20 +486,23 @@ async quickSettleDungeon(e) {
       const itemClass = item.class || '丹药';
       const quantity = Number(await exist_najie_thing(usr_qq, item.name, itemClass)) || 0;
       if (quantity <= 0) continue;
-      await Add_najie_thing(usr_qq, item.name, itemClass, -quantity);
-      gained += value * quantity;
-      consumed.push(`${item.name}×${quantity}`);
+      const result = applyDaoHeartFruit(player, item, quantity);
+      if (result.useCount <= 0) break;
+      await Add_najie_thing(usr_qq, item.name, itemClass, -result.useCount);
+      gained += result.change;
+      consumed.push(`${item.name}×${result.useCount}`);
     }
-    if (!gained) return e.reply('纳戒中没有可服用的道心果');
+    if (!gained) {
+      if (player.道心 >= DAO_HEART_MAX) return e.reply(`你的道心已圆满（${player.道心}/${DAO_HEART_MAX}），无需服用`);
+      return e.reply('纳戒中没有可服用的道心果');
+    }
 
-    const player = await Read_player(usr_qq);
-    const result = adjustDaoHeart(player, gained, '服用道心果');
     await Write_player(usr_qq, player);
     return e.reply([
       '【道心果·澄明本心】',
       `服用：${consumed.join('、')}`,
-      `道心 +${result.change}，当前 ${result.after}/500`,
-      result.after >= 500 ? '道心已臻圆满。' : '道心果力随修为沉淀，溢出部分不再累积。',
+      `道心 +${gained}，当前 ${player.道心}/${DAO_HEART_MAX}`,
+      player.道心 >= DAO_HEART_MAX ? '道心已臻圆满。' : '道心果力随修为沉淀。',
     ].join('\n'));
   }
 

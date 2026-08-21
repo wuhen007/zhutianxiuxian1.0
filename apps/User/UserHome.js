@@ -67,6 +67,7 @@ import {
   increaseSpiritHeartLimit,
   refreshSpiritHeart,
 } from '../../model/spiritUniverse.js';
+import { applyDaoHeartFruit, DAO_HEART_MAX } from '../../model/daoHeart.js';
 import {
   findItemSources,
   parseItemSearchQuery,
@@ -2401,6 +2402,21 @@ if (equipment.帝兵.name == "终古剑之主") {
         await Write_player(usr_qq, player);
         await Add_najie_thing(usr_qq, thing_name, '丹药', -quantity);
         e.reply(`服用成功，获得${insight}点可自由分配的功法感悟，当前共有${player.功法感悟值}点`);
+        return false;
+      }
+      if (thing_exist.type == '道心') {
+        const result = applyDaoHeartFruit(player, thing_exist, quantity);
+        if (result.perFruit <= 0) {
+          e.reply(`【${thing_name}】缺少道心效果数值，请检查物品配置`);
+          return false;
+        }
+        if (result.useCount <= 0) {
+          e.reply(`你的道心已圆满（${result.after}/${DAO_HEART_MAX}），无需服用`);
+          return false;
+        }
+        await Write_player(usr_qq, player);
+        await Add_najie_thing(usr_qq, thing_name, '丹药', -result.useCount);
+        e.reply(`服用${thing_name}×${result.useCount}，道心+${result.change}，当前${result.after}/${DAO_HEART_MAX}`);
         return false;
       }
       if (thing_exist.type == '心神恢复') {

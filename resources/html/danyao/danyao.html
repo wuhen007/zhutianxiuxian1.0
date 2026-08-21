@@ -32,10 +32,54 @@
               <div class="item_int" style="padding-left: 38px">
                 类型：{{item.type}}
               </div>
+              {{if item.exp > 0 || item.xueqi > 0 || item.xingyun > 0}}
               <div class="item_int" style="padding-left: 38px">
-                效果：{{item.HP}}{{item.exp}}{{item.xueqi}} {{if item.xingyun >
-                0}}{{(item.xingyun*100).toFixed(1)}}%{{/if}}
+                效果：{{if item.exp > 0}}修为+{{item.exp.toLocaleString()}}{{/if}}{{if item.exp > 0 && item.xueqi > 0}} {{/if}}{{if item.xueqi > 0}}血气+{{item.xueqi.toLocaleString()}}{{/if}}{{if (item.exp > 0 || item.xueqi > 0) && item.xingyun > 0}} {{/if}}{{if item.xingyun > 0}}幸运+{{(item.xingyun*100).toFixed(1)}}%{{/if}}
               </div>
+              {{/if}}
+              {{if item.道心 > 0}}
+              <div class="item_int" style="padding-left: 38px">增加道心：{{item.道心.toLocaleString()}}</div>
+              {{else if item.type == '道心' && item.desc}}
+              <div class="item_int" style="padding-left: 38px">效果：{{item.desc}}</div>
+              {{/if}}
+              {{if item.yuanshen > 0}}
+              <div class="item_int" style="padding-left: 38px">增加元神与元神上限：{{item.yuanshen.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.heart > 0}}
+              <div class="item_int" style="padding-left: 38px">恢复心神：{{item.heart.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.heartMax > 0}}
+              <div class="item_int" style="padding-left: 38px">增加心神上限：{{item.heartMax.toLocaleString()}}{{if item.useLimit > 0}}（最多服用{{item.useLimit}}颗）{{/if}}</div>
+              {{/if}}
+              {{if item.potential > 0}}
+              <div class="item_int" style="padding-left: 38px">增加仙道潜力：{{item.potential.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.insight > 0}}
+              <div class="item_int" style="padding-left: 38px">增加功法感悟：{{item.insight.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.HPp > 0}}
+              <div class="item_int" style="padding-left: 38px">恢复血量：{{(item.HPp*100).toFixed(1)}}%{{if item.HP > 0}} + {{item.HP.toLocaleString()}}{{/if}}</div>
+              {{else if item.HP > 0}}
+              <div class="item_int" style="padding-left: 38px">恢复血量：{{item.HP.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.shouyuan > 0}}
+              <div class="item_int" style="padding-left: 38px">增加寿元：{{item.shouyuan}}年</div>
+              {{/if}}
+              {{if item.chujin > 0}}
+              <div class="item_int" style="padding-left: 38px">增加出金率：{{item.chujin}}%</div>
+              {{/if}}
+              {{if item.额外数量 > 0}}
+              <div class="item_int" style="padding-left: 38px">下次炼器额外格子：{{item.额外数量}}</div>
+              {{/if}}
+              {{if item.biguan > 0}}
+              <div class="item_int" style="padding-left: 38px">提高下次闭关效率：{{(item.biguan*100).toFixed(0)}}%</div>
+              {{/if}}
+              {{if item.daoshang > 0}}
+              <div class="item_int" style="padding-left: 38px">清除道伤：{{item.daoshang.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.desc && !(item.exp || item.xueqi || item.HP || item.HPp || item.yuanshen || item.heart || item.heartMax || item.道心 || item.potential || item.insight || item.shouyuan || item.chujin || item.xingyun || item.额外数量 || item.biguan || item.daoshang)}}
+              <div class="item_int" style="padding-left: 38px">说明：{{item.desc}}</div>
+              {{/if}}
               <div class="item_int" style="padding-left: 38px">
                 价格：{{(item.出售价).toFixed(0)}}
               </div>
@@ -46,10 +90,54 @@
               <div class="item_int" style="padding-left: 38px">
                 类型：{{item.type}}
               </div>
+              {{if item.exp > 0 || item.xueqi > 0 || item.xingyun > 0}}
               <div class="item_int" style="padding-left: 38px">
-                效果：{{item.HP}}{{item.exp}}{{item.xueqi}} {{if item.xingyun >
-                0}}{{(item.xingyun*100).toFixed(1)}}%{{/if}}
+                效果：{{if item.exp > 0}}修为+{{item.exp.toLocaleString()}}{{/if}}{{if item.exp > 0 && item.xueqi > 0}} {{/if}}{{if item.xueqi > 0}}血气+{{item.xueqi.toLocaleString()}}{{/if}}{{if (item.exp > 0 || item.xueqi > 0) && item.xingyun > 0}} {{/if}}{{if item.xingyun > 0}}幸运+{{(item.xingyun*100).toFixed(1)}}%{{/if}}
               </div>
+              {{/if}}
+              {{if item.道心 > 0}}
+              <div class="item_int" style="padding-left: 38px">增加道心：{{item.道心.toLocaleString()}}</div>
+              {{else if item.type == '道心' && item.desc}}
+              <div class="item_int" style="padding-left: 38px">效果：{{item.desc}}</div>
+              {{/if}}
+              {{if item.yuanshen > 0}}
+              <div class="item_int" style="padding-left: 38px">增加元神与元神上限：{{item.yuanshen.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.heart > 0}}
+              <div class="item_int" style="padding-left: 38px">恢复心神：{{item.heart.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.heartMax > 0}}
+              <div class="item_int" style="padding-left: 38px">增加心神上限：{{item.heartMax.toLocaleString()}}{{if item.useLimit > 0}}（最多服用{{item.useLimit}}颗）{{/if}}</div>
+              {{/if}}
+              {{if item.potential > 0}}
+              <div class="item_int" style="padding-left: 38px">增加仙道潜力：{{item.potential.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.insight > 0}}
+              <div class="item_int" style="padding-left: 38px">增加功法感悟：{{item.insight.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.HPp > 0}}
+              <div class="item_int" style="padding-left: 38px">恢复血量：{{(item.HPp*100).toFixed(1)}}%{{if item.HP > 0}} + {{item.HP.toLocaleString()}}{{/if}}</div>
+              {{else if item.HP > 0}}
+              <div class="item_int" style="padding-left: 38px">恢复血量：{{item.HP.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.shouyuan > 0}}
+              <div class="item_int" style="padding-left: 38px">增加寿元：{{item.shouyuan}}年</div>
+              {{/if}}
+              {{if item.chujin > 0}}
+              <div class="item_int" style="padding-left: 38px">增加出金率：{{item.chujin}}%</div>
+              {{/if}}
+              {{if item.额外数量 > 0}}
+              <div class="item_int" style="padding-left: 38px">下次炼器额外格子：{{item.额外数量}}</div>
+              {{/if}}
+              {{if item.biguan > 0}}
+              <div class="item_int" style="padding-left: 38px">提高下次闭关效率：{{(item.biguan*100).toFixed(0)}}%</div>
+              {{/if}}
+              {{if item.daoshang > 0}}
+              <div class="item_int" style="padding-left: 38px">清除道伤：{{item.daoshang.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.desc && !(item.exp || item.xueqi || item.HP || item.HPp || item.yuanshen || item.heart || item.heartMax || item.道心 || item.potential || item.insight || item.shouyuan || item.chujin || item.xingyun || item.额外数量 || item.biguan || item.daoshang)}}
+              <div class="item_int" style="padding-left: 38px">说明：{{item.desc}}</div>
+              {{/if}}
               <div class="item_int" style="padding-left: 38px">
                 价格：{{(item.出售价).toFixed(0)}}
               </div>
@@ -71,10 +159,54 @@
               <div class="item_int" style="padding-left: 38px">
                 类型：{{item.type}}
               </div>
+              {{if item.exp > 0 || item.xueqi > 0 || item.xingyun > 0}}
               <div class="item_int" style="padding-left: 38px">
-                效果：{{item.HP}}{{item.exp}}{{item.xueqi}} {{if item.xingyun >
-                0}}{{(item.xingyun*100).toFixed(1)}}%{{/if}}
+                效果：{{if item.exp > 0}}修为+{{item.exp.toLocaleString()}}{{/if}}{{if item.exp > 0 && item.xueqi > 0}} {{/if}}{{if item.xueqi > 0}}血气+{{item.xueqi.toLocaleString()}}{{/if}}{{if (item.exp > 0 || item.xueqi > 0) && item.xingyun > 0}} {{/if}}{{if item.xingyun > 0}}幸运+{{(item.xingyun*100).toFixed(1)}}%{{/if}}
               </div>
+              {{/if}}
+              {{if item.道心 > 0}}
+              <div class="item_int" style="padding-left: 38px">增加道心：{{item.道心.toLocaleString()}}</div>
+              {{else if item.type == '道心' && item.desc}}
+              <div class="item_int" style="padding-left: 38px">效果：{{item.desc}}</div>
+              {{/if}}
+              {{if item.yuanshen > 0}}
+              <div class="item_int" style="padding-left: 38px">增加元神与元神上限：{{item.yuanshen.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.heart > 0}}
+              <div class="item_int" style="padding-left: 38px">恢复心神：{{item.heart.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.heartMax > 0}}
+              <div class="item_int" style="padding-left: 38px">增加心神上限：{{item.heartMax.toLocaleString()}}{{if item.useLimit > 0}}（最多服用{{item.useLimit}}颗）{{/if}}</div>
+              {{/if}}
+              {{if item.potential > 0}}
+              <div class="item_int" style="padding-left: 38px">增加仙道潜力：{{item.potential.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.insight > 0}}
+              <div class="item_int" style="padding-left: 38px">增加功法感悟：{{item.insight.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.HPp > 0}}
+              <div class="item_int" style="padding-left: 38px">恢复血量：{{(item.HPp*100).toFixed(1)}}%{{if item.HP > 0}} + {{item.HP.toLocaleString()}}{{/if}}</div>
+              {{else if item.HP > 0}}
+              <div class="item_int" style="padding-left: 38px">恢复血量：{{item.HP.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.shouyuan > 0}}
+              <div class="item_int" style="padding-left: 38px">增加寿元：{{item.shouyuan}}年</div>
+              {{/if}}
+              {{if item.chujin > 0}}
+              <div class="item_int" style="padding-left: 38px">增加出金率：{{item.chujin}}%</div>
+              {{/if}}
+              {{if item.额外数量 > 0}}
+              <div class="item_int" style="padding-left: 38px">下次炼器额外格子：{{item.额外数量}}</div>
+              {{/if}}
+              {{if item.biguan > 0}}
+              <div class="item_int" style="padding-left: 38px">提高下次闭关效率：{{(item.biguan*100).toFixed(0)}}%</div>
+              {{/if}}
+              {{if item.daoshang > 0}}
+              <div class="item_int" style="padding-left: 38px">清除道伤：{{item.daoshang.toLocaleString()}}</div>
+              {{/if}}
+              {{if item.desc && !(item.exp || item.xueqi || item.HP || item.HPp || item.yuanshen || item.heart || item.heartMax || item.道心 || item.potential || item.insight || item.shouyuan || item.chujin || item.xingyun || item.额外数量 || item.biguan || item.daoshang)}}
+              <div class="item_int" style="padding-left: 38px">说明：{{item.desc}}</div>
+              {{/if}}
               <div class="item_int" style="padding-left: 38px">
                 价格：{{(item.出售价).toFixed(0)}}
               </div>

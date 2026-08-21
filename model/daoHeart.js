@@ -168,3 +168,27 @@ export const DAO_HEART_FRUITS = Object.freeze({
 export function getDaoHeartFruitValue(name) {
   return DAO_HEART_FRUITS[String(name || '')] || 0;
 }
+
+export function applyDaoHeartFruit(player, fruit, quantity = 1, now = Date.now()) {
+  const requested = Math.max(1, Math.floor(Number(quantity) || 1));
+  const perFruit = Math.max(
+    0,
+    Number(fruit?.道心) || getDaoHeartFruitValue(fruit?.name)
+  );
+  const before = ensureDaoHeart(player, now);
+  if (perFruit <= 0 || before >= DAO_HEART_MAX) {
+    return { before, after: before, change: 0, useCount: 0, perFruit };
+  }
+
+  const useCount = Math.min(
+    requested,
+    Math.ceil((DAO_HEART_MAX - before) / perFruit)
+  );
+  const result = adjustDaoHeart(
+    player,
+    perFruit * useCount,
+    `服用${fruit?.name || '道心果'}`,
+    now
+  );
+  return { ...result, useCount, perFruit };
+}

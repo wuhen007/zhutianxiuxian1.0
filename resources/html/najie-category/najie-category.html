@@ -336,7 +336,7 @@
           {{each najie_丹药 item}}
           <div class="item-card rarity-{{item.稀有度 || 1}}">
             <div class="item-header">
-              <div class="item-name">{{item.name}}</div>
+              <div class="item-name">{{if item.type}}【{{item.type}}】{{/if}}{{item.name}}</div>
               <div class="item-status {{item.islockd ? 'status-locked' : 'status-unlocked'}}">
                 {{item.islockd ? '已锁定' : '未锁定'}}
               </div>
@@ -344,8 +344,13 @@
             <div class="item-details">
               {{if item.HPp > 0}}
               <div class="item-property">
-                <span class="property-name">恢复百分比</span>
-                <span class="property-value">{{(item.HPp*100).toFixed(1)}}%</span>
+                <span class="property-name">恢复血量</span>
+                <span class="property-value">{{(item.HPp*100).toFixed(1)}}%{{if item.HP > 0}} + {{item.HP.toLocaleString()}}{{/if}}</span>
+              </div>
+              {{else if item.HP > 0}}
+              <div class="item-property">
+                <span class="property-name">恢复血量</span>
+                <span class="property-value">{{item.HP.toLocaleString()}}</span>
               </div>
               {{/if}}
               {{if item.exp > 0}}
@@ -370,6 +375,77 @@
               <div class="item-property">
                 <span class="property-name">增加寿元</span>
                 <span class="property-value">{{item.shouyuan}}年</span>
+              </div>
+              {{/if}}
+              {{if item.道心 > 0}}
+              <div class="item-property">
+                <span class="property-name">增加道心</span>
+                <span class="property-value">{{item.道心.toLocaleString()}}</span>
+              </div>
+              {{else if item.type == '道心' && item.desc}}
+              <div class="item-property">
+                <span class="property-name">效果</span>
+                <span class="property-value">{{item.desc}}</span>
+              </div>
+              {{/if}}
+              {{if item.yuanshen > 0}}
+              <div class="item-property">
+                <span class="property-name">增加元神与元神上限</span>
+                <span class="property-value">{{item.yuanshen.toLocaleString()}}</span>
+              </div>
+              {{/if}}
+              {{if item.heart > 0}}
+              <div class="item-property">
+                <span class="property-name">恢复心神</span>
+                <span class="property-value">{{item.heart.toLocaleString()}}</span>
+              </div>
+              {{/if}}
+              {{if item.heartMax > 0}}
+              <div class="item-property">
+                <span class="property-name">增加心神上限</span>
+                <span class="property-value">{{item.heartMax.toLocaleString()}}{{if item.useLimit > 0}}（最多服用{{item.useLimit}}颗）{{/if}}</span>
+              </div>
+              {{/if}}
+              {{if item.potential > 0}}
+              <div class="item-property">
+                <span class="property-name">增加仙道潜力</span>
+                <span class="property-value">{{item.potential.toLocaleString()}}</span>
+              </div>
+              {{/if}}
+              {{if item.insight > 0}}
+              <div class="item-property">
+                <span class="property-name">增加功法感悟</span>
+                <span class="property-value">{{item.insight.toLocaleString()}}</span>
+              </div>
+              {{/if}}
+              {{if item.chujin > 0}}
+              <div class="item-property">
+                <span class="property-name">增加出金率</span>
+                <span class="property-value">{{item.chujin}}%</span>
+              </div>
+              {{/if}}
+              {{if item.额外数量 > 0}}
+              <div class="item-property">
+                <span class="property-name">下次炼器额外格子</span>
+                <span class="property-value">{{item.额外数量}}</span>
+              </div>
+              {{/if}}
+              {{if item.biguan > 0}}
+              <div class="item-property">
+                <span class="property-name">提高下次闭关效率</span>
+                <span class="property-value">{{(item.biguan*100).toFixed(0)}}%</span>
+              </div>
+              {{/if}}
+              {{if item.daoshang > 0}}
+              <div class="item-property">
+                <span class="property-name">清除道伤</span>
+                <span class="property-value">{{item.daoshang.toLocaleString()}}</span>
+              </div>
+              {{/if}}
+              {{if item.desc && !(item.exp || item.xueqi || item.HP || item.HPp || item.yuanshen || item.heart || item.heartMax || item.道心 || item.potential || item.insight || item.shouyuan || item.chujin || item.xingyun || item.额外数量 || item.biguan || item.daoshang)}}
+              <div class="item-property">
+                <span class="property-name">说明</span>
+                <span class="property-value">{{item.desc}}</span>
               </div>
               {{/if}}
               <div class="item-property">

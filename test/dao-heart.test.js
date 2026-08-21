@@ -5,6 +5,7 @@ import {
   DAO_HEART_FRUITS,
   DAO_HEART_MAX,
   DAO_HEART_RECOVERY_INTERVAL_MS,
+  applyDaoHeartFruit,
   adjustDaoHeart,
   ensureDaoHeart,
   getDaoHeartDamageMultiplier,
@@ -57,4 +58,15 @@ test('道心果品阶数值与上限一致', () => {
     圣品道心果: 40,
     帝品道心果: 100,
   });
+});
+
+test('服用道心果只消耗达到上限所需数量', () => {
+  const now = 123456;
+  const player = { 道心: 480, 道心上次恢复时间: now };
+  const result = applyDaoHeartFruit(player, { name: '灵品道心果' }, 5, now);
+
+  assert.equal(result.useCount, 2);
+  assert.equal(result.change, 20);
+  assert.equal(player.道心, DAO_HEART_MAX);
+  assert.equal(applyDaoHeartFruit(player, { name: '帝品道心果' }, 1, now).useCount, 0);
 });
