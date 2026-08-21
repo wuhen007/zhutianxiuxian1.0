@@ -4343,14 +4343,20 @@ async handleZhuTianYingzhao(e, caster, casterQQ) {
 
     // ===== 施加惩罚（祭道之上跳过） =====
     if (!isAboveJidao) {
+        const now = Date.now();
+        const bunianState = {
+            状态: '不念不想',
+            startTime: now,
+            endTime: now + bunianMin * 60 * 1000,
+            reason: isJidao ? '祭道映照后帝意波动，暂入不念不想' : '映照诸天后帝意枯竭，濒临从古史中消散',
+        };
         await redis.set(cdKey, JSON.stringify({
-            endTime: Date.now() + cdHours * 60 * 60 * 1000,
+            endTime: now + cdHours * 60 * 60 * 1000,
             reason: isJidao ? '祭道映照·帝意暂封' : '映照诸天·帝意枯竭，形神将散',
         }));
-        await redis.set(`xiuxian:player:${casterQQ}:bunian`, JSON.stringify({
-            endTime: Date.now() + bunianMin * 60 * 1000,
-            reason: isJidao ? '祭道映照后帝意波动，暂入不念不想' : '映照诸天后帝意枯竭，濒临从古史中消散',
-        }));
+        caster.不念不想 = bunianState;
+        await Write_player(casterQQ, caster);
+        await redis.set(`xiuxian:player:${casterQQ}:bunian`, JSON.stringify(bunianState));
     }
 
     // ===== 全服广播（传入境界） =====
