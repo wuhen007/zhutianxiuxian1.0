@@ -1,8 +1,32 @@
-import { plugin, puppeteer, data, Show } from '../../api/api.js';
-import { Read_player, Write_player, Add_najie_thing, Add_灵石, Add_修为, Add_血气, sleep } from '../../model/xiuxian.js';
-import { validateZhiXianChoice } from './zhixianChoice.js';
+import path from 'node:path';
 
-const zhiXianChoiceLocks = new Set();
+import { plugin } from '../../api/api.js';
+import {
+    __PATH,
+    Read_equipment,
+    Read_player,
+    Write_equipment,
+    Write_player,
+    Add_najie_thing,
+    Add_灵石,
+    Add_修为,
+    Add_血气,
+    channel,
+    existplayer,
+    invalidateBattleEquipmentCache,
+    player_efficiency,
+} from '../../model/xiuxian.js';
+import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import {
+    completeZhiXianTask,
+    ensureZhiXianState,
+    hasCompletedZhiXian,
+    migrateCompletedZhiXianTasks,
+    validateZhiXianChoice,
+    validateZhiXianSubmission,
+} from './zhixianChoice.js';
+import { adjustDaoHeart, ensureDaoHeart } from '../../model/daoHeart.js';
 
 export class zhiXianRenWu extends plugin {
     constructor() {
@@ -36,187 +60,197 @@ export class zhiXianRenWu extends plugin {
      * 查看我的支线任务
      */
     async look_zhixian(e) {
-        let usr_qq = e.user_id.toString().replace('qg_','');
-        let player = await Read_player(usr_qq);
-        
         if (!e.isGroup) return;
-        if (!await existplayer(usr_qq)) return;
+        const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
+        if (!await existplayer(usr_qq)) return e.reply('请先创建角色。');
 
-        // 初始化支线任务数组
-        if (!player.支线任务) {
-            player.支线任务 = [];
-            await Write_player(usr_qq, player);
-        }
+        return withPlayerMutationLock(usr_qq, async () => {
+            const player = await Read_player(usr_qq);
+            if (migrateCompletedZhiXianTasks(player)) await Write_player(usr_qq, player);
 
-        let msg = "【支线任务】\n";
-        if (player.支线任务.length === 0) {
-            msg += "你当前没有接取的支线任务。\n";
-            msg += "可通过使用特殊道具触发隐藏任务线。";
-            e.reply(msg);
-            return;
-        }
+            let msg = "【支线任务】\n";
+            if (player.支线任务.length === 0) {
+                msg += "你当前没有接取的支线任务。\n";
+                msg += "可通过使用特殊道具触发隐藏任务线。";
+            } else {
+                for (const taskId of player.支线任务) {
+                    const task = getZhiXianData(taskId);
+                    if (!task) {
+                        msg += `\n【未知支线 ${taskId}】进度数据仍保留，请联系管理员修复。\n`;
+                        continue;
+                    }
+                    const progress = player.支线任务进度[taskId] || { 阶段: 1 };
+                    msg += `\n【${task.name}】${getTaskStatus(taskId, progress)}\n`;
+                    msg += `${task.desc.substring(0, 30)}...\n`;
+                    msg += `当前阶段：${progress.阶段 || 1}/${task.阶段数}\n`;
+                    msg += `发送 #支线任务详情${taskId} 查看详情\n`;
+                }
+            }
 
-        for (let taskId of player.支线任务) {
-            let task = getZhiXianData(taskId);
-            let progress = player.支线任务进度[taskId] || {};
-            let status = getTaskStatus(taskId, progress);
-            
-            msg += `\n【${task.name}】${status}\n`;
-            msg += `${task.desc.substring(0, 30)}...\n`;
-            msg += `当前阶段：${progress.阶段 || 1}/${task.阶段数}\n`;
-            msg += `发送 #支线任务详情${taskId} 查看详情\n`;
-        }
-        
-        e.reply(msg);
+            const completedNames = Object.keys(player.支线任务完成记录)
+                .map(Number)
+                .map(taskId => getZhiXianData(taskId)?.name)
+                .filter(Boolean);
+            if (completedNames.length > 0) msg += `\n已完成：${completedNames.join('、')}`;
+            return e.reply(msg);
+        });
     }
 
     /**
      * 查看支线任务详情
      */
     async zhixian_detail(e) {
-        let taskId = parseInt(e.msg.match(/\d+/)[0]);
-        let usr_qq = e.user_id.toString().replace('qg_','');
-        let player = await Read_player(usr_qq);
-        
-        if (!player.支线任务.includes(taskId)) {
-            e.reply("你未接取该支线任务。");
-            return;
-        }
+        const taskId = parseInt(e.msg.match(/\d+/)[0]);
+        const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
+        if (!await existplayer(usr_qq)) return e.reply('请先创建角色。');
 
-        let task = getZhiXianData(taskId);
-        let progress = player.支线任务进度[taskId] || { 阶段: 1 };
-        let currentStage = task.阶段[progress.阶段 - 1];
+        return withPlayerMutationLock(usr_qq, async () => {
+            const player = await Read_player(usr_qq);
+            if (migrateCompletedZhiXianTasks(player)) await Write_player(usr_qq, player);
+            if (hasCompletedZhiXian(player, taskId)) return e.reply('该支线任务已经完成。');
+            if (!player.支线任务.includes(taskId)) return e.reply('你未接取该支线任务。');
 
-        let msg = `【${task.name}】\n\n`;
-        msg += `${task.desc}\n\n`;
-        msg += `【当前阶段：${progress.阶段}/${task.阶段数}】\n`;
-        msg += `${currentStage.名称}\n`;
-        msg += `${currentStage.描述}\n\n`;
-        
-        if (currentStage.需求) {
-            msg += `【任务需求】\n`;
-            for (let [key, value] of Object.entries(currentStage.需求)) {
-                let current = progress[key] || 0;
-                msg += `${key}: ${current}/${value}\n`;
+            const task = getZhiXianData(taskId);
+            if (!task) return e.reply('支线任务配置不存在，请联系管理员。');
+            const progress = player.支线任务进度[taskId] || { 阶段: 1 };
+            const stage = Number(progress.阶段) || 1;
+            const currentStage = task.阶段[stage - 1];
+            if (!currentStage) return e.reply('任务进度异常，请联系管理员修复。');
+
+            let msg = `【${task.name}】\n\n${task.desc}\n\n`;
+            msg += `【当前阶段：${stage}/${task.阶段数}】\n`;
+            msg += `${currentStage.名称}\n${currentStage.描述}\n\n`;
+
+            if (Object.keys(currentStage.需求 || {}).length > 0) {
+                msg += `【任务需求】\n`;
+                for (const [key, value] of Object.entries(currentStage.需求)) {
+                    msg += `${key}: ${Number(progress[key]) || 0}/${value}\n`;
+                }
             }
-        }
-        
-        if (currentStage.奖励) {
-            msg += `\n【阶段奖励】\n`;
-            for (let [key, value] of Object.entries(currentStage.奖励)) {
-                msg += `${key}: ${value}\n`;
+            if (Object.keys(currentStage.奖励 || {}).length > 0) {
+                msg += `\n【阶段奖励】\n`;
+                for (const [key, value] of Object.entries(currentStage.奖励)) msg += `${key}: ${value}\n`;
             }
-        }
 
-        msg += `\n发送 #提交支线任务${taskId} 提交当前阶段`;
-        e.reply(msg);
+            if (task.选项) {
+                msg += '\n【任务选择】\n';
+                task.选项.forEach((choice, index) => {
+                    msg += `发送 #选择支线${taskId}选项${index + 1} ${choice}\n`;
+                });
+            } else {
+                msg += `\n发送 #提交支线任务${taskId} 提交当前阶段`;
+            }
+            return e.reply(msg.trim());
+        });
     }
 
     /**
      * 提交支线任务阶段
      */
     async submit_zhixian(e) {
-        let taskId = parseInt(e.msg.match(/\d+/)[0]);
-        let usr_qq = e.user_id.toString().replace('qg_','');
-        let player = await Read_player(usr_qq);
-        
-        if (!player.支线任务.includes(taskId)) {
-            e.reply("你未接取该支线任务。");
-            return;
-        }
+        const taskId = parseInt(e.msg.match(/\d+/)[0]);
+        const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
+        if (!await existplayer(usr_qq)) return e.reply('请先创建角色。');
 
-        let task = getZhiXianData(taskId);
-        let progress = player.支线任务进度[taskId] || { 阶段: 1 };
-        let currentStage = task.阶段[progress.阶段 - 1];
+        return withPlayerMutationLock(usr_qq, async () => {
+            let player = await Read_player(usr_qq);
+            if (migrateCompletedZhiXianTasks(player)) await Write_player(usr_qq, player);
+            const task = getZhiXianData(taskId);
+            if (!task) return e.reply('支线任务配置不存在，请联系管理员。');
 
-        // 检查是否满足需求
-        if (currentStage.需求) {
-            for (let [key, value] of Object.entries(currentStage.需求)) {
-                let current = progress[key] || 0;
-                if (current < value) {
-                    e.reply(`任务需求未满足：${key} (${current}/${value})`);
-                    return;
+            const validation = validateZhiXianSubmission(player, taskId, task.阶段数);
+            if (!validation.ok) return e.reply(validation.message);
+            const progress = player.支线任务进度[taskId] || { 阶段: validation.stage };
+            const currentStage = task.阶段[validation.stage - 1];
+            if (!currentStage) return e.reply('支线任务阶段配置不存在，请联系管理员。');
+            for (const [key, value] of Object.entries(currentStage.需求 || {})) {
+                const current = Number(progress[key]) || 0;
+                if (current < value) return e.reply(`任务需求未满足：${key} (${current}/${value})`);
+            }
+
+            const transaction = createZhiXianTransaction(usr_qq);
+            try {
+                for (const [key, value] of Object.entries(currentStage.奖励 || {})) {
+                    await giveReward(usr_qq, key, value, `zhixian:${taskId}:stage:${validation.stage}:${key}`);
                 }
-            }
-        }
 
-        // 发放阶段奖励
-        if (currentStage.奖励) {
-            for (let [key, value] of Object.entries(currentStage.奖励)) {
-                await giveReward(usr_qq, key, value);
-            }
-        }
-
-        // 奖励函数会独立写入存档，刷新后再合并任务进度，避免旧快照覆盖奖励。
-        player = await Read_player(usr_qq);
-
-        // 推进到下一阶段
-        progress.阶段 = (progress.阶段 || 1) + 1;
-        
-        // 检查是否完成全部阶段
-        if (progress.阶段 > task.阶段数) {
-            player.支线任务 = player.支线任务.filter(id => id !== taskId);
-            delete player.支线任务进度[taskId];
-            await Write_player(usr_qq, player);
-            
-            // 发放最终奖励
-            if (task.最终奖励) {
-                for (let [key, value] of Object.entries(task.最终奖励)) {
-                    await giveReward(usr_qq, key, value);
+                const nextStageNumber = validation.stage + 1;
+                if (nextStageNumber > task.阶段数) {
+                    for (const [key, value] of Object.entries(task.最终奖励 || {})) {
+                        await giveReward(usr_qq, key, value, `zhixian:${taskId}:final:${key}`);
+                    }
+                    player = await Read_player(usr_qq);
+                    completeZhiXianTask(player, taskId);
+                    await Write_player(usr_qq, player);
+                    transaction.commit();
+                    return e.reply(`【${task.name}】\n\n${task.完成文案}`);
                 }
+
+                player = await Read_player(usr_qq);
+                ensureZhiXianState(player);
+                progress.阶段 = nextStageNumber;
+                player.支线任务进度[taskId] = progress;
+                await Write_player(usr_qq, player);
+                transaction.commit();
+
+                const nextStage = task.阶段[nextStageNumber - 1];
+                return e.reply([
+                    `【阶段完成】\n\n${currentStage.完成描述}\n\n`,
+                    `【下一阶段：${nextStage.名称}】\n`,
+                    `${nextStage.描述}\n`,
+                    `发送 #支线任务详情${taskId} 查看详情`,
+                ]);
+            } catch (error) {
+                rollbackZhiXianTransaction(transaction, usr_qq, error);
+                return e.reply('支线任务结算失败，进度与奖励已回滚，请稍后重试。');
             }
-            
-            e.reply(`【${task.name}】\n\n${task.完成文案}`);
-            return;
-        }
-
-        // 保存进度
-        player.支线任务进度[taskId] = progress;
-        await Write_player(usr_qq, player);
-
-        let nextStage = task.阶段[progress.阶段 - 1];
-        e.reply([
-            `【阶段完成】\n\n${currentStage.完成描述}\n\n`,
-            `【下一阶段：${nextStage.名称}】\n`,
-            `${nextStage.描述}\n`,
-            `发送 #支线任务详情${taskId} 查看详情`
-        ]);
+        });
     }
 
     /**
      * 处理支线任务选项选择
      */
     async zhixian_choice(e) {
-        let matches = e.msg.match(/#选择支线(\d+)选项(\d+)/);
+        const matches = e.msg.match(/#选择支线(\d+)选项(\d+)/);
         if (!matches) return;
 
-        let taskId = parseInt(matches[1]);
-        let choiceId = parseInt(matches[2]);
-        let usr_qq = e.user_id.toString().replace('qg_','');
+        const taskId = parseInt(matches[1]);
+        const choiceId = parseInt(matches[2]);
+        const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
+        if (!await existplayer(usr_qq)) return e.reply('请先创建角色。');
 
-        const lockKey = `${usr_qq}:${taskId}`;
-        if (zhiXianChoiceLocks.has(lockKey)) {
-            e.reply('该任务选项正在处理中，请勿重复提交。');
-            return;
-        }
-
-        zhiXianChoiceLocks.add(lockKey);
-        try {
+        return withPlayerMutationLock(usr_qq, async () => {
             let player = await Read_player(usr_qq);
+            if (migrateCompletedZhiXianTasks(player)) await Write_player(usr_qq, player);
             const validation = validateZhiXianChoice(player, taskId, choiceId);
-            if (!validation.ok) {
-                e.reply(validation.message);
-                return;
-            }
+            if (!validation.ok) return e.reply(validation.message);
 
-            if (taskId === 1) {
-                await handleHuaYunFeiChoice(usr_qq, player, choiceId, e);
-            } else if (taskId === 2) {
-                await handleWangTengChoice(usr_qq, player, choiceId, e);
+            const transaction = createZhiXianTransaction(usr_qq);
+            try {
+                const result = taskId === 1
+                    ? await handleHuaYunFeiChoice(usr_qq, player, choiceId)
+                    : await handleWangTengChoice(usr_qq, player, choiceId);
+                if (!result.ok) {
+                    transaction.commit();
+                    return e.reply(result.message);
+                }
+
+                await Write_player(usr_qq, player);
+                if (result.rebuildEquipment) {
+                    await Write_equipment(usr_qq, await Read_equipment(usr_qq));
+                }
+                if (result.refreshEfficiency) await player_efficiency(usr_qq);
+
+                player = await Read_player(usr_qq);
+                completeZhiXianTask(player, taskId, { choiceId });
+                await Write_player(usr_qq, player);
+                transaction.commit();
+                return e.reply(result.message);
+            } catch (error) {
+                rollbackZhiXianTransaction(transaction, usr_qq, error);
+                return e.reply('支线选择结算失败，进度与奖励已回滚，请稍后重试。');
             }
-        } finally {
-            zhiXianChoiceLocks.delete(lockKey);
-        }
+        });
     }
 }
 
@@ -230,6 +264,7 @@ function getZhiXianData(taskId) {
             name: "何为他人嫁衣",
             desc: "狠人一脉的悲凉宿命，华云飞不甘为炉鼎的抗争之路",
             阶段数: 1,
+            选项: ["继承执念", "斩断因果"],
             阶段: [
                 {
                     名称: "最终抉择",
@@ -239,7 +274,6 @@ function getZhiXianData(taskId) {
                     完成描述: ""
                 }
             ],
-            最终奖励: { 自由之心: 1, 狠人传承: 1 },
             完成文案: "你终于走出了属于自己的道，不再是谁的嫁衣。华云飞的执念在你体内消散，留下的是对自由的永恒追求。"
         },
         2: {
@@ -247,6 +281,7 @@ function getZhiXianData(taskId) {
             name: "重走大帝路",
             desc: "乱古大帝传承者王腾的遗憾，大帝之姿的逆天之路",
             阶段数: 1,
+            选项: ["觉醒武道天眼", "不继承王腾执念"],
             阶段: [
                 {
                     名称: "逆天改命",
@@ -256,7 +291,6 @@ function getZhiXianData(taskId) {
                     完成描述: ""
                 }
             ],
-            最终奖励: { 武道天眼: 1, 乱古帝符: 1 },
             完成文案: "你重走了大帝路，却走出了不同的结局。王腾的执念在你体内咆哮：『这一世，我必成帝！』"
         },
         3: {
@@ -336,14 +370,17 @@ function getZhiXianData(taskId) {
 /**
  * 处理华云飞任务选项
  */
-async function handleHuaYunFeiChoice(usr_qq, player, choiceId, e) {
+async function handleHuaYunFeiChoice(usr_qq, player, choiceId) {
     // 检查是否学过吞天魔功
-    const hasTuntianMagic = player.学习的功法 && player.学习的功法.includes('吞天魔功');
+    if (!Array.isArray(player.学习的功法)) player.学习的功法 = [];
+    const hasTuntianMagic = player.学习的功法.includes('吞天魔功');
+    const claimKey = `zhixian:1:choice:${choiceId}`;
+    let message;
     
     if (choiceId === 1) {
         // 继承执念 - 需要已学习吞天魔功
         if (!hasTuntianMagic) {
-            e.reply([
+            return { ok: false, message: [
                 "【选择失败】",
                 "",
                 "你想要继承吞天魔功的传承，",
@@ -355,26 +392,27 @@ async function handleHuaYunFeiChoice(usr_qq, player, choiceId, e) {
                 "只留下一声冷笑回荡在识海。",
                 "",
                 "（需要先学习《吞天魔功》才能选择此选项）"
-            ]);
-            return;
+            ] };
         }
         
-        // 继承执念
-        player.魔功值 = (player.魔功值 || 0) + 100;
-        player.灵根 = {
-            id: 7010015,
-            name: "魔胎仙体",
-            type: "魔胎",
-            归类: "遮天位面",
-            eff: 300,
-            法球倍率: 8,
-            攻击: 5,
-            防御: 2,
-            生命: 3,
-            生命本源: 150
-        };
+        if (!hasZhiXianRewardClaim(player, claimKey)) {
+            player.魔功值 = (Number(player.魔功值) || 0) + 100;
+            player.灵根 = {
+                id: 7010015,
+                name: "魔胎仙体",
+                type: "魔胎",
+                归类: "遮天位面",
+                eff: 300,
+                法球倍率: 8,
+                攻击: 5,
+                防御: 2,
+                生命: 3,
+                生命本源: 150
+            };
+            recordZhiXianRewardClaim(player, claimKey, 1);
+        }
         
-        e.reply([
+        message = [
             "【选择：继承执念】",
             "",
             "你指尖轻颤，将那缕不甘的意志彻底纳入神魂。",
@@ -391,24 +429,18 @@ async function handleHuaYunFeiChoice(usr_qq, player, choiceId, e) {
             "【魔功值 +100】",
             "",
             "你笑了，笑得比华云飞更冷。"
-        ]);
+        ];
     } else if (choiceId === 2) {
-        // 斩断因果
-        player.仙道潜力 = (player.仙道潜力 || 0) + 50;
-        player.道心 = (player.道心 || 0) + 30;
-        
-        // 避免重复添加功法
-        if (!player.学习的功法.includes('斩天道')) {
-            player.学习的功法.push('斩天道');
-        }
-        if (!player.学习的功法.includes('星耀天地')) {
-            player.学习的功法.push('星耀天地');
-        }
-        if (!player.学习的功法.includes('十方皆杀')) {
-            player.学习的功法.push('十方皆杀');
+        if (!hasZhiXianRewardClaim(player, claimKey)) {
+            player.仙道潜力 = (Number(player.仙道潜力) || 0) + 50;
+            adjustDaoHeart(player, 30, '支线任务：斩断因果');
+            for (const gongfa of ['斩天道', '星耀天地', '十方皆杀']) {
+                if (!player.学习的功法.includes(gongfa)) player.学习的功法.push(gongfa);
+            }
+            recordZhiXianRewardClaim(player, claimKey, 1);
         }
         
-        e.reply([
+        message = [
             "【选择：斩断因果】",
             "",
             "你不拜过去，不敬未来，只信手中道。",
@@ -426,35 +458,31 @@ async function handleHuaYunFeiChoice(usr_qq, player, choiceId, e) {
             "【领悟功法】斩天道 · 星耀天地 · 十方皆杀",
             "",
             "从此，你走的，是你自己的长生路。"
-        ]);
+        ];
     }
-    
-    // 推进到下一阶段
-    if (!player.支线任务进度) player.支线任务进度 = {};
-    let progress = player.支线任务进度[1] || { 阶段: 1 };
-    progress.阶段 = 2;
-    player.支线任务进度[1] = progress;
-    
-    // 更新生命本源（如果有灵根）
-    if (player.灵根 && player.灵根.生命本源) {
-        player.生命本源 = 100 + player.灵根.生命本源;
-    } else {
-        player.生命本源 = 100;
-    }
-    
-    await Write_player(usr_qq, player);
+
+    player.生命本源 = 100 + (Number(player.灵根?.生命本源) || 0);
+    return {
+        ok: true,
+        message,
+        rebuildEquipment: choiceId === 1,
+        refreshEfficiency: true,
+    };
 }
 
 /**
  * 处理王腾任务选项
  */
-async function handleWangTengChoice(usr_qq, player, choiceId, e) {
+async function handleWangTengChoice(usr_qq, player, choiceId) {
+    ensureDaoHeart(player);
+    const claimKey = `zhixian:2:choice:${choiceId}`;
+    let message;
     if (choiceId === 1) {
         // 觉醒武道天眼 - 需要道心>500且元神等级为仙台级
         const isXiantaiLevel = player.yuanshenlevel_id >= 1;
         
-        if (player.道心 <= 500) {
-            e.reply([
+        if ((Number(player.道心) || 0) < 500) {
+            return { ok: false, message: [
                 "【选择失败】",
                 "",
                 "你想要觉醒武道天眼，",
@@ -465,13 +493,12 @@ async function handleWangTengChoice(usr_qq, player, choiceId, e) {
                 "王腾的执念冷冷地看着你，",
                 "随后化作流光消散。",
                 "",
-                "（需要道心 > 500 才能选择此选项）"
-            ]);
-            return;
+                "（需要道心达到500圆满才能选择此选项）"
+            ] };
         }
         
         if (!isXiantaiLevel) {
-            e.reply([
+            return { ok: false, message: [
                 "【选择失败】",
                 "",
                 "你想要觉醒武道天眼，",
@@ -483,15 +510,16 @@ async function handleWangTengChoice(usr_qq, player, choiceId, e) {
                 "只留下一声叹息。",
                 "",
                 "（需要元神等级达到仙台级才能选择此选项）"
-            ]);
-            return;
+            ] };
         }
         
-        // 觉醒武道天眼
-        player.乱古战意 = 1;
-        player.武道天眼 = 1;
+        if (!hasZhiXianRewardClaim(player, claimKey)) {
+            player.乱古战意 = 1;
+            player.武道天眼 = 1;
+            recordZhiXianRewardClaim(player, claimKey, 1);
+        }
         
-        e.reply([
+        message = [
             "【选择：觉醒武道天眼】",
             "",
             "你凝视着王腾的执念，道心如磐石般坚定。",
@@ -508,17 +536,26 @@ async function handleWangTengChoice(usr_qq, player, choiceId, e) {
             "【获得】武道天眼（可看破一切幻术与虚妄）",
             "",
             "王腾的执念满意地点头，融入你的神魂。"
-        ]);
+        ];
         
     } else if (choiceId === 2) {
-        // 不继承王腾的执念
-        player.仙道潜力 = (player.仙道潜力 || 0) + 50;
-        player.道心 = (player.道心 || 0) + 50;
+        if (!hasZhiXianRewardClaim(player, claimKey)) {
+            player.仙道潜力 = (Number(player.仙道潜力) || 0) + 50;
+            adjustDaoHeart(player, 50, '支线任务：不继承王腾执念');
+            recordZhiXianRewardClaim(player, claimKey, 1);
+        }
         
-        // 获得乱古帝符
-        await Add_najie_thing(usr_qq, "乱古帝符", "道具", 1);
+        await Add_najie_thing(
+            usr_qq,
+            "乱古帝符",
+            "道具",
+            1,
+            undefined,
+            1,
+            { idempotencyKey: `${claimKey}:乱古帝符` },
+        );
         
-        e.reply([
+        message = [
             "【选择：不继承执念】",
             "",
             "你看着王腾的执念，轻轻摇头。",
@@ -539,53 +576,85 @@ async function handleWangTengChoice(usr_qq, player, choiceId, e) {
             "",
             "王腾的执念彻底消散，",
             "你感受到了前所未有的轻松。"
-        ]);
+        ];
     }
-    
-    // 推进到下一阶段
-    if (!player.支线任务进度) player.支线任务进度 = {};
-    let progress = player.支线任务进度[2] || { 阶段: 1 };
-    progress.阶段 = 2;
-    player.支线任务进度[2] = progress;
-    
-    await Write_player(usr_qq, player);
+
+    return { ok: true, message };
 }
 
 /**
  * 发放奖励通用函数
  */
-async function giveReward(usr_qq, type, value) {
+function createZhiXianTransaction(usr_qq) {
+    const transaction = new FileRollbackTransaction();
+    transaction.capture(path.join(__PATH.player_path, `${usr_qq}.json`));
+    transaction.capture(path.join(__PATH.najie_path, `${usr_qq}.json`));
+    transaction.capture(path.join(__PATH.equipment_path, `${usr_qq}.json`));
+    return transaction;
+}
+
+function rollbackZhiXianTransaction(transaction, usr_qq, error) {
+    console.error(`[支线任务] 玩家 ${usr_qq} 结算失败:`, error);
+    try {
+        transaction.rollback();
+    } catch (rollbackError) {
+        console.error(`[支线任务] 玩家 ${usr_qq} 回滚失败:`, rollbackError);
+    } finally {
+        invalidateBattleEquipmentCache(usr_qq);
+    }
+}
+
+function hasZhiXianRewardClaim(target, key) {
+    return Boolean(key && target?._rewardClaims?.[key]);
+}
+
+function recordZhiXianRewardClaim(target, key, amount) {
+    if (!key) return;
+    target._rewardClaims ??= {};
+    target._rewardClaims[key] = { amount, claimedAt: Date.now() };
+    const keys = Object.keys(target._rewardClaims);
+    for (let index = 0; index < keys.length - 500; index += 1) delete target._rewardClaims[keys[index]];
+}
+
+async function mutatePlayerReward(usr_qq, idempotencyKey, value, mutation) {
+    const player = await Read_player(usr_qq);
+    if (hasZhiXianRewardClaim(player, idempotencyKey)) return;
+    mutation(player);
+    recordZhiXianRewardClaim(player, idempotencyKey, value);
+    await Write_player(usr_qq, player);
+}
+
+async function giveReward(usr_qq, type, value, idempotencyKey) {
+    const options = { idempotencyKey };
     switch(type) {
         case '修为':
-            await Add_修为(usr_qq, value);
+            await Add_修为(usr_qq, value, options);
             break;
         case '血气':
-            await Add_血气(usr_qq, value);
+            await Add_血气(usr_qq, value, options);
             break;
         case '灵石':
-            await Add_灵石(usr_qq, value);
+            await Add_灵石(usr_qq, value, options);
             break;
         case '仙道潜力':
         case '元神强度':
-            // “元神强度”是显示名称，真实存档字段为“元神”。
-            const player = await Read_player(usr_qq);
-            const playerField = type === '元神强度' ? '元神' : type;
-            player[playerField] = (player[playerField] || 0) + Math.trunc(value);
-            await Write_player(usr_qq, player);
+            await mutatePlayerReward(usr_qq, idempotencyKey, value, player => {
+                const playerField = type === '元神强度' ? '元神' : type;
+                player[playerField] = (Number(player[playerField]) || 0) + Math.trunc(value);
+            });
             break;
-        case '永久称号': {
-            const player = await Read_player(usr_qq);
-            if (!Array.isArray(player.称号列表)) player.称号列表 = [];
-            if (!player.称号列表.includes(value)) player.称号列表.push(value);
-            await Write_player(usr_qq, player);
+        case '永久称号':
+            await mutatePlayerReward(usr_qq, idempotencyKey, value, player => {
+                if (!Array.isArray(player.称号列表)) player.称号列表 = [];
+                if (!player.称号列表.includes(value)) player.称号列表.push(value);
+            });
             break;
-        }
         case '功法':
-            await Add_najie_thing(usr_qq, value, "功法", 1);
+            await Add_najie_thing(usr_qq, value, "功法", 1, undefined, 1, options);
             break;
         default:
             // 道具类奖励
-            await Add_najie_thing(usr_qq, type, "道具", value);
+            await Add_najie_thing(usr_qq, type, "道具", value, undefined, 1, options);
     }
 }
 

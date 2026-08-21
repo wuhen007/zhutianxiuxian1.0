@@ -116,6 +116,10 @@ import { isCultivatingExtraPath } from '../../model/extraCultivation.js';
 import { isHighRealmConsumableRestricted } from '../../model/realmAuthority.js';
 import { selectEquipmentByCode } from '../../model/equipmentSwap.js';
 import { calculateLifeSourceRepairBaseCost } from '../../model/lifeSourceRepair.js';
+import {
+  hasCompletedZhiXian,
+  migrateCompletedZhiXianTasks,
+} from '../meirrenwu/zhixianChoice.js';
 
 const FLOWER_BREATHING_METHODS = new Set([
   '基础呼吸法',
@@ -5118,8 +5122,8 @@ if (thing_name == "星峰传承令") {
 }
 // 无拘仙印使用逻辑
 if (thing_name == "无拘仙印") {
-    if (!player.支线任务) player.支线任务 = [];
-    if (player.称号列表?.includes("世外逍遥客")) {
+    if (migrateCompletedZhiXianTasks(player)) await Write_player(usr_qq, player);
+    if (hasCompletedZhiXian(player, 4)) {
         e.reply("你已走完天地无拘之路，无需再次启印。");
         return;
     }
@@ -5129,7 +5133,6 @@ if (thing_name == "无拘仙印") {
     }
 
     player.支线任务.push(4);
-    player.支线任务进度 = player.支线任务进度 || {};
     player.支线任务进度[4] = { 阶段: 1, 横渡位面: 0 };
 
     await Write_player(usr_qq, player);
@@ -5144,7 +5147,11 @@ if (thing_name == "无拘仙印") {
 }
 // 华云飞的执念使用逻辑
 if (thing_name == "华云飞的执念") {
-    if (!player.支线任务) player.支线任务 = [];
+    if (migrateCompletedZhiXianTasks(player)) await Write_player(usr_qq, player);
+    if (hasCompletedZhiXian(player, 1)) {
+        e.reply("何为他人嫁衣已完成，无需再次触发。");
+        return;
+    }
     
     if (player.支线任务.includes(1)) {
         e.reply("你已与华云飞的执念产生过因果，无法再次触发。");
@@ -5152,7 +5159,6 @@ if (thing_name == "华云飞的执念") {
     }
     
     player.支线任务.push(1);
-    player.支线任务进度 = player.支线任务进度 || {};
     player.支线任务进度[1] = { 阶段: 1 };
     
     await Write_player(usr_qq, player);
@@ -5175,7 +5181,11 @@ if (thing_name == "华云飞的执念") {
 
 // 王腾的执念使用逻辑
 if (thing_name == "王腾的执念") {
-    if (!player.支线任务) player.支线任务 = [];
+    if (migrateCompletedZhiXianTasks(player)) await Write_player(usr_qq, player);
+    if (hasCompletedZhiXian(player, 2)) {
+        e.reply("重走大帝路已完成，无需再次触发。");
+        return;
+    }
     
     if (player.支线任务.includes(2)) {
         e.reply("大帝之路已启，无需重复触发。");
@@ -5183,7 +5193,6 @@ if (thing_name == "王腾的执念") {
     }
     
     player.支线任务.push(2);
-    player.支线任务进度 = player.支线任务进度 || {};
     player.支线任务进度[2] = { 阶段: 1 };
     
     await Write_player(usr_qq, player);
@@ -5210,7 +5219,11 @@ if (thing_name == "王腾的执念") {
 
 // 跨界追杀令使用逻辑
 if (thing_name == "跨界追杀令") {
-    if (!player.支线任务) player.支线任务 = [];
+    if (migrateCompletedZhiXianTasks(player)) await Write_player(usr_qq, player);
+    if (hasCompletedZhiXian(player, 3)) {
+        e.reply("异域追杀支线已完成，无需再次开启追杀令。");
+        return;
+    }
     
     if (player.支线任务.includes(3)) {
         e.reply("追杀令已激活，异域之门即将开启...");
@@ -5228,7 +5241,6 @@ if (thing_name == "跨界追杀令") {
     }
     
     player.支线任务.push(3);
-    player.支线任务进度 = player.支线任务进度 || {};
     player.支线任务进度[3] = { 阶段: 1 };
     
     await Write_player(usr_qq, player);
