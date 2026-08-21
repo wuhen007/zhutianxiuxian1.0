@@ -962,6 +962,33 @@ function damageEnemy(enemy, amount) {
   return { damage, absorbed, dealt: damage + absorbed };
 }
 
+function damageEnemyWithShieldMultiplier(enemy, amount, multiplier = 1) {
+  const incoming = Math.max(1, Math.round(asNumber(amount)));
+  const bonus = Math.min(
+    Math.max(0, enemy.shield || 0),
+    Math.max(0, Math.round(incoming * (asNumber(multiplier, 1) - 1)))
+  );
+  enemy.shield = Math.max(0, (enemy.shield || 0) - bonus);
+  const result = damageEnemy(enemy, incoming);
+  return {
+    damage: result.damage,
+    absorbed: result.absorbed + bonus,
+    dealt: result.dealt + bonus,
+  };
+}
+
+function purgeEnemyBuffs(enemy) {
+  const positiveMechanisms = new Set(['回血', '复活', '护盾', '分身', '吸血']);
+  const removed = enemy.mechanisms.filter(mechanism => positiveMechanisms.has(mechanism));
+  const shield = Math.max(0, enemy.shield || 0);
+  enemy.mechanisms = enemy.mechanisms.filter(mechanism => !positiveMechanisms.has(mechanism));
+  enemy.shield = 0;
+  enemy.maxShield = 0;
+  enemy.cloneCount = 0;
+  enemy.revivesLeft = 0;
+  return { shield, removed };
+}
+
 function healEnemy(run, enemy, amount, logs, skill, note = '') {
   if (enemy.hp <= 0) return 0;
   const before = enemy.hp;
@@ -1067,16 +1094,14 @@ function getGhostResonance(member) {
   const domain = getGhostDomainLevel(member);
   const equipped = new Set(member.endlessMetaEffects?.equippedPuzzles || []);
   const hasAll = ids => ids.every(id => equipped.has(id));
-  if (
-    domain >= 7 &&
-    hasAll(['ghost_shadow', 'ghost_hand', 'ghost_cleaver', 'music_box', 'wish_ghost'])
-  )
-    return {
-      tier: 3,
-      name: '七层鬼域·言出法随',
-      attrPct: 0.45,
-      ghostEyeDamageMultiplier: 2.4,
-    };
+  if (hasAll(['ghost_shadow', 'ghost_hand', 'ghost_cleaver', 'music_box', 'wish_ghost'])) {
+    if (domain >= 9)
+      return { tier: 5, name: '九层鬼域·必杀愿', attrPct: 0.45, ghostEyeDamageMultiplier: 3.2 };
+    if (domain >= 8)
+      return { tier: 4, name: '八层鬼域·规则愿', attrPct: 0.45, ghostEyeDamageMultiplier: 2.8 };
+    if (domain >= 7)
+      return { tier: 3, name: '七层鬼域·重启肢解', attrPct: 0.45, ghostEyeDamageMultiplier: 2.4 };
+  }
   if (domain >= 6 && hasAll(['ghost_shadow', 'ghost_hand', 'ghost_cleaver']))
     return {
       tier: 2,
@@ -1696,7 +1721,16 @@ function runTreasureMultiHit(run, member, enemy, round, logs, damageByMember, en
 
 function runTreasureBigProc(run, member, enemy, round, logs, damageByMember, entry, stats) {
   if (round % asNumber(entry.every, 4) !== 0) return;
-  const result = damageEnemy(enemy, treasureHitDamage(stats, entry, enemy));
+  const result = damageEnemyWithShieldMultiplier(
+    enemy,
+    treasureHitDamage(stats, entry, enemy),
+    entry.shieldMultiplier
+  );
+  const purged = entry.clearEnemyBuffs
+    ? purgeEnemyBuffs(enemy)
+    : { shield: 0, removed: [] };
+  result.absorbed += purged.shield;
+  result.dealt += purged.shield;
   damageByMember[member.id] += result.dealt;
   const narration = treasureNarration(entry, member, enemy);
   addBattleAction(run, {
@@ -1708,10 +1742,13 @@ function runTreasureBigProc(run, member, enemy, round, logs, damageByMember, ent
     damage: result.damage,
     absorbed: result.absorbed,
     narration: narration || undefined,
+    note: entry.clearEnemyBuffs
+      ? `清除增益：${purged.removed.length ? purged.removed.join('、') : '护盾及临时强化'}`
+      : '',
   });
   addBattleLog(
     logs,
-    `${narration || `${member.name}释放${entry.label}`}，造成${result.dealt}点伤害！`
+    `${narration || `${member.name}释放${entry.label}`}，造成${result.dealt}点伤害${entry.clearEnemyBuffs ? `，并清除${enemy.name}的全部战斗增益` : ''}！`
   );
   if (entry.burn && enemy.hp > 0)
     treasureApplyBurn(run, member, enemy, entry.burn, logs);
@@ -1809,6 +1846,7 @@ function createDecadeRider(run, member, rider, round, logs, first) {
     healPct: asNumber(rider.healPct, 0),
     skills: rider.skills || [],
     flavor: rider.flavor || '',
+    ultimate: rider.ultimate || null,
   };
   member.decadeRiders ||= [];
   member.decadeRiders.push(body);
@@ -1835,63 +1873,100 @@ function createDecadeRider(run, member, rider, round, logs, first) {
 function summonDecadeRiders(run, member, round, logs) {
   if (round === 1) {
     member.decadeRiders = [];
-    const first = shuffle(run, [...HEISEI_RIDERS]).slice(0, 2);
+    const first = [...HEISEI_RIDERS];
     for (const rider of first)
       createDecadeRider(run, member, rider, round, logs, true);
     addBattleLog(
       logs,
-      `${member.name}刷过神主牌，${first.map(rider => rider.name).join('、')}踏出世界夹缝！`
+      `${member.name}刷过K触屏神主牌，旧十年最终形态全员降临，十道终极之力锁定战场！`
     );
-  } else if (round % 3 === 0) {
-    if ((member.decadeRiders || []).length >= HEISEI_RIDERS.length) return;
-    const have = new Set((member.decadeRiders || []).map((rider) => rider.riderId));
-    const pick = shuffle(
-      run,
-      HEISEI_RIDERS.filter((rider) => !have.has(rider.id))
-    )[0];
-    if (pick) createDecadeRider(run, member, pick, round, logs, false);
   }
 }
 
-function attackWithDecadeRiders(run, member, enemy, logs, damageByMember) {
+function attackWithDecadeRiders(run, member, enemy, round, logs, damageByMember) {
+  let riderKilled = false;
   for (const rider of member.decadeRiders || []) {
     if (enemy.hp <= 0) break;
+    const ultimate = round % 3 === 0 ? rider.ultimate : null;
+    const hits = Math.max(1, Math.floor(asNumber(ultimate?.hits, rider.hits)));
     let dealt = 0;
-    for (let index = 0; index < rider.hits; index++) {
+    let absorbed = 0;
+    for (let index = 0; index < hits; index++) {
       if (enemy.hp <= 0) break;
-      let damage = Math.max(1, rider.attack - enemy.defense * 0.62);
+      const defenseRate = ultimate?.ignoreDefense ? 0.08 : 0.62;
+      let damage = Math.max(
+        1,
+        rider.attack * asNumber(ultimate?.damagePct, 1) - enemy.defense * defenseRate
+      );
       const critical = random(run) < rider.critChance;
       if (critical) damage *= 1.7;
       damage *= rider.damageMultiplier;
       if (rider.burnChance > 0 && random(run) < rider.burnChance) damage *= 1.35;
-      const result = damageEnemy(enemy, damage);
+      const result = damageEnemyWithShieldMultiplier(
+        enemy,
+        damage,
+        ultimate?.shieldMultiplier
+      );
+      if (result.damage > 0 && enemy.hp <= 0) riderKilled = true;
       dealt += result.dealt;
+      absorbed += result.absorbed;
       damageByMember[member.id] += result.dealt;
     }
-    if (rider.healPct > 0 && dealt > 0 && member.alive) {
-      const healed = Math.round(dealt * rider.healPct);
+    if (ultimate?.burnPct && enemy.hp > 0) {
+      const burn = damageEnemy(enemy, enemy.maxHp * ultimate.burnPct);
+      dealt += burn.dealt;
+      absorbed += burn.absorbed;
+      damageByMember[member.id] += burn.dealt;
+    }
+    const healPct = asNumber(ultimate?.healPct, rider.healPct);
+    if (healPct > 0 && dealt > 0 && member.alive) {
+      const healed = Math.round(dealt * healPct);
       member.hp = Math.min(
         calculateMemberStats(member, run).maxHp,
         member.hp + healed
       );
       addBattleLog(logs, `${rider.name}浴火吸取${healed}点生命回馈${member.name}。`);
     }
-    const skill = rider.skills[Math.floor(random(run) * rider.skills.length)];
+    if (ultimate?.shieldPct && member.alive) {
+      const gained = Math.round(calculateMemberStats(member, run).maxHp * ultimate.shieldPct);
+      member.shield = Math.max(0, member.shield || 0) + gained;
+      addBattleLog(logs, `${rider.name}展开电车护阵，为${member.name}凝聚${gained}点护盾。`);
+    }
+    const skill = ultimate?.label || rider.skills[Math.floor(random(run) * rider.skills.length)];
     addBattleAction(run, {
       side: 'player',
       kind: 'summon',
       actor: rider.name,
       skill,
-      verb: '自主施展',
+      verb: ultimate ? '释放终极技' : '自主施展',
       target: enemy.name,
       damage: dealt,
+      absorbed,
       narration: rider.flavor || undefined,
-      note: `构筑：${rider.flavor}`,
+      note: ultimate ? `旧十年最终形态必杀｜${rider.flavor}` : `构筑：${rider.flavor}`,
     });
-    addBattleLog(logs, `${rider.name}自主施展《${skill}》，轰出${dealt}点伤害！`);
+    addBattleLog(logs, `${rider.name}${ultimate ? '释放最终形态必杀' : '自主施展'}《${skill}》，轰出${dealt}点伤害！`);
     if (run.__counters)
       run.__counters.treasureRiderAttacks =
         (run.__counters.treasureRiderAttacks || 0) + 1;
+    if (ultimate && run.__counters)
+      run.__counters.treasureRiderUltimates =
+        (run.__counters.treasureRiderUltimates || 0) + 1;
+  }
+  if (riderKilled && !member.__treasureExecuteUsed?.['历代骑士·最终一击']) {
+    member.__treasureExecuteUsed ||= {};
+    member.__treasureExecuteUsed['历代骑士·最终一击'] = true;
+    addBattleAction(run, {
+      side: 'player',
+      actor: member.name,
+      skill: '历代骑士·最终一击',
+      verb: '终结',
+      target: enemy.name,
+      execute: true,
+      narration: `${member.name}刷下Final Attack Ride，旧十年最终形态的骑士纹章贯穿世界`,
+      note: '十骑合击直接完成处决',
+    });
+    addBattleLog(logs, `${member.name}发动《历代骑士·最终一击》，十骑合击将${enemy.name}一击终结！`);
   }
 }
 
@@ -2020,10 +2095,14 @@ function payGhostRecoil(run, member, stats, rate, logs, skill) {
   handleLethal(run, member, logs);
 }
 
-function triggerGhostWish(run, member, enemy, round, logs, damageByMember, stats) {
-  const wishes = ['execute', 'invalid', 'defenseless', 'immobilize'];
+function triggerGhostWish(run, member, enemy, logs, damageByMember, stats, domain) {
+  const wishes = domain >= 9
+    ? ['execute', 'defenseless']
+    : ['invalid', 'immobilize'];
   const wish = wishes[Math.floor(random(run) * wishes.length)];
   if (wish === 'execute') {
+    const enemyHpPct = clamp(enemy.hp / Math.max(1, enemy.maxHp), 0, 1);
+    const recoilRate = 0.25 + enemyHpPct * 0.5;
     const result = damageEnemy(enemy, enemy.hp + enemy.shield);
     damageByMember[member.id] += result.dealt;
     addBattleAction(run, {
@@ -2036,10 +2115,10 @@ function triggerGhostWish(run, member, enemy, round, logs, damageByMember, stats
       absorbed: result.absorbed,
       execute: true,
       narration: `${member.name}以许愿鬼改写结果：我说，这一刀必将斩杀眼前之人`,
-      note: '代价：25%最大生命',
+      note: `逻辑反噬：${Math.round(recoilRate * 100)}%最大生命（按敌方剩余生命计算）`,
     });
-    addBattleLog(logs, `${member.name}说道：“我说，这一刀必将斩杀眼前之人。”因果落定，${enemy.name}被当场斩杀！`);
-    payGhostRecoil(run, member, stats, 0.25, logs, '许愿鬼·巨大反噬');
+    addBattleLog(logs, `${member.name}说道：“我说，这一刀必将斩杀眼前之人。”九层鬼域强行闭合逻辑，${enemy.name}被当场斩杀！`);
+    payGhostRecoil(run, member, stats, recoilRate, logs, '九层鬼域·逻辑反噬');
   } else if (wish === 'invalid') {
     enemy.ghostAttackInvalidPending = true;
     addBattleAction(run, {
@@ -2055,9 +2134,9 @@ function triggerGhostWish(run, member, enemy, round, logs, damageByMember, stats
   } else if (wish === 'defenseless') {
     const broken = enemy.shield;
     enemy.shield = 0;
-    if (enemy.__ghostOriginalDefense === undefined)
-      enemy.__ghostOriginalDefense = enemy.defense;
     enemy.defense = 0;
+    enemy.maxShield = 0;
+    enemy.mechanisms = enemy.mechanisms.filter(mechanism => mechanism !== '护盾');
     addBattleAction(run, {
       side: 'player',
       kind: 'status',
@@ -2066,9 +2145,9 @@ function triggerGhostWish(run, member, enemy, round, logs, damageByMember, stats
       verb: '宣告',
       target: enemy.name,
       absorbed: broken,
-      note: '本回合防御归零并粉碎全部护盾',
+      note: '本场战斗永久失去防御与护盾',
     });
-    addBattleLog(logs, `${member.name}说道：“我说，眼前之人无法防御。”${enemy.name}的护盾与防御同时崩解！`);
+    addBattleLog(logs, `${member.name}说道：“我说，眼前之人无法防御。”九层鬼域抹去防御概念，${enemy.name}的护盾与防御永久崩解！`);
   } else {
     enemy.ghostImmobilizedPending = true;
     addBattleAction(run, {
@@ -2088,8 +2167,12 @@ function triggerGhostWish(run, member, enemy, round, logs, damageByMember, stats
 function runGhostResonance(run, member, enemy, round, logs, damageByMember, stats) {
   const resonance = getGhostResonance(member);
   if (!resonance || round < 6 || enemy.hp <= 0) return;
-  if (resonance.tier >= 3 && random(run) < 0.05) {
-    triggerGhostWish(run, member, enemy, round, logs, damageByMember, stats);
+  if (resonance.tier >= 5 && random(run) < 0.05) {
+    triggerGhostWish(run, member, enemy, logs, damageByMember, stats, 9);
+    return;
+  }
+  if (resonance.tier >= 4 && random(run) < 0.05) {
+    triggerGhostWish(run, member, enemy, logs, damageByMember, stats, 8);
     return;
   }
   if (
@@ -2104,19 +2187,32 @@ function runGhostResonance(run, member, enemy, round, logs, damageByMember, stat
     );
     const result = damageEnemy(enemy, damage);
     damageByMember[member.id] += result.dealt;
+    const freeDismember = resonance.tier >= 3;
     addBattleAction(run, {
       side: 'player',
       actor: member.name,
-      skill: '六层鬼域·肢解',
+      skill: freeDismember ? '七层鬼域·无代价肢解' : '六层鬼域·肢解',
       verb: '肢解',
       target: enemy.name,
       damage: result.damage,
       absorbed: result.absorbed,
       narration: `${member.name}低声道：“真不想走到这一步啊！”鬼手按住目标，鬼柴刀沿鬼眼锁定的死线肢解现实`,
-      note: '代价：20%最大生命',
+      note: freeDismember ? '许愿鬼重启自身，肢解反噬归零' : '代价：20%最大生命',
     });
     addBattleLog(logs, `${member.name}低声道：“真不想走到这一步啊！”鬼柴刀沿死线肢解${enemy.name}，造成${result.dealt}点超巨额伤害！`);
-    payGhostRecoil(run, member, stats, 0.2, logs, '鬼域肢解反噬');
+    if (freeDismember) {
+      addBattleAction(run, {
+        side: 'player',
+        kind: 'status',
+        actor: member.name,
+        skill: '许愿鬼·重启自身',
+        target: member.name,
+        note: '将自身重启至承担肢解代价之前',
+      });
+      addBattleLog(logs, `${member.name}借许愿鬼重启自身，肢解造成的灵异反噬尚未发生便被抹去！`);
+    } else {
+      payGhostRecoil(run, member, stats, 0.2, logs, '鬼域肢解反噬');
+    }
     if (run.__counters) run.__counters.ghostDismemberments++;
   }
 }
@@ -2302,7 +2398,7 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
   );
   // 无尽至宝：觉醒技能（不受大道沉寂影响）
   runTreasureCombat(run, member, enemy, round, logs, damageByMember);
-  attackWithDecadeRiders(run, member, enemy, logs, damageByMember);
+  attackWithDecadeRiders(run, member, enemy, round, logs, damageByMember);
 
   if (enemy.trait === '反射' && dealt > 0 && member.alive) {
     damageMember(
@@ -3195,6 +3291,7 @@ export function resolveEndlessLayer(run) {
     ghostWishes: 0,
     treasureRiderSummoned: 0,
     treasureRiderAttacks: 0,
+    treasureRiderUltimates: 0,
   };
   run.__damageTakenByMember = damageTakenByMember;
   run.__counters = counters;
@@ -3408,6 +3505,7 @@ export function resolveEndlessLayer(run) {
     ghostWishes: counters.ghostWishes,
     treasureRiderSummoned: counters.treasureRiderSummoned,
     treasureRiderAttacks: counters.treasureRiderAttacks,
+    treasureRiderUltimates: counters.treasureRiderUltimates,
     analysis: analysis || null,
   };
 

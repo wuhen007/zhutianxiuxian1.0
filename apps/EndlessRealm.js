@@ -953,7 +953,7 @@ export class EndlessRealm extends plugin {
       notices: [
         { tone: 'jade', title: '流派抉择', text: `当前：${view.effects.branchName || '未选择'}。治疗师、破阵师、守护者三选一，整碑重置后才可改换。` },
         { tone: 'jade', title: '厉鬼拼图', text: '局外装配后，仍需在本局获得【鬼眼】才会激活拼图属性与机制。' },
-        { tone: 'gold', title: '鬼眼羁绊', text: '鬼眼与鬼影可触发15%全属性；集齐鬼手、鬼柴刀等核心拼图后，六层与七层鬼域将升华为25%/45%全属性共鸣。' },
+        { tone: 'gold', title: '鬼眼羁绊', text: '六层完整拼图可反噬肢解；七层由许愿鬼重启自身，实现无代价肢解；八层解锁攻击无效与行动封禁；九层解锁防御抹除及高额逻辑反噬的必杀许愿。' },
         { tone: 'danger', title: '死亡代价', text: 'Boss前未封存道痕在团灭时只保留30%；主动撤离可以全额带回。' },
       ],
       metaNodes,

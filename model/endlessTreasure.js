@@ -39,20 +39,21 @@ export const SYNTHETIC_ABILITY_NAMES = Object.freeze({
   treasure_demon_blood: '魔人血脉',
   treasure_titan_power: '巨人之力',
   treasure_wushi_jing: '无始经',
+  treasure_strongest_qi: '最强之气',
 });
 
 /* 旧平成十年骑士（K触屏·神主形态召唤物） */
 export const HEISEI_RIDERS = Object.freeze([
-  Object.freeze({ id: 'kuuga', name: '空我', form: '究极形态', attack: 1.45, hp: 1.2, crit: 0.12, hits: 1, burnChance: 0, healPct: 0, skills: ['究极升华拳'], flavor: '惊异全能·漆黑之目' }),
-  Object.freeze({ id: 'agito', name: '亚极陀', form: '闪耀形态', attack: 1.3, hp: 1.4, crit: 0.08, hits: 1, burnChance: 0, healPct: 0, skills: ['闪耀骑士踢'], flavor: '太阳神光·护体再生' }),
-  Object.freeze({ id: 'ryuki', name: '龙骑', form: '生存形态', attack: 1.35, hp: 1.15, crit: 0.1, hits: 2, burnChance: 0, healPct: 0.1, skills: ['龙骑士踢'], flavor: '浴火吸血·因果契约' }),
-  Object.freeze({ id: 'faiz', name: '555', form: '爆裂形态', attack: 1.5, hp: 1.05, crit: 0.18, hits: 1, burnChance: 0, healPct: 0, skills: ['爆裂电光踢'], flavor: '光子超频·极限爆发' }),
-  Object.freeze({ id: 'blade', name: '剑', form: '帝王形态', attack: 1.25, hp: 1.35, crit: 0.08, hits: 1, burnChance: 0, healPct: 0, skills: ['皇家同花顺'], flavor: '卡牌连段·不死者封印' }),
-  Object.freeze({ id: 'hibiki', name: '响鬼', form: '装甲声刃', attack: 1.2, hp: 1.3, crit: 0.06, hits: 3, burnChance: 0, healPct: 0, skills: ['音击打·业火'], flavor: '鬼之音击·多段连斩' }),
-  Object.freeze({ id: 'kabuto', name: '甲斗', form: '超越形态', attack: 1.4, hp: 1.1, crit: 0.15, hits: 2, burnChance: 0, healPct: 0, skills: ['超加速·回旋踢'], flavor: 'Clock Up·超加速追击' }),
-  Object.freeze({ id: 'deno', name: '电王', form: '电车形态', attack: 1.28, hp: 1.45, crit: 0.08, hits: 1, burnChance: 0, healPct: 0, skills: ['电车斩杀'], flavor: '良太郎之力·坚盾护阵' }),
-  Object.freeze({ id: 'kiva', name: '月骑', form: '魔皇形态', attack: 1.38, hp: 1.2, crit: 0.1, hits: 1, burnChance: 0.3, healPct: 0, skills: ['魔皇破坏者'], flavor: '魔皇之力·魔焰灼敌' }),
-  Object.freeze({ id: 'decade', name: '帝骑', form: '神主形态', attack: 1.6, hp: 1.1, crit: 0.2, hits: 1, burnChance: 0, healPct: 0, skills: ['最终攻击驾驭'], flavor: '品红全能·驾驭诸骑' }),
+  Object.freeze({ id: 'kuuga', name: '空我', form: '究极形态', attack: 1.8, hp: 1.2, crit: 0.14, hits: 1, skills: ['究极升华拳'], flavor: '惊异全能·漆黑之目', ultimate: { label: '究极升华踢', damagePct: 6, shieldMultiplier: 3 } }),
+  Object.freeze({ id: 'agito', name: '亚极陀', form: '闪耀形态', attack: 1.65, hp: 1.4, crit: 0.1, hits: 1, skills: ['闪耀骑士踢'], flavor: '太阳神光·护体再生', ultimate: { label: '闪耀爆裂踢', damagePct: 5, healPct: 0.12 } }),
+  Object.freeze({ id: 'ryuki', name: '龙骑', form: '生存形态', attack: 1.7, hp: 1.15, crit: 0.12, hits: 2, healPct: 0.12, skills: ['龙骑士踢'], flavor: '浴火吸血·因果契约', ultimate: { label: '龙火风暴', damagePct: 3.2, hits: 2, healPct: 0.25 } }),
+  Object.freeze({ id: 'faiz', name: '555', form: '爆裂形态', attack: 1.95, hp: 1.05, crit: 0.22, hits: 1, skills: ['爆裂电光踢'], flavor: '光子超频·极限爆发', ultimate: { label: '爆裂光子破碎斩', damagePct: 7.5, ignoreDefense: true } }),
+  Object.freeze({ id: 'blade', name: '剑', form: '帝王形态', attack: 1.7, hp: 1.35, crit: 0.12, hits: 2, skills: ['皇家同花顺'], flavor: '卡牌连段·不死者封印', ultimate: { label: '皇家同花顺', damagePct: 6.5, ignoreDefense: true } }),
+  Object.freeze({ id: 'hibiki', name: '响鬼', form: '装甲形态', attack: 1.55, hp: 1.3, crit: 0.1, hits: 3, skills: ['音击打·业火'], flavor: '鬼之音击·多段连斩', ultimate: { label: '装甲声刃·鬼神觉声', damagePct: 1.55, hits: 7 } }),
+  Object.freeze({ id: 'kabuto', name: '甲斗', form: '超越形态', attack: 1.85, hp: 1.1, crit: 0.2, hits: 2, skills: ['超加速·回旋踢'], flavor: 'Hyper Clock Up·超越时空', ultimate: { label: '超越骑士踢', damagePct: 4, hits: 2, ignoreDefense: true } }),
+  Object.freeze({ id: 'deno', name: '电王', form: '电车形态', attack: 1.65, hp: 1.45, crit: 0.1, hits: 1, skills: ['电车斩杀'], flavor: '良太郎之力·坚盾护阵', ultimate: { label: '终极电车斩', damagePct: 5.5, shieldPct: 0.12 } }),
+  Object.freeze({ id: 'kiva', name: '月骑', form: '魔皇形态', attack: 1.8, hp: 1.2, crit: 0.15, hits: 1, burnChance: 0.35, skills: ['魔皇破坏者'], flavor: '魔皇之力·魔焰灼敌', ultimate: { label: '魔皇月蚀踢', damagePct: 6.5, burnPct: 0.04 } }),
+  Object.freeze({ id: 'decade', name: '帝骑', form: '神主形态', attack: 2.15, hp: 1.1, crit: 0.25, hits: 2, skills: ['最终攻击驾驭'], flavor: '品红全能·驾驭诸骑', ultimate: { label: 'Final Attack Ride·十骑终焉', damagePct: 10, shieldMultiplier: 4, ignoreDefense: true } }),
 ]);
 
 /**
@@ -74,7 +75,7 @@ export const ENDLESS_TREASURES = Object.freeze([
     icon: '📱',
     rarity: '神话',
     source: '无尽劫境·第25关',
-    desc: '品红骑士的驱动器。开局自带1级帝骑腰带；腰带练至3级后可化作神主形态帝骑，全属性+50%，召唤历代旧平成骑士终极形态并肩作战；敌人生命低于30%时发动最终一击。未觉醒时全属性+20%，可概率变身旧平成骑士。',
+    desc: '品红骑士的驱动器。帝骑腰带练至3级后化作神主形态，首回合召齐旧平成十位骑士的最终形态；每三回合全员释放专属终极技，兼具破盾、无视防御、恢复与护阵，理论持续输出位居全部至宝之首。',
     baseAbility: 'anime_decade_driver',
     baseLevel: 1,
     baseEffect: { attackPct: 0.08, hpPct: 0.08, defensePct: 0.08 },
@@ -608,6 +609,37 @@ export const ENDLESS_TREASURES = Object.freeze([
           label: '无始钟·镇压天音',
           verb: '鸣响',
           narration: '无始钟轻轻一震，镇压天音涤荡{enemy}',
+        },
+      ],
+    },
+  }),
+
+  /* 19. 最强之气 —— 修罗铠甲 */
+  Object.freeze({
+    id: 'treasure_strongest_qi',
+    name: '最强之气',
+    icon: '⚔️',
+    rarity: '禁忌',
+    source: '无尽劫境·第25关',
+    desc: '唯有超越一切执念的最强之气，才能驾驭修罗铠甲的完整力量。与修罗铠甲同时存在时觉醒为最强修罗，解锁神魔灭绝劈，对护盾造成毁灭性伤害并清除敌方增益。',
+    baseAbility: 'treasure_strongest_qi',
+    baseLevel: 1,
+    baseEffect: { attackPct: 0.16, hpPct: 0.12, defensePct: 0.12 },
+    awaken: {
+      name: '最强修罗·完整解放',
+      requires: { anime_shura_armor: 1 },
+      effect: { attackPct: 0.55, hpPct: 0.35, defensePct: 0.45, damageReduction: 0.08, critChance: 0.08 },
+      combat: [
+        {
+          type: 'bigProc',
+          every: 3,
+          damagePct: 4.5,
+          shieldMultiplier: 8,
+          clearEnemyBuffs: true,
+          ignoreDefense: true,
+          label: '神魔灭绝劈',
+          verb: '劈灭',
+          narration: '{member}将最强之气灌入修罗炼狱戟，神魔灭绝劈撕开空间斩向{enemy}',
         },
       ],
     },

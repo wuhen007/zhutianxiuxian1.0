@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ENDLESS_TREASURES,
+  HEISEI_RIDERS,
   grantRandomEndlessTreasure,
   normalizePlayerTreasures,
   getTreasureStates,
@@ -26,10 +27,11 @@ import {
   normalizeTitles,
 } from '../model/titleSystem.js';
 
-test('至宝池包含18件', () => {
-  assert.equal(ENDLESS_TREASURES.length, 18);
+test('至宝池包含19件并加入最强之气', () => {
+  assert.equal(ENDLESS_TREASURES.length, 19);
+  assert.ok(ENDLESS_TREASURES.some(item => item.id === 'treasure_strongest_qi'));
   const ids = new Set(ENDLESS_TREASURES.map((t) => t.id));
-  assert.equal(ids.size, 18, 'id不可重复');
+  assert.equal(ids.size, 19, 'id不可重复');
 });
 
 test('第25关随机解锁一件永久至宝', () => {
@@ -117,6 +119,37 @@ test('K触屏：帝骑腰带1级未觉醒，3级觉醒神主形态', () => {
   const entries = getTreasureBattleEntries(member, {});
   assert.ok(entries.some(e => e.type === 'summonRiders'));
   assert.ok(entries.some(e => e.type === 'execute'));
+});
+
+test('最强之气：与修罗铠甲共同解锁神魔灭绝劈', () => {
+  const member = {
+    id: 'p1',
+    name: '修罗召唤人',
+    treasureIds: [{ id: 'treasure_strongest_qi', level: 1 }],
+    abilities: { treasure_strongest_qi: 1 },
+    __worldAbilityCounts: {},
+  };
+  assert.equal(getTreasureStates(member, {})[0].awaken.active, false);
+  member.abilities.anime_shura_armor = 1;
+  const state = getTreasureStates(member, {})[0];
+  assert.equal(state.awaken.active, true);
+  assert.equal(state.awaken.formName, '最强修罗·完整解放');
+  const skill = getTreasureBattleEntries(member, {}).find(entry => entry.label === '神魔灭绝劈');
+  assert.equal(skill.shieldMultiplier, 8);
+  assert.equal(skill.clearEnemyBuffs, true);
+});
+
+test('K触屏旧十年终极技的理论DPS高于其他至宝主动技', () => {
+  const riderDps = HEISEI_RIDERS.reduce((sum, rider) => {
+    const ultimate = rider.ultimate;
+    return sum + rider.attack * ultimate.damagePct * (ultimate.hits || 1) / 3;
+  }, 0);
+  const otherDps = ENDLESS_TREASURES
+    .filter(treasure => treasure.id !== 'treasure_decade')
+    .flatMap(treasure => treasure.awaken?.combat || [])
+    .filter(entry => entry.damagePct)
+    .map(entry => entry.damagePct * (entry.hits || 1) / (entry.every || 1));
+  assert.ok(riderDps > Math.max(...otherDps));
 });
 
 test('缘一：集齐日之呼吸与通透世界后觉醒日呼传人', () => {

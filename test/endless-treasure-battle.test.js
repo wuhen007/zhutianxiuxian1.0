@@ -85,8 +85,57 @@ test('神主帝骑：开局召唤骑士并独立作战', () => {
   assert.ok(text.includes('降临战场'), '应召唤旧平成骑士');
   const summoned = allSummary.reduce((sum, s) => sum + (s.treasureRiderSummoned || 0), 0);
   const attacks = allSummary.reduce((sum, s) => sum + (s.treasureRiderAttacks || 0), 0);
-  assert.ok(summoned > 0, '骑士应被召唤');
+  assert.ok(summoned >= 10, '首回合应召齐旧十年最终形态');
   assert.ok(attacks > 0, '骑士应独立攻击');
+});
+
+test('神主帝骑：持久战每三回合释放旧十年最终形态必杀', () => {
+  const run = createRun(20260821, [
+    {
+      无尽至宝列表: [
+        { id: 'treasure_decade', name: 'K触屏·帝骑驱动器', level: 1 },
+      ],
+    },
+  ]);
+  autoChoose(run);
+  run.layer = 49;
+  run.members['10001'].abilities.anime_decade_driver = 3;
+  for (const member of Object.values(run.members)) {
+    member.base.attack = 1;
+    member.base.hp = 1_000_000_000;
+    member.base.defense = 1_000_000_000;
+  }
+  const battle = resolveEndlessLayer(run);
+  const ultimates = battle.roundDetails
+    .flatMap(round => round.actions)
+    .filter(action => action.note.includes('旧十年最终形态必杀'));
+  assert.ok(ultimates.length >= 10);
+  assert.ok(battle.summary.treasureRiderUltimates >= 10);
+});
+
+test('最强之气：神魔灭绝劈清除Boss增益', () => {
+  const run = createRun(20260822, [
+    {
+      无尽至宝列表: [
+        { id: 'treasure_strongest_qi', name: '最强之气', level: 1 },
+      ],
+    },
+  ]);
+  autoChoose(run);
+  run.layer = 49;
+  const member = run.members['10001'];
+  member.abilities.anime_shura_armor = 1;
+  for (const current of Object.values(run.members)) {
+    current.base.attack = 1;
+    current.base.hp = 1_000_000_000;
+    current.base.defense = 1_000_000_000;
+  }
+  const battle = resolveEndlessLayer(run);
+  const slash = battle.roundDetails
+    .flatMap(round => round.actions)
+    .find(action => action.skill === '神魔灭绝劈');
+  assert.ok(slash?.damage + slash?.absorbed > 0);
+  assert.match(slash.note, /清除增益/);
 });
 
 test('神主帝骑：敌人生命低于30%触发最终一击', () => {

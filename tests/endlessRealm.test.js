@@ -78,6 +78,8 @@ for (const [domainLevel, puzzles, expectedPct] of [
   [5, ['ghost_shadow'], 0.15],
   [6, ['ghost_shadow', 'ghost_hand', 'ghost_cleaver'], 0.25],
   [7, ['ghost_shadow', 'ghost_hand', 'ghost_cleaver', 'music_box', 'wish_ghost'], 0.45],
+  [8, ['ghost_shadow', 'ghost_hand', 'ghost_cleaver', 'music_box', 'wish_ghost'], 0.45],
+  [9, ['ghost_shadow', 'ghost_hand', 'ghost_cleaver', 'music_box', 'wish_ghost'], 0.45],
 ]) {
   const run = createOnePlayerRun(60000 + domainLevel);
   const member = run.members['10001'];
@@ -718,22 +720,38 @@ const firstGhostEyeHit = battle => battle.roundDetails
   .find(action => action.skill === '鬼眼·勘破死线')?.damage || 0;
 assert.ok(firstGhostEyeHit(shadowGhostEyeBattle) > firstGhostEyeHit(baseGhostEyeBattle));
 
-for (const [seed, skill] of [
-  [1, '许愿鬼·行动封绝'],
-  [3, '许愿鬼·攻击无效'],
-  [5, '许愿鬼·防御剥夺'],
-  [7, '许愿鬼·必杀之愿'],
-]) {
-  const battle = createGhostResonanceBattle(
-    seed,
-    7,
-    ['ghost_shadow', 'ghost_hand', 'ghost_cleaver', 'music_box', 'wish_ghost']
-  );
-  assert.ok(
-    battle.roundDetails.flatMap(round => round.actions).some(action => action.skill === skill),
-    `${skill}应在固定种子下触发`
-  );
-  assert.ok(battle.summary.ghostWishes >= 1);
+const fullGhostPuzzle = ['ghost_shadow', 'ghost_hand', 'ghost_cleaver', 'music_box', 'wish_ghost'];
+const findGhostBattle = (domain, skill) => {
+  for (let seed = 1; seed <= 160; seed++) {
+    const battle = createGhostResonanceBattle(seed, domain, fullGhostPuzzle);
+    if (battle.roundDetails.flatMap(round => round.actions).some(action => action.skill === skill))
+      return battle;
+  }
+  return null;
+};
+
+const seventhDomainBattle = findGhostBattle(7, '七层鬼域·无代价肢解');
+const seventhActions = seventhDomainBattle?.roundDetails.flatMap(round => round.actions) || [];
+assert.ok(seventhDomainBattle);
+assert.ok(seventhActions.some(action => action.skill === '许愿鬼·重启自身'));
+assert.ok(!seventhActions.some(action => action.skill === '鬼域肢解反噬'));
+assert.equal(seventhDomainBattle.summary.ghostWishes, 0);
+
+for (const skill of ['许愿鬼·攻击无效', '许愿鬼·行动封绝']) {
+  const battle = findGhostBattle(8, skill);
+  const actions = battle?.roundDetails.flatMap(round => round.actions) || [];
+  assert.ok(battle, `八层鬼域应触发${skill}`);
+  assert.ok(!actions.some(action => ['许愿鬼·必杀之愿', '许愿鬼·防御剥夺'].includes(action.skill)));
+}
+
+for (const skill of ['许愿鬼·必杀之愿', '许愿鬼·防御剥夺']) {
+  const battle = findGhostBattle(9, skill);
+  const action = battle?.roundDetails
+    .flatMap(round => round.actions)
+    .find(current => current.skill === skill);
+  assert.ok(action, `九层鬼域应触发${skill}`);
+  if (skill === '许愿鬼·必杀之愿') assert.match(action.note, /按敌方剩余生命计算/);
+  else assert.match(action.note, /永久失去防御与护盾/);
 }
 
 const ghostShadowRun = createOnePlayerRun(66772);
