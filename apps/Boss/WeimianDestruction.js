@@ -196,10 +196,7 @@ function cancelDestructionTimer(timer) {
 }
 
 function readActiveEvent() {
-  return Promise.all([
-    redis.get('guiyishizu'),
-    redis.get('Xiuxian:WorldBossStatus2'),
-  ]).then(([dajie, revolt]) => ({ dajie, revolt }));
+  return redis.get('guiyishizu');
 }
 
 async function loadDestructionState() {
@@ -299,7 +296,7 @@ async function getWorldClockDestructionStatus() {
 }
 
 async function isDestructionEventActive() {
-  const { dajie, revolt } = await readActiveEvent();
+  const dajie = await readActiveEvent();
   if (dajie) {
     try {
       if (!JSON.parse(dajie).isEternallyDefeated) return true;
@@ -307,27 +304,7 @@ async function isDestructionEventActive() {
       return true;
     }
   }
-  if (!revolt) return false;
-  try {
-    const status = JSON.parse(revolt);
-    return !(status.KilledTime !== -1 && Number(status.defeated) >= Number(status.totalBosses || 6));
-  } catch (e) {
-    return true;
-  }
-}
-
-async function recordBlackRevoltPlaneDestruction(plane) {
-  try {
-    const saved = await redis.get('Xiuxian:WorldBossStatus2');
-    if (!saved) return;
-    const status = JSON.parse(saved);
-    if (status.KilledTime !== -1 || !Array.isArray(status.bosses)) return;
-    status.destroyedPlanes = Array.isArray(status.destroyedPlanes) ? status.destroyedPlanes : [];
-    if (!status.destroyedPlanes.includes(plane.name)) status.destroyedPlanes.push(plane.name);
-    await redis.set('Xiuxian:WorldBossStatus2', JSON.stringify(status));
-  } catch (e) {
-    logger.warn('[黑暗动乱] 记录位面崩灭失败:', e.message);
-  }
+  return false;
 }
 
 /**
@@ -540,7 +517,6 @@ async function destroyWorldClockPlane() {
       const result = await destroyPlane(target);
       destroyedPlanes.add(target.id);
       markPlaneDestroyed(target.name);
-      await recordBlackRevoltPlaneDestruction(target);
       await broadcastDestruction(target, result);
       if (index < targets.length - 1) await new Promise(resolve => setTimeout(resolve, 1500));
     }

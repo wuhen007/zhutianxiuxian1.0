@@ -24,7 +24,14 @@ import {
   normalizeDarkRevoltStatus,
   syncDarkRevoltLegacyFields,
 } from '../../model/darkRevolt.js';
-import { startWeimianDestruction, stopWeimianDestruction, rescuePlaneForPlayer } from './WeimianDestruction.js';
+import { rescuePlaneForPlayer } from './WeimianDestruction.js';
+import {
+  clearDarkRevoltDestruction,
+  getCurrentWorldYear,
+  getDarkRevoltDestructionStatus,
+  initializeDarkRevoltDestruction,
+  touchDarkRevoltActivity,
+} from './DarkRevoltDestruction.js';
 let WorldBOSSBattleCD = []; //CD
 let WorldBOSSBattleLock = 0; //BOSS战斗锁，防止打架频率过高造成奖励多发
 let WorldBOSSBattleUnLockTimer = 0; //防止战斗锁因意外锁死
@@ -170,11 +177,7 @@ export class BOSS2 extends plugin {
       if (await BossIsAlive()) {
         await redis.del('Xiuxian:WorldBossStatus2');
         await redis.del('zhutianxiuxian1.0Record2');
-       try {
-         await stopWeimianDestruction();
-       } catch (error) {
-         console.error('[黑暗动乱] 位面毁灭系统停止失败:', error?.message || error);
-       }
+        await clearDarkRevoltDestruction();
        e.reply("恐怖的黑暗动乱气息惊扰到了如梦道祖，只见他睁眼望向诸天万界，眸光照耀永恒无垠的黑暗宇宙，划破了一切既定未定，截断了整片黑暗动乱的时空，将这段历史从古史的源头中直接抹去了，世间万灵都对这段过往失去了记忆！");
       } else e.reply('黑暗动乱早已结束');
     } else return false;
@@ -197,12 +200,18 @@ export class BOSS2 extends plugin {
           return false;
         }
         const activeBoss = getActiveDarkRevoltBoss(WorldBossStatus);
+        const destructionStatus = await getDarkRevoltDestructionStatus();
+        const destroyedPlanes = destructionStatus.targets.filter(target => target.destroyed).map(target => target.name);
         const ReplyMsg = [
           `----黑暗动乱·六位至尊----`,
           `阶段: ${WorldBossStatus.defeated || 0}/${WorldBossStatus.totalBosses || 6}`,
           `已收割万灵精血: ${WorldBossStatus.harvestedLives || 0}`,
-          `已打爆位面: ${(WorldBossStatus.destroyedPlanes || []).join('、') || '位面毁灭法则正在蔓延'}`,
+          `已毁灭位面: ${destroyedPlanes.join('、') || '无'}`,
         ];
+        ReplyMsg.push(
+          `至尊毁灭进度：${destructionStatus.targets.map(target => `${target.name}${target.hits}/${target.hitsToDestroy}`).join('、')}`,
+          `无人迎战阈值：${destructionStatus.intervalWorldYears}年`,
+        );
         for (const boss of WorldBossStatus.bosses) {
           const currentAttack = boss.isAngry ? Math.trunc(boss.攻击 * 1.8) : boss.isWeak ? Math.trunc(boss.攻击 * 0.7) : boss.攻击;
           const currentDefence = boss.isWeak ? Math.trunc(boss.防御 * 0.7) : boss.防御;
@@ -475,6 +484,10 @@ export class BOSS2 extends plugin {
         return false;
       }
       WorldBOSSBattleLock = 1;
+      await touchDarkRevoltActivity({
+        eventId: WorldBossStatus.harvestStartedAt,
+        worldYear: getCurrentWorldYear(),
+      });
       const corpseRescue = await consumeDachengShengtiCorpse(usr_qq, player, Boss, WorldBossStatus);
       const suppression = applyDarkRevoltSuppression(corpseRescue.player, supreme);
       const A_player = suppression.player;
@@ -580,9 +593,6 @@ export class BOSS2 extends plugin {
              }
              if (activeBoss.defeated) {
                WorldBossStatus.harvestedLives = (Number(WorldBossStatus.harvestedLives) || 0) + Math.trunc(activeBoss.OriginHealth * 0.001);
-               if (!Array.isArray(WorldBossStatus.destroyedPlanes)) WorldBossStatus.destroyedPlanes = [];
-               const destroyedPlane = `${activeBoss.forbiddenZone}周边位面`;
-               if (!WorldBossStatus.destroyedPlanes.includes(destroyedPlane)) WorldBossStatus.destroyedPlanes.push(destroyedPlane);
                e.reply(`${activeBoss.名号}陨落！其发动动乱时，${activeBoss.harvest}\n${activeBoss.battle}`);
                const nextBoss = getActiveDarkRevoltBoss(WorldBossStatus);
                if (nextBoss) {
@@ -681,12 +691,7 @@ if (allDarkRevoltBossesDefeated(WorldBossStatus)) {
     // 保存击杀记录
     WorldBossStatus.KilledTime = new Date().getTime();
     redis.set('Xiuxian:WorldBossStatus2', JSON.stringify(WorldBossStatus));
-    try {
-      await stopWeimianDestruction();
-    } catch (error) {
-      console.error('[黑暗动乱] 位面毁灭系统停止失败:', error?.message || error);
-    }
-    
+    await clearDarkRevoltDestruction();
     // 处理贡献排行榜奖励
     let PlayerList = await SortPlayer(PlayerRecordJSON);
     let Show_MAX = Math.min(PlayerList.length, 20); // 最多显示20名玩家
@@ -771,16 +776,15 @@ async function InitWorldBoss(e) {
   let PlayerRecord = 0;
   await redis.set('Xiuxian:WorldBossStatus2', JSON.stringify(WorldBossStatus));
   await redis.set('zhutianxiuxian1.0Record2', JSON.stringify(PlayerRecord));
+  await initializeDarkRevoltDestruction({
+    eventId: WorldBossStatus.harvestStartedAt,
+    worldYear: getCurrentWorldYear(),
+  });
   let msg = '【诸天位面公告】成仙路失败后的六位至尊同时出世，发动最大规模黑暗动乱：收割万灵精血、打爆位面、以血气再叩成仙路。帝道规则与皇道法则降临，低境界修士全属性削减70%。\n圣体血脉可尝试输入 #驾驭大成圣体尸骸，触发短暂叫板大帝的救场彩蛋。';
   const redisGlKey = 'xiuxian:AuctionofficialTask_GroupList';
   const groupList = await redis.sMembers(redisGlKey);
     for (const group_id of groupList) {
         await pushInfo(group_id, true, msg);
-    }
-    try {
-      await startWeimianDestruction();
-    } catch (error) {
-      console.error('[黑暗动乱] 位面毁灭系统启动失败:', error?.message || error);
     }
     return false;
 }

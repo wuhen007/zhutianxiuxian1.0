@@ -19,6 +19,10 @@ import { formatRealmEventLocation } from '../../model/realmEventLocation.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { getRealmAuthorityLevel, hasRealmAuthority } from '../../model/realmAuthority.js';
 import { repairAllDestroyedPlanes } from '../Boss/WeimianDestruction.js';
+import {
+  formatDarkRevoltPlaneDestruction,
+  processDarkRevoltPlaneDestruction,
+} from '../Boss/DarkRevoltDestruction.js';
 import { triggerPeriodicRiftsForEra } from '../../model/planeRiftFestival.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import {
@@ -264,6 +268,16 @@ export class EraChangeTask extends plugin {
 
     await this.broadcastMessage(message);
     return lifecycle;
+  }
+
+  async processDarkRevoltDestruction(worldYear) {
+    try {
+      const event = await processDarkRevoltPlaneDestruction(worldYear);
+      return event ? formatDarkRevoltPlaneDestruction(event) : '';
+    } catch (error) {
+      console.error('[黑暗动乱] 禁区至尊毁灭位面处理失败:', error);
+      return '';
+    }
   }
   async releaseJuelingSuppression(e) {
   // 权限检查：只有机器人管理员或修仙管理员可以使用
@@ -1084,6 +1098,10 @@ if (index === 4) { // 当前是绝灵时代
           }
         },
       });
+      const darkRevoltDestructionMessage = await this.processDarkRevoltDestruction(currentWorldYear);
+      if (darkRevoltDestructionMessage && era.pushNotice) {
+        await this.broadcastMessage(darkRevoltDestructionMessage);
+      }
       
       // 每千年发送进度通知
       if (era.pushNotice && years % 1000 === 0) {
@@ -1729,6 +1747,7 @@ if (index === 4) { // 当前是绝灵时代
       () => this.persistEraCurrent(this.set.Era, { index: eraIndex, years, epoch, totalYears: worldYear }),
     );
     await this.processDaoTreasureLifecycle(worldYear, epoch);
+    const darkRevoltDestructionMessage = await this.processDarkRevoltDestruction(worldYear);
     
     const era = this.eras[eraIndex];
     
@@ -1765,7 +1784,8 @@ if (index === 4) { // 当前是绝灵时代
       `新年份: ${years}/10000年`,
       `进度: ${this.createProgressBar(years)} ${Math.round((years/10000)*100)}%`,
       suppressMsg,
-      restoreMsg
+      restoreMsg,
+      darkRevoltDestructionMessage,
     ].join('\n'));
   }
   
@@ -1864,6 +1884,7 @@ if (index === 4) { // 当前是绝灵时代
           }
         },
       });
+      const darkRevoltDestructionMessage = await this.processDarkRevoltDestruction(currentWorldYear);
       
       const currentEra = this.eras[index];
       let message = [
@@ -1960,6 +1981,9 @@ if (index === 4) { // 当前是绝灵时代
       // 添加损失消息
       if (lossMessage) {
         message += '\n\n' + lossMessage;
+      }
+      if (darkRevoltDestructionMessage) {
+        message += `\n\n${darkRevoltDestructionMessage}`;
       }
       
       // 检查是否进入/离开绝灵时代
@@ -2082,6 +2106,7 @@ if (index === 4) { // 当前是绝灵时代
           }
         },
       });
+      const darkRevoltDestructionMessage = await this.processDarkRevoltDestruction(currentWorldYear);
       
       const newEraName = this.eras[index].name;
       
@@ -2137,6 +2162,9 @@ if (index === 4) { // 当前是绝灵时代
         if (riftResult) message += '\n\n' + riftResult.message;
       } catch (eventErr) {
         console.error("触发位面大事件失败:", eventErr);
+      }
+      if (darkRevoltDestructionMessage) {
+        message += `\n\n${darkRevoltDestructionMessage}`;
       }
       
       await e.reply(message);
