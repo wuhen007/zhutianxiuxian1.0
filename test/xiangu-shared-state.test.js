@@ -210,3 +210,66 @@ test('共享文档损坏时从空对象恢复', async () => {
   assert.equal(result.value, 'saved');
   assert.deepEqual(await readXianguSharedDocument(redis, scope), { ready: true });
 });
+
+test('认领记录携带轮次元数据且不影响既有结构', async () => {
+  const redis = createRedis();
+  const scope = { worldSeed: 'eternal', fragmentId: 'unique', entityId: '一滴帝血' };
+  const claimed = await claimXianguUniqueTreasure(
+    redis,
+    scope,
+    { id: '10001', name: '荒' },
+    500,
+    { meta: { roundSeed: 'round-A' } },
+  );
+  assert.equal(claimed.claimed, true);
+  assert.equal(claimed.record.roundSeed, 'round-A');
+  // 不带 meta 的既有调用不产生多余字段
+  const plain = await claimXianguUniqueTreasure(
+    redis,
+    { worldSeed: 'flower-2026', fragmentId: 'xiangu_core', entityId: '大罗剑胎' },
+    { id: '10002', name: '谪仙' },
+    501,
+  );
+  assert.equal(plain.record.roundSeed, undefined);
+});
+
+test('永久唯一范围跨轮次、跨玩家不可重复获得', async () => {
+  const redis = createRedis();
+  const scope = { worldSeed: 'eternal', fragmentId: 'unique', entityId: '玉石匣·仙王经文' };
+  const first = await claimXianguUniqueTreasure(
+    redis,
+    scope,
+    { id: '10001', name: '荒' },
+    600,
+    { meta: { roundSeed: 'round-A' } },
+  );
+  assert.equal(first.claimed, true);
+
+  // 他人（同轮/异轮）再取：拒绝
+  const other = await claimXianguUniqueTreasure(
+    redis,
+    scope,
+    { id: '10002', name: '石毅' },
+    601,
+    { meta: { roundSeed: 'round-A' } },
+  );
+  assert.equal(other.claimed, false);
+  assert.equal(other.record.claimantId, '10001');
+
+  // 本人跨轮次再取：拒绝（认领记录保留首发轮次）
+  const selfLater = await claimXianguUniqueTreasure(
+    redis,
+    scope,
+    { id: '10001', name: '荒' },
+    602,
+    { meta: { roundSeed: 'round-B' } },
+  );
+  assert.equal(selfLater.claimed, false);
+  assert.equal(selfLater.record.roundSeed, 'round-A');
+  assert.deepEqual(await getXianguUniqueTreasureClaim(redis, scope), {
+    claimantId: '10001',
+    claimantName: '荒',
+    claimedAt: 600,
+    roundSeed: 'round-A',
+  });
+});

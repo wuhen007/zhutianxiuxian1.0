@@ -68,6 +68,7 @@ import {
   takeXianguUniqueBagItem,
 } from './xianguBag.js';
 import {
+  drawRegularSeed,
   drawXianguSeed,
   findXianguTopSeed,
   grantXianguSeed,
@@ -664,6 +665,11 @@ async function prepareXianguMutation(e, playerId, actionName) {
     await e.reply(`【已离开仙古秘境】${actionName}未执行。`);
     return null;
   }
+  const guard = await guardXianguDefeatPending(actionState.player, playerId);
+  if (guard.blocked) {
+    await e.reply(guard.message);
+    return null;
+  }
   if (actionState.cancelled) {
     await e.reply(`【撤离中断】你选择${actionName}，撤离通道随之消散。`);
   }
@@ -765,6 +771,19 @@ function getXianguSharedScope(player, entityId, fragmentId = player?.xiangu_real
   };
 }
 
+/**
+ * 天地唯一造化的永久认领范围（玉石匣/大罗剑胎/帝血/顶级道种）。
+ * worldSeed 固定为 eternal，跨轮次、跨玩家全局唯一：
+ * 某人获得后，其他人（含获得者本人）无论未来哪一轮秘境都不可再获得第二个。
+ */
+function getXianguEternalScope(entityId) {
+  return {
+    worldSeed: 'eternal',
+    fragmentId: 'unique',
+    entityId: String(entityId || ''),
+  };
+}
+
 function getXianguSharedClaimant(player, playerId) {
   return {
     id: String(playerId),
@@ -775,13 +794,23 @@ function getXianguSharedClaimant(player, playerId) {
 // A player may retry after the receipt was written but before the local map
 // snapshot was saved. Treat an existing claim owned by that same player as a
 // successful retry instead of turning the reward into a false loss.
-async function claimXianguRewardForPlayer(claimScope, player, playerId) {
+async function claimXianguRewardForPlayer(claimScope, player, playerId, options = {}) {
+  const meta = {
+    // 记录认领发生时的轮次，用于区分「本地重试」与「跨轮次再次获得」。
+    roundSeed: String(player?.xiangu_world_seed || player?.xiangu_entry_time || ''),
+  };
   const claim = await claimXianguUniqueTreasure(
     redis,
     claimScope,
     getXianguSharedClaimant(player, playerId),
+    undefined,
+    { meta },
   );
   if (!claim.claimed && String(claim.record?.claimantId || '') === String(playerId)) {
+    if (options?.sameRoundOnly && claim.record?.roundSeed && claim.record.roundSeed !== meta.roundSeed) {
+      // 永久唯一造化：记录来自过往轮次，说明该玩家早已获得，不可再次领取。
+      return { ...claim, claimed: false, recovered: false, alreadyOwned: true };
+    }
     return { ...claim, claimed: true, recovered: true };
   }
   return claim;
@@ -1153,6 +1182,45 @@ function armXianguDefeatChoice(player, npc, scene) {
   return player.xiangu_pending_defeat;
 }
 
+/**
+ * 战败抉择未决时的拦截提示。返回非空字符串表示该行为应被阻止。
+ * 逾期不返回提示（由 guardXianguDefeatPending 按「任凭鱼肉」兜底结算）。
+ */
+function buildXianguDefeatPendingBlock(player) {
+  const pending = player?.xiangu_pending_defeat;
+  if (!pending || typeof pending !== 'object') return null;
+  if (Number(pending.expiresAt) < Date.now()) return null;
+  return [
+    `【身陷绝境·无法行动】`,
+    ``,
+    `你正被「${pending.npcName || '秘境存在'}」重创压制，瘫倒在地，动弹不得！`,
+    `此刻你唯一能做的，是决定自己的生死——`,
+    ``,
+    `① #求饶`,
+    `② #任凭鱼肉`,
+    ``,
+    `⏳ 60秒内未抉择，将视为「任凭鱼肉」！`,
+  ].join('\n');
+}
+
+/**
+ * 统一拦截战败抉择未决时的行为。
+ * 返回 { blocked: false } 表示放行；
+ * 返回 { blocked: true, message } 表示应阻止并回复 message。
+ * 若抉择窗口已逾期，自动按「任凭鱼肉」结算（含写出存档），再阻止该行为。
+ */
+async function guardXianguDefeatPending(player, player_qq) {
+  const pending = player?.xiangu_pending_defeat;
+  if (!pending || typeof pending !== 'object') return { blocked: false };
+  if (Number(pending.expiresAt) < Date.now()) {
+    const outcome = await settleXianguDefeatChoice(player, player_qq, 'slaughter');
+    await Write_player(player_qq, player);
+    return { blocked: true, message: outcome.message };
+  }
+  const message = buildXianguDefeatPendingBlock(player);
+  return message ? { blocked: true, message } : { blocked: false };
+}
+
 function buildXianguDefeatChoiceMenu(pending) {
   const factionText = { evil: '邪恶', good: '善良', neutral: '中立' }[pending?.faction] || '中立';
   return [
@@ -1334,8 +1402,9 @@ async function syncXianguSharedMapState(player) {
 
   const treasures = Object.entries(map.uniqueTreasures || {})
     .filter(([, treasure]) => treasure?.kind !== XIANGU_MARROW_POOL_KIND && !treasure?.claimed);
+  // 天地唯一造化按永久范围同步：已被任何人（含本人过往轮次）认领的机缘直接在地图上消失。
   const claims = await Promise.all(treasures.map(([name]) =>
-    getXianguUniqueTreasureClaim(redis, getXianguSharedScope(player, name, 'unique'))
+    getXianguUniqueTreasureClaim(redis, getXianguEternalScope(name))
   ));
   for (let index = 0; index < treasures.length; index++) {
     if (!claims[index]) continue;
@@ -1801,9 +1870,34 @@ async function addXianguSpoil(player, name, quantity = 1, desc = '仙古秘境�
   addXianguBagItem(ensureXianguBag(player), { name, type, quantity, desc });
 }
 
-function grantXianguBagSeed(player, seed) {
+/**
+ * 发放秘境道种。顶级道种（顶级道种:true，神话品质）全服永久唯一：
+ * 已被任何人（含本人过往轮次）获得时，回退为普通道种并标记 replaced。
+ * 返回 { seed, replaced, claimant }。
+ */
+async function grantXianguBagSeed(player, seed, player_qq = '') {
+  if (seed?.顶级道种) {
+    const claimScope = getXianguEternalScope(`顶级道种:${seed.名称}`);
+    const eternalClaim = await getXianguUniqueTreasureClaim(redis, claimScope);
+    if (eternalClaim?.claimantId) {
+      const fallback = drawRegularSeed(player?.xiangu_location || '边缘区域', Math.random, Date.now());
+      addXianguBagSeed(ensureXianguBag(player), fallback);
+      return {
+        seed: fallback,
+        replaced: true,
+        claimant: eternalClaim.claimantName || eternalClaim.claimantId,
+      };
+    }
+    await claimXianguUniqueTreasure(
+      redis,
+      claimScope,
+      getXianguSharedClaimant(player, player_qq),
+      undefined,
+      { meta: { roundSeed: String(player?.xiangu_world_seed || '') } },
+    );
+  }
   addXianguBagSeed(ensureXianguBag(player), seed);
-  return seed;
+  return { seed, replaced: false, claimant: '' };
 }
 
 function getXianguUsableSeedEntries(player) {
@@ -2545,6 +2639,11 @@ export class xianguPlace extends plugin {
           `${player.名号}此刻并不在仙古秘境中。`,
           `提示：使用 #进入仙古秘境 踏入秘境`
         ].join('\n'));
+      }
+
+      const evacuationGuard = await guardXianguDefeatPending(player, player_qq);
+      if (evacuationGuard.blocked) {
+        return e.reply(evacuationGuard.message);
       }
 
       const existingRaw = await redis.get(evacuationKey);
@@ -3489,6 +3588,10 @@ export class xianguPlace extends plugin {
     if (!player?.in_xiangu) {
       return e.reply('【撤离已完成】你已离开仙古秘境，本次移动未执行。');
     }
+    const moveGuard = await guardXianguDefeatPending(player, player_qq);
+    if (moveGuard.blocked) {
+      return e.reply(moveGuard.message);
+    }
     if (actionState.cancelled) {
       await e.reply('【撤离中断】你离开原位，尚未稳定的撤离通道随之崩散。');
     }
@@ -3887,6 +3990,10 @@ async XianguDivineScan(e) {
     }
     player = actionState.player;
     if (!player?.in_xiangu) return e.reply('【撤离已完成】本次推演未执行。');
+    const scanGuard = await guardXianguDefeatPending(player, player_qq);
+    if (scanGuard.blocked) {
+      return e.reply(scanGuard.message);
+    }
     if (!player.xiangu_realm_map) return e.reply('秘境地图已经失效，本次推演未执行。');
     if (!player.xiangu_gains || player.xiangu_gains.daoyun < 5) {
       return e.reply('【道韵不足】当前道韵不足5点，无法继续推演。');
@@ -4092,6 +4199,10 @@ async XianguDivineScan(e) {
     player = actionState.player;
     if (!player?.in_xiangu) {
       return e.reply('【撤离已完成】你已离开仙古秘境，本次移动未执行。');
+    }
+    const zoneGuard = await guardXianguDefeatPending(player, player_qq);
+    if (zoneGuard.blocked) {
+      return e.reply(zoneGuard.message);
     }
     if (actionState.cancelled) {
       await e.reply('【撤离中断】你转身前往其他区域，撤离通道随之消散。');
@@ -5524,6 +5635,10 @@ async XianguYiShenWeiZhong(e) {
       }
       player = attackerAction.player;
       if (!player?.in_xiangu) return e.reply('【撤离已完成】本次攻击未执行。');
+      const pvpAttackGuard = await guardXianguDefeatPending(player, player_qq);
+      if (pvpAttackGuard.blocked) {
+        return e.reply(pvpAttackGuard.message);
+      }
 
       // 检查凶名惩罚（高凶名者攻击时消耗道韵）
       const infamy = player.xiangu_infamy || 0;
@@ -5623,7 +5738,8 @@ async XianguYiShenWeiZhong(e) {
           const targetBag = ensureXianguBag(targetPlayer);
           if (targetBag.seeds.length > 0) {
             const stolenSeed = targetBag.seeds.splice(Math.floor(Math.random() * targetBag.seeds.length), 1)[0];
-            grantXianguBagSeed(player, stolenSeed);
+            // PvP 掠夺属玩家间转移，不触发天地唯一认领
+            addXianguBagSeed(ensureXianguBag(player), stolenSeed);
             lootMsg = `掠夺道种：${stolenSeed.名称 || stolenSeed.name}${stolenSeed.品质 ? ` [${stolenSeed.品质}]` : ''}`;
           } else if (targetBag.items.length > 0) {
             const itemIndex = Math.floor(Math.random() * targetBag.items.length);
@@ -5820,6 +5936,10 @@ async XianguYiShenWeiZhong(e) {
       targetPlayer = defenderAction.player;
       if (!player?.in_xiangu || !targetPlayer?.in_xiangu) {
         return e.reply('【切磋取消】一方已经完成撤离。');
+      }
+      const sparGuard = await guardXianguDefeatPending(player, player_qq);
+      if (sparGuard.blocked) {
+        return e.reply(sparGuard.message);
       }
       await refreshXianguPresence(player_qq, player);
       targetPlayer = await getXianguLiveNearbyTarget(player_qq, player, targetId, targetPlayer);
@@ -6124,6 +6244,10 @@ async XianguYiShenWeiZhong(e) {
       }
       player = actionState.player;
       if (!player?.in_xiangu) return e.reply('【撤离已完成】本次擂台挑战未执行。');
+      const arenaGuard = await guardXianguDefeatPending(player, player_qq);
+      if (arenaGuard.blocked) {
+        return e.reply(arenaGuard.message);
+      }
       if (actionState.cancelled) {
         await e.reply('【撤离中断】你选择登上擂台，撤离通道随之消散。');
       }
@@ -6179,6 +6303,10 @@ async XianguYiShenWeiZhong(e) {
       }
       player = actionState.player;
       if (!player?.in_xiangu) return e.reply('【撤离已完成】本次攻击未执行。');
+      const npcAttackGuard = await guardXianguDefeatPending(player, player_qq);
+      if (npcAttackGuard.blocked) {
+        return e.reply(npcAttackGuard.message);
+      }
       if (actionState.cancelled) {
         await e.reply('【撤离中断】你主动发起战斗，撤离通道随之消散。');
       }
@@ -6560,7 +6688,7 @@ async function handleTreasureCell(e, player, player_qq, map, x, y) {
 
   if (shouldDropXianguSeed(xianguConfig, zone, 'treasure')) {
     const seed = generateRandomSeed(zone, { fragmentId: map.fragmentId, source: 'treasure' });
-    grantXianguBagSeed(player, seed);
+    await grantXianguBagSeed(player, seed, player_qq);
     const { xiuwei, xueqi } = calcExploreRewards(player, riskMultiplier * 2);
     const reward = await grantXianguGrowthRewards(player, player_qq, { xiuwei, xueqi });
     return settleClaim([
@@ -6687,7 +6815,7 @@ async function handleDangerCell(e, player, player_qq, map, x, y) {
         const xianguConfig = getXianguSecretConfig();
         if (shouldDropXianguSeed(xianguConfig, zone, 'boss')) {
           const seed = generateRandomSeed(zone, { fragmentId: map.fragmentId, source: 'boss' });
-          grantXianguBagSeed(player, seed);
+          await grantXianguBagSeed(player, seed, player_qq);
           battleMsg += `\n【Boss道种掉落】${seed.名称} [${seed.品质}]`;
         }
       } else {
@@ -7045,7 +7173,17 @@ async function handleUniqueTreasureCell(e, player, player_qq, map, x, y) {
     if (foundTreasure.kind === XIANGU_MARROW_POOL_KIND) {
       return handleXianguMarrowPoolCell(player, player_qq, map, x, y, foundTreasure, foundName);
     }
-    const claimScope = getXianguSharedScope(player, foundName, 'unique');
+    // 天地唯一：玉石匣/大罗剑胎/帝血 全服永久唯一（跨轮次）。
+    const claimScope = getXianguEternalScope(foundName);
+    const eternalClaim = await getXianguUniqueTreasureClaim(redis, claimScope);
+    if (eternalClaim?.claimantId) {
+      foundTreasure.claimed = true;
+      map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
+      const isSelf = String(eternalClaim.claimantId) === String(player_qq);
+      return isSelf
+        ? `✨【天地唯一】${foundName}已由你于过往轮次获得，天机不可复得。`
+        : `✨【天地唯一】${foundName}已被${eternalClaim.claimantName || eternalClaim.claimantId}获得，此等造化举世唯一，再无第二份。`;
+    }
     const rewardName = foundTreasure.name || foundName;
     const beforeBag = getXianguBagSettlementSnapshot(player);
     const beforeGains = cloneXianguSettlementData(player.xiangu_gains);
@@ -7071,8 +7209,10 @@ async function handleUniqueTreasureCell(e, player, player_qq, map, x, y) {
     const xianguConfig = getXianguSecretConfig();
     if (shouldDropXianguSeed(xianguConfig, zone, 'unique')) {
       const seed = generateRandomSeed(zone, { fragmentId: map.fragmentId, source: 'unique' });
-      grantXianguBagSeed(player, seed);
-      seedMessage = `\n伴生道种：${seed.名称} [${seed.品质}]`;
+      const granted = await grantXianguBagSeed(player, seed, player_qq);
+      seedMessage = granted.replaced
+        ? `\n伴生道种：${granted.seed.名称} [${granted.seed.品质}]（${seed.名称}已被${granted.claimant || '他人'}获得，天地唯一）`
+        : `\n伴生道种：${seed.名称} [${seed.品质}]`;
     }
     const message = [`✨✨✨【绝世机缘·${foundName}】✨✨✨`, `${player.名号}伸手触及${foundTreasure.desc}`, ``, `秘境背包：${rewardName} | ${reward.sourceStone.toLocaleString()}源石 | ${reward.xiuwei}修为 | 20道韵${seedMessage}`, ``, `此等造化，足以震动九天十地！`].join('\n');
     const delivery = await deliverXianguClaimBagReward(
@@ -7083,7 +7223,7 @@ async function handleUniqueTreasureCell(e, player, player_qq, map, x, y) {
       beforeBag,
       {
         playerFields: ['xiangu_gains'],
-        claim: () => claimXianguRewardForPlayer(claimScope, player, player_qq),
+        claim: () => claimXianguRewardForPlayer(claimScope, player, player_qq, { sameRoundOnly: true }),
         onClaimRejected: () => {
           if (beforeGains === undefined) delete player.xiangu_gains;
           else player.xiangu_gains = cloneXianguSettlementData(beforeGains);
@@ -7208,7 +7348,7 @@ async function handleFlameTrial(player, location, player_qq, trial) {
 
   // 试炼成功：奖励一枚神话品质火道道种（可用于道种孕育点燃神火）
   player.血气 = Math.floor(player.血气上限 * 0.2);
-  grantXianguBagSeed(player, trialData.reward);
+  await grantXianguBagSeed(player, trialData.reward, player_qq);
 
   const { xiuwei, xueqi } = calcExploreRewards(player, 3);
   const trialRewards = await grantXianguGrowthRewards(player, player_qq, { xiuwei, xueqi });
@@ -7585,7 +7725,7 @@ async function performExplore(player, location, player_qq, usr_qq, bias = null) 
         // 道种掉落
         if (shouldDropXianguSeed(xianguConfig, location, 'treasure')) {
           const seed = generateRandomSeed(location, { source: 'treasure' });
-          grantXianguBagSeed(player, seed);
+          await grantXianguBagSeed(player, seed, player_qq);
           await Write_player(player_qq, player);
 
           result.message += [
@@ -7892,7 +8032,7 @@ async function handleBossEncounter(player, location, player_qq, usr_qq) {
     const xianguConfig = getXianguSecretConfig();
     if (shouldDropXianguSeed(xianguConfig, location, 'boss')) {
       const seed = generateRandomSeed(location, { source: 'boss' });
-      grantXianguBagSeed(player, seed);
+      await grantXianguBagSeed(player, seed, player_qq);
       await Write_player(player_qq, player);
 
       rewardMsg.push(`【道种掉落！】${seed.名称} [${seed.品质}]`);

@@ -101,6 +101,7 @@ async function claim(redisClient, kind, scope, claimant = {}, now = Date.now(), 
     claimantId: required(claimant.id, 'claimant.id'),
     claimantName: String(claimant.name || claimant.id),
     claimedAt: Math.max(0, Math.trunc(Number(now) || 0)),
+    ...(options.meta && typeof options.meta === 'object' ? options.meta : {}),
   };
   const claimed = Boolean(await redisClient.set(key, JSON.stringify(record), {
     NX: true,

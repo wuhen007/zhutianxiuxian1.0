@@ -136,7 +136,7 @@ function buildTopSeedReward(definition, source, now) {
   };
 }
 
-function drawRegularSeed(location, random, now) {
+export function drawRegularSeed(location, random = Math.random, now = Date.now()) {
   const pool = REGULAR_SEED_POOLS[location] || REGULAR_SEED_POOLS['边缘区域'];
   const weights = QUALITY_WEIGHTS[location] || QUALITY_WEIGHTS['边缘区域'];
   const quality = weightedPick(Object.entries(weights), entry => entry[1], random)?.[0] || '普通';
