@@ -561,8 +561,6 @@ async shenqi_jiesuan(e) {
     
     // === 神祇重天·经验获取与进阶（经验仅由代行结算赋予）===
     if (result) {
-        // 子结算已写入职业经验，先取最新存档，避免旧 player 将其覆盖。
-        player = await Read_player(usr_qq);
         player.神祇经验 = (player.神祇经验 || 0) + actualMinutes;
         let need = (player.神祇 || 1) * 1000;
         let advanced = false;
@@ -599,6 +597,9 @@ async shenqi_jiesuan(e) {
         // 更新消息
         result.msg += `\n\n任务超时${overdueMinutes}分钟，奖励减少${Math.floor(penaltyRate * 100)}%`;
     }
+
+    // 必须放在本次结算最后一次 Write_player 之后，避免旧玩家快照覆盖职业经验。
+    if (result?.exp > 0) await Add_职业经验(usr_qq, result.exp);
     
     // 清除代行任务
     await redis.del('xiuxian:player:' + usr_qq + ':shenqiaction');
@@ -690,9 +691,6 @@ async shenqi_plant_jiesuan(usr_qq, time, factor = 1) {
         await Add_najie_thing(usr_qq, reward.name, reward.type, reward.count);
     }
 
-    // 增加职业经验
-    await Add_职业经验(usr_qq, exp);
-
     // 构造神祇归来文案
     const herbNames = rewards.map(r => `${r.name}x${r.count}`).join('、');
     const msg = [
@@ -763,9 +761,6 @@ async shenqi_mine_jiesuan(usr_qq, time, factor = 1) {
     await Add_najie_thing(usr_qq, A[xuanze], '材料', minggeNum);
     await Add_najie_thing(usr_qq, B[xuanze], '材料', minggeNumB);
 
-    // 增加职业经验
-    await Add_职业经验(usr_qq, exp);
-
     // 构造神祇归来文案
     const oreNames = [
         `庚金x${minggeEnd}`,
@@ -833,9 +828,6 @@ async shenqi_hunt_jiesuan(usr_qq, time, factor = 1) {
     await Add_najie_thing(usr_qq, "野鸡", "食材", end_amount);
     await Add_najie_thing(usr_qq, "野羊", "食材", end_amount);
     
-    // 增加职业经验
-    await Add_职业经验(usr_qq, exp);
-    
     // 构造神祇归来文案
     const preyNames = [
         `野兔x${end_amount}`,
@@ -899,9 +891,6 @@ async shenqi_source_jiesuan(usr_qq, time, factor = 1) {
     await Add_najie_thing(usr_qq, "上品源石", "道具", rareSource);
     await Add_najie_thing(usr_qq, "神源石", "道具", divineSource);
     await Add_najie_thing(usr_qq, "凡源药", "丹药", sourceMedicine);
-    
-    // 增加职业经验
-    await Add_职业经验(usr_qq, exp);
     
     // 构造神祇归来文案
     const sourceNames = [
@@ -967,9 +956,6 @@ async shenqi_earth_qi_jiesuan(usr_qq, time, factor = 1) {
     await Add_najie_thing(usr_qq, "神源石", "道具", end_amount2);
     await Add_najie_thing(usr_qq, "地源药", "丹药", end_amount3);
     
-    // 增加职业经验
-    await Add_职业经验(usr_qq, exp);
-    
     // 构造神祇归来文案
     const itemNames = [
         `上品源石x${end_amount2}`,
@@ -1031,10 +1017,7 @@ async shenqi_vein_locate_jiesuan(usr_qq, time, factor = 1) {
         await Add_najie_thing(usr_qq, "龙脉精华", "道具", longmaiEssence);
     }
     
-    // 增加职业经验
     const exp = time * 20;
-    await Add_职业经验(usr_qq, exp);
-    
     // 构建奖励物品列表
     const items = [
         {name: "超品源石", type: "道具", count: end_amount},
@@ -1306,8 +1289,6 @@ async lingshen_jiesuan(e) {
     
     // === 灵性·经验获取与进阶（经验仅由代行结算赋予）===
     if (result) {
-        // 子结算已写入职业经验，先取最新存档，避免旧 player 将其覆盖。
-        player = await Read_player(usr_qq);
         player.灵性经验 = (player.灵性经验 || 0) + time;
         let need = (player.灵性 || 1) * 1000;
         let advanced = false;
@@ -1330,6 +1311,9 @@ async lingshen_jiesuan(e) {
         if (advanced) headerLines.push(`\n灵机圆融，灵性晋升至 ${player.灵性}重！`);
         result.msg = headerLines.join('\n') + `\n\n` + result.msg;
     }
+
+    // 必须放在本次结算最后一次 Write_player 之后，避免旧玩家快照覆盖职业经验。
+    if (result?.exp > 0) await Add_职业经验(usr_qq, result.exp);
     
     // 清除代行任务
     await redis.del('xiuxian:player:' + usr_qq + ':lingshenaction');
@@ -1410,9 +1394,6 @@ async lingshen_plant_jiesuan(usr_qq, time, factor = 1) {
         await Add_najie_thing(usr_qq, reward.name, reward.type, reward.count);
     }
 
-    // 增加职业经验
-    await Add_职业经验(usr_qq, exp);
-
     // 构造灵身归来文案
     const herbNames = rewards.map(r => `${r.name}x${r.count}`).join('、');
     const msg = [
@@ -1483,9 +1464,6 @@ async lingshen_mine_jiesuan(usr_qq, time, factor = 1) {
     await Add_najie_thing(usr_qq, A[xuanze], '材料', minggeNum);
     await Add_najie_thing(usr_qq, B[xuanze], '材料', minggeNumB);
 
-    // 增加职业经验
-    await Add_职业经验(usr_qq, exp);
-
     // 构造灵身归来文案
     const oreNames = [
         `庚金x${minggeEnd}`,
@@ -1553,9 +1531,6 @@ async lingshen_hunt_jiesuan(usr_qq, time, factor = 1) {
     await Add_najie_thing(usr_qq, "野鸡", "食材", end_amount);
     await Add_najie_thing(usr_qq, "野羊", "食材", end_amount);
     
-    // 增加职业经验
-    await Add_职业经验(usr_qq, exp);
-    
     // 构造灵身归来文案
     const preyNames = [
         `野兔x${end_amount}`,
@@ -1619,9 +1594,6 @@ async lingshen_source_jiesuan(usr_qq, time, factor = 1) {
     await Add_najie_thing(usr_qq, "上品源石", "道具", rareSource);
     await Add_najie_thing(usr_qq, "神源石", "道具", divineSource);
     await Add_najie_thing(usr_qq, "凡源药", "丹药", sourceMedicine);
-    
-    // 增加职业经验
-    await Add_职业经验(usr_qq, exp);
     
     // 构造灵身归来文案
     const sourceNames = [
@@ -1687,9 +1659,6 @@ async lingshen_earth_qi_jiesuan(usr_qq, time, factor = 1) {
     await Add_najie_thing(usr_qq, "神源石", "道具", end_amount2);
     await Add_najie_thing(usr_qq, "地源药", "丹药", end_amount3);
     
-    // 增加职业经验
-    await Add_职业经验(usr_qq, exp);
-    
     // 构造灵身归来文案
     const itemNames = [
         `上品源石x${end_amount2}`,
@@ -1751,10 +1720,7 @@ async lingshen_vein_locate_jiesuan(usr_qq, time, factor = 1) {
         await Add_najie_thing(usr_qq, "龙脉精华", "道具", longmaiEssence);
     }
     
-    // 增加职业经验
     const exp = time * 20;
-    await Add_职业经验(usr_qq, exp);
-    
     // 构建奖励物品列表
     const items = [
         {name: "超品源石", type: "道具", count: end_amount},
