@@ -561,6 +561,8 @@ async shenqi_jiesuan(e) {
     
     // === 神祇重天·经验获取与进阶（经验仅由代行结算赋予）===
     if (result) {
+        // 子结算已写入职业经验，先取最新存档，避免旧 player 将其覆盖。
+        player = await Read_player(usr_qq);
         player.神祇经验 = (player.神祇经验 || 0) + actualMinutes;
         let need = (player.神祇 || 1) * 1000;
         let advanced = false;
@@ -1304,6 +1306,8 @@ async lingshen_jiesuan(e) {
     
     // === 灵性·经验获取与进阶（经验仅由代行结算赋予）===
     if (result) {
+        // 子结算已写入职业经验，先取最新存档，避免旧 player 将其覆盖。
+        player = await Read_player(usr_qq);
         player.灵性经验 = (player.灵性经验 || 0) + time;
         let need = (player.灵性 || 1) * 1000;
         let advanced = false;

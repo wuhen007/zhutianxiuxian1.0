@@ -1,5 +1,9 @@
 import fs from 'node:fs';
 
+const renameRetryDelays = [20, 40, 80, 160, 320];
+const retryableRenameErrors = new Set(['EACCES', 'EBUSY', 'EPERM']);
+const sleepBuffer = new Int32Array(new SharedArrayBuffer(4));
+
 export function writeJsonAtomically(filePath, value, fileSystem = fs) {
   writeFileAtomically(filePath, JSON.stringify(value, null, '\t'), fileSystem);
 }
@@ -10,8 +14,21 @@ export function writeFileAtomically(filePath, content, fileSystem = fs) {
 
   try {
     fileSystem.writeFileSync(tempPath, content, 'utf8');
-    fileSystem.renameSync(tempPath, filePath);
+    renameWithRetry(fileSystem, tempPath, filePath);
   } finally {
     if (fileSystem.existsSync(tempPath)) fileSystem.unlinkSync(tempPath);
+  }
+}
+
+function renameWithRetry(fileSystem, sourcePath, targetPath) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      fileSystem.renameSync(sourcePath, targetPath);
+      return;
+    } catch (error) {
+      const delay = renameRetryDelays[attempt];
+      if (!retryableRenameErrors.has(error?.code) || delay === undefined) throw error;
+      Atomics.wait(sleepBuffer, 0, 0, delay);
+    }
   }
 }
