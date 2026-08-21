@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 import {
   AUTHORITY_COOLDOWNS,
@@ -7,6 +8,7 @@ import {
   INNATE_TREASURE_CATALOG,
   INNATE_TREASURE_NAMES,
   applyInnateTravelReduction,
+  buildInnateTreasureTransfer,
   createInnateTreasure,
   createInnateTreasureProjection,
   getCooldownRemaining,
@@ -19,6 +21,7 @@ import {
   hasReincarnationProtection,
   migrateLegacyInnateTreasureSlot,
   startAuthorityCooldown,
+  transferInnateTreasureAuthorityState,
   tryPanguShatterTalisman,
 } from '../model/innateTreasure.js';
 
@@ -56,6 +59,32 @@ test('先天至宝实体绑定唯一主人并使用独立至宝槽', () => {
   assert.equal(treasure.author_name, '10001');
   assert.equal(treasure.绑定者, '10001');
   assert.equal(treasure.认主时间, 1234);
+});
+
+test('至宝归属移交会更换唯一主人并撤销旧掌控记录', () => {
+  const state = {
+    owners: { 混沌珠: { ownerId: '10001', claimedAt: 1 } },
+    equipped: { 混沌珠: { ownerId: '10001', equippedAt: 2 } },
+    decree: null,
+    landscapeRealms: [],
+  };
+  const transfer = buildInnateTreasureTransfer(state, '混沌珠', '10001', '10002', 3000);
+  assert.equal(transfer.ok, true);
+  assert.equal(transfer.nextState.owners.混沌珠.ownerId, '10002');
+  assert.equal(transfer.nextState.owners.混沌珠.previousOwnerId, '10001');
+  assert.equal(transfer.nextState.owners.混沌珠.transferredAt, 3000);
+  assert.equal(transfer.nextState.equipped.混沌珠, undefined);
+  assert.equal(state.owners.混沌珠.ownerId, '10001');
+  assert.equal(buildInnateTreasureTransfer(state, '混沌珠', '99999', '10002').reason, 'not-owner');
+
+  const sourcePlayer = { 先天权柄: { 冷却: { 阴阳逆转: 9000 }, 太极模式: '阴', 阴阳逆转待用: true } };
+  const targetPlayer = { 先天权柄: { 冷却: { 阴阳逆转: 5000 }, 太极模式: '阳' } };
+  transferInnateTreasureAuthorityState(sourcePlayer, targetPlayer, '太极图');
+  assert.equal(sourcePlayer.先天权柄.冷却.阴阳逆转, undefined);
+  assert.equal(sourcePlayer.先天权柄.太极模式, undefined);
+  assert.equal(targetPlayer.先天权柄.冷却.阴阳逆转, 9000);
+  assert.equal(targetPlayer.先天权柄.太极模式, '阴');
+  assert.equal(targetPlayer.先天权柄.阴阳逆转待用, true);
 });
 
 test('择主榜第二三名获得有明确期限的七日投影', () => {
@@ -153,4 +182,24 @@ test('六道轮回盘与临时庇护都能阻止寿元轮回', () => {
   assert.equal(hasReincarnationProtection({ 当前先天至宝: '六道轮回盘' }, 1000), true);
   assert.equal(hasReincarnationProtection({ 先天权柄: { 轮回庇护截止: 2000 } }, 1000), true);
   assert.equal(hasReincarnationProtection({ 先天权柄: { 轮回庇护截止: 500 } }, 1000), false);
+});
+
+test('混沌钟#截断岁月消费层覆盖分段结算行动并加锁', () => {
+  const source = fs.readFileSync(
+    new URL('../apps/User/InnateTreasureAuthorities.js', import.meta.url),
+    'utf8',
+  );
+  const start = source.indexOf('async cutTime(e)');
+  const end = source.indexOf('async kongtongDecree(e)', start);
+  const block = source.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  // 加锁互斥，避免与定时结算竞态
+  assert.match(block, /withPlayerMutationLock\(ctx\.qq/);
+  // 支持分段结算行动（宗门/福地秘境历练，无 end_time 字段）
+  assert.match(block, /getSecretPlaceActionEndTime\(action\)/);
+  assert.match(block, /accelerateSecretPlaceAction\(action, endTime - now, now\)/);
+  // 常规行动仍走 end_time 截断
+  assert.match(block, /action\.end_time = now/);
+  // 轮回/关押/永寂仍被排除
+  assert.match(block, /轮回\|关押\|永寂/);
 });

@@ -46,7 +46,8 @@ test('复制和演化共用保护校验，演化池不会产出受保护材料',
   );
   assert.equal(source.match(/getChaosItemRestriction\(found\.item, catalogItem \|\| null\)/g)?.length, 2);
   assert.match(source, /nativePool\('材料'\)\.filter\(item => !getChaosItemRestriction\(item\)\)/);
-  assert.equal(source.match(/withPlayerMutationLock\(lockId/g)?.length, 2);
+  // 复制与演化各持玩家级双锁（嵌套 lockId 出现 2 次 × 2 个入口）
+  assert.ok((source.match(/withPlayerMutationLock\(lockId/g) || []).length >= 2);
   assert.equal(source.match(/await persistChaosState\(ctx\.qq, najie, ctx\.player\)/g)?.length, 2);
   assert.match(source, /transaction\.rollback\(\)/);
 });

@@ -353,6 +353,30 @@ export function releaseInnateTreasure(name, ownerId) {
   return true;
 }
 
+export function buildInnateTreasureTransfer(state, name, currentOwnerId, nextOwnerId, now = Date.now()) {
+  if (!isInnateTreasureName(name)) return { ok: false, reason: 'unknown' };
+  const currentOwner = String(currentOwnerId);
+  const nextOwner = String(nextOwnerId);
+  const ownerRecord = state?.owners?.[name];
+  if (!ownerRecord) return { ok: false, reason: 'unclaimed' };
+  if (String(ownerRecord.ownerId) !== currentOwner) {
+    return { ok: false, reason: 'not-owner', ownerId: String(ownerRecord.ownerId) };
+  }
+  if (currentOwner === nextOwner) return { ok: false, reason: 'same-owner' };
+
+  const nextState = JSON.parse(JSON.stringify({ ...defaultState(), ...(state || {}) }));
+  nextState.owners ||= {};
+  nextState.equipped ||= {};
+  nextState.owners[name] = {
+    ownerId: nextOwner,
+    claimedAt: now,
+    previousOwnerId: currentOwner,
+    transferredAt: now,
+  };
+  delete nextState.equipped[name];
+  return { ok: true, name, ownerId: nextOwner, previousOwnerId: currentOwner, nextState };
+}
+
 /**
  * 计算一次先天至宝发放方案（纯逻辑，不写任何文件）。
  * 供管理员 #发 指令调用：先在此判定归属占用，再执行 IO。
@@ -402,6 +426,33 @@ export function getAuthorityState(player) {
     player.先天权柄.冷却 = {};
   }
   return player.先天权柄;
+}
+
+const TREASURE_AUTHORITY_STATE_KEYS = Object.freeze({
+  太极图: Object.freeze(['太极模式', '阴阳逆转待用']),
+  盘古幡: Object.freeze(['盘古开天待用']),
+  诛仙四剑: Object.freeze(['诛仙剑阵待用']),
+  天地玄黄玲珑塔: Object.freeze(['玄黄护道待用']),
+  东皇钟: Object.freeze(['东皇镇世待用']),
+});
+
+export function transferInnateTreasureAuthorityState(sourcePlayer, targetPlayer, treasureName) {
+  const source = getAuthorityState(sourcePlayer);
+  const target = getAuthorityState(targetPlayer);
+  const cooldownKeys = (INNATE_TREASURE_CATALOG[treasureName]?.authorities || [])
+    .map(authority => authority.cooldownKey)
+    .filter(Boolean);
+  for (const key of cooldownKeys) {
+    const sourceExpiry = Number(source.冷却[key]) || 0;
+    if (sourceExpiry > 0) target.冷却[key] = Math.max(Number(target.冷却[key]) || 0, sourceExpiry);
+    delete source.冷却[key];
+  }
+  for (const key of TREASURE_AUTHORITY_STATE_KEYS[treasureName] || []) {
+    delete target[key];
+    if (Object.prototype.hasOwnProperty.call(source, key)) target[key] = source[key];
+    delete source[key];
+  }
+  return { sourcePlayer, targetPlayer };
 }
 
 export function getCooldownRemaining(player, key, now = Date.now()) {

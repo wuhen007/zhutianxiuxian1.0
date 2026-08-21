@@ -7,22 +7,29 @@ import {
   Read_equipment,
   Read_najie,
   Read_player,
+  Write_equipment,
   Write_najie,
   Write_player,
   __PATH,
   channel,
   existplayer,
   foundthing,
+  invalidateBattleEquipmentCache,
   instead_equipment,
   player_efficiency,
 } from '../../model/xiuxian.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import {
+  accelerateSecretPlaceAction,
+  getSecretPlaceActionEndTime,
+} from '../../model/secretPlaceAddiction.js';
 import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
 import {
   AUTHORITY_COOLDOWNS,
   INNATE_TREASURE_CATALOG,
   INNATE_TREASURE_NAMES,
+  buildInnateTreasureTransfer,
   claimKongtongBorrow,
   formatCooldown,
   getAuthorityState,
@@ -36,6 +43,7 @@ import {
   readInnateTreasureState,
   setKongtongDecree,
   startAuthorityCooldown,
+  transferInnateTreasureAuthorityState,
   PANGU_TALISMAN_SHATTER_CHANCE,
   writeInnateTreasureState,
 } from '../../model/innateTreasure.js';
@@ -111,6 +119,7 @@ export class InnateTreasureAuthorities extends plugin {
       rule: [
         { reg: '^#(?:先天)?至宝图鉴(?:\\s+.+)?$', fnc: 'showTreasureCatalog' },
         { reg: '^#执掌先天至宝\\s+.+$', fnc: 'equipTreasure' },
+        { reg: '^.*#移交至宝归属\\s+.+$', fnc: 'transferTreasure' },
         { reg: '^#先天至宝$', fnc: 'showTreasure' },
         { reg: '^#玄黄护道$', fnc: 'xuanhuangGuard' },
         { reg: '^#混沌复制\\s+.+\\*\\d+$', fnc: 'chaosCopy' },
@@ -227,6 +236,120 @@ export class InnateTreasureAuthorities extends plugin {
     return e.reply(projectionName
       ? `你执掌了【${requestedName}】，可在投影消散前动用【${treasureName}】的权柄。`
       : `【${treasureName}】已归于独立至宝位，其先天权柄开始显化。`);
+  }
+
+  async transferTreasure(e) {
+    if (!verc({ e })) return false;
+    if (!e.isGroup) return e.reply('至宝归属移交需在群聊中完成。');
+    const atItem = (e.message || []).find(item => item.type === 'at' && item.qq !== 'all');
+    const rawTarget = atItem?.qq || (e.at && e.at !== 'all' ? e.at : '');
+    if (!rawTarget) return e.reply('用法：@玩家 #移交至宝归属 至宝名');
+
+    const sourceQq = String(await channel(String(e.user_id).replace('qg_', '')));
+    const targetQq = String(await channel(String(rawTarget).replace('qg_', '')));
+    if (sourceQq === targetQq) return e.reply('至宝已经认你为主，无需移交给自己。');
+    if (!await existplayer(sourceQq)) return false;
+    if (!await existplayer(targetQq)) return e.reply('对方尚未踏入修行，无法承接至宝。');
+
+    const treasureName = String(e.msg || '').replace(/^.*#移交至宝归属\s+/, '').trim();
+    if (!isInnateTreasureName(treasureName)) {
+      return e.reply(`未收录先天至宝【${treasureName}】。可移交：${INNATE_TREASURE_NAMES.join('、')}`);
+    }
+
+    const lockIds = [sourceQq, targetQq].sort();
+    return withPlayerMutationLock(lockIds[0], () => withPlayerMutationLock(lockIds[1], async () => {
+      const state = readInnateTreasureState();
+      const transfer = buildInnateTreasureTransfer(state, treasureName, sourceQq, targetQq);
+      if (!transfer.ok) {
+        if (transfer.reason === 'unclaimed') return e.reply(`【${treasureName}】当前尚未认主。`);
+        if (transfer.reason === 'not-owner') return e.reply(`你并非【${treasureName}】当前认主者，不能移交其归属。`);
+        return e.reply('至宝归属没有发生变化。');
+      }
+
+      const [sourceNajie, targetNajie, sourceEquipment, targetEquipment] = await Promise.all([
+        Read_najie(sourceQq),
+        Read_najie(targetQq),
+        Read_equipment(sourceQq),
+        Read_equipment(targetQq),
+      ]);
+      sourceNajie.装备 ||= [];
+      targetNajie.装备 ||= [];
+
+      let treasure;
+      if (sourceEquipment.至宝?.name === treasureName && !sourceEquipment.至宝?.先天至宝本体) {
+        treasure = sourceEquipment.至宝;
+        sourceEquipment.至宝 = {};
+      } else {
+        const index = sourceNajie.装备.findIndex(item => item.name === treasureName && !item.先天至宝本体);
+        if (index < 0) return e.reply(`你的装备位与纳戒中都没有【${treasureName}】本体，归属数据可能需要修复。`);
+        [treasure] = sourceNajie.装备.splice(index, 1);
+      }
+
+      if (targetNajie.装备.some(item => item.name === treasureName && !item.先天至宝本体) ||
+          targetEquipment.至宝?.name === treasureName) {
+        return e.reply(`对方存档中已存在【${treasureName}】本体，请先修复重复数据。`);
+      }
+
+      const now = Date.now();
+      const transferredTreasure = {
+        ...treasure,
+        type: '至宝',
+        author_name: targetQq,
+        绑定者: targetQq,
+        认主时间: now,
+        数量: 1,
+        islockd: 1,
+      };
+      const previousTreasure = targetEquipment.至宝?.name ? { ...targetEquipment.至宝 } : null;
+      if (previousTreasure) targetNajie.装备.push({ ...previousTreasure, 数量: 1 });
+      targetEquipment.至宝 = transferredTreasure;
+
+      const transaction = new FileRollbackTransaction();
+      for (const qq of [sourceQq, targetQq]) {
+        transaction.capture(path.join(__PATH.player_path, `${qq}.json`));
+        transaction.capture(path.join(__PATH.najie_path, `${qq}.json`));
+        transaction.capture(path.join(__PATH.equipment_path, `${qq}.json`));
+      }
+      transaction.capture(path.join(__PATH.data_path, 'innate_treasure_state.json'));
+
+      let sourceName = sourceQq;
+      let targetName = targetQq;
+      try {
+        writeInnateTreasureState(transfer.nextState);
+        await Write_najie(sourceQq, sourceNajie);
+        await Write_equipment(sourceQq, sourceEquipment);
+        await Write_najie(targetQq, targetNajie);
+        await Write_equipment(targetQq, targetEquipment);
+        const [sourcePlayer, targetPlayer] = await Promise.all([
+          Read_player(sourceQq),
+          Read_player(targetQq),
+        ]);
+        transferInnateTreasureAuthorityState(sourcePlayer, targetPlayer, treasureName);
+        sourceName = sourcePlayer.名号 || sourceQq;
+        targetName = targetPlayer.名号 || targetQq;
+        await Write_player(sourceQq, sourcePlayer);
+        await Write_player(targetQq, targetPlayer);
+        transaction.commit();
+      } catch (error) {
+        try {
+          transaction.rollback();
+        } catch (rollbackError) {
+          throw new AggregateError([error, rollbackError], '至宝移交写入及回滚均失败');
+        } finally {
+          invalidateBattleEquipmentCache(sourceQq);
+          invalidateBattleEquipmentCache(targetQq);
+        }
+        logger.error('[先天至宝] 归属移交失败:', error);
+        return e.reply('至宝移交中断，双方数据已恢复，请稍后重试。');
+      }
+
+      return e.reply([
+        '【先天至宝·归属移交】',
+        `【${sourceName}】主动散去旧有大道烙印。`,
+        `【${treasureName}】已重新认主【${targetName}】，认主与掌控权同步移交。`,
+        previousTreasure ? `【${targetName}】原执掌的【${previousTreasure.name}】已退回纳戒。` : '',
+      ].filter(Boolean).join('\n'));
+    }));
   }
 
   async context(e, treasureName, cooldownKey = '') {
@@ -519,19 +642,35 @@ export class InnateTreasureAuthorities extends plugin {
     const ctx = await this.context(e, '混沌钟', '截断岁月');
     if (!ctx) return false;
     const key = `xiuxian:player:${ctx.qq}:action`;
-    const raw = await redis.get(key);
-    if (!raw) return e.reply('你当前没有可截断的计时行动。');
-    const action = JSON.parse(raw);
-    if (/轮回|关押|永寂/.test(String(action.action || ''))) {
-      return e.reply('此状态牵涉轮回或封禁，混沌钟无法截断。');
-    }
-    if (!Number(action.end_time) || Number(action.end_time) <= Date.now()) {
-      return e.reply('当前行动已经可以结算，无需截断岁月。');
-    }
-    action.end_time = Date.now();
-    startAuthorityCooldown(ctx.player, '截断岁月');
-    await redis.set(key, JSON.stringify(action));
-    await Write_player(ctx.qq, ctx.player);
+    const result = await withPlayerMutationLock(ctx.qq, async () => {
+      const raw = await redis.get(key);
+      if (!raw) return { blocked: 'none' };
+      let action = JSON.parse(raw);
+      if (/轮回|关押|永寂/.test(String(action.action || ''))) {
+        return { blocked: 'forbidden' };
+      }
+      const now = Date.now();
+      const endTime = getSecretPlaceActionEndTime(action);
+      if (!Number.isFinite(endTime) || endTime <= now) {
+        return { blocked: 'done' };
+      }
+      if (String(action.Place_actionplus) === '0') {
+        // 分段结算行动（宗门/福地秘境历练等，无 end_time 字段）：
+        // 把剩余全段压缩到期，由定时结算逐段消化。
+        const acceleration = accelerateSecretPlaceAction(action, endTime - now, now);
+        action = acceleration.action;
+      } else {
+        // 常规计时行动：直接拉到当前时刻
+        action.end_time = now;
+      }
+      startAuthorityCooldown(ctx.player, '截断岁月');
+      await redis.set(key, JSON.stringify(action));
+      await Write_player(ctx.qq, ctx.player);
+      return { blocked: '' };
+    });
+    if (result.blocked === 'none') return e.reply('你当前没有可截断的计时行动。');
+    if (result.blocked === 'forbidden') return e.reply('此状态牵涉轮回或封禁，混沌钟无法截断。');
+    if (result.blocked === 'done') return e.reply('当前行动已经可以结算，无需截断岁月。');
     return e.reply('混沌钟响，当前计时行动已抵达结算时刻。');
   }
 
