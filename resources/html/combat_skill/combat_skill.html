@@ -29,7 +29,7 @@
             <span>{{section.note}}</span>
             <h2>{{section.label}}</h2>
           </div>
-          <strong>{{section.equippedCount}} / {{section.limit}}</strong>
+          <strong>{{section.summary}}</strong>
         </header>
 
         {{if section.items.length}}
@@ -42,7 +42,7 @@
                 <h3>{{item.name}}</h3>
                 <p>{{item.stage}}{{if item.moveProgress}} · 已参悟{{item.moveProgress}}{{/if}}</p>
               </div>
-              <b>{{item.equipped ? '已装备' : '未装备'}}</b>
+              <b>{{item.automatic ? '自动生效' : (item.equipped ? '已装备' : '未装备')}}</b>
             </header>
 
             <div class="proficiency-row">

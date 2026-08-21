@@ -3,8 +3,14 @@ import {
   getGongfaCombatMultiplier,
   getGongfaProficiencyProfile,
   getGongfaTriggerChance,
+  getJieziDurationRounds,
+  getJieziExhaustionRounds,
+  getLearnedGongfaNames,
+  getMijueTriggerChance,
   getReviveRecoveryRatio,
   getVitalityRecoveryRate,
+  getYiqihuaConfig,
+  getYiqihuaTriggerChance,
   getZheziReviveConfig,
 } from './gongfaProficiency.js';
 import {
@@ -164,6 +170,68 @@ function buildSection(player, pools, loadout, definition) {
     note: definition.note,
     limit: definition.limit,
     equippedCount: equipped.size,
+    summary: `${equipped.size} / ${definition.limit}`,
+    items,
+  };
+}
+
+function buildSpecialSection(player) {
+  const learned = new Set(getLearnedGongfaNames(player));
+  const names = ['一气化三清', '皆字秘', '临字秘'].filter(name => learned.has(name));
+  const items = names.map((name, index) => {
+    const profile = getGongfaProficiencyProfile(player, name);
+    let trigger;
+    if (name === '一气化三清') {
+      const config = getYiqihuaConfig(player);
+      const duration = config.duration < 0 ? '永驻，直至被击杀' : `存续${config.duration}回合`;
+      trigger = {
+        when: '行动后判定（每局成功1次）',
+        chance: percent(getYiqihuaTriggerChance(player, () => 1), 2),
+        effect: `化出${config.count}道道身 · 全属性${percent(config.ratio)} · ${duration}`,
+        multiplier: `道身 ${multiplier(config.ratio)}`,
+      };
+    } else if (name === '皆字秘') {
+      const duration = getJieziDurationRounds(player);
+      const exhaustion = getJieziExhaustionRounds(player);
+      trigger = {
+        when: '攻击行动时自动判定',
+        chance: percent(getMijueTriggerChance(player, name, () => 1), 2),
+        effect: exhaustion > 0
+          ? `攻击、防御提升至10倍，持续${duration}回合；结束后力竭${exhaustion}回合（攻防-30%）`
+          : `攻击、防御提升至10倍，持续${duration}回合；结束后无力竭`,
+        multiplier: '攻防 x10.00',
+      };
+    } else {
+      const realm = profile.index >= 5 ? '必定神禁' : profile.index >= 3 ? '最低四禁' : '随机一至神禁';
+      trigger = {
+        when: '攻击行动时自动判定（每局成功1次）',
+        chance: percent(getMijueTriggerChance(player, name, () => 1), 2),
+        effect: `${realm}；一至六禁1回合，七至八禁2回合，神禁3回合`,
+        multiplier: '领域 x1.00 - x9.00',
+      };
+    }
+    return {
+      index: index + 1,
+      name,
+      equipped: true,
+      automatic: true,
+      stage: profile.name,
+      proficiency: profile.exp,
+      progress: Math.max(0, Math.min(100, profile.exp / 10)),
+      triggerBoost: multiplier(profile.trigger),
+      combatBoost: '专属规则',
+      effectBoost: '档位成长',
+      moveProgress: '',
+      triggers: [trigger],
+    };
+  });
+  return {
+    key: 'special',
+    label: '特殊秘法',
+    note: '无需占用技能槽，掌握后自动参与战斗',
+    limit: 3,
+    equippedCount: items.length,
+    summary: `${items.length} 门`,
     items,
   };
 }
@@ -180,6 +248,9 @@ export function buildCombatSkillPanel(player, pools = {}) {
     insight: Math.max(0, Math.floor(Number(player?.功法感悟值) || 0)),
     totalEquipped: loadout.攻击.length + loadout.防御.length + (loadout.生机 ? 1 : 0),
     totalLimit: ATTACK_SKILL_LIMIT + DEFENSE_SKILL_LIMIT + 1,
-    sections: definitions.map(definition => buildSection(player, pools, loadout, definition)),
+    sections: [
+      ...definitions.map(definition => buildSection(player, pools, loadout, definition)),
+      buildSpecialSection(player),
+    ],
   };
 }

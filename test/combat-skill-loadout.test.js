@@ -86,6 +86,23 @@ test('战斗技能面板给出实际概率、触发时机、倍率与熟练度',
   assert.match(vitality.triggers[1].effect, /每局复生2次/);
 });
 
+test('战斗技能面板展示无需装备的特殊秘法熟练度机制', () => {
+  const player = {
+    名号: '测试修士',
+    学习的功法: ['一气化三清', '皆字秘', '临字秘'],
+    功法熟练度: { 一气化三清: 500, 皆字秘: 750, 临字秘: 1000 },
+    战斗技能配置: { 攻击: [], 防御: [], 生机: '' },
+  };
+  const special = buildCombatSkillPanel(player, {}).sections.find(section => section.key === 'special');
+
+  assert.equal(special.summary, '3 门');
+  assert.deepEqual(special.items.map(item => item.name), ['一气化三清', '皆字秘', '临字秘']);
+  assert.match(special.items[0].triggers[0].effect, /2道道身.*55%.*2回合/);
+  assert.match(special.items[1].triggers[0].effect, /持续3回合.*力竭1回合/);
+  assert.match(special.items[2].triggers[0].effect, /必定神禁.*神禁3回合/);
+  assert.ok(special.items.every(item => item.automatic));
+});
+
 test('战斗技能命令使用HTML并在大列表时启用分页截图', () => {
   const source = fs.readFileSync(
     new URL('../apps/User/GongfaProficiency.js', import.meta.url),

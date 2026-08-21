@@ -23,6 +23,7 @@ import { buildCombatSkillPanel } from '../../model/combatSkillPanel.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 const SPECIAL_GONGFA = new Set([
+  '一气化三清',
   '皆字秘',
   '临字秘',
   '者字秘',
@@ -169,7 +170,8 @@ export class GongfaProficiency extends plugin {
         const triggers = item.triggers
           .map(row => `${row.when} ${row.chance}｜${row.effect}｜${row.multiplier}`)
           .join('；');
-        lines.push(`${item.index}. ${item.equipped ? '[已装备]' : '[未装备]'}${item.name}｜熟练度${item.proficiency}/1000｜${triggers}`);
+        const status = item.automatic ? '[自动生效]' : item.equipped ? '[已装备]' : '[未装备]';
+        lines.push(`${item.index}. ${status}${item.name}｜熟练度${item.proficiency}/1000｜${triggers}`);
       }
     }
     return e.reply(lines.join('\n'));
