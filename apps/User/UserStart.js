@@ -57,6 +57,12 @@ import {
   getExtraCultivationLevelSum,
 } from '../../model/extraCultivation.js';
 import { deletePlayerDataBundle } from '../AdminSuper/playerDeletion.js';
+import {
+  shouldSuppressJuelingLifespan,
+  suppressJuelingLifespan,
+} from '../../model/juelingLifespan.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { withJuelingEraLock } from '../tasks/juelingLifespanService.js';
 
 function deleteRebirthData(playerId) {
   const deletion = deletePlayerDataBundle({
@@ -67,6 +73,14 @@ function deleteRebirthData(playerId) {
   });
   data.xiaoshijie = deletion.remainingSmallWorlds;
   return deletion;
+}
+
+function writeCreatedPlayer(playerId, player) {
+  return withJuelingEraLock(() => withPlayerMutationLock(playerId, async () => {
+    const eraIndex = config.getConfig('xiuxian', 'xiuxian')?.Era?.current?.index ?? 0;
+    if (shouldSuppressJuelingLifespan(player, eraIndex)) suppressJuelingLifespan(player);
+    await Write_player(playerId, player);
+  }));
 }
 
 export class UserStart extends plugin {
@@ -374,7 +388,8 @@ async draw_player_mingge(e) {
         仙道潜力: DEFAULT_OPENING_POTENTIAL,
        命格词条上限: 1,
        附加命格: [],
-       道心:0,
+       道心:100,
+       道心值:100,
       道途: {
         version: 1,
         stages: {},
@@ -432,7 +447,7 @@ async draw_player_mingge(e) {
       仙宠口粮: [],
       宝石:[],
     };
-    await Write_player(B_qq, new_player);
+    await writeCreatedPlayer(B_qq, new_player);
     await Write_equipment(B_qq, new_equipment);
     await Write_najie(B_qq, new_najie);
     await Add_HP(B_qq, 999999);
@@ -834,7 +849,8 @@ async daily_lottery(e) {
         仙道潜力: DEFAULT_OPENING_POTENTIAL,
        命格词条上限: 1,
        附加命格: [],
-       道心:0,
+       道心:100,
+       道心值:100,
       道途: {
         version: 1,
         stages: {},
@@ -892,7 +908,7 @@ async daily_lottery(e) {
       仙宠口粮: [],
       宝石:[],
     };
-    await Write_player(usr_qq, new_player);
+    await writeCreatedPlayer(usr_qq, new_player);
     await Write_equipment(usr_qq, new_equipment);
     await Write_najie(usr_qq, new_najie);
     await Add_HP(usr_qq, 999999);

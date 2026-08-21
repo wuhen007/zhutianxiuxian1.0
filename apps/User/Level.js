@@ -72,6 +72,7 @@ import {
 } from './wudaoRules.js';
 import { findWudaoTeaItem } from './wudaoTea.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { addJuelingAwareLifespan } from '../../model/juelingLifespan.js';
 import { clearInterval } from 'timers';
 import { getRedDustDaoFruit, getRedDustPath, getRedDustVow } from '../../model/redDustPath.js';
 import {
@@ -79,6 +80,14 @@ import {
   formatGongfaProficiency,
   getWudaoGongfaReduction,
 } from '../../model/gongfaProficiency.js';
+import {
+  adjustDaoHeart,
+  ensureDaoHeart,
+  getDaoHeartDamageMultiplier,
+  getDaoHeartWudaoCostMultiplier,
+  getDaoHeartWudaoGainMultiplier,
+  getReverseLifeCostProfile,
+} from '../../model/daoHeart.js';
 
 function consumeBreakthroughPill(player) {
   if (player.breakthrough !== true) return 0;
@@ -322,11 +331,13 @@ async nihuojiushi(e) {
     
     // 当前处于第几世
     const currentLife = player.nihuo_count || 1;
+    const daoHeart = ensureDaoHeart(player);
+    const reverseCost = getReverseLifeCostProfile(player, currentLife, currentEra.index);
     
     // ========== 仙道潜力检查（逆活九世） ==========
     {
         // 第1世=1点，第2世=2点...第9世=9点，递增1点
-        const potentialCost = applyQuestionFortuneCost(player, currentLife);
+        const potentialCost = applyQuestionFortuneCost(player, reverseCost.potential);
         const currentPotential = player.仙道潜力 || 0;
         if (currentPotential < potentialCost) {
             e.reply([
@@ -345,16 +356,19 @@ async nihuojiushi(e) {
     const baseExpCost = 1500000000 * Math.pow(2, currentLife-1);
     const actualExpCost = applyQuestionFortuneCost(
       player,
-      Math.ceil(baseExpCost * difficulty * redDustVow.costRate)
+      Math.ceil(baseExpCost * difficulty * redDustVow.costRate * reverseCost.multiplier)
     );
+    const spiritCost = Math.ceil(reverseCost.spirit * 100000000);
+    const lifespanCost = reverseCost.lifespan;
     
     // 资源检查
-    if (player.修为 < actualExpCost || player.血气 < actualExpCost) {
+    if (player.修为 < actualExpCost || player.血气 < actualExpCost || (Number(player.元神) || 0) < spiritCost || (Number(player.寿元) || 0) < lifespanCost) {
         const expDeficit = Math.max(0, actualExpCost - player.修为, actualExpCost - player.血气);
         e.reply([
             `第${currentLife}世逆活资源不足！`,
             `时代影响：${eraNames[currentEra.index]}（难度系数×${difficulty}）`,
             `需求修为/血气：${actualExpCost.toLocaleString()}`,
+            `需求元神：${spiritCost.toLocaleString()}｜需求寿元：${lifespanCost.toLocaleString()}`,
             `缺口：${expDeficit.toLocaleString()}`,
             currentLife === 9 ? '最后一世需大圆满' : `需沉淀更深道基`
         ].join("\n"));
@@ -364,6 +378,8 @@ async nihuojiushi(e) {
     // 开始逆活过程
     player.修为 -= actualExpCost;
     player.血气 -= actualExpCost;
+    player.元神 = Math.max(0, (Number(player.元神) || 0) - spiritCost);
+    player.寿元 = Math.max(0, (Number(player.寿元) || 0) - lifespanCost);
     
     // 记录本次逆活时间
     player.last_nihuo_time = currentTotalYears;
@@ -391,7 +407,7 @@ async nihuojiushi(e) {
         `第${currentLife}世逆活开启！`,
         `时代背景：${eraNames[currentEra.index]}`,
         `消耗修为/血气：${actualExpCost.toLocaleString()}`,
-        `难度系数：${difficulty}×`,
+        `难度系数：${difficulty}×｜道心${daoHeart}/500，阶段数${reverseCost.stageCount}`,
         `本世世愿：${redDustVow.name}`,
         `面对心魔：${demon.name}`,
         `「${demon.desc}」`,
@@ -406,7 +422,8 @@ async nihuojiushi(e) {
     if (!battleResult.success) {
         // 心魔对抗失败
         const penaltyRate = difficulty * currentLife * 0.1;
-        const lostHp = Math.round(player.当前血量 * penaltyRate);
+        const lostHp = Math.round(player.当前血量 * penaltyRate * getDaoHeartDamageMultiplier(player));
+        adjustDaoHeart(player, -Math.max(5, currentLife * 8), `逆活第${currentLife}世心魔失败`);
         player.当前血量 = Math.max(1, player.当前血量 - lostHp);
         redDustPath.ashes += 1;
         player.红尘仙路 = redDustPath;
@@ -452,6 +469,7 @@ async nihuojiushi(e) {
                     `【逆活失败】第${currentLife}世未能渡过雷劫`,
                     '劫灰 +1，下次心魔威能降低2%'
                 );
+                adjustDaoHeart(player, -Math.max(8, currentLife * 10), `逆活第${currentLife}世雷劫失败`);
                 redDustPath.ashes += 1;
                 player.红尘仙路 = redDustPath;
                 await ForwardMsg(e, tribulationLog);
@@ -477,6 +495,7 @@ async nihuojiushi(e) {
     
     // 逆活成功
     player.nihuo_count = currentLife + 1;
+    adjustDaoHeart(player, 15, `逆活第${currentLife}世成功`);
     const companionMijing = syncXianguCompanionMijing(player);
     const companionMijingName = data.Levelmijing_list.find(
       level => Number(level.level_id) === Number(companionMijing.targetLevelId)
@@ -494,7 +513,7 @@ async nihuojiushi(e) {
     // 扣除仙道潜力（逆活成功后扣除，第currentLife世消耗currentLife点）
     player.仙道潜力 = Math.max(
         0,
-        (player.仙道潜力 || 0) - applyQuestionFortuneCost(player, currentLife)
+        (player.仙道潜力 || 0) - applyQuestionFortuneCost(player, reverseCost.potential)
     );
     
     // 属性增强
@@ -1796,7 +1815,7 @@ async hudao(e) {
       });
       const baseCosts = getWudaoResourceCosts(player.mijinglevel_id, player.xiangulevel_id);
       const wudaoGongfa = getWudaoGongfaReduction(player);
-      const wudaoCostMultiplier = 1 - wudaoGongfa.rate;
+      const wudaoCostMultiplier = (1 - wudaoGongfa.rate) * getDaoHeartWudaoCostMultiplier(player);
       const potentialCost = applyQuestionFortuneCost(player, Math.ceil(baseCosts.potential * wudaoCostMultiplier));
       const cultivationCost = applyQuestionFortuneCost(player, Math.ceil(baseCosts.cultivation * wudaoCostMultiplier));
       const bloodCost = applyQuestionFortuneCost(player, Math.ceil(baseCosts.blood * wudaoCostMultiplier));
@@ -1805,6 +1824,7 @@ async hudao(e) {
         Math.floor(baseCosts.lifespan * Math.max(0.5, result.lifespanMultiplier * wudaoCostMultiplier))
       );
       const spiritCost = applyQuestionFortuneCost(player, Math.ceil(baseCosts.spirit * wudaoCostMultiplier));
+      result.gain = Math.max(1, Math.floor(Number(result.gain) * getDaoHeartWudaoGainMultiplier(player)));
       const availableLifespan = getAvailableLifespan(player);
       const currentPotential = Number(player.仙道潜力) || 0;
       const currentCultivation = Number(player.修为) || 0;
@@ -1924,8 +1944,8 @@ async hudao(e) {
       ].join('\n'));
     }
 
-    const increaseValue = player.mijinglevel_id * 5000000 * 1.5;
-    const successRate = 0.2 + player.mijinglevel_id * 0.025;
+    const increaseValue = Math.floor(player.mijinglevel_id * 5000000 * 1.5 * getDaoHeartWudaoGainMultiplier(player));
+    const successRate = Math.min(0.95, (0.2 + player.mijinglevel_id * 0.025) * getDaoHeartWudaoGainMultiplier(player));
     if (Math.random() >= successRate) {
       return e.reply('悟道失败，古茶道韵未能与你共鸣，道具未消耗。');
     }
@@ -2329,20 +2349,11 @@ async OneKeyMaxUp(e) {
             totalCost += cost;
             totalPotentialCost += potentialCost;
             const sy = calculateShouyuan(player.Physique_id);
-            let actualShouyuanAdd = sy, suppressMsg = "";
-            if (currentEra.index === 4 && player.mijinglevel_id < 18) {
-                const current = player.寿元;
-                const potential = current + sy;
-                if (potential > 9999) {
-                    actualShouyuanAdd = 9999 - current;
-                    suppressMsg = `【寿元压制】处于绝灵时代，寿元被压制至9999年，实际增加${actualShouyuanAdd}年`;
-                } else {
-                    suppressMsg = `【寿元压制】处于绝灵时代，但增加后未超过9999年`;
-                }
-                if (!player.压制寿元) player.压制寿元 = current;
-                player.压制寿元 += actualShouyuanAdd;
-            }
-            player.寿元 += actualShouyuanAdd;
+            const lifespanGain = addJuelingAwareLifespan(player, sy, currentEra.index);
+            const actualShouyuanAdd = lifespanGain.added;
+            const suppressMsg = lifespanGain.suppressed
+                ? `【寿元压制】真实寿元增加${actualShouyuanAdd}年，当前寿元显示增加${lifespanGain.visibleAdded}年`
+                : "";
             addShou += actualShouyuanAdd;
             msg.push(`${nowInfo.level} → ${nextInfo.level} 成功！寿元 +${actualShouyuanAdd}年`);
             if (suppressMsg) msg.push(suppressMsg);
@@ -2589,20 +2600,11 @@ const luck = e.msg.includes('幸运');
         totalPotentialCost += potentialCost;
 
         const addShouyuan = calculateShouyuan(player.level_id, currentEra.index, player.mijinglevel_id);
-        let actualShouyuanAdd = addShouyuan, suppressMsg = "";
-        if (currentEra.index === 4 && player.mijinglevel_id < 18) {
-            const currentShouyuan = player.寿元;
-            const potential = currentShouyuan + addShouyuan;
-            if (potential > 9999) {
-                actualShouyuanAdd = 9999 - currentShouyuan;
-                suppressMsg = `【寿元压制】处于绝灵时代，寿元被压制至9999年，实际增加${actualShouyuanAdd}年`;
-            } else {
-                suppressMsg = `【寿元压制】处于绝灵时代，但增加后未超过9999年`;
-            }
-            if (!player.压制寿元) player.压制寿元 = currentShouyuan;
-            player.压制寿元 += actualShouyuanAdd;
-        }
-        player.寿元 += actualShouyuanAdd;
+        const lifespanGain = addJuelingAwareLifespan(player, addShouyuan, currentEra.index);
+        const actualShouyuanAdd = lifespanGain.added;
+        const suppressMsg = lifespanGain.suppressed
+            ? `【寿元压制】真实寿元增加${actualShouyuanAdd}年，当前寿元显示增加${lifespanGain.visibleAdded}年`
+            : "";
         totalAddShouyuan += actualShouyuanAdd;
 
         msg.push(`${now_level_info.level} → ${next_level_info.level} 成功！寿元 +${actualShouyuanAdd}年`);
@@ -3002,35 +3004,11 @@ async LevelMax_up(e, luck) {
         // 计算理论寿元增加量
         const theoryShouyuan = calculateShouyuan(player.Physique_id);
         
-        // ==== 寿元压制处理 ====
-        let actualShouyuanAdd = theoryShouyuan; // 实际增加的寿元
-        let suppressMsg = ""; // 压制提示信息
-        
-        // 检查是否处于绝灵时代且境界低于仙王
-        if (currentEra.index === 4 && player.mijinglevel_id < 18) {
-            // 计算当前寿元
-            const currentShouyuan = player.寿元;
-            
-            // 计算增加后的寿元
-            const potentialShouyuan = currentShouyuan + theoryShouyuan;
-            
-            // 如果超过9999，只增加到9999
-            if (potentialShouyuan > 9999) {
-                actualShouyuanAdd = 9999 - currentShouyuan;
-                suppressMsg = `【寿元压制】由于处于绝灵时代，寿元被压制至9999年，实际增加${actualShouyuanAdd}年`;
-            } else {
-                suppressMsg = `【寿元压制】处于绝灵时代，但增加后未超过9999年`;
-            }
-            
-            // 更新压制寿元（原始寿元记录）
-            if (!player.压制寿元) {
-                player.压制寿元 = currentShouyuan;
-            }
-            player.压制寿元 += actualShouyuanAdd;
-        }
-        
-        // 增加寿元
-        player.寿元 += actualShouyuanAdd;
+        const lifespanGain = addJuelingAwareLifespan(player, theoryShouyuan, currentEra.index);
+        const actualShouyuanAdd = lifespanGain.added;
+        const suppressMsg = lifespanGain.suppressed
+            ? `【寿元压制】真实寿元增加${actualShouyuanAdd}年，当前寿元显示增加${lifespanGain.visibleAdded}年`
+            : "";
         
         // 加入成功信息到消息列表
         msg.push(`${next_level_info.level} → 突破成功！`);
@@ -3465,36 +3443,11 @@ async Level_up(e, luck) {
         player.level_id = newLevelId;
         player.修为 -= actual_need_exp;
 
-        // ==== 新增：寿元增加逻辑（考虑绝灵时代限制）====
-        let actualShouyuanAdd = shouyuan; // 实际增加的寿元
-        let suppressMsg = ""; // 压制提示信息
-
-        // 检查是否处于绝灵时代且境界低于仙王
-        if (currentEra.index === 4 && player.mijinglevel_id < 18) {
-            // 计算当前寿元
-            const currentShouyuan = player.寿元;
-            
-            // 计算增加后的寿元
-            const potentialShouyuan = currentShouyuan + shouyuan;
-            
-            // 如果超过9999，只增加到9999
-            if (potentialShouyuan > 9999) {
-                actualShouyuanAdd = 9999 - currentShouyuan;
-                suppressMsg = `【寿元压制】由于处于绝灵时代，寿元被压制至9999年，实际增加${actualShouyuanAdd}年`;
-            } else {
-                suppressMsg = `【寿元压制】处于绝灵时代，但增加后未超过9999年`;
-            }
-            
-            // 更新压制寿元（原始寿元记录）
-            if (!player.压制寿元) {
-                player.压制寿元 = currentShouyuan;
-            }
-            player.压制寿元 += actualShouyuanAdd;
-        }
-
-        // 增加寿元
-        player.寿元 += actualShouyuanAdd;
-        // ==== 寿元增加逻辑结束 ====
+        const lifespanGain = addJuelingAwareLifespan(player, shouyuan, currentEra.index);
+        const actualShouyuanAdd = lifespanGain.added;
+        const suppressMsg = lifespanGain.suppressed
+            ? `【寿元压制】真实寿元增加${actualShouyuanAdd}年，当前寿元显示增加${lifespanGain.visibleAdded}年`
+            : "";
 
         // 扣除仙道潜力（突破成功后扣除）
         {

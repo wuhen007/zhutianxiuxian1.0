@@ -15,6 +15,7 @@ import {
   getJieziDurationRounds,
   getJieziExhaustionRounds,
   getLinzDurationRounds,
+  getMijueTriggerChance,
   getReviveRecoveryRatio,
   getVitalityRecoveryRate,
   getWudaoGongfaReduction,
@@ -23,6 +24,7 @@ import {
   tryLearnTianjiaoGongfa,
   tryVitalityRecovery,
   getYiqihuaConfig,
+  getYiqihuaTriggerChance,
 } from '../model/gongfaProficiency.js';
 
 test('功法熟练度按六档计算概率与威能', () => {
@@ -192,4 +194,15 @@ test('一气化三清按熟练度配置道身数量、全属性倍率和存续�
   assert.deepEqual(getYiqihuaConfig({ ...player, 功法熟练度: { 一气化三清: 1000 } }), {
     count: 2, ratio: 0.9, duration: -1,
   });
+});
+
+test('特殊秘法触发概率纳入熟练度倍率', () => {
+  const player = {
+    学习的功法: ['一气化三清', '皆字秘', '临字秘'],
+    功法熟练度: { 一气化三清: 500, 皆字秘: 500, 临字秘: 1000 },
+  };
+
+  assert.ok(Math.abs(getYiqihuaTriggerChance(player, () => 1) - 0.981) < Number.EPSILON);
+  assert.ok(Math.abs(getMijueTriggerChance(player, '皆字秘', () => 1) - 0.2289) < Number.EPSILON);
+  assert.ok(Math.abs(getMijueTriggerChance(player, '临字秘', () => 1) - 0.2415) < Number.EPSILON);
 });

@@ -1,4 +1,5 @@
 import { getRealmAuthorityLevel } from './realmAuthority.js';
+import { adjustDaoHeart } from './daoHeart.js';
 
 export const FORBIDDEN_DAY_MS = 24 * 60 * 60 * 1000;
 export const FORBIDDEN_COOLDOWN_MS = FORBIDDEN_DAY_MS;
@@ -272,7 +273,7 @@ export function applyForbiddenDisposition(type, attacker, target, options = {}) 
       };
     } else if (type === '灭魂') {
       target.当前血量 = 0;
-      target.道心值 = Math.max(1, integer(target.道心值, 100) - 10);
+      adjustDaoHeart(target, -10, '灭魂');
       target.邪道创伤.真灵蛰伏至 = now + SOUL_DORMANCY_MS;
     } else if (type === '夺果') {
       target.邪道创伤.道果裂痕至 = now + DAO_CRACK_DURATION_MS;

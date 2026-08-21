@@ -37,6 +37,7 @@ import {
   awardDungeonGongfaProficiency,
   formatGongfaProficiency,
 } from '../../model/gongfaProficiency.js';
+import { adjustDaoHeart } from '../../model/daoHeart.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
 import {
   getLocationByCoord,
@@ -454,6 +455,7 @@ export class LingjieRift extends plugin {
       lines.push('', '【探索失败】你被裂缝生灵重创，拼尽全力逃回凡间，当前血量降至1。');
     } else {
       lines.push('', '【探索胜利】裂缝生灵倒下，界土深处的灵光显露。');
+      adjustDaoHeart(player, 10, '战胜灵界裂缝天骄');
       player.灵界裂缝通关次数 = (Number(player.灵界裂缝通关次数) || 0) + 1;
       const rewardBonus = resolveRiftRewardBonus(player);
       lines.push(...await this.grantMainRewards(task.qq, rewardBonus));
@@ -496,6 +498,9 @@ export class LingjieRift extends plugin {
       { name: xiuwei, class: '丹药', count: 1 },
       { name: xueqi, class: '丹药', count: 1 },
     ];
+    const daoHeartRoll = Math.random();
+    if (daoHeartRoll < 0.08) rewards.push({ name: '玄品道心果', class: '丹药', count: 1, fixedCount: true });
+    else if (daoHeartRoll < 0.35) rewards.push({ name: '凡品道心果', class: '丹药', count: 1, fixedCount: true });
     if (Math.random() < 0.25) rewards.push({ name: Math.random() < 0.9 ? '天药' : '九转天药', class: '丹药', count: 1 });
     if (Math.random() < 0.08) rewards.push({ name: '太虚蕴神经', class: '功法', count: 1 });
     if (Math.random() < RIFT_ANCHOR_DROP_CHANCE) {

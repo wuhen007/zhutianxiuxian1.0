@@ -36,6 +36,7 @@ import {
   LEIDI_TRIBULATION_CONVERSION_RATE,
   LEIDI_TRIBULATION_CONVERSION_WAVES,
 } from '../User/zhetianTribulationRules.js';
+import { adjustDaoHeart, getDaoHeartDamageMultiplier } from '../../model/daoHeart.js';
 
 export { XIANGU_REALM_ROUTES, calcXianguCarryDaoFlaw } from './xianguTribulationSettlement.js';
 
@@ -479,7 +480,8 @@ export class XianguTribulation {
       multiplier: this._horrorMultiplier,
       finalWave: opts.finalWave,
     });
-    const base = horror.damage;
+    const daoHeartMultiplier = getDaoHeartDamageMultiplier(player);
+    const base = horror.damage * daoHeartMultiplier;
     const { damage: bodyDamage, msgs: bodyMsgs } = this._applyBodyDefenses(player, base);
     const defendedDamage = this._applyNormalDefenses(player, bodyDamage, bodyMsgs);
     const sourceName = opts.sourceName || '道火本源';
@@ -529,6 +531,7 @@ export class XianguTribulation {
 
     if (settlement.dead) {
       this.dead = true;
+      adjustDaoHeart(player, -25, `${fatalName}失败`);
       lines.push(`　${fatalName}彻底磨灭生机，功法难救——渡劫失败！`);
       return { lines, dead: true };
     }

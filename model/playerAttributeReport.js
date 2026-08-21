@@ -22,6 +22,7 @@ import { applyQuestionFortuneCost, hasRedDustFortune } from './redDustFortune.js
 import { isDaofaActive } from './daofa.js';
 import { calculateExtraAttributeLimit } from './attributeCaps.js';
 import { getRealmAuthorityLevel } from './realmAuthority.js';
+import { ensureDaoHeart } from './daoHeart.js';
 
 export { calculateExtraAttributeLimit } from './attributeCaps.js';
 
@@ -256,6 +257,7 @@ function buildRealmSection(player, levels) {
 }
 
 function buildCombatSection(player) {
+  const daoHeart = ensureDaoHeart(player);
   return [
     '【最终战斗属性】',
     `攻击：${integer(player?.攻击)}｜防御：${integer(player?.防御)}`,
@@ -264,7 +266,7 @@ function buildCombatSection(player) {
     `元神：${integer(player?.元神)}/${integer(player?.元神上限)}｜神识：${integer(player?.神识)}`,
     `修为：${integer(player?.修为)}｜血气：${integer(player?.血气)}｜修炼效率：${percent(player?.修炼效率提升, true)}`,
     `仙道潜力：${integer(player?.仙道潜力)}｜寿元：${integer(player?.寿元)}${number(player?.压制寿元) > 0 ? `（真实${integer(player.压制寿元)}）` : ''}`,
-    `生命本源：${integer(player?.生命本源)}｜道心：${integer(player?.道心)}｜道韵：${integer(player?.道韵)}｜幸运：${percent(player?.幸运)}`,
+    `生命本源：${integer(player?.生命本源)}｜道心：${integer(daoHeart)}｜道韵：${integer(player?.道韵)}｜幸运：${percent(player?.幸运)}`,
   ].join('\n');
 }
 
@@ -469,6 +471,7 @@ function attributeContext({ player, data, eraIndex, now }) {
 }
 
 export function buildPlayerAttributeView({ player, equipment, data, eraIndex = 2, difficulty, now = Date.now() }) {
+  const daoHeart = ensureDaoHeart(player, now);
   const context = attributeContext({ player, data, eraIndex, now });
   const { levels, minggeEffects, technique, wudao } = context;
   const extra = calculateExtraAttributeState(player);
@@ -585,7 +588,7 @@ export function buildPlayerAttributeView({ player, equipment, data, eraIndex = 2
       { label: '元神', value: integer(player?.元神), note: `上限 ${integer(player?.元神上限)}` },
       { label: '神识', value: integer(player?.神识), note: `穿透 ${percent(player?.穿透)}` },
       { label: '修炼效率', value: percent(player?.修炼效率提升, true), note: `${player?.灵根?.name || '无灵根'} · ${player?.天资等级 || '无天资'}` },
-      { label: '生命本源', value: integer(player?.生命本源), note: `道心 ${integer(player?.道心)}` },
+      { label: '生命本源', value: integer(player?.生命本源), note: `道心 ${integer(daoHeart)}` },
     ],
     extra: {
       total: integer(extra.limit.total),
@@ -687,7 +690,7 @@ export function buildPlayerAttributeView({ player, equipment, data, eraIndex = 2
       { label: '灵根', value: [player?.灵根?.type, player?.灵根?.name].filter(Boolean).join(' · ') || '无', note: `攻 ${percent(player?.灵根?.攻击, true)} · 防 ${percent(player?.灵根?.防御, true)} · 血 ${percent(player?.灵根?.生命, true)}` },
       { label: '主命格', value: [mainFate?.rarityName, mainFate?.name].filter(Boolean).join(' · ') || '无', note: `悟道寿元 ${wudaoAvailable ? wudao.result.lifespanMultiplier.toFixed(2) : '1.00'}× · 潜力收益 ${percent(minggeEffects?.仙道潜力收益, true)}` },
       { label: '附加命格', value: additionalFates.join(' / ') || '无', note: `秘境固定减时 ${minggeSeconds}秒 · 悟道收益 ${percent(minggeEffects?.悟道收益, true)}` },
-      { label: '道基', value: `元神 ${integer(player?.元神)} / ${integer(player?.元神上限)}`, note: `道心 ${integer(player?.道心)} · 道韵 ${integer(player?.道韵)} · 幸运 ${percent(player?.幸运)}` },
+      { label: '道基', value: `元神 ${integer(player?.元神)} / ${integer(player?.元神上限)}`, note: `道心 ${integer(daoHeart)} · 道韵 ${integer(player?.道韵)} · 幸运 ${percent(player?.幸运)}` },
     ],
   };
 }

@@ -13,6 +13,7 @@ import {
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
 import { runTaskOnce } from '../../utils/taskGuard.js';
+import { adjustDaoHeart } from '../../model/daoHeart.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 export class Xijietask extends plugin {
   constructor() {
@@ -149,6 +150,9 @@ export class Xijietask extends plugin {
                 A_player.当前血量 +
                 '血量,开始搜刮物品';
             } else if (Data_battle.winner === (playerSide === 'A' ? 'B' : 'A')) {
+              const failedPlayer = await Read_player(player_id);
+              adjustDaoHeart(failedPlayer, -20, '洗劫失败');
+              await Write_player(player_id, failedPlayer);
               var num = weizhi.Grade;
               last_msg +=
                 ',经过一番战斗,败下阵来,被抓进了地牢\n在地牢中你找到了秘境之匙x' +

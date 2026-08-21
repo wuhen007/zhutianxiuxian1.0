@@ -787,7 +787,8 @@ async function createNewPlayerAfterRebirth(e, oldPlayer, isChixiao, downgradedAp
       // 以下字段对齐正常 #开始修仙 模板，避免重生后玩家对象缺字段导致属性/战力 NaN
       速度: 100,
       仙道潜力: 0,
-      道心: 0,
+      道心: 100,
+      道心值: 100,
       元神伤害加成: 0,
       元神伤害减免: 0,
       神通伤害加成: 0,

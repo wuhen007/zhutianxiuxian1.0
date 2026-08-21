@@ -71,6 +71,7 @@ import {
   getForbiddenProtection,
   protectForbiddenTarget,
 } from '../../model/forbiddenSoul.js';
+import { adjustDaoHeart, getDaoHeartLearningChanceMultiplier } from '../../model/daoHeart.js';
 
 function formatSoulSearchTribulation(player, result) {
   if (!result.triggered) return [];
@@ -2974,7 +2975,7 @@ async handleTeach(e, isAll = false) {
         }
         
         // === 学习失败概率 ===
-        const successRate = getTeachingSuccessRate(gongfaLevel, targetAptitude.grade);
+        const successRate = Math.min(1, getTeachingSuccessRate(gongfaLevel, targetAptitude.grade) * getDaoHeartLearningChanceMultiplier(target));
         let failureReason = "";
         
         if (targetAptitude.grade === '生而愚痴') {
@@ -3187,7 +3188,7 @@ async handleTeach(e, isAll = false) {
         }
         
         // === 学习失败概率 ===
-        const successRate = getTeachingSuccessRate(gongfaLevel, targetAptitude.grade);
+        const successRate = Math.min(1, getTeachingSuccessRate(gongfaLevel, targetAptitude.grade) * getDaoHeartLearningChanceMultiplier(target));
         
         if (Math.random() > successRate) {
             failedByLuck.push(`${gongfaName}(成功率${(successRate * 100).toFixed(0)}%)`);
@@ -5315,7 +5316,7 @@ async soulSearch(e) {
   
   // 目标遭受元神创伤
   target.元神 = Math.max(100000, (target.元神 || 500000) * 0.7);
-  target.道心值 = Math.max(1, (target.道心值 || 100) - 20);
+  adjustDaoHeart(target, -20, '搜魂');
   protectForbiddenTarget(target, Date.now());
   
   await Write_player(executorQQ, executor);

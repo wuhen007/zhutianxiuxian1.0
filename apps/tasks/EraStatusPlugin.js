@@ -13,6 +13,11 @@ import {
   Write_najie,
 } from '../../model/xiuxian.js';
 import { hasRealmAuthority } from '../../model/realmAuthority.js';
+import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import {
+  restoreAllPlayerLifespans,
+  suppressAllPlayerLifespans,
+} from './juelingLifespanService.js';
 
 export class EraStatusPlugin extends plugin {
   constructor() {
@@ -144,9 +149,31 @@ export class EraStatusPlugin extends plugin {
     const oldYears = set.Era?.current?.years || 0;
     const oldEpoch = set.Era?.current?.epoch || 1;
     
-    // 更新时代配置
-    set.Era.current = { index: eraIndex, years, epoch };
-    config.setConfig('xiuxian', 'xiuxian', set);
+    const previousCurrent = set.Era.current;
+    const nextCurrent = {
+      index: eraIndex,
+      years,
+      epoch,
+      totalYears: getRealmEventWorldYear(eraIndex, years, epoch),
+    };
+    const persistEra = () => {
+      set.Era.current = nextCurrent;
+      try {
+        config.setConfig('xiuxian', 'xiuxian', set);
+      } catch (error) {
+        set.Era.current = previousCurrent;
+        throw error;
+      }
+    };
+    let suppressedCount = 0;
+    let restoredCount = 0;
+    if (oldEraIndex !== 4 && eraIndex === 4) {
+      suppressedCount = await suppressAllPlayerLifespans(persistEra);
+    } else if (oldEraIndex === 4 && eraIndex !== 4) {
+      restoredCount = await restoreAllPlayerLifespans(persistEra);
+    } else {
+      persistEra();
+    }
     
     // 获取新时代信息
     const newEra = this.eras[eraIndex];
@@ -156,11 +183,18 @@ export class EraStatusPlugin extends plugin {
     
     // ==== 新增：如果进入绝灵时代，触发寿元压制提示 ====
     let suppressMsg = "";
-    if (eraIndex === 4) {
+    if (oldEraIndex !== 4 && eraIndex === 4) {
       suppressMsg = [
         `【绝灵降临·寿元压制】`,
         `天地寂灭，灵气断绝！绝灵时代降临，天道法则发生剧变！`,
         `所有仙王以下境界修士的寿元被压制至9999年`,
+        `压制修士数量：${suppressedCount}人`,
+      ].join("\n");
+    } else if (oldEraIndex === 4 && eraIndex !== 4) {
+      suppressMsg = [
+        `【灵气复苏·寿元解封】`,
+        `绝灵时代结束，所有修士被压制的寿元已恢复`,
+        `恢复修士数量：${restoredCount}人`,
       ].join("\n");
     }
     

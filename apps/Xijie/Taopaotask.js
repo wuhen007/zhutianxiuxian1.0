@@ -6,10 +6,13 @@ import {
   Harm,
   Write_shop,
   Read_shop,
-  buildAt
+  buildAt,
+  Read_player,
+  Write_player
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
 import { runTaskOnce } from '../../utils/taskGuard.js';
+import { adjustDaoHeart } from '../../model/daoHeart.js';
 
 export class Taopaotask extends plugin {
   constructor() {
@@ -174,6 +177,9 @@ export class Taopaotask extends plugin {
               arr.cishu--;
               arr.A_player = A_player;
             } else {
+              const failedPlayer = await Read_player(player_id);
+              adjustDaoHeart(failedPlayer, -20, '洗劫逃亡失败');
+              await Write_player(player_id, failedPlayer);
               var num = weizhi.Grade + 1;
               last_msg +=
                 '\n在躲避追杀中,没能躲过此劫,被抓进了天牢\n在天牢中你找到了秘境之匙x' +

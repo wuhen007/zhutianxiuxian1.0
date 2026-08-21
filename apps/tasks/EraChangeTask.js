@@ -22,6 +22,10 @@ import { repairAllDestroyedPlanes } from '../Boss/WeimianDestruction.js';
 import { triggerPeriodicRiftsForEra } from '../../model/planeRiftFestival.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import {
+  restoreAllPlayerLifespans,
+  suppressAllPlayerLifespans,
+} from './juelingLifespanService.js';
+import {
   XIANGU_LIFECYCLE,
   advanceXianguLifecycle,
   getXianguOpeningAttemptProbability,
@@ -292,72 +296,34 @@ export class EraChangeTask extends plugin {
   }
 }
   /** 进入绝灵时代时压制玩家寿元 */
-  async suppressLifespan() {
-    try {
-      const playerFiles = fs.readdirSync(__PATH.player_path);
-      const jsonFiles = playerFiles.filter(file => file.endsWith(".json"));
-      
-      let suppressedCount = 0;
-      
-      for (const file of jsonFiles) {
-        const qq = file.replace(".json", "");
-        const player = await Read_player(qq);
-        
-        // 检查是否低于仙王境界
-        if (!hasRealmAuthority(player, 18)) {
-          // 检查是否已经压制过
-          if (!player.压制寿元) {
-            // 记录原始寿元
-            player.压制寿元 = player.寿元;
-          }
-          
-          // 设置当前寿元为9999
-          player.寿元 = Math.min(player.寿元, 9999);
-          
-          await Write_player(qq, player);
-          suppressedCount++;
-        }
-      }
-
-      return suppressedCount;
-    } catch (e) {
-      console.error("寿元压制失败:", e);
-      throw new Error("寿元压制失败");
-    }
+  async suppressLifespan(afterApply) {
+    return suppressAllPlayerLifespans(afterApply);
   }
   
   /** 离开绝灵时代时恢复玩家寿元 */
-  async restoreLifespan() {
+  async restoreLifespan(afterApply) {
+    return restoreAllPlayerLifespans(afterApply);
+  }
+
+  async applyEraLifespanTransition(oldIndex, newIndex, afterApply) {
+    if (oldIndex !== 4 && newIndex === 4) {
+      return { suppressedCount: await this.suppressLifespan(afterApply), restoredCount: 0 };
+    }
+    if (oldIndex === 4 && newIndex !== 4) {
+      return { suppressedCount: 0, restoredCount: await this.restoreLifespan(afterApply) };
+    }
+    if (afterApply) await afterApply();
+    return { suppressedCount: 0, restoredCount: 0 };
+  }
+
+  persistEraCurrent(era, current) {
+    const previous = era.current;
+    era.current = current;
     try {
-      const playerFiles = fs.readdirSync(__PATH.player_path);
-      const jsonFiles = playerFiles.filter(file => file.endsWith(".json"));
-      
-      let restoredCount = 0;
-      
-      for (const file of jsonFiles) {
-        const qq = file.replace(".json", "");
-        const player = await Read_player(qq);
-        
-        // 检查是否有压制记录
-        if (player.压制寿元) {
-          // 计算恢复值：原始寿元 - 当前寿元
-          const restoreValue = player.压制寿元 - player.寿元;
-          
-          // 恢复寿元
-          player.寿元 += restoreValue;
-          
-          // 清除压制记录
-          delete player.压制寿元;
-          
-          await Write_player(qq, player);
-          restoredCount++;
-        }
-      }
-      
-      return restoredCount;
-    } catch (e) {
-      console.error("寿元恢复失败:", e);
-      throw new Error("寿元恢复失败");
+      config.setConfig(this.configKey, 'xiuxian', this.set);
+    } catch (error) {
+      era.current = previous;
+      throw error;
     }
   }
   // 指令处理函数
@@ -1099,9 +1065,11 @@ if (index === 4) { // 当前是绝灵时代
         newEraName = this.eras[index].name;
       }
       
-      // 更新配置
-      era.current = { index, years, epoch, totalYears };
-      config.setConfig(this.configKey, 'xiuxian', this.set);
+      const lifespanTransition = await this.applyEraLifespanTransition(
+        oldIndex,
+        index,
+        () => this.persistEraCurrent(era, { index, years, epoch, totalYears }),
+      );
 
       const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
       await this.processDaoTreasureLifecycle(currentWorldYear, epoch);
@@ -1211,7 +1179,7 @@ if (index === 4) { // 当前是绝灵时代
       // ==== 新增：检查是否进入绝灵时代 ====
       // 检查是否进入绝灵时代
       if (oldIndex !== 4 && index === 4) {
-        const suppressedCount = await this.suppressLifespan();
+        const { suppressedCount } = lifespanTransition;
         
         // 广播消息
         const message = [
@@ -1233,7 +1201,7 @@ if (index === 4) { // 当前是绝灵时代
       
       // 检查是否离开绝灵时代
       if (oldIndex === 4 && index !== 4) {
-        const restoredCount = await this.restoreLifespan();
+        const { restoredCount } = lifespanTransition;
         
         // 广播消息
         const message = [
@@ -1754,10 +1722,12 @@ if (index === 4) { // 当前是绝灵时代
     // 记录旧时代索引
     const oldIndex = this.set.Era.current.index;
     
-    // 更新配置
     const worldYear = getRealmEventWorldYear(eraIndex, years, epoch);
-    this.set.Era.current = { index: eraIndex, years, epoch, totalYears: worldYear };
-    config.setConfig(this.configKey, 'xiuxian', this.set);
+    const lifespanTransition = await this.applyEraLifespanTransition(
+      oldIndex,
+      eraIndex,
+      () => this.persistEraCurrent(this.set.Era, { index: eraIndex, years, epoch, totalYears: worldYear }),
+    );
     await this.processDaoTreasureLifecycle(worldYear, epoch);
     
     const era = this.eras[eraIndex];
@@ -1768,7 +1738,7 @@ if (index === 4) { // 当前是绝灵时代
     
     // 检查是否进入绝灵时代
     if (oldIndex !== 4 && eraIndex === 4) {
-      const suppressedCount = await this.suppressLifespan();
+      const { suppressedCount } = lifespanTransition;
       
       suppressMsg = [
         `【绝灵降临·寿元压制】`,
@@ -1779,7 +1749,7 @@ if (index === 4) { // 当前是绝灵时代
     
     // 检查是否离开绝灵时代
     if (oldIndex === 4 && eraIndex !== 4) {
-      const restoredCount = await this.restoreLifespan();
+      const { restoredCount } = lifespanTransition;
       
       restoreMsg = [
         `【灵气复苏·寿元解封】`,
@@ -1876,8 +1846,11 @@ if (index === 4) { // 当前是绝灵时代
       }
       
       const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
-      era.current = { index, years, epoch, totalYears: currentWorldYear };
-      config.setConfig(this.configKey, 'xiuxian', this.set);
+      const lifespanTransition = await this.applyEraLifespanTransition(
+        oldIndex,
+        index,
+        () => this.persistEraCurrent(era, { index, years, epoch, totalYears: currentWorldYear }),
+      );
       await this.processDaoTreasureLifecycle(currentWorldYear, epoch);
 
       await this.processXianguLifecycle(weimianData, {
@@ -1994,7 +1967,7 @@ if (index === 4) { // 当前是绝灵时代
       let restoreMsg = '';
       
       if (oldIndex !== 4 && index === 4) {
-        const suppressedCount = await this.suppressLifespan();
+        const { suppressedCount } = lifespanTransition;
         
         suppressMsg = [
           `【绝灵降临·寿元压制】`,
@@ -2008,7 +1981,7 @@ if (index === 4) { // 当前是绝灵时代
       }
       
       if (oldIndex === 4 && index !== 4) {
-        const restoredCount = await this.restoreLifespan();
+        const { restoredCount } = lifespanTransition;
         
         restoreMsg = [
           `【灵气复苏·寿元解封】`,
@@ -2082,8 +2055,11 @@ if (index === 4) { // 当前是绝灵时代
       
       // 更新配置
       const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
-      era.current = { index, years, epoch, totalYears: currentWorldYear };
-      config.setConfig(this.configKey, 'xiuxian', this.set);
+      const lifespanTransition = await this.applyEraLifespanTransition(
+        oldIndex,
+        index,
+        () => this.persistEraCurrent(era, { index, years, epoch, totalYears: currentWorldYear }),
+      );
       await this.processDaoTreasureLifecycle(currentWorldYear, epoch);
 
       let weimianData = {};
@@ -2125,7 +2101,7 @@ if (index === 4) { // 当前是绝灵时代
       // ==== 新增：寿元压制逻辑 ====
       // 检查是否进入绝灵时代
       if (oldIndex !== 4 && index === 4) {
-        const suppressedCount = await this.suppressLifespan();
+        const { suppressedCount } = lifespanTransition;
         
         // 回复消息
         const suppressMsg = [
@@ -2139,7 +2115,7 @@ if (index === 4) { // 当前是绝灵时代
       
       // 检查是否离开绝灵时代
       if (oldIndex === 4 && index !== 4) {
-        const restoredCount = await this.restoreLifespan();
+        const { restoredCount } = lifespanTransition;
         
         // 回复消息
         const restoreMsg = [

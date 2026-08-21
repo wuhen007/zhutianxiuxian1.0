@@ -13,6 +13,7 @@ import { refreshDaofaStatus } from './daofa.js';
 import { getFlowerRealmDisplay, getXianguRealmDisplay } from './playerRealmDisplay.js';
 import { swapEquipmentState } from './equipmentSwap.js';
 import { FileRollbackTransaction } from '../apps/SecretPlace/rebirthTransaction.js';
+import { releaseJuelingLifespanForAuthority } from './juelingLifespan.js';
 // 道种专属技能全局池别名：战斗函数内 `data` 常被玩家参数遮蔽，故用 SKILL_DB 稳定引用 XiuxianData 单例
 const SKILL_DB = data;
 
@@ -67,12 +68,14 @@ import {
   getGongfaNumericMultiplier,
   getGongfaProficiencyProfile,
   getGongfaTriggerChance,
+  getMijueTriggerChance,
   getJieziDurationRounds,
   getJieziExhaustionRounds,
   getLinzDurationRounds,
   getReviveRecoveryRatio,
   getZheziReviveConfig,
   getYiqihuaConfig,
+  getYiqihuaTriggerChance,
   hasLearnedGongfa,
   recordGongfaCombatTrigger,
   resolveGongfaCombatSkill,
@@ -1055,6 +1058,7 @@ export async function dujie(user_qq) {
 export async function Write_player(usr_qq, player, options = {}) {
   assertGlobalInitIdle();
   await assertTribulationWriteAllowed(usr_qq, player);
+  releaseJuelingLifespanForAuthority(player);
   let dir = path.join(__PATH.player_path, `${usr_qq}.json`);
   if (options.trackDailyTask !== false && fs.existsSync(dir)) {
     try {
@@ -1099,7 +1103,7 @@ const TB_EQUIPMENT_CACHE_TTL_MS = 60_000;
 const TB_EQUIPMENT_CACHE_MAX = 200;
 const _tbEquipmentCache = new Map();
 
-function invalidateBattleEquipmentCache(playerId) {
+export function invalidateBattleEquipmentCache(playerId) {
   _tbEquipmentCache.delete(String(playerId));
 }
 
@@ -7153,11 +7157,7 @@ function handleCircularGod(attacker, defender, msg, context) {
 // P3-2: 提取九秘触发逻辑为公共函数（1v1 和团战共用）
 // 概率公式：base 1% + 已学九秘数 × 10%，最多 100%
 function calcMijueTriggerProb(attacker, name) {
-  const learnedMijue = attacker.学习的功法?.filter(gongfa =>
-    ["临", "兵", "斗", "者", "皆", "数", "组", "前", "行"].some(mijue => gongfa.includes(mijue))
-  ).length || 0;
-  const base = Math.min(1.0, 0.01 + learnedMijue * 0.1);
-  return getGongfaTriggerChance(attacker, { name, class: '功法', pr: base }, base);
+  return getMijueTriggerChance(attacker, name);
 }
 
 // 皆字秘：十倍战力，持续时间随熟练度提升。返回 true 表示触发了
@@ -9861,9 +9861,10 @@ msg.push(bSpeedMsg);
           const isA = attacker === A_player;
           const isTriggered = isA ? A_yiqihua_triggered : B_yiqihua_triggered;
           const config = getYiqihuaConfig(attacker);
-          if (!isTriggered && Math.random() < 0.9) {
+          if (!isTriggered && Math.random() < getYiqihuaTriggerChance(attacker)) {
             if (isA) A_yiqihua_triggered = true;
             else B_yiqihua_triggered = true;
+            recordGongfaCombatTrigger(attacker, '一气化三清');
 
             const tahuaEntities = isA ? A_tahua_entities : B_tahua_entities;
             const integerFields = ['攻击', '防御', '血量上限', '当前血量', '速度', '元神', '元神上限', '神识'];
@@ -11188,9 +11189,10 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
   function summonTeamYiqihua(attacker) {
     if (attacker?._yiqihua_entity || attacker?._yiqihua_triggered || !attacker.学习的功法?.includes('一气化三清')) return [];
-    if (Math.random() >= 0.9) return [];
+    if (Math.random() >= getYiqihuaTriggerChance(attacker)) return [];
 
     attacker._yiqihua_triggered = true;
+    recordGongfaCombatTrigger(attacker, '一气化三清');
     const config = getYiqihuaConfig(attacker);
     const entities = attacker._team === 'A' ? A_yiqihua_entities : B_yiqihua_entities;
     const integerFields = ['攻击', '防御', '血量上限', '当前血量', '速度', '元神', '元神上限', '神识'];
@@ -12565,7 +12567,7 @@ export async function synchronization(e) {
       Physique_id: 1, mijinglevel_id: 1, xiangulevel_id: 1, huafenlevel_id: 1,
       linggenshow: 1, power_place: 0, occupation_level: 1, 血量上限: 1,
       当前血量: 1, 攻击: 1, 防御: 1, 速度: 100, 仙道潜力: 0,
-      命格词条上限: 1, 心神: 0, 心神额外上限: 0, 道心: 0,
+      命格词条上限: 1, 心神: 0, 心神额外上限: 0, 道心: 100, 道心值: 100,
       元神伤害加成: 0, 元神伤害减免: 0, 神通伤害加成: 0, 神通伤害减免: 0,
       近战伤害加成: 0, 近战伤害减免: 0, 闪避率: 0, 穿透: 0,
       治疗效果加成: 0, 每回合恢复: 0, 血上限加成: 0,

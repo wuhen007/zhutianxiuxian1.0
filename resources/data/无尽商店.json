@@ -213,6 +213,18 @@
       "description": "每份兑换获得10滴三千弱水",
       "dailyLimit": 0,
       "action": "item"
+    },
+    {
+      "id": 20,
+      "name": "帝品道心果",
+      "itemClass": "丹药",
+      "category": "道心",
+      "rarity": "帝品",
+      "price": 4000,
+      "quantity": 1,
+      "description": "服用后道心+100，每日限购3枚。",
+      "dailyLimit": 3,
+      "action": "item"
     }
   ]
 }

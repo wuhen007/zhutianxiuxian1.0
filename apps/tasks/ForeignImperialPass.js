@@ -30,6 +30,7 @@ import {
   isImperialPassWaveComplete,
   rankImperialPassPrestige,
 } from '../../model/foreignImperialPass.js';
+import { adjustDaoHeart } from '../../model/daoHeart.js';
 
 const STATE_PATH = path.join(__PATH.data_path, 'foreign_imperial_pass.json');
 const PLANE_PATH = path.join(__PATH.data_path, '位面.json');
@@ -315,10 +316,8 @@ export class ForeignImperialPass extends plugin {
     const daoHeartLoss = defeated ? active.wave * 10 : 0;
 
     player.当前血量 = defeated ? 1 : Math.max(1, Math.trunc(Number(battle.A_hp) || 1));
-    if (defeated) {
-      if (Object.hasOwn(player, '道心值')) player.道心值 = Math.max(0, Number(player.道心值 || 0) - daoHeartLoss);
-      player.道心 = Math.max(0, Number(player.道心 || 0) - daoHeartLoss);
-    }
+    if (defeated) adjustDaoHeart(player, -daoHeartLoss, `帝关血战第${active.wave}波失败`);
+    else if (kills > 0) adjustDaoHeart(player, 10, '帝关斩杀异域天骄');
     await Write_player(qq, player);
 
     state = readState();
@@ -510,10 +509,7 @@ export class ForeignImperialPass extends plugin {
       const battle = await zd_battle(ascended, kings, { battleType: 'imperial_blood_king_battle' });
       const victory = battle.winner === 'A';
       player.当前血量 = victory ? Math.max(1, Number(player.血量上限) || 1) : 1;
-      if (!victory) {
-        if (Object.hasOwn(player, '道心值')) player.道心值 = Math.max(0, Number(player.道心值 || 0) - 50);
-        player.道心 = Math.max(0, Number(player.道心 || 0) - 50);
-      }
+      if (!victory) adjustDaoHeart(player, -50, '帝血融合失败');
       await Write_player(qq, player);
 
       const report = [

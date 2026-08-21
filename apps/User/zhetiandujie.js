@@ -65,6 +65,7 @@ import {
   channel
 } from '../../model/xiuxian.js';
 import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
+import { adjustDaoHeart, getDaoHeartDamageMultiplier } from '../../model/daoHeart.js';
 
 const TRIBULATION_METHODS = [
   'duzhendaoLeijie',
@@ -3336,6 +3337,7 @@ let battleLog = [
     
     // 如果证道劫失败
     if (!battleSuccess) {
+        adjustDaoHeart(player, -35, '证道劫失败');
         // 道伤增加
         player.道伤 = (player.道伤 || 0) + 1;
         player.修为 *= 0.4; // 惩罚更重
@@ -3591,6 +3593,7 @@ await this.broadcastToAll(player,startMsg);
         await this.broadcastToAll(player, successBroadcast);
     } else {
         // 证道失败结局
+        adjustDaoHeart(player, -50, '大帝意志劫失败');
         await e.reply([
             `【证道失败】`,
             `${player.名号}被大帝意志击败，证道之路断绝！`,
@@ -4647,8 +4650,11 @@ applyGongfaEffects(player, originalDamage, equipment = {}) {
     return { damage: originalDamage, messages: [] };
   }
 
-  let finalDamage = originalDamage;
-  let effectMessages = [];
+  const daoHeartMultiplier = getDaoHeartDamageMultiplier(player);
+  let finalDamage = originalDamage * daoHeartMultiplier;
+  let effectMessages = daoHeartMultiplier > 1
+    ? [`【道心承劫】道心${player.道心}/500，劫力提升×${daoHeartMultiplier.toFixed(2)}`]
+    : [];
   const eraFactor = this.getEraDifficultyFactor();
   const qitianFormation = consumeBlackEmperorTribulationFormation(player);
   if (qitianFormation.message && !qitianFormation.announced) {

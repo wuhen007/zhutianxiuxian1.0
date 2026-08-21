@@ -182,6 +182,23 @@ export function getGongfaTriggerChance(player, skill, chance = skill?.pr, random
   return clamp(base * getGongfaProficiencyProfile(player, owner).trigger, 0, 1);
 }
 
+export function getMijueTriggerChance(player, name, random = Math.random) {
+  const learnedCount = getLearnedGongfaNames(player).filter(gongfa =>
+    ['临', '兵', '斗', '者', '皆', '数', '组', '前', '行'].some(mijue => gongfa.includes(mijue))
+  ).length;
+  const base = Math.min(1, 0.01 + learnedCount * 0.1);
+  return getGongfaTriggerChance(player, { name, class: '功法', pr: base }, base, random);
+}
+
+export function getYiqihuaTriggerChance(player, random = Math.random) {
+  return getGongfaTriggerChance(
+    player,
+    { name: '一气化三清', class: '功法', pr: 0.9 },
+    0.9,
+    random
+  );
+}
+
 export function getGongfaCombatMultiplier(player, skill) {
   if (skill?.class !== '功法') return 1;
   const owner = getSkillProficiencyOwner(skill);

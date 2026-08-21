@@ -56,11 +56,18 @@ import {
 import { shouldTriggerDungeonMalignantEvent } from '../../model/dungeonMalignantEvent.js';
 import { AppName } from '../../app.config.js';
 import {
+  addJuelingAwareLifespan,
+  hasJuelingLifespan,
+  restoreJuelingLifespan,
+  shouldSuppressJuelingLifespan,
+} from '../../model/juelingLifespan.js';
+import {
   dataall,
   readall,
   allwupin,
   alluser
 } from '../../model/duanzaofu.js';
+import { DAO_HEART_FRUITS, adjustDaoHeart } from '../../model/daoHeart.js';
 export class UserSellAll extends plugin {
   constructor() {
     super({
@@ -140,6 +147,9 @@ export class UserSellAll extends plugin {
                 },
                 {   reg: '^#一键服用寿命丹$',
                     fnc: 'all_shouyuan'
+                },
+                {   reg: '^#一键服用道心果$',
+                    fnc: 'all_daoheart_fruit'
                 },
              {   reg: '^#一键回血$',
                     fnc: 'all_huixue'
@@ -455,6 +465,39 @@ async quickSettleDungeon(e) {
     e.reply(msg);
     return false;
   }
+
+  async all_daoheart_fruit(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return false;
+
+    const najie = await data.getData('najie', usr_qq);
+    const consumed = [];
+    let gained = 0;
+    for (const item of (najie?.丹药 || [])) {
+      const value = DAO_HEART_FRUITS[item.name];
+      if (!value) continue;
+      const itemClass = item.class || '丹药';
+      const quantity = Number(await exist_najie_thing(usr_qq, item.name, itemClass)) || 0;
+      if (quantity <= 0) continue;
+      await Add_najie_thing(usr_qq, item.name, itemClass, -quantity);
+      gained += value * quantity;
+      consumed.push(`${item.name}×${quantity}`);
+    }
+    if (!gained) return e.reply('纳戒中没有可服用的道心果');
+
+    const player = await Read_player(usr_qq);
+    const result = adjustDaoHeart(player, gained, '服用道心果');
+    await Write_player(usr_qq, player);
+    return e.reply([
+      '【道心果·澄明本心】',
+      `服用：${consumed.join('、')}`,
+      `道心 +${result.change}，当前 ${result.after}/500`,
+      result.after >= 500 ? '道心已臻圆满。' : '道心果力随修为沉淀，溢出部分不再累积。',
+    ].join('\n'));
+  }
+
    async all_huixue(e) {
     if (!e.isGroup) return;
     
@@ -549,7 +592,6 @@ async all_shenyao(e) {
     let xueqi = 0;
     let shouyuanAdd = 0;             
     let actualShouyuanAdd = 0;       
-    let suppressedShouyuanAdd = 0;   
     
     // 新增道伤修复相关变量
     let daoshangMsg = "";         // 道伤修复消息
@@ -629,26 +671,13 @@ async all_shenyao(e) {
     // 处理寿元增加逻辑
     let suppressMsg = "";
     if (shouyuanAdd > 0) {
-        if (player.压制寿元) {
-            // 压制状态下：
-            const currentShouyuan = player.寿元 || 0;
-            const availableCapacity = 9999 - currentShouyuan;
-            
-            if (shouyuanAdd > availableCapacity) {
-                actualShouyuanAdd = availableCapacity;
-            } else {
-                actualShouyuanAdd = shouyuanAdd;
-            }
-            
-            suppressedShouyuanAdd = shouyuanAdd;
-            player.寿元 = Math.min(9999, currentShouyuan + actualShouyuanAdd);
-            
-            if (actualShouyuanAdd < shouyuanAdd) {
-                suppressMsg = `\n【寿元压制】处于绝灵时代，寿命上限9999年。本次增加${actualShouyuanAdd}年（理论${shouyuanAdd}年）`;
-            } else {
-                suppressMsg = `\n【寿元压制】处于绝灵时代，寿命上限9999年。本次增加${shouyuanAdd}年`;
-            }
+        const eraIndex = config.getConfig('xiuxian', 'xiuxian')?.Era?.current?.index ?? 0;
+        if (shouldSuppressJuelingLifespan(player, eraIndex)) {
+            const lifespanGain = addJuelingAwareLifespan(player, shouyuanAdd, eraIndex);
+            actualShouyuanAdd = lifespanGain.added;
+            suppressMsg = `\n【寿元压制】真实寿元增加${lifespanGain.added}年，当前寿元显示增加${lifespanGain.visibleAdded}年`;
         } else {
+            if (hasJuelingLifespan(player)) restoreJuelingLifespan(player);
             if (player.寿元 >= 20000000) {
                 actualShouyuanAdd = 0;
                 suppressMsg = `\n你的寿元已足够漫长，神药的延寿效果已经对你不起作用`;

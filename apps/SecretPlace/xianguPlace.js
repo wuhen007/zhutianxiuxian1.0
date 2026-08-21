@@ -158,6 +158,7 @@ import {
   resolveXianguCanonNpcId,
 } from './xianguLegacy.js';
 import { isXianguPlayerRoundCurrent } from '../tasks/xianguLifecycle.js';
+import { adjustDaoHeart } from '../../model/daoHeart.js';
 
 function getXianguNpcRealmData() {
   return {
@@ -1220,6 +1221,7 @@ async function settleXianguDefeatChoice(player, player_qq, choice) {
   if (effectiveChoice === 'beg') {
     if (faction === 'evil') {
       // 邪恶：搜刮干净 + 杀死踢出
+      adjustDaoHeart(player, -50, '仙古秘境求饶后被杀');
       await ejectXianguPlayerKilled(player, player_qq, 'npc_begged_evil', { npcId: pending.npcId, npcName: pending.npcName });
       return {
         settled: true,
@@ -1269,6 +1271,7 @@ async function settleXianguDefeatChoice(player, player_qq, choice) {
     if (tarnished) {
       player.xiangu_daoheart_tarnish_until = now + XIANGU_DAOHEART_TARNISH_MS;
     }
+    adjustDaoHeart(player, -25, '仙古秘境求饶');
     await Write_player(player_qq, player);
 
     const lossLines = [];
@@ -1304,6 +1307,7 @@ async function settleXianguDefeatChoice(player, player_qq, choice) {
   }
 
   // 任凭鱼肉（含逾期兜底）
+  adjustDaoHeart(player, -35, overdue ? '仙古秘境犹豫后失败' : '仙古秘境任凭鱼肉');
   await ejectXianguPlayerKilled(player, player_qq, overdue ? 'npc_slaughter_overdue' : 'npc_slaughter', { npcId: pending.npcId, npcName: pending.npcName });
   return {
     settled: true,
