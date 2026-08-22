@@ -47,6 +47,7 @@ import {
     grantWendaoPalace,
 } from '../../model/spiritUniverse.js';
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
+import { getTitleById, grantTitle } from '../../model/titleSystem.js';
 
 /**
  * 问仙令 - 战令系统 v2
@@ -725,10 +726,8 @@ export class WenXianLing extends plugin {
                 await Add_najie_thing(usr_qq, reward.name, reward.kind, reward.count, 0);
                 break;
             case '称号':
-                if (!player.称号列表) player.称号列表 = [];
-                if (!player.称号列表.includes(reward.name)) {
-                    player.称号列表.push(reward.name);
-                }
+                if (!getTitleById(reward.name)) throw new Error(`未注册称号：${reward.name}`);
+                grantTitle(player, reward.name);
                 break;
             case '永久宝物':
                 grantWendaoPalace(player);

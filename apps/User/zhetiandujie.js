@@ -66,6 +66,13 @@ import {
 } from '../../model/xiuxian.js';
 import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
 import { adjustDaoHeart, getDaoHeartDamageMultiplier } from '../../model/daoHeart.js';
+import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import {
+  buildRelativeTianjiaoCombatant,
+  getTribulationAmbushChance,
+  parseTribulationLocation,
+  selectHostileTianjiao,
+} from '../../model/tianjiaoHostility.js';
 
 const TRIBULATION_METHODS = [
   'duzhendaoLeijie',
@@ -106,11 +113,11 @@ export class zhetiandujie extends plugin {
           fnc: 'zhundileijie'  
         },
         {
-          reg:'^#证道成帝$',
+          reg:'^#证道成帝(?:\\s*(?:偏僻(?:无人)?(?:的)?星系|无人星系|荒芜星域|偏僻无人))?$',
           fnc:'command_zhengdao'
         },
         { 
-          reg: '^#破王成帝$', 
+          reg: '^#破王成帝(?:\\s*(?:偏僻(?:无人)?(?:的)?星系|无人星系|荒芜星域|偏僻无人))?$',
           fnc: 'poWangChengDi' 
         },
         {
@@ -124,6 +131,7 @@ export class zhetiandujie extends plugin {
       ],
     });
 
+    this.activeTribulationContexts = new Map();
     this.gongfa = {
       "者字秘": { 
         resurrectTimes: 1,
@@ -177,7 +185,20 @@ export class zhetiandujie extends plugin {
       if (typeof original !== 'function') continue;
       this[methodName] = async function guardedTribulation(e, ...args) {
         const playerId = String(e.user_id || '').replace('qg_', '');
-        const result = await withTribulationLock(playerId, () => original.call(this, e, ...args));
+        const location = parseTribulationLocation(e.msg);
+        const result = await withTribulationLock(playerId, async () => {
+          this.activeTribulationContexts.set(playerId, { e, location });
+          try {
+            if (location === 'remote') {
+              await e.reply('【择地渡劫】你避开繁盛星域，前往偏僻无人的星系引动天劫，旧敌察觉声势的概率大幅降低。');
+            } else {
+              await e.reply('【显世渡劫】你就在繁盛星域引动天劫，声势毫无遮掩，不死不休的旧敌更容易找上门。');
+            }
+            return await original.call(this, e, ...args);
+          } finally {
+            this.activeTribulationContexts.delete(playerId);
+          }
+        });
         if (result === TRIBULATION_LOCK_BUSY) {
           return e.reply('【渡劫中】你已有一场渡劫正在进行，请等待结算完成。');
         }
@@ -4369,6 +4390,13 @@ async command_datitingtianji(e) {
     lines.push('');
   }
 
+  const 护法数 = player.护法玩家 && Number(player.护法玩家.当前血量) > 0 ? 1 : 0;
+  lines.push('【天机五·死敌截道】');
+  lines.push('显眼星域基础截道率55%，偏僻星系基础截道率16%。');
+  lines.push(`你当前${护法数 ? '有人护法' : '无人护法'}：显眼星域${(getTribulationAmbushChance('visible', 护法数, 1) * 100).toFixed(0)}%，偏僻星系${(getTribulationAmbushChance('remote', 护法数, 1) * 100).toFixed(0)}%。`);
+  lines.push('在原渡劫指令后追加“偏僻星系”即可择地，例如：#渡圣人雷劫 偏僻星系。');
+  lines.push('');
+
   lines.push(`「位面有壁，大道无形。可去者方为退路，不可去者莫强求。」`);
 
   await e.reply(lines.join('\n'));
@@ -4489,9 +4517,93 @@ async exitTribulationState(player, snapshot, usr_qq, equipment) {
   const refreshed = await Read_player(usr_qq);
   delete refreshed._玄黄护道渡劫;
   if (success) {
+    const ambush = await this.resolveTianjiaoTribulationAmbush(refreshed, snapshot, usr_qq);
+    if (ambush.defeated) {
+      await Write_player(usr_qq, refreshed);
+      await Write_equipment(usr_qq, equipment);
+      const rolledBack = await Read_player(usr_qq);
+      rolledBack.当前血量 = 1;
+      rolledBack.道伤 = Math.max(Number(rolledBack.道伤) || 0, Number(refreshed.道伤) || 0);
+      if (refreshed.护法玩家) rolledBack.护法玩家 = refreshed.护法玩家;
+      else delete rolledBack.护法玩家;
+      await Write_player(usr_qq, rolledBack);
+      return;
+    }
     refreshed.当前血量 = refreshed.血量上限;
   }
   await Write_player(usr_qq, refreshed);
+}
+
+async resolveTianjiaoTribulationAmbush(player, snapshot, usr_qq) {
+  const context = this.activeTribulationContexts.get(String(usr_qq));
+  if (!context?.e) return { triggered: false, defeated: false };
+  const retaliation = await selectHostileTianjiao({
+    redis,
+    tianjiaoList: data.weimiantianjiao_list,
+    playerId: usr_qq,
+    minimumLevel: '不死不休',
+    worldYear: getRealmEventWorldYear(),
+  });
+  if (!retaliation) return { triggered: false, defeated: false };
+
+  const guard = player.护法玩家 && Number(player.护法玩家.当前血量) > 0
+    ? {
+        ...player.护法玩家,
+        名号: player.护法玩家.名号 || player.护法玩家.名字 || '护法者',
+        血量上限: player.护法玩家.血量上限 || player.护法玩家.当前血量,
+        法球倍率: player.护法玩家.灵根?.法球倍率 || player.护法玩家.法球倍率 || 1,
+        学习的功法: player.护法玩家.学习的功法 || [],
+      }
+    : null;
+  const chance = getTribulationAmbushChance(
+    context.location,
+    guard ? 1 : 0,
+    retaliation.candidateCount,
+  );
+  if (Math.random() >= chance) return { triggered: false, defeated: false, chance };
+
+  const enemy = buildRelativeTianjiaoCombatant(
+    player,
+    retaliation.tianjiao,
+    1 + Math.min(0.5, retaliation.hatred / 1000),
+  );
+  await context.e.reply([
+    '【天劫将尽·死敌截道】',
+    `${player.名号}已熬过最后一道劫雷，${retaliation.name}却循着浩大声势杀入劫场。`,
+    context.location === 'remote'
+      ? '偏僻星系替你遮去了大半天机，但这名死敌仍追到了此地。'
+      : '你在显眼星域渡劫，漫天劫光最终引来了昔日死敌。',
+    `本次截杀概率：${(chance * 100).toFixed(1)}%；${guard ? `${guard.名号}与你并肩护劫。` : '无人护法，你只能独自迎战。'}`,
+  ].join('\n'));
+
+  const battle = guard
+    ? await zd_battle([{ ...player }, guard], enemy, { battleType: 'tianjiao_tribulation_ambush' })
+    : await zd_battle({ ...player }, enemy, { battleType: 'tianjiao_tribulation_ambush' });
+  const log = Array.isArray(battle.msg) ? battle.msg.slice(0, 20) : [battle.msg];
+  const image = await get_log_img(log);
+  if (image) await context.e.reply(image);
+
+  if (guard && Array.isArray(battle.A_team)) {
+    const guardResult = battle.A_team[1];
+    if (guardResult && player.护法玩家) {
+      player.护法玩家.当前血量 = Math.max(0, Number(guardResult.当前血量) || 0);
+      if (player.护法玩家.当前血量 <= 0) delete player.护法玩家;
+    }
+  }
+  if (battle.winner === 'A') {
+    await context.e.reply(`【护劫成功】你${guard ? `与${guard.名号}` : ''}击退${retaliation.name}，终于稳住新境界。`);
+    return { triggered: true, defeated: false, chance, retaliation };
+  }
+
+  player.mijinglevel_id = snapshot.mijinglevel_id;
+  player.当前血量 = 1;
+  player.道伤 = Math.max(0, Math.floor(Number(player.道伤) || 0)) + 1;
+  await context.e.reply([
+    '【截道成功·功亏一篑】',
+    `${retaliation.name}在天劫最后关头将你打落劫云，本次境界突破被逆转。`,
+    '当前血量降至1，道伤+1；下次可前往偏僻星系，并提前请人护法。',
+  ].join('\n'));
+  return { triggered: true, defeated: true, chance, retaliation };
 }
 
 // ==== 理论最大攻击计算 ====

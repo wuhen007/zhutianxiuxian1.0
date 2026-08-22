@@ -8,11 +8,13 @@ import test from 'node:test';
 import { WorldChatClient } from '../apps/worldChat/client.js';
 import {
   TRADE_LIMITS,
+  creditTradeAssets,
   extractTradeRealmPrefix,
   normalizeTradeAsset,
   parseCompactTradeBundle,
   parseTradeBundle,
   resolveTradeRealm,
+  tradeAssetClaimKey,
   tradePolicyAllows,
   validateTradeOffer,
 } from '../apps/worldChat/trade.js';
@@ -20,6 +22,40 @@ import { createWorldChatServer } from '../worldchat-server/server.js';
 
 const silentLogger = { info() {}, warn() {}, error() {} };
 const secret = () => crypto.randomBytes(32).toString('hex');
+
+test('重复结算为同一资产生成稳定且唯一的入账凭据', () => {
+  const first = tradeAssetClaimKey('t88c4b403', 'buyer', 'credit', 0);
+  assert.equal(first, 'worldtrade:T88C4B403:buyer:credit:0');
+  assert.equal(tradeAssetClaimKey('T88C4B403', 'buyer', 'credit', 0), first);
+  assert.notEqual(tradeAssetClaimKey('T88C4B403', 'buyer', 'credit', 1), first);
+  assert.notEqual(tradeAssetClaimKey('T88C4B403', 'seller', 'credit', 0), first);
+});
+
+test('多个插件实例重复处理完成结算时资产只到账一次', async () => {
+  const claims = new Set();
+  let balance = 0;
+  const adjust = async (_userId, _asset, delta, options) => {
+    if (claims.has(options.idempotencyKey)) return 0;
+    claims.add(options.idempotencyKey);
+    balance += delta;
+    return delta;
+  };
+  const entry = {
+    user_id: '10001',
+    role: 'buyer',
+    credited: false,
+    incoming: [{ kind: 'currency', name: '灵石', amount: 10_000 }],
+  };
+
+  await Promise.all([
+    creditTradeAssets('T88C4B403', structuredClone(entry), adjust),
+    creditTradeAssets('T88C4B403', structuredClone(entry), adjust),
+    creditTradeAssets('T88C4B403', structuredClone(entry), adjust),
+  ]);
+
+  assert.equal(balance, 10_000);
+  assert.equal(claims.size, 1);
+});
 
 async function waitFor(predicate, message, timeout = 5000) {
   const deadline = Date.now() + timeout;

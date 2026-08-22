@@ -27,6 +27,7 @@ import {
     validateZhiXianSubmission,
 } from './zhixianChoice.js';
 import { adjustDaoHeart, ensureDaoHeart } from '../../model/daoHeart.js';
+import { getTitleById, grantTitle } from '../../model/titleSystem.js';
 
 export class zhiXianRenWu extends plugin {
     constructor() {
@@ -645,8 +646,8 @@ async function giveReward(usr_qq, type, value, idempotencyKey) {
             break;
         case '永久称号':
             await mutatePlayerReward(usr_qq, idempotencyKey, value, player => {
-                if (!Array.isArray(player.称号列表)) player.称号列表 = [];
-                if (!player.称号列表.includes(value)) player.称号列表.push(value);
+                if (!getTitleById(value)) throw new Error(`未注册称号：${value}`);
+                grantTitle(player, value);
             });
             break;
         case '功法':

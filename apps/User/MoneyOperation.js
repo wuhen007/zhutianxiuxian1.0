@@ -7,6 +7,7 @@ import {
   exist_najie_thing,
   foundthing,
   Read_najie,
+  Write_najie,
   Go,
   Add_灵石,
   Add_源石,
@@ -21,12 +22,17 @@ import {
   instead_equipment
 } from '../../model/xiuxian.js';
 import {
+  EquipmentTransferError,
+  transferEquipment,
+} from '../../model/equipmentTransfer.js';
+import {
   buildInnateTreasureGrant,
   claimInnateTreasure,
   isInnateTreasureName,
   readInnateTreasureState,
   releaseInnateTreasure,
 } from '../../model/innateTreasure.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 export class MoneyOperation extends plugin {
   constructor() {
     super({
@@ -465,6 +471,7 @@ async Give(e) {
   
   // 处理代号输入
   let thing_piji;
+  let equipmentIndex;
   let najie = await Read_najie(A_qq);
   if (!isNaN(parseInt(thing_name))) {
     const thing_code = parseInt(thing_name);
@@ -486,6 +493,7 @@ async Give(e) {
       try {
         const equipIndex = thing_code - 101;
         if (equipIndex >= 0 && equipIndex < najie.装备.length) {
+          equipmentIndex = equipIndex;
           thing_name = najie.装备[equipIndex].name;
           thing_piji = najie.装备[equipIndex].pinji;
         } else {
@@ -497,8 +505,11 @@ async Give(e) {
     }
   }
   
-  // 检查物品是否存在
-  let thing_exist = await foundthing(thing_name);
+  // 纳戒中的完整装备对象是赠送时的权威数据源，赋名后无需等待物品表刷新。
+  const sourceEquipment = equipmentIndex !== undefined
+    ? najie.装备[equipmentIndex]
+    : najie.装备.find(item => item.name == thing_name);
+  let thing_exist = sourceEquipment || await foundthing(thing_name);
   if (!thing_exist) {
     return e.reply(`这方世界没有[${thing_name}]`);
   }
@@ -515,7 +526,7 @@ async Give(e) {
   };
   
   // 如果未指定品级，尝试获取默认品级
-  if (!thing_piji && code[1] && pj[code[1]] !== undefined) {
+  if (thing_piji === undefined && code[1] && pj[code[1]] !== undefined) {
     thing_piji = pj[code[1]];
     quantity = code[2]; // 数量在第三个位置
   }
@@ -523,54 +534,70 @@ async Give(e) {
   // 转换数量
   quantity = await convert2integer(quantity) || 1;
   
-  // 检查物品数量
-  let x = await exist_najie_thing(
-    A_qq,
-    thing_name,
-    thing_exist.class,
-    thing_piji
-  );
-  
-  if (x < quantity || !x) {
-    return e.reply(`你还没有这么多[${thing_name}]`);
-  }
-  
-  // 执行赠送
-  await Add_najie_thing(
-    A_qq,
-    thing_name,
-    thing_exist.class,
-    -quantity,
-    thing_piji
-  );
-  
-  if (thing_exist.class == '装备' || thing_exist.class == '仙宠') {
-    // 对于装备和仙宠，需要传递完整对象
-    let itemToSend;
-    if (thing_exist.class == '装备') {
-      itemToSend = najie.装备.find(item => 
-        item.name == thing_name && item.pinji == thing_piji
-      );
-    } else {
-      itemToSend = najie.仙宠.find(item => item.name == thing_name);
+  if (thing_exist.class == '装备') {
+    try {
+      const result = await transferEquipment({
+        sourceId: A_qq,
+        targetId: B_qq,
+        selector: equipmentIndex !== undefined
+          ? { index: equipmentIndex, expected: sourceEquipment }
+          : { name: thing_name, pinji: thing_piji },
+        quantity,
+      }, {
+        readNajie: Read_najie,
+        writeNajie: Write_najie,
+        withPlayerLock: withPlayerMutationLock,
+      });
+      thing_name = result.item.name;
+      thing_piji = result.item.pinji;
+    } catch (error) {
+      if (error instanceof EquipmentTransferError) {
+        if (error.code === 'write-failed') console.error('[装备赠送] 写入失败，已回滚:', error);
+        return e.reply(error.message);
+      }
+      console.error('[装备赠送] 写入及回滚异常:', error);
+      return e.reply('装备赠送异常，请联系管理员核对双方纳戒');
     }
-    
-    await Add_najie_thing(
-      B_qq,
-      itemToSend,
-      thing_exist.class,
-      quantity,
-      thing_piji
-    );
   } else {
-    // 普通物品
-    await Add_najie_thing(
-      B_qq,
+    const x = await exist_najie_thing(
+      A_qq,
       thing_name,
       thing_exist.class,
-      quantity,
       thing_piji
     );
+    if (x < quantity || !x) {
+      return e.reply(`你还没有这么多[${thing_name}]`);
+    }
+
+    await Add_najie_thing(
+      A_qq,
+      thing_name,
+      thing_exist.class,
+      -quantity,
+      thing_piji
+    );
+
+    if (thing_exist.class == '仙宠') {
+      // 仙宠需要传递完整对象
+      let itemToSend;
+      itemToSend = najie.仙宠.find(item => item.name == thing_name);
+      await Add_najie_thing(
+        B_qq,
+        itemToSend,
+        thing_exist.class,
+        quantity,
+        thing_piji
+      );
+    } else {
+      // 普通物品
+      await Add_najie_thing(
+        B_qq,
+        thing_name,
+        thing_exist.class,
+        quantity,
+        thing_piji
+      );
+    }
   }
   
   // 构建回复
@@ -715,15 +742,15 @@ async Give(e) {
     if (!ifexistplay) return false;
     let player = await data.getData('player', usr_qq);
     let thing_name = '水脚脚的钱包';
-    //x是纳戒内有的数量
-    let acount = await exist_najie_thing(usr_qq, thing_name, '装备');
+    const najie = await Read_najie(usr_qq);
+    const wallet = najie.装备.find(item => item.name == thing_name);
     //没有
-    if (!acount) {
+    if (!wallet || Number(wallet.数量) <= 0) {
       e.reply(`你没有[${thing_name}]这样的装备`);
       return false;
     }
     //扣掉装备
-    await Add_najie_thing(usr_qq, thing_name, '装备', -1);
+    await Add_najie_thing(usr_qq, thing_name, '装备', -1, wallet.pinji);
     //获得随机
     const x = 0.4;
     let random1 = Math.random();

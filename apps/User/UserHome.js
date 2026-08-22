@@ -79,6 +79,7 @@ import {
 import { resetIneligibleShengtiCultivation } from '../../model/shengtiCultivation.js';
 import { openJadeCasket } from '../../model/baitianTemple.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { bindBasicZhutianMirror, syncCurrentZhutianAvatar } from '../../model/zhutianMirror.js';
 import {
   accelerateSecretPlaceAction,
   getSecretPlaceActionEndTime,
@@ -2106,6 +2107,7 @@ if (func == "打开") {
       await Add_najie_thing(usr_qq, thing_name, '道具', -1);
       player.灵根 = { ...godMaster };
       player.生命本源 = 100 + (Number(player.灵根.生命本源) || 0);
+      syncCurrentZhutianAvatar(player);
       await checkAndRemoveShengtiMishu(player, usr_qq);
       await Write_player(usr_qq, player);
       const equipment = await Read_equipment(usr_qq);
@@ -2235,22 +2237,22 @@ if (func == "打开") {
             if (equipment.武器.name == "【光阴】天道之剑" && equipment.法宝.name == "【光阴】命运之心" && equipment.护具.name == "【光阴】主宰之甲"  && ( player.灵根.type == "天魔")) {
                 e.reply("你在此刻拥有了纪元主宰的权柄，天地万灵都在你的灭世魔威下颤抖！");
             } 
-            if (equipment.武器.name == "【超维】天帝剑"  &&  player.灵根.type == "命运") {
+            if (["【超维】破限剑", "【超维】天帝剑"].includes(equipment.武器.name)  &&  player.灵根.type == "命运") {
                 e.reply("恐怖的气息让时间长河都断裂了，无穷维宇都要在此剑中演化生灭！");
             }
-            if (equipment.武器.name == "【超维】多元星盘"  &&  player.灵根.type == "命运") {
+            if (equipment.法宝.name == "【超维】多元星盘"  &&  player.灵根.type == "命运") {
                 e.reply("哪怕是一切始终一切多元都要在你的手中湮灭！");
             }
-            if (equipment.武器.name == "【超维】主帝神甲"  &&  player.灵根.type == "命运") {
+            if (["【超维】元初之甲", "【超维】主帝神甲"].includes(equipment.护具.name)  &&  player.灵根.type == "命运") {
                 e.reply("创维灭维也只在一念之间！");
             }
-            if (equipment.武器.name == "【超维】天帝剑"  &&  player.灵根.type == "天魔") {
+            if (["【超维】破限剑", "【超维】天帝剑"].includes(equipment.武器.name)  &&  player.灵根.type == "天魔") {
                 e.reply("恐怖的气息让时间长河都断裂了，无穷维宇都要在此剑中演化生灭！");
             }
-            if (equipment.武器.name == "【超维】多元星盘"  &&  player.灵根.type == "天魔") {
+            if (equipment.法宝.name == "【超维】多元星盘"  &&  player.灵根.type == "天魔") {
                 e.reply("哪怕是一切始终一切多元都要在你的手中湮灭！");
             }
-            if (equipment.武器.name == "【超维】主帝神甲"  &&  player.灵根.type == "天魔") {
+            if (["【超维】元初之甲", "【超维】主帝神甲"].includes(equipment.护具.name)  &&  player.灵根.type == "天魔") {
                 e.reply("创维灭维也只在一念之间！");
             }
             if (equipment.武器.name == "【极道帝兵】万物母气鼎"  &&  player.灵根.type == "大成圣体") {
@@ -4487,138 +4489,30 @@ if (thing_name == "原始宝骨") {
     return;
 }
 if (thing_name == "诸天镜") {
-    if (player.修为 < 10000000 || player.血气 < 10000000) {
-        e.reply(`修为血气不足千万，难承诸天镜之威`);
-        return;
-    }
-    
-    await Add_血气(usr_qq, -10000000);
-    await Add_修为(usr_qq, -10000000);
-    let equipment = await Read_equipment(usr_qq);
-    await Write_equipment(usr_qq, equipment);
-    await Add_najie_thing(usr_qq, thing_name, "道具", -1);
-    
-    // 概率分配
-    const probabilitySakura = 0.35;    // 木之本樱概率降低
-    const probabilityMadoka = 0.15;    // 鹿目圆概率降低
-    const probabilityLiuYing = 0.25;   // 少女流萤
-    const probabilityIrena = 0.15;     // 伊蕾娜
-    const probabilityDecade = 0.10;    // 假面骑士帝骑
-    
-    // 随机选择
-    const fate = Math.random();
-    let chosenPath = null;
-    
-    if (fate < probabilitySakura) {
-        chosenPath = "木之本樱";
-    } else if (fate < probabilitySakura + probabilityMadoka) {
-        chosenPath = "鹿目圆";
-    } else if (fate < probabilitySakura + probabilityMadoka + probabilityLiuYing) {
-        chosenPath = "少女流萤";
-    } else if (fate < probabilitySakura + probabilityMadoka + probabilityLiuYing + probabilityIrena) {
-        chosenPath = "伊蕾娜";
-    } else {
-        chosenPath = "假面骑士帝骑";
-    }
-    
-    // 根据选择设置灵根
-    if (chosenPath === "木之本樱") {
-        player.灵根 = {
-            "id": 7010001,
-            "name": "木之本樱",
-            "type": "魔卡少女",
-            "归类": "诸天万界",
-            "eff": 0.4,
-            "法球倍率": 0.4,
-            "攻击": 0.5,
-            "防御": 0.5,
-            "生命": 0.5,
-            "生命本源": 0
-        };
-        e.reply(`诸天镜光华流转，神魂离体穿越时空。睁开眼时，你发现自己成了友枝小学的木之本樱。腰间系着封印之杖，耳边是小可的催促："快追！风牌要逃走了！"
-每天放学后，你穿梭在友枝町的大街小巷，与库洛牌周旋。记得那次收服"影牌"，知世在月光下举着摄像机："小樱，这个角度很美哦！"；还有"时牌"作乱时，雪兔哥温柔的笑容给了你勇气。
-当第五十三张库洛牌归位时，镜面突然波动，神魂归位。手中残留着星之杖的温度，心中多了份少女的纯粹勇气。
-归来的神魂中，带回了木之本樱的部分本源和力量。`);
-        
-    } else if (chosenPath === "鹿目圆") {
-        player.灵根 = {
-            "id": 7010002,
-            "name": "鹿目圆",
-            "type": "魔法少女",
-            "归类": "诸天万界",
-            "eff": 1.25,
-            "法球倍率": 1.25,
-            "攻击": 1,
-            "防御": 1,
-            "生命": 1,
-            "生命本源": 0
-        };
-        e.reply(`诸天镜映出绝望的夜空，魔女结界吞噬着见泷原市。再睁眼时，你成了鹿目圆，身旁是浑身浴血的晓美焰。   
-"小圆...快走..."焰的盾牌布满裂痕，时间宝石即将耗尽。魔女之夜的笑声撕裂天空，丘比的红瞳在阴影中闪烁："与我签订契约吧，你能改变一切。"    
-无数轮回的记忆涌入脑海：焰独自战斗的千百次轮回，沙耶香在绝望中堕落，杏子最后的牺牲...你握紧双拳，许下改写规则的愿望："我要终结所有魔女的诞生！"    
-无数个轮回世界线的因果叠加让你化作了圆神，消灭了所有时间线上的魔女，自己也化作了不可名状的存在。
-当镜面恢复平静，灵魂深处仍回荡着那个誓言。圆环之理的光芒虽已褪去，但改写宇宙法则的部分本源和力量，已在你的道基深处生根发芽。`);
-        
-    } else if (chosenPath === "少女流萤") {
-        player.灵根 = {
-            "id": 7010015,
-            "name": "少女流萤",
-            "type": "星铁",
-            "归类": "诸天万界",
-            "eff": 1.75,
-            "法球倍率": 1.75,
-            "攻击": 1.0,
-            "防御": 1.0,
-            "生命": 1.0,
-            "生命本源": 50
-        };
-        e.reply(`诸天镜中星光璀璨，化作一道流光将你的意识卷入其中。再醒来时，你发现自己身处匹诺康尼的黄金时刻，身体变成了神秘的「流萤」。
-你漫步在梦境都市的街道上，流光忆庭的使者偶尔投来好奇的目光。作为「萤火虫」的一员，你深知自己身负秘密使命。在盛大的梦境派对中，你与星穹列车的乘员相遇，共同经历了一段段奇幻冒险。
-最难忘的是与开拓者共舞的时刻，你们在「钟表小子」的雕像下旋转，流光溢彩的梦境泡泡在身边飘散。你知道自己体内蕴含着「萨姆」的力量，那是足以撕裂星空的机甲之力。
-当「死亡」与「末日兽」的危机降临，你毅然化身机甲战士，绚丽的萤火虫之光划破梦境天际。在最后的战斗中，你领悟了「流光忆庭」的秘法，将部分记忆与力量封存于星核之中。
-镜面回归平静，你的神魂带着流萤的机甲之力与星核能量归来，体内流淌着匹诺康尼的梦境力量与萤火虫的绚烂光华。`);
-        
-    } else if (chosenPath === "伊蕾娜") {
-        player.灵根 = {
-            "id": 7010016,
-            "name": "伊蕾娜",
-            "type": "魔女",
-            "归类": "诸天万界",
-            "eff": 0.65,
-            "法球倍率": 0.65,
-            "攻击": 0.55,
-            "防御": 0.25,
-            "生命": 0.25,
-            "生命本源": 0
-        };
-        e.reply(`诸天镜泛起银辉，将你卷入一个充满童话色彩的魔法世界。再睁眼时，你已化作那位有着灰白长发和星辰般眼眸的魔女——伊蕾娜。
-你骑着扫帚穿梭于列国之间，经历着各种奇妙又略带讽刺的冒险。在魔法之国遇见了自恋的沙耶，在花魔女之城品尝了艾薇利亚的特制点心，还在书籍之国与「不吃书的魔女」成了挚友。
-作为「灰之魔女」，你总是保持着那份优雅与从容，即便面对再古怪的遭遇也能用毒舌幽默化解。你的魔法天赋让你能轻易掌握各种咒语，而那份看透世情的智慧更是无价之宝。
-最难忘的是在「看不见的王国」，你帮助那位渴望看见星空的公主实现了愿望。当万千星辰在夜空绽放，你明白了每个世界都有其独特的美。
-镜面波动将你带回，但伊蕾娜的魔法天赋、旅行经验与那份独特的处世哲学已融入你的神魂。你获得了灰之魔女的部分本源，能够施展简单的魔法，且对世界的认知更加通透。`);
-        
-    } else if (chosenPath === "假面骑士帝骑") {
-        player.灵根 = {
-            "id": 7010017,
-            "name": "门矢士",
-            "type": "假面驾驭",
-            "归类": "诸天万界",
-            "eff": 1.0,
-            "法球倍率": 0.6,
-            "攻击": 0.25,
-            "防御": 0.25,
-            "生命": 0.25,
-            "生命本源": 0
-        };
-        e.reply(`诸天镜剧烈震动，空间被撕裂出一道次元裂缝。当你再次站稳，发现自己身着品红战甲，腰间挂着Decade驱动器，手中握着骑士卡片——你成了世界的破坏者，门矢士！
-你穿越于各个骑士世界，见证着英雄们的悲欢离合。在空我世界与五代雄介并肩作战，在龙骑世界阻止骑士间的残酷厮杀，在电王世界与异魔神一起乘坐时空列车...
-作为「路过的假面骑士」，你总是嘴上说着"我只是个路过的假面骑士，给我记好了"，却一次次为守护他人的世界而战。你掌握了Decade的力量，能够变身成各种骑士形态，甚至召唤其他骑士助战。
-最震撼的是与世界的破坏本能对抗的经历，当你面对自己的黑暗面，你明白了力量的真谛不在于破坏而在于守护。最终你超越了Decade的极限，获得了神主牌形态的力量。
-当次元壁再次开启，你的意识回归本体。但帝骑的力量已烙印在你的灵魂中——你获得了召唤次元壁的能力，可以短暂变身为假面骑士Decade，使用各种骑士卡片的力量。这份穿越世界的力量，让你在修仙路上也能"路过"各种秘境险地。`);
-    }
-   player.使用过诸天镜 = true;
-    await Write_player(usr_qq, player);
-          return false;
+    return withPlayerMutationLock(usr_qq, async () => {
+        const mirrorCount = await exist_najie_thing(usr_qq, thing_name, "道具");
+        if (!mirrorCount) {
+            e.reply("你的纳戒中没有诸天镜");
+            return false;
+        }
+
+        const latestPlayer = await Read_player(usr_qq);
+        const result = bindBasicZhutianMirror(latestPlayer);
+        latestPlayer.使用过诸天镜 = true;
+        await Add_najie_thing(usr_qq, thing_name, "道具", -1);
+        try {
+            await Write_player(usr_qq, latestPlayer);
+        } catch (error) {
+            await Add_najie_thing(usr_qq, thing_name, "道具", 1);
+            throw error;
+        }
+
+        e.reply(result.firstBind
+            ? "诸天镜已与你的神魂绑定，一阶镜能已经充满。可使用 #友枝町 开始探索。"
+            : "诸天镜化作养镜灵光，镜能已经补满，并获得镜尘×25。"
+        );
+        return false;
+    });
 }
                // 处理天心印记道具
 if (thing_name == "堕魔骨") {

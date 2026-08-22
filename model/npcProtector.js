@@ -157,7 +157,7 @@ export function consumeProtectorIntervention(player, now = Date.now()) {
   player.护道人出手次数 = Math.max(0, Math.floor(Number(player.护道人出手次数) || 0)) + 1;
 }
 
-export async function tryNpcProtectorIntervention(player, enemy, battle, now = Date.now()) {
+export async function tryNpcProtectorIntervention(player, enemy, battle, now = Date.now(), options = {}) {
   const name = player?.护道人;
   if (player?.大帝庇护 !== 1 || !isNpcProtector(name)) return { triggered: false, reason: 'none' };
   const cooldown = getProtectorCooldown(player, now);
@@ -169,7 +169,7 @@ export async function tryNpcProtectorIntervention(player, enemy, battle, now = D
   const messages = [config.intro, `${name}淡然开口：“既已应下护道之约，此劫便不该落在你身上。”`];
   let won = false;
 
-  if ((Number(protector.mijinglevel_id) || 0) >= 19) {
+  if (!options.forceBattle && (Number(protector.mijinglevel_id) || 0) >= 19) {
     enemy.当前血量 = 0;
     won = true;
     messages.push(name === '苏灵'
@@ -185,7 +185,9 @@ export async function tryNpcProtectorIntervention(player, enemy, battle, now = D
     player.当前血量 = Math.max(1, Number(player.血量上限) || 1);
     messages.push(`${name}替你平复伤势，随后收起法相。护道神念进入24小时休养。`);
   } else {
-    messages.push(`${name}的护道法相未能彻底镇住来敌，只得先护送你脱离险境。`);
+    messages.push(options.forceBattle
+      ? `${name}的护道法相在交战中败退，来敌仍未收手。`
+      : `${name}的护道法相未能彻底镇住来敌，只得先护送你脱离险境。`);
   }
   return { triggered: true, won, name, messages, protector };
 }

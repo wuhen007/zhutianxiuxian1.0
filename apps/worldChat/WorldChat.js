@@ -17,6 +17,7 @@ import { clientFilter } from './filter.js';
 import { formatWorldChatMessage } from './presentation.js';
 import {
   cleanTradeLabel,
+  creditTradeAssets,
   extractTradeRealmPrefix,
   parseCompactTradeBundle,
   parseTradeBundle,
@@ -483,12 +484,7 @@ export class WorldChat extends plugin {
       return;
     }
     await this.withTradeLock(entry.user_id, async () => {
-      if (!entry.credited) {
-        for (const asset of entry.incoming || []) {
-          await this.adjustAsset(entry.user_id, asset, asset.amount);
-        }
-        entry.credited = true;
-      }
+      await this.creditTradeIncoming(code, entry);
       delete ledger[code];
       await this.saveLedger();
     });
@@ -512,12 +508,19 @@ export class WorldChat extends plugin {
     return Math.max(0, Number(list.find((item) => item?.name === asset.name)?.数量) || 0);
   }
 
-  async adjustAsset(userId, asset, delta) {
+  async adjustAsset(userId, asset, delta, options = {}) {
     if (asset.kind === 'currency') {
-      if (asset.name === '灵石') return Add_灵石(userId, delta, { applyMingge: false });
-      return Add_源石(userId, delta, { applyMingge: false });
+      if (asset.name === '灵石') return Add_灵石(userId, delta, { ...options, applyMingge: false });
+      return Add_源石(userId, delta, { ...options, applyMingge: false });
     }
-    return Add_najie_thing(userId, asset.name, asset.type, delta);
+    return Add_najie_thing(userId, asset.name, asset.type, delta, undefined, 1, options);
+  }
+
+  async creditTradeIncoming(code, entry) {
+    await creditTradeAssets(code, entry, (userId, asset, delta, options) =>
+      this.adjustAsset(userId, asset, delta, options)
+    );
+    await this.saveLedger();
   }
 
   async reserveAssets(userId, assets) {
@@ -605,13 +608,7 @@ export class WorldChat extends plugin {
     }
     try {
       await this.withTradeLock(entry.user_id, async () => {
-        if (!entry.credited) {
-          for (const asset of entry.incoming || []) {
-            await this.adjustAsset(entry.user_id, asset, asset.amount);
-          }
-          entry.credited = true;
-          await this.saveLedger();
-        }
+        await this.creditTradeIncoming(code, entry);
       });
       await client.settleTrade(code, event.role, event.member_tag, true);
     } catch (error) {

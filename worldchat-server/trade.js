@@ -17,6 +17,20 @@ export function cleanTradeLabel(value, max = 60) {
     .slice(0, max);
 }
 
+export function tradeAssetClaimKey(code, role, phase, index) {
+  return `worldtrade:${cleanTradeLabel(code, 80).toUpperCase()}:${role}:${phase}:${index}`;
+}
+
+export async function creditTradeAssets(code, entry, adjust) {
+  if (entry.credited) return;
+  for (const [index, asset] of (entry.incoming || []).entries()) {
+    await adjust(entry.user_id, asset, asset.amount, {
+      idempotencyKey: tradeAssetClaimKey(code, entry.role, 'credit', index),
+    });
+  }
+  entry.credited = true;
+}
+
 export function isForbiddenTradeAsset(asset = {}) {
   return FORBIDDEN_ASSET.test(
     `${cleanTradeLabel(asset.name)} ${cleanTradeLabel(asset.type)}`

@@ -1479,6 +1479,7 @@ async breakthroughShenhuoRealm(e, usr_qq, player) {
     // 消耗能量
     await Add_血气(usr_qq, -actualNeed);
     await Add_修为(usr_qq, -actualNeed);
+    player.修为 = Math.max(0, (Number(player.修为) || 0) - actualNeed);
 
     // 基础成功率60% - 没有极境的修炼方式成功率较低
     const successRate = 0.6;
@@ -1519,13 +1520,26 @@ async breakthroughShenhuoRealm(e, usr_qq, player) {
     player.防御 += diff.防御;
     player.血气上限 += diff.血气;
     player.血气 = player.血气上限;
-    ensureXianqiState(player); // 自身修炼不修出仙气，仅规范旧存档字段
+    normalizeXianguExtremeRealms(player);
+    player.极境 = player.极境.filter(levelId => levelId !== '8');
+    player.xiangu_xianqi = 0;
+    delete player.xiangu_xianqi_detail;
+    delete player.xiangu_xianqi_three_complete;
+    ensureXianqiState(player);
 
-    if (!player.xiangu_shenhuo) player.xiangu_shenhuo = {};
-    player.xiangu_shenhuo.已点燃 = true;
-    player.xiangu_shenhuo.点燃方式 = '自身修炼';
-    player.xiangu_shenhuo.神火品质 = '下品';
-    player.xiangu_shenhuo.属性倍率 = 0.3;
+    // 普通冲关必须重建神火记录，不继承回炉前的道种、技能或神火极境。
+    player.xiangu_shenhuo = {
+        已点燃: true,
+        点燃方式: '自身修炼',
+        神火品质: '下品',
+        神火名称: '自身修炼·凡火',
+        属性倍率: 0.3,
+        点燃时间: new Date().toISOString(),
+        属性加成: {},
+        突破前境界: 7,
+        突破后境界: 8,
+        极境达成: false
+    };
 
     await Write_player(usr_qq, player);
 

@@ -1,3 +1,5 @@
+import { grantTitle } from '../../model/titleSystem.js';
+
 const choiceIdsByTask = {
     1: new Set([1, 2]),
     2: new Set([1, 2]),
@@ -74,6 +76,9 @@ export function migrateCompletedZhiXianTasks(player, now = Date.now()) {
             completedAt: now,
             migrated: true,
         });
+        migrated = true;
+    }
+    if (player.支线任务完成记录[4] && grantTitle(player, '世外逍遥客')) {
         migrated = true;
     }
     return migrated;

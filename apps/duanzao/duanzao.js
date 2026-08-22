@@ -37,10 +37,17 @@ import {
   Read_danyao,
   Write_danyao,
   Read_equipment,
-  channel
+  channel,
+  get_fight_img,
+  zd_battle
 } from '../../model/xiuxian.js';
 import { log } from 'console';
 import { getPetAbilityBonus, getTimedActionMultiplier } from '../../model/innateTreasure.js';
+import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import {
+  buildRelativeTianjiaoCombatant,
+  selectHostileTianjiao,
+} from '../../model/tianjiaoHostility.js';
 
 async function resolveForgeFire(user_qq, player) {
   const selectedName = player.炉火 || '凡火';
@@ -727,6 +734,45 @@ export class duanzao extends plugin {
 
         await Add_najie_thing(user_qq, zhuangbei, '装备', 1);
 
+        let robberyMessage = '';
+        try {
+          const retaliation = await selectHostileTianjiao({
+            redis,
+            tianjiaoList: data.weimiantianjiao_list,
+            playerId: user_qq,
+            minimumLevel: '死敌',
+            event: 'forge',
+            worldYear: getRealmEventWorldYear(),
+          });
+          if (retaliation) {
+            const robber = buildRelativeTianjiaoCombatant(
+              player,
+              retaliation.tianjiao,
+              0.95 + Math.min(0.35, retaliation.hatred / 1000),
+            );
+            await e.reply([
+              '【死敌窥炉·夺宝截杀】',
+              `${retaliation.name}循着开炉异象赶到，抬手封住洞府：「这件新生宝物，我要了。」`,
+              '守住此战，装备归你；战败则本次新炼装备会被夺走。',
+            ].join('\n'));
+            const robberyBattle = await zd_battle({ ...player }, robber, { battleType: 'tianjiao_forge_robbery' });
+            const battleLog = Array.isArray(robberyBattle.msg) ? robberyBattle.msg.slice(0, 20) : [robberyBattle.msg];
+            const battleImage = await get_fight_img(e, battleLog);
+            if (battleImage) await e.reply(battleImage);
+            if (robberyBattle.winner === 'B') {
+              await Add_najie_thing(user_qq, zhuangbei, '装备', -1, zhuangbei.pinji);
+              player.当前血量 = Math.max(1, Math.floor((Number(player.血量上限) || 1) * 0.1));
+              await Write_player(user_qq, player);
+              robberyMessage = `\n【夺宝得手】${retaliation.name}击败了你，新炼制的【${zhuangbei.name}】已被夺走。`;
+            } else if (robberyBattle.winner === 'A') {
+              robberyMessage = `\n【护宝成功】你击退${retaliation.name}，保住了【${zhuangbei.name}】。`;
+            }
+          }
+        } catch (error) {
+          console.error(`[天骄夺炉] player=${user_qq}`, error);
+          robberyMessage = '\n天骄夺炉异象被护炉阵法隔绝，本次装备仍归你所有。';
+        }
+
         // 灵根影响值
         let v =
           player.隐藏灵根.控器 / (Math.abs(max[1] - player.隐藏灵根.type) + 5);
@@ -767,7 +813,7 @@ export class duanzao extends plugin {
         if (fireName && fireRate > 0) extNote.push(`炉火【${fireName}】提速 ${Math.round(fireRate * 100)}%`);
         if (gongfaName) extNote.push(`功法【${gongfaName}】xishu+${gfXishu.toFixed(2)}`);
         const extStr = extNote.length ? '\n' + extNote.join('，') : '';
-        e.reply(`【${modeText}】炉[${furnaceName}] 火[${fireName}]${extStr}\n恭喜你获得了[${wuqiname}·${houzhui}],炼器经验增加了[${z}]`);
+        e.reply(`【${modeText}】炉[${furnaceName}] 火[${fireName}]${extStr}\n恭喜你获得了[${wuqiname}·${houzhui}],炼器经验增加了[${z}]${robberyMessage}`);
         return false;
       }
     }

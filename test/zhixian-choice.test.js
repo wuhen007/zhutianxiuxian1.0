@@ -120,3 +120,17 @@ test('旧版任务4称号会迁移为完成记录，避免重复触发', () => {
     assert.equal(player.支线任务完成记录[4].旧存档迁移, 1);
     assert.equal(player.支线任务完成记录[4].完成时间, 789);
 });
+
+test('任务4已完成但称号缺失时会自动补发', () => {
+    const player = {
+        支线任务: [],
+        支线任务进度: {},
+        支线任务完成记录: {
+            4: { 完成时间: 123, 奖励状态: '已领取' },
+        },
+    };
+
+    assert.equal(migrateCompletedZhiXianTasks(player, 789), true);
+    assert.deepEqual(player.称号列表, ['世外逍遥客']);
+    assert.equal(migrateCompletedZhiXianTasks(player, 789), false);
+});
