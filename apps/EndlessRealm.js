@@ -64,9 +64,11 @@ import {
 } from '../model/endlessTreasure.js';
 import {
   equipTitle,
+  getTitleEffects,
   getTitleViews,
   grantTitle,
   normalizeTitles,
+  recoverEarnedTitles,
 } from '../model/titleSystem.js';
 import fs from 'node:fs';
 import { AppName } from '../app.config.js';
@@ -3696,6 +3698,7 @@ export class EndlessRealm extends plugin {
     const userId = await this.checkPlayer(e);
     if (!userId) return false;
     const player = await Read_player(userId);
+    if (recoverEarnedTitles(player).length) await Write_player(userId, player);
     const view = getTitleViews(player);
     const lines = [
       '【称号】',
@@ -3724,11 +3727,18 @@ export class EndlessRealm extends plugin {
     const titleName = e.msg.replace(/^#(?:佩戴|切换|更换)称号\s*/, '').trim();
     if (!titleName) return e.reply('请发送 #佩戴称号 称号名，如 #佩戴称号 无尽劫境天尊');
     const player = await Read_player(userId);
-    if (!normalizeTitles(player).includes(titleName))
+    const recovered = recoverEarnedTitles(player);
+    if (!normalizeTitles(player).includes(titleName)) {
+      if (recovered.length) await Write_player(userId, player);
       return e.reply(`你尚未拥有称号【${titleName}】，发送 #称号 查看已拥有称号`);
+    }
     if (!equipTitle(player, titleName))
       return e.reply(`称号【${titleName}】不存在或无法佩戴`);
     await Write_player(userId, player);
-    return e.reply(`已佩戴称号【${titleName}】！在无尽劫境中全属性与道痕收益加成已生效。`);
+    const effects = getTitleEffects(player);
+    const effectLine = effects.attrPct || effects.tokenPct
+      ? `\n在无尽劫境中全属性+${Math.round(effects.attrPct * 100)}%、道痕收益+${Math.round(effects.tokenPct * 100)}%。`
+      : '';
+    return e.reply(`已佩戴称号【${titleName}】！${effectLine}`);
   }
 }

@@ -25,6 +25,7 @@ import {
   getTitleEffects,
   getTitleViews,
   normalizeTitles,
+  recoverEarnedTitles,
 } from '../model/titleSystem.js';
 
 test('至宝池包含19件并加入最强之气', () => {
@@ -232,6 +233,48 @@ test('称号：发放/佩戴/效果/视图', () => {
   assert.equal(view.list[0].equipped, true);
   assert.equal(equipTitle(player, '不存在的称号'), false);
   assert.equal(normalizeTitles(player).length, 1);
+});
+
+test('支线称号世外逍遥客已注册并可发放佩戴', () => {
+  const player = { 称号列表: [] };
+  assert.equal(grantTitle(player, '世外逍遥客'), true);
+  assert.equal(equipTitle(player, '世外逍遥客'), true);
+  const view = getTitleViews(player);
+  assert.equal(view.equippedTitle.name, '世外逍遥客');
+  assert.equal(view.list[0].source, '支线任务·天地无拘');
+  assert.deepEqual(getTitleEffects(player), { attrPct: 0, tokenPct: 0 });
+});
+
+test('问仙令与仙古玩法称号均已注册并可发放佩戴', () => {
+  for (const titleId of ['问仙者', '神火境修士', '祭炼真我', '仙古第一']) {
+    const player = { 称号列表: [] };
+    assert.equal(grantTitle(player, titleId), true, `${titleId}应可发放`);
+    assert.equal(equipTitle(player, titleId), true, `${titleId}应可佩戴`);
+    assert.equal(getTitleViews(player).equippedTitle.name, titleId);
+    assert.deepEqual(getTitleEffects(player), { attrPct: 0, tokenPct: 0 });
+  }
+});
+
+test('旧存档按已完成里程碑补发称号且重复执行幂等', () => {
+  const player = {
+    支线任务完成记录: { 4: true },
+    问仙令: { claimed: [60] },
+    xiangu_shenhuo: { 已点燃: true, 点燃方式: '道种孕育' },
+    xiangu_legacy: { crowns: 1 },
+  };
+  assert.deepEqual(recoverEarnedTitles(player), [
+    '世外逍遥客',
+    '问仙者',
+    '神火境修士',
+    '仙古第一',
+  ]);
+  assert.deepEqual(recoverEarnedTitles(player), []);
+
+  const zhenwoPlayer = {
+    xiangu_shenhuo: { 已点燃: true, 路线: '祭炼真我' },
+  };
+  assert.deepEqual(recoverEarnedTitles(zhenwoPlayer), ['祭炼真我']);
+  assert.deepEqual(recoverEarnedTitles({ 问仙令: { claimed: {} } }), []);
 });
 
 test('至宝面板视图', () => {

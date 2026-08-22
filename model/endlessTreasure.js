@@ -44,15 +44,15 @@ export const SYNTHETIC_ABILITY_NAMES = Object.freeze({
 
 /* 旧平成十年骑士（K触屏·神主形态召唤物） */
 export const HEISEI_RIDERS = Object.freeze([
-  Object.freeze({ id: 'kuuga', name: '空我', form: '究极形态', attack: 1.8, hp: 1.2, crit: 0.14, hits: 1, skills: ['究极升华拳'], flavor: '惊异全能·漆黑之目', ultimate: { label: '究极升华踢', damagePct: 6, shieldMultiplier: 3 } }),
-  Object.freeze({ id: 'agito', name: '亚极陀', form: '闪耀形态', attack: 1.65, hp: 1.4, crit: 0.1, hits: 1, skills: ['闪耀骑士踢'], flavor: '太阳神光·护体再生', ultimate: { label: '闪耀爆裂踢', damagePct: 5, healPct: 0.12 } }),
-  Object.freeze({ id: 'ryuki', name: '龙骑', form: '生存形态', attack: 1.7, hp: 1.15, crit: 0.12, hits: 2, healPct: 0.12, skills: ['龙骑士踢'], flavor: '浴火吸血·因果契约', ultimate: { label: '龙火风暴', damagePct: 3.2, hits: 2, healPct: 0.25 } }),
-  Object.freeze({ id: 'faiz', name: '555', form: '爆裂形态', attack: 1.95, hp: 1.05, crit: 0.22, hits: 1, skills: ['爆裂电光踢'], flavor: '光子超频·极限爆发', ultimate: { label: '爆裂光子破碎斩', damagePct: 7.5, ignoreDefense: true } }),
-  Object.freeze({ id: 'blade', name: '剑', form: '帝王形态', attack: 1.7, hp: 1.35, crit: 0.12, hits: 2, skills: ['皇家同花顺'], flavor: '卡牌连段·不死者封印', ultimate: { label: '皇家同花顺', damagePct: 6.5, ignoreDefense: true } }),
-  Object.freeze({ id: 'hibiki', name: '响鬼', form: '装甲形态', attack: 1.55, hp: 1.3, crit: 0.1, hits: 3, skills: ['音击打·业火'], flavor: '鬼之音击·多段连斩', ultimate: { label: '装甲声刃·鬼神觉声', damagePct: 1.55, hits: 7 } }),
-  Object.freeze({ id: 'kabuto', name: '甲斗', form: '超越形态', attack: 1.85, hp: 1.1, crit: 0.2, hits: 2, skills: ['超加速·回旋踢'], flavor: 'Hyper Clock Up·超越时空', ultimate: { label: '超越骑士踢', damagePct: 4, hits: 2, ignoreDefense: true } }),
-  Object.freeze({ id: 'deno', name: '电王', form: '电车形态', attack: 1.65, hp: 1.45, crit: 0.1, hits: 1, skills: ['电车斩杀'], flavor: '良太郎之力·坚盾护阵', ultimate: { label: '终极电车斩', damagePct: 5.5, shieldPct: 0.12 } }),
-  Object.freeze({ id: 'kiva', name: '月骑', form: '魔皇形态', attack: 1.8, hp: 1.2, crit: 0.15, hits: 1, burnChance: 0.35, skills: ['魔皇破坏者'], flavor: '魔皇之力·魔焰灼敌', ultimate: { label: '魔皇月蚀踢', damagePct: 6.5, burnPct: 0.04 } }),
+  Object.freeze({ id: 'kuuga', name: '空我', form: '究极形态', attack: 1.8, hp: 1.2, crit: 0.14, hits: 1, skills: ['究极升华拳'], flavor: '究极之暗·护盾蓄力', ultimate: { label: '究极升华·天地崩裂', damagePct: 8, shieldPct: 0.25, chargedStrike: true, chargeMultiplier: 1.5, shieldMultiplier: 3 } }),
+  Object.freeze({ id: 'agito', name: '亚极陀', form: '闪耀形态', attack: 1.65, hp: 1.4, crit: 0.1, hits: 1, skills: ['闪耀骑士踢'], flavor: '太阳神光·无限进化', ultimate: { label: '闪耀骑士踢', damagePct: 6, healMaxPct: 0.15, growthPct: 0.06, growthMax: 3 } }),
+  Object.freeze({ id: 'ryuki', name: '龙骑', form: '生存形态', attack: 1.7, hp: 1.15, crit: 0.12, hits: 2, healPct: 0.12, skills: ['龙骑士踢'], flavor: '烈火龙契约·浴火吸血', ultimate: { label: '龙火风暴', damagePct: 3.5, hits: 2, healPct: 0.35 } }),
+  Object.freeze({ id: 'faiz', name: 'Faiz', form: '爆裂形态', attack: 1.95, hp: 1.05, crit: 0.22, hits: 1, skills: ['爆裂电光踢'], flavor: '光子超频·破甲贯穿', ultimate: { label: '超强化深红电钻', aoeLabel: '光子破坏炮', damagePct: 8.5, aoeDamagePct: 5, ignoreDefense: true, armorBreakPct: 0.35, armorBreakRounds: 2 } }),
+  Object.freeze({ id: 'blade', name: 'Blade', form: '帝王形态', attack: 1.7, hp: 1.35, crit: 0.12, hits: 2, skills: ['皇家同花顺'], flavor: '十三不死者·皇家封印', ultimate: { label: '皇家同花顺', damagePct: 8, ignoreDefense: true, antiHealRounds: 2, lowHpThreshold: 0.35, lowHpMultiplier: 2 } }),
+  Object.freeze({ id: 'hibiki', name: '响鬼', form: '装甲形态', attack: 1.55, hp: 1.3, crit: 0.1, hits: 3, skills: ['音击打·业火'], flavor: '七重音击·灼烧引爆', ultimate: { label: '音击刃·鬼神觉声', damagePct: 1.1, hits: 7, burnPct: 0.012, burnStacks: 7 } }),
+  Object.freeze({ id: 'kabuto', name: 'Kabuto', form: '超越形态', attack: 1.85, hp: 1.1, crit: 0.2, hits: 2, skills: ['Hyper Clock Up'], flavor: '百虫剑·超越时空', ultimate: { label: '百虫剑·究极斩', damagePct: 10, ignoreDefense: true, actionAdvance: true, alternate: { label: '百虫剑·究极炮', damagePct: 6, ignoreDefense: true, actionDelay: 1 } } }),
+  Object.freeze({ id: 'deno', name: '电王', form: '电车形态', attack: 1.65, hp: 1.45, crit: 0.1, hits: 1, skills: ['电车斩杀'], flavor: '四大异魔神·随机形态', ultimate: { label: '电车斩·终点站', damagePct: 6, shieldPct: 0.15, randomFormBuff: true } }),
+  Object.freeze({ id: 'kiva', name: 'Kiva', form: '魔皇形态', attack: 1.8, hp: 1.2, crit: 0.15, hits: 1, burnChance: 0.35, skills: ['魔皇破坏者'], flavor: '赞巴特剑·血月汲取', ultimate: { label: '终结赞巴特斩', damagePct: 7.5, burnPct: 0.025, burnStacks: 3, healPct: 0.3 } }),
   Object.freeze({ id: 'decade', name: '帝骑', form: '神主形态', attack: 2.15, hp: 1.1, crit: 0.25, hits: 2, skills: ['最终攻击驾驭'], flavor: '品红全能·驾驭诸骑', ultimate: { label: 'Final Attack Ride·十骑终焉', damagePct: 10, shieldMultiplier: 4, ignoreDefense: true } }),
 ]);
 

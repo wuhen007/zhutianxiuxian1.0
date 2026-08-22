@@ -992,7 +992,10 @@ function purgeEnemyBuffs(enemy) {
 function healEnemy(run, enemy, amount, logs, skill, note = '') {
   if (enemy.hp <= 0) return 0;
   const before = enemy.hp;
-  const antiHeal = getTreasureAntiHeal(run);
+  const antiHeal = Math.max(
+    getTreasureAntiHeal(run),
+    enemy.decadeAntiHealRounds > 0 ? 1 : 0,
+  );
   let healing = Math.max(0, Math.round(amount));
   if (antiHeal > 0) {
     healing = Math.round(healing * (1 - antiHeal));
@@ -1887,20 +1890,31 @@ function attackWithDecadeRiders(run, member, enemy, round, logs, damageByMember)
   let riderKilled = false;
   for (const rider of member.decadeRiders || []) {
     if (enemy.hp <= 0) break;
-    const ultimate = round % 3 === 0 ? rider.ultimate : null;
-    const hits = Math.max(1, Math.floor(asNumber(ultimate?.hits, rider.hits)));
+    let ultimate = round % 3 === 0 ? rider.ultimate : null;
+    if (ultimate?.alternate && enemy.monsterCount > 1) {
+      ultimate = { ...ultimate, ...ultimate.alternate, alternate: null };
+    }
+    const repeated = Boolean(rider.extraActionNext);
+    rider.extraActionNext = false;
+    const chargedStrike = Boolean(ultimate?.chargedStrike && rider.chargedStrike);
+    const hits = Math.max(1, Math.floor(asNumber(ultimate?.hits, rider.hits))) * (repeated ? 2 : 1);
     let dealt = 0;
     let absorbed = 0;
     for (let index = 0; index < hits; index++) {
       if (enemy.hp <= 0) break;
       const defenseRate = ultimate?.ignoreDefense ? 0.08 : 0.62;
+      const lowHpBoost = ultimate?.lowHpThreshold &&
+        member.hp / Math.max(1, calculateMemberStats(member, run).maxHp) <= ultimate.lowHpThreshold
+        ? asNumber(ultimate.lowHpMultiplier, 1)
+        : 1;
       let damage = Math.max(
         1,
-        rider.attack * asNumber(ultimate?.damagePct, 1) - enemy.defense * defenseRate
+        rider.attack * asNumber(ultimate?.aoeDamagePct && enemy.monsterCount > 1 ? ultimate.aoeDamagePct : ultimate?.damagePct, 1) * lowHpBoost - enemy.defense * defenseRate
       );
       const critical = random(run) < rider.critChance;
       if (critical) damage *= 1.7;
       damage *= rider.damageMultiplier;
+      if (chargedStrike) damage *= asNumber(ultimate.chargeMultiplier, 1.5);
       if (rider.burnChance > 0 && random(run) < rider.burnChance) damage *= 1.35;
       const result = damageEnemyWithShieldMultiplier(
         enemy,
@@ -1913,10 +1927,13 @@ function attackWithDecadeRiders(run, member, enemy, round, logs, damageByMember)
       damageByMember[member.id] += result.dealt;
     }
     if (ultimate?.burnPct && enemy.hp > 0) {
-      const burn = damageEnemy(enemy, enemy.maxHp * ultimate.burnPct);
-      dealt += burn.dealt;
-      absorbed += burn.absorbed;
-      damageByMember[member.id] += burn.dealt;
+      const stacks = Math.max(1, Math.floor(asNumber(ultimate.burnStacks, 1)));
+      for (let index = 0; index < stacks && enemy.hp > 0; index++) {
+        const burn = damageEnemy(enemy, enemy.maxHp * ultimate.burnPct);
+        dealt += burn.dealt;
+        absorbed += burn.absorbed;
+        damageByMember[member.id] += burn.dealt;
+      }
     }
     const healPct = asNumber(ultimate?.healPct, rider.healPct);
     if (healPct > 0 && dealt > 0 && member.alive) {
@@ -1930,7 +1947,48 @@ function attackWithDecadeRiders(run, member, enemy, round, logs, damageByMember)
     if (ultimate?.shieldPct && member.alive) {
       const gained = Math.round(calculateMemberStats(member, run).maxHp * ultimate.shieldPct);
       member.shield = Math.max(0, member.shield || 0) + gained;
-      addBattleLog(logs, `${rider.name}展开电车护阵，为${member.name}凝聚${gained}点护盾。`);
+      addBattleLog(logs, `${rider.name}展开专属护阵，为${member.name}凝聚${gained}点护盾。`);
+    }
+    if (ultimate?.healMaxPct && member.alive) {
+      const max = calculateMemberStats(member, run).maxHp;
+      const before = member.hp;
+      member.hp = Math.min(max, member.hp + Math.round(max * ultimate.healMaxPct));
+      addBattleLog(logs, `${rider.name}以闪耀之光为${member.name}恢复${member.hp - before}点生命。`);
+    }
+    if (ultimate?.growthPct && (rider.growthStacks || 0) < asNumber(ultimate.growthMax, 3)) {
+      rider.growthStacks = (rider.growthStacks || 0) + 1;
+      rider.damageMultiplier *= 1 + ultimate.growthPct;
+      addBattleLog(logs, `${rider.name}完成一次进化，本场输出永久提升${Math.round(ultimate.growthPct * 100)}%。`);
+    }
+    if (ultimate?.armorBreakPct && !enemy.decadeArmorBreakRounds) {
+      enemy.decadeArmorBreakValue = Math.round(enemy.defense * ultimate.armorBreakPct);
+      enemy.defense = Math.max(0, enemy.defense - enemy.decadeArmorBreakValue);
+      enemy.decadeArmorBreakRounds = Math.max(1, Math.floor(asNumber(ultimate.armorBreakRounds, 2)));
+      addBattleLog(logs, `${rider.name}以光子血液贯穿防线，${enemy.name}防御降低${Math.round(ultimate.armorBreakPct * 100)}%！`);
+    }
+    if (ultimate?.antiHealRounds) {
+      enemy.decadeAntiHealRounds = Math.max(enemy.decadeAntiHealRounds || 0, ultimate.antiHealRounds);
+      addBattleLog(logs, `${rider.name}以皇家封印禁绝${enemy.name}的治疗能力${ultimate.antiHealRounds}回合！`);
+    }
+    if (ultimate?.actionAdvance) rider.extraActionNext = true;
+    if (ultimate?.actionDelay) {
+      enemy.decadeActionDelayRounds = Math.max(enemy.decadeActionDelayRounds || 0, ultimate.actionDelay);
+    }
+    if (ultimate?.randomFormBuff) {
+      const forms = ['圣剑', '圣竿', '圣翼', '圣枪'];
+      const form = forms[Math.floor(random(run) * forms.length)];
+      if (form === '圣剑') rider.damageMultiplier *= 1.12;
+      if (form === '圣竿') member.shield = (member.shield || 0) + Math.round(calculateMemberStats(member, run).maxHp * 0.08);
+      if (form === '圣翼') rider.extraActionNext = true;
+      if (form === '圣枪') rider.critChance = Math.min(0.85, rider.critChance + 0.08);
+      addBattleLog(logs, `${rider.name}切换${form}形态，随机形态增益已经生效。`);
+    }
+    if (chargedStrike) {
+      rider.chargedStrike = false;
+      addBattleLog(logs, `${rider.name}释放积蓄的究极之力，完成蓄力重击！`);
+    } else if (!ultimate && rider.ultimate?.chargedStrike && !rider.chargedStrike) {
+      rider.chargedStrike = true;
+      addBattleLog(logs, `${rider.name}以究极之暗稳住架势，开始为重击蓄力。`);
     }
     const skill = ultimate?.label || rider.skills[Math.floor(random(run) * rider.skills.length)];
     addBattleAction(run, {
@@ -1943,7 +2001,7 @@ function attackWithDecadeRiders(run, member, enemy, round, logs, damageByMember)
       damage: dealt,
       absorbed,
       narration: rider.flavor || undefined,
-      note: ultimate ? `旧十年最终形态必杀｜${rider.flavor}` : `构筑：${rider.flavor}`,
+      note: ultimate ? `旧十年最终形态必杀｜${rider.flavor}${chargedStrike ? '｜蓄力重击' : ''}${repeated ? '｜Hyper Clock Up追加行动' : ''}` : `构筑：${rider.flavor}${repeated ? '｜Hyper Clock Up追加行动' : ''}`,
     });
     addBattleLog(logs, `${rider.name}${ultimate ? '释放最终形态必杀' : '自主施展'}《${skill}》，轰出${dealt}点伤害！`);
     if (run.__counters)
@@ -2854,6 +2912,19 @@ function interruptEnemyTurn(run, enemy, round, logs) {
 function enemyTurn(run, enemy, round, logs) {
   const alive = Object.values(run.members).filter((member) => member.alive);
   if (!alive.length || enemy.hp <= 0) return;
+  if (enemy.decadeActionDelayRounds > 0) {
+    enemy.decadeActionDelayRounds -= 1;
+    addBattleAction(run, {
+      side: 'player',
+      kind: 'status',
+      actor: '超越甲斗',
+      skill: '百虫剑·究极炮',
+      target: enemy.name,
+      note: '敌方行动被轰退一轮',
+    });
+    addBattleLog(logs, `${enemy.name}尚未从百虫剑究极炮中稳住身形，本轮行动被迫取消！`);
+    return;
+  }
   if (enemy.ghostImmobilizedPending) {
     delete enemy.ghostImmobilizedPending;
     addBattleAction(run, {
@@ -2893,7 +2964,7 @@ function enemyTurn(run, enemy, round, logs) {
 }
 
 function endRound(run, enemy, round, logs, damageByMember) {
-  if (enemy.trait === '再生' && enemy.hp > 0) {
+  if (enemy.trait === '再生' && enemy.hp > 0 && !enemy.decadeAntiHealRounds) {
     const before = enemy.hp;
     enemy.hp = Math.min(enemy.maxHp, enemy.hp + Math.round(enemy.maxHp * 0.02));
     addBattleAction(run, {
@@ -2904,6 +2975,15 @@ function endRound(run, enemy, round, logs, damageByMember) {
       target: enemy.name,
       healing: enemy.hp - before,
     });
+  }
+  if (enemy.decadeAntiHealRounds > 0) enemy.decadeAntiHealRounds -= 1;
+  if (enemy.decadeArmorBreakRounds > 0) {
+    enemy.decadeArmorBreakRounds -= 1;
+    if (enemy.decadeArmorBreakRounds <= 0) {
+      enemy.defense += Math.max(0, enemy.decadeArmorBreakValue || 0);
+      delete enemy.decadeArmorBreakValue;
+      addBattleLog(logs, `${enemy.name}被光子血液贯穿的防线重新稳定。`);
+    }
   }
   for (const member of Object.values(run.members)) {
     if (!member.alive) continue;

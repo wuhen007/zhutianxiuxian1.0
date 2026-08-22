@@ -110,6 +110,7 @@ test('神主帝骑：持久战每三回合释放旧十年最终形态必杀', ()
     .flatMap(round => round.actions)
     .filter(action => action.note.includes('旧十年最终形态必杀'));
   assert.ok(ultimates.length >= 10);
+  assert.ok(ultimates.some(action => action.actor.includes('空我') && action.note.includes('蓄力重击')));
   assert.ok(battle.summary.treasureRiderUltimates >= 10);
 });
 
