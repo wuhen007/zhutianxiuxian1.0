@@ -2,6 +2,7 @@ import { plugin, puppeteer, verc, data, config,Show } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
 import { getTimedActionMultiplier } from '../../model/innateTreasure.js';
 import { buildXijieAtlasData } from '../../model/xijieAtlas.js';
+import { createXijiePlayerSnapshot } from '../../model/xijieNpc.js';
 import {
   existplayer,
   Read_player,
@@ -188,10 +189,10 @@ export class Xijie extends plugin {
         }
     }
          // 检查是否是终极古地，并检查玩家的道行等级
-    if (didian === '万维梵宇') {
+    if (didian === '超维真界') {
         let player = await Read_player(usr_qq);
         if (player.level_id >= 63) {
-            e.reply('你已经到达了整个世界的顶点处，独自坐观万千大世沉浮，品尝无敌之寂寞，早已疲倦，或许也唯有那维宙世界才能让你提的起一丝兴趣了。');
+            e.reply('你已经到达了整个世界的顶点处，独自坐观万千大世沉浮，品尝无敌之寂寞，早已疲倦，或许也唯有超维真界才能让你提起一丝兴趣了。');
         } else {
             if (player.level_id < 63) {
                 e.reply('你并非永恒境强者，无法超脱维宙。');
@@ -246,20 +247,8 @@ export class Xijie extends plugin {
       player.灵根 = await get_random_talent();
       player.修炼效率提升 += player.灵根.eff;
     }
-    //锁定属性
-    let A_player = {
-      名号: player.名号,
-      攻击: parseInt(player.攻击),
-      防御: parseInt(player.防御 * buff),
-      当前血量: parseInt(player.血量上限 * buff),
-      暴击率: player.暴击率,
-      灵根: player.灵根,
-      法球倍率: player.灵根.法球倍率,
-      魔值: 0,
-    };
-    if (player.魔道值 > 999) {
-      A_player.魔值 = 1;
-    }
+    // 锁定完整战斗快照，后续法则压制只修改镜像，不污染玩家存档。
+    const A_player = createXijiePlayerSnapshot(player, buff, usr_qq);
     var time = 15; //时间（分钟）
     let action_time = 60000 * time; //持续时间，单位毫秒
     let arr = {

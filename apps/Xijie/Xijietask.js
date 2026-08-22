@@ -15,6 +15,10 @@ import { AppName } from '../../app.config.js';
 import { runTaskOnce } from '../../utils/taskGuard.js';
 import { adjustDaoHeart } from '../../model/daoHeart.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
+import {
+  applyXijieLawSuppression,
+  buildXijieNpcCombatant,
+} from '../../model/xijieNpc.js';
 export class Xijietask extends plugin {
   constructor() {
     super({
@@ -97,24 +101,13 @@ export class Xijietask extends plugin {
               monster_index = Math.trunc(Math.random() * monster_length);
               monster = data.npc_list[i].three[monster_index];
             }
-            //设定npc数值
-            let B_player = {
-              名号: monster.name,
-              攻击: parseInt(monster.atk * A_player.攻击),
-              防御: parseInt(
-                (monster.def * A_player.防御) / (1 + weizhi.Grade * 0.05)
-              ),
-              当前血量: parseInt(
-                (monster.blood * A_player.当前血量) / (1 + weizhi.Grade * 0.05)
-              ),
-              暴击率: monster.baoji,
-              灵根: monster.灵根,
-              法球倍率: monster.灵根.法球倍率,
-            };
+            const B_player = buildXijieNpcCombatant(monster, A_player, weizhi.Grade);
             const currentPlayer = await Read_player(player_id);
-            const battleA = { ...A_player };
+            let battleA = { ...A_player, 学习的功法: [...(A_player.学习的功法 || [])] };
             const blackEmperorFormation = consumeBlackEmperorBattleFormation(currentPlayer, battleA, B_player);
             if (blackEmperorFormation.consumed) await Write_player(player_id, currentPlayer);
+            const lawSuppression = applyXijieLawSuppression(battleA, B_player);
+            battleA = lawSuppression.player;
             let Data_battle;
             let playerSide;
             let last_msg = '';
@@ -132,6 +125,7 @@ export class Xijietask extends plugin {
               A_player.当前血量 = Data_battle.B_hp;
             }
             let msgg = Data_battle.msg;
+            if (lawSuppression.message && Array.isArray(msgg)) msgg.unshift(lawSuppression.message);
             if (blackEmperorFormation.message && Array.isArray(msgg)) msgg.unshift(blackEmperorFormation.message);
             console.log(msgg);
             let arr = action;
