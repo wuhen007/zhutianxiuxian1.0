@@ -157,7 +157,7 @@ export class AuctionofficialTask2 extends plugin {
         const p = await Read_player(wupin.last_offer_player);
         bidder = p.名号;
       } else if (wupin.last_offer_player < 0) {
-        bidder = "神秘NPC";
+        bidder = wupin.tianjiaoBidder || "神秘NPC";
       }
 
       const msgArr = [
@@ -221,7 +221,7 @@ export class AuctionofficialTask2 extends plugin {
         `📦 拍品：【${auction.thing.name}】x${auction.amount}`,
         '成交！',
         `最终价格：${auction.last_price} 源石`,
-        '得主：神秘NPC',
+        `得主：${auction.tianjiaoBidder || '神秘NPC'}`,
       ];
     } else if (auction.resolution === 'defaulted') {
       msgArr = [

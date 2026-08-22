@@ -20,6 +20,11 @@ import {
   reserveAuctionItem,
 } from '../../model/auctionSettlement.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import {
+  applyTianjiaoAuctionCounterbid,
+  selectHostileTianjiao,
+} from '../../model/tianjiaoHostility.js';
 
 // const intervalTime = 7 * 24 * 60 * 60 * 1000;
 
@@ -100,6 +105,8 @@ export class Auction extends plugin {
     let msg = `___[星阁]___\n目前正在拍卖【${auction.thing.name}】\n`;
     if (auction.last_offer_player === 0) {
       msg += '暂无人出价';
+    } else if (auction.last_offer_player < 0) {
+      msg += `最高出价是${auction.tianjiaoBidder || '神秘修士'}叫出的${auction.last_price}`;
     } else {
       const player = await Read_player(auction.last_offer_player);
       msg += `最高出价是${player.名号}叫出的${auction.last_price}`;
@@ -266,15 +273,35 @@ export class Auction extends plugin {
     // await redis.sAdd(redisGlKey, String(e.group_id));
     auction.groupList = await redis.sMembers(redisGlKey);
 
-    auction.last_price = new_price;
-    auction.last_offer_player = usr_qq;
-    auction.last_offer_price = new Date().getTime(); // NOTE: Big SB
-    if (!await compareAndSetRedisJson(redis, 'xiuxian:AuctionofficialTask', auctionJson, auction)) {
+    const retaliation = await selectHostileTianjiao({
+      redis,
+      tianjiaoList: data.weimiantianjiao_list,
+      playerId: usr_qq,
+      minimumLevel: '仇恨',
+      event: 'auction',
+      worldYear: getRealmEventWorldYear(),
+    });
+    const counterbid = applyTianjiaoAuctionCounterbid(
+      { ...auction, last_price: new_price },
+      retaliation,
+      usr_qq,
+    );
+    const nextAuction = counterbid.countered
+      ? counterbid.auction
+      : {
+          ...auction,
+          last_price: new_price,
+          last_offer_player: usr_qq,
+          last_offer_price: Date.now(),
+        };
+    if (!await compareAndSetRedisJson(redis, 'xiuxian:AuctionofficialTask', auctionJson, nextAuction)) {
       return e.reply('价格已被其他玩家更新，请重新出价');
     }
 
-    const msg = `${player.名号}叫价${new_price} `;
-    await Promise.all(auction.groupList.map(group_id => pushInfo(group_id, true, msg)));
+    const msg = counterbid.countered
+      ? `${player.名号}叫价${new_price}，${retaliation.name}却当场抬至${counterbid.price}灵石：「你想要的东西，我偏不让你轻易拿走。」`
+      : `${player.名号}叫价${new_price} `;
+    await Promise.all(nextAuction.groupList.map(group_id => pushInfo(group_id, true, msg)));
   }
 
   async show_auction(e) {

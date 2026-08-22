@@ -119,7 +119,9 @@ export class AuctionofficialTask extends plugin {
         await this.sendAuctionImg(group_id, msgArr);
       }
     } else {
-      const resolution = wupin.last_offer_player === 0 ? 'unsold' : 'buyer';
+      const resolution = wupin.last_offer_player === 0
+        ? 'unsold'
+        : wupin.last_offer_player < 0 ? 'npc' : 'buyer';
       const settling = createSettlingAuction(wupin, resolution);
       if (!await compareAndSetRedisJson(
         redis,
@@ -161,6 +163,13 @@ export class AuctionofficialTask extends plugin {
         '成交！',
         `最终价格：${auction.last_price}`,
         `得主：${player.名号}`,
+      ];
+    } else if (auction.resolution === 'npc') {
+      msgArr = [
+        `拍品：【${auction.thing.name}】`,
+        '成交！',
+        `最终价格：${auction.last_price}`,
+        `得主：${auction.tianjiaoBidder || '神秘修士'}`,
       ];
     } else if (auction.resolution === 'defaulted') {
       msgArr = [
