@@ -10,6 +10,7 @@ import {
   ensureXianguNpcGoals,
   formatXianguLegacy,
   formatXianguNpcGoals,
+  hasXianguCrownForRound,
   recordXianguLegacyResult,
 } from '../apps/SecretPlace/xianguLegacy.js';
 
@@ -70,6 +71,15 @@ test('同一轮最多增加一冠，跨轮继续累计', () => {
   assert.equal(awardXianguCrown(player, { roundId: 'round-a', at: 200 }).awarded, false);
   assert.equal(awardXianguCrown(player, { roundId: 'round-b', at: 300 }).title, '二冠王');
   assert.equal(player.xiangu_legacy.crowns, 2);
+});
+
+test('终极造化门槛只认本轮 crowned，不读取永久冠数或佩戴称号', () => {
+  const player = { 名号: '荒', title: '仙古第一' };
+  awardXianguCrown(player, { roundId: 'round-old', at: 100 });
+  assert.equal(hasXianguCrownForRound(player, 'round-old'), true);
+  assert.equal(hasXianguCrownForRound(player, 'round-new'), false);
+  player.xiangu_legacy.crowns = 99;
+  assert.equal(hasXianguCrownForRound(player, 'round-new'), false);
 });
 
 test('十冠王和宁川保留原著历史冠数，目标展示包含行动地点', () => {

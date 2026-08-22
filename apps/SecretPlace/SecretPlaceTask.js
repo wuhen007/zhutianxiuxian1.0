@@ -30,6 +30,7 @@ import { AppName } from '../../app.config.js';
 import { rollDailyDungeonCoordinate } from '../../model/weimianTravel.js';
 import { consumeBlackEmperorBattleFormation, rollBlackEmperorDungeonEncounter, rollDuanDeEncounter } from '../../model/blackEmperor.js';
 import { rollSuLingDungeonEncounter } from '../../model/suLing.js';
+import { rollPlaneStoryCharacterEncounter } from '../../model/planeStoryCharacters.js';
 import { tryNpcProtectorIntervention } from '../../model/npcProtector.js';
 import {
   recordWenXianTaskProgress,
@@ -55,6 +56,11 @@ import {
   withSecretPlaceSettlementLock,
 } from '../../model/secretPlaceAddiction.js';
 import { shouldTriggerDungeonMalignantEvent } from '../../model/dungeonMalignantEvent.js';
+import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import {
+  applyTianjiaoDungeonSneakAttack,
+  selectHostileTianjiao,
+} from '../../model/tianjiaoHostility.js';
 export class SecretPlaceTask extends plugin {
   constructor() {
     super({
@@ -1819,6 +1825,14 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
                 last_msg += blackEmperorEncounter.message;
                 await Write_player(player_id, player);
               }
+              const planeStoryEncounter = rollPlaneStoryCharacterEncounter(player, {
+                dungeon: weizhi?.name,
+                plane: player.power_place,
+              });
+              if (planeStoryEncounter.encountered) {
+                last_msg += planeStoryEncounter.message;
+                await Write_player(player_id, player);
+              }
               const duandeEncounter = rollDuanDeEncounter(player, {
                 plane: player.power_place,
               });
@@ -2294,6 +2308,18 @@ ${aptitudeEvaluations[newAptitude]}
             }
             for (const [name, gained] of Object.entries(proficiencyGains)) {
               last_msg += ` 功法参悟：${formatGongfaProficiency(player, name)}（+${gained}）。`;
+            }
+            const tianjiaoSneakAttack = await selectHostileTianjiao({
+              redis,
+              tianjiaoList: data.weimiantianjiao_list,
+              playerId: player_id,
+              minimumLevel: '仇恨',
+              event: 'dungeon',
+              worldYear: getRealmEventWorldYear(),
+            });
+            if (tianjiaoSneakAttack) {
+              const sneakDamage = applyTianjiaoDungeonSneakAttack(player);
+              last_msg += ` 【旧怨偷袭】${tianjiaoSneakAttack.name}趁你下本结算、心神松懈时隔空出手，额外削去${bigNumberTransform(sneakDamage.damage)}点气血，当前仅余${bigNumberTransform(sneakDamage.remainingHp)}。`;
             }
             msg.push(player.名号 + last_msg + fyd_msg);
             console.log('降临输出:'+msg)

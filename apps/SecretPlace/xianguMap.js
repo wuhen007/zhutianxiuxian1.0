@@ -9,9 +9,69 @@ export const DEFAULT_XIANGU_FRAGMENT_SIZES = Object.freeze({
   bone_forest: Object.freeze([11, 11]),
   flame_abyss: Object.freeze([11, 11]),
   xiangu_core: Object.freeze([11, 11]),
+  xiangu_arena: Object.freeze([11, 11]),
+  xiangu_ultimate: Object.freeze([11, 11]),
   chaos_mosquito: Object.freeze([11, 11]),
   void_rift: Object.freeze([11, 11]),
 });
+
+export const XIANGU_MOVE_DIRECTIONS = Object.freeze({
+  '上': Object.freeze({ dx: 0, dy: -1, name: '上方' }),
+  '下': Object.freeze({ dx: 0, dy: 1, name: '下方' }),
+  '左': Object.freeze({ dx: -1, dy: 0, name: '左方' }),
+  '右': Object.freeze({ dx: 1, dy: 0, name: '右方' }),
+  '左上': Object.freeze({ dx: -1, dy: -1, name: '左上方' }),
+  '右上': Object.freeze({ dx: 1, dy: -1, name: '右上方' }),
+  '左下': Object.freeze({ dx: -1, dy: 1, name: '左下方' }),
+  '右下': Object.freeze({ dx: 1, dy: 1, name: '右下方' }),
+});
+
+const XIANGU_OPPOSITE_BOUNDARY = Object.freeze({
+  top: 'bottom',
+  bottom: 'top',
+  left: 'right',
+  right: 'left',
+});
+
+export function parseXianguMoveCommand(message, maxSteps = 20) {
+  const match = String(message || '').trim().match(/^#(左上|右上|左下|右下|上|下|左|右)(\d*)$/);
+  if (!match) return null;
+
+  const limit = Math.max(1, Math.floor(Number(maxSteps) || 20));
+  return {
+    key: match[1],
+    ...XIANGU_MOVE_DIRECTIONS[match[1]],
+    steps: match[2] ? Math.max(1, Math.min(limit, parseInt(match[2], 10) || 1)) : 1,
+  };
+}
+
+export function resolveXianguBoundaryTransition(map, currentPosition, nextPosition) {
+  const width = Math.floor(Number(map?.width) || Number(map?.grid?.[0]?.length));
+  const height = Math.floor(Number(map?.height) || Number(map?.grid?.length));
+  if (width < 1 || height < 1 || !currentPosition || !nextPosition) return null;
+
+  const verticalDirection = nextPosition.y < 0
+    ? 'top'
+    : nextPosition.y >= height ? 'bottom' : null;
+  const horizontalDirection = nextPosition.x < 0
+    ? 'left'
+    : nextPosition.x >= width ? 'right' : null;
+  const direction = verticalDirection || horizontalDirection;
+  if (!direction) return null;
+
+  return {
+    direction,
+    enterDirection: XIANGU_OPPOSITE_BOUNDARY[direction],
+    borderPosition: {
+      x: horizontalDirection === 'left'
+        ? 0
+        : horizontalDirection === 'right' ? width - 1 : currentPosition.x,
+      y: verticalDirection === 'top'
+        ? 0
+        : verticalDirection === 'bottom' ? height - 1 : currentPosition.y,
+    },
+  };
+}
 
 export const XIANGU_MARROW_POOL_NAME = '万道仙髓池';
 export const XIANGU_MARROW_POOL_KIND = 'wandao_xiansui_pool';

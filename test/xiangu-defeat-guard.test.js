@@ -39,21 +39,27 @@ test('战败抉择守卫逾期时自动按任凭鱼肉结算', () => {
   assert.match(fn, /Write_player\(player_qq, player\)/);
 });
 
-test('唯一机缘（玉石匣/大罗剑胎/帝血）使用永久唯一认领', () => {
+test('唯一机缘使用永久唯一认领，冠军固定造化按轮次隔离', () => {
+  const scope = source.indexOf('function getXianguTreasureClaimScope');
+  assert.ok(scope >= 0);
+  const scopeWindow = source.slice(scope, scope + 400);
+  assert.match(scopeWindow, /claimScope === 'round-champion'/);
+  assert.match(scopeWindow, /getXianguEternalScope\(name\)/);
+
   const cell = source.indexOf('async function handleUniqueTreasureCell');
   assert.ok(cell >= 0);
   const window = source.slice(cell, cell + 4000);
-  assert.match(window, /getXianguEternalScope\(foundName\)/);
+  assert.match(window, /getXianguTreasureClaimScope\(player, map, foundName, foundTreasure\)/);
   assert.match(window, /getXianguUniqueTreasureClaim\(redis, claimScope\)/);
   const claimCalls = source.indexOf('claimXianguRewardForPlayer(claimScope, player, player_qq, { sameRoundOnly: true })');
   assert.ok(claimCalls > cell, '唯一机缘认领未使用 sameRoundOnly 防跨轮重试');
 });
 
-test('唯一机缘地图同步使用永久认领范围（跨轮次清除）', () => {
+test('唯一机缘地图同步使用统一认领范围', () => {
   const sync = source.indexOf('async function syncXianguSharedMapState');
   assert.ok(sync >= 0);
   const window = source.slice(sync, sync + 1200);
-  assert.match(window, /getXianguEternalScope\(name\)/);
+  assert.match(window, /getXianguTreasureClaimScope\(player, map, name, treasure\)/);
 });
 
 test('顶级道种发放经过永久唯一认领并可回退普通道种', () => {

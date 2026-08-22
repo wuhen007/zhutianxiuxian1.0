@@ -228,6 +228,17 @@ export function awardXianguCrown(holder, { roundId, at = Date.now() } = {}) {
   return { awarded: true, crowns: legacy.crowns, title: getXianguCrownTitle(legacy.crowns), round, legacy };
 }
 
+export function hasXianguCrownForRound(holder, roundId) {
+  const normalizedRoundId = String(roundId ?? '').trim();
+  if (!normalizedRoundId || !holder || typeof holder !== 'object') return false;
+  const rounds = Array.isArray(holder.xiangu_legacy?.rounds)
+    ? holder.xiangu_legacy.rounds
+    : [];
+  return rounds.some(round =>
+    String(round?.roundId ?? '').trim() === normalizedRoundId && round?.crowned === true
+  );
+}
+
 export function formatXianguLegacy(holder, roundId) {
   const legacy = ensureXianguLegacy(holder);
   const round = roundId === undefined

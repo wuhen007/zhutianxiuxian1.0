@@ -97,8 +97,10 @@ import {
   getXianguMarrowPoolTrapChance,
   getRevealedXianguExits,
   isXianguExitUnlocked,
+  parseXianguMoveCommand,
   pickDifferentXianguFragment,
   placeXianguMarrowPool,
+  resolveXianguBoundaryTransition,
   restoreXianguFragmentSnapshot,
   resolveXianguMarrowPoolConfig,
   resolveXianguFragmentSize,
@@ -110,10 +112,19 @@ import {
   buildXianguArenaRewardPlan,
   buildXianguBattleSides as buildRawXianguBattleSides,
   getXianguExploreEfficiency,
-  recordXianguArenaWin,
   resolveXianguLeaderWinner,
   transferXianguDaoyun,
 } from './xianguCombat.js';
+import {
+  XIANGU_ARENA_FRAGMENT_ID,
+  XIANGU_ULTIMATE_FRAGMENT_ID,
+  closeXianguArena,
+  getXianguArenaBattleGate,
+  joinXianguArena,
+  readXianguArenaState,
+  recordXianguArenaBattleWin,
+  startXianguArena,
+} from './xianguArenaState.js';
 import {
   advanceXianguNpcState,
   bindXianguNpcLocations,
@@ -155,11 +166,13 @@ import {
   formatXianguLegacy,
   formatXianguNpcGoals,
   getXianguCrownTitle,
+  hasXianguCrownForRound,
   recordXianguLegacyResult,
   resolveXianguCanonNpcId,
 } from './xianguLegacy.js';
 import { isXianguPlayerRoundCurrent } from '../tasks/xianguLifecycle.js';
 import { adjustDaoHeart } from '../../model/daoHeart.js';
+import { grantTitle } from '../../model/titleSystem.js';
 
 function getXianguNpcRealmData() {
   return {
@@ -784,6 +797,12 @@ function getXianguEternalScope(entityId) {
   };
 }
 
+function getXianguTreasureClaimScope(player, map, name, treasure) {
+  return treasure?.claimScope === 'round-champion'
+    ? getXianguSharedScope(player, name, map?.fragmentId)
+    : getXianguEternalScope(name);
+}
+
 function getXianguSharedClaimant(player, playerId) {
   return {
     id: String(playerId),
@@ -890,6 +909,29 @@ async function finalizeXianguNpcDeath(player, npc, npcId) {
 
 function getXianguRoundId(player) {
   return String(player?.xiangu_world_seed || player?.xiangu_entry_time || 'legacy');
+}
+
+function getXianguLifecycleRoundId(worldData) {
+  return String(
+    worldData?.仙古秘境开启时间 ||
+    worldData?.仙古秘境会话ID ||
+    worldData?.仙古秘境开启总年份 ||
+    'manual-open'
+  );
+}
+
+function isPlayerInXianguArena(player) {
+  return player?.xiangu_realm_map?.fragmentId === XIANGU_ARENA_FRAGMENT_ID;
+}
+
+function getXianguFragmentEntryBlock(player, fragmentId) {
+  if (
+    fragmentId === XIANGU_ULTIMATE_FRAGMENT_ID &&
+    !hasXianguCrownForRound(player, getXianguRoundId(player))
+  ) {
+    return '【终极造化地·法则封锁】这里只承认本轮仙古第一，过往冠冕与佩戴称号均不作通行凭证。';
+  }
+  return null;
 }
 
 function getXianguNpcEntityId(npc, fallback = '') {
@@ -1139,11 +1181,12 @@ function recordXianguPlayerResult(player, type, amount = 1) {
   return recordXianguLegacyResult(player, { roundId: getXianguRoundId(player), type, amount });
 }
 
-function getXianguNpcVictoryEventType(npc, victimId) {
+async function getXianguNpcVictoryEventType(player, npc, victimId) {
   const isTenCrownKing = resolveXianguCanonNpcId(npc) === 'shiguanwang_tianzi';
-  const arenaActive = XIANGU_EVENTS.activeEvent?.type === 'arena' &&
-    XIANGU_EVENTS.activeEvent.endTime > Date.now();
-  const victimJoined = XIANGU_EVENTS.arenaParticipants?.some(entry => String(entry.qq) === String(victimId));
+  if (!isTenCrownKing || !isPlayerInXianguArena(player)) return XIANGU_LEGACY_EVENTS.PLAYER_KILL;
+  const arenaState = await readXianguArenaState(redis, getXianguRoundId(player));
+  const arenaActive = arenaState.activeEvent?.endTime > Date.now();
+  const victimJoined = arenaState.participants.some(entry => String(entry.qq) === String(victimId));
   return isTenCrownKing && arenaActive && victimJoined
     ? XIANGU_LEGACY_EVENTS.ARENA_WIN
     : XIANGU_LEGACY_EVENTS.PLAYER_KILL;
@@ -1247,7 +1290,7 @@ async function ejectXianguPlayerKilled(player, player_qq, reason, victim = null)
     try {
       const npcRef = { id: String(victim.npcId), name: victim.npcName || String(victim.npcId) };
       await recordXianguCanonNpcEvent(player, npcRef, {
-        type: getXianguNpcVictoryEventType(npcRef, player_qq),
+        type: await getXianguNpcVictoryEventType(player, npcRef, player_qq),
         victimId: player_qq,
       });
     } catch (sharedError) {
@@ -1402,9 +1445,8 @@ async function syncXianguSharedMapState(player) {
 
   const treasures = Object.entries(map.uniqueTreasures || {})
     .filter(([, treasure]) => treasure?.kind !== XIANGU_MARROW_POOL_KIND && !treasure?.claimed);
-  // 天地唯一造化按永久范围同步：已被任何人（含本人过往轮次）认领的机缘直接在地图上消失。
-  const claims = await Promise.all(treasures.map(([name]) =>
-    getXianguUniqueTreasureClaim(redis, getXianguEternalScope(name))
+  const claims = await Promise.all(treasures.map(([name, treasure]) =>
+    getXianguUniqueTreasureClaim(redis, getXianguTreasureClaimScope(player, map, name, treasure))
   ));
   for (let index = 0; index < treasures.length; index++) {
     if (!claims[index]) continue;
@@ -2213,7 +2255,7 @@ export class xianguPlace extends plugin {
     reg: '^#阵营排行$',
     fnc: 'XianguFactionRank'
     },
-    // ====== 终极版：六方向移动（支持 #左5 多步）+ 神识推演 ======
+    // ====== 终极版：八方向移动（支持 #左5 多步）+ 神识推演 ======
     {
     reg: '^#上\\d*$',
     fnc: 'XianguRealmMove'
@@ -2236,6 +2278,14 @@ export class xianguPlace extends plugin {
     },
     {
     reg: '^#右上\\d*$',
+    fnc: 'XianguRealmMove'
+    },
+    {
+    reg: '^#左下\\d*$',
+    fnc: 'XianguRealmMove'
+    },
+    {
+    reg: '^#右下\\d*$',
     fnc: 'XianguRealmMove'
     },
     {
@@ -3287,12 +3337,15 @@ export class xianguPlace extends plugin {
           const connFrag = REALM_FRAGMENTS[connId];
           const levelReq = connFrag ? ZONE_LEVEL_REQUIREMENTS[connFrag.zone] : 5;
           const discovered = unlockedDirections.has(dir);
-          const canEnter = discovered && player.xiangulevel_id >= levelReq;
+          const entryBlock = connFrag && getXianguFragmentEntryBlock(player, connFrag.id);
+          const canEnter = discovered && player.xiangulevel_id >= levelReq && !entryBlock;
           exits.push({
             direction: dirNames[dir] || dir,
             target: discovered ? (connFrag ? connFrag.name : connId) : '未探明',
             locked: !canEnter,
-            levelRequired: discovered ? getRealmName(levelReq) : '先探明出口',
+            levelRequired: discovered
+              ? (entryBlock ? '本轮仙古第一' : getRealmName(levelReq))
+              : '先探明出口',
           });
         }
       }
@@ -3537,7 +3590,7 @@ export class xianguPlace extends plugin {
     const fragment = REALM_FRAGMENTS[map.fragmentId];
     msg += [
       `【可用命令】`,
-      `#上 / #下 / #左 / #右 / #左上 / #右上 —— 向对应方向移动`,
+      `#上 / #下 / #左 / #右 / #左上 / #右上 / #左下 / #右下 —— 向对应方向移动`,
       `#秘境探索 —— 神识感知周围（更新视野）`,
       `#秘境推演 —— 消耗道韵主动推演前方吉凶`,
       `#秘境移动 [碎片名] —— 远距离移动（通过已揭示出口）`,
@@ -3620,26 +3673,11 @@ export class xianguPlace extends plugin {
     }
     // 解析方向（支持 #左5 多步移动，最多20步）
     const msg = e.msg.trim();
-    const moveMatch = msg.match(/^#(上|下|左|右|左上|右上)(\d*)$/);
-    if (!moveMatch) {
-      return e.reply(`未知的方向：${msg}，请使用 #上/#下/#左/#右/#左上/#右上（可带步数，如 #左5）`);
-    }
-    const dirKey = '#' + moveMatch[1];
-    const steps = moveMatch[2]
-      ? Math.max(1, Math.min(20, parseInt(moveMatch[2], 10) || 1))
-      : 1;
-    const directionMap = {
-      '#上':  { dx: 0,  dy: -1, name: '上方', borderDir: 'top',    enterDir: 'bottom' },
-      '#下':  { dx: 0,  dy: 1,  name: '下方', borderDir: 'bottom', enterDir: 'top' },
-      '#左':  { dx: -1, dy: 0,  name: '左方', borderDir: 'left',   enterDir: 'right' },
-      '#右':  { dx: 1,  dy: 0,  name: '右方', borderDir: 'right',  enterDir: 'left' },
-      '#左上': { dx: -1, dy: -1, name: '左上方', borderDir: 'top',  enterDir: 'bottom' },
-      '#右上': { dx: 1,  dy: -1, name: '右上方', borderDir: 'top',  enterDir: 'bottom' }
-    };
-    const dir = directionMap[dirKey];
+    const dir = parseXianguMoveCommand(msg);
     if (!dir) {
-      return e.reply(`未知的方向：${msg}，请使用 #上/#下/#左/#右/#左上/#右上`);
+      return e.reply(`未知的方向：${msg}，请使用 #上/#下/#左/#右/#左上/#右上/#左下/#右下（可带步数，如 #左5）`);
     }
+    const { steps } = dir;
 
     await redis.set(`xiuxian:player:${usr_qq}:xianguMoveCD`, Date.now().toString());
 
@@ -3661,12 +3699,12 @@ export class xianguPlace extends plugin {
         const nx = oldPos.x + dir.dx;
         const ny = oldPos.y + dir.dy;
         // 越界：多步移动不跨界，遇出口/边界即停
-        if (ny < 0 || ny >= map.height || nx < 0 || nx >= map.width) {
-          const bX = Math.min(Math.max(nx, 0), map.width - 1);
-          const bY = Math.min(Math.max(ny, 0), map.height - 1);
+        const boundary = resolveXianguBoundaryTransition(map, oldPos, { x: nx, y: ny });
+        if (boundary) {
+          const { x: bX, y: bY } = boundary.borderPosition;
           const borderCell = map.grid[bY][bX];
           stopReason = borderCell === CELL_TYPE.EXIT && isXianguExitUnlocked(map, bX, bY)
-            ? { title: '【出口在前】', text: `前方是碎片出口，多步移动不会跨界，请单步移动（#${moveMatch[1]}）穿越。` }
+            ? { title: '【出口在前】', text: `前方是碎片出口，多步移动不会跨界，请单步移动（#${dir.key}）穿越。` }
             : { title: '【边界受阻】', text: `${player.名号}连续前行，却撞上了一面无形的空间壁垒，只能停下。` };
           break;
         }
@@ -3680,7 +3718,7 @@ export class xianguPlace extends plugin {
         if (cell === CELL_TYPE.EXIT || XIANGU_MOVEMENT_TEXT_CELL_TYPES.has(cell)) {
           stopReason = {
             title: '【前路有变】',
-            text: `${player.名号}行至${eventCellText[cell] || '一处特殊之地'}前，止步观望。\n如需进入请单步移动（#${moveMatch[1]}）触发。`,
+            text: `${player.名号}行至${eventCellText[cell] || '一处特殊之地'}前，止步观望。\n如需进入请单步移动（#${dir.key}）触发。`,
           };
           break;
         }
@@ -3729,21 +3767,16 @@ export class xianguPlace extends plugin {
     const ny = oldPos.y + dir.dy;
 
     // ====== 越界处理：碎片间穿梭 ======
-    if (ny < 0 || ny >= map.height || nx < 0 || nx >= map.width) {
-      // 确定越界方向对应的边界格子
-      let borderCellX = oldPos.x;
-      let borderCellY = oldPos.y;
-      if (nx < 0) borderCellX = 0;
-      else if (nx >= map.width) borderCellX = map.width - 1;
-      if (ny < 0) borderCellY = 0;
-      else if (ny >= map.height) borderCellY = map.height - 1;
+    const boundary = resolveXianguBoundaryTransition(map, oldPos, { x: nx, y: ny });
+    if (boundary) {
+      const { x: borderCellX, y: borderCellY } = boundary.borderPosition;
 
       const borderCell = map.grid[borderCellY][borderCellX];
 
       // 检查边界格子是否为出口
       if (borderCell === CELL_TYPE.EXIT && isXianguExitUnlocked(map, borderCellX, borderCellY)) {
         // 边界是出口 → 尝试进入下一个碎片
-        let connection = map.connectedFragments[dir.borderDir];
+        let connection = map.connectedFragments[boundary.direction];
         if (!connection) {
           return e.reply([
             `【前方无路】`,
@@ -3756,7 +3789,7 @@ export class xianguPlace extends plugin {
         // 兼容旧存档中的自环连接；统一走拓扑修复，不能再随机覆盖主线出口。
         if (connection === map.fragmentId) {
           repairXianguFragmentTopology(player, map.fragmentId, map);
-          connection = map.connectedFragments[dir.borderDir];
+          connection = map.connectedFragments[boundary.direction];
           if (!connection) {
             return e.reply('【碎片连接修复失败】当前出口暂时无法稳定，请尝试其他方向。');
           }
@@ -3778,6 +3811,8 @@ export class xianguPlace extends plugin {
             `当前境界：${getRealmName(player.xiangulevel_id)}`
           ].join('\n'));
         }
+        const entryBlock = getXianguFragmentEntryBlock(player, connection);
+        if (entryBlock) return e.reply(entryBlock);
 
         const previousFragmentId = map.fragmentId;
         if (!player.xiangu_realm_history) player.xiangu_realm_history = {};
@@ -3796,7 +3831,7 @@ export class xianguPlace extends plugin {
             player,
             connection,
             createXianguConnections(player, connection),
-            dir.enterDir,
+            boundary.enterDirection,
             previousFragmentId,
           );
           nextFragmentState = createXianguFragmentState(player, connection, nextConnections);
@@ -4138,6 +4173,8 @@ async XianguDivineScan(e) {
         `#秘境移动 深层区域`,
         `#秘境移动 核心区域`,
         `#秘境移动 火道禁区`,
+        `#秘境移动 擂台区域`,
+        `#秘境移动 终极造化地`,
         ``,
         `或使用以下快捷命令：`,
         `#秘境前往接引古殿`,
@@ -4159,6 +4196,12 @@ async XianguDivineScan(e) {
       '深层区域': '深层区域',
       '核心': '核心区域',
       '核心区域': '核心区域',
+      '擂台': '擂台区域',
+      '擂台区域': '擂台区域',
+      '仙古擂台': '擂台区域',
+      '终极': '终极区域',
+      '终极区域': '终极区域',
+      '终极造化地': '终极区域',
       '接引古殿': '边缘区域',
       '初代营地': '边缘区域',
       '法则石碑': '边缘区域',
@@ -4170,6 +4213,7 @@ async XianguDivineScan(e) {
       '黑暗牢笼': '深层区域',
       '折仙咒遗迹': '深层区域',
       '仙古花蕾': '核心区域',
+      '仙古花蕾·核心': '核心区域',
       '火道禁区': '火道禁区',
       '万火深渊': '火道禁区'
     };
@@ -4186,6 +4230,8 @@ async XianguDivineScan(e) {
         `中层区域：十凶传承地、仙药园、真龙巢穴、天角蚁埋骨地`,
         `深层区域：仙王讲道台、黑暗牢笼、折仙咒遗迹`,
         `核心区域：仙古花蕾`,
+        `擂台区域：仙古擂台`,
+        `终极区域：终极造化地（仅本轮仙古第一）`,
         `火道禁区：万火深渊（祭炼真我·三千青石阶）`,
         ``,
         `提示：使用 #秘境地图 查看详细地图`
@@ -4229,8 +4275,10 @@ async XianguDivineScan(e) {
       '边缘区域': 1,
       '中层区域': 2,
       '深层区域': 3,
+      '擂台区域': 4,
       '核心区域': 4,
-      '火道禁区': 5
+      '火道禁区': 5,
+      '终极区域': 5
     };
     
     const currentLevel = areaLevels[currentLocation];
@@ -4241,8 +4289,10 @@ async XianguDivineScan(e) {
       '边缘区域': 5,  // 铭文境
       '中层区域': 6,  // 列阵境
       '深层区域': 7,  // 尊者境
+      '擂台区域': 7,  // 尊者境
       '核心区域': 7,   // 尊者境
-      '火道禁区': 7   // 尊者境（祭炼真我·未点燃神火）
+      '火道禁区': 7,  // 尊者境（祭炼真我·未点燃神火）
+      '终极区域': 7   // 本轮仙古第一另行校验
     };
     
     if (player.xiangulevel_id < levelRequirements[targetArea]) {
@@ -4278,11 +4328,13 @@ async XianguDivineScan(e) {
     }
     const targetFragmentId = targetExit.target;
     const targetFragment = REALM_FRAGMENTS[targetFragmentId];
+    const entryBlock = getXianguFragmentEntryBlock(player, targetFragmentId);
+    if (entryBlock) return e.reply(entryBlock);
 
     // 移动时间和风险
     const moveRisk = Math.abs(targetLevel - currentLevel) * 0.1;
     // 目标区域遭遇概率（跨区域越大越危险，深层区域本身更危险）
-    const targetBaseRisk = { '边缘区域': 0.1, '中层区域': 0.3, '深层区域': 0.5, '核心区域': 0.7, '火道禁区': 0.85 }[targetArea] || 0.3;
+    const targetBaseRisk = { '边缘区域': 0.1, '中层区域': 0.3, '深层区域': 0.5, '擂台区域': 0.7, '核心区域': 0.7, '火道禁区': 0.85, '终极区域': 0.9 }[targetArea] || 0.3;
     const encounterChance = Math.min(1.0, moveRisk + targetBaseRisk * 0.5);
     
     // 执行移动
@@ -4876,6 +4928,7 @@ async XianguJieZhuDaoZhong(e) {
 
     // 移除已融合的道种
     consumeXianguSeed(player, selectedEntry);
+    grantTitle(player, '神火境修士');
 
     await Write_player(player_qq, player);
 
@@ -4944,7 +4997,7 @@ async XianguJieZhuDaoZhong(e) {
       `${selectedSeed.额外效果 ? `额外效果：${selectedSeed.额外效果}` : ''}`,
       ``,
       `【获得称号】`,
-      `${baseConfig?.神火境配置?.突破奖励?.称号 || '神火境修士'}`,
+      `神火境修士`,
       ``,
       `【古史记载】`,
       `"神火既燃，便是踏入了仙途！`,
@@ -5459,6 +5512,7 @@ async XianguJilianZhenwo(e) {
     if (!player.学习的功法.includes('草字剑诀')) {
       player.学习的功法.push('草字剑诀');
     }
+    grantTitle(player, '祭炼真我');
 
     await Write_player(player_qq, player);
 
@@ -5677,6 +5731,14 @@ async XianguYiShenWeiZhong(e) {
       if (!areXianguPlayersNearby(player, targetPlayer)) {
         return e.reply('【位置变化】交战双方已不在同一碎片的近距离内，本次攻击未执行。');
       }
+      if (isPlayerInXianguArena(player)) {
+        const arenaGate = getXianguArenaBattleGate(
+          await readXianguArenaState(redis, getXianguRoundId(player)),
+          player_qq,
+          targetId,
+        );
+        if (!arenaGate.ok) return e.reply(arenaGate.reason);
+      }
       location = currentLocation;
       if (attackerAction.cancelled || defenderAction.cancelled) {
         await e.reply('【撤离中断】杀机惊动秘境法则，交战双方正在维持的撤离通道均已崩散。');
@@ -5752,9 +5814,11 @@ async XianguYiShenWeiZhong(e) {
         }
         if (lootMsg) resultMsg.push(lootMsg);
 
-        const arenaWin = XIANGU_EVENTS.activeEvent?.type === 'arena' &&
-          XIANGU_EVENTS.activeEvent.endTime > Date.now() &&
-          recordXianguArenaWin(XIANGU_EVENTS.arenaParticipants, player_qq, targetId);
+        const arenaWin = isPlayerInXianguArena(player) && (await recordXianguArenaBattleWin(redis, {
+          roundId: getXianguRoundId(player),
+          winnerId: player_qq,
+          loserId: targetId,
+        })).recorded;
         if (targetForcedExit) {
           player.xiangu_kills = (player.xiangu_kills || 0) + 1;
           recordXianguPlayerResult(player, XIANGU_LEGACY_EVENTS.PLAYER_KILL);
@@ -5814,9 +5878,11 @@ async XianguYiShenWeiZhong(e) {
         applyXianguHeavyInjury(player);
         playerForcedExit = player.当前血量 < playerMaxHp * 0.1;
         const uniqueSpoil = playerForcedExit ? transferXianguUniqueSpoil(targetPlayer, player) : null;
-        const arenaWin = XIANGU_EVENTS.activeEvent?.type === 'arena' &&
-          XIANGU_EVENTS.activeEvent.endTime > Date.now() &&
-          recordXianguArenaWin(XIANGU_EVENTS.arenaParticipants, targetId, player_qq);
+        const arenaWin = isPlayerInXianguArena(player) && (await recordXianguArenaBattleWin(redis, {
+          roundId: getXianguRoundId(player),
+          winnerId: targetId,
+          loserId: player_qq,
+        })).recorded;
         if (playerForcedExit) {
           targetPlayer.xiangu_kills = (Number(targetPlayer.xiangu_kills) || 0) + 1;
           recordXianguPlayerResult(targetPlayer, XIANGU_LEGACY_EVENTS.PLAYER_KILL);
@@ -6238,6 +6304,9 @@ async XianguYiShenWeiZhong(e) {
       const player_qq = await channel(usr_qq);
       let player = await Read_player(player_qq);
       if (!player.in_xiangu) return e.reply(`【擂台·未入秘境】需先进入仙古秘境`);
+      if (!isPlayerInXianguArena(player)) {
+        return e.reply('【擂台报名·不在现场】只有身处仙古擂台才能报名。');
+      }
       const actionState = await prepareXianguAction(player_qq);
       if (actionState.busy) {
         return e.reply('【撤离结算中】本次擂台挑战未执行。');
@@ -7173,13 +7242,21 @@ async function handleUniqueTreasureCell(e, player, player_qq, map, x, y) {
     if (foundTreasure.kind === XIANGU_MARROW_POOL_KIND) {
       return handleXianguMarrowPoolCell(player, player_qq, map, x, y, foundTreasure, foundName);
     }
-    // 天地唯一：玉石匣/大罗剑胎/帝血 全服永久唯一（跨轮次）。
-    const claimScope = getXianguEternalScope(foundName);
+    const isChampionFortune = foundTreasure.claimScope === 'round-champion';
+    if (isChampionFortune && !hasXianguCrownForRound(player, getXianguRoundId(player))) {
+      return '【冠军造化·法则不应】此造化只回应本轮仙古第一。';
+    }
+    const claimScope = getXianguTreasureClaimScope(player, map, foundName, foundTreasure);
     const eternalClaim = await getXianguUniqueTreasureClaim(redis, claimScope);
     if (eternalClaim?.claimantId) {
       foundTreasure.claimed = true;
       map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
       const isSelf = String(eternalClaim.claimantId) === String(player_qq);
+      if (isChampionFortune) {
+        return isSelf
+          ? `【冠军造化】你已领取本轮固定造化，不可重复获得。`
+          : `【冠军造化】本轮固定造化已被${eternalClaim.claimantName || eternalClaim.claimantId}领取。`;
+      }
       return isSelf
         ? `✨【天地唯一】${foundName}已由你于过往轮次获得，天机不可复得。`
         : `✨【天地唯一】${foundName}已被${eternalClaim.claimantName || eternalClaim.claimantId}获得，此等造化举世唯一，再无第二份。`;
@@ -7189,6 +7266,46 @@ async function handleUniqueTreasureCell(e, player, player_qq, map, x, y) {
     const beforeGains = cloneXianguSettlementData(player.xiangu_gains);
     foundTreasure.claimed = true;
     map.grid[y][x] = CELL_TYPE.EXPLORED_EMPTY;
+
+    if (isChampionFortune) {
+      addXianguBagPotential(ensureXianguBag(player), 100);
+      player.xiangu_gains ||= {};
+      player.xiangu_gains.daoyun = (Number(player.xiangu_gains.daoyun) || 0) + 1000;
+      player.xiangu_gains.unique_found = (Number(player.xiangu_gains.unique_found) || 0) + 1;
+      const delivery = await deliverXianguClaimBagReward(
+        player,
+        player_qq,
+        claimScope,
+        'round-champion-fortune',
+        beforeBag,
+        {
+          playerFields: ['xiangu_gains'],
+          claim: () => claimXianguRewardForPlayer(claimScope, player, player_qq, { sameRoundOnly: true }),
+          onClaimRejected: () => {
+            if (beforeGains === undefined) delete player.xiangu_gains;
+            else player.xiangu_gains = cloneXianguSettlementData(beforeGains);
+          },
+        },
+      );
+      if (delivery.status === 'fallback' && !delivery.receipt) {
+        foundTreasure.claimed = false;
+        map.grid[y][x] = CELL_TYPE.UNIQUE_TREASURE;
+        restoreXianguBagSettlementSnapshot(player, beforeBag);
+        if (beforeGains === undefined) delete player.xiangu_gains;
+        else player.xiangu_gains = cloneXianguSettlementData(beforeGains);
+        return '【冠军造化暂存】结算暂时不可用，造化仍在原地，请稍后重试。';
+      }
+      if (delivery.status === 'rejected') {
+        return `【冠军造化】本轮固定造化已经完成结算，不可重复领取。`;
+      }
+      return [
+        `【本轮仙古第一·固定造化】`,
+        `${player.名号}的本轮冠冕烙印点亮终极道台。`,
+        `仙道潜力 +100`,
+        `道韵 +1000`,
+        `此份造化每轮冠军均可领取，不受仙王经文与帝血归属影响。`,
+      ].join('\n');
+    }
 
     addXianguBagItem(ensureXianguBag(player), {
       name: rewardName,
@@ -8113,7 +8230,11 @@ function getAreaDescription(area) {
 然而黑暗牢笼中，不朽之王的气息令人心悸。`,
     '核心区域': `仙古花蕾璀璨夺目，道纹交织；
 这里是秘境的中心，也是离开的唯一出口；
-蕴含着传说中最顶级的机缘——唯一道则碎片。`,
+可在此安全撤离，也可完成道种融合。`,
+    '擂台区域': `古老擂台横亘在深层与花蕾核心之间；
+诸世天骄只有亲临此地，才能报名并展开本轮争霸。`,
+    '终极区域': `诸天道纹在此汇成唯一门户；
+只有本轮仙古第一的冠冕烙印，才能令终极造化显现。`,
     '火道禁区': `万火深渊中三千道火熊熊燃烧；
 祭炼真我者于此感悟大道，火道道种遍地；
 高品神火者在此如鱼得水，低品者步履维艰。`
@@ -8127,7 +8248,9 @@ function getAreaFeature(area) {
     '边缘区域': '安全区域，适合新手历练',
     '中层区域': '危险区域，可能遭遇遗种和守卫',
     '深层区域': '高危区域，仙王残念与黑暗力量并存',
-    '核心区域': '撤离区域，顶级机缘与最终Boss',
+    '核心区域': '撤离与道种融合区域',
+    '擂台区域': '本轮仙古第一争霸区域，仅限现场报名与交战',
+    '终极区域': '本轮冠军专属造化与全服唯一机缘',
     '火道禁区': '祭炼场·三千青石阶，火道道种孕育之地'
   };
   return features[area] || features['边缘区域'];
@@ -8139,7 +8262,9 @@ function getAreaSuggestion(area) {
     '边缘区域': '先在此地熟悉环境，积累资源',
     '中层区域': '可尝试探索十凶传承地或仙药园',
     '深层区域': '需做好充分准备，携带足够补给',
-    '核心区域': '最后前来，带足宝物准备撤离'
+    '擂台区域': '亲临擂台报名，与本轮参赛者争夺第一',
+    '核心区域': '可融合道种，也可在此安全撤离',
+    '终极区域': '本轮仙古第一可进入并领取冠军造化'
   };
   return suggestions[area] || suggestions['边缘区域'];
 }
@@ -8176,14 +8301,12 @@ function generateRandomSeed(location, options = {}) {
 
 // ==================== 步骤5：动态事件系统与NPC生态 ====================
 
-// ---- 全局动态事件状态（内存中，重启清零） ----
+// 普通动态事件仍是短生命周期内存态；仙古擂台独立持久化到 Redis。
 const XIANGU_EVENTS = {
   // 当前激活的事件：{ type, startTime, endTime, desc, participants }
   activeEvent: null,
   // 事件冷却时间记录
   lastEventTime: {},
-  // 擂台参赛者列表
-  arenaParticipants: [],
   // 事件历史（最近10条）
   eventHistory: []
 };
@@ -8879,7 +9002,10 @@ function getXianguMapNpcEntries(player) {
 // 查看当前秘境事件
 async function XianguEventListFn(e, player) {
   const now = Date.now();
-  const activeEv = XIANGU_EVENTS.activeEvent;
+  const arenaState = await readXianguArenaState(redis, getXianguRoundId(player));
+  const activeEv = arenaState.activeEvent?.endTime > now
+    ? arenaState.activeEvent
+    : XIANGU_EVENTS.activeEvent;
 
   let eventLines = [
     `【仙古秘境·大事记】`,
@@ -8902,7 +9028,9 @@ async function XianguEventListFn(e, player) {
 
     // 预估下次事件
     const nextEvents = Object.entries(EVENT_TYPES).map(([key, def]) => {
-      const lastTime = XIANGU_EVENTS.lastEventTime[key] || 0;
+      const lastTime = key === 'arena'
+        ? arenaState.lastEventTime
+        : (XIANGU_EVENTS.lastEventTime[key] || 0);
       const nextTime = lastTime + def.cooldown;
       return { key, name: def.name, nextTime };
     }).sort((a, b) => a.nextTime - b.nextTime);
@@ -8918,9 +9046,12 @@ async function XianguEventListFn(e, player) {
   }
 
   // 历史事件（最近3条）
-  if (XIANGU_EVENTS.eventHistory.length > 0) {
+  const eventHistory = [...XIANGU_EVENTS.eventHistory, ...arenaState.eventHistory]
+    .sort((a, b) => a.time - b.time)
+    .slice(-10);
+  if (eventHistory.length > 0) {
     eventLines.push(`【近期事件记录】`);
-    XIANGU_EVENTS.eventHistory.slice(-3).reverse().forEach(ev => {
+    eventHistory.slice(-3).reverse().forEach(ev => {
       const elapsed = Math.floor((now - ev.time) / 60000);
       eventLines.push(`· ${ev.name} — ${elapsed}分钟前`);
     });
@@ -8936,12 +9067,21 @@ async function XianguEventListFn(e, player) {
 async function XianguArenaFn(e, player, player_qq) {
   const now = Date.now();
   const arenaDef = EVENT_TYPES.arena;
+  const roundId = getXianguRoundId(player);
+  let arenaState = await readXianguArenaState(redis, roundId);
+  if (arenaState.activeEvent?.endTime <= now) {
+    await checkArenaSettlement(roundId);
+    arenaState = await readXianguArenaState(redis, roundId);
+  }
 
-  // 检查擂台冷却
-  const lastArena = XIANGU_EVENTS.lastEventTime.arena || 0;
-  const cooldownLeft = Math.ceil((lastArena + arenaDef.cooldown - now) / 60000);
-
-  if (!XIANGU_EVENTS.activeEvent || XIANGU_EVENTS.activeEvent.type !== 'arena') {
+  if (!arenaState.activeEvent) {
+    if (XIANGU_EVENTS.activeEvent?.endTime > now) {
+      return e.reply('【仙古擂台】当前另有秘境大事件进行中，请待其结束后再引动擂台。');
+    }
+    if (!isPlayerInXianguArena(player)) {
+      return e.reply('【仙古擂台·尚未抵达】请先循深层区域出口进入仙古擂台，亲临战台后方可开擂。');
+    }
+    const cooldownLeft = Math.ceil((arenaState.lastEventTime + arenaDef.cooldown - now) / 60000);
     if (cooldownLeft > 0) {
       return e.reply([
         `【仙古擂台·冷却中】`,
@@ -8955,21 +9095,25 @@ async function XianguArenaFn(e, player, player_qq) {
       ].join('\n'));
     }
 
-    // 发起擂台
-    const endTime = now + arenaDef.duration;
-    XIANGU_EVENTS.activeEvent = {
-      type: 'arena',
-      startTime: now,
-      endTime,
+    const startResult = await startXianguArena(redis, {
+      roundId,
+      playerId: player_qq,
+      playerName: player.名号,
+      now,
+      duration: arenaDef.duration,
+      cooldown: arenaDef.cooldown,
       desc: arenaDef.desc,
-      participants: [player_qq],
-      worldSeed: getXianguRoundId(player),
-    };
-    XIANGU_EVENTS.lastEventTime.arena = now;
-    XIANGU_EVENTS.arenaParticipants = [{ qq: player_qq, name: player.名号, wins: 0 }];
+    });
+    if (startResult.status !== 'started') {
+      arenaState = startResult.state;
+      if (!arenaState.activeEvent) {
+        const cooldownMinutes = Math.max(1, Math.ceil((startResult.cooldownLeft || 0) / 60000));
+        return e.reply(`【仙古擂台·冷却中】还需${cooldownMinutes}分钟方可再次开擂。`);
+      }
+    } else {
+      arenaState = startResult.state;
 
-    // 全服广播
-    const broadMsg = [
+      const broadMsg = [
       `【仙古秘境·大事件！】`,
       ``,
       `═══════════════════`,
@@ -8987,9 +9131,9 @@ async function XianguArenaFn(e, player, player_qq) {
       `擂台持续：30分钟`,
       `胜者将获得丰厚道韵奖励及"仙古第一"称号！`
     ].join('\n');
-    broadcastToXianguPlayers(broadMsg);
+      await broadcastToXianguPlayers(broadMsg);
 
-    return e.reply([
+      return e.reply([
       `【仙古擂台·开启！】`,
       ``,
       `${player.名号}踏上擂台，引动古阵！`,
@@ -8999,12 +9143,13 @@ async function XianguArenaFn(e, player, player_qq) {
       `等待其他修士挑战...`,
       ``,
       `使用 #秘境攻击 @对手 进行擂台对决`
-    ].join('\n'));
+      ].join('\n'));
+    }
   }
 
   // 擂台已开启，显示状态
-  const remaining = Math.ceil((XIANGU_EVENTS.activeEvent.endTime - now) / 60000);
-  const participants = XIANGU_EVENTS.arenaParticipants;
+  const remaining = Math.max(0, Math.ceil((arenaState.activeEvent.endTime - now) / 60000));
+  const participants = arenaState.participants;
 
   let lines = [
     `【仙古擂台·进行中】`,
@@ -9024,23 +9169,28 @@ async function XianguArenaFn(e, player, player_qq) {
 
 // 参与仙古擂台
 async function XianguArenaJoinFn(e, player, player_qq) {
-  if (!XIANGU_EVENTS.activeEvent || XIANGU_EVENTS.activeEvent.type !== 'arena') {
+  if (!isPlayerInXianguArena(player)) {
+    return e.reply('【擂台报名·不在现场】只有身处仙古擂台才能报名。');
+  }
+  const result = await joinXianguArena(redis, {
+    roundId: getXianguRoundId(player),
+    playerId: player_qq,
+    playerName: player.名号,
+  });
+  if (result.status === 'inactive') {
     return e.reply(`【擂台未开启】当前没有进行中的擂台，使用 #仙古擂台 查看`);
   }
 
-  const already = XIANGU_EVENTS.arenaParticipants.find(p => p.qq === player_qq);
-  if (already) {
+  if (result.status === 'joined') {
     return e.reply(`${player.名号}已在擂台参赛名单中！使用 #秘境攻击 @对手 与其他修士交战`);
   }
-
-  XIANGU_EVENTS.arenaParticipants.push({ qq: player_qq, name: player.名号, wins: 0 });
 
   return e.reply([
     `【仙古擂台·参赛成功！】`,
     ``,
     `${player.名号}踏上仙古擂台，昂然迎接挑战！`,
     ``,
-    `当前参赛人数：${XIANGU_EVENTS.arenaParticipants.length}`,
+    `当前参赛人数：${result.state.participants.length}`,
     ``,
     `【攻略提示】`,
     `· 使用 #秘境攻击 @对手 与擂台内修士对决`,
@@ -9764,9 +9914,11 @@ async function resolveXianguNpcEcologyBattle(player, player_qq, action) {
 async function processNPCBehavior(player, player_qq, { allowCombat = true } = {}) {
   ensureXianguMapNpcBindings(player);
   try {
-  const arenaTarget = XIANGU_EVENTS.activeEvent?.type === 'arena' &&
-    XIANGU_EVENTS.activeEvent.endTime > Date.now() &&
-    XIANGU_EVENTS.arenaParticipants?.some(entry => String(entry.qq) === String(player_qq));
+  const arenaState = isPlayerInXianguArena(player)
+    ? await readXianguArenaState(redis, getXianguRoundId(player))
+    : null;
+  const arenaTarget = arenaState?.activeEvent?.endTime > Date.now() &&
+    arenaState.participants.some(entry => String(entry.qq) === String(player_qq));
   for (const spot of player.xiangu_realm_map?.npcLocations || []) {
     if (resolveXianguCanonNpcId(spot?.npc) !== 'shiguanwang_tianzi') continue;
     spot.npc.xianguGoal = {
@@ -10124,10 +10276,16 @@ async function autoTriggerEvents() {
     if (lifecycle.available && !lifecycle.open) {
       // Events are round-scoped; never start or settle rewards after closure.
       XIANGU_EVENTS.activeEvent = null;
-      XIANGU_EVENTS.arenaParticipants = [];
       return;
     }
     const now = Date.now();
+    const roundId = getXianguLifecycleRoundId(lifecycle.data);
+    let arenaState = await readXianguArenaState(redis, roundId);
+    if (arenaState.activeEvent?.endTime <= now) {
+      await checkArenaSettlement(roundId);
+      arenaState = await readXianguArenaState(redis, roundId);
+    }
+    if (arenaState.activeEvent?.endTime > now) return;
     if (XIANGU_EVENTS.activeEvent && XIANGU_EVENTS.activeEvent.endTime <= now) {
       await settleCurrentEvent();
     }
@@ -10209,10 +10367,6 @@ function applyEventEffect(eventKey, eventData) {
 async function settleCurrentEvent() {
   const event = XIANGU_EVENTS.activeEvent;
   if (!event) return;
-  if (event.type === 'arena') {
-    await checkArenaSettlement();
-    return;
-  }
   const evDef = EVENT_TYPES[event.type];
   const settleMessages = {
     shixiong_awakening: `【${evDef.name}·结束】\n十凶遗种的气息逐渐消退，沉入秘境深处...`,
@@ -10224,17 +10378,15 @@ async function settleCurrentEvent() {
 }
 
 /** 擂台结算 */
-async function checkArenaSettlement() {
-  const ev = XIANGU_EVENTS.activeEvent;
-  if (!ev || ev.type !== 'arena') return;
-
-  const participants = XIANGU_EVENTS.arenaParticipants || [];
+async function checkArenaSettlement(roundId) {
+  const settlement = await closeXianguArena(redis, roundId);
+  if (!settlement) return;
+  const ev = settlement.event;
+  const participants = settlement.participants;
   const arenaDef = EVENT_TYPES.arena;
 
   if (participants.length === 0) {
     await broadcastToXianguPlayers(`【仙古擂台·无人问津】\n擂台缓缓坠入虚空，无一人参与。`);
-    XIANGU_EVENTS.activeEvent = null;
-    XIANGU_EVENTS.arenaParticipants = [];
     return;
   }
 
@@ -10244,13 +10396,9 @@ async function checkArenaSettlement() {
       `仅有${participants.length}名修士应战，未达到${arenaDef.minPlayers}人的开擂条件。`,
       `本届擂台不发放排名奖励。`,
     ].join('\n'));
-    XIANGU_EVENTS.activeEvent = null;
-    XIANGU_EVENTS.arenaParticipants = [];
     return;
   }
 
-  // 先结束活动，避免定时轮询重入造成奖励或冠冕重复结算。
-  XIANGU_EVENTS.activeEvent = null;
   participants.sort((a, b) => b.wins - a.wins);
   const rewardPlan = buildXianguArenaRewardPlan(participants, arenaDef.rewards);
   const top3 = rewardPlan.slice(0, 3);
@@ -10270,6 +10418,7 @@ async function checkArenaSettlement() {
           crown = awardXianguCrown(player, {
             roundId: String(ev.worldSeed || ev.startTime),
           });
+          grantTitle(player, '仙古第一');
         }
       });
     } catch (err) { console.error('擂台奖励发放失败:', err); }
@@ -10299,8 +10448,6 @@ async function checkArenaSettlement() {
     if (departed > 0) lines.push(`已有${departed}名参赛者离开秘境，未结算参与奖励。`);
   }
 
-  XIANGU_EVENTS.arenaParticipants = [];
-  XIANGU_EVENTS.eventHistory.push({ name: '仙古擂台', time: Date.now(), type: 'arena' });
   await broadcastToXianguPlayers(lines.join('\n'));
 }
 
@@ -10542,9 +10689,23 @@ const REALM_FRAGMENTS = {
   xiangu_core: {
     id: 'xiangu_core', name: '仙古花蕾·核心', zone: '核心区域',
     size: resolveXianguFragmentSize(XIANGU_MAP_CONFIG, 'xiangu_core'), risk: 0.9,
-    desc: '仙古花蕾深处，终极造化所在',
-    features: ['唯一机缘', '终极造化地', '撤离点', '道种融合地'],
+    desc: '仙古花蕾深处，承载归途法则与道种融合道台',
+    features: ['撤离点', '道种融合地'],
     npcDensity: 0.4, treasureDensity: 0.8
+  },
+  xiangu_arena: {
+    id: XIANGU_ARENA_FRAGMENT_ID, name: '仙古擂台', zone: '擂台区域',
+    size: resolveXianguFragmentSize(XIANGU_MAP_CONFIG, XIANGU_ARENA_FRAGMENT_ID, [8, 8]), risk: 0.75,
+    desc: '连接深层区域与仙古花蕾核心的古老战台',
+    features: ['擂台报名', '冠军争霸', '本轮排名'],
+    npcDensity: 0.1, treasureDensity: 0.15
+  },
+  xiangu_ultimate: {
+    id: XIANGU_ULTIMATE_FRAGMENT_ID, name: '终极造化地', zone: '终极区域',
+    size: resolveXianguFragmentSize(XIANGU_MAP_CONFIG, XIANGU_ULTIMATE_FRAGMENT_ID, [7, 7]), risk: 0.95,
+    desc: '仅向本轮仙古第一开启的终极造化空间',
+    features: ['冠军固定造化', '仙王经文', '帝血'],
+    npcDensity: 0.0, treasureDensity: 0.25
   },
   chaos_mosquito: {
     id: 'chaos_mosquito', name: '混沌蚊湖', zone: '深层区域',
@@ -10568,7 +10729,9 @@ const ZONE_FRAGMENT_POOLS = {
   '中层区域': ['ancient_ruins', 'true_dragon_nest', 'chaos_rift'],
   '深层区域': ['dark_prison', 'immortal_podium', 'bone_forest', 'chaos_mosquito'],
   '火道禁区': ['flame_abyss'],
+  '擂台区域': [XIANGU_ARENA_FRAGMENT_ID],
   '核心区域': ['xiangu_core'],
+  '终极区域': [XIANGU_ULTIMATE_FRAGMENT_ID],
   '隐藏区域': ['void_rift']
 };
 
@@ -10578,18 +10741,21 @@ const ZONE_LEVEL_REQUIREMENTS = {
   '中层区域': 6,   // 列阵境
   '深层区域': 7,   // 尊者境
   '火道禁区': 7,   // 尊者境（祭炼真我·未点燃神火）
+  '擂台区域': 7,   // 尊者境
   '核心区域': 7,   // 尊者境
+  '终极区域': 7,   // 本轮仙古第一
   '隐藏区域': 8    // 神火境
 };
 
-// 主线连接必须逐层向内，随机侧路仍保留。这样边缘图不会只形成两图回环，
-// 中层/深层也始终能找到通往核心的出口；核心再把隐藏区域作为高境界支线。
+// 擂台固定承接深层与核心，核心再通往冠军专属的终极造化地。
 const XIANGU_PROGRESS_TARGET_ZONES = {
   '边缘区域': ['边缘区域', '中层区域'],
   '中层区域': ['深层区域'],
-  '深层区域': ['火道禁区', '核心区域'],
-  '火道禁区': ['核心区域'],
-  '核心区域': ['隐藏区域'],
+  '深层区域': ['火道禁区', '擂台区域'],
+  '火道禁区': ['擂台区域'],
+  '擂台区域': ['深层区域', '核心区域'],
+  '核心区域': ['擂台区域', '终极区域', '隐藏区域'],
+  '终极区域': ['核心区域'],
   '隐藏区域': ['核心区域'],
 };
 
@@ -10657,6 +10823,32 @@ function getXianguRequiredConnectionTargets(player, fragmentId) {
   return targets;
 }
 
+function sanitizeXianguSpecialConnections(fragmentId, connections = {}) {
+  const sourceZone = REALM_FRAGMENTS[fragmentId]?.zone;
+  const result = { ...connections };
+  for (const direction of ['top', 'bottom', 'left', 'right']) {
+    const targetId = result[direction];
+    if (!targetId) continue;
+    const targetZone = REALM_FRAGMENTS[targetId]?.zone;
+    const skipsArena = targetId === 'xiangu_core' &&
+      ![XIANGU_ARENA_FRAGMENT_ID, XIANGU_ULTIMATE_FRAGMENT_ID, 'void_rift'].includes(fragmentId);
+    const skipsChampionGate = targetId === XIANGU_ULTIMATE_FRAGMENT_ID && fragmentId !== 'xiangu_core';
+    const skipsArenaEntrance = targetId === XIANGU_ARENA_FRAGMENT_ID &&
+      !['深层区域', '火道禁区', '核心区域'].includes(sourceZone);
+    const leavesCoreRoute = fragmentId === 'xiangu_core' &&
+      ![XIANGU_ARENA_FRAGMENT_ID, XIANGU_ULTIMATE_FRAGMENT_ID, 'void_rift'].includes(targetId);
+    const leavesArenaRoute = fragmentId === XIANGU_ARENA_FRAGMENT_ID &&
+      targetId !== 'xiangu_core' && targetZone !== '深层区域';
+    const leavesTerminalRoute = [XIANGU_ULTIMATE_FRAGMENT_ID, 'void_rift'].includes(fragmentId) &&
+      targetId !== 'xiangu_core';
+    if (skipsArena || skipsChampionGate || skipsArenaEntrance ||
+        leavesCoreRoute || leavesArenaRoute || leavesTerminalRoute) {
+      result[direction] = null;
+    }
+  }
+  return result;
+}
+
 function bindXianguReturnConnection(player, fragmentId, connections, returnDirection, previousFragmentId) {
   const requiredTargets = getXianguRequiredConnectionTargets(player, fragmentId);
   const random = createXianguSeededRandom(
@@ -10722,10 +10914,11 @@ function repairXianguFragmentTopology(player, fragmentId, map) {
   const height = Number(map.height) || map.grid.length;
   const requiredTargets = getXianguRequiredConnectionTargets(player, fragmentId);
   const currentConnections = map.connectedFragments || {};
+  const safeConnections = sanitizeXianguSpecialConnections(fragmentId, currentConnections);
   const playerDirection = getXianguExitDirection(map.playerPos, width, height);
   const repairedConnections = ensureXianguRequiredConnections(
     fragmentId,
-    currentConnections,
+    safeConnections,
     requiredTargets,
     createXianguSeededRandom(`${player?.xiangu_world_seed || 'legacy'}:${fragmentId}:repair`),
     playerDirection,
@@ -10746,6 +10939,18 @@ function repairXianguFragmentTopology(player, fragmentId, map) {
   let changed = ['top', 'bottom', 'left', 'right'].some(direction =>
     String(currentConnections[direction] || '') !== String(repairedConnections[direction] || '')
   );
+
+  if (fragmentId === 'xiangu_core' && map.uniqueTreasures) {
+    for (const name of ['玉石匣·仙王经文', '一滴帝血']) {
+      const treasure = map.uniqueTreasures[name];
+      if (!treasure) continue;
+      if (map.grid?.[treasure.pos?.y]?.[treasure.pos?.x] === CELL_TYPE.UNIQUE_TREASURE) {
+        map.grid[treasure.pos.y][treasure.pos.x] = CELL_TYPE.EXPLORED_EMPTY;
+      }
+      delete map.uniqueTreasures[name];
+      changed = true;
+    }
+  }
 
   const keptPositions = [];
   const seenPositions = new Set();
@@ -10798,12 +11003,14 @@ function repairXianguFragmentTopology(player, fragmentId, map) {
 
 function needsXianguFragmentTopologyRepair(player, fragmentId, map) {
   if (!map?.grid?.length || !REALM_FRAGMENTS[fragmentId]) return false;
+  if (fragmentId === 'xiangu_core' &&
+      ['玉石匣·仙王经文', '一滴帝血'].some(name => map.uniqueTreasures?.[name])) return true;
   const requiredTargets = getXianguRequiredConnectionTargets(player, fragmentId);
   const width = Number(map.width) || map.grid[0].length;
   const height = Number(map.height) || map.grid.length;
   const repaired = ensureXianguRequiredConnections(
     fragmentId,
-    map.connectedFragments || {},
+    sanitizeXianguSpecialConnections(fragmentId, map.connectedFragments || {}),
     requiredTargets,
     createXianguSeededRandom(`${player?.xiangu_world_seed || 'legacy'}:${fragmentId}:repair-check`),
     getXianguExitDirection(map.playerPos, width, height),
@@ -10828,7 +11035,10 @@ function createXianguConnections(player, fragmentId) {
   const topologyLevel = Math.max(...Object.values(ZONE_LEVEL_REQUIREMENTS));
   const seed = `${player.xiangu_world_seed || 'legacy'}:${fragmentId}:connections`;
   const random = createXianguSeededRandom(seed);
-  const connections = connectFragments(fragmentId, topologyLevel, random);
+  const connections = sanitizeXianguSpecialConnections(
+    fragmentId,
+    connectFragments(fragmentId, topologyLevel, random),
+  );
   return ensureXianguRequiredConnections(
     fragmentId,
     connections,
@@ -10979,13 +11189,23 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}, random = Math
   
   // 唯一机缘（仅核心区域和虚空夹层）
   const uniqueTreasures = {};
-  if (fragmentId === 'xiangu_core') {
-    const ux = 1 + Math.floor(random() * (w - 2));
-    const uy = 1 + Math.floor(random() * (h - 2));
-    if (grid[uy][ux] !== CELL_TYPE.WALL && grid[uy][ux] !== CELL_TYPE.EXIT) {
-      grid[uy][ux] = CELL_TYPE.UNIQUE_TREASURE;
-      uniqueTreasures['玉石匣·仙王经文'] = {
-        pos: { x: ux, y: uy },
+  const placeUniqueTreasure = (name, treasure) => {
+    const candidates = [];
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        if (![CELL_TYPE.WALL, CELL_TYPE.EXIT, CELL_TYPE.UNIQUE_TREASURE].includes(grid[y][x])) {
+          candidates.push({ x, y });
+        }
+      }
+    }
+    const pos = candidates[Math.floor(random() * candidates.length)];
+    if (!pos) return false;
+    grid[pos.y][pos.x] = CELL_TYPE.UNIQUE_TREASURE;
+    uniqueTreasures[name] = { ...treasure, pos };
+    return true;
+  };
+  if (fragmentId === XIANGU_ULTIMATE_FRAGMENT_ID) {
+    placeUniqueTreasure('玉石匣·仙王经文', {
         distEcho: 3,
         claimed: false,
         name: '玉石匣',
@@ -10996,15 +11216,8 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}, random = Math
           2: '一股浩瀚道韵从前方传来，令你体内功法自行运转！',
           1: '你面前的空间微微扭曲，一件被时光尘封的器物若隐若现...'
         }
-      };
-    }
-    
-    // 帝血（万物土下）
-    const cx = 1 + Math.floor(random() * (w - 2));
-    const cy = 1 + Math.floor(random() * (h - 2));
-    if (grid[cy][cx] !== CELL_TYPE.WALL && grid[cy][cx] !== CELL_TYPE.EXIT && grid[cy][cx] !== CELL_TYPE.UNIQUE_TREASURE) {
-      uniqueTreasures['一滴帝血'] = {
-        pos: { x: cx, y: cy },
+    });
+    placeUniqueTreasure('一滴帝血', {
         distEcho: 2,
         claimed: false,
         name: '帝血',
@@ -11014,8 +11227,19 @@ function generateFragmentGrid(fragmentId, connectedFragments = {}, random = Math
           2: '脚下大地隐隐传来温热...似有沉睡的力量在苏醒',
           1: '万物土在震动！一滴璀璨的金色血液缓缓浮出地面！'
         }
-      };
-    }
+    });
+    placeUniqueTreasure('本轮仙古第一造化', {
+      distEcho: 2,
+      claimed: false,
+      name: '本轮仙古第一造化',
+      type: '冠军造化',
+      claimScope: 'round-champion',
+      desc: '终极道台为本轮仙古第一凝成的专属造化，不受全服唯一机缘存续影响。',
+      echoMsg: {
+        2: '本轮冠冕烙印微微发热，前方有一道造化与之共鸣。',
+        1: '终极道台绽放仙光，正等待本轮仙古第一落印。',
+      },
+    });
   }
   
   if (fragmentId === 'void_rift') {

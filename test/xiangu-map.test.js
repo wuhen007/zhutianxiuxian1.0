@@ -15,8 +15,10 @@ import {
   getRevealedXianguExits,
   getXianguMarrowPoolTrapChance,
   isXianguExitUnlocked,
+  parseXianguMoveCommand,
   pickDifferentXianguFragment,
   placeXianguMarrowPool,
+  resolveXianguBoundaryTransition,
   restoreXianguFragmentSnapshot,
   resolveXianguMarrowPoolConfig,
   resolveXianguFragmentSize,
@@ -42,8 +44,8 @@ function reachableCells(grid, start, wallValue = 1) {
   return seen;
 }
 
-test('12张碎片地图均不少于120格', () => {
-  assert.equal(Object.keys(DEFAULT_XIANGU_FRAGMENT_SIZES).length, 12);
+test('14张碎片地图均不少于120格', () => {
+  assert.equal(Object.keys(DEFAULT_XIANGU_FRAGMENT_SIZES).length, 14);
   for (const [fragmentId, [width, height]] of Object.entries(DEFAULT_XIANGU_FRAGMENT_SIZES)) {
     assert.ok(width * height >= 120, `${fragmentId} 少于120格`);
     assert.ok(width <= 11 && height <= 11, `${fragmentId} 超出地图模板上限`);
@@ -112,6 +114,41 @@ test('方向移动使用图片回执且跨区移动必须经过已揭示出口',
   assert.match(source, /delivery\.status === 'fallback' && !delivery\.receipt/);
   assert.match(source, /map\.grid\[y\]\[x\] = CELL_TYPE\.TREASURE/);
   assert.match(source, /foundTreasure\.claimed = false/);
+});
+
+test('仙古秘境支持左下、右下在内的八方向移动', () => {
+  assert.deepEqual(parseXianguMoveCommand('#左下'), {
+    key: '左下', dx: -1, dy: 1, name: '左下方', steps: 1,
+  });
+  assert.deepEqual(parseXianguMoveCommand('#右下25'), {
+    key: '右下', dx: 1, dy: 1, name: '右下方', steps: 20,
+  });
+  assert.equal(parseXianguMoveCommand('#斜下'), null);
+
+  const source = fs.readFileSync(new URL('../apps/SecretPlace/xianguPlace.js', import.meta.url), 'utf8');
+  assert.match(source, /reg: '\^#左下\\\\d\*\$'/);
+  assert.match(source, /reg: '\^#右下\\\\d\*\$'/);
+});
+
+test('斜向跨界按实际越界边判定出口与返程方向', () => {
+  const map = { width: 11, height: 11 };
+
+  assert.deepEqual(
+    resolveXianguBoundaryTransition(map, { x: 0, y: 5 }, { x: -1, y: 6 }),
+    { direction: 'left', enterDirection: 'right', borderPosition: { x: 0, y: 5 } },
+  );
+  assert.deepEqual(
+    resolveXianguBoundaryTransition(map, { x: 10, y: 5 }, { x: 11, y: 6 }),
+    { direction: 'right', enterDirection: 'left', borderPosition: { x: 10, y: 5 } },
+  );
+  assert.deepEqual(
+    resolveXianguBoundaryTransition(map, { x: 5, y: 10 }, { x: 4, y: 11 }),
+    { direction: 'bottom', enterDirection: 'top', borderPosition: { x: 5, y: 10 } },
+  );
+  assert.equal(
+    resolveXianguBoundaryTransition(map, { x: 5, y: 5 }, { x: 4, y: 6 }),
+    null,
+  );
 });
 
 test('只在实际连接方向生成对应边界出口', () => {

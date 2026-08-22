@@ -22,6 +22,11 @@ import {
   calculateMinggeYield,
 } from '../../model/mingge.js';
 import { getTimedActionMultiplier } from '../../model/innateTreasure.js';
+import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import {
+  buildProxyPlunder,
+  selectHostileTianjiao,
+} from '../../model/tianjiaoHostility.js';
 export class guajixitong extends plugin {
   constructor() {
     super({
@@ -339,6 +344,11 @@ async shenqidaixing(e) {
         e.reply('你没有道宫神祇');
         return;
     }
+    const shenqiInjuredFor = Number(player.神祇重伤至) - Date.now();
+    if (shenqiInjuredFor > 0) {
+        e.reply(`你的神祇仍在养伤，约${Math.ceil(shenqiInjuredFor / 60000)}分钟后才能再次代行。`);
+        return;
+    }
     
     // 解析任务类型
     const taskType = e.msg.match(/采药|采矿|狩猎|寻源|地脉引气|寻脉定源/)[0];
@@ -558,6 +568,13 @@ async shenqi_jiesuan(e) {
             e.reply('未知的神祇代行任务类型');
             return;
     }
+    result = await this.applyTianjiaoProxyAmbush(
+        player,
+        usr_qq,
+        result,
+        '神祇',
+        shenqiaction.start_time,
+    );
     
     // === 神祇重天·经验获取与进阶（经验仅由代行结算赋予）===
     if (result) {
@@ -628,6 +645,48 @@ async shenqi_jiesuan(e) {
     }
     
     return true;
+}
+
+async applyTianjiaoProxyAmbush(player, usr_qq, result, proxyType, settlementId) {
+    if (!result) return result;
+    const retaliation = await selectHostileTianjiao({
+        redis,
+        tianjiaoList: data.weimiantianjiao_list,
+        playerId: usr_qq,
+        minimumLevel: '死敌',
+        event: 'proxy',
+        worldYear: getRealmEventWorldYear(),
+    });
+    if (!retaliation) return result;
+
+    const plunder = buildProxyPlunder(result.items);
+    for (let index = 0; index < plunder.stolen.length; index++) {
+        const item = plunder.stolen[index];
+        await Add_najie_thing(
+            usr_qq,
+            item.name,
+            item.class,
+            -item.amount,
+            undefined,
+            1,
+            { idempotencyKey: `tianjiao-proxy:${proxyType}:${settlementId}:${retaliation.name}:${index}` },
+        );
+        const reward = result.items?.find(entry => entry.name === item.name);
+        if (reward) reward.count = Math.max(0, Number(reward.count) - item.amount);
+    }
+    result.exp = Math.floor((Number(result.exp) || 0) * 0.35);
+    player[`${proxyType}重伤至`] = Date.now() + 6 * 60 * 60 * 1000;
+    const stolenLine = plunder.stolen.length > 0
+        ? plunder.stolen.map(item => `${item.name}x${item.amount}`).join('、')
+        : '大半职业感悟';
+    result.msg += [
+        '',
+        `【死敌埋伏·${proxyType}重伤】`,
+        `${retaliation.name}早已守在归途，专程截杀你的${proxyType}。`,
+        `被夺收益：${stolenLine}；职业经验仅保留35%。`,
+        `${proxyType}重伤，需休养6小时后才能再次代行。`,
+    ].join('\n');
+    return result;
 }
 // 神祇采药任务结算
 async shenqi_plant_jiesuan(usr_qq, time, factor = 1) {
@@ -1065,6 +1124,11 @@ async lingshendaixing(e) {
         e.reply('你的洞天没有蕴养出灵身');
         return;
     }
+    const lingshenInjuredFor = Number(player.灵身重伤至) - Date.now();
+    if (lingshenInjuredFor > 0) {
+        e.reply(`你的灵身仍在养伤，约${Math.ceil(lingshenInjuredFor / 60000)}分钟后才能再次代行。`);
+        return;
+    }
    // 解析任务类型
     const taskType = e.msg.match(/采药|采矿|狩猎|寻源|地脉引气|寻脉定源/)[0];
      // 职业验证
@@ -1286,6 +1350,13 @@ async lingshen_jiesuan(e) {
             e.reply('未知的灵身代行任务类型');
             return;
     }
+    result = await this.applyTianjiaoProxyAmbush(
+        player,
+        usr_qq,
+        result,
+        '灵身',
+        startTime,
+    );
     
     // === 灵性·经验获取与进阶（经验仅由代行结算赋予）===
     if (result) {
