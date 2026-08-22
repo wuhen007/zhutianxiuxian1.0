@@ -5458,6 +5458,9 @@ export async function Add_najie_thing(
     if (x > 0 && (pinji === undefined || pinji === null)) {
       pinji = Math.trunc(Math.random() * 6);
     }
+    if ((pinji === undefined || pinji === null) && x < 0) {
+      throw new Error(`扣除装备必须指定品质：${typeof name === 'object' ? name.name : name}`);
+    }
     const safeEquipmentMultiplier = Number.isFinite(Number(equipmentMultiplier))
       ? Math.max(0, Number(equipmentMultiplier))
       : 1;
