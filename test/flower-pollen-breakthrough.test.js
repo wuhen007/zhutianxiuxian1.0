@@ -6,6 +6,7 @@ import {
   calculateFlowerExtremeBonus,
   ensureFlowerPollenState,
   getFlowerDaoAttemptCost,
+  getFlowerDaoEquipmentBonuses,
   getFlowerDaoGateState,
   getFlowerDaoWoundState,
   getFlowerEvolutionChance,
@@ -22,7 +23,22 @@ test('花粉道则使用独立状态并限制每日悟道次数', () => {
   assert.deepEqual(player.花粉道途.daily, { date: '', count: 0 });
 
   const cost = getFlowerDaoAttemptCost(player, 9, 2);
-  assert.equal(cost.cultivation, 23437500000000);
+  assert.deepEqual(
+    {
+      potential: cost.potential,
+      cultivation: cost.cultivation,
+      blood: cost.blood,
+      lifespan: cost.lifespan,
+      spirit: cost.spirit,
+    },
+    {
+      potential: 900,
+      cultivation: 4096000000,
+      blood: 4096000000,
+      lifespan: 1800000,
+      spirit: 90000000,
+    }
+  );
   const gain = calculateFlowerDaoGain(player, 9, () => 0.5, { eraIndex: 2 });
   assert.ok(gain.gain > 0);
 
@@ -37,6 +53,79 @@ test('花粉道则使用独立状态并限制每日悟道次数', () => {
   const nextDay = recordFlowerDaoAttempt(player, 9, 10, '2026-08-17');
   assert.equal(nextDay.ok, true);
   assert.equal(player.花粉道途.daily.count, 1);
+});
+
+test('花粉悟道五资源成本统一受到时代影响', () => {
+  const player = ensureFlowerPollenState({ huafenlevel_id: 9 });
+  const normal = getFlowerDaoAttemptCost(player, 9, 2);
+  const spiritless = getFlowerDaoAttemptCost(player, 9, 4);
+  for (const key of ['potential', 'cultivation', 'blood', 'lifespan', 'spirit']) {
+    assert.equal(spiritless[key], normal[key] * 3, `${key}应受到绝灵时代三倍消耗影响`);
+  }
+});
+
+test('花粉悟道接入完整收益因子并正确处理污染与根基隐患', () => {
+  const base = ensureFlowerPollenState({
+    huafenlevel_id: 9,
+    学习的功法: ['基础呼吸法'],
+    进化积淀: 0,
+    花粉隐患: 0,
+    始祖污染度: 0,
+  });
+  const enhanced = structuredClone(base);
+  enhanced.进化积淀 = 200;
+  const baseGain = calculateFlowerDaoGain(base, 9, () => 0.5, { eraIndex: 2 });
+  const enhancedGain = calculateFlowerDaoGain(enhanced, 9, () => 0.5, {
+    eraIndex: 2,
+    ancestorSeed: true,
+    stoneJar: true,
+    physiqueBonus: 0.1,
+    aptitudeBonus: 0.1,
+    techniqueBonus: 0.1,
+    minggeBonus: 0.1,
+    titleBonus: 0.05,
+    equipmentBonus: 0.05,
+    treasureBonus: 0.1,
+    worldBonus: 0.1,
+    daoHeartMultiplier: 1,
+  });
+  assert.ok(enhancedGain.gain > baseGain.gain);
+  assert.equal(enhancedGain.bonuses.ancestorSeed, 0.08);
+  assert.equal(enhancedGain.bonuses.stoneJar, 0.1);
+
+  const polluted = structuredClone(enhanced);
+  polluted.始祖污染度 = 70;
+  polluted.花粉隐患 = 100;
+  polluted.花粉根基.损伤 = 40;
+  const pollutedGain = calculateFlowerDaoGain(polluted, 9, () => 0.5, { eraIndex: 2 });
+  assert.equal(pollutedGain.bonuses.breathing, baseGain.bonuses.breathing / 2);
+  assert.ok(pollutedGain.bonuses.pollution < 0);
+  assert.ok(pollutedGain.bonuses.risk < 0);
+  assert.ok(pollutedGain.bonuses.root < 0);
+  assert.ok(pollutedGain.gain < baseGain.gain);
+});
+
+test('祖种将花粉悟道每日上限提高到四次', () => {
+  const player = ensureFlowerPollenState({ huafenlevel_id: 9 });
+  for (let i = 0; i < 4; i += 1) {
+    assert.equal(recordFlowerDaoAttempt(player, 9, 1, '2026-08-22', 4).ok, true);
+  }
+  const blocked = recordFlowerDaoAttempt(player, 9, 1, '2026-08-22', 4);
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.reason, 'daily');
+});
+
+test('装备与至宝只读取显式悟道词条并兼容百分数写法', () => {
+  assert.deepEqual(getFlowerDaoEquipmentBonuses({
+    武器: { name: '悟道剑', 悟道加成: 0.08 },
+    护具: { name: '普通护具', atk: 999999 },
+    法宝: { name: '蒲团', 悟道收益: 5 },
+    帝兵: { name: '道钟', 悟道加成: 0.12 },
+    至宝: { name: '石书', 悟道收益: 10 },
+  }), {
+    equipment: 0.13,
+    treasure: 0.22,
+  });
 });
 
 test('花粉高阶节点进入多阶段蜕变劫', () => {

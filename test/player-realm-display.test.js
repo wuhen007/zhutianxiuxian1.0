@@ -16,6 +16,22 @@ test('仙古面板仅显示当前境界已达成的极境', () => {
   assert.equal(getXianguRealmDisplay({ xiangulevel_id: 7, 极境: ['6', '7'] }, xianguLevels), '尊者极境·无暇道基');
   assert.equal(getXianguRealmDisplay({ xiangulevel_id: 7, 极境: ['6'] }, xianguLevels), '尊者境');
   assert.equal(getXianguRealmDisplay({ xiangulevel_id: 8, xiangu_shenhuo: { 极境达成: true, 极境名称: '神火极境·世界树幼苗' } }, xianguLevels), '神火极境·世界树幼苗');
+  assert.equal(getXianguRealmDisplay({ xiangulevel_id: 8, 极境: ['7'], xiangu_shenhuo: { 已点燃: true, 点燃方式: '自身修炼', 极境达成: false } }, xianguLevels), '神火境');
+});
+
+test('尊者普通冲关重建普通神火状态', () => {
+  const source = fs.readFileSync(new URL('../apps/User/xiangujinshi.js', import.meta.url), 'utf8');
+  const start = source.indexOf('async breakthroughShenhuoRealm');
+  const end = source.indexOf('async breakthroughXianqiExtreme', start);
+  const block = source.slice(start, end);
+
+  assert.ok(start >= 0 && end > start);
+  assert.match(block, /player\.极境 = player\.极境\.filter\(levelId => levelId !== '8'\)/);
+  assert.match(block, /player\.xiangu_xianqi = 0/);
+  assert.match(block, /player\.xiangu_shenhuo = \{/);
+  assert.match(block, /点燃方式: '自身修炼'/);
+  assert.match(block, /极境达成: false/);
+  assert.doesNotMatch(block, /if \(!player\.xiangu_shenhuo\)/);
 });
 
 test('仙古高阶独立极境按存档标记显示', () => {

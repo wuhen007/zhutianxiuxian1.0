@@ -390,9 +390,38 @@ export function getFlowerDaoGateState(player, realmId = player?.huafenlevel_id) 
 export function getFlowerDaoAttemptCost(player, realmId, eraIndex = 2) {
   const rule = getFlowerDaoRuleForRealm(realmId);
   if (!rule) return null;
+  const level = Math.max(1, Math.trunc(number(realmId, 1)));
+  const era = getFlowerEraProfile(eraIndex);
   const base = getFlowerEvolutionCost(realmId, eraIndex);
   const amount = Math.max(100000, Math.trunc(base * 0.08));
-  return { cultivation: amount, blood: amount, rule };
+  return {
+    potential: Math.max(1, Math.trunc(level * 100 * era.costRate)),
+    cultivation: amount,
+    blood: amount,
+    lifespan: Math.max(1, Math.trunc(level * 200000 * era.costRate)),
+    spirit: Math.max(1, Math.trunc(level * 10000000 * era.costRate)),
+    rule,
+    era,
+  };
+}
+
+function explicitWudaoBonus(item) {
+  const raw = Number(item?.悟道加成 ?? item?.悟道收益);
+  if (!Number.isFinite(raw)) return 0;
+  return clamp(Math.abs(raw) > 1 ? raw / 100 : raw, -0.5, 0.5);
+}
+
+/** 只读取装备上明确配置的悟道词条，避免由战斗属性反推出不存在的悟道收益。 */
+export function getFlowerDaoEquipmentBonuses(equipment = {}) {
+  const sumSlots = slots => clamp(
+    slots.reduce((sum, slot) => sum + explicitWudaoBonus(equipment?.[slot]), 0),
+    -0.5,
+    0.5
+  );
+  return {
+    equipment: sumSlots(['武器', '护具', '法宝', '遗珍']),
+    treasure: sumSlots(['帝兵', '至宝']),
+  };
 }
 
 export function calculateFlowerDaoGain(player, realmId, random = Math.random, options = {}) {
@@ -403,17 +432,51 @@ export function calculateFlowerDaoGain(player, realmId, random = Math.random, op
   const [, breathing] = getBestBreathingMethod(player);
   const era = getFlowerEraProfile(options.eraIndex);
   const wound = getFlowerDaoWoundState(player);
+  const root = getFlowerRootState(player);
+  const bonuses = {
+    breathing: breathing * pollution.breathingMultiplier * 2,
+    branch: branch.daoBonus,
+    era: era.chanceShift,
+    accumulation: Math.min(0.2, number(player?.进化积淀) / 1000),
+    ancestorSeed: options.ancestorSeed ? 0.08 : 0,
+    stoneJar: options.stoneJar ? 0.1 : 0,
+    physique: clamp(number(options.physiqueBonus), -0.5, 0.5),
+    aptitude: clamp(number(options.aptitudeBonus), -0.5, 0.5),
+    technique: clamp(number(options.techniqueBonus), -0.5, 0.5),
+    mingge: clamp(number(options.minggeBonus), -0.5, 1),
+    title: clamp(number(options.titleBonus), -0.5, 0.5),
+    equipment: clamp(number(options.equipmentBonus), -0.5, 0.5),
+    treasure: clamp(number(options.treasureBonus), -0.5, 1),
+    risk: -Math.min(0.35, number(player?.花粉隐患) * 0.0035),
+    root: -Math.min(0.25, root.damage * 0.0025),
+    pollution: -pollution.successPenalty - pollution.markSuccessPenalty,
+    world: clamp(number(options.worldBonus), 0, 0.5),
+    wound: wound.daoMultiplier - 1,
+    daoHeart: clamp(number(options.daoHeartMultiplier, 1), 0.5, 1) - 1,
+  };
+  const additiveBonus = Object.entries(bonuses)
+    .filter(([name]) => !['world', 'wound', 'daoHeart'].includes(name))
+    .reduce((sum, [, value]) => sum + value, 0);
   const multiplier = clamp(
-    (1 + breathing * 2 + branch.daoBonus + era.chanceShift - pollution.successPenalty)
-      * wound.daoMultiplier,
-    0.5,
-    2.5
+    clamp(1 + additiveBonus, 0.25, 4)
+      * (1 + bonuses.world)
+      * wound.daoMultiplier
+      * (1 + bonuses.daoHeart),
+    0.1,
+    5
   );
   const randomFactor = 0.9 + clamp(number(random()), 0, 1) * 0.2;
-  return { gain: Math.max(1, Math.trunc(rule.baseGain * multiplier * randomFactor)), rule, multiplier };
+  return {
+    gain: Math.max(1, Math.trunc(rule.baseGain * multiplier * randomFactor)),
+    rule,
+    multiplier,
+    randomFactor,
+    bonuses,
+    era,
+  };
 }
 
-export function recordFlowerDaoAttempt(player, realmId, gain, dateKey = '') {
+export function recordFlowerDaoAttempt(player, realmId, gain, dateKey = '', dailyLimit = FLOWER_DAO_DAILY_LIMIT) {
   const gate = getFlowerDaoGateState(player, realmId);
   if (!gate.rule) return { ok: false, reason: 'no-rule' };
   if (gate.ok) return { ok: false, reason: 'complete', gate };
@@ -421,7 +484,8 @@ export function recordFlowerDaoAttempt(player, realmId, gain, dateKey = '') {
     gate.path.daily.date = dateKey;
     gate.path.daily.count = 0;
   }
-  if (gate.path.daily.count >= FLOWER_DAO_DAILY_LIMIT) return { ok: false, reason: 'daily', gate };
+  const limit = Math.max(FLOWER_DAO_DAILY_LIMIT, Math.trunc(number(dailyLimit, FLOWER_DAO_DAILY_LIMIT)));
+  if (gate.path.daily.count >= limit) return { ok: false, reason: 'daily', gate };
   gate.path.daily.count += 1;
   const before = gate.exp;
   const after = Math.min(gate.rule.targetExp, before + Math.max(0, Math.trunc(number(gain))));

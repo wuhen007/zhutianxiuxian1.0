@@ -46,6 +46,7 @@ import {
   resolveFlowerEvolution,
   calculateFlowerDaoGain,
   getFlowerDaoAttemptCost,
+  getFlowerDaoEquipmentBonuses,
   getFlowerDaoGateState,
   getFlowerBranchProfile,
   getFlowerBreakthroughRule,
@@ -64,6 +65,29 @@ import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import { getShanghaiDateKey } from '../../model/weimianTravel.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
+import { calculateMinggePotentialCost, getMinggeEffects } from '../../model/mingge.js';
+import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
+import { getTitleWudaoBonus } from '../../model/titleSystem.js';
+import { getKongtongModifiers } from '../../model/innateTreasure.js';
+import { getPlayerPlaneName } from '../../model/planeCoords.js';
+import {
+  consumePlayerLifespan,
+  formatSignedPercent,
+  getAptitudeWudaoBonus,
+  getAvailableLifespan,
+  getPhysiqueWudaoBonus,
+  getTechniqueWudaoProfile,
+  getWudaoLifespanCost,
+} from './wudaoRules.js';
+import {
+  awardWudaoGongfaProficiency,
+  getWudaoGongfaReduction,
+} from '../../model/gongfaProficiency.js';
+import {
+  ensureDaoHeart,
+  getDaoHeartWudaoCostMultiplier,
+  getDaoHeartWudaoGainMultiplier,
+} from '../../model/daoHeart.js';
 
 const MEDIA_BY_QUALITY = Object.entries(FLOWER_POLLEN_MEDIA)
   .sort((a, b) => a[1].quality - b[1].quality);
@@ -380,30 +404,144 @@ export class FlowerPollenPath extends plugin {
       if (!gate.rule) return e.reply('当前境界尚未开启花粉道则，继续进化即可。');
       if (gate.ok) return e.reply(`【花粉道则已圆满】${gate.rule.name}已经完成，可继续冲击${gate.rule.nextRealm}。`);
       const dateKey = getShanghaiDateKey();
-      if (gate.path.daily.date === dateKey && gate.path.daily.count >= 3) {
-        return e.reply('今日花粉悟道次数已用尽，明日再来。');
+      const ancestorSeed = Number(await exist_najie_thing(userId, '花粉路祖种', '道具')) > 0;
+      const dailyLimit = 3 + (ancestorSeed ? 1 : 0);
+      if (gate.path.daily.date === dateKey && gate.path.daily.count >= dailyLimit) {
+        return e.reply(`今日花粉悟道次数已用尽（${gate.path.daily.count}/${dailyLimit}），明日再来。`);
       }
+
       const eraIndex = getCurrentEraIndex();
-      const cost = getFlowerDaoAttemptCost(player, realmId, eraIndex);
-      if (Number(player.修为) < cost.cultivation || Number(player.血气) < cost.blood) {
-        return e.reply(`悟道需修为、血气各${bigNumberTransform(cost.cultivation)}（时代影响），当前本源不足。`);
+      const baseCosts = getFlowerDaoAttemptCost(player, realmId, eraIndex);
+      const stoneJar = Boolean(player.圣墟唯一机缘?.石罐本体);
+      const minggeEffects = getMinggeEffects(player, data.minggeList);
+      const technique = getTechniqueWudaoProfile(player.学习的功法, {
+        gongfaList: data.gongfa_list,
+        timeGongfaList: data.timegongfa_list,
+        dijingList: data.dijingList,
+      });
+      const equipment = await Read_equipment(userId);
+      const equipmentBonuses = getFlowerDaoEquipmentBonuses(equipment);
+      const titleBonus = getTitleWudaoBonus(player);
+      const rootRaw = Number(player.灵根?.悟道加成 ?? player.灵根?.eff) || 0;
+      const rootBonus = Math.max(-0.5, Math.min(0.5, Math.abs(rootRaw) > 1 ? rootRaw / 100 : rootRaw));
+      const physiqueBonus = getPhysiqueWudaoBonus(player.灵根?.name) || rootBonus;
+      const kongtong = getKongtongModifiers(player);
+      const imperialWudao = kongtong.decree?.type === '修炼'
+        && kongtong.decree.plane === getPlayerPlaneName(player);
+
+      ensureDaoHeart(player);
+      const wudaoGongfa = getWudaoGongfaReduction(player);
+      const costMultiplier = (1 - wudaoGongfa.rate)
+        * getDaoHeartWudaoCostMultiplier(player)
+        * (stoneJar ? 0.9 : 1);
+      const cost = {
+        potential: applyQuestionFortuneCost(
+          player,
+          calculateMinggePotentialCost(Math.ceil(baseCosts.potential * costMultiplier), minggeEffects)
+        ),
+        cultivation: applyQuestionFortuneCost(player, Math.ceil(baseCosts.cultivation * costMultiplier)),
+        blood: applyQuestionFortuneCost(player, Math.ceil(baseCosts.blood * costMultiplier)),
+        lifespan: applyQuestionFortuneCost(
+          player,
+          Math.floor(getWudaoLifespanCost({ lifespanCost: baseCosts.lifespan }, minggeEffects).cost * costMultiplier)
+        ),
+        spirit: applyQuestionFortuneCost(player, Math.ceil(baseCosts.spirit * costMultiplier)),
+      };
+      const current = {
+        potential: Number(player.仙道潜力) || 0,
+        cultivation: Number(player.修为) || 0,
+        blood: Number(player.血气) || 0,
+        lifespan: getAvailableLifespan(player),
+        spirit: Number(player.元神) || 0,
+      };
+      if (
+        current.potential < cost.potential
+        || current.cultivation < cost.cultivation
+        || current.blood < cost.blood
+        || current.lifespan <= cost.lifespan
+        || current.spirit < cost.spirit
+      ) {
+        await Write_player(userId, player);
+        return e.reply([
+          '【资源不足·花粉悟道中止】',
+          `仙道潜力：需${cost.potential.toLocaleString()}｜现有${current.potential.toLocaleString()}`,
+          `修为：需${bigNumberTransform(cost.cultivation)}｜现有${bigNumberTransform(current.cultivation)}`,
+          `血气：需${bigNumberTransform(cost.blood)}｜现有${bigNumberTransform(current.blood)}`,
+          `寿元：需${cost.lifespan.toLocaleString()}年｜现有${current.lifespan.toLocaleString()}年`,
+          `元神：需${bigNumberTransform(cost.spirit)}｜现有${bigNumberTransform(current.spirit)}`,
+          '花粉悟道会保留最后一缕寿元。',
+        ].join('\n'));
       }
-      player.修为 -= cost.cultivation;
-      player.血气 -= cost.blood;
-      const gain = calculateFlowerDaoGain(player, realmId, Math.random, { eraIndex });
-      const result = recordFlowerDaoAttempt(player, realmId, gain.gain, dateKey);
+
+      const gain = calculateFlowerDaoGain(player, realmId, Math.random, {
+        eraIndex,
+        ancestorSeed,
+        stoneJar,
+        physiqueBonus,
+        aptitudeBonus: getAptitudeWudaoBonus(player.天资等级),
+        techniqueBonus: technique.bonus,
+        minggeBonus: Number(minggeEffects.悟道收益) || 0,
+        titleBonus,
+        equipmentBonus: equipmentBonuses.equipment,
+        treasureBonus: equipmentBonuses.treasure + (imperialWudao ? 0.5 : 0),
+        worldBonus: Number(player.超维星界悟道加成) || 0,
+        daoHeartMultiplier: getDaoHeartWudaoGainMultiplier(player),
+      });
+      const tracesUsed = Math.min(50, Math.max(0, Math.floor(Number(player.先天道痕) || 0)));
+      if (tracesUsed > 0) {
+        player.先天道痕 -= tracesUsed;
+        gain.bonuses.traces = tracesUsed * 0.006;
+        gain.gain = Math.max(1, Math.floor(gain.gain * (1 + gain.bonuses.traces)));
+        gain.multiplier *= 1 + gain.bonuses.traces;
+      }
+
+      player.仙道潜力 = current.potential - cost.potential;
+      player.修为 = current.cultivation - cost.cultivation;
+      player.血气 = current.blood - cost.blood;
+      player.元神 = current.spirit - cost.spirit;
+      consumePlayerLifespan(player, cost.lifespan);
+      const result = recordFlowerDaoAttempt(player, realmId, gain.gain, dateKey, dailyLimit);
       if (!result.ok) return e.reply('今日花粉悟道次数已用尽，明日再来。');
       const breathingPractice = recordFlowerBreathingPractice(player, 3);
+      const proficiencyGains = awardWudaoGongfaProficiency(player, 5, { dateKey });
       await Write_player(userId, player);
       await refreshAttributes(userId);
+      const factorLines = [
+        `呼吸法 ${formatSignedPercent(gain.bonuses.breathing)}`,
+        `${gain.era.name} ${formatSignedPercent(gain.bonuses.era)}`,
+        `灵根/体质 ${formatSignedPercent(gain.bonuses.physique)}`,
+        `天资 ${formatSignedPercent(gain.bonuses.aptitude)}`,
+        `功法「${technique.name}」${formatSignedPercent(gain.bonuses.technique)}`,
+        `命格 ${formatSignedPercent(gain.bonuses.mingge)}`,
+        `道心 ${formatSignedPercent(gain.bonuses.daoHeart)}`,
+      ];
+      if (gain.bonuses.accumulation) factorLines.push(`进化积淀 ${formatSignedPercent(gain.bonuses.accumulation)}`);
+      if (gain.bonuses.risk) factorLines.push(`花粉隐患 ${formatSignedPercent(gain.bonuses.risk)}`);
+      if (gain.bonuses.root) factorLines.push(`根基损伤 ${formatSignedPercent(gain.bonuses.root)}`);
+      if (gain.bonuses.pollution) factorLines.push(`始祖污染 ${formatSignedPercent(gain.bonuses.pollution)}`);
+      if (gain.bonuses.wound) factorLines.push(`道伤 ${formatSignedPercent(gain.bonuses.wound)}`);
+      if (ancestorSeed) factorLines.push('花粉路祖种 +8% / 每日次数+1');
+      if (stoneJar) factorLines.push('石罐 +10% / 消耗-10%');
+      if (gain.bonuses.world) factorLines.push(`位面 ${formatSignedPercent(gain.bonuses.world)}`);
+      if (titleBonus) factorLines.push(`称号 ${formatSignedPercent(titleBonus)}`);
+      if (equipmentBonuses.equipment) factorLines.push(`装备 ${formatSignedPercent(equipmentBonuses.equipment)}`);
+      if (equipmentBonuses.treasure || imperialWudao) factorLines.push(`至宝 ${formatSignedPercent(gain.bonuses.treasure)}`);
+      if (tracesUsed) factorLines.push(`先天道痕 ${formatSignedPercent(gain.bonuses.traces)}`);
+      const proficiencyLine = Object.entries(proficiencyGains)
+        .map(([name, amount]) => `${name}熟练度+${amount}`)
+        .join('、');
       return e.reply([
         `【花粉悟道·${gain.rule.name}】`,
         `你在花粉潮汐中观照自身，悟得${result.gain}点道韵。`,
         `道则进度：${result.after}/${gain.rule.targetExp}（${result.gate.stage.name}）`,
-        `消耗修为、血气各${bigNumberTransform(cost.cultivation)}｜今日次数${result.gate.path.daily.count}/3`,
+        `消耗：潜力${cost.potential.toLocaleString()}｜修为${bigNumberTransform(cost.cultivation)}｜血气${bigNumberTransform(cost.blood)}`,
+        `消耗：寿元${cost.lifespan.toLocaleString()}年｜元神${bigNumberTransform(cost.spirit)}`,
+        `收益倍率：×${gain.multiplier.toFixed(2)}〔${factorLines.join('，')}〕`,
+        `今日次数：${result.gate.path.daily.count}/${dailyLimit}`,
         breathingPractice.gained ? breathingPractice.name + '熟练度 +' + breathingPractice.gained + '（' + breathingPractice.profile.name + '）' : '呼吸法熟练度已达今日上限',
+        proficiencyLine,
         result.completed ? `【道则圆满】下一步可冲击${gain.rule.nextRealm}。` : '道则尚未圆满，可继续 #花粉悟道。',
-      ].join('\n'));
+      ].filter(Boolean).join('\n'));
     });
   }
 

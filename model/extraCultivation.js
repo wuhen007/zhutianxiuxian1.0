@@ -63,6 +63,14 @@ export function ensureExtraCultivationState(player) {
   player.xiangulevel_id = levelId(player.xiangulevel_id);
   player.huafenlevel_id = levelId(player.huafenlevel_id);
 
+  // 兼容旧回炉存档：尊者及以下不应保留已点燃神火与仙气。
+  if (player.xiangulevel_id < 8) {
+    delete player.xiangu_shenhuo;
+    if (player.xiangu_xianqi !== undefined) player.xiangu_xianqi = 0;
+    delete player.xiangu_xianqi_detail;
+    delete player.xiangu_xianqi_three_complete;
+  }
+
   const companionTarget = getXianguCompanionMijingTarget(player);
   if (
     !EXTRA_CULTIVATION_PATHS[player.额外体系]
@@ -185,7 +193,9 @@ export function reforgeExtraCultivationState(player) {
   player.花粉极境 = [];
   delete player.花粉路分支;
   delete player.花粉路前身分支;
-  if (player.xiangu_shenhuo && typeof player.xiangu_shenhuo === 'object') {
+  if (nextLevels.xiangu < 8) {
+    delete player.xiangu_shenhuo;
+  } else if (player.xiangu_shenhuo && typeof player.xiangu_shenhuo === 'object') {
     player.xiangu_shenhuo.极境达成 = false;
     delete player.xiangu_shenhuo.极境名称;
   }
@@ -195,6 +205,7 @@ export function reforgeExtraCultivationState(player) {
   } else if (player.xiangu_xianqi !== undefined) {
     player.xiangu_xianqi = 0;
   }
+  delete player.xiangu_xianqi_detail;
   delete player.xiangu_xianqi_three_complete;
   delete player.xiangu_jiutian_shidi;
   delete player.xiangu_zhanxian_zhadao;

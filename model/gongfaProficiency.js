@@ -1,3 +1,5 @@
+import { resolveDecadeCombatSkill } from './decadeCombat.js';
+
 export const GONGFA_PROFICIENCY_MAX = 1000;
 export const GONGFA_DAILY_GAIN_MAX = 20;
 export const DOUZI_MIMIC_BASE_CHANCE = 0.02;
@@ -272,6 +274,9 @@ export function allocateGongfaInsight(player, name, amount) {
 }
 
 export function resolveGongfaCombatSkill(player, skill, random = Math.random) {
+  if (skill?.class === '灵根' && skill?.帝骑技能池) {
+    return resolveDecadeCombatSkill(player, skill, random);
+  }
   if (skill?.class !== '功法' || !Array.isArray(skill.招式) || !skill.招式.length) return skill;
   const proficiency = getGongfaProficiency(player, getSkillProficiencyOwner(skill));
   const moves = skill.招式.filter(move => proficiency >= Math.max(0, Number(move?.最低熟练度) || 0));

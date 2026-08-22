@@ -159,10 +159,59 @@ test('回炉重造让高于1级的额外体系各降一级并清除极境', () =
   assert.deepEqual(player.花粉极境, []);
   assert.equal(player.花粉路分支, undefined);
   assert.equal(player.花粉路前身分支, undefined);
-  assert.equal(player.xiangu_shenhuo.极境达成, false);
-  assert.equal(player.xiangu_shenhuo.极境名称, undefined);
-  assert.deepEqual(player.xiangu_xianqi, { strands: 0, max: 3 });
+  assert.equal(player.xiangu_shenhuo, undefined);
+  assert.equal(player.xiangu_xianqi, 0);
+  assert.equal(player.xiangu_xianqi_detail, undefined);
   assert.equal(player.xiangu_xianqi_three_complete, undefined);
   assert.equal(player.xiangu_jiutian_shidi, undefined);
   assert.equal(player.xiangu_zhanxian_zhadao, undefined);
+});
+
+test('神火极境回炉至尊者后可重新冲关神火', () => {
+  const player = {
+    额外体系: 'xiangu',
+    mijinglevel_id: 1,
+    xiangulevel_id: 8,
+    huafenlevel_id: 1,
+    极境: ['2', '3', '4', '5', '6', '7', '8'],
+    xiangu_shenhuo: {
+      已点燃: true,
+      点燃方式: '道种孕育',
+      极境达成: true,
+      极境名称: '神火极境·世界树幼苗',
+      专属技能: '万火共鸣',
+    },
+    xiangu_xianqi: { strands: 3, max: 3 },
+    xiangu_xianqi_detail: { list: [{ strand: 1 }], flags: {} },
+    xiangu_xianqi_three_complete: true,
+  };
+
+  const result = reforgeExtraCultivationState(player);
+  assert.equal(result.changed, true);
+  assert.equal(player.xiangulevel_id, 7);
+  assert.equal(player.xiangu_shenhuo, undefined);
+  assert.deepEqual(player.极境, []);
+  assert.equal(player.xiangu_xianqi_detail, undefined);
+  assert.deepEqual(getActiveExtraCultivationPaths(player), ['xiangu']);
+  assert.equal(canCultivateExtraPath(player, 'xiangu'), true);
+});
+
+test('旧回炉存档在读取归一化时清除尊者境残留神火', () => {
+  const player = {
+    额外体系: 'xiangu',
+    mijinglevel_id: 1,
+    xiangulevel_id: 7,
+    huafenlevel_id: 1,
+    xiangu_shenhuo: { 已点燃: true, 极境达成: true },
+    xiangu_xianqi: { strands: 3, max: 3 },
+    xiangu_xianqi_detail: { list: [{ strand: 1 }] },
+    xiangu_xianqi_three_complete: true,
+  };
+
+  ensureExtraCultivationState(player);
+  assert.equal(player.xiangu_shenhuo, undefined);
+  assert.equal(player.xiangu_xianqi, 0);
+  assert.equal(player.xiangu_xianqi_detail, undefined);
+  assert.equal(player.xiangu_xianqi_three_complete, undefined);
+  assert.equal(canCultivateExtraPath(player, 'xiangu'), true);
 });
