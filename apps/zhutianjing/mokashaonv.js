@@ -3,18 +3,10 @@
 
 import { plugin } from '../../api/api.js';
 import { channel, existplayer, Read_player, Write_player } from '../../model/xiuxian.js';
+import { ensureSakuraCardSystem, syncCurrentZhutianAvatar } from '../../model/zhutianMirror.js';
 
 function ensureClowCardSystem(player) {
-  player.库洛牌系统 ??= {
-    已封印库洛牌: [],
-    魔杖形态: "初始封印杖",
-    魔法熟练度: 0,
-    通过月之审判: false,
-    通过梦之试炼: false,
-    当前梦境进度: 0,
-    月之审判次数: 0,
-    总探索次数: 0
-  };
+  return ensureSakuraCardSystem(player);
 }
 
 async function replyTrialResult(e, success, message) {
@@ -250,6 +242,7 @@ clowCards = [
     player.修为 += 1000;
     player.库洛牌系统.魔法熟练度 += 100;
 
+    syncCurrentZhutianAvatar(player);
     await Write_player(usr_qq, player);
 
     const successMsg = [
@@ -359,6 +352,7 @@ clowCards = [
     player.库洛牌系统.魔法熟练度 += 300;
     player.生命本源 = 100 + player.灵根.生命本源;
 
+    syncCurrentZhutianAvatar(player);
     await Write_player(usr_qq, player);
 
     const successMsg = [
@@ -418,10 +412,14 @@ clowCards = [
     
     // 审判难度计算
     const difficulty = Math.min(1, player.库洛牌系统.月之审判次数 * 0.1 + 0.5);
-    const successRate = 0.3 + (player.库洛牌系统.魔法熟练度 / 100) * 0.5;
+    const comboBonus = player.库洛牌系统.当前组合 === '月华守护' ? 0.25 : 0;
+    const successRate = Math.min(0.95, 0.3 + (player.库洛牌系统.魔法熟练度 / 100) * 0.5 + comboBonus);
+    const pitySuccess = player.库洛牌系统.月之审判次数 >= 2;
+    if (comboBonus > 0) allMsgs.push('库洛牌组合【月华守护】展开，审判成功率提高25%。');
+    if (pitySuccess) allMsgs.push('两次审判留下的经验完成共鸣，本次审判必定通过。');
     
     // 审判过程
-    if (Math.random() < successRate) {
+    if (pitySuccess || Math.random() < successRate) {
       // 审判成功 - 参考动画中小樱用风牌获胜
       player.库洛牌系统.通过月之审判 = true;
       player.库洛牌系统.魔法熟练度 += 30;
@@ -561,40 +559,7 @@ clowCards = [
       return false;
     }
 
-    const player = await Read_player(usr_qq);
-    
-    ensureClowCardSystem(player);
-
-    // 随机获得一张库洛牌
-    const availableCards = this.clowCards.filter(card => 
-      !player.库洛牌系统.已封印库洛牌.includes(card.name)
-    );
-    
-    if (availableCards.length === 0) {
-      e.reply(" 恭喜！你已经收集了全部52张库洛牌！");
-      return true;
-    }
-
-    const randomCard = availableCards[Math.floor(Math.random() * availableCards.length)];
-    player.库洛牌系统.已封印库洛牌.push(randomCard.name);
-    player.库洛牌系统.魔法熟练度 += 5;
-    player.库洛牌系统.总探索次数 += 1;
-
-    await Write_player(usr_qq, player);
-
-    const message = [
-      " 库洛牌收集成功！",
-      ` 获得库洛牌：「${randomCard.name}」`,
-      ` 类型：${randomCard.type} | 威力：${randomCard.power}`,
-      ` 描述：${randomCard.description}`,
-      "",
-      ` 当前进度：${player.库洛牌系统.已封印库洛牌.length}/52张`,
-      ` 魔法熟练度：${player.库洛牌系统.魔法熟练度}`,
-      "",
-      " 使用 #小樱进阶 查看进阶条件"
-    ];
-
-    e.reply(message.join('\n'));
+    e.reply('库洛牌已经散落在友枝町各处。使用 #友枝町 查看地图，再用 #探索友枝町 地点名 进行封印。');
     return true;
   }
 }

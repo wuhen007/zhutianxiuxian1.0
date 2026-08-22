@@ -4,10 +4,14 @@ import {
   existplayer,
   Write_player,
   Read_player,
-  exist_najie_thing,
-  Add_najie_thing,
   channel
 } from '../../model/xiuxian.js';
+import {
+  consumeMirrorEnergy,
+  ensureZhutianMirrorSystem,
+  syncCurrentZhutianAvatar,
+} from '../../model/zhutianMirror.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 export class mofashaonv extends plugin {
   constructor() {
@@ -605,7 +609,8 @@ buildRescueSuccessMessage(caster, target, canRescue, results, cost, isSelf, stat
       e.reply('玩家不存在，请先创建角色');
       return false;
     }
-    
+
+    return withPlayerMutationLock(usr_qq, async () => {
     let player = await Read_player(usr_qq);
     
     // 检查是否为魔法少女一脉
@@ -628,18 +633,20 @@ buildRescueSuccessMessage(caster, target, canRescue, results, cost, isSelf, stat
     }
     
     
-    // 检查诸天镜道具
-    let hasMirror = await exist_najie_thing(usr_qq, '诸天镜', '道具');
-    if (!hasMirror) {
-      e.reply('🌸 穿梭需要消耗「诸天镜」×1，但你的纳戒中并无此物。');
+    const mirror = ensureZhutianMirrorSystem(player);
+    if (!mirror.已绑定) {
+      e.reply('请先绑定诸天镜，再尝试穿梭时间线。');
       return false;
     }
-    
-    // 消耗诸天镜
-    await Add_najie_thing(usr_qq, "诸天镜", "道具", -1);
-    
+    if (mirror.镜阶 < 2) {
+      e.reply('魔法少女小圆世界需要二阶诸天镜才能稳定锚定。');
+      return false;
+    }
+    if (!consumeMirrorEnergy(player).ok) {
+      e.reply('今日镜能已经耗尽，明日会自动恢复。');
+      return false;
+    }
 
-    
     // 增加总轮回次数
     player.希望系统.时间线干涉 += 1;
     const currentCycle = player.希望系统.时间线干涉;
@@ -667,6 +674,7 @@ buildRescueSuccessMessage(caster, target, canRescue, results, cost, isSelf, stat
     
     e.reply(replyMsg);
     return true;
+    });
   }
 
   // 魔法少女进阶函数
@@ -684,6 +692,7 @@ async mofashaonvjinjie(e) {
         return false;
     }
     
+    return withPlayerMutationLock(usr_qq, async () => {
     let player = await Read_player(usr_qq);
     
     // 初始化希望系统
@@ -749,6 +758,7 @@ async mofashaonvjinjie(e) {
                 "生命本源": 150
             };
             player.生命本源 = 100 + player.灵根.生命本源;
+            syncCurrentZhutianAvatar(player);
             await Write_player(usr_qq, player);
             
             const 进阶文案 = [
@@ -825,6 +835,7 @@ async mofashaonvjinjie(e) {
                 "生命本源": 300
             };
             player.生命本源 = 100 + player.灵根.生命本源;
+            syncCurrentZhutianAvatar(player);
             await Write_player(usr_qq, player);
             
             const 进阶文案 = [
@@ -901,6 +912,7 @@ async mofashaonvjinjie(e) {
                 "生命本源": 1000
             };
             player.生命本源 = 100 + player.灵根.生命本源;
+            syncCurrentZhutianAvatar(player);
             await Write_player(usr_qq, player);
             
             const 进阶文案 = [
@@ -941,6 +953,7 @@ async mofashaonvjinjie(e) {
     }
     
     return true;
+    });
 }
 
   // 生成魔法少女随机事件

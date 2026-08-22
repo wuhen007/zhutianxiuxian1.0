@@ -2,13 +2,24 @@ import { plugin, data } from '../../api/api.js';
 import { 
     Read_player, 
     Write_player, 
-    exist_najie_thing, 
-    Add_najie_thing, 
     Add_修为, 
     Add_血气,
-    Add_灵石 
+    Add_灵石,
+    player_efficiency,
 } from '../../model/xiuxian.js';
 import { getRealmAuthorityLevel, hasRealmAuthority } from '../../model/realmAuthority.js';
+import {
+  addMirrorRelic,
+  consumeMirrorEnergy,
+  ensureZhutianMirrorSystem,
+  exploreDecadeWorld,
+  exploreMitakihara,
+  exploreTomoeda,
+  getWorldMinimumMirrorTier,
+  MIRROR_TIER_CONFIG,
+  recordProjectionMirrorProgress,
+} from '../../model/zhutianMirror.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 // ========== 诸天投影世界配置 ==========
 const PROJECTION_WORLDS = {
@@ -508,7 +519,7 @@ export class touyingzhutian extends plugin {
     let rows = ['【诸天镜·可投影世界】', ''];
     for (const [key, world] of Object.entries(PROJECTION_WORLDS)) {
       const stars = '★'.repeat(world.difficulty) + '☆'.repeat(10 - world.difficulty);
-      rows.push(`${stars} ${world.name}  → 需求：${world.minLevelName}`);
+      rows.push(`${stars} ${world.name}  → 需求：${world.minLevelName}、${getWorldMinimumMirrorTier(world.name)}阶诸天镜`);
     }
     rows.push('');
     rows.push('使用 #投影诸天 随机投影到一个世界');
@@ -539,7 +550,7 @@ export class touyingzhutian extends plugin {
         '你强行中断了神魂投影！',
         '由于神魂强行脱离异界，受到反噬：',
         `修为损失：${penaltyXiuwei}`,
-        '诸天镜已消耗，投影终止。'
+        '本次镜能已消耗，投影终止。'
       ].join('\n'));
       return true;
     } catch (err) {
@@ -569,10 +580,9 @@ export class touyingzhutian extends plugin {
         }
       }
 
-      // 检查是否有诸天镜
-      const hasMirror = await exist_najie_thing(player_qq, '诸天镜', '道具');
-      if (!hasMirror) {
-        e.reply('你需要【诸天镜】才能进行神魂投影。\n可在天机阁用白泽玉/命运仙轮兑换。');
+      const mirror = ensureZhutianMirrorSystem(player);
+      if (!mirror.已绑定) {
+        e.reply('请先在天机阁兑换并使用诸天镜完成绑定。');
         return true;
       }
 
@@ -594,7 +604,9 @@ export class touyingzhutian extends plugin {
         // 随机选择（根据境界过滤）
         const availableWorlds = Object.values(PROJECTION_WORLDS).filter(w => {
           const requiredLevel = data.Level_list.find(l => l.name === w.minLevelName);
-          return requiredLevel && player.level_id >= requiredLevel.level_id;
+          return requiredLevel
+            && player.level_id >= requiredLevel.level_id
+            && mirror.镜阶 >= getWorldMinimumMirrorTier(w.name);
         });
         if (availableWorlds.length === 0) {
           e.reply('你的境界尚不足以投影诸天，至少需要筑基期。');
@@ -610,22 +622,55 @@ export class touyingzhutian extends plugin {
         return true;
       }
 
-      // 消耗诸天镜
-      await Add_najie_thing(player_qq, '诸天镜', '道具', -1);
+      const requiredTier = getWorldMinimumMirrorTier(selectedWorld.name);
+      if (mirror.镜阶 < requiredTier) {
+        e.reply(`【${selectedWorld.name}】需要至少${requiredTier}阶诸天镜，当前为${mirror.镜阶}阶。`);
+        return true;
+      }
 
-      // 初始化投影状态
-      const projectionState = {
-        action: '投影诸天',
-        world: selectedWorld.name,
-        step: 'start',
-        soulStability: 100,
-        worldInfluence: 0,
-        returnRate: 0,
-        startLevelId: player.level_id,
-        start_time: new Date().getTime(),
-      };
+      const startResult = await withPlayerMutationLock(player_qq, async () => {
+        const actionKey = 'xiuxian:player:' + player_qq + ':action';
+        if (await redis.get(actionKey)) return { ok: false, reason: 'action' };
 
-      await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(projectionState));
+        const latestPlayer = await Read_player(player_qq);
+        const latestMirror = ensureZhutianMirrorSystem(latestPlayer);
+        if (!latestMirror.已绑定) return { ok: false, reason: 'unbound' };
+        if (latestMirror.镜阶 < requiredTier) return { ok: false, reason: 'tier' };
+        const latestRequiredLevel = data.Level_list.find(l => l.name === selectedWorld.minLevelName);
+        if (latestRequiredLevel && latestPlayer.level_id < latestRequiredLevel.level_id) {
+          return { ok: false, reason: 'realm' };
+        }
+        const consumed = consumeMirrorEnergy(latestPlayer);
+        if (!consumed.ok) return consumed;
+
+        const projectionState = {
+          action: '投影诸天',
+          world: selectedWorld.name,
+          step: 'start',
+          soulStability: 100,
+          worldInfluence: 0,
+          returnRate: 0,
+          startLevelId: latestPlayer.level_id,
+          start_time: Date.now(),
+        };
+        await redis.set(actionKey, JSON.stringify(projectionState));
+        try {
+          await Write_player(player_qq, latestPlayer);
+        } catch (error) {
+          await redis.del(actionKey);
+          throw error;
+        }
+        return { ok: true, mirror: latestMirror };
+      });
+
+      if (!startResult.ok) {
+        if (startResult.reason === 'action') e.reply('你当前已有进行中的行动，暂时不能再次投影。');
+        else if (startResult.reason === 'unbound') e.reply('请先绑定诸天镜。');
+        else if (startResult.reason === 'tier') e.reply(`当前诸天镜阶位不足，需要${requiredTier}阶。`);
+        else if (startResult.reason === 'realm') e.reply(`你的境界不足！${selectedWorld.name}需要至少${selectedWorld.minLevelName}。`);
+        else if (startResult.reason === 'energy') e.reply('今日镜能已经耗尽，明日会自动恢复。');
+        return true;
+      }
 
       // 发送入口文案 + 第一个选择
       const node = selectedWorld.story.start;
@@ -634,7 +679,7 @@ export class touyingzhutian extends plugin {
         ...selectedWorld.entryText,
         '',
         `你的神魂稳定性：100/100`,
-        `世界影响力：0`,
+        `世界影响力：0 | 剩余镜能：${startResult.mirror.镜能}/${MIRROR_TIER_CONFIG[startResult.mirror.镜阶].energyMax}`,
         '',
         node.desc,
         '',
@@ -796,8 +841,17 @@ export class touyingzhutian extends plugin {
 
   // ========== 完成投影 ==========
   async completeProjection(e, player_qq, projection, world, endNode) {
-    const player = await Read_player(player_qq);
+    return withPlayerMutationLock(player_qq, async () => {
+    let player = await Read_player(player_qq);
     const endingType = endNode.end || 'neutral';
+    const settlementId = `${world.name}:${projection.start_time}`;
+    const initialMirror = ensureZhutianMirrorSystem(player);
+    if (!Array.isArray(initialMirror.已结算投影)) initialMirror.已结算投影 = [];
+    if (initialMirror.已结算投影.includes(settlementId)) {
+      await redis.del('xiuxian:player:' + player_qq + ':action');
+      e.reply('本次诸天投影已经完成结算，未重复发放奖励。');
+      return true;
+    }
 
     // 计算投影回归率（base 70%，世界影响力每20点+5%，上限95%）
     const baseRate = 0.7;
@@ -806,24 +860,27 @@ export class touyingzhutian extends plugin {
 
     // 计算实际奖励
     const reward = endNode.reward || { 修为: 500 };
-    const finalXiuwei = Math.floor((reward.修为 || 0) * returnRate);
-    const finalXueqi = Math.floor((reward.血气 || 0) * returnRate);
+    const calculatedXiuwei = Math.floor((reward.修为 || 0) * returnRate);
+    const calculatedXueqi = Math.floor((reward.血气 || 0) * returnRate);
 
     // 发放奖励
-    if (finalXiuwei > 0) await Add_修为(player_qq, finalXiuwei);
-    if (finalXueqi > 0) await Add_血气(player_qq, finalXueqi);
+    const xiuweiClaimKey = `zhutian:${settlementId}:xiuwei`;
+    const xueqiClaimKey = `zhutian:${settlementId}:xueqi`;
+    const addedXiuwei = calculatedXiuwei > 0
+      ? await Add_修为(player_qq, calculatedXiuwei, { idempotencyKey: xiuweiClaimKey })
+      : 0;
+    const addedXueqi = calculatedXueqi > 0
+      ? await Add_血气(player_qq, calculatedXueqi, { idempotencyKey: xueqiClaimKey })
+      : 0;
 
-    // 发放道具
+    player = await Read_player(player_qq);
+    const finalXiuwei = addedXiuwei || Number(player._rewardClaims?.[xiuweiClaimKey]?.amount) || 0;
+    const finalXueqi = addedXueqi || Number(player._rewardClaims?.[xueqiClaimKey]?.amount) || 0;
     const itemsGained = [];
-    if (reward.items) {
-      for (const item of reward.items) {
-        await Add_najie_thing(player_qq, item.name, item.class, 1);
-        itemsGained.push(item.name);
-      }
+    for (const item of reward.items || []) {
+      addMirrorRelic(player, item.name);
+      itemsGained.push(item.name);
     }
-
-    // 清除投影状态
-    await redis.del('xiuxian:player:' + player_qq + ':action');
 
     // 构建结局描述
     const endingNames = { good: '【完美结局】', neutral: '【平凡结局】', bad: '【糟糕结局】' };
@@ -846,7 +903,47 @@ export class touyingzhutian extends plugin {
     msg.push(`${player.名号}的神魂从【${world.name}】归来——投影体消散，修为回流本体！`);
 
     // ==== 道化之身：投影完成自动创建 ====
+    let mirrorRootChanged = false;
     if (endingType !== 'bad') {
+      const mirrorRewards = recordProjectionMirrorProgress(player, world.name, {
+        difficulty: world.difficulty,
+        endingType,
+      });
+      if (mirrorRewards.newMark) msg.push(`获得世界印记【${world.name}】`);
+      const materialRows = ['镜尘', '世界残响', '位面晶核', '时空锚', '诸天镜心']
+        .filter(name => mirrorRewards[name] > 0)
+        .map(name => `${name}+${mirrorRewards[name]}`);
+      msg.push(`诸天镜汲取世界余韵：${materialRows.join('、')}`);
+      if (world.name === '魔卡少女樱') {
+        const exploration = exploreTomoeda(player, '友枝小学', { consumeEnergy: false });
+        msg.push(`友枝町探索度 +8，镜尘 +${exploration.dust}${exploration.echo ? '，世界残响 +1' : ''}`);
+        if (exploration.card) msg.push(`封印库洛牌【${exploration.card}】`);
+        if (exploration.keyFound) msg.push('获得【封印之钥】');
+        if (exploration.unlocked) msg.push('解锁诸天化身【木之本樱】，可使用 #装载化身 木之本樱');
+      }
+      if (world.name === '魔法少女小圆') {
+        const exploration = exploreMitakihara(player, '蔷薇园魔女结界', { consumeEnergy: false });
+        msg.push(`见泷原探索度 +8，因果碎片 +1，希望碎片 +${exploration.hopeShards}`);
+        if (exploration.griefSeed) msg.push('净化魔女结界，获得【悲叹之种】');
+        if (exploration.gemFound) msg.push('获得【灵魂宝石】');
+        if (exploration.unlocked) msg.push('解锁诸天化身【鹿目圆】，可使用 #装载化身 鹿目圆');
+        if (exploration.corruptionGain) msg.push(`灵魂宝石污浊 +${exploration.corruptionGain}`);
+        if (exploration.timelineCollapsed) msg.push('当前时间线因污浊崩塌，自动回退到50点污浊');
+      }
+      if (world.name === '假面骑士帝骑') {
+        const exploration = exploreDecadeWorld(player, '光写真馆', { consumeEnergy: false });
+        if (!exploration.ok && exploration.reason === 'crisis') {
+          msg.push('骑士世界融合度已满，本次投影未推进探索；请使用 #最终攻击驾驭 化解危机');
+        } else {
+          msg.push(`骑士世界探索度 +8，世界共鸣 +${exploration.card ? 10 : 4}，融合度 +${exploration.fusionGain}`);
+          if (exploration.card) msg.push(`获得骑士卡片【${exploration.card}】`);
+          if (exploration.driverFound) msg.push('获得【帝骑驱动器】');
+          if (exploration.unlocked) msg.push('解锁诸天化身【门矢士】，可使用 #装载化身 门矢士');
+          if (exploration.advanced) msg.push('九位主骑之力共鸣，【门矢士】化身晋升为【帝骑】');
+          if (exploration.crisis) msg.push('世界融合度达到100，请使用 #最终攻击驾驭 化解危机');
+          mirrorRootChanged ||= exploration.rootChanged;
+        }
+      }
       if (!player.道化之身) player.道化之身 = [];
 
       // 道化之身上限 = 境界决定
@@ -885,10 +982,19 @@ export class touyingzhutian extends plugin {
         msg.push(`🌐 道化之身已达上限（${daohuaMax}），未能在此界凝出身外之身。`);
       }
 
-      await Write_player(player_qq, player);
     }
 
+    const settledMirror = ensureZhutianMirrorSystem(player);
+    if (!Array.isArray(settledMirror.已结算投影)) settledMirror.已结算投影 = [];
+    settledMirror.已结算投影.push(settlementId);
+    settledMirror.已结算投影 = settledMirror.已结算投影.slice(-100);
+    await Write_player(player_qq, player);
+    if (mirrorRootChanged) await player_efficiency(player_qq);
+    await redis.del('xiuxian:player:' + player_qq + ':action');
+
     e.reply(msg.join('\n'));
+    return true;
+    });
   }
 
   // ========== 查看道化之身 ==========

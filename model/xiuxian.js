@@ -127,6 +127,12 @@ import {
   normalizeRelicState,
 } from './relicSystem.js';
 import { hasSupremeInnate } from './supremePath.js';
+import {
+  applyDecadeSkillEffects,
+  resolveDecadeAuroraCurtain,
+  resolveDecadeDodgeCounter,
+  tickDecadeCombatState,
+} from './decadeCombat.js';
 import { getGodDemonStealRule, getRealmAuthorityLevel } from './realmAuthority.js';
 import { ensureExtraCultivationState } from './extraCultivation.js';
 import { calculateFlowerExtremeBonus, ensureFlowerPollenState, getFlowerPathAttributeMultiplier } from './flowerPollenPath.js';
@@ -1395,28 +1401,28 @@ export async function Write_equipment(usr_qq, equipment) {
   if (equipment.武器.name == "【光阴】天道之剑" && equipment.法宝.name == "【光阴】命运之心" && equipment.护具.name == "【光阴】主宰之甲" && player.灵根.type == "天魔") {
     套装增益.攻 += 6; 套装增益.血 += 4; 套装增益.防 += 5;
   }
-  // 超维·天帝剑（命运）
-  if (equipment.武器.name == "【超维】天帝剑" && player.灵根.type == "命运") {
+  // 超维·破限剑（命运，兼容旧存档名）
+  if (["【超维】破限剑", "【超维】天帝剑"].includes(equipment.武器.name) && player.灵根.type == "命运") {
     套装增益.攻 += 9; 套装增益.血 += 7; 套装增益.防 += 7;
   }
   // 超维·多元星盘（命运）
-  if (equipment.武器.name == "【超维】多元星盘" && player.灵根.type == "命运") {
+  if (equipment.法宝.name == "【超维】多元星盘" && player.灵根.type == "命运") {
     套装增益.攻 += 6; 套装增益.血 += 9; 套装增益.防 += 4;
   }
-  // 超维·主帝神甲（命运）
-  if (equipment.武器.name == "【超维】主帝神甲" && player.灵根.type == "命运") {
+  // 超维·元初之甲（命运，兼容旧存档名）
+  if (["【超维】元初之甲", "【超维】主帝神甲"].includes(equipment.护具.name) && player.灵根.type == "命运") {
     套装增益.攻 += 4; 套装增益.血 += 4; 套装增益.防 += 9;
   }
-  // 超维·天帝剑（天魔）
-  if (equipment.武器.name == "【超维】天帝剑" && player.灵根.type == "天魔") {
+  // 超维·破限剑（天魔，兼容旧存档名）
+  if (["【超维】破限剑", "【超维】天帝剑"].includes(equipment.武器.name) && player.灵根.type == "天魔") {
     套装增益.攻 += 14; 套装增益.血 += 7; 套装增益.防 += 7;
   }
   // 超维·多元星盘（天魔）
-  if (equipment.武器.name == "【超维】多元星盘" && player.灵根.type == "天魔") {
+  if (equipment.法宝.name == "【超维】多元星盘" && player.灵根.type == "天魔") {
     套装增益.攻 += 6; 套装增益.血 += 9; 套装增益.防 += 4;
   }
-  // 超维·主帝神甲（天魔）
-  if (equipment.武器.name == "【超维】主帝神甲" && player.灵根.type == "天魔") {
+  // 超维·元初之甲（天魔，兼容旧存档名）
+  if (["【超维】元初之甲", "【超维】主帝神甲"].includes(equipment.护具.name) && player.灵根.type == "天魔") {
     套装增益.攻 += 4; 套装增益.血 += 4; 套装增益.防 += 9;
   }
   // 极道帝兵·万物母气鼎
@@ -5449,7 +5455,7 @@ export async function Add_najie_thing(
   //写入
   //这部分写得很冗余,但能跑
   if (thing_class == '装备') {
-    if (!pinji && pinji != 0) {
+    if (x > 0 && (pinji === undefined || pinji === null)) {
       pinji = Math.trunc(Math.random() * 6);
     }
     const safeEquipmentMultiplier = Number.isFinite(Number(equipmentMultiplier))
@@ -5494,9 +5500,11 @@ export async function Add_najie_thing(
       }
     }
     if (typeof name != 'object') {
-      najie[thing_class].find(
+      const target = najie[thing_class].find(
         item => item.name == name && item.pinji == pinji
-      ).数量 += x;
+      );
+      if (!target) throw new Error(`纳戒中不存在指定品质的装备：${name}`);
+      target.数量 += x;
     } else {
       const sameVariant = najie[thing_class].find(
         item =>
@@ -5504,9 +5512,11 @@ export async function Add_najie_thing(
           item.pinji == pinji &&
           Boolean(item.归一属性) === Boolean(name.归一属性)
       );
-      (sameVariant || najie[thing_class].find(
+      const target = sameVariant || najie[thing_class].find(
         item => item.name == name.name && item.pinji == pinji
-      )).数量 += x;
+      );
+      if (!target) throw new Error(`纳戒中不存在指定品质的装备：${name.name}`);
+      target.数量 += x;
     }
     najie.装备 = najie.装备.filter(item => item.数量 > 0);
     await persistNajie();
@@ -8507,6 +8517,7 @@ let B_speed = (B_player.速度 ?? 100)
     const isImmune = (attacker === A_player && A_immune_control > 0) || 
                      (attacker === B_player && B_immune_control > 0);
     const attackerEquipment = await getEquipment(attacker);
+    if (context === 'main') tickDecadeCombatState(attacker, cnt2, msg);
 
     if (context === 'main' && Number(attacker._东皇冻结回合) > 0) {
       attacker._东皇冻结回合--;
@@ -8797,7 +8808,9 @@ let B_speed = (B_player.速度 ?? 100)
             功法威能系数 = Math.max(功法威能系数, getGongfaCombatMultiplier(attacker, skill));
           }
           if (skill.无视减伤) 无视减伤 = true;
-          if (skill.斩杀阈值) 斩杀阈值 = skill.斩杀阈值;
+          if (skill.斩杀阈值 && !(skill.帝骑效果 && isBossOpponent(defender))) {
+            斩杀阈值 = skill.斩杀阈值;
+          }
         let processedMsg1 = skill.msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
         let processedMsg2 = skill.msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
         
@@ -8806,6 +8819,12 @@ let B_speed = (B_player.速度 ?? 100)
         } else {
           msg.push(attacker.名号 + processedMsg1 + defender.名号 + processedMsg2);
         }
+
+        const decadeEffect = applyDecadeSkillEffects(attacker, defender, skill, {
+          shieldField: '护盾值',
+          isBoss: isBossOpponent(defender),
+        });
+        msg.push(...decadeEffect.messages);
         
         if (skill.不可防御 === 1) {
           不可防御 = true;
@@ -8843,7 +8862,7 @@ let B_speed = (B_player.速度 ?? 100)
 
         // —— 每个技能按自身攻击类型单独结算：基础连乘保留，增量归入对应类型桶 ——
         const _旧伤害 = 伤害;
-        伤害 = 伤害 * skill.beilv + skill.other;
+        伤害 = 伤害 * skill.beilv + skill.other + decadeEffect.bonusDamage;
         const 该技能增量 = 伤害 - _旧伤害;
         const _t = skill.攻击类型 || '神通';
         类型桶[_t] = (类型桶[_t] || 0) + 该技能增量;
@@ -9249,6 +9268,14 @@ let B_speed = (B_player.速度 ?? 100)
       const fate = resolveSuLingFatalFate(defender, fateSource, actual_damage);
       if (fate.triggered) msg.push(fate.message);
       actual_damage = fate.damage;
+    }
+
+    if (context === 'main') {
+      const curtain = resolveDecadeAuroraCurtain(defender, source, actual_damage, {
+        shieldField: '护盾值',
+      });
+      actual_damage = curtain.damage;
+      if (curtain.message) msg.push(curtain.message);
     }
 
     defender.当前血量 -= actual_damage;
@@ -10561,6 +10588,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     let attackMsgs = [];
     const isA = attacker._team === 'A';
     const 临字秘加成 = isA ? linziState.A_加成 : linziState.B_加成;
+    tickDecadeCombatState(attacker, round, attackMsgs);
 
     if (Number(attacker._东皇冻结回合) > 0) {
       attacker._东皇冻结回合--;
@@ -10814,7 +10842,10 @@ async function zd_battle_team(A_team, B_team, options = {}) {
           功法威能系数 = Math.max(功法威能系数, getGongfaCombatMultiplier(attacker, skill));
         }
         if (skill.无视减伤) 无视减伤 = true;
-        if (skill.斩杀阈值) 斩杀阈值 = skill.斩杀阈值;
+        if (
+          skill.斩杀阈值 &&
+          !(skill.帝骑效果 && (defender?.boss === true || defender?.type === 'boss'))
+        ) 斩杀阈值 = skill.斩杀阈值;
         let processedMsg1 = skill.msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
         let processedMsg2 = skill.msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
 
@@ -10824,13 +10855,27 @@ async function zd_battle_team(A_team, B_team, options = {}) {
           attackMsgs.push(attacker.名号 + processedMsg1 + defender.名号 + processedMsg2);
         }
 
+        const decadeEffect = applyDecadeSkillEffects(attacker, defender, skill, {
+          shieldField: '_护盾值',
+          isBoss: defender?.boss === true || defender?.type === 'boss',
+        });
+        attackMsgs.push(...decadeEffect.messages);
+
         if (skill.不可防御 === 1) 不可防御 = true;
         if (skill.不可复活 === 1) defender.不可复活 = true;
         if (skill.控制 === 1) defender.dongjie = true;
+        if (skill.拉条) {
+          attacker._actionBar = Math.min(ACTION_BAR_MAX, (attacker._actionBar || 0) + skill.拉条);
+          attackMsgs.push(`${attacker.名号}借Hyper Clock Up抢占行动，行动条推进${skill.拉条}点！`);
+        }
+        if (skill.推条) {
+          defender._actionBar = Math.max(0, (defender._actionBar || 0) - skill.推条);
+          attackMsgs.push(`${defender.名号}被究极炮轰退，行动条降低${skill.推条}点！`);
+        }
 
         // —— 每个技能按自身攻击类型单独结算：基础连乘保留，增量归入对应类型桶 ——
         const _旧伤害 = 伤害;
-        伤害 = 伤害 * skill.beilv + skill.other;
+        伤害 = 伤害 * skill.beilv + skill.other + decadeEffect.bonusDamage;
         const 该技能增量 = 伤害 - _旧伤害;
         const _t = skill.攻击类型 || '神通';
         类型桶[_t] = (类型桶[_t] || 0) + 该技能增量;
@@ -11001,6 +11046,11 @@ async function zd_battle_team(A_team, B_team, options = {}) {
           const aoeFate = resolveSuLingFatalFate(t, attacker, 群攻伤害);
           if (aoeFate.triggered) attackMsgs.push(aoeFate.message);
           群攻伤害 = aoeFate.damage;
+          const curtain = resolveDecadeAuroraCurtain(t, attacker, 群攻伤害, {
+            shieldField: '_护盾值',
+          });
+          群攻伤害 = curtain.damage;
+          if (curtain.message) attackMsgs.push(curtain.message);
           t.当前血量 -= 群攻伤害;
           if (t.当前血量 < 0) t.当前血量 = 0;
           if (群攻伤害 > 0 && t.当前血量 > 0) triggerTeamVitalityRecovery(t, '受击后', attackMsgs);
@@ -11071,6 +11121,12 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     const fate = resolveSuLingFatalFate(defender, attacker, actual_damage);
     if (fate.triggered) attackMsgs.push(fate.message);
     actual_damage = fate.damage;
+
+    const curtain = resolveDecadeAuroraCurtain(defender, attacker, actual_damage, {
+      shieldField: '_护盾值',
+    });
+    actual_damage = curtain.damage;
+    if (curtain.message) attackMsgs.push(curtain.message);
 
     defender.当前血量 -= actual_damage;
     if (defender.当前血量 < 0) defender.当前血量 = 0;
@@ -11611,6 +11667,19 @@ export async function tb_battle(players, boss, team) {
     const playerFate = resolveSuLingFatalFate(targetPlayer, bossCopy, result.damage);
     if (playerFate.triggered) msg.push(playerFate.message);
     result.damage = playerFate.damage;
+
+    const decadeShield = Math.max(0, Number(targetPlayer.护盾值) || 0);
+    if (decadeShield > 0) {
+      const absorbed = Math.min(decadeShield, result.damage);
+      targetPlayer.护盾值 = decadeShield - absorbed;
+      result.damage -= absorbed;
+      if (absorbed > 0) msg.push(`${targetPlayer.名号}的次元护盾抵消${absorbed}点伤害。`);
+    }
+    const curtain = resolveDecadeAuroraCurtain(targetPlayer, bossCopy, result.damage, {
+      shieldField: '护盾值',
+    });
+    result.damage = curtain.damage;
+    if (curtain.message) msg.push(curtain.message);
     
     // 更新玩家血量
     targetPlayer.当前血量 -= result.damage;
@@ -11680,6 +11749,7 @@ async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
   let triggerShengti = false; // 小成圣体触发标志
   let 无视减伤 = false; // 草字剑诀·斩真我：无视目标减伤与类型减免
   let 斩杀阈值 = 0; // 草字剑诀·斩真我：命中后残血斩杀阈值
+  tickDecadeCombatState(attacker, cnt, msgs);
 
   applyXianguTurnRecovery(attacker, msgs);
 
@@ -11796,12 +11866,21 @@ async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
       }
       msgs.push(skillMsg);
 
+      const decadeEffect = applyDecadeSkillEffects(attacker, defender, skill, {
+        shieldField: '护盾值',
+        isBoss: defender?.boss === true || defender?.type === 'boss' || /BOSS|Boss|首领/.test(String(defender?.名号 || '')),
+      });
+      msgs.push(...decadeEffect.messages);
+
       if (skill.无视减伤) 无视减伤 = true;
-      if (skill.斩杀阈值) 斩杀阈值 = skill.斩杀阈值;
+      if (
+        skill.斩杀阈值 &&
+        !(skill.帝骑效果 && (defender?.boss === true || defender?.type === 'boss' || /BOSS|Boss|首领/.test(String(defender?.名号 || ''))))
+      ) 斩杀阈值 = skill.斩杀阈值;
 
       // 应用技能效果（按自身攻击类型单独结算：基础连乘保留，增量归入对应类型桶）
       const _旧伤害 = 伤害;
-      伤害 = 伤害 * skill.beilv + skill.other;
+      伤害 = 伤害 * skill.beilv + skill.other + decadeEffect.bonusDamage;
       const 该技能增量 = 伤害 - _旧伤害;
       const _t = skill.攻击类型 || '神通';
       类型桶[_t] = (类型桶[_t] || 0) + 该技能增量;
@@ -11938,6 +12017,8 @@ export function calcDamage(attacker, defender, rawDamage, dmgTypeOrBuckets = '�
       msgs.push(`${defender.名号}乘风而起，攻击提升${Math.trunc(rate * defender._闪避增攻层数 * 100)}%！`);
     }
     msgs.unshift(`${defender.名号}身形虚化，避开了一击！`);
+    const decadeCounter = resolveDecadeDodgeCounter(defender, attacker);
+    if (decadeCounter.message) msgs.push(decadeCounter.message);
     return { actual_damage: 0, dodged: true, msgs };
   }
 
@@ -12774,8 +12855,8 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
     }
     
     // 装备调整（保持不变）
-    let wuqi = ['雾切之回光', '护摩之杖', '磐岩结绿', '三圣器·朗基努斯之枪'];
-    let wuqi2 = ['紫云剑', '炼血竹枪', '少阴玉剑', '纯阴金枪'];
+    let wuqi = ['雾切之回光', '护摩之杖', '磐岩结绿', '三圣器·朗基努斯之枪', '【超维】天帝剑', '【超维】主帝神甲'];
+    let wuqi2 = ['紫云剑', '炼血竹枪', '少阴玉剑', '纯阴金枪', '【超维】破限剑', '【超维】元初之甲'];
     for (let j of najie.装备) {
       for (let k in wuqi) {
         if (j.name == wuqi[k]) {
@@ -12783,6 +12864,16 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
         }
         if (equipment.武器?.name == wuqi[k]) equipment.武器.name = wuqi2[k];
         if (equipment.法宝?.name == wuqi[k]) equipment.法宝.name = wuqi2[k];
+        if (equipment.护具?.name == wuqi[k]) equipment.护具.name = wuqi2[k];
+      }
+    }
+    const itemNameMigrations = new Map([
+      ['主帝神血', '超维真血'],
+      ['万维梵宇之石', '超维之石'],
+    ]);
+    for (const category of ['丹药', '材料']) {
+      for (const item of najie[category] || []) {
+        item.name = itemNameMigrations.get(item.name) || item.name;
       }
     }
     
