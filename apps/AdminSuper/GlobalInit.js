@@ -1,7 +1,7 @@
 /**
- * 🌌 诸天初始化 · 万维梵宇灭维之战
+ * 诸天初始化 · 超维真界灭维之战
  *
- * 万维梵宇界外，原初之主自「无」中走出——
+ * 超维真界之外，原初之主自「无」中走出——
  * 从无到有，从有到无，循环往复，祭掉一切。
  * 灭维之后，并非死寂，混沌中传出第一声道音，
  * 天地间正在诞生至宝，道化万千，诸天重演。
@@ -295,7 +295,7 @@ export class GlobalInit extends plugin {
   constructor() {
     super({
       name: 'GlobalInit',
-      dsc: '诸天初始化·万维梵宇灭维之战',
+      dsc: '诸天初始化·超维真界灭维之战',
       event: 'message',
       priority: 50,
       rule: [
@@ -442,9 +442,9 @@ export class GlobalInit extends plugin {
 
     await e.reply(
       [
-        '【万维梵宇 · 灭维预警】',
+        '【超维真界 · 灭维预警】',
         '',
-        '万维梵宇界外，一尊无形无质的存在正缓缓睁开眼睛——',
+        '超维真界之外，一尊无形无质的存在正缓缓睁开眼睛——',
         '原初之主，自「无」中走出，向「有」而行。',
         '',
         '一旦灭维之战开启，将不可逆地祭掉：',
@@ -480,7 +480,7 @@ export class GlobalInit extends plugin {
       return true;
     }
     pendingConfirm.delete(userQQ);
-    await e.reply('原初之主收回了目光，万维梵宇界躲过一劫……此界众生，浑然不觉。');
+    await e.reply('原初之主收回了目光，超维真界躲过一劫……此界众生，浑然不觉。');
     return true;
   }
 
@@ -521,7 +521,7 @@ export class GlobalInit extends plugin {
     // ---------- 序章 ----------
     await e.reply(
       [
-        '【万维梵宇 · 灭维之战】',
+        '【超维真界 · 灭维之战】',
         '',
         '轰——！',
         '诸天震动，万道悲鸣！',
@@ -783,7 +783,7 @@ export class GlobalInit extends plugin {
       '天地间正在诞生至宝，道生一，一生二，二生三，三生万物。',
       '道化万千，诸天重演，洪荒复苏，仙路重铸。',
       '',
-      '万维梵宇界，已然重开。',
+      '超维真界，已然重开。',
       '静待有缘人，踏出问道的第一步。',
       '',
       '永恒未知之地上，一位独断万古的背影轻声开口：',
@@ -806,7 +806,7 @@ export class GlobalInit extends plugin {
       try {
         await e.reply(
           [
-            '【万维梵宇 · 灭维中断】',
+            '【超维真界 · 灭维中断】',
             '',
             '灭维之战在执行中遭遇未知反噬，流程已中止。',
             `旧界烙印封存于：${stats.backup || '（备份未完成，请查看后台日志）'}`,

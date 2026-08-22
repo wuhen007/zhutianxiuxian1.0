@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 
-const renameRetryDelays = [20, 40, 80, 160, 320];
+const renameRetryDelays = [20, 40];
 const retryableRenameErrors = new Set(['EACCES', 'EBUSY', 'EPERM']);
 const sleepBuffer = new Int32Array(new SharedArrayBuffer(4));
 
@@ -14,9 +14,22 @@ export function writeFileAtomically(filePath, content, fileSystem = fs) {
 
   try {
     fileSystem.writeFileSync(tempPath, content, 'utf8');
-    renameWithRetry(fileSystem, tempPath, filePath);
+    try {
+      renameWithRetry(fileSystem, tempPath, filePath);
+    } catch (error) {
+      if (!retryableRenameErrors.has(error?.code)) throw error;
+
+      // Windows scanners often allow writes but temporarily deny replacing an open file.
+      fileSystem.writeFileSync(filePath, content, 'utf8');
+    }
   } finally {
-    if (fileSystem.existsSync(tempPath)) fileSystem.unlinkSync(tempPath);
+    if (fileSystem.existsSync(tempPath)) {
+      try {
+        fileSystem.unlinkSync(tempPath);
+      } catch (error) {
+        if (!retryableRenameErrors.has(error?.code)) throw error;
+      }
+    }
   }
 }
 

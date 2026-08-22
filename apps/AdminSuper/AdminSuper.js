@@ -28,6 +28,7 @@ import {
 import { deletePlayerDataBundle } from './playerDeletion.js';
 import { getDailyTaskDateKey } from '../../model/dailyTask.js';
 import { buildUniqueItemRarityMap } from '../../model/najieRaritySync.js';
+import { backfillXianguEternalClaims } from '../../model/xianguEternalBackfill.js';
 export class AdminSuper extends plugin {
   constructor() {
     super({
@@ -123,6 +124,10 @@ export class AdminSuper extends plugin {
 {
     reg: '^#开启问仙令.*$',
     fnc: 'openWenXianLing'
+},
+{
+    reg: '^#补登唯一机缘(\\s*(预览|检测|dry|查询|查看))?$',
+    fnc: 'backfillEternalClaims'
 }
       ],
     });
@@ -1658,6 +1663,48 @@ async relieveFashanAction(e) {
       `当前问仙令等级：${result.newLevel}级`,
       `该玩家可发送 #问仙令 查看传承奖励。`,
     ].join('\n'));
+  }
+
+  // 指令：#补登唯一机缘          -> 扫描全服存档，把持有大罗剑胎/玉石匣/帝血的玩家补进永久认领记录
+  //       #补登唯一机缘 预览/检测 -> 仅统计，不写入
+  async backfillEternalClaims(e) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
+      return e.reply('你没有权限执行补登。');
+    }
+    if (!verc({ e })) return false;
+    const isPreview = /(预览|检测|dry|查询|查看)/.test(e.msg || '');
+    try {
+      const stats = await backfillXianguEternalClaims({
+        redisClient: redis,
+        playerDir: this.xiuxianData.filePathMap.player,
+        equipmentDir: this.xiuxianData.filePathMap.equipment,
+        najieDir: this.xiuxianData.filePathMap.najie,
+        dryRun: isPreview,
+      });
+      const lines = [
+        '【补登唯一机缘·天地唯一】' + (isPreview ? '预览（未写入）' : '已执行'),
+        `扫描玩家：${stats.scanned} 人`,
+        `持有者：${stats.holders} 人`,
+      ];
+      if (!isPreview) {
+        lines.push(
+          `新登记认领：${stats.registered} 条`,
+          `已有记录跳过：${stats.skipped} 条`,
+          `失败：${stats.failed} 条`,
+        );
+      }
+      const byName = Object.entries(stats.byName);
+      if (byName.length) {
+        lines.push('', '— 明细（持有玩家数）—', ...byName.map(([name, count]) => `${name}：${count} 人`));
+      }
+      return e.reply(lines.join('\n'));
+    } catch (error) {
+      console.error('[补登唯一机缘] 执行失败:', error);
+      return e.reply(`补登失败：${error?.message || error}`);
+    }
   }
 }
 async function found(A, B) {
