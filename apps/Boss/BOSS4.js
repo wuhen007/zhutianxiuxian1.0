@@ -60,6 +60,14 @@ import {
 } from '../../model/tianjiTalismans.js';
 import { getDouziMimicChance, tryLearnTianjiaoGongfa } from '../../model/gongfaProficiency.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import {
+  clearTianjiaoHatred,
+  getForbiddenEscapeMethod,
+  hasSoulSearchTechnique,
+  isEvilCultivator,
+  resolveTianjiaoSoulBacklash,
+  rollIndependentTianjiaoEscape,
+} from '../../model/tianjiaoHostility.js';
 
 let WorldBOSSBattleCD = []; //CD
 let WorldBOSSBattleLockToken = 0;
@@ -113,6 +121,26 @@ export class BOSS4 extends plugin {
         {
           reg: '^#反哺炼化\\s+(.*)$',
           fnc: 'ReimburseImitation',
+        },
+        {
+          reg: '^#接受求饶$',
+          fnc: 'AcceptTianjiaoSurrender',
+        },
+        {
+          reg: '^#拒绝求饶$',
+          fnc: 'RefuseTianjiaoSurrender',
+        },
+        {
+          reg: '^#搜魂天骄$',
+          fnc: 'SoulSearchTianjiao',
+        },
+        {
+          reg: '^#天魔炼化天骄$',
+          fnc: 'RefineTianjiao',
+        },
+        {
+          reg: '^#灭杀天骄$',
+          fnc: 'ExecuteTianjiao',
         },
       ],
     });
@@ -469,9 +497,6 @@ export class BOSS4 extends plugin {
     // 未配置仇恨等级时，保留原本的血量兜底概率。
     const hatredConfig = this.HATRED_CONFIG.LEVELS[hatredLevel] || {};
     const configuredChance = Number(hatredConfig.protectorChance);
-    const escapeChance = Number.isFinite(Number(hatredConfig.escapeChance))
-      ? Number(hatredConfig.escapeChance)
-      : 1;
     const hpChance = 0.10 + (30 - currentHP) / 30 * 0.70;
     const triggerChance = Number.isFinite(configuredChance)
       ? Math.min(0.95, Math.max(0, configuredChance))
@@ -535,13 +560,15 @@ export class BOSS4 extends plugin {
       
       await this.addHatred(tianjiaoName, e.user_id.toString(), '护道失败');
       
-      const escaped = Math.random() < escapeChance;
+      const escape = rollIndependentTianjiaoEscape();
+      const escaped = escape.escaped;
       messages.push(
         "",
         escaped ? `【天骄重伤遁走】` : `【天骄逃遁失败】`,
         escaped
           ? `${tianjiaoName}的护道人被你击败，天骄趁乱重伤逃走！`
-          : `${tianjiaoName}试图遁走，却被你截断退路！`
+          : `${tianjiaoName}试图遁走，却被你截断退路！`,
+        `独立逃跑概率：${(escape.chance * 100).toFixed(1)}%，掷骰：${(escape.roll * 100).toFixed(1)}%`
       );
       
       await Add_灵石(e.user_id.toString(), 8000000);
@@ -589,6 +616,280 @@ export class BOSS4 extends plugin {
         console.warn(`[天骄掉落] ${tianjiaoName}/${qq} 发放失败:`, error);
       }
     }
+  }
+
+  getPendingEncounterKey(qq) {
+    return `tianjiao:pending:${qq}`;
+  }
+
+  async readPendingEncounter(qq, requiredStage = '') {
+    const raw = await redis.get(this.getPendingEncounterKey(qq));
+    if (!raw) return null;
+    try {
+      const pending = JSON.parse(raw);
+      if (Number(pending.expiresAt) <= Date.now()) {
+        await redis.del(this.getPendingEncounterKey(qq));
+        return null;
+      }
+      if (requiredStage && pending.stage !== requiredStage) return null;
+      return pending;
+    } catch {
+      await redis.del(this.getPendingEncounterKey(qq));
+      return null;
+    }
+  }
+
+  async claimPendingEncounter(pending) {
+    return Boolean(await redis.set(`tianjiao:pending:claim:${pending.token}`, '1', { NX: true, EX: 30 }));
+  }
+
+  async releasePendingEncounterClaim(pending) {
+    await redis.del(`tianjiao:pending:claim:${pending.token}`);
+  }
+
+  async AcceptTianjiaoSurrender(e) {
+    const qq = e.user_id.toString().replace('qg_', '');
+    return withPlayerMutationLock(qq, async () => {
+      const pending = await this.readPendingEncounter(qq, 'offered');
+      if (!pending) return e.reply('当前没有等待处理的天骄求饶。');
+      if (!await this.claimPendingEncounter(pending)) return e.reply('这次求饶正在结算，请稍候查看纳戒。');
+      try {
+        const rewards = Array.isArray(pending.offer?.all) ? pending.offer.all : [];
+        for (let index = 0; index < rewards.length; index++) {
+          const item = rewards[index];
+          await Add_najie_thing(
+            qq,
+            item.name,
+            item.class,
+            Math.max(1, Math.min(20, Math.floor(Number(item.amount) || 1))),
+            undefined,
+            1,
+            { idempotencyKey: `tianjiao-surrender:${pending.token}:${index}` },
+          );
+        }
+        const hatredKey = this.getHatredKey(pending.tianjiaoName, qq);
+        const hatred = Math.max(0, Number(await redis.get(hatredKey)) || 0);
+        await redis.set(hatredKey, Math.max(0, hatred - 30).toString());
+        await this.updateTianjiaoHatredStatus(pending.tianjiaoName);
+        await redis.del(this.getPendingEncounterKey(qq));
+        await redis.set(`tianjiao:pending:resolved:${pending.token}`, 'accepted', { EX: 24 * 3600 });
+        return e.reply([
+          '【止戈受降】',
+          `你收下${pending.tianjiaoName}交出的赔礼，放其离去。`,
+          `获得：${rewards.map(item => `${item.name}x${item.amount}`).join('、')}`,
+          `双方仇恨值降低30。`,
+        ].join('\n'));
+      } catch (error) {
+        await this.releasePendingEncounterClaim(pending);
+        console.error(`[天骄求饶] 接受结算失败 player=${qq}`, error);
+        return e.reply('赔礼交割被天机打断，再发送一次 #接受求饶 即可续结算。');
+      }
+    });
+  }
+
+  async RefuseTianjiaoSurrender(e) {
+    const qq = e.user_id.toString().replace('qg_', '');
+    return withPlayerMutationLock(qq, async () => {
+      const pending = await this.readPendingEncounter(qq, 'offered');
+      if (!pending) return e.reply('当前没有等待处理的天骄求饶。');
+      if (!await this.claimPendingEncounter(pending)) return e.reply('这次选择正在结算，请稍候。');
+      const player = await Read_player(qq);
+      if (isEvilCultivator(player)) {
+        pending.stage = 'execution';
+        pending.expiresAt = Date.now() + 5 * 60 * 1000;
+        await redis.set(this.getPendingEncounterKey(qq), JSON.stringify(pending), { EX: 5 * 60 });
+        await this.releasePendingEncounterClaim(pending);
+        const choices = [
+          '发送 #天魔炼化天骄，尝试吞其道果。',
+          '发送 #灭杀天骄，直接斩断生机。',
+        ];
+        if (hasSoulSearchTechnique(player)) {
+          choices.unshift('你掌握【搜魂大法】，发送 #搜魂天骄 可先搜魂，再行灭杀。');
+        }
+        return e.reply([
+          '【拒降·魔念横生】',
+          `${pending.tianjiaoName}已被镇压，神魂正在剧烈挣扎。`,
+          ...choices,
+          '对方可能自爆神魂，反噬强度由双方境界差决定。选择保留5分钟。',
+        ].join('\n'));
+      }
+      try {
+        return await this.resolveForbiddenEscape(e, pending, qq);
+      } finally {
+        await this.releasePendingEncounterClaim(pending);
+      }
+    });
+  }
+
+  async resolveForbiddenEscape(e, pending, qq) {
+    const method = getForbiddenEscapeMethod();
+    const escape = rollIndependentTianjiaoEscape();
+    const tianjiaoData = data.weimiantianjiao_list.find(item => item.名号 === pending.tianjiaoName);
+    if (!tianjiaoData) {
+      await redis.del(this.getPendingEncounterKey(qq));
+      return e.reply('天骄气息已经消散，本次追杀结束。');
+    }
+
+    if (escape.escaped) {
+      const statusKey = `tianjiao:status:${pending.tianjiaoName}`;
+      let status = {};
+      try {
+        status = JSON.parse(await redis.get(statusKey) || '{}');
+      } catch {
+        status = {};
+      }
+      status.currentHP = 100;
+      status.isAlive = false;
+      await redis.set(statusKey, JSON.stringify(status));
+      await redis.set(this.getTianjiaoEscapeKey(pending.tianjiaoName), (Date.now() + this.escapeRefreshMs).toString());
+      await redis.del(`tianjiao:global:revive:${pending.tianjiaoName}`);
+      await redis.del(this.getPendingEncounterKey(qq));
+      return e.reply([
+        '【禁忌遁术】',
+        `${pending.tianjiaoName}${method}。`,
+        `独立逃跑概率：${(escape.chance * 100).toFixed(1)}%，掷骰：${(escape.roll * 100).toFixed(1)}%。`,
+        '禁忌手段成功，其将在6小时后重新现身；求饶赔礼随之失去。',
+      ].join('\n'));
+    }
+
+    await e.reply([
+      '【禁忌遁术·失败】',
+      `${pending.tianjiaoName}${method}，却被你截断因果。`,
+      `独立逃跑概率：${(escape.chance * 100).toFixed(1)}%，掷骰：${(escape.roll * 100).toFixed(1)}%。`,
+    ].join('\n'));
+    const settlementId = `ambush-${pending.token}`;
+    await this.distributeNormalBattleDrops(e, pending.tianjiaoName, tianjiaoData, qq, 1, settlementId);
+    await this.finalizePendingTianjiaoDeath(e, pending, qq, false);
+    await redis.del(this.getPendingEncounterKey(qq));
+    return true;
+  }
+
+  async SoulSearchTianjiao(e) {
+    return this.resolveEvilTianjiaoExecution(e, 'soul-search');
+  }
+
+  async RefineTianjiao(e) {
+    return this.resolveEvilTianjiaoExecution(e, 'refine');
+  }
+
+  async ExecuteTianjiao(e) {
+    return this.resolveEvilTianjiaoExecution(e, 'execute');
+  }
+
+  async resolveEvilTianjiaoExecution(e, mode) {
+    const qq = e.user_id.toString().replace('qg_', '');
+    return withPlayerMutationLock(qq, async () => {
+      const pending = await this.readPendingEncounter(qq, 'execution');
+      if (!pending) return e.reply('当前没有被你镇压、等待处置的天骄。');
+      if (!await this.claimPendingEncounter(pending)) return e.reply('这次处置正在结算，请稍候。');
+      try {
+        const player = await Read_player(qq);
+        if (!isEvilCultivator(player)) return e.reply('你的魔道修为不足以施展这种处置。');
+        if (mode === 'soul-search' && !hasSoulSearchTechnique(player)) {
+          return e.reply('你尚未掌握【搜魂大法】。');
+        }
+        const tianjiaoData = data.weimiantianjiao_list.find(item => item.名号 === pending.tianjiaoName);
+        if (!tianjiaoData) return e.reply('目标神魂已经脱离镇压。');
+        const claimKey = `tianjiao-evil:${pending.token}:${mode}`;
+        player._rewardClaims ||= {};
+        const alreadyResolved = Boolean(player._rewardClaims[claimKey]);
+        const backlash = alreadyResolved
+          ? { selfDestructed: false, repeated: true }
+          : resolveTianjiaoSoulBacklash(player, tianjiaoData);
+        const rewardLines = [];
+
+        if (!alreadyResolved && backlash.selfDestructed) {
+          player._rewardClaims[claimKey] = Date.now();
+          await Write_player(qq, player);
+          await this.finalizePendingTianjiaoDeath(e, pending, qq, true);
+          await redis.del(this.getPendingEncounterKey(qq));
+          return e.reply([
+            '【神魂自爆·禁术反噬】',
+            `${pending.tianjiaoName}宁愿自毁真灵，也不肯让你得到神魂中的秘密。`,
+            `肉身受创：${bigNumberTransform(backlash.bodyDamage)}，元神受创：${bigNumberTransform(backlash.soulDamage)}，道伤+${backlash.daoInjury}。`,
+            `自爆概率：${(backlash.chance * 100).toFixed(1)}%，其残灵已坠入轮回。`,
+          ].join('\n'));
+        }
+
+        if (!alreadyResolved && mode === 'soul-search') {
+          const learnable = (tianjiaoData.学习的功法 || []).filter(name => !player.学习的功法?.includes(name));
+          if (learnable.length > 0) {
+            const learned = learnable[Math.floor(Math.random() * learnable.length)];
+            player.学习的功法 ||= [];
+            player.学习的功法.push(learned);
+            rewardLines.push(`搜得功法记忆：【${learned}】`);
+          } else {
+            const gain = Math.max(1, Math.floor((Number(player.元神上限) || 100) * 0.05));
+            player.元神 = (Number(player.元神) || 0) + gain;
+            rewardLines.push(`其功法皆已掌握，转而炼得元神+${bigNumberTransform(gain)}`);
+          }
+        } else if (!alreadyResolved && mode === 'refine') {
+          const cultivation = Math.max(1, Math.floor((Number(player.修为) || 1) * 0.05));
+          const vitality = Math.max(1, Math.floor((Number(player.血气) || 1) * 0.05));
+          player.修为 = (Number(player.修为) || 0) + cultivation;
+          player.血气 = (Number(player.血气) || 0) + vitality;
+          player.魔道值 = (Number(player.魔道值) || 0) + 80;
+          rewardLines.push(`炼得修为+${bigNumberTransform(cultivation)}、血气+${bigNumberTransform(vitality)}、魔道值+80`);
+          const devour = absorbTuntianSource(player, {
+            类型: '天骄本源',
+            目标: pending.tianjiaoName,
+          });
+          if (devour.gained) {
+            rewardLines.push(`吞天本源：${devour.count}/${devour.target}，魔道值额外+20${devour.evolved ? '，体质蜕变为【混沌体】' : ''}`);
+          }
+        } else if (!alreadyResolved) {
+          rewardLines.push('你没有觊觎其道果，只斩断了这一世生机。');
+        }
+
+        if (!alreadyResolved) {
+          player._rewardClaims[claimKey] = Date.now();
+          await Write_player(qq, player);
+        }
+        await this.finalizePendingTianjiaoDeath(e, pending, qq, true);
+        await redis.del(this.getPendingEncounterKey(qq));
+        const titles = {
+          'soul-search': '搜魂功成',
+          refine: '天魔炼化',
+          execute: '斩断生机',
+        };
+        return e.reply([
+          `【${titles[mode]}】`,
+          `${pending.tianjiaoName}本世道身已灭，真灵坠入轮回。`,
+          ...rewardLines,
+        ].join('\n'));
+      } catch (error) {
+        console.error(`[天骄邪道处置] player=${qq} mode=${mode}`, error);
+        return e.reply('处置结算被天机打断，原选择仍保留，可再次发送对应指令续结算。');
+      } finally {
+        await this.releasePendingEncounterClaim(pending);
+      }
+    });
+  }
+
+  async finalizePendingTianjiaoDeath(e, pending, qq, suppressRewards) {
+    const tianjiaoData = data.weimiantianjiao_list.find(item => item.名号 === pending.tianjiaoName);
+    if (!tianjiaoData) return null;
+    const globalReviveKey = `tianjiao:global:revive:${pending.tianjiaoName}`;
+    if ((Number(await redis.get(globalReviveKey)) || 0) > Date.now()) return null;
+    const statusKey = `tianjiao:status:${pending.tianjiaoName}`;
+    let status = {};
+    try {
+      status = JSON.parse(await redis.get(statusKey) || '{}');
+    } catch {
+      status = {};
+    }
+    status.currentHP = 0;
+    status.isAlive = true;
+    return this.finalizeTianjiaoDefeat(e, {
+      tianjiaoName: pending.tianjiaoName,
+      tianjiaoData,
+      status,
+      statusKey,
+      globalReviveKey,
+      killerQQ: qq,
+      rewardMultiplier: 1,
+      suppressRewards,
+    });
   }
 
   // ========== 显示方法 ==========
@@ -710,7 +1011,7 @@ export class BOSS4 extends plugin {
           `第${life}世·${title}，${name}！`,
           '道身崩灭处，一点真灵不灭；轮回深处，昔年印记重新亮起。',
           '万载积累尽散，神骨道胎重铸，这一世自原点再踏征途。',
-          '旧怨未消，新敌四起，诸天修士当心，天骄已归来！',
+          '旧世因果俱消，新敌四起，诸天修士当心，天骄已归来！',
           '「纵死一次，大道不灭」',
         ].join('\n');
 
@@ -906,7 +1207,7 @@ export class BOSS4 extends plugin {
           msg.push(`【${tianjiao.名号}】`);
           msg.push(`  仇恨值: ${hatred}`);
           msg.push(`  关系: ${level}`);
-          msg.push(`  保命触发率: ${Math.floor(config.escapeChance * 100)}%`);
+          msg.push('  逃跑判定: 每次独立生成0~1概率并掷骰');
           msg.push(`  护道人召唤率: ${Math.floor(config.protectorChance * 100)}%`);
           msg.push('-------------------');
         }
@@ -936,7 +1237,7 @@ export class BOSS4 extends plugin {
       `****${tianjiaoName}仇恨状态****`,
       `你的仇恨值: ${hatred}`,
       `关系等级: ${level}`,
-      `保命手段触发率: ${Math.floor(config.escapeChance * 100)}%`,
+      '逃跑判定: 每次独立生成0~1概率并掷骰',
       `护道人召唤率: ${Math.floor(config.protectorChance * 100)}%`,
       "",
       `【全局统计】`,
@@ -1079,6 +1380,7 @@ export class BOSS4 extends plugin {
       globalReviveKey,
       killerQQ,
       rewardMultiplier = 1,
+      suppressRewards = false,
     } = options;
     const reviveTime = Date.now() + this.tianjiaoRefreshMs;
     const settlementId = reviveTime.toString();
@@ -1097,13 +1399,15 @@ export class BOSS4 extends plugin {
     await redis.del(this.getTianjiaoEscapeKey(tianjiaoName));
     await redis.set(statusKey, JSON.stringify(status));
 
+    const hatredCleanup = await clearTianjiaoHatred(redis, tianjiaoName);
+
     try {
-      await e.reply(`${tianjiaoName}道身崩灭，已入轮回！18小时后转世之身归来，届时全服公告。`);
+      await e.reply(`${tianjiaoName}道身崩灭，已入轮回！与全服玩家的${hatredCleanup.cleared}笔旧怨已经清空，18小时后转世之身归来。`);
     } catch (error) {
       console.warn(`[天骄轮回] ${tianjiaoName} 击杀提示发送失败:`, error);
     }
 
-    if (Array.isArray(tianjiaoData.特殊掉落)) {
+    if (!suppressRewards && Array.isArray(tianjiaoData.特殊掉落)) {
       for (let index = 0; index < tianjiaoData.特殊掉落.length; index++) {
         const special = tianjiaoData.特殊掉落[index];
         if (Math.random() >= special.概率) continue;
@@ -1143,7 +1447,7 @@ export class BOSS4 extends plugin {
     }
 
     // 参悟仿制掉落：天骄参悟的装备仿制品随之坠落
-    if (tianjiaoData.参悟仿制) {
+    if (!suppressRewards && tianjiaoData.参悟仿制) {
       try {
         const imitation = tianjiaoData.参悟仿制;
         await Add_najie_thing(killerQQ, createImitationItem(imitation, killerQQ), '装备', 1, 6);
@@ -1156,7 +1460,7 @@ export class BOSS4 extends plugin {
     }
 
     // 至宝夺回：天骄持宝被讨伐，击杀者高概率夺回至宝；未夺回则随转世释放，等待再出世
-    if (tianjiaoData?.天骄夺宝 && tianjiaoData.当前先天至宝) {
+    if (!suppressRewards && tianjiaoData?.天骄夺宝 && tianjiaoData.当前先天至宝) {
       try {
         const recovery = rollTianjiaoTreasureRecovery(tianjiaoData, Math.random, 0.8);
         if (recovery.ok && recovery.recovered) {
@@ -1182,16 +1486,17 @@ export class BOSS4 extends plugin {
       }
     }
 
-    try {
-      await this.distributeContributionRewards(e, tianjiaoName, tianjiaoData, killerQQ, settlementId);
-    } catch (error) {
-      console.warn(`[天骄贡献奖励] ${tianjiaoName} 结算失败:`, error);
-    } finally {
+    if (!suppressRewards) {
       try {
-        await redis.del(`tianjiao:damage:${tianjiaoName}`);
+        await this.distributeContributionRewards(e, tianjiaoName, tianjiaoData, killerQQ, settlementId);
       } catch (error) {
-        console.warn(`[天骄贡献奖励] ${tianjiaoName} 伤害榜清理失败:`, error);
+        console.warn(`[天骄贡献奖励] ${tianjiaoName} 结算失败:`, error);
       }
+    }
+    try {
+      await redis.del(`tianjiao:damage:${tianjiaoName}`);
+    } catch (error) {
+      console.warn(`[天骄贡献奖励] ${tianjiaoName} 伤害榜清理失败:`, error);
     }
 
     let reincarnation = null;
@@ -1759,11 +2064,6 @@ export class BOSS4 extends plugin {
             rewardMultiplier: panguRewardMultiplier,
           });
           rewardSettlementId = defeatSettlement.settlementId;
-          try {
-            await this.addHatred(tianjiaoName, usr_qq, '击杀');
-          } catch (error) {
-            console.warn(`[天骄仇恨] ${tianjiaoName} 击杀仇恨记录失败:`, error);
-          }
         } else {
           await this.distributeNormalBattleDrops(e, tianjiaoName, tianjiaoData, usr_qq, panguRewardMultiplier, battleId);
         }
@@ -1888,18 +2188,17 @@ export class BOSS4 extends plugin {
             globalReviveKey,
             killerQQ: usr_qq,
           });
-          try {
-            await this.addHatred(tianjiaoName, usr_qq, '击杀');
-          } catch (error) {
-            console.warn(`[天骄仇恨] ${tianjiaoName} 击杀仇恨记录失败:`, error);
-          }
           await e.reply(`${tianjiaoName}在交战中耗尽最后一丝生机，已入轮回结算。`);
         }
-        const hatredResult = await this.addHatred(tianjiaoName, usr_qq, '挑战失败');
-        const newLevel = this.getHatredLevel(hatredResult.new);
+        const hatredResult = tianjiaoDefeated
+          ? { gain: 0, new: 0 }
+          : await this.addHatred(tianjiaoName, usr_qq, '挑战失败');
+        const newLevel = tianjiaoDefeated ? '轮回' : this.getHatredLevel(hatredResult.new);
 
         // 天骄污损与参悟：败北时概率触发（仅针对百分比装备，温和可逆）
-        await this.rollTianjiaoTaint(e, tianjiaoData, usr_qq, player);
+        if (!tianjiaoDefeated) {
+          await this.rollTianjiaoTaint(e, tianjiaoData, usr_qq, player);
+        }
 
         // 发送胜利嘲讽
         const tauntDialogue = this.getRandomDialogue(tianjiaoData, '胜利嘲讽');

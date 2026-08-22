@@ -36,6 +36,14 @@ import {
   selectForbiddenSupreme,
 } from '../../model/weimianTravel.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
+import { randomUUID } from 'node:crypto';
+import {
+  buildTianjiaoSurrenderOffer,
+  isTianjiaoAvailable,
+  rollIndependentTianjiaoEscape,
+} from '../../model/tianjiaoHostility.js';
+import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import { tryNpcProtectorIntervention } from '../../model/npcProtector.js';
 export class TravelTask extends plugin {
   constructor() {
     super({
@@ -438,8 +446,10 @@ this.FORMATION_NAMES = [
    */
   async checkAmbush(e, player, tianjiaoName, group_id) {
     const usr_qq = player.id;
+    if (await redis.get(`tianjiao:pending:${usr_qq}`)) return false;
     const fearUntil = Number(await redis.get(`tianjiao:fear:${tianjiaoName}:${usr_qq}`)) || 0;
     if (fearUntil > Date.now()) return false;
+    if (!await this.canTianjiaoAmbush(tianjiaoName)) return false;
     
     // 获取仇恨值
     const hatred = await this.getPlayerHatred(tianjiaoName, usr_qq);
@@ -627,23 +637,153 @@ this.FORMATION_NAMES = [
     }
     
     if (isWin) {
-      // 玩家胜利 - 文本消息
-      const victoryMsg = this.AMBUSH_DIALOGUES.胜利[Math.floor(Math.random() * this.AMBUSH_DIALOGUES.胜利.length)];
-      await this.sendTextMessage(usr_qq, victoryMsg, group_id);
-      
+      const offer = buildTianjiaoSurrenderOffer(tianjiaoData, data);
+      const token = randomUUID();
+      const pending = {
+        type: 'surrender',
+        stage: 'offered',
+        token,
+        playerId: String(usr_qq),
+        tianjiaoName,
+        offer,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 10 * 60 * 1000,
+        groupId: group_id || '',
+      };
+      await redis.set(`tianjiao:pending:${usr_qq}`, JSON.stringify(pending), { EX: 10 * 60 });
+      await redis.set(`tianjiao:fear:${tianjiaoName}:${usr_qq}`, (Date.now() + 6 * 60 * 60 * 1000).toString());
       await this.addHatred(tianjiaoName, usr_qq, '挑战成功');
-      
-      await Add_灵石(usr_qq, 500000);
-      await Add_源石(usr_qq, 200000);
-      await this.sendTextMessage(usr_qq, '你获得了：灵石50万、源石20万', group_id);
+      const normal = offer.normal.map(item => `${item.name}x${item.amount}`).join('、') || '无';
+      const extras = offer.extras.map(item => `${item.name}x${item.amount}（稀有度${item.rarity}）`).join('、');
+      await this.sendTextMessage(usr_qq, [
+        '【天骄败退·献宝求饶】',
+        `${tianjiaoName}被你逼至绝境，主动交出随身战利品与五份赔礼。`,
+        `本命战利品：${normal}`,
+        `赔礼：${extras}`,
+        '发送 #接受求饶 收下全部赔礼并放其离去；发送 #拒绝求饶 继续追杀。',
+        '本次选择保留10分钟。',
+      ].join('\n'), group_id);
       
       return true; // 继续传送
       
     } else {
-      // 玩家失败 - 死亡处理
+      B_player.当前血量 = Math.max(1, Number(result.B_hp) || Number(B_player.当前血量) || 1);
+      const protection = await this.resolvePlayerProtector(
+        player,
+        B_player,
+        tianjiaoName,
+        usr_qq,
+        group_id,
+      );
+      if (protection.saved) return true;
       await this.handleAmbushDefeat(e, player, tianjiaoName, tianjiaoData, ambushType, group_id);
       return 'defeat'; // 标记为战败死亡
     }
+  }
+
+  async canTianjiaoAmbush(tianjiaoName) {
+    const now = Date.now();
+    const [statusRaw, reviveRaw, escapeRaw] = await Promise.all([
+      redis.get(`tianjiao:status:${tianjiaoName}`),
+      redis.get(`tianjiao:global:revive:${tianjiaoName}`),
+      redis.get(`tianjiao:global:escape:${tianjiaoName}`),
+    ]);
+    if (Math.max(Number(reviveRaw) || 0, Number(escapeRaw) || 0) > now) return false;
+    let status = null;
+    try {
+      status = statusRaw ? JSON.parse(statusRaw) : null;
+    } catch {
+      return false;
+    }
+    return isTianjiaoAvailable(status, getRealmEventWorldYear(), now);
+  }
+
+  buildPlayerProtectorCombatant(protector) {
+    return {
+      ...protector,
+      名号: protector.名号,
+      攻击: protector.攻击,
+      防御: protector.防御,
+      当前血量: protector.当前血量,
+      血量上限: protector.血量上限 || protector.当前血量,
+      暴击率: protector.暴击率,
+      暴击伤害: protector.暴击伤害,
+      灵根: protector.灵根,
+      法球倍率: protector.灵根?.法球倍率 || protector.法球倍率 || 1,
+      学习的功法: protector.学习的功法 || [],
+    };
+  }
+
+  async resolvePlayerProtector(player, woundedTianjiao, tianjiaoName, usr_qq, group_id) {
+    const remainingLine = `${tianjiaoName}带着上一战仅剩的${bigNumberTransform(woundedTianjiao.当前血量)}点气血迎战。`;
+    const npcProtection = await tryNpcProtectorIntervention(
+      player,
+      woundedTianjiao,
+      zd_battle,
+      Date.now(),
+      { forceBattle: true },
+    );
+    if (npcProtection.triggered) {
+      await Write_player(usr_qq, player);
+      await this.sendBattleImage(usr_qq, [
+        '【护道人接战】',
+        remainingLine,
+        ...npcProtection.messages,
+      ], group_id);
+      if (npcProtection.won) return { triggered: true, saved: true, protectorWon: true };
+      return this.resolveProtectorDefeat(player, tianjiaoName, usr_qq, group_id);
+    }
+
+    if (player.大帝庇护 !== 1 || !player.庇护人) {
+      return { triggered: false, saved: false };
+    }
+
+    try {
+      const protector = await Read_player(player.庇护人);
+      const protectorBattle = await zd_battle(
+        this.buildPlayerProtectorCombatant(protector),
+        woundedTianjiao,
+        { battleType: 'tianjiao_ambush_protector' },
+      );
+      await this.sendBattleImage(usr_qq, [
+        '【护道人跨界而来】',
+        `${protector.名号}循着护道印记降临：伤我所护之人，便由我来接这一战。`,
+        remainingLine,
+        ...(Array.isArray(protectorBattle.msg) ? protectorBattle.msg : [protectorBattle.msg]),
+      ], group_id);
+      if (protectorBattle.winner === 'A') {
+        player.当前血量 = Math.max(1, Math.floor((Number(player.血量上限) || 1) * 0.3));
+        await Write_player(usr_qq, player);
+        await redis.set(`tianjiao:fear:${tianjiaoName}:${usr_qq}`, (Date.now() + 6 * 60 * 60 * 1000).toString());
+        await this.sendTextMessage(usr_qq, `${protector.名号}击退了${tianjiaoName}，替你稳住伤势后送你继续上路。`, group_id);
+        return { triggered: true, saved: true, protectorWon: true };
+      }
+      return this.resolveProtectorDefeat(player, tianjiaoName, usr_qq, group_id);
+    } catch (error) {
+      console.error(`[天骄堵截] 玩家护道人出战失败 player=${usr_qq}`, error);
+      return { triggered: true, saved: false, error };
+    }
+  }
+
+  async resolveProtectorDefeat(player, tianjiaoName, usr_qq, group_id) {
+    const escape = rollIndependentTianjiaoEscape();
+    if (!escape.escaped) {
+      await this.sendTextMessage(usr_qq, [
+        `【护道人败北】${tianjiaoName}击败护道人后并未退走。`,
+        `独立逃跑概率：${(escape.chance * 100).toFixed(1)}%，掷骰：${(escape.roll * 100).toFixed(1)}%。`,
+      ].join('\n'), group_id);
+      return { triggered: true, saved: false, protectorWon: false, escape };
+    }
+
+    player.当前血量 = Math.max(1, Math.floor((Number(player.血量上限) || 1) * 0.1));
+    await Write_player(usr_qq, player);
+    await redis.set(`tianjiao:fear:${tianjiaoName}:${usr_qq}`, (Date.now() + 6 * 60 * 60 * 1000).toString());
+    await this.sendTextMessage(usr_qq, [
+      `【险死还生】${tianjiaoName}击败护道人后察觉远方气机逼近，最终选择遁走。`,
+      `独立逃跑概率：${(escape.chance * 100).toFixed(1)}%，掷骰：${(escape.roll * 100).toFixed(1)}%。`,
+      `你保住性命，当前血量：${bigNumberTransform(player.当前血量)}。`,
+    ].join('\n'), group_id);
+    return { triggered: true, saved: true, protectorWon: false, escape };
   }
   
   async addHatred(tianjiaoName, usr_qq, reason) {
@@ -1024,6 +1164,7 @@ this.FORMATION_NAMES = [
     const hatredList = [];
     
     for (const tianjiao of data.weimiantianjiao_list) {
+      if (!await this.canTianjiaoAmbush(tianjiao.名号)) continue;
       const hatred = await this.getPlayerHatred(tianjiao.名号, usr_qq);
       if (hatred > 0) {
         // 仇恨值越高，被选中的权重越大
