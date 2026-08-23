@@ -1,6 +1,8 @@
 export const MAX_PERCENT_EQUIPMENT_STAT = 499;
+const EQUIPMENT_TYPES = new Set(['武器', '护具', '法宝']);
 
 export function isNameablePercentageEquipment(item) {
+  if (item?.class !== '装备' && !EQUIPMENT_TYPES.has(item?.type)) return false;
   const atk = Number(item?.atk) || 0;
   const def = Number(item?.def) || 0;
   const hp = Number(item?.HP) || 0;

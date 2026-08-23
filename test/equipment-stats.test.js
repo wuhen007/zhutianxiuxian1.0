@@ -80,6 +80,10 @@ test('可赋名百分比装备以499为单属性上限', () => {
   assert.equal(isNameablePercentageEquipment({ type: '武器', atk: 1.4, def: 0.5, HP: 0 }), false);
 });
 
+test('带攻击字段的普通道具不会被当成百分比装备', () => {
+  assert.equal(isNameablePercentageEquipment({ class: '道具', type: '道具', atk: 2 }), false);
+});
+
 test('大罗剑胎对至尊体系列提供十五倍，其他灵根提供七点五倍', () => {
   const sword = {
     name: '大罗剑胎',
