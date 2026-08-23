@@ -6,6 +6,7 @@ import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 import { assertGlobalInitIdle } from '../utils/globalInitGuard.js';
 
 import data from './XiuxianData.js';
+import { cooldownRevivalGongfas, resolveInteractiveGongfaRevival } from './tribulationRevival.js';
 import { buildLinggenAtlasData, parseLinggenAtlasCommand } from './linggenAtlas.js';
 import { enrichNajieDisplayRarity } from './najieRarity.js';
 import { buildAnnouncePresentation, splitAnnounceDetail } from './announcePresentation.js';
@@ -405,6 +406,7 @@ export async function LevelTask(e, power_n, power_m, power_Grade, aconut, illusi
   
   let msg = [buildAt(usr_qq)];
   let player = await Read_player(usr_qq);
+  cooldownRevivalGongfas(player);
   
     // 特殊体质：肉身打散雷劫
   if (player.Physique_id == 43) {
@@ -614,7 +616,26 @@ export async function LevelTask(e, power_n, power_m, power_Grade, aconut, illusi
     return 1;
   } 
   
-  // 雷劫失败
+  // 雷劫失败时先尝试玩家设置的复活功法
+  player.当前血量 = 0;
+  const revival = await resolveInteractiveGongfaRevival(
+    e,
+    usr_qq,
+    player,
+    { minggeList: data.minggeList }
+  );
+  if (revival.revived) {
+    await Write_player(usr_qq, player);
+    msg.push(
+      `\n第${aconut}道雷劫击溃肉身！`,
+      ...revival.messages,
+      '【逆转生死】成功复活，并避开本道雷劫。'
+    );
+    await e.reply(msg);
+    return 1;
+  }
+
+  if (revival.messages?.length) msg.push(...revival.messages);
   player.当前血量 = 1;
   player.修为 = Math.trunc(player.修为 * 0.5);
 

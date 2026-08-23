@@ -64,7 +64,7 @@ export function applyXianguImperialWeaponDefense(player, equipment, damage, rand
   };
 }
 
-export function settleXianguWaveDamage({
+export async function settleXianguWaveDamage({
   player,
   bodyDamage,
   tryRevive,
@@ -75,7 +75,7 @@ export function settleXianguWaveDamage({
     gongfaActive ? applyGongfaReduction() : bodyDamage
   ));
   if (damage >= (player.当前血量 || 0)) {
-    const revival = tryRevive();
+    const revival = await tryRevive();
     if (revival) {
       return {
         revival,

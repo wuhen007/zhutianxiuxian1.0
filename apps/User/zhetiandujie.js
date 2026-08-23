@@ -24,6 +24,14 @@ import { calculateEquippedStats, calculateEquipmentSetBonuses } from '../../mode
 import { DAO_TREASURE_ALL_ATTRIBUTE_BONUS, isDaoTreasureItem } from '../../model/daoTreasure.js';
 import { consumeBlackEmperorTribulationFormation } from '../../model/blackEmperor.js';
 import { reduceTribulationDamageByDefense } from '../../model/tribulationDamage.js';
+import {
+  getAvailableRevivalGongfas,
+  getTribulationRevivalMode,
+  getTribulationRevivalCandidates,
+  requestManualRevivalChoice,
+  REVIVAL_GONGFA_NAMES,
+  submitManualRevivalChoice,
+} from '../../model/tribulationRevival.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
 import { PLACE_LOCATION_MAP, ZHETIAN_ENTRY_AUTHORITY_LEVEL } from '../../model/weimianTravel.js';
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
@@ -65,9 +73,11 @@ import {
   dujie,
   LevelTask,
   get_log_img,
-  channel
+  channel,
+  dj_players
 } from '../../model/xiuxian.js';
-import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
+import { isTribulationLocked, TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { adjustDaoHeart, getDaoHeartDamageMultiplier } from '../../model/daoHeart.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import {
@@ -126,6 +136,14 @@ export class zhetiandujie extends plugin {
         {
           reg: '^#(打听天机\\s*渡劫|渡劫天机)$',
           fnc: 'command_datitingtianji'
+        },
+        {
+          reg: '^#复活设置(?:\\s*(?:自动|手动))?$',
+          fnc: 'command_revival_setting'
+        },
+        {
+          reg: '^#复活选择\\s*.+$',
+          fnc: 'command_revival_choice'
         },
         {
           reg: '^#库洛牌祈愿\\s*(@?\\S+)?\\s*$',
@@ -210,8 +228,62 @@ export class zhetiandujie extends plugin {
     }
   }
 
+async command_revival_setting(e) {
+    if (!verc({ e })) return false;
+    let playerId = await channel(String(e.user_id).replace('qg_', ''));
+    if (!(await existplayer(playerId))) return false;
+    if (dj_players[playerId] || await isTribulationLocked(playerId)) {
+      return e.reply('请在本次渡劫结束后再调整复活设置。');
+    }
+
+    const selection = e.msg.replace(/^#复活设置\s*/, '').trim();
+    try {
+      return await withPlayerMutationLock(playerId, async () => {
+        const player = await Read_player(playerId);
+        const learned = REVIVAL_GONGFA_NAMES.filter(name =>
+          player.学习的功法?.includes(name) || Object.hasOwn(player.功法 || {}, name)
+        );
+        const current = getTribulationRevivalMode(player);
+
+        if (!selection) {
+          return e.reply([
+            `当前复活模式：${current}`,
+            `已掌握复活功法：${learned.join('、') || '暂无'}`,
+            '用法：#复活设置 自动 / #复活设置 手动',
+          ].join('\n'));
+        }
+        if (selection === '自动') {
+          delete player.渡劫复活模式;
+          delete player.渡劫复活技能;
+          await Write_player(playerId, player);
+          return e.reply('复活模式已设为自动：濒死时按功法优先级自动发动。');
+        }
+        player.渡劫复活模式 = '手动';
+        delete player.渡劫复活技能;
+        await Write_player(playerId, player);
+        return e.reply('复活模式已设为手动：濒死时会列出可用功法，60秒内选择即可。');
+      });
+    } catch (error) {
+      console.error('复活设置失败:', error);
+      return e.reply('复活设置没有生效，请稍后重试。');
+    }
+}
+
+async command_revival_choice(e) {
+    if (!verc({ e })) return false;
+    const playerId = await channel(String(e.user_id).replace('qg_', ''));
+    const input = e.msg.replace(/^#复活选择\s*/, '').trim();
+    const result = submitManualRevivalChoice(playerId, input);
+    if (result.ok) return e.reply(`已选择【${result.name}】，渡劫继续。`);
+    if (result.reason === 'invalid') {
+      return e.reply(`选择无效，可选：${result.choices.map((name, index) => `${index + 1}.${name}`).join('、')}`);
+    }
+    return e.reply('当前没有等待处理的复活选择。');
+}
+
 // ==== 遮天风格功法复活逻辑（生命本源消耗版）====
 async checkGongfaResurrection(e, player) {
+    const playerId = await channel(String(e.user_id).replace('qg_', ''));
     console.log('【DEBUG】开始检查复活功法，当前生命本源：', player.生命本源 || 0);
 
     // 命格复活每次渡劫只判定一次，不消耗生命本源，也不占用功法冷却。
@@ -247,7 +319,14 @@ async checkGongfaResurrection(e, player) {
     }
 
     // ==== 通用复活检查函数 ====
+let candidates = getAvailableRevivalGongfas(player, Object.keys(this.gongfa));
+if (getTribulationRevivalMode(player) === '手动' && candidates.length) {
+    const selected = await requestManualRevivalChoice(e, playerId, candidates);
+    candidates = selected ? [selected] : [];
+}
+const revivalCandidates = new Set(getTribulationRevivalCandidates(player, candidates));
 const tryResurrect = async (gongfaName, effectFunc) => {
+    if (!revivalCandidates.has(gongfaName)) return false;
     if (await this.checkGongfaExist(player, gongfaName) && player.生命本源 >= 50) {
         player.生命本源 -= 50;
         
@@ -255,7 +334,7 @@ const tryResurrect = async (gongfaName, effectFunc) => {
         player.功法[gongfaName].冷却回合 = this.gongfa[gongfaName].cooldown;
         
         await effectFunc();
-        await Write_player(e.user_id, player);
+        await Write_player(playerId, player);
         return true;
     }
     return false;
@@ -463,7 +542,7 @@ const tryResurrect = async (gongfaName, effectFunc) => {
     player.当前血量 = 1;
     player.修为 *= 0.7;
     player.血气 *= 0.7;
-    await Write_player(e.user_id, player);
+    await Write_player(playerId, player);
     return false;
 }
   // ==== 功法检查方法 ====

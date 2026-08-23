@@ -19,13 +19,75 @@ export const REVIVAL_GONGFA_CD = Object.freeze({
 
 export const REVIVAL_GONGFA_NAMES = Object.freeze(Object.keys(REVIVAL_GONGFA_CD));
 
+const pendingManualChoices = new Map();
+
+export function getTribulationRevivalMode(player) {
+  return player?.渡劫复活模式 === '手动' ? '手动' : '自动';
+}
+
+export function getTribulationRevivalCandidates(player, names = REVIVAL_GONGFA_NAMES) {
+  return [...new Set(Array.isArray(names) ? names : [])]
+    .filter(name => REVIVAL_GONGFA_NAMES.includes(name));
+}
+
 export function checkRevivalGongfa(player, name) {
   if (!player || typeof player !== 'object') return false;
   player.功法 ??= {};
   player.学习的功法 ??= [];
-  if (!player.学习的功法.includes(name)) return false;
+  if (!player.学习的功法.includes(name) && !Object.hasOwn(player.功法, name)) return false;
   player.功法[name] ??= { 冷却回合: 0 };
   return Number(player.功法[name].冷却回合 || 0) <= 0;
+}
+
+export function getAvailableRevivalGongfas(player, names = REVIVAL_GONGFA_NAMES) {
+  if (Number(player?.生命本源) < 50) return [];
+  return getTribulationRevivalCandidates(player, names)
+    .filter(name => checkRevivalGongfa(player, name));
+}
+
+export async function requestManualRevivalChoice(e, playerId, names, timeoutMs = 60_000) {
+  const choices = [...new Set(names)].filter(Boolean);
+  if (!choices.length) return '';
+
+  const key = String(playerId);
+  pendingManualChoices.get(key)?.finish('');
+  let resolveChoice;
+  let timer;
+  const result = new Promise(resolve => { resolveChoice = resolve; });
+  const finish = name => {
+    if (pendingManualChoices.get(key)?.finish !== finish) return;
+    clearTimeout(timer);
+    pendingManualChoices.delete(key);
+    resolveChoice(name);
+  };
+  timer = setTimeout(() => finish(''), timeoutMs);
+  timer.unref?.();
+  pendingManualChoices.set(key, { choices, finish });
+
+  try {
+    await e.reply([
+      '【濒死·选择复活功法】',
+      ...choices.map((name, index) => `${index + 1}. ${name}`),
+      '请在60秒内发送 #复活选择 序号',
+    ].join('\n'));
+  } catch (error) {
+    console.error('发送复活选择失败:', error);
+    finish('');
+  }
+  return result;
+}
+
+export function submitManualRevivalChoice(playerId, input) {
+  const pending = pendingManualChoices.get(String(playerId));
+  if (!pending) return { ok: false, reason: 'none' };
+  const text = String(input || '').trim();
+  const index = Number(text);
+  const name = Number.isInteger(index) && index > 0
+    ? pending.choices[index - 1]
+    : pending.choices.find(choice => choice === text);
+  if (!name) return { ok: false, reason: 'invalid', choices: [...pending.choices] };
+  pending.finish(name);
+  return { ok: true, name };
 }
 
 /** 每道雷劫后更新全部功法冷却（对标 zhetiandujie.updateCooldowns） */
@@ -43,12 +105,13 @@ function reviveMessage(player, lines) {
 
 /**
  * 渡劫死亡时的功法复活结算（纯函数）。
- * options: { minggeList, allowMingge = true }
+ * options: { minggeList, allowMingge = true, names, selectedName }
  * 返回 { revived, source, healAmount, messages, effect }；未复活时 revived=false。
  */
 export function resolveGongfaRevival(player, options = {}) {
   if (!player || typeof player !== 'object') return { revived: false, messages: [] };
-  player.生命本源 = Math.max(0, Math.trunc(Number(player.生命本源) || 0)) || 100;
+  const lifeEssence = Number(player.生命本源);
+  player.生命本源 = Number.isFinite(lifeEssence) ? Math.max(0, Math.trunc(lifeEssence)) : 100;
   const messages = [];
 
   // 命格复活：每次渡劫只判定一次（调用方每次渡劫重置 player._命格复活已判）
@@ -81,7 +144,16 @@ export function resolveGongfaRevival(player, options = {}) {
     };
   }
 
+  const names = getTribulationRevivalCandidates(player, options.names);
+  if (getTribulationRevivalMode(player) === '手动' && !options.selectedName) {
+    const choices = getAvailableRevivalGongfas(player, names);
+    if (choices.length) return { revived: false, requiresChoice: true, choices, messages: [] };
+  }
+  const revivalCandidates = new Set(
+    options.selectedName ? [options.selectedName] : names
+  );
   const attempt = (name, effect) => {
+    if (!revivalCandidates.has(name)) return null;
     if (!checkRevivalGongfa(player, name) || player.生命本源 < 50) return null;
     player.生命本源 -= 50;
     player.功法[name].冷却回合 = REVIVAL_GONGFA_CD[name];
@@ -189,4 +261,22 @@ export function resolveGongfaRevival(player, options = {}) {
     source: '无复活手段',
     messages: reviveMessage(player, ['【道基崩碎·渡劫中断】', '周身大道符文寸寸崩裂，从渡劫中坠落！']),
   };
+}
+
+export async function resolveInteractiveGongfaRevival(e, playerId, player, options = {}) {
+  const result = resolveGongfaRevival(player, options);
+  if (!result.requiresChoice) return result;
+  const selectedName = await requestManualRevivalChoice(e, playerId, result.choices);
+  if (!selectedName) {
+    return {
+      revived: false,
+      source: '手动选择超时',
+      messages: reviveMessage(player, ['【复活选择超时】', '未在时限内选定复活功法。']),
+    };
+  }
+  return resolveGongfaRevival(player, {
+    ...options,
+    allowMingge: false,
+    selectedName,
+  });
 }

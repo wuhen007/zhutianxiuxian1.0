@@ -59,7 +59,7 @@ import {
   repairFlowerRoot,
   recordFlowerBreathingPractice,
 } from '../../model/flowerPollenPath.js';
-import { cooldownRevivalGongfas, resolveGongfaRevival } from '../../model/tribulationRevival.js';
+import { cooldownRevivalGongfas, resolveInteractiveGongfaRevival } from '../../model/tribulationRevival.js';
 import { checkPlaneRealmLaw } from '../../model/planeRealmLaw.js';
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import { getShanghaiDateKey } from '../../model/weimianTravel.js';
@@ -741,7 +741,12 @@ export class FlowerPollenPath extends plugin {
           }
           await e.reply(lines.join('\n'));
           if (player.当前血量 <= 0) {
-            const revival = resolveGongfaRevival(player, { minggeList: data.minggeList });
+            const revival = await resolveInteractiveGongfaRevival(
+              e,
+              userId,
+              player,
+              { minggeList: data.minggeList }
+            );
             if (revival.revived) {
               await e.reply(revival.messages.join('\n'));
               await Write_player(userId, player);

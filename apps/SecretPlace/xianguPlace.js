@@ -5460,6 +5460,7 @@ async XianguJilianZhenwo(e) {
     // 文本演出与成功/失败判定在 XianguTribulation 中完成，本函数只负责最终状态写入
     const trib = new XianguTribulation();
     const tribResult = await trib.run(e, player, {
+      playerId: player_qq,
       completed,
       daoyun,
       equipment: tribulationEquipment,

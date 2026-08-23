@@ -60,11 +60,11 @@ test('仙古渡劫兼容遮天旧档位帝兵（极道帝兵自动对齐至尊�
   assert.ok(Math.abs(shengBing.reductionRate - 0.39) < 1e-9); // index 4 → 0.15 + 4*0.06
 });
 
-test('仙古渡劫首次致死前不触发功法被动，复活后避开当道雷劫', () => {
+test('仙古渡劫首次致死前不触发功法被动，复活后避开当道雷劫', async () => {
   const player = makePlayer();
   const calls = [];
 
-  const result = settleXianguWaveDamage({
+  const result = await settleXianguWaveDamage({
     player,
     bodyDamage: 40,
     tryRevive: () => {
@@ -88,11 +88,11 @@ test('仙古渡劫首次致死前不触发功法被动，复活后避开当道�
   assert.deepEqual(calls, ['revive']);
 });
 
-test('成功复活后的后续雷劫才触发功法被动', () => {
+test('成功复活后的后续雷劫才触发功法被动', async () => {
   const player = makePlayer({ 当前血量: 50 });
   const calls = [];
 
-  const result = settleXianguWaveDamage({
+  const result = await settleXianguWaveDamage({
     player,
     bodyDamage: 40,
     gongfaActive: true,
@@ -108,11 +108,11 @@ test('成功复活后的后续雷劫才触发功法被动', () => {
   assert.deepEqual(calls, ['reduce']);
 });
 
-test('没有复活资源时不能靠未激活的功法被动避免死亡', () => {
+test('没有复活资源时不能靠未激活的功法被动避免死亡', async () => {
   const player = makePlayer({ 生命本源: 0 });
   const calls = [];
 
-  const result = settleXianguWaveDamage({
+  const result = await settleXianguWaveDamage({
     player,
     bodyDamage: 40,
     tryRevive: () => null,

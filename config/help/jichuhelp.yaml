@@ -116,6 +116,9 @@
       title: '#渡劫'
       desc: '渡劫期经历的劫难，雷劫越多加成越高'
     - icon: help-icon_44
+      title: '#复活设置 自动/手动'
+      desc: '手动模式会在濒死时列出可用功法，按提示发送 #复活选择 序号'
+    - icon: help-icon_44
       title: '#打散雷劫'
       desc: '肉身玄圣或秘境体系道宫五重天可快速结束，且雷劫奖励翻倍'      
     - icon: help-icon_44

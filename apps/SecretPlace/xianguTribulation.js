@@ -37,6 +37,13 @@ import {
   LEIDI_TRIBULATION_CONVERSION_WAVES,
 } from '../User/zhetianTribulationRules.js';
 import { adjustDaoHeart, getDaoHeartDamageMultiplier } from '../../model/daoHeart.js';
+import {
+  cooldownRevivalGongfas,
+  getAvailableRevivalGongfas,
+  getTribulationRevivalMode,
+  requestManualRevivalChoice,
+  REVIVAL_GONGFA_CD,
+} from '../../model/tribulationRevival.js';
 
 export { XIANGU_REALM_ROUTES, calcXianguCarryDaoFlaw } from './xianguTribulationSettlement.js';
 
@@ -404,7 +411,7 @@ export class XianguTribulation {
     return hasXianguGongfa(player, gongfa);
   }
 
-  _tryRevive(player) {
+  async _tryRevive(e, player) {
     const M = this._M(player);
 
     // 1. 免死效果（真凰/万化圣诀）
@@ -423,9 +430,18 @@ export class XianguTribulation {
 
     // 2. 生命本源 + 复活功法
     player.生命本源 = player.生命本源 ?? 100;
-    const reviveGongfa = REVIVE_GONGFA.find((g) => this._hasGongfa(player, g));
+    let candidates = getAvailableRevivalGongfas(player, REVIVE_GONGFA)
+      .filter((g) => this._hasGongfa(player, g));
+    if (getTribulationRevivalMode(player) === '手动' && candidates.length) {
+      const selected = await requestManualRevivalChoice(e, this._playerId, candidates);
+      candidates = selected ? [selected] : [];
+    }
+    const reviveGongfa = candidates[0];
     if (player.生命本源 >= 50 && reviveGongfa) {
       player.生命本源 -= 50;
+      player.功法 ??= {};
+      player.功法[reviveGongfa] ??= {};
+      player.功法[reviveGongfa].冷却回合 = REVIVAL_GONGFA_CD[reviveGongfa];
       this.revived = true;
       switch (reviveGongfa) {
         case '者字秘':
@@ -477,7 +493,7 @@ export class XianguTribulation {
   }
 
   // ============ 一道劫：常规防御 → 已激活功法被动 → 致死复活并避开本劫 ============
-  _dealWave(player, frac, wave, note, opts = {}) {
+  async _dealWave(e, player, frac, wave, note, opts = {}) {
     const M = this._M(player);
     // 上位冲关与遮天一致，使用理论攻击作为每道劫的伤害基准。
     const attackBase = this._tribulationPower?.attack || M;
@@ -517,10 +533,10 @@ export class XianguTribulation {
 
     const gongfaMsgs = [];
     const gongfaActive = this.revived;
-    const settlement = settleXianguWaveDamage({
+    const settlement = await settleXianguWaveDamage({
       player,
       bodyDamage: defendedDamage,
-      tryRevive: () => this._tryRevive(player),
+      tryRevive: () => this._tryRevive(e, player),
       gongfaActive,
       applyGongfaReduction: () => this._gongfaReduce(player, base, defendedDamage, gongfaMsgs),
     });
@@ -584,8 +600,9 @@ export class XianguTribulation {
 
     // 每道劫独立推播：与遮天 `await broadcastToAll + battleLog=[] + sleep` 同构
     for (let i = 0; i < waves.length; i++) {
+      cooldownRevivalGongfas(player);
       const wave = (opts.waveOffset || 0) + i + 1;
-      const r = this._dealWave(player, waves[i].frac, wave, waves[i].note, {
+      const r = await this._dealWave(e, player, waves[i].frac, wave, waves[i].note, {
         ...opts,
         finalWave: i === waves.length - 1,
       });
@@ -617,6 +634,7 @@ export class XianguTribulation {
 
   async _run(e, player, ctx = {}) {
     this._horrorMultiplier = 1;
+    this._playerId = String(ctx.playerId || player.id || e.user_id || '').replace('qg_', '');
     this._equipment = ctx.equipment || {};
     const name = player.名号 || '修士';
     const successRate = this.calcSuccessRate(ctx.completed, ctx.daoyun);

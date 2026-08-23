@@ -3755,6 +3755,7 @@ async  fate_up(e) {
 
   // 开始双劫渡仙
   e.reply(`≡≡≡ 无妄真劫启 ≡≡≡\n${player.名号}即将面对双重劫难：天雷淬体！元神化真！`);
+    delete player._命格复活已判;
     player.dj =1;
     await Write_player(usr_qq, player);
   // 进入雷劫函数
