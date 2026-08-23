@@ -1,4 +1,4 @@
-import { plugin, data } from '../../api/api.js';
+import { plugin } from '../../api/api.js';
 import { 
     Read_player, 
     Write_player, 
@@ -27,7 +27,8 @@ const PROJECTION_WORLDS = {
   '魔卡少女樱': {
     name: '魔卡少女樱',
     difficulty: 2,
-    minLevelName: '筑基期',
+    minLevelId: 43,
+    minLevelName: '天仙',
     entryText: [
       '【诸天镜·友枝町】',
       '你睁开眼，发现自己站在友枝町的樱花树下。',
@@ -117,7 +118,8 @@ const PROJECTION_WORLDS = {
   '魔法少女小圆': {
     name: '魔法少女小圆',
     difficulty: 3,
-    minLevelName: '金丹期',
+    minLevelId: 46,
+    minLevelName: '金仙',
     entryText: [
       '【诸天镜·见泷原】',
       '铺天盖地的绝望感扑面而来——你投影到了一座诡异的城市。',
@@ -188,7 +190,8 @@ const PROJECTION_WORLDS = {
   '星穹铁道·匹诺康尼': {
     name: '星穹铁道·匹诺康尼',
     difficulty: 4,
-    minLevelName: '元婴期',
+    minLevelId: 47,
+    minLevelName: '大罗金仙',
     entryText: [
       '【诸天镜·匹诺康尼】',
       '你坠入一片流光溢彩的梦境之中——匹诺康尼，永不停歇的盛会。',
@@ -240,7 +243,8 @@ const PROJECTION_WORLDS = {
   '魔女之旅': {
     name: '魔女之旅',
     difficulty: 3,
-    minLevelName: '金丹期',
+    minLevelId: 46,
+    minLevelName: '金仙',
     entryText: [
       '【诸天镜·旅途中的国度】',
       '你投影到了一个奇妙的异世界。脚下是一条蜿蜒的石板路，两旁是连绵起伏的丘陵。',
@@ -292,7 +296,8 @@ const PROJECTION_WORLDS = {
   '假面骑士帝骑': {
     name: '假面骑士帝骑',
     difficulty: 5,
-    minLevelName: '化神期',
+    minLevelId: 48,
+    minLevelName: '大道金仙',
     entryText: [
       '【诸天镜·崩溃的骑士世界】',
       '九个世界正在融合——天空是叠加的照片，地面交错着不同时空的残骸。',
@@ -348,7 +353,8 @@ const PROJECTION_WORLDS = {
   '剑渊古路': {
     name: '剑渊古路',
     difficulty: 6,
-    minLevelName: '合体期',
+    minLevelId: 51,
+    minLevelName: '无极仙帝',
     entryText: [
       '【诸天镜·剑渊古路】',
       '你投影到了一片被剑意充斥的荒古大地——',
@@ -400,7 +406,8 @@ const PROJECTION_WORLDS = {
   '星海归墟': {
     name: '星海归墟',
     difficulty: 7,
-    minLevelName: '大乘期',
+    minLevelId: 55,
+    minLevelName: '万界道祖',
     entryText: [
       '【诸天镜·星海归墟】',
       '你投影到了一片漆黑的虚空——不，那不是虚空，是星海。',
@@ -439,11 +446,12 @@ const PROJECTION_WORLDS = {
   '万道争锋': {
     name: '万道争锋',
     difficulty: 5,
-    minLevelName: '化神期',
+    minLevelId: 48,
+    minLevelName: '大道金仙',
     entryText: [
       '【诸天镜·万道擂台】',
       '你投影到了一座悬浮在虚空中的巨大擂台——',
-      '四面八方是无数观战者的虚影，每一个都散发着至少化神期的气息。',
+      '四面八方是无数观战者的虚影，每一个都散发着至少大道金仙层次的气息。',
       '「欢迎来到万道争锋！」一位身穿星袍的老者立于擂台中央，',
       '「这里是诸天万界最强者的竞技场——只有在这里证明自己的道，才能被称为真正的强者！」',
       '老者指了指擂台的另一端：「你的对手，来自另一个维度的修士——去，用你的道，击败他！」'
@@ -475,6 +483,21 @@ const PROJECTION_WORLDS = {
     }
   }
 };
+
+const PROJECTION_WORLD_ORDER = [
+  '魔卡少女樱',
+  '魔女之旅',
+  '魔法少女小圆',
+  '星穹铁道·匹诺康尼',
+  '假面骑士帝骑',
+  '万道争锋',
+  '剑渊古路',
+  '星海归墟',
+];
+
+function hasProjectionRealm(player, world) {
+  return Number(player?.level_id || 0) >= world.minLevelId;
+}
 
 // ========== 主类 ==========
 export class touyingzhutian extends plugin {
@@ -517,7 +540,8 @@ export class touyingzhutian extends plugin {
   async listWorlds(e) {
     if (!e.isGroup) return;
     let rows = ['【诸天镜·可投影世界】', ''];
-    for (const [key, world] of Object.entries(PROJECTION_WORLDS)) {
+    for (const worldName of PROJECTION_WORLD_ORDER) {
+      const world = PROJECTION_WORLDS[worldName];
       const stars = '★'.repeat(world.difficulty) + '☆'.repeat(10 - world.difficulty);
       rows.push(`${stars} ${world.name}  → 需求：${world.minLevelName}、${getWorldMinimumMirrorTier(world.name)}阶诸天镜`);
     }
@@ -603,21 +627,18 @@ export class touyingzhutian extends plugin {
       } else {
         // 随机选择（根据境界过滤）
         const availableWorlds = Object.values(PROJECTION_WORLDS).filter(w => {
-          const requiredLevel = data.Level_list.find(l => l.name === w.minLevelName);
-          return requiredLevel
-            && player.level_id >= requiredLevel.level_id
+          return hasProjectionRealm(player, w)
             && mirror.镜阶 >= getWorldMinimumMirrorTier(w.name);
         });
         if (availableWorlds.length === 0) {
-          e.reply('你的境界尚不足以投影诸天，至少需要筑基期。');
+          e.reply('你的境界尚不足以投影诸天，至少需要达到天仙并持有一阶诸天镜。');
           return true;
         }
         selectedWorld = availableWorlds[Math.floor(Math.random() * availableWorlds.length)];
       }
 
       // 境界检查
-      const requiredLevel = data.Level_list.find(l => l.name === selectedWorld.minLevelName);
-      if (requiredLevel && player.level_id < requiredLevel.level_id) {
+      if (!hasProjectionRealm(player, selectedWorld)) {
         e.reply(`你的境界不足！${selectedWorld.name}需要至少${selectedWorld.minLevelName}才能投影。`);
         return true;
       }
@@ -636,8 +657,7 @@ export class touyingzhutian extends plugin {
         const latestMirror = ensureZhutianMirrorSystem(latestPlayer);
         if (!latestMirror.已绑定) return { ok: false, reason: 'unbound' };
         if (latestMirror.镜阶 < requiredTier) return { ok: false, reason: 'tier' };
-        const latestRequiredLevel = data.Level_list.find(l => l.name === selectedWorld.minLevelName);
-        if (latestRequiredLevel && latestPlayer.level_id < latestRequiredLevel.level_id) {
+        if (!hasProjectionRealm(latestPlayer, selectedWorld)) {
           return { ok: false, reason: 'realm' };
         }
         const consumed = consumeMirrorEnergy(latestPlayer);

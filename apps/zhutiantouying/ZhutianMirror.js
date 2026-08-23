@@ -15,6 +15,7 @@ import {
   exploreDecadeWorld,
   exploreMitakihara,
   exploreTomoeda,
+  inspectZhutianAvatarAdvancement,
   loadZhutianAvatar,
   MITAKIHARA_LOCATIONS,
   MIRROR_REFINEMENT_REQUIREMENTS,
@@ -40,13 +41,18 @@ function getAvatarStage(player, name) {
   return Number(player.诸天化身谱?.find(item => item.name === name)?.stage) || 0;
 }
 
+function getRealmGoal(player, targetStage) {
+  const realm = inspectZhutianAvatarAdvancement(player, targetStage);
+  return `${realm.ok ? '境界已满足' : `境界：${realm.requirement.label}`}`;
+}
+
 function getSakuraGoal(player) {
   const stage = getAvatarStage(player, '木之本樱');
   const cards = player.库洛牌系统.已封印库洛牌.length;
   const skill = player.库洛牌系统.魔法熟练度;
   if (stage === 0) return '基础化身：封印之钥 + 风、翔、影';
-  if (stage === 1) return `星之杖：库洛牌${cards}/10、熟练度${skill}/50、月之审判；#小樱进阶`;
-  if (stage === 2) return `梦之杖：库洛牌${cards}/52、熟练度${skill}/200、梦之试炼；#小樱进阶`;
+  if (stage === 1) return `星之杖：库洛牌${cards}/10、熟练度${skill}/50、月之审判、${getRealmGoal(player, 2)}；#小樱进阶`;
+  if (stage === 2) return `梦之杖：库洛牌${cards}/52、熟练度${skill}/200、梦之试炼、${getRealmGoal(player, 3)}；#小樱进阶`;
   return '梦之杖已经圆满';
 }
 
@@ -54,9 +60,9 @@ function getMadokaGoal(player) {
   const stage = getAvatarStage(player, '鹿目圆');
   const hope = player.希望系统;
   if (stage === 0) return '基础化身：灵魂宝石 + 因果碎片3';
-  if (stage === 1) return `许愿者·圆：希望${hope.希望碎片}/100、拯救${hope.拯救人数}/10、助人${hope.助人次数}/10、生命本源100；#魔法少女进阶`;
-  if (stage === 2) return `希望之光·圆：希望${hope.希望碎片}/500、净化${hope.净化绝望值}/1000、因果${hope.因果律领悟}/10、生命本源250；#魔法少女进阶`;
-  if (stage === 3) return `圆神：希望${hope.希望碎片}/1000、时间线${hope.时间线干涉}/5、因果${hope.因果律领悟}/50、生命本源300；#魔法少女进阶`;
+  if (stage === 1) return `许愿者·圆：希望${hope.希望碎片}/100、拯救${hope.拯救人数}/10、助人${hope.助人次数}/10、生命本源100、${getRealmGoal(player, 2)}；#魔法少女进阶`;
+  if (stage === 2) return `希望之光·圆：希望${hope.希望碎片}/500、净化${hope.净化绝望值}/1000、因果${hope.因果律领悟}/10、生命本源250、${getRealmGoal(player, 3)}；#魔法少女进阶`;
+  if (stage === 3) return `圆神：希望${hope.希望碎片}/1000、时间线${hope.时间线干涉}/5、因果${hope.因果律领悟}/50、生命本源300、${getRealmGoal(player, 4)}；#魔法少女进阶`;
   return '圆环之理已经圆满';
 }
 
@@ -64,9 +70,9 @@ function getDecadeGoal(player) {
   const stage = getAvatarStage(player, '门矢士');
   const progress = player.诸天镜系统.世界进度.假面骑士帝骑;
   if (stage === 0) return `门矢士：帝骑驱动器 + 骑士卡片${progress.骑士卡片.length}/3`;
-  if (stage === 1) return `帝骑：集齐九位主骑卡${progress.骑士卡片.length}/9`;
-  if (stage === 2) return `帝骑·神主：神主触屏碎片${progress.神主触屏碎片}/10`;
-  if (stage === 3) return `帝骑·终极神主：巡游${progress.已巡游世界.length}/${DECADE_TOUR_WORLDS.length}后使用 #终极卡试炼 路线`;
+  if (stage === 1) return `帝骑：集齐九位主骑卡${progress.骑士卡片.length}/9、${getRealmGoal(player, 2)}`;
+  if (stage === 2) return `帝骑·神主：神主触屏碎片${progress.神主触屏碎片}/10、${getRealmGoal(player, 3)}`;
+  if (stage === 3) return `帝骑·终极神主：巡游${progress.已巡游世界.length}/${DECADE_TOUR_WORLDS.length}、${getRealmGoal(player, 4)}后使用 #终极卡试炼 路线`;
   return '终极神主已经圆满';
 }
 
@@ -368,6 +374,7 @@ export class ZhutianMirrorSystem extends plugin {
       if (result.advanced) rows.push('九位主骑之力完成共鸣，【门矢士】化身晋升第二阶段【帝骑】！');
       if (result.touchFragment) rows.push(`获得【神主触屏碎片】，当前${player.诸天镜系统.世界进度.假面骑士帝骑.神主触屏碎片}/10。`);
       if (result.godMasterUnlocked) rows.push('十枚碎片凝成神主触屏，【门矢士】化身晋升第三阶段【帝骑·神主】！');
+      if (result.realmBlocked) rows.push(`进阶积累已经满足，境界尚差：${result.realmBlocked.missing.join('；')}。进度已保留。`);
       if (result.touredWorld) rows.push(`极光帷幕展开，完成【${result.touredWorld}】巡游。`);
       if (result.crisis) rows.push('世界融合度已经达到100，下一次探索前必须使用 #最终攻击驾驭 化解危机。');
       return e.reply(rows.join('\n'));
@@ -430,6 +437,7 @@ export class ZhutianMirrorSystem extends plugin {
         if (result.reason === 'resonance') return e.reply(`强攻路线需要世界共鸣${result.required}，当前${result.current}。`);
         if (result.reason === 'deck') return e.reply('共鸣路线需要先编组三张骑士卡片。');
         if (result.reason === 'battle') return e.reply('守护路线需要先使用最终攻击驾驭化解一次世界融合危机。');
+        if (result.reason === 'realm') return e.reply(`终极神主境界尚差：${result.realmBlocked.missing.join('；')}。试炼进度已保留。`);
         if (result.reason === 'energy') return e.reply('今日镜能已经耗尽，明日会自动恢复。');
       }
       await Write_player(playerId, player);

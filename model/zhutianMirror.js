@@ -1,3 +1,5 @@
+import { getRealmAuthorityLevel } from './realmAuthority.js';
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const MIRROR_TIER_CONFIG = Object.freeze({
@@ -30,6 +32,12 @@ export const MIRROR_REFINEMENT_REQUIREMENTS = Object.freeze({
   4: { 镜尘: 450, 世界残响: 100, 位面晶核: 6, 时空锚: 1 },
   5: { 镜尘: 800, 位面晶核: 10, 时空锚: 3, 世界印记: 5 },
   6: { 镜尘: 1500, 世界印记: 7, 诸天镜心: 1 },
+});
+
+export const ZHUTIAN_AVATAR_STAGE_REQUIREMENTS = Object.freeze({
+  2: Object.freeze({ levelId: 42, levelName: '地仙', authority: 10, authorityName: '大能级', label: '地仙本体 + 大能级额外体系' }),
+  3: Object.freeze({ levelId: 46, levelName: '金仙', authority: 15, authorityName: '准帝级', label: '金仙本体 + 准帝级额外体系' }),
+  4: Object.freeze({ levelId: 50, levelName: '究极仙王', authority: 20, authorityName: '准仙帝级', label: '究极仙王本体 + 准仙帝级额外体系' }),
 });
 
 export const TOMOEDA_LOCATIONS = Object.freeze({
@@ -190,6 +198,20 @@ function addUnique(list, value) {
 function getChinaDate(now = Date.now()) {
   const timestamp = now instanceof Date ? now.getTime() : Number(now);
   return new Date(timestamp + DAY_MS / 3).toISOString().slice(0, 10);
+}
+
+export function inspectZhutianAvatarAdvancement(player, targetStage) {
+  const requirement = ZHUTIAN_AVATAR_STAGE_REQUIREMENTS[targetStage];
+  if (!requirement) return { ok: true, targetStage, requirement: null, missing: [] };
+
+  const levelId = asNonNegativeInteger(player?.level_id);
+  const authority = getRealmAuthorityLevel(player);
+  const missing = [];
+  if (levelId < requirement.levelId) missing.push(`本体境界需达到【${requirement.levelName}】`);
+  if (authority < requirement.authority) {
+    missing.push(`额外体系（秘境、仙古或花粉）至少一条需达到【${requirement.authorityName}】等效层次`);
+  }
+  return { ok: missing.length === 0, targetStage, requirement, levelId, authority, missing };
 }
 
 function upsertAvatar(player, avatar) {
@@ -645,6 +667,7 @@ function tryUnlockDecadeAvatar(player) {
   let advanced = false;
   let godMasterUnlocked = false;
   let rootChanged = false;
+  let realmBlocked = null;
 
   if (!progress.基础化身已解锁 && progress.帝骑驱动器 && progress.骑士卡片.length >= 3) {
     progress.基础化身已解锁 = true;
@@ -653,24 +676,34 @@ function tryUnlockDecadeAvatar(player) {
     unlocked = true;
   }
   if (progress.基础化身已解锁 && !progress.帝骑已解锁 && progress.骑士卡片.length === DECADE_RIDER_CARDS.length) {
-    progress.帝骑已解锁 = true;
-    upsertAvatar(player, { name: '门矢士', world: '假面骑士帝骑', stage: 2, root: DECADE_ROOT });
-    if (system.当前化身 === '门矢士' && player.灵根?.name === '门矢士') {
-      player.灵根 = clone(DECADE_ROOT);
-      rootChanged = true;
+    const realm = inspectZhutianAvatarAdvancement(player, 2);
+    if (!realm.ok) {
+      realmBlocked = realm;
+    } else {
+      progress.帝骑已解锁 = true;
+      upsertAvatar(player, { name: '门矢士', world: '假面骑士帝骑', stage: 2, root: DECADE_ROOT });
+      if (system.当前化身 === '门矢士' && player.灵根?.name === '门矢士') {
+        player.灵根 = clone(DECADE_ROOT);
+        rootChanged = true;
+      }
+      advanced = true;
     }
-    advanced = true;
   }
   if (progress.帝骑已解锁 && !progress.神主已解锁 && progress.神主触屏碎片 >= 10) {
-    progress.神主已解锁 = true;
-    upsertAvatar(player, { name: '门矢士', world: '假面骑士帝骑', stage: 3, root: DECADE_GOD_MASTER_ROOT });
-    if (system.当前化身 === '门矢士' && ['门矢士', '帝骑'].includes(player.灵根?.name)) {
-      player.灵根 = clone(DECADE_GOD_MASTER_ROOT);
-      rootChanged = true;
+    const realm = inspectZhutianAvatarAdvancement(player, 3);
+    if (!realm.ok) {
+      realmBlocked = realm;
+    } else {
+      progress.神主已解锁 = true;
+      upsertAvatar(player, { name: '门矢士', world: '假面骑士帝骑', stage: 3, root: DECADE_GOD_MASTER_ROOT });
+      if (system.当前化身 === '门矢士' && ['门矢士', '帝骑'].includes(player.灵根?.name)) {
+        player.灵根 = clone(DECADE_GOD_MASTER_ROOT);
+        rootChanged = true;
+      }
+      godMasterUnlocked = true;
     }
-    godMasterUnlocked = true;
   }
-  return { unlocked, advanced, godMasterUnlocked, rootChanged };
+  return { unlocked, advanced, godMasterUnlocked, rootChanged, realmBlocked };
 }
 
 export function setDecadeCardDeck(player, cards, { now = Date.now() } = {}) {
@@ -806,6 +839,8 @@ export function challengeUltimateCardTrial(player, route, { now = Date.now(), co
   if (route === '强攻' && progress.共鸣度 < 220) return { ok: false, reason: 'resonance', current: progress.共鸣度, required: 220, system };
   if (route === '共鸣' && progress.出战卡组.length !== 3) return { ok: false, reason: 'deck', system };
   if (route === '守护' && progress.融合危机次数 < 1) return { ok: false, reason: 'battle', system };
+  const realm = inspectZhutianAvatarAdvancement(player, 4);
+  if (!realm.ok) return { ok: false, reason: 'realm', realmBlocked: realm, system };
   if (consumeEnergy) {
     const consumed = consumeMirrorEnergy(player, 1, { now });
     if (!consumed.ok) return consumed;

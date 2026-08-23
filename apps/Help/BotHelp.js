@@ -27,7 +27,7 @@ export class BotHelp extends plugin {
           fnc: 'zhiyehelp',
         },
           {
-          reg: '^.*诸天帮助.*',
+          reg: '^.*(诸天帮助|诸天镜帮助).*',
           fnc: 'zhutianhelp',
         },
                   {

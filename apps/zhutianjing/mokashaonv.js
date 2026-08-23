@@ -3,7 +3,7 @@
 
 import { plugin } from '../../api/api.js';
 import { channel, existplayer, Read_player, Write_player } from '../../model/xiuxian.js';
-import { ensureSakuraCardSystem, syncCurrentZhutianAvatar } from '../../model/zhutianMirror.js';
+import { ensureSakuraCardSystem, inspectZhutianAvatarAdvancement, syncCurrentZhutianAvatar } from '../../model/zhutianMirror.js';
 
 function ensureClowCardSystem(player) {
   return ensureSakuraCardSystem(player);
@@ -159,16 +159,17 @@ clowCards = [
    * 进阶到星之杖形态
    */
   async advanceToStarStaff(e, player, usr_qq, allMsgs) {
-    const requiredRealm = 9; // 仙台秘境大能
+    const realm = inspectZhutianAvatarAdvancement(player, 2);
     const requiredCards = 10;
     
     // 检查境界条件
-    if (player.mijinglevel_id < requiredRealm) {
+    if (!realm.ok) {
       allMsgs.push(
         "星之杖进阶条件不足！",
         `需要满足以下所有条件：`,
         ``,
-        `境界要求：仙台秘境大能以上（当前境界：${player.mijinlevel || '未知'}）`,
+        `境界要求：${realm.requirement.label}`,
+        ...realm.missing,
         `库洛牌数量：10张（当前${player.库洛牌系统.已封印库洛牌.length}张）`,
         `通过月之审判：未完成`,
         `魔法熟练度：50（当前${player.库洛牌系统.魔法熟练度}）`,
@@ -268,16 +269,17 @@ clowCards = [
    * 进阶到梦之杖完全体
    */
   async advanceToDreamStaff(e, player, usr_qq, allMsgs) {
-    const requiredRealm = 14; // 仙台秘境准帝
+    const realm = inspectZhutianAvatarAdvancement(player, 3);
     const requiredCards = 52; // 所有库洛牌
     
     // 检查境界条件
-    if (player.mijinglevel_id < requiredRealm) {
+    if (!realm.ok) {
       allMsgs.push(
         "梦之杖进阶条件不足！",
         `需要满足以下所有条件：`,
         ``,
-        `境界要求：仙台秘境准帝以上（当前境界：${player.mijinlevel || '未知'}）`,
+        `境界要求：${realm.requirement.label}`,
+        ...realm.missing,
         `库洛牌数量：52张（当前${player.库洛牌系统.已封印库洛牌.length}张）`,
         `通过梦之试炼：未完成`,
         `魔法熟练度：200（当前${player.库洛牌系统.魔法熟练度}）`,
@@ -398,11 +400,12 @@ clowCards = [
       );
     }
     
-    if (player.mijinglevel_id < 9) {
+    const realm = inspectZhutianAvatarAdvancement(player, 2);
+    if (!realm.ok) {
       return replyTrialResult(
         e,
         false,
-        ` 境界不足！\n需要通过月之审判，需达到「仙台秘境大能」境界。`
+        `境界不足！\n${realm.missing.join('；')}。`
       );
     }
     
@@ -473,6 +476,8 @@ clowCards = [
     if (player.库洛牌系统.已封印库洛牌.length < 52) {
       return replyTrialResult(e, false, " 需收集全部52张库洛牌，才能开启最终试炼！");
     }
+    const realm = inspectZhutianAvatarAdvancement(player, 3);
+    if (!realm.ok) return replyTrialResult(e, false, `境界不足！\n${realm.missing.join('；')}。`);
     
     allMsgs.push("【梦之试炼开启】");
     allMsgs.push("你陷入深层梦境，透明卡牌在四周飞舞...");

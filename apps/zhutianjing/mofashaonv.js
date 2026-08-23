@@ -9,6 +9,7 @@ import {
 import {
   consumeMirrorEnergy,
   ensureZhutianMirrorSystem,
+  inspectZhutianAvatarAdvancement,
   syncCurrentZhutianAvatar,
 } from '../../model/zhutianMirror.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
@@ -710,16 +711,17 @@ async mofashaonvjinjie(e) {
     
     // 魔法少女 → 许愿者·圆
     if (player.灵根.type === "魔法少女") {
-        const requiredRealm = 9;
-        const realmName = "仙台秘境大能";
+        const realm = inspectZhutianAvatarAdvancement(player, 2);
+        const realmName = realm.requirement.label;
         
         // 检查境界条件
-        if (player.mijinglevel_id <= requiredRealm) {
+        if (!realm.ok) {
             return e.reply([
                 `🌸 许愿者·圆 进阶条件不足！`,
                 `需要满足以下所有条件：`,
                 ``,
-                `❌ 境界要求：${realmName}以上（当前境界：${player.mijinlevel || '未知'}）`,
+                `❌ 境界要求：${realmName}`,
+                ...realm.missing,
                 `✅ 希望碎片：100个（当前${player.希望系统.希望碎片 || 0}个）`,
                 `✅ 拯救人数：10人（当前${player.希望系统.拯救人数 || 0}人）`,
                 `✅ 助人次数：10次（当前${player.希望系统.助人次数 || 0}次）`,
@@ -793,16 +795,17 @@ async mofashaonvjinjie(e) {
     }
     // 许愿者·圆 → 希望之光·圆
     else if (player.灵根.type === "愿望化身") {
-        const requiredRealm = 14;
-        const realmName = "仙台秘境准帝";
+        const realm = inspectZhutianAvatarAdvancement(player, 3);
+        const realmName = realm.requirement.label;
         
         // 检查境界条件
-        if (player.mijinglevel_id <= requiredRealm) {
+        if (!realm.ok) {
             return e.reply([
                 `🌸 希望之光·圆 进阶条件不足！`,
                 `需要满足以下所有条件：`,
                 ``,
-                `❌ 境界要求：${realmName}以上（当前境界：${player.mijinlevel || '未知'}）`,
+                `❌ 境界要求：${realmName}`,
+                ...realm.missing,
                 `✅ 希望碎片：500个（当前${player.希望系统.希望碎片 || 0}个）`,
                 `✅ 净化绝望值：1000点（当前${player.希望系统.净化绝望值 || 0}点）`,
                 `✅ 因果律领悟：10次（当前${player.希望系统.因果律领悟 || 0}次）`,
@@ -870,16 +873,17 @@ async mofashaonvjinjie(e) {
     }
     // 希望之光·圆 → 圆神
     else if (player.灵根.type === "希望化身") {
-        const requiredRealm = 19;
-        const realmName = "仙道领域准仙帝";
+        const realm = inspectZhutianAvatarAdvancement(player, 4);
+        const realmName = realm.requirement.label;
         
         // 检查境界条件
-        if (player.mijinglevel_id <= requiredRealm) {
+        if (!realm.ok) {
             return e.reply([
                 `🌸 圆神 最终进阶条件不足！`,
                 `需要满足以下所有条件：`,
                 ``,
-                `❌ 境界要求：${realmName}以上（当前境界：${player.mijinlevel || '未知'}）`,
+                `❌ 境界要求：${realmName}`,
+                ...realm.missing,
                 `✅ 希望碎片：1000个（当前${player.希望系统.希望碎片 || 0}个）`,
                 `✅ 时间线干涉：5次（当前${player.希望系统.时间线干涉 || 0}次）`,
                 `✅ 圆环理解：50次（当前${player.希望系统.因果律领悟 || 0}次）`,

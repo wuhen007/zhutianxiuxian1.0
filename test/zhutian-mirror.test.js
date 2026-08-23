@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import YAML from 'yaml';
 import {
   addMirrorRelic,
   bindBasicZhutianMirror,
@@ -15,6 +16,7 @@ import {
   exploreDecadeWorld,
   exploreMitakihara,
   exploreTomoeda,
+  inspectZhutianAvatarAdvancement,
   loadZhutianAvatar,
   purifyMadokaSoulGem,
   recordProjectionMirrorProgress,
@@ -31,9 +33,45 @@ const NOW = Date.parse('2026-08-22T04:00:00Z');
 
 function createPlayer() {
   return {
+    level_id: 50,
+    mijinglevel_id: 20,
     灵根: { id: 1, name: '金灵根', type: '金', eff: 0.1 },
   };
 }
+
+test('异世界化身进阶同时要求本体境界与至少一条等效额外体系', () => {
+  const lowMain = createPlayer();
+  lowMain.level_id = 41;
+  assert.deepEqual(inspectZhutianAvatarAdvancement(lowMain, 2).missing, ['本体境界需达到【地仙】']);
+
+  const lowExtra = createPlayer();
+  lowExtra.mijinglevel_id = 9;
+  assert.match(inspectZhutianAvatarAdvancement(lowExtra, 2).missing[0], /额外体系/);
+
+  const xianguQualified = createPlayer();
+  xianguQualified.level_id = 46;
+  xianguQualified.mijinglevel_id = 1;
+  xianguQualified.xiangulevel_id = 14;
+  assert.equal(inspectZhutianAvatarAdvancement(xianguQualified, 3).ok, true);
+});
+
+test('终极神主境界不足时保留试炼进度与镜能', () => {
+  const player = createPlayer();
+  player.level_id = 49;
+  bindBasicZhutianMirror(player, { now: NOW });
+  player.诸天镜系统.镜阶 = 7;
+  player.诸天镜系统.镜能 = 12;
+  const progress = player.诸天镜系统.世界进度.假面骑士帝骑;
+  progress.神主已解锁 = true;
+  progress.已巡游世界 = [...DECADE_TOUR_WORLDS];
+  progress.骑士卡片 = ['空我', '亚极陀', '龙骑', 'Faiz', '剑', '响鬼', '甲斗', '电王', 'Kiva'];
+  progress.出战卡组 = ['空我', '龙骑', '剑'];
+
+  const result = challengeUltimateCardTrial(player, '共鸣', { now: NOW });
+  assert.equal(result.reason, 'realm');
+  assert.equal(progress.终极神主已解锁, false);
+  assert.equal(player.诸天镜系统.镜能, 12);
+});
 
 test('诸天镜首次绑定、重复养镜与次日镜能恢复', () => {
   const player = createPlayer();
@@ -342,6 +380,44 @@ test('诸天镜导航、阶段目标和世界专属操作均已注册', async ()
   assert.match(mirrorApp, /下一目标/);
   assert.match(sakura, /月华守护/);
   assert.match(sakura, /pitySuccess/);
+});
+
+test('诸天投影使用明确境界ID并在帮助中列出完整主流程', async () => {
+  const [projection, help, botHelp] = await Promise.all([
+    readFile(new URL('../apps/zhutiantouying/zhutiantouying.js', import.meta.url), 'utf8'),
+    readFile(new URL('../config/help/zhutianhelp.yaml', import.meta.url), 'utf8'),
+    readFile(new URL('../apps/Help/BotHelp.js', import.meta.url), 'utf8'),
+  ]);
+  const worlds = [
+    ['魔卡少女樱', 43, '天仙'], ['魔女之旅', 46, '金仙'], ['魔法少女小圆', 46, '金仙'],
+    ['星穹铁道·匹诺康尼', 47, '大罗金仙'], ['假面骑士帝骑', 48, '大道金仙'],
+    ['万道争锋', 48, '大道金仙'], ['剑渊古路', 51, '无极仙帝'], ['星海归墟', 55, '万界道祖'],
+  ];
+  for (const [name, levelId, levelName] of worlds) {
+    const start = projection.indexOf(`'${name}':`);
+    const block = projection.slice(start, projection.indexOf('entryText:', start));
+    assert.ok(start >= 0, `缺少投影世界：${name}`);
+    assert.match(block, new RegExp(`minLevelId: ${levelId}`));
+    assert.match(block, new RegExp(`minLevelName: '${levelName}'`));
+  }
+  const order = projection.slice(projection.indexOf('const PROJECTION_WORLD_ORDER'), projection.indexOf('function hasProjectionRealm'));
+  let previous = -1;
+  for (const [name] of worlds) {
+    const current = order.indexOf(`'${name}'`);
+    assert.ok(current > previous, `投影世界显示顺序错误：${name}`);
+    previous = current;
+  }
+  assert.doesNotMatch(projection, /Level_list\.find/);
+  assert.doesNotMatch(projection, /至少需要筑基期/);
+  assert.ok((projection.match(/hasProjectionRealm/g) || []).length >= 4);
+  const helpData = YAML.parse(help);
+  assert.deepEqual(helpData.slice(0, 5).map(group => group.group), [
+    '诸天镜总览', '诸天化身', '友枝町与木之本樱', '见泷原与鹿目圆', '骑士世界与帝骑',
+  ]);
+  for (const command of ['#诸天镜', '#淬炼诸天镜', '#诸天世界', '#投影诸天', '#诸天化身', '#友枝町', '#见泷原', '#骑士世界']) {
+    assert.match(help, new RegExp(command));
+  }
+  assert.match(botHelp, /诸天镜帮助/);
 });
 
 test('诸天镜相关应用模块可以完整装载', () => {
