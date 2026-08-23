@@ -2,6 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { plugin, config, data } from '../../api/api.js';
 import { __PATH, channel, existplayer, Read_player } from '../../model/xiuxian.js';
+import { findPlayerArchiveSnapshot } from '../../model/backupSnapshot.js';
+import { writeJsonAtomically } from '../../utils/atomicJson.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 /** 自动备份保留份数，超过则删除最旧的 */
 const KEEP_BACKUP_COUNT = 30;
@@ -442,11 +445,12 @@ export class BackUp extends plugin {
     const dim = dimMatch[1];
 
     // 2. 解析目标 QQ（@ 优先：CQ at 消息 > 裸 @数字）
-    let targetQQ = '';
-    const atItem = e.message?.find(item => item.type === 'at');
-    if (atItem?.qq) {
-      targetQQ = atItem.qq.toString().replace('qg_', '');
-    }
+    let targetQQ = e.at && e.at !== 'all' ? String(e.at).replace('qg_', '') : '';
+    const atItem = Array.isArray(e.message)
+      ? e.message.find(item => item?.type === 'at')
+      : null;
+    const segmentQQ = atItem?.qq ?? atItem?.data?.qq;
+    if (!targetQQ && segmentQQ) targetQQ = String(segmentQQ).replace('qg_', '');
     if (!targetQQ) {
       const atMatch = e.msg.match(/@(\d+)/);
       if (atMatch) targetQQ = atMatch[1];
@@ -511,36 +515,49 @@ export class BackUp extends plugin {
     };
 
     try {
-      // 6. 回溯前，先为该玩家做轻量回滚备份，保证可逆（不污染 #存档列表）
-      const rbDir = `${__PATH.backup}/rollback_${Date.now()}`;
-      fs.mkdirSync(`${rbDir}/player_path`, { recursive: true });
-      fs.mkdirSync(`${rbDir}/najie_path`, { recursive: true });
-      const curPlayer = `${__PATH.player_path}/${targetQQ}.json`;
-      const curNajie = `${__PATH.najie_path}/${targetQQ}.json`;
-      if (fs.existsSync(curPlayer)) fs.copyFileSync(curPlayer, `${rbDir}/player_path/${targetQQ}.json`);
-      if (fs.existsSync(curNajie)) fs.copyFileSync(curNajie, `${rbDir}/najie_path/${targetQQ}.json`);
-
-      // 仅保留最近 5 份回滚备份，避免无限增长
-      const rbDirs = fs.readdirSync(__PATH.backup)
-        .filter(n => n.startsWith('rollback_'))
-        .sort();
-      while (rbDirs.length > 5) {
-        const old = rbDirs.shift();
-        fs.rmSync(`${__PATH.backup}/${old}`, { recursive: true, force: true });
-      }
-
-      // 7. 单玩家·单维度覆盖恢复
-      const restored = [];
-      for (const key of keys) {
-        const src = `${backUpPath}/${key}/${targetQQ}.json`;
-        if (!fs.existsSync(src)) {
-          e.reply(`该玩家在此备份点无【${labelMap[key]}】存档，已跳过`);
-          continue;
+      const restored = await withPlayerMutationLock(targetQQ, async () => {
+        const snapshots = [];
+        for (const key of keys) {
+          const src = findPlayerArchiveSnapshot({
+            backupPath: backUpPath,
+            dataPath: __PATH.data_path,
+            liveDirectory: __PATH[key],
+            legacyKey: key,
+            fileName: `${targetQQ}.json`,
+          });
+          if (!src) {
+            await e.reply(`该玩家在此备份点无【${labelMap[key]}】存档，已跳过`);
+            continue;
+          }
+          try {
+            snapshots.push({ key, value: JSON.parse(fs.readFileSync(src, 'utf8')) });
+          } catch (error) {
+            throw new Error(`备份中的【${labelMap[key]}】JSON 已损坏：${error.message}`);
+          }
         }
-        const dst = `${__PATH[key]}/${targetQQ}.json`;
-        fs.copyFileSync(src, dst);
-        restored.push(labelMap[key]);
-      }
+        if (!snapshots.length) return [];
+
+        // 回溯前保留当前玩家两份数据，且不污染正式存档列表。
+        const rbDir = path.join(__PATH.backup, `rollback_${Date.now()}`);
+        fs.mkdirSync(path.join(rbDir, 'player_path'), { recursive: true });
+        fs.mkdirSync(path.join(rbDir, 'najie_path'), { recursive: true });
+        const curPlayer = path.join(__PATH.player_path, `${targetQQ}.json`);
+        const curNajie = path.join(__PATH.najie_path, `${targetQQ}.json`);
+        if (fs.existsSync(curPlayer)) fs.copyFileSync(curPlayer, path.join(rbDir, 'player_path', `${targetQQ}.json`));
+        if (fs.existsSync(curNajie)) fs.copyFileSync(curNajie, path.join(rbDir, 'najie_path', `${targetQQ}.json`));
+
+        const rbDirs = fs.readdirSync(__PATH.backup)
+          .filter(name => name.startsWith('rollback_'))
+          .sort();
+        while (rbDirs.length > 5) {
+          fs.rmSync(path.join(__PATH.backup, rbDirs.shift()), { recursive: true, force: true });
+        }
+
+        for (const snapshot of snapshots) {
+          writeJsonAtomically(path.join(__PATH[snapshot.key], `${targetQQ}.json`), snapshot.value);
+        }
+        return snapshots.map(snapshot => labelMap[snapshot.key]);
+      });
 
       if (restored.length === 0) {
         e.reply('回溯已完成，但没有任何维度被恢复（目标备份点不含该玩家对应数据）');
