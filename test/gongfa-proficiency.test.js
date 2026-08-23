@@ -16,11 +16,14 @@ import {
   getJieziExhaustionRounds,
   getLinzDurationRounds,
   getMijueTriggerChance,
+  getNumberSecretConfig,
+  getNumberSecretTriggerChance,
   getReviveRecoveryRatio,
   getVitalityRecoveryRate,
   getWudaoGongfaReduction,
   getZheziReviveConfig,
   rollLinzRealmLevel,
+  scaleDaoBodyStats,
   tryLearnTianjiaoGongfa,
   tryVitalityRecovery,
   getYiqihuaConfig,
@@ -194,6 +197,26 @@ test('一气化三清按熟练度配置道身数量、全属性倍率和存续�
   assert.deepEqual(getYiqihuaConfig({ ...player, 功法熟练度: { 一气化三清: 1000 } }), {
     count: 2, ratio: 0.9, duration: -1,
   });
+});
+
+test('数字秘固定5%触发并与一气化三清形成三道身组合', () => {
+  assert.equal(getNumberSecretTriggerChance({ 学习的功法: [] }), 0);
+  assert.equal(getNumberSecretTriggerChance({ 学习的功法: ['数字秘'] }), 0.05);
+  assert.deepEqual(getNumberSecretConfig({ 学习的功法: ['数字秘'] }), {
+    count: 2, ratio: 0.55, duration: 2, combo: false,
+  });
+  assert.deepEqual(getNumberSecretConfig({ 学习的功法: ['数字秘', '一气化三清'] }), {
+    count: 3, ratio: 0.65, duration: 3, combo: true,
+  });
+  const body = scaleDaoBodyStats({
+    攻击: 100, 防御: 80, 血量上限: 1000, 当前血量: 500, 速度: 200,
+    暴击率: 0.2, 暴击伤害: 2,
+  }, 0.55);
+  assert.deepEqual({ ...body, 暴击率: undefined }, {
+    攻击: 55, 防御: 44, 血量上限: 550, 当前血量: 275, 速度: 110,
+    暴击率: undefined, 暴击伤害: 1.55,
+  });
+  assert.ok(Math.abs(body.暴击率 - 0.11) < Number.EPSILON);
 });
 
 test('特殊秘法触发概率纳入熟练度倍率', () => {

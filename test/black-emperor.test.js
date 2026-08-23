@@ -156,3 +156,16 @@ test('源石场接引山川龙脉可增强困龙阵与无始杀阵', () => {
   assert.equal(attacker.攻击, 220);
   assert.equal(attacker.暴击率, 0.35);
 });
+
+test('组字秘额外增强战斗阵法并记录本场功法触发', () => {
+  const player = {
+    学习的功法: ['组字秘'],
+    自刻PVE阵纹: [{ 名称: '山河困龙阵', 剩余次数: 1 }],
+  };
+  const enemy = { 攻击: 100, 防御: 100 };
+  const result = consumeBlackEmperorBattleFormation(player, { 攻击: 1 }, enemy);
+  assert.equal(result.formationBoost, true);
+  assert.equal(enemy.攻击, 70);
+  assert.equal(enemy.防御, 40);
+  assert.deepEqual(player._本场触发功法, ['组字秘']);
+});

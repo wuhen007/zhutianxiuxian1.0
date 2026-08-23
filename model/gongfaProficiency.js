@@ -4,6 +4,7 @@ export const GONGFA_PROFICIENCY_MAX = 1000;
 export const GONGFA_DAILY_GAIN_MAX = 20;
 export const DOUZI_MIMIC_BASE_CHANCE = 0.02;
 export const DOUZI_MIMIC_MAX_CHANCE = 0.1;
+export const NUMBER_SECRET_TRIGGER_CHANCE = 0.05;
 
 const ZHEZI_HEAL_RATES = Object.freeze([0.1, 0.1, 0.15, 0.2, 0.25, 0.35]);
 const BUMIE_HEAL_RATES = Object.freeze([0.12, 0.12, 0.2, 0.3, 0.4, 0.55]);
@@ -199,6 +200,38 @@ export function getYiqihuaTriggerChance(player, random = Math.random) {
     0.9,
     random
   );
+}
+
+export function getNumberSecretTriggerChance(player) {
+  return hasLearnedGongfa(player, '数字秘') ? NUMBER_SECRET_TRIGGER_CHANCE : 0;
+}
+
+export function getNumberSecretConfig(player) {
+  const combo = hasLearnedGongfa(player, '一气化三清');
+  return combo
+    ? { count: 3, ratio: 0.65, duration: 3, combo: true }
+    : { count: 2, ratio: 0.55, duration: 2, combo: false };
+}
+
+export function scaleDaoBodyStats(body, ratio) {
+  const scale = clamp(ratio, 0, 1);
+  const integerFields = ['攻击', '防御', '血量上限', '当前血量', '速度', '元神', '元神上限', '神识'];
+  const ratioFields = [
+    '暴击率', '法球倍率', '吸血率', '闪避率', '穿透',
+    '元神伤害加成', '元神伤害减免', '神通伤害加成', '神通伤害减免',
+    '近战伤害加成', '近战伤害减免', '全伤害类型加成', '全类型减免',
+    '治疗效果加成', '每回合恢复', '血上限加成', '减伤',
+  ];
+  for (const field of integerFields) {
+    if (Number.isFinite(Number(body?.[field]))) body[field] = Math.trunc(body[field] * scale);
+  }
+  for (const field of ratioFields) {
+    if (Number.isFinite(Number(body?.[field]))) body[field] *= scale;
+  }
+  if (Number.isFinite(Number(body?.暴击伤害))) {
+    body.暴击伤害 = 1 + Math.max(0, body.暴击伤害 - 1) * scale;
+  }
+  return body;
 }
 
 export function getGongfaCombatMultiplier(player, skill) {

@@ -69,6 +69,8 @@ import {
   getGongfaProficiencyProfile,
   getGongfaTriggerChance,
   getMijueTriggerChance,
+  getNumberSecretConfig,
+  getNumberSecretTriggerChance,
   getJieziDurationRounds,
   getJieziExhaustionRounds,
   getLinzDurationRounds,
@@ -80,6 +82,7 @@ import {
   recordGongfaCombatTrigger,
   resolveGongfaCombatSkill,
   rollLinzRealmLevel,
+  scaleDaoBodyStats,
   tryVitalityRecovery,
 } from './gongfaProficiency.js';
 import {
@@ -120,7 +123,7 @@ import {
   hasCoordinate,
   hasEngravedCoordinate,
 } from './weimianTravel.js';
-import { calculateEquippedStats, getEquipmentAllAttributeMultiplier } from './equipmentStats.js';
+import { calculateEquippedStats, calculateEquipmentSetBonuses } from './equipmentStats.js';
 import {
   applyRelicBattleOpening,
   applyRelicEffectsToPlayer,
@@ -1354,116 +1357,10 @@ export async function Write_equipment(usr_qq, equipment) {
   player.暴击伤害 += getPetAbilityBonus(player.仙宠, '暴伤');
 
   // ===== 阶段5：套装效果（增益相加，不再乘法叠加） =====
-  let 套装增益 = { 攻: 0, 防: 0, 血: 0 };
-  // 灭仙套
-  if (equipment.武器.name == "灭仙剑" && equipment.法宝.name == "灭仙符" && equipment.护具.name == "灭仙衣" && player.魔道值 > 999 && player.灵根.type == "魔头") {
-    套装增益.攻 += 0.15;
-  }
-  // 诛仙套
-  if (equipment.武器.name == "诛仙枪" && equipment.法宝.name == "诛仙花" && equipment.护具.name == "诛仙甲" && player.魔道值 > 999 && player.灵根.type == "魔头") {
-    套装增益.攻 += 0.05;
-    套装增益.血 += 0.2;
-  }
-  // 光明套
-  if (equipment.武器.name == "光明剑" && equipment.法宝.name == "光明符" && equipment.护具.name == "光明衣" && player.魔道值 < 1 && player.灵根.type == "转生") {
-    套装增益.攻 += 0.15;
-  }
-  // 神月套
-  if (equipment.武器.name == "神月剑" && equipment.法宝.name == "神日花" && equipment.护具.name == "神星甲" && player.魔道值 < 1 && player.灵根.type == "转生") {
-    套装增益.攻 += 0.05;
-    套装增益.血 += 0.2;
-  }
-  // 武祖套
-  if (equipment.武器.name == "【武祖】万仙武极天" && equipment.法宝.name == "【神命】无法无天" && equipment.护具.name == "【如梦】道祖的加护" && player.魔道值 < 1 && player.灵根.type == "命运") {
-    套装增益.攻 += 2; 套装增益.血 += 2; 套装增益.防 += 2;
-  }
-  // 邪神套
-  if (equipment.武器.name == "【邪神】斩仙灭神剑" && equipment.法宝.name == "【邪神】魔渊的凝视" && equipment.护具.name == "【邪神】冥王真祖甲" && player.魔道值 > 9999 && player.灵根.type == "天魔") {
-    套装增益.攻 += 3; 套装增益.血 += 1; 套装增益.防 += 1.5;
-  }
-  // 终焉神魔套
-  if (equipment.武器.name == "【终焉】诸神黄昏" && equipment.法宝.name == "【终焉】万劫归墟轮" && equipment.护具.name == "【终焉】神魔葬天衣" && player.灵根.name == "终焉神魔体") {
-    套装增益.攻 += 4; 套装增益.血 += 4; 套装增益.防 += 3;
-  }
-  // 万化天魔套；万灵魔幡的成长效果在战斗开场独立结算
-  if (equipment.武器.name == "【万化】万相天魔刃" && equipment.法宝.name == "【万化】万灵魔幡" && equipment.护具.name == "【万化】无相魔神袍" && player.灵根.name == "无相·万化天魔体") {
-    套装增益.攻 += 3.5; 套装增益.血 += 3.5; 套装增益.防 += 2.5;
-  }
-  // 彼岸命运神道套
-  if (equipment.武器.name == "【彼岸】万古皆空·命运枪" && equipment.法宝.name == "【彼岸】诸天命运轮" && equipment.护具.name == "【彼岸】万劫不坠天衣" && player.灵根.name == "彼岸·命运神道体") {
-    套装增益.攻 += 5; 套装增益.血 += 5; 套装增益.防 += 4;
-  }
-  // 光阴套（命运）
-  if (equipment.武器.name == "【光阴】天道之剑" && equipment.法宝.name == "【光阴】命运之心" && equipment.护具.name == "【光阴】主宰之甲" && player.灵根.type == "命运") {
-    套装增益.攻 += 5; 套装增益.血 += 5; 套装增益.防 += 5;
-  }
-  // 光阴套（天魔）
-  if (equipment.武器.name == "【光阴】天道之剑" && equipment.法宝.name == "【光阴】命运之心" && equipment.护具.name == "【光阴】主宰之甲" && player.灵根.type == "天魔") {
-    套装增益.攻 += 6; 套装增益.血 += 4; 套装增益.防 += 5;
-  }
-  // 超维·破限剑（命运，兼容旧存档名）
-  if (["【超维】破限剑", "【超维】天帝剑"].includes(equipment.武器.name) && player.灵根.type == "命运") {
-    套装增益.攻 += 9; 套装增益.血 += 7; 套装增益.防 += 7;
-  }
-  // 超维·多元星盘（命运）
-  if (equipment.法宝.name == "【超维】多元星盘" && player.灵根.type == "命运") {
-    套装增益.攻 += 6; 套装增益.血 += 9; 套装增益.防 += 4;
-  }
-  // 超维·元初之甲（命运，兼容旧存档名）
-  if (["【超维】元初之甲", "【超维】主帝神甲"].includes(equipment.护具.name) && player.灵根.type == "命运") {
-    套装增益.攻 += 4; 套装增益.血 += 4; 套装增益.防 += 9;
-  }
-  // 超维·破限剑（天魔，兼容旧存档名）
-  if (["【超维】破限剑", "【超维】天帝剑"].includes(equipment.武器.name) && player.灵根.type == "天魔") {
-    套装增益.攻 += 14; 套装增益.血 += 7; 套装增益.防 += 7;
-  }
-  // 超维·多元星盘（天魔）
-  if (equipment.法宝.name == "【超维】多元星盘" && player.灵根.type == "天魔") {
-    套装增益.攻 += 6; 套装增益.血 += 9; 套装增益.防 += 4;
-  }
-  // 超维·元初之甲（天魔，兼容旧存档名）
-  if (["【超维】元初之甲", "【超维】主帝神甲"].includes(equipment.护具.name) && player.灵根.type == "天魔") {
-    套装增益.攻 += 4; 套装增益.血 += 4; 套装增益.防 += 9;
-  }
-  // 极道帝兵·万物母气鼎
-  if (equipment.武器.name == "【极道帝兵】万物母气鼎" && player.灵根.type == "大成圣体") {
-    套装增益.攻 += 14; 套装增益.血 += 4; 套装增益.防 += 4;
-  }
-  // 仙帝器·大罗仙剑（准仙帝+）
-  if (equipment.武器.name == "仙帝器·大罗仙剑" && player.mijinglevel_id >= 20) {
-    套装增益.攻 += 16.5; 套装增益.血 += 9; 套装增益.防 += 9;
-  }
-  // 荒剑（仙帝+）
-  if (equipment.武器.name == "荒剑" && player.mijinglevel_id >= 21) {
-    套装增益.攻 += 19; 套装增益.血 += 9; 套装增益.防 += 9;
-  }
-  // 天帝鼎（仙帝+）
-  if (equipment.武器.name == "天帝鼎" && player.mijinglevel_id >= 21) {
-    套装增益.攻 += 19; 套装增益.血 += 9; 套装增益.防 += 9;
-  }
-
-  // 祭道甲胄（仙帝+）
-  if (equipment.护具.name == "祭道甲胄" && player.mijinglevel_id >= 21) {
-    套装增益.攻 += 14; 套装增益.血 += 19; 套装增益.防 += 34;
-  }
-  // 雷池（仙帝+）
-  if (equipment.法宝.name == "雷池" && player.mijinglevel_id >= 21) {
-    套装增益.攻 += 19; 套装增益.血 += 19; 套装增益.防 += 19;
-  }
-  // 大罗剑胎会与至尊体系列共鸣；倍率字段保存在装备本身，便于后续平衡调整。
-  if (equipment.武器.name === '大罗剑胎') {
-    const multiplier = getEquipmentAllAttributeMultiplier(player, equipment.武器);
-    const bonus = Math.max(0, multiplier - 1);
-    套装增益.攻 += bonus;
-    套装增益.防 += bonus;
-    套装增益.血 += bonus;
-  }
-  if (daoTreasureEquipped) {
-    const multiplier = Number(equipment.至宝.全属性倍率加成) || DAO_TREASURE_ALL_ATTRIBUTE_BONUS;
-    套装增益.攻 += multiplier;
-    套装增益.防 += multiplier;
-    套装增益.血 += multiplier;
-  }
+  const 套装增益 = calculateEquipmentSetBonuses(player, equipment, {
+    daoTreasureEquipped,
+    daoTreasureAllAttributeBonus: DAO_TREASURE_ALL_ATTRIBUTE_BONUS,
+  });
   // 统一应用套装增益（增益相加，不再乘法叠加）
   player.攻击 = Math.trunc(player.攻击 * (1 + 套装增益.攻));
   player.防御 = Math.trunc(player.防御 * (1 + 套装增益.防));
@@ -9887,52 +9784,50 @@ msg.push(bSpeedMsg);
             }
           }
         }
-        // 一气化三清：每方一局仅能触发一次，按熟练度生成道身。
-        if (attacker.学习的功法?.includes("一气化三清")) {
+        // 数字秘与一气化三清共用一组道身席位，每方每局只成功召唤一次。
+        if (attacker.学习的功法?.includes("数字秘") || attacker.学习的功法?.includes("一气化三清")) {
           const isA = attacker === A_player;
           const isTriggered = isA ? A_yiqihua_triggered : B_yiqihua_triggered;
-          const config = getYiqihuaConfig(attacker);
-          if (!isTriggered && Math.random() < getYiqihuaTriggerChance(attacker)) {
-            if (isA) A_yiqihua_triggered = true;
-            else B_yiqihua_triggered = true;
-            recordGongfaCombatTrigger(attacker, '一气化三清');
+          if (!isTriggered) {
+            const numberSecretTriggered = attacker.学习的功法?.includes("数字秘")
+              && Math.random() < getNumberSecretTriggerChance(attacker);
+            const yiqihuaTriggered = !numberSecretTriggered
+              && attacker.学习的功法?.includes("一气化三清")
+              && Math.random() < getYiqihuaTriggerChance(attacker);
+            if (numberSecretTriggered || yiqihuaTriggered) {
+              if (isA) A_yiqihua_triggered = true;
+              else B_yiqihua_triggered = true;
+              const config = numberSecretTriggered
+                ? getNumberSecretConfig(attacker)
+                : getYiqihuaConfig(attacker);
+              recordGongfaCombatTrigger(attacker, numberSecretTriggered ? '数字秘' : '一气化三清');
+              if (numberSecretTriggered && config.combo) recordGongfaCombatTrigger(attacker, '一气化三清');
 
-            const tahuaEntities = isA ? A_tahua_entities : B_tahua_entities;
-            const integerFields = ['攻击', '防御', '血量上限', '当前血量', '速度', '元神', '元神上限', '神识'];
-            const ratioFields = [
-              '暴击率', '法球倍率', '吸血率', '闪避率', '穿透',
-              '元神伤害加成', '元神伤害减免', '神通伤害加成', '神通伤害减免',
-              '近战伤害加成', '近战伤害减免', '全伤害类型加成', '全类型减免',
-              '治疗效果加成', '每回合恢复', '血上限加成', '减伤',
-            ];
-            for (let index = 0; index < config.count; index++) {
-              const entity = JSON.parse(JSON.stringify(attacker));
-              entity.名号 = `${attacker.名号}·道身${config.count > 1 ? `(${index + 1})` : ''}`;
-              for (const field of integerFields) {
-                if (Number.isFinite(Number(entity[field]))) entity[field] = Math.trunc(entity[field] * config.ratio);
+              const tahuaEntities = isA ? A_tahua_entities : B_tahua_entities;
+              for (let index = 0; index < config.count; index++) {
+                const entity = JSON.parse(JSON.stringify(attacker));
+                entity.名号 = `${attacker.名号}·道身${config.count > 1 ? `(${index + 1})` : ''}`;
+                scaleDaoBodyStats(entity, config.ratio);
+                entity.血量上限 = Math.max(1, entity.血量上限 || 1);
+                entity.当前血量 = entity.血量上限;
+                entity._tahua_type = "yiqihua";
+                entity._tahua_duration = config.duration;
+                entity._tahua_master = isA ? "A" : "B";
+                entity.avatarSkill = null;
+                entity.皆字秘触发 = false;
+                delete entity._皆字秘倍率;
+                delete entity._皆字秘力竭;
+                delete entity._临字秘加成倍率;
+                delete entity._临字秘压制比例;
+                tahuaEntities.push(entity);
               }
-              for (const field of ratioFields) {
-                if (Number.isFinite(Number(entity[field]))) entity[field] *= config.ratio;
-              }
-              if (Number.isFinite(Number(entity.暴击伤害))) {
-                entity.暴击伤害 = 1 + Math.max(0, entity.暴击伤害 - 1) * config.ratio;
-              }
-              entity.血量上限 = Math.max(1, entity.血量上限 || 1);
-              entity.当前血量 = entity.血量上限;
-              entity._tahua_type = "yiqihua";
-              entity._tahua_duration = config.duration;
-              entity._tahua_master = isA ? "A" : "B";
-              entity.avatarSkill = null;
-              entity.皆字秘触发 = false;
-              delete entity._皆字秘倍率;
-              delete entity._皆字秘力竭;
-              delete entity._临字秘加成倍率;
-              delete entity._临字秘压制比例;
-              tahuaEntities.push(entity);
+
+              const durationText = config.duration < 0 ? '永驻战场，除非被击杀' : `可存续${config.duration}回合`;
+              const skillName = numberSecretTriggered
+                ? config.combo ? '数字秘·一气化三清' : '数字秘'
+                : '一气化三清';
+              msg.push(`${attacker.名号}施展「${skillName}」，凝聚${config.count}道道身（全属性含速度${Math.round(config.ratio * 100)}%），${durationText}！`);
             }
-
-            const durationText = config.duration < 0 ? '永驻战场，除非被击杀' : `可存续${config.duration}回合`;
-            msg.push(`${attacker.名号}施展「一气化三清」，凝聚${config.count}道道身（全属性${Math.round(config.ratio * 100)}%），${durationText}！`);
           }
         }
       }
@@ -11248,32 +11143,25 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   }
 
   function summonTeamYiqihua(attacker) {
-    if (attacker?._yiqihua_entity || attacker?._yiqihua_triggered || !attacker.学习的功法?.includes('一气化三清')) return [];
-    if (Math.random() >= getYiqihuaTriggerChance(attacker)) return [];
+    if (attacker?._yiqihua_entity || attacker?._yiqihua_triggered) return [];
+    const numberSecretTriggered = attacker.学习的功法?.includes('数字秘')
+      && Math.random() < getNumberSecretTriggerChance(attacker);
+    const yiqihuaTriggered = !numberSecretTriggered
+      && attacker.学习的功法?.includes('一气化三清')
+      && Math.random() < getYiqihuaTriggerChance(attacker);
+    if (!numberSecretTriggered && !yiqihuaTriggered) return [];
 
     attacker._yiqihua_triggered = true;
-    recordGongfaCombatTrigger(attacker, '一气化三清');
-    const config = getYiqihuaConfig(attacker);
+    const config = numberSecretTriggered
+      ? getNumberSecretConfig(attacker)
+      : getYiqihuaConfig(attacker);
+    recordGongfaCombatTrigger(attacker, numberSecretTriggered ? '数字秘' : '一气化三清');
+    if (numberSecretTriggered && config.combo) recordGongfaCombatTrigger(attacker, '一气化三清');
     const entities = attacker._team === 'A' ? A_yiqihua_entities : B_yiqihua_entities;
-    const integerFields = ['攻击', '防御', '血量上限', '当前血量', '速度', '元神', '元神上限', '神识'];
-    const ratioFields = [
-      '暴击率', '法球倍率', '吸血率', '闪避率', '穿透',
-      '元神伤害加成', '元神伤害减免', '神通伤害加成', '神通伤害减免',
-      '近战伤害加成', '近战伤害减免', '全伤害类型加成', '全类型减免',
-      '治疗效果加成', '每回合恢复', '血上限加成', '减伤',
-    ];
     for (let index = 0; index < config.count; index++) {
       const entity = JSON.parse(JSON.stringify(attacker));
       entity.名号 = `${attacker.名号}·道身${config.count > 1 ? `(${index + 1})` : ''}`;
-      for (const field of integerFields) {
-        if (Number.isFinite(Number(entity[field]))) entity[field] = Math.trunc(entity[field] * config.ratio);
-      }
-      for (const field of ratioFields) {
-        if (Number.isFinite(Number(entity[field]))) entity[field] *= config.ratio;
-      }
-      if (Number.isFinite(Number(entity.暴击伤害))) {
-        entity.暴击伤害 = 1 + Math.max(0, entity.暴击伤害 - 1) * config.ratio;
-      }
+      scaleDaoBodyStats(entity, config.ratio);
       entity.血量上限 = Math.max(1, entity.血量上限 || 1);
       entity.当前血量 = entity.血量上限;
       entity._yiqihua_entity = true;
@@ -11287,7 +11175,10 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       entities.push(entity);
     }
     const durationText = config.duration < 0 ? '永驻战场，除非被击杀' : `可存续${config.duration}回合`;
-    msg.push(`${attacker.名号}施展「一气化三清」，凝聚${config.count}道道身（全属性${Math.round(config.ratio * 100)}%），${durationText}！`);
+    const skillName = numberSecretTriggered
+      ? config.combo ? '数字秘·一气化三清' : '数字秘'
+      : '一气化三清';
+    msg.push(`${attacker.名号}施展「${skillName}」，凝聚${config.count}道道身（全属性含速度${Math.round(config.ratio * 100)}%），${durationText}！`);
     return entities.slice(-config.count);
   }
 

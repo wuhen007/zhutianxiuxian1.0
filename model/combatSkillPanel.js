@@ -7,6 +7,8 @@ import {
   getJieziExhaustionRounds,
   getLearnedGongfaNames,
   getMijueTriggerChance,
+  getNumberSecretConfig,
+  getNumberSecretTriggerChance,
   getReviveRecoveryRatio,
   getVitalityRecoveryRate,
   getYiqihuaConfig,
@@ -177,11 +179,19 @@ function buildSection(player, pools, loadout, definition) {
 
 function buildSpecialSection(player) {
   const learned = new Set(getLearnedGongfaNames(player));
-  const names = ['一气化三清', '皆字秘', '临字秘'].filter(name => learned.has(name));
+  const names = ['数字秘', '一气化三清', '皆字秘', '临字秘', '组字秘'].filter(name => learned.has(name));
   const items = names.map((name, index) => {
     const profile = getGongfaProficiencyProfile(player, name);
     let trigger;
-    if (name === '一气化三清') {
+    if (name === '数字秘') {
+      const config = getNumberSecretConfig(player);
+      trigger = {
+        when: '行动后判定（每局成功1次）',
+        chance: percent(getNumberSecretTriggerChance(player), 2),
+        effect: `化出${config.count}道道身 · 全属性含速度${percent(config.ratio)} · 存续${config.duration}回合${config.combo ? ' · 已与一气化三清共鸣' : ''}`,
+        multiplier: `道身 ${multiplier(config.ratio)}`,
+      };
+    } else if (name === '一气化三清') {
       const config = getYiqihuaConfig(player);
       const duration = config.duration < 0 ? '永驻，直至被击杀' : `存续${config.duration}回合`;
       trigger = {
@@ -200,6 +210,13 @@ function buildSpecialSection(player) {
           ? `攻击、防御提升至10倍，持续${duration}回合；结束后力竭${exhaustion}回合（攻防-30%）`
           : `攻击、防御提升至10倍，持续${duration}回合；结束后无力竭`,
         multiplier: '攻防 x10.00',
+      };
+    } else if (name === '组字秘') {
+      trigger = {
+        when: 'PVE战斗阵法激活时',
+        chance: '100%',
+        effect: '阵法数值额外增强15%；山河困龙阵进一步削弱敌方攻防，无始杀阵同步增强杀伐加持',
+        multiplier: '阵威 +15%',
       };
     } else {
       const realm = profile.index >= 5 ? '必定神禁' : profile.index >= 3 ? '最低四禁' : '随机一至神禁';

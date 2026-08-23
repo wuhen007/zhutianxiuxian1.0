@@ -1,4 +1,6 @@
-﻿export const BLACK_EMPEROR_ENCOUNTER_CHANCE = 0.03;
+﻿import { getLearnedGongfaNames, recordGongfaCombatTrigger } from './gongfaProficiency.js';
+
+export const BLACK_EMPEROR_ENCOUNTER_CHANCE = 0.03;
 export const BLACK_EMPEROR_TEACHING_FAVOR = 80;
 
 export const BLACK_EMPEROR_FORMATIONS = Object.freeze([
@@ -197,16 +199,18 @@ export function consumeBlackEmperorBattleFormation(player, attacker, defender, o
   const remaining = Math.max(0, Number(item.剩余次数) || 0);
   const targets = Array.isArray(defender) ? defender : [defender];
   const terrainBoost = options.sourceField?.consumed ? 0.1 : 0;
+  const formationBoost = getLearnedGongfaNames(player).includes('组字秘') ? 0.15 : 0;
+  const totalBoost = terrainBoost + formationBoost;
 
   if (name === '山河困龙阵') {
     targets.forEach(target => {
-      target.攻击 = Math.max(1, Math.floor((Number(target.攻击) || 0) * (0.85 - terrainBoost)));
-      target.防御 = Math.max(0, Math.floor((Number(target.防御) || 0) * (0.55 - terrainBoost)));
+      target.攻击 = Math.max(1, Math.floor((Number(target.攻击) || 0) * (0.85 - totalBoost)));
+      target.防御 = Math.max(0, Math.floor((Number(target.防御) || 0) * (0.55 - totalBoost)));
       target._困龙封印 = true;
     });
   } else if (name === '无始杀阵') {
-    attacker.攻击 = Math.max(1, Math.floor((Number(attacker.攻击) || 0) * (2 + terrainBoost * 2)));
-    attacker.暴击率 = Math.min(1, Number(((Number(attacker.暴击率) || 0) + 0.2 + terrainBoost / 2).toFixed(4)));
+    attacker.攻击 = Math.max(1, Math.floor((Number(attacker.攻击) || 0) * (2 + totalBoost * 2)));
+    attacker.暴击率 = Math.min(1, Number(((Number(attacker.暴击率) || 0) + 0.2 + totalBoost / 2).toFixed(4)));
   } else {
     return { consumed: false, name, message: '' };
   }
@@ -222,6 +226,7 @@ export function consumeBlackEmperorBattleFormation(player, attacker, defender, o
 
   const character = getBlackEmperorData(player);
   if (character) recordEvent(character, `${source === 'self' ? '自刻' : '黑皇'}${name}激活（剩${remaining - 1}次）`);
+  if (formationBoost > 0) recordGongfaCombatTrigger(player, '组字秘');
   return {
     consumed: true,
     source,
@@ -229,11 +234,12 @@ export function consumeBlackEmperorBattleFormation(player, attacker, defender, o
     remaining: remaining - 1,
     seal: name === '山河困龙阵',
     terrainBoost: terrainBoost > 0,
+    formationBoost: formationBoost > 0,
     message: `${source === 'self' ? '你亲手刻下的' : '黑皇预先刻下的'}「${name}」骤然复苏，阵纹覆盖战场！${
       name === '山河困龙阵'
         ? ' 山河大势倒卷，敌方被大阵困住，一回合内难以出手！'
         : ` 杀伐道则加持，剩余${remaining - 1}次生效机会。`
-    }${terrainBoost ? ' 源石场接引山川龙脉，阵威再涨！' : ''}`,
+    }${terrainBoost ? ' 源石场接引山川龙脉，阵威再涨！' : ''}${formationBoost ? ' 组字秘重排天地纹理，阵法效果额外增强15%！' : ''}`,
   };
 }
 
