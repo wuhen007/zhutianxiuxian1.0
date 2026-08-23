@@ -1697,20 +1697,20 @@ if (weizhi.name === "石村") {
             if (weizhi.name != '诸神黄昏·旧神界') {
               //判断是不是旧神界
               let random = Math.random();
-               if (player.灵根.type === "魔卡少女" ) {
+                            if (player.灵根.type === "魔卡少女" ) {
               n += 1;
               last_msg += '你是魔卡少女，集天地万千宠爱于一身，所以在本次探索中额外获得一件奖励 ';
             }
 if (player.灵根.type === "魔卡少女·觉醒") {
-  n *= 2;
+  n += 2;
   last_msg += '「星之力啊，请赐予我光辉！」 ';
-  last_msg += '星之杖闪耀着璀璨光芒，小樱牌的力量完全解放，奖励翻倍 ';
+  last_msg += '星之杖闪耀着璀璨光芒，小樱牌的力量完全解放，本次探索中额外获得两件奖励 ';
 }
 
 if (player.灵根.type === "魔卡少女·完全") {
-  n *= 5;
+  n += 3;
   last_msg += '「所有的心，成为我的力量！」 ';
-  last_msg += '梦之杖绽放出彩虹般的光辉，透明牌的力量让奖励获得五倍加成 ';
+  last_msg += '梦之杖绽放出彩虹般的光辉，透明牌的力量让探索中额外获得三件奖励 ';
 }
               if (random < player.幸运) {
                 if (random < player.addluckyNo) {

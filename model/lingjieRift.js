@@ -227,13 +227,13 @@ export function resolveRiftRewardBonus(player, random = Math.random) {
   const rootType = player?.灵根?.type;
 
   if (rootType === '魔卡少女') {
-    multiplier *= 2;
+    multiplier += 1;
     messages.push('魔卡少女灵根：物品数量 ×2');
   } else if (rootType === '魔卡少女·觉醒') {
-    multiplier *= 2;
+    multiplier += 2;
     messages.push('星之杖觉醒：物品数量 ×2');
   } else if (rootType === '魔卡少女·完全') {
-    multiplier *= 5;
+    multiplier += 3;
     messages.push('梦之杖完全解放：物品数量 ×5');
   } else if (rootType === '神慧者') {
     multiplier *= 10;
