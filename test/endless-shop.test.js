@@ -41,7 +41,7 @@ test('无尽商店商品可按编号和名称查找', () => {
 });
 
 test('无尽商店实体商品都存在于物品目录', () => {
-  const catalogs = ['丹药列表.json', '炼丹师丹药.json', '道具列表.json', '盒子列表.json']
+  const catalogs = ['丹药列表.json', '炼丹师丹药.json', '道具列表.json', '盒子列表.json', '锻造材料.json']
     .flatMap(file => JSON.parse(fs.readFileSync(`${itemDir}${file}`, 'utf8')));
   for (const product of ENDLESS_SHOP.filter(item => item.action === 'item')) {
     assert.ok(
@@ -78,17 +78,50 @@ test('万象归一消耗材料并保留套装数值和百分比属性', () => {
     法宝: {},
   };
   const najie = {
-    装备: [{ name: '诸天剑影', type: '武器', atk: 0.5, def: 0.2, HP: 1, bao: 0.1, 数量: 1 }],
+    装备: [{
+      name: '诸天剑影', type: '武器', atk: 0.5, def: 0.2, HP: 1, bao: 0.1, 数量: 1,
+      归一属性: { 百分比: { atk: 0.1, def: 0.05 } },
+    }],
     道具: [{ name: FUSION_ITEM, 数量: 1 }],
   };
   const result = mergeSetEquipment(equipment, najie, '武器', '诸天剑影');
   assert.equal(result.equipment.武器.name, '灭仙剑');
   assert.deepEqual(result.equipment.武器.归一属性.百分比, {
-    atk: 0.5,
-    def: 0.2,
+    atk: 0.6,
+    def: 0.25,
     HP: 1,
   });
   assert.ok(Math.abs(result.equipment.武器.bao - 0.3) < 1e-12);
   assert.equal(result.najie.装备.length, 0);
   assert.equal(result.najie.道具.length, 0);
+});
+
+test('万象归一与全局装备规则共用499百分比阈值', () => {
+  const furnace = { 道具: [{ name: FUSION_ITEM, 数量: 1 }] };
+  assert.throws(() => mergeSetEquipment(
+    { 武器: { name: '灭仙剑', type: '武器', atk: 499 }, 护具: {}, 法宝: {} },
+    { ...furnace, 装备: [{ name: '百分比剑', type: '武器', atk: 1, 数量: 1 }] },
+    '武器',
+    '百分比剑'
+  ), /必须是数值装备/);
+
+  const merged = mergeSetEquipment(
+    { 武器: { name: '灭仙剑', type: '武器', atk: 500 }, 护具: {}, 法宝: {} },
+    { ...furnace, 装备: [{ name: '百分比剑', type: '武器', atk: 499, 数量: 1 }] },
+    '武器',
+    '百分比剑'
+  );
+  assert.equal(merged.target.归一属性.百分比.atk, 499);
+});
+
+test('万象归一落盘受玩家锁和三文件回滚保护', () => {
+  const source = fs.readFileSync(new URL('../apps/EndlessRealm.js', import.meta.url), 'utf8');
+  const start = source.indexOf('async mergeEquipment(e)');
+  const end = source.indexOf('async unequipEndlessPuzzleCmd', start);
+  const handler = source.slice(start, end);
+  assert.match(handler, /withPlayerMutationLock\(userId/);
+  assert.match(handler, /__PATH\.player_path/);
+  assert.match(handler, /__PATH\.equipment_path/);
+  assert.match(handler, /__PATH\.najie_path/);
+  assert.match(handler, /transaction\.rollback\(\)/);
 });

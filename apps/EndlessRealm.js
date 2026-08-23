@@ -7,9 +7,11 @@ import {
   Write_equipment,
   Write_najie,
   Write_player,
+  __PATH,
   channel,
   exist_najie_thing,
   existplayer,
+  invalidateBattleEquipmentCache,
 } from '../model/xiuxian.js';
 import {
   applyCheckpointChoice,
@@ -71,7 +73,10 @@ import {
   recoverEarnedTitles,
 } from '../model/titleSystem.js';
 import fs from 'node:fs';
+import path from 'node:path';
 import { AppName } from '../app.config.js';
+import { FileRollbackTransaction } from './SecretPlace/rebirthTransaction.js';
+import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 import {
   consumeSpiritHeart,
   getSpiritHeartMax,
@@ -1376,7 +1381,7 @@ export class EndlessRealm extends plugin {
     if (!match) return e.reply('#万象归一 武器/护具/法宝*百分比装备名');
     const slot = match[1];
     const sourceName = match[2].trim();
-    return this.withLock(e, `fusion:${userId}`, async () => {
+    return this.withLock(e, `fusion:${userId}`, () => withPlayerMutationLock(userId, async () => {
       const originalEquipment = await Read_equipment(userId);
       const najie = await Read_najie(userId);
       let merged;
@@ -1385,17 +1390,24 @@ export class EndlessRealm extends plugin {
       } catch (error) {
         return e.reply(error.message);
       }
+      const transaction = new FileRollbackTransaction();
+      transaction.capture(path.join(__PATH.player_path, `${userId}.json`));
+      transaction.capture(path.join(__PATH.equipment_path, `${userId}.json`));
+      transaction.capture(path.join(__PATH.najie_path, `${userId}.json`));
       try {
-        await Write_equipment(userId, merged.equipment);
         await Write_najie(userId, merged.najie);
+        await Write_equipment(userId, merged.equipment);
+        transaction.commit();
       } catch (error) {
         try {
-          await Write_equipment(userId, originalEquipment);
+          transaction.rollback();
         } catch (rollbackError) {
-          logger.error(`[万象归一] 回滚装备失败 player=${userId}`, rollbackError);
+          logger.error(`[万象归一] 三文件回滚失败 player=${userId}`, rollbackError);
+        } finally {
+          invalidateBattleEquipmentCache(userId);
         }
         logger.error(`[万象归一] 熔铸失败 player=${userId}`, error);
-        return e.reply('万象归一失败，装备状态已尝试恢复，请稍后再试');
+        return e.reply('万象归一失败，装备与材料状态已回滚，请稍后再试');
       }
       const pct = merged.target.归一属性.百分比;
       return e.reply([
@@ -1404,7 +1416,7 @@ export class EndlessRealm extends plugin {
         `追加百分比：攻击${pct.atk} / 防御${pct.def} / 血量${pct.HP}`,
         '原数值属性与套装效果完整保留。',
       ].join('\n'));
-    });
+    }));
   }
 
   async unequipEndlessPuzzleCmd(e) {

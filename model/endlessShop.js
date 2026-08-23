@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { INNATE_TREASURE_CATALOG } from './innateTreasure.js';
 import { getTreasureContestProfile } from './innateTreasureContest.js';
+import { MAX_PERCENT_EQUIPMENT_STAT } from './equipmentStats.js';
 import {
   formatRealmEventLocation,
   formatRealmEventTravel,
@@ -29,6 +30,14 @@ const SET_PIECES = new Set([
   '【武祖】万仙武极天', '【神命】无法无天', '【如梦】道祖的加护',
   '【邪神】斩仙灭神剑', '【邪神】魔渊的凝视', '【邪神】冥王真祖甲',
   '【光阴】天道之剑', '【光阴】命运之心', '【光阴】主宰之甲',
+  '【超维】破限剑','【超维】多元星盘','【超维】元初之甲',
+  '仙帝器·大罗仙剑','荒剑','天帝鼎','祭道甲胄','雷池','大罗剑胎','【极道帝兵】万物母气鼎',
+  '【彼岸】万古皆空·命运枪' ,'【彼岸】诸天命运轮', '【彼岸】万劫不坠天衣' ,
+  '【万化】万相天魔刃', '【万化】万灵魔幡' , '【万化】无相魔神袍' ,
+   '【终焉】诸神黄昏' , '【终焉】万劫归墟轮' , '【终焉】神魔葬天衣'
+
+
+
 ]);
 
 function clone(value) {
@@ -40,6 +49,16 @@ function stats(item) {
     atk: Number(item?.atk) || 0,
     def: Number(item?.def) || 0,
     HP: Number(item?.HP) || 0,
+  };
+}
+
+function percentageStats(item) {
+  const base = stats(item);
+  const merged = stats(item?.归一属性?.百分比);
+  return {
+    atk: base.atk + merged.atk,
+    def: base.def + merged.def,
+    HP: base.HP + merged.HP,
   };
 }
 
@@ -84,12 +103,14 @@ export function mergeSetEquipment(equipment, najie, slot, sourceName) {
   const target = nextEquipment?.[slot];
   if (!target?.name || !SET_PIECES.has(target.name)) throw new Error(`当前穿戴的${slot}不是可熔铸的套装部件`);
   if (target.归一属性) throw new Error(`当前${slot}已经完成万象归一`);
-  if (!Object.values(stats(target)).some(value => value > 99)) throw new Error('套装部件必须是数值装备');
+  if (!Object.values(stats(target)).some(value => value > MAX_PERCENT_EQUIPMENT_STAT)) {
+    throw new Error('套装部件必须是数值装备');
+  }
 
   const sourceIndex = (nextNajie.装备 || []).findIndex(item => {
     const values = Object.values(stats(item));
     return item.name === sourceName && item.type === slot && Number(item.数量) > 0 &&
-      values.some(value => value > 0) && values.every(value => value <= 99);
+      values.some(value => value > 0) && values.every(value => value <= MAX_PERCENT_EQUIPMENT_STAT);
   });
   if (sourceIndex < 0) throw new Error(`纳戒中没有符合条件的百分比${slot}【${sourceName}】`);
   const furnaceIndex = (nextNajie.道具 || []).findIndex(
@@ -98,7 +119,7 @@ export function mergeSetEquipment(equipment, najie, slot, sourceName) {
   if (furnaceIndex < 0) throw new Error(`缺少【${FUSION_ITEM}】`);
 
   const source = nextNajie.装备[sourceIndex];
-  target.归一属性 = { 百分比: stats(source) };
+  target.归一属性 = { 百分比: percentageStats(source) };
   target.归一来源 = source.name;
   target.bao = (Number(target.bao) || 0) + (Number(source.bao) || 0);
   source.数量 -= 1;
