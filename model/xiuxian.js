@@ -8752,6 +8752,7 @@ let B_speed = (B_player.速度 ?? 100)
         const decadeEffect = applyDecadeSkillEffects(attacker, defender, skill, {
           shieldField: '护盾值',
           isBoss: isBossOpponent(defender),
+          round: cnt2,
         });
         msg.push(...decadeEffect.messages);
         
@@ -12762,7 +12763,7 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
       }
       // 其他幸运仙宠（如麒麟、鲲鹏等，根据初始加成属性判断）
       else if (isNotNull(pet.初始加成) && isNotNull(pet.每级增加)) {
-        pet.加成 = pet.初始加成 + pet.每级增加 * (pet.等级 || 1);
+        pet.加成 = pet.每级增加 * (pet.等级 || 1);
         player.幸运 = (Number(player.addluckyNo) || 0) + (Number(pet.加成) || 0);
       }
       // 非幸运类型仙宠
@@ -12786,7 +12787,7 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
       }
       // 其他幸运仙宠也同步加成属性
       if (isNotNull(j.初始加成) && isNotNull(j.每级增加)) {
-        j.加成 = (j.初始加成 || 0) + (j.每级增加 || 0) * (j.等级 || 1);
+        j.加成 = (j.每级增加 || 0) * (j.等级 || 1);
       }
     }
     

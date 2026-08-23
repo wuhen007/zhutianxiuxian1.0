@@ -1,4 +1,11 @@
+import { scaleDaoBodyStats } from './gongfaProficiency.js';
+
 const DECADE_ROOTS = new Set(['帝骑', '帝骑·神主', '帝骑·终极神主']);
+
+// 骑士助战分身：召唤型帝骑技能触发后，按出战卡组召唤一名骑士分身协同作战
+const DECADE_AVATAR_RATIO = 0.6;      // 分身继承本体属性比例
+const DECADE_AVATAR_DURATION = 3;     // 分身存续回合数
+const DECADE_AVATAR_MAX = 2;          // 同场最多骑士助战分身数
 
 const DECADE_CARD_MOVES = Object.freeze([
   { 骑士卡: '空我', name: 'Kamen Ride·究极空我', form: '究极空我', beilv: 3.2, 护盾比例: 0.12, 蓄力重击: 1, 蓄力倍率: 1.4 },
@@ -33,6 +40,7 @@ const DECADE_ULTIMATE_MOVES = Object.freeze([
     护盾比例: move.护盾比例 ? Math.min(0.35, move.护盾比例 + 0.05) : undefined,
     回复比例: move.回复比例 ? Math.min(0.25, move.回复比例 + 0.05) : undefined,
     吸血比例: move.吸血比例 ? Math.min(0.45, move.吸血比例 + 0.05) : undefined,
+    召唤骑士: 1, // 该骑士的「诸界投影」形式会召唤对应骑士作为助战分身（而非仅一次性伤害）
   })),
   { name: 'Complete Ride·世界重叠', form: '攻击、守护与极速三重世界', beilv: 8, 护盾比例: 0.18, 回复比例: 0.12, 攻击成长: 0.05, 攻击成长上限: 3, 清除控制: 1 },
   { name: 'All Rider Final Attack', form: '历代骑士终极投影', beilv: 14, 不可防御: 1, 无视减伤: 1, 护盾比例: 0.2 },
@@ -92,6 +100,18 @@ export function tickDecadeCombatState(unit, round, messages = []) {
   if (!unit || unit._帝骑状态结算回合 === round) return messages;
   unit._帝骑状态结算回合 = round;
 
+  // 骑士助战分身到期清理（按回合存活，到期化作星尘消散）
+  if (Array.isArray(unit.分身)) {
+    for (const f of unit.分身) {
+      if (f._帝骑分身 && f._帝骑分身到期回合 !== undefined && round > f._帝骑分身到期回合) {
+        if (asNumber(f.当前血量) > 0) {
+          f.当前血量 = 0;
+          messages.push(`${f.名号}完成助战使命，化作星尘消散。`);
+        }
+      }
+    }
+  }
+
   if (unit._帝骑禁疗回合 > 0) {
     unit._帝骑禁疗回合 -= 1;
     if (unit._帝骑禁疗回合 <= 0) {
@@ -117,7 +137,7 @@ export function applyDecadeSkillEffects(
   attacker,
   defender,
   skill,
-  { shieldField = '护盾值', isBoss = false, random = Math.random } = {},
+  { shieldField = '护盾值', isBoss = false, random = Math.random, round } = {},
 ) {
   if (!skill?.帝骑效果 || !isDecadeRoot(attacker)) {
     return { messages: [], bonusDamage: 0 };
@@ -217,7 +237,43 @@ export function applyDecadeSkillEffects(
     if (bonusDamage > 0) messages.push(`世界破坏之力撕开首领法则，追加${bonusDamage}点比例伤害。`);
   }
 
+  if (skill.召唤骑士) {
+    const result = summonDecadeKnightAvatar(attacker, skill, round, random);
+    if (result) messages.push(result.message);
+  }
+
   return { messages, bonusDamage };
+}
+
+// 召唤骑士助战分身：克隆本体并剥离技能来源，使其成为纯协同攻击单位（杜绝帝骑技能递归）
+function summonDecadeKnightAvatar(master, skill, round, random) {
+  if (!Array.isArray(master.分身)) master.分身 = [];
+  const aliveAvatars = master.分身.filter(f => f._帝骑分身 && asNumber(f.当前血量) > 0).length;
+  if (aliveAvatars >= DECADE_AVATAR_MAX) return null;
+
+  const clone = JSON.parse(JSON.stringify(master));
+  // 剥离会再次触发技能的来源：灵根 / 功法 / 技能池 / 道种，确保分身只做基础协同攻击
+  clone.灵根 = { name: '普通灵根', type: null, 法球倍率: 1 };
+  clone.学习的功法 = [];
+  clone.攻击技能池 = [];
+  clone.jineng1 = [];
+  delete clone.xiangu_shenhuo;
+  clone.分身 = [];
+  clone.avatarSkill = null;
+  clone._帝骑分身 = true;
+
+  const knight = skill.骑士卡 || String(skill.招式名 || '').replace(/·诸界投影$/, '') || '骑士';
+  clone.名号 = `${master.名号}·${knight}骑士`;
+
+  scaleDaoBodyStats(clone, DECADE_AVATAR_RATIO);
+  clone.当前血量 = clone.血量上限;
+  clone._帝骑分身到期回合 =
+    Number.isFinite(Number(round)) ? Number(round) + DECADE_AVATAR_DURATION : Infinity;
+
+  master.分身.push(clone);
+  return {
+    message: `【骑士助战】${clone.名号}撕裂次元壁踏临战场，继承${Math.round(DECADE_AVATAR_RATIO * 100)}%战力，助战${DECADE_AVATAR_DURATION}回合！`,
+  };
 }
 
 export function resolveDecadeDodgeCounter(defender, source) {

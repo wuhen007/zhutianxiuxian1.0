@@ -502,10 +502,9 @@ export class InnateTreasureAuthorities extends plugin {
     if (!main || !secondary) return e.reply('主宠与副宠都必须在纳戒中。');
     if (main.炼妖继承能力) return e.reply('这只主宠已经进行过炼妖融合。');
     // 副宠加成优先用已重算的 加成；若其为常驻纳戒、从未出战导致 加成 为 0/缺失，
-    // 则用其基础成长（初始加成 + 每级增加*等级）推导，避免继承的 50% 能力直接归零。
+    // 则用其基础成长（每级增加 × 等级）推导，避免继承的 50% 能力直接归零。
     const secondaryStoredBonus = Number(secondary.加成) || 0;
-    const secondaryDerivedBonus = (Number(secondary.初始加成) || 0)
-      + (Number(secondary.每级增加) || 0) * (Number(secondary.等级) || 1);
+    const secondaryDerivedBonus = (Number(secondary.每级增加) || 0) * (Number(secondary.等级) || 1);
     const secondaryEffectiveBonus = secondaryStoredBonus > 0 ? secondaryStoredBonus : secondaryDerivedBonus;
     main.炼妖继承能力 = {
       来源: secondary.name,

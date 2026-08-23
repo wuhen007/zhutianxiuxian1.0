@@ -447,7 +447,7 @@ export class Pokemon extends plugin {
       player.制符成功率 = (player.制符成功率 || 0) - player.仙宠.加成;
     }
     player.仙宠 = last;
-    player.仙宠.加成 = (player.仙宠.初始加成 || 0) + player.仙宠.等级 * player.仙宠.每级增加;
+    player.仙宠.加成 = player.仙宠.等级 * player.仙宠.每级增加;
     if (last.type == '幸运') {
       player.幸运 = player.幸运 + last.加成;
     }
