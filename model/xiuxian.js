@@ -8065,6 +8065,14 @@ let B_speed = (B_player.速度 ?? 100)
   let cnt2;
   let t;
   let msg = [];
+  // 打桩/DPS 测试用：累计 B 方（木桩）承受的总伤害，供外部精确计算 DPS。
+  let B_total_damage_taken = 0;
+  // 打桩/DPS 测试用：累计 A 方（玩家）发起的有效攻击次数（即"回合数"）。
+  let A_attack_count = 0;
+  // 打桩/DPS 测试用：回合上限（玩家攻击次数上限）。不传则走原版整场 100 动作上限。
+  const maxRound = (typeof options.maxRound === 'number' && options.maxRound > 0)
+    ? Math.floor(options.maxRound)
+    : null;
   msg.push(
     ...applyForbiddenBattleModifiers(A_player),
     ...applyForbiddenBattleModifiers(B_player)
@@ -8246,7 +8254,7 @@ let B_speed = (B_player.速度 ?? 100)
       actionOrder,
       A_speed,
       B_speed,
-      extra: { ...extra, proficiencyGains }
+      extra: { ...extra, proficiencyGains, totalDamageTaken: B_total_damage_taken, playerAttacks: A_attack_count }
     });
     if (!wanhuaHarvestSettled) {
       wanhuaHarvestSettled = true;
@@ -9199,6 +9207,9 @@ let B_speed = (B_player.速度 ?? 100)
       if (curtain.message) msg.push(curtain.message);
     }
 
+    // DPS 测试：累计木桩（B 方）承受的伤害
+    if (defender === B_player) B_total_damage_taken += actual_damage;
+
     defender.当前血量 -= actual_damage;
     if (defender.当前血量 < 0) defender.当前血量 = 0;
 
@@ -9496,6 +9507,11 @@ msg.push(bSpeedMsg);
 
 
   while (A_player.当前血量 > 0 && B_player.当前血量 > 0) {
+    // 打桩/DPS 模式：玩家有效攻击次数达到指定上限即收尾（木桩不会死，靠此结束）。
+    if (maxRound != null && A_attack_count >= maxRound) {
+      msg.push(`【打桩结束】已演练${maxRound}回合，木桩巍然不动，气血恒久远。`);
+      break;
+    }
     // 整场战斗回合上限保护（避免高回复/护盾循环长期占用进程）
     const MAX_ROUND = 100;
     if (cnt >= MAX_ROUND) {
@@ -9677,6 +9693,7 @@ msg.push(bSpeedMsg);
           
           defender.当前血量 -= 伤害;
           defender.当前血量 = Math.max(defender.当前血量, 0);
+          if (defender === B_player) B_total_damage_taken += 伤害;
           
           msg.push(`${attacker.名号}催动阴阳生死图，撕开了天地混沌，轰杀向${defender.名号}，${defender.名号}损失了${bigNumberTransform(伤害)}生命，${defender.名号}剩余${bigNumberTransform(defender.当前血量)}生命`);
           
@@ -9702,6 +9719,7 @@ msg.push(bSpeedMsg);
           伤害 = Math.trunc(2 * 法球伤害);
           
           defender.当前血量 -= 伤害;
+          if (defender === B_player) B_total_damage_taken += 伤害;
           defender.当前血量 = Math.max(defender.当前血量, 0);
           
           msg.push(`${attacker.名号} 的仙王分身对敌手打出恐怖一击后消散了，${defender.名号}损失了${bigNumberTransform(伤害)}生命，${defender.名号}剩余${bigNumberTransform(defender.当前血量)}生命`);
@@ -9938,6 +9956,8 @@ msg.push(bSpeedMsg);
 
       // 主要攻击（保持原样）
       const attackResult = await performAttack(attacker, defender, cnt2, "main");
+      // 打桩/DPS 测试用：统计玩家（A 方）发起的有效攻击次数
+      if (attacker === A_player) A_attack_count++;
       let { 伤害 = 0, isCritical = false, baoji = 1, battleEnded: attackBattleEnded = false, winner: attackWinner = null, 斩杀阈值 = 0 } = attackResult || {};
       if (attackBattleEnded) {
         msg.push(...((attackResult && attackResult.msg) || []));
@@ -10012,6 +10032,7 @@ msg.push(bSpeedMsg);
           const entityDmg = Math.trunc(entity.攻击 * avatar.beilv * (0.8 + Math.random() * 0.4));
           target.当前血量 -= entityDmg;
           target.当前血量 = Math.max(target.当前血量, 0);
+          if (target === B_player) B_total_damage_taken += entityDmg;
 
           msg.push(`${entity.名号}施展「${avatar.skill}」攻击${target.名号}！`);
           if (avatar.special.includes("禁锢") || avatar.special.includes("麻痹")) {
