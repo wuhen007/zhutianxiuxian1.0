@@ -27,10 +27,59 @@ import {
   setDecadeCardDeck,
   TOMOEDA_LOCATIONS,
 } from '../../model/zhutianMirror.js';
+import {
+  beginExplorationStory,
+  getExplorationStorySummary,
+  resolveExplorationStory,
+} from '../../model/zhutianExplorationStory.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+
+const EXPLORATION_STORY_ACTION = '诸天镜探索剧情';
 
 async function getPlayerId(e) {
   return channel(e.user_id.toString().replace('qg_', ''));
+}
+
+function getActionKey(e) {
+  return `xiuxian:player:${e.user_id}:action`;
+}
+
+function pendingActionMessage(actionStr) {
+  try {
+    const action = JSON.parse(actionStr);
+    if (action.action === EXPLORATION_STORY_ACTION) {
+      return `【${action.title}】的抉择尚未完成，请先输入 1-${action.maxChoice}。`;
+    }
+  } catch {}
+  return '你当前还有进行中的行动，请先完成后再探索。';
+}
+
+function appendStory(rows, story) {
+  if (!story) return;
+  rows.push('', `【异界奇遇·${story.title}】`, story.scene, '');
+  rows.push(...story.options.map(item => `${item.num}. ${item.text}`));
+  rows.push('请在15分钟内输入数字作出选择。');
+}
+
+async function persistExploration(playerId, player, e, story) {
+  const actionKey = getActionKey(e);
+  if (story) {
+    await redis.set(actionKey, JSON.stringify({
+      action: EXPLORATION_STORY_ACTION,
+      playerId,
+      world: story.world,
+      eventId: story.id,
+      title: story.title,
+      maxChoice: story.options.length,
+      resolutionId: `${Date.now()}:${playerId}:${story.id}`,
+    }), { EX: 15 * 60 });
+  }
+  try {
+    await Write_player(playerId, player);
+  } catch (error) {
+    if (story) await redis.del(actionKey);
+    throw error;
+  }
 }
 
 function formatMaterials(system) {
@@ -84,6 +133,7 @@ export class ZhutianMirrorSystem extends plugin {
       event: 'message',
       priority: 590,
       rule: [
+        { reg: '^[1234]$', fnc: 'handleExplorationStoryChoice' },
         { reg: '^#诸天镜$', fnc: 'mirrorPanel' },
         { reg: '^#友枝町$', fnc: 'tomoedaMap' },
         { reg: '^#探索友枝町(?:\\s+.*)?$', fnc: 'exploreTomoeda' },
@@ -102,6 +152,62 @@ export class ZhutianMirrorSystem extends plugin {
         { reg: '^#淬炼诸天镜$', fnc: 'refineMirror' },
       ],
     });
+  }
+
+  async handleExplorationStoryChoice(e) {
+    const actionKey = getActionKey(e);
+    const actionStr = await redis.get(actionKey);
+    if (!actionStr) return false;
+
+    let action;
+    try {
+      action = JSON.parse(actionStr);
+    } catch {
+      return false;
+    }
+    if (action.action !== EXPLORATION_STORY_ACTION) return false;
+
+    const choice = Number(e.msg.trim());
+    if (!Number.isInteger(choice) || choice < 1 || choice > action.maxChoice) {
+      await e.reply(`【${action.title}】请输入 1-${action.maxChoice} 作出选择。`);
+      return true;
+    }
+
+    try {
+      return await withPlayerMutationLock(action.playerId, async () => {
+        const latestStr = await redis.get(actionKey);
+        if (!latestStr) return true;
+        const latest = JSON.parse(latestStr);
+        if (latest.action !== EXPLORATION_STORY_ACTION || latest.resolutionId !== action.resolutionId) return false;
+
+        const player = await Read_player(action.playerId);
+        const result = resolveExplorationStory(player, latest.world, latest.eventId, choice, {
+          resolutionId: latest.resolutionId,
+        });
+        if (!result.ok) {
+          await redis.del(actionKey);
+          await e.reply('这段异界奇遇已经消散，请重新探索。');
+          return true;
+        }
+        if (result.alreadyResolved) {
+          await redis.del(actionKey);
+          await e.reply(`【${result.title}】已经完成结算，本次没有重复改变存档。`);
+          return true;
+        }
+
+        await Write_player(action.playerId, player);
+        await redis.del(actionKey);
+        const rows = [`【异界奇遇·${result.title}】`, result.result];
+        if (result.changes.length > 0) rows.push(`影响：${result.changes.join('，')}`);
+        if (result.nextTitle) rows.push(`事件将继续：下次探索会进入【${result.nextTitle}】。`);
+        await e.reply(rows.join('\n'));
+        return true;
+      });
+    } catch (error) {
+      console.error('诸天镜探索剧情结算失败:', error);
+      await e.reply('异界奇遇结算遇到波动，选择仍已保留，请稍后再次输入数字。');
+      return true;
+    }
   }
 
   async mirrorPanel(e) {
@@ -151,6 +257,7 @@ export class ZhutianMirrorSystem extends plugin {
       if (!system.已绑定) return e.reply('请先在天机阁兑换并使用诸天镜。');
 
       const progress = system.世界进度.魔法少女樱;
+      const story = getExplorationStorySummary(player, '魔法少女樱');
       const rows = [
         '【友枝町·投影地图】',
         `探索度：${progress.探索度}/100 | 镜能：${system.镜能}/${MIRROR_TIER_CONFIG[system.镜阶].energyMax}`,
@@ -159,6 +266,8 @@ export class ZhutianMirrorSystem extends plugin {
         `已封印库洛牌：${player.库洛牌系统.已封印库洛牌.length}/52`,
         `出战卡组：${player.库洛牌系统.出战卡组.join('、') || '未编组'}${player.库洛牌系统.当前组合 ? `（${player.库洛牌系统.当前组合}）` : ''}`,
         `下一目标：${getSakuraGoal(player)}`,
+        `剧情经历：${story.count}次 | 人物关系：${story.relations}`,
+        ...(story.pending ? [`连续事件：${story.pending}待续`] : []),
         '',
       ];
       for (const [name, config] of Object.entries(TOMOEDA_LOCATIONS)) {
@@ -176,6 +285,8 @@ export class ZhutianMirrorSystem extends plugin {
     if (!location) return this.tomoedaMap(e);
 
     return withPlayerMutationLock(playerId, async () => {
+      const pendingAction = await redis.get(getActionKey(e));
+      if (pendingAction) return e.reply(pendingActionMessage(pendingAction));
       const player = await Read_player(playerId);
       const result = exploreTomoeda(player, location);
       if (!result.ok) {
@@ -185,7 +296,8 @@ export class ZhutianMirrorSystem extends plugin {
         if (result.reason === 'energy') return e.reply('今日镜能已经耗尽，明日会自动恢复。');
       }
 
-      await Write_player(playerId, player);
+      const story = beginExplorationStory(player, '魔法少女樱', location);
+      await persistExploration(playerId, player, e, story);
       const rows = [
         `【友枝町·${location}】`,
         `探索度 +8，镜尘 +${result.dust}${result.echo ? '，世界残响 +1' : ''}`,
@@ -195,6 +307,7 @@ export class ZhutianMirrorSystem extends plugin {
       if (result.keyFound) rows.push('你在异界共鸣中找到了【封印之钥】！');
       if (result.unlocked) rows.push('封印之钥与风、翔、影三牌共鸣，【木之本樱】基础化身已经解锁！', '使用 #装载化身 木之本樱');
       if (result.combo) rows.push(`当前组合【${result.combo}】已在本次探索生效。`);
+      appendStory(rows, story);
       return e.reply(rows.join('\n'));
     });
   }
@@ -232,6 +345,7 @@ export class ZhutianMirrorSystem extends plugin {
       if (!system.已绑定) return e.reply('请先在天机阁兑换并使用诸天镜。');
 
       const progress = system.世界进度.魔法少女小圆;
+      const story = getExplorationStorySummary(player, '魔法少女小圆');
       const rows = [
         '【见泷原·因果观测图】',
         `探索度：${progress.探索度}/100 | 镜能：${system.镜能}/${MIRROR_TIER_CONFIG[system.镜阶].energyMax}`,
@@ -240,6 +354,8 @@ export class ZhutianMirrorSystem extends plugin {
         `灵魂宝石污浊：${progress.灵魂宝石污浊度}/100 | 时间线重置：${progress.时间线重置次数}次`,
         `鹿目圆化身：${progress.基础化身已解锁 ? '已解锁' : '未解锁'}`,
         `下一目标：${getMadokaGoal(player)}`,
+        `剧情经历：${story.count}次 | 人物关系：${story.relations}`,
+        ...(story.pending ? [`连续事件：${story.pending}待续`] : []),
         '',
       ];
       for (const [name, config] of Object.entries(MITAKIHARA_LOCATIONS)) {
@@ -257,6 +373,8 @@ export class ZhutianMirrorSystem extends plugin {
     if (!location) return this.mitakiharaMap(e);
 
     return withPlayerMutationLock(playerId, async () => {
+      const pendingAction = await redis.get(getActionKey(e));
+      if (pendingAction) return e.reply(pendingActionMessage(pendingAction));
       const player = await Read_player(playerId);
       const result = exploreMitakihara(player, location);
       if (!result.ok) {
@@ -266,7 +384,8 @@ export class ZhutianMirrorSystem extends plugin {
         if (result.reason === 'energy') return e.reply('今日镜能已经耗尽，明日会自动恢复。');
       }
 
-      await Write_player(playerId, player);
+      const story = beginExplorationStory(player, '魔法少女小圆', location);
+      await persistExploration(playerId, player, e, story);
       const rows = [
         `【见泷原·${location}】`,
         `因果碎片 +1，希望碎片 +${result.hopeShards}，净化绝望值 +${result.despairPurified}`,
@@ -278,6 +397,7 @@ export class ZhutianMirrorSystem extends plugin {
       if (result.gemFound) rows.push('纠缠的因果凝成了【灵魂宝石】！');
       if (result.unlocked) rows.push('灵魂宝石与三枚因果碎片共鸣，【鹿目圆】基础化身已经解锁！', '使用 #装载化身 鹿目圆');
       if (result.timelineCollapsed) rows.push('污浊突破极限，当前时间线崩塌并自动回退到50点污浊；下次可提前净化或主动重置。');
+      appendStory(rows, story);
       return e.reply(rows.join('\n'));
     });
   }
@@ -324,6 +444,7 @@ export class ZhutianMirrorSystem extends plugin {
       if (!system.已绑定) return e.reply('请先在天机阁兑换并使用诸天镜。');
 
       const progress = system.世界进度.假面骑士帝骑;
+      const story = getExplorationStorySummary(player, '假面骑士帝骑');
       const rows = [
         '【骑士世界·世界巡游图】',
         `探索度：${progress.探索度}/100 | 镜能：${system.镜能}/${MIRROR_TIER_CONFIG[system.镜阶].energyMax}`,
@@ -333,6 +454,8 @@ export class ZhutianMirrorSystem extends plugin {
         `神主触屏碎片：${progress.神主触屏碎片}/10 | 十世界巡游：${progress.已巡游世界.length}/${DECADE_TOUR_WORLDS.length}`,
         `门矢士化身：${progress.基础化身已解锁 ? '已解锁' : '未解锁'} | 帝骑形态：${progress.帝骑已解锁 ? '已解锁' : '未解锁'}`,
         `下一目标：${getDecadeGoal(player)}`,
+        `剧情经历：${story.count}次 | 人物关系：${story.relations}`,
+        ...(story.pending ? [`连续事件：${story.pending}待续`] : []),
         '',
       ];
       for (const [name, config] of Object.entries(DECADE_LOCATIONS)) {
@@ -350,6 +473,8 @@ export class ZhutianMirrorSystem extends plugin {
     if (!location) return this.decadeMap(e);
 
     return withPlayerMutationLock(playerId, async () => {
+      const pendingAction = await redis.get(getActionKey(e));
+      if (pendingAction) return e.reply(pendingActionMessage(pendingAction));
       const player = await Read_player(playerId);
       const result = exploreDecadeWorld(player, location);
       if (!result.ok) {
@@ -360,7 +485,8 @@ export class ZhutianMirrorSystem extends plugin {
         if (result.reason === 'crisis') return e.reply('世界融合度已经达到100，探索通道被重叠世界封锁。请先编组三张骑士卡片并使用 #最终攻击驾驭。');
       }
 
-      await Write_player(playerId, player);
+      const story = beginExplorationStory(player, '假面骑士帝骑', location);
+      await persistExploration(playerId, player, e, story);
       if (result.rootChanged) await player_efficiency(playerId);
       const rows = [
         `【骑士世界·${location}】`,
@@ -377,6 +503,7 @@ export class ZhutianMirrorSystem extends plugin {
       if (result.realmBlocked) rows.push(`进阶积累已经满足，境界尚差：${result.realmBlocked.missing.join('；')}。进度已保留。`);
       if (result.touredWorld) rows.push(`极光帷幕展开，完成【${result.touredWorld}】巡游。`);
       if (result.crisis) rows.push('世界融合度已经达到100，下一次探索前必须使用 #最终攻击驾驭 化解危机。');
+      appendStory(rows, story);
       return e.reply(rows.join('\n'));
     });
   }
