@@ -72,7 +72,7 @@ export class ExamplePlugin extends plugin {
           fnc: 'liuShenInteraction'
         },
         {
-          reg: '^#(张五爷请教|交流|张五爷论源)',
+          reg: '^#(张五爷请教|张五爷交流|张五爷论源)',
           fnc: 'zhangWuYeInteraction'
         },
         {

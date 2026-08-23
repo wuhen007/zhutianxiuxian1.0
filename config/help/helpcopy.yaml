@@ -10,7 +10,7 @@
     - icon: help-icon_43
       title: '#喂给仙宠+食物名称'
       desc: '升级仙宠'
-- grop: -塔-
+- group: -塔-
   list:
     - icon: help-icon_19
       title: '#挑战镇妖塔'
@@ -39,8 +39,8 @@
       title: '@群友 残云封天剑'
       desc: '将其禁言'
     - icon: help-icon_18
-      title: '除你禁言'
-      desc: '解除禁言禁言'
+      title: '@群友 除你禁言 / 废除'
+      desc: '解除由禁言术或残云封天剑施加的禁言'
 - group: 一键功能
   list:
     - icon: help-icon_37

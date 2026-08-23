@@ -117,7 +117,7 @@
       desc: '炼体信息'
     - icon: help-icon_17
       title: '#修仙助手'
-      desc: '查看这个阶段能做的事/不够完善'      
+      desc: '按当前境界查看推荐修行目标与可参与玩法'
     - icon: help-icon_38
       title: '#突破 #幸运突破'
       desc: '打破浩劫-幸运草增加成功率'

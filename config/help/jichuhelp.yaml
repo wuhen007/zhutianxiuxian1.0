@@ -35,7 +35,7 @@
       desc: '每颗获得50点可自由分配的功法感悟'
     - icon: help-icon_7
       title: '#战斗技能'
-      desc: '查看技能序号、实际触发概率、时机、效果、倍率与当前熟练度'
+      desc: '查看技能序号、实际触发概率、时机、效果与熟练度；数字秘、组字秘等被动也会列在特殊秘法区'
     - icon: help-icon_7
       title: '#配置攻击/防御/恢复技能 序号或技能名'
       desc: '按战斗技能面板内的分类序号配置；恢复与复活技能共用一个生机槽'
@@ -126,14 +126,14 @@
 - group: 世界副本
   list:
     - icon: help-icon_16
-      title: '#妖王'
-      desc: '仙界BOSS'
+      title: '#妖王状态'
+      desc: '查看妖王当前血量、奖励与开放状态'
     - icon: help-icon_31
       title: '#讨伐妖王'
       desc: '干就完了'
     - icon: help-icon_60
-      title: '#妖王'
-      desc: '伤害排行榜'
+      title: '#妖王贡献榜'
+      desc: '查看本轮妖王伤害贡献排行'
 
 - group: 天地战场
   list:
