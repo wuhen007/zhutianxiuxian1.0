@@ -5,11 +5,13 @@ import {
     Add_修为, 
     Add_血气,
     Add_灵石,
+    channel,
     player_efficiency,
 } from '../../model/xiuxian.js';
 import { getRealmAuthorityLevel, hasRealmAuthority } from '../../model/realmAuthority.js';
 import {
   addMirrorRelic,
+  applyProjectionEffect,
   consumeMirrorEnergy,
   ensureZhutianMirrorSystem,
   exploreDecadeWorld,
@@ -20,6 +22,14 @@ import {
   recordProjectionMirrorProgress,
 } from '../../model/zhutianMirror.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+
+function getProjectionActionKey(e) {
+  return `xiuxian:player:${e.user_id}:action`;
+}
+
+async function getProjectionPlayerId(e) {
+  return channel(String(e.user_id).replace('qg_', ''));
+}
 
 // ========== 诸天投影世界配置 ==========
 const PROJECTION_WORLDS = {
@@ -554,29 +564,28 @@ export class touyingzhutian extends plugin {
 
   // ========== 强制退出投影 ==========
   async forceExitProjection(e) {
-    const player_qq = e.user_id;
+    const playerId = await getProjectionPlayerId(e);
+    const actionKey = getProjectionActionKey(e);
     try {
-      const player = await Read_player(player_qq);
-      const action = await redis.get('xiuxian:player:' + player_qq + ':action');
-      const projection = action ? JSON.parse(action) : null;
+      return await withPlayerMutationLock(playerId, async () => {
+        const action = await redis.get(actionKey);
+        const projection = action ? JSON.parse(action) : null;
+        if (!projection || projection.action !== '投影诸天') {
+          await e.reply('你当前没有进行中的投影');
+          return true;
+        }
 
-      if (!projection || projection.action !== '投影诸天') {
-        e.reply('你当前没有进行中的投影');
+        const penaltyXiuwei = Math.floor(projection.returnRate ? projection.returnRate * 100 : 500);
+        await Add_修为(playerId, -penaltyXiuwei);
+        await redis.del(actionKey);
+        await e.reply([
+          '你强行中断了神魂投影！',
+          '由于神魂强行脱离异界，受到反噬：',
+          `修为损失：${penaltyXiuwei}`,
+          '本次镜能已消耗，投影终止。',
+        ].join('\n'));
         return true;
-      }
-
-      // 计算惩罚
-      const penaltyXiuwei = Math.floor(projection.returnRate ? projection.returnRate * 100 : 500);
-      await Add_修为(player_qq, -penaltyXiuwei);
-
-      await redis.del('xiuxian:player:' + player_qq + ':action');
-      e.reply([
-        '你强行中断了神魂投影！',
-        '由于神魂强行脱离异界，受到反噬：',
-        `修为损失：${penaltyXiuwei}`,
-        '本次镜能已消耗，投影终止。'
-      ].join('\n'));
-      return true;
+      });
     } catch (err) {
       console.error('退出投影出错:', err);
       e.reply('退出投影时发生意外');
@@ -586,16 +595,17 @@ export class touyingzhutian extends plugin {
 
   // ========== 开始投影 ==========
   async touyingzhutian(e) {
-    const player_qq = e.user_id;
+    const playerId = await getProjectionPlayerId(e);
+    const actionKey = getProjectionActionKey(e);
     try {
-      const player = await Read_player(player_qq);
+      const player = await Read_player(playerId);
       if (!player) {
         e.reply('未找到玩家数据');
         return true;
       }
 
       // 检查是否已在投影中
-      const existingAction = await redis.get('xiuxian:player:' + player_qq + ':action');
+      const existingAction = await redis.get(actionKey);
       if (existingAction) {
         const action = JSON.parse(existingAction);
         if (action && action.action === '投影诸天') {
@@ -649,11 +659,10 @@ export class touyingzhutian extends plugin {
         return true;
       }
 
-      const startResult = await withPlayerMutationLock(player_qq, async () => {
-        const actionKey = 'xiuxian:player:' + player_qq + ':action';
+      const startResult = await withPlayerMutationLock(playerId, async () => {
         if (await redis.get(actionKey)) return { ok: false, reason: 'action' };
 
-        const latestPlayer = await Read_player(player_qq);
+        const latestPlayer = await Read_player(playerId);
         const latestMirror = ensureZhutianMirrorSystem(latestPlayer);
         if (!latestMirror.已绑定) return { ok: false, reason: 'unbound' };
         if (latestMirror.镜阶 < requiredTier) return { ok: false, reason: 'tier' };
@@ -665,6 +674,7 @@ export class touyingzhutian extends plugin {
 
         const projectionState = {
           action: '投影诸天',
+          playerId,
           world: selectedWorld.name,
           step: 'start',
           soulStability: 100,
@@ -675,7 +685,7 @@ export class touyingzhutian extends plugin {
         };
         await redis.set(actionKey, JSON.stringify(projectionState));
         try {
-          await Write_player(player_qq, latestPlayer);
+          await Write_player(playerId, latestPlayer);
         } catch (error) {
           await redis.del(actionKey);
           throw error;
@@ -715,139 +725,108 @@ export class touyingzhutian extends plugin {
 
   // ========== 处理选择 ==========
   async handleProjectionChoice(e) {
-    const player_qq = e.user_id;
-    const choice = parseInt(e.msg.trim());
-    if (isNaN(choice) || choice < 1 || choice > 4) {
-      e.reply('请输入 1、2、3 或 4 来做出选择');
-      return true;
-    }
-
+    const actionKey = getProjectionActionKey(e);
     try {
-      const actionStr = await redis.get('xiuxian:player:' + player_qq + ':action');
-      if (!actionStr) {
-        e.reply('当前没有进行中的投影');
-        return true;
+      const initialStr = await redis.get(actionKey);
+      if (!initialStr) return false;
+      let initialAction;
+      try {
+        initialAction = JSON.parse(initialStr);
+      } catch {
+        return false;
       }
-      const projection = JSON.parse(actionStr);
-      if (projection.action !== '投影诸天') {
-        e.reply('当前没有进行中的投影');
-        return true;
-      }
+      if (initialAction.action !== '投影诸天') return false;
 
-      const world = PROJECTION_WORLDS[projection.world];
-      if (!world) {
-        e.reply('投影数据异常，请使用 #退出投影');
-        return true;
-      }
+      const playerId = await getProjectionPlayerId(e);
+      return await withPlayerMutationLock(playerId, async () => {
+        const actionStr = await redis.get(actionKey);
+        if (!actionStr) return true;
+        if (actionStr !== initialStr) return true;
+        const projection = JSON.parse(actionStr);
+        if (projection.action !== '投影诸天') return true;
+        projection.playerId = playerId;
 
-      // 找到当前节点
-      const currentNode = world.story[projection.step];
-      if (!currentNode || !currentNode.options) {
-        e.reply('当前无可用选择，请使用 #退出投影');
-        return true;
-      }
-
-      // 找到玩家选择对应的选项
-      const selectedOption = currentNode.options.find(o => o.num === choice);
-      if (!selectedOption) {
-        e.reply('无效的选择，请输入对应的数字');
-        return true;
-      }
-
-      // 处理额外效果（bonus/penalty）
-      if (selectedOption.bonus) {
-        const parts = selectedOption.bonus.split(',');
-        for (const part of parts) {
-          const match = part.trim().match(/([+-]?\d+)(魂|影)/);
-          if (match) {
-            const val = parseInt(match[1]);
-            if (match[2] === '魂') projection.soulStability = Math.max(0, Math.min(100, projection.soulStability + val));
-            if (match[2] === '影') projection.worldInfluence = Math.max(0, projection.worldInfluence + val);
-          }
-        }
-      }
-      if (selectedOption.penalty) {
-        const parts = selectedOption.penalty.split(',');
-        for (const part of parts) {
-          const match = part.trim().match(/([+-]?\d+)(魂|影)/);
-          if (match) {
-            const val = parseInt(match[1]);
-            if (match[2] === '魂') projection.soulStability = Math.max(0, Math.min(100, projection.soulStability + val));
-            if (match[2] === '影') projection.worldInfluence = Math.max(0, projection.worldInfluence + val);
-          }
-        }
-      }
-
-      // 移动到下一个节点
-      const nextNodeKey = selectedOption.next;
-
-      // 判断是否到达终点
-      if (!nextNodeKey) {
-        e.reply('剧情分支异常，本次投影被迫终止');
-        await redis.del('xiuxian:player:' + player_qq + ':action');
-        return true;
-      }
-
-      const nextNode = world.story[nextNodeKey];
-      if (!nextNode) {
-        e.reply('剧情节点异常，本次投影被迫终止');
-        await redis.del('xiuxian:player:' + player_qq + ':action');
-        return true;
-      }
-
-      // 如果是终点节点（有 end 字段）
-      if (nextNode.end) {
-        await this.completeProjection(e, player_qq, projection, world, nextNode);
-        return true;
-      }
-
-      // 如果还有子选项
-      if (nextNode.options && nextNode.options.length > 0) {
-        projection.step = nextNodeKey;
-
-        // 检查神魂稳定性
-        if (projection.soulStability <= 0) {
-          await this.collapseProjection(e, player_qq, projection, world);
+        const world = PROJECTION_WORLDS[projection.world];
+        if (!world) {
+          await e.reply('投影数据异常，请使用 #退出投影');
           return true;
         }
 
-        // 每轮自然衰减 2-5 点神魂稳定性
-        projection.soulStability = Math.max(0, projection.soulStability - (2 + Math.floor(Math.random() * 4)));
-
-        if (projection.soulStability <= 0) {
-          await this.collapseProjection(e, player_qq, projection, world);
+        const currentNode = world.story[projection.step];
+        if (!currentNode?.options) {
+          await e.reply('当前无可用选择，请使用 #退出投影');
           return true;
         }
 
-        await redis.set('xiuxian:player:' + player_qq + ':action', JSON.stringify(projection));
+        const choice = Number(e.msg.trim());
+        const selectedOption = currentNode.options.find(option => option.num === choice);
+        if (!selectedOption) {
+          await e.reply(`无效的选择，请输入：${currentNode.options.map(option => option.num).join('、')}`);
+          return true;
+        }
 
-        const optionsText = nextNode.options.map(o => `${o.num}. ${o.text}`).join('\n');
-        e.reply([
-          nextNode.desc,
-          '',
-          `神魂稳定性：${projection.soulStability}/100`,
-          `世界影响力：${projection.worldInfluence}`,
-          '',
-          optionsText
-        ].join('\n'));
+        applyProjectionEffect(projection, selectedOption.bonus);
+        applyProjectionEffect(projection, selectedOption.penalty);
+
+        const nextNodeKey = selectedOption.next;
+        if (!nextNodeKey) {
+          await redis.del(actionKey);
+          await e.reply('剧情分支异常，本次投影被迫终止');
+          return true;
+        }
+
+        const nextNode = world.story[nextNodeKey];
+        if (!nextNode) {
+          await redis.del(actionKey);
+          await e.reply('剧情节点异常，本次投影被迫终止');
+          return true;
+        }
+        applyProjectionEffect(projection, nextNode.bonus);
+        applyProjectionEffect(projection, nextNode.penalty);
+
+        if (nextNode.end) {
+          return this.completeProjection(e, playerId, actionKey, projection, world, nextNode);
+        }
+
+        if (nextNode.options?.length > 0) {
+          projection.step = nextNodeKey;
+          if (projection.soulStability <= 0) {
+            return this.collapseProjection(e, playerId, actionKey, projection, world);
+          }
+
+          projection.soulStability = Math.max(0, projection.soulStability - (2 + Math.floor(Math.random() * 4)));
+          if (projection.soulStability <= 0) {
+            return this.collapseProjection(e, playerId, actionKey, projection, world);
+          }
+
+          await redis.set(actionKey, JSON.stringify(projection));
+          const optionsText = nextNode.options.map(option => `${option.num}. ${option.text}`).join('\n');
+          await e.reply([
+            nextNode.desc,
+            '',
+            `神魂稳定性：${projection.soulStability}/100`,
+            `世界影响力：${projection.worldInfluence}`,
+            '',
+            optionsText,
+          ].join('\n'));
+          return true;
+        }
+
+        await e.reply('剧情结构异常，请使用 #退出投影');
         return true;
-      }
-
-      // 不应该到达这里
-      e.reply('剧情结构异常，请使用 #退出投影');
-      return true;
+      });
     } catch (err) {
       console.error('处理选择出错:', err);
-      e.reply('处理选择时发生意外');
+      await e.reply('处理选择时发生意外，当前选择尚未生效，请稍后重试');
       return true;
     }
   }
 
   // ========== 神魂崩溃 ==========
-  async collapseProjection(e, player_qq, projection, world) {
-    await redis.del('xiuxian:player:' + player_qq + ':action');
+  async collapseProjection(e, playerId, actionKey, projection, world) {
+    await redis.del(actionKey);
     const penalty = Math.floor(projection.returnRate * 50 || 300);
-    await Add_修为(player_qq, -penalty);
+    await Add_修为(playerId, -penalty);
 
     e.reply([
       `⚠️ 神魂稳定性降至临界点！`,
@@ -860,18 +839,20 @@ export class touyingzhutian extends plugin {
   }
 
   // ========== 完成投影 ==========
-  async completeProjection(e, player_qq, projection, world, endNode) {
-    return withPlayerMutationLock(player_qq, async () => {
-    let player = await Read_player(player_qq);
+  async completeProjection(e, playerId, actionKey, projection, world, endNode) {
+    return withPlayerMutationLock(playerId, async () => {
+    let player = await Read_player(playerId);
     const endingType = endNode.end || 'neutral';
     const settlementId = `${world.name}:${projection.start_time}`;
     const initialMirror = ensureZhutianMirrorSystem(player);
     if (!Array.isArray(initialMirror.已结算投影)) initialMirror.已结算投影 = [];
     if (initialMirror.已结算投影.includes(settlementId)) {
-      await redis.del('xiuxian:player:' + player_qq + ':action');
+      await redis.del(actionKey);
       e.reply('本次诸天投影已经完成结算，未重复发放奖励。');
       return true;
     }
+
+    applyProjectionEffect(projection, `${Number(endNode.reward?.影) || 0}影`);
 
     // 计算投影回归率（base 70%，世界影响力每20点+5%，上限95%）
     const baseRate = 0.7;
@@ -887,13 +868,13 @@ export class touyingzhutian extends plugin {
     const xiuweiClaimKey = `zhutian:${settlementId}:xiuwei`;
     const xueqiClaimKey = `zhutian:${settlementId}:xueqi`;
     const addedXiuwei = calculatedXiuwei > 0
-      ? await Add_修为(player_qq, calculatedXiuwei, { idempotencyKey: xiuweiClaimKey })
+      ? await Add_修为(playerId, calculatedXiuwei, { idempotencyKey: xiuweiClaimKey })
       : 0;
     const addedXueqi = calculatedXueqi > 0
-      ? await Add_血气(player_qq, calculatedXueqi, { idempotencyKey: xueqiClaimKey })
+      ? await Add_血气(playerId, calculatedXueqi, { idempotencyKey: xueqiClaimKey })
       : 0;
 
-    player = await Read_player(player_qq);
+    player = await Read_player(playerId);
     const finalXiuwei = addedXiuwei || Number(player._rewardClaims?.[xiuweiClaimKey]?.amount) || 0;
     const finalXueqi = addedXueqi || Number(player._rewardClaims?.[xueqiClaimKey]?.amount) || 0;
     const itemsGained = [];
@@ -1008,9 +989,9 @@ export class touyingzhutian extends plugin {
     if (!Array.isArray(settledMirror.已结算投影)) settledMirror.已结算投影 = [];
     settledMirror.已结算投影.push(settlementId);
     settledMirror.已结算投影 = settledMirror.已结算投影.slice(-100);
-    await Write_player(player_qq, player);
-    if (mirrorRootChanged) await player_efficiency(player_qq);
-    await redis.del('xiuxian:player:' + player_qq + ':action');
+    await Write_player(playerId, player);
+    if (mirrorRootChanged) await player_efficiency(playerId);
+    await redis.del(actionKey);
 
     e.reply(msg.join('\n'));
     return true;
@@ -1019,8 +1000,8 @@ export class touyingzhutian extends plugin {
 
   // ========== 查看道化之身 ==========
   async listDaohua(e) {
-    const player_qq = e.user_id;
-    const player = await Read_player(player_qq);
+    const playerId = await getProjectionPlayerId(e);
+    const player = await Read_player(playerId);
     if (!player) return e.reply('请先创建角色');
 
     if (!player.道化之身 || player.道化之身.length === 0) {
@@ -1054,8 +1035,8 @@ export class touyingzhutian extends plugin {
 
   // ========== 万身归真 ==========
   async recycleAllDaohua(e) {
-    const player_qq = e.user_id;
-    const player = await Read_player(player_qq);
+    const playerId = await getProjectionPlayerId(e);
+    const player = await Read_player(playerId);
     if (!player) return e.reply('请先创建角色');
 
     if (!player.道化之身 || player.道化之身.length === 0) {
@@ -1087,7 +1068,7 @@ export class touyingzhutian extends plugin {
 
     // 回归率 = 基础70%
     const returnXiuwei = Math.floor(totalXiuwei * 0.7);
-    await Add_修为(player_qq, returnXiuwei);
+    await Add_修为(playerId, returnXiuwei);
 
     // 继承特殊能力
     if (inheritedSpecials.length > 0) {
@@ -1101,7 +1082,7 @@ export class touyingzhutian extends plugin {
     const count = player.道化之身.length;
     const worldNames = player.道化之身.map(d => d.world).join('、');
     player.道化之身 = [];
-    await Write_player(player_qq, player);
+    await Write_player(playerId, player);
 
     const msg = [
       '【万身归真】',

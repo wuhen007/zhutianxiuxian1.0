@@ -191,6 +191,22 @@ function asNonNegativeInteger(value) {
   return Number.isFinite(number) ? Math.max(0, Math.floor(number)) : 0;
 }
 
+export function applyProjectionEffect(projection, expression) {
+  for (const part of String(expression || '').split(',')) {
+    const match = part.trim().match(/([+-]?\d+)(魂|影)/);
+    if (!match) continue;
+    const value = Number(match[1]);
+    if (match[2] === '魂') {
+      const current = Number(projection.soulStability);
+      projection.soulStability = Math.max(0, Math.min(100, (Number.isFinite(current) ? current : 0) + value));
+    } else {
+      const current = Number(projection.worldInfluence);
+      projection.worldInfluence = Math.max(0, (Number.isFinite(current) ? current : 0) + value);
+    }
+  }
+  return projection;
+}
+
 function addUnique(list, value) {
   if (!list.includes(value)) list.push(value);
 }
