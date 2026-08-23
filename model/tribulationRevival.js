@@ -127,14 +127,14 @@ export function resolveGongfaRevival(player, options = {}) {
     const healAmount = Math.floor(Number(player.血量上限 || 0) * 0.6);
     player.当前血量 = healAmount;
     player.柳神效果 = {
-      庇护层数: 3, 减伤比例: 0.2,
-      持续恢复: { 回合数: 5, 治疗量: Math.floor(Number(player.血量上限 || 0) * 0.08) },
+      庇护层数: 3, 减伤比例: 0.45,
+      持续恢复: { 回合数: 5, 治疗量: Math.floor(Number(player.血量上限 || 0) * 0.15) },
       免疫控制: true,
     };
     return { source: '柳神法·生生不息', healAmount, messages: [
       '【柳神法·生生不息】', '消耗50点生命本源（剩余：' + player.生命本源 + '）', '冷却时间：' + REVIVAL_GONGFA_CD['柳神法'] + '回合',
       '通天柳树虚影撑开雷海，枝条垂落万道霞光！', '「祭灵之道，生生不息...」祭祀音回荡星空！',
-      '恢复血量：' + healAmount.toLocaleString(), '附加效果：', '1. 获得3层「柳神庇护」（每层减伤20%）', '2. 每道雷劫恢复8%最大生命值，持续5道', '3. 免疫控制效果',
+      '恢复血量：' + healAmount.toLocaleString(), '附加效果：', '1. 获得3层「柳神庇护」（每层减伤45%，每次落雷消耗1层）', '2. 每道雷劫恢复15%最大生命值，持续5道', '3. 免疫控制效果',
     ] };
   });
   if (ls) return { revived: true, ...ls };

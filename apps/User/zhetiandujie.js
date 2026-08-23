@@ -20,7 +20,8 @@ import {
   calculateZhetianTribulationCosts,
   rollZhetianMinggeRevival,
 } from './zhetianTribulationMingge.js';
-import { calculateEquippedStats } from '../../model/equipmentStats.js';
+import { calculateEquippedStats, calculateEquipmentSetBonuses } from '../../model/equipmentStats.js';
+import { DAO_TREASURE_ALL_ATTRIBUTE_BONUS, isDaoTreasureItem } from '../../model/daoTreasure.js';
 import { consumeBlackEmperorTribulationFormation } from '../../model/blackEmperor.js';
 import { reduceTribulationDamageByDefense } from '../../model/tribulationDamage.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
@@ -28,8 +29,10 @@ import { PLACE_LOCATION_MAP, ZHETIAN_ENTRY_AUTHORITY_LEVEL } from '../../model/w
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import { getPlayerPlaneCoordinate } from '../../model/planeCoords.js';
 import {
+  calculateEmperorTribulationBaseDamage,
   resetTribulationGongfaCooldowns,
   ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS,
+  ZHETIAN_QUASI_EMPEROR_ERA_DIFFICULTY_RATES,
   BODY_TRIBULATION_SHIFT,
   calcPlaneCoordinateShift,
   calcCoordinateShift,
@@ -342,17 +345,17 @@ const tryResurrect = async (gongfaName, effectFunc) => {
             `「祭灵之道，生生不息...」祭祀音回荡星空！`,
             `恢复血量：${healAmount}/${player.血量上限}`,
             `附加效果：`,
-            `1. 获得3层「柳神庇护」（每层减伤20%）`,
-            `2. 每秒恢复8%生命值，持续5秒`,
+            `1. 获得3层「柳神庇护」（每层减伤45%，每次落雷消耗1层）`,
+            `2. 每道雷劫恢复15%最大生命值，持续5道`,
             `3. 免疫控制效果`,
         ].join("\n"));
         
         player.柳神效果 = {
             庇护层数: 3,
-            减伤比例: 0.2,
+            减伤比例: 0.45,
             持续恢复: {
                 回合数: 5,
-                治疗量: Math.floor(player.血量上限 * 0.08)
+                治疗量: Math.floor(player.血量上限 * 0.15)
             },
             免疫控制: true
         };
@@ -2154,7 +2157,7 @@ async zhundileijie(e) {
     const set = config.getConfig('xiuxian', 'xiuxian');
     const currentEra = set.Era?.current || { index: 0, years: 0 };
     const eraCostRates = [2.0, 2.5, 3.0, 4.0, 6.0]; // 准帝劫消耗极大
-    const eraDifficultyRates = [0.3, 0.6, 2, 3, 5];
+    const eraDifficultyRates = ZHETIAN_QUASI_EMPEROR_ERA_DIFFICULTY_RATES;
     const eraNames = ["神话时代", "太古时代", "天命时代", "末法时代", "绝灵时代"];
     
     const difficultyRate = eraDifficultyRates[currentEra.index] * (selectedHeaven / 3);
@@ -2937,6 +2940,7 @@ async zhundileijie(e) {
     const eraName = eraNames[currentEra.index];
     const eraBoost = difficultyRate; // 使用难度系数作为时代加成
     const challengeDifficultyRate = difficultyRate * zhengdaoDecision.difficultyMultiplier;
+    const quasiEmperorDifficultyRate = ZHETIAN_QUASI_EMPEROR_ERA_DIFFICULTY_RATES[currentEra.index] * 3;
     const costModifier = costRate !== 1.0 ? `(×${costRate})` : "";
     
     // 计算实际需求
@@ -3055,7 +3059,12 @@ let battleLog = [
         { 
             name: "万道枷锁", 
             waves: 9,
-            baseDamage: maxAtk * 0.5 * challengeDifficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大帝,
+            baseDamage: calculateEmperorTribulationBaseDamage({
+                maxAtk,
+                quasiDifficultyRate: quasiEmperorDifficultyRate,
+                stage: "万道枷锁",
+                routeDifficultyMultiplier: zhengdaoDecision.difficultyMultiplier,
+            }),
             desc: [
                 `天道降下万道枷锁，欲将逆天者束缚！`,
                 `每一道枷锁都蕴含一种大道法则，`,
@@ -3151,7 +3160,12 @@ let battleLog = [
         {
             name: "帝兵劫",
             waves: 9,
-            baseDamage: maxAtk * 1.2 * challengeDifficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大帝,
+            baseDamage: calculateEmperorTribulationBaseDamage({
+                maxAtk,
+                quasiDifficultyRate: quasiEmperorDifficultyRate,
+                stage: "帝兵劫",
+                routeDifficultyMultiplier: zhengdaoDecision.difficultyMultiplier,
+            }),
             desc: [
                 `雷劫演化极道帝兵，进行终极攻伐！`,
                 `不仅有无始钟、虚空镜等已知帝兵，`,
@@ -3215,7 +3229,12 @@ let battleLog = [
         {
             name: "天道审判",
             waves: 1,
-            baseDamage: maxAtk * 6.0 * challengeDifficultyRate * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大帝,
+            baseDamage: calculateEmperorTribulationBaseDamage({
+                maxAtk,
+                quasiDifficultyRate: quasiEmperorDifficultyRate,
+                stage: "天道审判",
+                routeDifficultyMultiplier: zhengdaoDecision.difficultyMultiplier,
+            }),
             desc: [
                 `最终审判！天道显化，降下终极一击！`,
                 `这是天地对逆天者的最终考验！`,
@@ -3400,6 +3419,7 @@ await this.broadcastToAll(player,startMsg);
         { name: "太阳圣皇", desc: "扶桑神树，耀照九天", quote: "帝路茫茫，唯道可证", basePower: 7.5e8 },
         { name: "青帝", desc: "万古青天一株莲", quote: "天道无常，我道永恒", basePower: 8.2e8 },
         { name: "虚空大帝", desc: "虚空无垠，道化万古", quote: "虚空不灭，大道永存", basePower: 8.8e8 },
+        { name: "恒宇大帝", desc: "恒宇炉火，炼尽诸天", quote: "炉养百经，火炼万道", basePower: 8.9e8 },
         { name: "斗战圣皇", desc: "战天斗地，不敬仙神", quote: "战无不胜，攻无不克", basePower: 9.0e8 },
         { name: "狠人大帝", desc: "一念花开，君临天下", quote: "不为成仙，只为在这红尘中等你归来", basePower: 9e8 },
         { name: "无始大帝", desc: "仙路尽头谁为峰，一见无始道成空", quote: "我道成时，天地俯首", basePower: 9.5e8 }
@@ -3407,6 +3427,10 @@ await this.broadcastToAll(player,startMsg);
     
     let battleCount = 0;
     battleSuccess = true;
+
+    // 帝战开始前回满一次，此后七位古帝连续继承剩余血量。
+    player.当前血量 = player.血量上限;
+    await Write_player(usr_qq, player);
     
     for (const emperor of emperors) {
         battleCount++;
@@ -3418,10 +3442,6 @@ await this.broadcastToAll(player,startMsg);
             player,
             challengeDifficultyRate
         );
-        
-        // 恢复玩家血量
-        player.当前血量 = player.血量上限;
-        await Write_player(usr_qq, player); 
         
         // 战斗预告
         const prebattleMsg = [
@@ -4030,12 +4050,12 @@ async broadcastToAll(player,startMsg) {
 }
 
 // ==== 渡劫属性计算 ====
-// 渡劫保留武器/护具/法宝/帝兵/至宝的直接属性，套装效果仍被天道压制
+// 渡劫保留武器/护具/法宝/帝兵/至宝的直接属性与套装效果
 // 帝兵与独立至宝额外保留全属性×后两层基础
 // 调用方式：const tAttr = this.calcTribulationAttr(player, equipment);
 
 /**
- * 渡劫全属性计算 —— 镜像 Write_equipment，保留装备直接属性但剥离套装效果
+ * 渡劫全属性计算 —— 镜像 Write_equipment，保留装备直接属性与套装效果
  * @param {Object} player  - Read_player 的玩家对象
  * @param {Object} equipment - Read_equipment 的装备对象
  * @returns {{攻击, 防御, 血量上限, 暴击率, 暴击伤害}}
@@ -4114,8 +4134,16 @@ calcTribulationAttr(player, equipment) {
   if (暴击伤害 > 2.5) 暴击伤害 = 2.5;
   if (player.仙宠?.type == '暴伤') 暴击伤害 += player.仙宠.加成 || 0;
 
-  // ===== 阶段5：套装效果 —— 天道排斥，全部归零（×1 无变化） =====
-  // 不计算任何套装增益
+  // ===== 阶段5：套装效果（与 Write_equipment 共用同一规则） =====
+  const daoTreasureEquipped = isDaoTreasureItem(equipment.至宝)
+    && String(equipment.至宝.绑定者 || equipment.至宝.author_name) === String(player.id);
+  const 套装增益 = calculateEquipmentSetBonuses(player, equipment, {
+    daoTreasureEquipped,
+    daoTreasureAllAttributeBonus: DAO_TREASURE_ALL_ATTRIBUTE_BONUS,
+  });
+  攻击 = Math.trunc(攻击 * (1 + 套装增益.攻));
+  防御 = Math.trunc(防御 * (1 + 套装增益.防));
+  血量上限 = Math.trunc(血量上限 * (1 + 套装增益.血));
 
   // ===== 阶段6：帝兵与至宝全属性（只乘后两层基础，保留） =====
   const 秘境基础数据 = data.Levelmijing_list.find(item => item.level_id == player.mijinglevel_id);
@@ -5613,19 +5641,14 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
       );
     }
 
-    if (this.isEffectActive(player, "柳神法") && player.柳神效果) {
-      const 减伤值 = originalDamage * (player.柳神效果.减伤比例 || 0.2);
+    if (player.柳神效果?.庇护层数 > 0) {
+      const 减伤值 = finalDamage * (player.柳神效果.减伤比例 || 0.45);
       finalDamage -= 减伤值;
       
       effectMessages.push(
         `【柳神庇护】抵消${bigNumberTransform(减伤值)}伤害`,
         `剩余庇护层数：${--player.柳神效果.庇护层数}`
       );
-      
-      if (player.柳神效果.持续恢复) {
-        player.当前血量 += player.柳神效果.持续恢复.治疗量 || 0;
-        player.柳神效果.持续恢复.回合数--;
-      }
     }
 
     if (this.isEffectActive(player, "雷帝宝术") && player.雷帝效果) {
@@ -5809,6 +5832,7 @@ function createEmperorPlayer(emperorName, battleNumber, player, difficultyRate =
         当前血量: baseHP,
         攻击: baseAttack,
         防御: baseDefense,
+        速度: 100,
         学习的功法: [],
         灵根: { name: "普通灵根", type: "普通", 法球倍率: 1.0 },
         法球倍率: 1.0,
@@ -5846,6 +5870,15 @@ function createEmperorPlayer(emperorName, battleNumber, player, difficultyRate =
             B_player.学习的功法.push("虚空遁形","虚空经", "虚空永恒放逐","大虚空术");
             B_player.灵根 = { name: "虚空道体", type: "特殊体质", "法球倍率": 1.5 };
             B_player.法球倍率 = 1.5;
+            break;
+
+        case "恒宇大帝":
+            B_player.当前血量 = baseHP * 0.45;
+            B_player.攻击 = baseAttack * 0.65;
+            B_player.防御 = baseDefense * 0.55;
+            B_player.学习的功法.push("恒宇经", "恒宇炉·焚尽八荒", "恒宇炉护体");
+            B_player.灵根 = { name: "恒宇帝体", type: "特殊体质", "法球倍率": 1.8 };
+            B_player.法球倍率 = 1.8;
             break;
             
         case "斗战圣皇":

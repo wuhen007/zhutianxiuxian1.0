@@ -128,6 +128,44 @@ export const ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS = Object.freeze({
   逆活: 180,
 });
 
+export const ZHETIAN_QUASI_EMPEROR_ERA_DIFFICULTY_RATES = Object.freeze([
+  0.3,
+  0.6,
+  2,
+  3,
+  5,
+]);
+
+export const ZHETIAN_EMPEROR_TRIBULATION_RATIOS = Object.freeze({
+  万道枷锁: 1.5,
+  帝兵劫: 1.5,
+  天道审判: 2.75,
+});
+
+const ZHETIAN_QUASI_EMPEROR_STAGE_FACTORS = Object.freeze({
+  万道枷锁: 0.3,
+  帝兵劫: 2,
+  天道审判: 5,
+});
+
+export function calculateEmperorTribulationBaseDamage({
+  maxAtk,
+  quasiDifficultyRate,
+  stage,
+  routeDifficultyMultiplier = 1,
+}) {
+  const stageFactor = ZHETIAN_QUASI_EMPEROR_STAGE_FACTORS[stage];
+  const stageRatio = ZHETIAN_EMPEROR_TRIBULATION_RATIOS[stage];
+  if (!stageFactor || !stageRatio) return 0;
+
+  return Math.max(0, Number(maxAtk) || 0)
+    * stageFactor
+    * Math.max(0, Number(quasiDifficultyRate) || 0)
+    * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.准帝
+    * stageRatio
+    * Math.max(0, Number(routeDifficultyMultiplier) || 0);
+}
+
 export function getReverseLifeTribulationWaves(life) {
   const normalizedLife = Math.max(1, Math.min(9, Math.trunc(Number(life) || 1)));
   return normalizedLife * 7;

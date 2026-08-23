@@ -319,10 +319,19 @@ export class XianguTribulation {
 
     // 柳神法
     if (player.柳神效果 && player.柳神效果.庇护层数 > 0) {
-      const r = finalDamage * (player.柳神效果.减伤比例 || 0.2);
+      const r = finalDamage * (player.柳神效果.减伤比例 || 0.45);
       finalDamage -= r;
       player.柳神效果.庇护层数--;
-      msgs.push(`【柳神法】庇护·减伤 ${bigNumberTransform(r)}`);
+      msgs.push(`【柳神法】庇护·减伤 ${bigNumberTransform(r)}（剩余${player.柳神效果.庇护层数}层）`);
+    }
+    if (player.柳神效果?.持续恢复?.回合数 > 0) {
+      const heal = Math.min(
+        player.柳神效果.持续恢复.治疗量 || Math.floor(M * 0.15),
+        M - (player.当前血量 || 0)
+      );
+      player.当前血量 = Math.min(M, (player.当前血量 || 0) + heal);
+      player.柳神效果.持续恢复.回合数--;
+      msgs.push(`【柳神法】生机流转，恢复 ${bigNumberTransform(heal)} 生命`);
     }
 
     // 涅槃仙功
@@ -440,8 +449,8 @@ export class XianguTribulation {
           player.当前血量 = Math.floor(M * 0.6);
           player.柳神效果 = {
             庇护层数: 3,
-            减伤比例: 0.2,
-            持续恢复: { 回合数: 5, 治疗量: Math.floor(M * 0.08) },
+            减伤比例: 0.45,
+            持续恢复: { 回合数: 5, 治疗量: Math.floor(M * 0.15) },
           };
           break;
         case '不灭经':

@@ -714,12 +714,31 @@ export class FlowerPollenPath extends plugin {
             defense,
             mitigationRate: mitigation.rate,
           });
-          player.当前血量 = Math.max(0, player.当前血量 - waveResult.damage);
+          let actualDamage = waveResult.damage;
+          let willowReduction = 0;
+          if (player.柳神效果?.庇护层数 > 0) {
+            willowReduction = Math.floor(actualDamage * (player.柳神效果.减伤比例 || 0.45));
+            actualDamage = Math.max(0, actualDamage - willowReduction);
+            player.柳神效果.庇护层数--;
+          }
+          player.当前血量 = Math.max(0, player.当前血量 - actualDamage);
           const lines = [
             `第${stageIndex + 1}阶段·第${wave}道雷劫`,
-            `劫伤：${bigNumberTransform(waveResult.damage)}${waveResult.reduction ? `（防御减免 ${bigNumberTransform(waveResult.reduction)}）` : ''}`,
+            `劫伤：${bigNumberTransform(actualDamage)}${waveResult.reduction ? `（防御减免 ${bigNumberTransform(waveResult.reduction)}）` : ''}`,
             `剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`,
           ];
+          if (willowReduction > 0) {
+            lines.push(`【柳神庇护】减伤 ${bigNumberTransform(willowReduction)}，剩余${player.柳神效果.庇护层数}层`);
+          }
+          if (player.柳神效果?.持续恢复?.回合数 > 0) {
+            const heal = Math.min(
+              player.柳神效果.持续恢复.治疗量 || Math.floor(player.血量上限 * 0.15),
+              player.血量上限 - player.当前血量
+            );
+            player.当前血量 += heal;
+            player.柳神效果.持续恢复.回合数--;
+            lines.push(`【柳神生机】恢复 ${bigNumberTransform(heal)}，当前血量 ${bigNumberTransform(player.当前血量)}`);
+          }
           await e.reply(lines.join('\n'));
           if (player.当前血量 <= 0) {
             const revival = resolveGongfaRevival(player, { minggeList: data.minggeList });

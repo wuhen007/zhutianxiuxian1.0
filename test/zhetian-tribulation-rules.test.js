@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  calculateEmperorTribulationBaseDamage,
   calculateXianguHorrorWavePower,
   calcXianguTribulationPower,
   canUseClowWish,
@@ -15,6 +16,8 @@ import {
   LEIDI_TRIBULATION_CONVERSION_RATE,
   LEIDI_TRIBULATION_CONVERSION_WAVES,
   resetTribulationGongfaCooldowns,
+  ZHETIAN_EMPEROR_TRIBULATION_RATIOS,
+  ZHETIAN_QUASI_EMPEROR_ERA_DIFFICULTY_RATES,
   ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS,
 } from '../apps/User/zhetianTribulationRules.js';
 
@@ -45,6 +48,62 @@ test('遮天各境界使用独立雷劫倍率', () => {
     大帝: 150,
     逆活: 180,
   });
+});
+
+test('大帝劫三主阶段按准帝九重劫固定比例缩放', () => {
+  assert.deepEqual(ZHETIAN_EMPEROR_TRIBULATION_RATIOS, {
+    万道枷锁: 1.5,
+    帝兵劫: 1.5,
+    天道审判: 2.75,
+  });
+
+  const stageFactors = { 万道枷锁: 0.3, 帝兵劫: 2, 天道审判: 5 };
+  for (const eraRate of ZHETIAN_QUASI_EMPEROR_ERA_DIFFICULTY_RATES) {
+    const quasiDifficultyRate = eraRate * 3;
+    for (const [stage, factor] of Object.entries(stageFactors)) {
+      const quasiBaseDamage = 100 * factor * quasiDifficultyRate
+        * ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.准帝;
+      assert.equal(calculateEmperorTribulationBaseDamage({
+        maxAtk: 100,
+        quasiDifficultyRate,
+        stage,
+      }), quasiBaseDamage * ZHETIAN_EMPEROR_TRIBULATION_RATIOS[stage]);
+    }
+  }
+
+  assert.equal(calculateEmperorTribulationBaseDamage({
+    maxAtk: 100,
+    quasiDifficultyRate: 6,
+    stage: '帝兵劫',
+    routeDifficultyMultiplier: 1.5,
+  }), 100 * 2 * 6 * 120 * 1.5 * 1.5);
+});
+
+test('七帝连战只在开战前回满一次，并定义恒宇大帝速度与功法', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'apps', 'User', 'zhetiandujie.js'), 'utf8');
+  const attackSkills = JSON.parse(fs.readFileSync(
+    path.join(__dirname, '..', 'resources', 'data', 'item', '技能组', '攻击技能.json'),
+    'utf8',
+  ));
+  const defenseSkills = JSON.parse(fs.readFileSync(
+    path.join(__dirname, '..', 'resources', 'data', 'item', '技能组', '防御技能.json'),
+    'utf8',
+  ));
+  const gauntletStart = source.indexOf('// ==== 大帝意志阵列 ====');
+  const loopStart = source.indexOf('for (const emperor of emperors)', gauntletStart);
+  const loopEnd = source.indexOf('// 最终证道结果', loopStart);
+  const emperorFactoryStart = source.indexOf('function createEmperorPlayer');
+  const emperorFactoryEnd = source.indexOf('// 睡眠函数', emperorFactoryStart);
+  const emperorFactory = source.slice(emperorFactoryStart, emperorFactoryEnd);
+
+  assert.ok(gauntletStart >= 0 && loopStart > gauntletStart && loopEnd > loopStart);
+  assert.match(source.slice(gauntletStart, loopStart), /player\.当前血量 = player\.血量上限;/);
+  assert.doesNotMatch(source.slice(loopStart, loopEnd), /player\.当前血量 = player\.血量上限;/);
+  assert.match(source, /name: "恒宇大帝"/);
+  assert.match(emperorFactory, /速度: 100/);
+  assert.match(emperorFactory, /"恒宇经", "恒宇炉·焚尽八荒", "恒宇炉护体"/);
+  assert.equal(attackSkills.find(skill => skill.name === '恒宇炉·焚尽八荒')?.beilv, 5.2);
+  assert.equal(defenseSkills.find(skill => skill.name === '恒宇炉护体')?.beilv, 0.45);
 });
 
 test('逆活每多一世增加七道雷劫', () => {
