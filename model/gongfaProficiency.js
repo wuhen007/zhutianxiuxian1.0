@@ -306,17 +306,25 @@ export function allocateGongfaInsight(player, name, amount) {
   };
 }
 
+/**
+ * 招式解析的硬性契约：只允许替换「效果数值 + 战斗文案」，
+ * 绝不允许改动 name / class / cnt 这三个技能标识字段。
+ * 战斗引擎按 name 反查归属（功法查 hasLearnedGongfa、灵根查 hasSupremeInnate），
+ * 一旦 name 被招式名覆盖，该技能在所有战斗场景下都会判定失败、永不触发。
+ */
 export function resolveGongfaCombatSkill(player, skill, random = Math.random) {
   if (skill?.class === '灵根' && skill?.帝骑技能池) {
-    return resolveDecadeCombatSkill(player, skill, random);
+    const resolved = resolveDecadeCombatSkill(player, skill, random);
+    if (resolved === skill) return skill;
+    return { ...resolved, name: skill.name, class: skill.class, cnt: skill.cnt };
   }
   if (skill?.class !== '功法' || !Array.isArray(skill.招式) || !skill.招式.length) return skill;
   const proficiency = getGongfaProficiency(player, getSkillProficiencyOwner(skill));
   const moves = skill.招式.filter(move => proficiency >= Math.max(0, Number(move?.最低熟练度) || 0));
   if (!moves.length) return skill;
   const roll = Math.max(0, Math.min(1 - Number.EPSILON, Number(random()) || 0));
-  const { name: moveName, ...effect } = moves[Math.floor(roll * moves.length)];
-  return { ...skill, ...effect, 招式名: moveName };
+  const { name: moveName, class: _moveClass, cnt: _moveCnt, ...effect } = moves[Math.floor(roll * moves.length)];
+  return { ...skill, ...effect, name: skill.name, class: skill.class, cnt: skill.cnt, 招式名: moveName };
 }
 
 export function awardRecordedCombatProficiency(player, amount = 1, options = {}) {

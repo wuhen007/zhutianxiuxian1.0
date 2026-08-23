@@ -66,13 +66,17 @@ export function resolveDecadeCombatSkill(player, skill, random = Math.random) {
   if (!moves.length) return skill;
   const roll = Math.max(0, Math.min(1 - Number.EPSILON, asNumber(random())));
   const move = moves[Math.floor(roll * moves.length)];
+  // 招式的 name 只作为展示用的「招式名」，绝不能覆盖 skill.name。
+  // 战斗引擎用 hasSupremeInnate(attacker, skill.name) 判定灵根技能是否可用，
+  // 一旦 name 被替换成招式名（如「百虫剑·究极斩」），判定必然失败 → 帝骑技能永不触发。
+  const { name: moveName, ...moveEffect } = move;
   const resolved = {
     ...skill,
-    ...move,
+    ...moveEffect,
     帝骑效果: 1,
-    招式名: move.name,
-    msg1: `点亮${move.骑士卡 ? `${move.骑士卡}骑士卡` : '终极卡'}，召唤${move.form}发动《${move.name}》，`,
-    msg2: `被《${move.name}》正面命中`,
+    招式名: moveName,
+    msg1: `点亮${move.骑士卡 ? `${move.骑士卡}骑士卡` : '终极卡'}，召唤${move.form}发动《${moveName}》，`,
+    msg2: `被《${moveName}》正面命中`,
   };
   if (
     resolved.残血倍率 > 1 &&
