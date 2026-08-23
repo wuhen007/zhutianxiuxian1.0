@@ -350,7 +350,7 @@ export function ensureZhutianMirrorSystem(player, { now = Date.now(), migrateLeg
   if (!Array.isArray(decade.骑士卡片)) decade.骑士卡片 = [];
   decade.骑士卡片 = [...new Set(decade.骑士卡片.filter(name => DECADE_RIDER_CARDS.includes(name)))];
   if (!Array.isArray(decade.出战卡组)) decade.出战卡组 = [];
-  decade.出战卡组 = [...new Set(decade.出战卡组.filter(name => decade.骑士卡片.includes(name)))].slice(0, 3);
+  decade.出战卡组 = [...new Set(decade.出战卡组.filter(name => decade.骑士卡片.includes(name)))].slice(0, DECADE_RIDER_CARDS.length);
   if (!Array.isArray(decade.已巡游世界)) decade.已巡游世界 = [];
   decade.已巡游世界 = [...new Set(decade.已巡游世界.filter(name => DECADE_TOUR_WORLDS.includes(name)))];
 
@@ -821,7 +821,7 @@ export function executeFinalAttackRide(player, { now = Date.now(), consumeEnergy
   const progress = system.世界进度.假面骑士帝骑;
   if (!system.已绑定) return { ok: false, reason: 'unbound', system };
   if (system.镜阶 < 3) return { ok: false, reason: 'tier', requiredTier: 3, system };
-  if (progress.出战卡组.length !== 3) return { ok: false, reason: 'deck', system };
+  if (progress.出战卡组.length === 0) return { ok: false, reason: 'deck', system };
   if (progress.世界融合度 < 60) return { ok: false, reason: 'fusion', current: progress.世界融合度, system };
   if (consumeEnergy) {
     const consumed = consumeMirrorEnergy(player, 1, { now });
@@ -853,7 +853,7 @@ export function challengeUltimateCardTrial(player, route, { now = Date.now(), co
   }
   if (!['强攻', '共鸣', '守护'].includes(route)) return { ok: false, reason: 'route', system };
   if (route === '强攻' && progress.共鸣度 < 220) return { ok: false, reason: 'resonance', current: progress.共鸣度, required: 220, system };
-  if (route === '共鸣' && progress.出战卡组.length !== 3) return { ok: false, reason: 'deck', system };
+  if (route === '共鸣' && progress.出战卡组.length === 0) return { ok: false, reason: 'deck', system };
   if (route === '守护' && progress.融合危机次数 < 1) return { ok: false, reason: 'battle', system };
   const realm = inspectZhutianAvatarAdvancement(player, 4);
   if (!realm.ok) return { ok: false, reason: 'realm', realmBlocked: realm, system };
