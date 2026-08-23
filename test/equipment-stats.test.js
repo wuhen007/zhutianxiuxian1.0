@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 
 import {
   calculateEquippedStats,
+  calculateEquipmentSetBonuses,
   getEquipmentAllAttributeMultiplier,
+  isNameablePercentageEquipment,
+  MAX_PERCENT_EQUIPMENT_STAT,
 } from '../model/equipmentStats.js';
 
 test('装备百分比统一加算后只乘一次基础属性', () => {
@@ -67,6 +71,15 @@ test('百分比装备单属性加成上限为 50000%', () => {
   );
 });
 
+test('可赋名百分比装备以499为单属性上限', () => {
+  assert.equal(MAX_PERCENT_EQUIPMENT_STAT, 499);
+  assert.equal(isNameablePercentageEquipment({ type: '武器', atk: 99, def: 0, HP: 0 }), true);
+  assert.equal(isNameablePercentageEquipment({ type: '武器', atk: 499, def: 0, HP: 0 }), true);
+  assert.equal(isNameablePercentageEquipment({ type: '武器', atk: 500, def: 0, HP: 0 }), false);
+  assert.equal(isNameablePercentageEquipment({ type: '法宝', atk: 1, def: 0, HP: 499 }), true);
+  assert.equal(isNameablePercentageEquipment({ type: '武器', atk: 1.4, def: 0.5, HP: 0 }), false);
+});
+
 test('大罗剑胎对至尊体系列提供十五倍，其他灵根提供七点五倍', () => {
   const sword = {
     name: '大罗剑胎',
@@ -79,4 +92,36 @@ test('大罗剑胎对至尊体系列提供十五倍，其他灵根提供七点�
   assert.equal(getEquipmentAllAttributeMultiplier({ 灵根: { type: '终极至尊体' } }, sword), 15);
   assert.equal(getEquipmentAllAttributeMultiplier({ 灵根: { type: '天灵根' } }, sword), 7.5);
   assert.equal(getEquipmentAllAttributeMultiplier({ 灵根: { type: '至尊体' } }, { name: '普通剑' }), 1);
+});
+
+test('常规重算与渡劫共用套装增益规则', () => {
+  assert.deepEqual(calculateEquipmentSetBonuses({
+    魔道值: 1000,
+    灵根: { type: '魔头' },
+  }, {
+    武器: { name: '灭仙剑' },
+    护具: { name: '灭仙衣' },
+    法宝: { name: '灭仙符' },
+  }), { 攻: 0.15, 防: 0, 血: 0 });
+
+  assert.deepEqual(calculateEquipmentSetBonuses({
+    mijinglevel_id: 21,
+    灵根: { type: '普通' },
+  }, {
+    武器: { name: '荒剑' },
+    护具: { name: '祭道甲胄' },
+    法宝: { name: '雷池' },
+  }), { 攻: 52, 防: 62, 血: 47 });
+
+  assert.deepEqual(calculateEquipmentSetBonuses({}, {}), { 攻: 0, 防: 0, 血: 0 });
+
+  const tribulationSource = fs.readFileSync(
+    new URL('../apps/User/zhetiandujie.js', import.meta.url),
+    'utf8',
+  );
+  const methodStart = tribulationSource.indexOf('calcTribulationAttr(player, equipment)');
+  const methodEnd = tribulationSource.indexOf('async command_datitingtianji', methodStart);
+  const methodSource = tribulationSource.slice(methodStart, methodEnd);
+  assert.match(methodSource, /calculateEquipmentSetBonuses\(player, equipment/);
+  assert.doesNotMatch(methodSource, /不计算任何套装增益/);
 });

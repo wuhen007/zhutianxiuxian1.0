@@ -31,6 +31,8 @@ test('只有当前玩家自己炼制且未赋名的百分比装备会被拦截',
   assert.equal(requiresInnerWorldNaming({ ...crafted, owner_name: '10001' }, '10001'), false);
   assert.equal(requiresInnerWorldNaming({ type: '武器', atk: 2 }, '10001'), false);
   assert.equal(requiresInnerWorldNaming({ ...crafted, author_name: '副本天骄' }, '10001'), false);
+  assert.equal(requiresInnerWorldNaming({ ...crafted, atk: 499 }, '10001'), true);
+  assert.equal(requiresInnerWorldNaming({ ...crafted, atk: 500 }, '10001'), false);
 });
 
 test('同名自炼和副本百分比装备并存时只存入副本掉落', () => {

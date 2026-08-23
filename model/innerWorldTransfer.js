@@ -1,3 +1,5 @@
+import { isNameablePercentageEquipment } from './equipmentStats.js';
+
 const TRANSIENT_FIELDS = new Set(['数量', '存入时间']);
 
 function clone(item) {
@@ -21,11 +23,7 @@ function variantKey(item) {
 }
 
 export function isPercentEquipment(item) {
-  const atk = Number(item?.atk) || 0;
-  const def = Number(item?.def) || 0;
-  const hp = Number(item?.HP) || 0;
-  if (atk >= 99 || def >= 99 || hp >= 99) return false;
-  return atk >= 1.5 || def >= 1.2 || (item?.type === '法宝' && (atk >= 1 || def >= 1)) || atk + def > 1.95;
+  return isNameablePercentageEquipment(item);
 }
 
 export function requiresInnerWorldNaming(item, playerId) {

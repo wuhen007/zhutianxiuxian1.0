@@ -19,7 +19,11 @@ function read(relativePath) {
 
 test('装备显示阈值与战斗计算一致：单属性 >499 为数值装备，否则百分比', () => {
   const equipmentStats = read('model/equipmentStats.js');
-  assert.match(equipmentStats, /atk > 499 \|\| def > 499 \|\| HP > 499/);
+  assert.match(equipmentStats, /MAX_PERCENT_EQUIPMENT_STAT = 499/);
+  assert.match(
+    equipmentStats,
+    /atk > MAX_PERCENT_EQUIPMENT_STAT \|\| def > MAX_PERCENT_EQUIPMENT_STAT \|\| HP > MAX_PERCENT_EQUIPMENT_STAT/
+  );
 
   for (const file of EQUIPMENT_HTML_FILES) {
     const html = read(file);

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { getPlayerPlaneName } from './planeCoords.js';
 import { getDungeonGongfaReduction } from './gongfaProficiency.js';
 import { hasPercentageStats } from './tianjiaoTaint.js';
+import { isNameablePercentageEquipment } from './equipmentStats.js';
 
 export const INNATE_TREASURE_NAMES = Object.freeze([
   '混沌珠',
@@ -30,7 +31,6 @@ const LEGACY_RARITY_RANK = Object.freeze({
   普通: 0, 锻造: 0, 稀有: 1, 珍贵: 2, 史诗: 3, 传说: 4,
   顶级: 5, 神级: 6, 仙级: 7, 先天: 8,
 });
-const PERCENT_EQUIPMENT_TYPES = new Set(['武器', '护具', '法宝']);
 
 function readChaosItemRarity(item) {
   const rarity = Number(item?.稀有度);
@@ -42,16 +42,6 @@ export function getChaosItemRarity(item, catalogItem = null) {
   return Math.max(readChaosItemRarity(item), readChaosItemRarity(catalogItem));
 }
 
-function hasLegacyPercentageStats(item) {
-  if (item?.class !== '装备' && !PERCENT_EQUIPMENT_TYPES.has(item?.type)) return false;
-  const atk = Number(item?.atk) || 0;
-  const def = Number(item?.def) || 0;
-  const hp = Number(item?.HP) || 0;
-  if (atk >= 99 || def >= 99 || hp >= 99) return false;
-  return atk >= 1.5 || def >= 1.2 ||
-    (item?.type === '法宝' && (atk >= 1 || def >= 1)) || atk + def > 1.95;
-}
-
 export function getChaosItemRestriction(item, catalogItem = null) {
   const inspected = catalogItem ? { ...catalogItem, ...item } : item;
   const name = item?.name || '该物品';
@@ -60,7 +50,7 @@ export function getChaosItemRestriction(item, catalogItem = null) {
   if (inspected?.type === '帝兵' && inspected?.author_name) {
     return `【${name}】是炼制帝兵，受本命烙印保护，不可进行混沌复制或演化。`;
   }
-  if (hasPercentageStats(inspected) || hasLegacyPercentageStats(inspected)) {
+  if (hasPercentageStats(inspected) || isNameablePercentageEquipment(inspected)) {
     return `【${name}】是百分比装备，不可进行混沌复制或演化。`;
   }
   const rarity = getChaosItemRarity(item, catalogItem);

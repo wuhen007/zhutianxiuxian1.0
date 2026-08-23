@@ -45,6 +45,11 @@ import { log } from 'console';
 import { getPetAbilityBonus, getTimedActionMultiplier } from '../../model/innateTreasure.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import {
+  isEquipmentNameTooLong,
+  parseEquipmentNamingCommand,
+} from '../../model/equipmentNaming.js';
+import { isNameablePercentageEquipment } from '../../model/equipmentStats.js';
+import {
   buildRelativeTianjiaoCombatant,
   selectHostileTianjiao,
 } from '../../model/tianjiaoHostility.js';
@@ -1316,23 +1321,24 @@ export class duanzao extends plugin {
     let user_qq = e.user_id.toString().replace('qg_',''); //用户qq
     user_qq=await channel(user_qq)
     if (!(await existplayer(user_qq))) return false;
-    let thing = e.msg.replace('#', '');
-    thing = thing.replace('赋名', '');
-    const code = thing.split('*');
-    const thing_name = code[0]; //原物品
-    let new_name = code[1]; //新名字
+    const naming = parseEquipmentNamingCommand(e.msg, '赋名');
+    if (!naming) {
+      e.reply('格式错误，请使用：#赋名原装备名*新名字');
+      return false;
+    }
+    const thing_name = naming.originalName;
+    const new_name = naming.newName;
     const thingnum = await exist_najie_thing(user_qq, thing_name, '装备');
     if (!thingnum) {
       e.reply(`你没有这件装备`);
       return false;
     }
-    const newname = await foundthing(new_name);
-    if (newname) {
-      e.reply(`这个世间已经拥有这把武器了`);
+    if (isEquipmentNameTooLong(new_name)) {
+      e.reply('字符超出最大限制,请重新赋名');
       return false;
     }
-    if (newname.length > 8) {
-      e.reply('字符超出最大限制,请重新赋名');
+    if (await foundthing(new_name)) {
+      e.reply(`这个世间已经拥有这把武器了`);
       return false;
     }
     let A;
@@ -1351,14 +1357,7 @@ export class duanzao extends plugin {
     const thingall = await Read_najie(user_qq);
 
     for (let item of thingall.装备) {
-      if (item.name == thing_name) {
-        if (item.atk < 99 && item.def <99 && item.HP < 99) {
-          if (
-            item.atk >= 1.5 ||
-            item.def >= 1.2 ||
-            (item.type == '法宝' && (item.atk >= 1 || item.def >= 1)) ||
-            item.atk + item.def > 1.95
-          ) {
+      if (item.name == thing_name && isNameablePercentageEquipment(item)) {
             item.atk=Math.round(item.atk*100)/100
             item.def=Math.round(item.def*100)/100
             item.HP=Math.round(item.HP*100)/100
@@ -1404,10 +1403,8 @@ export class duanzao extends plugin {
 };
             allThing.push(newThing)
             await dataall(allThing,'传闻系统')
-            e.reply(`附名成功,您的${thing_name}更名为${new_name}`);
+            e.reply(`赋名成功,您的${thing_name}更名为${new_name}`);
             return false;
-          }
-        }
       }
     }
     e.reply(`您的装备太弱了,无法赋予名字`);
@@ -1416,23 +1413,24 @@ export class duanzao extends plugin {
   async remakeit(e){
     let user_qq=e.user_id.toString().replace('qg_','')
     user_qq=await channel(user_qq)
-    let thing = e.msg.replace('#', '');
-    thing = thing.replace('神兵重铸', '');
-    const code = thing.split('*');
-    const thing_name = code[0]; //物品原名
-    let newname = code[1]; //数量改名
+    const naming = parseEquipmentNamingCommand(e.msg, '神兵重铸');
+    if (!naming) {
+      e.reply('格式错误，请使用：#神兵重铸原装备名*新名字');
+      return false;
+    }
+    const thing_name = naming.originalName;
+    const newname = naming.newName;
     const thingnum = await exist_najie_thing(user_qq, thing_name, '装备');
     if (!thingnum) {
       e.reply(`你没有这件装备`);
       return false;
     }
-    const it = await foundthing(newname);
-    if (it) {
-      e.reply(`这个世间已经拥有这把武器了`);
+    if (isEquipmentNameTooLong(newname)) {
+      e.reply('字符超出最大限制,请重新赋名');
       return false;
     }
-    if (it.length > 8) {
-      e.reply('字符超出最大限制,请重新赋名');
+    if (await foundthing(newname)) {
+      e.reply(`这个世间已经拥有这把武器了`);
       return false;
     }
     const ka = await exist_najie_thing(user_qq, '神兵重铸卡', '道具');
