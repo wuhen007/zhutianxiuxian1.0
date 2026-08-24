@@ -7877,6 +7877,37 @@ function handleSpecialSkills(attacker, defender, msg, teshujineng) {
   }
 }
 
+export function consumeBattleActionIndex(unit) {
+  const index = Math.max(0, Math.trunc(Number(unit?._battleActionCount) || 0));
+  if (unit) unit._battleActionCount = index + 1;
+  return index;
+}
+
+export function applyBattleStatBoostOnce(unit, flag, multipliers = {}) {
+  if (!unit || unit[flag]) return false;
+  unit[flag] = true;
+  if (Number(multipliers.attack) > 0) {
+    unit.攻击 = Math.trunc((Number(unit.攻击) || 0) * Number(multipliers.attack));
+  }
+  if (Number(multipliers.defense) > 0) {
+    unit.防御 = Math.trunc((Number(unit.防御) || 0) * Number(multipliers.defense));
+  }
+  if (Number(multipliers.health) > 0) {
+    const maxHp = Math.max(0, Number(unit.血量上限) || Number(unit.当前血量) || 0);
+    unit.当前血量 = Math.min(maxHp, Math.trunc((Number(unit.当前血量) || 0) * Number(multipliers.health)));
+  }
+  return true;
+}
+
+export function healBattleUnitByCurrentRatio(unit, ratio) {
+  if (!unit || !(Number(ratio) > 0)) return 0;
+  const currentHp = Math.max(0, Number(unit.当前血量) || 0);
+  const maxHp = Number(unit.血量上限) > 0 ? Number(unit.血量上限) : currentHp;
+  const nextHp = Math.min(maxHp, Math.trunc(currentHp * (1 + Number(ratio))));
+  unit.当前血量 = nextHp;
+  return Math.max(0, nextHp - currentHp);
+}
+
 /**
  * 战斗分发函数
  * 支持模式：
@@ -8061,8 +8092,10 @@ let B_speed = (B_player.速度 ?? 100)
   
   let actionOrder = [];
 
+  A_player._battleActionCount = 0;
+  B_player._battleActionCount = 0;
   let cnt = 0;
-  let cnt2;
+  let cnt2 = 0;
   let t;
   let msg = [];
   // 打桩/DPS 测试用：累计 B 方（木桩）承受的总伤害，供外部精确计算 DPS。
@@ -8489,16 +8522,21 @@ let B_speed = (B_player.速度 ?? 100)
         );
         msg.push(bannerAttack.message, ...bannerDamage.msgs);
         msg.push(
-          `${defender.名号}元神受创，损失${bigNumberTransform(applied.actual_damage)}点生命，行动值-${bannerAttack.actionBarReduction}！`
+          `${defender.名号}元神受创，损失${bigNumberTransform(applied.actual_damage)}点生命，剩余血量${bigNumberTransform(defender.当前血量)}，行动值-${bannerAttack.actionBarReduction}！`
         );
-        if (defender.当前血量 <= 0 && !applied.revived) {
-          return {
-            伤害: 0,
-            isCritical: false,
-            baoji: 1,
-            battleEnded: true,
-            winner: attacker === A_player ? 'A' : 'B',
-          };
+        if (defender.当前血量 <= 0) {
+          const revival = checkRevival(defender, 'main');
+          if (revival.revived) {
+            msg.push(...(Array.isArray(revival.message) ? revival.message : [revival.message]));
+          } else {
+            return {
+              伤害: 0,
+              isCritical: false,
+              baoji: 1,
+              battleEnded: true,
+              winner: attacker === A_player ? 'A' : 'B',
+            };
+          }
         }
       }
     }
@@ -8618,10 +8656,11 @@ let B_speed = (B_player.速度 ?? 100)
       if (petCriticalBonus > 0) baoji += petCriticalBonus;
       if (petCombatBonus > 0) {
         let ran = Math.random();
-        if (ran < 0.35) {
-          attacker.攻击 += Math.trunc(attacker.攻击 * petCombatBonus);
-          attacker.防御 += Math.trunc(attacker.防御 * petCombatBonus);
-          attacker.当前血量 += Math.trunc(attacker.当前血量 * petCombatBonus);
+        if (ran < 0.35 && applyBattleStatBoostOnce(attacker, '_仙宠战斗增幅已触发', {
+          attack: 1 + petCombatBonus,
+          defense: 1 + petCombatBonus,
+          health: 1 + petCombatBonus,
+        })) {
           msg.push(`仙宠【${attacker.仙宠.name}】辅佐了${attacker.名号}，攻防血增加${Math.trunc(petCombatBonus * 100)}%`);
         }
       }
@@ -8644,14 +8683,15 @@ let B_speed = (B_player.速度 ?? 100)
       if (equipment?.护具?.name == '星辰袍' && ran > 0.15) {
         const shieldValue = Math.trunc(attacker.血量上限 * 0.35);
         attacker.护盾值 = (attacker.护盾值 || 0) + shieldValue;
-        const defenseBoost = Math.trunc(attacker.防御 * 0.5);
-        attacker.防御 += defenseBoost;
+        const defenseBefore = attacker.防御;
+        const defenseBoosted = applyBattleStatBoostOnce(attacker, '_星辰袍防御已触发', { defense: 1.5 });
+        const defenseBoost = defenseBoosted ? attacker.防御 - defenseBefore : 0;
 
         msg.push(`【星辰袍·周天星斗护体】`);
         msg.push(`${attacker.名号}身披星辰袍，引动周天星斗之力！`);
         msg.push(`三百六十五颗主星同时亮起，垂落无尽星辉，结成周天星斗大阵！`);
         msg.push(`星辰之力凝聚成不灭护盾，万法不侵（护盾值+${shieldValue}）`);
-        msg.push(`星辉淬体，防御力大幅提升（防御+${defenseBoost}）`);
+        if (defenseBoosted) msg.push(`星辉淬体，防御力大幅提升（防御+${defenseBoost}）`);
 
         if (ran > 0.85) {
           const counterDamage = Math.trunc(defender.攻击 * 0.8);
@@ -8664,16 +8704,16 @@ let B_speed = (B_player.速度 ?? 100)
         }
       }
 
-      if (equipment?.武器?.name == '紫云剑' && ran > 0.7) {
-        attacker.攻击 *= 3;
+      if (equipment?.武器?.name == '紫云剑' && ran > 0.7 &&
+          applyBattleStatBoostOnce(attacker, '_紫云剑增幅已触发', { attack: 3 })) {
         msg.push(`${attacker.名号}触发了紫云剑被动,攻击力提高了200%`);
       } else if (equipment?.武器?.name == '炼血竹枪' && ran > 0.75) {
-        attacker.攻击 *= 2;
-        attacker.当前血量 = Math.trunc(attacker.当前血量 * 1.2);
-        msg.push(`${attacker.名号}触发了炼血竹枪被动,攻击力提高了100%,血量回复了20%`);
+        const boosted = applyBattleStatBoostOnce(attacker, '_炼血竹枪增幅已触发', { attack: 2 });
+        const healed = healBattleUnitByCurrentRatio(attacker, 0.2);
+        if (boosted || healed > 0) msg.push(`${attacker.名号}触发了炼血竹枪被动,攻击力提高了100%,恢复${bigNumberTransform(healed)}点血量`);
       } else if (equipment?.武器?.name == '少阴玉剑' && ran > 0.75) {
-        attacker.当前血量 = Math.trunc(attacker.当前血量 * 1.4);
-        msg.push(`${attacker.名号}触发了少阴玉剑被动,血量回复了40%`);
+        const healed = healBattleUnitByCurrentRatio(attacker, 0.4);
+        if (healed > 0) msg.push(`${attacker.名号}触发了少阴玉剑被动,恢复${bigNumberTransform(healed)}点血量`);
       } else if (equipment?.武器?.name == '荒剑' && (attacker.mijinglevel_id>20||attacker.xiangulevel_id>20) && ran > 0.75) {
         let 武器伤害 = attacker.攻击 * attacker.法球倍率 * 100;
         defender.当前血量 = Math.max(defender.当前血量 - 武器伤害, 0);
@@ -9000,9 +9040,7 @@ let B_speed = (B_player.速度 ?? 100)
             const 攻击者原始血量 = attacker.当前血量;
             attacker.当前血量 = Math.max(attacker.当前血量 - 反弹伤害, 0);
             const 攻击者损失血量 = 攻击者原始血量 - attacker.当前血量;
-            
-            伤害 = 伤害 * getDefenseSkillMultiplier(defender, skill) + skill.other;
-            
+
             msg.push(`${attacker.名号}受到${bigNumberTransform(反弹伤害)}点反弹伤害！`);
             msg.push(`${defender.名号}当前生命${bigNumberTransform(defender.当前血量)}，${attacker.名号}当前生命：${bigNumberTransform(攻击者原始血量)} → ${bigNumberTransform(attacker.当前血量)} (减少${bigNumberTransform(攻击者损失血量)})`);
           }
@@ -9018,6 +9056,23 @@ let B_speed = (B_player.速度 ?? 100)
       }
     } else {
       msg.push(`${defender.名号}的防御手段被${attacker.名号}的攻击神通完全压制！`);
+    }
+
+    if (context !== 'fenshen' && attacker.当前血量 <= 0) {
+      const revival = checkRevival(attacker, context);
+      if (revival.revived) {
+        msg.push(revival.message);
+      } else {
+        msg.push(`${attacker.名号}被${defender.名号}的反击之力击溃！`);
+        return {
+          伤害: 0,
+          isCritical: false,
+          baoji: 1,
+          battleEnded: true,
+          winner: defender === A_player ? 'A' : 'B',
+          msg: [],
+        };
+      }
     }
 
     let buff = 1;
@@ -9079,7 +9134,7 @@ let B_speed = (B_player.速度 ?? 100)
     return { 伤害, isCritical, baoji, 无视减伤, 斩杀阈值 };
   }
 
-  // ==================== 伤害应用函数（保持原样） ====================
+  // ==================== 伤害应用函数 ====================
   function applyDamage(defender, 伤害, context, source = null) {
     let fenshen_blocked = false;
     let actual_damage = 伤害;
@@ -9218,15 +9273,6 @@ let B_speed = (B_player.速度 ?? 100)
       triggerVitalityRecovery(defender, '受击后');
     }
 
-    // P0-2: 致死时立即检查复活（不让主循环漏掉涅槃仙功/圆神复活机会）
-    if (context !== "fenshen" && defender.当前血量 <= 0) {
-      const 复活结果 = checkRevival(defender, context);
-      if (复活结果.revived) {
-        msg.push(复活结果.message);
-        return { actual_damage: 0, fenshen_blocked, revived: true };
-      }
-    }
-
     return { actual_damage, fenshen_blocked };
   }
 
@@ -9283,7 +9329,7 @@ let B_speed = (B_player.速度 ?? 100)
     for (var i = 0; i < availableReviveSkills.length; i++) {
       if (availableReviveSkills[i].复活技能 !== 1) continue;
 
-      if (player.学习的功法 && player.学习的功法.indexOf(availableReviveSkills[i].name) > -1) {
+      if (hasLearnedGongfa(player, availableReviveSkills[i].熟练度归属 || availableReviveSkills[i].name)) {
         const skill = availableReviveSkills[i];
         const alreadyRevived = player === A_player ? A_revived : B_revived;
         const zheziLimit = getZheziReviveConfig(player).maxRevives;
@@ -9476,6 +9522,11 @@ let B_speed = (B_player.速度 ?? 100)
   }
   await applyInnateBattleOpening(A_player, B_player);
   await applyInnateBattleOpening(B_player, A_player);
+  for (const player of [A_player, B_player]) {
+    if (player.当前血量 > 0) continue;
+    const revival = checkRevival(player, 'main');
+    if (revival.revived) msg.push(revival.message);
+  }
 
 msg.push(`天地元气涌动，二人周身气势攀升，大战一触即发！`);
 msg.push(`【天道法则】行动条满三千点方可出手，速度决定先机`);
@@ -9531,8 +9582,6 @@ msg.push(bSpeedMsg);
       }
       break;
     }
-    cnt2 = Math.trunc(cnt / 2);
-    
     // ===== 推进行动条 =====
     let actionResult = null;
     let roundsAdvanced = 0;
@@ -9550,6 +9599,7 @@ msg.push(bSpeedMsg);
     if (!actionResult) break;
     
     const { attacker, defender, attackerBar, defenderBar } = actionResult;
+    cnt2 = consumeBattleActionIndex(attacker);
           // 每轮显示行动条状态
       const A_bar = Math.min(A_actionBar, ACTION_BAR_MAX);
       const B_bar = Math.min(B_actionBar, ACTION_BAR_MAX);
@@ -9670,18 +9720,18 @@ msg.push(bSpeedMsg);
     if (!attacker.dongjie) {
       // 木之本樱恢复
       if (attacker.灵根 && attacker.灵根.name === "木之本樱" && attacker.当前血量 < attacker.血量上限 && Math.random() < 0.55) {
-        let 回复血量 = attacker.当前血量 * 0.3;
-        attacker.当前血量 = Math.max(attacker.当前血量 + 回复血量, 0);
+        const 回复血量 = healBattleUnitByCurrentRatio(attacker, 0.3);
         msg.push(`${attacker.名号}拿出了爱牌，为自己回复了${bigNumberTransform(回复血量)}点生命,${attacker.名号}当前血量${bigNumberTransform(attacker.当前血量)}`);
       }
 
       // 小成圣体（保持原样）
       if (attacker.灵根?.type == "小成圣体") {
-        if (Math.random() < 0.15) {
+        if (Math.random() < 0.15 && applyBattleStatBoostOnce(attacker, '_小成圣体异象已触发', {
+          attack: 1.5,
+          defense: 1.5,
+          health: 1.5,
+        })) {
           msg.push(`${attacker.名号} 撑开了异象锦绣山河，一片不属于此界的天地山河浮现，山河领域笼罩自身，战力暴涨，举手投足间让宇宙中的日月星辰都与之共鸣，绽开无量神光`);
-          attacker.当前血量 *= 1.5;
-          attacker.防御 *= 1.5;
-          attacker.攻击 *= 1.5;
           msg.push(`${attacker.名号}的攻击暴涨到了${bigNumberTransform(attacker.攻击)}，${attacker.名号}的防御暴涨到了${bigNumberTransform(attacker.防御)}，${attacker.名号}的生命暴涨到了${bigNumberTransform(attacker.当前血量)}`);
         }
         
@@ -10005,7 +10055,20 @@ msg.push(bSpeedMsg);
       // 检查复活（保持原样）
       const 复活结果 = checkRevival(defender, "main");
       if (复活结果.revived) {
-        msg.push(复活结果.message);
+        msg.push(...(Array.isArray(复活结果.message) ? 复活结果.message : [复活结果.message]));
+      }
+
+      if (attacker.当前血量 <= 0) {
+        const attackerRevival = checkRevival(attacker, 'main');
+        if (attackerRevival.revived) {
+          msg.push(...(Array.isArray(attackerRevival.message) ? attackerRevival.message : [attackerRevival.message]));
+        } else if (defender.当前血量 > 0) {
+          msg.push(`${attacker.名号}被${defender.名号}的反制手段击溃！`);
+          return build1v1BattleResult({
+            battleEnded: true,
+            winner: defender === A_player ? 'A' : 'B',
+          });
+        }
       }
       const domainMessage = tickDaoTreasureDomain(attacker);
       if (domainMessage) msg.push(domainMessage);
@@ -10142,6 +10205,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       p._speed = (p.速度 ?? 100) + (p.mijinglevel_id ?? 0) * 50 + (p.xiangulevel_id ?? 0) * 50
         + Math.max(0, (p.huafenlevel_id ?? 1) - 1) * 50;
       p._speedBoost = 1.0;
+      p._battleActionCount = 0;
       p._fumianhuihe = 0;
       p._fumian_damage = 0;
       p._fumian_type = null;
@@ -10310,6 +10374,11 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
   for (const holder of A_team) await applyTeamInnateOpening(holder, B_team);
   for (const holder of B_team) await applyTeamInnateOpening(holder, A_team);
+  for (const unit of allUnits) {
+    if (unit.当前血量 > 0) continue;
+    const revival = checkTeamRevival(unit);
+    if (revival.revived) msg.push(...(Array.isArray(revival.message) ? revival.message : [revival.message]));
+  }
 
   const aLun = A_team.find(unit => unit.当前先天至宝 === '六道轮回盘');
   if (aLun) {
@@ -10566,7 +10635,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       defender._actionBar = Math.max(0, (Number(defender._actionBar) || 0) - bannerAttack.actionBarReduction);
       attackMsgs.push(bannerAttack.message, ...bannerDamage.msgs);
       attackMsgs.push(
-        `${defender.名号}元神受创，损失${bigNumberTransform(actualDamage)}点生命，行动值-${bannerAttack.actionBarReduction}！`
+        `${defender.名号}元神受创，损失${bigNumberTransform(actualDamage)}点生命，剩余血量${bigNumberTransform(defender.当前血量)}，行动值-${bannerAttack.actionBarReduction}！`
       );
       if (defender.当前血量 <= 0) {
         return { msgs: attackMsgs, damage: actualDamage, killed: true, aoeKilled: [] };
@@ -10617,11 +10686,12 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     // 小成圣体特殊处理
     if (attacker.灵根?.type == "小成圣体") {
-      if (Math.random() < 0.15) {
+      if (Math.random() < 0.15 && applyBattleStatBoostOnce(attacker, '_小成圣体异象已触发', {
+        attack: 1.5,
+        defense: 1.5,
+        health: 1.5,
+      })) {
         attackMsgs.push(`${attacker.名号}撑开了异象锦绣山河！`);
-        attacker.当前血量 = Math.trunc(attacker.当前血量 * 1.5);
-        attacker.防御 = Math.trunc(attacker.防御 * 1.5);
-        attacker.攻击 = Math.trunc(attacker.攻击 * 1.5);
       }
       if (Math.random() < 0.25) {
         let 伤害 = Harm(attacker.攻击 * 0.85, defender.防御);
@@ -10638,18 +10708,18 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     // 大成圣体异象
     if (attacker.灵根?.type == "大成圣体") {
-      if (Math.random() < 0.3) {
-        attacker.攻击 = Math.trunc(attacker.攻击 * 3);
+      if (Math.random() < 0.3 && applyBattleStatBoostOnce(attacker, '_大成圣体异象已触发', { attack: 3 })) {
         attackMsgs.push(`${attacker.名号}九大异象齐开，九尊仙王虚影浮现！`);
       }
     }
 
     // 混沌体
     if (attacker.灵根?.type == "混沌体") {
-      if (Math.random() < 0.4) {
-        attacker.攻击 = Math.trunc(attacker.攻击 * 2);
-        attacker.防御 = Math.trunc(attacker.防御 * 2);
-        attacker.当前血量 = Math.trunc(attacker.当前血量 * 1.5);
+      if (Math.random() < 0.4 && applyBattleStatBoostOnce(attacker, '_混沌体异象已触发', {
+        attack: 2,
+        defense: 2,
+        health: 1.5,
+      })) {
         attackMsgs.push(`${attacker.名号}混沌体异象显现，万道混沌气弥漫！`);
       }
     }
@@ -10676,8 +10746,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     // 木之本樱恢复
     if (attacker.灵根 && attacker.灵根.name === "木之本樱" && attacker.当前血量 < attacker.血量上限 && Math.random() < 0.55) {
-      let 回复血量 = attacker.当前血量 * 0.3;
-      attacker.当前血量 = Math.max(attacker.当前血量 + 回复血量, 0);
+      const 回复血量 = healBattleUnitByCurrentRatio(attacker, 0.3);
       attackMsgs.push(`${attacker.名号}为自己回复了${bigNumberTransform(回复血量)}点生命`);
     }
 
@@ -10697,8 +10766,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         if (equipment.护具.name == '星辰袍' && ran > 0.15) {
           const shieldValue = Math.trunc(attacker.血量上限 * 0.35);
           attacker._护盾值 = (attacker._护盾值 || 0) + shieldValue;
-          const defenseBoost = Math.trunc(attacker.防御 * 0.5);
-          attacker.防御 += defenseBoost;
+          applyBattleStatBoostOnce(attacker, '_星辰袍防御已触发', { defense: 1.5 });
           attackMsgs.push(`【星辰袍·周天星斗护体】星辰之力凝聚不灭护盾（+${shieldValue}护盾）`);
           
           if (ran > 0.85) {
@@ -10711,16 +10779,16 @@ async function zd_battle_team(A_team, B_team, options = {}) {
           }
         }
 
-        if (equipment.武器.name == '紫云剑' && ran > 0.7) {
-          attacker.攻击 = Math.trunc(attacker.攻击 * 3);
+        if (equipment.武器.name == '紫云剑' && ran > 0.7 &&
+            applyBattleStatBoostOnce(attacker, '_紫云剑增幅已触发', { attack: 3 })) {
           attackMsgs.push(`${attacker.名号}触发了紫云剑被动,攻击力提高200%`);
         } else if (equipment.武器.name == '炼血竹枪' && ran > 0.75) {
-          attacker.攻击 = Math.trunc(attacker.攻击 * 2);
-          attacker.当前血量 = Math.trunc(attacker.当前血量 * 1.2);
-          attackMsgs.push(`${attacker.名号}触发了炼血竹枪被动,攻击力+100%,血量+20%`);
+          const boosted = applyBattleStatBoostOnce(attacker, '_炼血竹枪增幅已触发', { attack: 2 });
+          const healed = healBattleUnitByCurrentRatio(attacker, 0.2);
+          if (boosted || healed > 0) attackMsgs.push(`${attacker.名号}触发了炼血竹枪被动,攻击力+100%,恢复${bigNumberTransform(healed)}点血量`);
         } else if (equipment.武器.name == '少阴玉剑' && ran > 0.75) {
-          attacker.当前血量 = Math.trunc(attacker.当前血量 * 1.4);
-          attackMsgs.push(`${attacker.名号}触发了少阴玉剑被动,血量+40%`);
+          const healed = healBattleUnitByCurrentRatio(attacker, 0.4);
+          if (healed > 0) attackMsgs.push(`${attacker.名号}触发了少阴玉剑被动,恢复${bigNumberTransform(healed)}点血量`);
         } else if (equipment.武器.name == '荒剑' && (attacker.mijinglevel_id > 20 || attacker.xiangulevel_id > 20) && ran > 0.75) {
           let 武器伤害 = attacker.攻击 * attacker.法球倍率 * 100;
           defender.当前血量 = Math.max(defender.当前血量 - 武器伤害, 0);
@@ -10742,10 +10810,11 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       if (petCriticalBonus > 0) baoji += petCriticalBonus;
       if (petCombatBonus > 0) {
         let ran = Math.random();
-        if (ran < 0.35) {
-          attacker.攻击 += Math.trunc(attacker.攻击 * petCombatBonus);
-          attacker.防御 += Math.trunc(attacker.防御 * petCombatBonus);
-          attacker.当前血量 += Math.trunc(attacker.当前血量 * petCombatBonus);
+        if (ran < 0.35 && applyBattleStatBoostOnce(attacker, '_仙宠战斗增幅已触发', {
+          attack: 1 + petCombatBonus,
+          defense: 1 + petCombatBonus,
+          health: 1 + petCombatBonus,
+        })) {
           attackMsgs.push(`仙宠【${attacker.仙宠.name}】辅佐了${attacker.名号}，伤害+${Math.trunc(petCombatBonus * 100)}%`);
         }
       }
@@ -11285,6 +11354,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     if (!readyUnit) break;
 
     readyUnit._actionBar -= ACTION_BAR_MAX;
+    const roundIndex = consumeBattleActionIndex(readyUnit);
 
     const enemies = getAliveEnemies(readyUnit);
     if (enemies.length === 0) break;
@@ -11366,7 +11436,6 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     }
 
     // 执行攻击
-    const roundIndex = Math.trunc(cnt / 2);
     const attackResult = await performTeamAttack(readyUnit, target, roundIndex, enemies);
     msg.push(...attackResult.msgs);
     const domainMessage = tickDaoTreasureDomain(readyUnit);
@@ -11394,14 +11463,6 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       }
     }
 
-    const summonedEntities = summonTeamYiqihua(readyUnit);
-    const activeEntities = readyUnit._team === 'A' ? A_yiqihua_entities : B_yiqihua_entities;
-    if (summonedEntities.length > 0 || activeEntities.length > 0) {
-      const enemyTeam = readyUnit._team === 'A' ? B_team : A_team;
-      await processTeamYiqihua(activeEntities, enemyTeam, roundIndex);
-      tickTeamYiqihua(activeEntities);
-    }
-
     // 检查攻击者是否被反弹致死
     if (readyUnit.当前血量 <= 0) {
       const reviveResult = checkTeamRevival(readyUnit);
@@ -11409,6 +11470,16 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         msg.push(...reviveResult.message);
       } else {
         msg.push(`${readyUnit.名号}被反弹之力击溃！`);
+      }
+    }
+
+    if (readyUnit.当前血量 > 0) {
+      const summonedEntities = summonTeamYiqihua(readyUnit);
+      const activeEntities = readyUnit._team === 'A' ? A_yiqihua_entities : B_yiqihua_entities;
+      if (summonedEntities.length > 0 || activeEntities.length > 0) {
+        const enemyTeam = readyUnit._team === 'A' ? B_team : A_team;
+        await processTeamYiqihua(activeEntities, enemyTeam, roundIndex);
+        tickTeamYiqihua(activeEntities);
       }
     }
 
@@ -11470,6 +11541,7 @@ export async function tb_battle(players, boss, team) {
   // 初始化玩家属性
   for (let player of teamData) {
     player.初始血量 = player.当前血量; // 记录初始血量
+    player._battleActionCount = 0;
     
     // 魔道值增益处理
     if (player.魔道值 > 999 && (player.灵根.type == '魔头' || player.灵根.type == '天魔')) {
@@ -11488,6 +11560,7 @@ export async function tb_battle(players, boss, team) {
       );
     }
   }
+  bossCopy._battleActionCount = 0;
   
   // 仇恨系统：记录每个玩家的仇恨值
   let hatred = new Array(teamData.length).fill(0);
@@ -11546,7 +11619,7 @@ export async function tb_battle(players, boss, team) {
       if (playerFateTransfer.triggered) msg.push(playerFateTransfer.message);
       
       // 玩家攻击BOSS
-      const result = await calculateAttack(player, bossCopy, cnt, jineng1, jineng2);
+      const result = await calculateAttack(player, bossCopy, consumeBattleActionIndex(player), jineng1, jineng2);
       msg.push(...result.msgs);
 
       const bossFate = resolveSuLingFatalFate(bossCopy, player, result.damage);
@@ -11598,7 +11671,7 @@ export async function tb_battle(players, boss, team) {
     if (bossFateTransfer.triggered) msg.push(bossFateTransfer.message);
     
     // BOSS攻击仇恨目标
-    const result = await calculateAttack(bossCopy, targetPlayer, cnt, jineng1, jineng2);
+    const result = await calculateAttack(bossCopy, targetPlayer, consumeBattleActionIndex(bossCopy), jineng1, jineng2);
     msg.push(...result.msgs);
 
     const playerFate = resolveSuLingFatalFate(targetPlayer, bossCopy, result.damage);
@@ -11681,12 +11754,12 @@ function selectTarget(players, hatred) {
 
 // 计算攻击伤害（删除仙宠逻辑）
 // P0-5: 加 equipment 缓存 + 装备属性加成不修改 attacker（防指数膨胀）
-async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
+async function calculateAttack(attacker, defender, actionIndex, jineng1, jineng2) {
   let msgs = [];
   let triggerShengti = false; // 小成圣体触发标志
   let 无视减伤 = false; // 草字剑诀·斩真我：无视目标减伤与类型减免
   let 斩杀阈值 = 0; // 草字剑诀·斩真我：命中后残血斩杀阈值
-  tickDecadeCombatState(attacker, cnt, msgs);
+  tickDecadeCombatState(attacker, actionIndex, msgs);
 
   applyXianguTurnRecovery(attacker, msgs);
 
@@ -11729,12 +11802,10 @@ async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
       msgs.push(`${attacker.名号}触发了紫云剑被动，攻击力临时提高${weaponAtkBoost}`);
     } else if (equipment.武器?.name == '炼血竹枪' && ran > 0.75) {
       weaponAtkBoost = originalAtk;  // 攻击力 +100%
-      weaponHpHeal = attacker.当前血量 * 0.2;
-      attacker.当前血量 = Math.trunc(attacker.当前血量 + weaponHpHeal);
+      weaponHpHeal = healBattleUnitByCurrentRatio(attacker, 0.2);
       msgs.push(`${attacker.名号}触发了炼血竹枪被动，攻击力临时提高${weaponAtkBoost}，血量回复${weaponHpHeal}`);
     } else if (equipment.武器?.name == '少阴玉剑' && ran > 0.85) {
-      weaponHpHeal = attacker.当前血量 * 0.4;
-      attacker.当前血量 = Math.trunc(attacker.当前血量 + weaponHpHeal);
+      weaponHpHeal = healBattleUnitByCurrentRatio(attacker, 0.4);
       msgs.push(`${attacker.名号}触发了少阴玉剑被动，血量回复${weaponHpHeal}`);
     }
   }
@@ -11765,7 +11836,7 @@ async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
   
   // 技能触发
   let count = 0; // 限制次数
-  let cnt2 = Math.trunc(cnt / 2);
+  const cnt2 = actionIndex;
   let 攻击类型 = '神通'; // 攻击技能类型（元神/神通/近战），用于 calcDamage 类型加成/减免
   const _基础伤害 = 伤害; // 基础普攻伤害（归为神通类型）
   let 类型桶 = { '神通': _基础伤害 }; // 分类型伤害桶：每个技能按自身攻击类型累加增量
@@ -11777,9 +11848,8 @@ async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
       (skill.class == '常驻' &&
         (cnt2 == skill.cnt || skill.cnt == -1) &&
         Math.random() < getGongfaTriggerChance(attacker, skill)) ||
-      (attacker.学习的功法 &&
-        skill.class == '功法' &&
-        attacker.学习的功法.indexOf(skill.name) > -1 &&
+      (skill.class == '功法' &&
+        hasLearnedGongfa(attacker, skill.熟练度归属 || skill.name) &&
         (cnt2 == skill.cnt || skill.cnt == -1) &&
         Math.random() < getGongfaTriggerChance(attacker, skill)) ||
       (skill.class == '灵根' &&
@@ -11838,9 +11908,8 @@ async function calculateAttack(attacker, defender, cnt, jineng1, jineng2) {
 
   for (var i = 0; i < jineng2.length; i++) {
     if (
-      (defender.学习的功法 &&
-        jineng2[i].class == '功法' &&
-        defender.学习的功法.indexOf(jineng2[i].name) > -1 &&
+      (jineng2[i].class == '功法' &&
+        hasLearnedGongfa(defender, jineng2[i].熟练度归属 || jineng2[i].name) &&
         (cnt2 == jineng2[i].cnt || jineng2[i].cnt == -1) &&
         Math.random() < getGongfaTriggerChance(defender, jineng2[i])) ||
       (jineng2[i].class == '灵根' &&
@@ -12754,17 +12823,18 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
     // 仙宠幸运加成同步
     let pet = player.仙宠;
     if (pet && pet.id) {
+      const isLuckyPet = pet.type === '幸运';
       // 原有ID范围内的幸运仙宠（2931-2935）
       if (pet.id > 2930 && pet.id < 2936) {
         pet.初始加成 = 0.002;
         pet.每级增加 = 0.002;
         pet.加成 = pet.每级增加 * (pet.等级 || 1);
-        player.幸运 = (Number(player.addluckyNo) || 0) + (Number(pet.加成) || 0);
+        player.幸运 = (Number(player.addluckyNo) || 0) + (isLuckyPet ? (Number(pet.加成) || 0) : 0);
       }
-      // 其他幸运仙宠（如麒麟、鲲鹏等，根据初始加成属性判断）
+      // 其他成长型仙宠（麒麟、鲲鹏等，根据初始加成属性判断）
       else if (isNotNull(pet.初始加成) && isNotNull(pet.每级增加)) {
         pet.加成 = pet.每级增加 * (pet.等级 || 1);
-        player.幸运 = (Number(player.addluckyNo) || 0) + (Number(pet.加成) || 0);
+        player.幸运 = (Number(player.addluckyNo) || 0) + (isLuckyPet ? (Number(pet.加成) || 0) : 0);
       }
       // 非幸运类型仙宠
       else {
