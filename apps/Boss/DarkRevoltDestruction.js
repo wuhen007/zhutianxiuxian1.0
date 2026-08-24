@@ -2,6 +2,11 @@ import fs from 'fs';
 import { config, data } from '../../api/api.js';
 import { Write_player } from '../../model/xiuxian.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import { survivesDarkRevoltPlaneDestruction } from '../../model/darkRevolt.js';
+import {
+  markPlaneDestroyed,
+  PLANE_DESTRUCTION_SOURCES,
+} from '../../model/planeDestruction.js';
 
 export const DARK_REVOLT_DESTRUCTION = Object.freeze({
   intervalWorldYears: 5000,
@@ -89,18 +94,18 @@ function readWorldState() {
   }
 }
 
-function writeWorldState(worldState) {
-  try {
-    fs.writeFileSync(data.filePathMap.weimianList, JSON.stringify(worldState, null, 4), 'utf8');
-    return true;
-  } catch (error) {
-    logger.error('[黑暗动乱] 保存毁灭位面状态失败:', error.message);
-    return false;
-  }
+async function clearDestroyedPlaneActivities(qq) {
+  await Promise.allSettled([
+    redis.del(`xiuxian:player:${qq}:action`),
+    redis.del(`xiuxian:player:${qq}:action:fashan`),
+    redis.del(`xiuxian:travel_task:${qq}`),
+    redis.del(`xiuxian:player:${qq}:addiction_history`),
+  ]);
 }
 
 async function sendPlayersIntoReincarnation(target, supremeName, hit, worldYear) {
-  const names = [];
+  const reincarnatedNames = [];
+  const survivorIds = [];
   let files = [];
   try {
     const playerDir = data.filePathMap.player;
@@ -114,6 +119,11 @@ async function sendPlayersIntoReincarnation(target, supremeName, hit, worldYear)
     try {
       const player = await data.getData('player', qq);
       if (!player || Number(player.power_place) !== Number(target.id)) continue;
+      if (survivesDarkRevoltPlaneDestruction(player)) {
+        logger.info(`[黑暗动乱] ${player.名号 || qq}(${qq})达到大帝级权柄，于至尊毁灭位面时存活`);
+        survivorIds.push(qq);
+        continue;
+      }
       player.power_place = 0;
       player.黑暗动乱轮回 = {
         状态: '轮回中',
@@ -124,12 +134,13 @@ async function sendPlayersIntoReincarnation(target, supremeName, hit, worldYear)
         时间: Date.now(),
       };
       await Write_player(qq, player);
-      names.push(player.名号 || qq);
+      await clearDestroyedPlaneActivities(qq);
+      reincarnatedNames.push(player.名号 || qq);
     } catch (error) {
       logger.error(`[黑暗动乱] 将玩家${qq}打入轮回失败:`, error.message);
     }
   }
-  return names;
+  return { reincarnatedNames, survivorIds };
 }
 
 export async function initializeDarkRevoltDestruction({ eventId, worldYear = getCurrentWorldYear() } = {}) {
@@ -185,6 +196,9 @@ export async function processDarkRevoltPlaneDestruction(worldYear = getCurrentWo
       if (worldState[target.dataName] === 0 && state.damageCounts[target.name] < target.hitsToDestroy) {
         state.damageCounts[target.name] = target.hitsToDestroy;
         worldStateChanged = true;
+      } else if (worldState[target.dataName] === 1 && state.damageCounts[target.name] >= target.hitsToDestroy) {
+        state.damageCounts[target.name] = 0;
+        worldStateChanged = true;
       }
     }
 
@@ -204,7 +218,8 @@ export async function processDarkRevoltPlaneDestruction(worldYear = getCurrentWo
 
     const hit = state.damageCounts[target.name] + 1;
     const supremeName = bossStatus.bosses?.find(boss => boss.id === bossStatus.activeBossId)?.名号 || '禁区至尊';
-    const reincarnatedNames = await sendPlayersIntoReincarnation(target, supremeName, hit, worldYear);
+    const affectedPlayers = await sendPlayersIntoReincarnation(target, supremeName, hit, worldYear);
+    const reincarnatedNames = affectedPlayers.reincarnatedNames;
     state.damageCounts[target.name] = hit;
     state.lastBattleWorldYear = Number(worldYear) || 0;
     state.lastEventWorldYear = Number(worldYear) || 0;
@@ -222,9 +237,14 @@ export async function processDarkRevoltPlaneDestruction(worldYear = getCurrentWo
       worldState[target.dataName] = 0;
       worldStateChanged = true;
       fullyDestroyed = true;
+      await Promise.all(affectedPlayers.survivorIds.map(clearDestroyedPlaneActivities));
+      markPlaneDestroyed(data.filePathMap.weimianList, target.dataName, {
+        source: PLANE_DESTRUCTION_SOURCES.DARK_REVOLT,
+        actor: supremeName,
+        worldYear,
+      });
     }
     await writeState(state);
-    if (worldStateChanged) writeWorldState(worldState);
 
     return {
       target,

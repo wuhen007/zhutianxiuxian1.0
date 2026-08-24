@@ -1,8 +1,11 @@
-import fs from 'fs';
 import { plugin, verc, data } from '../../api/api.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
 import { isDaofaActive } from '../../model/daofa.js';
 import { getDungeonGongfaReduction } from '../../model/gongfaProficiency.js';
+import {
+  buildPlaneDestroyedMessage,
+  getPlaneDestructionInfo,
+} from '../../model/planeDestruction.js';
 import {
   Read_player,
   isNotNull,
@@ -21,43 +24,13 @@ import {
   channel
 } from '../../model/xiuxian.js';
 
-// ==================== 诡异大祭·崩灭位面检查工具 ====================
-/**
- * 检查目标位面是否被诡异大祭摧毁（位面.json对应key为0）
- * @param {string} planeName - 位面名称，如'凡间'/'仙界'/'下界八域'等
- * @returns {boolean} true=已崩灭，false=正常
- */
 function isWeiMianDestroyed(planeName) {
-  try {
-    const filePath = data.filePathMap.weimianList;
-    const obj = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-    return obj[planeName] === 0;
-  } catch (e) {
-    return false; // 读取失败容错，不阻断副本
-  }
+  return getPlaneDestructionInfo(data.filePathMap.weimianList, planeName).destroyed;
 }
 
-/**
- * 诡异大祭崩灭位面的副本拦截回复
- * @param {object} e - 消息对象
- * @param {string} planeName - 被崩灭的位面名称
- */
 async function replyPlaneDestroyed(e, planeName) {
-  return e.reply([
-    `【诡异大祭·副本封锁】`,
-    ``,
-    `你试图进入「${planeName}」的秘境——`,
-    `然而通往此地的虚空古路，已是一片废墟与乱流。`,
-    ``,
-    `厄土仙帝的一掌彻底粉碎了「${planeName}」的位面壁垒，`,
-    `副本入口随之崩塌，无法再行涉足！`,
-    ``,
-    `「崩灭的位面，岂容尔等自由进出？」`,
-    ``,
-    `唯仙帝映照权能，方可修复崩灭的位面。`,
-  ].join('\n'));
+  return e.reply(buildPlaneDestroyedMessage(data.filePathMap.weimianList, planeName));
 }
-// ===========================================================
 
 export class SecretPlaceplus extends plugin {
   constructor() {

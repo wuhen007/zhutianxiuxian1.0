@@ -108,27 +108,18 @@ import {
     SECT_WAR_SHOP,
     SECT_WAR_TOKEN,
 } from '../../model/sectWarShop.js';
+import {
+    buildPlaneDestroyedMessage,
+    getPlaneDestructionInfo,
+} from '../../model/planeDestruction.js';
 
-// ==================== 诡异大祭·崩灭位面检查工具 ====================
 function isWeiMianDestroyed(planeName) {
-    try {
-        const filePath = data.filePathMap.weimianList;
-        const obj = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        return obj[planeName] === 0;
-    } catch (e) { return false; }
+    return getPlaneDestructionInfo(data.filePathMap.weimianList, planeName).destroyed;
 }
 
 async function replyPlaneDestroyed(e, planeName) {
-    return e.reply([
-        `【虚空封锁·位面崩灭】`,
-        ``,
-        `厄土仙帝的一掌彻底粉碎了「${planeName}」的位面壁垒，副本入口随之崩塌！`,
-        `「崩灭的位面，岂容尔等自由进出？」`,
-        ``,
-        `唯仙帝映照权能，方可修复崩灭的位面。`,
-    ].join('\n'));
+    return e.reply(buildPlaneDestroyedMessage(data.filePathMap.weimianList, planeName));
 }
-// ================================================================
 
 // ==================== 位面穿梭·接引请求 ====================
 // 待确认请求缓存：key = 被接引/送往者QQ，value = { fromQQ, fromName, type, locationName, expire }
@@ -185,23 +176,9 @@ function treasureBattleExcerpt(messages) {
 const ENGRAVE_LINGSHI_COST = 5e7;
 // ================================================================
 
-// 崩灭位面提示文案（与 goToLocation 保持一致）
 function buildPlaneDestroyedMsgs(planeName) {
-    return [
-        `【虚空封锁·位面崩灭】`,
-        ``,
-        `你试图踏入「${planeName}」——`,
-        `然而星空古路的另一端，只有无尽的黑暗与虚空乱流。`,
-        ``,
-        `诡异大祭期间，始祖亲手将「${planeName}」打爆，`,
-        `位面壁垒彻底崩碎，山河破灭，生灵涂炭！`,
-        ``,
-        `「此界已成废墟，汝欲入死地乎？」`,
-        ``,
-        `唯仙帝映照权能，方可修复崩灭的位面。`,
-    ].join('\n');
+    return buildPlaneDestroyedMessage(data.filePathMap.weimianList, planeName);
 }
-// ================================================================
 
 
 export class SecretPlace extends plugin {

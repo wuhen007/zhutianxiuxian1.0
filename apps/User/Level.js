@@ -88,6 +88,7 @@ import {
   getDaoHeartWudaoGainMultiplier,
   getReverseLifeCostProfile,
 } from '../../model/daoHeart.js';
+import { consumePlaneFavorForWudao } from '../../model/foreignCalamity.js';
 
 function consumeBreakthroughPill(player) {
   if (player.breakthrough !== true) return 0;
@@ -1865,10 +1866,13 @@ async hudao(e) {
         result.multiplier = Number(result.multiplier) + tracesUsed * 0.006;
       }
 
-      const actualGain = Math.min(
-        Math.floor(result.gain * (imperialWudao ? 1.5 : 1)),
-        rule.targetExp - currentExp
+      const planeFavor = consumePlaneFavorForWudao(
+        player,
+        result.gain * (imperialWudao ? 1.5 : 1),
+        rule.targetExp - currentExp,
       );
+      const actualGain = planeFavor.gain;
+      if (planeFavor.consumed) result.multiplier *= 1.2;
       player.仙道潜力 = currentPotential - potentialCost;
       player.修为 = currentCultivation - cultivationCost;
       player.血气 = currentBlood - bloodCost;
@@ -1892,6 +1896,7 @@ async hudao(e) {
       if (useTea) factorLines.push(`悟道古茶 ${formatSignedPercent(result.bonuses.tea)}`);
       if (tracesUsed > 0) factorLines.push(`先天道痕 ${formatSignedPercent(result.bonuses.traces)}`);
       if (imperialWudao) factorLines.push('人皇敕令 +50%');
+      if (planeFavor.consumed) factorLines.push(`位面青睐 +20%（消耗1，余${planeFavor.remainingFavor}）`);
 
       const reply = [
         `【悟道·${rule.name}】`,

@@ -11,7 +11,7 @@
  * - 诡异大祭开启后保留一次开场预警，后续按诸天纪年节点随机破坏位面
  * - 该位面所有低于准仙帝的玩家 → 入永寂（存档备份到永寂者列表，正式数据清除）
  * - 准仙帝及以上玩家 → 存活，传送至凡间
- * - 被破坏的位面在大祭期间不可再次进入
+ * - 被破坏的位面持续封锁，直至仙帝级及以上力量修复
  * - 永寂者可被仙帝映照权能召唤归来
  */
 
@@ -22,80 +22,12 @@ import { Write_player } from '../../model/xiuxian.js';
 import { sendToYongJi } from './YongJiList.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { hasRealmAuthority } from '../../model/realmAuthority.js';
-import { writeJsonAtomically } from '../../utils/atomicJson.js';
-
-// ==================== 位面.json 工具函数 ====================
-
-/**
- * 读取 位面.json
- * @returns {Object} 位面数据对象
- */
-function readWeiMianJson() {
-  try {
-    const filePath = data.filePathMap.weimianList;
-    const content = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(content);
-  } catch (e) {
-    logger.error('[诡异大祭] 读取位面.json失败:', e.message);
-    return null;
-  }
-}
-
-/**
- * 写入 位面.json
- * @param {Object} obj - 完整的位面数据对象
- */
-function writeWeiMianJson(obj) {
-  try {
-    const filePath = data.filePathMap.weimianList;
-    writeJsonAtomically(filePath, obj);
-  } catch (e) {
-    logger.error('[诡异大祭] 写入位面.json失败:', e.message);
-  }
-}
-
-/**
- * 将位面.json中指定位面标记为崩灭（值设为0）
- * @param {string} planeName - 位面名称（与json中的key一致）
- */
-function markPlaneDestroyed(planeName) {
-  const obj = readWeiMianJson();
-  if (!obj) return;
-  if (planeName in obj) {
-    obj[planeName] = 0;
-    writeWeiMianJson(obj);
-    logger.info(`[诡异大祭] 位面.json: 「${planeName}」已标记为崩灭(0)`);
-  }
-}
-
-/**
- * 将位面.json中指定位面修复（值设为1）
- * @param {string} planeName - 位面名称
- */
-function markPlaneRepaired(planeName) {
-  const obj = readWeiMianJson();
-  if (!obj) return;
-  if (planeName in obj) {
-    obj[planeName] = 1;
-    writeWeiMianJson(obj);
-    logger.info(`[诡异大祭] 位面.json: 「${planeName}」已修复(1)`);
-  }
-}
-
-/**
- * 将所有可破坏位面修复（值重置为1）
- */
-function markAllPlanesRepaired() {
-  const obj = readWeiMianJson();
-  if (!obj) return;
-  for (const p of DESTROYABLE_PLANES) {
-    if (p.name in obj) {
-      obj[p.name] = 1;
-    }
-  }
-  writeWeiMianJson(obj);
-  logger.info('[诡异大祭] 位面.json: 所有位面已重置为可用(1)');
-}
+import {
+  markPlaneDestroyed,
+  PLANE_DESTRUCTION_SOURCES,
+  repairDestroyedPlanes,
+  repairPlane,
+} from '../../model/planeDestruction.js';
 
 // ==================== 配置常量 ====================
 
@@ -168,9 +100,13 @@ function currentWorldYear() {
 }
 
 function currentPlaneLevel() {
-  const obj = readWeiMianJson();
-  const level = Number(obj?.['诸天位面']);
-  return Number.isFinite(level) ? Math.max(1, level) : 1;
+  try {
+    const obj = JSON.parse(fs.readFileSync(data.filePathMap.weimianList, 'utf8'));
+    const level = Number(obj?.['诸天位面']);
+    return Number.isFinite(level) ? Math.max(1, level) : 1;
+  } catch {
+    return 1;
+  }
 }
 
 function destructionWorldYearInterval() {
@@ -390,13 +326,10 @@ export async function stopWeimianDestruction() {
   if (timerState.firstWaveTimer) clearTimeout(timerState.firstWaveTimer);
   timerState.firstWaveTimer = null;
   destructionInProgress = false;
-  destroyedPlanes = new Set();
   protectedPlanes = new Set();
   nextDestructionWorldYear = 0;
-  markAllPlanesRepaired();
   try {
     await redis.del(
-      DESTRUCTION_REDIS_KEYS.destroyed,
       DESTRUCTION_REDIS_KEYS.protected,
       DESTRUCTION_REDIS_KEYS.rescueUsed,
       DESTRUCTION_REDIS_KEYS.currentTargets,
@@ -405,7 +338,7 @@ export async function stopWeimianDestruction() {
       DESTRUCTION_REDIS_KEYS.timerActive,
     );
   } catch (e) {}
-  logger.info('[诡异大祭] 位面破坏系统停止，所有位面标记已恢复');
+  logger.info('[诡异大祭] 位面破坏系统停止，厄土仙帝造成的位面崩灭保留至仙帝映照修复');
   return true;
 }
 
@@ -429,17 +362,11 @@ export function isPlaneDestroyed(planeId) {
  * 清除内存状态、Redis记录、位面.json三处同步
  */
 export async function repairAllDestroyedPlanes(options = {}) {
-  if (!destroyedPlanes.size) {
-    try {
-      const saved = await redis.get(DESTRUCTION_REDIS_KEYS.destroyed);
-      if (saved) destroyedPlanes = new Set(JSON.parse(saved));
-    } catch (e) {}
-  }
-  const repaired = [...destroyedPlanes];
   const requestedWorldYear = Number(options.worldYear);
   const repairWorldYear = Number.isFinite(requestedWorldYear)
     ? Math.max(0, requestedWorldYear)
     : currentWorldYear();
+  const repaired = repairDestroyedPlanes(data.filePathMap.weimianList);
   destroyedPlanes.clear();
   protectedPlanes.clear();
   nextDestructionWorldYear = repairWorldYear + destructionWorldYearInterval();
@@ -453,7 +380,6 @@ export async function repairAllDestroyedPlanes(options = {}) {
     await redis.set(DESTRUCTION_REDIS_KEYS.nextWorldYear, String(nextDestructionWorldYear));
     await redis.set(DESTRUCTION_REDIS_KEYS.lastRepairWorldYear, String(repairWorldYear));
   } catch (e) {}
-  markAllPlanesRepaired();
   logger.info(`[诡异大祭] 位面修复完成 | 修复:${repaired.length} | 纪年:${repairWorldYear}`);
   return { repaired, repairedCount: repaired.length, worldYear: repairWorldYear };
 }
@@ -465,13 +391,8 @@ export async function repairAllDestroyedPlanes(options = {}) {
  */
 export async function repairSinglePlane(planeId) {
   planeId = Number(planeId);
-  if (!destroyedPlanes.size) {
-    try {
-      const saved = await redis.get(DESTRUCTION_REDIS_KEYS.destroyed);
-      if (saved) destroyedPlanes = new Set(JSON.parse(saved));
-    } catch (e) {}
-  }
-  if (!destroyedPlanes.has(planeId)) return false;
+  const repairedPlaneName = PLANE_NAMES[planeId];
+  if (!repairedPlaneName || !repairPlane(data.filePathMap.weimianList, repairedPlaneName)) return false;
   destroyedPlanes.delete(planeId);
   protectedPlanes.delete(planeId);
   try {
@@ -479,8 +400,6 @@ export async function repairSinglePlane(planeId) {
     await redis.set(DESTRUCTION_REDIS_KEYS.protected, JSON.stringify([...protectedPlanes]));
     await redis.set(DESTRUCTION_REDIS_KEYS.lastRepairWorldYear, String(currentWorldYear()));
   } catch (e) {}
-  const repairedPlaneName = PLANE_NAMES[planeId];
-  if (repairedPlaneName) markPlaneRepaired(repairedPlaneName);
   logger.info(`[诡异大祭] 仙帝映照——位面「${repairedPlaneName || planeId}」已修复`);
   return true;
 }
@@ -516,7 +435,11 @@ async function destroyWorldClockPlane() {
       const target = targets[index];
       const result = await destroyPlane(target);
       destroyedPlanes.add(target.id);
-      markPlaneDestroyed(target.name);
+      markPlaneDestroyed(data.filePathMap.weimianList, target.name, {
+        source: PLANE_DESTRUCTION_SOURCES.STRANGE_EMPEROR,
+        actor: '厄土仙帝',
+        worldYear: currentWorldYear(),
+      });
       await broadcastDestruction(target, result);
       if (index < targets.length - 1) await new Promise(resolve => setTimeout(resolve, 1500));
     }

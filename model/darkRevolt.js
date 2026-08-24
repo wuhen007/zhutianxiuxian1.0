@@ -5,6 +5,8 @@
  * 数值使用 Number：本事件的额外加成为 10 万亿，仍低于 JS 安全整数上限。
  */
 
+import { hasRealmAuthority } from './realmAuthority.js';
+
 export const DARK_REVOLT_CONSTANTS = Object.freeze({
   imperialWeaponMultiplier: 120,
   equipmentBonusPercent: 100,
@@ -32,6 +34,10 @@ export const DARK_REVOLT_RESCUE_EVENTS = Object.freeze({
     quote: '各大圣地帝兵同时复苏，恒宇炉、虚空镜、太皇剑与吞天魔罐齐鸣，共击一位至尊。',
   },
 });
+
+export function survivesDarkRevoltPlaneDestruction(player = {}) {
+  return hasRealmAuthority(player, DARK_REVOLT_CONSTANTS.emperorLevel);
+}
 
 /** 六位至尊。顺序即帝战阶段顺序；长生天尊仍保留为仙陵外、对阵大成圣体的独立战场叙事。 */
 export const DARK_REVOLT_SUPREMES = Object.freeze([

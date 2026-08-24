@@ -18,7 +18,7 @@ import RealmEvents from './RealmEvents.js';
 import { formatRealmEventLocation } from '../../model/realmEventLocation.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { getRealmAuthorityLevel, hasRealmAuthority } from '../../model/realmAuthority.js';
-import { repairAllDestroyedPlanes } from '../Boss/WeimianDestruction.js';
+import { repairNaturallyDestroyedPlanes } from '../../model/planeDestruction.js';
 import {
   formatDarkRevoltPlaneDestruction,
   processDarkRevoltPlaneDestruction,
@@ -54,6 +54,7 @@ import {
   DAO_TREASURE_STAGES,
   advanceDaoTreasureProject,
 } from '../../model/daoTreasure.js';
+import { spawnForeignCalamities } from '../../model/foreignCalamity.js';
 
 export class EraChangeTask extends plugin {
   constructor() {
@@ -1086,6 +1087,19 @@ if (index === 4) { // 当前是绝灵时代
       );
 
       const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
+      const foreignCalamities = await spawnForeignCalamities(previousWorldYear, currentWorldYear);
+      if (foreignCalamities.length > 0 && era.pushNotice) {
+        const counts = foreignCalamities.reduce((total, entity) => {
+          total[entity.type] = (total[entity.type] || 0) + 1;
+          return total;
+        }, {});
+        await this.broadcastMessage([
+          '【千年灾劫·域外来敌】',
+          `诸天纪年抵达${foreignCalamities[0].worldYear}年，界壁外降下${foreignCalamities.length}尊灾厄。`,
+          Object.entries(counts).map(([type, count]) => `${type}x${count}`).join('、'),
+          '发送 #域外灾厄 查看，击败后可获得两组随机战利品、业力消减与位面青睐。',
+        ].join('\n'));
+      }
       await this.processDaoTreasureLifecycle(currentWorldYear, epoch);
       await this.processXianguLifecycle(weimianData, {
         previousWorldYear,
@@ -1265,17 +1279,21 @@ if (index === 4) { // 当前是绝灵时代
     const oldLevel = weimianData["诸天位面"] || 5;
 
     // 位面等级与毁灭/修复共用 Era.current.totalYears 这条诸天纪年。
-    const repairResult = await repairAllDestroyedPlanes({
-      source: '诸天位面纪年自愈',
+    const repaired = repairNaturallyDestroyedPlanes(weimianPath, {
       worldYear,
+      minAge: this.set.Era.weimianRepairInterval || 2000,
     });
-    if (repairResult.repairedCount > 0) {
+    if (repaired.length > 0) {
       await this.broadcastMessage([
         '【诸天位面·岁月回流】',
-        `诸天纪年抵达修复节点，${repairResult.repairedCount} 个崩灭位面的法则重新闭合。`,
-        `当前诸天纪年：${repairResult.worldYear}年`,
+        `诸天纪年抵达修复节点，${repaired.length} 个被禁区至尊打爆的位面重新凝聚。`,
+        `恢复位面：${repaired.join('、')}`,
+        `当前诸天纪年：${worldYear}年`,
       ].join('\n'));
     }
+
+    // 自愈函数已更新位面文件，重新读取，避免后续位面等级写回覆盖修复结果。
+    weimianData = JSON.parse(fs.readFileSync(weimianPath, 'utf8'));
     
     // 已达顶峰，不再修复
     if (oldLevel >= 10) return;
