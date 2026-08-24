@@ -6668,15 +6668,16 @@ async XianguYiShenWeiZhong(e) {
   // 处理探索方向选择
   async XianguExploreChoice(e) {
     try {
+      if (await redis.get(`xiuxian:player:${e.user_id}:action`)) return false;
       const usr_qq = e.user_id.toString().replace('qg_', '');
       const player_qq = await channel(usr_qq);
       let player = await Read_player(player_qq);
-      if (!player.in_xiangu) return;
+      if (!player.in_xiangu) return false;
       const optionsJson = await redis.get(`xiuxian:player:${usr_qq}:xianguOptions`);
-      if (!optionsJson) return;
+      if (!optionsJson) return false;
       const options = JSON.parse(optionsJson);
       const choice = parseInt(e.msg) - 1;
-      if (choice < 0 || choice >= options.length) return;
+      if (choice < 0 || choice >= options.length) return false;
       const chosen = options[choice];
       const actionState = await prepareXianguAction(player_qq);
       if (actionState.busy) {
@@ -6704,8 +6705,11 @@ async XianguYiShenWeiZhong(e) {
       await redis.del(`xiuxian:player:${usr_qq}:xianguOptions`);
       await Write_player(player_qq, player);
       await e.reply(exploreResult.message);
+      return true;
     } catch (error) {
       console.error('探索选择处理失败:', error);
+      await e.reply('秘境选择处理失败，本次选择尚未生效，请稍后重试。');
+      return true;
     }
   }
 

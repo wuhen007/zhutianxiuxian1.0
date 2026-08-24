@@ -49,3 +49,15 @@ test('频道账号使用映射后的玩家ID并保留原消息行动键', async 
   assert.match(source, /`xiuxian:player:\$\{e\.user_id\}:action`/);
   assert.match(source, /playerId,\s*\n\s*world: selectedWorld\.name/);
 });
+
+test('仙古数字选项未命中时会放行诸天投影选择', async () => {
+  const source = await readFile(new URL('../apps/SecretPlace/xianguPlace.js', import.meta.url), 'utf8');
+  const start = source.indexOf('async XianguExploreChoice(e)');
+  const end = source.indexOf('\n  }\n\n}', start);
+  const handler = source.slice(start, end);
+  assert.match(handler, /redis\.get\(`xiuxian:player:\$\{e\.user_id\}:action`\)\) return false/);
+  assert.match(handler, /if \(!player\.in_xiangu\) return false/);
+  assert.match(handler, /if \(!optionsJson\) return false/);
+  assert.match(handler, /choice < 0 \|\| choice >= options\.length\) return false/);
+  assert.match(handler, /await e\.reply\(exploreResult\.message\);\s*return true/);
+});
