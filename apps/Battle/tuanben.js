@@ -27,6 +27,7 @@ import {
 } from '../../model/combatSkillLoadout.js';
 import { applySuperdimensionalOpening } from '../../model/shengfaFragment.js';
 import { applyRelicBattleOpening } from '../../model/relicSystem.js';
+import { getCompanionAttackAction } from '../../model/companionCombat.js';
 export class tuanben extends plugin {
   constructor() {
     super({
@@ -2988,7 +2989,7 @@ if (player.分身 && player.分身.length > 0) {
         if (fenshen.当前血量 > 0) {
             const fenshenDmg = Math.trunc(fenshen.攻击 * 0.8);
             bossCopy.当前血量 = Math.max(0, bossCopy.当前血量 - fenshenDmg);
-            await addBattleLog(` ${fenshen.名号}拉弓凝聚虹光，造成${bigNumberTransform(fenshenDmg)}点协同伤害`);
+            await addBattleLog(` ${fenshen.名号}${getCompanionAttackAction(fenshen)}，造成${bigNumberTransform(fenshenDmg)}点协同伤害`);
         }
     }
 }

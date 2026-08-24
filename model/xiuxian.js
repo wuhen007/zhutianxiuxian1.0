@@ -137,6 +137,7 @@ import {
   resolveDecadeDodgeCounter,
   tickDecadeCombatState,
 } from './decadeCombat.js';
+import { getCompanionAttackAction } from './companionCombat.js';
 import { getGodDemonStealRule, getRealmAuthorityLevel } from './realmAuthority.js';
 import { ensureExtraCultivationState } from './extraCultivation.js';
 import { calculateFlowerExtremeBonus, ensureFlowerPollenState, getFlowerPathAttributeMultiplier } from './flowerPollenPath.js';
@@ -2608,7 +2609,7 @@ export async function get_wmtj_img(e) {
     const formattedTianjiaoItems = tianjiaoItems.map(tianjiao => {
         return {
             ...tianjiao,
-            境界: getTianjiaoRealmName(tianjiao, data.Levelmijing_list, data.xiangujinshi_list),
+            境界: getTianjiaoRealmName(tianjiao, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list),
             攻击: bigNumberTransform(tianjiao.攻击),
             防御: bigNumberTransform(tianjiao.防御),
             血量: bigNumberTransform(tianjiao.血量),
@@ -5405,7 +5406,7 @@ export async function Add_najie_thing(
             equ.def *= z[pinji] * safeEquipmentMultiplier;
             equ.HP *= z[pinji] * safeEquipmentMultiplier;
             equ.数量 = x;
-            equ.islockd = 0;
+            equ.islockd = thing.不可交易 || thing.全服唯一 ? 1 : 0;
             najie[thing_class].push(equ);
             await persistNajie();
             return;
@@ -5414,7 +5415,7 @@ export async function Add_najie_thing(
       } else {
         if (!name.pinji) name.pinji = pinji;
         name.数量 = x;
-        name.islockd = name.大道至宝本体 ? 1 : 0;
+        name.islockd = name.不可交易 || name.全服唯一 || name.大道至宝本体 ? 1 : 0;
         najie[thing_class].push(name);
         await persistNajie();
         return;
@@ -7918,6 +7919,21 @@ export function healBattleUnitByCurrentRatio(unit, ratio) {
  * 返回约定：A_hp/B_hp 为对应一方的最终剩余总血量；
  * A_xue/B_xue 仅作为旧调用方的兼容别名。
  */
+function applySacrificeGrowth(attacker, skill, messages) {
+  const growth = Math.max(0, Number(skill.攻击成长) || 0);
+  const cap = Math.max(growth, Number(skill.攻击成长上限) || growth);
+  if (growth <= 0 || Number(attacker._献祭成长) >= cap) return;
+
+  const added = Math.min(growth, cap - (Number(attacker._献祭成长) || 0));
+  const baseAttack = Number(attacker._献祭成长基础攻击) || Number(attacker.攻击) || 1;
+  const hpCost = Math.trunc((Number(attacker.血量上限) || Number(attacker.当前血量) || 1) * Math.max(0, Number(skill.献祭生命) || 0));
+  attacker._献祭成长基础攻击 = baseAttack;
+  attacker._献祭成长 = (Number(attacker._献祭成长) || 0) + added;
+  attacker.攻击 = Math.max(1, Math.trunc((Number(attacker.攻击) || 0) + baseAttack * added));
+  attacker.当前血量 = Math.max(1, (Number(attacker.当前血量) || 1) - hpCost);
+  messages.push(`【献祭成长】${attacker.名号}献祭${bigNumberTransform(hpCost)}点生命，本场攻击提升${Math.round(added * 100)}%（累计${Math.round(attacker._献祭成长 * 100)}%）！`);
+}
+
 export async function zd_battle(A_input, B_input, options = {}) {
   const A_isArray = Array.isArray(A_input);
   const B_isArray = Array.isArray(B_input);
@@ -8806,6 +8822,8 @@ let B_speed = (B_player.速度 ?? 100)
         if (skill.控制 === 1) {
           defender.dongjie = true;
         }
+        if (skill.禁疗) defender.禁疗 = Math.max(Number(defender.禁疗) || 0, Number(skill.禁疗));
+        applySacrificeGrowth(attacker, skill, msg);
         
         if (skill.拉条) {
           const 拉条值 = Math.round(skill.拉条 * getGongfaNumericMultiplier(attacker, skill));
@@ -10081,7 +10099,7 @@ msg.push(bSpeedMsg);
           const { 伤害: fenshen_damage } = await performAttack(fenshen, defender, cnt2, "fenshen");
           const { actual_damage } = applyDamage(defender, fenshen_damage, "fenshen", fenshen);
           
-          msg.push(`${fenshen.名号}拉弓凝聚虹光，`);
+          msg.push(`${fenshen.名号}${getCompanionAttackAction(fenshen)}，`);
           msg.push(`造成${bigNumberTransform(actual_damage)}点协同伤害`);
         }
       }
@@ -10874,6 +10892,8 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         if (skill.不可防御 === 1) 不可防御 = true;
         if (skill.不可复活 === 1) defender.不可复活 = true;
         if (skill.控制 === 1) defender.dongjie = true;
+        if (skill.禁疗) defender.禁疗 = Math.max(Number(defender.禁疗) || 0, Number(skill.禁疗));
+        applySacrificeGrowth(attacker, skill, attackMsgs);
         if (skill.拉条) {
           attacker._actionBar = Math.min(ACTION_BAR_MAX, (attacker._actionBar || 0) + skill.拉条);
           attackMsgs.push(`${attacker.名号}借Hyper Clock Up抢占行动，行动条推进${skill.拉条}点！`);

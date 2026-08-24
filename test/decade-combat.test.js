@@ -11,6 +11,7 @@ import {
   tickDecadeCombatState,
 } from '../model/decadeCombat.js';
 import { HEISEI_RIDERS } from '../model/endlessTreasure.js';
+import { getCompanionAttackAction } from '../model/companionCombat.js';
 
 function decade(name = '帝骑·神主', deck = ['空我', '甲斗', 'Kiva']) {
   return {
@@ -31,19 +32,28 @@ test('攻击技能表可正常加载三阶段帝骑技能入口', () => {
   assert.deepEqual(skills.filter(skill => skill.帝骑技能池).map(skill => skill.name), ['帝骑', '帝骑·神主', '帝骑·终极神主']);
 });
 
+test('帝骑骑士助战使用骑士文案，只有圆环分身使用拉弓文案', () => {
+  assert.equal(getCompanionAttackAction({ _帝骑分身: true, 分身: true }), '驾驭骑士之力');
+  assert.equal(getCompanionAttackAction({ 分身: true, 名号: '圆环分身' }), '拉弓凝聚虹光');
+  assert.equal(getCompanionAttackAction({ 分身: true, 名号: '数字秘分身' }), '发动协同攻击');
+  assert.equal(getCompanionAttackAction({ 名号: '魂奴' }), '发动协同攻击');
+});
+
 test('帝骑技能池只从三张出战卡与无卡牌限制的世界技能中取招式', () => {
   const player = decade('帝骑·神主', ['甲斗', 'Kiva', '电王']);
   const skill = { name: '帝骑·神主', class: '灵根', 帝骑技能池: '终极形态召唤', beilv: 7 };
   const result = resolveDecadeCombatSkill(player, skill, () => 0);
   assert.equal(result.骑士卡, '甲斗');
-  assert.equal(result.name, '百虫剑·究极斩');
+  assert.equal(result.name, '帝骑·神主');
+  assert.equal(result.招式名, '百虫剑·究极斩');
 
   const ultimate = resolveDecadeCombatSkill(
     decade('帝骑·终极神主', ['空我', '亚极陀', '龙骑']),
     { name: '帝骑·终极神主', class: '灵根', 帝骑技能池: '全骑士与世界破坏', beilv: 10 },
     () => 0.999,
   );
-  assert.equal(ultimate.name, '世界破坏者·终幕');
+  assert.equal(ultimate.name, '帝骑·终极神主');
+  assert.equal(ultimate.招式名, '世界破坏者·终幕');
   assert.equal(ultimate.首领最大生命伤害比例, 0.08);
 });
 
