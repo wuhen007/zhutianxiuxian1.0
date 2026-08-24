@@ -40,11 +40,11 @@ import {
 import {
   advanceSpecialTianjiaoEvolution,
   attemptTianjiaoBreakthrough,
+  canTianjiaoGrow,
   ensureTianjiaoInitialTemplate,
   getTianjiaoImprovementChance,
   improveTianjiao,
   isIndependentTianjiao,
-  isTianjiaoHealing,
   isTianjiaoBreakthroughYear,
   isTianjiaoImprovementYear,
   recoverTianjiaoFromSetback,
@@ -1511,7 +1511,7 @@ if (index === 4) { // 当前是绝灵时代
     }
   }
   
-  /** 天骄每三千年自我强化，每五千年额外尝试突破一次境界。 */
+  /** 天骄每三千年尝试突破并进行一次自我强化。 */
   async handleTianjiaoGrowth() {
     try {
       const tianjiaoList = data.weimiantianjiao_list;
@@ -1527,6 +1527,7 @@ if (index === 4) { // 当前是绝灵时代
         physiqueLevels: data.LevelMax_list,
         secretLevels: data.Levelmijing_list,
         ancientLevels: data.xiangujinshi_list,
+        flowerLevels: data.huafen_list,
         equipmentList: data.equipment_list,
         specialEquipmentList: data.tszb_list,
         imperialWeaponList: data.dibing_list,
@@ -1562,7 +1563,7 @@ if (index === 4) { // 当前是绝灵时代
         }
 
         if (!isIndependentTianjiao(tianjiao)) continue;
-        if (isTianjiaoHealing(status, worldYears)) continue;
+        if (!canTianjiaoGrow(status, worldYears)) continue;
 
         let statusChanged = false;
         if (breakthroughDue) {

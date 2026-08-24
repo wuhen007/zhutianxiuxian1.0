@@ -59,7 +59,10 @@ import {
   getTianjiaoScentAccess,
 } from '../../model/tianjiTalismans.js';
 import { getDouziMimicChance, tryLearnTianjiaoGongfa } from '../../model/gongfaProficiency.js';
+import { getExtraCultivationLevelSum } from '../../model/extraCultivation.js';
+import { getTianjiaoRealmTier } from '../../model/realmAuthority.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { addRelicToBag, createFishKingRelic } from '../../model/relicSystem.js';
 import {
   clearTianjiaoHatred,
   getForbiddenEscapeMethod,
@@ -67,6 +70,7 @@ import {
   isEvilCultivator,
   resolveTianjiaoSoulBacklash,
   rollIndependentTianjiaoEscape,
+  rollTianjiaoDropAmount,
 } from '../../model/tianjiaoHostility.js';
 
 let WorldBOSSBattleCD = []; //CD
@@ -242,7 +246,12 @@ export class BOSS4 extends plugin {
       "霸王浑战": "霸血焚天·紫血替身",
       "十冠王天子": "世界树枝·替劫叶",
       "鹤无双": "不朽王座·虚影遁",
-      "逍遥子": "鲲鹏极速·扶摇遁"
+      "逍遥子": "鲲鹏极速·扶摇遁",
+      "武疯子": "七死身·光阴替命",
+      "谪仙": "仙古玉笛·祭灵替劫",
+      "六冠王宁川": "万灵天图·替命道纹",
+      "伊轻舞": "八德宝轮·广寒月影",
+      "元古": "元光转生轮·皇血替身"
     };
     return map[name] || "神秘保命法宝";
   }
@@ -266,7 +275,12 @@ export class BOSS4 extends plugin {
       "仙古遗地长老·十方": "仙古护道长老·十方禁忌",
       "鹤无双": "鹤族护道仙·鹤凌云",
       "异域不朽客·鹤青冥": "异域护道不朽·鹤破虚",
-      "逍遥子": "故友·无涯散仙"
+      "逍遥子": "故友·无涯散仙",
+      "武疯子": "武皇一脉大能·黎九霄",
+      "谪仙": "仙古遗脉护道者·曲无尘",
+      "六冠王宁川": "宁族护道神·宁天图",
+      "伊轻舞": "广寒宫太上长老·月寒衣",
+      "元古": "元皇湖古圣·元玄"
     };
     return map[name] || `${name}的护道人`;
   }
@@ -600,22 +614,39 @@ export class BOSS4 extends plugin {
     for (let index = 0; index < tianjiaoData.掉落物.length; index++) {
       const item = tianjiaoData.掉落物[index];
       if (Math.random() >= item.概率) continue;
-      const amount = item.数量 * multiplier;
+      const amount = rollTianjiaoDropAmount(item, multiplier);
       try {
-        await Add_najie_thing(
-          qq,
-          item.name,
-          item.class,
-          amount,
-          undefined,
-          1,
-          { idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoName, settlementId, qq, 'battle-drop', index) }
-        );
-        await e.reply(`获得掉落：${item.name} x${amount}`);
+        const idempotencyKey = this.getTianjiaoRewardIdempotencyKey(tianjiaoName, settlementId, qq, 'battle-drop', index);
+        const display = await this.grantTianjiaoDrop(qq, item, amount, idempotencyKey);
+        if (display) await e.reply(`获得掉落：${display}`);
       } catch (error) {
         console.warn(`[天骄掉落] ${tianjiaoName}/${qq} 发放失败:`, error);
       }
     }
+  }
+
+  async grantTianjiaoDrop(qq, item, amount, idempotencyKey) {
+    if (item.class !== '遗珍') {
+      await Add_najie_thing(qq, item.name, item.class, amount, undefined, 1, { idempotencyKey });
+      return `${item.name} x${amount}`;
+    }
+
+    return withPlayerMutationLock(qq, async () => {
+      const equipment = await Read_equipment(qq);
+      equipment._rewardClaims ||= {};
+      if (equipment._rewardClaims[idempotencyKey]) return '';
+      const relics = [];
+      let relicState = equipment.遗珍;
+      for (let index = 0; index < amount; index++) {
+        const relic = createFishKingRelic({ plane: '圣墟大宇宙' });
+        relicState = addRelicToBag(relicState, relic);
+        relics.push(`${relic.品质}·${relic.套装}`);
+      }
+      equipment.遗珍 = relicState;
+      equipment._rewardClaims[idempotencyKey] = { claimedAt: Date.now(), amount };
+      await Write_equipment(qq, equipment);
+      return `随机遗珍 x${amount}（${relics.join('、')}）`;
+    });
   }
 
   getPendingEncounterKey(qq) {
@@ -901,7 +932,7 @@ export class BOSS4 extends plugin {
     let msg = ['****位面天骄列表****'];
     for (const tianjiao of data.weimiantianjiao_list) {
       const trace = this.getAvailableTianjiaoTrace(player, tianjiao);
-      const realm = getTianjiaoRealmName(tianjiao, data.Levelmijing_list, data.xiangujinshi_list);
+      const realm = getTianjiaoRealmName(tianjiao, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list);
       msg.push(`名号: ${tianjiao.名号}`);
       msg.push(`境界: ${realm}`);
       msg.push(`踪迹: ${formatTianjiaoTrace(trace)}`);
@@ -945,6 +976,7 @@ export class BOSS4 extends plugin {
       physiqueLevels: data.LevelMax_list,
       secretLevels: data.Levelmijing_list,
       ancientLevels: data.xiangujinshi_list,
+      flowerLevels: data.huafen_list,
       equipmentList: data.equipment_list,
       specialEquipmentList: data.tszb_list,
       imperialWeaponList: data.dibing_list,
@@ -1082,7 +1114,7 @@ export class BOSS4 extends plugin {
 
       for (const tianjiao of data.weimiantianjiao_list) {
         const trace = this.getAvailableTianjiaoTrace(player, tianjiao);
-        const realm = getTianjiaoRealmName(tianjiao, data.Levelmijing_list, data.xiangujinshi_list);
+        const realm = getTianjiaoRealmName(tianjiao, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list);
         const statusKey = `tianjiao:status:${tianjiao.名号}`;
         let status = await redis.get(statusKey);
         status = JSON.parse(status || '{}');
@@ -1170,7 +1202,7 @@ export class BOSS4 extends plugin {
     }
 
     const healing = isTianjiaoHealing(status, this.getTianjiaoWorldYear());
-    const realm = getTianjiaoRealmName(tianjiaoData, data.Levelmijing_list, data.xiangujinshi_list);
+    const realm = getTianjiaoRealmName(tianjiaoData, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list);
     let ReplyMsg = [
       `----${tianjiaoName}状态----`,
       `境界: ${realm}`,
@@ -1411,18 +1443,12 @@ export class BOSS4 extends plugin {
       for (let index = 0; index < tianjiaoData.特殊掉落.length; index++) {
         const special = tianjiaoData.特殊掉落[index];
         if (Math.random() >= special.概率) continue;
-        const amount = special.数量 * rewardMultiplier;
+        const amount = rollTianjiaoDropAmount(special, rewardMultiplier);
         try {
-          await Add_najie_thing(
-            killerQQ,
-            special.name,
-            special.class,
-            amount,
-            undefined,
-            1,
-            { idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoName, settlementId, killerQQ, 'special-drop', index) }
-          );
-          let dropMsg = `特殊掉落：${special.name} x${amount}`;
+          const idempotencyKey = this.getTianjiaoRewardIdempotencyKey(tianjiaoName, settlementId, killerQQ, 'special-drop', index);
+          const display = await this.grantTianjiaoDrop(killerQQ, special, amount, idempotencyKey);
+          if (!display) continue;
+          let dropMsg = `特殊掉落：${display}`;
           if (special.效果) dropMsg += `（${special.效果}）`;
           await e.reply(dropMsg);
         } catch (error) {
@@ -1826,6 +1852,7 @@ export class BOSS4 extends plugin {
       let attributeMultiplier = 10;
       let openingDialogue = "";
       const usesIndependentStats = isIndependentTianjiao(tianjiaoData);
+      const tianjiaoRealmTier = getTianjiaoRealmTier(A_player);
 
       if (tianjiaoData.名号 === "猪咪岁岁") {
         if (A_player.level_id > 41) {
@@ -1838,24 +1865,24 @@ export class BOSS4 extends plugin {
         }
       } else if (usesIndependentStats) {
         attributeMultiplier = 1;
-        if (A_player.mijinglevel_id < 9 && A_player.xiangulevel_id < 7) {
-          player.道伤 += 1;
+        if (tianjiaoRealmTier === 'below') {
+          player.道伤 = Math.max(0, Number(player.道伤) || 0) + 1;
           player.当前血量 = 0;
           await Write_player(usr_qq, player);
-          e.reply(`你连仙台境/尊者境都未达到，${tianjiaoName}根本不想浪费时间在你这只蝼蚁身上，直接将你一巴掌拍死！(道伤+1)`);
+          e.reply(`你尚未达到仙台、尊者或塑形级权柄，${tianjiaoName}根本不想浪费时间在你身上，直接将你一掌击败！(道伤+1)`);
           WorldBOSSBattleLock = 0;
           return false;
         }
         openingDialogue = `${tianjiaoName}携自身当前境界与你一战！`;
       } else {
-        if (A_player.mijinglevel_id >= 12 || A_player.xiangulevel_id >= 10) {
+        if (tianjiaoRealmTier === 'full') {
           attributeMultiplier = 5;
-          openingDialogue = `检测到玩家已成就圣人/天神境，${tianjiaoName}将不再压制境界，以全部实力应战！`;
-        } else if (A_player.mijinglevel_id < 9 && A_player.xiangulevel_id < 7) {
-          player.道伤 += 1;
+          openingDialogue = `检测到玩家已具备圣人级以上权柄，${tianjiaoName}将不再压制境界，以全部实力应战！`;
+        } else if (tianjiaoRealmTier === 'below') {
+          player.道伤 = Math.max(0, Number(player.道伤) || 0) + 1;
           player.当前血量 = 0;
           await Write_player(usr_qq, player);
-          e.reply(`你连仙台境/尊者境都未达到，${tianjiaoName}根本不想浪费时间在你这只蝼蚁身上，直接将你一巴掌拍死！(道伤+1)`);
+          e.reply(`你尚未达到仙台、尊者或塑形级权柄，${tianjiaoName}根本不想浪费时间在你身上，直接将你一掌击败！(道伤+1)`);
           WorldBOSSBattleLock = 0;
           return false;
         } else {
@@ -1872,13 +1899,14 @@ export class BOSS4 extends plugin {
         e.reply(openingDialogue);
       }
 
-      // 遮天与九天十地天骄使用自身境界、装备和积累，不再镜像挑战者属性。
+      // 位面天骄使用自身境界、装备和积累，不再镜像挑战者属性。
       const independentStats = usesIndependentStats
         ? buildTianjiaoBattleStats(tianjiaoData, {
             cultivationLevels: data.Level_list,
             physiqueLevels: data.LevelMax_list,
             secretLevels: data.Levelmijing_list,
             ancientLevels: data.xiangujinshi_list,
+            flowerLevels: data.huafen_list,
             equipmentList: data.equipment_list,
             imperialWeaponList: data.dibing_list,
           })
@@ -2070,7 +2098,7 @@ export class BOSS4 extends plugin {
 
         // 计算奖励
         let reward = 10000;
-        let zuizhong = (A_player.mijinglevel_id + A_player.xiangulevel_id) * A_player.level_id * A_player.Physique_id * reward * panguRewardMultiplier;
+        let zuizhong = getExtraCultivationLevelSum(A_player) * A_player.level_id * A_player.Physique_id * reward * panguRewardMultiplier;
 
         // 发放胜利奖励
         const rewardCalls = [
@@ -2213,7 +2241,7 @@ export class BOSS4 extends plugin {
 
         // 计算失败奖励
         let reward = 10;
-        let zuizhong = (A_player.mijinglevel_id + A_player.xiangulevel_id) * A_player.level_id * A_player.Physique_id * reward;
+        let zuizhong = getExtraCultivationLevelSum(A_player) * A_player.level_id * A_player.Physique_id * reward;
 
         const failureRewards = [
           () => Add_源石(usr_qq, 1000000, {
@@ -2371,16 +2399,10 @@ export class BOSS4 extends plugin {
 
       try {
         if (Math.random() < actualProbability) {
-          await Add_najie_thing(
-            qq,
-            item.name,
-            item.class,
-            item.数量,
-            undefined,
-            1,
-            { idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoData.名号 || 'unknown', settlementId, qq, rewardKind, i) }
-          );
-          rewards.push(`${item.name}x${item.数量}`);
+          const amount = rollTianjiaoDropAmount(item);
+          const idempotencyKey = this.getTianjiaoRewardIdempotencyKey(tianjiaoData.名号 || 'unknown', settlementId, qq, rewardKind, i);
+          const display = await this.grantTianjiaoDrop(qq, item, amount, idempotencyKey);
+          if (display) rewards.push(display.replace(' x', 'x'));
           hasDropped = true;
         }
       } catch (itemError) {
@@ -2393,16 +2415,10 @@ export class BOSS4 extends plugin {
       const fallbackIndex = Math.floor(Math.random() * fallbackItems.length);
       const fallbackItem = fallbackItems[fallbackIndex];
       try {
-        await Add_najie_thing(
-          qq,
-          fallbackItem.name,
-          fallbackItem.class,
-          fallbackItem.数量,
-          undefined,
-          1,
-          { idempotencyKey: this.getTianjiaoRewardIdempotencyKey(tianjiaoData.名号 || 'unknown', settlementId, qq, `${rewardKind}-fallback`) }
-        );
-        rewards.push(`${fallbackItem.name}x${fallbackItem.数量}（保底奖励）`);
+        const amount = rollTianjiaoDropAmount(fallbackItem);
+        const idempotencyKey = this.getTianjiaoRewardIdempotencyKey(tianjiaoData.名号 || 'unknown', settlementId, qq, `${rewardKind}-fallback`);
+        const display = await this.grantTianjiaoDrop(qq, fallbackItem, amount, idempotencyKey);
+        if (display) rewards.push(`${display.replace(' x', 'x')}（保底奖励）`);
       } catch (itemError) {
         console.warn(`发放保底物品失败: ${fallbackItem.name}`, itemError);
       }

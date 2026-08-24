@@ -6,6 +6,7 @@ import {
   applyTianjiaoImprovement,
   attemptTianjiaoBreakthrough,
   buildTianjiaoBattleStats,
+  canTianjiaoGrow,
   createTianjiaoTrace,
   getKnownTianjiaoTrace,
   getTianjiaoTraceReach,
@@ -13,6 +14,7 @@ import {
   getTianjiaoImprovementChance,
   getTianjiaoRealmName,
   improveTianjiao,
+  isIndependentTianjiao,
   isTianjiaoHealing,
   isTianjiaoBreakthroughYear,
   isTianjiaoImprovementYear,
@@ -41,10 +43,15 @@ const context = {
     { level_id: 17, level: '红尘仙', 基础攻击: 12000, 基础防御: 12000, 基础血量: 12000 },
   ],
   ancientLevels: [{ level_id: 1, level: '普通人', 基础攻击: 0, 基础防御: 0, 基础血量: 0 }],
+  flowerLevels: [
+    { level_id: 1, level: '普通人', 基础攻击: 0, 基础防御: 0, 基础血量: 0 },
+    { level_id: 16, level: '混元境——大能', 基础攻击: 8000, 基础防御: 8000, 基础血量: 8000 },
+    { level_id: 17, level: '大宇境/究极境', 基础攻击: 12000, 基础防御: 12000, 基础血量: 12000 },
+  ],
   equipmentList: [
-    { name: '烂铁匕首', type: '武器', atk: 100, def: 0, HP: 0, bao: 0.01 },
-    { name: '破铜护具', type: '护具', atk: 0, def: 100, HP: 0, bao: 0.01 },
-    { name: '廉价炮仗', type: '法宝', atk: 0, def: 0, HP: 100, bao: 0.01 },
+    { name: '烂铁匕首', type: '武器', atk: 500, def: 0, HP: 0, bao: 0.01 },
+    { name: '破铜护具', type: '护具', atk: 0, def: 500, HP: 0, bao: 0.01 },
+    { name: '廉价炮仗', type: '法宝', atk: 0, def: 0, HP: 500, bao: 0.01 },
   ],
   specialEquipmentList: [
     { name: '更好的法宝', class: '装备', type: '法宝', atk: 200, def: 200, HP: 200, bao: 0.1 },
@@ -86,6 +93,35 @@ test('天骄展示境界取秘境与仙古字段中的最高者', () => {
   ), '无妄真劫境');
 });
 
+test('阳间天骄使用花粉路境界、属性与成长', () => {
+  const tianjiao = {
+    名号: '武疯子',
+    位面: 7,
+    境界: '混元境——大能',
+    mijinglevel_id: 1,
+    xiangulevel_id: 1,
+    huafenlevel_id: 16,
+  };
+
+  assert.equal(isIndependentTianjiao(tianjiao), true);
+  assert.equal(getTianjiaoRealmName(
+    tianjiao,
+    context.secretLevels,
+    context.ancientLevels,
+    context.flowerLevels,
+  ), '混元境——大能');
+
+  const stats = buildTianjiaoBattleStats(tianjiao, context);
+  assert.equal(stats.攻击, 8650);
+  assert.equal(stats.防御, 8760);
+  assert.equal(stats.血量上限, 8870);
+
+  const breakthrough = attemptTianjiaoBreakthrough(tianjiao, context, () => 0);
+  assert.equal(breakthrough.field, 'huafenlevel_id');
+  assert.equal(breakthrough.newRealm, '大宇境/究极境');
+  assert.equal(tianjiao.huafenlevel_id, 17);
+});
+
 test('天骄每三千年尝试证道与自强', () => {
   assert.equal(isTianjiaoBreakthroughYear(0), false);
   assert.equal(isTianjiaoBreakthroughYear(2000), false);
@@ -116,7 +152,23 @@ test('天骄每三千年尝试证道与自强', () => {
   assert.equal(tianjiao.mijinglevel_id, 16);
 });
 
-test('遮天与九天十地天骄按满练气、满炼体和自身境界生成属性', () => {
+test('陨落转世和养伤期间暂停天骄成长', () => {
+  assert.equal(canTianjiaoGrow({}, 3000), true);
+  assert.equal(canTianjiaoGrow({ isAlive: true }, 3000), true);
+  assert.equal(canTianjiaoGrow({ isAlive: false }, 3000), false);
+  assert.equal(canTianjiaoGrow({
+    isAlive: true,
+    isHealing: true,
+    养伤: { untilWorldYear: 4000 },
+  }, 3000), false);
+  assert.equal(canTianjiaoGrow({
+    isAlive: true,
+    isHealing: true,
+    养伤: { untilWorldYear: 3000 },
+  }, 3000), true);
+});
+
+test('位面天骄按满练气、满炼体和自身境界生成属性', () => {
   const stats = buildTianjiaoBattleStats({
     名号: '测试天骄',
     位面: 2,
@@ -130,9 +182,9 @@ test('遮天与九天十地天骄按满练气、满炼体和自身境界生成�
 
   assert.equal(stats.level_id, 64);
   assert.equal(stats.Physique_id, 63);
-  assert.equal(stats.攻击, 1250);
-  assert.equal(stats.防御, 1360);
-  assert.equal(stats.血量上限, 1470);
+  assert.equal(stats.攻击, 1650);
+  assert.equal(stats.防御, 1760);
+  assert.equal(stats.血量上限, 1870);
   assert.equal(stats.装备.武器.name, '烂铁匕首');
   assert.equal(stats.装备.帝兵.name, '废铁');
 });
@@ -183,7 +235,7 @@ test('每三千年自强保持高概率，单次最多完成四种行为', () =>
   assert.notEqual(tianjiao.装备.帝兵.name, '测试天骄·本命道兵');
 });
 
-test('副本和位面事件会刷新限时踪迹，特殊位面不会成为天骄位置', () => {
+test('副本和位面事件会刷新限时踪迹，禁入位面不会成为天骄位置', () => {
   const now = 1_000_000;
   const tianjiao = { 名号: '测试天骄', 位面: 2 };
   const player = { power_place: 2 };

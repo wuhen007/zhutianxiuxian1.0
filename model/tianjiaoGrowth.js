@@ -1,9 +1,9 @@
 import { calculateEquippedStats } from './equipmentStats.js';
 import { createRealmEventLocation } from './realmEventLocation.js';
 import { getPlayerPlaneCoordinate, getPlayerPlaneName } from './planeCoords.js';
-import { PLACE_LOCATION_MAP, SPECIAL_LOCATIONS } from './weimianTravel.js';
+import { PLACE_LOCATION_MAP } from './weimianTravel.js';
 
-export const TIANJIAO_PLANES = Object.freeze([2, 2.5]);
+export const TIANJIAO_PLANES = Object.freeze([2, 2.5, 7]);
 export const HUAYUNFEI_DEVOUR_CHANCE = 0.4;
 export const TIANJIAO_BREAKTHROUGH_INTERVAL = 3000;
 export const TIANJIAO_IMPROVEMENT_INTERVAL = 3000;
@@ -16,7 +16,7 @@ export const TIANJIAO_HEALING_RECOVERY = 20;
 const ERA_FACTORS = Object.freeze([1, 0.75, 0.5, 0.08, 0.02]);
 const IMPROVEMENT_CHANCES = Object.freeze([0.9, 0.85, 0.8, 0.7, 0.6]);
 const IMPERIAL_WEAPON_ALL_ATTRIBUTE_GAINS = Object.freeze([1, 2, 3, 5, 7, 10, 20, 30, 50, 100, 200]);
-const REALM_LIMITS = Object.freeze({ mijinglevel_id: 24, xiangulevel_id: 25 });
+const REALM_LIMITS = Object.freeze({ mijinglevel_id: 24, xiangulevel_id: 25, huafenlevel_id: 25 });
 const STARTER_NAMES = Object.freeze({
   武器: '烂铁匕首',
   护具: '破铜护具',
@@ -37,7 +37,7 @@ const ARTIFACT_CORES = Object.freeze({
 const REINCARNATION_PREFIXES = Object.freeze(['紫微', '星墟', '北斗', '天外', '轮回', '太初', '九霄', '万古']);
 const REINCARNATION_SUFFIXES = Object.freeze(['转世身', '归来者', '道胎', '新生', '轮回子', '再世身']);
 const INITIAL_TEMPLATE_FIELDS = Object.freeze([
-  '境界', 'level_id', 'Physique_id', 'mijinglevel_id', 'xiangulevel_id',
+  '境界', 'level_id', 'Physique_id', 'mijinglevel_id', 'xiangulevel_id', 'huafenlevel_id',
   '攻击', '防御', '当前血量', '血量上限', '暴击率', '暴击伤害', '速度',
   '闪避率', '首次闪避', '闪避增攻', '闪避增攻上限', '灵根', '学习的功法',
 ]);
@@ -68,13 +68,15 @@ function findRealm(levels, levelId) {
   return (levels || []).find(realm => Number(realm?.level_id) === Number(levelId)) || {};
 }
 
-export function getTianjiaoRealmName(tianjiao, secretLevels = [], ancientLevels = []) {
-  const secretLevel = Number(tianjiao?.mijinglevel_id) || 1;
-  const ancientLevel = Number(tianjiao?.xiangulevel_id) || 1;
-  if (secretLevel === 1 && ancientLevel === 1) return tianjiao?.境界 || '普通人';
-
-  const levels = secretLevel >= ancientLevel ? secretLevels : ancientLevels;
-  return findRealm(levels, Math.max(secretLevel, ancientLevel)).level || tianjiao?.境界 || '未知境界';
+export function getTianjiaoRealmName(tianjiao, secretLevels = [], ancientLevels = [], flowerLevels = []) {
+  const paths = [
+    { level: Number(tianjiao?.mijinglevel_id) || 1, levels: secretLevels },
+    { level: Number(tianjiao?.xiangulevel_id) || 1, levels: ancientLevels },
+    { level: Number(tianjiao?.huafenlevel_id) || 1, levels: flowerLevels },
+  ];
+  const active = paths.filter(path => path.level > 1).sort((a, b) => b.level - a.level)[0];
+  if (!active) return tianjiao?.境界 || '普通人';
+  return findRealm(active.levels, active.level).level || tianjiao?.境界 || '未知境界';
 }
 
 function realmStats(realm) {
@@ -135,8 +137,9 @@ function randomEntry(items, random) {
   return items[Math.min(items.length - 1, Math.floor(random() * items.length))];
 }
 
+const FORBIDDEN_TIANJIAO_PLANES = Object.freeze(['仙域', '时间长河', '永恒未知之地']);
 const ALLOWED_TIANJIAO_PLANES = Object.freeze(
-  Object.keys(PLACE_LOCATION_MAP).filter(plane => !SPECIAL_LOCATIONS.includes(plane)),
+  Object.keys(PLACE_LOCATION_MAP).filter(plane => !FORBIDDEN_TIANJIAO_PLANES.includes(plane)),
 );
 
 function planeNameFromId(planeId) {
@@ -153,8 +156,8 @@ export function createTianjiaoTrace(tianjiao, options = {}) {
     : randomEntry(ALLOWED_TIANJIAO_PLANES, random);
   const destination = options.destination?.plane === plane && options.destination?.coordinate
     ? options.destination
-    : createRealmEventLocation({ plane, random });
-  if (!destination || SPECIAL_LOCATIONS.includes(destination.plane)) return null;
+    : createRealmEventLocation({ plane, random, allowShengxu: true });
+  if (!destination || FORBIDDEN_TIANJIAO_PLANES.includes(destination.plane)) return null;
   return {
     name: tianjiao.名号,
     plane: destination.plane,
@@ -307,6 +310,10 @@ export function isTianjiaoHealing(status, worldYear) {
   return Number.isFinite(until) && until > Number(worldYear);
 }
 
+export function canTianjiaoGrow(status, worldYear) {
+  return status?.isAlive !== false && !isTianjiaoHealing(status, worldYear);
+}
+
 export function recoverTianjiaoFromSetback(status, worldYear) {
   if (!status?.isHealing) return null;
   const until = Number(status.养伤?.untilWorldYear);
@@ -390,7 +397,7 @@ export function advanceSpecialTianjiaoEvolution(tianjiao, context, random = Math
 }
 
 export function attemptTianjiaoBreakthrough(tianjiao, context, random = Math.random) {
-  const candidates = ['mijinglevel_id', 'xiangulevel_id'].filter(field => {
+  const candidates = Object.keys(REALM_LIMITS).filter(field => {
     const level = Number(tianjiao?.[field]) || 1;
     return level > 1 && level < REALM_LIMITS[field];
   });
@@ -403,7 +410,9 @@ export function attemptTianjiaoBreakthrough(tianjiao, context, random = Math.ran
   const chance = getTianjiaoBreakthroughChance(field, oldLevel, context.eraIndex);
   if (random() >= chance) return null;
 
-  const levels = field === 'mijinglevel_id' ? context.secretLevels : context.ancientLevels;
+  const levels = field === 'mijinglevel_id'
+    ? context.secretLevels
+    : field === 'xiangulevel_id' ? context.ancientLevels : context.flowerLevels;
   const oldRealm = findRealm(levels, oldLevel).level || `第${oldLevel}境`;
   const newLevel = oldLevel + 1;
   const newRealm = findRealm(levels, newLevel).level || `第${newLevel}境`;
@@ -417,11 +426,12 @@ export function getTianjiaoRealmStats(tianjiao, context) {
   const physique = maxRealm(context.physiqueLevels);
   const secret = findRealm(context.secretLevels, tianjiao?.mijinglevel_id || 1);
   const ancient = findRealm(context.ancientLevels, tianjiao?.xiangulevel_id || 1);
+  const flower = findRealm(context.flowerLevels, tianjiao?.huafenlevel_id || 1);
   return {
     level_id: Number(cultivation.level_id) || 1,
     Physique_id: Number(physique.level_id) || 1,
-    base: addStats(realmStats(cultivation), realmStats(physique), realmStats(secret), realmStats(ancient)),
-    laterRealms: addStats(realmStats(secret), realmStats(ancient)),
+    base: addStats(realmStats(cultivation), realmStats(physique), realmStats(secret), realmStats(ancient), realmStats(flower)),
+    laterRealms: addStats(realmStats(secret), realmStats(ancient), realmStats(flower)),
     baseCritical: (Number(cultivation.基础暴击) || 0) + (Number(physique.基础暴击) || 0),
   };
 }
@@ -463,7 +473,11 @@ function hasPercentageStats(item) {
 function washPercentageEquipment(tianjiao, equipment, slot, random) {
   const current = equipment[slot];
   const crafted = cloneItem(current);
-  const pathLevel = Math.max(Number(tianjiao.mijinglevel_id) || 1, Number(tianjiao.xiangulevel_id) || 1);
+  const pathLevel = Math.max(
+    Number(tianjiao.mijinglevel_id) || 1,
+    Number(tianjiao.xiangulevel_id) || 1,
+    Number(tianjiao.huafenlevel_id) || 1,
+  );
   const legacyName = `${tianjiao.名号}祭炼的${slot}`;
   const wasPercentageEquipment = hasPercentageStats(current);
   if (!crafted.天骄炼制 || crafted.name === legacyName) crafted.name = randomArtifactName(slot, random);
@@ -499,7 +513,11 @@ function improveEquipment(tianjiao, context, random) {
 function forgeImperialWeapon(tianjiao, context, random) {
   const equipment = ensureTianjiaoEquipment(tianjiao, context);
   const oldWeapon = equipment.帝兵;
-  const pathLevel = Math.max(Number(tianjiao.mijinglevel_id) || 1, Number(tianjiao.xiangulevel_id) || 1);
+  const pathLevel = Math.max(
+    Number(tianjiao.mijinglevel_id) || 1,
+    Number(tianjiao.xiangulevel_id) || 1,
+    Number(tianjiao.huafenlevel_id) || 1,
+  );
   const wasForged = oldWeapon?.author_name === tianjiao.名号 && oldWeapon?.name !== STARTER_NAMES.帝兵;
   const legacyName = `${tianjiao.名号}·本命道兵`;
   const weaponName = !wasForged || oldWeapon.name === legacyName

@@ -1370,6 +1370,7 @@ export class EndlessRealm extends plugin {
         tianjiao,
         data.Levelmijing_list || [],
         data.xiangujinshi_list || [],
+        data.huafen_list || [],
       ),
     };
   }

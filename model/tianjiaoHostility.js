@@ -40,6 +40,13 @@ function clampProbability(value) {
   return Math.min(1, Math.max(0, Number(value) || 0));
 }
 
+export function rollTianjiaoDropAmount(item, multiplier = 1, random = Math.random, cap = Infinity) {
+  const minimum = Math.max(1, Math.floor(Number(item?.最小数量 ?? item?.数量) || 1));
+  const maximum = Math.max(minimum, Math.floor(Number(item?.最大数量 ?? item?.数量) || minimum));
+  const rolled = minimum + Math.min(maximum - minimum, Math.floor(clampProbability(random()) * (maximum - minimum + 1)));
+  return Math.max(1, Math.min(cap, Math.floor(rolled * Math.max(1, Number(multiplier) || 1))));
+}
+
 function clone(value) {
   return structuredClone(value);
 }
@@ -158,7 +165,7 @@ export function buildTianjiaoSurrenderOffer(tianjiao, gameData, random = Math.ra
     .map(item => ({
       name: String(item.name),
       class: String(item.class),
-      amount: Math.max(1, Math.min(20, Math.floor(Number(item.数量) || 1))),
+      amount: rollTianjiaoDropAmount(item, 1, random, 20),
       rarity: Math.max(0, Math.floor(Number(item.稀有度) || 0)),
     }));
   if (normal.length === 0 && drops.length > 0) {
@@ -166,7 +173,7 @@ export function buildTianjiaoSurrenderOffer(tianjiao, gameData, random = Math.ra
     normal.push({
       name: String(fallback.name),
       class: String(fallback.class),
-      amount: Math.max(1, Math.min(20, Math.floor(Number(fallback.数量) || 1))),
+      amount: rollTianjiaoDropAmount(fallback, 1, random, 20),
       rarity: Math.max(0, Math.floor(Number(fallback.稀有度) || 0)),
     });
   }
