@@ -3,7 +3,10 @@ import { fileURLToPath } from 'node:url';
 
 import { INNATE_TREASURE_CATALOG } from './innateTreasure.js';
 import { getTreasureContestProfile } from './innateTreasureContest.js';
-import { MAX_PERCENT_EQUIPMENT_STAT } from './equipmentStats.js';
+import {
+  isCanonicalDaluoSwordEmbryo,
+  MAX_PERCENT_EQUIPMENT_STAT,
+} from './equipmentStats.js';
 import {
   formatRealmEventLocation,
   formatRealmEventTravel,
@@ -102,6 +105,9 @@ export function mergeSetEquipment(equipment, najie, slot, sourceName) {
   const nextNajie = clone(najie);
   const target = nextEquipment?.[slot];
   if (!target?.name || !SET_PIECES.has(target.name)) throw new Error(`当前穿戴的${slot}不是可熔铸的套装部件`);
+  if (target.name === '大罗剑胎' && !isCanonicalDaluoSwordEmbryo(target)) {
+    throw new Error('当前穿戴的武器不是仙古秘境产出的大罗剑胎');
+  }
   if (target.归一属性) throw new Error(`当前${slot}已经完成万象归一`);
   if (!Object.values(stats(target)).some(value => value > MAX_PERCENT_EQUIPMENT_STAT)) {
     throw new Error('套装部件必须是数值装备');

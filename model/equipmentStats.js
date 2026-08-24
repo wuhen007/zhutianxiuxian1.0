@@ -1,4 +1,6 @@
 export const MAX_PERCENT_EQUIPMENT_STAT = 499;
+import { getZhutianExclusiveEquipmentBonus } from './exclusiveEquipmentSets.js';
+
 const EQUIPMENT_TYPES = new Set(['武器', '护具', '法宝']);
 
 export function isNameablePercentageEquipment(item) {
@@ -60,11 +62,18 @@ export function calculateEquippedStats(baseStats, slots = []) {
 }
 
 export function getEquipmentAllAttributeMultiplier(player, slot) {
-  if (slot?.name !== '大罗剑胎') return 1;
+  if (!isCanonicalDaluoSwordEmbryo(slot)) return 1;
   const isSupremePhysique = String(player?.灵根?.type || '').includes('至尊体');
   const field = isSupremePhysique ? '至尊体全属性倍率' : '其他灵根全属性倍率';
-  const fallback = isSupremePhysique ? 15 : 7.5;
-  return Math.max(1, Number(slot[field]) || fallback);
+  return Math.max(1, Number(slot[field]) || 1);
+}
+
+export function isCanonicalDaluoSwordEmbryo(slot) {
+  return slot?.name === '大罗剑胎'
+    && (Number(slot.id) === 100054 || (
+      Number(slot.至尊体全属性倍率) === 15
+      && Number(slot.其他灵根全属性倍率) === 7.5
+    ));
 }
 
 export function calculateEquipmentSetBonuses(player, equipment = {}, options = {}) {
@@ -144,9 +153,15 @@ export function calculateEquipmentSetBonuses(player, equipment = {}, options = {
   if (treasure.name === '雷池' && player.mijinglevel_id >= 21) {
     bonus.攻 += 19; bonus.血 += 19; bonus.防 += 19;
   }
-  if (weapon.name === '大罗剑胎') {
+  if (isCanonicalDaluoSwordEmbryo(weapon)) {
     const value = Math.max(0, getEquipmentAllAttributeMultiplier(player, weapon) - 1);
     bonus.攻 += value; bonus.防 += value; bonus.血 += value;
+  }
+  const zhutianSet = getZhutianExclusiveEquipmentBonus(player, equipment);
+  if (zhutianSet.active) {
+    bonus.攻 += zhutianSet.bonus;
+    bonus.防 += zhutianSet.bonus;
+    bonus.血 += zhutianSet.bonus;
   }
   if (options.daoTreasureEquipped) {
     const value = Number(daoTreasure.全属性倍率加成)

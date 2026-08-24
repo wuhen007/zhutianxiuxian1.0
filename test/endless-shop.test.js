@@ -114,6 +114,38 @@ test('万象归一与全局装备规则共用499百分比阈值', () => {
   assert.equal(merged.target.归一属性.百分比.atk, 499);
 });
 
+test('同名自铸武器不会被万象归一误认成仙古大罗剑胎', () => {
+  const najie = {
+    装备: [{ name: '百分比剑', type: '武器', atk: 1, 数量: 1 }],
+    道具: [{ name: FUSION_ITEM, 数量: 1 }],
+  };
+  assert.throws(() => mergeSetEquipment(
+    { 武器: { name: '大罗剑胎', type: '武器', atk: 1000 }, 护具: {}, 法宝: {} },
+    najie,
+    '武器',
+    '百分比剑'
+  ), /不是仙古秘境产出的大罗剑胎/);
+
+  const result = mergeSetEquipment(
+    {
+      武器: {
+        id: 100054,
+        name: '大罗剑胎',
+        type: '武器',
+        atk: 3_000_000_000,
+        至尊体全属性倍率: 15,
+        其他灵根全属性倍率: 7.5,
+      },
+      护具: {},
+      法宝: {},
+    },
+    najie,
+    '武器',
+    '百分比剑'
+  );
+  assert.equal(result.target.归一来源, '百分比剑');
+});
+
 test('万象归一落盘受玩家锁和三文件回滚保护', () => {
   const source = fs.readFileSync(new URL('../apps/EndlessRealm.js', import.meta.url), 'utf8');
   const start = source.indexOf('async mergeEquipment(e)');

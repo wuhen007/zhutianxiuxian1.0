@@ -117,6 +117,7 @@ import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { isCultivatingExtraPath } from '../../model/extraCultivation.js';
 import { isHighRealmConsumableRestricted } from '../../model/realmAuthority.js';
 import { selectEquipmentByCode } from '../../model/equipmentSwap.js';
+import { isCanonicalDaluoSwordEmbryo } from '../../model/equipmentStats.js';
 import { calculateLifeSourceRepairBaseCost } from '../../model/lifeSourceRepair.js';
 import {
   hasCompletedZhiXian,
@@ -2258,7 +2259,7 @@ if (func == "打开") {
             if (equipment.武器.name == "【极道帝兵】万物母气鼎"  &&  player.灵根.type == "大成圣体") {
                 e.reply("你为天帝，当镇压世间一切敌！");
             }
-            if (equipment.武器.name == "大罗剑胎") {
+            if (isCanonicalDaluoSwordEmbryo(equipment.武器)) {
                 const isSupremePhysique = String(player.灵根?.type || '').includes('至尊体');
                 e.reply([
                     '【大罗剑胎·古船苏醒】',

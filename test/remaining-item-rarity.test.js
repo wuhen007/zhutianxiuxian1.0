@@ -29,7 +29,7 @@ test('道具、草药、功法和灵根的代表性成长阶梯递增', () => {
 });
 
 test('炉火成长序列和同名强化物保持一致', () => {
-  assert.deepEqual(read('炼器火.json').map(item => item.稀有度), [1, 3, 5, 7, 9]);
+  assert.deepEqual(read('炼器火.json').map(item => item.稀有度), [1, 3, 5, 7, 9, 10]);
   assert.deepEqual(read('炼器炉.json').map(item => item.稀有度), [1, 3, 5, 7, 9, 10]);
   const props = new Map(read('道具列表.json').map(item => [item.name, item.稀有度]));
   for (const item of read('强化列表.json')) assert.equal(item.稀有度, props.get(item.name), item.name);

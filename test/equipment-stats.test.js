@@ -6,6 +6,7 @@ import {
   calculateEquippedStats,
   calculateEquipmentSetBonuses,
   getEquipmentAllAttributeMultiplier,
+  isCanonicalDaluoSwordEmbryo,
   isNameablePercentageEquipment,
   MAX_PERCENT_EQUIPMENT_STAT,
 } from '../model/equipmentStats.js';
@@ -96,6 +97,16 @@ test('大罗剑胎对至尊体系列提供十五倍，其他灵根提供七点�
   assert.equal(getEquipmentAllAttributeMultiplier({ 灵根: { type: '终极至尊体' } }, sword), 15);
   assert.equal(getEquipmentAllAttributeMultiplier({ 灵根: { type: '天灵根' } }, sword), 7.5);
   assert.equal(getEquipmentAllAttributeMultiplier({ 灵根: { type: '至尊体' } }, { name: '普通剑' }), 1);
+  assert.equal(isCanonicalDaluoSwordEmbryo(sword), true);
+});
+
+test('自铸百分比武器即使同名大罗剑胎也不会触发仙古唯一装备加成', () => {
+  const renamedCraft = { name: '大罗剑胎', class: '装备', type: '武器', atk: 48.5, def: 36, HP: 52 };
+  assert.equal(isCanonicalDaluoSwordEmbryo(renamedCraft), false);
+  assert.equal(getEquipmentAllAttributeMultiplier({ 灵根: { type: '至尊体' } }, renamedCraft), 1);
+  assert.deepEqual(calculateEquipmentSetBonuses({ 灵根: { type: '至尊体' } }, {
+    武器: renamedCraft,
+  }), { 攻: 0, 防: 0, 血: 0 });
 });
 
 test('常规重算与渡劫共用套装增益规则', () => {

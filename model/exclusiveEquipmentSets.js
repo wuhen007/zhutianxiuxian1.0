@@ -19,6 +19,88 @@ export const EXCLUSIVE_EQUIPMENT_SETS = Object.freeze({
   }),
 });
 
+export const ZHUTIAN_EQUIPMENT_STAGE_BONUSES = Object.freeze([0, 0.3, 0.7, 1.5, 3]);
+
+export const ZHUTIAN_EXCLUSIVE_EQUIPMENT_SETS = Object.freeze({
+  木之本樱: Object.freeze({
+    setName: '魔卡守护套',
+    roots: Object.freeze(['木之本樱', '星之杖·木之本樱', '梦之杖·木之本樱']),
+    weapon: Object.freeze({ id: 9600201, name: '【魔卡】星钥法杖' }),
+    armor: Object.freeze({ id: 9600202, name: '【魔卡】守护法衣' }),
+    treasure: Object.freeze({ id: 9600203, name: '【魔卡】库洛魔法书' }),
+  }),
+  鹿目圆: Object.freeze({
+    setName: '圆环希望套',
+    roots: Object.freeze(['鹿目圆', '许愿者·圆', '希望之光·圆', '圆神']),
+    weapon: Object.freeze({ id: 9600204, name: '【圆环】因果长弓' }),
+    armor: Object.freeze({ id: 9600205, name: '【圆环】希望法衣' }),
+    treasure: Object.freeze({ id: 9600206, name: '【圆环】灵魂宝石' }),
+  }),
+  门矢士: Object.freeze({
+    setName: '世界旅者套',
+    roots: Object.freeze(['门矢士', '帝骑', '帝骑·神主', '帝骑·终极神主']),
+    weapon: Object.freeze({ id: 9600207, name: '【帝骑】驾驭卡盒剑' }),
+    armor: Object.freeze({ id: 9600208, name: '【帝骑】次元战甲' }),
+    treasure: Object.freeze({ id: 9600209, name: '【帝骑】次元驱动器' }),
+  }),
+  少女流萤: Object.freeze({
+    setName: '焦土骑士套',
+    roots: Object.freeze(['少女流萤', '流萤萨姆机甲']),
+    weapon: Object.freeze({ id: 9600210, name: '【流萤】火萤IV型光刃' }),
+    armor: Object.freeze({ id: 9600211, name: '【流萤】萨姆装甲' }),
+    treasure: Object.freeze({ id: 9600212, name: '【流萤】变身器' }),
+  }),
+  伊蕾娜: Object.freeze({
+    setName: '灰之魔女套',
+    roots: Object.freeze(['伊蕾娜']),
+    weapon: Object.freeze({ id: 9600213, name: '【灰之魔女】星辰魔杖' }),
+    armor: Object.freeze({ id: 9600214, name: '【灰之魔女】旅行法袍' }),
+    treasure: Object.freeze({ id: 9600215, name: '【灰之魔女】冒险日记' }),
+  }),
+  爱莉希雅: Object.freeze({
+    setName: '无瑕始源套',
+    roots: Object.freeze(['爱莉希雅', '人之律者·爱莉希雅', '始源之律者·爱莉希雅']),
+    weapon: Object.freeze({ id: 9600216, name: '【始源】飞花爱之诗' }),
+    armor: Object.freeze({ id: 9600217, name: '【始源】无瑕礼装' }),
+    treasure: Object.freeze({ id: 9600218, name: '【始源】水晶花冠' }),
+  }),
+  天命青儿: Object.freeze({
+    setName: '天命剑道套',
+    roots: Object.freeze(['天命青儿']),
+    weapon: Object.freeze({ id: 9600219, name: '【天命】行道剑' }),
+    armor: Object.freeze({ id: 9600220, name: '【天命】大道青衣' }),
+    treasure: Object.freeze({ id: 9600221, name: '【天命】天命剑匣' }),
+  }),
+});
+
+export function getZhutianExclusiveEquipmentSet(avatarName) {
+  return ZHUTIAN_EXCLUSIVE_EQUIPMENT_SETS[avatarName] || null;
+}
+
+export function getZhutianExclusiveEquipmentBonus(player, equipment = {}) {
+  const rootName = String(player?.灵根?.name || '');
+  for (const [avatarName, set] of Object.entries(ZHUTIAN_EXCLUSIVE_EQUIPMENT_SETS)) {
+    const stage = set.roots.indexOf(rootName) + 1;
+    if (stage <= 0) continue;
+    const matches = [
+      [equipment.武器, set.weapon],
+      [equipment.护具, set.armor],
+      [equipment.法宝, set.treasure],
+    ].every(([equipped, required]) =>
+      equipped?.name === required.name && Number(equipped.id) === required.id
+    );
+    if (!matches) return { active: false, avatarName, setName: set.setName, stage, bonus: 0 };
+    return {
+      active: true,
+      avatarName,
+      setName: set.setName,
+      stage,
+      bonus: ZHUTIAN_EQUIPMENT_STAGE_BONUSES[stage] || 0,
+    };
+  }
+  return { active: false, avatarName: '', setName: '', stage: 0, bonus: 0 };
+}
+
 function number(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
