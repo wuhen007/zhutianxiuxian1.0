@@ -19,7 +19,7 @@
           <span>当前：{{currentPlane}}</span>
           <span>花粉序列：{{flowerLevel}}阶</span>
         </div>
-        <p class="command">探索指令：#探索圣墟 地点名 · 每处每日一次</p>
+        <p class="command">单次：#探索圣墟 地点名 · 沉迷：#沉迷圣墟 地点名*次数</p>
       </header>
 
       <section class="dungeon-list">
@@ -47,6 +47,7 @@
           <footer>
             <span>主要产出：{{item.medium}} × {{item.amount}}</span>
             <span>呼吸法：{{item.gongfa}}</span>
+            <span>三档奖励：{{item.rewardsText}}</span>
             <span class="inheritance">妙术秘术：{{item.skillsText}}</span>
           </footer>
         </article>

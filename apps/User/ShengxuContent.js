@@ -1,6 +1,7 @@
-import { plugin, puppeteer, Show, verc } from '../../api/api.js';
+import { config, plugin, puppeteer, Show, verc } from '../../api/api.js';
 import {
   Add_najie_thing,
+  Go,
   Read_player,
   Write_player,
   bigNumberTransform,
@@ -23,6 +24,7 @@ import {
   getShengxuExploreDuration,
   getShengxuExploreShortages,
   resolveShengxuDungeonReward,
+  resolveShengxuTierReward,
   synthesizeBreathingMethod,
 } from '../../model/shengxuContent.js';
 import {
@@ -88,6 +90,7 @@ export class ShengxuContent extends plugin {
       rule: [
         { reg: '^#圣墟副本$', fnc: 'dungeons' },
         { reg: '^#探索圣墟\\s+.+$', fnc: 'explore' },
+        { reg: '^#沉迷圣墟\\s+.+\\*\\d+$', fnc: 'addictedExplore' },
         { reg: '^#圣墟势力$', fnc: 'factions' },
         { reg: '^#加入(?:菩提基因|大梦净土|阳间第一山)$', fnc: 'joinFaction' },
         { reg: '^#领取圣墟俸禄$', fnc: 'salary' },
@@ -135,6 +138,7 @@ export class ShengxuContent extends plugin {
         lingshiCost: bigNumberTransform(cost.lingshi),
         shouyuanCost: cost.shouyuan,
         skillsText: dungeon.skills.map(skill => skill.name).join('、'),
+        rewardsText: `one：${dungeon.one.map(item => item.name).join('、')}｜two：${dungeon.two.map(item => item.name).join('、')}｜three：${dungeon.three.map(item => item.name).join('、')}`,
         ready: realmReady && planeReady && shortages.length === 0,
         status: !realmReady ? `花粉序列不足（需${dungeon.requiredLevel}阶）`
           : !planeReady ? `需身处${plane}`
@@ -158,7 +162,24 @@ export class ShengxuContent extends plugin {
     if (!context) return e.reply('玩家不存在，请先创建角色。');
     const dungeon = getShengxuDungeon(e.msg.replace(/^#探索圣墟\s+/, ''));
     if (!dungeon) return e.reply(`未知地点。可用：${SHENGXU_DUNGEONS.map(item => item.name).join('、')}`);
+    return this.beginExplore(e, context, dungeon, 1);
+  }
+
+  async addictedExplore(e) {
+    if (!verc({ e })) return false;
+    const context = await this.getPlayer(e);
+    if (!context) return e.reply('玩家不存在，请先创建角色。');
+    const match = e.msg.match(/^#沉迷圣墟\s+(.+?)\*(\d+)$/);
+    const dungeon = getShengxuDungeon(match?.[1]);
+    const batches = Number(match?.[2]);
+    if (!dungeon) return e.reply(`未知地点。可用：${SHENGXU_DUNGEONS.map(item => item.name).join('、')}`);
+    if (!Number.isInteger(batches) || batches < 1 || batches > 12) return e.reply('沉迷次数必须在1-12之间。');
+    return this.beginExplore(e, context, dungeon, batches * 10);
+  }
+
+  async beginExplore(e, context, dungeon, totalCount) {
     const { userId } = context;
+    if (!(await Go(e))) return false;
     return withPlayerMutationLock(userId, async () => {
       const player = await Read_player(userId);
       if (!isCultivatingExtraPath(player, 'huafen')) return e.reply('只有花粉进化路修士可以进入圣墟副本。');
@@ -170,8 +191,6 @@ export class ShengxuContent extends plugin {
       if (Number(player.huafenlevel_id) < dungeon.requiredLevel) {
         return e.reply(`探索${dungeon.name}需花粉进化序列达到${dungeon.requiredLevel}，当前为${player.huafenlevel_id}。`);
       }
-      if (await redis.get(`xiuxian:player:${userId}:game_action`) == 0) return e.reply('修仙：游戏进行中...');
-
       // 探索中检查：同一时间只能探索一处圣墟副本
       const exploreKey = `xiuxian:shengxu:explore:${userId}`;
       const activeRaw = await redis.get(exploreKey);
@@ -184,33 +203,45 @@ export class ShengxuContent extends plugin {
             const s = Math.floor((remainMs % 60000) / 1000);
             return e.reply(`你正在探索【${active.dungeonName}】，剩余 ${m} 分 ${s} 秒后归来。`);
           }
-          await redis.del(exploreKey);
+          return e.reply(`【${active.dungeonName}】探索已经结束，正在等待结算。`);
         } catch {
           // 坏数据直接覆盖
+          await redis.del(exploreKey);
         }
       }
 
-      const cost = getShengxuExploreCost(dungeon);
-      const shortages = getShengxuExploreShortages(player, cost);
-      if (shortages.length) return e.reply(['【圣墟探索·资源不足】', ...shortages].join('\n'));
-
-      // 每处每日一次（探索开始日占位）
-      const dailyKey = `xiuxian:shengxu:dungeon:${getShanghaiDateKey()}:${dungeon.name}:${userId}`;
-      if (!(await redis.set(dailyKey, '1', { EX: 2 * 24 * 60 * 60, NX: true }))) {
+      // 单次探索保留每日限制；沉迷以十轮为一组，按资源和总耗时约束。
+      const dailyKey = totalCount === 1
+        ? `xiuxian:shengxu:dungeon:${getShanghaiDateKey()}:${dungeon.name}:${userId}`
+        : null;
+      if (dailyKey && !(await redis.set(dailyKey, '1', { EX: 2 * 24 * 60 * 60, NX: true }))) {
         return e.reply(`你今日已经探索过${dungeon.name}。`);
       }
 
+      const unitCost = getShengxuExploreCost(dungeon);
+      const cost = Object.fromEntries(Object.entries(unitCost).map(([key, value]) => [key, value * totalCount]));
+      const totalShortages = getShengxuExploreShortages(player, cost);
+      if (totalShortages.length) {
+        if (dailyKey) await redis.del(dailyKey);
+        return e.reply(['【圣墟探索·资源不足】', ...totalShortages].join('\n'));
+      }
       const durationMin = getShengxuExploreDuration(player, dungeon);
+      const totalDurationMin = durationMin * totalCount;
       const now = Date.now();
-      const endTime = now + durationMin * 60 * 1000;
+      const endTime = now + totalDurationMin * 60 * 1000;
       const task = {
         taskId: `${userId}:${dungeon.name}:${now}`,
+        mode: totalCount > 1 ? 'addiction' : 'single',
         qq: userId,
         playerName: player.名号 || userId,
         groupId: e.isGroup ? e.group_id : null,
         dungeonName: dungeon.name,
         start_time: now,
         end_time: endTime,
+        next_settle_time: now + durationMin * 60 * 1000,
+        interval: durationMin * 60 * 1000,
+        total_count: totalCount,
+        settled_count: 0,
         cost,
       };
       player.修为 -= cost.xiuwei;
@@ -218,21 +249,32 @@ export class ShengxuContent extends plugin {
       player.灵石 -= cost.lingshi;
       player.寿元 -= cost.shouyuan;
       try {
-        await redis.set(exploreKey, JSON.stringify(task), { EX: 24 * 60 * 60 });
+        const ttl = Math.ceil(totalDurationMin * 60) + 24 * 60 * 60;
+        await redis.set(exploreKey, JSON.stringify(task), { EX: ttl });
+        await redis.set(`xiuxian:player:${userId}:action`, JSON.stringify({
+          action: totalCount > 1 ? '圣墟沉迷' : '圣墟探索',
+          start_time: now,
+          end_time: endTime,
+          time: totalDurationMin * 60 * 1000,
+          Place_actionplus: 'shengxu',
+          Place_address: { name: dungeon.name },
+          shengxuTaskId: task.taskId,
+        }), { EX: ttl });
         await Write_player(userId, player);
       } catch (error) {
         await redis.del(exploreKey);
-        await redis.del(dailyKey);
+        await redis.del(`xiuxian:player:${userId}:action`);
+        if (dailyKey) await redis.del(dailyKey);
         throw error;
       }
       const endLabel = new Date(endTime).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' });
       return e.reply([
-        `【${dungeon.name}·开始探索】`,
-        `${player.名号 || userId}踏入${dungeon.name}，${dungeon.monster}的气息在深处隐现。`,
+        `【${dungeon.name}·${totalCount > 1 ? '开始沉迷' : '开始探索'}】`,
+        `${player.名号 || userId}踏入${dungeon.name}，${dungeon.monster}的气息在深处隐现。${totalCount > 1 ? `将连续探索${totalCount}轮。` : ''}`,
         `入场消耗：修为${bigNumberTransform(cost.xiuwei)}｜血气${bigNumberTransform(cost.xueqi)}｜灵石${bigNumberTransform(cost.lingshi)}｜寿元${cost.shouyuan}年`,
-        `探索耗时：${durationMin} 分钟`,
+        `探索耗时：每轮${durationMin}分钟｜共${totalDurationMin}分钟`,
         `预计归来：${endLabel}`,
-        '探索结束后将自动结算收获。',
+        totalCount > 1 ? '每轮到期自动结算，全部完成后推送汇总收获。' : '探索结束后将自动结算收获。',
       ].join('\n'));
     });
   }
@@ -262,14 +304,21 @@ export class ShengxuContent extends plugin {
         await redis.del(key);
         continue;
       }
-      if (now < Number(task.end_time)) continue;
+      const addictionComplete = task.mode === 'addiction' && Number(task.settled_count) >= Number(task.total_count);
+      const dueAt = task.mode === 'addiction' ? task.next_settle_time : task.end_time;
+      if (!addictionComplete && now < Number(dueAt)) continue;
       const settleKey = `xiuxian:shengxu:settling:${task.qq}`;
       const token = `${process.pid}:${Date.now()}:${Math.random()}`;
       if (!(await redis.set(settleKey, token, { EX: 120, NX: true }))) continue;
       try {
         if ((await redis.get(key)) !== raw) continue;
-        await this.settleExplore(task);
-        await redis.del(key);
+        if (task.mode === 'addiction') {
+          await this.settleAddiction(key, task, now);
+        } else {
+          await this.settleExplore(task);
+          await redis.del(key);
+          await this.clearShengxuAction(task);
+        }
       } catch (error) {
         console.error(`[圣墟副本] 玩家 ${task.qq} 探索结算失败:`, error);
       } finally {
@@ -278,14 +327,81 @@ export class ShengxuContent extends plugin {
     }
   }
 
-  async settleExplore(task) {
+  async settleAddiction(key, task, now) {
+    task.summary ??= { wins: 0, losses: 0, xiuwei: 0, xueqi: 0, lingshi: 0, accumulation: 0, items: {} };
+    let processed = 0;
+    while (task.settled_count < task.total_count && now >= Number(task.next_settle_time) && processed < 10) {
+      const round = Number(task.settled_count) + 1;
+      const result = await this.settleExplore({ ...task, taskId: `${task.taskId}:round:${round}` }, false);
+      task.settled_count = round;
+      task.next_settle_time = Number(task.next_settle_time) + Number(task.interval);
+      processed++;
+      if (!result?.alreadySettled) this.addAddictionSummary(task.summary, result);
+      const ttl = Math.max(24 * 60 * 60, Math.ceil((Number(task.end_time) - Date.now()) / 1000) + 24 * 60 * 60);
+      await redis.set(key, JSON.stringify(task), { EX: ttl });
+    }
+    if (task.settled_count >= task.total_count) {
+      await redis.del(key);
+      await this.clearShengxuAction(task);
+      return this.sendAddictionResult(task);
+    }
+  }
+
+  addAddictionSummary(summary, result) {
+    if (!result?.settled) return;
+    if (!result.won) {
+      summary.losses++;
+      return;
+    }
+    summary.wins++;
+    const reward = result.reward;
+    summary.xiuwei += reward.xiuwei;
+    summary.xueqi += reward.xueqi;
+    summary.lingshi += reward.lingshi;
+    summary.accumulation += reward.accumulation;
+    const items = [
+      { name: reward.medium, amount: reward.amount },
+      reward.gongfa && { name: reward.gongfa, amount: 1 },
+      reward.herb && { name: reward.herb, amount: 1 },
+      reward.fruit && { name: reward.fruit, amount: 1 },
+      result.tierReward,
+    ].filter(Boolean);
+    for (const item of items) summary.items[item.name] = (summary.items[item.name] || 0) + (item.amount || 1);
+  }
+
+  async sendAddictionResult(task) {
+    const summary = task.summary || {};
+    const items = Object.entries(summary.items || {}).map(([name, amount]) => `${name}×${amount}`);
+    const message = [
+      `【${task.dungeonName}·沉迷结算完成】`,
+      `连续探索：${task.total_count}轮｜胜${summary.wins || 0}｜负${summary.losses || 0}`,
+      `修为+${bigNumberTransform(summary.xiuwei || 0)}｜血气+${bigNumberTransform(summary.xueqi || 0)}｜灵石+${bigNumberTransform(summary.lingshi || 0)}`,
+      `进化积淀+${summary.accumulation || 0}`,
+      items.length ? `物品：${items.join('｜')}` : '本次没有获得物品。',
+    ].join('\n');
+    return this.sendExploreResult(task, message);
+  }
+
+  async clearShengxuAction(task) {
+    const key = `xiuxian:player:${task.qq}:action`;
+    const raw = await redis.get(key);
+    if (!raw) return;
+    try {
+      const action = JSON.parse(raw);
+      if (action.shengxuTaskId === task.taskId) await redis.del(key);
+    } catch {
+      // 其他模块可能正在迁移动作数据，不在此处清理未知结构。
+    }
+  }
+
+  async settleExplore(task, sendResult = true) {
     const userId = String(task.qq);
     const player = await Read_player(userId);
-    if (!player) return;
+    if (!player) return { settled: false };
     const dungeon = getShengxuDungeon(task.dungeonName);
-    if (!dungeon) return;
+    if (!dungeon) return { settled: false };
     const settlementId = task.taskId || `${userId}:${dungeon.name}:${task.start_time}`;
-    if (player.圣墟副本最近结算?.[dungeon.name] === settlementId) return;
+    if (player.圣墟副本最近结算?.[dungeon.name] === settlementId) return { settled: true, alreadySettled: true };
 
     const attacker = structuredClone(player);
     attacker.当前血量 = Math.max(1, Number(player.血量上限 || player.当前血量) || 1);
@@ -297,10 +413,14 @@ export class ShengxuContent extends plugin {
       ...battleExcerpt(battle.msg),
     ];
     let message = '';
+    let outcome = { settled: false };
     await withPlayerMutationLock(userId, async () => {
       const fresh = await Read_player(userId);
       fresh.圣墟副本最近结算 ??= {};
-      if (fresh.圣墟副本最近结算[dungeon.name] === settlementId) return;
+      if (fresh.圣墟副本最近结算[dungeon.name] === settlementId) {
+        outcome = { settled: true, alreadySettled: true };
+        return;
+      }
       fresh.当前血量 = battle.winner === 'A' ? Math.max(1, Math.trunc(battle.A_hp)) : 1;
       fresh.功法熟练度 = attacker.功法熟练度;
       fresh.功法熟练度每日 = attacker.功法熟练度每日;
@@ -309,10 +429,13 @@ export class ShengxuContent extends plugin {
         await Write_player(userId, fresh);
         lines.push('【探索失败】你被异变生灵重创，当前血量降至1。');
         message = lines.join('\n');
+        outcome = { settled: true, won: false };
         return;
       }
 
       const reward = resolveShengxuDungeonReward(dungeon);
+      const tierRates = config.getConfig('xiuxian', 'xiuxian')?.SecretPlace || {};
+      const tierReward = resolveShengxuTierReward(dungeon, Math.random, tierRates);
       const addReward = (name, type, amount, slot) => Add_najie_thing(
         userId, name, type, amount, undefined, 1, { idempotencyKey: `shengxu:${settlementId}:${slot}` }
       );
@@ -320,6 +443,7 @@ export class ShengxuContent extends plugin {
       if (reward.gongfa) await addReward(reward.gongfa, '功法', 1, 'gongfa');
       if (reward.herb) await addReward(reward.herb, '道具', 1, 'herb');
       if (reward.fruit) await addReward(reward.fruit, '道具', 1, 'fruit');
+      if (tierReward) await addReward(tierReward.name, tierReward.class, tierReward.amount, `tier:${tierReward.tier}`);
       fresh.进化积淀 = Math.max(0, Number(fresh.进化积淀) || 0) + reward.accumulation;
       fresh.修为 = Math.max(0, (Number(fresh.修为) || 0) + reward.xiuwei);
       fresh.血气 = Math.max(0, (Number(fresh.血气) || 0) + reward.xueqi);
@@ -342,6 +466,7 @@ export class ShengxuContent extends plugin {
       );
       if (reward.herb) lines.push('【本源圣药】灵性惊人，可净化始祖污染度−60。');
       if (reward.fruit) lines.push('【异果机缘】获得' + reward.fruit + '×1，可服用换取进化积淀。');
+      if (tierReward) lines.push(`【${tierReward.tier}档奖励】${tierReward.name}×${tierReward.amount}`);
       if (page.ok) {
         if (page.learned) lines.push(`呼吸法残页折现：进化积淀+${page.reward}（已掌握${page.gongfa}）`);
         else lines.push(`拾取【${page.gongfa}·残页】${page.count}/${page.need}，集齐可 #合成呼吸法 ${page.gongfa}`);
@@ -353,8 +478,10 @@ export class ShengxuContent extends plugin {
       }
       lines.push(reward.gongfa ? `获得传承：【${reward.gongfa}】` : '本次未直接寻得呼吸法传承。');
       message = lines.join('\n');
+      outcome = { settled: true, won: true, reward, tierReward };
     });
-    if (message) return this.sendExploreResult(task, message);
+    if (message && sendResult) await this.sendExploreResult(task, message);
+    return outcome;
   }
 
   async sendExploreResult(task, message) {

@@ -64,6 +64,30 @@ test('shengxu settlement is claimed and recorded idempotently', () => {
   assert.match(source, /idempotencyKey: `shengxu:/);
 });
 
+test('shengxu addiction uses per-round idempotent settlement and one final summary', () => {
+  const source = fs.readFileSync(new URL('../apps/User/ShengxuContent.js', import.meta.url), 'utf8');
+  assert.match(source, /#沉迷圣墟/);
+  assert.match(source, /batches \* 10/);
+  assert.match(source, /async settleAddiction/);
+  assert.match(source, /:round:\$\{round\}/);
+  assert.match(source, /沉迷结算完成/);
+  assert.match(source, /正在等待结算/);
+});
+
+test('shengxu panel documents addiction and tier rewards', () => {
+  const html = fs.readFileSync(new URL('../resources/html/shengxu_place/shengxu_place.html', import.meta.url), 'utf8');
+  assert.match(html, /#沉迷圣墟 地点名\*次数/);
+  assert.match(html, /三档奖励/);
+  assert.match(html, /rewardsText/);
+});
+
+test('origin herb used by shengxu rewards exists in item data', () => {
+  const items = JSON.parse(fs.readFileSync(new URL('../resources/data/item/道具列表.json', import.meta.url), 'utf8'));
+  const herb = items.filter(item => item.name === '本源圣药');
+  assert.equal(herb.length, 1);
+  assert.equal(herb[0].class, '道具');
+});
+
 test('earth chapter contains a complete early-game dungeon route', () => {
   const earthDungeons = [
     '太行山', '昆仑山', '武当山', '龙虎山', '嵩山', '终南山', '泰山', '顺天玉虚宫', '大雷音寺遗址',

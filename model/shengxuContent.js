@@ -1,3 +1,16 @@
+function withRewardTiers(dungeon) {
+  const level = Math.max(1, Number(dungeon.requiredLevel) || 1);
+  const fruit = level >= 14 ? '祖种异果' : level >= 7 ? '本源异果' : '进化异果';
+  const three = [{ name: dungeon.gongfa, class: '功法', amount: 1 }];
+  if (dungeon.herbChance) three.push({ name: '本源圣药', class: '道具', amount: 1 });
+  return Object.freeze({
+    ...dungeon,
+    one: Object.freeze([{ name: dungeon.medium, class: '道具', amount: 1 }]),
+    two: Object.freeze([{ name: fruit, class: '道具', amount: 1 }]),
+    three: Object.freeze(three.map(Object.freeze)),
+  });
+}
+
 export const SHENGXU_DUNGEONS = Object.freeze([
   Object.freeze({ chapter: '地球篇', name: '太行山', requiredLevel: 2, monster: '太行苍狼', scale: 0.68, medium: '普通进化花粉', amount: 2, accumulation: 6, gongfa: '形意呼吸法', gongfaChance: 0.12, duration: 7, skills: [{ name: '大力牛魔拳', chance: 0.15 }, { name: '共振术', chance: 0.08 }] }),
   Object.freeze({ chapter: '地球篇', name: '昆仑山', requiredLevel: 2, monster: '昆仑兽王', scale: 0.72, medium: '普通进化花粉', amount: 2, accumulation: 8, gongfa: '形意呼吸法', gongfaChance: 0.18, duration: 7, skills: [{ name: '终极拳', chance: 0.15 }, { name: '螺旋术', chance: 0.08 }] }),
@@ -11,7 +24,7 @@ export const SHENGXU_DUNGEONS = Object.freeze([
   Object.freeze({ chapter: '星路篇', name: '小阴间星路', requiredLevel: 8, monster: '星路猎杀者', scale: 1.1, medium: '神性进化花粉', amount: 1, accumulation: 16, gongfa: '道引呼吸法', gongfaChance: 0.07, duration: 10, fieldPage: true, skills: [{ name: '寒霜覆地', chance: 0.1 }, { name: '七妙宝术·土', chance: 0.1 }, { name: '少阴拳', chance: 0.07 }, { name: '少阳拳', chance: 0.06 }] }),
   Object.freeze({ chapter: '阳间篇', name: '阳间名山', requiredLevel: 11, monster: '阳间神祇', scale: 1.22, medium: '神性进化花粉', amount: 2, accumulation: 20, gongfa: '道引呼吸法', gongfaChance: 0.1, duration: 15, herbChance: 0.05, fieldPage: true, skills: [{ name: '七妙宝术·金', chance: 0.08 }, { name: '七妙宝术·火', chance: 0.08 }, { name: '场域法·镇', chance: 0.06 }, { name: '魂钟精神攻杀术', chance: 0.05 }, { name: '五色神光', chance: 0.04 }, { name: '金色符文秘术', chance: 0.03 }] }),
   Object.freeze({ chapter: '诡异篇', name: '魂河古地', requiredLevel: 17, monster: '魂河接引者', scale: 1.38, medium: '无暇进化花粉', amount: 1, accumulation: 28, gongfa: '盗引呼吸法', gongfaChance: 0.03, duration: 20, herbChance: 0.1, fieldPage: true, skills: [{ name: '七妙宝术·水', chance: 0.06 }, { name: '七妙宝术·木', chance: 0.06 }, { name: '七妙宝术·阴', chance: 0.08 }, { name: '七妙宝术·阳', chance: 0.08 }, { name: '时间妙术', chance: 0.05 }, { name: '时光术', chance: 0.03 }, { name: '小六道时光术', chance: 0.03 }, { name: '斩千秋', chance: 0.025 }, { name: '九宝妙术', chance: 0.015 }] }),
-]);
+].map(withRewardTiers));
 
 // 呼吸法下本提速：呼吸法越精深，圣墟探索归来越快
 export const BREATHING_TIME_REDUCTION = Object.freeze({
@@ -120,6 +133,21 @@ export function resolveShengxuDungeonReward(dungeon, random = Math.random) {
     // 呼吸法传承：概率直接获得；另走残页收集（5 张合成，见下方）
     gongfa: Number(random()) < dungeon.gongfaChance ? dungeon.gongfa : '',
   };
+}
+
+/** 按常规副本的 one/two/three 级联概率抽取一项额外奖励。 */
+export function resolveShengxuTierReward(dungeon, random = Math.random, rates = {}) {
+  if (!dungeon) return null;
+  const oneRate = Number.isFinite(Number(rates.one)) ? Number(rates.one) : 0.99;
+  const twoRate = Number.isFinite(Number(rates.two)) ? Number(rates.two) : 0.5;
+  const threeRate = Number.isFinite(Number(rates.three)) ? Number(rates.three) : 0.25;
+  if (Number(random()) > oneRate) return null;
+  let tier = 'one';
+  if (Number(random()) <= twoRate) tier = Number(random()) <= threeRate ? 'three' : 'two';
+  const pool = Array.isArray(dungeon[tier]) ? dungeon[tier] : [];
+  if (!pool.length) return null;
+  const index = Math.min(pool.length - 1, Math.floor(Math.max(0, Number(random()) || 0) * pool.length));
+  return { ...pool[index], tier };
 }
 
 // ==== 呼吸法残页：副本刷取功法（每处每日一次 → 每日 1 张，5 张合成一本）====
