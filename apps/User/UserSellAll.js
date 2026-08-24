@@ -54,6 +54,7 @@ import {
   withSecretPlaceSettlementLock,
 } from '../../model/secretPlaceAddiction.js';
 import { shouldTriggerDungeonMalignantEvent } from '../../model/dungeonMalignantEvent.js';
+import { normalizeSellableEquipmentQuality } from '../../model/equipmentSale.js';
 import { AppName } from '../../app.config.js';
 import {
   addJuelingAwareLifespan,
@@ -1354,6 +1355,10 @@ async Sell_all_comodities(e) {
             return e.reply(`无效的物品类别: ${thing}`);
         }
         wupin = wupin1;
+
+        if (wupin.includes('装备') && normalizeSellableEquipmentQuality(najie)) {
+            await Write_najie(usr_qq, najie);
+        }
         
         for (let category of wupin) {
             if (!Array.isArray(najie[category])) continue;
@@ -1515,6 +1520,9 @@ padLeft(str, length) {
     usr_qq = await channel(usr_qq);
     //有无存档
     let najie = await data.getData('najie', usr_qq);
+    if (normalizeSellableEquipmentQuality(najie)) {
+      await Write_najie(usr_qq, najie);
+    }
     let commodities_price = 0;
     let wupin = [
       '装备',
@@ -1531,12 +1539,12 @@ padLeft(str, length) {
     for (let i of wupin) {
       for (let l of najie[i]) {
         if (l && l.islockd == 0) {
-          console.log(await foundthing(l.name).出售价)
+          if (i === '装备' && l.type === '帝兵' && l.author_name) continue;
           //纳戒中的数量
           let quantity = l.数量;
           if(l.name!="秘境之匙"){
             await Add_najie_thing(usr_qq, l.name, l.class, -quantity, l.pinji);
-            commodities_price = commodities_price + l.出售价 * quantity;
+            commodities_price = commodities_price + (l.出售价 ?? 12000) * quantity;
           }else{
             await Add_najie_thing(usr_qq, l.name, l.class, -quantity, l.pinji);
             commodities_price = commodities_price + 2000000 * quantity;
