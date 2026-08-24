@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { findPlayerArchiveSnapshot } from '../model/backupSnapshot.js';
+import { findPlayerArchiveSnapshot, selectBackupsToDelete } from '../model/backupSnapshot.js';
 
 const source = fs.readFileSync(new URL('../apps/User/BackUp.js', import.meta.url), 'utf8');
 
@@ -42,4 +42,35 @@ test('single-player restore resolves current full snapshots and legacy snapshots
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('backup cleanup preserves the latest snapshot of every day for one week', () => {
+  const now = new Date(2026, 7, 24, 20, 0, 0, 0);
+  const timestamp = (daysAgo, hour) => {
+    const date = new Date(now);
+    date.setDate(date.getDate() - daysAgo);
+    date.setHours(hour, 0, 0, 0);
+    return date.getTime();
+  };
+  const folders = [
+    timestamp(0, 8), timestamp(0, 12), timestamp(0, 18),
+    timestamp(1, 9), timestamp(1, 22),
+    timestamp(2, 10), timestamp(2, 23),
+    timestamp(7, 8), timestamp(7, 21),
+    timestamp(8, 23),
+  ].map(String);
+
+  const deleted = new Set(selectBackupsToDelete(folders, {
+    keepCount: 2,
+    retentionDays: 7,
+    now: now.getTime(),
+  }));
+
+  assert.equal(deleted.has(String(timestamp(1, 22))), false);
+  assert.equal(deleted.has(String(timestamp(2, 23))), false);
+  assert.equal(deleted.has(String(timestamp(7, 21))), false);
+  assert.equal(deleted.has(String(timestamp(1, 9))), true);
+  assert.equal(deleted.has(String(timestamp(2, 10))), true);
+  assert.equal(deleted.has(String(timestamp(7, 8))), true);
+  assert.equal(deleted.has(String(timestamp(8, 23))), true);
 });

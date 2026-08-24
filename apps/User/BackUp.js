@@ -2,12 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import { plugin, config, data } from '../../api/api.js';
 import { __PATH, channel, existplayer, Read_player } from '../../model/xiuxian.js';
-import { findPlayerArchiveSnapshot } from '../../model/backupSnapshot.js';
+import { findPlayerArchiveSnapshot, selectBackupsToDelete } from '../../model/backupSnapshot.js';
 import { writeJsonAtomically } from '../../utils/atomicJson.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
-/** 自动备份保留份数，超过则删除最旧的 */
+/** 七天窗口内保留的常规备份份数，每日最晚一份另行保底。 */
 const KEEP_BACKUP_COUNT = 30;
+const DAILY_BACKUP_RETENTION_DAYS = 7;
 const FULL_DATA_SNAPSHOT = 'data';
 const ROOT_DATA_SNAPSHOT = 'root_data';
 const RUNTIME_CONFIG_SNAPSHOT = 'runtime_config';
@@ -591,10 +592,7 @@ export class BackUp extends plugin {
     });
   }
 
-  /**
-   * 自动备份清理：仅保留最近 KEEP_BACKUP_COUNT 份，超出的删除最旧的
-   * 备份目录以毫秒时间戳命名，升序排序后末尾为最新
-   */
+  /** 最近七天每天至少保留最晚一份，同时保留窗口内最新的常规备份。 */
   async cleanOldBackups(keepCount = KEEP_BACKUP_COUNT) {
     try {
       const backupDir = __PATH.backup;
@@ -602,13 +600,16 @@ export class BackUp extends plugin {
       const folders = fs.readdirSync(backupDir).filter(name => {
         const stat = fs.statSync(`${backupDir}/${name}`);
         return name === `${Number(name)}` && stat.isDirectory();
-      }).sort((a, b) => Number(a) - Number(b)); // 升序：旧的在前
-      if (folders.length <= keepCount) return;
-      const toDelete = folders.slice(0, folders.length - keepCount);
+      });
+      const toDelete = selectBackupsToDelete(folders, {
+        keepCount,
+        retentionDays: DAILY_BACKUP_RETENTION_DAYS,
+      });
+      if (toDelete.length === 0) return;
       for (const f of toDelete) {
         fs.rmSync(`${backupDir}/${f}`, { recursive: true, force: true });
       }
-      logger.info(`修仙：清理旧备份 ${toDelete.length} 份，保留最新 ${keepCount} 份`);
+      logger.info(`修仙：清理旧备份 ${toDelete.length} 份，保留近七天每日最晚一份及窗口内最新 ${keepCount} 份`);
     } catch (err) {
       logger.error('清理旧备份出错:', err);
     }
