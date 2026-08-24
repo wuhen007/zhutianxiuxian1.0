@@ -13,6 +13,7 @@ import {
   zd_battle,
 } from '../../model/xiuxian.js';
 import {
+  FOREIGN_CALAMITY_BATTLE_COOLDOWN_MS,
   FOREIGN_PAGE_REQUIREMENT,
   FOREIGN_TECHNIQUES,
   createForeignCalamityRewardPlan,
@@ -21,11 +22,13 @@ import {
   saveForeignCalamity,
   withForeignCalamityLock,
 } from '../../model/foreignCalamity.js';
+import { applyTianmoCalamityRefinement } from '../../model/tianmoHuasheng.js';
 import { addRelicToBag, normalizeRelicState } from '../../model/relicSystem.js';
 import { isEvilCultivator } from '../../model/tianjiaoHostility.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 const REFINE_KEY = qq => `xiuxian:foreign-calamity:refine:${qq}`;
+const BATTLE_COOLDOWN_KEY = qq => `xiuxian:foreign-calamity:battle-cooldown:${qq}`;
 
 function playerId(e) {
   return e.user_id.toString().replace('qg_', '');
@@ -109,6 +112,17 @@ export class ForeignCalamity extends plugin {
       return withPlayerMutationLock(qq, async () => {
         const player = await Read_player(qq);
         if (Number(player.当前血量) <= 0) return { message: '你当前气血枯竭，先恢复状态再来讨伐。' };
+        const now = Date.now();
+        const cooldownKey = BATTLE_COOLDOWN_KEY(qq);
+        const cooldownUntil = Number(await redis.get(cooldownKey)) || 0;
+        if (cooldownUntil > now) {
+          return { message: `域外讨伐尚在调息，还需${Math.ceil((cooldownUntil - now) / 60000)}分钟。` };
+        }
+        const reserved = await redis.set(cooldownKey, String(now + FOREIGN_CALAMITY_BATTLE_COOLDOWN_MS), {
+          NX: true,
+          EX: Math.ceil(FOREIGN_CALAMITY_BATTLE_COOLDOWN_MS / 1000),
+        });
+        if (reserved !== 'OK') return { message: '域外讨伐尚在调息，请稍后再试。' };
         const attacker = {
           ...player,
           灵根: player.灵根 || { name: '普通灵根', 法球倍率: 1 },
@@ -144,6 +158,7 @@ export class ForeignCalamity extends plugin {
               attack: entity.攻击,
               defense: entity.防御,
               maxHp: entity.血量上限,
+              lifeSource: entity.生命本源,
             }), { EX: 5 * 60 });
           }
         }
@@ -264,13 +279,25 @@ export class ForeignCalamity extends plugin {
       player.血气 = (Number(player.血气) || 0) + blood;
       player.元神 = (Number(player.元神) || 0) + soul;
       player.魔道值 = (Number(player.魔道值) || 0) + 50;
+      const tianmoGrowth = applyTianmoCalamityRefinement(player, {
+        sourceLifeEssence: pending.lifeSource,
+      });
+      if (tianmoGrowth.applied) player.法球倍率 = player.灵根.法球倍率;
       player._foreignCalamityRefines[pending.entityId] = Date.now();
       await Write_player(qq, player);
       await redis.del(REFINE_KEY(qq));
-      return e.reply([
+      const lines = [
         `【天魔炼化】${pending.name}的残存本源被你炼入魔躯。`,
         `修为+${bigNumberTransform(cultivation)}｜血气+${bigNumberTransform(blood)}｜元神+${bigNumberTransform(soul)}｜魔道值+50`,
-      ].join('\n'));
+      ];
+      if (tianmoGrowth.applied) {
+        lines.push(
+          `天魔化生进度+0.1人｜生命本源+${tianmoGrowth.lifeSourceGain}（炼化10尊灾厄折算1名玩家）`,
+          `法球倍率 ${(tianmoGrowth.previousOrb * 100).toFixed(0)}%→${(tianmoGrowth.currentOrb * 100).toFixed(0)}%｜灵根攻、防、生各+0.005`,
+        );
+        if (tianmoGrowth.evolved) lines.push('万灵归一，你已蜕变为【无相·万化天魔体】！');
+      }
+      return e.reply(lines.join('\n'));
     });
   }
 

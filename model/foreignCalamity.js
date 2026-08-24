@@ -3,6 +3,7 @@ import { readPlayerArchives } from './riftGuardian.js';
 
 export const FOREIGN_CALAMITY_INDEX_KEY = 'xiuxian:foreign-calamity:index';
 export const FOREIGN_PAGE_REQUIREMENT = 10;
+export const FOREIGN_CALAMITY_BATTLE_COOLDOWN_MS = 15 * 60 * 1000;
 
 export const FOREIGN_TECHNIQUES = Object.freeze([
   { name: '太虚观界经', category: '道与法', desc: '观诸界生灭，于太虚中借来一线不坏界光护持己身。' },
@@ -35,6 +36,7 @@ const FALLBACK_AVERAGE = Object.freeze({
   穿透: 0,
   速度: 100,
   元神: 1_000_000,
+  生命本源: 100,
   level_id: 1,
   Physique_id: 1,
   mijinglevel_id: 1,
@@ -123,6 +125,7 @@ export function createForeignCalamityWave({ worldYear, players = readPlayerArchi
       穿透: Math.max(0, Math.round(average.穿透 * swing)),
       速度: scaled('速度'),
       元神: scaled('元神'),
+      生命本源: scaled('生命本源'),
       level_id: realm('level_id'),
       Physique_id: realm('Physique_id'),
       mijinglevel_id: realm('mijinglevel_id'),

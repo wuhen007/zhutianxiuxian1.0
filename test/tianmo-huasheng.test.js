@@ -7,6 +7,7 @@ import {
   SAME_TARGET_COOLDOWN_MS,
   TIANMO_HUASHENG_TECHNIQUE,
   WANHUA_TIANMO_PHYSIQUE,
+  applyTianmoCalamityRefinement,
   applyTianmoRefinement,
   calculateEssenceTransfer,
   createTianmoTrialOpponent,
@@ -109,6 +110,26 @@ test("炼化按潜力50%、其余10%真实转移并保留最低本源", () => {
   );
   assert.equal(exhausted.寿元, 0);
   assert.equal(exhausted.生命本源, 0);
+});
+
+test("十次灾厄炼化折算一次玩家炼化并实际增加生命本源", () => {
+  const executor = makeTianmo();
+  for (let index = 0; index < 10; index++) {
+    assert.equal(applyTianmoCalamityRefinement(executor, {
+      now: 1000 + index,
+      sourceLifeEssence: 51,
+    }).applied, true);
+  }
+
+  assert.equal(executor.天魔化生.炼化次数, 1);
+  assert.equal(executor.天魔化生.灾厄炼化次数, 10);
+  assert.equal(executor.生命本源, 105);
+  assert.equal(executor.天魔化生.累计所得.生命本源, 5);
+  assert.equal(executor.灵根.法球倍率, 2.1);
+  assert.deepEqual(
+    [executor.灵根.攻击, executor.灵根.防御, executor.灵根.生命],
+    [3.05, 2.05, 2.05]
+  );
 });
 
 test("达到500%法球倍率时蜕变为无相万化天魔体", () => {

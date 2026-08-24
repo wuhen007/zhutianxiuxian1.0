@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
+  FOREIGN_CALAMITY_BATTLE_COOLDOWN_MS,
   FOREIGN_PAGE_REQUIREMENT,
   FOREIGN_TECHNIQUES,
   averageForeignCalamityPlayers,
@@ -12,14 +15,19 @@ import {
 } from '../model/foreignCalamity.js';
 
 const samplePlayers = [
-  { 攻击: 100, 防御: 80, 血量上限: 1000, 速度: 100, 元神: 200, 暴击率: 0.2, 暴击伤害: 1.5, mijinglevel_id: 4, xiangulevel_id: 2, huafenlevel_id: 1 },
-  { 攻击: 300, 防御: 160, 血量上限: 3000, 速度: 200, 元神: 400, 暴击率: 0.4, 暴击伤害: 2.5, mijinglevel_id: 8, xiangulevel_id: 4, huafenlevel_id: 3 },
+  { 攻击: 100, 防御: 80, 血量上限: 1000, 速度: 100, 元神: 200, 生命本源: 51, 暴击率: 0.2, 暴击伤害: 1.5, mijinglevel_id: 4, xiangulevel_id: 2, huafenlevel_id: 1 },
+  { 攻击: 300, 防御: 160, 血量上限: 3000, 速度: 200, 元神: 400, 生命本源: 151, 暴击率: 0.4, 暴击伤害: 2.5, mijinglevel_id: 8, xiangulevel_id: 4, huafenlevel_id: 3 },
 ];
+
+test('每名玩家的域外灾厄讨伐冷却为15分钟', () => {
+  assert.equal(FOREIGN_CALAMITY_BATTLE_COOLDOWN_MS, 15 * 60 * 1000);
+});
 
 test('域外灾厄按全服有效玩家平均值生成1至10尊，并继承额外体系', () => {
   const average = averageForeignCalamityPlayers(samplePlayers);
   assert.equal(average.攻击, 200);
   assert.equal(average.血量上限, 2000);
+  assert.equal(average.生命本源, 101);
   assert.equal(average.mijinglevel_id, 6);
   assert.equal(average.samples, 2);
 
@@ -28,6 +36,7 @@ test('域外灾厄按全服有效玩家平均值生成1至10尊，并继承额�
   assert.equal(one.length, 1);
   assert.equal(ten.length, 10);
   assert.ok(one[0].攻击 > 0 && one[0].防御 > 0 && one[0].血量上限 > 0);
+  assert.ok(one[0].生命本源 > 0);
   assert.ok(one[0].mijinglevel_id > 0 && one[0].xiangulevel_id > 0 && one[0].huafenlevel_id > 0);
   assert.ok(one[0].额外体系);
 });
@@ -96,4 +105,20 @@ test('十三门域外传承均有十页合一材料，只有道与法和杀术�
       `${technique.name}技能配置`,
     );
   }
+});
+
+test('域外灾厄应用模块可以完整装载', () => {
+  const cwd = fileURLToPath(new URL('../../..', import.meta.url));
+  const script = `
+    globalThis.Bot = { makeLog() {} };
+    globalThis.logger = new Proxy({}, { get() { return () => {}; } });
+    await import('./plugins/zhutianxiuxian1.0/apps/Boss/ForeignCalamity.js');
+    process.exit(0);
+  `;
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval', script], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
 });

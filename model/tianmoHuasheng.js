@@ -5,6 +5,7 @@ export const WANHUA_TIANMO_PHYSIQUE = "无相·万化天魔体";
 export const REFINEMENT_ORB_GAIN = 0.1;
 export const REFINEMENT_ATTRIBUTE_GAIN = 0.05;
 export const REFINEMENT_ORB_TARGET = 5;
+export const CALAMITY_REFINEMENT_WEIGHT = 0.1;
 export const REFINEMENT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 export const SAME_TARGET_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 export const TIANMO_LEGACY_DURATION_MS = 24 * 60 * 60 * 1000;
@@ -31,7 +32,7 @@ const TRANSFER_RULES = Object.freeze({
 });
 
 function roundGrowth(value) {
-  return Math.round((Number(value) || 0) * 100) / 100;
+  return Math.round((Number(value) || 0) * 1000) / 1000;
 }
 
 function calculateDrain(value, rate, reserve) {
@@ -60,7 +61,8 @@ export function ensureTianmoHuashengState(player) {
   }
 
   const state = player.天魔化生;
-  state.炼化次数 = Math.max(0, Math.floor(Number(state.炼化次数) || 0));
+  state.炼化次数 = Math.max(0, roundGrowth(state.炼化次数));
+  state.灾厄炼化次数 = Math.max(0, Math.floor(Number(state.灾厄炼化次数) || 0));
   state.上次炼化 = Math.max(0, Number(state.上次炼化) || 0);
   state.炼化记录 =
     state.炼化记录 && typeof state.炼化记录 === "object" ? state.炼化记录 : {};
@@ -69,7 +71,7 @@ export function ensureTianmoHuashengState(player) {
   for (const key of Object.keys(TRANSFER_RULES)) {
     state.累计所得[key] = Math.max(
       0,
-      Math.floor(Number(state.累计所得[key]) || 0)
+      roundGrowth(state.累计所得[key])
     );
   }
   state.已蜕变 = Boolean(
@@ -119,35 +121,19 @@ export function calculateEssenceTransfer(target) {
   return transfer;
 }
 
-export function applyTianmoRefinement(executor, target, options = {}) {
-  const now = Number(options.now) || Date.now();
-  const targetId = String(options.targetId ?? target?.id ?? "unknown");
-  const transfer = calculateEssenceTransfer(target);
-
-  for (const [key, amount] of Object.entries(transfer)) {
-    executor[key] =
-      Math.max(0, Math.floor(Number(executor[key]) || 0)) + amount;
-    target[key] = Math.max(0, Math.floor(Number(target[key]) || 0) - amount);
-  }
-
-  const state = ensureTianmoHuashengState(executor);
-  state.炼化次数 += 1;
-  state.上次炼化 = now;
-  state.炼化记录[targetId] = now;
-  target.天魔炼化保护至 = now + SAME_TARGET_COOLDOWN_MS;
-  for (const [key, amount] of Object.entries(transfer)) {
-    state.累计所得[key] += amount;
-  }
+function applyRefinementGrowth(executor, state, now, weight) {
+  const effectiveWeight = Math.max(0, Number(weight) || 0);
+  state.炼化次数 = roundGrowth(state.炼化次数 + effectiveWeight);
 
   const root = executor.灵根;
   const previousOrb = Number(root.法球倍率) || 0;
   root.法球倍率 = Math.min(
     REFINEMENT_ORB_TARGET,
-    roundGrowth(previousOrb + REFINEMENT_ORB_GAIN)
+    roundGrowth(previousOrb + REFINEMENT_ORB_GAIN * effectiveWeight)
   );
   for (const key of ["攻击", "防御", "生命"]) {
     root[key] = roundGrowth(
-      (Number(root[key]) || 0) + REFINEMENT_ATTRIBUTE_GAIN
+      (Number(root[key]) || 0) + REFINEMENT_ATTRIBUTE_GAIN * effectiveWeight
     );
   }
 
@@ -161,18 +147,66 @@ export function applyTianmoRefinement(executor, target, options = {}) {
       WANHUA_TIANMO_ROOT.生命本源 - (Number(root.生命本源) || 0)
     );
     executor.灵根 = { ...WANHUA_TIANMO_ROOT };
-    executor.生命本源 += lifeEssenceDifference;
+    executor.生命本源 = Math.max(0, Number(executor.生命本源) || 0) + lifeEssenceDifference;
     state.已蜕变 = true;
     state.蜕变时间 = now;
     evolved = true;
   }
 
   return {
-    transfer,
     evolved,
     previousOrb,
     currentOrb: executor.灵根.法球倍率,
     refinementCount: state.炼化次数,
+  };
+}
+
+export function applyTianmoRefinement(executor, target, options = {}) {
+  const now = Number(options.now) || Date.now();
+  const targetId = String(options.targetId ?? target?.id ?? "unknown");
+  const transfer = calculateEssenceTransfer(target);
+
+  for (const [key, amount] of Object.entries(transfer)) {
+    executor[key] =
+      Math.max(0, Math.floor(Number(executor[key]) || 0)) + amount;
+    target[key] = Math.max(0, Math.floor(Number(target[key]) || 0) - amount);
+  }
+
+  const state = ensureTianmoHuashengState(executor);
+  state.上次炼化 = now;
+  state.炼化记录[targetId] = now;
+  target.天魔炼化保护至 = now + SAME_TARGET_COOLDOWN_MS;
+  for (const [key, amount] of Object.entries(transfer)) {
+    state.累计所得[key] += amount;
+  }
+
+  const growth = applyRefinementGrowth(executor, state, now, 1);
+
+  return {
+    transfer,
+    ...growth,
+  };
+}
+
+export function applyTianmoCalamityRefinement(executor, options = {}) {
+  if (!isTianmoHuashengPhysique(executor) || !hasTianmoHuashengTechnique(executor)) {
+    return { applied: false };
+  }
+
+  const now = Number(options.now) || Date.now();
+  const state = ensureTianmoHuashengState(executor);
+  const sourceLifeEssence = Math.max(1, Number(options.sourceLifeEssence) || 100);
+  const lifeSourceGain = roundGrowth(
+    calculateDrain(sourceLifeEssence, TRANSFER_RULES.生命本源.rate, TRANSFER_RULES.生命本源.reserve)
+      * CALAMITY_REFINEMENT_WEIGHT
+  );
+  executor.生命本源 = roundGrowth(Math.max(0, Number(executor.生命本源) || 0) + lifeSourceGain);
+  state.累计所得.生命本源 = roundGrowth(state.累计所得.生命本源 + lifeSourceGain);
+  state.灾厄炼化次数 += 1;
+  return {
+    applied: true,
+    lifeSourceGain,
+    ...applyRefinementGrowth(executor, state, now, CALAMITY_REFINEMENT_WEIGHT),
   };
 }
 
