@@ -140,6 +140,27 @@ test('友枝町三次有效探索可集齐基础条件且不会覆盖本源灵�
   assert.equal(player.灵根.name, '金灵根');
 });
 
+test('本源灵根变化后再次装载化身会刷新本源快照', () => {
+  const player = createPlayer();
+  bindBasicZhutianMirror(player, { now: NOW });
+  player.诸天化身谱.push({
+    name: '木之本樱',
+    stage: 1,
+    root: { id: 901, name: '木之本樱', type: '诸天化身', eff: 1.2 },
+  });
+
+  assert.equal(loadZhutianAvatar(player, '木之本樱', { now: NOW }).ok, true);
+  assert.equal(loadZhutianAvatar(player, '本源', { now: NOW }).ok, true);
+
+  player.灵根 = { id: 88, name: '混沌灵根', type: '混沌', eff: 2.5 };
+
+  assert.equal(loadZhutianAvatar(player, '木之本樱', { now: NOW }).ok, true);
+  assert.equal(player.诸天镜系统.本源灵根.name, '混沌灵根');
+  assert.equal(loadZhutianAvatar(player, '本源', { now: NOW }).ok, true);
+  assert.equal(player.灵根.name, '混沌灵根');
+  assert.notEqual(player.灵根, player.诸天镜系统.本源灵根);
+});
+
 test('地点阶位校验先于镜能消耗，封印之钥第八次保底', () => {
   const player = createPlayer();
   bindBasicZhutianMirror(player, { now: NOW });

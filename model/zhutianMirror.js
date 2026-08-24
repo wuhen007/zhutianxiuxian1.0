@@ -886,7 +886,8 @@ export function loadZhutianAvatar(player, avatarName, { now = Date.now() } = {})
 
   const avatar = player.诸天化身谱.find(item => item.name === avatarName);
   if (!avatar) return { ok: false, reason: 'avatar', system };
-  if (!system.本源灵根 && !LEGACY_AVATARS[player.灵根?.name]) system.本源灵根 = clone(player.灵根);
+  // 本源灵根可能已通过进阶或重塑发生变化，装载化身前刷新当前本源快照。
+  if (!system.当前化身 && player.灵根) system.本源灵根 = clone(player.灵根);
   player.灵根 = clone(avatar.root);
   system.当前化身 = avatar.name;
   return { ok: true, name: avatar.name, root: player.灵根, system };

@@ -1,5 +1,6 @@
 import { plugin } from '../../api/api.js';
 import {
+  Add_najie_thing,
   channel,
   existplayer,
   player_efficiency,
@@ -32,6 +33,10 @@ import {
   getExplorationStorySummary,
   resolveExplorationStory,
 } from '../../model/zhutianExplorationStory.js';
+import {
+  getZhutianExclusiveEquipmentSet,
+  ZHUTIAN_EQUIPMENT_STAGE_BONUSES,
+} from '../../model/exclusiveEquipmentSets.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 const EXPLORATION_STORY_ACTION = '诸天镜探索剧情';
@@ -587,9 +592,13 @@ export class ZhutianMirrorSystem extends plugin {
         if (system.镜阶 >= 3) entries.push('#骑士世界');
         return e.reply(`【诸天化身谱】尚未收录化身。\n当前可探索：${entries.join('、')}`);
       }
-      const rows = player.诸天化身谱.map(avatar =>
-        `${system.当前化身 === avatar.name ? '当前' : '可装载'} ${avatar.name}·第${avatar.stage}阶段（${avatar.world}）`
-      );
+      const rows = player.诸天化身谱.map(avatar => {
+        const set = getZhutianExclusiveEquipmentSet(avatar.name);
+        const setText = set
+          ? ` | ${set.setName}全属性+${Math.round((ZHUTIAN_EQUIPMENT_STAGE_BONUSES[avatar.stage] || 0) * 100)}%`
+          : '';
+        return `${system.当前化身 === avatar.name ? '当前' : '可装载'} ${avatar.name}·第${avatar.stage}阶段（${avatar.world}）${setText}`;
+      });
       const goals = [];
       if (player.诸天化身谱.some(item => item.name === '木之本樱')) goals.push(getSakuraGoal(player));
       if (player.诸天化身谱.some(item => item.name === '鹿目圆')) goals.push(getMadokaGoal(player));
@@ -614,8 +623,18 @@ export class ZhutianMirrorSystem extends plugin {
         return e.reply(`化身谱中尚未收录【${avatarName}】，使用 #诸天化身 查看。`);
       }
       await Write_player(playerId, player);
+      const set = getZhutianExclusiveEquipmentSet(result.name);
+      if (set) {
+        for (const piece of [set.weapon, set.armor, set.treasure]) {
+          await Add_najie_thing(playerId, piece.name, '装备', 1, 6, 1, {
+            idempotencyKey: `zhutian-exclusive-equipment:${result.name}:${piece.id}`,
+          });
+        }
+      }
       await player_efficiency(playerId);
-      return e.reply(`诸天镜映照己身，已装载【${result.name}】。`);
+      const rows = [`诸天镜映照己身，已装载【${result.name}】。`];
+      if (set) rows.push(`专属套装【${set.setName}】已同步至纳戒，穿齐后按当前化身阶段提升全属性。`);
+      return e.reply(rows.join('\n'));
     });
   }
 
