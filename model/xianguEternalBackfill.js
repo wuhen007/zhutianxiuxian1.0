@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { claimXianguUniqueTreasure } from '../apps/SecretPlace/xianguSharedState.js';
+import { isCanonicalDaluoSwordEmbryo } from './equipmentStats.js';
 
 /**
  * 天地唯一机缘·全服补登
@@ -28,9 +29,11 @@ function readJsonFile(filePath) {
   }
 }
 
-function resolveClaimKey(name) {
+function resolveClaimKey(item) {
+  const name = typeof item === 'object' ? item?.name || item?.名称 : item;
   if (!name) return null;
   const value = String(name).trim();
+  if (value === '大罗剑胎' && !isCanonicalDaluoSwordEmbryo(item)) return null;
   return Object.hasOwn(ETERNAL_ITEM_CLAIM_KEYS, value) ? ETERNAL_ITEM_CLAIM_KEYS[value] : null;
 }
 
@@ -41,16 +44,16 @@ function resolveClaimKey(name) {
  */
 export function collectHeldEternalItems({ player, equipment, najie } = {}) {
   const held = new Set();
-  const consider = name => {
-    const claimKey = resolveClaimKey(name);
+  const consider = item => {
+    const claimKey = resolveClaimKey(item);
     if (claimKey) held.add(claimKey);
   };
   for (const slot of ['武器', '护具', '法宝']) {
-    consider(equipment?.[slot]?.name);
+    consider(equipment?.[slot]);
   }
-  for (const item of najie?.装备 || []) consider(item?.name || item?.名称);
-  for (const item of najie?.道具 || []) consider(item?.name || item?.名称);
-  for (const item of player?.xiangu_bag?.items || []) consider(item?.name || item?.名称);
+  for (const item of najie?.装备 || []) consider(item);
+  for (const item of najie?.道具 || []) consider(item);
+  for (const item of player?.xiangu_bag?.items || []) consider(item);
   return held;
 }
 

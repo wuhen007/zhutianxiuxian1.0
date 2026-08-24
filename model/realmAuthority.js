@@ -65,6 +65,16 @@ export function hasRealmAuthority(player, requiredLevel) {
   return getRealmAuthorityLevel(player) >= levelId(requiredLevel);
 }
 
+export function getTianjiaoRealmTier(player) {
+  const authorityLevel = getRealmAuthorityLevel(player);
+  const xianguLevel = levelId(player?.xiangulevel_id);
+
+  // 保留原有仙古路线的讨伐门槛，同时让花粉路按统一权柄参与匹配。
+  if (authorityLevel >= 12 || xianguLevel >= 10) return 'full';
+  if (authorityLevel >= 9 || xianguLevel >= 7) return 'matched';
+  return 'below';
+}
+
 export function getYuanshenAdvancement(levels, currentLevel) {
   const current = levelId(currentLevel);
   const next = (Array.isArray(levels) ? levels : [])

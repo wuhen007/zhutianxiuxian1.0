@@ -5,6 +5,7 @@ import {
   getFlowerPollenAuthorityLevel,
   getRealmAuthorityLevel,
   getRealmAuthorityName,
+  getTianjiaoRealmTier,
   getGodDemonStealRule,
   getYuanshenAdvancement,
   hasRealmAuthority,
@@ -112,6 +113,21 @@ test('flower pollen realms map to matching authority tiers', () => {
     assert.equal(getFlowerPollenAuthorityLevel(huafen), expected);
     assert.equal(getRealmAuthorityLevel({ huafenlevel_id: huafen }), expected);
   }
+});
+
+test('tianjiao challenge matches all three cultivation paths', () => {
+  assert.equal(getTianjiaoRealmTier({ mijinglevel_id: 8 }), 'below');
+  assert.equal(getTianjiaoRealmTier({ mijinglevel_id: 9 }), 'matched');
+  assert.equal(getTianjiaoRealmTier({ mijinglevel_id: 12 }), 'full');
+
+  assert.equal(getTianjiaoRealmTier({ xiangulevel_id: 6 }), 'below');
+  assert.equal(getTianjiaoRealmTier({ xiangulevel_id: 7 }), 'matched');
+  assert.equal(getTianjiaoRealmTier({ xiangulevel_id: 10 }), 'full');
+
+  assert.equal(getTianjiaoRealmTier({ huafenlevel_id: 6 }), 'below');
+  assert.equal(getTianjiaoRealmTier({ huafenlevel_id: 7 }), 'matched');
+  assert.equal(getTianjiaoRealmTier({ huafenlevel_id: 10 }), 'matched');
+  assert.equal(getTianjiaoRealmTier({ huafenlevel_id: 11 }), 'full');
 });
 
 test('终焉神魔体按九秘领域和帝境等级限制夺取', () => {
