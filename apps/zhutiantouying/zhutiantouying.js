@@ -22,6 +22,7 @@ import {
   recordProjectionMirrorProgress,
 } from '../../model/zhutianMirror.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { formatPlayerActionBlock, inspectPlayerAction } from '../../model/playerActionState.js';
 
 function getProjectionActionKey(e) {
   return `xiuxian:player:${e.user_id}:action`;
@@ -606,12 +607,10 @@ export class touyingzhutian extends plugin {
 
       // 检查是否已在投影中
       const existingAction = await redis.get(actionKey);
-      if (existingAction) {
-        const action = JSON.parse(existingAction);
-        if (action && action.action === '投影诸天') {
-          e.reply('你已经在投影诸天中，请输入 1/2/3/4 继续剧情，或使用 #退出投影');
-          return true;
-        }
+      const existingState = inspectPlayerAction(existingAction);
+      if (existingState.active) {
+        e.reply(formatPlayerActionBlock(existingState));
+        return true;
       }
 
       const mirror = ensureZhutianMirrorSystem(player);
@@ -660,7 +659,8 @@ export class touyingzhutian extends plugin {
       }
 
       const startResult = await withPlayerMutationLock(playerId, async () => {
-        if (await redis.get(actionKey)) return { ok: false, reason: 'action' };
+        const currentState = inspectPlayerAction(await redis.get(actionKey));
+        if (currentState.active) return { ok: false, reason: 'action', state: currentState };
 
         const latestPlayer = await Read_player(playerId);
         const latestMirror = ensureZhutianMirrorSystem(latestPlayer);
@@ -694,7 +694,7 @@ export class touyingzhutian extends plugin {
       });
 
       if (!startResult.ok) {
-        if (startResult.reason === 'action') e.reply('你当前已有进行中的行动，暂时不能再次投影。');
+        if (startResult.reason === 'action') e.reply(formatPlayerActionBlock(startResult.state));
         else if (startResult.reason === 'unbound') e.reply('请先绑定诸天镜。');
         else if (startResult.reason === 'tier') e.reply(`当前诸天镜阶位不足，需要${requiredTier}阶。`);
         else if (startResult.reason === 'realm') e.reply(`你的境界不足！${selectedWorld.name}需要至少${selectedWorld.minLevelName}。`);
