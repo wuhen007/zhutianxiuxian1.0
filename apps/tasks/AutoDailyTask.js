@@ -22,7 +22,7 @@ import {
 } from '../../model/extraCultivation.js';
 import { runTaskOnce } from '../../utils/taskGuard.js';
 import { pickDivineBeastReward } from '../../model/divineBeastReward.js';
-// 问仙令：每日任务完成后 +50 经验
+// 问仙令：每日任务完成后 +350 经验
 import { WenXianLing } from '../WenXianLing/WenXianLing.js';
 
 /**
@@ -241,10 +241,10 @@ async processPlayer(qq) {
         const beastResult = await this.autoBeastBonus(usr_qq, await Read_player(usr_qq));
         if (beastResult) stats.beast = 1;
 
-        // 问仙令：实际完成签到后 +50 经验，和手动签到共用每日标记
+        // 问仙令：实际完成签到后 +350 经验，和手动签到共用每日标记
         try {
             const passResult = signResult
-                ? await WenXianLing.addDailySignExp(usr_qq, 50)
+                ? await WenXianLing.addDailySignExp(usr_qq, 350)
                 : null;
             if (passResult?.levelUp) {
                 console.log(`[问仙令] ${player.名号} 升级 ${passResult.oldLevel} → ${passResult.newLevel}`);

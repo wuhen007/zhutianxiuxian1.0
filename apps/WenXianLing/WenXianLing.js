@@ -687,7 +687,7 @@ export class WenXianLing extends plugin {
             `#问仙令帮助 - 查看帮助`,
             ``,
             `【经验来源】`,
-            `修仙签到基础 +50  |  每日任务 +50`,
+            `修仙签到基础 +350  |  每日任务 +1500`,
             `问仙令每日任务每项 +${WENXIAN_DAILY_QUEST_EXP}  |  每周任务 +${WENXIAN_WEEKLY_TASK_EXP}`,
             ``,
             `【额外奖励节点】`,
@@ -784,7 +784,7 @@ async function addDailyExpOnce(usr_qq, amount, type) {
 }
 
 // 手动与自动签到共用同一个幂等标记。
-WenXianLing.addDailySignExp = async function (usr_qq, amount = 50) {
+WenXianLing.addDailySignExp = async function (usr_qq, amount = 350) {
     return addDailyExpOnce(usr_qq, amount, 'sign');
 };
 

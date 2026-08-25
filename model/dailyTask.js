@@ -1,6 +1,6 @@
 import { getShanghaiDateKey } from './weimianTravel.js';
 
-export const DAILY_TASK_WENXIAN_EXP = 50;
+export const DAILY_TASK_WENXIAN_EXP = 1500;
 export const DAILY_TASK_LINGSHI_PROGRESS_FIELD = '_dailyTaskLingshiProgress';
 
 export function getDailyTaskDateKey(timestamp = Date.now()) {

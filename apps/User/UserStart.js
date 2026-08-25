@@ -1490,7 +1490,7 @@ async daily_gift(e) {
     await Add_血气(usr_qq, gift_xiuwei);
 
     // 手动、代签共用每日标记；问仙令经验也属于签到奖励，应用命格倍率。
-    const passExp = Math.max(0, Math.floor(50 * signMultiplier));
+    const passExp = Math.max(0, Math.floor(350 * signMultiplier));
     const passResult = await WenXianLing.addDailySignExp(usr_qq, passExp);
     
     // 生成签到截图

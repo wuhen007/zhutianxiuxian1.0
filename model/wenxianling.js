@@ -18,8 +18,8 @@ export const WENXIAN_CLUE_COST = 3_000_000_000;
 export const WENXIAN_DUNGEON_CLUE_CHANCE = 0.01;
 export const WENXIAN_DUNGEON_CLUE_PITY = 30;
 export const WENXIAN_DAILY_TASK_TARGET = 7;
-export const WENXIAN_DAILY_QUEST_EXP = 200;
-export const WENXIAN_WEEKLY_TASK_EXP = 500;
+export const WENXIAN_DAILY_QUEST_EXP = 500;
+export const WENXIAN_WEEKLY_TASK_EXP = 3000;
 export const WENXIAN_DAILY_QUEST_GOALS = Object.freeze({
   spiritHeart: 30,
   tianjiao: 1,
