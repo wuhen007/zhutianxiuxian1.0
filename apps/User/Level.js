@@ -37,8 +37,6 @@ import { getPlayerPlaneName } from '../../model/planeCoords.js';
 import {
   canStartRedDustPath,
   canCultivateExtraPath,
-  completeDaoByNineLives,
-  createCultivationSystem,
   getActiveExtraCultivationPaths,
   getExtraCultivationPathName,
   isCultivatingExtraPath,
@@ -58,7 +56,9 @@ import {
   XIANGU_DAO_REALM_RULES,
   calculateWudaoAttempt,
   calculateWudaoResult,
+  completeDaoByNineLives,
   consumePlayerLifespan,
+  createCultivationSystem,
   ensureDaoPath,
   formatSignedPercent,
   getAvailableLifespan,
