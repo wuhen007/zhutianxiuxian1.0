@@ -32,12 +32,12 @@ import {
 const DAILY_TASK_LOCK_KEY = 'xiuxian:lock:daily_task_records';
 const DAILY_TASK_LOCK_TTL_SECONDS = 60;
 const DAILY_REWARD_READY_BUTTONS = [[
-    { text: '领取每日奖励', command: '#领取每日奖励' },
-    { text: '查看任务', command: '#我的任务' },
+    { text: '领取每日奖励', command: '#领取每日奖励', permission: false },
+    { text: '查看任务', command: '#我的任务', permission: false },
 ]];
 const DAILY_REWARD_CLAIMED_BUTTONS = [[
-    { text: '查看任务', command: '#我的任务' },
-    { text: '修仙签到', command: '#修仙签到' },
+    { text: '查看任务', command: '#我的任务', permission: false },
+    { text: '修仙签到', command: '#修仙签到', permission: false },
 ]];
 
 function getDailyFinalReward(record, player) {

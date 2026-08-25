@@ -965,7 +965,7 @@ export class WorldChat extends plugin {
       ].join('\n'),
       text: `${result.message}\n发布${options.anonymous ? '身份' : '人'}：${identity}`,
       buttons: [[
-        { text: '交易列表', command: '#跨服交易 列表' },
+        { text: '交易列表', command: '#跨服交易 列表', permission: false },
         { text: '撤销交易', command: `#跨服交易 取消 ${result.trade.code}` },
       ]],
     });
@@ -1046,9 +1046,9 @@ export class WorldChat extends plugin {
         ].join('\n'),
         text,
         buttons: [[
-          { text: '查看位面', command: '#跨服交易 位面' },
-          { text: '交易列表', command: '#跨服交易 列表' },
-          { text: '世界网页', command: '#世界 网页' },
+          { text: '查看位面', command: '#跨服交易 位面', permission: false },
+          { text: '交易列表', command: '#跨服交易 列表', permission: false },
+          { text: '世界网页', command: '#世界 网页', permission: false },
         ]],
       });
     }
@@ -1149,8 +1149,8 @@ export class WorldChat extends plugin {
         ].join('\n'),
         text,
         buttons: result.trades.slice(0, 5).map((trade) => [
-          { text: `接受 ${trade.code}`, command: `#跨服交易 接受 ${trade.code}` },
-          { text: `匿名 ${trade.code}`, command: `#跨服交易 匿名购买 ${trade.code}` },
+          { text: `接受 ${trade.code}`, command: `#跨服交易 接受 ${trade.code}`, permission: false },
+          { text: `匿名 ${trade.code}`, command: `#跨服交易 匿名购买 ${trade.code}`, permission: false },
         ]),
       });
     }

@@ -23,5 +23,5 @@ export function buildOfficialMessage(markdown, buttonRows = [], userId = '', con
 
 export function replyOfficialMessage(e, { markdown, text = markdown, buttons = [], content = [] }) {
   if (!isOfficialMessageEvent(e)) return e.reply(text);
-  return e.reply(buildOfficialMessage(markdown, buttons, String(e.user_id || ''), content));
+  return e.reply(buildOfficialMessage(markdown, buttons, String(e.qqbot_user_id || e.user_id || ''), content));
 }
