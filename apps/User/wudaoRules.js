@@ -1,4 +1,4 @@
-export const DAO_PATH_VERSION = 1;
+export const DAO_PATH_VERSION = 2;
 export const DAO_DAILY_LIMIT = 3;
 
 export const DAO_REALM_RULES = Object.freeze([
@@ -9,6 +9,7 @@ export const DAO_REALM_RULES = Object.freeze([
     targetExp: 600,
     baseGain: 20,
     lifespanCost: 200000,
+    yuanshenLevel: 2,
     completion: '己道初立',
     nextRealm: '圣人',
   }),
@@ -19,6 +20,7 @@ export const DAO_REALM_RULES = Object.freeze([
     targetExp: 1200,
     baseGain: 40,
     lifespanCost: 5000000,
+    yuanshenLevel: 3,
     completion: '圣域成形',
     nextRealm: '圣人王',
   }),
@@ -29,6 +31,7 @@ export const DAO_REALM_RULES = Object.freeze([
     targetExp: 2400,
     baseGain: 80,
     lifespanCost: 10000000,
+    yuanshenLevel: 4,
     completion: '秩序成链',
     nextRealm: '大圣',
   }),
@@ -39,6 +42,7 @@ export const DAO_REALM_RULES = Object.freeze([
     targetExp: 4800,
     baseGain: 160,
     lifespanCost: 20000000,
+    yuanshenLevel: 5,
     completion: '大圣道果',
     nextRealm: '准帝',
   }),
@@ -49,20 +53,54 @@ export const DAO_REALM_RULES = Object.freeze([
     targetExp: 9600,
     baseGain: 320,
     lifespanCost: 150000000,
+    yuanshenLevel: 6,
     completion: '皇道雏形',
     nextRealm: '大帝',
+  }),
+  Object.freeze({
+    realmId: 17,
+    key: 'redDustImmortalDao',
+    name: '红尘仙道',
+    targetExp: 19200,
+    baseGain: 640,
+    lifespanCost: 300000000,
+    yuanshenLevel: 8,
+    completion: '不朽仙道',
+    nextRealm: '仙王',
+  }),
+  Object.freeze({
+    realmId: 18,
+    key: 'immortalKingDao',
+    name: '仙王道则',
+    targetExp: 38400,
+    baseGain: 1280,
+    lifespanCost: 600000000,
+    yuanshenLevel: 9,
+    completion: '王境道果',
+    nextRealm: '仙王巨头',
+  }),
+  Object.freeze({
+    realmId: 19,
+    key: 'giantDaoPrototype',
+    name: '诸天道则',
+    targetExp: 76800,
+    baseGain: 2560,
+    lifespanCost: 1200000000,
+    yuanshenLevel: 10,
+    completion: '体系雏形',
+    nextRealm: '合道开创修炼体系',
   }),
 ]);
 
 // 仙古今世法的悟道阶段独立于遮天道途，避免两个体系共用同名法则或进度。
 export const XIANGU_DAO_REALM_RULES = Object.freeze([
-  Object.freeze({ realmId: 9, key: 'trueGodLaw', name: '真神法则', targetExp: 600, baseGain: 20, lifespanCost: 200000, completion: '真神道果', nextRealm: '圣祭境' }),
-  Object.freeze({ realmId: 10, key: 'godKingPrinciple', name: '神王道则', targetExp: 1200, baseGain: 40, lifespanCost: 200000, completion: '神王道果', nextRealm: '天神境' }),
-  Object.freeze({ realmId: 11, key: 'heavenlyRule', name: '天规', targetExp: 2400, baseGain: 80, lifespanCost: 200000, completion: '天规初立', nextRealm: '虚道境' }),
-  Object.freeze({ realmId: 12, key: 'mysteriousVoid', name: '玄虚', targetExp: 4800, baseGain: 160, lifespanCost: 200000, completion: '玄虚道果', nextRealm: '斩我境' }),
-  Object.freeze({ realmId: 13, key: 'onlySelf', name: '唯我', targetExp: 9600, baseGain: 320, lifespanCost: 200000, completion: '真我独尊', nextRealm: '遁一境' }),
-  Object.freeze({ realmId: 14, key: 'originReturn', name: '归元', targetExp: 19200, baseGain: 640, lifespanCost: 200000, completion: '万法归元', nextRealm: '至尊境' }),
-  Object.freeze({ realmId: 15, key: 'supreme', name: '无上', targetExp: 38400, baseGain: 1280, lifespanCost: 200000, completion: '无上道果', nextRealm: '真仙境' }),
+  Object.freeze({ realmId: 9, key: 'trueGodLaw', name: '真神法则', targetExp: 600, baseGain: 20, lifespanCost: 200000, yuanshenLevel: 2, completion: '真神道果', nextRealm: '圣祭境' }),
+  Object.freeze({ realmId: 10, key: 'godKingPrinciple', name: '神王道则', targetExp: 1200, baseGain: 40, lifespanCost: 200000, yuanshenLevel: 2, completion: '神王道果', nextRealm: '天神境' }),
+  Object.freeze({ realmId: 11, key: 'heavenlyRule', name: '天规', targetExp: 2400, baseGain: 80, lifespanCost: 200000, yuanshenLevel: 3, completion: '天规初立', nextRealm: '虚道境' }),
+  Object.freeze({ realmId: 12, key: 'mysteriousVoid', name: '玄虚', targetExp: 4800, baseGain: 160, lifespanCost: 200000, yuanshenLevel: 4, completion: '玄虚道果', nextRealm: '斩我境' }),
+  Object.freeze({ realmId: 13, key: 'onlySelf', name: '唯我', targetExp: 9600, baseGain: 320, lifespanCost: 200000, yuanshenLevel: 5, completion: '真我独尊', nextRealm: '遁一境' }),
+  Object.freeze({ realmId: 14, key: 'originReturn', name: '归元', targetExp: 19200, baseGain: 640, lifespanCost: 200000, yuanshenLevel: 6, completion: '万法归元', nextRealm: '至尊境' }),
+  Object.freeze({ realmId: 15, key: 'supreme', name: '无上', targetExp: 38400, baseGain: 1280, lifespanCost: 200000, yuanshenLevel: 7, completion: '无上道果', nextRealm: '真仙境' }),
 ]);
 
 export const XIANGU_DAO_PATH_VERSION = 1;
@@ -90,6 +128,8 @@ export function getWudaoResourceCosts(mijingLevel, xianguLevel) {
 const PHYSIQUE_BONUSES = Object.freeze({
   '小成·荒古圣体': 0.05,
   '大成·荒古圣体': 0.1,
+  '小成·苍天霸体': 0.05,
+  '大成·苍天霸体': 0.1,
   先天道胎: 0.25,
   先天圣体道胎: 0.3,
   混沌体: 0.35,
@@ -180,6 +220,7 @@ export function ensureDaoPath(player, options = {}) {
     path.daily = { date: '', count: 0 };
     changed = true;
   }
+  const previousVersion = Number(path.version) || 0;
   if (path.version !== DAO_PATH_VERSION) {
     path.version = DAO_PATH_VERSION;
     changed = true;
@@ -195,7 +236,9 @@ export function ensureDaoPath(player, options = {}) {
       } else if (currentRealm > rule.realmId) {
         exp = rule.targetExp;
       } else if (currentRealm === rule.realmId) {
-        exp = Math.floor(rule.targetExp / 2);
+        // 高境节点代表“当前境界通往下一境界”的门槛，老存档从零开始悟；
+        // 人道阶段沿用旧版中途进度回填规则。
+        exp = rule.realmId >= 17 ? 0 : Math.floor(rule.targetExp / 2);
       } else {
         continue;
       }
@@ -204,6 +247,17 @@ export function ensureDaoPath(player, options = {}) {
 
     if (currentRealm >= 16) {
       path.result = path.result || { name: '无缺帝道', achievedAt: null };
+    }
+  }
+
+  // v1 存档没有红尘仙后的悟道节点：已经走过的节点自动补满，当前节点从零开始。
+  if (previousVersion < 2 && hadDaoPath) {
+    const currentRealm = Number(player.mijinglevel_id) || 0;
+    for (const rule of DAO_REALM_RULES.filter(item => item.realmId >= 17)) {
+      if (path.stages[rule.key] !== undefined) continue;
+      if (currentRealm > rule.realmId) path.stages[rule.key] = rule.targetExp;
+      else if (currentRealm === rule.realmId) path.stages[rule.key] = 0;
+      changed = true;
     }
   }
 
@@ -306,6 +360,51 @@ export function markDaoAsEmperor(player, method = '') {
     achievedAt: Date.now(),
   };
   return path.result;
+}
+
+/** 九世逆活圆满后，自动补齐此前的人道与帝道，不占用红尘仙后的悟道节点。 */
+export function completeDaoByNineLives(player, daoFruit = '', now = Date.now()) {
+  const { path } = ensureDaoPath(player, { migrateLegacy: false });
+  for (const rule of DAO_REALM_RULES.filter(item => item.realmId <= 15)) {
+    path.stages[rule.key] = rule.targetExp;
+  }
+  path.result = {
+    name: daoFruit ? `九世圆满·${daoFruit}` : '九世圆满大道',
+    method: '逆活九世',
+    achievedAt: now,
+  };
+  return path.result;
+}
+
+/** 在仙王巨头圆满诸天道则后，记录玩家独有的修炼体系。 */
+export function createCultivationSystem(player, rawName, now = Date.now()) {
+  if (player?.自创修炼体系) return { ok: false, reason: 'exists', system: player.自创修炼体系 };
+  const name = String(rawName ?? '').trim();
+  if (!name) return { ok: false, reason: 'name' };
+  if (name.length < 2 || name.length > 16 || /[\r\n#]/.test(name)) {
+    return { ok: false, reason: 'name' };
+  }
+  if ((Number(player?.mijinglevel_id) || 0) < 19) return { ok: false, reason: 'realm' };
+  const gate = getDaoGateState(player, 19);
+  if (!gate.ok) return { ok: false, reason: 'dao', gate };
+
+  const fullName = name.endsWith('体系') ? name : `${name}体系`;
+  const system = {
+    name: fullName,
+    founder: player?.名号 || '',
+    source: '九世大道与仙王道果合流',
+    createdAt: now,
+    stage: '道祖体系',
+  };
+  player.自创修炼体系 = system;
+  const { path } = ensureDaoPath(player, { migrateLegacy: false });
+  path.result = {
+    name: `${fullName}·开道者`,
+    method: '合道',
+    inherited: path.result?.name || '九世圆满大道',
+    achievedAt: now,
+  };
+  return { ok: true, system, path: path.result };
 }
 
 export function getDaoGateState(player, realmId) {
@@ -461,6 +560,38 @@ export function calculateWudaoResult(options) {
     era,
     lifespanCost: lifespan.cost,
     lifespanMultiplier: lifespan.multiplier,
+  };
+}
+
+export function calculateWudaoAttempt(options = {}) {
+  const requiredYuanshenLevel = Math.max(0, Math.trunc(Number(options.requiredYuanshenLevel) || 0));
+  const parsedYuanshenLevel = Number(options.currentYuanshenLevel);
+  const currentYuanshenLevel = Number.isFinite(parsedYuanshenLevel)
+    ? Math.max(-1, Math.trunc(parsedYuanshenLevel))
+    : -1;
+  if (currentYuanshenLevel < requiredYuanshenLevel) {
+    return { allowed: false, success: false, successChance: 0, resourceCostRate: 0 };
+  }
+
+  const successChance = clamp(
+    0.7 + (currentYuanshenLevel - requiredYuanshenLevel) * 0.05,
+    0.7,
+    0.95,
+  );
+  const random = options.random || Math.random;
+  const success = safeRandom(random) < successChance;
+  if (success) {
+    return { allowed: true, success: true, successChance, resourceCostRate: 1 };
+  }
+
+  const baseLossPercent = Math.floor(safeRandom(random) * 101);
+  const resourceCostRate = baseLossPercent / 100 * (options.useTea ? 0.5 : 1);
+  return {
+    allowed: true,
+    success: false,
+    successChance,
+    baseLossPercent,
+    resourceCostRate,
   };
 }
 

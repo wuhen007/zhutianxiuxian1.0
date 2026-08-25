@@ -12,6 +12,10 @@ export const ABOVE_ALL_DAOS_PHYSIQUES = Object.freeze({
     opening: '黄金血气贯穿星海，圣体真身以无上伟力轰击天心！',
     mechanism: '不借天心，不合万道，只以无敌圣体击穿帝道压制！',
   }),
+  '大成·苍天霸体': Object.freeze({
+    opening: '紫血横贯九天，霸体真身以无上战意震动天心！',
+    mechanism: '不借天心，不合万道，只以霸体神力与霸钟道则撕开帝道压制！',
+  }),
   先天圣体道胎: Object.freeze({
     opening: '圣体金血与先天道韵交织，肉身破道，道胎御道！',
     mechanism: '圣体撕开万道枷锁，先天道胎驾驭诸天法则！',

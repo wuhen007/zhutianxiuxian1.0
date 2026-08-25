@@ -37,8 +37,11 @@ import { getPlayerPlaneName } from '../../model/planeCoords.js';
 import {
   canStartRedDustPath,
   canCultivateExtraPath,
+  completeDaoByNineLives,
+  createCultivationSystem,
   getActiveExtraCultivationPaths,
   getExtraCultivationPathName,
+  isCultivatingExtraPath,
   reforgeExtraCultivationState,
   selectExtraCultivationPath,
   syncXianguCompanionMijing,
@@ -53,11 +56,13 @@ import {
   DAO_DAILY_LIMIT,
   DAO_REALM_RULES,
   XIANGU_DAO_REALM_RULES,
+  calculateWudaoAttempt,
   calculateWudaoResult,
   consumePlayerLifespan,
   ensureDaoPath,
   formatSignedPercent,
   getAvailableLifespan,
+  getDaoGateState,
   getDaoRuleForRealm,
   getDaoStage,
   getShanghaiDateKey,
@@ -152,9 +157,13 @@ export class Level extends plugin {
                   fnc:'command_dasan'
                 },
             
-                 {
+                {
                   reg:'^#逆活九世$',
                   fnc:'nihuojiushi'
+                },
+                {
+                  reg: '^#合道\\s+(.+)$',
+                  fnc: 'hedao'
                 },
 {
   reg: '^#为其护道$',
@@ -530,6 +539,7 @@ async nihuojiushi(e) {
         player.mijinglevel_id = 17;
         player.境界称号 = "红尘仙";
         player.红尘道果 = getRedDustDaoFruit(redDustPath.seals);
+        completeDaoByNineLives(player, player.红尘道果);
         
         // 红尘仙特性
         player.长生特性 = true;
@@ -619,7 +629,10 @@ async zhengdao(e) {
          e.reply(messages);
         return;
     }
-     if (!canCultivateExtraPath(player, 'mijing')) {
+     const isXianguCompanionMijing = player.额外体系 === 'xiangu'
+       && Number(player.xiangulevel_id) >= 15
+       && Number(player.mijinglevel_id) >= 17;
+     if (!isXianguCompanionMijing && !canCultivateExtraPath(player, 'mijing')) {
         // 辰东风格文案
         const activePath = getActiveExtraCultivationPaths(player).map(getExtraCultivationPathName).join('、');
         const messages = [
@@ -646,8 +659,21 @@ async zhengdao(e) {
          e.reply(messages);
         return;
     }
-      // ==== 新增：红尘仙之上境界检查 ====
+    // ==== 新增：红尘仙之上境界检查 ====
     const targetLevel = player.mijinglevel_id + 1;
+
+    // 红尘仙、仙王、仙王巨头的晋升必须先圆满当前高境道则。
+    if ([17, 18].includes(Number(player.mijinglevel_id))) {
+        const gate = getDaoGateState(player, player.mijinglevel_id);
+        if (gate.changed) await Write_player(usr_qq, player);
+        if (!gate.ok) {
+            return e.reply([
+                `【${gate.rule.name}未圆·突破受阻】`,
+                `当前进度：${gate.exp}/${gate.rule.targetExp}（${gate.stage.name}）`,
+                `请先发送 #悟道 圆满${gate.rule.name}，再冲击${gate.rule.nextRealm}。`,
+            ].join('\n'));
+        }
+    }
     
     if (targetLevel >= 18&&targetLevel < 20) {
         // 检查是否在仙域（power_place=6）
@@ -1739,16 +1765,32 @@ async hudao(e) {
 
       const mijingRealmId = Number(player.mijinglevel_id) || 0;
       const xianguRealmId = Number(player.xiangulevel_id) || 0;
-      const isXiangu = mijingRealmId <= 1 && xianguRealmId >= 9;
+      const isXiangu = mijingRealmId < 17
+        && xianguRealmId >= 9
+        && isCultivatingExtraPath(player, 'xiangu');
       const realmId = isXiangu ? xianguRealmId : mijingRealmId;
       if (!isXiangu && realmId < 11) return this.legacyTeaWudao(e, usr_qq, player);
-      if (realmId >= 16) {
+      if (isXiangu && realmId >= 16) {
         return e.reply([
-          isXiangu ? '【仙道已成】' : '【帝道无缺】',
-          isXiangu
-            ? `${player.名号}已踏入仙道领域，当前人道法则皆已圆满。`
-            : `${player.名号}已证无缺帝道，寻常悟道已无法再补益自身。`,
+          '【仙道已成】',
+          `${player.名号}已踏入仙道领域，当前仙古道则已经圆满。`,
           '可发送#我的道途查看昔日道果。'
+        ].join('\n'));
+      }
+      if (!isXiangu && realmId === 16) {
+        return e.reply([
+          '【帝道无缺】',
+          `${player.名号}已证无缺帝道，先完成九世逆活，方能开启红尘仙后的高境悟道。`,
+          '请发送 #逆活九世。',
+        ].join('\n'));
+      }
+      if (!isXiangu && realmId >= 20) {
+        return e.reply([
+          '【体系已越境】',
+          `${player.名号}已经走过仙王巨头悟道阶段。`,
+          player.自创修炼体系
+            ? `当前体系：${player.自创修炼体系.name}`
+            : '请发送 #合道 体系名，开创属于自己的修炼体系。',
         ].join('\n'));
       }
 
@@ -1756,6 +1798,25 @@ async hudao(e) {
         ? getXianguDaoRuleForRealm(realmId)
         : getDaoRuleForRealm(realmId);
       if (!rule) return e.reply('当前境界尚未开放对应的悟道阶段。');
+
+      const parsedYuanshenLevel = Number(player.yuanshenlevel_id);
+      const currentYuanshenLevel = Number.isFinite(parsedYuanshenLevel)
+        ? Math.trunc(parsedYuanshenLevel)
+        : -1;
+      if (currentYuanshenLevel < rule.yuanshenLevel) {
+        const currentYuanshenName = data.Levelyuanshen_list.find(
+          item => Number(item.level_id) === currentYuanshenLevel
+        )?.level || '尚未凝练元神';
+        const requiredYuanshenName = data.Levelyuanshen_list.find(
+          item => Number(item.level_id) === rule.yuanshenLevel
+        )?.level || `${rule.yuanshenLevel}级元神`;
+        return e.reply([
+          `【元神境界不足·${rule.name}难悟】`,
+          `当前元神：${currentYuanshenName}`,
+          `悟道要求：${requiredYuanshenName}`,
+          '请先使用 #凝练元神 提升元神境界。',
+        ].join('\n'));
+      }
 
       const ensured = isXiangu ? ensureXianguDaoPath(player) : ensureDaoPath(player);
       if (isXiangu) unlockXianguDaoRealm(player, realmId);
@@ -1851,6 +1912,42 @@ async hudao(e) {
         ].join('\n'));
       }
 
+      const attempt = calculateWudaoAttempt({
+        requiredYuanshenLevel: rule.yuanshenLevel,
+        currentYuanshenLevel,
+        useTea,
+      });
+      const spentPotential = Math.floor(potentialCost * attempt.resourceCostRate);
+      const spentCultivation = Math.floor(cultivationCost * attempt.resourceCostRate);
+      const spentBlood = Math.floor(bloodCost * attempt.resourceCostRate);
+      const spentLifespan = Math.floor(lifespanCost * attempt.resourceCostRate);
+      const spentSpirit = Math.floor(spiritCost * attempt.resourceCostRate);
+      player.仙道潜力 = currentPotential - spentPotential;
+      player.修为 = currentCultivation - spentCultivation;
+      player.血气 = currentBlood - spentBlood;
+      player.元神 = currentSpirit - spentSpirit;
+      if (spentLifespan > 0) consumePlayerLifespan(player, spentLifespan);
+      const attemptCount = recordDaoAttempt(ensured.path, dateKey);
+
+      if (!attempt.success) {
+        await Write_player(usr_qq, player);
+        if (usedWudaoDan) await Add_najie_thing(usr_qq, '大衍悟道丹', '丹药', -1);
+        if (teaItem) await Add_najie_thing(usr_qq, teaItem, '道具', -1);
+        const lossPercent = Number((attempt.resourceCostRate * 100).toFixed(1));
+        return e.reply([
+          `【悟道·${rule.name}·失败】`,
+          '识海震荡，道则方聚又散，本次未能留下道途感悟。',
+          `成功率：${Math.round(attempt.successChance * 100)}%`,
+          `资源损失：${lossPercent}%${useTea ? `（古茶庇护，原损失${attempt.baseLossPercent}%减半）` : ''}`,
+          `损失：潜力${spentPotential.toLocaleString()}｜修为${spentCultivation.toLocaleString()}｜血气${spentBlood.toLocaleString()}`,
+          `损失：寿元${spentLifespan.toLocaleString()}年｜元神${spentSpirit.toLocaleString()}`,
+          `道途进度：${currentExp}/${rule.targetExp}（未增加）`,
+          usedWudaoDan
+            ? `今日悟道：${attemptCount}（服大衍悟道丹·续道）/${DAO_DAILY_LIMIT}`
+            : `今日悟道：${attemptCount}/${DAO_DAILY_LIMIT}`,
+        ].join('\n'));
+      }
+
       const previousStage = getDaoStage(currentExp, rule);
       const kongtong = getKongtongModifiers(player);
       const imperialWudao = kongtong.decree?.type === '修炼' &&
@@ -1873,13 +1970,7 @@ async hudao(e) {
       );
       const actualGain = planeFavor.gain;
       if (planeFavor.consumed) result.multiplier *= 1.2;
-      player.仙道潜力 = currentPotential - potentialCost;
-      player.修为 = currentCultivation - cultivationCost;
-      player.血气 = currentBlood - bloodCost;
-      player.元神 = currentSpirit - spiritCost;
-      consumePlayerLifespan(player, lifespanCost);
       ensured.path.stages[rule.key] = currentExp + actualGain;
-      const attemptCount = recordDaoAttempt(ensured.path, dateKey);
       const proficiencyGains = awardWudaoGongfaProficiency(player, 5, { dateKey });
       const currentStage = getDaoStage(ensured.path.stages[rule.key], rule);
       await Write_player(usr_qq, player);
@@ -1896,13 +1987,12 @@ async hudao(e) {
       if (useTea) factorLines.push(`悟道古茶 ${formatSignedPercent(result.bonuses.tea)}`);
       if (tracesUsed > 0) factorLines.push(`先天道痕 ${formatSignedPercent(result.bonuses.traces)}`);
       if (imperialWudao) factorLines.push('人皇敕令 +50%');
-      if (planeFavor.consumed) factorLines.push(`位面青睐 +20%（消耗1，余${planeFavor.remainingFavor}）`);
+      if (planeFavor.consumed) factorLines.push(`位面青睐 +20%（消耗${planeFavor.consumed}，余${planeFavor.remainingFavor}）`);
 
       const reply = [
         `【悟道·${rule.name}】`,
-        result.enlightened
-          ? '灵光贯穿识海，你于刹那间顿悟，诸般道理豁然贯通！'
-          : '你以自身之道印证天地万法，于枯坐中补全一缕道则。',
+        result.enlightened ? '悟道顿悟成功，诸般道理豁然贯通！' : '你以自身之道印证天地万法，于枯坐中补全一缕道则。',
+        `悟道成功率：${Math.round(attempt.successChance * 100)}%`,
         `消耗：潜力${potentialCost.toLocaleString()}｜修为${cultivationCost.toLocaleString()}｜血气${bloodCost.toLocaleString()}`,
         `消耗：寿元${lifespanCost.toLocaleString()}年｜元神${spiritCost.toLocaleString()}`,
         `本次感悟：+${actualGain}${result.enlightened ? '（顿悟）' : ''}`,
@@ -1983,6 +2073,36 @@ async hudao(e) {
     ].join('\n'));
   }
 
+  async hedao(e) {
+    if (!e.isGroup) return e.reply('修仙游戏请在群聊中游玩');
+    const usr_qq = e.user_id.toString().replace('qg_', '');
+    if (!(await existplayer(usr_qq))) return e.reply('玩家不存在，请先创建角色');
+    const rawName = e.msg.match(/^#合道\s+(.+)$/)?.[1]?.trim();
+    return withPlayerMutationLock(usr_qq, async () => {
+      const player = await Read_player(usr_qq);
+      const result = createCultivationSystem(player, rawName);
+      if (!result.ok) {
+        if (result.reason === 'exists') return e.reply(`你已经开创了【${result.system.name}】，不可重复合道。`);
+        if (result.reason === 'name') return e.reply('体系名需为2至16个字符，不能包含换行或#。');
+        if (result.reason === 'realm') return e.reply('只有达到仙王巨头境，才有资格合道开创体系。');
+        if (result.reason === 'dao') return e.reply([
+          `【${result.gate.rule.name}未圆·合道受阻】`,
+          `当前进度：${result.gate.exp}/${result.gate.rule.targetExp}（${result.gate.stage.name}）`,
+          `请先发送 #悟道 圆满${result.gate.rule.name}。`,
+        ].join('\n'));
+      }
+      if (!Array.isArray(player.成就)) player.成就 = [];
+      if (!player.成就.includes('23')) player.成就.push('23');
+      await Write_player(usr_qq, player);
+      return e.reply([
+        '【合道成功·体系开创】',
+        `${player.名号}将九世大道、红尘仙道与王境道果熔于一炉。`,
+        `独创体系：【${result.system.name}】`,
+        '从此自身即是道统源头，后续可挑战 #破王成帝。',
+      ].join('\n'));
+    });
+  }
+
   async showDaoPath(e) {
     if (!e.isGroup) return e.reply('修仙游戏请在群聊中游玩');
     const usr_qq = e.user_id.toString().replace('qg_', '');
@@ -1991,7 +2111,9 @@ async hudao(e) {
     const player = await Read_player(usr_qq);
     const mijingRealmId = Number(player.mijinglevel_id) || 0;
     const xianguRealmId = Number(player.xiangulevel_id) || 0;
-    const isXiangu = mijingRealmId <= 1 && xianguRealmId >= 9;
+    const isXiangu = mijingRealmId < 17
+      && xianguRealmId >= 9
+      && isCultivatingExtraPath(player, 'xiangu');
     const realmId = isXiangu ? xianguRealmId : mijingRealmId;
     if (!isXiangu && realmId < 11) {
       if (xianguRealmId > 1) {
@@ -2028,7 +2150,8 @@ async hudao(e) {
       `【${player.名号}·我的道途】`,
       isXiangu ? '仙古今世法道途：' : '遮天人体秘境道途：',
       ...lines,
-      !isXiangu && realmId >= 16 ? `帝道道果：${ensured.path.result?.name || '无缺帝道'}` : '',
+      !isXiangu && realmId >= 16 ? `大道道果：${ensured.path.result?.name || '无缺帝道'}` : '',
+      !isXiangu && player.自创修炼体系 ? `自创体系：${player.自创修炼体系.name}` : '',
       `今日剩余悟道：${remaining}/${DAO_DAILY_LIMIT}`,
       `真实寿元：${getAvailableLifespan(player).toLocaleString()}年`
     ].filter(Boolean).join('\n'));
@@ -2724,6 +2847,20 @@ const luck = e.msg.includes('幸运');
             result.effectDesc = `【荒古圣体异象】\n金色血气冲霄汉，圣体异象压诸天！锦绣山河、阴阳生死图、\n仙王临九天、混沌种青莲四大异象齐出，镇压万古青天！`;
             break;
             
+        case "小成·苍天霸体":
+            result.costReduction = 0.75;
+            result.probBonus = 0.25;
+            result.talentDesc = `【小成苍天霸体】紫血沸腾，霸体初成！突破消耗减少25%，成功率提升25%！`;
+            result.effectDesc = `【苍天霸体异象】\n紫血沸腾，紫色血气化作九天真龙，霸钟长鸣震碎虚空！`;
+            break;
+
+        case "大成·苍天霸体":
+            result.costReduction = 0.65;
+            result.probBonus = 0.35;
+            result.talentDesc = `【大成苍天霸体】紫血镇压万道，霸钟护持真身！突破消耗减少35%，成功率提升35%！`;
+            result.effectDesc = `【霸血领域】\n紫血冲霄，九神合一，霸钟领域镇压战场，攻防与控制抗性全面提升！`;
+            break;
+
         case "苍天霸体":
             result.costReduction = 0.75;
             result.probBonus = 0.25;

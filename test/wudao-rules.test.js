@@ -6,7 +6,10 @@ import {
   DAO_DAILY_LIMIT,
   DAO_REALM_RULES,
   XIANGU_DAO_REALM_RULES,
+  completeDaoByNineLives,
+  calculateWudaoAttempt,
   calculateWudaoResult,
+  createCultivationSystem,
   consumePlayerLifespan,
   ensureDaoPath,
   getAvailableLifespan,
@@ -31,15 +34,15 @@ function sequenceRandom(values) {
 
 test('仙古悟道法则与两体系合计成本按配置计算', () => {
   assert.deepEqual(
-    XIANGU_DAO_REALM_RULES.map(rule => [rule.realmId, rule.name]),
+    XIANGU_DAO_REALM_RULES.map(rule => [rule.realmId, rule.name, rule.yuanshenLevel]),
     [
-      [9, '真神法则'],
-      [10, '神王道则'],
-      [11, '天规'],
-      [12, '玄虚'],
-      [13, '唯我'],
-      [14, '归元'],
-      [15, '无上'],
+      [9, '真神法则', 2],
+      [10, '神王道则', 2],
+      [11, '天规', 3],
+      [12, '玄虚', 4],
+      [13, '唯我', 5],
+      [14, '归元', 6],
+      [15, '无上', 7],
     ],
   );
 
@@ -60,7 +63,7 @@ test('仙古悟道法则与两体系合计成本按配置计算', () => {
   assert.equal(getXianguDaoGateState(player, 9).ok, true);
 });
 
-test('五层己道的经验、单次收益与寿元消耗按境界递进', () => {
+test('人道至红尘仙后高境己道的经验、收益与寿元消耗按境界递进', () => {
   assert.deepEqual(
     DAO_REALM_RULES.map(rule => [
       rule.realmId,
@@ -68,15 +71,96 @@ test('五层己道的经验、单次收益与寿元消耗按境界递进', () =>
       rule.targetExp,
       rule.baseGain,
       rule.lifespanCost,
+      rule.yuanshenLevel,
     ]),
     [
-      [11, '王者道则', 600, 20, 200000],
-      [12, '圣道法则', 1200, 40, 5000000],
-      [13, '圣王法则', 2400, 80, 10000000],
-      [14, '大圣法则', 4800, 160, 20000000],
-      [15, '准帝法则', 9600, 320, 150000000],
+      [11, '王者道则', 600, 20, 200000, 2],
+      [12, '圣道法则', 1200, 40, 5000000, 3],
+      [13, '圣王法则', 2400, 80, 10000000, 4],
+      [14, '大圣法则', 4800, 160, 20000000, 5],
+      [15, '准帝法则', 9600, 320, 150000000, 6],
+      [17, '红尘仙道', 19200, 640, 300000000, 8],
+      [18, '仙王道则', 38400, 1280, 600000000, 9],
+      [19, '诸天道则', 76800, 2560, 1200000000, 10],
     ]
   );
+});
+
+test('九世圆满自动补齐此前大道，红尘仙后的悟道节点从零开始', () => {
+  const player = { mijinglevel_id: 17, 道途: { version: 2, stages: {}, daily: { date: '', count: 0 } } };
+  const result = completeDaoByNineLives(player, '羽化道果', 123);
+  assert.equal(result.name, '九世圆满·羽化道果');
+  assert.equal(player.道途.stages.quasiEmperorDao, 9600);
+  assert.equal(player.道途.stages.redDustImmortalDao, undefined);
+});
+
+test('仙王巨头圆满诸天道则后才能合道开创体系', () => {
+  const player = {
+    名号: '测试者',
+    mijinglevel_id: 19,
+    道途: {
+      version: 2,
+      stages: { giantDaoPrototype: 76800 },
+      daily: { date: '', count: 0 },
+    },
+  };
+  const result = createCultivationSystem(player, '万象', 456);
+  assert.equal(result.ok, true);
+  assert.equal(result.system.name, '万象体系');
+  assert.equal(player.自创修炼体系.name, '万象体系');
+  assert.equal(createCultivationSystem(player, '重复').reason, 'exists');
+});
+
+test('悟道要求匹配元神境界，失败随机损耗且古茶将损耗减半', () => {
+  assert.equal(calculateWudaoAttempt({
+    requiredYuanshenLevel: 4,
+    currentYuanshenLevel: 3,
+  }).allowed, false);
+
+  const success = calculateWudaoAttempt({
+    requiredYuanshenLevel: 4,
+    currentYuanshenLevel: 4,
+    random: sequenceRandom([0.69]),
+  });
+  assert.equal(success.successChance, 0.7);
+  assert.equal(success.success, true);
+  assert.equal(success.resourceCostRate, 1);
+
+  const fullLoss = calculateWudaoAttempt({
+    requiredYuanshenLevel: 4,
+    currentYuanshenLevel: 4,
+    random: sequenceRandom([0.7, 0.999]),
+  });
+  assert.equal(fullLoss.success, false);
+  assert.equal(fullLoss.baseLossPercent, 100);
+  assert.equal(fullLoss.resourceCostRate, 1);
+
+  const teaLoss = calculateWudaoAttempt({
+    requiredYuanshenLevel: 4,
+    currentYuanshenLevel: 4,
+    useTea: true,
+    random: sequenceRandom([0.7, 0.999]),
+  });
+  assert.equal(teaLoss.baseLossPercent, 100);
+  assert.equal(teaLoss.resourceCostRate, 0.5);
+
+  const noLoss = calculateWudaoAttempt({
+    requiredYuanshenLevel: 4,
+    currentYuanshenLevel: 5,
+    random: sequenceRandom([0.75, 0]),
+  });
+  assert.equal(noLoss.successChance, 0.75);
+  assert.equal(noLoss.success, false);
+  assert.equal(noLoss.resourceCostRate, 0);
+});
+
+test('悟道业务入口执行元神门槛与失败资源扣除', () => {
+  const source = readFileSync(new URL('../apps/User/Level.js', import.meta.url), 'utf8');
+  assert.match(source, /currentYuanshenLevel < rule\.yuanshenLevel/);
+  assert.match(source, /calculateWudaoAttempt\(\{/);
+  assert.match(source, /Math\.floor\(potentialCost \* attempt\.resourceCostRate\)/);
+  assert.match(source, /if \(!attempt\.success\)/);
+  assert.match(source, /古茶庇护，原损失\$\{attempt\.baseLossPercent\}%减半/);
 });
 
 test('法则阶段按初悟、小成、大成、圆满递进', () => {
@@ -96,6 +180,13 @@ test('老玩家补齐已走过的道途，当前境界从大成继续', () => {
   assert.equal(player.道途.stages.saintDao, 1200);
   assert.equal(player.道途.stages.saintKingDao, 1200);
   assert.equal(player.道途.stages.greatSaintDao, undefined);
+});
+
+test('高境老存档回填已走过节点，当前红尘仙节点不预填半程', () => {
+  const player = { mijinglevel_id: 17, 道途: { version: 1, stages: {}, daily: { date: '', count: 0 } } };
+  ensureDaoPath(player);
+  assert.equal(player.道途.stages.redDustImmortalDao, 0);
+  assert.equal(player.道途.stages.giantDaoPrototype, undefined);
 });
 
 test('带有新存档标记的玩家不会获得老玩家回填', () => {

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -9,6 +10,7 @@ import {
   getExtraCultivationLevelProduct,
   getExtraCultivationLevelSum,
   getXianguCompanionMijingTarget,
+  isCultivatingExtraPath,
   reforgeExtraCultivationState,
   selectExtraCultivationPath,
   syncXianguCompanionMijing,
@@ -61,6 +63,7 @@ test('仙古上位境界只升不降地同步轮海至化龙秘境', () => {
 
   ensureExtraCultivationState(player);
   assert.equal(player.mijinglevel_id, 5);
+  assert.equal(isCultivatingExtraPath(player, 'xiangu'), true);
   for (const [xianguLevel, mijingLevel] of [[13, 6], [14, 7], [15, 8]]) {
     player.xiangulevel_id = xianguLevel;
     assert.equal(syncXianguCompanionMijing(player).targetLevelId, mijingLevel);
@@ -77,6 +80,12 @@ test('仙古上位境界只升不降地同步轮海至化龙秘境', () => {
   player.mijinglevel_id = 18;
   assert.deepEqual(getActiveExtraCultivationPaths(player), ['mijing', 'xiangu']);
   assert.equal(canCultivateExtraPath(player, 'xiangu'), false);
+});
+
+test('仙古伴生人体秘境不会让悟道入口误判为遮天体系', () => {
+  const source = readFileSync(new URL('../apps/User/Level.js', import.meta.url), 'utf8');
+  assert.match(source, /xianguRealmId >= 9[\s\S]{0,120}isCultivatingExtraPath\(player, 'xiangu'\)/);
+  assert.doesNotMatch(source, /mijingRealmId <= 1 && xianguRealmId >= 9/);
 });
 
 test('仙古至尊逆活每成功一世推进一个秘境并于第九世成就红尘仙', () => {

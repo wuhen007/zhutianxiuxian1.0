@@ -5,11 +5,20 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  CLOW_WISH_COSTS,
+  CLOW_WISH_WEAKNESS_MS,
   calculateEmperorTribulationBaseDamage,
   calculateXianguHorrorWavePower,
   calcXianguTribulationPower,
   canUseClowWish,
+  applyKingTribulationClowBacklash,
+  consumeClowWishCosts,
+  consumeKingTribulationClowWish,
+  getClowWishWeaknessRemainingMs,
+  getImmortalKingAssaultPlan,
+  getKingToEmperorTribulationRatio,
   getXianguUpperTribulationHorrorMultiplier,
+  inspectClowWishCosts,
   getReverseLifeTribulationWaves,
   XIANGU_UPPER_TRIBULATION_HORROR_MULTIPLIERS,
   XIANGU_TRIBULATION_BASE_ATK_SCALE,
@@ -20,6 +29,10 @@ import {
   ZHETIAN_QUASI_EMPEROR_ERA_DIFFICULTY_RATES,
   ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS,
 } from '../apps/User/zhetianTribulationRules.js';
+import {
+  applyClowWishBattleWeakness,
+  CLOW_WISH_BATTLE_MULTIPLIER,
+} from '../model/clowWish.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,6 +51,59 @@ test('库洛牌祈愿仅允许小樱系列灵根', () => {
   assert.equal(canUseClowWish({}), false);
 });
 
+test('库洛牌祈愿精确扣除六项代价并施加48小时虚弱', () => {
+  const now = 1_000_000;
+  const player = {
+    心神: 35,
+    元神: 100_000_007,
+    寿元: 9999,
+    压制寿元: 1_000_000_123,
+    修为: 10_000_000_011,
+    血气: 10_000_000_013,
+    仙道潜力: 1003,
+  };
+
+  assert.deepEqual(CLOW_WISH_COSTS, {
+    心神: 30,
+    元神: 100_000_000,
+    寿元: 1_000_000_000,
+    修为: 10_000_000_000,
+    血气: 10_000_000_000,
+    仙道潜力: 1000,
+  });
+  assert.equal(CLOW_WISH_WEAKNESS_MS, 48 * 60 * 60 * 1000);
+  assert.equal(inspectClowWishCosts(player).ok, true);
+  assert.equal(consumeClowWishCosts(player, now).ok, true);
+  assert.deepEqual(player, {
+    心神: 5,
+    元神: 7,
+    寿元: 123,
+    压制寿元: 123,
+    修为: 11,
+    血气: 13,
+    仙道潜力: 3,
+    库洛牌祈愿虚弱至: now + CLOW_WISH_WEAKNESS_MS,
+  });
+  assert.equal(getClowWishWeaknessRemainingMs(player, now), CLOW_WISH_WEAKNESS_MS);
+});
+
+test('库洛牌祈愿资源不足时不扣款，虚弱期攻防速度减半', () => {
+  const poor = { 心神: 29, 元神: 1, 寿元: 1, 修为: 1, 血气: 1, 仙道潜力: 1 };
+  const snapshot = structuredClone(poor);
+  assert.equal(consumeClowWishCosts(poor, 1000).ok, false);
+  assert.deepEqual(poor, snapshot);
+
+  const combatant = { 攻击: 101, 防御: 81, 速度: 121, 库洛牌祈愿虚弱至: 2000 };
+  const active = applyClowWishBattleWeakness(combatant, 1000);
+  assert.equal(CLOW_WISH_BATTLE_MULTIPLIER, 0.5);
+  assert.equal(active.active, true);
+  assert.deepEqual(combatant, { 攻击: 50, 防御: 40, 速度: 60, 库洛牌祈愿虚弱至: 2000 });
+
+  const recovered = { 攻击: 101, 防御: 81, 速度: 121, 库洛牌祈愿虚弱至: 1000 };
+  assert.equal(applyClowWishBattleWeakness(recovered, 1000).active, false);
+  assert.equal(recovered.攻击, 101);
+});
+
 test('遮天各境界使用独立雷劫倍率', () => {
   assert.deepEqual(ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS, {
     斩道: 30,
@@ -46,8 +112,46 @@ test('遮天各境界使用独立雷劫倍率', () => {
     大圣: 90,
     准帝: 120,
     大帝: 150,
+    破王成帝: 240,
     逆活: 180,
   });
+  assert.ok(ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.破王成帝 >= ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大帝);
+  assert.ok(getKingToEmperorTribulationRatio() >= 1);
+});
+
+test('破王成帝无视全部偏移，库洛牌强行祈愿触发反噬', () => {
+  const target = { 库洛牌祈愿: { 来源: '123456', 区间偏移: -5 } };
+  assert.deepEqual(consumeKingTribulationClowWish(target), { triggered: true, source: '123456' });
+  assert.equal(target.库洛牌祈愿, undefined);
+
+  const caster = { 当前血量: 101, 道伤: 2 };
+  applyKingTribulationClowBacklash(caster);
+  assert.deepEqual(caster, { 当前血量: 50, 道伤: 7 });
+
+  const source = fs.readFileSync(path.join(__dirname, '..', 'apps', 'User', 'zhetiandujie.js'), 'utf8');
+  const start = source.indexOf('async poWangChengDi');
+  const end = source.indexOf('// 解除护法双向绑定', start);
+  const kingTribulation = source.slice(start, end);
+  assert.doesNotMatch(kingTribulation, /calcMaxAtkWithTribulationShifts/);
+  assert.match(kingTribulation, /位面偏移、欺天阵纹与库洛牌祈愿均无法改变本次劫数/);
+});
+
+test('破王成帝第11道起持续遭遇诸王，第30道固定联手一击', () => {
+  assert.deepEqual(getImmortalKingAssaultPlan(10, () => 0), { active: false, joint: false, count: 0 });
+  assert.deepEqual(getImmortalKingAssaultPlan(11, () => 0), { active: true, joint: false, count: 1 });
+  assert.deepEqual(getImmortalKingAssaultPlan(20, () => 0.999), { active: true, joint: false, count: 4 });
+  for (let strike = 11; strike < 30; strike++) {
+    const plan = getImmortalKingAssaultPlan(strike, () => (strike % 4) / 4);
+    assert.equal(plan.active, true, `第${strike}道不应停歇`);
+    assert.equal(plan.joint, false);
+    assert.ok(plan.count >= 1 && plan.count <= 4);
+  }
+  assert.deepEqual(getImmortalKingAssaultPlan(30, () => 0), { active: true, joint: true, count: 8 });
+
+  const source = fs.readFileSync(path.join(__dirname, '..', 'apps', 'User', 'zhetiandujie.js'), 'utf8');
+  assert.match(source, /if \(broken > 10\)/);
+  assert.match(source, /attackBySupremes\(player, diffRate, broken\)/);
+  assert.match(source, /八大不朽之王·联手一击/);
 });
 
 test('大帝劫三主阶段按准帝九重劫固定比例缩放', () => {

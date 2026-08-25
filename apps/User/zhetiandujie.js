@@ -49,6 +49,14 @@ import {
   LEIDI_TRIBULATION_CONVERSION_RATE,
   LEIDI_TRIBULATION_CONVERSION_WAVES,
   canUseClowWish,
+  CLOW_WISH_COSTS,
+  consumeClowWishCosts,
+  consumeKingTribulationClowWish,
+  applyKingTribulationClowBacklash,
+  getClowWishWeaknessRemainingMs,
+  getImmortalKingAssaultPlan,
+  getKingToEmperorTribulationRatio,
+  inspectClowWishCosts,
 } from './zhetianTribulationRules.js';
 import {
   existplayer,
@@ -79,6 +87,7 @@ import {
 import { isTribulationLocked, TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { adjustDaoHeart, getDaoHeartDamageMultiplier } from '../../model/daoHeart.js';
+import { refreshSpiritHeart } from '../../model/spiritUniverse.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import {
   buildRelativeTianjiaoCombatant,
@@ -3742,6 +3751,18 @@ async poWangChengDi(e) {
   /* ====== 基础校验 ====== */
   if (player.mijinglevel_id !== 19)
     return e.reply('仅仙道领域——仙王巨头可破王成帝');
+  const daoGate = getDaoGateState(player, 19);
+  if (daoGate.changed) await Write_player(usr_qq, player);
+  if (!daoGate.ok) {
+    return e.reply([
+      `【${daoGate.rule.name}未圆·帝路受阻】`,
+      `当前进度：${daoGate.exp}/${daoGate.rule.targetExp}（${daoGate.stage.name}）`,
+      `请先发送 #悟道 圆满${daoGate.rule.name}。`,
+    ].join('\n'));
+  }
+  if (!player.自创修炼体系) {
+    return e.reply('仙王巨头还缺最后一步：请先发送 #合道 体系名，开创自己的修炼体系。');
+  }
   if (player.破王成帝 && Date.now() / 1000 < player.破王成帝)
     return e.reply('你道基未愈，暂不可再次冲击帝位');
   player.生命本源 = player.生命本源 ?? 100;
@@ -3791,13 +3812,32 @@ await Write_player(usr_qq, player);
 // ===== 天道排斥外物，进入渡劫状态 =====
 const _tribSnap7 = this.enterTribulationState(player, equipment);
 
-  // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
-  const { maxAtk, formationShift, kuluoShift, qitianMessage } = this.calcMaxAtkWithTribulationShifts(player, equipment);
+  const clowWish = consumeKingTribulationClowWish(player);
+  let clowBacklashLine = '';
+  if (clowWish.triggered) {
+    let backlashTarget = player;
+    let backlashQQ = usr_qq;
+    if (clowWish.source && clowWish.source !== usr_qq && await existplayer(clowWish.source)) {
+      backlashQQ = clowWish.source;
+      await withPlayerMutationLock(backlashQQ, async () => {
+        backlashTarget = await Read_player(backlashQQ);
+        applyKingTribulationClowBacklash(backlashTarget);
+        await Write_player(backlashQQ, backlashTarget);
+      });
+    } else {
+      applyKingTribulationClowBacklash(backlashTarget);
+    }
+    clowBacklashLine = `库洛牌强行干涉帝劫，引发天道反噬：${backlashTarget.名号 || backlashQQ}道伤+5、当前血量削减50%。`;
+  }
+  await Write_player(usr_qq, player);
 
   let log = [
     `【破王成帝·帝劫启】`,
     `${player.名号}欲破王称帝，引动诸天震荡！`,
     `融合第六秘境「举头三尺有神明」，头顶小人浮现，其周身缠绕${totalShackles}道大道枷锁！`,
+    `破王劫威倍率：×${ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.破王成帝}（证道成帝：×${ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大帝}）`,
+    `【帝劫绝对锁定】位面偏移、欺天阵纹与库洛牌祈愿均无法改变本次劫数。`,
+    ...(clowBacklashLine ? [clowBacklashLine] : []),
     `消耗修为：${realNeed.toLocaleString()} 消耗血气：${bloodNeed.toLocaleString()}`,
     ...(minggeCostLine ? [minggeCostLine] : [])
   ];
@@ -3807,7 +3847,21 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
   /* ====== 枷锁循环（30 道，30 s 一道） ====== */
   let broken = 0;
   let checkDone = null;
+  let running = false;
+  let finished = false;
+  let finishTribulation;
+  const completion = new Promise(resolve => {
+    finishTribulation = () => {
+      if (finished) return;
+      finished = true;
+      clearInterval(lockInterval);
+      if (checkDone) clearInterval(checkDone);
+      resolve(true);
+    };
+  });
   const lockInterval = setInterval(async () => {
+    if (running || finished) return;
+    running = true;
     try {
           /* ------ 新增：护法血量同步（防止护法者中途回血/受伤） ------ */
     if (player.护法玩家) {
@@ -3817,8 +3871,8 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
     }
       if (broken >= totalShackles) { clearInterval(lockInterval); return; }
 
-      /* 每道扣 55 % 当前血量的“道伤” */
-      let raw = player.当前血量 * 0.55;
+      /* 破王劫倍率始终不低于证道成帝劫 */
+      let raw = player.当前血量 * 0.55 * getKingToEmperorTribulationRatio();
       const { damage: dmg, messages } = await this.applyTribulationDamage(player, raw, equipment);
       player.当前血量 = Math.max(1, player.当前血量 - dmg);
       broken++;
@@ -3836,8 +3890,10 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
       /* 每 10 层神明下降一尺 */
       if (broken % 10 === 0) log.push(`【神明降临】头顶小人下降 ${broken / 10} 尺！神威浩荡，整片宇宙都在颤栗！！`);
 
-      /* 15 道触发不朽之王 or 莫晓羽庇护 */
-      if (broken === 15) log.push(...(await this.attackBySupremes(player, diffRate, e)));
+      /* 神明小人下降一尺后，诸王从第 11 道起每道阻击；第 30 道八王合击 */
+      if (broken > 10) {
+        log.push(...(await this.attackBySupremes(player, diffRate, broken)));
+      }
 
       await Write_player(usr_qq, player);
       await e.reply(log.join('\n'));
@@ -3847,8 +3903,6 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
       if (player.当前血量 <= 1) {
         const resurrected = await this.checkGongfaResurrection(e, player);
         if (!resurrected) {
-          clearInterval(lockInterval);
-          if (checkDone) clearInterval(checkDone);
           /* 失败惩罚 */
           player.生命本源 -= 50;
           player.修为 *= 0.7;
@@ -3866,22 +3920,24 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
           ].join('\n'));
           // ===== 渡劫结束，重算全装属性 =====
           await this.exitTribulationState(player, _tribSnap7, usr_qq, equipment);
+          finishTribulation();
         } else {
           log.push(`【向死而生】重燃生命之火，继续迎战枷锁！`);
         }
       }
     } catch (err) {
-      clearInterval(lockInterval);
-      if (checkDone) clearInterval(checkDone);
       console.error('枷锁阶段出错：', err);
+      finishTribulation();
+    } finally {
+      running = false;
     }
   }, 30000);
 
   /* ====== 突破完成检查 ====== */
   checkDone = setInterval(async () => {
-    if (broken >= totalShackles && player.当前血量 > 1) {
-      clearInterval(checkDone);
-      clearInterval(lockInterval);
+    if (running || finished || broken < totalShackles || player.当前血量 <= 1) return;
+    running = true;
+    try {
       player.mijinglevel_id = 20;        // 准仙帝
       player.神明枷锁 = 0;
       player.神明之光 = 3;
@@ -3897,8 +3953,15 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
       ].join('\n'));
       // ===== 渡劫结束，重算全装属性 =====
       await this.exitTribulationState(player, _tribSnap7, usr_qq, equipment);
+      finishTribulation();
+    } catch (err) {
+      console.error('帝劫结算出错：', err);
+      finishTribulation();
+    } finally {
+      running = false;
     }
   }, 1000);
+  return completion;
 }
 // 解除护法双向绑定
 async clearProtectorRelation(player) {
@@ -3916,104 +3979,69 @@ async clearProtectorRelation(player) {
     }
   }
 }
-/* ====== 不朽之王围攻（含莫晓羽庇护） ====== */
-async attackBySupremes(player, diffRate, e) {
-  const msgs = [];
-  msgs.push(
-    `【诸王阻道】`,
-    `几大不朽之王感应到帝者气息，跨界而来！`
-  );
+/* ====== 不朽之王持续阻道（含莫晓羽单道庇护） ====== */
+async attackBySupremes(player, diffRate, strike) {
+  const plan = getImmortalKingAssaultPlan(strike);
+  if (!plan.active) return [];
 
-  /* ====== 莫晓羽庇护判定 ====== */
+  const msgs = [
+    `【第 ${strike} 道·诸王阻道】`,
+    `异域不朽之王感应到帝者气息，跨界而来！`,
+  ];
+
   if (player.莫晓羽庇护 === 1) {
-    player.莫晓羽庇护 = 0;                 // 一次性消耗
-    player.莫晓羽CD = Math.floor(Date.now() / 1000) + 86400; // 24 h 内不可再得
-
-    /* 星指维宇崩全文 */
+    player.莫晓羽庇护 = 0;
+    player.莫晓羽CD = Math.floor(Date.now() / 1000) + 86400;
     msgs.push(
-      `时间长河上游，一道英姿伟岸的身影踏破万古而来！`,
-      `他黑发如瀑，眸若冷电，周身环绕无穷维度泡影！`,
-      `「区区不朽之王，也敢阻我庇护之人破王成帝？」`,
-      `声如开天辟地之雷，震得整片古史都在颤抖！`,
-      ``,
-      `【星指维宇崩】`,
-      `云海极不可思议的景象在发生！`,
-      `无数维度时空的泡影浮现，一颗颗庞大的维宙围绕着莫晓羽转动！`,
-      `万万劫时空古史为之明亮，上至太宇之前，下至无尽未来！`,
-      ``,
-      `只见莫晓羽缓缓抬手，无尽维宙被其攥握手中！`,
-      `「星指维宇崩！」`,
-      `虚妄中洪亮的声音响彻诸天万界，在混沌海中炸响回荡！`,
-      ``,
-      `一道汇聚着至高维度极尽锋芒的巨指浮现！`,
-      `占据一切时空概念变量，向着五大不朽之王点指而去！`,
-      `这一指，无量指光普照一切，刹那光华，直达永恒，直达终结！`,
-      ``,
-      `五大不朽之王身躯寸寸崩解！`,
-      `他们的存在被从古史中彻底抹去：`,
-      `- 昆谛的炼仙壶化为虚无，连传说都消散！`,
-      `- 安澜的不朽盾崩为尘埃，赤锋矛断为星屑！`,
-      `- 蒲魔王的噬神之种归于寂灭，再无重生可能！`,
-      `- 无殇的万法不侵之躯被永恒洞穿，法则根基尽毁！`,
-      `- 俞陀的万古不朽身化为光雨，真灵永寂！`,
-      `- 赤王的时间长河被彻底蒸干，再无岁月痕迹！`,
-      ``,
-      `过去无人记得他们曾存在`,
-      `现在无人知晓他们曾降临`,
-      `未来无人能寻他们之踪迹`,
-      `就连诸天万界的史书典籍中，关于他们的记载也瞬间化为空白！`,
-      ``,
-      `莫晓羽转身望向${player.名号}，眸光转缓：`,
-      `「帝路漫漫，此劫已过，前路珍重...」`,
-      `伟岸身影渐淡，唯有一道符咒虚影守护在${player.名号}头顶`,
-      `流转着镇压万古轮回的无上伟力！`
+      `时间长河上游，莫晓羽踏破万古而来！`,
+      `【星指维宇崩】无尽维宙汇于一指，将本轮阻道之王尽数击退！`,
+      `这道庇护已经耗尽；余下帝劫中，异域诸王仍会接连降临。`,
     );
-
-    await Write_player(e.user_id, player);
-    return msgs;                             // 跳过 20 次攻击
+    return msgs;
   }
 
-  /* ====== 无庇护 → 原 20 次轮流攻击 ====== */
   const attackers = [
     { name: '昆谛', quote: '炼仙壶下，万道成灰！', mult: 1.0 },
     { name: '安澜', quote: '赤锋矛破九天，不朽盾镇轮回！', mult: 0.9 },
     { name: '蒲魔王', quote: '噬神之种，葬尔道果！', mult: 1.1 },
     { name: '无殇', quote: '万法不侵，帝路断魂！', mult: 1.3 },
     { name: '俞陀', quote: '万古成空，唯我不朽！', mult: 1.2 },
-    { name: "瞿忡", quote: "葬灭古今，唯我永恒！", mult: 1.4},
-    { name: "刀王", quote: "一刀断万古！", mult: 1.5 },
-    { name: '赤王', quote: '时间长河，葬汝真灵！', mult: 0.8 }
+    { name: '瞿忡', quote: '葬灭古今，唯我永恒！', mult: 1.4 },
+    { name: '刀王', quote: '一刀断万古！', mult: 1.5 },
+    { name: '赤王', quote: '时间长河，葬汝真灵！', mult: 0.8 },
   ];
+  const kingRatio = getKingToEmperorTribulationRatio();
 
-  for (let i = 0; i < 20; i++) {
-    /* ---- 每 5 次普攻后插入一次「八大联手一击」 ---- */
-    if (i > 0 && i % 5 === 0) {
-      msgs.push(
-        ``,
-        `【八大不朽之王·联手一击】`,
-        `「诸王合力，断你帝路！」`
-      );
-      // 8 人同时出手，基础倍率 1.5
-      let jointBase = player.攻击 * 0.3 * 8 * 1.5 * diffRate;
-      const { damage: jointDmg } = this.applyGongfaEffects(player, jointBase, {});
-      player.当前血量 = Math.max(1, player.当前血量 - jointDmg);
-      msgs.push(
-      `八王合击，打出 ${bigNumberTransform(jointDmg)} 点道伤！`,
-      `剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`
-      );
-      if (player.当前血量 <= 1) break;
-    }
-
-    /* ---- 常规轮流单挑 ---- */
-    const atk = attackers[i % attackers.length];
-    let base = player.攻击 * 0.3 * atk.mult * diffRate;
-    const { damage: dmg } = this.applyGongfaEffects(player, base, {});
-    player.当前血量 = Math.max(1, player.当前血量 - dmg);
-    msgs.push(`${atk.name}破空而至，阻道帝路：「${atk.quote}」`);
-    msgs.push(`打出恐怖一击，造成${bigNumberTransform(dmg)}点道伤！`);
-    if (player.当前血量 <= 1) break;
+  if (plan.joint) {
+    const jointBase = player.攻击 * 0.3 * attackers.length * 1.5 * diffRate * kingRatio;
+    const { damage, messages } = await this.applyTribulationDamage(player, jointBase, {});
+    player.当前血量 = Math.max(1, player.当前血量 - damage);
+    msgs.push(
+      `【八大不朽之王·联手一击】「诸王合力，断你帝路！」`,
+      `八王合击造成 ${bigNumberTransform(damage)} 点道伤！`,
+      ...messages,
+      `剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`,
+    );
+    return msgs;
   }
 
+  for (let i = attackers.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [attackers[i], attackers[j]] = [attackers[j], attackers[i]];
+  }
+  const selected = attackers.slice(0, plan.count);
+  msgs.push(`本轮共有 ${selected.length} 名不朽之王同时阻道！`);
+  for (const attacker of selected) {
+    const base = player.攻击 * 0.3 * attacker.mult * diffRate * kingRatio;
+    const { damage, messages } = await this.applyTribulationDamage(player, base, {});
+    player.当前血量 = Math.max(1, player.当前血量 - damage);
+    msgs.push(
+      `${attacker.name}破空而至：「${attacker.quote}」造成${bigNumberTransform(damage)}点道伤！`,
+      ...messages,
+    );
+    if (player.当前血量 <= 1) break;
+  }
+  msgs.push(`剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`);
   return msgs;
 }
 
@@ -4510,64 +4538,69 @@ async command_datitingtianji(e) {
   return true;
 }
 
-/**
- * #库洛牌祈愿 —— 为他人施加一次性的渡劫区间减伤 buff
- * 限制：发起者每日 3 次；目标单次受益 -5 区间偏移（向安全端）
- * buff 存储在目标 player.库洛牌祈愿，下次对方渡劫时自动消耗
- */
+/** #库洛牌祈愿 —— 以高额资源与 48 小时虚弱为代价，为他人施加一次性渡劫偏移。 */
 async command_kuluoqiyuan(e) {
   if (!e.isGroup) return e.reply('修仙：请在群聊中使用库洛牌祈愿');
 
   const fromQQ = e.user_id.toString().replace('qg_', '');
   if (!await existplayer(fromQQ)) return e.reply('你还未踏入修仙路');
-  const caster = await Read_player(fromQQ);
-  if (!canUseClowWish(caster)) {
-    return e.reply('只有木之本樱、星之杖·木之本樱或梦之杖·木之本樱才能使用库洛牌祈愿。');
-  }
 
-  // 解析 @ 目标
   const rawTarget = e.at && e.at !== 'all' ? String(e.at).replace('qg_', '') : '';
   if (!rawTarget) return e.reply('用法：#库洛牌祈愿 @玩家\n（例如：#库洛牌祈愿 @叶凡）');
   if (rawTarget === fromQQ) return e.reply('不能为自己祈愿，渡劫终须独自面对。');
-
   if (!await existplayer(rawTarget)) return e.reply('对方未踏入修仙路，祈愿无法传达。');
 
-  // 每日 3 次限制（Redis）
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  const counterKey = `xiuxian:kuluo_wish:${fromQQ}:${today}`;
-  let used = Number(await redis.get(counterKey)) || 0;
-  if (used >= 3) {
-    return e.reply([
-      `【库洛牌·祈愿已达上限】`,
-      `今日已祈愿 ${used} 次（上限 3 次）`,
-      `明日再来吧，愿星光为你蓄势。`
-    ].join('\n'));
-  }
+  const now = Date.now();
+  const lockIds = [fromQQ, rawTarget].sort();
+  const result = await withPlayerMutationLock(lockIds[0], () =>
+    withPlayerMutationLock(lockIds[1], async () => {
+      const caster = await Read_player(fromQQ);
+      if (!canUseClowWish(caster)) {
+        return { ok: false, message: '只有木之本樱一脉才能发动库洛牌祈愿。' };
+      }
 
-  // 固定 buff 值 -5（向安全端偏移 5 点）
-  const 区间偏移 = -5;
-  const targetPlayer = await Read_player(rawTarget);
+      const weaknessRemaining = getClowWishWeaknessRemainingMs(caster, now);
+      if (weaknessRemaining > 0) {
+        const hours = Math.floor(weaknessRemaining / 3600000);
+        const minutes = Math.ceil((weaknessRemaining % 3600000) / 60000);
+        return { ok: false, message: `愿力反噬尚未平息，仍需休养${hours}小时${minutes}分钟。` };
+      }
 
-  // 若目标已有 buff，覆盖（最新一次生效）
-  targetPlayer.库洛牌祈愿 = {
-    区间偏移,
-    来源: fromQQ,
-    时间: Date.now(),
-    一次性: true,
-  };
-  await Write_player(rawTarget, targetPlayer);
+      refreshSpiritHeart(caster, now);
+      const costStatus = inspectClowWishCosts(caster);
+      if (!costStatus.ok) {
+        const missing = costStatus.missing.map(item =>
+          `${item.field}：${bigNumberTransform(item.current)}/${bigNumberTransform(item.cost)}`
+        );
+        return { ok: false, message: ['【库洛牌祈愿·代价不足】', ...missing].join('\n') };
+      }
 
-  // 计数 +1
-  await redis.set(counterKey, String(used + 1), 'EX', 60 * 60 * 25); // 25h 防止跨日漂移
+      const targetPlayer = await Read_player(rawTarget);
+      const casterBefore = JSON.parse(JSON.stringify(caster));
+      consumeClowWishCosts(caster, now);
+      targetPlayer.库洛牌祈愿 = {
+        区间偏移: -5,
+        来源: fromQQ,
+        时间: now,
+        一次性: true,
+      };
 
-  const 剩余 = 3 - used - 1;
+      await Write_player(fromQQ, caster);
+      try {
+        await Write_player(rawTarget, targetPlayer);
+      } catch (error) {
+        await Write_player(fromQQ, casterBefore);
+        throw error;
+      }
+      return { ok: true, targetName: targetPlayer.名号 };
+    })
+  );
+
+  if (!result.ok) return e.reply(result.message);
   await e.reply([
-    `【库洛牌·祈愿成功】`,
-    `${targetPlayer.名号}，你身上已被星光庇佑。`,
-    `下次渡劫时，本场雷劫随机区间向安全端偏移 ${Math.abs(区间偏移)} 点。`,
-    `（buff 为一次性，对方渡劫即消耗）`,
-    ``,
-    `你今日剩余祈愿次数：${剩余}/3`
+    `【库洛牌祈愿】${result.targetName}已被星光庇佑，下一次渡劫区间向安全端偏移5点。`,
+    `代价：心神${CLOW_WISH_COSTS.心神}、元神${bigNumberTransform(CLOW_WISH_COSTS.元神)}、寿元${bigNumberTransform(CLOW_WISH_COSTS.寿元)}、修为${bigNumberTransform(CLOW_WISH_COSTS.修为)}、血气${bigNumberTransform(CLOW_WISH_COSTS.血气)}、仙道潜力${CLOW_WISH_COSTS.仙道潜力}。`,
+    `愿力反噬：48小时内攻防速度降低50%，期间不可再次祈愿。`,
   ].join('\n'));
   return true;
 }

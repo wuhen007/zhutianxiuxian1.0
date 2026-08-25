@@ -118,6 +118,67 @@ export function canUseClowWish(player) {
   return SAKURA_ROOT_NAMES.has(player?.灵根?.name);
 }
 
+export const CLOW_WISH_COSTS = Object.freeze({
+  心神: 30,
+  元神: 100_000_000,
+  寿元: 1_000_000_000,
+  修为: 10_000_000_000,
+  血气: 10_000_000_000,
+  仙道潜力: 1_000,
+});
+
+export const CLOW_WISH_WEAKNESS_MS = 48 * 60 * 60 * 1000;
+
+function clowWishResource(player, field) {
+  if (field === '寿元') {
+    const suppressed = Number(player?.压制寿元);
+    if (Number.isFinite(suppressed) && suppressed > 0) return Math.floor(suppressed);
+  }
+  return Math.max(0, Math.floor(Number(player?.[field]) || 0));
+}
+
+export function getClowWishWeaknessRemainingMs(player, now = Date.now()) {
+  return Math.max(0, (Number(player?.库洛牌祈愿虚弱至) || 0) - now);
+}
+
+export function inspectClowWishCosts(player) {
+  const balances = Object.fromEntries(
+    Object.keys(CLOW_WISH_COSTS).map(field => [field, clowWishResource(player, field)])
+  );
+  const missing = Object.entries(CLOW_WISH_COSTS)
+    .filter(([field, cost]) => balances[field] < cost)
+    .map(([field, cost]) => ({ field, cost, current: balances[field] }));
+  return { ok: missing.length === 0, balances, missing };
+}
+
+export function consumeClowWishCosts(player, now = Date.now()) {
+  const status = inspectClowWishCosts(player);
+  if (!status.ok) return status;
+
+  for (const field of ['心神', '元神', '修为', '血气', '仙道潜力']) {
+    player[field] = clowWishResource(player, field) - CLOW_WISH_COSTS[field];
+  }
+
+  const remainingLifespan = status.balances.寿元 - CLOW_WISH_COSTS.寿元;
+  const suppressed = Number(player?.压制寿元);
+  if (Number.isFinite(suppressed) && suppressed > 0) {
+    player.压制寿元 = remainingLifespan;
+    player.寿元 = Math.min(Math.max(0, Number(player.寿元) || 0), remainingLifespan, 9999);
+  } else {
+    player.寿元 = remainingLifespan;
+  }
+  player.库洛牌祈愿虚弱至 = now + CLOW_WISH_WEAKNESS_MS;
+  return { ...status, expiresAt: player.库洛牌祈愿虚弱至 };
+}
+
+export function getImmortalKingAssaultPlan(strike, random = Math.random) {
+  const wave = Math.trunc(Number(strike) || 0);
+  if (wave <= 10) return { active: false, joint: false, count: 0 };
+  if (wave >= 30) return { active: true, joint: true, count: 8 };
+  const roll = Math.max(0, Math.min(0.999999999999, Number(random()) || 0));
+  return { active: true, joint: false, count: Math.floor(roll * 4) + 1 };
+}
+
 export const ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS = Object.freeze({
   斩道: 30,
   圣人: 45,
@@ -125,8 +186,30 @@ export const ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS = Object.freeze({
   大圣: 90,
   准帝: 120,
   大帝: 150,
+  破王成帝: 240,
   逆活: 180,
 });
+
+export function consumeKingTribulationClowWish(player) {
+  const wish = player?.库洛牌祈愿;
+  if (!wish) return { triggered: false, source: '' };
+  delete player.库洛牌祈愿;
+  return { triggered: true, source: String(wish.来源 || '') };
+}
+
+export function applyKingTribulationClowBacklash(player) {
+  player.道伤 = Math.max(0, Number(player.道伤) || 0) + 5;
+  player.当前血量 = Math.max(1, Math.floor((Number(player.当前血量) || 1) * 0.5));
+  return player;
+}
+
+export function getKingToEmperorTribulationRatio() {
+  return Math.max(
+    1,
+    ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.破王成帝
+      / ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大帝
+  );
+}
 
 export const ZHETIAN_QUASI_EMPEROR_ERA_DIFFICULTY_RATES = Object.freeze([
   0.3,
