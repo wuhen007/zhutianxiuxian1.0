@@ -674,7 +674,7 @@ async batijuexing(e) {
             // 检查霸体大圆满标志
             if (player.学习的功法?.includes("霸拳真解")&&player.霸体祖星洗礼) {
                 player.灵根 = {
-                    "id": 7010013,
+                    "id": 70049,
                     "name": "大成·苍天霸体", 
                     "type": "大成霸体",
                     "归类": "遮天位面",

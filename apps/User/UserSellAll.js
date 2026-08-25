@@ -55,6 +55,7 @@ import {
 } from '../../model/secretPlaceAddiction.js';
 import { shouldTriggerDungeonMalignantEvent } from '../../model/dungeonMalignantEvent.js';
 import { normalizeSellableEquipmentQuality } from '../../model/equipmentSale.js';
+import { replyOfficialMessage } from '../../model/officialMessage.js';
 import { AppName } from '../../app.config.js';
 import {
   addJuelingAwareLifespan,
@@ -1467,10 +1468,25 @@ async Sell_all_comodities(e) {
     formattedMsg.push(`总价值: ${this.formatNumber(totalValue)} 灵石`);
     formattedMsg.push(`回复[1]确认出售，回复[0]取消`);
     
-    e.reply(await get_log_img(formattedMsg.join('\n')));
-    
+    const preview = await get_log_img(formattedMsg.join('\n'));
     // 设置上下文等待确认
     this.setContext('noticeSellAllGoods');
+    await replyOfficialMessage(e, {
+        content: [preview],
+        markdown: [
+            '## 一键出售确认',
+            '',
+            `**物品数量：** ${goodsNum} 件`,
+            `**预估总价：** ${this.formatNumber(totalValue)} 灵石`,
+            '',
+            '> 请核对上方清单后确认，本次操作会出售清单内全部物品。',
+        ].join('\n'),
+        text: preview,
+        buttons: [[
+            { text: '确认出售', command: '1' },
+            { text: '取消', command: '0' },
+        ]],
+    });
     return false;
 }
 

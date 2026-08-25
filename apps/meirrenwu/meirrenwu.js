@@ -21,6 +21,7 @@ import {
 } from '../../model/dailyTask.js';
 import { getMinggeEffects, grantMinggePotential } from '../../model/mingge.js';
 import { recordWenXianTaskProgress, recordWenXianTrial } from '../../model/wenxianling.js';
+import { replyOfficialMessage } from '../../model/officialMessage.js';
 import { WenXianLing } from '../WenXianLing/WenXianLing.js';
 import {
     acquireRedisLock,
@@ -30,6 +31,75 @@ import {
 
 const DAILY_TASK_LOCK_KEY = 'xiuxian:lock:daily_task_records';
 const DAILY_TASK_LOCK_TTL_SECONDS = 60;
+const DAILY_REWARD_READY_BUTTONS = [[
+    { text: '领取每日奖励', command: '#领取每日奖励' },
+    { text: '查看任务', command: '#我的任务' },
+]];
+const DAILY_REWARD_CLAIMED_BUTTONS = [[
+    { text: '查看任务', command: '#我的任务' },
+    { text: '修仙签到', command: '#修仙签到' },
+]];
+
+function getDailyFinalReward(record, player) {
+    const level = Number(record?.等级) || 0;
+    const cultivationLevel = (Number(player?.level_id) || 0) + (Number(player?.Physique_id) || 0);
+    return {
+        amount: level * cultivationLevel * 8000,
+        taskExp: (level * 5 + cultivationLevel) * 12,
+        keys: level,
+        draws: 3,
+    };
+}
+
+function buildDailyRewardReadyMarkdown(reward, potentialGain, progressLines = [], settledReward) {
+    const settledLines = settledReward?.tasks ? [
+        '',
+        '## 本次提交已发放',
+        '',
+        `- 完成任务 x ${settledReward.tasks}`,
+        `- 修为 x ${settledReward.amount}`,
+        `- 血气 x ${settledReward.amount}`,
+        `- 灵石 x ${settledReward.amount}`,
+        `- 任务经验 x ${settledReward.taskExp}`,
+    ] : [];
+    return [
+        '# 每日修行结算',
+        '',
+        '> 今日所有任务均已完成，可以领取奖励。',
+        '',
+        '**完成进度：** 3 / 3',
+        `**仙道潜力：** +${potentialGain}`,
+        ...progressLines,
+        ...settledLines,
+        '',
+        '## 待领取奖励',
+        '',
+        `- 修为 x ${reward.amount}`,
+        `- 血气 x ${reward.amount}`,
+        `- 灵石 x ${reward.amount}`,
+        `- 任务经验 x ${reward.taskExp}`,
+        `- 秘境之匙 x ${reward.keys}`,
+        `- 每日抽奖次数 x ${reward.draws}`,
+    ].join('\n');
+}
+
+function buildDailyRewardClaimedMarkdown(reward, passReward) {
+    return [
+        '# 每日奖励已领取',
+        '',
+        '> 今日修行奖励已经结算。',
+        '',
+        '## 获得奖励',
+        '',
+        `- 修为 x ${reward.amount}`,
+        `- 血气 x ${reward.amount}`,
+        `- 灵石 x ${reward.amount}`,
+        `- 任务经验 x ${reward.taskExp}`,
+        `- 秘境之匙 x ${reward.keys}`,
+        `- 每日抽奖次数 x ${reward.draws}`,
+        `- ${passReward}`,
+    ].join('\n');
+}
 
 function syncLingshiProgress(record, player) {
     const progress = getDailyTaskLingshiProgress(player);
@@ -161,7 +231,18 @@ export class meirrenwu extends plugin {
         const i = findDailyTaskIndex(renwu, usr_qq);
         if (i < 0) return e.reply('请先发送 #获取每日任务 接取今日任务。');
         if (isDailyTaskComplete(renwu[i])) {
-            return e.reply(renwu[i].renwu === 2 ? '今日奖励已经领取。' : '全部任务已完成，请发送 #领取每日奖励。');
+            if (renwu[i].renwu === 2) return e.reply('今日奖励已经领取。');
+            const completedPlayer = await Read_player(usr_qq);
+            const dateKey = getDailyTaskDateKey();
+            const potentialGain = Number(completedPlayer._rewardClaims?.[`daily-task:${dateKey}:potential`]?.amount) || 0;
+            return replyOfficialMessage(e, {
+                markdown: buildDailyRewardReadyMarkdown(
+                    getDailyFinalReward(renwu[i], completedPlayer),
+                    potentialGain,
+                ),
+                text: '全部任务已完成，请发送 #领取每日奖励。',
+                buttons: DAILY_REWARD_READY_BUTTONS,
+            });
         }
         if (renwu[i].wancheng1 === 0 && renwu[i].wancheng2 === 0 && renwu[i].wancheng3 === 0) {
             return e.reply('请先发送 #获取每日任务 接取今日任务。');
@@ -172,6 +253,8 @@ export class meirrenwu extends plugin {
         const dateKey = getDailyTaskDateKey();
 
         let m = '';
+        let readyMarkdown = '';
+        let completedTasks = 0;
         let dengji = renwu[i].等级
         //这里是任务提交需要的东西
         //需要消耗：(任务等级*5+player炼气+player练体)*5000个灵石
@@ -195,6 +278,7 @@ export class meirrenwu extends plugin {
         if (renwu[i].jilu1 > xuyao1 - 1&& renwu[i].wancheng1 == 1) {
             renwu[i].wancheng1 = 2;
             renwu[i].jilu1 = 0;
+            completedTasks += 1;
             await grantTaskStepReward(usr_qq, dateKey, 1, jiangli);
             renwu[i].经验 += jingyan
             m += `你完成了任务1,获得了：\n1.修为*${jiangli}\n2.血气*${jiangli}\n3.灵石*${jiangli}\n4.任务经验*${jingyan}\n`;
@@ -202,6 +286,7 @@ export class meirrenwu extends plugin {
         if (renwu[i].jilu2 > xuyao2 - 1&& renwu[i].wancheng2 == 1) {
             renwu[i].wancheng2 = 2;
             renwu[i].jilu2 = 0;
+            completedTasks += 1;
             await grantTaskStepReward(usr_qq, dateKey, 2, jiangli);
             renwu[i].经验 += jingyan
             m += `你完成了任务2,获得了：\n1.修为*${jiangli}\n2.血气*${jiangli}\n3.灵石*${jiangli}\n4.任务经验*${jingyan}\n`;
@@ -209,6 +294,7 @@ export class meirrenwu extends plugin {
         if (renwu[i].jilu3 > xuyao3 - 1 && renwu[i].wancheng3 == 1) {
             renwu[i].wancheng3 = 2;
             renwu[i].jilu3 = 0;
+            completedTasks += 1;
             await grantTaskStepReward(usr_qq, dateKey, 3, jiangli);
             renwu[i].经验 += jingyan
             m += `你完成了任务3,获得了：\n1.修为*${jiangli}\n2.血气*${jiangli}\n3.灵石*${jiangli}\n4.任务经验*${jingyan}\n`;
@@ -238,6 +324,23 @@ export class meirrenwu extends plugin {
             if (weeklyTask.changed) {
                 m += `\n每周任务：每日任务 ${weeklyTask.weekly.progress.dailyTask}/5。`;
             }
+            const progressLines = [];
+            if (passTrial.changed) {
+                progressLines.push(`**问仙试炼：** 每日任务 ${passTrial.trial.dailyTasks}/7`);
+            }
+            if (weeklyTask.changed) {
+                progressLines.push(`**每周任务：** 每日任务 ${weeklyTask.weekly.progress.dailyTask}/5`);
+            }
+            readyMarkdown = buildDailyRewardReadyMarkdown(
+                getDailyFinalReward(renwu[i], rewardPlayer),
+                potentialGain,
+                progressLines,
+                {
+                    tasks: completedTasks,
+                    amount: jiangli * completedTasks,
+                    taskExp: jingyan * completedTasks,
+                },
+            );
         }
         //这里是经验升级的地方，你如果要是需要改记得给底下还有俩也改了，一般来说不用改，要的挺多的，等级巨难升
         //计算公式：(任务等级*1000加2333)*5
@@ -248,6 +351,13 @@ export class meirrenwu extends plugin {
         }
         await Write_renwu(renwu);
         //最后发送任务完成状态
+        if (readyMarkdown) {
+            return replyOfficialMessage(e, {
+                markdown: readyMarkdown,
+                text: m,
+                buttons: DAILY_REWARD_READY_BUTTONS,
+            });
+        }
         if (m) return e.reply(m);
         return e.reply('你还有任务没完成哦~');
         });
@@ -310,14 +420,15 @@ export class meirrenwu extends plugin {
         //看你怎么弄了，反正给的东西是不多的，巨少！(估计狗都嫌弃)
         //这个是获得的灵石，修为，血气
         //计算公式：(任务等级*(player炼气+player练体))*8000
-        let jiangli = (dengji * (player.level_id + player.Physique_id)) * 8000
+        const reward = getDailyFinalReward(renwu[i], player);
+        let jiangli = reward.amount
         //这个是获得的物品的数量
         //计算公式：任务等级
-        let wupin = dengji
+        let wupin = reward.keys
         //这个是任务经验，任务等级越高获得的东西越多，但是这个等级挺难升的，不用改，问题不大
         //(我自己测试是64练气54炼体，也要做上小一周才能升一级，而且越往后越难升)
         //计算公式：((任务等级*5)+player炼气+player练体)*12
-        let jingyan = ((dengji * 5) + player.level_id + player.Physique_id) * 12
+        let jingyan = reward.taskExp
         const rewardKey = `daily-task:${getDailyTaskDateKey()}:final`;
         await Add_修为(usr_qq, jiangli, { idempotencyKey: `${rewardKey}:xiuwei` });
         await Add_血气(usr_qq, jiangli, { idempotencyKey: `${rewardKey}:xueqi` });
@@ -364,7 +475,11 @@ export class meirrenwu extends plugin {
             : passResult.unlocked === false
                 ? `7.问仙道痕*${passResult.added}（暂存${passResult.pendingExp}/1000）`
                 : `7.问仙令经验*${passResult.added}${passResult.levelUp ? `（等级提升至${passResult.newLevel}级）` : ''}`;
-        return e.reply(`你领取了每日任务奖励，获得了：\n1.修为*${jiangli}\n2.血气*${jiangli}\n3.灵石*${jiangli}\n4.任务经验*${jingyan}\n5.秘境之匙*${wupin}个\n6.每日抽奖次数*3次\n${passMessage}\n`);
+        return replyOfficialMessage(e, {
+            markdown: buildDailyRewardClaimedMarkdown(reward, passMessage.replace(/^7\./, '')),
+            text: `你领取了每日任务奖励，获得了：\n1.修为*${jiangli}\n2.血气*${jiangli}\n3.灵石*${jiangli}\n4.任务经验*${jingyan}\n5.秘境之匙*${wupin}个\n6.每日抽奖次数*3次\n${passMessage}\n`,
+            buttons: DAILY_REWARD_CLAIMED_BUTTONS,
+        });
         });
     }
 }
