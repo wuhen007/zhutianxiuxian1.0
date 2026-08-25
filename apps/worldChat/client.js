@@ -243,6 +243,15 @@ export class WorldChatClient {
     this.raidHandler = null;
     this.backfillPromise = null;
     this.deliveryChain = Promise.resolve();
+    this.deliveryPending = 0;
+    this.deliveryQueueLimit = Math.max(
+      1,
+      Math.trunc(Number(options.deliveryQueueLimit) || 200)
+    );
+    const configuredRetries = Number(options.deliveryMaxRetries);
+    this.deliveryMaxRetries = Number.isFinite(configuredRetries)
+      ? Math.max(0, Math.trunc(configuredRetries))
+      : 5;
     this.deliveryRetryBaseMs = Math.max(
       10,
       Number(options.deliveryRetryBaseMs) || 1_000
@@ -702,16 +711,23 @@ export class WorldChatClient {
   }
 
   enqueueDelivery(message) {
+    if (this.deliveryPending >= this.deliveryQueueLimit) {
+      return Promise.reject(new Error('delivery_queue_full'));
+    }
+    this.deliveryPending += 1;
     const delivery = this.deliveryChain.then(() =>
       this.deliverWithRetry(message)
-    );
+    ).finally(() => {
+      this.deliveryPending = Math.max(0, this.deliveryPending - 1);
+    });
     this.deliveryChain = delivery.catch(() => {});
     return delivery;
   }
 
   async deliverWithRetry(message) {
     let delay = this.deliveryRetryBaseMs;
-    for (;;) {
+    for (let retry = 0; ; retry += 1) {
+      if (!this.cfg.enable) throw new Error('delivery_disabled');
       try {
         await this.deliver(message);
         if (this.lastError?.startsWith('delivery_failed:')) {
@@ -720,7 +736,7 @@ export class WorldChatClient {
         return;
       } catch (error) {
         this.lastError = `delivery_failed:${error.message}`;
-        if (!this.cfg.enable) throw error;
+        if (!this.cfg.enable || retry >= this.deliveryMaxRetries) throw error;
         await new Promise((resolve) => {
           const timer = setTimeout(resolve, delay);
           timer.unref?.();

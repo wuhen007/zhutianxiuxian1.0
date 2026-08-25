@@ -383,3 +383,33 @@ test('实时投递失败会自动重试且不提前收取序号', async (t) => {
   assert.equal(attempts, 2);
   assert.equal(client.cfg.last_seen_seq, 1);
 });
+
+test('永久投递失败会停止重试并限制等待队列', async () => {
+  const keepAlive = setInterval(() => {}, 100);
+  const client = new WorldChatClient({
+    config: clientConfig('ws://127.0.0.1:1', 'bounded_client', secret(), 'group_bounded'),
+    persist: false,
+    deliveryRetryBaseMs: 10,
+    deliveryMaxRetries: 1,
+    deliveryQueueLimit: 1,
+  });
+  let attempts = 0;
+  client.setMessageHandler(() => {
+    attempts += 1;
+    throw new Error('永久失败');
+  });
+
+  try {
+    const first = client.enqueueDelivery({ id: 'm1', seq: 1 });
+    await assert.rejects(
+      client.enqueueDelivery({ id: 'm2', seq: 2 }),
+      /delivery_queue_full/
+    );
+    await assert.rejects(first, /永久失败/);
+    assert.equal(attempts, 2);
+    assert.equal(client.deliveryPending, 0);
+  } finally {
+    clearInterval(keepAlive);
+    client.close();
+  }
+});

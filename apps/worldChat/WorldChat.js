@@ -33,8 +33,17 @@ import {
   createWorldWebLink,
   registerWorldWebController,
 } from '../../model/endlessWebServer.js';
+import { replyOfficialMessage } from '../../model/officialMessage.js';
 
 const USER_COOLDOWN_MS = 5_000;
+const PLAYER_READ_BATCH_SIZE = 16;
+const WORLD_CACHE_LIMIT = 2_000;
+const WORLD_GROUP_CACHE_LIMIT = 500;
+const realmStatsState = globalThis[Symbol.for('zhutianxiuxian.worldChatRealmStats')] ??= {
+  owner: null,
+  timer: null,
+  running: false,
+};
 const TRADE_NAJIE_TYPES = [
   '装备', '丹药', '道具', '功法', '草药', '食材', '盒子',
   '材料', '仙宠', '仙宠口粮', '宝石',
@@ -52,6 +61,12 @@ const TRADE_ITEM_POOLS = [
   ['宝石', ['baoshi_list']],
   ['装备', ['equipment_list']],
 ];
+
+function setBoundedMap(map, key, value, limit = WORLD_CACHE_LIMIT) {
+  if (map.has(key)) map.delete(key);
+  map.set(key, value);
+  while (map.size > limit) map.delete(map.keys().next().value);
+}
 
 function resolveTradeItemType(name, najie = {}) {
   for (const type of TRADE_NAJIE_TYPES) {
@@ -239,16 +254,16 @@ async function localRealmStats() {
   let max_mijing = 0;
   let max_xiangu = 0;
   let max_huafen = 0;
-  await Promise.all(
-    files.map(async (file) => {
+  for (let offset = 0; offset < files.length; offset += PLAYER_READ_BATCH_SIZE) {
+    await Promise.all(files.slice(offset, offset + PLAYER_READ_BATCH_SIZE).map(async (file) => {
       try {
         const player = JSON.parse(await fs.readFile(path.join(__PATH.player_path, file), 'utf8'));
         max_mijing = Math.max(max_mijing, Number(player.mijinglevel_id) || 0);
         max_xiangu = Math.max(max_xiangu, Number(player.xiangulevel_id) || 0);
         max_huafen = Math.max(max_huafen, Number(player.huafenlevel_id) || 0);
       } catch {}
-    })
-  );
+    }));
+  }
   return { players: files.length, max_mijing, max_xiangu, max_huafen };
 }
 
@@ -297,7 +312,6 @@ export class WorldChat extends plugin {
     this.pendingConfirmations = new Map();
     this.groupSenders = new Map();
     this.deliveredGroups = new Map();
-    this.tradeUsers = new Map();
     this.tradeLocks = new Map();
     this.tradeLedger = null;
     this.completedTradeNotices = new Set();
@@ -309,12 +323,24 @@ export class WorldChat extends plugin {
       });
     });
     client.connect();
-    this.refreshRealmStats();
-    this.realmStatsTimer = setInterval(() => {
-      this.refreshRealmStats();
-      this.reconcileTradeLedger();
-    }, 60_000);
-    this.realmStatsTimer.unref?.();
+    realmStatsState.owner = this;
+    if (realmStatsState.timer) clearInterval(realmStatsState.timer);
+    const refresh = async () => {
+      if (realmStatsState.running) return;
+      realmStatsState.running = true;
+      const owner = realmStatsState.owner;
+      try {
+        await Promise.allSettled([
+          owner.refreshRealmStats(),
+          owner.reconcileTradeLedger(),
+        ]);
+      } finally {
+        realmStatsState.running = false;
+      }
+    };
+    refresh();
+    realmStatsState.timer = setInterval(refresh, 60_000);
+    realmStatsState.timer.unref?.();
   }
 
   readyBot() {
@@ -361,7 +387,7 @@ export class WorldChat extends plugin {
       }
     });
     if (failures.length) {
-      this.deliveredGroups.set(message.id, delivered);
+      setBoundedMap(this.deliveredGroups, message.id, delivered, 200);
       throw failures[0];
     }
     this.deliveredGroups.delete(message.id);
@@ -494,7 +520,6 @@ export class WorldChat extends plugin {
   rememberTradeUser(e) {
     const userId = String(e.user_id || '');
     const tag = client.userTag(userId);
-    this.tradeUsers.set(tag, userId);
     return { userId, tag };
   }
 
@@ -649,8 +674,11 @@ export class WorldChat extends plugin {
 
   rememberGroupSender(e) {
     if (!e?.isGroup || !e.group_id || typeof e.reply !== 'function') return;
-    this.groupSenders.set(String(e.group_id), (message) =>
-      e.reply(message, false)
+    setBoundedMap(
+      this.groupSenders,
+      String(e.group_id),
+      (message) => e.reply(message, false),
+      WORLD_GROUP_CACHE_LIMIT
     );
   }
 
@@ -759,7 +787,7 @@ export class WorldChat extends plugin {
     const cooldownKey = String(userId);
     const wait = USER_COOLDOWN_MS - (Date.now() - (this.cooldowns.get(cooldownKey) || 0));
     if (wait > 0) return { ok: false, reason: `世界传音尚在回响，请等待 ${Math.ceil(wait / 1000)} 秒` };
-    this.cooldowns.set(cooldownKey, Date.now());
+    setBoundedMap(this.cooldowns, cooldownKey, Date.now());
     const result = await client.pub(text, {
       name: session.displayName || '无名道友',
       tag: client.userTag(userId),
@@ -819,7 +847,7 @@ export class WorldChat extends plugin {
       e.reply(`世界频道传音尚在回响，请等待 ${Math.ceil(wait / 1000)} 秒`);
       return true;
     }
-    this.cooldowns.set(cooldownKey, Date.now());
+    setBoundedMap(this.cooldowns, cooldownKey, Date.now());
 
     const player = await Read_player(e.user_id).catch(() => null);
     const title = getWorldChatTitle(player);
@@ -883,7 +911,6 @@ export class WorldChat extends plugin {
     const validation = validateTradeOffer(give, want);
     if (!validation.ok) return { ok: false, reason: `报价被诸天规则拦截：${validation.reason}` };
     const tag = client.userTag(userId);
-    this.tradeUsers.set(tag, String(userId));
     const pending = `P_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     try {
       await this.prepareTradeEscrow(
@@ -922,7 +949,26 @@ export class WorldChat extends plugin {
       displayName: options.displayName || senderName(e),
       anonymous: options.anonymous === true,
     });
-    return e.reply(result.ok ? `${result.message}${options.anonymous ? '\n发布身份：匿名道友' : `\n发布人：${tradeDisplayName(options.displayName || senderName(e))}`}` : result.reason);
+    if (!result.ok) return e.reply(result.reason);
+    const identity = options.anonymous
+      ? '匿名道友'
+      : tradeDisplayName(options.displayName || senderName(e));
+    return replyOfficialMessage(e, {
+      markdown: [
+        '# 跨服交易已发布',
+        '',
+        `**交易码：** ${result.trade.code}`,
+        `**目标位面：** ${targetServerId}`,
+        `**提供：** ${tradeSummary(result.trade.give)}`,
+        `**需求：** ${tradeSummary(result.trade.want)}`,
+        `**发布人：** ${identity}`,
+      ].join('\n'),
+      text: `${result.message}\n发布${options.anonymous ? '身份' : '人'}：${identity}`,
+      buttons: [[
+        { text: '交易列表', command: '#跨服交易 列表' },
+        { text: '撤销交易', command: `#跨服交易 取消 ${result.trade.code}` },
+      ]],
+    });
   }
 
   async acceptTradeForUser(userId, code, options = {}) {
@@ -932,7 +978,6 @@ export class WorldChat extends plugin {
     const trade = list.trades?.find((item) => item.code === normalizedCode);
     if (!list.ok || !trade) return { ok: false, reason: `找不到交易 ${normalizedCode}` };
     const tag = client.userTag(userId);
-    this.tradeUsers.set(tag, String(userId));
     try {
       await this.prepareTradeEscrow(normalizedCode, userId, 'buyer', trade.want, trade.give);
       const result = await client.acceptTrade(normalizedCode, tag, {
@@ -974,7 +1019,7 @@ export class WorldChat extends plugin {
     const anonymousPurchase = /^匿名购买\s+/i.test(raw);
     const tradeInput = raw.replace(/^(?:匿名发布|匿名购买)\s+/i, '').trim();
     if (!raw || raw === '规则') {
-      return e.reply([
+      const text = [
         '【跨服交易规则】',
         '允许：灵石、源石、普通纳戒物品，以物易物或货币交换。',
         '禁止：圣法碎片、至宝、帝兵及超出单笔上限的数量。',
@@ -986,7 +1031,26 @@ export class WorldChat extends plugin {
         '查看：#跨服交易 位面 / #跨服交易 列表',
         '成交：#跨服交易 接受 交易码（实名）或 #跨服交易 匿名购买 交易码；撤销：#跨服交易 取消 交易码',
         '服主先执行「#跨服交易 开启」，再用「#跨服交易 同意 位面名或sv_x」开放指定位面。',
-      ].join('\n'));
+      ].join('\n');
+      return replyOfficialMessage(e, {
+        markdown: [
+          '# 跨服交易规则',
+          '',
+          '**发布交易**',
+          '`#跨服交易 位面名 秘境之匙*1 换 灵石*10000`',
+          '',
+          '**匿名发布**',
+          '`#跨服交易 匿名发布 位面名 秘境之匙*1 换 灵石*10000`',
+          '',
+          '> 服主需先同意目标位面的交易许可。',
+        ].join('\n'),
+        text,
+        buttons: [[
+          { text: '查看位面', command: '#跨服交易 位面' },
+          { text: '交易列表', command: '#跨服交易 列表' },
+          { text: '世界网页', command: '#世界 网页' },
+        ]],
+      });
     }
 
     if (raw === '开启' || raw === '关闭') {
@@ -1060,7 +1124,7 @@ export class WorldChat extends plugin {
       const result = await client.listTrades();
       if (!result.ok) return e.reply(`交易列表获取失败：${result.reason || '总机未连接'}`);
       if (!result.trades?.length) return e.reply('当前没有发给本位面的跨服交易');
-      return e.reply([
+      const text = [
         '【跨服交易列表】',
         ...result.trades.map((trade) => [
           `交易码：${trade.code}`,
@@ -1069,7 +1133,26 @@ export class WorldChat extends plugin {
           `提供：${tradeSummary(trade.give)}`,
           `需求：${tradeSummary(trade.want)}`,
         ].join('\n')),
-      ].join('\n\n'));
+      ].join('\n\n');
+      return replyOfficialMessage(e, {
+        markdown: [
+          '# 跨服交易列表',
+          '',
+          ...result.trades.flatMap((trade) => [
+            `## ${trade.code}`,
+            `**来自：** ${trade.seller_name}（${trade.seller_server_id}）`,
+            `**卖家：** ${trade.seller_player_name || '匿名道友'}`,
+            `**提供：** ${tradeSummary(trade.give)}`,
+            `**需求：** ${tradeSummary(trade.want)}`,
+            '',
+          ]),
+        ].join('\n'),
+        text,
+        buttons: result.trades.slice(0, 5).map((trade) => [
+          { text: `接受 ${trade.code}`, command: `#跨服交易 接受 ${trade.code}` },
+          { text: `匿名 ${trade.code}`, command: `#跨服交易 匿名购买 ${trade.code}` },
+        ]),
+      });
     }
 
     const publishMatch = tradeInput.match(/^发布\s+([\s\S]+?)\s+给[=:]([\s\S]+?)\s+换[=:]([\s\S]+)$/i);
@@ -1243,7 +1326,7 @@ export class WorldChat extends plugin {
       this.pendingConfirmations.delete(key);
       return true;
     }
-    this.pendingConfirmations.set(key, Date.now());
+    setBoundedMap(this.pendingConfirmations, key, Date.now(), 500);
     return false;
   }
 

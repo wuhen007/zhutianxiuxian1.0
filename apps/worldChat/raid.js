@@ -2,6 +2,7 @@ const NUMBER_FIELDS = [
   '攻击', '防御', '当前血量', '血量上限', '速度', '暴击率', '暴击伤害',
   '法球倍率', '魔道值', '神石', 'level_id', 'Physique_id', 'mijinglevel_id',
   'xiangulevel_id', 'huafenlevel_id', 'yuanshenlevel_id', '治疗效果加成', '闪避', '破防', '减伤',
+  '无尽劫境最高层',
 ];
 
 function finiteNumber(value) {
@@ -31,6 +32,7 @@ export function createCrossRaidAvatar(player) {
     功法熟练度: cleanObject(player?.功法熟练度, 3000),
     xiangu_shenhuo: cleanObject(player?.xiangu_shenhuo, 1500),
     无尽道碑: cleanObject(player?.无尽道碑, 2000),
+    无尽劫境进阶: cleanObject(player?.无尽劫境进阶, 2000),
     无尽至宝列表: (Array.isArray(player?.无尽至宝列表) ? player.无尽至宝列表 : [])
       .map((item) => typeof item === 'string'
         ? item.slice(0, 60)
