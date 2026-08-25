@@ -29,6 +29,15 @@ import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 const REFINE_KEY = qq => `xiuxian:foreign-calamity:refine:${qq}`;
 const BATTLE_COOLDOWN_KEY = qq => `xiuxian:foreign-calamity:battle-cooldown:${qq}`;
+const PLAYER_HISTORY_LIMIT = 200;
+
+function rememberPlayerHistory(record, key) {
+  record[key] = Date.now();
+  const keys = Object.keys(record);
+  for (let index = 0; index < keys.length - PLAYER_HISTORY_LIMIT; index++) {
+    delete record[keys[index]];
+  }
+}
 
 function playerId(e) {
   return e.user_id.toString().replace('qg_', '');
@@ -219,7 +228,7 @@ export class ForeignCalamity extends plugin {
       const oldKarma = Math.max(0, Number(player.业力值) || 0);
       player.业力值 = Math.max(0, oldKarma - plan.karmaReduction);
       player.位面青睐 = Math.max(0, Number(player.位面青睐) || 0) + plan.planeFavor;
-      player._foreignCalamityClaims[entity.id] = Date.now();
+      rememberPlayerHistory(player._foreignCalamityClaims, entity.id);
       await Write_player(qq, player);
       entity.rewardClaimedAt = Date.now();
       await saveForeignCalamity(entity);
@@ -283,7 +292,7 @@ export class ForeignCalamity extends plugin {
         sourceLifeEssence: pending.lifeSource,
       });
       if (tianmoGrowth.applied) player.法球倍率 = player.灵根.法球倍率;
-      player._foreignCalamityRefines[pending.entityId] = Date.now();
+      rememberPlayerHistory(player._foreignCalamityRefines, pending.entityId);
       await Write_player(qq, player);
       await redis.del(REFINE_KEY(qq));
       const lines = [

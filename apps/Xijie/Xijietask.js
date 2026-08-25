@@ -10,6 +10,7 @@ import {
   buildAt,
   Read_player,
   Write_player,
+  get_fight_img,
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
 import { runTaskOnce } from '../../utils/taskGuard.js';
@@ -185,6 +186,30 @@ export class Xijietask extends plugin {
               JSON.stringify(arr)
             );
             msg.push('\n' + last_msg);
+            //洗劫战斗日志：渲染成战斗图推送（与比武风格一致），渲染失败时静默降级
+            try {
+              const fightLog = [
+                last_msg,
+                ...(Array.isArray(msgg) ? msgg : []),
+              ];
+              const fightImg = await get_fight_img(
+                { user_id: player_id },
+                fightLog
+              );
+              if (fightImg) {
+                if (is_group) {
+                  await Bot.pickGroup(push_address)
+                    .sendMsg(fightImg)
+                    .catch(err => {
+                      Bot.logger.mark(err);
+                    });
+                } else {
+                  await common.relpyPrivate(player_id, fightImg);
+                }
+              }
+            } catch (err) {
+              Bot.logger.mark(err);
+            }
             if (is_group) {
               await this.pushInfo(push_address, is_group, msg);
             } else {

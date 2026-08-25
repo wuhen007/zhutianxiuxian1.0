@@ -2,6 +2,7 @@ import {plugin, verc, data, config} from '../../api/api.js';
 import common from '../../../../lib/common/common.js';
 import fs from 'fs';
 import { getDispatchState } from '../../model/factionDispatch.js';
+import { replyOfficialMessage } from '../../model/officialMessage.js';
 import {
   applyFactionExit,
   formatFactionCooldown,
@@ -138,6 +139,10 @@ export class shilitixi extends plugin {
 {
     reg: '^#确认脱离势力$',
     fnc: 'confirmFactionExit'
+},
+{
+    reg: '^#取消脱离势力$',
+    fnc: 'cancelFactionExit'
 }
       ],
     });
@@ -162,7 +167,7 @@ async requestFactionExit(e) {
         position: player.势力职位 || '',
     }), { EX: FACTION_EXIT_CONFIRM_SECONDS });
 
-    return e.reply([
+    const text = [
         '【脱离势力确认】',
         `当前身份：${player.势力}${player.势力职位 || '弟子'}`,
         '脱离后职位归零，晋升消耗不予返还。',
@@ -170,7 +175,31 @@ async requestFactionExit(e) {
         '已经领取过的入门和晋升奖励不会再次发放。',
         player.势力 === '剑云海' ? '剑云海传人机缘不可再次选择。' : '',
         `若已决定，请在${FACTION_EXIT_CONFIRM_SECONDS}秒内发送：#确认脱离势力`,
-    ].filter(Boolean).join('\n'));
+    ].filter(Boolean).join('\n');
+    return replyOfficialMessage(e, {
+        markdown: [
+            '# 脱离势力确认',
+            '',
+            `**当前身份：** ${player.势力}${player.势力职位 || '弟子'}`,
+            `**重新加入冷却：** ${formatFactionCooldown(cooldownMs)}`,
+            '> 脱离后职位归零，晋升消耗不予返还；已领取奖励不会重复发放。',
+            player.势力 === '剑云海' ? '> 剑云海传人机缘将被舍弃，此后不可重选。' : '',
+            '',
+            `请在${FACTION_EXIT_CONFIRM_SECONDS}秒内作出决定。`,
+        ].filter(Boolean).join('\n'),
+        text,
+        buttons: [[
+            { text: '确认脱离', command: '#确认脱离势力' },
+            { text: '取消', command: '#取消脱离势力' },
+        ]],
+    });
+}
+
+async cancelFactionExit(e) {
+    if (!verc({ e })) return false;
+    const usr_qq = (await channel(e.user_id.toString().replace('qg_',''))).toString();
+    await redis.del(factionExitConfirmKey(usr_qq));
+    return e.reply('本次脱离势力操作已取消。');
 }
 
 async confirmFactionExit(e) {
@@ -1110,7 +1139,25 @@ const usr_qq = (await channel(e.user_id.toString().replace('qg_',''))).toString(
     await Add_najie_thing(usr_qq, '剑云海令牌', '道具', -1);
     await Write_player(usr_qq, player);
     
-    return e.reply(encounterText);
+    return replyOfficialMessage(e, {
+        markdown: [
+            '# 剑云海机缘',
+            '',
+            '剑魔帝主负手立于万顷剑海之前，静候你的选择。',
+            '',
+            '- **修炼资源：** 灵石与剑云海圣药',
+            '- **拜师传人：** 继承《永恒终极剑道》',
+            '- **帝主庇护：** 黑暗牢笼豁免与副本增益',
+            '',
+            '> 此次机缘仅可选择一次。',
+        ].join('\n'),
+        text: encounterText,
+        buttons: [[
+            { text: '修炼资源', command: '#剑云海选择1' },
+            { text: '拜师传人', command: '#剑云海选择2' },
+            { text: '帝主庇护', command: '#剑云海选择3' },
+        ]],
+    });
 }
 async jianyunhaiChoice(e) {
     const usr_qq = (await channel(e.user_id.toString().replace('qg_',''))).toString();

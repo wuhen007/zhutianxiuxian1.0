@@ -4,6 +4,7 @@
 // 不依赖 e/this：只改 player 状态并返回结果与文案，落盘与发送由调用方负责。
 import { rollZhetianMinggeRevival } from '../apps/User/zhetianTribulationMingge.js';
 import { getMinggeEffects } from './mingge.js';
+import { replyOfficialMessage } from './officialMessage.js';
 
 // 复活功法冷却（回合），与 zhetiandujie.js this.gongfa 保持一致
 export const REVIVAL_GONGFA_CD = Object.freeze({
@@ -65,11 +66,29 @@ export async function requestManualRevivalChoice(e, playerId, names, timeoutMs =
   pendingManualChoices.set(key, { choices, finish });
 
   try {
-    await e.reply([
+    const text = [
       '【濒死·选择复活功法】',
       ...choices.map((name, index) => `${index + 1}. ${name}`),
       '请在60秒内发送 #复活选择 序号',
-    ].join('\n'));
+    ].join('\n');
+    const buttons = [];
+    for (let index = 0; index < choices.length; index += 2) {
+      buttons.push(choices.slice(index, index + 2).map((name, offset) => ({
+        text: name,
+        command: `#复活选择 ${index + offset + 1}`,
+      })));
+    }
+    await replyOfficialMessage(e, {
+      markdown: [
+        '# 濒死：选择复活功法',
+        '',
+        '> 生命本源正在消散，请在60秒内作出选择。',
+        '',
+        ...choices.map((name, index) => `- **${index + 1}.** ${name}`),
+      ].join('\n'),
+      text,
+      buttons,
+    });
   } catch (error) {
     console.error('发送复活选择失败:', error);
     finish('');

@@ -15,6 +15,7 @@ import { getFlowerRealmDisplay, getXianguRealmDisplay } from './playerRealmDispl
 import { swapEquipmentState } from './equipmentSwap.js';
 import { FileRollbackTransaction } from '../apps/SecretPlace/rebirthTransaction.js';
 import { releaseJuelingLifespanForAuthority } from './juelingLifespan.js';
+import { applyClowWishBattleWeakness } from './clowWish.js';
 // 道种专属技能全局池别名：战斗函数内 `data` 常被玩家参数遮蔽，故用 SKILL_DB 稳定引用 XiuxianData 单例
 const SKILL_DB = data;
 
@@ -731,8 +732,11 @@ export async function mortal_tribulation(e, player) {
     
     let aconut = 1;
     let result = { success: undefined };
+    let running = false;
     
   let time = setInterval(async () => {
+    if (running || result.success !== undefined) return;
+    running = true;
     try {
       const flag = await LevelTask(e, n, p+n, y, aconut, player.虚实转化率 || 0);
       
@@ -783,6 +787,8 @@ export async function mortal_tribulation(e, player) {
       clearInterval(time);
       result.success = false;
       dj = 0;
+    } finally {
+      running = false;
     }
   }, 60000);
     
@@ -863,9 +869,12 @@ export async function spirit_tribulation(e, player) {
         };
         
         const playerState = spirit_players[usr_qq];
+        playerState.running = false;
         
         // 创建元神劫定时器
         playerState.timer = setInterval(async () => {
+            if (playerState.running || playerState.result.success !== undefined) return;
+            playerState.running = true;
             try {
                 // 每转开始前刷新玩家数据
                 player = await Read_player(usr_qq);
@@ -1001,6 +1010,8 @@ export async function spirit_tribulation(e, player) {
                 clearInterval(playerState.timer);
                 playerState.result = { success: false, damage: 0.1 };
                 delete spirit_players[usr_qq];
+            } finally {
+                playerState.running = false;
             }
         }, 60000); // 每转间隔1分钟
         
@@ -2497,6 +2508,55 @@ export async function get_lqpf_img(e) {
     const templateData = await new Show(e).get_lqpfData(renderData);
     return await puppeteer.screenshot('lqpf', templateData);
 }
+const xigenRankingState = globalThis[Symbol.for('zhutianxiuxian.xigenRanking')] ??= {
+    expiresAt: 0,
+    players: [],
+    promise: null,
+    timer: null,
+};
+
+async function readXigenRankingPlayers() {
+    if (xigenRankingState.expiresAt > Date.now()) return xigenRankingState.players;
+    if (xigenRankingState.promise) return xigenRankingState.promise;
+    xigenRankingState.promise = (async () => {
+        const files = await fs.promises.readdir(__PATH.player_path);
+        const jsonFiles = files.filter(file => file.endsWith('.json'));
+        const players = [];
+        for (let offset = 0; offset < jsonFiles.length; offset += 16) {
+            const batch = await Promise.all(jsonFiles.slice(offset, offset + 16).map(async file => {
+                const qq = file.replace('.json', '');
+                try {
+                    const player = await Read_player(qq);
+                    const washCount = player.洗根次数 || 0;
+                    if (washCount <= 0) return null;
+                    return {
+                        qq,
+                        name: player.名号,
+                        washCount,
+                        linggen: player.灵根,
+                    };
+                } catch {
+                    return null;
+                }
+            }));
+            players.push(...batch.filter(Boolean));
+        }
+        xigenRankingState.players = players;
+        xigenRankingState.expiresAt = Date.now() + 30_000;
+        if (xigenRankingState.timer) clearTimeout(xigenRankingState.timer);
+        xigenRankingState.timer = setTimeout(() => {
+            xigenRankingState.players = [];
+            xigenRankingState.expiresAt = 0;
+            xigenRankingState.timer = null;
+        }, 30_000);
+        xigenRankingState.timer.unref?.();
+        return players;
+    })().finally(() => {
+        xigenRankingState.promise = null;
+    });
+    return xigenRankingState.promise;
+}
+
 export async function get_xigen_img(e) {
     try {
         let usr_qq = e.user_id.toString().replace('qg_', '');
@@ -2505,27 +2565,8 @@ export async function get_xigen_img(e) {
         // 1. 验证玩家是否存在
         if (!data.existData('player', usr_qq)) return;
 
-        // 2. 异步读取所有玩家文件
-        const files = await fs.promises.readdir(__PATH.player_path);
-        const jsonFiles = files.filter(file => file.endsWith(".json"));
-
-        // 3. 并行读取玩家数据（提升效率）
-        const players = await Promise.all(
-            jsonFiles.map(async file => {
-                const qq = file.replace(".json", '');
-                const player = await Read_player(parseInt(qq));
-                
-                // 处理洗根次数未找到的情况，设为0
-                const washCount = player.洗根次数 || 0;
-                
-                return {
-                    qq,
-                    name: player.名号,
-                    washCount: washCount,
-                    linggen: player.灵根
-                };
-            })
-        );
+        // 2. 分批读取；短时间内的重复请求共享结果，避免同时扫描全服存档。
+        const players = await readXigenRankingPlayers();
 
         // 4. 过滤掉洗根次数为0的玩家
         const filteredPlayers = players.filter(p => p.washCount > 0);
@@ -3500,7 +3541,11 @@ const exp2 = bigNumberTransform(player.血气);
 }
 //返回战斗
 export async function get_fight_img(e,data) {
-  const messages = (Array.isArray(data) ? data : [data]).map(item => String(item ?? ''));
+  const source = Array.isArray(data) ? data : [data];
+  const selected = source.length > 400
+    ? [...source.slice(0, 200), `【战报过长，已省略 ${source.length - 400} 条过程】`, ...source.slice(-200)]
+    : source;
+  const messages = selected.map(item => String(item ?? '').slice(0, 2_000));
   const fightmsgJson = JSON.stringify(messages).replace(/[<>&]/g, char => ({
     '<': '\\u003c',
     '>': '\\u003e',
@@ -7844,6 +7889,28 @@ const 技能效果处理 = {
     attacker.防御 = Math.floor(attacker.防御 * 提升);
     attacker.当前血量 = Math.floor(attacker.当前血量 * 提升);
     msg.push(`${attacker.名号}在「始源终焉」领域加持下，全属性暴涨${Math.round((提升 - 1) * 100)}%！`);
+  },
+
+  // 霸血领域 - 大成·苍天霸体
+  "霸血领域": function(attacker, defender, msg, skill) {
+    const processedMsg1 = (skill.msg1 || "").replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+    const processedMsg2 = (skill.msg2 || "").replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
+    if (processedMsg1) msg.push(processedMsg1);
+
+    const 提升 = Number(skill.属性提升) || 1.8;
+    attacker.攻击 = Math.floor(attacker.攻击 * 提升);
+    attacker.防御 = Math.floor(attacker.防御 * 1.5);
+    attacker.当前血量 = Math.floor(attacker.当前血量 * 1.5);
+    attacker.免疫控制 = Math.max(Number(attacker.免疫控制) || 0, 1);
+    attacker.霸血领域 = true;
+
+    defender.攻击 = Math.floor(defender.攻击 * 0.8);
+    defender.防御 = Math.floor(defender.防御 * 0.8);
+    defender.禁疗 = Math.max(Number(defender.禁疗) || 0, 0.2);
+
+    msg.push(`${attacker.名号}攻击提升${Math.round((提升 - 1) * 100)}%，防御与当前生命提升50%，获得1回合控制免疫！`);
+    msg.push(`${defender.名号}受到霸血道则压制，攻击、防御降低20%，治疗效果降低20%！`);
+    if (processedMsg2) msg.push(processedMsg2);
   }
 };
 
@@ -8047,6 +8114,9 @@ async function zd_battle_1v1(AA_player, BB_player, options = {}) {
   // 保持输入、战斗状态与返回字段的 A/B 归属一致。
   let A_player = JSON.parse(JSON.stringify(AA_player));
   let B_player = JSON.parse(JSON.stringify(BB_player));
+  const weaknessNow = Date.now();
+  const A_clowWeakness = applyClowWishBattleWeakness(A_player, weaknessNow);
+  const B_clowWeakness = applyClowWishBattleWeakness(B_player, weaknessNow);
 
   // 初始化负面效果
   A_player.fumianhuihe = 0;
@@ -8113,7 +8183,7 @@ let B_speed = (B_player.速度 ?? 100)
   let cnt = 0;
   let cnt2 = 0;
   let t;
-  let msg = [];
+  let msg = [A_clowWeakness.message, B_clowWeakness.message].filter(Boolean);
   // 打桩/DPS 测试用：累计 B 方（木桩）承受的总伤害，供外部精确计算 DPS。
   let B_total_damage_taken = 0;
   // 打桩/DPS 测试用：累计 A 方（玩家）发起的有效攻击次数（即"回合数"）。
@@ -10215,6 +10285,8 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
   function initTeam(team, teamName) {
     for (let p of team) {
+      const clowWeakness = applyClowWishBattleWeakness(p);
+      if (clowWeakness.message) msg.push(clowWeakness.message);
       p._team = teamName;
       p._actionBar = (
         (hasLearnedGongfa(p, '行字秘') && getGongfaProficiencyProfile(p, '行字秘').index >= 5) ||

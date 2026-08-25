@@ -4,6 +4,7 @@ import { readPlayerArchives } from './riftGuardian.js';
 export const FOREIGN_CALAMITY_INDEX_KEY = 'xiuxian:foreign-calamity:index';
 export const FOREIGN_PAGE_REQUIREMENT = 10;
 export const FOREIGN_CALAMITY_BATTLE_COOLDOWN_MS = 15 * 60 * 1000;
+const FOREIGN_CALAMITY_READ_BATCH_SIZE = 50;
 
 export const FOREIGN_TECHNIQUES = Object.freeze([
   { name: '太虚观界经', category: '道与法', desc: '观诸界生灭，于太虚中借来一线不坏界光护持己身。' },
@@ -161,13 +162,22 @@ export function createForeignCalamityRewardPlan(entity, random = Math.random) {
   };
 }
 
+export const PLANE_FAVOR_WUDAO_COST = 50;
+
 export function consumePlaneFavorForWudao(player, rawGain, remaining) {
   const base = Math.min(Math.max(0, Math.floor(finite(rawGain))), Math.max(0, Math.floor(finite(remaining))));
   const favor = Math.max(0, Math.floor(finite(player?.位面青睐)));
   const enhanced = Math.min(Math.floor(finite(rawGain) * 1.2), Math.max(0, Math.floor(finite(remaining))));
-  if (favor <= 0 || enhanced <= base) return { gain: base, consumed: 0, bonus: 0, remainingFavor: favor };
-  player.位面青睐 = favor - 1;
-  return { gain: enhanced, consumed: 1, bonus: enhanced - base, remainingFavor: favor - 1 };
+  if (favor < PLANE_FAVOR_WUDAO_COST || enhanced <= base) {
+    return { gain: base, consumed: 0, bonus: 0, remainingFavor: favor };
+  }
+  player.位面青睐 = favor - PLANE_FAVOR_WUDAO_COST;
+  return {
+    gain: enhanced,
+    consumed: PLANE_FAVOR_WUDAO_COST,
+    bonus: enhanced - base,
+    remainingFavor: player.位面青睐,
+  };
 }
 
 export async function spawnForeignCalamities(previousWorldYear, currentWorldYear, options = {}) {
@@ -202,13 +212,30 @@ export async function readForeignCalamity(id) {
 
 export async function saveForeignCalamity(entity) {
   await redis.set(`xiuxian:foreign-calamity:entity:${entity.id}`, JSON.stringify(entity));
-  await redis.sAdd(FOREIGN_CALAMITY_INDEX_KEY, entity.id);
+  if (entity.status === 'defeated' && entity.rewardClaimedAt) {
+    await redis.sRem(FOREIGN_CALAMITY_INDEX_KEY, entity.id);
+  } else {
+    await redis.sAdd(FOREIGN_CALAMITY_INDEX_KEY, entity.id);
+  }
   return entity;
 }
 
 export async function listForeignCalamities() {
   const ids = await redis.sMembers(FOREIGN_CALAMITY_INDEX_KEY);
-  return (await Promise.all(ids.map(readForeignCalamity))).filter(Boolean);
+  const entities = [];
+  for (let offset = 0; offset < ids.length; offset += FOREIGN_CALAMITY_READ_BATCH_SIZE) {
+    const batchIds = ids.slice(offset, offset + FOREIGN_CALAMITY_READ_BATCH_SIZE);
+    const batch = await Promise.all(batchIds.map(readForeignCalamity));
+    for (let index = 0; index < batch.length; index++) {
+      const entity = batch[index];
+      if (!entity || (entity.status === 'defeated' && entity.rewardClaimedAt)) {
+        await redis.sRem(FOREIGN_CALAMITY_INDEX_KEY, batchIds[index]);
+      } else {
+        entities.push(entity);
+      }
+    }
+  }
+  return entities;
 }
 
 export async function withForeignCalamityLock(id, task) {

@@ -298,3 +298,37 @@ export function judgeGuardBattle(playerPower, guardian, options = {}) {
     summary: '被守卫一击轰出裂界',
   };
 }
+
+/** 把 zd_battle 的结果转换为裂界探索裁决。 */
+export function resolveGuardBattle(player, guardian, battle) {
+  if (!battle || !Number.isFinite(Number(battle.A_hp)) || !Number.isFinite(Number(battle.B_hp))) {
+    throw new Error('裂界守卫战斗返回了无效血量');
+  }
+  const playerStartHp = Math.max(1, toNumber(player?.当前血量, 1));
+  const playerBattleHp = Math.max(0, toNumber(battle?.A_hp));
+  const guardStartHp = Math.max(1, toNumber(guardian?.血量上限 ?? guardian?.当前血量, 1));
+  const guardBattleHp = Math.min(guardStartHp, Math.max(0, toNumber(battle?.B_hp, guardStartHp)));
+  const won = battle?.winner === 'A' && guardBattleHp <= 0;
+  const remainingRatio = Math.min(1, playerBattleHp / playerStartHp);
+  const outcome = won ? (remainingRatio >= 0.5 ? 'win' : 'narrow') : 'lose';
+  const rewards = outcome === 'win'
+    ? { lootScale: 1.15, contributionBonus: 2, summary: '正面击溃守卫' }
+    : outcome === 'narrow'
+      ? { lootScale: 0.7, contributionBonus: 1, summary: '力战险胜，战利品散落大半' }
+      : { lootScale: 0, contributionBonus: 0, summary: '未能击溃守卫，被轰出裂界' };
+
+  return {
+    outcome,
+    ...rewards,
+    resolution: 'battle',
+    hpLoss: 0,
+    playerHp: Math.max(1, playerBattleHp),
+    guardHp: guardBattleHp,
+    damageTaken: Math.max(0, playerStartHp - playerBattleHp),
+    damageDealt: Math.max(
+      0,
+      guardStartHp - guardBattleHp,
+      toNumber(battle.totalDamageTaken)
+    ),
+  };
+}

@@ -11,6 +11,7 @@ import {
   GUARD_FALLBACK_AVERAGE,
   judgeGuardBattle,
   RIFT_GUARDIAN_PROFILES,
+  resolveGuardBattle,
 } from '../model/riftGuardian.js';
 import {
   beginRiftExpedition,
@@ -137,7 +138,59 @@ test('judgeGuardBattle 守卫战力带 ±10% 临场波动', () => {
   assert.ok(high.guardPower > raw);
 });
 
-test('强攻路线：exploreRift 以守卫战力裁决取代成功率', () => {
+test('真实守卫战斗按剩余血量裁决并统计双方实际伤害', () => {
+  const player = { 当前血量: 1000 };
+  const guardian = { 当前血量: 2000, 血量上限: 2000 };
+
+  const win = resolveGuardBattle(player, guardian, {
+    winner: 'A', A_hp: 700, B_hp: 0, totalDamageTaken: 2300,
+  });
+  assert.equal(win.outcome, 'win');
+  assert.equal(win.playerHp, 700);
+  assert.equal(win.damageTaken, 300);
+  assert.equal(win.damageDealt, 2300);
+
+  const narrow = resolveGuardBattle(player, guardian, { winner: 'A', A_hp: 300, B_hp: 0 });
+  assert.equal(narrow.outcome, 'narrow');
+  assert.equal(narrow.lootScale, 0.7);
+
+  const lose = resolveGuardBattle(player, guardian, { winner: 'B', A_hp: 0, B_hp: 800 });
+  assert.equal(lose.outcome, 'lose');
+  assert.equal(lose.playerHp, 1);
+  assert.equal(lose.damageTaken, 1000);
+  assert.equal(lose.damageDealt, 1200);
+  assert.throws(
+    () => resolveGuardBattle(player, guardian, { winner: 'A', A_hp: NaN, B_hp: 0 }),
+    /无效血量/
+  );
+});
+
+test('强攻路线优先使用真实战斗裁决，不再由战力覆盖胜负', () => {
+  const state = getDefaultRiftState();
+  const [rift] = rollPeriodicRifts(state, 2000, { random: () => 0, now: 100 }).opened;
+  beginRiftExpedition(state, rift.id, 'real-battle', 100);
+  const guardian = createRiftGuardian(1, SAMPLE_AVERAGE);
+  const combatVerdict = resolveGuardBattle(
+    { 当前血量: 1000 },
+    guardian,
+    { winner: 'A', A_hp: 900, B_hp: 0 }
+  );
+
+  const result = exploreRift(state, rift.id, 'real-battle', '强攻', {
+    random: () => 0.5,
+    realmLevel: 16,
+    now: 100,
+    guardian,
+    combatPower: 0,
+    combatVerdict,
+  });
+  assert.equal(result.success, true);
+  assert.equal(result.disturbance.verdict.resolution, 'battle');
+  assert.equal(result.disturbance.verdict.damageDealt, guardian.血量上限);
+  assert.equal(result.hpLoss, 0);
+});
+
+test('强攻路线兼容旧版战力裁决调用', () => {
   const state = getDefaultRiftState();
   const [rift] = rollPeriodicRifts(state, 2000, { random: () => 0, now: 100 }).opened;
   beginRiftExpedition(state, rift.id, '1', 100);

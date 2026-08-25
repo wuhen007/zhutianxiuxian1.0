@@ -356,7 +356,7 @@ export function exploreRift(state, riftId, qq, routeName, options = {}) {
     // 强攻：每层强制遭遇裂界守卫，战斗结果直接取代成功率判定
     const guardian = options.guardian;
     if (guardian) {
-      const verdict = judgeGuardBattle(options.combatPower, guardian, { random });
+      const verdict = options.combatVerdict || judgeGuardBattle(options.combatPower, guardian, { random });
       disturbance.triggered = true;
       disturbance.verdict = verdict;
       disturbance.detail = verdict.summary;

@@ -4,6 +4,7 @@ const LOCK_PREFIX = 'xiuxian:player:';
 const LOCK_SUFFIX = ':tribulation_lock';
 const LOCK_TTL_SECONDS = 900;
 const RENEW_INTERVAL_MS = 30_000;
+const MAX_SNAPSHOT_EPOCHS = 50_000;
 
 const releaseScript = `
 if redis.call('get', KEYS[1]) == ARGV[1] then
@@ -138,7 +139,12 @@ export async function withTribulationLock(playerId, action) {
     return await tribulationStorage.run(context, () => action(context));
   } finally {
     clearInterval(timer);
-    snapshotEpochs.set(id, getSnapshotEpoch(id) + 1);
+    const nextEpoch = getSnapshotEpoch(id) + 1;
+    snapshotEpochs.delete(id);
+    snapshotEpochs.set(id, nextEpoch);
+    while (snapshotEpochs.size > MAX_SNAPSHOT_EPOCHS) {
+      snapshotEpochs.delete(snapshotEpochs.keys().next().value);
+    }
     try {
       await redis.eval(releaseScript, { keys: [key], arguments: [token] });
     } catch (error) {

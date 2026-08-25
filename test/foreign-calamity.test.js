@@ -5,12 +5,16 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   FOREIGN_CALAMITY_BATTLE_COOLDOWN_MS,
+  FOREIGN_CALAMITY_INDEX_KEY,
   FOREIGN_PAGE_REQUIREMENT,
   FOREIGN_TECHNIQUES,
+  PLANE_FAVOR_WUDAO_COST,
   averageForeignCalamityPlayers,
   consumePlaneFavorForWudao,
   createForeignCalamityRewardPlan,
   createForeignCalamityWave,
+  listForeignCalamities,
+  saveForeignCalamity,
   spawnForeignCalamities,
 } from '../model/foreignCalamity.js';
 
@@ -61,6 +65,37 @@ test('跨过多个千年节点会逐波生成，重复执行不会再生成', as
   }
 });
 
+test('已领奖和失效灾厄会从活动索引清理', async () => {
+  const values = new Map();
+  const sets = new Map([[FOREIGN_CALAMITY_INDEX_KEY, new Set(['active', 'claimed', 'missing'])]]);
+  values.set('xiuxian:foreign-calamity:entity:active', JSON.stringify({ id: 'active', status: 'active' }));
+  values.set('xiuxian:foreign-calamity:entity:claimed', JSON.stringify({
+    id: 'claimed', status: 'defeated', rewardClaimedAt: 1,
+  }));
+  globalThis.redis = {
+    async get(key) { return values.get(key) ?? null; },
+    async set(key, value) { values.set(key, value); return 'OK'; },
+    async sMembers(key) { return [...(sets.get(key) || [])]; },
+    async sAdd(key, value) {
+      if (!sets.has(key)) sets.set(key, new Set());
+      sets.get(key).add(value);
+    },
+    async sRem(key, value) { sets.get(key)?.delete(value); },
+  };
+  try {
+    const entities = await listForeignCalamities();
+    assert.deepEqual(entities.map(entity => entity.id), ['active']);
+    assert.deepEqual([...sets.get(FOREIGN_CALAMITY_INDEX_KEY)], ['active']);
+
+    await saveForeignCalamity({ id: 'pending', status: 'defeated' });
+    assert.ok(sets.get(FOREIGN_CALAMITY_INDEX_KEY).has('pending'));
+    await saveForeignCalamity({ id: 'pending', status: 'defeated', rewardClaimedAt: 2 });
+    assert.equal(sets.get(FOREIGN_CALAMITY_INDEX_KEY).has('pending'), false);
+  } finally {
+    delete globalThis.redis;
+  }
+});
+
 test('击杀奖励严格抽取两种不同奖组，并固定消减业力、增加位面青睐', () => {
   const entity = createForeignCalamityWave({ worldYear: 1000, players: samplePlayers, random: () => 0.4 })[0];
   for (let index = 0; index < 50; index++) {
@@ -77,17 +112,24 @@ test('击杀奖励严格抽取两种不同奖组，并固定消减业力、增�
   }
 });
 
-test('位面青睐仅在实际增加悟道收益时消耗1点', () => {
-  const player = { 位面青睐: 8 };
+test('位面青睐达到50点且实际增加悟道收益时才消耗50点', () => {
+  assert.equal(PLANE_FAVOR_WUDAO_COST, 50);
+  const player = { 位面青睐: 58 };
   assert.deepEqual(consumePlaneFavorForWudao(player, 100, 500), {
-    gain: 120, consumed: 1, bonus: 20, remainingFavor: 7,
+    gain: 120, consumed: 50, bonus: 20, remainingFavor: 8,
   });
-  assert.equal(player.位面青睐, 7);
+  assert.equal(player.位面青睐, 8);
 
   assert.deepEqual(consumePlaneFavorForWudao(player, 100, 100), {
-    gain: 100, consumed: 0, bonus: 0, remainingFavor: 7,
+    gain: 100, consumed: 0, bonus: 0, remainingFavor: 8,
   });
-  assert.equal(player.位面青睐, 7);
+  assert.equal(player.位面青睐, 8);
+
+  const insufficient = { 位面青睐: 49 };
+  assert.deepEqual(consumePlaneFavorForWudao(insufficient, 100, 500), {
+    gain: 100, consumed: 0, bonus: 0, remainingFavor: 49,
+  });
+  assert.equal(insufficient.位面青睐, 49);
 });
 
 test('十三门域外传承均有十页合一材料，只有道与法和杀术配置战斗技能', () => {

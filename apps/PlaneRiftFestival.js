@@ -10,6 +10,8 @@ import {
   channel,
   exist_najie_thing,
   existplayer,
+  get_fight_img,
+  zd_battle,
 } from '../model/xiuxian.js';
 import { getPlayerPlaneCoordinate, getPlayerPlaneName } from '../model/planeCoords.js';
 import { getRealmAuthorityLevel } from '../model/realmAuthority.js';
@@ -34,9 +36,8 @@ import {
 } from '../model/planeRiftFestival.js';
 import {
   createRiftGuardian,
-  getCombatPower,
   getEliteAverage,
-  getUnitSpeed,
+  resolveGuardBattle,
 } from '../model/riftGuardian.js';
 
 const PASS_NAME = '巡界玉符';
@@ -155,7 +156,7 @@ export class PlaneRiftFestival extends plugin {
       '三种路线各有外界干扰：',
       '· 稳阵——可能遇【界潮涌动】压低成功率，全服锚定≥60%可压制大半。',
       '· 寻宝——可能惊动【守护灵】，潜行成则收益×1.3，败则收益×0.6且成功率下降。',
-      '· 强攻——每层必遇【裂界守卫】，需以战力正面击溃（守卫取全服前十平均战力）。',
+      '· 强攻——每层必遇【裂界守卫】并进入真实战斗（守卫属性取全服前十平均）。',
       '可随时 #撤离裂界；失败只保住一半界源，三层通关则全部带出。',
       '#界源兑换：兑换秘境之匙、星图、巡界玉符、真我宝盒或无尽秘钥配方。',
     ].join('\n'));
@@ -242,7 +243,7 @@ export class PlaneRiftFestival extends plugin {
       `${PASS_NAME}化作一道稳定界门，你抵达裂界第一层。`,
       '#裂界稳阵：成功率最高，易遇【界潮涌动】压成功率，全服锚定高可压制。',
       '#裂界寻宝：收益均衡，可能惊动【守护灵】，潜行成败影响收益。',
-      '#裂界强攻：每层必战【裂界守卫】，战力取全服前十均值，胜则收获与贡献最高。',
+      '#裂界强攻：每层与【裂界守卫】真实战斗，守卫属性取全服前十均值，胜则收获与贡献最高。',
       '探索后可继续深入，或发送 #撤离裂界 带走界源。',
     ].join('\n'));
   }
@@ -252,7 +253,7 @@ export class PlaneRiftFestival extends plugin {
       '【裂界探索】请使用以下指令：',
       '· #裂界稳阵：成功率最高，可能遭遇【界潮涌动】压低成功率（位面锚定≥60%可压制）。',
       '· #裂界寻宝：收益均衡，可能惊动【守护灵】，潜行成败影响收益。',
-      '· #裂界强攻：每层必战【裂界守卫】，战力取全服前十均值，胜则收获与贡献最高。',
+      '· #裂界强攻：每层与【裂界守卫】真实战斗，守卫属性取全服前十均值，胜则收获与贡献最高。',
     ].join('\n'));
   }
 
@@ -266,18 +267,35 @@ export class PlaneRiftFestival extends plugin {
     if (!current || current.expedition.status !== 'active') return e.reply('你当前没有正在进行的裂界探索。');
     if (getPlayerPlaneName(player) !== current.rift.plane) return e.reply(`你的真身已离开${current.rift.plane}，无法继续深入。`);
     const route = e.msg.match(/(稳阵|寻宝|强攻)$/)?.[1];
+    if (Number(current.rift.expiresAt) <= Date.now()) {
+      const withdrawn = withdrawRift(state, current.rift.id, qq);
+      saveRiftState(state);
+      const payout = await this.settlePayout(qq, player, withdrawn.rift, withdrawn.expedition);
+      return e.reply(`裂界已闭合，你被界潮推出，带回界源${payout.source}（境界乘区×${payout.realmMult}，修为+${formatPower(payout.cultivation)}）。`);
+    }
 
-    // 强攻路线每层必遇裂界守卫：战力取全服前十平均，按层数系数放大
-    const playerPower = getCombatPower(player);
+    // 强攻路线每层必遇裂界守卫：属性取全服前十平均，胜负交给真实战斗系统。
+    const battleDepth = current.expedition.depth + 1;
     const guardian = route === '强攻'
-      ? createRiftGuardian(current.expedition.depth + 1, getEliteAverage())
+      ? createRiftGuardian(battleDepth, getEliteAverage())
       : null;
+    let battle = null;
+    let combatVerdict = null;
+    if (guardian) {
+      const challenger = {
+        ...player,
+        灵根: player.灵根 || { name: '普通灵根', 法球倍率: 0 },
+        法球倍率: Math.max(0, Number(player.法球倍率 ?? player.灵根?.法球倍率) || 0),
+      };
+      battle = await zd_battle(challenger, guardian, { battleType: 'plane_rift_guardian' });
+      combatVerdict = resolveGuardBattle(challenger, guardian, battle);
+    }
 
     const result = exploreRift(state, current.rift.id, qq, route, {
       realmLevel: getRealmAuthorityLevel(player),
       signStreak: Number(player.巡界签到?.streak) || 0,
       guardian,
-      combatPower: playerPower,
+      combatVerdict,
     });
     if (!result.ok && result.reason === 'expired') {
       const withdrawn = withdrawRift(state, current.rift.id, qq);
@@ -288,15 +306,20 @@ export class PlaneRiftFestival extends plugin {
     if (!result.ok) return e.reply('本次裂界探索无法继续。');
     saveRiftState(state);
 
-    const hpLost = result.hpLoss ? applyHpLoss(player, result.hpLoss) : 0;
+    const hpLost = combatVerdict
+      ? combatVerdict.damageTaken
+      : result.hpLoss ? applyHpLoss(player, result.hpLoss) : 0;
+    if (combatVerdict) player.当前血量 = combatVerdict.playerHp;
+    if (battle) await this.sendBattleLog(e, battleDepth, guardian, battle);
     const disturbanceLine = this.formatDisturbance(route, result, guardian);
     const chance = Math.round(result.chance * 100);
+    const resolutionText = route === '强攻' ? '真实战斗裁决' : `本次成功率${chance}%`;
     if (!result.success) {
       const payout = await this.settlePayout(qq, player, result.rift, result.expedition);
       return e.reply([
         `【裂界失陷·${route}】`,
         disturbanceLine,
-        `第${result.expedition.depth + 1}层探索失败（本次成功率${chance}%）。`,
+        `第${result.expedition.depth + 1}层探索失败（${resolutionText}）。`,
         hpLost ? `激战损耗气血${formatPower(hpLost)}，当前气血余${formatPower(player.当前血量)}。` : null,
         `你舍弃大半战利品遁出裂界，保住界源${payout.source}。`,
         `境界乘区×${payout.realmMult}（练气${player.level_id}×炼体${player.Physique_id}×秘境${player.mijinglevel_id}×仙古${player.xiangulevel_id}×花粉${player.huafenlevel_id || 1}），获得修为与血气各${formatPower(payout.cultivation)}。`,
@@ -307,7 +330,7 @@ export class PlaneRiftFestival extends plugin {
       return e.reply([
         `【裂界贯通·三层尽破】`,
         disturbanceLine,
-        `${route}成功（本次成功率${chance}%），取得界源胚${result.gained}。`,
+        `${route}成功（${resolutionText}），取得界源胚${result.gained}。`,
         hpLost ? `激战损耗气血${formatPower(hpLost)}，当前气血余${formatPower(player.当前血量)}。` : null,
         `锚定度${result.rift.anchor}%令最终收益×${payout.multiplier.toFixed(2)}。`,
         `带出界源${payout.source}，境界乘区×${payout.realmMult}，获得修为与血气各${formatPower(payout.cultivation)}。`,
@@ -317,7 +340,7 @@ export class PlaneRiftFestival extends plugin {
     return e.reply([
       `【裂界第${result.expedition.depth}层·${route}成功】`,
       disturbanceLine,
-      `本次成功率${chance}%，取得界源胚${result.gained}。`,
+      `${resolutionText}，取得界源胚${result.gained}。`,
       hpLost ? `激战损耗气血${formatPower(hpLost)}，当前气血余${formatPower(player.当前血量)}。` : null,
       `当前携带${result.expedition.loot}，位面锚定度${result.rift.anchor}%。`,
       `可继续探索第${result.expedition.depth + 1}层，或 #撤离裂界。`,
@@ -335,10 +358,29 @@ export class PlaneRiftFestival extends plugin {
     if (d.type === '裂界守卫' && guardian) {
       const v = d.verdict;
       const verdict = v?.outcome === 'win' ? '正面击溃' : v?.outcome === 'narrow' ? '力战险胜' : '被轰出';
-      return `遭遇【裂界守卫·${guardian.名号}】（战力${formatPower(guardian.战力)}，速度${guardian.实际速度}）→ ${verdict}。`;
+      const damage = v?.resolution === 'battle'
+        ? `，造成${formatPower(v.damageDealt)}伤害，损失${formatPower(v.damageTaken)}气血`
+        : '';
+      return `遭遇【裂界守卫·${guardian.名号}】（战力${formatPower(guardian.战力)}，速度${guardian.实际速度}）→ ${verdict}${damage}。`;
     }
     if (!d.triggered) return '';
     return `外界干扰·${d.type}：${d.detail || ''}`;
+  }
+
+  async sendBattleLog(e, depth, guardian, battle) {
+    const lines = [
+      `【裂界强攻·第${depth}层】对阵${guardian.名号}`,
+      ...(Array.isArray(battle?.msg) ? battle.msg : [battle?.msg]).filter(Boolean),
+    ];
+    for (let start = 0; start < lines.length; start += 20) {
+      try {
+        const image = await get_fight_img(e, lines.slice(start, start + 20));
+        if (image) await e.reply(image);
+      } catch (err) {
+        logger?.error?.(`[PlaneRiftFestival] 战斗日志渲染失败：${err?.stack || err}`);
+        break;
+      }
+    }
   }
 
   async withdraw(e) {
