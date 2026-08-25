@@ -16,6 +16,12 @@ import {
 } from './endlessTreasure.js';
 import { getTitleEffects } from './titleSystem.js';
 import {
+  ENDLESS_TIER_MAX_LAYER,
+  getEndlessDifficulty,
+  normalizeEndlessDifficultyTier,
+} from './endlessDifficulty.js';
+import { getEndlessCelestialAbilityMultiplier } from './endlessCelestial.js';
+import {
   autoSelectEndlessStarRoute,
   completeEndlessStarNode,
   ensureEndlessStarMap,
@@ -201,7 +207,12 @@ function collectEffects(member, run) {
   }
   for (const [abilityId, level] of Object.entries(member.abilities || {})) {
     if (isAbilitySealed(member, abilityId)) continue;
-    mergeEffect(effects, ABILITIES.get(abilityId)?.effect, level);
+    const ability = ABILITIES.get(abilityId);
+    const celestialMultiplier = getEndlessCelestialAbilityMultiplier(
+      run.celestialPhenomenon,
+      ability
+    );
+    mergeEffect(effects, ability?.effect, level * celestialMultiplier);
   }
   for (const boonId of member.blessings || []) {
     mergeEffect(effects, CHECKPOINT_BOONS.get(boonId)?.effect);
@@ -219,7 +230,12 @@ function collectEffects(member, run) {
             if (isAbilitySealed(current, abilityId)) return sum;
             return (
               sum +
-              asNumber(ABILITIES.get(abilityId)?.effect?.teamShieldPct) * level
+              asNumber(ABILITIES.get(abilityId)?.effect?.teamShieldPct) *
+                level *
+                getEndlessCelestialAbilityMultiplier(
+                  run.celestialPhenomenon,
+                  ABILITIES.get(abilityId)
+                )
             );
           },
           0
@@ -309,7 +325,7 @@ function refreshMemberVitals(run, oldMaximums = {}) {
   }
 }
 
-function createProjection(id, player) {
+function createProjection(id, player, celestialPhenomenon = null) {
   const realmDepth =
     asNumber(player.level_id) +
     asNumber(player.Physique_id) +
@@ -331,7 +347,11 @@ function createProjection(id, player) {
   }
   // 无尽至宝：只有局外已装配的至宝会投影入场。
   const treasureIds = getEquippedEndlessTreasures(player).map(({ id, level }) => ({ id, level }));
+  const disabledTreasureIds = new Set(
+    celestialPhenomenon?.disabledTreasureIds || []
+  );
   for (const { id } of treasureIds) {
+    if (disabledTreasureIds.has(id)) continue;
     const treasure = getTreasureById(id);
     if (!treasure?.baseAbility) continue;
     abilities[treasure.baseAbility] = Math.max(
@@ -527,6 +547,8 @@ export function createEndlessRun({
   groupId,
   players,
   seed = Date.now(),
+  difficultyTier = 1,
+  celestialPhenomenon = null,
 }) {
   if (!players?.length) throw new Error('无尽劫境至少需要一名玩家');
   const run = {
@@ -535,6 +557,8 @@ export function createEndlessRun({
     contentVersion: CONTENT.version,
     teamId,
     groupId: String(groupId),
+    difficultyTier: normalizeEndlessDifficultyTier(difficultyTier),
+    celestialPhenomenon: celestialPhenomenon ? clone(celestialPhenomenon) : null,
     layer: 0,
     highestClearedLayer: 0,
     phase: 'choice',
@@ -557,7 +581,11 @@ export function createEndlessRun({
     CONTENT.worlds.map((world) => world.id)
   );
   for (const entry of players)
-    run.members[entry.id] = createProjection(entry.id, entry.player);
+    run.members[entry.id] = createProjection(
+      entry.id,
+      entry.player,
+      run.celestialPhenomenon
+    );
   // 称号：任意成员佩戴「无尽劫境天尊」→ 全队道痕收益+25%
   run.titleTokenBoost =
     1 +
@@ -836,6 +864,7 @@ export function createEndlessEnemy(run, layer) {
   const pool = world[stage];
   const template = pool[Math.floor(random(run) * pool.length)];
   const teamSize = Object.keys(run.members).length;
+  const difficulty = getEndlessDifficulty(run.difficultyTier);
   const teamScale = 1 + Math.max(0, teamSize - 1) * 0.27;
   const bossCycle = stage === 'boss' ? Math.floor(layer / 10) : 0;
   const monsterCount = (stage === 'boss'
@@ -847,11 +876,14 @@ export function createEndlessEnemy(run, layer) {
     ? createBossRoster(run, world, template, monsterCount)
     : [];
   const hpScale =
-    Math.pow(1.1, layer - 1) * teamScale * (encounter?.enemyHpMultiplier || 1);
+    Math.pow(1.1, layer - 1) * teamScale *
+    (encounter?.enemyHpMultiplier || 1) * difficulty.enemyHpMultiplier;
   const attackScale =
-    Math.pow(1.047, layer - 1) * teamScale * (encounter?.enemyAttackMultiplier || 1);
+    Math.pow(1.047, layer - 1) * teamScale *
+    (encounter?.enemyAttackMultiplier || 1) * difficulty.enemyAttackMultiplier;
   const defenseScale =
-    Math.pow(1.032, layer - 1) * teamScale * (encounter?.enemyDefenseMultiplier || 1);
+    Math.pow(1.032, layer - 1) * teamScale *
+    (encounter?.enemyDefenseMultiplier || 1) * difficulty.enemyDefenseMultiplier;
   const baseHp = bossRoster.length
     ? bossRoster.reduce((sum, boss) => sum + boss.hp * boss.count, 0)
     : template.hp * monsterCount;
@@ -922,6 +954,54 @@ export function createEndlessEnemy(run, layer) {
     ? Math.round(enemy.maxHp * 0.12)
     : 0;
   enemy.shield = enemy.maxShield;
+  const configuredChance = Number(run.rivalEncounterChance);
+  const rivalChance = Number.isFinite(configuredChance)
+    ? clamp(configuredChance, 0, 1)
+    : Math.min(0.15, 0.07 + difficulty.tier * 0.01);
+  if (stage !== 'boss' && random(run) < rivalChance) {
+    const ownedAbilityIds = Object.values(run.members)
+      .flatMap(member => Object.keys(member.abilities || {}))
+      .filter((id, index, values) => values.indexOf(id) === index);
+    const extraPool = CONTENT.abilities.filter(
+      ability => !ability.bossOnly && !ownedAbilityIds.includes(ability.id)
+    );
+    const rivalAbilities = shuffle(run, ownedAbilityIds).slice(0, 3);
+    rivalAbilities.push(
+      ...shuffle(run, extraPool.map(ability => ability.id)).slice(0, 2)
+    );
+    const buildAbilities = rivalAbilities
+      .map(id => ABILITIES.get(id))
+      .filter(Boolean);
+    const tags = new Set(buildAbilities.flatMap(ability => ability.tags || []));
+    const tagMechanisms = [
+      ['生存', '回血'],
+      ['速度', '连击'],
+      ['召唤', '分身'],
+      ['爆发', '斩杀'],
+      ['规则', '沉默'],
+      ['火焰', '禁疗'],
+    ].filter(([tag]) => tags.has(tag)).map(([, mechanism]) => mechanism);
+    const rivalPower = 0.9 + random(run) * 0.55;
+    enemy.rivalTeam = true;
+    enemy.rivalPower = rivalPower;
+    enemy.rivalBuild = buildAbilities.map(ability => ability.name);
+    enemy.name = `轮回劫境小队·${['万劫余烬', '逆命者', '彼岸残光', '道尽众生'][Math.floor(random(run) * 4)]}`;
+    enemy.unitName = '轮回投影';
+    enemy.worldName = '轮回劫境';
+    enemy.trait = rivalPower > 1 ? '越阶构筑' : '同道争锋';
+    enemy.monsterCount = teamSize;
+    enemy.unitMaxHp = Math.max(1, Math.round(enemy.unitMaxHp * rivalPower));
+    enemy.maxHp = Math.max(1, Math.round(enemy.maxHp * rivalPower));
+    enemy.attack = Math.max(1, Math.round(enemy.attack * rivalPower));
+    enemy.defense = Math.max(0, Math.round(enemy.defense * rivalPower));
+    enemy.mechanisms = [...new Set(tagMechanisms)].slice(0, 3);
+    enemy.revivesLeft = enemy.mechanisms.includes('复活') ? 1 : 0;
+    enemy.rewardMultiplier = Math.max(1.35, rivalPower * 1.2);
+    enemy.maxShield = enemy.mechanisms.includes('护盾')
+      ? Math.round(enemy.maxHp * 0.12)
+      : 0;
+    enemy.shield = enemy.maxShield;
+  }
   return enemy;
 }
 
@@ -1122,13 +1202,17 @@ function getGhostResonance(member) {
   return null;
 }
 
-function abilityProcs(member) {
+function abilityProcs(member, run) {
   const procs = [];
   for (const [abilityId, level] of Object.entries(member.abilities || {})) {
     if (isAbilitySealed(member, abilityId)) continue;
     const ability = ABILITIES.get(abilityId);
     if (ability?.proc) {
       const proc = { ...ability.proc, level, source: ability.name, abilityId };
+      proc.damagePct *= getEndlessCelestialAbilityMultiplier(
+        run?.celestialPhenomenon,
+        ability
+      );
       if (abilityId === 'neutral_ghost_eye')
         proc.damagePct *= getGhostResonance(member)?.ghostEyeDamageMultiplier || 1;
       procs.push(proc);
@@ -2390,7 +2474,7 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
     return;
   }
 
-  if (!isSilenced) for (const proc of abilityProcs(member)) {
+  if (!isSilenced) for (const proc of abilityProcs(member, run)) {
     if (enemy.hp <= 0 || round % proc.everyRounds !== 0) continue;
     const variant = proc.variants?.length
       ? proc.variants[Math.floor(random(run) * proc.variants.length)]
@@ -3256,10 +3340,16 @@ function finishVictory(run, enemy, layer) {
   delete run.__ninthGhostDomainUsed;
 
   const encounter = getEndlessStarEncounter(run, layer);
-  const rewardMultiplier = Math.max(1, asNumber(encounter?.rewardMultiplier, 1));
+  const difficulty = getEndlessDifficulty(run.difficultyTier);
+  const rewardMultiplier =
+    Math.max(1, asNumber(encounter?.rewardMultiplier, 1)) *
+    Math.max(1, asNumber(enemy?.rewardMultiplier, 1)) *
+    difficulty.rewardMultiplier;
   const tokenMultiplier = Math.max(
     0,
-    asNumber(encounter?.tokenMultiplier, 1) * (enemy.trait === '蚀痕' ? 0.5 : 1)
+    asNumber(encounter?.tokenMultiplier, 1) *
+      (enemy.trait === '蚀痕' ? 0.5 : 1) *
+      Math.max(0, asNumber(run.celestialPhenomenon?.tokenMultiplier, 1))
   );
   const currencyReward = getEndlessLayerCurrencyReward(layer);
   const layerReward = {
@@ -3385,6 +3475,12 @@ export function resolveEndlessLayer(run) {
         logs,
         `随机灾厄【${encounter.calamity.name}】降临：${encounter.calamity.description}`
       );
+  }
+  if (enemy.rivalTeam) {
+    addBattleLog(
+      logs,
+      `遭遇【${enemy.name}】；对方构筑：${enemy.rivalBuild.join('、')}，战力修正×${enemy.rivalPower.toFixed(2)}。`
+    );
   }
   prepareBattle(run, enemy, encounter, logs);
   if (encounter) {
@@ -3517,7 +3613,18 @@ export function resolveEndlessLayer(run) {
     if (layerReward.starReward?.description)
       addBattleLog(logs, `劫星回响：${layerReward.starReward.description}。`);
     completeEndlessStarNode(run, layer, true);
-    if (enemy.stage === 'boss') beginCheckpoint(run, layer);
+    if (layer >= ENDLESS_TIER_MAX_LAYER) {
+      run.phase = 'completed';
+      run.completed = true;
+      run.completedAt = Date.now();
+      run.pendingChoices = {};
+      run.checkpoint = null;
+      addBattleLog(
+        logs,
+        `${getEndlessDifficulty(run.difficultyTier).code}劫境第一百五十层已经打穿，本阶挑战完成。`
+      );
+    }
+    else if (enemy.stage === 'boss') beginCheckpoint(run, layer);
     else if (encounter?.skipAbilityReward) {
       run.pendingChoices = {};
       run.pendingChoiceLayer = layer + 1;
@@ -3601,6 +3708,10 @@ export function resolveEndlessLayer(run) {
     enemyCount: enemy.monsterCount,
     enemyUnitMaxHp: enemy.unitMaxHp,
     enemyTeamScale: enemy.teamScale,
+    difficultyTier: normalizeEndlessDifficultyTier(run.difficultyTier),
+    rivalTeam: Boolean(enemy.rivalTeam),
+    rivalBuild: enemy.rivalBuild || [],
+    rivalPower: enemy.rivalPower || null,
     starRoute: enemy.starNode,
     victory,
     rounds,
@@ -3612,6 +3723,7 @@ export function resolveEndlessLayer(run) {
     damageTakenByMember,
     roundDetails,
     layerReward,
+    completed: Boolean(run.completed),
     summary,
     logs,
     at: Date.now(),

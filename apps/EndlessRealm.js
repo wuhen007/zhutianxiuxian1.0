@@ -101,6 +101,23 @@ import {
   getEndlessBattleTemplateModel,
   normalizeEndlessBattleTemplate,
 } from '../model/endlessBattleTemplate.js';
+import {
+  ENDLESS_MAX_DIFFICULTY_TIER,
+  ENDLESS_TIER_MAX_LAYER,
+  canEnterEndlessDifficulty,
+  formatEndlessDifficulty,
+  getEndlessDifficulty,
+  getEndlessLimitedPurchaseLimit,
+  normalizeEndlessDifficultyProgress,
+  normalizeEndlessDifficultyTier,
+  recordEndlessDifficultyProgress,
+  selectEndlessDifficulty,
+} from '../model/endlessDifficulty.js';
+import {
+  formatEndlessCelestial,
+  getDailyEndlessCelestial,
+  getEndlessCelestialPrice,
+} from '../model/endlessCelestial.js';
 import RealmEvents from './tasks/RealmEvents.js';
 import {
   createTianjiaoTrace,
@@ -135,6 +152,10 @@ import {
 const STATE_TTL_SECONDS = 7 * 24 * 60 * 60;
 const LOCK_TTL_SECONDS = 12;
 const MAX_TEAM_SIZE = 4;
+const endlessWebRetryState = globalThis[Symbol.for('zhutianxiuxian.endlessWebRetry')] ??= {
+  generation: 0,
+  timer: null,
+};
 
 export class EndlessRealm extends plugin {
   constructor() {
@@ -148,6 +169,8 @@ export class EndlessRealm extends plugin {
         { reg: '^#创建无尽队伍$', fnc: 'createTeam' },
         { reg: '^#加入无尽队伍\\s*\\d{6}$', fnc: 'joinTeam' },
         { reg: '^#无尽队伍$', fnc: 'showTeam' },
+        { reg: '^#(?:无尽难度|劫境难度)(?:\\s*[Aa]?[1-9])?$', fnc: 'setEndlessDifficulty' },
+        { reg: '^#(?:今日天象|无尽天象)$', fnc: 'showEndlessCelestial' },
         { reg: '^#离开无尽队伍$', fnc: 'leaveTeam' },
         { reg: '^#解散无尽队伍$', fnc: 'disbandTeam' },
         { reg: '^#发布跨服无尽$', fnc: 'publishCrossEndless' },
@@ -205,11 +228,19 @@ export class EndlessRealm extends plugin {
         logger.error('[跨服无尽] 事件处理失败', error)
       )
     );
+    endlessWebRetryState.generation += 1;
+    const generation = endlessWebRetryState.generation;
+    if (endlessWebRetryState.timer) clearTimeout(endlessWebRetryState.timer);
+    endlessWebRetryState.timer = null;
     const startWebServer = () =>
       startEndlessWebServer(this).catch((error) => {
+        if (generation !== endlessWebRetryState.generation) return;
         if (error?.message === 'Redis 尚未就绪') {
-          const timer = setTimeout(startWebServer, 5000);
-          timer.unref?.();
+          endlessWebRetryState.timer = setTimeout(() => {
+            endlessWebRetryState.timer = null;
+            startWebServer();
+          }, 5000);
+          endlessWebRetryState.timer.unref?.();
           return;
         }
         logger.error('[无尽网页] 服务启动失败', error);
@@ -860,6 +891,7 @@ export class EndlessRealm extends plugin {
       ],
       notices: run
         ? [
+            { tone: run.celestialPhenomenon?.tone || 'normal', title: `天象·${run.celestialPhenomenon?.name || '万象平稳'}`, text: run.celestialPhenomenon?.description || '诸天规则暂时平稳。' },
             { tone: run.phase === 'ready' ? 'jade' : 'normal', title: '当前进程', text: phase },
             run.phase === 'checkpoint'
               ? { tone: 'danger', title: '十方天关', text: '本轮劫环已完成，等待队长进行劫后问道。' }
@@ -867,7 +899,10 @@ export class EndlessRealm extends plugin {
                 ? { tone: 'jade', title: '劫途已定', text: `第${this.starTargetLayer(run)}层将踏入【${selectedStar.name}】。` }
                 : { tone: 'danger', title: '因果未定', text: '发送 #劫途星图 观测路线，队长定途后方可推进。' },
           ]
-        : [{ tone: 'jade', title: '入境准备', text: `每名成员需要【${ENDLESS_ENTRY_ITEM}】×1与基础心神${ENDLESS_SPIRIT_HEART_COST}点。` }],
+        : [
+            { tone: 'gold', title: formatEndlessDifficulty(team.difficultyTier), text: `本阶打穿${ENDLESS_TIER_MAX_LAYER}层后完成首通，并解锁下一难度。` },
+            { tone: 'jade', title: '入境准备', text: `每名成员需要【${ENDLESS_ENTRY_ITEM}】×1与基础心神${ENDLESS_SPIRIT_HEART_COST}点。` },
+          ],
       team: { id: team.id },
       members: this.panelMembers(team, run, userId),
       choiceGroups: run ? this.panelChoiceGroups(run, [userId]) : [],
@@ -897,12 +932,12 @@ export class EndlessRealm extends plugin {
     return {
       mode: 'build',
       eyebrow: 'BUILD ARCHIVE · 诸天铭刻',
-      title: `无尽构筑 · 第${run.layer}层`,
+      title: `${formatEndlessDifficulty(run.difficultyTier)} · 第${run.layer}层`,
       subtitle: '能力、天关机缘与跨世界共鸣共同塑造本次投影；局外道碑加成已经计入下列属性。',
       mark: String(run.layer).padStart(2, '0'),
       status: this.phaseText(run.phase),
       heroStats: [
-        { label: '当前层数', value: run.layer, note: getWorldForLayer(run, run.layer + 1).name },
+        { label: '当前进度', value: `${run.layer} / ${ENDLESS_TIER_MAX_LAYER}`, note: formatEndlessDifficulty(run.difficultyTier) },
         { label: '共享命火', value: `${run.lifeFire} / ${run.maxLifeFire}`, note: '全队共用' },
         { label: '诸天共鸣', value: run.fusions.length, note: '已激活组合流派' },
         { label: '待选投影', value: Object.keys(run.pendingChoices || {}).length, note: this.phaseText(run.phase) },
@@ -911,6 +946,11 @@ export class EndlessRealm extends plugin {
       members: this.panelMembers(team, run, userId, true),
       fusions: run.fusions.map(id => getFusion(id)?.name || id),
       choiceGroups: this.panelChoiceGroups(run, [userId]),
+      notices: [{
+        tone: run.celestialPhenomenon?.tone || 'normal',
+        title: `天象·${run.celestialPhenomenon?.name || '万象平稳'}`,
+        text: run.celestialPhenomenon?.description || '诸天规则暂时平稳。',
+      }],
       checkpoint: run.phase === 'checkpoint' ? this.panelCheckpoint(run) : null,
       treasury: {
         bankedLingshi: this.formatAmount(run.banked.lingshi),
@@ -1135,6 +1175,8 @@ export class EndlessRealm extends plugin {
         '#创建无尽队伍',
         '#加入无尽队伍 123456',
         '#无尽队伍',
+        '#无尽难度 / #无尽难度 A2',
+        '#今日天象',
         '#发布跨服无尽 / #跨服无尽队伍',
         '#化身跨服加入无尽 房间码',
         '#跨服无尽状态 / #退出跨服无尽',
@@ -1202,22 +1244,34 @@ export class EndlessRealm extends plugin {
     const userId = await this.checkPlayer(e);
     if (!userId) return false;
     const player = await Read_player(userId);
-    const day = this.todayKey();
+    const celestial = getDailyEndlessCelestial();
+    const day = celestial.dateKey;
+    const legacyDay = day.replace(/-0(\d)/g, '-$1');
     const products = ENDLESS_SHOP.map((item, index) => {
-      const bought = Number(
-        player.无尽商店购买记录?.[`${day}:${item.id}`]
-      ) || 0;
-      const remaining = item.dailyLimit
-        ? Math.max(0, item.dailyLimit - bought)
+      const bought = [...new Set([day, legacyDay])].reduce(
+        (sum, recordDay) => sum +
+          (Number(player.无尽商店购买记录?.[`${recordDay}:${item.id}`]) || 0),
+        0
+      );
+      const dailyLimit = getEndlessLimitedPurchaseLimit(
+        player,
+        item.dailyLimit,
+        celestial
+      );
+      const price = getEndlessCelestialPrice(item.price, celestial);
+      const remaining = dailyLimit
+        ? Math.max(0, dailyLimit - bought)
         : null;
       return {
         ...item,
         index: String(index + 1).padStart(2, '0'),
         tone: item.category || '寻常',
         wide: [7, 9, 12].includes(item.id),
-        price: this.formatAmount(item.price),
-        limitText: item.dailyLimit ? `每日限购 ${item.dailyLimit}` : '',
-        stockText: item.dailyLimit ? `今日余 ${remaining}` : '不限购',
+        price: this.formatAmount(price),
+        basePrice: item.price,
+        dailyLimit,
+        limitText: dailyLimit ? `今日限购 ${dailyLimit}` : '',
+        stockText: dailyLimit ? `今日余 ${remaining}` : '不限购',
         soldOut: remaining === 0,
       };
     });
@@ -1233,6 +1287,7 @@ export class EndlessRealm extends plugin {
         products,
         featured,
         catalogProducts,
+        celestial,
       });
       const image = await puppeteer.screenshot('endless_shop', renderData);
       if (image) return e.reply(image);
@@ -1243,6 +1298,7 @@ export class EndlessRealm extends plugin {
     const lines = [
       '【无尽商店】',
       `${ENDLESS_TOKEN}：${this.formatAmount(player[ENDLESS_TOKEN])}`,
+      `今日天象：${celestial.name}｜${celestial.description}`,
       '',
       ...products.map(item =>
         `${item.id}. ${item.name} · ${item.price}${ENDLESS_TOKEN}${
@@ -1254,11 +1310,6 @@ export class EndlessRealm extends plugin {
       `使用【${FUSION_ITEM}】：#万象归一 武器/护具/法宝*百分比装备名`,
     ];
     return e.reply(lines.join('\n'));
-  }
-
-  todayKey() {
-    const now = new Date();
-    return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
   }
 
   async buyEndlessItem(e) {
@@ -1273,23 +1324,37 @@ export class EndlessRealm extends plugin {
 
     return this.withLock(e, `store:${userId}`, async () => {
       const player = await Read_player(userId);
-      const day = this.todayKey();
+      const celestial = getDailyEndlessCelestial();
+      const day = celestial.dateKey;
+      const legacyDay = day.replace(/-0(\d)/g, '-$1');
       player.无尽商店购买记录 ||= {};
       for (const key of Object.keys(player.无尽商店购买记录)) {
-        if (!key.startsWith(`${day}:`)) delete player.无尽商店购买记录[key];
+        if (!key.startsWith(`${day}:`) && !key.startsWith(`${legacyDay}:`))
+          delete player.无尽商店购买记录[key];
       }
       const recordKey = `${day}:${product.id}`;
-      const bought = Number(player.无尽商店购买记录[recordKey]) || 0;
-      if (product.dailyLimit && bought + amount > product.dailyLimit)
-        return e.reply(`【${product.name}】每日限购${product.dailyLimit}件，你今天已购买${bought}件`);
-      const cost = product.price * amount;
+      const bought = [...new Set([day, legacyDay])].reduce(
+        (sum, recordDay) => sum +
+          (Number(player.无尽商店购买记录[`${recordDay}:${product.id}`]) || 0),
+        0
+      );
+      const dailyLimit = getEndlessLimitedPurchaseLimit(
+        player,
+        product.dailyLimit,
+        celestial
+      );
+      if (dailyLimit && bought + amount > dailyLimit)
+        return e.reply(`【${product.name}】今日限购${dailyLimit}件，你今天已购买${bought}件`);
+      const unitPrice = getEndlessCelestialPrice(product.price, celestial);
+      const cost = unitPrice * amount;
       const rewardAmount = getEndlessProductRewardAmount(product, amount);
       if ((Number(player[ENDLESS_TOKEN]) || 0) < cost)
         return e.reply(`${ENDLESS_TOKEN}不足：需要${cost}，当前${Number(player[ENDLESS_TOKEN]) || 0}`);
 
       const original = JSON.parse(JSON.stringify(player));
       player[ENDLESS_TOKEN] = (Number(player[ENDLESS_TOKEN]) || 0) - cost;
-      player.无尽商店购买记录[recordKey] = bought + amount;
+      player.无尽商店购买记录[recordKey] =
+        (Number(player.无尽商店购买记录[recordKey]) || 0) + amount;
       try {
         await Write_player(userId, player);
         if (product.action === 'item')
@@ -1333,6 +1398,7 @@ export class EndlessRealm extends plugin {
         '【无尽商店·购买成功】',
         `${product.name}×${rewardAmount}`,
         `消耗${ENDLESS_TOKEN}：${cost}`,
+        `今日天象：${celestial.name}（单价${unitPrice}）`,
         `剩余${ENDLESS_TOKEN}：${player[ENDLESS_TOKEN]}`,
       ];
       if (treasureEvent) lines.push('', ...formatTreasureClue(treasureEvent.eventData));
@@ -1845,7 +1911,12 @@ export class EndlessRealm extends plugin {
         player[ENDLESS_TOKEN] = (Number(player[ENDLESS_TOKEN]) || 0) + (Number(reward.tokens) || 0);
         player.修为 = (Number(player.修为) || 0) + (Number(reward.cultivation) || 0);
         player.血气 = (Number(player.血气) || 0) + (Number(reward.blood) || 0);
-        player.无尽劫境最高层 = Math.max(Number(player.无尽劫境最高层) || 0, Number(settlement.highestLayer) || 0);
+        recordEndlessDifficultyProgress(
+          player,
+          settlement.difficultyTier,
+          settlement.highestLayer,
+          { cleared: Boolean(settlement.cleared) }
+        );
         player.无尽劫境次数 = (Number(player.无尽劫境次数) || 0) + 1;
         player.无尽劫境结算记录 = [...records, settlement.id].slice(-30);
         if (Number(settlement.highestLayer) >= ENDLESS_TREASURE_UNLOCK_LAYER)
@@ -1973,6 +2044,7 @@ export class EndlessRealm extends plugin {
           [userId]: player.名号 || `无名修士${String(userId).slice(-4)}`,
         },
         status: 'lobby',
+        difficultyTier: normalizeEndlessDifficultyProgress(player).selectedTier,
         createdAt: Date.now(),
       };
       await this.saveTeam(team);
@@ -1982,6 +2054,7 @@ export class EndlessRealm extends plugin {
           `队伍编号：${id}`,
           `队长：${team.memberNames[userId]}`,
           `成员：1/${MAX_TEAM_SIZE}`,
+          `挑战难度：${formatEndlessDifficulty(team.difficultyTier)}`,
           `其他玩家发送 #加入无尽队伍 ${id}`,
           `开局时每人消耗【${ENDLESS_ENTRY_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点`,
         ].join('\n')
@@ -2043,6 +2116,7 @@ export class EndlessRealm extends plugin {
     const lines = [
       `【无尽队伍·${team.id}】`,
       `状态：${this.statusText(team.status)}`,
+      `挑战难度：${formatEndlessDifficulty(run?.difficultyTier || team.difficultyTier)}`,
       `成员：${displayedMembers.length + remoteMembers.length}/${MAX_TEAM_SIZE}`,
       ...displayedMembers.map(
         (id) =>
@@ -2056,6 +2130,7 @@ export class EndlessRealm extends plugin {
       const nextWorld = getWorldForLayer(run, run.layer + 1);
       lines.push(
         `当前层数：${run.layer}`,
+        `本局天象：${run.celestialPhenomenon?.name || '万象平稳'}`,
         `下一位面：${nextWorld.name}`,
         `命火：${run.lifeFire}/${run.maxLifeFire}`,
         `阶段：${
@@ -2100,6 +2175,50 @@ export class EndlessRealm extends plugin {
     if (!this.isTeamGroup(e, team))
       return e.reply('请回到无尽队伍所在群进行操作');
     return this.replyTeamStatus(e, team, userId);
+  }
+
+  async showEndlessCelestial(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    return e.reply(formatEndlessCelestial(getDailyEndlessCelestial()).join('\n'));
+  }
+
+  async setEndlessDifficulty(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const targetMatch = String(e.msg || '').match(/A?([1-9])\s*$/i);
+    const team = await this.getPlayerTeam(userId);
+    const player = await Read_player(userId);
+    const progress = normalizeEndlessDifficultyProgress(player);
+    if (!targetMatch) {
+      const highest = progress.clearedTiers.at(-1) || 0;
+      return e.reply([
+        '【无尽劫境·难度进阶】',
+        `已解锁：A1～A${progress.unlockedTier}`,
+        `已首通：${highest ? progress.clearedTiers.map(formatEndlessDifficulty).join('、') : '暂无'}`,
+        `当前选择：${formatEndlessDifficulty(team?.difficultyTier || progress.selectedTier)}`,
+        `每阶均需打穿${ENDLESS_TIER_MAX_LAYER}层；每个首通使全部限购额度+10%，最低+1件。`,
+        '#无尽难度 A2',
+      ].join('\n'));
+    }
+    if (!team) return e.reply('请先发送 #创建无尽队伍，再由队长选择挑战难度');
+    if (!this.isTeamGroup(e, team)) return e.reply('请回到无尽队伍所在群进行操作');
+    if (team.leader !== userId) return e.reply('只有队长可以调整无尽难度');
+    if (team.status !== 'lobby') return e.reply('本局难度已经固定，结算后可重新选择');
+    const target = normalizeEndlessDifficultyTier(targetMatch[1]);
+    const blocked = [];
+    for (const id of team.members) {
+      const memberPlayer = team.crossMembers?.[id]?.avatar || await Read_player(id);
+      if (!canEnterEndlessDifficulty(memberPlayer, target))
+        blocked.push(team.memberNames[id] || id);
+    }
+    if (blocked.length)
+      return e.reply(`${blocked.join('、')}尚未解锁${formatEndlessDifficulty(target)}`);
+    selectEndlessDifficulty(player, target);
+    await Write_player(userId, player);
+    team.difficultyTier = target;
+    await this.saveTeam(team);
+    return e.reply(`挑战难度已切换为【${formatEndlessDifficulty(target)}】；本阶通关层数为${ENDLESS_TIER_MAX_LAYER}层。`);
   }
 
   async leaveTeam(e) {
@@ -2197,11 +2316,14 @@ export class EndlessRealm extends plugin {
 
       const missing = [];
       const players = [];
+      const difficultyTier = normalizeEndlessDifficultyTier(team.difficultyTier);
       const weekendFree = isWeekendNow();
       const freeWeekKey = getWeekendFreeWeekKey();
       for (const id of team.members) {
         const cross = team.crossMembers?.[id];
         if (cross) {
+          if (!canEnterEndlessDifficulty(cross.avatar, difficultyTier))
+            missing.push(`${team.memberNames[id]}（尚未解锁${formatEndlessDifficulty(difficultyTier)}）`);
           players.push({ id, player: cross.avatar, heartCost: 0, freeAvailable: false, cross: true });
           continue;
         }
@@ -2210,6 +2332,8 @@ export class EndlessRealm extends plugin {
           continue;
         }
         const player = await Read_player(id);
+        if (!canEnterEndlessDifficulty(player, difficultyTier))
+          missing.push(`${team.memberNames[id]}（尚未解锁${formatEndlessDifficulty(difficultyTier)}）`);
         // 周末免费入场：每周末一次，无需秘钥与心神
         const freeAvailable =
           weekendFree && player[WEEKEND_FREE_FIELD] !== freeWeekKey;
@@ -2240,6 +2364,8 @@ export class EndlessRealm extends plugin {
         groupId: team.groupId,
         players,
         seed: Date.now() ^ Number(team.id),
+        difficultyTier,
+        celestialPhenomenon: getDailyEndlessCelestial(),
       });
       const originalPlayers = new Map(
         players.filter((entry) => !entry.cross).map(({ id, player }) => [id, structuredClone(player)])
@@ -2330,6 +2456,8 @@ export class EndlessRealm extends plugin {
       return e.reply(
         [
           '【诸天无尽劫境开启】',
+          `挑战难度：${formatEndlessDifficulty(run.difficultyTier)}（共${ENDLESS_TIER_MAX_LAYER}层）`,
+          `今日天象：${run.celestialPhenomenon.name}｜${run.celestialPhenomenon.description}`,
           `全队消耗【${ENDLESS_ENTRY_ITEM}】×1、心神按各自命格结算`,
           ...(freeMembers.length
             ? [
@@ -2673,7 +2801,7 @@ export class EndlessRealm extends plugin {
       })
       .join('\n');
     const lines = [
-      `【无尽劫境·第${result.layer}层】`,
+      `【${formatEndlessDifficulty(run.difficultyTier)}·第${result.layer}层】`,
       `${result.world} · ${this.stageText(result.stage)}`,
       `敌人：${result.enemy} [${result.trait}]`,
       `敌方血条：${enemyHp}`,
@@ -2860,6 +2988,9 @@ export class EndlessRealm extends plugin {
     return {
       saveId: `endless_${run.teamId}_${result.layer}`,
       layer: result.layer,
+      difficulty: formatEndlessDifficulty(run.difficultyTier),
+      celestial: run.celestialPhenomenon,
+      completed: Boolean(result.completed),
       world: result.world,
       stage: result.stage,
       stageName: this.stageText(result.stage),
@@ -2964,6 +3095,8 @@ export class EndlessRealm extends plugin {
       const image = await puppeteer.screenshot(templateModel, renderData);
       if (image) {
         await e.reply(image);
+        if (result.completed && settlement)
+          return e.reply(this.formatSettlement(settlement, '劫境通关结算').join('\n'));
         if (result.victory) {
           const nextStep = run.phase === 'checkpoint'
             ? this.formatCheckpoint(run)
@@ -2984,7 +3117,10 @@ export class EndlessRealm extends plugin {
 
     const lines = this.formatBattle(run, result);
     if (settlement)
-      lines.push('', ...this.formatSettlement(settlement, '团灭结算'));
+      lines.push('', ...this.formatSettlement(
+        settlement,
+        result.completed ? '劫境通关结算' : '团灭结算'
+      ));
     return e.reply(lines.join('\n'));
   }
 
@@ -3040,7 +3176,15 @@ export class EndlessRealm extends plugin {
       }
       await this.saveRun(run);
       let settlement = null;
-      if (!result.victory) {
+      if (result.completed) {
+        settlement = await this.settleRun(team, run, 1, 'clear');
+        if (e.isEndlessWeb)
+          e.endlessTerminalState = {
+            ...serializeEndlessWebState(this, team, run, userId),
+            ended: true,
+          };
+      }
+      else if (!result.victory) {
         settlement = await this.settleRun(team, run, 0.3, 'defeat');
         if (e.isEndlessWeb) {
           const group = globalThis.Bot?.pickGroup?.(e.group_id);
@@ -3073,7 +3217,10 @@ export class EndlessRealm extends plugin {
       return e.reply('请回到无尽队伍所在群进行操作');
     const run = await this.getRun(team.id);
     if (!run) return e.reply('无尽劫境状态已经失效');
-    const lines = [`【无尽构筑·第${run.layer}层】`];
+    const lines = [
+      `【无尽构筑·${formatEndlessDifficulty(run.difficultyTier)}·第${run.layer}层】`,
+      `本局天象：${run.celestialPhenomenon?.name || '万象平稳'}｜${run.celestialPhenomenon?.description || '诸天规则暂时平稳。'}`,
+    ];
     for (const member of Object.values(run.members)) {
       const stats = getMemberStats(run, member.id);
       const abilities = Object.entries(member.abilities || {});
@@ -3148,7 +3295,8 @@ export class EndlessRealm extends plugin {
             settlement.reward.lostSourceStone
           )} / ${ENDLESS_TOKEN}${this.formatAmount(settlement.reward.lostTokens)}`
         : '全部战利品已经安全带出。',
-      `抵达层数：${settlement.layer}`,
+      `抵达层数：${settlement.layer}/${ENDLESS_TIER_MAX_LAYER}`,
+      `挑战难度：${formatEndlessDifficulty(settlement.difficultyTier)}`,
       ...(Array.isArray(settlement.extras) && settlement.extras.length
         ? ['', ...settlement.extras.map(line => `✨ ${line}`)]
         : []),
@@ -3209,10 +3357,21 @@ export class EndlessRealm extends plugin {
             (Number(player.修为) || 0) + (Number(memberReward.cultivation) || 0);
           player.血气 =
             (Number(player.血气) || 0) + (Number(memberReward.blood) || 0);
-          player.无尽劫境最高层 = Math.max(
-            Number(player.无尽劫境最高层) || 0,
-            highestClearedLayer
+          const progressResult = recordEndlessDifficultyProgress(
+            player,
+            run.difficultyTier,
+            highestClearedLayer,
+            { cleared: reason === 'clear' || run.completed }
           );
+          if (progressResult.firstClear) {
+            const currentDifficulty = getEndlessDifficulty(run.difficultyTier);
+            const unlockText = currentDifficulty.tier < ENDLESS_MAX_DIFFICULTY_TIER
+              ? `，已解锁${formatEndlessDifficulty(currentDifficulty.tier + 1)}`
+              : '，九阶劫境已经全部贯通';
+            run.settlement.extras.push(
+              `${team.memberNames?.[id] || id}首通【${formatEndlessDifficulty(currentDifficulty.tier)}】${unlockText}；限购额度永久再提高10%（最低+1）。`
+            );
+          }
           player.无尽劫境次数 = (Number(player.无尽劫境次数) || 0) + 1;
           player.无尽劫境结算记录 = [...records, run.settlement.id].slice(-30);
           // 无尽至宝：本趟打到第25关 → 解锁一件永久随机至宝（已全收集则升级）
@@ -3267,6 +3426,8 @@ export class EndlessRealm extends plugin {
           server_id: member.serverId,
           member_tag: member.memberTag,
           highestLayer: highestClearedLayer,
+          difficultyTier: normalizeEndlessDifficultyTier(run.difficultyTier),
+          cleared: reason === 'clear' || Boolean(run.completed),
           reward: {
             lingshi: Number(run.settlement.reward.lingshi) || 0,
             sourceStone: Number(run.settlement.reward.sourceStone) || 0,
@@ -3306,6 +3467,7 @@ export class EndlessRealm extends plugin {
       total: team.members.length,
       reward: run.settlement.reward,
       layer: run.layer,
+      difficultyTier: normalizeEndlessDifficultyTier(run.difficultyTier),
       memberNames: team.memberNames,
       extras: run.settlement.extras || [],
     };
@@ -3505,11 +3667,15 @@ export class EndlessRealm extends plugin {
     const player = await Read_player(userId);
     const loadout = normalizeEndlessTreasureLoadout(player);
     const views = getPlayerTreasureViews(player);
+    const celestial = getDailyEndlessCelestial();
     const nextSlot = loadout.slots + 1;
     const lines = [
       '【无尽至宝】',
       `持有${views.length}件｜已装配${loadout.equipped.length}/${loadout.slots}件`,
       `劫境道痕：${Math.max(0, Math.floor(Number(player.劫境道痕) || 0))}`,
+      ...(celestial.disabledTreasureNames?.length
+        ? [`今日天象禁用：${celestial.disabledTreasureNames.join('、')}`]
+        : []),
       `Lv.1按${Math.round(ENDLESS_TREASURE_EFFECT_RATE * 100)}%效能结算，每级额外提高${Math.round(ENDLESS_TREASURE_EFFECT_PER_LEVEL * 100)}%，最高Lv.${ENDLESS_TREASURE_LEVEL_CAP}。`,
       loadout.slots
         ? `下一槽：最高通关${getEndlessTreasureSlotGate(nextSlot)}层，并消耗${getEndlessTreasureSlotCost(nextSlot)}道痕。`
@@ -3641,12 +3807,21 @@ export class EndlessRealm extends plugin {
         const id = file.replace('.json', '');
         try {
           const player = JSON.parse(fs.readFileSync(`${dir}/${file}`, 'utf8'));
+          const progress = normalizeEndlessDifficultyProgress(player);
           const layer = Number(player.无尽劫境最高层) || 0;
           if (!layer) continue;
+          const difficultyTier = Math.min(
+            ENDLESS_MAX_DIFFICULTY_TIER,
+            Math.max(1, Math.ceil(layer / ENDLESS_TIER_MAX_LAYER))
+          );
+          const localLayer = progress.highestLayers[difficultyTier] ||
+            (layer % ENDLESS_TIER_MAX_LAYER || ENDLESS_TIER_MAX_LAYER);
           rankings.push({
             qq: id,
             name: player.名号 || id,
             layer,
+            difficultyTier,
+            localLayer,
             runs: Number(player.无尽劫境次数) || 0,
           });
         } catch (error) {
@@ -3662,24 +3837,30 @@ export class EndlessRealm extends plugin {
     const top = rankings.slice(0, 10);
     const lines = [
       '【无尽劫境·万界劫榜】',
-      '按「无尽劫境最高层」排序（同层取通关次数少者优先）',
+      '按「难度优先、层数次之」排序（同进度取通关次数少者优先）',
       '',
       ...top.map((entry, index) => {
         const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
         const isFirst = index === 0 && entry.layer >= 30;
-        return `${medal} ${entry.name}｜第${entry.layer}层｜通关${entry.runs}次${isFirst ? '｜【无尽劫境天尊】' : ''}`;
+        return `${medal} ${entry.name}｜${formatEndlessDifficulty(entry.difficultyTier)}·第${entry.localLayer}层｜通关${entry.runs}次${isFirst ? '｜【无尽劫境天尊】' : ''}`;
       }),
     ];
     const myRank = rankings.findIndex((entry) => entry.qq === userId) + 1;
     if (myRank > 0) {
       const mine = rankings[myRank - 1];
-      lines.push('', `你的排名：第${myRank}名｜第${mine.layer}层｜通关${mine.runs}次`);
+      lines.push('', `你的排名：第${myRank}名｜${formatEndlessDifficulty(mine.difficultyTier)}·第${mine.localLayer}层｜通关${mine.runs}次`);
     } else {
       lines.push('', '你还未进入劫榜，打穿第1关即可上榜。');
     }
     const serverMax = rankings[0]?.layer || 0;
-    if (serverMax >= 30)
-      lines.push('', `当前全服最高纪录：第${serverMax}层。`);
+    if (serverMax >= 30) {
+      const serverTier = Math.min(
+        ENDLESS_MAX_DIFFICULTY_TIER,
+        Math.max(1, Math.ceil(serverMax / ENDLESS_TIER_MAX_LAYER))
+      );
+      const serverLocalLayer = serverMax % ENDLESS_TIER_MAX_LAYER || ENDLESS_TIER_MAX_LAYER;
+      lines.push('', `当前全服最高纪录：${formatEndlessDifficulty(serverTier)}·第${serverLocalLayer}层。`);
+    }
     return e.reply(lines.join('\n'));
   }
 

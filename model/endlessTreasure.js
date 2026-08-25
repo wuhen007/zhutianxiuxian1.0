@@ -890,10 +890,14 @@ function meetsRequirementGroup(member, group) {
  */
 export function getTreasureStates(member, run) {
   if (!member?.treasureIds?.length) return [];
+  const disabledTreasureIds = new Set(
+    run?.celestialPhenomenon?.disabledTreasureIds || []
+  );
   const effectScale = (level) =>
     ENDLESS_TREASURE_EFFECT_RATE + ENDLESS_TREASURE_EFFECT_PER_LEVEL * (level - 1);
   return member.treasureIds
     .map(({ id, level }) => {
+      if (disabledTreasureIds.has(id)) return null;
       const treasure = TREASURE_MAP.get(id);
       if (!treasure) return null;
       const baseEffect = {};
