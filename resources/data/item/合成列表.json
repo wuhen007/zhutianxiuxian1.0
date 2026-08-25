@@ -1886,6 +1886,42 @@
       }
     ]
   },
+  {
+    "name": "太阴真经·仙台卷",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "太阴真经·仙台卷残页",
+        "class": "材料",
+        "amount": 10
+      }
+    ]
+  },
+  {
+    "name": "元皇道剑",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "元皇道剑残页",
+        "class": "材料",
+        "amount": 10
+      }
+    ]
+  },
+  {
+    "name": "元光转生轮",
+    "class": "功法",
+    "amount": 1,
+    "materials": [
+      {
+        "name": "元光转生轮残页",
+        "class": "材料",
+        "amount": 10
+      }
+    ]
+  },
     {
     "name": "组字秘",
     "class": "功法",

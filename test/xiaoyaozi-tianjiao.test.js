@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 
+import { resolveGongfaCombatSkill } from '../model/gongfaProficiency.js';
+
 function readItemData(file) {
   return JSON.parse(fs.readFileSync(new URL(`../resources/data/item/${file}`, import.meta.url), 'utf8'));
 }
@@ -14,6 +16,8 @@ test('仙界天骄逍遥子的设定、掉落与传承完整可用', () => {
   const equipment = readItemData('特殊装备列表.json');
   const techniques = readItemData('功法列表.json');
   const recipes = readItemData('合成列表.json');
+  const attacks = readItemData('技能组/攻击技能.json');
+  const defenses = readItemData('技能组/防御技能.json');
 
   const xiaoyaozi = bosses.find(item => item.名号 === '逍遥子');
   assert.equal(xiaoyaozi?.位面, 1);
@@ -54,7 +58,22 @@ test('仙界天骄逍遥子的设定、掉落与传承完整可用', () => {
     techniques.find(item => item.name === '鲲鹏道图')?.属性加成,
     { 闪避率: 0.05, 暴击率: 0.05 },
   );
-  assert.ok(techniques.some(item => item.name === '逍遥游'));
+  const xiaoyaoyou = techniques.find(item => item.name === '逍遥游');
+  assert.deepEqual(xiaoyaoyou?.属性加成, { 闪避率: 0.1, 速度: 300 });
+  const xiaoyaoyouAttack = attacks.find(item => item.name === '逍遥游');
+  assert.deepEqual(
+    xiaoyaoyouAttack?.招式?.map(item => [item.name, item.最低熟练度]),
+    [['扶摇九万里', 0], ['天地一蜉蝣', 250], ['鲲鹏裂天击', 500], ['天地无拘', 750]],
+  );
+  const masteredMove = resolveGongfaCombatSkill(
+    { 学习的功法: ['逍遥游'], 功法熟练度: { 逍遥游: 750 } },
+    xiaoyaoyouAttack,
+    () => 0.999,
+  );
+  assert.equal(masteredMove.name, '逍遥游');
+  assert.equal(masteredMove.招式名, '天地无拘');
+  assert.equal(masteredMove.beilv, 5.2);
+  assert.ok(defenses.some(item => item.name === '逍遥游' && item.beilv === 0.55));
   assert.ok(props.some(item => item.name === '无拘仙印'));
   assert.ok(props.some(item => item.name === '星图'));
 

@@ -15,6 +15,8 @@ test('谪仙、六冠王宁川、伊轻舞与元古均已实装为可讨伐天�
     材料: readItemData('材料列表.json'),
     功法: readItemData('功法列表.json'),
     装备: [...readItemData('装备列表.json'), ...readItemData('特殊装备列表.json')],
+    丹药: readItemData('炼丹师丹药.json'),
+    盒子: readItemData('盒子列表.json'),
   };
   const expected = {
     谪仙: { plane: 2.5, realm: 11, skill: '谪仙曲·祭灵' },
@@ -46,4 +48,33 @@ test('谪仙、六冠王宁川、伊轻舞与元古均已实装为可讨伐天�
     { growth: 0.12, cap: 0.6, cost: 0.06 },
   );
   assert.equal(attacks.find(skill => skill.name === '广寒封天').禁疗, 0.8);
+
+  const yiqingwu = bosses.find(item => item.名号 === '伊轻舞');
+  assert.deepEqual(yiqingwu.掉落物.map(item => item.name), [
+    '太阴一转十万年残卷',
+    '太阴真经·仙台卷残页',
+  ]);
+  assert.deepEqual(yiqingwu.特殊掉落.map(item => item.name), ['八德宝轮', '太阴真经']);
+  assert.equal(catalogues.装备.find(item => item.name === '八德宝轮')?.type, '法宝');
+
+  const yuangu = bosses.find(item => item.名号 === '元古');
+  assert.deepEqual(yuangu.掉落物.map(item => [item.name, item.class]), [
+    ['元皇道剑残页', '材料'],
+    ['元光转生轮残页', '材料'],
+    ['大衍悟道丹', '丹药'],
+    ['超越宝盒', '盒子'],
+  ]);
+  assert.deepEqual(yuangu.特殊掉落.map(item => item.name), ['元皇道剑', '元光转生轮']);
+
+  const recipes = readItemData('合成列表.json');
+  for (const [technique, page] of [
+    ['太阴真经·仙台卷', '太阴真经·仙台卷残页'],
+    ['元皇道剑', '元皇道剑残页'],
+    ['元光转生轮', '元光转生轮残页'],
+  ]) {
+    assert.ok(catalogues.功法.some(item => item.name === technique), `缺少功法定义：${technique}`);
+    assert.deepEqual(recipes.find(item => item.name === technique)?.materials, [
+      { name: page, class: '材料', amount: 10 },
+    ]);
+  }
 });
