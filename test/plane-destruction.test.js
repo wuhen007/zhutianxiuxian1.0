@@ -107,3 +107,21 @@ test('缺少毁灭来源的旧位面使用通用拦截文案', t => {
   assert.match(message, /已经被打爆/);
   assert.doesNotMatch(message, /禁区至尊|厄土仙帝/);
 });
+
+test('帝尊炼界有独立拦截文案且不会自然修复', t => {
+  const fixture = createPlaneFile();
+  t.after(fixture.cleanup);
+  markPlaneDestroyed(fixture.filePath, '遮天位面', {
+    source: PLANE_DESTRUCTION_SOURCES.EMPEROR_REFINEMENT,
+    actor: '帝尊',
+    worldYear: 10_000,
+  });
+
+  const message = buildPlaneDestroyedMessage(fixture.filePath, '遮天位面');
+  assert.match(message, /帝尊以世界鼎炼化/);
+  assert.match(message, /不会随时间自行恢复/);
+  assert.deepEqual(repairNaturallyDestroyedPlanes(fixture.filePath, {
+    worldYear: 100_000,
+    minAge: 2_000,
+  }), []);
+});

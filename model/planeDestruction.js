@@ -6,6 +6,7 @@ export const PLANE_DESTRUCTION_RECORD_KEY = '位面毁灭记录';
 export const PLANE_DESTRUCTION_SOURCES = Object.freeze({
   DARK_REVOLT: 'dark_revolt',
   STRANGE_EMPEROR: 'strange_emperor',
+  EMPEROR_REFINEMENT: 'emperor_refinement',
 });
 
 const KNOWN_PLANES = Object.freeze([
@@ -140,6 +141,12 @@ export function buildPlaneDestroyedMessage(filePath, planeName) {
       `「${planeName}」已被厄土仙帝彻底毁灭。`,
       '仙帝法则磨灭了位面本源，此界不会随时间自行恢复。',
       '唯有仙帝级及以上强者施展映照权能，方可重塑此界。',
+    );
+  } else if (info.source === PLANE_DESTRUCTION_SOURCES.EMPEROR_REFINEMENT) {
+    lines.push(
+      `「${planeName}」已被帝尊以世界鼎炼化。`,
+      '遮天宇宙的万道与众生道果皆已归入世界鼎，位面通道与副本入口彻底封闭。',
+      '帝尊危机未被终结前，此界不会随时间自行恢复。',
     );
   } else {
     lines.push(

@@ -18,7 +18,19 @@ import RealmEvents from './RealmEvents.js';
 import { formatRealmEventLocation } from '../../model/realmEventLocation.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { getRealmAuthorityLevel, hasRealmAuthority } from '../../model/realmAuthority.js';
-import { repairNaturallyDestroyedPlanes } from '../../model/planeDestruction.js';
+import {
+  markPlaneDestroyed,
+  PLANE_DESTRUCTION_SOURCES,
+  repairNaturallyDestroyedPlanes,
+} from '../../model/planeDestruction.js';
+import {
+  awakenEmperorCrisis,
+  confrontEmperorCrisis,
+  defeatEmperorCrisis,
+  EMPEROR_CRISIS_GRACE_YEARS,
+  EMPEROR_CRISIS_KEY,
+  resolveEmperorCrisis,
+} from '../../model/emperorCrisis.js';
 import {
   formatDarkRevoltPlaneDestruction,
   processDarkRevoltPlaneDestruction,
@@ -1116,6 +1128,10 @@ if (index === 4) { // 当前是绝灵时代
       if (darkRevoltDestructionMessage && era.pushNotice) {
         await this.broadcastMessage(darkRevoltDestructionMessage);
       }
+      const emperorRefinementMessage = await processEmperorRefinement(currentWorldYear);
+      if (emperorRefinementMessage && era.pushNotice) {
+        await this.broadcastMessage(emperorRefinementMessage);
+      }
       
       // 每千年发送进度通知
       if (era.pushNotice && years % 1000 === 0) {
@@ -1158,21 +1174,22 @@ if (index === 4) { // 当前是绝灵时代
           console.log('帝尊已被彻底打败，不再响应高境界玩家');
         } else {
           // 设置帝尊感知标记
-          await setEmperorAwareness();
-          
-          const message = [
+          const emperorCrisis = await setEmperorAwareness(currentWorldYear);
+          if (emperorCrisis.awakened) {
+            const message = [
             `【帝尊布局·万古惊变】`,
             `在时间长河的上游，一道恐怖的气息苏醒！`,
             `帝尊睁开万古未动的眼眸，神念扫过诸天万界：`,
             `"这一世...竟有变数？"`,
             `帝尊布局万古，妄图炼化全宇宙生灵的道果成就自身，`,
             `忽然感应到似乎有一道变数崛起了！`,
-            `此一世有了大帝么？`,
+            `此一世有了大帝么？若${EMPEROR_CRISIS_GRACE_YEARS}年内无人应战，遮天宇宙将被世界鼎炼化。`,
             `感应到的高境界修士：`,
           ...highLevelPlayers.map(p => `- ${p.名号}（权柄等级: ${p.authorityLevel}）`)
           ].join('\n');
           
-          await this.broadcastMessage(message);
+            await this.broadcastMessage(message);
+          }
         }
       }
       
@@ -1449,6 +1466,12 @@ if (index === 4) { // 当前是绝灵时代
   }
   
   async checkHighLevelPlayers() {
+    const now = Date.now();
+    if (this.highLevelPlayersCache?.expiresAt > now) {
+      return this.highLevelPlayersCache.players;
+    }
+    if (this.highLevelPlayersPromise) return this.highLevelPlayersPromise;
+    this.highLevelPlayersPromise = (async () => {
     try {
       // 获取所有玩家文件
       const playerFiles = fs.readdirSync(__PATH.player_path);
@@ -1472,11 +1495,19 @@ if (index === 4) { // 当前是绝灵时代
         }
       }
       
+      this.highLevelPlayersCache = {
+        players: highLevelPlayers,
+        expiresAt: Date.now() + 60_000,
+      };
       return highLevelPlayers;
     } catch (e) {
       console.error("检查高境界玩家失败:", e);
       return [];
     }
+    })().finally(() => {
+      this.highLevelPlayersPromise = null;
+    });
+    return this.highLevelPlayersPromise;
   }
   
   // 新增：重置天心印记的方法
@@ -1767,6 +1798,7 @@ if (index === 4) { // 当前是绝灵时代
     );
     await this.processDaoTreasureLifecycle(worldYear, epoch);
     const darkRevoltDestructionMessage = await this.processDarkRevoltDestruction(worldYear);
+    const emperorRefinementMessage = await processEmperorRefinement(worldYear);
     
     const era = this.eras[eraIndex];
     
@@ -1805,6 +1837,7 @@ if (index === 4) { // 当前是绝灵时代
       suppressMsg,
       restoreMsg,
       darkRevoltDestructionMessage,
+      emperorRefinementMessage,
     ].join('\n'));
   }
   
@@ -1904,6 +1937,7 @@ if (index === 4) { // 当前是绝灵时代
         },
       });
       const darkRevoltDestructionMessage = await this.processDarkRevoltDestruction(currentWorldYear);
+      const emperorRefinementMessage = await processEmperorRefinement(currentWorldYear);
       
       const currentEra = this.eras[index];
       let message = [
@@ -1966,21 +2000,22 @@ if (index === 4) { // 当前是绝灵时代
       const highLevelPlayers = await this.checkHighLevelPlayers();
       if (highLevelPlayers.length > 0) {
         if (weimianData.帝尊 !== 0) {
-          await setEmperorAwareness();
-          
-          const highPlayerMsg = [
+          const emperorCrisis = await setEmperorAwareness(currentWorldYear);
+          if (emperorCrisis.awakened) {
+            const highPlayerMsg = [
             `【帝尊布局·万古惊变】`,
             `在时间长河的上游，一道恐怖的气息苏醒！`,
             `帝尊睁开万古未动的眼眸，神念扫过诸天万界：`,
             `"这一世...竟有变数？"`,
             `帝尊布局万古，妄图炼化全宇宙生灵的道果成就自身，`,
             `忽然感应到似乎有一道变数崛起了！`,
-            `此一世有了大帝么？`,
+            `此一世有了大帝么？若${EMPEROR_CRISIS_GRACE_YEARS}年内无人应战，遮天宇宙将被世界鼎炼化。`,
             `感应到的高境界修士：`,
             ...highLevelPlayers.map(p => `- ${p.名号}（权柄等级: ${p.authorityLevel}）`)
           ].join('\n');
           
-          message += '\n\n' + highPlayerMsg;
+            message += '\n\n' + highPlayerMsg;
+          }
         } else {
           message += '\n\n帝尊已被彻底打败，不再响应高境界玩家';
         }
@@ -2004,6 +2039,7 @@ if (index === 4) { // 当前是绝灵时代
       if (darkRevoltDestructionMessage) {
         message += `\n\n${darkRevoltDestructionMessage}`;
       }
+      if (emperorRefinementMessage) message += `\n\n${emperorRefinementMessage}`;
       
       // 检查是否进入/离开绝灵时代
       let suppressMsg = '';
@@ -2126,6 +2162,7 @@ if (index === 4) { // 当前是绝灵时代
         },
       });
       const darkRevoltDestructionMessage = await this.processDarkRevoltDestruction(currentWorldYear);
+      const emperorRefinementMessage = await processEmperorRefinement(currentWorldYear);
       
       const newEraName = this.eras[index].name;
       
@@ -2185,6 +2222,7 @@ if (index === 4) { // 当前是绝灵时代
       if (darkRevoltDestructionMessage) {
         message += `\n\n${darkRevoltDestructionMessage}`;
       }
+      if (emperorRefinementMessage) message += `\n\n${emperorRefinementMessage}`;
       
       await e.reply(message);
       
@@ -2427,43 +2465,98 @@ function logError(funcName, error) {
   // 可以添加更多日志逻辑，如写入文件等
 }
 
-/** 设置帝尊感知标记 */
-export async function setEmperorAwareness() {
+function currentEmperorWorldYear() {
+  const current = config.getConfig('xiuxian', 'xiuxian')?.Era?.current || {};
+  return getRealmEventWorldYear(current.index, current.years, current.epoch);
+}
+
+function readEmperorPlaneState() {
+  const filePath = data.filePathMap.weimianList;
+  if (!fs.existsSync(filePath)) return { filePath, state: null };
+  return { filePath, state: JSON.parse(fs.readFileSync(filePath, 'utf8')) };
+}
+
+function saveEmperorPlaneState(filePath, state) {
+  fs.writeFileSync(filePath, JSON.stringify(state, null, 4), 'utf8');
+}
+
+export async function processEmperorRefinement(worldYear = currentEmperorWorldYear()) {
   try {
-    // 检查是否已存在
-    const exists = await redis.exists(redisKeys.emperorAwareness);
-    if (exists) {
-      console.log('帝尊感知标记已存在，更新有效期');
-      await redis.expire(redisKeys.emperorAwareness, 24 * 3600);
-      return true;
+    const { filePath, state } = readEmperorPlaneState();
+    if (!state) return null;
+    const result = resolveEmperorCrisis(state[EMPEROR_CRISIS_KEY], worldYear);
+    if (!result.refined) return null;
+    state[EMPEROR_CRISIS_KEY] = result.state;
+    saveEmperorPlaneState(filePath, state);
+    markPlaneDestroyed(filePath, '遮天位面', {
+      source: PLANE_DESTRUCTION_SOURCES.EMPEROR_REFINEMENT,
+      actor: '帝尊',
+      worldYear,
+    });
+    await redis.del(redisKeys.emperorAwareness);
+    return [
+      '【帝尊炼界·遮天终局】',
+      `${EMPEROR_CRISIS_GRACE_YEARS}年内无人应战，帝尊以世界鼎吞纳万道与众生道果。`,
+      '遮天宇宙已被彻底炼化，位面通道与全部副本入口崩灭。',
+    ].join('\n');
+  } catch (e) {
+    logError('processEmperorRefinement', e);
+    return null;
+  }
+}
+
+export async function setEmperorAwareness(worldYear = currentEmperorWorldYear()) {
+  try {
+    const { filePath, state } = readEmperorPlaneState();
+    if (!state || state.帝尊 === 0 || state['遮天位面'] === 0) {
+      return { active: false, awakened: false };
     }
-    
-    // 设置新标记
-    await redis.set(redisKeys.emperorAwareness, 'active', 'EX', 24 * 3600);
-    console.log('帝尊感知标记已设置');
-    return true;
+    const result = awakenEmperorCrisis(state[EMPEROR_CRISIS_KEY], worldYear);
+    state[EMPEROR_CRISIS_KEY] = result.state;
+    if (result.awakened) saveEmperorPlaneState(filePath, state);
+    const active = result.state?.status === 'active';
+    if (active) await redis.set(redisKeys.emperorAwareness, 'active');
+    return { active, awakened: result.awakened, deadline: result.state?.deadline };
   } catch (e) {
     logError('setEmperorAwareness', e);
-    return false;
+    return { active: false, awakened: false };
+  }
+}
+
+export async function delayEmperorRefinement(worldYear = currentEmperorWorldYear()) {
+  try {
+    if (await processEmperorRefinement(worldYear)) return { confronted: false };
+    const { filePath, state } = readEmperorPlaneState();
+    if (!state) return { confronted: false };
+    const result = confrontEmperorCrisis(state[EMPEROR_CRISIS_KEY], worldYear);
+    if (!result.confronted) return result;
+    state[EMPEROR_CRISIS_KEY] = result.state;
+    saveEmperorPlaneState(filePath, state);
+    await redis.set(redisKeys.emperorAwareness, 'active');
+    return { confronted: true, deadline: result.state.deadline };
+  } catch (e) {
+    logError('delayEmperorRefinement', e);
+    return { confronted: false };
   }
 }
 
 /** 检查帝尊感知标记 */
 export async function checkEmperorAwareness() {
   try {
-    const status = await redis.get(redisKeys.emperorAwareness);
-    
-    if (status === null) {
-      console.log('帝尊感知标记不存在');
-      return false;
+    await processEmperorRefinement(currentEmperorWorldYear());
+    let { state } = readEmperorPlaneState();
+    if (
+      state?.帝尊 !== 0
+      && state?.['遮天位面'] !== 0
+      && !state?.[EMPEROR_CRISIS_KEY]
+      && await redis.get(redisKeys.emperorAwareness) === 'active'
+    ) {
+      await setEmperorAwareness(currentEmperorWorldYear());
+      ({ state } = readEmperorPlaneState());
     }
-    
-    if (status !== 'active') {
-      console.warn(`未知的帝尊感知状态: ${status}`);
-      return false;
-    }
-    
-    return true;
+    return state?.帝尊 !== 0
+      && state?.['遮天位面'] !== 0
+      && state?.[EMPEROR_CRISIS_KEY]?.status === 'active';
   } catch (e) {
     logError('checkEmperorAwareness', e);
     return false;
@@ -2472,42 +2565,16 @@ export async function checkEmperorAwareness() {
 
 export async function clearEmperorAwareness() {
   try {
-    // 检查标记是否存在
-    const exists = await redis.exists(redisKeys.emperorAwareness);
-    if (!exists) {
-      console.log('帝尊感知标记不存在，无需清除');
-      return true;
-    }
-    
-    // 清除Redis标记
     await redis.del(redisKeys.emperorAwareness);
-    console.log('帝尊感知标记已清除');
-    
-    // ==== 新增：更新位面数据文件 ====
-    try {
-      // 读取位面数据文件
-      const weimianPath = data.filePathMap.weimianList;
-      if (!fs.existsSync(weimianPath)) {
-        console.error('位面数据文件不存在');
-        return false;
-      }
-      
-      // 读取并解析位面数据
-      const rawData = fs.readFileSync(weimianPath, 'utf8');
-      const weimianData = JSON.parse(rawData);
-      
-      // 更新帝尊状态
-      weimianData.帝尊 = 0; // 0表示已被彻底打败
-      
-      // 保存更新后的位面数据
-      fs.writeFileSync(weimianPath, JSON.stringify(weimianData, null, 4), 'utf8');
-      console.log('位面数据已更新：帝尊状态设置为0（已被彻底打败）');
-      
-      return true;
-    } catch (fileErr) {
-      console.error('更新位面数据失败:', fileErr);
-      return false;
-    }
+    const { filePath, state } = readEmperorPlaneState();
+    if (!state) return false;
+    state.帝尊 = 0;
+    state[EMPEROR_CRISIS_KEY] = defeatEmperorCrisis(
+      state[EMPEROR_CRISIS_KEY],
+      currentEmperorWorldYear(),
+    );
+    saveEmperorPlaneState(filePath, state);
+    return true;
   } catch (e) {
     logError('clearEmperorAwareness', e);
     return false;

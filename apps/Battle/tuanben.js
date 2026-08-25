@@ -1,10 +1,10 @@
 import { plugin, config ,data} from '../../api/api.js';
-import { existplayer, Read_player, Write_player, Add_najie_thing, channel ,calculateHarm, ensureNumber, bigNumberTransform, exist_najie_thing, get_fight_img, initActionBar, advanceUnitBars, getReadyUnits, boostActionBar, pushBackActionBar, ACTION_BAR_MAX, applyXianguTurnRecovery, calcDamage, getSeedSkillEntry, settleBattleGongfaProficiency } from '../../model/xiuxian.js';
+import { existplayer, Read_player, Read_equipment, Write_player, Add_najie_thing, channel ,calculateHarm, ensureNumber, bigNumberTransform, exist_najie_thing, get_fight_img, initActionBar, advanceUnitBars, getReadyUnits, boostActionBar, pushBackActionBar, ACTION_BAR_MAX, applyXianguTurnRecovery, calcDamage, getSeedSkillEntry, settleBattleGongfaProficiency } from '../../model/xiuxian.js';
 import { segment } from "icqq"
 import {
  checkEmperorAwareness,
  clearEmperorAwareness,
- setEmperorAwareness,
+ delayEmperorRefinement,
 } from '../tasks/EraChangeTask.js';
 import { hasSupremeInnate } from '../../model/supremePath.js';
 import { getGodDemonStealRule, getRealmAuthorityLevel } from '../../model/realmAuthority.js';
@@ -27,7 +27,16 @@ import {
 } from '../../model/combatSkillLoadout.js';
 import { applySuperdimensionalOpening } from '../../model/shengfaFragment.js';
 import { applyRelicBattleOpening } from '../../model/relicSystem.js';
+import { replyOfficialMessage } from '../../model/officialMessage.js';
 import { getCompanionAttackAction } from '../../model/companionCombat.js';
+import {
+  applyEmperorDefeatPenalty,
+  applyEmperorWorldTripodOpening,
+  buildEmperorSleepAction,
+  EMPEROR_CRISIS_GRACE_YEARS,
+  getEmperorSleepRemainingMs,
+} from '../../model/emperorCrisis.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 export class tuanben extends plugin {
   constructor() {
     super({
@@ -248,6 +257,13 @@ async resetAllPlayerCD(e) {
 async createEmperorTeam(e) {
   const usr_qq = await this.getUserId(e);
    let player = await Read_player(usr_qq);
+  const sleepRemaining = getEmperorSleepRemainingMs(player);
+  if (sleepRemaining > 0) {
+    return e.reply(`帝尊一战留下的虚弱尚未恢复，还需沉眠${Math.ceil(sleepRemaining / 60000)}分钟。`);
+  }
+  if (getRealmAuthorityLevel(player) < 16) {
+    return e.reply('至少达到大帝级权柄，方可创建讨伐帝尊的队伍。');
+  }
   // 检查帝尊感知标记 - 修正：添加括号调用函数
   const isEmperorAware = await checkEmperorAwareness();
   
@@ -282,7 +298,7 @@ async createEmperorTeam(e) {
   await this.saveTeam(teamId, newTeam);
   await this.linkPlayer(usr_qq, teamId);
   
- e.reply([
+  const message = [
     `🌠【帝尊讨伐令·诸天震动】🌠`,
     `「${player.名号}」仰天长啸，声震九霄！`,
     `一道金光冲天而起，贯穿时间长河，直指帝尊所在！`,
@@ -295,17 +311,42 @@ async createEmperorTeam(e) {
     ``,
     `挑战须知:`,
     `• 此战只为证道,不计奖励,不占CD`,
+    `• 真正发起迎战可将世界鼎炼界之期再拖延${EMPEROR_CRISIS_GRACE_YEARS}年`,
     `• 帝尊实力滔天，九死一生！`,
     `• 胜则名垂青史，败则身死道消！`,
     ``,
     `「今日，吾等当逆天伐帝，证我辈修士不屈之志！」`
-  ].join('\n'));
+  ].join('\n');
+  await replyOfficialMessage(e, {
+    markdown: [
+      '# 帝尊讨伐队伍',
+      '',
+      `**队伍：** ${teamId}`,
+      `**队长：** ${player.名号}`,
+      '**成员：** 1 / 5',
+      '',
+      `> 真正迎战可将世界鼎炼界之期延后${EMPEROR_CRISIS_GRACE_YEARS}年。`,
+    ].join('\n'),
+    text: message,
+    buttons: [
+      [{ text: '加入队伍', command: `#加入迎战帝尊 ${teamId}`, permission: false }],
+      [
+        { text: '查看队伍', command: '#查看队伍信息' },
+        { text: '迎战帝尊', command: '#迎战帝尊' },
+      ],
+    ],
+  });
   return true;
 }
   
   // 加入帝尊挑战队伍
   async joinEmperorTeam(e) {
     const usr_qq = await this.getUserId(e);
+    const joiningPlayer = await Read_player(usr_qq);
+    const sleepRemaining = getEmperorSleepRemainingMs(joiningPlayer);
+    if (sleepRemaining > 0) {
+      return e.reply(`你仍在帝尊战败后的虚弱沉眠中，还需${Math.ceil(sleepRemaining / 60000)}分钟。`);
+    }
     
     // 检查是否已在队伍中
     const existingTeamId = await this.getPlayerTeamId(usr_qq);
@@ -375,7 +416,22 @@ async createEmperorTeam(e) {
       `注意：此挑战无奖励，不计CD，只为证明实力！`
     ];
     
-    e.reply(message.join('\n'));
+    await replyOfficialMessage(e, {
+      markdown: [
+        '# 已加入帝尊讨伐队伍',
+        '',
+        `**队伍：** ${teamId}`,
+        `**新成员：** ${newMember.名号}`,
+        `**当前人数：** ${team.members.length} / 5`,
+        '',
+        ...members.map(member => `- ${member.id === team.leader ? '**队长** ' : ''}${member.name}（战力 ${this.formatPower(member.power)}）`),
+      ].join('\n'),
+      text: message.join('\n'),
+      buttons: [[
+        { text: '查看队伍', command: '#查看队伍信息' },
+        { text: '离开队伍', command: '#离开队伍' },
+      ]],
+    });
     return true;
   }
   
@@ -397,6 +453,15 @@ async createEmperorTeam(e) {
     if (team.leader !== usr_qq) {
       return e.reply('只有队长可以发起挑战');
     }
+    const leader = await Read_player(usr_qq);
+    const sleepRemaining = getEmperorSleepRemainingMs(leader);
+    if (sleepRemaining > 0) {
+      return e.reply(`你仍在帝尊战败后的虚弱沉眠中，还需${Math.ceil(sleepRemaining / 60000)}分钟。`);
+    }
+    if (getRealmAuthorityLevel(leader) < 16) {
+      return e.reply('队长已失去大帝级权柄，本次讨伐无法发起。');
+    }
+    if (!await checkEmperorAwareness()) return e.reply('帝尊危机当前并未处于可迎战状态。');
     
     // 检查状态
     if (team.status === 'inBattle') {
@@ -415,12 +480,15 @@ async createEmperorTeam(e) {
     // 准备玩家数据并初始化状态
     const playersData = await Promise.all(
         team.members.map(async id => {
-            const p = await Read_player(id);
+            const [p, equipment] = await Promise.all([Read_player(id), Read_equipment(id)]);
+            p._帝兵品阶 = equipment?.帝兵?.品阶 || '';
+            p._帝兵名称 = equipment?.帝兵?.name || '';
             p.初始血量 = p.当前血量;
             
             // 基础状态
             p.dongjie = false;
             p.已复活 = false;
+            p.不可复活 = false;
             p.免疫控制 = 0;
             p.已死亡 = false;
             p.护盾值 = 0;
@@ -438,6 +506,8 @@ async createEmperorTeam(e) {
     
      
     try {
+      const confrontation = await delayEmperorRefinement();
+      if (!confrontation.confronted) throw new Error('帝尊炼界期限已经结束');
       // 执行战斗
       const battleResult = await this.tb_battle(playersData, bossData, e);
 
@@ -454,6 +524,19 @@ if (battleResult.result === "玩家胜利") {
   // 清除帝尊感知标记
   await clearEmperorAwareness();
 }
+        const defeatReports = [];
+        if (battleResult.result !== "玩家胜利") {
+          const now = Date.now();
+          for (const id of team.members) {
+            await withPlayerMutationLock(id, async () => {
+              const defeatedPlayer = await Read_player(id);
+              applyEmperorDefeatPenalty(defeatedPlayer, now);
+              await Write_player(id, defeatedPlayer);
+              await redis.set(`xiuxian:player:${id}:action`, JSON.stringify(buildEmperorSleepAction(now)));
+              defeatReports.push(`${defeatedPlayer.名号}：道伤+5，本源、寿元、元神枯竭50%`);
+            });
+          }
+        }
         // 构建战斗结果总结
         const resultSummary = [
             ` 帝尊挑战结果 `,
@@ -461,7 +544,8 @@ if (battleResult.result === "玩家胜利") {
                 ? `恭喜队伍成功击败帝尊！守护了遮天宇宙！` 
                 : `很遗憾，队伍未能击败帝尊...`,
             `战斗时长: ${((Date.now() - team.battleStartTime) / 1000).toFixed(1)}秒`,
-            `此战只为证道，不计奖励，不占CD`
+            `此战只为证道，不计奖励，不占CD`,
+            ...(defeatReports.length ? ['【败北代价·沉眠2小时】', ...defeatReports] : []),
         ];
         
         if (battleResult.result === "玩家胜利") {
@@ -692,13 +776,31 @@ if (battleResult.result === "玩家胜利") {
     await this.saveTeam(teamId, newTeam);
     await this.linkPlayer(usr_qq, teamId);
     
-    e.reply([
+    const message = [
       ` 成功创建讨伐【${bossName}】的队伍！`,
       ` 队伍ID: ${teamId}`,
       ` 当前成员: 1/5`,
       ` 其他成员使用: #加入讨伐队伍 ${teamId}`,
       ` 跨服招募使用: #发布跨服团本`
-    ].join('\n'));
+    ].join('\n');
+    await replyOfficialMessage(e, {
+      markdown: [
+        `# ${bossName}讨伐队伍`,
+        '',
+        `**队伍：** ${teamId}`,
+        '**成员：** 1 / 5',
+        '**状态：** 招募中',
+      ].join('\n'),
+      text: message,
+      buttons: [
+        [{ text: '加入队伍', command: `#加入讨伐队伍 ${teamId}`, permission: false }],
+        [
+          { text: '查看队伍', command: '#查看队伍信息' },
+          { text: '发起讨伐', command: '#发起讨伐' },
+          { text: '跨服招募', command: '#发布跨服团本' },
+        ],
+      ],
+    });
     return true;
   }
   
@@ -822,7 +924,22 @@ async joinBossTeam(e) {
     team.status === 'full' ? '队伍已满员，随时可发起讨伐！' : '继续招募中...'
   ];
   
-  e.reply(message.join('\n'));
+  await replyOfficialMessage(e, {
+    markdown: [
+      `# 已加入${team.boss}讨伐队伍`,
+      '',
+      `**队伍：** ${teamId}`,
+      `**新成员：** ${newMember.名号}`,
+      `**当前人数：** ${team.members.length} / 5`,
+      '',
+      ...members.map(member => `- ${member.id === team.leader ? '**队长** ' : ''}${member.name}（战力 ${this.formatPower(member.power)}）`),
+    ].join('\n'),
+    text: message.join('\n'),
+    buttons: [[
+      { text: '查看队伍', command: '#查看队伍信息' },
+      { text: '离开队伍', command: '#离开队伍' },
+    ]],
+  });
   return true;
 }
 
@@ -875,6 +992,7 @@ const playersData = await Promise.all(
         // 基础状态
         p.dongjie = false; // 定身状态
         p.已复活 = false;
+        p.不可复活 = false;
         p.免疫控制 = 0;
         p.已死亡 = false;
         
@@ -906,6 +1024,7 @@ const playersData = await Promise.all(
           avatar.初始血量 = avatar.当前血量;
           avatar.dongjie = false;
           avatar.已复活 = false;
+          avatar.不可复活 = false;
           avatar.免疫控制 = 0;
           avatar.已死亡 = false;
           avatar.分身 = [];
@@ -1425,7 +1544,33 @@ async disbandTeamInternal(teamId, team) {
         '尚未进行战斗'
     ];
     
-    e.reply(message.join('\n'));
+    const buttons = [[{ text: '离开队伍', command: '#离开队伍' }]];
+    if (team.leader === usr_qq) {
+      buttons[0].unshift({
+        text: team.isEmperorChallenge ? '迎战帝尊' : '发起讨伐',
+        command: team.isEmperorChallenge ? '#迎战帝尊' : '#发起讨伐',
+      });
+      if (!team.isEmperorChallenge) {
+        buttons[0].push({ text: '跨服招募', command: '#发布跨服团本' });
+      }
+    }
+    await replyOfficialMessage(e, {
+      markdown: [
+        `# ${team.boss}讨伐队伍`,
+        '',
+        `**队伍：** ${teamId}`,
+        `**队长：** ${leader?.name || '未知'}`,
+        `**状态：** ${this.getStatusText(team.status)}`,
+        `**成员：** ${team.members.length + crossMembers.length} / 5`,
+        '',
+        ...members.map(member => `- ${member.id === team.leader ? '**队长** ' : ''}${member.name}（战力 ${this.formatPower(member.power)}）`),
+        ...crossMembers.map(member => `- **跨服化身** ${member.avatar.名号}（${member.server_name}）`),
+        '',
+        team.battleLog.length > 0 ? `> 最近战况：${team.battleLog[0].result}` : '> 尚未进行战斗',
+      ].join('\n'),
+      text: message.join('\n'),
+      buttons,
+    });
     return true;
   }
   
@@ -1595,6 +1740,8 @@ async disbandTeamInternal(teamId, team) {
         血量上限:  200 * Math.floor(Math.random() * 580000000000),
         暴击率: 1,
         灵根: "混沌体",
+        帝兵: { name: '世界鼎', type: '帝兵', 品阶: '红尘仙器' },
+        世界鼎加持: true,
         学习的功法:  [
 "九秘合一", // 九秘合一，破灭万法
 "临字秘", // 肉身不灭，永恒固守
@@ -2052,6 +2199,19 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
         
         // 应用技能效果
         if (skill.不可防御 === 1) 不可防御 = true;
+        if (skill.不可复活 === 1) {
+          safeDefender.不可复活 = true;
+          defender.不可复活 = true;
+        }
+        if (skill.不可回血 === 1) {
+          safeDefender.禁疗 = 1;
+          defender.禁疗 = 1;
+        }
+        if (skill.禁疗) {
+          const 禁疗值 = Math.max(Number(safeDefender.禁疗) || 0, Number(skill.禁疗));
+          safeDefender.禁疗 = 禁疗值;
+          defender.禁疗 = Math.max(Number(defender.禁疗) || 0, 禁疗值);
+        }
         if (skill.无视减伤) 无视减伤 = true;
         if (skill.斩杀阈值) 斩杀阈值 = skill.斩杀阈值;
         const beforeSkillDamage = 伤害;
@@ -2274,12 +2434,24 @@ const addBattleLog = (...lines) => {
     imageSendQueue = imageSendQueue.then(() => this.sendBattleImages(e, logsToSend));
   }
 };
+
+  const tripodOpening = applyEmperorWorldTripodOpening(bossCopy, playersData);
+  if (tripodOpening.active) {
+    bossCopy.初始血量 = bossCopy.当前血量;
+    addBattleLog('【世界鼎·炼化万道】帝尊攻防、生命与速度等核心战斗属性提升50%。');
+    if (tripodOpening.suppressed.length > 0) {
+      addBattleLog(`【仙器门槛·帝威压制】${tripodOpening.suppressed.join('、')}的帝兵未达仙器，全战斗属性与速度降低50%。`);
+    } else {
+      addBattleLog('【仙器护道】全队帝兵均已达到仙器品阶，抵住了世界鼎的属性压制。');
+    }
+  }
   
   // 初始化玩家状态
   for (let player of playersData) {
     player.初始血量 = player.当前血量; // 记录初始血量
     player.dongjie = false; // 定身状态
     player.已复活 = false; // 是否已复活
+    player.不可复活 = false; // 当前战斗是否禁止复活
     player._者字秘复活次数 = 0;
     player.免疫控制 = 0; // 免疫控制回合数
     player.已死亡 = false; // 是否已死亡
@@ -2318,6 +2490,10 @@ const addBattleLog = (...lines) => {
   let jinxiuShanheActive = false; // 是否激活
   let jinxiuShanheRounds = 0;    // 持续回合
   let jinxiuShanheBuff = 1.0;    // 增益倍率
+
+  // 大成苍天霸体领域状态
+  let baxueDomainActive = false;
+  let baxueDomainRounds = 0;
   
   // 战斗超时设置
   const startTime = Date.now();
@@ -2527,6 +2703,24 @@ if (bossCopy.名号 === '帝尊') {
             );
           }
         }
+      }
+    }
+
+    if (baxueDomainActive) {
+      baxueDomainRounds--;
+      if (baxueDomainRounds <= 0) {
+        baxueDomainActive = false;
+        for (const member of playersData) {
+          const boost = member._霸血领域加成;
+          if (!boost) continue;
+          member.攻击 = Math.max(0, member.攻击 - boost.attack);
+          member.防御 = Math.max(0, member.防御 - boost.defense);
+          member.暴击率 = Math.max(0, (Number(member.暴击率) || 0) - boost.critRate);
+          member.免疫控制 = Math.max(0, (Number(member.免疫控制) || 0) - boost.control);
+          delete member._霸血领域加成;
+          member.霸血领域 = false;
+        }
+        await addBattleLog(`霸血领域持续时间结束，紫金霸钟隐入体内。`);
       }
     }
     
@@ -2975,6 +3169,42 @@ if (player.灵根?.name === "木之本樱" &&
             `- 攻击附带圣体道则，无视敌人30%防御`,
             `- 获得圣体金身，减伤效果提升50%`
           );
+        }
+      }
+
+      // ==== 大成·苍天霸体：霸血领域触发 ====
+      if (player.灵根?.name === "大成·苍天霸体" && !baxueDomainActive) {
+        const triggerChance = 0.9;
+        if (Math.random() < triggerChance) {
+          baxueDomainActive = true;
+          baxueDomainRounds = 5;
+          await addBattleLog(
+            `${player.名号}撑开大成苍天霸体专属领域【霸血领域·霸钟镇世】！`,
+            `紫血冲霄，九神虚影合于霸钟，战场内所有队友获得霸体加持，持续5回合！`
+          );
+
+          for (const member of playersData) {
+            if (member.当前血量 <= 0) continue;
+            const attackBoost = Math.trunc(member.攻击 * 0.8);
+            const defenseBoost = Math.trunc(member.防御 * 0.5);
+            const critRateBoost = 0.2;
+            const currentControl = Number(member.免疫控制) || 0;
+            const controlBoost = Math.max(0, 2 - currentControl);
+            member.攻击 += attackBoost;
+            member.防御 += defenseBoost;
+            member.暴击率 = (Number(member.暴击率) || 0) + critRateBoost;
+            member.免疫控制 = currentControl + controlBoost;
+            member.霸血领域 = true;
+            member._霸血领域加成 = {
+              attack: attackBoost,
+              defense: defenseBoost,
+              critRate: critRateBoost,
+              control: controlBoost
+            };
+            await addBattleLog(
+              `${member.名号}沐浴在霸血领域中，攻击提升80%，防御提升50%，暴击率提升20%，获得2回合控制免疫！`
+            );
+          }
         }
       }
       
@@ -3695,6 +3925,9 @@ async checkPlayerStatus(playersData, addBattleLog) {
 
 // 辅助方法：检查玩家复活
 async checkPlayerRevival(player) {
+  if (player?.不可复活) {
+    return { success: false, message: [] };
+  }
   if (player.当前血量 <= 0 && !player.已复活) {
     const zheziConfig = getZheziReviveConfig(player);
     const zheziCount = Math.max(0, Number(player._者字秘复活次数) || 0);
@@ -3774,6 +4007,7 @@ async checkPlayerRevival(player) {
 resetPlayersStatus(playersData) {
     for (const player of playersData) {
         player.已复活 = false;
+        player.不可复活 = false;
         player._者字秘复活次数 = 0;
         player.免疫控制 = 0;
         player.已死亡 = false;
