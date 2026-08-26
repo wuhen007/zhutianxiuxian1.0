@@ -173,6 +173,7 @@ import {
 import { isXianguPlayerRoundCurrent } from '../tasks/xianguLifecycle.js';
 import { adjustDaoHeart } from '../../model/daoHeart.js';
 import { grantTitle } from '../../model/titleSystem.js';
+import { replyOfficialMessage } from '../../model/officialMessage.js';
 
 function getXianguNpcRealmData() {
   return {
@@ -238,6 +239,14 @@ function xianguEvacuationKey(playerId) {
 
 function xianguEvacuationLockKey(playerId) {
   return xianguPlayerRedisKey(playerId, 'xiangu_evacuation_lock');
+}
+
+function xianguSeedFusionIntentKey(playerId) {
+  return xianguPlayerRedisKey(playerId, 'xiangu_seed_fusion_intent');
+}
+
+function xianguSeedFusionClaimKey(playerId) {
+  return xianguPlayerRedisKey(playerId, 'xiangu_seed_fusion_claim');
 }
 
 function getXianguActionContext(playerId) {
@@ -2161,6 +2170,14 @@ export class xianguPlace extends plugin {
     fnc: 'XianguJieZhuDaoZhong'
     },
     {
+    reg: '^#确认融合道种$',
+    fnc: 'ConfirmXianguSeedFusion'
+    },
+    {
+    reg: '^#取消融合道种$',
+    fnc: 'CancelXianguSeedFusion'
+    },
+    {
     reg: '^#服用(.+)点燃神火$',
     fnc: 'XianguFuYongDanYao'
     },
@@ -2770,7 +2787,7 @@ export class xianguPlace extends plugin {
       await redis.set(evacuationKey, JSON.stringify(state), { EX: ttlSeconds });
 
       const command = mode === 'emergency' ? '#紧急撤离' : '#离开仙古秘境';
-      return e.reply([
+      const text = [
         mode === 'emergency' ? `【紧急撤离·强开虚空通道】` : `【仙古花蕾·撤离通道开启】`,
         mode === 'emergency'
           ? `${player.名号}燃烧秘境印记，强行锚定外界坐标！`
@@ -2783,7 +2800,24 @@ export class xianguPlace extends plugin {
         ``,
         `等待结束后再次发送 ${command} 或 #确认撤离。`,
         `移动、探索、主动交战或受到伤害都会中断撤离。`
-      ].join('\n'));
+      ].join('\n');
+      return replyOfficialMessage(e, {
+        markdown: [
+          mode === 'emergency' ? '# 紧急撤离·强开虚空通道' : '# 仙古花蕾·撤离通道开启',
+          '',
+          `**秘境背包物品：** ${summary.najieDelta}件`,
+          `**秘境背包道种：** ${summary.seedCount}枚`,
+          `**秘境背包源石：** ${summary.sourceStone.toLocaleString()}`,
+          `**准备时间：** ${durationSeconds}秒`,
+          '',
+          '> 移动、探索、主动交战或受到伤害都会中断撤离。',
+        ].join('\n'),
+        text,
+        buttons: [[
+          { text: '确认撤离', command: '#确认撤离' },
+          { text: '查看状态', command: '#秘境状态' },
+        ]],
+      });
     } catch (error) {
       console.error('开始仙古秘境撤离失败:', error);
       return e.reply(`撤离失败：${error.message}`);
@@ -4607,6 +4641,44 @@ async XianguViewSeeds(e) {
   }
 }
 
+async ConfirmXianguSeedFusion(e) {
+  const usr_qq = e.user_id.toString().replace('qg_', '');
+  const player_qq = await channel(usr_qq);
+  const intentKey = xianguSeedFusionIntentKey(player_qq);
+  const claimKey = xianguSeedFusionClaimKey(player_qq);
+  let intent;
+
+  try {
+    intent = JSON.parse(await redis.get(intentKey) || 'null');
+  } catch {
+    intent = null;
+  }
+  if (!intent?.seedName) {
+    await redis.del(intentKey);
+    return e.reply('当前没有待确认的道种融合，或确认已超时。');
+  }
+
+  const claimToken = `${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+  const claimed = await redis.set(claimKey, claimToken, { EX: 30, NX: true });
+  if (!claimed) return e.reply('道种融合正在处理，请勿重复点击。');
+
+  await redis.del(intentKey);
+  e.xianguConfirmedSeedName = intent.seedName;
+  try {
+    return await this.XianguJieZhuDaoZhong(e);
+  } finally {
+    delete e.xianguConfirmedSeedName;
+    if (await redis.get(claimKey) === claimToken) await redis.del(claimKey);
+  }
+}
+
+async CancelXianguSeedFusion(e) {
+  const usr_qq = e.user_id.toString().replace('qg_', '');
+  const player_qq = await channel(usr_qq);
+  const removed = await redis.del(xianguSeedFusionIntentKey(player_qq));
+  return e.reply(removed ? '已取消本次道种融合，道种未消耗。' : '当前没有待取消的道种融合。');
+}
+
 // 融合道种 - 点燃神火
 async XianguJieZhuDaoZhong(e) {
   try {
@@ -4680,7 +4752,8 @@ async XianguJieZhuDaoZhong(e) {
     }
 
     // 解析命令参数：#借助XX道种点燃神火 / #借助XX点燃神火
-    const msg = e.msg.replace(/^#借助/, '').replace(/点燃神火$/, '').replace(/道种$/, '').trim();
+    const confirmedSeedName = String(e.xianguConfirmedSeedName || '').trim();
+    const msg = confirmedSeedName || e.msg.replace(/^#借助/, '').replace(/点燃神火$/, '').replace(/道种$/, '').trim();
     
     // 如果没有参数，显示道种选择列表
     if (!msg) {
@@ -4766,10 +4839,9 @@ async XianguJieZhuDaoZhong(e) {
     
     const totalSuccessRate = Math.min(0.95, baseSuccessRate + daoyunBonus + coreBonus + seedBonus);
 
-    // 发送确认消息
+    // 首次选择只创建确认意图；确认命令会重新读取玩家存档并再次校验道种。
     const qualityMark = selectedSeed.品质 === '神话' ? '★' : selectedSeed.品质 === '传说' ? '◆' : selectedSeed.品质 === '稀有' ? '○' : '·';
-    
-    await e.reply([
+    const confirmationText = [
       `【道种融合·确认】`,
       ``,
       `${player.名号}准备融合道种：`,
@@ -4798,11 +4870,27 @@ async XianguJieZhuDaoZhong(e) {
       `• 核心区域融合可获得额外加成`,
       ``,
       `【确认提示】`,
-      `融合将被开始，请确保安全！`
-    ].join('\n'));
+      confirmedSeedName
+        ? `确认完成，融合即将开始！`
+        : `融合尚未开始，请在60秒内确认。`,
+      confirmedSeedName ? `` : `发送 #确认融合道种 或 #取消融合道种`
+    ].filter(Boolean).join('\n');
 
-    // 等待玩家确认
-    await sleep(3000);
+    if (!confirmedSeedName) {
+      await redis.set(
+        xianguSeedFusionIntentKey(player_qq),
+        JSON.stringify({ seedName: selectedSeed.名称 }),
+        { EX: 60 }
+      );
+      return replyOfficialMessage(e, {
+        markdown: confirmationText,
+        text: confirmationText,
+        buttons: [[
+          { text: '确认融合', command: '#确认融合道种' },
+          { text: '取消', command: '#取消融合道种' },
+        ]],
+      });
+    }
 
     // 执行融合
     await e.reply([

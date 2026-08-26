@@ -89,7 +89,8 @@ export function buildXijieNpcCombatant(monster = {}, player = {}, grade = 1) {
     当前血量: maxHealth,
     暴击率: number(monster.baoji, 1),
     暴击伤害: number(monster.暴击伤害, 1.5),
-    速度: Math.max(1, Math.trunc(number(monster.速度, 100))),
+    // 战斗引擎会在此基础上再叠加三条额外体系的境界速度。
+    速度: 100,
     闪避率: number(monster.闪避率),
     吸血率: number(monster.吸血率),
     穿透: number(monster.穿透),

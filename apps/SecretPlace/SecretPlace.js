@@ -112,6 +112,7 @@ import {
     buildPlaneDestroyedMessage,
     getPlaneDestructionInfo,
 } from '../../model/planeDestruction.js';
+import { replyOfficialMessage } from '../../model/officialMessage.js';
 
 function isWeiMianDestroyed(planeName) {
     return getPlaneDestructionInfo(data.filePathMap.weimianList, planeName).destroyed;
@@ -135,6 +136,34 @@ function setPendingJieyin(targetQQ, request) {
         if (Number(pending.expire) <= now) pendingJieyinMap.delete(qq);
     }
     pendingJieyinMap.set(targetQQ, { ...request, expire: now + 60000 });
+}
+
+function replyJieyinRequest(e, { fromName, targetName, type, locationName }) {
+    const typeLabel = type === 'jieyin' ? '接引' : '传送';
+    const actionLabel = type === 'jieyin' ? '接引至' : '送往';
+    const text = [
+        `【仙王神通·${typeLabel}道友】`,
+        `${fromName}欲将${targetName}${actionLabel}${locationName}。`,
+        '',
+        `等待${targetName}在60秒内确认。`,
+        '（超时则请求失效，需重新发起）',
+    ].join('\n');
+    return replyOfficialMessage(e, {
+        markdown: [
+            `# 仙王神通·${typeLabel}道友`,
+            '',
+            `**发起者：** ${fromName}`,
+            `**目标：** ${targetName}`,
+            `**目的地：** ${locationName}`,
+            '',
+            '> 请目标玩家在60秒内确认，超时后按钮不会改变存档。',
+        ].join('\n'),
+        text,
+        buttons: [[
+            { text: `同意${typeLabel}`, command: '#同意接引', permission: false },
+            { text: `拒绝${typeLabel}`, command: '#拒绝接引', permission: false },
+        ]],
+    });
 }
 
 const SECT_WAR_SIDE_LABELS = {
@@ -3512,13 +3541,12 @@ async jieyinPlayer(e) {
     locationName: targetLocationName
   });
 
-  return e.reply([
-    `【仙王神通·接引道友】`,
-    `${player.名号 || usr_qq}欲将${targetPlayer.名号 || targetQQ}接引至${targetLocationName}。`,
-    ``,
-    `⏳ 等待${targetPlayer.名号 || targetQQ}在60秒内发送 #同意接引 确认。`,
-    `（超时则请求失效，需重新发起）`
-  ].join('\n'));
+  return replyJieyinRequest(e, {
+    fromName: player.名号 || usr_qq,
+    targetName: targetPlayer.名号 || targetQQ,
+    type: 'jieyin',
+    locationName: targetLocationName,
+  });
 }
 
 
@@ -3619,13 +3647,12 @@ async sendPlayerToLocation(e) {
     locationName: location
   });
 
-  return e.reply([
-    `【仙王神通·传送道友】`,
-    `${player.名号 || usr_qq}欲将${targetPlayer.名号 || targetQQ}送往${location}。`,
-    ``,
-    `⏳ 等待${targetPlayer.名号 || targetQQ}在60秒内发送 #同意接引 确认。`,
-    `（超时则请求失效，需重新发起）`
-  ].join('\n'));
+  return replyJieyinRequest(e, {
+    fromName: player.名号 || usr_qq,
+    targetName: targetPlayer.名号 || targetQQ,
+    type: 'songwang',
+    locationName: location,
+  });
 }
 
 // ==================== 接引/送往·共用门槛与确认逻辑 ====================
