@@ -30,6 +30,7 @@ import {
   channel
 } from '../../model/xiuxian.js';
 import { XianguTribulation, XIANGU_REALM_ROUTES } from '../SecretPlace/xianguTribulation.js';
+import { canBreakthroughXianguRealmHere } from '../SecretPlace/xianguTribulationSettlement.js';
 import {
   ensureXianqiState,
   getNextXianqiTrial,
@@ -43,6 +44,7 @@ import {
   unlockXianguDaoRealm,
 } from './wudaoRules.js';
 import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
+import { canEnterQuasiEmperor } from '../../model/worldlineAuthority.js';
 import {
   canCultivateExtraPath,
   getActiveExtraCultivationPaths,
@@ -231,7 +233,27 @@ export class xiangujinshi extends plugin {
     // 检查位面等级
     const weimianLevel = weimianData["诸天位面"] || 10;
     const weimianyazhi = 10 - weimianLevel;
-    if (player.xiangulevel_id + 1 > 19 - weimianyazhi) {
+    const targetXianguLevel = Number(player.xiangulevel_id) + 1;
+    if (!canBreakthroughXianguRealmHere(player, targetXianguLevel)) {
+      const targetName = data.xiangujinshi_list.find(item => item.level_id == targetXianguLevel)?.level || '仙道领域';
+      return e.reply([
+        '【仙域法则未至·仙道难成】',
+        `${player.名号}欲冲击${targetName}，却未身处仙域。`,
+        '真仙至帝光仙王的道果必须由完整仙道法则承载，请先前往仙域。',
+      ].join('\n'));
+    }
+    const targetingQuasiEmperor = targetXianguLevel === 21;
+    const quasiEmperorGate = targetingQuasiEmperor
+      ? canEnterQuasiEmperor(player, 'xiangu')
+      : null;
+    if (targetingQuasiEmperor && !quasiEmperorGate.ok) {
+      const guidance = quasiEmperorGate.reason === 'system'
+        ? '请先将诸天古则悟至圆满，再发送 #合道 体系名（体系名不超过五字）。'
+        : '你已合道立下体系，还需发送 #破王成帝劫 完成最终洗礼。';
+      return e.reply(['【帝光仙王·合道在先】', guidance].join('\n'));
+    }
+    const crossingQuasiEmperor = targetingQuasiEmperor && quasiEmperorGate.ok;
+    if (targetXianguLevel > 19 - weimianyazhi && !crossingQuasiEmperor) {
       const messages = [
         `诸天破碎，万界凋零！`,
         `时空长河断流，大道根基崩坏！`,
@@ -375,6 +397,16 @@ if (player.xiangulevel_id === 4) {
         return await this.breakthroughUpperRealm(e, usr_qq, player);
     }
     if (player.xiangulevel_id === 14) {
+        return await this.breakthroughUpperRealm(e, usr_qq, player);
+    }
+    if (player.xiangulevel_id === 20) {
+        const emperorGate = canEnterQuasiEmperor(player, 'xiangu');
+        if (!emperorGate.ok) {
+            const guidance = emperorGate.reason === 'system'
+              ? '请先将诸天古则悟至圆满，再发送 #合道 体系名（体系名不超过五字）。'
+              : '你已合道立下体系，还需发送 #破王成帝劫 完成最终洗礼。';
+            return e.reply(['【帝光仙王·合道在先】', guidance].join('\n'));
+        }
         return await this.breakthroughUpperRealm(e, usr_qq, player);
     }
     return e.reply("后续内容还在更新");

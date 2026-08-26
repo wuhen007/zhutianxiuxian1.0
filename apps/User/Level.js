@@ -39,12 +39,18 @@ import {
   canCultivateExtraPath,
   getActiveExtraCultivationPaths,
   getExtraCultivationPathName,
-  isCultivatingExtraPath,
   reforgeExtraCultivationState,
   selectExtraCultivationPath,
   syncXianguCompanionMijing,
 } from '../../model/extraCultivation.js';
-import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
+import { getRealmAuthorityLevel, getRealmAuthorityName, getRealmAuthorityPath } from '../../model/realmAuthority.js';
+import { canEnterQuasiEmperor } from '../../model/worldlineAuthority.js';
+import { FlowerPollenPath } from './FlowerPollenPath.js';
+import {
+  FLOWER_DAO_DAILY_LIMIT,
+  FLOWER_DAO_RULES,
+  getFlowerDaoGateState,
+} from '../../model/flowerPollenPath.js';
 import { zhetiandujie } from './zhetiandujie.js';
 import {
   getReverseLifeTribulationWaves,
@@ -944,23 +950,18 @@ const gongfaName = getRequiredGongfaName(player, "化龙");
     return;
 }
 if (player.mijinglevel_id + 1 === 20) {
-   if (typeof player.破王成帝 === 'undefined') {
-        player.破王成帝 = 10; // 初始化为10个步骤
-        await Write_player(usr_qq, player);  // 保存玩家数据
+    const emperorGate = canEnterQuasiEmperor(player, 'mijing');
+    if (!emperorGate.ok) {
+      const guidance = emperorGate.reason === 'system'
+        ? '先将诸天道则悟至圆满，再发送 #合道 体系名（体系名不超过五字）。'
+        : '你已合道立下体系，还需发送 #破王成帝劫，经受帝劫洗礼。';
+      e.reply([
+        '【仙王绝巅·帝路难行】',
+        '踏入准仙帝前，必须走出自己的道，并渡过破王成帝劫。',
+        guidance,
+      ].join('\n'));
+      return;
     }
-    
-    e.reply([
-        `【仙王绝巅·帝路难行】`,
-        ``,
-        `你已登临仙王巨头之境，俯瞰纪元沉浮，一念间星河崩灭，万道臣服！`,
-        `然帝路已断万古，界海尽头黑雾翻涌，黑暗源头蛰伏，`,
-        `欲更进一步，需：`,
-        ``,
-        `踏遍界海亿万残界，寻找破王成帝的契机`,
-        `此路九死无生，古来天骄皆埋骨帝路：`,
-        `唯有无敌信念可破桎梏！`,
-    ].join('\n'));
-    return;
 }
 if (player.mijinglevel_id+ 1 == 21 ) {
     // 初始化纪元积累
@@ -1764,14 +1765,14 @@ async hudao(e) {
       const player = await Read_player(usr_qq);
       if (!isNotNull(player.Physique_id)) return e.reply('请先#刷新信息');
 
+      const daoRoute = getRealmAuthorityPath(player);
+      if (daoRoute === 'huafen') return new FlowerPollenPath().flowerDao(e);
       const mijingRealmId = Number(player.mijinglevel_id) || 0;
       const xianguRealmId = Number(player.xiangulevel_id) || 0;
-      const isXiangu = mijingRealmId < 17
-        && xianguRealmId >= 9
-        && isCultivatingExtraPath(player, 'xiangu');
+      const isXiangu = daoRoute === 'xiangu';
       const realmId = isXiangu ? xianguRealmId : mijingRealmId;
       if (!isXiangu && realmId < 11) return this.legacyTeaWudao(e, usr_qq, player);
-      if (isXiangu && realmId >= 16) {
+      if (isXiangu && realmId >= 16 && realmId !== 20) {
         return e.reply([
           '【仙道已成】',
           `${player.名号}已踏入仙道领域，当前仙古道则已经圆满。`,
@@ -2084,8 +2085,8 @@ async hudao(e) {
       const result = createCultivationSystem(player, rawName);
       if (!result.ok) {
         if (result.reason === 'exists') return e.reply(`你已经开创了【${result.system.name}】，不可重复合道。`);
-        if (result.reason === 'name') return e.reply('体系名需为2至16个字符，不能包含换行或#。');
-        if (result.reason === 'realm') return e.reply('只有达到仙王巨头境，才有资格合道开创体系。');
+        if (result.reason === 'name') return e.reply('体系名需为一至五个字，不能包含换行或#。');
+        if (result.reason === 'realm') return e.reply('主修体系达到仙王巨头级权柄后，方可合道开创体系。');
         if (result.reason === 'dao') return e.reply([
           `【${result.gate.rule.name}未圆·合道受阻】`,
           `当前进度：${result.gate.exp}/${result.gate.rule.targetExp}（${result.gate.stage.name}）`,
@@ -2097,9 +2098,9 @@ async hudao(e) {
       await Write_player(usr_qq, player);
       return e.reply([
         '【合道成功·体系开创】',
-        `${player.名号}将九世大道、红尘仙道与王境道果熔于一炉。`,
+        `${player.名号}以${result.system.source}，熔炼出独属于自己的修炼体系。`,
         `独创体系：【${result.system.name}】`,
-        '从此自身即是道统源头，后续可挑战 #破王成帝。',
+        '从此自身即是道统源头，后续可挑战 #破王成帝劫。',
       ].join('\n'));
     });
   }
@@ -2110,50 +2111,78 @@ async hudao(e) {
     if (!(await existplayer(usr_qq))) return e.reply('玩家不存在，请先创建角色');
 
     const player = await Read_player(usr_qq);
-    const mijingRealmId = Number(player.mijinglevel_id) || 0;
-    const xianguRealmId = Number(player.xiangulevel_id) || 0;
-    const isXiangu = mijingRealmId < 17
-      && xianguRealmId >= 9
-      && isCultivatingExtraPath(player, 'xiangu');
-    const realmId = isXiangu ? xianguRealmId : mijingRealmId;
-    if (!isXiangu && realmId < 11) {
-      if (xianguRealmId > 1) {
-        return e.reply('仙古今世法尚未进入真一境，达到真一境后方可开辟仙古道途。');
-      }
-      return e.reply('你尚未斩道，需成就斩道王者后才能开创自身道途。');
-    }
+    const daoRoute = getRealmAuthorityPath(player);
+    const realmId = Number(player[daoRoute === 'xiangu'
+      ? 'xiangulevel_id'
+      : daoRoute === 'huafen' ? 'huafenlevel_id' : 'mijinglevel_id']) || 0;
+    const realmName = getRealmAuthorityName(
+      player,
+      data.Levelmijing_list,
+      data.xiangujinshi_list,
+      data.huafen_list,
+    );
+    const routeLabel = {
+      mijing: '遮天人体秘境道途',
+      xiangu: '仙古今世法道途',
+      huafen: '花粉进化路道途',
+    }[daoRoute];
 
-    const ensured = isXiangu ? ensureXianguDaoPath(player) : ensureDaoPath(player);
-    const currentRule = isXiangu
+    const flowerGate = daoRoute === 'huafen' ? getFlowerDaoGateState(player, realmId) : null;
+    const ensured = daoRoute === 'xiangu'
+      ? ensureXianguDaoPath(player)
+      : daoRoute === 'huafen'
+        ? { path: flowerGate.path, changed: false }
+        : ensureDaoPath(player);
+    const currentRule = daoRoute === 'xiangu'
       ? getXianguDaoRuleForRealm(realmId)
-      : getDaoRuleForRealm(realmId);
+      : daoRoute === 'huafen'
+        ? flowerGate.rule
+        : getDaoRuleForRealm(realmId);
     let changed = ensured.changed;
     if (currentRule && ensured.path.stages[currentRule.key] === undefined) {
-      if (isXiangu) unlockXianguDaoRealm(player, realmId);
-      else unlockDaoRealm(player, realmId);
+      if (daoRoute === 'xiangu') unlockXianguDaoRealm(player, realmId);
+      else if (daoRoute === 'mijing') unlockDaoRealm(player, realmId);
       changed = true;
     }
-    if (refreshDaoDaily(ensured.path)) changed = true;
+    if (daoRoute === 'huafen') {
+      const dateKey = getShanghaiDateKey();
+      if (ensured.path.daily.date !== dateKey) {
+        ensured.path.daily = { date: dateKey, count: 0 };
+        changed = true;
+      }
+    } else if (refreshDaoDaily(ensured.path)) changed = true;
     if (changed) await Write_player(usr_qq, player);
 
-    const rules = isXiangu ? XIANGU_DAO_REALM_RULES : DAO_REALM_RULES;
+    const rules = daoRoute === 'xiangu'
+      ? XIANGU_DAO_REALM_RULES
+      : daoRoute === 'huafen' ? FLOWER_DAO_RULES : DAO_REALM_RULES;
     const lines = rules
       .filter(rule => rule.realmId <= realmId || ensured.path.stages[rule.key] !== undefined)
       .map(rule => {
-        const exp = Number(ensured.path.stages[rule.key]) || 0;
-        const stage = getDaoStage(exp, rule);
+        const gate = daoRoute === 'huafen' ? getFlowerDaoGateState(player, rule.realmId) : null;
+        const exp = gate ? gate.exp : Number(ensured.path.stages[rule.key]) || 0;
+        const stage = gate ? gate.stage : getDaoStage(exp, rule);
         const marker = rule.realmId === realmId ? '→' : '·';
         return `${marker} ${rule.name}：${exp}/${rule.targetExp}（${stage.name}）`;
       });
-    const remaining = Math.max(0, DAO_DAILY_LIMIT - ensured.path.daily.count);
+    const hasFlowerAncestorSeed = daoRoute === 'huafen'
+      && Number(await exist_najie_thing(usr_qq, '花粉路祖种', '道具')) > 0;
+    const dailyLimit = daoRoute === 'huafen'
+      ? FLOWER_DAO_DAILY_LIMIT + (hasFlowerAncestorSeed ? 1 : 0)
+      : DAO_DAILY_LIMIT;
+    const remaining = Math.max(0, dailyLimit - ensured.path.daily.count);
 
     return e.reply([
       `【${player.名号}·我的道途】`,
-      isXiangu ? '仙古今世法道途：' : '遮天人体秘境道途：',
-      ...lines,
-      !isXiangu && realmId >= 16 ? `大道道果：${ensured.path.result?.name || '无缺帝道'}` : '',
-      !isXiangu && player.自创修炼体系 ? `自创体系：${player.自创修炼体系.name}` : '',
-      `今日剩余悟道：${remaining}/${DAO_DAILY_LIMIT}`,
+      `主修体系：${routeLabel}`,
+      `当前境界：${realmName}（等效权柄${getRealmAuthorityLevel(player)}重天）`,
+      ...(lines.length ? lines : ['· 当前境界尚未开启专属道则']),
+      ensured.path.result?.name ? `大道道果：${ensured.path.result.name}` : '',
+      player.已创自身之道
+        ? `自身之道：${player.自身之道名称}（${player.自身之道境界 || '道基初成'}）`
+        : '自身之道：尚未开创（可使用 #创造自身之道）',
+      player.自创修炼体系 ? `自创体系：${player.自创修炼体系.name}` : '',
+      `今日剩余悟道：${remaining}/${dailyLimit}`,
       `真实寿元：${getAvailableLifespan(player).toLocaleString()}年`
     ].filter(Boolean).join('\n'));
   }

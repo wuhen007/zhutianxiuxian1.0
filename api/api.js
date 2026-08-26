@@ -83,6 +83,23 @@ export const calculatorData = async (e) => {
 };
 
 export const verc = ({ e }) => {
+    const userId = String(e?.user_id || '').replace('qg_', '');
+    if (userId) {
+        const playerFile = getResourcePath(path.join('xiuxian_player', `${userId}.json`));
+        try {
+            if (fs.existsSync(playerFile)) {
+                const player = JSON.parse(fs.readFileSync(playerFile, 'utf8'));
+                if (player.练气存档状态 === '不可用' || player.练气存档状态 === '永久不可用') {
+                    e.reply?.(player.练气存档状态 === '永久不可用'
+                        ? '【古史尽灭】所有时间线与当世道标均已熄灭，练气存档永久封锁。'
+                        : '【形神俱灭】肉身与神魂均已毁灭，练气存档、纳戒处于封锁状态，需由仙帝使用 #重塑形神。');
+                    return false;
+                }
+            }
+        } catch (error) {
+            console.warn(`[形神状态] 读取玩家 ${userId} 失败：${error.message}`);
+        }
+    }
     return true;
 };
 

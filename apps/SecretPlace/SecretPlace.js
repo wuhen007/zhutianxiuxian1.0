@@ -83,10 +83,12 @@ import {
     consumeTravelWind,
     getBaseTravelThreshold,
     getBodyTravelQuote,
+    getDimensionBarrierCount,
     getLocationThreshold,
     getTokenTravelTime,
     getUnknownCoordinates,
     hasCoordinate,
+    isInstantAllHeavensTravel,
     purchaseCoordinateClue,
     rememberCoordinate,
 } from '../../model/weimianTravel.js';
@@ -331,7 +333,7 @@ export class SecretPlace extends plugin {
           fnc: 'handleDungeonDrop',
         },
        {
-  reg: '^#穿梭(凡间|仙界|下界八域|仙域|遮天位面|九天十地|界海|太初星墟|时间长河|永恒未知之地|小阴间|大阴间|阳间)$',
+  reg: '^#穿梭(凡间|仙界|下界八域|仙域|遮天位面|九天十地|界海|异域|太初星墟|时间长河|小阴间|大阴间|阳间|厄土高原|上苍之上|永恒未知之地|百维真界|原初宇宙海|千维宙古界|万维梵宇界|神维丝线海)$',
   fnc: 'goToLocation'
 },
 {
@@ -556,7 +558,7 @@ async goToLocation(e) {
     const player = await Read_player(usr_qq);
     
     // 解析目标地点
-    const location = e.msg.match(/^#穿梭(凡间|仙界|下界八域|九天十地|遮天位面|界海|太初星墟|时间长河|永恒未知之地|仙域|小阴间|大阴间|阳间)$/)[1];
+    const location = e.msg.match(/^#穿梭(凡间|仙界|下界八域|九天十地|遮天位面|界海|异域|太初星墟|时间长河|仙域|小阴间|大阴间|阳间|厄土高原|上苍之上|永恒未知之地|百维真界|原初宇宙海|千维宙古界|万维梵宇界|神维丝线海)$/)[1];
     
     // 地点映射表（统一引用模块级 PLACE_LOCATION_MAP，避免多处分散硬编码）
     const LOCATION_MAP = PLACE_LOCATION_MAP;
@@ -620,8 +622,9 @@ async goToLocation(e) {
     const hasLowToken = (player.位面传送次数 || 0) > 0;
     const tokenTier = hasHighToken ? 'high' : (hasLowToken ? 'low' : null);
     const isSpecialLocation = SPECIAL_LOCATIONS.includes(location);
+    const isInstantTravel = isInstantAllHeavensTravel(player, player.power_place, targetLocation);
 
-    if (tokenTier && !isSpecialLocation) {
+    if (tokenTier && !isSpecialLocation && !isInstantTravel) {
         // 传送阵要求：目标位面已在传送阵上"刻画"坐标
         const engraved = Array.isArray(player.传送阵坐标) ? player.传送阵坐标 : [];
         if (!engraved.includes(location)) {
@@ -785,11 +788,15 @@ async goToLocation(e) {
         ].join('\n'));
     }
 
-    const windResult = consumeTravelWind(player, travelTime);
-    travelTime = windResult.travelTime;
-    travelTime = Math.max(1, Math.ceil(travelTime * getTimedActionMultiplier(player)));
-    const shipResult = applyInnateTravelReduction(player, travelTime);
-    travelTime = shipResult.travelTime;
+    let windResult = { consumed: false, travelTime, reduction: 0, remainingUses: Number(player.天外清风加速次数) || 0 };
+    let shipResult = { travelTime, reduction: 0 };
+    if (travelTime > 0) {
+      windResult = consumeTravelWind(player, travelTime);
+      travelTime = windResult.travelTime;
+      travelTime = Math.max(1, Math.ceil(travelTime * getTimedActionMultiplier(player)));
+      shipResult = applyInnateTravelReduction(player, travelTime);
+      travelTime = shipResult.travelTime;
+    }
     if (windResult.consumed) {
         allMsgs.push([
             `【天外清风·清风引路】`,
@@ -980,6 +987,16 @@ async goToLocation(e) {
     player.修为 -= xiuweiCost;
     player.血气 -= qixueCost;
     player.寿元 -= shouyuanCost;
+
+    if (travelTime === 0) {
+        player.power_place = targetLocation;
+        await Write_player(usr_qq, player);
+        return e.reply([
+            `【准仙帝权能·诸天无距】`,
+            `${player.名号}一念收束诸天坐标，从${fromLocation}直接降临${location}。`,
+            `消耗修为${xiuweiCost}、血气${qixueCost}、寿元${shouyuanCost}，本次穿梭无需等待。`
+        ].join('\n'));
+    }
     
     // 设置传送行动（此时player.power_place还是出发地，from_location会正确记录）
     const travelAction = {
@@ -1084,19 +1101,9 @@ async Xiuxianstate(e) {
     usr_qq = await channel(usr_qq);
     const player = await Read_player(usr_qq);
     
-    // 定义位置状态映射
-    const PLACE_STATES = {
-        0: "凡间",
-        1: "仙界",
-        1.5:'下界八域',
-        2: "遮天位面",
-        2.5: "九天十地",
-        3: "界海",
-        3.5: "太初星墟",
-        4: "时间长河",
-        5: "永恒未知之地",
-        6: "仙域"
-    };
+    const PLACE_STATES = Object.fromEntries(
+        Object.entries(PLACE_LOCATION_MAP).map(([name, location]) => [location, name])
+    );
     
     // 获取真身位置
     const truePlace = PLACE_STATES[player.power_place] || "未知之地";
@@ -3498,6 +3505,9 @@ async jieyinPlayer(e) {
       `你当前所处的位面不在已知星图之中，无法锚定接引坐标。`
     ].join('\n'));
   }
+  if (getDimensionBarrierCount(targetPlayer.power_place, player.power_place) > 0) {
+    return e.reply('接引神通无法越过维度壁垒，目标需自行使用 #穿梭 跨越界壁。');
+  }
 
   // 锁1：目标位面准入（复用 goToLocation 同一套门槛）
   if (isWeiMianDestroyed(targetLocationName)) {
@@ -3607,6 +3617,10 @@ async sendPlayerToLocation(e) {
 
   const targetPlayer = await Read_player(targetQQ);
 
+  if (getDimensionBarrierCount(targetPlayer.power_place, PLACE_LOCATION_MAP[location]) > 0) {
+    return e.reply('送往神通无法越过维度壁垒，目标需自行使用 #穿梭 跨越界壁。');
+  }
+
   // 锁1：目标位面准入（复用 goToLocation 同一套门槛，覆盖全部位面）
   if (isWeiMianDestroyed(location)) {
     return e.reply(buildPlaneDestroyedMsgs(location));
@@ -3659,6 +3673,13 @@ async sendPlayerToLocation(e) {
 // 位面准入门槛检查（与 goToLocation 完全一致的判定逻辑，单一真相源）
 async checkLocationThreshold(player, location) {
     const threshold = getLocationThreshold(player, location);
+    if (threshold.code === 'dimension-barrier') {
+        return { ok: false, msgs: [
+            `【${location}·维度壁垒】`,
+            `此地已超出诸天万界层，常规位面通道在界壁前自行崩解。`,
+            ...threshold.checks.map(item => `${item.label}：${item.display}`),
+        ] };
+    }
     if (location === '小阴间' && threshold.code === 'shengxu') {
         return { ok: false, msgs: [
             `【小阴间·进化坐标未显】`,
@@ -3764,7 +3785,13 @@ async checkLocationThreshold(player, location) {
             `需秘境体系或仙古今世法达到16级。`
         ] };
     }
-    // 凡间：仙帝以上禁止下凡
+    if (location === '异域' && threshold.code === 'foreign-realm') {
+        return { ok: false, msgs: [
+            `【异域界壁·王境未至】`,
+            `异域法则排斥仙王以下的真身，需达到仙王级权柄方可破界。`,
+        ] };
+    }
+    // 凡间：准仙帝起可收束权柄下凡，其余境界沿用天地承载限制
     if (threshold.code === 'mortal-realm') {
         return { ok: false, msgs: [
             `【仙帝下凡·天地不容】`,
@@ -3841,6 +3868,11 @@ async confirmJieyin(e) {
             ``,
             ...threshold.msgs
         ].join('\n'));
+    }
+
+    if (getDimensionBarrierCount(targetPlayer.power_place, PLACE_LOCATION_MAP[req.locationName]) > 0) {
+        pendingJieyinMap.delete(targetQQ);
+        return e.reply('请求涉及跨维度壁垒，空间通道已自行崩解，请改用 #穿梭。');
     }
 
     // 执行传送

@@ -12,6 +12,12 @@ import {
   unlockDaoRealm,
 } from './wudaoRules.js';
 import {
+  ensureWorldlineState,
+  getBreakKingEmperorGate,
+  markBreakKingEmperorTribulationPassed,
+  resolveBreakKingEmperorFailure,
+} from '../../model/worldlineAuthority.js';
+import {
   calculateMinggeFourRealmBonus,
   getMinggeEffectNumber,
   getMinggeEffects,
@@ -62,10 +68,12 @@ import {
   existplayer,
   Write_player,
   Write_equipment,
+  Write_najie,
   isNotNull,
   player_efficiency,
   get_random_fromARR,
   Read_player,
+  Read_najie,
   bigNumberTransform,
   foundthing,
   Read_equipment,
@@ -139,7 +147,7 @@ export class zhetiandujie extends plugin {
           fnc:'command_zhengdao'
         },
         { 
-          reg: '^#破王成帝(?:\\s*(?:偏僻(?:无人)?(?:的)?星系|无人星系|荒芜星域|偏僻无人))?$',
+          reg: '^#破王成帝(?:劫)?(?:\\s*(?:偏僻(?:无人)?(?:的)?星系|无人星系|荒芜星域|偏僻无人))?$',
           fnc: 'poWangChengDi' 
         },
         {
@@ -3742,6 +3750,7 @@ await this.broadcastToAll(player,startMsg);
  * 失败惩罚：−50 本源 + 24 h CD + 修为/血气 7 折
  */
 async poWangChengDi(e) {
+  if (!verc({ e })) return false;
   if (!e.isGroup) return e.reply('修仙游戏请在群聊中游玩');
 
   const usr_qq = e.user_id.toString().replace('qg_', '');
@@ -3749,19 +3758,22 @@ async poWangChengDi(e) {
   const equipment = await Read_equipment(usr_qq);
 
   /* ====== 基础校验 ====== */
-  if (player.mijinglevel_id !== 19)
-    return e.reply('仅仙道领域——仙王巨头可破王成帝');
-  const daoGate = getDaoGateState(player, 19);
-  if (daoGate.changed) await Write_player(usr_qq, player);
-  if (!daoGate.ok) {
-    return e.reply([
-      `【${daoGate.rule.name}未圆·帝路受阻】`,
-      `当前进度：${daoGate.exp}/${daoGate.rule.targetExp}（${daoGate.stage.name}）`,
-      `请先发送 #悟道 圆满${daoGate.rule.name}。`,
-    ].join('\n'));
+  const emperorGate = getBreakKingEmperorGate(player, player.自创修炼体系?.route);
+  if (emperorGate.reason === 'realm' || emperorGate.reason === 'route') {
+    return e.reply('需先抵达当前修炼体系的准仙帝前一境，方可破王成帝。');
   }
-  if (!player.自创修炼体系) {
-    return e.reply('仙王巨头还缺最后一步：请先发送 #合道 体系名，开创自己的修炼体系。');
+  if (emperorGate.reason === 'system') {
+    return e.reply('帝路尚缺最后一步：请先圆满本体系道则，再发送 #合道 体系名（不超过五字）。');
+  }
+  if (emperorGate.reason === 'destroyed') {
+    return e.reply('你已形神俱灭，需由仙帝级玩家发送 #重塑形神 并@你。');
+  }
+  if (emperorGate.reason === 'passed' || emperorGate.reason === 'transcended') {
+    return e.reply('你已渡过破王成帝劫，道果中留有完整帝劫烙印。');
+  }
+  if (emperorGate.reason === 'cooldown') {
+    const seconds = Math.max(1, Math.ceil((emperorGate.retryAt - Date.now()) / 1000));
+    return e.reply(`帝劫余波未散，${Math.floor(seconds / 60)}分${seconds % 60}秒后方可再次尝试。`);
   }
   if (player.破王成帝 && Date.now() / 1000 < player.破王成帝)
     return e.reply('你道基未愈，暂不可再次冲击帝位');
@@ -3834,7 +3846,7 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
   let log = [
     `【破王成帝·帝劫启】`,
     `${player.名号}欲破王称帝，引动诸天震荡！`,
-    `融合第六秘境「举头三尺有神明」，头顶小人浮现，其周身缠绕${totalShackles}道大道枷锁！`,
+    `自创体系【${player.自创修炼体系.name}】显化道胎，其上缠绕${totalShackles}道大道枷锁！`,
     `破王劫威倍率：×${ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.破王成帝}（证道成帝：×${ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大帝}）`,
     `【帝劫绝对锁定】位面偏移、欺天阵纹与库洛牌祈愿均无法改变本次劫数。`,
     ...(clowBacklashLine ? [clowBacklashLine] : []),
@@ -3880,7 +3892,7 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
 
       log.push(
         `【第 ${broken} 道枷锁崩断！】`,
-        `- 几大秘境剧烈摇颤，天地大道哀鸣！`,
+        `- 周身诸境剧烈摇颤，天地大道哀鸣！`,
         `- 体魄龟裂，满身伤痕，几乎要炸开了，王血染红虚空！`,
         `- 头顶神明小人光芒大盛，大道符文流转不息！`,
         `造成 ${bigNumberTransform(dmg)} 点道伤 剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`
@@ -3908,18 +3920,37 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
           player.修为 *= 0.7;
           player.血气 *= 0.7;
           player.破王成帝 = Math.floor(Date.now() / 1000) + 86400; // 24 h CD
-          player.当前血量 = 1;
+          const failure = resolveBreakKingEmperorFailure(player, emperorGate.route);
+          if (failure.outcome === 'flaw') player.当前血量 = 1;
           /* ------ 新增：解除双方护法关系 ------ */
           await this.clearProtectorRelation(player);
           await Write_player(usr_qq, player);
+          const consequence = failure.outcome === 'destroyed'
+            ? ['【形神俱灭】肉身毁灭，神魂炸碎；练气存档与纳戒已经封锁。', '唯有仙帝级生灵能够强行重塑形神。']
+            : failure.outcome === 'severe'
+              ? ['【身魂重创】肉身濒碎，神魂留下一道不可逆裂痕。']
+              : [`【道果有瑕】当前道果瑕疵：${player.道果瑕疵 || 1}。`];
           await e.reply([
             `【帝路崩断·道基受损】`,
             `${player.名号}终究未能打破桎梏，帝路崩断！`,
-            `生命本源 −50（剩余 ${player.生命本源}）`,
+            `生命本源 -50（剩余 ${player.生命本源}）`,
+            ...consequence,
             `需修养 24 时辰，以无上神物修复道基方能再战帝路！`
           ].join('\n'));
           // ===== 渡劫结束，重算全装属性 =====
           await this.exitTribulationState(player, _tribSnap7, usr_qq, equipment);
+          if (failure.outcome === 'destroyed') {
+            const destroyedPlayer = await Read_player(usr_qq);
+            destroyedPlayer.当前血量 = 0;
+            destroyedPlayer.修仙状态 = player.修仙状态;
+            destroyedPlayer.练气存档状态 = player.练气存档状态;
+            destroyedPlayer.纳戒封锁 = player.纳戒封锁;
+            destroyedPlayer.时间线权能 = player.时间线权能;
+            await Write_player(usr_qq, destroyedPlayer);
+            const najie = await Read_najie(usr_qq);
+            najie.时间线封锁 = player.纳戒封锁;
+            await Write_najie(usr_qq, najie);
+          }
           finishTribulation();
         } else {
           log.push(`【向死而生】重燃生命之火，继续迎战枷锁！`);
@@ -3938,7 +3969,8 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
     if (running || finished || broken < totalShackles || player.当前血量 <= 1) return;
     running = true;
     try {
-      player.mijinglevel_id = 20;        // 准仙帝
+      const passed = markBreakKingEmperorTribulationPassed(player, emperorGate.route);
+      player[passed.gate.config.field] = passed.gate.config.targetRealmId;
       player.神明枷锁 = 0;
       player.神明之光 = 3;
       player.破王成帝 = 0;               // 清除标记
@@ -3949,7 +3981,7 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
       await e.reply([
         `【帝境突破】`,
         `${player.名号}长啸震九天：「我身为炉，万道为火，今日熔炼古今法，重开帝者路！」`,
-        `破碎王境，登临准仙帝！`
+        `自创体系【${player.自创修炼体系.name}】经帝劫洗礼，破碎王境，登临准仙帝！`
       ].join('\n'));
       // ===== 渡劫结束，重算全装属性 =====
       await this.exitTribulationState(player, _tribSnap7, usr_qq, equipment);
@@ -4622,7 +4654,9 @@ enterTribulationState(player, equipment) {
     当前血量: player.当前血量,
     暴击率: player.暴击率,
     暴击伤害: player.暴击伤害,
-    mijinglevel_id: player.mijinglevel_id
+    mijinglevel_id: player.mijinglevel_id,
+    xiangulevel_id: player.xiangulevel_id,
+    huafenlevel_id: player.huafenlevel_id,
   };
 
   const tAttr = this.calcTribulationAttr(player, equipment);
@@ -4648,7 +4682,9 @@ enterTribulationState(player, equipment) {
  */
 async exitTribulationState(player, snapshot, usr_qq, equipment) {
   // 判断是否渡劫成功（mijinglevel_id 提升了 = 成功）
-  const success = player.mijinglevel_id > snapshot.mijinglevel_id;
+  const success = player.mijinglevel_id > snapshot.mijinglevel_id
+    || player.xiangulevel_id > snapshot.xiangulevel_id
+    || player.huafenlevel_id > snapshot.huafenlevel_id;
 
   // Write_equipment 内部会 Read_player（含新 mijinglevel_id）→ 重算全装属性 → Write_player
   await Write_equipment(usr_qq, equipment);
@@ -4736,6 +4772,17 @@ async resolveTianjiaoTribulationAmbush(player, snapshot, usr_qq) {
   }
 
   player.mijinglevel_id = snapshot.mijinglevel_id;
+  player.xiangulevel_id = snapshot.xiangulevel_id;
+  player.huafenlevel_id = snapshot.huafenlevel_id;
+  const route = player.自创修炼体系?.route;
+  const tribulation = ensureWorldlineState(player).tribulations[route];
+  if (tribulation) {
+    tribulation.status = 'failed';
+    tribulation.outcome = 'ambushed';
+    tribulation.lastAttemptAt = Date.now();
+    delete tribulation.passedAt;
+  }
+  player.道果瑕疵 = Math.max(0, Number(player.道果瑕疵) || 0) + 1;
   player.当前血量 = 1;
   player.道伤 = Math.max(0, Math.floor(Number(player.道伤) || 0)) + 1;
   await context.e.reply([

@@ -121,10 +121,12 @@ import {
   ensureDefaultCoordinates,
   getKunpengReduction,
   getLocationThreshold,
+  getLocationName,
   getTokenTier,
   getTokenTravelTime,
   hasCoordinate,
   hasEngravedCoordinate,
+  isInstantAllHeavensTravel,
 } from './weimianTravel.js';
 import { calculateEquippedStats, calculateEquipmentSetBonuses } from './equipmentStats.js';
 import {
@@ -1646,7 +1648,11 @@ function idToCss(id) { return String(id).replace('.', '_'); }
 
 // 位面 ID → 徽章字
 function idToBadge(id) {
-  const m = { 0: '凡', 1: '仙', 1.5: '下', 2: '遮', 2.5: '九', 3: '界', 3.5: '墟', 4: '时', 5: '永', 6: '域' };
+  const m = {
+    0: '凡', 1: '仙', 1.5: '下', 2: '遮', 2.5: '九', 3: '界', 3.2: '异',
+    3.5: '墟', 3.6: '时', 4: '阴', 5: '冥', 6: '域', 6.5: '永', 7: '阳',
+    100: '厄', 200: '上', 400: '百', 500: '初', 600: '千', 700: '万', 800: '神',
+  };
   return m[id] || '?';
 }
 
@@ -1660,6 +1666,7 @@ export async function get_weimian_img(e) {
 
     const mijingLv = player.mijinglevel_id ?? 0;
     const xianguLv = player.xiangulevel_id ?? 0;
+    const huafenLv = player.huafenlevel_id ?? 1;
     const physiqueLv = player.Physique_id ?? 0;
     const currentPlaceValue = Number(player.power_place ?? 0);
     const currentPlace = Number.isFinite(currentPlaceValue) ? currentPlaceValue : 0;
@@ -1707,24 +1714,72 @@ export async function get_weimian_img(e) {
         isSpecial: false
       },
       {
+        id: 3.2, name: '异域', icon: '⚔️', description: '与九天十地对峙的古老大界，不朽之王盘踞，异域法则自成体系。',
+        danger: '仙王级', features: '不朽王族·边荒战场',
+        isSpecial: false
+      },
+      {
         id: 3.5, name: '太初星墟', icon: '☄️', description: '开天前残界堆叠成的星海废墟，古老观测站仍在捕捉诸天裂隙。',
         danger: '致命', features: '残界潮汐·裂界观测',
         isSpecial: false
       },
       {
-        id: 4, name: '时间长河', icon: '⏳', description: '贯穿古今未来的长河，超脱者的领域。可逆溯万古，窥探未来。',
+        id: 3.6, name: '时间长河', icon: '⏳', description: '贯穿古今未来的长河，超脱者的领域。可逆溯万古，窥探未来。',
         danger: '不可知', features: '时间领域·历史长河',
         isSpecial: true
       },
       {
-        id: 5, name: '永恒未知之地', icon: '♾️', description: '超脱诸天之外，万法不存。仙帝也无法完全掌握的终极领域。',
-        danger: '不可知', features: '诸天之外·终极秘密',
+        id: 4, name: '小阴间', icon: '🌑', description: '圣墟进化路的起始天地，阳间眼中的残破宇宙，映照者可主宰一界沉浮。',
+        danger: '高', features: '映照诸天·花粉起源',
+        isSpecial: true
+      },
+      {
+        id: 5, name: '大阴间', icon: '🌘', description: '比小阴间更完整的进化天地，法则厚重，神祗与大能留下无数道统。',
+        danger: '极高', features: '神祗道统·完整进化',
         isSpecial: true
       },
       {
         id: 6, name: '仙域', icon: '✨', description: '完美世界至高净土，仙王巨头坐镇，诸天万界之核心。',
         danger: '仙王级', features: '仙王坐镇·至高净土',
         isSpecial: true
+      },
+      {
+        id: 7, name: '阳间', icon: '☀️', description: '圣墟体系法则完整的浩瀚主界，大能争渡，诸天道统在此交汇。',
+        danger: '致命', features: '大宇宙·花粉盛世',
+        isSpecial: true
+      },
+      {
+        id: 100, name: '厄土高原', icon: '☠️', description: '诸天万界外第一重壁垒，诡异族群举行大祭的源头之地。',
+        danger: '不可知', features: '诡异祖地·高原大祭', isSpecial: true
+      },
+      {
+        id: 200, name: '上苍之上', icon: '☁️', description: '高居诸天与厄土之上的浩瀚天地，路尽级生灵方可真身降临。',
+        danger: '不可知', features: '上苍诸域·帝者战场', isSpecial: true
+      },
+      {
+        id: 6.5, name: '永恒未知之地', icon: '♾️', description: '第三重维度壁垒之外，万法不存，唯有仙帝真身能够横渡。',
+        danger: '不可知', features: '诸天之外·终极秘密',
+        isSpecial: true
+      },
+      {
+        id: 400, name: '百维真界', icon: '💠', description: '第四重维度壁垒后的真实界域，无穷位面仅是其投影。',
+        danger: '不可知', features: '百维真界·仙帝可渡', isSpecial: true
+      },
+      {
+        id: 500, name: '原初宇宙海', icon: '🌌', description: '千维宙古界外的原初宇宙海，祭道之上方能击穿界壁。',
+        danger: '不可知', features: '原初母海·祭道之上', isSpecial: true
+      },
+      {
+        id: 600, name: '千维宙古界', icon: '🔱', description: '无数古史与宇宙海叠加而成的千维界域。',
+        danger: '不可知', features: '千维古史·宙海叠合', isSpecial: true
+      },
+      {
+        id: 700, name: '万维梵宇界', icon: '🕸️', description: '万维规则共同编织的梵宇，只响应唯一道之上的权柄。',
+        danger: '不可知', features: '万维梵宇·唯一权柄', isSpecial: true
+      },
+      {
+        id: 800, name: '神维丝线海', icon: '🧵', description: '诸界最外层，无数维度如丝线漂浮于无边神海。',
+        danger: '不可知', features: '神维丝海·诸界尽头', isSpecial: true
       },
     ];
 
@@ -1736,7 +1791,8 @@ export async function get_weimian_img(e) {
       const locationThreshold = getLocationThreshold(player, name);
       const coordinateKnown = hasCoordinate(player, name);
       const tokenTier = getTokenTier(player);
-      const tokenRoute = Boolean(tokenTier && !SPECIAL_LOCATIONS.includes(name));
+      const instantTravel = isInstantAllHeavensTravel(player, currentPlace, id);
+      const tokenRoute = Boolean(tokenTier && !SPECIAL_LOCATIONS.includes(name) && !instantTravel);
       const coordinateEngraved = hasEngravedCoordinate(player, name);
       const routeReady = !tokenRoute || coordinateEngraved;
       const thresholdMet = tokenRoute || locationThreshold.ok;
@@ -1780,6 +1836,8 @@ export async function get_weimian_img(e) {
       let shouyuanCost = bodyQuote.shouyuanCost;
       let travelTime = bodyQuote.travelTime;
       let costClass = 'cost-ok';
+
+      if (!isCurrent && instantTravel) route_label = '准仙帝权能·诸天无距';
 
       if (!isCurrent && tokenRoute) {
         route_label = tokenTier === 'high' ? '高级传送阵' : '传送阵';
@@ -1841,6 +1899,7 @@ export async function get_weimian_img(e) {
       physiqueLevel: fmtLevel(data.LevelMax_list, physiqueLv),
       mijinLevel: fmtLevel(data.Levelmijing_list, mijingLv),
       xianguLevel: fmtLevel(data.xiangujinshi_list, xianguLv),
+      huafenLevel: fmtLevel(data.huafen_list, huafenLv),
       travelTechnique: travelTechniqueReduction > 0
         ? `鲲鹏宝术（-${travelTechniqueReduction}分）`
         : '无',
@@ -2241,6 +2300,46 @@ export async function get_gongfa_img(e) {
     ...data1,
   });
 }
+
+function getForgeMaterialEffect(item) {
+  const labels = [
+    ['攻', '攻'], ['防', '防'], ['血', '血'], ['暴', '暴'],
+  ];
+  const attributes = labels
+    .filter(([, key]) => Number(item?.[key]) > 0)
+    .map(([label, key]) => `${label}+${(Number(item[key]) * 100).toFixed(1)}%`);
+  const elements = ['金', '木', '水', '火', '土']
+    .filter(key => Number(item?.[key]) > 0)
+    .map(key => `${key}${Number(item[key])}`);
+  return [...attributes, ...elements].join('·') || item?.desc || '基础锻造材料';
+}
+
+export async function get_duanzaocailiao_img(e) {
+  let usr_qq = e.user_id.toString().replace('qg_', '');
+  usr_qq = await channel(usr_qq);
+  if (!data.existData('player', usr_qq)) return;
+
+  const player = await data.getData('player', usr_qq);
+  const najie = await Read_najie(usr_qq);
+  const owned = (Array.isArray(najie?.材料) ? najie.材料 : []).reduce((totals, item) => {
+    totals.set(item.name, (totals.get(item.name) || 0) + (Number(item.数量) || 0));
+    return totals;
+  }, new Map());
+  const materials = data.duanzhaocailiao.map(item => ({
+    ...item,
+    owned: owned.get(item.name) || 0,
+    effect: getForgeMaterialEffect(item),
+  }));
+  const playerData = {
+    user_id: usr_qq,
+    nickname: player.名号,
+    material_have: materials.filter(item => item.owned > 0),
+    material_need: materials.filter(item => item.owned <= 0),
+  };
+  const renderData = await new Show(e).get_duanzaocailiaoData(playerData);
+  return await puppeteer.screenshot('duanzaocailiao', renderData);
+}
+
 export async function get_hecheng_img(e) {
     // 用户ID处理
     let usr_qq = e.user_id.toString().replace('qg_', '');
@@ -4983,12 +5082,20 @@ export async function datachange(data) {
   }
 }
 //写入纳戒信息,第二个参数是一个JavaScript对象
-export async function Write_najie(usr_qq, najie) {
+export async function Write_najie(usr_qq, najie, options = {}) {
   assertGlobalInitIdle();
   await assertTribulationWriteAllowed(usr_qq, najie);
   let dir = path.join(__PATH.najie_path, `${usr_qq}.json`);
+  if (!options.allowWorldlineUnlock && fs.existsSync(dir)) {
+    try {
+      const current = JSON.parse(fs.readFileSync(dir, 'utf8'));
+      if (current.时间线封锁?.locked) return false;
+    } catch {
+      // Keep the existing repair path for malformed inventory files.
+    }
+  }
   writeJsonAtomically(dir, najie);
-  return;
+  return true;
 }
 
 //修为数量和灵石数量正增加,负减少
@@ -6767,21 +6874,9 @@ export async function Go(e) {
     usr_qq = await channel(usr_qq);
     const player = await Read_player(usr_qq);
     
-    // 定义位置状态映射
-    const PLACE_STATES = {
-        0: "凡间",
-        1: "仙界",
-        2: "遮天位面",
-        2.5: "九天十地",
-        3: "界海",
-        3.5: "太初星墟",
-        4: "时间长河",
-        5: "永恒未知之地"
-    };
-    
     // 获取当前位置名称
     const currentPlace = player.power_place || 0; // 默认为仙界
-    const placeName = PLACE_STATES[currentPlace] || "未知之地";
+    const placeName = getLocationName(currentPlace) || "未知之地";
     
     // // 不开放私聊
     // if (!e.isGroup) {
@@ -6937,17 +7032,14 @@ export async function Read_shop() {
 //判断是否还有物品
 export async function existshop(didian) {
   let shop = await Read_shop();
-  let i;
-  let thing = [];
-  for (i = 0; i < shop.length; i++) {
-    if (shop[i].name == didian) {
-      break;
-    }
-  }
-  for (var j = 0; j < shop[i].one.length; j++) {
-    if (shop[i].one[j].数量 > 0) {
-      thing.push(shop[i].one[j]);
-    }
+  const place = Array.isArray(shop)
+    ? shop.find(item => item?.name === didian)
+    : null;
+  if (!place) return false;
+
+  const thing = [];
+  for (const item of Array.isArray(place.one) ? place.one : []) {
+    if (Number(item?.数量) > 0) thing.push(item);
   }
   if (thing.length > 0) {
     return thing;
@@ -8155,15 +8247,8 @@ async function zd_battle_1v1(AA_player, BB_player, options = {}) {
   let B_actionBar = 0;
   const ACTION_BAR_MAX = 3000;
   
-let A_speed = (A_player.速度 ?? 100)
-  + (A_player.mijinglevel_id ?? 0) * 50
-  + (A_player.xiangulevel_id ?? 0) * 50
-  + Math.max(0, (A_player.huafenlevel_id ?? 1) - 1) * 50;
-
-let B_speed = (B_player.速度 ?? 100)
-  + (B_player.mijinglevel_id ?? 0) * 50
-  + (B_player.xiangulevel_id ?? 0) * 50
-  + Math.max(0, (B_player.huafenlevel_id ?? 1) - 1) * 50;
+let A_speed = getBattleUnitSpeed(A_player);
+let B_speed = getBattleUnitSpeed(B_player);
 
   if (
     (hasLearnedGongfa(A_player, '行字秘') && getGongfaProficiencyProfile(A_player, '行字秘').index >= 5) ||
@@ -8330,14 +8415,8 @@ let B_speed = (B_player.速度 ?? 100)
   const A_daoOpening = applyDaoTreasureBattleOpening(A_player, B_player, { state: daoState });
   const B_daoOpening = applyDaoTreasureBattleOpening(B_player, A_player, { state: daoState });
   msg.push(...A_daoOpening.messages, ...B_daoOpening.messages);
-  A_speed = (A_player.速度 ?? 100)
-    + (A_player.mijinglevel_id ?? 0) * 50
-    + (A_player.xiangulevel_id ?? 0) * 50
-    + Math.max(0, (A_player.huafenlevel_id ?? 1) - 1) * 50;
-  B_speed = (B_player.速度 ?? 100)
-    + (B_player.mijinglevel_id ?? 0) * 50
-    + (B_player.xiangulevel_id ?? 0) * 50
-    + Math.max(0, (B_player.huafenlevel_id ?? 1) - 1) * 50;
+  A_speed = getBattleUnitSpeed(A_player);
+  B_speed = getBattleUnitSpeed(B_player);
   A_speed = Math.max(1, Math.floor(A_speed
     * (Number(A_daoOpening.holderSpeedMultiplier) || 1)
     * (Number(B_daoOpening.opponentSpeedMultiplier) || 1)));
@@ -9621,10 +9700,10 @@ msg.push(`天地元气涌动，二人周身气势攀升，大战一触即发！`
 msg.push(`【天道法则】行动条满三千点方可出手，速度决定先机`);
 msg.push(`【神通对轰】高速度可抢先出手，更有机会施展神通与对方对轰，占据主动！`);
 
-let a玩家秘境加成 = A_player.mijinglevel_id * 50;
-let b玩家秘境加成 = B_player.mijinglevel_id * 50;
-let a玩家仙古加成 = A_player.xiangulevel_id * 50;
-let b玩家仙古加成 = B_player.xiangulevel_id * 50;
+let a玩家秘境加成 = A_player._忽略境界速度加成 ? 0 : A_player.mijinglevel_id * 50;
+let b玩家秘境加成 = B_player._忽略境界速度加成 ? 0 : B_player.mijinglevel_id * 50;
+let a玩家仙古加成 = A_player._忽略境界速度加成 ? 0 : A_player.xiangulevel_id * 50;
+let b玩家仙古加成 = B_player._忽略境界速度加成 ? 0 : B_player.xiangulevel_id * 50;
 
 // A 玩家速度文案
 let aSpeedMsg = `${A_player.名号} 遁光速度：${A_speed}`;
@@ -10293,8 +10372,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         (hasLearnedGongfa(p, '行字秘') && getGongfaProficiencyProfile(p, '行字秘').index >= 5) ||
         (hasLearnedGongfa(p, '鲲鹏宝术') && getGongfaProficiencyProfile(p, '鲲鹏宝术').index >= 5)
       ) ? ACTION_BAR_MAX : 0;
-      p._speed = (p.速度 ?? 100) + (p.mijinglevel_id ?? 0) * 50 + (p.xiangulevel_id ?? 0) * 50
-        + Math.max(0, (p.huafenlevel_id ?? 1) - 1) * 50;
+      p._speed = getBattleUnitSpeed(p);
       p._speedBoost = 1.0;
       p._battleActionCount = 0;
       p._fumianhuihe = 0;
@@ -10489,9 +10567,9 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   // 展示速度
   for (let p of allUnits) {
     let speedMsg = `${p.名号} 遁光速度：${p._speed}`;
-    let mijing = (p.mijinglevel_id ?? 0) * 50;
-    let xiangu = (p.xiangulevel_id ?? 0) * 50;
-    let huafen = Math.max(0, (p.huafenlevel_id ?? 1) - 1) * 50;
+    let mijing = p._忽略境界速度加成 ? 0 : (p.mijinglevel_id ?? 0) * 50;
+    let xiangu = p._忽略境界速度加成 ? 0 : (p.xiangulevel_id ?? 0) * 50;
+    let huafen = p._忽略境界速度加成 ? 0 : Math.max(0, (p.huafenlevel_id ?? 1) - 1) * 50;
     if (mijing > 0) speedMsg += `，秘境体系加成：${mijing}`;
     if (xiangu > 0) speedMsg += `，仙古今世法加成：${xiangu}`;
     if (huafen > 0) speedMsg += `，花粉进化路加成：${huafen}`;
@@ -13850,14 +13928,24 @@ export  function getTargetQQFromEvent(e, selfQQ = '') {
 // 行动条满 max 点方可出手，速度决定先机；拉条=立即再动，推条=延后行动。
 export const ACTION_BAR_MAX = 3000;
 
+export function getBattleUnitSpeed(unit) {
+  const base = Number(unit?.速度 ?? 100) || 100;
+  if (unit?._忽略境界速度加成) return Math.max(1, Math.floor(base));
+  return Math.max(1, Math.floor(
+    base
+    + (Number(unit?.mijinglevel_id) || 0) * 50
+    + (Number(unit?.xiangulevel_id) || 0) * 50
+    + Math.max(0, (Number(unit?.huafenlevel_id) || 1) - 1) * 50
+  ));
+}
+
 // 初始化单位的行动条字段：_actionBar / _speed / _speedBoost
 // 速度算法：传入 speed 则直接作为最终速度；否则叠加三条额外体系境界速度。
 export function initActionBar(unit, { speed, boost = 1.0 } = {}) {
   unit._actionBar = unit._actionBar || 0;
   const base = (speed != null)
     ? speed
-    : (unit.速度 ?? 100) + (unit.mijinglevel_id ?? 0) * 50 + (unit.xiangulevel_id ?? 0) * 50
-      + Math.max(0, (unit.huafenlevel_id ?? 1) - 1) * 50;
+    : getBattleUnitSpeed(unit);
   unit._speed = Math.floor(base);
   unit._speedBoost = boost;
   return unit;
