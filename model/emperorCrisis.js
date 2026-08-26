@@ -61,6 +61,12 @@ export function defeatEmperorCrisis(current, currentWorldYear) {
   return { ...(current || {}), status: 'defeated', defeatedAt: worldYear(currentWorldYear) };
 }
 
+export function getEmperorChallengeMode(current) {
+  if (current?.status === 'active') return 'confront';
+  if (current?.status === 'refined') return 'reclaim';
+  return null;
+}
+
 export function isImmortalImperialWeapon(weapon) {
   const rank = String(typeof weapon === 'string' ? weapon : weapon?.品阶 || '');
   return IMMORTAL_WEAPON_RANKS.has(rank) || rank.startsWith('道器（') || rank.startsWith('唯一器');

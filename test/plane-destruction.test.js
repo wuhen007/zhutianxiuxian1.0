@@ -120,6 +120,7 @@ test('帝尊炼界有独立拦截文案且不会自然修复', t => {
   const message = buildPlaneDestroyedMessage(fixture.filePath, '遮天位面');
   assert.match(message, /帝尊以世界鼎炼化/);
   assert.match(message, /不会随时间自行恢复/);
+  assert.match(message, /#组队迎战帝尊/);
   assert.deepEqual(repairNaturallyDestroyedPlanes(fixture.filePath, {
     worldYear: 100_000,
     minAge: 2_000,

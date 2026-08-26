@@ -147,6 +147,7 @@ export function buildPlaneDestroyedMessage(filePath, planeName) {
       `「${planeName}」已被帝尊以世界鼎炼化。`,
       '遮天宇宙的万道与众生道果皆已归入世界鼎，位面通道与副本入口彻底封闭。',
       '帝尊危机未被终结前，此界不会随时间自行恢复。',
+      '大帝级强者可发送 #组队迎战帝尊，击败帝尊后夺回万道并重塑此界。',
     );
   } else {
     lines.push(

@@ -265,9 +265,9 @@ async createEmperorTeam(e) {
     return e.reply('至少达到大帝级权柄，方可创建讨伐帝尊的队伍。');
   }
   // 检查帝尊感知标记 - 修正：添加括号调用函数
-  const isEmperorAware = await checkEmperorAwareness();
+  const emperorChallenge = await checkEmperorAwareness({ details: true });
   
-  if (!isEmperorAware) {
+  if (!emperorChallenge.available) {
     return e.reply([
       `帝尊尚未察觉此世变数！`,
       `「时间长河上游，帝尊仍在沉睡...」`,
@@ -276,6 +276,7 @@ async createEmperorTeam(e) {
       `届时方可挑战帝尊！`
     ].join('\n'));
   }
+  const isReclaimBattle = emperorChallenge.mode === 'reclaim';
   
   // 检查是否已在队伍中
   if (await this.getPlayerTeamId(usr_qq)) {
@@ -311,7 +312,9 @@ async createEmperorTeam(e) {
     ``,
     `挑战须知:`,
     `• 此战只为证道,不计奖励,不占CD`,
-    `• 真正发起迎战可将世界鼎炼界之期再拖延${EMPEROR_CRISIS_GRACE_YEARS}年`,
+    isReclaimBattle
+      ? `• 帝尊已炼化遮天，此战胜利将夺回万道并重塑遮天宇宙`
+      : `• 真正发起迎战可将世界鼎炼界之期再拖延${EMPEROR_CRISIS_GRACE_YEARS}年`,
     `• 帝尊实力滔天，九死一生！`,
     `• 胜则名垂青史，败则身死道消！`,
     ``,
@@ -325,7 +328,9 @@ async createEmperorTeam(e) {
       `**队长：** ${player.名号}`,
       '**成员：** 1 / 5',
       '',
-      `> 真正迎战可将世界鼎炼界之期延后${EMPEROR_CRISIS_GRACE_YEARS}年。`,
+      isReclaimBattle
+        ? '> 帝尊已炼化遮天，击败他可夺回万道并恢复位面。'
+        : `> 真正迎战可将世界鼎炼界之期延后${EMPEROR_CRISIS_GRACE_YEARS}年。`,
     ].join('\n'),
     text: message,
     buttons: [
@@ -461,7 +466,8 @@ async createEmperorTeam(e) {
     if (getRealmAuthorityLevel(leader) < 16) {
       return e.reply('队长已失去大帝级权柄，本次讨伐无法发起。');
     }
-    if (!await checkEmperorAwareness()) return e.reply('帝尊危机当前并未处于可迎战状态。');
+    const emperorChallenge = await checkEmperorAwareness({ details: true });
+    if (!emperorChallenge.available) return e.reply('帝尊危机当前并未处于可迎战状态。');
     
     // 检查状态
     if (team.status === 'inBattle') {
@@ -520,10 +526,10 @@ async createEmperorTeam(e) {
             members: team.members
         });
         await this.saveTeam(teamId, team);
-if (battleResult.result === "玩家胜利") {
-  // 清除帝尊感知标记
-  await clearEmperorAwareness();
-}
+        let emperorSettlement = { restoredPlane: false };
+        if (battleResult.result === "玩家胜利") {
+          emperorSettlement = await clearEmperorAwareness();
+        }
         const defeatReports = [];
         if (battleResult.result !== "玩家胜利") {
           const now = Date.now();
@@ -540,8 +546,10 @@ if (battleResult.result === "玩家胜利") {
         // 构建战斗结果总结
         const resultSummary = [
             ` 帝尊挑战结果 `,
-            battleResult.result === "玩家胜利" 
-                ? `恭喜队伍成功击败帝尊！守护了遮天宇宙！` 
+            battleResult.result === "玩家胜利"
+                ? emperorSettlement.restoredPlane
+                  ? `恭喜队伍成功击败帝尊，夺回万道并重塑了遮天宇宙！`
+                  : `恭喜队伍成功击败帝尊！守护了遮天宇宙！`
                 : `很遗憾，队伍未能击败帝尊...`,
             `战斗时长: ${((Date.now() - team.battleStartTime) / 1000).toFixed(1)}秒`,
             `此战只为证道，不计奖励，不占CD`,
@@ -551,6 +559,12 @@ if (battleResult.result === "玩家胜利") {
         if (battleResult.result === "玩家胜利") {
       resultSummary.push(...[
         ``,
+        ...(emperorSettlement.restoredPlane ? [
+          `【万道归位·遮天重塑】`,
+          `世界鼎崩裂，曾被吞纳的万道与众生道果重归天地。`,
+          `遮天宇宙自寂灭中再现，位面通道与全部副本入口已经恢复。`,
+          ``,
+        ] : []),
         `【帝尊陨落·万古成空】`,
         `帝尊帝躯寸寸崩裂，万道法则如琉璃破碎，帝血洒落星空，染红诸天万界！`,
         `「吾为帝尊，布局万古，欲炼化此界成就无上仙位...」`,

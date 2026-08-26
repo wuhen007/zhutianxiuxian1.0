@@ -1,9 +1,34 @@
 {
-    "lastCheckWorldYear": null,
-    "pity": {
-        "仙界": 0,
-        "太初星墟": 0
-    },
-    "activeRifts": [],
-    "history": []
+  "lastCheckWorldYear": 2000,
+  "pity": {
+    "仙界": 2,
+    "太初星墟": 0
+  },
+  "activeRifts": [
+    {
+      "id": "4000-太初星墟",
+      "plane": "太初星墟",
+      "name": "归零舰墓",
+      "location": "归零舰墓",
+      "coordinate": {
+        "x": 180,
+        "y": 180
+      },
+      "worldYear": 4000,
+      "openedAt": 1787731201533,
+      "expiresAt": 1787745601533,
+      "anchor": 0,
+      "contribution": {},
+      "expeditions": {}
+    }
+  ],
+  "history": [
+    {
+      "id": "4000-太初星墟",
+      "plane": "太初星墟",
+      "name": "归零舰墓",
+      "worldYear": 4000,
+      "openedAt": 1787731201533
+    }
+  ]
 }

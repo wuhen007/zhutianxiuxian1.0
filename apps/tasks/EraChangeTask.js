@@ -19,8 +19,10 @@ import { formatRealmEventLocation } from '../../model/realmEventLocation.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { getRealmAuthorityLevel, hasRealmAuthority } from '../../model/realmAuthority.js';
 import {
+  getPlaneDestructionInfo,
   markPlaneDestroyed,
   PLANE_DESTRUCTION_SOURCES,
+  repairPlane,
   repairNaturallyDestroyedPlanes,
 } from '../../model/planeDestruction.js';
 import {
@@ -29,6 +31,7 @@ import {
   defeatEmperorCrisis,
   EMPEROR_CRISIS_GRACE_YEARS,
   EMPEROR_CRISIS_KEY,
+  getEmperorChallengeMode,
   resolveEmperorCrisis,
 } from '../../model/emperorCrisis.js';
 import {
@@ -2525,9 +2528,12 @@ export async function setEmperorAwareness(worldYear = currentEmperorWorldYear())
 
 export async function delayEmperorRefinement(worldYear = currentEmperorWorldYear()) {
   try {
-    if (await processEmperorRefinement(worldYear)) return { confronted: false };
+    await processEmperorRefinement(worldYear);
     const { filePath, state } = readEmperorPlaneState();
     if (!state) return { confronted: false };
+    if (getEmperorChallengeMode(state[EMPEROR_CRISIS_KEY]) === 'reclaim') {
+      return { confronted: true, recoveryBattle: true };
+    }
     const result = confrontEmperorCrisis(state[EMPEROR_CRISIS_KEY], worldYear);
     if (!result.confronted) return result;
     state[EMPEROR_CRISIS_KEY] = result.state;
@@ -2540,8 +2546,8 @@ export async function delayEmperorRefinement(worldYear = currentEmperorWorldYear
   }
 }
 
-/** 检查帝尊感知标记 */
-export async function checkEmperorAwareness() {
+/** 检查帝尊是否处于迎战或炼界后夺回状态 */
+export async function checkEmperorAwareness(options = {}) {
   try {
     await processEmperorRefinement(currentEmperorWorldYear());
     let { state } = readEmperorPlaneState();
@@ -2554,12 +2560,12 @@ export async function checkEmperorAwareness() {
       await setEmperorAwareness(currentEmperorWorldYear());
       ({ state } = readEmperorPlaneState());
     }
-    return state?.帝尊 !== 0
-      && state?.['遮天位面'] !== 0
-      && state?.[EMPEROR_CRISIS_KEY]?.status === 'active';
+    const mode = state?.帝尊 !== 0 ? getEmperorChallengeMode(state?.[EMPEROR_CRISIS_KEY]) : null;
+    const available = mode === 'reclaim' || (mode === 'confront' && state?.['遮天位面'] !== 0);
+    return options.details ? { available, mode } : available;
   } catch (e) {
     logError('checkEmperorAwareness', e);
-    return false;
+    return options.details ? { available: false, mode: null } : false;
   }
 }
 
@@ -2567,16 +2573,19 @@ export async function clearEmperorAwareness() {
   try {
     await redis.del(redisKeys.emperorAwareness);
     const { filePath, state } = readEmperorPlaneState();
-    if (!state) return false;
+    if (!state) return { cleared: false, restoredPlane: false };
+    const restoreZhetian = getEmperorChallengeMode(state[EMPEROR_CRISIS_KEY]) === 'reclaim'
+      && getPlaneDestructionInfo(filePath, '遮天位面').source === PLANE_DESTRUCTION_SOURCES.EMPEROR_REFINEMENT;
     state.帝尊 = 0;
     state[EMPEROR_CRISIS_KEY] = defeatEmperorCrisis(
       state[EMPEROR_CRISIS_KEY],
       currentEmperorWorldYear(),
     );
     saveEmperorPlaneState(filePath, state);
-    return true;
+    const restoredPlane = restoreZhetian && repairPlane(filePath, '遮天位面');
+    return { cleared: true, restoredPlane };
   } catch (e) {
     logError('clearEmperorAwareness', e);
-    return false;
+    return { cleared: false, restoredPlane: false };
   }
 }

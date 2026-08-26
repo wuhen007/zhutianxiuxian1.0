@@ -1,8 +1,74 @@
 {
-    "eventHistory": [],
-    "lastEventTime": 0,
-    "lastEventWorldYear": null,
-    "activeEvents": [],
+    "eventHistory": [
+        {
+            "type": "coordinateClue",
+            "plane": "太初星墟",
+            "location": "太初矿心",
+            "coordinate": {
+                "x": 476,
+                "y": 475
+            },
+            "sourcePlane": "太初星墟",
+            "targetPlane": "永恒未知之地",
+            "discovererName": "路人甲2号",
+            "claimedQqs": [],
+            "timestamp": 1787724002776,
+            "expiresAt": 1787810402776,
+            "source": "era",
+            "interaction": "coordinate",
+            "participantQqs": [],
+            "tianjiaoTrace": {
+                "name": "逍遥子",
+                "plane": "太初星墟",
+                "location": "太初矿心",
+                "coordinate": {
+                    "x": 476,
+                    "y": 475
+                },
+                "source": "位面事件",
+                "reincarnation": 0,
+                "traceVersion": 0,
+                "foundAt": 1787724002775,
+                "expiresAt": 1787810402775
+            }
+        }
+    ],
+    "lastEventTime": 2000,
+    "lastEventWorldYear": 2000,
+    "activeEvents": [
+        {
+            "type": "coordinateClue",
+            "plane": "太初星墟",
+            "location": "太初矿心",
+            "coordinate": {
+                "x": 476,
+                "y": 475
+            },
+            "sourcePlane": "太初星墟",
+            "targetPlane": "永恒未知之地",
+            "discovererName": "路人甲2号",
+            "claimedQqs": [],
+            "timestamp": 1787724002776,
+            "expiresAt": 1787810402776,
+            "source": "era",
+            "interaction": "coordinate",
+            "participantQqs": [],
+            "tianjiaoTrace": {
+                "name": "逍遥子",
+                "plane": "太初星墟",
+                "location": "太初矿心",
+                "coordinate": {
+                    "x": 476,
+                    "y": 475
+                },
+                "source": "位面事件",
+                "reincarnation": 0,
+                "traceVersion": 0,
+                "foundAt": 1787724002775,
+                "expiresAt": 1787810402775
+            }
+        }
+    ],
     "eventCooldown": 2000,
     "enableEvents": true,
     "eraTriggerChance": 0.35,

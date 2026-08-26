@@ -12,6 +12,7 @@ import {
   confrontEmperorCrisis,
   EMPEROR_CRISIS_GRACE_YEARS,
   EMPEROR_DEFEAT_SLEEP_MS,
+  getEmperorChallengeMode,
   getEmperorSleepRemainingMs,
   isImmortalImperialWeapon,
   resolveEmperorCrisis,
@@ -37,6 +38,14 @@ test('真正迎战会把炼界死线延后一万年', () => {
   assert.equal(confrontation.state.lastConfrontedAt, 5_000);
   assert.equal(confrontation.state.deadline, 15_000);
   assert.equal(confrontation.state.confrontations, 1);
+});
+
+test('帝尊炼界后转为夺回战，败亡后才结束挑战', () => {
+  const active = awakenEmperorCrisis(null, 1_000).state;
+  const refined = resolveEmperorCrisis(active, active.deadline).state;
+  assert.equal(getEmperorChallengeMode(active), 'confront');
+  assert.equal(getEmperorChallengeMode(refined), 'reclaim');
+  assert.equal(getEmperorChallengeMode({ status: 'defeated' }), null);
 });
 
 test('世界鼎强化帝尊并压制未达仙器的帝兵持有者', () => {
@@ -87,5 +96,7 @@ test('帝尊团本接入大帝门槛、对峙续期和败北持久化', () => {
   const eraSource = fs.readFileSync(path.join(__dirname, '..', 'apps', 'tasks', 'EraChangeTask.js'), 'utf8');
   assert.match(eraSource, /processEmperorRefinement\(currentWorldYear\)/);
   assert.match(eraSource, /PLANE_DESTRUCTION_SOURCES\.EMPEROR_REFINEMENT/);
+  assert.match(eraSource, /repairPlane\(filePath, '遮天位面'\)/);
+  assert.match(eraSource, /recoveryBattle: true/);
   assert.doesNotMatch(eraSource, /redis\.expire\(redisKeys\.emperorAwareness/);
 });
