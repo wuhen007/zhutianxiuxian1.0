@@ -183,6 +183,63 @@ function readBody(req, limit) {
   });
 }
 
+const TERMINAL_TRADE_STATUSES = new Set([
+  'cancelled',
+  'completed',
+  'expired',
+  'failed',
+]);
+
+function tradeTerminalTimestamp(trade, fallback) {
+  for (const value of [
+    trade.closed_at,
+    trade.completed_at,
+    trade.expires_at,
+    trade.created_at,
+  ]) {
+    const timestamp = Number(value);
+    if (Number.isFinite(timestamp) && timestamp > 0) return timestamp;
+  }
+  return fallback;
+}
+
+export function pruneTrades(trades, options = {}) {
+  const now = Number.isFinite(options.now) ? options.now : Date.now();
+  const retentionMs = Math.max(0, Number(options.retentionMs) || 0);
+  const maxRetained = Math.max(0, Math.trunc(Number(options.maxRetained) || 0));
+  const terminal = [];
+  let changed = false;
+
+  for (const [code, trade] of trades) {
+    if (Number(trade.expires_at) <= now && ['open', 'settling'].includes(trade.status)) {
+      trade.status = 'expired';
+      trade.failure_reason = 'trade_expired';
+      trade.closed_at = now;
+      changed = true;
+      options.onExpire?.(trade);
+    }
+
+    if (!TERMINAL_TRADE_STATUSES.has(trade.status)) continue;
+    const closedAt = tradeTerminalTimestamp(trade, now);
+    if (retentionMs === 0 || now - closedAt >= retentionMs) {
+      trades.delete(code);
+      changed = true;
+      continue;
+    }
+    terminal.push({ code, closedAt });
+  }
+
+  if (terminal.length > maxRetained) {
+    terminal.sort((left, right) => left.closedAt - right.closedAt);
+    for (const { code } of terminal.slice(0, terminal.length - maxRetained)) {
+      trades.delete(code);
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 export function createWorldChatServer(options = {}) {
   const cfg = { ...CONFIG, ...(options.config || {}) };
   const logger = options.logger || console;
@@ -213,11 +270,17 @@ export function createWorldChatServer(options = {}) {
       .map((raid) => [raid.code, raid])
   );
 
+  const storedTrades = readJson(tradesFile, []);
   const trades = new Map(
-    (Array.isArray(readJson(tradesFile, [])) ? readJson(tradesFile, []) : [])
-      .filter((trade) => trade?.code && trade.expires_at > Date.now())
+    (Array.isArray(storedTrades) ? storedTrades : [])
+      .filter((trade) => trade?.code)
       .map((trade) => [trade.code, trade])
   );
+  const loadedTradesPruned = pruneTrades(trades, {
+    retentionMs: cfg.TRADE_TERMINAL_RETENTION_MS,
+    maxRetained: cfg.TRADE_MAX_RETAINED_TERMINAL,
+  });
+  if (loadedTradesPruned) atomicWriteJson(tradesFile, [...trades.values()]);
 
   const bannedData = readJson(bannedFile, []);
   const banned = new Set(
@@ -856,6 +919,7 @@ export function createWorldChatServer(options = {}) {
         if (message.ok !== true) {
           trade.status = 'failed';
           trade.failure_reason = cleanTradeLabel(message.reason, 120) || 'local_settlement_failed';
+          trade.closed_at = Date.now();
           saveTrades();
           sendTradeEvent(trade.seller_server_id, 'TRADE_ROLLBACK', trade);
           sendTradeEvent(trade.buyer_server_id, 'TRADE_ROLLBACK', trade);
@@ -865,6 +929,7 @@ export function createWorldChatServer(options = {}) {
         if (trade.settlement.seller && trade.settlement.buyer) {
           trade.status = 'completed';
           trade.completed_at = Date.now();
+          trade.closed_at = trade.completed_at;
           saveTrades();
           sendTradeEvent(trade.seller_server_id, 'TRADE_COMPLETED', trade, {
             role: 'seller',
@@ -1312,16 +1377,15 @@ export function createWorldChatServer(options = {}) {
       }
     }
     if (raidsChanged) saveRaids();
-    let tradesChanged = false;
-    for (const [code, trade] of trades) {
-      if (trade.expires_at <= Date.now() && ['open', 'settling'].includes(trade.status)) {
-        trade.status = 'expired';
-        trade.failure_reason = 'trade_expired';
-        tradesChanged = true;
+    const tradesChanged = pruneTrades(trades, {
+      now: Date.now(),
+      retentionMs: cfg.TRADE_TERMINAL_RETENTION_MS,
+      maxRetained: cfg.TRADE_MAX_RETAINED_TERMINAL,
+      onExpire(trade) {
         sendTradeEvent(trade.seller_server_id, 'TRADE_ROLLBACK', trade);
         if (trade.buyer_server_id) sendTradeEvent(trade.buyer_server_id, 'TRADE_ROLLBACK', trade);
-      }
-    }
+      },
+    });
     if (tradesChanged) saveTrades();
   }, 30_000);
   heartbeat.unref();

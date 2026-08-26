@@ -384,32 +384,254 @@ test('实时投递失败会自动重试且不提前收取序号', async (t) => {
   assert.equal(client.cfg.last_seen_seq, 1);
 });
 
-test('永久投递失败会停止重试并限制等待队列', async () => {
-  const keepAlive = setInterval(() => {}, 100);
+test('世界消息投递参数使用保守默认值、硬上限和旧参数兼容', () => {
+  const makeClient = (name, options = {}) =>
+    new WorldChatClient({
+      config: clientConfig(
+        'ws://127.0.0.1:1',
+        `delivery_${name}`,
+        secret(),
+        `group_${name}`
+      ),
+      persist: false,
+      ...options,
+    });
+  const clients = [
+    makeClient('defaults'),
+    makeClient('capped', {
+      deliveryQueueLimit: 10_000,
+      deliveryMaxAttempts: 10_000,
+      deliveryRetryBaseMs: 10_000_000,
+      deliveryRetryMaxMs: 10_000_000,
+    }),
+    makeClient('zero', { deliveryMaxAttempts: 0 }),
+    makeClient('legacy_zero', { deliveryMaxRetries: 0 }),
+    makeClient('legacy_one', { deliveryMaxRetries: 1 }),
+    makeClient('preferred', {
+      deliveryMaxAttempts: 3,
+      deliveryMaxRetries: 9,
+    }),
+  ];
+  const [defaults, capped, zero, legacyZero, legacyOne, preferred] = clients;
+
+  try {
+    assert.equal(defaults.deliveryQueueLimit, 100);
+    assert.equal(defaults.deliveryMaxAttempts, 5);
+    assert.equal(defaults.deliveryRetryMaxMs, 30_000);
+    assert.equal(capped.deliveryQueueLimit, 500);
+    assert.equal(capped.deliveryMaxAttempts, 10);
+    assert.equal(capped.deliveryRetryBaseMs, 60_000);
+    assert.equal(capped.deliveryRetryMaxMs, 60_000);
+    assert.equal(zero.deliveryMaxAttempts, 1);
+    assert.equal(legacyZero.deliveryMaxAttempts, 1);
+    assert.equal(legacyOne.deliveryMaxAttempts, 2);
+    assert.equal(preferred.deliveryMaxAttempts, 3);
+  } finally {
+    for (const client of clients) client.close();
+  }
+});
+
+test('永久失败的世界消息有限重试后释放并继续投递下一条', async () => {
   const client = new WorldChatClient({
-    config: clientConfig('ws://127.0.0.1:1', 'bounded_client', secret(), 'group_bounded'),
+    config: clientConfig(
+      'ws://127.0.0.1:1',
+      'bounded_retry',
+      secret(),
+      'group_retry'
+    ),
     persist: false,
+    deliveryMaxAttempts: 2,
     deliveryRetryBaseMs: 10,
-    deliveryMaxRetries: 1,
-    deliveryQueueLimit: 1,
   });
-  let attempts = 0;
-  client.setMessageHandler(() => {
-    attempts += 1;
-    throw new Error('永久失败');
+  const attempts = new Map();
+  const delivered = [];
+  const cleaned = [];
+  client.setMessageHandler(async (message) => {
+    attempts.set(message.id, (attempts.get(message.id) || 0) + 1);
+    if (message.id === 'permanent_failure') throw new Error('永久失败');
+    delivered.push(message.id);
+  });
+  client.setDeliveryFailureHandler((message) => cleaned.push(message.id));
+
+  try {
+    const results = await Promise.allSettled([
+      client.enqueueDelivery({ id: 'permanent_failure', seq: 1 }),
+      client.enqueueDelivery({ id: 'next_message', seq: 2 }),
+    ]);
+
+    assert.equal(results[0].status, 'rejected');
+    assert.equal(results[1].status, 'fulfilled');
+    assert.equal(attempts.get('permanent_failure'), 2);
+    assert.deepEqual(delivered, ['next_message']);
+    assert.deepEqual(cleaned, ['permanent_failure']);
+    assert.equal(client.cfg.last_seen_seq, 2);
+    assert.equal(client.pendingDeliveries.size, 0);
+    assert.equal(client.deliveryQueue.length, 0);
+  } finally {
+    client.close();
+  }
+});
+
+test('世界消息投递队列保留对象数量不超过配置上限', async () => {
+  const client = new WorldChatClient({
+    config: clientConfig(
+      'ws://127.0.0.1:1',
+      'bounded_queue',
+      secret(),
+      'group_queue'
+    ),
+    persist: false,
+    deliveryQueueLimit: 2,
+    deliveryMaxAttempts: 1,
+  });
+  let releaseFirst;
+  let markStarted;
+  const firstStarted = new Promise((resolve) => {
+    markStarted = resolve;
+  });
+  const firstGate = new Promise((resolve) => {
+    releaseFirst = resolve;
+  });
+  client.setMessageHandler(async (message) => {
+    if (message.id !== 'first') return;
+    markStarted();
+    await firstGate;
   });
 
   try {
-    const first = client.enqueueDelivery({ id: 'm1', seq: 1 });
+    const first = client.enqueueDelivery({ id: 'first', seq: 1 });
+    await firstStarted;
+    const second = client.enqueueDelivery({ id: 'second', seq: 2 });
     await assert.rejects(
-      client.enqueueDelivery({ id: 'm2', seq: 2 }),
+      client.enqueueDelivery({ id: 'overflow', seq: 3 }),
       /delivery_queue_full/
     );
-    await assert.rejects(first, /永久失败/);
-    assert.equal(attempts, 2);
-    assert.equal(client.deliveryPending, 0);
+    assert.equal(client.pendingDeliveries.size, 2);
+    assert.equal(client.deliveryQueue.length, 1);
+
+    releaseFirst();
+    await Promise.all([first, second]);
+    assert.equal(client.pendingDeliveries.size, 0);
+    assert.equal(client.deliveryQueue.length, 0);
   } finally {
-    clearInterval(keepAlive);
+    releaseFirst?.();
     client.close();
   }
+});
+
+test('实时消息队列满时关闭连接以等待重连补拉', async () => {
+  const client = new WorldChatClient({
+    config: clientConfig(
+      'ws://127.0.0.1:1',
+      'queue_reconnect',
+      secret(),
+      'group_reconnect'
+    ),
+    persist: false,
+    deliveryQueueLimit: 1,
+    deliveryMaxAttempts: 1,
+  });
+  let releaseActive;
+  let markStarted;
+  const activeStarted = new Promise((resolve) => {
+    markStarted = resolve;
+  });
+  const activeGate = new Promise((resolve) => {
+    releaseActive = resolve;
+  });
+  client.setMessageHandler(async () => {
+    markStarted();
+    await activeGate;
+  });
+
+  const active = client.enqueueDelivery({ id: 'active_live', seq: 1 });
+  await activeStarted;
+  let closeArgs = null;
+  client.ws = {
+    close(...args) {
+      closeArgs = args;
+    },
+  };
+
+  try {
+    client.onMessage(
+      JSON.stringify({
+        type: 'MESSAGE',
+        message: { id: 'overflow_live', seq: 2 },
+      })
+    );
+    await waitFor(() => closeArgs, '队列满后连接未关闭');
+    assert.deepEqual(closeArgs, [1013, 'delivery_queue_full']);
+    assert.equal(client.pendingDeliveries.size, 1);
+  } finally {
+    releaseActive();
+    await active;
+    client.close();
+  }
+});
+
+test('补拉消息最终失败时跳过该条并继续处理后续消息', async () => {
+  const client = new WorldChatClient({
+    config: clientConfig(
+      'ws://127.0.0.1:1',
+      'backfill_skip',
+      secret(),
+      'group_backfill'
+    ),
+    persist: false,
+    deliveryMaxAttempts: 1,
+  });
+  const delivered = [];
+  client.setMessageHandler((message) => {
+    if (message.id === 'failed_backfill') throw new Error('永久失败');
+    delivered.push(message.id);
+  });
+  client.query = async () => ({
+    ok: true,
+    messages: [
+      { id: 'failed_backfill', seq: 1 },
+      { id: 'following_backfill', seq: 2 },
+    ],
+  });
+
+  try {
+    await client.backfill();
+    assert.deepEqual(delivered, ['following_backfill']);
+    assert.equal(client.cfg.last_seen_seq, 2);
+    assert.equal(client.pendingDeliveries.size, 0);
+  } finally {
+    client.close();
+  }
+});
+
+test('关闭客户端会取消重试等待并释放未执行消息', async () => {
+  const client = new WorldChatClient({
+    config: clientConfig(
+      'ws://127.0.0.1:1',
+      'close_delivery',
+      secret(),
+      'group_close'
+    ),
+    persist: false,
+    deliveryMaxAttempts: 10,
+    deliveryRetryBaseMs: 60_000,
+  });
+  client.setMessageHandler(() => {
+    throw new Error('等待重试');
+  });
+
+  const active = client.enqueueDelivery({ id: 'active', seq: 1 });
+  const queued = client.enqueueDelivery({ id: 'queued', seq: 2 });
+  const activeRejected = assert.rejects(active, /delivery_disabled/);
+  const queuedRejected = assert.rejects(queued, /closed/);
+  await waitFor(() => client.deliveryRetryWait, '投递重试等待未开始');
+
+  client.close();
+  await Promise.all([activeRejected, queuedRejected]);
+  await waitFor(
+    () => client.pendingDeliveries.size === 0 && !client.deliveryProcessing,
+    '关闭后投递状态未释放'
+  );
+  assert.equal(client.deliveryQueue.length, 0);
+  assert.equal(client.deliveryRetryWait, null);
 });
