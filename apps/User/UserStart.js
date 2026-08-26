@@ -62,7 +62,26 @@ import {
   suppressJuelingLifespan,
 } from '../../model/juelingLifespan.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { replyOfficialMessage } from '../../model/officialMessage.js';
 import { withJuelingEraLock } from '../tasks/juelingLifespanService.js';
+
+function replyRecreateConfirmation(e) {
+  const text = '一旦转世一切当世与你无缘,你真的要重生吗?回复:【断绝此生】或者【再继仙缘】进行选择';
+  return replyOfficialMessage(e, {
+    markdown: [
+      '# 转世重生确认',
+      '',
+      '> 断绝此生会清理当前角色存档，并开始新的一世。',
+      '',
+      '选择“再继仙缘”则保留当前存档。',
+    ].join('\n'),
+    text,
+    buttons: [[
+      { text: '断绝此生', command: '断绝此生' },
+      { text: '再继仙缘', command: '再继仙缘' },
+    ]],
+  });
+}
 
 function deleteRebirthData(playerId) {
   const deletion = deletePlayerDataBundle({
@@ -1151,11 +1170,7 @@ async force_reCreate_player(e) {
     /** 设置上下文 */
     this.setContext('RE_xiuxian');
     /** 回复 */
-    await e.reply(
-      '一旦转世一切当世与你无缘,你真的要重生吗?回复:【断绝此生】或者【再继仙缘】进行选择',
-      false,
-      { at: true }
-    );
+    await replyRecreateConfirmation(e);
     return false;
   }
 
@@ -1249,9 +1264,7 @@ async force_reCreate_player(e) {
       await redis.set('xiuxian:player:' + usr_qq + ':reCreate_acount', acount);
     } else {
       this.setContext('RE_xiuxian');
-      await this.reply('请回复:【断绝此生】或者【再继仙缘】进行选择', false, {
-        at: true,
-      });
+      await replyRecreateConfirmation(e);
       return false;
     }
     /** 结束上下文 */

@@ -77,6 +77,7 @@ import path from 'node:path';
 import { AppName } from '../app.config.js';
 import { FileRollbackTransaction } from './SecretPlace/rebirthTransaction.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
+import { replyOfficialMessage } from '../model/officialMessage.js';
 import {
   consumeSpiritHeart,
   getSpiritHeartMax,
@@ -211,6 +212,7 @@ export class EndlessRealm extends plugin {
         { reg: '^#拓展厉鬼拼图槽$', fnc: 'expandEndlessPuzzleSlotsCmd' },
         { reg: '^#重置万劫道碑$', fnc: 'requestResetEndlessMeta' },
         { reg: '^#确认重置万劫道碑$', fnc: 'confirmResetEndlessMeta' },
+        { reg: '^#取消重置万劫道碑$', fnc: 'cancelResetEndlessMeta' },
         { reg: '^#万象归一\\s+(?:武器|护具|法宝)\\*.+$', fnc: 'mergeEquipment' },
         { reg: '^#无尽至宝$', fnc: 'showTreasures' },
         { reg: '^#升级无尽至宝\\s*.+$', fnc: 'upgradeTreasureCmd' },
@@ -1073,9 +1075,31 @@ export class EndlessRealm extends plugin {
     const view = getEndlessMetaView(player);
     if (!view.meta.spent) return e.reply('万劫道碑尚未消耗道痕，无需重置');
     await redis.set(this.metaResetKey(userId), '1', { EX: 60 });
-    return e.reply(
-      `重置将返还已消耗劫境道痕的90%（预计${Math.floor(view.meta.spent * 0.9)}），并清空全部传承与拼图。\n60秒内发送 #确认重置万劫道碑`
-    );
+    const refund = Math.floor(view.meta.spent * 0.9);
+    const text = `重置将返还已消耗劫境道痕的90%（预计${refund}），并清空全部传承与拼图。\n60秒内发送 #确认重置万劫道碑`;
+    return replyOfficialMessage(e, {
+      markdown: [
+        '# 重置万劫道碑',
+        '',
+        `**预计返还：** ${refund}劫境道痕`,
+        '',
+        '> 将清空全部传承与厉鬼拼图，仅返还已消耗道痕的90%。',
+        '',
+        '请在60秒内确认。',
+      ].join('\n'),
+      text,
+      buttons: [[
+        { text: '确认重置', command: '#确认重置万劫道碑' },
+        { text: '保留道碑', command: '#取消重置万劫道碑' },
+      ]],
+    });
+  }
+
+  async cancelResetEndlessMeta(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    await redis.del(this.metaResetKey(userId));
+    return e.reply('已取消重置，万劫道碑保持原状。');
   }
 
   async confirmResetEndlessMeta(e) {

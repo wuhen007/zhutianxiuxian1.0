@@ -77,6 +77,7 @@ import {
 } from './wudaoRules.js';
 import { findWudaoTeaItem } from './wudaoTea.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { replyOfficialMessage } from '../../model/officialMessage.js';
 import { addJuelingAwareLifespan } from '../../model/juelingLifespan.js';
 import { clearInterval } from 'timers';
 import { getRedDustDaoFruit, getRedDustPath, getRedDustVow } from '../../model/redDustPath.js';
@@ -2217,7 +2218,7 @@ async jijinshenghua(e) {
         return true;
     }
     
-      e.reply([
+      const confirmationText = [
         `【极尽升华·终极一跃】`,
        
         `你确定要极尽升华吗？这将带来以下效果：`,
@@ -2227,10 +2228,26 @@ async jijinshenghua(e) {
         `效果持续30秒`,
        
         `回复[1]确认极尽升华，回复[0]取消`
-    ].join('\n'));
+      ].join('\n');
     
     // 设置上下文（关键修改点）
     this.setContext('noticeJijinShenghua');
+    await replyOfficialMessage(e, {
+      markdown: [
+        '# 极尽升华·终极一跃',
+        '',
+        '- 攻击、防御、生命值提升300%',
+        '- 全属性临时提升至巅峰状态',
+        '- 效果持续30秒',
+        '',
+        '> 代价：当前人体秘境境界将永久下降1级。',
+      ].join('\n'),
+      text: confirmationText,
+      buttons: [[
+        { text: '确认升华', command: '1' },
+        { text: '取消', command: '0' },
+      ]],
+    });
     return false;
 }
 

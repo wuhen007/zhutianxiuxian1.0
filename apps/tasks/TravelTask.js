@@ -38,12 +38,14 @@ import {
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 import { randomUUID } from 'node:crypto';
 import {
+  buildRelativeTianjiaoCombatant,
   buildTianjiaoSurrenderOffer,
   isTianjiaoAvailable,
   rollIndependentTianjiaoEscape,
 } from '../../model/tianjiaoHostility.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { tryNpcProtectorIntervention } from '../../model/npcProtector.js';
+import { replyOfficialMessage } from '../../model/officialMessage.js';
 export class TravelTask extends plugin {
   constructor() {
     super({
@@ -572,18 +574,8 @@ this.FORMATION_NAMES = [
     
     // 构建偷袭者属性
     const multiplier = this.AMBUSH_CONFIG.ATTACKER_MULTIPLIER[ambushType];
-    let B_player = {
-      名号: `${tianjiaoName}(偷袭)`,
-      攻击: parseInt(A_player.攻击 * multiplier),
-      防御: parseInt(A_player.防御 * multiplier),
-      当前血量: parseInt(A_player.血量上限 * multiplier),
-      血量上限: parseInt(A_player.血量上限 * multiplier),
-      暴击率: tianjiaoData.暴击率,
-      暴击伤害: tianjiaoData.暴击伤害,
-      灵根: tianjiaoData.灵根?.name || "普通灵根",
-      法球倍率: tianjiaoData.灵根?.法球倍率 || 1,
-      学习的功法: tianjiaoData.学习的功法 || [],
-    };
+    let B_player = buildRelativeTianjiaoCombatant(A_player, tianjiaoData, multiplier);
+    B_player.名号 = `${tianjiaoName}(偷袭)`;
     
     // 大阵加成
     if (ambushType === '大阵围困') {
@@ -655,14 +647,31 @@ this.FORMATION_NAMES = [
       await this.addHatred(tianjiaoName, usr_qq, '挑战成功');
       const normal = offer.normal.map(item => `${item.name}x${item.amount}`).join('、') || '无';
       const extras = offer.extras.map(item => `${item.name}x${item.amount}（稀有度${item.rarity}）`).join('、');
-      await this.sendTextMessage(usr_qq, [
+      const surrenderText = [
         '【天骄败退·献宝求饶】',
         `${tianjiaoName}被你逼至绝境，主动交出随身战利品与五份赔礼。`,
         `本命战利品：${normal}`,
         `赔礼：${extras}`,
         '发送 #接受求饶 收下全部赔礼并放其离去；发送 #拒绝求饶 继续追杀。',
         '本次选择保留10分钟。',
-      ].join('\n'), group_id);
+      ].join('\n');
+      await replyOfficialMessage(this.createSimulatedEvent(usr_qq, group_id), {
+        markdown: [
+          '# 天骄败退·献宝求饶',
+          '',
+          `${tianjiaoName}被逼至绝境，主动交出随身战利品与五份赔礼。`,
+          '',
+          `**本命战利品：** ${normal}`,
+          `**赔礼：** ${extras}`,
+          '',
+          '> 本次选择保留10分钟。',
+        ].join('\n'),
+        text: surrenderText,
+        buttons: [[
+          { text: '接受求饶', command: '#接受求饶', permission: false },
+          { text: '拒绝求饶', command: '#拒绝求饶', permission: false },
+        ]],
+      });
       
       return true; // 继续传送
       
@@ -947,7 +956,7 @@ this.FORMATION_NAMES = [
         if (group_id) {
           await Bot.pickGroup(group_id).sendMsg([
             segment.at(Number(user_id)),
-            content
+            ...(Array.isArray(content) ? content : [content]),
           ]);
         } else {
           await common.relpyPrivate(user_id, content);

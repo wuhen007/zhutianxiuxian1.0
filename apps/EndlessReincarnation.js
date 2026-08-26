@@ -5,6 +5,7 @@ import {
   channel,
   existplayer,
 } from '../model/xiuxian.js';
+import { replyOfficialMessage } from '../model/officialMessage.js';
 import {
   REINCARNATION_ATTRIBUTE_GROUPS,
   REINCARNATION_BRANCH_GRADES,
@@ -40,6 +41,7 @@ export class EndlessReincarnation extends plugin {
         { reg: '^#基因锁$', fnc: 'showGeneLock' },
         { reg: '^#退出无尽轮回$', fnc: 'requestExit' },
         { reg: '^#确认退出无尽轮回$', fnc: 'confirmExit' },
+        { reg: '^#取消退出无尽轮回$', fnc: 'cancelExit' },
       ],
     });
   }
@@ -608,7 +610,28 @@ export class EndlessReincarnation extends plugin {
     const run = await this.activeRun(e, userId);
     if (!run) return false;
     await redis.set(this.exitKey(userId), '1', { EX: 60 });
-    return e.reply('退出会放弃本次全部轮回点与支线权限。60秒内发送 #确认退出无尽轮回');
+    const text = '退出会放弃本次全部轮回点与支线权限。60秒内发送 #确认退出无尽轮回';
+    return replyOfficialMessage(e, {
+      markdown: [
+        '# 退出无尽轮回',
+        '',
+        '> 退出后将放弃本次全部轮回点与支线权限。',
+        '',
+        '请在60秒内确认。',
+      ].join('\n'),
+      text,
+      buttons: [[
+        { text: '确认退出', command: '#确认退出无尽轮回' },
+        { text: '继续轮回', command: '#取消退出无尽轮回' },
+      ]],
+    });
+  }
+
+  async cancelExit(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    await redis.del(this.exitKey(userId));
+    return e.reply('已取消退出，本次世界线继续。');
   }
 
   async confirmExit(e) {

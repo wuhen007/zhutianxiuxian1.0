@@ -40,6 +40,7 @@ import {
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { applySoulSearchKarmaTribulation } from '../User/soulSearchRules.js';
+import { replyOfficialMessage } from '../../model/officialMessage.js';
 
 const PUPPET_CRAFT_COST = Object.freeze({ 阴魂木: 3, 神魂结晶: 1, 灵石: 50_000_000 });
 const PUPPET_REPAIR_COST = Object.freeze({ 阴魂木: 1, 灵石: 10_000_000 });
@@ -633,7 +634,19 @@ export class ForbiddenSoul extends plugin {
   async destroyPuppet(e) {
     if (!verc({ e })) return false;
     if (!String(e.msg).trim().endsWith('确认')) {
-      return e.reply('销毁后不返还材料。确定请发送：#毁去人傀 确认');
+      const text = '销毁后不返还材料。确定请发送：#毁去人傀 确认';
+      return replyOfficialMessage(e, {
+        markdown: [
+          '# 毁去人傀',
+          '',
+          '> 人傀将被彻底销毁，已消耗的材料不会返还。',
+        ].join('\n'),
+        text,
+        buttons: [[
+          { text: '确认销毁', command: '#毁去人傀 确认' },
+          { text: '保留人傀', command: '#我的人傀' },
+        ]],
+      });
     }
     const playerId = await resolveQQ(e.user_id);
     if (!(await existplayer(playerId))) return false;

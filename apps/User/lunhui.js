@@ -11,6 +11,29 @@ import {
   channel
 } from '../../model/xiuxian.js';
 import { Add_najie_thing, Add_HP } from '../../model/xiuxian.js';
+import { replyOfficialMessage } from '../../model/officialMessage.js';
+
+function replyLunhuiConfirmation(e) {
+  const text = [
+    '轮回之术乃逆天造化之术，须清空仙人所有的修为气血才可施展。',
+    '传说只有得到“轮回阵旗”进行辅助轮回，才会抵御轮回之苦的十之八九。',
+    '回复：【确认轮回】或者【先不轮回】进行选择。',
+  ].join('\n');
+  return replyOfficialMessage(e, {
+    markdown: [
+      '# 轮回确认',
+      '',
+      '> 轮回会清空当世修为与气血，并重新降临凡界。',
+      '',
+      '轮回阵旗可以抵御大部分轮回之苦。',
+    ].join('\n'),
+    text,
+    buttons: [[
+      { text: '确认轮回', command: '确认轮回' },
+      { text: '先不轮回', command: '先不轮回' },
+    ]],
+  });
+}
 export class lunhui extends plugin {
   constructor() {
     super({
@@ -40,12 +63,8 @@ export class lunhui extends plugin {
     }
     let lhxq = await redis.get('xiuxian:player:' + usr_qq + ':lunhui');
     if (lhxq != 1) {
-      e.reply(
-        '轮回之术乃逆天造化之术，须清空仙人所有的修为气血才可施展。\n' +
-          '传说只有得到"轮回阵旗"进行辅助轮回，才会抵御轮回之苦的十之八九。\n' +
-          '回复:【确认轮回】或者【先不轮回】进行选择'
-      );
       this.setContext('yeslunhui');
+      await replyLunhuiConfirmation(e);
       return false;
     } else if (lhxq == 1) {
       await redis.set('xiuxian:player:' + usr_qq + ':lunhui', 0);
@@ -420,11 +439,7 @@ export class lunhui extends plugin {
       return false;
     } else {
       this.setContext('yeslunhui');
-      await this.reply(
-        '轮回之术乃逆天造化之术，须清空仙人所有的修为气血才可施展\n' +
-          '传说只有得到"轮回阵旗"进行辅助轮回，才会抵御轮回之苦的十之八九' +
-          '回复:【确认轮回】或者【先不轮回】进行选择'
-      );
+      await replyLunhuiConfirmation(e);
       return false;
     }
     /** 结束上下文 */

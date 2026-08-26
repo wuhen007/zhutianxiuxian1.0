@@ -62,6 +62,7 @@ import { getDouziMimicChance, tryLearnTianjiaoGongfa } from '../../model/gongfaP
 import { getExtraCultivationLevelSum } from '../../model/extraCultivation.js';
 import { getTianjiaoRealmTier } from '../../model/realmAuthority.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { replyOfficialMessage } from '../../model/officialMessage.js';
 import { addRelicToBag, createFishKingRelic } from '../../model/relicSystem.js';
 import {
   clearTianjiaoHatred,
@@ -737,12 +738,31 @@ export class BOSS4 extends plugin {
         if (hasSoulSearchTechnique(player)) {
           choices.unshift('你掌握【搜魂大法】，发送 #搜魂天骄 可先搜魂，再行灭杀。');
         }
-        return e.reply([
+        const text = [
           '【拒降·魔念横生】',
           `${pending.tianjiaoName}已被镇压，神魂正在剧烈挣扎。`,
           ...choices,
           '对方可能自爆神魂，反噬强度由双方境界差决定。选择保留5分钟。',
-        ].join('\n'));
+        ].join('\n');
+        const buttons = [];
+        if (hasSoulSearchTechnique(player)) buttons.push({ text: '搜魂', command: '#搜魂天骄' });
+        buttons.push(
+          { text: '天魔炼化', command: '#天魔炼化天骄' },
+          { text: '直接灭杀', command: '#灭杀天骄' },
+        );
+        return replyOfficialMessage(e, {
+          markdown: [
+            '# 拒降·魔念横生',
+            '',
+            `${pending.tianjiaoName}已被镇压，神魂正在剧烈挣扎。`,
+            '',
+            ...choices.map(choice => `- ${choice}`),
+            '',
+            '> 对方可能自爆神魂，选择保留5分钟。',
+          ].join('\n'),
+          text,
+          buttons: [buttons],
+        });
       }
       try {
         return await this.resolveForbiddenEscape(e, pending, qq);
