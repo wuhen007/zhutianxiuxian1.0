@@ -1,7 +1,11 @@
 import { plugin, puppeteer, verc, data, config,Show } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
 import { getTimedActionMultiplier } from '../../model/innateTreasure.js';
-import { buildXijieAtlasData } from '../../model/xijieAtlas.js';
+import {
+  buildXijieAtlasData,
+  isXijieShopLockExpired,
+  XIJIE_SHOP_LOCK_TTL_MS,
+} from '../../model/xijieAtlas.js';
 import { createXijiePlayerSnapshot } from '../../model/xijieNpc.js';
 import {
   existplayer,
@@ -96,9 +100,11 @@ export class Xijie extends plugin {
       }
     }
     if (i == shop.length) {
+      e.reply(`未找到重置地点：${didian}`);
       return false;
     }
     shop[i].state = 0;
+    delete shop[i].state_until;
     await Write_shop(shop);
     e.reply('重置成功!');
     return false;
@@ -215,7 +221,13 @@ export class Xijie extends plugin {
       }
     }
     if (i == shop.length) {
+      e.reply(`未找到洗劫地点：${didian}`);
       return false;
+    }
+    if (isXijieShopLockExpired(shop[i], now_time)) {
+      shop[i].state = 0;
+      delete shop[i].state_until;
+      await Write_shop(shop);
     }
     if (shop[i].state == 1) {
       e.reply(didian + '已经戒备森严了,还是不要硬闯好了');
@@ -242,6 +254,7 @@ export class Xijie extends plugin {
     await Write_player(usr_qq, player);
 
     shop[i].state = 1;
+    shop[i].state_until = now_time + XIJIE_SHOP_LOCK_TTL_MS;
     await Write_shop(shop);
     if (player.灵根 == null || player.灵根 == undefined) {
       player.灵根 = await get_random_talent();

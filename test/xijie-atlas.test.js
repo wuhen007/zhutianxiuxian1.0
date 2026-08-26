@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import template from 'art-template';
-import { buildXijieAtlasData } from '../model/xijieAtlas.js';
+import {
+  buildXijieAtlasData,
+  isXijieShopLockExpired,
+  refreshXijieShop,
+  XIJIE_SHOP_LOCK_TTL_MS,
+} from '../model/xijieAtlas.js';
 
 const html = fs.readFileSync(
   new URL('../resources/html/xijie_list/xijie_list.html', import.meta.url),
@@ -15,6 +20,14 @@ const css = fs.readFileSync(
 );
 
 const appSource = fs.readFileSync(new URL('../apps/Xijie/Xijie.js', import.meta.url), 'utf8');
+const staticShop = JSON.parse(fs.readFileSync(
+  new URL('../resources/data/item/shop列表.json', import.meta.url),
+  'utf8'
+));
+const runtimeShop = JSON.parse(fs.readFileSync(
+  new URL('../resources/data/shop/shop.json', import.meta.url),
+  'utf8'
+));
 
 test('洗劫图鉴按地点汇总实时状态和掉落权重', () => {
   const atlas = buildXijieAtlasData([
@@ -67,4 +80,37 @@ test('洗劫图鉴模板可渲染所有地点和核心状态', () => {
     pluResPath: '..',
   });
   assert.match(emptyOutput, /暂无洗劫地点档案/);
+});
+
+test('商店刷新完整同步目录并让所有地点重新营业', () => {
+  const refreshed = refreshXijieShop(
+    [
+      { id: 1, name: '旧店', Grade: 3, state: 1, price: 1, one: [] },
+      { id: 2, name: '万维梵宇', Grade: 2, state: 1, price: 1, one: [] },
+    ],
+    [
+      { id: 2, name: '万维梵宇', Grade: 1, state: 0, price: 99, one: [{ name: '梵宇石', 数量: 5 }] },
+      { id: 3, name: '新店', Grade: 1, state: 0, price: 88, one: [] },
+    ]
+  );
+
+  assert.deepEqual(refreshed.map(place => place.name), ['万维梵宇', '新店']);
+  assert.equal(refreshed[0].Grade, 2);
+  assert.equal(refreshed[0].state, 0);
+  assert.equal(refreshed[0].price, 99);
+  assert.deepEqual(refreshed[0].one, [{ name: '梵宇石', 数量: 5 }]);
+  assert.equal(refreshed[1].state, 0);
+});
+
+test('静态商店列表与运行时商店完全同步', () => {
+  assert.deepEqual(staticShop, runtimeShop);
+  assert.ok(runtimeShop.some(place => place.name === '超维真界'));
+});
+
+test('洗劫地点占用超时或缺少旧版时间戳时自动失效', () => {
+  const now = 1_000_000;
+  assert.equal(isXijieShopLockExpired({ state: 0 }, now), false);
+  assert.equal(isXijieShopLockExpired({ state: 1 }, now), true);
+  assert.equal(isXijieShopLockExpired({ state: 1, state_until: now - 1 }, now), true);
+  assert.equal(isXijieShopLockExpired({ state: 1, state_until: now + XIJIE_SHOP_LOCK_TTL_MS }, now), false);
 });

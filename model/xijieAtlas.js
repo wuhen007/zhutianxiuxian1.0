@@ -10,6 +10,8 @@ const GRADE_TONES = Object.freeze({
   3: 'danger',
 });
 
+export const XIJIE_SHOP_LOCK_TTL_MS = 4 * 60 * 60 * 1000;
+
 const formatNumber = value => {
   const number = Number(value);
   return Number.isFinite(number) ? number.toLocaleString('zh-CN') : '—';
@@ -19,6 +21,26 @@ const normalizeGrade = value => {
   const grade = Number(value);
   return Math.min(3, Math.max(1, Number.isFinite(grade) ? Math.trunc(grade) : 1));
 };
+
+export function refreshXijieShop(runtimeList, catalogList) {
+  const runtimeByName = new Map(
+    (Array.isArray(runtimeList) ? runtimeList : [])
+      .filter(place => place?.name)
+      .map(place => [place.name, place])
+  );
+
+  return (Array.isArray(catalogList) ? catalogList : []).map(source => ({
+    ...structuredClone(source),
+    Grade: normalizeGrade(runtimeByName.get(source.name)?.Grade ?? source.Grade),
+    state: 0,
+  }));
+}
+
+export function isXijieShopLockExpired(place, now = Date.now()) {
+  if (Number(place?.state) !== 1) return false;
+  const expiresAt = Number(place?.state_until);
+  return !Number.isFinite(expiresAt) || expiresAt <= Number(now);
+}
 
 function groupRewards(entries) {
   const groups = new Map();
