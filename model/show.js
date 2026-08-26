@@ -219,6 +219,14 @@ async get_jindi_placeData(myData) {
       ...myData,
     };
   }
+  async get_duanzaocailiaoData(myData) {
+    this.model = 'duanzaocailiao';
+    return {
+      ...this.screenData,
+      saveId: 'duanzaocailiao',
+      ...myData,
+    };
+  }
   async get_combatSkillData(myData) {
     this.model = 'combat_skill';
     return {

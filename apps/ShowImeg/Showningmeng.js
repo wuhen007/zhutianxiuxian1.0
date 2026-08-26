@@ -2,6 +2,7 @@ import { plugin, verc } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
 import {
   get_gongfa_img,
+  get_duanzaocailiao_img,
   get_danyao_img,
   get_wuqi_img,
   get_daoju_img,
@@ -46,6 +47,10 @@ export class Showningmeng extends plugin {
         {
           reg: '^#功法楼$',
           fnc: 'Show_GongFa',
+        },
+        {
+          reg: '^#锻造材料楼$',
+          fnc: 'Show_DuanzhaoCailiao',
         },
           {
           reg: '^#合成图鉴$',
@@ -198,6 +203,13 @@ export class Showningmeng extends plugin {
   async Show_GongFa(e) {
     if (!verc({ e })) return false;
     let img = await get_gongfa_img(e);
+    e.reply(img);
+    return false;
+  }
+  //锻造材料楼
+  async Show_DuanzhaoCailiao(e) {
+    if (!verc({ e })) return false;
+    const img = await get_duanzaocailiao_img(e);
     e.reply(img);
     return false;
   }

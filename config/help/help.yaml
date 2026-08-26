@@ -56,6 +56,9 @@
       title: '#功法楼'
       desc: '查看所有功法'
     - icon: help-icon_13
+      title: '#锻造材料楼'
+      desc: '查看所有锻造材料、属性与持有状态'
+    - icon: help-icon_13
       title: '#丹药楼'
       desc: '查看所有丹药'
     - icon: help-icon_13
