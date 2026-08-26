@@ -1335,18 +1335,8 @@ async saveCustomSkill(skill, listType) {
     // 保存文件
     fs.writeFileSync(filePath, JSON.stringify(skillList, null, 2), 'utf8');
     
-    // 同步内存数据
-    switch (listType) {
-      case 1:
-        data.jineng1 = skillList;
-        break;
-      case 2:
-        data.jineng2 = skillList;
-        break;
-      case 3:
-        data.jineng3 = skillList;
-        break;
-    }
+    // 重新合并基础技能与全部自创技能，避免一门自创道法覆盖整张战斗技能表。
+    data.reloadBattleSkillLists();
     
     return true;
   } catch (error) {

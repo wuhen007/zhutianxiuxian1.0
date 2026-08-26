@@ -8,6 +8,7 @@ import {
 } from './tribulationLock.js';
 import { writeJsonAtomically } from '../utils/atomicJson.js';
 import { assertGlobalInitIdle } from '../utils/globalInitGuard.js';
+import { mergeBattleSkillLists } from './battleSkillRegistry.js';
 
 /*
   数据封装
@@ -347,16 +348,8 @@ this.gongfa_list = JSON.parse(
     );
     //兼容旧字段名
     this.minggeLlist = this.minggeList;
-    //加载技能列表（技能组）
-    this.jineng1 = JSON.parse(
-      fs.readFileSync(`${this.lib_path}/技能组/攻击技能.json`)
-    );
-    this.jineng2 = JSON.parse(
-      fs.readFileSync(`${this.lib_path}/技能组/防御技能.json`)
-    );
-    this.jineng3 = JSON.parse(
-      fs.readFileSync(`${this.lib_path}/技能组/复活技能.json`)
-    );
+    // 加载基础技能与玩家自创技能；自创技能只覆盖同名项，不覆盖整张基础表。
+    this.reloadBattleSkillLists();
     this.teshujineng = JSON.parse(
       fs.readFileSync(`${this.lib_path}/技能组/灵根增幅技能.json`)
     );
@@ -403,6 +396,29 @@ this.gongfa_list = JSON.parse(
     this.tuanbenjiangli = JSON.parse(fs.readFileSync(`${this.lib_path}/团本奖励列表.json`));
     //BOSS掉落列表
     this.GroupBossReward_list = JSON.parse(fs.readFileSync(`${this.lib_path}/GroupBoss.json`));
+  }
+
+  reloadBattleSkillLists() {
+    const definitions = [
+      ['jineng1', '攻击技能.json', 1],
+      ['jineng2', '防御技能.json', 2],
+      ['jineng3', '复活技能.json', 3],
+    ];
+    for (const [property, baseFile, listType] of definitions) {
+      const basePath = path.join(this.lib_path, '技能组', baseFile);
+      const customPath = path.join(this.lib_path, '技能列表', `技能列表${listType}.json`);
+      const baseSkills = JSON.parse(fs.readFileSync(basePath, 'utf8'));
+      let customSkills = [];
+      if (fs.existsSync(customPath)) {
+        try {
+          const parsed = JSON.parse(fs.readFileSync(customPath, 'utf8'));
+          if (Array.isArray(parsed)) customSkills = parsed;
+        } catch (error) {
+          console.error(`读取自创技能列表失败：${customPath}`, error);
+        }
+      }
+      this[property] = mergeBattleSkillLists(baseSkills, customSkills);
+    }
   }
    /**
    * 获取道法仙术列表

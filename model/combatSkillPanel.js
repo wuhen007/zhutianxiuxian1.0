@@ -147,7 +147,7 @@ function buildSection(player, pools, loadout, definition) {
     : new Set(loadout[definition.type] || []);
   const items = names.map((name, index) => {
     const skills = (allSkills || []).filter(skill =>
-      skill?.class === '功法' && (skill.熟练度归属 || skill.name) === name
+      (skill?.熟练度归属 || skill?.name) === name
     );
     const profile = getGongfaProficiencyProfile(player, name);
     const moveSkill = skills.find(skill => Array.isArray(skill.招式));

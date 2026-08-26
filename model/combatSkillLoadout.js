@@ -17,7 +17,7 @@ function eligibleNames(player, pool) {
   const learned = learnedNames(player);
   return [...new Set(
     (Array.isArray(pool) ? pool : [])
-      .filter(skill => skill?.class === '功法' && learned.has(skillOwner(skill)))
+      .filter(skill => learned.has(skillOwner(skill)))
       .map(skillOwner)
       .filter(Boolean)
   )];
@@ -71,8 +71,9 @@ export function ensureCombatSkillLoadout(player, pools = {}) {
 export function filterEquippedCombatSkills(player, pool, type) {
   if (!player?.战斗技能配置) return Array.isArray(pool) ? pool : [];
   const equipped = new Set(player.战斗技能配置[type] || []);
+  const learned = learnedNames(player);
   return (Array.isArray(pool) ? pool : []).filter(skill =>
-    skill?.class !== '功法' || equipped.has(skillOwner(skill))
+    !learned.has(skillOwner(skill)) || equipped.has(skillOwner(skill))
   );
 }
 
@@ -85,8 +86,9 @@ export function getEquippedVitalitySkill(player, pool) {
 export function filterEquippedVitalitySkills(player, pool) {
   if (!player?.战斗技能配置) return Array.isArray(pool) ? pool : [];
   const selected = player.战斗技能配置.生机;
+  const learned = learnedNames(player);
   return (Array.isArray(pool) ? pool : []).filter(skill =>
-    skill?.class !== '功法' || skillOwner(skill) === selected
+    !learned.has(skillOwner(skill)) || skillOwner(skill) === selected
   );
 }
 

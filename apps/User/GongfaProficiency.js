@@ -129,6 +129,8 @@ export class GongfaProficiency extends plugin {
   }
 
   #skillPools() {
+    // 修复热更新期间自创道法曾覆盖内存技能池的问题，并同步最新自创技能。
+    data.reloadBattleSkillLists();
     return {
       attack: data.jineng1,
       defense: data.jineng2,
