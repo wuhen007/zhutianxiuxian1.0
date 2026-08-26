@@ -26,6 +26,12 @@ const LEGACY_LOCAL_CONFIG_PATH = path.join(MODULE_DIR, 'config.local.json');
 const LEGACY_CONFIG_PATH = path.join(MODULE_DIR, 'config.json');
 const DEV_SECRET = 'zhutian-worldchat-dev-secret-change-me';
 const DEFAULT_WORLDCHAT_URL = 'wss://worldchat.ameng2027.xyz';
+const DEFAULT_DELIVERY_QUEUE_LIMIT = 100;
+const DEFAULT_DELIVERY_MAX_ATTEMPTS = 5;
+const DEFAULT_DELIVERY_RETRY_MAX_MS = 30_000;
+const MAX_DELIVERY_QUEUE_LIMIT = 500;
+const MAX_DELIVERY_ATTEMPTS = 10;
+const MAX_DELIVERY_RETRY_MS = 60_000;
 
 function atomicWriteJson(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -242,19 +248,45 @@ export class WorldChatClient {
     this.tradeHandler = null;
     this.raidHandler = null;
     this.backfillPromise = null;
-    this.deliveryChain = Promise.resolve();
-    this.deliveryPending = 0;
-    this.deliveryQueueLimit = Math.max(
-      1,
-      Math.trunc(Number(options.deliveryQueueLimit) || 200)
+    this.deliveryFailureHandler = null;
+    this.deliveryQueue = [];
+    this.pendingDeliveries = new Map();
+    this.deliveryProcessing = false;
+    this.deliveryRetryWait = null;
+    this.deliveryQueueLimit = Math.min(
+      MAX_DELIVERY_QUEUE_LIMIT,
+      Math.max(
+        1,
+        Math.trunc(Number(options.deliveryQueueLimit)) ||
+          DEFAULT_DELIVERY_QUEUE_LIMIT
+      )
     );
-    const configuredRetries = Number(options.deliveryMaxRetries);
-    this.deliveryMaxRetries = Number.isFinite(configuredRetries)
-      ? Math.max(0, Math.trunc(configuredRetries))
-      : 5;
-    this.deliveryRetryBaseMs = Math.max(
-      10,
-      Number(options.deliveryRetryBaseMs) || 1_000
+    let configuredAttempts = DEFAULT_DELIVERY_MAX_ATTEMPTS;
+    if (options.deliveryMaxAttempts !== undefined) {
+      configuredAttempts = Number(options.deliveryMaxAttempts);
+    } else if (options.deliveryMaxRetries !== undefined) {
+      const retries = Number(options.deliveryMaxRetries);
+      configuredAttempts = Number.isNaN(retries)
+        ? DEFAULT_DELIVERY_MAX_ATTEMPTS
+        : Math.max(0, Math.trunc(retries)) + 1;
+    }
+    if (Number.isNaN(configuredAttempts)) {
+      configuredAttempts = DEFAULT_DELIVERY_MAX_ATTEMPTS;
+    }
+    this.deliveryMaxAttempts = Math.min(
+      MAX_DELIVERY_ATTEMPTS,
+      Math.max(1, Math.trunc(configuredAttempts))
+    );
+    this.deliveryRetryBaseMs = Math.min(
+      MAX_DELIVERY_RETRY_MS,
+      Math.max(10, Number(options.deliveryRetryBaseMs) || 1_000)
+    );
+    this.deliveryRetryMaxMs = Math.min(
+      MAX_DELIVERY_RETRY_MS,
+      Math.max(
+        this.deliveryRetryBaseMs,
+        Number(options.deliveryRetryMaxMs) || DEFAULT_DELIVERY_RETRY_MAX_MS
+      )
     );
     this.identityPromise = null;
   }
@@ -276,6 +308,11 @@ export class WorldChatClient {
 
   setMessageHandler(handler) {
     this.messageHandler = typeof handler === 'function' ? handler : null;
+  }
+
+  setDeliveryFailureHandler(handler) {
+    this.deliveryFailureHandler =
+      typeof handler === 'function' ? handler : null;
   }
 
   setTradeHandler(handler) {
@@ -466,9 +503,12 @@ export class WorldChatClient {
     }
 
     if (message.type === 'MESSAGE') {
-      this.enqueueDelivery(message.message).catch(
-        (error) => (this.lastError = error.message)
-      );
+      this.enqueueDelivery(message.message).catch((error) => {
+        this.lastError = error.message;
+        if (error.message === 'delivery_queue_full') {
+          this.ws?.close(1013, 'delivery_queue_full');
+        }
+      });
       return;
     }
 
@@ -711,22 +751,61 @@ export class WorldChatClient {
   }
 
   enqueueDelivery(message) {
-    if (this.deliveryPending >= this.deliveryQueueLimit) {
+    if (
+      !message?.id ||
+      !Number.isSafeInteger(message.seq) ||
+      this.seenMessageIds.has(message.id)
+    ) {
+      return Promise.resolve();
+    }
+    const pending = this.pendingDeliveries.get(message.id);
+    if (pending) return pending;
+    if (this.pendingDeliveries.size >= this.deliveryQueueLimit) {
       return Promise.reject(new Error('delivery_queue_full'));
     }
-    this.deliveryPending += 1;
-    const delivery = this.deliveryChain.then(() =>
-      this.deliverWithRetry(message)
-    ).finally(() => {
-      this.deliveryPending = Math.max(0, this.deliveryPending - 1);
+
+    let resolveDelivery;
+    let rejectDelivery;
+    const delivery = new Promise((resolve, reject) => {
+      resolveDelivery = resolve;
+      rejectDelivery = reject;
     });
-    this.deliveryChain = delivery.catch(() => {});
+    this.pendingDeliveries.set(message.id, delivery);
+    this.deliveryQueue.push({
+      message,
+      resolve: resolveDelivery,
+      reject: rejectDelivery,
+    });
+    this.processDeliveryQueue();
     return delivery;
+  }
+
+  processDeliveryQueue() {
+    if (this.deliveryProcessing) return;
+    this.deliveryProcessing = true;
+    void (async () => {
+      while (this.deliveryQueue.length) {
+        const delivery = this.deliveryQueue.shift();
+        const { message } = delivery;
+        try {
+          await this.deliverWithRetry(message);
+          delivery.resolve();
+        } catch (error) {
+          await this.finalizeFailedDelivery(message, error);
+          delivery.reject(error);
+        } finally {
+          this.pendingDeliveries.delete(message.id);
+        }
+      }
+    })().finally(() => {
+      this.deliveryProcessing = false;
+      if (this.deliveryQueue.length) this.processDeliveryQueue();
+    });
   }
 
   async deliverWithRetry(message) {
     let delay = this.deliveryRetryBaseMs;
-    for (let retry = 0; ; retry += 1) {
+    for (let attempt = 1; attempt <= this.deliveryMaxAttempts; attempt += 1) {
       if (!this.cfg.enable) throw new Error('delivery_disabled');
       try {
         await this.deliver(message);
@@ -736,13 +815,72 @@ export class WorldChatClient {
         return;
       } catch (error) {
         this.lastError = `delivery_failed:${error.message}`;
-        if (!this.cfg.enable || retry >= this.deliveryMaxRetries) throw error;
-        await new Promise((resolve) => {
-          const timer = setTimeout(resolve, delay);
-          timer.unref?.();
-        });
-        delay = Math.min(60_000, delay * 2);
+        if (!this.cfg.enable || attempt >= this.deliveryMaxAttempts) {
+          throw error;
+        }
+        await this.waitForDeliveryRetry(delay);
+        delay = Math.min(this.deliveryRetryMaxMs, delay * 2);
       }
+    }
+  }
+
+  waitForDeliveryRetry(delay) {
+    return new Promise((resolve) => {
+      const finish = () => {
+        if (this.deliveryRetryWait?.timer === timer) {
+          this.deliveryRetryWait = null;
+        }
+        resolve();
+      };
+      const timer = setTimeout(finish, delay);
+      timer.unref?.();
+      this.deliveryRetryWait = { timer, finish };
+    });
+  }
+
+  cancelDeliveryRetry() {
+    const wait = this.deliveryRetryWait;
+    if (!wait) return;
+    clearTimeout(wait.timer);
+    this.deliveryRetryWait = null;
+    wait.finish();
+  }
+
+  clearDeliveryQueue(reason = 'delivery_queue_cleared') {
+    const error = reason instanceof Error ? reason : new Error(reason);
+    for (const delivery of this.deliveryQueue.splice(0)) {
+      this.pendingDeliveries.delete(delivery.message.id);
+      delivery.reject(error);
+    }
+  }
+
+  async finalizeFailedDelivery(message, error) {
+    try {
+      await this.deliveryFailureHandler?.(message, error);
+    } catch (handlerError) {
+      globalThis.logger?.warn?.(
+        `[worldchat] 投递失败清理异常: ${handlerError.message}`
+      );
+    }
+    if (error?.message === 'delivery_disabled') return;
+    try {
+      this.rememberDeliveredMessage(message);
+    } catch (stateError) {
+      globalThis.logger?.warn?.(
+        `[worldchat] 投递失败状态保存异常: ${stateError.message}`
+      );
+    }
+  }
+
+  rememberDeliveredMessage(message) {
+    if (!message?.id || !Number.isSafeInteger(message.seq)) return;
+    this.seenMessageIds.add(message.id);
+    if (this.seenMessageIds.size > 2000) {
+      this.seenMessageIds.delete(this.seenMessageIds.values().next().value);
+    }
+    if (message.seq > this.cfg.last_seen_seq) {
+      this.cfg.last_seen_seq = message.seq;
+      this.saveConfig();
     }
   }
 
@@ -754,14 +892,7 @@ export class WorldChatClient {
     )
       return;
     if (this.messageHandler) await this.messageHandler(message);
-    this.seenMessageIds.add(message.id);
-    if (this.seenMessageIds.size > 2000) {
-      this.seenMessageIds.delete(this.seenMessageIds.values().next().value);
-    }
-    if (message.seq > this.cfg.last_seen_seq) {
-      this.cfg.last_seen_seq = message.seq;
-      this.saveConfig();
-    }
+    this.rememberDeliveredMessage(message);
   }
 
   async backfill() {
@@ -773,7 +904,16 @@ export class WorldChatClient {
         const result = await this.query(100, cursor);
         if (!result.ok || !Array.isArray(result.messages)) break;
         for (const message of result.messages) {
-          await this.enqueueDelivery(message);
+          try {
+            await this.enqueueDelivery(message);
+          } catch (error) {
+            if (
+              error?.message === 'delivery_queue_full' ||
+              error?.message === 'delivery_disabled'
+            ) {
+              throw error;
+            }
+          }
           cursor = Math.max(cursor, Number(message.seq) || 0);
         }
         if (result.messages.length < 100) break;
@@ -906,6 +1046,8 @@ export class WorldChatClient {
     if (!this.cfg.enable) {
       if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+      this.cancelDeliveryRetry();
+      this.clearDeliveryQueue('delivery_disabled');
       this.ws?.close();
       this.ws = null;
       this.connected = false;
@@ -922,6 +1064,8 @@ export class WorldChatClient {
     this.reconnectTimer = null;
     this.stopPing();
     this.rejectPending('closed');
+    this.cancelDeliveryRetry();
+    this.clearDeliveryQueue('closed');
     this.ws?.terminate?.();
     this.ws = null;
     this.connected = false;

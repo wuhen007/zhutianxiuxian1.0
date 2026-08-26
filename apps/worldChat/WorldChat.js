@@ -317,6 +317,9 @@ export class WorldChat extends plugin {
     this.completedTradeNotices = new Set();
     registerWorldWebController(this);
     client.setMessageHandler((message) => this.broadcast(message));
+    client.setDeliveryFailureHandler((message) => {
+      if (message?.id) this.deliveredGroups.delete(message.id);
+    });
     client.setTradeHandler((event) => {
       this.handleTradeEvent(event).catch((error) => {
         globalThis.logger?.error?.('[worldchat] 跨服交易事件处理失败', error);
