@@ -1,4 +1,3 @@
-import { segment } from '../../../lib/modules/oicq/index.js';
 import config from './Config.js';
 
 export function isOfficialMessageEvent(e) {
@@ -11,13 +10,13 @@ export function isOfficialMessageEvent(e) {
 
 export function buildOfficialMessage(markdown, buttonRows = [], userId = '', content = []) {
   const message = (Array.isArray(content) ? content : [content]).filter(Boolean);
-  if (markdown) message.push(segment.markdown(markdown));
+  if (markdown) message.push({ type: 'markdown', data: markdown });
   const rows = buttonRows.map(row => row.map(({ command, permission, ...button }) => ({
     ...button,
     callback: command,
     permission: permission ?? userId,
   })));
-  if (rows.length) message.push(segment.button(...rows));
+  if (rows.length) message.push({ type: 'button', data: rows });
   return message;
 }
 
