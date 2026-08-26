@@ -43,6 +43,7 @@ test('仙古悟道法则与两体系合计成本按配置计算', () => {
       [13, '唯我', 5],
       [14, '归元', 6],
       [15, '无上', 7],
+      [20, '诸天古则', 10],
     ],
   );
 
@@ -106,9 +107,23 @@ test('仙王巨头圆满诸天道则后才能合道开创体系', () => {
   };
   const result = createCultivationSystem(player, '万象', 456);
   assert.equal(result.ok, true);
-  assert.equal(result.system.name, '万象体系');
-  assert.equal(player.自创修炼体系.name, '万象体系');
+  assert.equal(result.system.name, '万象');
+  assert.equal(player.自创修炼体系.name, '万象');
   assert.equal(createCultivationSystem(player, '重复').reason, 'exists');
+});
+
+test('体系名由玩家原样命名且不得超过五字', () => {
+  const createPlayer = () => ({
+    名号: '开道者',
+    mijinglevel_id: 19,
+    道途: {
+      version: 2,
+      stages: { giantDaoPrototype: 76800 },
+      daily: { date: '', count: 0 },
+    },
+  });
+  assert.equal(createCultivationSystem(createPlayer(), '五行天').system.name, '五行天');
+  assert.equal(createCultivationSystem(createPlayer(), '一二三四五六').reason, 'name');
 });
 
 test('悟道要求匹配元神境界，失败随机损耗且古茶将损耗减半', () => {

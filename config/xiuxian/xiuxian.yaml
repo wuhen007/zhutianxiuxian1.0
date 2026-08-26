@@ -107,9 +107,9 @@ Era:
   Master: null
   current:
     index: 0
-    years: 0
+    years: 3000
     epoch: 1
-    totalYears: 0
+    totalYears: 3000
   yearlyAdvance: 1000
   weimianRepairInterval: 2000
 BotType: onebot

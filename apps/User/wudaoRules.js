@@ -1,3 +1,6 @@
+import { getRealmAuthorityLevel, getRealmAuthorityPath } from '../../model/realmAuthority.js';
+import { getFlowerDaoGateState } from '../../model/flowerPollenPath.js';
+
 export const DAO_PATH_VERSION = 2;
 export const DAO_DAILY_LIMIT = 3;
 
@@ -101,6 +104,7 @@ export const XIANGU_DAO_REALM_RULES = Object.freeze([
   Object.freeze({ realmId: 13, key: 'onlySelf', name: '唯我', targetExp: 9600, baseGain: 320, lifespanCost: 200000, yuanshenLevel: 5, completion: '真我独尊', nextRealm: '遁一境' }),
   Object.freeze({ realmId: 14, key: 'originReturn', name: '归元', targetExp: 19200, baseGain: 640, lifespanCost: 200000, yuanshenLevel: 6, completion: '万法归元', nextRealm: '至尊境' }),
   Object.freeze({ realmId: 15, key: 'supreme', name: '无上', targetExp: 38400, baseGain: 1280, lifespanCost: 200000, yuanshenLevel: 7, completion: '无上道果', nextRealm: '真仙境' }),
+  Object.freeze({ realmId: 20, key: 'emperorLightPrototype', name: '诸天古则', targetExp: 76800, baseGain: 2560, lifespanCost: 1200000000, yuanshenLevel: 10, completion: '体系雏形', nextRealm: '合道开创修炼体系' }),
 ]);
 
 export const XIANGU_DAO_PATH_VERSION = 1;
@@ -380,26 +384,40 @@ export function completeDaoByNineLives(player, daoFruit = '', now = Date.now()) 
 export function createCultivationSystem(player, rawName, now = Date.now()) {
   if (player?.自创修炼体系) return { ok: false, reason: 'exists', system: player.自创修炼体系 };
   const name = String(rawName ?? '').trim();
-  if (!name) return { ok: false, reason: 'name' };
-  if (name.length < 2 || name.length > 16 || /[\r\n#]/.test(name)) {
+  if (!name || Array.from(name).length > 5 || /[\r\n#]/.test(name)) {
     return { ok: false, reason: 'name' };
   }
-  if ((Number(player?.mijinglevel_id) || 0) < 19) return { ok: false, reason: 'realm' };
-  const gate = getDaoGateState(player, 19);
+  if (getRealmAuthorityLevel(player) < 19) return { ok: false, reason: 'realm' };
+
+  const route = getRealmAuthorityPath(player);
+  const routeLabel = {
+    mijing: '遮天人体秘境',
+    xiangu: '仙古今世法',
+    huafen: '花粉进化路',
+  }[route];
+  const gate = route === 'xiangu'
+    ? getXianguDaoGateState(player, 20)
+    : route === 'huafen'
+      ? getFlowerDaoGateState(player, 19)
+      : getDaoGateState(player, 19);
   if (!gate.ok) return { ok: false, reason: 'dao', gate };
 
-  const fullName = name.endsWith('体系') ? name : `${name}体系`;
   const system = {
-    name: fullName,
+    name,
     founder: player?.名号 || '',
-    source: '九世大道与仙王道果合流',
+    source: `${routeLabel}道果合流`,
+    route,
     createdAt: now,
     stage: '道祖体系',
   };
   player.自创修炼体系 = system;
-  const { path } = ensureDaoPath(player, { migrateLegacy: false });
+  const path = route === 'xiangu'
+    ? ensureXianguDaoPath(player).path
+    : route === 'huafen'
+      ? gate.path
+      : ensureDaoPath(player, { migrateLegacy: false }).path;
   path.result = {
-    name: `${fullName}·开道者`,
+    name: `${name}·开道者`,
     method: '合道',
     inherited: path.result?.name || '九世圆满大道',
     achievedAt: now,

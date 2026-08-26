@@ -28,7 +28,13 @@ foundthing,
   channel,
   ForwardMsg
 } from '../../model/xiuxian.js';
-import { hasRealmAuthority } from '../../model/realmAuthority.js';
+import {
+    getRealmAuthorityLevel,
+    getRealmAuthorityName,
+    getRealmAuthorityPath,
+    hasRealmAuthority,
+} from '../../model/realmAuthority.js';
+import { getExtraCultivationLevelSum } from '../../model/extraCultivation.js';
 // 在玩家数据结构中添加轮回大道相关字段
 const playerTemplate = {
     // ...其他字段
@@ -130,13 +136,13 @@ const OWN_WAY_BREAKTHROUGH_RULES = Object.freeze([
     { target: 8, requirements: [['祭道法则', 128000]] },
 ]);
 
-// 无缺帝道是后五境的共同根基，真实修为境界也必须同步抵达。
+// 后五境按三条修炼体系的等效权柄统一判断。
 const OWN_WAY_LATE_REALM_GATES = Object.freeze([
-    { target: 4, name: '红尘仙境', mijingLevel: 17, xianguLevel: 16 },
-    { target: 5, name: '仙王境', mijingLevel: 18, xianguLevel: 18 },
-    { target: 6, name: '准仙帝境', mijingLevel: 20, xianguLevel: 20 },
-    { target: 7, name: '仙帝境', mijingLevel: 21, xianguLevel: 21 },
-    { target: 8, name: '祭道境', mijingLevel: 22, xianguLevel: 22 },
+    { target: 4, name: '红尘仙级', authorityLevel: 17 },
+    { target: 5, name: '仙王级', authorityLevel: 18 },
+    { target: 6, name: '准仙帝级', authorityLevel: 20 },
+    { target: 7, name: '仙帝级', authorityLevel: 21 },
+    { target: 8, name: '祭道级', authorityLevel: 22 },
 ]);
 
 const OWN_WAY_RESOURCE_ALIASES = Object.freeze({
@@ -145,6 +151,8 @@ const OWN_WAY_RESOURCE_ALIASES = Object.freeze({
     '遁一': ['遁一', '遁一法则', 'originReturn'],
     '至尊': ['至尊', '至尊法则', 'supreme'],
     '圣王法则': ['圣王法则', 'saintKingDao'],
+    '玄虚': ['玄虚', '虚道', '虚道法则', 'mysteriousVoid'],
+    '映照法则': ['映照法则', 'reflectionPrinciple'],
     '大圣法则': ['大圣法则', 'greatSaintDao'],
     '准帝法则': ['准帝法则', 'quasiEmperorDao'],
 });
@@ -183,13 +191,10 @@ function getOwnWayLateRealmGate(player, targetIndex) {
     const gate = OWN_WAY_LATE_REALM_GATES.find(item => item.target === targetIndex);
     if (!gate) return { ok: true, missing: [] };
 
-    const { path: daoPath } = ensureDaoPath(player);
-    const mijingLevel = Math.max(0, Math.trunc(Number(player?.mijinglevel_id) || 0));
-    const xianguLevel = Math.max(0, Math.trunc(Number(player?.xiangulevel_id) || 0));
     const missing = [];
-    if (daoPath?.result?.name !== '无缺帝道') missing.push('先证得大帝境的无缺帝道');
-    if (mijingLevel < gate.mijingLevel && xianguLevel < gate.xianguLevel) {
-        missing.push(`真实境界达到${gate.name}（秘境≥${gate.mijingLevel}或仙古≥${gate.xianguLevel}）`);
+    const authorityLevel = getRealmAuthorityLevel(player);
+    if (authorityLevel < gate.authorityLevel) {
+        missing.push(`主修体系达到${gate.name}（等效权柄≥${gate.authorityLevel}重天，当前${authorityLevel}重天）`);
     }
     return { ok: missing.length === 0, missing };
 }
@@ -202,6 +207,7 @@ function getOwnWayResourceLocations(player, resourceName) {
         { parent: player?.法则, keys: aliases },
         { parent: player?.道途?.stages, keys: aliases },
         { parent: player?.仙古道途?.stages, keys: aliases },
+        { parent: player?.花粉道途?.stages, keys: aliases },
     ];
     for (const container of containers) {
         if (!container.parent || typeof container.parent !== 'object') continue;
@@ -228,28 +234,30 @@ function consumeOwnWayResource(player, resourceName, amount) {
 }
 
 function getOwnWayCreationCosts(player) {
-    const mijingLevel = Math.max(0, Math.trunc(Number(player?.mijinglevel_id) || 0));
-    const xianguLevel = Math.max(0, Math.trunc(Number(player?.xiangulevel_id) || 0));
+    const route = getRealmAuthorityPath(player);
+    const routeName = { mijing: '人体秘境', xiangu: '仙古今世法', huafen: '花粉进化路' }[route];
+    const levelField = route === 'xiangu' ? 'xiangulevel_id' : route === 'huafen' ? 'huafenlevel_id' : 'mijinglevel_id';
+    const routeLevel = Math.max(1, Math.trunc(Number(player?.[levelField]) || 1));
+    const levelSum = getExtraCultivationLevelSum(player);
     return {
-        mijingLevel,
-        xianguLevel,
-        potential: 200 * (mijingLevel + xianguLevel),
+        route,
+        routeName,
+        routeLevel,
+        levelSum,
+        potential: 200 * levelSum,
         cultivation: OWN_WAY_CREATION_CULTIVATION,
         blood: OWN_WAY_CREATION_BLOOD,
-        saintKingLaw: OWN_WAY_CREATION_SAINT_KING_LAW,
+        law: OWN_WAY_CREATION_SAINT_KING_LAW,
         lifeSource: 50,
     };
 }
 
-function getOwnWaySaintKingLaw(player) {
-    const legacyValue = Number(player?.法则?.['圣王法则']);
-    const pathValue = Number(player?.道途?.stages?.saintKingDao);
-    const candidates = [];
-    if (Number.isFinite(legacyValue)) candidates.push({ value: Math.max(0, legacyValue), source: '法则' });
-    if (Number.isFinite(pathValue)) candidates.push({ value: Math.max(0, pathValue), source: '道途' });
-    if (candidates.length) return candidates.sort((a, b) => b.value - a.value)[0];
-
-    return { value: 0, source: null };
+function getOwnWayCreationLaw(player) {
+    const route = getRealmAuthorityPath(player);
+    const resourceName = { mijing: '圣王法则', xiangu: '玄虚', huafen: '映照法则' }[route];
+    const location = getOwnWayResourceLocations(player, resourceName)
+        .sort((a, b) => b.value - a.value)[0] || null;
+    return { route, name: resourceName, value: location?.value || 0, location };
 }
 
 export class daofa extends plugin {
@@ -843,10 +851,16 @@ async  createOwnWay(e) {
         
         // 境界检查（准帝以上）
         if (!hasRealmAuthority(player, 13)) {
+            const currentRealm = getRealmAuthorityName(
+                player,
+                data.Levelmijing_list,
+                data.xiangujinshi_list,
+                data.huafen_list,
+            );
             return e.reply([
-                `欲创自身大道，需先登临圣人王之境！`,
-                `你当前境界仅为${player.境界}，`,
-                `需达到圣人王境界方可开创自身大道`
+                `欲创自身大道，需主修体系达到圣人王级权柄！`,
+                `当前主修境界：${currentRealm}（等效权柄${getRealmAuthorityLevel(player)}重天）`,
+                `人体秘境、仙古今世法与花粉进化路均按等效权柄参与判断。`
             ].join('\n'));
         }
 
@@ -890,9 +904,9 @@ async  createOwnWay(e) {
             return e.reply(`你已掌握【${wayName}】，无需再创`);
         }
         
-        // 创建自身之道的资源门槛：修为、血气各1兆，仙道潜力按两套秘境等级合计计算。
+        // 创建资源按当前主修体系与三体系有效等级计算。
         const creationCosts = getOwnWayCreationCosts(player);
-        const saintKingLaw = getOwnWaySaintKingLaw(player);
+        const creationLaw = getOwnWayCreationLaw(player);
         const currentPotential = Number(player.仙道潜力) || 0;
         const currentCultivation = Number(player.修为) || 0;
         const currentBlood = Number(player.血气) || 0;
@@ -900,7 +914,8 @@ async  createOwnWay(e) {
             return e.reply([
                 `开创自身大道需要大量仙道潜力！`,
                 `当前仙道潜力：${currentPotential.toLocaleString()}`,
-                `所需仙道潜力：${creationCosts.potential.toLocaleString()}（200×（秘境${creationCosts.mijingLevel}级＋仙古${creationCosts.xianguLevel}级））`,
+                `所需仙道潜力：${creationCosts.potential.toLocaleString()}（200×三体系有效等级${creationCosts.levelSum}）`,
+                `当前主修：${creationCosts.routeName}${creationCosts.routeLevel}级`,
                 `请继续积累仙道潜力再试`
             ].join('\n'));
         }
@@ -920,12 +935,12 @@ async  createOwnWay(e) {
                 `请继续积累血气再试`
             ].join('\n'));
         }
-        if (saintKingLaw.value < creationCosts.saintKingLaw) {
+        if (creationLaw.value < creationCosts.law) {
             return e.reply([
-                `圣王法则不足，无法承载自身大道！`,
-                `当前圣王法则：${saintKingLaw.value.toLocaleString()}`,
-                `至少需要：${creationCosts.saintKingLaw.toLocaleString()}`,
-                `请先参悟并积累足够的圣王法则`
+                `${creationLaw.name}不足，尚不足以承载自身大道！`,
+                `当前${creationLaw.name}：${creationLaw.value.toLocaleString()}`,
+                `至少需要：${creationCosts.law.toLocaleString()}`,
+                `请先参悟并积累足够的${creationLaw.name}`
             ].join('\n'));
         }
 
@@ -959,7 +974,8 @@ async  createOwnWay(e) {
                 `【自身之道·开创开始】`,
                 `${player.名号}已开始熔炼万法，准备开创【${wayName}】。`,
                 `修仙状态：创造自身之道（至少30分钟）`,
-                `结算消耗：仙道潜力${creationCosts.potential.toLocaleString()}、修为与血气各${bigNumberTransform(creationCosts.cultivation)}、圣王法则${creationCosts.saintKingLaw}`,
+                `主修体系：${creationCosts.routeName}${creationCosts.routeLevel}级`,
+                `结算消耗：仙道潜力${creationCosts.potential.toLocaleString()}、修为与血气各${bigNumberTransform(creationCosts.cultivation)}、${creationLaw.name}${creationCosts.law}`,
                 `预计结束：${new Date(endTime).toLocaleString()}`,
                 `请等待状态结束后再次发送#创造自身之道完成结算。`
             ].join('\n'));
@@ -1069,13 +1085,7 @@ async  createOwnWay(e) {
         player.修为 -= creationCosts.cultivation;
         player.血气 -= creationCosts.blood;
         player.仙道潜力 = currentPotential - creationCosts.potential;
-        if (saintKingLaw.source === '法则') {
-            player.法则['圣王法则'] = saintKingLaw.value - creationCosts.saintKingLaw;
-        } else {
-            player.道途 = player.道途 || {};
-            player.道途.stages = player.道途.stages || {};
-            player.道途.stages.saintKingDao = saintKingLaw.value - creationCosts.saintKingLaw;
-        }
+        creationLaw.location.parent[creationLaw.location.key] = creationLaw.value - creationCosts.law;
         player.生命本源 -= creationCosts.lifeSource; // 扣除生命本源
         
         // 添加到玩家功法列表
@@ -1091,7 +1101,8 @@ async  createOwnWay(e) {
             消耗修为: creationCosts.cultivation,
             消耗血气: creationCosts.blood,
             消耗仙道潜力: creationCosts.potential,
-            消耗圣王法则: creationCosts.saintKingLaw,
+            消耗法则: `${creationLaw.name}×${creationCosts.law}`,
+            主修体系: creationCosts.routeName,
             消耗生命本源: creationCosts.lifeSource
         });
         

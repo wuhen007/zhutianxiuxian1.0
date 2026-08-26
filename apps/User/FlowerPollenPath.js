@@ -62,6 +62,7 @@ import {
 import { cooldownRevivalGongfas, resolveInteractiveGongfaRevival } from '../../model/tribulationRevival.js';
 import { checkPlaneRealmLaw } from '../../model/planeRealmLaw.js';
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
+import { canEnterQuasiEmperor } from '../../model/worldlineAuthority.js';
 import { getShanghaiDateKey } from '../../model/weimianTravel.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
@@ -279,6 +280,15 @@ export class FlowerPollenPath extends plugin {
       if (root.critical) return e.reply('【进化根基濒临崩溃】请先使用 #重塑进化根基，修复花粉根基后再继续进化。');
 
       const targetLevelId = player.huafenlevel_id + 1;
+      if (targetLevelId === 21) {
+        const emperorGate = canEnterQuasiEmperor(player, 'huafen');
+        if (!emperorGate.ok) {
+          const guidance = emperorGate.reason === 'system'
+            ? '请先圆满仙王道则，再发送 #合道 体系名（体系名不超过五字）。'
+            : '你已合道立下体系，还需发送 #破王成帝劫 完成最终洗礼。';
+          return e.reply(['【道祖门槛·合道在先】', guidance].join('\n'));
+        }
+      }
       const daoGate = getFlowerDaoGateState(player, player.huafenlevel_id);
       if (!daoGate.ok) {
         return e.reply([`【花粉道则未圆】`, `${daoGate.rule.name}进度：${daoGate.exp}/${daoGate.rule.targetExp}（${daoGate.stage.name}）`, `请先发送 #花粉悟道，圆满后才能冲击${realmName(targetLevelId)}。`].join('\n'));
