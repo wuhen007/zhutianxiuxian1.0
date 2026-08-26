@@ -124,6 +124,10 @@ import { selectEquipmentByCode } from '../../model/equipmentSwap.js';
 import { isCanonicalDaluoSwordEmbryo } from '../../model/equipmentStats.js';
 import { calculateLifeSourceRepairBaseCost } from '../../model/lifeSourceRepair.js';
 import {
+  recordGuidedTalent,
+  resolveGuidedTalent,
+} from '../../model/linggenGuidance.js';
+import {
   hasCompletedZhiXian,
   migrateCompletedZhiXianTasks,
 } from '../meirrenwu/zhixianChoice.js';
@@ -238,6 +242,10 @@ export class UserHome extends plugin {
 {
     reg: '^#使用锁灵仙符$',
     fnc: 'useLockLinggenToken'
+},
+{
+    reg: '^#(?:查看|保留|选择)引灵结果(?:\\s*\\*?\\s*.*)?$',
+    fnc: 'chooseLinggenResult'
 },
 {
     reg: '^#修复道伤$',
@@ -700,6 +708,70 @@ async chooseBatchRerollFate(e) {
     return true;
 }
 
+async chooseLinggenResult(e) {
+    if (!verc({ e })) return false;
+
+    let usr_qq = e.user_id.toString().replace('qg_','');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return false;
+
+    return withPlayerMutationLock(usr_qq, async () => {
+        const player = await Read_player(usr_qq);
+        const pending = player.引灵结果暂存;
+        if (!Array.isArray(pending?.候选) || pending.候选.length < 2) {
+            e.reply('当前没有需要选择的引灵结果。');
+            return true;
+        }
+
+        const resultLines = formatGuidedTalentList(pending.候选);
+        if (e.msg.startsWith('#查看')) {
+            e.reply([
+                `【引灵仙符·${pending.类型}候选】`,
+                ...resultLines,
+                '发送 #保留引灵结果 序号 或 #保留引灵结果 灵根名 进行选择。',
+            ].join('\n'));
+            return true;
+        }
+
+        const choice = e.msg
+            .replace(/^#(?:保留|选择)引灵结果/, '')
+            .replace(/^\s*\*/, '')
+            .trim();
+        const selected = resolveGuidedTalent(pending.候选, choice);
+        if (!selected) {
+            e.reply([
+                '引灵结果序号或名称有误，可选结果为：',
+                ...resultLines,
+                '发送 #保留引灵结果 序号 或 #保留引灵结果 灵根名 进行选择。',
+            ].join('\n'));
+            return true;
+        }
+        const activeAvatar = getActiveZhutianAvatarName(player);
+        if (activeAvatar) {
+            e.reply(`当前正装载化身【${activeAvatar}】，请先发送 #装载化身 本源，再保留引灵结果。`);
+            return true;
+        }
+
+        const oldTalent = player.灵根;
+        player.灵根 = selected.talent;
+        delete player.引灵结果暂存;
+        await checkAndRemoveShengtiMishu(player, usr_qq);
+        player.生命本源 = 100 + (player.灵根?.生命本源 || 0);
+        await Write_player(usr_qq, player);
+        const equipment = await Read_equipment(usr_qq);
+        await Write_equipment(usr_qq, equipment);
+        await player_efficiency(usr_qq);
+
+        e.reply([
+            '【引灵仙符·择灵完成】',
+            `已保留：${selected.talent.name}（本批洗出${selected.count}次）`,
+            `灵根变化：${oldTalent?.name || '无'} → ${selected.talent.name}`,
+            '可在【#我的练气】中查看详情',
+        ].join('\n'));
+        return true;
+    });
+}
+
 // 独立处理锁灵仙符使用
 async useLockLinggenToken(e) {
     if (!verc({ e })) return false;
@@ -713,6 +785,11 @@ async useLockLinggenToken(e) {
     
     // 获取玩家数据
     let player = await Read_player(usr_qq);
+
+    if (player.引灵结果暂存) {
+        e.reply('尚有引灵结果未选择，请先发送 #查看引灵结果。');
+        return true;
+    }
     
     // 检查是否有锁灵仙符
     const hasToken = await exist_najie_thing(usr_qq, '锁灵仙符', '道具');
@@ -766,6 +843,11 @@ async useLinggenToken(e) {
     
     // 获取玩家数据
     let player = await Read_player(usr_qq);
+
+    if (player.引灵结果暂存) {
+        e.reply('尚有引灵结果未选择，请先发送 #查看引灵结果。');
+        return true;
+    }
     
     // 解析灵根类型
     const match = e.msg.match(/^#使用引灵仙符\s+(\S+)/);
@@ -2093,6 +2175,12 @@ if (func == "打开") {
       (thing_exist?.type == '洗髓' || ROOT_MUTATION_ITEMS.has(thing_name))
     ) {
       return e.reply(`当前正装载化身【${activeAvatar}】，请先发送 #装载化身 本源，再进行灵根重塑。`);
+    }
+    if (
+      player.引灵结果暂存 &&
+      (thing_exist?.type == '洗髓' || ROOT_MUTATION_ITEMS.has(thing_name))
+    ) {
+      return e.reply('尚有引灵结果未选择，请先发送 #查看引灵结果。');
     }
     let pj = {
       劣: 0,
@@ -6052,6 +6140,10 @@ if (thing_exist.type == '洗髓') {
         await e.reply('你未开灵根，无法洗髓！');
         return false;
     }
+    if (player.引灵结果暂存) {
+        e.reply('尚有引灵结果未选择，请先发送 #查看引灵结果。');
+        return false;
+    }
     const maxLifeSource = 100 + (player.灵根?.生命本源 || 0);
     if (player.生命本源 < maxLifeSource) {
         e.reply("你的生命本源亏空无法洗髓!");
@@ -6092,12 +6184,13 @@ if (thing_exist.type == '洗髓') {
     };
 
     // 初始化最终灵根（默认为当前灵根）
-    let finalTalent = player.灵根;
-    let lastTalent = player.灵根; // 最后一次洗髓结果
+    const originalTalent = player.灵根;
+    let finalTalent = originalTalent;
+    let lastTalent = originalTalent; // 最后一次洗髓结果
     
     // 检查是否有指定灵根类型道具效果
     let targetType = player.next_linggen_target_type || null;
-    let targetTypeBest = null; // 目标类型中最好的灵根
+    const targetTypeResults = [];
     
     // 检查是否有保留最佳灵根道具效果
     const keepBestEffect = player.next_linggen_keep_best || false;
@@ -6111,11 +6204,7 @@ if (thing_exist.type == '洗髓') {
         lastTalent = newTalent; // 记录最后一次洗髓结果
         
         // 检查是否是目标类型
-        if (targetType && newTalent.type === targetType) {
-            if (!targetTypeBest || isBetterQuality(newTalent, targetTypeBest)) {
-                targetTypeBest = newTalent;
-            }
-        }
+        recordGuidedTalent(targetTypeResults, newTalent, targetType);
         
         // 如果使用锁灵仙符，记录最佳灵根
         if (keepBestEffect) {
@@ -6134,13 +6223,38 @@ if (thing_exist.type == '洗髓') {
         }
     }
 
+    targetTypeResults.sort((a, b) => b.count - a.count);
+
+    // 同一目标类型洗出多种灵根时，先保留原灵根，等待玩家选择。
+    if (!keepBestEffect && targetTypeResults.length > 1) {
+        const targetHitCount = targetTypeResults.reduce((sum, item) => sum + item.count, 0);
+        player.next_linggen_target_type = null;
+        player.next_linggen_keep_best = false;
+        player.洗根次数 += quantity;
+        player.引灵结果暂存 = {
+            类型: targetType,
+            洗髓次数: quantity,
+            候选: targetTypeResults,
+            创建时间: Date.now(),
+        };
+        await Write_player(usr_qq, player);
+        e.reply([
+            segment.at(usr_qq),
+            `成功洗髓${quantity}次，消耗${quantity}个${thing_name}，剩余数量：${najieThingCount - quantity}`,
+            `【引灵仙符·${targetType}】共感应到${targetHitCount}次：`,
+            ...formatGuidedTalentList(targetTypeResults),
+            '当前灵根暂未改变，请发送 #保留引灵结果 序号 或 #保留引灵结果 灵根名。',
+        ]);
+        return false;
+    }
+
     // 确定最终灵根
     if (keepBestEffect) {
         // 锁灵仙符效果优先
         finalTalent = bestTalent;
-    } else if (targetTypeBest) {
+    } else if (targetTypeResults.length === 1) {
         // 引灵仙符效果次之
-        finalTalent = targetTypeBest;
+        finalTalent = targetTypeResults[0].talent;
     } else {
         // 默认使用最后一次洗髓结果
         finalTalent = lastTalent;
@@ -6170,11 +6284,11 @@ if (thing_exist.type == '洗髓') {
     ];
     
     // 检查是否有提升
-    const originalWeight = talentWeights[player.灵根.type] || 0;
+    const originalWeight = talentWeights[originalTalent?.type] || 0;
     const finalWeight = talentWeights[finalTalent.type] || 0;
     const improved = finalWeight > originalWeight || 
                      (finalWeight === originalWeight && 
-                      isBetterQuality(finalTalent, player.灵根));
+                      isBetterQuality(finalTalent, originalTalent));
     
     if (improved) {
         replyMessages.push(
@@ -6194,8 +6308,12 @@ if (thing_exist.type == '洗髓') {
         replyMessages.push(`锁灵仙符生效：已锁定最佳灵根状态`);
     }
     if (targetType) {
-        if (targetTypeBest) {
-            replyMessages.push(`引灵仙符生效：成功感应到【${targetType}】灵根`);
+        if (targetTypeResults.length) {
+            const targetHitCount = targetTypeResults.reduce((sum, item) => sum + item.count, 0);
+            replyMessages.push(
+                `引灵仙符生效：共感应到【${targetType}】灵根${targetHitCount}次`,
+                ...formatGuidedTalentList(targetTypeResults)
+            );
         } else {
             replyMessages.push(`引灵仙符效果：未感应到【${targetType}】灵根`);
         }
@@ -6206,6 +6324,10 @@ if (thing_exist.type == '洗髓') {
     // 回复结果
     e.reply(replyMessages);
     return false;
+}
+
+function formatGuidedTalentList(candidates) {
+    return candidates.map((item, index) => `${index + 1}. ${item.talent.name} ×${item.count}`);
 }
 
 // 辅助函数：比较灵根品质
