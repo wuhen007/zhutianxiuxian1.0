@@ -245,6 +245,39 @@ function upsertAvatar(player, avatar) {
   return created;
 }
 
+function getLifeSourceMax(root) {
+  return 100 + Math.max(0, Number(root?.生命本源) || 0);
+}
+
+export function syncLifeSourceForRootChange(player, previousRoot, nextRoot) {
+  const previousMax = getLifeSourceMax(previousRoot);
+  const nextMax = getLifeSourceMax(nextRoot);
+  const current = Number.isFinite(Number(player.生命本源))
+    ? Math.max(0, Number(player.生命本源))
+    : previousMax;
+  const system = player.诸天镜系统;
+  const previousState = system?.生命本源切换状态;
+  const samePreviousRoot = previousState?.灵根 === String(previousRoot?.name || '');
+  const previousEffective = samePreviousRoot && Number.isFinite(Number(previousState.真实值))
+    ? Number(previousState.真实值) + current - Math.max(0, Number(previousState.显示值) || 0)
+    : current;
+  const nextEffective = previousEffective + nextMax - previousMax;
+  player.生命本源 = Math.max(0, nextEffective);
+  if (system && typeof system === 'object') {
+    system.生命本源切换状态 = {
+      灵根: String(nextRoot?.name || ''),
+      显示值: player.生命本源,
+      真实值: nextEffective,
+    };
+  }
+  return player.生命本源;
+}
+
+export function getActiveZhutianAvatarName(player) {
+  const name = player?.诸天镜系统?.当前化身;
+  return typeof name === 'string' ? name.trim() : '';
+}
+
 export function getClowCardCombo(cards = []) {
   const selected = new Set(cards);
   return Object.entries(CLOW_CARD_COMBOS).find(([, required]) => required.every(card => selected.has(card)))?.[0] || null;
@@ -877,9 +910,12 @@ export function loadZhutianAvatar(player, avatarName, { now = Date.now() } = {})
   const system = ensureZhutianMirrorSystem(player, { now });
   if (!system.已绑定) return { ok: false, reason: 'unbound', system };
 
+  const previousRoot = player.灵根;
+
   if (avatarName === '本源') {
     if (!system.本源灵根) return { ok: false, reason: 'origin', system };
     player.灵根 = clone(system.本源灵根);
+    syncLifeSourceForRootChange(player, previousRoot, player.灵根);
     delete system.当前化身;
     return { ok: true, name: '本源', root: player.灵根, system };
   }
@@ -889,6 +925,7 @@ export function loadZhutianAvatar(player, avatarName, { now = Date.now() } = {})
   // 本源灵根可能已通过进阶或重塑发生变化，装载化身前刷新当前本源快照。
   if (!system.当前化身 && player.灵根) system.本源灵根 = clone(player.灵根);
   player.灵根 = clone(avatar.root);
+  syncLifeSourceForRootChange(player, previousRoot, player.灵根);
   system.当前化身 = avatar.name;
   return { ok: true, name: avatar.name, root: player.灵根, system };
 }

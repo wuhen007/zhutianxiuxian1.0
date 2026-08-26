@@ -79,7 +79,11 @@ import {
 import { resetIneligibleShengtiCultivation } from '../../model/shengtiCultivation.js';
 import { openJadeCasket } from '../../model/baitianTemple.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
-import { bindBasicZhutianMirror, syncCurrentZhutianAvatar } from '../../model/zhutianMirror.js';
+import {
+  bindBasicZhutianMirror,
+  getActiveZhutianAvatarName,
+  syncCurrentZhutianAvatar,
+} from '../../model/zhutianMirror.js';
 import {
   accelerateSecretPlaceAction,
   getSecretPlaceActionEndTime,
@@ -131,6 +135,16 @@ const FLOWER_BREATHING_METHODS = new Set([
   '大雷音呼吸法',
   '道引呼吸法',
   '盗引呼吸法',
+]);
+
+const ROOT_MUTATION_ITEMS = new Set([
+  '堕魔骨',
+  '轮回道果',
+  '武祖权柄',
+  '邪神道果',
+  '荒古源血晶',
+  '圆神终极本源',
+  '先天混沌圣体道胎本源',
 ]);
 /**
  * 全局变量
@@ -2072,6 +2086,14 @@ if (func == "打开") {
     }
     //看看物品名称有没有设定,是不是瞎说的
     let thing_exist = await foundthing(thing_name);
+    const activeAvatar = getActiveZhutianAvatarName(player);
+    if (
+      activeAvatar &&
+      func == '消耗' &&
+      (thing_exist?.type == '洗髓' || ROOT_MUTATION_ITEMS.has(thing_name))
+    ) {
+      return e.reply(`当前正装载化身【${activeAvatar}】，请先发送 #装载化身 本源，再进行灵根重塑。`);
+    }
     let pj = {
       劣: 0,
       普: 1,

@@ -1,10 +1,15 @@
+import path from 'node:path';
 import { plugin } from '../../api/api.js';
 import {
   Add_najie_thing,
+  __PATH,
   channel,
   existplayer,
+  invalidateBattleEquipmentCache,
   player_efficiency,
+  Read_equipment,
   Read_player,
+  Write_equipment,
   Write_player,
 } from '../../model/xiuxian.js';
 import {
@@ -37,7 +42,9 @@ import {
   getZhutianExclusiveEquipmentSet,
   ZHUTIAN_EQUIPMENT_STAGE_BONUSES,
 } from '../../model/exclusiveEquipmentSets.js';
+import { replyOfficialMessage } from '../../model/officialMessage.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
 
 const EXPLORATION_STORY_ACTION = '诸天镜探索剧情';
 
@@ -64,6 +71,42 @@ function appendStory(rows, story) {
   rows.push('', `【异界奇遇·${story.title}】`, story.scene, '');
   rows.push(...story.options.map(item => `${item.num}. ${item.text}`));
   rows.push('请在15分钟内输入数字作出选择。');
+}
+
+function storyChoiceButtons(story) {
+  const buttons = [];
+  for (let index = 0; index < story.options.length; index += 2) {
+    buttons.push(story.options.slice(index, index + 2).map(item => ({
+      text: [...`${item.num}. ${item.text}`].slice(0, 20).join(''),
+      command: String(item.num),
+    })));
+  }
+  return buttons;
+}
+
+function replyExplorationResult(e, rows, story) {
+  if (!story) return e.reply(rows.join('\n'));
+  const textRows = [...rows];
+  appendStory(textRows, story);
+  const text = textRows.join('\n');
+
+  const [title, ...details] = rows;
+  return replyOfficialMessage(e, {
+    markdown: [
+      `# ${String(title).replace(/[【】]/g, '')}`,
+      '',
+      ...details.filter(Boolean).map(line => `- ${line}`),
+      '',
+      `## 异界奇遇·${story.title}`,
+      story.scene,
+      '',
+      ...story.options.map(item => `- **${item.num}.** ${item.text}`),
+      '',
+      '> 请在15分钟内作出选择。',
+    ].join('\n'),
+    text,
+    buttons: storyChoiceButtons(story),
+  });
 }
 
 async function persistExploration(playerId, player, e, story) {
@@ -312,8 +355,7 @@ export class ZhutianMirrorSystem extends plugin {
       if (result.keyFound) rows.push('你在异界共鸣中找到了【封印之钥】！');
       if (result.unlocked) rows.push('封印之钥与风、翔、影三牌共鸣，【木之本樱】基础化身已经解锁！', '使用 #装载化身 木之本樱');
       if (result.combo) rows.push(`当前组合【${result.combo}】已在本次探索生效。`);
-      appendStory(rows, story);
-      return e.reply(rows.join('\n'));
+      return replyExplorationResult(e, rows, story);
     });
   }
 
@@ -402,8 +444,7 @@ export class ZhutianMirrorSystem extends plugin {
       if (result.gemFound) rows.push('纠缠的因果凝成了【灵魂宝石】！');
       if (result.unlocked) rows.push('灵魂宝石与三枚因果碎片共鸣，【鹿目圆】基础化身已经解锁！', '使用 #装载化身 鹿目圆');
       if (result.timelineCollapsed) rows.push('污浊突破极限，当前时间线崩塌并自动回退到50点污浊；下次可提前净化或主动重置。');
-      appendStory(rows, story);
-      return e.reply(rows.join('\n'));
+      return replyExplorationResult(e, rows, story);
     });
   }
 
@@ -508,8 +549,7 @@ export class ZhutianMirrorSystem extends plugin {
       if (result.realmBlocked) rows.push(`进阶积累已经满足，境界尚差：${result.realmBlocked.missing.join('；')}。进度已保留。`);
       if (result.touredWorld) rows.push(`极光帷幕展开，完成【${result.touredWorld}】巡游。`);
       if (result.crisis) rows.push('世界融合度已经达到100，下一次探索前必须使用 #最终攻击驾驭 化解危机。');
-      appendStory(rows, story);
-      return e.reply(rows.join('\n'));
+      return replyExplorationResult(e, rows, story);
     });
   }
 
@@ -622,16 +662,42 @@ export class ZhutianMirrorSystem extends plugin {
         if (result.reason === 'origin') return e.reply('旧版诸天灵根迁移时没有留下原灵根记录，当前没有可返回的本源灵根。');
         return e.reply(`化身谱中尚未收录【${avatarName}】，使用 #诸天化身 查看。`);
       }
-      await Write_player(playerId, player);
-      const set = getZhutianExclusiveEquipmentSet(result.name);
-      if (set) {
-        for (const piece of [set.weapon, set.armor, set.treasure]) {
-          await Add_najie_thing(playerId, piece.name, '装备', 1, 6, 1, {
-            idempotencyKey: `zhutian-exclusive-equipment:${result.name}:${piece.id}`,
-          });
+
+      const transaction = new FileRollbackTransaction();
+      transaction.capture(path.join(__PATH.player_path, `${playerId}.json`));
+      transaction.capture(path.join(__PATH.najie_path, `${playerId}.json`));
+      transaction.capture(path.join(__PATH.equipment_path, `${playerId}.json`));
+      let set;
+      try {
+        await Write_player(playerId, player);
+        set = getZhutianExclusiveEquipmentSet(result.name);
+        if (set) {
+          for (const piece of [set.weapon, set.armor, set.treasure]) {
+            await Add_najie_thing(playerId, piece.name, '装备', 1, 6, 1, {
+              idempotencyKey: `zhutian-exclusive-equipment:${result.name}:${piece.id}`,
+            });
+          }
         }
+        const equipment = await Read_equipment(playerId);
+        await Write_equipment(playerId, equipment);
+        await player_efficiency(playerId);
+        transaction.commit();
+      } catch (error) {
+        let rollbackError;
+        try {
+          transaction.rollback();
+        } catch (caught) {
+          rollbackError = caught;
+        } finally {
+          invalidateBattleEquipmentCache(playerId);
+        }
+        console.error(`[诸天镜] 装载化身失败 player=${playerId} avatar=${avatarName}`, error);
+        if (rollbackError) {
+          console.error(`[诸天镜] 装载化身回滚失败 player=${playerId} avatar=${avatarName}`, rollbackError);
+          return e.reply('诸天镜映照中断且存档回滚异常，请联系管理员检查该玩家的灵根、装备与纳戒存档。');
+        }
+        return e.reply('诸天镜映照中断，灵根、装备与纳戒状态已恢复，请重新装载。');
       }
-      await player_efficiency(playerId);
       const rows = [`诸天镜映照己身，已装载【${result.name}】。`];
       if (set) rows.push(`专属套装【${set.setName}】已同步至纳戒，穿齐后按当前化身阶段提升全属性。`);
       return e.reply(rows.join('\n'));
