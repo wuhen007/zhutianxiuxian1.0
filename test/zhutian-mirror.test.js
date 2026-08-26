@@ -376,6 +376,16 @@ test('投影阶位材料来源覆盖位面晶核、时空锚和诸天镜心', ()
   assert.equal(player.诸天镜系统.世界印记.length, 3);
 });
 
+test('无独立地图的投影世界按结局推进世界完成度', () => {
+  const player = createPlayer();
+  bindBasicZhutianMirror(player, { now: NOW });
+  const good = recordProjectionMirrorProgress(player, '崩坏宇宙', { endingType: 'good', now: NOW });
+  const neutral = recordProjectionMirrorProgress(player, '崩坏宇宙', { endingType: 'neutral', now: NOW });
+  const bad = recordProjectionMirrorProgress(player, '崩坏宇宙', { endingType: 'bad', now: NOW });
+  assert.deepEqual([good.完成度增加, neutral.完成度增加, bad.完成度增加], [10, 5, 0]);
+  assert.equal(player.诸天镜系统.世界进度.崩坏宇宙.探索度, 15);
+});
+
 test('旧随机灵根入口与免费抽卡入口已移除', async () => {
   const [userHome, projection, sakura, madoka] = await Promise.all([
     readFile(new URL('../apps/User/UserHome.js', import.meta.url), 'utf8'),

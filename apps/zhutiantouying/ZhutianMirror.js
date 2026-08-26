@@ -40,6 +40,7 @@ import {
 } from '../../model/zhutianExplorationStory.js';
 import {
   getZhutianExclusiveEquipmentSet,
+  getZhutianWorldCompletion,
   ZHUTIAN_EQUIPMENT_STAGE_BONUSES,
 } from '../../model/exclusiveEquipmentSets.js';
 import { replyOfficialMessage } from '../../model/officialMessage.js';
@@ -346,6 +347,7 @@ export class ZhutianMirrorSystem extends plugin {
 
       const story = beginExplorationStory(player, '魔法少女樱', location);
       await persistExploration(playerId, player, e, story);
+      await player_efficiency(playerId);
       const rows = [
         `【友枝町·${location}】`,
         `探索度 +8，镜尘 +${result.dust}${result.echo ? '，世界残响 +1' : ''}`,
@@ -433,6 +435,7 @@ export class ZhutianMirrorSystem extends plugin {
 
       const story = beginExplorationStory(player, '魔法少女小圆', location);
       await persistExploration(playerId, player, e, story);
+      await player_efficiency(playerId);
       const rows = [
         `【见泷原·${location}】`,
         `因果碎片 +1，希望碎片 +${result.hopeShards}，净化绝望值 +${result.despairPurified}`,
@@ -533,7 +536,7 @@ export class ZhutianMirrorSystem extends plugin {
 
       const story = beginExplorationStory(player, '假面骑士帝骑', location);
       await persistExploration(playerId, player, e, story);
-      if (result.rootChanged) await player_efficiency(playerId);
+      await player_efficiency(playerId);
       const rows = [
         `【骑士世界·${location}】`,
         `世界共鸣 +${result.card ? 10 : 4}，镜尘 +${result.dust}${result.echo ? '，世界残响 +1' : ''}`,
@@ -634,9 +637,10 @@ export class ZhutianMirrorSystem extends plugin {
       }
       const rows = player.诸天化身谱.map(avatar => {
         const set = getZhutianExclusiveEquipmentSet(avatar.name);
-        const setText = set
-          ? ` | ${set.setName}全属性+${Math.round((ZHUTIAN_EQUIPMENT_STAGE_BONUSES[avatar.stage] || 0) * 100)}%`
-          : '';
+        const completion = set ? getZhutianWorldCompletion(player, set.world) : 0;
+        const maxBonus = ZHUTIAN_EQUIPMENT_STAGE_BONUSES[avatar.stage] || 0;
+        const currentBonus = maxBonus * completion / 100;
+        const setText = set ? ` | ${set.setName}完成度${completion}%·全属性+${Math.round(currentBonus * 100)}%（满额+${maxBonus * 100}%）` : '';
         return `${system.当前化身 === avatar.name ? '当前' : '可装载'} ${avatar.name}·第${avatar.stage}阶段（${avatar.world}）${setText}`;
       });
       const goals = [];

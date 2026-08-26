@@ -161,6 +161,7 @@ export const DECADE_ULTIMATE_ROOT = Object.freeze({
 
 const MATERIAL_NAMES = ['镜尘', '世界残响', '位面晶核', '时空锚', '诸天镜心'];
 const SAKURA_REQUIRED_CARDS = ['风', '翔', '影'];
+const DEDICATED_EXPLORATION_WORLDS = new Set(['魔卡少女樱', '魔法少女小圆', '假面骑士帝骑']);
 const LEGACY_AVATARS = Object.freeze({
   木之本樱: { name: '木之本樱', world: '魔卡少女樱', stage: 1 },
   '星之杖·木之本樱': { name: '木之本樱', world: '魔卡少女樱', stage: 2 },
@@ -476,13 +477,22 @@ export function recordProjectionMirrorProgress(
   { difficulty = 1, endingType = 'neutral', now = Date.now() } = {},
 ) {
   const system = ensureZhutianMirrorSystem(player, { now });
-  if (endingType === 'bad') return { gained: false, newMark: false, 镜尘: 0, 世界残响: 0, 位面晶核: 0, 时空锚: 0, 诸天镜心: 0 };
+  if (endingType === 'bad') return { gained: false, newMark: false, 完成度增加: 0, 镜尘: 0, 世界残响: 0, 位面晶核: 0, 时空锚: 0, 诸天镜心: 0 };
 
   const worldTier = getWorldMinimumMirrorTier(worldName);
   const value = Math.max(1, asNonNegativeInteger(difficulty));
+  const progress = system.世界进度[worldName] ||= {};
+  const completionGain = DEDICATED_EXPLORATION_WORLDS.has(worldName)
+    ? 0
+    : endingType === 'good' ? 10 : 5;
+  if (completionGain > 0) {
+    progress.探索度 = Math.min(100, asNonNegativeInteger(progress.探索度) + completionGain);
+  }
   const rewards = {
     gained: true,
     newMark: !system.世界印记.includes(worldName),
+    完成度增加: completionGain,
+    世界完成度: asNonNegativeInteger(progress.探索度),
     镜尘: 4 + value,
     世界残响: Math.max(1, Math.floor(value / 2)),
     位面晶核: worldTier >= 2 ? 1 : 0,

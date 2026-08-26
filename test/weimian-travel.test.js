@@ -13,6 +13,9 @@ import {
   ensureDefaultCoordinates,
   getBaseTravelThreshold,
   getBodyTravelQuote,
+  getDimensionBarrierCount,
+  getDimensionBarrierTravelTime,
+  getDimensionLayer,
   getKunpengReduction,
   getLocationThreshold,
   getTokenTier,
@@ -20,6 +23,7 @@ import {
   getUnknownCoordinates,
   hasCoordinate,
   hasEngravedCoordinate,
+  isInstantAllHeavensTravel,
   purchaseCoordinateClue,
   recordUnfetteredJourney,
   registerForbiddenSupremeAttention,
@@ -56,7 +60,7 @@ test('高位面门槛采用三种额外体系中的当前体系', () => {
   assert.equal(getLocationThreshold({ huafenlevel_id: 15 }, '太初星墟').ok, true);
 });
 
-test('圣墟三级位面只向花粉路修士开放且按境界分档', () => {
+test('圣墟三级位面按花粉境界分档且准仙帝可跨越内部界壁', () => {
   assert.equal(PLACE_LOCATION_MAP.小阴间, 4);
   assert.equal(PLACE_LOCATION_MAP.大阴间, 5);
   assert.equal(PLACE_LOCATION_MAP.阳间, 7);
@@ -69,7 +73,8 @@ test('圣墟三级位面只向花粉路修士开放且按境界分档', () => {
   assert.equal(hasCoordinate(flowerPlayer, '小阴间'), true);
   assert.equal(rememberCoordinate(flowerPlayer, '小阴间'), false);
   assert.equal(purchaseCoordinateClue({ 灵石: COORDINATE_CLUE_COST }, '小阴间').reason, 'invalid');
-  assert.equal(getLocationThreshold({ mijinglevel_id: 20, xiangulevel_id: 1 }, '小阴间').ok, false);
+  assert.equal(getLocationThreshold({ mijinglevel_id: 20, xiangulevel_id: 1 }, '小阴间').ok, true);
+  assert.equal(getLocationThreshold({ mijinglevel_id: 19, xiangulevel_id: 1 }, '小阴间').ok, false);
   assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 1 }, '小阴间').ok, false);
   // 大阴间需神祇境(12)、阳间需神将境(13)——神将入阳间冲击神王
   assert.equal(getLocationThreshold({ 额外体系: 'huafen', huafenlevel_id: 12 }, '大阴间').ok, true);
@@ -122,6 +127,14 @@ test('坐标记忆只解锁一次，重金求购会校验并扣除灵石', () =>
   assert.equal(hasCoordinate(buyer, '界海'), true);
 });
 
+test('每日副本只会发现当前权柄可触及的高维坐标', () => {
+  assert.equal(getUnknownCoordinates({ mijinglevel_id: 18 }).includes('厄土高原'), false);
+  const emperorUnknown = getUnknownCoordinates({ mijinglevel_id: 21 });
+  assert.equal(emperorUnknown.includes('百维真界'), true);
+  assert.equal(emperorUnknown.includes('原初宇宙海'), false);
+  assert.equal(getUnknownCoordinates({ mijinglevel_id: 23 }).includes('原初宇宙海'), true);
+});
+
 test('成功副本每日只抽取一次坐标记忆', () => {
   const player = { 记忆坐标: [] };
   const first = rollDailyDungeonCoordinate(player, {
@@ -147,17 +160,46 @@ test('寻缘签倍率将副本坐标发现率从10%提升至20%', () => {
   assert.equal(result.reason, 'found');
 });
 
-test('费用、耗时和传送阵优先级与穿梭逻辑一致', () => {
+test('准仙帝在诸天万界内部穿梭不再产生等待时间', () => {
   const player = { ...traveler, mijinglevel_id: 21 };
   const quote = getBodyTravelQuote(player, 0, 1);
   assert.ok(Math.abs(calcRealmReducePct(player) - 0.7) < 1e-12);
   assert.ok(Math.abs(quote.xiuweiCost - 3000000) < 1e-6);
   assert.ok(Math.abs(quote.qixueCost - 4500000) < 1e-6);
   assert.ok(Math.abs(quote.shouyuanCost - 3000) < 1e-6);
-  assert.ok(Math.abs(quote.travelTime - 5) < 1e-12);
-  assert.ok(Math.abs(getTokenTravelTime(player, 0, 1, 'low') - 4) < 1e-12);
-  assert.equal(getTokenTravelTime(player, 0, 1, 'high'), 1);
+  assert.equal(quote.travelTime, 0);
+  assert.equal(getTokenTravelTime(player, 0, 1, 'low'), 0);
+  assert.equal(getTokenTravelTime(player, 0, 1, 'high'), 0);
+  assert.equal(isInstantAllHeavensTravel({ mijinglevel_id: 20 }, 0, PLACE_LOCATION_MAP.异域), true);
   assert.equal(getTokenTier({ 位面传送次数: 2, 高级传送次数: 1 }), 'high');
+});
+
+test('维度壁垒按仙帝、祭道之上与唯一道之上分层准入', () => {
+  assert.equal(getDimensionLayer('厄土高原'), 1);
+  assert.equal(getDimensionLayer('百维真界'), 4);
+  assert.equal(getDimensionLayer('原初宇宙海'), 5);
+  assert.equal(getDimensionLayer('神维丝线海'), 8);
+
+  const emperor = { mijinglevel_id: 21 };
+  assert.equal(getLocationThreshold(emperor, '上苍之上').ok, true);
+  assert.equal(getLocationThreshold(emperor, '永恒未知之地').ok, true);
+  assert.equal(getLocationThreshold(emperor, '百维真界').ok, true);
+  assert.equal(getLocationThreshold(emperor, '原初宇宙海').ok, false);
+  assert.equal(getLocationThreshold({ mijinglevel_id: 23 }, '原初宇宙海').ok, true);
+  assert.equal(getLocationThreshold({ xiangulevel_id: 24 }, '千维宙古界').ok, true);
+  assert.equal(getLocationThreshold({ mijinglevel_id: 23 }, '万维梵宇界').ok, false);
+  assert.equal(getLocationThreshold({ mijinglevel_id: 24 }, '神维丝线海').ok, true);
+});
+
+test('跨维度壁垒保留长耗时且不被准仙帝瞬移规则绕过', () => {
+  const emperor = { ...traveler, mijinglevel_id: 21 };
+  const target = PLACE_LOCATION_MAP.百维真界;
+  assert.equal(getDimensionBarrierCount(PLACE_LOCATION_MAP.凡间, target), 4);
+  assert.equal(getDimensionBarrierTravelTime(emperor, PLACE_LOCATION_MAP.凡间, target), 1440);
+  const quote = getBodyTravelQuote(emperor, PLACE_LOCATION_MAP.凡间, target);
+  assert.equal(quote.dimensionBarrierCount, 4);
+  assert.equal(quote.travelTime, 1440);
+  assert.equal(isInstantAllHeavensTravel(emperor, PLACE_LOCATION_MAP.凡间, target), false);
 });
 
 test('鲲鹏宝术按玩家两套体系动态减少穿梭时间', () => {
@@ -172,7 +214,7 @@ test('鲲鹏宝术按玩家两套体系动态减少穿梭时间', () => {
     学习的功法: ['鲲鹏宝术'],
   }, 0, 1);
   assert.equal(quote.kunpengReduction, 5);
-  assert.equal(quote.travelTime, 1);
+  assert.equal(quote.travelTime, 0);
 });
 
 test('天外清风缩短下一次穿梭且最低保留一分钟', () => {

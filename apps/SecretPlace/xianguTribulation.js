@@ -839,6 +839,13 @@ export class XianguTribulation {
     );
   }
 
+  async _runPassedEmperorTribulation() {
+    return {
+      success: true,
+      routeText: '此前渡过的破王成帝劫再度显化，诸天古则归于己身。',
+    };
+  }
+
   async _runRealmBreakthrough(e, player, ctx = {}) {
     this.revived = false;
     this.dead = false;

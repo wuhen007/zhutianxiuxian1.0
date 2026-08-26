@@ -9,6 +9,7 @@ export const PLACE_LOCATION_MAP = Object.freeze({
   '遮天位面': 2,
   '九天十地': 2.5,
   '界海': 3,
+  '异域': 3.2,
   '太初星墟': 3.5,
   '时间长河': 3.6,
   '小阴间': 4,
@@ -16,10 +17,39 @@ export const PLACE_LOCATION_MAP = Object.freeze({
   '仙域': 6,
   '永恒未知之地': 6.5,
   '阳间': 7,
+  '厄土高原': 100,
+  '上苍之上': 200,
+  '百维真界': 400,
+  '原初宇宙海': 500,
+  '千维宙古界': 600,
+  '万维梵宇界': 700,
+  '神维丝线海': 800,
 });
 
 export const DEFAULT_KNOWN_LOCATIONS = Object.freeze(['凡间']);
-export const SPECIAL_LOCATIONS = Object.freeze(['仙域', '时间长河', '永恒未知之地', '小阴间', '大阴间', '阳间']);
+export const SPECIAL_LOCATIONS = Object.freeze([
+  '仙域', '异域', '时间长河', '永恒未知之地', '小阴间', '大阴间', '阳间',
+  '厄土高原', '上苍之上', '百维真界', '原初宇宙海',
+  '千维宙古界', '万维梵宇界', '神维丝线海',
+]);
+
+export const ALL_HEAVENS_LOCATIONS = Object.freeze([
+  '凡间', '仙界', '下界八域', '遮天位面', '九天十地', '界海', '异域',
+  '太初星墟', '时间长河', '小阴间', '大阴间', '仙域', '阳间',
+]);
+
+export const DIMENSION_BARRIER_LAYERS = Object.freeze({
+  '厄土高原': 1,
+  '上苍之上': 2,
+  '永恒未知之地': 3,
+  '百维真界': 4,
+  '原初宇宙海': 5,
+  '千维宙古界': 6,
+  '万维梵宇界': 7,
+  '神维丝线海': 8,
+});
+
+export const DIMENSION_BARRIER_BASE_MINUTES = 8 * 60;
 
 // 圣墟位面三级：小阴间（映照绝巅 11）/ 大阴间（13）/ 阳间（17）
 export const SHENGXU_PLANES = Object.freeze(['小阴间', '大阴间', '阳间']);
@@ -42,6 +72,49 @@ export const TIANWAI_WIND_REDUCTION_MINUTES = 5;
 export const FORBIDDEN_SUPREME_ATTENTION_THRESHOLD = 10;
 export const FORBIDDEN_SUPREME_ALL_ATTRIBUTE = 75_000_000_000;
 export const FORBIDDEN_SUPREME_EQUIPMENT_MULTIPLIER = 150;
+
+export function getLocationName(location) {
+  if (Object.hasOwn(PLACE_LOCATION_MAP, location)) return String(location);
+  const numeric = Number(location);
+  return Object.entries(PLACE_LOCATION_MAP)
+    .find(([, value]) => Number(value) === numeric)?.[0] || '';
+}
+
+export function getDimensionLayer(location) {
+  const name = getLocationName(location);
+  return DIMENSION_BARRIER_LAYERS[name] || 0;
+}
+
+export function isAllHeavensLocation(location) {
+  return ALL_HEAVENS_LOCATIONS.includes(getLocationName(location));
+}
+
+export function getDimensionBarrierCount(fromLocation, toLocation) {
+  return Math.abs(getDimensionLayer(fromLocation) - getDimensionLayer(toLocation));
+}
+
+export function isInstantAllHeavensTravel(player, fromLocation, toLocation) {
+  return getRealmAuthorityLevel(player) >= 20
+    && isAllHeavensLocation(fromLocation)
+    && isAllHeavensLocation(toLocation);
+}
+
+function getDimensionTravelMultiplier(player) {
+  const authority = getRealmAuthorityLevel(player);
+  if (authority >= 24) return 0.2;
+  if (authority >= 23) return 0.35;
+  if (authority >= 22) return 0.55;
+  return 0.75;
+}
+
+export function getDimensionBarrierTravelTime(player, fromLocation, toLocation) {
+  const barriers = getDimensionBarrierCount(fromLocation, toLocation);
+  if (barriers === 0) return 0;
+  return Math.max(
+    60 * barriers,
+    Math.round(barriers * DIMENSION_BARRIER_BASE_MINUTES * getDimensionTravelMultiplier(player))
+  );
+}
 
 // 禁区至尊注视·概率与豁免（按穿梭方式区分触发概率；准帝九重天以上可凭体质/境界豁免）
 // 肉身横渡 50% / 低级传送阵 25% / 高级传送阵 5%
@@ -316,7 +389,9 @@ export function ensureDefaultCoordinates(player) {
 export function hasCoordinate(player, location) {
   if (DEFAULT_KNOWN_LOCATIONS.includes(location)) return true;
   if (location === '遮天位面' && Number(player?.五色祭坛激活) === 1) return true;
-  if (isShengxuPlane(location) && isCultivatingExtraPath(player, 'huafen')) return true;
+  if (isShengxuPlane(location) && (
+    isCultivatingExtraPath(player, 'huafen') || getRealmAuthorityLevel(player) >= 20
+  )) return true;
   return Array.isArray(player?.记忆坐标) && player.记忆坐标.includes(location);
 }
 
@@ -327,7 +402,10 @@ export function getCoordinateLocations() {
 }
 
 export function getUnknownCoordinates(player) {
-  return getCoordinateLocations().filter(location => !hasCoordinate(player, location));
+  return getCoordinateLocations().filter(location => (
+    !hasCoordinate(player, location)
+    && (getDimensionLayer(location) === 0 || getLocationThreshold(player, location).ok)
+  ));
 }
 
 export function rememberCoordinate(player, location) {
@@ -412,30 +490,37 @@ export function getLocationThreshold(player, location) {
   const xiangu = level(player, 'xiangulevel_id');
   const huafen = level(player, 'huafenlevel_id');
   const cultivation = level(player, 'level_id');
+  const authority = getRealmAuthorityLevel(player);
+  const dimensionLayer = getDimensionLayer(location);
   let code = null;
   let checks = [];
 
-  if (location === '小阴间') {
-    const met = isCultivatingExtraPath(player, 'huafen') && huafen >= 2;
+  if (dimensionLayer > 0) {
+    const required = dimensionLayer <= 4 ? 21 : dimensionLayer <= 6 ? 23 : 24;
+    const met = authority >= required;
+    code = met ? null : 'dimension-barrier';
+    checks = [{
+      label: `第${dimensionLayer}重维度壁垒`,
+      display: `等效权柄 ${authority}/${required}（${dimensionLayer <= 4 ? '仙帝' : dimensionLayer <= 6 ? '祭道之上' : '唯一道之上'}）`,
+      met,
+    }];
+  } else if (location === '小阴间') {
+    const met = authority >= 20 || (isCultivatingExtraPath(player, 'huafen') && huafen >= 2);
     code = met ? null : 'shengxu';
     checks = [{ label: '花粉进化路', display: `花粉 ${huafen}/2，且未兼修其他额外体系`, met }];
   } else if (location === '大阴间') {
-    const met = isCultivatingExtraPath(player, 'huafen') && huafen >= 12;
+    const met = authority >= 20 || (isCultivatingExtraPath(player, 'huafen') && huafen >= 12);
     code = met ? null : 'dayinjian';
     checks = [{ label: '花粉·神祇境', display: `花粉 ${huafen}/12`, met }];
   } else if (location === '阳间') {
     // 神将（13）即可入阳间，于法则完整之地冲击神王（14）
-    const met = isCultivatingExtraPath(player, 'huafen') && huafen >= 13;
+    const met = authority >= 20 || (isCultivatingExtraPath(player, 'huafen') && huafen >= 13);
     code = met ? null : 'yangjian';
     checks = [{ label: '花粉·神将境', display: `花粉 ${huafen}/13`, met }];
   } else if (location === '时间长河') {
     const met = mijing >= 20 || xiangu >= 20 || huafen >= 21;
     code = met ? null : 'time-river';
     checks = [{ label: '准仙帝境界', display: `秘境 ${mijing}/20、仙古 ${xiangu}/20或花粉 ${huafen}/21`, met }];
-  } else if (location === '永恒未知之地') {
-    const met = mijing >= 21 || xiangu >= 21 || huafen >= 22;
-    code = met ? null : 'eternal-land';
-    checks = [{ label: '仙帝境界', display: `秘境 ${mijing}/21、仙古 ${xiangu}/21或花粉 ${huafen}/22`, met }];
   } else if (location === '仙界') {
     const met = cultivation >= 42 || (Number(player?.lunhui) || 0) !== 0;
     code = met ? null : 'immortal-realm';
@@ -454,14 +539,18 @@ export function getLocationThreshold(player, location) {
     const met = mijing >= 18 || xiangu >= 16 || huafen >= 18;
     code = met ? null : 'immortal-domain';
     checks = [{ label: '仙王境界', display: `秘境 ${mijing}/18、仙古 ${xiangu}/16或花粉 ${huafen}/18`, met }];
+  } else if (location === '异域') {
+    const met = authority >= 18;
+    code = met ? null : 'foreign-realm';
+    checks = [{ label: '异域界壁', display: `等效权柄 ${authority}/18（仙王）`, met }];
   } else if (location === '太初星墟') {
     const met = mijing >= 16 || xiangu >= 16 || huafen >= 15;
     code = met ? null : 'primordial-ruins';
     checks = [{ label: '裂界承载', display: `秘境 ${mijing}/16、仙古 ${xiangu}/16或花粉 ${huafen}/15`, met }];
   } else if (location === '凡间') {
-    const met = mijing <= 20 && xiangu <= 20 && huafen <= 21;
+    const met = authority >= 20 || (mijing <= 20 && xiangu <= 20 && huafen <= 21);
     code = met ? null : 'mortal-realm';
-    checks = [{ label: '天地承载', display: met ? '可下凡' : '仙帝威压过强', met }];
+    checks = [{ label: '天地承载', display: met ? '可收束权柄下凡' : '仙帝威压过强', met }];
   }
 
   return { ok: code === null, code, checks };
@@ -479,24 +568,42 @@ export function getKunpengReduction(player) {
 }
 
 export function getBodyTravelQuote(player, fromLocation, toLocation) {
-  const distance = Math.abs(Number(fromLocation) - Number(toLocation));
+  const barriers = getDimensionBarrierCount(fromLocation, toLocation);
+  const distance = barriers || Math.abs(Number(fromLocation) - Number(toLocation));
   if (distance === 0) {
-    return { distance, xiuweiCost: 0, qixueCost: 0, shouyuanCost: 0, travelTime: 0, kunpengReduction: 0 };
+    return { distance, dimensionBarrierCount: 0, xiuweiCost: 0, qixueCost: 0, shouyuanCost: 0, travelTime: 0, kunpengReduction: 0 };
   }
 
   const multiplier = 1 - calcRealmReducePct(player);
+  if (barriers > 0) {
+    return {
+      distance,
+      dimensionBarrierCount: barriers,
+      xiuweiCost: Math.round(barriers * 1_000_000_000 * multiplier),
+      qixueCost: Math.round(barriers * 1_500_000_000 * multiplier),
+      shouyuanCost: Math.round(barriers * 100_000 * multiplier),
+      travelTime: getDimensionBarrierTravelTime(player, fromLocation, toLocation),
+      kunpengReduction: 0,
+    };
+  }
   const kunpengReduction = getKunpengReduction(player);
   return {
     distance,
+    dimensionBarrierCount: 0,
     xiuweiCost: Math.round(distance * 10000000 * multiplier),
     qixueCost: Math.round(distance * 15000000 * multiplier),
     shouyuanCost: Math.round(distance * 10000 * multiplier),
-    travelTime: Math.round(Math.max(1, Math.max(2, distance * TRAVEL_BASE_MIN_PER_LEVEL * multiplier) - kunpengReduction)),
+    travelTime: isInstantAllHeavensTravel(player, fromLocation, toLocation)
+      ? 0
+      : Math.round(Math.max(1, Math.max(2, distance * TRAVEL_BASE_MIN_PER_LEVEL * multiplier) - kunpengReduction)),
     kunpengReduction,
   };
 }
 
 export function getTokenTravelTime(player, fromLocation, toLocation, tier) {
+  if (isInstantAllHeavensTravel(player, fromLocation, toLocation)) return 0;
+  const barrierTime = getDimensionBarrierTravelTime(player, fromLocation, toLocation);
+  if (barrierTime > 0) return barrierTime;
   const distance = Math.abs(Number(fromLocation) - Number(toLocation));
   if (distance === 0) return 0;
   const basePerLevel = tier === 'high' ? TOKEN_HIGH_MIN_PER_LEVEL : TOKEN_LOW_MIN_PER_LEVEL;

@@ -6,7 +6,13 @@ export const XIANGU_REALM_ROUTES = Object.freeze({
   12: Object.freeze({ targetLevelId: 13, targetName: '斩我境', costMultiplier: 30, tribulationMethod: '_runZhanwoTribulation' }),
   13: Object.freeze({ targetLevelId: 14, targetName: '遁一境', costMultiplier: 30, tribulationMethod: '_runDunyiTribulation' }),
   14: Object.freeze({ targetLevelId: 15, targetName: '至尊境', costMultiplier: 30, tribulationMethod: '_runZhizunTribulation' }),
+  20: Object.freeze({ targetLevelId: 21, targetName: '准仙帝', costMultiplier: 300, tribulationMethod: '_runPassedEmperorTribulation' }),
 });
+
+export function canBreakthroughXianguRealmHere(player, targetLevelId) {
+  const target = Number(targetLevelId);
+  return target < 16 || target > 20 || Number(player?.power_place) === 6;
+}
 
 // 载道劫判定（至尊路第四关）：自身之道境界达到「至尊·真意」及以上（阶段 index>=3）
 // 即可以身为种、以我为根，借道而不失本我，不留隐患；否则借外道载道，留下道基隐患。

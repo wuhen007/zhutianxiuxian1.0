@@ -3,10 +3,19 @@ import test from 'node:test';
 
 import {
   applyXianguImperialWeaponDefense,
+  canBreakthroughXianguRealmHere,
   XIANGU_REALM_ROUTES,
   hasXianguGongfa,
   settleXianguWaveDamage,
 } from '../apps/SecretPlace/xianguTribulationSettlement.js';
+
+test('仙古真仙至帝光仙王必须身处仙域', () => {
+  assert.equal(canBreakthroughXianguRealmHere({ power_place: 5 }, 15), true);
+  assert.equal(canBreakthroughXianguRealmHere({ power_place: 5 }, 16), false);
+  assert.equal(canBreakthroughXianguRealmHere({ power_place: '6' }, 16), true);
+  assert.equal(canBreakthroughXianguRealmHere({ power_place: 5 }, 20), false);
+  assert.equal(canBreakthroughXianguRealmHere({ power_place: 5 }, 21), true);
+});
 
 function makePlayer(extra = {}) {
   return {

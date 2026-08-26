@@ -8,6 +8,7 @@ import {
   ZHUTIAN_EXCLUSIVE_EQUIPMENT_SETS,
   applyExclusiveSetOpening,
   getZhutianExclusiveEquipmentBonus,
+  getZhutianWorldCompletion,
   rewriteBeyondDefeat,
 } from '../model/exclusiveEquipmentSets.js';
 import { calculateEquipmentSetBonuses } from '../model/equipmentStats.js';
@@ -52,6 +53,7 @@ test('七类诸天化身的二十一件专属装备已登记且不可交易', ()
 });
 
 test('诸天专属套装按对应灵根阶段同步增长全属性', () => {
+  assert.deepEqual(ZHUTIAN_EQUIPMENT_STAGE_BONUSES, [0, 2.5, 5, 8, 15]);
   for (const [avatarName, set] of Object.entries(ZHUTIAN_EXCLUSIVE_EQUIPMENT_SETS)) {
     const equipped = {
       武器: { ...set.weapon },
@@ -61,7 +63,11 @@ test('诸天专属套装按对应灵根阶段同步增长全属性', () => {
     set.roots.forEach((rootName, index) => {
       const stage = index + 1;
       const expected = ZHUTIAN_EQUIPMENT_STAGE_BONUSES[stage];
-      const result = getZhutianExclusiveEquipmentBonus({ 灵根: { name: rootName } }, equipped);
+      const player = {
+        灵根: { name: rootName },
+        诸天镜系统: { 世界进度: { [set.world]: { 探索度: 100 } } },
+      };
+      const result = getZhutianExclusiveEquipmentBonus(player, equipped);
       assert.deepEqual(result, {
         active: true,
         avatarName,
@@ -69,13 +75,33 @@ test('诸天专属套装按对应灵根阶段同步增长全属性', () => {
         stage,
         bonus: expected,
       });
-      assert.deepEqual(calculateEquipmentSetBonuses({ 灵根: { name: rootName } }, equipped), {
+      assert.deepEqual(calculateEquipmentSetBonuses(player, equipped), {
         攻: expected,
         防: expected,
         血: expected,
       });
     });
   }
+});
+
+test('诸天专属套装按所属世界完成度线性兑现阶段上限', () => {
+  const set = ZHUTIAN_EXCLUSIVE_EQUIPMENT_SETS.门矢士;
+  const player = {
+    灵根: { name: '帝骑·终极神主' },
+    诸天镜系统: { 世界进度: { [set.world]: { 探索度: 40 } } },
+  };
+  const equipped = {
+    武器: { ...set.weapon },
+    护具: { ...set.armor },
+    法宝: { ...set.treasure },
+  };
+  assert.equal(getZhutianWorldCompletion(player, set.world), 40);
+  assert.equal(getZhutianExclusiveEquipmentBonus(player, equipped).bonus, 6);
+  assert.deepEqual(calculateEquipmentSetBonuses(player, equipped), { 攻: 6, 防: 6, 血: 6 });
+
+  player.诸天镜系统.世界进度[set.world].探索度 = 100;
+  const fullBonus = calculateEquipmentSetBonuses(player, equipped).攻;
+  assert.equal(Math.trunc(6_250_000_000 * (1 + fullBonus)), 100_000_000_000);
 });
 
 test('诸天专属套装混穿、伪造编号或切换本源后不生效', () => {

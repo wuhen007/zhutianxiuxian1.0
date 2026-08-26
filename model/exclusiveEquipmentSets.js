@@ -19,11 +19,12 @@ export const EXCLUSIVE_EQUIPMENT_SETS = Object.freeze({
   }),
 });
 
-export const ZHUTIAN_EQUIPMENT_STAGE_BONUSES = Object.freeze([0, 0.3, 0.7, 1.5, 3]);
+export const ZHUTIAN_EQUIPMENT_STAGE_BONUSES = Object.freeze([0, 2.5, 5, 8, 15]);
 
 export const ZHUTIAN_EXCLUSIVE_EQUIPMENT_SETS = Object.freeze({
   木之本樱: Object.freeze({
     setName: '魔卡守护套',
+    world: '魔法少女樱',
     roots: Object.freeze(['木之本樱', '星之杖·木之本樱', '梦之杖·木之本樱']),
     weapon: Object.freeze({ id: 9600201, name: '【魔卡】星钥法杖' }),
     armor: Object.freeze({ id: 9600202, name: '【魔卡】守护法衣' }),
@@ -31,6 +32,7 @@ export const ZHUTIAN_EXCLUSIVE_EQUIPMENT_SETS = Object.freeze({
   }),
   鹿目圆: Object.freeze({
     setName: '圆环希望套',
+    world: '魔法少女小圆',
     roots: Object.freeze(['鹿目圆', '许愿者·圆', '希望之光·圆', '圆神']),
     weapon: Object.freeze({ id: 9600204, name: '【圆环】因果长弓' }),
     armor: Object.freeze({ id: 9600205, name: '【圆环】希望法衣' }),
@@ -38,6 +40,7 @@ export const ZHUTIAN_EXCLUSIVE_EQUIPMENT_SETS = Object.freeze({
   }),
   门矢士: Object.freeze({
     setName: '世界旅者套',
+    world: '假面骑士帝骑',
     roots: Object.freeze(['门矢士', '帝骑', '帝骑·神主', '帝骑·终极神主']),
     weapon: Object.freeze({ id: 9600207, name: '【帝骑】驾驭卡盒剑' }),
     armor: Object.freeze({ id: 9600208, name: '【帝骑】次元战甲' }),
@@ -45,6 +48,7 @@ export const ZHUTIAN_EXCLUSIVE_EQUIPMENT_SETS = Object.freeze({
   }),
   少女流萤: Object.freeze({
     setName: '焦土骑士套',
+    world: '星穹铁道·匹诺康尼',
     roots: Object.freeze(['少女流萤', '流萤萨姆机甲']),
     weapon: Object.freeze({ id: 9600210, name: '【流萤】火萤IV型光刃' }),
     armor: Object.freeze({ id: 9600211, name: '【流萤】萨姆装甲' }),
@@ -52,6 +56,7 @@ export const ZHUTIAN_EXCLUSIVE_EQUIPMENT_SETS = Object.freeze({
   }),
   伊蕾娜: Object.freeze({
     setName: '灰之魔女套',
+    world: '魔女之旅',
     roots: Object.freeze(['伊蕾娜']),
     weapon: Object.freeze({ id: 9600213, name: '【灰之魔女】星辰魔杖' }),
     armor: Object.freeze({ id: 9600214, name: '【灰之魔女】旅行法袍' }),
@@ -59,6 +64,7 @@ export const ZHUTIAN_EXCLUSIVE_EQUIPMENT_SETS = Object.freeze({
   }),
   爱莉希雅: Object.freeze({
     setName: '无瑕始源套',
+    world: '崩坏宇宙',
     roots: Object.freeze(['爱莉希雅', '人之律者·爱莉希雅', '始源之律者·爱莉希雅']),
     weapon: Object.freeze({ id: 9600216, name: '【始源】飞花爱之诗' }),
     armor: Object.freeze({ id: 9600217, name: '【始源】无瑕礼装' }),
@@ -66,6 +72,7 @@ export const ZHUTIAN_EXCLUSIVE_EQUIPMENT_SETS = Object.freeze({
   }),
   天命青儿: Object.freeze({
     setName: '天命剑道套',
+    world: '一剑独尊',
     roots: Object.freeze(['天命青儿']),
     weapon: Object.freeze({ id: 9600219, name: '【天命】行道剑' }),
     armor: Object.freeze({ id: 9600220, name: '【天命】大道青衣' }),
@@ -75,6 +82,12 @@ export const ZHUTIAN_EXCLUSIVE_EQUIPMENT_SETS = Object.freeze({
 
 export function getZhutianExclusiveEquipmentSet(avatarName) {
   return ZHUTIAN_EXCLUSIVE_EQUIPMENT_SETS[avatarName] || null;
+}
+
+export function getZhutianWorldCompletion(player, worldName) {
+  const progress = player?.诸天镜系统?.世界进度?.[worldName] || {};
+  const value = Number(progress.完成度 ?? progress.探索度) || 0;
+  return Math.min(100, Math.max(0, Math.floor(value)));
 }
 
 export function getZhutianExclusiveEquipmentBonus(player, equipment = {}) {
@@ -90,12 +103,14 @@ export function getZhutianExclusiveEquipmentBonus(player, equipment = {}) {
       equipped?.name === required.name && Number(equipped.id) === required.id
     );
     if (!matches) return { active: false, avatarName, setName: set.setName, stage, bonus: 0 };
+    const completion = getZhutianWorldCompletion(player, set.world);
+    const maxBonus = ZHUTIAN_EQUIPMENT_STAGE_BONUSES[stage] || 0;
     return {
       active: true,
       avatarName,
       setName: set.setName,
       stage,
-      bonus: ZHUTIAN_EQUIPMENT_STAGE_BONUSES[stage] || 0,
+      bonus: Number((maxBonus * completion / 100).toFixed(4)),
     };
   }
   return { active: false, avatarName: '', setName: '', stage: 0, bonus: 0 };

@@ -905,18 +905,24 @@ export class touyingzhutian extends plugin {
 
     // ==== 道化之身：投影完成自动创建 ====
     let mirrorRootChanged = false;
+    let mirrorCompletionChanged = false;
     if (endingType !== 'bad') {
       const mirrorRewards = recordProjectionMirrorProgress(player, world.name, {
         difficulty: world.difficulty,
         endingType,
       });
+      mirrorCompletionChanged = mirrorRewards.完成度增加 > 0;
       if (mirrorRewards.newMark) msg.push(`获得世界印记【${world.name}】`);
       const materialRows = ['镜尘', '世界残响', '位面晶核', '时空锚', '诸天镜心']
         .filter(name => mirrorRewards[name] > 0)
         .map(name => `${name}+${mirrorRewards[name]}`);
       msg.push(`诸天镜汲取世界余韵：${materialRows.join('、')}`);
+      if (mirrorRewards.完成度增加 > 0) {
+        msg.push(`${world.name}完成度 +${mirrorRewards.完成度增加}%，当前${mirrorRewards.世界完成度}%`);
+      }
       if (world.name === '魔卡少女樱') {
         const exploration = exploreTomoeda(player, '友枝小学', { consumeEnergy: false });
+        mirrorCompletionChanged = true;
         msg.push(`友枝町探索度 +8，镜尘 +${exploration.dust}${exploration.echo ? '，世界残响 +1' : ''}`);
         if (exploration.card) msg.push(`封印库洛牌【${exploration.card}】`);
         if (exploration.keyFound) msg.push('获得【封印之钥】');
@@ -924,6 +930,7 @@ export class touyingzhutian extends plugin {
       }
       if (world.name === '魔法少女小圆') {
         const exploration = exploreMitakihara(player, '蔷薇园魔女结界', { consumeEnergy: false });
+        mirrorCompletionChanged = true;
         msg.push(`见泷原探索度 +8，因果碎片 +1，希望碎片 +${exploration.hopeShards}`);
         if (exploration.griefSeed) msg.push('净化魔女结界，获得【悲叹之种】');
         if (exploration.gemFound) msg.push('获得【灵魂宝石】');
@@ -936,6 +943,7 @@ export class touyingzhutian extends plugin {
         if (!exploration.ok && exploration.reason === 'crisis') {
           msg.push('骑士世界融合度已满，本次投影未推进探索；请使用 #最终攻击驾驭 化解危机');
         } else {
+          mirrorCompletionChanged = true;
           msg.push(`骑士世界探索度 +8，世界共鸣 +${exploration.card ? 10 : 4}，融合度 +${exploration.fusionGain}`);
           if (exploration.card) msg.push(`获得骑士卡片【${exploration.card}】`);
           if (exploration.driverFound) msg.push('获得【帝骑驱动器】');
@@ -990,7 +998,7 @@ export class touyingzhutian extends plugin {
     settledMirror.已结算投影.push(settlementId);
     settledMirror.已结算投影 = settledMirror.已结算投影.slice(-100);
     await Write_player(playerId, player);
-    if (mirrorRootChanged) await player_efficiency(playerId);
+    if (mirrorRootChanged || mirrorCompletionChanged) await player_efficiency(playerId);
     await redis.del(actionKey);
 
     e.reply(msg.join('\n'));
