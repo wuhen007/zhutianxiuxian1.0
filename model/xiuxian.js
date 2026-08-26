@@ -16,6 +16,7 @@ import { swapEquipmentState } from './equipmentSwap.js';
 import { FileRollbackTransaction } from '../apps/SecretPlace/rebirthTransaction.js';
 import { releaseJuelingLifespanForAuthority } from './juelingLifespan.js';
 import { applyClowWishBattleWeakness } from './clowWish.js';
+import { findTalentSynchronizationMatch } from './talentSynchronization.js';
 // 道种专属技能全局池别名：战斗函数内 `data` 常被玩家参数遮蔽，故用 SKILL_DB 稳定引用 XiuxianData 单例
 const SKILL_DB = data;
 
@@ -12720,9 +12721,7 @@ export async function synchronization(e) {
     // 检查玩家灵根数据是否需要更新
     if (player.灵根 && isNotNull(player.灵根)) {
       // 查找新版本的灵根数据
-      let newTalent = data.talent_list.find(t => 
-        t.id === player.灵根.id || t.name === player.灵根.name
-      );
+      const newTalent = findTalentSynchronizationMatch(data.talent_list, player.灵根);
       
       if (newTalent) {
         // 旧存档独有字段保留，标准字段以当前物品表为准。
