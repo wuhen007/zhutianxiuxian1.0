@@ -1,22 +1,38 @@
 {
-  "lastCheckWorldYear": 2000,
+  "lastCheckWorldYear": 8000,
   "pity": {
-    "仙界": 2,
+    "仙界": 0,
     "太初星墟": 0
   },
   "activeRifts": [
     {
-      "id": "4000-太初星墟",
+      "id": "6000-太初星墟",
       "plane": "太初星墟",
-      "name": "归零舰墓",
-      "location": "归零舰墓",
+      "name": "无光观测站",
+      "location": "无光观测站",
       "coordinate": {
-        "x": 180,
+        "x": 820,
         "y": 180
       },
-      "worldYear": 4000,
-      "openedAt": 1787731201533,
-      "expiresAt": 1787745601533,
+      "worldYear": 6000,
+      "openedAt": 1787756401572,
+      "expiresAt": 1787770801572,
+      "anchor": 0,
+      "contribution": {},
+      "expeditions": {}
+    },
+    {
+      "id": "8000-仙界",
+      "plane": "仙界",
+      "name": "斩岁仙府",
+      "location": "冥寒仙府",
+      "coordinate": {
+        "x": 242,
+        "y": 116
+      },
+      "worldYear": 8000,
+      "openedAt": 1787763601073,
+      "expiresAt": 1787778001073,
       "anchor": 0,
       "contribution": {},
       "expeditions": {}
@@ -29,6 +45,27 @@
       "name": "归零舰墓",
       "worldYear": 4000,
       "openedAt": 1787731201533
+    },
+    {
+      "id": "4000-仙界",
+      "plane": "仙界",
+      "name": "万象丹庭",
+      "worldYear": 4000,
+      "openedAt": 1787745601878
+    },
+    {
+      "id": "6000-太初星墟",
+      "plane": "太初星墟",
+      "name": "无光观测站",
+      "worldYear": 6000,
+      "openedAt": 1787756401572
+    },
+    {
+      "id": "8000-仙界",
+      "plane": "仙界",
+      "name": "斩岁仙府",
+      "worldYear": 8000,
+      "openedAt": 1787763601073
     }
   ]
 }

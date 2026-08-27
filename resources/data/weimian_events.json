@@ -31,10 +31,142 @@
                 "foundAt": 1787724002775,
                 "expiresAt": 1787810402775
             }
+        },
+        {
+            "type": "treasureAppear",
+            "treasure": {
+                "name": "崆峒印",
+                "desc": "人皇至宝",
+                "rarity": "至宝",
+                "power": 14
+            },
+            "plane": "下界八域",
+            "location": "星空古路·下界段",
+            "coordinate": {
+                "x": 969,
+                "y": 457
+            },
+            "luckyPlayer": {
+                "qq": "2283096140",
+                "name": "路人甲2号"
+            },
+            "witnessCount": 6,
+            "timestamp": 1787760001282,
+            "expiresAt": 1787846401282,
+            "contest": {
+                "version": 1,
+                "status": "open",
+                "startedAt": 1787760001282,
+                "sealProgress": 0,
+                "participants": {
+                    "tianjiao:霸王浑战": {
+                        "qq": "tianjiao:霸王浑战",
+                        "name": "霸王浑战",
+                        "joinedAt": 1787760001283,
+                        "trials": {
+                            "battle": {
+                                "tag": "力",
+                                "score": 19,
+                                "detail": "力压守护灵，势如破竹。",
+                                "completedAt": 1787760001283
+                            },
+                            "insight": {
+                                "tag": "悟",
+                                "score": 18,
+                                "detail": "一眼洞悉禁制真意。",
+                                "completedAt": 1787760001283
+                            },
+                            "support": {
+                                "tag": "德",
+                                "score": 17,
+                                "detail": "以本源护住灵脉，泽被一方。",
+                                "completedAt": 1787760001283
+                            }
+                        },
+                        "trialScore": 54,
+                        "contribution": 7,
+                        "daoHeart": "守护苍生",
+                        "isTianjiao": true,
+                        "tianjiaoName": "霸王浑战"
+                    },
+                    "tianjiao:王腾": {
+                        "qq": "tianjiao:王腾",
+                        "name": "王腾",
+                        "joinedAt": 1787760001283,
+                        "trials": {
+                            "battle": {
+                                "tag": "力",
+                                "score": 18,
+                                "detail": "力压守护灵，势如破竹。",
+                                "completedAt": 1787760001283
+                            },
+                            "insight": {
+                                "tag": "悟",
+                                "score": 18,
+                                "detail": "一眼洞悉禁制真意。",
+                                "completedAt": 1787760001283
+                            },
+                            "support": {
+                                "tag": "德",
+                                "score": 17,
+                                "detail": "以本源护住灵脉，泽被一方。",
+                                "completedAt": 1787760001283
+                            }
+                        },
+                        "trialScore": 53,
+                        "contribution": 6,
+                        "daoHeart": "守护苍生",
+                        "isTianjiao": true,
+                        "tianjiaoName": "王腾"
+                    },
+                    "tianjiao:华云飞": {
+                        "qq": "tianjiao:华云飞",
+                        "name": "华云飞",
+                        "joinedAt": 1787760001283,
+                        "trials": {
+                            "battle": {
+                                "tag": "力",
+                                "score": 18,
+                                "detail": "力压守护灵，势如破竹。",
+                                "completedAt": 1787760001283
+                            },
+                            "insight": {
+                                "tag": "悟",
+                                "score": 18,
+                                "detail": "一眼洞悉禁制真意。",
+                                "completedAt": 1787760001283
+                            },
+                            "support": {
+                                "tag": "德",
+                                "score": 17,
+                                "detail": "以本源护住灵脉，泽被一方。",
+                                "completedAt": 1787760001283
+                            }
+                        },
+                        "trialScore": 53,
+                        "contribution": 6,
+                        "daoHeart": "守护苍生",
+                        "isTianjiao": true,
+                        "tianjiaoName": "华云飞"
+                    }
+                },
+                "rewardedQqs": [],
+                "profile": {
+                    "omen": "人道气运如长河汇聚，亿万呼声共同托起古印。"
+                }
+            },
+            "tianjiaoEntrants": [
+                "霸王浑战",
+                "王腾",
+                "华云飞"
+            ],
+            "source": "era",
+            "interaction": "treasure",
+            "participantQqs": []
         }
     ],
-    "lastEventTime": 2000,
-    "lastEventWorldYear": 2000,
+    "lastEventTime": 7000,
+    "lastEventWorldYear": 7000,
     "activeEvents": [
         {
             "type": "coordinateClue",
@@ -67,6 +199,138 @@
                 "foundAt": 1787724002775,
                 "expiresAt": 1787810402775
             }
+        },
+        {
+            "type": "treasureAppear",
+            "treasure": {
+                "name": "崆峒印",
+                "desc": "人皇至宝",
+                "rarity": "至宝",
+                "power": 14
+            },
+            "plane": "下界八域",
+            "location": "星空古路·下界段",
+            "coordinate": {
+                "x": 969,
+                "y": 457
+            },
+            "luckyPlayer": {
+                "qq": "2283096140",
+                "name": "路人甲2号"
+            },
+            "witnessCount": 6,
+            "timestamp": 1787760001282,
+            "expiresAt": 1787846401282,
+            "contest": {
+                "version": 1,
+                "status": "open",
+                "startedAt": 1787760001282,
+                "sealProgress": 0,
+                "participants": {
+                    "tianjiao:霸王浑战": {
+                        "qq": "tianjiao:霸王浑战",
+                        "name": "霸王浑战",
+                        "joinedAt": 1787760001283,
+                        "trials": {
+                            "battle": {
+                                "tag": "力",
+                                "score": 19,
+                                "detail": "力压守护灵，势如破竹。",
+                                "completedAt": 1787760001283
+                            },
+                            "insight": {
+                                "tag": "悟",
+                                "score": 18,
+                                "detail": "一眼洞悉禁制真意。",
+                                "completedAt": 1787760001283
+                            },
+                            "support": {
+                                "tag": "德",
+                                "score": 17,
+                                "detail": "以本源护住灵脉，泽被一方。",
+                                "completedAt": 1787760001283
+                            }
+                        },
+                        "trialScore": 54,
+                        "contribution": 7,
+                        "daoHeart": "守护苍生",
+                        "isTianjiao": true,
+                        "tianjiaoName": "霸王浑战"
+                    },
+                    "tianjiao:王腾": {
+                        "qq": "tianjiao:王腾",
+                        "name": "王腾",
+                        "joinedAt": 1787760001283,
+                        "trials": {
+                            "battle": {
+                                "tag": "力",
+                                "score": 18,
+                                "detail": "力压守护灵，势如破竹。",
+                                "completedAt": 1787760001283
+                            },
+                            "insight": {
+                                "tag": "悟",
+                                "score": 18,
+                                "detail": "一眼洞悉禁制真意。",
+                                "completedAt": 1787760001283
+                            },
+                            "support": {
+                                "tag": "德",
+                                "score": 17,
+                                "detail": "以本源护住灵脉，泽被一方。",
+                                "completedAt": 1787760001283
+                            }
+                        },
+                        "trialScore": 53,
+                        "contribution": 6,
+                        "daoHeart": "守护苍生",
+                        "isTianjiao": true,
+                        "tianjiaoName": "王腾"
+                    },
+                    "tianjiao:华云飞": {
+                        "qq": "tianjiao:华云飞",
+                        "name": "华云飞",
+                        "joinedAt": 1787760001283,
+                        "trials": {
+                            "battle": {
+                                "tag": "力",
+                                "score": 18,
+                                "detail": "力压守护灵，势如破竹。",
+                                "completedAt": 1787760001283
+                            },
+                            "insight": {
+                                "tag": "悟",
+                                "score": 18,
+                                "detail": "一眼洞悉禁制真意。",
+                                "completedAt": 1787760001283
+                            },
+                            "support": {
+                                "tag": "德",
+                                "score": 17,
+                                "detail": "以本源护住灵脉，泽被一方。",
+                                "completedAt": 1787760001283
+                            }
+                        },
+                        "trialScore": 53,
+                        "contribution": 6,
+                        "daoHeart": "守护苍生",
+                        "isTianjiao": true,
+                        "tianjiaoName": "华云飞"
+                    }
+                },
+                "rewardedQqs": [],
+                "profile": {
+                    "omen": "人道气运如长河汇聚，亿万呼声共同托起古印。"
+                }
+            },
+            "tianjiaoEntrants": [
+                "霸王浑战",
+                "王腾",
+                "华云飞"
+            ],
+            "source": "era",
+            "interaction": "treasure",
+            "participantQqs": []
         }
     ],
     "eventCooldown": 2000,

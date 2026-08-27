@@ -2,29 +2,7 @@
 	"version": 1,
 	"active": {
 		"cleansing": null,
-		"daoSighting": {
-			"id": "dao-sighting-1787745000040-791470",
-			"type": "dao-treasure-sighting",
-			"status": "active",
-			"createdAt": 1787745000040,
-			"expiresAt": 1787746800040,
-			"createdWorldYear": 3000,
-			"expiresWorldYear": 4000,
-			"treasure": {
-				"name": "无界道门",
-				"title": "空间大道显化"
-			},
-			"location": {
-				"plane": "界海",
-				"name": "魂河故道",
-				"coordinate": {
-					"x": 841,
-					"y": 735
-				}
-			},
-			"seekers": {},
-			"claimant": null
-		}
+		"daoSighting": null
 	},
 	"history": [
 		{
@@ -44,6 +22,36 @@
 			"eventId": "dao-sighting-1787745000040-791470",
 			"serverId": "global",
 			"at": 1787745000040
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1787745000040-791470",
+			"serverId": "global",
+			"at": 1787746200036
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1787752800034-646162",
+			"serverId": "global",
+			"at": 1787752800034
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1787752800034-646162",
+			"serverId": "global",
+			"at": 1787753400050
+		},
+		{
+			"type": "dao-sighting-auto-opened",
+			"eventId": "dao-sighting-1787762400047-669489",
+			"serverId": "global",
+			"at": 1787762400047
+		},
+		{
+			"type": "daoSighting-expired",
+			"eventId": "dao-sighting-1787762400047-669489",
+			"serverId": "global",
+			"at": 1787764200037
 		}
 	],
 	"lastAutoSpawnAt": 0
