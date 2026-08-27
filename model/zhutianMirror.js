@@ -940,6 +940,20 @@ export function loadZhutianAvatar(player, avatarName, { now = Date.now() } = {})
   return { ok: true, name: avatar.name, root: player.灵根, system };
 }
 
+export function recoverMissingZhutianOrigin(player, originRoot, { now = Date.now() } = {}) {
+  const system = ensureZhutianMirrorSystem(player, { now });
+  if (!LEGACY_AVATARS[player.灵根?.name]) return { ok: false, reason: 'root', system };
+  if (system.本源灵根) return { ok: false, reason: 'exists', root: clone(system.本源灵根), system };
+  if (system.本源灵根已补领) return { ok: false, reason: 'claimed', system };
+  if (!originRoot || typeof originRoot !== 'object' || !originRoot.name || LEGACY_AVATARS[originRoot.name]) {
+    return { ok: false, reason: 'candidate', system };
+  }
+
+  system.本源灵根 = clone(originRoot);
+  system.本源灵根已补领 = true;
+  return { ok: true, root: clone(system.本源灵根), avatarName: system.当前化身, system };
+}
+
 export function syncCurrentZhutianAvatar(player, { now = Date.now() } = {}) {
   const system = ensureZhutianMirrorSystem(player, { now, migrateLegacy: false });
   const legacy = LEGACY_AVATARS[player.灵根?.name];

@@ -5,6 +5,7 @@ import {
   __PATH,
   channel,
   existplayer,
+  get_random_talent,
   invalidateBattleEquipmentCache,
   player_efficiency,
   Read_equipment,
@@ -27,6 +28,7 @@ import {
   MIRROR_REFINEMENT_REQUIREMENTS,
   MIRROR_TIER_CONFIG,
   purifyMadokaSoulGem,
+  recoverMissingZhutianOrigin,
   refineZhutianMirror,
   resetMitakiharaTimeline,
   setClowCardDeck,
@@ -198,6 +200,7 @@ export class ZhutianMirrorSystem extends plugin {
         { reg: '^#终极卡试炼(?:\\s+.*)?$', fnc: 'ultimateCardTrial' },
         { reg: '^#诸天化身$', fnc: 'avatarPanel' },
         { reg: '^#装载化身\\s*.*$', fnc: 'loadAvatar' },
+        { reg: '^#(?:重新获取灵根|重获本源灵根)$', fnc: 'recoverOriginRoot' },
         { reg: '^#淬炼诸天镜$', fnc: 'refineMirror' },
       ],
     });
@@ -663,7 +666,7 @@ export class ZhutianMirrorSystem extends plugin {
       const result = loadZhutianAvatar(player, avatarName);
       if (!result.ok) {
         if (result.reason === 'unbound') return e.reply('请先绑定诸天镜。');
-        if (result.reason === 'origin') return e.reply('旧版诸天灵根迁移时没有留下原灵根记录，当前没有可返回的本源灵根。');
+        if (result.reason === 'origin') return e.reply('旧版诸天灵根迁移时未留下本源记录，可发送 #重新获取灵根 进行一次性补领。');
         return e.reply(`化身谱中尚未收录【${avatarName}】，使用 #诸天化身 查看。`);
       }
 
@@ -705,6 +708,32 @@ export class ZhutianMirrorSystem extends plugin {
       const rows = [`诸天镜映照己身，已装载【${result.name}】。`];
       if (set) rows.push(`专属套装【${set.setName}】已同步至纳戒，穿齐后按当前化身阶段提升全属性。`);
       return e.reply(rows.join('\n'));
+    });
+  }
+
+  async recoverOriginRoot(e) {
+    const playerId = await getPlayerId(e);
+    if (!await existplayer(playerId)) return e.reply('玩家不存在，请先创建角色');
+    return withPlayerMutationLock(playerId, async () => {
+      const player = await Read_player(playerId);
+      const originRoot = await get_random_talent();
+      const result = recoverMissingZhutianOrigin(player, originRoot);
+      if (!result.ok) {
+        if (result.reason === 'exists') {
+          return e.reply(`已经保存本源灵根【${result.root.name}】，使用 #装载化身 本源 即可切换。`);
+        }
+        if (result.reason === 'claimed') return e.reply('本源灵根已经补领过，不可重复获取。');
+        if (result.reason === 'candidate') return e.reply('本源凝聚异常，请重新发送指令。');
+        return e.reply('该指令仅供当前使用旧版诸天镜系列灵根、且缺少本源存档的玩家使用。');
+      }
+
+      await Write_player(playerId, player);
+      return e.reply([
+        '【本源灵根补领成功】',
+        `旧存档未保留原始灵根数值，已按初始灵根规则重新凝聚【${result.root.name}】作为本源。`,
+        `当前仍保持【${player.灵根.name}】化身，使用 #装载化身 本源 即可切换。`,
+        '本次补领已永久记录。',
+      ].join('\n'));
     });
   }
 
