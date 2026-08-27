@@ -146,7 +146,7 @@ test('愿鳞兑换档位、数量及绑定引潮灯符合设定', () => {
   assert.equal(parseWishScaleExchange('#愿鳞兑换 宇宙核心'), '宇宙核心');
   assert.deepEqual(WISH_SCALE_EXCHANGE_NAMES, [
     '众生仙钓', '百草香饵', '神藏仙饵', '矿髓沉饵', '因果道饵', '轮回冥饵',
-    '宇宙核心', '界核', '鸿蒙道火', '三千弱水', '万界引潮灯', '轮回命签',
+    '宇宙核心', '界核', '鸿蒙道火', '三千弱水', '万界引潮灯', '大衍悟道丹配方', '轮回命签',
   ]);
   assert.deepEqual(
     WISH_SCALE_EXCHANGE_NAMES.map(name => [name, getWishScaleExchangeConfig(name).cost]),
@@ -154,7 +154,7 @@ test('愿鳞兑换档位、数量及绑定引潮灯符合设定', () => {
       ['众生仙钓', 5], ['百草香饵', 30], ['神藏仙饵', 30],
       ['矿髓沉饵', 40], ['因果道饵', 50], ['轮回冥饵', 50],
       ['宇宙核心', 80], ['界核', 80], ['鸿蒙道火', 80],
-      ['三千弱水', 80], ['万界引潮灯', 120], ['轮回命签', 50],
+      ['三千弱水', 80], ['万界引潮灯', 120], ['大衍悟道丹配方', 200], ['轮回命签', 50],
     ]
   );
   for (const name of ['宇宙核心', '界核', '鸿蒙道火', '三千弱水']) {
@@ -167,6 +167,10 @@ test('愿鳞兑换档位、数量及绑定引潮灯符合设定', () => {
   assert.ok(itemLists.some(item => item.name === '轮回命签' && item.class === '道具'));
   const lamp = itemLists.find(item => item.name === '万界引潮灯');
   assert.equal(lamp.不可交易, 1);
+  const pillRecipe = getWishScaleExchangeConfig('大衍悟道丹配方');
+  assert.equal(pillRecipe.unique, true);
+  assert.equal(pillRecipe.unlockFlag, '大衍悟道丹配方');
+  assert.ok(itemLists.some(item => item.name === '大衍悟道丹配方' && item.不可交易 === 1));
 });
 
 test('垂钓基础四十分钟，引潮灯先减半，道法仙术再减十分钟', () => {

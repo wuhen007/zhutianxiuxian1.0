@@ -116,6 +116,10 @@ export class Occupation extends plugin {
           fnc: 'show_danfang',
         },
         {
+          reg: '^#参悟大衍悟道丹配方$',
+          fnc: 'learnDayanWudaoPillRecipe',
+        },
+        {
           reg: '^#符道配方$',
           fnc: 'show_zhizuo',
         },
@@ -3275,6 +3279,38 @@ async shoulie_back(e) {
     let img = await get_danfang_img(e);
     e.reply(img);
     return false;
+  }
+  async learnDayanWudaoPillRecipe(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return false;
+
+    const recipeName = '大衍悟道丹配方';
+    const player = await Read_player(usr_qq);
+    if (player[recipeName]) {
+      return e.reply('你已经参悟【大衍悟道丹配方】，满级炼丹师可使用 #炼制大衍悟道丹*数量');
+    }
+    if (Number(await exist_najie_thing(usr_qq, recipeName, '道具')) < 1) {
+      return e.reply('你还没有【大衍悟道丹配方】，可使用 #愿鳞兑换 大衍悟道丹配方 消耗200众生愿鳞兑换');
+    }
+
+    await Add_najie_thing(usr_qq, recipeName, '道具', -1);
+    player[recipeName] = true;
+    try {
+      await Write_player(usr_qq, player);
+    } catch (error) {
+      await Add_najie_thing(usr_qq, recipeName, '道具', 1);
+      console.error('[大衍悟道丹配方] 参悟存档失败，已退还配方', error);
+      return e.reply('参悟失败，配方已退还，请稍后重试');
+    }
+
+    return e.reply([
+      '【大衍悟道丹配方已参悟】',
+      '炼制门槛：满级（36级·白袍极品）炼丹师',
+      '每颗消耗：悟道古茶叶×10、万年凝血草×20、万年太玄果×20、万年天魂菊×20、万年清心草×20',
+      '发送 #炼制大衍悟道丹*数量 即可炼制。',
+    ].join('\n'));
   }
     async show_zhizuo(e) {
     if (!verc({ e })) return false;

@@ -125,6 +125,12 @@ const wishScaleExchangeConfigs = {
     reward: { name: "万界引潮灯", class: "道具", amount: 1 },
     unique: true,
   },
+  大衍悟道丹配方: {
+    cost: 200,
+    reward: { name: "大衍悟道丹配方", class: "道具", amount: 1 },
+    unique: true,
+    unlockFlag: "大衍悟道丹配方",
+  },
   轮回命签: { cost: 50, reward: { name: "轮回命签", class: "道具", amount: 50 } },
 };
 
