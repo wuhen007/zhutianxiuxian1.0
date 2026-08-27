@@ -10,6 +10,7 @@ import {  Write_player,  } from '../../model/xiuxian.js'
 import { shijianc,  isNotNull,ForwardMsg } from '../../model/xiuxian.js'
 import { Add_灵石,  Add_najie_thing,channel} from '../../model/xiuxian.js'
 import { getMinggeEffects, getMinggeDirectMultiplier } from '../../model/mingge.js';
+import { DAILY_SIGN_BUTTONS, replyOfficialMessage } from '../../model/officialMessage.js';
 
 import { segment } from "oicq"
 import { __PATH } from '../../model/xiuxian.js'
@@ -178,8 +179,11 @@ async preview_pifu(e) {
             let Today = await shijianc(nowTime);
             let lastsign_time = await getxinghailastsign_time(usr_qq);//获得上次签到日期
             if (Today.Y == lastsign_time.Y && Today.M == lastsign_time.M && Today.D == lastsign_time.D) {
-                e.reply(`今日已经签到过了`);
-                return;
+                return replyOfficialMessage(e, {
+                    markdown: '今日已经完成星海之缘签到。',
+                    text: '今日已经签到过了',
+                    buttons: DAILY_SIGN_BUTTONS,
+                });
             }
             if (player.level_id < 42 ) {
             e.reply('成仙以后才能签到');
@@ -212,8 +216,12 @@ async preview_pifu(e) {
                 await Add_najie_thing(usr_qq, "魔君讨伐令", "道具", 3);
                 await Add_najie_thing(usr_qq, "群星秘钥", "道具", 5);
                 player.星海之缘签到天数 = 999;
-                e.reply("您已连续签到七天,成功领取四周目福利礼包("+thing_name+"灵石x20w,群星秘钥x5,秘境之匙x5,魔君讨伐令x3,真我宝盒x1)")
-                return
+                const milestoneMessage = "您已连续签到七天,成功领取四周目福利礼包("+thing_name+"灵石x20w,群星秘钥x5,秘境之匙x5,魔君讨伐令x3,真我宝盒x1)";
+                return replyOfficialMessage(e, {
+                    markdown: milestoneMessage,
+                    text: milestoneMessage,
+                    buttons: DAILY_SIGN_BUTTONS,
+                });
             }
 
             //给奖励（命格·签到奖励倍率，与修仙签到一致）
@@ -236,8 +244,12 @@ async preview_pifu(e) {
             await Write_player(usr_qq,player)
             await Add_修为(usr_qq, gift_xiuwei);
             await Add_血气(usr_qq, gift_xiuwei);
-            e.reply(msg);
-            return;
+            return replyOfficialMessage(e, {
+                markdown: msg.filter(item => typeof item === 'string').join('\n'),
+                text: msg,
+                content: msg.filter(item => typeof item !== 'string'),
+                buttons: DAILY_SIGN_BUTTONS,
+            });
         }
 async zhaohuanailixiya(e) {
     if (!e.isGroup) {

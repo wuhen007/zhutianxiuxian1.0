@@ -15,6 +15,7 @@ import {
 } from '../model/xiuxian.js';
 import { getPlayerPlaneCoordinate, getPlayerPlaneName } from '../model/planeCoords.js';
 import { getRealmAuthorityLevel } from '../model/realmAuthority.js';
+import { DAILY_SIGN_BUTTONS, replyOfficialMessage } from '../model/officialMessage.js';
 import { getShanghaiDateKey, rememberCoordinate } from '../model/weimianTravel.js';
 import {
   FESTIVAL_PLANE,
@@ -169,7 +170,14 @@ export class PlaneRiftFestival extends plugin {
     const { qq, player } = account;
     const now = new Date();
     const result = updateFestivalSign(player, getShanghaiDateKey(now), previousDateKey(now));
-    if (!result.ok) return e.reply('今日已经巡界签到过了。');
+    if (!result.ok) {
+      const message = '今日已经巡界签到过了。';
+      return replyOfficialMessage(e, {
+        markdown: message,
+        text: message,
+        buttons: DAILY_SIGN_BUTTONS,
+      });
+    }
 
     const { streak, total } = result.sign;
     const passes = streak % 7 === 0 ? 3 : streak % 3 === 0 ? 2 : 1;
@@ -190,13 +198,18 @@ export class PlaneRiftFestival extends plugin {
       extras.push('星图×1');
     }
 
-    return e.reply([
+    const message = [
       '【巡界签到】',
       `连续签到：${streak}天　累计：${total}天`,
       `获得修为与血气各${gain}、${PASS_NAME}×${passes}${extras.length ? `、${extras.join('、')}` : ''}`,
       firstCoordinate ? `巡界司已将「${FESTIVAL_PLANE}」坐标烙入你的星图。` : null,
       `连续签到可为裂界探索提供最高7%成功率加成。`,
-    ].filter(Boolean).join('\n'));
+    ].filter(Boolean).join('\n');
+    return replyOfficialMessage(e, {
+      markdown: message,
+      text: message,
+      buttons: DAILY_SIGN_BUTTONS,
+    });
   }
 
   async riftStatus(e) {

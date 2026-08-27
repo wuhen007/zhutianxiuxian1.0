@@ -1,5 +1,6 @@
 import { plugin, verc } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
+import { replyImageWithButtons } from '../../model/officialMessage.js';
 import {
   get_gongfa_img,
   get_duanzaocailiao_img,
@@ -24,6 +25,26 @@ import {
   get_weimian_img,
   get_yaochi_img
 } from '../../model/xiuxian.js';
+
+const ATLAS_BUTTONS = [
+  [
+    { text: '装备楼', command: '#装备楼', permission: false },
+    { text: '功法楼', command: '#功法楼', permission: false },
+  ],
+  [
+    { text: '锻造材料楼', command: '#锻造材料楼', permission: false },
+    { text: '丹药楼', command: '#丹药楼', permission: false },
+  ],
+  [
+    { text: '道具楼', command: '#道具楼', permission: false },
+    { text: '仙宠楼', command: '#仙宠楼', permission: false },
+  ],
+  [
+    { text: '位面图鉴', command: '#位面图鉴', permission: false },
+    { text: '合成图鉴', command: '#合成图鉴', permission: false },
+  ],
+];
+
 export class Showningmeng extends plugin {
   constructor(e) {
     super({
@@ -180,7 +201,7 @@ export class Showningmeng extends plugin {
   async Show_XianChong(e) {
     if (!verc({ e })) return false;
     let img = await get_XianChong_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
 
@@ -188,7 +209,7 @@ export class Showningmeng extends plugin {
   async Show_WuQi(e) {
     if (!verc({ e })) return false;
     let img = await get_wuqi_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
 
@@ -196,28 +217,28 @@ export class Showningmeng extends plugin {
   async Show_DanYao(e) {
     if (!verc({ e })) return false;
     let img = await get_danyao_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
   //功法楼
   async Show_GongFa(e) {
     if (!verc({ e })) return false;
     let img = await get_gongfa_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
   //锻造材料楼
   async Show_DuanzhaoCailiao(e) {
     if (!verc({ e })) return false;
     const img = await get_duanzaocailiao_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
   //合成图鉴
   async Show_hecheng(e) {
     if (!verc({ e })) return false;
     let img = await get_hecheng_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
     //洗根榜
@@ -252,7 +273,7 @@ export class Showningmeng extends plugin {
   async Show_weimian(e) {
     if (!verc({ e })) return false;
     let img = await get_weimian_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
   //练气皮肤图鉴
@@ -280,7 +301,7 @@ export class Showningmeng extends plugin {
   async Show_DaoJu(e) {
     if (!verc({ e })) return false;
     let img = await get_daoju_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: ATLAS_BUTTONS });
     return false;
   }
 }

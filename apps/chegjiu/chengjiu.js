@@ -14,6 +14,22 @@ import {
 } from '../../model/xiuxian.js';
 import { Add_灵石, Add_修为, Add_血气, Add_najie_thing } from '../../model/xiuxian.js';
 import { canTeachGongfa } from '../../model/gongfaTeaching.js';
+import { replyOfficialButtons } from '../../model/officialMessage.js';
+
+const ASSISTANT_BUTTONS = [
+    [
+        { text: '我的练气', command: '#我的练气', permission: false },
+        { text: '我的炼体', command: '#我的炼体', permission: false },
+    ],
+    [
+        { text: '我的任务', command: '#我的任务', permission: false },
+        { text: '我的纳戒', command: '#我的纳戒', permission: false },
+    ],
+    [
+        { text: '位面图鉴', command: '#位面图鉴', permission: false },
+        { text: '我的小世界', command: '#我的小世界', permission: false },
+    ],
+];
 
 
 
@@ -182,6 +198,10 @@ async  xiuxianzhushou(e) {
     msg.push(`修仙小贴士：${randomTip}`);
     
     await ForwardMsg(e, msg);
+    await replyOfficialButtons(e, {
+        markdown: '# 修仙助手',
+        buttons: ASSISTANT_BUTTONS,
+    });
 }
 async chengjiu1(e) {
     let usr_qq = e.user_id.toString().replace('qg_','');

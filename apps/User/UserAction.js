@@ -19,6 +19,27 @@ import {
   channel,
   buildAt
 } from '../../model/xiuxian.js';
+import { replyImageWithButtons } from '../../model/officialMessage.js';
+
+const NAJIE_BUTTONS = [
+  [
+    { text: '装备', command: '#纳戒装备', permission: false },
+    { text: '丹药', command: '#纳戒丹药', permission: false },
+  ],
+  [
+    { text: '道具', command: '#纳戒道具', permission: false },
+    { text: '材料', command: '#纳戒材料', permission: false },
+  ],
+  [
+    { text: '功法', command: '#纳戒功法', permission: false },
+    { text: '草药', command: '#纳戒草药', permission: false },
+  ],
+  [
+    { text: '食材', command: '#纳戒食材', permission: false },
+    { text: '盒子', command: '#纳戒盒子', permission: false },
+  ],
+];
+
 export class UserAction extends plugin {
   constructor() {
     super({
@@ -449,7 +470,7 @@ target.神识 = target.神识 || 0;
     
     // 生成类别图片
     let img = await get_najie_category_img(e, category);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: NAJIE_BUTTONS });
     return true;
   }
 
@@ -465,7 +486,7 @@ target.神识 = target.神识 || 0;
     
     // 获取纳戒图片
     let img = await get_najie_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: NAJIE_BUTTONS });
     return false;
   }
 
@@ -1253,7 +1274,7 @@ async dating(e) {
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) return false;
     let img = await get_najie_img(e);
-    e.reply(img);
+    replyImageWithButtons(e, { image: img, buttons: NAJIE_BUTTONS });
     return false;
   }
 

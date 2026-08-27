@@ -26,6 +26,10 @@ import {
 import { getPlayerPlaneName } from "../../model/planeCoords.js";
 import { getRealmEventWorldYear } from "../../model/realmEventClock.js";
 import {
+  DAILY_SIGN_BUTTONS,
+  replyOfficialMessage,
+} from "../../model/officialMessage.js";
+import {
   claimImmortalFishingSign,
   consumeFishAtlasSets,
   getPendingFishAtlasRewards,
@@ -67,7 +71,12 @@ export class ImmortalFishing extends plugin {
       if (!player) return e.reply("你还未踏入修仙界，请先发送【#踏入仙途】。");
       const result = claimImmortalFishingSign(player);
       if (!result.claimed) {
-        return e.reply("今日已垂纶于诸天界河，机缘已定，明日再来。已连续垂纶" + result.streak + "日。");
+        const message = "今日已垂纶于诸天界河，机缘已定，明日再来。已连续垂纶" + result.streak + "日。";
+        return replyOfficialMessage(e, {
+          markdown: message,
+          text: message,
+          buttons: DAILY_SIGN_BUTTONS,
+        });
       }
 
       const rewards = result.rewards || { hookAmount: result.amount, baits: [] };
@@ -110,7 +119,12 @@ export class ImmortalFishing extends plugin {
         ...rewards.baits.map(bait => bait.name + " x" + bait.amount),
         "连续垂纶" + result.streak + "日" + bonus + "。",
       ];
-      return e.reply(lines.join("\n"));
+      const message = lines.join("\n");
+      return replyOfficialMessage(e, {
+        markdown: message,
+        text: message,
+        buttons: DAILY_SIGN_BUTTONS,
+      });
     });
   }
 
@@ -311,6 +325,10 @@ export class ImmortalFishing extends plugin {
         return true;
       }
       if (config.unique) {
+        if (config.unlockFlag && player[config.unlockFlag]) {
+          await e.reply(`你已经参悟【${config.reward.name}】，无需重复兑换。`);
+          return true;
+        }
         const owned = await exist_najie_thing(
           usr_qq,
           config.reward.name,

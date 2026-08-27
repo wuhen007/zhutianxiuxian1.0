@@ -21,7 +21,11 @@ import {
 } from '../../model/dailyTask.js';
 import { getMinggeEffects, grantMinggePotential } from '../../model/mingge.js';
 import { recordWenXianTaskProgress, recordWenXianTrial } from '../../model/wenxianling.js';
-import { replyOfficialMessage } from '../../model/officialMessage.js';
+import {
+    DAILY_SIGN_BUTTONS,
+    replyImageWithButtons,
+    replyOfficialMessage,
+} from '../../model/officialMessage.js';
 import { WenXianLing } from '../WenXianLing/WenXianLing.js';
 import {
     acquireRedisLock,
@@ -35,10 +39,17 @@ const DAILY_REWARD_READY_BUTTONS = [[
     { text: '领取每日奖励', command: '#领取每日奖励', permission: false },
     { text: '查看任务', command: '#我的任务', permission: false },
 ]];
-const DAILY_REWARD_CLAIMED_BUTTONS = [[
+const DAILY_TASK_BUTTONS = [[
     { text: '查看任务', command: '#我的任务', permission: false },
-    { text: '修仙签到', command: '#修仙签到', permission: false },
+    { text: '提交任务', command: '#提交每日任务', permission: false },
 ]];
+const DAILY_REWARD_CLAIMED_BUTTONS = [
+    [
+        { text: '每日抽奖', command: '#每日抽奖', permission: false },
+        { text: '查看任务', command: '#我的任务', permission: false },
+    ],
+    ...DAILY_SIGN_BUTTONS,
+];
 
 function getDailyFinalReward(record, player) {
     const level = Number(record?.等级) || 0;
@@ -210,7 +221,11 @@ export class meirrenwu extends plugin {
             await Write_player(usr_qq, player, { trackDailyTask: false });
             await redis.set(`xiuxian:player:${usr_qq}:last_renwu_time`, nowTime);
             await redis.del(`xiuxian:player:${usr_qq}:renwu_lingshi_jilu`);
-            return e.reply('今日任务成功接取');
+            return replyOfficialMessage(e, {
+                markdown: '# 每日任务已接取\n\n> 今日三项修行任务已经刷新。',
+                text: '今日任务成功接取',
+                buttons: DAILY_TASK_BUTTONS,
+            });
         });
     }
     /**
@@ -377,6 +392,7 @@ export class meirrenwu extends plugin {
         }
 
         let ready = false;
+        let buttons = DAILY_TASK_BUTTONS;
         await withDailyTaskLock(e, async () => {
             const renwu = await Read_renwu();
             const i = findDailyTaskIndex(renwu, usr_qq);
@@ -386,12 +402,17 @@ export class meirrenwu extends plugin {
             const before = `${renwu[i].jilu1}:${renwu[i].jilu2}`;
             syncLingshiProgress(renwu[i], player);
             if (before !== `${renwu[i].jilu1}:${renwu[i].jilu2}`) await Write_renwu(renwu);
+            if (isDailyTaskComplete(renwu[i])) {
+                buttons = renwu[i].renwu === 2
+                    ? DAILY_REWARD_CLAIMED_BUTTONS
+                    : DAILY_REWARD_READY_BUTTONS;
+            }
             ready = true;
         });
         if (!ready) return false;
 
         const img = await get_renwu_img(e);
-        return e.reply(img);
+        return replyImageWithButtons(e, { image: img, buttons });
     }
     /**
      * 领取每日奖励
