@@ -28,6 +28,11 @@ import {
   normalizeNajieDropLocation,
 } from '../../model/najieDropLocation.js';
 import {
+  filterRememberedNajieDrops,
+  hasNajieDropMemory,
+  tryRecallOwnNajieDrop,
+} from '../../model/najieDropMemory.js';
+import {
   getPlayerPlaneCoordinate,
   getPlayerPlaneName,
 } from '../../model/planeCoords.js';
@@ -607,6 +612,12 @@ async function pickupNajieDrop(dropKey, pickerId) {
     }
 
     const picker = await Read_player(pickerId);
+    if (!hasNajieDropMemory(picker, dropKey)) {
+      return {
+        success: false,
+        message: '你对这枚纳戒没有任何记忆，即使抵达坐标，也只会与它擦肩而过。',
+      };
+    }
     const reach = checkNajieDropReach(picker, data.location);
     if (!reach.ok && reach.reason === 'plane') {
       return {
@@ -1059,6 +1070,7 @@ async function forceRebirthPlayer(
       const hasLoot = (oldNajie && !isNajieEmpty(oldNajie)) || hasEquipment || hasPet;
       if (hasLoot) {
         dropInfo = await createNajieDrop(player_id, oldPlayer, augmentedNajie, taskId);
+        dropInfo.remembered = tryRecallOwnNajieDrop(new_player, dropInfo.dropKey);
         console.log(`【纳戒掉落】玩家 ${player_id} 的遗物掉落至 ${formatLocation(dropInfo.location)}（装备:${hasEquipment} 仙宠:${hasPet}）`);
       }
     } catch (err) {
@@ -1101,7 +1113,9 @@ async function forceRebirthPlayer(
 
     let najieDropMsg = '';
     if (dropInfo) {
-      najieDropMsg = `\n【纳戒遗落】前世纳戒遗落于${dropInfo.location.weimianName}，坐标(${dropInfo.location.x}, ${dropInfo.location.y})，有缘人或可寻得...`;
+      najieDropMsg = dropInfo.remembered
+        ? `\n【前尘记忆】你记起前世纳戒遗落于${dropInfo.location.weimianName}，坐标(${dropInfo.location.x}, ${dropInfo.location.y})。`
+        : `\n【前尘尽忘】前世纳戒已坠入诸天，但相关记忆被轮回磨灭；纵使旁人知晓坐标，也无法凭空寻得。`;
     }
 
     let rebornMsg;
@@ -1992,10 +2006,16 @@ class NajieDrop extends plugin {
   // 列出所有未捡取的遗落纳戒
   async listNajieDrops(e) {
     try {
-      const drops = await getAllNajieDrops();
+      const player = await Read_player(e.user_id.toString().replace('qg_', ''));
+      const allDrops = await getAllNajieDrops();
+      const drops = filterRememberedNajieDrops(allDrops, player);
       
-      if (drops.length === 0) {
+      if (allDrops.length === 0) {
         await e.reply('当前没有任何遗落的纳戒。');
+        return;
+      }
+      if (drops.length === 0) {
+        await e.reply('你尚未忆起任何遗落纳戒。探索秘境时，或许能触及相关残忆。');
         return;
       }
       
@@ -2003,8 +2023,9 @@ class NajieDrop extends plugin {
       
       for (let i = 0; i < Math.min(drops.length, 10); i++) {
         const drop = drops[i];
+        const globalIndex = allDrops.findIndex(item => item.key === drop.key) + 1;
         const remaining = Math.ceil((drop.expiredTime - Date.now()) / (1000 * 60 * 60));
-        msg.push(`【${i + 1}】前主：${drop.player_name}`);
+        msg.push(`【${globalIndex}】前主：${drop.player_name}`);
         msg.push(`    位置：${drop.location.weimianName} (${drop.location.x}, ${drop.location.y})`);
         msg.push(`    剩余：约${remaining}小时后消散`);
         msg.push('');
@@ -2031,22 +2052,24 @@ class NajieDrop extends plugin {
       const msg = e.msg.replace('#查询遗落纳戒', '').trim();
       const weimianName = msg || '';
       
+      const player = await Read_player(e.user_id.toString().replace('qg_', ''));
       const allDrops = await getAllNajieDrops();
+      const rememberedDrops = filterRememberedNajieDrops(allDrops, player);
       let drops;
       if (weimianName) {
         const weimian = weimianList.find(w => w.name.includes(weimianName));
         if (weimian) {
-          drops = allDrops.filter(drop => drop.location.weimianName === weimian.name);
+          drops = rememberedDrops.filter(drop => drop.location.weimianName === weimian.name);
         } else {
           await e.reply(`未找到名为"${weimianName}"的位面。`);
           return;
         }
       } else {
-        drops = allDrops;
+        drops = rememberedDrops;
       }
       
       if (drops.length === 0) {
-        await e.reply(`当前${weimianName ? weimianName + '中' : ''}没有任何遗落的纳戒。`);
+        await e.reply(`你没有忆起${weimianName ? weimianName + '中' : ''}任何遗落纳戒。`);
         return;
       }
       
@@ -2181,7 +2204,12 @@ class NajieDrop extends plugin {
       }
       
       const allDrops = await getAllNajieDrops();
-      const nearbyDrops = findNearbyNajieDrops(allDrops, player, radius);
+      const nearbyDrops = findNearbyNajieDrops(
+        allDrops,
+        player,
+        radius,
+        drop => hasNajieDropMemory(player, drop.key)
+      );
       
       if (nearbyDrops.length === 0) {
         await e.reply(`在${weimianName}坐标${coordinate.x},${coordinate.y}周围${radius}格内没有遗落纳戒。`);

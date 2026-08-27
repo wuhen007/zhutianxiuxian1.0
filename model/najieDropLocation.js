@@ -97,7 +97,7 @@ export function checkNajieDropReach(player, rawLocation) {
   return { ok: true, currentPlane, coordinate, distance: 0, location };
 }
 
-export function findNearbyNajieDrops(allDrops, player, radius) {
+export function findNearbyNajieDrops(allDrops, player, radius, canSee = () => true) {
   const currentPlane = getPlayerPlaneName(player);
   const coordinate = getPlayerPlaneCoordinate(player, currentPlane);
   if (!currentPlane || !coordinate) return [];
@@ -115,6 +115,6 @@ export function findNearbyNajieDrops(allDrops, player, radius) {
           : Infinity,
       };
     })
-    .filter(item => item.distance <= safeRadius)
+    .filter(item => item.distance <= safeRadius && canSee(item.drop))
     .sort((a, b) => a.distance - b.distance || a.globalIndex - b.globalIndex);
 }

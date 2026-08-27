@@ -58,6 +58,10 @@ import {
   applyTianjiaoDungeonSneakAttack,
   selectHostileTianjiao,
 } from '../../model/tianjiaoHostility.js';
+import {
+  discoverNajieDropMemory,
+  formatNajieMemoryDiscovery,
+} from '../../model/najieDropMemory.js';
 export class SecretPlaceplusTask extends plugin {
   constructor() {
     super({
@@ -2298,6 +2302,8 @@ ${aptitudeEvaluations[newAptitude]}
               const sneakDamage = applyTianjiaoDungeonSneakAttack(player);
               last_msg += ` 【旧怨偷袭】${tianjiaoSneakAttack.name}趁连续探索结算时暗中出手，额外削去${bigNumberTransform(sneakDamage.damage)}点气血，当前仅余${bigNumberTransform(sneakDamage.remainingHp)}。`;
             }
+            const memoryDiscovery = await discoverNajieDropMemory(redis, player);
+            if (memoryDiscovery) last_msg += ` ${formatNajieMemoryDiscovery(memoryDiscovery)}`;
             msg.push(player.名号 + last_msg+fyd_msg);
 
   // 结算后更新动作状态

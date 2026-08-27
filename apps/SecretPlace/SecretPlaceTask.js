@@ -61,6 +61,10 @@ import {
   applyTianjiaoDungeonSneakAttack,
   selectHostileTianjiao,
 } from '../../model/tianjiaoHostility.js';
+import {
+  discoverNajieDropMemory,
+  formatNajieMemoryDiscovery,
+} from '../../model/najieDropMemory.js';
 export class SecretPlaceTask extends plugin {
   constructor() {
     super({
@@ -142,6 +146,7 @@ export class SecretPlaceTask extends plugin {
             const proficiencyMsg = Object.entries(proficiencyGains)
                 .map(([name, gained]) => `${formatGongfaProficiency(player, name)}（+${gained}）`)
                 .join('\n');
+            const memoryDiscovery = await discoverNajieDropMemory(redis, player);
             
             // 保存玩家数据
             await Write_player(player_id, player);
@@ -149,7 +154,11 @@ export class SecretPlaceTask extends plugin {
             // 构建消息
             const finalMsg = [
                 segment.at(Number(player_id)),
-                proficiencyMsg ? `${resultMsg}\n功法参悟：${proficiencyMsg}` : resultMsg
+                [
+                  resultMsg,
+                  proficiencyMsg ? `功法参悟：${proficiencyMsg}` : '',
+                  memoryDiscovery ? formatNajieMemoryDiscovery(memoryDiscovery) : '',
+                ].filter(Boolean).join('\n')
             ];
             
             // 发送消息
@@ -2322,6 +2331,8 @@ ${aptitudeEvaluations[newAptitude]}
               const sneakDamage = applyTianjiaoDungeonSneakAttack(player);
               last_msg += ` 【旧怨偷袭】${tianjiaoSneakAttack.name}趁你下本结算、心神松懈时隔空出手，额外削去${bigNumberTransform(sneakDamage.damage)}点气血，当前仅余${bigNumberTransform(sneakDamage.remainingHp)}。`;
             }
+            const memoryDiscovery = await discoverNajieDropMemory(redis, player);
+            if (memoryDiscovery) last_msg += ` ${formatNajieMemoryDiscovery(memoryDiscovery)}`;
             msg.push(player.名号 + last_msg + fyd_msg);
             console.log('降临输出:'+msg)
             let arr = action;
