@@ -6,6 +6,7 @@ const EQUIPMENT_HTML_FILES = [
   'resources/html/najie/najie.html',
   'resources/html/equipment/equipment.html',
   'resources/html/player/player.html',
+  'resources/html/player/player-2.html',
   'resources/html/player_pindao/player_pindao.html',
   'resources/html/najie_copy/najie_copy.html',
   'resources/html/najie-category/najie-category.html',

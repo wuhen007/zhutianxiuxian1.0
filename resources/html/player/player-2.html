@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{player.名号}} · 诸天命盘</title>
+    <link rel="stylesheet" href="{{pluResPath}}/html/player/player-2.css">
+    <link rel="shortcut icon" href="#">
+  </head>
+  <body>
+    <main class="sheet mythic-sheet" style="background-image:url('{{pluResPath}}/img/player_pifu/{{pifu}}.jpg')">
+      <div class="mythic-frame" aria-hidden="true"></div>
+
+      <div class="mythic-topline">
+        <span>诸天帝籍 · 太初卷</span>
+        <span>QQ {{user_id}}</span>
+        <span>{{player.势力}}{{player.势力职位}} · {{player_action}}</span>
+      </div>
+
+      <section class="mythic-hero">
+        <div class="mythic-avatar">
+          <img src="{{avatar}}" alt="{{player.名号}}" onerror="whenError(this)">
+        </div>
+        <div class="mythic-name">
+          <small>道号</small>
+          <h1>{{player.名号}}</h1>
+          <i>帝</i>
+        </div>
+
+        <div class="mythic-title">
+          <span>称号</span>
+          <strong>{{if player.当前称号 && player.称号列表 && player.称号列表.indexOf(player.当前称号) !== -1}}{{player.当前称号}}{{else}}无{{/if}}</strong>
+          <p>帝号：{{if player.di_wei == '天帝'}}{{player.帝号}}{{else}}无{{/if}}</p>
+          {{if player.称号列表 && player.称号列表.length}}<small>拥有 {{player.称号列表.length}} 个称号 · 发送 #称号 查看/佩戴</small>{{/if}}
+        </div>
+
+        <div class="mythic-power">
+          <span>万古战力</span>
+          <strong>{{PowerMini}}</strong>
+          <small>道果映照 · 战力归一</small>
+        </div>
+
+        <div class="mythic-wheel" aria-hidden="true">
+          <span data-glyph="☰" style="--angle:0deg">乾</span>
+          <span data-glyph="☴" style="--angle:45deg">巽</span>
+          <span data-glyph="☵" style="--angle:90deg">坎</span>
+          <span data-glyph="☶" style="--angle:135deg">艮</span>
+          <span data-glyph="☷" style="--angle:180deg">坤</span>
+          <span data-glyph="☳" style="--angle:225deg">震</span>
+          <span data-glyph="☲" style="--angle:270deg">离</span>
+          <span data-glyph="☱" style="--angle:315deg">兑</span>
+        </div>
+
+        <div class="mythic-realm">
+          <span>境界道果</span>
+          <strong>{{rank_lianqi}}</strong>
+          <small>{{if player.yuanshenlevel_id !== undefined && player.yuanshenlevel_id !== null}}{{yuanshen_level}}{{else}}元神未凝{{/if}}</small>
+        </div>
+
+        <div class="mythic-combat mythic-atk"><span>攻击</span><strong>{{player_atk}}<sup>{{player_atk2}}</sup></strong></div>
+        <div class="mythic-combat mythic-def"><span>防御</span><strong>{{player_def}}<sup>{{player_def2}}</sup></strong></div>
+        <div class="mythic-combat mythic-crit"><span>暴击</span><strong>{{bao}}</strong></div>
+        <div class="mythic-combat mythic-damage"><span>暴伤</span><strong>{{(player.暴击伤害*100).toFixed(0)}}%</strong></div>
+      </section>
+
+      <section class="mythic-oath">
+        <span>道宣</span>
+        <strong>{{player.宣言}}</strong>
+        <i>敕</i>
+      </section>
+
+      <section class="mythic-resources">
+        <div>
+          <span>生命</span><strong>{{shengming}} / {{shengming2}}</strong>
+          <div class="mythic-life-meter"><b {{strand_hp.style}}></b></div>
+        </div>
+        <div><span>灵石</span><strong>{{lingshi}}</strong></div>
+        <div><span>源石</span><strong>{{player.源石}}</strong></div>
+        <div><span>寿元</span><strong>{{player.寿元}}</strong></div>
+        <div><span>性别</span><strong>{{['未知','女','男','扶她'][player.sex]}}</strong></div>
+      </section>
+
+      {{if player.mijinglevel_id > 1 || player.xiangulevel_id > 1 || player.huafenlevel_id > 1}}
+      <section class="mythic-section mythic-systems-section">
+        <div class="mythic-section-heading"><span>证道体系</span><h2>三道同证</h2></div>
+        <div class="mythic-systems {{if player.mijinglevel_id <= 1}}mythic-no-prime{{/if}} {{if player.xiangulevel_id <= 1 && player.huafenlevel_id <= 1}}mythic-prime-only{{/if}}">
+          {{if player.mijinglevel_id > 1}}
+          <article class="mythic-system-prime"><span>秘境体系</span><strong>{{rank_xiuliantixi}}</strong><p>人体秘境 · 自成寰宇</p></article>
+          {{/if}}
+          {{if player.xiangulevel_id > 1 || player.huafenlevel_id > 1}}
+          <div class="mythic-system-pair">
+            {{if player.xiangulevel_id > 1}}<article><span>仙古今世法</span><strong>{{rank_xiangujinshi}}</strong><p>仙古道果 · 今世归一</p></article>{{/if}}
+            {{if player.huafenlevel_id > 1}}<article><span>花粉进化路</span><strong>{{rank_huafen}}</strong><p>花粉真路 · 进化不息</p></article>{{/if}}
+          </div>
+          {{/if}}
+        </div>
+      </section>
+      {{/if}}
+
+      <section class="mythic-dual">
+        <div class="mythic-section mythic-destiny">
+          <div class="mythic-section-heading"><span>仙籍</span><h2>命数天书</h2></div>
+          <div class="mythic-facts">
+            <div><span>所属势力</span><strong>{{player.势力}}</strong></div>
+            <div><span>势力职位</span><strong>{{player.势力职位}}</strong></div>
+            <div><span>所属宗门</span><strong>{{this_association.宗门名称}}</strong></div>
+            <div><span>宗门职位</span><strong>{{this_association.职位}}</strong></div>
+            <div><span>护道人</span><strong>{{player.护道人}}</strong></div>
+            <div><span>道侣</span><strong>{{婚姻状况}}</strong></div>
+            <div class="mythic-wide"><span>灵根</span><strong>【{{player.灵根.type}}】{{player.灵根.name}}</strong></div>
+            <div class="mythic-wide"><span>被动</span><strong>额外增伤 · 攻击 +{{(player.灵根.法球倍率*100).toFixed(1)}}%</strong></div>
+            <div class="mythic-wide"><span>命格</span><strong>{{if player.命格}}【{{player.命格.rarityName}}·{{player.命格.name}}{{if player.命格.isNegative}}·厄{{/if}}】{{if player.附加命格}}{{each player.附加命格 item}}【{{item.rarityName}}·{{item.name}}{{if item.isNegative}}·厄{{/if}}】{{/each}}{{/if}}{{else}}【未定】{{/if}}</strong></div>
+            <div><span>天资</span><strong>{{player.天资等级}}</strong></div>
+            <div><span>天资评价</span><strong>{{player.天资评价}}</strong></div>
+            <div><span>职业</span><strong>{{occupation}}</strong></div>
+            <div><span>仙道潜力</span><strong>{{player.仙道潜力 || 0}}</strong></div>
+          </div>
+        </div>
+
+        <div class="mythic-section mythic-cultivation">
+          <div class="mythic-section-heading"><span>本源</span><h2>道行长河</h2></div>
+          <div class="mythic-progress">
+            <div><p><span>炼气 · {{rank_lianqi}}{{if player.修为 >= expmax_lianqi}} [UP]{{/if}}</span><strong>{{exp}} / {{expmax_lianqi}} · {{strand_lianqi.num}}%</strong></p><b style="--progress:{{strand_lianqi.num}}%"></b></div>
+            <div><p><span>炼体 · {{rank_llianti}}{{if player.血气 >= expmax_llianti}} [UP]{{/if}}</span><strong>{{exp2}} / {{expmax_llianti}} · {{strand_llianti.num}}%</strong></p><b style="--progress:{{strand_llianti.num}}%"></b></div>
+            {{if player.occupation != ""}}
+            <div><p><span>炼丹 · {{rank_liandan}}{{if player.occupation_exp >= expmax_liandan}} [UP]{{/if}}</span><strong>{{player.occupation_exp}} / {{expmax_liandan}} · {{strand_liandan.num}}%</strong></p><b style="--progress:{{strand_liandan.num}}%"></b></div>
+            {{/if}}
+          </div>
+          {{if player.元神 !== undefined && player.元神上限 !== undefined && (player.元神 > 0 || player.元神上限 > 0)}}
+          <div class="mythic-spirit"><span>元神：【{{player.元神}} / {{player.元神上限}}】</span><strong>{{if player.yuanshenlevel_id !== undefined && player.yuanshenlevel_id !== null}}{{yuanshen_level}}{{else}}未凝练{{/if}}</strong><small>神识：{{player.神识}} · {{strand_yuanshen.num}}%</small></div>
+          {{/if}}
+          <div class="mythic-facts mythic-bonuses">
+            <div><span>攻击加成</span><strong>{{攻击加成}}<sup>{{攻击加成_t}}</sup></strong></div>
+            <div><span>防御加成</span><strong>{{防御加成}}<sup>{{防御加成_t}}</sup></strong></div>
+            <div><span>生命加成</span><strong>{{生命加成}}<sup>{{生命加成_t}}</sup></strong></div>
+            <div><span>暴击伤害</span><strong>{{(player.暴击伤害*100).toFixed(0)}}%</strong></div>
+            <div class="mythic-wide"><span>生命本源</span><strong>{{player.生命本源}}</strong></div>
+            <div><span>修炼加成</span><strong>{{(player.修炼效率提升*100).toFixed(0)}}%</strong></div>
+            <div><span>幸运</span><strong>{{(player.幸运*100).toFixed(1)}}%</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mythic-section mythic-state-section">
+        <div class="mythic-section-heading"><span>诸身</span><h2>命星列宿</h2></div>
+        <div class="mythic-states">
+          <div><span>镇妖</span><strong>{{player.镇妖塔层数}} 层</strong></div>
+          <div><span>神魂</span><strong>{{player.神魄段数}} 层</strong></div>
+          <div><span>轮回点</span><strong>{{player.轮回点}} 点</strong></div>
+          <div><span>魔道值</span><strong>{{player.魔道值}}</strong></div>
+          <div><span>饱食度</span><strong>{{player.饱食度}}</strong></div>
+          <div><span>热量</span><strong>{{player.热量}}</strong></div>
+          <div><span>内丹</span><strong>{{neidan}}</strong></div>
+          <div><span>当前状态</span><strong>{{player_action}}</strong></div>
+        </div>
+      </section>
+
+      <section class="mythic-section mythic-arsenal-section">
+        <div class="mythic-section-heading"><span>神藏</span><h2>帝器天宫</h2></div>
+        <div class="mythic-arsenal">
+          <article class="mythic-weapon">
+            <small>武器 · {{if equipment.武器.品阶 && equipment.武器.品阶 != '无'}}{{equipment.武器.品阶}}{{else}}无品阶{{/if}}</small>
+            <h3>{{equipment.武器.name}}</h3>
+            {{if equipment.武器.atk>499 || equipment.武器.def>499 || equipment.武器.HP>499}}
+            <p>属性：无 · 攻击 {{(equipment.武器.atk).toFixed(0)}} · 防御 {{(equipment.武器.def).toFixed(0)}}<br>生命 {{(equipment.武器.HP).toFixed(0)}} · 暴击 {{equipment.武器.bao}} · 评级【{{武器评级}}】</p>
+            {{else}}
+            <p>属性：{{['金','木','土','水','火'][equipment.武器.id-1]}} · 攻击 +{{(equipment.武器.atk*100).toFixed(0)}}% · 防御 +{{(equipment.武器.def*100).toFixed(0)}}%<br>生命 +{{(equipment.武器.HP*100).toFixed(0)}}% · 暴击 {{equipment.武器.bao}} · 评级【{{武器评级}}】</p>
+            {{/if}}
+          </article>
+          <article>
+            <small>护具</small><h3>{{equipment.护具.name}}</h3>
+            {{if equipment.护具.atk>499 || equipment.护具.def>499 || equipment.护具.HP>499}}
+            <p>属性：无 · 攻击 {{(equipment.护具.atk).toFixed(0)}} · 防御 {{(equipment.护具.def).toFixed(0)}}<br>生命 {{(equipment.护具.HP).toFixed(0)}} · 暴击 {{equipment.护具.bao}} · 评级【{{护具评级}}】</p>
+            {{else}}
+            <p>属性：{{['金','木','土','水','火'][equipment.护具.id-1]}} · 攻击 +{{(equipment.护具.atk*100).toFixed(0)}}% · 防御 +{{(equipment.护具.def*100).toFixed(0)}}%<br>生命 +{{(equipment.护具.HP*100).toFixed(0)}}% · 暴击 {{equipment.护具.bao}} · 评级【{{护具评级}}】</p>
+            {{/if}}
+          </article>
+          <article>
+            <small>法宝</small><h3>{{equipment.法宝.name}}</h3>
+            {{if equipment.法宝.atk>499 || equipment.法宝.def>499 || equipment.法宝.HP>499}}
+            <p>属性：无 · 攻击 {{(equipment.法宝.atk).toFixed(0)}} · 防御 {{(equipment.法宝.def).toFixed(0)}}<br>生命 {{(equipment.法宝.HP).toFixed(0)}} · 暴击 {{equipment.法宝.bao}} · 评级【{{法宝评级}}】</p>
+            {{else}}
+            <p>属性：{{['金','木','土','水','火'][equipment.法宝.id-1]}} · 攻击 +{{(equipment.法宝.atk*100).toFixed(0)}}% · 防御 +{{(equipment.法宝.def*100).toFixed(0)}}%<br>生命 +{{(equipment.法宝.HP*100).toFixed(0)}}% · 暴击 {{equipment.法宝.bao}} · 评级【{{法宝评级}}】</p>
+            {{/if}}
+          </article>
+          <article class="mythic-dibing">
+            <small>帝兵 · {{equipment.帝兵.品阶}}</small><h3>{{equipment.帝兵.name}}</h3>
+            {{if equipment.帝兵.atk>499 || equipment.帝兵.def>499 || equipment.帝兵.HP>499}}
+            <p>全属性 {{equipment.帝兵.全属性}} · 攻击 {{(equipment.帝兵.atk).toFixed(0)}} · 防御 {{(equipment.帝兵.def).toFixed(0)}}<br>生命 {{(equipment.帝兵.HP).toFixed(0)}} · 暴击 {{equipment.帝兵.bao}} · 评级【{{帝兵评级}}】</p>
+            {{else}}
+            <p>暴击 {{equipment.帝兵.bao}} · 评级【{{帝兵评级}}】</p>
+            {{/if}}
+          </article>
+          <article class="mythic-pet">
+            {{if player.仙宠 == ""}}
+            <small>仙宠</small><h3 class="mythic-empty">仙宠暂无</h3>
+            {{else}}
+            <small>仙宠 · {{player.仙宠.品级}}</small><h3>{{player.仙宠.name}}</h3>
+            <p>等级 {{player.仙宠.等级}} · {{if player.仙宠.type=="战斗"}}战斗型 · 三维加成 {{player.仙宠.atk}}{{else}}{{player.仙宠.type}}加成 {{(player.仙宠.加成*100).toFixed(1)}}%{{/if}} · 灵魂绑定：{{if player.仙宠.灵魂绑定==1}}有{{else}}无{{/if}}</p>
+            {{/if}}
+          </article>
+        </div>
+      </section>
+
+      <footer class="mythic-footer">
+        <span>道法仙术：{{player.daofa}}</span>
+        <strong>现世存档 · {{player.名号}} · QQ {{user_id}}</strong>
+      </footer>
+    </main>
+  </body>
+</html>

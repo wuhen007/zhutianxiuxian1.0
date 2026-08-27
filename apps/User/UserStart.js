@@ -62,7 +62,13 @@ import {
   suppressJuelingLifespan,
 } from '../../model/juelingLifespan.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
-import { replyOfficialMessage } from '../../model/officialMessage.js';
+import {
+  DAILY_SIGN_BUTTONS,
+  replyImageWithButtons,
+  replyOfficialButtons,
+  replyOfficialMessage,
+} from '../../model/officialMessage.js';
+import { parsePlayerLayoutCommand } from '../../model/playerLayout.js';
 import { withJuelingEraLock } from '../tasks/juelingLifespanService.js';
 
 function replyRecreateConfirmation(e) {
@@ -128,6 +134,10 @@ export class UserStart extends plugin {
         {
           reg: '^#我的练气|#我$',
           fnc: 'Show_player',
+        },
+        {
+          reg: '^#切换练气排版\\s*[12]$',
+          fnc: 'Switch_player_layout',
         },
                 {
           reg: '^#强制再入仙途$',
@@ -762,6 +772,10 @@ async daily_lottery(e) {
         await redis.set("xiuxian:player:" + usr_qq + ":lastCifuTime", new Date().getTime());
         // 回复玩家
        await ForwardMsg(e, msg);
+       await replyOfficialButtons(e, {
+         markdown: '# 日常机缘',
+         buttons: DAILY_SIGN_BUTTONS,
+       });
     }
   async cs(e){
 
@@ -1285,6 +1299,22 @@ async force_reCreate_player(e) {
     e.reply(img);
     return false;
   }
+
+  async Switch_player_layout(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return false;
+
+    const layout = parsePlayerLayoutCommand(e.msg);
+    if (!layout) return false;
+
+    const player = await Read_player(usr_qq);
+    player.练气排版 = layout;
+    await Write_player(usr_qq, player);
+    await e.reply(`已切换练气排版${layout}，发送 #我的练气 查看。`);
+    return false;
+  }
   
 
 async Set_sex(e) {
@@ -1452,7 +1482,7 @@ async daily_gift(e) {
         await Write_player(usr_qq, player);
         
         const img = await get_xiuxianqiandao_img(e, player, 0, 0, 0, true);
-        e.reply(img);
+        await replyImageWithButtons(e, { image: img, buttons: DAILY_SIGN_BUTTONS });
         return false;
     }
     if (!await reserveDailyAction(redis, usr_qq, 'sign', nowTime)) {
@@ -1508,7 +1538,7 @@ async daily_gift(e) {
     
     // 生成签到截图
     const img = await get_xiuxianqiandao_img(e, player, gift_xiuwei, yuanshi, ticketCount);
-    e.reply(img);
+    await replyImageWithButtons(e, { image: img, buttons: DAILY_SIGN_BUTTONS });
     if (passResult?.levelUp) {
       e.reply(`问仙令经验 +${passExp}，等级提升：${passResult.oldLevel} -> ${passResult.newLevel}`);
     } else if (passResult?.unlocked === false && passResult.added > 0) {
@@ -1585,7 +1615,7 @@ async daofa_gift(e) {
       await Add_najie_thing(usr_qq, '超越宝盒', '盒子', 5);
   
   // 构建回复信息
-  const b = [
+  let b = [
     `${player.名号}已连续道法赐福7天，已进行重置，并奖励超越宝盒x5`,
   ].join('\n');
   
@@ -1637,7 +1667,11 @@ async daofa_gift(e) {
   if (signMult_df !== 1) {
       b += `\n【命格】签到奖励倍率生效：本次道法赐福奖励 ×${signMult_df}`;
   }
-  e.reply(b);
+  await replyOfficialMessage(e, {
+    markdown: b,
+    text: b,
+    buttons: DAILY_SIGN_BUTTONS,
+  });
   return true;
 }
 

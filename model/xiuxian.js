@@ -12,6 +12,7 @@ import { enrichNajieDisplayRarity } from './najieRarity.js';
 import { buildAnnouncePresentation, splitAnnounceDetail } from './announcePresentation.js';
 import { refreshDaofaStatus } from './daofa.js';
 import { getFlowerRealmDisplay, getXianguRealmDisplay } from './playerRealmDisplay.js';
+import { getPlayerLayout } from './playerLayout.js';
 import { swapEquipmentState } from './equipmentSwap.js';
 import { FileRollbackTransaction } from '../apps/SecretPlace/rebirthTransaction.js';
 import { releaseJuelingLifespanForAuthority } from './juelingLifespan.js';
@@ -3438,7 +3439,7 @@ const exp2 = bigNumberTransform(player.血气);
   equipment.护具.bao = parseInt(equipment.护具.bao * 100) + '%';
   equipment.法宝.bao = parseInt(equipment.法宝.bao * 100) + '%';
   equipment.帝兵.bao = parseInt(equipment.帝兵.bao * 100) + '%';
-  if(l<11){
+  if(l<11 || getPlayerLayout(player) === 2){
 
   
   let player_data = {
@@ -3466,6 +3467,7 @@ const exp2 = bigNumberTransform(player.血气);
     neidan: nd,
     pifu: action,
     user_id: usr_qq,
+    avatar: e.user?.avatar || `https://q1.qlogo.cn/g?b=qq&s=0&nk=${usr_qq}`,
     player, // 玩家数据
     rank_lianqi, // 练气境界
     expmax_lianqi, // 练气需求经验

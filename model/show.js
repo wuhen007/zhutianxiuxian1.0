@@ -1,4 +1,5 @@
 import base from './base.js';
+import { getPlayerLayout } from './playerLayout.js';
 
 export default class Game extends base {
   constructor(e) {
@@ -8,10 +9,15 @@ export default class Game extends base {
 
   async get_playerData(myData) {
     this.model = 'player';
+    const screenData = this.screenData;
+    const layout = getPlayerLayout(myData?.player);
     return {
-      ...this.screenData,
+      ...screenData,
       saveId: 'player',
       ...myData,
+      tplFile: layout === 2
+        ? screenData.tplFile.replace(/player\.html$/, 'player-2.html')
+        : screenData.tplFile,
     };
   }
   async get_detailedAttributesData(myData) {
