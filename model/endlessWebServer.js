@@ -22,6 +22,7 @@ const webRoot = path.join(pluginRoot, 'resources', 'web', 'endless');
 const wendaoWebRoot = path.join(pluginRoot, 'resources', 'web', 'wendao');
 const wendaoAudioRoot = path.join(wendaoWebRoot, 'audio');
 const worldWebRoot = path.join(pluginRoot, 'resources', 'web', 'world');
+const surveyWebRoot = path.join(pluginRoot, 'resources', 'web', 'survey');
 const configPath = path.join(pluginRoot, 'config', 'endless-web.json');
 const TICKET_PREFIX = 'Xiuxian:Endless:Web:Ticket:';
 const SESSION_PREFIX = 'Xiuxian:Endless:Web:Session:';
@@ -29,6 +30,8 @@ const ACTION_PREFIX = 'Xiuxian:Endless:Web:Action:';
 const TEAM_CHAT_PREFIX = 'Xiuxian:Endless:Web:TeamChat:';
 const WORLD_TICKET_PREFIX = 'Xiuxian:World:Web:Ticket:';
 const WORLD_SESSION_PREFIX = 'Xiuxian:World:Web:Session:';
+const SURVEY_TICKET_PREFIX = 'Xiuxian:Survey:Web:Ticket:';
+const SURVEY_SESSION_PREFIX = 'Xiuxian:Survey:Web:Session:';
 const TEAM_CHAT_MAX_MESSAGES = 80;
 const TEAM_CHAT_TTL_SECONDS = 2 * 24 * 60 * 60;
 const BODY_LIMIT = 16 * 1024;
@@ -42,6 +45,7 @@ let activeServer = null;
 let serverPromise = null;
 let activeRealm = null;
 let activeWorldController = null;
+let activeSurveyController = null;
 
 const WENDAO_ASSETS = {
   'selection.jpg': path.join(pluginRoot, 'resources', 'img', 'state', '背景图.jpg'),
@@ -116,6 +120,14 @@ function worldSessionKey(token) {
   return `${WORLD_SESSION_PREFIX}${token}`;
 }
 
+function surveyTicketKey(token) {
+  return `${SURVEY_TICKET_PREFIX}${token}`;
+}
+
+function surveySessionKey(token) {
+  return `${SURVEY_SESSION_PREFIX}${token}`;
+}
+
 function actionKey(session, operationId) {
   return `${ACTION_PREFIX}${session}:${operationId}`;
 }
@@ -183,6 +195,10 @@ function cookieName(config) {
 
 function worldCookieName(config) {
   return config.publicUrl.startsWith('https://') ? '__Host-world_session' : 'world_session';
+}
+
+function surveyCookieName(config) {
+  return config.publicUrl.startsWith('https://') ? '__Host-survey_session' : 'survey_session';
 }
 
 function sameOrigin(req, config) {
@@ -253,6 +269,18 @@ export async function issueWorldWebTicket(redisClient, config, identity) {
 
 export async function consumeWorldWebTicket(redisClient, token) {
   return consumeTicket(redisClient, worldTicketKey(token));
+}
+
+export async function issueSurveyWebTicket(redisClient, config, identity) {
+  const token = randomToken(24);
+  await redisClient.set(surveyTicketKey(token), JSON.stringify(identity), {
+    EX: config.ticketTtlSeconds,
+  });
+  return token;
+}
+
+export async function consumeSurveyWebTicket(redisClient, token) {
+  return consumeTicket(redisClient, surveyTicketKey(token));
 }
 
 function parseCookies(header = '') {
@@ -594,8 +622,25 @@ async function loadWorldSession(redisClient, config, req) {
   }
 }
 
+async function loadSurveySession(redisClient, config, req) {
+  const token = parseCookies(req.headers.cookie)[surveyCookieName(config)];
+  if (!token) return null;
+  const raw = await redisClient.get(surveySessionKey(token));
+  if (!raw) return null;
+  try {
+    return { token, ...JSON.parse(raw) };
+  } catch {
+    await redisClient.del(surveySessionKey(token));
+    return null;
+  }
+}
+
 function currentWorldController(controller) {
   return controller || activeWorldController;
+}
+
+function currentSurveyController(controller) {
+  return controller || activeSurveyController;
 }
 
 async function currentState(realm, session, redisClient = null) {
@@ -628,7 +673,7 @@ async function performAction(realm, session, action, value) {
   };
 }
 
-export function createEndlessWebHttpServer({ realm, redisClient, config, worldController = null }) {
+export function createEndlessWebHttpServer({ realm, redisClient, config, worldController = null, surveyController = null }) {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://localhost');
     const endlessRealm = activeRealm || realm;
@@ -675,6 +720,49 @@ export function createEndlessWebHttpServer({ realm, redisClient, config, worldCo
       if (req.method === 'GET' && url.pathname.startsWith('/world/assets/')) {
         const asset = WORLD_ASSETS[url.pathname.slice('/world/assets/'.length)];
         if (asset) return sendFile(res, asset, 'image/jpeg');
+      }
+
+      if (req.method === 'GET' && (url.pathname === '/survey' || url.pathname === '/survey/'))
+        return sendFile(res, path.join(surveyWebRoot, 'index.html'), 'text/html; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/survey/app.js')
+        return sendFile(res, path.join(surveyWebRoot, 'app.js'), 'text/javascript; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/survey/style.css')
+        return sendFile(res, path.join(surveyWebRoot, 'style.css'), 'text/css; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/survey/realm.jpg')
+        return sendFile(res, path.join(pluginRoot, 'resources', 'img', 'help', 'zhutian.jpg'), 'image/jpeg');
+
+      if (req.method === 'POST' && url.pathname === '/api/survey/session') {
+        if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
+        if (!(await withinRateLimit(redisClient, `survey-session:${clientAddress(req)}`, 10, 60)))
+          return sendJson(res, 429, { error: '入口请求过于频繁，请稍后再试' });
+        const body = await readJson(req);
+        const identity = await consumeSurveyWebTicket(redisClient, String(body.token || ''));
+        if (!identity) return sendJson(res, 401, { error: '入口已失效，请重新发送 #诸天调研问卷' });
+        const session = randomToken();
+        await redisClient.set(surveySessionKey(session), JSON.stringify(identity), {
+          EX: config.sessionTtlSeconds,
+        });
+        const secure = config.publicUrl.startsWith('https://') ? '; Secure' : '';
+        return sendJson(res, 200, { ok: true }, {
+          'Set-Cookie': `${surveyCookieName(config)}=${encodeURIComponent(session)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${config.sessionTtlSeconds}${secure}`,
+        });
+      }
+
+      if (url.pathname.startsWith('/api/survey/')) {
+        const session = await loadSurveySession(redisClient, config, req);
+        if (!session) return sendJson(res, 401, { error: '会话已失效，请重新发送 #诸天调研问卷' });
+        const controller = currentSurveyController(surveyController);
+        if (!controller) return sendJson(res, 503, { error: '调研服务尚未就绪' });
+        if (req.method === 'GET' && url.pathname === '/api/survey/state') {
+          return sendJson(res, 200, { ok: true, state: await controller.getSurveyWebState(session) });
+        }
+        if (req.method === 'POST' && url.pathname === '/api/survey/submit') {
+          if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
+          if (!(await withinRateLimit(redisClient, `survey-submit:${session.token}`, 5, 60)))
+            return sendJson(res, 429, { error: '提交过于频繁，请稍后再试' });
+          const result = await controller.submitSurvey(session, await readJson(req));
+          return sendJson(res, result?.ok === false ? 400 : 200, result || { ok: true });
+        }
       }
 
       if (req.method === 'POST' && url.pathname === '/api/world/session') {
@@ -867,6 +955,21 @@ export async function createEndlessWebLink(realm, identity) {
 
 export function registerWorldWebController(controller) {
   activeWorldController = controller || null;
+}
+
+export function registerSurveyWebController(controller) {
+  activeSurveyController = controller || null;
+}
+
+export async function createSurveyWebLink(controller, identity) {
+  const config = getEndlessWebConfig();
+  if (!config.enabled) throw new Error('诸天调研网页功能尚未开启');
+  const redisClient = globalThis.redis;
+  if (!redisClient) throw new Error('Redis 尚未就绪');
+  registerSurveyWebController(controller);
+  await ensureServer(activeRealm, redisClient, config);
+  const token = await issueSurveyWebTicket(redisClient, config, identity);
+  return `${config.publicUrl}/survey?t=${encodeURIComponent(token)}`;
 }
 
 export async function createWorldWebLink(controller, identity) {

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>诸天修仙调研问卷</title>
+  <link rel="stylesheet" href="/survey/style.css">
+  <script src="/survey/app.js" defer></script>
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true"></div>
+  <header class="topbar">
+    <div class="brand-mark" aria-hidden="true">诸</div>
+    <div>
+      <p class="eyebrow">诸天万界 · 众生共议</p>
+      <h1>诸天修仙调研问卷</h1>
+    </div>
+    <div class="progress-wrap" id="progress-wrap" hidden>
+      <span id="progress-label">0 / 12</span>
+      <div class="progress-track"><span id="progress-bar"></span></div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="intro">
+      <div>
+        <p class="seal">万界问心</p>
+        <h2 id="welcome">正在开启问卷...</h2>
+      </div>
+      <div class="rewards" aria-label="完成奖励">
+        <span>众生仙钓 <b>10</b></span>
+        <span>无尽秘钥 <b>3</b></span>
+        <span>超越宝盒 <b>20</b></span>
+        <span>源石 <b>1500万</b></span>
+      </div>
+    </section>
+
+    <div id="notice" class="notice" role="status">正在校验专属入口...</div>
+    <form id="survey-form" hidden novalidate>
+      <div id="questions" class="questions"></div>
+      <div class="submit-row">
+        <p id="validation-message" class="validation" aria-live="polite"></p>
+        <button id="submit-button" type="submit">提交答卷并领取奖励</button>
+      </div>
+    </form>
+
+    <section id="result" class="result" hidden>
+      <p class="result-kicker">因果已录</p>
+      <h2 id="result-title">答卷提交成功</h2>
+      <p id="result-message"></p>
+      <div class="result-rewards">众生仙钓×10 · 无尽秘钥×3 · 超越宝盒×20 · 源石×1500万</div>
+      <button id="retry-reward" type="button" hidden>继续领取奖励</button>
+    </section>
+  </main>
+</body>
+</html>
