@@ -55,6 +55,49 @@ test('禁区至尊毁灭的位面满修复年限后自行恢复', t => {
   assert.equal(restored[PLANE_DESTRUCTION_RECORD_KEY], undefined);
 });
 
+test('帝关城破的位面满修复年限后自行恢复', t => {
+  const fixture = createPlaneFile({ 九天十地: 1 });
+  t.after(fixture.cleanup);
+
+  for (const planeName of ['九天十地', '遮天位面']) {
+    assert.equal(markPlaneDestroyed(fixture.filePath, planeName, {
+      source: PLANE_DESTRUCTION_SOURCES.FOREIGN_IMPERIAL_PASS,
+      actor: '异域叩击帝关',
+      worldYear: 1000,
+    }), true);
+  }
+
+  assert.deepEqual(repairNaturallyDestroyedPlanes(fixture.filePath, {
+    worldYear: 2999,
+    minAge: 2000,
+  }), []);
+  assert.equal(fixture.read().遮天位面, 0);
+  assert.equal(fixture.read().九天十地, 0);
+
+  assert.deepEqual(repairNaturallyDestroyedPlanes(fixture.filePath, {
+    worldYear: 3000,
+    minAge: 2000,
+  }), ['遮天位面', '九天十地']);
+  const restored = fixture.read();
+  assert.equal(restored.遮天位面, 1);
+  assert.equal(restored.九天十地, 1);
+  assert.equal(restored[PLANE_DESTRUCTION_RECORD_KEY], undefined);
+});
+
+test('帝关城破文案说明位面会自然重聚', t => {
+  const fixture = createPlaneFile({ 九天十地: 1 });
+  t.after(fixture.cleanup);
+
+  markPlaneDestroyed(fixture.filePath, '九天十地', {
+    source: PLANE_DESTRUCTION_SOURCES.FOREIGN_IMPERIAL_PASS,
+    actor: '异域叩击帝关',
+    worldYear: 1000,
+  });
+  const message = buildPlaneDestroyedMessage(fixture.filePath, '九天十地');
+  assert.match(message, /异域叩击帝关/);
+  assert.match(message, /自然|重聚/);
+});
+
 test('毁灭拦截文案区分禁区至尊与厄土仙帝', t => {
   const fixture = createPlaneFile();
   t.after(fixture.cleanup);

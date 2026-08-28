@@ -1,6 +1,7 @@
 import { calculateEquippedStats } from './equipmentStats.js';
 import { createRealmEventLocation } from './realmEventLocation.js';
 import { getPlayerPlaneCoordinate, getPlayerPlaneName } from './planeCoords.js';
+import { getRealmAuthorityLevel, getRealmAuthorityPath } from './realmAuthority.js';
 import { PLACE_LOCATION_MAP } from './weimianTravel.js';
 
 export const TIANJIAO_PLANES = Object.freeze([2, 2.5, 7]);
@@ -15,7 +16,26 @@ export const TIANJIAO_HEALING_RECOVERY = 20;
 
 const ERA_FACTORS = Object.freeze([1, 0.75, 0.5, 0.08, 0.02]);
 const IMPROVEMENT_CHANCES = Object.freeze([0.9, 0.85, 0.8, 0.7, 0.6]);
-const IMPERIAL_WEAPON_ALL_ATTRIBUTE_GAINS = Object.freeze([1, 2, 3, 5, 7, 10, 20, 30, 50, 100, 200]);
+const WEAPON_RANK_NUMERALS = Object.freeze(['一', '二', '三', '四', '五', '六', '七', '八', '九']);
+const POST_SACRIFICE_WEAPON_RANKS = Object.freeze([
+  ...WEAPON_RANK_NUMERALS.map(number => `道器（${number}阶）`),
+  ...WEAPON_RANK_NUMERALS.map(number => `鸿蒙器（${number}阶）`),
+  ...WEAPON_RANK_NUMERALS.map(number => `唯一器（${number}阶）`),
+]);
+const ZHETIAN_IMPERIAL_WEAPON_RANKS = Object.freeze([
+  '雏形', '通灵', '铭刻道与理', '斩道王兵', '圣兵', '准帝兵',
+  '极道帝兵', '仙器', '仙王器', '准仙帝器', '仙帝器', '祭道器',
+  ...POST_SACRIFICE_WEAPON_RANKS,
+]);
+const XIANGU_IMPERIAL_WEAPON_RANKS = Object.freeze([
+  '雏形', '通灵', '铭刻道与理', '真神兵', '天神兵', '遁一兵',
+  '至尊兵', '仙器', '仙王器', '准仙帝器', '仙帝器', '祭道器',
+  ...POST_SACRIFICE_WEAPON_RANKS,
+]);
+const IMPERIAL_WEAPON_ALL_ATTRIBUTE_GAINS = Object.freeze([
+  1, 2, 3, 5, 7, 10, 20, 30, 50, 100, 200,
+  ...Array.from({ length: 27 }, (_, index) => 300 + index * 50),
+]);
 const REALM_LIMITS = Object.freeze({ mijinglevel_id: 24, xiangulevel_id: 25, huafenlevel_id: 25 });
 const STARTER_NAMES = Object.freeze({
   武器: '烂铁匕首',
@@ -510,41 +530,104 @@ function improveEquipment(tianjiao, context, random) {
   return `搜刮并换上${slot}【${found.name}】`;
 }
 
+export function getTianjiaoImperialWeaponWashLimit(tianjiao) {
+  const authority = getRealmAuthorityLevel(tianjiao);
+  if (authority >= 24) return 38;
+  if (authority >= 23) return 29;
+  if (authority >= 22) return 11;
+  if (authority >= 21) return 10;
+  if (authority >= 20) return 9;
+  if (authority >= 18) return 8;
+  if (authority >= 17) return 7;
+  if (authority >= 16) return 6;
+  if (authority >= 15) return 5;
+  if (authority >= 12) return 4;
+  if (authority >= 11) return 3;
+  return 2;
+}
+
+function getTianjiaoImperialWeaponRanks(tianjiao) {
+  return getRealmAuthorityPath(tianjiao) === 'mijing'
+    ? ZHETIAN_IMPERIAL_WEAPON_RANKS
+    : XIANGU_IMPERIAL_WEAPON_RANKS;
+}
+
+export function getTianjiaoImperialWeaponAllAttributeCap(tianjiao) {
+  const authority = getRealmAuthorityLevel(tianjiao);
+  const washLimit = getTianjiaoImperialWeaponWashLimit(tianjiao);
+  const rankGrowth = IMPERIAL_WEAPON_ALL_ATTRIBUTE_GAINS
+    .slice(0, washLimit)
+    .reduce((sum, gain) => sum + gain, 0);
+  const nurture = tianjiao?.学习的功法?.includes('兵字秘') ? 50 : 10;
+  const engraving = authority >= 13 ? 5 : 0;
+  const tribulation = authority >= 15 ? 55
+    : authority >= 14 ? 35
+      : authority >= 13 ? 20
+        : authority >= 12 ? 10
+          : authority >= 11 ? 5 : 0;
+  return Number((1.2 + nurture + rankGrowth + engraving + tribulation).toFixed(1));
+}
+
+function formatImperialWeaponCorrection(result) {
+  return `帝兵自检纠正【${result.name}】：洗礼${result.beforeWash}→${result.afterWash}，品阶校准为${result.rank}，全属性${result.beforeAll}→${result.afterAll}（理论上限${result.cap}）`;
+}
+
+export function reconcileTianjiaoImperialWeapon(tianjiao, context) {
+  const equipment = ensureTianjiaoEquipment(tianjiao, context);
+  const weapon = equipment.帝兵;
+  if (!weapon || (weapon.author_name !== tianjiao?.名号 && !weapon.天骄本命)) return null;
+
+  const washLimit = getTianjiaoImperialWeaponWashLimit(tianjiao);
+  const beforeWash = Math.max(0, Math.floor(Number(weapon.洗礼次数) || 0));
+  const afterWash = Math.min(beforeWash, washLimit);
+  const ranks = getTianjiaoImperialWeaponRanks(tianjiao);
+  const rank = ranks[afterWash];
+  const cap = getTianjiaoImperialWeaponAllAttributeCap(tianjiao);
+  const beforeAll = Math.max(0, Number(weapon.全属性) || 0);
+  const afterAll = Math.min(beforeAll, cap);
+  if (beforeWash === afterWash && weapon.品阶 === rank && beforeAll === afterAll) return null;
+
+  weapon.洗礼次数 = afterWash;
+  weapon.品阶 = rank;
+  weapon.全属性 = afterAll;
+  return { name: weapon.name, beforeWash, afterWash, beforeAll, afterAll, rank, cap };
+}
+
 function forgeImperialWeapon(tianjiao, context, random) {
   const equipment = ensureTianjiaoEquipment(tianjiao, context);
+  const correction = reconcileTianjiaoImperialWeapon(tianjiao, context);
   const oldWeapon = equipment.帝兵;
-  const pathLevel = Math.max(
-    Number(tianjiao.mijinglevel_id) || 1,
-    Number(tianjiao.xiangulevel_id) || 1,
-    Number(tianjiao.huafenlevel_id) || 1,
-  );
   const wasForged = oldWeapon?.author_name === tianjiao.名号 && oldWeapon?.name !== STARTER_NAMES.帝兵;
   const legacyName = `${tianjiao.名号}·本命道兵`;
   const weaponName = !wasForged || oldWeapon.name === legacyName
     ? randomArtifactName('帝兵', random)
     : oldWeapon.name;
   const washCount = Math.max(0, Math.floor(Number(oldWeapon?.洗礼次数) || 0));
-  // 帝兵洗礼沿用玩家的进阶规则：三攻属性翻倍，全属性按阶段固定增加。
-  const gain = IMPERIAL_WEAPON_ALL_ATTRIBUTE_GAINS[
-    Math.min(washCount, IMPERIAL_WEAPON_ALL_ATTRIBUTE_GAINS.length - 1)
-  ];
+  const washLimit = getTianjiaoImperialWeaponWashLimit(tianjiao);
+  if (washCount >= washLimit) return correction ? formatImperialWeaponCorrection(correction) : null;
+
+  const nextWashCount = washCount + 1;
+  const gain = IMPERIAL_WEAPON_ALL_ATTRIBUTE_GAINS[washCount];
+  const cap = getTianjiaoImperialWeaponAllAttributeCap(tianjiao);
   equipment.帝兵 = {
     ...cloneItem(oldWeapon),
     name: weaponName,
     type: '帝兵',
     class: '装备',
-    品阶: pathLevel >= 16 ? '极道帝兵' : '本命道兵',
+    品阶: getTianjiaoImperialWeaponRanks(tianjiao)[nextWashCount],
     author_name: tianjiao.名号,
     天骄本命: true,
-    洗礼次数: Math.max(0, Math.floor(Number(oldWeapon?.洗礼次数) || 0)) + 1,
+    洗礼次数: nextWashCount,
+    洗礼上限: washLimit,
+    理论全属性上限: cap,
     atk: Math.max(1, Math.round((Number(oldWeapon?.atk) || 0) * 2)),
     def: Math.max(1, Math.round((Number(oldWeapon?.def) || 0) * 2)),
     HP: Math.max(1, Math.round((Number(oldWeapon?.HP) || 0) * 2)),
-    bao: Math.min(1, Math.max(Number(oldWeapon?.bao) || 0, pathLevel * 0.03) + 0.01),
-    全属性: (Number(oldWeapon?.全属性) || 0) + gain,
+    bao: Math.min(1, Math.max(Number(oldWeapon?.bao) || 0, getRealmAuthorityLevel(tianjiao) * 0.03) + 0.01),
+    全属性: Math.min(cap, (Number(oldWeapon?.全属性) || 0) + gain),
   };
-  const action = wasForged ? `第${equipment.帝兵.洗礼次数}次洗礼` : '炼成';
-  return `${action}本命帝兵【${equipment.帝兵.name}】（全属性+${gain}）`;
+  const action = wasForged ? `第${nextWashCount}/${washLimit}次洗礼` : '炼成';
+  return `${action}本命帝兵【${equipment.帝兵.name}】，晋升${equipment.帝兵.品阶}（全属性+${gain}，上限${cap}）`;
 }
 
 function addExtraBonus(tianjiao, context, random) {
@@ -580,15 +663,18 @@ export function applyTianjiaoImprovement(tianjiao, action, context, random = Mat
 }
 
 export function improveTianjiao(tianjiao, context, random = Math.random) {
+  const correction = reconcileTianjiaoImperialWeapon(tianjiao, context);
   const actions = ['equipment', 'imperialWeapon', 'extraBonus', 'technique'];
   const count = 1 + Math.floor(random() * actions.length);
   for (let index = actions.length - 1; index > 0; index--) {
     const swap = Math.floor(random() * (index + 1));
     [actions[index], actions[swap]] = [actions[swap], actions[index]];
   }
-  return actions.slice(0, count)
+  const reports = actions.slice(0, count)
     .map(action => applyTianjiaoImprovement(tianjiao, action, context, random))
     .filter(Boolean);
+  if (correction) reports.unshift(formatImperialWeaponCorrection(correction));
+  return reports;
 }
 
 export function buildTianjiaoBattleStats(tianjiao, context) {

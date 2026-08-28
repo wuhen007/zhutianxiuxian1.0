@@ -11,6 +11,8 @@ import {
   getKnownTianjiaoTrace,
   getTianjiaoTraceReach,
   getTianjiaoBreakthroughChance,
+  getTianjiaoImperialWeaponAllAttributeCap,
+  getTianjiaoImperialWeaponWashLimit,
   getTianjiaoImprovementChance,
   getTianjiaoRealmName,
   improveTianjiao,
@@ -19,6 +21,7 @@ import {
   isTianjiaoBreakthroughYear,
   isTianjiaoImprovementYear,
   recoverTianjiaoFromSetback,
+  reconcileTianjiaoImperialWeapon,
   registerTianjiaoDefeat,
   resetTianjiaoToInitialTemplate,
   rollDungeonTianjiaoTrace,
@@ -224,15 +227,80 @@ test('每三千年自强保持高概率，单次最多完成四种行为', () =>
   applyTianjiaoImprovement(tianjiao, 'imperialWeapon', context, () => 0);
   assert.equal(tianjiao.装备.帝兵.name, imperialName);
   assert.equal(tianjiao.装备.帝兵.洗礼次数, 2);
+  assert.equal(tianjiao.装备.帝兵.品阶, '铭刻道与理');
   assert.equal(tianjiao.装备.帝兵.atk, imperialAttack * 2);
   assert.equal(tianjiao.装备.帝兵.全属性, imperialAll + 2);
 
   tianjiao.装备.武器.name = '测试天骄祭炼的武器';
-  tianjiao.装备.帝兵.name = '测试天骄·本命道兵';
   applyTianjiaoImprovement(tianjiao, 'equipment', context, () => 0);
-  applyTianjiaoImprovement(tianjiao, 'imperialWeapon', context, () => 0);
+  const cappedWeapon = applyTianjiaoImprovement(tianjiao, 'imperialWeapon', context, () => 0);
   assert.notEqual(tianjiao.装备.武器.name, '测试天骄祭炼的武器');
-  assert.notEqual(tianjiao.装备.帝兵.name, '测试天骄·本命道兵');
+  assert.equal(cappedWeapon, null);
+  assert.equal(tianjiao.装备.帝兵.洗礼次数, 2);
+});
+
+test('天骄帝兵按玩家同源规则限制境界、品阶与全属性', () => {
+  const greatPower = { 名号: '大能天骄', mijinglevel_id: 10, xiangulevel_id: 1, 学习的功法: [] };
+  assert.equal(getTianjiaoImperialWeaponWashLimit(greatPower), 2);
+  assert.equal(getTianjiaoImperialWeaponAllAttributeCap(greatPower), 14.2);
+  const playerTheory = new Map([[10, 14.2], [11, 22.2], [12, 32.2], [13, 47.2], [14, 62.2], [15, 89.2]]);
+  for (const [level, expected] of playerTheory) {
+    assert.equal(getTianjiaoImperialWeaponAllAttributeCap({ mijinglevel_id: level, 学习的功法: [] }), expected);
+  }
+  greatPower.学习的功法.push('兵字秘');
+  assert.equal(getTianjiaoImperialWeaponAllAttributeCap(greatPower), 54.2);
+
+  const quasiEmperor = { 名号: '准帝天骄', mijinglevel_id: 15, xiangulevel_id: 1, 学习的功法: ['兵字秘'] };
+  assert.equal(getTianjiaoImperialWeaponWashLimit(quasiEmperor), 5);
+  assert.equal(getTianjiaoImperialWeaponAllAttributeCap(quasiEmperor), 129.2);
+
+  const ancientGod = { 名号: '天神天骄', mijinglevel_id: 1, xiangulevel_id: 11, 学习的功法: [] };
+  for (let count = 0; count < 4; count++) {
+    assert.ok(applyTianjiaoImprovement(ancientGod, 'imperialWeapon', context, () => 0));
+  }
+  assert.equal(ancientGod.装备.帝兵.洗礼次数, 4);
+  assert.equal(ancientGod.装备.帝兵.品阶, '天神兵');
+  assert.equal(applyTianjiaoImprovement(ancientGod, 'imperialWeapon', context, () => 0), null);
+
+  const aboveSacrifice = { 名号: '祭道之上', mijinglevel_id: 23, xiangulevel_id: 1, 学习的功法: ['兵字秘'] };
+  const uniqueDao = { 名号: '唯一道之上', mijinglevel_id: 24, xiangulevel_id: 1, 学习的功法: ['兵字秘'] };
+  assert.equal(getTianjiaoImperialWeaponWashLimit(aboveSacrifice), 29);
+  assert.equal(getTianjiaoImperialWeaponWashLimit(uniqueDao), 38);
+  for (let count = 0; count < 38; count++) {
+    assert.ok(applyTianjiaoImprovement(uniqueDao, 'imperialWeapon', context, () => 0));
+  }
+  assert.equal(uniqueDao.装备.帝兵.品阶, '唯一器（九阶）');
+  assert.equal(applyTianjiaoImprovement(uniqueDao, 'imperialWeapon', context, () => 0), null);
+});
+
+test('天骄自强会把历史超限帝兵纠正到当前理论上限', () => {
+  const tianjiao = {
+    名号: '纠错天骄',
+    mijinglevel_id: 10,
+    xiangulevel_id: 1,
+    学习的功法: [],
+    装备: {
+      帝兵: {
+        name: '越界帝兵', author_name: '纠错天骄', 天骄本命: true,
+        品阶: '唯一器（九阶）', 洗礼次数: 99, 全属性: 999,
+      },
+    },
+  };
+
+  const correction = reconcileTianjiaoImperialWeapon(tianjiao, context);
+  assert.deepEqual(
+    [correction.afterWash, correction.rank, correction.afterAll, correction.cap],
+    [2, '铭刻道与理', 14.2, 14.2],
+  );
+
+  tianjiao.装备.帝兵.洗礼次数 = 99;
+  tianjiao.装备.帝兵.品阶 = '唯一器（九阶）';
+  tianjiao.装备.帝兵.全属性 = 999;
+  const reports = improveTianjiao(tianjiao, context, () => 0);
+  assert.match(reports[0], /帝兵自检纠正/);
+  assert.equal(tianjiao.装备.帝兵.洗礼次数, 2);
+  assert.equal(tianjiao.装备.帝兵.品阶, '铭刻道与理');
+  assert.equal(tianjiao.装备.帝兵.全属性, 14.2);
 });
 
 test('副本和位面事件会刷新限时踪迹，禁入位面不会成为天骄位置', () => {
