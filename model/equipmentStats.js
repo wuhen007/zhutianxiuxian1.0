@@ -17,7 +17,36 @@ export function isNameablePercentageEquipment(item) {
     || atk + def > 1.95;
 }
 
-export function calculateEquippedStats(baseStats, slots = []) {
+/**
+ * 百分比装备属性溢出补偿（万道神炉被动）：
+ * 某项属性超出理论极限（cap）时，把超出部分补偿到未达极限的属性上，
+ * 最终所有属性都能达到理论极限、不溢出；全部达极限后仍有剩余则丢弃（正常情况不会发生）。
+ */
+export function rebalancePercentBonuses(atk, def, hp, cap = 500) {
+  const values = [Number(atk) || 0, Number(def) || 0, Number(hp) || 0];
+  let overflow = 0;
+  for (let i = 0; i < 3; i++) {
+    if (values[i] > cap) {
+      overflow += values[i] - cap;
+      values[i] = cap;
+    }
+  }
+  while (overflow > 0) {
+    let filledAny = false;
+    for (let i = 0; i < 3; i++) {
+      if (values[i] < cap && overflow > 0) {
+        const give = Math.min(cap - values[i], overflow);
+        values[i] += give;
+        overflow -= give;
+        filledAny = true;
+      }
+    }
+    if (!filledAny) break;
+  }
+  return { atk: values[0], def: values[1], HP: values[2], overflow };
+}
+
+export function calculateEquippedStats(baseStats, slots = [], options = {}) {
   const baseAttack = Number(baseStats?.攻击) || 0;
   const baseDefense = Number(baseStats?.防御) || 0;
   const baseHp = Number(baseStats?.血量上限) || 0;
@@ -50,9 +79,17 @@ export function calculateEquippedStats(baseStats, slots = []) {
 
   // 百分比装备单属性加成上限：最高 50000%（即加成 ≤ 500，总倍率 ≤ 501 倍）
   const MAX_PERCENT_BONUS = 500;
-  attackBonus = Math.min(attackBonus, MAX_PERCENT_BONUS);
-  defenseBonus = Math.min(defenseBonus, MAX_PERCENT_BONUS);
-  hpBonus = Math.min(hpBonus, MAX_PERCENT_BONUS);
+  if (options.rebalanceOverflow) {
+    // 万道神炉被动：溢出部分补偿至未达极限的属性，最终全部达到理论极限、不溢出
+    const balanced = rebalancePercentBonuses(attackBonus, defenseBonus, hpBonus, MAX_PERCENT_BONUS);
+    attackBonus = balanced.atk;
+    defenseBonus = balanced.def;
+    hpBonus = balanced.HP;
+  } else {
+    attackBonus = Math.min(attackBonus, MAX_PERCENT_BONUS);
+    defenseBonus = Math.min(defenseBonus, MAX_PERCENT_BONUS);
+    hpBonus = Math.min(hpBonus, MAX_PERCENT_BONUS);
+  }
 
   return {
     攻击: Math.trunc(baseAttack * (1 + attackBonus) + fixedAttack),

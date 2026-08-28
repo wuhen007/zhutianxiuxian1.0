@@ -1440,7 +1440,10 @@ export async function Write_equipment(usr_qq, equipment) {
   player.防御 = player.防御 * (1 + 灵根防御);
   player.血量上限 = player.血量上限 * (1 + 灵根生命);
   let type = ['武器', '护具', '法宝', '帝兵', '至宝'];
-  const equippedStats = calculateEquippedStats(player, type.map(i => equipment[i]));
+  const equippedStats = calculateEquippedStats(player, type.map(i => equipment[i]), {
+    // 万道神炉被动：百分比装备属性溢出自动补偿至理论极限
+    rebalanceOverflow: hasEquippedInnateTreasure(player, '万道神炉'),
+  });
   player.攻击 = equippedStats.攻击;
   player.防御 = equippedStats.防御;
   player.血量上限 = equippedStats.血量上限;
@@ -2428,11 +2431,14 @@ export async function get_hecheng_img(e) {
         
         categorizedItems[category].push({
             name: item.name,
-            materials: item.materials.map(mat => ({
+            materials: [
+              ...item.materials.map(mat => ({
                 name: mat.name,
                 class: mat.class,
                 amount: mat.amount
-            }))
+              })),
+              ...Object.entries(item.costs || {}).map(([name, amount]) => ({ name, class: '资源', amount })),
+            ]
         });
     });
     
@@ -8518,6 +8524,25 @@ let B_speed = getBattleUnitSpeed(B_player);
 
   const A_equipment = await getEquipment(A_player);
   const B_equipment = await getEquipment(B_player);
+  for (const [holder, equipment] of [[A_player, A_equipment], [B_player, B_equipment]]) {
+    delete holder._装备首次免控名称;
+    delete holder._装备首次免控已触发;
+    delete holder._装备低血护盾比例;
+    delete holder._装备低血护盾阈值;
+    delete holder._装备低血护盾名称;
+    delete holder._装备低血护盾已触发;
+    const slots = [equipment?.武器, equipment?.护具, equipment?.法宝].filter(Boolean);
+    const spiritReduction = slots.reduce((sum, item) => sum + (Number(item.元神伤害减免) || 0), 0);
+    if (spiritReduction > 0) holder.元神伤害减免 = Math.min(0.9, (Number(holder.元神伤害减免) || 0) + spiritReduction);
+    const controlImmunityItem = slots.find(item => Number(item.首次免控) > 0);
+    if (controlImmunityItem) holder._装备首次免控名称 = controlImmunityItem.name;
+    const shieldRatio = Number(equipment?.护具?.低血护盾) || 0;
+    if (shieldRatio > 0) {
+      holder._装备低血护盾比例 = shieldRatio;
+      holder._装备低血护盾阈值 = Number(equipment.护具.低血阈值) || 0.3;
+      holder._装备低血护盾名称 = equipment.护具.name;
+    }
+  }
   const A_superdimensional = applySuperdimensionalOpening(A_player, [B_player]);
   const B_superdimensional = applySuperdimensionalOpening(B_player, [A_player]);
   if (A_superdimensional.active) {
@@ -8714,8 +8739,8 @@ let B_speed = getBattleUnitSpeed(B_player);
   // ==================== 行动拉条核心函数 ====================
   
   function advanceActionBars() {
-    const A_realSpeed = Math.floor(A_speed * A_speedBoost);
-    const B_realSpeed = Math.floor(B_speed * B_speedBoost);
+    const A_realSpeed = Math.floor(A_speed * A_speedBoost * (1 - (Number(A_player._技能速度削弱回合) > 0 ? Number(A_player._技能速度削弱比例) || 0 : 0)));
+    const B_realSpeed = Math.floor(B_speed * B_speedBoost * (1 - (Number(B_player._技能速度削弱回合) > 0 ? Number(B_player._技能速度削弱比例) || 0 : 0)));
     
     A_actionBar += A_realSpeed;
     B_actionBar += B_realSpeed;
@@ -8771,6 +8796,20 @@ let B_speed = getBattleUnitSpeed(B_player);
     return true;
   }
 
+  function tickTimedSkillDebuffs(unit) {
+    if (Number(unit._技能禁疗回合) > 0) {
+      unit._技能禁疗回合--;
+      if (unit._技能禁疗回合 <= 0) {
+        unit.禁疗 = Number(unit._技能禁疗原值) || 0;
+        delete unit._技能禁疗原值;
+      }
+    }
+    if (Number(unit._技能速度削弱回合) > 0) {
+      unit._技能速度削弱回合--;
+      if (unit._技能速度削弱回合 <= 0) delete unit._技能速度削弱比例;
+    }
+  }
+
   // ==================== 攻击处理函数（保持原样） ====================
   async function performAttack(attacker, defender, cnt2, context = "main") {
     delete attacker._时间长河反制本回合;
@@ -8799,11 +8838,13 @@ let B_speed = getBattleUnitSpeed(B_player);
         attacker.dongjie = false;
         const immuneType = (attacker === A_player ? A_immune_type : B_immune_type) || "涅槃真火护体";
         msg.push(`${attacker.名号}的${immuneType}效果免疫了冻结状态！`);
-      } else if (attackerEquipment?.护具?.name === '逍遥仙袍' && !attacker._逍遥仙袍已触发) {
+      } else if (Object.values(attackerEquipment || {}).some(item => Number(item?.首次免控) > 0) && !attacker._装备首次免控已触发) {
+        const immunityItem = Object.values(attackerEquipment || {}).find(item => Number(item?.首次免控) > 0);
         attacker.dongjie = false;
-        attacker._逍遥仙袍已触发 = true;
-        attacker._逍遥仙袍闪避次数 = 1;
-        msg.push(`${attacker.名号}的逍遥仙袍清风流转，解除了首次控制，并获得一次10%闪避加成！`);
+        attacker._装备首次免控已触发 = true;
+        if (immunityItem?.name === '逍遥仙袍') attacker._逍遥仙袍闪避次数 = 1;
+        const dodgeText = immunityItem?.name === '逍遥仙袍' ? '，并获得一次10%闪避加成' : '';
+        msg.push(`${attacker.名号}的${immunityItem?.name || '护身装备'}流转道光，解除了本场首次控制${dodgeText}！`);
       } else {
         if (context !== "fenshen") {
           msg.push(`${attacker.名号}无法动弹！`);
@@ -8815,6 +8856,7 @@ let B_speed = getBattleUnitSpeed(B_player);
 
     applyXianguTurnRecovery(attacker, msg);
     if (context === 'main') triggerVitalityRecovery(attacker, '行动前');
+    if (context === 'main') tickTimedSkillDebuffs(attacker);
 
     if (context === 'main') {
       const bannerAttack = rollWanhuaBannerActiveAttack(attacker, defender);
@@ -9131,7 +9173,15 @@ let B_speed = getBattleUnitSpeed(B_player);
         if (skill.控制 === 1 && tryApplyDinghaiControl(defender, msg, '强制控制')) {
           defender.dongjie = true;
         }
-        if (skill.禁疗) defender.禁疗 = Math.max(Number(defender.禁疗) || 0, Number(skill.禁疗));
+        if (skill.禁疗) {
+          if (skill.禁疗回合 && !Number(defender._技能禁疗回合)) defender._技能禁疗原值 = Number(defender.禁疗) || 0;
+          defender.禁疗 = Math.max(Number(defender.禁疗) || 0, Number(skill.禁疗));
+          if (skill.禁疗回合) defender._技能禁疗回合 = Math.max(Number(defender._技能禁疗回合) || 0, Number(skill.禁疗回合));
+        }
+        if (skill.速度削弱) {
+          defender._技能速度削弱比例 = Math.max(Number(defender._技能速度削弱比例) || 0, Number(skill.速度削弱));
+          defender._技能速度削弱回合 = Math.max(Number(defender._技能速度削弱回合) || 0, Number(skill.速度削弱回合) || 1);
+        }
         applySacrificeGrowth(attacker, skill, msg);
         
         if (skill.拉条) {
@@ -9593,6 +9643,17 @@ let B_speed = getBattleUnitSpeed(B_player);
 
     defender.当前血量 -= actual_damage;
     if (defender.当前血量 < 0) defender.当前血量 = 0;
+    if (
+      defender.当前血量 > 0 &&
+      Number(defender._装备低血护盾比例) > 0 &&
+      !defender._装备低血护盾已触发 &&
+      defender.当前血量 <= defender.血量上限 * (Number(defender._装备低血护盾阈值) || 0.3)
+    ) {
+      const shield = Math.max(1, Math.trunc(defender.血量上限 * Number(defender._装备低血护盾比例)));
+      defender.护盾值 = (Number(defender.护盾值) || 0) + shield;
+      defender._装备低血护盾已触发 = true;
+      msg.push(`【${defender._装备低血护盾名称 || '护具'}】${defender.名号}气血跌破三成，凝聚${bigNumberTransform(shield)}点护盾！`);
+    }
 
     if (context === 'main' && actual_damage > 0 && defender.当前血量 > 0) {
       triggerVitalityRecovery(defender, '受击后');
@@ -10635,6 +10696,25 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       try {
         const equipment = await Read_equipment(holder.id);
         teamEquipment.set(holder, equipment);
+        delete holder._装备首次免控名称;
+        delete holder._装备首次免控已触发;
+        delete holder._装备低血护盾比例;
+        delete holder._装备低血护盾阈值;
+        delete holder._装备低血护盾名称;
+        delete holder._装备低血护盾已触发;
+        const slots = [equipment?.武器, equipment?.护具, equipment?.法宝].filter(Boolean);
+        const spiritReduction = slots.reduce((sum, item) => sum + (Number(item.元神伤害减免) || 0), 0);
+        if (spiritReduction > 0) {
+          holder.元神伤害减免 = Math.min(0.9, (Number(holder.元神伤害减免) || 0) + spiritReduction);
+        }
+        const controlImmunityItem = slots.find(item => Number(item.首次免控) > 0);
+        if (controlImmunityItem) holder._装备首次免控名称 = controlImmunityItem.name;
+        const shieldRatio = Number(equipment?.护具?.低血护盾) || 0;
+        if (shieldRatio > 0) {
+          holder._装备低血护盾比例 = shieldRatio;
+          holder._装备低血护盾阈值 = Number(equipment.护具.低血阈值) || 0.3;
+          holder._装备低血护盾名称 = equipment.护具.name;
+        }
         const setOpening = applyExclusiveSetOpening(holder, equipment);
         msg.push(...setOpening.messages);
         const opening = applyWanhuaBannerOpening(
@@ -11020,6 +11100,34 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     return true;
   }
 
+  function tickTeamTimedSkillDebuffs(unit) {
+    if (Number(unit._技能禁疗回合) > 0) {
+      unit._技能禁疗回合--;
+      if (unit._技能禁疗回合 <= 0) {
+        unit.禁疗 = Number(unit._技能禁疗原值) || 0;
+        delete unit._技能禁疗原值;
+      }
+    }
+    if (Number(unit._技能速度削弱回合) > 0) {
+      unit._技能速度削弱回合--;
+      if (unit._技能速度削弱回合 <= 0) delete unit._技能速度削弱比例;
+    }
+  }
+
+  function triggerTeamEquipmentLowHpShield(unit, messages) {
+    if (
+      unit.当前血量 <= 0 ||
+      Number(unit._装备低血护盾比例) <= 0 ||
+      unit._装备低血护盾已触发 ||
+      unit.当前血量 > unit.血量上限 * (Number(unit._装备低血护盾阈值) || 0.3)
+    ) return false;
+    const shield = Math.max(1, Math.trunc(unit.血量上限 * Number(unit._装备低血护盾比例)));
+    unit._护盾值 = (Number(unit._护盾值) || 0) + shield;
+    unit._装备低血护盾已触发 = true;
+    messages.push(`【${unit._装备低血护盾名称 || '护具'}】${unit.名号}气血跌破三成，凝聚${bigNumberTransform(shield)}点护盾！`);
+    return true;
+  }
+
   async function performTeamAttack(attacker, defender, round, allEnemies) {
     let attackMsgs = [];
     delete attacker._时间长河反制本回合;
@@ -11047,6 +11155,13 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         attacker.dongjie = false;
         const immuneType = attacker._immune_type || "涅槃真火护体";
         attackMsgs.push(`${attacker.名号}的${immuneType}效果免疫了冻结状态！`);
+      } else if (Object.values(teamEquipment.get(attacker) || {}).some(item => Number(item?.首次免控) > 0) && !attacker._装备首次免控已触发) {
+        const immunityItem = Object.values(teamEquipment.get(attacker) || {}).find(item => Number(item?.首次免控) > 0);
+        attacker.dongjie = false;
+        attacker._装备首次免控已触发 = true;
+        if (immunityItem?.name === '逍遥仙袍') attacker._逍遥仙袍闪避次数 = 1;
+        const dodgeText = immunityItem?.name === '逍遥仙袍' ? '，并获得一次10%闪避加成' : '';
+        attackMsgs.push(`${attacker.名号}的${immunityItem?.name || '护身装备'}流转道光，解除了本场首次控制${dodgeText}！`);
       } else {
         attackMsgs.push(`${attacker.名号}无法动弹！`);
         attacker.dongjie = false;
@@ -11056,6 +11171,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     applyXianguTurnRecovery(attacker, attackMsgs);
     triggerTeamVitalityRecovery(attacker, '行动前', attackMsgs);
+    tickTeamTimedSkillDebuffs(attacker);
 
     const bannerAttack = rollWanhuaBannerActiveAttack(attacker, defender);
     if (bannerAttack) {
@@ -11067,6 +11183,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       actualDamage -= absorbed;
       appendDinghaiResolution(attackMsgs, recordDinghaiShieldAbsorption(defender, attacker, absorbed));
       defender.当前血量 = Math.max(0, defender.当前血量 - actualDamage);
+      triggerTeamEquipmentLowHpShield(defender, attackMsgs);
       const pushed = tryApplyDinghaiControl(defender, attackMsgs, '行动条推退');
       if (pushed) defender._actionBar = Math.max(0, (Number(defender._actionBar) || 0) - bannerAttack.actionBarReduction);
       attackMsgs.push(bannerAttack.message, ...bannerDamage.msgs);
@@ -11318,7 +11435,15 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         if (skill.不可防御 === 1) 不可防御 = true;
         if (skill.不可复活 === 1) defender.不可复活 = true;
         if (skill.控制 === 1 && tryApplyDinghaiControl(defender, attackMsgs, '强制控制')) defender.dongjie = true;
-        if (skill.禁疗) defender.禁疗 = Math.max(Number(defender.禁疗) || 0, Number(skill.禁疗));
+        if (skill.禁疗) {
+          if (skill.禁疗回合 && !Number(defender._技能禁疗回合)) defender._技能禁疗原值 = Number(defender.禁疗) || 0;
+          defender.禁疗 = Math.max(Number(defender.禁疗) || 0, Number(skill.禁疗));
+          if (skill.禁疗回合) defender._技能禁疗回合 = Math.max(Number(defender._技能禁疗回合) || 0, Number(skill.禁疗回合));
+        }
+        if (skill.速度削弱) {
+          defender._技能速度削弱比例 = Math.max(Number(defender._技能速度削弱比例) || 0, Number(skill.速度削弱));
+          defender._技能速度削弱回合 = Math.max(Number(defender._技能速度削弱回合) || 0, Number(skill.速度削弱回合) || 1);
+        }
         applySacrificeGrowth(attacker, skill, attackMsgs);
         if (skill.拉条) {
           attacker._actionBar = Math.min(ACTION_BAR_MAX, (attacker._actionBar || 0) + skill.拉条);
@@ -11509,6 +11634,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
           if (curtain.message) attackMsgs.push(curtain.message);
           t.当前血量 -= 群攻伤害;
           if (t.当前血量 < 0) t.当前血量 = 0;
+          triggerTeamEquipmentLowHpShield(t, attackMsgs);
           if (群攻伤害 > 0 && t.当前血量 > 0) triggerTeamVitalityRecovery(t, '受击后', attackMsgs);
           attackMsgs.push(`【群攻】${attacker.名号}的余波扫中${t.名号}，造成${bigNumberTransform(群攻伤害)}伤害`);
           if (t.当前血量 <= 0) {
@@ -11588,6 +11714,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     defender.当前血量 -= actual_damage;
     if (defender.当前血量 < 0) defender.当前血量 = 0;
+    triggerTeamEquipmentLowHpShield(defender, attackMsgs);
 
     // —— 草字剑诀·斩真我：命中后残血斩杀 ——
     if (斩杀阈值 > 0 && defender.当前血量 > 0 && defender.当前血量 <= 斩杀阈值 * defender.血量上限) {
@@ -11799,7 +11926,10 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       roundsAdvanced++;
       for (let u of allUnits) {
         if (u.当前血量 <= 0) continue;
-        u._actionBar += Math.floor(u._speed * u._speedBoost);
+        const speedPenalty = Number(u._技能速度削弱回合) > 0
+          ? Math.min(0.95, Math.max(0, Number(u._技能速度削弱比例) || 0))
+          : 0;
+        u._actionBar += Math.floor(u._speed * u._speedBoost * (1 - speedPenalty));
       }
 
       const readyList = allUnits.filter(u => u.当前血量 > 0 && u._actionBar >= ACTION_BAR_MAX);
@@ -14247,9 +14377,20 @@ export function getBattleUnitSpeed(unit) {
 }
 
 function tryApplyDinghaiControl(unit, messages, controlName = '控制') {
-  if (!consumeDinghaiControlImmunity(unit)) return true;
-  if (Array.isArray(messages)) messages.push(`【镇海】${unit.名号}定住诸海诸天，首次${controlName}被定海珠化解！`);
-  return false;
+  if (consumeDinghaiControlImmunity(unit)) {
+    if (Array.isArray(messages)) messages.push(`【镇海】${unit.名号}定住诸海诸天，首次${controlName}被定海珠化解！`);
+    return false;
+  }
+  if (unit?._装备首次免控名称 && !unit._装备首次免控已触发) {
+    unit._装备首次免控已触发 = true;
+    if (unit._装备首次免控名称 === '逍遥仙袍') unit._逍遥仙袍闪避次数 = 1;
+    const dodgeText = unit._装备首次免控名称 === '逍遥仙袍' ? '，并获得一次10%闪避加成' : '';
+    if (Array.isArray(messages)) {
+      messages.push(`【${unit._装备首次免控名称}】${unit.名号}化解了本场首次${controlName}${dodgeText}！`);
+    }
+    return false;
+  }
+  return true;
 }
 
 function appendDinghaiResolution(messages, result) {

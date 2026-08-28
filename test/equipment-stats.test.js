@@ -9,6 +9,7 @@ import {
   isCanonicalDaluoSwordEmbryo,
   isNameablePercentageEquipment,
   MAX_PERCENT_EQUIPMENT_STAT,
+  rebalancePercentBonuses,
 } from '../model/equipmentStats.js';
 
 test('装备百分比统一加算后只乘一次基础属性', () => {
@@ -83,6 +84,26 @@ test('可赋名百分比装备以499为单属性上限', () => {
 
 test('带攻击字段的普通道具不会被当成百分比装备', () => {
   assert.equal(isNameablePercentageEquipment({ class: '道具', type: '道具', atk: 2 }), false);
+});
+
+test('万道神炉：百分比装备溢出自动补偿至理论极限（不溢出不丢失）', () => {
+  // 攻超出（600）：100 点溢出按序补偿给第一个未达极限的属性（防）
+  assert.deepEqual(rebalancePercentBonuses(600, 100, 200), { atk: 500, def: 200, HP: 200, overflow: 0 });
+  // 防超出（600）：溢出补攻
+  assert.deepEqual(rebalancePercentBonuses(300, 600, 300), { atk: 400, def: 500, HP: 300, overflow: 0 });
+  // 全部未超：原样保留
+  assert.deepEqual(rebalancePercentBonuses(100, 200, 300), { atk: 100, def: 200, HP: 300, overflow: 0 });
+  // 全部超出：全部钳制到极限（无可补偿目标，剩余溢出丢弃）
+  assert.deepEqual(rebalancePercentBonuses(600, 600, 600), { atk: 500, def: 500, HP: 500, overflow: 300 });
+
+  const base = { 攻击: 1000, 防御: 1000, 血量上限: 1000 };
+  // 攻 60000%、防 10000%、血 20000%：默认模式攻被截断丢弃；补偿模式下溢出补防、血，最终全部达 50000% 极限
+  const slots = [{ 归一属性: { 百分比: { atk: 600, def: 100, HP: 200 } } }];
+  assert.equal(calculateEquippedStats(base, slots).攻击, 501000);
+  assert.equal(calculateEquippedStats(base, slots).防御, 101000);
+  assert.equal(calculateEquippedStats(base, slots).血量上限, 201000);
+  const compensated = calculateEquippedStats(base, slots, { rebalanceOverflow: true });
+  assert.deepEqual(compensated, { 攻击: 501000, 防御: 201000, 血量上限: 201000 });
 });
 
 test('大罗剑胎对至尊体系列提供十五倍，其他灵根提供七点五倍', () => {

@@ -42,7 +42,7 @@ import {
   zd_battle
 } from '../../model/xiuxian.js';
 import { log } from 'console';
-import { getCraftingTimedActionMultiplier, getPetAbilityBonus } from '../../model/innateTreasure.js';
+import { getCraftingTimedActionMultiplier, getPetAbilityBonus, hasEquippedInnateTreasure, getAuthorityState } from '../../model/innateTreasure.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import {
   isEquipmentNameTooLong,
@@ -397,6 +397,10 @@ export class duanzao extends plugin {
     if (dy.beiyong5 > 0) {
       dyew = dy.beiyong5;
     }
+    // 万道神炉：装备时炼器容量 +5 个格子
+    if (hasEquippedInnateTreasure(player, '万道神炉')) {
+      dyew += 5;
+    }
     const shengyu =
       dyew +
       tripod.容纳量 +
@@ -663,6 +667,18 @@ export class duanzao extends plugin {
           }
         }
 
+        let furnaceBonusNote = '';
+        // ===== 万道神炉·万道开炉：炼器开炉系数+0.5（消耗待用状态，仅本炉生效） =====
+        const furnacePending = getAuthorityState(player).万道开炉待用;
+        if (furnacePending && Number(furnacePending.expiresAt) > Date.now()) {
+          const furnaceBonus = Number(furnacePending.furnaceBonus) || 0;
+          if (furnaceBonus > 0) {
+            xishu += furnaceBonus;
+            delete getAuthorityState(player).万道开炉待用;
+            furnaceBonusNote = `\n【万道开炉】万道炉火共鸣，本炉炼器系数+${furnaceBonus}！`;
+          }
+        }
+
         let houzhui;
         // 计算五维收益（五行加成所有模式通用）
         let i;
@@ -818,7 +834,7 @@ export class duanzao extends plugin {
         if (fireName && fireRate > 0) extNote.push(`炉火【${fireName}】提速 ${Math.round(fireRate * 100)}%`);
         if (gongfaName) extNote.push(`功法【${gongfaName}】xishu+${gfXishu.toFixed(2)}`);
         const extStr = extNote.length ? '\n' + extNote.join('，') : '';
-        e.reply(`【${modeText}】炉[${furnaceName}] 火[${fireName}]${extStr}\n恭喜你获得了[${wuqiname}·${houzhui}],炼器经验增加了[${z}]${robberyMessage}`);
+        e.reply(`【${modeText}】炉[${furnaceName}] 火[${fireName}]${extStr}${furnaceBonusNote}\n恭喜你获得了[${wuqiname}·${houzhui}],炼器经验增加了[${z}]${robberyMessage}`);
         return false;
       }
     }
