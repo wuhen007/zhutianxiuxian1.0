@@ -130,6 +130,7 @@ export function getGodDemonStealRule(attacker, defender) {
 }
 
 export function getRealmAuthorityPath(player) {
+  if (['mijing', 'xiangu', 'huafen'].includes(player?.额外体系)) return player.额外体系;
   const mijingLevel = levelId(player?.mijinglevel_id);
   const xianguLevel = xianguAuthorityLevel(player?.xiangulevel_id);
   const huafenLevel = getFlowerPollenAuthorityLevel(player?.huafenlevel_id);

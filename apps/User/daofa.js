@@ -35,6 +35,10 @@ import {
     hasRealmAuthority,
 } from '../../model/realmAuthority.js';
 import { getExtraCultivationLevelSum } from '../../model/extraCultivation.js';
+import {
+    bindOwnWayRoute,
+    getOwnWayRealmGate,
+} from '../../model/ownWayRealm.js';
 // 在玩家数据结构中添加轮回大道相关字段
 const playerTemplate = {
     // ...其他字段
@@ -124,37 +128,10 @@ const OWN_WAY_REALM_RULES = Object.freeze([
     { index: 8, name: '祭道·祭尽诸我', min: 401, max: 500, multiplier: 256, feature: '祭尽诸我' },
 ]);
 
-// 突破消耗按阶段翻倍；资源名称兼容法则表、遮天道途和仙古道途旧存档。
-const OWN_WAY_BREAKTHROUGH_RULES = Object.freeze([
-    { target: 1, requirements: [['虚道', 1000], ['圣王法则', 1000]] },
-    { target: 2, requirements: [['斩我', 2000], ['大圣法则', 2000]] },
-    { target: 3, requirements: [['遁一', 4000], ['准帝法则', 4000]] },
-    { target: 4, requirements: [['大帝法则', 8000]] },
-    { target: 5, requirements: [['仙王法则', 16000]] },
-    { target: 6, requirements: [['准仙帝法则', 32000]] },
-    { target: 7, requirements: [['仙帝法则', 64000]] },
-    { target: 8, requirements: [['祭道法则', 128000]] },
-]);
-
-// 后五境按三条修炼体系的等效权柄统一判断。
-const OWN_WAY_LATE_REALM_GATES = Object.freeze([
-    { target: 4, name: '红尘仙级', authorityLevel: 17 },
-    { target: 5, name: '仙王级', authorityLevel: 18 },
-    { target: 6, name: '准仙帝级', authorityLevel: 20 },
-    { target: 7, name: '仙帝级', authorityLevel: 21 },
-    { target: 8, name: '祭道级', authorityLevel: 22 },
-]);
-
 const OWN_WAY_RESOURCE_ALIASES = Object.freeze({
-    '虚道': ['虚道', '虚道法则', 'mysteriousVoid'],
-    '斩我': ['斩我', '斩我法则', 'onlySelf'],
-    '遁一': ['遁一', '遁一法则', 'originReturn'],
-    '至尊': ['至尊', '至尊法则', 'supreme'],
     '圣王法则': ['圣王法则', 'saintKingDao'],
     '玄虚': ['玄虚', '虚道', '虚道法则', 'mysteriousVoid'],
     '映照法则': ['映照法则', 'reflectionPrinciple'],
-    '大圣法则': ['大圣法则', 'greatSaintDao'],
-    '准帝法则': ['准帝法则', 'quasiEmperorDao'],
 });
 
 function getOwnWayRealmRule(index) {
@@ -187,18 +164,6 @@ function getOwnWayCultivationCosts(realm) {
     };
 }
 
-function getOwnWayLateRealmGate(player, targetIndex) {
-    const gate = OWN_WAY_LATE_REALM_GATES.find(item => item.target === targetIndex);
-    if (!gate) return { ok: true, missing: [] };
-
-    const missing = [];
-    const authorityLevel = getRealmAuthorityLevel(player);
-    if (authorityLevel < gate.authorityLevel) {
-        missing.push(`主修体系达到${gate.name}（等效权柄≥${gate.authorityLevel}重天，当前${authorityLevel}重天）`);
-    }
-    return { ok: missing.length === 0, missing };
-}
-
 function getOwnWayResourceLocations(player, resourceName) {
     const aliases = OWN_WAY_RESOURCE_ALIASES[resourceName] || [resourceName];
     const locations = [];
@@ -218,19 +183,6 @@ function getOwnWayResourceLocations(player, resourceName) {
         }
     }
     return locations;
-}
-
-function getOwnWayResource(player, resourceName) {
-    return getOwnWayResourceLocations(player, resourceName)
-        .reduce((max, location) => Math.max(max, location.value), 0);
-}
-
-function consumeOwnWayResource(player, resourceName, amount) {
-    const location = getOwnWayResourceLocations(player, resourceName)
-        .sort((a, b) => b.value - a.value)[0];
-    if (!location || location.value < amount) return false;
-    location.parent[location.key] = location.value - amount;
-    return true;
 }
 
 function getOwnWayCreationCosts(player) {
@@ -849,8 +801,9 @@ async  createOwnWay(e) {
             ].join('\n'));
         }
         
-        // 境界检查（准帝以上）
-        if (!hasRealmAuthority(player, 13)) {
+        // 创建与后续突破都只认玩家选定的三大额外体系，伴生体系不能代替主修境界。
+        const creationRealmGate = getOwnWayRealmGate(player, 0);
+        if (!creationRealmGate.ok) {
             const currentRealm = getRealmAuthorityName(
                 player,
                 data.Levelmijing_list,
@@ -859,8 +812,9 @@ async  createOwnWay(e) {
             );
             return e.reply([
                 `欲创自身大道，需主修体系达到圣人王级权柄！`,
-                `当前主修境界：${currentRealm}（等效权柄${getRealmAuthorityLevel(player)}重天）`,
-                `人体秘境、仙古今世法与花粉进化路均按等效权柄参与判断。`
+                `当前主修境界：${currentRealm}（${creationRealmGate.field}=${creationRealmGate.currentRealmId}）`,
+                `尚缺：${creationRealmGate.missing.join('、')}`,
+                `人体秘境、仙古今世法与花粉进化路分别校验自己的实际境界。`
             ].join('\n'));
         }
 
@@ -1103,6 +1057,7 @@ async  createOwnWay(e) {
             消耗仙道潜力: creationCosts.potential,
             消耗法则: `${creationLaw.name}×${creationCosts.law}`,
             主修体系: creationCosts.routeName,
+            主修体系标识: creationCosts.route,
             消耗生命本源: creationCosts.lifeSource
         });
         
@@ -1112,6 +1067,7 @@ async  createOwnWay(e) {
         player.自身之道类型 = wayType;
         player.自身之道阶段 = 0;
         player.自身之道境界 = OWN_WAY_REALM_RULES[0].name;
+        player.自身之道体系 = bindOwnWayRoute(player, creationCosts.route);
         player.修炼次数 = Number(player.修炼次数) || 0;
 
         await Write_player(usr_qq, player);
@@ -1550,7 +1506,7 @@ async cultivateOwnWay(e) {
     // === 3. 当前境界封顶检查与阶段固定消耗 ===
     const currentCultivationCount = Math.max(0, Math.trunc(Number(player.修炼次数) || 0));
     const currentRealm = getOwnWayCurrentRealm(player);
-    const currentRealmGate = getOwnWayLateRealmGate(player, currentRealm.index);
+    const currentRealmGate = getOwnWayRealmGate(player, currentRealm.index);
     if (!currentRealmGate.ok) {
         return e.reply([
             `【${currentRealm.name}·道途未至】`,
@@ -1919,25 +1875,12 @@ async breakthroughOwnWay(e) {
         ].join('\n'));
     }
 
-    const realmGate = getOwnWayLateRealmGate(player, nextRealm.index);
+    const realmGate = getOwnWayRealmGate(player, nextRealm.index);
     if (!realmGate.ok) {
         return e.reply([
             `【${currentRealm.name}·道途未至】`,
             `目标境界：${nextRealm.name}`,
             ...realmGate.missing.map(item => `尚缺：${item}`)
-        ].join('\n'));
-    }
-
-    const breakthroughRule = OWN_WAY_BREAKTHROUGH_RULES.find(rule => rule.target === nextRealm.index);
-    const requirements = breakthroughRule?.requirements || [];
-    const missing = requirements
-        .map(([name, amount]) => ({ name, amount, current: getOwnWayResource(player, name) }))
-        .filter(requirement => requirement.current < requirement.amount);
-    if (missing.length) {
-        return e.reply([
-            `【${currentRealm.name}·突破资源不足】`,
-            `目标境界：${nextRealm.name}`,
-            ...missing.map(item => `${item.name}：${item.current.toLocaleString()}/${item.amount.toLocaleString()}`)
         ].join('\n'));
     }
 
@@ -1959,9 +1902,6 @@ async breakthroughOwnWay(e) {
     const saveResult = await this.saveCustomSkill(updatedSkill, listType);
     if (!saveResult) return e.reply('保存自身之道突破结果失败，请稍后再试');
 
-    for (const [name, amount] of requirements) {
-        consumeOwnWayResource(player, name, amount);
-    }
     player.自身之道阶段 = nextRealm.index;
     player.自身之道境界 = nextRealm.name;
     if (nextRealm.index >= 4) player.自身之道根基 = '无缺帝道';
@@ -1970,7 +1910,8 @@ async breakthroughOwnWay(e) {
         时间: new Date().toLocaleString(),
         原境界: currentRealm.name,
         新境界: nextRealm.name,
-        消耗: Object.fromEntries(requirements),
+        所属体系: realmGate.route,
+        体系境界: `${realmGate.routeName}${realmGate.currentRealmId}级`,
     });
     await Write_player(usr_qq, player);
 
@@ -1980,7 +1921,7 @@ async breakthroughOwnWay(e) {
         `${player.名号}的【${skillName}】由${currentRealm.name}突破至${nextRealm.name}！`,
         `解锁特性：${nextRealm.feature}`,
         nextRealm.index >= 4 ? `道源根基：无缺帝道` : '',
-        `突破消耗：${requirements.map(([name, amount]) => `${name}${amount.toLocaleString()}`).join('、') || '无'}`,
+        `体系门槛：${realmGate.routeName}${realmGate.currentRealmId}级（需${realmGate.requiredRealmName}${realmGate.requiredRealmId}级）`,
         `下一阶段：${cultivationCount + 1}～${nextRealm.max}次`,
         `每次修炼消耗：仙道潜力${nextCost.potential}、修为与血气各${bigNumberTransform(nextCost.cultivation)}`
     ].filter(Boolean).join('\n'));

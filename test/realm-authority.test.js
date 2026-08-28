@@ -5,6 +5,7 @@ import {
   getFlowerPollenAuthorityLevel,
   getRealmAuthorityLevel,
   getRealmAuthorityName,
+  getRealmAuthorityPath,
   getTianjiaoRealmTier,
   getGodDemonStealRule,
   getYuanshenAdvancement,
@@ -47,6 +48,21 @@ test('either cultivation path can satisfy an authority requirement', () => {
 test('the stronger path determines the effective authority', () => {
   assert.equal(getRealmAuthorityLevel({ mijinglevel_id: 22, xiangulevel_id: 24 }), 23);
   assert.equal(getRealmAuthorityLevel({ mijinglevel_id: 24, xiangulevel_id: 22 }), 24);
+});
+
+test('显式选择的额外体系优先于伴生体系和其他残留境界', () => {
+  assert.equal(getRealmAuthorityPath({
+    额外体系: 'xiangu',
+    mijinglevel_id: 21,
+    xiangulevel_id: 12,
+    huafenlevel_id: 25,
+  }), 'xiangu');
+  assert.equal(getRealmAuthorityPath({
+    额外体系: 'huafen',
+    mijinglevel_id: 24,
+    xiangulevel_id: 25,
+    huafenlevel_id: 12,
+  }), 'huafen');
 });
 
 test('realm loss applies to the path providing the authority', () => {
