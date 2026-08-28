@@ -1,5 +1,9 @@
-import { plugin, common, puppeteer, config, Show } from '../../api/api.js';
+import { plugin, puppeteer, config, Show } from '../../api/api.js';
 import { Read_temp, Write_temp } from '../../model/xiuxian.js';
+import {
+  getSecretPlaceSummaryNotificationRoute,
+  sendSecretPlaceNotification,
+} from '../../model/secretPlaceNotification.js';
 export class msgTask extends plugin {
   constructor() {
     super({
@@ -26,50 +30,34 @@ export class msgTask extends plugin {
       temp = await Read_temp();
     }
     if (temp.length > 0) {
-      let group = [];
-      group.push(temp[0].qq_group);
-      f1: for (let i of temp) {
-        for (let j of group) {
-          if (i.qq_group == j) continue f1;
+      const batches = new Map();
+      for (const entry of temp) {
+        const route = getSecretPlaceSummaryNotificationRoute(entry);
+        if (!route.target) {
+          console.error('[秘境汇总通知] 缺少消息目标，已跳过:', entry);
+          continue;
         }
-        group.push(i.qq_group);
+        if (!batches.has(route.key)) {
+          batches.set(route.key, { ...route, entries: [], msg: [] });
+        }
+        const batch = batches.get(route.key);
+        batch.entries.push(entry);
+        batch.msg.push(entry.msg);
       }
-      console.log(group)
-      for (let i of group) {
-        let msg = [];
-        for (let j of temp) {
-          if (i == j.qq_group) {
-            msg.push(j.msg);
-          }
-        }
+
+      const failedEntries = [];
+      for (const batch of batches.values()) {
         let temp_data = {
-          log: msg,
+          log: batch.msg,
         };
         const data1 = await new Show().get_log(temp_data);
         let img = await puppeteer.screenshot('log', {
           ...data1,
         });
-        await this.pushInfo(i, true, img);
+        const sent = await sendSecretPlaceNotification(batch.action, batch.playerId, img);
+        if (!sent) failedEntries.push(...batch.entries);
       }
-      await Write_temp([]);
-    }
-  }
-
-  /**
-   * 推送消息，群消息推送群，或者推送私人
-   * @param id
-   * @param is_group
-   * @return  falses {Promise<void>}
-   */
-  async pushInfo(id, is_group, msg) {
-    if (is_group) {
-      await Bot.pickGroup(id)
-        .sendMsg(msg)
-        .catch(err => {
-          Bot.logger.mark(err);
-        });
-    } else {
-      await common.relpyPrivate(id, msg);
+      await Write_temp(failedEntries);
     }
   }
 }

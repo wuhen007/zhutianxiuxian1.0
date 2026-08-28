@@ -4,6 +4,7 @@ import puppeteer from '../../../lib/puppeteer/puppeteer.js';
 import { writeJsonAtomically } from '../utils/atomicJson.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 import { assertGlobalInitIdle } from '../utils/globalInitGuard.js';
+import { hasPendingSecretPlaceSettlement } from './secretPlaceAddiction.js';
 
 import data from './XiuxianData.js';
 import { cooldownRevivalGongfas, resolveInteractiveGongfaRevival } from './tribulationRevival.js';
@@ -6978,22 +6979,14 @@ export async function Go(e) {
             e.reply(replyMsg.join("\n"));
             return 0;
         }
-    
-    
-    // ...其他代码...
 
-
-    // if(action.Place_action==0){
-    //   action=action.toString()
-    //   e.reply(`降临秘境${action.Place_address}已完成,等待结算中`)
-    //   return 0;
-    // }
-
-    // if(action.Place_actionplus==0){
-    //   action=action.toString()
-    //   e.reply(`沉迷秘境${action.Place_address}x${action.cishu}次已完成,等待结算中`)
-    //   return 0;
-    // }
+        if (hasPendingSecretPlaceSettlement(action)) {
+            const pendingAddictionSettlement = action.Place_actionplus == '0';
+            const place = action.Place_address?.name || action.Place_address || '';
+            const actionName = pendingAddictionSettlement ? '沉迷秘境' : '秘境';
+            e.reply(`${actionName}${place ? `「${place}」` : ''}已完成，等待结算中`);
+            return 0;
+        }
   }
 
   return true;

@@ -72,3 +72,55 @@ test('单张结算卡使用映射后的玩家账号加锁和读写行动', () =>
     /if \(thing_exist\.type === "秘境结算"\) \{\s*const player_id = String\(usr_qq\);/,
   );
 });
+
+test('定时结算逐玩家隔离异常且通知统一走安全发送', () => {
+  for (const path of [
+    '../apps/SecretPlace/SecretPlaceTask.js',
+    '../apps/SecretPlace/SecretPlaceplusTask.js',
+  ]) {
+    const source = read(path);
+    assert.match(source, /try \{\s*result = await withSecretPlaceSettlementLock\(player_id/);
+    assert.match(source, /catch \(error\) \{[\s\S]*?continue;/);
+    assert.match(source, /sendSecretPlaceNotification\(action, player_id, msg\)/);
+  }
+});
+
+test('普通秘境开始计算奖励前不再发送结束通知', () => {
+  const source = read('../apps/SecretPlace/SecretPlaceTask.js');
+  const settlementStart = source.indexOf("if (action.Place_action == '0')");
+  const rewardStart = source.indexOf('let weizhi = action.Place_address', settlementStart);
+  assert.ok(settlementStart >= 0 && rewardStart > settlementStart);
+  assert.doesNotMatch(source.slice(settlementStart, rewardStart), /sendSecretPlaceNotification|sendMsg/);
+});
+
+test('秘境入口持久化会话路由而非直接保存伪群号', () => {
+  for (const path of [
+    '../apps/SecretPlace/SecretPlace.js',
+    '../apps/SecretPlace/SecretPlaceplus.js',
+  ]) {
+    const source = read(path);
+    assert.match(source, /applySecretPlaceNotificationContext\(arr, e, usr_qq\)/);
+    assert.doesNotMatch(source, /arr\.group_id = e\.group_id/);
+  }
+});
+
+test('天资奇遇分支不会提前退出整个玩家结算', () => {
+  for (const path of [
+    '../apps/SecretPlace/SecretPlaceTask.js',
+    '../apps/SecretPlace/SecretPlaceplusTask.js',
+  ]) {
+    const source = read(path);
+    const start = source.indexOf('aptitudeEncounter:');
+    const end = source.indexOf("if (random > 0.1 && random < 0.1002)", start);
+    assert.ok(start >= 0 && end > start);
+    assert.doesNotMatch(source.slice(start, end), /\breturn\s*;/);
+    assert.match(source.slice(start, end), /break aptitudeEncounter;/);
+  }
+});
+
+test('秘境汇总通知失败时保留原始条目等待重试', () => {
+  const source = read('../apps/SecretPlace/msgTask.js');
+  assert.match(source, /const failedEntries = \[\]/);
+  assert.match(source, /if \(!sent\) failedEntries\.push\(\.\.\.batch\.entries\)/);
+  assert.match(source, /await Write_temp\(failedEntries\)/);
+});

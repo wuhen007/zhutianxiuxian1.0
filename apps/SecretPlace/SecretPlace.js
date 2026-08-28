@@ -115,6 +115,7 @@ import {
     getPlaneDestructionInfo,
 } from '../../model/planeDestruction.js';
 import { replyOfficialMessage } from '../../model/officialMessage.js';
+import { applySecretPlaceNotificationContext } from '../../model/secretPlaceNotification.js';
 
 function isWeiMianDestroyed(planeName) {
     return getPlaneDestructionInfo(data.filePathMap.weimianList, planeName).destroyed;
@@ -1443,9 +1444,7 @@ async Gojiehaiplace(e) {
         Place_address: weizhi,
     };
     
-    if (e.isGroup) {
-        arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     // 更新任务记录
     const A = await channel(e.user_id);
@@ -1709,9 +1708,7 @@ async Gosecretplace(e) {
                 Place_address: weizhi,
             };
             
-            if (e.isGroup) {
-                arr.group_id = e.group_id;
-            }
+            applySecretPlaceNotificationContext(arr, e, usr_qq);
             
             await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
             
@@ -1770,9 +1767,7 @@ async Gosecretplace(e) {
         Place_address: weizhi,
     };
     
-    if (e.isGroup) {
-        arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
 
@@ -1898,9 +1893,7 @@ async Goxiajie(e) {
         Place_address: weizhi,
     };
     
-    if (e.isGroup) {
-        arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
 
@@ -2021,9 +2014,7 @@ async Gojiutianshidi(e) {
         Place_address: weizhi,
     };
     
-    if (e.isGroup) {
-        arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
 
@@ -2150,9 +2141,7 @@ async Gozhetian(e) {
                     Place_address: weizhi,
                 };
                 
-                if (e.isGroup) {
-                    arr.group_id = e.group_id;
-                }
+                applySecretPlaceNotificationContext(arr, e, usr_qq);
                 
                 await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
                 return e.reply(allMsgs.join('\n\n'));
@@ -2362,9 +2351,7 @@ async Gozhetian(e) {
         Place_address: weizhi,
     };
     
-    if (e.isGroup) {
-        arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
@@ -2477,9 +2464,7 @@ async Goforbiddenarea(e) {
                 Place_address: weizhi,
             };
             
-            if (e.isGroup) {
-                arr.group_id = e.group_id;
-            }
+            applySecretPlaceNotificationContext(arr, e, usr_qq);
             
             // 使用专用键存储法身行动
             await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
@@ -2581,9 +2566,7 @@ async Goforbiddenarea(e) {
         Place_address: weizhi,
     };
     
-    if (e.isGroup) {
-        arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     // 使用原键名存储真身行动
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
@@ -2749,9 +2732,7 @@ async GoTimeplace(e) {
                 Place_address: weizhi,
             };
             
-            if (e.isGroup) {
-                arr.group_id = e.group_id;
-            }
+            applySecretPlaceNotificationContext(arr, e, usr_qq);
             
             // 使用专用键存储法身行动
             await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
@@ -2859,9 +2840,7 @@ async GoTimeplace(e) {
         Place_address: weizhi,
     };
     
-    if (e.isGroup) {
-        arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     // 更新任务记录
     const A = await channel(e.user_id);
@@ -3167,9 +3146,7 @@ if (didian === "往世星海") {
                     Place_address: weizhi,
                 };
                 
-                if (e.isGroup) {
-                    arr.group_id = e.group_id;
-                }
+                applySecretPlaceNotificationContext(arr, e, usr_qq);
                 
                 await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
                 
@@ -3212,9 +3189,7 @@ if (didian === "往世星海") {
         Place_address: weizhi,
     };
     
-    if (e.isGroup) {
-        arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     // 使用原键名存储真身行动
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));

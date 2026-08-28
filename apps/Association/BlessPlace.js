@@ -1,6 +1,7 @@
 import fs from 'fs';
 import { plugin, verc, config, data } from '../../api/api.js';
 import { createSecretPlaceAddictionAction } from '../../model/secretPlaceAddiction.js';
+import { applySecretPlaceNotificationContext } from '../../model/secretPlaceNotification.js';
 import { getTimedActionMultiplier } from '../../model/innateTreasure.js';
 import {
   Add_灵石,
@@ -346,9 +347,7 @@ export class BlessPlace extends plugin {
       Place_address: weizhi,
       XF: ass.power,
     };
-    if (e.isGroup) {
-      arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     // setTimeout(() => {
     //         SecretPlaceMax(e, weizhi);
@@ -427,9 +426,7 @@ export class BlessPlace extends plugin {
       xf: ass.power,
       now,
     });
-    if (e.isGroup) {
-      arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     await redis.set('xiuxian:player:' + usr_qq + ':addiction_history', JSON.stringify({
       start_time: now,
