@@ -524,8 +524,10 @@ export class StrangeSacrifice extends plugin {
       const killed = (battle.B_team || []).filter(
         (enemy) => enemy.当前血量 <= 0 && enemy._仙帝级强者,
       ).length;
-      const progress = applyStrangeSacrificeVictory(player, encounter, killed);
       const won = playerAlive && Number(battle.B_hp) <= 0;
+      const progress = won
+        ? applyStrangeSacrificeVictory(player, encounter, killed)
+        : { emperorKills: 0, totalEmperorKills: Number(player.厄土仙帝击杀数) || 0 };
       let conclusion;
 
       if (won) {
@@ -539,11 +541,17 @@ export class StrangeSacrifice extends plugin {
         state.participants[id] = { result: 'win', killed, at: Date.now() };
       } else {
         const defeat = applyStrangeSacrificeDefeat(player);
-        conclusion = [
-          `【身灭道消】本战斩杀${progress.emperorKills}位仙帝级强者。`,
-          `过去${defeat.count}条时间线被打灭，24小时内所有交互封锁。`,
-          `累计仙帝击杀${progress.totalEmperorKills}/10。`,
-        ].join('\n');
+        conclusion = defeat.rewritten
+          ? [
+              '【永恒改命】本战仍判负且不结算击杀收益。',
+              '永恒仙图抵消了身灭道消：时间线未被打灭，也未进入24小时交互封锁。',
+              `累计仙帝击杀${progress.totalEmperorKills}/10。`,
+            ].join('\n')
+          : [
+              `【身灭道消】本战斩杀${progress.emperorKills}位仙帝级强者。`,
+              `过去${defeat.count}条时间线被打灭，24小时内所有交互封锁。`,
+              `累计仙帝击杀${progress.totalEmperorKills}/10。`,
+            ].join('\n');
         state.participants[id] = { result: 'loss', killed, at: Date.now() };
       }
       await Write_player(id, player, { trackDailyTask: false });

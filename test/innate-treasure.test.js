@@ -5,24 +5,43 @@ import fs from 'node:fs';
 import {
   AUTHORITY_COOLDOWNS,
   CONTESTABLE_INNATE_TREASURE_NAMES,
+  ETERNAL_MAP_COMPONENTS,
+  ETERNAL_MAP_GESTATION_WORLD_YEARS,
+  ETERNAL_MAP_SYNTHESIS_COSTS,
   INNATE_TREASURE_CATALOG,
   INNATE_TREASURE_NAMES,
+  applyDinghaiBattleOpening,
   applyInnateTravelReduction,
+  applyNewTreasureDamageRules,
   buildInnateTreasureTransfer,
   createInnateTreasure,
   createInnateTreasureProjection,
+  createEternalImmortalMap,
+  consumeAlchemyMultiplier,
+  consumeEternalMapSynthesisMaterials,
+  consumeDinghaiControlImmunity,
+  getCausalDebtMultiplier,
   getCooldownRemaining,
+  getEternalMapGestationStatus,
   getHabitatSlotBonus,
   getInnerWorldOpenChance,
   getInnerWorldYieldMultiplier,
+  getCraftingTimedActionMultiplier,
+  getInnateSpeedMultiplier,
   getPetAbilityBonus,
   getPetTreasureRules,
   getTimedActionMultiplier,
+  getTribulationDamageMultiplier,
+  hasEquippedInnateTreasure,
   hasReincarnationProtection,
   migrateLegacyInnateTreasureSlot,
+  recordDinghaiShieldAbsorption,
   startAuthorityCooldown,
+  temperMyriadTribulationSpirit,
+  tickDinghaiEvolution,
   transferInnateTreasureAuthorityState,
   tryPanguShatterTalisman,
+  tryEternalFateRewrite,
 } from '../model/innateTreasure.js';
 import { swapEquipmentState } from '../model/equipmentSwap.js';
 
@@ -222,4 +241,143 @@ test('混沌钟#截断岁月消费层覆盖分段结算行动并加锁', () => {
   assert.match(block, /action\.end_time = now/);
   // 轮回/关押/永寂仍被排除
   assert.match(block, /轮回\|关押\|永寂/);
+});
+
+test('永恒仙图固定大道至宝数值并继承九件组件权能', () => {
+  assert.equal(ETERNAL_MAP_COMPONENTS.length, 9);
+  const item = createEternalImmortalMap('10001', 1234);
+  assert.equal(item.name, '永恒仙图');
+  assert.equal(item.固定全属性, 1_000_000_000_000);
+  assert.equal(item.全属性倍率加成, 300);
+  assert.equal(item.不可交易, true);
+  const player = { 当前大道至宝: '永恒仙图' };
+  for (const name of ETERNAL_MAP_COMPONENTS) assert.equal(hasEquippedInnateTreasure(player, name), true);
+  assert.equal(hasEquippedInnateTreasure(player, '盘古幡'), false);
+});
+
+test('永恒仙图合成材料完整校验后才统一扣除', () => {
+  assert.deepEqual(ETERNAL_MAP_SYNTHESIS_COSTS, { 界核: 9, 宇宙核心: 1, 鸿蒙道火: 90 });
+  const insufficient = { 材料: [{ name: '界核', 数量: 8 }] };
+  const rejected = consumeEternalMapSynthesisMaterials(insufficient);
+  assert.equal(rejected.ok, false);
+  assert.equal(insufficient.材料[0].数量, 8);
+
+  const najie = {
+    材料: [
+      { name: '界核', 数量: 5 },
+      { name: '界核', 数量: 6 },
+      { name: '宇宙核心', 数量: 1 },
+      { name: '鸿蒙道火', 数量: 100 },
+      { name: '万物源金', 数量: 3 },
+    ],
+  };
+  assert.equal(consumeEternalMapSynthesisMaterials(najie).ok, true);
+  assert.equal(najie.材料.filter(item => item.name === '界核').reduce((sum, item) => sum + item.数量, 0), 2);
+  assert.equal(najie.材料.some(item => item.name === '宇宙核心'), false);
+  assert.equal(najie.材料.find(item => item.name === '鸿蒙道火').数量, 10);
+  assert.equal(najie.材料.find(item => item.name === '万物源金').数量, 3);
+});
+
+test('永恒仙图必须孕育9000世界年才可成形', () => {
+  assert.equal(ETERNAL_MAP_GESTATION_WORLD_YEARS, 9000);
+  const record = { status: 'gestating', readyAtWorldYear: 19000 };
+  assert.deepEqual(getEternalMapGestationStatus(record, 10000), {
+    phase: 'gestating',
+    remainingWorldYears: 9000,
+    readyAtWorldYear: 19000,
+  });
+  assert.equal(getEternalMapGestationStatus(record, 18999.5).remainingWorldYears, 1);
+  assert.equal(getEternalMapGestationStatus(record, 19000).phase, 'ready');
+  assert.equal(getEternalMapGestationStatus({ ownerId: '10001', createdAt: 1 }, 0).phase, 'formed');
+});
+
+test('逐日、神炉、神灯与天碑被动倍率按设计生效', () => {
+  assert.deepEqual(applyInnateTravelReduction({ 当前先天至宝: '逐日仙辇' }, 100), { travelTime: 85, reduction: 15 });
+  assert.equal(getInnateSpeedMultiplier({ 当前先天至宝: '逐日仙辇' }), 1.1);
+  assert.equal(getCraftingTimedActionMultiplier({ 当前先天至宝: '万道神炉' }), 0.8);
+  assert.equal(getCausalDebtMultiplier({ 当前先天至宝: '因果神灯' }), 0.85);
+  assert.equal(getTribulationDamageMultiplier({ 当前先天至宝: '万劫天碑' }), 0.85);
+});
+
+test('万道开炉倍率只消费一次且过期时不生效', () => {
+  const player = {
+    当前先天至宝: '万道神炉',
+    先天权柄: { 冷却: {}, 万道开炉待用: { multiplier: 3, expiresAt: 2000 } },
+  };
+  assert.equal(consumeAlchemyMultiplier(player, 1000), 3);
+  assert.equal(consumeAlchemyMultiplier(player, 1000), 1);
+  player.先天权柄.万道开炉待用 = { multiplier: 2, expiresAt: 999 };
+  assert.equal(consumeAlchemyMultiplier(player, 1000), 1);
+});
+
+test('万劫淬神按初始上限加算四次并恢复当前元神', () => {
+  const player = { 元神: 0, 元神上限: 1000 };
+  for (let index = 0; index < 4; index++) temperMyriadTribulationSpirit(player);
+  assert.equal(player.元神上限, 2000);
+  assert.equal(player.先天权柄.万劫淬神次数, 4);
+  temperMyriadTribulationSpirit(player);
+  assert.equal(player.元神上限, 2000);
+  assert.equal(player.元神, 2000);
+});
+
+test('太初首击对首领额外伤害封顶2%，无量首伤再执行减伤与封顶', () => {
+  const attacker = { 名号: '持刃者', _太初仙刃首击倍率: 2.5 };
+  const boss = { 名号: '首领', boss: true, 血量上限: 10_000, 当前血量: 10_000 };
+  assert.equal(applyNewTreasureDamageRules(attacker, boss, 1000).damage, 1200);
+  assert.equal(attacker._太初仙刃首击倍率, undefined);
+
+  const defender = { 名号: '持尺者', _无量护身剩余: 3, _无量天尺首伤上限: 450 };
+  assert.equal(applyNewTreasureDamageRules({}, defender, 1000).damage, 450);
+  assert.equal(defender._无量护身剩余, 2);
+  assert.equal(applyNewTreasureDamageRules({}, defender, 1000).damage, 800);
+});
+
+test('永恒改命保底气血元神并使用共享十日冷却', () => {
+  const player = { 当前大道至宝: '永恒仙图', 当前血量: 0, 元神: 0, 修仙状态: '身灭道消' };
+  assert.equal(tryEternalFateRewrite(player, 1000), true);
+  assert.equal(player.当前血量, 1);
+  assert.equal(player.元神, 1);
+  assert.equal(player.修仙状态, '空闲');
+  assert.equal(getCooldownRemaining(player, '永恒改命', 1000), 10 * 24 * 60 * 60 * 1000);
+  assert.equal(tryEternalFateRewrite(player, 1001), false);
+});
+
+test('定海珠开场护盾与首次控制免疫按次数生效', () => {
+  const holder = { 当前先天至宝: '定海珠', 血量上限: 1000, 当前血量: 1000, 护盾值: 50 };
+  const passive = applyDinghaiBattleOpening(holder);
+  assert.deepEqual(passive, { active: false, shield: 200, blockedOpeningControl: false });
+  assert.equal(holder.护盾值, 250);
+  assert.equal(consumeDinghaiControlImmunity(holder), true);
+  assert.equal(consumeDinghaiControlImmunity(holder), false);
+
+  const controlled = { 当前先天至宝: '定海珠', 血量上限: 1000, 当前血量: 1000, dongjie: true };
+  assert.equal(applyDinghaiBattleOpening(controlled).blockedOpeningControl, true);
+  assert.equal(controlled.dongjie, false);
+  assert.equal(consumeDinghaiControlImmunity(controlled), false);
+});
+
+test('演化诸天在护盾破碎或三次行动时只反击一次', () => {
+  const attacker = { 名号: '攻盾者', 当前血量: 10000, 血量上限: 10000 };
+  const holder = { 当前先天至宝: '定海珠', 血量上限: 1000, 当前血量: 1000, 攻击: 100, 法球倍率: 2, _护盾值: 0 };
+  assert.equal(applyDinghaiBattleOpening(holder, { active: true, shieldField: '_护盾值' }).shield, 500);
+  holder._护盾值 -= 100;
+  assert.equal(recordDinghaiShieldAbsorption(holder, attacker, 100).ended, false);
+  assert.equal(tickDinghaiEvolution(holder).ended, false);
+  assert.equal(tickDinghaiEvolution(holder).ended, false);
+  const result = tickDinghaiEvolution(holder);
+  assert.equal(result.damage, 80);
+  assert.equal(attacker.当前血量, 9920);
+  assert.equal(holder._护盾值, 0);
+  assert.equal(tickDinghaiEvolution(holder).ended, false);
+});
+
+test('演化诸天反击同时受攻击法球上限与首领3%上限约束', () => {
+  const boss = { 名号: '试炼首领', boss: true, 当前血量: 10000, 血量上限: 10000 };
+  const holder = { 当前先天至宝: '定海珠', 血量上限: 1000, 当前血量: 1000, 攻击: 100, 法球倍率: 2, 护盾值: 0 };
+  applyDinghaiBattleOpening(holder, { active: true });
+  holder.护盾值 = 0;
+  const result = recordDinghaiShieldAbsorption(holder, boss, 500);
+  assert.equal(result.damage, 300);
+  assert.equal(boss.当前血量, 9700);
+  assert.equal(recordDinghaiShieldAbsorption(holder, boss, 500).damage, 0);
 });

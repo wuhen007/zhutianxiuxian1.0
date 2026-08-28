@@ -4,6 +4,7 @@ import {
   getRealmAuthorityPath,
 } from './realmAuthority.js';
 import { destroyWorldline } from './worldlineAuthority.js';
+import { tryEternalFateRewrite } from './innateTreasure.js';
 
 export const STRANGE_SACRIFICE = Object.freeze({
   yearsPerEpoch: 50_000,
@@ -350,6 +351,9 @@ export function applyStrangeSacrificeDefeat(
   player,
   { now = Date.now(), random = Math.random, lineIds = [] } = {},
 ) {
+  if (tryEternalFateRewrite(player, now)) {
+    return { destroyed: [], count: 0, lockUntil: 0, rewritten: true };
+  }
   const roll = Math.min(0.999999, Math.max(0, number(random(), 0)));
   const count = 3 + Math.floor(roll * 3);
   const destroyed = [];

@@ -5,6 +5,10 @@ import { getPlayerPlaneName } from './planeCoords.js';
 import { getDungeonGongfaReduction } from './gongfaProficiency.js';
 import { hasPercentageStats } from './tianjiaoTaint.js';
 import { isNameablePercentageEquipment } from './equipmentStats.js';
+import {
+  DAO_TREASURE_ALL_ATTRIBUTE_BONUS,
+  DAO_TREASURE_FIXED_ATTRIBUTES,
+} from './daoTreasure.js';
 
 export const INNATE_TREASURE_NAMES = Object.freeze([
   '混沌珠',
@@ -19,7 +23,29 @@ export const INNATE_TREASURE_NAMES = Object.freeze([
   '炼妖壶',
   '崆峒印',
   '虚天舟',
+  '太初仙刃',
+  '无量天尺',
+  '逐日仙辇',
+  '造化仙池',
+  '周天星辰旗',
+  '万道神炉',
+  '菩提祖树',
+  '因果神灯',
+  '万劫天碑',
+  '定海珠',
 ]);
+
+export const ETERNAL_MAP_NAME = '永恒仙图';
+export const ETERNAL_MAP_COMPONENTS = Object.freeze([
+  '太初仙刃', '无量天尺', '逐日仙辇', '造化仙池', '周天星辰旗',
+  '万道神炉', '菩提祖树', '因果神灯', '万劫天碑',
+]);
+export const ETERNAL_MAP_SYNTHESIS_COSTS = Object.freeze({
+  界核: 9,
+  宇宙核心: 1,
+  鸿蒙道火: 90,
+});
+export const ETERNAL_MAP_GESTATION_WORLD_YEARS = 9000;
 
 export const CONTESTABLE_INNATE_TREASURE_NAMES = Object.freeze(
   INNATE_TREASURE_NAMES.filter(name => name !== '虚天舟')
@@ -194,6 +220,97 @@ export const INNATE_TREASURE_CATALOG = Object.freeze({
       { command: '#离开虚天舟', effect: '在启航前主动离舟。' },
     ],
   },
+  太初仙刃: {
+    title: '太初裁道',
+    lore: '太初第一缕锋芒所化，专斩诸法尚未圆满之处。',
+    summary: 'PVE无视防御，并可令下一场战斗的首击获得强化。',
+    passives: ['PVE战斗中无视敌方15%防御。'],
+    authorities: [
+      { command: '#太初一斩', cooldownKey: '太初一斩', effect: '下一场战斗首次命中伤害提升至2.5倍；对首领额外增伤部分不超过其最大生命2%。' },
+    ],
+  },
+  无量天尺: {
+    title: '无量护世',
+    lore: '尺量诸天，也量劫力，超出承受之限的毁灭皆被截断。',
+    summary: '限制首次受击伤害，并可连续抵御三次攻击。',
+    passives: ['每场战斗首次受到的伤害不超过自身最大生命45%。'],
+    authorities: [
+      { command: '#无量护身', cooldownKey: '无量护身', effect: '下一场战斗前3次受到的伤害降低20%。' },
+    ],
+  },
+  逐日仙辇: {
+    title: '逐光巡天',
+    lore: '仙辇追逐大日横渡诸界，光阴与山河都在车轮下退去。',
+    summary: '缩短位面穿梭时间并提升战斗速度。',
+    passives: ['位面穿梭时间缩短15%；战斗速度提升10%。'],
+    authorities: [],
+  },
+  造化仙池: {
+    title: '造化回春',
+    lore: '一池造化液孕育万灵，可补生命本源，也可滋养仙道根基。',
+    summary: '强化治疗，并可恢复生命本源、提升仙道潜力。',
+    passives: ['治疗效果提升25%。'],
+    authorities: [
+      { command: '#造化回春 [@玩家]', cooldownKey: '造化回春', effect: '为自己或同位面玩家恢复至自然生命本源上限，并增加50点仙道潜力。' },
+    ],
+  },
+  周天星辰旗: {
+    title: '周天列宿',
+    lore: '诸天星斗皆为旗上道纹，展开时可调度群星护持同行之人。',
+    summary: '提高队伍速度，并可在下一场战斗展开群体护盾。',
+    passives: ['所在队伍全体战斗速度提升8%。'],
+    authorities: [
+      { command: '#星辰护界', cooldownKey: '星辰护界', effect: '下一场战斗为自己生成25%最大生命护盾，为队友生成15%最大生命护盾。' },
+    ],
+  },
+  万道神炉: {
+    title: '万道归炉',
+    lore: '万道皆可为火，丹器入炉便在诸法共鸣中蜕变。',
+    summary: '缩短炼丹炼器耗时，并可令下一炉丹药获得多倍产出。',
+    passives: ['炼丹与炼器耗时缩短20%。'],
+    authorities: [
+      { command: '#万道开炉', cooldownKey: '万道开炉', effect: '锁定下一次普通丹药成功出炉倍率：70%为2倍、30%为3倍，24小时内有效，可与仙宠双倍叠加。' },
+    ],
+  },
+  菩提祖树: {
+    title: '菩提道祖',
+    lore: '祖树叶落一念明，枝桠间沉淀着诸世修士的悟道回响。',
+    summary: '提高修炼与悟道收益，并可直接获得额外修炼。',
+    passives: ['修炼与悟道收益提升25%。'],
+    authorities: [
+      { command: '#菩提悟道', cooldownKey: '菩提悟道', effect: '立即获得相当于闭关4小时的修为与血气收益。' },
+    ],
+  },
+  因果神灯: {
+    title: '照见因果',
+    lore: '灯火照见因果来路，使缠身之债在光中显形并消散。',
+    summary: '减少因果债获取，并可主动消减已有因果债。',
+    passives: ['获得的因果债降低15%。'],
+    authorities: [
+      { command: '#因果净照', cooldownKey: '因果净照', effect: '消减15点因果债。' },
+    ],
+  },
+  万劫天碑: {
+    title: '万劫留痕',
+    lore: '天碑铭刻诸世大劫，持碑者借万劫磨砺元神而不失本真。',
+    summary: '降低渡劫伤害，并可恢复、永久淬炼元神上限。',
+    passives: ['渡劫所受伤害降低15%。'],
+    authorities: [
+      { command: '#万劫淬神', cooldownKey: '万劫淬神', effect: '恢复50%最大元神，并永久增加初始元神上限的25%；上限淬炼最多4次，合计提升100%。' },
+    ],
+  },
+  定海珠: {
+    title: '诸海之宗',
+    lore: '混沌初开，二十四颗定海珠映照诸海诸天，珠光所至，风浪、时序与万法皆归宁定。',
+    summary: '以定海护盾抵挡开局攻势，免疫首次控制，并可演化诸天反击攻盾之敌。',
+    passives: [
+      '镇海：战斗开始时获得20%最大生命护盾。',
+      '每场战斗首次冻结、沉默、行动条推退或强制控制无效。',
+    ],
+    authorities: [
+      { command: '#演化诸天', cooldownKey: '演化诸天', effect: '下一场战斗的定海护盾提升至50%最大生命；护盾破碎或持有者完成3次行动时，对最后攻击者返还实际吸收伤害的80%，且只结算一次。' },
+    ],
+  },
 });
 
 export const AUTHORITY_COOLDOWNS = Object.freeze({
@@ -211,6 +328,16 @@ export const AUTHORITY_COOLDOWNS = Object.freeze({
   人皇敕令: 7 * 24 * 60 * 60 * 1000,
   执掌轮回: 24 * 60 * 60 * 1000,
   阴阳逆转: 24 * 60 * 60 * 1000,
+  太初一斩: 24 * 60 * 60 * 1000,
+  无量护身: 24 * 60 * 60 * 1000,
+  造化回春: 7 * 24 * 60 * 60 * 1000,
+  星辰护界: 24 * 60 * 60 * 1000,
+  万道开炉: 72 * 60 * 60 * 1000,
+  菩提悟道: 72 * 60 * 60 * 1000,
+  因果净照: 7 * 24 * 60 * 60 * 1000,
+  万劫淬神: 7 * 24 * 60 * 60 * 1000,
+  演化诸天: 24 * 60 * 60 * 1000,
+  永恒改命: 10 * 24 * 60 * 60 * 1000,
 });
 
 export const INNATE_TREASURE_PROJECTION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -232,7 +359,7 @@ const STATE_FILE = path.join(
 );
 
 function defaultState() {
-  return { owners: {}, equipped: {}, decree: null, landscapeRealms: [] };
+  return { owners: {}, equipped: {}, decree: null, landscapeRealms: [], eternalMap: null };
 }
 
 export function readInnateTreasureState() {
@@ -292,6 +419,72 @@ export function createInnateTreasure(name, ownerId, now = Date.now()) {
     pinji: 6,
     数量: 1,
     islockd: 1,
+  };
+}
+
+export function createEternalImmortalMap(ownerId, now = Date.now()) {
+  return {
+    id: 39_000_009,
+    name: ETERNAL_MAP_NAME,
+    class: '装备',
+    type: '至宝',
+    品阶: '大道至宝',
+    大道至宝本体: true,
+    永恒仙图本体: true,
+    author_name: String(ownerId),
+    绑定者: String(ownerId),
+    固定全属性: DAO_TREASURE_FIXED_ATTRIBUTES,
+    全属性倍率加成: DAO_TREASURE_ALL_ATTRIBUTE_BONUS,
+    atk: 0,
+    def: 0,
+    HP: 0,
+    bao: 0,
+    全属性: 0,
+    出售价: 0,
+    pinji: 6,
+    稀有度: 10,
+    数量: 1,
+    islockd: 1,
+    不可交易: true,
+    不可出售: true,
+    合成时间: now,
+  };
+}
+
+export function consumeEternalMapSynthesisMaterials(najie) {
+  const materials = Array.isArray(najie?.材料) ? najie.材料 : [];
+  const missing = Object.entries(ETERNAL_MAP_SYNTHESIS_COSTS)
+    .map(([name, required]) => {
+      const owned = materials
+        .filter(item => item?.name === name)
+        .reduce((sum, item) => sum + Math.max(0, Number(item.数量) || 0), 0);
+      return owned >= required ? null : { name, required, owned };
+    })
+    .filter(Boolean);
+  if (missing.length) return { ok: false, missing };
+
+  for (const [name, required] of Object.entries(ETERNAL_MAP_SYNTHESIS_COSTS)) {
+    let remaining = required;
+    for (const item of materials) {
+      if (item?.name !== name || remaining <= 0) continue;
+      const consumed = Math.min(Math.max(0, Number(item.数量) || 0), remaining);
+      item.数量 = (Number(item.数量) || 0) - consumed;
+      remaining -= consumed;
+    }
+  }
+  najie.材料 = materials.filter(item => (Number(item?.数量) || 0) > 0);
+  return { ok: true };
+}
+
+export function getEternalMapGestationStatus(record, worldYear) {
+  if (!record) return { phase: 'available', remainingWorldYears: 0 };
+  if (record.status !== 'gestating') return { phase: 'formed', remainingWorldYears: 0 };
+  const readyAtWorldYear = Number(record.readyAtWorldYear) || 0;
+  const remainingWorldYears = Math.max(0, Math.ceil(readyAtWorldYear - (Number(worldYear) || 0)));
+  return {
+    phase: remainingWorldYears > 0 ? 'gestating' : 'ready',
+    remainingWorldYears,
+    readyAtWorldYear,
   };
 }
 
@@ -407,7 +600,90 @@ export function updateEquippedInnateTreasure(ownerId, treasureName, sectName = '
 }
 
 export function hasEquippedInnateTreasure(player, name) {
-  return player?.当前先天至宝 === name;
+  return player?.当前先天至宝 === name ||
+    (player?.当前大道至宝 === ETERNAL_MAP_NAME && ETERNAL_MAP_COMPONENTS.includes(name));
+}
+
+export function applyDinghaiBattleOpening(holder, { active = false, shieldField = '护盾值' } = {}) {
+  if (!hasEquippedInnateTreasure(holder, '定海珠')) return { active: false, shield: 0 };
+  const blockedOpeningControl = Boolean(holder.dongjie || Number(holder._东皇冻结回合) > 0);
+  const maxHp = Math.max(1, Number(holder.血量上限) || Number(holder.当前血量) || 1);
+  const shield = Math.max(1, Math.floor(maxHp * (active ? 0.5 : 0.2)));
+  holder[shieldField] = Math.max(0, Number(holder[shieldField]) || 0) + shield;
+  holder._定海珠护盾字段 = shieldField;
+  holder._定海珠护盾值 = shield;
+  holder._定海珠控制免疫 = !blockedOpeningControl;
+  if (blockedOpeningControl) {
+    holder.dongjie = false;
+    holder._东皇冻结回合 = 0;
+  }
+  holder._定海珠演化激活 = Boolean(active);
+  holder._定海珠演化剩余行动 = active ? 3 : 0;
+  holder._定海珠吸收伤害 = 0;
+  holder._定海珠最后攻击者 = null;
+  holder._定海珠反击已结算 = false;
+  return { active: Boolean(active), shield, blockedOpeningControl };
+}
+
+export function consumeDinghaiControlImmunity(holder) {
+  if (!holder?._定海珠控制免疫) return false;
+  holder._定海珠控制免疫 = false;
+  return true;
+}
+
+function isDinghaiBoss(target) {
+  return target?.boss === true || target?.type === 'boss' ||
+    /BOSS|Boss|首领|天骄/.test(String(target?.名号 || target?.name || ''));
+}
+
+function settleDinghaiEvolution(holder, reason) {
+  if (!holder?._定海珠演化激活 || holder._定海珠反击已结算) {
+    return { ended: false, damage: 0, target: null, reason };
+  }
+  holder._定海珠演化激活 = false;
+  holder._定海珠反击已结算 = true;
+  holder._定海珠演化剩余行动 = 0;
+
+  const shieldField = holder._定海珠护盾字段 || '护盾值';
+  const ownShield = Math.max(0, Number(holder._定海珠护盾值) || 0);
+  holder[shieldField] = Math.max(0, (Number(holder[shieldField]) || 0) - ownShield);
+  holder._定海珠护盾值 = 0;
+
+  const target = holder._定海珠最后攻击者;
+  const absorbed = Math.max(0, Number(holder._定海珠吸收伤害) || 0);
+  if (!target || absorbed <= 0 || Number(target.当前血量) <= 0) {
+    return { ended: true, damage: 0, target, reason };
+  }
+  const orbMultiplier = Math.max(0, Number(holder.法球倍率 ?? holder.灵根?.法球倍率 ?? 1) || 0);
+  const attackCap = Math.max(0, Math.floor((Number(holder.攻击) || 0) * orbMultiplier * 3));
+  const bossCap = isDinghaiBoss(target)
+    ? Math.max(0, Math.floor((Number(target.血量上限) || Number(target.当前血量) || 0) * 0.03))
+    : Number.POSITIVE_INFINITY;
+  const damage = Math.max(0, Math.min(Math.floor(absorbed * 0.8), attackCap, bossCap));
+  target.当前血量 = Math.max(0, (Number(target.当前血量) || 0) - damage);
+  return { ended: true, damage, target, reason };
+}
+
+export function recordDinghaiShieldAbsorption(holder, attacker, absorbed) {
+  const ownShield = Math.max(0, Number(holder?._定海珠护盾值) || 0);
+  const amount = Math.min(ownShield, Math.max(0, Number(absorbed) || 0));
+  if (amount <= 0) return { ended: false, damage: 0, target: null };
+  holder._定海珠护盾值 = ownShield - amount;
+  holder._定海珠吸收伤害 = Math.max(0, Number(holder._定海珠吸收伤害) || 0) + amount;
+  if (attacker) holder._定海珠最后攻击者 = attacker;
+  return holder._定海珠护盾值 <= 0
+    ? settleDinghaiEvolution(holder, '护盾破碎')
+    : { ended: false, damage: 0, target: null };
+}
+
+export function tickDinghaiEvolution(holder) {
+  if (!holder?._定海珠演化激活 || holder._定海珠反击已结算) {
+    return { ended: false, damage: 0, target: null };
+  }
+  holder._定海珠演化剩余行动 = Math.max(0, Number(holder._定海珠演化剩余行动) - 1);
+  return holder._定海珠演化剩余行动 <= 0
+    ? settleDinghaiEvolution(holder, '三次行动完成')
+    : { ended: false, damage: 0, target: null };
 }
 
 export function getAuthorityState(player) {
@@ -424,6 +700,7 @@ const TREASURE_AUTHORITY_STATE_KEYS = Object.freeze({
   诛仙四剑: Object.freeze(['诛仙剑阵待用']),
   天地玄黄玲珑塔: Object.freeze(['玄黄护道待用']),
   东皇钟: Object.freeze(['东皇镇世待用']),
+  定海珠: Object.freeze(['定海珠演化待用']),
 });
 
 export function transferInnateTreasureAuthorityState(sourcePlayer, targetPlayer, treasureName) {
@@ -463,6 +740,90 @@ export function getTimedActionMultiplier(player) {
   return 1;
 }
 
+export function getCraftingTimedActionMultiplier(player) {
+  return getTimedActionMultiplier(player) * (hasEquippedInnateTreasure(player, '万道神炉') ? 0.8 : 1);
+}
+
+export function getInnateSpeedMultiplier(player) {
+  return hasEquippedInnateTreasure(player, '逐日仙辇') ? 1.1 : 1;
+}
+
+export function getCausalDebtMultiplier(player) {
+  return hasEquippedInnateTreasure(player, '因果神灯') ? 0.85 : 1;
+}
+
+export function consumeAlchemyMultiplier(player, now = Date.now()) {
+  const state = getAuthorityState(player);
+  const pending = state.万道开炉待用;
+  if (!pending || Number(pending.expiresAt) <= now || !hasEquippedInnateTreasure(player, '万道神炉')) {
+    if (pending && Number(pending.expiresAt) <= now) delete state.万道开炉待用;
+    return 1;
+  }
+  delete state.万道开炉待用;
+  return Number(pending.multiplier) === 3 ? 3 : 2;
+}
+
+export function temperMyriadTribulationSpirit(player) {
+  const state = getAuthorityState(player);
+  const currentMax = Math.max(1, Math.floor(Number(player.元神上限) || Number(player.元神) || 1));
+  const base = Math.max(1, Math.floor(Number(state.万劫淬神基础上限) || currentMax));
+  state.万劫淬神基础上限 = base;
+  const previousCount = Math.max(0, Math.floor(Number(state.万劫淬神次数) || 0));
+  const increased = previousCount < 4;
+  if (increased) {
+    player.元神上限 = currentMax + Math.floor(base * 0.25);
+    state.万劫淬神次数 = previousCount + 1;
+  } else {
+    player.元神上限 = currentMax;
+  }
+  const restored = Math.floor(player.元神上限 * 0.5);
+  player.元神 = Math.min(player.元神上限, Math.max(0, Number(player.元神) || 0) + restored);
+  return { increased, count: Number(state.万劫淬神次数) || 4, base, restored, max: player.元神上限 };
+}
+
+export function tryEternalFateRewrite(player, now = Date.now()) {
+  if (player?.当前大道至宝 !== ETERNAL_MAP_NAME || getCooldownRemaining(player, '永恒改命', now) > 0) {
+    return false;
+  }
+  startAuthorityCooldown(player, '永恒改命', now);
+  player.当前血量 = Math.max(1, Number(player.当前血量) || 0);
+  player.元神 = Math.max(1, Number(player.元神) || 0);
+  player.修仙状态 = '空闲';
+  player.道果状态 = '永恒仙图·既定命运改写';
+  getAuthorityState(player).永恒改命记录 = [
+    ...(Array.isArray(player.先天权柄.永恒改命记录) ? player.先天权柄.永恒改命记录 : []),
+    { type: '身灭道消', at: now, state: 'rewritten' },
+  ].slice(-10);
+  return true;
+}
+
+export function applyNewTreasureDamageRules(attacker, defender, damage) {
+  let result = Math.max(0, Math.floor(Number(damage) || 0));
+  const messages = [];
+  if (attacker?._太初仙刃首击倍率) {
+    const base = result;
+    const desiredExtra = Math.floor(base * (Number(attacker._太初仙刃首击倍率) - 1));
+    const boss = defender?.boss === true || defender?.type === 'boss' || /BOSS|Boss|首领|天骄/.test(String(defender?.名号 || defender?.name || ''));
+    const extra = boss
+      ? Math.min(desiredExtra, Math.floor((Number(defender?.血量上限) || Number(defender?.当前血量) || 0) * 0.02))
+      : desiredExtra;
+    result += Math.max(0, extra);
+    delete attacker._太初仙刃首击倍率;
+    messages.push(`【太初一斩】${attacker.名号 || '持刃者'}的首次命中迸发太初锋芒。`);
+  }
+  if (Number(defender?._无量护身剩余) > 0) {
+    result = Math.floor(result * 0.8);
+    defender._无量护身剩余 -= 1;
+    messages.push(`【无量护身】${defender.名号 || '持尺者'}将本次伤害削减20%。`);
+  }
+  if (defender?._无量天尺首伤上限) {
+    result = Math.min(result, Math.max(1, Math.floor(Number(defender._无量天尺首伤上限))));
+    delete defender._无量天尺首伤上限;
+    messages.push(`【无量天尺】首次受击伤害被截断在最大生命45%以内。`);
+  }
+  return { damage: result, messages };
+}
+
 export function getDungeonTimedActionMultiplier(player) {
   const technique = getDungeonGongfaReduction(player);
   return Math.max(0.5, getTimedActionMultiplier(player) * (1 - technique.rate));
@@ -470,6 +831,10 @@ export function getDungeonTimedActionMultiplier(player) {
 
 export function applyInnateTravelReduction(player, travelTime, random = Math.random) {
   const original = Math.max(1, Math.ceil(Number(travelTime) || 1));
+  if (hasEquippedInnateTreasure(player, '逐日仙辇')) {
+    const travelTime = Math.max(1, Math.ceil(original * 0.85));
+    return { travelTime, reduction: original - travelTime };
+  }
   if (!hasEquippedInnateTreasure(player, '虚天舟')) {
     return { travelTime: original, reduction: 0 };
   }
@@ -517,10 +882,15 @@ export function getInnerWorldYieldMultiplier(player) {
 }
 
 export function getTribulationDamageMultiplier(player) {
-  return hasEquippedInnateTreasure(player, '天地玄黄玲珑塔') &&
+  const xuanhuang = hasEquippedInnateTreasure(player, '天地玄黄玲珑塔') &&
     player?.先天权柄?.玄黄护道待用 === true
     ? 0.7
     : 1;
+  return xuanhuang * getPassiveTribulationDamageMultiplier(player);
+}
+
+export function getPassiveTribulationDamageMultiplier(player) {
+  return hasEquippedInnateTreasure(player, '万劫天碑') ? 0.85 : 1;
 }
 
 export function hasReincarnationProtection(player, now = Date.now()) {
@@ -538,7 +908,8 @@ export function getKongtongModifiers(player, now = Date.now()) {
   );
   const decree = state.decree && Number(state.decree.expiresAt) > now ? state.decree : null;
   return {
-    cultivationMultiplier: ownerOrSect ? 2 : 1,
+    cultivationMultiplier: (ownerOrSect ? 2 : 1) * (hasEquippedInnateTreasure(player, '菩提祖树') ? 1.25 : 1),
+    wudaoMultiplier: hasEquippedInnateTreasure(player, '菩提祖树') ? 1.25 : 1,
     decree,
   };
 }

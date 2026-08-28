@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { plugin, verc, config, data } from '../../api/api.js';
 import {
@@ -19,6 +20,9 @@ import {
   player_efficiency,
 } from '../../model/xiuxian.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
+import { getMinggeEffects } from '../../model/mingge.js';
+import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
+import { ensureWorldlineState, getCausalDebtTier } from '../../model/worldlineAuthority.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import {
   accelerateSecretPlaceAction,
@@ -27,13 +31,20 @@ import {
 import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
 import {
   AUTHORITY_COOLDOWNS,
+  ETERNAL_MAP_COMPONENTS,
+  ETERNAL_MAP_GESTATION_WORLD_YEARS,
+  ETERNAL_MAP_NAME,
+  ETERNAL_MAP_SYNTHESIS_COSTS,
   INNATE_TREASURE_CATALOG,
   INNATE_TREASURE_NAMES,
   buildInnateTreasureTransfer,
+  consumeEternalMapSynthesisMaterials,
+  createEternalImmortalMap,
   claimKongtongBorrow,
   formatCooldown,
   getAuthorityState,
   getCooldownRemaining,
+  getEternalMapGestationStatus,
   getChaosItemRarity,
   getChaosItemRestriction,
   getInnateTreasureProjectionName,
@@ -43,6 +54,7 @@ import {
   readInnateTreasureState,
   setKongtongDecree,
   startAuthorityCooldown,
+  temperMyriadTribulationSpirit,
   transferInnateTreasureAuthorityState,
   PANGU_TALISMAN_SHATTER_CHANCE,
   writeInnateTreasureState,
@@ -50,6 +62,13 @@ import {
 
 const COPYABLE_CLASSES = ['丹药', '道具', '草药', '材料', '食材', '仙宠口粮', '盒子'];
 const CHAOS_INSPECTABLE_CLASSES = [...COPYABLE_CLASSES, '装备'];
+
+function currentWorldYear() {
+  const current = config.getConfig('xiuxian', 'xiuxian')?.Era?.current || {};
+  const calculated = getRealmEventWorldYear(current.index, current.years, current.epoch);
+  const total = Number(current.totalYears);
+  return Number.isFinite(total) ? Math.max(total, calculated) : calculated;
+}
 
 function parseItemAmount(message, command) {
   const match = String(message || '').match(new RegExp(`^#${command}\\s+(.+?)\\*(\\d+)$`));
@@ -75,6 +94,27 @@ function mergeInventoryItem(najie, itemClass, item, amount) {
 function removeInventoryItem(najie, itemClass, item, amount) {
   item.数量 = (Number(item.数量) || 0) - amount;
   najie[itemClass] = najie[itemClass].filter(entry => Number(entry.数量) > 0);
+}
+
+function worldStorageHasItem(name) {
+  const contains = value => {
+    if (Array.isArray(value)) return value.some(entry => entry?.name === name || contains(entry));
+    if (!value || typeof value !== 'object') return false;
+    if (value.name === name) return true;
+    return Object.values(value).some(contains);
+  };
+  for (const directory of [__PATH.najie_path, __PATH.equipment_path]) {
+    if (!fs.existsSync(directory)) continue;
+    for (const fileName of fs.readdirSync(directory)) {
+      if (!fileName.endsWith('.json')) continue;
+      try {
+        if (contains(JSON.parse(fs.readFileSync(path.join(directory, fileName), 'utf8')))) return true;
+      } catch {
+        // Ignore an unrelated damaged save and keep checking the remaining holders.
+      }
+    }
+  }
+  return false;
 }
 
 function nativePool(itemClass) {
@@ -141,6 +181,18 @@ export class InnateTreasureAuthorities extends plugin {
         { reg: '^#同意登舟$', fnc: 'acceptXutianPassenger' },
         { reg: '^#虚天舟乘员$', fnc: 'showXutianPassengers' },
         { reg: '^#离开虚天舟$', fnc: 'leaveXutianShip' },
+        { reg: '^#(?:太初一斩|太初斩道)$', fnc: 'prepareTaichu' },
+        { reg: '^#(?:无量护身|无量封界)$', fnc: 'prepareWuliang' },
+        { reg: '^#(?:星辰护界|周天列阵)$', fnc: 'prepareStarBanner' },
+        { reg: '^#造化回春', fnc: 'creationSpring' },
+        { reg: '^#万道开炉$', fnc: 'openMyriadFurnace' },
+        { reg: '^#(?:菩提悟道|菩提顿悟)$', fnc: 'bodhiEnlightenment' },
+        { reg: '^#(?:因果净照|燃灯解因)$', fnc: 'cleanseCausality' },
+        { reg: '^#万劫淬神$', fnc: 'temperSpirit' },
+        { reg: '^#演化诸天$', fnc: 'prepareDinghai' },
+        { reg: '^#合成永恒仙图$', fnc: 'synthesizeEternalMap' },
+        { reg: '^#永恒古史$', fnc: 'showEternalHistory' },
+        { reg: '^#永恒改命\\s+\\S+$', fnc: 'rewriteEternalFact' },
       ],
     });
     this.task = {
@@ -155,6 +207,12 @@ export class InnateTreasureAuthorities extends plugin {
     if (!ownerId) return '未认主';
     let ownerName = '一位修士';
     if (await existplayer(ownerId)) ownerName = (await Read_player(ownerId)).名号 || ownerName;
+    if (ETERNAL_MAP_COMPONENTS.includes(name) && state.owners?.[name]?.fusedInto === ETERNAL_MAP_NAME) {
+      return `已熔入永恒仙图·${ownerName}`;
+    }
+    if (ETERNAL_MAP_COMPONENTS.includes(name) && state.owners?.[name]?.gestatingInto === ETERNAL_MAP_NAME) {
+      return `仙图孕育中·${ownerName}`;
+    }
     const equipped = String(state.equipped?.[name]?.ownerId || '') === String(ownerId);
     return `${equipped ? '执掌中' : '已认主'}·${ownerName}`;
   }
@@ -259,6 +317,10 @@ export class InnateTreasureAuthorities extends plugin {
     const lockIds = [sourceQq, targetQq].sort();
     return withPlayerMutationLock(lockIds[0], () => withPlayerMutationLock(lockIds[1], async () => {
       const state = readInnateTreasureState();
+      if (ETERNAL_MAP_COMPONENTS.includes(treasureName) &&
+          (state.owners?.[treasureName]?.gestatingInto || state.owners?.[treasureName]?.fusedInto)) {
+        return e.reply(`【${treasureName}】已经熔入永恒仙图道胎，不能再单独移交。`);
+      }
       const transfer = buildInnateTreasureTransfer(state, treasureName, sourceQq, targetQq);
       if (!transfer.ok) {
         if (transfer.reason === 'unclaimed') return e.reply(`【${treasureName}】当前尚未认主。`);
@@ -392,7 +454,7 @@ export class InnateTreasureAuthorities extends plugin {
     let qq = await channel(String(e.user_id).replace('qg_', ''));
     if (!await existplayer(qq)) return false;
     const player = await Read_player(qq);
-    const name = player.当前先天至宝;
+    const name = player.当前先天至宝 || (player.当前大道至宝 === ETERNAL_MAP_NAME ? ETERNAL_MAP_NAME : '');
     if (!name) return e.reply('你当前没有执掌先天至宝。使用 #执掌先天至宝 名称 可令已认主的至宝归位。');
     const cooldowns = Object.entries(player.先天权柄?.冷却 || {})
       .map(([key, expiresAt]) => [key, Math.max(0, Number(expiresAt) - Date.now())])
@@ -612,6 +674,284 @@ export class InnateTreasureAuthorities extends plugin {
 
   async preparePangu(e) {
     return this.prepare(e, '盘古幡', '开天', '盘古开天待用', `开天气机已凝聚，下一场PVE或天骄讨伐将触发开天；战胜天骄时有${PANGU_TALISMAN_SHATTER_CHANCE * 100}%概率打碎其本世护身法宝。`);
+  }
+
+  async prepareTaichu(e) {
+    return this.prepare(e, '太初仙刃', '太初一斩', '太初仙刃首击待用', '太初锋芒已凝聚，下一场战斗的首次命中将触发太初一斩。');
+  }
+
+  async prepareWuliang(e) {
+    return this.prepare(e, '无量天尺', '无量护身', '无量护身待用', '无量道纹护住周身，下一场战斗前3次受击伤害降低20%。');
+  }
+
+  async prepareStarBanner(e) {
+    return this.prepare(e, '周天星辰旗', '星辰护界', '星辰护界待用', '周天星辰已经列阵，下一场战斗将为己方展开星辰护盾。');
+  }
+
+  async prepareDinghai(e) {
+    return this.prepare(e, '定海珠', '演化诸天', '定海珠演化待用', '二十四颗定海珠已映照诸天，下一场战斗将展开50%最大生命的定海护盾。');
+  }
+
+  async creationSpring(e) {
+    const ctx = await this.context(e, '造化仙池', '造化回春');
+    if (!ctx) return false;
+    const rawTarget = e.at && e.at !== 'all' ? String(e.at).replace('qg_', '') : '';
+    const targetQq = rawTarget ? String(await channel(rawTarget)) : String(ctx.qq);
+    if (!await existplayer(targetQq)) return e.reply('目标尚未踏入修行。');
+    const target = targetQq === String(ctx.qq) ? ctx.player : await Read_player(targetQq);
+    if (getPlayerPlaneName(target) !== getPlayerPlaneName(ctx.player)) return e.reply('造化仙池只能滋养同一位面的修士。');
+    const effects = getMinggeEffects(target, data.minggeList);
+    const naturalMax = Math.max(100, 100 + (Number(target.灵根?.生命本源) || 0) + (Number(effects.生命本源额外) || 0));
+    const restored = Math.max(0, naturalMax - (Number(target.生命本源) || 0));
+    target.生命本源 = Math.max(Number(target.生命本源) || 0, naturalMax);
+    target.仙道潜力 = Math.max(0, Number(target.仙道潜力) || 0) + 50;
+    startAuthorityCooldown(ctx.player, '造化回春');
+    await Write_player(targetQq, target);
+    if (targetQq !== String(ctx.qq)) await Write_player(ctx.qq, ctx.player);
+    return e.reply(`【造化回春】${target.名号}生命本源恢复${restored}点，仙道潜力+50。`);
+  }
+
+  async openMyriadFurnace(e) {
+    const ctx = await this.context(e, '万道神炉', '万道开炉');
+    if (!ctx) return false;
+    const multiplier = Math.random() < 0.7 ? 2 : 3;
+    getAuthorityState(ctx.player).万道开炉待用 = {
+      multiplier,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+    };
+    startAuthorityCooldown(ctx.player, '万道开炉');
+    await Write_player(ctx.qq, ctx.player);
+    return e.reply(`【万道开炉】已锁定${multiplier}倍丹药产出，24小时内下一次普通丹药成功出炉时触发。`);
+  }
+
+  async bodhiEnlightenment(e) {
+    const ctx = await this.context(e, '菩提祖树', '菩提悟道');
+    if (!ctx) return false;
+    await player_efficiency(ctx.qq);
+    ctx.player = await Read_player(ctx.qq);
+    const cf = config.getConfig('xiuxian', 'xiuxian');
+    const perMinute = Math.floor((Number(cf.biguan?.size) || 0) * (Number(ctx.player.level_id) || 1) * ((Number(ctx.player.修炼效率提升) || 0) + 1));
+    const modifiers = getKongtongModifiers(ctx.player);
+    const cultivation = Math.max(1, Math.floor(perMinute * 240 * modifiers.cultivationMultiplier));
+    await Add_修为(ctx.qq, cultivation);
+    await Add_血气(ctx.qq, cultivation);
+    ctx.player = await Read_player(ctx.qq);
+    startAuthorityCooldown(ctx.player, '菩提悟道');
+    await Write_player(ctx.qq, ctx.player);
+    return e.reply(`【菩提悟道】菩提叶落，道念澄明：修为与血气各+${cultivation.toLocaleString('zh-CN')}。`);
+  }
+
+  async cleanseCausality(e) {
+    const ctx = await this.context(e, '因果神灯', '因果净照');
+    if (!ctx) return false;
+    const state = ensureWorldlineState(ctx.player);
+    const reduced = Math.min(15, Math.max(0, Number(state.causalDebt) || 0));
+    state.causalDebt = Math.max(0, Number(state.causalDebt) - reduced);
+    ctx.player.因果反噬 = { debt: state.causalDebt, ...getCausalDebtTier(state.causalDebt), updatedAt: Date.now() };
+    state.history.push({ type: '因果净照', reduced, at: Date.now() });
+    startAuthorityCooldown(ctx.player, '因果净照');
+    await Write_player(ctx.qq, ctx.player);
+    return e.reply(`【因果净照】神灯照去${reduced}点因果债，当前因果债：${state.causalDebt}。`);
+  }
+
+  async temperSpirit(e) {
+    const ctx = await this.context(e, '万劫天碑', '万劫淬神');
+    if (!ctx) return false;
+    const result = temperMyriadTribulationSpirit(ctx.player);
+    startAuthorityCooldown(ctx.player, '万劫淬神');
+    await Write_player(ctx.qq, ctx.player);
+    const increaseLine = result.increased
+      ? `元神上限永久提升至${result.max.toLocaleString('zh-CN')}（${result.count}/4）`
+      : `元神上限淬炼已圆满（4/4）`;
+    return e.reply(`【万劫淬神】恢复元神${result.restored.toLocaleString('zh-CN')}；${increaseLine}。`);
+  }
+
+  async synthesizeEternalMap(e) {
+    if (!verc({ e })) return false;
+    const qq = String(await channel(String(e.user_id).replace('qg_', '')));
+    if (!await existplayer(qq)) return false;
+    return withPlayerMutationLock(qq, async () => {
+      const state = readInnateTreasureState();
+      const worldYear = currentWorldYear();
+      const gestation = getEternalMapGestationStatus(state.eternalMap, worldYear);
+      if (state.eternalMap) {
+        if (String(state.eternalMap.ownerId || '') !== qq) {
+          return e.reply(gestation.phase === 'formed'
+            ? '永恒仙图已经在诸天中成形，无法再次合成。'
+            : `永恒仙图正在他人道炉中孕育，距离成形还需${gestation.remainingWorldYears.toLocaleString('zh-CN')}世界年。`);
+        }
+        if (gestation.phase === 'formed') return e.reply('你已经炼成【永恒仙图】，无需再次合成。');
+        if (gestation.phase === 'gestating') {
+          return e.reply(`【永恒仙图】仍在孕育，距离成形还需${gestation.remainingWorldYears.toLocaleString('zh-CN')}世界年（预计诸天纪年${gestation.readyAtWorldYear.toLocaleString('zh-CN')}年）。`);
+        }
+
+        const [najie, equipment] = await Promise.all([Read_najie(qq), Read_equipment(qq)]);
+        najie.装备 ||= [];
+        if (equipment.至宝?.name) najie.装备.push({ ...equipment.至宝, 数量: 1 });
+        equipment.至宝 = createEternalImmortalMap(qq);
+        for (const name of ETERNAL_MAP_COMPONENTS) {
+          const owner = state.owners?.[name] || {};
+          state.owners[name] = {
+            ...owner,
+            ownerId: qq,
+            fusedInto: ETERNAL_MAP_NAME,
+            fusedAt: Date.now(),
+          };
+          delete state.owners[name].gestatingInto;
+          delete state.equipped[name];
+        }
+        state.eternalMap = {
+          ...state.eternalMap,
+          status: 'formed',
+          formedAt: Date.now(),
+          formedAtWorldYear: worldYear,
+        };
+
+        const transaction = new FileRollbackTransaction();
+        transaction.capture(path.join(__PATH.player_path, `${qq}.json`));
+        transaction.capture(path.join(__PATH.najie_path, `${qq}.json`));
+        transaction.capture(path.join(__PATH.equipment_path, `${qq}.json`));
+        transaction.capture(path.join(__PATH.data_path, 'innate_treasure_state.json'));
+        try {
+          writeInnateTreasureState(state);
+          await Write_najie(qq, najie);
+          await Write_equipment(qq, equipment);
+          transaction.commit();
+        } catch (error) {
+          transaction.rollback();
+          invalidateBattleEquipmentCache(qq);
+          throw error;
+        }
+        return e.reply('【大道至宝·永恒仙图】九宝历经9000世界年孕育，今日归一成图。攻击、防御、血量各固定增加一万亿，全属性倍率+300，九宝权能与原有冷却全部保留。');
+      }
+
+      const missingOwnership = ETERNAL_MAP_COMPONENTS.filter(name => String(state.owners?.[name]?.ownerId || '') !== qq);
+      if (missingOwnership.length) return e.reply(`尚未取得这些至宝的永久归属：${missingOwnership.join('、')}`);
+      const [najie, equipment] = await Promise.all([Read_najie(qq), Read_equipment(qq)]);
+      najie.装备 ||= [];
+      const held = name => equipment.至宝?.name === name || najie.装备.some(item => item.name === name && !item.先天投影截止);
+      const missingItems = ETERNAL_MAP_COMPONENTS.filter(name => !held(name));
+      if (missingItems.length) return e.reply(`存档中缺少这些至宝本体：${missingItems.join('、')}`);
+
+      const materialResult = consumeEternalMapSynthesisMaterials(najie);
+      if (!materialResult.ok) {
+        return e.reply(`合成材料不足：${materialResult.missing.map(item => `${item.name} ${item.owned}/${item.required}`).join('、')}`);
+      }
+
+      najie.装备 = najie.装备.filter(item => !ETERNAL_MAP_COMPONENTS.includes(item.name));
+      if (ETERNAL_MAP_COMPONENTS.includes(equipment.至宝?.name)) equipment.至宝 = {};
+      for (const name of ETERNAL_MAP_COMPONENTS) {
+        state.owners[name] = {
+          ...state.owners[name],
+          ownerId: qq,
+          gestatingInto: ETERNAL_MAP_NAME,
+          gestationStartedAt: Date.now(),
+        };
+        delete state.equipped[name];
+      }
+      state.eternalMap = {
+        ownerId: qq,
+        status: 'gestating',
+        startedAt: Date.now(),
+        startedAtWorldYear: worldYear,
+        readyAtWorldYear: worldYear + ETERNAL_MAP_GESTATION_WORLD_YEARS,
+      };
+
+      const transaction = new FileRollbackTransaction();
+      transaction.capture(path.join(__PATH.player_path, `${qq}.json`));
+      transaction.capture(path.join(__PATH.najie_path, `${qq}.json`));
+      transaction.capture(path.join(__PATH.equipment_path, `${qq}.json`));
+      transaction.capture(path.join(__PATH.data_path, 'innate_treasure_state.json'));
+      try {
+        writeInnateTreasureState(state);
+        await Write_najie(qq, najie);
+        await Write_equipment(qq, equipment);
+        transaction.commit();
+      } catch (error) {
+        transaction.rollback();
+        invalidateBattleEquipmentCache(qq);
+        throw error;
+      }
+      return e.reply([
+        '【永恒仙图·开始孕育】',
+        '九件先天至宝已永久熔入道胎。',
+        `消耗：${Object.entries(ETERNAL_MAP_SYNTHESIS_COSTS).map(([name, amount]) => `${name}×${amount}`).join('、')}`,
+        `成形：诸天纪年${state.eternalMap.readyAtWorldYear.toLocaleString('zh-CN')}年（还需${ETERNAL_MAP_GESTATION_WORLD_YEARS.toLocaleString('zh-CN')}世界年）。`,
+        '到期后再次发送 #合成永恒仙图 令大道至宝出世。',
+      ].join('\n'));
+    });
+  }
+
+  async showEternalHistory(e) {
+    if (!verc({ e })) return false;
+    const qq = String(await channel(String(e.user_id).replace('qg_', '')));
+    const player = await Read_player(qq);
+    if (player.当前大道至宝 !== ETERNAL_MAP_NAME) return e.reply('需先执掌【永恒仙图】才能观照永恒古史。');
+    const records = Array.isArray(player.先天权柄?.永恒改命记录) ? player.先天权柄.永恒改命记录 : [];
+    if (!records.length) return e.reply('【永恒古史】当前没有可供改写的既定事实。');
+    return e.reply(['【永恒古史】', ...records.map((record, index) => `${record.id || index + 1}. ${record.name || record.type}｜${record.state === 'erased' ? '可改写' : '已改写'}`)].join('\n'));
+  }
+
+  async rewriteEternalFact(e) {
+    if (!verc({ e })) return false;
+    const qq = String(await channel(String(e.user_id).replace('qg_', '')));
+    if (!await existplayer(qq)) return false;
+    const player = await Read_player(qq);
+    if (player.当前大道至宝 !== ETERNAL_MAP_NAME) return e.reply('需先执掌【永恒仙图】才能改写既定事实。');
+    const remaining = getCooldownRemaining(player, '永恒改命');
+    if (remaining > 0) return e.reply(`【永恒改命】尚在冷却，还需${formatCooldown(remaining)}。`);
+    const id = String(e.msg).replace(/^#永恒改命\s+/, '').trim();
+    const records = Array.isArray(player.先天权柄?.永恒改命记录) ? player.先天权柄.永恒改命记录 : [];
+    const record = records.find((item, index) => String(item.id || index + 1) === id && item.state === 'erased');
+    if (!record) return e.reply('没有找到这条可改写的永恒古史记录。');
+    const innateState = readInnateTreasureState();
+    if (record.innateName && innateState.owners?.[record.innateName] && String(innateState.owners[record.innateName].ownerId) !== qq) {
+      return e.reply(`【${record.innateName}】已经重新认他人为主，本次改命未生效，也未进入冷却。`);
+    }
+    const recordedItems = [
+      ...(record.snapshot?.inventory || []).map(entry => entry.item),
+      ...(record.snapshot?.equipment || []).map(entry => entry.item),
+    ];
+    if (recordedItems.some(item => item?.全服唯一) && worldStorageHasItem(record.name)) {
+      return e.reply(`【${record.name}】的全服唯一锚点已经被重新占据，本次改命未生效，也未进入冷却。`);
+    }
+    const [najie, equipment] = await Promise.all([Read_najie(qq), Read_equipment(qq)]);
+    for (const [key, value] of Object.entries(record.snapshot?.player || {})) player[key] = value;
+    for (const entry of record.snapshot?.inventory || []) {
+      najie[entry.itemClass] ||= [];
+      const current = najie[entry.itemClass].find(item => item.name === entry.item.name);
+      if (current) current.数量 = (Number(current.数量) || 0) + (Number(entry.item.数量) || 1);
+      else najie[entry.itemClass].push({ ...entry.item });
+    }
+    for (const entry of record.snapshot?.equipment || []) {
+      if (!equipment[entry.slot]?.name) equipment[entry.slot] = { ...entry.item };
+      else {
+        najie.装备 ||= [];
+        najie.装备.push({ ...entry.item, class: '装备', 数量: 1 });
+      }
+    }
+    record.state = 'rewritten';
+    record.rewrittenAt = Date.now();
+    startAuthorityCooldown(player, '永恒改命');
+    if (record.innateName) innateState.owners[record.innateName] = { ownerId: qq, claimedAt: Date.now() };
+
+    const transaction = new FileRollbackTransaction();
+    transaction.capture(path.join(__PATH.player_path, `${qq}.json`));
+    transaction.capture(path.join(__PATH.najie_path, `${qq}.json`));
+    transaction.capture(path.join(__PATH.equipment_path, `${qq}.json`));
+    transaction.capture(path.join(__PATH.data_path, 'innate_treasure_state.json'));
+    try {
+      if (record.innateName) writeInnateTreasureState(innateState);
+      await Write_player(qq, player);
+      await Write_najie(qq, najie);
+      if ((record.snapshot?.equipment || []).length) await Write_equipment(qq, equipment);
+      transaction.commit();
+    } catch (error) {
+      transaction.rollback();
+      invalidateBattleEquipmentCache(qq);
+      throw error;
+    }
+    return e.reply(`【永恒改命】既定事实“${record.name || record.type}”已从古史中重新显化。`);
   }
 
   async prepareZhuxian(e) {

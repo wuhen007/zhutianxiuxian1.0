@@ -95,6 +95,16 @@ test('战败打灭三至五条时间线并封锁二十四小时', () => {
   assert.equal(maxResult.count, 5);
 });
 
+test('永恒仙图抵消祭礼身灭道消且不打灭时间线', () => {
+  const player = emperor({ 当前大道至宝: '永恒仙图', 元神: 0 });
+  const result = applyStrangeSacrificeDefeat(player, { now: 1000, random: () => 0 });
+  assert.equal(result.rewritten, true);
+  assert.deepEqual(result.destroyed, []);
+  assert.equal(player.当前血量, 900);
+  assert.equal(player.元神, 1);
+  assert.equal(player.诡异祭礼身灭道消至, undefined);
+});
+
 test('祭道要求十位仙帝击杀、道心圆满与自身之道修满', () => {
   assert.equal(getSacrificePromotionGate(emperor()).ok, true);
   assert.equal(
@@ -159,10 +169,9 @@ test('祭道、造化万物与Boss指令已接入新规则', () => {
     'utf8',
   );
   assert.match(realmSource, /getSacrificePromotionGate\(player\)/);
-  assert.match(
-    realmSource,
-    /authorityLevel === 21 \? 75 : authorityLevel === 22 \? 50 : 0/,
-  );
+  assert.match(realmSource, /calculateCreationEverything\(authorityLevel, itemExist\.稀有度, amount\)/);
+  assert.match(realmSource, /action: '造化万物'/);
+  assert.match(realmSource, /creationProfile\.causalDebt/);
   assert.match(bossSource, /#迎战诡异小祭/);
   assert.match(bossSource, /#迎战诡异大祭/);
   assert.match(bossSource, /#开启诡异大祭万界/);

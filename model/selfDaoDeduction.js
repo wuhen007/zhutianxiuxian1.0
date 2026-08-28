@@ -1,5 +1,6 @@
 import { getRealmAuthorityLevel, getRealmAuthorityPath } from './realmAuthority.js';
 import { synchronizeCausalFacts } from './worldlineAuthority.js';
+import { tryEternalFateRewrite } from './innateTreasure.js';
 
 export const SELF_DAO_REQUIRED_ATTEMPTS = 10;
 export const SELF_DAO_REALM_AWAKENING = 5;
@@ -142,6 +143,11 @@ export function promoteSelfDaoToImmortalEmperor(player, now = Date.now()) {
 
 export function startCorpseEmperorRecovery(player, now = Date.now()) {
   const state = ensureSelfDaoDeduction(player);
+  if (tryEternalFateRewrite(player, now)) {
+    state.battlePending = true;
+    state.recovery = null;
+    return { rewritten: true, startAt: now, endAt: now };
+  }
   state.battlePending = false;
   state.recovery = {
     status: 'recovering',

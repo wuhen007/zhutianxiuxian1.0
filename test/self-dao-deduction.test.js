@@ -88,6 +88,16 @@ test('三体系晋升映射正确，尸骸战败320分钟后重聚成帝', () =>
   assert.equal(xiangu.xiangulevel_id, 22);
 });
 
+test('永恒仙图抵消尸骸仙帝身灭道消并保留重战状态', () => {
+  const player = quasiEmperor({ 当前大道至宝: '永恒仙图', 当前血量: 0, 元神: 0 });
+  const recovery = startCorpseEmperorRecovery(player, 1000);
+  assert.equal(recovery.rewritten, true);
+  assert.equal(player.己道推演.battlePending, true);
+  assert.equal(player.己道推演.recovery, null);
+  assert.equal(player.当前血量, 1);
+  assert.equal(player.元神, 1);
+});
+
 test('尸骸呼吸只损坏位面并扣减诸天承受力', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'corpse-plane-'));
   const file = path.join(dir, '位面.json');
