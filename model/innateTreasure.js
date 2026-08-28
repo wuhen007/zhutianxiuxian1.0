@@ -248,10 +248,10 @@ export const INNATE_TREASURE_CATALOG = Object.freeze({
   造化仙池: {
     title: '造化回春',
     lore: '一池造化液孕育万灵，可补生命本源，也可滋养仙道根基。',
-    summary: '强化治疗，并可恢复生命本源、提升仙道潜力。',
+    summary: '强化治疗，并修复道伤、恢复生命本源、大幅提升仙道潜力。',
     passives: ['治疗效果提升25%。'],
     authorities: [
-      { command: '#造化回春 [@玩家]', cooldownKey: '造化回春', effect: '为自己或同位面玩家恢复至自然生命本源上限，并增加50点仙道潜力。' },
+      { command: '#造化回春 [@玩家]', cooldownKey: '造化回春', effect: '为自己或同位面玩家恢复至自然生命本源上限、修复全部道伤并解除无法证道，增加500点仙道潜力。' },
     ],
   },
   周天星辰旗: {
@@ -266,19 +266,19 @@ export const INNATE_TREASURE_CATALOG = Object.freeze({
   万道神炉: {
     title: '万道归炉',
     lore: '万道皆可为火，丹器入炉便在诸法共鸣中蜕变。',
-    summary: '缩短炼丹炼器耗时，并可令下一炉丹药获得多倍产出。',
-    passives: ['炼丹与炼器耗时缩短20%。'],
+    summary: '缩短炼丹炼器耗时、扩充炼器炉容量，并可令下一炉丹药多倍产出或炼器开炉获得系数加成。',
+    passives: ['炼丹与炼器耗时缩短20%；炼器炉容量+5个格子；百分比装备属性溢出自动补偿至理论极限。'],
     authorities: [
-      { command: '#万道开炉', cooldownKey: '万道开炉', effect: '锁定下一次普通丹药成功出炉倍率：70%为2倍、30%为3倍，24小时内有效，可与仙宠双倍叠加。' },
+      { command: '#万道开炉', cooldownKey: '万道开炉', effect: '锁定下一次普通丹药成功出炉倍率（70%为2倍、30%为3倍），或下一次炼器开炉系数+0.5，24小时内有效，可与仙宠双倍叠加。' },
     ],
   },
   菩提祖树: {
     title: '菩提道祖',
     lore: '祖树叶落一念明，枝桠间沉淀着诸世修士的悟道回响。',
-    summary: '提高修炼与悟道收益，并可直接获得额外修炼。',
-    passives: ['修炼与悟道收益提升25%。'],
+    summary: '大幅提高修炼与悟道收益，并可顿悟悟道兼得闭关修行。',
+    passives: ['修炼收益提升12500%；悟道收益提升200%。'],
     authorities: [
-      { command: '#菩提悟道', cooldownKey: '菩提悟道', effect: '立即获得相当于闭关4小时的修为与血气收益。' },
+      { command: '#菩提悟道', cooldownKey: '菩提悟道', effect: '立刻无条件无代价获得一次顿悟的悟道，并直接获得闭关72小时的修为与血气收益。' },
     ],
   },
   因果神灯: {
@@ -908,8 +908,9 @@ export function getKongtongModifiers(player, now = Date.now()) {
   );
   const decree = state.decree && Number(state.decree.expiresAt) > now ? state.decree : null;
   return {
-    cultivationMultiplier: (ownerOrSect ? 2 : 1) * (hasEquippedInnateTreasure(player, '菩提祖树') ? 1.25 : 1),
-    wudaoMultiplier: hasEquippedInnateTreasure(player, '菩提祖树') ? 1.25 : 1,
+    // 菩提祖树：修炼收益 +12500%（×126）、悟道收益 +200%（×3）
+    cultivationMultiplier: (ownerOrSect ? 2 : 1) * (hasEquippedInnateTreasure(player, '菩提祖树') ? 126 : 1),
+    wudaoMultiplier: hasEquippedInnateTreasure(player, '菩提祖树') ? 3 : 1,
     decree,
   };
 }

@@ -24,6 +24,15 @@ import { getMinggeEffects } from '../../model/mingge.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { ensureWorldlineState, getCausalDebtTier } from '../../model/worldlineAuthority.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { getRealmAuthorityPath } from '../../model/realmAuthority.js';
+import {
+  calculateWudaoResult,
+  ensureDaoPath,
+  ensureXianguDaoPath,
+  getDaoRuleForRealm,
+  getXianguDaoRuleForRealm,
+} from '../../model/wudaoRules.js';
+import { getFlowerDaoGateState } from '../../model/flowerPollenPath.js';
 import {
   accelerateSecretPlaceAction,
   getSecretPlaceActionEndTime,
@@ -704,11 +713,17 @@ export class InnateTreasureAuthorities extends plugin {
     const naturalMax = Math.max(100, 100 + (Number(target.灵根?.生命本源) || 0) + (Number(effects.生命本源额外) || 0));
     const restored = Math.max(0, naturalMax - (Number(target.生命本源) || 0));
     target.生命本源 = Math.max(Number(target.生命本源) || 0, naturalMax);
-    target.仙道潜力 = Math.max(0, Number(target.仙道潜力) || 0) + 50;
+    target.仙道潜力 = Math.max(0, Number(target.仙道潜力) || 0) + 500;
+    // 造化仙池修复道伤：道伤归零，并解除"无法证道"封锁
+    const hadDaoWound = (Number(target.道伤) || 0) > 0;
+    target.道伤 = 0;
+    delete target.无法证道;
     startAuthorityCooldown(ctx.player, '造化回春');
     await Write_player(targetQq, target);
     if (targetQq !== String(ctx.qq)) await Write_player(ctx.qq, ctx.player);
-    return e.reply(`【造化回春】${target.名号}生命本源恢复${restored}点，仙道潜力+50。`);
+    const lines = [`【造化回春】${target.名号}生命本源恢复${restored}点，仙道潜力+500。`];
+    if (hadDaoWound) lines.push('仙池圣水涤荡道基，道伤尽愈！');
+    return e.reply(lines.join('\n'));
   }
 
   async openMyriadFurnace(e) {
@@ -717,11 +732,12 @@ export class InnateTreasureAuthorities extends plugin {
     const multiplier = Math.random() < 0.7 ? 2 : 3;
     getAuthorityState(ctx.player).万道开炉待用 = {
       multiplier,
+      furnaceBonus: 0.5,
       expiresAt: Date.now() + 24 * 60 * 60 * 1000,
     };
     startAuthorityCooldown(ctx.player, '万道开炉');
     await Write_player(ctx.qq, ctx.player);
-    return e.reply(`【万道开炉】已锁定${multiplier}倍丹药产出，24小时内下一次普通丹药成功出炉时触发。`);
+    return e.reply(`【万道开炉】已锁定${multiplier}倍丹药产出（或下一次炼器开炉系数+0.5），24小时内下一次普通丹药/炼器开炉时触发。`);
   }
 
   async bodhiEnlightenment(e) {
@@ -730,15 +746,63 @@ export class InnateTreasureAuthorities extends plugin {
     await player_efficiency(ctx.qq);
     ctx.player = await Read_player(ctx.qq);
     const cf = config.getConfig('xiuxian', 'xiuxian');
+    // 直接获得闭关72小时（4320分钟）的修为与血气收益
     const perMinute = Math.floor((Number(cf.biguan?.size) || 0) * (Number(ctx.player.level_id) || 1) * ((Number(ctx.player.修炼效率提升) || 0) + 1));
     const modifiers = getKongtongModifiers(ctx.player);
-    const cultivation = Math.max(1, Math.floor(perMinute * 240 * modifiers.cultivationMultiplier));
+    const cultivation = Math.max(1, Math.floor(perMinute * 72 * 60 * modifiers.cultivationMultiplier));
     await Add_修为(ctx.qq, cultivation);
     await Add_血气(ctx.qq, cultivation);
+    // 立刻无条件无代价获得一次顿悟的悟道
+    const wudao = this.applyFreeEnlightenment(ctx.player);
     ctx.player = await Read_player(ctx.qq);
     startAuthorityCooldown(ctx.player, '菩提悟道');
     await Write_player(ctx.qq, ctx.player);
-    return e.reply(`【菩提悟道】菩提叶落，道念澄明：修为与血气各+${cultivation.toLocaleString('zh-CN')}。`);
+    const lines = [
+      '【菩提悟道】',
+      '菩提叶落，道念澄明：',
+      `修为与血气各+${cultivation.toLocaleString('zh-CN')}（闭关72小时收益）。`,
+    ];
+    if (wudao.ok) lines.push(`顿悟成功：${wudao.ruleName} 道途进度+${wudao.gain}（顿悟双倍，无条件无代价）。`);
+    else lines.push(wudao.reason);
+    return e.reply(lines.join('\n'));
+  }
+
+  /** 菩提祖树专属：无条件无代价结算一次顿悟的悟道（必然成功、收益双倍、不耗资源、不限次数） */
+  applyFreeEnlightenment(player) {
+    const route = getRealmAuthorityPath(player);
+    let rule = null;
+    let path = null;
+    if (route === 'xiangu') {
+      path = ensureXianguDaoPath(player).path;
+      rule = getXianguDaoRuleForRealm(Number(player.xiangulevel_id) || 0);
+    } else if (route === 'huafen') {
+      const gate = getFlowerDaoGateState(player, Number(player.huafenlevel_id) || 1);
+      path = gate.path;
+      rule = gate.rule;
+    } else {
+      path = ensureDaoPath(player, { migrateLegacy: false }).path;
+      rule = getDaoRuleForRealm(Number(player.mijinglevel_id) || 0);
+    }
+    if (!rule) return { ok: false, reason: '当前境界尚未开启道途，本次仅获得闭关收益。' };
+    const key = rule.key;
+    const current = Number(path.stages?.[key]) || 0;
+    if (current >= rule.targetExp) return { ok: false, reason: `${rule.name}已圆满，道途进度未变化。` };
+    const set = config.getConfig('xiuxian', 'xiuxian');
+    const eraIndex = Number(set.Era?.current?.index ?? 2);
+    const minggeEffects = getMinggeEffects(player, data.minggeList);
+    const result = calculateWudaoResult({
+      rule,
+      physiqueName: player.灵根?.name,
+      eraIndex,
+      aptitudeName: player.天资等级,
+      techniqueBonus: 0,
+      worldBonus: Number(player.超维星界悟道加成) || 0,
+      minggeEffects,
+    });
+    // 顿悟：收益双倍，必然成功
+    const gain = Math.max(1, Math.floor(Number(result.gain) * 2));
+    path.stages[key] = Math.min(rule.targetExp, current + gain);
+    return { ok: true, gain, ruleName: rule.name };
   }
 
   async cleanseCausality(e) {
