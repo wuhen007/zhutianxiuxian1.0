@@ -69,7 +69,7 @@ import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulat
 import { calculateMinggePotentialCost, getMinggeEffects } from '../../model/mingge.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
 import { getTitleWudaoBonus } from '../../model/titleSystem.js';
-import { getKongtongModifiers } from '../../model/innateTreasure.js';
+import { getKongtongModifiers, getPassiveTribulationDamageMultiplier } from '../../model/innateTreasure.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
 import {
   consumePlayerLifespan,
@@ -499,7 +499,7 @@ export class FlowerPollenPath extends plugin {
         minggeBonus: Number(minggeEffects.悟道收益) || 0,
         titleBonus,
         equipmentBonus: equipmentBonuses.equipment,
-        treasureBonus: equipmentBonuses.treasure + (imperialWudao ? 0.5 : 0),
+        treasureBonus: equipmentBonuses.treasure + (imperialWudao ? 0.5 : 0) + (kongtong.wudaoMultiplier - 1),
         worldBonus: Number(player.超维星界悟道加成) || 0,
         daoHeartMultiplier: getDaoHeartWudaoGainMultiplier(player),
       });
@@ -729,6 +729,7 @@ export class FlowerPollenPath extends plugin {
             eraIndex,
             defense,
             mitigationRate: mitigation.rate,
+            treasureMultiplier: getPassiveTribulationDamageMultiplier(player),
           });
           let actualDamage = waveResult.damage;
           let willowReduction = 0;

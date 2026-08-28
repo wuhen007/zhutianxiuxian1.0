@@ -28,7 +28,7 @@ import {
   getMinggeEffects,
   calculateMinggeYield,
 } from '../../model/mingge.js';
-import { getPetAbilityBonus, getTimedActionMultiplier } from '../../model/innateTreasure.js';
+import { consumeAlchemyMultiplier, getPetAbilityBonus, getTimedActionMultiplier } from '../../model/innateTreasure.js';
 import {
   SOURCE_STONE_FIELD_CONFIG,
   prepareSourceStoneField as createSourceStoneField,
@@ -3439,6 +3439,15 @@ async shoulie_back(e) {
         );
       } else {
         e.reply('你的仙宠只是在旁边看着');
+      }
+    }
+    const furnaceEligible = !danfang.唯一 && !danfang.全服唯一 && !danfang.任务物品 && !danfang.固定唯一奖励;
+    if (furnaceEligible) {
+      const furnaceMultiplier = consumeAlchemyMultiplier(player);
+      if (furnaceMultiplier > 1) {
+        n *= furnaceMultiplier;
+        await Write_player(usr_qq, player);
+        e.reply(`【万道神炉】万道炉火共鸣，本炉丹药产出提升至${furnaceMultiplier}倍。`);
       }
     }
     if (

@@ -42,6 +42,7 @@ import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
 import { PLACE_LOCATION_MAP, ZHETIAN_ENTRY_AUTHORITY_LEVEL } from '../../model/weimianTravel.js';
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import { getPlayerPlaneCoordinate } from '../../model/planeCoords.js';
+import { hasEquippedInnateTreasure } from '../../model/innateTreasure.js';
 import {
   calculateEmperorTribulationBaseDamage,
   resetTribulationGongfaCooldowns,
@@ -3988,6 +3989,8 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
       player.神明之光 = 3;
       player.破王成帝 = 0;               // 清除标记
       player.当前血量 = player.血量上限;
+      player.修为=0;
+      player.血气=0;
       /* ------ 新增：解除双方护法关系 ------ */
       await this.clearProtectorRelation(player);
       await Write_player(usr_qq, player);
@@ -5921,6 +5924,10 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
       effectMessages.push('【玄黄护道】天地玄黄气护住道基，本次渡劫所受伤害降低30%。');
     }
     if (player._玄黄护道渡劫) finalDamage *= 0.7;
+    if (hasEquippedInnateTreasure(player, '万劫天碑')) {
+      finalDamage *= 0.85;
+      effectMessages.push('【万劫天碑】天碑承接劫力，本次渡劫所受伤害降低15%。');
+    }
 
     // 黑皇欺天阵纹：现在改为区间偏移（-15 ~ +15），由 calcMaxTheoreticalAtk 应用，此处不再乘伤害
     const defended = reduceTribulationDamageByDefense(finalDamage, player.防御);

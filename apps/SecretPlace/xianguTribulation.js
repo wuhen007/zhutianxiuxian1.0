@@ -37,6 +37,7 @@ import {
   LEIDI_TRIBULATION_CONVERSION_WAVES,
 } from '../User/zhetianTribulationRules.js';
 import { adjustDaoHeart, getDaoHeartDamageMultiplier } from '../../model/daoHeart.js';
+import { getPassiveTribulationDamageMultiplier } from '../../model/innateTreasure.js';
 import {
   cooldownRevivalGongfas,
   getAvailableRevivalGongfas,
@@ -185,7 +186,9 @@ export class XianguTribulation {
         + `${Math.round(defended.reductionRate * 100)}% 劫伤（${bigNumberTransform(defended.reduction)}）`
       );
     }
-    return defended.damage;
+    const treasureMultiplier = getPassiveTribulationDamageMultiplier(player);
+    if (treasureMultiplier < 1) msgs.push('【万劫天碑】天碑承接劫力，本次劫伤降低15%。');
+    return defended.damage * treasureMultiplier;
   }
 
   // 灵根/体质属于常规减伤，不要求先触发功法复活。

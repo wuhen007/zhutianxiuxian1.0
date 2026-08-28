@@ -1,5 +1,6 @@
 import { addGongfaProficiency, getGongfaProficiencyProfile } from './gongfaProficiency.js';
 import { reduceTribulationDamageByDefense } from './tribulationDamage.js';
+import { getPassiveTribulationDamageMultiplier } from './innateTreasure.js';
 
 export const FLOWER_POLLEN_MEDIA = Object.freeze({
   普通进化花粉: Object.freeze({ quality: 1, chance: 0.05, risk: 12, accumulation: 10 }),
@@ -573,7 +574,8 @@ export function calculateFlowerTribulationWave(baseAtk, rule, realmId, stageInde
   const raw = Math.max(1, Math.trunc(baseAtk * stageRatio * multiplier * eraDifficulty * waveFactor));
   const { damage: afterDefense, reduction } = reduceTribulationDamageByDefense(raw, Math.max(0, number(options.defense)));
   const mitigationRate = clamp(number(options.mitigationRate), 0, 0.7);
-  const damage = Math.max(1, Math.trunc(afterDefense * (1 - mitigationRate)));
+  const treasureMultiplier = Math.max(0, number(options.treasureMultiplier, 1));
+  const damage = Math.max(1, Math.trunc(afterDefense * (1 - mitigationRate) * treasureMultiplier));
   return { raw, reduction, damage, stageRatio, multiplier, eraDifficulty, waveFactor, mitigationRate };
 }
 
@@ -601,7 +603,10 @@ export function simulateFlowerTribulation(player, options = {}) {
     const waves = [];
     for (let wave = 1; wave <= FLOWER_TRIBULATION_WAVES_PER_STAGE; wave++) {
       const waveResult = calculateFlowerTribulationWave(baseAtk, gate.rule, realmId, stageIndex, wave, {
-        eraIndex: options.eraIndex, defense, mitigationRate: mitigation.rate,
+        eraIndex: options.eraIndex,
+        defense,
+        mitigationRate: mitigation.rate,
+        treasureMultiplier: getPassiveTribulationDamageMultiplier(player),
       });
       hp = Math.max(0, hp - waveResult.damage);
       waves.push({ wave, damage: waveResult.damage, hp });
