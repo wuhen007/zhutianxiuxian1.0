@@ -21,6 +21,21 @@ import { findTalentSynchronizationMatch } from './talentSynchronization.js';
 // 道种专属技能全局池别名：战斗函数内 `data` 常被玩家参数遮蔽，故用 SKILL_DB 稳定引用 XiuxianData 单例
 const SKILL_DB = data;
 
+function getTimeRiverCounterProfile(attacker, defender) {
+  const source = attacker?._时间长河反制来源 || defender?.名号 || attacker?.名号;
+  return getTimeRiverAdversaryProfile(source);
+}
+
+function emitTimeRiverCounter(attacker, defender, skill, messages) {
+  const profile = getTimeRiverCounterProfile(attacker, defender);
+  if (!attacker?._时间长河反制目标 || !isTimeRiverCounteredSkill(skill, profile)) return false;
+  if (!attacker._时间长河反制本回合) {
+    messages.push(getTimeRiverCounterMessage(profile, skill?.name));
+    attacker._时间长河反制本回合 = true;
+  }
+  return true;
+}
+
 // 按道种专属技能名查找技能条目（跨攻击/防御/治疗池），返回含 技能分类 的条目
 export function getSeedSkillEntry(name) {
   if (!name) return null;
@@ -144,6 +159,11 @@ import {
 } from './decadeCombat.js';
 import { getCompanionAttackAction } from './companionCombat.js';
 import { getGodDemonStealRule, getRealmAuthorityLevel } from './realmAuthority.js';
+import { getRealmEventWorldYear } from './realmEventClock.js';
+import {
+  applyHeavenWillSlashOnAdvancement,
+  ensureStrangeSacrificeState,
+} from './strangeSacrifice.js';
 import { ensureExtraCultivationState } from './extraCultivation.js';
 import { calculateFlowerExtremeBonus, ensureFlowerPollenState, getFlowerPathAttributeMultiplier } from './flowerPollenPath.js';
 import { calculateFlowerFieldBonus } from './flowerPollenField.js';
@@ -178,6 +198,13 @@ import {
   applyExclusiveSetOpening,
   rewriteBeyondDefeat,
 } from './exclusiveEquipmentSets.js';
+import {
+  applyTimeRiverSkillEffect,
+  getTimeRiverAdversaryProfile,
+  getTimeRiverCounterMessage,
+  isTimeRiverCounteredSkill,
+  prioritizeTimeRiverAttackSkills,
+} from './timeRiverAdversary.js';
 import {
   DAO_TREASURE_ALL_ATTRIBUTE_BONUS,
   applyDaoTreasureBattleOpening,
@@ -1104,16 +1131,37 @@ export async function dujie(user_qq) {
 export async function Write_player(usr_qq, player, options = {}) {
   assertGlobalInitIdle();
   await assertTribulationWriteAllowed(usr_qq, player);
-  releaseJuelingLifespanForAuthority(player);
   let dir = path.join(__PATH.player_path, `${usr_qq}.json`);
-  if (options.trackDailyTask !== false && fs.existsSync(dir)) {
+  let previousPlayer = null;
+  if (fs.existsSync(dir)) {
     try {
-      const previousPlayer = JSON.parse(fs.readFileSync(dir, 'utf8'));
-      updateDailyTaskLingshiProgress(previousPlayer, player);
+      previousPlayer = JSON.parse(fs.readFileSync(dir, 'utf8'));
+      if (options.trackDailyTask !== false) updateDailyTaskLingshiProgress(previousPlayer, player);
     } catch (error) {
       console.warn(`记录玩家 ${usr_qq} 每日任务灵石流水失败:`, error);
     }
   }
+  if (previousPlayer) {
+    try {
+      const ritualFile = path.join(__PATH.data_path, 'strange_sacrifice_state.json');
+      const ritualState = ensureStrangeSacrificeState(
+        fs.existsSync(ritualFile) ? JSON.parse(fs.readFileSync(ritualFile, 'utf8')) : null,
+      );
+      const current = config.getConfig('xiuxian', 'xiuxian')?.Era?.current || {};
+      const currentWorldYear = Math.max(
+        Number(current.totalYears) || 0,
+        getRealmEventWorldYear(current.index, current.years, current.epoch),
+      );
+      const slash = applyHeavenWillSlashOnAdvancement(previousPlayer, player, ritualState, currentWorldYear);
+      if (slash.triggered) {
+        player.天意一刀提示 = `天意一刀持续至诸天纪年${slash.untilWorldYear}年，本次仙道进阶已被斩断。`;
+        console.warn(`[天意一刀] 玩家${usr_qq}强行进阶仙道领域，道基被斩开`);
+      }
+    } catch (error) {
+      console.warn(`[天意一刀] 玩家${usr_qq}进阶校验失败:`, error);
+    }
+  }
+  releaseJuelingLifespanForAuthority(player);
   writeJsonAtomically(dir, player);
   return;
 }
@@ -1750,16 +1798,20 @@ export async function get_weimian_img(e) {
         isSpecial: true
       },
       {
-        id: 100, name: '厄土高原', icon: '☠️', description: '诸天万界外第一重壁垒，诡异族群举行大祭的源头之地。',
-        danger: '不可知', features: '诡异祖地·高原大祭', isSpecial: true
+        id: 200, name: '上苍之上', icon: '☁️', description: '诸天万界之外的第一层维度壁垒，上苍诸域铺展于无尽古史之上。',
+        danger: '不可知', features: '第一层壁垒·上苍诸域', isSpecial: true
       },
       {
-        id: 200, name: '上苍之上', icon: '☁️', description: '高居诸天与厄土之上的浩瀚天地，路尽级生灵方可真身降临。',
-        danger: '不可知', features: '上苍诸域·帝者战场', isSpecial: true
+        id: 300, name: '超维宇宙', icon: '🌀', description: '穿过上苍之后的第二层维度壁垒，维度法则开始脱离诸天常理。',
+        danger: '不可知', features: '第二层壁垒·超维法则', isSpecial: true
       },
       {
-        id: 6.5, name: '永恒未知之地', icon: '♾️', description: '第三重维度壁垒之外，万法不存，唯有仙帝真身能够横渡。',
-        danger: '不可知', features: '诸天之外·终极秘密',
+        id: 100, name: '厄土高原', icon: '☠️', description: '第三层维度壁垒的诡异祖地，高原大祭与永恒未知彼此相望。',
+        danger: '不可知', features: '第三层壁垒·高原大祭', isSpecial: true
+      },
+      {
+        id: 6.5, name: '永恒未知之地', icon: '♾️', description: '与厄土同属第三层维度壁垒的永恒战场，仙帝真身镇守之地。',
+        danger: '不可知', features: '第三层壁垒·永恒镇守',
         isSpecial: true
       },
       {
@@ -7237,6 +7289,16 @@ function calcMijueTriggerProb(attacker, name) {
 // 削弱：不再增幅生命；倍率到期除法还原；力竭期攻防 ×0.7（呼应原著"虚弱期致命"）
 function tryJieziMijue(attacker, msgs) {
   if (!attacker.学习的功法?.includes("皆字秘") || attacker.皆字秘触发 || attacker._皆字秘力竭 > 0) return false;
+  if (attacker._时间长河反制目标) {
+    if (!attacker._时间长河反制本回合) {
+      msgs.push(getTimeRiverCounterMessage(
+        getTimeRiverAdversaryProfile(attacker._时间长河反制来源 || attacker.名号),
+        '皆字秘',
+      ));
+      attacker._时间长河反制本回合 = true;
+    }
+    return false;
+  }
   if (Math.random() >= calcMijueTriggerProb(attacker, '皆字秘')) return false;
 
   const originalAttack = attacker.攻击;
@@ -7267,6 +7329,16 @@ function tryJieziMijue(attacker, msgs) {
 // 削弱：一至六禁 1 回合、七至八禁 2 回合、神禁 3 回合；到期属性除法还原
 function tryLinzMijue(attacker, defender, msgs, linziState, isA) {
   if (!attacker.学习的功法?.includes("临字秘")) return false;
+  if (attacker._时间长河反制目标) {
+    if (!attacker._时间长河反制本回合) {
+      msgs.push(getTimeRiverCounterMessage(
+        getTimeRiverAdversaryProfile(attacker._时间长河反制来源 || attacker.名号),
+        '临字秘',
+      ));
+      attacker._时间长河反制本回合 = true;
+    }
+    return false;
+  }
   const 已触发 = isA ? linziState.A_触发 : linziState.B_触发;
   if (已触发) return false;
   if (Math.random() >= calcMijueTriggerProb(attacker, '临字秘')) return false;
@@ -8062,6 +8134,16 @@ export function applyBattleStatBoostOnce(unit, flag, multipliers = {}) {
   return true;
 }
 
+export function normalizeBattleOrbMultiplier(unit) {
+  if (!unit || typeof unit !== 'object') return 0;
+  const raw = unit.法球倍率 == null || unit.法球倍率 === ''
+    ? unit.灵根?.法球倍率
+    : unit.法球倍率;
+  const value = Number(raw);
+  unit.法球倍率 = Number.isFinite(value) ? Math.max(0, value) : 0;
+  return unit.法球倍率;
+}
+
 export function healBattleUnitByCurrentRatio(unit, ratio) {
   if (!unit || !(Number(ratio) > 0)) return 0;
   const currentHp = Math.max(0, Number(unit.当前血量) || 0);
@@ -8112,6 +8194,8 @@ export async function zd_battle(A_input, B_input, options = {}) {
   // 深拷贝
   const A_copy = A_team.map(p => JSON.parse(JSON.stringify(p)));
   const B_copy = B_team.map(p => JSON.parse(JSON.stringify(p)));
+  A_copy.forEach(normalizeBattleOrbMultiplier);
+  B_copy.forEach(normalizeBattleOrbMultiplier);
   A_copy.forEach(p => applyForbiddenBattleModifiers(p));
   B_copy.forEach(p => applyForbiddenBattleModifiers(p));
   A_copy.forEach(p => { if (p?._困龙封印) { p.dongjie = true; delete p._困龙封印; } });
@@ -8209,6 +8293,8 @@ async function zd_battle_1v1(AA_player, BB_player, options = {}) {
   // 保持输入、战斗状态与返回字段的 A/B 归属一致。
   let A_player = JSON.parse(JSON.stringify(AA_player));
   let B_player = JSON.parse(JSON.stringify(BB_player));
+  normalizeBattleOrbMultiplier(A_player);
+  normalizeBattleOrbMultiplier(B_player);
   const weaknessNow = Date.now();
   const A_clowWeakness = applyClowWishBattleWeakness(A_player, weaknessNow);
   const B_clowWeakness = applyClowWishBattleWeakness(B_player, weaknessNow);
@@ -8644,6 +8730,7 @@ let B_speed = getBattleUnitSpeed(B_player);
 
   // ==================== 攻击处理函数（保持原样） ====================
   async function performAttack(attacker, defender, cnt2, context = "main") {
+    delete attacker._时间长河反制本回合;
     const isImmune = (attacker === A_player && A_immune_control > 0) || 
                      (attacker === B_player && B_immune_control > 0);
     const attackerEquipment = await getEquipment(attacker);
@@ -8731,7 +8818,7 @@ let B_speed = getBattleUnitSpeed(B_player);
 
     if (!innateSilenced) {
       handleControlEffects( A_immune_control, B_immune_control, A_player, B_player, attacker, defender, msg, emperorFieldTriggered, context, linziState);
-      if (await handleEmperorWeapon(attacker, defender, msg, emperorWeaponTriggered, attackerEquipment)) {
+      if (!attacker._时间长河至宝失效 && await handleEmperorWeapon(attacker, defender, msg, emperorWeaponTriggered, attackerEquipment)) {
         emperorWeaponTriggered = true;
       }
       handleCircularGod(attacker, defender, msg, context);
@@ -8921,7 +9008,10 @@ let B_speed = getBattleUnitSpeed(B_player);
     const _基础伤害 = 伤害; // 基础普攻伤害（归为神通类型）
     let 类型桶 = { '神通': _基础伤害 }; // 分类型伤害桶：每个技能按自身攻击类型累加增量
     let 功法威能系数 = 1;
-    const attackerSkills = filterEquippedCombatSkills(attacker, jineng1, '攻击');
+    const attackerSkills = prioritizeTimeRiverAttackSkills(
+      attacker,
+      filterEquippedCombatSkills(attacker, jineng1, '攻击'),
+    );
     for (var i = 0; !innateSilenced && i < attackerSkills.length; i++) {
       const skill = resolveGongfaCombatSkill(attacker, attackerSkills[i]);
       if (context === "fenshen" && fenshen.includes(skill.name)) {
@@ -8939,6 +9029,7 @@ let B_speed = getBattleUnitSpeed(B_player);
           (skill.class == '功法' && hasLearnedGongfa(attacker, skill.熟练度归属 || skill.name) && (cnt2 == skill.cnt || skill.cnt == -1) && Random < actualPr) ||
           (skill.class == '灵根' && hasSupremeInnate(attacker, skill.name) && (cnt2 == skill.cnt || skill.cnt == -1) && Random < actualPr) ||
           (attacker.xiangu_shenhuo && skill.class == '道种专属' && attacker.xiangu_shenhuo.专属技能 === skill.name && (cnt2 == skill.cnt || skill.cnt == -1) && Random < actualPr)) {
+          if (emitTimeRiverCounter(attacker, defender, skill, msg)) continue;
           攻击方技能 = skill;
           if (skill.class === '功法') {
             recordGongfaCombatTrigger(attacker, skill);
@@ -8963,6 +9054,7 @@ let B_speed = getBattleUnitSpeed(B_player);
           round: cnt2,
         });
         msg.push(...decadeEffect.messages);
+        applyTimeRiverSkillEffect(attacker, defender, skill, msg);
         
         if (skill.不可防御 === 1) {
           不可防御 = true;
@@ -9629,6 +9721,10 @@ let B_speed = getBattleUnitSpeed(B_player);
   }
 
   async function applyInnateBattleOpening(holder, opponent) {
+    if (holder?._时间长河至宝失效) {
+      msg.push(`【古史反制】${holder.名号}试图催动灵根与至宝，时间长河帝光将其加持当场打断！`);
+      return;
+    }
     const treasure = holder.当前先天至宝;
 
     if (treasure === '盘古幡' && !isPvpBattle) {
@@ -9961,9 +10057,20 @@ msg.push(bSpeedMsg);
       }
 
       // ==================== 他化自在法·行者化身召唤 ====================
+      if (
+        attacker._时间长河反制目标 &&
+        !attacker._时间长河反制本回合 &&
+        attacker.学习的功法?.some(name => ['【仙帝】他化自在法', '他化自在法', '一气化三清', '数字秘'].includes(name))
+      ) {
+        msg.push(getTimeRiverCounterMessage(
+          getTimeRiverCounterProfile(attacker, defender),
+          attacker.学习的功法.find(name => ['【仙帝】他化自在法', '他化自在法', '一气化三清', '数字秘'].includes(name)),
+        ));
+        attacker._时间长河反制本回合 = true;
+      }
       if (!attacker.名号.includes('分身')) {
         // 他化自在法（等级化机制）
-        if (attacker.学习的功法?.includes("【仙帝】他化自在法")) {
+        if (!attacker._时间长河反制目标 && attacker.学习的功法?.includes("【仙帝】他化自在法")) {
           const levelConfig = getTahuaLevelConfig(attacker.mijinglevel_id);
           const isA = attacker === A_player;
           const tahuaEntities = isA ? A_tahua_entities : B_tahua_entities;
@@ -10045,7 +10152,7 @@ msg.push(bSpeedMsg);
           }
         }
         // 数字秘与一气化三清共用一组道身席位，每方每局只成功召唤一次。
-        if (attacker.学习的功法?.includes("数字秘") || attacker.学习的功法?.includes("一气化三清")) {
+        if (!attacker._时间长河反制目标 && (attacker.学习的功法?.includes("数字秘") || attacker.学习的功法?.includes("一气化三清"))) {
           const isA = attacker === A_player;
           const isTriggered = isA ? A_yiqihua_triggered : B_yiqihua_triggered;
           if (!isTriggered) {
@@ -10497,6 +10604,10 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   }
 
   async function applyTeamInnateOpening(holder, enemies) {
+    if (holder?._时间长河至宝失效) {
+      msg.push(`【古史反制】${holder.名号}试图催动灵根与至宝，三帝帝光将其加持当场打断！`);
+      return;
+    }
     if (holder.当前先天至宝 === '盘古幡') {
       for (const enemy of enemies) enemy.防御 = Math.floor((Number(enemy.防御) || 0) * 0.7);
       msg.push(`【盘古幡·破界】${holder.名号}以开天余威斩敌，敌方全体防御被无视三成。`);
@@ -10767,6 +10878,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
   async function performTeamAttack(attacker, defender, round, allEnemies) {
     let attackMsgs = [];
+    delete attacker._时间长河反制本回合;
     const isA = attacker._team === 'A';
     const 临字秘加成 = isA ? linziState.A_加成 : linziState.B_加成;
     tickDecadeCombatState(attacker, round, attackMsgs);
@@ -11008,7 +11120,10 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     let 类型桶 = { '神通': _基础伤害 }; // 分类型伤害桶：每个技能按自身攻击类型累加增量
     let 功法威能系数 = 1;
 
-    const attackerSkills = filterEquippedCombatSkills(attacker, jineng1, '攻击');
+    const attackerSkills = prioritizeTimeRiverAttackSkills(
+      attacker,
+      filterEquippedCombatSkills(attacker, jineng1, '攻击'),
+    );
     for (var i = 0; !innateSilenced && i < attackerSkills.length; i++) {
       const skill = resolveGongfaCombatSkill(attacker, attackerSkills[i]);
       let actualPr = getGongfaTriggerChance(attacker, skill);
@@ -11017,6 +11132,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
           (skill.class == '功法' && hasLearnedGongfa(attacker, skill.熟练度归属 || skill.name) && (round == skill.cnt || skill.cnt == -1) && Random < actualPr) ||
           (skill.class == '灵根' && hasSupremeInnate(attacker, skill.name) && (round == skill.cnt || skill.cnt == -1) && Random < actualPr) ||
           (attacker.xiangu_shenhuo && skill.class == '道种专属' && attacker.xiangu_shenhuo.专属技能 === skill.name && (round == skill.cnt || skill.cnt == -1) && Random < actualPr)) {
+        if (emitTimeRiverCounter(attacker, defender, skill, attackMsgs)) continue;
         攻击方技能列表.push(skill);
         if (skill.class === '功法') {
           recordGongfaCombatTrigger(attacker, skill);
@@ -11041,6 +11157,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
           isBoss: defender?.boss === true || defender?.type === 'boss',
         });
         attackMsgs.push(...decadeEffect.messages);
+        applyTimeRiverSkillEffect(attacker, defender, skill, attackMsgs);
 
         if (skill.不可防御 === 1) 不可防御 = true;
         if (skill.不可复活 === 1) defender.不可复活 = true;
@@ -11429,6 +11546,16 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
   function summonTeamYiqihua(attacker) {
     if (attacker?._yiqihua_entity || attacker?._yiqihua_triggered) return [];
+    if (attacker?._时间长河反制目标) {
+      if (!attacker._时间长河反制本回合 && attacker.学习的功法?.some(name => ['一气化三清', '数字秘'].includes(name))) {
+        msg.push(getTimeRiverCounterMessage(
+          getTimeRiverCounterProfile(attacker, null),
+          attacker.学习的功法.find(name => ['一气化三清', '数字秘'].includes(name)),
+        ));
+        attacker._时间长河反制本回合 = true;
+      }
+      return [];
+    }
     const numberSecretTriggered = attacker.学习的功法?.includes('数字秘')
       && Math.random() < getNumberSecretTriggerChance(attacker);
     const yiqihuaTriggered = !numberSecretTriggered
@@ -11705,6 +11832,8 @@ export async function tb_battle(players, boss, team) {
   // 深拷贝玩家和BOSS数据
   let teamData = players.map(p => JSON.parse(JSON.stringify(p)));
   let bossCopy = JSON.parse(JSON.stringify(boss));
+  teamData.forEach(normalizeBattleOrbMultiplier);
+  normalizeBattleOrbMultiplier(bossCopy);
   
   let cnt = 0; // 回合计数器
   let msg = []; // 战斗日志

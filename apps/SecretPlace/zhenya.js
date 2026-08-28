@@ -126,6 +126,8 @@ export class DarkSuppressionTask extends plugin {
       const originalRealm = getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list);
       lowerRealmAuthority(player);
       const currentRealm = getRealmAuthorityName(player, data.Levelmijing_list, data.xiangujinshi_list, data.huafen_list);
+      if (player.道果状态 === '道崩·炼化中') player.道果状态 = '道果受损';
+      delete player.时间长河道崩;
       
       // 保存玩家数据
       await Write_player(playerId, player);

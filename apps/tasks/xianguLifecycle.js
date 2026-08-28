@@ -10,6 +10,7 @@ export const XIANGU_LIFECYCLE = Object.freeze({
   BLOOM_CHECK_INTERVAL_YEARS: 2000,
   PREPARATION_YEARS: 1000,
   OPEN_DURATION_YEARS: 10000,
+  REOPEN_COOLDOWN_YEARS: 10000,
 });
 
 function isRecord(value) {
@@ -51,12 +52,21 @@ function normalizeOpenState(data, worldYear, openDurationYears, changes) {
   const closingWorldYear = savedClosingYear >= openingWorldYear
     ? savedClosingYear
     : openingWorldYear + openDurationYears;
+  const savedNextCheckYear = getStoredLifecycleWorldYear(
+    data.仙古秘境下次判定总年份,
+    worldYear,
+  );
+  const minimumNextCheckYear = openingWorldYear + XIANGU_LIFECYCLE.REOPEN_COOLDOWN_YEARS;
+  const nextCheckWorldYear = savedNextCheckYear >= minimumNextCheckYear
+    ? savedNextCheckYear
+    : minimumNextCheckYear;
 
   assignIfChanged(data, '仙古秘境', 1, changes);
   assignIfChanged(data, '仙古秘境阶段', XIANGU_STAGE.OPEN, changes);
   assignIfChanged(data, '仙古秘境开启时间', openingWorldYear, changes);
   assignIfChanged(data, '仙古秘境开启总年份', openingWorldYear, changes);
   assignIfChanged(data, '仙古秘境关闭总年份', closingWorldYear, changes);
+  assignIfChanged(data, '仙古秘境下次判定总年份', nextCheckWorldYear, changes);
   if (!data.仙古秘境会话ID) {
     assignIfChanged(data, '仙古秘境会话ID', makeSessionId(openingWorldYear), changes);
   }
@@ -82,6 +92,12 @@ function openXiangu(data, worldYear, openDurationYears, changes) {
   assignIfChanged(data, '仙古秘境开启时间', worldYear, changes);
   assignIfChanged(data, '仙古秘境开启总年份', worldYear, changes);
   assignIfChanged(data, '仙古秘境关闭总年份', worldYear + openDurationYears, changes);
+  assignIfChanged(
+    data,
+    '仙古秘境下次判定总年份',
+    worldYear + XIANGU_LIFECYCLE.REOPEN_COOLDOWN_YEARS,
+    changes,
+  );
   assignIfChanged(data, '仙古秘境会话ID', makeSessionId(worldYear), changes);
 }
 
@@ -133,6 +149,22 @@ export function shouldCheckXianguBloom(previousWorldYear, worldYear, interval = 
   const previous = toWorldYear(previousWorldYear);
   const current = toWorldYear(worldYear);
   return current >= safeInterval && Math.floor(current / safeInterval) > Math.floor(previous / safeInterval);
+}
+
+/** Once a round has opened, defer the next bloom check until its cooldown expires. */
+export function isXianguBloomCheckDue(data, previousWorldYear, worldYear) {
+  const current = toWorldYear(worldYear);
+  const nextCheckWorldYear = getStoredLifecycleWorldYear(
+    data?.仙古秘境下次判定总年份,
+    current,
+  );
+  if (nextCheckWorldYear >= 0) return current >= nextCheckWorldYear;
+  return shouldCheckXianguBloom(previousWorldYear, current);
+}
+
+export function scheduleXianguBloomCheck(data, worldYear) {
+  if (!isRecord(data)) throw new TypeError('仙古秘境位面数据无效');
+  data.仙古秘境下次判定总年份 = toWorldYear(worldYear) + XIANGU_LIFECYCLE.BLOOM_CHECK_INTERVAL_YEARS;
 }
 
 /** Preserve the historic first attempt rate (5% base + 10% per failed milestone). */

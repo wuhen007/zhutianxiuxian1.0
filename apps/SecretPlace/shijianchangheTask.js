@@ -29,6 +29,15 @@ import {
   awardDungeonGongfaProficiency,
   formatGongfaProficiency,
 } from '../../model/gongfaProficiency.js';
+import {
+  buildTimeRiverAdversary,
+  collapsePastWorldlineArtifacts,
+  ensureTimeRiverSkills,
+  getTimeRiverEnemyNames,
+} from '../../model/timeRiverAdversary.js';
+import { destroyWorldline } from '../../model/worldlineAuthority.js';
+
+ensureTimeRiverSkills(data);
 
 export class ShijianChangheTask extends plugin {
   constructor() {
@@ -131,21 +140,25 @@ async checkTimeRiverActions() {
     // 计算缩放因子
     const scaleFactor = this.calculateScaleFactor(getRealmAuthorityLevel(player));
     
-    // 构建战斗角色
-    const B_player = {
-      名号: enemyTemplate.name,
-      攻击: parseInt(enemyTemplate.attack * scaleFactor),
-      防御: parseInt(enemyTemplate.defense * scaleFactor),
-      当前血量: parseInt(enemyTemplate.hp * scaleFactor),
-      暴击率: enemyTemplate.criticalRate,
-      灵根: enemyTemplate.灵根,
-      法球倍率: enemyTemplate.灵根.法球倍率,
-      学习的功法: enemyTemplate.special,
-      era: enemyTemplate.era
-    };
+    // 构建战斗角色；苍帝被击溃后，鸿帝与羽帝沿古史同时降临。
+    const B_player = buildTimeRiverAdversary(player, enemyTemplate, { scaleFactor });
+    const B_team = B_player.名号 === '苍帝'
+      ? ['鸿帝', '羽帝'].map(name => {
+          const template = data.shijianchanghe_list.find(item => item.name === name);
+          return template ? buildTimeRiverAdversary(player, template, { scaleFactor }) : null;
+        }).filter(Boolean)
+      : [];
+    const enemyTeam = [B_player, ...B_team];
+    if (enemyTeam.some(enemy => enemy._时间长河反制)) {
+      A_player._时间长河反制 = true;
+      A_player._时间长河反制目标 = true;
+      A_player._时间长河至宝失效 = true;
+      A_player._帝兵失效 = true;
+      A_player._时间长河反制来源 = B_player.名号;
+    }
     
     // 生成遭遇文案
-    const encounterMessage = this.generateEncounterMessage(B_player);
+    const encounterMessage = this.generateEncounterMessage(B_player, B_team);
     
     // 发送遭遇消息
     await this.sendEncounterMessage(usr_qq, action, encounterMessage);
@@ -153,7 +166,9 @@ async checkTimeRiverActions() {
     const blackEmperorFormation = consumeBlackEmperorBattleFormation(player, A_player, B_player);
     if (blackEmperorFormation.consumed) await Write_player(usr_qq, player);
     // 进行战斗
-    const battleResult = await zd_battle(A_player, B_player);
+    const battleResult = B_team.length
+      ? await zd_battle([A_player], enemyTeam, { timeRiverBattle: true })
+      : await zd_battle(A_player, B_player, { timeRiverBattle: true });
     player.功法熟练度 = A_player.功法熟练度;
     player.功法熟练度每日 = A_player.功法熟练度每日;
     const proficiencyGains = awardDungeonGongfaProficiency(player);
@@ -167,47 +182,22 @@ async checkTimeRiverActions() {
     // 确定战斗结果
     let outcome;
     let specialEvents = {};
+    const enemyNames = getTimeRiverEnemyNames(B_player.名号, B_team);
+    const darkEnemyEncounter = enemyNames.some(name => [
+      '苍帝', '羽帝', '鸿帝', '灭世老人', '未来准仙帝', '尸骸仙帝',
+    ].includes(name));
     if (enemyHp <= 0) {
       outcome = 'victory';
-       // 99%概率触发厄土仙帝推演惩罚 (只针对仙帝以下玩家)
       if (Math.random() < 0.35 && !hasRealmAuthority(player, 21)) {
         specialEvents.pastBodyExposed = true;
-              const suppressionTime = 30 * 60 * 1000;
-  const endTime = Date.now() + suppressionTime;
- // 设置玩家动作状态
-   await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify({
-    action: "道果崩解",
-    start_time: Date.now(),
-    end_time: endTime,
-    group_id: action.group_id
-  }));
-       const { player: updatedPlayer } = await this.handlePastBodyExposed(usr_qq);
-  Object.assign(player, updatedPlayer); // 同步修改
-  
       }
     } else if (playerHp <= 0) {
       outcome = 'defeat';
-      
-      // 30%概率触发厄土仙帝推演惩罚 (只针对仙帝以下玩家)
-      if (Math.random() < 0.8 && !hasRealmAuthority(player, 21)) {
+      if (Math.random() < 0.8 && !hasRealmAuthority(player, 21) && !darkEnemyEncounter) {
         specialEvents.pastBodyExposed = true;
-              const suppressionTime = 30 * 60 * 1000;
-  const endTime = Date.now() + suppressionTime;
- // 设置玩家动作状态
-   await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify({
-    action: "道果崩解",
-    start_time: Date.now(),
-    end_time: endTime,
-    group_id: action.group_id
-  }));
-               const { player: updatedPlayer } = await this.handlePastBodyExposed(usr_qq);
-  Object.assign(player, updatedPlayer); // 同步修改
       }
 
-      // 黑暗准仙帝镇压（特定敌人）
-      if (B_player.名号 === "苍帝"||B_player.名号 === "羽帝"||B_player.名号 === "鸿帝"||B_player.名号 === "灭世老人"||B_player.名号 === "未来准仙帝"
-        ||B_player.名号 === "尸骸仙帝"
-      ) {
+      if (darkEnemyEncounter) {
         specialEvents.darkSuppression = true;
       }
     } else {
@@ -249,7 +239,10 @@ async checkTimeRiverActions() {
 if (specialEvents.pastBodyExposed && specialEvents.darkSuppression) {
   // 黑暗镇压优先级更高
   delete specialEvents.pastBodyExposed;
-  penalties.darkSuppression = await this.handleDarkSuppression(usr_qq, action);
+  penalties.darkSuppression = await this.handleDarkSuppression(usr_qq, action, {
+    worldlineCollapse: true,
+    enemyNames,
+  });
 } else if (specialEvents.pastBodyExposed) {
   penalties.pastBodyExposed = await this.handlePastBodyExposed(usr_qq);
 }
@@ -275,8 +268,10 @@ if (specialEvents.pastBodyExposed && specialEvents.darkSuppression) {
     await Write_player(usr_qq, player);
         let equipment = await Read_equipment(usr_qq);
         await Write_equipment(usr_qq, equipment);
-    // 清除动作状态
-    await redis.del(`xiuxian:player:${usr_qq}:action`);
+    // 黑暗镇压需要保留动作状态，交由镇压定时任务解除。
+    if (!specialEvents.darkSuppression) {
+      await redis.del(`xiuxian:player:${usr_qq}:action`);
+    }
     
     // 发送结果消息
     await this.sendResultMessage(usr_qq, action, resultMessage);
@@ -288,6 +283,7 @@ async handlePastBodyExposed(usr_qq) {
   try {
     const player = await Read_player(usr_qq);
     const najie = await Read_najie(usr_qq);
+    const equipment = await Read_equipment(usr_qq);
     
     // 惩罚1: 丢失纳戒物品
     let lostItems = [];
@@ -327,10 +323,14 @@ async handlePastBodyExposed(usr_qq) {
     const physiquePenalty = Math.floor(Math.random() * 5) + 1;
     player.level_id = Math.max(0, player.level_id - levelPenalty);
     player.Physique_id = Math.max(0, player.Physique_id - physiquePenalty);
+    const worldlineCollapse = collapsePastWorldlineArtifacts(equipment, player);
+    if (worldlineCollapse.destroyed) await Write_equipment(usr_qq, equipment);
+    destroyWorldline(player, `时间长河过去身:${Date.now()}`);
 
     return {
       player, // 返回修改后的 player 对象
       lostItems,
+      worldlineCollapse,
       reductionLvl: {
         originalLevel: player.level_id + levelPenalty,
         originalPhysique: player.Physique_id + physiquePenalty,
@@ -359,11 +359,23 @@ async handlePastBodyExposed(usr_qq) {
   }
 }
   /** 处理被黑暗准仙帝镇压 */
-async handleDarkSuppression(usr_qq, action) {
+async handleDarkSuppression(usr_qq, action, options = {}) {
   // 设置镇压时间（60分钟）
   const player = await Read_player(usr_qq);
+  const equipment = await Read_equipment(usr_qq);
   const suppressionTime = 60 * 60 * 1000;
   const endTime = Date.now() + suppressionTime;
+  const worldlineCollapse = options.worldlineCollapse
+    ? collapsePastWorldlineArtifacts(equipment, player)
+    : { destroyed: false };
+  if (worldlineCollapse.destroyed) await Write_equipment(usr_qq, equipment);
+  destroyWorldline(player, `苍帝道崩:${Date.now()}`);
+  player.道果状态 = '道崩·炼化中';
+  player.时间长河道崩 = {
+    source: options.enemyNames?.join('、') || '黑暗准仙帝',
+    startedAt: Date.now(),
+    worldlineCollapse,
+  };
   
   // 记录镇压状态（不再使用setTimeout）
   await redis.set(`xiuxian:dark_suppression:${usr_qq}`, "true");
@@ -384,12 +396,13 @@ async handleDarkSuppression(usr_qq, action) {
   return { 
     suppressionTime,
     endTime,
+    worldlineCollapse,
     message: "你已被黑暗准仙帝镇压，60分钟后将解除镇压并跌落一层境界"
   };
 }
   
   // 生成遭遇文案
-  generateEncounterMessage(enemy) {
+  generateEncounterMessage(enemy, team = []) {
     const encounterMessages = {
       "苍帝": [
         `【时间长河遭遇·黑暗天庭】`,
@@ -465,12 +478,17 @@ async handleDarkSuppression(usr_qq, action) {
       ],
     };
     
-    return encounterMessages[enemy.名号] || [
+    const message = encounterMessages[enemy.名号] || [
       `【时间长河遭遇】`,
       `你在${enemy.era}的长河中，遭遇了${enemy.名号}！`,
       `他展现无上威能，向你袭来！`,
       `一场跨越时空的巅峰对决即将展开！`
     ];
+    if (enemy.名号 === '苍帝' && team.length) {
+      message.push('【古史异变】苍帝现身的刹那，鸿帝与羽帝同时从相邻时间线踏出，三帝并立！');
+      message.push('即使苍帝先一步败退，另外两尊黑暗准仙帝仍会接续出手，直到三帝战阵彻底崩解。');
+    }
+    return message;
   }
   
   // 发送遭遇消息  // 修改后的发送遭遇消息方法
@@ -571,7 +589,7 @@ async sendEncounterMessage(usr_qq, action, message) {
     
     // 添加特殊事件详细描述
 if (battleResult.specialEvents.pastBodyExposed && battleResult.penalties.pastBodyExposed) {
-  const { lostItems, reductionLvl } = battleResult.penalties.pastBodyExposed;
+  const { lostItems, reductionLvl, worldlineCollapse } = battleResult.penalties.pastBodyExposed;
   
   message.push(`【厄土仙帝推演】`);
   message.push(`厄土仙帝锁定到你的气机推演出你的过去身，一缕眸光跨越万古斩来！`);
@@ -584,6 +602,9 @@ if (battleResult.specialEvents.pastBodyExposed && battleResult.penalties.pastBod
   } else {
     message.push(`- 幸运的是，你的纳戒未受损失！`);
   }
+  if (worldlineCollapse?.destroyed) {
+    message.push(`- 古史道崩：${worldlineCollapse.slot}【${worldlineCollapse.name}】的既定事实被抹去！`);
+  }
 }
     
     if (battleResult.specialEvents.darkSuppression) {
@@ -592,6 +613,12 @@ if (battleResult.specialEvents.pastBodyExposed && battleResult.penalties.pastBod
       message.push(`此过程将持续60分钟！`);
       message.push(`60分钟后解除镇压，但你的境界将跌落一层！`);
       message.push(`在此期间你将无法进行其他行动！`);
+      const worldlineCollapse = battleResult.penalties.darkSuppression?.worldlineCollapse;
+      if (worldlineCollapse?.destroyed) {
+        message.push(`【古史道崩】${worldlineCollapse.slot}【${worldlineCollapse.name}】的过去锚点已被厄土仙帝打灭，现世持有事实随之消失！`);
+      } else {
+        message.push(`【古史道崩】厄土仙帝已打灭一条过去时间线，玩家道果留下时间线创伤。`);
+      }
     }
     
     // 添加纪元积累信息
@@ -709,7 +736,6 @@ async sendResultMessage(usr_qq, action, resultMessage) {
   try {
     // 构建消息数组
     const msgArray = [
-      segment.at(usr_qq),
       '【时间长河探索结果】',
       resultMessage
     ];
@@ -718,7 +744,7 @@ async sendResultMessage(usr_qq, action, resultMessage) {
     const mockEvent = {
       reply: async (content) => {
         if (action.group_id) {
-          await Bot.pickGroup(action.group_id).sendMsg(content);
+          await Bot.pickGroup(action.group_id).sendMsg([segment.at(usr_qq), content]);
         } else {
           await Bot.sendPrivateMsg(usr_qq, content);
         }
@@ -732,13 +758,15 @@ async sendResultMessage(usr_qq, action, resultMessage) {
   } catch (error) {
     console.error('发送结果消息失败:', error);
     
-    // 备用方案：私聊发送文本
     const fallbackMessage = [
       '【时间长河探索结果】',
       resultMessage
     ].join('\n');
-    
-    await Bot.sendPrivateMsg(usr_qq, fallbackMessage);
+    if (action.group_id) {
+      await Bot.pickGroup(action.group_id).sendMsg([segment.at(usr_qq), fallbackMessage]);
+    } else {
+      await Bot.sendPrivateMsg(usr_qq, fallbackMessage);
+    }
   }
 }
 

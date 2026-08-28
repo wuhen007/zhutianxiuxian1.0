@@ -40,6 +40,7 @@ import {
   SHOUYUAN_DIFFICULTIES,
   resolveShouyuanDifficulty,
 } from '../User/shouyuanDifficulty.js';
+import { createDimensionGuardState } from '../../model/dimensionGuard.js';
 
 // ==================== 常量 ====================
 
@@ -83,10 +84,18 @@ const WEIMIAN_INITIAL_STATE = Object.freeze({
   九天十地: 1,
   界海: 1,
   时间长河: 1,
+  小阴间: 1,
+  大阴间: 1,
+  阳间: 1,
+  上苍之上: 1,
+  超维宇宙: 1,
+  厄土高原: 1,
   永恒未知之地: 1,
   仙域: 1,
   帝尊: 1,
   成仙路: 0,
+  成仙路开启总年份: 0,
+  成仙路下次判定总年份: 0,
   仙古秘境: 0,
   古地府: 1,
   轮回路: 1,
@@ -99,9 +108,11 @@ const WEIMIAN_INITIAL_STATE = Object.freeze({
   仙古秘境准备结束总年份: 0,
   仙古秘境开启总年份: 0,
   仙古秘境关闭总年份: 0,
+  仙古秘境下次判定总年份: 0,
 });
 
 const REALM_EVENTS_FILE = path.join(__PATH.data_path, 'weimian_events.json');
+const DIMENSION_GUARD_STATE_FILE = path.join(__PATH.data_path, 'dimension_guard_state.json');
 
 /** 需要清理的 redis key 前缀模式（本插件专属前缀，不会波及其他插件） */
 const REDIS_PATTERNS = [
@@ -550,6 +561,7 @@ export class GlobalInit extends plugin {
       backupIfExist(path.join(__PATH.lib_path, '玩家自创帝经.json'), backupDir);
       backupIfExist(path.join(__PATH.lib_path, '仙宠列表.json'), backupDir);
       backupIfExist(data.filePathMap.weimianList, backupDir);
+      backupIfExist(DIMENSION_GUARD_STATE_FILE, backupDir);
       backupIfExist(REALM_EVENTS_FILE, backupDir);
       backupIfExist(path.join(__PATH.data_path, 'foreign_imperial_pass.json'), backupDir);
       backupIfExist(path.join(__PATH.data_path, 'innate_treasure_state.json'), backupDir);
@@ -746,6 +758,13 @@ export class GlobalInit extends plugin {
     } catch (err) {
       failures.push('位面状态');
       logger.error('[诸天初始化] 重置位面状态失败', err);
+    }
+
+    try {
+      writeJson(DIMENSION_GUARD_STATE_FILE, createDimensionGuardState());
+    } catch (err) {
+      failures.push('维度镇守状态');
+      logger.error('[诸天初始化] 重置维度镇守状态失败', err);
     }
 
     try {

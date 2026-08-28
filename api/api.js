@@ -89,6 +89,12 @@ export const verc = ({ e }) => {
         try {
             if (fs.existsSync(playerFile)) {
                 const player = JSON.parse(fs.readFileSync(playerFile, 'utf8'));
+                const sacrificeLockUntil = Number(player.诡异祭礼身灭道消至) || 0;
+                if (sacrificeLockUntil > Date.now()) {
+                    const hours = Math.ceil((sacrificeLockUntil - Date.now()) / 3600000);
+                    e.reply?.(`【身灭道消·诸法皆寂】过去时间线尚未重聚，${hours}小时内不可进行任何交互。`);
+                    return false;
+                }
                 if (player.练气存档状态 === '不可用' || player.练气存档状态 === '永久不可用') {
                     e.reply?.(player.练气存档状态 === '永久不可用'
                         ? '【古史尽灭】所有时间线与当世道标均已熄灭，练气存档永久封锁。'

@@ -16,6 +16,10 @@ import {
 import { startWeimianDestruction, stopWeimianDestruction, handleDestructionStatusCommand } from './WeimianDestruction.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 import {
+  markPlaneDestroyed,
+  PLANE_DESTRUCTION_SOURCES,
+} from '../../model/planeDestruction.js';
+import {
   getYongJiStats,
 } from './YongJiList.js';
 
@@ -1724,6 +1728,10 @@ export class BOSS3 extends plugin {
     await redis.del('guiyishizu');
     await redis.del('gaoyuan');
     await redis.del('guiyishizu_ancestors');
+    markPlaneDestroyed(data.filePathMap.weimianList, '厄土高原', {
+      source: PLANE_DESTRUCTION_SOURCES.STRANGE_EMPEROR,
+      actor: killerPlayer.名号 || '终结高原者',
+    });
     
     // 广播终焉消息
     const groupList = await redis.sMembers('xiuxian:AuctionofficialTask_GroupList');

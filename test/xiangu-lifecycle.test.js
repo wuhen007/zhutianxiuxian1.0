@@ -5,8 +5,10 @@ import {
   XIANGU_STAGE,
   advanceXianguLifecycle,
   getXianguOpeningAttemptProbability,
+  isXianguBloomCheckDue,
   isXianguPlayerRoundCurrent,
   getXianguWorldYear,
+  scheduleXianguBloomCheck,
   setXianguOpeningProbability,
   shouldCheckXianguBloom,
   startXianguPreparation,
@@ -40,6 +42,7 @@ test('仙古花蕾先现世准备，再在准备期结束后开放', () => {
   assert.equal(world.仙古秘境阶段, XIANGU_STAGE.OPEN);
   assert.equal(world.仙古秘境开启总年份, 49000);
   assert.equal(world.仙古秘境关闭总年份, 59000);
+  assert.equal(world.仙古秘境下次判定总年份, 59000);
   assert.equal(world.仙古秘境会话ID, 'xiangu-49000');
 });
 
@@ -63,6 +66,17 @@ test('仙古秘境按世界总年份关闭，不受时代与纪元重置影响',
   assert.equal(world.仙古秘境阶段, XIANGU_STAGE.CLOSED);
   assert.equal(world.仙古秘境会话ID, '');
   assert.equal(world.仙古秘境开启总年份, 0);
+  assert.equal(world.仙古秘境下次判定总年份, 59000);
+});
+
+test('仙古秘境开启后以诸天纪年锁定一万年再判定', () => {
+  const world = { 仙古秘境下次判定总年份: 59000 };
+  assert.equal(isXianguBloomCheckDue(world, 57000, 58000), false);
+  assert.equal(isXianguBloomCheckDue(world, 58000, 59000), true);
+
+  scheduleXianguBloomCheck(world, 59000);
+  assert.equal(world.仙古秘境下次判定总年份, 61000);
+  assert.equal(isXianguBloomCheckDue(world, 59000, 60000), false);
 });
 
 test('跨时代与跨纪元仍以连续世界年份判断花蕾节点', () => {
