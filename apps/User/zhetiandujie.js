@@ -3775,6 +3775,19 @@ async poWangChengDi(e) {
     const seconds = Math.max(1, Math.ceil((emperorGate.retryAt - Date.now()) / 1000));
     return e.reply(`帝劫余波未散，${Math.floor(seconds / 60)}分${seconds % 60}秒后方可再次尝试。`);
   }
+  /* ====== 界海历练前置：准仙帝须先横渡界海十次（与原著帝路一致） ====== */
+  const 界海历练次数 = Math.max(0, Math.floor(Number(player.界海历练次数) || 0));
+  if (界海历练次数 < 10) {
+    return e.reply([
+      `【界海未渡·帝路难行】`,
+      `${player.名号}欲破王成帝，却感帝路未尽！`,
+      `界海深处传来帝落时代的低语：`,
+      `「准仙帝之路，须先横渡界海十次，洗尽道则中的界海浊气，方能引动帝劫！」`,
+      ``,
+      `当前界海历练：${界海历练次数}/10`,
+      `请先 #穿梭界海 前往界海，再使用 #探索界海 地点 完成历练（每次探索计 1 次）。`,
+    ].join('\n'));
+  }
   if (player.破王成帝 && Date.now() / 1000 < player.破王成帝)
     return e.reply('你道基未愈，暂不可再次冲击帝位');
   player.生命本源 = player.生命本源 ?? 100;
@@ -4045,12 +4058,13 @@ async attackBySupremes(player, diffRate, strike) {
   const kingRatio = getKingToEmperorTribulationRatio();
 
   if (plan.joint) {
-    const jointBase = player.攻击 * 0.3 * attackers.length * 1.5 * diffRate * kingRatio;
+    const maxHpJointBonus = Math.floor((Number(player.血量上限) || 0) * 2);
+    const jointBase = player.攻击 * 0.3 * attackers.length * 1.5 * diffRate * kingRatio + maxHpJointBonus;
     const { damage, messages } = await this.applyTribulationDamage(player, jointBase, {});
     player.当前血量 = Math.max(1, player.当前血量 - damage);
     msgs.push(
       `【八大不朽之王·联手一击】「诸王合力，断你帝路！」`,
-      `八王合击造成 ${bigNumberTransform(damage)} 点道伤！`,
+      `八王合击造成 ${bigNumberTransform(damage)} 点道伤（含${bigNumberTransform(maxHpJointBonus)}点·八王各附25%最大生命压制）！`,
       ...messages,
       `剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`,
     );
@@ -4064,11 +4078,12 @@ async attackBySupremes(player, diffRate, strike) {
   const selected = attackers.slice(0, plan.count);
   msgs.push(`本轮共有 ${selected.length} 名不朽之王同时阻道！`);
   for (const attacker of selected) {
-    const base = player.攻击 * 0.3 * attacker.mult * diffRate * kingRatio;
+    const maxHpBonus = Math.floor((Number(player.血量上限) || 0) * 0.25);
+    const base = player.攻击 * 0.3 * attacker.mult * diffRate * kingRatio + maxHpBonus;
     const { damage, messages } = await this.applyTribulationDamage(player, base, {});
     player.当前血量 = Math.max(1, player.当前血量 - damage);
     msgs.push(
-      `${attacker.name}破空而至：「${attacker.quote}」造成${bigNumberTransform(damage)}点道伤！`,
+      `${attacker.name}破空而至：「${attacker.quote}」造成${bigNumberTransform(damage)}点道伤（含${bigNumberTransform(maxHpBonus)}点·25%最大生命压制）！`,
       ...messages,
     );
     if (player.当前血量 <= 1) break;

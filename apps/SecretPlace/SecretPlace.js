@@ -333,7 +333,7 @@ export class SecretPlace extends plugin {
           fnc: 'handleDungeonDrop',
         },
        {
-  reg: '^#穿梭(凡间|仙界|下界八域|仙域|遮天位面|九天十地|界海|异域|太初星墟|时间长河|小阴间|大阴间|阳间|厄土高原|上苍之上|永恒未知之地|百维真界|原初宇宙海|千维宙古界|万维梵宇界|神维丝线海)$',
+  reg: '^#穿梭(凡间|仙界|下界八域|仙域|遮天位面|九天十地|界海|异域|太初星墟|时间长河|小阴间|大阴间|阳间|厄土高原|上苍之上|超维宇宙|永恒未知之地|百维真界|原初宇宙海|千维宙古界|万维梵宇界|神维丝线海)$',
   fnc: 'goToLocation'
 },
 {
@@ -558,7 +558,7 @@ async goToLocation(e) {
     const player = await Read_player(usr_qq);
     
     // 解析目标地点
-    const location = e.msg.match(/^#穿梭(凡间|仙界|下界八域|九天十地|遮天位面|界海|异域|太初星墟|时间长河|仙域|小阴间|大阴间|阳间|厄土高原|上苍之上|永恒未知之地|百维真界|原初宇宙海|千维宙古界|万维梵宇界|神维丝线海)$/)[1];
+    const location = e.msg.match(/^#穿梭(凡间|仙界|下界八域|九天十地|遮天位面|界海|异域|太初星墟|时间长河|仙域|小阴间|大阴间|阳间|厄土高原|上苍之上|超维宇宙|永恒未知之地|百维真界|原初宇宙海|千维宙古界|万维梵宇界|神维丝线海)$/)[1];
     
     // 地点映射表（统一引用模块级 PLACE_LOCATION_MAP，避免多处分散硬编码）
     const LOCATION_MAP = PLACE_LOCATION_MAP;
@@ -1398,6 +1398,8 @@ async Gojiehaiplace(e) {
     }
     player.lastDungeonType = '界海';
     player.lastDungeonName = didian;
+    // 界海历练计数：破王成帝前置（横渡界海十次）
+    player.界海历练次数 = (Number(player.界海历练次数) || 0) + 1;
     await Write_player(usr_qq, player);
     // 扣除灵石
     await Add_灵石(usr_qq, -Price);

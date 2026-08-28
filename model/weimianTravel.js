@@ -19,6 +19,7 @@ export const PLACE_LOCATION_MAP = Object.freeze({
   '阳间': 7,
   '厄土高原': 100,
   '上苍之上': 200,
+  '超维宇宙': 300,
   '百维真界': 400,
   '原初宇宙海': 500,
   '千维宙古界': 600,
@@ -29,7 +30,7 @@ export const PLACE_LOCATION_MAP = Object.freeze({
 export const DEFAULT_KNOWN_LOCATIONS = Object.freeze(['凡间']);
 export const SPECIAL_LOCATIONS = Object.freeze([
   '仙域', '异域', '时间长河', '永恒未知之地', '小阴间', '大阴间', '阳间',
-  '厄土高原', '上苍之上', '百维真界', '原初宇宙海',
+  '厄土高原', '上苍之上', '超维宇宙', '百维真界', '原初宇宙海',
   '千维宙古界', '万维梵宇界', '神维丝线海',
 ]);
 
@@ -39,14 +40,38 @@ export const ALL_HEAVENS_LOCATIONS = Object.freeze([
 ]);
 
 export const DIMENSION_BARRIER_LAYERS = Object.freeze({
-  '厄土高原': 1,
-  '上苍之上': 2,
+  '上苍之上': 1,
+  '超维宇宙': 2,
+  '厄土高原': 3,
   '永恒未知之地': 3,
   '百维真界': 4,
   '原初宇宙海': 5,
   '千维宙古界': 6,
   '万维梵宇界': 7,
   '神维丝线海': 8,
+});
+
+// 破界强度独立于三大修炼体系境界编号，避免用 30、50 等门槛污染现有境界表。
+export const DIMENSION_BARRIER_POWER_REQUIREMENTS = Object.freeze({
+  '超维宇宙': 30,
+  '上苍之上': 50,
+  '厄土高原': 60,
+  '永恒未知之地': 65,
+  '百维真界': 80,
+  '原初宇宙海': 90,
+  '千维宙古界': 100,
+  '万维梵宇界': 120,
+  '神维丝线海': 150,
+});
+
+// 当前道途的等效破界强度。原初宇宙海未给出数值，按相邻层级补为 90。
+export const DIMENSION_BREAKING_POWER_BY_AUTHORITY = Object.freeze({
+  20: 30,
+  21: 65,
+  22: 80,
+  23: 100,
+  24: 120,
+  25: 150,
 });
 
 export const DIMENSION_BARRIER_BASE_MINUTES = 8 * 60;
@@ -91,6 +116,28 @@ export function isAllHeavensLocation(location) {
 
 export function getDimensionBarrierCount(fromLocation, toLocation) {
   return Math.abs(getDimensionLayer(fromLocation) - getDimensionLayer(toLocation));
+}
+
+export function getDimensionBreakingPower(player) {
+  const authority = getRealmAuthorityLevel(player);
+  if (authority <= 0) return 0;
+  if (authority >= 25) return DIMENSION_BREAKING_POWER_BY_AUTHORITY[25];
+  return DIMENSION_BREAKING_POWER_BY_AUTHORITY[authority] || 0;
+}
+
+export function getDimensionTradeCompatibility(fromPlayer, toPlayer) {
+  const fromLayer = getDimensionLayer(fromPlayer?.power_place);
+  const toLayer = getDimensionLayer(toPlayer?.power_place);
+  return {
+    ok: fromLayer === toLayer,
+    fromLayer,
+    toLayer,
+    reason: fromLayer === toLayer ? null : 'dimension-barrier',
+  };
+}
+
+export function canUseCrossServerTrade(player) {
+  return isAllHeavensLocation(player?.power_place);
 }
 
 export function isInstantAllHeavensTravel(player, fromLocation, toLocation) {
@@ -496,12 +543,14 @@ export function getLocationThreshold(player, location) {
   let checks = [];
 
   if (dimensionLayer > 0) {
-    const required = dimensionLayer <= 4 ? 21 : dimensionLayer <= 6 ? 23 : 24;
-    const met = authority >= required;
+    const locationName = getLocationName(location);
+    const required = DIMENSION_BARRIER_POWER_REQUIREMENTS[locationName] || 0;
+    const breakingPower = getDimensionBreakingPower(player);
+    const met = breakingPower >= required;
     code = met ? null : 'dimension-barrier';
     checks = [{
       label: `第${dimensionLayer}重维度壁垒`,
-      display: `等效权柄 ${authority}/${required}（${dimensionLayer <= 4 ? '仙帝' : dimensionLayer <= 6 ? '祭道之上' : '唯一道之上'}）`,
+      display: `破界强度 ${breakingPower}/${required}（等效权柄 ${authority}）`,
       met,
     }];
   } else if (location === '小阴间') {

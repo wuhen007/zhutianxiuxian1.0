@@ -15,7 +15,9 @@ import {
   getBodyTravelQuote,
   getDimensionBarrierCount,
   getDimensionBarrierTravelTime,
+  getDimensionBreakingPower,
   getDimensionLayer,
+  getDimensionTradeCompatibility,
   getKunpengReduction,
   getLocationThreshold,
   getTokenTier,
@@ -130,7 +132,8 @@ test('坐标记忆只解锁一次，重金求购会校验并扣除灵石', () =>
 test('每日副本只会发现当前权柄可触及的高维坐标', () => {
   assert.equal(getUnknownCoordinates({ mijinglevel_id: 18 }).includes('厄土高原'), false);
   const emperorUnknown = getUnknownCoordinates({ mijinglevel_id: 21 });
-  assert.equal(emperorUnknown.includes('百维真界'), true);
+  assert.equal(emperorUnknown.includes('永恒未知之地'), true);
+  assert.equal(emperorUnknown.includes('百维真界'), false);
   assert.equal(emperorUnknown.includes('原初宇宙海'), false);
   assert.equal(getUnknownCoordinates({ mijinglevel_id: 23 }).includes('原初宇宙海'), true);
 });
@@ -175,20 +178,39 @@ test('准仙帝在诸天万界内部穿梭不再产生等待时间', () => {
 });
 
 test('维度壁垒按仙帝、祭道之上与唯一道之上分层准入', () => {
-  assert.equal(getDimensionLayer('厄土高原'), 1);
+  assert.equal(getDimensionLayer('上苍之上'), 1);
+  assert.equal(getDimensionLayer('超维宇宙'), 2);
+  assert.equal(getDimensionLayer('厄土高原'), 3);
+  assert.equal(getDimensionLayer('永恒未知之地'), 3);
   assert.equal(getDimensionLayer('百维真界'), 4);
   assert.equal(getDimensionLayer('原初宇宙海'), 5);
   assert.equal(getDimensionLayer('神维丝线海'), 8);
 
+  assert.equal(getDimensionBreakingPower({ mijinglevel_id: 20 }), 30);
+  assert.equal(getDimensionBreakingPower({ mijinglevel_id: 21 }), 65);
+  assert.equal(getDimensionBreakingPower({ mijinglevel_id: 25 }), 150);
+  assert.equal(getLocationThreshold({ mijinglevel_id: 20 }, '超维宇宙').ok, true);
+  assert.equal(getLocationThreshold({ mijinglevel_id: 20 }, '上苍之上').ok, false);
+
   const emperor = { mijinglevel_id: 21 };
   assert.equal(getLocationThreshold(emperor, '上苍之上').ok, true);
   assert.equal(getLocationThreshold(emperor, '永恒未知之地').ok, true);
-  assert.equal(getLocationThreshold(emperor, '百维真界').ok, true);
+  assert.equal(getLocationThreshold(emperor, '百维真界').ok, false);
   assert.equal(getLocationThreshold(emperor, '原初宇宙海').ok, false);
   assert.equal(getLocationThreshold({ mijinglevel_id: 23 }, '原初宇宙海').ok, true);
   assert.equal(getLocationThreshold({ xiangulevel_id: 24 }, '千维宙古界').ok, true);
   assert.equal(getLocationThreshold({ mijinglevel_id: 23 }, '万维梵宇界').ok, false);
-  assert.equal(getLocationThreshold({ mijinglevel_id: 24 }, '神维丝线海').ok, true);
+  assert.equal(getLocationThreshold({ mijinglevel_id: 25 }, '神维丝线海').ok, true);
+});
+
+test('同层资产可流转，跨层赠送会被维度壁垒拦截', () => {
+  const allHeavens = { power_place: PLACE_LOCATION_MAP.凡间 };
+  const upper = { power_place: PLACE_LOCATION_MAP.上苍之上 };
+  const highland = { power_place: PLACE_LOCATION_MAP.厄土高原 };
+  const eternal = { power_place: PLACE_LOCATION_MAP.永恒未知之地 };
+  assert.equal(getDimensionTradeCompatibility(allHeavens, upper).ok, false);
+  assert.equal(getDimensionTradeCompatibility(highland, eternal).ok, true);
+  assert.equal(getDimensionTradeCompatibility(upper, upper).ok, true);
 });
 
 test('跨维度壁垒保留长耗时且不被准仙帝瞬移规则绕过', () => {
