@@ -4,6 +4,7 @@ import path from 'node:path';
 import { config, data, plugin } from '../../api/api.js';
 import {
   Read_player,
+  Write_player,
   __PATH,
 } from '../../model/xiuxian.js';
 import {
@@ -11,9 +12,15 @@ import {
   PLANE_DESTRUCTION_SOURCES,
 } from '../../model/planeDestruction.js';
 import {
+  DIMENSION_THREAT_TYPES,
+  ETERNAL_GUARD_DURATION_MINUTES,
+  ETERNAL_GUARD_INTERVAL_MS,
   advanceDimensionGuardState,
+  applyEternalGuardStatus,
   createDimensionGuardState,
+  isEternalGuardAction,
   isGuardingEternal,
+  isImmortalEmperorPlayer,
 } from '../../model/dimensionGuard.js';
 import { writeJsonAtomically } from '../../utils/atomicJson.js';
 
@@ -49,28 +56,87 @@ function highlandDestroyed() {
   }
 }
 
-async function findGuardians() {
-  const guardians = [];
+function readAction(raw) {
+  try {
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function findImmortalEmperors() {
+  const emperors = [];
   for (const file of readPlayerFiles()) {
     const id = file.replace(/\.json$/, '');
     try {
       const player = await Read_player(id);
-      if (isGuardingEternal(player)) guardians.push({ id, name: player.名号 || id });
+      if (isImmortalEmperorPlayer(player)) {
+        emperors.push({ id, name: player.名号 || id, player });
+      }
     } catch {}
+  }
+  return emperors;
+}
+
+async function syncEternalGuardActions(emperors, now) {
+  const guardians = [];
+  for (const emperor of emperors) {
+    const actionKey = `xiuxian:player:${emperor.id}:action`;
+    const currentAction = readAction(await redis.get(actionKey));
+    const guarding = isGuardingEternal(emperor.player);
+
+    if (!guarding) {
+      if (isEternalGuardAction(currentAction)) await redis.del(actionKey);
+      if (emperor.player.修仙状态 === '镇守永恒未知之地') {
+        emperor.player.修仙状态 = '空闲';
+        delete emperor.player.永恒镇守结束时间;
+        await Write_player(emperor.id, emperor.player);
+      }
+      continue;
+    }
+
+    const needsRenewal = !isEternalGuardAction(currentAction)
+      || Number(currentAction.end_time) <= now + ETERNAL_GUARD_INTERVAL_MS;
+    let action = currentAction;
+    if (needsRenewal) {
+      action = applyEternalGuardStatus(emperor.player, now);
+      await Write_player(emperor.id, emperor.player);
+      await redis.set(actionKey, JSON.stringify(action));
+    } else if (emperor.player.修仙状态 !== '镇守永恒未知之地') {
+      emperor.player.修仙状态 = '镇守永恒未知之地';
+      emperor.player.永恒镇守开始时间 ||= Number(action.start_time) || now;
+      emperor.player.永恒镇守结束时间 = Number(action.end_time) || 0;
+      await Write_player(emperor.id, emperor.player);
+    }
+
+    guardians.push({
+      ...emperor,
+      guardEndAt: Number(action?.end_time) || 0,
+    });
   }
   return guardians;
 }
 
 function formatTime(timestamp) {
-  if (!timestamp) return '未排定';
+  if (!timestamp) return '尚未排定';
   return new Date(timestamp).toLocaleString('zh-CN', { hour12: false });
+}
+
+function threatName(type) {
+  return type === DIMENSION_THREAT_TYPES.HIGHLAND_TERROR ? '厄土大恐怖' : '维度灾厄';
+}
+
+function destructionSource(type) {
+  return type === DIMENSION_THREAT_TYPES.HIGHLAND_TERROR
+    ? PLANE_DESTRUCTION_SOURCES.HIGHLAND_TERROR
+    : PLANE_DESTRUCTION_SOURCES.DIMENSION_CALAMITY;
 }
 
 export class DimensionGuard extends plugin {
   constructor() {
     super({
       name: '永恒未知之地维度镇守',
-      dsc: '仙帝镇守永恒未知之地，防止大恐怖席卷上苍与诸天',
+      dsc: '仙帝镇守永恒未知之地，迎战厄土大恐怖与维度灾厄',
       event: 'message',
       priority: 579,
       rule: [
@@ -89,9 +155,7 @@ export class DimensionGuard extends plugin {
 
   async broadcast(message) {
     const set = config.getConfig('xiuxian', 'xiuxian');
-    const configured = Array.isArray(set?.Era?.notifyGroups)
-      ? set.Era.notifyGroups
-      : [];
+    const configured = Array.isArray(set?.Era?.notifyGroups) ? set.Era.notifyGroups : [];
     const fallback = configured.length
       ? []
       : await redis.sMembers('xiuxian:AuctionofficialTask_GroupList');
@@ -109,27 +173,50 @@ export class DimensionGuard extends plugin {
     this.ticking = true;
     try {
       const now = Date.now();
-      const guardians = await findGuardians();
+      const emperors = await findImmortalEmperors();
+      const guardians = await syncEternalGuardActions(emperors, now);
       const result = advanceDimensionGuardState(readState(), {
         now,
+        emperorAppeared: emperors.length > 0,
         guarded: guardians.length > 0,
         highlandDestroyed: highlandDestroyed(),
       });
-      if (result.event) {
-        const destroyed = markPlanesDestroyed(PLANE_FILE, result.event.targets, {
-          source: PLANE_DESTRUCTION_SOURCES.DIMENSION_CALAMITY,
-          actor: '永恒未知之地大恐怖',
-        });
-        await this.broadcast([
-          '【维度灾厄·永恒失守】',
-          '厄土高原尚存，而永恒未知之地无人镇守。',
-          '大恐怖已席卷而下，上苍之上与诸天万界的现世锚点被逐一打灭。',
-          `本次覆灭位面：${destroyed.join('、') || '暂无可写入位面'}`,
-          '仙帝真身归位永恒未知之地后，方可阻止下一轮灾厄；已毁位面需以映照权能重塑。',
-        ].join('\n'));
-      }
       saveState(result.state);
-      return Boolean(result.event);
+
+      if (!result.event) return false;
+      if (result.event.type === 'emperor-era-started') {
+        await this.broadcast([
+          '【仙帝纪元·高维灾厄苏醒】',
+          '世间第一缕路尽级帝光照破古史，沉寂于维度之外的存在同时睁开了眼。',
+          '从此，厄土大恐怖与维度灾厄每小时进入一次来袭判定。',
+          `当前镇守仙帝：${guardians.map((item) => item.name).join('、') || '无'}`,
+        ].join('\n'));
+        return true;
+      }
+
+      const incomingThreat = threatName(result.event.threatType);
+      if (result.event.type === 'guard-defense') {
+        await this.broadcast([
+          `【永恒大战·${incomingThreat}来袭】`,
+          `${guardians.map((item) => item.name).join('、')}真身镇守永恒未知之地，与高维来敌每时每刻征战。`,
+          '帝光横断万古，本轮来袭已被挡在上苍之外，诸天万界得以延续。',
+          `累计击退：${result.state.defenseCount}次｜下轮来袭：${formatTime(result.state.nextAssaultAt)}`,
+        ].join('\n'));
+        return true;
+      }
+
+      const destroyed = markPlanesDestroyed(PLANE_FILE, result.event.targets, {
+        source: destructionSource(result.event.threatType),
+        actor: incomingThreat,
+      });
+      await this.broadcast([
+        `【维度灾厄·永恒失守】`,
+        `仙帝纪元已经开启，永恒未知之地却无人镇守，${incomingThreat}越过了最后防线。`,
+        '大恐怖席卷而下，上苍之上与诸天万界的现世锚点被逐一打灭。',
+        `本次覆灭位面：${destroyed.join('、') || '暂无可写入位面'}`,
+        '仙帝真身归位永恒未知之地后，方可阻止下一轮灾厄；已毁位面需以映照权能重塑。',
+      ].join('\n'));
+      return true;
     } finally {
       this.ticking = false;
     }
@@ -138,14 +225,18 @@ export class DimensionGuard extends plugin {
   async showStatus(e) {
     await this.tick();
     const state = readState();
-    const guardians = await findGuardians();
+    const emperors = await findImmortalEmperors();
+    const guardians = await syncEternalGuardActions(emperors, Date.now());
     const lines = [
       '【维度镇守·永恒未知之地】',
-      `厄土高原：${highlandDestroyed() ? '已覆灭，灾厄链断开' : '尚存'}`,
+      `仙帝纪元：${state.emperorEraStartedAt ? `已于${formatTime(state.emperorEraStartedAt)}开启` : '尚未开启，高维灾厄沉寂'}`,
+      `厄土大恐怖：${state.emperorEraStartedAt ? (highlandDestroyed() ? '随厄土覆灭而沉寂' : '活跃') : '沉寂'}`,
+      `维度灾厄：${state.emperorEraStartedAt ? '活跃' : '沉寂'}`,
       `当前镇守仙帝：${guardians.length ? guardians.map((item) => item.name).join('、') : '无'}`,
-      `镇守规则：每小时检查一次，仙帝真身位于永恒未知之地即算镇守；法身可在诸天代行副本。`,
-      `下一次大恐怖：${formatTime(state.nextCalamityAt)}`,
-      `历史灾厄：${state.calamityCount || 0}次`,
+      `真身状态：${guardians.length ? `镇守永恒未知之地（${ETERNAL_GUARD_DURATION_MINUTES}分钟循环续持）` : '无人承担镇守责任'}`,
+      '镇守期间真身每时每刻都在大战，法身可在诸天代行并刷取副本。',
+      `下一轮来袭：${formatTime(state.nextAssaultAt)}`,
+      `来袭${state.assaultCount || 0}次｜击退${state.defenseCount || 0}次｜失守${state.calamityCount || 0}次`,
     ];
     return e.reply(lines.join('\n'));
   }

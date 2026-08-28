@@ -45,6 +45,7 @@ import {
 } from '../../model/extraCultivation.js';
 import { getRealmAuthorityLevel, getRealmAuthorityName, getRealmAuthorityPath } from '../../model/realmAuthority.js';
 import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
+import { applyEternalGuardStatus } from '../../model/dimensionGuard.js';
 import { canEnterQuasiEmperor } from '../../model/worldlineAuthority.js';
 import { FlowerPollenPath } from './FlowerPollenPath.js';
 import {
@@ -1358,6 +1359,11 @@ if (player.mijinglevel_id === 20) { // 路尽级仙帝境界
     player.法身位置 = 0; // 法身位置（默认为仙界）
     player.法身行动 = null; // 法身当前行动
     player.power_place = PLACE_LOCATION_MAP.永恒未知之地;
+    const eternalGuardAction = applyEternalGuardStatus(player);
+    await redis.set(
+      `xiuxian:player:${usr_qq}:action`,
+      JSON.stringify(eternalGuardAction),
+    );
     await Write_player(usr_qq, player);
 }
 if (player.mijinglevel_id > 10 && player.mijinglevel_id < 18) {
@@ -1963,6 +1969,8 @@ async hudao(e) {
       const kongtong = getKongtongModifiers(player);
       const imperialWudao = kongtong.decree?.type === '修炼' &&
         kongtong.decree.plane === getPlayerPlaneName(player);
+      result.gain = Math.max(1, Math.floor(Number(result.gain) * kongtong.wudaoMultiplier));
+      result.multiplier = Number(result.multiplier) * kongtong.wudaoMultiplier;
 
       // 先天道痕·道韵加持：消耗道痕提升本次悟道收益（每道痕+0.6%，单次上限50道痕/+30%）
       const daoTraces = Math.max(0, Math.floor(Number(player.先天道痕) || 0));

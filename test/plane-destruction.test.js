@@ -11,6 +11,7 @@ import {
   PLANE_DESTRUCTION_RECORD_KEY,
   PLANE_DESTRUCTION_SOURCES,
   repairNaturallyDestroyedPlanes,
+  repairDestroyedPlanes,
   repairPlane,
 } from '../model/planeDestruction.js';
 
@@ -138,6 +139,16 @@ test('厄土仙帝毁灭的位面只接受显式修复', t => {
   }), []);
   assert.equal(fixture.read().仙界, 0);
   assert.equal(repairPlane(fixture.filePath, '仙界'), true);
+  assert.equal(fixture.read().仙界, 1);
+});
+
+test('管理员恢复诸天位面会批量重聚所有毁灭位面', t => {
+  const fixture = createPlaneFile();
+  t.after(fixture.cleanup);
+  markPlaneDestroyed(fixture.filePath, '凡间', { source: PLANE_DESTRUCTION_SOURCES.STRANGE_EMPEROR });
+  markPlaneDestroyed(fixture.filePath, '仙界', { source: PLANE_DESTRUCTION_SOURCES.DARK_REVOLT });
+  assert.deepEqual(repairDestroyedPlanes(fixture.filePath), ['凡间', '仙界']);
+  assert.equal(fixture.read().凡间, 1);
   assert.equal(fixture.read().仙界, 1);
 });
 

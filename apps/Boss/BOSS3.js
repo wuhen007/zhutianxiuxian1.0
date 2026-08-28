@@ -13,7 +13,13 @@ import {
   Add_修为,
   Add_血气,
 } from '../../model/xiuxian.js';
-import { startWeimianDestruction, stopWeimianDestruction, handleDestructionStatusCommand } from './WeimianDestruction.js';
+import {
+  startWeimianDestruction,
+  stopWeimianDestruction,
+  handleDestructionStatusCommand,
+  repairAllDestroyedPlanes,
+  repairDestroyedPlaneByName,
+} from './WeimianDestruction.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 import {
   markPlaneDestroyed,
@@ -59,6 +65,14 @@ export class BOSS3 extends plugin {
         {
           reg: '^#位面毁灭状态$',
           fnc: 'ShowWeimianDestructionStatus',
+        },
+        {
+          reg: '^#恢复诸天位面$',
+          fnc: 'RestoreAllPlanes',
+        },
+        {
+          reg: '^#恢复(?:凡间|仙界|下界八域|遮天位面|九天十地|界海|太初星墟|时间长河|小阴间|大阴间|仙域|阳间|上苍之上|超维宇宙|厄土高原|永恒未知之地)$',
+          fnc: 'RestoreNamedPlane',
         },
         {
           reg: '^#永寂名单$',
@@ -237,6 +251,25 @@ export class BOSS3 extends plugin {
   async ShowWeimianDestructionStatus(e) {
     if (!verc({ e })) return false;
     await handleDestructionStatusCommand(e);
+  }
+
+  async RestoreAllPlanes(e) {
+    if (!verc({ e }) || !e.isMaster) return false;
+    const result = await repairAllDestroyedPlanes();
+    await e.reply(result.repairedCount
+      ? `【诸天复原】已恢复${result.repairedCount}个位面：${result.repaired.join('、')}`
+      : '【诸天复原】当前没有处于毁灭状态的位面');
+    return true;
+  }
+
+  async RestoreNamedPlane(e) {
+    if (!verc({ e }) || !e.isMaster) return false;
+    const planeName = String(e.msg || '').replace(/^#恢复/, '').trim();
+    const repaired = await repairDestroyedPlaneByName(planeName);
+    await e.reply(repaired
+      ? `【位面复原】「${planeName}」已从破灭中重聚`
+      : `【位面复原】「${planeName}」当前未被毁灭`);
+    return true;
   }
   
   // 黑暗动乱伤害贡献榜

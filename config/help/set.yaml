@@ -58,6 +58,9 @@
 - group: 修仙管理
   list:
     - icon: help-icon_9
+      title: '#恢复诸天位面 / #恢复位面名'
+      desc: '管理员恢复所有或指定的毁灭位面'
+    - icon: help-icon_9
       title: '#解散宗门+宗门名'
       desc: '解散宗门，删除文件'
     - icon: help-icon_9

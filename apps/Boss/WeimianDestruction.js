@@ -404,6 +404,24 @@ export async function repairSinglePlane(planeId) {
   return true;
 }
 
+/** 管理员按位面名称修复，同时同步运行时毁灭状态。 */
+export async function repairDestroyedPlaneByName(planeName) {
+  const name = String(planeName || '').trim();
+  if (!repairPlane(data.filePathMap.weimianList, name)) return false;
+  const planeId = Object.keys(PLANE_NAMES).find(id => PLANE_NAMES[id] === name);
+  if (planeId !== undefined) {
+    destroyedPlanes.delete(Number(planeId));
+    protectedPlanes.delete(Number(planeId));
+  }
+  try {
+    await redis.set(DESTRUCTION_REDIS_KEYS.destroyed, JSON.stringify([...destroyedPlanes]));
+    await redis.set(DESTRUCTION_REDIS_KEYS.protected, JSON.stringify([...protectedPlanes]));
+    await redis.set(DESTRUCTION_REDIS_KEYS.lastRepairWorldYear, String(currentWorldYear()));
+  } catch (e) {}
+  logger.info(`[诡异大祭] 管理员恢复位面「${name}」`);
+  return true;
+}
+
 // ==================== 核心破坏逻辑 ====================
 
 /**

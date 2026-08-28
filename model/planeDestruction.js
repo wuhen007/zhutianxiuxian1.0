@@ -10,6 +10,7 @@ export const PLANE_DESTRUCTION_SOURCES = Object.freeze({
   STRANGE_EMPEROR: 'strange_emperor',
   EMPEROR_REFINEMENT: 'emperor_refinement',
   CORPSE_EMPEROR_BREATH: 'corpse_emperor_breath',
+  HIGHLAND_TERROR: 'highland_terror',
   DIMENSION_CALAMITY: 'dimension_calamity',
 });
 
@@ -219,6 +220,12 @@ export function buildPlaneDestroyedMessage(filePath, planeName) {
       '遮天宇宙的万道与众生道果皆已归入世界鼎，位面通道与副本入口彻底封闭。',
       '帝尊危机未被终结前，此界不会随时间自行恢复。',
       '大帝级强者可发送 #组队迎战帝尊，击败帝尊后夺回万道并重塑此界。',
+    );
+  } else if (info.source === PLANE_DESTRUCTION_SOURCES.HIGHLAND_TERROR) {
+    lines.push(
+      `「${planeName}」被厄土高原降下的大恐怖打灭。`,
+      '诡异源头磨灭了此界现世锚点，位面不会自然恢复，需由仙帝映照诸世后重塑。',
+      '灾厄平息前无法进入或下本。',
     );
   } else if (info.source === PLANE_DESTRUCTION_SOURCES.DIMENSION_CALAMITY) {
     lines.push(
