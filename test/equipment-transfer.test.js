@@ -5,6 +5,8 @@ import test from 'node:test';
 import {
   EquipmentTransferError,
   applyEquipmentTransfer,
+  isItemPermanentlyNonTradeable,
+  isItemTransferRestricted,
   transferEquipment,
 } from '../model/equipmentTransfer.js';
 
@@ -116,6 +118,36 @@ test('equipment code refuses to send a different item after the inventory change
   );
   assert.equal(source.装备[0].name, '后来入包的装备');
   assert.equal(target.装备.length, 0);
+});
+
+test('gift rejects locked and non-tradeable unique items without changing inventories', () => {
+  for (const restriction of [
+    { islockd: 1 },
+    { 不可交易: 1 },
+    { 全服唯一: 1 },
+    { 大道至宝本体: true },
+    { 品阶: '先天至宝', islockd: 0 },
+    { type: '帝兵', author_name: '10001' },
+  ]) {
+    const protectedItem = { ...namedPercentageTreasure, ...restriction };
+    const source = najie([protectedItem]);
+    const target = najie();
+
+    assert.equal(isItemTransferRestricted(protectedItem), true);
+    assert.throws(
+      () => applyEquipmentTransfer(source, target, { name: protectedItem.name }, 1, '20002'),
+      error => error instanceof EquipmentTransferError && error.code === 'transfer-forbidden',
+    );
+    assert.deepEqual(source, najie([protectedItem]));
+    assert.deepEqual(target, najie());
+  }
+});
+
+test('gift command checks both inventory lock state and catalog trade restrictions', () => {
+  const source = fs.readFileSync(new URL('../apps/User/MoneyOperation.js', import.meta.url), 'utf8');
+  assert.equal(isItemPermanentlyNonTradeable({ islockd: 1 }), false);
+  assert.match(source, /isItemTransferRestricted\(sourceItem\) \|\| isItemPermanentlyNonTradeable\(catalogItem\)/);
+  assert.match(source, /已锁定或属于不可交易造化，不能赠送/);
 });
 
 test('shared inventory helper refuses equipment removal without quality', () => {

@@ -76,7 +76,7 @@ export function swapEquipmentState(najie, equipment, expected, options = {}) {
     nextNajie.装备.push({
       ...clone(previous),
       数量: 1,
-      islockd: previous.大道至宝本体 ? 1 : 0,
+      islockd: previous.大道至宝本体 || Number(previous.islockd) > 0 ? 1 : 0,
     });
   }
 

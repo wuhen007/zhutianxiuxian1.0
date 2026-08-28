@@ -24,6 +24,7 @@ import {
   transferInnateTreasureAuthorityState,
   tryPanguShatterTalisman,
 } from '../model/innateTreasure.js';
+import { swapEquipmentState } from '../model/equipmentSwap.js';
 
 test('至宝图鉴完整覆盖全部先天至宝及真实冷却', () => {
   assert.deepEqual(Object.keys(INNATE_TREASURE_CATALOG), [...INNATE_TREASURE_NAMES]);
@@ -120,6 +121,25 @@ test('普通帝兵与独立先天至宝可以同时执掌', () => {
   assert.equal(equipment.帝兵.name, '本命帝兵');
   assert.equal(equipment.至宝.name, '盘古幡');
   assert.equal(equipment.至宝.type, '至宝');
+});
+
+test('已锁定至宝更换后退回纳戒仍保持锁定', () => {
+  const previous = { ...createInnateTreasure('盘古幡', '10001', 1000), islockd: 1 };
+  const incoming = { ...createInnateTreasure('太极图', '10001', 1000), 数量: 1, islockd: 0 };
+  const result = swapEquipmentState(
+    { 装备: [incoming] },
+    { 至宝: previous },
+    incoming,
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.equipment.至宝.name, '太极图');
+  assert.equal(result.najie.装备.find(item => item.name === '盘古幡').islockd, 1);
+
+  const commandSource = fs.readFileSync(new URL('../apps/User/UserSellAll.js', import.meta.url), 'utf8');
+  assert.match(commandSource, /thing_name === '至宝'/);
+  assert.match(commandSource, /un_lock === '解锁' && equipment\.至宝\.大道至宝本体/);
+  assert.match(commandSource, /equipment\.至宝\.islockd = un_lock === '锁定' \? 1 : 0/);
 });
 
 test('不同权柄使用独立冷却', () => {

@@ -48,6 +48,19 @@ test('战斗属性增幅每场只应用一次且生命不会超过上限', () =>
   assert.equal(unit.攻击, 150);
 });
 
+test('战斗单位只有灵根内法球倍率时仍能造成法球伤害', () => {
+  const normalizeBattleOrbMultiplier = loadExportedFunction('normalizeBattleOrbMultiplier');
+  const unit = { 攻击: 1000, 灵根: { 法球倍率: 0.6 } };
+
+  assert.equal(normalizeBattleOrbMultiplier(unit), 0.6);
+  assert.equal(unit.法球倍率, 0.6);
+  assert.equal(Math.trunc(unit.攻击 * unit.法球倍率), 600);
+  assert.equal(normalizeBattleOrbMultiplier({ 灵根: {} }), 0);
+  assert.match(source, /A_copy\.forEach\(normalizeBattleOrbMultiplier\)/);
+  assert.match(source, /normalizeBattleOrbMultiplier\(A_player\)/);
+  assert.match(source, /teamData\.forEach\(normalizeBattleOrbMultiplier\)/);
+});
+
 test('按当前生命比例回血会封顶最大生命', () => {
   const healBattleUnitByCurrentRatio = loadExportedFunction('healBattleUnitByCurrentRatio');
   const unit = { 当前血量: 80, 血量上限: 100 };

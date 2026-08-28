@@ -16,6 +16,25 @@ function quantityOf(item) {
   return Math.max(0, Number(item?.数量) || 0);
 }
 
+export function isItemPermanentlyNonTradeable(item) {
+  return Boolean(item) && (
+    item.不可交易 === true ||
+    Number(item.不可交易) > 0 ||
+    item.全服唯一 === true ||
+    Number(item.全服唯一) > 0 ||
+    Boolean(item.大道至宝本体) ||
+    item.品阶 === '先天至宝' ||
+    (item.type === '帝兵' && Boolean(item.author_name))
+  );
+}
+
+export function isItemTransferRestricted(item) {
+  return isItemPermanentlyNonTradeable(item) ||
+    Number(item?.islockd) > 0 ||
+    item?.锁定 === true ||
+    Number(item?.锁定) > 0;
+}
+
 function comparableEquipment(item) {
   const copy = clone(item);
   delete copy.数量;
@@ -71,6 +90,9 @@ export function applyEquipmentTransfer(sourceNajie, targetNajie, selector, quant
   targetNajie.装备 ||= [];
   const selected = selectEquipment(sourceNajie.装备, selector);
   const sourceItem = selected[0].item;
+  if (isItemTransferRestricted(sourceItem)) {
+    throw new EquipmentTransferError('transfer-forbidden', `【${sourceItem.name}】已锁定或不可交易，不能赠送`);
+  }
   if (sourceItem.pinji === undefined || sourceItem.pinji === null) {
     throw new EquipmentTransferError('missing-quality', `装备【${sourceItem.name}】缺少品质数据`);
   }
