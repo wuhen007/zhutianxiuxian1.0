@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   recordGuidedTalent,
   resolveGuidedTalent,
+  formatGuidedTalentList,
 } from '../model/linggenGuidance.js';
 
 test('引灵仙符统计同类型灵根，并支持序号或名称选择', () => {
@@ -23,4 +24,10 @@ test('引灵仙符统计同类型灵根，并支持序号或名称选择', () =>
   assert.equal(resolveGuidedTalent(candidates, '2').talent.name, '太阴之体');
   assert.equal(resolveGuidedTalent(candidates, '万星体').count, 2);
   assert.equal(resolveGuidedTalent(candidates, '9'), null);
+  assert.deepEqual(formatGuidedTalentList(candidates), [
+    '1. 太阳之体（11次）',
+    '2. 太阴之体（5次）',
+    '3. 万星体（2次）',
+  ]);
+  assert.deepEqual(formatGuidedTalentList([]), []);
 });

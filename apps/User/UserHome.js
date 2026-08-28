@@ -126,6 +126,7 @@ import { calculateLifeSourceRepairBaseCost } from '../../model/lifeSourceRepair.
 import {
   recordGuidedTalent,
   resolveGuidedTalent,
+  formatGuidedTalentList,
 } from '../../model/linggenGuidance.js';
 import {
   hasCompletedZhiXian,
