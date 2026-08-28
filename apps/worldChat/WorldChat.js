@@ -34,6 +34,10 @@ import {
   registerWorldWebController,
 } from '../../model/endlessWebServer.js';
 import { replyOfficialMessage } from '../../model/officialMessage.js';
+import {
+  canUseCrossServerTrade,
+  getDimensionLayer,
+} from '../../model/weimianTravel.js';
 
 const USER_COOLDOWN_MS = 5_000;
 const PLAYER_READ_BATCH_SIZE = 16;
@@ -183,6 +187,7 @@ function tradeFailureReason(reason) {
     too_many_trades: '双方当前挂单数量已达上限，请先完成或撤销部分交易',
     invalid_target: '目标位面标识无效，请发送「#跨服交易 位面」重新选择',
     timeout: '请求总机超时，请稍后查询交易列表再重试',
+    cross_dimension_forbidden: '跨服交易只在诸天万界（第0层）开放，其他维度壁垒之间无法互通资产',
   };
   return messages[reason] || reason || '未知错误';
 }
@@ -911,6 +916,10 @@ export class WorldChat extends plugin {
   }
 
   async createTradeForUser(userId, targetServerId, give, want, options = {}) {
+    const seller = await Read_player(String(userId).replace('qg_', '')).catch(() => null);
+    if (!seller || !canUseCrossServerTrade(seller)) {
+      return { ok: false, reason: tradeFailureReason('cross_dimension_forbidden') };
+    }
     const validation = validateTradeOffer(give, want);
     if (!validation.ok) return { ok: false, reason: `报价被诸天规则拦截：${validation.reason}` };
     const tag = client.userTag(userId);
@@ -928,6 +937,7 @@ export class WorldChat extends plugin {
         seller_tag: tag,
         seller_player_name: options.anonymous === true ? '' : tradeDisplayName(options.displayName),
         seller_anonymous: options.anonymous === true,
+        seller_dimension_layer: getDimensionLayer(seller.power_place),
         give: validation.give,
         want: validation.want,
       });
@@ -975,6 +985,10 @@ export class WorldChat extends plugin {
   }
 
   async acceptTradeForUser(userId, code, options = {}) {
+    const buyer = await Read_player(String(userId).replace('qg_', '')).catch(() => null);
+    if (!buyer || !canUseCrossServerTrade(buyer)) {
+      return { ok: false, reason: tradeFailureReason('cross_dimension_forbidden') };
+    }
     const normalizedCode = String(code || '').toUpperCase();
     if (!/^[A-Z0-9_-]{6,80}$/.test(normalizedCode)) return { ok: false, reason: '交易码格式无效' };
     const list = await client.listTrades();
@@ -986,6 +1000,7 @@ export class WorldChat extends plugin {
       const result = await client.acceptTrade(normalizedCode, tag, {
         displayName: options.displayName,
         anonymous: options.anonymous === true,
+        buyer_dimension_layer: getDimensionLayer(buyer.power_place),
       });
       if (!result.ok) {
         await this.rollbackLocalTrade(normalizedCode);

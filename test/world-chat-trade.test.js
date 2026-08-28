@@ -185,6 +185,16 @@ test('总机提供位面概况并完成双端跨服交易结算', async (t) => {
   assert.deepEqual(realms.realms.map((realm) => realm.server_id).sort(), ['sv_a', 'sv_b']);
   assert.equal(realms.realms.find((realm) => realm.server_id === 'sv_b').realm_stats.players, 12);
 
+  const blockedCreate = await clientA.createTrade({
+    target_server_id: 'sv_b',
+    seller_tag: 'a'.repeat(16),
+    seller_dimension_layer: 1,
+    give: [{ kind: 'item', type: '道具', name: '普通材料', amount: 1 }],
+    want: [{ kind: 'currency', name: '灵石', amount: 1000 }],
+  });
+  assert.equal(blockedCreate.ok, false);
+  assert.equal(blockedCreate.reason, 'cross_dimension_forbidden');
+
   const created = await clientA.createTrade({
     target_server_id: 'sv_b',
     seller_tag: 'a'.repeat(16),
@@ -212,6 +222,19 @@ test('总机提供位面概况并完成双端跨服交易结算', async (t) => {
   assert.equal(server.getTrades()[0].settlement.buyer, true);
   await waitFor(() => completedRoles.length === 2, '双方未收到成交通知');
   assert.deepEqual(completedRoles.sort(), ['buyer', 'seller']);
+
+  const blockedAcceptOffer = await clientA.createTrade({
+    target_server_id: 'sv_b',
+    seller_tag: 'a'.repeat(16),
+    give: [{ kind: 'item', type: '道具', name: '普通材料', amount: 1 }],
+    want: [{ kind: 'currency', name: '灵石', amount: 1000 }],
+  });
+  assert.equal(blockedAcceptOffer.ok, true);
+  const blockedAccept = await clientB.acceptTrade(blockedAcceptOffer.trade.code, 'b'.repeat(16), {
+    buyer_dimension_layer: 1,
+  });
+  assert.equal(blockedAccept.ok, false);
+  assert.equal(blockedAccept.reason, 'cross_dimension_forbidden');
 
   const anonymous = await clientA.createTrade({
     target_server_id: 'sv_b',

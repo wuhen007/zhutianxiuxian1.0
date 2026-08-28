@@ -15,6 +15,11 @@ import {
   Read_Exchange,
   channel
 } from '../../model/xiuxian.js';
+import {
+  getDimensionLayer,
+  getDimensionTradeCompatibility,
+  getLocationName,
+} from '../../model/weimianTravel.js';
 export class Exchange extends plugin {
   constructor() {
     super({
@@ -226,6 +231,8 @@ export class Exchange extends plugin {
       pj = pinji2[thing_piji];
       wupin = {
         qq: usr_qq,
+        seller_dimension_layer: getDimensionLayer(player.power_place),
+        seller_location: getLocationName(player.power_place),
         name: equ,
         price: thing_value,
         pinji2: thing_piji,
@@ -244,6 +251,8 @@ export class Exchange extends plugin {
     } else {
       wupin = {
         qq: usr_qq,
+        seller_dimension_layer: getDimensionLayer(player.power_place),
+        seller_location: getLocationName(player.power_place),
         name: thing_exist,
         price: thing_value,
         aconut: thing_amount,
@@ -321,6 +330,23 @@ export class Exchange extends plugin {
     if (thingqq == usr_qq) {
       e.reply('自己买自己的东西？我看你是闲得蛋疼！');
       return false;
+    }
+    let seller;
+    try {
+      seller = await Read_player(thingqq);
+    } catch {
+      seller = null;
+    }
+    if (!seller) {
+      return e.reply('卖家存档暂不可读取，本次上架物品无法结算。');
+    }
+    const dimensionTrade = getDimensionTradeCompatibility(seller, player);
+    if (!dimensionTrade.ok) {
+      return e.reply([
+        '【维度壁垒·上架失效】',
+        `卖家位于第${dimensionTrade.fromLayer}层，你位于第${dimensionTrade.toLayer}层。`,
+        '跨越维度壁垒无法读取该条上架记录，物品仍保留在原上架位。',
+      ].join('\n'));
     }
     //根据qq得到物品
     let thing_name = Exchange[x].name.name;

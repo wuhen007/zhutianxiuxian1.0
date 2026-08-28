@@ -23,6 +23,8 @@ import {
 } from '../../model/xiuxian.js';
 import {
   EquipmentTransferError,
+  isItemPermanentlyNonTradeable,
+  isItemTransferRestricted,
   transferEquipment,
 } from '../../model/equipmentTransfer.js';
 import {
@@ -33,6 +35,7 @@ import {
   releaseInnateTreasure,
 } from '../../model/innateTreasure.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { getDimensionTradeCompatibility } from '../../model/weimianTravel.js';
 export class MoneyOperation extends plugin {
   constructor() {
     super({
@@ -389,6 +392,15 @@ async Give(e) {
   // 获取双方玩家数据
   const A_player = await Read_player(A_qq);
   const B_player = await Read_player(B_qq);
+
+  const dimensionTrade = getDimensionTradeCompatibility(A_player, B_player);
+  if (!dimensionTrade.ok) {
+    return e.reply([
+      '【维度壁垒·赠送失效】',
+      `你位于第${dimensionTrade.fromLayer}层，对方位于第${dimensionTrade.toLayer}层。`,
+      '维度壁垒隔绝因果与纳戒通道，跨层赠送不会生效。',
+    ].join('\n'));
+  }
   
   // 解析消息
   const msg = e.msg.replace('#赠送', '').trim();
@@ -509,7 +521,8 @@ async Give(e) {
   const sourceEquipment = equipmentIndex !== undefined
     ? najie.装备[equipmentIndex]
     : najie.装备.find(item => item.name == thing_name);
-  let thing_exist = sourceEquipment || await foundthing(thing_name);
+  const catalogItem = await foundthing(thing_name);
+  let thing_exist = sourceEquipment || catalogItem;
   if (!thing_exist) {
     return e.reply(`这方世界没有[${thing_name}]`);
   }
@@ -533,6 +546,17 @@ async Give(e) {
   
   // 转换数量
   quantity = await convert2integer(quantity) || 1;
+
+  const sourceItem = equipmentIndex !== undefined
+    ? sourceEquipment
+    : (Array.isArray(najie[thing_exist.class])
+      ? najie[thing_exist.class].find(item =>
+        item.name == thing_name && (thing_piji === undefined || item.pinji == thing_piji)
+      )
+      : null);
+  if (isItemTransferRestricted(sourceItem) || isItemPermanentlyNonTradeable(catalogItem)) {
+    return e.reply(`【${thing_name}】已锁定或属于不可交易造化，不能赠送。`);
+  }
   
   if (thing_exist.class == '装备') {
     try {
@@ -705,6 +729,15 @@ async Give(e) {
     let ifexistplay_honbao = await existplayer(honbao_qq);
     if (!ifexistplay_honbao) {
       return false;
+    }
+    const sender = await Read_player(honbao_qq);
+    const dimensionTrade = getDimensionTradeCompatibility(sender, player);
+    if (!dimensionTrade.ok) {
+      return e.reply([
+        '【维度壁垒·红包失效】',
+        `发红包者位于第${dimensionTrade.fromLayer}层，你位于第${dimensionTrade.toLayer}层。`,
+        '跨层无法牵引红包中的灵石。',
+      ].join('\n'));
     }
     //这里有错
     let acount = await redis.get(

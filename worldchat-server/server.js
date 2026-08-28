@@ -34,6 +34,12 @@ function atomicWriteJson(file, value) {
   fs.renameSync(temp, file);
 }
 
+function normalizeTradeDimensionLayer(value) {
+  if (value === undefined || value === null || value === '') return 0;
+  const layer = Number(value);
+  return Number.isInteger(layer) && layer >= 0 ? layer : -1;
+}
+
 function normalizeClients(raw) {
   const result = new Map();
   for (const [serverId, value] of Object.entries(raw || {})) {
@@ -786,12 +792,14 @@ export function createWorldChatServer(options = {}) {
         const targetServerId = String(message.target_server_id || '');
         const target = online.get(targetServerId);
         const offer = validateTradeOffer(message.give, message.want);
+        const sellerDimensionLayer = normalizeTradeDimensionLayer(message.seller_dimension_layer);
         let reason = null;
         if (!/^[A-Za-z0-9_-]{8,80}$/.test(requestId)) reason = 'invalid_request_id';
         else if (!/^[A-Za-z0-9_-]{3,64}$/.test(targetServerId)) reason = 'invalid_target';
         else if (!connection.tradeEnabled) reason = 'trade_disabled';
         else if (!target) reason = 'target_offline';
         else if (!tradePeerAllowed(connection, target)) reason = 'trade_not_allowed';
+        else if (sellerDimensionLayer !== 0) reason = 'cross_dimension_forbidden';
         else if (!offer.ok) reason = offer.reason;
         else if ([...trades.values()].filter((trade) =>
           trade.status === 'open' &&
@@ -809,6 +817,7 @@ export function createWorldChatServer(options = {}) {
           seller_player_name: message.seller_anonymous === true
             ? ''
             : cleanLabel(message.seller_player_name, 30) || '无名道友',
+          seller_dimension_layer: sellerDimensionLayer,
           target_server_id: target.serverId,
           target_name: target.name,
           give: offer.give,
@@ -872,12 +881,15 @@ export function createWorldChatServer(options = {}) {
         const code = String(message.code || '').toUpperCase();
         const trade = trades.get(code);
         const buyerTag = String(message.buyer_tag || '');
+        const buyerDimensionLayer = normalizeTradeDimensionLayer(message.buyer_dimension_layer);
+        const sellerDimensionLayer = normalizeTradeDimensionLayer(trade?.seller_dimension_layer);
         const seller = trade ? online.get(trade.seller_server_id) : null;
         let reason = null;
         if (!trade || trade.expires_at <= Date.now()) reason = 'trade_not_found';
         else if (trade.status !== 'open') reason = 'trade_closed';
         else if (trade.target_server_id !== connection.serverId) reason = 'wrong_target';
         else if (!seller || !tradePeerAllowed(connection, seller)) reason = 'trade_not_allowed';
+        else if (sellerDimensionLayer !== 0 || buyerDimensionLayer !== 0) reason = 'cross_dimension_forbidden';
         else if (!/^[a-f0-9]{12,32}$/i.test(buyerTag)) reason = 'invalid_member_tag';
         if (reason) return send(ws, { type: 'TRADE_ACCEPT_RESULT', request_id: requestId, ok: false, reason });
 
@@ -886,6 +898,7 @@ export function createWorldChatServer(options = {}) {
         trade.buyer_name = connection.name;
         trade.buyer_tag = buyerTag;
         trade.buyer_anonymous = message.buyer_anonymous === true;
+        trade.buyer_dimension_layer = buyerDimensionLayer;
         trade.buyer_player_name = trade.buyer_anonymous
           ? ''
           : cleanLabel(message.buyer_player_name, 30) || '无名道友';

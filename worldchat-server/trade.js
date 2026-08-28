@@ -237,6 +237,8 @@ export function publicTradeView(trade) {
     seller_name: trade.seller_name,
     target_server_id: trade.target_server_id,
     target_name: trade.target_name,
+    seller_dimension_layer: Number(trade.seller_dimension_layer) || 0,
+    buyer_dimension_layer: Number(trade.buyer_dimension_layer) || 0,
     give: trade.give,
     want: trade.want,
     created_at: trade.created_at,

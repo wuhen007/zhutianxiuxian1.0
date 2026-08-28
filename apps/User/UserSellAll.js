@@ -25,6 +25,7 @@ import {
   zd_battle,
   player_efficiency,
   Read_equipment,
+  Write_equipment,
   instead_equipment,
   Read_najie,
   get_equipment_img,
@@ -37,7 +38,10 @@ import {
   GetPower
 } from '../../model/xiuxian.js';
 import { getMinggeEffects, getMinggeDirectMultiplier } from '../../model/mingge.js';
-import { rollDailyDungeonCoordinate } from '../../model/weimianTravel.js';
+import {
+  getDimensionTradeCompatibility,
+  rollDailyDungeonCoordinate,
+} from '../../model/weimianTravel.js';
 import { resolveZhetianDungeonVictory } from '../../model/zhetianInheritance.js';
 import { recordWenXianTaskProgress } from '../../model/wenxianling.js';
 import { isHighRealmConsumableRestricted } from '../../model/realmAuthority.js';
@@ -1092,6 +1096,16 @@ async all_shenyao(e) {
       e.reply(`此人尚未踏入仙途`);
       return false;
     }
+    const sender = await Read_player(A_qq);
+    const receiver = await Read_player(B_qq);
+    const dimensionTrade = getDimensionTradeCompatibility(sender, receiver);
+    if (!dimensionTrade.ok) {
+      return e.reply([
+        '【维度壁垒·一键赠送失效】',
+        `你位于第${dimensionTrade.fromLayer}层，对方位于第${dimensionTrade.toLayer}层。`,
+        '跨层赠送不会生效，纳戒物品保持原状。',
+      ].join('\n'));
+    }
     let A_najie = await data.getData('najie', A_qq);
     let wupin = [
       '装备',
@@ -1216,6 +1230,21 @@ async all_shenyao(e) {
     let thing = msg.substr(2).split('*');
     let thing_name = thing[0];
     let najie = await Read_najie(usr_qq);
+    if (thing_name === '至宝' && !thing[1]) {
+      const equipment = await Read_equipment(usr_qq);
+      if (!equipment?.至宝?.name) {
+        e.reply('当前至宝位没有可锁定的至宝');
+        return false;
+      }
+      if (un_lock === '解锁' && equipment.至宝.大道至宝本体) {
+        e.reply(`大道至宝本体:${equipment.至宝.name}受规则保护，始终锁定`);
+        return false;
+      }
+      equipment.至宝.islockd = un_lock === '锁定' ? 1 : 0;
+      await Write_equipment(usr_qq, equipment);
+      e.reply(`至宝:${equipment.至宝.name}已${un_lock}`);
+      return false;
+    }
     thing[0] = parseInt(thing[0]);
     let thing_pinji;
     //装备优化

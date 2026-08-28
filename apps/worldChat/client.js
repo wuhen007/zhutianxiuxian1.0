@@ -657,6 +657,7 @@ export class WorldChatClient {
       buyer_tag: buyerTag,
       buyer_player_name: String(options.displayName || '').slice(0, 30),
       buyer_anonymous: options.anonymous === true,
+      buyer_dimension_layer: Number(options.buyer_dimension_layer) || 0,
     });
   }
 
