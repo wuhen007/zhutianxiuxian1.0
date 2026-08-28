@@ -42,7 +42,7 @@ import {
   zd_battle
 } from '../../model/xiuxian.js';
 import { log } from 'console';
-import { getPetAbilityBonus, getTimedActionMultiplier } from '../../model/innateTreasure.js';
+import { getCraftingTimedActionMultiplier, getPetAbilityBonus } from '../../model/innateTreasure.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import {
   isEquipmentNameTooLong,
@@ -488,7 +488,7 @@ export class duanzao extends plugin {
         const gfCut = gfObj && typeof gfObj.timeCut === 'number' ? gfObj.timeCut : 0;
         const timeSpeed = 1 - Math.min(0.95, fr + gfCut);
         action_time = Math.floor(action_time * timeSpeed);
-        const timeMultiplier = getTimedActionMultiplier(player);
+        const timeMultiplier = getCraftingTimedActionMultiplier(player);
         const actualActionTime = Math.floor(action_time * timeMultiplier);
         item.状态 = 1;
         item.TIME = Date.now() - Math.floor(action_time * (1 - timeMultiplier));

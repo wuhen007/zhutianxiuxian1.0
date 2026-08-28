@@ -209,6 +209,16 @@ export class SelfDaoDeduction extends plugin {
 
         if (aHp <= 0) {
           const recovery = startCorpseEmperorRecovery(player);
+          if (recovery.rewritten) {
+            await Write_player(id, player, { trackDailyTask: false });
+            await redis.set(`xiuxian:player:${id}:game_action`, '1');
+            await redis.del(`xiuxian:player:${id}:action`);
+            response = [
+              ...opening, '【终极帝剑·永恒改命】', ...report,
+              '此战仍以败局落幕，永恒仙图却改写了身灭道消的既定命运；气血与元神保留一线，可再次发送 #推演己道 重开帝战。',
+            ].join('\n');
+            return;
+          }
           recovery.groupId = e.isGroup ? e.group_id : null;
           await Write_player(id, player, { trackDailyTask: false });
           await redis.set(`xiuxian:player:${id}:action`, JSON.stringify({
