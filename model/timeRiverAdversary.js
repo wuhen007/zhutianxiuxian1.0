@@ -1,8 +1,19 @@
 export const TIME_RIVER_SPEED = Object.freeze({
-  base: 100,
+  base: 150,
   realmLevel: 20,
-  final: 100 + 20 * 50,
+  final: 150 + 20 * 50,
+  triad: Object.freeze({ base: 100, realmLevel: 20, final: 100 + 20 * 50 }),
+  supreme: Object.freeze({ base: 150, realmLevel: 21, final: 150 + 21 * 50 }),
 });
+
+export const DARK_TRIAD_NAMES = Object.freeze(['苍帝', '鸿帝', '羽帝']);
+export const TIME_RIVER_PHASE_DURATION_MS = 15 * 60 * 1000;
+export const TIME_RIVER_RESCUE_WINDOW_MS = 10 * 60 * 1000;
+export const TIME_RIVER_REVIVAL_TAUNTS = Object.freeze([
+  '羽帝喝吼：“{player}，你能挣扎到几时！？”',
+  '苍帝冷幽幽地说道：“你的确很强，但是，等若跟三个自己血战，你能胜出吗？谁都无法逆天！”',
+  '鸿帝冷漠地说道：“望穿古今未来，谁还能与我等比肩，来此一战？你注定是一个失败者！”',
+]);
 
 export const TIME_RIVER_COUNTER_SKILLS = Object.freeze([
   '他化自在法',
@@ -70,7 +81,7 @@ export const TIME_RIVER_SKILL_LIBRARY = Object.freeze([
     稀有度: 10,
   },
   {
-    name: '帝威卸甲',
+    name: '鸿帝死咒·泄帝势',
     class: '功法',
     pr: 0.34,
     cnt: -1,
@@ -78,9 +89,22 @@ export const TIME_RIVER_SKILL_LIBRARY = Object.freeze([
     other: 0,
     时间长河效果: '剥落无敌气魄',
     时间长河速度: 200,
-    msg1: '苍帝眸光一沉，帝威化作无形古矛，专斩对手最盛的无敌气魄！',
-    msg2: '无敌气魄被强行卸下，攻、防、生命上限与当前生命同时削减五成！',
+    msg1: '鸿帝身后一望无际的古国突兀浮现，死咒言出即法，冥冥天机搅乱乾坤！',
+    msg2: '磅礴无敌的气势被死咒撕开，盖世帝威不断外泄，攻、防与生命同时削减五成！',
     攻击类型: '神通',
+    稀有度: 10,
+  },
+  {
+    name: '苍帝无敌拳印',
+    class: '功法',
+    pr: 0.24,
+    cnt: -1,
+    beilv: 12,
+    other: 0,
+    不可防御: 1,
+    msg1: '苍帝断喝，灰发披散，宏大的拳意挤碎天宇，万物凋零；拳印打破万古诸天，踏着岁月河流狂暴轰来！',
+    msg2: '无敌气势被泄之际，这一拳正中道果，震得手臂发麻、帝躯踉跄！',
+    攻击类型: '近战',
     稀有度: 10,
   },
   {
@@ -91,10 +115,9 @@ export const TIME_RIVER_SKILL_LIBRARY = Object.freeze([
     beilv: 25,
     other: 0,
     不可防御: 1,
-    不可复活: 1,
     控制: 1,
     msg1: '祭灭万物！苍帝抬手祭尽诸天万象，黑暗火光将古今未来压成一线！',
-    msg2: '被祭灭之力钉死于岁月源头，神魂、肉身与复生印记一同归于寂灭！',
+    msg2: '被祭灭之力钉死于岁月源头，神魂与肉身同时崩解，复生印记剧烈震荡！',
     攻击类型: '元神',
     稀有度: 10,
   },
@@ -172,6 +195,46 @@ function randomInt(min, max, random) {
   return Math.floor(roll * (max - min + 1)) + min;
 }
 
+export function isDarkTriadEmperor(name) {
+  return DARK_TRIAD_NAMES.includes(String(name || '').trim());
+}
+
+export function rollTimeRiverEraReward(outcome, random = Math.random) {
+  return outcome === 'victory' ? randomInt(3, 5, random) : randomInt(1, 2, random);
+}
+
+export function rollDarkTriadContinuation(random = Math.random) {
+  if (number(random(), 1) >= 0.3) return { summoned: false, imperialPill: false, reward: 0 };
+  const imperialPill = number(random(), 1) < 0.5;
+  return { summoned: true, imperialPill, reward: imperialPill ? 30 : 10 };
+}
+
+export function scaleTimeRiverAdversary(enemy, ratio = 0.7) {
+  const scale = Math.max(0, number(ratio, 0.7));
+  const result = { ...enemy };
+  for (const field of ['攻击', '防御', '血量上限']) {
+    result[field] = integer(number(enemy?.[field]) * scale);
+  }
+  result.当前血量 = result.血量上限;
+  result._时间长河恢复比例 = scale;
+  return result;
+}
+
+export function getTimeRiverSacrificeRecovery(player) {
+  const mijing = integer(player?.mijinglevel_id, 1);
+  const xiangu = integer(player?.xiangulevel_id, 1);
+  const huafen = integer(player?.huafenlevel_id, 1);
+  const candidates = [
+    { path: 'mijing', level: mijing, tiers: [[20, 0.75, '帝光仙王及以上'], [19, 0.5, '仙王巨头'], [18, 0.35, '仙王'], [17, 0.15, '红尘仙']] },
+    { path: 'xiangu', level: xiangu, tiers: [[20, 0.75, '帝光仙王及以上'], [19, 0.5, '仙王巨头'], [17, 0.35, '仙王'], [16, 0.15, '真仙']] },
+    { path: 'huafen', level: huafen, tiers: [[21, 0.75, '帝光仙王及以上'], [20, 0.5, '仙王巨头'], [19, 0.35, '仙王'], [17, 0.15, '大宇/究极']] },
+  ].map(candidate => {
+    const tier = candidate.tiers.find(([required]) => candidate.level >= required);
+    return tier ? { eligible: true, path: candidate.path, ratio: tier[1], tier: tier[2] } : null;
+  }).filter(Boolean).sort((a, b) => b.ratio - a.ratio);
+  return candidates[0] || { eligible: false, path: '', ratio: 0, tier: '未成仙' };
+}
+
 export function getTimeRiverAdversaryProfile(name) {
   if (name && typeof name === 'object') {
     if (name.counter !== undefined && name.id) return name;
@@ -228,12 +291,20 @@ export function buildTimeRiverAdversary(player, template, options = {}) {
   const attack = integer(player?.攻击, integer(number(template?.attack) * scaleFactor)) * multiplier;
   const defense = integer(player?.防御, integer(number(template?.defense) * scaleFactor)) * multiplier;
   const maxHp = integer(player?.血量上限, integer(number(template?.hp) * scaleFactor)) * multiplier;
+  const triadSkills = name === '苍帝'
+    ? TIME_RIVER_SKILL_LIBRARY.filter(skill => skill.name !== '鸿帝死咒·泄帝势').map(skill => skill.name)
+    : name === '鸿帝' ? ['鸿帝死咒·泄帝势'] : [];
   const learned = [...new Set([
     ...(Array.isArray(template?.special) ? template.special : []),
-    ...(name === '苍帝' ? TIME_RIVER_SKILL_LIBRARY.map(skill => skill.name) : []),
+    ...triadSkills,
     ...(name === '尸骸仙帝' ? CORPSE_EMPEROR_SKILL_NAMES : []),
   ])];
   const counter = Boolean(profile?.counter);
+  const speedProfile = isDarkTriadEmperor(name)
+    ? TIME_RIVER_SPEED.triad
+    : ['荒天帝', '叶天帝', '尸骸仙帝'].includes(name)
+      ? TIME_RIVER_SPEED.supreme
+      : TIME_RIVER_SPEED;
 
   return {
     名号: name,
@@ -246,8 +317,8 @@ export function buildTimeRiverAdversary(player, template, options = {}) {
     法球倍率: number(template?.灵根?.法球倍率, 1),
     学习的功法: learned,
     era: template?.era || profile?.era || '未知纪元',
-    速度: TIME_RIVER_SPEED.base,
-    mijinglevel_id: TIME_RIVER_SPEED.realmLevel,
+    速度: speedProfile.base,
+    mijinglevel_id: speedProfile.realmLevel,
     _时间长河身份: profile?.id || '',
     _时间长河反制: counter,
     _时间长河至宝失效: counter,
@@ -265,7 +336,7 @@ export function applyTimeRiverSkillEffect(attacker, defender, skill, messages = 
   defender.无敌气魄 = false;
   defender._无敌气魄 = false;
   defender._时间长河无敌气魄已卸除 = true;
-  messages.push(`【帝威卸甲】${attacker?.名号 || '苍帝'}以帝威卸下${defender.名号 || '对手'}的无敌气魄，攻、防、生命上限与当前生命均削减50%！`);
+  messages.push(`【鸿帝死咒·泄帝势】${attacker?.名号 || '鸿帝'}以言出即法的死咒撕开${defender.名号 || '对手'}的无敌气魄，攻、防、生命上限与当前生命均削减50%！`);
   messages.push(`【技能先机】帝威卸甲的时间长河速度：${number(skill.时间长河速度, 200)}。`);
   return true;
 }

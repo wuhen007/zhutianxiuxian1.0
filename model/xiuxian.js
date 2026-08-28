@@ -124,10 +124,17 @@ import {
   suppressEmperorWeaponInBattle,
 } from './shengfaFragment.js';
 import {
+  applyDinghaiBattleOpening,
+  applyNewTreasureDamageRules,
+  consumeDinghaiControlImmunity,
   getPetAbilityBonus,
+  getInnateSpeedMultiplier,
+  hasEquippedInnateTreasure,
   isInnateTreasureName,
   getInnateTreasureProjectionName,
   migrateLegacyInnateTreasureSlot,
+  recordDinghaiShieldAbsorption,
+  tickDinghaiEvolution,
   updateEquippedInnateTreasure,
 } from './innateTreasure.js';
 import {
@@ -1348,7 +1355,7 @@ export async function Write_equipment(usr_qq, equipment) {
     String(equipment.至宝.绑定者 || equipment.至宝.author_name) === String(usr_qq);
   player.当前先天至宝 = innateTreasureName;
   player.当前大道至宝 = daoTreasureEquipped ? equipment.至宝.name : '';
-  if (!daoTreasureEquipped) player.大道主权柄 = '';
+  if (!daoTreasureEquipped || equipment.至宝?.永恒仙图本体) player.大道主权柄 = '';
   player.先天至宝失效时间 = projectionName
     ? Number(equipment.至宝.先天投影截止)
     : 0;
@@ -1533,6 +1540,10 @@ export async function Write_equipment(usr_qq, equipment) {
     player.防御 += fixed;
     player.血量上限 += fixed;
   }
+  const previousCreationPoolBonus = Number(player._造化仙池治疗加成) || 0;
+  player.治疗效果加成 = Math.max(0, (Number(player.治疗效果加成) || 0) - previousCreationPoolBonus);
+  player._造化仙池治疗加成 = hasEquippedInnateTreasure(player, '造化仙池') ? 0.25 : 0;
+  player.治疗效果加成 += player._造化仙池治疗加成;
   applyRelicEffectsToPlayer(player, equipment, { rebuiltCombatStats: true });
     await Write_player(usr_qq, player);
     await Add_HP(usr_qq, 0);
@@ -6961,6 +6972,15 @@ export async function Go(e) {
         // 人物有动作查询动作结束时间
         let action_end_time = action.end_time;
         let now_time = new Date().getTime();
+        if (action.action === '时间长河战败待援') {
+            const remaining = Math.max(0, Number(action_end_time) - now_time);
+            const m = Math.floor(remaining / 60000);
+            const s = Math.floor((remaining % 60000) / 1000);
+            e.reply(remaining > 0
+              ? `【帝血待援】你被钉在时间长河的败亡节点，剩余${m}分${s}秒，期间不可行动。`
+              : '【帝血待援】献祭窗口已经结束，等待时间长河裁定。');
+            return 0;
+        }
         if (action.Place_actionplus === '0') {
         // 沉迷副本（秘境历练）结构
         action_end_time = action.start_time + action.total_time * 60 * 1000;
@@ -7150,7 +7170,7 @@ const DI_BING_RANKS = [
     if (equipment.帝兵.主材料 === "万物母气") {
         msg.push(`玄黄垂落，母气流转，镇压诸天万道！`);
         msg.push(`${defender.名号}如陷泥沼，行动艰难！`);
-        defender.dongjie = true;
+        if (tryApplyDinghaiControl(defender, msg, '强制控制')) defender.dongjie = true;
     }
     
     // 特殊帝兵效果
@@ -7496,7 +7516,7 @@ if (attacker.mijinglevel_id > 19 && defender.mijinglevel_id < 20 && Math.random(
   if (isImmune) {
     // 秘境等级差距过大时，免疫失效
     if (attacker.mijinglevel_id - defender.mijinglevel_id >= 2) {
-      defender.dongjie = true;
+      if (tryApplyDinghaiControl(defender, msg, '强制控制')) defender.dongjie = true;
       msg.push(`${attacker.名号}周身仙光亿万缕，大道符文压盖诸天，一缕气息崩断万古时空！`);
       msg.push(`然而${defender.名号}的涅槃真火在绝对实力差距下黯然熄灭，如同萤火之于皓月！`);
       msg.push(`${defender.名号}，在吾面前，纵有涅槃之力亦难逃镇压！`);
@@ -7511,7 +7531,7 @@ if (attacker.mijinglevel_id > 19 && defender.mijinglevel_id < 20 && Math.random(
     }
   } else {
     // 无免疫效果时正常触发
-    defender.dongjie = true; 
+    if (tryApplyDinghaiControl(defender, msg, '强制控制')) defender.dongjie = true;
     msg.push(`${attacker.名号}身上散发出超越诸天极限的气息，一缕眸光压塌万古！`);
     msg.push(`${defender.名号}的身躯与神魂被永恒禁锢，时间长河在此断流！`);
     msg.push(`${defender.名号}，在吾面前，你连蝼蚁都不如！`);
@@ -7523,7 +7543,7 @@ if (attacker.mijinglevel_id > 19 && defender.mijinglevel_id < 20 && Math.random(
 if ( defender.灵根&&defender.灵根.name === "命运神道体") {
       if (Math.random() > 0.7) {
         msg.push(`${defender.名号}推开了命运生死轮盘，改写了真实，局势发生了微妙的变化，${attacker.名号}被命运之力禁锢了！`);
-         attacker.dongjie = true; 
+         if (tryApplyDinghaiControl(attacker, msg, '强制控制')) attacker.dongjie = true;
         if (Math.random() > 0.01) {
           let 回复血量 = defender.当前血量 * 0.5;
           defender.当前血量 = Math.max(defender.当前血量 + 回复血量, 0);
@@ -7710,7 +7730,7 @@ if (context !== "fenshen") {
 const 技能效果处理 = {
   // 时牌定身 - 木之本樱
   "时牌定身": function(attacker, defender, msg, skill) {
-    defender.dongjie = true; 
+    if (tryApplyDinghaiControl(defender, msg, '强制控制')) defender.dongjie = true;
     let processedMsg1 = skill.msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
     let processedMsg2 = skill.msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
     msg.push(attacker.名号 + processedMsg1 + defender.名号 + processedMsg2);
@@ -7721,7 +7741,7 @@ const 技能效果处理 = {
     let godDemonMsg = [];
     
     // 禁锢效果
-    defender.dongjie = true;
+    if (tryApplyDinghaiControl(defender, msg, '强制控制')) defender.dongjie = true;
     let processedMsg1 = skill.msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
     let processedMsg2 = skill.msg2.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
     godDemonMsg.push(processedMsg1);
@@ -7820,7 +7840,7 @@ const 技能效果处理 = {
     const godDemonMsg = [];
     
     // 禁锢效果
-    defender.dongjie = true;
+    if (tryApplyDinghaiControl(defender, msg, '强制控制')) defender.dongjie = true;
     
     // 处理消息文本
     const processedMsg1 = skill.msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
@@ -7858,7 +7878,7 @@ const 技能效果处理 = {
   // 混沌开天 - 混沌体
   "混沌开天": function(attacker, defender, msg, skill) {
     // 禁锢效果
-    defender.dongjie = true;
+    if (tryApplyDinghaiControl(defender, msg, '强制控制')) defender.dongjie = true;
     
     // 处理消息文本
     const processedMsg1 = skill.msg1.replace(/他/g, attacker.名号).replace(/对手/g, defender.名号);
@@ -8002,7 +8022,7 @@ const 技能效果处理 = {
       defender.攻击 = Math.max(Math.floor(defender.攻击 * (1 - 比例)), 0);
       defender.防御 = Math.max(Math.floor(defender.防御 * (1 - 比例)), 0);
       defender.当前血量 = Math.max(Math.floor(defender.当前血量 * (1 - 比例)), 0);
-      defender.dongjie = true;
+      if (tryApplyDinghaiControl(defender, msg, '强制控制')) defender.dongjie = true;
       msg.push(`万法臣服！${defender.名号}全属性下降40%且被禁锢1回合！`);
     }
   },
@@ -8280,6 +8300,33 @@ async function settleWanhuaBannerHarvest(ownerSource, defeatedSource) {
     ? `，并将天骄「${harvest.addedMainSoul.sourceName}」炼为主魂（${harvest.state.主魂.length}/10）`
     : '';
   return `【万灵炼魂】${ownerSource.名号}以魔幡吞没败者生魂，${soulText}${mainSoulText}。`;
+}
+
+export function createTahuaAvatarEntity(caster, opponent, avatar, duration, master) {
+  const isSelfMirror = avatar.id === 'mirror_self';
+  const isEnemyMirror = avatar.id === 'mirror_enemy';
+  const isMirror = isSelfMirror || isEnemyMirror;
+  const source = isEnemyMirror ? opponent : caster;
+  const entity = JSON.parse(JSON.stringify(source));
+
+  entity.名号 = isEnemyMirror
+    ? `${caster.名号}·他化自在身(${opponent.名号}映照)`
+    : `${caster.名号}·他化自在身(${isSelfMirror ? caster.名号 : avatar.name})`;
+  entity._tahua_type = avatar.id;
+  entity._tahua_duration = isMirror ? duration : -1;
+  entity._tahua_master = master;
+  entity._tahua_can_use_gongfa = isMirror;
+  entity._tahua_can_summon_dao_body = isMirror;
+  entity._tahua_yiqihua_triggered = false;
+  entity.avatarSkill = isMirror ? null : { ...avatar };
+  entity.分身 = [];
+  entity.当前血量 = Math.max(1, Number(entity.血量上限) || 1);
+  entity.皆字秘触发 = false;
+  delete entity._皆字秘倍率;
+  delete entity._皆字秘力竭;
+  delete entity._临字秘加成倍率;
+  delete entity._临字秘压制比例;
+  return entity;
 }
 
 async function zd_battle_1v1(AA_player, BB_player, options = {}) {
@@ -8714,11 +8761,14 @@ let B_speed = getBattleUnitSpeed(B_player);
   }
   
   function pushBackActionBar(bar, amount) {
+    const target = bar === 'A' ? A_player : B_player;
+    if (!tryApplyDinghaiControl(target, msg, '行动条推退')) return false;
     if (bar === 'A') {
       A_actionBar = Math.max(A_actionBar - amount, 0);
     } else {
       B_actionBar = Math.max(B_actionBar - amount, 0);
     }
+    return true;
   }
 
   // ==================== 攻击处理函数（保持原样） ====================
@@ -8730,15 +8780,22 @@ let B_speed = getBattleUnitSpeed(B_player);
     if (context === 'main') tickDecadeCombatState(attacker, cnt2, msg);
 
     if (context === 'main' && Number(attacker._东皇冻结回合) > 0) {
-      attacker._东皇冻结回合--;
-      msg.push(`${attacker.名号}被至宝镇封，本回合无法行动！`);
-      return null;
+      if (!tryApplyDinghaiControl(attacker, msg, '冻结')) {
+        attacker._东皇冻结回合 = 0;
+      } else {
+        attacker._东皇冻结回合--;
+        msg.push(`${attacker.名号}被至宝镇封，本回合无法行动！`);
+        return null;
+      }
     }
-    const innateSilenced = context === 'main' && attacker._陷仙沉默 && Math.random() < 0.3;
+    let innateSilenced = context === 'main' && attacker._陷仙沉默 && Math.random() < 0.3;
+    if (innateSilenced && !tryApplyDinghaiControl(attacker, msg, '沉默')) innateSilenced = false;
     if (innateSilenced) msg.push(`【陷仙剑】${attacker.名号}神通被沉默，本回合只能进行普通攻击。`);
 
     if (attacker.dongjie) {
-      if (isImmune) {
+      if (!tryApplyDinghaiControl(attacker, msg, '强制控制')) {
+        attacker.dongjie = false;
+      } else if (isImmune) {
         attacker.dongjie = false;
         const immuneType = (attacker === A_player ? A_immune_type : B_immune_type) || "涅槃真火护体";
         msg.push(`${attacker.名号}的${immuneType}效果免疫了冻结状态！`);
@@ -8764,13 +8821,13 @@ let B_speed = getBattleUnitSpeed(B_player);
       if (bannerAttack) {
         const bannerDamage = calcDamage(attacker, defender, bannerAttack.rawDamage, '元神');
         const applied = applyDamage(defender, bannerDamage.actual_damage, 'main', attacker);
-        pushBackActionBar(
+        const pushed = pushBackActionBar(
           attacker === A_player ? 'B' : 'A',
           bannerAttack.actionBarReduction
         );
         msg.push(bannerAttack.message, ...bannerDamage.msgs);
         msg.push(
-          `${defender.名号}元神受创，损失${bigNumberTransform(applied.actual_damage)}点生命，剩余血量${bigNumberTransform(defender.当前血量)}，行动值-${bannerAttack.actionBarReduction}！`
+          `${defender.名号}元神受创，损失${bigNumberTransform(applied.actual_damage)}点生命，剩余血量${bigNumberTransform(defender.当前血量)}${pushed ? `，行动值-${bannerAttack.actionBarReduction}` : ''}！`
         );
         if (defender.当前血量 <= 0) {
           const revival = checkRevival(defender, 'main');
@@ -8783,6 +8840,21 @@ let B_speed = getBattleUnitSpeed(B_player);
               baoji: 1,
               battleEnded: true,
               winner: attacker === A_player ? 'A' : 'B',
+            };
+          }
+        }
+        if (attacker.当前血量 <= 0) {
+          const revival = checkRevival(attacker, 'main');
+          if (revival.revived) {
+            msg.push(...(Array.isArray(revival.message) ? revival.message : [revival.message]));
+          } else {
+            msg.push(`${attacker.名号}被定海珠的诸海反潮击溃！`);
+            return {
+              伤害: 0,
+              isCritical: false,
+              baoji: 1,
+              battleEnded: true,
+              winner: defender === A_player ? 'A' : 'B',
             };
           }
         }
@@ -8824,7 +8896,7 @@ let B_speed = getBattleUnitSpeed(B_player);
       let godDemonMsg = [];
       
       if (Math.random() > 0.01) {
-        defender.dongjie = true;
+        if (tryApplyDinghaiControl(defender, msg, '强制控制')) defender.dongjie = true;
         godDemonMsg.push(`所有法，所有名，所有往来朝夕皆如土！`);
         godDemonMsg.push(`${attacker.名号}身与魂轮回诸天归来！祂自出世以来游历无穷混沌海未曾一败，在此刻意气神已经到达了顶峰，超脱了彼岸`);
         godDemonMsg.push(`无穷的拳意世界重重而立，巍峨神殿压迫而来，诸天命运生死轮盘浮现！`);
@@ -9056,7 +9128,7 @@ let B_speed = getBattleUnitSpeed(B_player);
           不可复活 = true;
           defender.不可复活 = true;
         }
-        if (skill.控制 === 1) {
+        if (skill.控制 === 1 && tryApplyDinghaiControl(defender, msg, '强制控制')) {
           defender.dongjie = true;
         }
         if (skill.禁疗) defender.禁疗 = Math.max(Number(defender.禁疗) || 0, Number(skill.禁疗));
@@ -9075,8 +9147,9 @@ let B_speed = getBattleUnitSpeed(B_player);
         if (skill.推条) {
           const 推条值 = Math.round(skill.推条 * getGongfaNumericMultiplier(attacker, skill));
           const bar = defender === A_player ? 'A' : 'B';
-          pushBackActionBar(bar, 推条值);
-          msg.push(`${defender.名号}被无上伟力镇压，遁光受阻，行动条被压制${推条值}点！`);
+          if (pushBackActionBar(bar, 推条值)) {
+            msg.push(`${defender.名号}被无上伟力镇压，遁光受阻，行动条被压制${推条值}点！`);
+          }
         }
         if (skill.速度加成) {
           const 速度效果 = skill.速度加成 * getGongfaNumericMultiplier(attacker, skill);
@@ -9186,9 +9259,11 @@ let B_speed = getBattleUnitSpeed(B_player);
           const 对轰推条 = 100;
           const attackerBar = attacker === A_player ? 'A' : 'B';
           const defenderBar = defender === A_player ? 'A' : 'B';
-          pushBackActionBar(attackerBar, 对轰推条);
-          pushBackActionBar(defenderBar, 对轰推条);
-          msg.push(`神通对轰的冲击让双方都后退数步，行动条各减少${对轰推条}点！`);
+          const attackerPushed = pushBackActionBar(attackerBar, 对轰推条);
+          const defenderPushed = pushBackActionBar(defenderBar, 对轰推条);
+          if (attackerPushed || defenderPushed) {
+            msg.push(`神通对轰的冲击令${attackerPushed && defenderPushed ? '双方' : attackerPushed ? attacker.名号 : defender.名号}行动条减少${对轰推条}点！`);
+          }
           
         } else {
           // 防御方对轰失败
@@ -9415,17 +9490,12 @@ let B_speed = getBattleUnitSpeed(B_player);
     }
 
     if (defender.护盾值 > 0) {
-      if (defender.护盾值 >= actual_damage) {
-        const 抵消值 = actual_damage;  // 先记录抵消值
-        defender.护盾值 -= actual_damage;
-        actual_damage = 0;
-        msg.push(`${defender.名号}的护盾抵消了${bigNumberTransform(抵消值)}点伤害！`);
-      } else {
-        const 抵消值 = defender.护盾值;
-        actual_damage -= defender.护盾值;
-        msg.push(`${defender.名号}的护盾抵消${bigNumberTransform(抵消值)}点伤害！`);
-        defender.护盾值 = 0;
-      }
+      const shield = Math.max(0, Number(defender.护盾值) || 0);
+      const absorbed = Math.min(shield, actual_damage);
+      defender.护盾值 = shield - absorbed;
+      actual_damage -= absorbed;
+      msg.push(`${defender.名号}的护盾抵消了${bigNumberTransform(absorbed)}点伤害！`);
+      appendDinghaiResolution(msg, recordDinghaiShieldAbsorption(defender, source, absorbed));
     }
 
     if (context !== "fenshen" && defender.分身 && defender.分身.length > 0) {
@@ -9692,6 +9762,10 @@ let B_speed = getBattleUnitSpeed(B_player);
     if (加成消息 !== "") {
       消息.push(`${player.名号}获得${加成消息.trim()}！`);
     }
+    if (Array.isArray(player._时间长河复活彩蛋) && !player._时间长河复活彩蛋已触发) {
+      player._时间长河复活彩蛋已触发 = true;
+      消息.push(...player._时间长河复活彩蛋.map(line => String(line).replaceAll('{player}', player.名号)));
+    }
     
     消息.push(`恢复${bigNumberTransform(恢复血量)}点血量！`);
     
@@ -9719,6 +9793,28 @@ let B_speed = getBattleUnitSpeed(B_player);
       return;
     }
     const treasure = holder.当前先天至宝;
+
+    if (hasEquippedInnateTreasure(holder, '太初仙刃') && !isPvpBattle) {
+      opponent.防御 = Math.max(0, Math.floor((Number(opponent.防御) || 0) * 0.85));
+      msg.push(`【太初仙刃】${holder.名号}斩开太初道隙，无视${opponent.名号}一成半防御。`);
+      if (await consumeAuthorityFlag(holder, '太初仙刃首击待用')) holder._太初仙刃首击倍率 = 2.5;
+    }
+    if (hasEquippedInnateTreasure(holder, '无量天尺')) {
+      holder._无量天尺首伤上限 = Math.max(1, Math.floor((Number(holder.血量上限) || 1) * 0.45));
+      if (await consumeAuthorityFlag(holder, '无量护身待用')) holder._无量护身剩余 = 3;
+    }
+    if (hasEquippedInnateTreasure(holder, '周天星辰旗') && await consumeAuthorityFlag(holder, '星辰护界待用')) {
+      const shield = Math.max(1, Math.floor((Number(holder.血量上限) || 1) * 0.25));
+      holder._护盾值 = (Number(holder._护盾值) || 0) + shield;
+      holder.护盾值 = (Number(holder.护盾值) || 0) + shield;
+      msg.push(`【星辰护界】周天星斗垂落，为${holder.名号}凝成${bigNumberTransform(shield)}点护盾。`);
+    }
+    if (treasure === '定海珠') {
+      const active = await consumeAuthorityFlag(holder, '定海珠演化待用');
+      const opening = applyDinghaiBattleOpening(holder, { active, shieldField: '护盾值' });
+      msg.push(`【${active ? '演化诸天' : '镇海'}】二十四颗定海珠环绕${holder.名号}，凝成${bigNumberTransform(opening.shield)}点护盾。`);
+      if (opening.blockedOpeningControl) msg.push(`【镇海】${holder.名号}遭受的开局控制已被珠光定住。`);
+    }
 
     if (treasure === '盘古幡' && !isPvpBattle) {
       opponent.防御 = Math.max(0, Math.floor((Number(opponent.防御) || 0) * 0.7));
@@ -9751,7 +9847,9 @@ let B_speed = getBattleUnitSpeed(B_player);
 
     if (treasure === '东皇钟' && await consumeAuthorityFlag(holder, '东皇镇世待用')) {
       const boss = isBossOpponent(opponent);
-      opponent._东皇冻结回合 = isPvpBattle || boss ? 1 : 3;
+      opponent._东皇冻结回合 = tryApplyDinghaiControl(opponent, msg, '冻结')
+        ? (isPvpBattle || boss ? 1 : 3)
+        : 0;
       if (boss) opponent.攻击 = Math.floor((Number(opponent.攻击) || 0) * 0.7);
       msg.push(boss
         ? `【东皇镇世】${opponent.名号}首回合被冻结，且攻击降低30%。`
@@ -9765,7 +9863,9 @@ let B_speed = getBattleUnitSpeed(B_player);
       }
       if (await consumeAuthorityFlag(holder, '阴阳逆转待用')) {
         holder._阴阳逆转护命 = true;
-        opponent._东皇冻结回合 = Math.max(Number(opponent._东皇冻结回合) || 0, 1);
+        if (tryApplyDinghaiControl(opponent, msg, '强制控制')) {
+          opponent._东皇冻结回合 = Math.max(Number(opponent._东皇冻结回合) || 0, 1);
+        }
         msg.push(`【阴阳逆转】${opponent.名号}开局被定住一回合，${holder.名号}获得一次致命伤害逆转。`);
       }
     }
@@ -9779,6 +9879,8 @@ let B_speed = getBattleUnitSpeed(B_player);
     A_speed = Math.max(1, Math.floor(A_speed * 0.8));
     msg.push(`【六道轮回盘】${A_player.名号}被轮回法则笼罩，速度降低两成。`);
   }
+  if (hasEquippedInnateTreasure(A_player, '周天星辰旗')) A_speed = Math.max(1, Math.floor(A_speed * 1.08));
+  if (hasEquippedInnateTreasure(B_player, '周天星辰旗')) B_speed = Math.max(1, Math.floor(B_speed * 1.08));
   await applyInnateBattleOpening(A_player, B_player);
   await applyInnateBattleOpening(B_player, A_player);
   for (const player of [A_player, B_player]) {
@@ -9876,8 +9978,9 @@ msg.push(bSpeedMsg);
     if (fateTransfer.triggered) msg.push(fateTransfer.message);
 
     if (attacker.当前先天至宝 === '六道轮回盘' && Math.random() < 0.2) {
-      pushBackActionBar(defenderBar, Math.floor(ACTION_BAR_MAX * 0.2));
-      msg.push(`【六道轮回盘】${defender.名号}的行动进度被推退20%。`);
+      if (pushBackActionBar(defenderBar, Math.floor(ACTION_BAR_MAX * 0.2))) {
+        msg.push(`【六道轮回盘】${defender.名号}的行动进度被推退20%。`);
+      }
     }
     
     actionOrder.push({
@@ -9969,10 +10072,14 @@ msg.push(bSpeedMsg);
 
     // 检查冻结（保持原样）
     if (attacker.dongjie) {
-      msg.push(`${attacker.名号}无法动弹！`);
-      attacker.dongjie = false;
-      cnt++;
-      continue;
+      if (!tryApplyDinghaiControl(attacker, msg, '强制控制')) {
+        attacker.dongjie = false;
+      } else {
+        msg.push(`${attacker.名号}无法动弹！`);
+        attacker.dongjie = false;
+        cnt++;
+        continue;
+      }
     }
 
     // ===== 执行攻击（保持原样） =====
@@ -10087,59 +10194,37 @@ msg.push(bSpeedMsg);
               const selectedAvatars = shuffled.slice(0, summonCount);
               
               for (const avatar of selectedAvatars) {
-                const entity = JSON.parse(JSON.stringify(attacker));
-                entity.名号 = `${attacker.名号}·他化自在身(${avatar.name})`;
-                entity._tahua_type = avatar.id;
-                entity._tahua_duration = levelConfig.duration;
-                entity._tahua_master = isA ? "A" : "B";
-                entity.avatarSkill = { ...avatar };
-                entity.当前血量 = entity.血量上限;
-                
-                if (isA) {
-                  A_tahua_entities.push(entity);
+                const entity = createTahuaAvatarEntity(
+                  attacker,
+                  defender,
+                  avatar,
+                  levelConfig.duration,
+                  isA ? 'A' : 'B',
+                );
+                tahuaEntities.push(entity);
+
+                if (avatar.id === 'mirror_self') {
+                  msg.push(`时间长河映照出${attacker.名号}的完整道果，100%全属性与所学功法尽数复刻！`);
+                } else if (avatar.id === 'mirror_enemy') {
+                  msg.push(`时间长河映照出${defender.名号}的完整道果，100%全属性与敌方功法尽数复刻！`);
                 } else {
-                  B_tahua_entities.push(entity);
-                }
-                
-                msg.push(`时间长河中踏出一道伟岸身影——${avatar.name}降临！`);
-                msg.push(`${avatar.name}眸绽冷电，睥睨万古：「${avatar.desc}」`);
-                
-                const avatarDmg = Math.trunc(entity.攻击 * avatar.beilv * (0.8 + Math.random() * 0.4));
-                defender.当前血量 -= avatarDmg;
-                defender.当前血量 = Math.max(defender.当前血量, 0);
-                
-                msg.push(`${avatar.name}施展「${avatar.skill}」！${avatar.msg1}`);
-                msg.push(`${avatar.msg2}，造成${bigNumberTransform(avatarDmg)}点伤害！`);
-                msg.push(`${defender.名号}剩余血量：${bigNumberTransform(defender.当前血量)}`);
-                
-                if (avatar.special.includes("禁锢") || avatar.special.includes("麻痹")) {
-                  defender.dongjie = true;
-                  msg.push(`${defender.名号}被${avatar.name}的力量禁锢，无法行动！`);
-                }
-                
-                if (defender.当前血量 <= 0) {
-                  const 复活结果 = checkRevival(defender, "main");
-                  if (复活结果.revived) {
-                    msg.push(复活结果.message);
-                    continue;
-                  } else {
-                    msg.push(`${attacker.名号}击败了${defender.名号}`);
-                    return build1v1BattleResult({
-                      battleEnded: true,
-                      winner: attacker === A_player ? "A" : "B"
-                    });
-                  }
+                  msg.push(`时间长河中踏出一道伟岸身影——${avatar.name}前来助战！`);
+                  msg.push(`${avatar.name}眸绽冷电，睥睨万古：「${avatar.desc}」`);
                 }
               }
               
               if (isA) A_tahua_triggered = true;
               else B_tahua_triggered = true;
               
-              if (levelConfig.duration > 0) {
-                msg.push(`${attacker.名号}的他化自在身可存在${levelConfig.duration}回合`);
-              } else {
-                const currentCount = tahuaEntities.filter(e => e.当前血量 > 0).length;
-                msg.push(`${attacker.名号}的他化自在身永驻战场，直至被击杀！【${currentCount}/${levelConfig.maxActive}】`);
+              const mirrorCount = selectedAvatars.filter(avatar => avatar.id.startsWith('mirror_')).length;
+              const heroCount = selectedAvatars.length - mirrorCount;
+              if (mirrorCount > 0 && levelConfig.duration > 0) {
+                msg.push(`映照道果可存在${levelConfig.duration}回合，期间将独立攻击并为${attacker.名号}挡刀！`);
+              } else if (mirrorCount > 0) {
+                msg.push(`映照道果永驻战场，将独立攻击并为${attacker.名号}挡刀！`);
+              }
+              if (heroCount > 0) {
+                msg.push(`时间长河中的强者将并肩战至终局，不会施展一击后离去！`);
               }
             }
           }
@@ -10218,58 +10303,37 @@ msg.push(bSpeedMsg);
             const selectedAvatars = shuffled.slice(0, summonCount);
             
             for (const avatar of selectedAvatars) {
-              const entity = JSON.parse(JSON.stringify(defender));
-              entity.名号 = `${defender.名号}·他化自在身(${avatar.name})`;
-              entity._tahua_type = avatar.id;
-              entity._tahua_duration = defLevelConfig.duration;
-              entity._tahua_master = isDefA ? "A" : "B";
-              entity.avatarSkill = { ...avatar };
-              entity.当前血量 = entity.血量上限;
-              
-              if (isDefA) {
-                A_tahua_entities.push(entity);
+              const entity = createTahuaAvatarEntity(
+                defender,
+                attacker,
+                avatar,
+                defLevelConfig.duration,
+                isDefA ? 'A' : 'B',
+              );
+              defTahuaEntities.push(entity);
+
+              if (avatar.id === 'mirror_self') {
+                msg.push(`时间长河映照出${defender.名号}的完整道果，100%全属性与所学功法尽数复刻！`);
+              } else if (avatar.id === 'mirror_enemy') {
+                msg.push(`时间长河映照出${attacker.名号}的完整道果，100%全属性与敌方功法尽数复刻！`);
               } else {
-                B_tahua_entities.push(entity);
-              }
-              
-              msg.push(`时间长河中踏出一道伟岸身影——${avatar.name}降临！`);
-              msg.push(`${avatar.name}眸绽冷电，睥睨万古：「${avatar.desc}」`);
-              
-              const avatarDmg = Math.trunc(entity.攻击 * avatar.beilv * (0.8 + Math.random() * 0.4));
-              attacker.当前血量 -= avatarDmg;
-              attacker.当前血量 = Math.max(attacker.当前血量, 0);
-              
-              msg.push(`${avatar.name}施展「${avatar.skill}」！${avatar.msg1}`);
-              msg.push(`${avatar.msg2}，造成${bigNumberTransform(avatarDmg)}点伤害！`);
-              msg.push(`${attacker.名号}剩余血量：${bigNumberTransform(attacker.当前血量)}`);
-              
-              if (avatar.special.includes("禁锢") || avatar.special.includes("麻痹")) {
-                attacker.dongjie = true;
-                msg.push(`${attacker.名号}被${avatar.name}的力量禁锢，无法行动！`);
-              }
-              
-              if (attacker.当前血量 <= 0) {
-                const 复活结果 = checkRevival(attacker, "main");
-                if (复活结果.revived) {
-                  msg.push(复活结果.message);
-                  continue;
-                } else {
-                  msg.push(`${defender.名号}击败了${attacker.名号}`);
-                  return build1v1BattleResult({
-                    battleEnded: true,
-                    winner: defender === A_player ? "A" : "B"
-                  });
-                }
+                msg.push(`时间长河中踏出一道伟岸身影——${avatar.name}前来助战！`);
+                msg.push(`${avatar.name}眸绽冷电，睥睨万古：「${avatar.desc}」`);
               }
             }
             
             if (isDefA) A_tahua_triggered = true;
             else B_tahua_triggered = true;
             
-            if (defLevelConfig.duration > 0) {
-              msg.push(`${defender.名号}的他化自在身可存在${defLevelConfig.duration}回合`);
-            } else {
-              msg.push(`${defender.名号}的他化自在身永驻战场，直至被击杀！`);
+            const mirrorCount = selectedAvatars.filter(avatar => avatar.id.startsWith('mirror_')).length;
+            const heroCount = selectedAvatars.length - mirrorCount;
+            if (mirrorCount > 0 && defLevelConfig.duration > 0) {
+              msg.push(`映照道果可存在${defLevelConfig.duration}回合，期间将独立攻击并为${defender.名号}挡刀！`);
+            } else if (mirrorCount > 0) {
+              msg.push(`映照道果永驻战场，将独立攻击并为${defender.名号}挡刀！`);
+            }
+            if (heroCount > 0) {
+              msg.push(`时间长河中的强者将并肩战至终局，不会施展一击后离去！`);
             }
           }
         }
@@ -10306,6 +10370,7 @@ msg.push(bSpeedMsg);
       }
       const attack_msg = createCombatMessage(cnt, attacker, defender, 伤害, actual_damage, isCritical, fenshen_blocked);
       msg.push(attack_msg);
+      if (attackResult) appendDinghaiResolution(msg, tickDinghaiEvolution(attacker));
 
       if (
         attacker.当前先天至宝 === '诛仙四剑' &&
@@ -10357,26 +10422,79 @@ msg.push(bSpeedMsg);
       }
     }
 
+    function trySummonTahuaDaoBodies(entity, entities) {
+      if (!entity._tahua_can_summon_dao_body || entity._tahua_yiqihua_triggered) return;
+
+      const numberSecretTriggered = entity.学习的功法?.includes('数字秘')
+        && Math.random() < getNumberSecretTriggerChance(entity);
+      const yiqihuaTriggered = !numberSecretTriggered
+        && entity.学习的功法?.includes('一气化三清')
+        && Math.random() < getYiqihuaTriggerChance(entity);
+      if (!numberSecretTriggered && !yiqihuaTriggered) return;
+
+      entity._tahua_yiqihua_triggered = true;
+      const config = numberSecretTriggered
+        ? getNumberSecretConfig(entity)
+        : getYiqihuaConfig(entity);
+      const skillName = numberSecretTriggered
+        ? config.combo ? '数字秘·一气化三清' : '数字秘'
+        : '一气化三清';
+      const owner = entity._tahua_master === 'A' ? A_player : B_player;
+      recordGongfaCombatTrigger(entity, numberSecretTriggered ? '数字秘' : '一气化三清');
+      recordGongfaCombatTrigger(owner, numberSecretTriggered ? '数字秘' : '一气化三清');
+      if (numberSecretTriggered && config.combo) {
+        recordGongfaCombatTrigger(entity, '一气化三清');
+        recordGongfaCombatTrigger(owner, '一气化三清');
+      }
+
+      for (let index = 0; index < config.count; index++) {
+        const daoBody = JSON.parse(JSON.stringify(entity));
+        daoBody.名号 = `${entity.名号}·道身${config.count > 1 ? `(${index + 1})` : ''}`;
+        scaleDaoBodyStats(daoBody, config.ratio);
+        daoBody.血量上限 = Math.max(1, Number(daoBody.血量上限) || 1);
+        daoBody.当前血量 = daoBody.血量上限;
+        daoBody._tahua_type = 'tahua_yiqihua';
+        daoBody._tahua_duration = config.duration > 0 ? config.duration + 1 : config.duration;
+        daoBody._tahua_can_use_gongfa = false;
+        daoBody._tahua_can_summon_dao_body = false;
+        daoBody.avatarSkill = null;
+        daoBody.分身 = [];
+        daoBody.皆字秘触发 = false;
+        delete daoBody._皆字秘倍率;
+        delete daoBody._皆字秘力竭;
+        entities.push(daoBody);
+      }
+
+      const durationText = config.duration < 0 ? '战至终局' : `存续${config.duration}回合`;
+      msg.push(`${entity.名号}施展「${skillName}」，再化出${config.count}道${Math.round(config.ratio * 100)}%全属性道身，${durationText}！`);
+    }
+
     // ==================== 他化自在身独立攻击（统一攻守，消除对称重复） ====================
-    // 抽象后：任一方的化身攻击任一方，都走同一段逻辑
     async function processTahuaAttack(entities, target, winner) {
       for (const entity of entities.filter(e => e.当前血量 > 0)) {
+        tickJieziMijue(entity, msg);
+        trySummonTahuaDaoBodies(entity, entities);
+        if (entity._tahua_can_use_gongfa && tryJieziMijue(entity, msg)) {
+          recordGongfaCombatTrigger(entity._tahua_master === 'A' ? A_player : B_player, '皆字秘');
+        }
+
         if (entity.avatarSkill) {
           const avatar = entity.avatarSkill;
           const entityDmg = Math.trunc(entity.攻击 * avatar.beilv * (0.8 + Math.random() * 0.4));
-          target.当前血量 -= entityDmg;
-          target.当前血量 = Math.max(target.当前血量, 0);
-          if (target === B_player) B_total_damage_taken += entityDmg;
+          const { actual_damage } = applyDamage(target, entityDmg, 'tahua', entity);
 
           msg.push(`${entity.名号}施展「${avatar.skill}」攻击${target.名号}！`);
           if (avatar.special.includes("禁锢") || avatar.special.includes("麻痹")) {
-            target.dongjie = true;
-            msg.push(`${target.名号}被${avatar.name}的力量禁锢！`);
+            if (tryApplyDinghaiControl(target, msg, '强制控制')) {
+              target.dongjie = true;
+              msg.push(`${target.名号}被${avatar.name}的力量禁锢！`);
+            }
           }
-          msg.push(`造成${bigNumberTransform(entityDmg)}点伤害，${target.名号}剩余${bigNumberTransform(target.当前血量)}`);
+          msg.push(`造成${bigNumberTransform(actual_damage)}点伤害，${target.名号}剩余${bigNumberTransform(target.当前血量)}`);
         } else {
-          const { 伤害: entityDmg } = await performAttack(entity, target, cnt2, "fenshen");
-          const { actual_damage } = applyDamage(target, entityDmg, "fenshen", entity);
+          const entityAttack = await performAttack(entity, target, cnt2, "fenshen");
+          const entityDmg = Math.max(0, Number(entityAttack?.伤害) || 0);
+          const { actual_damage } = applyDamage(target, entityDmg, 'tahua', entity);
           msg.push(`${entity.名号}发动攻击，对${target.名号}造成${bigNumberTransform(actual_damage)}伤害`);
         }
 
@@ -10410,7 +10528,7 @@ msg.push(bSpeedMsg);
     // ==================== 他化自在身消散 ====================
     for (const entity of [...A_tahua_entities]) {
       if (entity.当前血量 > 0 && entity._tahua_duration === 0) {
-        if (entity._tahua_type === "yiqihua") {
+        if (["yiqihua", "tahua_yiqihua"].includes(entity._tahua_type)) {
           msg.push(`${entity.名号}存续时间已尽，化作一缕清气消散，回归本体体内！`);
         } else {
           msg.push(`${entity.名号}持续时间结束，伟岸身影渐趋虚淡，回归时间长河...`);
@@ -10421,7 +10539,7 @@ msg.push(bSpeedMsg);
 
     for (const entity of [...B_tahua_entities]) {
       if (entity.当前血量 > 0 && entity._tahua_duration === 0) {
-        if (entity._tahua_type === "yiqihua") {
+        if (["yiqihua", "tahua_yiqihua"].includes(entity._tahua_type)) {
           msg.push(`${entity.名号}存续时间已尽，化作一缕清气消散，回归本体体内！`);
         } else {
           msg.push(`${entity.名号}持续时间结束，伟岸身影渐趋虚淡，回归时间长河...`);
@@ -10601,6 +10719,31 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       msg.push(`【古史反制】${holder.名号}试图催动灵根与至宝，三帝帝光将其加持当场打断！`);
       return;
     }
+    const allies = holder._team === 'A' ? A_team : B_team;
+    if (hasEquippedInnateTreasure(holder, '太初仙刃')) {
+      for (const enemy of enemies) enemy.防御 = Math.floor((Number(enemy.防御) || 0) * 0.85);
+      msg.push(`【太初仙刃】${holder.名号}斩开敌方道隙，敌方全体防御被无视一成半。`);
+      if (await consumeTeamAuthority(holder, '太初仙刃首击待用')) holder._太初仙刃首击倍率 = 2.5;
+    }
+    if (hasEquippedInnateTreasure(holder, '无量天尺')) {
+      holder._无量天尺首伤上限 = Math.max(1, Math.floor((Number(holder.血量上限) || 1) * 0.45));
+      if (await consumeTeamAuthority(holder, '无量护身待用')) holder._无量护身剩余 = 3;
+    }
+    if (hasEquippedInnateTreasure(holder, '周天星辰旗') && await consumeTeamAuthority(holder, '星辰护界待用')) {
+      for (const ally of allies) {
+        const rate = ally === holder ? 0.25 : 0.15;
+        const shield = Math.max(1, Math.floor((Number(ally.血量上限) || 1) * rate));
+        ally._护盾值 = (Number(ally._护盾值) || 0) + shield;
+        ally.护盾值 = (Number(ally.护盾值) || 0) + shield;
+      }
+      msg.push(`【星辰护界】${holder.名号}展开周天星幕，群星护持己方全体。`);
+    }
+    if (holder.当前先天至宝 === '定海珠') {
+      const active = await consumeTeamAuthority(holder, '定海珠演化待用');
+      const opening = applyDinghaiBattleOpening(holder, { active, shieldField: '_护盾值' });
+      msg.push(`【${active ? '演化诸天' : '镇海'}】二十四颗定海珠只护持有者${holder.名号}，凝成${bigNumberTransform(opening.shield)}点护盾。`);
+      if (opening.blockedOpeningControl) msg.push(`【镇海】${holder.名号}遭受的开局控制已被珠光定住。`);
+    }
     if (holder.当前先天至宝 === '盘古幡') {
       for (const enemy of enemies) enemy.防御 = Math.floor((Number(enemy.防御) || 0) * 0.7);
       msg.push(`【盘古幡·破界】${holder.名号}以开天余威斩敌，敌方全体防御被无视三成。`);
@@ -10631,7 +10774,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     if (holder.当前先天至宝 === '东皇钟' && await consumeTeamAuthority(holder, '东皇镇世待用')) {
       for (const enemy of enemies) {
         const boss = enemy.boss === true || enemy.type === 'boss' || /BOSS|Boss|首领|天骄/.test(String(enemy.名号 || ''));
-        enemy._东皇冻结回合 = boss ? 1 : 3;
+        enemy._东皇冻结回合 = tryApplyDinghaiControl(enemy, msg, '冻结') ? (boss ? 1 : 3) : 0;
         if (boss) enemy.攻击 = Math.floor((Number(enemy.攻击) || 0) * 0.7);
       }
       msg.push(`【东皇镇世】敌方全体被镇封，首领攻击同时受到压制。`);
@@ -10642,13 +10785,21 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     }
     if (holder.当前先天至宝 === '太极图' && await consumeTeamAuthority(holder, '阴阳逆转待用')) {
       holder._阴阳逆转护命 = true;
-      for (const enemy of enemies) enemy.dongjie = true;
+      for (const enemy of enemies) {
+        if (tryApplyDinghaiControl(enemy, msg, '强制控制')) enemy.dongjie = true;
+      }
       msg.push(`【阴阳逆转】敌方全体开局被定住，${holder.名号}获得一次致命伤害逆转。`);
     }
   }
 
   for (const holder of A_team) await applyTeamInnateOpening(holder, B_team);
   for (const holder of B_team) await applyTeamInnateOpening(holder, A_team);
+  if (A_team.some(unit => hasEquippedInnateTreasure(unit, '周天星辰旗'))) {
+    for (const unit of A_team) unit._speed = Math.max(1, Math.floor(unit._speed * 1.08));
+  }
+  if (B_team.some(unit => hasEquippedInnateTreasure(unit, '周天星辰旗'))) {
+    for (const unit of B_team) unit._speed = Math.max(1, Math.floor(unit._speed * 1.08));
+  }
   for (const unit of allUnits) {
     if (unit.当前血量 > 0) continue;
     const revival = checkTeamRevival(unit);
@@ -10716,12 +10867,12 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       
       if (isImmune) {
         if (attacker.mijinglevel_id - defender.mijinglevel_id >= 2) {
-          defender.dongjie = true;
+          if (tryApplyDinghaiControl(defender, attackMsgs, '强制控制')) defender.dongjie = true;
           attackMsgs.push(`${attacker.名号}周身仙光亿万缕，大道符文压盖诸天！`);
           attackMsgs.push(`${defender.名号}的涅槃真火在绝对实力差距下黯然熄灭！`);
         }
       } else {
-        defender.dongjie = true;
+        if (tryApplyDinghaiControl(defender, attackMsgs, '强制控制')) defender.dongjie = true;
         attackMsgs.push(`${attacker.名号}身上散发出超越诸天极限的气息，一缕眸光压塌万古！`);
         attackMsgs.push(`${defender.名号}的身躯与神魂被永恒禁锢！`);
       }
@@ -10731,7 +10882,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     if (defender.灵根 && defender.灵根.name === "命运神道体" && Math.random() > 0.7) {
       const uid = defender.id || defender.名号;
       if (!命运神道体触发[uid]) {
-        attacker.dongjie = true;
+        if (tryApplyDinghaiControl(attacker, attackMsgs, '强制控制')) attacker.dongjie = true;
         attackMsgs.push(`${defender.名号}推开了命运生死轮盘，${attacker.名号}被命运之力禁锢了！`);
         
         if (Math.random() > 0.01) {
@@ -10791,7 +10942,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       
       // 特殊帝兵效果
       if (equipment.帝兵.主材料 === "万物母气") {
-        defender.dongjie = true;
+        if (tryApplyDinghaiControl(defender, attackMsgs, '强制控制')) defender.dongjie = true;
         attackMsgs.push(`玄黄垂落，${defender.名号}如陷泥沼！`);
       }
       
@@ -10816,7 +10967,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     if (轮回诸天拳触发 || !attacker.灵根 || attacker.灵根.name !== "彼岸·命运神道体") return false;
     
     if (Math.random() > 0.01) {
-      defender.dongjie = true;
+      if (tryApplyDinghaiControl(defender, attackMsgs, '强制控制')) defender.dongjie = true;
       attackMsgs.push(`所有法，所有名，所有往来朝夕皆如土！`);
       attackMsgs.push(`${attacker.名号}身与魂轮回诸天归来，端坐九重天上！`);
       attackMsgs.push(`${defender.名号}被恐怖的神意压制无法动弹！`);
@@ -10877,22 +11028,29 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     tickDecadeCombatState(attacker, round, attackMsgs);
 
     if (Number(attacker._东皇冻结回合) > 0) {
-      attacker._东皇冻结回合--;
-      attackMsgs.push(`${attacker.名号}被东皇钟镇封，无法行动！`);
-      return { msgs: attackMsgs, damage: 0, killed: false, aoeKilled: [] };
+      if (!tryApplyDinghaiControl(attacker, attackMsgs, '冻结')) {
+        attacker._东皇冻结回合 = 0;
+      } else {
+        attacker._东皇冻结回合--;
+        attackMsgs.push(`${attacker.名号}被东皇钟镇封，无法行动！`);
+        return { msgs: attackMsgs, damage: 0, killed: false, aoeKilled: [], skipped: true };
+      }
     }
-    const innateSilenced = attacker._陷仙沉默 && Math.random() < 0.3;
+    let innateSilenced = attacker._陷仙沉默 && Math.random() < 0.3;
+    if (innateSilenced && !tryApplyDinghaiControl(attacker, attackMsgs, '沉默')) innateSilenced = false;
     if (innateSilenced) attackMsgs.push(`【陷仙剑】${attacker.名号}神通被沉默，本回合只能进行普通攻击。`);
 
     if (attacker.dongjie) {
-      if (attacker._immune_control > 0) {
+      if (!tryApplyDinghaiControl(attacker, attackMsgs, '强制控制')) {
+        attacker.dongjie = false;
+      } else if (attacker._immune_control > 0) {
         attacker.dongjie = false;
         const immuneType = attacker._immune_type || "涅槃真火护体";
         attackMsgs.push(`${attacker.名号}的${immuneType}效果免疫了冻结状态！`);
       } else {
         attackMsgs.push(`${attacker.名号}无法动弹！`);
         attacker.dongjie = false;
-        return { msgs: attackMsgs, damage: 0, killed: false, aoeKilled: [] };
+        return { msgs: attackMsgs, damage: 0, killed: false, aoeKilled: [], skipped: true };
       }
     }
 
@@ -10907,14 +11065,19 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       const absorbed = Math.min(shield, actualDamage);
       defender._护盾值 = shield - absorbed;
       actualDamage -= absorbed;
+      appendDinghaiResolution(attackMsgs, recordDinghaiShieldAbsorption(defender, attacker, absorbed));
       defender.当前血量 = Math.max(0, defender.当前血量 - actualDamage);
-      defender._actionBar = Math.max(0, (Number(defender._actionBar) || 0) - bannerAttack.actionBarReduction);
+      const pushed = tryApplyDinghaiControl(defender, attackMsgs, '行动条推退');
+      if (pushed) defender._actionBar = Math.max(0, (Number(defender._actionBar) || 0) - bannerAttack.actionBarReduction);
       attackMsgs.push(bannerAttack.message, ...bannerDamage.msgs);
       attackMsgs.push(
-        `${defender.名号}元神受创，损失${bigNumberTransform(actualDamage)}点生命，剩余血量${bigNumberTransform(defender.当前血量)}，行动值-${bannerAttack.actionBarReduction}！`
+        `${defender.名号}元神受创，损失${bigNumberTransform(actualDamage)}点生命，剩余血量${bigNumberTransform(defender.当前血量)}${pushed ? `，行动值-${bannerAttack.actionBarReduction}` : ''}！`
       );
       if (defender.当前血量 <= 0) {
         return { msgs: attackMsgs, damage: actualDamage, killed: true, aoeKilled: [] };
+      }
+      if (attacker.当前血量 <= 0) {
+        return { msgs: attackMsgs, damage: actualDamage, killed: false, aoeKilled: [] };
       }
     }
 
@@ -11154,7 +11317,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
         if (skill.不可防御 === 1) 不可防御 = true;
         if (skill.不可复活 === 1) defender.不可复活 = true;
-        if (skill.控制 === 1) defender.dongjie = true;
+        if (skill.控制 === 1 && tryApplyDinghaiControl(defender, attackMsgs, '强制控制')) defender.dongjie = true;
         if (skill.禁疗) defender.禁疗 = Math.max(Number(defender.禁疗) || 0, Number(skill.禁疗));
         applySacrificeGrowth(attacker, skill, attackMsgs);
         if (skill.拉条) {
@@ -11162,8 +11325,10 @@ async function zd_battle_team(A_team, B_team, options = {}) {
           attackMsgs.push(`${attacker.名号}借Hyper Clock Up抢占行动，行动条推进${skill.拉条}点！`);
         }
         if (skill.推条) {
-          defender._actionBar = Math.max(0, (defender._actionBar || 0) - skill.推条);
-          attackMsgs.push(`${defender.名号}被究极炮轰退，行动条降低${skill.推条}点！`);
+          if (tryApplyDinghaiControl(defender, attackMsgs, '行动条推退')) {
+            defender._actionBar = Math.max(0, (defender._actionBar || 0) - skill.推条);
+            attackMsgs.push(`${defender.名号}被究极炮轰退，行动条降低${skill.推条}点！`);
+          }
         }
 
         // —— 每个技能按自身攻击类型单独结算：基础连乘保留，增量归入对应类型桶 ——
@@ -11328,13 +11493,11 @@ async function zd_battle_team(A_team, B_team, options = {}) {
             群攻伤害 = applyDaoTreasureDomainReduction(t, 群攻伤害);
           }
           if (t._护盾值 > 0) {
-            if (t._护盾值 >= 群攻伤害) {
-              t._护盾值 -= 群攻伤害;
-              群攻伤害 = 0;
-            } else {
-              群攻伤害 -= t._护盾值;
-              t._护盾值 = 0;
-            }
+            const shield = Math.max(0, Number(t._护盾值) || 0);
+            const absorbed = Math.min(shield, 群攻伤害);
+            t._护盾值 = shield - absorbed;
+            群攻伤害 -= absorbed;
+            appendDinghaiResolution(attackMsgs, recordDinghaiShieldAbsorption(t, attacker, absorbed));
           }
           const aoeFate = resolveSuLingFatalFate(t, attacker, 群攻伤害);
           if (aoeFate.triggered) attackMsgs.push(aoeFate.message);
@@ -11357,8 +11520,12 @@ async function zd_battle_team(A_team, B_team, options = {}) {
             }
             aoeKilled.push(t);
           }
+          if (attacker.当前血量 <= 0) break;
         }
       }
+    }
+    if (attacker.当前血量 <= 0) {
+      return { msgs: attackMsgs, damage: 0, killed: false, aoeKilled };
     }
 
     // 仙气压制：攻击方每多一道仙气，对少一道者伤害+30%（完美世界·石昊三道仙气）
@@ -11394,13 +11561,11 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       actual_damage = 0;
     }
     if (defender._护盾值 > 0) {
-      if (defender._护盾值 >= actual_damage) {
-        defender._护盾值 -= actual_damage;
-        actual_damage = 0;
-      } else {
-        actual_damage -= defender._护盾值;
-        defender._护盾值 = 0;
-      }
+      const shield = Math.max(0, Number(defender._护盾值) || 0);
+      const absorbed = Math.min(shield, actual_damage);
+      defender._护盾值 = shield - absorbed;
+      actual_damage -= absorbed;
+      appendDinghaiResolution(attackMsgs, recordDinghaiShieldAbsorption(defender, attacker, absorbed));
     }
 
     if (defender._阴阳逆转护命 && actual_damage >= defender.当前血量) {
@@ -11527,6 +11692,10 @@ async function zd_battle_team(A_team, B_team, options = {}) {
           }
           if (加成消息 !== "") {
             msgs.push(`${player.名号}获得${加成消息.trim()}！`);
+          }
+          if (Array.isArray(player._时间长河复活彩蛋) && !player._时间长河复活彩蛋已触发) {
+            player._时间长河复活彩蛋已触发 = true;
+            msgs.push(...player._时间长河复活彩蛋.map(line => String(line).replaceAll('{player}', player.名号)));
           }
 
           msgs.push(`恢复${bigNumberTransform(恢复血量)}点血量！`);
@@ -11674,8 +11843,10 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     const target = enemies[Math.floor(Math.random() * enemies.length)];
 
     if (readyUnit.当前先天至宝 === '六道轮回盘' && Math.random() < 0.2) {
-      target._actionBar = Math.max(0, target._actionBar - Math.floor(ACTION_BAR_MAX * 0.2));
-      msg.push(`【六道轮回盘】${target.名号}的行动进度被推退20%。`);
+      if (tryApplyDinghaiControl(target, msg, '行动条推退')) {
+        target._actionBar = Math.max(0, target._actionBar - Math.floor(ACTION_BAR_MAX * 0.2));
+        msg.push(`【六道轮回盘】${target.名号}的行动进度被推退20%。`);
+      }
     }
 
     msg.push(`【第${cnt}回合】${readyUnit.名号} 抢占先机！[${readyUnit._team}方行动]`);
@@ -11731,6 +11902,13 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     // 执行攻击
     const attackResult = await performTeamAttack(readyUnit, target, roundIndex, enemies);
     msg.push(...attackResult.msgs);
+    const dinghaiResult = attackResult.skipped ? null : tickDinghaiEvolution(readyUnit);
+    appendDinghaiResolution(msg, dinghaiResult);
+    if (dinghaiResult.target?.当前血量 <= 0 && dinghaiResult.target !== target) {
+      const reviveResult = checkTeamRevival(dinghaiResult.target);
+      if (reviveResult.revived) msg.push(...reviveResult.message);
+      else msg.push(`${dinghaiResult.target.名号}被定海珠返回的诸海之力击溃！`);
+    }
     const domainMessage = tickDaoTreasureDomain(readyUnit);
     if (domainMessage) msg.push(domainMessage);
 
@@ -12372,7 +12550,9 @@ export function calcDamage(attacker, defender, rawDamage, dmgTypeOrBuckets = '�
       total = Math.trunc(total * (1 - generalReduction));
       msgs.push(`${defender.名号}的道种护体抵消了${bigNumberTransform(before - total)}点伤害！`);
     }
-    return { actual_damage: total, dodged: false, msgs };
+    const treasureDamage = applyNewTreasureDamageRules(attacker, defender, total);
+    msgs.push(...treasureDamage.messages);
+    return { actual_damage: treasureDamage.damage, dodged: false, msgs };
   }
 
   // ===== 旧模式（单类型），保持原逻辑兼容 =====
@@ -12408,7 +12588,9 @@ export function calcDamage(attacker, defender, rawDamage, dmgTypeOrBuckets = '�
     dmg = Math.trunc(dmg * (1 - generalReduction));
     msgs.push(`${defender.名号}的道种护体抵消了${bigNumberTransform(before - dmg)}点伤害！`);
   }
-  return { actual_damage: dmg, dodged: false, msgs };
+  const treasureDamage = applyNewTreasureDamageRules(attacker, defender, dmg);
+  msgs.push(...treasureDamage.messages);
+  return { actual_damage: treasureDamage.damage, dodged: false, msgs };
 }
 
 function calcXianqiSuppressMul(attacker, defender) {
@@ -14054,13 +14236,30 @@ export const ACTION_BAR_MAX = 3000;
 
 export function getBattleUnitSpeed(unit) {
   const base = Number(unit?.速度 ?? 100) || 100;
-  if (unit?._忽略境界速度加成) return Math.max(1, Math.floor(base));
+  if (unit?._忽略境界速度加成) return Math.max(1, Math.floor(base * getInnateSpeedMultiplier(unit)));
   return Math.max(1, Math.floor(
-    base
+    (base
     + (Number(unit?.mijinglevel_id) || 0) * 50
     + (Number(unit?.xiangulevel_id) || 0) * 50
-    + Math.max(0, (Number(unit?.huafenlevel_id) || 1) - 1) * 50
+    + Math.max(0, (Number(unit?.huafenlevel_id) || 1) - 1) * 50)
+    * getInnateSpeedMultiplier(unit)
   ));
+}
+
+function tryApplyDinghaiControl(unit, messages, controlName = '控制') {
+  if (!consumeDinghaiControlImmunity(unit)) return true;
+  if (Array.isArray(messages)) messages.push(`【镇海】${unit.名号}定住诸海诸天，首次${controlName}被定海珠化解！`);
+  return false;
+}
+
+function appendDinghaiResolution(messages, result) {
+  if (!result?.ended || !Array.isArray(messages)) return false;
+  if (result.damage > 0 && result.target) {
+    messages.push(`【诸海反潮】定海护盾${result.reason}，向${result.target.名号}返还${bigNumberTransform(result.damage)}点伤害！`);
+  } else {
+    messages.push(`【演化诸天】定海护盾${result.reason}，未凝聚出可返还的伤害。`);
+  }
+  return true;
 }
 
 // 初始化单位的行动条字段：_actionBar / _speed / _speedBoost

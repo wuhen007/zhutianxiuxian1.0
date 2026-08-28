@@ -1,6 +1,6 @@
 import { plugin, verc, data, config } from '../../api/api.js';
-import { getDungeonTimedActionMultiplier } from '../../model/innateTreasure.js';
 import { hasRealmAuthority } from '../../model/realmAuthority.js';
+import { TIME_RIVER_PHASE_DURATION_MS } from '../../model/timeRiverAdversary.js';
 
 import {
   Read_player,
@@ -81,11 +81,10 @@ export class shijianchanghe extends plugin {
   
   player.power_place =4;
     await Write_player(usr_qq, player);
-      let time = 10; //时间（分钟）
-      let action_time = 60000 * time; //持续时间，单位毫秒
+      let action_time = TIME_RIVER_PHASE_DURATION_MS;
       let arr = {
         action: '遨游时间长河', //动作
-       end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),//结束时间
+       end_time: new Date().getTime() + action_time,//结束时间
         time: action_time, //持续时间
         shutup: '1', //闭关
         working: '1', //降妖
@@ -107,14 +106,14 @@ export class shijianchanghe extends plugin {
        await redis.set(`xiuxian:time_river:end_time:${usr_qq}`, arr.end_time);
         const activePlayers = await redis.get('xiuxian:time_river:active_players') || '[]';
   const playersList = JSON.parse(activePlayers);
-  playersList.push(usr_qq);
+  if (!playersList.includes(usr_qq)) playersList.push(usr_qq);
        // 添加玩家到有序集合
   await redis.set('xiuxian:time_river:active_players', JSON.stringify(playersList));
   await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
        // 回复玩家
       e.reply([
           `你的真身踏入了时间长河，逆流而上！`,
-          `探索将在10分钟后结束，请耐心等待。`
+          `首段探索将在15分钟后结束，请耐心等待。`
       ].join('\n'));
       
       return true;
