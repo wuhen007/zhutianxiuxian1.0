@@ -73,6 +73,7 @@ import {
 } from '../../model/forbiddenSoul.js';
 import { adjustDaoHeart, getDaoHeartLearningChanceMultiplier } from '../../model/daoHeart.js';
 import { addCausalDebt } from '../../model/worldlineAuthority.js';
+import { calculateCreationEverything, formatCreationDuration } from '../../model/createEverything.js';
 import {
   getSacrificePromotionGate,
   promotePlayerToSacrifice,
@@ -204,7 +205,7 @@ fnc: 'tianyi_yidao'
         fnc: 'oneClickExchangeSourceStone'
     },
      {
-        reg: '^#造化万物 (.*)$',
+        reg: '^#造化万物(?:\\s+(.*))?$',
         fnc: 'createEverything'
     },
     {
@@ -676,7 +677,7 @@ async jiyuanjilei(e) {
   }
 
   // 计算奖励（优化后的公式）
-  const baseReward = 100000;
+  const baseReward = 100000000;
   const reward = baseReward *
     Math.max(1, getRealmAuthorityLevel(player)) *
     player.level_id  * 
@@ -2285,10 +2286,39 @@ async createEverything(e) {
     const usr_qq = e.user_id.toString().replace('qg_','');
     const player_qq = await channel(usr_qq);
     const player = await Read_player(player_qq);
-    const authorityLevel = getRealmAuthorityLevel(player);
+    const actionKey = `xiuxian:player:${player_qq}:action`;
+    const actionRaw = await redis.get(actionKey);
+    let action = null;
+    try {
+        action = actionRaw ? JSON.parse(actionRaw) : null;
+    } catch {
+        return e.reply('当前修仙状态数据异常，请联系管理员处理。');
+    }
+
+    let pendingCreation = null;
+    if (action?.action === '造化万物') {
+        pendingCreation = action.creation;
+        if (!pendingCreation?.itemName || !pendingCreation?.itemClass) {
+            return e.reply('造化万物行动数据异常，请联系管理员处理。');
+        }
+        const remainingMs = Math.max(0, Number(action.end_time) - Date.now());
+        if (remainingMs > 0) {
+            return e.reply([
+                `【造化万物·演化中】`,
+                `正在造化：【${pendingCreation.itemName}】x${pendingCreation.amount}`,
+                `稀有度：${pendingCreation.rarity}｜数量倍率：x${pendingCreation.quantityMultiplier}`,
+                `剩余时间：${formatCreationDuration(Math.ceil(remainingMs / 60_000))}`,
+                `造化完成后发送 #造化万物 领取。`,
+            ].join('\n'));
+        }
+    } else if (actionRaw) {
+        return e.reply(`你当前正在进行【${action?.action || '其他修仙行动'}】，结束并结算后才能造化万物。`);
+    }
+
+    let authorityLevel = pendingCreation?.authorityLevel ?? getRealmAuthorityLevel(player);
 
     // 检查境界 - 仙帝及以上（境界ID >= 21）
-    if (authorityLevel < 21) {
+    if (!pendingCreation && authorityLevel < 21) {
         e.reply([
             `【境界不足】`,
             `造化万物乃仙帝伟力！`,
@@ -2297,25 +2327,37 @@ async createEverything(e) {
         return true;
     }
 
-    // 解析指令
-    const msg = e.msg.replace('#造化万物', '').trim();
-    let [itemName, amountStr] = msg.split(/\s+/);
-    let amount = parseInt(amountStr) || 1;
+    let itemName;
+    let amount;
+    let itemExist;
+    let creationProfile;
+    if (pendingCreation) {
+        itemName = pendingCreation.itemName;
+        amount = pendingCreation.amount;
+        itemExist = {
+            class: pendingCreation.itemClass,
+            出售价: pendingCreation.salePrice,
+            稀有度: pendingCreation.rarity,
+        };
+        creationProfile = pendingCreation;
+    } else {
+        const msg = e.msg.replace('#造化万物', '').trim();
+        const [parsedItemName, amountStr] = msg.split(/\s+/);
+        itemName = parsedItemName;
+        amount = amountStr === undefined ? 1 : Number(amountStr);
+        if (!itemName) return e.reply('指令格式：#造化万物 物品名 [数量]');
+        if (!Number.isSafeInteger(amount) || amount <= 0) {
+            return e.reply('造化万物需心诚，数量必须为正整数！');
+        }
 
-    if (amount <= 0) {
-        e.reply('造化万物需心诚，数量需为正数！');
-        return true;
-    }
-
-    // 检查物品是否存在
-    const itemExist = await foundthing(itemName);
-    if (itemExist?.不可创造) {
-        e.reply(`此等物品涉及的力量哪怕是仙帝也无法造化！`);
-        return true;
-    }
-    if (!itemExist) {
-        e.reply(`诸天万界中并无【${itemName}】此物，仙帝亦不可无中生有！`);
-        return true;
+        itemExist = await foundthing(itemName);
+        if (itemExist?.不可创造) {
+            return e.reply(`此等物品涉及的力量哪怕是仙帝也无法造化！`);
+        }
+        if (!itemExist) {
+            return e.reply(`诸天万界中并无【${itemName}】此物，仙帝亦不可无中生有！`);
+        }
+        creationProfile = calculateCreationEverything(authorityLevel, itemExist.稀有度, amount);
     }
 
     // 读取位面数据
@@ -2338,10 +2380,11 @@ async createEverything(e) {
     // === 根据境界计算消耗 ===
     let costPerItem = 0;
     let costDescription = "";
+    const itemSalePrice = Math.max(0, Number(itemExist.出售价) || 0);
     
     if (authorityLevel === 22) {
         // 祭道境界：每10000出售价消耗1点承受力
-        costPerItem = Math.ceil(itemExist.出售价 / 10000);
+        costPerItem = Math.ceil(itemSalePrice / 10000);
         costDescription = `每10000出售价消耗1点承受力`;
     } else if (authorityLevel >= 23) {
         // 祭道之上境界：不消耗任何承受力
@@ -2349,14 +2392,17 @@ async createEverything(e) {
         costDescription = `祭道之上，言出法随，不染因果`;
     } else {
         // 仙帝境界：每100出售价消耗1点承受力
-        costPerItem = Math.ceil(itemExist.出售价 / 100);
+        costPerItem = Math.ceil(itemSalePrice / 100);
         costDescription = `每100出售价消耗1点承受力`;
     }
 
-    const totalCost = costPerItem * amount;
+    const totalCost = pendingCreation?.totalCost ?? costPerItem * amount;
+    if (!Number.isSafeInteger(totalCost) || totalCost < 0) {
+        return e.reply('本次造化规模过大，现世承受力无法稳定计量。');
+    }
 
     // 检查承受力是否足够（祭道之上除外）
-    if (authorityLevel < 23 && weimianData.现世承受力 < totalCost) {
+    if (!pendingCreation && authorityLevel < 23 && weimianData.现世承受力 < totalCost) {
         const realmNames = [
             "上苍之上",
             "魂河尽头",
@@ -2383,23 +2429,73 @@ async createEverything(e) {
         return true;
     }
 
-    // 扣除承受力（祭道之上除外）
-    if (authorityLevel < 23) {
-        weimianData.现世承受力 -= totalCost;
-        
-        // 保存位面数据
-        try {
-            fs.writeFileSync(data.filePathMap.weimianList, JSON.stringify(weimianData, null, 4), 'utf8');
-        } catch (error) {
-            console.error('保存位面数据失败:', error);
+    if (!pendingCreation) {
+        if (authorityLevel < 23) {
+            weimianData.现世承受力 -= totalCost;
+            try {
+                fs.writeFileSync(data.filePathMap.weimianList, JSON.stringify(weimianData, null, 4), 'utf8');
+            } catch (error) {
+                console.error('保存位面数据失败:', error);
+                return e.reply('保存现世承受力失败，本次造化未开始。');
+            }
         }
+
+        const now = Date.now();
+        const creation = {
+            ...creationProfile,
+            itemName,
+            itemClass: itemExist.class,
+            salePrice: itemSalePrice,
+            authorityLevel,
+            totalCost,
+            costDescription,
+        };
+        const actionData = {
+            action: '造化万物',
+            start_time: now,
+            end_time: now + creation.durationMs,
+            time: creation.durationMs,
+            creation,
+            shutup: '0',
+            working: '1',
+            Place_action: '1',
+            Place_actionplus: '1',
+            power_up: '1',
+            mojie: '1',
+            xijie: '1',
+            plant: '1',
+            mine: '1',
+        };
+        try {
+            await redis.set(actionKey, JSON.stringify(actionData));
+        } catch (error) {
+            if (authorityLevel < 23) {
+                weimianData.现世承受力 += totalCost;
+                fs.writeFileSync(data.filePathMap.weimianList, JSON.stringify(weimianData, null, 4), 'utf8');
+            }
+            console.error('保存造化万物行动失败:', error);
+            return e.reply('造化行动开启失败，预扣的现世承受力已返还。');
+        }
+
+        return e.reply([
+            `【造化万物·万道演化】`,
+            `${player.名号}开始造化【${itemName}】x${amount}。`,
+            `稀有度：${creation.rarity}｜数量倍率：x${creation.quantityMultiplier}`,
+            `境界耗时比例：1:${creation.minutesPerRarity}`,
+            `所需时间：${formatCreationDuration(creation.minutes)}`,
+            creation.causalDebt > 0 ? `预计基础因果债：${creation.causalDebt}点` : `祭道之上不染因果。`,
+            authorityLevel < 23 ? `已预扣现世承受力：${totalCost}点` : `无需消耗现世承受力。`,
+            `预计完成：${new Date(actionData.end_time).toLocaleString()}`,
+            `完成后发送 #造化万物 领取。`,
+        ].join('\n'));
     }
 
-    // 添加物品到纳戒；因果债按一次施法结算，不随创造数量重复累加。
+    // 行动到时后结算物品与因果债。
     await Add_najie_thing(player_qq, itemName, itemExist.class, amount);
-    const causalDebtAmount = authorityLevel === 21 ? 75 : authorityLevel === 22 ? 50 : 0;
+    const causalDebtAmount = Number(creationProfile.causalDebt) || 0;
     const causalDebtResult = addCausalDebt(player, causalDebtAmount, `造化万物：${itemName}`);
     await Write_player(player_qq, player);
+    await redis.del(actionKey);
  if (authorityLevel < 22 && weimianData.现世承受力 < 1000000) {
         // 40%概率触发始祖扼杀
         if (Math.random() < 0.4) {
@@ -2546,6 +2642,7 @@ async createEverything(e) {
         );
     }
 
+    createTexts.push(`本次造化历时${formatCreationDuration(creationProfile.minutes)}。`);
     createTexts.push(causalDebtResult.costFree
         ? `祭道之上不染因果，本次因果债为0。`
         : `本次造化新增因果债${causalDebtResult.delta}点，当前共${causalDebtResult.debt}点。`);
