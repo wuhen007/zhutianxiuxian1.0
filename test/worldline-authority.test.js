@@ -12,11 +12,14 @@ import {
   ensureWorldlineState,
   getBreakKingEmperorGate,
   getCausalDebtTier,
+  getTimelineWithdrawalAuthority,
   getWorldlineWithdrawalBlock,
   isShapeSpiritDestroyed,
   markBreakKingEmperorTribulationPassed,
+  parseTimelineSelection,
   rebuildShapeSpirit,
   recordTimelineWithdrawal,
+  recordTimelineWithdrawals,
   reduceCausalDebtWithEraAccumulation,
   removeArtifactRankingEntries,
   resolveAncientHistoryStrike,
@@ -28,8 +31,10 @@ import {
 } from '../model/worldlineAuthority.js';
 import {
   extractArchiveItem,
+  listArchivePlayerIds,
   listBackupLineIds,
   mergeArchiveItem,
+  readBackupEra,
   readPlayerArchiveInventory,
 } from '../model/backupSnapshot.js';
 
@@ -261,13 +266,44 @@ test('时间线支取读取真实备份快照并以时间线键防止重复领�
   const lineData = path.join(backupRoot, '100', 'data');
   fs.mkdirSync(path.join(lineData, 'xiuxian_player'), { recursive: true });
   fs.mkdirSync(path.join(lineData, 'xiuxian_najie'), { recursive: true });
+  fs.mkdirSync(path.join(backupRoot, '100', 'runtime_config', 'xiuxian'), { recursive: true });
+  fs.writeFileSync(
+    path.join(backupRoot, '100', 'runtime_config', 'xiuxian', 'xiuxian.yaml'),
+    'Era:\n  current:\n    index: 3\n    years: 4200\n    epoch: 2\n',
+  );
   fs.writeFileSync(path.join(lineData, 'xiuxian_player', '1.json'), JSON.stringify({ 灵石: 88 }));
   fs.writeFileSync(path.join(lineData, 'xiuxian_najie', '1.json'), JSON.stringify({
     灵石: 12,
     道具: [{ name: '界海石', 数量: 3, class: '道具' }],
   }));
+  fs.writeFileSync(path.join(lineData, 'xiuxian_player', '2.json'), JSON.stringify({ 灵石: 1 }));
+  const legacyLine = path.join(backupRoot, '200');
+  fs.mkdirSync(path.join(legacyLine, 'player_path'), { recursive: true });
+  fs.mkdirSync(path.join(legacyLine, 'najie_path'), { recursive: true });
+  fs.writeFileSync(path.join(legacyLine, 'player_path', '3.json'), JSON.stringify({ 灵石: 9 }));
+  fs.writeFileSync(path.join(legacyLine, 'najie_path', '3.json'), JSON.stringify({
+    道具: [{ name: '界海石', 数量: 5, class: '道具' }],
+  }));
 
-  assert.deepEqual(listBackupLineIds(backupRoot), ['100']);
+  assert.deepEqual(listBackupLineIds(backupRoot), ['200', '100']);
+  assert.deepEqual(listArchivePlayerIds({
+    backupRoot,
+    dataPath,
+    playerDirectory,
+    najieDirectory,
+  }), ['1', '2', '3']);
+  assert.deepEqual(readBackupEra({ backupRoot, lineId: '100' }), {
+    known: true,
+    index: 3,
+    epoch: 2,
+    years: 4200,
+    name: '末法时代',
+    label: '第2纪元·末法时代（第4200年）',
+  });
+  assert.deepEqual(readBackupEra({ backupRoot, lineId: '200' }), {
+    known: false,
+    label: '古史时代不可考',
+  });
   const snapshot = readPlayerArchiveInventory({
     backupRoot,
     lineId: '100',
@@ -281,6 +317,15 @@ test('时间线支取读取真实备份快照并以时间线键防止重复领�
   const current = { player: { 灵石: 0 }, najie: { 灵石: 0, 道具: [] } };
   assert.equal(mergeArchiveItem(current, entry), true);
   assert.equal(current.najie.道具[0].数量, 3);
+  const legacySnapshot = readPlayerArchiveInventory({
+    backupRoot,
+    lineId: '200',
+    dataPath,
+    playerId: '3',
+    playerDirectory,
+    najieDirectory,
+  });
+  assert.equal(extractArchiveItem(legacySnapshot, '道具', '界海石').amount, 5);
 
   const actor = { mijinglevel_id: 20 };
   assert.deepEqual(selectWithdrawableLines(actor, ['100'], '1', '道具', '界海石'), ['100']);
@@ -289,4 +334,64 @@ test('时间线支取读取真实备份快照并以时间线键防止重复领�
   });
   assert.deepEqual(selectWithdrawableLines(actor, ['100'], '1', '道具', '界海石'), []);
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('准仙帝随机选线，仙帝与祭道获得可选择的候选范围', () => {
+  const quasi = { mijinglevel_id: 20 };
+  const emperor = { mijinglevel_id: 21 };
+  const sacrifice = { mijinglevel_id: 22 };
+  assert.deepEqual(getTimelineWithdrawalAuthority(quasi), {
+    level: 20, mode: 'random_one', limit: 1, revealLines: false,
+  });
+  assert.equal(getTimelineWithdrawalAuthority(emperor).mode, 'target_select');
+  assert.equal(getTimelineWithdrawalAuthority(sacrifice).mode, 'scope_select');
+  assert.deepEqual(
+    selectWithdrawableLines(quasi, ['100', '200', '300'], '9', '道具', '界海石', () => 0.99),
+    ['300'],
+  );
+  assert.deepEqual(
+    selectWithdrawableLines(emperor, ['100', '200', '300'], '9', '道具', '界海石'),
+    ['100', '200', '300'],
+  );
+});
+
+test('仙帝可按编号选择若干时间线或全部时间线', () => {
+  assert.deepEqual(parseTimelineSelection('1,3', 4), [0, 2]);
+  assert.deepEqual(parseTimelineSelection('1、1 2', 4), [0, 1]);
+  assert.deepEqual(parseTimelineSelection('全部', 3), [0, 1, 2]);
+  assert.deepEqual(parseTimelineSelection('0,2', 3), []);
+  assert.deepEqual(parseTimelineSelection('1,5', 3), []);
+});
+
+test('批量支取逐条叠加因果债并记录每条时间线的真实数量', () => {
+  const actor = { id: '1', mijinglevel_id: 22, 血量上限: 1000, 当前血量: 1000 };
+  const result = recordTimelineWithdrawals(actor, {
+    playerId: '1',
+    category: '道具',
+    itemName: '界海石',
+    claims: [
+      { targetId: '2', lines: [{ lineId: '100', amount: 3 }, { lineId: '200', amount: 2 }] },
+      { targetId: '3', lines: [{ lineId: '300', amount: 1 }] },
+    ],
+    now: 1000,
+  });
+  assert.equal(result.delta, 86);
+  assert.equal(ensureWorldlineState(actor).withdrawals['2:道具:界海石:100'].amount, 3);
+  assert.equal(ensureWorldlineState(actor).withdrawals['2:道具:界海石:200'].amount, 2);
+  assert.deepEqual(selectWithdrawableLines(actor, ['100', '200'], '2', '道具', '界海石'), []);
+  assert.deepEqual(selectWithdrawableLines(actor, ['300'], '3', '道具', '界海石'), []);
+});
+
+test('时间线指令接入时代推演、选线确认与祭道显式全体范围', () => {
+  const source = fs.readFileSync(new URL('../apps/User/WorldlineAuthority.js', import.meta.url), 'utf8');
+  assert.match(source, /authority\.mode === 'random_one'/);
+  assert.match(source, /authority\.mode === 'scope_select'/);
+  assert.match(source, /listArchivePlayerIds/);
+  assert.match(source, /readBackupEra/);
+  assert.match(source, /pendingTimelineWithdrawals/);
+  assert.match(source, /confirmTimelineWithdrawal/);
+  assert.match(source, /globalRequested/);
+  assert.match(source, /逐线因果债已叠加结算/);
+  assert.match(source, /祭道·诸世映照/);
+  assert.doesNotMatch(source, /toLocaleString\('zh-CN'\)/);
 });

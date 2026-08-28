@@ -1,4 +1,5 @@
 import { getRealmAuthorityLevel, getRealmAuthorityPath, lowerRealmAuthority } from './realmAuthority.js';
+import { getCausalDebtMultiplier } from './innateTreasure.js';
 
 export const WORLDLINE_STATE_VERSION = 2;
 export const BREAK_KING_EMPEROR_RETRY_COOLDOWN_MS = 30 * 60 * 1000;
@@ -393,7 +394,7 @@ export function reduceCausalDebtWithEraAccumulation(player, requestedAmount = 1,
 export function addCausalDebt(player, amount, reason, now = Date.now()) {
   const state = ensureWorldlineState(player);
   const costFree = getRealmAuthorityLevel(player) >= 23;
-  const delta = costFree ? 0 : Math.max(0, number(amount));
+  const delta = costFree ? 0 : Math.ceil(Math.max(0, number(amount)) * getCausalDebtMultiplier(player));
   state.causalDebt += delta;
   state.history.push({ type: '因果债', amount: delta, reason: reason || '', at: now });
   trimHistory(state.history);
@@ -523,21 +524,28 @@ export function resolveAncientHistoryStrike(attacker, target, options = {}) {
   return { ok: true, outcome: 'fact_erased', fact, line, debt, ...comparison };
 }
 
-export function getWithdrawalLimit(player) {
+export function getTimelineWithdrawalAuthority(player) {
   const level = getRealmAuthorityLevel(player);
-  if (level >= 21) return Number.POSITIVE_INFINITY;
-  if (level >= 20) return 1;
-  return 0;
+  if (level >= 22) return { level, mode: 'scope_select', limit: Number.POSITIVE_INFINITY, revealLines: true };
+  if (level >= 21) return { level, mode: 'target_select', limit: Number.POSITIVE_INFINITY, revealLines: true };
+  if (level >= 20) return { level, mode: 'random_one', limit: 1, revealLines: false };
+  return { level, mode: 'none', limit: 0, revealLines: false };
 }
 
-export function selectWithdrawableLines(player, lineIds, targetId, category, itemName) {
+export function getWithdrawalLimit(player) {
+  return getTimelineWithdrawalAuthority(player).limit;
+}
+
+export function selectWithdrawableLines(player, lineIds, targetId, category, itemName, random = Math.random) {
   const state = ensureWorldlineState(player);
-  const limit = getWithdrawalLimit(player);
-  if (limit === 0) return [];
+  const authority = getTimelineWithdrawalAuthority(player);
+  if (authority.limit === 0) return [];
   const prefix = `${String(targetId)}:${String(category)}:${String(itemName)}:`;
   const available = [...new Set((lineIds || []).map(String))]
     .filter(lineId => !state.withdrawals[`${prefix}${lineId}`]);
-  return Number.isFinite(limit) ? available.slice(0, limit) : available;
+  if (authority.mode !== 'random_one' || available.length <= 1) return available;
+  const roll = Math.min(1 - Number.EPSILON, Math.max(0, Number(random()) || 0));
+  return [available[Math.floor(roll * available.length)]];
 }
 
 export function isTimelineWithdrawalClaimed(player, targetId, category, itemName, lineId) {
@@ -545,6 +553,17 @@ export function isTimelineWithdrawalClaimed(player, targetId, category, itemName
   return Boolean(state.withdrawals[
     `${String(targetId)}:${String(category)}:${String(itemName)}:${String(lineId)}`
   ]);
+}
+
+export function parseTimelineSelection(value, maxCount) {
+  const max = Math.max(0, Math.trunc(number(maxCount)));
+  const text = String(value || '').trim();
+  if (!text || max === 0) return [];
+  if (text === '全部') return Array.from({ length: max }, (_, index) => index);
+  const tokens = text.split(/[\s,，、]+/).filter(Boolean);
+  if (!tokens.length || tokens.some(token => !/^\d+$/.test(token))) return [];
+  const indexes = [...new Set(tokens.map(token => Number(token) - 1))];
+  return indexes.every(index => index >= 0 && index < max) ? indexes : [];
 }
 
 export function recordTimelineWithdrawal(player, {
@@ -556,16 +575,55 @@ export function recordTimelineWithdrawal(player, {
   playerId = '',
   now = Date.now(),
 }) {
+  return recordTimelineWithdrawals(player, {
+    playerId,
+    category,
+    itemName,
+    claims: [{ targetId, lineIds, amount }],
+    now,
+  });
+}
+
+export function recordTimelineWithdrawals(player, {
+  playerId = '',
+  category,
+  itemName,
+  claims = [],
+  now = Date.now(),
+}) {
   const state = ensureWorldlineState(player);
-  for (const lineId of lineIds.map(String)) {
-    const key = `${String(targetId)}:${String(category)}:${String(itemName)}:${lineId}`;
-    state.withdrawals[key] = { at: now, amount };
+  const normalizedClaims = claims
+    .map(claim => {
+      const targetId = String(claim?.targetId || '');
+      const fallbackLineIds = [...new Set((claim?.lineIds || []).map(String))];
+      const fallbackAmount = Math.max(0, number(claim?.amount));
+      const fallbackPerLine = fallbackLineIds.length ? fallbackAmount / fallbackLineIds.length : 0;
+      const sourceLines = Array.isArray(claim?.lines)
+        ? claim.lines
+        : fallbackLineIds.map(lineId => ({ lineId, amount: fallbackPerLine }));
+      const lines = [...new Map(sourceLines.map(line => [
+        String(line?.lineId || ''),
+        { lineId: String(line?.lineId || ''), amount: Math.max(0, number(line?.amount)) },
+      ])).values()].filter(line => line.lineId);
+      return { targetId, lines };
+    })
+    .filter(claim => claim.targetId && claim.lines.length);
+  let lineCount = 0;
+  let causalCost = 0;
+  const ownId = String(playerId || player.qq || player.id || '');
+  for (const claim of normalizedClaims) {
+    const multiplier = claim.targetId === ownId ? 1 : 2;
+    lineCount += claim.lines.length;
+    for (const line of claim.lines) {
+      const key = `${claim.targetId}:${String(category)}:${String(itemName)}:${line.lineId}`;
+      state.withdrawals[key] = { at: now, amount: line.amount };
+      causalCost += Math.max(10, Math.ceil(12 + Math.log10(Math.max(1, line.amount)) * 8)) * multiplier;
+    }
   }
-  const external = String(targetId) !== String(playerId || player.qq || player.id || '');
   return addCausalDebt(
     player,
-    Math.max(10, Math.ceil(lineIds.length * 12 + Math.log10(Math.max(1, number(amount))) * 8)) * (external ? 2 : 1),
-    `支取${lineIds.length}条时间线中的${itemName}`,
+    causalCost,
+    `支取${normalizedClaims.length}名玩家${lineCount}条时间线中的${itemName}`,
     now,
   );
 }

@@ -6,6 +6,7 @@ import {
   __PATH,
   channel,
   existplayer,
+  Read_equipment,
   Read_najie,
   Read_player,
   Write_equipment,
@@ -14,28 +15,37 @@ import {
 } from '../../model/xiuxian.js';
 import {
   extractArchiveItem,
+  listArchivePlayerIds,
   listBackupLineIds,
   mergeArchiveItem,
+  readBackupEra,
   readPlayerArchiveInventory,
 } from '../../model/backupSnapshot.js';
 import {
   addCausalDebt,
   compareWorldlineAuthority,
   ensureWorldlineState,
+  getTimelineWithdrawalAuthority,
   getWorldlineWithdrawalBlock,
-  getWithdrawalLimit,
   getWorldlineStatus,
   isShapeSpiritDestroyed,
   isTimelineWithdrawalClaimed,
+  parseTimelineSelection,
   rebuildShapeSpirit,
-  recordTimelineWithdrawal,
+  recordTimelineWithdrawals,
   reduceCausalDebtWithEraAccumulation,
   removeArtifactRankingEntries,
   resolveAncientHistoryStrike,
+  selectWithdrawableLines,
   setShapeSpiritDestroyed,
 } from '../../model/worldlineAuthority.js';
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
-import { isInnateTreasureName, releaseInnateTreasure } from '../../model/innateTreasure.js';
+import {
+  ETERNAL_MAP_NAME,
+  getAuthorityState,
+  isInnateTreasureName,
+  releaseInnateTreasure,
+} from '../../model/innateTreasure.js';
 import { Read_it, Writeit } from '../../model/duanzaofu.js';
 import { writeJsonAtomically } from '../../utils/atomicJson.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
@@ -43,6 +53,8 @@ import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 const CAUSAL_STATE_FILE = path.join(__PATH.data_path, 'worldline_causal_state.json');
 const ITEM_CATEGORIES = new Set(['装备', '丹药', '道具', '功法', '草药', '材料', '盒子', '仙宠']);
 const FACT_TYPES = new Set(['证道', '创道', '造化', '功法', '物品', '至宝']);
+const TIMELINE_SELECTION_TTL_MS = 10 * 60 * 1000;
+const pendingTimelineWithdrawals = new Map();
 
 async function playerIdFromEvent(e) {
   return String(await channel(String(e.user_id).replace('qg_', '')));
@@ -57,6 +69,10 @@ function withPlayerPairLock(firstId, secondId, task) {
   const ids = [...new Set([String(firstId), String(secondId)])].sort();
   if (ids.length === 1) return withPlayerMutationLock(ids[0], task);
   return withPlayerMutationLock(ids[0], () => withPlayerMutationLock(ids[1], task));
+}
+
+function withdrawalSessionKey(e, actorId) {
+  return `${actorId}:${e.group_id || 'private'}`;
 }
 
 function parseItemSpec(message, command) {
@@ -203,6 +219,43 @@ async function applyErasedFact(targetId, target, type, name) {
   return effect;
 }
 
+async function buildEternalFactRecord(targetId, target, type, name) {
+  if (target.当前大道至宝 !== ETERNAL_MAP_NAME) return null;
+  const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
+  const fieldsByType = {
+    功法: ['学习的功法', '功法'],
+    创道: ['自创修炼体系', '自身之道名称', '自身之道受损', '自身之道阶段', '自身之道境界'],
+    证道: ['level_id', 'mijinglevel_id', 'xiangulevel_id', 'huafenlevel_id', '境界称号'],
+    造化: ['唯一性造化受损'],
+  };
+  const playerSnapshot = {};
+  for (const field of fieldsByType[type] || []) {
+    if (Object.prototype.hasOwnProperty.call(target, field)) playerSnapshot[field] = clone(target[field]);
+  }
+  const snapshot = { player: playerSnapshot, inventory: [], equipment: [] };
+  if (type === '物品' || type === '至宝') {
+    const [najie, equipment] = await Promise.all([Read_najie(targetId), Read_equipment(targetId)]);
+    for (const [itemClass, entries] of Object.entries(najie)) {
+      if (!Array.isArray(entries)) continue;
+      for (const item of entries.filter(entry => entry?.name === name)) {
+        snapshot.inventory.push({ itemClass, item: clone(item) });
+      }
+    }
+    for (const [slot, item] of Object.entries(equipment)) {
+      if (item?.name === name) snapshot.equipment.push({ slot, item: clone(item) });
+    }
+  }
+  return {
+    id: `E${Date.now().toString(36)}`,
+    type,
+    name,
+    state: 'erased',
+    erasedAt: Date.now(),
+    snapshot,
+    innateName: isInnateTreasureName(name) ? name : '',
+  };
+}
+
 async function persistCausalImpact(actor, debtResult) {
   if (!debtResult?.delta) return;
   await withPlayerMutationLock('worldline:causal-impact', async () => {
@@ -245,6 +298,57 @@ async function persistCausalImpact(actor, debtResult) {
   });
 }
 
+function scanTimelineItems(actor, targetId, spec, lineIds, eraByLine = new Map()) {
+  const hits = [];
+  for (const lineId of lineIds) {
+    if (isTimelineWithdrawalClaimed(actor, targetId, spec.category, spec.itemName, lineId)) continue;
+    const snapshot = readPlayerArchiveInventory({
+      backupRoot: __PATH.backup,
+      lineId,
+      dataPath: __PATH.data_path,
+      playerId: targetId,
+      playerDirectory: __PATH.player_path,
+      najieDirectory: __PATH.najie_path,
+    });
+    const entry = extractArchiveItem(snapshot, spec.category, spec.itemName);
+    if (entry) hits.push({
+      targetId,
+      lineId,
+      entry,
+      era: eraByLine.get(lineId) || { known: false, label: '古史时代不可考' },
+      targetName: snapshot.player?.名号 || '',
+    });
+  }
+  return hits;
+}
+
+function formatTimelineHit(hit, index, targetLabel = '') {
+  return `${index + 1}. ${targetLabel ? `${targetLabel}｜` : ''}${hit.era.label}｜×${hit.entry.amount}`;
+}
+
+async function settleTimelineWithdrawal(actorId, actor, selected, spec) {
+  const najie = await Read_najie(actorId);
+  let total = 0;
+  const grouped = new Map();
+  for (const hit of selected) {
+    mergeArchiveItem({ player: actor, najie }, hit.entry);
+    total += hit.entry.amount;
+    const lines = grouped.get(hit.targetId) || [];
+    lines.push({ lineId: hit.lineId, amount: hit.entry.amount });
+    grouped.set(hit.targetId, lines);
+  }
+  const debt = recordTimelineWithdrawals(actor, {
+    playerId: actorId,
+    category: spec.category,
+    itemName: spec.itemName,
+    claims: [...grouped].map(([targetId, lines]) => ({ targetId, lines })),
+  });
+  await persistCausalImpact(actor, debt);
+  await Write_player(actorId, actor);
+  await Write_najie(actorId, najie);
+  return { total, debt };
+}
+
 export class WorldlineAuthority extends plugin {
   constructor() {
     super({
@@ -254,6 +358,8 @@ export class WorldlineAuthority extends plugin {
       priority: 590,
       rule: [
         { reg: '^#(?:时间线权能|古史状态|因果债)$', fnc: 'worldlineStatus' },
+        { reg: '^#确认支取时间线\\s*(?:全部|[\\d\\s,，、]+)$', fnc: 'confirmTimelineWithdrawal' },
+        { reg: '^#取消支取时间线$', fnc: 'cancelTimelineWithdrawal' },
         { reg: '^#支取时间线(?:.|\n)+$', fnc: 'withdrawTimeline' },
         { reg: '^#(?:消减因果债|纪元消债)(?:\\s*[*＊]?\\s*\\d+)?$', fnc: 'reduceCausalDebt' },
         { reg: '^#古史打击(?:.|\n)+$', fnc: 'ancientHistoryStrike' },
@@ -273,9 +379,9 @@ export class WorldlineAuthority extends plugin {
       await Write_player(userId, player);
       const abilities = [];
       if (status.level >= 19) abilities.push('感知时间线扰动、法身护持过去');
-      if (status.level >= 20) abilities.push('单线支取、改写低境古史');
-      if (status.level >= 21) abilities.push('支取全部存档、单线毁灭不损真身');
-      if (status.level >= 22) abilities.push('打击仙帝古史锚点');
+      if (status.level >= 20) abilities.push('模糊感知命中数量、随机单线支取、改写低境古史');
+      if (status.level >= 21) abilities.push('推演指定玩家的古史时代、自选时间线支取');
+      if (status.level >= 22) abilities.push('指定玩家或遍观全体、自选诸世支取、打击仙帝古史锚点');
       const facts = status.facts.filter(fact => fact.state === 'anchored').slice(-6);
       return e.reply([
         `【${player.名号}·时间线权能】`,
@@ -296,22 +402,44 @@ export class WorldlineAuthority extends plugin {
     if (!verc({ e })) return false;
     const actorId = await playerIdFromEvent(e);
     const mentionedId = await mentionedPlayerId(e);
-    const targetId = mentionedId || actorId;
     const spec = parseItemSpec(e.msg, '#支取时间线');
-    if (!spec) return e.reply('格式：#支取时间线 灵石，或 #支取时间线 [@玩家] 道具*物品名');
-    if (!(await existplayer(actorId)) || !(await existplayer(targetId))) return e.reply('目标玩家存档不存在。');
+    if (!spec) return e.reply('格式：#支取时间线 [@玩家/全体] 道具*物品名');
+    if (!(await existplayer(actorId))) return e.reply('玩家存档不存在。');
 
-    return withPlayerPairLock(actorId, targetId, async () => {
+    const itemMarker = String(e.msg || '').search(/(?:纳戒灵石|灵石|装备|丹药|道具|功法|草药|材料|盒子|仙宠)/);
+    const scopeText = itemMarker >= 0 ? String(e.msg).slice(0, itemMarker) : '';
+    const globalRequested = scopeText.includes('全体');
+    if (globalRequested && mentionedId) return e.reply('指定玩家与全体玩家只能选择一种支取范围。');
+
+    const lockTargetId = mentionedId || actorId;
+    return withPlayerPairLock(actorId, lockTargetId, async () => {
       const actor = await Read_player(actorId);
-      const target = targetId === actorId ? actor : await Read_player(targetId);
       const withdrawalBlock = getWorldlineWithdrawalBlock(actor);
       if (withdrawalBlock.blocked) {
         return e.reply(`你被时间长河雷劫击杀后的因果封禁尚未消散，${formatDuration(withdrawalBlock.remainingMs)}内不得再次支取时间线。`);
       }
-      const limit = getWithdrawalLimit(actor);
-      if (limit === 0) return e.reply('至少达到准仙帝级权柄，方可从备份存档中支取实物。');
+      const authority = getTimelineWithdrawalAuthority(actor);
+      if (authority.mode === 'none') return e.reply('至少达到准仙帝级权柄，方可从备份存档中支取实物。');
+      if (globalRequested && authority.mode !== 'scope_select') {
+        return e.reply('遍观全体玩家的所有时间线需要祭道级权柄。');
+      }
 
-      if (targetId !== actorId) {
+      const lineIds = listBackupLineIds(__PATH.backup);
+      const archivePlayerIds = listArchivePlayerIds({
+        backupRoot: __PATH.backup,
+        lineIds,
+        dataPath: __PATH.data_path,
+        playerDirectory: __PATH.player_path,
+        najieDirectory: __PATH.najie_path,
+      });
+      const globalScope = authority.mode === 'scope_select' && globalRequested;
+      const targetId = mentionedId || actorId;
+      if (!globalScope && !(await existplayer(targetId)) && !archivePlayerIds.includes(targetId)) {
+        return e.reply('目标玩家在现世与历史存档中均不存在。');
+      }
+
+      if (!globalScope && targetId !== actorId && await existplayer(targetId)) {
+        const target = await Read_player(targetId);
         const comparison = compareWorldlineAuthority(actor, target);
         if (!comparison.ok) {
           const debt = addCausalDebt(actor, comparison.reason === 'same_level' ? 45 : 80, '强行支取受护持的时间线');
@@ -329,51 +457,160 @@ export class WorldlineAuthority extends plugin {
         }
       }
 
-      const lineIds = listBackupLineIds(__PATH.backup);
-      const selected = [];
-      const entries = [];
-      for (const lineId of lineIds) {
-        if (isTimelineWithdrawalClaimed(actor, targetId, spec.category, spec.itemName, lineId)) continue;
-        const snapshot = readPlayerArchiveInventory({
-          backupRoot: __PATH.backup,
-          lineId,
-          dataPath: __PATH.data_path,
-          playerId: targetId,
-          playerDirectory: __PATH.player_path,
-          najieDirectory: __PATH.najie_path,
-        });
-        const entry = extractArchiveItem(snapshot, spec.category, spec.itemName);
-        if (!entry) continue;
-        selected.push(lineId);
-        entries.push(entry);
-        if (Number.isFinite(limit) && selected.length >= limit) break;
+      const targetIds = globalScope ? archivePlayerIds : [targetId];
+      const labels = new Map([[actorId, actor.名号 || actorId]]);
+      const eraByLine = new Map(lineIds.map(lineId => [lineId, readBackupEra({
+        backupRoot: __PATH.backup,
+        lineId,
+      })]));
+      const protectedTargets = [];
+      const hits = [];
+      for (const currentTargetId of targetIds) {
+        if (globalScope && currentTargetId !== actorId && await existplayer(currentTargetId)) {
+          const currentTarget = await Read_player(currentTargetId);
+          labels.set(currentTargetId, currentTarget.名号 || currentTargetId);
+          const comparison = compareWorldlineAuthority(actor, currentTarget);
+          if (!comparison.ok) {
+            protectedTargets.push(`${currentTarget.名号 || currentTargetId}(${currentTargetId})`);
+            continue;
+          }
+        } else if (!labels.has(currentTargetId) && await existplayer(currentTargetId)) {
+          const currentTarget = await Read_player(currentTargetId);
+          labels.set(currentTargetId, currentTarget.名号 || currentTargetId);
+        }
+        const targetHits = scanTimelineItems(actor, currentTargetId, spec, lineIds, eraByLine);
+        if (!labels.has(currentTargetId) && targetHits[0]?.targetName) {
+          labels.set(currentTargetId, targetHits[0].targetName);
+        }
+        hits.push(...targetHits);
       }
-      if (!entries.length) return e.reply('可触及的历史存档中没有该物品，或对应时间线已经支取过。');
+      if (!hits.length) {
+        return e.reply(globalScope
+          ? `祭道神念遍观${targetIds.length}名玩家的所有时间线，没有发现尚可支取的【${spec.itemName}】${protectedTargets.length ? `；另有${protectedTargets.length}名同级或高境玩家受道果护持` : ''}。`
+          : authority.mode === 'random_one'
+            ? `准仙帝法身模糊感知：目标可能存在0条尚可支取【${spec.itemName}】的时间线。`
+            : `目标所有可见时间线中没有尚可支取的【${spec.itemName}】。`);
+      }
 
-      const najie = await Read_najie(actorId);
-      let total = 0;
-      for (const entry of entries) {
-        mergeArchiveItem({ player: actor, najie }, entry);
-        total += entry.amount;
+      if (authority.mode === 'random_one') {
+        const selectedLineIds = new Set(selectWithdrawableLines(
+          actor,
+          hits.map(hit => hit.lineId),
+          targetId,
+          spec.category,
+          spec.itemName,
+        ));
+        const selected = hits.filter(hit => selectedLineIds.has(hit.lineId));
+        const { total, debt } = await settleTimelineWithdrawal(actorId, actor, selected, spec);
+        return e.reply([
+          '【时间线支取·既定化虚】',
+          `准仙帝法身朦胧感知：${labels.get(targetId) || targetId}可能有${hits.length}条时间线存在【${spec.itemName}】。`,
+          `无法辨清具体古史，只得随机支取其中一条，获得×${total}。`,
+          ...formatCausalDebtResult(debt),
+          debt.tier.level >= 2 ? `因果已开始牵连：${actor.因果牵连?.related?.join('、') || '宗门与身边之人'}。` : '',
+        ].filter(Boolean).join('\n'));
       }
-      const debt = recordTimelineWithdrawal(actor, {
-        playerId: actorId,
-        targetId,
-        category: spec.category,
-        itemName: spec.itemName,
-        lineIds: selected,
-        amount: total,
-      });
-      await persistCausalImpact(actor, debt);
-      await Write_player(actorId, actor);
-      await Write_najie(actorId, najie);
+
+      const sessionKey = withdrawalSessionKey(e, actorId);
+      const session = {
+        createdAt: Date.now(),
+        spec,
+        hits,
+      };
+      pendingTimelineWithdrawals.set(sessionKey, session);
+      const expiryTimer = setTimeout(() => {
+        if (pendingTimelineWithdrawals.get(sessionKey) === session) {
+          pendingTimelineWithdrawals.delete(sessionKey);
+        }
+      }, TIMELINE_SELECTION_TTL_MS);
+      expiryTimer.unref?.();
+
+      const detailLines = hits.map((hit, index) => formatTimelineHit(
+        hit,
+        index,
+        globalScope ? `${labels.get(hit.targetId) || hit.targetId}(${hit.targetId})` : '',
+      ));
+      for (let index = 0; index < detailLines.length; index += 25) {
+        await e.reply([
+          `【${globalScope ? '祭道·诸世映照' : '仙帝·古史推演'} ${Math.floor(index / 25) + 1}/${Math.ceil(detailLines.length / 25)}】`,
+          ...detailLines.slice(index, index + 25),
+        ].join('\n'));
+      }
+      return e.reply([
+        `共推演出${hits.length}条持有【${spec.itemName}】的时间线，本次尚未支取。`,
+        protectedTargets.length ? `同级或高境道果护持而跳过：${protectedTargets.join('、')}` : '',
+        '发送 #确认支取时间线 1,3 选择若干条，或发送 #确认支取时间线 全部。',
+        '候选古史十分钟后消散；可发送 #取消支取时间线。',
+      ].filter(Boolean).join('\n'));
+    });
+  }
+
+  async confirmTimelineWithdrawal(e) {
+    if (!verc({ e })) return false;
+    const actorId = await playerIdFromEvent(e);
+    const sessionKey = withdrawalSessionKey(e, actorId);
+    const pending = pendingTimelineWithdrawals.get(sessionKey);
+    if (!pending) return e.reply('当前没有等待确认的时间线支取，请先推演目标物品。');
+    if (!(await existplayer(actorId))) {
+      pendingTimelineWithdrawals.delete(sessionKey);
+      return e.reply('玩家存档不存在。');
+    }
+    if (Date.now() - pending.createdAt > TIMELINE_SELECTION_TTL_MS) {
+      pendingTimelineWithdrawals.delete(sessionKey);
+      return e.reply('候选古史已经消散，请重新发送支取时间线指令推演。');
+    }
+    const selectionText = String(e.msg || '').replace('#确认支取时间线', '').trim();
+    const indexes = parseTimelineSelection(selectionText, pending.hits.length);
+    if (!indexes.length) return e.reply(`请选择1-${pending.hits.length}之间的编号，多个编号用逗号分隔，或填写“全部”。`);
+
+    return withPlayerMutationLock(actorId, async () => {
+      const actor = await Read_player(actorId);
+      const authority = getTimelineWithdrawalAuthority(actor);
+      if (authority.level < 21) {
+        pendingTimelineWithdrawals.delete(sessionKey);
+        return e.reply('当前权柄已经不足以辨认并选择古史，请重新推演。');
+      }
+      const withdrawalBlock = getWorldlineWithdrawalBlock(actor);
+      if (withdrawalBlock.blocked) {
+        return e.reply(`因果封禁尚未消散，${formatDuration(withdrawalBlock.remainingMs)}内不得支取时间线。`);
+      }
+
+      const selected = indexes.map(index => pending.hits[index]);
+      for (const targetId of new Set(selected.map(hit => hit.targetId))) {
+        if (targetId === actorId || !(await existplayer(targetId))) continue;
+        const target = await Read_player(targetId);
+        if (!compareWorldlineAuthority(actor, target).ok) {
+          pendingTimelineWithdrawals.delete(sessionKey);
+          return e.reply(`${target.名号 || targetId}的当世道果已经发生变化，本次候选古史失效，请重新推演。`);
+        }
+      }
+      if (selected.some(hit => isTimelineWithdrawalClaimed(
+        actor,
+        hit.targetId,
+        pending.spec.category,
+        pending.spec.itemName,
+        hit.lineId,
+      ))) {
+        pendingTimelineWithdrawals.delete(sessionKey);
+        return e.reply('部分候选时间线已经被支取，本次清单失效，请重新推演。');
+      }
+
+      const { total, debt } = await settleTimelineWithdrawal(actorId, actor, selected, pending.spec);
+      pendingTimelineWithdrawals.delete(sessionKey);
       return e.reply([
         '【时间线支取·既定化虚】',
-        `从${selected.length}条历史存档支取【${spec.itemName}】×${total}。`,
+        `已支取${selected.length}条古史时间线，获得【${pending.spec.itemName}】×${total}。`,
+        `逐线因果债已叠加结算。`,
         ...formatCausalDebtResult(debt),
         debt.tier.level >= 2 ? `因果已开始牵连：${actor.因果牵连?.related?.join('、') || '宗门与身边之人'}。` : '',
       ].filter(Boolean).join('\n'));
     });
+  }
+
+  async cancelTimelineWithdrawal(e) {
+    const actorId = await playerIdFromEvent(e);
+    const removed = pendingTimelineWithdrawals.delete(withdrawalSessionKey(e, actorId));
+    return e.reply(removed ? '候选古史已经散去，本次支取取消。' : '当前没有等待确认的时间线支取。');
   }
 
   async reduceCausalDebt(e) {
@@ -419,6 +656,7 @@ export class WorldlineAuthority extends plugin {
         return e.reply('古史打击要求秘境、仙古或花粉路任一体系至少达到准仙帝。');
       }
       const lineIds = listBackupLineIds(__PATH.backup);
+      const eternalRecord = await buildEternalFactRecord(targetId, target, spec.type, spec.name);
       const targetState = ensureWorldlineState(target);
       const lineId = lineIds.find(id => !targetState.destroyedLines.includes(id)) || `现世前影:${Date.now()}`;
       const result = resolveAncientHistoryStrike(actor, target, {
@@ -450,6 +688,13 @@ export class WorldlineAuthority extends plugin {
 
       let effect = { text: '该时间线已经从古史中熄灭。' };
       if (result.outcome === 'fact_erased') effect = await applyErasedFact(targetId, target, spec.type, spec.name);
+      if (result.outcome === 'fact_erased' && eternalRecord) {
+        const authority = getAuthorityState(target);
+        authority.永恒改命记录 = [
+          ...(Array.isArray(authority.永恒改命记录) ? authority.永恒改命记录 : []),
+          eternalRecord,
+        ].slice(-10);
+      }
       await Write_player(actorId, actor);
       await Write_player(targetId, target);
       return e.reply([
