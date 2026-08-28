@@ -1,5 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import YAML from 'yaml';
+
+export const ARCHIVE_ERA_NAMES = Object.freeze([
+  '神话时代',
+  '太古时代',
+  '天命时代',
+  '末法时代',
+  '绝灵时代',
+]);
 
 export function findPlayerArchiveSnapshot({
   backupPath,
@@ -15,8 +24,11 @@ export function findPlayerArchiveSnapshot({
     if (fileSystem.existsSync(current)) return current;
   }
 
-  const legacy = path.join(backupPath, legacyKey, fileName);
-  return fileSystem.existsSync(legacy) ? legacy : '';
+  for (const key of Array.isArray(legacyKey) ? legacyKey : [legacyKey]) {
+    const legacy = path.join(backupPath, key, fileName);
+    if (fileSystem.existsSync(legacy)) return legacy;
+  }
+  return '';
 }
 
 export function selectBackupsToDelete(folderNames, {
@@ -55,6 +67,68 @@ export function listBackupLineIds(backupRoot, fileSystem = fs) {
     .sort((a, b) => Number(b) - Number(a));
 }
 
+export function readBackupEra({ backupRoot, lineId, fileSystem = fs }) {
+  const configFile = path.join(
+    backupRoot,
+    String(lineId),
+    'runtime_config',
+    'xiuxian',
+    'xiuxian.yaml',
+  );
+  if (!fileSystem.existsSync(configFile)) return { known: false, label: '古史时代不可考' };
+  try {
+    const current = YAML.parse(fileSystem.readFileSync(configFile, 'utf8'))?.Era?.current || {};
+    const index = Math.trunc(Number(current.index));
+    if (!ARCHIVE_ERA_NAMES[index]) return { known: false, label: '古史时代不可考' };
+    const epoch = Math.max(1, Math.trunc(Number(current.epoch) || 1));
+    const years = Math.max(0, Math.trunc(Number(current.years) || 0));
+    return {
+      known: true,
+      index,
+      epoch,
+      years,
+      name: ARCHIVE_ERA_NAMES[index],
+      label: `第${epoch}纪元·${ARCHIVE_ERA_NAMES[index]}（第${years}年）`,
+    };
+  } catch {
+    return { known: false, label: '古史时代不可考' };
+  }
+}
+
+export function listArchivePlayerIds({
+  backupRoot,
+  lineIds = listBackupLineIds(backupRoot),
+  dataPath,
+  playerDirectory,
+  najieDirectory,
+  fileSystem = fs,
+}) {
+  const ids = new Set();
+  for (const lineId of lineIds) {
+    const backupPath = path.join(backupRoot, String(lineId));
+    const directories = [];
+    for (const liveDirectory of [playerDirectory, najieDirectory]) {
+      const relative = path.relative(dataPath, liveDirectory);
+      if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
+        directories.push(path.join(backupPath, 'data', relative));
+      }
+    }
+    directories.push(
+      path.join(backupPath, 'player'),
+      path.join(backupPath, 'player_path'),
+      path.join(backupPath, 'najie'),
+      path.join(backupPath, 'najie_path'),
+    );
+    for (const directory of directories) {
+      if (!fileSystem.existsSync(directory) || !fileSystem.statSync(directory).isDirectory()) continue;
+      for (const fileName of fileSystem.readdirSync(directory)) {
+        if (fileName.endsWith('.json')) ids.add(fileName.slice(0, -5));
+      }
+    }
+  }
+  return [...ids].sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true }));
+}
+
 export function readPlayerArchiveInventory({
   backupRoot,
   lineId,
@@ -79,7 +153,7 @@ export function readPlayerArchiveInventory({
       backupPath,
       dataPath,
       liveDirectory: playerDirectory,
-      legacyKey: 'player',
+      legacyKey: ['player', 'player_path'],
       fileName,
       fileSystem,
     })),
@@ -87,7 +161,7 @@ export function readPlayerArchiveInventory({
       backupPath,
       dataPath,
       liveDirectory: najieDirectory,
-      legacyKey: 'najie',
+      legacyKey: ['najie', 'najie_path'],
       fileName,
       fileSystem,
     })),
