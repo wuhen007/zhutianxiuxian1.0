@@ -2005,5 +2005,39 @@
     { "name": "组字秘", "class": "功法", "amount": 1 },
     { "name": "前字秘", "class": "功法", "amount": 1 }
   ]
+},
+{
+  "name": "天帝拳",
+  "class": "功法",
+  "amount": 1,
+  "materials": [
+    { "name": "天帝拳残页", "class": "材料", "amount": 10 }
+  ]
+},
+{
+  "name": "葬天古经",
+  "class": "功法",
+  "amount": 1,
+  "materials": [
+    { "name": "葬天古经残页", "class": "材料", "amount": 10 }
+  ]
+},
+{
+  "name": "魂河渡世灯",
+  "class": "装备",
+  "amount": 1,
+  "costs": { "源石": 20000000000 },
+  "materials": [
+    { "name": "魂河古晶", "class": "材料", "amount": 60 }
+  ]
+},
+{
+  "name": "葬帝玄甲",
+  "class": "装备",
+  "amount": 1,
+  "costs": { "源石": 20000000000 },
+  "materials": [
+    { "name": "葬帝黑金", "class": "材料", "amount": 60 }
+  ]
 }
 ]
