@@ -17,6 +17,11 @@ const RENEW_LOCK_SCRIPT = `
 
 export const SECRET_PLACE_SETTLEMENT_BUSY = Symbol('secret-place-settlement-busy');
 
+export function hasPendingSecretPlaceSettlement(action) {
+  if (!action || typeof action !== 'object' || action.is_jiesuan == 1) return false;
+  return action.Place_action == '0' || action.Place_actionplus == '0';
+}
+
 export function getSecretPlaceSettlementLockKey(playerId) {
   return `xiuxian:player:${String(playerId)}:secret-place-settlement-lock`;
 }

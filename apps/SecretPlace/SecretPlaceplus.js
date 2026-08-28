@@ -23,6 +23,7 @@ import {
   get_addictionharvest_img,
   channel
 } from '../../model/xiuxian.js';
+import { applySecretPlaceNotificationContext } from '../../model/secretPlaceNotification.js';
 
 function isWeiMianDestroyed(planeName) {
   return getPlaneDestructionInfo(data.filePathMap.weimianList, planeName).destroyed;
@@ -269,9 +270,7 @@ async Gosecretplace(e) {
         Place_address: weizhi,
     };
     
-    if (e.isGroup) {
-        arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
@@ -448,9 +447,7 @@ async Goxiajie(e) {
         Place_address: weizhi,
     };
     
-    if (e.isGroup) {
-        arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
@@ -624,9 +621,7 @@ async Gojiutianshidi(e) {
         Place_address: weizhi,
     };
     
-    if (e.isGroup) {
-        arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
@@ -887,9 +882,7 @@ async Gozhetian(e) {
         Place_address: weizhi,
     };
     
-    if (e.isGroup) {
-        arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
@@ -1057,9 +1050,7 @@ async Goforbiddenarea(e) {
         Place_address: weizhi,
     };
     
-    if (e.isGroup) {
-        arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     
@@ -1323,9 +1314,7 @@ if (didian === "往世星海") {
         Place_address: weizhi,
     };
     
-    if (e.isGroup) {
-        arr.group_id = e.group_id;
-    }
+    applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
     

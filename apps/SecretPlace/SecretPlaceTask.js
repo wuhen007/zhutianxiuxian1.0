@@ -4,7 +4,6 @@ import {__PATH} from '../../model/xiuxian.js';
 import {
   Read_player,
   Read_najie,
-  isNotNull,
   Add_najie_thing,
   Add_修为,
   Add_血气,
@@ -65,6 +64,7 @@ import {
   discoverNajieDropMemory,
   formatNajieMemoryDiscovery,
 } from '../../model/najieDropMemory.js';
+import { sendSecretPlaceNotification } from '../../model/secretPlaceNotification.js';
 export class SecretPlaceTask extends plugin {
   constructor() {
     super({
@@ -111,7 +111,9 @@ export class SecretPlaceTask extends plugin {
     }
     let targetResult;
     for (let player_id of playerList) {
-      const result = await withSecretPlaceSettlementLock(player_id, async () => {
+      let result;
+      try {
+        result = await withSecretPlaceSettlementLock(player_id, async () => {
       let log_mag = ''; //查询当前人物动作日志信息
       log_mag = log_mag + '查询' + player_id + '是否有动作,';
       //得到动作
@@ -161,12 +163,7 @@ export class SecretPlaceTask extends plugin {
                 ].filter(Boolean).join('\n')
             ];
             
-            // 发送消息
-            if (parsedAction.group_id) {
-                await Bot.pickGroup(parsedAction.group_id).sendMsg(finalMsg);
-            } else {
-                await Bot.pickUser(player_id).sendMsg(finalMsg);
-            }
+            await sendSecretPlaceNotification(parsedAction, player_id, finalMsg);
             
             // 清除法身行动状态
             await redis.del('xiuxian:player:' + player_id + ':action:fashan');
@@ -177,15 +174,6 @@ export class SecretPlaceTask extends plugin {
 }
       //不为空，存在动作
       if (action != null) {
-        
-        let push_address; //消息推送地址
-        let is_group = false; //是否推送到群
-        if (await action.hasOwnProperty('group_id')) {
-          if (isNotNull(action.group_id)) {
-            is_group = true;
-            push_address = action.group_id;
-          }
-        }
         //最后发送的消息
         let msg = [];
         //动作结束时间
@@ -201,17 +189,6 @@ export class SecretPlaceTask extends plugin {
         
           //时间过了
           if (now_time > end_time) {
-             // 构建最终消息
-    let finalMsg = [
-        segment.at(Number(player_id)), // 艾特玩家
-        `【秘境探索结束】`,
-    ];
-      // 发送消息
-    if (is_group) {
-        await Bot.pickGroup(push_address).sendMsg(finalMsg);
-    } else {
-        await Bot.pickUser(player_id).sendMsg(finalMsg);
-    }
             let weizhi = action.Place_address;
           let xf = action.XF ?? -1;
              
@@ -589,7 +566,11 @@ if (weizhi.name === "紫薇星域") {
                 eventMsg.push(successMsg);
                 // 添加功法并公告
                 player.学习的功法.push('一气化三清');
-                await e.reply(`【紫气浩荡·道衍诸天】${player.name}于八景宫得老子传承，周天星辰共贺！`);
+                await sendSecretPlaceNotification(
+                  action,
+                  usr_qq,
+                  `【紫气浩荡·道衍诸天】${player.name}于八景宫得老子传承，周天星辰共贺！`,
+                );
             } else {
                 eventMsg.push(failedEntryMsg);
             }
@@ -601,15 +582,11 @@ if (weizhi.name === "紫薇星域") {
         // 保存数据并发送消息
         await Write_player(usr_qq, player);
         const finalMsg = eventMsg.join('\n');
-        if (action.group_id) {
-            await Bot.pickGroup(action.group_id).sendMsg([segment.at(usr_qq), finalMsg]);
-        } else {
-            await common.relpyPrivate(usr_qq, finalMsg);
-        }
+        await sendSecretPlaceNotification(action, usr_qq, [segment.at(usr_qq), finalMsg]);
 
     } catch (err) {
         console.error("八景宫事件异常:", err);
-        await common.reply(e, "周天星辰紊乱！推演中断");
+        await sendSecretPlaceNotification(action, usr_qq, '周天星辰紊乱！推演中断');
     }
 }
            // 万龙巢探索事件 - 万龙古经与龙皇印获取
@@ -851,18 +828,14 @@ if (player.power_place == 2 && player.古地府 && player.灵根.type === "圣�
         await Write_player(usr_qq, player);
         
         // 发送消息
-        if (action.group_id) {
-            await Bot.pickGroup(action.group_id).sendMsg([
-                segment.at(usr_qq),
-                penaltyMsg.join('\n')
-            ]);
-        } else {
-            await common.relpyPrivate(usr_qq, penaltyMsg.join('\n'));
-        }
+        await sendSecretPlaceNotification(action, usr_qq, [
+            segment.at(usr_qq),
+            penaltyMsg.join('\n')
+        ]);
         
     } catch (err) {
         console.error("古地府事件处理失败:", err);
-        await common.reply(e, "地府阴气扰乱天机！事件处理失败");
+        await sendSecretPlaceNotification(action, usr_qq, '地府阴气扰乱天机！事件处理失败');
     }
 }
 if (player.power_place == 2 && Math.random() < 0.01) {
@@ -904,19 +877,15 @@ if (player.power_place == 2 && Math.random() < 0.01) {
             await Write_player(usr_qq, player);
             
             // 发送消息
-            if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
-                    segment.at(usr_qq),
-                    eventMsg.join('\n')
-                ]);
-            } else {
-                await common.relpyPrivate(usr_qq, eventMsg.join('\n'));
-            }
+            await sendSecretPlaceNotification(action, usr_qq, [
+                segment.at(usr_qq),
+                eventMsg.join('\n')
+            ]);
         }
         
     } catch (err) {
         console.error("源天师事件处理失败:", err);
-        await common.reply(e, "源气紊乱，天机不显！事件处理失败");
+        await sendSecretPlaceNotification(action, usr_qq, '源气紊乱，天机不显！事件处理失败');
     }
 }
                 if (player.power_place == 2) {
@@ -1018,14 +987,10 @@ if (player.power_place == 2 && Math.random() < 0.01) {
                             player.学习的功法.push('终极圣体秘术');
                             await Write_player(usr_qq, player);
                                        // ==== 消息推送 ====
-            if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
-                    segment.at(usr_qq),
-                    shengtimsg
-                ]);
-            } else {
-                await common.relpyPrivate(usr_qq, shengtimsg);
-            }
+            await sendSecretPlaceNotification(action, usr_qq, [
+                segment.at(usr_qq),
+                shengtimsg
+            ]);
                         } else {
                             // 概率触发但未获得的感悟
                             last_msg += ` 你手握菩提子，隐约感应到圣崖之巅与荧惑古星间存在着一条由圣血铺就的无形古路，一道悲凉的目光似乎跨越星海注视着你...（机缘未至，或可尝试提升天资以加深感应）`;
@@ -1124,16 +1089,10 @@ if (weizhi.name === "霸体祖星") {
         const finalMsg = eventMsg.join('\n');
         
         // ==== 消息推送 ====
-        if (e.isGroup) {
-            // 群聊消息
-            await Bot.pickGroup(e.group_id).sendMsg([
-                segment.at(usr_qq),
-                finalMsg
-            ]);
-        } else {
-            // 私聊消息
-            await common.relpyPrivate(usr_qq, finalMsg);
-        }
+        await sendSecretPlaceNotification(action, usr_qq, [
+            segment.at(usr_qq),
+            finalMsg
+        ]);
     } else if (!isMinorBati) {
         last_msg += ' 你来霸体祖星深处，忽然法则轰鸣，紫色血气如天渊般将你拒之门外：非霸体血脉，不得入内！';
     } else if (player.霸体祖星洗礼) {
@@ -1323,19 +1282,15 @@ if (weizhi.name === "霸体祖星") {
             }
 
             // ==== 消息推送 ====
-            if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
-                    segment.at(usr_qq),
-                    penaltyMsg
-                ]);
-            } else {
-                await common.relpyPrivate(usr_qq, penaltyMsg);
-            }
+            await sendSecretPlaceNotification(action, usr_qq, [
+                segment.at(usr_qq),
+                penaltyMsg
+            ]);
             
         } catch (err) {
             console.error("圣崖事件处理失败:", err);
             // 错误处理（避免崩溃）
-            await common.relpyPrivate(usr_qq, "帝阵反噬过强，天机紊乱！请稍后再试");
+            await sendSecretPlaceNotification(action, usr_qq, '帝阵反噬过强，天机紊乱！请稍后再试');
         }
     }
 }
@@ -1368,18 +1323,14 @@ if (weizhi.name === "北斗星紫山") {
 
             await Write_player(usr_qq, player);
             // ==== 消息推送 ====
-            if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
-                    segment.at(usr_qq),
-                    penaltyMsg
-                ]);
-            } else {
-                await common.relpyPrivate(usr_qq, penaltyMsg);
-            }
+            await sendSecretPlaceNotification(action, usr_qq, [
+                segment.at(usr_qq),
+                penaltyMsg
+            ]);
             
         } catch (err) {
             console.error("紫山事件处理失败:", err);
-            await common.reply(e, "无始钟波扰乱天机！推演失败");
+            await sendSecretPlaceNotification(action, usr_qq, '无始钟波扰乱天机！推演失败');
         }
     }
 }
@@ -1413,18 +1364,14 @@ if (weizhi.name === "荒古禁地") {
 
             await Write_player(usr_qq, player);
             // ==== 消息推送 ====
-            if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
-                    segment.at(usr_qq),
-                    penaltyMsg
-                ]);
-            } else {
-                await common.relpyPrivate(usr_qq, penaltyMsg);
-            }
+            await sendSecretPlaceNotification(action, usr_qq, [
+                segment.at(usr_qq),
+                penaltyMsg
+            ]);
             
         } catch (err) {
             console.error("荒古禁地事件处理失败:", err);
-            await common.reply(e, "时间道则反噬！推演中断");
+            await sendSecretPlaceNotification(action, usr_qq, '时间道则反噬！推演中断');
         }
     }
 }
@@ -1469,18 +1416,14 @@ if (weizhi.name === "太初古矿") {
 
             await Write_player(usr_qq, player);
              // ==== 消息推送 ====
-            if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
-                    segment.at(usr_qq),
-                    penaltyMsg
-                ]);
-            } else {
-                await common.relpyPrivate(usr_qq, penaltyMsg);
-            }
+            await sendSecretPlaceNotification(action, usr_qq, [
+                segment.at(usr_qq),
+                penaltyMsg
+            ]);
             
         } catch (err) {
             console.error("太初古矿事件处理失败:", err);
-            await common.reply(e, "太初之气紊乱！推演失败");
+            await sendSecretPlaceNotification(action, usr_qq, '太初之气紊乱！推演失败');
         }
     }
 }
@@ -1538,18 +1481,14 @@ if (weizhi.name === "石国皇都") {
 
             await Write_player(usr_qq, player);
             // ==== 消息推送 ====
-            if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
-                    segment.at(usr_qq),
-                    penaltyMsg.join('\n')
-                ]);
-            } else {
-                await common.relpyPrivate(usr_qq, penaltyMsg.join('\n'));
-            }
+            await sendSecretPlaceNotification(action, usr_qq, [
+                segment.at(usr_qq),
+                penaltyMsg.join('\n')
+            ]);
             
         } catch (err) {
             console.error("石国皇都事件处理失败:", err);
-            await common.reply(e, "人皇威压扰乱天机！推演失败");
+            await sendSecretPlaceNotification(action, usr_qq, '人皇威压扰乱天机！推演失败');
         }
     }
 }
@@ -1609,18 +1548,14 @@ if (weizhi.name === "西陵界") {
 
             await Write_player(usr_qq, player);
             // ==== 消息推送 ====
-            if (action.group_id) {
-                await Bot.pickGroup(action.group_id).sendMsg([
-                    segment.at(usr_qq),
-                    penaltyMsg.join('\n')
-                ]);
-            } else {
-                await common.relpyPrivate(usr_qq, penaltyMsg.join('\n'));
-            }
+            await sendSecretPlaceNotification(action, usr_qq, [
+                segment.at(usr_qq),
+                penaltyMsg.join('\n')
+            ]);
             
         } catch (err) {
             console.error("西陵界事件处理失败:", err);
-            await common.reply(e, "葬地死气扰乱天机！推演失败");
+            await sendSecretPlaceNotification(action, usr_qq, '葬地死气扰乱天机！推演失败');
         }
     }
 }
@@ -1951,6 +1886,7 @@ const hasSpecialLinggen = specialLinggenTypes.includes(player.灵根.name);
                   await Add_najie_thing(player_id, Get_lianqi.name, '道具', 1);
                 }
               }
+aptitudeEncounter: {
 if (random < 0.0001) {
     // 完整的天资等级序列（包含所有等级）
     const aptitudeSequence = [
@@ -1976,13 +1912,13 @@ if (random < 0.0001) {
         player.天资评价 = '天生愚笨，修炼难如登天';
         await Write_player(usr_qq, player);
         last_msg += `${B_player.名号}倒下后，你的旧天资被天地法则重新厘定为「生而愚痴」。`;
-        return;
+        break aptitudeEncounter;
     }
     
     // 特殊处理：无化如是无法提升
     if (player.天资等级 === '无化如是') {
         last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。\n他凝视你片刻，长叹一声："无化如是，无用之人，此乃天道所封。老朽虽为地仙，亦不敢逆天而行。"\n语罢，老者身影逐渐淡去，唯留一声叹息："天命如此，好自为之..."`;
-        return;
+        break aptitudeEncounter;
     }
     
     // 特殊处理：生而愚痴最多提升到天弃之人
@@ -2011,7 +1947,7 @@ ${aptitudeEvaluations['天弃之人']}
         } else {
             last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。\n老者探查你资质后，摇头叹息："生而愚痴，愚昧如石，纵是仙丹妙药亦难回天。"\n说完化作青烟散去。`;
         }
-        return;
+        break aptitudeEncounter;
     }
     
     // 天资评价库
@@ -2048,7 +1984,7 @@ ${aptitudeEvaluations['天弃之人']}
     // 如果已经是万古无双，不再提升
     if (currentIndex >= 9) {
         last_msg += `${B_player.名号}倒下后，你转身瞧见一位仙风道骨的老者。他目光如渊，仿佛能洞穿万古时空："小友资质已臻至境，老朽亦无可指点。"话音未落，身影已如梦幻泡影般消散。`;
-        return;
+        break aptitudeEncounter;
     }
     
     let newAptitude = aptitudeSequence[newIndex];
@@ -2079,6 +2015,7 @@ ${aptitudeEvaluations[newAptitude]}
     // 添加特殊道具
     await Add_najie_thing(player_id, '如梦道痕', '道具', 1);
   
+}
 }
               if (random > 0.1 && random < 0.1002) {
                 last_msg +=
@@ -2344,8 +2281,6 @@ ${aptitudeEvaluations[newAptitude]}
             arr.Place_actionplus = 1; //沉迷状态
             //结束的时间也修改为当前时间
             arr.end_time = new Date().getTime();
-            //结算完去除group_id
-            delete arr.group_id;
             //写入redis
             await redis.set(
               'xiuxian:player:' + player_id + ':action',
@@ -2358,17 +2293,17 @@ ${aptitudeEvaluations[newAptitude]}
             player.血气+=qixue;
 
            await Write_player(usr_qq, player);
-            //发送消息
             msg=await get_log_img(msg)
-              if (is_group) {
-                await this.pushInfo(push_address, is_group, msg);
-              } else {
-                await this.pushInfo(player_id, is_group, msg);
-              }
+            await sendSecretPlaceNotification(action, player_id, msg);
           }
         }
       }
-      });
+        });
+      } catch (error) {
+        console.error(`[秘境结算] 玩家${player_id}结算失败，本轮继续处理其他玩家:`, error);
+        if (targetPlayerId != null) targetResult = false;
+        continue;
+      }
       if (targetPlayerId != null) targetResult = result;
     }
     return targetResult;
@@ -2553,23 +2488,6 @@ async sendDaoshangNotification(player, message) {
         }
     }
 }
-  /**
-   * 推送消息，群消息推送群，或者推送私人
-   * @param id
-   * @param is_group
-   * @return  falses {Promise<void>}
-   */
-  async pushInfo(id, is_group, msg) {
-    if (is_group) {
-      await Bot.pickGroup(id)
-        .sendMsg(msg)
-        .catch(err => {
-          Bot.logger.mark(err);
-        });
-    } else {
-      await common.relpyPrivate(id, msg);
-    }
-  }
 }
 async function checkGongfaInServer(gongfaName) {
     let File = fs.readdirSync(__PATH.player_path);

@@ -5,11 +5,20 @@ import {
   accelerateSecretPlaceAction,
   createSecretPlaceAddictionAction,
   getSecretPlaceSettlementLockKey,
+  hasPendingSecretPlaceSettlement,
   normalizeLegacySecretPlaceAddictionAction,
   recordSecretPlaceItemToHistory,
   SECRET_PLACE_SETTLEMENT_BUSY,
   withSecretPlaceSettlementLock,
 } from '../model/secretPlaceAddiction.js';
+
+test('仅未完成结算的普通或沉迷秘境阻止新动作覆盖', () => {
+  assert.equal(hasPendingSecretPlaceSettlement({ Place_action: '0' }), true);
+  assert.equal(hasPendingSecretPlaceSettlement({ Place_actionplus: '0' }), true);
+  assert.equal(hasPendingSecretPlaceSettlement({ Place_action: '0', is_jiesuan: 1 }), false);
+  assert.equal(hasPendingSecretPlaceSettlement({ Place_action: '1', Place_actionplus: '1' }), false);
+  assert.equal(hasPendingSecretPlaceSettlement({ action: '位面穿梭' }), false);
+});
 
 function createRedis(values = new Map()) {
   return {
