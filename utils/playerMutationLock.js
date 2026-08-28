@@ -111,7 +111,6 @@ export async function withPlayerMutationLock(playerId, task, options = {}) {
         () => expireWaitingEntry(key, queue, entry),
         waitTimeoutMs
       );
-      entry.waitTimer.unref?.();
     }
   });
 }

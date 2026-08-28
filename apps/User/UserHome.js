@@ -1972,7 +1972,7 @@ async broadcastToAll(player,message) {
     
     // 确保数量是数字
     quantity = Number(quantity);
-    if (isNaN(quantity) || quantity <= 0) {
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) {
         e.reply("合成数量必须为正整数");
         return;
     }
@@ -2006,6 +2006,14 @@ async broadcastToAll(player,message) {
         e.reply(message);
         return;
     }
+
+    const insufficientResources = Object.entries(wupin.costs || {}).filter(
+      ([field, amount]) => (Number(player[field]) || 0) < Number(amount) * quantity
+    );
+    if (insufficientResources.length > 0) {
+      e.reply(`资源不足：${insufficientResources.map(([field, amount]) => `${field}需要${Number(amount) * quantity}`).join('、')}`);
+      return;
+    }
     
     // 纳戒中减去对应物品
     for (let i = 0; i < wupin.materials.length; i++) {
@@ -2017,6 +2025,10 @@ async broadcastToAll(player,message) {
             -material.amount * quantity
         );
     }
+    for (const [field, amount] of Object.entries(wupin.costs || {})) {
+      player[field] = Number(player[field]) - Number(amount) * quantity;
+    }
+    if (Object.keys(wupin.costs || {}).length > 0) await Write_player(usr_qq, player);
     
     // 添加合成物品
     await Add_najie_thing(
@@ -2026,7 +2038,8 @@ async broadcastToAll(player,message) {
         wupin.amount * quantity
     );
     
-    e.reply(`合成成功，获得${wupin.name} x${wupin.amount * quantity}`);
+    const resourceCost = Object.entries(wupin.costs || {}).map(([field, amount]) => `${field}-${Number(amount) * quantity}`).join('、');
+    e.reply(`合成成功，获得${wupin.name} x${wupin.amount * quantity}${resourceCost ? `（${resourceCost}）` : ''}`);
     return;
 }
 if (func == "打开") {

@@ -1,6 +1,8 @@
 import { plugin, verc, data, config } from '../../api/api.js';
 import { hasRealmAuthority } from '../../model/realmAuthority.js';
 import { TIME_RIVER_PHASE_DURATION_MS } from '../../model/timeRiverAdversary.js';
+import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 import {
   Read_player,
@@ -46,18 +48,16 @@ export class shijianchanghe extends plugin {
   }
   //遨游时间长河
     async roamTimeRiver(e) {
+      if (!verc({ e })) return false;
       let usr_qq = e.user_id.toString().replace('qg_','');
       usr_qq = await channel(usr_qq);
+      if (!await existplayer(usr_qq)) return false;
       let player = await Read_player(usr_qq);
        // 检查是否可以前往
     const flag = await Go(e);
     if (!flag) {
         return false;
     }
-      let now_level_id;
-        now_level_id = data.Level_list.find(
-        item => item.level_id == player.level_id
-      ).level_id;
   if (!hasRealmAuthority(player, 20)) {
       const replyMsg = [
           `【时间长河·禁忌之地】`,
@@ -79,7 +79,7 @@ export class shijianchanghe extends plugin {
       return false;
   }
   
-  player.power_place =4;
+  player.power_place = PLACE_LOCATION_MAP.时间长河;
     await Write_player(usr_qq, player);
       let action_time = TIME_RIVER_PHASE_DURATION_MS;
       let arr = {
@@ -104,11 +104,18 @@ export class shijianchanghe extends plugin {
       A=await channel(A)
       await Add_renwu_progress(A, 'jilu3');
        await redis.set(`xiuxian:time_river:end_time:${usr_qq}`, arr.end_time);
-        const activePlayers = await redis.get('xiuxian:time_river:active_players') || '[]';
-  const playersList = JSON.parse(activePlayers);
-  if (!playersList.includes(usr_qq)) playersList.push(usr_qq);
-       // 添加玩家到有序集合
-  await redis.set('xiuxian:time_river:active_players', JSON.stringify(playersList));
+  await withPlayerMutationLock('time-river-active-index', async () => {
+    const activePlayers = await redis.get('xiuxian:time_river:active_players') || '[]';
+    let playersList = [];
+    try {
+      const parsed = JSON.parse(activePlayers);
+      if (Array.isArray(parsed)) playersList = parsed.map(String);
+    } catch {
+      playersList = [];
+    }
+    if (!playersList.includes(usr_qq)) playersList.push(usr_qq);
+    await redis.set('xiuxian:time_river:active_players', JSON.stringify(playersList));
+  });
   await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
        // 回复玩家
       e.reply([
