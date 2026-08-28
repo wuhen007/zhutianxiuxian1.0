@@ -22,12 +22,14 @@ import {
   addCausalDebt,
   compareWorldlineAuthority,
   ensureWorldlineState,
+  getWorldlineWithdrawalBlock,
   getWithdrawalLimit,
   getWorldlineStatus,
   isShapeSpiritDestroyed,
   isTimelineWithdrawalClaimed,
   rebuildShapeSpirit,
   recordTimelineWithdrawal,
+  reduceCausalDebtWithEraAccumulation,
   removeArtifactRankingEntries,
   resolveAncientHistoryStrike,
   setShapeSpiritDestroyed,
@@ -73,6 +75,29 @@ function parseFactSpec(message) {
   const type = match[1];
   const name = match[2].trim();
   return FACT_TYPES.has(type) && name ? { type, name } : null;
+}
+
+function formatDuration(milliseconds) {
+  const minutes = Math.max(1, Math.ceil(Number(milliseconds || 0) / 60_000));
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  return [hours ? `${hours}小时` : '', restMinutes ? `${restMinutes}分钟` : ''].filter(Boolean).join('');
+}
+
+function formatCausalDebtResult(result) {
+  if (!result) return [];
+  const lines = [result.costFree
+    ? '祭道之上不沾因果，本次因果债为0。'
+    : `因果债 +${result.delta}，当前${result.debt}（${result.tier.name}）。`];
+  if (!result.backlash?.triggered) return lines;
+  lines.push(
+    `【时间长河·因果雷罚】因果债已超过200，连续降下${result.backlash.bolts}道雷劫。`,
+    `每道雷劫造成血量上限120%的伤害：${result.backlash.damagePerBolt.toLocaleString()}点。`,
+  );
+  if (result.backlash.killed) {
+    lines.push('你被因果雷罚击杀，道伤+2；12小时内不得再次支取时间线。');
+  }
+  return lines;
 }
 
 function eraseNamedItem(container, itemName, equipment = false) {
@@ -230,6 +255,7 @@ export class WorldlineAuthority extends plugin {
       rule: [
         { reg: '^#(?:时间线权能|古史状态|因果债)$', fnc: 'worldlineStatus' },
         { reg: '^#支取时间线(?:.|\n)+$', fnc: 'withdrawTimeline' },
+        { reg: '^#(?:消减因果债|纪元消债)(?:\\s*[*＊]?\\s*\\d+)?$', fnc: 'reduceCausalDebt' },
         { reg: '^#古史打击(?:.|\n)+$', fnc: 'ancientHistoryStrike' },
         { reg: '^#重塑形神$', fnc: 'rebuildBodyAndSoul' },
       ],
@@ -242,6 +268,7 @@ export class WorldlineAuthority extends plugin {
     return withPlayerMutationLock(userId, async () => {
       const player = await Read_player(userId);
       const status = getWorldlineStatus(player);
+      const withdrawalBlock = getWorldlineWithdrawalBlock(player);
       const lineIds = listBackupLineIds(__PATH.backup);
       await Write_player(userId, player);
       const abilities = [];
@@ -255,6 +282,8 @@ export class WorldlineAuthority extends plugin {
         `等效权柄：${status.level}重天`,
         `历史存档：${lineIds.length}条｜已毁：${status.destroyedLines.length}条`,
         `因果债：${status.causalDebt}（${status.debtTier.name}）`,
+        `纪元消债：${status.debtReductionRate <= 0 ? '至少需要准仙帝级权柄' : Number.isFinite(status.debtReductionRate) ? `1点纪元积累消减${status.debtReductionRate}点因果债` : '祭道之上无因果代价'}`,
+        withdrawalBlock.blocked ? `支取封禁：剩余${formatDuration(withdrawalBlock.remainingMs)}` : '支取封禁：无',
         `现世状态：${status.noReturn ? '绝无复生' : status.shapeSpiritDestroyed ? '形神俱灭' : '道标稳固'}`,
         `权能：${abilities.join('；') || '尚未触及时光长河'}`,
         `关键事实：${facts.length ? facts.map(fact => `${fact.type}·${fact.name}`).join('、') : '尚未形成可见锚点'}`,
@@ -275,6 +304,10 @@ export class WorldlineAuthority extends plugin {
     return withPlayerPairLock(actorId, targetId, async () => {
       const actor = await Read_player(actorId);
       const target = targetId === actorId ? actor : await Read_player(targetId);
+      const withdrawalBlock = getWorldlineWithdrawalBlock(actor);
+      if (withdrawalBlock.blocked) {
+        return e.reply(`你被时间长河雷劫击杀后的因果封禁尚未消散，${formatDuration(withdrawalBlock.remainingMs)}内不得再次支取时间线。`);
+      }
       const limit = getWithdrawalLimit(actor);
       if (limit === 0) return e.reply('至少达到准仙帝级权柄，方可从备份存档中支取实物。');
 
@@ -287,9 +320,12 @@ export class WorldlineAuthority extends plugin {
           }
           await persistCausalImpact(actor, debt);
           await Write_player(actorId, actor);
-          return e.reply(comparison.reason === 'same_level'
+          return e.reply([
+            comparison.reason === 'same_level'
             ? '同级本体循因果降临，支取中止；若要强取，只能先与其当世本体分出胜负。'
-            : '目标的高境本体护持过去，你的时间线法身已被当场抹灭。');
+            : '目标的高境本体护持过去，你的时间线法身已被当场抹灭。',
+            ...formatCausalDebtResult(debt),
+          ].join('\n'));
         }
       }
 
@@ -334,9 +370,36 @@ export class WorldlineAuthority extends plugin {
       return e.reply([
         '【时间线支取·既定化虚】',
         `从${selected.length}条历史存档支取【${spec.itemName}】×${total}。`,
-        `因果债 +${debt.delta}，当前${debt.debt}（${debt.tier.name}）。`,
+        ...formatCausalDebtResult(debt),
         debt.tier.level >= 2 ? `因果已开始牵连：${actor.因果牵连?.related?.join('、') || '宗门与身边之人'}。` : '',
       ].filter(Boolean).join('\n'));
+    });
+  }
+
+  async reduceCausalDebt(e) {
+    if (!verc({ e })) return false;
+    const actorId = await playerIdFromEvent(e);
+    if (!(await existplayer(actorId))) return e.reply('玩家不存在，请先创建角色。');
+    const match = String(e.msg || '').match(/(\d+)/);
+    const requested = match ? Number(match[1]) : 1;
+
+    return withPlayerMutationLock(actorId, async () => {
+      const player = await Read_player(actorId);
+      const result = reduceCausalDebtWithEraAccumulation(player, requested);
+      if (!result.ok) {
+        if (result.reason === 'authority') return e.reply('秘境、仙古或花粉路任一体系至少达到准仙帝，方可消减因果债。');
+        if (result.reason === 'no_debt') return e.reply('当前没有因果债需要消减。');
+        return e.reply(`纪元积累不足，当前剩余${result.available || 0}点。`);
+      }
+      await Write_player(actorId, player);
+      return e.reply([
+        '【纪元积累·洗去因果】',
+        result.costFree
+          ? `祭道之上超脱因果，本次不消耗纪元积累，消去${result.reduced}点旧债。`
+          : `消耗${result.spent}点纪元积累，按1:${result.rate}消去${result.reduced}点因果债。`,
+        `剩余因果债：${result.debt}（${result.tier.name}）`,
+        `剩余纪元积累：${player.纪元积累 || 0}`,
+      ].join('\n'));
     });
   }
 
@@ -352,6 +415,9 @@ export class WorldlineAuthority extends plugin {
     return withPlayerPairLock(actorId, targetId, async () => {
       const actor = await Read_player(actorId);
       const target = await Read_player(targetId);
+      if (getRealmAuthorityLevel(actor) < 20) {
+        return e.reply('古史打击要求秘境、仙古或花粉路任一体系至少达到准仙帝。');
+      }
       const lineIds = listBackupLineIds(__PATH.backup);
       const targetState = ensureWorldlineState(target);
       const lineId = lineIds.find(id => !targetState.destroyedLines.includes(id)) || `现世前影:${Date.now()}`;
@@ -369,11 +435,17 @@ export class WorldlineAuthority extends plugin {
           const actorNajie = await Read_najie(actorId);
           actorNajie.时间线封锁 = actor.纳戒封锁;
           await Write_najie(actorId, actorNajie);
-          return e.reply('路尽级力量沿因果反斩，你的法身、真身与神魂一并被抹灭。');
+          return e.reply([
+            '路尽级力量沿因果反斩，你的法身、真身与神魂一并被抹灭。',
+            ...formatCausalDebtResult(result.debt),
+          ].join('\n'));
         }
-        return e.reply(result.outcome === 'body_clash'
-          ? '目标当世本体循古史波动降临，双方权柄同级，本次改写转化为本体对峙。'
-          : '目标境界压过施术者，过去法身自行显化并挡下了古史打击。');
+        return e.reply([
+          result.outcome === 'body_clash'
+            ? '目标当世本体循古史波动降临，双方权柄同级，本次改写转化为本体对峙。'
+            : '目标境界压过施术者，过去法身自行显化并挡下了古史打击。',
+          ...formatCausalDebtResult(result.debt),
+        ].join('\n'));
       }
 
       let effect = { text: '该时间线已经从古史中熄灭。' };
@@ -386,7 +458,7 @@ export class WorldlineAuthority extends plugin {
         `结果：${result.outcome === 'line_only' ? '仅打灭一条过去时间线，仙帝真身不受影响。' : effect.text}`,
         result.line?.presentEffect === 'quasi_emperor_flaw' ? '准仙帝现世道果受到牵连，新增一道古史创伤。' : '',
         result.line?.allLinesDestroyed ? '目标的所有可见时间线均已熄灭；若当世再陷永寂，将绝无复生可能。' : '',
-        `因果债 +${result.debt.delta}，当前${result.debt.debt}（${result.debt.tier.name}）。`,
+        ...formatCausalDebtResult(result.debt),
       ].filter(Boolean).join('\n'));
     });
   }
@@ -419,7 +491,7 @@ export class WorldlineAuthority extends plugin {
         '【映照诸天·重塑形神】',
         `${actor.名号}以路尽之光重聚${target.名号}的肉身与神魂。`,
         `目标恢复至${rebuilt.currentHp}点生命，练气存档与纳戒重新可用。`,
-        `施术者承受因果债 +${debt.delta}。`,
+        ...formatCausalDebtResult(debt),
       ].join('\n'));
     });
   }

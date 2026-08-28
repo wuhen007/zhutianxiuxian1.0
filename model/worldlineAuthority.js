@@ -1,7 +1,11 @@
 import { getRealmAuthorityLevel, getRealmAuthorityPath, lowerRealmAuthority } from './realmAuthority.js';
 
-export const WORLDLINE_STATE_VERSION = 1;
+export const WORLDLINE_STATE_VERSION = 2;
 export const BREAK_KING_EMPEROR_RETRY_COOLDOWN_MS = 30 * 60 * 1000;
+export const CAUSAL_DEBT_BACKLASH_THRESHOLD = 200;
+export const TIME_RIVER_BACKLASH_BOLTS = 20;
+export const TIME_RIVER_BACKLASH_DAMAGE_RATIO = 1.2;
+export const WORLDLINE_WITHDRAWAL_BLOCK_MS = 12 * 60 * 60 * 1000;
 
 export const PRE_QUASI_EMPEROR_REALMS = Object.freeze({
   mijing: Object.freeze({ field: 'mijinglevel_id', realmId: 19, targetRealmId: 20, name: '秘境体系' }),
@@ -46,6 +50,7 @@ export function ensureWorldlineState(player) {
   old.tribulations = old.tribulations && typeof old.tribulations === 'object' ? old.tribulations : {};
   old.history = Array.isArray(old.history) ? old.history : [];
   old.causalDebt = Math.max(0, number(old.causalDebt));
+  old.withdrawalBlockedUntil = Math.max(0, number(old.withdrawalBlockedUntil));
   old.noReturn = Boolean(old.noReturn);
   player.时间线权能 = old;
   return old;
@@ -290,12 +295,7 @@ export function getCausalDebtTier(debt) {
   return { level: 0, name: '因果平稳', effect: '尚未形成显著反噬' };
 }
 
-export function addCausalDebt(player, amount, reason, now = Date.now()) {
-  const state = ensureWorldlineState(player);
-  const delta = Math.max(0, number(amount));
-  state.causalDebt += delta;
-  state.history.push({ type: '因果债', amount: delta, reason: reason || '', at: now });
-  trimHistory(state.history);
+function updateCausalDebtProjection(player, state, now = Date.now()) {
   const tier = getCausalDebtTier(state.causalDebt);
   player.因果反噬 = { debt: state.causalDebt, ...tier, updatedAt: now };
   if (tier.level >= 2) {
@@ -305,8 +305,101 @@ export function addCausalDebt(player, amount, reason, now = Date.now()) {
       related: collectRelatedNames(player),
       updatedAt: now,
     };
+  } else {
+    delete player.因果牵连;
   }
-  return { debt: state.causalDebt, delta, tier };
+  return tier;
+}
+
+export function getWorldlineWithdrawalBlock(player, now = Date.now()) {
+  const state = ensureWorldlineState(player);
+  const remainingMs = Math.max(0, state.withdrawalBlockedUntil - now);
+  return {
+    blocked: remainingMs > 0,
+    until: state.withdrawalBlockedUntil,
+    remainingMs,
+  };
+}
+
+export function resolveCausalDebtBacklash(player, now = Date.now()) {
+  const state = ensureWorldlineState(player);
+  if (state.causalDebt <= CAUSAL_DEBT_BACKLASH_THRESHOLD) {
+    return { triggered: false, debt: state.causalDebt };
+  }
+
+  const maxHp = Math.max(1, number(player.血量上限, number(player.血气上限, 1)));
+  const damagePerBolt = Math.ceil(maxHp * TIME_RIVER_BACKLASH_DAMAGE_RATIO);
+  const currentHp = Math.max(0, number(player.当前血量, maxHp));
+  const totalDamage = damagePerBolt * TIME_RIVER_BACKLASH_BOLTS;
+  player.当前血量 = Math.max(0, currentHp - totalDamage);
+  const killed = player.当前血量 <= 0;
+  if (killed) {
+    player.道伤 = Math.max(0, number(player.道伤)) + 2;
+    state.withdrawalBlockedUntil = Math.max(
+      state.withdrawalBlockedUntil,
+      now + WORLDLINE_WITHDRAWAL_BLOCK_MS,
+    );
+  }
+  const result = {
+    triggered: true,
+    bolts: TIME_RIVER_BACKLASH_BOLTS,
+    damagePerBolt,
+    totalDamage,
+    killed,
+    blockedUntil: killed ? state.withdrawalBlockedUntil : 0,
+  };
+  state.history.push({ type: '时间长河雷劫', ...result, at: now });
+  trimHistory(state.history);
+  return result;
+}
+
+export function getCausalDebtReductionRate(player) {
+  const level = getRealmAuthorityLevel(player);
+  if (level >= 23) return Number.POSITIVE_INFINITY;
+  if (level >= 22) return 5;
+  if (level >= 21) return 3;
+  if (level >= 20) return 1.5;
+  return 0;
+}
+
+export function reduceCausalDebtWithEraAccumulation(player, requestedAmount = 1, now = Date.now()) {
+  const state = ensureWorldlineState(player);
+  const rate = getCausalDebtReductionRate(player);
+  if (rate <= 0) return { ok: false, reason: 'authority', debt: state.causalDebt, rate };
+  if (state.causalDebt <= 0) return { ok: false, reason: 'no_debt', debt: 0, rate };
+
+  if (!Number.isFinite(rate)) {
+    const reduced = state.causalDebt;
+    state.causalDebt = 0;
+    const tier = updateCausalDebtProjection(player, state, now);
+    state.history.push({ type: '纪元消债', spent: 0, reduced, rate: 'free', at: now });
+    trimHistory(state.history);
+    return { ok: true, spent: 0, reduced, debt: 0, rate, tier, costFree: true };
+  }
+
+  const requested = Math.max(1, Math.floor(number(requestedAmount, 1)));
+  const available = Math.max(0, Math.floor(number(player.纪元积累)));
+  if (available <= 0) return { ok: false, reason: 'insufficient', debt: state.causalDebt, rate, available };
+  const spent = Math.min(requested, available, Math.ceil(state.causalDebt / rate));
+  const reduced = Math.min(state.causalDebt, spent * rate);
+  player.纪元积累 = available - spent;
+  state.causalDebt = Math.max(0, state.causalDebt - reduced);
+  const tier = updateCausalDebtProjection(player, state, now);
+  state.history.push({ type: '纪元消债', spent, reduced, rate, at: now });
+  trimHistory(state.history);
+  return { ok: true, spent, reduced, debt: state.causalDebt, rate, tier, costFree: false };
+}
+
+export function addCausalDebt(player, amount, reason, now = Date.now()) {
+  const state = ensureWorldlineState(player);
+  const costFree = getRealmAuthorityLevel(player) >= 23;
+  const delta = costFree ? 0 : Math.max(0, number(amount));
+  state.causalDebt += delta;
+  state.history.push({ type: '因果债', amount: delta, reason: reason || '', at: now });
+  trimHistory(state.history);
+  const tier = updateCausalDebtProjection(player, state, now);
+  const backlash = delta > 0 ? resolveCausalDebtBacklash(player, now) : { triggered: false };
+  return { debt: state.causalDebt, delta, tier, backlash, costFree };
 }
 
 export function collectRelatedNames(player) {
@@ -488,7 +581,9 @@ export function getWorldlineStatus(player) {
     destroyedLines: state.destroyedLines,
     causalDebt: state.causalDebt,
     debtTier: getCausalDebtTier(state.causalDebt),
+    debtReductionRate: getCausalDebtReductionRate(player),
     withdrawalLimit: getWithdrawalLimit(player),
+    withdrawalBlockedUntil: state.withdrawalBlockedUntil,
     shapeSpiritDestroyed: isShapeSpiritDestroyed(player),
     noReturn: state.noReturn,
   };

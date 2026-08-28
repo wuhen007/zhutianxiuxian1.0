@@ -6,20 +6,25 @@ import test from 'node:test';
 
 import {
   addCausalDebt,
+  CAUSAL_DEBT_BACKLASH_THRESHOLD,
   canEnterQuasiEmperor,
   destroyWorldline,
   ensureWorldlineState,
   getBreakKingEmperorGate,
   getCausalDebtTier,
+  getWorldlineWithdrawalBlock,
   isShapeSpiritDestroyed,
   markBreakKingEmperorTribulationPassed,
   rebuildShapeSpirit,
   recordTimelineWithdrawal,
+  reduceCausalDebtWithEraAccumulation,
   removeArtifactRankingEntries,
   resolveAncientHistoryStrike,
   resolveBreakKingEmperorTribulation,
   resolveBreakKingEmperorFailure,
   selectWithdrawableLines,
+  TIME_RIVER_BACKLASH_BOLTS,
+  WORLDLINE_WITHDRAWAL_BLOCK_MS,
 } from '../model/worldlineAuthority.js';
 import {
   extractArchiveItem,
@@ -64,6 +69,7 @@ test('完整破王成帝战斗接入三体系共用结算且没有重复随机�
   assert.equal(battleSource.includes('getBreakKingEmperorGate(player, player.自创修炼体系?.route)'), true);
   assert.equal(battleSource.includes('resolveBreakKingEmperorFailure(player, emperorGate.route)'), true);
   assert.equal(battleSource.includes('player[passed.gate.config.field] = passed.gate.config.targetRealmId'), true);
+  assert.equal(battleSource.includes('界海历练次数'), true);
   assert.equal(authoritySource.includes('breakKingEmperor'), false);
   assert.equal(authoritySource.includes('await Writeit(erased.items)'), true);
 });
@@ -165,6 +171,85 @@ test('因果债逐级引发绝灵、关系牵连、位面损坏与厄土大祭',
   const result = addCausalDebt(player, 320, '过度干涉', 1000);
   assert.equal(result.tier.level, 2);
   assert.deepEqual(player.因果牵连.related, ['道侣甲', '诸天宗']);
+});
+
+test('因果债严格超过200后承受二十道血量上限120%的雷罚', () => {
+  const now = 1_000_000;
+  const player = {
+    mijinglevel_id: 20,
+    血量上限: 1000,
+    当前血量: 1000,
+    道伤: 1,
+  };
+  const threshold = addCausalDebt(player, CAUSAL_DEBT_BACKLASH_THRESHOLD, '触碰时间线', now);
+  assert.equal(threshold.backlash.triggered, false);
+  assert.equal(player.当前血量, 1000);
+
+  const punished = addCausalDebt(player, 1, '越过因果界限', now);
+  assert.equal(punished.backlash.triggered, true);
+  assert.equal(punished.backlash.bolts, TIME_RIVER_BACKLASH_BOLTS);
+  assert.equal(punished.backlash.damagePerBolt, 1200);
+  assert.equal(punished.backlash.totalDamage, 24_000);
+  assert.equal(player.当前血量, 0);
+  assert.equal(player.道伤, 3);
+  assert.equal(punished.backlash.blockedUntil, now + WORLDLINE_WITHDRAWAL_BLOCK_MS);
+  assert.equal(getWorldlineWithdrawalBlock(player, now + WORLDLINE_WITHDRAWAL_BLOCK_MS - 1).blocked, true);
+  assert.equal(getWorldlineWithdrawalBlock(player, now + WORLDLINE_WITHDRAWAL_BLOCK_MS).blocked, false);
+});
+
+test('纪元积累按准仙帝、仙帝、祭道倍率消债，祭道之上不沾因果', () => {
+  const belowQuasiEmperor = { mijinglevel_id: 19, xiangulevel_id: 20, huafenlevel_id: 20, 纪元积累: 10 };
+  ensureWorldlineState(belowQuasiEmperor).causalDebt = 100;
+  assert.equal(reduceCausalDebtWithEraAccumulation(belowQuasiEmperor, 1, 1000).reason, 'authority');
+
+  const quasiEmperor = { mijinglevel_id: 20, 纪元积累: 10 };
+  ensureWorldlineState(quasiEmperor).causalDebt = 100;
+  const quasiResult = reduceCausalDebtWithEraAccumulation(quasiEmperor, 4, 1000);
+  assert.deepEqual(
+    { spent: quasiResult.spent, reduced: quasiResult.reduced, debt: quasiResult.debt },
+    { spent: 4, reduced: 6, debt: 94 },
+  );
+  assert.equal(quasiEmperor.纪元积累, 6);
+
+  const emperor = { mijinglevel_id: 21, 纪元积累: 3 };
+  ensureWorldlineState(emperor).causalDebt = 35;
+  const emperorResult = reduceCausalDebtWithEraAccumulation(emperor, 2, 1000);
+  assert.equal(emperorResult.rate, 3);
+  assert.equal(emperorResult.debt, 29);
+
+  const sacrifice = { mijinglevel_id: 22, 纪元积累: 2 };
+  ensureWorldlineState(sacrifice).causalDebt = 35;
+  const sacrificeResult = reduceCausalDebtWithEraAccumulation(sacrifice, 2, 1000);
+  assert.equal(sacrificeResult.rate, 5);
+  assert.equal(sacrificeResult.debt, 25);
+
+  const beyond = { mijinglevel_id: 23, 纪元积累: 2 };
+  const freeDebt = addCausalDebt(beyond, 999, '逆转古史', 1000);
+  assert.equal(freeDebt.costFree, true);
+  assert.equal(freeDebt.delta, 0);
+  ensureWorldlineState(beyond).causalDebt = 50;
+  const cleared = reduceCausalDebtWithEraAccumulation(beyond, 1, 2000);
+  assert.equal(cleared.costFree, true);
+  assert.equal(cleared.debt, 0);
+  assert.equal(beyond.纪元积累, 2);
+});
+
+test('古史打击要求三大体系任一达到准仙帝', () => {
+  const target = { 名号: '古史目标', mijinglevel_id: 1 };
+  const options = { type: '功法', name: '古经', lineId: '1', availableLineIds: ['1'], now: 1000 };
+  const qualified = [
+    { mijinglevel_id: 20 },
+    { xiangulevel_id: 21 },
+    { huafenlevel_id: 21 },
+  ];
+  for (const actor of qualified) {
+    assert.equal(resolveAncientHistoryStrike(actor, structuredClone(target), options).ok, true);
+  }
+
+  const below = { mijinglevel_id: 19, xiangulevel_id: 20, huafenlevel_id: 20 };
+  const denied = resolveAncientHistoryStrike(below, structuredClone(target), options);
+  assert.equal(denied.ok, false);
+  assert.equal(denied.reason, 'authority');
 });
 
 test('时间线支取读取真实备份快照并以时间线键防止重复领取', () => {
