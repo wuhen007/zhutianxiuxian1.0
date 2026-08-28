@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   applyImperialPassSortie,
   createForeignProdigy,
@@ -11,6 +12,17 @@ import {
   isImperialPassWaveComplete,
   rankImperialPassPrestige,
 } from '../model/foreignImperialPass.js';
+
+test('帝关城破通过标准毁灭记录接入自然修复', () => {
+  const source = fs.readFileSync(new URL('../apps/tasks/ForeignImperialPass.js', import.meta.url), 'utf8');
+  const start = source.indexOf('async breachImperialPass');
+  const end = source.indexOf('async forceImperialPass', start);
+  const breachBody = source.slice(start, end);
+
+  assert.match(breachBody, /markPlaneDestroyed/);
+  assert.match(breachBody, /PLANE_DESTRUCTION_SOURCES\.FOREIGN_IMPERIAL_PASS/);
+  assert.doesNotMatch(breachBody, /planes\.九天十地\s*=\s*0|planes\.遮天位面\s*=\s*0/);
+});
 
 test('圣王与虚道按元神表统一使用圣人王公式', () => {
   assert.equal(isImperialPassThreshold({ mijinglevel_id: 13 }), true);

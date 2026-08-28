@@ -48,10 +48,19 @@ import {
   XIANGU_LIFECYCLE,
   advanceXianguLifecycle,
   getXianguOpeningAttemptProbability,
+  isXianguBloomCheckDue,
+  scheduleXianguBloomCheck,
   setXianguOpeningProbability,
-  shouldCheckXianguBloom,
   startXianguPreparation,
 } from './xianguLifecycle.js';
+import {
+  CHENGXIAN_ROAD_LIFECYCLE,
+  closeChengxianRoad,
+  isChengxianRoadCheckDue,
+  isChengxianRoadCloseDue,
+  markChengxianRoadCheckFailed,
+  markChengxianRoadOpened,
+} from '../../model/chengxianRoad.js';
 import {
   advanceSpecialTianjiaoEvolution,
   attemptTianjiaoBreakthrough,
@@ -218,7 +227,7 @@ export class EraChangeTask extends plugin {
     if (
       lifecycle.transition === null &&
       lifecycle.stage === 'closed' &&
-      shouldCheckXianguBloom(previousWorldYear, worldYear)
+      isXianguBloomCheckDue(weimianData, previousWorldYear, worldYear)
     ) {
       const attemptProbability = getXianguOpeningAttemptProbability(weimianData);
       if (Math.random() < attemptProbability) {
@@ -229,7 +238,9 @@ export class EraChangeTask extends plugin {
       } else {
         const previousProbability = weimianData.仙古秘境开启概率;
         setXianguOpeningProbability(weimianData, attemptProbability);
+        scheduleXianguBloomCheck(weimianData, worldYear);
         changed ||= previousProbability !== weimianData.仙古秘境开启概率;
+        changed = true;
       }
     } else if (lifecycle.transition) {
       notice = lifecycle.transition;
@@ -284,6 +295,84 @@ export class EraChangeTask extends plugin {
 
     await this.broadcastMessage(message);
     return lifecycle;
+  }
+
+  async processChengxianRoad(weimianData, {
+    previousWorldYear,
+    worldYear,
+    save,
+  }) {
+    let changed = false;
+    let notice = null;
+
+    if (isChengxianRoadCloseDue(weimianData, worldYear)) {
+      closeChengxianRoad(weimianData);
+      changed = true;
+      notice = 'closed';
+    }
+
+    // A road that just closed waits for the next clock tick before rolling again.
+    if (
+      !notice &&
+      isChengxianRoadCheckDue(weimianData, previousWorldYear, worldYear)
+    ) {
+      const highLevelPlayers = await this.checkHighLevelPlayers();
+      const eligiblePlayers = highLevelPlayers.filter(player => player.authorityLevel >= 16);
+      const baseProbability = 0.3;
+      const playerBonus = Math.min(eligiblePlayers.length * 0.05, 0.5);
+      const totalProbability = Math.min(baseProbability + playerBonus, 0.7);
+
+      if (Math.random() < totalProbability) {
+        markChengxianRoadOpened(weimianData, worldYear);
+        changed = true;
+        notice = 'opened';
+      } else {
+        const previousNextCheck = weimianData.成仙路下次判定总年份;
+        markChengxianRoadCheckFailed(weimianData, worldYear);
+        changed ||= previousNextCheck !== weimianData.成仙路下次判定总年份;
+      }
+
+      if (notice === 'opened') {
+        const realmNames = ['北斗星域', '飞仙星', '葬帝星', '紫微星域', '通天古星'];
+        const randomRealm = realmNames[Math.floor(Math.random() * realmNames.length)];
+        const message = [
+          '【仙路开启·万古惊变】',
+          `${randomRealm}上空，天穹骤然崩裂！`,
+          '一道横贯星河的璀璨仙路显化世间！',
+          '「轰隆隆——」',
+          '万道仙光垂落，照亮诸天万界！',
+          '仙域气息弥漫，长生物质喷涌！',
+          '「成仙路开启了！」',
+          '古史记载：',
+          '- 神话时代，帝尊曾率天庭部众踏仙路',
+          '- 太古末年，不死天皇沐浴帝血飞升',
+          '- 荒古岁月，狠人大帝一掌断仙路',
+          '而今，仙路再现，',
+          '红尘仙及以上的修士皆可尝试轰击仙路，踏入传说中的仙域！',
+          `本次仙路开启后${CHENGXIAN_ROAD_LIFECYCLE.REOPEN_COOLDOWN_YEARS}年内，不再进入新的开启判定。`,
+          '使用 #轰击成仙路 命令尝试进入仙域。',
+          '「这一世，谁能成仙？」',
+        ].join('\n');
+        if (changed) save?.();
+        await this.broadcastMessage(message);
+        return { changed, transition: notice };
+      }
+    }
+
+    if (changed) save?.();
+    if (notice === 'closed') {
+      await this.broadcastMessage([
+        '【仙路闭合·万古沉寂】',
+        '千年时光转瞬即逝，璀璨的成仙路逐渐黯淡！',
+        '横贯星河的仙路缓缓闭合，最终消失在虚空之中……',
+        '「仙路已闭，待有缘再开」',
+        '「这一世，终究无人成仙？」',
+        '仙路闭合，诸天万界重归沉寂，',
+        '唯有等待下一次仙路开启……',
+        `本次仙路自开启起${CHENGXIAN_ROAD_LIFECYCLE.REOPEN_COOLDOWN_YEARS}年内，不再进入新的开启判定。`,
+      ].join('\n'));
+    }
+    return { changed, transition: notice };
   }
 
   async processDarkRevoltDestruction(worldYear) {
@@ -945,31 +1034,6 @@ async checkJuelingLoss(e) {
         console.error('读取位面数据失败:', err);
       }
       
-      // ==== 新增：检查并关闭成仙路 ====
-      // 检查成仙路是否开启，如果开启则关闭（因为已经过去1000年）
-      if (weimianData.成仙路 === 1) {
-        weimianData.成仙路 = 0; // 关闭成仙路
-
-        // 保存位面数据
-        try {
-          fs.writeFileSync(weimianPath, JSON.stringify(weimianData, null, 4), 'utf8');
-        } catch (fileErr) {
-          console.error('保存位面数据失败:', fileErr);
-        }
-
-        // 广播成仙路关闭消息
-        const closeMessage = [
-          `【仙路闭合·万古沉寂】`,
-          `千年时光转瞬即逝，璀璨的成仙路逐渐黯淡！`,
-          `横贯星河的仙路缓缓闭合，最终消失在虚空之中……`,
-          `「仙路已闭，待有缘再开」`,
-          `「这一世，终究无人成仙？」`,
-          `仙路闭合，诸天万界重归沉寂，`,
-          `唯有等待下一个仙路开启的纪元……`
-        ].join('\n');
-
-        await this.broadcastMessage(closeMessage);
-      }
   // ==== 绝灵时代物品损失处理 ====
 let lossMessage = '';
 if (index === 4) { // 当前是绝灵时代
@@ -1003,68 +1067,6 @@ if (index === 4) { // 当前是绝灵时代
       // 广播损失信息
       if (lossMessage) {
         await this.broadcastMessage(lossMessage);
-      }
-      // ==== 新增：成仙路开启检查 ====
-      // 每2000年检查一次
-      if (years % 2000 === 0) {
-        // 获取高境界玩家（红尘仙及以上）
-        const highLevelPlayers = await this.checkHighLevelPlayers();
-        const eligiblePlayers = highLevelPlayers.filter(p => p.authorityLevel >= 16);
-        
-        // 计算开启概率
-        const baseProbability = 0.3; // 基础概率30%
-        const playerBonus = Math.min(eligiblePlayers.length * 0.05, 0.5); // 每个玩家增加5%，最高50%
-        const totalProbability = Math.min(baseProbability + playerBonus, 0.7); // 最高70%
-        
-        // 随机决定是否开启
-        if (Math.random() < totalProbability) {
-          // 更新成仙路状态
-          weimianData.成仙路 = 1;
-          
-          // 保存位面数据
-          try {
-            fs.writeFileSync(weimianPath, JSON.stringify(weimianData, null, 4), 'utf8');
-          } catch (fileErr) {
-            console.error('保存位面数据失败:', fileErr);
-          }
-          
-          // 构建成仙路开启文案
-          const realmNames = [
-            "北斗星域",
-            "飞仙星",
-            "葬帝星",
-            "紫微星域",
-            "通天古星"
-          ];
-          const randomRealm = realmNames[Math.floor(Math.random() * realmNames.length)];
-          
-          const message = [
-            `【仙路开启·万古惊变】`,
-            `${randomRealm}上空，天穹骤然崩裂！`,
-            `一道横贯星河的璀璨仙路显化世间！`,
-            `「轰隆隆——」`,
-            `万道仙光垂落，照亮诸天万界！`,
-            `仙域气息弥漫，长生物质喷涌！`,
-            `「成仙路开启了！」`,
-            `「这一世，终于等到仙路开启！」`,
-            `古史记载：`,
-            `- 神话时代，帝尊曾率天庭部众踏仙路`,
-            `- 太古末年，不死天皇沐浴帝血飞升`,
-            `- 荒古岁月，狠人大帝一掌断仙路`,
-            `而今，仙路再现，`,
-            `红尘仙及以上的修士皆可尝试轰击仙路，`,
-            `踏入传说中的仙域！`,
-            `使用 #轰击成仙路 命令尝试进入仙域`,
-            `（需红尘仙境界及以上）`,
-            `概率计算：`,
-            `基础概率：30%`,
-            `高境界修士加成：${eligiblePlayers.length}人 × 5% = ${(playerBonus * 100).toFixed(0)}%`,
-            `总概率：${(totalProbability * 100).toFixed(0)}%`,
-            `「这一世，谁能成仙？」`
-          ].join('\n');
-          
-          await this.broadcastMessage(message);
-        }
       }
       // 修复核心：统一处理年份溢出
       const totalEras = this.eras.length;
@@ -1115,6 +1117,17 @@ if (index === 4) { // 当前是绝灵时代
           '发送 #域外灾厄 查看，击败后可获得两组随机战利品、业力消减与位面青睐。',
         ].join('\n'));
       }
+      await this.processChengxianRoad(weimianData, {
+        previousWorldYear,
+        worldYear: currentWorldYear,
+        save: () => {
+          try {
+            fs.writeFileSync(weimianPath, JSON.stringify(weimianData, null, 4), 'utf8');
+          } catch (err) {
+            console.error('保存位面数据失败:', err);
+          }
+        },
+      });
       await this.processDaoTreasureLifecycle(currentWorldYear, epoch);
       await this.processXianguLifecycle(weimianData, {
         previousWorldYear,
@@ -1247,10 +1260,6 @@ if (index === 4) { // 当前是绝灵时代
         await this.broadcastMessage(message);
       }
       
-      // ==== 诡异大祭8纪元自动开启 ====
-      // 检查是否在时代变迁时触发诡异大祭
-      await this.checkAndTriggerDajie(epoch);
-      
       // 检查是否离开绝灵时代
       if (oldIndex === 4 && index !== 4) {
         const { restoredCount } = lifespanTransition;
@@ -1306,7 +1315,7 @@ if (index === 4) { // 当前是绝灵时代
     if (repaired.length > 0) {
       await this.broadcastMessage([
         '【诸天位面·岁月回流】',
-        `诸天纪年抵达修复节点，${repaired.length} 个被禁区至尊打爆的位面重新凝聚。`,
+        `诸天纪年抵达修复节点，${repaired.length} 个可自然修复的残破位面重新凝聚。`,
         `恢复位面：${repaired.join('、')}`,
         `当前诸天纪年：${worldYear}年`,
       ].join('\n'));
@@ -1878,26 +1887,6 @@ if (index === 4) { // 当前是绝灵时代
         console.error('读取位面数据失败:', err);
       }
       
-      if (weimianData.成仙路 === 1) {
-        weimianData.成仙路 = 0;
-
-        try {
-          fs.writeFileSync(weimianPath, JSON.stringify(weimianData, null, 4), 'utf8');
-        } catch (fileErr) {
-          console.error('保存位面数据失败:', fileErr);
-        }
-
-        const closeMessage = [
-          `【仙路闭合·万古沉寂】`,
-          `千年时光转瞬即逝，璀璨的成仙路逐渐黯淡！`,
-          `横贯星河的仙路缓缓闭合，最终消失在虚空之中……`,
-          `「仙路已闭，待有缘再开」`,
-          `「这一世，终究无人成仙？」`
-        ].join('\n');
-
-        await this.broadcastMessage(closeMessage);
-      }
-      
       const totalEras = this.eras.length;
       let eraPass = 0;
       
@@ -1926,6 +1915,17 @@ if (index === 4) { // 当前是绝灵时代
         index,
         () => this.persistEraCurrent(era, { index, years, epoch, totalYears: currentWorldYear }),
       );
+      await this.processChengxianRoad(weimianData, {
+        previousWorldYear,
+        worldYear: currentWorldYear,
+        save: () => {
+          try {
+            fs.writeFileSync(weimianPath, JSON.stringify(weimianData, null, 4), 'utf8');
+          } catch (err) {
+            console.error('保存位面数据失败:', err);
+          }
+        },
+      });
       await this.processDaoTreasureLifecycle(currentWorldYear, epoch);
 
       await this.processXianguLifecycle(weimianData, {
@@ -2153,6 +2153,17 @@ if (index === 4) { // 当前是绝灵时代
       } catch (err) {
         console.error('读取位面数据失败:', err);
       }
+      await this.processChengxianRoad(weimianData, {
+        previousWorldYear,
+        worldYear: currentWorldYear,
+        save: () => {
+          try {
+            fs.writeFileSync(weimianPath, JSON.stringify(weimianData, null, 4), 'utf8');
+          } catch (err) {
+            console.error('保存位面数据失败:', err);
+          }
+        },
+      });
       await this.processXianguLifecycle(weimianData, {
         previousWorldYear,
         worldYear: currentWorldYear,

@@ -31,6 +31,10 @@ import {
   rankImperialPassPrestige,
 } from '../../model/foreignImperialPass.js';
 import { adjustDaoHeart } from '../../model/daoHeart.js';
+import {
+  markPlaneDestroyed,
+  PLANE_DESTRUCTION_SOURCES,
+} from '../../model/planeDestruction.js';
 
 const STATE_PATH = path.join(__PATH.data_path, 'foreign_imperial_pass.json');
 const PLANE_PATH = path.join(__PATH.data_path, '位面.json');
@@ -542,10 +546,13 @@ export class ForeignImperialPass extends plugin {
     const state = readState();
     if (state.status === 'ended') return false;
     try {
-      const planes = JSON.parse(fs.readFileSync(PLANE_PATH, 'utf8'));
-      planes.九天十地 = 0;
-      planes.遮天位面 = 0;
-      fs.writeFileSync(PLANE_PATH, JSON.stringify(planes, null, 4), 'utf8');
+      for (const planeName of ['九天十地', '遮天位面']) {
+        markPlaneDestroyed(PLANE_PATH, planeName, {
+          source: PLANE_DESTRUCTION_SOURCES.FOREIGN_IMPERIAL_PASS,
+          actor: '异域叩击帝关',
+          worldYear: year,
+        });
+      }
     } catch (error) {
       console.error('[异域叩关] 写入残破位面失败:', error);
     }
