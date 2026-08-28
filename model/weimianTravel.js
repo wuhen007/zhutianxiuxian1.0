@@ -74,6 +74,9 @@ export const DIMENSION_BREAKING_POWER_BY_AUTHORITY = Object.freeze({
   25: 150,
 });
 
+export const SAN_SHI_TONG_GUAN_NAME = '三世铜棺';
+export const SAN_SHI_TONG_GUAN_MIN_AUTHORITY = 20;
+
 export const DIMENSION_BARRIER_BASE_MINUTES = 8 * 60;
 
 // 圣墟位面三级：小阴间（映照绝巅 11）/ 大阴间（13）/ 阳间（17）
@@ -123,6 +126,14 @@ export function getDimensionBreakingPower(player) {
   if (authority <= 0) return 0;
   if (authority >= 25) return DIMENSION_BREAKING_POWER_BY_AUTHORITY[25];
   return DIMENSION_BREAKING_POWER_BY_AUTHORITY[authority] || 0;
+}
+
+export function canUseSanShiTongGuanPassage(player, toLocation, coffinCount = 0) {
+  const location = getLocationName(toLocation);
+  if (location !== '上苍之上') return false;
+  if (getRealmAuthorityLevel(player) < SAN_SHI_TONG_GUAN_MIN_AUTHORITY) return false;
+  if (Number(coffinCount) < 1) return false;
+  return getDimensionBreakingPower(player) < DIMENSION_BARRIER_POWER_REQUIREMENTS[location];
 }
 
 export function getDimensionTradeCompatibility(fromPlayer, toPlayer) {

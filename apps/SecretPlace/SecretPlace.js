@@ -77,9 +77,11 @@ import {
     COORDINATE_CLUE_COST,
     DEFAULT_KNOWN_LOCATIONS,
     PLACE_LOCATION_MAP,
+    SAN_SHI_TONG_GUAN_NAME,
     SPECIAL_LOCATIONS,
     TRAVEL_REDUCE_MAX,
     calcRealmReducePct,
+    canUseSanShiTongGuanPassage,
     consumeTravelWind,
     getBaseTravelThreshold,
     getBodyTravelQuote,
@@ -116,6 +118,14 @@ import {
 } from '../../model/planeDestruction.js';
 import { replyOfficialMessage } from '../../model/officialMessage.js';
 import { applySecretPlaceNotificationContext } from '../../model/secretPlaceNotification.js';
+import {
+    calculateShangcangDuration,
+    deductShangcangCost,
+    formatShangcangCost,
+    getShangcangCostShortage,
+    SHANGCANG_NORMAL_ACTION,
+    SHANGCANG_PLANE_ID,
+} from '../../model/shangcangDungeon.js';
 
 function isWeiMianDestroyed(planeName) {
     return getPlaneDestructionInfo(data.filePathMap.weimianList, planeName).destroyed;
@@ -300,6 +310,10 @@ export class SecretPlace extends plugin {
           {
           reg: '^#上苍之上',
           fnc: 'shangcang',
+        },
+        {
+          reg: '^#前往上苍之上.*$',
+          fnc: 'GoShangcang',
         },
           {
           reg: '^#下界八域',
@@ -594,10 +608,15 @@ async goToLocation(e) {
     if (!flag) {
         return false;
     }
+
+    const sanShiTongGuanCount = location === '上苍之上'
+        ? await exist_najie_thing(usr_qq, SAN_SHI_TONG_GUAN_NAME, '道具')
+        : 0;
+    const useSanShiTongGuan = canUseSanShiTongGuanPassage(player, location, sanShiTongGuanCount);
     
     // ========== 坐标记忆校验（凡间默认已知，其余需先记坐标；五色祭坛激活可免记直抵遮天） ==========
     const altarBypassZhatian = (location === '遮天位面' && player.五色祭坛激活 === 1);
-    if (!hasCoordinate(player, location) && !altarBypassZhatian) {
+    if (!hasCoordinate(player, location) && !altarBypassZhatian && !useSanShiTongGuan) {
         return e.reply([
             `【坐标未知·星路迷茫】`,
             `你并不知道「${location}」的星空坐标，无法定位彼岸。`,
@@ -719,8 +738,11 @@ async goToLocation(e) {
 
     // ========== 通用位面准入门槛检查（接引/送往复用同一套逻辑） ==========
     const threshold = await this.checkLocationThreshold(player, location);
-    if (!threshold.ok) {
-        return e.reply(threshold.msgs);
+    if (!threshold.ok && !useSanShiTongGuan) {
+        const coffinHint = location === '上苍之上'
+            ? ['', '※ 准仙帝可携带一具三世铜棺，以 #穿梭上苍之上 跨越此重维度壁垒。']
+            : [];
+        return e.reply([...threshold.msgs, ...coffinHint].join('\n'));
     }
     // =====================================================================
     
@@ -789,6 +811,15 @@ async goToLocation(e) {
         ].join('\n'));
     }
 
+    if (useSanShiTongGuan) {
+        const currentCount = await exist_najie_thing(usr_qq, SAN_SHI_TONG_GUAN_NAME, '道具');
+        if (currentCount < 1) {
+            return e.reply('三世铜棺的气机已经消失，失去彼岸坐标后，上苍界壁重新闭合。');
+        }
+        await Add_najie_thing(usr_qq, SAN_SHI_TONG_GUAN_NAME, '道具', -1);
+        allMsgs.push('【三世铜棺·贯穿上苍】铜棺映照前世、今世与来世，替你锚定上苍坐标并撞开第一重维度壁垒。三世铜棺 -1。');
+    }
+
     let windResult = { consumed: false, travelTime, reduction: 0, remainingUses: Number(player.天外清风加速次数) || 0 };
     let shipResult = { travelTime, reduction: 0 };
     if (travelTime > 0) {
@@ -815,6 +846,19 @@ async goToLocation(e) {
     let travelMsg = [];
 
     switch (true) {
+        case useSanShiTongGuan:
+            startMsg = [
+                `你立于三世铜棺之上，棺身承载三世道痕，贯穿诸天与上苍的维度壁垒`,
+                `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
+                `从${fromLocation}向上苍之上进发`,
+                `预计需要${travelTime}分钟抵达`
+            ];
+            travelMsg = [
+                `三世铜棺在维度夹层中前行，亿万世界化作身后的微光`,
+                `上苍法则沿棺壁流淌，为你的真身隔开界壁碾压`,
+                `前方浮现上苍之上的浩瀚疆域，彼岸将至`
+            ];
+            break;
         case player.power_place === 0 && targetLocation === 1: // 凡间→仙界
             startMsg = [
                 `你祭出飞剑，化作一道流光直冲云霄`,
@@ -1018,7 +1062,8 @@ async goToLocation(e) {
         group_id: e.isGroup ? e.group_id : null,
         used_token: false, // 标记未使用传送次数
         tianwai_wind: windResult.consumed,
-        travel_protected: hasEquippedInnateTreasure(player, '虚天舟')
+        travel_protected: hasEquippedInnateTreasure(player, '虚天舟'),
+        san_shi_tong_guan: useSanShiTongGuan
     };
     
     // 保存到Redis
@@ -1290,6 +1335,48 @@ async xunbao(e) {
         let weizhi = data.shangcang_list;
         let img=await shangcangweizhi(e, weizhi, addres);
        e.reply(img)
+    }
+   async GoShangcang(e) {
+        if (!verc({ e })) return false;
+        let usr_qq = e.user_id.toString().replace('qg_', '');
+        usr_qq = await channel(usr_qq);
+        if (!await Go(e)) return false;
+        if (isWeiMianDestroyed('上苍之上')) return replyPlaneDestroyed(e, '上苍之上');
+
+        const player = await Read_player(usr_qq);
+        if (Number(player.power_place) !== SHANGCANG_PLANE_ID) return e.reply('你当前不在上苍之上');
+        const didian = e.msg.replace('#前往上苍之上', '').trim();
+        const weizhi = data.shangcang_list.find(item => item.name === didian);
+        if (!weizhi) return e.reply(`未知的上苍之上地点：${didian}，可前往魂河或天帝葬坑`);
+
+        const shortage = getShangcangCostShortage(player);
+        if (shortage) return e.reply(`${shortage[0]}不足，本次需要${formatShangcangCost()}`);
+        const timing = calculateShangcangDuration(player, data.minggeList);
+        deductShangcangCost(player);
+        player.lastDungeonType = '上苍之上';
+        player.lastDungeonName = didian;
+
+        const now = Date.now();
+        const action = {
+          action: SHANGCANG_NORMAL_ACTION,
+          start_time: now,
+          end_time: now + timing.durationMs,
+          time: timing.durationMs,
+          shutup: '1', working: '1', power_up: '1',
+          Place_action: '0', Place_actionplus: '1',
+          mojie: '1', xijie: '1', plant: '1', mine: '1',
+          Place_address: weizhi,
+          settled_count: 0,
+        };
+        applySecretPlaceNotificationContext(action, e, usr_qq);
+        await Write_player(usr_qq, player);
+        await redis.set(`xiuxian:player:${usr_qq}:action`, JSON.stringify(action));
+        return e.reply([
+          `【上苍之上·${didian}】`,
+          `已消耗：${formatShangcangCost()}`,
+          ...timing.messages,
+          `${timing.minutes}分钟后归来。`,
+        ].join('\n'));
     }
              //上苍之上
    async xiajie(e) {
@@ -3415,6 +3502,7 @@ if (action != null) {
     九天十地: `#前往九天十地${place}`,
     仙境:     `#镇守仙境${place}`,
     界海:     `#探索界海${place}`,
+    上苍之上: `#前往上苍之上${place}`,
     仙府:     `#探索仙府`,      // 仙府本身不带地名
   };
   const fullCmd = cmdMap[type];
@@ -3431,6 +3519,7 @@ if (action != null) {
   if (type === '九天十地') return this.Gojiutianshidi(e);
   if (type === '仙境')     return this.Gofairyrealm(e);
   if (type === '界海')     return this.Gojiehaiplace(e);
+  if (type === '上苍之上') return this.GoShangcang(e);
   if (type === '仙府')     return this.GoTimeplace(e);
 }
 // 接引玩家功能

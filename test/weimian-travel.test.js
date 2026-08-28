@@ -9,6 +9,7 @@ import {
   applyForbiddenSupremePlunder,
   buildForbiddenSupreme,
   calcRealmReducePct,
+  canUseSanShiTongGuanPassage,
   consumeTravelWind,
   ensureDefaultCoordinates,
   getBaseTravelThreshold,
@@ -201,6 +202,15 @@ test('维度壁垒按仙帝、祭道之上与唯一道之上分层准入', () =>
   assert.equal(getLocationThreshold({ xiangulevel_id: 24 }, '千维宙古界').ok, true);
   assert.equal(getLocationThreshold({ mijinglevel_id: 23 }, '万维梵宇界').ok, false);
   assert.equal(getLocationThreshold({ mijinglevel_id: 25 }, '神维丝线海').ok, true);
+});
+
+test('三世铜棺只为准仙帝开启上苍之上的单次通道', () => {
+  assert.equal(canUseSanShiTongGuanPassage({ mijinglevel_id: 19 }, '上苍之上', 1), false);
+  assert.equal(canUseSanShiTongGuanPassage({ mijinglevel_id: 20 }, '上苍之上', 0), false);
+  assert.equal(canUseSanShiTongGuanPassage({ mijinglevel_id: 20 }, '上苍之上', 1), true);
+  assert.equal(canUseSanShiTongGuanPassage({ xiangulevel_id: 21 }, '上苍之上', 1), true);
+  assert.equal(canUseSanShiTongGuanPassage({ huafenlevel_id: 21 }, '厄土高原', 1), false);
+  assert.equal(canUseSanShiTongGuanPassage({ mijinglevel_id: 21 }, '上苍之上', 1), false);
 });
 
 test('同层资产可流转，跨层赠送会被维度壁垒拦截', () => {

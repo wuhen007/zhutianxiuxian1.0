@@ -65,6 +65,7 @@ import {
   formatNajieMemoryDiscovery,
 } from '../../model/najieDropMemory.js';
 import { sendSecretPlaceNotification } from '../../model/secretPlaceNotification.js';
+import { isShangcangAction } from '../../model/shangcangDungeon.js';
 export class SecretPlaceTask extends plugin {
   constructor() {
     super({
@@ -174,6 +175,7 @@ export class SecretPlaceTask extends plugin {
 }
       //不为空，存在动作
       if (action != null) {
+        if (isShangcangAction(action)) return false;
         //最后发送的消息
         let msg = [];
         //动作结束时间

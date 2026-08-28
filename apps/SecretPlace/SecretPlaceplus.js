@@ -24,6 +24,14 @@ import {
   channel
 } from '../../model/xiuxian.js';
 import { applySecretPlaceNotificationContext } from '../../model/secretPlaceNotification.js';
+import {
+  calculateShangcangDuration,
+  deductShangcangCost,
+  formatShangcangCost,
+  getShangcangCostShortage,
+  SHANGCANG_ADDICTION_ACTION,
+  SHANGCANG_PLANE_ID,
+} from '../../model/shangcangDungeon.js';
 
 function isWeiMianDestroyed(planeName) {
   return getPlaneDestructionInfo(data.filePathMap.weimianList, planeName).destroyed;
@@ -61,9 +69,13 @@ export class SecretPlaceplus extends plugin {
           reg: '^#沉迷下界八域.*$',
           fnc: 'Goxiajie',
         },
-                         {
+        {
           reg: '^#沉迷九天十地.*$',
           fnc: 'Gojiutianshidi',
+        },
+        {
+          reg: '^#沉迷上苍之上.*$',
+          fnc: 'GoShangcang',
         },
         {
           reg: '^#沉迷收获$',
@@ -84,6 +96,75 @@ export class SecretPlaceplus extends plugin {
       return false;
     }
     return false;
+  }
+
+  async GoShangcang(e) {
+    if (!verc({ e })) return false;
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    const match = /^(魂河|天帝葬坑)(?:\*([1-9]\d*))?$/.exec(e.msg.replace('#沉迷上苍之上', '').trim());
+    if (!match) return e.reply('用法：#沉迷上苍之上魂河*次数 或 #沉迷上苍之上天帝葬坑*次数');
+    const count = Number(match[2] || 1);
+    if (!Number.isSafeInteger(count)) return e.reply('沉迷次数过大，超出可记录范围');
+    if (!await Go(e)) return false;
+    if (isWeiMianDestroyed('上苍之上')) return replyPlaneDestroyed(e, '上苍之上');
+
+    const player = await Read_player(usr_qq);
+    if (Number(player.power_place) !== SHANGCANG_PLANE_ID) return e.reply('你当前不在上苍之上');
+    const location = match[1];
+    const weizhi = data.shangcang_list.find(item => item.name === location);
+    if (!weizhi) return e.reply(`未找到地点：${location}`);
+    const shortage = getShangcangCostShortage(player);
+    if (shortage) return e.reply(`${shortage[0]}不足，首轮需要${formatShangcangCost()}`);
+
+    const timing = calculateShangcangDuration(player, data.minggeList);
+    const totalDuration = timing.durationMs * count;
+    if (!Number.isSafeInteger(totalDuration) || totalDuration > Number.MAX_SAFE_INTEGER - Date.now()) {
+      return e.reply('沉迷次数过大，超出可记录时间范围');
+    }
+
+    deductShangcangCost(player);
+    player.lastDungeonType = '上苍之上';
+    player.lastDungeonName = location;
+    const now = Date.now();
+    const action = {
+      action: SHANGCANG_ADDICTION_ACTION,
+      start_time: now,
+      end_time: now + totalDuration,
+      total_time: totalDuration / 60_000,
+      remaining_time: totalDuration / 60_000,
+      total_count: count,
+      settled_count: 0,
+      interval: timing.durationMs,
+      next_settle_time: now + timing.durationMs,
+      shutup: '1', working: '1', power_up: '1',
+      Place_action: '1', Place_actionplus: '0',
+      mojie: '1', xijie: '1', plant: '1', mine: '1',
+      Place_address: weizhi,
+    };
+    applySecretPlaceNotificationContext(action, e, usr_qq);
+    await Write_player(usr_qq, player);
+    await redis.set(`xiuxian:player:${usr_qq}:action`, JSON.stringify(action));
+    await redis.set(`xiuxian:player:${usr_qq}:addiction_history`, JSON.stringify({
+      start_time: now,
+      location,
+      location_type: '上苍之上',
+      total_count: count,
+      settled_count: 0,
+      victory_count: 0,
+      death_count: 0,
+      xiuwei_gained: 0,
+      xueqi_gained: 0,
+      items_gained: [],
+      status: 'in_progress',
+      end_time: null,
+    }));
+    return e.reply([
+      `【沉迷上苍之上·${location}】共${count}轮`,
+      `已扣除首轮：${formatShangcangCost()}`,
+      `每轮${timing.minutes}分钟，后续将在结算前逐轮扣费；资源不足时自动停止。`,
+      ...timing.messages,
+    ].join('\n'));
   }
 
   //秘境地点

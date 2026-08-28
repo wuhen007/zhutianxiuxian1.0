@@ -1,6 +1,7 @@
 import { plugin, puppeteer, verc, data, config,Show } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
 import { getTimedActionMultiplier } from '../../model/innateTreasure.js';
+import { hasRealmAuthority } from '../../model/realmAuthority.js';
 import {
   buildXijieAtlasData,
   isXijieShopLockExpired,
@@ -78,6 +79,13 @@ export class Xijie extends plugin {
               return false; // 返回false表示没有逆道令
           }
       }
+
+  async CheckAndConsumeSanShiTongGuan(usr_qq) {
+    const count = await exist_najie_thing(usr_qq, '三世铜棺', '道具');
+    if (count < 1) return false;
+    await Add_najie_thing(usr_qq, '三世铜棺', '道具', -1);
+    return true;
+  }
   async chongzhi(e) {
     if (!verc({ e })) return false;
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
@@ -184,11 +192,15 @@ export class Xijie extends plugin {
            // 检查是否是终极古地，并检查玩家的道行等级
     if (didian === '终极古地') {
         let player = await Read_player(usr_qq);
-        if (player.mijinglevel_id >= 20) {
+        if (hasRealmAuthority(player, 20)) {
             e.reply('你的道行震古烁今凌驾整个纪元，无惧界海浪潮的汹涌，只身横渡界海堤坝直奔终极古地。');
         } else {
+            if (!hasRealmAuthority(player, 18)) {
+                e.reply('你意识到界海的浪潮非常汹涌，每一朵浪花都是残破的宇宙。至少达到仙王境，才有资格借三世铜棺横渡界海。');
+                return;
+            }
             let hassanshitongguan = await this.CheckAndConsumeSanShiTongGuan(usr_qq);
-            if (!hassanshitongguan || player.mijinglevel_id < 18) {
+            if (!hassanshitongguan) {
                 e.reply('你意识到界海的浪潮非常汹涌，每一朵浪花都是残破的宇宙，非真正的道祖无法横渡，如果想要横渡界海去往终极古地你需要仙道领域达到仙王的修为和三世铜棺，否则根本无法跨越界海。');
                 return;
             }

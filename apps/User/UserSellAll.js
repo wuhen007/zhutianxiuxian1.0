@@ -50,6 +50,8 @@ import { consumeBlackEmperorBattleFormation, rollBlackEmperorDungeonEncounter, r
 import { rollRuthlessDestinyEncounter } from '../../model/ruthlessEmperor.js';
 import { SecretPlaceTask } from '../SecretPlace/SecretPlaceTask.js';
 import { SecretPlaceplusTask } from '../SecretPlace/SecretPlaceplusTask.js';
+import { ShangcangTask } from '../SecretPlace/ShangcangTask.js';
+import { isShangcangAction } from '../../model/shangcangDungeon.js';
 import {
   accelerateSecretPlaceAction,
   getSecretPlaceActionEndTime,
@@ -1894,7 +1896,7 @@ if (totalPotentialCost > 0) {
         //用户信息
         let player = await Read_player(player_id);
         //有秘境状态:这个直接结算即可
-        if (action.Place_action == '0') {//降临
+        if (action.Place_action == '0' && !isShangcangAction(action)) {//降临
           //这里改一改,要在结束时间的前两分钟提前结算
      end_time = end_time - 60000 * 1;
      
@@ -3945,7 +3947,7 @@ ${aptitudeEvaluations[newAptitude]}
             e.reply("未到时候")
             return
           }
-        }else if (action.Place_actionplus == '0') {//沉迷
+        }else if (action.Place_actionplus == '0' && !isShangcangAction(action)) {//沉迷
     
            //end_time = end_time - action.time;
           //时间过了
@@ -6092,6 +6094,20 @@ let arr = action;
     }
     const action = JSON.parse(rawAction);
     const now = Date.now();
+
+    if (isShangcangAction(action)) {
+      const dueAt = action.Place_actionplus == '0' ? Number(action.next_settle_time) : Number(action.end_time);
+      if (!Number.isFinite(dueAt) || now < dueAt) {
+        e.reply('未到时候');
+        return false;
+      }
+      const result = await new ShangcangTask().settlePlayer(playerId, now);
+      if (result === SECRET_PLACE_SETTLEMENT_BUSY) {
+        e.reply('秘境正在结算，请稍后重试');
+        return false;
+      }
+      return result;
+    }
 
     if (action.Place_action == '0') {
       if (now <= Number(action.end_time) - 60 * 1000) {
