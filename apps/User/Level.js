@@ -44,6 +44,7 @@ import {
   syncXianguCompanionMijing,
 } from '../../model/extraCultivation.js';
 import { getRealmAuthorityLevel, getRealmAuthorityName, getRealmAuthorityPath } from '../../model/realmAuthority.js';
+import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
 import { canEnterQuasiEmperor } from '../../model/worldlineAuthority.js';
 import { FlowerPollenPath } from './FlowerPollenPath.js';
 import {
@@ -963,6 +964,14 @@ if (player.mijinglevel_id + 1 === 20) {
       return;
     }
 }
+if (player.mijinglevel_id + 1 == 21) {
+    e.reply([
+        '【准仙帝绝巅·己道未尽】',
+        '仙帝并非依靠普通突破踏入。须将自身之道修至当前上限，再以 #推演己道 完成十次终极推演。',
+        '第五次后设立自创体系六大境界，第十次结出神胎，并直面终极古地的尸骸仙帝。'
+    ].join('\n'));
+    return;
+}
 if (player.mijinglevel_id+ 1 == 21 ) {
     // 初始化纪元积累
     if (typeof player.纪元积累 === 'undefined') {
@@ -1348,7 +1357,7 @@ if (player.mijinglevel_id === 20) { // 路尽级仙帝境界
     player.法身 = 1; // 法身状态：1表示已凝聚
     player.法身位置 = 0; // 法身位置（默认为仙界）
     player.法身行动 = null; // 法身当前行动
-    player.power_place = 5;
+    player.power_place = PLACE_LOCATION_MAP.永恒未知之地;
     await Write_player(usr_qq, player);
 }
 if (player.mijinglevel_id > 10 && player.mijinglevel_id < 18) {

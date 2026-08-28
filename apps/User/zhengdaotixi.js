@@ -72,6 +72,11 @@ import {
   protectForbiddenTarget,
 } from '../../model/forbiddenSoul.js';
 import { adjustDaoHeart, getDaoHeartLearningChanceMultiplier } from '../../model/daoHeart.js';
+import { addCausalDebt } from '../../model/worldlineAuthority.js';
+import {
+  getSacrificePromotionGate,
+  promotePlayerToSacrifice,
+} from '../../model/strangeSacrifice.js';
 
 function formatSoulSearchTribulation(player, result) {
   if (!result.triggered) return [];
@@ -1175,9 +1180,14 @@ async changeAptitude(e) {
     
     let player = await Read_player(usr_qq);
     
-    // 检查玩家是否已经达到ID21境界（仙帝）
-    if (player.mijinglevel_id !== 21) {
-        e.reply('只有达到仙帝境界才能祭掉自身至高大道');
+    const promotionGate = getSacrificePromotionGate(player);
+    if (!promotionGate.ok) {
+        const missing = [];
+        if (!promotionGate.checks.immortalEmperor) missing.push('达到路尽级仙帝');
+        if (!promotionGate.checks.emperorKills) missing.push(`击杀仙帝级强者10位（当前${promotionGate.kills}位）`);
+        if (!promotionGate.checks.daoHeart) missing.push(`道心圆满（当前${promotionGate.daoHeart.name}）`);
+        if (!promotionGate.checks.selfDao) missing.push(`自身之道修满仙帝阶段（当前${promotionGate.selfDaoCultivation}/400）`);
+        e.reply(['【祭道门槛未满】', ...missing.map(item => `· ${item}`)].join('\n'));
         return;
     }
     
@@ -1253,7 +1263,7 @@ async changeAptitude(e) {
             // 祭道成功并获得主宰道舍庇护
             player.修为 = 0;
             player.血气 = 0;
-            player.mijinglevel_id = 22;
+            promotePlayerToSacrifice(player);
             player.level_id = 1;
             player.Physique_id = 1;
             player.主宰道舍庇护 = 1; // 新增庇护属性
@@ -1296,7 +1306,7 @@ async changeAptitude(e) {
         // 40%概率成功
         player.修为 = 0;
         player.血气 = 0;
-        player.mijinglevel_id = 22;
+        promotePlayerToSacrifice(player);
         player.level_id = 1;
         player.Physique_id = 1;
         await Add_HP(usr_qq, 9999999999);
@@ -2385,8 +2395,11 @@ async createEverything(e) {
         }
     }
 
-    // 添加物品到纳戒
+    // 添加物品到纳戒；因果债按一次施法结算，不随创造数量重复累加。
     await Add_najie_thing(player_qq, itemName, itemExist.class, amount);
+    const causalDebtAmount = authorityLevel === 21 ? 75 : authorityLevel === 22 ? 50 : 0;
+    const causalDebtResult = addCausalDebt(player, causalDebtAmount, `造化万物：${itemName}`);
+    await Write_player(player_qq, player);
  if (authorityLevel < 22 && weimianData.现世承受力 < 1000000) {
         // 40%概率触发始祖扼杀
         if (Math.random() < 0.4) {
@@ -2531,6 +2544,13 @@ async createEverything(e) {
             `诸天根基动摇，万界濒临崩坏！`,
             `现世承受力仅余：${weimianData.现世承受力}点！`
         );
+    }
+
+    createTexts.push(causalDebtResult.costFree
+        ? `祭道之上不染因果，本次因果债为0。`
+        : `本次造化新增因果债${causalDebtResult.delta}点，当前共${causalDebtResult.debt}点。`);
+    if (causalDebtResult.backlash?.triggered) {
+        createTexts.push(`因果债超过200点，时间长河降下二十道反噬雷劫。`);
     }
 
     e.reply(createTexts.join('\n'));
@@ -5385,8 +5405,8 @@ async guanding(e) {
     const authorityLevel = getRealmAuthorityLevel(invoker);
     
     // 检查操作者境界是否足够
-    if (authorityLevel < 21) {
-        return e.reply(`需仙帝境(21重)以上才可灌顶`);
+    if (authorityLevel < 23) {
+        return e.reply(`需祭道之上(23重)才可灌顶`);
     }
     if (!target) return e.reply('目标玩家不存在');
 

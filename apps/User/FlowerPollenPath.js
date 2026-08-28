@@ -280,6 +280,12 @@ export class FlowerPollenPath extends plugin {
       if (root.critical) return e.reply('【进化根基濒临崩溃】请先使用 #重塑进化根基，修复花粉根基后再继续进化。');
 
       const targetLevelId = player.huafenlevel_id + 1;
+      if (targetLevelId === 22) {
+        return e.reply([
+          '【道祖绝巅·己道未尽】',
+          '路尽级仙帝并非依靠普通进化踏入。请将自身之道修至当前上限，再发送 #推演己道。',
+        ].join('\n'));
+      }
       if (targetLevelId === 21) {
         const emperorGate = canEnterQuasiEmperor(player, 'huafen');
         if (!emperorGate.ok) {

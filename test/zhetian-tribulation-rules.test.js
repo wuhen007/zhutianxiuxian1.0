@@ -112,7 +112,7 @@ test('遮天各境界使用独立雷劫倍率', () => {
     大圣: 90,
     准帝: 120,
     大帝: 150,
-    破王成帝: 240,
+    破王成帝: 320,
     逆活: 180,
   });
   assert.ok(ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.破王成帝 >= ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS.大帝);
@@ -152,6 +152,9 @@ test('破王成帝第11道起持续遭遇诸王，第30道固定联手一击', (
   assert.match(source, /if \(broken > 10\)/);
   assert.match(source, /attackBySupremes\(player, diffRate, broken\)/);
   assert.match(source, /八大不朽之王·联手一击/);
+  assert.match(source, /八王各附25%最大生命压制/);
+  assert.match(source, /血量上限\)\s*\|\| 0\) \* 0\.25/);
+  assert.match(source, /血量上限\)\s*\|\| 0\) \* 2/);
 });
 
 test('大帝劫三主阶段按准帝九重劫固定比例缩放', () => {

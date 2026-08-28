@@ -186,7 +186,7 @@ export const ZHETIAN_TRIBULATION_DAMAGE_MULTIPLIERS = Object.freeze({
   大圣: 90,
   准帝: 120,
   大帝: 150,
-  破王成帝: 240,
+  破王成帝: 320,
   逆活: 180,
 });
 
