@@ -477,7 +477,7 @@ function playCard(cardUid, fromEcho = false) {
   if (getCharacter().id === 'mage' && combat.cardsPlayed === 3) {
     addCombatResource(1);
     combat.spellPulse += 3;
-    combat.log.push('灵枢回响：返还1点法力，下一次术法获得增幅');
+    combat.log.push('霜息回响：返还1点法力，下一次术法获得增幅');
   }
 
   if (getCharacter().id === 'talisman' && card.type === '符箓' && !combat.sealAddedThisTurn) {

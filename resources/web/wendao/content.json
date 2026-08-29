@@ -39,14 +39,14 @@
       "id": "mage",
       "name": "苏婉儿",
       "path": "法修",
-      "epithet": "照夜灵枢",
+      "epithet": "寒眸映雪",
       "portrait": "/wendao/assets/su-waner.jpg",
       "maxHp": 64,
       "resource": { "name": "法力", "max": 7, "recover": 4 },
-      "passive": { "name": "灵枢回响", "text": "每回合第三张牌返还1点法力，并使下一次术法伤害提高3点。" },
-      "relic": "relic_star_compass",
+      "passive": { "name": "霜息回响", "text": "每回合第三张牌返还1点法力，并使下一次术法伤害提高3点。" },
+      "relic": "relic_frost_veil",
       "aptitudes": { "生命": 2, "战斗": 3, "智识": 5, "心神": 4 },
-      "background": "苏氏天生看得见灵气的走向，却因此被认作不祥。她把二十四年流亡画成一卷星图，只差最后一笔，便能证明所谓天命，不过是可以重写的阵纹。",
+      "background": "苏氏女，生而灵眸独照，能见常人不可见之灵气流光。族老视作不祥，五岁封于寒山孤峰。风雪里长成，裙素、眸冷、术自成。二十四岁踏雪下山，不求仙路、不拜山门，只把那些写她'不祥'的因果，一道道炼作指尖清光。",
       "deck": ["mage_flame", "mage_flame", "mage_flame", "mage_flame", "mage_barrier", "mage_barrier", "mage_barrier", "mage_barrier", "mage_gather", "mage_frost"]
     },
     {
@@ -122,7 +122,7 @@
   "relics": [
     { "id": "relic_sword_tassel", "name": "无锋剑穗", "grade": "本命物", "text": "每场战斗首次造成伤害时，获得2层剑势。", "effect": { "firstHitSword": 2 } },
     { "id": "relic_iron_bone", "name": "镇岳骨", "grade": "本命物", "text": "每场战斗开始获得10点护体。", "effect": { "startBlock": 10 } },
-    { "id": "relic_star_compass", "name": "照夜星盘", "grade": "本命物", "text": "每场战斗第一回合多抽2张牌。", "effect": { "openingDraw": 2 } },
+    { "id": "relic_frost_veil", "name": "霜华轻纱", "grade": "本命物", "text": "每场战斗第一回合霜华拂袖，多抽2张牌。", "effect": { "openingDraw": 2 } },
     { "id": "relic_vermilion_brush", "name": "不妄朱笔", "grade": "本命物", "text": "每场战斗开始获得1枚符印与1点符墨。", "effect": { "startSeal": 1, "startEnergy": 1 } },
     { "id": "relic_copper_mirror", "name": "照骨铜镜", "grade": "法宝", "text": "敌人的攻击意图显示最终总伤害。", "effect": { "exactIntent": true } },
     { "id": "relic_blood_jade", "name": "温血古玉", "grade": "法宝", "text": "战斗胜利后回复6点生命。", "effect": { "healAfterCombat": 6 } },
