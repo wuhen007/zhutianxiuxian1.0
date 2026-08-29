@@ -12,6 +12,7 @@ import {
   getTianjiaoTraceReach,
   getTianjiaoBreakthroughChance,
   getTianjiaoImperialWeaponAllAttributeCap,
+  getTianjiaoImperialWeaponStatCaps,
   getTianjiaoImperialWeaponWashLimit,
   getTianjiaoImprovementChance,
   getTianjiaoRealmName,
@@ -283,6 +284,7 @@ test('天骄自强会把历史超限帝兵纠正到当前理论上限', () => {
       帝兵: {
         name: '越界帝兵', author_name: '纠错天骄', 天骄本命: true,
         品阶: '唯一器（九阶）', 洗礼次数: 99, 全属性: 999,
+        atk: 999, def: 998, HP: 997,
       },
     },
   };
@@ -292,15 +294,56 @@ test('天骄自强会把历史超限帝兵纠正到当前理论上限', () => {
     [correction.afterWash, correction.rank, correction.afterAll, correction.cap],
     [2, '铭刻道与理', 14.2, 14.2],
   );
+  assert.deepEqual(getTianjiaoImperialWeaponStatCaps(tianjiao, context, 2), { atk: 2, def: 2, HP: 2 });
+  assert.deepEqual(correction.afterStats, { atk: 2, def: 2, HP: 2 });
+  assert.deepEqual(
+    [tianjiao.装备.帝兵.atk, tianjiao.装备.帝兵.def, tianjiao.装备.帝兵.HP],
+    [2, 2, 2],
+  );
 
   tianjiao.装备.帝兵.洗礼次数 = 99;
   tianjiao.装备.帝兵.品阶 = '唯一器（九阶）';
   tianjiao.装备.帝兵.全属性 = 999;
+  tianjiao.装备.帝兵.atk = 999;
   const reports = improveTianjiao(tianjiao, context, () => 0);
   assert.match(reports[0], /帝兵自检纠正/);
+  assert.match(reports[0], /攻击999→2/);
   assert.equal(tianjiao.装备.帝兵.洗礼次数, 2);
   assert.equal(tianjiao.装备.帝兵.品阶, '铭刻道与理');
   assert.equal(tianjiao.装备.帝兵.全属性, 14.2);
+  assert.equal(tianjiao.装备.帝兵.atk, 2);
+});
+
+test('天骄帝兵三维上限按当前洗礼次数计算且后续洗礼不会越界', () => {
+  const nonzeroStarterContext = {
+    ...context,
+    imperialWeaponList: [
+      { name: '废铁', class: '装备', type: '帝兵', atk: 501, def: 3, HP: 5, bao: 0, 全属性: 0 },
+    ],
+  };
+  assert.deepEqual(
+    getTianjiaoImperialWeaponStatCaps({ mijinglevel_id: 10 }, nonzeroStarterContext, 2),
+    { atk: 2004, def: 12, HP: 20 },
+  );
+
+  const tianjiao = {
+    名号: '逐阶纠错天骄', mijinglevel_id: 10, xiangulevel_id: 1, 学习的功法: [],
+    装备: {
+      帝兵: {
+        name: '逐阶帝兵', author_name: '逐阶纠错天骄', 天骄本命: true,
+        品阶: '通灵', 洗礼次数: 1, 全属性: 1, atk: 999, def: 999, HP: 999,
+      },
+    },
+  };
+
+  const correction = reconcileTianjiaoImperialWeapon(tianjiao, context);
+  assert.deepEqual(correction.statCaps, { atk: 1, def: 1, HP: 1 });
+  const report = applyTianjiaoImprovement(tianjiao, 'imperialWeapon', context, () => 0);
+  assert.match(report, /第2\/2次洗礼/);
+  assert.deepEqual(
+    [tianjiao.装备.帝兵.atk, tianjiao.装备.帝兵.def, tianjiao.装备.帝兵.HP],
+    [2, 2, 2],
+  );
 });
 
 test('副本和位面事件会刷新限时踪迹，禁入位面不会成为天骄位置', () => {

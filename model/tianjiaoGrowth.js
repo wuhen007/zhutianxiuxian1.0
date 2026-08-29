@@ -568,8 +568,27 @@ export function getTianjiaoImperialWeaponAllAttributeCap(tianjiao) {
   return Number((1.2 + nurture + rankGrowth + engraving + tribulation).toFixed(1));
 }
 
+function growImperialWeaponStat(value) {
+  return Math.max(1, Math.round((Number(value) || 0) * 2));
+}
+
+export function getTianjiaoImperialWeaponStatCaps(tianjiao, context, washCount) {
+  const limit = getTianjiaoImperialWeaponWashLimit(tianjiao);
+  const washes = Math.min(limit, Math.max(0, Math.floor(Number(washCount) || 0)));
+  const starter = getStarterTianjiaoEquipment(context).帝兵;
+  return Object.fromEntries(['atk', 'def', 'HP'].map(field => {
+    let value = Math.max(0, Number(starter?.[field]) || 0);
+    for (let index = 0; index < washes; index++) value = growImperialWeaponStat(value);
+    return [field, value];
+  }));
+}
+
 function formatImperialWeaponCorrection(result) {
-  return `帝兵自检纠正【${result.name}】：洗礼${result.beforeWash}→${result.afterWash}，品阶校准为${result.rank}，全属性${result.beforeAll}→${result.afterAll}（理论上限${result.cap}）`;
+  const dimensions = [['攻击', 'atk'], ['防御', 'def'], ['生命', 'HP']]
+    .filter(([, field]) => result.beforeStats[field] !== result.afterStats[field])
+    .map(([label, field]) => `${label}${result.beforeStats[field]}→${result.afterStats[field]}`)
+    .join('、');
+  return `帝兵自检纠正【${result.name}】：洗礼${result.beforeWash}→${result.afterWash}，品阶校准为${result.rank}，全属性${result.beforeAll}→${result.afterAll}（理论上限${result.cap}）${dimensions ? `，三维${dimensions}` : ''}`;
 }
 
 export function reconcileTianjiaoImperialWeapon(tianjiao, context) {
@@ -585,12 +604,21 @@ export function reconcileTianjiaoImperialWeapon(tianjiao, context) {
   const cap = getTianjiaoImperialWeaponAllAttributeCap(tianjiao);
   const beforeAll = Math.max(0, Number(weapon.全属性) || 0);
   const afterAll = Math.min(beforeAll, cap);
-  if (beforeWash === afterWash && weapon.品阶 === rank && beforeAll === afterAll) return null;
+  const statCaps = getTianjiaoImperialWeaponStatCaps(tianjiao, context, afterWash);
+  const beforeStats = Object.fromEntries(
+    Object.keys(statCaps).map(field => [field, Math.max(0, Number(weapon[field]) || 0)]),
+  );
+  const afterStats = Object.fromEntries(
+    Object.keys(statCaps).map(field => [field, Math.min(beforeStats[field], statCaps[field])]),
+  );
+  const statsChanged = Object.keys(statCaps).some(field => beforeStats[field] !== afterStats[field]);
+  if (beforeWash === afterWash && weapon.品阶 === rank && beforeAll === afterAll && !statsChanged) return null;
 
   weapon.洗礼次数 = afterWash;
   weapon.品阶 = rank;
   weapon.全属性 = afterAll;
-  return { name: weapon.name, beforeWash, afterWash, beforeAll, afterAll, rank, cap };
+  Object.assign(weapon, afterStats, { 理论三维上限: statCaps });
+  return { name: weapon.name, beforeWash, afterWash, beforeAll, afterAll, beforeStats, afterStats, statCaps, rank, cap };
 }
 
 function forgeImperialWeapon(tianjiao, context, random) {
@@ -609,6 +637,7 @@ function forgeImperialWeapon(tianjiao, context, random) {
   const nextWashCount = washCount + 1;
   const gain = IMPERIAL_WEAPON_ALL_ATTRIBUTE_GAINS[washCount];
   const cap = getTianjiaoImperialWeaponAllAttributeCap(tianjiao);
+  const statCaps = getTianjiaoImperialWeaponStatCaps(tianjiao, context, nextWashCount);
   equipment.帝兵 = {
     ...cloneItem(oldWeapon),
     name: weaponName,
@@ -620,9 +649,10 @@ function forgeImperialWeapon(tianjiao, context, random) {
     洗礼次数: nextWashCount,
     洗礼上限: washLimit,
     理论全属性上限: cap,
-    atk: Math.max(1, Math.round((Number(oldWeapon?.atk) || 0) * 2)),
-    def: Math.max(1, Math.round((Number(oldWeapon?.def) || 0) * 2)),
-    HP: Math.max(1, Math.round((Number(oldWeapon?.HP) || 0) * 2)),
+    理论三维上限: statCaps,
+    atk: Math.min(statCaps.atk, growImperialWeaponStat(oldWeapon?.atk)),
+    def: Math.min(statCaps.def, growImperialWeaponStat(oldWeapon?.def)),
+    HP: Math.min(statCaps.HP, growImperialWeaponStat(oldWeapon?.HP)),
     bao: Math.min(1, Math.max(Number(oldWeapon?.bao) || 0, getRealmAuthorityLevel(tianjiao) * 0.03) + 0.01),
     全属性: Math.min(cap, (Number(oldWeapon?.全属性) || 0) + gain),
   };
