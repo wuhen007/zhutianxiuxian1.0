@@ -12,6 +12,7 @@ import {
   canUseSanShiTongGuanPassage,
   consumeTravelWind,
   ensureDefaultCoordinates,
+  getCoordinateLocations,
   getBaseTravelThreshold,
   getBodyTravelQuote,
   getDimensionBarrierCount,
@@ -27,6 +28,7 @@ import {
   hasCoordinate,
   hasEngravedCoordinate,
   isInstantAllHeavensTravel,
+  isSealedLocation,
   purchaseCoordinateClue,
   recordUnfetteredJourney,
   registerForbiddenSupremeAttention,
@@ -128,6 +130,20 @@ test('坐标记忆只解锁一次，重金求购会校验并扣除灵石', () =>
   assert.equal(purchaseCoordinateClue(buyer, '界海').ok, true);
   assert.equal(buyer.灵石, 0);
   assert.equal(hasCoordinate(buyer, '界海'), true);
+});
+
+test('彼岸世界保留位面编号但不进入常规坐标与传送体系', () => {
+  assert.equal(isSealedLocation('彼岸世界'), true);
+  assert.equal(isSealedLocation(PLACE_LOCATION_MAP.彼岸世界), true);
+  assert.equal(getCoordinateLocations().includes('彼岸世界'), false);
+  assert.equal(getUnknownCoordinates({ mijinglevel_id: 25 }).includes('彼岸世界'), false);
+
+  const player = { 灵石: COORDINATE_CLUE_COST, 记忆坐标: ['彼岸世界'] };
+  assert.equal(hasCoordinate(player, '彼岸世界'), false);
+  assert.equal(rememberCoordinate(player, '彼岸世界'), false);
+  assert.equal(purchaseCoordinateClue(player, '彼岸世界').reason, 'invalid');
+  assert.equal(player.灵石, COORDINATE_CLUE_COST);
+  assert.equal(getLocationThreshold(player, '彼岸世界').code, 'sealed');
 });
 
 test('每日副本只会发现当前权柄可触及的高维坐标', () => {

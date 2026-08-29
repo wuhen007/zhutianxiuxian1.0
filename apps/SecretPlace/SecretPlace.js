@@ -91,6 +91,7 @@ import {
     getUnknownCoordinates,
     hasCoordinate,
     isInstantAllHeavensTravel,
+    isSealedLocation,
     purchaseCoordinateClue,
     rememberCoordinate,
 } from '../../model/weimianTravel.js';
@@ -3739,6 +3740,13 @@ async sendPlayerToLocation(e) {
 // 位面准入门槛检查（与 goToLocation 完全一致的判定逻辑，单一真相源）
 async checkLocationThreshold(player, location) {
     const threshold = getLocationThreshold(player, location);
+    if (threshold.code === 'sealed') {
+        return { ok: false, msgs: [
+            `【${location}·裂界封锁】`,
+            `此界是彼岸古文明留下的奇异节点，常规位面通道无法锚定。`,
+            `需身处太初星墟并唤醒完整裂界残忆，再以 #进入彼岸世界 横渡。`,
+        ] };
+    }
     if (threshold.code === 'dimension-barrier') {
         return { ok: false, msgs: [
             `【${location}·维度壁垒】`,
@@ -5697,6 +5705,9 @@ async recordCoordinate(e) {
     if (!PLACE_LOCATION_MAP.hasOwnProperty(location)) {
         return e.reply(`无效位面：${location}\n可用：${Object.keys(PLACE_LOCATION_MAP).join('、')}`);
     }
+    if (isSealedLocation(location)) {
+        return e.reply('彼岸世界没有可被星图拓印的常规坐标，需通过太初星墟的裂界残忆进入。');
+    }
     if (DEFAULT_KNOWN_LOCATIONS.includes(location)) {
         return e.reply(`「${location}」为默认已知坐标，无需记录。`);
     }
@@ -5738,6 +5749,9 @@ async engraveCoordinate(e) {
     const location = m[1];
     if (!PLACE_LOCATION_MAP.hasOwnProperty(location)) {
         return e.reply(`无效位面：${location}\n可用：${Object.keys(PLACE_LOCATION_MAP).join('、')}`);
+    }
+    if (isSealedLocation(location)) {
+        return e.reply('彼岸世界的坐标不受诸天传送阵承认，裂界通路无法刻入阵纹。');
     }
     if (!hasCoordinate(player, location)) {
         return e.reply([

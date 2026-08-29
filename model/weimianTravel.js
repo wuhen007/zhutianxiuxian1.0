@@ -11,6 +11,7 @@ export const PLACE_LOCATION_MAP = Object.freeze({
   '界海': 3,
   '异域': 3.2,
   '太初星墟': 3.5,
+  '彼岸世界': 3.8,
   '时间长河': 3.6,
   '小阴间': 4,
   '大阴间': 5,
@@ -28,6 +29,7 @@ export const PLACE_LOCATION_MAP = Object.freeze({
 });
 
 export const DEFAULT_KNOWN_LOCATIONS = Object.freeze(['凡间']);
+export const SEALED_LOCATIONS = Object.freeze(['彼岸世界']);
 export const SPECIAL_LOCATIONS = Object.freeze([
   '仙域', '异域', '时间长河', '永恒未知之地', '小阴间', '大阴间', '阳间',
   '厄土高原', '上苍之上', '超维宇宙', '百维真界', '原初宇宙海',
@@ -106,6 +108,10 @@ export function getLocationName(location) {
   const numeric = Number(location);
   return Object.entries(PLACE_LOCATION_MAP)
     .find(([, value]) => Number(value) === numeric)?.[0] || '';
+}
+
+export function isSealedLocation(location) {
+  return SEALED_LOCATIONS.includes(getLocationName(location));
 }
 
 export function getDimensionLayer(location) {
@@ -445,6 +451,7 @@ export function ensureDefaultCoordinates(player) {
 }
 
 export function hasCoordinate(player, location) {
+  if (isSealedLocation(location)) return false;
   if (DEFAULT_KNOWN_LOCATIONS.includes(location)) return true;
   if (location === '遮天位面' && Number(player?.五色祭坛激活) === 1) return true;
   if (isShengxuPlane(location) && (
@@ -455,7 +462,9 @@ export function hasCoordinate(player, location) {
 
 export function getCoordinateLocations() {
   return Object.keys(PLACE_LOCATION_MAP).filter(location =>
-    !isShengxuPlane(location) && !DEFAULT_KNOWN_LOCATIONS.includes(location)
+    !isShengxuPlane(location)
+    && !isSealedLocation(location)
+    && !DEFAULT_KNOWN_LOCATIONS.includes(location)
   );
 }
 
@@ -467,7 +476,7 @@ export function getUnknownCoordinates(player) {
 }
 
 export function rememberCoordinate(player, location) {
-  if (isShengxuPlane(location) || !Object.hasOwn(PLACE_LOCATION_MAP, location) || DEFAULT_KNOWN_LOCATIONS.includes(location)) return false;
+  if (isShengxuPlane(location) || isSealedLocation(location) || !Object.hasOwn(PLACE_LOCATION_MAP, location) || DEFAULT_KNOWN_LOCATIONS.includes(location)) return false;
   if (!Array.isArray(player.记忆坐标)) player.记忆坐标 = [];
   if (player.记忆坐标.includes(location)) return false;
   player.记忆坐标.push(location);
@@ -503,7 +512,7 @@ export function rollDailyDungeonCoordinate(player, options = {}) {
 }
 
 export function purchaseCoordinateClue(player, location, cost = COORDINATE_CLUE_COST) {
-  if (isShengxuPlane(location) || !Object.hasOwn(PLACE_LOCATION_MAP, location) || DEFAULT_KNOWN_LOCATIONS.includes(location)) {
+  if (isShengxuPlane(location) || isSealedLocation(location) || !Object.hasOwn(PLACE_LOCATION_MAP, location) || DEFAULT_KNOWN_LOCATIONS.includes(location)) {
     return { ok: false, reason: 'invalid' };
   }
   if (hasCoordinate(player, location)) return { ok: false, reason: 'known' };
@@ -553,7 +562,10 @@ export function getLocationThreshold(player, location) {
   let code = null;
   let checks = [];
 
-  if (dimensionLayer > 0) {
+  if (isSealedLocation(location)) {
+    code = 'sealed';
+    checks = [{ label: '裂界唯一通路', display: '需由太初星墟唤醒裂界残忆', met: false }];
+  } else if (dimensionLayer > 0) {
     const locationName = getLocationName(location);
     const required = DIMENSION_BARRIER_POWER_REQUIREMENTS[locationName] || 0;
     const breakingPower = getDimensionBreakingPower(player);
