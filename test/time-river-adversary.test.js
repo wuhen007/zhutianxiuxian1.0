@@ -3,11 +3,17 @@ import assert from 'node:assert/strict';
 import {
   CORPSE_EMPEROR_SKILL_LIBRARY,
   CORPSE_EMPEROR_SKILL_NAMES,
+  CANG_EMPEROR_SPEED_SUPPRESSION,
+  DARK_TRIAD_DAMAGE_REDUCTION,
+  DARK_TRIAD_OPENING_SHIELD_RATE,
+  DARK_TRIAD_REVIVAL_LIMIT,
   TIME_RIVER_COUNTER_SKILLS,
   TIME_RIVER_SKILL_LIBRARY,
-  TIME_RIVER_SPEED,
+  TIME_RIVER_ATTRIBUTE_RANGE,
   TIME_RIVER_PHASE_DURATION_MS,
   TIME_RIVER_RESCUE_WINDOW_MS,
+  applyCangEmperorOpeningSuppression,
+  applyTimeRiverSacrificeBuff,
   applyTimeRiverSkillEffect,
   buildTimeRiverAdversary,
   collapsePastWorldlineArtifacts,
@@ -19,14 +25,18 @@ import {
   getTimeRiverSacrificeRecovery,
   isDarkTriadEmperor,
   rollDarkTriadContinuation,
+  rollTimeRiverAttributeMultiplier,
   rollTimeRiverEraReward,
   scaleTimeRiverAdversary,
+  tickCangEmperorOpeningSuppression,
+  tryDarkTriadRevival,
 } from '../model/timeRiverAdversary.js';
 
 const player = {
   攻击: 100,
   防御: 200,
   血量上限: 1000,
+  速度: 100,
 };
 
 const template = name => ({
@@ -40,30 +50,31 @@ const template = name => ({
   灵根: { name: '测试灵根', 法球倍率: 1 },
 });
 
-test('叶天帝与荒天帝按遭遇倍率生成全属性，速度固定为1200', () => {
+test('全部时间长河敌人统一按玩家1.5至3倍全属性生成，且不暴露倍率', () => {
   const ye = buildTimeRiverAdversary(player, template('叶天帝'), { random: () => 0 });
   const huang = buildTimeRiverAdversary(player, template('荒天帝'), { random: () => 0.999999 });
 
-  assert.equal(ye._时间长河倍率, 5);
-  assert.deepEqual([ye.攻击, ye.防御, ye.血量上限], [500, 1000, 5000]);
-  assert.equal(huang._时间长河倍率, 12);
-  assert.deepEqual([huang.攻击, huang.防御, huang.血量上限], [1200, 2400, 12000]);
-  for (const enemy of [ye, huang]) {
-    assert.equal(enemy.速度 + enemy.mijinglevel_id * 50, TIME_RIVER_SPEED.supreme.final);
-    assert.equal(enemy.当前血量, enemy.血量上限);
-  }
+  assert.deepEqual(TIME_RIVER_ATTRIBUTE_RANGE, [1.5, 3]);
+  assert.equal(rollTimeRiverAttributeMultiplier(() => 0), 1.5);
+  assert.equal(rollTimeRiverAttributeMultiplier(() => 0.999999), 3);
+  assert.deepEqual([ye.攻击, ye.防御, ye.血量上限, ye.速度], [150, 300, 1500, 150]);
+  assert.deepEqual([huang.攻击, huang.防御, huang.血量上限, huang.速度], [300, 600, 3000, 300]);
+  assert.equal('_时间长河倍率' in ye, false);
+  assert.equal('_时间长河倍率' in huang, false);
+  assert.equal(ye.当前血量, ye.血量上限);
+  assert.equal(huang.当前血量, huang.血量上限);
 });
 
-test('其他时间长河敌人为玩家1至3倍，尸骸仙帝固定三倍', () => {
+test('普通敌人与尸骸仙帝同样服从统一倍率', () => {
   const weak = buildTimeRiverAdversary(player, template('狠人大帝'), { random: () => 0 });
   const strong = buildTimeRiverAdversary(player, template('无始大帝'), { random: () => 0.999999 });
   const corpse = buildTimeRiverAdversary(player, template('尸骸仙帝'), { random: () => 0 });
 
-  assert.deepEqual([weak.攻击, weak.防御, weak.血量上限], [100, 200, 1000]);
+  assert.deepEqual([weak.攻击, weak.防御, weak.血量上限], [150, 300, 1500]);
   assert.deepEqual([strong.攻击, strong.防御, strong.血量上限], [300, 600, 3000]);
-  assert.deepEqual([corpse.攻击, corpse.防御, corpse.血量上限], [300, 600, 3000]);
-  assert.equal(weak.速度 + weak.mijinglevel_id * 50, TIME_RIVER_SPEED.final);
-  assert.equal(corpse.速度 + corpse.mijinglevel_id * 50, TIME_RIVER_SPEED.supreme.final);
+  assert.deepEqual([corpse.攻击, corpse.防御, corpse.血量上限], [150, 300, 1500]);
+  assert.equal(weak.速度, 150);
+  assert.equal(corpse.速度, 150);
   assert.equal(corpse._时间长河反制, true);
   for (const skill of CORPSE_EMPEROR_SKILL_NAMES) assert.ok(corpse.学习的功法.includes(skill));
   const ultimate = CORPSE_EMPEROR_SKILL_LIBRARY.find(skill => skill.name === '终极帝剑斩杀');
@@ -85,12 +96,12 @@ test('尸骸仙帝的终极帝剑优先进入每回合技能判定', () => {
 });
 
 test('苍帝携带三招，并能组成苍鸿羽三帝阵容', () => {
-  const cang = buildTimeRiverAdversary(player, template('苍帝'));
-  const hong = buildTimeRiverAdversary(player, template('鸿帝'));
-  const yu = buildTimeRiverAdversary(player, template('羽帝'));
+  const cang = buildTimeRiverAdversary(player, template('苍帝'), { random: () => 0 });
+  const hong = buildTimeRiverAdversary(player, template('鸿帝'), { random: () => 0 });
+  const yu = buildTimeRiverAdversary(player, template('羽帝'), { random: () => 0 });
   assert.deepEqual(getTimeRiverEnemyNames(cang.名号, [hong, yu]), ['苍帝', '鸿帝', '羽帝']);
   assert.equal(cang._时间长河反制, true);
-  assert.equal(cang.速度 + cang.mijinglevel_id * 50, TIME_RIVER_SPEED.triad.final);
+  assert.equal(cang.速度, 150);
   for (const skill of TIME_RIVER_SKILL_LIBRARY.filter(item => !item.name.startsWith('鸿帝死咒'))) {
     assert.ok(cang.学习的功法.includes(skill.name));
   }
@@ -104,6 +115,52 @@ test('时间长河反制拦截九秘与灵根战力', () => {
   assert.equal(isTimeRiverCounteredSkill({ name: '皆字秘', class: '功法' }, huang), true);
   assert.equal(isTimeRiverCounteredSkill({ name: '任意先天神通', class: '灵根' }, huang), true);
   assert.match(getTimeRiverCounterMessage(huang, '一气化三清'), /他化自在/);
+});
+
+test('所有时间长河对手均反制临字秘，普通对手不扩大到其他技能', () => {
+  const ordinary = buildTimeRiverAdversary(player, template('狠人大帝'));
+  assert.equal(ordinary._时间长河临字秘反制, true);
+  assert.equal(isTimeRiverCounteredSkill({ name: '临字秘', class: '功法' }, ordinary), true);
+  assert.equal(isTimeRiverCounteredSkill({ name: '行字秘', class: '功法' }, ordinary), false);
+});
+
+test('黑暗三帝具备开场防御与两次满血解控复生', () => {
+  const cang = buildTimeRiverAdversary(player, template('苍帝'), { random: () => 0 });
+  assert.equal(cang.护盾值, Math.trunc(cang.血量上限 * DARK_TRIAD_OPENING_SHIELD_RATE));
+  assert.equal(cang._持续减伤比例, DARK_TRIAD_DAMAGE_REDUCTION);
+  assert.equal(cang._时间长河复活上限, DARK_TRIAD_REVIVAL_LIMIT);
+
+  for (let used = 1; used <= DARK_TRIAD_REVIVAL_LIMIT; used++) {
+    cang.当前血量 = 0;
+    cang.dongjie = true;
+    cang.不可复活 = true;
+    cang._技能速度削弱回合 = 3;
+    const revival = tryDarkTriadRevival(cang);
+    assert.equal(revival.revived, true);
+    assert.equal(cang.当前血量, cang.血量上限);
+    assert.equal(cang.dongjie, false);
+    assert.equal(cang.不可复活, false);
+    assert.equal(cang._技能速度削弱回合, 0);
+    assert.equal(cang._时间长河复活次数已用, used);
+  }
+  cang.当前血量 = 0;
+  assert.equal(tryDarkTriadRevival(cang).revived, false);
+});
+
+test('苍帝开场压制暂降30%全属性与1200速度，三次行动后复原', () => {
+  const combatant = { 名号: '玩家', 攻击: 100, 防御: 200, 血量上限: 1000, 当前血量: 800, 速度: 2000 };
+  const opening = applyCangEmperorOpeningSuppression(combatant);
+  assert.equal(opening.applied, true);
+  assert.deepEqual(
+    [combatant.攻击, combatant.防御, combatant.血量上限, combatant.当前血量, combatant.速度],
+    [70, 140, 700, 560, 2000 - CANG_EMPEROR_SPEED_SUPPRESSION],
+  );
+  for (let turn = 0; turn < 3; turn++) assert.equal(tickCangEmperorOpeningSuppression(combatant).restored, false);
+  assert.equal(tickCangEmperorOpeningSuppression(combatant).restored, true);
+  assert.deepEqual(
+    [combatant.攻击, combatant.防御, combatant.血量上限, combatant.当前血量, combatant.速度],
+    [100, 200, 1000, 800, 2000],
+  );
 });
 
 test('鸿帝死咒削减属性并拆除无敌气魄', () => {
@@ -135,14 +192,23 @@ test('时间长河阶段、奖励和三帝后续概率符合配置', () => {
   assert.deepEqual(rollDarkTriadContinuation(() => rolls.shift()), { summoned: true, imperialPill: false, reward: 10 });
 });
 
-test('帝丹恢复七成核心属性，献祭回血按三体系境界分四档', () => {
-  const restored = scaleTimeRiverAdversary({ 攻击: 100, 防御: 200, 血量上限: 1000, 当前血量: 0 }, 0.7);
-  assert.deepEqual([restored.攻击, restored.防御, restored.血量上限, restored.当前血量], [70, 140, 700, 700]);
+test('帝丹恢复七成全属性，献祭按三体系境界分四档并满血增幅', () => {
+  const restored = scaleTimeRiverAdversary({ 攻击: 100, 防御: 200, 血量上限: 1000, 当前血量: 0, 速度: 300, 护盾值: 350 }, 0.7);
+  assert.deepEqual(
+    [restored.攻击, restored.防御, restored.血量上限, restored.当前血量, restored.速度, restored.护盾值],
+    [70, 140, 700, 700, 210, 245],
+  );
   assert.equal(getTimeRiverSacrificeRecovery({ mijinglevel_id: 16, xiangulevel_id: 15, huafenlevel_id: 16 }).eligible, false);
   assert.deepEqual(getTimeRiverSacrificeRecovery({ mijinglevel_id: 17 }), { eligible: true, path: 'mijing', ratio: 0.15, tier: '红尘仙' });
   assert.equal(getTimeRiverSacrificeRecovery({ xiangulevel_id: 17 }).ratio, 0.35);
   assert.equal(getTimeRiverSacrificeRecovery({ huafenlevel_id: 20 }).ratio, 0.5);
   assert.equal(getTimeRiverSacrificeRecovery({ mijinglevel_id: 17, xiangulevel_id: 20 }).path, 'xiangu');
+  const rescued = applyTimeRiverSacrificeBuff({ ...player, 当前血量: 1, mijinglevel_id: 2 }, 0.35);
+  assert.deepEqual(
+    [rescued.攻击, rescued.防御, rescued.血量上限, rescued.当前血量, rescued.速度],
+    [135, 270, 1350, 1350, 270],
+  );
+  assert.equal(rescued._忽略境界速度加成, true);
   assert.equal(isDarkTriadEmperor('羽帝'), true);
   assert.equal(isDarkTriadEmperor('尸骸仙帝'), false);
 });

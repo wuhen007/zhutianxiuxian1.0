@@ -11,13 +11,19 @@ import { getGodDemonStealRule, getRealmAuthorityLevel } from '../../model/realmA
 import { worldChatClient } from '../worldChat/client.js';
 import { createCrossRaidAvatar, hydrateCrossRaidAvatar } from '../worldChat/raid.js';
 import {
+  applyUltimateNirvanaDefense,
+  clearCombatNegativeEffects,
   getDefenseSkillMultiplier,
   getGongfaCombatMultiplier,
+  getGongfaNumericMultiplier,
   getGongfaTriggerChance,
+  getKunpengSpeedDamageMultiplier,
   getReviveRecoveryRatio,
   getZheziReviveConfig,
   hasLearnedGongfa,
   recordGongfaCombatTrigger,
+  resolveHuangwuLethalGuard,
+  resolveHuangwuSwordIntent,
   resolveGongfaCombatSkill,
   tryVitalityRecovery,
 } from '../../model/gongfaProficiency.js';
@@ -37,6 +43,33 @@ import {
   getEmperorSleepRemainingMs,
 } from '../../model/emperorCrisis.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+
+function applyRaidDefenseExtras(defender, skill, messages) {
+  if (skill?.清除负面) {
+    clearCombatNegativeEffects(defender);
+    messages.push(`【真龙涤厄】${defender.名号}龙气贯体，所有负面效果尽数溢散！`);
+  }
+  if (skill?.name !== '终极涅槃·至尊') return;
+  const { actionBoost, reduction } = applyUltimateNirvanaDefense(defender, skill);
+  boostActionBar(defender, actionBoost);
+  messages.push(`【终极涅槃】${defender.名号}行动条提升${actionBoost}点，常驻免伤叠加至${Math.round(reduction * 100)}%！`);
+}
+
+function applyRaidHuangwuLethalDefense(defender, attacker, damage, messages) {
+  const guard = resolveHuangwuLethalGuard(defender, attacker, damage);
+  if (!guard.triggered) return damage;
+  const hitDamage = Math.max(1, calculateHarm(Number(defender.攻击) || 1, Number(attacker.防御) || 0));
+  let hits = 0;
+  for (; hits < guard.hits && attacker.当前血量 > 0; hits++) {
+    attacker.当前血量 = Math.max(0, attacker.当前血量 - hitDamage);
+  }
+  messages.push(
+    `【荒无剑诀·绝境反斩】${defender.名号}免疫致命伤害，连斩${hits}剑，对${attacker.名号}造成${bigNumberTransform(hitDamage * hits)}点伤害！`,
+    `荒无剑气封锁${attacker.名号}一回合并禁绝疗愈，${defender.名号}进入两回合荒无剑意！`
+  );
+  return 0;
+}
+
 export class tuanben extends plugin {
   constructor() {
     super({
@@ -1937,6 +1970,14 @@ async disbandTeamInternal(teamId, team) {
       if (actual > 0) msgs.push(`${attacker.名号}的「${seedSkill.name}」生机涌动，恢复${bigNumberTransform(actual)}点生命！`);
     }
 
+    const swordIntent = resolveHuangwuSwordIntent(attacker, defender);
+    const 荒无看破防御 = swordIntent.pierced;
+    if (swordIntent.active) {
+      msgs.push(swordIntent.pierced
+        ? `【荒无剑意·看破】${attacker.名号}看穿攻防破绽，斩去${defender.名号}全属性10%，本击不可防御！`
+        : `【荒无剑意】${attacker.名号}剑意未散，尚余${swordIntent.remaining}回合！`);
+    }
+
     const safeAttacker = this.sanitizeCombatant(attacker);
     const safeDefender = this.sanitizeCombatant(defender);
 
@@ -2166,7 +2207,7 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
     // 技能触发
     let count = 0; // 限制次数
     let cnt2 = Math.trunc(cnt / 2);
-    let 不可防御 = false;
+    let 不可防御 = 荒无看破防御;
     let 无视减伤 = false;
     let 斩杀阈值 = 0;
      // 定义九秘功法列表（全局常量）
@@ -2175,8 +2216,9 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
     "皆字秘", "数字秘", "组字秘", "前字秘", "行字秘"
   ];
     const attackerSkills = filterEquippedCombatSkills(safeAttacker, jineng1, '攻击');
+    const currentSpeed = Math.floor((Number(attacker._speed) || Number(attacker.速度) || 100) * (Number(attacker._speedBoost) || 1));
     for (var i = 0; i < attackerSkills.length; i++) {
-      const skill = resolveGongfaCombatSkill(safeAttacker, attackerSkills[i]);
+      const skill = resolveGongfaCombatSkill(safeAttacker, attackerSkills[i], Math.random, { speed: currentSpeed });
          // ==== 九秘功法压制检测（二次确认）====
         if (九秘功法列表.includes(skill.name)) {
           const isSuppressed = await checkNineSecretSuppression(
@@ -2229,7 +2271,9 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
         if (skill.无视减伤) 无视减伤 = true;
         if (skill.斩杀阈值) 斩杀阈值 = skill.斩杀阈值;
         const beforeSkillDamage = 伤害;
-        伤害 = 伤害 * skill.beilv + skill.other;
+        const 鲲鹏速度倍率 = getKunpengSpeedDamageMultiplier(skill, currentSpeed);
+        伤害 = 伤害 * skill.beilv * 鲲鹏速度倍率 + skill.other;
+        if (鲲鹏速度倍率 > 1) msgs.push(`【鲲鹏极速】${currentSpeed}点速度令本式伤害提升至${鲲鹏速度倍率.toFixed(2)}倍！`);
         if (skill.class === '功法' && 伤害 > beforeSkillDamage) {
           伤害 = beforeSkillDamage + (伤害 - beforeSkillDamage) * getGongfaCombatMultiplier(safeAttacker, skill);
         }
@@ -2259,10 +2303,20 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
           msgs.push(`${safeDefender.名号}行动进度被压制${skill.推条}点！`);
         }
         if (skill.速度加成) {
-          attacker._speedBoost = ensureNumber(attacker._speedBoost, 1) + skill.速度加成;
-          msgs.push(`${safeAttacker.名号}速度提升${Math.round(skill.速度加成 * 100)}%！`);
+          if (skill.速度加成类型 === '固定') {
+            attacker._speed = ensureNumber(attacker._speed, Number(attacker.速度) || 100) + (Number(skill.速度加成) || 0);
+            msgs.push(`${safeAttacker.名号}遁速常驻提升${Number(skill.速度加成) || 0}点！`);
+          } else {
+            const speedBoost = skill.速度加成 * getGongfaNumericMultiplier(safeAttacker, skill);
+            attacker._speedBoost = ensureNumber(attacker._speedBoost, 1) + speedBoost;
+            msgs.push(`${safeAttacker.名号}速度提升${Math.round(speedBoost * 100)}%！`);
+          }
         }
-        
+        if (skill.六道轮回拳意) {
+          attacker.法力免疫 = '六道轮回拳意·识破';
+          msgs.push(`【六道轮回拳意】${attacker.名号}识破万法，将免疫下一次攻击！`);
+        }
+
         count++;
         if (count == 2) break; // 最多触发3个技能
       }
@@ -2293,6 +2347,7 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
           skillMsg += safeAttacker.名号 + skill.msg2;
         }
         msgs.push(skillMsg);
+        applyRaidDefenseExtras(defender, skill, msgs);
         
         // 应用技能效果
         伤害 = 伤害 * getDefenseSkillMultiplier(safeDefender, skill) + skill.other;
@@ -2348,6 +2403,11 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
       defender._持续减伤回合--;
       if (defender._持续减伤回合 <= 0) defender._持续减伤比例 = 0;
       msgs.push(`${defender.名号}的道种厚土之力抵消了${bigNumberTransform(before - 伤害)}点伤害！`);
+    }
+    if (!无视减伤 && defender._终极涅槃免伤比例 > 0) {
+      const before = 伤害;
+      伤害 = Math.trunc(伤害 * (1 - Math.min(0.6, defender._终极涅槃免伤比例)));
+      msgs.push(`【终极涅槃·不朽】${defender.名号}抵消了${bigNumberTransform(before - 伤害)}点伤害！`);
     }
     if (!attacker._先天禁疗 && attacker.吸血率 > 0 && 伤害 > 0) {
       const before = attacker.当前血量;
@@ -2742,6 +2802,13 @@ if (bossCopy.名号 === '帝尊') {
     for (const activeUnit of readyUnits) {
       if (activeUnit.当前血量 <= 0 || activeUnit._actionBar < ACTION_BAR_MAX) continue;
       activeUnit._actionBar -= ACTION_BAR_MAX;
+
+      if (Number(activeUnit._荒无剑气回合) > 0) {
+        activeUnit._荒无剑气回合--;
+        activeUnit.dongjie = false;
+        await addBattleLog(`【荒无剑气】${activeUnit.名号}被剑气封锁，本回合不可动弹！`);
+        continue;
+      }
 
       if (activeUnit._fumianhuihe > 0 && activeUnit._fumian_damage > 0) {
         const effectDamage = ensureNumber(activeUnit._fumian_damage, 0);
@@ -3239,6 +3306,19 @@ if (player.分身 && player.分身.length > 0) {
 }
       // 确保伤害是有效数字
       let damage = ensureNumber(result.damage, 0);
+      if (bossCopy._荒无看破攻击) {
+        bossCopy._荒无看破攻击 = false;
+        damage = 0;
+        await addBattleLog(`【荒无剑意·看破】${bossCopy.名号}看穿攻势，免疫了本次攻击！`);
+      } else if (bossCopy.法力免疫) {
+        const immune = bossCopy.法力免疫;
+        bossCopy.法力免疫 = null;
+        damage = 0;
+        await addBattleLog(`【法力免疫】${bossCopy.名号}免疫了本次攻击（${immune}）！`);
+      }
+      const huangwuMessages = [];
+      damage = applyRaidHuangwuLethalDefense(bossCopy, player, damage, huangwuMessages);
+      if (huangwuMessages.length) await addBattleLog(...huangwuMessages);
       
       // 更新BOSS血量
       bossCopy.当前血量 = Math.max(0, ensureNumber(bossCopy.当前血量 - damage));
@@ -3728,6 +3808,16 @@ if (bossCopy.火焰风暴) {
 
       // 确保伤害是有效数字
      let damage = ensureNumber(result.damage, 0);
+      if (targetPlayer._荒无看破攻击) {
+        targetPlayer._荒无看破攻击 = false;
+        damage = 0;
+        await addBattleLog(`【荒无剑意·看破】${targetPlayer.名号}看穿攻势，免疫了本次攻击！`);
+      } else if (targetPlayer.法力免疫) {
+        const immune = targetPlayer.法力免疫;
+        targetPlayer.法力免疫 = null;
+        damage = 0;
+        await addBattleLog(`【法力免疫】${targetPlayer.名号}免疫了本次攻击（${immune}）！`);
+      }
       // ==== 分身死亡处理 ====
 // ==== 分身消散处理 ====
 if (targetPlayer.分身 && targetPlayer.分身.length > 0) {
@@ -3784,6 +3874,9 @@ if (targetPlayer.分身 && targetPlayer.分身.length > 0) {
         }
     }
 }
+      const huangwuMessages = [];
+      damage = applyRaidHuangwuLethalDefense(targetPlayer, bossCopy, damage, huangwuMessages);
+      if (huangwuMessages.length) await addBattleLog(...huangwuMessages);
       // 更新玩家血量
       targetPlayer.当前血量 = Math.max(0, ensureNumber(targetPlayer.当前血量 - damage));
       if (result.斩杀阈值 > 0 && targetPlayer.当前血量 > 0 && targetPlayer.当前血量 <= result.斩杀阈值 * targetPlayer.血量上限) {

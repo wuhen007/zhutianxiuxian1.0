@@ -54,6 +54,8 @@ import {
   rollTimeRiverEraReward,
   scaleTimeRiverAdversary,
   getTimeRiverSacrificeRecovery,
+  applyTimeRiverSacrificeBuff,
+  applyCangEmperorOpeningSuppression,
   TIME_RIVER_REVIVAL_TAUNTS,
 } from '../../model/timeRiverAdversary.js';
 import { destroyWorldline } from '../../model/worldlineAuthority.js';
@@ -176,8 +178,8 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     }
   }
 
-  buildPlayerCombatant(player, usr_qq, revivalTaunts = false) {
-    return {
+  buildPlayerCombatant(player, usr_qq, revivalTaunts = false, sacrificeBuff = 0) {
+    const combatant = {
       id: player.id || usr_qq,
       名号: player.名号,
       攻击: player.攻击,
@@ -192,11 +194,15 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       功法熟练度每日: player.功法熟练度每日,
       战斗技能配置: player.战斗技能配置,
       仙宠: player.仙宠,
+      速度: player.速度,
       mijinglevel_id: player.mijinglevel_id,
       xiangulevel_id: player.xiangulevel_id,
       huafenlevel_id: player.huafenlevel_id,
       ...(revivalTaunts ? { _时间长河复活彩蛋: TIME_RIVER_REVIVAL_TAUNTS } : {}),
     };
+    return sacrificeBuff > 0
+      ? applyTimeRiverSacrificeBuff(combatant, sacrificeBuff)
+      : combatant;
   }
 
   getEnemyTemplate(name) {
@@ -220,9 +226,42 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       const template = this.getEnemyTemplate(name);
       if (!template) throw new Error(`时间长河敌人配置缺失：${name}`);
       const enemy = buildTimeRiverAdversary(player, template, { scaleFactor });
-      return action.imperialPill && isDarkTriadEmperor(name)
+      const built = action.imperialPill && isDarkTriadEmperor(name)
         ? scaleTimeRiverAdversary(enemy, 0.7)
         : enemy;
+      const saved = action.enemyState?.find(item => item.name === name);
+      if (!saved) return built;
+      for (const field of ['攻击', '防御', '血量上限', '速度']) {
+        if (Number.isFinite(Number(saved[field]))) built[field] = Math.max(1, Math.trunc(Number(saved[field])));
+      }
+      built.当前血量 = Math.max(0, Math.min(built.血量上限, Math.trunc(Number(saved.当前血量) || 0)));
+      built._时间长河复活次数已用 = Math.max(0, Math.trunc(Number(saved._时间长河复活次数已用) || 0));
+      built.护盾值 = Math.max(0, Math.trunc(Number(saved.护盾值) || 0));
+      built._持续减伤回合 = Math.max(0, Math.trunc(Number(saved._持续减伤回合) || 0));
+      built._持续减伤比例 = Math.max(0, Number(saved._持续减伤比例) || 0);
+      built._忽略境界速度加成 = true;
+      return built;
+    });
+  }
+
+  captureEnemyState(enemies, battleResult) {
+    const resultTeam = Array.isArray(battleResult.B_team) ? battleResult.B_team : [];
+    return enemies.map((enemy, index) => {
+      const resultEnemy = resultTeam.find(item => item.名号 === enemy.名号) || resultTeam[index];
+      const currentHp = resultEnemy?.当前血量 ?? (index === 0 ? battleResult.B_hp : enemy.当前血量);
+      const resolved = resultEnemy || enemy;
+      return {
+        name: enemy.名号,
+        攻击: resolved.攻击,
+        防御: resolved.防御,
+        血量上限: resolved.血量上限,
+        当前血量: Math.max(0, Number(currentHp) || 0),
+        速度: resolved.速度,
+        _时间长河复活次数已用: Math.max(0, Number(resolved._时间长河复活次数已用) || 0),
+        护盾值: Math.max(0, Number(resolved._护盾值 ?? resolved.护盾值) || 0),
+        _持续减伤回合: Math.max(0, Number(resolved._持续减伤回合) || 0),
+        _持续减伤比例: Math.max(0, Number(resolved._持续减伤比例) || 0),
+      };
     });
   }
 
@@ -234,21 +273,43 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     const primary = enemies[0];
     const isGroupBattle = enemies.length > 1;
     const chainBattle = stage !== 'initial' || isDarkTriadEmperor(primary.名号);
-    const A_player = this.buildPlayerCombatant(player, usr_qq, isGroupBattle && enemies.some(enemy => isDarkTriadEmperor(enemy.名号)));
-    if (enemies.some(enemy => enemy._时间长河反制)) {
+    const A_player = this.buildPlayerCombatant(
+      player,
+      usr_qq,
+      isGroupBattle && enemies.some(enemy => isDarkTriadEmperor(enemy.名号)),
+      Number(action.sacrificeBuff) || 0,
+    );
+    const counterEnemy = enemies.find(enemy => enemy._时间长河反制);
+    const linCounterEnemy = counterEnemy || enemies.find(enemy => enemy._时间长河临字秘反制);
+    if (linCounterEnemy) {
+      A_player._时间长河临字秘反制目标 = true;
+      A_player._时间长河反制来源 = linCounterEnemy.名号;
+    }
+    if (counterEnemy) {
       A_player._时间长河反制 = true;
       A_player._时间长河反制目标 = true;
       A_player._时间长河至宝失效 = true;
       A_player._帝兵失效 = true;
-      A_player._时间长河反制来源 = primary.名号;
+      A_player._时间长河反制来源 = counterEnemy.名号;
     }
+    const cangOpening = stage === 'triad' && enemies.some(enemy => enemy.名号 === '苍帝')
+      ? applyCangEmperorOpeningSuppression(A_player)
+      : { applied: false };
 
     await this.sendEncounterMessage(usr_qq, action, this.generateStageEncounter(player, action, enemies));
     const formation = consumeBlackEmperorBattleFormation(player, A_player, primary);
     const battleResult = isGroupBattle
       ? await zd_battle([A_player], enemies, { timeRiverBattle: true })
       : await zd_battle(A_player, primary, { timeRiverBattle: true });
-    if (formation.message && Array.isArray(battleResult.msg)) battleResult.msg.unshift(formation.message);
+    if (Array.isArray(battleResult.msg)) {
+      const openingMessages = [];
+      if (stage === 'triad') {
+        openingMessages.push('【黑暗三帝·帝辉护体】苍、鸿、羽三帝各自凝聚35%生命护盾，并以帝辉减免30%伤害；每帝均可满血复生两次，复生时解除控制。');
+      }
+      if (cangOpening.message) openingMessages.push(cangOpening.message);
+      if (formation.message) openingMessages.push(formation.message);
+      battleResult.msg.unshift(...openingMessages);
+    }
 
     const resolvedPlayer = battleResult.A_team?.[0] || A_player;
     player.功法熟练度 = resolvedPlayer.功法熟练度 || player.功法熟练度;
@@ -269,6 +330,8 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     const penalties = {};
     if (outcome === 'defeat' && chainBattle) {
       specialEvents.rescueWindow = true;
+      specialEvents.willowGuardian = DARK_TRIAD_NAMES.every(name => enemyNames.includes(name))
+        && !action.willowGuardianTriggered;
     } else if (outcome === 'defeat' && primary.名号 !== '尸骸仙帝' && enemyNames.some(name => ['灭世老人', '未来准仙帝'].includes(name))) {
       specialEvents.darkSuppression = true;
     } else if (outcome === 'defeat' && !chainBattle && !hasRealmAuthority(player, 21) && Math.random() < 0.3) {
@@ -308,6 +371,8 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
         imperialPill: Boolean(action.imperialPill),
         oldManReward: action.oldManReward,
         enemyNames,
+        enemyState: this.captureEnemyState(enemies, battleResult),
+        willowGuardianTriggered: Boolean(action.willowGuardianTriggered || specialEvents.willowGuardian),
       });
       return true;
     }
@@ -335,8 +400,10 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       const primaryName = action.primaryName || '黑暗准仙帝';
       const supporters = DARK_TRIAD_NAMES.filter(name => name !== primaryName).join('与');
       return [
-        '【时间长河改道·诸世间崩塌】',
-        `${primaryName}的帝躯在古史中满血重聚，${supporters}跨越相邻纪元同时降临！`,
+        action.enemyState ? '【时间长河续接·帝战再启】' : '【时间长河改道·诸世间崩塌】',
+        action.enemyState
+          ? `魂血续上败亡节点，苍、鸿、羽三帝携上一战的剩余气血再度围杀${player.名号}！`
+          : `${primaryName}的帝躯在古史中满血重聚，${supporters}跨越相邻纪元同时降临！`,
         '鸿帝：“一觉万古，这世间又多了一尊帝者吗？可惜，亦不懂天机，一意孤行，只得送他上路！”',
         '羽帝：“没有永恒不灭的天地主角，你或许是这一纪元的异数，可是遇上我们三个同样的生灵，又能如何，可以逆天吗？”',
         `苍帝：“你名为${player.名号}，很可悲也很可惜，与我等为敌，你注定要血染诸天！”`,
@@ -347,6 +414,12 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       ];
     }
     if (stage === 'old_man') {
+      if (action.enemyState) {
+        return [
+          '【古史尽头·血祭续战】',
+          `魂血贯通败亡节点，灭世老人与黑暗三帝保留上一战的剩余气血，再度围住${player.名号}！`,
+        ];
+      }
       return action.imperialPill ? [
         '【时间长河改道·灭世老人降临】',
         '灭世老人赐下三枚帝丹，苍、鸿、羽三帝恢复七成全属性；四尊黑暗帝者截断古今未来，联手围杀！',
@@ -368,11 +441,16 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       start_time: Date.now(),
       end_time: endTime,
       time: TIME_RIVER_PHASE_DURATION_MS,
+      sacrificeBuff: Number(details.sacrificeBuff) || 0,
+      enemyState: details.enemyState || null,
+      willowGuardianTriggered: Boolean(previousAction.willowGuardianTriggered || details.willowGuardianTriggered),
     };
     await redis.set(`xiuxian:player:${usr_qq}:action`, JSON.stringify(action));
     await redis.set(`xiuxian:time_river:end_time:${usr_qq}`, endTime);
     await this.addActiveTimeRiverPlayer(usr_qq);
-    const text = stage === 'triad'
+    const text = details.enemyState
+      ? '【血祭续战】魂血照亮断裂古史，敌方保留上一战的剩余气血，十五分钟后从败亡节点继续结算。'
+      : stage === 'triad'
       ? '【三帝截流】苍鸿羽三帝已满状态并立，时间长河改道，诸世间崩塌！十五分钟后三帝围杀正式结算。'
       : stage === 'old_man'
         ? `【灭世追猎】灭世老人已经降临${details.imperialPill ? '，并赐帝丹令苍鸿羽恢复七成全属性' : ''}！十五分钟后结算。`
@@ -430,18 +508,22 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     donor[field] = Math.max(1, (Number(donor[field]) || 1) - 1);
     donor.level_id = 1;
     donor.Physique_id = 1;
-    target.当前血量 = Math.max(1, Math.trunc((Number(target.血量上限) || 1) * recovery.ratio));
+    target.当前血量 = Math.max(1, Number(target.血量上限) || 1);
     await Write_player(donorQQ, donor);
     await Write_player(targetQQ, target);
     await this.scheduleTimeRiverStage(targetQQ, action, action.retryStage, {
       primaryName: action.primaryName,
       imperialPill: action.imperialPill,
       oldManReward: action.oldManReward,
+      enemyState: action.enemyState,
+      sacrificeBuff: recovery.ratio,
+      willowGuardianTriggered: action.willowGuardianTriggered,
     });
     await e.reply([
       '【献祭魂与血·古史续接】',
       `${donor.名号}献出魂与血，同源灵根贯通断裂的时间线！`,
-      `${target.名号}恢复${Math.round(recovery.ratio * 100)}%巅峰气血（献祭者层级：${recovery.tier}），十五分钟后重战。`,
+      `${target.名号}恢复全部气血，并获得${Math.round(recovery.ratio * 100)}%攻击、防御、生命上限与速度加成（献祭者层级：${recovery.tier}）。`,
+      '黑暗帝者保留上一战结束时的剩余气血，十五分钟后从断裂战局继续。',
       `代价：${path === 'xiangu' ? '仙古今世法' : path === 'huafen' ? '花粉进化路' : '秘境体系'}跌落一层，练气与炼体归一。`,
     ].join('\n'));
     return true;
@@ -756,6 +838,9 @@ async sendEncounterMessage(usr_qq, action, message) {
     } else if (battleResult.outcome === 'defeat') {
       if (battleResult.specialEvents.rescueWindow) {
         message.push(this.getDefeatMessage(enemy));
+        if (battleResult.specialEvents.willowGuardian) {
+          message.push(...this.getWillowGuardianMessage(player));
+        }
         message.push('【帝血待援】肉身与元神被打散，十分钟内真身被钉在败亡节点，无法进行任何行动。');
         message.push('同灵根且至少一条额外体系成仙的玩家，可用“#献祭魂与血 @你”献祭救援；逾时将开始炼化道果。');
       } else if (battleResult.specialEvents.darkSuppression) {
@@ -845,6 +930,17 @@ if (battleResult.specialEvents.pastBodyExposed && battleResult.penalties.pastBod
     return message.join('\n');
   }
   
+  /** 苍鸿羽三帝战败彩蛋 */
+  getWillowGuardianMessage(player) {
+    return [
+      '【柳神·小塔护道】',
+      `苍、鸿、羽三帝合击，将${player.名号}打落时间长河，羽帝已执弑帝战矛追杀而至！`,
+      '焦黑柳树横断古今，小塔随之崩解塔身，将准仙帝火与残存帝骨熔入柳神法相。',
+      '柳神燃尽万古道行，独自托住羽帝，为你守住最后十分钟的献祭时机。',
+      '火光熄灭，柳叶凋零。柳神最终身灭道消，只余一截焦黑柳枝钉在破碎的时间长河中。',
+    ];
+  }
+
   /** 黑暗镇压消息 */
   getDarkSuppressionMessage() {
     return [

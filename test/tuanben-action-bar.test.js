@@ -55,14 +55,14 @@ test('团本同拍单位按速度和行动条排序', () => {
 
 test('拉条保留溢出，不满条不会提前触发', () => {
   const boostActionBar = loadBoostActionBar();
-  const unit = { 当前血量: 1, _actionBar: 2800 };
+  const unit = { 当前血量: 1, _actionBar: 4800 };
 
   assert.equal(boostActionBar(unit, 300), true);
-  assert.equal(unit._actionBar, 3100);
+  assert.equal(unit._actionBar, 5100);
 
-  unit._actionBar = 2500;
+  unit._actionBar = 4500;
   assert.equal(boostActionBar(unit, 300), false);
-  assert.equal(unit._actionBar, 2800);
+  assert.equal(unit._actionBar, 4800);
 });
 
 

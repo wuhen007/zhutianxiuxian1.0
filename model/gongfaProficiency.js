@@ -312,7 +312,84 @@ export function allocateGongfaInsight(player, name, amount) {
  * 战斗引擎按 name 反查归属（功法查 hasLearnedGongfa、灵根查 hasSupremeInnate），
  * 一旦 name 被招式名覆盖，该技能在所有战斗场景下都会判定失败、永不触发。
  */
-export function resolveGongfaCombatSkill(player, skill, random = Math.random) {
+export function getNiluanComboChance(speed) {
+  return Math.min(1, Number((Math.floor(Math.max(0, Number(speed) || 0) / 50) * 0.03).toFixed(2)));
+}
+
+export function getKunpengSpeedDamageMultiplier(skill, speed) {
+  if (!String(skill?.name || '').startsWith('鲲鹏宝术') || skill?.攻击类型 === '辅助') return 1;
+  return Math.max(1, Math.max(0, Number(speed) || 0) / 1000);
+}
+
+export function clearCombatNegativeEffects(unit) {
+  if (!unit || typeof unit !== 'object') return unit;
+  unit.dongjie = false;
+  unit.fumianhuihe = 0;
+  unit.fumian_damage = 0;
+  unit.fumian_type = null;
+  unit._fumianhuihe = 0;
+  unit._fumian_damage = 0;
+  unit._fumian_type = null;
+  unit._东皇冻结回合 = 0;
+  unit._荒无剑气回合 = 0;
+  unit._技能禁疗回合 = 0;
+  unit.禁疗 = 0;
+  unit._技能速度削弱回合 = 0;
+  delete unit._技能禁疗原值;
+  delete unit._技能速度削弱比例;
+  delete unit._陷仙沉默;
+  delete unit._诛仙易伤;
+  delete unit._绝仙流血;
+  return unit;
+}
+
+export function applyUltimateNirvanaDefense(unit, skill) {
+  const actionCap = Math.max(0, Number(skill?.拉条上限) || 600);
+  const actionUsed = Math.max(0, Number(unit?._终极涅槃拉条累计) || 0);
+  const actionBoost = Math.min(Math.max(0, Number(skill?.拉条) || 200), Math.max(0, actionCap - actionUsed));
+  const reductionCap = Math.min(1, Math.max(0, Number(skill?.免伤叠加上限) || 0.6));
+  const reduction = Math.min(
+    reductionCap,
+    Math.max(0, Number(unit?._终极涅槃免伤比例) || 0) + Math.max(0, Number(skill?.免伤叠加) || 0.2)
+  );
+  unit._终极涅槃拉条累计 = actionUsed + actionBoost;
+  unit._终极涅槃免伤比例 = reduction;
+  return { actionBoost, reduction };
+}
+
+export function resolveHuangwuSwordIntent(attacker, defender, random = Math.random) {
+  const rounds = Math.max(0, Number(attacker?._荒无剑意回合) || 0);
+  if (!rounds) return { active: false, pierced: false, remaining: 0 };
+  attacker._荒无剑意回合 = rounds - 1;
+  if (random() >= 0.3) return { active: true, pierced: false, remaining: rounds - 1 };
+
+  for (const field of ['攻击', '防御', '血量上限', '当前血量', '速度', '元神', '元神上限', '神识']) {
+    if (Number.isFinite(Number(defender?.[field]))) defender[field] = Math.max(0, Math.trunc(Number(defender[field]) * 0.9));
+  }
+  if (Number.isFinite(Number(defender?._speed))) defender._speed = Math.max(1, Math.trunc(defender._speed * 0.9));
+  if (Number(defender?.血量上限) > 0) defender.当前血量 = Math.min(defender.当前血量, defender.血量上限);
+  attacker._荒无看破攻击 = true;
+  return { active: true, pierced: true, remaining: rounds - 1 };
+}
+
+export function resolveHuangwuLethalGuard(defender, attacker, incomingDamage, random = Math.random) {
+  if (
+    !hasLearnedGongfa(defender, '荒无剑诀') ||
+    !attacker ||
+    Number(incomingDamage) < Number(defender?.当前血量) ||
+    random() >= 0.5
+  ) return { triggered: false, hits: 0 };
+
+  defender._荒无剑意回合 = 2;
+  attacker.dongjie = true;
+  attacker._荒无剑气回合 = 1;
+  if (!Number(attacker._技能禁疗回合)) attacker._技能禁疗原值 = Number(attacker.禁疗) || 0;
+  attacker.禁疗 = 1;
+  attacker._技能禁疗回合 = Math.max(1, Number(attacker._技能禁疗回合) || 0);
+  return { triggered: true, hits: 3 };
+}
+
+export function resolveGongfaCombatSkill(player, skill, random = Math.random, options = {}) {
   if (skill?.class === '灵根' && skill?.帝骑技能池) {
     const resolved = resolveDecadeCombatSkill(player, skill, random);
     if (resolved === skill) return skill;
@@ -322,6 +399,29 @@ export function resolveGongfaCombatSkill(player, skill, random = Math.random) {
   const proficiency = getGongfaProficiency(player, getSkillProficiencyOwner(skill));
   const moves = skill.招式.filter(move => proficiency >= Math.max(0, Number(move?.最低熟练度) || 0));
   if (!moves.length) return skill;
+  if (skill.name === '逆乱八式') {
+    const chance = getNiluanComboChance(options.speed ?? player?._speed ?? player?.速度);
+    let count = 1;
+    while (count < moves.length && random() < chance) count++;
+    const startRoll = Math.max(0, Math.min(1 - Number.EPSILON, Number(random()) || 0));
+    const start = Math.floor(startRoll * (moves.length - count + 1));
+    const combo = moves.slice(start, start + count);
+    const last = combo.at(-1);
+    const { name: _moveName, class: _moveClass, cnt: _moveCnt, ...effect } = last;
+    return {
+      ...skill,
+      ...effect,
+      beilv: combo.reduce((total, move) => total + (Number(move.beilv) || 0), 0),
+      other: combo.reduce((total, move) => total + (Number(move.other) || 0), 0),
+      msg1: combo.map(move => move.msg1).filter(Boolean).join('继而') + (count > 1 ? `【逆乱连击·${count}式】` : ''),
+      name: skill.name,
+      class: skill.class,
+      cnt: skill.cnt,
+      招式名: combo.map(move => move.name).join('→'),
+      逆乱连击数: count,
+      逆乱连击率: chance,
+    };
+  }
   const roll = Math.max(0, Math.min(1 - Number.EPSILON, Number(random()) || 0));
   const { name: moveName, class: _moveClass, cnt: _moveCnt, ...effect } = moves[Math.floor(roll * moves.length)];
   return { ...skill, ...effect, name: skill.name, class: skill.class, cnt: skill.cnt, 招式名: moveName };
@@ -412,8 +512,9 @@ export function rollLinzRealmLevel(player, random = Math.random) {
 }
 
 export function getReviveRecoveryRatio(player, skill) {
-  const base = clamp(skill?.恢复比例 ?? 0.5, 0, 0.9);
-  return Math.min(0.9, base * getGongfaNumericMultiplier(player, skill));
+  const cap = clamp(skill?.恢复比例上限 ?? 0.9, 0, 1);
+  const base = clamp(skill?.恢复比例 ?? 0.5, 0, cap);
+  return Math.min(cap, base * getGongfaNumericMultiplier(player, skill));
 }
 
 export function getDefenseSkillMultiplier(player, skill) {

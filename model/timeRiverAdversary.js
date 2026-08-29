@@ -1,12 +1,11 @@
-export const TIME_RIVER_SPEED = Object.freeze({
-  base: 150,
-  realmLevel: 20,
-  final: 150 + 20 * 50,
-  triad: Object.freeze({ base: 100, realmLevel: 20, final: 100 + 20 * 50 }),
-  supreme: Object.freeze({ base: 150, realmLevel: 21, final: 150 + 21 * 50 }),
-});
-
 export const DARK_TRIAD_NAMES = Object.freeze(['苍帝', '鸿帝', '羽帝']);
+export const TIME_RIVER_ATTRIBUTE_RANGE = Object.freeze([1.5, 3]);
+export const DARK_TRIAD_REVIVAL_LIMIT = 2;
+export const DARK_TRIAD_OPENING_SHIELD_RATE = 0.35;
+export const DARK_TRIAD_DAMAGE_REDUCTION = 0.3;
+export const CANG_EMPEROR_SPEED_SUPPRESSION = 1200;
+export const CANG_EMPEROR_ATTRIBUTE_RATE = 0.7;
+export const CANG_EMPEROR_SUPPRESSION_ACTIONS = 3;
 export const TIME_RIVER_PHASE_DURATION_MS = 15 * 60 * 1000;
 export const TIME_RIVER_RESCUE_WINDOW_MS = 10 * 60 * 1000;
 export const TIME_RIVER_REVIVAL_TAUNTS = Object.freeze([
@@ -32,13 +31,11 @@ export const TIME_RIVER_COUNTER_SKILLS = Object.freeze([
 export const TIME_RIVER_ADVERSARY_PROFILES = Object.freeze({
   叶天帝: Object.freeze({
     id: 'ye-tiandi',
-    multiplier: Object.freeze([5, 8]),
     counter: false,
     era: '后荒古时代',
   }),
   荒天帝: Object.freeze({
     id: 'huang-tiandi',
-    multiplier: Object.freeze([10, 12]),
     counter: true,
     era: '乱古纪元',
   }),
@@ -60,7 +57,6 @@ export const TIME_RIVER_ADVERSARY_PROFILES = Object.freeze({
   }),
   尸骸仙帝: Object.freeze({
     id: 'corpse-immortal-emperor',
-    multiplier: Object.freeze([3, 3]),
     counter: true,
     era: '终极古地',
   }),
@@ -195,6 +191,135 @@ function randomInt(min, max, random) {
   return Math.floor(roll * (max - min + 1)) + min;
 }
 
+function timeRiverUnitSpeed(unit) {
+  if (unit?._忽略境界速度加成) return integer(unit?.速度, 100);
+  return integer(
+    number(unit?.速度, 100)
+    + number(unit?.mijinglevel_id) * 50
+    + number(unit?.xiangulevel_id) * 50
+    + Math.max(0, number(unit?.huafenlevel_id, 1) - 1) * 50,
+  );
+}
+
+export function rollTimeRiverAttributeMultiplier(random = Math.random) {
+  const roll = Math.min(1, Math.max(0, number(random(), 0)));
+  const [min, max] = TIME_RIVER_ATTRIBUTE_RANGE;
+  return Math.round((min + (max - min) * roll) * 100) / 100;
+}
+
+export function applyTimeRiverSacrificeBuff(combatant, ratio = 0) {
+  const bonus = Math.max(0, number(ratio));
+  if (!bonus) {
+    combatant.当前血量 = combatant.血量上限;
+    return combatant;
+  }
+  const multiplier = 1 + bonus;
+  combatant.攻击 = integer(number(combatant.攻击) * multiplier);
+  combatant.防御 = integer(number(combatant.防御) * multiplier);
+  combatant.血量上限 = integer(number(combatant.血量上限) * multiplier);
+  combatant.当前血量 = combatant.血量上限;
+  combatant.速度 = integer(timeRiverUnitSpeed(combatant) * multiplier);
+  combatant._忽略境界速度加成 = true;
+  return combatant;
+}
+
+export function applyDarkTriadBattleKit(combatant) {
+  if (!isDarkTriadEmperor(combatant?.名号)) return combatant;
+  combatant._时间长河黑暗三帝 = true;
+  combatant._时间长河复活上限 = DARK_TRIAD_REVIVAL_LIMIT;
+  combatant._时间长河复活次数已用 = Math.max(0, Math.trunc(number(combatant._时间长河复活次数已用)));
+  combatant.护盾值 = Math.max(
+    Math.max(0, Math.trunc(number(combatant.护盾值))),
+    Math.trunc(number(combatant.血量上限) * DARK_TRIAD_OPENING_SHIELD_RATE),
+  );
+  combatant._持续减伤比例 = Math.max(number(combatant._持续减伤比例), DARK_TRIAD_DAMAGE_REDUCTION);
+  combatant._持续减伤回合 = Math.max(Math.trunc(number(combatant._持续减伤回合)), 6);
+  return combatant;
+}
+
+export function tryDarkTriadRevival(combatant) {
+  if (!combatant?._时间长河黑暗三帝 || number(combatant.当前血量) > 0) {
+    return { revived: false };
+  }
+  const used = Math.max(0, Math.trunc(number(combatant._时间长河复活次数已用)));
+  const limit = Math.max(0, Math.trunc(number(combatant._时间长河复活上限, DARK_TRIAD_REVIVAL_LIMIT)));
+  if (used >= limit) return { revived: false };
+
+  if (number(combatant._临字秘压制比例) > 0) {
+    const restoreRate = 1 - Math.min(0.95, number(combatant._临字秘压制比例));
+    combatant.攻击 = integer(number(combatant.攻击) / restoreRate);
+    combatant.防御 = integer(number(combatant.防御) / restoreRate);
+  }
+  combatant._时间长河复活次数已用 = used + 1;
+  combatant.当前血量 = Math.max(1, number(combatant.血量上限));
+  combatant.护盾值 = Math.trunc(number(combatant.血量上限) * 0.25);
+  combatant._护盾值 = combatant.护盾值;
+  combatant._持续减伤比例 = DARK_TRIAD_DAMAGE_REDUCTION;
+  combatant._持续减伤回合 = Math.max(Math.trunc(number(combatant._持续减伤回合)), 3);
+  combatant.dongjie = false;
+  combatant.不可复活 = false;
+  combatant.禁疗 = 0;
+  combatant._先天禁疗 = false;
+  combatant._东皇冻结回合 = 0;
+  combatant._技能禁疗回合 = 0;
+  combatant._技能速度削弱回合 = 0;
+  combatant._技能速度削弱比例 = 0;
+  combatant.fumianhuihe = 0;
+  combatant.fumian_damage = 0;
+  combatant.fumian_type = null;
+  combatant._fumianhuihe = 0;
+  combatant._fumian_damage = 0;
+  combatant._fumian_type = null;
+  delete combatant._临字秘压制比例;
+
+  return {
+    revived: true,
+    used: combatant._时间长河复活次数已用,
+    remaining: limit - combatant._时间长河复活次数已用,
+    message: `【黑暗帝血·归来】${combatant.名号}自古史尽头满血复生，诸般控制与负面状态尽数崩解！本场尚余${limit - combatant._时间长河复活次数已用}次复生。`,
+  };
+}
+
+export function applyCangEmperorOpeningSuppression(combatant) {
+  if (!combatant || combatant._苍帝精气神压制) return { applied: false };
+  const originalSpeed = timeRiverUnitSpeed(combatant);
+  for (const field of ['攻击', '防御', '血量上限', '当前血量']) {
+    combatant[field] = integer(number(combatant[field]) * CANG_EMPEROR_ATTRIBUTE_RATE);
+  }
+  combatant.速度 = Math.max(1, originalSpeed - CANG_EMPEROR_SPEED_SUPPRESSION);
+  combatant._忽略境界速度加成 = true;
+  combatant._苍帝精气神压制 = {
+    remainingActions: CANG_EMPEROR_SUPPRESSION_ACTIONS,
+    originalSpeed,
+  };
+  return {
+    applied: true,
+    message: `【苍帝·一念消神】苍帝开场消解精气神，${combatant.名号}前三次行动攻击、防御与生命暂降30%，速度暂降${CANG_EMPEROR_SPEED_SUPPRESSION}点！`,
+  };
+}
+
+export function tickCangEmperorOpeningSuppression(combatant) {
+  const state = combatant?._苍帝精气神压制;
+  if (!state) return { restored: false };
+  if (state.remainingActions > 0) {
+    state.remainingActions -= 1;
+    return { restored: false, remainingActions: state.remainingActions };
+  }
+
+  for (const field of ['攻击', '防御', '血量上限', '当前血量']) {
+    combatant[field] = integer(number(combatant[field]) / CANG_EMPEROR_ATTRIBUTE_RATE);
+  }
+  combatant.当前血量 = Math.min(combatant.当前血量, combatant.血量上限);
+  combatant.速度 = Math.max(1, Math.trunc(number(state.originalSpeed, combatant.速度)));
+  combatant._speed = combatant.速度;
+  combatant._忽略境界速度加成 = true;
+  delete combatant._苍帝精气神压制;
+  return {
+    restored: true,
+    message: `【精气神复归】${combatant.名号}挣脱苍帝压制，攻击、防御、生命与速度恢复！`,
+  };
+}
+
 export function isDarkTriadEmperor(name) {
   return DARK_TRIAD_NAMES.includes(String(name || '').trim());
 }
@@ -212,9 +337,10 @@ export function rollDarkTriadContinuation(random = Math.random) {
 export function scaleTimeRiverAdversary(enemy, ratio = 0.7) {
   const scale = Math.max(0, number(ratio, 0.7));
   const result = { ...enemy };
-  for (const field of ['攻击', '防御', '血量上限']) {
+  for (const field of ['攻击', '防御', '血量上限', '速度']) {
     result[field] = integer(number(enemy?.[field]) * scale);
   }
+  if (number(enemy?.护盾值) > 0) result.护盾值 = Math.round(number(enemy.护盾值) * scale);
   result.当前血量 = result.血量上限;
   result._时间长河恢复比例 = scale;
   return result;
@@ -252,8 +378,10 @@ export function getTimeRiverEnemyNames(primaryName, team = []) {
 
 export function isTimeRiverCounteredSkill(skill, profile) {
   const resolvedProfile = getTimeRiverAdversaryProfile(profile);
-  if (!resolvedProfile?.counter || !skill) return false;
+  if (!skill) return false;
   const name = String(skill.name || skill.熟练度归属 || '');
+  if (name.includes('临字秘') && (resolvedProfile || profile)) return true;
+  if (!resolvedProfile?.counter) return false;
   return skill.class === '灵根' || TIME_RIVER_COUNTER_SKILLS.some(item => name.includes(item));
 }
 
@@ -267,6 +395,9 @@ export function getTimeRiverCounterMessage(profile, skillName = '') {
   const detail = skillName ? `【${skillName}】` : '此类借力之法';
   if (enemyName === '荒天帝') {
     return `【荒天帝·反制】${detail}映照古今，却被荒天帝一剑截断：他化自在，他化万古；你之术有形，我之道已独断万古。`;
+  }
+  if (!resolvedProfile) {
+    return `【时间长河·临字反制】${detail}刚刚展开，对手便借古史道痕截断禁忌领域，临字秘未能成形。`;
   }
   return `【苍鸿羽·反制】${detail}刚刚显化，苍帝、鸿帝、羽帝同时出手，三道帝光将其残酷打断：刹那提升法力，数倍、十倍，甚至更多倍的叠加，这依旧难以无敌，我等亦能，且有破解之法。`;
 }
@@ -285,12 +416,10 @@ export function buildTimeRiverAdversary(player, template, options = {}) {
   const profile = getTimeRiverAdversaryProfile(name);
   const scaleFactor = Math.max(0, number(options.scaleFactor, 1));
   const random = options.random || Math.random;
-  const range = options.multiplierRange || profile?.multiplier || [1, 3];
-  const forcedMultiplier = number(options.multiplier);
-  const multiplier = forcedMultiplier > 0 ? forcedMultiplier : randomInt(range[0], range[1], random);
-  const attack = integer(player?.攻击, integer(number(template?.attack) * scaleFactor)) * multiplier;
-  const defense = integer(player?.防御, integer(number(template?.defense) * scaleFactor)) * multiplier;
-  const maxHp = integer(player?.血量上限, integer(number(template?.hp) * scaleFactor)) * multiplier;
+  const multiplier = rollTimeRiverAttributeMultiplier(random);
+  const attack = integer(integer(player?.攻击, integer(number(template?.attack) * scaleFactor)) * multiplier);
+  const defense = integer(integer(player?.防御, integer(number(template?.defense) * scaleFactor)) * multiplier);
+  const maxHp = integer(integer(player?.血量上限, integer(number(template?.hp) * scaleFactor)) * multiplier);
   const triadSkills = name === '苍帝'
     ? TIME_RIVER_SKILL_LIBRARY.filter(skill => skill.name !== '鸿帝死咒·泄帝势').map(skill => skill.name)
     : name === '鸿帝' ? ['鸿帝死咒·泄帝势'] : [];
@@ -300,13 +429,8 @@ export function buildTimeRiverAdversary(player, template, options = {}) {
     ...(name === '尸骸仙帝' ? CORPSE_EMPEROR_SKILL_NAMES : []),
   ])];
   const counter = Boolean(profile?.counter);
-  const speedProfile = isDarkTriadEmperor(name)
-    ? TIME_RIVER_SPEED.triad
-    : ['荒天帝', '叶天帝', '尸骸仙帝'].includes(name)
-      ? TIME_RIVER_SPEED.supreme
-      : TIME_RIVER_SPEED;
 
-  return {
+  const adversary = {
     名号: name,
     攻击: attack,
     防御: defense,
@@ -317,13 +441,17 @@ export function buildTimeRiverAdversary(player, template, options = {}) {
     法球倍率: number(template?.灵根?.法球倍率, 1),
     学习的功法: learned,
     era: template?.era || profile?.era || '未知纪元',
-    速度: speedProfile.base,
-    mijinglevel_id: speedProfile.realmLevel,
+    速度: integer(timeRiverUnitSpeed(player) * multiplier),
+    mijinglevel_id: number(player?.mijinglevel_id),
+    xiangulevel_id: number(player?.xiangulevel_id),
+    huafenlevel_id: number(player?.huafenlevel_id),
+    _忽略境界速度加成: true,
     _时间长河身份: profile?.id || '',
     _时间长河反制: counter,
+    _时间长河临字秘反制: true,
     _时间长河至宝失效: counter,
-    _时间长河倍率: multiplier,
   };
+  return applyDarkTriadBattleKit(adversary);
 }
 
 export function applyTimeRiverSkillEffect(attacker, defender, skill, messages = []) {
