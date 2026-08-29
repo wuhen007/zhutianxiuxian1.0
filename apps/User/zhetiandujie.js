@@ -27,6 +27,7 @@ import {
   rollZhetianMinggeRevival,
 } from './zhetianTribulationMingge.js';
 import { calculateEquippedStats, calculateEquipmentSetBonuses } from '../../model/equipmentStats.js';
+import { revokeBreakKingEmperorEligibility } from '../../model/realmAuthority.js';
 import { DAO_TREASURE_ALL_ATTRIBUTE_BONUS, isDaoTreasureItem } from '../../model/daoTreasure.js';
 import { consumeBlackEmperorTribulationFormation } from '../../model/blackEmperor.js';
 import { reduceTribulationDamageByDefense } from '../../model/tribulationDamage.js';
@@ -3582,6 +3583,8 @@ await this.broadcastToAll(player,startMsg);
             player.防御加成 -= defenseLoss;
             player.生命加成 -= hpLoss;
             player.mijinglevel_id = Math.max(1, player.mijinglevel_id - 1);
+            // 证道失败境界跌落削帝路资格：需重渡破王成帝劫
+            revokeBreakKingEmperorEligibility(player, 'mijing');
             
             await Write_player(usr_qq, player);
             

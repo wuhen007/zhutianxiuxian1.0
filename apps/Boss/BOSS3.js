@@ -28,6 +28,7 @@ import {
 import {
   getYongJiStats,
 } from './YongJiList.js';
+import { revokeBreakKingEmperorEligibility } from '../../model/realmAuthority.js';
 
 let WorldBOSSBattleCD = []; //CD
 let WorldBOSSBattleLock = 0; //BOSS战斗锁
@@ -389,6 +390,8 @@ export class BOSS3 extends plugin {
             player.mijinglevel_id = Math.max(1, player.mijinglevel_id - 1);
             player.level_id = Math.max(1, player.level_id - 1);
             player.Physique_id = Math.max(1, player.Physique_id - 1);
+            // 境界跌落削帝路资格：需重渡破王成帝劫
+            revokeBreakKingEmperorEligibility(player, 'mijing');
           }
           
           await Write_player(usr_qq, player);
@@ -2052,6 +2055,8 @@ async function applyJueLingEraPenalty() {
         player.mijinglevel_id = Math.max(1, player.mijinglevel_id - 1);
         player.level_id = Math.max(1, player.level_id - 1);
         player.Physique_id = Math.max(1, player.Physique_id - 1);
+        // 绝灵降临境界跌落削帝路资格：需重渡破王成帝劫
+        revokeBreakKingEmperorEligibility(player, 'mijing');
         await Write_player(qq, player);
         affectedPlayers++;
       }

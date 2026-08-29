@@ -153,5 +153,25 @@ export function lowerRealmAuthority(player, amount = 1) {
   const field = path === 'xiangu' ? 'xiangulevel_id'
     : path === 'huafen' ? 'huafenlevel_id' : 'mijinglevel_id';
   player[field] = Math.max(1, levelId(player?.[field]) - Math.max(1, levelId(amount)));
+  // 境界跌落即削帝路资格：清掉对应体系破王成帝的「passed」烙印，跌落玩家须重渡帝劫。
+  revokeBreakKingEmperorEligibility(player, path);
   return path;
+}
+
+/**
+ * 削除某体系的帝路资格（破王成帝劫烙印）。
+ * 只清除 status === 'passed' 的记录；failed 记录（含冷却）保留，避免跌落反而白嫖冷却重置。
+ * 直接操作 player.时间线权能，不依赖 worldlineAuthority，避免循环引用。
+ * @returns {boolean} 是否清除了 passed 烙印
+ */
+export function revokeBreakKingEmperorEligibility(player, route) {
+  const state = player?.时间线权能;
+  if (!state?.tribulations || !route) return false;
+  const record = state.tribulations[route];
+  if (!record || record.status !== 'passed') return false;
+  delete state.tribulations[route];
+  if (Array.isArray(state.history)) {
+    state.history.push({ type: '帝路资格', result: 'revoked', route, at: Date.now() });
+  }
+  return true;
 }

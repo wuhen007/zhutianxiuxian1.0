@@ -979,9 +979,9 @@ if (player.mijinglevel_id+ 1 == 21 ) {
         player.纪元积累 = 0;
         await Write_player(usr_qq, player);
     }
-       if (player.纪元积累 < 100) {
+       if (player.纪元积累 < 1500) {
     // 计算剩余纪元
-    const remainingEpochs = 100 - player.纪元积累;
+    const remainingEpochs = 1500 - player.纪元积累;
     
    // 构建文案
 const message = [

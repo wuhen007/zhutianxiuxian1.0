@@ -44,7 +44,7 @@ import {
 } from '../../model/weimianTravel.js';
 import { resolveZhetianDungeonVictory } from '../../model/zhetianInheritance.js';
 import { recordWenXianTaskProgress } from '../../model/wenxianling.js';
-import { isHighRealmConsumableRestricted } from '../../model/realmAuthority.js';
+import { isHighRealmConsumableRestricted, revokeBreakKingEmperorEligibility } from '../../model/realmAuthority.js';
 import { formatTianjiaoTrace, rollDungeonTianjiaoTrace } from '../../model/tianjiaoGrowth.js';
 import { consumeBlackEmperorBattleFormation, rollBlackEmperorDungeonEncounter, rollDuanDeEncounter } from '../../model/blackEmperor.js';
 import { rollRuthlessDestinyEncounter } from '../../model/ruthlessEmperor.js';
@@ -2925,6 +2925,9 @@ if (weizhi.name === "紫薇星域") {
                         const newLevel = Math.max(1, player[prop] - reduction);
                         daoShangMsg += `\n${getPropertyName(prop)}: ${player[prop]} → ${newLevel} (跌落${reduction}级)`;
                         player[prop] = newLevel;
+                        // 道基崩解削帝路资格：秘境/仙古跌落需重渡破王成帝劫
+                        if (prop === 'mijinglevel_id') revokeBreakKingEmperorEligibility(player, 'mijing');
+                        if (prop === 'xiangulevel_id') revokeBreakKingEmperorEligibility(player, 'xiangu');
                     }
                 });
             } else {
@@ -2933,6 +2936,9 @@ if (weizhi.name === "紫薇星域") {
                 player.Physique_id = Math.max(1, player.Physique_id - 1);
                 player.mijinglevel_id = Math.max(1, player.mijinglevel_id - 1);
                 player.xiangulevel_id = Math.max(1, player.xiangulevel_id - 1);
+                // 道基崩解削帝路资格：需重渡破王成帝劫
+                revokeBreakKingEmperorEligibility(player, 'mijing');
+                revokeBreakKingEmperorEligibility(player, 'xiangu');
             }
             
             // 合并消息
@@ -5004,6 +5010,9 @@ if (weizhi.name === "紫薇星域") {
                         const newLevel = Math.max(1, player[prop] - reduction);
                         daoShangMsg += `\n${getPropertyName(prop)}: ${player[prop]} → ${newLevel} (跌落${reduction}级)`;
                         player[prop] = newLevel;
+                        // 道基崩解削帝路资格：秘境/仙古跌落需重渡破王成帝劫
+                        if (prop === 'mijinglevel_id') revokeBreakKingEmperorEligibility(player, 'mijing');
+                        if (prop === 'xiangulevel_id') revokeBreakKingEmperorEligibility(player, 'xiangu');
                     }
                 });
             } else {
@@ -5012,6 +5021,9 @@ if (weizhi.name === "紫薇星域") {
                 player.Physique_id = Math.max(1, player.Physique_id - 1);
                 player.mijinglevel_id = Math.max(1, player.mijinglevel_id - 1);
                 player.xiangulevel_id = Math.max(1, player.xiangulevel_id - 1);
+                // 道基崩解削帝路资格：需重渡破王成帝劫
+                revokeBreakKingEmperorEligibility(player, 'mijing');
+                revokeBreakKingEmperorEligibility(player, 'xiangu');
             }
             
             // 合并消息

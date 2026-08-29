@@ -37,6 +37,10 @@ import {
   readBackupEra,
   readPlayerArchiveInventory,
 } from '../model/backupSnapshot.js';
+import {
+  lowerRealmAuthority,
+  revokeBreakKingEmperorEligibility,
+} from '../model/realmAuthority.js';
 
 function readyPlayer(route) {
   const player = {
@@ -394,4 +398,35 @@ test('时间线指令接入时代推演、选线确认与祭道显式全体范�
   assert.match(source, /逐线因果债已叠加结算/);
   assert.match(source, /祭道·诸世映照/);
   assert.doesNotMatch(source, /toLocaleString\('zh-CN'\)/);
+});
+
+test('境界跌落削帝路资格：准仙帝跌回仙王巨头后须重渡破王成帝劫', () => {
+  const player = readyPlayer('mijing');
+  // 渡劫成功并踏入准仙帝
+  assert.equal(markBreakKingEmperorTribulationPassed(player, 'mijing', 1000).outcome, 'passed');
+  player.mijinglevel_id = 20;
+  assert.equal(canEnterQuasiEmperor(player, 'mijing').ok, true);
+
+  // 跌落一层（20→19）：帝路资格被削，passed 烙印清除
+  assert.equal(lowerRealmAuthority(player, 1), 'mijing');
+  assert.equal(player.mijinglevel_id, 19);
+  assert.equal(ensureWorldlineState(player).tribulations.mijing, undefined);
+  assert.equal(canEnterQuasiEmperor(player, 'mijing').ok, false);
+  assert.equal(canEnterQuasiEmperor(player, 'mijing').reason, 'tribulation');
+});
+
+test('revoke 只清除 passed 烙印，保留 failed 冷却记录', () => {
+  const passed = readyPlayer('xiangu');
+  markBreakKingEmperorTribulationPassed(passed, 'xiangu', 1000);
+  assert.equal(revokeBreakKingEmperorEligibility(passed, 'xiangu'), true);
+  assert.equal(ensureWorldlineState(passed).tribulations.xiangu, undefined);
+  assert.equal(canEnterQuasiEmperor(passed, 'xiangu').reason, 'tribulation');
+
+  const failed = readyPlayer('huafen');
+  resolveBreakKingEmperorFailure(failed, 'huafen', () => 0.1, 1000);
+  assert.equal(failed.道果瑕疵, 1);
+  // failed 状态（含冷却）不应被削除
+  assert.equal(revokeBreakKingEmperorEligibility(failed, 'huafen'), false);
+  assert.equal(ensureWorldlineState(failed).tribulations.huafen.status, 'failed');
+  assert.equal(getBreakKingEmperorGate(failed, 'huafen', 1000).reason, 'cooldown');
 });

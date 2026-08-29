@@ -64,6 +64,7 @@ import {
   getRealmAuthorityName,
   hasRealmAuthority,
   lowerRealmAuthority,
+  revokeBreakKingEmperorEligibility,
 } from '../../model/realmAuthority.js';
 import {
   FORBIDDEN_COOLDOWN_MS,
@@ -5746,6 +5747,8 @@ const battleResult = await zd_battle(player, BB_player);
             player.防御加成 -= defenseLoss;
             player.生命加成 -= hpLoss;
             player.mijinglevel_id = Math.max(1, player.mijinglevel_id - battleCount);
+            // 证道失败境界跌落削帝路资格：需重渡破王成帝劫
+            revokeBreakKingEmperorEligibility(player, 'mijing');
             
             await Write_player(usr_qq, player);
             
