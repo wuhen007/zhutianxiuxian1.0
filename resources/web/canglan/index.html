@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#090908">
+  <title>沧澜界 · 大星图</title>
+  <link rel="stylesheet" href="/canglan/style.css?v=20260829">
+</head>
+<body>
+  <main id="app" class="app-shell is-loading">
+    <canvas id="star-map" tabindex="0" aria-label="沧澜界六边星图，共六十一颗大星"></canvas>
+
+    <header class="topbar">
+      <div class="brand-lockup">
+        <span class="brand-mark" aria-hidden="true">沧</span>
+        <div>
+          <span class="kicker">CANG-LAN STAR SEA</span>
+          <h1>沧澜界</h1>
+        </div>
+      </div>
+
+      <div class="realm-readout" aria-label="修士状态">
+        <div><span>境界</span><strong id="realm-name">读取中</strong></div>
+        <div><span>心神</span><strong><b id="mind-value">--</b><small id="mind-max">/ --</small></strong></div>
+        <div><span>界压</span><strong id="pressure-value">--</strong></div>
+      </div>
+
+      <div class="connection-state">
+        <i aria-hidden="true"></i>
+        <span id="connection-text">接驳星海</span>
+      </div>
+    </header>
+
+    <section class="sector-caption" aria-label="星域概况">
+      <span>第七星域</span>
+      <strong><b id="known-count">--</b> / 61</strong>
+      <small>大星已探明</small>
+    </section>
+
+    <nav class="map-tools" aria-label="星图控制">
+      <button id="zoom-in" type="button" title="放大星图" aria-label="放大星图"><i data-lucide="zoom-in"></i></button>
+      <button id="zoom-out" type="button" title="缩小星图" aria-label="缩小星图"><i data-lucide="zoom-out"></i></button>
+      <button id="reset-view" type="button" title="归位星图" aria-label="归位星图"><i data-lucide="locate-fixed"></i></button>
+      <button id="refresh-state" type="button" title="刷新星海状态" aria-label="刷新星海状态"><i data-lucide="refresh-cw"></i></button>
+    </nav>
+
+    <div class="map-legend" aria-label="星图图例">
+      <span><i class="legend-anchor"></i>已锚定</span>
+      <span><i class="legend-known"></i>已探明</span>
+      <span><i class="legend-observed"></i>已观测</span>
+      <span><i class="legend-unknown"></i>未知</span>
+    </div>
+
+    <section id="route-bar" class="route-bar" aria-live="polite">
+      <div class="route-points">
+        <span id="route-from">当前大星</span>
+        <i data-lucide="move-right" aria-hidden="true"></i>
+        <strong id="route-to">择定一颗大星</strong>
+      </div>
+      <dl>
+        <div><dt>星距</dt><dd id="route-distance">0 格</dd></div>
+        <div><dt>未锚</dt><dd id="route-unknown">0 格</dd></div>
+        <div><dt>心神</dt><dd id="route-cost">0 点</dd></div>
+      </dl>
+    </section>
+
+    <aside id="intel-panel" class="intel-panel" aria-labelledby="star-name">
+      <button id="drawer-toggle" class="drawer-toggle" type="button" title="展开或收起大星情报" aria-label="展开或收起大星情报">
+        <span aria-hidden="true"></span>
+        <i data-lucide="chevron-up"></i>
+      </button>
+
+      <header class="intel-head">
+        <div>
+          <span id="star-status" class="star-status">尚未定星</span>
+          <h2 id="star-name">择定一颗大星</h2>
+          <p id="star-coordinates">沧澜星图等待神念</p>
+        </div>
+        <span id="threat-mark" class="threat-mark">--</span>
+      </header>
+
+      <p id="star-signal" class="signal-copy">星海寂静，因果尚未落向任何坐标。</p>
+
+      <dl class="star-facts">
+        <div><dt>法则</dt><dd id="star-law">未解析</dd></div>
+        <div><dt>星相</dt><dd id="star-kind">未解析</dd></div>
+        <div><dt>文明</dt><dd id="star-civilization">未解析</dd></div>
+        <div><dt>危险</dt><dd id="star-threat">未解析</dd></div>
+        <div><dt>探索贡献</dt><dd id="star-contribution">未解析</dd></div>
+      </dl>
+
+      <section class="route-brief" aria-label="当前路线">
+        <div><span>航程</span><strong id="panel-distance">0 格</strong></div>
+        <div><span>心神</span><strong id="panel-cost">0 点</strong></div>
+        <p id="route-note">选择大星后显化航路。</p>
+      </section>
+
+      <div id="action-grid" class="action-grid">
+        <button type="button" data-action="observe" title="观测这颗大星"><i data-lucide="scan-eye"></i><span>观星</span></button>
+        <button type="button" data-action="move" class="primary-action" title="沿预览路线跃迁"><i data-lucide="navigation"></i><span>跃迁</span></button>
+        <button type="button" data-action="explore" title="探索当前大星"><i data-lucide="telescope"></i><span>探索</span></button>
+        <button type="button" data-action="anchor" title="建立当前大星星锚"><i data-lucide="anchor"></i><span>锚定</span></button>
+      </div>
+    </aside>
+
+    <div id="jump-flash" class="jump-flash" aria-hidden="true"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </main>
+
+  <section id="gate" class="gate" role="status" aria-live="polite">
+    <span class="gate-mark" aria-hidden="true">澜</span>
+    <p>CANG-LAN STAR SEA</p>
+    <h2 id="gate-title">正在接引星图</h2>
+    <span id="gate-message">神念校验中</span>
+    <button id="retry-button" type="button" title="重新接驳星图" hidden><i data-lucide="refresh-cw"></i><span>重新接驳</span></button>
+  </section>
+
+  <script src="/world/lucide.min.js?v=20260820"></script>
+  <script src="/canglan/app.js?v=20260829"></script>
+</body>
+</html>

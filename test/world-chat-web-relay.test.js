@@ -99,4 +99,30 @@ test('网页票据由总机单次消费并把请求转回签发区服', async t 
   });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].sessionId, opened.session_id);
+
+  const canglanTicket = await target.createWebTicket('canglan', {
+    userId: 'player-2',
+    runId: 'run-relay-2',
+  });
+  assert.equal(canglanTicket.ok, true);
+  const canglanSession = await gateway.openWebSession(canglanTicket.token);
+  assert.equal(canglanSession.ok, true);
+  assert.equal(canglanSession.kind, 'canglan');
+
+  const canglanState = await gateway.webRequest(canglanSession.session_id, 'state');
+  assert.equal(canglanState.ok, true);
+  assert.equal(canglanState.result.payload.state.operation, 'state');
+  assert.equal(calls.at(-1).identity.runId, 'run-relay-2');
+  const canglanAction = await gateway.webRequest(canglanSession.session_id, 'action', {
+    action: 'move',
+    targetId: 'star-1',
+    operationId: 'canglan-relay-operation-0001',
+  });
+  assert.equal(canglanAction.ok, true);
+  assert.equal(canglanAction.result.payload.state.operation, 'action');
+  assert.deepEqual(calls.at(-1).body, {
+    action: 'move',
+    targetId: 'star-1',
+    operationId: 'canglan-relay-operation-0001',
+  });
 });

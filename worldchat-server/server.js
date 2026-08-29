@@ -461,6 +461,7 @@ export function createWorldChatServer(options = {}) {
     const operations = {
       endless: new Set(['state', 'chat.get', 'chat.post', 'action']),
       survey: new Set(['state', 'submit']),
+      canglan: new Set(['state', 'action']),
     };
     return operations[kind]?.has(operation) || false;
   }
@@ -801,7 +802,7 @@ export function createWorldChatServer(options = {}) {
         const identity = cleanWebPayload(message.identity, 16 * 1024);
         let reason = null;
         if (!/^[A-Za-z0-9_-]{8,80}$/.test(requestId)) reason = 'invalid_request_id';
-        else if (!['endless', 'survey'].includes(kind)) reason = 'invalid_web_kind';
+        else if (!['endless', 'survey', 'canglan'].includes(kind)) reason = 'invalid_web_kind';
         else if (!identity) reason = 'invalid_identity';
         if (reason) {
           return send(ws, {

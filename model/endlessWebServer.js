@@ -24,6 +24,7 @@ const wendaoWebRoot = path.join(pluginRoot, 'resources', 'web', 'wendao');
 const wendaoAudioRoot = path.join(wendaoWebRoot, 'audio');
 const worldWebRoot = path.join(pluginRoot, 'resources', 'web', 'world');
 const surveyWebRoot = path.join(pluginRoot, 'resources', 'web', 'survey');
+const canglanWebRoot = path.join(pluginRoot, 'resources', 'web', 'canglan');
 const configPath = path.join(pluginRoot, 'config', 'endless-web.json');
 const localConfigPath = path.join(pluginRoot, 'config', 'endless-web.local.json');
 const TICKET_PREFIX = 'Xiuxian:Endless:Web:Ticket:';
@@ -34,6 +35,9 @@ const WORLD_TICKET_PREFIX = 'Xiuxian:World:Web:Ticket:';
 const WORLD_SESSION_PREFIX = 'Xiuxian:World:Web:Session:';
 const SURVEY_TICKET_PREFIX = 'Xiuxian:Survey:Web:Ticket:';
 const SURVEY_SESSION_PREFIX = 'Xiuxian:Survey:Web:Session:';
+const CANGLAN_TICKET_PREFIX = 'Xiuxian:Canglan:Web:Ticket:';
+const CANGLAN_SESSION_PREFIX = 'Xiuxian:Canglan:Web:Session:';
+const CANGLAN_ACTION_PREFIX = 'Xiuxian:Canglan:Web:Action:';
 const TEAM_CHAT_MAX_MESSAGES = 80;
 const TEAM_CHAT_TTL_SECONDS = 2 * 24 * 60 * 60;
 const BODY_LIMIT = 16 * 1024;
@@ -48,6 +52,7 @@ let serverPromise = null;
 let activeRealm = null;
 let activeWorldController = null;
 let activeSurveyController = null;
+let activeCanglanController = null;
 
 const WENDAO_ASSETS = {
   'selection.jpg': path.join(pluginRoot, 'resources', 'img', 'state', '背景图.jpg'),
@@ -145,6 +150,18 @@ function surveySessionKey(token) {
   return `${SURVEY_SESSION_PREFIX}${token}`;
 }
 
+function canglanTicketKey(token) {
+  return `${CANGLAN_TICKET_PREFIX}${token}`;
+}
+
+function canglanSessionKey(token) {
+  return `${CANGLAN_SESSION_PREFIX}${token}`;
+}
+
+function canglanActionKey(session, operationId) {
+  return `${CANGLAN_ACTION_PREFIX}${session}:${operationId}`;
+}
+
 function actionKey(session, operationId) {
   return `${ACTION_PREFIX}${session}:${operationId}`;
 }
@@ -216,6 +233,12 @@ function worldCookieName(config) {
 
 function surveyCookieName(config) {
   return config.publicUrl.startsWith('https://') ? '__Host-survey_session' : 'survey_session';
+}
+
+function canglanCookieName(config) {
+  return config.publicUrl.startsWith('https://')
+    ? '__Host-canglan_session'
+    : 'canglan_session';
 }
 
 function sameOrigin(req, config) {
@@ -298,6 +321,18 @@ export async function issueSurveyWebTicket(redisClient, config, identity) {
 
 export async function consumeSurveyWebTicket(redisClient, token) {
   return consumeTicket(redisClient, surveyTicketKey(token));
+}
+
+export async function issueCanglanWebTicket(redisClient, config, identity) {
+  const token = randomToken(24);
+  await redisClient.set(canglanTicketKey(token), JSON.stringify(identity), {
+    EX: config.ticketTtlSeconds,
+  });
+  return token;
+}
+
+export async function consumeCanglanWebTicket(redisClient, token) {
+  return consumeTicket(redisClient, canglanTicketKey(token));
 }
 
 function parseCookies(header = '') {
@@ -652,12 +687,44 @@ async function loadSurveySession(redisClient, config, req) {
   }
 }
 
+async function loadCanglanSession(redisClient, config, req) {
+  const token = parseCookies(req.headers.cookie)[canglanCookieName(config)];
+  if (!token) return null;
+  const raw = await redisClient.get(canglanSessionKey(token));
+  if (!raw) return null;
+  try {
+    return { token, ...JSON.parse(raw) };
+  } catch {
+    await redisClient.del(canglanSessionKey(token));
+    return null;
+  }
+}
+
 function currentWorldController(controller) {
   return controller || activeWorldController;
 }
 
 function currentSurveyController(controller) {
   return controller || activeSurveyController;
+}
+
+function currentCanglanController(controller) {
+  return controller || activeCanglanController;
+}
+
+function canglanControllerIdentity(session) {
+  const {
+    token: _token,
+    relay: _relay,
+    relayKind: _relayKind,
+    relaySessionId: _relaySessionId,
+    ...identity
+  } = session || {};
+  return {
+    ...identity,
+    userId: String(identity.userId || ''),
+    runId: String(identity.runId || ''),
+  };
 }
 
 async function currentState(realm, session, redisClient = null) {
@@ -710,9 +777,13 @@ async function createRelayTicket(kind, identity) {
 }
 
 async function consumeLocalOrRelayTicket(redisClient, kind, token) {
-  const localConsumer = kind === 'survey'
-    ? consumeSurveyWebTicket
-    : consumeEndlessWebTicket;
+  const localConsumers = {
+    endless: consumeEndlessWebTicket,
+    survey: consumeSurveyWebTicket,
+    canglan: consumeCanglanWebTicket,
+  };
+  const localConsumer = localConsumers[kind];
+  if (!localConsumer) return null;
   const identity = await localConsumer(redisClient, token);
   if (identity) return identity;
   if (!worldChatClient.authed) return null;
@@ -737,6 +808,66 @@ async function requestWebRelay(session, operation, body = {}) {
   return result.result;
 }
 
+async function handleCanglanAction(controller, session, body, redisClient, sessionTtlSeconds) {
+  if (!controller || typeof controller.performWebAction !== 'function') {
+    return { status: 503, payload: { error: '沧澜星图操作服务尚未就绪' } };
+  }
+  const action = String(body?.action || '').trim();
+  const targetId = String(body?.targetId ?? '').trim();
+  const operationId = String(body?.operationId || '');
+  if (!action || action.length > 48)
+    return { status: 400, payload: { error: '操作类型无效' } };
+  if (!targetId || targetId.length > 120)
+    return { status: 400, payload: { error: '目标星辰无效' } };
+  if (!/^[A-Za-z0-9-]{16,64}$/.test(operationId))
+    return { status: 400, payload: { error: '操作标识无效' } };
+
+  const operationKey = canglanActionKey(session.token, operationId);
+  const acquired = await redisClient.set(operationKey, 'processing', {
+    NX: true,
+    EX: 60,
+  });
+  if (!acquired) {
+    const cached = await redisClient.get(operationKey);
+    if (cached && cached !== 'processing') return JSON.parse(cached);
+    return { status: 409, payload: { error: '该操作正在执行，请勿重复提交' } };
+  }
+
+  const identity = canglanControllerIdentity(session);
+  try {
+    const actionResult = await controller.performWebAction({
+      ...identity,
+      action,
+      targetId,
+      operationId,
+    });
+    const result = actionResult && typeof actionResult === 'object'
+      ? { ...actionResult }
+      : { message: String(actionResult || '沧澜星图状态已更新') };
+    result.ok = result.ok !== false;
+    const receipt = { status: result.ok ? 200 : 400, payload: result };
+
+    // Persist the domain result before optional state enrichment so retries never repeat the action.
+    await redisClient.set(operationKey, JSON.stringify(receipt), {
+      EX: sessionTtlSeconds,
+    });
+    if (result.ok && !Object.hasOwn(result, 'state') && typeof controller.getWebState === 'function') {
+      try {
+        result.state = await controller.getWebState(identity);
+        await redisClient.set(operationKey, JSON.stringify(receipt), {
+          EX: sessionTtlSeconds,
+        });
+      } catch (error) {
+        globalThis.logger?.warn?.(`[沧澜星图网页] 状态富化失败：${error.message}`);
+      }
+    }
+    return receipt;
+  } catch (error) {
+    await redisClient.del(operationKey);
+    throw error;
+  }
+}
+
 async function handleIncomingWebRelay({ kind, operation, sessionId, identity, body }) {
   const redisClient = globalThis.redis;
   if (!redisClient) throw new Error('redis_not_ready');
@@ -744,6 +875,28 @@ async function handleIncomingWebRelay({ kind, operation, sessionId, identity, bo
     ...(identity || {}),
     token: `relay:${sessionId}`,
   };
+
+  if (kind === 'canglan') {
+    const controller = currentCanglanController();
+    if (!controller) throw new Error('canglan_not_ready');
+    if (operation === 'state') {
+      if (typeof controller.getWebState !== 'function') throw new Error('canglan_state_not_ready');
+      return {
+        status: 200,
+        payload: { ok: true, state: await controller.getWebState(canglanControllerIdentity(session)) },
+      };
+    }
+    if (operation === 'action') {
+      return handleCanglanAction(
+        controller,
+        session,
+        body || {},
+        redisClient,
+        getEndlessWebConfig().sessionTtlSeconds
+      );
+    }
+    throw new Error('invalid_web_operation');
+  }
 
   if (kind === 'survey') {
     const controller = currentSurveyController();
@@ -842,7 +995,14 @@ async function handleIncomingWebRelay({ kind, operation, sessionId, identity, bo
   }
 }
 
-export function createEndlessWebHttpServer({ realm, redisClient, config, worldController = null, surveyController = null }) {
+export function createEndlessWebHttpServer({
+  realm,
+  redisClient,
+  config,
+  worldController = null,
+  surveyController = null,
+  canglanController = null,
+}) {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://localhost');
     const endlessRealm = activeRealm || realm;
@@ -891,6 +1051,13 @@ export function createEndlessWebHttpServer({ realm, redisClient, config, worldCo
         if (asset) return sendFile(res, asset, 'image/jpeg');
       }
 
+      if (req.method === 'GET' && (url.pathname === '/canglan' || url.pathname === '/canglan/'))
+        return sendFile(res, path.join(canglanWebRoot, 'index.html'), 'text/html; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/canglan/app.js')
+        return sendFile(res, path.join(canglanWebRoot, 'app.js'), 'text/javascript; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/canglan/style.css')
+        return sendFile(res, path.join(canglanWebRoot, 'style.css'), 'text/css; charset=utf-8');
+
       if (req.method === 'GET' && (url.pathname === '/survey' || url.pathname === '/survey/'))
         return sendFile(res, path.join(surveyWebRoot, 'index.html'), 'text/html; charset=utf-8');
       if (req.method === 'GET' && url.pathname === '/survey/app.js')
@@ -899,6 +1066,70 @@ export function createEndlessWebHttpServer({ realm, redisClient, config, worldCo
         return sendFile(res, path.join(surveyWebRoot, 'style.css'), 'text/css; charset=utf-8');
       if (req.method === 'GET' && url.pathname === '/survey/realm.jpg')
         return sendFile(res, path.join(pluginRoot, 'resources', 'img', 'help', 'zhutian.jpg'), 'image/jpeg');
+
+      if (req.method === 'POST' && url.pathname === '/api/canglan/session') {
+        if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
+        if (!(await withinRateLimit(redisClient, `canglan-session:${clientAddress(req)}`, 10, 60)))
+          return sendJson(res, 429, { error: '入口请求过于频繁，请稍后再试' });
+        const body = await readJson(req);
+        const identity = await consumeLocalOrRelayTicket(
+          redisClient,
+          'canglan',
+          String(body.ticket || '')
+        );
+        if (!identity || (!identity.relay && (!identity.userId || !identity.runId)))
+          return sendJson(res, 401, { error: '入口已失效，请重新领取沧澜星图入口' });
+        const session = randomToken();
+        await redisClient.set(canglanSessionKey(session), JSON.stringify(identity), {
+          EX: config.sessionTtlSeconds,
+        });
+        const secure = config.publicUrl.startsWith('https://') ? '; Secure' : '';
+        return sendJson(res, 200, { ok: true }, {
+          'Set-Cookie': `${canglanCookieName(config)}=${encodeURIComponent(session)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${config.sessionTtlSeconds}${secure}`,
+        });
+      }
+
+      if (url.pathname.startsWith('/api/canglan/')) {
+        const session = await loadCanglanSession(redisClient, config, req);
+        if (!session)
+          return sendJson(res, 401, { error: '会话已失效，请重新领取沧澜星图入口' });
+        if (session.relay) {
+          if (req.method === 'GET' && url.pathname === '/api/canglan/state') {
+            const relayed = await requestWebRelay(session, 'state');
+            return sendJson(res, relayed.status, relayed.payload);
+          }
+          if (req.method === 'POST' && url.pathname === '/api/canglan/action') {
+            if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
+            if (!(await withinRateLimit(redisClient, `canglan-action:${session.token}`, 30, 10)))
+              return sendJson(res, 429, { error: '操作过于频繁，请稍后再试' });
+            const relayed = await requestWebRelay(session, 'action', await readJson(req));
+            return sendJson(res, relayed.status, relayed.payload);
+          }
+        }
+        const controller = currentCanglanController(canglanController);
+        if (!controller) return sendJson(res, 503, { error: '沧澜星图服务尚未就绪' });
+        const controllerIdentity = canglanControllerIdentity(session);
+        if (req.method === 'GET' && url.pathname === '/api/canglan/state') {
+          if (typeof controller.getWebState !== 'function')
+            return sendJson(res, 503, { error: '沧澜星图状态服务尚未就绪' });
+          const state = await controller.getWebState(controllerIdentity);
+          return sendJson(res, 200, { ok: true, state });
+        }
+        if (req.method === 'POST' && url.pathname === '/api/canglan/action') {
+          if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
+          if (!(await withinRateLimit(redisClient, `canglan-action:${session.token}`, 30, 10)))
+            return sendJson(res, 429, { error: '操作过于频繁，请稍后再试' });
+          const body = await readJson(req);
+          const result = await handleCanglanAction(
+            controller,
+            session,
+            body,
+            redisClient,
+            config.sessionTtlSeconds
+          );
+          return sendJson(res, result.status, result.payload);
+        }
+      }
 
       if (req.method === 'POST' && url.pathname === '/api/survey/session') {
         if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
@@ -1180,6 +1411,32 @@ export function registerWorldWebController(controller) {
 
 export function registerSurveyWebController(controller) {
   activeSurveyController = controller || null;
+}
+
+export function registerCanglanWebController(controller) {
+  activeCanglanController = controller || null;
+}
+
+export async function createCanglanWebLink(controller, identity) {
+  const config = getEndlessWebConfig();
+  if (!config.enabled) throw new Error('沧澜星图网页功能尚未开启');
+  const redisClient = globalThis.redis;
+  if (!redisClient) throw new Error('Redis 尚未就绪');
+  const normalizedIdentity = identity && typeof identity === 'object'
+    ? {
+        ...identity,
+        userId: String(identity.userId || ''),
+        runId: String(identity.runId || ''),
+      }
+    : { userId: String(identity || ''), runId: '' };
+  if (!normalizedIdentity.userId) throw new Error('沧澜星图入口缺少玩家身份');
+  if (!normalizedIdentity.runId) throw new Error('沧澜星图入口缺少远征轮次');
+  registerCanglanWebController(controller);
+  if (!config.relayEnabled) await ensureServer(activeRealm, redisClient, config);
+  const ticket = config.relayEnabled
+    ? await createRelayTicket('canglan', normalizedIdentity)
+    : await issueCanglanWebTicket(redisClient, config, normalizedIdentity);
+  return `${config.publicUrl}/canglan?ticket=${encodeURIComponent(ticket)}`;
 }
 
 export async function createSurveyWebLink(controller, identity) {
