@@ -52,6 +52,7 @@ temp/
 apps/worldChat/config.local.json
 apps/worldChat/config.json
 apps/worldChat/installation.id
+config/endless-web.local.json
 worldchat-server/clients.json
 worldchat-server/*.tmp
 apps/worldChat/*.tmp

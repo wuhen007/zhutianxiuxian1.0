@@ -10,12 +10,23 @@ import {
   createEndlessWebHttpServer,
   issueEndlessWebTicket,
   issueWorldWebTicket,
+  mergeEndlessWebConfig,
   serializeEndlessWebState,
 } from '../model/endlessWebServer.js';
 import {
   selectEndlessStarRoute,
   suggestEndlessStarRoute,
 } from '../model/endlessStarMap.js';
+
+test('本机网页配置覆盖仓库默认配置', () => {
+  assert.deepEqual(
+    mergeEndlessWebConfig(
+      { enabled: true, port: 3000, publicUrl: 'https://endless.example.com' },
+      { publicUrl: 'https://endless-node-82.example.com' }
+    ),
+    { enabled: true, port: 3000, publicUrl: 'https://endless-node-82.example.com' }
+  );
+});
 
 class MemoryRedis {
   data = new Map();

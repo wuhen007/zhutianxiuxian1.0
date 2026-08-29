@@ -76,6 +76,7 @@ function hasUsableIdentity(config = {}) {
 function normalizeConfig(input = {}) {
   const cfg = { ...input };
   cfg.enable = cfg.enable !== false;
+  cfg.web_relay_enabled = cfg.web_relay_enabled !== false;
   cfg.url = cfg.url || DEFAULT_WORLDCHAT_URL;
   cfg.enrollment_token = String(cfg.enrollment_token || '');
   cfg.auto_register =
@@ -247,6 +248,7 @@ export class WorldChatClient {
     this.messageHandler = null;
     this.tradeHandler = null;
     this.raidHandler = null;
+    this.webRelayHandler = null;
     this.backfillPromise = null;
     this.deliveryFailureHandler = null;
     this.deliveryQueue = [];
@@ -323,6 +325,10 @@ export class WorldChatClient {
     this.raidHandler = typeof handler === 'function' ? handler : null;
   }
 
+  setWebRelayHandler(handler) {
+    this.webRelayHandler = typeof handler === 'function' ? handler : null;
+  }
+
   hasIdentity() {
     return hasUsableIdentity(this.cfg);
   }
@@ -383,7 +389,7 @@ export class WorldChatClient {
   }
 
   connect() {
-    if (!this.cfg.enable) return;
+    if (!this.cfg.enable && !this.cfg.web_relay_enabled) return;
     if (!this.hasIdentity()) {
       if (this.identityPromise) return;
       this.identityPromise = this.registerIdentity()
@@ -393,7 +399,7 @@ export class WorldChatClient {
         })
         .finally(() => {
           this.identityPromise = null;
-          if (this.cfg.enable && this.hasIdentity()) this.connect();
+          if ((this.cfg.enable || this.cfg.web_relay_enabled) && this.hasIdentity()) this.connect();
         });
       return;
     }
@@ -407,7 +413,7 @@ export class WorldChatClient {
 
     let ws;
     try {
-      ws = new this.WebSocket(this.cfg.url, { maxPayload: 256 * 1024 });
+      ws = new this.WebSocket(this.cfg.url, { maxPayload: 1024 * 1024 });
     } catch (error) {
       this.lastError = error.message;
       this.scheduleReconnect();
@@ -450,10 +456,10 @@ export class WorldChatClient {
   presence() {
     const groups = this.groups();
     return {
-      joined: groups.length > 0,
-      groups: this.cfg.expose_group ? groups : [],
+      joined: this.cfg.enable && groups.length > 0,
+      groups: this.cfg.enable && this.cfg.expose_group ? groups : [],
       expose_level: this.cfg.expose_group || undefined,
-      trade_enabled: this.cfg.trade_enabled,
+      trade_enabled: this.cfg.enable && this.cfg.trade_enabled,
       trade_allow_servers: this.cfg.trade_allow_servers,
       trade_deny_servers: this.cfg.trade_deny_servers,
       realm_stats: this.cfg.realm_stats,
@@ -498,11 +504,12 @@ export class WorldChatClient {
       this.reconnectDelay = 1000;
       this.startPing();
       this.syncPresence();
-      this.backfill().catch(() => {});
+      if (this.cfg.enable) this.backfill().catch(() => {});
       return;
     }
 
     if (message.type === 'MESSAGE') {
+      if (!this.cfg.enable) return;
       this.enqueueDelivery(message.message).catch((error) => {
         this.lastError = error.message;
         if (error.message === 'delivery_queue_full') {
@@ -519,6 +526,30 @@ export class WorldChatClient {
 
     if (['RAID_MEMBER_JOINED', 'RAID_MEMBER_LEFT', 'RAID_ACTION', 'RAID_CHAT', 'RAID_STATE', 'RAID_SETTLEMENT', 'RAID_CLOSED'].includes(message.type)) {
       this.raidHandler?.({ type: message.type, ...message });
+      return;
+    }
+
+    if (message.type === 'WEB_RPC_REQUEST') {
+      Promise.resolve()
+        .then(() => {
+          if (!this.webRelayHandler) throw new Error('web_relay_not_ready');
+          return this.webRelayHandler({
+            kind: message.kind,
+            operation: message.operation,
+            sessionId: message.session_id,
+            identity: message.identity,
+            body: message.body || {},
+          });
+        })
+        .then((result) => this.sendWebRelayResult(message.relay_id, true, result))
+        .catch((error) =>
+          this.sendWebRelayResult(
+            message.relay_id,
+            false,
+            null,
+            error?.message || 'web_relay_failed'
+          )
+        );
       return;
     }
 
@@ -555,7 +586,7 @@ export class WorldChatClient {
   }
 
   scheduleReconnect() {
-    if (!this.cfg.enable || this.reconnectTimer) return;
+    if ((!this.cfg.enable && !this.cfg.web_relay_enabled) || this.reconnectTimer) return;
     const delay = this.reconnectDelay + Math.floor(Math.random() * 250);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -588,6 +619,46 @@ export class WorldChatClient {
       this.pending.set(requestId, { type: responseType, resolve, timer });
       this.ws.send(JSON.stringify({ type, request_id: requestId, ...body }));
     });
+  }
+
+  sendWebRelayResult(relayId, ok, result = null, reason = '') {
+    if (!this.authed || this.ws?.readyState !== this.WebSocket.OPEN) return;
+    this.ws.send(
+      JSON.stringify({
+        type: 'WEB_RPC_RESULT',
+        relay_id: String(relayId || ''),
+        ok: Boolean(ok),
+        result,
+        reason: String(reason || '').slice(0, 200),
+      })
+    );
+  }
+
+  createWebTicket(kind, identity) {
+    return this.request(
+      'WEB_TICKET_CREATE',
+      'WEB_TICKET_CREATE_RESULT',
+      { kind, identity },
+      8000
+    );
+  }
+
+  openWebSession(token) {
+    return this.request(
+      'WEB_SESSION_OPEN',
+      'WEB_SESSION_OPEN_RESULT',
+      { token },
+      8000
+    );
+  }
+
+  webRequest(sessionId, operation, body = {}) {
+    return this.request(
+      'WEB_RPC_REQUEST',
+      'WEB_RPC_REQUEST_RESULT',
+      { session_id: sessionId, operation, body },
+      20_000
+    );
   }
 
   pub(text, sender = {}, images = []) {
@@ -982,6 +1053,7 @@ export class WorldChatClient {
   status() {
     return {
       enable: this.cfg.enable,
+      web_relay_enabled: this.cfg.web_relay_enabled,
       connected: this.connected,
       authed: this.authed,
       url: this.cfg.url,
@@ -1045,15 +1117,18 @@ export class WorldChatClient {
     this.cfg.enable = Boolean(value);
     this.saveConfig();
     if (!this.cfg.enable) {
-      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
       this.cancelDeliveryRetry();
       this.clearDeliveryQueue('delivery_disabled');
-      this.ws?.close();
-      this.ws = null;
-      this.connected = false;
-      this.authed = false;
-      this.stopPing();
+      if (this.cfg.web_relay_enabled) this.syncPresence();
+      else {
+        if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+        this.ws?.close();
+        this.ws = null;
+        this.connected = false;
+        this.authed = false;
+        this.stopPing();
+      }
     } else {
       this.connect();
     }
@@ -1061,6 +1136,7 @@ export class WorldChatClient {
 
   close() {
     this.cfg.enable = false;
+    this.cfg.web_relay_enabled = false;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
     this.stopPing();

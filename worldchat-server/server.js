@@ -298,6 +298,9 @@ export function createWorldChatServer(options = {}) {
   const userLastPublish = new Map();
   const registrationWindows = new Map();
   let publishedRequests = new Map();
+  const webTickets = new Map();
+  const webSessions = new Map();
+  const webRpcPending = new Map();
 
   function rebuildDedupe() {
     publishedRequests = new Map(
@@ -442,6 +445,24 @@ export function createWorldChatServer(options = {}) {
     } catch {
       return null;
     }
+  }
+
+  function cleanWebPayload(value, maxBytes = cfg.MAX_PAYLOAD_BYTES) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    try {
+      const json = JSON.stringify(value);
+      return Buffer.byteLength(json) <= maxBytes ? JSON.parse(json) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function webOperationAllowed(kind, operation) {
+    const operations = {
+      endless: new Set(['state', 'chat.get', 'chat.post', 'action']),
+      survey: new Set(['state', 'submit']),
+    };
+    return operations[kind]?.has(operation) || false;
   }
 
   function newRaidCode() {
@@ -772,6 +793,139 @@ export function createWorldChatServer(options = {}) {
         send(ws, { type: 'SYNC_ACK', ok: true, last_seq: nextSeq - 1 });
         redeliverTradeSettlements(connection.serverId);
         return;
+      }
+
+      if (message.type === 'WEB_TICKET_CREATE') {
+        const requestId = String(message.request_id || '');
+        const kind = String(message.kind || '');
+        const identity = cleanWebPayload(message.identity, 16 * 1024);
+        let reason = null;
+        if (!/^[A-Za-z0-9_-]{8,80}$/.test(requestId)) reason = 'invalid_request_id';
+        else if (!['endless', 'survey'].includes(kind)) reason = 'invalid_web_kind';
+        else if (!identity) reason = 'invalid_identity';
+        if (reason) {
+          return send(ws, {
+            type: 'WEB_TICKET_CREATE_RESULT',
+            request_id: requestId,
+            ok: false,
+            reason,
+          });
+        }
+        const token = crypto.randomBytes(24).toString('base64url');
+        const expiresAt = Date.now() + cfg.WEB_TICKET_TTL_MS;
+        webTickets.set(token, {
+          targetServerId: connection.serverId,
+          kind,
+          identity,
+          expiresAt,
+        });
+        return send(ws, {
+          type: 'WEB_TICKET_CREATE_RESULT',
+          request_id: requestId,
+          ok: true,
+          token,
+          expires_at: expiresAt,
+        });
+      }
+
+      if (message.type === 'WEB_SESSION_OPEN') {
+        const requestId = String(message.request_id || '');
+        const token = String(message.token || '');
+        const ticket = webTickets.get(token);
+        let reason = null;
+        if (!/^[A-Za-z0-9_-]{8,80}$/.test(requestId)) reason = 'invalid_request_id';
+        else if (!ticket || ticket.expiresAt <= Date.now()) reason = 'web_ticket_expired';
+        else if (!online.has(ticket.targetServerId)) reason = 'target_offline';
+        if (reason) {
+          if (ticket?.expiresAt <= Date.now()) webTickets.delete(token);
+          return send(ws, {
+            type: 'WEB_SESSION_OPEN_RESULT',
+            request_id: requestId,
+            ok: false,
+            reason,
+          });
+        }
+        webTickets.delete(token);
+        const sessionId = crypto.randomBytes(32).toString('base64url');
+        const expiresAt = Date.now() + cfg.WEB_SESSION_TTL_MS;
+        webSessions.set(sessionId, {
+          gatewayServerId: connection.serverId,
+          targetServerId: ticket.targetServerId,
+          kind: ticket.kind,
+          identity: ticket.identity,
+          expiresAt,
+        });
+        return send(ws, {
+          type: 'WEB_SESSION_OPEN_RESULT',
+          request_id: requestId,
+          ok: true,
+          session_id: sessionId,
+          kind: ticket.kind,
+          expires_at: expiresAt,
+        });
+      }
+
+      if (message.type === 'WEB_RPC_REQUEST') {
+        const requestId = String(message.request_id || '');
+        const sessionId = String(message.session_id || '');
+        const operation = String(message.operation || '');
+        const session = webSessions.get(sessionId);
+        const body = cleanWebPayload(message.body || {}, 64 * 1024);
+        const target = session ? online.get(session.targetServerId) : null;
+        let reason = null;
+        if (!/^[A-Za-z0-9_-]{8,80}$/.test(requestId)) reason = 'invalid_request_id';
+        else if (!session || session.expiresAt <= Date.now()) reason = 'web_session_expired';
+        else if (session.gatewayServerId !== connection.serverId) reason = 'web_session_mismatch';
+        else if (!webOperationAllowed(session.kind, operation)) reason = 'invalid_web_operation';
+        else if (!body) reason = 'invalid_web_payload';
+        else if (!target) reason = 'target_offline';
+        if (reason) {
+          if (session?.expiresAt <= Date.now()) webSessions.delete(sessionId);
+          return send(ws, {
+            type: 'WEB_RPC_REQUEST_RESULT',
+            request_id: requestId,
+            ok: false,
+            reason,
+          });
+        }
+        const relayId = crypto.randomUUID();
+        webRpcPending.set(relayId, {
+          gatewayServerId: connection.serverId,
+          targetServerId: session.targetServerId,
+          requestId,
+          expiresAt: Date.now() + cfg.WEB_RPC_TIMEOUT_MS,
+        });
+        send(target.ws, {
+          type: 'WEB_RPC_REQUEST',
+          relay_id: relayId,
+          session_id: sessionId,
+          kind: session.kind,
+          operation,
+          identity: session.identity,
+          body,
+        });
+        return;
+      }
+
+      if (message.type === 'WEB_RPC_RESULT') {
+        const relayId = String(message.relay_id || '');
+        const pending = webRpcPending.get(relayId);
+        if (!pending || pending.targetServerId !== connection.serverId) return;
+        webRpcPending.delete(relayId);
+        const gateway = online.get(pending.gatewayServerId);
+        if (!gateway) return;
+        const result = message.ok
+          ? cleanWebPayload(message.result, cfg.MAX_PAYLOAD_BYTES)
+          : null;
+        return send(gateway.ws, {
+          type: 'WEB_RPC_REQUEST_RESULT',
+          request_id: pending.requestId,
+          ok: Boolean(message.ok && result),
+          result,
+          reason: message.ok && !result
+            ? 'invalid_web_result'
+            : cleanLabel(message.reason, 200) || undefined,
+        });
       }
 
       if (message.type === 'REALM_LIST') {
@@ -1372,6 +1526,7 @@ export function createWorldChatServer(options = {}) {
   });
 
   const heartbeat = setInterval(() => {
+    const now = Date.now();
     const cutoff = Date.now() - 60_000;
     for (const [key, timestamp] of userLastPublish)
       if (timestamp < cutoff) userLastPublish.delete(key);
@@ -1380,6 +1535,25 @@ export function createWorldChatServer(options = {}) {
       else {
         ws.isAlive = false;
         ws.ping();
+      }
+    }
+    for (const [token, ticket] of webTickets) {
+      if (ticket.expiresAt <= now) webTickets.delete(token);
+    }
+    for (const [sessionId, session] of webSessions) {
+      if (session.expiresAt <= now) webSessions.delete(sessionId);
+    }
+    for (const [relayId, pending] of webRpcPending) {
+      if (pending.expiresAt > now) continue;
+      webRpcPending.delete(relayId);
+      const gateway = online.get(pending.gatewayServerId);
+      if (gateway) {
+        send(gateway.ws, {
+          type: 'WEB_RPC_REQUEST_RESULT',
+          request_id: pending.requestId,
+          ok: false,
+          reason: 'web_rpc_timeout',
+        });
       }
     }
     let raidsChanged = false;

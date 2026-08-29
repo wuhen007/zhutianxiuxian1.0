@@ -1,5 +1,6 @@
 {
   "enable": true,
+  "web_relay_enabled": true,
   "url": "wss://worldchat.ameng2027.xyz",
   "auto_register": true,
   "enrollment_token": "",

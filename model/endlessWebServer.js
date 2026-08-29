@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { worldChatClient } from '../apps/worldChat/client.js';
 import {
   ensureEndlessStarMapState,
   getAbility,
@@ -24,6 +25,7 @@ const wendaoAudioRoot = path.join(wendaoWebRoot, 'audio');
 const worldWebRoot = path.join(pluginRoot, 'resources', 'web', 'world');
 const surveyWebRoot = path.join(pluginRoot, 'resources', 'web', 'survey');
 const configPath = path.join(pluginRoot, 'config', 'endless-web.json');
+const localConfigPath = path.join(pluginRoot, 'config', 'endless-web.local.json');
 const TICKET_PREFIX = 'Xiuxian:Endless:Web:Ticket:';
 const SESSION_PREFIX = 'Xiuxian:Endless:Web:Session:';
 const ACTION_PREFIX = 'Xiuxian:Endless:Web:Action:';
@@ -77,12 +79,26 @@ function positiveInteger(value, fallback) {
   return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
+export function mergeEndlessWebConfig(fileConfig = {}, localConfig = {}) {
+  return { ...fileConfig, ...localConfig };
+}
+
 export function getEndlessWebConfig() {
   let fileConfig = {};
   try {
     fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   } catch (error) {
     globalThis.logger?.warn?.(`[无尽网页] 读取配置失败：${error.message}`);
+  }
+  if (fs.existsSync(localConfigPath)) {
+    try {
+      fileConfig = mergeEndlessWebConfig(
+        fileConfig,
+        JSON.parse(fs.readFileSync(localConfigPath, 'utf8'))
+      );
+    } catch (error) {
+      globalThis.logger?.warn?.(`[无尽网页] 读取本机配置失败：${error.message}`);
+    }
   }
   const port = positiveInteger(process.env.ENDLESS_WEB_PORT || fileConfig.port, 3000);
   const publicUrl = String(process.env.ENDLESS_WEB_PUBLIC_URL || fileConfig.publicUrl || `http://127.0.0.1:${port}`).replace(/\/+$/, '');
@@ -91,6 +107,7 @@ export function getEndlessWebConfig() {
     host: String(process.env.ENDLESS_WEB_HOST || fileConfig.host || '127.0.0.1'),
     port,
     publicUrl,
+    relayEnabled: fileConfig.relayEnabled !== false,
     ticketTtlSeconds: positiveInteger(fileConfig.ticketTtlSeconds, 120),
     sessionTtlSeconds: positiveInteger(fileConfig.sessionTtlSeconds, 21600),
   };
@@ -673,6 +690,158 @@ async function performAction(realm, session, action, value) {
   };
 }
 
+async function waitForWorldRelay(timeoutMs = 5000) {
+  if (worldChatClient.authed) return true;
+  worldChatClient.connect();
+  const deadline = Date.now() + timeoutMs;
+  while (!worldChatClient.authed && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  return worldChatClient.authed;
+}
+
+async function createRelayTicket(kind, identity) {
+  if (!(await waitForWorldRelay())) throw new Error('网页中继仍在连接，请稍后重试');
+  const result = await worldChatClient.createWebTicket(kind, identity);
+  if (!result?.ok || !result.token) {
+    throw new Error(`网页中继签发失败：${result?.reason || 'unknown'}`);
+  }
+  return result.token;
+}
+
+async function consumeLocalOrRelayTicket(redisClient, kind, token) {
+  const localConsumer = kind === 'survey'
+    ? consumeSurveyWebTicket
+    : consumeEndlessWebTicket;
+  const identity = await localConsumer(redisClient, token);
+  if (identity) return identity;
+  if (!worldChatClient.authed) return null;
+  const result = await worldChatClient.openWebSession(token);
+  if (!result?.ok || result.kind !== kind || !result.session_id) return null;
+  return {
+    relay: true,
+    relayKind: kind,
+    relaySessionId: result.session_id,
+  };
+}
+
+async function requestWebRelay(session, operation, body = {}) {
+  const result = await worldChatClient.webRequest(
+    session.relaySessionId,
+    operation,
+    body
+  );
+  if (!result?.ok || !result.result) {
+    throw new Error(`网页中继请求失败：${result?.reason || 'unknown'}`);
+  }
+  return result.result;
+}
+
+async function handleIncomingWebRelay({ kind, operation, sessionId, identity, body }) {
+  const redisClient = globalThis.redis;
+  if (!redisClient) throw new Error('redis_not_ready');
+  const session = {
+    ...(identity || {}),
+    token: `relay:${sessionId}`,
+  };
+
+  if (kind === 'survey') {
+    const controller = currentSurveyController();
+    if (!controller) throw new Error('survey_not_ready');
+    if (operation === 'state') {
+      return {
+        status: 200,
+        payload: { ok: true, state: await controller.getSurveyWebState(session) },
+      };
+    }
+    if (operation === 'submit') {
+      const result = await controller.submitSurvey(session, body || {});
+      return {
+        status: result?.ok === false ? 400 : 200,
+        payload: result || { ok: true },
+      };
+    }
+    throw new Error('invalid_web_operation');
+  }
+
+  if (kind !== 'endless' || !activeRealm) throw new Error('endless_not_ready');
+  const state = await currentState(activeRealm, session, redisClient);
+  if (!state) {
+    return { status: 410, payload: { error: '本次无尽劫境已经结束' } };
+  }
+  if (operation === 'state') {
+    return { status: 200, payload: { ok: true, state } };
+  }
+  if (operation === 'chat.get') {
+    return { status: 200, payload: { ok: true, messages: state.teamChat || [] } };
+  }
+  if (operation === 'chat.post') {
+    const text = cleanTeamChatText(body?.text);
+    if (!text) return { status: 400, payload: { error: '消息内容不能为空' } };
+    const team = await activeRealm.getTeam(session.teamId);
+    const message = {
+      id: `${Date.now()}-${randomToken(6)}`,
+      userId: String(session.userId),
+      name: String(team?.memberNames?.[session.userId] || session.rawUserId || '同行者').slice(0, 40),
+      text,
+      at: Date.now(),
+    };
+    await appendTeamChat(redisClient, session.teamId, message);
+    return {
+      status: 200,
+      payload: {
+        ok: true,
+        message,
+        messages: await readTeamChat(redisClient, session.teamId),
+      },
+    };
+  }
+  if (operation !== 'action') throw new Error('invalid_web_operation');
+
+  const operationId = String(body?.operationId || '');
+  if (!/^[A-Za-z0-9-]{16,64}$/.test(operationId)) {
+    return { status: 400, payload: { error: '操作标识无效' } };
+  }
+  const operationKey = actionKey(session.token, operationId);
+  const acquired = await redisClient.set(operationKey, 'processing', {
+    NX: true,
+    EX: 60,
+  });
+  if (!acquired) {
+    const cached = await redisClient.get(operationKey);
+    if (cached && cached !== 'processing') {
+      return { status: 200, payload: JSON.parse(cached) };
+    }
+    return { status: 409, payload: { error: '该操作正在执行，请勿重复提交' } };
+  }
+  try {
+    const actionResult = await performAction(
+      activeRealm,
+      session,
+      body?.action,
+      body?.value
+    );
+    const nextState = actionResult.terminalState ||
+      (await currentState(activeRealm, session, redisClient));
+    if (nextState && !nextState.teamChat) {
+      nextState.teamChat = await readTeamChat(redisClient, session.teamId);
+    }
+    const result = {
+      ok: true,
+      message: actionResult.message,
+      state: nextState,
+      ended: Boolean(actionResult.terminalState) || !nextState,
+    };
+    await redisClient.set(operationKey, JSON.stringify(result), {
+      EX: getEndlessWebConfig().sessionTtlSeconds,
+    });
+    return { status: 200, payload: result };
+  } catch (error) {
+    await redisClient.del(operationKey);
+    throw error;
+  }
+}
+
 export function createEndlessWebHttpServer({ realm, redisClient, config, worldController = null, surveyController = null }) {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://localhost');
@@ -736,7 +905,11 @@ export function createEndlessWebHttpServer({ realm, redisClient, config, worldCo
         if (!(await withinRateLimit(redisClient, `survey-session:${clientAddress(req)}`, 10, 60)))
           return sendJson(res, 429, { error: '入口请求过于频繁，请稍后再试' });
         const body = await readJson(req);
-        const identity = await consumeSurveyWebTicket(redisClient, String(body.token || ''));
+        const identity = await consumeLocalOrRelayTicket(
+          redisClient,
+          'survey',
+          String(body.token || '')
+        );
         if (!identity) return sendJson(res, 401, { error: '入口已失效，请重新发送 #诸天调研问卷' });
         const session = randomToken();
         await redisClient.set(surveySessionKey(session), JSON.stringify(identity), {
@@ -751,6 +924,19 @@ export function createEndlessWebHttpServer({ realm, redisClient, config, worldCo
       if (url.pathname.startsWith('/api/survey/')) {
         const session = await loadSurveySession(redisClient, config, req);
         if (!session) return sendJson(res, 401, { error: '会话已失效，请重新发送 #诸天调研问卷' });
+        if (session.relay) {
+          if (req.method === 'GET' && url.pathname === '/api/survey/state') {
+            const relayed = await requestWebRelay(session, 'state');
+            return sendJson(res, relayed.status, relayed.payload);
+          }
+          if (req.method === 'POST' && url.pathname === '/api/survey/submit') {
+            if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
+            if (!(await withinRateLimit(redisClient, `survey-submit:${session.token}`, 5, 60)))
+              return sendJson(res, 429, { error: '提交过于频繁，请稍后再试' });
+            const relayed = await requestWebRelay(session, 'submit', await readJson(req));
+            return sendJson(res, relayed.status, relayed.payload);
+          }
+        }
         const controller = currentSurveyController(surveyController);
         if (!controller) return sendJson(res, 503, { error: '调研服务尚未就绪' });
         if (req.method === 'GET' && url.pathname === '/api/survey/state') {
@@ -810,7 +996,11 @@ export function createEndlessWebHttpServer({ realm, redisClient, config, worldCo
         if (!(await withinRateLimit(redisClient, `session:${clientAddress(req)}`, 10, 60)))
           return sendJson(res, 429, { error: '入口请求过于频繁，请稍后再试' });
         const body = await readJson(req);
-        const identity = await consumeEndlessWebTicket(redisClient, String(body.token || ''));
+        const identity = await consumeLocalOrRelayTicket(
+          redisClient,
+          'endless',
+          String(body.token || '')
+        );
         if (!identity)
           return sendJson(res, 401, {
             error: '入口已失效，请重新发送 #无尽网页',
@@ -838,6 +1028,34 @@ export function createEndlessWebHttpServer({ realm, redisClient, config, worldCo
           return sendJson(res, 401, {
             error: '会话已失效，请重新领取网页入口',
           });
+        if (session.relay) {
+          if (req.method === 'GET' && url.pathname === '/api/endless/state') {
+            const relayed = await requestWebRelay(session, 'state');
+            if (relayed.status === 410) await redisClient.del(sessionKey(session.token));
+            return sendJson(res, relayed.status, relayed.payload);
+          }
+          if (url.pathname === '/api/endless/chat') {
+            if (req.method === 'GET') {
+              const relayed = await requestWebRelay(session, 'chat.get');
+              return sendJson(res, relayed.status, relayed.payload);
+            }
+            if (req.method === 'POST') {
+              if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
+              if (!(await withinRateLimit(redisClient, `chat:${session.token}`, 60, 60)))
+                return sendJson(res, 429, { error: '队伍聊天过于频繁，请稍后再试' });
+              const relayed = await requestWebRelay(session, 'chat.post', await readJson(req));
+              return sendJson(res, relayed.status, relayed.payload);
+            }
+          }
+          if (req.method === 'POST' && url.pathname === '/api/endless/action') {
+            if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
+            if (!(await withinRateLimit(redisClient, `action:${session.token}`, 30, 10)))
+              return sendJson(res, 429, { error: '操作过于频繁，请稍后再试' });
+            const relayed = await requestWebRelay(session, 'action', await readJson(req));
+            if (relayed.payload?.ended) await redisClient.del(sessionKey(session.token));
+            return sendJson(res, relayed.status, relayed.payload);
+          }
+        }
         if (req.method === 'GET' && url.pathname === '/api/endless/state') {
           const state = await currentState(endlessRealm, session, redisClient);
           if (!state) await redisClient.del(sessionKey(session.token));
@@ -948,8 +1166,11 @@ export async function createEndlessWebLink(realm, identity) {
   if (!config.enabled) throw new Error('无尽网页功能尚未开启');
   const redisClient = globalThis.redis;
   if (!redisClient) throw new Error('Redis 尚未就绪');
-  await startEndlessWebServer(realm);
-  const token = await issueEndlessWebTicket(redisClient, config, identity);
+  if (config.relayEnabled) activeRealm = realm;
+  else await startEndlessWebServer(realm);
+  const token = config.relayEnabled
+    ? await createRelayTicket('endless', identity)
+    : await issueEndlessWebTicket(redisClient, config, identity);
   return `${config.publicUrl}/endless?t=${encodeURIComponent(token)}`;
 }
 
@@ -967,8 +1188,10 @@ export async function createSurveyWebLink(controller, identity) {
   const redisClient = globalThis.redis;
   if (!redisClient) throw new Error('Redis 尚未就绪');
   registerSurveyWebController(controller);
-  await ensureServer(activeRealm, redisClient, config);
-  const token = await issueSurveyWebTicket(redisClient, config, identity);
+  if (!config.relayEnabled) await ensureServer(activeRealm, redisClient, config);
+  const token = config.relayEnabled
+    ? await createRelayTicket('survey', identity)
+    : await issueSurveyWebTicket(redisClient, config, identity);
   return `${config.publicUrl}/survey?t=${encodeURIComponent(token)}`;
 }
 
@@ -986,3 +1209,5 @@ export async function createWorldWebLink(controller, identity) {
 export function createEndlessWendaoLink(config = getEndlessWebConfig()) {
   return `${config.publicUrl}/wendao`;
 }
+
+worldChatClient.setWebRelayHandler(handleIncomingWebRelay);
