@@ -260,6 +260,12 @@ import {
   rewriteBeyondDefeat,
 } from './exclusiveEquipmentSets.js';
 import {
+  applySelfDaoBattleOpening,
+  enforceSelfDaoBuffSuppression,
+  resetSelfDaoBattleState,
+  trySelfDaoDivineEmbryoRevival,
+} from './selfDaoDeduction.js';
+import {
   applyTimeRiverSkillEffect,
   getTimeRiverAdversaryProfile,
   getTimeRiverCounterMessage,
@@ -5865,8 +5871,7 @@ export async function ForwardMsg(e, data) {
 //    await e.reply(await Bot.makeForwardMsg(msgList));
 //  }
 let img = await get_fight_img(e,data)
-e.reply(img)
-  return;
+return await e.reply(img)
 }
 
 
@@ -7003,7 +7008,9 @@ export async function Go(e) {
     
     // 获取当前位置名称
     const currentPlace = player.power_place || 0; // 默认为仙界
-    const placeName = getLocationName(currentPlace) || "未知之地";
+    const placeName = player.大宇宙位置?.宇宙名
+      ? `${player.大宇宙位置.宇宙名}（玩家大宇宙）`
+      : getLocationName(currentPlace) || "未知之地";
     
     // // 不开放私聊
     // if (!e.isGroup) {
@@ -8206,7 +8213,7 @@ export function consumeBattleActionIndex(unit) {
 }
 
 export function applyBattleStatBoostOnce(unit, flag, multipliers = {}) {
-  if (!unit || unit[flag]) return false;
+  if (!unit || unit[flag] || unit._半步仙帝加成压制) return false;
   unit[flag] = true;
   if (Number(multipliers.attack) > 0) {
     unit.攻击 = Math.trunc((Number(unit.攻击) || 0) * Number(multipliers.attack));
@@ -8407,8 +8414,14 @@ async function zd_battle_1v1(AA_player, BB_player, options = {}) {
   // 保持输入、战斗状态与返回字段的 A/B 归属一致。
   let A_player = JSON.parse(JSON.stringify(AA_player));
   let B_player = JSON.parse(JSON.stringify(BB_player));
+  resetSelfDaoBattleState(A_player);
+  resetSelfDaoBattleState(B_player);
   normalizeBattleOrbMultiplier(A_player);
   normalizeBattleOrbMultiplier(B_player);
+  const selfDaoOpeningMessages = [
+    ...applySelfDaoBattleOpening(A_player, B_player),
+    ...applySelfDaoBattleOpening(B_player, A_player),
+  ];
   const weaknessNow = Date.now();
   const A_clowWeakness = applyClowWishBattleWeakness(A_player, weaknessNow);
   const B_clowWeakness = applyClowWishBattleWeakness(B_player, weaknessNow);
@@ -8471,7 +8484,7 @@ let B_speed = getBattleUnitSpeed(B_player);
   let cnt = 0;
   let cnt2 = 0;
   let t;
-  let msg = [A_clowWeakness.message, B_clowWeakness.message].filter(Boolean);
+  let msg = [A_clowWeakness.message, B_clowWeakness.message, ...selfDaoOpeningMessages].filter(Boolean);
   // 打桩/DPS 测试用：累计 B 方（木桩）承受的总伤害，供外部精确计算 DPS。
   let B_total_damage_taken = 0;
   // 打桩/DPS 测试用：累计 A 方（玩家）发起的有效攻击次数（即"回合数"）。
@@ -8901,6 +8914,8 @@ let B_speed = getBattleUnitSpeed(B_player);
 
   // ==================== 攻击处理函数（保持原样） ====================
   async function performAttack(attacker, defender, cnt2, context = "main") {
+    enforceSelfDaoBuffSuppression(attacker);
+    enforceSelfDaoBuffSuppression(defender);
     delete attacker._时间长河反制本回合;
     const isImmune = (attacker === A_player && A_immune_control > 0) || 
                      (attacker === B_player && B_immune_control > 0);
@@ -9638,6 +9653,7 @@ let B_speed = getBattleUnitSpeed(B_player);
 
   // ==================== 伤害应用函数 ====================
   function applyDamage(defender, 伤害, context, source = null) {
+    enforceSelfDaoBuffSuppression(defender);
     let fenshen_blocked = false;
     let actual_damage = 伤害;
 
@@ -9818,6 +9834,10 @@ let B_speed = getBattleUnitSpeed(B_player);
   function checkRevival(player, context = "main") {
     const darkTriadRevival = tryDarkTriadRevival(player);
     if (darkTriadRevival.revived) return { revived: true, message: darkTriadRevival.message };
+    if (context !== 'fenshen') {
+      const divineEmbryoRevival = trySelfDaoDivineEmbryoRevival(player);
+      if (divineEmbryoRevival.revived) return divineEmbryoRevival;
+    }
     if (context !== 'fenshen') {
       const daoRewrite = tryDaoTreasureDeathRewrite(player);
       if (daoRewrite.revived) return { revived: true, message: daoRewrite.messages.join('\n') };
@@ -10171,6 +10191,8 @@ msg.push(bSpeedMsg);
     if (!actionResult) break;
     
     const { attacker, defender, attackerBar, defenderBar } = actionResult;
+    const cangSuppression = tickCangEmperorOpeningSuppression(attacker);
+    if (cangSuppression.message) msg.push(cangSuppression.message);
     cnt2 = consumeBattleActionIndex(attacker);
           // 每轮显示行动条状态
       const A_bar = Math.min(A_actionBar, ACTION_BAR_MAX);
@@ -10845,6 +10867,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
   function initTeam(team, teamName) {
     for (let p of team) {
+      resetSelfDaoBattleState(p);
       const clowWeakness = applyClowWishBattleWeakness(p);
       if (clowWeakness.message) msg.push(clowWeakness.message);
       p._team = teamName;
@@ -10885,6 +10908,8 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
   initTeam(A_team, 'A');
   initTeam(B_team, 'B');
+  for (const holder of A_team) msg.push(...applySelfDaoBattleOpening(holder, B_team));
+  for (const holder of B_team) msg.push(...applySelfDaoBattleOpening(holder, A_team));
 
   const teamEquipment = new Map();
 
@@ -12021,6 +12046,8 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   function checkTeamRevival(player) {
     const darkTriadRevival = tryDarkTriadRevival(player);
     if (darkTriadRevival.revived) return { revived: true, message: [darkTriadRevival.message] };
+    const divineEmbryoRevival = trySelfDaoDivineEmbryoRevival(player);
+    if (divineEmbryoRevival.revived) return { revived: true, message: [divineEmbryoRevival.message] };
     const daoRewrite = tryDaoTreasureDeathRewrite(player);
     if (daoRewrite.revived) return { revived: true, message: daoRewrite.messages };
     if (consumeDaoTreasureRevivalBlock(player)) {
@@ -12646,6 +12673,8 @@ function selectTarget(players, hatred) {
 // 计算攻击伤害（删除仙宠逻辑）
 // P0-5: 加 equipment 缓存 + 装备属性加成不修改 attacker（防指数膨胀）
 async function calculateAttack(attacker, defender, actionIndex, jineng1, jineng2) {
+  enforceSelfDaoBuffSuppression(attacker);
+  enforceSelfDaoBuffSuppression(defender);
   let msgs = [];
   let triggerShengti = false; // 小成圣体触发标志
   let 不可防御 = false;
@@ -12711,6 +12740,11 @@ async function calculateAttack(attacker, defender, actionIndex, jineng1, jineng2
       weaponHpHeal = healBattleUnitByCurrentRatio(attacker, 0.4);
       msgs.push(`${attacker.名号}触发了少阴玉剑被动，血量回复${weaponHpHeal}`);
     }
+  }
+  if (attacker._半步仙帝加成压制 && (weaponAtkBoost > 0 || weaponDefBoost > 0)) {
+    weaponAtkBoost = 0;
+    weaponDefBoost = 0;
+    msgs.push(`【半步仙帝·破法】${attacker.名号}的临时属性加持被当场破解！`);
   }
   
   // 小成圣体技能触发

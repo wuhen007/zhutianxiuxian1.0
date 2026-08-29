@@ -13,8 +13,12 @@ import {
 import { damagePlanes, PLANE_DESTRUCTION_SOURCES } from '../../model/planeDestruction.js';
 import {
   SELF_DAO_COSTS,
+  SELF_DAO_DIVINE_EMBRYO_ATTEMPT,
+  SELF_DAO_HALF_IMMORTAL_EMPEROR_ATTEMPT,
   SELF_DAO_PLANE_TARGETS,
+  SELF_DAO_QUASI_EMPEROR_PEAK_ATTEMPT,
   SELF_DAO_RECOVERY_MS,
+  SELF_DAO_REQUIRED_ATTEMPTS,
   completeCorpseEmperorRecovery,
   consumeSelfDaoDeduction,
   ensureSelfDaoDeduction,
@@ -39,6 +43,22 @@ function costLine(costs = SELF_DAO_COSTS) {
 function battleExcerpt(messages = []) {
   if (messages.length <= 24) return messages;
   return [...messages.slice(0, 14), `……中间省略${messages.length - 22}条战报……`, ...messages.slice(-8)];
+}
+
+function progressLine(attempt) {
+  if (attempt === SELF_DAO_QUASI_EMPEROR_PEAK_ATTEMPT) {
+    return '十层推演圆满，你已抵达准仙帝极巅，号绝顶道祖；战斗中获得30%神通与近战伤害减免。';
+  }
+  if (attempt === SELF_DAO_DIVINE_EMBRYO_ATTEMPT) {
+    return '十五层推演圆满，己道神胎结出；此后每场战斗可额外满血复活一次，并解除控制。';
+  }
+  if (attempt < SELF_DAO_QUASI_EMPEROR_PEAK_ATTEMPT) {
+    return `距离准仙帝极巅尚余${SELF_DAO_QUASI_EMPEROR_PEAK_ATTEMPT - attempt}层推演。`;
+  }
+  if (attempt < SELF_DAO_DIVINE_EMBRYO_ATTEMPT) {
+    return `距离结出神胎尚余${SELF_DAO_DIVINE_EMBRYO_ATTEMPT - attempt}层推演。`;
+  }
+  return `距离半步仙帝尚余${SELF_DAO_HALF_IMMORTAL_EMPEROR_ATTEMPT - attempt}层推演；抵达后才会直面尸骸仙帝。`;
 }
 
 function battlePlayer(player, id) {
@@ -144,14 +164,14 @@ export class SelfDaoDeduction extends plugin {
             return;
           }
           await Write_player(id, player, { trackDailyTask: false });
-          if (deduction.attempt < 10) {
+          if (deduction.attempt < SELF_DAO_REQUIRED_ATTEMPTS) {
             response = [
-              `【推演己道·第${deduction.attempt}/10次】`,
+              `【推演己道·第${deduction.attempt}/${SELF_DAO_REQUIRED_ATTEMPTS}层】`,
               `${player.名号}斩去迷雾，将自身之道向尽头再推一步。`,
               costLine(deduction.costs),
               deduction.attempt === 5
                 ? '五次推演圆满，一线前路显化。现在可为体系设立六个大境界：\n#设立体系境界 境界一/境界二/境界三/境界四/境界五/境界六'
-                : `距离结出神胎尚余${10 - deduction.attempt}次推演。`,
+                : progressLine(deduction.attempt),
             ].join('\n');
             return;
           }
@@ -169,8 +189,8 @@ export class SelfDaoDeduction extends plugin {
           await Write_player(id, player, { trackDailyTask: false });
         }
         const opening = planeDamage ? [
-          '【推演己道·第10/10次】',
-          '己道抵达尽头，神胎结出；终极古地的尸骸随之开始呼吸。',
+          '【推演己道·第20/20层】',
+          '己道再进一步，踏入半步仙帝并破解万法加持；终极古地的尸骸随之开始呼吸。',
           `诸天承受力：${bigNumberTransform(planeDamage.bearingBefore)} → ${bigNumberTransform(planeDamage.bearingAfter)}`,
           `受损位面：${planeDamage.damaged.join('、')}`,
           '尸骸仙帝自沉眠中睁眼，你必须直面诸天万古最大的恐怖。',
@@ -270,7 +290,7 @@ export class SelfDaoDeduction extends plugin {
     const groups = [...new Set([...configured, ...fallback])];
     const message = [
       '【终极古地·尸骸呼吸】',
-      `${player.名号}己道推演十次圆满，神胎初结，惊醒了终极古地的尸骸仙帝！`,
+      `${player.名号}己道推演二十层圆满，神胎大成并踏入半步仙帝，惊醒了终极古地的尸骸仙帝！`,
       `一呼一吸间，大宇宙精气与诸天承受力被吞噬：${bigNumberTransform(damage.bearingBefore)} → ${bigNumberTransform(damage.bearingAfter)}`,
       `受损位面：${damage.damaged.join('、')}`,
       '诸天万古最大的恐怖已经睁眼。',

@@ -2,8 +2,12 @@ import { getRealmAuthorityLevel, getRealmAuthorityPath } from './realmAuthority.
 import { synchronizeCausalFacts } from './worldlineAuthority.js';
 import { tryEternalFateRewrite } from './innateTreasure.js';
 
-export const SELF_DAO_REQUIRED_ATTEMPTS = 10;
+export const SELF_DAO_REQUIRED_ATTEMPTS = 20;
 export const SELF_DAO_REALM_AWAKENING = 5;
+export const SELF_DAO_QUASI_EMPEROR_PEAK_ATTEMPT = 10;
+export const SELF_DAO_DIVINE_EMBRYO_ATTEMPT = 15;
+export const SELF_DAO_HALF_IMMORTAL_EMPEROR_ATTEMPT = 20;
+export const SELF_DAO_PEAK_DAMAGE_REDUCTION = 0.3;
 export const SELF_DAO_LATE_COST_MULTIPLIER = 20;
 export const SELF_DAO_RECOVERY_MS = 320 * 60 * 1000;
 export const SELF_DAO_COSTS = Object.freeze({
@@ -29,6 +33,42 @@ function lifespanField(player) {
   return number(player?.压制寿元) > 0 ? '压制寿元' : '寿元';
 }
 
+const SELF_DAO_BATTLE_BONUS_FIELDS = Object.freeze([
+  '攻击', '防御', '血量上限', '速度', '_speed',
+  '元神伤害加成', '神通伤害加成', '近战伤害加成', '全伤害类型加成',
+  '暴击率', '暴击伤害', '闪避率', '穿透', '减伤', '减伤比例',
+]);
+
+function unlockSelfDaoMilestones(player, state, now = Date.now()) {
+  if (state.attempts >= SELF_DAO_QUASI_EMPEROR_PEAK_ATTEMPT) {
+    state.quasiEmperorPeak = true;
+    state.quasiEmperorPeakAt ||= now;
+  }
+  if (state.attempts >= SELF_DAO_DIVINE_EMBRYO_ATTEMPT) {
+    state.divineEmbryo = '已结出';
+    state.divineEmbryoAt ||= now;
+  }
+  if (state.attempts >= SELF_DAO_HALF_IMMORTAL_EMPEROR_ATTEMPT) {
+    state.halfImmortalEmperor = true;
+    state.halfImmortalEmperorAt ||= now;
+  }
+
+  if (state.completed || state.recovery?.status === 'recovering') return;
+  if (state.halfImmortalEmperor) {
+    player.自身之道境界 = '半步仙帝·神胎圆满';
+    player.道果状态 = '半步仙帝·可破万法加持';
+    if (player.自创修炼体系) player.自创修炼体系.stage = '六境圆满·半步仙帝';
+  } else if (state.divineEmbryo === '已结出') {
+    player.自身之道境界 = '绝顶道祖·神胎初成';
+    player.道果状态 = '神胎初成·万劫不灭';
+    if (player.自创修炼体系) player.自创修炼体系.stage = '六境圆满·神胎初成';
+  } else if (state.quasiEmperorPeak) {
+    player.自身之道境界 = '准仙帝极巅·绝顶道祖';
+    player.道果状态 = '绝顶道祖·己道极巅';
+    if (player.自创修炼体系) player.自创修炼体系.stage = '六境圆满·准仙帝极巅';
+  }
+}
+
 export function ensureSelfDaoDeduction(player) {
   const old = player.己道推演 && typeof player.己道推演 === 'object' ? player.己道推演 : {};
   old.attempts = Math.max(0, Math.min(SELF_DAO_REQUIRED_ATTEMPTS, Math.trunc(number(old.attempts))));
@@ -36,6 +76,17 @@ export function ensureSelfDaoDeduction(player) {
   old.pathAwakened = old.attempts >= SELF_DAO_REALM_AWAKENING || Boolean(old.pathAwakened);
   old.battlePending = Boolean(old.battlePending);
   old.completed = Boolean(old.completed);
+  if (number(old.progressionVersion) < 2) {
+    if (old.completed || old.recovery?.status === 'recovering') {
+      old.attempts = SELF_DAO_REQUIRED_ATTEMPTS;
+    } else if (old.attempts >= 10) {
+      old.battlePending = false;
+      delete old.divineEmbryo;
+      delete old.divineEmbryoAt;
+    }
+    old.progressionVersion = 2;
+  }
+  unlockSelfDaoMilestones(player, old);
   player.己道推演 = old;
   return old;
 }
@@ -101,12 +152,78 @@ export function consumeSelfDaoDeduction(player, now = Date.now()) {
   state.lastDeductionAt = now;
   state.pathAwakened = state.attempts >= SELF_DAO_REALM_AWAKENING;
   if (state.attempts === SELF_DAO_REALM_AWAKENING) state.awakenedAt = now;
+  unlockSelfDaoMilestones(player, state, now);
   if (state.attempts === SELF_DAO_REQUIRED_ATTEMPTS) {
-    state.divineEmbryo = '已结出';
     state.battlePending = true;
-    state.terrorTriggered = false;
+    if (state.terrorTriggered == null) state.terrorTriggered = false;
   }
   return { ok: true, reason: 'deduced', state, costs, attempt: state.attempts };
+}
+
+export function resetSelfDaoBattleState(unit) {
+  if (!unit || typeof unit !== 'object') return unit;
+  delete unit._己道极巅减伤已应用;
+  delete unit._己道神胎复活可用;
+  delete unit._己道神胎复活已用;
+  delete unit._半步仙帝加成压制;
+  return unit;
+}
+
+export function enforceSelfDaoBuffSuppression(unit) {
+  const seal = unit?._半步仙帝加成压制;
+  if (!seal) return false;
+  for (const field of SELF_DAO_BATTLE_BONUS_FIELDS) {
+    const ceiling = number(seal[field]);
+    if (ceiling > 0 && number(unit[field]) > ceiling) unit[field] = ceiling;
+  }
+  if (number(unit.当前血量) > number(unit.血量上限)) unit.当前血量 = number(unit.血量上限);
+  for (const field of ['护盾值', '_护盾值', '_持续减伤回合', '_持续减伤比例', '_免控回合']) {
+    if (number(unit[field]) > 0) unit[field] = 0;
+  }
+  return true;
+}
+
+export function applySelfDaoBattleOpening(holder, opponents = []) {
+  if (!holder || typeof holder !== 'object') return [];
+  const state = ensureSelfDaoDeduction(holder);
+  const messages = [];
+  if (state.quasiEmperorPeak && !holder._己道极巅减伤已应用) {
+    holder._己道极巅减伤已应用 = true;
+    holder.神通伤害减免 = Math.min(0.9, number(holder.神通伤害减免) + SELF_DAO_PEAK_DAMAGE_REDUCTION);
+    holder.近战伤害减免 = Math.min(0.9, number(holder.近战伤害减免) + SELF_DAO_PEAK_DAMAGE_REDUCTION);
+    messages.push(`【绝顶道祖】${holder.名号 || '修士'}己道护体，获得30%神通与近战伤害减免。`);
+  }
+  if (state.divineEmbryo === '已结出') holder._己道神胎复活可用 = true;
+  if (!state.halfImmortalEmperor) return messages;
+
+  const targets = (Array.isArray(opponents) ? opponents : [opponents]).filter(Boolean);
+  for (const opponent of targets) {
+    opponent._半步仙帝加成压制 = Object.fromEntries(
+      SELF_DAO_BATTLE_BONUS_FIELDS.map(field => [field, number(opponent[field])])
+    );
+    enforceSelfDaoBuffSuppression(opponent);
+  }
+  if (targets.length) messages.push(`【半步仙帝·破法】${holder.名号 || '修士'}照见加持根源，破解敌方本场属性、护盾与减伤增益。`);
+  return messages;
+}
+
+export function trySelfDaoDivineEmbryoRevival(unit) {
+  if (!unit?._己道神胎复活可用 || unit._己道神胎复活已用 || number(unit.当前血量) > 0) {
+    return { revived: false };
+  }
+  unit._己道神胎复活已用 = true;
+  unit.当前血量 = Math.max(1, number(unit.血量上限));
+  unit.dongjie = false;
+  for (const field of [
+    'fumianhuihe', 'fumian_damage', '_fumianhuihe', '_fumian_damage',
+    '_东皇冻结回合', '_技能速度削弱回合', '_技能速度削弱比例',
+  ]) unit[field] = 0;
+  unit.fumian_type = null;
+  unit._fumian_type = null;
+  return {
+    revived: true,
+    message: `【己道神胎·再生】${unit.名号 || '修士'}以神胎重塑肉身与元神，满血复生并解除控制；本场额外复生次数已用。`,
+  };
 }
 
 export function setCultivationSystemRealms(player, names, now = Date.now()) {
