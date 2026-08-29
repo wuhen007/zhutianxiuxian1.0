@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -8,14 +9,20 @@ import {
   createItemUniverseDungeon,
   createReincarnationUniverseDungeon,
   editUniverseDungeon,
+  enterGrandUniverse,
   enterUniverseDungeon,
   getGrandUniverseLawCap,
   getGrandUniverseLawStage,
   getReincarnationDungeonCost,
   improveGrandUniverseLaws,
   isGrandUniverseAbsoluteSpiritImmune,
+  leaveGrandUniverse,
   refineItemIntoUniverseAura,
+  setGrandUniverseOpen,
 } from '../model/grandUniverse.js';
+
+const appSource = fs.readFileSync(new URL('../apps/Garden/GrandUniverse.js', import.meta.url), 'utf8');
+const xiuxianSource = fs.readFileSync(new URL('../model/xiuxian.js', import.meta.url), 'utf8');
 
 function king(overrides = {}) {
   return {
@@ -53,6 +60,7 @@ test('仙王以自身之道将圆满小世界升格为绝灵免疫的大宇宙',
   assert.equal(world.attributes.面积, '无垠星海');
   assert.equal(world.attributes.特殊资源.includes('宇宙本源'), true);
   assert.equal(isGrandUniverseAbsoluteSpiritImmune(world), true);
+  assert.equal(world.大宇宙.对外开放, true);
   assert.deepEqual(world.药田, []);
   assert.deepEqual(world.栖息地, []);
 });
@@ -85,7 +93,7 @@ test('普通仙王法则封顶红尘仙，仙王巨头可完善到帝光仙王',
 
 test('已有物品可炼成灵韵并与另一件物品共同铸造自定义秘境', () => {
   const player = king();
-  const world = smallWorld();
+  const world = smallWorld({ player_qq: '10001' });
   const najie = {
     材料: [{ name: '世界树心', 数量: 4, pinji: 4, 出售价: 1_000_000_000 }],
   };
@@ -106,10 +114,52 @@ test('已有物品可炼成灵韵并与另一件物品共同铸造自定义秘�
   assert.equal(editUniverseDungeon(world, '世界树境', '敌人', '太古树祖').ok, true);
   assert.equal(created.dungeon.enemyName, '太古树祖');
 
-  const run = enterUniverseDungeon(player, world, '世界树境', { now: 3000, random: () => 0 });
+  const run = enterUniverseDungeon(player, world, '世界树境', {
+    now: 3000, random: () => 0, universeId: '10001',
+  });
   assert.equal(run.success, true);
   assert.equal(run.rewards.aura, 20);
-  assert.equal(enterUniverseDungeon(player, world, '世界树境', { now: 3001 }).reason, 'cooldown');
+  const visitorRun = enterUniverseDungeon(king(), world, '世界树境', {
+    now: 3001, random: () => 0, universeId: '10001',
+  });
+  assert.equal(visitorRun.success, true);
+  assert.equal(enterUniverseDungeon(player, world, '世界树境', {
+    now: 3001, universeId: '10001',
+  }).reason, 'cooldown');
+});
+
+test('升格后的大宇宙是可开关的玩家位面，访客可进入与离开', () => {
+  const owner = king();
+  const visitor = king();
+  const world = smallWorld({ player_qq: '10001' });
+  ascendSmallWorldToGrandUniverse(owner, world, 1000);
+
+  const entered = enterGrandUniverse(visitor, world, {
+    ownerId: '10001', visitorId: '20002', now: 2000,
+  });
+  assert.equal(entered.ok, true);
+  assert.deepEqual(visitor.大宇宙位置, {
+    界主: '10001', 宇宙名: '万象界', 进入时间: 2000,
+  });
+  assert.equal(world.大宇宙.访客记录[0].玩家, '20002');
+
+  assert.equal(leaveGrandUniverse(visitor).ok, true);
+  assert.equal(visitor.大宇宙位置, undefined);
+  assert.equal(setGrandUniverseOpen(world, false).open, false);
+  assert.equal(enterGrandUniverse(visitor, world, {
+    ownerId: '10001', visitorId: '20002', now: 3000,
+  }).reason, 'closed');
+});
+
+test('大宇宙应用接入位面列表、访客入口和访客秘境链路', () => {
+  assert.match(appSource, /#大宇宙列表/);
+  assert.match(appSource, /#开放大宇宙/);
+  assert.match(appSource, /#关闭大宇宙/);
+  assert.match(appSource, /#进入大宇宙/);
+  assert.match(appSource, /#离开大宇宙/);
+  assert.match(appSource, /mutateAccessibleUniverse/);
+  assert.match(appSource, /enterUniverseDungeon\(player, world, name, \{ universeId: ownerId \}\)/);
+  assert.match(xiuxianSource, /大宇宙位置\?\.宇宙名/);
 });
 
 test('准仙帝付出完整代价演绎轮回秘境，仙帝获得权能减免', () => {

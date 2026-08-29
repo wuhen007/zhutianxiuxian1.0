@@ -137,6 +137,8 @@ export function ascendSmallWorldToGrandUniverse(player, world, now = Date.now())
     道行投入: number(player.修炼次数),
     灵韵: 0,
     绝灵免疫: true,
+    对外开放: true,
+    访客记录: [],
     秘境: [],
     秘境记录: [],
   };
@@ -144,6 +146,45 @@ export function ascendSmallWorldToGrandUniverse(player, world, now = Date.now())
   world.attributes.面积 = '无垠星海';
   world.attributes.特殊资源 = [...new Set([...(world.attributes.特殊资源 || []), '宇宙本源'])];
   return { ok: true, universe: world.大宇宙, stage: GRAND_UNIVERSE_LAW_STAGES[0] };
+}
+
+export function setGrandUniverseOpen(world, open) {
+  const universe = universeOf(world);
+  if (!universe) return { ok: false, reason: 'universe' };
+  universe.对外开放 = Boolean(open);
+  return { ok: true, open: universe.对外开放 };
+}
+
+export function enterGrandUniverse(player, world, {
+  ownerId,
+  visitorId,
+  now = Date.now(),
+} = {}) {
+  const universe = universeOf(world);
+  if (!universe) return { ok: false, reason: 'universe' };
+  if (universe.对外开放 === false) return { ok: false, reason: 'closed' };
+  const owner = String(ownerId || world?.player_qq || '').trim();
+  const visitor = String(visitorId || '').trim();
+  if (!owner || !visitor) return { ok: false, reason: 'target' };
+  if (owner === visitor) return { ok: false, reason: 'owner' };
+
+  player.大宇宙位置 = {
+    界主: owner,
+    宇宙名: world.world_name || '无名大宇宙',
+    进入时间: now,
+  };
+  universe.访客记录 = (Array.isArray(universe.访客记录) ? universe.访客记录 : [])
+    .filter(item => String(item?.玩家) !== visitor);
+  universe.访客记录.push({ 玩家: visitor, 进入时间: now });
+  universe.访客记录 = universe.访客记录.slice(-30);
+  return { ok: true, location: player.大宇宙位置 };
+}
+
+export function leaveGrandUniverse(player) {
+  if (!player?.大宇宙位置) return { ok: false, reason: 'not-inside' };
+  const location = player.大宇宙位置;
+  delete player.大宇宙位置;
+  return { ok: true, location };
 }
 
 export function improveGrandUniverseLaws(player, world) {
@@ -285,12 +326,18 @@ export function editUniverseDungeon(world, name, field, value) {
   return { ok: true, dungeon, field };
 }
 
-export function enterUniverseDungeon(player, world, name, { now = Date.now(), random = Math.random } = {}) {
+export function enterUniverseDungeon(player, world, name, {
+  now = Date.now(),
+  random = Math.random,
+  universeId = '',
+} = {}) {
   const universe = universeOf(world);
   if (!universe) return { ok: false, reason: 'universe' };
   const dungeon = findDungeon(world, name);
   if (!dungeon) return { ok: false, reason: 'dungeon' };
-  const lastRunAt = number(dungeon.lastRunAt);
+  player.大宇宙秘境冷却 ||= {};
+  const cooldownKey = `${String(universeId || world?.player_qq || world?.world_name || 'universe')}:${dungeon.id}`;
+  const lastRunAt = number(player.大宇宙秘境冷却[cooldownKey]);
   const remaining = lastRunAt > 0
     ? Math.max(0, lastRunAt + UNIVERSE_DUNGEON_COOLDOWN_MS - now)
     : 0;
@@ -304,6 +351,7 @@ export function enterUniverseDungeon(player, world, name, { now = Date.now(), ra
 
   const chance = Math.max(0.35, Math.min(0.98, 0.72 + (authority - requiredAuthority) * 0.08));
   const success = number(random()) < chance;
+  player.大宇宙秘境冷却[cooldownKey] = now;
   dungeon.lastRunAt = now;
   dungeon.runs = number(dungeon.runs) + 1;
   const record = { dungeon: dungeon.name, time: now, success };

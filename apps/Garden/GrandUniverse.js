@@ -8,6 +8,7 @@ import {
   __PATH,
   channel,
   existplayer,
+  getTargetQQFromEvent,
 } from '../../model/xiuxian.js';
 import {
   GRAND_UNIVERSE_LAW_STAGES,
@@ -17,11 +18,14 @@ import {
   createItemUniverseDungeon,
   createReincarnationUniverseDungeon,
   editUniverseDungeon,
+  enterGrandUniverse,
   enterUniverseDungeon,
   getGrandUniverseLawCap,
   getGrandUniverseLawStage,
   improveGrandUniverseLaws,
+  leaveGrandUniverse,
   refineItemIntoUniverseAura,
+  setGrandUniverseOpen,
 } from '../../model/grandUniverse.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { FileRollbackTransaction, writeJsonAtomically } from '../SecretPlace/rebirthTransaction.js';
@@ -61,6 +65,10 @@ function failureMessage(result) {
     field: '可编辑字段仅限：简介、敌人、奖励。',
     content: '编辑内容应为2至60个字。',
     cooldown: `这座秘境的轮回尚未重启，还需${formatDuration(result.remaining)}。`,
+    closed: '这座大宇宙已经封闭，暂不接引外界生灵。',
+    target: '没有找到目标玩家的大宇宙。',
+    owner: '你本就是这座大宇宙的界主。',
+    'not-inside': '你当前不在其他玩家的大宇宙中。',
   };
   return messages[result.reason] || '大宇宙法则本次未能响应。';
 }
@@ -73,6 +81,11 @@ export class GrandUniverse extends plugin {
       event: 'message',
       priority: 599,
       rule: [
+        { reg: '^#大宇宙列表$', fnc: 'listGrandUniverses' },
+        { reg: '^#开放大宇宙$', fnc: 'openGrandUniverse' },
+        { reg: '^#关闭大宇宙$', fnc: 'closeGrandUniverse' },
+        { reg: '^#进入大宇宙(?:\\s+.*)?$', fnc: 'enterGrandUniverse' },
+        { reg: '^#离开大宇宙$', fnc: 'leaveGrandUniverse' },
         { reg: '^#(?:我的)?大宇宙$', fnc: 'viewGrandUniverse' },
         { reg: '^#升格大宇宙$', fnc: 'ascendGrandUniverse' },
         { reg: '^#完善宇宙法则(?:\\*[1-5])?$', fnc: 'improveUniverseLaws' },
@@ -92,6 +105,78 @@ export class GrandUniverse extends plugin {
 
   getWorld(qq) {
     return (data.xiaoshijie || []).find(item => String(item.player_qq) === String(qq));
+  }
+
+  async withPlayerLocks(ids, operation) {
+    const keys = [...new Set(ids.map(String))].sort();
+    const run = index => index >= keys.length
+      ? operation()
+      : withPlayerMutationLock(keys[index], () => run(index + 1));
+    return run(0);
+  }
+
+  async resolveUniverseTarget(e, selfQq) {
+    const input = e.msg.replace(/^#进入大宇宙\s*/, '').trim();
+    const eventTarget = getTargetQQFromEvent(e, selfQq);
+    let ownerId = eventTarget || (/^\d{5,20}$/.test(input) ? input : '');
+    if (ownerId) ownerId = String(await channel(ownerId));
+    const world = ownerId
+      ? this.getWorld(ownerId)
+      : (data.xiaoshijie || []).find(item => item.大宇宙 && item.world_name === input);
+    return { ownerId: String(world?.player_qq || ownerId), world };
+  }
+
+  async mutateUniverseVisit(e, targetOwnerId, operation) {
+    if (!e.isGroup) return false;
+    const qq = await this.getQq(e);
+    if (!await existplayer(qq)) return e.reply('请先创建修仙角色。');
+
+    try {
+      return await this.withPlayerLocks([qq, targetOwnerId], async () => {
+        const worldIndex = (data.xiaoshijie || []).findIndex(
+          item => String(item.player_qq) === String(targetOwnerId)
+        );
+        const world = worldIndex >= 0 ? data.xiaoshijie[worldIndex] : null;
+        const player = await Read_player(qq);
+        const snapshot = world ? structuredClone(world) : null;
+        const result = operation({ player, world, qq, ownerId: String(targetOwnerId) });
+        if (!result.ok) return e.reply(failureMessage(result));
+
+        const worldFile = path.join(data.lib_path, '小世界列表.json');
+        const transaction = new FileRollbackTransaction();
+        transaction.capture(path.join(__PATH.player_path, `${qq}.json`));
+        transaction.capture(worldFile);
+        try {
+          await Write_player(qq, player);
+          writeJsonAtomically(worldFile, data.xiaoshijie);
+          transaction.commit();
+        } catch (error) {
+          transaction.rollback();
+          if (worldIndex >= 0 && snapshot) data.xiaoshijie[worldIndex] = snapshot;
+          throw error;
+        }
+        return { ...result, ownerId: String(targetOwnerId), worldName: world.world_name };
+      });
+    } catch (error) {
+      console.error(`[大宇宙] 玩家${qq}跨界写入失败:`, error);
+      return e.reply('大宇宙存档写入失败，本次变化已回滚。');
+    }
+  }
+
+  async mutateAccessibleUniverse(e, operation) {
+    const qq = await this.getQq(e);
+    if (!await existplayer(qq)) return e.reply('请先创建修仙角色。');
+    const initialPlayer = await Read_player(qq);
+    const initialOwnerId = String(initialPlayer?.大宇宙位置?.界主 || qq);
+    return this.mutateUniverseVisit(e, initialOwnerId, ({ player, world, ownerId }) => {
+      const currentOwnerId = String(player?.大宇宙位置?.界主 || qq);
+      if (currentOwnerId !== ownerId) return { ok: false, reason: 'target' };
+      if (currentOwnerId !== qq && !world?.大宇宙) return { ok: false, reason: 'target' };
+      if (currentOwnerId !== qq && world?.大宇宙?.对外开放 === false) {
+        return { ok: false, reason: 'closed' };
+      }
+      return operation({ player, world, qq, ownerId });
+    });
   }
 
   async mutate(e, operation, { inventory = false } = {}) {
@@ -135,6 +220,55 @@ export class GrandUniverse extends plugin {
     }
   }
 
+  async listGrandUniverses(e) {
+    const worlds = (data.xiaoshijie || []).filter(
+      item => item.大宇宙 && item.大宇宙.对外开放 !== false
+    );
+    if (!worlds.length) return e.reply('诸天之中暂时没有对外开放的大宇宙。');
+    return e.reply([
+      '【诸天大宇宙·位面坐标】',
+      ...worlds.map((world, index) => {
+        const stage = getGrandUniverseLawStage(world);
+        return `${index + 1}.【${world.world_name}】界主${world.player_qq}｜承载${stage.capacity}｜秘境${world.大宇宙.秘境?.length || 0}座`;
+      }),
+      '发送 #进入大宇宙 QQ、#进入大宇宙 宇宙名，或@界主进入。',
+    ].join('\n'));
+  }
+
+  async openGrandUniverse(e) {
+    const result = await this.mutate(e, ({ world }) => setGrandUniverseOpen(world, true));
+    if (!result?.ok) return result;
+    return e.reply('【界门洞开】你的大宇宙已接入诸天位面，其他玩家现在可以进入。');
+  }
+
+  async closeGrandUniverse(e) {
+    const result = await this.mutate(e, ({ world }) => setGrandUniverseOpen(world, false));
+    if (!result?.ok) return result;
+    return e.reply('【界门封闭】你的大宇宙已隔绝外界，现有访客仍可使用 #离开大宇宙 返回诸天。');
+  }
+
+  async enterGrandUniverse(e) {
+    const qq = await this.getQq(e);
+    const target = await this.resolveUniverseTarget(e, qq);
+    if (!target.world?.大宇宙) return e.reply(failureMessage({ reason: 'target' }));
+    const result = await this.mutateUniverseVisit(e, target.ownerId, ({ player, world, ownerId }) => (
+      enterGrandUniverse(player, world, { ownerId, visitorId: qq })
+    ));
+    if (!result?.ok) return result;
+    return e.reply([
+      `【横渡界壁·${result.worldName}】`,
+      `你已进入界主${result.ownerId}开辟的大宇宙，这里视作一座独立玩家位面。`,
+      '可使用 #宇宙秘境 查看本界副本，使用 #进入宇宙秘境 秘境名 进行挑战。',
+      '发送 #离开大宇宙 可返回诸天万界。',
+    ].join('\n'));
+  }
+
+  async leaveGrandUniverse(e) {
+    const result = await this.mutate(e, ({ player }) => leaveGrandUniverse(player));
+    if (!result?.ok) return result;
+    return e.reply(`【离界归途】你已离开【${result.location.宇宙名}】，返回原本所在的诸天位面。`);
+  }
+
   async viewGrandUniverse(e) {
     const qq = await this.getQq(e);
     const world = this.getWorld(qq);
@@ -151,6 +285,7 @@ export class GrandUniverse extends plugin {
       `承载上限：${stage.capacity}｜当前境界可完善至${cap.capacity}`,
       `道行投入：${formatNumber(universe.道行投入)}｜宇宙灵韵：${formatNumber(universe.灵韵)}`,
       `绝灵时代：不受压制｜自定义秘境：${universe.秘境?.length || 0}/12`,
+      `位面界门：${universe.对外开放 === false ? '封闭' : '开放'}｜近期访客：${universe.访客记录?.length || 0}`,
     ].join('\n'));
   }
 
@@ -162,6 +297,7 @@ export class GrandUniverse extends plugin {
       `你以自身之道【${result.universe.创世之道}】重定乾坤，原有小世界化作无垠星海。`,
       `初生法则足以承载${result.stage.capacity}，并永久摆脱绝灵时代压制。`,
       '原有药田、栖息地、工坊与世界资产全部保留。',
+      '大宇宙已作为玩家位面接入诸天，默认开放，其他玩家可按界主或宇宙名进入。',
     ].join('\n'));
   }
 
@@ -231,29 +367,40 @@ export class GrandUniverse extends plugin {
 
   async listUniverseDungeons(e) {
     const qq = await this.getQq(e);
-    const world = this.getWorld(qq);
-    if (!world?.大宇宙) return e.reply('请先使用 #升格大宇宙。');
+    if (!await existplayer(qq)) return e.reply('请先创建修仙角色。');
+    const player = await Read_player(qq);
+    const ownerId = String(player?.大宇宙位置?.界主 || qq);
+    const world = this.getWorld(ownerId);
+    if (!world?.大宇宙) {
+      return e.reply(ownerId === qq ? '请先使用 #升格大宇宙。' : failureMessage({ reason: 'target' }));
+    }
+    if (ownerId !== qq && world.大宇宙.对外开放 === false) {
+      return e.reply(failureMessage({ reason: 'closed' }));
+    }
     const dungeons = world.大宇宙.秘境 || [];
     if (!dungeons.length) return e.reply('大宇宙中尚无自定义秘境。');
     return e.reply([
       `【${world.world_name}·宇宙秘境】`,
+      ownerId !== qq ? `当前位面界主：${ownerId}` : '',
       ...dungeons.map((item, index) => [
         `${index + 1}.【${item.name}】${item.source.mode === 'item' ? '器物造化' : '轮回演绎'}`,
         `   ${item.description}｜敌人：${item.enemyName}｜奖励：${item.rewardText}｜挑战${item.runs || 0}次`,
       ].join('\n')),
-    ].join('\n'));
+    ].filter(Boolean).join('\n'));
   }
 
   async enterUniverseDungeon(e) {
     const name = e.msg.replace(/^#进入宇宙秘境\s+/, '').trim();
-    const result = await this.mutate(e, ({ player, world }) => enterUniverseDungeon(player, world, name));
+    const result = await this.mutateAccessibleUniverse(e, ({ player, world, ownerId }) => (
+      enterUniverseDungeon(player, world, name, { universeId: ownerId })
+    ));
     if (!result?.ok) return result;
     if (!result.success) {
       return e.reply(`【${result.dungeon.name}·挑战失利】你被${result.dungeon.enemyName}击退，当前血量仅余一成。`);
     }
     return e.reply([
       `【${result.dungeon.name}·轮回通关】`,
-      `你镇压${result.dungeon.enemyName}，完成一次属于自己的宇宙秘境。`,
+      `你镇压${result.dungeon.enemyName}，完成一次【${result.worldName}】的宇宙秘境。`,
       `获得：修为${formatNumber(result.rewards.cultivation)}、血气${formatNumber(result.rewards.blood)}、仙道潜力${result.rewards.potential}、宇宙灵韵${result.rewards.aura}`,
       `秘境设定奖励：${result.dungeon.rewardText}`,
     ].join('\n'));
