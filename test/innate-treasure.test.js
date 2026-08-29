@@ -295,7 +295,7 @@ test('逐日、神炉、神灯与天碑被动倍率按设计生效', () => {
   assert.deepEqual(applyInnateTravelReduction({ 当前先天至宝: '逐日仙辇' }, 100), { travelTime: 85, reduction: 15 });
   assert.equal(getInnateSpeedMultiplier({ 当前先天至宝: '逐日仙辇' }), 1.1);
   assert.equal(getCraftingTimedActionMultiplier({ 当前先天至宝: '万道神炉' }), 0.8);
-  assert.equal(getCausalDebtMultiplier({ 当前先天至宝: '因果神灯' }), 0.85);
+  assert.equal(getCausalDebtMultiplier({ 当前先天至宝: '因果神灯' }), 0.75);
   assert.equal(getTribulationDamageMultiplier({ 当前先天至宝: '万劫天碑' }), 0.85);
 });
 
@@ -310,14 +310,20 @@ test('万道开炉倍率只消费一次且过期时不生效', () => {
   assert.equal(consumeAlchemyMultiplier(player, 1000), 1);
 });
 
-test('万劫淬神按初始上限加算四次并恢复当前元神', () => {
+test('万劫淬神按当前上限增加10%且没有次数上限', () => {
   const player = { 元神: 0, 元神上限: 1000 };
-  for (let index = 0; index < 4; index++) temperMyriadTribulationSpirit(player);
-  assert.equal(player.元神上限, 2000);
-  assert.equal(player.先天权柄.万劫淬神次数, 4);
-  temperMyriadTribulationSpirit(player);
-  assert.equal(player.元神上限, 2000);
-  assert.equal(player.元神, 2000);
+  let expectedMax = 1000;
+  for (let index = 0; index < 10; index++) {
+    expectedMax += Math.max(1, Math.floor(expectedMax * 0.1));
+    temperMyriadTribulationSpirit(player);
+  }
+  assert.equal(player.元神上限, expectedMax);
+  assert.equal(player.元神, expectedMax);
+  assert.equal(player.先天权柄.万劫淬神次数, 10);
+  assert.match(INNATE_TREASURE_CATALOG.万劫天碑.authorities[0].effect, /10%.*次数不限/);
+  assert.match(INNATE_TREASURE_CATALOG.因果神灯.authorities[0].effect, /40点因果债/);
+  const authoritySource = fs.readFileSync(new URL('../apps/User/InnateTreasureAuthorities.js', import.meta.url), 'utf8');
+  assert.match(authoritySource, /Math\.min\(40, Math\.max\(0, Number\(state\.causalDebt\)/);
 });
 
 test('太初首击对首领额外伤害封顶2%，无量首伤再执行减伤与封顶', () => {

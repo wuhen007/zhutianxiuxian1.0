@@ -31,7 +31,7 @@ import {
   ensureXianguDaoPath,
   getDaoRuleForRealm,
   getXianguDaoRuleForRealm,
-} from '../../model/wudaoRules.js';
+} from './wudaoRules.js';
 import { getFlowerDaoGateState } from '../../model/flowerPollenPath.js';
 import {
   accelerateSecretPlaceAction,
@@ -809,7 +809,7 @@ export class InnateTreasureAuthorities extends plugin {
     const ctx = await this.context(e, '因果神灯', '因果净照');
     if (!ctx) return false;
     const state = ensureWorldlineState(ctx.player);
-    const reduced = Math.min(15, Math.max(0, Number(state.causalDebt) || 0));
+    const reduced = Math.min(40, Math.max(0, Number(state.causalDebt) || 0));
     state.causalDebt = Math.max(0, Number(state.causalDebt) - reduced);
     ctx.player.因果反噬 = { debt: state.causalDebt, ...getCausalDebtTier(state.causalDebt), updatedAt: Date.now() };
     state.history.push({ type: '因果净照', reduced, at: Date.now() });
@@ -824,10 +824,7 @@ export class InnateTreasureAuthorities extends plugin {
     const result = temperMyriadTribulationSpirit(ctx.player);
     startAuthorityCooldown(ctx.player, '万劫淬神');
     await Write_player(ctx.qq, ctx.player);
-    const increaseLine = result.increased
-      ? `元神上限永久提升至${result.max.toLocaleString('zh-CN')}（${result.count}/4）`
-      : `元神上限淬炼已圆满（4/4）`;
-    return e.reply(`【万劫淬神】恢复元神${result.restored.toLocaleString('zh-CN')}；${increaseLine}。`);
+    return e.reply(`【万劫淬神】恢复元神${result.restored.toLocaleString('zh-CN')}；元神上限永久提升至${result.max.toLocaleString('zh-CN')}（已淬炼${result.count}次，无次数上限）。`);
   }
 
   async synthesizeEternalMap(e) {

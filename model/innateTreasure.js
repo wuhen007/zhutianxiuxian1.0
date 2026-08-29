@@ -285,9 +285,9 @@ export const INNATE_TREASURE_CATALOG = Object.freeze({
     title: '照见因果',
     lore: '灯火照见因果来路，使缠身之债在光中显形并消散。',
     summary: '减少因果债获取，并可主动消减已有因果债。',
-    passives: ['获得的因果债降低15%。'],
+    passives: ['获得的因果债降低25%。'],
     authorities: [
-      { command: '#因果净照', cooldownKey: '因果净照', effect: '消减15点因果债。' },
+      { command: '#因果净照', cooldownKey: '因果净照', effect: '消减40点因果债。' },
     ],
   },
   万劫天碑: {
@@ -296,7 +296,7 @@ export const INNATE_TREASURE_CATALOG = Object.freeze({
     summary: '降低渡劫伤害，并可恢复、永久淬炼元神上限。',
     passives: ['渡劫所受伤害降低15%。'],
     authorities: [
-      { command: '#万劫淬神', cooldownKey: '万劫淬神', effect: '恢复50%最大元神，并永久增加初始元神上限的25%；上限淬炼最多4次，合计提升100%。' },
+      { command: '#万劫淬神', cooldownKey: '万劫淬神', effect: '恢复50%最大元神，并永久增加当前元神上限的10%，淬炼次数不限。' },
     ],
   },
   定海珠: {
@@ -749,7 +749,7 @@ export function getInnateSpeedMultiplier(player) {
 }
 
 export function getCausalDebtMultiplier(player) {
-  return hasEquippedInnateTreasure(player, '因果神灯') ? 0.85 : 1;
+  return hasEquippedInnateTreasure(player, '因果神灯') ? 0.75 : 1;
 }
 
 export function consumeAlchemyMultiplier(player, now = Date.now()) {
@@ -766,19 +766,12 @@ export function consumeAlchemyMultiplier(player, now = Date.now()) {
 export function temperMyriadTribulationSpirit(player) {
   const state = getAuthorityState(player);
   const currentMax = Math.max(1, Math.floor(Number(player.元神上限) || Number(player.元神) || 1));
-  const base = Math.max(1, Math.floor(Number(state.万劫淬神基础上限) || currentMax));
-  state.万劫淬神基础上限 = base;
   const previousCount = Math.max(0, Math.floor(Number(state.万劫淬神次数) || 0));
-  const increased = previousCount < 4;
-  if (increased) {
-    player.元神上限 = currentMax + Math.floor(base * 0.25);
-    state.万劫淬神次数 = previousCount + 1;
-  } else {
-    player.元神上限 = currentMax;
-  }
+  player.元神上限 = currentMax + Math.max(1, Math.floor(currentMax * 0.1));
+  state.万劫淬神次数 = previousCount + 1;
   const restored = Math.floor(player.元神上限 * 0.5);
   player.元神 = Math.min(player.元神上限, Math.max(0, Number(player.元神) || 0) + restored);
-  return { increased, count: Number(state.万劫淬神次数) || 4, base, restored, max: player.元神上限 };
+  return { increased: true, count: state.万劫淬神次数, restored, max: player.元神上限 };
 }
 
 export function tryEternalFateRewrite(player, now = Date.now()) {
