@@ -194,11 +194,12 @@ export function applyTianmoCalamityRefinement(executor, options = {}) {
   }
 
   const now = Number(options.now) || Date.now();
+  const refinementWeight = Math.max(0, Number(options.weight) || CALAMITY_REFINEMENT_WEIGHT);
   const state = ensureTianmoHuashengState(executor);
   const sourceLifeEssence = Math.max(1, Number(options.sourceLifeEssence) || 100);
   const lifeSourceGain = roundGrowth(
     calculateDrain(sourceLifeEssence, TRANSFER_RULES.生命本源.rate, TRANSFER_RULES.生命本源.reserve)
-      * CALAMITY_REFINEMENT_WEIGHT
+      * refinementWeight
   );
   executor.生命本源 = roundGrowth(Math.max(0, Number(executor.生命本源) || 0) + lifeSourceGain);
   state.累计所得.生命本源 = roundGrowth(state.累计所得.生命本源 + lifeSourceGain);
@@ -206,7 +207,8 @@ export function applyTianmoCalamityRefinement(executor, options = {}) {
   return {
     applied: true,
     lifeSourceGain,
-    ...applyRefinementGrowth(executor, state, now, CALAMITY_REFINEMENT_WEIGHT),
+    refinementWeight,
+    ...applyRefinementGrowth(executor, state, now, refinementWeight),
   };
 }
 

@@ -132,6 +132,26 @@ test("十次灾厄炼化折算一次玩家炼化并实际增加生命本源", ()
   );
 });
 
+test("灾厄魔主炼化按0.5名玩家计入化生进度", () => {
+  const executor = makeTianmo();
+  const result = applyTianmoCalamityRefinement(executor, {
+    now: 1000,
+    sourceLifeEssence: 51,
+    weight: 0.5,
+  });
+
+  assert.equal(result.applied, true);
+  assert.equal(result.refinementWeight, 0.5);
+  assert.equal(executor.天魔化生.炼化次数, 0.5);
+  assert.equal(executor.天魔化生.灾厄炼化次数, 1);
+  assert.equal(executor.生命本源, 102.5);
+  assert.equal(executor.灵根.法球倍率, 2.05);
+  assert.deepEqual(
+    [executor.灵根.攻击, executor.灵根.防御, executor.灵根.生命],
+    [3.025, 2.025, 2.025]
+  );
+});
+
 test("达到500%法球倍率时蜕变为无相万化天魔体", () => {
   const executor = makeTianmo();
   executor.灵根.法球倍率 = 4.9;

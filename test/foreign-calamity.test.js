@@ -154,7 +154,9 @@ test('域外灾厄应用模块可以完整装载', () => {
   const script = `
     globalThis.Bot = { makeLog() {} };
     globalThis.logger = new Proxy({}, { get() { return () => {}; } });
-    await import('./plugins/zhutianxiuxian1.0/apps/Boss/ForeignCalamity.js');
+    const { ForeignCalamity } = await import('./plugins/zhutianxiuxian1.0/apps/Boss/ForeignCalamity.js');
+    const app = new ForeignCalamity();
+    if (!app.rule.some(rule => rule.reg === '^#天魔炼化魔主$')) process.exit(2);
     process.exit(0);
   `;
   const result = spawnSync(process.execPath, ['--input-type=module', '--eval', script], {

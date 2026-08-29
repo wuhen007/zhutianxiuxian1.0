@@ -240,7 +240,7 @@ export class TianmoHuasheng extends plugin {
         `法球倍率：${(orb * 100).toFixed(0)}% / 500%`,
         `攻防生：${player.灵根.攻击} / ${player.灵根.防御} / ${player.灵根.生命}`,
         `已炼化：${state.炼化次数}人（含灾厄折算）`,
-        `灾厄炼化：${state.灾厄炼化次数}尊（每10尊折算1人）`,
+        `灾厄类炼化：${state.灾厄炼化次数}尊（普通灾厄0.1人，灾厄魔主0.5人）`,
         `距离蜕变：${
           remaining > 0 ? `还需${remaining}次` : `已成${WANHUA_TIANMO_PHYSIQUE}`
         }`,
