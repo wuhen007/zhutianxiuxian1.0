@@ -24,6 +24,7 @@ import {
   applyImperialPassSortie,
   createForeignProdigy,
   createImperialPassWave,
+  getImperialPassDueReminders,
   getImperialPassSupport,
   getWaveEnemyCount,
   isImperialPassThreshold,
@@ -170,6 +171,8 @@ export class ForeignImperialPass extends plugin {
           : state.active?.deadlineWorldYear;
         if (Number.isFinite(Number(deadline)) && year >= Number(deadline)) {
           await this.breachImperialPass('帝关援军未能在期限内完成防守', year);
+        } else if (state.active?.phase === 'army') {
+          await this.broadcastImperialPassReminders(state, year);
         }
         return true;
       }
@@ -190,6 +193,31 @@ export class ForeignImperialPass extends plugin {
     } finally {
       this.checking = false;
     }
+  }
+
+  async broadcastImperialPassReminders(state, year) {
+    const reminders = getImperialPassDueReminders(state.active, year);
+    if (!reminders.length) return false;
+    state.active.remindedWorldYears = [
+      ...new Set([...(state.active.remindedWorldYears || []), ...reminders]),
+    ].sort((a, b) => a - b);
+    writeState(state);
+
+    for (const elapsed of reminders) {
+      const remaining = Math.max(0, Number(state.active.deadlineWorldYear) - Number(year));
+      const finalWarning = remaining <= 1000;
+      await RealmEvents.broadcastEvent([
+        finalWarning ? '【帝关泣血·最后千年】' : `【帝关烽火·叩关第${elapsed}年】`,
+        finalWarning
+          ? '不朽法旨横压天渊，安澜、俞陀的法相已在异域尽头显化。帝城阵纹成片熄灭，城关将破！'
+          : '天渊震荡不止，异域战车与铁骑遮蔽大地。原始帝城墙体开裂，守城者的血染红了城砖。',
+        finalWarning
+          ? '再无人登城驰援，异域不朽之王便会越过天渊，九天十地与遮天位面都将被战火撕裂。'
+          : '异域大军仍在叩关，诸族援军却迟迟未至。若烽火继续无人回应，帝关终将被攻破。',
+        `距离防守期限尚余${remaining}诸天年。发送 #驰援帝关 迎战异域，发送 #帝关战况 查看战局。`,
+      ].join('\n'));
+    }
+    return true;
   }
 
   async startWave(wave, year, players = null) {
@@ -215,6 +243,7 @@ export class ForeignImperialPass extends plugin {
       `【异域叩击帝关·第${wave}波】`,
       leaders,
       `本波需击杀异域天骄100名，并由开战时身处遮天位面、九天十地的${defenders.length}名修士全部驰援。`,
+      '本波防守期共三千年；每过一千年，帝关都会再次燃起告急烽火。',
       `防守期限：诸天纪年${state.active.deadlineWorldYear}年。`,
       '发送 #驰援帝关 参战；发送 #帝关战况 查看士气与威名榜。',
     ].join('\n'));

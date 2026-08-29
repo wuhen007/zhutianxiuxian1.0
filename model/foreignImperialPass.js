@@ -1,6 +1,7 @@
 export const IMPERIAL_PASS_TRIGGER_CHANCE = 0.25;
 export const IMPERIAL_PASS_KILL_TARGET = 100;
-export const IMPERIAL_PASS_WAVE_YEARS = 1000;
+export const IMPERIAL_PASS_WAVE_YEARS = 3000;
+export const IMPERIAL_PASS_REMINDER_INTERVAL_YEARS = 1000;
 export const IMPERIAL_PASS_REST_YEARS = 5000;
 export const IMPERIAL_PASS_PRISON_MINUTES = 999999;
 
@@ -122,6 +123,7 @@ export function createImperialPassWave({ wave, worldYear, eligibleQqs = [], now 
     startedAt: now,
     startedWorldYear: worldYear,
     deadlineWorldYear: worldYear + IMPERIAL_PASS_WAVE_YEARS,
+    remindedWorldYears: [],
     eligibleQqs: [...new Set(eligibleQqs.map(String))],
     participants: {},
     totalKills: 0,
@@ -130,6 +132,22 @@ export function createImperialPassWave({ wave, worldYear, eligibleQqs = [], now 
     mengTianzhengTriggered: false,
     bloodChampion: null,
   };
+}
+
+export function getImperialPassDueReminders(active, currentWorldYear) {
+  if (!active || active.phase !== 'army') return [];
+  const start = Number(active.startedWorldYear) || 0;
+  const deadline = Number(active.deadlineWorldYear) || start;
+  const current = Number(currentWorldYear) || 0;
+  if (current >= deadline) return [];
+  const sent = new Set((active.remindedWorldYears || []).map(Number));
+  const due = [];
+  for (let elapsed = IMPERIAL_PASS_REMINDER_INTERVAL_YEARS;
+    start + elapsed < deadline;
+    elapsed += IMPERIAL_PASS_REMINDER_INTERVAL_YEARS) {
+    if (current >= start + elapsed && !sent.has(elapsed)) due.push(elapsed);
+  }
+  return due;
 }
 
 export function applyImperialPassSortie(active, result) {

@@ -6,12 +6,30 @@ import {
   createForeignProdigy,
   createImperialPassWave,
   getEquivalentSecretRealm,
+  getImperialPassDueReminders,
   getImperialPassSupport,
   getWaveEnemyCount,
   isImperialPassThreshold,
   isImperialPassWaveComplete,
   rankImperialPassPrestige,
 } from '../model/foreignImperialPass.js';
+
+test('帝关每波防守三千年，并在前两千年各提醒一次', () => {
+  const wave = createImperialPassWave({ wave: 1, worldYear: 1000, now: 1 });
+  assert.equal(wave.deadlineWorldYear, 4000);
+  assert.deepEqual(getImperialPassDueReminders(wave, 1999), []);
+  assert.deepEqual(getImperialPassDueReminders(wave, 2000), [1000]);
+  wave.remindedWorldYears.push(1000);
+  assert.deepEqual(getImperialPassDueReminders(wave, 3000), [2000]);
+  wave.remindedWorldYears.push(2000);
+  assert.deepEqual(getImperialPassDueReminders(wave, 3500), []);
+  assert.deepEqual(getImperialPassDueReminders({ ...wave, remindedWorldYears: [] }, 4000), []);
+
+  const source = fs.readFileSync(new URL('../apps/tasks/ForeignImperialPass.js', import.meta.url), 'utf8');
+  assert.match(source, /帝关泣血·最后千年/);
+  assert.match(source, /安澜、俞陀的法相/);
+  assert.match(source, /城关将破/);
+});
 
 test('帝关城破通过标准毁灭记录接入自然修复', () => {
   const source = fs.readFileSync(new URL('../apps/tasks/ForeignImperialPass.js', import.meta.url), 'utf8');
