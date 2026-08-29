@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   CORPSE_EMPEROR_SKILL_LIBRARY,
   CORPSE_EMPEROR_SKILL_NAMES,
+  CANG_EMPEROR_ATTRIBUTE_RATE,
   CANG_EMPEROR_SPEED_SUPPRESSION,
+  CANG_EMPEROR_SUPPRESSION_ACTIONS,
   DARK_TRIAD_DAMAGE_REDUCTION,
   DARK_TRIAD_OPENING_SHIELD_RATE,
   DARK_TRIAD_REVIVAL_LIMIT,
@@ -124,43 +126,63 @@ test('所有时间长河对手均反制临字秘，普通对手不扩大到其�
   assert.equal(isTimeRiverCounteredSkill({ name: '行字秘', class: '功法' }, ordinary), false);
 });
 
-test('黑暗三帝具备开场防御与两次满血解控复生', () => {
+test('黑暗三帝具备开场防御与一次满血复生，复生保留控制状态', () => {
   const cang = buildTimeRiverAdversary(player, template('苍帝'), { random: () => 0 });
   assert.equal(cang.护盾值, Math.trunc(cang.血量上限 * DARK_TRIAD_OPENING_SHIELD_RATE));
   assert.equal(cang._持续减伤比例, DARK_TRIAD_DAMAGE_REDUCTION);
   assert.equal(cang._时间长河复活上限, DARK_TRIAD_REVIVAL_LIMIT);
 
-  for (let used = 1; used <= DARK_TRIAD_REVIVAL_LIMIT; used++) {
-    cang.当前血量 = 0;
-    cang.dongjie = true;
-    cang.不可复活 = true;
-    cang._技能速度削弱回合 = 3;
-    const revival = tryDarkTriadRevival(cang);
-    assert.equal(revival.revived, true);
-    assert.equal(cang.当前血量, cang.血量上限);
-    assert.equal(cang.dongjie, false);
-    assert.equal(cang.不可复活, false);
-    assert.equal(cang._技能速度削弱回合, 0);
-    assert.equal(cang._时间长河复活次数已用, used);
-  }
+  cang.当前血量 = 0;
+  cang.dongjie = true;
+  cang.不可复活 = true;
+  cang.禁疗 = 1;
+  cang._技能速度削弱回合 = 3;
+  cang._临字秘压制比例 = 0.5;
+  const revival = tryDarkTriadRevival(cang);
+  assert.equal(revival.revived, true);
+  assert.equal(cang.当前血量, cang.血量上限);
+  assert.equal(cang.dongjie, true);
+  assert.equal(cang.不可复活, true);
+  assert.equal(cang.禁疗, 1);
+  assert.equal(cang._技能速度削弱回合, 3);
+  assert.equal(cang._临字秘压制比例, 0.5);
+  assert.equal(cang._时间长河复活次数已用, 1);
   cang.当前血量 = 0;
   assert.equal(tryDarkTriadRevival(cang).revived, false);
 });
 
-test('苍帝开场压制暂降30%全属性与1200速度，三次行动后复原', () => {
+test('苍帝开场压制暂降20%全属性与500速度，两次行动后复原', () => {
   const combatant = { 名号: '玩家', 攻击: 100, 防御: 200, 血量上限: 1000, 当前血量: 800, 速度: 2000 };
   const opening = applyCangEmperorOpeningSuppression(combatant);
   assert.equal(opening.applied, true);
   assert.deepEqual(
     [combatant.攻击, combatant.防御, combatant.血量上限, combatant.当前血量, combatant.速度],
-    [70, 140, 700, 560, 2000 - CANG_EMPEROR_SPEED_SUPPRESSION],
+    [80, 160, 800, 640, 2000 - CANG_EMPEROR_SPEED_SUPPRESSION],
   );
-  for (let turn = 0; turn < 3; turn++) assert.equal(tickCangEmperorOpeningSuppression(combatant).restored, false);
+  assert.equal(CANG_EMPEROR_ATTRIBUTE_RATE, 0.8);
+  for (let turn = 0; turn < CANG_EMPEROR_SUPPRESSION_ACTIONS; turn++) {
+    assert.equal(tickCangEmperorOpeningSuppression(combatant).restored, false);
+  }
   assert.equal(tickCangEmperorOpeningSuppression(combatant).restored, true);
   assert.deepEqual(
     [combatant.攻击, combatant.防御, combatant.血量上限, combatant.当前血量, combatant.速度],
     [100, 200, 1000, 800, 2000],
   );
+});
+
+test('结出神胎的准仙帝及更高境界免疫苍帝精气神消解', () => {
+  const divineEmbryo = {
+    名号: '神胎准仙帝', 攻击: 100, 防御: 200, 血量上限: 1000, 当前血量: 800, 速度: 2000,
+    mijinglevel_id: 20, 己道推演: { divineEmbryo: '已结出' },
+  };
+  const emperor = { ...divineEmbryo, 名号: '路尽级仙帝', mijinglevel_id: 21, 己道推演: undefined };
+  const quasiSnapshot = structuredClone(divineEmbryo);
+  const emperorSnapshot = structuredClone(emperor);
+
+  assert.equal(applyCangEmperorOpeningSuppression(divineEmbryo).immune, true);
+  assert.equal(applyCangEmperorOpeningSuppression(emperor).immune, true);
+  assert.deepEqual(divineEmbryo, quasiSnapshot);
+  assert.deepEqual(emperor, emperorSnapshot);
 });
 
 test('鸿帝死咒削减属性并拆除无敌气魄', () => {

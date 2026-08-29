@@ -198,6 +198,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       mijinglevel_id: player.mijinglevel_id,
       xiangulevel_id: player.xiangulevel_id,
       huafenlevel_id: player.huafenlevel_id,
+      己道推演: player.己道推演,
       ...(revivalTaunts ? { _时间长河复活彩蛋: TIME_RIVER_REVIVAL_TAUNTS } : {}),
     };
     return sacrificeBuff > 0
@@ -292,7 +293,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       A_player._帝兵失效 = true;
       A_player._时间长河反制来源 = counterEnemy.名号;
     }
-    const cangOpening = stage === 'triad' && enemies.some(enemy => enemy.名号 === '苍帝')
+    const cangOpening = enemies.some(enemy => enemy.名号 === '苍帝')
       ? applyCangEmperorOpeningSuppression(A_player)
       : { applied: false };
 
@@ -304,7 +305,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     if (Array.isArray(battleResult.msg)) {
       const openingMessages = [];
       if (stage === 'triad') {
-        openingMessages.push('【黑暗三帝·帝辉护体】苍、鸿、羽三帝各自凝聚35%生命护盾，并以帝辉减免30%伤害；每帝均可满血复生两次，复生时解除控制。');
+        openingMessages.push('【黑暗三帝·帝辉护体】苍、鸿、羽三帝各自凝聚35%生命护盾，并以帝辉减免30%伤害；每帝均可满血复生一次，复生不会解除已有控制与负面状态。');
       }
       if (cangOpening.message) openingMessages.push(cangOpening.message);
       if (formation.message) openingMessages.push(formation.message);
@@ -826,11 +827,7 @@ async sendEncounterMessage(usr_qq, action, message) {
     message.push(`战斗过程：`);
     
     // 添加战斗关键回合
-    if (battleResult.msg && battleResult.msg.length > 35) {
-      message = message.concat(battleResult.msg.slice(0, 3), battleResult.msg.slice(-2));
-    } else if (battleResult.msg) {
-      message = message.concat(battleResult.msg);
-    }
+    if (Array.isArray(battleResult.msg)) message.push(...battleResult.msg);
     
     // 添加结果
     if (battleResult.outcome === 'victory') {
@@ -1032,12 +1029,6 @@ if (battleResult.specialEvents.pastBodyExposed && battleResult.penalties.pastBod
   // 修改后的发送结果消息方法
 async sendResultMessage(usr_qq, action, resultMessage) {
   try {
-    // 构建消息数组
-    const msgArray = [
-      '【时间长河探索结果】',
-      resultMessage
-    ];
-    
     // 创建模拟事件对象
     const mockEvent = {
       reply: async (content) => {
@@ -1051,8 +1042,18 @@ async sendResultMessage(usr_qq, action, resultMessage) {
       user_id: usr_qq
     };
     
-    // 使用 ForwardMsg 发送图片
-    await ForwardMsg(mockEvent, msgArray);
+    // 长战报完整分页，避免图片过高或截断中间战斗过程。
+    const lines = String(resultMessage || '').split('\n');
+    const pageSize = 60;
+    const pageCount = Math.max(1, Math.ceil(lines.length / pageSize));
+    for (let index = 0; index < pageCount; index++) {
+      const title = pageCount > 1
+        ? `【时间长河探索结果 ${index + 1}/${pageCount}】`
+        : '【时间长河探索结果】';
+      const page = lines.slice(index * pageSize, (index + 1) * pageSize);
+      await ForwardMsg(mockEvent, [title, ...page]);
+      if (index < pageCount - 1) await new Promise(resolve => setTimeout(resolve, 500));
+    }
   } catch (error) {
     console.error('发送结果消息失败:', error);
     

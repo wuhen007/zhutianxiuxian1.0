@@ -13,6 +13,7 @@ test('时间长河任务接入分段三帝战、献祭待援和尸骸免炼化',
   assert.match(source, /getTimeRiverSacrificeRecovery/);
   assert.match(source, /applyTimeRiverSacrificeBuff/);
   assert.match(source, /applyCangEmperorOpeningSuppression/);
+  assert.match(source, /己道推演: player\.己道推演/);
   assert.match(source, /const counterEnemy = enemies\.find\(enemy => enemy\._时间长河反制\)/);
   assert.match(source, /_时间长河临字秘反制目标/);
   assert.match(source, /_时间长河复活次数已用/);
@@ -25,6 +26,7 @@ test('时间长河任务接入分段三帝战、献祭待援和尸骸免炼化',
   assert.match(source, /primary\.名号 !== '尸骸仙帝'/);
   assert.doesNotMatch(source, /B_player\.名号 === '苍帝'[\s\S]{0,120}\['鸿帝', '羽帝'\]/);
   assert.equal((xiuxianSource.match(/action\.action === '时间长河战败待援'/g) || []).length, 1);
+  assert.match(xiuxianSource, /tickCangEmperorOpeningSuppression\(attacker\)/);
   assert.match(xiuxianSource, /tickCangEmperorOpeningSuppression\(readyUnit\)/);
   assert.match(xiuxianSource, /tryDarkTriadRevival\(player\)/);
   assert.match(xiuxianSource, /_时间长河复活彩蛋/);
@@ -42,4 +44,13 @@ test('遨游时间长河使用正确位面编号并防止重复结算与胜利�
   assert.match(source, /outcome === 'defeat' && !chainBattle/);
   assert.match(source, /Number\(player\.纪元积累\) \|\| 0/);
   assert.match(source, /if \(!await existplayer\(usr_qq\)\)/);
+});
+
+test('时间长河长战报保留完整过程并按多张图片顺序发送', () => {
+  assert.doesNotMatch(source, /battleResult\.msg\.slice\(0, 3\)/);
+  assert.doesNotMatch(source, /battleResult\.msg\.slice\(-2\)/);
+  assert.match(source, /const pageSize = 60/);
+  assert.match(source, /时间长河探索结果 \$\{index \+ 1\}\/\$\{pageCount\}/);
+  assert.match(source, /await ForwardMsg\(mockEvent, \[title, \.\.\.page\]\)/);
+  assert.match(xiuxianSource, /return await e\.reply\(img\)/);
 });

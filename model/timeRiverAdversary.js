@@ -1,11 +1,13 @@
+import { hasRealmAuthority } from './realmAuthority.js';
+
 export const DARK_TRIAD_NAMES = Object.freeze(['苍帝', '鸿帝', '羽帝']);
 export const TIME_RIVER_ATTRIBUTE_RANGE = Object.freeze([1.5, 3]);
-export const DARK_TRIAD_REVIVAL_LIMIT = 2;
+export const DARK_TRIAD_REVIVAL_LIMIT = 1;
 export const DARK_TRIAD_OPENING_SHIELD_RATE = 0.35;
 export const DARK_TRIAD_DAMAGE_REDUCTION = 0.3;
-export const CANG_EMPEROR_SPEED_SUPPRESSION = 1200;
-export const CANG_EMPEROR_ATTRIBUTE_RATE = 0.7;
-export const CANG_EMPEROR_SUPPRESSION_ACTIONS = 3;
+export const CANG_EMPEROR_SPEED_SUPPRESSION = 500;
+export const CANG_EMPEROR_ATTRIBUTE_RATE = 0.8;
+export const CANG_EMPEROR_SUPPRESSION_ACTIONS = 2;
 export const TIME_RIVER_PHASE_DURATION_MS = 15 * 60 * 1000;
 export const TIME_RIVER_RESCUE_WINDOW_MS = 10 * 60 * 1000;
 export const TIME_RIVER_REVIVAL_TAUNTS = Object.freeze([
@@ -245,43 +247,32 @@ export function tryDarkTriadRevival(combatant) {
   const limit = Math.max(0, Math.trunc(number(combatant._时间长河复活上限, DARK_TRIAD_REVIVAL_LIMIT)));
   if (used >= limit) return { revived: false };
 
-  if (number(combatant._临字秘压制比例) > 0) {
-    const restoreRate = 1 - Math.min(0.95, number(combatant._临字秘压制比例));
-    combatant.攻击 = integer(number(combatant.攻击) / restoreRate);
-    combatant.防御 = integer(number(combatant.防御) / restoreRate);
-  }
   combatant._时间长河复活次数已用 = used + 1;
   combatant.当前血量 = Math.max(1, number(combatant.血量上限));
   combatant.护盾值 = Math.trunc(number(combatant.血量上限) * 0.25);
   combatant._护盾值 = combatant.护盾值;
   combatant._持续减伤比例 = DARK_TRIAD_DAMAGE_REDUCTION;
   combatant._持续减伤回合 = Math.max(Math.trunc(number(combatant._持续减伤回合)), 3);
-  combatant.dongjie = false;
-  combatant.不可复活 = false;
-  combatant.禁疗 = 0;
-  combatant._先天禁疗 = false;
-  combatant._东皇冻结回合 = 0;
-  combatant._技能禁疗回合 = 0;
-  combatant._技能速度削弱回合 = 0;
-  combatant._技能速度削弱比例 = 0;
-  combatant.fumianhuihe = 0;
-  combatant.fumian_damage = 0;
-  combatant.fumian_type = null;
-  combatant._fumianhuihe = 0;
-  combatant._fumian_damage = 0;
-  combatant._fumian_type = null;
-  delete combatant._临字秘压制比例;
 
   return {
     revived: true,
     used: combatant._时间长河复活次数已用,
     remaining: limit - combatant._时间长河复活次数已用,
-    message: `【黑暗帝血·归来】${combatant.名号}自古史尽头满血复生，诸般控制与负面状态尽数崩解！本场尚余${limit - combatant._时间长河复活次数已用}次复生。`,
+    message: `【黑暗帝血·归来】${combatant.名号}自古史尽头满血复生，但控制与负面状态仍烙印在帝躯之上！本场尚余${limit - combatant._时间长河复活次数已用}次复生。`,
   };
 }
 
 export function applyCangEmperorOpeningSuppression(combatant) {
   if (!combatant || combatant._苍帝精气神压制) return { applied: false };
+  const divineEmbryoQuasiEmperor = hasRealmAuthority(combatant, 20)
+    && combatant?.己道推演?.divineEmbryo === '已结出';
+  if (divineEmbryoQuasiEmperor || hasRealmAuthority(combatant, 21)) {
+    return {
+      applied: false,
+      immune: true,
+      message: `【神胎不朽】${combatant.名号}己道神胎自成一体，苍帝消解精气神的手段毫无作用！`,
+    };
+  }
   const originalSpeed = timeRiverUnitSpeed(combatant);
   for (const field of ['攻击', '防御', '血量上限', '当前血量']) {
     combatant[field] = integer(number(combatant[field]) * CANG_EMPEROR_ATTRIBUTE_RATE);
@@ -294,7 +285,7 @@ export function applyCangEmperorOpeningSuppression(combatant) {
   };
   return {
     applied: true,
-    message: `【苍帝·一念消神】苍帝开场消解精气神，${combatant.名号}前三次行动攻击、防御与生命暂降30%，速度暂降${CANG_EMPEROR_SPEED_SUPPRESSION}点！`,
+    message: `【苍帝·一念消神】苍帝开场消解精气神，${combatant.名号}前两次行动攻击、防御与生命暂降20%，速度暂降${CANG_EMPEROR_SPEED_SUPPRESSION}点！`,
   };
 }
 
