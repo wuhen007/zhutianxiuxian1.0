@@ -9,6 +9,7 @@ import {
   getSuLingData,
   getSuLingRelation,
   getSuLingStoryBeat,
+  hasSuLingUltimate,
   isFateDivineBody,
 } from '../../model/suLing.js';
 
@@ -66,13 +67,14 @@ export class SuLing extends plugin {
     const favor = Math.max(0, Number(character.好感度) || 0);
     const relation = getSuLingRelation(favor);
     const teaching = Math.max(0, Number(character.指点次数) || 0);
+    const learned = hasSuLingUltimate(player);
     const next = favor < 60 ? 60 : favor < 180 ? 180 : favor < 240 ? 240 : favor < 480 ? 480 : null;
     await e.reply([
       '【剧情人物·苏灵】',
       `关系：${relation.name}（${favor}好感度）`,
-      `命运神道体：${isFateDivineBody(player) ? '同源' : '不符，无法接受终极指点'}`,
+      `传承道基：${learned ? '终极奥秘已烙入真灵，换灵根后仍可使用' : isFateDivineBody(player) ? '命运神道体同源' : '当前灵根无法接受终极指点'}`,
       `大道指点：${teaching}/${SU_LING_TEACHING_TOTAL}`,
-      `终极奥秘：${player.命运终章已领悟 ? `已领悟「${SU_LING_ULTIMATE}」` : favor >= SU_LING_DEEP_FAVOR ? '可发送 #苏灵请教（每日一次）' : `需达到${SU_LING_DEEP_FAVOR}好感度`}`,
+      `终极奥秘：${learned ? `已领悟「${SU_LING_ULTIMATE}」` : favor >= SU_LING_DEEP_FAVOR ? '可发送 #苏灵请教（每日一次）' : `需达到${SU_LING_DEEP_FAVOR}好感度`}`,
       `护道之约：${favor >= SU_LING_PROTECTOR_FAVOR ? '可发送 #请苏灵护道' : `需达到${SU_LING_PROTECTOR_FAVOR}好感度`}`,
       next ? `下一幕剧情：${next}好感度` : '五幕剧情均已解锁',
       '互动：#苏灵交流 / #苏灵请教 / #请苏灵护道 / #抹除至尊印记 苏灵',
@@ -126,7 +128,7 @@ export class SuLing extends plugin {
     if (!result.ok) {
       const messages = {
         favor: `你与苏灵的关系尚未达到「命途相知」，还需${result.missing}好感度。`,
-        physique: '苏灵看过你的道基后轻轻摇头：此法只可传给命运神道体，否则福祸倒悬，反受其害。',
+        physique: '苏灵看过你的道基后轻轻摇头：需以命运神道体领悟此法；一旦完整掌握，日后更换灵根也不会失去。',
         daily: `今日已经接受过指点（${result.count}/${SU_LING_TEACHING_TOTAL}），待明日命轮转过一周再来。`,
         learned: `你已掌握「${SU_LING_ULTIMATE}」，无需重复参悟。`,
       };

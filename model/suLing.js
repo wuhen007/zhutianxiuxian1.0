@@ -102,14 +102,15 @@ export function rollSuLingDungeonEncounter(player, options = {}) {
 export function advanceSuLingTeaching(player, dateKey) {
   const character = getSuLingData(player);
   if (!character) return { ok: false, reason: 'not-met' };
+  if (hasSuLingUltimate(player)) {
+    player.命运终章已领悟 = true;
+    return { ok: false, reason: 'learned', count: SU_LING_TEACHING_TOTAL };
+  }
   const favor = Math.max(0, Number(character.好感度) || 0);
   if (favor < SU_LING_DEEP_FAVOR) {
     return { ok: false, reason: 'favor', missing: SU_LING_DEEP_FAVOR - favor };
   }
   if (!isFateDivineBody(player)) return { ok: false, reason: 'physique' };
-  if (player.命运终章已领悟 || player.学习的功法?.includes(SU_LING_ULTIMATE)) {
-    return { ok: false, reason: 'learned', count: SU_LING_TEACHING_TOTAL };
-  }
   if (character.上次指点日期 === dateKey) {
     return { ok: false, reason: 'daily', count: Math.max(0, Number(character.指点次数) || 0) };
   }

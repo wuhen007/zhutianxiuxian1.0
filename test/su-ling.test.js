@@ -8,6 +8,7 @@ import {
   consumeDeletedFateAction,
   getSuLingData,
   getSuLingRelation,
+  hasSuLingUltimate,
   resolveSuLingFatalFate,
   rollSuLingDungeonEncounter,
   transferSuLingFateEffects,
@@ -96,6 +97,24 @@ test('移劫夺运会转嫁负面、夺取增益并在致死时删除两次行�
   assert.equal(consumeDeletedFateAction(enemy).skipped, true);
   assert.equal(consumeDeletedFateAction(enemy).skipped, false);
   assert.equal(resolveSuLingFatalFate(holder, enemy, 100).triggered, false);
+});
+
+test('移劫夺运领悟后更换灵根仍永久生效', () => {
+  const holder = {
+    名号: '换根玩家',
+    灵根: { name: '混沌体' },
+    学习的功法: [SU_LING_ULTIMATE],
+    剧情人物: [{ 苏灵: 1, 好感度: 240 }],
+    当前血量: 100,
+    _困龙封印: 1,
+  };
+  const enemy = { 名号: '敌人', _护盾值: 50 };
+  assert.equal(advanceSuLingTeaching(holder, '2026-08-29').reason, 'learned');
+  assert.equal(holder.命运终章已领悟, true);
+  holder.学习的功法 = [];
+  assert.equal(hasSuLingUltimate(holder), true);
+  assert.equal(transferSuLingFateEffects(holder, enemy).triggered, true);
+  assert.equal(resolveSuLingFatalFate(holder, enemy, 100).triggered, true);
 });
 
 test('苏灵达到480好感可受邀护道，使用四京属性与命运轮盘', async () => {
