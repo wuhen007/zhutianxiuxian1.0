@@ -7,8 +7,10 @@ import {
   ENDLESS_SHOP,
   ENDLESS_TOKEN,
   FUSION_ITEM,
+  canPurchaseEndlessProduct,
   findEndlessProduct,
   formatTreasureClue,
+  grantEndlessDirectReward,
   mergeSetEquipment,
 } from '../model/endlessShop.js';
 
@@ -94,6 +96,19 @@ test('万象归一消耗材料并保留套装数值和百分比属性', () => {
   assert.ok(Math.abs(result.equipment.武器.bao - 0.3) < 1e-12);
   assert.equal(result.najie.装备.length, 0);
   assert.equal(result.najie.道具.length, 0);
+});
+
+test('准仙帝可用两万道痕兑换一点纪元积累', () => {
+  const product = findEndlessProduct('纪元积累');
+  assert.equal(product.price, 20_000);
+  assert.equal(canPurchaseEndlessProduct({ mijinglevel_id: 19 }, product), false);
+  assert.equal(canPurchaseEndlessProduct({ mijinglevel_id: 20 }, product), true);
+  assert.equal(canPurchaseEndlessProduct({ xiangulevel_id: 21 }, product), true);
+  assert.equal(canPurchaseEndlessProduct({ huafenlevel_id: 21 }, product), true);
+
+  const player = { 纪元积累: 3 };
+  assert.equal(grantEndlessDirectReward(player, product, 2), true);
+  assert.equal(player.纪元积累, 5);
 });
 
 test('万象归一与全局装备规则共用499百分比阈值', () => {

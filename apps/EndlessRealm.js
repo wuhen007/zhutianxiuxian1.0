@@ -92,8 +92,10 @@ import {
   ENDLESS_SHOP,
   ENDLESS_TOKEN,
   FUSION_ITEM,
+  canPurchaseEndlessProduct,
   findEndlessProduct,
   formatTreasureClue,
+  grantEndlessDirectReward,
   getEndlessProductRewardAmount,
   mergeSetEquipment,
 } from '../model/endlessShop.js';
@@ -1348,6 +1350,8 @@ export class EndlessRealm extends plugin {
 
     return this.withLock(e, `store:${userId}`, async () => {
       const player = await Read_player(userId);
+      if (!canPurchaseEndlessProduct(player, product))
+        return e.reply(`购买【${product.name}】需达到准仙帝境界`);
       const celestial = getDailyEndlessCelestial();
       const day = celestial.dateKey;
       const legacyDay = day.replace(/-0(\d)/g, '-$1');
@@ -1379,6 +1383,7 @@ export class EndlessRealm extends plugin {
       player[ENDLESS_TOKEN] = (Number(player[ENDLESS_TOKEN]) || 0) - cost;
       player.无尽商店购买记录[recordKey] =
         (Number(player.无尽商店购买记录[recordKey]) || 0) + amount;
+      grantEndlessDirectReward(player, product, rewardAmount);
       try {
         await Write_player(userId, player);
         if (product.action === 'item')

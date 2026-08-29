@@ -225,6 +225,19 @@
       "description": "服用后道心+100，每日限购3枚。",
       "dailyLimit": 3,
       "action": "item"
+    },
+    {
+      "id": 21,
+      "name": "纪元积累",
+      "itemClass": "",
+      "category": "纪元",
+      "rarity": "禁忌",
+      "price": 20000,
+      "quantity": 1,
+      "description": "纪元积累+1，仅准仙帝及以上可购买",
+      "dailyLimit": 0,
+      "action": "era",
+      "requiredRealmAuthority": 20
     }
   ]
 }

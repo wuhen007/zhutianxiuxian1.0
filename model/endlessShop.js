@@ -11,6 +11,7 @@ import {
   formatRealmEventLocation,
   formatRealmEventTravel,
 } from './realmEventLocation.js';
+import { hasRealmAuthority } from './realmAuthority.js';
 
 const shopPath = fileURLToPath(
   new URL('../resources/data/无尽商店.json', import.meta.url)
@@ -74,6 +75,18 @@ export function getEndlessProductRewardAmount(product, purchases = 1) {
   const count = Math.max(0, Math.trunc(Number(purchases) || 0));
   const quantity = Math.max(1, Math.trunc(Number(product?.quantity) || 1));
   return count * quantity;
+}
+
+export function canPurchaseEndlessProduct(player, product) {
+  const required = Math.max(0, Math.trunc(Number(product?.requiredRealmAuthority) || 0));
+  return !required || hasRealmAuthority(player, required);
+}
+
+export function grantEndlessDirectReward(player, product, amount) {
+  if (product?.action !== 'era') return false;
+  player.纪元积累 = Math.max(0, Math.trunc(Number(player.纪元积累) || 0)) +
+    Math.max(0, Math.trunc(Number(amount) || 0));
+  return true;
 }
 
 export function formatTreasureClue(event, now = Date.now()) {
