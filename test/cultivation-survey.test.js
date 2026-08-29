@@ -8,6 +8,7 @@ import {
   SURVEY_QUESTIONS,
   SURVEY_REWARDS,
   buildSurveyStatistics,
+  buildSurveyStatisticsView,
   readSurveyResponse,
   readSurveyResponses,
   submitSurveyResponse,
@@ -106,6 +107,12 @@ test('统计按实际回答人数计算单选和多选占比', async t => {
   assert.equal(statistics.total, 2);
   assert.equal(statistics.questions.find(question => question.id === 'q4').counts.非常难, 1);
   assert.equal(statistics.questions.find(question => question.id === 'q4_1').answered, 1);
+  assert.deepEqual(new Set(statistics.participants), new Set(['甲', '乙']));
+  const view = buildSurveyStatisticsView(statistics, { now: 1_800_000 });
+  assert.equal(view.questions.find(question => question.id === 'q4').rows[0].ratioLabel, '50.0%');
+  assert.equal(view.questions.find(question => question.id === 'q4_1').conditionNote, '仅当第4题选择「非常难」时展示');
+  assert.equal(view.metrics[0].value, 2);
+  assert.ok(view.insights.some(item => item.label === '玩法偏好'));
   assert.deepEqual(SURVEY_REWARDS, { 众生仙钓: 10, 无尽秘钥: 3, 超越宝盒: 20, 源石: 15_000_000 });
 });
 

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}} · 第{{version}}期</title>
+    <link rel="stylesheet" href="{{pluResPath}}/html/survey_statistics/survey_statistics.css" />
+  </head>
+  <body>
+    <div id="container" class="survey-canvas">
+    <article class="survey-report">
+      <header class="report-header">
+        <div class="title-lockup">
+          <div class="edition-seal" aria-hidden="true"><span>诸</span><b>天</b></div>
+          <div>
+            <p>PLAYER RESEARCH ARCHIVE · ISSUE {{version}}</p>
+            <h1>{{title}}</h1>
+            <span>{{subtitle}}</span>
+          </div>
+        </div>
+        <div class="report-meta">
+          <span>收卷区间</span>
+          <b>{{submissionWindow}}</b>
+        </div>
+        <div class="metric-grid">
+          {{each metrics metric}}
+          <div class="metric">
+            <strong>{{metric.value}}</strong><small>{{metric.note}}</small>
+            <span>{{metric.label}}</span>
+          </div>
+          {{/each}}
+        </div>
+      </header>
+
+      <section class="insight-section">
+        <div class="section-heading">
+          <span>01 / SIGNAL</span>
+          <div><h2>核心观察</h2><p>由本期有效答卷自动提炼</p></div>
+          <b>{{metrics[0].value}} 份样本</b>
+        </div>
+        <div class="insight-grid">
+          {{each insights insight insightIndex}}
+          <div class="insight-item">
+            <span>0{{insightIndex + 1}}</span>
+            <div><b>{{insight.label}}</b><p>{{insight.text}}</p></div>
+          </div>
+          {{/each}}
+        </div>
+      </section>
+
+      <main class="question-section">
+        <div class="section-heading">
+          <span>02 / DISTRIBUTION</span>
+          <div><h2>逐题票型</h2><p>比例均按该题实际回答人数计算</p></div>
+          <b>单选与多选分别统计</b>
+        </div>
+        <div class="question-grid">
+          {{each questions question}}
+          <article class="question-card {{question.isWide ? 'is-wide' : ''}} {{question.answered ? '' : 'is-empty'}}">
+            <header class="question-header">
+              <div class="question-number"><span>Q</span><strong>{{question.number}}</strong></div>
+              <div class="question-title">
+                <h3>{{question.text}}</h3>
+                <p>{{question.typeLabel}} · 有效 {{question.answered}} 份{{if question.conditionNote}} · 条件题{{/if}}</p>
+              </div>
+              <span class="question-type">{{question.typeLabel}}</span>
+            </header>
+            {{if question.conditionNote}}
+            <div class="condition-note">{{question.conditionNote}}</div>
+            {{/if}}
+            <div class="bar-chart">
+              {{each question.rows row}}
+              <div class="bar-row tone-{{row.tone}}" aria-label="{{row.label}} {{row.count}}票，占{{row.ratioLabel}}">
+                <span>{{row.label}}</span>
+                <div class="bar-track" aria-hidden="true"><i style="width: {{row.width}}%"></i></div>
+                <strong>{{row.count}}<small>{{row.ratioLabel}}</small></strong>
+              </div>
+              {{/each}}
+            </div>
+            {{if question.otherAnswers && question.otherAnswers.length}}
+            <div class="voice-list">
+              <b>其他回答</b>
+              {{each question.otherAnswers answer}}
+              <p><span>{{answer.playerName}}</span>{{answer.text}}</p>
+              {{/each}}
+            </div>
+            {{/if}}
+          </article>
+          {{/each}}
+        </div>
+      </main>
+
+      <section class="participant-section">
+        <div class="section-heading">
+          <span>03 / PARTICIPANTS</span>
+          <div><h2>参与道友</h2><p>按答卷文件读取顺序列示</p></div>
+          <b>{{participants.length}} 人</b>
+        </div>
+        {{if participants.length}}
+        <div class="participant-list">
+          {{each participants participant participantIndex}}
+          <span><i>{{participantIndex + 1}}</i>{{participant}}</span>
+          {{/each}}
+        </div>
+        {{else}}
+        <div class="participant-empty">尚待诸天回响</div>
+        {{/if}}
+      </section>
+
+      <footer class="report-footer">
+        <div><span>ZHUTIAN SURVEY</span><b>诸天万界修仙 · 调研问卷 v{{version}}</b></div>
+        <p>统计口径：有效答卷全量汇总 · 多选题每项独立计票</p>
+        <strong>生成于 {{generatedAt}}</strong>
+      </footer>
+    </article>
+    </div>
+  </body>
+</html>

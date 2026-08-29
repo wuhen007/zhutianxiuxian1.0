@@ -207,19 +207,138 @@ export function readSurveyResponses(options = {}) {
 }
 
 export function buildSurveyStatistics(responses = readSurveyResponses()) {
+  const orderedResponses = responses
+    .map((response, index) => ({ response, index }))
+    .sort((a, b) => (Number(a.response.submittedAt) || 0) - (Number(b.response.submittedAt) || 0) || a.index - b.index)
+    .map(item => item.response);
   const questions = SURVEY_QUESTIONS.map(question => {
     const counts = Object.fromEntries([...question.options, '__other__'].map(option => [option, 0]));
+    const otherAnswers = [];
     let answered = 0;
-    for (const response of responses) {
+    for (const response of orderedResponses) {
       const answer = response.answers?.[question.id];
       if (!answer) continue;
       answered += 1;
       const selected = Array.isArray(answer.selected) ? answer.selected : [answer.selected];
       for (const value of selected) if (Object.hasOwn(counts, value)) counts[value] += 1;
+      if (selected.includes('__other__') && answer.other) {
+        otherAnswers.push({
+          playerName: String(response.playerName || '无名道友'),
+          text: String(answer.other),
+        });
+      }
     }
-    return { ...question, answered, counts };
+    return { ...question, answered, counts, otherAnswers };
   });
-  return { version: SURVEY_VERSION, total: responses.length, questions };
+  const submittedAt = orderedResponses
+    .map(response => Number(response.submittedAt))
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  return {
+    version: SURVEY_VERSION,
+    total: responses.length,
+    questions,
+    participants: orderedResponses.map(response => String(response.playerName || '无名道友')),
+    firstSubmittedAt: submittedAt[0] || 0,
+    lastSubmittedAt: submittedAt.at(-1) || 0,
+  };
+}
+
+function ratioOf(count, total) {
+  return total > 0 ? count / total * 100 : 0;
+}
+
+function formatSurveyTime(timestamp, withDate = true) {
+  if (!timestamp) return '暂无记录';
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    ...(withDate ? { month: '2-digit', day: '2-digit' } : {}),
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(timestamp).replaceAll('/', '-');
+}
+
+function topRows(question, limit = 1) {
+  return question.rows
+    .filter(row => row.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+}
+
+export function buildSurveyStatisticsView(statistics, options = {}) {
+  const questions = statistics.questions.map(question => {
+    const maxCount = Math.max(0, ...Object.values(question.counts));
+    const rows = [...question.options, '__other__'].map(option => {
+      const count = Number(question.counts[option]) || 0;
+      const ratio = ratioOf(count, question.answered);
+      return {
+        label: option === '__other__' ? '其他（自定义）' : option,
+        count,
+        ratio,
+        ratioLabel: `${ratio.toFixed(1)}%`,
+        width: ratio > 0 ? Math.max(2, Number(ratio.toFixed(1))) : 0,
+        tone: option === '__other__' ? 'other' : (count > 0 && count === maxCount ? 'top' : 'normal'),
+      };
+    });
+    const condition = question.showWhen
+      ? SURVEY_QUESTIONS.find(item => item.id === question.showWhen.questionId)
+      : null;
+    return {
+      ...question,
+      rows,
+      typeLabel: question.type === 'multiple' ? '多选' : '单选',
+      isWide: rows.length >= 8 || Boolean(question.showWhen),
+      conditionNote: condition
+        ? `仅当第${condition.number}题选择「${question.showWhen.equals}」时展示`
+        : '',
+    };
+  });
+
+  const byId = Object.fromEntries(questions.map(question => [question.id, question]));
+  const insights = [];
+  const addInsight = (id, label, makeText, limit = 1) => {
+    const question = byId[id];
+    if (!question?.answered) return;
+    const leaders = topRows(question, limit);
+    if (leaders.length) insights.push({ label, text: makeText(leaders, question) });
+  };
+  addInsight('q1', '节奏共识', ([leader]) => `${leader.label}以 ${leader.ratioLabel} 居首，共 ${leader.count} 位道友选择。`);
+  addInsight('q4', '难度体感', ([leader]) => `最多玩家认为当前难度为「${leader.label}」，占有效回答的 ${leader.ratioLabel}。`);
+  addInsight('q6', '玩法偏好', ([leader]) => `最受青睐的玩法是「${leader.label}」，获得 ${leader.count} 票。`);
+  addInsight('q8', '健康生态', leaders => `优先诉求集中在${leaders.map(item => `「${item.label}」`).join('、')}。`, 3);
+  addInsight('q12', '赞助态度', ([leader]) => `「${leader.label}」为主流选择，支持率 ${leader.ratioLabel}。`);
+  if (!insights.length) insights.push({ label: '等待回响', text: '本期尚无有效答卷，统计图将在收到回答后自动生成。' });
+
+  const firstSubmittedAt = Number(statistics.firstSubmittedAt) || 0;
+  const lastSubmittedAt = Number(statistics.lastSubmittedAt) || 0;
+  const elapsedHours = Math.max(0, lastSubmittedAt - firstSubmittedAt) / 3_600_000;
+  const answeredQuestions = questions.filter(question => question.answered > 0).length;
+  const customAnswerCount = questions.reduce((sum, question) => sum + question.otherAnswers.length, 0);
+  const submissionWindow = firstSubmittedAt
+    ? `${formatSurveyTime(firstSubmittedAt)} 至 ${formatSurveyTime(lastSubmittedAt, false)}`
+    : '暂无提交记录';
+
+  return {
+    version: statistics.version,
+    title: `诸天修仙调研统计`,
+    subtitle: `第 ${statistics.version} 期玩家意见全量汇总`,
+    generatedAt: formatSurveyTime(options.now || Date.now()),
+    submissionWindow,
+    questions,
+    insights,
+    participants: statistics.participants || [],
+    metrics: [
+      { value: statistics.total, label: '有效答卷', note: '份' },
+      { value: answeredQuestions, label: '题目覆盖', note: `共 ${questions.length} 题` },
+      { value: customAnswerCount, label: '自定义意见', note: '条' },
+      {
+        value: firstSubmittedAt ? (elapsedHours < 0.1 ? '<0.1h' : `${elapsedHours.toFixed(1)}h`) : '--',
+        label: '提交窗口',
+        note: firstSubmittedAt ? '北京时间' : '等待答卷',
+      },
+    ],
+  };
 }
 
 export function formatSurveyStatistics(statistics) {

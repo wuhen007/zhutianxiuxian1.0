@@ -1,4 +1,4 @@
-import { config, plugin } from '../api/api.js';
+import { Show, config, plugin, puppeteer } from '../api/api.js';
 import {
   Add_najie_thing,
   Add_源石,
@@ -6,13 +6,13 @@ import {
   Read_player,
   channel,
   existplayer,
-  get_log_img,
 } from '../model/xiuxian.js';
 import {
   SURVEY_QUESTIONS,
   SURVEY_REWARDS,
   SURVEY_VERSION,
   buildSurveyStatistics,
+  buildSurveyStatisticsView,
   formatSurveyStatistics,
   readSurveyResponse,
   readSurveyResponses,
@@ -159,7 +159,15 @@ export class CultivationSurvey extends plugin {
     const statistics = buildSurveyStatistics(readSurveyResponses());
     const report = formatSurveyStatistics(statistics);
     try {
-      return e.reply(await get_log_img(report));
+      const view = buildSurveyStatisticsView(statistics);
+      const renderData = await new Show(e).get_surveyStatisticsData({
+        ...view,
+        saveId: `survey_statistics_v${statistics.version}`,
+        imgType: 'png',
+      });
+      const image = await puppeteer.screenshot('survey_statistics', renderData);
+      if (!image) throw new Error('统计图未生成');
+      return e.reply(image);
     } catch (error) {
       logger.error('[诸天调研] 统计图片生成失败', error);
       return e.reply(report);

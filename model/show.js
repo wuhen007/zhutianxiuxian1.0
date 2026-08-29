@@ -56,6 +56,13 @@ export default class Game extends base {
       ...myData,
     };
   }
+  async get_surveyStatisticsData(myData) {
+    this.model = 'survey_statistics';
+    return {
+      ...this.screenData,
+      ...myData,
+    };
+  }
   async get_player_pindao_Data(myData) {
     this.model = 'player_pindao';
     return {
