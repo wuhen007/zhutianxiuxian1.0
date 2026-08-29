@@ -20,7 +20,8 @@ foundthing,
   Read_equipment,
   Add_HP,
    zd_battle,
-   Read_najie,
+  Read_najie,
+  Write_najie,
   exist_najie_thing,
   Add_修为,
   bigNumberTransform,
@@ -35,6 +36,7 @@ foundthing,
   ForwardMsg
 } from '../../model/xiuxian.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
+import { computeJuelingErasure } from '../../model/juelingLoss.js';
 import { createTianjiaoTrace, formatTianjiaoTrace, getKnownTianjiaoTrace } from '../../model/tianjiaoGrowth.js';
 import {
   formatTianjiSearchResult,
@@ -2495,6 +2497,15 @@ async createEverything(e) {
     await Add_najie_thing(player_qq, itemName, itemExist.class, amount);
     const causalDebtAmount = Number(creationProfile.causalDebt) || 0;
     const causalDebtResult = addCausalDebt(player, causalDebtAmount, `造化万物：${itemName}`);
+    // 因果绝灵侵蚀：多次雷劫后大概率同时引来超长绝灵（护身符/仙王豁免均无效）
+    const juelingItems = causalDebtResult.backlash?.jueling
+      ? await (async () => {
+          const najie = await Read_najie(player_qq);
+          const { items } = computeJuelingErasure(najie, causalDebtResult.backlash.jueling.years);
+          if (items.length > 0) await Write_najie(player_qq, najie);
+          return items;
+        })()
+      : [];
     await Write_player(player_qq, player);
     await redis.del(actionKey);
  if (authorityLevel < 22 && weimianData.现世承受力 < 1000000) {
@@ -2649,6 +2660,13 @@ async createEverything(e) {
         : `本次造化新增因果债${causalDebtResult.delta}点，当前共${causalDebtResult.debt}点。`);
     if (causalDebtResult.backlash?.triggered) {
         createTexts.push(`因果债超过200点，时间长河降下二十道反噬雷劫。`);
+    }
+    if (causalDebtResult.backlash?.jueling) {
+        createTexts.push(
+            `【因果绝灵·侵蚀降临】`,
+            `时间长河雷劫惊动沉寂的绝灵——一场长达 ${causalDebtResult.backlash.jueling.years} 年的绝灵侵蚀将你吞没，星宇护身符与仙王豁免均无法抵挡！`,
+            `纳戒损失：${juelingItems.length ? juelingItems.map(item => `${item.name}x${item.amount}`).join('、') : '无可侵蚀之物'}`,
+        );
     }
 
     e.reply(createTexts.join('\n'));

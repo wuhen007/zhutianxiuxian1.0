@@ -7,6 +7,15 @@ export const CAUSAL_DEBT_BACKLASH_THRESHOLD = 200;
 export const TIME_RIVER_BACKLASH_BOLTS = 20;
 export const TIME_RIVER_BACKLASH_DAMAGE_RATIO = 1.2;
 export const WORLDLINE_WITHDRAWAL_BLOCK_MS = 12 * 60 * 60 * 1000;
+// 因果债联动：每次触发时间长河雷劫，支取冷却额外延迟 5 小时
+export const CAUSAL_BACKLASH_EXTRA_BLOCK_MS = 5 * 60 * 60 * 1000;
+// 因果债联动：累计触发 ≥3 次雷劫后，下次大概率同时引来「绝灵侵蚀」
+export const CAUSAL_JUELING_MIN_BACKLASHES = 3;
+export const CAUSAL_JUELING_BASE_YEARS = 11000;
+export const CAUSAL_JUELING_EXTRA_YEARS = 3000;
+export const CAUSAL_JUELING_CHANCE_BASE = 0.5;
+export const CAUSAL_JUELING_CHANCE_STEP = 0.1;
+export const CAUSAL_JUELING_CHANCE_CAP = 0.85;
 
 export const PRE_QUASI_EMPEROR_REALMS = Object.freeze({
   mijing: Object.freeze({ field: 'mijinglevel_id', realmId: 19, targetRealmId: 20, name: '秘境体系' }),
@@ -322,7 +331,7 @@ export function getWorldlineWithdrawalBlock(player, now = Date.now()) {
   };
 }
 
-export function resolveCausalDebtBacklash(player, now = Date.now()) {
+export function resolveCausalDebtBacklash(player, now = Date.now(), random = Math.random) {
   const state = ensureWorldlineState(player);
   if (state.causalDebt <= CAUSAL_DEBT_BACKLASH_THRESHOLD) {
     return { triggered: false, debt: state.causalDebt };
@@ -336,18 +345,44 @@ export function resolveCausalDebtBacklash(player, now = Date.now()) {
   const killed = player.当前血量 <= 0;
   if (killed) {
     player.道伤 = Math.max(0, number(player.道伤)) + 2;
-    state.withdrawalBlockedUntil = Math.max(
-      state.withdrawalBlockedUntil,
-      now + WORLDLINE_WITHDRAWAL_BLOCK_MS,
-    );
   }
+
+  // 支取冷却：每次触发在现有冷却基础上延迟 5 小时；本次死亡再叠 12 小时基准。
+  // 冷却未散时连续触发会持续累加（多次触发 → 冷却越来越长）。
+  const baseUntil = Math.max(
+    killed ? now + WORLDLINE_WITHDRAWAL_BLOCK_MS : now,
+    state.withdrawalBlockedUntil,
+  );
+  state.withdrawalBlockedUntil = baseUntil + CAUSAL_BACKLASH_EXTRA_BLOCK_MS;
+
+  // 因果债联动：累计触发多次后，下次大概率同时引来「绝灵侵蚀」。
+  // 绝灵侵蚀：11000~13000 年的个人级绝灵，星宇护身符与仙王豁免均无法抵挡（immuneBypass）。
+  const count = Math.max(0, number(state.riverBacklashCount)) + 1;
+  state.riverBacklashCount = count;
+  let jueling = null;
+  if (count >= CAUSAL_JUELING_MIN_BACKLASHES) {
+    const chance = Math.min(
+      CAUSAL_JUELING_CHANCE_CAP,
+      CAUSAL_JUELING_CHANCE_BASE + (count - CAUSAL_JUELING_MIN_BACKLASHES) * CAUSAL_JUELING_CHANCE_STEP,
+    );
+    if (random() < chance) {
+      const years = CAUSAL_JUELING_BASE_YEARS + Math.floor(random() * (CAUSAL_JUELING_EXTRA_YEARS + 1));
+      player.因果绝灵 = { years, immuneBypass: true, at: now };
+      state.history.push({ type: '因果绝灵', years, immuneBypass: true, at: now });
+      trimHistory(state.history);
+      jueling = { years, immuneBypass: true };
+    }
+  }
+
   const result = {
     triggered: true,
     bolts: TIME_RIVER_BACKLASH_BOLTS,
     damagePerBolt,
     totalDamage,
     killed,
-    blockedUntil: killed ? state.withdrawalBlockedUntil : 0,
+    count,
+    jueling,
+    blockedUntil: state.withdrawalBlockedUntil,
   };
   state.history.push({ type: '时间长河雷劫', ...result, at: now });
   trimHistory(state.history);
@@ -391,7 +426,7 @@ export function reduceCausalDebtWithEraAccumulation(player, requestedAmount = 1,
   return { ok: true, spent, reduced, debt: state.causalDebt, rate, tier, costFree: false };
 }
 
-export function addCausalDebt(player, amount, reason, now = Date.now()) {
+export function addCausalDebt(player, amount, reason, now = Date.now(), random = Math.random) {
   const state = ensureWorldlineState(player);
   const costFree = getRealmAuthorityLevel(player) >= 23;
   const delta = costFree ? 0 : Math.ceil(Math.max(0, number(amount)) * getCausalDebtMultiplier(player));
@@ -399,7 +434,7 @@ export function addCausalDebt(player, amount, reason, now = Date.now()) {
   state.history.push({ type: '因果债', amount: delta, reason: reason || '', at: now });
   trimHistory(state.history);
   const tier = updateCausalDebtProjection(player, state, now);
-  const backlash = delta > 0 ? resolveCausalDebtBacklash(player, now) : { triggered: false };
+  const backlash = delta > 0 ? resolveCausalDebtBacklash(player, now, random) : { triggered: false };
   return { debt: state.causalDebt, delta, tier, backlash, costFree };
 }
 

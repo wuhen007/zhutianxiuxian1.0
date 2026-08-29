@@ -6,7 +6,11 @@ import test from 'node:test';
 
 import {
   addCausalDebt,
+  CAUSAL_BACKLASH_EXTRA_BLOCK_MS,
   CAUSAL_DEBT_BACKLASH_THRESHOLD,
+  CAUSAL_JUELING_BASE_YEARS,
+  CAUSAL_JUELING_EXTRA_YEARS,
+  CAUSAL_JUELING_MIN_BACKLASHES,
   canEnterQuasiEmperor,
   destroyWorldline,
   ensureWorldlineState,
@@ -29,6 +33,7 @@ import {
   TIME_RIVER_BACKLASH_BOLTS,
   WORLDLINE_WITHDRAWAL_BLOCK_MS,
 } from '../model/worldlineAuthority.js';
+import { computeJuelingErasure } from '../model/juelingLoss.js';
 import {
   extractArchiveItem,
   listArchivePlayerIds,
@@ -201,9 +206,11 @@ test('因果债严格超过200后承受二十道血量上限120%的雷罚', () =
   assert.equal(punished.backlash.totalDamage, 24_000);
   assert.equal(player.当前血量, 0);
   assert.equal(player.道伤, 3);
-  assert.equal(punished.backlash.blockedUntil, now + WORLDLINE_WITHDRAWAL_BLOCK_MS);
-  assert.equal(getWorldlineWithdrawalBlock(player, now + WORLDLINE_WITHDRAWAL_BLOCK_MS - 1).blocked, true);
-  assert.equal(getWorldlineWithdrawalBlock(player, now + WORLDLINE_WITHDRAWAL_BLOCK_MS).blocked, false);
+  // 死亡基准 12h + 每次触发延迟 5h
+  const blockUntil = now + WORLDLINE_WITHDRAWAL_BLOCK_MS + CAUSAL_BACKLASH_EXTRA_BLOCK_MS;
+  assert.equal(punished.backlash.blockedUntil, blockUntil);
+  assert.equal(getWorldlineWithdrawalBlock(player, blockUntil - 1).blocked, true);
+  assert.equal(getWorldlineWithdrawalBlock(player, blockUntil).blocked, false);
 });
 
 test('纪元积累按准仙帝、仙帝、祭道倍率消债，祭道之上不沾因果', () => {
@@ -429,4 +436,64 @@ test('revoke 只清除 passed 烙印，保留 failed 冷却记录', () => {
   assert.equal(revokeBreakKingEmperorEligibility(failed, 'huafen'), false);
   assert.equal(ensureWorldlineState(failed).tribulations.huafen.status, 'failed');
   assert.equal(getBreakKingEmperorGate(failed, 'huafen', 1000).reason, 'cooldown');
+});
+
+test('多次触发时间长河雷劫后，下次大概率同时引来因果绝灵（11000~14000年）', () => {
+  const player = { mijinglevel_id: 20, 血量上限: 1000, 当前血量: 1000 };
+  // 先把债务拉过阈值（第 1 次雷劫），再触发 2 次（累计 3 次）：不引绝灵
+  addCausalDebt(player, CAUSAL_DEBT_BACKLASH_THRESHOLD + 1, '触碰时间线', 1000);
+  addCausalDebt(player, 1, '触碰时间线', 1001);
+  addCausalDebt(player, 1, '触碰时间线', 1002);
+  assert.equal(ensureWorldlineState(player).riverBacklashCount, CAUSAL_JUELING_MIN_BACKLASHES);
+
+  // 第 4 次（count=4）：注入命中随机数 → 绝灵侵蚀降临
+  player.当前血量 = 1000;
+  const fourth = addCausalDebt(player, 1, '触碰时间线', 2000, () => 0.05);
+  assert.equal(fourth.backlash.triggered, true);
+  assert.ok(fourth.backlash.jueling, '应触发因果绝灵');
+  assert.ok(fourth.backlash.jueling.years >= CAUSAL_JUELING_BASE_YEARS);
+  assert.ok(fourth.backlash.jueling.years <= CAUSAL_JUELING_BASE_YEARS + CAUSAL_JUELING_EXTRA_YEARS);
+  assert.equal(player.因果绝灵.immuneBypass, true);
+  assert.equal(fourth.backlash.count, CAUSAL_JUELING_MIN_BACKLASHES + 1);
+
+  // 第 5 次（count=5）：注入未命中随机数 → 不再引绝灵
+  player.当前血量 = 1000;
+  const fifth = addCausalDebt(player, 1, '触碰时间线', 2001, () => 0.99);
+  assert.equal(fifth.backlash.jueling, null);
+});
+
+test('每次触发时间长河雷劫，支取冷却在现有基础上延迟5小时（连续触发累加）', () => {
+  const player = { mijinglevel_id: 20, 血量上限: 1000, 当前血量: 1000 };
+  const first = addCausalDebt(player, CAUSAL_DEBT_BACKLASH_THRESHOLD + 1, '触碰时间线', 1000);
+  assert.equal(first.backlash.triggered, true);
+  assert.equal(first.backlash.killed, true);
+  const second = addCausalDebt(player, 1, '触碰时间线', 1001);
+  assert.equal(second.backlash.triggered, true);
+  assert.equal(
+    second.backlash.blockedUntil,
+    first.backlash.blockedUntil + CAUSAL_BACKLASH_EXTRA_BLOCK_MS,
+  );
+});
+
+test('绝灵侵蚀损失按超长年数追加组数并跳过锁定物品', () => {
+  const najie = {
+    丹药: [
+      { name: '锁灵丹', 数量: 100, islockd: 1 },
+      { name: '天药', 数量: 10 },
+    ],
+    道具: [{ name: '界海石', 数量: 50 }],
+  };
+  // 确定性伪随机（LCG）：保证选择能遍历到锁定物与正常物
+  let seed = 1;
+  const random = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648;
+  };
+  const { items, groups } = computeJuelingErasure(najie, 12000, { random });
+  assert.ok(groups >= 27 && groups <= 29, `损失组数应在 27~29（基础3~5 + 12千年×2）：${groups}`);
+  assert.ok(items.length > 0, '应有物品被侵蚀');
+  assert.equal(items.every(item => item.name !== '锁灵丹'), true);
+  const seaStone = items.find(item => item.name === '界海石');
+  assert.ok(seaStone, '可损失物品应被侵蚀');
+  assert.ok(seaStone.amount >= 1 && seaStone.amount <= 5, `界海石损失数量应在 1~5：${seaStone.amount}`); // floor(50 * 0.1) = 5
 });

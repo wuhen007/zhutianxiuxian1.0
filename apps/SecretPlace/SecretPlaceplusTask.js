@@ -34,6 +34,7 @@ import {
   rollDailyDungeonWenXianClue,
 } from '../../model/wenxianling.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
+import { revokeBreakKingEmperorEligibility } from '../../model/realmAuthority.js';
 import {
   getDungeonFortuneMultiplier,
   getSeekingFortuneMultipliers,
@@ -1202,6 +1203,9 @@ if (weizhi.name === "霸体祖星") {
                         const newLevel = Math.max(1, player[prop] - reduction);
                         daoShangMsg += `\n${getPropertyName(prop)}: ${player[prop]} → ${newLevel} (跌落${reduction}级)`;
                         player[prop] = newLevel;
+                        // 道基崩解削帝路资格：秘境/仙古跌落需重渡破王成帝劫
+                        if (prop === 'mijinglevel_id') revokeBreakKingEmperorEligibility(player, 'mijing');
+                        if (prop === 'xiangulevel_id') revokeBreakKingEmperorEligibility(player, 'xiangu');
                     }
                 });
             } else {
@@ -1210,6 +1214,9 @@ if (weizhi.name === "霸体祖星") {
                 player.Physique_id = Math.max(1, player.Physique_id - 1);
                 player.mijinglevel_id = Math.max(1, player.mijinglevel_id - 1);
                 player.xiangulevel_id = Math.max(1, player.xiangulevel_id - 1);
+                // 道基崩解削帝路资格：需重渡破王成帝劫
+                revokeBreakKingEmperorEligibility(player, 'mijing');
+                revokeBreakKingEmperorEligibility(player, 'xiangu');
             }
             
             // 合并消息

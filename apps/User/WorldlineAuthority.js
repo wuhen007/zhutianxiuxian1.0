@@ -40,6 +40,7 @@ import {
   setShapeSpiritDestroyed,
 } from '../../model/worldlineAuthority.js';
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
+import { computeJuelingErasure } from '../../model/juelingLoss.js';
 import {
   ETERNAL_MAP_NAME,
   getAuthorityState,
@@ -256,6 +257,30 @@ async function buildEternalFactRecord(targetId, target, type, name) {
   };
 }
 
+/**
+ * 因果绝灵侵蚀：立即执行个人超长绝灵损失（11000~13000 年，星宇护身符与仙王豁免均无法抵挡）。
+ * @param {string} qq 玩家 QQ
+ * @param {{ years: number }} jueling 绝灵侵蚀参数
+ * @returns {Promise<Array<{name, category, amount}>>} 损失的物品列表
+ */
+async function applyCausalJuelingErasure(qq, jueling) {
+  const najie = await Read_najie(qq);
+  const { items } = computeJuelingErasure(najie, jueling.years);
+  if (items.length > 0) await Write_najie(qq, najie);
+  return items;
+}
+
+/** 因果绝灵侵蚀的回复文案行（无触发时返回空数组） */
+function formatJuelingErasureLines(debt, items) {
+  const jueling = debt?.backlash?.jueling;
+  if (!jueling) return [];
+  return [
+    '【因果绝灵·侵蚀降临】',
+    `时间长河雷劫惊动沉寂的绝灵——一场长达 ${jueling.years} 年的绝灵侵蚀将你吞没，星宇护身符与仙王豁免均无法抵挡！`,
+    `纳戒损失：${items.length ? items.map(item => `${item.name}x${item.amount}`).join('、') : '无可侵蚀之物'}`,
+  ];
+}
+
 async function persistCausalImpact(actor, debtResult) {
   if (!debtResult?.delta) return;
   await withPlayerMutationLock('worldline:causal-impact', async () => {
@@ -443,6 +468,10 @@ export class WorldlineAuthority extends plugin {
         const comparison = compareWorldlineAuthority(actor, target);
         if (!comparison.ok) {
           const debt = addCausalDebt(actor, comparison.reason === 'same_level' ? 45 : 80, '强行支取受护持的时间线');
+          // 因果绝灵侵蚀：多次雷劫后大概率同时引来超长绝灵（护身符/仙王豁免均无效）
+          const juelingItems = debt.backlash?.jueling
+            ? await applyCausalJuelingErasure(actorId, debt.backlash.jueling)
+            : [];
           if (comparison.reason === 'higher_target' && comparison.targetLevel >= 21) {
             setShapeSpiritDestroyed(actor, '支取路尽级过去时遭本体抹杀');
           }
@@ -453,7 +482,8 @@ export class WorldlineAuthority extends plugin {
             ? '同级本体循因果降临，支取中止；若要强取，只能先与其当世本体分出胜负。'
             : '目标的高境本体护持过去，你的时间线法身已被当场抹灭。',
             ...formatCausalDebtResult(debt),
-          ].join('\n'));
+            ...formatJuelingErasureLines(debt, juelingItems),
+          ].filter(Boolean).join('\n'));
         }
       }
 
@@ -726,6 +756,10 @@ export class WorldlineAuthority extends plugin {
 
       const rebuilt = rebuildShapeSpirit(target, actor.名号);
       const debt = addCausalDebt(actor, 120, `为${target.名号}逆转形神俱灭`);
+      // 因果绝灵侵蚀：多次雷劫后大概率同时引来超长绝灵（护身符/仙王豁免均无效）
+      const juelingItems = debt.backlash?.jueling
+        ? await applyCausalJuelingErasure(actorId, debt.backlash.jueling)
+        : [];
       const najie = await Read_najie(targetId);
       delete najie.时间线封锁;
       await persistCausalImpact(actor, debt);
@@ -737,7 +771,8 @@ export class WorldlineAuthority extends plugin {
         `${actor.名号}以路尽之光重聚${target.名号}的肉身与神魂。`,
         `目标恢复至${rebuilt.currentHp}点生命，练气存档与纳戒重新可用。`,
         ...formatCausalDebtResult(debt),
-      ].join('\n'));
+        ...formatJuelingErasureLines(debt, juelingItems),
+      ].filter(Boolean).join('\n'));
     });
   }
 }
