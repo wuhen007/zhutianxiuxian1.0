@@ -4,6 +4,7 @@ import { tryEternalFateRewrite } from './innateTreasure.js';
 
 export const SELF_DAO_REQUIRED_ATTEMPTS = 10;
 export const SELF_DAO_REALM_AWAKENING = 5;
+export const SELF_DAO_LATE_COST_MULTIPLIER = 20;
 export const SELF_DAO_RECOVERY_MS = 320 * 60 * 1000;
 export const SELF_DAO_COSTS = Object.freeze({
   era: 50,
@@ -39,6 +40,15 @@ export function ensureSelfDaoDeduction(player) {
   return old;
 }
 
+export function getSelfDaoDeductionCosts(player) {
+  const attempts = Math.max(0, Math.trunc(number(player?.己道推演?.attempts)));
+  if (attempts < SELF_DAO_REALM_AWAKENING) return SELF_DAO_COSTS;
+  return Object.fromEntries(Object.entries(SELF_DAO_COSTS).map(([key, cost]) => [
+    key,
+    key === 'mind' ? cost : cost * SELF_DAO_LATE_COST_MULTIPLIER,
+  ]));
+}
+
 export function getSelfDaoDeductionGate(player) {
   const state = ensureSelfDaoDeduction(player);
   if (getRealmAuthorityLevel(player) >= 21 || state.completed) return { ok: false, reason: 'completed', state };
@@ -63,25 +73,27 @@ export function getSelfDaoDeductionGate(player) {
     cultivation: number(player.修为),
     blood: number(player.血气),
   };
-  const missing = Object.entries(SELF_DAO_COSTS)
+  const costs = getSelfDaoDeductionCosts(player);
+  const missing = Object.entries(costs)
     .filter(([key, cost]) => resources[key] < cost)
     .map(([key, cost]) => ({ key, have: resources[key], need: cost }));
-  return missing.length ? { ok: false, reason: 'resources', missing, resources, state }
-    : { ok: true, reason: 'deduce', resources, state };
+  return missing.length ? { ok: false, reason: 'resources', missing, resources, costs, state }
+    : { ok: true, reason: 'deduce', resources, costs, state };
 }
 
 export function consumeSelfDaoDeduction(player, now = Date.now()) {
   const gate = getSelfDaoDeductionGate(player);
   if (!gate.ok || gate.reason !== 'deduce') return gate;
 
-  player.纪元积累 = number(player.纪元积累) - SELF_DAO_COSTS.era;
-  player.心神 = number(player.心神) - SELF_DAO_COSTS.mind;
-  player.元神 = number(player.元神) - SELF_DAO_COSTS.spirit;
-  player.仙道潜力 = number(player.仙道潜力) - SELF_DAO_COSTS.potential;
-  player.修为 = number(player.修为) - SELF_DAO_COSTS.cultivation;
-  player.血气 = number(player.血气) - SELF_DAO_COSTS.blood;
+  const costs = gate.costs;
+  player.纪元积累 = number(player.纪元积累) - costs.era;
+  player.心神 = number(player.心神) - costs.mind;
+  player.元神 = number(player.元神) - costs.spirit;
+  player.仙道潜力 = number(player.仙道潜力) - costs.potential;
+  player.修为 = number(player.修为) - costs.cultivation;
+  player.血气 = number(player.血气) - costs.blood;
   const lifeField = lifespanField(player);
-  player[lifeField] = number(player[lifeField]) - SELF_DAO_COSTS.lifespan;
+  player[lifeField] = number(player[lifeField]) - costs.lifespan;
   if (lifeField === '压制寿元') player.寿元 = Math.min(number(player.寿元), player.压制寿元, 9999);
 
   const state = gate.state;
@@ -94,7 +106,7 @@ export function consumeSelfDaoDeduction(player, now = Date.now()) {
     state.battlePending = true;
     state.terrorTriggered = false;
   }
-  return { ok: true, reason: 'deduced', state, attempt: state.attempts };
+  return { ok: true, reason: 'deduced', state, costs, attempt: state.attempts };
 }
 
 export function setCultivationSystemRealms(player, names, now = Date.now()) {

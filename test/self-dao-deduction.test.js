@@ -7,10 +7,12 @@ import test from 'node:test';
 import { damagePlanes, PLANE_DAMAGE_RECORD_KEY } from '../model/planeDestruction.js';
 import {
   SELF_DAO_COSTS,
+  SELF_DAO_LATE_COST_MULTIPLIER,
   SELF_DAO_PLANE_TARGETS,
   SELF_DAO_RECOVERY_MS,
   completeCorpseEmperorRecovery,
   consumeSelfDaoDeduction,
+  getSelfDaoDeductionCosts,
   getSelfDaoDeductionGate,
   promoteSelfDaoToImmortalEmperor,
   setCultivationSystemRealms,
@@ -29,20 +31,20 @@ function quasiEmperor(overrides = {}) {
     自身之道境界: '准仙帝·帝光映古',
     修炼次数: 300,
     自创修炼体系: { name: '测试体系', route: 'mijing' },
-    纪元积累: SELF_DAO_COSTS.era * 10,
-    心神: SELF_DAO_COSTS.mind * 10,
-    元神: SELF_DAO_COSTS.spirit * 10,
-    仙道潜力: SELF_DAO_COSTS.potential * 10,
-    寿元: SELF_DAO_COSTS.lifespan * 10,
-    修为: SELF_DAO_COSTS.cultivation * 10,
-    血气: SELF_DAO_COSTS.blood * 10,
+    纪元积累: SELF_DAO_COSTS.era * 110,
+    心神: SELF_DAO_COSTS.mind * 110,
+    元神: SELF_DAO_COSTS.spirit * 110,
+    仙道潜力: SELF_DAO_COSTS.potential * 110,
+    寿元: SELF_DAO_COSTS.lifespan * 110,
+    修为: SELF_DAO_COSTS.cultivation * 110,
+    血气: SELF_DAO_COSTS.blood * 110,
     血量上限: 1000,
     当前血量: 1000,
     ...overrides,
   };
 }
 
-test('己道每次按固定成本推演，第五次后必须设立六境', () => {
+test('己道前五次按原价推演，第六次起除心神外消耗二十倍', () => {
   const player = quasiEmperor();
   const before = { ...player };
   const first = consumeSelfDaoDeduction(player, 1);
@@ -56,7 +58,17 @@ test('己道每次按固定成本推演，第五次后必须设立六境', () =>
   for (let attempt = 2; attempt <= 5; attempt++) assert.equal(consumeSelfDaoDeduction(player, attempt).attempt, attempt);
   assert.equal(getSelfDaoDeductionGate(player).reason, 'realms');
   assert.equal(setCultivationSystemRealms(player, ['启灵', '命轮', '道宫', '神桥', '天门', '路尽']).ok, true);
-  for (let attempt = 6; attempt <= 10; attempt++) assert.equal(consumeSelfDaoDeduction(player, attempt).attempt, attempt);
+  const lateCosts = getSelfDaoDeductionCosts(player);
+  assert.equal(lateCosts.mind, SELF_DAO_COSTS.mind);
+  for (const key of Object.keys(SELF_DAO_COSTS).filter(key => key !== 'mind')) {
+    assert.equal(lateCosts[key], SELF_DAO_COSTS[key] * SELF_DAO_LATE_COST_MULTIPLIER);
+  }
+  const beforeSixth = { ...player };
+  assert.equal(consumeSelfDaoDeduction(player, 6).attempt, 6);
+  assert.equal(player.心神, beforeSixth.心神 - SELF_DAO_COSTS.mind);
+  assert.equal(player.元神, beforeSixth.元神 - SELF_DAO_COSTS.spirit * SELF_DAO_LATE_COST_MULTIPLIER);
+  assert.equal(player.纪元积累, beforeSixth.纪元积累 - SELF_DAO_COSTS.era * SELF_DAO_LATE_COST_MULTIPLIER);
+  for (let attempt = 7; attempt <= 10; attempt++) assert.equal(consumeSelfDaoDeduction(player, attempt).attempt, attempt);
   assert.equal(player.己道推演.divineEmbryo, '已结出');
   assert.equal(player.己道推演.battlePending, true);
   assert.deepEqual(player.自创修炼体系.realms, ['启灵', '命轮', '道宫', '神桥', '天门', '路尽']);

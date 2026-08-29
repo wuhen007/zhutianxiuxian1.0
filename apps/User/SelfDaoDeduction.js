@@ -32,8 +32,8 @@ const RESOURCE_NAMES = Object.freeze({
   lifespan: '寿元', cultivation: '修为', blood: '血气',
 });
 
-function costLine() {
-  return `每次消耗：纪元积累${SELF_DAO_COSTS.era}、心神${SELF_DAO_COSTS.mind}、元神${bigNumberTransform(SELF_DAO_COSTS.spirit)}、仙道潜力${SELF_DAO_COSTS.potential}、寿元${bigNumberTransform(SELF_DAO_COSTS.lifespan)}、修为与血气各${bigNumberTransform(SELF_DAO_COSTS.cultivation)}`;
+function costLine(costs = SELF_DAO_COSTS) {
+  return `本次消耗：纪元积累${costs.era}、心神${costs.mind}、元神${bigNumberTransform(costs.spirit)}、仙道潜力${costs.potential}、寿元${bigNumberTransform(costs.lifespan)}、修为与血气各${bigNumberTransform(costs.cultivation)}`;
 }
 
 function battleExcerpt(messages = []) {
@@ -93,7 +93,7 @@ export class SelfDaoDeduction extends plugin {
     if (gate.reason === 'own_way_cap') return '自身之道尚未达到准仙帝阶段上限：需自身之道阶段6、修炼次数300。';
     if (gate.reason === 'realms') return '你已明悟一线前路，请先发送：#设立体系境界 境界一/境界二/境界三/境界四/境界五/境界六';
     if (gate.reason === 'resources') {
-      return ['【己道推演·资粮不足】', ...gate.missing.map(item => `${RESOURCE_NAMES[item.key]}：${bigNumberTransform(item.have)}/${bigNumberTransform(item.need)}`), costLine()].join('\n');
+      return ['【己道推演·资粮不足】', ...gate.missing.map(item => `${RESOURCE_NAMES[item.key]}：${bigNumberTransform(item.have)}/${bigNumberTransform(item.need)}`), costLine(gate.costs)].join('\n');
     }
     return '己道推演条件尚未满足。';
   }
@@ -148,7 +148,7 @@ export class SelfDaoDeduction extends plugin {
             response = [
               `【推演己道·第${deduction.attempt}/10次】`,
               `${player.名号}斩去迷雾，将自身之道向尽头再推一步。`,
-              costLine(),
+              costLine(deduction.costs),
               deduction.attempt === 5
                 ? '五次推演圆满，一线前路显化。现在可为体系设立六个大境界：\n#设立体系境界 境界一/境界二/境界三/境界四/境界五/境界六'
                 : `距离结出神胎尚余${10 - deduction.attempt}次推演。`,
@@ -191,7 +191,7 @@ export class SelfDaoDeduction extends plugin {
         const corpse = buildTimeRiverAdversary(challenger, {
           name: '尸骸仙帝', era: '终极古地', special: [],
           criticalRate: 0.35, 灵根: { name: '仙帝场域', 法球倍率: 3 },
-        }, { multiplier: 3 });
+        });
         const battle = await zd_battle(challenger, corpse, { timeRiverBattle: true, battleType: 'corpse_emperor' });
         const aHp = Number(battle.A_hp ?? battle.A_xue) || 0;
         const bHp = Number(battle.B_hp ?? battle.B_xue) || 0;

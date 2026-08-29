@@ -39,6 +39,10 @@ import {
     bindOwnWayRoute,
     getOwnWayRealmGate,
 } from '../../model/ownWayRealm.js';
+import {
+    getOwnWaySkillListType,
+    validateOwnWaySkillDescription,
+} from '../../model/ownWaySkill.js';
 // 在玩家数据结构中添加轮回大道相关字段
 const playerTemplate = {
     // ...其他字段
@@ -234,6 +238,14 @@ export class daofa extends plugin {
   fnc: 'breakthroughOwnWay',
   dsc: '自身之道达到当前境界极限后进行突破',
 },
+{
+  reg: '^#(?:编辑|修改)自身之道(?:技能)?描述(?:\\s+.*)?$',
+  fnc: 'editOwnWaySkillDescription',
+},
+{
+  reg: '^#同步自身之道技能$',
+  fnc: 'syncOwnWaySkill',
+},
     {
                     reg: '^#轮回大道$',
                     fnc: 'viewReincarnationWay',
@@ -263,6 +275,69 @@ export class daofa extends plugin {
       ],
     });
   }
+
+async syncOwnWaySkillRecord(player, usr_qq, description = player.自身之道技能描述) {
+    const skillName = String(player.自身之道名称 || '').trim();
+    const wayType = String(player.自身之道类型 || '').trim();
+    const listType = getOwnWaySkillListType(wayType);
+    let skill = await this.getCustomSkill(skillName, listType);
+    const repaired = !skill;
+    skill ||= this.createOwnWaySkill(wayType, skillName, player.名号);
+    if (!skill) return null;
+
+    skill.创造者ID ||= String(usr_qq);
+    skill.自身之道阶段 = Math.max(0, Number(player.自身之道阶段) || 0);
+    skill.自身之道境界 = player.自身之道境界 || skill.自身之道境界;
+    if (description) skill.desc = description;
+    if (!await this.saveCustomSkill(skill, listType)) return null;
+
+    if (!Array.isArray(player.学习的功法)) player.学习的功法 = [];
+    if (!player.学习的功法.includes(skillName)) player.学习的功法.push(skillName);
+    return { listType, repaired, skill };
+}
+
+async editOwnWaySkillDescription(e) {
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return false;
+    const player = await Read_player(usr_qq);
+    if (!player.已创自身之道 || !player.自身之道名称 || !player.自身之道类型) {
+        return e.reply('你尚未开创自身之道，请先使用 #创造自身之道');
+    }
+
+    const input = String(e.msg || '')
+        .replace(/^#(?:编辑|修改)自身之道(?:技能)?描述/, '')
+        .trim();
+    const validation = validateOwnWaySkillDescription(input);
+    if (validation.reason === 'empty') return e.reply('格式：#编辑自身之道描述 [20字以内的描述]');
+    if (validation.reason === 'multiline') return e.reply('技能描述只允许单行文本');
+    if (validation.reason === 'too-long') return e.reply(`技能描述最多20字，当前${validation.length}字`);
+
+    player.自身之道技能描述 = validation.description;
+    const result = await this.syncOwnWaySkillRecord(player, usr_qq, validation.description);
+    if (!result) return e.reply('自身之道技能保存失败，请稍后再试');
+    await Write_player(usr_qq, player);
+    return e.reply([
+        `【自身之道·描述已更新】`,
+        `技能：${player.自身之道名称}`,
+        `描述：${validation.description}`,
+        result.repaired ? `已补录至技能列表${result.listType}` : `已同步至技能列表${result.listType}`,
+    ].join('\n'));
+}
+
+async syncOwnWaySkill(e) {
+    let usr_qq = e.user_id.toString().replace('qg_', '');
+    usr_qq = await channel(usr_qq);
+    if (!await existplayer(usr_qq)) return false;
+    const player = await Read_player(usr_qq);
+    if (!player.已创自身之道 || !player.自身之道名称 || !player.自身之道类型) {
+        return e.reply('你尚未开创自身之道，请先使用 #创造自身之道');
+    }
+    const result = await this.syncOwnWaySkillRecord(player, usr_qq);
+    if (!result) return e.reply('自身之道技能同步失败，请稍后再试');
+    await Write_player(usr_qq, player);
+    return e.reply(`【自身之道·技能同步】${player.自身之道名称}已${result.repaired ? '补录' : '刷新'}至技能列表${result.listType}。`);
+}
 
 
 // 检查玩家是否满足功法学习条件
@@ -1952,18 +2027,7 @@ async getCustomSkill(skillName, listType) {
 }
 // 根据大道类型获取对应的技能列表类型
 getListTypeByWayType(wayType) {
-    switch (wayType) {
-        case '攻伐':
-        case '时空':
-        case '因果':
-        case '封禁':
-            return 1;
-        case '护体': return 2;
-        case '涅槃':
-        case '轮回':
-            return 3;
-        default: return 1;
-    }
+    return getOwnWaySkillListType(wayType);
 }
 async createEmperorSutra(e) {
     if (!e.isGroup) {
