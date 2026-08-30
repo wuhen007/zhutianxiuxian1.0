@@ -47,6 +47,7 @@ import {
   collapsePastWorldlineArtifacts,
   ensureTimeRiverSkills,
   getTimeRiverEnemyNames,
+  getTimeRiverFixedSpeed,
   DARK_TRIAD_NAMES,
   TIME_RIVER_PHASE_DURATION_MS,
   TIME_RIVER_RESCUE_WINDOW_MS,
@@ -282,9 +283,11 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       const built = action.imperialPill && isDarkTriadEmperor(name)
         ? scaleTimeRiverAdversary(enemy, 0.7)
         : enemy;
+      // 速度由名号固定，不受阶段缩放与历史存档影响
+      built.速度 = getTimeRiverFixedSpeed(name);
       const saved = action.enemyState?.find(item => item.name === name);
       if (!saved) return built;
-      for (const field of ['攻击', '防御', '血量上限', '速度']) {
+      for (const field of ['攻击', '防御', '血量上限']) {
         if (Number.isFinite(Number(saved[field]))) built[field] = Math.max(1, Math.trunc(Number(saved[field])));
       }
       built.当前血量 = Math.max(0, Math.min(built.血量上限, Math.trunc(Number(saved.当前血量) || 0)));

@@ -5,11 +5,15 @@ export const TIME_RIVER_ATTRIBUTE_RANGE = Object.freeze([1.5, 3]);
 export const DARK_TRIAD_REVIVAL_LIMIT = 1;
 export const DARK_TRIAD_OPENING_SHIELD_RATE = 0.35;
 export const DARK_TRIAD_DAMAGE_REDUCTION = 0.3;
-export const CANG_EMPEROR_SPEED_SUPPRESSION = 500;
 export const CANG_EMPEROR_ATTRIBUTE_RATE = 0.8;
 export const CANG_EMPEROR_SUPPRESSION_ACTIONS = 2;
 export const TIME_RIVER_PHASE_DURATION_MS = 15 * 60 * 1000;
 export const TIME_RIVER_RESCUE_WINDOW_MS = 10 * 60 * 1000;
+// 时间长河敌人速度改为定值，不再随玩家境界/倍率浮动
+export const TIME_RIVER_BASE_SPEED = 1150;
+export const TIME_RIVER_PEAK_SPEED = 1250;
+export const TIME_RIVER_PEAK_SPEED_NAMES = Object.freeze(['荒天帝', '叶天帝', '狠人大帝', '尸骸仙帝']);
+const TIME_RIVER_SPEED_NAME_ALIAS = Object.freeze({ 狠人: '狠人大帝' });
 export const TIME_RIVER_REVIVAL_TAUNTS = Object.freeze([
   '羽帝喝吼：“{player}，你能挣扎到几时！？”',
   '苍帝冷幽幽地说道：“你的确很强，但是，等若跟三个自己血战，你能胜出吗？谁都无法逆天！”',
@@ -203,6 +207,20 @@ function timeRiverUnitSpeed(unit) {
   );
 }
 
+export function normalizeTimeRiverSpeedName(name) {
+  if (name && typeof name === 'object') {
+    name = name.名号 || name.name || name._时间长河身份 || '';
+  }
+  const raw = String(name || '').trim();
+  return TIME_RIVER_SPEED_NAME_ALIAS[raw] || raw;
+}
+
+export function getTimeRiverFixedSpeed(name) {
+  return TIME_RIVER_PEAK_SPEED_NAMES.includes(normalizeTimeRiverSpeedName(name))
+    ? TIME_RIVER_PEAK_SPEED
+    : TIME_RIVER_BASE_SPEED;
+}
+
 export function rollTimeRiverAttributeMultiplier(random = Math.random) {
   const roll = Math.min(1, Math.max(0, number(random(), 0)));
   const [min, max] = TIME_RIVER_ATTRIBUTE_RANGE;
@@ -273,19 +291,15 @@ export function applyCangEmperorOpeningSuppression(combatant) {
       message: `【神胎不朽】${combatant.名号}己道神胎自成一体，苍帝消解精气神的手段毫无作用！`,
     };
   }
-  const originalSpeed = timeRiverUnitSpeed(combatant);
   for (const field of ['攻击', '防御', '血量上限', '当前血量']) {
     combatant[field] = integer(number(combatant[field]) * CANG_EMPEROR_ATTRIBUTE_RATE);
   }
-  combatant.速度 = Math.max(1, originalSpeed - CANG_EMPEROR_SPEED_SUPPRESSION);
-  combatant._忽略境界速度加成 = true;
   combatant._苍帝精气神压制 = {
     remainingActions: CANG_EMPEROR_SUPPRESSION_ACTIONS,
-    originalSpeed,
   };
   return {
     applied: true,
-    message: `【苍帝·一念消神】苍帝开场消解精气神，${combatant.名号}前两次行动攻击、防御与生命暂降20%，速度暂降${CANG_EMPEROR_SPEED_SUPPRESSION}点！`,
+    message: `【苍帝·一念消神】苍帝开场消解精气神，${combatant.名号}前两次行动攻击、防御与生命暂降20%！`,
   };
 }
 
@@ -301,13 +315,10 @@ export function tickCangEmperorOpeningSuppression(combatant) {
     combatant[field] = integer(number(combatant[field]) / CANG_EMPEROR_ATTRIBUTE_RATE);
   }
   combatant.当前血量 = Math.min(combatant.当前血量, combatant.血量上限);
-  combatant.速度 = Math.max(1, Math.trunc(number(state.originalSpeed, combatant.速度)));
-  combatant._speed = combatant.速度;
-  combatant._忽略境界速度加成 = true;
   delete combatant._苍帝精气神压制;
   return {
     restored: true,
-    message: `【精气神复归】${combatant.名号}挣脱苍帝压制，攻击、防御、生命与速度恢复！`,
+    message: `【精气神复归】${combatant.名号}挣脱苍帝压制，攻击、防御与生命恢复！`,
   };
 }
 
@@ -432,7 +443,7 @@ export function buildTimeRiverAdversary(player, template, options = {}) {
     法球倍率: number(template?.灵根?.法球倍率, 1),
     学习的功法: learned,
     era: template?.era || profile?.era || '未知纪元',
-    速度: integer(timeRiverUnitSpeed(player) * multiplier),
+    速度: getTimeRiverFixedSpeed(name),
     mijinglevel_id: number(player?.mijinglevel_id),
     xiangulevel_id: number(player?.xiangulevel_id),
     huafenlevel_id: number(player?.huafenlevel_id),

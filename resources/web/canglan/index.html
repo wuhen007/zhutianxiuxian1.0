@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#090908">
   <title>沧澜界 · 大星图</title>
-  <link rel="stylesheet" href="/canglan/style.css?v=20260829">
+  <link rel="stylesheet" href="/canglan/style.css?v=20260830c">
 </head>
 <body>
   <main id="app" class="app-shell is-loading">
@@ -37,6 +37,23 @@
       <span>第七星域</span>
       <strong><b id="known-count">--</b> / 61</strong>
       <small>大星已探明</small>
+    </section>
+
+    <section id="threat-strip" class="threat-strip" aria-labelledby="threat-strip-title" aria-live="polite" hidden>
+      <div class="threat-beacon" aria-hidden="true"><i></i><span id="threat-phase-label">灾厄监测</span></div>
+      <div class="threat-strip-copy">
+        <strong id="threat-strip-title">星海无战事</strong>
+        <span id="threat-strip-summary">未发现域外因果。</span>
+      </div>
+      <div id="threat-strip-progress" class="threat-strip-progress" role="progressbar" aria-label="全服事件进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <span id="threat-strip-progress-fill"></span>
+        <b id="threat-strip-progress-text">0 / 0</b>
+      </div>
+      <div id="threat-escalation" class="threat-escalation" aria-label="高维威胁标记">
+        <span id="era-lord-mark" hidden>纪元</span>
+        <span id="hyperdimensional-mark" class="is-hyper" hidden>超维</span>
+      </div>
+      <button id="focus-threat" type="button" title="定位事件大星" aria-label="定位事件大星"><i data-lucide="crosshair"></i></button>
     </section>
 
     <nav class="map-tools" aria-label="星图控制">
@@ -72,6 +89,43 @@
         <i data-lucide="chevron-up"></i>
       </button>
 
+      <section id="threat-console" class="threat-console" aria-labelledby="threat-title" hidden>
+        <header class="threat-console-head">
+          <div>
+            <span id="threat-console-phase">全服威胁</span>
+            <h3 id="threat-title">星海无战事</h3>
+          </div>
+          <code id="threat-event-id">--</code>
+        </header>
+
+        <div class="threat-vitals">
+          <div class="threat-vitals-line">
+            <span id="threat-primary-label">讨伐进度</span>
+            <strong id="threat-primary-value">0 / 0</strong>
+          </div>
+          <div id="threat-progress" class="threat-progress" role="progressbar" aria-label="当前威胁进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <span id="threat-progress-fill"></span>
+          </div>
+          <p id="threat-detail">星海因果尚未显化。</p>
+        </div>
+
+        <dl class="threat-metrics">
+          <div><dt id="threat-metric-one-label">个人战果</dt><dd id="threat-metric-one">--</dd></div>
+          <div><dt id="threat-metric-two-label">全服态势</dt><dd id="threat-metric-two">--</dd></div>
+          <div><dt id="threat-metric-three-label">下一节点</dt><dd id="threat-metric-three">--</dd></div>
+        </dl>
+
+        <div id="threat-action-grid" class="threat-action-grid" aria-label="全服威胁行动">
+          <button type="button" data-threat-action="challenge" title="迎战灾厄或魔主" aria-label="迎战灾厄或魔主"><i data-lucide="swords"></i><span>迎战</span></button>
+          <button type="button" data-threat-action="execute" title="彻底诛灭灾厄魔主" aria-label="彻底诛灭灾厄魔主"><i data-lucide="skull"></i><span>诛灭</span></button>
+          <button type="button" data-threat-action="refine" title="炼化灾厄魔主" aria-label="炼化灾厄魔主"><i data-lucide="flame"></i><span>炼化</span></button>
+          <button type="button" data-threat-action="defend" title="驰援清剿前线" aria-label="驰援清剿前线"><i data-lucide="shield"></i><span>守星</span></button>
+          <button type="button" data-threat-action="claim" title="领取本轮讨伐战果" aria-label="领取本轮讨伐战果"><i data-lucide="package-check"></i><span>战果</span></button>
+        </div>
+
+        <ol id="threat-history" class="threat-history" aria-label="最近战报"></ol>
+      </section>
+
       <header class="intel-head">
         <div>
           <span id="star-status" class="star-status">尚未定星</span>
@@ -82,6 +136,70 @@
       </header>
 
       <p id="star-signal" class="signal-copy">星海寂静，因果尚未落向任何坐标。</p>
+
+      <section id="expedition-console" class="expedition-console" aria-labelledby="expedition-title" data-phase="empty">
+        <header class="expedition-head">
+          <div>
+            <span>星域行动</span>
+            <h3 id="expedition-title">未建立远征</h3>
+          </div>
+          <code id="expedition-run-id">IDLE</code>
+        </header>
+
+        <div class="expedition-campaign">
+          <div class="expedition-stage-line">
+            <span id="expedition-stage-name">星路待命</span>
+            <strong id="expedition-stage-count">0 / 0</strong>
+          </div>
+          <div id="expedition-progress" class="expedition-progress" role="progressbar" aria-label="区域战役进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <span id="expedition-progress-fill"></span>
+          </div>
+          <p id="expedition-brief">当前大星尚无个人远征记录。</p>
+        </div>
+
+        <div class="expedition-assets">
+          <section class="expedition-asset" aria-labelledby="camp-label">
+            <header>
+              <span id="camp-label"><i data-lucide="shield-half" aria-hidden="true"></i>前线营地</span>
+              <b id="camp-tier">未建立</b>
+            </header>
+            <strong id="camp-name">无星锚驻点</strong>
+            <p id="camp-status">驻点信号未落定</p>
+            <div id="camp-defense" class="asset-meter" role="progressbar" aria-label="营地防御" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="camp-defense-fill"></span></div>
+          </section>
+
+          <section class="expedition-asset" aria-labelledby="bag-label">
+            <header>
+              <span id="bag-label"><i data-lucide="backpack" aria-hidden="true"></i>临时行囊</span>
+              <b id="bag-capacity">0 / 0</b>
+            </header>
+            <strong id="bag-summary">尚无未结算战利品</strong>
+            <ul id="bag-items" class="bag-items" aria-label="临时战利品"></ul>
+            <div id="bag-load" class="asset-meter" role="progressbar" aria-label="行囊负载" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="bag-load-fill"></span></div>
+          </section>
+        </div>
+
+        <div id="expedition-alert" class="expedition-alert" data-tone="quiet">
+          <i id="expedition-alert-icon" data-lucide="radio-tower" aria-hidden="true"></i>
+          <div>
+            <strong id="expedition-alert-title">前线静默</strong>
+            <span id="expedition-alert-copy">未发现撤离、失联或遗失行囊信号。</span>
+          </div>
+          <div id="expedition-flags" class="expedition-flags" aria-label="远征状态"></div>
+        </div>
+
+        <div class="expedition-actions" aria-label="星域远征行动">
+          <button type="button" data-expedition-action="expedition_enter" title="进入当前星域远征"><i data-lucide="flag"></i><span>入域</span></button>
+          <button type="button" data-expedition-action="camp_build" title="建设或升级前线营地"><i data-lucide="hammer"></i><span>建营</span></button>
+          <button type="button" data-expedition-action="campaign_advance" title="推进当前区域战役"><i data-lucide="swords"></i><span>推进</span></button>
+          <button type="button" data-expedition-action="bag_deposit" title="将临时战利品存入营地"><i data-lucide="archive"></i><span>存放</span></button>
+          <button type="button" data-expedition-action="expedition_rescue" title="救援同星域失联修士"><i data-lucide="life-buoy"></i><span>救援</span></button>
+          <button type="button" data-expedition-action="lost_cache_recover" title="追回当前星域遗失行囊"><i data-lucide="package-search"></i><span>追回遗失行囊</span></button>
+          <button type="button" data-expedition-action="evacuation_start" title="从前线营地开始稳定撤离"><i data-lucide="log-out"></i><span>撤离</span></button>
+          <button type="button" data-expedition-action="evacuation_force" class="danger-action" title="放弃部分未存放战利品并强制撤离"><i data-lucide="triangle-alert"></i><span>强撤</span></button>
+          <button type="button" data-expedition-action="expedition_claim" class="claim-action" title="领取已送达的远征结算"><i data-lucide="package-check"></i><span>领取</span></button>
+        </div>
+      </section>
 
       <dl class="star-facts">
         <div><dt>法则</dt><dd id="star-law">未解析</dd></div>
@@ -118,6 +236,6 @@
   </section>
 
   <script src="/world/lucide.min.js?v=20260820"></script>
-  <script src="/canglan/app.js?v=20260829"></script>
+  <script src="/canglan/app.js?v=20260830c"></script>
 </body>
 </html>

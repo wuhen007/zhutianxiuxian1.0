@@ -17,6 +17,7 @@ import {
   __PATH,
   Add_修为,
   Add_血气,
+  Add_纪元积累,
   channel,
   buildAt,
   instead_equipment
@@ -185,6 +186,8 @@ export class MoneyOperation extends plugin {
       await Add_寿元(B_qq, thing_amount);
     } else if (thing_name == '血气') {
       await Add_血气(B_qq, thing_amount);
+    } else if (thing_name == '纪元积累') {
+      await Add_纪元积累(B_qq, thing_amount);
     } else if (isInnateTreasureName(String(thing_name).trim())) {
       // 先天至宝专属发放：普通 foundthing 路径不会设置认主/独立至宝位状态
       const cleanName = String(thing_name).trim();

@@ -17,6 +17,25 @@
   const SQRT3 = Math.sqrt(3);
   const STATUS_ORDER = { unseen: 0, observed: 1, explored: 2, anchored: 3 };
   const STATUS_LABELS = { unseen: '未探明星域', observed: '已捕获星辉', explored: '已探明大星', anchored: '稳定星锚' };
+  const THREAT_PHASE_LABELS = {
+    calamity: '灾厄爆发',
+    overlord: '魔主降临',
+    decision: '魔主待决',
+    purge: '清剿推进',
+    resolved: '战事平定',
+  };
+  const THREAT_ACTIONS = new Set(['challenge', 'execute', 'refine', 'defend', 'claim']);
+  const EXPEDITION_ACTIONS = new Set([
+    'expedition_enter',
+    'camp_build',
+    'campaign_advance',
+    'bag_deposit',
+    'expedition_rescue',
+    'lost_cache_recover',
+    'evacuation_start',
+    'evacuation_force',
+    'expedition_claim',
+  ]);
   const PALETTE = {
     void: '#090908',
     bone: '#ede5d4',
@@ -119,6 +138,244 @@
     return 'unseen';
   }
 
+  function finiteNumber(value, fallback = 0) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : fallback;
+  }
+
+  function optionalBoolean(value, fallback = false) {
+    return typeof value === 'boolean' ? value : fallback;
+  }
+
+  function normalizeBagItems(rawItems) {
+    if (Array.isArray(rawItems)) {
+      return rawItems.map((item, index) => typeof item === 'string'
+        ? { id: `item-${index}`, name: item, quantity: 1 }
+        : {
+          ...item,
+          id: String(item?.id ?? item?.name ?? `item-${index}`),
+          name: String(item?.name ?? item?.title ?? item?.itemName ?? '未鉴定物'),
+          quantity: Math.max(1, Math.trunc(finiteNumber(item?.quantity, finiteNumber(item?.count, 1)))),
+        });
+    }
+    if (rawItems && typeof rawItems === 'object') {
+      return Object.entries(rawItems).map(([name, quantity]) => ({
+        id: name,
+        name,
+        quantity: Math.max(1, Math.trunc(finiteNumber(quantity, 1))),
+      }));
+    }
+    return [];
+  }
+
+  function normalizeExpedition(rawExpedition, nodes) {
+    const supplied = Boolean(rawExpedition && typeof rawExpedition === 'object');
+    const exists = supplied && rawExpedition.exists !== false;
+    const source = supplied ? rawExpedition : {};
+    const campaignSource = source.campaign && typeof source.campaign === 'object' ? source.campaign : {};
+    const stageSource = source.stage && typeof source.stage === 'object'
+      ? source.stage
+      : campaignSource.stage && typeof campaignSource.stage === 'object'
+        ? campaignSource.stage
+        : {};
+    const status = String(source.status ?? campaignSource.status ?? 'idle').toLowerCase();
+    const completed = optionalBoolean(campaignSource.complete, optionalBoolean(source.complete, ['complete', 'completed', 'settled', 'closed'].includes(status)));
+    const active = exists && optionalBoolean(
+      source.active,
+      optionalBoolean(source.inExpedition, Boolean(source.runId || campaignSource.id) && !completed),
+    );
+    const indexedStage = stageSource.index !== undefined ? finiteNumber(stageSource.index) + 1 : 0;
+    const stageNumber = active || completed
+      ? Math.max(1, Math.trunc(finiteNumber(
+        stageSource.number,
+        finiteNumber(stageSource.current, finiteNumber(campaignSource.stageNumber, finiteNumber(source.stageIndex, indexedStage || 1))),
+      )))
+      : 0;
+    const stageTotal = active || completed
+      ? Math.max(stageNumber, Math.trunc(finiteNumber(stageSource.total, finiteNumber(campaignSource.stageTotal, finiteNumber(source.stageTotal, 4)))))
+      : 0;
+    const rawProgress = finiteNumber(
+      stageSource.progress,
+      finiteNumber(campaignSource.progress, stageTotal ? (stageNumber - (completed ? 0 : 1)) / stageTotal * 100 : 0),
+    );
+    const progress = clampPercent(rawProgress > 0 && rawProgress <= 1 ? rawProgress * 100 : rawProgress);
+    const campSource = source.camp && typeof source.camp === 'object' ? source.camp : {};
+    const campLevel = Math.max(0, Math.trunc(finiteNumber(campSource.level, finiteNumber(campSource.tier))));
+    const campEstablished = optionalBoolean(campSource.established, optionalBoolean(campSource.active, campLevel > 0));
+    const campDefense = Math.max(0, finiteNumber(campSource.defense, finiteNumber(campSource.currentDefense)));
+    const campMaxDefense = Math.max(1, finiteNumber(campSource.maxDefense, finiteNumber(campSource.defenseMax, campEstablished ? 100 : 1)));
+    const bagSource = source.tacticalBag && typeof source.tacticalBag === 'object'
+      ? source.tacticalBag
+      : source.bag && typeof source.bag === 'object'
+        ? source.bag
+        : {};
+    const bagItems = normalizeBagItems(bagSource.items ?? bagSource.loot ?? bagSource.materials);
+    const itemUnits = bagItems.reduce((total, item) => total + item.quantity, 0);
+    const bagUsed = Math.max(0, finiteNumber(bagSource.used, finiteNumber(bagSource.load, itemUnits)));
+    const bagCapacity = Math.max(bagUsed, finiteNumber(bagSource.capacity, finiteNumber(bagSource.max, active ? 12 : 0)));
+    const evacuationSource = source.evacuation && typeof source.evacuation === 'object' ? source.evacuation : {};
+    const evacuationStatus = String(evacuationSource.status ?? evacuationSource.phase ?? 'idle').toLowerCase();
+    const evacuationActive = optionalBoolean(evacuationSource.active, ['preparing', 'channeling', 'ready', 'arrived'].includes(evacuationStatus));
+    const evacuationReady = optionalBoolean(evacuationSource.ready, ['ready', 'arrived', 'complete', 'completed'].includes(evacuationStatus));
+    const downedSource = source.downed;
+    const downed = typeof downedSource === 'object' && downedSource
+      ? { ...downedSource, active: optionalBoolean(downedSource.active, optionalBoolean(downedSource.downed, true)) }
+      : { active: downedSource === true };
+    const lostSource = source.lostCache && typeof source.lostCache === 'object' ? source.lostCache : {};
+    const lostCount = Math.max(0, Math.trunc(finiteNumber(lostSource.itemCount, finiteNumber(lostSource.count, normalizeBagItems(lostSource.items).length))));
+    const lostCache = {
+      ...lostSource,
+      active: optionalBoolean(lostSource.active, optionalBoolean(lostSource.recoverable, lostCount > 0)),
+      itemCount: lostCount,
+      expiresAt: lostSource.expiresAt ?? lostSource.expireAt ?? null,
+    };
+    const rescueTargets = Array.isArray(source.rescueTargets) ? source.rescueTargets : [];
+    const viewer = source.viewer && typeof source.viewer === 'object' ? source.viewer : {};
+    const starId = String(source.starId ?? campaignSource.starId ?? campaignSource.targetId ?? '0,0');
+    const lostCaches = (Array.isArray(viewer.lostCaches) ? viewer.lostCaches : Array.isArray(source.lostCaches) ? source.lostCaches : [])
+      .filter(cache => String(cache?.starId ?? cache?.positionId ?? starId) === starId);
+    const fallbackStar = nodes.find(node => node.id === starId || node.coordKey === starId);
+    const canClaim = optionalBoolean(viewer.canClaim, optionalBoolean(source.canClaim, evacuationReady && !evacuationSource.claimed));
+
+    return {
+      ...source,
+      exists,
+      active,
+      runId: String(source.runId ?? campaignSource.id ?? (active ? 'EXPEDITION' : 'IDLE')),
+      starId,
+      campaign: {
+        ...campaignSource,
+        title: String(campaignSource.title ?? campaignSource.name ?? `${fallbackStar?.name || '当前大星'}区域战役`),
+        status,
+        complete: completed,
+        progress,
+      },
+      stage: {
+        ...stageSource,
+        number: stageNumber,
+        total: stageTotal,
+        name: String(stageSource.name ?? stageSource.title ?? campaignSource.stageName ?? (active ? '远征前哨' : '星路待命')),
+      },
+      camp: {
+        ...campSource,
+        established: campEstablished,
+        name: String(campSource.name ?? campSource.title ?? (campEstablished ? '无名星锚营地' : '无星锚驻点')),
+        level: campLevel,
+        maxLevel: Math.max(campLevel, Math.trunc(finiteNumber(campSource.maxLevel, finiteNumber(campSource.maxTier, 3)))),
+        defense: campDefense,
+        maxDefense: campMaxDefense,
+      },
+      tacticalBag: {
+        ...bagSource,
+        items: bagItems,
+        used: bagUsed,
+        capacity: bagCapacity,
+        secured: Math.max(0, finiteNumber(bagSource.secured, finiteNumber(bagSource.deposited))),
+      },
+      evacuation: {
+        ...evacuationSource,
+        status: evacuationStatus,
+        active: evacuationActive,
+        ready: evacuationReady,
+        completesAt: evacuationSource.completesAt ?? evacuationSource.readyAt ?? null,
+      },
+      downed,
+      lostCache,
+      lostCaches,
+      rescueTargets,
+      viewer: {
+        ...viewer,
+        canEnter: optionalBoolean(viewer.canEnter, optionalBoolean(source.canEnter, !active && !canClaim)),
+        canBuildCamp: optionalBoolean(viewer.canBuildCamp, active && !campEstablished && !downed.active && !evacuationActive),
+        canAdvance: optionalBoolean(viewer.canAdvance, active && campEstablished && !completed && !downed.active && !evacuationActive),
+        canDeposit: optionalBoolean(viewer.canDeposit, active && campEstablished && bagUsed > 0 && !downed.active && !evacuationActive),
+        canRescue: optionalBoolean(viewer.canRescue, active && rescueTargets.length > 0 && !downed.active && !evacuationActive),
+        canRecoverLostCache: optionalBoolean(viewer.canRecoverLostCache, active && lostCaches.length > 0 && !downed.active && !evacuationActive),
+        canEvacuate: optionalBoolean(viewer.canEvacuate, active && campEstablished && completed && !downed.active && !evacuationActive),
+        canForceEvacuate: optionalBoolean(viewer.canForceEvacuate, active && (downed.active || !campEstablished) && !evacuationActive),
+        canClaim,
+      },
+    };
+  }
+
+  function normalizeThreat(rawThreat, nodes) {
+    if (!rawThreat || typeof rawThreat !== 'object') return null;
+    const phase = String(rawThreat.phase || '').toLowerCase();
+    if (!Object.hasOwn(THREAT_PHASE_LABELS, phase)) return null;
+    const overlord = rawThreat.overlord || {};
+    const decision = rawThreat.decision || {};
+    const purge = rawThreat.purge || {};
+    const viewer = rawThreat.viewer || {};
+    const starId = String(rawThreat.starId ?? purge.currentStarId ?? '0,0');
+    const purgeCurrentStarId = String(purge.currentStarId ?? starId);
+    const purgeRoute = Array.isArray(purge.route) ? purge.route : [];
+    const purgeRouteId = reference => String(
+      typeof reference === 'object' && reference
+        ? reference.starId ?? reference.id ?? reference.coordKey ?? coordinateKey(reference.q ?? reference.x, reference.r ?? reference.y)
+        : reference
+    );
+    const derivedPurgeStep = purgeRoute.findIndex(reference => purgeRouteId(reference) === purgeCurrentStarId);
+    const fallbackStar = nodes.find(node => node.id === starId || node.coordKey === starId);
+    const maxHp = Math.max(0, finiteNumber(overlord.maxHp, finiteNumber(overlord.currentHp, finiteNumber(overlord.hp))));
+    const totalSteps = Math.max(0, Math.trunc(finiteNumber(purge.totalSteps, purgeRoute.length - 1)));
+    return {
+      ...rawThreat,
+      eventId: String(rawThreat.eventId || 'THREAT-UNKNOWN'),
+      phase,
+      starId,
+      title: String(
+        phase === 'purge'
+          ? purge.title || rawThreat.title
+          : ['overlord', 'decision'].includes(phase)
+            ? overlord.title || rawThreat.title || overlord.name
+            : rawThreat.title
+        || `${fallbackStar?.name || '未知大星'}威胁`
+      ),
+      killCount: Math.max(0, Math.trunc(finiteNumber(rawThreat.killCount))),
+      killTarget: Math.max(1, Math.trunc(finiteNumber(rawThreat.killTarget, 10))),
+      overlord: {
+        ...overlord,
+        name: String(overlord.title || overlord.name || '灾厄魔主'),
+        hp: Math.max(0, finiteNumber(overlord.currentHp, finiteNumber(overlord.hp))),
+        maxHp,
+        revived: overlord.revived === true,
+        viewerDamage: Math.max(0, finiteNumber(overlord.viewerDamage)),
+      },
+      decision: {
+        ...decision,
+        canExecute: decision.canExecute === true || viewer.canExecute === true,
+        canRefine: decision.canRefine === true || viewer.canRefine === true,
+        refinementWeight: Math.max(0, finiteNumber(decision.refinementWeight, .5)),
+      },
+      purge: {
+        ...purge,
+        currentStarId: purgeCurrentStarId,
+        route: purgeRoute,
+        step: Math.max(0, Math.trunc(finiteNumber(purge.step, finiteNumber(purge.routeIndex, derivedPurgeStep >= 0 ? derivedPurgeStep : 0)))),
+        totalSteps,
+        defense: Math.max(0, finiteNumber(purge.defenseCount, finiteNumber(purge.defense))),
+        required: Math.max(1, finiteNumber(purge.defenseRequirement, finiteNumber(purge.required, 1))),
+        occupied: purge.occupied === true,
+        nextAdvanceAt: purge.nextAdvanceAt || null,
+      },
+      escalation: rawThreat.escalation || {},
+      viewer: {
+        ...viewer,
+        canChallenge: viewer.canChallenge === true,
+        canResolve: viewer.canResolve === true,
+        canExecute: viewer.canExecute === true || decision.canExecute === true,
+        canRefine: viewer.canRefine === true || decision.canRefine === true,
+        canDefend: viewer.canDefend === true,
+        canClaim: viewer.canClaim === true,
+        calamityKill: Math.max(0, finiteNumber(viewer.calamityKill)),
+        defenseContribution: Math.max(0, finiteNumber(viewer.purgeDefense, finiteNumber(viewer.defenseContribution))),
+        purgeDefense: Math.max(0, finiteNumber(viewer.purgeDefense, finiteNumber(viewer.defenseContribution))),
+        pendingRewardEventId: viewer.pendingRewardEventId || null,
+      },
+      history: Array.isArray(rawThreat.history) ? rawThreat.history : [],
+    };
+  }
+
   function normalizeState(raw = {}) {
     const supplied = Array.isArray(raw.nodes)
       ? raw.nodes
@@ -179,6 +436,8 @@
         positionId: positionNode.id,
       },
       pressure: Math.max(0, Number(raw.pressure ?? raw.expeditionPressure ?? 0)),
+      threat: normalizeThreat(raw.threat ?? raw.world?.threat, nodes),
+      expedition: normalizeExpedition(raw.expedition ?? raw.world?.expedition, nodes),
     };
   }
 
@@ -209,6 +468,46 @@
       },
       pressure: 42,
       nodes,
+      threat: {
+        eventId: 'CL-7-038',
+        phase: 'calamity',
+        starId: '1,-1',
+        title: '赤霄灾潮 · 变异体增殖',
+        killCount: 9,
+        killTarget: 10,
+        overlord: {
+          name: '煌天焚世魔主',
+          hp: 1200000000000000,
+          maxHp: 1200000000000000,
+          revived: false,
+          viewerDamage: 0,
+        },
+        decision: { canExecute: false, canRefine: false, refinementWeight: .5 },
+        purge: {
+          currentStarId: '3,-2',
+          route: ['3,-2', '2,-1', '1,-1', '0,0'],
+          step: 0,
+          totalSteps: 3,
+          defense: 0,
+          required: 3,
+          occupied: false,
+          nextAdvanceAt: Date.now() + 180000,
+        },
+        escalation: { eraLord: false, hyperdimensional: false },
+        viewer: {
+          canChallenge: true,
+          canResolve: false,
+          canExecute: false,
+          canRefine: false,
+          canDefend: false,
+          canClaim: false,
+          calamityKill: 1,
+          defenseContribution: 0,
+          purgeDefense: 0,
+          pendingRewardEventId: null,
+        },
+        history: [{ type: 'calamity_started', starName: '玄阙神炉' }],
+      },
     });
   }
 
@@ -229,6 +528,19 @@
 
   function coordMap() {
     return new Map((state?.nodes || BASE_NODES).map(node => [node.coordKey, node]));
+  }
+
+  function resolveThreatNode(reference) {
+    if (reference === null || reference === undefined) return null;
+    if (typeof reference !== 'object') return getNode(reference);
+    const id = reference.starId ?? reference.id ?? reference.coordKey;
+    if (id !== undefined) {
+      const matched = getNode(id);
+      if (matched) return matched;
+    }
+    const q = Number(reference.q ?? reference.x);
+    const r = Number(reference.r ?? reference.y);
+    return Number.isFinite(q) && Number.isFinite(r) ? getNode(coordinateKey(q, r)) : null;
   }
 
   function cubeRound(q, r) {
@@ -304,6 +616,374 @@
     };
   }
 
+  function clampPercent(value) {
+    return Math.max(0, Math.min(100, finiteNumber(value)));
+  }
+
+  function formatMagnitude(value) {
+    const numeric = Math.max(0, finiteNumber(value));
+    const units = [
+      [1e12, '兆'],
+      [1e8, '亿'],
+      [1e4, '万'],
+    ];
+    const unit = units.find(([size]) => numeric >= size);
+    if (!unit) return Math.round(numeric).toLocaleString('zh-CN');
+    const amount = numeric / unit[0];
+    return `${amount >= 100 ? Math.round(amount) : amount.toFixed(amount >= 10 ? 1 : 2).replace(/\.0+$/, '')}${unit[1]}`;
+  }
+
+  function escalationActive(value) {
+    if (!value) return false;
+    if (typeof value !== 'object') return Boolean(value);
+    if (Object.hasOwn(value, 'active')) return value.active === true;
+    if (Object.hasOwn(value, 'present')) return value.present === true;
+    if (Object.hasOwn(value, 'arrived')) return value.arrived === true;
+    return Object.keys(value).length > 0;
+  }
+
+  function escalationName(value, fallback) {
+    return typeof value === 'object' && value ? String(value.name || value.title || fallback) : fallback;
+  }
+
+  function threatProgressModel(threat) {
+    if (!threat) return { label: '全服威胁', value: '--', progress: 0, summary: '未发现域外因果。', detail: '星海因果尚未显化。' };
+    if (threat.phase === 'calamity') {
+      const remaining = Math.max(0, threat.killTarget - threat.killCount);
+      return {
+        label: '全服灾厄击杀',
+        value: `${threat.killCount} / ${threat.killTarget}`,
+        progress: threat.killCount / threat.killTarget * 100,
+        summary: `再斩 ${remaining} 只，灾厄魔主将循裂界降临。`,
+        detail: '同源灾厄变异体正在事件大星增殖，全服击杀共同推进降临阈值。',
+      };
+    }
+    if (threat.phase === 'overlord') {
+      const maxHp = Math.max(1, threat.overlord.maxHp);
+      return {
+        label: threat.overlord.name,
+        value: `${formatMagnitude(threat.overlord.hp)} / ${formatMagnitude(threat.overlord.maxHp)}`,
+        progress: (1 - threat.overlord.hp / maxHp) * 100,
+        summary: `${threat.overlord.name}镇压星域，全服伤害实时汇入。`,
+        detail: threat.overlord.revived
+          ? '魔主返命功法已经触发，复生之身仍保留全属性增幅。'
+          : '魔主正以十倍秘法与化外身封锁星路，击破后将进入处置阶段。',
+      };
+    }
+    if (threat.phase === 'decision') {
+      return {
+        label: '魔主处置',
+        value: '因果待决',
+        progress: 100,
+        summary: `诛灭魔主，或按 ${threat.decision.refinementWeight} 人权重炼入本源。`,
+        detail: `炼化可计作 ${threat.decision.refinementWeight} 人贡献；任一处置都会暴露先天至宝因果，引来古文明清剿者。`,
+      };
+    }
+    if (threat.phase === 'purge') {
+      const remaining = Math.max(0, threat.purge.required - threat.purge.defense);
+      return {
+        label: threat.purge.occupied ? '失守大星反攻' : '全服守星防线',
+        value: `${threat.purge.defense} / ${threat.purge.required}`,
+        progress: threat.purge.defense / threat.purge.required * 100,
+        summary: `清剿阵列推进 ${threat.purge.step}/${threat.purge.totalSteps}，防线还需 ${remaining} 点。`,
+        detail: threat.purge.occupied
+          ? '当前大星已经失守，清剿者将沿已探明星路继续推进。'
+          : '彼岸古文明正在回收违禁品因果，守住当前节点即可截断推进路线。',
+      };
+    }
+    return {
+      label: '本轮战果',
+      value: threat.viewer.canClaim ? '待领取' : '已归档',
+      progress: 100,
+      summary: threat.viewer.canClaim ? '星海威胁解除，个人战果等待结算。' : '星海威胁解除，永久星图状态已经更新。',
+      detail: threat.viewer.canClaim ? '领取本轮全服讨伐战果，完成此次事件闭环。' : '清剿者已经退出当前星域，事件记录写入彼岸古史。',
+    };
+  }
+
+  function formatAdvanceTime(value) {
+    if (!value) return '未显化';
+    const remaining = Math.max(0, new Date(value).getTime() - Date.now());
+    if (!Number.isFinite(remaining)) return '未显化';
+    if (remaining <= 0) return '即将推进';
+    return `${Math.max(1, Math.ceil(remaining / 60000))} 分钟`;
+  }
+
+  function threatHistoryText(entry) {
+    if (typeof entry === 'string') return entry;
+    if (!entry || typeof entry !== 'object') return '';
+    if (entry.text || entry.message || entry.summary) {
+      return String(entry.text || entry.message || entry.summary);
+    }
+    const type = String(entry.type || '').toLowerCase();
+    const star = entry.starName || entry.starTitle || entry.starId || entry.currentStarId || '事件大星';
+    const playerName = entry.playerName || entry.authorizedPlayerName || '一位彼岸修士';
+    const fate = String(entry.fate || entry.choice || '').toLowerCase();
+    const messages = {
+      calamity_started: `域外灾厄在${star}爆发。`,
+      calamity_kill: `${playerName}斩灭灾厄变异体，全服累计 ${finiteNumber(entry.killCount)} 只。`,
+      overlord_spawned: '灾厄魔主循裂界降临，化外身封锁星路。',
+      overlord_battle: `${playerName}对灾厄魔主造成 ${formatMagnitude(entry.damage)} 伤害。`,
+      overlord_revived: '魔主返命功法触发，解除控制并以全盛状态再度行动。',
+      decision_opened: `${playerName}击破魔主复生之身，本源进入处置窗口。`,
+      overlord_fate_chosen: fate === 'refine' || fate === 'refined'
+        ? '魔主本源已被炼化，按 0.5 人权重计入战果。'
+        : '魔主本源已被彻底诛灭。',
+      purge_started: '彼岸古文明清剿阵列锁定先天至宝因果。',
+      purge_advanced: `清剿阵列已经推进至${star}。`,
+      purge_occupied: `${star}失守，清剿阵列开始改写当地法则。`,
+      star_occupied: `${star}失守，清剿阵列开始改写当地法则。`,
+      purge_defense: `${playerName}补强守星防线，当前防御 ${finiteNumber(entry.defense)}。`,
+      threat_resolved: '全服防线稳固，星域威胁已经解除。',
+      treasure_signaled: `${entry.treasureName || '先天至宝'}因果暴露，彼岸观测者完成锁定。`,
+    };
+    return messages[type] || String(entry.title || '彼岸因果发生变化。');
+  }
+
+  function setProgress(selector, fillSelector, progress) {
+    const element = $(selector);
+    const value = clampPercent(progress);
+    element?.setAttribute('aria-valuenow', String(Math.round(value)));
+    const fill = $(fillSelector);
+    if (fill) fill.style.width = `${value}%`;
+  }
+
+  function renderThreatHistory(history) {
+    const list = $('#threat-history');
+    if (!list) return;
+    const items = (history || []).slice(-2).reverse().map(threatHistoryText).filter(Boolean);
+    list.replaceChildren(...items.map(text => {
+      const item = document.createElement('li');
+      item.textContent = text;
+      return item;
+    }));
+  }
+
+  function threatTargetNode(threat = state?.threat) {
+    if (!threat) return null;
+    const id = threat.phase === 'purge' || threat.phase === 'resolved'
+      ? threat.purge.currentStarId || threat.starId
+      : threat.starId;
+    return resolveThreatNode(id) || resolveThreatNode(threat.starId);
+  }
+
+  function expeditionTargetId(action) {
+    const expedition = state?.expedition;
+    if (!expedition) return selectedId;
+    if (action === 'expedition_rescue') {
+      const rescue = expedition.rescueTargets[0];
+      return String(rescue?.userId ?? rescue?.id ?? expedition.starId ?? selectedId);
+    }
+    if (action === 'lost_cache_recover') {
+      const cache = expedition.lostCaches[0];
+      return String(cache?.cacheId ?? cache?.id ?? expedition.starId ?? selectedId);
+    }
+    return action === 'expedition_enter'
+      ? selectedId
+      : String(expedition.starId ?? selectedId ?? state.player.positionId);
+  }
+
+  function renderThreat() {
+    const threat = state?.threat;
+    const strip = $('#threat-strip');
+    const consolePanel = $('#threat-console');
+    strip.hidden = !threat;
+    consolePanel.hidden = !threat;
+    if (!threat) return;
+
+    const model = threatProgressModel(threat);
+    const phaseLabel = THREAT_PHASE_LABELS[threat.phase];
+    strip.dataset.phase = threat.phase;
+    consolePanel.dataset.phase = threat.phase;
+    setText('#threat-phase-label', phaseLabel);
+    setText('#threat-console-phase', `全服威胁 · ${phaseLabel}`);
+    setText('#threat-strip-title', threat.title);
+    setText('#threat-title', threat.title);
+    setText('#threat-strip-summary', model.summary);
+    setText('#threat-strip-progress-text', model.value);
+    setText('#threat-event-id', threat.eventId);
+    setText('#threat-primary-label', model.label);
+    setText('#threat-primary-value', model.value);
+    setText('#threat-detail', model.detail);
+    setProgress('#threat-strip-progress', '#threat-strip-progress-fill', model.progress);
+    setProgress('#threat-progress', '#threat-progress-fill', model.progress);
+
+    const eraLord = escalationActive(threat.escalation?.eraLord);
+    const hyperdimensional = escalationActive(threat.escalation?.hyperdimensional);
+    const eraMark = $('#era-lord-mark');
+    const hyperMark = $('#hyperdimensional-mark');
+    eraMark.hidden = !eraLord;
+    hyperMark.hidden = !hyperdimensional;
+    eraMark.textContent = eraLord ? escalationName(threat.escalation.eraLord, '纪元') : '纪元';
+    hyperMark.textContent = hyperdimensional ? escalationName(threat.escalation.hyperdimensional, '超维') : '超维';
+
+    const metrics = threat.phase === 'calamity'
+      ? [['个人击杀', threat.viewer.calamityKill], ['剩余灾厄', Math.max(0, threat.killTarget - threat.killCount)], ['事件坐标', threatTargetNode(threat)?.name || threat.starId]]
+      : threat.phase === 'overlord'
+        ? [['个人伤害', formatMagnitude(threat.overlord.viewerDamage)], ['返命功法', threat.overlord.revived ? '已触发' : '未触发'], ['处置节点', '击破魔主']]
+        : threat.phase === 'decision'
+          ? [['处置资格', threat.viewer.canExecute || threat.viewer.canRefine ? '已取得' : '待取得'], ['炼化权重', `${threat.decision.refinementWeight} 人`], ['清剿预兆', '因果锁定']]
+          : threat.phase === 'purge'
+            ? [['守星贡献', threat.viewer.defenseContribution], ['推进节点', `${threat.purge.step}/${threat.purge.totalSteps}`], ['下次推进', formatAdvanceTime(threat.purge.nextAdvanceAt)]]
+            : [['灾厄击杀', threat.viewer.calamityKill], ['守星贡献', threat.viewer.defenseContribution], ['战果状态', threat.viewer.canClaim ? '待领取' : '已领取']];
+    metrics.forEach((metric, index) => {
+      const suffix = ['one', 'two', 'three'][index];
+      setText(`#threat-metric-${suffix}-label`, metric[0]);
+      setText(`#threat-metric-${suffix}`, metric[1]);
+    });
+
+    const actionStates = {
+      challenge: ['calamity', 'overlord'].includes(threat.phase) && threat.viewer.canChallenge,
+      execute: threat.phase === 'decision' && threat.viewer.canExecute && threat.decision.canExecute,
+      refine: threat.phase === 'decision' && threat.viewer.canRefine && threat.decision.canRefine,
+      defend: threat.phase === 'purge' && threat.viewer.canDefend,
+      claim: threat.viewer.canClaim,
+    };
+    document.querySelectorAll('[data-threat-action]').forEach(button => {
+      const action = button.dataset.threatAction;
+      button.disabled = busy || !actionStates[action];
+      button.classList.toggle('is-busy', busy && activeAction === action);
+      button.setAttribute('aria-busy', String(busy && activeAction === action));
+    });
+    $('#focus-threat').disabled = !threatTargetNode(threat);
+    renderThreatHistory(threat.history);
+  }
+
+  function formatRemaining(value) {
+    if (!value) return '';
+    const remaining = new Date(value).getTime() - Date.now();
+    if (!Number.isFinite(remaining)) return '';
+    if (remaining <= 0) return '已就绪';
+    if (remaining < 60000) return `${Math.max(1, Math.ceil(remaining / 1000))} 秒`;
+    return `${Math.ceil(remaining / 60000)} 分钟`;
+  }
+
+  function replaceTextList(selector, values, emptyText = '') {
+    const list = $(selector);
+    if (!list) return;
+    const content = values.length ? values : emptyText ? [emptyText] : [];
+    list.replaceChildren(...content.map(value => {
+      const item = document.createElement('li');
+      item.textContent = value;
+      return item;
+    }));
+  }
+
+  function renderExpedition(selected) {
+    const expedition = state?.expedition;
+    if (!expedition) return;
+    const panel = $('#expedition-console');
+    const phase = expedition.evacuation.ready
+      ? 'ready'
+      : expedition.downed.active
+        ? 'downed'
+        : expedition.evacuation.active
+          ? 'evacuating'
+          : expedition.active
+            ? 'active'
+            : expedition.campaign.complete
+              ? 'settled'
+              : 'empty';
+    panel.dataset.phase = phase;
+
+    setText('#expedition-title', expedition.exists ? expedition.campaign.title : '未建立远征');
+    setText('#expedition-run-id', expedition.active || expedition.campaign.complete ? expedition.runId : 'IDLE');
+    setText('#expedition-stage-name', expedition.stage.name);
+    setText('#expedition-stage-count', expedition.stage.total ? `${expedition.stage.number} / ${expedition.stage.total}` : '0 / 0');
+    setProgress('#expedition-progress', '#expedition-progress-fill', expedition.campaign.progress);
+    setText('#expedition-brief', expedition.active
+      ? `${expedition.campaign.status === 'active' || expedition.campaign.status === 'idle' ? '远征进行中' : expedition.campaign.status} · 当前大星行动由全服探索态势共同推进。`
+      : expedition.campaign.complete
+        ? '本轮星域行动已完成，远征记录保留在彼岸古史。'
+        : '当前大星尚无个人远征记录。');
+
+    const camp = expedition.camp;
+    setText('#camp-tier', camp.established ? `L${camp.level} / ${camp.maxLevel}` : '未建立');
+    setText('#camp-name', camp.name);
+    setText('#camp-status', camp.established ? `防御 ${Math.round(camp.defense)} / ${Math.round(camp.maxDefense)} · 星锚在线` : '驻点信号未落定');
+    setProgress('#camp-defense', '#camp-defense-fill', camp.established ? camp.defense / camp.maxDefense * 100 : 0);
+
+    const bag = expedition.tacticalBag;
+    setText('#bag-capacity', `${Math.round(bag.used)} / ${Math.round(bag.capacity)}`);
+    setText('#bag-summary', bag.items.length
+      ? `${bag.items.length} 类未结算物资${bag.secured ? ` · 已封存 ${Math.round(bag.secured)}` : ''}`
+      : bag.secured
+        ? `${Math.round(bag.secured)} 份物资已封存`
+        : '尚无未结算战利品');
+    replaceTextList('#bag-items', bag.items.slice(0, 2).map(item => `${item.name} × ${item.quantity}`), '行囊净空');
+    setProgress('#bag-load', '#bag-load-fill', bag.capacity ? bag.used / bag.capacity * 100 : 0);
+
+    let alertTone = 'quiet';
+    let alertTitle = '前线静默';
+    let alertCopy = '未发现撤离、失联或遗失行囊信号。';
+    if (expedition.evacuation.ready) {
+      alertTone = 'ready';
+      alertTitle = '撤离战果待领取';
+      alertCopy = expedition.evacuation.forced
+        ? '强制撤离已经完成，部分未封存物资留在原星。'
+        : '维度通道已经闭合，远征战果可进行最终结算。';
+    } else if (expedition.downed.active) {
+      alertTone = 'danger';
+      alertTitle = '道躯失联';
+      alertCopy = `等待同星修士救援${formatRemaining(expedition.downed.expiresAt) ? ` · ${formatRemaining(expedition.downed.expiresAt)}` : ''}`;
+    } else if (expedition.evacuation.active) {
+      alertTone = 'warning';
+      alertTitle = '撤离通道构筑中';
+      alertCopy = `星锚正在固定维度坐标${formatRemaining(expedition.evacuation.completesAt) ? ` · ${formatRemaining(expedition.evacuation.completesAt)}` : ''}`;
+    } else if (expedition.lostCache.active) {
+      alertTone = 'warning';
+      alertTitle = '遗失行囊信号';
+      alertCopy = `${expedition.lostCache.itemCount} 份物资留在原星${formatRemaining(expedition.lostCache.expiresAt) ? ` · ${formatRemaining(expedition.lostCache.expiresAt)}` : ''}`;
+    } else if (expedition.rescueTargets.length) {
+      alertTone = 'signal';
+      alertTitle = '同星求援';
+      alertCopy = `${expedition.rescueTargets.length} 道失联神念仍在当前区域回响。`;
+    } else if (expedition.lostCaches.length) {
+      alertTone = 'signal';
+      alertTitle = '遗失行囊可追回';
+      alertCopy = `${expedition.lostCaches.length} 道同星缓存信号仍可定位。`;
+    } else if (expedition.active) {
+      alertTone = 'stable';
+      alertTitle = '远征信号稳定';
+      alertCopy = camp.established ? '营地星锚在线，临时物资通道保持畅通。' : '区域落点已建立，前线营地尚未成形。';
+    }
+    const alert = $('#expedition-alert');
+    alert.dataset.tone = alertTone;
+    setText('#expedition-alert-title', alertTitle);
+    setText('#expedition-alert-copy', alertCopy);
+
+    const flags = [];
+    if (camp.established) flags.push(`营地 L${camp.level}`);
+    if (expedition.downed.active) flags.push('濒危');
+    if (expedition.evacuation.active) flags.push(expedition.evacuation.ready ? '待结算' : '撤离中');
+    if (expedition.rescueTargets.length) flags.push(`${expedition.rescueTargets.length} 求援`);
+    if (expedition.lostCaches.length) flags.push(`${expedition.lostCaches.length} 可追回`);
+    if (expedition.lostCache.active) flags.push(`${expedition.lostCache.itemCount} 遗失`);
+    const flagBox = $('#expedition-flags');
+    flagBox.replaceChildren(...flags.map(text => {
+      const flag = document.createElement('span');
+      flag.textContent = text;
+      return flag;
+    }));
+
+    const actionStates = {
+      expedition_enter: expedition.viewer.canEnter && Boolean(selected && selected.status !== 'unseen'),
+      camp_build: expedition.viewer.canBuildCamp,
+      campaign_advance: expedition.viewer.canAdvance,
+      bag_deposit: expedition.viewer.canDeposit,
+      expedition_rescue: expedition.viewer.canRescue && expedition.rescueTargets.length > 0,
+      lost_cache_recover: expedition.viewer.canRecoverLostCache && expedition.lostCaches.length > 0,
+      evacuation_start: expedition.viewer.canEvacuate,
+      evacuation_force: expedition.viewer.canForceEvacuate,
+      expedition_claim: expedition.viewer.canClaim,
+    };
+    document.querySelectorAll('[data-expedition-action]').forEach(button => {
+      const action = button.dataset.expeditionAction;
+      button.disabled = busy || !actionStates[action];
+      button.classList.toggle('is-busy', busy && activeAction === action);
+      button.setAttribute('aria-busy', String(busy && activeAction === action));
+    });
+  }
+
   function routeNote(selected, cost) {
     if (!selected) return '选择大星后显化航路。';
     if (cost.distance === 0) return '神念已抵达此星。';
@@ -370,6 +1050,8 @@
       button.disabled = busy || !actionStates[action];
       button.classList.toggle('is-busy', busy && activeAction === action);
     });
+    renderThreat();
+    renderExpedition(selected);
   }
 
   function signed(value) {
@@ -455,6 +1137,135 @@
     context.moveTo(0, view.height * .82);
     context.lineTo(view.width * .33, view.height);
     context.stroke();
+  }
+
+  function purgeRouteNodes(threat = state?.threat) {
+    if (!threat || !Array.isArray(threat.purge?.route)) return [];
+    return threat.purge.route.map(resolveThreatNode).filter(Boolean);
+  }
+
+  function drawPurgeRoute(now) {
+    const threat = state?.threat;
+    if (!threat || !['purge', 'resolved'].includes(threat.phase)) return;
+    const route = purgeRouteNodes(threat);
+    if (route.length < 2) return;
+    const step = Math.min(route.length - 1, Math.max(0, threat.purge.step));
+    const phaseAlpha = threat.phase === 'resolved' ? .25 : 1;
+
+    context.save();
+    context.beginPath();
+    route.forEach((node, index) => {
+      if (index === 0) context.moveTo(node.x, node.y);
+      else context.lineTo(node.x, node.y);
+    });
+    context.setLineDash([5 / camera.zoom, 8 / camera.zoom]);
+    context.lineDashOffset = motionQuery.matches ? 0 : now * .012 / camera.zoom;
+    context.lineWidth = 3.2 / camera.zoom;
+    context.strokeStyle = PALETTE.cinnabar;
+    context.globalAlpha = .26 * phaseAlpha;
+    context.stroke();
+
+    if (step > 0) {
+      context.beginPath();
+      route.slice(0, step + 1).forEach((node, index) => {
+        if (index === 0) context.moveTo(node.x, node.y);
+        else context.lineTo(node.x, node.y);
+      });
+      context.setLineDash([]);
+      context.lineWidth = 2.4 / camera.zoom;
+      context.strokeStyle = threat.phase === 'resolved' ? PALETTE.gold : PALETTE.cinnabar;
+      context.globalAlpha = .9 * phaseAlpha;
+      context.stroke();
+    }
+
+    const current = resolveThreatNode(threat.purge.currentStarId) || route[step];
+    if (current) {
+      const pulse = motionQuery.matches ? 0 : (Math.sin(now * .004) + 1) * 2;
+      traceHex(current.x, current.y, 27 + pulse);
+      context.setLineDash([]);
+      context.lineWidth = 2 / camera.zoom;
+      context.strokeStyle = threat.purge.occupied ? PALETTE.bone : PALETTE.cinnabar;
+      context.globalAlpha = threat.phase === 'resolved' ? .34 : .92;
+      context.stroke();
+      if (threat.purge.occupied) {
+        context.fillStyle = 'rgba(189,69,52,.22)';
+        context.fill();
+      }
+    }
+    context.restore();
+  }
+
+  function drawThreatMarkers(now) {
+    const threat = state?.threat;
+    const node = threatTargetNode(threat);
+    if (!threat || !node) return;
+    const resolved = threat.phase === 'resolved';
+    const eraLord = escalationActive(threat.escalation?.eraLord);
+    const hyperdimensional = escalationActive(threat.escalation?.hyperdimensional);
+    const pulse = motionQuery.matches ? 0 : (Math.sin(now * .0032) + 1) * 2.8;
+    const radius = threat.phase === 'overlord' || threat.phase === 'decision' ? 33 : 28;
+
+    context.save();
+    context.globalAlpha = resolved ? .34 : .95;
+    context.strokeStyle = resolved ? PALETTE.gold : PALETTE.cinnabar;
+    context.lineWidth = (threat.phase === 'overlord' || threat.phase === 'decision' ? 2.2 : 1.6) / camera.zoom;
+    context.beginPath();
+    context.arc(node.x, node.y, radius + pulse, 0, Math.PI * 2);
+    context.stroke();
+    context.globalAlpha *= .46;
+    context.beginPath();
+    context.arc(node.x, node.y, radius + 8 + pulse * .55, now * .0005, now * .0005 + Math.PI * 1.42);
+    context.stroke();
+
+    if (threat.phase === 'overlord' || threat.phase === 'decision') {
+      context.globalAlpha = resolved ? .25 : .8;
+      context.beginPath();
+      for (let index = 0; index < 4; index += 1) {
+        const angle = Math.PI / 2 * index + Math.PI / 4;
+        context.moveTo(node.x + Math.cos(angle) * 38, node.y + Math.sin(angle) * 38);
+        context.lineTo(node.x + Math.cos(angle) * 47, node.y + Math.sin(angle) * 47);
+      }
+      context.stroke();
+    }
+
+    if (eraLord) {
+      context.globalAlpha = resolved ? .3 : .88;
+      context.strokeStyle = PALETTE.goldBright;
+      context.lineWidth = 1.4 / camera.zoom;
+      traceHex(node.x, node.y, 40 + pulse * .3);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(node.x - 10, node.y - 44);
+      context.lineTo(node.x, node.y - 51);
+      context.lineTo(node.x + 10, node.y - 44);
+      context.stroke();
+    }
+
+    if (hyperdimensional) {
+      const size = 48 + pulse * .22;
+      context.globalAlpha = resolved ? .28 : .9;
+      context.strokeStyle = PALETTE.bone;
+      context.lineWidth = 1.2 / camera.zoom;
+      context.save();
+      context.translate(node.x, node.y);
+      context.rotate(Math.PI / 4 + (motionQuery.matches ? 0 : now * .00008));
+      context.strokeRect(-size, -size, size * 2, size * 2);
+      context.strokeStyle = PALETTE.cinnabar;
+      context.globalAlpha *= .62;
+      context.strokeRect(-size + 5, -size - 3, size * 2, size * 2);
+      context.restore();
+    }
+
+    if (camera.zoom >= .5) {
+      context.globalAlpha = resolved ? .45 : .9;
+      context.fillStyle = hyperdimensional ? PALETTE.bone : eraLord ? PALETTE.goldBright : PALETTE.cinnabar;
+      context.font = '800 7px Consolas, "Microsoft YaHei UI", sans-serif';
+      context.textAlign = 'center';
+      context.textBaseline = 'bottom';
+      const marker = hyperdimensional ? '超维干涉' : eraLord ? '纪元主宰' : THREAT_PHASE_LABELS[threat.phase];
+      context.fillText(marker, node.x, node.y - (hyperdimensional ? 58 : eraLord ? 50 : 39), 70);
+    }
+    context.restore();
   }
 
   function drawRoute(now) {
@@ -610,8 +1421,10 @@
     context.save();
     context.translate(camera.x, camera.y);
     context.scale(camera.zoom, camera.zoom);
+    drawPurgeRoute(now);
     drawRoute(now);
     (state?.nodes || BASE_NODES).forEach(node => drawNode(node, now));
+    drawThreatMarkers(now);
     drawTravel(now);
     context.restore();
   }
@@ -822,11 +1635,253 @@
     return typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
   }
 
+  function addPreviewHistory(threat, entry) {
+    threat.history = [...(threat.history || []), typeof entry === 'string' ? { text: entry } : entry].slice(-6);
+  }
+
+  function previewThreatAction(next, action) {
+    const threat = next.threat;
+    if (!threat) throw new Error('当前星域没有显化中的全服威胁。');
+    if (action === 'challenge' && threat.phase === 'calamity' && threat.viewer.canChallenge) {
+      threat.killCount = threat.killTarget;
+      threat.viewer.calamityKill += 1;
+      threat.phase = 'overlord';
+      threat.title = '煌天焚世魔主 · 真身降临';
+      threat.overlord.hp = threat.overlord.maxHp;
+      threat.overlord.revived = false;
+      threat.viewer.canChallenge = true;
+      addPreviewHistory(threat, { type: 'overlord_spawned' });
+      return { ok: true, state: next, message: '灾厄阈值已破，煌天焚世魔主降临！' };
+    }
+    if (action === 'challenge' && threat.phase === 'overlord' && threat.viewer.canChallenge) {
+      if (!threat.overlord.revived) {
+        threat.overlord.hp = threat.overlord.maxHp;
+        threat.overlord.viewerDamage += threat.overlord.maxHp;
+        threat.overlord.revived = true;
+        addPreviewHistory(threat, { type: 'overlord_revived' });
+        return { ok: true, state: next, message: '魔主返命功法触发，复生之身以全盛状态再度行动！' };
+      }
+      threat.overlord.hp = 0;
+      threat.overlord.viewerDamage += threat.overlord.maxHp;
+      threat.phase = 'decision';
+      threat.title = '煌天焚世魔主 · 本源待决';
+      threat.viewer.canChallenge = false;
+      threat.viewer.canResolve = true;
+      threat.viewer.canExecute = true;
+      threat.viewer.canRefine = true;
+      threat.decision.canExecute = true;
+      threat.decision.canRefine = true;
+      addPreviewHistory(threat, { type: 'decision_opened' });
+      return { ok: true, state: next, message: '魔主返命与化外身尽数破灭，请决定其本源归宿。' };
+    }
+    if (['execute', 'refine'].includes(action) && threat.phase === 'decision') {
+      const allowed = action === 'execute'
+        ? threat.viewer.canExecute && threat.decision.canExecute
+        : threat.viewer.canRefine && threat.decision.canRefine;
+      if (!allowed) throw new Error('当前处置因果尚未开放。');
+      const refined = action === 'refine';
+      threat.phase = 'purge';
+      threat.title = '古文明清剿阵列 · 禁器回收';
+      threat.purge.currentStarId = '2,-1';
+      threat.purge.route = ['3,-2', '2,-1', '1,-1', '0,0'];
+      threat.purge.step = 1;
+      threat.purge.totalSteps = 3;
+      threat.purge.defense = 2;
+      threat.purge.required = 3;
+      threat.purge.occupied = false;
+      threat.purge.nextAdvanceAt = Date.now() + 180000;
+      threat.escalation = {
+        eraLord: { active: true, name: '纪元' },
+        hyperdimensional: { active: true, name: '超维' },
+      };
+      threat.viewer.canResolve = false;
+      threat.viewer.canExecute = false;
+      threat.viewer.canRefine = false;
+      threat.viewer.canDefend = true;
+      addPreviewHistory(threat, { type: 'overlord_fate_chosen', fate: refined ? 'refine' : 'execute' });
+      addPreviewHistory(threat, { type: 'purge_started' });
+      return { ok: true, state: next, message: refined ? '炼化完成，清剿阵列已经锁定星域！' : '魔主已诛，清剿阵列仍然跨界抵达！' };
+    }
+    if (action === 'defend' && threat.phase === 'purge' && threat.viewer.canDefend) {
+      threat.purge.defense = threat.purge.required;
+      threat.purge.step = Math.min(threat.purge.totalSteps, threat.purge.step + 1);
+      threat.purge.currentStarId = threat.purge.route[threat.purge.step] || threat.purge.currentStarId;
+      threat.viewer.defenseContribution += 1;
+      threat.viewer.purgeDefense = threat.viewer.defenseContribution;
+      threat.viewer.canDefend = false;
+      threat.viewer.canClaim = true;
+      threat.viewer.pendingRewardEventId = threat.eventId;
+      threat.phase = 'resolved';
+      threat.title = '第七星域 · 清剿退潮';
+      threat.escalation = {
+        eraLord: { active: false, name: '纪元' },
+        hyperdimensional: { active: false, name: '超维' },
+      };
+      addPreviewHistory(threat, { type: 'threat_resolved' });
+      return { ok: true, state: next, message: '守星成功，事件永久状态已经写入星图。' };
+    }
+    if (action === 'claim' && threat.viewer.canClaim) {
+      threat.viewer.canClaim = false;
+      threat.viewer.pendingRewardEventId = null;
+      addPreviewHistory(threat, '个人讨伐战果已领取，纪元积累与古史情报归入行囊。');
+      return { ok: true, state: next, message: '战果已领取：纪元积累与彼岸古史情报。' };
+    }
+    throw new Error('当前事件阶段不接受这项行动。');
+  }
+
+  function previewExpeditionAction(next, action, targetId) {
+    const expedition = next.expedition;
+    if (action === 'expedition_enter') {
+      if (!expedition.viewer.canEnter) throw new Error('当前已有远征因果尚未结清。');
+      const node = next.nodes.find(item => item.id === targetId || item.coordKey === targetId);
+      if (!node || node.status === 'unseen') throw new Error('目标大星尚未完成观测。');
+      next.player.positionId = node.id;
+      next.expedition = {
+        active: true,
+        runId: `CLX-${String(Date.now()).slice(-6)}`,
+        starId: node.id,
+        campaign: {
+          title: `${node.name} · 灾痕远征`,
+          status: 'active',
+          complete: false,
+          progress: 12,
+          stage: { number: 1, total: 4, name: '观测灾痕' },
+        },
+        camp: null,
+        tacticalBag: { items: [], used: 0, capacity: 12, secured: 0 },
+        evacuation: { status: 'idle', active: false, ready: false },
+        downed: false,
+        lostCache: null,
+        rescueTargets: [],
+        viewer: {
+          canEnter: false,
+          canBuildCamp: true,
+          canAdvance: false,
+          canDeposit: false,
+          canRescue: false,
+          canRecoverLostCache: true,
+          canEvacuate: false,
+          canForceEvacuate: true,
+          canClaim: false,
+          lostCaches: [{ cacheId: 'preview-cache-01', starId: node.id, itemCount: 2, name: '失落星匣' }],
+        },
+      };
+      return { ok: true, state: next, message: `已进入${node.name}区域战役，灾痕坐标完成锁定。` };
+    }
+    if (!expedition.active) throw new Error('当前没有进行中的星域远征。');
+    if (action === 'camp_build') {
+      if (!expedition.viewer.canBuildCamp) throw new Error('营地星锚尚未满足建设条件。');
+      expedition.camp = {
+        established: true,
+        name: '照夜前线营',
+        level: 1,
+        maxLevel: 3,
+        defense: 36,
+        maxDefense: 100,
+      };
+      expedition.campaign.progress = 25;
+      expedition.viewer.canBuildCamp = false;
+      expedition.viewer.canAdvance = true;
+      expedition.viewer.canForceEvacuate = false;
+      return { ok: true, state: next, message: '前线营地落成，星锚与临时物资通道已经接通。' };
+    }
+    if (action === 'campaign_advance') {
+      if (!expedition.viewer.canAdvance) throw new Error('区域战役暂时没有可推进节点。');
+      expedition.stage = { number: 2, total: 4, name: '清理同源变异体' };
+      expedition.campaign.stage = expedition.stage;
+      expedition.campaign.progress = 52;
+      expedition.tacticalBag.items = [
+        ...expedition.tacticalBag.items,
+        { id: 'anchor-core', name: '星锚残芯', quantity: 2 },
+        { id: 'shore-sand', name: '彼岸界砂', quantity: 3 },
+      ];
+      expedition.tacticalBag.used += 5;
+      expedition.rescueTargets = [{ userId: 'preview-rescue-01', name: '失联观星者' }];
+      expedition.viewer.canAdvance = false;
+      expedition.viewer.canDeposit = true;
+      expedition.viewer.canRescue = false;
+      return { ok: true, state: next, message: '变异体阵线已破，临时行囊装入五份彼岸物资。' };
+    }
+    if (action === 'bag_deposit') {
+      if (!expedition.viewer.canDeposit) throw new Error('当前没有可封存的临时战利品。');
+      expedition.tacticalBag.secured += expedition.tacticalBag.used;
+      expedition.tacticalBag.items = [];
+      expedition.tacticalBag.used = 0;
+      expedition.viewer.canDeposit = false;
+      expedition.viewer.canRescue = expedition.rescueTargets.length > 0;
+      return { ok: true, state: next, message: '临时物资已封入营地星锚，本轮撤离将保留这些战果。' };
+    }
+    if (action === 'expedition_rescue') {
+      const rescue = expedition.rescueTargets.find(target => String(target.userId ?? target.id) === String(targetId)) || expedition.rescueTargets[0];
+      if (!expedition.viewer.canRescue || !rescue) throw new Error('当前星域没有可响应的求援信号。');
+      expedition.rescueTargets = expedition.rescueTargets.filter(target => target !== rescue);
+      expedition.stage = { number: 4, total: 4, name: '古星阵眼稳定' };
+      expedition.campaign.stage = expedition.stage;
+      expedition.campaign.progress = 100;
+      expedition.campaign.complete = true;
+      expedition.campaign.status = 'complete';
+      expedition.tacticalBag.items = [{ id: 'ancient-component', name: '古文明构件', quantity: 1 }];
+      expedition.tacticalBag.used = 1;
+      expedition.viewer.canRescue = false;
+      expedition.viewer.canEvacuate = true;
+      return { ok: true, state: next, message: `${rescue.name || '失联修士'}已回归营地，区域战役完成。` };
+    }
+    if (action === 'lost_cache_recover') {
+      const cache = expedition.lostCaches.find(item => String(item.cacheId ?? item.id) === String(targetId)) || expedition.lostCaches[0];
+      if (!expedition.viewer.canRecoverLostCache || !cache) throw new Error('当前星域没有可追回的遗失行囊。');
+      const recovered = Math.max(1, Math.trunc(finiteNumber(cache.itemCount, finiteNumber(cache.count, 1))));
+      expedition.lostCaches = expedition.lostCaches.filter(item => item !== cache);
+      expedition.viewer.lostCaches = expedition.lostCaches;
+      expedition.tacticalBag.items = [
+        ...expedition.tacticalBag.items,
+        { id: `recovered-${cache.cacheId ?? cache.id}`, name: cache.name || '追回物资', quantity: recovered },
+      ];
+      expedition.tacticalBag.used += recovered;
+      expedition.viewer.canRecoverLostCache = expedition.lostCaches.length > 0;
+      expedition.viewer.canDeposit = expedition.camp.established && expedition.tacticalBag.used > 0;
+      return { ok: true, state: next, message: `遗失行囊已追回，${recovered} 份物资重新归入临时行囊。` };
+    }
+    if (action === 'evacuation_start') {
+      if (!expedition.viewer.canEvacuate) throw new Error('稳定撤离条件尚未满足。');
+      expedition.evacuation = { status: 'ready', active: true, ready: true, forced: false, completesAt: Date.now() };
+      expedition.viewer.canEvacuate = false;
+      expedition.viewer.canClaim = true;
+      return { ok: true, state: next, message: '星锚撤离完成，远征战果已经送达结算节点。' };
+    }
+    if (action === 'evacuation_force') {
+      if (!expedition.viewer.canForceEvacuate) throw new Error('当前状态不需要强制撤离。');
+      const lostCount = Math.ceil(expedition.tacticalBag.used * .3);
+      expedition.lostCache = lostCount
+        ? { active: true, itemCount: lostCount, expiresAt: Date.now() + 30 * 60000 }
+        : null;
+      expedition.tacticalBag.used = Math.max(0, expedition.tacticalBag.used - lostCount);
+      expedition.evacuation = { status: 'ready', active: true, ready: true, forced: true, completesAt: Date.now() };
+      expedition.viewer.canForceEvacuate = false;
+      expedition.viewer.canClaim = true;
+      return { ok: true, state: next, message: lostCount ? `强制撤离完成，${lostCount} 份物资遗留在原星。` : '强制撤离完成。' };
+    }
+    if (action === 'expedition_claim') {
+      if (!expedition.viewer.canClaim) throw new Error('当前没有待领取的远征结算。');
+      expedition.active = false;
+      expedition.campaign.complete = true;
+      expedition.campaign.status = 'settled';
+      expedition.evacuation = { ...expedition.evacuation, active: false, ready: false, claimed: true, status: 'claimed' };
+      expedition.tacticalBag.items = [];
+      expedition.tacticalBag.used = 0;
+      expedition.viewer.canClaim = false;
+      expedition.viewer.canEnter = true;
+      return { ok: true, state: next, message: '远征结算已领取，封存物资与区域贡献归入本体。' };
+    }
+    throw new Error('当前远征阶段不接受这项行动。');
+  }
+
   function previewAction(action, targetId) {
     const next = cloneState(state);
+    if (EXPEDITION_ACTIONS.has(action)) return previewExpeditionAction(next, action, targetId);
     const node = next.nodes.find(item => item.id === targetId);
     const current = next.nodes.find(item => item.id === next.player.positionId);
     if (!node) throw new Error('目标大星已离开神念范围。');
+    if (THREAT_ACTIONS.has(action)) return previewThreatAction(next, action);
     if (action === 'observe') {
       if (node.status !== 'unseen') throw new Error('此星已经完成观测。');
       if (!current || axialDistance(current, node) !== 1) throw new Error('神念只能观测当前大星相邻的星域。');
@@ -890,23 +1945,35 @@
 
   async function performAction(action) {
     if (busy) return;
-    const target = getNode(selectedId);
-    if (!target) return;
+    const threatAction = THREAT_ACTIONS.has(action);
+    const expeditionAction = EXPEDITION_ACTIONS.has(action);
+    const targetId = threatAction
+      ? threatTargetNode()?.id
+      : expeditionAction
+        ? expeditionTargetId(action)
+        : getNode(selectedId)?.id;
+    if (!targetId) return;
     const travelRoute = action === 'move' ? [...currentRoute] : [];
     busy = true;
     activeAction = action;
     render();
     try {
       const payload = isPreview
-        ? previewAction(action, target.id)
+        ? previewAction(action, targetId)
         : await requestJson('/api/canglan/action', {
           method: 'POST',
-          body: JSON.stringify({ action, targetId: target.id, operationId: operationId() }),
+          body: JSON.stringify({ action, targetId, operationId: operationId() }),
         });
       if (action === 'move') await playTravel(travelRoute);
       const nextState = payload.state || (!isPreview ? await fetchState() : state);
       state = normalizeState(nextState);
-      selectedId = action === 'move' ? state.player.positionId : (getNode(target.id)?.id || state.player.positionId);
+      selectedId = action === 'move'
+        ? state.player.positionId
+        : threatAction
+          ? (threatTargetNode()?.id || selectedId || state.player.positionId)
+          : expeditionAction
+            ? (getNode(state.expedition?.starId)?.id || selectedId || state.player.positionId)
+            : (getNode(targetId)?.id || state.player.positionId);
       showToast(payload.message || '星海因果已经更新。');
     } catch (error) {
       showToast(error.message || '本次神念未能落定。');
@@ -937,13 +2004,30 @@
     }
   }
 
+  function focusThreat() {
+    const node = threatTargetNode();
+    if (!node) return;
+    selectedId = node.id;
+    const panelWidth = view.width > 760 ? parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--panel-width')) || 370 : 0;
+    const mapCenterX = (view.width - panelWidth) / 2;
+    const mapCenterY = view.height / 2 + (view.width <= 760 ? 36 : 24);
+    camera.x = mapCenterX - node.x * camera.zoom;
+    camera.y = mapCenterY - node.y * camera.zoom;
+    render();
+    if (view.width <= 760) setDrawer(true);
+    canvas.focus({ preventScroll: true });
+  }
+
   $('#zoom-in').addEventListener('click', () => setZoom(camera.zoom * 1.2));
   $('#zoom-out').addEventListener('click', () => setZoom(camera.zoom / 1.2));
   $('#reset-view').addEventListener('click', resetView);
   $('#refresh-state').addEventListener('click', refreshState);
+  $('#focus-threat').addEventListener('click', focusThreat);
   $('#drawer-toggle').addEventListener('click', () => setDrawer(!intelPanel.classList.contains('is-open')));
   $('#retry-button').addEventListener('click', connect);
   document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => performAction(button.dataset.action)));
+  document.querySelectorAll('[data-threat-action]').forEach(button => button.addEventListener('click', () => performAction(button.dataset.threatAction)));
+  document.querySelectorAll('[data-expedition-action]').forEach(button => button.addEventListener('click', () => performAction(button.dataset.expeditionAction)));
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && view.width <= 760) setDrawer(false);
   });

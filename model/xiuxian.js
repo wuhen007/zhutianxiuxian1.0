@@ -5333,6 +5333,21 @@ export async function Add_血气(usr_qq, 血气 = 0, options = {}) {
   });
 }
 
+// 纪元积累：直接写入角色纪元积累字段（不经过纳戒），支持负数扣减，结果不会低于 0
+export async function Add_纪元积累(usr_qq, 纪元积累数量 = 0, options = {}) {
+  return withPlayerMutationLock(usr_qq, async () => {
+    let player = await Read_player(usr_qq);
+    const idempotencyKey = options?.idempotencyKey;
+    if (idempotencyKey && player._rewardClaims?.[idempotencyKey]) return 0;
+    const delta = Math.trunc(纪元积累数量);
+    if (delta === 0) return 0;
+    player.纪元积累 = Math.max(0, Math.trunc(Number(player.纪元积累) || 0) + delta);
+    recordRewardClaim(player, idempotencyKey, delta);
+    await Write_player(usr_qq, player, options);
+    return delta;
+  });
+}
+
 
 export async function Add_热量(usr_qq, 热量 = 0) {
   return withPlayerMutationLock(usr_qq, async () => {

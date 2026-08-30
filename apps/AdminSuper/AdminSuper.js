@@ -17,6 +17,7 @@ import {
   Write_najie,
   Add_灵石,
   Add_源石,
+  Add_纪元积累,
   channel
 } from '../../model/xiuxian.js';
 import { Read_player, __PATH } from '../../model/xiuxian.js';
@@ -128,6 +129,10 @@ export class AdminSuper extends plugin {
 {
     reg: '^#补登唯一机缘(\\s*(预览|检测|dry|查询|查看))?$',
     fnc: 'backfillEternalClaims'
+},
+{
+    reg: '^#发放纪元积累.*$',
+    fnc: 'grantEpochAccum'
 }
       ],
     });
@@ -1704,6 +1709,61 @@ async relieveFashanAction(e) {
     } catch (error) {
       console.error('[补登唯一机缘] 执行失败:', error);
       return e.reply(`补登失败：${error?.message || error}`);
+    }
+  }
+
+  // 指令：#发放纪元积累*N@玩家 / #发放纪元积累N@玩家 / #发放纪元积累*N QQ号
+  //       目标优先取 @，其次消息中的 QQ 号，未指定时发给指令发送者自己
+  async grantEpochAccum(e) {
+    const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
+    const masterList = xiuxianConfig.Master || [];
+    const userQQ = e.user_id.toString().replace('qg_', '');
+    if (!e.isMaster && !masterList.includes(userQQ)) {
+      return e.reply('你没有权限发放纪元积累。');
+    }
+    if (!verc({ e })) return false;
+
+    // 解析数量：#发放纪元积累*5 或 #发放纪元积累5
+    const msg = String(e.msg || '').replace(/^\s*#/, '');
+    const numMatch = msg.match(/^发放纪元积累[×x*]?\s*(\d+)/);
+    if (!numMatch) {
+      return e.reply('格式：#发放纪元积累*N@玩家 或 #发放纪元积累N@玩家（N 为正整数）');
+    }
+    const amount = Math.trunc(Number(numMatch[1]));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return e.reply('纪元积累数量必须是正整数。');
+    }
+
+    // 解析目标：优先 @，其次消息中的 QQ 号，最后默认发给发送者自己
+    let targetQQ = '';
+    if (e.message && Array.isArray(e.message)) {
+      const atMsg = e.message.find(item => item.type === 'at');
+      if (atMsg && atMsg.qq) targetQQ = String(atMsg.qq).replace('qg_', '');
+    }
+    if (!targetQQ) {
+      const qqMatch = msg.match(/@(\d+)/) || msg.match(/(\d{5,})/);
+      if (qqMatch) targetQQ = qqMatch[1];
+    }
+    if (!targetQQ) targetQQ = userQQ;
+    targetQQ = await channel(targetQQ);
+
+    // 检查存档
+    const ifexistplay = await existplayer(targetQQ);
+    if (!ifexistplay) {
+      return e.reply('对方无存档，无法发放纪元积累。');
+    }
+
+    try {
+      const granted = await Add_纪元积累(targetQQ, amount);
+      const player = await Read_player(targetQQ);
+      return e.reply([
+        '【管理员发放·纪元积累】',
+        `已发放 ${granted} 点纪元积累给 ${player.名号 || targetQQ}（QQ: ${targetQQ}）`,
+        `当前纪元积累：${player.纪元积累 || 0} 点`,
+      ].join('\n'));
+    } catch (error) {
+      console.error('[发放纪元积累] 执行失败:', error);
+      return e.reply(`发放失败：${error?.message || error}`);
     }
   }
 }

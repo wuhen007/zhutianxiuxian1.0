@@ -2544,7 +2544,8 @@ export class EndlessRealm extends plugin {
   async openEndlessWeb(e) {
     const userId = await this.checkPlayer(e);
     if (!userId) return false;
-    if (!getEndlessWebConfig().enabled)
+    const webConfig = getEndlessWebConfig();
+    if (!webConfig.enabled)
       return e.reply('无尽劫境网页入口暂未开放，请继续使用群聊指令');
     const team = await this.getPlayerTeam(userId);
     if (!team || team.status !== 'running')
@@ -2562,7 +2563,9 @@ export class EndlessRealm extends plugin {
               ? ['其他队员请各自发送「#无尽网页」领取自己的入口。']
               : []),
           ].join('\n')
-        : '网页入口生成失败，请检查 config/endless-web.json 与服务器端口'
+        : webConfig.relayEnabled
+          ? '网页入口暂时未就绪，请稍后重新发送「#无尽网页」'
+          : '网页服务未就绪，请检查 config/endless-web.json、Redis 与服务器端口'
     );
   }
 

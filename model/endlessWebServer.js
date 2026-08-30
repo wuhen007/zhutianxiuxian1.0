@@ -757,23 +757,42 @@ async function performAction(realm, session, action, value) {
   };
 }
 
-async function waitForWorldRelay(timeoutMs = 5000) {
-  if (worldChatClient.authed) return true;
-  worldChatClient.connect();
-  const deadline = Date.now() + timeoutMs;
-  while (!worldChatClient.authed && Date.now() < deadline) {
-    await new Promise(resolve => setTimeout(resolve, 50));
-  }
-  return worldChatClient.authed;
+function worldRelayReady(client) {
+  return client.authed && client.ws?.readyState === client.WebSocket.OPEN;
 }
 
-async function createRelayTicket(kind, identity) {
-  if (!(await waitForWorldRelay())) throw new Error('网页中继仍在连接，请稍后重试');
-  const result = await worldChatClient.createWebTicket(kind, identity);
-  if (!result?.ok || !result.token) {
-    throw new Error(`网页中继签发失败：${result?.reason || 'unknown'}`);
+async function waitForWorldRelay(client = worldChatClient, timeoutMs = 5000) {
+  if (worldRelayReady(client)) return true;
+  client.connect();
+  const deadline = Date.now() + timeoutMs;
+  while (!worldRelayReady(client) && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 50));
   }
-  return result.token;
+  return worldRelayReady(client);
+}
+
+export async function createRelayTicket(
+  kind,
+  identity,
+  client = worldChatClient,
+  timeoutMs = 5000
+) {
+  let result = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (!(await waitForWorldRelay(client, timeoutMs))) {
+      result = { ok: false, reason: 'disconnected' };
+    } else {
+      try {
+        result = await client.createWebTicket(kind, identity);
+      } catch (error) {
+        client.lastError = error?.message || String(error);
+        result = { ok: false, reason: 'disconnected' };
+      }
+      if (result?.ok && result.token) return result.token;
+    }
+    if (result?.reason !== 'disconnected') break;
+  }
+  throw new Error(`网页中继签发失败：${result?.reason || 'unknown'}`);
 }
 
 async function consumeLocalOrRelayTicket(redisClient, kind, token) {
@@ -1375,8 +1394,12 @@ async function ensureServer(realm, redisClient, config) {
       serverPromise = null;
       reject(error);
     });
+    server.once('close', () => {
+      if (activeServer === server) activeServer = null;
+    });
     server.listen(config.port, config.host, () => {
       activeServer = server;
+      serverPromise = null;
       globalThis.logger?.mark?.(`[无尽网页] 已监听 ${config.host}:${config.port}`);
       resolve(server);
     });
