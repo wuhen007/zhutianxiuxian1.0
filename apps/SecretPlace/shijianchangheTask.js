@@ -43,6 +43,7 @@ import {
 } from '../../model/gongfaProficiency.js';
 import {
   buildTimeRiverAdversary,
+  buildTimeRiverTeamBenchmark,
   collapsePastWorldlineArtifacts,
   ensureTimeRiverSkills,
   getTimeRiverEnemyNames,
@@ -61,6 +62,8 @@ import {
 import { destroyWorldline } from '../../model/worldlineAuthority.js';
 
 ensureTimeRiverSkills(data);
+
+const TIME_RIVER_ACTIVE_ACTIONS = ['遨游时间长河', '组队遨游时间长河', '时间长河战败待援'];
 
 export class ShijianChangheTask extends plugin {
   constructor() {
@@ -89,7 +92,17 @@ async checkTimeRiverActions() {
   const playersList = await this.getActiveTimeRiverPlayers();
   for (const usr_qq of playersList) {
     try {
-      await withPlayerMutationLock(usr_qq, () => this.checkTimeRiverPlayer(usr_qq, currentTime));
+      const raw = await redis.get(`xiuxian:player:${usr_qq}:action`);
+      let memberIds = [String(usr_qq)];
+      try {
+        const action = JSON.parse(raw);
+        if (Array.isArray(action?.timeRiverTeamMembers)) memberIds.push(...action.timeRiverTeamMembers.map(String));
+      } catch {}
+      const ids = [...new Set(memberIds)].sort();
+      const lock = index => index >= ids.length
+        ? this.checkTimeRiverPlayer(usr_qq, currentTime)
+        : withPlayerMutationLock(ids[index], () => lock(index + 1));
+      await lock(0);
     } catch (err) {
       console.error(`处理玩家${usr_qq}时出错:`, err);
     }
@@ -121,7 +134,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
         }
         return;
       }
-      if (!['遨游时间长河', '时间长河战败待援'].includes(action.action)) {
+      if (!TIME_RIVER_ACTIVE_ACTIONS.includes(action.action)) {
         await this.clearTimeRiverTracking(usr_qq);
         return;
       }
@@ -129,18 +142,31 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       if (!endTime || endTime > currentTime) return;
 
       if (action.action === '时间长河战败待援') {
-        await this.handleDarkSuppression(usr_qq, action, {
-          worldlineCollapse: true,
-          enemyNames: action.enemyNames || DARK_TRIAD_NAMES,
-        });
-        await this.notifyPlayer(usr_qq, action, '【十息成劫】十分钟内无人献祭魂与血，你的元神已被拘入黑暗古国，开始炼化道果！');
-        await this.clearTimeRiverTracking(usr_qq);
+        const memberIds = this.getTimeRiverMemberIds(usr_qq, action);
+        for (const memberId of memberIds) {
+          if (!await existplayer(memberId)) continue;
+          await this.handleDarkSuppression(memberId, action, {
+            worldlineCollapse: true,
+            enemyNames: action.enemyNames || DARK_TRIAD_NAMES,
+          });
+        }
+        await this.notifyPlayer(usr_qq, action, memberIds.length > 1
+          ? '【十息成劫】十分钟内无人献祭魂与血，整支队伍的元神均被拘入黑暗古国，开始炼化道果！'
+          : '【十息成劫】十分钟内无人献祭魂与血，你的元神已被拘入黑暗古国，开始炼化道果！');
+        await this.clearTimeRiverTracking(usr_qq, action);
         return;
       }
 
       const continuing = await this.handleTimeRiverCompletion(usr_qq, action);
-      if (!continuing) await this.clearTimeRiverTracking(usr_qq);
+      if (!continuing) await this.clearTimeRiverTracking(usr_qq, action);
 }
+
+  getTimeRiverMemberIds(usr_qq, action = {}) {
+    return [...new Set([
+      String(action.timeRiverLeader || usr_qq),
+      ...(Array.isArray(action.timeRiverTeamMembers) ? action.timeRiverTeamMembers.map(String) : []),
+    ])].slice(0, 4);
+  }
 
   async getActiveTimeRiverPlayers() {
     try {
@@ -158,23 +184,49 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     });
   }
 
-  async clearTimeRiverTracking(usr_qq) {
+  async clearTimeRiverTracking(usr_qq, sourceAction = null) {
+    let action = sourceAction;
+    if (!action) {
+      try {
+        action = JSON.parse(await redis.get(`xiuxian:player:${usr_qq}:action`));
+      } catch {
+        action = {};
+      }
+    }
+    action ||= {};
+    const members = this.getTimeRiverMemberIds(usr_qq, action);
     await withPlayerMutationLock('time-river-active-index', async () => {
-      const players = (await this.getActiveTimeRiverPlayers()).filter(id => id !== String(usr_qq));
+      const players = (await this.getActiveTimeRiverPlayers()).filter(id => !members.includes(id));
       await redis.set('xiuxian:time_river:active_players', JSON.stringify(players));
     });
-    await redis.del(`xiuxian:time_river:end_time:${usr_qq}`);
-    const current = await redis.get(`xiuxian:player:${usr_qq}:action`);
-    if (!current) return;
-    let action;
-    try {
-      action = JSON.parse(current);
-    } catch {
-      await redis.del(`xiuxian:player:${usr_qq}:action`);
-      return;
+    for (const memberId of members) {
+      await redis.del(`xiuxian:time_river:end_time:${memberId}`);
+      const current = await redis.get(`xiuxian:player:${memberId}:action`);
+      if (!current) continue;
+      try {
+        const memberAction = JSON.parse(current);
+        const sameTeam = !action.timeRiverTeamId || memberAction.timeRiverTeamId === action.timeRiverTeamId;
+        if (sameTeam && TIME_RIVER_ACTIVE_ACTIONS.includes(memberAction.action)) {
+          await redis.del(`xiuxian:player:${memberId}:action`);
+        }
+      } catch {
+        await redis.del(`xiuxian:player:${memberId}:action`);
+      }
     }
-    if (['遨游时间长河', '时间长河战败待援'].includes(action.action)) {
-      await redis.del(`xiuxian:player:${usr_qq}:action`);
+    if (action.timeRiverTeamId) {
+      const teamKey = `xiuxian:time_river:team:${action.timeRiverTeamId}`;
+      const rawTeam = await redis.get(teamKey);
+      if (rawTeam) {
+        try {
+          const team = JSON.parse(rawTeam);
+          team.status = 'recruiting';
+          delete team.startedAt;
+          await redis.set(teamKey, JSON.stringify(team), 'EX', 24 * 60 * 60);
+          await Promise.all(team.members.map(memberId => (
+            redis.set(`xiuxian:time_river:player_team:${memberId}`, team.id, 'EX', 24 * 60 * 60)
+          )));
+        } catch {}
+      }
     }
   }
 
@@ -267,105 +319,125 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
   }
 
   async handleTimeRiverCompletion(usr_qq, action) {
-    const player = await Read_player(usr_qq);
-    player.纪元积累 = Math.max(0, Number(player.纪元积累) || 0);
+    const memberIds = this.getTimeRiverMemberIds(usr_qq, action);
+    const members = [];
+    for (const id of memberIds) {
+      if (await existplayer(id)) members.push({ id, player: await Read_player(id) });
+    }
+    if (!members.length) return false;
+    const leader = members.find(member => member.id === String(action.timeRiverLeader || usr_qq)) || members[0];
+    for (const { player } of members) player.纪元积累 = Math.max(0, Number(player.纪元积累) || 0);
     const stage = action.timeRiverStage || 'initial';
-    const enemies = this.buildStageEnemies(player, action);
+    const benchmark = buildTimeRiverTeamBenchmark(members.map(member => member.player));
+    const enemies = this.buildStageEnemies(benchmark, action);
     const primary = enemies[0];
-    const isGroupBattle = enemies.length > 1;
+    const isGroupBattle = members.length > 1 || enemies.length > 1;
     const chainBattle = stage !== 'initial' || isDarkTriadEmperor(primary.名号);
-    const A_player = this.buildPlayerCombatant(
-      player,
-      usr_qq,
-      isGroupBattle && enemies.some(enemy => isDarkTriadEmperor(enemy.名号)),
-      Number(action.sacrificeBuff) || 0,
-    );
+    const combatants = members.map(({ id, player }) => this.buildPlayerCombatant(
+      player, id, enemies.some(enemy => isDarkTriadEmperor(enemy.名号)), Number(action.sacrificeBuff) || 0,
+    ));
     const counterEnemy = enemies.find(enemy => enemy._时间长河反制);
     const linCounterEnemy = counterEnemy || enemies.find(enemy => enemy._时间长河临字秘反制);
-    if (linCounterEnemy) {
-      A_player._时间长河临字秘反制目标 = true;
-      A_player._时间长河反制来源 = linCounterEnemy.名号;
+    const openingMessages = [];
+    for (const combatant of combatants) {
+      if (linCounterEnemy) {
+        combatant._时间长河临字秘反制目标 = true;
+        combatant._时间长河反制来源 = linCounterEnemy.名号;
+      }
+      if (counterEnemy) {
+        combatant._时间长河反制 = true;
+        combatant._时间长河反制目标 = true;
+        combatant._时间长河至宝失效 = true;
+        combatant._帝兵失效 = true;
+        combatant._时间长河反制来源 = counterEnemy.名号;
+      }
+      if (enemies.some(enemy => enemy.名号 === '苍帝')) {
+        const suppression = applyCangEmperorOpeningSuppression(combatant);
+        if (suppression.message) openingMessages.push(suppression.message);
+      }
     }
-    if (counterEnemy) {
-      A_player._时间长河反制 = true;
-      A_player._时间长河反制目标 = true;
-      A_player._时间长河至宝失效 = true;
-      A_player._帝兵失效 = true;
-      A_player._时间长河反制来源 = counterEnemy.名号;
-    }
-    const cangOpening = enemies.some(enemy => enemy.名号 === '苍帝')
-      ? applyCangEmperorOpeningSuppression(A_player)
-      : { applied: false };
 
-    await this.sendEncounterMessage(usr_qq, action, this.generateStageEncounter(player, action, enemies));
-    const formation = consumeBlackEmperorBattleFormation(player, A_player, primary);
+    const teamName = members.map(member => member.player.名号).join('、');
+    await this.sendEncounterMessage(usr_qq, action, this.generateStageEncounter(
+      { ...leader.player, 名号: teamName }, action, enemies,
+    ));
+    for (let index = 0; index < members.length; index++) {
+      const formation = consumeBlackEmperorBattleFormation(members[index].player, combatants[index], primary);
+      if (formation.message) openingMessages.push(formation.message);
+    }
     const battleResult = isGroupBattle
-      ? await zd_battle([A_player], enemies, { timeRiverBattle: true })
-      : await zd_battle(A_player, primary, { timeRiverBattle: true });
+      ? await zd_battle(combatants, enemies, { timeRiverBattle: true })
+      : await zd_battle(combatants[0], primary, { timeRiverBattle: true });
     if (Array.isArray(battleResult.msg)) {
-      const openingMessages = [];
       if (stage === 'triad') {
         openingMessages.push('【黑暗三帝·帝辉护体】苍、鸿、羽三帝各自凝聚35%生命护盾，并以帝辉减免30%伤害；每帝均可满血复生一次，复生不会解除已有控制与负面状态。');
       }
-      if (cangOpening.message) openingMessages.push(cangOpening.message);
-      if (formation.message) openingMessages.push(formation.message);
       battleResult.msg.unshift(...openingMessages);
     }
 
-    const resolvedPlayer = battleResult.A_team?.[0] || A_player;
-    player.功法熟练度 = resolvedPlayer.功法熟练度 || player.功法熟练度;
-    player.功法熟练度每日 = resolvedPlayer.功法熟练度每日 || player.功法熟练度每日;
-    player.当前血量 = Math.max(0, Math.min(Number(player.血量上限) || 1, Number(battleResult.A_hp) || 0));
-    const proficiencyGains = awardDungeonGongfaProficiency(player);
     const outcome = battleResult.winner === 'A' ? 'victory' : battleResult.winner === 'B' ? 'defeat' : 'draw';
-
     let eraAccumulationChange = rollTimeRiverEraReward(outcome);
     if (outcome === 'victory' && stage === 'triad') eraAccumulationChange *= 3;
     if (outcome === 'victory' && stage === 'old_man') eraAccumulationChange = action.oldManReward || (action.imperialPill ? 30 : 10);
     if (outcome === 'victory' && stage === 'initial' && primary.名号 === '荒天帝') eraAccumulationChange += 2;
-    const currentEraAccumulation = Math.max(0, Number(player.纪元积累) || 0);
-    player.纪元积累 = Math.min(this.MAX_ERA_ACCUMULATION, currentEraAccumulation + eraAccumulationChange);
-
     const enemyNames = getTimeRiverEnemyNames(primary.名号, enemies.slice(1));
-    const specialEvents = {};
-    const penalties = {};
-    if (outcome === 'defeat' && chainBattle) {
-      specialEvents.rescueWindow = true;
-      specialEvents.willowGuardian = DARK_TRIAD_NAMES.every(name => enemyNames.includes(name))
-        && !action.willowGuardianTriggered;
-    } else if (outcome === 'defeat' && primary.名号 !== '尸骸仙帝' && enemyNames.some(name => ['灭世老人', '未来准仙帝'].includes(name))) {
-      specialEvents.darkSuppression = true;
-    } else if (outcome === 'defeat' && !chainBattle && !hasRealmAuthority(player, 21) && Math.random() < 0.3) {
-      const timelessTalisman = await exist_najie_thing(usr_qq, '诸世无痕符', '道具');
-      if (timelessTalisman > 0) {
-        await Add_najie_thing(usr_qq, '诸世无痕符', '道具', -1);
-        specialEvents.pastBodyTalismanResisted = true;
-        // 已诞生神胎的准仙帝：50% 概率以神胎道韵抵御厄土仙帝的推演
-      } else if (player?.己道推演?.divineEmbryo === '已结出' && Math.random() < 0.5) {
-        specialEvents.pastBodyResisted = true;
-      } else {
-        specialEvents.pastBodyExposed = true;
-        penalties.pastBodyExposed = await this.handlePastBodyExposed(usr_qq);
-        Object.assign(player, penalties.pastBodyExposed.player);
+    const resolvedTeam = Array.isArray(battleResult.A_team) ? battleResult.A_team : [combatants[0]];
+    const memberResults = [];
+    for (let index = 0; index < members.length; index++) {
+      const { id, player } = members[index];
+      const resolvedPlayer = resolvedTeam[index] || combatants[index];
+      player.功法熟练度 = resolvedPlayer.功法熟练度 || player.功法熟练度;
+      player.功法熟练度每日 = resolvedPlayer.功法熟练度每日 || player.功法熟练度每日;
+      const remainingHp = members.length === 1 && !battleResult.A_team
+        ? battleResult.A_hp
+        : resolvedPlayer.当前血量;
+      player.当前血量 = Math.max(0, Math.min(Number(player.血量上限) || 1, Number(remainingHp) || 0));
+      const proficiencyGains = awardDungeonGongfaProficiency(player);
+      player.纪元积累 = Math.min(this.MAX_ERA_ACCUMULATION, player.纪元积累 + eraAccumulationChange);
+
+      const specialEvents = {};
+      const penalties = {};
+      if (outcome === 'defeat' && chainBattle) {
+        specialEvents.rescueWindow = true;
+        specialEvents.willowGuardian = index === 0
+          && DARK_TRIAD_NAMES.every(name => enemyNames.includes(name))
+          && !action.willowGuardianTriggered;
+      } else if (outcome === 'defeat' && primary.名号 !== '尸骸仙帝' && enemyNames.some(name => ['灭世老人', '未来准仙帝'].includes(name))) {
+        specialEvents.darkSuppression = true;
+      } else if (outcome === 'defeat' && !chainBattle && !hasRealmAuthority(player, 21) && Math.random() < 0.3) {
+        const timelessTalisman = await exist_najie_thing(id, '诸世无痕符', '道具');
+        if (timelessTalisman > 0) {
+          await Add_najie_thing(id, '诸世无痕符', '道具', -1);
+          specialEvents.pastBodyTalismanResisted = true;
+        } else if (player?.己道推演?.divineEmbryo === '已结出' && Math.random() < 0.5) {
+          specialEvents.pastBodyResisted = true;
+        } else {
+          specialEvents.pastBodyExposed = true;
+          penalties.pastBodyExposed = await this.handlePastBodyExposed(id);
+          Object.assign(player, penalties.pastBodyExposed.player);
+        }
       }
+
+      await Write_player(id, player);
+      if (specialEvents.darkSuppression) {
+        penalties.darkSuppression = await this.handleDarkSuppression(id, action, { worldlineCollapse: true, enemyNames });
+      }
+      memberResults.push({ id, player, specialEvents, penalties, proficiencyGains });
     }
 
-    await Write_player(usr_qq, player);
-    if (specialEvents.darkSuppression) {
-      penalties.darkSuppression = await this.handleDarkSuppression(usr_qq, action, { worldlineCollapse: true, enemyNames });
+    for (const result of memberResults) {
+      await this.sendResultMessage(result.id, action, this.generateResultMessage(result.player, primary, {
+        ...battleResult,
+        outcome,
+        specialEvents: result.specialEvents,
+        penalties: result.penalties,
+        proficiencyGains: result.proficiencyGains,
+        eraAccumulationChange,
+        newEraAccumulation: result.player.纪元积累,
+      }));
     }
 
-    await this.sendResultMessage(usr_qq, action, this.generateResultMessage(player, primary, {
-      ...battleResult,
-      outcome,
-      specialEvents,
-      penalties,
-      proficiencyGains,
-      eraAccumulationChange,
-      newEraAccumulation: player.纪元积累,
-    }));
-
-    if (specialEvents.rescueWindow) {
+    if (memberResults.some(result => result.specialEvents.rescueWindow)) {
       await this.openRescueWindow(usr_qq, action, {
         retryStage: stage === 'initial' ? 'solo' : stage,
         primaryName: primary.名号,
@@ -373,11 +445,13 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
         oldManReward: action.oldManReward,
         enemyNames,
         enemyState: this.captureEnemyState(enemies, battleResult),
-        willowGuardianTriggered: Boolean(action.willowGuardianTriggered || specialEvents.willowGuardian),
+        willowGuardianTriggered: Boolean(
+          action.willowGuardianTriggered || memberResults.some(result => result.specialEvents.willowGuardian)
+        ),
       });
       return true;
     }
-    if (specialEvents.darkSuppression) return false;
+    if (memberResults.some(result => result.specialEvents.darkSuppression)) return false;
     if (outcome === 'victory' && stage === 'initial' && isDarkTriadEmperor(primary.名号)) {
       await this.scheduleTimeRiverStage(usr_qq, action, 'triad', { primaryName: primary.名号 });
       return true;
@@ -446,8 +520,10 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       enemyState: details.enemyState || null,
       willowGuardianTriggered: Boolean(previousAction.willowGuardianTriggered || details.willowGuardianTriggered),
     };
-    await redis.set(`xiuxian:player:${usr_qq}:action`, JSON.stringify(action));
-    await redis.set(`xiuxian:time_river:end_time:${usr_qq}`, endTime);
+    for (const memberId of this.getTimeRiverMemberIds(usr_qq, action)) {
+      await redis.set(`xiuxian:player:${memberId}:action`, JSON.stringify(action));
+      await redis.set(`xiuxian:time_river:end_time:${memberId}`, endTime);
+    }
     await this.addActiveTimeRiverPlayer(usr_qq);
     const text = details.enemyState
       ? '【血祭续战】魂血照亮断裂古史，敌方保留上一战的剩余气血，十五分钟后从败亡节点继续结算。'
@@ -468,10 +544,15 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       start_time: Date.now(),
       end_time: endTime,
     };
-    await redis.set(`xiuxian:player:${usr_qq}:action`, JSON.stringify(action));
-    await redis.set(`xiuxian:time_river:end_time:${usr_qq}`, endTime);
+    for (const memberId of this.getTimeRiverMemberIds(usr_qq, action)) {
+      await redis.set(`xiuxian:player:${memberId}:action`, JSON.stringify(action));
+      await redis.set(`xiuxian:time_river:end_time:${memberId}`, endTime);
+    }
     await this.addActiveTimeRiverPlayer(usr_qq);
-    await this.notifyPlayer(usr_qq, action, '【帝血待援】你已战败，十分钟内无法行动。同灵根且至少一条额外体系成仙的玩家，可发送“#献祭魂与血 @你”续接此战；逾时将被炼化道果。');
+    const teamBattle = this.getTimeRiverMemberIds(usr_qq, action).length > 1;
+    await this.notifyPlayer(usr_qq, action, teamBattle
+      ? '【帝血待援】队伍已战败，十分钟内全员无法行动。同灵根且至少一条额外体系成仙的外援，可向任一成员献祭魂与血续接此战；逾时全员将被炼化道果。'
+      : '【帝血待援】你已战败，十分钟内无法行动。同灵根且至少一条额外体系成仙的玩家，可发送“#献祭魂与血 @你”续接此战；逾时将被炼化道果。');
   }
 
   async sacrificeSoulAndBlood(e) {
@@ -482,7 +563,14 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     if (String(targetQQ) === String(donorQQ)) return e.reply('魂与血必须献给另一位同灵根玩家');
     if (!await existplayer(donorQQ) || !await existplayer(targetQQ)) return e.reply('献祭双方都需要拥有修仙存档');
 
-    const ids = [...new Set([String(donorQQ), String(targetQQ)])].sort();
+    let targetAction = {};
+    try {
+      targetAction = JSON.parse(await redis.get(`xiuxian:player:${targetQQ}:action`)) || {};
+    } catch {}
+    const ids = [...new Set([
+      String(donorQQ),
+      ...this.getTimeRiverMemberIds(targetQQ, targetAction),
+    ])].sort();
     const lock = index => index >= ids.length
       ? this.sacrificeSoulAndBloodLocked(e, donorQQ, targetQQ)
       : withPlayerMutationLock(ids[index], () => lock(index + 1));
@@ -498,6 +586,8 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     }
     const donor = await Read_player(donorQQ);
     const target = await Read_player(targetQQ);
+    const memberIds = this.getTimeRiverMemberIds(targetQQ, action);
+    if (memberIds.includes(String(donorQQ))) return e.reply('战败队伍中的成员此刻同陷败亡节点，需由队伍外的同灵根玩家献祭');
     if (!donor.灵根?.name || donor.灵根.name !== target.灵根?.name) {
       return e.reply(`灵根不相同：你为【${donor.灵根?.name || '未知'}】，对方为【${target.灵根?.name || '未知'}】`);
     }
@@ -509,10 +599,14 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     donor[field] = Math.max(1, (Number(donor[field]) || 1) - 1);
     donor.level_id = 1;
     donor.Physique_id = 1;
-    target.当前血量 = Math.max(1, Number(target.血量上限) || 1);
     await Write_player(donorQQ, donor);
-    await Write_player(targetQQ, target);
-    await this.scheduleTimeRiverStage(targetQQ, action, action.retryStage, {
+    for (const memberId of memberIds) {
+      const member = memberId === String(targetQQ) ? target : await Read_player(memberId);
+      member.当前血量 = Math.max(1, Number(member.血量上限) || 1);
+      await Write_player(memberId, member);
+    }
+    const leaderId = String(action.timeRiverLeader || targetQQ);
+    await this.scheduleTimeRiverStage(leaderId, action, action.retryStage, {
       primaryName: action.primaryName,
       imperialPill: action.imperialPill,
       oldManReward: action.oldManReward,
@@ -523,7 +617,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     await e.reply([
       '【献祭魂与血·古史续接】',
       `${donor.名号}献出魂与血，同源灵根贯通断裂的时间线！`,
-      `${target.名号}恢复全部气血，并获得${Math.round(recovery.ratio * 100)}%攻击、防御、生命上限与速度加成（献祭者层级：${recovery.tier}）。`,
+      `${memberIds.length > 1 ? '整支队伍' : target.名号}恢复全部气血，并获得${Math.round(recovery.ratio * 100)}%攻击、防御、生命上限与速度加成（献祭者层级：${recovery.tier}）。`,
       '黑暗帝者保留上一战结束时的剩余气血，十五分钟后从断裂战局继续。',
       `代价：${path === 'xiangu' ? '仙古今世法' : path === 'huafen' ? '花粉进化路' : '秘境体系'}跌落一层，练气与炼体归一。`,
     ].join('\n'));

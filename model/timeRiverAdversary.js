@@ -445,6 +445,23 @@ export function buildTimeRiverAdversary(player, template, options = {}) {
   return applyDarkTriadBattleKit(adversary);
 }
 
+export function buildTimeRiverTeamBenchmark(players = []) {
+  const members = Array.isArray(players) ? players.filter(Boolean) : [];
+  if (!members.length) return {};
+  const max = field => Math.max(...members.map(player => number(player?.[field])));
+  return {
+    攻击: max('攻击'),
+    防御: max('防御'),
+    血量上限: max('血量上限'),
+    当前血量: max('血量上限'),
+    速度: Math.max(...members.map(timeRiverUnitSpeed)),
+    mijinglevel_id: max('mijinglevel_id'),
+    xiangulevel_id: max('xiangulevel_id'),
+    huafenlevel_id: max('huafenlevel_id'),
+    _忽略境界速度加成: true,
+  };
+}
+
 export function applyTimeRiverSkillEffect(attacker, defender, skill, messages = []) {
   if (skill?.时间长河效果 !== '剥落无敌气魄' || !defender) return false;
 

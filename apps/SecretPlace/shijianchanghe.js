@@ -39,19 +39,250 @@ export class shijianchanghe extends plugin {
       event: 'message',
       priority: 600,
       rule: [
-                      {
-    reg: '^#遨游时间长河$',
-    fnc: 'roamTimeRiver'
-    }
+        { reg: '^#组队时间长河$', fnc: 'createTimeRiverTeam' },
+        { reg: '^#加入时间长河队伍\\s*\\d{6}$', fnc: 'joinTimeRiverTeam' },
+        { reg: '^#(?:查看)?时间长河队伍$', fnc: 'viewTimeRiverTeam' },
+        { reg: '^#退出时间长河队伍$', fnc: 'leaveTimeRiverTeam' },
+        { reg: '^#解散时间长河队伍$', fnc: 'disbandTimeRiverTeam' },
+        { reg: '^#组队遨游时间长河$', fnc: 'startTeamTimeRiver' },
+        { reg: '^#遨游时间长河$', fnc: 'roamTimeRiver' },
       ],
     });
   }
+
+  teamKey(id) {
+    return `xiuxian:time_river:team:${id}`;
+  }
+
+  playerTeamKey(qq) {
+    return `xiuxian:time_river:player_team:${qq}`;
+  }
+
+  async getQq(e) {
+    return String(await channel(String(e.user_id).replace('qg_', '')));
+  }
+
+  async getTimeRiverTeam(qq) {
+    const teamId = await redis.get(this.playerTeamKey(qq));
+    if (!teamId) return null;
+    const raw = await redis.get(this.teamKey(teamId));
+    if (!raw) {
+      await redis.del(this.playerTeamKey(qq));
+      return null;
+    }
+    try {
+      return JSON.parse(raw);
+    } catch {
+      await redis.del(this.playerTeamKey(qq));
+      return null;
+    }
+  }
+
+  async saveTimeRiverTeam(team) {
+    await redis.set(this.teamKey(team.id), JSON.stringify(team), 'EX', 24 * 60 * 60);
+    await Promise.all(team.members.map(qq => (
+      redis.set(this.playerTeamKey(qq), team.id, 'EX', 24 * 60 * 60)
+    )));
+  }
+
+  async withTimeRiverTeamLock(operation) {
+    return withPlayerMutationLock('time-river-team-index', operation);
+  }
+
+  async requireQuasiEmperor(e, qq) {
+    if (!await existplayer(qq)) {
+      await e.reply('请先创建修仙角色。');
+      return null;
+    }
+    const player = await Read_player(qq);
+    if (!hasRealmAuthority(player, 20)) {
+      await e.reply('组队踏入时间长河，成员仍须拥有准仙帝及以上权柄。');
+      return null;
+    }
+    return player;
+  }
+
+  async createTimeRiverTeam(e) {
+    if (!e.isGroup || !verc({ e })) return false;
+    const qq = await this.getQq(e);
+    const player = await this.requireQuasiEmperor(e, qq);
+    if (!player) return false;
+
+    return this.withTimeRiverTeamLock(async () => {
+      const existing = await this.getTimeRiverTeam(qq);
+      if (existing) return e.reply(`你已在时间长河队伍【${existing.id}】中。`);
+      let id;
+      do {
+        id = String(Math.floor(100000 + Math.random() * 900000));
+      } while (await redis.get(this.teamKey(id)));
+      const team = {
+        id,
+        leader: qq,
+        members: [qq],
+        status: 'recruiting',
+        groupId: e.group_id,
+        createdAt: Date.now(),
+      };
+      await this.saveTimeRiverTeam(team);
+      return e.reply([
+        '【时间长河·帝者结盟】',
+        `${player.名号}以准仙帝道果锚定一处古史坐标。`,
+        `队伍编号：${id}｜当前人数：1/4`,
+        `加入：#加入时间长河队伍 ${id}`,
+        '集齐至少两人后，由队长发送 #组队遨游时间长河。',
+      ].join('\n'));
+    });
+  }
+
+  async joinTimeRiverTeam(e) {
+    if (!e.isGroup || !verc({ e })) return false;
+    const qq = await this.getQq(e);
+    const player = await this.requireQuasiEmperor(e, qq);
+    if (!player) return false;
+    const teamId = e.msg.match(/(\d{6})$/)?.[1];
+
+    return this.withTimeRiverTeamLock(async () => {
+      if (await this.getTimeRiverTeam(qq)) return e.reply('你已经加入了其他时间长河队伍。');
+      const raw = await redis.get(this.teamKey(teamId));
+      if (!raw) return e.reply('这个时间长河队伍不存在或已经失效。');
+      const team = JSON.parse(raw);
+      if (team.status !== 'recruiting') return e.reply('这支队伍已经踏入时间长河，古史坐标现已封闭。');
+      if (team.members.length >= 4) return e.reply('时间长河队伍最多容纳四位准仙帝。');
+      team.members.push(qq);
+      await this.saveTimeRiverTeam(team);
+      return e.reply(`【帝者入列】${player.名号}加入队伍【${team.id}】，当前${team.members.length}/4人。`);
+    });
+  }
+
+  async viewTimeRiverTeam(e) {
+    const qq = await this.getQq(e);
+    const team = await this.getTimeRiverTeam(qq);
+    if (!team) return e.reply('你当前没有时间长河队伍。');
+    const members = await Promise.all(team.members.map(async id => ({ id, player: await Read_player(id) })));
+    return e.reply([
+      `【时间长河队伍·${team.id}】`,
+      `状态：${team.status === 'exploring' ? '横渡古史中' : '招募中'}｜人数：${members.length}/4`,
+      ...members.map(({ id, player }) => `${id === team.leader ? '【队长】' : '【成员】'}${player.名号}`),
+      team.status === 'recruiting' && qq === team.leader ? '发起：#组队遨游时间长河' : '',
+    ].filter(Boolean).join('\n'));
+  }
+
+  async leaveTimeRiverTeam(e) {
+    const qq = await this.getQq(e);
+    return this.withTimeRiverTeamLock(async () => {
+      const team = await this.getTimeRiverTeam(qq);
+      if (!team) return e.reply('你当前没有时间长河队伍。');
+      if (team.status === 'exploring') return e.reply('真身已被古史节点锁定，探索结束前不可退出队伍。');
+      team.members = team.members.filter(id => id !== qq);
+      await redis.del(this.playerTeamKey(qq));
+      if (!team.members.length) {
+        await redis.del(this.teamKey(team.id));
+        return e.reply('你已退出，时间长河队伍随之解散。');
+      }
+      if (team.leader === qq) team.leader = team.members[0];
+      await this.saveTimeRiverTeam(team);
+      return e.reply(`你已退出时间长河队伍【${team.id}】。`);
+    });
+  }
+
+  async disbandTimeRiverTeam(e) {
+    const qq = await this.getQq(e);
+    return this.withTimeRiverTeamLock(async () => {
+      const team = await this.getTimeRiverTeam(qq);
+      if (!team) return e.reply('你当前没有时间长河队伍。');
+      if (team.leader !== qq) return e.reply('只有队长可以解散时间长河队伍。');
+      if (team.status === 'exploring') return e.reply('真身已踏入时间长河，探索结束前不可解散。');
+      await Promise.all(team.members.map(id => redis.del(this.playerTeamKey(id))));
+      await redis.del(this.teamKey(team.id));
+      return e.reply(`时间长河队伍【${team.id}】已经解散。`);
+    });
+  }
+
+  async startTeamTimeRiver(e) {
+    if (!e.isGroup || !verc({ e })) return false;
+    const qq = await this.getQq(e);
+    return this.withTimeRiverTeamLock(async () => {
+      const team = await this.getTimeRiverTeam(qq);
+      if (!team) return e.reply('请先使用 #组队时间长河 创建队伍。');
+      if (team.leader !== qq) return e.reply('只有队长可以锚定古史并发起探索。');
+      if (team.status !== 'recruiting') return e.reply('队伍已经在时间长河中。');
+      if (team.members.length < 2 || team.members.length > 4) return e.reply('组队探索需要2至4位准仙帝。');
+
+      const ids = [...team.members].map(String).sort();
+      const lock = index => index >= ids.length
+        ? this.startTeamTimeRiverLocked(e, team)
+        : withPlayerMutationLock(ids[index], () => lock(index + 1));
+      return lock(0);
+    });
+  }
+
+  async startTeamTimeRiverLocked(e, team) {
+    const now = Date.now();
+    const players = [];
+    for (const id of team.members) {
+      if (!await existplayer(id)) return e.reply(`成员${id}的修仙存档不存在。`);
+      const player = await Read_player(id);
+      if (!hasRealmAuthority(player, 20)) return e.reply(`成员【${player.名号}】尚未达到准仙帝。`);
+      const rawAction = await redis.get(`xiuxian:player:${id}:action`);
+      if (rawAction) {
+        try {
+          const action = JSON.parse(rawAction);
+          if (!action.end_time || Number(action.end_time) > now) return e.reply(`成员【${player.名号}】正在${action.action}中。`);
+        } catch {
+          return e.reply(`成员【${player.名号}】的行动状态异常，请先结束当前行动。`);
+        }
+      }
+      players.push({ id, player });
+    }
+
+    const endTime = now + TIME_RIVER_PHASE_DURATION_MS;
+    const action = {
+      action: '组队遨游时间长河',
+      start_time: now,
+      end_time: endTime,
+      time: TIME_RIVER_PHASE_DURATION_MS,
+      shutup: '1', working: '1', Place_action: '1', Place_actionplus: '1',
+      power_up: '1', mojie: '1', xijie: '1', plant: '1', mine: '1', time_river: '0',
+      group_id: e.group_id,
+      timeRiverTeamId: team.id,
+      timeRiverLeader: team.leader,
+      timeRiverTeamMembers: [...team.members],
+    };
+    for (const { id, player } of players) {
+      player.power_place = PLACE_LOCATION_MAP.时间长河;
+      await Write_player(id, player);
+      await redis.set(`xiuxian:player:${id}:action`, JSON.stringify(action));
+      await redis.set(`xiuxian:time_river:end_time:${id}`, endTime);
+      await Add_renwu_progress(id, 'jilu3');
+    }
+    team.status = 'exploring';
+    team.startedAt = now;
+    await this.saveTimeRiverTeam(team);
+    await withPlayerMutationLock('time-river-active-index', async () => {
+      let active = [];
+      try {
+        active = JSON.parse(await redis.get('xiuxian:time_river:active_players') || '[]').map(String);
+      } catch {}
+      if (!active.includes(team.leader)) active.push(team.leader);
+      await redis.set('xiuxian:time_river:active_players', JSON.stringify(active));
+    });
+    return e.reply([
+      '【四帝横渡·共赴古史】',
+      `${players.map(item => item.player.名号).join('、')}同时踏入时间长河！`,
+      '队伍已被同一古史节点锁定，首段探索将在15分钟后统一结算。',
+    ].join('\n'));
+  }
+
   //遨游时间长河
     async roamTimeRiver(e) {
       if (!verc({ e })) return false;
       let usr_qq = e.user_id.toString().replace('qg_','');
       usr_qq = await channel(usr_qq);
       if (!await existplayer(usr_qq)) return false;
+      const existingTeam = await this.getTimeRiverTeam(usr_qq);
+      if (existingTeam) {
+        return e.reply(`你已在时间长河队伍【${existingTeam.id}】中，请由队长使用 #组队遨游时间长河。`);
+      }
       let player = await Read_player(usr_qq);
        // 检查是否可以前往
     const flag = await Go(e);
