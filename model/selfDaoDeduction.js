@@ -10,6 +10,13 @@ export const SELF_DAO_HALF_IMMORTAL_EMPEROR_ATTEMPT = 20;
 export const SELF_DAO_PEAK_DAMAGE_REDUCTION = 0.3;
 export const SELF_DAO_LATE_COST_MULTIPLIER = 20;
 export const SELF_DAO_RECOVERY_MS = 320 * 60 * 1000;
+export const ERA_ACCUMULATION_CAPS = Object.freeze({
+  default: 100,
+  quasiEmperorPeak: 200,
+  divineEmbryo: 300,
+  halfImmortalEmperor: 500,
+  immortalEmperor: 1000,
+});
 export const SELF_DAO_COSTS = Object.freeze({
   era: 50,
   mind: 50,
@@ -31,6 +38,25 @@ function number(value) {
 
 function lifespanField(player) {
   return number(player?.压制寿元) > 0 ? '压制寿元' : '寿元';
+}
+
+export function getEraAccumulationCap(player) {
+  const state = player?.己道推演 && typeof player.己道推演 === 'object' ? player.己道推演 : {};
+  const attempts = Math.max(0, Math.trunc(number(state.attempts)));
+  if (getRealmAuthorityLevel(player) >= 21 || state.completed) return ERA_ACCUMULATION_CAPS.immortalEmperor;
+  if (state.halfImmortalEmperor || attempts >= SELF_DAO_HALF_IMMORTAL_EMPEROR_ATTEMPT) return ERA_ACCUMULATION_CAPS.halfImmortalEmperor;
+  if (state.divineEmbryo === '已结出' || attempts >= SELF_DAO_DIVINE_EMBRYO_ATTEMPT) return ERA_ACCUMULATION_CAPS.divineEmbryo;
+  if (state.quasiEmperorPeak || attempts >= SELF_DAO_QUASI_EMPEROR_PEAK_ATTEMPT) return ERA_ACCUMULATION_CAPS.quasiEmperorPeak;
+  return ERA_ACCUMULATION_CAPS.default;
+}
+
+export function addCappedEraAccumulation(player, amount) {
+  const before = Math.max(0, number(player?.纪元积累));
+  const requested = Math.max(0, Math.trunc(number(amount)));
+  const cap = getEraAccumulationCap(player);
+  const gained = Math.min(requested, Math.max(0, cap - before));
+  player.纪元积累 = before + gained;
+  return { before, gained, cap, after: player.纪元积累 };
 }
 
 const SELF_DAO_BATTLE_BONUS_FIELDS = Object.freeze([
@@ -87,6 +113,10 @@ export function ensureSelfDaoDeduction(player) {
     old.progressionVersion = 2;
   }
   unlockSelfDaoMilestones(player, old);
+  // 旧版存档可能只记录了层数，达到第二十层时仍应进入尸骸仙帝战。
+  if (!old.completed && old.recovery?.status !== 'recovering' && old.attempts >= SELF_DAO_REQUIRED_ATTEMPTS) {
+    old.battlePending = true;
+  }
   player.己道推演 = old;
   return old;
 }
@@ -96,7 +126,9 @@ export function getSelfDaoDeductionCosts(player) {
   if (attempts < SELF_DAO_REALM_AWAKENING) return SELF_DAO_COSTS;
   return Object.fromEntries(Object.entries(SELF_DAO_COSTS).map(([key, cost]) => [
     key,
-    key === 'mind' ? cost : cost * SELF_DAO_LATE_COST_MULTIPLIER,
+    key === 'mind' ? cost
+      : key === 'era' ? (attempts < 10 ? 50 : attempts < 15 ? 70 : 80)
+        : cost * SELF_DAO_LATE_COST_MULTIPLIER,
   ]));
 }
 

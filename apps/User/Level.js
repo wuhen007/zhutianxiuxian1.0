@@ -44,7 +44,7 @@ import {
   syncXianguCompanionMijing,
 } from '../../model/extraCultivation.js';
 import { getRealmAuthorityLevel, getRealmAuthorityName, getRealmAuthorityPath } from '../../model/realmAuthority.js';
-import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
+import { isAllHeavensLocation, PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
 import { applyEternalGuardStatus } from '../../model/dimensionGuard.js';
 import { canEnterQuasiEmperor } from '../../model/worldlineAuthority.js';
 import { FlowerPollenPath } from './FlowerPollenPath.js';
@@ -973,49 +973,6 @@ if (player.mijinglevel_id + 1 == 21) {
     ].join('\n'));
     return;
 }
-if (player.mijinglevel_id+ 1 == 21 ) {
-    // 初始化纪元积累
-    if (typeof player.纪元积累 === 'undefined') {
-        player.纪元积累 = 0;
-        await Write_player(usr_qq, player);
-    }
-       if (player.纪元积累 < 1500) {
-    // 计算剩余纪元
-    const remainingEpochs = 1500 - player.纪元积累;
-    
-   // 构建文案
-const message = [
-    `【帝路漫漫·纪元为阶】`,
-    `${player.名号}屹立准仙帝绝巅，帝威浩荡，压盖诸天！`,
-    `眸光开阖间，纪元生灭，万道成空！`,
-    `然仙帝之路，超脱一切，自身胜道！`,
-    `你已积累：${player.纪元积累}个纪元积累`,
-    `尚需：${remainingEpochs}个纪元的终极蜕变`,
-    `帝路明悟：`,
-    `"秩序如同路边的花，绽放了又枯萎"`,
-    `"唯自身永恒，一道压万道，诸天共尊！"`,
-    `"路尽见真我，一念花开，一念界灭"`,
-    `待你成就仙帝果位时：`,
-    `- 眸光所至，万古时空皆为画卷`,
-    `- 呼吸间，亿万宇宙生灭轮回`,
-    `- 踏出那一步，自身便是道，超越一切法`,
-    `- 诸天至高，路尽级生灵，俯瞰纪元沉浮`,
-    `仙帝特质：`,
-    ` 一道压万道，诸天规则如掌中纹路`,
-    ` 言出即法，一念创世`,
-    ` 路尽级进化，真正的不死不灭`,
-    ` 眸光映照古今未来，看遍纪元轮回`,
-    `此乃：`,
-    `「自身胜道，万道成空」`,
-    `「诸天至高，路尽见真」`,
-    `这一世，你能否：`,
-    `踏出那终极一跃，成就路尽级生灵？`,
-    `让诸天共颂你的真名！`
-].join('\n');
-    
-    e.reply(message);
-    return;
-}}
     // 检查是否正在尝试突破ID22境界
     if (player.mijinglevel_id + 1 === 22) {
         e.reply('仙帝已然超越诸天极限，一证永证，万道成空，自身胜道，超脱无尽诸天与古史，随意颠覆古今未来，天地万物也难以磨灭其本质，即使自身陨落了只要有人念想，就会化作道标接引再次归来，若想更进一步，须焚烧至高大道，祭掉所有一切，极尽升华，博一线可能！');
@@ -3988,6 +3945,10 @@ async  fate_up(e) {
     }
     //读取信息
     let player = await Read_player(usr_qq);
+    if (!isAllHeavensLocation(player.power_place ?? PLACE_LOCATION_MAP.凡间)) {
+      e.reply('登仙必须在诸天万界维度内完成，请先回到诸天万界。');
+      return false;
+    }
     //境界
     let now_level = data.Level_list.find(
       item => item.level_id == player.level_id

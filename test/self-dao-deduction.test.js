@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { damagePlanes, PLANE_DAMAGE_RECORD_KEY } from '../model/planeDestruction.js';
 import {
+  ERA_ACCUMULATION_CAPS,
   SELF_DAO_COSTS,
   SELF_DAO_DIVINE_EMBRYO_ATTEMPT,
   SELF_DAO_HALF_IMMORTAL_EMPEROR_ATTEMPT,
@@ -15,13 +16,16 @@ import {
   SELF_DAO_PEAK_DAMAGE_REDUCTION,
   SELF_DAO_PLANE_TARGETS,
   SELF_DAO_QUASI_EMPEROR_PEAK_ATTEMPT,
+  SELF_DAO_REALM_AWAKENING,
   SELF_DAO_RECOVERY_MS,
   SELF_DAO_REQUIRED_ATTEMPTS,
+  addCappedEraAccumulation,
   applySelfDaoBattleOpening,
   completeCorpseEmperorRecovery,
   consumeSelfDaoDeduction,
   enforceSelfDaoBuffSuppression,
   ensureSelfDaoDeduction,
+  getEraAccumulationCap,
   getSelfDaoDeductionCosts,
   getSelfDaoDeductionGate,
   promoteSelfDaoToImmortalEmperor,
@@ -72,14 +76,15 @@ test('己道前五层按原价，十/十五/二十层依次解锁极巅、神胎
   assert.equal(setCultivationSystemRealms(player, ['启灵', '命轮', '道宫', '神桥', '天门', '路尽']).ok, true);
   const lateCosts = getSelfDaoDeductionCosts(player);
   assert.equal(lateCosts.mind, SELF_DAO_COSTS.mind);
-  for (const key of Object.keys(SELF_DAO_COSTS).filter(key => key !== 'mind')) {
+  assert.equal(lateCosts.era, 50);
+  for (const key of Object.keys(SELF_DAO_COSTS).filter(key => !['mind', 'era'].includes(key))) {
     assert.equal(lateCosts[key], SELF_DAO_COSTS[key] * SELF_DAO_LATE_COST_MULTIPLIER);
   }
   const beforeSixth = { ...player };
   assert.equal(consumeSelfDaoDeduction(player, 6).attempt, 6);
   assert.equal(player.心神, beforeSixth.心神 - SELF_DAO_COSTS.mind);
   assert.equal(player.元神, beforeSixth.元神 - SELF_DAO_COSTS.spirit * SELF_DAO_LATE_COST_MULTIPLIER);
-  assert.equal(player.纪元积累, beforeSixth.纪元积累 - SELF_DAO_COSTS.era * SELF_DAO_LATE_COST_MULTIPLIER);
+  assert.equal(player.纪元积累, beforeSixth.纪元积累 - 50);
   for (let attempt = 7; attempt <= SELF_DAO_QUASI_EMPEROR_PEAK_ATTEMPT; attempt++) {
     assert.equal(consumeSelfDaoDeduction(player, attempt).attempt, attempt);
   }
@@ -100,6 +105,36 @@ test('己道前五层按原价，十/十五/二十层依次解锁极巅、神胎
   assert.deepEqual(player.自创修炼体系.realms, ['启灵', '命轮', '道宫', '神桥', '天门', '路尽']);
 });
 
+test('己道推演纪元积累按1-10层50、11-15层70、16-20层80扣除', () => {
+  for (const [attempts, era] of [[0, 50], [9, 50], [10, 70], [14, 70], [15, 80], [19, 80]]) {
+    const costs = getSelfDaoDeductionCosts(quasiEmperor({
+      己道推演: { progressionVersion: 2, attempts, realms: ['一', '二', '三', '四', '五', '六'] },
+    }));
+    assert.equal(costs.era, era);
+    assert.equal(costs.mind, SELF_DAO_COSTS.mind);
+    if (attempts >= SELF_DAO_REALM_AWAKENING) {
+      assert.equal(costs.spirit, SELF_DAO_COSTS.spirit * SELF_DAO_LATE_COST_MULTIPLIER);
+    }
+  }
+  assert.equal(10 * 50 + 5 * 70 + 5 * 80, 1_250);
+});
+
+test('时间长河与上苍纪元上限随己道里程碑提升', () => {
+  const stages = [
+    [{}, ERA_ACCUMULATION_CAPS.default],
+    [{ 己道推演: { attempts: 10 } }, ERA_ACCUMULATION_CAPS.quasiEmperorPeak],
+    [{ 己道推演: { attempts: 15 } }, ERA_ACCUMULATION_CAPS.divineEmbryo],
+    [{ 己道推演: { attempts: 20 } }, ERA_ACCUMULATION_CAPS.halfImmortalEmperor],
+    [{ mijinglevel_id: 21, 己道推演: { attempts: 20, completed: true } }, ERA_ACCUMULATION_CAPS.immortalEmperor],
+  ];
+  for (const [player, cap] of stages) assert.equal(getEraAccumulationCap(player), cap);
+
+  const nearCap = { 纪元积累: 198, 己道推演: { attempts: 10 } };
+  assert.deepEqual(addCappedEraAccumulation(nearCap, 5), { before: 198, gained: 2, cap: 200, after: 200 });
+  const overCap = { 纪元积累: 350, 己道推演: { attempts: 15 } };
+  assert.deepEqual(addCappedEraAccumulation(overCap, 5), { before: 350, gained: 0, cap: 300, after: 350 });
+});
+
 test('旧版十层未成帝存档迁移为准仙帝极巅，不再提前触发尸骸帝战', () => {
   const player = quasiEmperor({
     己道推演: {
@@ -114,6 +149,20 @@ test('旧版十层未成帝存档迁移为准仙帝极巅，不再提前触发�
   assert.equal(state.quasiEmperorPeak, true);
   assert.equal(state.divineEmbryo, undefined);
   assert.equal(state.battlePending, false);
+});
+
+test('旧版二十层存档迁移后直接进入尸骸仙帝战', () => {
+  const player = quasiEmperor({
+    己道推演: {
+      attempts: SELF_DAO_REQUIRED_ATTEMPTS,
+      realms: ['一', '二', '三', '四', '五', '六'],
+    },
+  });
+  const state = ensureSelfDaoDeduction(player);
+  assert.equal(state.attempts, SELF_DAO_REQUIRED_ATTEMPTS);
+  assert.equal(state.halfImmortalEmperor, true);
+  assert.equal(state.battlePending, true);
+  assert.equal(getSelfDaoDeductionGate(player).reason, 'battle');
 });
 
 test('己道里程碑能力会在真实战斗状态中生效', () => {
