@@ -5919,7 +5919,7 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
     }
 
     if (
-      player.当前先天至宝 === '天地玄黄玲珑塔' &&
+      hasEquippedInnateTreasure(player, '天地玄黄玲珑塔', '玄黄护道') &&
       player.先天权柄?.玄黄护道待用
     ) {
       player._玄黄护道渡劫 = true;
@@ -5927,7 +5927,7 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
       effectMessages.push('【玄黄护道】天地玄黄气护住道基，本次渡劫所受伤害降低30%。');
     }
     if (player._玄黄护道渡劫) finalDamage *= 0.7;
-    if (hasEquippedInnateTreasure(player, '万劫天碑')) {
+    if (hasEquippedInnateTreasure(player, '万劫天碑', '被动:1')) {
       finalDamage *= 0.85;
       effectMessages.push('【万劫天碑】天碑承接劫力，本次渡劫所受伤害降低15%。');
     }

@@ -55,7 +55,7 @@
             "expiresAt": 1787846401282,
             "contest": {
                 "version": 1,
-                "status": "open",
+                "status": "settled",
                 "startedAt": 1787760001282,
                 "sealProgress": 0,
                 "participants": {
@@ -150,9 +150,60 @@
                         "tianjiaoName": "华云飞"
                     }
                 },
-                "rewardedQqs": [],
+                "rewardedQqs": [
+                    "tianjiao:霸王浑战",
+                    "tianjiao:王腾",
+                    "tianjiao:华云飞"
+                ],
                 "profile": {
                     "omen": "人道气运如长河汇聚，亿万呼声共同托起古印。"
+                },
+                "settledAt": 1788163200087,
+                "rankings": [
+                    {
+                        "qq": "tianjiao:霸王浑战",
+                        "name": "霸王浑战",
+                        "trialScore": 54,
+                        "affinity": 25,
+                        "contribution": 7,
+                        "luck": 3,
+                        "tianjiBonus": 0,
+                        "total": 89,
+                        "joinedAt": 1787760001283
+                    },
+                    {
+                        "qq": "tianjiao:王腾",
+                        "name": "王腾",
+                        "trialScore": 53,
+                        "affinity": 25,
+                        "contribution": 6,
+                        "luck": 4,
+                        "tianjiBonus": 0,
+                        "total": 88,
+                        "joinedAt": 1787760001283
+                    },
+                    {
+                        "qq": "tianjiao:华云飞",
+                        "name": "华云飞",
+                        "trialScore": 53,
+                        "affinity": 25,
+                        "contribution": 6,
+                        "luck": 0,
+                        "tianjiBonus": 0,
+                        "total": 84,
+                        "joinedAt": 1787760001283
+                    }
+                ],
+                "winner": {
+                    "qq": "tianjiao:霸王浑战",
+                    "name": "霸王浑战",
+                    "trialScore": 54,
+                    "affinity": 25,
+                    "contribution": 7,
+                    "luck": 3,
+                    "tianjiBonus": 0,
+                    "total": 89,
+                    "joinedAt": 1787760001283
                 }
             },
             "tianjiaoEntrants": [
@@ -162,7 +213,22 @@
             ],
             "source": "era",
             "interaction": "treasure",
-            "participantQqs": []
+            "participantQqs": [
+                "tianjiao:霸王浑战",
+                "tianjiao:王腾",
+                "tianjiao:华云飞"
+            ],
+            "winner": {
+                "qq": "tianjiao:霸王浑战",
+                "name": "霸王浑战",
+                "trialScore": 54,
+                "affinity": 25,
+                "contribution": 7,
+                "luck": 3,
+                "tianjiBonus": 0,
+                "total": 89,
+                "joinedAt": 1787760001283
+            }
         }
     ],
     "lastEventTime": 7000,
@@ -223,7 +289,7 @@
             "expiresAt": 1787846401282,
             "contest": {
                 "version": 1,
-                "status": "open",
+                "status": "settled",
                 "startedAt": 1787760001282,
                 "sealProgress": 0,
                 "participants": {
@@ -318,9 +384,60 @@
                         "tianjiaoName": "华云飞"
                     }
                 },
-                "rewardedQqs": [],
+                "rewardedQqs": [
+                    "tianjiao:霸王浑战",
+                    "tianjiao:王腾",
+                    "tianjiao:华云飞"
+                ],
                 "profile": {
                     "omen": "人道气运如长河汇聚，亿万呼声共同托起古印。"
+                },
+                "settledAt": 1788163200087,
+                "rankings": [
+                    {
+                        "qq": "tianjiao:霸王浑战",
+                        "name": "霸王浑战",
+                        "trialScore": 54,
+                        "affinity": 25,
+                        "contribution": 7,
+                        "luck": 3,
+                        "tianjiBonus": 0,
+                        "total": 89,
+                        "joinedAt": 1787760001283
+                    },
+                    {
+                        "qq": "tianjiao:王腾",
+                        "name": "王腾",
+                        "trialScore": 53,
+                        "affinity": 25,
+                        "contribution": 6,
+                        "luck": 4,
+                        "tianjiBonus": 0,
+                        "total": 88,
+                        "joinedAt": 1787760001283
+                    },
+                    {
+                        "qq": "tianjiao:华云飞",
+                        "name": "华云飞",
+                        "trialScore": 53,
+                        "affinity": 25,
+                        "contribution": 6,
+                        "luck": 0,
+                        "tianjiBonus": 0,
+                        "total": 84,
+                        "joinedAt": 1787760001283
+                    }
+                ],
+                "winner": {
+                    "qq": "tianjiao:霸王浑战",
+                    "name": "霸王浑战",
+                    "trialScore": 54,
+                    "affinity": 25,
+                    "contribution": 7,
+                    "luck": 3,
+                    "tianjiBonus": 0,
+                    "total": 89,
+                    "joinedAt": 1787760001283
                 }
             },
             "tianjiaoEntrants": [
@@ -330,7 +447,11 @@
             ],
             "source": "era",
             "interaction": "treasure",
-            "participantQqs": []
+            "participantQqs": [
+                "tianjiao:霸王浑战",
+                "tianjiao:王腾",
+                "tianjiao:华云飞"
+            ]
         }
     ],
     "eventCooldown": 2000,

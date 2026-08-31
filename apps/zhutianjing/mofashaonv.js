@@ -13,6 +13,13 @@ import {
   syncCurrentZhutianAvatar,
 } from '../../model/zhutianMirror.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { getLifeSourceRepairMaximum } from '../../model/lifeSourceRepair.js';
+import { getMinggeEffects } from '../../model/mingge.js';
+
+function getRecoverableLifeSourceMaximum(player) {
+    const effects = getMinggeEffects(player, data.minggeList);
+    return getLifeSourceRepairMaximum(player, effects.生命本源额外);
+}
 
 export class mofashaonv extends plugin {
   constructor() {
@@ -81,6 +88,7 @@ async jiushu(e) {
     if (atItems.length > 0) {
         // 救赎他人
         targetQQ = atItems[0].qq.toString().replace('qg_', '');
+        targetQQ = await channel(targetQQ);
     } else {
         // 救赎自己
         targetQQ = casterQQ;
@@ -126,7 +134,7 @@ async jiushu(e) {
         isHeianlaolong: parsedAction?.heianlaolong, // 黑暗牢笼状态
         isJinbi: parsedAction?.action === '禁闭', // 禁闭状态
         hasDaoshang: target.道伤 > 0, // 有道伤
-        hasShengmingbenyuan: target.生命本源 < (100 + (target.灵根?.生命本源 || 0)) // 生命本源受损
+        hasShengmingbenyuan: target.生命本源 < getRecoverableLifeSourceMaximum(target) // 生命本源受损
     };
 
     // ===== 永寂等级与救援权限判定 =====
@@ -291,9 +299,6 @@ calculateRescueCost(caster, canRescue) {
 
 /** 执行救赎 */
 async executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf, casterQQ, status = {}) {
-    // 消耗希望碎片
-    caster.希望系统.希望碎片 -= cost;
-    
     // 执行各类救赎
     const results = {
         tianlao: canRescue.tianlao ? await this.rescueTianlao(targetQQ) : false,
@@ -308,15 +313,34 @@ async executeRescue(e, caster, target, targetQQ, canRescue, cost, isSelf, caster
         }) : false
     };
 
+    // 自救时各修复函数已经把目标写回；重新读取，避免旧的施法者对象覆盖修复结果。
+    const updatedCaster = isSelf ? await Read_player(casterQQ) : caster;
+
+    // 消耗希望碎片并记录救赎统计
+    if (
+        !updatedCaster.希望系统 ||
+        typeof updatedCaster.希望系统 !== 'object' ||
+        Array.isArray(updatedCaster.希望系统)
+    ) {
+        updatedCaster.希望系统 = {};
+    }
+    updatedCaster.希望系统.希望碎片 = Math.max(
+        0,
+        (Number(updatedCaster.希望系统.希望碎片) || 0) - cost
+    );
+
     // 记录救赎统计
-    caster.希望系统.拯救人数 += Object.values(results).filter(v => v).length;
-    caster.希望系统.助人次数 += 1;
+    const rescuedCount = Object.values(results).filter(Boolean).length;
+    updatedCaster.希望系统.拯救人数 =
+        (Number(updatedCaster.希望系统.拯救人数) || 0) + rescuedCount;
+    updatedCaster.希望系统.助人次数 =
+        (Number(updatedCaster.希望系统.助人次数) || 0) + 1;
 
     // 更新施法者数据
-    await Write_player(casterQQ, caster);
+    await Write_player(casterQQ, updatedCaster);
 
     // 构建回复消息
-    const message = this.buildRescueSuccessMessage(caster, target, canRescue, results, cost, isSelf, status);
+    const message = this.buildRescueSuccessMessage(updatedCaster, target, canRescue, results, cost, isSelf, status);
     e.reply(message);
 
     return true;
@@ -381,7 +405,7 @@ async rescueHeianlaolong(targetQQ) {
 /** 修复生命本源 */
 async healShengmingbenyuan(targetQQ) {
     const target = await Read_player(targetQQ);
-    const maxShengmingbenyuan = 100 + (target.灵根?.生命本源 || 0);
+    const maxShengmingbenyuan = getRecoverableLifeSourceMaximum(target);
     target.生命本源 = maxShengmingbenyuan;
     
     target.救赎记录 = target.救赎记录 || [];
@@ -419,7 +443,7 @@ async rescueYongji(targetQQ, status = {}) {
     const target = await Read_player(targetQQ);
     target.当前血量 = target.血量上限;
     target.道伤 = 0;
-    target.生命本源 = 100 + (target.灵根?.生命本源 || 0);
+    target.生命本源 = getRecoverableLifeSourceMaximum(target);
 
     // 设置虚弱期
     let weaknessTime = 20 * 60 * 1000; // 20分钟

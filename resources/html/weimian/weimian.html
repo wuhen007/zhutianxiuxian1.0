@@ -100,6 +100,45 @@
     .p-value.cyan { color: #06b6d4; }
     .p-value.orange { color: #f59e0b; }
 
+    /* 维度分层总览 */
+    .dimension-guide {
+      margin-bottom: 22px;
+      padding: 14px 16px;
+      background: rgba(20, 20, 40, 0.72);
+      border: 1px solid rgba(100, 100, 255, 0.2);
+      border-radius: 8px;
+    }
+
+    .guide-title {
+      color: #ffd93d;
+      font-size: 15px;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+
+    .guide-row {
+      display: grid;
+      grid-template-columns: 150px minmax(180px, 0.9fr) minmax(260px, 1.5fr);
+      gap: 10px;
+      align-items: start;
+      padding: 8px 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .guide-name { color: #8a8aff; font-weight: bold; }
+    .guide-locations { color: #e5e7eb; overflow-wrap: anywhere; }
+    .guide-barrier { color: #cbd5e0; overflow-wrap: anywhere; }
+    .guide-note {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      color: #6bcf7f;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
     /* 位面网格 */
     .realms-grid {
       display: grid;
@@ -265,6 +304,18 @@
     .realm-info-label { color: #8a8aff; font-size: 10px; margin-bottom: 2px; }
     .realm-info-value { color: #e5e7eb; font-size: 11px; font-weight: bold; }
 
+    .dimension-meta {
+      margin-bottom: 10px;
+      padding: 7px 8px;
+      background: rgba(77, 150, 255, 0.08);
+      border-left: 2px solid rgba(77, 150, 255, 0.6);
+      color: #cbd5e0;
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    .dimension-meta-title { color: #4d96ff; font-weight: bold; }
+
     /* 条件区域 */
     .req-box {
       background: rgba(0, 0, 0, 0.3);
@@ -337,6 +388,10 @@
       letter-spacing: 2px;
       border-top: 1px solid rgba(255, 255, 255, 0.06);
     }
+
+    @media (max-width: 700px) {
+      .guide-row { grid-template-columns: 1fr; gap: 3px; }
+    }
   </style>
 </head>
 
@@ -392,6 +447,18 @@
       </div>
     </div>
 
+    <div class="dimension-guide">
+      <div class="guide-title">维度分层与壁垒</div>
+      {{each dimension_guide item}}
+      <div class="guide-row">
+        <span class="guide-name">{{item.layer_label}} · {{item.name}}</span>
+        <span class="guide-locations">{{item.locations}}</span>
+        <span class="guide-barrier">{{item.barrier}}</span>
+      </div>
+      {{/each}}
+      <div class="guide-note">仙帝权能：诸天万界、上苍之上与永恒未知之地可直达；诸天万界与上苍之上无等待，其余计时航程减少70%。</div>
+    </div>
+
     <!-- 位面卡片网格 -->
     <div class="realms-grid">
       {{each realmList realm}}
@@ -411,6 +478,11 @@
         </div>
 
         <div class="card-desc">{{realm.description}}</div>
+
+        <div class="dimension-meta">
+          <div class="dimension-meta-title">{{realm.dimension_layer_label}} · {{realm.dimension_name}}</div>
+          <div>{{realm.dimension_barrier}}</div>
+        </div>
 
         <div class="realm-info">
           <div class="realm-info-item">

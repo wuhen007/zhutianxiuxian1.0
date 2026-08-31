@@ -398,7 +398,7 @@ export class duanzao extends plugin {
       dyew = dy.beiyong5;
     }
     // 万道神炉：装备时炼器容量 +5 个格子
-    if (hasEquippedInnateTreasure(player, '万道神炉')) {
+    if (hasEquippedInnateTreasure(player, '万道神炉', '被动:1')) {
       dyew += 5;
     }
     const shengyu =

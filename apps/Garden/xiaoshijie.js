@@ -2291,7 +2291,7 @@ async showEnvironmentHelp(e) {
               const pillCounts = {};
               for (let i = 0; i < amount; i++) {
                 const pillName = pickSmallWorldPill(Math.random(), {
-                  xutianAlchemy: Boolean(player.虚天之主传承 && hasEquippedInnateTreasure(player, '虚天舟')),
+                  xutianAlchemy: Boolean(player.虚天之主传承 && hasEquippedInnateTreasure(player, '虚天舟', '被动:3')),
                 });
                 pillCounts[pillName] = (pillCounts[pillName] || 0) + 1;
               }
@@ -2550,7 +2550,7 @@ async showEnvironmentHelp(e) {
 
   async tourLandscapeLocked(e, player_qq) {
     const player = await Read_player(player_qq);
-    if (!hasEquippedInnateTreasure(player, '山河社稷图')) {
+    if (!hasEquippedInnateTreasure(player, '山河社稷图', '图中巡游')) {
       return e.reply('需先执掌【山河社稷图】才能进入图中巡游。');
     }
 

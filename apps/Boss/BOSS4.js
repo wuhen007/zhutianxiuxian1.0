@@ -38,7 +38,12 @@ import {
   resetTianjiaoToInitialTemplate,
 } from '../../model/tianjiaoGrowth.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
-import { claimInnateTreasure, createInnateTreasure, tryPanguShatterTalisman } from '../../model/innateTreasure.js';
+import {
+  claimInnateTreasure,
+  createInnateTreasure,
+  hasEquippedInnateTreasure,
+  tryPanguShatterTalisman,
+} from '../../model/innateTreasure.js';
 import { clearTianjiaoTreasure, rollTianjiaoTreasureRecovery } from '../../model/tianjiaoTreasure.js';
 import {
   TAINTED_SLOTS,
@@ -1739,8 +1744,8 @@ export class BOSS4 extends plugin {
     const tianjiaoName = match[1].trim();
     const usr_qq = e.user_id.toString();
       const player = await Read_player(usr_qq);
-      const panguRewardMultiplier = player.当前先天至宝 === '盘古幡' && player.先天权柄?.盘古开天待用 ? 2 : 1;
-      const zhuxianTianjiao = player.当前先天至宝 === '诛仙四剑';
+      const panguRewardMultiplier = hasEquippedInnateTreasure(player, '盘古幡', '开天') && player.先天权柄?.盘古开天待用 ? 2 : 1;
+      const zhuxianTianjiao = hasEquippedInnateTreasure(player, '诛仙四剑', '被动:1');
     
     const tianjiaoData = data.weimiantianjiao_list.find(tj => tj.名号 === tianjiaoName);
     if (!tianjiaoData) {

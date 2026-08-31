@@ -122,7 +122,11 @@ import { isCultivatingExtraPath } from '../../model/extraCultivation.js';
 import { isHighRealmConsumableRestricted } from '../../model/realmAuthority.js';
 import { selectEquipmentByCode } from '../../model/equipmentSwap.js';
 import { isCanonicalDaluoSwordEmbryo } from '../../model/equipmentStats.js';
-import { calculateLifeSourceRepairBaseCost } from '../../model/lifeSourceRepair.js';
+import {
+  calculateLifeSourceRepairBaseCost,
+  getLifeSourceRepairMaximum,
+} from '../../model/lifeSourceRepair.js';
+import { isTianmoHuashengPhysique } from '../../model/tianmoHuasheng.js';
 import {
   recordGuidedTalent,
   resolveGuidedTalent,
@@ -286,7 +290,12 @@ async shengmingbenyuan(e) {
     // 2. 获取玩家数据
     const player = await Read_player(usr_qq);
     const minggeEffects = getMinggeEffects(player, data.minggeList);
-    const maxLifeBase = 100 + (player.灵根?.生命本源 || 0) + (minggeEffects?.生命本源额外 || 0);
+    const maxLifeBase = getLifeSourceRepairMaximum(player, minggeEffects?.生命本源额外);
+
+    // 旧天魔存档的本源迁移在读取时完成；满值早退前先持久化一次。
+    if (isTianmoHuashengPhysique(player) && player.天魔化生?.生命本源版本 >= 2) {
+        await Write_player(usr_qq, player);
+    }
     
     // 3. 检查是否需要修复
     if (player.生命本源 >= maxLifeBase) {
@@ -4772,12 +4781,13 @@ if (thing_name == "邪神道果") {
         // 如果灵根是九重魔功，应用邪神道果的效果
         await Add_najie_thing(usr_qq, thing_name, "道具", -1); // 从玩家的道具中移除一个邪神道果
         
-        player.灵根 = {"id":7010010,"name":"极道天魔","type":"天魔","归类":"神魔","eff":2,"法球倍率":2,"攻击":3,"防御":2,"生命":2,"生命本源":50};
+        player.灵根 = {"id":7010010,"name":"极道天魔","type":"天魔","归类":"神魔","eff":2,"法球倍率":2,"攻击":3,"防御":2,"生命":2,"生命本源":150};
         player.lunhui = 0; // 清除轮回状态
          
         
                   await checkAndRemoveShengtiMishu(player, usr_qq);
-    player.生命本源 = 100+player.灵根.生命本源;
+    const extremeMinggeEffects = getMinggeEffects(player, data.minggeList);
+    player.生命本源 = getLifeSourceRepairMaximum(player, extremeMinggeEffects.生命本源额外);
     // 更新玩家数据
     await Write_player(usr_qq, player);
     let equipment = await Read_equipment(usr_qq);
