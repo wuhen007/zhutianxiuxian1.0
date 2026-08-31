@@ -93,6 +93,15 @@ export const OTHER_SHORE_KEY_STARS = Object.freeze([
   }),
   Object.freeze({
     q: 1,
+    r: -1,
+    name: "玄阙神炉",
+    kind: "forge",
+    risk: 4,
+    anchorRequirement: 7,
+    description: "亦称太初熔星，先秦炼气士曾在此锻造星路阵眼，如今炉心孕育着同源灾核。",
+  }),
+  Object.freeze({
+    q: 1,
     r: 2,
     name: "太初熔星",
     kind: "forge",
@@ -407,6 +416,19 @@ export function clearOtherShoreStar(world, coordinate) {
   if (PHASE_RANK[state.phase] < PHASE_RANK.anchored)
     throw new Error("建立道标后才能完成该大星");
   return advancePhase(world, coordinate, "cleared");
+}
+
+export function clearOtherShoreCampaignStar(world, coordinate) {
+  const { star, state } = stateFor(world, coordinate);
+  if (PHASE_RANK[state.phase] < PHASE_RANK.visited)
+    throw new Error("踏足该大星后才能完成战役");
+  if (PHASE_RANK[state.phase] >= PHASE_RANK.anchored)
+    return clearOtherShoreStar(world, star.id);
+  const contributed = updateState(world, star.id, {
+    ...state,
+    contribution: Math.max(Number(state.contribution || 0), star.anchorRequirement),
+  });
+  return clearOtherShoreStar(anchorOtherShoreStar(contributed, star.id), star.id);
 }
 
 export function calculateOtherShoreTravel(

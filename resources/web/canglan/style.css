@@ -1081,6 +1081,802 @@ button:active:not(:disabled) {
   height: 14px;
 }
 
+.progression-console {
+  margin: 20px 0 24px;
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line);
+}
+
+.progression-head {
+  min-width: 0;
+  padding: 13px 0 11px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.progression-head > div { min-width: 0; }
+
+.progression-head span {
+  display: block;
+  color: var(--gold);
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.progression-head h3 {
+  margin: 6px 0 0;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.progression-head code {
+  color: var(--gold-bright);
+  font: 700 9px/1.3 Consolas, monospace;
+}
+
+.progression-layers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.progression-layers span,
+.progression-layers button {
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 7px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  border-top: 0;
+  border-left: 0;
+  background: transparent;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.progression-layers button {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.progression-layers button:hover:not(:disabled),
+.progression-layers button.is-current {
+  color: var(--void);
+  background: var(--gold-bright);
+}
+
+.progression-layers span::before,
+.progression-layers button::before {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  border: 1px solid currentColor;
+  content: "";
+  transform: rotate(45deg);
+}
+
+.progression-layers span.is-unlocked,
+.progression-layers button.is-unlocked {
+  color: var(--gold-bright);
+}
+
+.progression-materials {
+  margin: 0;
+  padding: 9px 0 10px;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.true-world-console {
+  margin: 20px 0 24px;
+  border-top: 1px solid var(--cinnabar);
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.true-world-console[data-phase="locked"] {
+  border-top-color: var(--muted);
+}
+
+.true-world-console[data-phase="defeated"] {
+  border-top-color: var(--gold);
+}
+
+.true-world-head {
+  min-width: 0;
+  padding: 14px 0 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.true-world-head > div {
+  min-width: 0;
+}
+
+.true-world-head span {
+  display: block;
+  color: var(--cinnabar);
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.true-world-console[data-phase="locked"] .true-world-head span {
+  color: var(--muted);
+}
+
+.true-world-head h3 {
+  margin: 7px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.true-world-head code {
+  max-width: 92px;
+  overflow: hidden;
+  color: var(--gold-bright);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 700 8px/1.3 Consolas, monospace;
+}
+
+.true-world-vitals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.true-world-vitals > div {
+  min-width: 0;
+  padding: 10px 7px 9px 0;
+}
+
+.true-world-vitals > div + div {
+  padding-left: 7px;
+  border-left: 1px solid var(--line);
+}
+
+.true-world-vitals span,
+.true-world-vitals strong,
+.true-world-vitals small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.true-world-vitals span,
+.true-world-vitals small {
+  color: var(--muted);
+  font-size: 7px;
+}
+
+.true-world-vitals strong {
+  margin-top: 6px;
+  color: var(--gold-bright);
+  font: 700 10px/1 Consolas, monospace;
+}
+
+.true-world-vitals small {
+  margin-top: 5px;
+}
+
+.true-world-progress {
+  height: 4px;
+  margin-top: 11px;
+  overflow: hidden;
+  background: rgba(237, 229, 212, .1);
+}
+
+.true-world-progress span {
+  width: 0;
+  height: 100%;
+  display: block;
+  background: var(--cinnabar);
+  transition: width .32s ease;
+}
+
+.true-world-console[data-phase="defeated"] .true-world-progress span {
+  background: var(--gold-bright);
+}
+
+.true-world-sector {
+  margin-top: 12px;
+  padding: 11px 0 10px;
+  border-top: 1px solid var(--line);
+}
+
+.true-world-sector > header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.true-world-sector > header span,
+.true-world-sector > header strong,
+.true-world-sector > header code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.true-world-sector > header span {
+  color: var(--gold);
+  font-size: 7px;
+}
+
+.true-world-sector > header strong {
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.true-world-sector > header code {
+  color: var(--cinnabar);
+  font: 700 8px/1 Consolas, monospace;
+}
+
+.true-world-sector > p,
+.true-world-brief {
+  margin: 7px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.55;
+}
+
+.true-world-enemy {
+  margin-top: 10px;
+  padding: 9px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.true-world-enemy > div {
+  min-width: 0;
+}
+
+.true-world-enemy span,
+.true-world-enemy strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.true-world-enemy span {
+  color: var(--muted);
+  font-size: 7px;
+}
+
+.true-world-enemy strong {
+  margin-top: 5px;
+  color: var(--ink-soft);
+  font-size: 9px;
+}
+
+.true-world-enemy-hp {
+  text-align: right;
+}
+
+.true-world-enemy-hp strong {
+  color: var(--gold-bright);
+  font: 700 9px/1 Consolas, monospace;
+}
+
+.true-world-enemy[data-status="active"] strong {
+  color: var(--cinnabar);
+}
+
+.true-world-frontier {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.true-world-sector-chip {
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 7px;
+  overflow: hidden;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 7px;
+}
+
+.true-world-sector-chip:hover:not(:disabled) {
+  color: var(--void);
+  border-color: var(--gold);
+  background: var(--gold-bright);
+}
+
+.true-world-sector-chip.status-explored {
+  color: var(--gold-bright);
+}
+
+.true-world-sector-chip.status-observed {
+  color: var(--ink-soft);
+}
+
+.true-world-loot {
+  min-height: 0;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+  list-style: none;
+}
+
+.true-world-loot:empty {
+  display: none;
+}
+
+.true-world-loot li {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--gold-bright);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 7px;
+  line-height: 1.45;
+}
+
+.true-world-actions {
+  margin-top: 11px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--line-strong);
+  border-left: 1px solid var(--line-strong);
+}
+
+.true-world-actions button {
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 3px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--ink-soft);
+  border: 0;
+  border-right: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+  background: transparent;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.true-world-actions button:hover:not(:disabled),
+.true-world-actions .claim-action:not(:disabled) {
+  color: var(--void);
+  background: var(--gold-bright);
+}
+
+.true-world-actions button.is-busy svg {
+  animation: spin .8s linear infinite;
+}
+
+.true-world-actions svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ancient-event-console,
+.dao-forge-console {
+  margin-top: 17px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-strong);
+}
+
+.ancient-event-head,
+.dao-forge-head,
+.ancient-event-detail > header,
+.dao-forge-detail > header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.ancient-event-head > div,
+.dao-forge-head > div {
+  min-width: 0;
+}
+
+.ancient-event-head span,
+.dao-forge-head span {
+  display: block;
+  color: var(--cinnabar);
+  font-size: 7px;
+  font-weight: 800;
+}
+
+.ancient-event-head strong,
+.dao-forge-head strong {
+  display: block;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.ancient-event-head code,
+.dao-forge-head code,
+.ancient-event-detail code,
+.dao-forge-detail code {
+  color: var(--gold-bright);
+  white-space: nowrap;
+  font: 700 8px/1.3 Consolas, monospace;
+}
+
+.ancient-event-track,
+.dao-forge-recipes {
+  margin-top: 11px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.ancient-event-track button,
+.dao-forge-recipes button {
+  min-width: 0;
+  min-height: 58px;
+  padding: 7px 5px;
+  display: grid;
+  grid-template-rows: auto minmax(20px, auto) auto;
+  align-content: space-between;
+  gap: 4px;
+  color: var(--muted);
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ancient-event-track b,
+.ancient-event-track span,
+.ancient-event-track small,
+.dao-forge-recipes b,
+.dao-forge-recipes span,
+.dao-forge-recipes small {
+  display: block;
+  min-width: 0;
+}
+
+.ancient-event-track b,
+.dao-forge-recipes b {
+  color: var(--muted);
+  font: 700 7px/1 Consolas, monospace;
+}
+
+.ancient-event-track span,
+.dao-forge-recipes span {
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.ancient-event-track small,
+.dao-forge-recipes small {
+  color: var(--muted);
+  font-size: 7px;
+}
+
+.ancient-event-track button:hover:not(:disabled),
+.ancient-event-track button.is-current,
+.dao-forge-recipes button:hover:not(:disabled),
+.dao-forge-recipes button.is-current {
+  background: rgba(199, 167, 95, .1);
+}
+
+.ancient-event-track button.is-current,
+.dao-forge-recipes button.is-current {
+  box-shadow: inset 0 -2px 0 var(--gold-bright);
+}
+
+.ancient-event-track button[data-status="active"] b,
+.ancient-event-track button[data-status="active"] small,
+.dao-forge-recipes button.is-current small {
+  color: var(--cinnabar);
+}
+
+.ancient-event-track button[data-status="completed"] b,
+.ancient-event-track button[data-status="completed"] small {
+  color: var(--gold-bright);
+}
+
+.ancient-event-detail,
+.dao-forge-detail {
+  padding: 11px 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ancient-event-detail > header {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.ancient-event-detail > header span,
+.ancient-event-detail > header strong,
+.dao-forge-detail > header strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ancient-event-detail > header span {
+  color: var(--cinnabar);
+  font-size: 7px;
+}
+
+.ancient-event-detail > header strong,
+.dao-forge-detail > header strong {
+  color: var(--ink);
+  font-size: 9px;
+}
+
+.ancient-event-detail > p,
+.dao-forge-detail > p {
+  margin: 7px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.ancient-event-progress,
+.dao-forge-progress {
+  height: 3px;
+  margin-top: 9px;
+  overflow: hidden;
+  background: rgba(237, 229, 212, .1);
+}
+
+.ancient-event-progress span,
+.dao-forge-progress span {
+  width: 0;
+  height: 100%;
+  display: block;
+  background: var(--cinnabar);
+  transition: width .32s ease;
+}
+
+.ancient-event-console[data-status="completed"] .ancient-event-progress span,
+.dao-forge-console[data-status="ready"] .dao-forge-progress span,
+.dao-forge-console[data-status="claimed"] .dao-forge-progress span {
+  background: var(--gold-bright);
+}
+
+.ancient-event-meta {
+  margin-top: 6px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font: 7px/1.3 Consolas, monospace;
+}
+
+.ancient-event-opposition,
+.dao-forge-requirements {
+  color: var(--ink-soft) !important;
+}
+
+.dao-forge-selection {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.dao-forge-selection > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dao-forge-selection > header span {
+  color: var(--ink-soft);
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.dao-forge-selection > header code {
+  color: var(--gold-bright);
+  font: 700 8px/1.3 Consolas, monospace;
+}
+
+.dao-forge-treasure-options {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+
+.dao-forge-treasure-options:empty {
+  display: none;
+}
+
+.dao-forge-treasure-options label {
+  min-width: 0;
+  min-height: 30px;
+  padding: 5px 7px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-soft);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  font-size: 8px;
+}
+
+.dao-forge-treasure-options label:has(input:checked) {
+  color: var(--gold-bright);
+  background: rgba(199, 167, 95, .1);
+}
+
+.dao-forge-treasure-options label:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: .42;
+}
+
+.dao-forge-treasure-options input {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--gold-bright);
+}
+
+.dao-forge-treasure-options span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dao-forge-locked-selection {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 8px;
+  overflow-wrap: anywhere;
+  color: var(--gold-bright);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.dao-forge-authority-field {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+}
+
+.dao-forge-authority-field[hidden] {
+  display: none;
+}
+
+.dao-forge-authority-field span {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.dao-forge-authority-field input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  font: 8px/1.3 Consolas, "Microsoft YaHei UI", sans-serif;
+}
+
+.dao-forge-authority-field input:focus {
+  border-color: var(--gold-bright);
+}
+
+.dao-forge-authority-field input::placeholder {
+  color: var(--muted);
+}
+
+.ancient-event-actions,
+.dao-forge-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-left: 1px solid var(--line-strong);
+}
+
+.ancient-event-actions button,
+.dao-forge-actions button {
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--ink-soft);
+  border: 0;
+  border-right: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+  background: transparent;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.ancient-event-actions button:hover:not(:disabled),
+.dao-forge-actions button:hover:not(:disabled) {
+  color: var(--void);
+  background: var(--gold-bright);
+}
+
+.ancient-event-actions button:active:not(:disabled),
+.dao-forge-actions button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.ancient-event-actions button:disabled,
+.dao-forge-actions button:disabled,
+.ancient-event-track button:disabled,
+.dao-forge-recipes button:disabled {
+  cursor: not-allowed;
+  opacity: .42;
+}
+
+.ancient-event-actions button.is-busy svg,
+.dao-forge-actions button.is-busy svg {
+  animation: spin .8s linear infinite;
+}
+
+.ancient-event-actions svg,
+.dao-forge-actions svg {
+  width: 13px;
+  height: 13px;
+}
+
 .intel-head {
   min-width: 0;
   padding-top: 36px;
@@ -1504,6 +2300,11 @@ button:active:not(:disabled) {
   .expedition-head h3 { font-size: 14px; }
   .expedition-asset { padding-top: 11px; }
   .expedition-actions button { min-height: 50px; font-size: 9px; }
+  .true-world-console { margin-block: 18px 20px; }
+  .true-world-head { padding-block: 13px 11px; }
+  .true-world-head h3 { font-size: 14px; }
+  .true-world-actions button { min-height: 50px; font-size: 9px; }
+  .true-world-sector-chip { min-height: 36px; }
 
   .intel-head {
     padding-top: 14px;
@@ -1546,6 +2347,7 @@ button:active:not(:disabled) {
   .star-facts > div:nth-child(even) { padding-inline: 0; border-left: 0; }
   .expedition-asset { padding-right: 8px; }
   .expedition-asset + .expedition-asset { padding-inline: 8px 0; }
+  .true-world-frontier { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

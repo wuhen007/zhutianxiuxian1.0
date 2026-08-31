@@ -13,6 +13,7 @@ import {
   OTHER_SHORE_KEY_STARS,
   anchorOtherShoreStar,
   calculateOtherShoreTravel,
+  clearOtherShoreCampaignStar,
   clearOtherShoreStar,
   contributeOtherShoreExploration,
   createOtherShoreWorld,
@@ -24,11 +25,15 @@ import {
   visitOtherShoreStar,
 } from "../model/otherShoreWorld.js";
 
-test("半径4的沧澜界生成61颗大星，其中12颗为手工关键星", () => {
+test("半径4的沧澜界生成61颗大星，其中13颗为手工关键星", () => {
   const world = createOtherShoreWorld("count-seed");
   assert.equal(world.stars.length, 61);
-  assert.equal(OTHER_SHORE_KEY_STARS.length, 12);
-  assert.equal(world.stars.filter((star) => star.keyStar).length, 12);
+  assert.equal(OTHER_SHORE_KEY_STARS.length, 13);
+  assert.equal(world.stars.filter((star) => star.keyStar).length, 13);
+  const furnace = world.stars.find((star) => star.id === "1,-1");
+  assert.equal(furnace.name, "玄阙神炉");
+  assert.equal(furnace.keyStar, true);
+  assert.equal(world.stars.find((star) => star.id === "1,2").name, "太初熔星");
 
   const view = serializeOtherShoreWorld(world);
   const center = view.stars.find((star) => star.id === "0,0");
@@ -99,6 +104,17 @@ test("观测、踏足、贡献、锚定与完成只向前推进共享阶段", ()
   assert.equal(anchored.states[target.id].phase, "anchored");
   assert.equal(cleared.states[target.id].phase, "cleared");
   assert.equal(observed.states[target.id].phase, "sensed");
+});
+
+test("旧版已踏足远征在首领伏诛后自动补足道标并彻查", () => {
+  const initial = observeOtherShoreStars(createOtherShoreWorld("legacy-run"), "0,0", 1);
+  const target = getOtherShoreNeighbors(initial, "0,0")[0];
+  const visited = visitOtherShoreStar(initial, target.id);
+  const cleared = clearOtherShoreCampaignStar(visited, target.id);
+
+  assert.equal(cleared.states[target.id].phase, "cleared");
+  assert.equal(cleared.states[target.id].contribution, target.anchorRequirement);
+  assert.equal(visited.states[target.id].phase, "visited");
 });
 
 test("心神计费匹配六个境界档位并持久保留不足一点的路程", () => {

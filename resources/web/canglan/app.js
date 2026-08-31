@@ -14,6 +14,8 @@
   const motionQuery = matchMedia('(prefers-reduced-motion: reduce)');
   const HEX_RADIUS = 50;
   const MAP_RADIUS = 4;
+  const TRUE_WORLD_RADIUS = 48;
+  const TRUE_WORLD_SECTOR_COUNT = 1 + 3 * TRUE_WORLD_RADIUS * (TRUE_WORLD_RADIUS + 1);
   const SQRT3 = Math.sqrt(3);
   const STATUS_ORDER = { unseen: 0, observed: 1, explored: 2, anchored: 3 };
   const STATUS_LABELS = { unseen: '未探明星域', observed: '已捕获星辉', explored: '已探明大星', anchored: '稳定星锚' };
@@ -36,6 +38,26 @@
     'evacuation_force',
     'expedition_claim',
   ]);
+  const TRUE_WORLD_ACTIONS = new Set([
+    'true_world_observe',
+    'true_world_move',
+    'true_world_encounter',
+    'true_world_claim',
+    // Domain-level names remain accepted so a gateway can expose them directly.
+    'true_world_explore',
+    'true_world_encounter_start',
+    'true_world_battle',
+    'true_world_enter',
+    'true_world_leave',
+  ]);
+  const ANCIENT_EVENT_ACTIONS = new Set([
+    'ancient_event_contribute',
+    'ancient_event_claim',
+  ]);
+  const DAO_FORGE_ACTIONS = new Set([
+    'dao_forge_start',
+    'dao_forge_claim',
+  ]);
   const PALETTE = {
     void: '#090908',
     bone: '#ede5d4',
@@ -53,6 +75,11 @@
   let pinch = null;
   let state = null;
   let selectedId = null;
+  let trueWorldSelectedSectorId = null;
+  let ancientEventSelectedId = null;
+  let daoForgeSelectedRecipeId = null;
+  const daoForgeTreasureSelections = new Map();
+  let daoForgeAuthorityDraft = '';
   let currentRoute = [];
   let currentRouteCost = { distance: 0, unknown: 0, cost: 0, remainder: 0, denominator: 1 };
   let busy = false;
@@ -191,9 +218,10 @@
         finiteNumber(stageSource.current, finiteNumber(campaignSource.stageNumber, finiteNumber(source.stageIndex, indexedStage || 1))),
       )))
       : 0;
-    const stageTotal = active || completed
-      ? Math.max(stageNumber, Math.trunc(finiteNumber(stageSource.total, finiteNumber(campaignSource.stageTotal, finiteNumber(source.stageTotal, 4)))))
-      : 0;
+    const stageTotal = Math.max(stageNumber, Math.trunc(finiteNumber(
+      stageSource.total,
+      finiteNumber(campaignSource.stageTotal, finiteNumber(source.stageTotal, active || completed ? 4 : 0)),
+    )));
     const rawProgress = finiteNumber(
       stageSource.progress,
       finiteNumber(campaignSource.progress, stageTotal ? (stageNumber - (completed ? 0 : 1)) / stageTotal * 100 : 0),
@@ -249,6 +277,9 @@
         status,
         complete: completed,
         progress,
+        unlocked: optionalBoolean(campaignSource.unlocked, true),
+        lockedReason: String(campaignSource.lockedReason || ''),
+        chain: Array.isArray(campaignSource.chain) ? campaignSource.chain : [],
       },
       stage: {
         ...stageSource,
@@ -376,6 +407,290 @@
     };
   }
 
+  function normalizeProgression(rawProgression) {
+    const source = rawProgression && typeof rawProgression === 'object' ? rawProgression : {};
+    const fallbackLayers = [
+      { id: 'canglan', name: '沧澜界', unlocked: true, enemyRange: '圣王~准帝' },
+      { id: 'true_world', name: '真世界', unlocked: false, enemyRange: '真仙~仙王巨头' },
+      { id: 'qiankun', name: '乾坤界', unlocked: false, enemyRange: '仙帝~祭道' },
+    ];
+    const layers = Array.isArray(source.layers) && source.layers.length
+      ? source.layers.map(layer => ({
+        ...layer,
+        id: String(layer?.id || ''),
+        name: String(layer?.name || layer?.id || '未知层'),
+        unlocked: layer?.unlocked === true,
+      }))
+      : fallbackLayers;
+    const unlockedLayers = Array.isArray(source.unlockedLayers)
+      ? source.unlockedLayers.map(value => String(value))
+      : layers.filter(layer => layer.unlocked).map(layer => layer.id);
+    return {
+      ...source,
+      currentLayer: String(source.currentLayer || unlockedLayers.at(-1) || 'canglan'),
+      unlockedLayers,
+      layers,
+      materials: Array.isArray(source.materials) ? source.materials : [],
+      recipes: Array.isArray(source.recipes) ? source.recipes : [],
+    };
+  }
+
+  function normalizeTrueWorldCoordinate(value, fallback = '0,0') {
+    if (value && typeof value === 'object') {
+      const q = Number(value.q ?? value.x);
+      const r = Number(value.r ?? value.y);
+      if (Number.isInteger(q) && Number.isInteger(r)) return `${q},${r}`;
+      return normalizeTrueWorldCoordinate(value.id ?? value.coordinate ?? value.coord, fallback);
+    }
+    const text = String(value ?? '').trim();
+    return /^-?\d+,-?\d+$/.test(text) ? text : fallback;
+  }
+
+  function normalizeTrueWorld(rawTrueWorld) {
+    const supplied = rawTrueWorld && typeof rawTrueWorld === 'object';
+    const source = supplied ? rawTrueWorld : {};
+    const globalSource = source.global && typeof source.global === 'object'
+      ? source.global
+      : source.summary && typeof source.summary === 'object'
+        ? source.summary
+        : {};
+    const viewerSource = source.viewer && typeof source.viewer === 'object'
+      ? source.viewer
+      : source.player && typeof source.player === 'object'
+        ? source.player
+        : {};
+    const rawSectors = Array.isArray(source.sectors)
+      ? source.sectors
+      : Array.isArray(source.visibleSectors)
+        ? source.visibleSectors
+        : [];
+    const sectors = rawSectors.map((sector, index) => {
+      const id = normalizeTrueWorldCoordinate(sector, `0,${index}`);
+      const coordinates = id.split(',').map(Number);
+      const progress = Math.max(0, finiteNumber(sector?.progress, finiteNumber(sector?.contribution)));
+      const required = Math.max(1, finiteNumber(sector?.progressRequired, finiteNumber(sector?.requirement, 1)));
+      return {
+        ...sector,
+        id,
+        q: Number.isFinite(coordinates[0]) ? coordinates[0] : 0,
+        r: Number.isFinite(coordinates[1]) ? coordinates[1] : 0,
+        name: String(sector?.name ?? sector?.landmark?.name ?? sector?.biomeName ?? `真世界扇区 ${id}`),
+        status: String(sector?.status ?? sector?.phase ?? 'unseen').toLowerCase(),
+        progress,
+        progressRequired: required,
+        known: sector?.known !== false,
+        threat: Math.max(0, finiteNumber(sector?.threat, 0)),
+        biomeName: String(sector?.biomeName ?? sector?.biome ?? '未知星域'),
+        biomeDescription: String(sector?.biomeDescription ?? sector?.description ?? ''),
+        landmark: sector?.landmark || null,
+        encounter: sector?.encounter || null,
+      };
+    });
+    const fallbackSector = sectors.find(sector => sector.id === '0,0') || sectors[0] || {
+      id: '0,0', q: 0, r: 0, name: '真世界门户', status: 'explored', progress: 1, progressRequired: 1, threat: 0,
+    };
+    const currentSectorId = normalizeTrueWorldCoordinate(
+      source.currentSectorId ?? source.focusSectorId ?? source.currentSector ?? viewerSource.coordinate ?? source.center,
+      fallbackSector.id,
+    );
+    const currentSector = sectors.find(sector => sector.id === currentSectorId) || {
+      ...fallbackSector,
+      id: currentSectorId,
+      ...(() => {
+        const [q, r] = currentSectorId.split(',').map(Number);
+        return { q: Number.isFinite(q) ? q : 0, r: Number.isFinite(r) ? r : 0 };
+      })(),
+    };
+    const activeEncounters = Array.isArray(source.activeEncounters) ? source.activeEncounters : [];
+    const enemySource = source.enemy && typeof source.enemy === 'object'
+      ? source.enemy
+      : source.encounter && typeof source.encounter === 'object'
+        ? source.encounter
+        : currentSector.encounter && typeof currentSector.encounter === 'object'
+          ? currentSector.encounter
+          : activeEncounters.find(entry => String(entry?.sectorId ?? entry?.coordinate ?? '') === currentSectorId) || activeEncounters[0] || {};
+    const enemyMaxHp = Math.max(0, finiteNumber(enemySource.maxHp, finiteNumber(enemySource.hp, 0)));
+    const enemyCurrentHp = Math.max(0, finiteNumber(enemySource.currentHp, finiteNumber(enemySource.hp, enemyMaxHp)));
+    const actions = source.actions && typeof source.actions === 'object' ? source.actions : {};
+    const actionAllowed = (name, fallback) => {
+      const key = `can${name[0].toUpperCase()}${name.slice(1)}`;
+      if (typeof viewerSource[key] === 'boolean') return viewerSource[key];
+      if (typeof actions[name] === 'boolean') return actions[name];
+      return fallback;
+    };
+    const pendingClaims = Array.isArray(viewerSource.pendingClaims)
+      ? viewerSource.pendingClaims
+      : Array.isArray(source.pendingClaims)
+        ? source.pendingClaims
+        : [];
+    const pendingLoot = pendingClaims.map((claim, index) => ({
+      id: String(claim?.claimId ?? `claim-${index}`),
+      claimId: String(claim?.claimId ?? `claim-${index}`),
+      name: String(claim?.opportunity || claim?.tier || '真世界战果'),
+      quantity: Math.max(1, Math.trunc(finiteNumber(claim?.materialUnits, 1))),
+      tier: claim?.tier || null,
+      eraAccumulation: Math.max(0, finiteNumber(claim?.eraAccumulation)),
+    }));
+    const normalizedLoot = normalizeBagItems(
+      source.loot ?? source.rewards ?? viewerSource.loot ?? viewerSource.rewards ?? source.claimableLoot,
+    );
+    const loot = normalizedLoot.length ? normalizedLoot : pendingLoot;
+    const globalExplored = Math.max(0, Math.trunc(finiteNumber(globalSource.exploredCount, finiteNumber(source.exploredCount, 0))));
+    const globalObserved = Math.max(0, Math.trunc(finiteNumber(globalSource.observedCount, finiteNumber(source.observedCount, globalExplored))));
+    const sectorCount = Math.max(1, Math.trunc(finiteNumber(source.sectorCount, finiteNumber(globalSource.sectorCount, 1 + 3 * 48 * 49))));
+    const progressPercent = clampPercent(finiteNumber(globalSource.progressPercent, finiteNumber(source.progressPercent, globalExplored / sectorCount * 100)));
+    const unlocked = source.unlocked !== false && source.access !== false && source.locked !== true;
+    return {
+      ...source,
+      exists: supplied && source.exists !== false,
+      unlocked,
+      title: String(source.title ?? source.name ?? '真世界'),
+      radius: Math.max(1, Math.trunc(finiteNumber(source.radius, 48))),
+      sectorCount,
+      currentSectorId,
+      currentSector,
+      center: normalizeTrueWorldCoordinate(source.center, currentSectorId),
+      sectors,
+      frontier: Array.isArray(source.frontier) ? source.frontier : [],
+      global: {
+        ...globalSource,
+        observedCount: globalObserved,
+        exploredCount: globalExplored,
+        progressPercent,
+        eraAccumulation: Math.max(0, finiteNumber(globalSource.eraAccumulation, finiteNumber(source.eraAccumulation, 0))),
+        quasiImmortalEmperorDefeated: Math.max(0, Math.trunc(finiteNumber(globalSource.quasiImmortalEmperorDefeated, finiteNumber(source.quasiImmortalEmperorDefeated, 0)))),
+        encounterCount: Math.max(0, Math.trunc(finiteNumber(globalSource.encounterCount, 0))),
+        victoryCount: Math.max(0, Math.trunc(finiteNumber(globalSource.victoryCount, 0))),
+      },
+      viewer: {
+        ...viewerSource,
+        coordinate: normalizeTrueWorldCoordinate(viewerSource.coordinate ?? viewerSource.currentSector ?? currentSectorId, currentSectorId),
+        eraAccumulation: Math.max(0, finiteNumber(viewerSource.eraAccumulation, 0)),
+        quasiImmortalEmperorSources: Math.max(0, Math.trunc(finiteNumber(viewerSource.quasiImmortalEmperorSources, 0))),
+        knownCount: Math.max(0, Math.trunc(finiteNumber(viewerSource.knownCount, 0))),
+        exploredCount: Math.max(0, Math.trunc(finiteNumber(viewerSource.exploredCount, 0))),
+        victories: viewerSource.victories && typeof viewerSource.victories === 'object' ? viewerSource.victories : {},
+        materials: viewerSource.materials && typeof viewerSource.materials === 'object' ? viewerSource.materials : {},
+        opportunities: Array.isArray(viewerSource.opportunities) ? viewerSource.opportunities : [],
+        loot,
+        canObserve: actionAllowed('observe', unlocked),
+        canMove: actionAllowed('move', unlocked),
+        canExplore: actionAllowed('explore', unlocked && currentSector.status !== 'explored'),
+        canEncounter: actionAllowed('encounter', unlocked && currentSector.status === 'explored'),
+        canClaim: actionAllowed('claim', unlocked && loot.length > 0),
+      },
+      enemy: {
+        ...enemySource,
+        encounterId: String(enemySource.encounterId ?? enemySource.id ?? ''),
+        tier: String(enemySource.tier ?? enemySource.realmTier ?? ''),
+        name: String(enemySource.name ?? enemySource.title ?? '尚未生成'),
+        realmName: String(enemySource.realmName ?? enemySource.realm ?? '--'),
+        maxHp: enemyMaxHp,
+        currentHp: Math.min(enemyMaxHp || enemyCurrentHp, enemyCurrentHp),
+        status: String(enemySource.status ?? (enemyMaxHp > 0 ? 'active' : 'idle')).toLowerCase(),
+        sameRealmMutant: enemySource.sameRealmMutant === true,
+      },
+      loot,
+    };
+  }
+
+  function normalizeAncientEvents(rawAncientEvents) {
+    const source = rawAncientEvents && typeof rawAncientEvents === 'object' ? rawAncientEvents : {};
+    const events = (Array.isArray(source.events) ? source.events : []).map((entry, index) => {
+      const event = entry && typeof entry === 'object' ? entry : {};
+      const viewer = event.viewer && typeof event.viewer === 'object' ? event.viewer : {};
+      const required = Math.max(1, Math.trunc(finiteNumber(event.contributionRequired, 1)));
+      const progress = Math.min(required, Math.max(0, Math.trunc(finiteNumber(event.progress))));
+      return {
+        ...event,
+        id: String(event.id || `ancient-event-${index + 1}`),
+        order: Math.max(1, Math.trunc(finiteNumber(event.order, index + 1))),
+        name: String(event.name || `古文明章节 ${index + 1}`),
+        coordinate: normalizeTrueWorldCoordinate(event.coordinate, '0,0'),
+        description: String(event.description || '古史因果尚未完成解析。'),
+        opposition: Array.isArray(event.opposition) ? event.opposition.map(String) : [],
+        status: String(event.status || 'locked').toLowerCase(),
+        progress,
+        contributionRequired: required,
+        progressPercent: clampPercent(finiteNumber(event.progressPercent, progress / required * 100)),
+        contributorCount: Math.max(0, Math.trunc(finiteNumber(event.contributorCount))),
+        sectorExplored: event.sectorExplored === true,
+        viewer: {
+          ...viewer,
+          contribution: Math.max(0, Math.trunc(finiteNumber(viewer.contribution))),
+          claimed: viewer.claimed === true,
+          atCoordinate: viewer.atCoordinate === true,
+          canContribute: viewer.canContribute === true,
+          canClaim: viewer.canClaim === true,
+        },
+      };
+    }).sort((a, b) => a.order - b.order);
+    const completedCount = Math.max(
+      events.filter(event => event.status === 'completed').length,
+      Math.trunc(finiteNumber(source.completedCount)),
+    );
+    const viewerSource = source.viewer && typeof source.viewer === 'object' ? source.viewer : {};
+    return {
+      ...source,
+      exists: events.length > 0,
+      status: String(source.status || (completedCount === events.length && events.length ? 'completed' : 'active')).toLowerCase(),
+      activeEventId: String(source.activeEventId || events.find(event => event.status === 'active')?.id || ''),
+      completedCount,
+      eventCount: Math.max(events.length, Math.trunc(finiteNumber(source.eventCount, events.length))),
+      events,
+      viewer: {
+        ...viewerSource,
+        totalContribution: Math.max(0, Math.trunc(finiteNumber(viewerSource.totalContribution, events.reduce((sum, event) => sum + event.viewer.contribution, 0)))),
+        canClaim: viewerSource.canClaim === true || events.some(event => event.viewer.canClaim),
+      },
+    };
+  }
+
+  function normalizeDaoForge(rawDaoForge) {
+    const source = rawDaoForge && typeof rawDaoForge === 'object' ? rawDaoForge : {};
+    const recipes = (Array.isArray(source.recipes) ? source.recipes : []).map((entry, index) => {
+      const recipe = entry && typeof entry === 'object' ? entry : {};
+      return {
+        ...recipe,
+        id: String(recipe.id || `dao-forge-recipe-${index + 1}`),
+        index: Math.max(1, Math.trunc(finiteNumber(recipe.index, index + 1))),
+        name: String(recipe.name || `第${index + 1}法`),
+        description: String(recipe.description || '此法仍在彼岸古史中等待补全。'),
+        known: recipe.known === true,
+        ready: recipe.ready === true,
+        unavailable: recipe.unavailable === true,
+        missing: Array.isArray(recipe.missing) ? recipe.missing : [],
+      };
+    }).sort((a, b) => a.index - b.index);
+    const rawForge = source.forge && typeof source.forge === 'object' ? source.forge : null;
+    const durationMs = Math.max(1, finiteNumber(source.durationMs, 24 * 60 * 60 * 1000));
+    const forge = rawForge ? {
+      ...rawForge,
+      forgeId: String(rawForge.forgeId || ''),
+      status: String(rawForge.status || 'forging').toLowerCase(),
+      recipeId: String(rawForge.recipeId || ''),
+      recipeName: String(rawForge.recipeName || '大道至宝'),
+      treasureName: String(rawForge.treasureName || rawForge.recipeName || '大道至宝'),
+      startedAt: Math.max(0, finiteNumber(rawForge.startedAt)),
+      readyAt: Math.max(0, finiteNumber(rawForge.readyAt)),
+      remainingMs: Math.max(0, finiteNumber(rawForge.remainingMs)),
+      progress: clampPercent(finiteNumber(rawForge.progress)),
+      canClaim: rawForge.canClaim === true || String(rawForge.status).toLowerCase() === 'ready',
+    } : null;
+    return {
+      ...source,
+      exists: recipes.length > 0 || Boolean(forge),
+      durationMs,
+      recipes,
+      forge,
+      ownedInnateTreasures: Array.isArray(source.ownedInnateTreasures)
+        ? source.ownedInnateTreasures
+          .map(entry => String(entry && typeof entry === 'object' ? entry.name ?? entry.id ?? '' : entry || '').trim())
+          .filter(Boolean)
+        : [],
+    };
+  }
+
   function normalizeState(raw = {}) {
     const supplied = Array.isArray(raw.nodes)
       ? raw.nodes
@@ -412,6 +727,7 @@
         contribution: Math.max(0, Number(suppliedNode.contribution ?? base.contribution) || 0),
         anchorRequirement: Math.max(0, Number(suppliedNode.anchorRequirement ?? base.anchorRequirement) || 0),
         viewerContributed: suppliedNode.viewerContributed === true,
+        cleared: suppliedNode.cleared === true || suppliedNode.phase === 'cleared',
       };
     });
 
@@ -438,10 +754,19 @@
       pressure: Math.max(0, Number(raw.pressure ?? raw.expeditionPressure ?? 0)),
       threat: normalizeThreat(raw.threat ?? raw.world?.threat, nodes),
       expedition: normalizeExpedition(raw.expedition ?? raw.world?.expedition, nodes),
+      progression: normalizeProgression(raw.progression ?? raw.world?.progression),
+      trueWorld: normalizeTrueWorld(raw.trueWorld ?? raw.true_world ?? raw.world?.trueWorld ?? raw.world?.true_world),
+      ancientEvents: normalizeAncientEvents(raw.ancientEvents ?? raw.world?.ancientEvents),
+      daoForge: normalizeDaoForge(raw.daoForge ?? raw.world?.daoForge),
     };
   }
 
   function createPreviewState() {
+    const campaignStars = {
+      '1,-1': { name: '玄阙神炉', kind: '古文明神炉', law: '太初真火', civilization: '先秦炼气士遗脉', signal: '神炉灾痕连接着失落古航路，炉心深处有共享灾核正在复苏。' },
+      '4,-4': { name: '彼岸渡口', kind: '裂界古渡', law: '两界折叠', civilization: '先秦归航者', signal: '残缺渡碑保存着先秦炼气士横穿灵界裂隙的返乡坐标。' },
+      '0,-4': { name: '裂界母锚', kind: '维度母锚', law: '万隙归源', civilization: '彼岸古文明', signal: '诸灵界裂隙在此汇为同一根系，母锚背后隐约显出更高世界。' },
+    };
     const nodes = BASE_NODES.map(node => {
       const distance = axialDistance(node);
       let status = 'unseen';
@@ -454,10 +779,10 @@
         : status === 'explored'
           ? Math.max(0, node.anchorRequirement - 1)
           : 0;
-      return { ...node, status, contribution, viewerContributed: false };
+      return { ...node, ...(campaignStars[node.id] || {}), status, contribution, viewerContributed: false };
     });
 
-    return normalizeState({
+    const previewState = normalizeState({
       player: {
         name: '观星者',
         realm: '仙王巨头',
@@ -508,7 +833,113 @@
         },
         history: [{ type: 'calamity_started', starName: '玄阙神炉' }],
       },
+      expedition: {
+        exists: true,
+        active: false,
+        runId: 'IDLE',
+        starId: '1,-1',
+        campaign: {
+          title: '玄阙神炉区域战役',
+          status: 'idle',
+          complete: false,
+          progress: 0,
+          unlocked: true,
+          lockedReason: '',
+          chain: [
+            { starId: '1,-1', name: '玄阙神炉', order: 0, unlocked: true, viewerCleared: false, globalCleared: false },
+            { starId: '4,-4', name: '先秦归航', order: 1, unlocked: false, viewerCleared: false, globalCleared: false },
+            { starId: '0,-4', name: '母锚归一', order: 2, unlocked: false, viewerCleared: false, globalCleared: false },
+          ],
+        },
+        stage: { number: 0, total: 5, name: '等待建立远征' },
+        camp: { level: 0, maxLevel: 3, name: '玄阙神炉临时驻点', defense: 0, maxDefense: 1 },
+        tacticalBag: { items: [], used: 0, secured: 0, capacity: 0 },
+        evacuation: { status: 'idle', active: false, ready: false },
+        downed: { active: false },
+        lostCache: { active: false },
+        lostCaches: [],
+        rescueTargets: [],
+        viewer: {
+          canEnter: true,
+          canBuildCamp: false,
+          canAdvance: false,
+          canDeposit: false,
+          canRescue: false,
+          canRecoverLostCache: false,
+          canEvacuate: false,
+          canForceEvacuate: false,
+          canClaim: false,
+        },
+      },
     });
+    if (params.get('layer') === 'true_world') {
+      previewState.progression.currentLayer = 'true_world';
+      previewState.progression.unlockedLayers = ['canglan', 'true_world'];
+      previewState.progression.layers = previewState.progression.layers.map(layer => ({
+        ...layer,
+        unlocked: ['canglan', 'true_world'].includes(layer.id),
+      }));
+      previewState.trueWorld = normalizeTrueWorld({
+        exists: true,
+        unlocked: true,
+        title: '真世界 · 先秦遗都前线',
+        radius: 48,
+        sectorCount: TRUE_WORLD_SECTOR_COUNT,
+        center: '0,0',
+        currentSectorId: '7,-3',
+        sectors: [
+          { id: '0,0', q: 0, r: 0, name: '真世界门户', status: 'explored', progress: 100, progressRequired: 100, threat: 2, biomeName: '真界源海', biomeDescription: '门户后的星海正在向全服神念展开。' },
+          { id: '1,0', q: 1, r: 0, name: '先秦遗都外环', status: 'observed', progress: 22, progressRequired: 100, threat: 4, biomeName: '先秦炼气遗都', biomeDescription: '残存道种炉在星尘中回应观测。' },
+          { id: '-1,1', q: -1, r: 1, name: '灵界裂隙源庭', status: 'observed', progress: 48, progressRequired: 100, threat: 5, biomeName: '灵界裂隙荒原', biomeDescription: '裂缝像河流一样改道。' },
+          { id: '7,-3', q: 7, r: -3, name: '先秦炼气祖庭', status: 'explored', progress: 100, progressRequired: 100, threat: 7, biomeName: '祖庭道火星海', biomeDescription: '失落炼气士把大星炼成祖庭，古史正沿道火重新显化。' },
+          { id: '-9,4', q: -9, r: 4, name: '灵界裂隙源庭', status: 'observed', progress: 38, progressRequired: 100, threat: 8, biomeName: '万隙源海', biomeDescription: '诸天灵界裂隙在这里汇成一条古老源谱。' },
+          { id: '13,-8', q: 13, r: -8, name: '禁宝清算庭', status: 'unseen', progress: 0, progressRequired: 100, threat: 9, biomeName: '清算星垣' },
+          { id: '21,-13', q: 21, r: -13, name: '纪元主宰观测台', status: 'unseen', progress: 0, progressRequired: 100, threat: 10, biomeName: '超维观测断层' },
+        ],
+        global: { observedCount: 5, exploredCount: 2, progressPercent: 0.028, eraAccumulation: 12, quasiImmortalEmperorDefeated: 3, encounterCount: 8, victoryCount: 7 },
+        viewer: {
+          coordinate: '7,-3', knownCount: 5, exploredCount: 2, eraAccumulation: 4, quasiImmortalEmperorSources: 2,
+          victories: { total: 2, quasi_immortal_emperor: 1 },
+          materials: { 'true-world-source-crystal': 9, 'dao-rule-origin': 4 },
+          loot: [{ id: 'opportunity:qin-qi-refinement', claimId: 'preview-claim-01', name: '先秦炼气遗篇', quantity: 1 }],
+          pendingClaims: [{ claimId: 'preview-claim-01', tier: 'quasi_immortal_emperor', materialUnits: 13, eraAccumulation: 1, opportunity: '先秦炼气遗篇' }],
+          canObserve: true, canMove: true, canEncounter: true, canClaim: true,
+        },
+        enemy: { encounterId: 'preview-tw-wave-01', tier: 'quasi_immortal_emperor', name: '同源准仙帝灾厄变异体', realmName: '准仙帝', maxHp: 8400000000000000, currentHp: 4200000000000000, status: 'active', sameRealmMutant: true },
+        frontier: ['0,0', '1,0', '-9,4', '13,-8'],
+      });
+      previewState.ancientEvents = normalizeAncientEvents({
+        status: 'active', activeEventId: 'qin-qi-refiner-ancestral-court', completedCount: 0, eventCount: 4,
+        events: [
+          { id: 'qin-qi-refiner-ancestral-court', order: 1, name: '先秦炼气祖庭', coordinate: '7,-3', status: 'active', progress: 70, contributionRequired: 120, contributorCount: 6, sectorExplored: true, description: '复原先秦炼气士以星辰为炉、以身为种的祖庭古史。', opposition: ['祖庭道火残灵', '裂界守史人'], viewer: { contribution: 10, atCoordinate: true, canContribute: true, canClaim: false } },
+          { id: 'spirit-rift-source-court', order: 2, name: '灵界裂隙源庭', coordinate: '-9,4', status: 'locked', progress: 0, contributionRequired: 180, description: '沿旧源谱追溯灵界裂隙，拼合彼岸古文明第一次越界的炼制术。', opposition: ['裂界巡猎者', '源庭校正阵'], viewer: {} },
+          { id: 'forbidden-treasure-cleansing-court', order: 3, name: '禁宝清算庭', coordinate: '13,-8', status: 'locked', progress: 0, contributionRequired: 260, description: '攻入清算中枢，截获尚未被无尽商店收录的先天至宝天机。', opposition: ['禁宝司清算舰队', '违禁因果裁定者'], viewer: {} },
+          { id: 'era-overlord-observatory-finale', order: 4, name: '纪元主宰观测台', coordinate: '21,-13', status: 'locked', progress: 0, contributionRequired: 400, description: '切断逻辑彼岸观测链，迎战纪元主宰投影与超维清算者。', opposition: ['纪元主宰·逻辑投影', '超维清算者·断律使'], viewer: {} },
+        ],
+        viewer: { totalContribution: 10, canClaim: false },
+      });
+      previewState.daoForge = normalizeDaoForge({
+        durationMs: 86400000,
+        ownedInnateTreasures: ['盘古幡', '太极图', '混沌钟', '诛仙四剑', '山河社稷图'],
+        authorityOptions: [
+          { name: '开天', cooldownKey: '开天', sourceTreasureName: '盘古幡', command: '#开天' },
+          { name: '阴阳逆转', cooldownKey: '阴阳逆转', sourceTreasureName: '太极图', command: '#阴阳逆转' },
+          { name: '诛仙剑阵', cooldownKey: '诛仙剑阵', sourceTreasureName: '诛仙四剑', command: '#布诛仙剑阵' },
+          { name: '星辰护界', cooldownKey: '星辰护界', sourceTreasureName: '周天星辰旗', command: '#星辰护界' },
+          { name: '演化诸天', cooldownKey: '演化诸天', sourceTreasureName: '定海珠', command: '#演化诸天' },
+        ],
+        recipes: [
+          { id: 'three-innate-erasure', index: 1, name: '三宝归墟法', description: '三件先天至宝自古史消失，融合三宝全部可解析权柄并缩短冷却。', known: true, ready: true, missing: [] },
+          { id: 'custom-ancient-method', index: 2, name: '彼岸定法', description: '彼岸古法正文尚未补全，当前只保留炼制位。', known: false, ready: false, unavailable: true, missing: [{ label: '彼岸古法正文' }] },
+          { id: 'dao-fruit-five-treasure', index: 3, name: '道果五宝法', description: '道果与五宝同炉，保留五宝并随机强化一项权柄。', known: true, ready: true, missing: [] },
+          { id: 'return-truth-edit', index: 4, name: '还真编权法', description: '三十准仙帝本源入炉，自定义编辑三项强化权柄。', known: true, ready: false, missing: [{ label: '准仙帝本源 30' }] },
+        ],
+      });
+      trueWorldSelectedSectorId = '7,-3';
+      ancientEventSelectedId = 'qin-qi-refiner-ancestral-court';
+      daoForgeSelectedRecipeId = 'three-innate-erasure';
+    }
+    return previewState;
   }
 
   function setText(selector, value) {
@@ -782,6 +1213,29 @@
       : String(expedition.starId ?? selectedId ?? state.player.positionId);
   }
 
+  function trueWorldTargetId(action = '') {
+    const trueWorld = state?.trueWorld;
+    if (action === 'true_world_claim') {
+      const pending = trueWorld?.viewer?.pendingClaims;
+      if (Array.isArray(pending) && pending.length) return String(pending[0].claimId || '');
+      const loot = Array.isArray(trueWorld?.loot) ? trueWorld.loot : [];
+      const claim = loot.find(item => item?.claimId);
+      if (claim?.claimId) return String(claim.claimId);
+    }
+    return String(trueWorldSelectedSectorId || trueWorld?.currentSectorId || trueWorld?.center || '0,0');
+  }
+
+  function ancientEventTargetId() {
+    return String(selectedAncientEvent()?.id || state?.ancientEvents?.activeEventId || '');
+  }
+
+  function daoForgeTargetId(action = '') {
+    if (action === 'dao_forge_claim') return String(state?.daoForge?.forge?.forgeId || '');
+    const recipe = selectedDaoForgeRecipe();
+    const selection = daoForgeSelection(recipe);
+    return recipe ? `${recipe.id}|${selection.entries.join(',')}` : '';
+  }
+
   function renderThreat() {
     const threat = state?.threat;
     const strip = $('#threat-strip');
@@ -890,11 +1344,15 @@
     setText('#expedition-stage-name', expedition.stage.name);
     setText('#expedition-stage-count', expedition.stage.total ? `${expedition.stage.number} / ${expedition.stage.total}` : '0 / 0');
     setProgress('#expedition-progress', '#expedition-progress-fill', expedition.campaign.progress);
-    setText('#expedition-brief', expedition.active
-      ? `${expedition.campaign.status === 'active' || expedition.campaign.status === 'idle' ? '远征进行中' : expedition.campaign.status} · 当前大星行动由全服探索态势共同推进。`
-      : expedition.campaign.complete
-        ? '本轮星域行动已完成，远征记录保留在彼岸古史。'
-        : '当前大星尚无个人远征记录。');
+    setText('#expedition-brief', expedition.campaign.unlocked === false
+      ? expedition.campaign.lockedReason || '前置战役尚未完成。'
+      : expedition.active
+        ? `${expedition.campaign.status === 'active' || expedition.campaign.status === 'idle' ? '远征进行中' : expedition.campaign.status} · 当前大星行动由全服探索态势共同推进。`
+        : expedition.campaign.complete
+          ? '本轮星域行动已完成，远征记录保留在彼岸古史。'
+          : expedition.exists
+            ? '星锚稳定后可建立个人远征，全服共享区域首领气血。'
+            : '当前大星尚未显化区域战役。');
 
     const camp = expedition.camp;
     setText('#camp-tier', camp.established ? `L${camp.level} / ${camp.maxLevel}` : '未建立');
@@ -958,6 +1416,12 @@
     if (expedition.rescueTargets.length) flags.push(`${expedition.rescueTargets.length} 求援`);
     if (expedition.lostCaches.length) flags.push(`${expedition.lostCaches.length} 可追回`);
     if (expedition.lostCache.active) flags.push(`${expedition.lostCache.itemCount} 遗失`);
+    const campaignChain = expedition.campaign.chain || [];
+    if (campaignChain.length) {
+      const cleared = campaignChain.filter(entry => entry.viewerCleared).length;
+      flags.push(`沧澜主线 ${cleared}/${campaignChain.length}`);
+    }
+    if (expedition.campaign.unlocked === false) flags.push('前置锁定');
     const flagBox = $('#expedition-flags');
     flagBox.replaceChildren(...flags.map(text => {
       const flag = document.createElement('span');
@@ -966,7 +1430,8 @@
     }));
 
     const actionStates = {
-      expedition_enter: expedition.viewer.canEnter && Boolean(selected && selected.status !== 'unseen'),
+      expedition_enter: expedition.viewer.canEnter
+        && Boolean(selected && selected.id === expedition.starId && selected.status !== 'unseen'),
       camp_build: expedition.viewer.canBuildCamp,
       campaign_advance: expedition.viewer.canAdvance,
       bag_deposit: expedition.viewer.canDeposit,
@@ -991,6 +1456,426 @@
     if (cost.unknown === 0) return '航路均已锚定，本次不消耗心神。';
     if (cost.denominator > 1 && cost.remainder > 0) return `跨越 ${cost.unknown} 格未锚星域，余程记为 ${cost.remainder}/${cost.denominator}。`;
     return `跨越 ${cost.unknown} 格未锚星域，航路可达。`;
+  }
+
+  const TRUE_WORLD_STATUS_LABELS = {
+    unseen: '未观测',
+    observed: '已观测',
+    explored: '已探明',
+    active: '敌群活跃',
+    defeated: '敌群已清除',
+    idle: '等待敌群',
+    locked: '入口未开',
+  };
+
+  const TRUE_WORLD_TIER_LABELS = {
+    true_immortal: '真仙',
+    immortal_king: '仙王',
+    immortal_king_giant: '仙王巨头',
+    quasi_immortal_emperor: '准仙帝',
+  };
+
+  function trueWorldStatusLabel(value) {
+    const key = String(value || '').toLowerCase();
+    return TRUE_WORLD_STATUS_LABELS[key] || (key ? key : '待命');
+  }
+
+  function ancientEventStatusLabel(value) {
+    return ({ locked: '前置锁定', active: '全服推进中', completed: '古史已复原' })[String(value || '').toLowerCase()] || '状态未知';
+  }
+
+  function formatForgeClock(value) {
+    const remaining = Math.max(0, Math.trunc(finiteNumber(value)));
+    const seconds = Math.ceil(remaining / 1000);
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor(seconds % 3600 / 60);
+    const rest = seconds % 60;
+    return [hours, minutes, rest].map(part => String(part).padStart(2, '0')).join(':');
+  }
+
+  function selectedAncientEvent() {
+    const ancient = state?.ancientEvents;
+    if (!ancient?.events?.length) return null;
+    const id = ancientEventSelectedId && ancient.events.some(event => event.id === ancientEventSelectedId)
+      ? ancientEventSelectedId
+      : ancient.activeEventId || ancient.events.find(event => event.viewer.canClaim)?.id || ancient.events[0].id;
+    ancientEventSelectedId = id;
+    return ancient.events.find(event => event.id === id) || ancient.events[0];
+  }
+
+  function renderAncientEvents() {
+    const panel = $('#ancient-event-console');
+    const ancient = state?.ancientEvents;
+    if (!panel) return;
+    panel.hidden = !ancient?.exists;
+    if (!ancient?.exists) return;
+    const event = selectedAncientEvent();
+    setText('#ancient-event-count', `${ancient.completedCount} / ${Math.max(ancient.eventCount, ancient.events.length)}`);
+    const track = $('#ancient-event-track');
+    if (track) {
+      track.replaceChildren(...ancient.events.map(entry => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.role = 'tab';
+        button.dataset.ancientEventId = entry.id;
+        button.dataset.status = entry.status;
+        button.className = entry.id === event?.id ? 'is-current' : '';
+        button.setAttribute('aria-selected', String(entry.id === event?.id));
+        button.title = `${entry.name} · ${entry.coordinate}`;
+        const order = document.createElement('b');
+        order.textContent = String(entry.order).padStart(2, '0');
+        const name = document.createElement('span');
+        name.textContent = entry.name;
+        const progress = document.createElement('small');
+        progress.textContent = entry.status === 'completed' ? '完成' : entry.status === 'locked' ? '锁定' : `${Math.round(entry.progressPercent)}%`;
+        button.append(order, name, progress);
+        button.addEventListener('click', () => {
+          ancientEventSelectedId = entry.id;
+          renderAncientEvents();
+        });
+        return button;
+      }));
+    }
+    if (!event) return;
+    panel.dataset.status = event.status;
+    setText('#ancient-event-status', ancientEventStatusLabel(event.status));
+    setText('#ancient-event-name', event.name);
+    setText('#ancient-event-coordinate', event.coordinate);
+    setText('#ancient-event-copy', event.description);
+    setText('#ancient-event-contribution', `全服 ${event.progress} / ${event.contributionRequired}`);
+    setText('#ancient-event-viewer', `个人 ${event.viewer.contribution} · ${event.contributorCount} 人留痕`);
+    setText('#ancient-event-opposition', `敌对：${event.opposition.length ? event.opposition.join(' · ') : '尚未观测'}`);
+    setProgress('.ancient-event-progress', '#ancient-event-progress-fill', event.progressPercent);
+    document.querySelectorAll('[data-ancient-event-action]').forEach(button => {
+      const action = button.dataset.ancientEventAction;
+      const allowed = action === 'ancient_event_contribute' ? event.viewer.canContribute : event.viewer.canClaim;
+      button.disabled = busy || !allowed;
+      button.classList.toggle('is-busy', busy && activeAction === action);
+      button.setAttribute('aria-busy', String(busy && activeAction === action));
+    });
+  }
+
+  function selectedDaoForgeRecipe() {
+    const forgeState = state?.daoForge;
+    if (!forgeState?.recipes?.length) return null;
+    const activeRecipeId = forgeState.forge && forgeState.forge.status !== 'claimed' ? forgeState.forge.recipeId : '';
+    const id = activeRecipeId || (
+      daoForgeSelectedRecipeId && forgeState.recipes.some(recipe => recipe.id === daoForgeSelectedRecipeId)
+        ? daoForgeSelectedRecipeId
+        : forgeState.recipes.find(recipe => recipe.known && recipe.ready && !recipe.unavailable)?.id || forgeState.recipes[0].id
+    );
+    daoForgeSelectedRecipeId = id;
+    return forgeState.recipes.find(recipe => recipe.id === id) || forgeState.recipes[0];
+  }
+
+  function daoForgeSelectionRule(recipeId) {
+    if (recipeId === 'three-innate-erasure') return { kind: 'treasure', count: 3, label: '投入先天至宝' };
+    if (recipeId === 'dao-fruit-five-treasure') return { kind: 'treasure', count: 5, label: '指定五件先天至宝' };
+    if (recipeId === 'return-truth-edit') return { kind: 'authority', count: 3, label: '编辑强化权柄' };
+    return { kind: 'locked', count: 0, label: '彼岸古法正文' };
+  }
+
+  function daoForgeSelection(recipe) {
+    const rule = daoForgeSelectionRule(recipe?.id);
+    let entries = [];
+    if (rule.kind === 'treasure') {
+      const selected = daoForgeTreasureSelections.get(recipe.id) || new Set();
+      daoForgeTreasureSelections.set(recipe.id, selected);
+      entries = [...selected];
+    } else if (rule.kind === 'authority') {
+      entries = daoForgeAuthorityDraft.split(/[、,，]/).map(value => value.trim()).filter(Boolean);
+    }
+    return {
+      ...rule,
+      entries,
+      valid: rule.count > 0 && entries.length === rule.count && new Set(entries).size === rule.count,
+    };
+  }
+
+  function forgeRecordSelections(forge) {
+    const consumed = Array.isArray(forge?.consumption?.innateTreasures) ? forge.consumption.innateTreasures : [];
+    const preserved = Array.isArray(forge?.output?.preservedInnateTreasures) ? forge.output.preservedInnateTreasures : [];
+    const authorities = Array.isArray(forge?.output?.authorities) ? forge.output.authorities : [];
+    return [...consumed, ...preserved, ...authorities]
+      .map(entry => String(entry && typeof entry === 'object' ? entry.name ?? entry.id ?? '' : entry || '').trim())
+      .filter(Boolean);
+  }
+
+  function renderDaoForgeSelection(recipe, forgeState, active) {
+    const selection = daoForgeSelection(recipe);
+    const options = $('#dao-forge-treasure-options');
+    const authorityField = $('#dao-forge-authority-field');
+    const authorityInput = $('#dao-forge-authorities');
+    const authorityOptions = $('#dao-forge-authority-options');
+    if (authorityOptions) {
+      authorityOptions.replaceChildren(...(forgeState.authorityOptions || []).map(authority => {
+        const option = document.createElement('option');
+        option.value = authority.cooldownKey || authority.name;
+        option.label = `${authority.sourceTreasureName} · ${authority.name}`;
+        return option;
+      }));
+    }
+    setText('#dao-forge-selection-label', active ? '本炉投入已经锁定' : selection.label);
+    const lockedEntries = active ? forgeRecordSelections(forgeState.forge) : [];
+    setText('#dao-forge-selection-count', active
+      ? `${lockedEntries.length} 项`
+      : selection.count ? `${selection.entries.length} / ${selection.count}` : 'LOCKED');
+    authorityField.hidden = active || selection.kind !== 'authority';
+    if (authorityInput && authorityInput.value !== daoForgeAuthorityDraft) authorityInput.value = daoForgeAuthorityDraft;
+    if (!options) return selection;
+    if (active) {
+      const summary = document.createElement('p');
+      summary.className = 'dao-forge-locked-selection';
+      summary.textContent = lockedEntries.length ? lockedEntries.join(' · ') : '大道权柄正在炉中重排';
+      options.replaceChildren(summary);
+      return selection;
+    }
+    if (selection.kind !== 'treasure') {
+      options.replaceChildren();
+      return selection;
+    }
+    const selected = daoForgeTreasureSelections.get(recipe.id);
+    const owned = forgeState.ownedInnateTreasures;
+    for (const name of [...selected]) if (!owned.includes(name)) selected.delete(name);
+    options.replaceChildren(...owned.map(name => {
+      const label = document.createElement('label');
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.value = name;
+      input.checked = selected.has(name);
+      input.disabled = !input.checked && selected.size >= selection.count;
+      const text = document.createElement('span');
+      text.textContent = name;
+      input.addEventListener('change', () => {
+        if (input.checked) selected.add(name);
+        else selected.delete(name);
+        renderDaoForge();
+      });
+      label.append(input, text);
+      return label;
+    }));
+    selection.entries = [...selected];
+    selection.valid = selection.entries.length === selection.count;
+    setText('#dao-forge-selection-count', `${selection.entries.length} / ${selection.count}`);
+    return selection;
+  }
+
+  function renderDaoForge() {
+    const panel = $('#dao-forge-console');
+    const forgeState = state?.daoForge;
+    if (!panel) return;
+    panel.hidden = !forgeState?.exists;
+    if (!forgeState?.exists) return;
+    const recipe = selectedDaoForgeRecipe();
+    const forge = forgeState.forge;
+    const active = forge && forge.status !== 'claimed';
+    const selection = renderDaoForgeSelection(recipe, forgeState, active);
+    const progress = forge
+      ? clampPercent(forge.readyAt > forge.startedAt
+        ? (Date.now() - forge.startedAt) / (forge.readyAt - forge.startedAt) * 100
+        : forge.progress)
+      : 0;
+    const remainingMs = forge?.status === 'forging'
+      ? Math.max(0, (forge.readyAt || Date.now() + forge.remainingMs) - Date.now())
+      : 0;
+    const status = forge?.status || 'idle';
+    const statusLabel = ({ idle: '待开炉', forging: '炼制中', ready: '可出炉', claimed: '已收取' })[status] || status;
+    panel.dataset.status = status;
+    setText('#dao-forge-status', statusLabel);
+    const recipes = $('#dao-forge-recipes');
+    if (recipes) {
+      recipes.replaceChildren(...forgeState.recipes.map(entry => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.role = 'tab';
+        button.dataset.daoForgeRecipe = entry.id;
+        button.className = entry.id === recipe?.id ? 'is-current' : '';
+        button.setAttribute('aria-selected', String(entry.id === recipe?.id));
+        button.disabled = Boolean(active && entry.id !== forge.recipeId);
+        button.title = entry.unavailable ? '此法正文尚未补全' : entry.known ? entry.description : '尚未掌握此炼制法';
+        const number = document.createElement('b');
+        number.textContent = String(entry.index).padStart(2, '0');
+        const name = document.createElement('span');
+        name.textContent = entry.name;
+        const mark = document.createElement('small');
+        mark.textContent = entry.unavailable ? '缺卷' : !entry.known ? '未悟' : entry.ready ? '可炼' : '缺材';
+        button.append(number, name, mark);
+        button.addEventListener('click', () => {
+          daoForgeSelectedRecipeId = entry.id;
+          renderDaoForge();
+        });
+        return button;
+      }));
+    }
+    if (!recipe) return;
+    setText('#dao-forge-recipe-name', forge?.recipeName || recipe.name);
+    setText('#dao-forge-timer', status === 'forging' ? formatForgeClock(remainingMs) : status === 'ready' ? '00:00:00' : '24:00:00');
+    setText('#dao-forge-recipe-copy', forge ? `${forge.treasureName}正在炉中重排大道权柄。` : recipe.description);
+    const missing = recipe.missing.map(entry => String(entry?.label || entry?.name || entry)).filter(Boolean);
+    const requirement = recipe.unavailable
+      ? '彼岸古法正文尚未补全'
+      : !recipe.known
+        ? '尚未从准仙帝战果或古文明记录中悟得此法'
+        : missing.length
+          ? `缺少：${missing.join(' · ')}`
+          : selection.valid || active
+            ? `条件齐备 · 已持有 ${forgeState.ownedInnateTreasures.length} 件先天至宝`
+            : `还需指定 ${Math.max(0, selection.count - selection.entries.length)} 项${selection.kind === 'authority' ? '强化权柄' : '先天至宝'}`;
+    setText('#dao-forge-requirements', requirement);
+    setProgress('.dao-forge-progress', '#dao-forge-progress-fill', status === 'ready' || status === 'claimed' ? 100 : progress);
+    document.querySelectorAll('[data-dao-forge-action]').forEach(button => {
+      const action = button.dataset.daoForgeAction;
+      const allowed = action === 'dao_forge_start'
+        ? !active && recipe.known && recipe.ready && !recipe.unavailable && selection.valid
+        : Boolean(forge?.canClaim || status === 'ready');
+      button.disabled = busy || !allowed;
+      button.classList.toggle('is-busy', busy && activeAction === action);
+      button.setAttribute('aria-busy', String(busy && activeAction === action));
+    });
+  }
+
+  function renderTrueWorld() {
+    const panel = $('#true-world-console');
+    if (!panel) return;
+    const progression = state?.progression || {};
+    const progressionLayer = (progression.layers || []).find(layer => layer.id === 'true_world');
+    const tw = state?.trueWorld;
+    const visible = Boolean(tw?.exists || progression.currentLayer === 'true_world' || progressionLayer?.unlocked === true);
+    panel.hidden = !visible;
+    if (!visible || !tw) return;
+
+    const unlocked = tw.unlocked !== false && progressionLayer?.unlocked !== false;
+    panel.dataset.phase = unlocked ? String(tw.enemy?.status || 'idle') : 'locked';
+    setText('#true-world-title', unlocked ? tw.title : '真世界未接驳');
+    setText('#true-world-coordinate', unlocked ? tw.currentSectorId : 'LOCKED');
+    const global = tw.global || {};
+    const viewer = tw.viewer || {};
+    const explored = Math.max(0, Math.trunc(finiteNumber(global.exploredCount)));
+    const sectorCount = Math.max(1, Math.trunc(finiteNumber(tw.sectorCount, TRUE_WORLD_SECTOR_COUNT)));
+    const observed = Math.max(0, Math.trunc(finiteNumber(global.observedCount)));
+    setText('#true-world-explored', `${explored} / ${sectorCount}`);
+    setText('#true-world-observed', `观测 ${observed}`);
+    setText('#true-world-era', formatMagnitude(global.eraAccumulation));
+    setText('#true-world-quasi', `准仙帝 ${Math.max(0, Math.trunc(finiteNumber(global.quasiImmortalEmperorDefeated)))}`);
+    setText('#true-world-player-era', formatMagnitude(viewer.eraAccumulation));
+    setText('#true-world-victories', `胜场 ${Math.max(0, Math.trunc(finiteNumber(viewer.victories?.total, viewer.victories?.count)))}`);
+    setProgress('.true-world-progress', '#true-world-progress-fill', global.progressPercent);
+
+    const sectors = Array.isArray(tw.sectors) ? tw.sectors : [];
+    const selectedId = trueWorldSelectedSectorId && (sectors.some(sector => sector.id === trueWorldSelectedSectorId) || trueWorldSelectedSectorId === tw.currentSectorId)
+      ? trueWorldSelectedSectorId
+      : tw.currentSectorId;
+    trueWorldSelectedSectorId = selectedId;
+    const selected = sectors.find(sector => sector.id === selectedId) || tw.currentSector || { id: selectedId, name: '真世界扇区', status: 'unseen' };
+    const encounter = selected.encounter && typeof selected.encounter === 'object' ? selected.encounter : (selected.id === tw.currentSectorId ? tw.enemy : null);
+    const enemy = selected.id === tw.currentSectorId && tw.enemy ? tw.enemy : encounter || {};
+    const sectorProgress = Math.max(0, finiteNumber(selected.progress));
+    const sectorRequired = Math.max(1, finiteNumber(selected.progressRequired, 1));
+    setText('#true-world-sector-badge', `${trueWorldStatusLabel(selected.status)} · ${sectorProgress}/${sectorRequired}`);
+    setText('#true-world-sector-title', selected.name || selected.biomeName || `真世界扇区 ${selected.id}`);
+    setText('#true-world-sector-threat', `危 ${Math.max(0, Math.trunc(finiteNumber(selected.threat)))}`);
+    setText('#true-world-sector-copy', selected.biomeDescription || selected.landmark?.lore || (unlocked ? '神念尚未解析该扇区的文明回声。' : '完成沧澜界关键战役后，真世界入口将显化。'));
+    const enemyBox = $('#true-world-enemy');
+    const enemyStatus = String(enemy.status || 'idle').toLowerCase();
+    enemyBox?.setAttribute('data-status', enemyStatus);
+    setText('#true-world-enemy-tier', enemy.tier ? (TRUE_WORLD_TIER_LABELS[enemy.tier] || enemy.tier) : '当前敌群');
+    setText('#true-world-enemy-name', enemy.name || '尚未生成');
+    setText('#true-world-enemy-realm', enemy.sameRealmMutant ? `${enemy.realmName || '--'} · 同源变异` : (enemy.realmName || '--'));
+    const enemyHp = Math.max(0, finiteNumber(enemy.currentHp));
+    const enemyMaxHp = Math.max(enemyHp, finiteNumber(enemy.maxHp));
+    setText('#true-world-enemy-health', enemyMaxHp > 0 ? `${formatMagnitude(enemyHp)} / ${formatMagnitude(enemyMaxHp)}` : '--');
+
+    const frontier = [];
+    const seen = new Set();
+    [...sectors, ...(Array.isArray(tw.frontier) ? tw.frontier : [])].forEach(entry => {
+      const id = normalizeTrueWorldCoordinate(entry, '');
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      const sector = typeof entry === 'object' && entry
+        ? { ...entry, id }
+        : sectors.find(item => item.id === id) || { id, name: `真世界扇区 ${id}`, status: 'unseen' };
+      if (id !== selectedId) frontier.push(sector);
+    });
+    const frontierBox = $('#true-world-frontier');
+    if (frontierBox) {
+      frontierBox.replaceChildren(...frontier.slice(0, 8).map(sector => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.dataset.trueWorldSector = sector.id;
+        item.className = `true-world-sector-chip status-${String(sector.status || 'unseen').toLowerCase()}`;
+        item.textContent = `${sector.name || sector.id} · ${trueWorldStatusLabel(sector.status)}`;
+        item.title = `${sector.id} · 选择目标扇区`;
+        item.disabled = !unlocked;
+        return item;
+      }));
+    }
+    const loot = Array.isArray(tw.loot) && tw.loot.length ? tw.loot : (Array.isArray(viewer.loot) ? viewer.loot : []);
+    const materialEntries = viewer.materials && typeof viewer.materials === 'object'
+      ? Object.entries(viewer.materials).filter(([, amount]) => finiteNumber(amount) > 0).slice(0, 3).map(([name, amount]) => ({ id: name, name, quantity: amount }))
+      : [];
+    const lootBox = $('#true-world-loot');
+    if (lootBox) {
+      const entries = [...loot, ...materialEntries];
+      lootBox.replaceChildren(...entries.slice(0, 5).map(item => {
+        const li = document.createElement('li');
+        li.textContent = `${item.name || item.id || '战利品'} ×${Math.max(1, Math.trunc(finiteNumber(item.quantity, 1)))}`;
+        return li;
+      }));
+    }
+    const brief = !unlocked
+      ? String((progressionLayer && (progressionLayer.entry || progressionLayer.description)) || '完成沧澜界战役与裂界母锚后开放。')
+      : `半径 ${tw.radius} · ${sectorCount.toLocaleString('zh-CN')} 个扇区 · 全服共同探索${enemyStatus === 'active' ? ' · 敌群正在侵入' : ''}`;
+    setText('#true-world-brief', brief);
+    const actionStates = {
+      true_world_observe: unlocked && viewer.canObserve && ['unseen', 'observed'].includes(String(selected.status).toLowerCase()),
+      true_world_explore: unlocked && viewer.canObserve && selected.id === tw.currentSectorId && String(selected.status).toLowerCase() !== 'explored',
+      true_world_move: unlocked && viewer.canMove && selected.id !== tw.currentSectorId,
+      true_world_encounter: unlocked && viewer.canEncounter && selected.id === tw.currentSectorId && selected.status === 'explored',
+      true_world_encounter_start: unlocked && viewer.canEncounter && selected.id === tw.currentSectorId && selected.status === 'explored',
+      true_world_battle: unlocked && viewer.canEncounter && selected.id === tw.currentSectorId && enemyStatus === 'active',
+      true_world_claim: unlocked && viewer.canClaim,
+    };
+    const observeButton = document.querySelector('[data-true-world-action="true_world_observe"], [data-true-world-action="true_world_explore"]');
+    if (observeButton) {
+      const exploreMode = selected.status === 'observed' && viewer.canExplore;
+      observeButton.dataset.trueWorldAction = exploreMode ? 'true_world_explore' : 'true_world_observe';
+      const label = observeButton.querySelector('span');
+      if (label) label.textContent = exploreMode ? '开图' : '观测';
+    }
+    document.querySelectorAll('[data-true-world-action]').forEach(button => {
+      const action = button.dataset.trueWorldAction;
+      button.disabled = busy || !actionStates[action];
+      button.classList.toggle('is-busy', busy && activeAction === action);
+      button.setAttribute('aria-busy', String(busy && activeAction === action));
+    });
+    renderAncientEvents();
+    renderDaoForge();
+  }
+
+  function renderProgression() {
+    const progression = state?.progression;
+    if (!progression) return;
+    const layers = Array.isArray(progression.layers) ? progression.layers : [];
+    const unlocked = layers.filter(layer => layer.unlocked === true).length;
+    setText('#progression-title', layers.find(layer => layer.id === progression.currentLayer)?.name || '沧澜界');
+    setText('#progression-layer-count', `${unlocked} / ${Math.max(3, layers.length)}`);
+    const layerBox = $('#progression-layers');
+    if (layerBox) {
+      layerBox.replaceChildren(...layers.map(layer => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.dataset.layerId = layer.id;
+        item.className = `${layer.unlocked ? 'is-unlocked' : 'is-locked'}${layer.id === progression.currentLayer ? ' is-current' : ''}`;
+        item.textContent = layer.name;
+        item.title = layer.unlocked ? '切换层级' : String(layer.entry || '尚未开放');
+        item.disabled = layer.unlocked !== true;
+        return item;
+      }));
+    }
+    const materials = (progression.materials || []).slice(0, 5).map(material => `${material.name} ${material.baseQuantity}`);
+    setText('#progression-materials', materials.length
+      ? `大道至宝稳定材料：${materials.join(' · ')}`
+      : '大道至宝稳定材料：随真世界探索逐步收录');
   }
 
   function render() {
@@ -1023,7 +1908,7 @@
 
     const unseen = !selected || selected.status === 'unseen';
     const progress = explorationProgress(selected);
-    setText('#star-status', selected ? STATUS_LABELS[selected.status] : '尚未定星');
+    setText('#star-status', selected ? selected.cleared ? '彻查' : STATUS_LABELS[selected.status] : '尚未定星');
     setText('#star-name', displayName(selected));
     setText('#star-coordinates', selected ? `星标 Q${signed(selected.q)} · R${signed(selected.r)}` : '沧澜星图等待神念');
     setText('#threat-mark', unseen ? '--' : `危${Number(selected.threat) || '?'}`);
@@ -1052,6 +1937,8 @@
     });
     renderThreat();
     renderExpedition(selected);
+    renderProgression();
+    renderTrueWorld();
   }
 
   function signed(value) {
@@ -1142,6 +2029,38 @@
   function purgeRouteNodes(threat = state?.threat) {
     if (!threat || !Array.isArray(threat.purge?.route)) return [];
     return threat.purge.route.map(resolveThreatNode).filter(Boolean);
+  }
+
+  function drawCampaignRoute(now) {
+    const chain = state?.expedition?.campaign?.chain || [];
+    const points = chain
+      .map(entry => ({ entry, node: getNode(entry.starId) }))
+      .filter(item => item.node);
+    if (points.length < 2) return;
+    context.save();
+    for (let index = 1; index < points.length; index += 1) {
+      const previous = points[index - 1];
+      const current = points[index];
+      const completed = current.entry.viewerCleared === true;
+      context.beginPath();
+      context.moveTo(previous.node.x, previous.node.y);
+      context.lineTo(current.node.x, current.node.y);
+      context.setLineDash(completed ? [] : [4 / camera.zoom, 7 / camera.zoom]);
+      context.lineDashOffset = motionQuery.matches ? 0 : -now * .006 / camera.zoom;
+      context.lineWidth = (completed ? 2.2 : 1.35) / camera.zoom;
+      context.strokeStyle = completed ? PALETTE.goldBright : PALETTE.boneSoft;
+      context.globalAlpha = completed ? .72 : current.entry.unlocked ? .38 : .18;
+      context.stroke();
+    }
+    points.forEach(({ entry, node }) => {
+      traceHex(node.x, node.y, 25);
+      context.setLineDash([]);
+      context.lineWidth = (entry.viewerCleared ? 2.2 : 1.2) / camera.zoom;
+      context.strokeStyle = entry.viewerCleared ? PALETTE.goldBright : entry.unlocked ? PALETTE.gold : PALETTE.muted;
+      context.globalAlpha = entry.viewerCleared ? .86 : .48;
+      context.stroke();
+    });
+    context.restore();
   }
 
   function drawPurgeRoute(now) {
@@ -1351,6 +2270,15 @@
       context.stroke();
     }
 
+    if (node.cleared && !unknown) {
+      context.strokeStyle = PALETTE.goldBright;
+      context.lineWidth = 1.4 / camera.zoom;
+      context.globalAlpha = .82;
+      context.beginPath();
+      context.arc(node.x, node.y, 18, 0, Math.PI * 2);
+      context.stroke();
+    }
+
     if (current) {
       context.strokeStyle = PALETTE.goldBright;
       context.lineWidth = 1.7 / camera.zoom;
@@ -1421,6 +2349,7 @@
     context.save();
     context.translate(camera.x, camera.y);
     context.scale(camera.zoom, camera.zoom);
+    drawCampaignRoute(now);
     drawPurgeRoute(now);
     drawRoute(now);
     (state?.nodes || BASE_NODES).forEach(node => drawNode(node, now));
@@ -1744,8 +2673,11 @@
           title: `${node.name} · 灾痕远征`,
           status: 'active',
           complete: false,
-          progress: 12,
-          stage: { number: 1, total: 4, name: '观测灾痕' },
+          progress: 10,
+          unlocked: true,
+          lockedReason: '',
+          chain: expedition.campaign.chain || [],
+          stage: { number: 1, total: 5, name: '观测灾痕' },
         },
         camp: null,
         tacticalBag: { items: [], used: 0, capacity: 12, secured: 0 },
@@ -1787,7 +2719,29 @@
     }
     if (action === 'campaign_advance') {
       if (!expedition.viewer.canAdvance) throw new Error('区域战役暂时没有可推进节点。');
-      expedition.stage = { number: 2, total: 4, name: '清理同源变异体' };
+      if (expedition.stage.number >= 4) {
+        expedition.stage = { number: 5, total: 5, name: '镇压神炉灾核' };
+        expedition.campaign.stage = expedition.stage;
+        expedition.campaign.progress = 100;
+        expedition.campaign.complete = true;
+        expedition.campaign.status = 'complete';
+        expedition.tacticalBag.items = [
+          ...expedition.tacticalBag.items,
+          { id: 'era-power', name: '纪元之力', quantity: 1 },
+        ];
+        expedition.tacticalBag.used += 1;
+        expedition.viewer.canAdvance = false;
+        expedition.viewer.canDeposit = true;
+        expedition.viewer.canEvacuate = true;
+        return { ok: true, state: next, message: '神炉灾核已经镇压，五阶段区域战役完成。' };
+      }
+      if (expedition.stage.number >= 3) {
+        expedition.stage = { number: 4, total: 5, name: '读取先秦炉铭' };
+        expedition.campaign.stage = expedition.stage;
+        expedition.campaign.progress = 82;
+        return { ok: true, state: next, message: '古星阵眼稳定，先秦炉铭已经显化。' };
+      }
+      expedition.stage = { number: 2, total: 5, name: '清理同源变异体' };
       expedition.campaign.stage = expedition.stage;
       expedition.campaign.progress = 52;
       expedition.tacticalBag.items = [
@@ -1815,16 +2769,18 @@
       const rescue = expedition.rescueTargets.find(target => String(target.userId ?? target.id) === String(targetId)) || expedition.rescueTargets[0];
       if (!expedition.viewer.canRescue || !rescue) throw new Error('当前星域没有可响应的求援信号。');
       expedition.rescueTargets = expedition.rescueTargets.filter(target => target !== rescue);
-      expedition.stage = { number: 4, total: 4, name: '古星阵眼稳定' };
+      expedition.stage = { number: 3, total: 5, name: '修复古星阵眼' };
       expedition.campaign.stage = expedition.stage;
-      expedition.campaign.progress = 100;
-      expedition.campaign.complete = true;
-      expedition.campaign.status = 'complete';
-      expedition.tacticalBag.items = [{ id: 'ancient-component', name: '古文明构件', quantity: 1 }];
-      expedition.tacticalBag.used = 1;
+      expedition.campaign.progress = 64;
+      expedition.tacticalBag.items = [
+        ...expedition.tacticalBag.items,
+        { id: 'ancient-component', name: '古文明构件', quantity: 1 },
+      ];
+      expedition.tacticalBag.used += 1;
       expedition.viewer.canRescue = false;
-      expedition.viewer.canEvacuate = true;
-      return { ok: true, state: next, message: `${rescue.name || '失联修士'}已回归营地，区域战役完成。` };
+      expedition.viewer.canAdvance = true;
+      expedition.viewer.canDeposit = true;
+      return { ok: true, state: next, message: `${rescue.name || '失联修士'}已回归营地，古星阵眼修复节点已经开放。` };
     }
     if (action === 'lost_cache_recover') {
       const cache = expedition.lostCaches.find(item => String(item.cacheId ?? item.id) === String(targetId)) || expedition.lostCaches[0];
@@ -1875,8 +2831,192 @@
     throw new Error('当前远征阶段不接受这项行动。');
   }
 
+  function previewTrueWorldAction(next, action, targetId) {
+    const trueWorld = next.trueWorld;
+    if (!trueWorld?.exists || trueWorld.unlocked === false) throw new Error('真世界入口尚未接驳。');
+    if (action === 'true_world_enter' || action === 'true_world_leave') {
+      const layer = action === 'true_world_enter' ? 'true_world' : 'canglan';
+      trueWorld.currentLayer = layer;
+      next.currentLayer = layer;
+      next.progression ||= {};
+      next.progression.currentLayer = layer;
+      next.player.layer = layer;
+      return {
+        ok: true,
+        state: next,
+        message: layer === 'true_world' ? '预览：已接驳真世界。' : '预览：已返回沧澜界。',
+      };
+    }
+    trueWorld.global ||= {};
+    trueWorld.viewer ||= {};
+    trueWorld.sectors ||= [];
+    const id = normalizeTrueWorldCoordinate(targetId, trueWorld.currentSectorId || '0,0');
+    let sector = trueWorld.sectors.find(entry => entry.id === id);
+    if (!sector) {
+      const [q, r] = id.split(',').map(Number);
+      sector = { id, q, r, name: `真世界扇区 ${id}`, status: 'unseen', progress: 0, progressRequired: 100, threat: 4, biomeName: '未知星域' };
+      trueWorld.sectors.push(sector);
+    }
+    const normalizeViewerLoot = () => {
+      trueWorld.viewer.loot = Array.isArray(trueWorld.viewer.loot) ? trueWorld.viewer.loot : [];
+      trueWorld.loot = Array.isArray(trueWorld.loot) ? trueWorld.loot : trueWorld.viewer.loot;
+    };
+    const markObserved = () => {
+      const wasUnseen = sector.status === 'unseen';
+      sector.status = sector.status === 'unseen' ? 'observed' : sector.status;
+      if (wasUnseen) trueWorld.global.observedCount = Math.max(0, finiteNumber(trueWorld.global.observedCount)) + 1;
+      sector.progress = Math.min(Math.max(1, finiteNumber(sector.progressRequired, 100)), finiteNumber(sector.progress) + 25);
+      if (sector.progress >= sector.progressRequired) {
+        sector.status = 'explored';
+        trueWorld.global.exploredCount = Math.max(0, finiteNumber(trueWorld.global.exploredCount)) + (sector._previewExplored ? 0 : 1);
+        sector._previewExplored = true;
+      }
+      trueWorld.global.progressPercent = trueWorld.global.exploredCount / Math.max(1, finiteNumber(trueWorld.sectorCount, TRUE_WORLD_SECTOR_COUNT)) * 100;
+    };
+    if (action === 'true_world_observe' || action === 'true_world_explore') {
+      markObserved();
+      trueWorld.currentSectorId = id;
+      trueWorld.viewer.coordinate = id;
+      trueWorld.viewer.canExplore = sector.status !== 'explored';
+      return { ok: true, state: next, message: `${sector.name}观测回波已并入全服星图。` };
+    }
+    if (action === 'true_world_move') {
+      markObserved();
+      trueWorld.currentSectorId = id;
+      trueWorld.viewer.coordinate = id;
+      return { ok: true, state: next, message: `真世界航路闭合，已抵达${sector.name}。` };
+    }
+    if (action === 'true_world_encounter' || action === 'true_world_encounter_start' || action === 'true_world_battle') {
+      if (sector.status !== 'explored') markObserved();
+      trueWorld.currentSectorId = id;
+      trueWorld.viewer.coordinate = id;
+      trueWorld.enemy = {
+        encounterId: trueWorld.enemy?.encounterId || 'preview-tw-wave-01',
+        tier: 'quasi_immortal_emperor',
+        name: '同源准仙帝灾厄变异体',
+        realmName: '准仙帝',
+        maxHp: 8400000000000000,
+        currentHp: 0,
+        status: 'defeated',
+        sameRealmMutant: true,
+      };
+      trueWorld.global.victoryCount = Math.max(0, finiteNumber(trueWorld.global.victoryCount)) + 1;
+      trueWorld.global.quasiImmortalEmperorDefeated = Math.max(0, finiteNumber(trueWorld.global.quasiImmortalEmperorDefeated)) + 1;
+      trueWorld.global.eraAccumulation = Math.max(0, finiteNumber(trueWorld.global.eraAccumulation)) + 1;
+      trueWorld.viewer.eraAccumulation = Math.max(0, finiteNumber(trueWorld.viewer.eraAccumulation)) + 1;
+      trueWorld.viewer.victories ||= {};
+      trueWorld.viewer.victories.total = Math.max(0, finiteNumber(trueWorld.viewer.victories.total)) + 1;
+      normalizeViewerLoot();
+      const reward = { id: 'era-dao-marrow', name: '纪元道髓', quantity: 1 };
+      trueWorld.loot.push(reward);
+      trueWorld.viewer.canClaim = true;
+      return { ok: true, state: next, message: '同源准仙帝变异体已镇压，纪元积累与战利品等待收取。' };
+    }
+    if (action === 'true_world_claim') {
+      normalizeViewerLoot();
+      if (!trueWorld.viewer.canClaim && !trueWorld.loot.length) throw new Error('当前没有待收取的真世界战果。');
+      trueWorld.viewer.canClaim = false;
+      trueWorld.viewer.loot = [];
+      trueWorld.loot = [];
+      return { ok: true, state: next, message: '真世界战果已收取，纪元积累归入本体。' };
+    }
+    throw new Error('当前真世界行动未接入。');
+  }
+
+  function previewAncientEventAction(next, action, targetId) {
+    const ancient = next.ancientEvents;
+    const event = ancient?.events?.find(entry => entry.id === targetId);
+    if (!event) throw new Error('所选古文明章节已经隐入古史。');
+    if (action === 'ancient_event_contribute') {
+      if (!event.viewer.canContribute) throw new Error('需抵达事件坐标，并完成真世界扇区探索。');
+      const applied = Math.min(10, event.contributionRequired - event.progress);
+      event.progress += applied;
+      event.progressPercent = event.progress / event.contributionRequired * 100;
+      event.viewer.contribution += applied;
+      event.contributorCount = Math.max(1, event.contributorCount);
+      ancient.viewer.totalContribution += applied;
+      if (event.progress >= event.contributionRequired) {
+        event.status = 'completed';
+        event.viewer.canContribute = false;
+        event.viewer.canClaim = true;
+        ancient.completedCount += 1;
+        const nextEvent = ancient.events.find(entry => entry.order === event.order + 1);
+        if (nextEvent) {
+          nextEvent.status = 'active';
+          ancient.activeEventId = nextEvent.id;
+        } else {
+          ancient.activeEventId = '';
+          ancient.status = 'completed';
+        }
+      }
+      ancient.viewer.canClaim = ancient.events.some(entry => entry.viewer.canClaim);
+      return { ok: true, state: next, message: `${event.name}全服贡献 ${event.progress}/${event.contributionRequired}。` };
+    }
+    if (action === 'ancient_event_claim') {
+      if (!event.viewer.canClaim) throw new Error('所选章节暂无个人战果。');
+      event.viewer.canClaim = false;
+      event.viewer.claimed = true;
+      ancient.viewer.canClaim = ancient.events.some(entry => entry.viewer.canClaim);
+      return { ok: true, state: next, message: `${event.name}个人古史战果已经归档。` };
+    }
+    throw new Error('当前古文明行动未接入。');
+  }
+
+  function previewDaoForgeAction(next, action, targetId) {
+    const forgeState = next.daoForge;
+    if (!forgeState?.exists) throw new Error('大道炉尚未在真世界显化。');
+    if (action === 'dao_forge_start') {
+      const [recipeId, rawEntries = ''] = String(targetId).split('|', 2);
+      const entries = rawEntries.split(',').map(value => value.trim()).filter(Boolean);
+      const recipe = forgeState.recipes.find(entry => entry.id === recipeId);
+      if (!recipe || !recipe.known || !recipe.ready || recipe.unavailable) throw new Error('所选炼制法的条件尚未齐备。');
+      const rule = daoForgeSelectionRule(recipe.id);
+      if (entries.length !== rule.count || new Set(entries).size !== rule.count) {
+        throw new Error(`${recipe.name}需要恰好指定${rule.count}项投入。`);
+      }
+      if (rule.kind === 'treasure' && entries.some(name => !forgeState.ownedInnateTreasures.includes(name))) {
+        throw new Error('所选先天至宝不在当前持有列表。');
+      }
+      if (forgeState.forge && forgeState.forge.status !== 'claimed') throw new Error('当前已有大道至宝在炉中。');
+      const startedAt = Date.now();
+      forgeState.forge = {
+        forgeId: `preview-forge-${recipe.id}`,
+        status: 'forging',
+        recipeId: recipe.id,
+        recipeName: recipe.name,
+        treasureName: `${recipe.name}·大道至宝`,
+        startedAt,
+        readyAt: startedAt + forgeState.durationMs,
+        remainingMs: forgeState.durationMs,
+        progress: 0,
+        canClaim: false,
+        selectionEntries: entries,
+        consumption: rule.kind === 'treasure' && recipe.id === 'three-innate-erasure'
+          ? { innateTreasures: entries.map(name => ({ id: name, name })) }
+          : { innateTreasures: [] },
+        output: rule.kind === 'treasure'
+          ? { preservedInnateTreasures: recipe.id === 'dao-fruit-five-treasure' ? entries.map(name => ({ id: name, name })) : [] }
+          : { authorities: entries.map(name => ({ id: name, name })) },
+      };
+      return { ok: true, state: next, message: `${recipe.name}已经开炉，二十四小时后大道至宝成形。` };
+    }
+    if (action === 'dao_forge_claim') {
+      const forge = forgeState.forge;
+      if (!forge || !(forge.canClaim || forge.status === 'ready')) throw new Error('大道炉仍在炼制。');
+      forge.status = 'claimed';
+      forge.canClaim = false;
+      forge.progress = 100;
+      forge.remainingMs = 0;
+      return { ok: true, state: next, message: `${forge.treasureName}已经出炉并收入纳戒。` };
+    }
+    throw new Error('当前大道炉行动未接入。');
+  }
+
   function previewAction(action, targetId) {
     const next = cloneState(state);
+    if (ANCIENT_EVENT_ACTIONS.has(action)) return previewAncientEventAction(next, action, targetId);
+    if (DAO_FORGE_ACTIONS.has(action)) return previewDaoForgeAction(next, action, targetId);
+    if (TRUE_WORLD_ACTIONS.has(action)) return previewTrueWorldAction(next, action, targetId);
     if (EXPEDITION_ACTIONS.has(action)) return previewExpeditionAction(next, action, targetId);
     const node = next.nodes.find(item => item.id === targetId);
     const current = next.nodes.find(item => item.id === next.player.positionId);
@@ -1947,11 +3087,20 @@
     if (busy) return;
     const threatAction = THREAT_ACTIONS.has(action);
     const expeditionAction = EXPEDITION_ACTIONS.has(action);
+    const trueWorldAction = TRUE_WORLD_ACTIONS.has(action);
+    const ancientEventAction = ANCIENT_EVENT_ACTIONS.has(action);
+    const daoForgeAction = DAO_FORGE_ACTIONS.has(action);
     const targetId = threatAction
       ? threatTargetNode()?.id
       : expeditionAction
         ? expeditionTargetId(action)
-        : getNode(selectedId)?.id;
+        : trueWorldAction
+          ? trueWorldTargetId(action)
+          : ancientEventAction
+            ? ancientEventTargetId()
+            : daoForgeAction
+              ? daoForgeTargetId(action)
+              : getNode(selectedId)?.id;
     if (!targetId) return;
     const travelRoute = action === 'move' ? [...currentRoute] : [];
     busy = true;
@@ -1973,7 +3122,9 @@
           ? (threatTargetNode()?.id || selectedId || state.player.positionId)
           : expeditionAction
             ? (getNode(state.expedition?.starId)?.id || selectedId || state.player.positionId)
-            : (getNode(targetId)?.id || state.player.positionId);
+            : trueWorldAction || ancientEventAction || daoForgeAction
+              ? selectedId
+              : (getNode(targetId)?.id || state.player.positionId);
       showToast(payload.message || '星海因果已经更新。');
     } catch (error) {
       showToast(error.message || '本次神念未能落定。');
@@ -2028,6 +3179,38 @@
   document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => performAction(button.dataset.action)));
   document.querySelectorAll('[data-threat-action]').forEach(button => button.addEventListener('click', () => performAction(button.dataset.threatAction)));
   document.querySelectorAll('[data-expedition-action]').forEach(button => button.addEventListener('click', () => performAction(button.dataset.expeditionAction)));
+  document.querySelectorAll('[data-true-world-action]').forEach(button => button.addEventListener('click', () => performAction(button.dataset.trueWorldAction)));
+  document.querySelectorAll('[data-ancient-event-action]').forEach(button => button.addEventListener('click', () => performAction(button.dataset.ancientEventAction)));
+  document.querySelectorAll('[data-dao-forge-action]').forEach(button => button.addEventListener('click', () => performAction(button.dataset.daoForgeAction)));
+  $('#dao-forge-authorities')?.addEventListener('input', event => {
+    daoForgeAuthorityDraft = event.currentTarget.value;
+    renderDaoForge();
+  });
+  document.addEventListener('click', event => {
+    const layerButton = event.target.closest?.('[data-layer-id]');
+    if (layerButton && !layerButton.disabled && state?.progression) {
+      const layerId = String(layerButton.dataset.layerId || '');
+      const layer = (state.progression.layers || []).find(entry => entry.id === layerId);
+      if (!layer?.unlocked) return;
+      const currentLayer = String(state.currentLayer || state.progression.currentLayer || 'canglan');
+      if (layerId !== currentLayer && (layerId === 'true_world' || currentLayer === 'true_world')) {
+        trueWorldSelectedSectorId = state.trueWorld?.currentSectorId || trueWorldSelectedSectorId || '0,0';
+        void performAction(layerId === 'true_world' ? 'true_world_enter' : 'true_world_leave');
+        return;
+      }
+      state.progression.currentLayer = layerId;
+      if (layerId === 'true_world') {
+        trueWorldSelectedSectorId = state.trueWorld?.currentSectorId || '0,0';
+        setDrawer(true);
+      }
+      render();
+    }
+    const sectorButton = event.target.closest?.('[data-true-world-sector]');
+    if (sectorButton && !sectorButton.disabled) {
+      trueWorldSelectedSectorId = String(sectorButton.dataset.trueWorldSector || '0,0');
+      render();
+    }
+  });
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && view.width <= 760) setDrawer(false);
   });

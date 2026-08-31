@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#090908">
   <title>沧澜界 · 大星图</title>
-  <link rel="stylesheet" href="/canglan/style.css?v=20260830c">
+  <link rel="stylesheet" href="/canglan/style.css?v=20260831a">
 </head>
 <body>
   <main id="app" class="app-shell is-loading">
@@ -201,6 +201,149 @@
         </div>
       </section>
 
+      <section id="progression-console" class="progression-console" aria-labelledby="progression-title">
+        <header class="progression-head">
+          <div>
+            <span>彼岸航路</span>
+            <h3 id="progression-title">沧澜界</h3>
+          </div>
+          <code id="progression-layer-count">1 / 3</code>
+        </header>
+        <div id="progression-layers" class="progression-layers" aria-label="彼岸世界层级"></div>
+        <p id="progression-materials" class="progression-materials">稳定材料读取中</p>
+      </section>
+
+      <section id="true-world-console" class="true-world-console" aria-labelledby="true-world-title" data-phase="locked" hidden>
+        <header class="true-world-head">
+          <div>
+            <span>真世界 · 全服远征</span>
+            <h3 id="true-world-title">真世界未接驳</h3>
+          </div>
+          <code id="true-world-coordinate">0,0</code>
+        </header>
+
+        <div class="true-world-vitals">
+          <div>
+            <span>全服开图</span>
+            <strong id="true-world-explored">0 / 0</strong>
+            <small id="true-world-observed">观测 0</small>
+          </div>
+          <div>
+            <span>纪元积累</span>
+            <strong id="true-world-era">0</strong>
+            <small id="true-world-quasi">准仙帝 0</small>
+          </div>
+          <div>
+            <span>个人战果</span>
+            <strong id="true-world-player-era">0</strong>
+            <small id="true-world-victories">胜场 0</small>
+          </div>
+        </div>
+
+        <div class="true-world-progress" role="progressbar" aria-label="真世界全服探索度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <span id="true-world-progress-fill"></span>
+        </div>
+
+        <section class="true-world-sector" aria-labelledby="true-world-sector-title">
+          <header>
+            <span id="true-world-sector-badge">扇区待命</span>
+            <strong id="true-world-sector-title">真世界门户</strong>
+            <code id="true-world-sector-threat">危 0</code>
+          </header>
+          <p id="true-world-sector-copy">等待全服神念接入真世界。</p>
+          <div id="true-world-enemy" class="true-world-enemy" data-status="idle">
+            <div>
+              <span id="true-world-enemy-tier">当前敌群</span>
+              <strong id="true-world-enemy-name">尚未生成</strong>
+            </div>
+            <div class="true-world-enemy-hp">
+              <span id="true-world-enemy-realm">--</span>
+              <strong id="true-world-enemy-health">--</strong>
+            </div>
+          </div>
+        </section>
+
+        <div id="true-world-frontier" class="true-world-frontier" aria-label="真世界可见扇区"></div>
+        <p id="true-world-brief" class="true-world-brief">真世界的星海仍在展开。</p>
+        <ul id="true-world-loot" class="true-world-loot" aria-label="真世界战利品"></ul>
+
+        <div class="true-world-actions" aria-label="真世界探索行动">
+          <button type="button" data-true-world-action="true_world_observe" title="观测当前真世界扇区"><i data-lucide="scan-eye"></i><span>观测</span></button>
+          <button type="button" data-true-world-action="true_world_move" class="primary-action" title="移动至目标真世界扇区"><i data-lucide="navigation"></i><span>移动</span></button>
+          <button type="button" data-true-world-action="true_world_encounter" title="迎战当前真世界敌群"><i data-lucide="swords"></i><span>迎战</span></button>
+          <button type="button" data-true-world-action="true_world_claim" class="claim-action" title="领取真世界战果"><i data-lucide="package-check"></i><span>收取</span></button>
+        </div>
+
+        <div id="ancient-event-console" class="ancient-event-console" aria-labelledby="ancient-event-title">
+          <header class="ancient-event-head">
+            <div>
+              <span>全服古史复原</span>
+              <strong id="ancient-event-title">彼岸古文明事件链</strong>
+            </div>
+            <code id="ancient-event-count">0 / 4</code>
+          </header>
+          <div id="ancient-event-track" class="ancient-event-track" role="tablist" aria-label="彼岸古文明事件章节"></div>
+          <div class="ancient-event-detail">
+            <header>
+              <span id="ancient-event-status">前置锁定</span>
+              <strong id="ancient-event-name">古史尚未显化</strong>
+              <code id="ancient-event-coordinate">--</code>
+            </header>
+            <p id="ancient-event-copy">等待真世界坐标与古文明因果重合。</p>
+            <div class="ancient-event-progress" role="progressbar" aria-label="古文明事件全服贡献" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <span id="ancient-event-progress-fill"></span>
+            </div>
+            <div class="ancient-event-meta">
+              <span id="ancient-event-contribution">贡献 0 / 0</span>
+              <span id="ancient-event-viewer">个人 0</span>
+            </div>
+            <p id="ancient-event-opposition" class="ancient-event-opposition">敌对：尚未观测</p>
+          </div>
+          <div class="ancient-event-actions" aria-label="古文明事件行动">
+            <button type="button" data-ancient-event-action="ancient_event_contribute" title="在事件坐标留下十点全服贡献"><i data-lucide="landmark"></i><span>留痕</span></button>
+            <button type="button" data-ancient-event-action="ancient_event_claim" title="领取所选古文明章节战果"><i data-lucide="scroll-text"></i><span>领取</span></button>
+          </div>
+        </div>
+
+        <div id="dao-forge-console" class="dao-forge-console" aria-labelledby="dao-forge-title">
+          <header class="dao-forge-head">
+            <div>
+              <span>二十四时辰大道炉</span>
+              <strong id="dao-forge-title">大道至宝炼制</strong>
+            </div>
+            <code id="dao-forge-status">待开炉</code>
+          </header>
+          <div id="dao-forge-recipes" class="dao-forge-recipes" role="tablist" aria-label="大道至宝炼制配方"></div>
+          <div class="dao-forge-detail">
+            <header>
+              <strong id="dao-forge-recipe-name">选择炼制法</strong>
+              <code id="dao-forge-timer">24:00:00</code>
+            </header>
+            <p id="dao-forge-recipe-copy">真世界将验证配方、材料与先天至宝。</p>
+            <div class="dao-forge-progress" role="progressbar" aria-label="大道至宝炼制进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <span id="dao-forge-progress-fill"></span>
+            </div>
+            <p id="dao-forge-requirements" class="dao-forge-requirements">配方条件读取中</p>
+          </div>
+          <div id="dao-forge-selection" class="dao-forge-selection">
+            <header>
+              <span id="dao-forge-selection-label">投入先天至宝</span>
+              <code id="dao-forge-selection-count">0 / 3</code>
+            </header>
+            <div id="dao-forge-treasure-options" class="dao-forge-treasure-options" role="group" aria-label="选择投入大道炉的先天至宝"></div>
+            <label id="dao-forge-authority-field" class="dao-forge-authority-field" hidden>
+              <span>强化权柄</span>
+              <input id="dao-forge-authorities" type="text" maxlength="96" autocomplete="off" list="dao-forge-authority-options" placeholder="开天, 阴阳逆转, 星辰护界" aria-label="输入三项强化权柄，以逗号分隔">
+              <datalist id="dao-forge-authority-options"></datalist>
+            </label>
+          </div>
+          <div class="dao-forge-actions" aria-label="大道至宝炼制行动">
+            <button type="button" data-dao-forge-action="dao_forge_start" title="按所选炼制法开启大道炉"><i data-lucide="flame"></i><span>开炉</span></button>
+            <button type="button" data-dao-forge-action="dao_forge_claim" title="收取炼制完成的大道至宝"><i data-lucide="package-check"></i><span>出炉</span></button>
+          </div>
+        </div>
+      </section>
+
       <dl class="star-facts">
         <div><dt>法则</dt><dd id="star-law">未解析</dd></div>
         <div><dt>星相</dt><dd id="star-kind">未解析</dd></div>
@@ -236,6 +379,6 @@
   </section>
 
   <script src="/world/lucide.min.js?v=20260820"></script>
-  <script src="/canglan/app.js?v=20260830c"></script>
+  <script src="/canglan/app.js?v=20260831a"></script>
 </body>
 </html>

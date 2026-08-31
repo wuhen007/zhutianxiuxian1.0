@@ -74,6 +74,7 @@ import {
 import {
     ACCIDENT_BASE,
     ACCIDENT_REALM_REDUCE,
+    canImmortalEmperorFreeTravel,
     COORDINATE_CLUE_COST,
     DEFAULT_KNOWN_LOCATIONS,
     PLACE_LOCATION_MAP,
@@ -86,11 +87,13 @@ import {
     getBaseTravelThreshold,
     getBodyTravelQuote,
     getDimensionBarrierCount,
+    getDimensionName,
     getLocationThreshold,
     getTokenTravelTime,
     getUnknownCoordinates,
     hasCoordinate,
     isInstantAllHeavensTravel,
+    isTimeRiverLocation,
     isSealedLocation,
     purchaseCoordinateClue,
     rememberCoordinate,
@@ -522,7 +525,7 @@ export class SecretPlace extends plugin {
   }
 
   async startXutianPassengers(owner, ownerTask) {
-    if (!ownerTask.travel_protected || !hasEquippedInnateTreasure(owner, '虚天舟')) return [];
+    if (!ownerTask.travel_protected || !hasEquippedInnateTreasure(owner, '虚天舟', '被动:1')) return [];
     const passengerIds = [...new Set((owner.虚天舟乘员 || []).map(String))].slice(0, 3);
     const boarded = [];
 
@@ -585,8 +588,13 @@ async goToLocation(e) {
     }
     
     const targetLocation = LOCATION_MAP[location];
+    const emperorFreeTravel = canImmortalEmperorFreeTravel(
+        player,
+        player.power_place,
+        targetLocation,
+    );
     
-    if (!getBaseTravelThreshold(player).ok) {
+    if (!emperorFreeTravel && !getBaseTravelThreshold(player).ok) {
         const messages = [`你必须成就地仙，肉身成圣后才能承受住穿梭空间的能量风暴`,];
         
          e.reply(messages);
@@ -617,7 +625,7 @@ async goToLocation(e) {
     
     // ========== 坐标记忆校验（凡间默认已知，其余需先记坐标；五色祭坛激活可免记直抵遮天） ==========
     const altarBypassZhatian = (location === '遮天位面' && player.五色祭坛激活 === 1);
-    if (!hasCoordinate(player, location) && !altarBypassZhatian && !useSanShiTongGuan) {
+    if (!hasCoordinate(player, location) && !altarBypassZhatian && !useSanShiTongGuan && !emperorFreeTravel) {
         return e.reply([
             `【坐标未知·星路迷茫】`,
             `你并不知道「${location}」的星空坐标，无法定位彼岸。`,
@@ -645,7 +653,7 @@ async goToLocation(e) {
     const isSpecialLocation = SPECIAL_LOCATIONS.includes(location);
     const isInstantTravel = isInstantAllHeavensTravel(player, player.power_place, targetLocation);
 
-    if (tokenTier && !isSpecialLocation && !isInstantTravel) {
+    if (tokenTier && !isSpecialLocation && !isInstantTravel && !emperorFreeTravel) {
         // 传送阵要求：目标位面已在传送阵上"刻画"坐标
         const engraved = Array.isArray(player.传送阵坐标) ? player.传送阵坐标 : [];
         if (!engraved.includes(location)) {
@@ -715,7 +723,7 @@ async goToLocation(e) {
             token_tier: tokenTier,
             accident: isAccident,
             tianwai_wind: windResult.consumed,
-            travel_protected: hasEquippedInnateTreasure(player, '虚天舟'),
+            travel_protected: hasEquippedInnateTreasure(player, '虚天舟', '被动:1'),
             travel_msg: [
                 `阵纹流转，星空古路在脚下铺展`,
                 `你沿古路横渡，位面光影在身侧缓缓流淌`,
@@ -739,7 +747,7 @@ async goToLocation(e) {
 
     // ========== 通用位面准入门槛检查（接引/送往复用同一套逻辑） ==========
     const threshold = await this.checkLocationThreshold(player, location);
-    if (!threshold.ok && !useSanShiTongGuan) {
+    if (!threshold.ok && !useSanShiTongGuan && !emperorFreeTravel) {
         const coffinHint = location === '上苍之上'
             ? ['', '※ 准仙帝可携带一具三世铜棺，以 #穿梭上苍之上 跨越此重维度壁垒。']
             : [];
@@ -752,6 +760,18 @@ async goToLocation(e) {
     const { xiuweiCost, qixueCost, shouyuanCost } = travelQuote;
     let travelTime = travelQuote.travelTime;
     let allMsgs = [];
+
+    if (travelQuote.dimensionBarrierCount > 0) {
+        allMsgs.push(
+            `【维度壁垒】${getDimensionName(player.power_place)} → ${getDimensionName(targetLocation)}，`
+            + `本次需跨越${travelQuote.dimensionBarrierCount}重界壁。`,
+        );
+    }
+    if (emperorFreeTravel && !isInstantTravel) {
+        allMsgs.push('【仙帝权能·永恒直达】三组核心维度之间无需坐标与普通准入检验，计时航程减少70%。');
+    } else if (isTimeRiverLocation(player.power_place) || isTimeRiverLocation(targetLocation)) {
+        allMsgs.push('【时序界壁】时间长河是独立时序域，不属于诸天万界内部。');
+    }
 
     // ==== 鲲鹏宝术检查 ====
     if (travelQuote.kunpengReduction > 0) {
@@ -1038,7 +1058,7 @@ async goToLocation(e) {
         player.power_place = targetLocation;
         await Write_player(usr_qq, player);
         return e.reply([
-            `【准仙帝权能·诸天无距】`,
+            `【${emperorFreeTravel ? '仙帝' : '准仙帝'}权能·诸天无距】`,
             `${player.名号}一念收束诸天坐标，从${fromLocation}直接降临${location}。`,
             `消耗修为${xiuweiCost}、血气${qixueCost}、寿元${shouyuanCost}，本次穿梭无需等待。`
         ].join('\n'));
@@ -1063,7 +1083,7 @@ async goToLocation(e) {
         group_id: e.isGroup ? e.group_id : null,
         used_token: false, // 标记未使用传送次数
         tianwai_wind: windResult.consumed,
-        travel_protected: hasEquippedInnateTreasure(player, '虚天舟'),
+        travel_protected: hasEquippedInnateTreasure(player, '虚天舟', '被动:1'),
         san_shi_tong_guan: useSanShiTongGuan
     };
     
@@ -3572,7 +3592,8 @@ async jieyinPlayer(e) {
       `你当前所处的位面不在已知星图之中，无法锚定接引坐标。`
     ].join('\n'));
   }
-  if (getDimensionBarrierCount(targetPlayer.power_place, player.power_place) > 0) {
+  if (getDimensionBarrierCount(targetPlayer.power_place, player.power_place) > 0
+    && !isInstantAllHeavensTravel(targetPlayer, targetPlayer.power_place, player.power_place)) {
     return e.reply('接引神通无法越过维度壁垒，目标需自行使用 #穿梭 跨越界壁。');
   }
 
@@ -3684,7 +3705,8 @@ async sendPlayerToLocation(e) {
 
   const targetPlayer = await Read_player(targetQQ);
 
-  if (getDimensionBarrierCount(targetPlayer.power_place, PLACE_LOCATION_MAP[location]) > 0) {
+  if (getDimensionBarrierCount(targetPlayer.power_place, PLACE_LOCATION_MAP[location]) > 0
+    && !isInstantAllHeavensTravel(targetPlayer, targetPlayer.power_place, PLACE_LOCATION_MAP[location])) {
     return e.reply('送往神通无法越过维度壁垒，目标需自行使用 #穿梭 跨越界壁。');
   }
 
@@ -3944,7 +3966,8 @@ async confirmJieyin(e) {
         ].join('\n'));
     }
 
-    if (getDimensionBarrierCount(targetPlayer.power_place, PLACE_LOCATION_MAP[req.locationName]) > 0) {
+    if (getDimensionBarrierCount(targetPlayer.power_place, PLACE_LOCATION_MAP[req.locationName]) > 0
+      && !isInstantAllHeavensTravel(targetPlayer, targetPlayer.power_place, PLACE_LOCATION_MAP[req.locationName])) {
         pendingJieyinMap.delete(targetQQ);
         return e.reply('请求涉及跨维度壁垒，空间通道已自行崩解，请改用 #穿梭。');
     }

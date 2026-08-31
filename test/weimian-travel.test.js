@@ -1,14 +1,19 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 
 import {
+  ALL_HEAVENS_LOCATIONS,
   COORDINATE_CLUE_COST,
+  DIMENSION_GROUPS,
+  IMMORTAL_EMPEROR_TRAVEL_TIME_REDUCTION,
   PLACE_LOCATION_MAP,
   FORBIDDEN_SUPREME_ALL_ATTRIBUTE,
   FORBIDDEN_SUPREMES,
   applyForbiddenSupremePlunder,
   buildForbiddenSupreme,
   calcRealmReducePct,
+  canImmortalEmperorFreeTravel,
   canUseSanShiTongGuanPassage,
   consumeTravelWind,
   ensureDefaultCoordinates,
@@ -16,9 +21,12 @@ import {
   getBaseTravelThreshold,
   getBodyTravelQuote,
   getDimensionBarrierCount,
+  getDimensionBarrierDescription,
   getDimensionBarrierTravelTime,
   getDimensionBreakingPower,
+  getDimensionGroup,
   getDimensionLayer,
+  getDimensionName,
   getDimensionTradeCompatibility,
   getKunpengReduction,
   getLocationThreshold,
@@ -28,7 +36,9 @@ import {
   hasCoordinate,
   hasEngravedCoordinate,
   isInstantAllHeavensTravel,
+  isAllHeavensLocation,
   isSealedLocation,
+  isTimeRiverLocation,
   purchaseCoordinateClue,
   recordUnfetteredJourney,
   registerForbiddenSupremeAttention,
@@ -149,7 +159,7 @@ test('彼岸世界保留位面编号但不进入常规坐标与传送体系', ()
 test('每日副本只会发现当前权柄可触及的高维坐标', () => {
   assert.equal(getUnknownCoordinates({ mijinglevel_id: 18 }).includes('厄土高原'), false);
   const emperorUnknown = getUnknownCoordinates({ mijinglevel_id: 21 });
-  assert.equal(emperorUnknown.includes('永恒未知之地'), true);
+  assert.equal(emperorUnknown.includes('永恒未知之地'), false);
   assert.equal(emperorUnknown.includes('百维真界'), false);
   assert.equal(emperorUnknown.includes('原初宇宙海'), false);
   assert.equal(getUnknownCoordinates({ mijinglevel_id: 23 }).includes('原初宇宙海'), true);
@@ -192,6 +202,73 @@ test('准仙帝在诸天万界内部穿梭不再产生等待时间', () => {
   assert.equal(getTokenTravelTime(player, 0, 1, 'high'), 0);
   assert.equal(isInstantAllHeavensTravel({ mijinglevel_id: 20 }, 0, PLACE_LOCATION_MAP.异域), true);
   assert.equal(getTokenTier({ 位面传送次数: 2, 高级传送次数: 1 }), 'high');
+});
+
+test('位面图鉴按诸天、时间长河、上苍、永恒未知与更高维度分组', () => {
+  assert.equal(ALL_HEAVENS_LOCATIONS.includes('时间长河'), false);
+  assert.equal(isAllHeavensLocation(PLACE_LOCATION_MAP.时间长河), false);
+  assert.equal(isTimeRiverLocation(PLACE_LOCATION_MAP.时间长河), true);
+  assert.equal(getDimensionLayer('时间长河'), -1);
+  assert.equal(getDimensionName('凡间'), '诸天万界');
+  assert.equal(getDimensionName('时间长河'), '时间长河');
+  assert.equal(getDimensionName('上苍之上'), '上苍之上');
+  assert.equal(getDimensionName('永恒未知之地'), '永恒未知之地');
+  assert.equal(getDimensionGroup('神维丝线海'), DIMENSION_GROUPS.higherDimensions);
+  assert.match(getDimensionBarrierDescription('时间长河'), /时序界壁/);
+  assert.match(getDimensionBarrierDescription('上苍之上'), /第一重空间壁垒/);
+});
+
+test('仙帝可直达诸天、上苍与永恒未知，诸天和上苍之间无需等待', () => {
+  const quasiEmperor = { ...traveler, mijinglevel_id: 20 };
+  const immortalEmperor = { ...traveler, mijinglevel_id: 21 };
+  const mortal = PLACE_LOCATION_MAP.凡间;
+  const upper = PLACE_LOCATION_MAP.上苍之上;
+  const eternal = PLACE_LOCATION_MAP.永恒未知之地;
+  const timeRiver = PLACE_LOCATION_MAP.时间长河;
+
+  assert.equal(canImmortalEmperorFreeTravel(quasiEmperor, mortal, upper), false);
+  assert.equal(canImmortalEmperorFreeTravel(immortalEmperor, mortal, upper), true);
+  assert.equal(canImmortalEmperorFreeTravel(immortalEmperor, upper, eternal), true);
+  assert.equal(canImmortalEmperorFreeTravel(immortalEmperor, mortal, timeRiver), false);
+  assert.equal(hasCoordinate(immortalEmperor, '永恒未知之地'), true);
+  assert.equal(isInstantAllHeavensTravel(immortalEmperor, mortal, upper), true);
+  assert.equal(isInstantAllHeavensTravel(immortalEmperor, mortal, eternal), false);
+  assert.equal(isInstantAllHeavensTravel(quasiEmperor, mortal, upper), false);
+  assert.equal(getDimensionBarrierTravelTime(immortalEmperor, mortal, upper), 0);
+  assert.equal(getBodyTravelQuote(immortalEmperor, '凡间', '上苍之上').travelTime, 0);
+});
+
+test('仙帝仍需计时的跨维度航程统一减少70%', () => {
+  const immortalEmperor = { ...traveler, mijinglevel_id: 21 };
+  const mortal = PLACE_LOCATION_MAP.凡间;
+  const eternal = PLACE_LOCATION_MAP.永恒未知之地;
+  const timeRiver = PLACE_LOCATION_MAP.时间长河;
+
+  assert.equal(IMMORTAL_EMPEROR_TRAVEL_TIME_REDUCTION, 0.7);
+  assert.equal(getDimensionBarrierCount(mortal, eternal), 3);
+  assert.equal(getDimensionBarrierTravelTime(immortalEmperor, mortal, eternal), 432);
+  assert.equal(getBodyTravelQuote(immortalEmperor, '凡间', '永恒未知之地').travelTime, 432);
+  assert.equal(getDimensionBarrierCount(mortal, timeRiver), 1);
+  assert.equal(getDimensionBarrierTravelTime(immortalEmperor, mortal, timeRiver), 144);
+  assert.equal(getBodyTravelQuote(immortalEmperor, '凡间', '时间长河').travelTime, 144);
+});
+
+test('登仙、遨游、穿梭与位面图鉴入口均接入共享维度规则', () => {
+  const levelSource = fs.readFileSync(new URL('../apps/User/Level.js', import.meta.url), 'utf8');
+  const riverSource = fs.readFileSync(new URL('../apps/SecretPlace/shijianchanghe.js', import.meta.url), 'utf8');
+  const travelSource = fs.readFileSync(new URL('../apps/SecretPlace/SecretPlace.js', import.meta.url), 'utf8');
+  const atlasSource = fs.readFileSync(new URL('../model/xiuxian.js', import.meta.url), 'utf8');
+  const atlasTemplate = fs.readFileSync(new URL('../resources/html/weimian/weimian.html', import.meta.url), 'utf8');
+
+  assert.match(levelSource, /isAllHeavensLocation\(player\.power_place/);
+  assert.match(levelSource, /登仙必须在诸天万界维度内完成/);
+  assert.match(riverSource, /isTimeRiverLocation\(player\.power_place\)/);
+  assert.doesNotMatch(riverSource, /player\.power_place\s*=\s*PLACE_LOCATION_MAP\.时间长河/);
+  assert.match(travelSource, /canImmortalEmperorFreeTravel/);
+  assert.match(travelSource, /isInstantAllHeavensTravel/);
+  assert.match(travelSource, /本次需跨越\$\{travelQuote\.dimensionBarrierCount\}重界壁/);
+  assert.match(atlasSource, /dimension_guide/);
+  assert.match(atlasTemplate, /维度分层与壁垒/);
 });
 
 test('维度壁垒按仙帝、祭道之上与唯一道之上分层准入', () => {
@@ -239,14 +316,14 @@ test('同层资产可流转，跨层赠送会被维度壁垒拦截', () => {
   assert.equal(getDimensionTradeCompatibility(upper, upper).ok, true);
 });
 
-test('跨维度壁垒保留长耗时且不被准仙帝瞬移规则绕过', () => {
+test('更高维度壁垒仍受准入限制并按仙帝七成减时计算', () => {
   const emperor = { ...traveler, mijinglevel_id: 21 };
   const target = PLACE_LOCATION_MAP.百维真界;
   assert.equal(getDimensionBarrierCount(PLACE_LOCATION_MAP.凡间, target), 4);
-  assert.equal(getDimensionBarrierTravelTime(emperor, PLACE_LOCATION_MAP.凡间, target), 1440);
+  assert.equal(getDimensionBarrierTravelTime(emperor, PLACE_LOCATION_MAP.凡间, target), 576);
   const quote = getBodyTravelQuote(emperor, PLACE_LOCATION_MAP.凡间, target);
   assert.equal(quote.dimensionBarrierCount, 4);
-  assert.equal(quote.travelTime, 1440);
+  assert.equal(quote.travelTime, 576);
   assert.equal(isInstantAllHeavensTravel(emperor, PLACE_LOCATION_MAP.凡间, target), false);
 });
 

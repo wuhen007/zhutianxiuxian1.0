@@ -38,10 +38,70 @@ export const SPECIAL_LOCATIONS = Object.freeze([
 
 export const ALL_HEAVENS_LOCATIONS = Object.freeze([
   '凡间', '仙界', '下界八域', '遮天位面', '九天十地', '界海', '异域',
-  '太初星墟', '时间长河', '小阴间', '大阴间', '仙域', '阳间',
+  '太初星墟', '小阴间', '大阴间', '仙域', '阳间',
 ]);
 
+// 时间长河是独立的时序域；仙帝可将诸天、上苍与永恒未知之地视为一组可达区域。
+export const TIME_RIVER_LOCATIONS = Object.freeze(['时间长河']);
+export const EMPEROR_FREE_TRAVEL_LOCATIONS = Object.freeze([
+  ...ALL_HEAVENS_LOCATIONS,
+  '上苍之上',
+  '永恒未知之地',
+]);
+export const EMPEROR_INSTANT_TRAVEL_LOCATIONS = Object.freeze([
+  ...ALL_HEAVENS_LOCATIONS,
+  '上苍之上',
+]);
+export const IMMORTAL_EMPEROR_TRAVEL_TIME_REDUCTION = 0.7;
+
+export const DIMENSION_GROUPS = Object.freeze({
+  allHeavens: Object.freeze({
+    key: 'all-heavens',
+    name: '诸天万界',
+    layer: 0,
+    layerLabel: '第0层',
+    locations: ALL_HEAVENS_LOCATIONS,
+    barrier: '本维度内部无维度壁垒，准仙帝即可凭权柄无等待穿梭。',
+  }),
+  timeRiver: Object.freeze({
+    key: 'time-river',
+    name: '时间长河',
+    layer: -1,
+    layerLabel: '独立时序域',
+    locations: TIME_RIVER_LOCATIONS,
+    barrier: '与诸天万界以时序界壁相隔，遨游必须先身处时间长河。',
+  }),
+  upperHeaven: Object.freeze({
+    key: 'upper-heaven',
+    name: '上苍之上',
+    layer: 1,
+    layerLabel: '第1层',
+    locations: Object.freeze(['上苍之上']),
+    barrier: '诸天万界之外的第一重空间壁垒，仙帝可无等待往返。',
+  }),
+  eternalUnknown: Object.freeze({
+    key: 'eternal-unknown',
+    name: '永恒未知之地',
+    layer: 3,
+    layerLabel: '第3层',
+    locations: Object.freeze(['永恒未知之地']),
+    barrier: '与厄土同属第三重维度壁垒，仙帝可直达但仍受跨层航程计时。',
+  }),
+  higherDimensions: Object.freeze({
+    key: 'higher-dimensions',
+    name: '更高维度',
+    layer: null,
+    layerLabel: '第2层及以上',
+    locations: Object.freeze([
+      '超维宇宙', '厄土高原', '百维真界', '原初宇宙海',
+      '千维宙古界', '万维梵宇界', '神维丝线海',
+    ]),
+    barrier: '依次叠加维度壁垒，仍按破界强度与层数判定。',
+  }),
+});
+
 export const DIMENSION_BARRIER_LAYERS = Object.freeze({
+  '时间长河': -1,
   '上苍之上': 1,
   '超维宇宙': 2,
   '厄土高原': 3,
@@ -123,6 +183,44 @@ export function isAllHeavensLocation(location) {
   return ALL_HEAVENS_LOCATIONS.includes(getLocationName(location));
 }
 
+export function isTimeRiverLocation(location) {
+  return TIME_RIVER_LOCATIONS.includes(getLocationName(location));
+}
+
+export function getDimensionGroup(location) {
+  const name = getLocationName(location);
+  return Object.values(DIMENSION_GROUPS).find(group => group.locations.includes(name)) || null;
+}
+
+export function getDimensionName(location) {
+  return getDimensionGroup(location)?.name || (isSealedLocation(location) ? '封闭裂界' : '未知维度');
+}
+
+export function getDimensionBarrierDescription(location) {
+  const group = getDimensionGroup(location);
+  if (group?.key === 'higher-dimensions') {
+    return `第${getDimensionLayer(location)}重维度壁垒，需满足对应破界强度，跨层时壁垒逐重叠加。`;
+  }
+  return group?.barrier || (
+    isSealedLocation(location) ? '封闭裂界节点，不进入常规维度通道。' : '维度资料未登记。'
+  );
+}
+
+export function isEmperorFreeTravelLocation(location) {
+  return EMPEROR_FREE_TRAVEL_LOCATIONS.includes(getLocationName(location));
+}
+
+export function canImmortalEmperorFreeTravel(player, fromLocation, toLocation) {
+  const from = getLocationName(fromLocation);
+  const to = getLocationName(toLocation);
+  return getRealmAuthorityLevel(player) >= 21
+    && from !== ''
+    && to !== ''
+    && from !== to
+    && isEmperorFreeTravelLocation(from)
+    && isEmperorFreeTravelLocation(to);
+}
+
 export function getDimensionBarrierCount(fromLocation, toLocation) {
   return Math.abs(getDimensionLayer(fromLocation) - getDimensionLayer(toLocation));
 }
@@ -158,9 +256,17 @@ export function canUseCrossServerTrade(player) {
 }
 
 export function isInstantAllHeavensTravel(player, fromLocation, toLocation) {
-  return getRealmAuthorityLevel(player) >= 20
-    && isAllHeavensLocation(fromLocation)
-    && isAllHeavensLocation(toLocation);
+  const authority = getRealmAuthorityLevel(player);
+  const from = getLocationName(fromLocation);
+  const to = getLocationName(toLocation);
+  if (authority >= 21
+    && EMPEROR_INSTANT_TRAVEL_LOCATIONS.includes(from)
+    && EMPEROR_INSTANT_TRAVEL_LOCATIONS.includes(to)) {
+    return true;
+  }
+  return authority >= 20
+    && isAllHeavensLocation(from)
+    && isAllHeavensLocation(to);
 }
 
 function getDimensionTravelMultiplier(player) {
@@ -174,9 +280,14 @@ function getDimensionTravelMultiplier(player) {
 export function getDimensionBarrierTravelTime(player, fromLocation, toLocation) {
   const barriers = getDimensionBarrierCount(fromLocation, toLocation);
   if (barriers === 0) return 0;
+  if (isInstantAllHeavensTravel(player, fromLocation, toLocation)) return 0;
+  let multiplier = getDimensionTravelMultiplier(player);
+  if (getRealmAuthorityLevel(player) >= 21) {
+    multiplier = Math.min(multiplier, 1 - IMMORTAL_EMPEROR_TRAVEL_TIME_REDUCTION);
+  }
   return Math.max(
     60 * barriers,
-    Math.round(barriers * DIMENSION_BARRIER_BASE_MINUTES * getDimensionTravelMultiplier(player))
+    Math.round(barriers * DIMENSION_BARRIER_BASE_MINUTES * multiplier)
   );
 }
 
@@ -452,6 +563,7 @@ export function ensureDefaultCoordinates(player) {
 
 export function hasCoordinate(player, location) {
   if (isSealedLocation(location)) return false;
+  if (getRealmAuthorityLevel(player) >= 21 && isEmperorFreeTravelLocation(location)) return true;
   if (DEFAULT_KNOWN_LOCATIONS.includes(location)) return true;
   if (location === '遮天位面' && Number(player?.五色祭坛激活) === 1) return true;
   if (isShengxuPlane(location) && (
@@ -565,6 +677,12 @@ export function getLocationThreshold(player, location) {
   if (isSealedLocation(location)) {
     code = 'sealed';
     checks = [{ label: '裂界唯一通路', display: '需由太初星墟唤醒裂界残忆', met: false }];
+  } else if (authority >= 21 && isEmperorFreeTravelLocation(location)) {
+    checks = [{
+      label: '仙帝维度权能',
+      display: '诸天万界、上苍之上与永恒未知之地可直达',
+      met: true,
+    }];
   } else if (dimensionLayer > 0) {
     const locationName = getLocationName(location);
     const required = DIMENSION_BARRIER_POWER_REQUIREMENTS[locationName] || 0;
@@ -641,7 +759,15 @@ export function getKunpengReduction(player) {
 
 export function getBodyTravelQuote(player, fromLocation, toLocation) {
   const barriers = getDimensionBarrierCount(fromLocation, toLocation);
-  const distance = barriers || Math.abs(Number(fromLocation) - Number(toLocation));
+  const fromValue = Number.isFinite(Number(fromLocation))
+    ? Number(fromLocation)
+    : Number(PLACE_LOCATION_MAP[getLocationName(fromLocation)]);
+  const toValue = Number.isFinite(Number(toLocation))
+    ? Number(toLocation)
+    : Number(PLACE_LOCATION_MAP[getLocationName(toLocation)]);
+  const rawDistance = Math.abs(fromValue - toValue);
+  const distance = barriers || (Number.isFinite(rawDistance) ? rawDistance : 0);
+  const instant = isInstantAllHeavensTravel(player, fromLocation, toLocation);
   if (distance === 0) {
     return { distance, dimensionBarrierCount: 0, xiuweiCost: 0, qixueCost: 0, shouyuanCost: 0, travelTime: 0, kunpengReduction: 0 };
   }
@@ -654,8 +780,9 @@ export function getBodyTravelQuote(player, fromLocation, toLocation) {
       xiuweiCost: Math.round(barriers * 1_000_000_000 * multiplier),
       qixueCost: Math.round(barriers * 1_500_000_000 * multiplier),
       shouyuanCost: Math.round(barriers * 100_000 * multiplier),
-      travelTime: getDimensionBarrierTravelTime(player, fromLocation, toLocation),
+      travelTime: instant ? 0 : getDimensionBarrierTravelTime(player, fromLocation, toLocation),
       kunpengReduction: 0,
+      instant,
     };
   }
   const kunpengReduction = getKunpengReduction(player);
@@ -665,7 +792,7 @@ export function getBodyTravelQuote(player, fromLocation, toLocation) {
     xiuweiCost: Math.round(distance * 10000000 * multiplier),
     qixueCost: Math.round(distance * 15000000 * multiplier),
     shouyuanCost: Math.round(distance * 10000 * multiplier),
-    travelTime: isInstantAllHeavensTravel(player, fromLocation, toLocation)
+    travelTime: instant
       ? 0
       : Math.round(Math.max(1, Math.max(2, distance * TRAVEL_BASE_MIN_PER_LEVEL * multiplier) - kunpengReduction)),
     kunpengReduction,
@@ -676,7 +803,13 @@ export function getTokenTravelTime(player, fromLocation, toLocation, tier) {
   if (isInstantAllHeavensTravel(player, fromLocation, toLocation)) return 0;
   const barrierTime = getDimensionBarrierTravelTime(player, fromLocation, toLocation);
   if (barrierTime > 0) return barrierTime;
-  const distance = Math.abs(Number(fromLocation) - Number(toLocation));
+  const fromValue = Number.isFinite(Number(fromLocation))
+    ? Number(fromLocation)
+    : Number(PLACE_LOCATION_MAP[getLocationName(fromLocation)]);
+  const toValue = Number.isFinite(Number(toLocation))
+    ? Number(toLocation)
+    : Number(PLACE_LOCATION_MAP[getLocationName(toLocation)]);
+  const distance = Math.abs(fromValue - toValue);
   if (distance === 0) return 0;
   const basePerLevel = tier === 'high' ? TOKEN_HIGH_MIN_PER_LEVEL : TOKEN_LOW_MIN_PER_LEVEL;
   return Math.round(Math.max(1, distance * basePerLevel * (1 - calcRealmReducePct(player))));

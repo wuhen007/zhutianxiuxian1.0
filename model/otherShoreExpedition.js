@@ -1,4 +1,8 @@
+import { clearOtherShoreCampaignStar } from './otherShoreWorld.js';
+
 export const OTHER_SHORE_EXPEDITION_STAR_ID = '1,-1';
+export const OTHER_SHORE_QIN_FERRY_STAR_ID = '4,-4';
+export const OTHER_SHORE_RIFT_MOTHER_ANCHOR_STAR_ID = '0,-4';
 export const OTHER_SHORE_LOST_CACHE_TTL_MS = 30 * 60 * 1000;
 export const OTHER_SHORE_FORCED_EVACUATION_LOSS_RATE = 0.3;
 export const OTHER_SHORE_CAMP_CONTRIBUTION_CAP = 10;
@@ -8,6 +12,14 @@ export const OTHER_SHORE_CAMPAIGNS = Object.freeze({
     campaignId: 'xuanque-divine-furnace',
     starId: OTHER_SHORE_EXPEDITION_STAR_ID,
     name: '玄阙神炉',
+    order: 0,
+    prerequisiteStarId: null,
+    firstClearLoot: Object.freeze({
+      id: 'key:era-power',
+      name: '纪元之力',
+      kind: 'key',
+      quantity: 1,
+    }),
     boss: Object.freeze({
       bossId: 'xuanque-calamity-core',
       name: '玄阙灾核',
@@ -21,7 +33,63 @@ export const OTHER_SHORE_CAMPAIGNS = Object.freeze({
       Object.freeze({ id: 'suppress-calamity-core', name: '镇压神炉灾核', kind: 'boss' }),
     ]),
   }),
+  [OTHER_SHORE_QIN_FERRY_STAR_ID]: Object.freeze({
+    campaignId: 'qin-homeward-voyage',
+    starId: OTHER_SHORE_QIN_FERRY_STAR_ID,
+    name: '先秦归航',
+    order: 1,
+    prerequisiteStarId: OTHER_SHORE_EXPEDITION_STAR_ID,
+    firstClearLoot: Object.freeze({
+      id: 'key:qin-homeward-stele-rubbing',
+      name: '先秦归航碑拓',
+      kind: 'key',
+      quantity: 1,
+    }),
+    boss: Object.freeze({
+      bossId: 'rift-voyage-devourer',
+      name: '裂隙噬航者',
+      maxHp: 900_000_000_000_000,
+    }),
+    stages: Object.freeze([
+      Object.freeze({ id: 'trace-qin-route', name: '追溯先秦航痕', kind: 'lore' }),
+      Object.freeze({ id: 'cross-spirit-rift', name: '穿行灵界裂隙', kind: 'explore' }),
+      Object.freeze({ id: 'restore-ferry-stele', name: '复原彼岸渡碑', kind: 'operation' }),
+      Object.freeze({ id: 'repel-rift-demons', name: '击退裂隙邪魔', kind: 'battle' }),
+      Object.freeze({ id: 'defeat-voyage-devourer', name: '斩灭噬航者', kind: 'boss' }),
+    ]),
+  }),
+  [OTHER_SHORE_RIFT_MOTHER_ANCHOR_STAR_ID]: Object.freeze({
+    campaignId: 'rift-mother-anchor-unification',
+    starId: OTHER_SHORE_RIFT_MOTHER_ANCHOR_STAR_ID,
+    name: '母锚归一',
+    order: 2,
+    prerequisiteStarId: OTHER_SHORE_QIN_FERRY_STAR_ID,
+    firstClearLoot: Object.freeze({
+      id: 'key:rift-mother-anchor-core',
+      name: '裂界母锚坐标核',
+      kind: 'key',
+      quantity: 1,
+    }),
+    boss: Object.freeze({
+      bossId: 'world-devouring-anchor-emperor',
+      name: '噬界锚皇',
+      maxHp: 1_200_000_000_000_000,
+    }),
+    stages: Object.freeze([
+      Object.freeze({ id: 'decode-rift-genealogy', name: '解读裂隙源谱', kind: 'lore' }),
+      Object.freeze({ id: 'stabilize-anchor-veins', name: '校准母锚维脉', kind: 'operation' }),
+      Object.freeze({ id: 'recover-qin-dojo', name: '复原先秦道场坐标', kind: 'explore' }),
+      Object.freeze({ id: 'clear-anchor-corruption', name: '清剿母锚侵蚀体', kind: 'battle' }),
+      Object.freeze({ id: 'suppress-anchor-emperor', name: '镇压噬界锚皇', kind: 'boss' }),
+    ]),
+  }),
 });
+
+export const OTHER_SHORE_CAMPAIGN_CHAIN = Object.freeze(
+  Object.values(OTHER_SHORE_CAMPAIGNS)
+    .sort((left, right) => left.order - right.order)
+    .map(campaign => campaign.starId),
+);
 
 export const OTHER_SHORE_CAMP_LEVELS = Object.freeze([
   Object.freeze({ level: 0, buildRequirement: 0, storageCapacity: 0, resilience: 0, healing: false }),
@@ -80,6 +148,32 @@ function requireCampaign(starId) {
   return campaign;
 }
 
+function campaignUnlock(state, campaign, playerId) {
+  if (!campaign.prerequisiteStarId) {
+    return {
+      unlocked: true,
+      prerequisiteCampaignId: null,
+      prerequisiteStarId: null,
+      prerequisiteName: null,
+      globalCleared: true,
+      playerCleared: true,
+    };
+  }
+  const prerequisite = requireCampaign(campaign.prerequisiteStarId);
+  const prerequisiteState = state.campaigns[prerequisite.starId];
+  const viewer = String(playerId || '');
+  const globalCleared = prerequisiteState?.status === 'completed' || prerequisiteState?.clearCount > 0;
+  const playerCleared = (prerequisiteState?.participants?.[viewer]?.clears || 0) > 0;
+  return {
+    unlocked: playerCleared,
+    prerequisiteCampaignId: prerequisite.campaignId,
+    prerequisiteStarId: prerequisite.starId,
+    prerequisiteName: prerequisite.name,
+    globalCleared,
+    playerCleared,
+  };
+}
+
 function createCampaignState(campaign) {
   return {
     campaignId: campaign.campaignId,
@@ -103,11 +197,20 @@ function createCampaignState(campaign) {
   };
 }
 
+function synchronizeCompletedCampaignStar(world, campaignState) {
+  const completed = campaignState.status === 'completed'
+    || campaignState.boss?.status === 'defeated'
+    || whole(campaignState.clearCount) > 0;
+  const phase = world.states?.[campaignState.starId]?.phase;
+  if (!completed || phase === 'cleared' || !CAMPAIGN_PHASES.has(phase)) return;
+  world.states = clearOtherShoreCampaignStar(world, campaignState.starId).states;
+}
+
 export function ensureOtherShoreExpeditionState(world) {
   requireWorld(world);
   world.expedition ||= {};
   const state = world.expedition;
-  state.version = 1;
+  state.version = 2;
   state.camps ||= {};
   state.campaigns ||= {};
   state.runs ||= {};
@@ -117,7 +220,12 @@ export function ensureOtherShoreExpeditionState(world) {
   state.claims ||= {};
   state.receipts ||= {};
   for (const campaign of Object.values(OTHER_SHORE_CAMPAIGNS)) {
-    state.campaigns[campaign.starId] ||= createCampaignState(campaign);
+    const campaignState = state.campaigns[campaign.starId] ||= createCampaignState(campaign);
+    campaignState.stageClears ||= [];
+    while (campaignState.stageClears.length < campaign.stages.length) campaignState.stageClears.push(0);
+    campaignState.participants ||= {};
+    campaignState.completions ||= {};
+    synchronizeCompletedCampaignStar(world, campaignState);
   }
   return state;
 }
@@ -428,7 +536,18 @@ export function startOtherShoreExpedition(world, {
   const current = state.runs[id];
   if (current && current.status !== 'evacuated') throw new Error('当前修士已有进行中的彼岸远征');
   const campaignState = state.campaigns[star];
-  if (campaignState.participants[id]?.clears > 0) throw new Error('当前修士已经完成玄阙神炉首通');
+  const completed = campaignState.participants[id]?.clears > 0;
+  const recoveryOnly = completed && Object.values(state.lostCaches).some(cache =>
+    cache.ownerId === id
+    && cache.starId === star
+    && cache.status === 'available'
+    && startedAt < cache.expiresAt
+  );
+  if (completed && !recoveryOnly) throw new Error(`当前修士已经完成${campaign.name}首通`);
+  const unlock = campaignUnlock(state, campaign, id);
+  if (!recoveryOnly && !unlock.unlocked) {
+    throw new Error(`需先完成前置战役【${unlock.prerequisiteName}】个人首通`);
+  }
   const participant = campaignState.participants[id] ||= {
     playerName: String(playerName || id),
     starts: 0,
@@ -444,8 +563,9 @@ export function startOtherShoreExpedition(world, {
     starId: star,
     playerId: id,
     playerName: String(playerName || id),
+    mode: recoveryOnly ? 'recovery' : 'campaign',
     status: 'active',
-    stageIndex: 0,
+    stageIndex: recoveryOnly ? campaign.stages.length : 0,
     startedAt,
     updatedAt: startedAt,
     bag: createBag(),
@@ -461,25 +581,26 @@ export function startOtherShoreExpedition(world, {
 
 function completeRun(campaignState, run, at) {
   if (campaignState.completions[run.runId]) return false;
-  addLoot(run.bag.carried, [{
-    id: 'key:era-power',
-    name: '纪元之力',
-    kind: 'key',
-    quantity: 1,
-  }]);
-  run.stageIndex = 5;
+  const campaign = requireCampaign(run.starId);
+  const stageCount = campaign.stages.length;
+  addLoot(run.bag.carried, [campaign.firstClearLoot]);
+  run.stageIndex = stageCount;
   run.status = 'ready_to_evac';
   run.completedAt = at;
   run.updatedAt = at;
   run.history.push({ type: 'campaign_completed', at });
-  campaignState.completions[run.runId] = { playerId: run.playerId, at };
+  campaignState.completions[run.runId] = {
+    campaignId: campaign.campaignId,
+    playerId: run.playerId,
+    at,
+  };
   const participant = campaignState.participants[run.playerId] ||= {
     playerName: run.playerName,
     starts: 1,
     clears: 0,
     highestStage: 0,
   };
-  participant.highestStage = 5;
+  participant.highestStage = stageCount;
   participant.clears++;
   return true;
 }
@@ -499,10 +620,13 @@ export function advanceOtherShoreExpedition(world, {
   const previous = receiptFor(run, operation, 'stage_advance', run.playerId);
   if (previous) return previous;
   requireRunStatus(run, ['active']);
+  if (run.mode === 'recovery') throw new Error('追回专用远征不可推进战役阶段');
   const campaign = requireCampaign(run.starId);
   const stage = campaign.stages[run.stageIndex];
   if (!stage) throw new Error('本轮远征战役已经完成');
-  if (run.stageIndex >= campaign.stages.length - 1) throw new Error('第五阶段需挑战全服共享区域首领');
+  if (run.stageIndex >= campaign.stages.length - 1) {
+    throw new Error(`最终阶段需挑战全服共享区域首领【${campaign.boss.name}】`);
+  }
   if (stageId !== undefined && requiredText(stageId, 'stageId') !== stage.id) {
     throw new Error(`当前战役阶段已经变化：${stage.id}`);
   }
@@ -564,15 +688,17 @@ export function applyOtherShoreCampaignBossBattle(world, {
   const state = ensureOtherShoreExpeditionState(world);
   const run = runFor(world, { playerId, runId });
   const actor = run.playerId;
+  const receiptActor = `${actor}:${run.runId}:${run.starId}`;
   const operation = requiredText(operationId, 'operationId');
-  const previous = receiptFor(state, operation, 'campaign_boss_battle', actor);
+  const previous = receiptFor(state, operation, 'campaign_boss_battle', receiptActor);
   if (previous) return previous;
   const star = requireStar(world, starId);
   if (star !== run.starId) throw new Error(`必须位于区域首领大星 ${run.starId}`);
   requireRunStatus(run, ['waiting_boss']);
   const campaignState = state.campaigns[star];
+  const campaign = requireCampaign(star);
   const boss = campaignState.boss;
-  if (boss.status === 'defeated') throw new Error('玄阙灾核已经被镇压');
+  if (boss.status === 'defeated') throw new Error(`${campaign.boss.name}已经被镇压`);
   const dealt = Math.min(boss.currentHp, campaignBossDamage(boss, { damage, battle, won }));
   const at = timestamp(now);
   if (dealt > 0) {
@@ -592,11 +718,23 @@ export function applyOtherShoreCampaignBossBattle(world, {
     boss.defeatedAt = at;
     boss.defeatedBy = actor;
     campaignState.status = 'completed';
-    campaignState.stageClears[4]++;
+    campaignState.stageClears[campaignState.stageClears.length - 1]++;
     campaignState.clearCount++;
+    synchronizeCompletedCampaignStar(world, campaignState);
     for (const candidate of Object.values(state.runs)) {
-      if (candidate.campaignId !== campaignState.campaignId || candidate.status !== 'waiting_boss') continue;
-      if (completeRun(campaignState, candidate, at)) completedPlayerIds.push(candidate.playerId);
+      const downedAtBoss = candidate.status === 'downed'
+        && candidate.downed?.resumeStatus === 'waiting_boss';
+      if (
+        candidate.campaignId !== campaignState.campaignId
+        || (candidate.status !== 'waiting_boss' && !downedAtBoss)
+      ) continue;
+      if (completeRun(campaignState, candidate, at)) {
+        if (downedAtBoss) {
+          candidate.status = 'downed';
+          candidate.downed.resumeStatus = 'ready_to_evac';
+        }
+        completedPlayerIds.push(candidate.playerId);
+      }
     }
   }
   campaignState.updatedAt = at;
@@ -608,7 +746,7 @@ export function applyOtherShoreCampaignBossBattle(world, {
     defeated,
     completedPlayerIds,
   };
-  return saveReceipt(state, operation, 'campaign_boss_battle', actor, result, at);
+  return saveReceipt(state, operation, 'campaign_boss_battle', receiptActor, result, at);
 }
 
 export function depositOtherShoreExpeditionLoot(world, {
@@ -710,7 +848,9 @@ export function rescueOtherShoreExpedition(world, {
   const indexed = state.downed?.[targetRun.starId]?.[targetRun.playerId];
   if (!indexed || indexed.runId !== targetRun.runId) throw new Error('该濒危目标已经失效');
   const at = timestamp(now);
-  targetRun.status = 'stabilized';
+  targetRun.status = ['active', 'waiting_boss', 'ready_to_evac'].includes(targetRun.downed?.resumeStatus)
+    ? targetRun.downed.resumeStatus
+    : 'active';
   targetRun.rescue = {
     rescuerId: rescuerRun.playerId,
     rescuerName: rescuerRun.playerName,
@@ -946,9 +1086,29 @@ export function serializeOtherShoreExpedition(world, {
     ? state.settlements[run.settlement.claimId]
     : null;
   const runCampaign = run ? OTHER_SHORE_CAMPAIGNS[run.starId] : null;
+  const campaignAccess = campaign ? campaignUnlock(state, campaign, viewer) : null;
+  const campaignChain = OTHER_SHORE_CAMPAIGN_CHAIN.map(campaignStarId => {
+    const entry = OTHER_SHORE_CAMPAIGNS[campaignStarId];
+    const entryState = state.campaigns[campaignStarId];
+    const access = campaignUnlock(state, entry, viewer);
+    return {
+      campaignId: entry.campaignId,
+      starId: entry.starId,
+      name: entry.name,
+      order: entry.order,
+      status: entryState.status,
+      globalCleared: entryState.status === 'completed' || entryState.clearCount > 0,
+      viewerCleared: (entryState.participants[viewer]?.clears || 0) > 0,
+      unlocked: access.unlocked,
+      prerequisiteCampaignId: access.prerequisiteCampaignId,
+      prerequisiteStarId: access.prerequisiteStarId,
+      prerequisiteName: access.prerequisiteName,
+    };
+  });
   return {
     version: state.version,
     starId: star,
+    campaignChain,
     camp: {
       starId: camp.starId,
       level: camp.level,
@@ -961,10 +1121,22 @@ export function serializeOtherShoreExpedition(world, {
     },
     campaign: campaign ? {
       campaignId: campaign.campaignId,
+      starId: campaign.starId,
       name: campaign.name,
+      order: campaign.order,
+      unlocked: campaignAccess.unlocked,
       status: campaignState.status,
       clearCount: campaignState.clearCount,
       participantCount: Object.keys(campaignState.participants).length,
+      viewerCleared: (campaignState.participants[viewer]?.clears || 0) > 0,
+      prerequisite: campaignAccess.prerequisiteCampaignId ? {
+        campaignId: campaignAccess.prerequisiteCampaignId,
+        starId: campaignAccess.prerequisiteStarId,
+        name: campaignAccess.prerequisiteName,
+        globalCleared: campaignAccess.globalCleared,
+        viewerCleared: campaignAccess.playerCleared,
+      } : null,
+      firstClearLoot: copy(campaign.firstClearLoot),
       stages: campaign.stages.map((stage, index) => ({
         ...stage,
         clearCount: campaignState.stageClears[index],
@@ -986,6 +1158,7 @@ export function serializeOtherShoreExpedition(world, {
     viewer: {
       run: run ? {
         runId: run.runId,
+        mode: run.mode || 'campaign',
         status: run.status,
         stageIndex: run.stageIndex,
         currentStage: copy(runCampaign?.stages[run.stageIndex] || null),

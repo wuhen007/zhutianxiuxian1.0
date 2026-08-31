@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import {
   consumeCanglanWebTicket,
   createCanglanWebLink,
@@ -43,6 +44,69 @@ class MemoryRedis {
   }
 }
 
+test('沧澜网页声明真世界、古文明事件与大道铸炉动作契约', async () => {
+  const [html, app, css] = await Promise.all([
+    readFile(new URL('../resources/web/canglan/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../resources/web/canglan/app.js', import.meta.url), 'utf8'),
+    readFile(new URL('../resources/web/canglan/style.css', import.meta.url), 'utf8'),
+  ]);
+  for (const id of [
+    'true-world-console',
+    'true-world-frontier',
+    'true-world-explored',
+    'true-world-loot',
+    'ancient-event-console',
+    'ancient-event-track',
+    'ancient-event-opposition',
+    'dao-forge-console',
+    'dao-forge-recipes',
+    'dao-forge-timer',
+    'dao-forge-selection',
+    'dao-forge-treasure-options',
+    'dao-forge-authorities',
+    'dao-forge-authority-options',
+  ]) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  for (const action of ['true_world_observe', 'true_world_move', 'true_world_encounter', 'true_world_claim']) {
+    assert.match(html, new RegExp(`data-true-world-action="${action}"`));
+    assert.match(app, new RegExp(action));
+  }
+  for (const action of ['ancient_event_contribute', 'ancient_event_claim']) {
+    assert.match(html, new RegExp(`data-ancient-event-action="${action}"`));
+    assert.match(app, new RegExp(action));
+  }
+  for (const action of ['dao_forge_start', 'dao_forge_claim']) {
+    assert.match(html, new RegExp(`data-dao-forge-action="${action}"`));
+    assert.match(app, new RegExp(action));
+  }
+  for (const selector of [
+    '.true-world-console',
+    '.true-world-frontier',
+    '.true-world-actions',
+    '.ancient-event-track',
+    '.ancient-event-progress',
+    '.dao-forge-recipes',
+    '.dao-forge-progress',
+  ]) {
+    assert.match(css, new RegExp(selector.replace('.', '\\.'), 'm'));
+  }
+  assert.match(app, /normalizeTrueWorld/);
+  assert.match(app, /normalizeAncientEvents/);
+  assert.match(app, /normalizeDaoForge/);
+  assert.match(app, /previewAncientEventAction/);
+  assert.match(app, /previewDaoForgeAction/);
+  assert.match(app, /daoForgeTreasureSelections/);
+  assert.match(app, /daoForgeAuthorityDraft/);
+  assert.match(app, /forgeState\.authorityOptions/);
+  assert.match(app, /selection\.entries\.join\(','\)/);
+  assert.match(app, /String\(targetId\)\.split\('\|', 2\)/);
+  assert.match(html, /id="dao-forge-authorities" type="text"/);
+  assert.match(app, /state\.trueWorld/);
+  assert.match(app, /state\?\.ancientEvents/);
+  assert.match(app, /state\?\.daoForge/);
+});
+
 test('沧澜网页票据使用独立命名空间且只能兑换一次', async () => {
   const redis = new MemoryRedis();
   const config = { ticketTtlSeconds: 120 };
@@ -63,11 +127,13 @@ test('沧澜网页在中继部署下由总机签发入口', async t => {
   const previousRedis = globalThis.redis;
   const original = {
     authed: worldChatClient.authed,
+    ws: worldChatClient.ws,
     createWebTicket: worldChatClient.createWebTicket,
   };
   const tickets = [];
   globalThis.redis = redis;
   worldChatClient.authed = true;
+  worldChatClient.ws = { readyState: worldChatClient.WebSocket.OPEN };
   worldChatClient.createWebTicket = async (kind, identity) => {
     tickets.push({ kind, identity });
     return { ok: true, token: 'relay-canglan-ticket' };
