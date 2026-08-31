@@ -18,6 +18,7 @@ import {
 
 const completeState = {
   treasure: {
+    name: '诸天文明炉',
     ownerId: '10001',
     authorities: { 生死: '完整', 命运: '完整', 万法: '完整', 世界: '完整' },
   },
@@ -136,4 +137,14 @@ test('世界权柄持续五次行动并提供独立35%减伤', () => {
   assert.match(tickDaoTreasureDomain(holder), /大道界归隐/);
   assert.equal(holder._大道世界减伤, undefined);
   assert.equal(applyDaoTreasureDomainReduction(holder, 1000), 1000);
+});
+
+test('旧大道至宝器主换装其他大道至宝后不会误触固定权柄', () => {
+  const holder = makeHolder('生死');
+  holder.当前大道至宝 = '彼岸新铸大道至宝';
+  const enemy = { 名号: '敌手', 当前血量: 1000, 血量上限: 1000 };
+  const opening = applyDaoTreasureBattleOpening(holder, enemy, { state: completeState });
+  assert.equal(opening.active, false);
+  assert.equal(holder._大道生死护命, undefined);
+  assert.equal(enemy._大道生死断轮回, undefined);
 });

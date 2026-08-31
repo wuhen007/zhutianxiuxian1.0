@@ -21,6 +21,7 @@ import {
 } from '../../model/xiuxian.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
 import { getMinggeEffects } from '../../model/mingge.js';
+import { getLifeSourceRepairMaximum } from '../../model/lifeSourceRepair.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { ensureWorldlineState, getCausalDebtTier } from '../../model/worldlineAuthority.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
@@ -435,7 +436,7 @@ export class InnateTreasureAuthorities extends plugin {
       await e.reply(`【${treasureName}】的先天权柄正被道天清算封禁，还需${remaining}才能再次显化。`);
       return null;
     }
-    if (!hasEquippedInnateTreasure(player, treasureName)) {
+    if (!hasEquippedInnateTreasure(player, treasureName, cooldownKey)) {
       await e.reply(`需先执掌【${treasureName}】才能动用此权柄。`);
       return null;
     }
@@ -463,7 +464,9 @@ export class InnateTreasureAuthorities extends plugin {
     let qq = await channel(String(e.user_id).replace('qg_', ''));
     if (!await existplayer(qq)) return false;
     const player = await Read_player(qq);
-    const name = player.当前先天至宝 || (player.当前大道至宝 === ETERNAL_MAP_NAME ? ETERNAL_MAP_NAME : '');
+    const name = player.当前先天至宝
+      || (player.当前大道至宝 === ETERNAL_MAP_NAME ? ETERNAL_MAP_NAME : '')
+      || player.彼岸大道至宝运行时?.name;
     if (!name) return e.reply('你当前没有执掌先天至宝。使用 #执掌先天至宝 名称 可令已认主的至宝归位。');
     const cooldowns = Object.entries(player.先天权柄?.冷却 || {})
       .map(([key, expiresAt]) => [key, Math.max(0, Number(expiresAt) - Date.now())])
@@ -710,7 +713,7 @@ export class InnateTreasureAuthorities extends plugin {
     const target = targetQq === String(ctx.qq) ? ctx.player : await Read_player(targetQq);
     if (getPlayerPlaneName(target) !== getPlayerPlaneName(ctx.player)) return e.reply('造化仙池只能滋养同一位面的修士。');
     const effects = getMinggeEffects(target, data.minggeList);
-    const naturalMax = Math.max(100, 100 + (Number(target.灵根?.生命本源) || 0) + (Number(effects.生命本源额外) || 0));
+    const naturalMax = getLifeSourceRepairMaximum(target, effects.生命本源额外);
     const restored = Math.max(0, naturalMax - (Number(target.生命本源) || 0));
     target.生命本源 = Math.max(Number(target.生命本源) || 0, naturalMax);
     target.仙道潜力 = Math.max(0, Number(target.仙道潜力) || 0) + 500;
@@ -1028,7 +1031,7 @@ export class InnateTreasureAuthorities extends plugin {
   }
 
   async switchTaiji(e) {
-    const ctx = await this.context(e, '太极图');
+    const ctx = await this.context(e, '太极图', '切换太极');
     if (!ctx) return false;
     const mode = String(e.msg).match(/^#切换太极\s+(阴|阳)$/)?.[1];
     getAuthorityState(ctx.player).太极模式 = mode;
@@ -1139,7 +1142,7 @@ export class InnateTreasureAuthorities extends plugin {
   }
 
   async inviteXutianPassenger(e) {
-    const ctx = await this.context(e, '虚天舟');
+    const ctx = await this.context(e, '虚天舟', '邀请登舟');
     if (!ctx) return false;
     const rawTarget = e.at && e.at !== 'all' ? String(e.at).replace('qg_', '') : '';
     if (!rawTarget) return e.reply('用法：#邀请登舟 @玩家');
@@ -1172,7 +1175,7 @@ export class InnateTreasureAuthorities extends plugin {
     }
     const owner = await Read_player(invitation.ownerQq);
     const passenger = await Read_player(qq);
-    if (!hasEquippedInnateTreasure(owner, '虚天舟')) return e.reply('船主已经不再执掌虚天舟。');
+    if (!hasEquippedInnateTreasure(owner, '虚天舟', '邀请登舟')) return e.reply('船主已经不再执掌虚天舟。');
     if (owner.power_place !== passenger.power_place) return e.reply('你与虚天舟已不在同一位面。');
     if (await this.isPlayerBusy(qq)) return e.reply('你当前正在行动，无法登舟。');
     owner.虚天舟乘员 = [...new Set((owner.虚天舟乘员 || []).map(String))];
@@ -1186,7 +1189,7 @@ export class InnateTreasureAuthorities extends plugin {
   }
 
   async showXutianPassengers(e) {
-    const ctx = await this.context(e, '虚天舟');
+    const ctx = await this.context(e, '虚天舟', '虚天舟乘员');
     if (!ctx) return false;
     const passengers = [];
     for (const qq of [...new Set((ctx.player.虚天舟乘员 || []).map(String))].slice(0, 3)) {

@@ -161,7 +161,8 @@ export function applyDaoTreasureBattleOpening(holder, opponent, options = {}) {
     return { active: false, holderSpeedMultiplier: 1, opponentSpeedMultiplier: 1, messages };
   }
   const state = options.state || readDaoTreasureState();
-  if (!isDaoTreasureOwner(holder.id, state)) {
+  if (String(holder.当前大道至宝) !== String(state.treasure?.name || '')
+    || !isDaoTreasureOwner(holder.id, state)) {
     return { active: false, holderSpeedMultiplier: 1, opponentSpeedMultiplier: 1, messages };
   }
   const authority = holder.大道主权柄;

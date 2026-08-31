@@ -5,6 +5,7 @@ import { getPlayerPlaneName } from './planeCoords.js';
 import { getDungeonGongfaReduction } from './gongfaProficiency.js';
 import { hasPercentageStats } from './tianjiaoTaint.js';
 import { isNameablePercentageEquipment } from './equipmentStats.js';
+import { writeJsonAtomically } from '../utils/atomicJson.js';
 import {
   DAO_TREASURE_ALL_ATTRIBUTE_BONUS,
   DAO_TREASURE_FIXED_ATTRIBUTES,
@@ -362,18 +363,24 @@ function defaultState() {
   return { owners: {}, equipped: {}, decree: null, landscapeRealms: [], eternalMap: null };
 }
 
-export function readInnateTreasureState() {
+export function readInnateTreasureState(options = {}) {
+  const strict = options === true || options?.strict === true;
   try {
     if (!fs.existsSync(STATE_FILE)) return defaultState();
     return { ...defaultState(), ...JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')) };
   } catch (error) {
+    if (strict) {
+      const failure = new Error(`先天至宝全服状态读取失败：${error.message}`);
+      failure.cause = error;
+      throw failure;
+    }
     console.error('[先天至宝] 读取全局状态失败:', error.message);
     return defaultState();
   }
 }
 
 export function writeInnateTreasureState(state) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+  writeJsonAtomically(STATE_FILE, state);
 }
 
 export function isInnateTreasureName(name) {
@@ -599,30 +606,134 @@ export function updateEquippedInnateTreasure(ownerId, treasureName, sectName = '
   writeInnateTreasureState(state);
 }
 
-export function hasEquippedInnateTreasure(player, name) {
-  return player?.当前先天至宝 === name ||
-    (player?.当前大道至宝 === ETERNAL_MAP_NAME && ETERNAL_MAP_COMPONENTS.includes(name));
+function authorityCommandKey(command) {
+  return String(command || '').trim().replace(/^#/, '').split(/\s+/)[0];
+}
+
+function normalizeAuthorityLookupKey(value) {
+  return authorityCommandKey(value) || String(value || '').trim();
+}
+
+function catalogAuthorityDescriptor(entry = {}) {
+  const requestedName = String(entry.sourceTreasureName || entry.sourceTreasureId || '').trim();
+  const requestedKeys = [entry.cooldownKey, entry.authorityKey, entry.command, entry.name]
+    .map(normalizeAuthorityLookupKey)
+    .filter(Boolean);
+  const catalogs = requestedName && INNATE_TREASURE_CATALOG[requestedName]
+    ? [[requestedName, INNATE_TREASURE_CATALOG[requestedName]]]
+    : Object.entries(INNATE_TREASURE_CATALOG);
+
+  for (const [treasureName, catalog] of catalogs) {
+    for (const authority of catalog.authorities || []) {
+      const commandKey = authorityCommandKey(authority.command);
+      const aliases = [authority.cooldownKey, commandKey, authority.command]
+        .map(normalizeAuthorityLookupKey)
+        .filter(Boolean);
+      if (!aliases.some(alias => requestedKeys.includes(alias))) continue;
+      return {
+        treasureName,
+        name: authority.cooldownKey || commandKey,
+        authorityKey: authority.cooldownKey || commandKey,
+        cooldownKey: authority.cooldownKey || '',
+        command: authority.command || '',
+        effect: authority.effect || '',
+        passive: false,
+      };
+    }
+    for (const [index, effect] of (catalog.passives || []).entries()) {
+      const displayName = `${catalog.title || treasureName}·被动${index + 1}`;
+      const passiveKey = `被动:${index + 1}`;
+      const aliases = [displayName, passiveKey, effect]
+        .map(normalizeAuthorityLookupKey)
+        .filter(Boolean);
+      if (!aliases.some(alias => requestedKeys.includes(alias))) continue;
+      return {
+        treasureName,
+        name: displayName,
+        authorityKey: passiveKey,
+        cooldownKey: '',
+        command: '',
+        effect,
+        passive: true,
+      };
+    }
+  }
+  return null;
+}
+
+export function createOtherShoreDaoTreasureRuntime(item) {
+  const isOtherShoreTreasure = item?.彼岸大道至宝 === true ||
+    (item?.大道至宝本体 === true && Array.isArray(item?.authorities));
+  if (!isOtherShoreTreasure || !item?.name || !Array.isArray(item.authorities)) return null;
+  const authorities = item.authorities.map((entry, index) => {
+    const source = entry && typeof entry === 'object' ? entry : { name: entry };
+    const descriptor = catalogAuthorityDescriptor(source);
+    if (!descriptor) return null;
+    return {
+      id: String(source.id || `${item.name}:authority:${index + 1}`),
+      ...descriptor,
+      enhanced: source.enhanced === true,
+      mode: String(source.mode || ''),
+    };
+  }).filter(Boolean);
+  const rawMultiplier = Number(item.冷却倍率 ?? item.cooldownMultiplier);
+  return {
+    name: String(item.name),
+    sourceForgeId: String(item.sourceForgeId || ''),
+    cooldownMultiplier: Number.isFinite(rawMultiplier)
+      ? Math.max(0.05, Math.min(1, rawMultiplier))
+      : 1,
+    authorities,
+  };
+}
+
+export function getEquippedOtherShoreDaoAuthority(player, treasureName = '', authorityKey = '') {
+  const runtime = player?.彼岸大道至宝运行时;
+  if (!runtime || String(runtime.name || '') !== String(player?.当前大道至宝 || '')) return null;
+  const requestedTreasure = String(treasureName || '');
+  const requestedKey = normalizeAuthorityLookupKey(authorityKey);
+  return (runtime.authorities || []).find((authority) => {
+    if (requestedTreasure && authority.treasureName !== requestedTreasure) return false;
+    if (!requestedKey) return authority.passive === true;
+    return [authority.authorityKey, authority.cooldownKey, authority.name, authority.command]
+      .map(normalizeAuthorityLookupKey)
+      .filter(Boolean)
+      .includes(requestedKey);
+  }) || null;
+}
+
+export function hasEquippedInnateTreasure(player, name, authorityKey = '') {
+  if (player?.当前先天至宝 === name ||
+    (player?.当前大道至宝 === ETERNAL_MAP_NAME && ETERNAL_MAP_COMPONENTS.includes(name))) {
+    return true;
+  }
+  return Boolean(getEquippedOtherShoreDaoAuthority(player, name, authorityKey));
 }
 
 export function applyDinghaiBattleOpening(holder, { active = false, shieldField = '护盾值' } = {}) {
-  if (!hasEquippedInnateTreasure(holder, '定海珠')) return { active: false, shield: 0 };
+  const shieldPassive = hasEquippedInnateTreasure(holder, '定海珠', '被动:1');
+  const controlPassive = hasEquippedInnateTreasure(holder, '定海珠', '被动:2');
+  const evolutionAuthority = active && hasEquippedInnateTreasure(holder, '定海珠', '演化诸天');
+  if (!shieldPassive && !controlPassive && !evolutionAuthority) return { active: false, shield: 0 };
   const blockedOpeningControl = Boolean(holder.dongjie || Number(holder._东皇冻结回合) > 0);
   const maxHp = Math.max(1, Number(holder.血量上限) || Number(holder.当前血量) || 1);
-  const shield = Math.max(1, Math.floor(maxHp * (active ? 0.5 : 0.2)));
+  const shield = shieldPassive || evolutionAuthority
+    ? Math.max(1, Math.floor(maxHp * (evolutionAuthority ? 0.5 : 0.2)))
+    : 0;
   holder[shieldField] = Math.max(0, Number(holder[shieldField]) || 0) + shield;
   holder._定海珠护盾字段 = shieldField;
   holder._定海珠护盾值 = shield;
-  holder._定海珠控制免疫 = !blockedOpeningControl;
-  if (blockedOpeningControl) {
+  holder._定海珠控制免疫 = controlPassive && !blockedOpeningControl;
+  if (controlPassive && blockedOpeningControl) {
     holder.dongjie = false;
     holder._东皇冻结回合 = 0;
   }
-  holder._定海珠演化激活 = Boolean(active);
-  holder._定海珠演化剩余行动 = active ? 3 : 0;
+  holder._定海珠演化激活 = evolutionAuthority;
+  holder._定海珠演化剩余行动 = evolutionAuthority ? 3 : 0;
   holder._定海珠吸收伤害 = 0;
   holder._定海珠最后攻击者 = null;
   holder._定海珠反击已结算 = false;
-  return { active: Boolean(active), shield, blockedOpeningControl };
+  return { active: evolutionAuthority, shield, blockedOpeningControl: controlPassive && blockedOpeningControl };
 }
 
 export function consumeDinghaiControlImmunity(holder) {
@@ -700,8 +811,22 @@ const TREASURE_AUTHORITY_STATE_KEYS = Object.freeze({
   诛仙四剑: Object.freeze(['诛仙剑阵待用']),
   天地玄黄玲珑塔: Object.freeze(['玄黄护道待用']),
   东皇钟: Object.freeze(['东皇镇世待用']),
+  太初仙刃: Object.freeze(['太初仙刃首击待用']),
+  无量天尺: Object.freeze(['无量护身待用']),
+  周天星辰旗: Object.freeze(['星辰护界待用']),
+  万道神炉: Object.freeze(['万道开炉待用']),
   定海珠: Object.freeze(['定海珠演化待用']),
 });
+
+export function clearInnateTreasureAuthorityState(player, treasureName) {
+  const state = getAuthorityState(player);
+  const cooldownKeys = (INNATE_TREASURE_CATALOG[treasureName]?.authorities || [])
+    .map(authority => authority.cooldownKey)
+    .filter(Boolean);
+  for (const key of cooldownKeys) delete state.冷却[key];
+  for (const key of TREASURE_AUTHORITY_STATE_KEYS[treasureName] || []) delete state[key];
+  return player;
+}
 
 export function transferInnateTreasureAuthorityState(sourcePlayer, targetPlayer, treasureName) {
   const source = getAuthorityState(sourcePlayer);
@@ -730,32 +855,37 @@ export function getCooldownRemaining(player, key, now = Date.now()) {
 export function startAuthorityCooldown(player, key, now = Date.now()) {
   const duration = AUTHORITY_COOLDOWNS[key];
   if (!duration) throw new Error(`未知权柄冷却：${key}`);
-  getAuthorityState(player).冷却[key] = now + duration;
-  return now + duration;
+  const inherited = getEquippedOtherShoreDaoAuthority(player, '', key);
+  const multiplier = inherited
+    ? Math.max(0.05, Math.min(1, Number(player.彼岸大道至宝运行时?.cooldownMultiplier) || 1))
+    : 1;
+  const expiresAt = now + Math.max(1, Math.round(duration * multiplier));
+  getAuthorityState(player).冷却[key] = expiresAt;
+  return expiresAt;
 }
 
 export function getTimedActionMultiplier(player) {
-  if (hasEquippedInnateTreasure(player, '混沌钟')) return 0.7;
-  if (hasEquippedInnateTreasure(player, '东皇钟')) return 0.8;
+  if (hasEquippedInnateTreasure(player, '混沌钟', '被动:1')) return 0.7;
+  if (hasEquippedInnateTreasure(player, '东皇钟', '被动:1')) return 0.8;
   return 1;
 }
 
 export function getCraftingTimedActionMultiplier(player) {
-  return getTimedActionMultiplier(player) * (hasEquippedInnateTreasure(player, '万道神炉') ? 0.8 : 1);
+  return getTimedActionMultiplier(player) * (hasEquippedInnateTreasure(player, '万道神炉', '被动:1') ? 0.8 : 1);
 }
 
 export function getInnateSpeedMultiplier(player) {
-  return hasEquippedInnateTreasure(player, '逐日仙辇') ? 1.1 : 1;
+  return hasEquippedInnateTreasure(player, '逐日仙辇', '被动:1') ? 1.1 : 1;
 }
 
 export function getCausalDebtMultiplier(player) {
-  return hasEquippedInnateTreasure(player, '因果神灯') ? 0.75 : 1;
+  return hasEquippedInnateTreasure(player, '因果神灯', '被动:1') ? 0.75 : 1;
 }
 
 export function consumeAlchemyMultiplier(player, now = Date.now()) {
   const state = getAuthorityState(player);
   const pending = state.万道开炉待用;
-  if (!pending || Number(pending.expiresAt) <= now || !hasEquippedInnateTreasure(player, '万道神炉')) {
+  if (!pending || Number(pending.expiresAt) <= now || !hasEquippedInnateTreasure(player, '万道神炉', '万道开炉')) {
     if (pending && Number(pending.expiresAt) <= now) delete state.万道开炉待用;
     return 1;
   }
@@ -824,11 +954,11 @@ export function getDungeonTimedActionMultiplier(player) {
 
 export function applyInnateTravelReduction(player, travelTime, random = Math.random) {
   const original = Math.max(1, Math.ceil(Number(travelTime) || 1));
-  if (hasEquippedInnateTreasure(player, '逐日仙辇')) {
+  if (hasEquippedInnateTreasure(player, '逐日仙辇', '被动:1')) {
     const travelTime = Math.max(1, Math.ceil(original * 0.85));
     return { travelTime, reduction: original - travelTime };
   }
-  if (!hasEquippedInnateTreasure(player, '虚天舟')) {
+  if (!hasEquippedInnateTreasure(player, '虚天舟', '被动:1')) {
     return { travelTime: original, reduction: 0 };
   }
   const reduction = 5 + Math.floor(Math.min(Math.max(Number(random()) || 0, 0), 1 - Number.EPSILON) * 6);
@@ -836,7 +966,7 @@ export function applyInnateTravelReduction(player, travelTime, random = Math.ran
 }
 
 export function getPetTreasureRules(player) {
-  if (!hasEquippedInnateTreasure(player, '炼妖壶')) {
+  if (!hasEquippedInnateTreasure(player, '炼妖壶', '被动:1')) {
     return { requiredMinutes: null, maxMinutes: null, rewardMultiplier: 1 };
   }
   return { requiredMinutes: 60, maxMinutes: 24 * 60, rewardMultiplier: 2 };
@@ -850,16 +980,16 @@ export function getPetAbilityBonus(pet, type) {
 }
 
 export function getSmallWorldYieldMultiplier(player) {
-  return hasEquippedInnateTreasure(player, '山河社稷图') ? 2 : 1;
+  return hasEquippedInnateTreasure(player, '山河社稷图', '被动:1') ? 2 : 1;
 }
 
 export function getHabitatSlotBonus(player) {
-  return hasEquippedInnateTreasure(player, '山河社稷图') ? 2 : 0;
+  return hasEquippedInnateTreasure(player, '山河社稷图', '被动:1') ? 2 : 0;
 }
 
 export function getInnerWorldOpenChance(baseChance, player) {
   const chance = Math.min(1, Math.max(0, Number(baseChance) || 0));
-  if (!hasEquippedInnateTreasure(player, '天地玄黄玲珑塔')) return chance;
+  if (!hasEquippedInnateTreasure(player, '天地玄黄玲珑塔', '玄黄护道')) return chance;
   const guarded = player?.先天权柄?.玄黄护道待用 === true;
   return guarded ? 1 - (1 - chance) * 0.7 : chance;
 }
@@ -871,11 +1001,11 @@ export function consumeXuanhuangGuard(player) {
 }
 
 export function getInnerWorldYieldMultiplier(player) {
-  return hasEquippedInnateTreasure(player, '崆峒印') ? 1.3 : 1;
+  return hasEquippedInnateTreasure(player, '崆峒印', '被动:2') ? 1.3 : 1;
 }
 
 export function getTribulationDamageMultiplier(player) {
-  const xuanhuang = hasEquippedInnateTreasure(player, '天地玄黄玲珑塔') &&
+  const xuanhuang = hasEquippedInnateTreasure(player, '天地玄黄玲珑塔', '玄黄护道') &&
     player?.先天权柄?.玄黄护道待用 === true
     ? 0.7
     : 1;
@@ -883,11 +1013,11 @@ export function getTribulationDamageMultiplier(player) {
 }
 
 export function getPassiveTribulationDamageMultiplier(player) {
-  return hasEquippedInnateTreasure(player, '万劫天碑') ? 0.85 : 1;
+  return hasEquippedInnateTreasure(player, '万劫天碑', '被动:1') ? 0.85 : 1;
 }
 
 export function hasReincarnationProtection(player, now = Date.now()) {
-  return hasEquippedInnateTreasure(player, '六道轮回盘') ||
+  return hasEquippedInnateTreasure(player, '六道轮回盘', '被动:1') ||
     Number(player?.先天权柄?.轮回庇护截止) > now;
 }
 
@@ -902,8 +1032,8 @@ export function getKongtongModifiers(player, now = Date.now()) {
   const decree = state.decree && Number(state.decree.expiresAt) > now ? state.decree : null;
   return {
     // 菩提祖树：修炼收益 +12500%（×126）、悟道收益 +200%（×3）
-    cultivationMultiplier: (ownerOrSect ? 2 : 1) * (hasEquippedInnateTreasure(player, '菩提祖树') ? 126 : 1),
-    wudaoMultiplier: hasEquippedInnateTreasure(player, '菩提祖树') ? 3 : 1,
+    cultivationMultiplier: (ownerOrSect ? 2 : 1) * (hasEquippedInnateTreasure(player, '菩提祖树', '被动:1') ? 126 : 1),
+    wudaoMultiplier: hasEquippedInnateTreasure(player, '菩提祖树', '被动:1') ? 3 : 1,
     decree,
   };
 }

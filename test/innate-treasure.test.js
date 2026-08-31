@@ -17,6 +17,7 @@ import {
   createInnateTreasure,
   createInnateTreasureProjection,
   createEternalImmortalMap,
+  createOtherShoreDaoTreasureRuntime,
   consumeAlchemyMultiplier,
   consumeEternalMapSynthesisMaterials,
   consumeDinghaiControlImmunity,
@@ -166,6 +167,97 @@ test('不同权柄使用独立冷却', () => {
   startAuthorityCooldown(player, '混沌复制', 1000);
   assert.equal(getCooldownRemaining(player, '混沌复制', 1000), 12 * 60 * 60 * 1000);
   assert.equal(getCooldownRemaining(player, '混沌变幻', 1000), 0);
+});
+
+test('彼岸大道至宝只继承所选开天主动权柄', () => {
+  const runtime = createOtherShoreDaoTreasureRuntime({
+    name: '彼岸开天器',
+    大道至宝本体: true,
+    cooldownMultiplier: 0.5,
+    authorities: [{
+      name: '开天',
+      sourceTreasureId: 'pangu-banner',
+      sourceTreasureName: '盘古幡',
+      command: '#开天',
+      cooldownKey: '开天',
+    }],
+  });
+  const player = { 当前大道至宝: runtime.name, 彼岸大道至宝运行时: runtime };
+
+  assert.equal(runtime.authorities[0].authorityKey, '开天');
+  assert.equal(hasEquippedInnateTreasure(player, '盘古幡', '开天'), true);
+  assert.equal(hasEquippedInnateTreasure(player, '盘古幡'), false);
+  assert.equal(hasEquippedInnateTreasure(player, '诛仙四剑', '开天'), false);
+});
+
+test('第四法自定义别名归一到现有权柄与冷却键', () => {
+  const runtime = createOtherShoreDaoTreasureRuntime({
+    name: '还真开天器',
+    大道至宝本体: true,
+    authorities: [{
+      name: '开天',
+      sourceTreasureName: '盘古幡',
+      command: '#开天',
+      cooldownKey: '开天冷却',
+      mode: 'return-truth-edited',
+    }],
+  });
+  const player = { 当前大道至宝: runtime.name, 彼岸大道至宝运行时: runtime };
+
+  assert.equal(runtime.authorities[0].cooldownKey, '开天');
+  assert.equal(hasEquippedInnateTreasure(player, '盘古幡', '开天'), true);
+});
+
+test('彼岸大道至宝被动与主动严格隔离', () => {
+  const runtime = createOtherShoreDaoTreasureRuntime({
+    name: '彼岸护道器',
+    大道至宝本体: true,
+    冷却倍率: 0.5,
+    authorities: [{
+      name: INNATE_TREASURE_CATALOG.盘古幡.passives[0],
+      sourceTreasureName: '盘古幡',
+      passive: true,
+    }],
+  });
+  const player = { 当前大道至宝: runtime.name, 彼岸大道至宝运行时: runtime };
+
+  assert.equal(hasEquippedInnateTreasure(player, '盘古幡'), true);
+  assert.equal(hasEquippedInnateTreasure(player, '盘古幡', '被动:1'), true);
+  assert.equal(hasEquippedInnateTreasure(player, '盘古幡', '开天'), false);
+});
+
+test('彼岸大道至宝的主动权柄不会连带放出同源系统被动', () => {
+  const runtime = createOtherShoreDaoTreasureRuntime({
+    name: '彼岸万道器',
+    大道至宝本体: true,
+    authorities: [{ name: '万道开炉', sourceTreasureName: '万道神炉' }],
+  });
+  const player = { 当前大道至宝: runtime.name, 彼岸大道至宝运行时: runtime };
+
+  assert.equal(hasEquippedInnateTreasure(player, '万道神炉', '万道开炉'), true);
+  assert.equal(getCraftingTimedActionMultiplier(player), 1);
+});
+
+test('彼岸大道至宝的0.5冷却只作用于自身所含权柄', () => {
+  const runtime = createOtherShoreDaoTreasureRuntime({
+    name: '彼岸开天器',
+    大道至宝本体: true,
+    cooldownMultiplier: 0.5,
+    authorities: [{ name: '开天', sourceTreasureName: '盘古幡' }],
+  });
+  const player = { 当前大道至宝: runtime.name, 彼岸大道至宝运行时: runtime };
+  const now = 1000;
+
+  startAuthorityCooldown(player, '开天', now);
+  assert.equal(getCooldownRemaining(player, '开天', now), AUTHORITY_COOLDOWNS.开天 * 0.5);
+  startAuthorityCooldown(player, '混沌复制', now);
+  assert.equal(getCooldownRemaining(player, '混沌复制', now), AUTHORITY_COOLDOWNS.混沌复制);
+});
+
+test('装备重算会投影彼岸大道至宝权柄运行时', () => {
+  const source = fs.readFileSync(new URL('../model/xiuxian.js', import.meta.url), 'utf8');
+  assert.match(source, /createOtherShoreDaoTreasureRuntime\(equipment\.至宝\)/);
+  assert.match(source, /player\.彼岸大道至宝运行时 = otherShoreDaoRuntime/);
 });
 
 test('盘古幡开天有30%概率打碎天骄本世护身法宝', () => {
