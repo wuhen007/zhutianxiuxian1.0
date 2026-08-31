@@ -130,7 +130,9 @@ function reviveMessage(player, lines) {
 export function resolveGongfaRevival(player, options = {}) {
   if (!player || typeof player !== 'object') return { revived: false, messages: [] };
   const lifeEssence = Number(player.生命本源);
-  player.生命本源 = Number.isFinite(lifeEssence) ? Math.max(0, Math.trunc(lifeEssence)) : 100;
+  player.生命本源 = Number.isFinite(lifeEssence)
+    ? Math.round(Math.max(0, lifeEssence) * 1000) / 1000
+    : 100;
   const messages = [];
 
   // 命格复活：每次渡劫只判定一次（调用方每次渡劫重置 player._命格复活已判）

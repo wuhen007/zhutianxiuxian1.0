@@ -95,7 +95,7 @@ export function applyEmperorWorldTripodOpening(boss, players) {
 
 export function applyEmperorDefeatPenalty(player, now = Date.now()) {
   player.道伤 = Math.max(0, Number(player.道伤) || 0) + 5;
-  player.生命本源 = Math.max(0, Math.floor((Number(player.生命本源) || 0) * 0.5));
+  player.生命本源 = Math.round(Math.max(0, Number(player.生命本源) || 0) * 500) / 1000;
   player.元神 = Math.max(0, Math.floor((Number(player.元神) || 0) * 0.5));
   if ((Number(player.压制寿元) || 0) > 0) {
     player.压制寿元 = Math.max(0, Math.floor(Number(player.压制寿元) * 0.5));

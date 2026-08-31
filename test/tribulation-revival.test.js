@@ -108,6 +108,27 @@ test('生命本源为零时保持枯竭，不会被复活结算重置', () => {
   assert.equal(player.生命本源, 0);
 });
 
+test('天魔炼化的小数生命本源经过复活结算仍会保留', () => {
+  const noRevival = {
+    名号: '测试修士',
+    血量上限: 1000,
+    当前血量: 0,
+    生命本源: 252.5,
+    学习的功法: [],
+    功法: {},
+  };
+  assert.equal(resolveGongfaRevival(noRevival, { allowMingge: false }).revived, false);
+  assert.equal(noRevival.生命本源, 252.5);
+
+  const revived = {
+    ...noRevival,
+    学习的功法: ['者字秘'],
+    功法: { 者字秘: { 冷却回合: 0 } },
+  };
+  assert.equal(resolveGongfaRevival(revived, { allowMingge: false }).revived, true);
+  assert.equal(revived.生命本源, 202.5);
+});
+
 test('普通肉身雷劫失败也接入统一复活选择', () => {
   const source = fs.readFileSync(new URL('../model/xiuxian.js', import.meta.url), 'utf8');
   const start = source.indexOf('export async function LevelTask');

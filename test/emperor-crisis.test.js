@@ -71,7 +71,7 @@ test('帝尊战败惩罚结算五点道伤、三项枯竭与两小时沉眠', ()
   applyEmperorDefeatPenalty(player, now);
   assert.deepEqual(player, {
     道伤: 7,
-    生命本源: 50,
+    生命本源: 50.5,
     元神: 40,
     寿元: 9999,
     压制寿元: 10_000,
@@ -83,6 +83,10 @@ test('帝尊战败惩罚结算五点道伤、三项枯竭与两小时沉眠', ()
   const ordinary = { 道伤: 0, 生命本源: 100, 元神: 100, 寿元: 101 };
   applyEmperorDefeatPenalty(ordinary, now);
   assert.equal(ordinary.寿元, 50);
+
+  const refined = { 道伤: 0, 生命本源: 252.5, 元神: 100, 寿元: 100 };
+  applyEmperorDefeatPenalty(refined, now);
+  assert.equal(refined.生命本源, 126.25);
 });
 
 test('帝尊团本接入大帝门槛、对峙续期和败北持久化', () => {
