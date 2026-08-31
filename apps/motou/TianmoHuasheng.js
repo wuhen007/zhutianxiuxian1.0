@@ -1,4 +1,4 @@
-import { plugin, verc } from "../../api/api.js";
+import { data, plugin, verc } from "../../api/api.js";
 import RealmEvents from "../tasks/RealmEvents.js";
 import {
   formatRealmEventLocation,
@@ -38,6 +38,8 @@ import {
   WANHUA_BANNER_NAME,
   formatWanhuaBannerStatus,
 } from '../../model/wanhuaBanner.js';
+import { getLifeSourceRepairMaximum } from '../../model/lifeSourceRepair.js';
+import { getMinggeEffects } from '../../model/mingge.js';
 
 const activeRefinements = new Set();
 
@@ -225,6 +227,8 @@ export class TianmoHuasheng extends plugin {
 
     const state = ensureTianmoHuashengState(player);
     const orb = Number(player.灵根?.法球倍率) || 0;
+    const effects = getMinggeEffects(player, data.minggeList);
+    const lifeSourceMaximum = getLifeSourceRepairMaximum(player, effects.生命本源额外);
     const remaining = Math.max(
       0,
       Math.ceil((REFINEMENT_ORB_TARGET - orb) / 0.1)
@@ -239,6 +243,7 @@ export class TianmoHuasheng extends plugin {
         `当前体质：${player.灵根.name}`,
         `法球倍率：${(orb * 100).toFixed(0)}% / 500%`,
         `攻防生：${player.灵根.攻击} / ${player.灵根.防御} / ${player.灵根.生命}`,
+        `生命本源：${player.生命本源} / ${lifeSourceMaximum}`,
         `已炼化：${state.炼化次数}人（含灾厄折算）`,
         `灾厄类炼化：${state.灾厄炼化次数}尊（普通灾厄0.1人，灾厄魔主0.5人）`,
         `距离蜕变：${

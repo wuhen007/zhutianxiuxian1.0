@@ -9,6 +9,11 @@ export const CALAMITY_REFINEMENT_WEIGHT = 0.1;
 export const REFINEMENT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 export const SAME_TARGET_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 export const TIANMO_LEGACY_DURATION_MS = 24 * 60 * 60 * 1000;
+const TIANMO_LIFE_SOURCE_MIGRATION_VERSION = 2;
+const TIANMO_LIFE_SOURCE_PROFILES = Object.freeze({
+  [JIDAO_TIANMO_PHYSIQUE]: Object.freeze({ legacy: 50, current: 150 }),
+  [WANHUA_TIANMO_PHYSIQUE]: Object.freeze({ legacy: 100, current: 500 }),
+});
 
 export const WANHUA_TIANMO_ROOT = Object.freeze({
   id: 7010020,
@@ -20,7 +25,7 @@ export const WANHUA_TIANMO_ROOT = Object.freeze({
   攻击: 8,
   防御: 3.5,
   生命: 8,
-  生命本源: 100,
+  生命本源: 500,
 });
 
 const TRANSFER_RULES = Object.freeze({
@@ -54,7 +59,7 @@ export function hasTianmoHuashengTechnique(player) {
   );
 }
 
-export function ensureTianmoHuashengState(player) {
+export function ensureTianmoHuashengState(player, options = {}) {
   const current = player.天魔化生;
   if (!current || typeof current !== "object" || Array.isArray(current)) {
     player.天魔化生 = {};
@@ -73,6 +78,21 @@ export function ensureTianmoHuashengState(player) {
       0,
       roundGrowth(state.累计所得[key])
     );
+  }
+  if ((Number(state.生命本源版本) || 0) < TIANMO_LIFE_SOURCE_MIGRATION_VERSION) {
+    const profile = TIANMO_LIFE_SOURCE_PROFILES[player?.灵根?.name];
+    if (profile) {
+      const storedBonus = Math.max(0, Number(player.灵根.生命本源) || 0);
+      const currentLifeSource = Math.max(0, Number(player.生命本源) || 0);
+      const extraLifeSource = Math.max(0, Number(options.extraLifeSource) || 0);
+      const legacyMaximum = 100 + profile.legacy + state.累计所得.生命本源 + extraLifeSource;
+      const increase = storedBonus < profile.current
+        ? profile.current - storedBonus
+        : currentLifeSource <= legacyMaximum ? profile.current - profile.legacy : 0;
+      player.灵根.生命本源 = Math.max(storedBonus, profile.current);
+      player.生命本源 = roundGrowth(currentLifeSource + increase);
+    }
+    state.生命本源版本 = TIANMO_LIFE_SOURCE_MIGRATION_VERSION;
   }
   state.已蜕变 = Boolean(
     state.已蜕变 || player.灵根?.name === WANHUA_TIANMO_PHYSIQUE
@@ -165,14 +185,19 @@ export function applyTianmoRefinement(executor, target, options = {}) {
   const now = Number(options.now) || Date.now();
   const targetId = String(options.targetId ?? target?.id ?? "unknown");
   const transfer = calculateEssenceTransfer(target);
+  const state = ensureTianmoHuashengState(executor);
 
   for (const [key, amount] of Object.entries(transfer)) {
-    executor[key] =
-      Math.max(0, Math.floor(Number(executor[key]) || 0)) + amount;
-    target[key] = Math.max(0, Math.floor(Number(target[key]) || 0) - amount);
+    const executorValue = Math.max(0, Number(executor[key]) || 0);
+    executor[key] = key === "生命本源"
+      ? roundGrowth(executorValue + amount)
+      : Math.floor(executorValue) + amount;
+    const targetValue = Math.max(0, Number(target[key]) || 0);
+    target[key] = key === "生命本源"
+      ? roundGrowth(Math.max(0, targetValue - amount))
+      : Math.max(0, Math.floor(targetValue) - amount);
   }
 
-  const state = ensureTianmoHuashengState(executor);
   state.上次炼化 = now;
   state.炼化记录[targetId] = now;
   target.天魔炼化保护至 = now + SAME_TARGET_COOLDOWN_MS;

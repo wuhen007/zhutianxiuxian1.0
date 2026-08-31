@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   REFINEMENT_COOLDOWN_MS,
   SAME_TARGET_COOLDOWN_MS,
   TIANMO_HUASHENG_TECHNIQUE,
+  WANHUA_TIANMO_ROOT,
   WANHUA_TIANMO_PHYSIQUE,
   applyTianmoCalamityRefinement,
   applyTianmoRefinement,
   calculateEssenceTransfer,
   createTianmoTrialOpponent,
+  ensureTianmoHuashengState,
   getRefinementAvailability,
   grantTianmoHuashengTechnique,
 } from "../model/tianmoHuasheng.js";
@@ -26,14 +30,14 @@ function makeTianmo(extra = {}) {
       攻击: 3,
       防御: 2,
       生命: 2,
-      生命本源: 50,
+      生命本源: 150,
     },
     学习的功法: [TIANMO_HUASHENG_TECHNIQUE],
     仙道潜力: 0,
     修为: 0,
     血气: 0,
     寿元: 10,
-    生命本源: 100,
+    生命本源: 250,
     ...extra,
   };
 }
@@ -80,9 +84,9 @@ test("万灵怨胎按挑战者战力生成且不会继承功法", () => {
   assert.deepEqual(player.学习的功法, [TIANMO_HUASHENG_TECHNIQUE]);
 });
 
-test("炼化按潜力50%、其余10%真实转移并保留最低本源", () => {
+test("炼化按潜力50%、其余10%真实转移并保留最低本源与小数", () => {
   const executor = makeTianmo();
-  const target = makeTarget();
+  const target = makeTarget({ 生命本源: 51.5 });
   const expected = calculateEssenceTransfer(target);
   assert.deepEqual(expected, {
     仙道潜力: 4,
@@ -103,6 +107,8 @@ test("炼化按潜力50%、其余10%真实转移并保留最低本源", () => {
   assert.equal(executor.灵根.攻击, 3.05);
   assert.equal(executor.灵根.防御, 2.05);
   assert.equal(executor.灵根.生命, 2.05);
+  assert.equal(executor.生命本源, 255);
+  assert.equal(target.生命本源, 46.5);
   assert.equal(target.天魔炼化保护至, 1000 + SAME_TARGET_COOLDOWN_MS);
 
   const exhausted = calculateEssenceTransfer(
@@ -123,7 +129,7 @@ test("十次灾厄炼化折算一次玩家炼化并实际增加生命本源", ()
 
   assert.equal(executor.天魔化生.炼化次数, 1);
   assert.equal(executor.天魔化生.灾厄炼化次数, 10);
-  assert.equal(executor.生命本源, 105);
+  assert.equal(executor.生命本源, 255);
   assert.equal(executor.天魔化生.累计所得.生命本源, 5);
   assert.equal(executor.灵根.法球倍率, 2.1);
   assert.deepEqual(
@@ -144,12 +150,16 @@ test("灾厄魔主炼化按0.5名玩家计入化生进度", () => {
   assert.equal(result.refinementWeight, 0.5);
   assert.equal(executor.天魔化生.炼化次数, 0.5);
   assert.equal(executor.天魔化生.灾厄炼化次数, 1);
-  assert.equal(executor.生命本源, 102.5);
+  assert.equal(executor.生命本源, 252.5);
   assert.equal(executor.灵根.法球倍率, 2.05);
   assert.deepEqual(
     [executor.灵根.攻击, executor.灵根.防御, executor.灵根.生命],
     [3.025, 2.025, 2.025]
   );
+
+  applyTianmoRefinement(executor, makeTarget(), { now: 2000, targetId: "next" });
+  assert.equal(executor.生命本源, 257.5);
+  assert.equal(executor.天魔化生.累计所得.生命本源, 7.5);
 });
 
 test("达到500%法球倍率时蜕变为无相万化天魔体", () => {
@@ -169,8 +179,54 @@ test("达到500%法球倍率时蜕变为无相万化天魔体", () => {
   assert.equal(executor.灵根.攻击, 8);
   assert.equal(executor.灵根.防御, 3.5);
   assert.equal(executor.灵根.生命, 8);
-  assert.equal(executor.生命本源, 155);
+  assert.equal(executor.灵根.生命本源, 500);
+  assert.equal(executor.生命本源, 605);
   assert.equal(executor.天魔化生.已蜕变, true);
+});
+
+test("旧极道与无相存档补齐本源差额且不会重复叠加", () => {
+  const legacyJidao = makeTianmo({
+    灵根: { ...makeTianmo().灵根, 生命本源: 50 },
+    生命本源: 150,
+  });
+  ensureTianmoHuashengState(legacyJidao);
+  assert.equal(legacyJidao.灵根.生命本源, 150);
+  assert.equal(legacyJidao.生命本源, 250);
+
+  const legacyWanhua = {
+    灵根: { ...WANHUA_TIANMO_ROOT, 生命本源: 100 },
+    生命本源: 205,
+    天魔化生: { 累计所得: { 生命本源: 5 } },
+  };
+  ensureTianmoHuashengState(legacyWanhua);
+  assert.equal(legacyWanhua.灵根.生命本源, 500);
+  assert.equal(legacyWanhua.生命本源, 605);
+  ensureTianmoHuashengState(legacyWanhua);
+  assert.equal(legacyWanhua.生命本源, 605);
+
+  const syncedWanhua = {
+    灵根: { ...WANHUA_TIANMO_ROOT },
+    生命本源: 280,
+  };
+  ensureTianmoHuashengState(syncedWanhua, { extraLifeSource: 100 });
+  assert.equal(syncedWanhua.灵根.生命本源, 500);
+  assert.equal(syncedWanhua.生命本源, 680);
+  ensureTianmoHuashengState(syncedWanhua, { extraLifeSource: 100 });
+  assert.equal(syncedWanhua.生命本源, 680);
+
+  const damagedSyncedWanhua = {
+    灵根: { ...WANHUA_TIANMO_ROOT },
+    生命本源: 150,
+  };
+  ensureTianmoHuashengState(damagedSyncedWanhua);
+  assert.equal(damagedSyncedWanhua.生命本源, 550);
+
+  const aboveLegacyThreshold = {
+    灵根: { ...WANHUA_TIANMO_ROOT },
+    生命本源: 250,
+  };
+  ensureTianmoHuashengState(aboveLegacyThreshold);
+  assert.equal(aboveLegacyThreshold.生命本源, 250);
 });
 
 test("功法、体质与两类灵根技能均已登记到静态数据", () => {
@@ -187,6 +243,7 @@ test("功法、体质与两类灵根技能均已登记到静态数据", () => {
     (item) => item.name === WANHUA_TIANMO_PHYSIQUE
   );
   assert.equal(physique.法球倍率, 5);
+  assert.equal(physique.生命本源, WANHUA_TIANMO_ROOT.生命本源);
   assert.deepEqual([physique.攻击, physique.防御, physique.生命], [8, 3.5, 8]);
   assert.ok(attacks.some((item) => item.name === WANHUA_TIANMO_PHYSIQUE));
   assert.ok(
@@ -217,4 +274,61 @@ test("炼化受24小时全局冷却与7天同目标保护", () => {
   state = getRefinementAvailability(executor, "b", now, protectedTarget);
   assert.equal(state.ok, false);
   assert.equal(state.waitMs, 5000);
+});
+
+test("天魔化生与生命本源救赎模块可以完整装载", () => {
+  const script = `
+    globalThis.Bot = { makeLog() {} };
+    globalThis.logger = new Proxy({}, { get() { return () => {}; } });
+    const tianmo = await import('./plugins/zhutianxiuxian1.0/apps/motou/TianmoHuasheng.js');
+    const rescue = await import('./plugins/zhutianxiuxian1.0/apps/zhutianjing/mofashaonv.js');
+    if (typeof tianmo.TianmoHuasheng !== 'function') process.exit(1);
+    if (typeof rescue.mofashaonv !== 'function') process.exit(1);
+    process.exit(0);
+  `;
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval', script], {
+    cwd: fileURLToPath(new URL('../../..', import.meta.url)),
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+test("自救写回会保留目标修复结果", () => {
+  const source = fs.readFileSync(
+    new URL("../apps/zhutianjing/mofashaonv.js", import.meta.url),
+    "utf8"
+  );
+  const start = source.indexOf("async executeRescue(");
+  const end = source.indexOf("/** 解放天牢 */", start);
+  assert.ok(start >= 0 && end > start, "executeRescue block should remain discoverable");
+
+  const block = source.slice(start, end);
+  const refresh = block.indexOf(
+    "const updatedCaster = isSelf ? await Read_player(casterQQ) : caster;"
+  );
+  const deduct = block.indexOf(
+    "updatedCaster.希望系统.希望碎片 = Math.max("
+  );
+  const write = block.indexOf("await Write_player(casterQQ, updatedCaster);");
+
+  assert.ok(refresh >= 0, "self rescue should refresh the persisted player state");
+  assert.ok(refresh < deduct, "cost should be applied after the refresh");
+  assert.ok(deduct < write, "the merged state should be written after accounting");
+});
+
+test("修复指令会在满值早退前持久化天魔本源迁移", () => {
+  const source = fs.readFileSync(
+    new URL("../apps/User/UserHome.js", import.meta.url),
+    "utf8"
+  );
+  const start = source.indexOf("async shengmingbenyuan(");
+  const end = source.indexOf("async repairDaoshang(", start);
+  assert.ok(start >= 0 && end > start, "life-source repair block should remain discoverable");
+
+  const block = source.slice(start, end);
+  const persist = block.indexOf("await Write_player(usr_qq, player);");
+  const earlyExit = block.indexOf("if (player.生命本源 >= maxLifeBase)");
+  assert.ok(persist >= 0, "repair should persist migrated player data");
+  assert.ok(persist < earlyExit, "migration persistence should precede the full-value early exit");
 });
