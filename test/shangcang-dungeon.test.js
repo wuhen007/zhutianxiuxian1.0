@@ -34,10 +34,30 @@ test('上苍副本成本、掉落和纪元进度闭环', () => {
   recordShangcangVictory(progressPlayer);
   const third = recordShangcangVictory(progressPlayer);
   assert.equal(third.gained, 2);
+  assert.equal(third.cap, 100);
   assert.equal(progressPlayer.纪元积累, 100);
   assert.equal(progressPlayer.上苍之上纪元进度, 0);
   assert.equal(isShangcangAction({ action: SHANGCANG_NORMAL_ACTION }), true);
   assert.equal(isShangcangAction({ action: SHANGCANG_ADDICTION_ACTION }), true);
+});
+
+test('上苍三胜奖励按己道阶段提升纪元积累上限', () => {
+  const stages = [
+    [{ 纪元积累: 198, 己道推演: { attempts: 10 } }, 200],
+    [{ 纪元积累: 298, 己道推演: { attempts: 15 } }, 300],
+    [{ 纪元积累: 498, 己道推演: { attempts: 20 } }, 500],
+    [{ 纪元积累: 998, mijinglevel_id: 21 }, 1000],
+  ];
+
+  for (const [player, cap] of stages) {
+    recordShangcangVictory(player);
+    recordShangcangVictory(player);
+    const result = recordShangcangVictory(player);
+    assert.deepEqual(
+      { gained: result.gained, cap: result.cap, accumulated: player.纪元积累 },
+      { gained: 2, cap, accumulated: cap },
+    );
+  }
 });
 
 test('魂河和天帝葬坑资源、功法与合成配置齐全', () => {

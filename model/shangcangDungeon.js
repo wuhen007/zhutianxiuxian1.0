@@ -1,6 +1,7 @@
 import { isDaofaActive } from './daofa.js';
 import { getDungeonTimedActionMultiplier } from './innateTreasure.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from './mingge.js';
+import { addCappedEraAccumulation } from './selfDaoDeduction.js';
 
 export const SHANGCANG_PLANE_ID = 200;
 export const SHANGCANG_NORMAL_ACTION = '上苍之上历练';
@@ -97,8 +98,7 @@ export function recordShangcangVictory(player) {
   player.上苍之上胜场 = Math.max(0, Math.trunc(Number(player.上苍之上胜场) || 0)) + 1;
   const progress = Math.max(0, Math.trunc(Number(player.上苍之上纪元进度) || 0)) + 1;
   const requested = Math.floor(progress / 3) * 5;
-  const before = Math.max(0, Number(player.纪元积累) || 0);
-  player.纪元积累 = Math.min(100, before + requested);
+  const era = addCappedEraAccumulation(player, requested);
   player.上苍之上纪元进度 = progress % 3;
-  return { gained: player.纪元积累 - before, progress: player.上苍之上纪元进度, wins: player.上苍之上胜场 };
+  return { ...era, progress: player.上苍之上纪元进度, wins: player.上苍之上胜场 };
 }

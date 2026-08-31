@@ -136,7 +136,7 @@ export class ShangcangTask extends plugin {
     const lines = [
       `【上苍之上·${location}】${result}`,
       rewards.length ? `获得：${rewards.map(item => `${item.name}×${item.count}`).join('、')}` : '本轮没有获得战利品',
-      era?.gained ? `三胜积累：纪元积累+${era.gained}（当前${player.纪元积累}/100）` : '',
+      era?.gained ? `三胜积累：纪元积累+${era.gained}（当前${player.纪元积累}/${era.cap}）` : '',
       Object.keys(proficiency).length ? `功法参悟：${Object.keys(proficiency).join('、')}` : '',
       addiction && !stopReason && action.Place_actionplus == '0'
         ? `沉迷进度：${action.settled_count}/${action.total_count}`
