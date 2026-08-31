@@ -1,7 +1,7 @@
 import { plugin, verc, data, config } from '../../api/api.js';
 import { hasRealmAuthority } from '../../model/realmAuthority.js';
 import { TIME_RIVER_PHASE_DURATION_MS } from '../../model/timeRiverAdversary.js';
-import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
+import { isTimeRiverLocation } from '../../model/weimianTravel.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 import {
@@ -223,6 +223,9 @@ export class shijianchanghe extends plugin {
       if (!await existplayer(id)) return e.reply(`成员${id}的修仙存档不存在。`);
       const player = await Read_player(id);
       if (!hasRealmAuthority(player, 20)) return e.reply(`成员【${player.名号}】尚未达到准仙帝。`);
+      if (!isTimeRiverLocation(player.power_place)) {
+        return e.reply(`成员【${player.名号}】当前不在时间长河，请先使用 #穿梭时间长河。`);
+      }
       const rawAction = await redis.get(`xiuxian:player:${id}:action`);
       if (rawAction) {
         try {
@@ -249,7 +252,6 @@ export class shijianchanghe extends plugin {
       timeRiverTeamMembers: [...team.members],
     };
     for (const { id, player } of players) {
-      player.power_place = PLACE_LOCATION_MAP.时间长河;
       await Write_player(id, player);
       await redis.set(`xiuxian:player:${id}:action`, JSON.stringify(action));
       await redis.set(`xiuxian:time_river:end_time:${id}`, endTime);
@@ -284,11 +286,14 @@ export class shijianchanghe extends plugin {
         return e.reply(`你已在时间长河队伍【${existingTeam.id}】中，请由队长使用 #组队遨游时间长河。`);
       }
       let player = await Read_player(usr_qq);
-       // 检查是否可以前往
-    const flag = await Go(e);
-    if (!flag) {
+      if (!isTimeRiverLocation(player.power_place)) {
+        return e.reply('遨游时间长河必须先身处时间长河，请先使用 #穿梭时间长河。');
+      }
+      // 检查是否可以前往
+      const flag = await Go(e);
+      if (!flag) {
         return false;
-    }
+      }
   if (!hasRealmAuthority(player, 20)) {
       const replyMsg = [
           `【时间长河·禁忌之地】`,
@@ -310,7 +315,6 @@ export class shijianchanghe extends plugin {
       return false;
   }
   
-  player.power_place = PLACE_LOCATION_MAP.时间长河;
     await Write_player(usr_qq, player);
       let action_time = TIME_RIVER_PHASE_DURATION_MS;
       let arr = {

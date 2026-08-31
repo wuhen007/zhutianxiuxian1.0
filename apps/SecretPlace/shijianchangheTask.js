@@ -31,6 +31,7 @@ import {
   getRealmAuthorityLevel,
   hasRealmAuthority,
 } from '../../model/realmAuthority.js';
+import { addCappedEraAccumulation } from '../../model/selfDaoDeduction.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { runTaskOnce } from '../../utils/taskGuard.js';
 import {
@@ -84,8 +85,6 @@ export class ShijianChangheTask extends plugin {
       fnc: () => runTaskOnce('ShijianChangheTask', () => this.checkTimeRiverActions()),
     };
     
-    // 纪元积累上限
-    this.MAX_ERA_ACCUMULATION = 100;
   }
   
 async checkTimeRiverActions() {
@@ -396,7 +395,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
         : resolvedPlayer.当前血量;
       player.当前血量 = Math.max(0, Math.min(Number(player.血量上限) || 1, Number(remainingHp) || 0));
       const proficiencyGains = awardDungeonGongfaProficiency(player);
-      player.纪元积累 = Math.min(this.MAX_ERA_ACCUMULATION, player.纪元积累 + eraAccumulationChange);
+      const era = addCappedEraAccumulation(player, eraAccumulationChange);
 
       const specialEvents = {};
       const penalties = {};
@@ -425,7 +424,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       if (specialEvents.darkSuppression) {
         penalties.darkSuppression = await this.handleDarkSuppression(id, action, { worldlineCollapse: true, enemyNames });
       }
-      memberResults.push({ id, player, specialEvents, penalties, proficiencyGains });
+      memberResults.push({ id, player, specialEvents, penalties, proficiencyGains, era });
     }
 
     for (const result of memberResults) {
@@ -435,7 +434,8 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
         specialEvents: result.specialEvents,
         penalties: result.penalties,
         proficiencyGains: result.proficiencyGains,
-        eraAccumulationChange,
+        eraAccumulationChange: result.era.gained,
+        eraAccumulationCap: result.era.cap,
         newEraAccumulation: result.player.纪元积累,
       }));
     }
@@ -1012,7 +1012,7 @@ if (battleResult.specialEvents.pastBodyExposed && battleResult.penalties.pastBod
         message.push(` 战胜绝世强者荒天帝，额外获得2点纪元积累！`);
       }
     }
-    message.push(`当前纪元积累：${battleResult.newEraAccumulation}/${this.MAX_ERA_ACCUMULATION}`);
+    message.push(`当前纪元积累：${battleResult.newEraAccumulation}/${battleResult.eraAccumulationCap}`);
     
     // 时代加成提示
     if (enemy.era === 0 || enemy.era === 1) {
