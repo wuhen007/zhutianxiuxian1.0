@@ -180,6 +180,7 @@ import {
   applyDinghaiBattleOpening,
   applyNewTreasureDamageRules,
   consumeDinghaiControlImmunity,
+  createOtherShoreDaoTreasureRuntime,
   getPetAbilityBonus,
   getInnateSpeedMultiplier,
   hasEquippedInnateTreasure,
@@ -191,10 +192,15 @@ import {
   updateEquippedInnateTreasure,
 } from './innateTreasure.js';
 import {
+  DIMENSION_GROUPS,
   PLACE_LOCATION_MAP,
   SPECIAL_LOCATIONS,
+  canImmortalEmperorFreeTravel,
   getBaseTravelThreshold,
   getBodyTravelQuote,
+  getDimensionBarrierDescription,
+  getDimensionGroup,
+  getDimensionLayer,
   ensureDefaultCoordinates,
   getKunpengReduction,
   getLocationThreshold,
@@ -255,6 +261,11 @@ import {
   recordWanhuaKill,
   rollWanhuaBannerActiveAttack,
 } from './wanhuaBanner.js';
+import {
+  ensureTianmoHuashengState,
+  isTianmoHuashengPhysique,
+} from './tianmoHuasheng.js';
+import { getLifeSourceRepairMaximum } from './lifeSourceRepair.js';
 import {
   applyExclusiveSetOpening,
   rewriteBeyondDefeat,
@@ -493,6 +504,11 @@ export async function Read_player(usr_qq) {
   });
   ensureForbiddenState(player);
   ensureWanhuaBannerState(player);
+  if (isTianmoHuashengPhysique(player)) {
+    ensureTianmoHuashengState(player, {
+      extraLifeSource: getMinggeEffects(player, data.minggeList).生命本源额外,
+    });
+  }
   ensureExtraCultivationState(player);
   ensureFlowerPollenState(player);
   if (player.先天至宝失效时间 && Number(player.先天至宝失效时间) <= Date.now()) {
@@ -1230,6 +1246,11 @@ export async function Write_player(usr_qq, player, options = {}) {
       console.warn(`[天意一刀] 玩家${usr_qq}进阶校验失败:`, error);
     }
   }
+  if (isTianmoHuashengPhysique(player)) {
+    ensureTianmoHuashengState(player, {
+      extraLifeSource: getMinggeEffects(player, data.minggeList).生命本源额外,
+    });
+  }
   releaseJuelingLifespanForAuthority(player);
   writeJsonAtomically(dir, player);
   return;
@@ -1414,9 +1435,19 @@ export async function Write_equipment(usr_qq, equipment) {
     : '');
   const daoTreasureEquipped = isDaoTreasureItem(equipment.至宝) &&
     String(equipment.至宝.绑定者 || equipment.至宝.author_name) === String(usr_qq);
+  const otherShoreDaoRuntime = daoTreasureEquipped
+    ? createOtherShoreDaoTreasureRuntime(equipment.至宝)
+    : null;
+  const previousDaoTreasure = String(player.当前大道至宝 || '');
   player.当前先天至宝 = innateTreasureName;
   player.当前大道至宝 = daoTreasureEquipped ? equipment.至宝.name : '';
-  if (!daoTreasureEquipped || equipment.至宝?.永恒仙图本体) player.大道主权柄 = '';
+  if (!daoTreasureEquipped
+    || equipment.至宝?.永恒仙图本体
+    || previousDaoTreasure !== String(player.当前大道至宝 || '')) {
+    player.大道主权柄 = '';
+  }
+  if (otherShoreDaoRuntime) player.彼岸大道至宝运行时 = otherShoreDaoRuntime;
+  else delete player.彼岸大道至宝运行时;
   player.先天至宝失效时间 = projectionName
     ? Number(equipment.至宝.先天投影截止)
     : 0;
@@ -1503,7 +1534,7 @@ export async function Write_equipment(usr_qq, equipment) {
   let type = ['武器', '护具', '法宝', '帝兵', '至宝'];
   const equippedStats = calculateEquippedStats(player, type.map(i => equipment[i]), {
     // 万道神炉被动：百分比装备属性溢出自动补偿至理论极限
-    rebalanceOverflow: hasEquippedInnateTreasure(player, '万道神炉'),
+    rebalanceOverflow: hasEquippedInnateTreasure(player, '万道神炉', '被动:1'),
   });
   player.攻击 = equippedStats.攻击;
   player.防御 = equippedStats.防御;
@@ -1606,7 +1637,7 @@ export async function Write_equipment(usr_qq, equipment) {
   }
   const previousCreationPoolBonus = Number(player._造化仙池治疗加成) || 0;
   player.治疗效果加成 = Math.max(0, (Number(player.治疗效果加成) || 0) - previousCreationPoolBonus);
-  player._造化仙池治疗加成 = hasEquippedInnateTreasure(player, '造化仙池') ? 0.25 : 0;
+  player._造化仙池治疗加成 = hasEquippedInnateTreasure(player, '造化仙池', '被动:1') ? 0.25 : 0;
   player.治疗效果加成 += player._造化仙池治疗加成;
   applyRelicEffectsToPlayer(player, equipment, { rebuiltCombatStats: true });
     await Write_player(usr_qq, player);
@@ -1631,7 +1662,8 @@ player.血量上限 = player.血量上限 * (1+灵根生命);
     
     // 生命本源直接加算
     if (player.灵根.生命本源) {
-      player.生命本源 = 100+player.灵根.生命本源;
+      const effects = getMinggeEffects(player, data.minggeList);
+      player.生命本源 = getLifeSourceRepairMaximum(player, effects.生命本源额外);
     }
   
 
@@ -1921,11 +1953,16 @@ export async function get_weimian_img(e) {
       const coordinateKnown = hasCoordinate(player, name);
       const tokenTier = getTokenTier(player);
       const instantTravel = isInstantAllHeavensTravel(player, currentPlace, id);
-      const tokenRoute = Boolean(tokenTier && !SPECIAL_LOCATIONS.includes(name) && !instantTravel);
+      const emperorFreeTravel = canImmortalEmperorFreeTravel(player, currentPlace, id);
+      const tokenRoute = Boolean(tokenTier && !SPECIAL_LOCATIONS.includes(name) && !instantTravel && !emperorFreeTravel);
       const coordinateEngraved = hasEngravedCoordinate(player, name);
-      const routeReady = !tokenRoute || coordinateEngraved;
-      const thresholdMet = tokenRoute || locationThreshold.ok;
-      const unlocked = worldOpen && baseThreshold.ok && coordinateKnown && routeReady && thresholdMet;
+      const routeReady = emperorFreeTravel || !tokenRoute || coordinateEngraved;
+      const thresholdMet = emperorFreeTravel || tokenRoute || locationThreshold.ok;
+      const unlocked = worldOpen
+        && (emperorFreeTravel || baseThreshold.ok)
+        && (emperorFreeTravel || coordinateKnown)
+        && routeReady
+        && thresholdMet;
 
       let status_tag = 'locked';
       let status_label = '未解锁';
@@ -1935,9 +1972,9 @@ export async function get_weimian_img(e) {
       } else if (!worldOpen) {
         status_tag = 'destroyed';
         status_label = '已崩灭';
-      } else if (!coordinateKnown) {
+      } else if (!coordinateKnown && !emperorFreeTravel) {
         status_label = '坐标未知';
-      } else if (tokenRoute && !coordinateEngraved) {
+      } else if (tokenRoute && !coordinateEngraved && !emperorFreeTravel) {
         status_label = '阵图未刻';
       } else if (unlocked) {
         status_tag = 'unlocked';
@@ -1946,19 +1983,30 @@ export async function get_weimian_img(e) {
 
       const req_items = [
         { label: '位面状态', display: worldOpen ? '开放' : '已崩灭', met: worldOpen },
-        ...baseThreshold.checks,
+        ...baseThreshold.checks.map(check => ({
+          ...check,
+          bypassed: emperorFreeTravel && !check.met,
+          display: emperorFreeTravel && !check.met ? `${check.display}（仙帝权能）` : check.display,
+        })),
         ...locationThreshold.checks.map(check => ({
           ...check,
-          bypassed: tokenRoute && !check.met,
-          display: tokenRoute && !check.met ? `${check.display}（传送阵通行）` : check.display,
+          bypassed: (tokenRoute || emperorFreeTravel) && !check.met,
+          display: tokenRoute && !check.met
+            ? `${check.display}（传送阵通行）`
+            : emperorFreeTravel && !check.met ? `${check.display}（仙帝权能）` : check.display,
         })),
-        { label: '星空坐标', display: coordinateKnown ? '已知' : '未记录', met: coordinateKnown },
+        {
+          label: '星空坐标',
+          display: emperorFreeTravel ? '仙帝权能·无需坐标' : (coordinateKnown ? '已知' : '未记录'),
+          met: coordinateKnown || emperorFreeTravel,
+        },
       ];
-      if (tokenRoute) {
+      if (tokenRoute && !emperorFreeTravel) {
         req_items.push({ label: '传送阵坐标', display: coordinateEngraved ? '已刻画' : '未刻画', met: coordinateEngraved });
       }
 
       const bodyQuote = getBodyTravelQuote(player, currentPlace, id);
+      const dimensionGroup = getDimensionGroup(name);
       let route_label = isCurrent ? '无需穿梭' : '肉身穿梭';
       let xiuweiCost = bodyQuote.xiuweiCost;
       let qixueCost = bodyQuote.qixueCost;
@@ -1966,7 +2014,10 @@ export async function get_weimian_img(e) {
       let travelTime = bodyQuote.travelTime;
       let costClass = 'cost-ok';
 
-      if (!isCurrent && instantTravel) route_label = '准仙帝权能·诸天无距';
+      if (!isCurrent && instantTravel) {
+        route_label = getRealmAuthorityLevel(player) >= 21 ? '仙帝权能·诸天无距' : '准仙帝权能·诸天无距';
+      }
+      if (!isCurrent && emperorFreeTravel && !instantTravel) route_label = '仙帝权能·跨层直达';
 
       if (!isCurrent && tokenRoute) {
         route_label = tokenTier === 'high' ? '高级传送阵' : '传送阵';
@@ -1993,6 +2044,11 @@ export async function get_weimian_img(e) {
         id_css: idToCss(id),
         id_badge: idToBadge(id),
         name: realm.name,
+        dimension_name: dimensionGroup?.name || '封闭裂界',
+        dimension_layer_label: dimensionGroup?.layer === null
+          ? `第${getDimensionLayer(name)}层`
+          : (dimensionGroup?.layerLabel || `第${getDimensionLayer(name)}层`),
+        dimension_barrier: getDimensionBarrierDescription(name),
         icon: realm.icon,
         description: realm.description,
         isSpecial: realm.isSpecial,
@@ -2018,6 +2074,14 @@ export async function get_weimian_img(e) {
 
     const unlockedCount = realmList.filter(realm => realm.unlocked).length;
     const total = realmList.length;
+    const dimension_guide = Object.values(DIMENSION_GROUPS).map(group => ({
+      name: group.name,
+      layer_label: group.layerLabel,
+      locations: group.layer === null
+        ? group.locations.map(location => `${location}（第${getDimensionLayer(location)}层）`).join('、')
+        : group.locations.join('、'),
+      barrier: group.barrier,
+    }));
 
     const playerData = {
       nickname: player.名号 || usr_qq,
@@ -2035,6 +2099,7 @@ export async function get_weimian_img(e) {
       unlocked: unlockedCount,
       total,
       progress: Math.round((unlockedCount / total) * 100),
+      dimension_guide,
       realmList,
     };
 
@@ -3236,7 +3301,7 @@ export async function get_player_img(e) {
   if (!ifexistplay) {
     return;
   }
-  let player = await data.getData('player', usr_qq);
+  let player = await Read_player(usr_qq);
   refreshDaofaStatus(player);
   let equipment = await data.getData('equipment', usr_qq);
   let player_status = await getPlayerAction(usr_qq);
@@ -9688,7 +9753,7 @@ let B_speed = getBattleUnitSpeed(B_player);
 
     if (
       context === 'main' && source &&
-      defender.当前先天至宝 === '太极图' &&
+      hasEquippedInnateTreasure(defender, '太极图', '被动:1') &&
       defender.先天权柄?.太极模式 === '阴' &&
       Math.random() < 0.3
     ) {
@@ -10034,60 +10099,71 @@ let B_speed = getBattleUnitSpeed(B_player);
       msg.push(`【古史反制】${holder.名号}试图催动灵根与至宝，时间长河帝光将其加持当场打断！`);
       return;
     }
-    const treasure = holder.当前先天至宝;
-
-    if (hasEquippedInnateTreasure(holder, '太初仙刃') && !isPvpBattle) {
+    if (hasEquippedInnateTreasure(holder, '太初仙刃', '被动:1') && !isPvpBattle) {
       opponent.防御 = Math.max(0, Math.floor((Number(opponent.防御) || 0) * 0.85));
       msg.push(`【太初仙刃】${holder.名号}斩开太初道隙，无视${opponent.名号}一成半防御。`);
-      if (await consumeAuthorityFlag(holder, '太初仙刃首击待用')) holder._太初仙刃首击倍率 = 2.5;
     }
-    if (hasEquippedInnateTreasure(holder, '无量天尺')) {
+    if (hasEquippedInnateTreasure(holder, '太初仙刃', '太初一斩') && !isPvpBattle
+      && await consumeAuthorityFlag(holder, '太初仙刃首击待用')) {
+      holder._太初仙刃首击倍率 = 2.5;
+    }
+    if (hasEquippedInnateTreasure(holder, '无量天尺', '被动:1')) {
       holder._无量天尺首伤上限 = Math.max(1, Math.floor((Number(holder.血量上限) || 1) * 0.45));
-      if (await consumeAuthorityFlag(holder, '无量护身待用')) holder._无量护身剩余 = 3;
     }
-    if (hasEquippedInnateTreasure(holder, '周天星辰旗') && await consumeAuthorityFlag(holder, '星辰护界待用')) {
+    if (hasEquippedInnateTreasure(holder, '无量天尺', '无量护身')
+      && await consumeAuthorityFlag(holder, '无量护身待用')) {
+      holder._无量护身剩余 = 3;
+    }
+    if (hasEquippedInnateTreasure(holder, '周天星辰旗', '星辰护界')
+      && await consumeAuthorityFlag(holder, '星辰护界待用')) {
       const shield = Math.max(1, Math.floor((Number(holder.血量上限) || 1) * 0.25));
       holder._护盾值 = (Number(holder._护盾值) || 0) + shield;
       holder.护盾值 = (Number(holder.护盾值) || 0) + shield;
       msg.push(`【星辰护界】周天星斗垂落，为${holder.名号}凝成${bigNumberTransform(shield)}点护盾。`);
     }
-    if (treasure === '定海珠') {
-      const active = await consumeAuthorityFlag(holder, '定海珠演化待用');
+    if (hasEquippedInnateTreasure(holder, '定海珠', '被动:1')
+      || hasEquippedInnateTreasure(holder, '定海珠', '被动:2')
+      || hasEquippedInnateTreasure(holder, '定海珠', '演化诸天')) {
+      const active = hasEquippedInnateTreasure(holder, '定海珠', '演化诸天')
+        && await consumeAuthorityFlag(holder, '定海珠演化待用');
       const opening = applyDinghaiBattleOpening(holder, { active, shieldField: '护盾值' });
-      msg.push(`【${active ? '演化诸天' : '镇海'}】二十四颗定海珠环绕${holder.名号}，凝成${bigNumberTransform(opening.shield)}点护盾。`);
+      if (opening.shield > 0) msg.push(`【${active ? '演化诸天' : '镇海'}】二十四颗定海珠环绕${holder.名号}，凝成${bigNumberTransform(opening.shield)}点护盾。`);
       if (opening.blockedOpeningControl) msg.push(`【镇海】${holder.名号}遭受的开局控制已被珠光定住。`);
     }
 
-    if (treasure === '盘古幡' && !isPvpBattle) {
+    if (hasEquippedInnateTreasure(holder, '盘古幡', '被动:1') && !isPvpBattle) {
       opponent.防御 = Math.max(0, Math.floor((Number(opponent.防御) || 0) * 0.7));
       msg.push(`【盘古幡·破界】${holder.名号}无视了${opponent.名号}三成防御。`);
-      if (await consumeAuthorityFlag(holder, '盘古开天待用')) {
-        opponent.防御 = 0;
-        const hpLossRate = isBossOpponent(opponent) ? 0.03 : 0.3;
-        const hpLoss = Math.floor((Number(opponent.血量上限) || Number(opponent.当前血量) || 0) * hpLossRate);
-        opponent.当前血量 = Math.max(1, opponent.当前血量 - hpLoss);
-        msg.push(`【开天】盘古幡撕裂大道，${opponent.名号}防御归零，初始气血-${Math.round(hpLossRate * 100)}%。`);
-      }
+    }
+    if (hasEquippedInnateTreasure(holder, '盘古幡', '开天') && !isPvpBattle
+      && await consumeAuthorityFlag(holder, '盘古开天待用')) {
+      opponent.防御 = 0;
+      const hpLossRate = isBossOpponent(opponent) ? 0.03 : 0.3;
+      const hpLoss = Math.floor((Number(opponent.血量上限) || Number(opponent.当前血量) || 0) * hpLossRate);
+      opponent.当前血量 = Math.max(1, opponent.当前血量 - hpLoss);
+      msg.push(`【开天】盘古幡撕裂大道，${opponent.名号}防御归零，初始气血-${Math.round(hpLossRate * 100)}%。`);
     }
 
-    if (treasure === '诛仙四剑') {
+    if (hasEquippedInnateTreasure(holder, '诛仙四剑', '被动:1')) {
       opponent._先天禁疗 = true;
       msg.push(`【诛仙四剑】诛仙剑意锁死${opponent.名号}气机，一切治疗尽皆失效！`);
-      if (await consumeAuthorityFlag(holder, '诛仙剑阵待用')) {
-        const sword = ['戮仙剑', '绝仙剑', '陷仙剑', '诛仙剑'][Math.floor(Math.random() * 4)];
-        if (sword === '戮仙剑') opponent._诛仙易伤 = 0.5;
-        if (sword === '绝仙剑') opponent._绝仙流血 = true;
-        if (sword === '陷仙剑') opponent._陷仙沉默 = true;
-        if (sword === '诛仙剑') {
-          const damage = Math.floor((Number(holder.攻击) || 1) * (Number(holder.法球倍率) || 1) * 5);
-          opponent.当前血量 = Math.max(0, opponent.当前血量 - damage);
-          msg.push(`【诛仙剑】必中且无法防御的五倍神通贯穿${opponent.名号}，造成${bigNumberTransform(damage)}点伤害。`);
-        }
-        if (sword !== '诛仙剑') msg.push(`【诛仙剑阵·${sword}】剑阵开局权柄已降临。`);
+    }
+    if (hasEquippedInnateTreasure(holder, '诛仙四剑', '诛仙剑阵')
+      && await consumeAuthorityFlag(holder, '诛仙剑阵待用')) {
+      const sword = ['戮仙剑', '绝仙剑', '陷仙剑', '诛仙剑'][Math.floor(Math.random() * 4)];
+      if (sword === '戮仙剑') opponent._诛仙易伤 = 0.5;
+      if (sword === '绝仙剑') opponent._绝仙流血 = true;
+      if (sword === '陷仙剑') opponent._陷仙沉默 = true;
+      if (sword === '诛仙剑') {
+        const damage = Math.floor((Number(holder.攻击) || 1) * (Number(holder.法球倍率) || 1) * 5);
+        opponent.当前血量 = Math.max(0, opponent.当前血量 - damage);
+        msg.push(`【诛仙剑】必中且无法防御的五倍神通贯穿${opponent.名号}，造成${bigNumberTransform(damage)}点伤害。`);
       }
+      if (sword !== '诛仙剑') msg.push(`【诛仙剑阵·${sword}】剑阵开局权柄已降临。`);
     }
 
-    if (treasure === '东皇钟' && await consumeAuthorityFlag(holder, '东皇镇世待用')) {
+    if (hasEquippedInnateTreasure(holder, '东皇钟', '东皇镇世')
+      && await consumeAuthorityFlag(holder, '东皇镇世待用')) {
       const boss = isBossOpponent(opponent);
       opponent._东皇冻结回合 = tryApplyDinghaiControl(opponent, msg, '冻结')
         ? (isPvpBattle || boss ? 1 : 3)
@@ -10098,12 +10174,16 @@ let B_speed = getBattleUnitSpeed(B_player);
         : `【东皇镇世】${opponent.名号}被东皇钟镇封${opponent._东皇冻结回合}回合。`);
     }
 
-    if (treasure === '太极图') {
-      if (holder.先天权柄?.太极模式 === '阳') {
+    if (hasEquippedInnateTreasure(holder, '太极图', '切换太极')
+      || hasEquippedInnateTreasure(holder, '太极图', '阴阳逆转')
+      || hasEquippedInnateTreasure(holder, '太极图', '被动:1')
+      || hasEquippedInnateTreasure(holder, '太极图', '被动:2')) {
+      if (hasEquippedInnateTreasure(holder, '太极图', '被动:2') && holder.先天权柄?.太极模式 === '阳') {
         holder.吸血率 = Math.max(Number(holder.吸血率) || 0, 0.5);
         msg.push(`【太极图·阳相】阴阳轮转，${holder.名号}攻伐自带五成吸血。`);
       }
-      if (await consumeAuthorityFlag(holder, '阴阳逆转待用')) {
+      if (hasEquippedInnateTreasure(holder, '太极图', '阴阳逆转')
+        && await consumeAuthorityFlag(holder, '阴阳逆转待用')) {
         holder._阴阳逆转护命 = true;
         if (tryApplyDinghaiControl(opponent, msg, '强制控制')) {
           opponent._东皇冻结回合 = Math.max(Number(opponent._东皇冻结回合) || 0, 1);
@@ -10113,16 +10193,16 @@ let B_speed = getBattleUnitSpeed(B_player);
     }
   }
 
-  if (A_player.当前先天至宝 === '六道轮回盘') {
+  if (hasEquippedInnateTreasure(A_player, '六道轮回盘', '被动:2')) {
     B_speed = Math.max(1, Math.floor(B_speed * 0.8));
     msg.push(`【六道轮回盘】${B_player.名号}被轮回法则笼罩，速度降低两成。`);
   }
-  if (B_player.当前先天至宝 === '六道轮回盘') {
+  if (hasEquippedInnateTreasure(B_player, '六道轮回盘', '被动:2')) {
     A_speed = Math.max(1, Math.floor(A_speed * 0.8));
     msg.push(`【六道轮回盘】${A_player.名号}被轮回法则笼罩，速度降低两成。`);
   }
-  if (hasEquippedInnateTreasure(A_player, '周天星辰旗')) A_speed = Math.max(1, Math.floor(A_speed * 1.08));
-  if (hasEquippedInnateTreasure(B_player, '周天星辰旗')) B_speed = Math.max(1, Math.floor(B_speed * 1.08));
+  if (hasEquippedInnateTreasure(A_player, '周天星辰旗', '被动:1')) A_speed = Math.max(1, Math.floor(A_speed * 1.08));
+  if (hasEquippedInnateTreasure(B_player, '周天星辰旗', '被动:1')) B_speed = Math.max(1, Math.floor(B_speed * 1.08));
   await applyInnateBattleOpening(A_player, B_player);
   await applyInnateBattleOpening(B_player, A_player);
   for (const player of [A_player, B_player]) {
@@ -10225,7 +10305,7 @@ msg.push(bSpeedMsg);
     const fateTransfer = transferSuLingFateEffects(attacker, defender);
     if (fateTransfer.triggered) msg.push(fateTransfer.message);
 
-    if (attacker.当前先天至宝 === '六道轮回盘' && Math.random() < 0.2) {
+    if (hasEquippedInnateTreasure(attacker, '六道轮回盘', '被动:2') && Math.random() < 0.2) {
       if (pushBackActionBar(defenderBar, Math.floor(ACTION_BAR_MAX * 0.2))) {
         msg.push(`【六道轮回盘】${defender.名号}的行动进度被推退20%。`);
       }
@@ -10641,7 +10721,7 @@ msg.push(bSpeedMsg);
       if (attackResult) appendDinghaiResolution(msg, tickDinghaiEvolution(attacker));
 
       if (
-        attacker.当前先天至宝 === '诛仙四剑' &&
+        hasEquippedInnateTreasure(attacker, '诛仙四剑', '被动:1') &&
         defender.当前血量 > 0 &&
         defender.当前血量 < defender.血量上限 * 0.25
       ) {
@@ -11039,16 +11119,23 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       return;
     }
     const allies = holder._team === 'A' ? A_team : B_team;
-    if (hasEquippedInnateTreasure(holder, '太初仙刃')) {
+    if (hasEquippedInnateTreasure(holder, '太初仙刃', '被动:1')) {
       for (const enemy of enemies) enemy.防御 = Math.floor((Number(enemy.防御) || 0) * 0.85);
       msg.push(`【太初仙刃】${holder.名号}斩开敌方道隙，敌方全体防御被无视一成半。`);
-      if (await consumeTeamAuthority(holder, '太初仙刃首击待用')) holder._太初仙刃首击倍率 = 2.5;
     }
-    if (hasEquippedInnateTreasure(holder, '无量天尺')) {
+    if (hasEquippedInnateTreasure(holder, '太初仙刃', '太初一斩')
+      && await consumeTeamAuthority(holder, '太初仙刃首击待用')) {
+      holder._太初仙刃首击倍率 = 2.5;
+    }
+    if (hasEquippedInnateTreasure(holder, '无量天尺', '被动:1')) {
       holder._无量天尺首伤上限 = Math.max(1, Math.floor((Number(holder.血量上限) || 1) * 0.45));
-      if (await consumeTeamAuthority(holder, '无量护身待用')) holder._无量护身剩余 = 3;
     }
-    if (hasEquippedInnateTreasure(holder, '周天星辰旗') && await consumeTeamAuthority(holder, '星辰护界待用')) {
+    if (hasEquippedInnateTreasure(holder, '无量天尺', '无量护身')
+      && await consumeTeamAuthority(holder, '无量护身待用')) {
+      holder._无量护身剩余 = 3;
+    }
+    if (hasEquippedInnateTreasure(holder, '周天星辰旗', '星辰护界')
+      && await consumeTeamAuthority(holder, '星辰护界待用')) {
       for (const ally of allies) {
         const rate = ally === holder ? 0.25 : 0.15;
         const shield = Math.max(1, Math.floor((Number(ally.血量上限) || 1) * rate));
@@ -11057,40 +11144,46 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       }
       msg.push(`【星辰护界】${holder.名号}展开周天星幕，群星护持己方全体。`);
     }
-    if (holder.当前先天至宝 === '定海珠') {
-      const active = await consumeTeamAuthority(holder, '定海珠演化待用');
+    if (hasEquippedInnateTreasure(holder, '定海珠', '被动:1')
+      || hasEquippedInnateTreasure(holder, '定海珠', '被动:2')
+      || hasEquippedInnateTreasure(holder, '定海珠', '演化诸天')) {
+      const active = hasEquippedInnateTreasure(holder, '定海珠', '演化诸天')
+        && await consumeTeamAuthority(holder, '定海珠演化待用');
       const opening = applyDinghaiBattleOpening(holder, { active, shieldField: '_护盾值' });
-      msg.push(`【${active ? '演化诸天' : '镇海'}】二十四颗定海珠只护持有者${holder.名号}，凝成${bigNumberTransform(opening.shield)}点护盾。`);
+      if (opening.shield > 0) msg.push(`【${active ? '演化诸天' : '镇海'}】二十四颗定海珠只护持有者${holder.名号}，凝成${bigNumberTransform(opening.shield)}点护盾。`);
       if (opening.blockedOpeningControl) msg.push(`【镇海】${holder.名号}遭受的开局控制已被珠光定住。`);
     }
-    if (holder.当前先天至宝 === '盘古幡') {
+    if (hasEquippedInnateTreasure(holder, '盘古幡', '被动:1')) {
       for (const enemy of enemies) enemy.防御 = Math.floor((Number(enemy.防御) || 0) * 0.7);
       msg.push(`【盘古幡·破界】${holder.名号}以开天余威斩敌，敌方全体防御被无视三成。`);
-      if (await consumeTeamAuthority(holder, '盘古开天待用')) {
-        for (const enemy of enemies) {
-          enemy.防御 = 0;
-          const boss = enemy.boss === true || enemy.type === 'boss' || /BOSS|Boss|首领|天骄/.test(String(enemy.名号 || ''));
-          const maxHp = Number(enemy.血量上限) || Number(enemy.当前血量) || 1;
-          enemy.当前血量 = Math.max(1, enemy.当前血量 - Math.floor(maxHp * (boss ? 0.03 : 0.3)));
-        }
-        msg.push(`【开天】${holder.名号}令敌方全体防御归零，并斩去初始气血。`);
-      }
     }
-    if (holder.当前先天至宝 === '诛仙四剑') {
+    if (hasEquippedInnateTreasure(holder, '盘古幡', '开天')
+      && await consumeTeamAuthority(holder, '盘古开天待用')) {
+      for (const enemy of enemies) {
+        enemy.防御 = 0;
+        const boss = enemy.boss === true || enemy.type === 'boss' || /BOSS|Boss|首领|天骄/.test(String(enemy.名号 || ''));
+        const maxHp = Number(enemy.血量上限) || Number(enemy.当前血量) || 1;
+        enemy.当前血量 = Math.max(1, enemy.当前血量 - Math.floor(maxHp * (boss ? 0.03 : 0.3)));
+      }
+      msg.push(`【开天】${holder.名号}令敌方全体防御归零，并斩去初始气血。`);
+    }
+    if (hasEquippedInnateTreasure(holder, '诛仙四剑', '被动:1')) {
       for (const enemy of enemies) enemy._先天禁疗 = true;
       msg.push(`【诛仙四剑】诛仙剑意封锁全场，敌方无法治疗！`);
-      if (await consumeTeamAuthority(holder, '诛仙剑阵待用')) {
-        const sword = ['戮仙剑', '绝仙剑', '陷仙剑', '诛仙剑'][Math.floor(Math.random() * 4)];
-        for (const enemy of enemies) {
-          if (sword === '戮仙剑') enemy._诛仙易伤 = 0.5;
-          if (sword === '绝仙剑') enemy._绝仙流血 = true;
-          if (sword === '陷仙剑') enemy._陷仙沉默 = true;
-          if (sword === '诛仙剑') enemy.当前血量 = Math.max(0, enemy.当前血量 - Math.floor(holder.攻击 * (holder.法球倍率 || 1) * 5));
-        }
-        msg.push(`【诛仙剑阵·${sword}】剑阵笼罩敌方全体。`);
-      }
     }
-    if (holder.当前先天至宝 === '东皇钟' && await consumeTeamAuthority(holder, '东皇镇世待用')) {
+    if (hasEquippedInnateTreasure(holder, '诛仙四剑', '诛仙剑阵')
+      && await consumeTeamAuthority(holder, '诛仙剑阵待用')) {
+      const sword = ['戮仙剑', '绝仙剑', '陷仙剑', '诛仙剑'][Math.floor(Math.random() * 4)];
+      for (const enemy of enemies) {
+        if (sword === '戮仙剑') enemy._诛仙易伤 = 0.5;
+        if (sword === '绝仙剑') enemy._绝仙流血 = true;
+        if (sword === '陷仙剑') enemy._陷仙沉默 = true;
+        if (sword === '诛仙剑') enemy.当前血量 = Math.max(0, enemy.当前血量 - Math.floor(holder.攻击 * (holder.法球倍率 || 1) * 5));
+      }
+      msg.push(`【诛仙剑阵·${sword}】剑阵笼罩敌方全体。`);
+    }
+    if (hasEquippedInnateTreasure(holder, '东皇钟', '东皇镇世')
+      && await consumeTeamAuthority(holder, '东皇镇世待用')) {
       for (const enemy of enemies) {
         const boss = enemy.boss === true || enemy.type === 'boss' || /BOSS|Boss|首领|天骄/.test(String(enemy.名号 || ''));
         enemy._东皇冻结回合 = tryApplyDinghaiControl(enemy, msg, '冻结') ? (boss ? 1 : 3) : 0;
@@ -11098,11 +11191,12 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       }
       msg.push(`【东皇镇世】敌方全体被镇封，首领攻击同时受到压制。`);
     }
-    if (holder.当前先天至宝 === '太极图' && holder.先天权柄?.太极模式 === '阳') {
+    if (hasEquippedInnateTreasure(holder, '太极图', '被动:2') && holder.先天权柄?.太极模式 === '阳') {
       holder.吸血率 = Math.max(Number(holder.吸血率) || 0, 0.5);
       msg.push(`【太极图·阳相】阴阳轮转，${holder.名号}攻伐自带五成吸血。`);
     }
-    if (holder.当前先天至宝 === '太极图' && await consumeTeamAuthority(holder, '阴阳逆转待用')) {
+    if (hasEquippedInnateTreasure(holder, '太极图', '阴阳逆转')
+      && await consumeTeamAuthority(holder, '阴阳逆转待用')) {
       holder._阴阳逆转护命 = true;
       for (const enemy of enemies) {
         if (tryApplyDinghaiControl(enemy, msg, '强制控制')) enemy.dongjie = true;
@@ -11113,10 +11207,10 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
   for (const holder of A_team) await applyTeamInnateOpening(holder, B_team);
   for (const holder of B_team) await applyTeamInnateOpening(holder, A_team);
-  if (A_team.some(unit => hasEquippedInnateTreasure(unit, '周天星辰旗'))) {
+  if (A_team.some(unit => hasEquippedInnateTreasure(unit, '周天星辰旗', '被动:1'))) {
     for (const unit of A_team) unit._speed = Math.max(1, Math.floor(unit._speed * 1.08));
   }
-  if (B_team.some(unit => hasEquippedInnateTreasure(unit, '周天星辰旗'))) {
+  if (B_team.some(unit => hasEquippedInnateTreasure(unit, '周天星辰旗', '被动:1'))) {
     for (const unit of B_team) unit._speed = Math.max(1, Math.floor(unit._speed * 1.08));
   }
   for (const unit of allUnits) {
@@ -11125,12 +11219,12 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     if (revival.revived) msg.push(...(Array.isArray(revival.message) ? revival.message : [revival.message]));
   }
 
-  const aLun = A_team.find(unit => unit.当前先天至宝 === '六道轮回盘');
+  const aLun = A_team.find(unit => hasEquippedInnateTreasure(unit, '六道轮回盘', '被动:2'));
   if (aLun) {
     for (const unit of B_team) unit._speed = Math.max(1, Math.floor(unit._speed * 0.8));
     msg.push(`【六道轮回盘】${aLun.名号}掌轮回之枢，对方全体速度被压制两成。`);
   }
-  const bLun = B_team.find(unit => unit.当前先天至宝 === '六道轮回盘');
+  const bLun = B_team.find(unit => hasEquippedInnateTreasure(unit, '六道轮回盘', '被动:2'));
   if (bLun) {
     for (const unit of A_team) unit._speed = Math.max(1, Math.floor(unit._speed * 0.8));
     msg.push(`【六道轮回盘】${bLun.名号}掌轮回之枢，对方全体速度被压制两成。`);
@@ -11975,7 +12069,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       actual_damage = 0;
     }
     if (
-      defender.当前先天至宝 === '太极图' &&
+      hasEquippedInnateTreasure(defender, '太极图', '被动:1') &&
       defender.先天权柄?.太极模式 === '阴' &&
       Math.random() < 0.3
     ) {
@@ -12025,7 +12119,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         attackMsgs.push(`${attacker.名号}一剑「草字剑诀」斩落真我，${defender.名号}气血已衰竭至极，本源被当场斩断！`);
       }
     }
-    if (attacker.当前先天至宝 === '诛仙四剑' && defender.当前血量 > 0 && defender.当前血量 < defender.血量上限 * 0.25) {
+    if (hasEquippedInnateTreasure(attacker, '诛仙四剑', '被动:1') && defender.当前血量 > 0 && defender.当前血量 < defender.血量上限 * 0.25) {
       const executeFate = resolveSuLingFatalFate(defender, attacker, defender.当前血量);
       if (executeFate.triggered) attackMsgs.push(executeFate.message);
       else {
@@ -12278,7 +12372,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     const target = enemies[Math.floor(Math.random() * enemies.length)];
 
-    if (readyUnit.当前先天至宝 === '六道轮回盘' && Math.random() < 0.2) {
+    if (hasEquippedInnateTreasure(readyUnit, '六道轮回盘', '被动:2') && Math.random() < 0.2) {
       if (tryApplyDinghaiControl(target, msg, '行动条推退')) {
         target._actionBar = Math.max(0, target._actionBar - Math.floor(ACTION_BAR_MAX * 0.2));
         msg.push(`【六道轮回盘】${target.名号}的行动进度被推退20%。`);
@@ -13599,6 +13693,11 @@ export async function synchronization(e) {
     transaction.capture(path.join(__PATH.equipment_path, `${usr_qq}.json`));
     transaction.capture(path.join(__PATH.danyao_path, `${usr_qq}.json`));
     let player = await data.getData('player', usr_qq);
+    if (isTianmoHuashengPhysique(player)) {
+      ensureTianmoHuashengState(player, {
+        extraLifeSource: getMinggeEffects(player, data.minggeList).生命本源额外,
+      });
+    }
     let najie = await Read_najie(usr_qq);
     let equipment = await Read_equipment(usr_qq);
     
