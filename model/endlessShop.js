@@ -4,8 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { INNATE_TREASURE_CATALOG } from './innateTreasure.js';
 import { getTreasureContestProfile } from './innateTreasureContest.js';
 import {
+  collectEquipmentStatPools,
   isCanonicalDaluoSwordEmbryo,
-  MAX_PERCENT_EQUIPMENT_STAT,
+  isFixedStatEquipment,
+  MAX_EQUIPMENT_PERCENT_BONUS,
 } from './equipmentStats.js';
 import {
   formatRealmEventLocation,
@@ -66,6 +68,60 @@ function percentageStats(item) {
   };
 }
 
+const EQUIPMENT_STAT_LABELS = { atk: '攻击', def: '防御', HP: '血量' };
+const EQUIPMENT_SLOTS = ['武器', '护具', '法宝', '帝兵', '至宝'];
+
+function formatRate(rate) {
+  return `${Number(((Number(rate) || 0) * 100).toFixed(2))}%`;
+}
+
+function equipmentStatPools(equipment) {
+  return collectEquipmentStatPools(
+    EQUIPMENT_SLOTS.map(slotName => equipment?.[slotName]),
+  );
+}
+
+export function formatFusionResult(merged, previousEquipment) {
+  const pct = merged.target.归一属性.百分比;
+  const sourceCritical = Number(merged.source?.bao) || 0;
+  const lines = [
+    '【万象归一·熔铸成功】',
+    `${merged.target.name}吞纳了${merged.source.name}的道则`,
+    `归一词条：攻击+${formatRate(pct.atk)} / 防御+${formatRate(pct.def)} / 血量+${formatRate(pct.HP)} / 暴击+${formatRate(sourceCritical)}`,
+    '原数值属性与套装效果完整保留。',
+    `结算方式：归一词条与普通百分比装备分别计算+${MAX_EQUIPMENT_PERCENT_BONUS * 100}%上限，套装效果在其后独立生效。`,
+  ];
+  const before = equipmentStatPools(previousEquipment);
+  const after = equipmentStatPools(merged.equipment);
+  const ordinaryCapped = Object.keys(before.percentage).filter(
+    field => before.percentage[field] >= MAX_EQUIPMENT_PERCENT_BONUS,
+  );
+  const fusionAlreadyCapped = Object.keys(before.fusion).filter(
+    field => before.fusion[field] >= MAX_EQUIPMENT_PERCENT_BONUS,
+  );
+  const fusionNewlyCapped = Object.keys(after.fusion).filter(
+    field => before.fusion[field] < MAX_EQUIPMENT_PERCENT_BONUS
+      && after.fusion[field] > MAX_EQUIPMENT_PERCENT_BONUS,
+  );
+
+  if (ordinaryCapped.length) {
+    lines.push(
+      `普通装备提示：${ordinaryCapped.map(field => EQUIPMENT_STAT_LABELS[field]).join('、')}已达普通百分比+${MAX_EQUIPMENT_PERCENT_BONUS * 100}%上限，本次归一词条仍照常生效。`,
+    );
+  }
+  if (fusionAlreadyCapped.length) {
+    lines.push(
+      `归一上限提示：归一前${fusionAlreadyCapped.map(field => EQUIPMENT_STAT_LABELS[field]).join('、')}已达归一词条+${MAX_EQUIPMENT_PERCENT_BONUS * 100}%上限，对应新增部分本次截顶。`,
+    );
+  }
+  if (fusionNewlyCapped.length) {
+    lines.push(
+      `归一上限提示：${fusionNewlyCapped.map(field => EQUIPMENT_STAT_LABELS[field]).join('、')}本次在独立+${MAX_EQUIPMENT_PERCENT_BONUS * 100}%上限处截顶，超出部分保留在归一词条中。`,
+    );
+  }
+  return lines;
+}
+
 export function findEndlessProduct(selector) {
   const text = String(selector || '').trim();
   return ENDLESS_SHOP.find(item => String(item.id) === text || item.name === text) || null;
@@ -122,14 +178,14 @@ export function mergeSetEquipment(equipment, najie, slot, sourceName) {
     throw new Error('当前穿戴的武器不是仙古秘境产出的大罗剑胎');
   }
   if (target.归一属性) throw new Error(`当前${slot}已经完成万象归一`);
-  if (!Object.values(stats(target)).some(value => value > MAX_PERCENT_EQUIPMENT_STAT)) {
+  if (!isFixedStatEquipment(target)) {
     throw new Error('套装部件必须是数值装备');
   }
 
   const sourceIndex = (nextNajie.装备 || []).findIndex(item => {
     const values = Object.values(stats(item));
     return item.name === sourceName && item.type === slot && Number(item.数量) > 0 &&
-      values.some(value => value > 0) && values.every(value => value <= MAX_PERCENT_EQUIPMENT_STAT);
+      values.some(value => value > 0) && !isFixedStatEquipment(item);
   });
   if (sourceIndex < 0) throw new Error(`纳戒中没有符合条件的百分比${slot}【${sourceName}】`);
   const furnaceIndex = (nextNajie.道具 || []).findIndex(

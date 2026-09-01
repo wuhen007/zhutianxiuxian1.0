@@ -9,10 +9,15 @@ import {
   FUSION_ITEM,
   canPurchaseEndlessProduct,
   findEndlessProduct,
+  formatFusionResult,
   formatTreasureClue,
   grantEndlessDirectReward,
   mergeSetEquipment,
 } from '../model/endlessShop.js';
+import {
+  calculateEquippedStats,
+  calculateEquipmentSetBonuses,
+} from '../model/equipmentStats.js';
 
 const itemDir = fileURLToPath(new URL('../resources/data/item/', import.meta.url));
 const shopData = JSON.parse(
@@ -96,6 +101,95 @@ test('万象归一消耗材料并保留套装数值和百分比属性', () => {
   assert.ok(Math.abs(result.equipment.武器.bao - 0.3) < 1e-12);
   assert.equal(result.najie.装备.length, 0);
   assert.equal(result.najie.道具.length, 0);
+});
+
+test('万象归一后的固定值、百分比与原套装效果共同进入面板', () => {
+  const equipment = {
+    武器: { name: '灭仙剑', type: '武器', atk: 1000, def: 200, HP: 300 },
+    护具: { name: '灭仙衣', type: '护具' },
+    法宝: { name: '灭仙符', type: '法宝' },
+  };
+  const najie = {
+    装备: [{ name: '百分比剑', type: '武器', atk: 0.5, def: 0.2, HP: 1, 数量: 1 }],
+    道具: [{ name: FUSION_ITEM, 数量: 1 }],
+  };
+  const merged = mergeSetEquipment(equipment, najie, '武器', '百分比剑');
+  const stats = calculateEquippedStats(
+    { 攻击: 1000, 防御: 1000, 血量上限: 1000 },
+    [merged.equipment.武器, merged.equipment.护具, merged.equipment.法宝]
+  );
+  const set = calculateEquipmentSetBonuses({ 魔道值: 1000, 灵根: { type: '魔头' } }, merged.equipment);
+
+  assert.deepEqual(stats, { 攻击: 2500, 防御: 1400, 血量上限: 2300 });
+  assert.deepEqual(set, { 攻: 0.15, 防: 0, 血: 0 });
+  assert.deepEqual({
+    攻击: Math.trunc(stats.攻击 * (1 + set.攻)),
+    防御: Math.trunc(stats.防御 * (1 + set.防)),
+    血量上限: Math.trunc(stats.血量上限 * (1 + set.血)),
+  }, { 攻击: 2875, 防御: 1400, 血量上限: 2300 });
+});
+
+test('万象归一在普通百分比封顶后仍从独立池增加三维', () => {
+  const equipment = {
+    武器: {
+      id: 100054,
+      name: '大罗剑胎',
+      type: '武器',
+      atk: 4_500_000_000,
+      def: 4_500_000_000,
+      HP: 4_500_000_000,
+      bao: 0.2,
+      至尊体全属性倍率: 15,
+      其他灵根全属性倍率: 7.5,
+    },
+    护具: { type: '护具', atk: 278.95, def: 286.84, HP: 361.6, bao: 0.83 },
+    法宝: { type: '法宝', atk: 279.62, def: 287.52, HP: 362.54, bao: 0.83 },
+    帝兵: {},
+    至宝: {},
+  };
+  const najie = {
+    装备: [{
+      name: '剑', type: '武器', atk: 303.96, def: 92.51, HP: 303.96, bao: 0.83, 数量: 1,
+    }],
+    道具: [{ name: FUSION_ITEM, 数量: 1 }],
+  };
+  const merged = mergeSetEquipment(equipment, najie, '武器', '剑');
+  const before = calculateEquippedStats(
+    { 攻击: 1000, 防御: 1000, 血量上限: 1000 },
+    Object.values(equipment),
+  );
+  const after = calculateEquippedStats(
+    { 攻击: 1000, 防御: 1000, 血量上限: 1000 },
+    Object.values(merged.equipment),
+  );
+  const message = formatFusionResult(merged, equipment).join('\n');
+
+  assert.equal(after.攻击 - before.攻击, 303_960);
+  assert.equal(after.防御 - before.防御, 92_510);
+  assert.equal(after.血量上限 - before.血量上限, 303_960);
+  const set = calculateEquipmentSetBonuses(
+    { 灵根: { type: '圆环之理' } },
+    merged.equipment,
+  );
+  assert.deepEqual(set, { 攻: 6.5, 防: 6.5, 血: 6.5 });
+  assert.equal(
+    Math.trunc(after.攻击 * (1 + set.攻)) - Math.trunc(before.攻击 * (1 + set.攻)),
+    2_279_700,
+  );
+  assert.equal(
+    Math.trunc(after.防御 * (1 + set.防)) - Math.trunc(before.防御 * (1 + set.防)),
+    693_825,
+  );
+  assert.equal(
+    Math.trunc(after.血量上限 * (1 + set.血)) - Math.trunc(before.血量上限 * (1 + set.血)),
+    2_279_700,
+  );
+  assert.equal(merged.target.bao, 1.03);
+  assert.match(message, /攻击\+30396% \/ 防御\+9251% \/ 血量\+30396% \/ 暴击\+83%/);
+  assert.match(message, /归一词条与普通百分比装备分别计算\+50000%上限/);
+  assert.match(message, /攻击、防御、血量已达普通百分比\+50000%上限/);
+  assert.match(message, /本次归一词条仍照常生效/);
+  assert.doesNotMatch(message, /三维面板增量为0/);
 });
 
 test('准仙帝可用两万道痕兑换一点纪元积累', () => {

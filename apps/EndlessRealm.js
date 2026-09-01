@@ -94,6 +94,7 @@ import {
   FUSION_ITEM,
   canPurchaseEndlessProduct,
   findEndlessProduct,
+  formatFusionResult,
   formatTreasureClue,
   grantEndlessDirectReward,
   getEndlessProductRewardAmount,
@@ -1505,13 +1506,7 @@ export class EndlessRealm extends plugin {
         logger.error(`[万象归一] 熔铸失败 player=${userId}`, error);
         return e.reply('万象归一失败，装备与材料状态已回滚，请稍后再试');
       }
-      const pct = merged.target.归一属性.百分比;
-      return e.reply([
-        '【万象归一·熔铸成功】',
-        `${merged.target.name}吞纳了${sourceName}的道则`,
-        `追加百分比：攻击${pct.atk} / 防御${pct.def} / 血量${pct.HP}`,
-        '原数值属性与套装效果完整保留。',
-      ].join('\n'));
+      return e.reply(formatFusionResult(merged, originalEquipment).join('\n'));
     }));
   }
 
