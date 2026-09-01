@@ -28,6 +28,7 @@ import {
 } from './zhixianChoice.js';
 import { adjustDaoHeart, ensureDaoHeart } from '../../model/daoHeart.js';
 import { getTitleById, grantTitle } from '../../model/titleSystem.js';
+import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
 
 export class zhiXianRenWu extends plugin {
     constructor() {
@@ -222,6 +223,12 @@ export class zhiXianRenWu extends plugin {
 
         return withPlayerMutationLock(usr_qq, async () => {
             let player = await Read_player(usr_qq);
+            if (taskId === 1 && choiceId === 1) {
+                const avatarName = getActiveZhutianAvatarName(player);
+                if (avatarName) {
+                    return e.reply(`当前正装载化身【${avatarName}】，请先发送 #装载化身 本源，再继承支线灵根。`);
+                }
+            }
             if (migrateCompletedZhiXianTasks(player)) await Write_player(usr_qq, player);
             const validation = validateZhiXianChoice(player, taskId, choiceId);
             if (!validation.ok) return e.reply(validation.message);

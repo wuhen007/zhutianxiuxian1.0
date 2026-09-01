@@ -92,3 +92,18 @@ test("圣地遗骸每日仅尝试一次且成功后增加一份本源", () => {
   assert.equal(succeeded.count, 1);
   assert.equal(player.吞天魔功修炼.吞噬记录[0].目标, "姬家先贤遗骸");
 });
+
+test("装载诸天化身时吞天本源不会推进或改写灵根", () => {
+  const player = makeDevourer({
+    诸天镜系统: { 当前化身: "木之本樱" },
+  });
+  const originalRoot = structuredClone(player.灵根);
+  const result = absorbTuntianSource(player, { 类型: "天骄本源", 目标: "测试天骄" });
+
+  assert.equal(result.gained, false);
+  assert.equal(result.reason, "avatar_loaded");
+  assert.equal(result.avatarName, "木之本樱");
+  assert.deepEqual(player.灵根, originalRoot);
+  assert.equal(player.吞天魔功修炼, undefined);
+  assert.equal(player.魔道值, 0);
+});

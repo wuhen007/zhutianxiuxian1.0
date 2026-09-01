@@ -81,6 +81,8 @@ import {
   getSacrificePromotionGate,
   promotePlayerToSacrifice,
 } from '../../model/strangeSacrifice.js';
+import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 function formatSoulSearchTribulation(player, result) {
   if (!result.triggered) return [];
@@ -4848,7 +4850,7 @@ async reshapeLinggen(e) {
    }
    
    // 获取目标玩家QQ
-   const targetQQ = atItems[0].qq;
+   const targetQQ = await channel(String(atItems[0].qq));
    
    // 处理消息内容：去掉指令前缀和所有艾特
    let content = e.msg.replace(/^#重塑灵根\s*/, '');
@@ -4890,8 +4892,13 @@ async reshapeLinggen(e) {
    if (!await existplayer(targetQQ)) {
      return e.reply("目标玩家不存在，请先创建角色");
    }
-   
+
+   return withPlayerMutationLock(targetQQ, async () => {
    const targetPlayer = await Read_player(targetQQ);
+   const avatarName = getActiveZhutianAvatarName(targetPlayer);
+   if (avatarName) {
+     return e.reply(`目标当前正装载化身【${avatarName}】，请先让其发送 #装载化身 本源，再重塑灵根。`);
+   }
    
    // 查找灵根
    const newLinggen = data.talent_list.find(item => item.name === linggenName);
@@ -4938,6 +4945,7 @@ const message = [
 ].join("\n");
    
    return e.reply(message);
+   });
 }
 
 // 推演天机功能

@@ -8,6 +8,7 @@ import {
   resolveExplorationStory,
   ZHUTIAN_EXPLORATION_EVENTS,
 } from '../model/zhutianExplorationStory.js';
+import { getZhutianMirrorVersion } from '../utils/zhutianMirrorVersion.js';
 
 const NOW = new Date('2026-08-23T00:00:00+08:00').getTime();
 
@@ -39,8 +40,10 @@ test('友枝町连续事件会持久化关系、标记、熟练度并防止重�
   const opening = beginExplorationStory(player, '魔法少女樱', '友枝小学', { random: () => 0 });
   assert.equal(opening.id, 'sakura_mirror_start');
 
+  const beforeFirst = getZhutianMirrorVersion(player);
   const first = resolveExplorationStory(player, opening.world, opening.id, 1, { resolutionId: 'story-1' });
   assert.equal(first.ok, true);
+  assert.equal(getZhutianMirrorVersion(player), beforeFirst + 1);
   assert.equal(first.nextTitle, '镜牌的约定');
   let state = ensureExplorationStoryState(player, '魔法少女樱');
   assert.equal(state.人物关系.木之本樱, 2);
@@ -54,8 +57,10 @@ test('友枝町连续事件会持久化关系、标记、熟练度并防止重�
   assert.equal(state.人物关系.木之本樱, 5);
   assert.ok(state.事件标记.includes('镜牌盟约'));
 
+  const beforeRepeated = getZhutianMirrorVersion(player);
   const repeated = resolveExplorationStory(player, sequel.world, sequel.id, 1, { resolutionId: 'story-2' });
   assert.equal(repeated.alreadyResolved, true);
+  assert.equal(getZhutianMirrorVersion(player), beforeRepeated);
   assert.equal(player.库洛牌系统.魔法熟练度, 5);
   assert.equal(state.人物关系.木之本樱, 5);
 });

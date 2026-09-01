@@ -1,6 +1,17 @@
 import { getRealmAuthorityLevel } from './realmAuthority.js';
+import { bumpZhutianMirrorVersion } from '../utils/zhutianMirrorVersion.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+export const ZHUTIAN_PROJECTION_COST = Object.freeze({
+  修为: 100_000_000,
+  血气: 100_000_000,
+  元神: 1_000_000,
+  镜能: 1,
+});
+
+export const ZHUTIAN_AVATAR_SWITCH_ENERGY_COST = 1;
+export const ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS = 15 * 60 * 1000;
 
 export const MIRROR_TIER_CONFIG = Object.freeze({
   1: { name: '一阶·初映', energyMax: 3 },
@@ -192,6 +203,58 @@ function asNonNegativeInteger(value) {
   return Number.isFinite(number) ? Math.max(0, Math.floor(number)) : 0;
 }
 
+export function inspectZhutianProjectionCost(player) {
+  const current = {
+    修为: asNonNegativeInteger(player?.修为),
+    血气: asNonNegativeInteger(player?.血气),
+    元神: asNonNegativeInteger(player?.元神),
+    镜能: asNonNegativeInteger(player?.诸天镜系统?.镜能),
+  };
+  const missing = Object.entries(ZHUTIAN_PROJECTION_COST)
+    .filter(([name, required]) => current[name] < required)
+    .map(([name, required]) => ({ name, required, current: current[name] }));
+  const remaining = Object.fromEntries(
+    Object.entries(ZHUTIAN_PROJECTION_COST).map(([name, required]) => [name, current[name] - required]),
+  );
+  return { ok: missing.length === 0, cost: ZHUTIAN_PROJECTION_COST, current, remaining, missing };
+}
+
+export function consumeZhutianProjectionCost(player) {
+  const result = inspectZhutianProjectionCost(player);
+  if (!result.ok) return result;
+  player.修为 = result.remaining.修为;
+  player.血气 = result.remaining.血气;
+  player.元神 = result.remaining.元神;
+  player.诸天镜系统.镜能 = result.remaining.镜能;
+  bumpZhutianMirrorVersion(player);
+  return result;
+}
+
+export function recordZhutianProjectionCharge(player, billingId, { now = Date.now() } = {}) {
+  const id = String(billingId || '').trim();
+  if (!id) throw new TypeError('投影扣费事务 ID 不得为空');
+  const system = ensureZhutianMirrorSystem(player, { now });
+  system.最近投影扣费 = { id, 扣费时间: Number(now) || Date.now() };
+  return system.最近投影扣费;
+}
+
+export function reconcileZhutianProjectionBilling(player, projection) {
+  if (!projection || projection.action !== '投影诸天') return { status: 'ignore', projection };
+  if (projection.billingStatus !== 'pending') return { status: 'active', projection };
+  const billingId = String(projection.billingId || '');
+  const chargedId = String(player?.诸天镜系统?.最近投影扣费?.id || '');
+  if (!billingId || chargedId !== billingId) return { status: 'discard', projection: null };
+  return { status: 'activate', projection: { ...projection, billingStatus: 'active' } };
+}
+
+export function inspectZhutianAvatarSwitchCooldown(player, { now = Date.now() } = {}) {
+  const timestamp = now instanceof Date ? now.getTime() : Number(now);
+  const currentTime = Number.isFinite(timestamp) ? timestamp : Date.now();
+  const cooldownUntil = asNonNegativeInteger(player?.诸天镜系统?.化身切换冷却至);
+  const remainingMs = Math.max(0, cooldownUntil - currentTime);
+  return { ready: remainingMs === 0, currentTime, cooldownUntil, remainingMs };
+}
+
 export function applyProjectionEffect(projection, expression) {
   for (const part of String(expression || '').split(',')) {
     const match = part.trim().match(/([+-]?\d+)(魂|影)/);
@@ -276,7 +339,8 @@ export function syncLifeSourceForRootChange(player, previousRoot, nextRoot) {
 
 export function getActiveZhutianAvatarName(player) {
   const name = player?.诸天镜系统?.当前化身;
-  return typeof name === 'string' ? name.trim() : '';
+  if (typeof name === 'string' && name.trim()) return name.trim();
+  return LEGACY_AVATARS[player?.灵根?.name]?.name || '';
 }
 
 export function getClowCardCombo(cards = []) {
@@ -310,6 +374,7 @@ export function setClowCardDeck(player, cards, { now = Date.now() } = {}) {
   if (missing.length > 0) return { ok: false, reason: 'card', missing };
   player.库洛牌系统.出战卡组 = selected;
   player.库洛牌系统.当前组合 = getClowCardCombo(selected);
+  bumpZhutianMirrorVersion(player);
   return { ok: true, cards: selected, combo: player.库洛牌系统.当前组合 };
 }
 
@@ -322,7 +387,11 @@ function ensureMadokaHopeSystem(player) {
   return hope;
 }
 
-export function ensureZhutianMirrorSystem(player, { now = Date.now(), migrateLegacy = true } = {}) {
+export function ensureZhutianMirrorSystem(
+  player,
+  { now = Date.now(), migrateLegacy = true, bumpOnChange = false } = {},
+) {
+  const before = bumpOnChange ? JSON.stringify(player) : '';
   if (!player.诸天镜系统 || typeof player.诸天镜系统 !== 'object') player.诸天镜系统 = {};
   if (!Array.isArray(player.诸天化身谱)) player.诸天化身谱 = [];
 
@@ -330,7 +399,9 @@ export function ensureZhutianMirrorSystem(player, { now = Date.now(), migrateLeg
   system.已绑定 = Boolean(system.已绑定);
   system.镜阶 = Math.min(7, Math.max(1, asNonNegativeInteger(system.镜阶) || 1));
   system.镜能 = asNonNegativeInteger(system.镜能);
+  system.状态版本 = asNonNegativeInteger(system.状态版本);
   system.镜能日期 ||= getChinaDate(now);
+  system.化身切换冷却至 = asNonNegativeInteger(system.化身切换冷却至);
   if (!system.材料 || typeof system.材料 !== 'object') system.材料 = {};
   for (const name of MATERIAL_NAMES) system.材料[name] = asNonNegativeInteger(system.材料[name]);
   if (!Array.isArray(system.已解锁世界)) system.已解锁世界 = [];
@@ -429,6 +500,7 @@ export function ensureZhutianMirrorSystem(player, { now = Date.now(), migrateLeg
   }
   ensureSakuraCardSystem(player);
   ensureMadokaHopeSystem(player);
+  if (bumpOnChange && JSON.stringify(player) !== before) bumpZhutianMirrorVersion(player);
   return system;
 }
 
@@ -440,6 +512,7 @@ export function bindBasicZhutianMirror(player, { now = Date.now() } = {}) {
   system.镜能 = MIRROR_TIER_CONFIG[system.镜阶].energyMax;
   addUnique(system.已解锁世界, '魔卡少女樱');
   if (!firstBind) system.材料.镜尘 += 25;
+  bumpZhutianMirrorVersion(player);
   return { firstBind, system };
 }
 
@@ -453,6 +526,7 @@ export function consumeMirrorEnergy(player, amount = 1, { now = Date.now() } = {
   if (!system.已绑定) return { ok: false, reason: 'unbound', system };
   if (system.镜能 < cost) return { ok: false, reason: 'energy', system };
   system.镜能 -= cost;
+  bumpZhutianMirrorVersion(player);
   return { ok: true, cost, system };
 }
 
@@ -462,6 +536,7 @@ export function refundMirrorEnergy(player, amount = 1, { now = Date.now() } = {}
     MIRROR_TIER_CONFIG[system.镜阶].energyMax,
     system.镜能 + Math.max(1, asNonNegativeInteger(amount)),
   );
+  bumpZhutianMirrorVersion(player);
   return system.镜能;
 }
 
@@ -525,6 +600,7 @@ export function refineZhutianMirror(player, { now = Date.now() } = {}) {
   for (const [world, tier] of Object.entries(WORLD_MIN_MIRROR_TIER)) {
     if (tier <= system.镜阶) addUnique(system.已解锁世界, world);
   }
+  bumpZhutianMirrorVersion(player);
   return { ok: true, tier: system.镜阶, system };
 }
 
@@ -699,6 +775,7 @@ export function purifyMadokaSoulGem(player, { now = Date.now() } = {}) {
   progress.悲叹之种 -= 1;
   progress.灵魂宝石污浊度 = Math.max(0, before - 40);
   ensureMadokaHopeSystem(player).净化绝望值 += 20;
+  bumpZhutianMirrorVersion(player);
   return { ok: true, before, after: progress.灵魂宝石污浊度, system };
 }
 
@@ -773,6 +850,7 @@ export function setDecadeCardDeck(player, cards, { now = Date.now() } = {}) {
   const missing = selected.filter(card => !progress.骑士卡片.includes(card));
   if (missing.length > 0) return { ok: false, reason: 'card', missing, system };
   progress.出战卡组 = selected;
+  bumpZhutianMirrorVersion(player);
   return { ok: true, cards: selected, system };
 }
 
@@ -920,24 +998,52 @@ export function loadZhutianAvatar(player, avatarName, { now = Date.now() } = {})
   const system = ensureZhutianMirrorSystem(player, { now });
   if (!system.已绑定) return { ok: false, reason: 'unbound', system };
 
-  const previousRoot = player.灵根;
-
-  if (avatarName === '本源') {
-    if (!system.本源灵根) return { ok: false, reason: 'origin', system };
-    player.灵根 = clone(system.本源灵根);
-    syncLifeSourceForRootChange(player, previousRoot, player.灵根);
-    delete system.当前化身;
-    return { ok: true, name: '本源', root: player.灵根, system };
+  const targetName = String(avatarName || '').trim();
+  const currentName = system.当前化身 || '本源';
+  if (targetName === currentName) {
+    return { ok: true, unchanged: true, name: currentName, root: player.灵根, system };
   }
 
-  const avatar = player.诸天化身谱.find(item => item.name === avatarName);
-  if (!avatar) return { ok: false, reason: 'avatar', system };
+  let nextRoot;
+  let nextAvatarName;
+  if (targetName === '本源') {
+    if (!system.本源灵根) return { ok: false, reason: 'origin', system };
+    nextRoot = system.本源灵根;
+    nextAvatarName = '';
+  } else {
+    const avatar = player.诸天化身谱.find(item => item.name === targetName);
+    if (!avatar) return { ok: false, reason: 'avatar', system };
+    nextRoot = avatar.root;
+    nextAvatarName = avatar.name;
+  }
+
+  if (!nextRoot || typeof nextRoot !== 'object' || Array.isArray(nextRoot)
+    || typeof nextRoot.name !== 'string' || !nextRoot.name.trim()) {
+    return { ok: false, reason: 'root', system };
+  }
+
+  const cooldown = inspectZhutianAvatarSwitchCooldown(player, { now });
+  if (!cooldown.ready) return { ok: false, reason: 'cooldown', ...cooldown, system };
+  const consumed = consumeMirrorEnergy(player, ZHUTIAN_AVATAR_SWITCH_ENERGY_COST, { now });
+  if (!consumed.ok) return consumed;
+
+  const previousRoot = player.灵根;
   // 本源灵根可能已通过进阶或重塑发生变化，装载化身前刷新当前本源快照。
-  if (!system.当前化身 && player.灵根) system.本源灵根 = clone(player.灵根);
-  player.灵根 = clone(avatar.root);
+  if (nextAvatarName && !system.当前化身 && player.灵根) system.本源灵根 = clone(player.灵根);
+  player.灵根 = clone(nextRoot);
   syncLifeSourceForRootChange(player, previousRoot, player.灵根);
-  system.当前化身 = avatar.name;
-  return { ok: true, name: avatar.name, root: player.灵根, system };
+  if (nextAvatarName) system.当前化身 = nextAvatarName;
+  else delete system.当前化身;
+  system.化身切换冷却至 = cooldown.currentTime + ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS;
+  return {
+    ok: true,
+    name: nextAvatarName || '本源',
+    root: player.灵根,
+    energyCost: ZHUTIAN_AVATAR_SWITCH_ENERGY_COST,
+    remainingEnergy: system.镜能,
+    cooldownUntil: system.化身切换冷却至,
+    system,
+  };
 }
 
 export function recoverMissingZhutianOrigin(player, originRoot, { now = Date.now() } = {}) {
@@ -951,6 +1057,7 @@ export function recoverMissingZhutianOrigin(player, originRoot, { now = Date.now
 
   system.本源灵根 = clone(originRoot);
   system.本源灵根已补领 = true;
+  bumpZhutianMirrorVersion(player);
   return { ok: true, root: clone(system.本源灵根), avatarName: system.当前化身, system };
 }
 
@@ -972,5 +1079,6 @@ export function syncCurrentZhutianAvatar(player, { now = Date.now() } = {}) {
       progress.终极卡试炼 = true;
     }
   }
+  bumpZhutianMirrorVersion(player);
   return true;
 }

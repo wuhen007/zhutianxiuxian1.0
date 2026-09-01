@@ -1,6 +1,8 @@
 import { plugin, verc, data } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
 import { getTimedActionMultiplier } from '../../model/innateTreasure.js';
+import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import {
   existplayer,
   Read_player,
@@ -45,7 +47,12 @@ export class motou extends plugin {
     //有无存档
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) return false;
+    return withPlayerMutationLock(usr_qq, async () => {
     let player = await Read_player(usr_qq);
+    const avatarName = getActiveZhutianAvatarName(player);
+    if (avatarName) {
+      return e.reply(`当前正装载化身【${avatarName}】，请先发送 #装载化身 本源，再修炼或转世魔根。`);
+    }
     if (player.魔道值 < 1000 && (player.灵根.type !== "魔头" && player.灵根.type !== "天魔")) {
             e.reply("你不是魔头");
             return;
@@ -189,11 +196,13 @@ export class motou extends plugin {
       }
     }
     return false;
+    });
   }
   async RE_lingeng(e) {
     if (!verc({ e })) return false;
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);
+    return withPlayerMutationLock(usr_qq, async () => {
     let player = await Read_player(usr_qq);
     /** 内容 */
     let new_msg = this.e.message;
@@ -204,6 +213,11 @@ export class motou extends plugin {
       this.finish('RE_lingeng');
       return false;
     } else if (choice == '转世魔根') {
+      const avatarName = getActiveZhutianAvatarName(player);
+      if (avatarName) {
+        this.finish('RE_lingeng');
+        return e.reply(`当前正装载化身【${avatarName}】，请先发送 #装载化身 本源，再转世魔根。`);
+      }
       var x = await exist_najie_thing(usr_qq, '魔石', '道具');
       if (!x) {
         e.reply('你没有魔石');
@@ -221,6 +235,7 @@ export class motou extends plugin {
       this.finish('RE_lingeng');
       return false;
     }
+    });
   }
 
   async mojie(e) {

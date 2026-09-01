@@ -41,7 +41,12 @@ test('彼岸世界插件注册完整探索入口与前置界律拦截', () => {
   assert.match(pluginSource, /遨游时间长河/);
   assert.match(pluginSource, /轮回\|登仙\|证道\|轰击成仙路/);
   assert.match(pluginSource, /Number\(player\?\.power_place\) === OTHER_SHORE_PLANE_ID/);
-  assert.match(pluginSource, /pickFriend/);
+  const webEntry = pluginSource.slice(
+    pluginSource.indexOf('async openOtherShoreWeb(e)'),
+    pluginSource.indexOf('async observeStar(e)'),
+  );
+  assert.match(webEntry, /await e\.reply\(message\)/);
+  assert.doesNotMatch(webEntry, /pickFriend|sendMsg/);
   assert.match(pluginSource, /ACTION_RECEIPT_LIMIT/);
   assert.match(pluginSource, /其余道痕需由其他修士补全/);
   assert.match(pluginSource, /一键回血/);

@@ -5,8 +5,19 @@ import { __PATH } from './xiuxian.js';
 import data from './XiuxianData.js';
 
 import { Write_player } from './xiuxian.js';
+import { getActiveZhutianAvatarName } from './zhutianMirror.js';
+import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 
 export async function settripod(qq) {
+  return withPlayerMutationLock(String(qq), () => settripodLocked(qq));
+}
+
+async function settripodLocked(qq) {
+  const player = await data.getData('player', qq);
+  const avatarName = getActiveZhutianAvatarName(player);
+  if (avatarName) {
+    return `当前正装载化身【${avatarName}】，请先发送 #装载化身 本源，再进行炼器师能力评测。`;
+  }
   let tripod1;
   try {
     tripod1 = await Read_tripod();
@@ -32,7 +43,6 @@ export async function settripod(qq) {
     await Write_duanlu(tripod1);
   }
   //增加锻造天赋
-  const player = await data.getData('player', qq);
   let tianfu = Math.floor(40 * Math.random() + 80);
   player.锻造天赋 = tianfu;
   //增加隐藏灵根

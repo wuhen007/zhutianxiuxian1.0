@@ -1,5 +1,7 @@
 import { ensureZhutianMirrorSystem } from './zhutianMirror.js';
 
+import { bumpZhutianMirrorVersion } from '../utils/zhutianMirrorVersion.js';
+
 const option = (text, result, effect = {}) => ({ text, result, effect });
 
 export const ZHUTIAN_EXPLORATION_EVENTS = Object.freeze({
@@ -387,6 +389,7 @@ export function resolveExplorationStory(player, world, eventId, choice, { resolu
     state.已结算剧情.push(resolutionId);
     state.已结算剧情 = state.已结算剧情.slice(-100);
   }
+  bumpZhutianMirrorVersion(player);
 
   return {
     ok: true,

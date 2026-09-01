@@ -39,6 +39,16 @@ import {
   getZhetianAwakeningStage,
   inspectZhetianAwakening,
 } from '../../model/zhetianPhysiquePath.js';
+import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+
+function getAvatarRootGuardMessage(player) {
+  const avatarName = getActiveZhutianAvatarName(player);
+  return avatarName
+    ? `当前正装载化身【${avatarName}】，请先发送 #装载化身 本源，再进行灵根觉醒。`
+    : '';
+}
+
 export class linggenjuexing extends plugin {
   constructor() {
     super({
@@ -146,7 +156,8 @@ async zouxiangwangshi(e) {
   /* ---------- 第二步：处理选择（框架把 1/2 喂进来） ---------- */
   async wangshiChoice(e) {
     if (!verc({ e })) return false;
-    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
+    return withPlayerMutationLock(usr_qq, async () => {
     const player = await Read_player(usr_qq);
     
     // 获取用户拥有的往世乐土之章数量
@@ -161,6 +172,11 @@ async zouxiangwangshi(e) {
     }
     
     if (new_msg === "1") {
+      const guardMessage = getAvatarRootGuardMessage(player);
+      if (guardMessage) {
+        this.finish('wangshiChoice');
+        return e.reply(guardMessage);
+      }
       const 水晶花 = (await exist_najie_thing(usr_qq, '无瑕水晶花', '道具')) || 0;
       const 誓约证 = (await exist_najie_thing(usr_qq, '誓约之证', '道具')) || 0;
       if (水晶花 < 4 || 誓约证 < 4) {
@@ -226,6 +242,7 @@ async zouxiangwangshi(e) {
     /* ---------- 超时或非法 ---------- */
     await e.reply('选择无效，已超时。乐土之门悄然闭合……');
     this.finish('wangshiChoice');
+    });
   }
 
   /* ---------- 第三步：处理选择数量 ---------- */
@@ -290,10 +307,13 @@ async zouxiangwangshi(e) {
 async zhenwojuexing(e) {
     if (!e.isGroup) { e.reply('请在群聊中完成真我仪式'); return; }
 
-    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
     if (!await existplayer(usr_qq)) { e.reply('玩家不存在'); return; }
 
+    return withPlayerMutationLock(usr_qq, async () => {
     const player = await Read_player(usr_qq);
+    const guardMessage = getAvatarRootGuardMessage(player);
+    if (guardMessage) return e.reply(guardMessage);
     if ( player.灵根.name !== '爱莉希雅'&& player.灵根.name !== '人之律者·爱莉希雅') {
         e.reply('只有无瑕之人·爱莉希雅才能开启真我觉醒'); return;
     }
@@ -381,15 +401,19 @@ async zhenwojuexing(e) {
         ].join('\n');
         e.reply(txt);
     }
+    });
 }
 
 async liuyingjuexing(e) {
     if (!e.isGroup) { e.reply('请在群聊中完成流萤觉醒'); return; }
 
-    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
     if (!await existplayer(usr_qq)) { e.reply('玩家不存在'); return; }
 
+    return withPlayerMutationLock(usr_qq, async () => {
     const player = await Read_player(usr_qq);
+    const guardMessage = getAvatarRootGuardMessage(player);
+    if (guardMessage) return e.reply(guardMessage);
     if ( player.灵根.name !== '少女流萤') {
         e.reply('只有少女流萤灵根才能开启流萤觉醒'); return;
     }
@@ -441,13 +465,14 @@ async liuyingjuexing(e) {
         ].join('\n');
         e.reply(txt);
     }
+    });
 }
 async shengtijuexing(e) {
     if (!e.isGroup) {
         e.reply('修仙游戏请在群聊中游玩');
         return;
     }
-    let usr_qq = e.user_id.toString().replace('qg_', '');
+    let usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) {
         e.reply('玩家不存在，请先创建角色');
@@ -458,7 +483,10 @@ async shengtijuexing(e) {
         e.reply("修仙：游戏进行中...");
         return;
     }
+    return withPlayerMutationLock(usr_qq, async () => {
     let player = await Read_player(usr_qq);
+    const guardMessage = getAvatarRootGuardMessage(player);
+    if (guardMessage) return e.reply(guardMessage);
     if (!isNotNull(player.Physique_id)) {
         e.reply("请先#刷新信息");
         return;
@@ -602,13 +630,14 @@ async shengtijuexing(e) {
     else {
         e.reply(` 觉醒条件不足！需达到更高境界且完成秘境修炼。`);
     }
+    });
 }
 async batijuexing(e) {
     if (!e.isGroup) {
         e.reply('修仙游戏请在群聊中游玩');
         return;
     }
-    let usr_qq = e.user_id.toString().replace('qg_', '');
+    let usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) {
         e.reply('玩家不存在，请先创建角色');
@@ -619,7 +648,10 @@ async batijuexing(e) {
         e.reply("修仙：游戏进行中...");
         return;
     }
+    return withPlayerMutationLock(usr_qq, async () => {
     let player = await Read_player(usr_qq);
+    const guardMessage = getAvatarRootGuardMessage(player);
+    if (guardMessage) return e.reply(guardMessage);
     if (!isNotNull(player.Physique_id)) {
         e.reply("请先#刷新信息");
         return;
@@ -724,13 +756,14 @@ async batijuexing(e) {
     else {
         e.reply(` 觉醒条件不足！需达到更高境界。`);
     }
+    });
 }
 async yaotijuexing(e) {
     if (!e.isGroup) {
         e.reply('修仙游戏请在群聊中游玩');
         return;
     }
-    let usr_qq = e.user_id.toString().replace('qg_', '');
+    let usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) {
         e.reply('玩家不存在，请先创建角色');
@@ -741,7 +774,10 @@ async yaotijuexing(e) {
         e.reply("修仙：游戏进行中...");
         return;
     }
+    return withPlayerMutationLock(usr_qq, async () => {
     let player = await Read_player(usr_qq);
+    const guardMessage = getAvatarRootGuardMessage(player);
+    if (guardMessage) return e.reply(guardMessage);
     if (!isNotNull(player.Physique_id)) {
         e.reply("请先#刷新信息");
         return;
@@ -850,6 +886,7 @@ async yaotijuexing(e) {
     else {
         e.reply(` 觉醒条件不足！需达到更高境界。`);
     }
+    });
 }
 
 async taiyangjuexing(e) {
@@ -866,13 +903,16 @@ async shenwangjuexing(e) {
 
 async awakenZhetianPhysique(e, routeKey) {
     if (!e.isGroup) return e.reply('修仙游戏请在群聊中游玩');
-    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
     if (!await existplayer(usr_qq)) return e.reply('玩家不存在，请先创建角色');
 
     const game_action = await redis.get(`xiuxian:player:${usr_qq}:game_action`);
     if (game_action == 0) return e.reply('修仙：游戏进行中...');
 
+    return withPlayerMutationLock(usr_qq, async () => {
     const player = await Read_player(usr_qq);
+    const guardMessage = getAvatarRootGuardMessage(player);
+    if (guardMessage) return e.reply(guardMessage);
     if (!isNotNull(player.Physique_id)) return e.reply('请先#刷新信息');
 
     const state = getZhetianAwakeningStage(player, routeKey);
@@ -918,11 +958,12 @@ async awakenZhetianPhysique(e, routeKey) {
         result.stage.description,
         `灵根蜕变：${result.stage.from} → ${result.stage.to}`,
     ].join('\n'));
+    });
 }
 
 async getSupremeContext(e) {
     if (!verc({ e })) return null;
-    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const usr_qq = await channel(e.user_id.toString().replace('qg_', ''));
     if (!await existplayer(usr_qq)) {
         await e.reply('玩家不存在，请先创建角色');
         return null;
@@ -1090,9 +1131,13 @@ buildSupremeTrialFighters(player, trial) {
 }
 
 async supremeTrial(e) {
+    const lockQQ = await channel(e.user_id.toString().replace('qg_', ''));
+    return withPlayerMutationLock(lockQQ, async () => {
     const ctx = await this.getSupremeContext(e);
     if (!ctx) return false;
     const { usr_qq, player, path } = ctx;
+    const guardMessage = getAvatarRootGuardMessage(player);
+    if (guardMessage) return e.reply(guardMessage);
     if (!path.试炼) return e.reply('你尚未开启至尊试炼。');
 
     const { attacker, enemy } = this.buildSupremeTrialFighters(player, path.试炼);
@@ -1132,6 +1177,7 @@ async supremeTrial(e) {
             : '至尊符文不再拘泥于一块骨，而是遍布血肉脏腑。第三至尊术于体内轰鸣。',
         `当前称号：${getSupremeTitle(player)}`,
     ].join('\n'));
+    });
 }
 
 async awakenImmortalBone(e) {

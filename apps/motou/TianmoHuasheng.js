@@ -40,6 +40,7 @@ import {
 } from '../../model/wanhuaBanner.js';
 import { getLifeSourceRepairMaximum } from '../../model/lifeSourceRepair.js';
 import { getMinggeEffects } from '../../model/mingge.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 const activeRefinements = new Set();
 
@@ -59,6 +60,22 @@ function formatDuration(ms) {
 
 function formatNumber(value) {
   return Math.floor(Number(value) || 0).toLocaleString("zh-CN");
+}
+
+function formatRefinementFailure(result) {
+  if (result?.reason === "avatar_loaded") {
+    return `当前正装载化身【${result.avatarName}】，请先发送 #装载化身 本源，再运转天魔化生功。`;
+  }
+  return result?.reason || "天魔化生功暂时无法运转。";
+}
+
+function withPlayerLocks(playerIds, task) {
+  const ids = [...new Set(playerIds.map(String))].sort();
+  const acquire = (index) =>
+    index >= ids.length
+      ? task()
+      : withPlayerMutationLock(ids[index], () => acquire(index + 1));
+  return acquire(0);
 }
 
 function getActiveAction(actionValue) {
@@ -234,8 +251,13 @@ export class TianmoHuasheng extends plugin {
       Math.ceil((REFINEMENT_ORB_TARGET - orb) / 0.1)
     );
     const availability = getRefinementAvailability(player, "__status__");
-    const cooldown =
-      availability.waitMs > 0 ? formatDuration(availability.waitMs) : "可炼化";
+    const cooldown = availability.reason === "avatar_loaded"
+      ? formatRefinementFailure(availability)
+      : availability.waitMs > 0
+        ? formatDuration(availability.waitMs)
+        : availability.ok
+          ? "可炼化"
+          : formatRefinementFailure(availability);
 
     return e.reply(
       [
@@ -277,18 +299,12 @@ export class TianmoHuasheng extends plugin {
 
     lockKeys.forEach((key) => activeRefinements.add(key));
     try {
+      return await withPlayerLocks(lockKeys, async () => {
       const [executor, target] = await Promise.all([
         Read_player(executorQQ),
         Read_player(targetQQ),
       ]);
       const now = Date.now();
-
-      if (!isTianmoHuashengPhysique(executor)) {
-        return e.reply("只有【极道天魔】一脉能够施展天魔化生功。");
-      }
-      if (!hasTianmoHuashengTechnique(executor)) {
-        return e.reply("你尚未获得【天魔化生功】传承。");
-      }
 
       const availability = getRefinementAvailability(
         executor,
@@ -297,12 +313,23 @@ export class TianmoHuasheng extends plugin {
         target
       );
       if (!availability.ok) {
+        if (availability.reason === "avatar_loaded") {
+          return e.reply(formatRefinementFailure(availability));
+        }
         const wait =
           availability.waitMs > 0
             ? `，还需${formatDuration(availability.waitMs)}`
             : "";
         return e.reply(`${availability.reason}${wait}。`);
       }
+
+      if (!isTianmoHuashengPhysique(executor)) {
+        return e.reply("只有【极道天魔】一脉能够施展天魔化生功。");
+      }
+      if (!hasTianmoHuashengTechnique(executor)) {
+        return e.reply("你尚未获得【天魔化生功】传承。");
+      }
+
       if (isProtectedWeakTarget(executor, target)) {
         return e.reply("天魔亦有傲骨，不可炼化境界相差过大的弱小修士。");
       }
@@ -363,6 +390,10 @@ export class TianmoHuasheng extends plugin {
         targetId: targetQQ,
         now,
       });
+      if (!result.applied) {
+        await redis.del(forbiddenCooldownKey(executorQQ));
+        return e.reply(formatRefinementFailure(result));
+      }
       protectForbiddenTarget(target, now);
       executor.法球倍率 = executor.灵根.法球倍率;
       target.当前血量 = 0;
@@ -396,6 +427,7 @@ export class TianmoHuasheng extends plugin {
         );
       }
       return e.reply(lines.join("\n"));
+      });
     } catch (error) {
       console.error("天魔炼化失败:", error);
       return e.reply(`天魔化生功运转失败：${error.message}`);

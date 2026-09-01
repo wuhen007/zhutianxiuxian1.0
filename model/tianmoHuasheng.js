@@ -1,3 +1,5 @@
+import { getActiveZhutianAvatarName } from "./zhutianMirror.js";
+
 export const TIANMO_HUASHENG_TECHNIQUE = "天魔化生功";
 export const JIDAO_TIANMO_PHYSIQUE = "极道天魔";
 export const WANHUA_TIANMO_PHYSIQUE = "无相·万化天魔体";
@@ -106,6 +108,10 @@ export function getRefinementAvailability(
   now = Date.now(),
   target = null
 ) {
+  const avatarName = getActiveZhutianAvatarName(player);
+  if (avatarName) {
+    return { ok: false, reason: "avatar_loaded", avatarName, waitMs: 0 };
+  }
   if (!isTianmoHuashengPhysique(player)) {
     return {
       ok: false,
@@ -182,6 +188,10 @@ function applyRefinementGrowth(executor, state, now, weight) {
 }
 
 export function applyTianmoRefinement(executor, target, options = {}) {
+  const avatarName = getActiveZhutianAvatarName(executor);
+  if (avatarName) {
+    return { applied: false, reason: "avatar_loaded", avatarName };
+  }
   const now = Number(options.now) || Date.now();
   const targetId = String(options.targetId ?? target?.id ?? "unknown");
   const transfer = calculateEssenceTransfer(target);
@@ -208,12 +218,17 @@ export function applyTianmoRefinement(executor, target, options = {}) {
   const growth = applyRefinementGrowth(executor, state, now, 1);
 
   return {
+    applied: true,
     transfer,
     ...growth,
   };
 }
 
 export function applyTianmoCalamityRefinement(executor, options = {}) {
+  const avatarName = getActiveZhutianAvatarName(executor);
+  if (avatarName) {
+    return { applied: false, reason: "avatar_loaded", avatarName };
+  }
   if (!isTianmoHuashengPhysique(executor) || !hasTianmoHuashengTechnique(executor)) {
     return { applied: false };
   }

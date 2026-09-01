@@ -3,7 +3,14 @@
 
 import { plugin } from '../../api/api.js';
 import { channel, existplayer, Read_player, Write_player } from '../../model/xiuxian.js';
-import { ensureSakuraCardSystem, inspectZhutianAvatarAdvancement, syncCurrentZhutianAvatar } from '../../model/zhutianMirror.js';
+import {
+  ensureSakuraCardSystem,
+  inspectZhutianAvatarAdvancement,
+  syncCurrentZhutianAvatar,
+  syncLifeSourceForRootChange,
+} from '../../model/zhutianMirror.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { bumpZhutianMirrorVersion } from '../../utils/zhutianMirrorVersion.js';
 
 function ensureClowCardSystem(player) {
   return ensureSakuraCardSystem(player);
@@ -135,24 +142,26 @@ clowCards = [
       return false;
     }
 
-    const player = await Read_player(usr_qq);
-    const allMsgs = [];
+    return withPlayerMutationLock(usr_qq, async () => {
+      const player = await Read_player(usr_qq);
+      const allMsgs = [];
 
-    ensureClowCardSystem(player);
+      ensureClowCardSystem(player);
 
-    // 根据当前灵根类型进行不同的进阶判断
-    switch (player.灵根.type) {
-      case "魔卡少女":
-        return await this.advanceToStarStaff(e, player, usr_qq, allMsgs);
-      case "魔卡少女·觉醒":
-        return await this.advanceToDreamStaff(e, player, usr_qq, allMsgs);
-      case "魔卡少女·完全":
-        e.reply("你已经是完全体的梦之杖·木之本樱，达到了当前体系的巅峰！");
-        return true;
-      default:
-        e.reply("当前灵根不属于木之本樱体系，无法使用此进阶系统");
-        return false;
-    }
+      // 根据当前灵根类型进行不同的进阶判断
+      switch (player.灵根.type) {
+        case "魔卡少女":
+          return this.advanceToStarStaff(e, player, usr_qq, allMsgs);
+        case "魔卡少女·觉醒":
+          return this.advanceToDreamStaff(e, player, usr_qq, allMsgs);
+        case "魔卡少女·完全":
+          e.reply("你已经是完全体的梦之杖·木之本樱，达到了当前体系的巅峰！");
+          return true;
+        default:
+          e.reply("当前灵根不属于木之本樱体系，无法使用此进阶系统");
+          return false;
+      }
+    });
   }
 
   /**
@@ -225,6 +234,7 @@ clowCards = [
     }
 
     // 正式进阶为星之杖形态
+    const previousRoot = player.灵根;
     player.灵根 = {
       "id": 7010015,
       "name": "星之杖·木之本樱",
@@ -238,6 +248,7 @@ clowCards = [
       "生命本源": 50,
       "特殊能力": ["库洛牌转化", "星之杖魔法"]
     };
+    syncLifeSourceForRootChange(player, previousRoot, player.灵根);
 
     player.库洛牌系统.魔杖形态 = "星之杖";
     player.修为 += 1000;
@@ -335,6 +346,7 @@ clowCards = [
     }
 
     // 正式进阶为梦之杖完全体
+    const previousRoot = player.灵根;
     player.灵根 = {
       "id": 7010015,
       "name": "梦之杖·木之本樱", 
@@ -352,7 +364,7 @@ clowCards = [
     player.库洛牌系统.魔杖形态 = "梦之杖";
     player.修为 += 5000;
     player.库洛牌系统.魔法熟练度 += 300;
-    player.生命本源 = 100 + player.灵根.生命本源;
+    syncLifeSourceForRootChange(player, previousRoot, player.灵根);
 
     syncCurrentZhutianAvatar(player);
     await Write_player(usr_qq, player);
@@ -434,6 +446,7 @@ clowCards = [
       allMsgs.push("星之杖绽放光芒！你用「风牌」温柔地包裹住月！");
       allMsgs.push("月宣布：「你已成为库洛牌的新主人，不是因为力量，而是因为你的心！」");
       
+      bumpZhutianMirrorVersion(player);
       await Write_player(usr_qq, player);
       
       return replyTrialResult(e, true, allMsgs.join('\n'));
@@ -447,6 +460,7 @@ clowCards = [
       allMsgs.push("你感受到心中重要的感情正在模糊，这是「遗忘」的代价！");
       allMsgs.push(`修为减少${forgetPenalty}点，请积累更多库洛牌后再来挑战！`);
       
+      bumpZhutianMirrorVersion(player);
       await Write_player(usr_qq, player);
       
       return replyTrialResult(e, false, allMsgs.join('\n'));
@@ -539,6 +553,7 @@ clowCards = [
       }
       
       player.库洛牌系统.魔法熟练度 += 50;
+      bumpZhutianMirrorVersion(player);
       await Write_player(usr_qq, player);
       
       return replyTrialResult(e, progress >= 3, allMsgs.join('\n'));
@@ -546,6 +561,7 @@ clowCards = [
       allMsgs.push(` 试炼暂停！需要满足条件：${currentEvent.requirement}`);
       allMsgs.push("在梦境中继续探索，下次将会继续...");
       
+      bumpZhutianMirrorVersion(player);
       await Write_player(usr_qq, player);
       
       return replyTrialResult(e, false, allMsgs.join('\n'));

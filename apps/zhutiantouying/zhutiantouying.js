@@ -1,4 +1,5 @@
 import { plugin } from '../../api/api.js';
+import { randomUUID } from 'node:crypto';
 import { 
     Read_player, 
     Write_player, 
@@ -12,7 +13,7 @@ import { getRealmAuthorityLevel, hasRealmAuthority } from '../../model/realmAuth
 import {
   addMirrorRelic,
   applyProjectionEffect,
-  consumeMirrorEnergy,
+  consumeZhutianProjectionCost,
   ensureZhutianMirrorSystem,
   exploreDecadeWorld,
   exploreMitakihara,
@@ -20,16 +21,122 @@ import {
   getWorldMinimumMirrorTier,
   MIRROR_TIER_CONFIG,
   recordProjectionMirrorProgress,
+  recordZhutianProjectionCharge,
+  reconcileZhutianProjectionBilling,
+  ZHUTIAN_PROJECTION_COST,
 } from '../../model/zhutianMirror.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { formatPlayerActionBlock, inspectPlayerAction } from '../../model/playerActionState.js';
+import { bumpZhutianMirrorVersion } from '../../utils/zhutianMirrorVersion.js';
+import {
+  compareAndDeleteRedisJson,
+  compareAndExpireRedisKey,
+  compareAndSetRedisJson,
+} from '../../utils/redisJsonCas.js';
+import { migrateLegacyPlayerActionKey } from '../../utils/playerActionKey.js';
 
-function getProjectionActionKey(e) {
-  return `xiuxian:player:${e.user_id}:action`;
+const PROJECTION_LOCK_BUSY = Symbol('projection-lock-busy');
+const PROJECTION_LOCK_TTL_SECONDS = 120;
+const PROJECTION_LOCK_TTL_MS = PROJECTION_LOCK_TTL_SECONDS * 1000;
+const PROJECTION_LOCK_RENEW_INTERVAL_MS = Math.floor(PROJECTION_LOCK_TTL_MS / 3);
+const PROJECTION_BILLING_GRACE_MS = 180_000;
+
+function getProjectionActionKey(playerId) {
+  return `xiuxian:player:${playerId}:action`;
 }
 
 async function getProjectionPlayerId(e) {
-  return channel(String(e.user_id).replace('qg_', ''));
+  const rawPlayerId = String(e.user_id);
+  const playerId = await channel(rawPlayerId.replace('qg_', ''));
+  await migrateLegacyPlayerActionKey(redis, playerId, rawPlayerId);
+  return playerId;
+}
+
+async function reconcileProjectionAction(actionKey, player) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const raw = await redis.get(actionKey);
+    if (!raw) return { raw: null, projection: null };
+    let projection;
+    try {
+      projection = JSON.parse(raw);
+    } catch {
+      return { raw, projection: null };
+    }
+    if (projection.action !== '投影诸天' || projection.billingStatus !== 'pending') {
+      return { raw, projection };
+    }
+
+    const resolution = reconcileZhutianProjectionBilling(player, projection);
+    if (resolution.status === 'discard') {
+      if (Number(projection.billingPendingUntil) > Date.now()) {
+        return { raw, projection, awaitingBilling: true };
+      }
+      if (await compareAndDeleteRedisJson(redis, actionKey, raw)) {
+        return { raw: null, projection: null, discarded: true, previousRaw: raw };
+      }
+      continue;
+    }
+    if (resolution.status === 'activate') {
+      if (await compareAndSetRedisJson(redis, actionKey, raw, resolution.projection)) {
+        const activeRaw = JSON.stringify(resolution.projection);
+        return { raw: activeRaw, projection: resolution.projection, activated: true, previousRaw: raw };
+      }
+      continue;
+    }
+    return { raw, projection };
+  }
+  const raw = await redis.get(actionKey);
+  try {
+    return { raw, projection: raw ? JSON.parse(raw) : null };
+  } catch {
+    return { raw, projection: null };
+  }
+}
+
+async function withProjectionMutationLock(playerId, task) {
+  const lockKey = `xiuxian:player:${playerId}:projection-lock`;
+  const token = randomUUID();
+  const acquired = await redis.set(lockKey, token, { NX: true, EX: PROJECTION_LOCK_TTL_SECONDS });
+  if (!acquired) return PROJECTION_LOCK_BUSY;
+  let lost = false;
+  let renewing = false;
+  const lockLostError = () => new Error(`诸天投影锁已失效 player=${playerId}`);
+  const renew = async () => {
+    if (lost || renewing) return;
+    renewing = true;
+    try {
+      if (!await compareAndExpireRedisKey(redis, lockKey, token, PROJECTION_LOCK_TTL_MS)) lost = true;
+    } catch (error) {
+      lost = true;
+      console.error(`[诸天投影] 续租玩家锁失败 player=${playerId}`, error);
+    } finally {
+      renewing = false;
+    }
+  };
+  const timer = setInterval(() => void renew(), PROJECTION_LOCK_RENEW_INTERVAL_MS);
+  timer.unref?.();
+  const lease = {
+    token,
+    async assertOwned() {
+      if (lost || await redis.get(lockKey) !== token) {
+        lost = true;
+        throw lockLostError();
+      }
+    },
+  };
+  try {
+    return await withPlayerMutationLock(playerId, async () => {
+      await lease.assertOwned();
+      return task(lease);
+    });
+  } finally {
+    clearInterval(timer);
+    try {
+      await compareAndDeleteRedisJson(redis, lockKey, token);
+    } catch (error) {
+      console.error(`[诸天投影] 释放玩家锁失败 player=${playerId}`, error);
+    }
+  }
 }
 
 // ========== 诸天投影世界配置 ==========
@@ -566,19 +673,59 @@ export class touyingzhutian extends plugin {
   // ========== 强制退出投影 ==========
   async forceExitProjection(e) {
     const playerId = await getProjectionPlayerId(e);
-    const actionKey = getProjectionActionKey(e);
+    const actionKey = getProjectionActionKey(playerId);
     try {
-      return await withPlayerMutationLock(playerId, async () => {
-        const action = await redis.get(actionKey);
-        const projection = action ? JSON.parse(action) : null;
+      const result = await withProjectionMutationLock(playerId, async lease => {
+        const player = await Read_player(playerId);
+        const reconciled = await reconcileProjectionAction(actionKey, player);
+        const { projection } = reconciled;
         if (!projection || projection.action !== '投影诸天') {
           await e.reply('你当前没有进行中的投影');
           return true;
         }
+        if (reconciled.awaitingBilling) {
+          await e.reply('诸天镜正在确认本次投影扣费，请稍后再试。');
+          return true;
+        }
+
+        if (projection.billingStatus === 'settling') {
+          await e.reply('本次诸天投影正在结算，请稍后查看结果。');
+          return true;
+        }
+        if (projection.billingStatus === 'collapsing') {
+          const world = PROJECTION_WORLDS[projection.world] || { name: projection.world };
+          return this.collapseProjection(
+            e,
+            playerId,
+            actionKey,
+            reconciled.raw,
+            projection,
+            world,
+            lease,
+          );
+        }
 
         const penaltyXiuwei = Math.floor(projection.returnRate ? projection.returnRate * 100 : 500);
-        await Add_修为(playerId, -penaltyXiuwei);
-        await redis.del(actionKey);
+        const billingId = projection.billingId || `${projection.world}:${projection.start_time || 'legacy'}`;
+        let terminalRaw = reconciled.raw;
+        if (projection.billingStatus !== 'force-exiting') {
+          const terminalProjection = { ...projection, billingStatus: 'force-exiting' };
+          if (!await compareAndSetRedisJson(redis, actionKey, reconciled.raw, terminalProjection)) {
+            await e.reply('投影状态已经变化，请重新发送 #退出投影。');
+            return true;
+          }
+          terminalRaw = JSON.stringify(terminalProjection);
+        }
+        await lease.assertOwned();
+        await Add_修为(playerId, -penaltyXiuwei, {
+          idempotencyKey: `zhutian-projection:${billingId}:terminal-penalty`,
+        });
+        await lease.assertOwned();
+        if (!await compareAndDeleteRedisJson(redis, actionKey, terminalRaw)) {
+          const currentRaw = await redis.get(actionKey);
+          if (currentRaw) throw new Error(`退出投影时行动状态发生变化 billingId=${billingId}`);
+          return true;
+        }
         await e.reply([
           '你强行中断了神魂投影！',
           '由于神魂强行脱离异界，受到反噬：',
@@ -587,6 +734,11 @@ export class touyingzhutian extends plugin {
         ].join('\n'));
         return true;
       });
+      if (result === PROJECTION_LOCK_BUSY) {
+        await e.reply('诸天镜正在处理上一道神念，请稍后再试。');
+        return true;
+      }
+      return result;
     } catch (err) {
       console.error('退出投影出错:', err);
       e.reply('退出投影时发生意外');
@@ -597,19 +749,11 @@ export class touyingzhutian extends plugin {
   // ========== 开始投影 ==========
   async touyingzhutian(e) {
     const playerId = await getProjectionPlayerId(e);
-    const actionKey = getProjectionActionKey(e);
+    const actionKey = getProjectionActionKey(playerId);
     try {
       const player = await Read_player(playerId);
       if (!player) {
         e.reply('未找到玩家数据');
-        return true;
-      }
-
-      // 检查是否已在投影中
-      const existingAction = await redis.get(actionKey);
-      const existingState = inspectPlayerAction(existingAction);
-      if (existingState.active) {
-        e.reply(formatPlayerActionBlock(existingState));
         return true;
       }
 
@@ -658,22 +802,30 @@ export class touyingzhutian extends plugin {
         return true;
       }
 
-      const startResult = await withPlayerMutationLock(playerId, async () => {
-        const currentState = inspectPlayerAction(await redis.get(actionKey));
+      const startResult = await withProjectionMutationLock(playerId, async lease => {
+        const latestPlayer = await Read_player(playerId);
+        const currentAction = await reconcileProjectionAction(actionKey, latestPlayer);
+        const currentState = inspectPlayerAction(currentAction.raw);
         if (currentState.active) return { ok: false, reason: 'action', state: currentState };
 
-        const latestPlayer = await Read_player(playerId);
         const latestMirror = ensureZhutianMirrorSystem(latestPlayer);
         if (!latestMirror.已绑定) return { ok: false, reason: 'unbound' };
         if (latestMirror.镜阶 < requiredTier) return { ok: false, reason: 'tier' };
         if (!hasProjectionRealm(latestPlayer, selectedWorld)) {
           return { ok: false, reason: 'realm' };
         }
-        const consumed = consumeMirrorEnergy(latestPlayer);
-        if (!consumed.ok) return consumed;
+        const costCheck = consumeZhutianProjectionCost(latestPlayer);
+        if (!costCheck.ok) return { ok: false, reason: 'resources', costCheck };
 
+        const billingId = randomUUID();
+        recordZhutianProjectionCharge(latestPlayer, billingId);
+        const billingCreatedAt = Date.now();
         const projectionState = {
           action: '投影诸天',
+          billingId,
+          billingStatus: 'pending',
+          billingCreatedAt,
+          billingPendingUntil: billingCreatedAt + PROJECTION_BILLING_GRACE_MS,
           playerId,
           world: selectedWorld.name,
           step: 'start',
@@ -683,22 +835,50 @@ export class touyingzhutian extends plugin {
           startLevelId: latestPlayer.level_id,
           start_time: Date.now(),
         };
-        await redis.set(actionKey, JSON.stringify(projectionState));
+        const pendingRaw = JSON.stringify(projectionState);
+        if (!await redis.set(actionKey, pendingRaw, { NX: true })) {
+          return {
+            ok: false,
+            reason: 'action',
+            state: inspectPlayerAction(await redis.get(actionKey)),
+          };
+        }
         try {
+          await lease.assertOwned();
           await Write_player(playerId, latestPlayer);
         } catch (error) {
-          await redis.del(actionKey);
+          await compareAndDeleteRedisJson(redis, actionKey, pendingRaw);
           throw error;
         }
-        return { ok: true, mirror: latestMirror };
+        await lease.assertOwned();
+        const activeProjection = { ...projectionState, billingStatus: 'active' };
+        let activated = await compareAndSetRedisJson(redis, actionKey, pendingRaw, activeProjection);
+        if (!activated) {
+          const currentRaw = await redis.get(actionKey);
+          let current;
+          try { current = currentRaw ? JSON.parse(currentRaw) : null; } catch {}
+          activated = current?.billingId === billingId && current?.billingStatus === 'active';
+        }
+        if (!activated) throw new Error(`投影扣费已落盘但行动激活失败 billingId=${billingId}`);
+        return { ok: true, mirror: latestMirror, costCheck };
       });
+
+      if (startResult === PROJECTION_LOCK_BUSY) {
+        e.reply('诸天镜正在处理上一道神念，请稍后再试。');
+        return true;
+      }
 
       if (!startResult.ok) {
         if (startResult.reason === 'action') e.reply(formatPlayerActionBlock(startResult.state));
         else if (startResult.reason === 'unbound') e.reply('请先绑定诸天镜。');
         else if (startResult.reason === 'tier') e.reply(`当前诸天镜阶位不足，需要${requiredTier}阶。`);
         else if (startResult.reason === 'realm') e.reply(`你的境界不足！${selectedWorld.name}需要至少${selectedWorld.minLevelName}。`);
-        else if (startResult.reason === 'energy') e.reply('今日镜能已经耗尽，明日会自动恢复。');
+        else if (startResult.reason === 'resources') {
+          const missing = startResult.costCheck.missing
+            .map(item => `${item.name}需${item.required.toLocaleString('zh-CN')}，当前${item.current.toLocaleString('zh-CN')}`)
+            .join('；');
+          e.reply(`投影诸天所需资源不足：${missing}。本次未消耗任何资源。`);
+        }
         return true;
       }
 
@@ -710,6 +890,7 @@ export class touyingzhutian extends plugin {
         '',
         `你的神魂稳定性：100/100`,
         `世界影响力：0 | 剩余镜能：${startResult.mirror.镜能}/${MIRROR_TIER_CONFIG[startResult.mirror.镜阶].energyMax}`,
+        `投影消耗：修为${ZHUTIAN_PROJECTION_COST.修为.toLocaleString('zh-CN')}、血气${ZHUTIAN_PROJECTION_COST.血气.toLocaleString('zh-CN')}、元神${ZHUTIAN_PROJECTION_COST.元神.toLocaleString('zh-CN')}、镜能${ZHUTIAN_PROJECTION_COST.镜能}`,
         '',
         node.desc,
         '',
@@ -725,31 +906,49 @@ export class touyingzhutian extends plugin {
 
   // ========== 处理选择 ==========
   async handleProjectionChoice(e) {
-    const actionKey = getProjectionActionKey(e);
+    const playerId = await getProjectionPlayerId(e);
+    const actionKey = getProjectionActionKey(playerId);
     try {
-      const initialStr = await redis.get(actionKey);
-      if (!initialStr) return false;
-      let initialAction;
-      try {
-        initialAction = JSON.parse(initialStr);
-      } catch {
-        return false;
-      }
-      if (initialAction.action !== '投影诸天') return false;
+      const result = await withProjectionMutationLock(playerId, async lease => {
+        const initialStr = await redis.get(actionKey);
+        if (!initialStr) return false;
+        let initialAction;
+        try {
+          initialAction = JSON.parse(initialStr);
+        } catch {
+          return false;
+        }
+        if (initialAction.action !== '投影诸天') return false;
 
-      const playerId = await getProjectionPlayerId(e);
-      return await withPlayerMutationLock(playerId, async () => {
-        const actionStr = await redis.get(actionKey);
+        const player = await Read_player(playerId);
+        const reconciled = await reconcileProjectionAction(actionKey, player);
+        const actionStr = reconciled.raw;
         if (!actionStr) return true;
-        if (actionStr !== initialStr) return true;
-        const projection = JSON.parse(actionStr);
+        if (reconciled.awaitingBilling) {
+          await e.reply('诸天镜正在确认本次投影扣费，请稍后再选择。');
+          return true;
+        }
+        const projection = reconciled.projection || JSON.parse(actionStr);
         if (projection.action !== '投影诸天') return true;
         projection.playerId = playerId;
+        await lease.assertOwned();
 
         const world = PROJECTION_WORLDS[projection.world];
         if (!world) {
           await e.reply('投影数据异常，请使用 #退出投影');
           return true;
+        }
+
+        if (projection.billingStatus === 'settling') {
+          const endNode = world.story[projection.endingNodeKey || projection.step];
+          if (!endNode?.end) {
+            await e.reply('投影结算数据异常，请使用 #退出投影');
+            return true;
+          }
+          return this.completeProjection(e, playerId, actionKey, actionStr, projection, world, endNode, lease);
+        }
+        if (projection.billingStatus === 'collapsing') {
+          return this.collapseProjection(e, playerId, actionKey, actionStr, projection, world, lease);
         }
 
         const currentNode = world.story[projection.step];
@@ -770,14 +969,14 @@ export class touyingzhutian extends plugin {
 
         const nextNodeKey = selectedOption.next;
         if (!nextNodeKey) {
-          await redis.del(actionKey);
+          await compareAndDeleteRedisJson(redis, actionKey, actionStr);
           await e.reply('剧情分支异常，本次投影被迫终止');
           return true;
         }
 
         const nextNode = world.story[nextNodeKey];
         if (!nextNode) {
-          await redis.del(actionKey);
+          await compareAndDeleteRedisJson(redis, actionKey, actionStr);
           await e.reply('剧情节点异常，本次投影被迫终止');
           return true;
         }
@@ -785,21 +984,34 @@ export class touyingzhutian extends plugin {
         applyProjectionEffect(projection, nextNode.penalty);
 
         if (nextNode.end) {
-          return this.completeProjection(e, playerId, actionKey, projection, world, nextNode);
+          projection.step = nextNodeKey;
+          projection.endingNodeKey = nextNodeKey;
+          projection.billingStatus = 'settling';
+          await lease.assertOwned();
+          if (!await compareAndSetRedisJson(redis, actionKey, actionStr, projection)) return true;
+          const settlementRaw = JSON.stringify(projection);
+          return this.completeProjection(e, playerId, actionKey, settlementRaw, projection, world, nextNode, lease);
         }
 
         if (nextNode.options?.length > 0) {
           projection.step = nextNodeKey;
           if (projection.soulStability <= 0) {
-            return this.collapseProjection(e, playerId, actionKey, projection, world);
+            projection.billingStatus = 'collapsing';
+            await lease.assertOwned();
+            if (!await compareAndSetRedisJson(redis, actionKey, actionStr, projection)) return true;
+            return this.collapseProjection(e, playerId, actionKey, JSON.stringify(projection), projection, world, lease);
           }
 
           projection.soulStability = Math.max(0, projection.soulStability - (2 + Math.floor(Math.random() * 4)));
           if (projection.soulStability <= 0) {
-            return this.collapseProjection(e, playerId, actionKey, projection, world);
+            projection.billingStatus = 'collapsing';
+            await lease.assertOwned();
+            if (!await compareAndSetRedisJson(redis, actionKey, actionStr, projection)) return true;
+            return this.collapseProjection(e, playerId, actionKey, JSON.stringify(projection), projection, world, lease);
           }
 
-          await redis.set(actionKey, JSON.stringify(projection));
+          await lease.assertOwned();
+          if (!await compareAndSetRedisJson(redis, actionKey, actionStr, projection)) return true;
           const optionsText = nextNode.options.map(option => `${option.num}. ${option.text}`).join('\n');
           await e.reply([
             nextNode.desc,
@@ -815,6 +1027,11 @@ export class touyingzhutian extends plugin {
         await e.reply('剧情结构异常，请使用 #退出投影');
         return true;
       });
+      if (result === PROJECTION_LOCK_BUSY) {
+        await e.reply('诸天镜正在处理上一道神念，请稍后再试。');
+        return true;
+      }
+      return result;
     } catch (err) {
       console.error('处理选择出错:', err);
       await e.reply('处理选择时发生意外，当前选择尚未生效，请稍后重试');
@@ -823,10 +1040,16 @@ export class touyingzhutian extends plugin {
   }
 
   // ========== 神魂崩溃 ==========
-  async collapseProjection(e, playerId, actionKey, projection, world) {
-    await redis.del(actionKey);
+  async collapseProjection(e, playerId, actionKey, actionRaw, projection, world, lease) {
     const penalty = Math.floor(projection.returnRate * 50 || 300);
-    await Add_修为(playerId, -penalty);
+    const billingId = projection.billingId || `${projection.world}:${projection.start_time || 'legacy'}`;
+    await lease?.assertOwned();
+    if (await redis.get(actionKey) !== actionRaw) return true;
+    await Add_修为(playerId, -penalty, {
+      idempotencyKey: `zhutian-projection:${billingId}:terminal-penalty`,
+    });
+    await lease?.assertOwned();
+    if (!await compareAndDeleteRedisJson(redis, actionKey, actionRaw)) return true;
 
     e.reply([
       `⚠️ 神魂稳定性降至临界点！`,
@@ -836,18 +1059,20 @@ export class touyingzhutian extends plugin {
       '',
       `世界影响力残留：${projection.worldInfluence}`
     ].join('\n'));
+    return true;
   }
 
   // ========== 完成投影 ==========
-  async completeProjection(e, playerId, actionKey, projection, world, endNode) {
+  async completeProjection(e, playerId, actionKey, actionRaw, projection, world, endNode, lease) {
     return withPlayerMutationLock(playerId, async () => {
+    await lease?.assertOwned();
     let player = await Read_player(playerId);
     const endingType = endNode.end || 'neutral';
-    const settlementId = `${world.name}:${projection.start_time}`;
+    const settlementId = projection.billingId || `${world.name}:${projection.start_time}`;
     const initialMirror = ensureZhutianMirrorSystem(player);
     if (!Array.isArray(initialMirror.已结算投影)) initialMirror.已结算投影 = [];
     if (initialMirror.已结算投影.includes(settlementId)) {
-      await redis.del(actionKey);
+      await compareAndDeleteRedisJson(redis, actionKey, actionRaw);
       e.reply('本次诸天投影已经完成结算，未重复发放奖励。');
       return true;
     }
@@ -867,6 +1092,7 @@ export class touyingzhutian extends plugin {
     // 发放奖励
     const xiuweiClaimKey = `zhutian:${settlementId}:xiuwei`;
     const xueqiClaimKey = `zhutian:${settlementId}:xueqi`;
+    await lease?.assertOwned();
     const addedXiuwei = calculatedXiuwei > 0
       ? await Add_修为(playerId, calculatedXiuwei, { idempotencyKey: xiuweiClaimKey })
       : 0;
@@ -875,6 +1101,13 @@ export class touyingzhutian extends plugin {
       : 0;
 
     player = await Read_player(playerId);
+    const refreshedMirror = ensureZhutianMirrorSystem(player);
+    if (!Array.isArray(refreshedMirror.已结算投影)) refreshedMirror.已结算投影 = [];
+    if (refreshedMirror.已结算投影.includes(settlementId)) {
+      await compareAndDeleteRedisJson(redis, actionKey, actionRaw);
+      e.reply('本次诸天投影已经完成结算，未重复发放奖励。');
+      return true;
+    }
     const finalXiuwei = addedXiuwei || Number(player._rewardClaims?.[xiuweiClaimKey]?.amount) || 0;
     const finalXueqi = addedXueqi || Number(player._rewardClaims?.[xueqiClaimKey]?.amount) || 0;
     const itemsGained = [];
@@ -995,11 +1228,13 @@ export class touyingzhutian extends plugin {
 
     const settledMirror = ensureZhutianMirrorSystem(player);
     if (!Array.isArray(settledMirror.已结算投影)) settledMirror.已结算投影 = [];
-    settledMirror.已结算投影.push(settlementId);
+    if (!settledMirror.已结算投影.includes(settlementId)) settledMirror.已结算投影.push(settlementId);
     settledMirror.已结算投影 = settledMirror.已结算投影.slice(-100);
+    bumpZhutianMirrorVersion(player);
+    await lease?.assertOwned();
     await Write_player(playerId, player);
     if (mirrorRootChanged || mirrorCompletionChanged) await player_efficiency(playerId);
-    await redis.del(actionKey);
+    await compareAndDeleteRedisJson(redis, actionKey, actionRaw);
 
     e.reply(msg.join('\n'));
     return true;

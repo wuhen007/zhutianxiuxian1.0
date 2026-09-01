@@ -16,14 +16,16 @@ test('投影选项与节点的魂影效果共用同一套钳制规则', () => {
   assert.deepEqual(legacyProjection, { soulStability: 10, worldInfluence: 5 });
 });
 
-test('投影数字处理锁内重读行动并拒绝处理排队期间过期的选择', async () => {
+test('投影数字处理使用跨进程锁与 CAS 推进行动状态', async () => {
   const source = await readFile(new URL('../apps/zhutiantouying/zhutiantouying.js', import.meta.url), 'utf8');
   const handler = source.slice(source.indexOf('async handleProjectionChoice'), source.indexOf('// ========== 神魂崩溃'));
-  assert.match(handler, /withPlayerMutationLock\(playerId/);
-  assert.ok((handler.match(/redis\.get\(actionKey\)/g) || []).length >= 2);
+  assert.match(handler, /withProjectionMutationLock\(playerId/);
+  assert.match(handler, /reconcileProjectionAction\(actionKey, player\)/);
   assert.match(handler, /if \(!initialStr\) return false/);
   assert.match(handler, /initialAction\.action !== '投影诸天'\) return false/);
-  assert.match(handler, /actionStr !== initialStr/);
+  assert.ok((handler.match(/compareAndSetRedisJson\(redis, actionKey/g) || []).length >= 3);
+  assert.match(handler, /billingStatus = 'settling'/);
+  assert.match(handler, /billingStatus = 'collapsing'/);
   assert.match(handler, /applyProjectionEffect\(projection, nextNode\.penalty\)/);
   assert.doesNotMatch(handler, /当前没有进行中的投影/);
 
@@ -31,7 +33,20 @@ test('投影数字处理锁内重读行动并拒绝处理排队期间过期的�
     source.indexOf('async forceExitProjection'),
     source.indexOf('// ========== 开始投影')
   );
-  assert.match(forceExit, /withPlayerMutationLock\(playerId/);
+  assert.match(forceExit, /withProjectionMutationLock\(playerId/);
+  assert.match(forceExit, /billingStatus: 'force-exiting'/);
+  assert.match(forceExit, /idempotencyKey: `zhutian-projection:\$\{billingId\}:terminal-penalty`/);
+  assert.match(forceExit, /compareAndDeleteRedisJson\(redis, actionKey, terminalRaw\)/);
+
+  assert.match(source, /compareAndExpireRedisKey\(redis, lockKey, token, PROJECTION_LOCK_TTL_MS\)/);
+  assert.match(source, /setInterval\(\(\) => void renew\(\), PROJECTION_LOCK_RENEW_INTERVAL_MS\)/);
+  assert.match(source, /await lease\.assertOwned\(\)/);
+  assert.doesNotMatch(source, /!activated && !currentRaw/);
+  assert.doesNotMatch(source, /redis\.set\(actionKey, JSON\.stringify\(activeProjection\)/);
+
+  const settlement = source.slice(source.indexOf('async completeProjection'), source.indexOf('// ========== 查看道化之身'));
+  assert.ok((settlement.match(/已结算投影\.includes\(settlementId\)/g) || []).length >= 3);
+  assert.match(settlement, /if \(!settledMirror\.已结算投影\.includes\(settlementId\)\) settledMirror\.已结算投影\.push/);
 });
 
 test('结局影奖励先进入世界影响力再计算回归率', async () => {
@@ -43,10 +58,13 @@ test('结局影奖励先进入世界影响力再计算回归率', async () => {
   assert.match(settlement, /applyProjectionEffect/);
 });
 
-test('频道账号使用映射后的玩家ID并保留原消息行动键', async () => {
+test('频道账号统一使用映射后的玩家ID并迁移旧行动键', async () => {
   const source = await readFile(new URL('../apps/zhutiantouying/zhutiantouying.js', import.meta.url), 'utf8');
-  assert.match(source, /channel\(String\(e\.user_id\)\.replace\('qg_', ''\)\)/);
-  assert.match(source, /`xiuxian:player:\$\{e\.user_id\}:action`/);
+  assert.match(source, /const rawPlayerId = String\(e\.user_id\)/);
+  assert.match(source, /channel\(rawPlayerId\.replace\('qg_', ''\)\)/);
+  assert.match(source, /migrateLegacyPlayerActionKey\(redis, playerId, rawPlayerId\)/);
+  assert.match(source, /getProjectionActionKey\(playerId\)/);
+  assert.doesNotMatch(source, /`xiuxian:player:\$\{e\.user_id\}:action`/);
   assert.match(source, /playerId,\s*\n\s*world: selectedWorld\.name/);
 });
 

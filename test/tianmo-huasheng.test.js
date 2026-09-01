@@ -184,6 +184,30 @@ test("达到500%法球倍率时蜕变为无相万化天魔体", () => {
   assert.equal(executor.天魔化生.已蜕变, true);
 });
 
+test("装载诸天化身时两类天魔炼化都不会改变灵根或目标", () => {
+  const executor = makeTianmo({
+    诸天镜系统: { 当前化身: "鹿目圆" },
+  });
+  const target = makeTarget();
+  const originalExecutor = structuredClone(executor);
+  const originalTarget = structuredClone(target);
+
+  const playerResult = applyTianmoRefinement(executor, target, {
+    now: 1000,
+    targetId: "target",
+  });
+  const calamityResult = applyTianmoCalamityRefinement(executor, {
+    now: 1000,
+    sourceLifeEssence: 100,
+  });
+
+  assert.equal(getRefinementAvailability(executor, "target", 1000).reason, "avatar_loaded");
+  assert.equal(playerResult.reason, "avatar_loaded");
+  assert.equal(calamityResult.reason, "avatar_loaded");
+  assert.deepEqual(executor, originalExecutor);
+  assert.deepEqual(target, originalTarget);
+});
+
 test("旧极道与无相存档补齐本源差额且不会重复叠加", () => {
   const legacyJidao = makeTianmo({
     灵根: { ...makeTianmo().灵根, 生命本源: 50 },

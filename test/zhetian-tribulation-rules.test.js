@@ -17,10 +17,12 @@ import {
   getClowWishWeaknessRemainingMs,
   getImmortalKingAssaultPlan,
   getKingToEmperorTribulationRatio,
+  getXianguStageWaveCapRate,
   getXianguUpperTribulationHorrorMultiplier,
   inspectClowWishCosts,
   getReverseLifeTribulationWaves,
   XIANGU_UPPER_TRIBULATION_HORROR_MULTIPLIERS,
+  XIANGU_STAGE_DAMAGE_BUDGET_RATE,
   XIANGU_TRIBULATION_BASE_ATK_SCALE,
   LEIDI_TRIBULATION_CONVERSION_RATE,
   LEIDI_TRIBULATION_CONVERSION_WAVES,
@@ -318,6 +320,49 @@ test('恐怖劫威按血量软限形成险死承压，终结道与后续境界�
     capRate: null,
     capped: false,
   });
+});
+
+test('仙古连续劫数共享阶段伤害预算且末道保留更高权重', () => {
+  assert.equal(XIANGU_STAGE_DAMAGE_BUDGET_RATE, 1.1);
+  for (const waveCount of [3, 4, 5, 6]) {
+    const rates = Array.from(
+      { length: waveCount },
+      (_, index) => getXianguStageWaveCapRate(index, waveCount),
+    );
+    const sum = rates.reduce((total, rate) => total + rate, 0);
+    assert.ok(Math.abs(sum - XIANGU_STAGE_DAMAGE_BUDGET_RATE) < 1e-12);
+    assert.ok(Math.abs(rates.at(-1) - rates[0] * 1.5) < 1e-12);
+  }
+
+  const lowRealmOrdinary = calculateXianguHorrorWavePower({
+    baseDamage: 1_000_000,
+    maxHp: 1_000,
+    multiplier: 15,
+    maxDamageRate: getXianguStageWaveCapRate(0, 3),
+  });
+  assert.equal(lowRealmOrdinary.capRate, 0.18);
+});
+
+test('至尊五道阶段在常驻减伤准备后存在完整生存路径', () => {
+  const maxHp = 1_000_000;
+  const waveCount = 5;
+  const damages = Array.from({ length: waveCount }, (_, index) => {
+    const wave = calculateXianguHorrorWavePower({
+      baseDamage: 1_000_000_000,
+      maxHp,
+      multiplier: 30,
+      finalWave: index === waveCount - 1,
+      maxDamageRate: getXianguStageWaveCapRate(index, waveCount),
+    });
+    return wave.damage;
+  });
+  const total = damages.reduce((sum, damage) => sum + damage, 0);
+  const unpreparedRemaining = maxHp - total;
+  const preparedRemaining = maxHp - total * 0.9;
+
+  assert.ok(total <= maxHp * XIANGU_STAGE_DAMAGE_BUDGET_RATE + 1e-6);
+  assert.ok(unpreparedRemaining < 0);
+  assert.ok(preparedRemaining > 0);
 });
 
 test('生产数据下仙古上位劫原始峰值不低于遮天对标境界', () => {

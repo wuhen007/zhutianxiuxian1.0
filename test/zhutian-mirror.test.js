@@ -9,6 +9,7 @@ import {
   bindBasicZhutianMirror,
   challengeUltimateCardTrial,
   consumeMirrorEnergy,
+  consumeZhutianProjectionCost,
   DECADE_LOCATIONS,
   DECADE_TOUR_WORLDS,
   ensureZhutianMirrorSystem,
@@ -16,10 +17,15 @@ import {
   exploreDecadeWorld,
   exploreMitakihara,
   exploreTomoeda,
+  getActiveZhutianAvatarName,
+  inspectZhutianAvatarSwitchCooldown,
   inspectZhutianAvatarAdvancement,
+  inspectZhutianProjectionCost,
   loadZhutianAvatar,
   purifyMadokaSoulGem,
+  recordZhutianProjectionCharge,
   recordProjectionMirrorProgress,
+  reconcileZhutianProjectionBilling,
   refineZhutianMirror,
   resetMitakiharaTimeline,
   setClowCardDeck,
@@ -27,7 +33,16 @@ import {
   syncCurrentZhutianAvatar,
   MITAKIHARA_LOCATIONS,
   TOMOEDA_LOCATIONS,
+  ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS,
+  ZHUTIAN_AVATAR_SWITCH_ENERGY_COST,
+  ZHUTIAN_PROJECTION_COST,
 } from '../model/zhutianMirror.js';
+import {
+  assertZhutianAvatarRootWriteAllowed,
+  assertZhutianMirrorWriteCurrent,
+  getZhutianMirrorVersion,
+  markZhutianMirrorSnapshot,
+} from '../utils/zhutianMirrorVersion.js';
 
 const NOW = Date.parse('2026-08-22T04:00:00Z');
 
@@ -131,13 +146,34 @@ test('友枝町三次有效探索可集齐基础条件且不会覆盖本源灵�
   assert.equal(player.灵根.name, '金灵根');
   assert.equal(player.诸天化身谱[0].name, '木之本樱');
 
+  player.诸天镜系统.镜能 = 2;
   assert.equal(loadZhutianAvatar(player, '木之本樱', { now: NOW }).ok, true);
   assert.equal(player.灵根.name, '木之本樱');
   player.灵根 = { id: 7010015, name: '星之杖·木之本樱', type: '魔卡少女·觉醒' };
   assert.equal(syncCurrentZhutianAvatar(player, { now: NOW }), true);
   assert.equal(player.诸天化身谱[0].stage, 2);
-  assert.equal(loadZhutianAvatar(player, '本源', { now: NOW }).ok, true);
+  assert.equal(loadZhutianAvatar(player, '本源', { now: NOW + ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS }).ok, true);
   assert.equal(player.灵根.name, '金灵根');
+});
+
+test('面板持久化跨日恢复时只递增一次诸天镜状态版本', () => {
+  const player = createPlayer();
+  bindBasicZhutianMirror(player, { now: NOW });
+  consumeMirrorEnergy(player, 1, { now: NOW });
+  const before = getZhutianMirrorVersion(player);
+
+  ensureZhutianMirrorSystem(player, {
+    now: NOW + 24 * 60 * 60 * 1000,
+    bumpOnChange: true,
+  });
+  assert.equal(player.诸天镜系统.镜能, 3);
+  assert.equal(getZhutianMirrorVersion(player), before + 1);
+
+  ensureZhutianMirrorSystem(player, {
+    now: NOW + 24 * 60 * 60 * 1000,
+    bumpOnChange: true,
+  });
+  assert.equal(getZhutianMirrorVersion(player), before + 1);
 });
 
 test('本源灵根变化后再次装载化身会刷新本源快照', () => {
@@ -148,17 +184,303 @@ test('本源灵根变化后再次装载化身会刷新本源快照', () => {
     stage: 1,
     root: { id: 901, name: '木之本樱', type: '诸天化身', eff: 1.2 },
   });
+  player.诸天镜系统.镜阶 = 2;
+  player.诸天镜系统.镜能 = 4;
 
   assert.equal(loadZhutianAvatar(player, '木之本樱', { now: NOW }).ok, true);
-  assert.equal(loadZhutianAvatar(player, '本源', { now: NOW }).ok, true);
+  assert.equal(loadZhutianAvatar(player, '本源', { now: NOW + ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS }).ok, true);
 
   player.灵根 = { id: 88, name: '混沌灵根', type: '混沌', eff: 2.5 };
 
-  assert.equal(loadZhutianAvatar(player, '木之本樱', { now: NOW }).ok, true);
+  assert.equal(loadZhutianAvatar(player, '木之本樱', { now: NOW + ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS * 2 }).ok, true);
   assert.equal(player.诸天镜系统.本源灵根.name, '混沌灵根');
-  assert.equal(loadZhutianAvatar(player, '本源', { now: NOW }).ok, true);
+  assert.equal(loadZhutianAvatar(player, '本源', { now: NOW + ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS * 3 }).ok, true);
   assert.equal(player.灵根.name, '混沌灵根');
   assert.notEqual(player.灵根, player.诸天镜系统.本源灵根);
+});
+
+test('投影固定成本计算保持纯函数且会一次列出所有不足资源', () => {
+  assert.deepEqual(ZHUTIAN_PROJECTION_COST, {
+    修为: 100_000_000,
+    血气: 100_000_000,
+    元神: 1_000_000,
+    镜能: 1,
+  });
+  const player = {
+    修为: 150_000_000,
+    血气: 120_000_000,
+    元神: 2_000_000,
+    诸天镜系统: { 镜能: 2 },
+  };
+  const before = structuredClone(player);
+  const ready = inspectZhutianProjectionCost(player);
+  assert.equal(ready.ok, true);
+  assert.deepEqual(ready.remaining, { 修为: 50_000_000, 血气: 20_000_000, 元神: 1_000_000, 镜能: 1 });
+  assert.deepEqual(player, before);
+
+  const exact = {
+    修为: ZHUTIAN_PROJECTION_COST.修为,
+    血气: ZHUTIAN_PROJECTION_COST.血气,
+    元神: ZHUTIAN_PROJECTION_COST.元神,
+    诸天镜系统: { 镜能: ZHUTIAN_PROJECTION_COST.镜能 },
+  };
+  assert.equal(consumeZhutianProjectionCost(exact).ok, true);
+  assert.deepEqual(exact, { 修为: 0, 血气: 0, 元神: 0, 诸天镜系统: { 镜能: 0, 状态版本: 1 } });
+
+  for (const name of Object.keys(ZHUTIAN_PROJECTION_COST)) {
+    const blocked = {
+      修为: ZHUTIAN_PROJECTION_COST.修为,
+      血气: ZHUTIAN_PROJECTION_COST.血气,
+      元神: ZHUTIAN_PROJECTION_COST.元神,
+      诸天镜系统: { 镜能: ZHUTIAN_PROJECTION_COST.镜能 },
+    };
+    if (name === '镜能') blocked.诸天镜系统.镜能 -= 1;
+    else blocked[name] -= 1;
+    const blockedBefore = structuredClone(blocked);
+    const result = consumeZhutianProjectionCost(blocked);
+    assert.equal(result.ok, false, `${name}不足时应拦截`);
+    assert.deepEqual(blocked, blockedBefore, `${name}不足时四项资源均不应变化`);
+  }
+});
+
+test('投影入口在玩家锁内以待确认扣费事务落盘', async () => {
+  const source = await readFile(new URL('../apps/zhutiantouying/zhutiantouying.js', import.meta.url), 'utf8');
+  const start = source.indexOf('const startResult = await withProjectionMutationLock');
+  const end = source.indexOf('if (!startResult.ok)', start);
+  const block = source.slice(start, end);
+  const consumeIndex = block.indexOf('consumeZhutianProjectionCost(latestPlayer)');
+  const pendingIndex = block.indexOf("billingStatus: 'pending'");
+  const actionIndex = block.indexOf('await redis.set(actionKey, pendingRaw, { NX: true })', pendingIndex);
+  const writeIndex = block.indexOf('await Write_player(playerId, latestPlayer)');
+  const activateIndex = block.indexOf('compareAndSetRedisJson(redis, actionKey, pendingRaw, activeProjection)', writeIndex);
+  assert.ok(consumeIndex >= 0 && consumeIndex < pendingIndex && pendingIndex < actionIndex);
+  assert.ok(actionIndex < writeIndex && writeIndex < activateIndex);
+  assert.match(source, /reconcileProjectionAction\(actionKey, latestPlayer\)/);
+  assert.match(source, /billingPendingUntil: billingCreatedAt \+ PROJECTION_BILLING_GRACE_MS/);
+  assert.match(source, /compareAndDeleteRedisJson\(redis, actionKey, pendingRaw\)/);
+  assert.match(source, /idempotencyKey: `zhutian-projection:\$\{billingId\}:terminal-penalty`/);
+  assert.doesNotMatch(block, /!activated && !currentRaw/);
+  assert.equal((block.match(/Write_player\(playerId, latestPlayer\)/g) || []).length, 1);
+});
+
+test('投影待确认扣费在崩溃后可区分未扣费与已扣费状态', () => {
+  const projection = { action: '投影诸天', billingId: 'billing-1', billingStatus: 'pending' };
+  const unpaid = createPlayer();
+  assert.equal(reconcileZhutianProjectionBilling(unpaid, projection).status, 'discard');
+
+  const charged = {
+    ...createPlayer(),
+    修为: ZHUTIAN_PROJECTION_COST.修为,
+    血气: ZHUTIAN_PROJECTION_COST.血气,
+    元神: ZHUTIAN_PROJECTION_COST.元神,
+    诸天镜系统: { 镜能: 1 },
+  };
+  assert.equal(consumeZhutianProjectionCost(charged).ok, true);
+  recordZhutianProjectionCharge(charged, 'billing-1', { now: NOW });
+  const recovered = reconcileZhutianProjectionBilling(charged, projection);
+  assert.equal(recovered.status, 'activate');
+  assert.equal(recovered.projection.billingStatus, 'active');
+});
+
+test('诸天镜状态版本拒绝化身切换前的旧快照回写', () => {
+  const current = createPlayer();
+  bindBasicZhutianMirror(current, { now: NOW });
+  current.诸天化身谱.push({ name: '化身甲', stage: 1, root: { name: '化身甲', type: '诸天化身' } });
+  const stale = structuredClone(current);
+  assert.equal(loadZhutianAvatar(current, '化身甲', { now: NOW }).ok, true);
+  assert.ok(getZhutianMirrorVersion(current) > getZhutianMirrorVersion(stale));
+  assert.throws(
+    () => assertZhutianMirrorWriteCurrent(current, stale),
+    error => error?.code === 'ZHUTIAN_MIRROR_STALE_WRITE',
+  );
+});
+
+test('诸天镜状态版本拒绝两个快照同时从同一版本递增后互相覆盖', () => {
+  const current = createPlayer();
+  bindBasicZhutianMirror(current, { now: NOW });
+  const first = markZhutianMirrorSnapshot(structuredClone(current));
+  const second = markZhutianMirrorSnapshot(structuredClone(current));
+  consumeMirrorEnergy(first, 1, { now: NOW });
+  consumeMirrorEnergy(second, 1, { now: NOW });
+
+  assert.doesNotThrow(() => assertZhutianMirrorWriteCurrent(current, first));
+  assert.throws(
+    () => assertZhutianMirrorWriteCurrent(first, second),
+    error => error?.code === 'ZHUTIAN_MIRROR_STALE_WRITE',
+  );
+});
+
+test('装载化身时中央写屏障拒绝未登记的显隐灵根变化', () => {
+  const previous = createPlayer();
+  bindBasicZhutianMirror(previous, { now: NOW });
+  previous.诸天镜系统.当前化身 = '化身甲';
+  previous.诸天化身谱.push({ name: '化身甲', root: { name: '化身甲', type: '诸天化身' } });
+  previous.灵根 = { name: '化身甲', type: '诸天化身' };
+
+  const external = structuredClone(previous);
+  external.灵根 = { name: '外部改根', type: '违规' };
+  assert.throws(
+    () => assertZhutianAvatarRootWriteAllowed(previous, external),
+    error => error?.code === 'ZHUTIAN_AVATAR_ROOT_MUTATION',
+  );
+
+  const internal = structuredClone(external);
+  internal.诸天镜系统.状态版本++;
+  assert.doesNotThrow(() => assertZhutianAvatarRootWriteAllowed(previous, internal));
+});
+
+test('卡组编成与灵魂宝石净化都会递增诸天镜状态版本', () => {
+  const sakura = createPlayer();
+  bindBasicZhutianMirror(sakura, { now: NOW });
+  sakura.库洛牌系统.已封印库洛牌 = ['风', '翔', '影'];
+  const sakuraVersion = getZhutianMirrorVersion(sakura);
+  assert.equal(setClowCardDeck(sakura, ['风', '翔', '影'], { now: NOW }).ok, true);
+  assert.equal(getZhutianMirrorVersion(sakura), sakuraVersion + 1);
+
+  const madoka = createPlayer();
+  bindBasicZhutianMirror(madoka, { now: NOW });
+  const madokaProgress = madoka.诸天镜系统.世界进度.魔法少女小圆;
+  madokaProgress.灵魂宝石 = true;
+  madokaProgress.灵魂宝石污浊度 = 80;
+  madokaProgress.悲叹之种 = 1;
+  const madokaVersion = getZhutianMirrorVersion(madoka);
+  assert.equal(purifyMadokaSoulGem(madoka, { now: NOW }).ok, true);
+  assert.equal(getZhutianMirrorVersion(madoka), madokaVersion + 1);
+
+  const decade = createPlayer();
+  bindBasicZhutianMirror(decade, { now: NOW });
+  decade.诸天镜系统.世界进度.假面骑士帝骑.骑士卡片 = ['空我', '龙骑', '剑'];
+  const decadeVersion = getZhutianMirrorVersion(decade);
+  assert.equal(setDecadeCardDeck(decade, ['空我', '龙骑', '剑'], { now: NOW }).ok, true);
+  assert.equal(getZhutianMirrorVersion(decade), decadeVersion + 1);
+});
+
+test('化身装载提交核心存档后以幂等方式续接附属状态', async () => {
+  const source = await readFile(new URL('../apps/zhutiantouying/ZhutianMirror.js', import.meta.url), 'utf8');
+  const start = source.indexOf('async loadAvatar(e)');
+  const end = source.indexOf('async recoverOriginRoot(e)', start);
+  const block = source.slice(start, end);
+  const writeIndex = block.indexOf('await Write_player(playerId, player)');
+  const equipmentIndex = block.indexOf('await Add_najie_thing');
+
+  assert.ok(writeIndex >= 0 && writeIndex < equipmentIndex);
+  assert.match(block, /const switched = !result\.unchanged/);
+  assert.match(block, /idempotencyKey: `zhutian-exclusive-equipment:/);
+  assert.match(block, /再次发送相同装载指令即可续接/);
+  assert.doesNotMatch(block, /FileRollbackTransaction|transaction\.rollback|Write_equipment/);
+});
+
+test('化身有效切换扣镜能并冷却十五分钟，重复与失败请求不改变灵根', () => {
+  assert.equal(ZHUTIAN_AVATAR_SWITCH_ENERGY_COST, 1);
+  assert.equal(ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS, 15 * 60 * 1000);
+  const player = createPlayer();
+  bindBasicZhutianMirror(player, { now: NOW });
+  player.诸天镜系统.镜阶 = 2;
+  player.诸天镜系统.镜能 = 4;
+  player.诸天化身谱.push(
+    { name: '化身甲', stage: 1, root: { id: 901, name: '化身甲', type: '诸天化身' } },
+    { name: '化身乙', stage: 1, root: { id: 902, name: '化身乙', type: '诸天化身' } },
+  );
+
+  const origin = structuredClone(player.灵根);
+  const invalid = loadZhutianAvatar(player, '未收录化身', { now: NOW });
+  assert.equal(invalid.reason, 'avatar');
+  assert.equal(player.诸天镜系统.镜能, 4);
+  assert.deepEqual(player.灵根, origin);
+
+  const first = loadZhutianAvatar(player, '化身甲', { now: NOW });
+  assert.equal(first.ok, true);
+  assert.equal(first.remainingEnergy, 3);
+  assert.equal(player.诸天镜系统.化身切换冷却至, NOW + ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS);
+
+  const repeated = loadZhutianAvatar(player, '化身甲', { now: NOW + 1 });
+  assert.equal(repeated.unchanged, true);
+  assert.equal(player.诸天镜系统.镜能, 3);
+
+  const cooling = loadZhutianAvatar(player, '化身乙', { now: NOW + 1 });
+  assert.equal(cooling.reason, 'cooldown');
+  assert.equal(player.灵根.name, '化身甲');
+  assert.equal(player.诸天镜系统.镜能, 3);
+  assert.deepEqual(inspectZhutianAvatarSwitchCooldown(player, { now: NOW + 1 }), {
+    ready: false,
+    currentTime: NOW + 1,
+    cooldownUntil: NOW + ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS,
+    remainingMs: ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS - 1,
+  });
+
+  const second = loadZhutianAvatar(player, '化身乙', { now: NOW + ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS });
+  assert.equal(second.ok, true);
+  assert.equal(player.灵根.name, '化身乙');
+  assert.equal(player.诸天镜系统.镜能, 2);
+
+  const back = loadZhutianAvatar(player, '本源', { now: NOW + ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS * 2 });
+  assert.equal(back.ok, true);
+  assert.deepEqual(player.灵根, origin);
+  assert.equal(player.诸天镜系统.镜能, 1);
+});
+
+test('本源缺失或镜能不足时化身切换不改变灵根', () => {
+  const missingOrigin = createPlayer();
+  bindBasicZhutianMirror(missingOrigin, { now: NOW });
+  missingOrigin.诸天镜系统.当前化身 = '化身甲';
+  missingOrigin.灵根 = { id: 901, name: '化身甲', type: '诸天化身' };
+  const beforeMissing = structuredClone(missingOrigin.灵根);
+  assert.equal(loadZhutianAvatar(missingOrigin, '本源', { now: NOW }).reason, 'origin');
+  assert.deepEqual(missingOrigin.灵根, beforeMissing);
+  assert.equal(missingOrigin.诸天镜系统.镜能, 3);
+
+  const noEnergy = createPlayer();
+  bindBasicZhutianMirror(noEnergy, { now: NOW });
+  noEnergy.诸天镜系统.镜能 = 0;
+  noEnergy.诸天化身谱.push({ name: '化身甲', stage: 1, root: { id: 901, name: '化身甲', type: '诸天化身' } });
+  const beforeEnergy = structuredClone(noEnergy.灵根);
+  assert.equal(loadZhutianAvatar(noEnergy, '化身甲', { now: NOW }).reason, 'energy');
+  assert.deepEqual(noEnergy.灵根, beforeEnergy);
+  assert.equal(noEnergy.诸天镜系统.镜能, 0);
+  assert.equal(noEnergy.诸天镜系统.化身切换冷却至, 0);
+});
+
+test('损坏的化身或本源灵根在扣镜能前拦截', () => {
+  const malformedAvatar = createPlayer();
+  bindBasicZhutianMirror(malformedAvatar, { now: NOW });
+  malformedAvatar.诸天化身谱.push({ name: '损坏化身', stage: 1, root: null });
+  const avatarBefore = {
+    root: structuredClone(malformedAvatar.灵根),
+    energy: malformedAvatar.诸天镜系统.镜能,
+    cooldown: malformedAvatar.诸天镜系统.化身切换冷却至,
+    version: malformedAvatar.诸天镜系统.状态版本,
+  };
+  assert.equal(loadZhutianAvatar(malformedAvatar, '损坏化身', { now: NOW }).reason, 'root');
+  assert.deepEqual({
+    root: malformedAvatar.灵根,
+    energy: malformedAvatar.诸天镜系统.镜能,
+    cooldown: malformedAvatar.诸天镜系统.化身切换冷却至,
+    version: malformedAvatar.诸天镜系统.状态版本,
+  }, avatarBefore);
+
+  const malformedOrigin = createPlayer();
+  bindBasicZhutianMirror(malformedOrigin, { now: NOW });
+  malformedOrigin.诸天镜系统.当前化身 = '化身甲';
+  malformedOrigin.诸天镜系统.本源灵根 = {};
+  malformedOrigin.灵根 = { name: '化身甲', type: '诸天化身' };
+  const originBefore = {
+    root: structuredClone(malformedOrigin.灵根),
+    energy: malformedOrigin.诸天镜系统.镜能,
+    cooldown: malformedOrigin.诸天镜系统.化身切换冷却至,
+    version: malformedOrigin.诸天镜系统.状态版本,
+  };
+  assert.equal(loadZhutianAvatar(malformedOrigin, '本源', { now: NOW }).reason, 'root');
+  assert.deepEqual({
+    root: malformedOrigin.灵根,
+    energy: malformedOrigin.诸天镜系统.镜能,
+    cooldown: malformedOrigin.诸天镜系统.化身切换冷却至,
+    version: malformedOrigin.诸天镜系统.状态版本,
+  }, originBefore);
+});
+
+test('未迁移的旧版化身灵根也会触发装载守卫', () => {
+  assert.equal(getActiveZhutianAvatarName({ 灵根: { name: '星之杖·木之本樱' } }), '木之本樱');
+  assert.equal(getActiveZhutianAvatarName({ 灵根: { name: '金灵根' } }), '');
 });
 
 test('地点阶位校验先于镜能消耗，封印之钥第八次保底', () => {
@@ -411,6 +733,7 @@ test('诸天镜导航、阶段目标和世界专属操作均已注册', async ()
   assert.match(mirrorApp, /下一目标/);
   assert.match(sakura, /月华守护/);
   assert.match(sakura, /pitySuccess/);
+  assert.equal((sakura.match(/bumpZhutianMirrorVersion\(player\);\s*await Write_player/g) || []).length, 4);
 });
 
 test('诸天投影使用明确境界ID并在帮助中列出完整主流程', async () => {

@@ -70,6 +70,7 @@ import {
 } from '../../model/officialMessage.js';
 import { parsePlayerLayoutCommand } from '../../model/playerLayout.js';
 import { withJuelingEraLock } from '../tasks/juelingLifespanService.js';
+import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
 
 function replyRecreateConfirmation(e) {
   const text = '一旦转世一切当世与你无缘,你真的要重生吗?回复:【断绝此生】或者【再继仙缘】进行选择';
@@ -977,6 +978,8 @@ async force_reCreate_player(e) {
     e.reply('没有存档，无法强制重开！');
     return false;
   }
+
+  return withJuelingEraLock(() => withPlayerMutationLock(usr_qq, async () => {
   
   // 获取重生次数
   let acount = await redis.get('xiuxian:player:' + usr_qq + ':reCreate_acount');
@@ -988,9 +991,14 @@ async force_reCreate_player(e) {
   }
   
   // 获取玩家数据
-  let player = await data.getData('player', usr_qq);
+  let player = await Read_player(usr_qq);
   if (!player) {
     e.reply('无法读取玩家数据！');
+    return false;
+  }
+  const activeAvatar = getActiveZhutianAvatarName(player);
+  if (activeAvatar) {
+    e.reply(`当前正在装载诸天化身【${activeAvatar}】，请先发送 #装载化身 本源，再重新进入仙途。`);
     return false;
   }
   
@@ -1130,6 +1138,7 @@ async force_reCreate_player(e) {
   ]);
   
   return true;
+  }));
 }
   //重新修仙
   async reCreate_player(e) {
@@ -1204,6 +1213,7 @@ async force_reCreate_player(e) {
       this.finish('RE_xiuxian');
       return false;
     } else if (choice == '断绝此生') {
+      return withJuelingEraLock(() => withPlayerMutationLock(usr_qq, async () => {
       //得到重生次数
       let acount = await redis.get(
         'xiuxian:player:' + usr_qq + ':reCreate_acount'
@@ -1216,7 +1226,13 @@ async force_reCreate_player(e) {
       acount = Number(acount);
       acount++;
       //重生牵扯到宗门模块
-      let player = await data.getData('player', usr_qq);
+      let player = await Read_player(usr_qq);
+      const activeAvatar = getActiveZhutianAvatarName(player);
+      if (activeAvatar) {
+        this.finish('RE_xiuxian');
+        await e.reply(`当前正在装载诸天化身【${activeAvatar}】，请先发送 #装载化身 本源，再重新进入仙途。`);
+        return false;
+      }
       if (isNotNull(player.宗门)) {
         if (player.宗门.职位 != '宗主') {
           //不是宗主
@@ -1276,6 +1292,9 @@ async force_reCreate_player(e) {
         nowTime
       ); //redis设置本次改名时间戳
       await redis.set('xiuxian:player:' + usr_qq + ':reCreate_acount', acount);
+      this.finish('RE_xiuxian');
+      return false;
+      }));
     } else {
       this.setContext('RE_xiuxian');
       await replyRecreateConfirmation(e);

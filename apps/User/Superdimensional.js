@@ -22,6 +22,7 @@ import { repairAllDestroyedPlanes } from '../Boss/WeimianDestruction.js';
 import RealmEvents from '../tasks/RealmEvents.js';
 import { runTaskOnce } from '../../utils/taskGuard.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
 import {
   ascendSuperdimensionalStarRealm,
   canCreateWithSuperdimensionalPower,
@@ -177,6 +178,13 @@ export class Superdimensional extends plugin {
     return withPlayerLocks([holder.qq, targetQQ], async () => {
       const caster = await Read_player(holder.qq);
       const target = targetQQ === holder.qq ? caster : await Read_player(targetQQ);
+
+      if (kind === '灵根') {
+        const avatarName = getActiveZhutianAvatarName(target);
+        if (avatarName) {
+          return e.reply(`目标当前正装载化身【${avatarName}】，请先让其发送 #装载化身 本源，再改写灵根。`);
+        }
+      }
 
       if (kind === '天资') {
         if (!APTITUDES.includes(name)) return e.reply(`未知天资：${name}`);

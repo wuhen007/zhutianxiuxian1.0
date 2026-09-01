@@ -62,6 +62,8 @@ test('异域天骄全属性复用遮天渡劫的境界基数与随机区间', ()
   assert.equal(enemy.攻击, Math.trunc(111 * 47.2));
   assert.equal(enemy.防御, Math.trunc(222 * 47.2));
   assert.equal(enemy.血量上限, Math.trunc(333 * 47.2));
+  assert.equal(enemy.速度, 13 * 50);
+  assert.equal(enemy._忽略境界速度加成, true);
 });
 
 test('波数提高敌人数，百杀且全员应援后才击溃士气', () => {

@@ -42,6 +42,7 @@ import { REFINEMENT_ATTRIBUTE_GAIN, applyTianmoCalamityRefinement } from '../../
 import { addRelicToBag, normalizeRelicState } from '../../model/relicSystem.js';
 import { isEvilCultivator } from '../../model/tianjiaoHostility.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
 
 const REFINE_KEY = (qq, kind = 'calamity') => kind === 'overlord'
   ? `xiuxian:foreign-calamity:overlord:refine:${qq}`
@@ -544,6 +545,10 @@ export class ForeignCalamity extends plugin {
       if (!raw) return { message: `当前没有被你镇压、可供炼化的${kind === 'overlord' ? '灾厄魔主' : '域外灾厄'}。` };
       return withPlayerMutationLock(qq, async () => {
         const player = await Read_player(qq);
+        const avatarName = getActiveZhutianAvatarName(player);
+        if (avatarName) {
+          return { message: `当前正装载化身【${avatarName}】，请先发送 #装载化身 本源，再炼化域外本源。` };
+        }
         if (!isEvilCultivator(player)) return { message: '你的魔道修为尚不足以炼化这份域外本源。' };
         const pending = JSON.parse(raw);
         player._foreignCalamityRefines ||= {};

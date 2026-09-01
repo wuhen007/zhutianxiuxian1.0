@@ -12,6 +12,8 @@ import {
 } from '../../model/xiuxian.js';
 import { Add_najie_thing, Add_HP } from '../../model/xiuxian.js';
 import { replyOfficialMessage } from '../../model/officialMessage.js';
+import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 function replyLunhuiConfirmation(e) {
   const text = [
@@ -54,9 +56,18 @@ export class lunhui extends plugin {
     if (!verc({ e })) return false;
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);
+    return withPlayerMutationLock(usr_qq, () => this.lunhuiLocked(e, usr_qq));
+  }
+
+  async lunhuiLocked(e, usr_qq) {
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) return false;
     let player = await data.getData('player', usr_qq);
+    const activeAvatar = getActiveZhutianAvatarName(player);
+    if (activeAvatar) {
+      e.reply(`当前正装载化身【${activeAvatar}】，请先发送 #装载化身 本源，再进行轮回。`);
+      return false;
+    }
     if (!isNotNull(player.lunhui)) {
       player.lunhui = 0;
       await Write_player(usr_qq, player);

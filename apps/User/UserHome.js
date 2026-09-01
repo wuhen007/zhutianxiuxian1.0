@@ -154,7 +154,9 @@ const ROOT_MUTATION_ITEMS = new Set([
   '荒古源血晶',
   '圆神终极本源',
   '先天混沌圣体道胎本源',
+  '圣法碎片',
 ]);
+const ROOT_MUTATION_MEDICINE_TYPES = new Set(['补根', '补天', '灵根']);
 /**
  * 全局变量
  */
@@ -1912,6 +1914,10 @@ async broadcastToAll(player,message) {
     if (!verc({ e })) return false;
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);
+    return withPlayerMutationLock(usr_qq, () => this.Player_useLocked(e, usr_qq));
+  }
+
+  async Player_useLocked(e, usr_qq) {
     //有无存档
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) return false;
@@ -2192,17 +2198,13 @@ if (func == "打开") {
     //看看物品名称有没有设定,是不是瞎说的
     let thing_exist = await foundthing(thing_name);
     const activeAvatar = getActiveZhutianAvatarName(player);
-    if (
-      activeAvatar &&
-      func == '消耗' &&
-      (thing_exist?.type == '洗髓' || ROOT_MUTATION_ITEMS.has(thing_name))
-    ) {
+    const mutatesRoot =
+      (func == '消耗' && (thing_exist?.type == '洗髓' || ROOT_MUTATION_ITEMS.has(thing_name))) ||
+      (func == '服用' && ROOT_MUTATION_MEDICINE_TYPES.has(thing_exist?.type));
+    if (activeAvatar && mutatesRoot) {
       return e.reply(`当前正装载化身【${activeAvatar}】，请先发送 #装载化身 本源，再进行灵根重塑。`);
     }
-    if (
-      player.引灵结果暂存 &&
-      (thing_exist?.type == '洗髓' || ROOT_MUTATION_ITEMS.has(thing_name))
-    ) {
+    if (player.引灵结果暂存 && mutatesRoot) {
       return e.reply('尚有引灵结果未选择，请先发送 #查看引灵结果。');
     }
     let pj = {

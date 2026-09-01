@@ -1,3 +1,5 @@
+import { getActiveZhutianAvatarName } from "./zhutianMirror.js";
+
 export const TUNTIAN_TECHNIQUE = "吞天魔功";
 export const TUNTIAN_SOURCE_TARGET = 10;
 export const SAINT_REMAINS_COOLDOWN_MS = 24 * 60 * 60 * 1000;
@@ -56,6 +58,15 @@ export function ensureTuntianState(player) {
 }
 
 export function getTuntianEligibility(player) {
+  const avatarName = getActiveZhutianAvatarName(player);
+  if (avatarName) {
+    return {
+      ok: false,
+      completed: false,
+      reason: "avatar_loaded",
+      avatarName,
+    };
+  }
   if (player?.灵根?.name === CHAOS_ROOT.name) {
     return {
       ok: false,

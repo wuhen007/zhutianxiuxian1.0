@@ -1,3 +1,5 @@
+import { getActiveZhutianAvatarName } from './zhutianMirror.js';
+
 export const SHENGFA_FRAGMENT = '圣法碎片';
 export const SHENGFA_REFINING = '炼化超脱至宝中';
 export const SHENGFA_REFINE_MS = 480 * 60 * 1000;
@@ -36,6 +38,15 @@ export function isShengfaClaimed(player) {
 
 export function startShengfaRefinement(player, { now = Date.now(), groupId = '' } = {}) {
   if (!player) return { ok: false, message: '玩家数据不存在' };
+  const avatarName = getActiveZhutianAvatarName(player);
+  if (avatarName) {
+    return {
+      ok: false,
+      reason: 'avatar_loaded',
+      avatarName,
+      message: `当前正装载化身【${avatarName}】，请先发送 #装载化身 本源，再炼化圣法碎片。`,
+    };
+  }
   if (isShengfaClaimed(player)) return { ok: false, message: '你已炼化或正在炼化圣法碎片' };
 
   const endTime = now + SHENGFA_REFINE_MS;
@@ -51,6 +62,8 @@ export function startShengfaRefinement(player, { now = Date.now(), groupId = '' 
 export function completeShengfaRefinement(player, now = Date.now()) {
   const state = player?.圣法碎片;
   if (!player || state?.状态 !== '炼化中' || Number(state.完成时间) > now) return { ok: false };
+  const avatarName = getActiveZhutianAvatarName(player);
+  if (avatarName) return { ok: false, reason: 'avatar_loaded', avatarName };
 
   player.学习的功法 = Array.isArray(player.学习的功法) ? player.学习的功法 : [];
   for (const name of SHENGFA_GONGFA) {

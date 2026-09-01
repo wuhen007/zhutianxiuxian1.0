@@ -24,6 +24,8 @@ import {
 } from '../../model/xiuxian.js';
 import { Add_灵石, Add_修为 } from '../../model/xiuxian.js';
 import { recordWenXianTaskProgress } from '../../model/wenxianling.js';
+import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import {
   SOURCE_DUEL_COOLDOWN_MS,
   SOURCE_DUEL_NPCS,
@@ -53,6 +55,15 @@ import {
 let gane_key_user = []; //怡红院限制
 var yazhu = []; //投入
 let gametime = []; //临时游戏CD
+
+function withPlayerLocks(playerIds, task) {
+  const ids = [...new Set(playerIds.map(String))].sort();
+  const acquire = index => index >= ids.length
+    ? task()
+    : withPlayerMutationLock(ids[index], () => acquire(index + 1));
+  return acquire(0);
+}
+
 export class Games extends plugin {
   constructor() {
     super({
@@ -1376,6 +1387,8 @@ async Couple(e) {
         return false;
     }
 
+    return withPlayerLocks([A, B], async () => {
+
     const FUSION_GUARANTEE = 20;               // ★保底次数
     async function getFailCnt(qq) {            // 工具：读失败次数
         return parseInt(await redis.get(`xiuxian:player:${qq}:fusion_fail`) || 0);
@@ -1424,6 +1437,12 @@ async Couple(e) {
 
     let playerA = await Read_player(A);
     let playerB = await Read_player(B);
+
+    const loadedPlayer = [playerA, playerB].find(player => getActiveZhutianAvatarName(player));
+    if (loadedPlayer) {
+        const avatarName = getActiveZhutianAvatarName(loadedPlayer);
+        return e.reply(`参与者当前正装载化身【${avatarName}】，请先发送 #装载化身 本源，再进行双修灵根融合。`);
+    }
 
     // ========  融合检测变量  ========
     let isShenDao = playerA.灵根.name === "命运神道体";
@@ -1585,6 +1604,7 @@ if (!fusionHit) {
         e.reply('你们双修时心神合一，但是不知道哪来的小孩，惊断了状态');
     }
     return false;
+    });
 }
 }
 

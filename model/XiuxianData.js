@@ -8,6 +8,11 @@ import {
 } from './tribulationLock.js';
 import { writeJsonAtomically } from '../utils/atomicJson.js';
 import { assertGlobalInitIdle } from '../utils/globalInitGuard.js';
+import {
+  assertZhutianAvatarRootWriteAllowed,
+  assertZhutianMirrorWriteCurrent,
+  markZhutianMirrorSnapshot,
+} from '../utils/zhutianMirrorVersion.js';
 import { mergeBattleSkillLists } from './battleSkillRegistry.js';
 
 /*
@@ -591,7 +596,8 @@ this.gongfa_list = JSON.parse(
     //将字符串数据转变成json格式
     data = JSON.parse(data);
     if (user_qq && ['player', 'equipment', 'najie'].includes(file_name)) {
-      return markTribulationSnapshot(user_qq, data);
+      const snapshot = file_name === 'player' ? markZhutianMirrorSnapshot(data) : data;
+      return markTribulationSnapshot(user_qq, snapshot);
     }
     return data;
   }
@@ -663,6 +669,11 @@ this.gongfa_list = JSON.parse(
       dir = path.join(file_path + '/' + file_name + '.json');
     }
     if (fs.existsSync(dir)) {
+      if (file_name === 'player') {
+        const previousPlayer = JSON.parse(fs.readFileSync(dir, 'utf8'));
+        assertZhutianMirrorWriteCurrent(previousPlayer, data);
+        assertZhutianAvatarRootWriteAllowed(previousPlayer, data);
+      }
       writeJsonAtomically(dir, data);
     }
     return;

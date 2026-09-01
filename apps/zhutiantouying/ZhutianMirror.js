@@ -1,16 +1,11 @@
-import path from 'node:path';
 import { plugin } from '../../api/api.js';
 import {
   Add_najie_thing,
-  __PATH,
   channel,
   existplayer,
   get_random_talent,
-  invalidateBattleEquipmentCache,
   player_efficiency,
-  Read_equipment,
   Read_player,
-  Write_equipment,
   Write_player,
 } from '../../model/xiuxian.js';
 import {
@@ -22,6 +17,7 @@ import {
   exploreDecadeWorld,
   exploreMitakihara,
   exploreTomoeda,
+  inspectZhutianAvatarSwitchCooldown,
   inspectZhutianAvatarAdvancement,
   loadZhutianAvatar,
   MITAKIHARA_LOCATIONS,
@@ -34,6 +30,8 @@ import {
   setClowCardDeck,
   setDecadeCardDeck,
   TOMOEDA_LOCATIONS,
+  ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS,
+  ZHUTIAN_AVATAR_SWITCH_ENERGY_COST,
 } from '../../model/zhutianMirror.js';
 import {
   beginExplorationStory,
@@ -47,16 +45,29 @@ import {
 } from '../../model/exclusiveEquipmentSets.js';
 import { replyOfficialMessage } from '../../model/officialMessage.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
-import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
+import {
+  compareAndDeleteRedisJson,
+} from '../../utils/redisJsonCas.js';
+import { migrateLegacyPlayerActionKey } from '../../utils/playerActionKey.js';
 
 const EXPLORATION_STORY_ACTION = '诸天镜探索剧情';
 
 async function getPlayerId(e) {
-  return channel(e.user_id.toString().replace('qg_', ''));
+  const rawPlayerId = e.user_id.toString();
+  const playerId = await channel(rawPlayerId.replace('qg_', ''));
+  await migrateLegacyPlayerActionKey(redis, playerId, rawPlayerId);
+  return playerId;
 }
 
-function getActionKey(e) {
-  return `xiuxian:player:${e.user_id}:action`;
+function getActionKey(playerId) {
+  return `xiuxian:player:${playerId}:action`;
+}
+
+function formatCooldown(ms) {
+  const totalSeconds = Math.max(1, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}分${seconds}秒`;
 }
 
 function pendingActionMessage(actionStr) {
@@ -112,10 +123,11 @@ function replyExplorationResult(e, rows, story) {
   });
 }
 
-async function persistExploration(playerId, player, e, story) {
-  const actionKey = getActionKey(e);
+async function persistExploration(playerId, player, story) {
+  const actionKey = getActionKey(playerId);
+  let actionRaw;
   if (story) {
-    await redis.set(actionKey, JSON.stringify({
+    actionRaw = JSON.stringify({
       action: EXPLORATION_STORY_ACTION,
       playerId,
       world: story.world,
@@ -123,14 +135,16 @@ async function persistExploration(playerId, player, e, story) {
       title: story.title,
       maxChoice: story.options.length,
       resolutionId: `${Date.now()}:${playerId}:${story.id}`,
-    }), { EX: 15 * 60 });
+    });
+    if (!await redis.set(actionKey, actionRaw, { EX: 15 * 60, NX: true })) return false;
   }
   try {
     await Write_player(playerId, player);
   } catch (error) {
-    if (story) await redis.del(actionKey);
+    if (story) await compareAndDeleteRedisJson(redis, actionKey, actionRaw);
     throw error;
   }
+  return true;
 }
 
 function formatMaterials(system) {
@@ -207,7 +221,8 @@ export class ZhutianMirrorSystem extends plugin {
   }
 
   async handleExplorationStoryChoice(e) {
-    const actionKey = getActionKey(e);
+    const playerId = await getPlayerId(e);
+    const actionKey = getActionKey(playerId);
     const actionStr = await redis.get(actionKey);
     if (!actionStr) return false;
 
@@ -237,18 +252,18 @@ export class ZhutianMirrorSystem extends plugin {
           resolutionId: latest.resolutionId,
         });
         if (!result.ok) {
-          await redis.del(actionKey);
+          await compareAndDeleteRedisJson(redis, actionKey, latestStr);
           await e.reply('这段异界奇遇已经消散，请重新探索。');
           return true;
         }
         if (result.alreadyResolved) {
-          await redis.del(actionKey);
+          await compareAndDeleteRedisJson(redis, actionKey, latestStr);
           await e.reply(`【${result.title}】已经完成结算，本次没有重复改变存档。`);
           return true;
         }
 
         await Write_player(action.playerId, player);
-        await redis.del(actionKey);
+        await compareAndDeleteRedisJson(redis, actionKey, latestStr);
         const rows = [`【异界奇遇·${result.title}】`, result.result];
         if (result.changes.length > 0) rows.push(`影响：${result.changes.join('，')}`);
         if (result.nextTitle) rows.push(`事件将继续：下次探索会进入【${result.nextTitle}】。`);
@@ -267,7 +282,7 @@ export class ZhutianMirrorSystem extends plugin {
     if (!await existplayer(playerId)) return e.reply('玩家不存在，请先创建角色');
     return withPlayerMutationLock(playerId, async () => {
       const player = await Read_player(playerId);
-      const system = ensureZhutianMirrorSystem(player);
+      const system = ensureZhutianMirrorSystem(player, { bumpOnChange: true });
       await Write_player(playerId, player);
       if (!system.已绑定) {
         return e.reply('【诸天镜】尚未绑定\n在天机阁兑换诸天镜后，使用 #使用诸天镜 完成绑定。');
@@ -275,6 +290,7 @@ export class ZhutianMirrorSystem extends plugin {
       const tier = MIRROR_TIER_CONFIG[system.镜阶];
       const next = MIRROR_REFINEMENT_REQUIREMENTS[system.镜阶];
       const relics = Object.entries(system.异界遗物).filter(([, amount]) => amount > 0);
+      const switchCooldown = inspectZhutianAvatarSwitchCooldown(player);
       const rows = [
         `【诸天镜】${tier.name}`,
         `镜能：${system.镜能}/${tier.energyMax}（每日恢复）`,
@@ -282,6 +298,9 @@ export class ZhutianMirrorSystem extends plugin {
         `世界印记：${system.世界印记.length}`,
         `已解锁世界：${system.已解锁世界.join('、') || '无'}`,
         `当前化身：${system.当前化身 || '本源'}`,
+        switchCooldown.ready
+          ? `化身切换：可用（消耗${ZHUTIAN_AVATAR_SWITCH_ENERGY_COST}镜能，切换后冷却${ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS / 60_000}分钟）`
+          : `化身切换：冷却剩余${formatCooldown(switchCooldown.remainingMs)}`,
       ];
       const entries = ['#友枝町'];
       if (system.镜阶 >= 2) entries.push('#见泷原');
@@ -304,7 +323,7 @@ export class ZhutianMirrorSystem extends plugin {
     if (!await existplayer(playerId)) return e.reply('玩家不存在，请先创建角色');
     return withPlayerMutationLock(playerId, async () => {
       const player = await Read_player(playerId);
-      const system = ensureZhutianMirrorSystem(player);
+      const system = ensureZhutianMirrorSystem(player, { bumpOnChange: true });
       await Write_player(playerId, player);
       if (!system.已绑定) return e.reply('请先在天机阁兑换并使用诸天镜。');
 
@@ -337,7 +356,7 @@ export class ZhutianMirrorSystem extends plugin {
     if (!location) return this.tomoedaMap(e);
 
     return withPlayerMutationLock(playerId, async () => {
-      const pendingAction = await redis.get(getActionKey(e));
+      const pendingAction = await redis.get(getActionKey(playerId));
       if (pendingAction) return e.reply(pendingActionMessage(pendingAction));
       const player = await Read_player(playerId);
       const result = exploreTomoeda(player, location);
@@ -349,7 +368,9 @@ export class ZhutianMirrorSystem extends plugin {
       }
 
       const story = beginExplorationStory(player, '魔法少女樱', location);
-      await persistExploration(playerId, player, e, story);
+      if (!await persistExploration(playerId, player, story)) {
+        return e.reply(pendingActionMessage(await redis.get(getActionKey(playerId))));
+      }
       await player_efficiency(playerId);
       const rows = [
         `【友枝町·${location}】`,
@@ -392,7 +413,7 @@ export class ZhutianMirrorSystem extends plugin {
     if (!await existplayer(playerId)) return e.reply('玩家不存在，请先创建角色');
     return withPlayerMutationLock(playerId, async () => {
       const player = await Read_player(playerId);
-      const system = ensureZhutianMirrorSystem(player);
+      const system = ensureZhutianMirrorSystem(player, { bumpOnChange: true });
       await Write_player(playerId, player);
       if (!system.已绑定) return e.reply('请先在天机阁兑换并使用诸天镜。');
 
@@ -425,7 +446,7 @@ export class ZhutianMirrorSystem extends plugin {
     if (!location) return this.mitakiharaMap(e);
 
     return withPlayerMutationLock(playerId, async () => {
-      const pendingAction = await redis.get(getActionKey(e));
+      const pendingAction = await redis.get(getActionKey(playerId));
       if (pendingAction) return e.reply(pendingActionMessage(pendingAction));
       const player = await Read_player(playerId);
       const result = exploreMitakihara(player, location);
@@ -437,7 +458,9 @@ export class ZhutianMirrorSystem extends plugin {
       }
 
       const story = beginExplorationStory(player, '魔法少女小圆', location);
-      await persistExploration(playerId, player, e, story);
+      if (!await persistExploration(playerId, player, story)) {
+        return e.reply(pendingActionMessage(await redis.get(getActionKey(playerId))));
+      }
       await player_efficiency(playerId);
       const rows = [
         `【见泷原·${location}】`,
@@ -491,7 +514,7 @@ export class ZhutianMirrorSystem extends plugin {
     if (!await existplayer(playerId)) return e.reply('玩家不存在，请先创建角色');
     return withPlayerMutationLock(playerId, async () => {
       const player = await Read_player(playerId);
-      const system = ensureZhutianMirrorSystem(player);
+      const system = ensureZhutianMirrorSystem(player, { bumpOnChange: true });
       await Write_player(playerId, player);
       if (!system.已绑定) return e.reply('请先在天机阁兑换并使用诸天镜。');
 
@@ -525,7 +548,7 @@ export class ZhutianMirrorSystem extends plugin {
     if (!location) return this.decadeMap(e);
 
     return withPlayerMutationLock(playerId, async () => {
-      const pendingAction = await redis.get(getActionKey(e));
+      const pendingAction = await redis.get(getActionKey(playerId));
       if (pendingAction) return e.reply(pendingActionMessage(pendingAction));
       const player = await Read_player(playerId);
       const result = exploreDecadeWorld(player, location);
@@ -538,7 +561,9 @@ export class ZhutianMirrorSystem extends plugin {
       }
 
       const story = beginExplorationStory(player, '假面骑士帝骑', location);
-      await persistExploration(playerId, player, e, story);
+      if (!await persistExploration(playerId, player, story)) {
+        return e.reply(pendingActionMessage(await redis.get(getActionKey(playerId))));
+      }
       await player_efficiency(playerId);
       const rows = [
         `【骑士世界·${location}】`,
@@ -629,7 +654,7 @@ export class ZhutianMirrorSystem extends plugin {
     if (!await existplayer(playerId)) return e.reply('玩家不存在，请先创建角色');
     return withPlayerMutationLock(playerId, async () => {
       const player = await Read_player(playerId);
-      const system = ensureZhutianMirrorSystem(player);
+      const system = ensureZhutianMirrorSystem(player, { bumpOnChange: true });
       await Write_player(playerId, player);
       if (!system.已绑定) return e.reply('请先绑定诸天镜。');
       if (player.诸天化身谱.length === 0) {
@@ -651,7 +676,12 @@ export class ZhutianMirrorSystem extends plugin {
       if (player.诸天化身谱.some(item => item.name === '鹿目圆')) goals.push(getMadokaGoal(player));
       if (player.诸天化身谱.some(item => item.name === '门矢士')) goals.push(getDecadeGoal(player));
       if (goals.length > 0) rows.push('', '【阶段目标】', ...goals);
-      return e.reply(['【诸天化身谱】', ...rows, '', '使用 #装载化身 化身名；使用 #装载化身 本源 返回原灵根。'].join('\n'));
+      return e.reply([
+        '【诸天化身谱】',
+        ...rows,
+        '',
+        `使用 #装载化身 化身名；使用 #装载化身 本源 返回原灵根。每次有效切换消耗${ZHUTIAN_AVATAR_SWITCH_ENERGY_COST}镜能，冷却${ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS / 60_000}分钟。`,
+      ].join('\n'));
     });
   }
 
@@ -667,17 +697,25 @@ export class ZhutianMirrorSystem extends plugin {
       if (!result.ok) {
         if (result.reason === 'unbound') return e.reply('请先绑定诸天镜。');
         if (result.reason === 'origin') return e.reply('旧版诸天灵根迁移时未留下本源记录，可发送 #重新获取灵根 进行一次性补领。');
+        if (result.reason === 'root') return e.reply('化身谱中的灵根数据异常，本次未消耗镜能，请联系管理员修复。');
+        if (result.reason === 'cooldown') return e.reply(`诸天镜映照尚未稳定，${formatCooldown(result.remainingMs)}后才能再次切换化身。`);
+        if (result.reason === 'energy') return e.reply(`镜能不足，切换化身需要${ZHUTIAN_AVATAR_SWITCH_ENERGY_COST}点镜能。`);
         return e.reply(`化身谱中尚未收录【${avatarName}】，使用 #诸天化身 查看。`);
       }
+      const switched = !result.unchanged;
 
-      const transaction = new FileRollbackTransaction();
-      transaction.capture(path.join(__PATH.player_path, `${playerId}.json`));
-      transaction.capture(path.join(__PATH.najie_path, `${playerId}.json`));
-      transaction.capture(path.join(__PATH.equipment_path, `${playerId}.json`));
-      let set;
+      const set = getZhutianExclusiveEquipmentSet(result.name);
+      if (switched) {
+        try {
+          await Write_player(playerId, player);
+        } catch (error) {
+          console.error(`[诸天镜] 装载化身失败 player=${playerId} avatar=${avatarName}`, error);
+          return e.reply('诸天镜映照中断，化身切换未落盘，本次未消耗镜能，请重新装载。');
+        }
+      }
+
+      let syncError;
       try {
-        await Write_player(playerId, player);
-        set = getZhutianExclusiveEquipmentSet(result.name);
         if (set) {
           for (const piece of [set.weapon, set.armor, set.treasure]) {
             await Add_najie_thing(playerId, piece.name, '装备', 1, 6, 1, {
@@ -685,28 +723,19 @@ export class ZhutianMirrorSystem extends plugin {
             });
           }
         }
-        const equipment = await Read_equipment(playerId);
-        await Write_equipment(playerId, equipment);
         await player_efficiency(playerId);
-        transaction.commit();
       } catch (error) {
-        let rollbackError;
-        try {
-          transaction.rollback();
-        } catch (caught) {
-          rollbackError = caught;
-        } finally {
-          invalidateBattleEquipmentCache(playerId);
-        }
-        console.error(`[诸天镜] 装载化身失败 player=${playerId} avatar=${avatarName}`, error);
-        if (rollbackError) {
-          console.error(`[诸天镜] 装载化身回滚失败 player=${playerId} avatar=${avatarName}`, rollbackError);
-          return e.reply('诸天镜映照中断且存档回滚异常，请联系管理员检查该玩家的灵根、装备与纳戒存档。');
-        }
-        return e.reply('诸天镜映照中断，灵根、装备与纳戒状态已恢复，请重新装载。');
+        syncError = error;
+        console.error(`[诸天镜] 化身附属状态同步失败 player=${playerId} avatar=${avatarName}`, error);
       }
-      const rows = [`诸天镜映照己身，已装载【${result.name}】。`];
-      if (set) rows.push(`专属套装【${set.setName}】已同步至纳戒，穿齐后按当前化身阶段提升全属性。`);
+      const rows = switched
+        ? [
+          `诸天镜映照己身，已装载【${result.name}】。`,
+          `镜能 -${result.energyCost}，剩余${result.remainingEnergy}；下次切换需等待${ZHUTIAN_AVATAR_SWITCH_COOLDOWN_MS / 60_000}分钟。`,
+        ]
+        : [`当前已经装载【${result.name}】，未消耗镜能。`];
+      if (set && !syncError) rows.push(`专属套装【${set.setName}】已同步至纳戒，穿齐后按当前化身阶段提升全属性。`);
+      if (syncError) rows.push('化身状态已保存；专属装备或修炼效率尚待同步，再次发送相同装载指令即可续接。');
       return e.reply(rows.join('\n'));
     });
   }

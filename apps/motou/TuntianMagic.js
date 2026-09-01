@@ -15,6 +15,7 @@ import {
   getTuntianEligibility,
   hasTuntianTechnique,
 } from "../../model/tuntianMagic.js";
+import { withPlayerMutationLock } from "../../utils/playerMutationLock.js";
 
 const activeDevours = new Set();
 
@@ -23,6 +24,13 @@ function formatDuration(ms) {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   return `${hours ? `${hours}小时` : ""}${minutes ? `${minutes}分钟` : ""}`;
+}
+
+function formatTuntianFailure(result) {
+  if (result?.reason === "avatar_loaded") {
+    return `当前正装载化身【${result.avatarName}】，请先发送 #装载化身 本源，再运转吞天魔功。`;
+  }
+  return result?.reason || "吞天魔功暂时无法运转。";
 }
 
 export class TuntianMagic extends plugin {
@@ -58,7 +66,7 @@ export class TuntianMagic extends plugin {
       return e.reply("【吞天魔功】万般本源归一，你已蜕变为【混沌体】。");
     }
     const eligibility = getTuntianEligibility(player);
-    if (!eligibility.ok) return e.reply(eligibility.reason);
+    if (!eligibility.ok) return e.reply(formatTuntianFailure(eligibility));
 
     const state = ensureTuntianState(player);
     const availability = getSaintRemainsAvailability(player);
@@ -82,14 +90,16 @@ export class TuntianMagic extends plugin {
     if (!verc({ e })) return false;
     const result = await this.getPlayer(e);
     if (!result) return false;
-    const { qq, player } = result;
+    const { qq } = result;
     if (activeDevours.has(qq))
       return e.reply("吞天魔功正在炼化本源，请稍后再试。");
 
     activeDevours.add(qq);
     try {
+      return await withPlayerMutationLock(qq, async () => {
+      const player = await Read_player(qq);
       const eligibility = getTuntianEligibility(player);
-      if (!eligibility.ok) return e.reply(eligibility.reason);
+      if (!eligibility.ok) return e.reply(formatTuntianFailure(eligibility));
       if (Number(player.power_place) !== 2) {
         return e.reply("先贤祖陵皆在遮天位面，你需先抵达北斗星域。");
       }
@@ -116,6 +126,9 @@ export class TuntianMagic extends plugin {
         ];
       const devour = attemptSaintRemains(player, holyLand);
       if (!devour.attempted) {
+        if (devour.reason === "avatar_loaded") {
+          return e.reply(formatTuntianFailure(devour));
+        }
         const wait =
           devour.waitMs > 0 ? `，还需${formatDuration(devour.waitMs)}` : "";
         return e.reply(`${devour.reason}${wait}`);
@@ -144,6 +157,7 @@ export class TuntianMagic extends plugin {
           .filter(Boolean)
           .join("\n")
       );
+      });
     } catch (error) {
       console.error("吞噬先贤遗骸失败:", error);
       return e.reply("吞天魔功运转异常，本次未能吞噬本源。");

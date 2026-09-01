@@ -37,6 +37,27 @@ test('圣法碎片炼化480分钟且不提升境界', () => {
   assert.ok(SHENGFA_GONGFA.every(name => player.学习的功法.includes(name)));
 });
 
+test('装载诸天化身时圣法碎片不会开始或完成改根', () => {
+  const blockedStart = {
+    学习的功法: [],
+    灵根: { name: '木之本樱' },
+    诸天镜系统: { 当前化身: '木之本樱' },
+  };
+  const startResult = startShengfaRefinement(blockedStart, { now: 1000 });
+  assert.equal(startResult.reason, 'avatar_loaded');
+  assert.equal(blockedStart.圣法碎片, undefined);
+
+  const player = { 学习的功法: [], 灵根: { name: '原灵根' } };
+  const started = startShengfaRefinement(player, { now: 1000 });
+  player.诸天镜系统 = { 当前化身: '鹿目圆' };
+  player.灵根 = { name: '鹿目圆' };
+  const rootBeforeSettlement = structuredClone(player.灵根);
+  const completion = completeShengfaRefinement(player, started.endTime);
+  assert.equal(completion.reason, 'avatar_loaded');
+  assert.deepEqual(player.灵根, rootBeforeSettlement);
+  assert.equal(player.圣法碎片.状态, '炼化中');
+});
+
 test('仅无化如是能以超低概率获得机缘', () => {
   assert.equal(rollShengfaDungeonEncounter({ 天资等级: '万古无双' }, { random: () => 0 }).encountered, false);
   const player = { 天资等级: '无化如是' };

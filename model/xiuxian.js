@@ -3,6 +3,13 @@ import path from 'path';
 import puppeteer from '../../../lib/puppeteer/puppeteer.js';
 import { writeJsonAtomically } from '../utils/atomicJson.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
+import {
+  assertZhutianAvatarRootWriteAllowed,
+  assertZhutianMirrorWriteCurrent,
+  bumpZhutianMirrorVersion,
+  markZhutianMirrorSnapshot,
+} from '../utils/zhutianMirrorVersion.js';
+import { getActiveZhutianAvatarName } from './zhutianMirror.js';
 import { assertGlobalInitIdle } from '../utils/globalInitGuard.js';
 import { hasPendingSecretPlaceSettlement } from './secretPlaceAddiction.js';
 
@@ -516,7 +523,7 @@ export async function Read_player(usr_qq) {
     player.先天至宝失效时间 = 0;
   }
   ensureDefaultCoordinates(player);
-  return markTribulationSnapshot(usr_qq, player);
+  return markTribulationSnapshot(usr_qq, markZhutianMirrorSnapshot(player));
 }
 export async function LevelTask(e, power_n, power_m, power_Grade, aconut, illusionRate) {
   let usr_qq = e.user_id.toString().replace('qg_','');
@@ -1214,6 +1221,7 @@ export async function dujie(user_qq) {
 }
 //写入存档信息,第二个参数是一个JavaScript对象
 export async function Write_player(usr_qq, player, options = {}) {
+  return withPlayerMutationLock(usr_qq, async () => {
   assertGlobalInitIdle();
   await assertTribulationWriteAllowed(usr_qq, player);
   let dir = path.join(__PATH.player_path, `${usr_qq}.json`);
@@ -1221,8 +1229,11 @@ export async function Write_player(usr_qq, player, options = {}) {
   if (fs.existsSync(dir)) {
     try {
       previousPlayer = JSON.parse(fs.readFileSync(dir, 'utf8'));
+      assertZhutianMirrorWriteCurrent(previousPlayer, player);
+      assertZhutianAvatarRootWriteAllowed(previousPlayer, player);
       if (options.trackDailyTask !== false) updateDailyTaskLingshiProgress(previousPlayer, player);
     } catch (error) {
+      if (['ZHUTIAN_MIRROR_STALE_WRITE', 'ZHUTIAN_AVATAR_ROOT_MUTATION'].includes(error?.code)) throw error;
       console.warn(`记录玩家 ${usr_qq} 每日任务灵石流水失败:`, error);
     }
   }
@@ -1253,7 +1264,9 @@ export async function Write_player(usr_qq, player, options = {}) {
   }
   releaseJuelingLifespanForAuthority(player);
   writeJsonAtomically(dir, player);
+  markZhutianMirrorSnapshot(player);
   return;
+  });
 }
 
 function normalizeEquipmentSlot(slot) {
@@ -3317,14 +3330,25 @@ export async function get_player_img(e) {
     player.宣言 = '这个人很懒什么都没写';
   }
   if (player.灵根 == null || player.灵根 == undefined) {
-    player.灵根 = await get_random_talent();
+    const avatarName = getActiveZhutianAvatarName(player);
+    const avatarRoot = player.诸天化身谱?.find(item => item.name === avatarName)?.root;
+    if (avatarName) {
+      if (!avatarRoot || typeof avatarRoot !== 'object' || !avatarRoot.name) {
+        await e.reply('当前化身的灵根快照异常，请联系管理员修复诸天化身谱。');
+        return;
+      }
+      player.灵根 = structuredClone(avatarRoot);
+      bumpZhutianMirrorVersion(player);
+    } else {
+      player.灵根 = await get_random_talent();
+    }
   }
   if (player.天资等级 == null || player.天资等级 == undefined) {
     const aptitude = await get_random_aptitude();
     player.天资等级 = aptitude.grade;
     player.天资评价 = aptitude.evaluation;
   }
-  data.setData('player', usr_qq, player);
+  await Write_player(usr_qq, player);
   await player_efficiency(usr_qq); // 注意这里刷新了修炼效率提升
   if ((await player.linggenshow) != 0) {
     player.灵根.type = '无';
@@ -13693,6 +13717,7 @@ export async function synchronization(e) {
     transaction.capture(path.join(__PATH.equipment_path, `${usr_qq}.json`));
     transaction.capture(path.join(__PATH.danyao_path, `${usr_qq}.json`));
     let player = await data.getData('player', usr_qq);
+    const activeZhutianAvatar = getActiveZhutianAvatarName(player);
     if (isTianmoHuashengPhysique(player)) {
       ensureTianmoHuashengState(player, {
         extraLifeSource: getMinggeEffects(player, data.minggeList).生命本源额外,
@@ -13703,7 +13728,7 @@ export async function synchronization(e) {
     
     // ========== 灵根数据同步 ==========
     // 检查玩家灵根数据是否需要更新
-    if (player.灵根 && isNotNull(player.灵根)) {
+    if (!activeZhutianAvatar && player.灵根 && isNotNull(player.灵根)) {
       // 查找新版本的灵根数据
       const newTalent = findTalentSynchronizationMatch(data.talent_list, player.灵根);
       
@@ -13967,14 +13992,14 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
     const linggeng = player.灵根?.name
       ? data.talent_list.find(item => item.name == player.灵根.name)
       : null;
-    if (linggeng) {
+    if (!activeZhutianAvatar && linggeng) {
       player.灵根 = {
         ...player.灵根,
         ...linggeng,
       };
     }
 
-    if (player.隐藏灵根) {
+    if (!activeZhutianAvatar && player.隐藏灵根) {
       const hiddenTalent = data.yincang.find(
         item => item.name == player.隐藏灵根.name
       );

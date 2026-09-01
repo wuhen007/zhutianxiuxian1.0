@@ -69,6 +69,21 @@ export function getXianguUpperTribulationHorrorMultiplier(fromLevelId) {
   return XIANGU_UPPER_TRIBULATION_HORROR_MULTIPLIERS[levelId] || 1;
 }
 
+export const XIANGU_STAGE_DAMAGE_BUDGET_RATE = 1.1;
+const XIANGU_STAGE_FINAL_WAVE_WEIGHT = 1.5;
+
+/**
+ * 将连续劫数的伤害上限约束在同一阶段预算内，末道仍保留更高权重。
+ * 预算在灵根、帝兵等减伤前结算，因此常驻减伤仍直接决定能否渡过。
+ */
+export function getXianguStageWaveCapRate(waveIndex, waveCount) {
+  const count = Math.max(1, Math.trunc(Number(waveCount) || 1));
+  const index = Math.max(0, Math.min(count - 1, Math.trunc(Number(waveIndex) || 0)));
+  const totalWeight = count - 1 + XIANGU_STAGE_FINAL_WAVE_WEIGHT;
+  const weight = index === count - 1 ? XIANGU_STAGE_FINAL_WAVE_WEIGHT : 1;
+  return XIANGU_STAGE_DAMAGE_BUDGET_RATE * weight / totalWeight;
+}
+
 /**
  * 保留 15~30 倍原始劫威，同时将单道肉身承压平滑压入可渡区间。
  * 普通道上限随境界从 18% 提升至 45%，阶段终结道从 55% 提升至 85%。
@@ -79,6 +94,7 @@ export function calculateXianguHorrorWavePower({
   maxHp,
   multiplier = 1,
   finalWave = false,
+  maxDamageRate,
 }) {
   const normalizedMultiplier = Math.max(1, Number(multiplier) || 1);
   const rawDamage = Math.max(1, Number(baseDamage) || 1) * normalizedMultiplier;
@@ -93,9 +109,13 @@ export function calculateXianguHorrorWavePower({
   }
 
   const progress = Math.max(0, Math.min(1, (normalizedMultiplier - 15) / 15));
-  const capRate = finalWave
+  const defaultCapRate = finalWave
     ? 0.55 + progress * 0.30
     : 0.18 + progress * 0.27;
+  const requestedCapRate = Number(maxDamageRate);
+  const capRate = Number.isFinite(requestedCapRate) && requestedCapRate > 0
+    ? Math.min(defaultCapRate, requestedCapRate)
+    : defaultCapRate;
   const cap = Math.max(1, Number(maxHp) || 1) * capRate;
   const damage = cap * (1 - Math.exp(-rawDamage / cap));
 

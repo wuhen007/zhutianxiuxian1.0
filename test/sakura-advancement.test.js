@@ -15,6 +15,11 @@ process.chdir(fileURLToPath(new URL('../../..', import.meta.url)));
 
 const { SakuraAdvancementSystem } = await import('../apps/zhutianjing/mokashaonv.js');
 
+test.after(async () => {
+  const config = (await import('../../../lib/config/config.js')).default;
+  await Promise.all(Object.values(config.watcher).map(watcher => watcher.close()));
+});
+
 function createMissingPlayerEvent() {
   return {
     isGroup: true,

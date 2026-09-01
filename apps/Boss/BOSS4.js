@@ -67,6 +67,7 @@ import { getDouziMimicChance, tryLearnTianjiaoGongfa } from '../../model/gongfaP
 import { getExtraCultivationLevelSum } from '../../model/extraCultivation.js';
 import { getTianjiaoRealmTier } from '../../model/realmAuthority.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
 import { replyOfficialMessage } from '../../model/officialMessage.js';
 import { addRelicToBag, createFishKingRelic } from '../../model/relicSystem.js';
 import {
@@ -840,6 +841,12 @@ export class BOSS4 extends plugin {
       if (!await this.claimPendingEncounter(pending)) return e.reply('这次处置正在结算，请稍候。');
       try {
         const player = await Read_player(qq);
+        if (mode === 'refine') {
+          const avatarName = getActiveZhutianAvatarName(player);
+          if (avatarName) {
+            return e.reply(`当前正装载化身【${avatarName}】，请先发送 #装载化身 本源，再炼化天骄本源。`);
+          }
+        }
         if (!isEvilCultivator(player)) return e.reply('你的魔道修为不足以施展这种处置。');
         if (mode === 'soul-search' && !hasSoulSearchTechnique(player)) {
           return e.reply('你尚未掌握【搜魂大法】。');
@@ -2209,13 +2216,17 @@ export class BOSS4 extends plugin {
         await e.reply(rewardMsg.join('\n'));
 
         if (tianjiaoDefeated) {
-          const latestPlayer = await Read_player(usr_qq);
-          const passTrial = recordWenXianTrial(latestPlayer, 'tianjiao');
-          const devour = absorbTuntianSource(latestPlayer, {
-            类型: '天骄本源',
-            目标: tianjiaoName,
+          const progression = await withPlayerMutationLock(usr_qq, async () => {
+            const latestPlayer = await Read_player(usr_qq);
+            const passTrial = recordWenXianTrial(latestPlayer, 'tianjiao');
+            const devour = absorbTuntianSource(latestPlayer, {
+              类型: '天骄本源',
+              目标: tianjiaoName,
+            });
+            if (passTrial.changed || devour.gained) await Write_player(usr_qq, latestPlayer);
+            return { devour };
           });
-          if (passTrial.changed || devour.gained) await Write_player(usr_qq, latestPlayer);
+          const { devour } = progression;
           if (devour.gained) {
             await e.reply([
               '【吞天魔功·猎杀天骄】',
@@ -2223,6 +2234,8 @@ export class BOSS4 extends plugin {
               `吞天本源：${devour.count}/${devour.target}｜魔道值 +20`,
               devour.evolved ? '万般体质熔炼归一，你已蜕变为【混沌体】！' : '',
             ].filter(Boolean).join('\n'));
+          } else if (devour.reason === 'avatar_loaded') {
+            await e.reply(`当前正装载化身【${devour.avatarName}】，本次未吸收天骄本源；请先发送 #装载化身 本源。`);
           }
         }
 
