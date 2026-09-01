@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -6,6 +7,7 @@ import {
   canBreakthroughXianguRealmHere,
   XIANGU_REALM_ROUTES,
   hasXianguGongfa,
+  resolveXianguBreakthroughCommand,
   settleXianguWaveDamage,
 } from '../apps/SecretPlace/xianguTribulationSettlement.js';
 
@@ -155,4 +157,26 @@ test('仙古上位境界路由完整接通斩我、遁一和至尊', () => {
       [15, '至尊境', '_runZhizunTribulation'],
     ],
   );
+});
+
+test('遁一境的冲关与冲关极境都进入至尊路并在写档前升至15级', () => {
+  for (const command of ['#冲关', '#冲关极境']) {
+    const resolved = resolveXianguBreakthroughCommand(14, command.includes('极境'));
+    assert.equal(resolved.type, 'realm');
+    assert.equal(resolved.method, 'breakthroughUpperRealm');
+    assert.equal(resolved.route.targetLevelId, 15);
+    assert.equal(resolved.route.targetName, '至尊境');
+  }
+
+  assert.equal(resolveXianguBreakthroughCommand(12, true).method, 'breakthroughJiutianShidiExtreme');
+  assert.equal(resolveXianguBreakthroughCommand(13, true).method, 'breakthroughZhanxianExtreme');
+
+  const source = readFileSync(new URL('../apps/User/xiangujinshi.js', import.meta.url), 'utf8');
+  const emperorGate = source.indexOf("canEnterQuasiEmperor(player, 'xiangu')");
+  const routeDispatch = source.indexOf('const commandRoute = resolveXianguBreakthroughCommand');
+  const start = source.indexOf('async breakthroughUpperRealm');
+  const assignment = source.indexOf('player.xiangulevel_id = breakthrough.targetLevelId;', start);
+  const persistence = source.indexOf('await Write_player(usr_qq, player);', assignment);
+  assert.ok(emperorGate >= 0 && routeDispatch > emperorGate);
+  assert.ok(start >= 0 && assignment > start && persistence > assignment);
 });

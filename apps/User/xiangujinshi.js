@@ -30,7 +30,10 @@ import {
   channel
 } from '../../model/xiuxian.js';
 import { XianguTribulation, XIANGU_REALM_ROUTES } from '../SecretPlace/xianguTribulation.js';
-import { canBreakthroughXianguRealmHere } from '../SecretPlace/xianguTribulationSettlement.js';
+import {
+  canBreakthroughXianguRealmHere,
+  resolveXianguBreakthroughCommand,
+} from '../SecretPlace/xianguTribulationSettlement.js';
 import {
   ensureXianqiState,
   getNextXianqiTrial,
@@ -375,40 +378,8 @@ if (player.xiangulevel_id === 4) {
            return await this.breakthroughZhenyiRealm(e, usr_qq, player);
         }
     }
-    if (player.xiangulevel_id === 9) {
-        return await this.breakthroughUpperRealm(e, usr_qq, player);
-    }
-    if (player.xiangulevel_id === 10) {
-        return await this.breakthroughUpperRealm(e, usr_qq, player);
-    }
-    if (player.xiangulevel_id === 11) {
-        return await this.breakthroughUpperRealm(e, usr_qq, player);
-    }
-    if (player.xiangulevel_id === 12) {
-        if (isExtreme) {
-            return await this.breakthroughJiutianShidiExtreme(e, usr_qq, player);
-        }
-        return await this.breakthroughUpperRealm(e, usr_qq, player);
-    }
-    if (player.xiangulevel_id === 13) {
-        if (isExtreme) {
-            return await this.breakthroughZhanxianExtreme(e, usr_qq, player);
-        }
-        return await this.breakthroughUpperRealm(e, usr_qq, player);
-    }
-    if (player.xiangulevel_id === 14) {
-        return await this.breakthroughUpperRealm(e, usr_qq, player);
-    }
-    if (player.xiangulevel_id === 20) {
-        const emperorGate = canEnterQuasiEmperor(player, 'xiangu');
-        if (!emperorGate.ok) {
-            const guidance = emperorGate.reason === 'system'
-              ? '请先将诸天古则悟至圆满，再发送 #合道 体系名（体系名不超过五字）。'
-              : '你已合道立下体系，还需发送 #破王成帝劫 完成最终洗礼。';
-            return e.reply(['【帝光仙王·合道在先】', guidance].join('\n'));
-        }
-        return await this.breakthroughUpperRealm(e, usr_qq, player);
-    }
+    const commandRoute = resolveXianguBreakthroughCommand(player.xiangulevel_id, isExtreme);
+    if (commandRoute) return await this[commandRoute.method](e, usr_qq, player);
     return e.reply("后续内容还在更新");
   }
 

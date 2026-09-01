@@ -9,6 +9,22 @@ export const XIANGU_REALM_ROUTES = Object.freeze({
   20: Object.freeze({ targetLevelId: 21, targetName: '准仙帝', costMultiplier: 300, tribulationMethod: '_runPassedEmperorTribulation' }),
 });
 
+export function resolveXianguBreakthroughCommand(currentLevelId, isExtreme = false) {
+  const levelId = Number(currentLevelId);
+  if (!Number.isInteger(levelId)) return null;
+  if (isExtreme && levelId === 12) {
+    return { type: 'extreme', method: 'breakthroughJiutianShidiExtreme', route: null };
+  }
+  if (isExtreme && levelId === 13) {
+    return { type: 'extreme', method: 'breakthroughZhanxianExtreme', route: null };
+  }
+
+  const route = XIANGU_REALM_ROUTES[levelId];
+  return route
+    ? { type: 'realm', method: 'breakthroughUpperRealm', route }
+    : null;
+}
+
 export function canBreakthroughXianguRealmHere(player, targetLevelId) {
   const target = Number(targetLevelId);
   return target < 16 || target > 20 || Number(player?.power_place) === 6;

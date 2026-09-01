@@ -4,7 +4,10 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { calcXianguCarryDaoFlaw } from '../apps/SecretPlace/xianguTribulationSettlement.js';
+import {
+  calcXianguCarryDaoFlaw,
+  resolveXianguBreakthroughCommand,
+} from '../apps/SecretPlace/xianguTribulationSettlement.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -87,9 +90,15 @@ test('至尊路新增第四关·载道之劫，外部道痕隐患由自身之道
 
 test('冲关极境在虚道/斩我接续九天十地劫与斩仙铡刀劫入口', () => {
   const src = readSource('apps/User/xiangujinshi.js');
-  assert.match(src, /xiangulevel_id === 12/);
+  assert.equal(
+    resolveXianguBreakthroughCommand(12, true).method,
+    'breakthroughJiutianShidiExtreme',
+  );
   assert.match(src, /breakthroughJiutianShidiExtreme\s*\(/);
-  assert.match(src, /xiangulevel_id === 13/);
+  assert.equal(
+    resolveXianguBreakthroughCommand(13, true).method,
+    'breakthroughZhanxianExtreme',
+  );
   assert.match(src, /breakthroughZhanxianExtreme\s*\(/);
   assert.match(src, /xiangu_jiutian_shidi = true/);
   assert.match(src, /xiangu_nifa_zhanwo = true/);
