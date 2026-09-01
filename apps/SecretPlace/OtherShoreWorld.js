@@ -133,6 +133,7 @@ import {
 import { inspectPlayerAction } from '../../model/playerActionState.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { FileRollbackTransaction } from './rebirthTransaction.js';
+import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
 
 const OTHER_SHORE_PLANE_ID = 3.8;
 const OTHER_SHORE_ORIGIN_PLANE_ID = 3.5;
@@ -1542,10 +1543,11 @@ async function deliverPendingPlayerMutations(userId, player) {
   const session = currentSession(player);
   if (!session) return [];
   const prefix = `${userId}:${session.runId}:`;
+  const avatarName = getActiveZhutianAvatarName(player);
   return deliverOtherShorePlayerMutations(
     globalThis.redis,
     createCanglanWorld,
-    key => key.startsWith(prefix),
+    (key, pending) => key.startsWith(prefix) && (!avatarName || pending?.action !== 'refine'),
     async pending => {
       if (pending.userId !== userId || pending.runId !== session.runId) {
         throw new Error('彼岸玩家变更回执身份不匹配');
@@ -3488,6 +3490,12 @@ export class OtherShoreWorld extends plugin {
       if (!session || (expectedRunId && session.runId !== expectedRunId)) {
         throw new Error('本次彼岸远征已更替，请重新领取星图入口');
       }
+      if (action === 'refine') {
+        const avatarName = getActiveZhutianAvatarName(player);
+        if (avatarName) {
+          throw new Error(`当前正装载化身【${avatarName}】，请先发送 #装载化身 本源，再炼化彼岸魔主。`);
+        }
+      }
       const replay = findActionReceipt(session, operation, action, undefined);
       if (replay) return { message: replay.message, replayed: true };
 
@@ -4110,14 +4118,7 @@ export class OtherShoreWorld extends plugin {
         displayName: result.player.名号 || '无名修士',
       });
       const message = `【沧澜界·全服星图】\n${link}\n入口两分钟内有效，进入后可持续使用两小时。`;
-      if (!e.isGroup) {
-        await e.reply(message);
-        return true;
-      }
-      const friend = e.bot?.pickFriend?.(e.user_id);
-      if (!friend?.sendMsg) throw new Error('当前适配器未开放私聊投递');
-      await friend.sendMsg(message);
-      await e.reply('沧澜星图入口已通过私聊送达，请在两分钟内开启。');
+      await e.reply(message);
     } catch (error) {
       await e.reply(`沧澜星图入口生成失败：${error.message}`);
     }

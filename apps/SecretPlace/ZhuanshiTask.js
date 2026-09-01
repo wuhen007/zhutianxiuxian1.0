@@ -53,7 +53,9 @@ import {
   normalizeReincarnationAptitude,
   resolveReincarnationAptitudeLoss,
 } from '../../model/reincarnationAptitude.js';
+import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
 import { readShouyuanDifficulty } from '../User/shouyuanDifficulty.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 let ZxTask = null;
 
@@ -313,23 +315,25 @@ async function cancelPendingRebirth(targetId, actor, reason) {
     const raw = await redis.get(taskKey);
     if (!raw) return { success: false, code: 'missing' };
 
-    const task = JSON.parse(raw);
-    const taskId = getRebirthTaskId(task, taskKey);
-    if (await isRebirthTaskCommitted(targetId, taskId)) {
-      return { success: false, code: 'committed' };
-    }
+    return await withPlayerMutationLock(String(targetId), async () => {
+      const task = JSON.parse(raw);
+      const taskId = getRebirthTaskId(task, taskKey);
+      if (await isRebirthTaskCommitted(targetId, taskId)) {
+        return { success: false, code: 'committed' };
+      }
 
-    const deniedTask = applyReincarnationDecision(task, 'deny', actor);
-    deniedTask.rescue_reason = reason;
-    await redis.set(taskKey, JSON.stringify(deniedTask));
-    const player = await restoreRescuedPlayer(deniedTask);
+      const deniedTask = applyReincarnationDecision(task, 'deny', actor);
+      deniedTask.rescue_reason = reason;
+      await redis.set(taskKey, JSON.stringify(deniedTask));
+      const player = await restoreRescuedPlayer(deniedTask);
 
-    await redis.multi()
-      .del(taskKey)
-      .del(actionKey)
-      .exec();
+      await redis.multi()
+        .del(taskKey)
+        .del(actionKey)
+        .exec();
 
-    return { success: true, task: deniedTask, player };
+      return { success: true, task: deniedTask, player };
+    });
   } finally {
     await releaseRedisLock(lockKey, lockToken);
   }
@@ -1544,13 +1548,12 @@ class ZhuanshiTask extends plugin {
             continue;
           }
 
-          const task = JSON.parse(taskData);
+          let task = JSON.parse(taskData);
           const now = Date.now();
           const player_id = task.player_id;
 
           if (now >= task.end_time) {
-            const taskId = getRebirthTaskId(task, key);
-            const lockToken = `${taskId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+            const lockToken = `${getRebirthTaskId(task, key)}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
             const lockKey = `xiuxian:lock:zhuanshi_task:${player_id}`;
             const locked = await acquireRedisLock(
               lockKey,
@@ -1560,84 +1563,110 @@ class ZhuanshiTask extends plugin {
             if (!locked) continue;
 
             try {
-              if (await isRebirthTaskCommitted(player_id, taskId)) {
-                await redis.del(key);
-                await redis.del(`xiuxian:player:${player_id}:action`);
-                console.log(`【轮回】玩家 ${player_id} 的任务已完成，清理残留任务`);
-                continue;
-              }
+              const lockedTaskData = await redis.get(key);
+              if (!lockedTaskData) continue;
+              task = JSON.parse(lockedTaskData);
+              if (Date.now() < task.end_time) continue;
 
-              if (task.rebirth_decision?.status === 'deny') {
-                await restoreRescuedPlayer(task);
-                await redis.multi()
-                  .del(key)
-                  .del(`xiuxian:player:${player_id}:action`)
-                  .exec();
-                console.log(`【轮回】玩家 ${player_id} 的往生已被驳回`);
-                continue;
-              }
-
-              if (task.type === '寿元耗尽' && !difficulty.reincarnatesOnExhaustion) {
-                await restoreRescuedPlayer(task);
-                await redis.multi()
-                  .del(key)
-                  .del(`xiuxian:player:${player_id}:action`)
-                  .exec();
-                console.log(`【轮回】当前为${difficulty.name}难度，取消玩家 ${player_id} 的寿元轮回`);
-                continue;
-              }
-
-              const controller = await getActiveReincarnationController();
-              if (requiresControllerDecision(task, controller)) {
-                const wasPending = Boolean(task.controller_pending);
-                await holdTaskForController(key, task, controller);
-                if (!wasPending) {
-                  await notifyReincarnationPlayer(
-                    player_id,
-                    `【轮回路·等待裁定】\n${task.player_name || player_id}的魂魄已抵达轮回路。当前执掌者：${controller.player_name}，等待其裁定是否往生。`,
-                    [controller.player_id]
+              const taskId = getRebirthTaskId(task, key);
+              await withPlayerMutationLock(player_id, async () => {
+                const currentPlayer = await existplayer(player_id)
+                  ? await Read_player(player_id)
+                  : null;
+                const activeAvatar = currentPlayer
+                  ? getActiveZhutianAvatarName(currentPlayer)
+                  : null;
+                if (activeAvatar) {
+                  await redis.expire(key, FAILED_TASK_TTL_SECONDS);
+                  console.log(
+                    `【轮回】玩家 ${player_id} 正装载化身「${activeAvatar}」，保留任务等待切回本源`
                   );
+                  return;
                 }
-                console.log(
-                  `【轮回执掌】玩家 ${player_id} 等待 ${controller.player_name} 裁定`
-                );
-                continue;
-              }
 
-              task.task_id = taskId;
-              console.log(`【轮回】玩家 ${player_id} 时间到，开始轮回...`);
+                if (!currentPlayer || currentPlayer.last_rebirth_task_id === taskId) {
+                  await redis.del(key);
+                  await redis.del(`xiuxian:player:${player_id}:action`);
+                  console.log(`【轮回】玩家 ${player_id} 的任务已完成，清理残留任务`);
+                  return;
+                }
 
-              const msgCtx = {
-                isGroup: false,
-                group_id: null,
-                user_id: player_id,
-                reply: async (msg) => {
-                  try {
-                    // 改为全服公告（复用插件既有 broadcastToAllGroups，无需造轮子）
-                    await broadcastToAllGroups(msg);
-                  } catch (err) {
-                    console.error('【轮回】全服公告发送失败:', err);
+                if (task.rebirth_decision?.status === 'deny') {
+                  await restoreRescuedPlayer(task);
+                  await redis.multi()
+                    .del(key)
+                    .del(`xiuxian:player:${player_id}:action`)
+                    .exec();
+                  console.log(`【轮回】玩家 ${player_id} 的往生已被驳回`);
+                  return;
+                }
+
+                if (task.type === '寿元耗尽' && !difficulty.reincarnatesOnExhaustion) {
+                  await restoreRescuedPlayer(task);
+                  await redis.multi()
+                    .del(key)
+                    .del(`xiuxian:player:${player_id}:action`)
+                    .exec();
+                  console.log(`【轮回】当前为${difficulty.name}难度，取消玩家 ${player_id} 的寿元轮回`);
+                  return;
+                }
+
+                const controller = await getActiveReincarnationController();
+                if (requiresControllerDecision(task, controller)) {
+                  const wasPending = Boolean(task.controller_pending);
+                  await holdTaskForController(key, task, controller);
+                  if (!wasPending) {
+                    await notifyReincarnationPlayer(
+                      player_id,
+                      `【轮回路·等待裁定】\n${task.player_name || player_id}的魂魄已抵达轮回路。当前执掌者：${controller.player_name}，等待其裁定是否往生。`,
+                      [controller.player_id]
+                    );
                   }
+                  console.log(
+                    `【轮回执掌】玩家 ${player_id} 等待 ${controller.player_name} 裁定`
+                  );
+                  return;
                 }
-              };
 
-              try {
-                await executeZhuanshiRebirth(msgCtx, task, taskId);
-              } catch (err) {
-                const retry = await scheduleRebirthRetry(key, task, err);
-                console.error(
-                  `【轮回】玩家 ${player_id} 第${retry.retryCount}次失败，` +
-                  `${retry.retryMinutes}分钟后重试`
-                );
-                continue;
-              }
+                const settlementTask = {
+                  ...task,
+                  player_data: currentPlayer,
+                  task_id: taskId,
+                };
+                console.log(`【轮回】玩家 ${player_id} 时间到，开始轮回...`);
 
-              try {
-                await redis.del(`xiuxian:player:${player_id}:action`);
-                await redis.del(key);
-              } catch (cleanupErr) {
-                console.error(`轮回成功后的任务清理失败 (${key}):`, cleanupErr);
-              }
+                const msgCtx = {
+                  isGroup: false,
+                  group_id: null,
+                  user_id: player_id,
+                  reply: async (msg) => {
+                    try {
+                      // 改为全服公告（复用插件既有 broadcastToAllGroups，无需造轮子）
+                      await broadcastToAllGroups(msg);
+                    } catch (err) {
+                      console.error('【轮回】全服公告发送失败:', err);
+                    }
+                  }
+                };
+
+                try {
+                  await executeZhuanshiRebirth(msgCtx, settlementTask, taskId);
+                } catch (err) {
+                  const retry = await scheduleRebirthRetry(key, settlementTask, err);
+                  console.error(
+                    `【轮回】玩家 ${player_id} 第${retry.retryCount}次失败，` +
+                    `${retry.retryMinutes}分钟后重试`
+                  );
+                  return;
+                }
+
+                try {
+                  await redis.del(`xiuxian:player:${player_id}:action`);
+                  await redis.del(key);
+                } catch (cleanupErr) {
+                  console.error(`轮回成功后的任务清理失败 (${key}):`, cleanupErr);
+                }
+              });
             } finally {
               await releaseRedisLock(lockKey, lockToken);
             }

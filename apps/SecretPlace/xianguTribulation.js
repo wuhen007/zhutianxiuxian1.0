@@ -32,6 +32,7 @@ import {
 import {
   calculateXianguHorrorWavePower,
   calcXianguTribulationPower,
+  getXianguStageWaveCapRate,
   getXianguUpperTribulationHorrorMultiplier,
   LEIDI_TRIBULATION_CONVERSION_RATE,
   LEIDI_TRIBULATION_CONVERSION_WAVES,
@@ -502,14 +503,15 @@ export class XianguTribulation {
     const attackBase = this._tribulationPower?.attack || M;
     const eraFactor = this._tribulationPower ? this._eraFactor : 1;
     const ordinaryBase = attackBase * frac * (1 + 0.03 * wave) * eraFactor;
+    const daoHeartMultiplier = getDaoHeartDamageMultiplier(player);
     const horror = calculateXianguHorrorWavePower({
-      baseDamage: ordinaryBase,
+      baseDamage: ordinaryBase * daoHeartMultiplier,
       maxHp: M,
       multiplier: this._horrorMultiplier,
       finalWave: opts.finalWave,
+      maxDamageRate: opts.maxDamageRate,
     });
-    const daoHeartMultiplier = getDaoHeartDamageMultiplier(player);
-    const base = horror.damage * daoHeartMultiplier;
+    const base = horror.damage;
     const { damage: bodyDamage, msgs: bodyMsgs } = this._applyBodyDefenses(player, base);
     const defendedDamage = this._applyNormalDefenses(player, bodyDamage, bodyMsgs);
     const sourceName = opts.sourceName || '道火本源';
@@ -521,8 +523,11 @@ export class XianguTribulation {
       ? '理论战力雷劫·与遮天同构'
       : '血量基准·不随时代缩放';
     if (horror.multiplier > 1) {
+      const daoHeartText = daoHeartMultiplier > 1
+        ? ` × 道心${daoHeartMultiplier.toFixed(2)}`
+        : '';
       lines.push(
-        `　${sourceName} ${bigNumberTransform(ordinaryBase)} × ${horror.multiplier}倍 = `
+        `　${sourceName} ${bigNumberTransform(ordinaryBase)} × ${horror.multiplier}倍${daoHeartText} = `
         + `${bigNumberTransform(horror.rawDamage)}（${damageModel}）`
       );
       lines.push(
@@ -608,6 +613,9 @@ export class XianguTribulation {
       const r = await this._dealWave(e, player, waves[i].frac, wave, waves[i].note, {
         ...opts,
         finalWave: i === waves.length - 1,
+        maxDamageRate: this._horrorMultiplier > 1
+          ? getXianguStageWaveCapRate(i, waves.length)
+          : undefined,
       });
       const waveLines = [...r.lines, '', this._bar(player)];
       await e.reply(waveLines.join('\n'));
