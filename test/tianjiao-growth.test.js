@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 
+import { isFixedStatEquipment } from '../model/equipmentStats.js';
 import {
   advanceSpecialTianjiaoEvolution,
   applyTianjiaoImprovement,
@@ -70,6 +72,39 @@ const context = {
     { name: '混沌体', type: '混沌体', 法球倍率: 1.45, 攻击: 5, 防御: 5, 生命: 5 },
   ],
 };
+
+test('旧位面天骄装备按当前阈值保持固定数值语义', () => {
+  const tianjiaoList = JSON.parse(fs.readFileSync(
+    new URL('../resources/data/item/位面boss列表.json', import.meta.url),
+    'utf8',
+  ));
+  const migrated = [
+    ['金翅小鹏王', '法宝', 'HP', 520],
+    ['华云飞', '武器', 'atk', 510],
+    ['华云飞', '法宝', 'HP', 520],
+    ['王腾', '武器', 'atk', 510],
+    ['王腾', '护具', 'def', 510],
+    ['霸王浑战', '护具', 'def', 510],
+    ['十冠王天子', '武器', 'atk', 510],
+    ['十冠王天子', '法宝', 'HP', 520],
+    ['鹤无双', '武器', 'atk', 510],
+  ];
+
+  for (const [name, slot, field, expected] of migrated) {
+    const item = tianjiaoList.find(entry => entry.名号 === name)?.装备?.[slot];
+    assert.equal(item?.[field], expected, `${name}的${slot}迁移值错误`);
+    assert.equal(isFixedStatEquipment(item), true, `${name}的${slot}应按固定数值计算`);
+  }
+
+  const wufengzi = tianjiaoList.find(entry => entry.名号 === '武疯子');
+  for (const slot of ['武器', '护具', '法宝']) {
+    assert.equal(
+      isFixedStatEquipment(wufengzi?.装备?.[slot]),
+      false,
+      `武疯子的${slot}应继续按百分比计算`,
+    );
+  }
+});
 
 function sequenceRandom(...values) {
   let index = 0;

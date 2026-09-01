@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import template from 'art-template';
+
+import {
+  isFixedStatEquipment,
+  MAX_PERCENT_EQUIPMENT_STAT,
+} from '../model/equipmentStats.js';
 
 const EQUIPMENT_HTML_FILES = [
   'resources/html/najie/najie.html',
@@ -19,12 +25,9 @@ function read(relativePath) {
 }
 
 test('装备显示阈值与战斗计算一致：单属性 >499 为数值装备，否则百分比', () => {
-  const equipmentStats = read('model/equipmentStats.js');
-  assert.match(equipmentStats, /MAX_PERCENT_EQUIPMENT_STAT = 499/);
-  assert.match(
-    equipmentStats,
-    /atk > MAX_PERCENT_EQUIPMENT_STAT \|\| def > MAX_PERCENT_EQUIPMENT_STAT \|\| HP > MAX_PERCENT_EQUIPMENT_STAT/
-  );
+  assert.equal(MAX_PERCENT_EQUIPMENT_STAT, 499);
+  assert.equal(isFixedStatEquipment({ atk: 499, def: 499, HP: 499 }), false);
+  assert.equal(isFixedStatEquipment({ atk: 500, def: 1, HP: 1 }), true);
 
   for (const file of EQUIPMENT_HTML_FILES) {
     const html = read(file);
@@ -48,19 +51,88 @@ test('百分比装备统一按倍率显示：1.6 显示为 160%', () => {
       !/\.(atk|def|HP)>=\s*1\?/.test(html),
       `${file} 仍残留 >=1 时不乘 100 的错误显示`
     );
-    const percentExprs = html.match(/\.(atk|def|HP)\*100\)\.toFixed\(0\)/g) || [];
-    assert.ok(percentExprs.length > 0, `${file} 缺少倍率乘 100 的百分比显示`);
+    assert.match(
+      html,
+      /(atk|def|HP)[^\n]*\*100\)\.toFixed\(0\)/,
+      `${file} 缺少倍率乘 100 的百分比显示`
+    );
   }
 });
 
-test('装备列表内置百分比装备（100~499）与战斗规则自洽', () => {
+test('归一追加词条在所有装备模板中可编译并正确合并显示', () => {
+  for (const file of EQUIPMENT_HTML_FILES) {
+    const html = read(file);
+    assert.match(html, /归一属性/);
+    assert.match(html, /百分比/);
+    assert.doesNotThrow(() => template.compile(html), `${file} 模板编译失败`);
+  }
+
+  const output = template.render(read('resources/html/najie/najie.html'), {
+    pluResPath: '',
+    pifu: 1,
+    user_id: '10001',
+    player: { 名号: '测试道君', 当前血量: 1, 血量上限: 1 },
+    strand_hp: { style: '' },
+    strand_lingshi: { style: '' },
+    najie: {
+      等级: 1,
+      灵石: 0,
+      灵石上限: 1,
+      装备: [
+        {
+          id: 1,
+          name: '固定归一剑',
+          type: '武器',
+          pinji: 0,
+          islockd: 0,
+          atk: 1000,
+          def: 200,
+          HP: 300,
+          bao: 0,
+          数量: 1,
+          出售价: 1,
+          归一属性: { 百分比: { atk: 0.5 } },
+        },
+        {
+          id: 2,
+          name: '百分比归一剑',
+          type: '武器',
+          pinji: 0,
+          islockd: 0,
+          atk: 0.5,
+          def: 0,
+          HP: 0,
+          bao: 0,
+          数量: 1,
+          出售价: 1,
+          归一属性: { 百分比: { atk: 0.12 } },
+        },
+      ],
+      丹药: [],
+      道具: [],
+      功法: [],
+      草药: [],
+      材料: [],
+      食材: [],
+      盒子: [],
+      宝石: [],
+      仙宠: [],
+      仙宠口粮: [],
+    },
+  });
+
+  assert.match(output, /攻击：1000（\+50%）/);
+  assert.match(output, /攻击：62%/);
+});
+
+test('装备列表内置百分比装备与战斗规则自洽', () => {
   const list = JSON.parse(read('resources/data/item/装备列表.json'));
-  const suspicious = (Array.isArray(list) ? list : Object.values(list)).filter(
-    item =>
-      item &&
-      ([item.atk, item.def, item.HP].some(n => Number(n) >= 100 && Number(n) <= 499))
+  const woodenSword = (Array.isArray(list) ? list : Object.values(list)).find(
+    item => item?.name === '小木剑'
   );
-  // 100~499 的装备按战斗规则是百分比装备（≤499），显示层必须能标出 %，
-  // 这里仅断言此类装备存在且数量已知，防止数据被误改后显示层静默失配。
-  assert.ok(suspicious.length >= 3, '内置装备中应存在 100~499 区间的百分比装备');
+  assert.deepEqual(
+    [woodenSword?.atk, woodenSword?.def, woodenSword?.HP],
+    [100, 100, 100],
+  );
+  assert.equal(isFixedStatEquipment(woodenSword), false);
 });

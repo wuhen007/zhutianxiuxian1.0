@@ -73,6 +73,73 @@ test('百分比装备单属性加成上限为 50000%', () => {
   );
 });
 
+test('万象归一与普通百分比装备分池封顶后继续加算', () => {
+  const base = { 攻击: 1000, 防御: 1000, 血量上限: 1000 };
+  const fixedFusion = {
+    name: '大罗剑胎',
+    atk: 1000,
+    def: 2000,
+    HP: 3000,
+    归一来源: '百分比装备',
+    归一属性: { 百分比: { atk: 300, def: 100, HP: 200 } },
+  };
+  const ordinaryOverflow = [
+    { atk: 300, def: 300, HP: 300 },
+    { atk: 300, def: 300, HP: 300 },
+  ];
+
+  assert.deepEqual(
+    calculateEquippedStats(base, [fixedFusion, ...ordinaryOverflow]),
+    { 攻击: 802000, 防御: 603000, 血量上限: 704000 },
+  );
+
+  // 两池均未封顶时仍沿用原来的加算曲线，不引入额外交叉倍率。
+  assert.deepEqual(
+    calculateEquippedStats(base, [
+      { atk: 0.5, def: 0.5, HP: 0.5 },
+      {
+        atk: 1000,
+        def: 2000,
+        HP: 3000,
+        归一来源: '百分比装备',
+        归一属性: { 百分比: { atk: 0.5, def: 0.5, HP: 0.5 } },
+      },
+    ]),
+    { 攻击: 3000, 防御: 4000, 血量上限: 5000 },
+  );
+});
+
+test('只有万象归一标记进入独立池，天骄洗礼等旧词条仍留普通池', () => {
+  const base = { 攻击: 1000, 防御: 1000, 血量上限: 1000 };
+  assert.deepEqual(
+    calculateEquippedStats(base, [
+      { atk: 300, def: 300, HP: 300 },
+      { atk: 300, def: 300, HP: 300 },
+      {
+        atk: 1000,
+        def: 2000,
+        HP: 3000,
+        归一属性: { 百分比: { atk: 100, def: 100, HP: 100 } },
+      },
+    ]),
+    { 攻击: 502000, 防御: 503000, 血量上限: 504000 },
+  );
+});
+
+test('万象归一独立池单属性上限同为 50000%', () => {
+  const base = { 攻击: 1000, 防御: 1000, 血量上限: 1000 };
+  assert.deepEqual(
+    calculateEquippedStats(base, [{
+      atk: 1000,
+      def: 2000,
+      HP: 3000,
+      归一来源: '百分比装备',
+      归一属性: { 百分比: { atk: 600, def: 600, HP: 600 } },
+    }]),
+    { 攻击: 502000, 防御: 503000, 血量上限: 504000 },
+  );
+});
+
 test('可赋名百分比装备以499为单属性上限', () => {
   assert.equal(MAX_PERCENT_EQUIPMENT_STAT, 499);
   assert.equal(isNameablePercentageEquipment({ type: '武器', atk: 99, def: 0, HP: 0 }), true);

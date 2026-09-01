@@ -36,23 +36,23 @@
             </div>
             {{if item.atk>499 || item.def>499 || item.HP>499}}
             <div class="item_int" style="padding-left: 38px">
-              攻击：{{item.atk}}
+              攻击：{{item.atk}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.atk}}（+{{(item.归一属性.百分比.atk*100).toFixed(0)}}%）{{/if}}
             </div>
             <div class="item_int" style="padding-left: 38px">
-              防御：{{item.def}}
+              防御：{{item.def}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.def}}（+{{(item.归一属性.百分比.def*100).toFixed(0)}}%）{{/if}}
             </div>
             <div class="item_int" style="padding-left: 38px">
-              血量：{{item.HP}}
+              血量：{{item.HP}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.HP}}（+{{(item.归一属性.百分比.HP*100).toFixed(0)}}%）{{/if}}
             </div>
             {{else}}
             <div class="item_int" style="padding-left: 38px">
-              攻击:{{(item.atk*100).toFixed(0)}}%
+              攻击:{{(((item.atk || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.atk) || 0))*100).toFixed(0)}}%
             </div>
             <div class="item_int" style="padding-left: 38px">
-              防御:{{(item.def*100).toFixed(0)}}%
+              防御:{{(((item.def || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.def) || 0))*100).toFixed(0)}}%
             </div>
             <div class="item_int" style="padding-left: 38px">
-              血量:{{(item.HP*100).toFixed(0)}}%
+              血量:{{(((item.HP || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.HP) || 0))*100).toFixed(0)}}%
             </div>
             {{/if}}
             {{if item.type === "帝兵" && item.全属性}}
@@ -90,23 +90,23 @@
             
             {{if item.atk>499 || item.def>499 || item.HP>499}}
             <div class="item_int" style="padding-left: 38px">
-              攻击：{{item.atk}}
+              攻击：{{item.atk}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.atk}}（+{{(item.归一属性.百分比.atk*100).toFixed(0)}}%）{{/if}}
             </div>
             <div class="item_int" style="padding-left: 38px">
-              防御：{{item.def}}
+              防御：{{item.def}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.def}}（+{{(item.归一属性.百分比.def*100).toFixed(0)}}%）{{/if}}
             </div>
             <div class="item_int" style="padding-left: 38px">
-              血量：{{item.HP}}
+              血量：{{item.HP}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.HP}}（+{{(item.归一属性.百分比.HP*100).toFixed(0)}}%）{{/if}}
             </div>
             {{else}}
             <div class="item_int" style="padding-left: 38px">
-              攻击:{{(item.atk*100).toFixed(0)}}%
+              攻击:{{(((item.atk || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.atk) || 0))*100).toFixed(0)}}%
             </div>
             <div class="item_int" style="padding-left: 38px">
-              防御:{{(item.def*100).toFixed(0)}}%
+              防御:{{(((item.def || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.def) || 0))*100).toFixed(0)}}%
             </div>
             <div class="item_int" style="padding-left: 38px">
-              血量:{{(item.HP*100).toFixed(0)}}%
+              血量:{{(((item.HP || 0) + ((item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.HP) || 0))*100).toFixed(0)}}%
             </div>
             {{/if}}
             {{if item.type === "帝兵" && item.全属性}}

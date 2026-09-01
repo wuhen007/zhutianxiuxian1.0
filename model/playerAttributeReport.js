@@ -21,8 +21,12 @@ import {
 import { applyQuestionFortuneCost, hasRedDustFortune } from './redDustFortune.js';
 import { isDaofaActive } from './daofa.js';
 import { calculateExtraAttributeLimit } from './attributeCaps.js';
-import { getRealmAuthorityLevel } from './realmAuthority.js';
+import { getRealmAuthorityLevel, getRealmAuthorityPath } from './realmAuthority.js';
 import { ensureDaoHeart } from './daoHeart.js';
+import {
+  isFixedStatEquipment,
+  MAX_EQUIPMENT_PERCENT_BONUS,
+} from './equipmentStats.js';
 
 export { calculateExtraAttributeLimit } from './attributeCaps.js';
 
@@ -81,24 +85,33 @@ export function calculateExtraAttributeState(player) {
 function getSlotStat(slot, field) {
   const merged = number(slot?.归一属性?.百分比?.[field]);
   const raw = number(slot?.[field]);
-  const fixedMode = ['atk', 'def', 'HP'].some(key => number(slot?.[key]) > 499);
+  const fixedMode = isFixedStatEquipment(slot);
+  const fusionMode = fixedMode && Boolean(slot?.归一来源);
   return fixedMode
-    ? { rate: merged, fixed: raw }
-    : { rate: merged + raw, fixed: 0 };
+    ? { rate: fusionMode ? 0 : merged, fusion: fusionMode ? merged : 0, fixed: raw }
+    : { rate: merged + raw, fusion: 0, fixed: 0 };
 }
 
 function sumSlotStats(equipment, slotNames) {
-  const total = { atkRate: 0, atkFixed: 0, defRate: 0, defFixed: 0, hpRate: 0, hpFixed: 0, critical: 0 };
+  const total = {
+    atkRate: 0, atkFusion: 0, atkFixed: 0,
+    defRate: 0, defFusion: 0, defFixed: 0,
+    hpRate: 0, hpFusion: 0, hpFixed: 0,
+    critical: 0,
+  };
   for (const slotName of slotNames) {
     const slot = equipment?.[slotName] || {};
     const attack = getSlotStat(slot, 'atk');
     const defense = getSlotStat(slot, 'def');
     const health = getSlotStat(slot, 'HP');
     total.atkRate += attack.rate;
+    total.atkFusion += attack.fusion;
     total.atkFixed += attack.fixed;
     total.defRate += defense.rate;
+    total.defFusion += defense.fusion;
     total.defFixed += defense.fixed;
     total.hpRate += health.rate;
+    total.hpFusion += health.fusion;
     total.hpFixed += health.fixed;
     total.critical += number(slot.bao);
   }
@@ -113,6 +126,7 @@ function formatSlot(slotName, slot) {
   const stat = (value, label) => {
     const parts = [];
     if (value.rate) parts.push(percent(value.rate, true));
+    if (value.fusion) parts.push(`归一${percent(value.fusion, true)}`);
     if (value.fixed) parts.push(signedInteger(value.fixed));
     return `${label}${parts.join('') || '0'}`;
   };
@@ -161,7 +175,7 @@ export function calculateAllAttributeSlotBonuses(player, equipment, levels) {
 function wudaoContext(player) {
   const secretId = number(player?.mijinglevel_id);
   const ancientId = number(player?.xiangulevel_id);
-  const isAncient = secretId <= 1 && ancientId >= 9;
+  const isAncient = getRealmAuthorityPath(player) === 'xiangu';
   const realmId = isAncient ? ancientId : secretId;
   return {
     isAncient,
@@ -310,6 +324,7 @@ function buildEquipmentSection(player, equipment, levels) {
     '【装备加成】',
     ...NORMAL_SLOT_NAMES.map(slot => formatSlot(slot, equipment?.[slot])),
     `普通装备词条合计：攻${percent(ordinary.atkRate, true)}${signedInteger(ordinary.atkFixed)}｜防${percent(ordinary.defRate, true)}${signedInteger(ordinary.defFixed)}｜血${percent(ordinary.hpRate, true)}${signedInteger(ordinary.hpFixed)}｜暴击${percent(ordinary.critical, true)}`,
+    `万象归一独立池：攻${percent(ordinary.atkFusion, true)}｜防${percent(ordinary.defFusion, true)}｜血${percent(ordinary.hpFusion, true)}（单项上限+${MAX_EQUIPMENT_PERCENT_BONUS * 100}%）`,
     `灵根倍率：攻${percent(player?.灵根?.攻击, true)}｜防${percent(player?.灵根?.防御, true)}｜血${percent(player?.灵根?.生命, true)}`,
     '',
     '【帝兵加成】',
@@ -429,6 +444,7 @@ function formatLooseValue(value) {
 function formatSlotValue(stat) {
   const parts = [];
   if (stat.rate) parts.push(percent(stat.rate, true));
+  if (stat.fusion) parts.push(`归一 ${percent(stat.fusion, true)}`);
   if (stat.fixed) parts.push(signedInteger(stat.fixed));
   return parts.join(' / ') || '0';
 }
@@ -599,6 +615,7 @@ export function buildPlayerAttributeView({ player, equipment, data, eraIndex = 2
     equipment: {
       slots: NORMAL_SLOT_NAMES.map(slotName => equipmentSlotView(slotName, equipment?.[slotName])),
       total: `攻 ${percent(ordinary.atkRate, true)} / ${signedInteger(ordinary.atkFixed)} · 防 ${percent(ordinary.defRate, true)} / ${signedInteger(ordinary.defFixed)} · 血 ${percent(ordinary.hpRate, true)} / ${signedInteger(ordinary.hpFixed)} · 暴击 ${percent(ordinary.critical, true)}`,
+      fusion: `攻 ${percent(ordinary.atkFusion, true)} · 防 ${percent(ordinary.defFusion, true)} · 血 ${percent(ordinary.hpFusion, true)} · 单项上限 +${MAX_EQUIPMENT_PERCENT_BONUS * 100}%`,
       imperial: {
         ...artifactView('帝兵', equipment?.帝兵, allAttribute.imperial, `归属倍率 ${allAttribute.imperial.scale.toFixed(2)}×`),
         note: `${integer(allAttribute.imperial.allAttribute)} × 额外体系基础 × ${allAttribute.imperial.scale.toFixed(2)}，按当前归属与境界结算。`,

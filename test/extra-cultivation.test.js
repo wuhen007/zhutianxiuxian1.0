@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -15,6 +14,7 @@ import {
   selectExtraCultivationPath,
   syncXianguCompanionMijing,
 } from '../model/extraCultivation.js';
+import { getRealmAuthorityPath } from '../model/realmAuthority.js';
 
 test('legacy player extra realms are normalized and inferred', () => {
   const player = { mijinglevel_id: 1, xianggulevel_id: 8 };
@@ -83,9 +83,12 @@ test('仙古上位境界只升不降地同步轮海至化龙秘境', () => {
 });
 
 test('仙古伴生人体秘境不会让悟道入口误判为遮天体系', () => {
-  const source = readFileSync(new URL('../apps/User/Level.js', import.meta.url), 'utf8');
-  assert.match(source, /xianguRealmId >= 9[\s\S]{0,120}isCultivatingExtraPath\(player, 'xiangu'\)/);
-  assert.doesNotMatch(source, /mijingRealmId <= 1 && xianguRealmId >= 9/);
+  assert.equal(getRealmAuthorityPath({
+    额外体系: 'xiangu',
+    mijinglevel_id: 7,
+    xiangulevel_id: 14,
+    huafenlevel_id: 1,
+  }), 'xiangu');
 });
 
 test('仙古至尊逆活每成功一世推进一个秘境并于第九世成就红尘仙', () => {

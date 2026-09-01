@@ -29,6 +29,18 @@ test('练气面板按玩家设置分流模板', async () => {
   assert.match(mythicData.tplFile, /resources\/html\/player\/player-2\.html$/);
 });
 
+test('练气面板明确区分最终三维与额外属性加成', () => {
+  for (const file of [
+    '../resources/html/player/player.html',
+    '../resources/html/player_pindao/player_pindao.html',
+  ]) {
+    const html = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
+    assert.match(html, /攻击加成：\{\{攻击加成\}\}/);
+    assert.match(html, /防御加成：\{\{防御加成\}\}/);
+    assert.match(html, /生命加成：\{\{生命加成\}\}/);
+  }
+});
+
 test('切换指令已注册并持久化到玩家存档字段', () => {
   const source = fs.readFileSync(new URL('../apps/User/UserStart.js', import.meta.url), 'utf8');
   assert.ok(source.includes("reg: '^#切换练气排版\\\\s*[12]$'"));

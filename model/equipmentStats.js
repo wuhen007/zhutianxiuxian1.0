@@ -1,7 +1,53 @@
 export const MAX_PERCENT_EQUIPMENT_STAT = 499;
+export const MAX_EQUIPMENT_PERCENT_BONUS = 500;
 import { getZhutianExclusiveEquipmentBonus } from './exclusiveEquipmentSets.js';
 
 const EQUIPMENT_TYPES = new Set(['武器', '护具', '法宝']);
+const EQUIPMENT_STAT_FIELDS = ['atk', 'def', 'HP'];
+
+const emptyEquipmentStats = () => ({ atk: 0, def: 0, HP: 0 });
+
+export function isFixedStatEquipment(item) {
+  return EQUIPMENT_STAT_FIELDS.some(field =>
+    (Number(item?.[field]) || 0) > MAX_PERCENT_EQUIPMENT_STAT
+  );
+}
+
+/**
+ * 普通百分比装备与万象归一词条使用两个独立封顶池。
+ */
+export function collectEquipmentStatPools(slots = []) {
+  const pools = {
+    percentage: emptyEquipmentStats(),
+    fusion: emptyEquipmentStats(),
+    fixed: emptyEquipmentStats(),
+  };
+
+  for (const slot of slots) {
+    const merged = slot?.归一属性?.百分比 || {};
+    const fixedEquipment = isFixedStatEquipment(slot);
+    const fusionEquipment = fixedEquipment && Boolean(slot?.归一来源);
+
+    for (const field of EQUIPMENT_STAT_FIELDS) {
+      const rawValue = Number(slot?.[field]) || 0;
+      const mergedValue = Number(merged?.[field]) || 0;
+
+      if (fixedEquipment) {
+        pools.fixed[field] += rawValue;
+      } else {
+        pools.percentage[field] += rawValue;
+      }
+
+      if (fusionEquipment) {
+        pools.fusion[field] += mergedValue;
+      } else {
+        pools.percentage[field] += mergedValue;
+      }
+    }
+  }
+
+  return pools;
+}
 
 export function isNameablePercentageEquipment(item) {
   if (item?.class !== '装备' && !EQUIPMENT_TYPES.has(item?.type)) return false;
@@ -22,7 +68,7 @@ export function isNameablePercentageEquipment(item) {
  * 某项属性超出理论极限（cap）时，把超出部分补偿到未达极限的属性上，
  * 最终所有属性都能达到理论极限、不溢出；全部达极限后仍有剩余则丢弃（正常情况不会发生）。
  */
-export function rebalancePercentBonuses(atk, def, hp, cap = 500) {
+export function rebalancePercentBonuses(atk, def, hp, cap = MAX_EQUIPMENT_PERCENT_BONUS) {
   const values = [Number(atk) || 0, Number(def) || 0, Number(hp) || 0];
   let overflow = 0;
   for (let i = 0; i < 3; i++) {
@@ -50,51 +96,42 @@ export function calculateEquippedStats(baseStats, slots = [], options = {}) {
   const baseAttack = Number(baseStats?.攻击) || 0;
   const baseDefense = Number(baseStats?.防御) || 0;
   const baseHp = Number(baseStats?.血量上限) || 0;
-  let attackBonus = 0;
-  let defenseBonus = 0;
-  let hpBonus = 0;
-  let fixedAttack = 0;
-  let fixedDefense = 0;
-  let fixedHp = 0;
-
-  for (const slot of slots) {
-    const merged = slot?.归一属性?.百分比 || {};
-    attackBonus += Number(merged.atk) || 0;
-    defenseBonus += Number(merged.def) || 0;
-    hpBonus += Number(merged.HP) || 0;
-    const atk = Number(slot?.atk) || 0;
-    const def = Number(slot?.def) || 0;
-    const HP = Number(slot?.HP) || 0;
-    if (atk > MAX_PERCENT_EQUIPMENT_STAT || def > MAX_PERCENT_EQUIPMENT_STAT || HP > MAX_PERCENT_EQUIPMENT_STAT) {
-      fixedAttack += atk;
-      fixedDefense += def;
-      fixedHp += HP;
-      continue;
-    }
-
-    attackBonus += atk;
-    defenseBonus += def;
-    hpBonus += HP;
-  }
+  const pools = collectEquipmentStatPools(slots);
+  let percentageBonus = pools.percentage;
+  let fusionBonus = pools.fusion;
 
   // 百分比装备单属性加成上限：最高 50000%（即加成 ≤ 500，总倍率 ≤ 501 倍）
-  const MAX_PERCENT_BONUS = 500;
   if (options.rebalanceOverflow) {
-    // 万道神炉被动：溢出部分补偿至未达极限的属性，最终全部达到理论极限、不溢出
-    const balanced = rebalancePercentBonuses(attackBonus, defenseBonus, hpBonus, MAX_PERCENT_BONUS);
-    attackBonus = balanced.atk;
-    defenseBonus = balanced.def;
-    hpBonus = balanced.HP;
+    // 两个池分别补偿、分别封顶，互相之间不占用上限。
+    percentageBonus = rebalancePercentBonuses(
+      percentageBonus.atk,
+      percentageBonus.def,
+      percentageBonus.HP,
+      MAX_EQUIPMENT_PERCENT_BONUS,
+    );
+    fusionBonus = rebalancePercentBonuses(
+      fusionBonus.atk,
+      fusionBonus.def,
+      fusionBonus.HP,
+      MAX_EQUIPMENT_PERCENT_BONUS,
+    );
   } else {
-    attackBonus = Math.min(attackBonus, MAX_PERCENT_BONUS);
-    defenseBonus = Math.min(defenseBonus, MAX_PERCENT_BONUS);
-    hpBonus = Math.min(hpBonus, MAX_PERCENT_BONUS);
+    percentageBonus = {
+      atk: Math.min(percentageBonus.atk, MAX_EQUIPMENT_PERCENT_BONUS),
+      def: Math.min(percentageBonus.def, MAX_EQUIPMENT_PERCENT_BONUS),
+      HP: Math.min(percentageBonus.HP, MAX_EQUIPMENT_PERCENT_BONUS),
+    };
+    fusionBonus = {
+      atk: Math.min(fusionBonus.atk, MAX_EQUIPMENT_PERCENT_BONUS),
+      def: Math.min(fusionBonus.def, MAX_EQUIPMENT_PERCENT_BONUS),
+      HP: Math.min(fusionBonus.HP, MAX_EQUIPMENT_PERCENT_BONUS),
+    };
   }
 
   return {
-    攻击: Math.trunc(baseAttack * (1 + attackBonus) + fixedAttack),
-    防御: Math.trunc(baseDefense * (1 + defenseBonus) + fixedDefense),
-    血量上限: Math.trunc(baseHp * (1 + hpBonus) + fixedHp),
+    攻击: Math.trunc(baseAttack * (1 + percentageBonus.atk + fusionBonus.atk) + pools.fixed.atk),
+    防御: Math.trunc(baseDefense * (1 + percentageBonus.def + fusionBonus.def) + pools.fixed.def),
+    血量上限: Math.trunc(baseHp * (1 + percentageBonus.HP + fusionBonus.HP) + pools.fixed.HP),
   };
 }
 

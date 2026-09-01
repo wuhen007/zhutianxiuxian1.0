@@ -131,7 +131,10 @@ test('混合高低装备词条按整件装备的固定值模式展示', () => {
   const report = buildPlayerAttributeReport({
     player: { id: '1', level_id: 1, Physique_id: 1, mijinglevel_id: 1, xiangulevel_id: 1, 灵根: {}, 学习的功法: [] },
     equipment: {
-      武器: { name: '混合武器', atk: 1000, def: 2, HP: 3, bao: 0 },
+      武器: {
+        name: '混合武器', atk: 1000, def: 2, HP: 3, bao: 0,
+        归一属性: { 百分比: { atk: 0.5, def: 0.25, HP: 1 } },
+      },
       护具: {}, 法宝: {}, 帝兵: {}, 至宝: {},
     },
     data: {
@@ -143,7 +146,26 @@ test('混合高低装备词条按整件装备的固定值模式展示', () => {
     },
     difficulty: {},
   });
-  assert.match(report.join('\n'), /武器【混合武器】攻\+1,000｜防\+2｜血\+3/);
+  assert.match(report.join('\n'), /武器【混合武器】攻\+50%\+1,000｜防\+25%\+2｜血\+100%\+3/);
+});
+
+test('属性报告将万象归一词条从普通百分比池单列', () => {
+  const fixture = createViewFixture();
+  fixture.equipment.武器 = {
+    name: '大罗剑胎',
+    atk: 1000,
+    def: 2000,
+    HP: 3000,
+    归一来源: '百分比剑',
+    归一属性: { 百分比: { atk: 0.5, def: 0.25, HP: 1 } },
+  };
+
+  const report = buildPlayerAttributeReport(fixture).join('\n');
+  const view = buildPlayerAttributeView(fixture);
+
+  assert.match(report, /万象归一独立池：攻\+50%｜防\+25%｜血\+100%/);
+  assert.match(view.equipment.fusion, /攻 \+50% · 防 \+25% · 血 \+100%/);
+  assert.doesNotMatch(view.equipment.total, /\+50%/);
 });
 
 test('低境界自铸特殊帝兵按现有结算同时取得本命与十分之一加成', () => {
@@ -180,6 +202,20 @@ test('悟道消耗依次应用功法、命格寿元倍率与问道签', () => {
   assert.equal(report.costs.potential, 816);
   assert.equal(report.costs.cultivation, 195_840_000);
   assert.equal(report.costs.lifespan, 1_305_600);
+});
+
+test('遁一境伴生秘境仍按仙古路线显示归元悟道', () => {
+  const report = calculateWudaoCosts({
+    mijinglevel_id: 7,
+    xiangulevel_id: 14,
+    灵根: {},
+    学习的功法: [],
+    仙古道途: { stages: {} },
+  });
+
+  assert.equal(report.available, true);
+  assert.equal(report.rule.name, '归元');
+  assert.equal(report.rule.nextRealm, '至尊境');
 });
 
 test('HTML属性视图完整输出真实分区与稀释状态', () => {
