@@ -6,6 +6,7 @@ import {
   GRAND_UNIVERSE_LAW_STAGES,
   UNIVERSE_DUNGEON_AURA_COST,
   ascendSmallWorldToGrandUniverse,
+  canGrandUniverseCarryMijingRealm,
   createItemUniverseDungeon,
   createReincarnationUniverseDungeon,
   editUniverseDungeon,
@@ -23,6 +24,7 @@ import {
 
 const appSource = fs.readFileSync(new URL('../apps/Garden/GrandUniverse.js', import.meta.url), 'utf8');
 const xiuxianSource = fs.readFileSync(new URL('../model/xiuxian.js', import.meta.url), 'utf8');
+const levelSource = fs.readFileSync(new URL('../apps/User/Level.js', import.meta.url), 'utf8');
 
 function king(overrides = {}) {
   return {
@@ -178,4 +180,52 @@ test('准仙帝付出完整代价演绎轮回秘境，仙帝获得权能减免',
   assert.equal(emperorCost.multiplier, 0.35);
   assert.ok(emperorCost.cultivation < quasiCost.cultivation);
   assert.ok(emperorCost.aura < quasiCost.aura);
+});
+
+// 将某座大宇宙的法则完善到指定等级
+function raiseLawTo(world, targetLevel) {
+  const ascender = king({ mijinglevel_id: 21, 修炼次数: 100_000 });
+  let guard = 0;
+  while (getGrandUniverseLawStage(world).level < targetLevel && guard++ < 20) {
+    assert.equal(improveGrandUniverseLaws(ascender, world).ok, true);
+  }
+}
+
+test('大宇宙按法则承载决定可否证道仙王/仙王巨头', () => {
+  const base = smallWorld({ player_qq: '10001' });
+  ascendSmallWorldToGrandUniverse(king(), base);
+
+  // 无大宇宙的小世界不可作为承载判定对象
+  assert.equal(canGrandUniverseCarryMijingRealm(smallWorld(), 18).reason, 'universe');
+  // 宇宙初生（承载真仙）：仙王、仙王巨头均不可
+  assert.equal(canGrandUniverseCarryMijingRealm(base, 18).reason, 'capacity');
+  assert.equal(canGrandUniverseCarryMijingRealm(base, 19).reason, 'capacity');
+  assert.equal(canGrandUniverseCarryMijingRealm(base, 18).required.capacity, '仙王');
+
+  // 王境法域（承载仙王）：可证道仙王，但仍不可证道仙王巨头
+  raiseLawTo(base, 2);
+  assert.equal(canGrandUniverseCarryMijingRealm(base, 18).ok, true);
+  assert.equal(canGrandUniverseCarryMijingRealm(base, 18).stage.capacity, '仙王');
+  assert.equal(canGrandUniverseCarryMijingRealm(base, 19).reason, 'capacity');
+  assert.equal(canGrandUniverseCarryMijingRealm(base, 19).required.capacity, '仙王巨头');
+
+  // 巨头天宇（承载仙王巨头）：仙王与仙王巨头皆可证道
+  raiseLawTo(base, 4);
+  assert.equal(canGrandUniverseCarryMijingRealm(base, 18).ok, true);
+  assert.equal(canGrandUniverseCarryMijingRealm(base, 19).ok, true);
+  assert.equal(canGrandUniverseCarryMijingRealm(base, 19).stage.capacity, '仙王巨头');
+
+  // 大宇宙最高只到帝光仙王：准仙帝不在承载表内，一律不可
+  assert.equal(canGrandUniverseCarryMijingRealm(base, 20).reason, 'unsupported');
+});
+
+test('#证道 突破仙王/仙王巨头时认可承载足够的大宇宙（防回归）', () => {
+  // 拦截不再只认仙域：仙域之外先查身处的大宇宙，承载足够即放行
+  assert.match(levelSource, /import \{ canGrandUniverseCarryMijingRealm \} from '\.\.\/\.\.\/model\/grandUniverse\.js'/);
+  assert.match(levelSource, /if \(player\.power_place !== 6\) \{[\s\S]*?canGrandUniverseCarryMijingRealm\(hostWorld, targetLevel\)/);
+  assert.match(levelSource, /if \(carry\?\.ok\) \{\s*\/\/ 身处法则足以承载目标境界的大宇宙，允许在此证道/);
+  // 承载不足时应提示完善至目标法则阶段，而不是直接要求回仙域
+  assert.match(levelSource, /【诸天有缺·宇宙难载】[\s\S]*?完善至【\$\{carry\.required\.name\}】（可承载\$\{carry\.required\.capacity\}）/);
+  // 非大宇宙且非仙域仍走原「需仙域完整法则承载」提示
+  assert.match(levelSource, /【诸天有缺·仙路难行】[\s\S]*?需仙域完整法则承载/);
 });

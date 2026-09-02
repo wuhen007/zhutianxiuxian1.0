@@ -45,6 +45,7 @@ import {
 } from '../../model/extraCultivation.js';
 import { getRealmAuthorityLevel, getRealmAuthorityName, getRealmAuthorityPath } from '../../model/realmAuthority.js';
 import { isAllHeavensLocation, PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
+import { canGrandUniverseCarryMijingRealm } from '../../model/grandUniverse.js';
 import { applyEternalGuardStatus } from '../../model/dimensionGuard.js';
 import { canEnterQuasiEmperor } from '../../model/worldlineAuthority.js';
 import { FlowerPollenPath } from './FlowerPollenPath.js';
@@ -685,20 +686,49 @@ async zhengdao(e) {
     }
     
     if (targetLevel >= 18&&targetLevel < 20) {
-        // 检查是否在仙域（power_place=6）
+        // 仙道领域需法则完整之地承载：
+        //   - 仙域（power_place=6）法则完整，恒可承载仙王与仙王巨头；
+        //   - 身处大宇宙时按其法则承载判定：仙王需至少「王境法域」、
+        //     仙王巨头需至少「巨头天宇」，承载足够方可于此证道。
         if (player.power_place !== 6) {
-            return e.reply([
-                `【诸天有缺·仙路难行】`,
-                `${player.名号}盘坐星空，欲突破至${data.Levelmijing_list.find(l => l.level_id === targetLevel)?.level || "更高境界"}，`,
-                `然天地剧震，万道哀鸣！`,
-                `整片宇宙都在剧烈颤抖，仿佛要崩碎开来！`,
-                `「此界大道残缺，规则不全！」`,
-                `「踏入仙道领域，需仙域完整法则承载！」`,
-                `你感到体内道则紊乱，仙台欲裂，`,
-                `仿佛下一刻就要被残缺的天地法则反噬！`,
-                `唯有仙域，那片被仙道法则完整覆盖的古地，`,
-                `方能承载仙道领域的无上道果！`,
-            ].join('\n'));
+            const universeLocation = player.大宇宙位置;
+            const hostWorld = universeLocation?.界主
+                ? (data.xiaoshijie || []).find(item => String(item.player_qq) === String(universeLocation.界主))
+                : null;
+            const carry = hostWorld?.大宇宙
+                ? canGrandUniverseCarryMijingRealm(hostWorld, targetLevel)
+                : null;
+            if (carry?.ok) {
+                // 身处法则足以承载目标境界的大宇宙，允许在此证道
+            } else {
+                const targetRealmName = data.Levelmijing_list.find(l => l.level_id === targetLevel)?.level || "更高境界";
+                if (carry?.reason === 'capacity' && hostWorld?.大宇宙) {
+                    return e.reply([
+                        `【诸天有缺·宇宙难载】`,
+                        `${player.名号}盘坐于【${hostWorld.world_name}】大宇宙，欲突破至${targetRealmName}，`,
+                        `然整座大宇宙都在剧烈颤抖，仿佛要崩碎开来！`,
+                        `「此界大道残缺，规则不全！」`,
+                        `「${carry.stage.name}」法则初立，承载上限仅为${carry.stage.capacity}，`,
+                        `不足以容纳${targetRealmName}的无上道果！`,
+                        `你感到体内道则紊乱，仙台欲裂，`,
+                        `仿佛下一刻就要被残缺的天地法则反噬！`,
+                        `请先将大宇宙法则完善至【${carry.required.name}】（可承载${carry.required.capacity}），`,
+                        `或返回仙域印证此境。`,
+                    ].join('\n'));
+                }
+                return e.reply([
+                    `【诸天有缺·仙路难行】`,
+                    `${player.名号}盘坐星空，欲突破至${targetRealmName}，`,
+                    `然天地剧震，万道哀鸣！`,
+                    `整片宇宙都在剧烈颤抖，仿佛要崩碎开来！`,
+                    `「此界大道残缺，规则不全！」`,
+                    `「踏入仙道领域，需仙域完整法则承载！」`,
+                    `你感到体内道则紊乱，仙台欲裂，`,
+                    `仿佛下一刻就要被残缺的天地法则反噬！`,
+                    `唯有仙域，那片被仙道法则完整覆盖的古地，`,
+                    `方能承载仙道领域的无上道果！`,
+                ].join('\n'));
+            }
         }
     }
     let next_level_id = data.Levelmijing_list.find(item => item.level_id == (Number(player.mijinglevel_id) + 1));

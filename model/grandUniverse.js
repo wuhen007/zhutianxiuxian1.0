@@ -18,6 +18,15 @@ export const UNIVERSE_INVENTORY_CATEGORIES = Object.freeze([
   '装备', '丹药', '道具', '功法', '草药', '食材', '材料', '仙宠口粮', '盒子', '宝石',
 ]);
 
+// 人体秘境主线（mijinglevel_id）证道仙道领域所需的法则承载等级：
+//   18 = 仙王       → 需 ≥ 王境法域(2)
+//   19 = 仙王巨头   → 需 ≥ 巨头天宇(4)
+// 更高境界（准仙帝等）另有帝路劫/己道等独立门槛，不在此表内，大宇宙一律不可承载。
+export const GRAND_UNIVERSE_CARRY_REALM_STAGE = Object.freeze({
+  18: 2,
+  19: 4,
+});
+
 const DUNGEON_EDIT_FIELDS = Object.freeze({
   '简介': 'description',
   '敌人': 'enemyName',
@@ -108,6 +117,32 @@ export function getGrandUniverseLawCap(player) {
   const authority = getRealmAuthorityLevel(player);
   if (authority < GRAND_UNIVERSE_MIN_AUTHORITY) return -1;
   return authority >= 19 ? GRAND_UNIVERSE_LAW_STAGES.length - 1 : 1;
+}
+
+/**
+ * 大宇宙法则能否承载目标秘境主线境界证道。
+ * 只有承载上限达到对应境界的大宇宙，才允许身处其中的修士冲击该果位。
+ * @param {object} world 小世界对象（须已升格，含 .大宇宙）
+ * @param {number} mijingLevel 目标 mijinglevel_id（18=仙王、19=仙王巨头）
+ * @returns {{ok:true, stage:object} | {ok:false, reason:string, stage?:object, required?:object}}
+ */
+export function canGrandUniverseCarryMijingRealm(world, mijingLevel) {
+  const universe = universeOf(world);
+  if (!universe) return { ok: false, reason: 'universe' };
+  const target = Math.trunc(Number(mijingLevel));
+  const requiredStage = GRAND_UNIVERSE_CARRY_REALM_STAGE[target];
+  if (!requiredStage) return { ok: false, reason: 'unsupported', target };
+  const stage = lawStage(world);
+  if (stage.level < requiredStage) {
+    return {
+      ok: false,
+      reason: 'capacity',
+      target,
+      stage,
+      required: GRAND_UNIVERSE_LAW_STAGES[requiredStage],
+    };
+  }
+  return { ok: true, target, stage };
 }
 
 export function isGrandUniverseAbsoluteSpiritImmune(world) {
