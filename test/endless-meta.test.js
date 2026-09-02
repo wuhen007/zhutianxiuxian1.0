@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  ENDLESS_META_NODES,
   expandEndlessPuzzleSlots,
   getEndlessMetaEffects,
   getEndlessMetaView,
@@ -9,6 +10,10 @@ import {
   unequipEndlessPuzzle,
   upgradeEndlessMeta,
 } from '../model/endlessMeta.js';
+import {
+  applyEndlessChoice,
+  createEndlessRun,
+} from '../model/endlessRealm.js';
 
 const gated = { 劫境道痕: 10_000, 无尽劫境最高层: 19 };
 assert.throws(() => upgradeEndlessMeta(gated, '衍算天机'), /最高通过20层/);
@@ -57,5 +62,47 @@ const reset = resetEndlessMeta(player);
 assert.equal(reset.refund, Math.floor(beforeReset.meta.spent * 0.9));
 assert.equal(getEndlessMetaView(player).meta.spent, 0);
 assert.equal(getEndlessMetaView(player).meta.equippedPuzzles.length, 0);
+
+const threePointedBlade = ENDLESS_META_NODES.find(node => node.id === 'three_pointed_blade');
+assert.ok(threePointedBlade);
+assert.equal(threePointedBlade.maxRank, 1);
+assert.deepEqual(threePointedBlade.gates, [450]);
+assert.deepEqual(threePointedBlade.costs, [5000]);
+
+const bladeLocked = { 劫境道痕: 5000, 无尽劫境最高层: 449 };
+assert.throws(
+  () => upgradeEndlessMeta(bladeLocked, 'three_pointed_blade'),
+  /最高通过450层/
+);
+const bladePlayer = { 名号: '显圣真君', 劫境道痕: 5000, 无尽劫境最高层: 450 };
+const bladeUnlock = upgradeEndlessMeta(bladePlayer, 'three_pointed_blade');
+assert.equal(bladeUnlock.cost, 5000);
+assert.equal(bladePlayer.劫境道痕, 0);
+assert.equal(bladePlayer.无尽道碑.nodes.three_pointed_blade, 1);
+
+const createBladeRun = (playerData) => createEndlessRun({
+  teamId: 'three-pointed-blade',
+  groupId: 'test-group',
+  seed: 20260902,
+  difficultyTier: 4,
+  players: [{ id: '1', player: playerData }],
+});
+const lockedRun = createBladeRun({ 名号: '未参悟者' });
+lockedRun.phase = 'choice';
+lockedRun.pendingChoices = { '1': ['myth_three_pointed_blade'] };
+assert.throws(
+  () => applyEndlessChoice(lockedRun, '1', 1),
+  undefined,
+  '未参悟道碑节点时不应选择三尖两刃刀'
+);
+
+const unlockedRun = createBladeRun(bladePlayer);
+assert.equal(unlockedRun.members['1'].endlessMeta.nodes.three_pointed_blade, 1);
+unlockedRun.phase = 'choice';
+unlockedRun.pendingChoices = { '1': ['myth_three_pointed_blade'] };
+assert.equal(
+  applyEndlessChoice(unlockedRun, '1', 1).ability.id,
+  'myth_three_pointed_blade'
+);
 
 console.log('endless meta tests passed');

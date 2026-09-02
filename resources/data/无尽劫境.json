@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "worlds": [
     {
       "id": "perfect",
@@ -980,6 +980,346 @@
       }
     },
     {
+      "id": "myth_great_sage_art",
+      "name": "大品天仙诀",
+      "world": "multiverse",
+      "rarity": "核心",
+      "minDifficultyTier": 3,
+      "tags": [
+        "仙法",
+        "变化",
+        "生存"
+      ],
+      "description": "性命双修、万法归一，稳固肉身与元神并持续恢复命火。",
+      "maxLevel": 3,
+      "effect": {
+        "hpPct": 0.08,
+        "defensePct": 0.06,
+        "regenPct": 0.012
+      }
+    },
+    {
+      "id": "myth_seventy_two_transformations",
+      "name": "七十二变",
+      "world": "multiverse",
+      "rarity": "核心",
+      "minDifficultyTier": 3,
+      "tags": [
+        "变化",
+        "速度",
+        "规则"
+      ],
+      "description": "随劫化形、避灾躲厄，以变化之道创造额外行动。",
+      "maxLevel": 3,
+      "effect": {
+        "dodgeChance": 0.04,
+        "extraActionChance": 0.045
+      },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.58,
+        "label": "七十二变·法天象地",
+        "verb": "变化",
+        "narration": "{member}摇身化作擎天法相，一掌越过云海镇向{enemy}"
+      }
+    },
+    {
+      "id": "multi_spider_sense",
+      "name": "蜘蛛感应",
+      "world": "multiverse",
+      "rarity": "稀有",
+      "minDifficultyTier": 3,
+      "tags": [
+        "感知",
+        "速度",
+        "闪避"
+      ],
+      "description": "危险发生前便捕捉其轨迹，强化闪避与弱点打击。",
+      "maxLevel": 3,
+      "effect": {
+        "dodgeChance": 0.05,
+        "critChance": 0.025
+      }
+    },
+    {
+      "id": "multi_symbiote_suit",
+      "name": "共生体战衣",
+      "world": "multiverse",
+      "rarity": "核心",
+      "minDifficultyTier": 3,
+      "tags": [
+        "共生体",
+        "再生",
+        "爆发"
+      ],
+      "description": "活体战衣随战势重构，兼具力量增幅与高速再生。",
+      "maxLevel": 3,
+      "effect": {
+        "attackPct": 0.08,
+        "hpPct": 0.08,
+        "regenPct": 0.012
+      },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.55,
+        "label": "共生体·万触突袭",
+        "verb": "共生",
+        "narration": "{member}的共生体化出万千黑色触须，从所有死角贯穿{enemy}"
+      }
+    },
+    {
+      "id": "art_eight_nine",
+      "name": "八九玄功",
+      "world": "perfect",
+      "rarity": "核心",
+      "minDifficultyTier": 4,
+      "tags": [
+        "肉身",
+        "变化",
+        "生存"
+      ],
+      "description": "肉身万劫不坏、变化无穷，并保留一次玄功护命。",
+      "maxLevel": 3,
+      "effect": {
+        "hpPct": 0.1,
+        "defensePct": 0.08,
+        "damageReduction": 0.03,
+        "revivePct": 0.06
+      }
+    },
+    {
+      "id": "myth_heaven_eye",
+      "name": "天眼",
+      "world": "perfect",
+      "rarity": "核心",
+      "minDifficultyTier": 4,
+      "tags": [
+        "瞳术",
+        "洞察",
+        "斩杀"
+      ],
+      "description": "眉心神目照见虚妄、弱点与因果命门。",
+      "maxLevel": 3,
+      "effect": {
+        "critChance": 0.06,
+        "dodgeChance": 0.03,
+        "executePct": 0.05
+      },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.68,
+        "label": "天眼·神光照彻",
+        "verb": "睁眼",
+        "narration": "{member}眉心天眼洞开，一束神光照穿{enemy}的法则破绽"
+      }
+    },
+    {
+      "id": "myth_three_pointed_blade",
+      "name": "三尖两刃刀",
+      "world": "perfect",
+      "rarity": "禁忌",
+      "minDifficultyTier": 4,
+      "requiredMetaNode": "three_pointed_blade",
+      "tags": [
+        "神兵",
+        "战技",
+        "破甲"
+      ],
+      "description": "万劫道碑封存的显圣神兵，参悟对应传承后才会进入能力池。",
+      "maxLevel": 3,
+      "effect": {
+        "attackPct": 0.1,
+        "critChance": 0.04
+      },
+      "proc": {
+        "everyRounds": 3,
+        "damagePct": 0.76,
+        "label": "三尖两刃·劈山赶日",
+        "verb": "挥刀",
+        "narration": "{member}横转三尖两刃刀，雪亮锋芒劈开山海斩中{enemy}"
+      }
+    },
+    {
+      "id": "multi_solar_core",
+      "name": "黄太阳核心",
+      "world": "multiverse",
+      "rarity": "核心",
+      "minDifficultyTier": 4,
+      "tags": [
+        "恒星",
+        "能量",
+        "恢复"
+      ],
+      "description": "将黄太阳辐射炼成体内恒星，持续补充力量与生命。",
+      "maxLevel": 3,
+      "effect": {
+        "attackPct": 0.08,
+        "hpPct": 0.1,
+        "regenPct": 0.015
+      }
+    },
+    {
+      "id": "multi_man_of_steel",
+      "name": "钢铁之躯",
+      "world": "multiverse",
+      "rarity": "核心",
+      "minDifficultyTier": 4,
+      "tags": [
+        "肉身",
+        "防御",
+        "生存"
+      ],
+      "description": "细胞储存恒星能量，使肉身拥有跨越灾劫的强度。",
+      "maxLevel": 3,
+      "effect": {
+        "hpPct": 0.12,
+        "defensePct": 0.14,
+        "damageReduction": 0.05
+      }
+    },
+    {
+      "id": "perfect_peace_sword",
+      "name": "平乱诀",
+      "world": "perfect",
+      "rarity": "核心",
+      "minDifficultyTier": 5,
+      "tags": [
+        "剑道",
+        "元神",
+        "爆发"
+      ],
+      "description": "元神化作无坚不摧的剑胎，专斩真灵本源。",
+      "maxLevel": 3,
+      "effect": {
+        "attackPct": 0.08,
+        "critChance": 0.04
+      },
+      "proc": {
+        "everyRounds": 3,
+        "damagePct": 0.82,
+        "label": "平乱诀·元神剑胎",
+        "verb": "化剑",
+        "narration": "{member}眉心元神化作剑胎，一线仙光直斩{enemy}真灵"
+      }
+    },
+    {
+      "id": "perfect_immortal_tribulation_sword",
+      "name": "仙劫剑诀",
+      "world": "perfect",
+      "rarity": "禁忌",
+      "minDifficultyTier": 5,
+      "tags": [
+        "剑道",
+        "天劫",
+        "斩杀"
+      ],
+      "description": "剑光引动诸天仙劫，越过防线镇杀本源。",
+      "maxLevel": 3,
+      "effect": {
+        "attackPct": 0.1,
+        "executePct": 0.04
+      },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.92,
+        "label": "仙劫剑诀·万劫临身",
+        "verb": "引劫",
+        "narration": "{member}一剑接引万重仙劫，雷海随剑锋淹没{enemy}"
+      }
+    },
+    {
+      "id": "art_grass_sword",
+      "name": "草字剑诀",
+      "world": "perfect",
+      "rarity": "禁忌",
+      "minDifficultyTier": 5,
+      "tags": [
+        "剑道",
+        "斩杀",
+        "爆发"
+      ],
+      "description": "一株草可斩尽日月星辰，剑意越过万物表象直抵本源。",
+      "maxLevel": 3,
+      "effect": {
+        "critChance": 0.08,
+        "executePct": 0.06
+      },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.85,
+        "label": "草字剑诀·一草斩星辰",
+        "verb": "斩出",
+        "narration": "{member}并指化出碧绿剑草，一线剑光越过星海斩向{enemy}"
+      }
+    },
+    {
+      "id": "anime_hogyoku",
+      "name": "崩玉",
+      "world": "anime",
+      "rarity": "禁忌",
+      "minDifficultyTier": 5,
+      "tags": [
+        "进化",
+        "灵压",
+        "成长"
+      ],
+      "description": "读取持有者深层愿望并推动生命不断突破界限。",
+      "maxLevel": 3,
+      "effect": {
+        "attackPct": 0.06,
+        "hpPct": 0.06,
+        "defensePct": 0.06,
+        "onWinAttackPct": 0.006
+      }
+    },
+    {
+      "id": "anime_emperor_armor",
+      "name": "帝皇铠甲",
+      "world": "anime",
+      "rarity": "禁忌",
+      "minDifficultyTier": 6,
+      "tags": [
+        "铠甲",
+        "五行",
+        "规则"
+      ],
+      "description": "五行之力相生归一，随着等级提升逐步接近终极帝皇形态。",
+      "maxLevel": 3,
+      "effect": {
+        "attackPct": 0.08,
+        "hpPct": 0.08,
+        "defensePct": 0.08,
+        "damageReduction": 0.03
+      },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.82,
+        "label": "帝皇铠甲·五行必杀",
+        "verb": "合铠",
+        "narration": "{member}聚合金木水火土五行之力，帝皇极光贯穿{enemy}"
+      }
+    },
+    {
+      "id": "multi_white_lantern",
+      "name": "白灯之力",
+      "world": "multiverse",
+      "rarity": "禁忌",
+      "minDifficultyTier": 6,
+      "tags": [
+        "生命",
+        "光明",
+        "复活"
+      ],
+      "description": "汇聚情感光谱为生命白光，修复伤势并庇护全队。",
+      "maxLevel": 3,
+      "effect": {
+        "hpPct": 0.1,
+        "regenPct": 0.02,
+        "teamShieldPct": 0.06,
+        "revivePct": 0.1
+      }
+    },
+    {
       "id": "neutral_attack",
       "name": "无尽战意",
       "world": "neutral",
@@ -1119,6 +1459,7 @@
       "kind": "无上道法",
       "origin": "洪荒",
       "description": "肉身万劫不坏、变化无穷，并保留一次玄功护命。",
+      "grantsAbility": "art_eight_nine",
       "effect": {
         "hpPct": 0.2,
         "defensePct": 0.16,
@@ -1272,6 +1613,7 @@
       "kind": "无上道法",
       "origin": "完美世界",
       "description": "一株草可斩尽日月星辰，极大强化暴击与斩杀。",
+      "grantsAbility": "art_grass_sword",
       "effect": {
         "critChance": 0.08,
         "executePct": 0.12
@@ -1435,7 +1777,7 @@
       "skills": [
         "他化自在·他化万古",
         "草字剑诀",
-        "荒芜剑诀"
+        "荒无剑诀"
       ],
       "narration": "独断万古的帝者踏出岁月长河，一剑斩开古今未来"
     },
@@ -1690,6 +2032,28 @@
         "attackPct": 0.16,
         "fireScalingPct": 0.035,
         "onWinAttackPct": 0.006
+      }
+    },
+    {
+      "id": "fusion_desolate_sword",
+      "name": "荒无剑诀",
+      "requires": [
+        "perfect_peace_sword",
+        "perfect_immortal_tribulation_sword",
+        "art_grass_sword"
+      ],
+      "description": "平乱、仙劫与草字三大剑诀归一，化作可斩古今未来的荒无剑诀。",
+      "effect": {
+        "attackPct": 0.24,
+        "critChance": 0.08,
+        "executePct": 0.1
+      },
+      "proc": {
+        "everyRounds": 3,
+        "damagePct": 1.35,
+        "label": "荒无剑诀·独断万古",
+        "verb": "归一",
+        "narration": "三大剑诀在岁月长河上归一，荒无一剑斩断{enemy}的古今未来"
       }
     }
   ]

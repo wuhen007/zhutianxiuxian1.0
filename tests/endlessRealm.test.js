@@ -93,8 +93,8 @@ for (const [domainLevel, puzzles, expectedPct] of [
 
 const content = getEndlessContent();
 assert.equal(content.worlds.length, 6);
-assert.equal(content.abilities.length, 36);
-assert.equal(content.fusions.length, 10);
+assert.equal(content.abilities.length, 51);
+assert.equal(content.fusions.length, 11);
 assert.equal(content.checkpointBoons.length, 20);
 assert.equal(content.freeTransformationHeroes.length, 12);
 assert.equal(
@@ -310,6 +310,7 @@ assert.ok(
 const packCombatRun = createOnePlayerRun(808080);
 chooseFirstForEveryone(packCombatRun);
 packCombatRun.layer = 10;
+packCombatRun.rivalEncounterChance = 0;
 packCombatRun.members['10001'].base.attack = 1;
 packCombatRun.members['10001'].base.hp = 1_000_000_000;
 packCombatRun.members['10001'].base.defense = 1_000_000_000;

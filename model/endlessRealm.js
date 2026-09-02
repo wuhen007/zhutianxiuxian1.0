@@ -394,7 +394,20 @@ function createProjection(id, player, celestialPhenomenon = null) {
   };
 }
 
-function isAbilityAvailable(member, ability) {
+function getAbilityLockReason(run, member, ability) {
+  const minTier = Math.max(1, Math.floor(asNumber(ability?.minDifficultyTier, 1)));
+  if (normalizeEndlessDifficultyTier(run?.difficultyTier) < minTier)
+    return `需进入A${minTier}劫境`;
+  if (
+    ability?.requiredMetaNode &&
+    !asNumber(member?.endlessMeta?.nodes?.[ability.requiredMetaNode])
+  )
+    return `需先在万劫道碑参悟【${ability.name}】`;
+  return '';
+}
+
+function isAbilityAvailable(member, ability, run) {
+  if (getAbilityLockReason(run, member, ability)) return false;
   const meetsRequirements = Object.entries(ability.requires || {}).every(
     ([abilityId, level]) => getOwnedLevel(member, abilityId) >= asNumber(level)
   );
@@ -406,7 +419,7 @@ function isAbilityAvailable(member, ability) {
 
 function pickUnique(run, pool, member, picked) {
   const available = pool.filter(
-    (item) => !picked.has(item.id) && isAbilityAvailable(member, item)
+    (item) => !picked.has(item.id) && isAbilityAvailable(member, item, run)
   );
   const selected = weightedPick(run, available);
   if (selected) picked.add(selected.id);
@@ -418,7 +431,9 @@ function createChoices(run, memberId, layer = Math.max(1, run.layer + 1), exclud
   if (!member?.alive) return [];
   const world = getWorldForLayer(run, layer);
   const picked = new Set(excluded);
-  const choicePool = CONTENT.abilities.filter(ability => !ability.bossOnly);
+  const choicePool = CONTENT.abilities.filter(
+    ability => !ability.bossOnly && !getAbilityLockReason(run, member, ability)
+  );
   const related = choicePool.filter(
     (ability) => ability.world === world.id
   );
@@ -530,9 +545,12 @@ export function getEndlessAbilitySelfDamageRate(run, memberId, abilityId) {
 export function detectFusions(run) {
   const owned = new Set(
     Object.values(run.members).flatMap((member) =>
-      Object.keys(member.abilities || {}).filter(
-        (abilityId) => getOwnedLevel(member, abilityId) > 0
-      )
+      [
+        ...Object.keys(member.abilities || {}).filter(
+          (abilityId) => getOwnedLevel(member, abilityId) > 0
+        ),
+        ...(member.blessings || []),
+      ]
     )
   );
   return CONTENT.fusions
@@ -637,7 +655,9 @@ export function applyEndlessChoice(run, memberId, choiceNumber) {
   const ability = ABILITIES.get(abilityId);
   if (!ability) throw new Error(`请选择1至${choices.length}`);
   const member = run.members[memberId];
-  if (!isAbilityAvailable(member, ability))
+  const lockReason = getAbilityLockReason(run, member, ability);
+  if (lockReason) throw new Error(`${ability.name}${lockReason}`);
+  if (!isAbilityAvailable(member, ability, run))
     throw new Error(`${ability.name}的进阶条件尚未满足`);
 
   const oldMaximums = Object.fromEntries(
@@ -732,6 +752,7 @@ export function applyCheckpointChoice(run, choiceNumber) {
           const ability = ABILITIES.get(boon.grantsAbility);
           return (
             ability &&
+            !getAbilityLockReason(run, member, ability) &&
             getOwnedLevel(member, ability.id) < asNumber(ability.maxLevel, 1)
           );
         })

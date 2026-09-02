@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  ENDLESS_SPECIAL_TREASURES,
   ENDLESS_TREASURES,
   HEISEI_RIDERS,
   grantRandomEndlessTreasure,
+  grantRandomEndlessTierTreasure,
   normalizePlayerTreasures,
   getTreasureStates,
   getTreasureEffects,
@@ -20,6 +22,11 @@ import {
   getEndlessTreasureUpgradeCost,
 } from '../model/endlessTreasure.js';
 import {
+  detectFusions,
+  getEndlessContent,
+} from '../model/endlessRealm.js';
+import { getEndlessDifficulty } from '../model/endlessDifficulty.js';
+import {
   grantTitle,
   equipTitle,
   getTitleEffects,
@@ -28,11 +35,211 @@ import {
   recoverEarnedTitles,
 } from '../model/titleSystem.js';
 
-test('至宝池包含19件并加入最强之气', () => {
-  assert.equal(ENDLESS_TREASURES.length, 19);
-  assert.ok(ENDLESS_TREASURES.some(item => item.id === 'treasure_strongest_qi'));
+const NORMAL_ENDLESS_TREASURES = ENDLESS_TREASURES.filter(treasure => !treasure.dropTier);
+
+test('普通至宝池保持19件，A3至A6特殊至宝共8件', () => {
+  assert.equal(NORMAL_ENDLESS_TREASURES.length, 19);
+  assert.equal(ENDLESS_SPECIAL_TREASURES.length, 8);
+  assert.ok(NORMAL_ENDLESS_TREASURES.some(item => item.id === 'treasure_strongest_qi'));
+  assert.deepEqual(
+    ENDLESS_SPECIAL_TREASURES.map(treasure => treasure.id).sort(),
+    [
+      'treasure_body_seed',
+      'treasure_five_elements',
+      'treasure_great_sage',
+      'treasure_hogyoku',
+      'treasure_kryptonian',
+      'treasure_spider_totem',
+      'treasure_true_lord',
+      'treasure_white_lantern',
+    ].sort()
+  );
+  for (const tier of [3, 4, 5, 6]) {
+    assert.equal(
+      ENDLESS_SPECIAL_TREASURES.filter(treasure => treasure.dropTier === tier).length,
+      2,
+      `A${tier}应有两件特殊至宝`
+    );
+  }
   const ids = new Set(ENDLESS_TREASURES.map((t) => t.id));
-  assert.equal(ids.size, 19, 'id不可重复');
+  assert.equal(ids.size, ENDLESS_TREASURES.length, 'id不可重复');
+});
+
+test('A3至A6通关按25%、30%、35%、40%判定对应特殊至宝', () => {
+  const sequence = (...values) => {
+    let index = 0;
+    return () => values[index++] ?? values.at(-1) ?? 0;
+  };
+  for (const [tier, chance] of [[3, 0.25], [4, 0.3], [5, 0.35], [6, 0.4]]) {
+    assert.equal(getEndlessDifficulty(tier).specialTreasureChance, chance);
+
+    const missed = { id: `miss-${tier}` };
+    assert.equal(
+      grantRandomEndlessTierTreasure(missed, tier, sequence(chance, 0)),
+      null,
+      `A${tier}概率未命中时不应发放`
+    );
+    assert.deepEqual(missed.无尽至宝列表 || [], []);
+
+    const gained = grantRandomEndlessTierTreasure(
+      { id: `hit-${tier}` },
+      tier,
+      sequence(chance - 0.001, 0)
+    );
+    assert.ok(gained);
+    assert.equal(gained.treasure.dropTier, tier);
+    assert.ok(ENDLESS_SPECIAL_TREASURES.some(treasure => treasure.id === gained.treasure.id));
+  }
+
+  for (const tier of [1, 2, 7, 9]) {
+    const player = { id: `tier-${tier}` };
+    assert.equal(grantRandomEndlessTierTreasure(player, tier, () => 0), null);
+    assert.deepEqual(player.无尽至宝列表 || [], []);
+  }
+});
+
+test('普通随机至宝不会混入A3至A6特殊池', () => {
+  for (let index = 0; index < NORMAL_ENDLESS_TREASURES.length; index++) {
+    const gained = grantRandomEndlessTreasure(
+      { id: `normal-${index}` },
+      () => (index + 0.5) / NORMAL_ENDLESS_TREASURES.length
+    );
+    assert.ok(gained);
+    assert.equal(gained.treasure.dropTier, undefined);
+  }
+});
+
+test('八件特殊至宝按能力、boon与融合条件逐项觉醒', () => {
+  const byId = Object.fromEntries(ENDLESS_SPECIAL_TREASURES.map(treasure => [treasure.id, treasure]));
+  const greatSageRequires = {
+    myth_great_sage_art: 1,
+    myth_seventy_two_transformations: 1,
+    anime_fiery_eyes: 1,
+  };
+  const trueLordRequires = {
+    art_eight_nine: 1,
+    myth_heaven_eye: 1,
+    myth_three_pointed_blade: 1,
+  };
+  const bodySeedRequires = {
+    perfect_free_transformation: 1,
+    perfect_supreme_bone: 1,
+  };
+  const spiderRequires = {
+    multi_spider_gene: 1,
+    multi_spider_sense: 1,
+    multi_symbiote_suit: 1,
+  };
+  const kryptonianRequires = {
+    multi_solar_core: 1,
+    multi_man_of_steel: 1,
+  };
+
+  assert.deepEqual(byId.treasure_great_sage.awaken.requires, greatSageRequires);
+  assert.deepEqual(byId.treasure_true_lord.awaken.requires, trueLordRequires);
+  assert.deepEqual(byId.treasure_body_seed.awaken.requires, bodySeedRequires);
+  assert.deepEqual(byId.treasure_body_seed.awaken.requiresFusions, ['fusion_desolate_sword']);
+  assert.deepEqual(byId.treasure_five_elements.awaken.requires, { anime_emperor_armor: 3 });
+  assert.deepEqual(byId.treasure_spider_totem.awaken.requires, spiderRequires);
+  assert.deepEqual(byId.treasure_kryptonian.awaken.requires, kryptonianRequires);
+  assert.deepEqual(byId.treasure_hogyoku.awaken.requires, { anime_hogyoku: 3 });
+  assert.deepEqual(byId.treasure_white_lantern.awaken.requires, { multi_white_lantern: 3 });
+
+  const stateFor = (treasureId, abilities, { blessings = [], fusions = [] } = {}) =>
+    getTreasureStates({
+      id: 'holder',
+      treasureIds: [{ id: treasureId, level: 1 }],
+      abilities: { ...abilities },
+      blessings: [...blessings],
+      fusions: [...fusions],
+      __worldAbilityCounts: {},
+    }, { fusions: [...fusions] })[0];
+
+  for (const [treasureId, requirements] of [
+    ['treasure_great_sage', greatSageRequires],
+    ['treasure_true_lord', trueLordRequires],
+    ['treasure_spider_totem', spiderRequires],
+    ['treasure_kryptonian', kryptonianRequires],
+  ]) {
+    assert.equal(stateFor(treasureId, requirements).awaken.active, true);
+    for (const missing of Object.keys(requirements)) {
+      const incomplete = { ...requirements };
+      delete incomplete[missing];
+      assert.equal(
+        stateFor(treasureId, incomplete).awaken.active,
+        false,
+        `${treasureId}缺少${missing}时不应觉醒`
+      );
+    }
+  }
+
+  const staffStage = byId.treasure_great_sage.stages.find(stage =>
+    stage.requiresBoons?.includes('relic_ruyi_staff')
+  );
+  assert.ok(staffStage, '齐天大圣血脉应有金箍棒强化阶段');
+  assert.deepEqual(stateFor('treasure_great_sage', greatSageRequires).stageEffect, {});
+  assert.ok(Object.keys(stateFor('treasure_great_sage', greatSageRequires, {
+    blessings: ['relic_ruyi_staff'],
+  }).stageEffect).length > 0);
+
+  assert.equal(stateFor('treasure_body_seed', bodySeedRequires).awaken.active, false);
+  assert.equal(stateFor('treasure_body_seed', bodySeedRequires, {
+    fusions: ['fusion_desolate_sword'],
+  }).awaken.active, true);
+  for (const missing of Object.keys(bodySeedRequires)) {
+    const incomplete = { ...bodySeedRequires };
+    delete incomplete[missing];
+    assert.equal(stateFor('treasure_body_seed', incomplete, {
+      fusions: ['fusion_desolate_sword'],
+    }).awaken.active, false);
+  }
+
+  assert.equal(stateFor('treasure_five_elements', { anime_emperor_armor: 2 }).awaken.active, false);
+  const emperor = stateFor('treasure_five_elements', { anime_emperor_armor: 3 });
+  assert.equal(emperor.awaken.active, true);
+  assert.equal(emperor.awaken.formName, '终极帝皇铠甲');
+
+  for (const [treasureId, abilityId] of [
+    ['treasure_hogyoku', 'anime_hogyoku'],
+    ['treasure_white_lantern', 'multi_white_lantern'],
+  ]) {
+    assert.equal(stateFor(treasureId, { [abilityId]: 2 }).awaken.active, false);
+    assert.equal(stateFor(treasureId, { [abilityId]: 3 }).awaken.active, true);
+  }
+});
+
+test('平乱诀、仙劫剑诀与草字剑诀共同合成荒无剑诀', () => {
+  const content = getEndlessContent();
+  const fusion = content.fusions.find(item => item.id === 'fusion_desolate_sword');
+  assert.ok(fusion);
+  assert.deepEqual(
+    [...fusion.requires].sort(),
+    ['art_grass_sword', 'perfect_immortal_tribulation_sword', 'perfect_peace_sword'].sort()
+  );
+
+  const fusionRun = (overrides = {}) => ({
+    members: {
+      first: {
+        abilities: { perfect_peace_sword: 1 },
+        blessings: ['art_grass_sword'],
+      },
+      second: {
+        abilities: { perfect_immortal_tribulation_sword: 1 },
+        blessings: [],
+      },
+    },
+    ...overrides,
+  });
+  assert.ok(detectFusions(fusionRun()).includes('fusion_desolate_sword'));
+
+  const noGrass = fusionRun();
+  noGrass.members.first.blessings = [];
+  assert.equal(detectFusions(noGrass).includes('fusion_desolate_sword'), false);
+  for (const missing of ['perfect_peace_sword', 'perfect_immortal_tribulation_sword']) {
+    const incomplete = fusionRun();
+    for (const member of Object.values(incomplete.members)) delete member.abilities[missing];
+    assert.equal(detectFusions(incomplete).includes('fusion_desolate_sword'), false);
+  }
 });
 
 test('第25关随机解锁一件永久至宝', () => {
@@ -49,7 +256,7 @@ test('第25关随机解锁一件永久至宝', () => {
 test('全部收集后重复解锁升级至宝', () => {
   const player = {
     id: '2',
-    无尽至宝列表: ENDLESS_TREASURES.map((t) => ({
+    无尽至宝列表: NORMAL_ENDLESS_TREASURES.map((t) => ({
       id: t.id,
       name: t.name,
       level: 1,
@@ -66,7 +273,7 @@ test('全部收集后重复解锁升级至宝', () => {
 test('至宝等级上限10级，满级不再升级', () => {
   const player = {
     id: '3',
-    无尽至宝列表: ENDLESS_TREASURES.map((t) => ({
+    无尽至宝列表: NORMAL_ENDLESS_TREASURES.map((t) => ({
       id: t.id,
       name: t.name,
       level: ENDLESS_TREASURE_LEVEL_CAP,
@@ -145,7 +352,7 @@ test('K触屏旧十年终极技的理论DPS高于其他至宝主动技', () => {
     const ultimate = rider.ultimate;
     return sum + rider.attack * ultimate.damagePct * (ultimate.hits || 1) / 3;
   }, 0);
-  const otherDps = ENDLESS_TREASURES
+  const otherDps = NORMAL_ENDLESS_TREASURES
     .filter(treasure => treasure.id !== 'treasure_decade')
     .flatMap(treasure => treasure.awaken?.combat || [])
     .filter(entry => entry.damagePct)
@@ -279,19 +486,27 @@ test('旧存档按已完成里程碑补发称号且重复执行幂等', () => {
 
 test('至宝面板视图', () => {
   const player = {
-    无尽至宝列表: [{ id: 'treasure_decade', name: 'K触屏·帝骑驱动器', level: 1 }],
+    无尽至宝列表: [
+      { id: 'treasure_decade', name: 'K触屏·帝骑驱动器', level: 1 },
+      { id: 'treasure_great_sage', name: '齐天大圣血脉', level: 1 },
+    ],
   };
   const views = getPlayerTreasureViews(player);
-  assert.equal(views.length, 1);
+  assert.equal(views.length, 2);
   assert.equal(views[0].name, 'K触屏·帝骑驱动器');
   assert.ok(views[0].desc.length > 0);
+  assert.equal(views[1].source, '无尽劫境·A3通关秘藏');
+  assert.deepEqual(views[1].stageConditions, [{
+    name: '定海神珍·斗战齐天',
+    condition: '持有 「如意金箍棒」',
+  }]);
 });
 
 test('至宝槽按25层循环并递增消耗道痕', () => {
   const player = {
     无尽劫境最高层: 75,
     劫境道痕: 20_000,
-    无尽至宝列表: ENDLESS_TREASURES.slice(0, 3).map(treasure => ({
+    无尽至宝列表: NORMAL_ENDLESS_TREASURES.slice(0, 3).map(treasure => ({
       id: treasure.id,
       name: treasure.name,
       level: 1,

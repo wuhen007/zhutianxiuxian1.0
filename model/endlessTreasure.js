@@ -1,3 +1,5 @@
+import { getEndlessDifficulty } from './endlessDifficulty.js';
+
 /**
  * 无尽至宝系统
  * ------------
@@ -40,6 +42,29 @@ export const SYNTHETIC_ABILITY_NAMES = Object.freeze({
   treasure_titan_power: '巨人之力',
   treasure_wushi_jing: '无始经',
   treasure_strongest_qi: '最强之气',
+  treasure_great_sage_bloodline: '齐天大圣血脉',
+  treasure_spider_totem: '蜘蛛宇宙图腾',
+  treasure_true_lord: '二郎显圣真君',
+  treasure_kryptonian_blood: '氪星血脉',
+  treasure_body_seed: '以身为种',
+  myth_great_sage_art: '大品天仙诀',
+  myth_seventy_two_transformations: '七十二变',
+  anime_fiery_eyes: '火眼金睛',
+  relic_ruyi_staff: '如意金箍棒',
+  art_eight_nine: '八九玄功',
+  myth_heaven_eye: '天眼',
+  myth_three_pointed_blade: '三尖两刃刀',
+  perfect_free_transformation: '他化自在法',
+  perfect_supreme_bone: '至尊骨',
+  fusion_desolate_sword: '荒无剑诀',
+  multi_spider_gene: '蜘蛛侠基因',
+  multi_spider_sense: '蜘蛛感应',
+  multi_symbiote_suit: '共生体战衣',
+  multi_solar_core: '黄太阳核心',
+  multi_man_of_steel: '钢铁之躯',
+  anime_hogyoku: '崩玉',
+  anime_emperor_armor: '帝皇铠甲',
+  multi_white_lantern: '白灯之力',
 });
 
 /* 旧平成十年骑士（K触屏·神主形态召唤物） */
@@ -67,7 +92,7 @@ export const HEISEI_RIDERS = Object.freeze([
  *  - awaken.combat：觉醒形态专属战斗技能（由 endlessRealm 执行）
  *  - alternate：未觉醒时的替代形态（仅部分至宝需要，如 K触屏普通帝骑）
  */
-export const ENDLESS_TREASURES = Object.freeze([
+const REGULAR_ENDLESS_TREASURES = Object.freeze([
   /* 1. K触屏·帝骑驱动器 —— 假面骑士Decade */
   Object.freeze({
     id: 'treasure_decade',
@@ -646,12 +671,272 @@ export const ENDLESS_TREASURES = Object.freeze([
   }),
 ]);
 
+export const ENDLESS_SPECIAL_TREASURES = Object.freeze([
+  Object.freeze({
+    id: 'treasure_great_sage',
+    name: '齐天大圣血脉',
+    icon: '🐒',
+    rarity: '禁忌',
+    source: '无尽劫境·A3通关秘藏',
+    dropTier: 3,
+    desc: '斗战圣猿的不屈血脉。集齐大品天仙诀、七十二变与火眼金睛后觉醒齐天大圣；若再获得如意金箍棒，属性与连段会进一步升华。',
+    baseAbility: 'treasure_great_sage_bloodline',
+    baseLevel: 1,
+    baseEffect: { attackPct: 0.14, hpPct: 0.1, critChance: 0.05 },
+    stages: [
+      {
+        name: '定海神珍·斗战齐天',
+        requiresBoons: ['relic_ruyi_staff'],
+        effect: { attackPct: 0.2, critChance: 0.04, comboAttackPct: 0.02 },
+      },
+    ],
+    awaken: {
+      name: '齐天大圣·大闹天宫',
+      requires: {
+        myth_great_sage_art: 1,
+        myth_seventy_two_transformations: 1,
+        anime_fiery_eyes: 1,
+      },
+      effect: { attackPct: 0.45, hpPct: 0.3, defensePct: 0.2, extraActionChance: 0.06 },
+      combat: [
+        {
+          type: 'multiHit',
+          every: 3,
+          hits: 5,
+          damagePct: 0.55,
+          label: '齐天棍法·大闹天宫',
+          verb: '横扫',
+          narration: '{member}法天象地，五道斗战棍影接连砸向{enemy}',
+        },
+      ],
+    },
+  }),
+  Object.freeze({
+    id: 'treasure_spider_totem',
+    name: '蜘蛛宇宙图腾',
+    icon: '🕸️',
+    rarity: '神话',
+    source: '无尽劫境·A3通关秘藏',
+    dropTier: 3,
+    desc: '生命与命运之网的多元图腾。蜘蛛侠基因、蜘蛛感应与共生体战衣同时存在时，唤来无数宇宙的蜘蛛之力。',
+    baseAbility: 'treasure_spider_totem',
+    baseLevel: 1,
+    baseEffect: { dodgeChance: 0.06, critChance: 0.05, extraActionChance: 0.03 },
+    awaken: {
+      name: '蜘蛛宇宙·命运之网',
+      requires: {
+        multi_spider_gene: 1,
+        multi_spider_sense: 1,
+        multi_symbiote_suit: 1,
+      },
+      effect: { attackPct: 0.3, hpPct: 0.24, dodgeChance: 0.08, extraActionChance: 0.08 },
+      combat: [
+        {
+          type: 'multiHit',
+          every: 3,
+          hits: 4,
+          damagePct: 0.44,
+          label: '蜘蛛宇宙·蛛网集结',
+          verb: '集结',
+          narration: '命运之网洞开多元裂隙，四道蜘蛛投影同时围攻{enemy}',
+        },
+      ],
+    },
+  }),
+  Object.freeze({
+    id: 'treasure_true_lord',
+    name: '二郎显圣真君',
+    icon: '👁️',
+    rarity: '禁忌',
+    source: '无尽劫境·A4通关秘藏',
+    dropTier: 4,
+    desc: '清源妙道真君的显圣道果。八九玄功、天眼与三尖两刃刀齐聚后，显化法天象地真身。',
+    baseAbility: 'treasure_true_lord',
+    baseLevel: 1,
+    baseEffect: { attackPct: 0.14, hpPct: 0.12, defensePct: 0.12 },
+    awaken: {
+      name: '清源妙道·显圣真君',
+      requires: {
+        art_eight_nine: 1,
+        myth_heaven_eye: 1,
+        myth_three_pointed_blade: 1,
+      },
+      effect: { attackPct: 0.48, hpPct: 0.35, defensePct: 0.4, critChance: 0.08 },
+      combat: [
+        {
+          type: 'bigProc',
+          every: 3,
+          damagePct: 3.4,
+          shieldMultiplier: 5,
+          clearEnemyBuffs: true,
+          ignoreDefense: true,
+          label: '天眼神锋·劈山赶日',
+          verb: '显圣',
+          narration: '{member}天眼锁定真形，三尖两刃刀劈开山海斩向{enemy}',
+        },
+      ],
+    },
+  }),
+  Object.freeze({
+    id: 'treasure_kryptonian',
+    name: '氪星血脉',
+    icon: '☀️',
+    rarity: '神话',
+    source: '无尽劫境·A4通关秘藏',
+    dropTier: 4,
+    desc: '沐浴黄太阳便会持续进化的氪星基因。集齐黄太阳核心与钢铁之躯后，解放完整恒星级力量。',
+    baseAbility: 'treasure_kryptonian_blood',
+    baseLevel: 1,
+    baseEffect: { hpPct: 0.16, defensePct: 0.14, regenPct: 0.012 },
+    awaken: {
+      name: '氪星之子·黄太阳超载',
+      requires: { multi_solar_core: 1, multi_man_of_steel: 1 },
+      effect: { attackPct: 0.4, hpPct: 0.42, defensePct: 0.38, damageReduction: 0.08 },
+      combat: [
+        {
+          type: 'bigProc',
+          every: 4,
+          damagePct: 2.7,
+          label: '热视线·恒星耀斑',
+          verb: '释放',
+          narration: '{member}双目喷薄恒星热视线，将{enemy}所在天幕烧穿',
+        },
+      ],
+    },
+  }),
+  Object.freeze({
+    id: 'treasure_body_seed',
+    name: '以身为种',
+    icon: '🌱',
+    rarity: '禁忌',
+    source: '无尽劫境·A5通关秘藏',
+    dropTier: 5,
+    desc: '不假外界道种，以自身开辟无上仙路。荒无剑诀、他化自在法与至尊骨齐聚后，体内诸门共鸣。',
+    baseAbility: 'treasure_body_seed',
+    baseLevel: 1,
+    baseEffect: { attackPct: 0.16, hpPct: 0.16, defensePct: 0.12 },
+    awaken: {
+      name: '以身为种·万古唯一',
+      requires: { perfect_free_transformation: 1, perfect_supreme_bone: 1 },
+      requiresFusions: ['fusion_desolate_sword'],
+      effect: { attackPct: 0.55, hpPct: 0.45, defensePct: 0.35, damageReduction: 0.1 },
+      combat: [
+        {
+          type: 'multiHit',
+          every: 3,
+          hits: 3,
+          damagePct: 1.1,
+          label: '以身为种·荒无三剑',
+          verb: '开门',
+          narration: '{member}体内诸门齐开，三道荒无剑光斩断{enemy}的过去现在未来',
+        },
+      ],
+    },
+  }),
+  Object.freeze({
+    id: 'treasure_hogyoku',
+    name: '崩玉·无限进化',
+    icon: '💎',
+    rarity: '禁忌',
+    source: '无尽劫境·A5通关秘藏',
+    dropTier: 5,
+    desc: '读取灵魂深层愿望并突破界限的核心。将崩玉提升至3级后，完成超越死神与虚的持续进化。',
+    baseAbility: 'anime_hogyoku',
+    baseLevel: 1,
+    baseEffect: { attackPct: 0.12, hpPct: 0.12, defensePct: 0.12 },
+    awaken: {
+      name: '崩玉融合·无限进化',
+      requires: { anime_hogyoku: 3 },
+      effect: { attackPct: 0.45, hpPct: 0.4, defensePct: 0.35, revivePct: 0.25 },
+      combat: [
+        {
+          type: 'bigProc',
+          every: 3,
+          damagePct: 2.8,
+          label: '崩玉进化·超越灵压',
+          verb: '进化',
+          narration: '{member}与崩玉再次融合，超越极限的灵压碾过{enemy}',
+        },
+      ],
+    },
+  }),
+  Object.freeze({
+    id: 'treasure_five_elements',
+    name: '五行血脉',
+    icon: '🛡️',
+    rarity: '禁忌',
+    source: '无尽劫境·A6通关秘藏',
+    dropTier: 6,
+    desc: '金木水火土五行光影血脉归一。将帝皇铠甲提升至3级后，解锁终极帝皇铠甲。',
+    baseAbility: 'anime_emperor_armor',
+    baseLevel: 1,
+    baseEffect: { attackPct: 0.16, hpPct: 0.16, defensePct: 0.16 },
+    awaken: {
+      name: '终极帝皇铠甲',
+      requires: { anime_emperor_armor: 3 },
+      effect: { attackPct: 0.6, hpPct: 0.55, defensePct: 0.6, damageReduction: 0.12, extraActionChance: 0.08 },
+      combat: [
+        {
+          type: 'bigProc',
+          every: 3,
+          damagePct: 5,
+          shieldMultiplier: 8,
+          clearEnemyBuffs: true,
+          ignoreDefense: true,
+          label: '终极帝皇·五圣必杀',
+          verb: '封魔',
+          narration: '{member}召来五圣兽法相，终极帝皇五圣必杀贯穿{enemy}',
+        },
+      ],
+    },
+  }),
+  Object.freeze({
+    id: 'treasure_white_lantern',
+    name: '白灯戒·生命方程式',
+    icon: '💡',
+    rarity: '禁忌',
+    source: '无尽劫境·A6通关秘藏',
+    dropTier: 6,
+    desc: '完整情感光谱汇成的生命白光。将白灯之力提升至3级后，掌握生命方程式并庇护全队。',
+    baseAbility: 'multi_white_lantern',
+    baseLevel: 1,
+    baseEffect: { hpPct: 0.16, defensePct: 0.12, regenPct: 0.015, teamShieldPct: 0.06 },
+    awaken: {
+      name: '白灯生命方程式',
+      requires: { multi_white_lantern: 3 },
+      effect: { hpPct: 0.5, defensePct: 0.4, regenPct: 0.04, teamShieldPct: 0.15, revivePct: 0.3 },
+      combat: [
+        {
+          type: 'domain',
+          damagePct: 0.025,
+          label: '生命方程式·白光领域',
+          narration: '生命白光覆盖战场，持续净化{enemy}的毁灭权柄',
+        },
+        {
+          type: 'bigProc',
+          every: 4,
+          damagePct: 2.4,
+          label: '白灯·生命创生',
+          verb: '创生',
+          narration: '{member}书写生命方程式，白色光潮冲刷{enemy}',
+        },
+      ],
+    },
+  }),
+]);
+
+export const ENDLESS_TREASURES = Object.freeze([
+  ...REGULAR_ENDLESS_TREASURES,
+  ...ENDLESS_SPECIAL_TREASURES,
+]);
+
 const TREASURE_MAP = new Map(ENDLESS_TREASURES.map((treasure) => [treasure.id, treasure]));
 
 const EFFECT_KEYS = Object.freeze([
   'attackPct', 'hpPct', 'defensePct', 'critChance', 'dodgeChance', 'regenPct',
   'damageReduction', 'reflectChance', 'reflectPct', 'extraActionChance',
   'summonPct', 'executePct', 'teamShieldPct', 'riderKickChance',
+  'comboAttackPct', 'revivePct', 'victoryHealPct', 'onWinAttackPct',
 ]);
 
 function asNumber(value, fallback = 0) {
@@ -823,35 +1108,86 @@ export function upgradeEndlessTreasure(player, input) {
 export function grantRandomEndlessTreasure(player, randomizer = Math.random) {
   const owned = normalizePlayerTreasures(player);
   const ownedIds = new Set(owned.map((item) => item.id));
-  const candidates = ENDLESS_TREASURES.filter((treasure) => !ownedIds.has(treasure.id));
-  let upgraded = false;
-  let treasure;
-  let level;
-  if (candidates.length) {
-    treasure = candidates[Math.floor(randomizer() * candidates.length)];
-    level = 1;
-  } else if (owned.length) {
-    const target = owned[Math.floor(randomizer() * owned.length)];
-    treasure = TREASURE_MAP.get(target.id);
-    level = Math.min(ENDLESS_TREASURE_LEVEL_CAP, target.level + 1);
-    upgraded = level > target.level;
-    if (!upgraded) return null;
-    player[ENDLESS_TREASURE_FIELD] = owned.map((item) =>
-      item.id === target.id ? { ...item, level } : item
+  const missing = REGULAR_ENDLESS_TREASURES.filter(
+    treasure => !ownedIds.has(treasure.id)
+  );
+  const upgradable = owned.filter(item => {
+    const treasure = TREASURE_MAP.get(item.id);
+    return !treasure?.dropTier && item.level < ENDLESS_TREASURE_LEVEL_CAP;
+  });
+  const pool = missing.length
+    ? missing
+    : upgradable.map(item => TREASURE_MAP.get(item.id));
+  if (!pool.length) return null;
+  return grantSelectedTreasure(
+    player,
+    owned,
+    pickTreasure(pool, randomizer())
+  );
+}
+
+export function grantRandomEndlessTierTreasure(
+  player,
+  difficultyTier,
+  randomizer = Math.random
+) {
+  const difficulty = getEndlessDifficulty(difficultyTier);
+  const chance = asNumber(difficulty.specialTreasureChance);
+  const roll = clamp(asNumber(randomizer()), 0, 1);
+  if (!chance || roll >= chance) return null;
+
+  const tierPool = ENDLESS_SPECIAL_TREASURES.filter(
+    treasure => treasure.dropTier === difficulty.tier
+  );
+  const owned = normalizePlayerTreasures(player);
+  const ownedById = new Map(owned.map(item => [item.id, item]));
+  const missing = tierPool.filter(treasure => !ownedById.has(treasure.id));
+  const upgradable = tierPool.filter(
+    treasure => ownedById.get(treasure.id)?.level < ENDLESS_TREASURE_LEVEL_CAP
+  );
+  const pool = missing.length ? missing : upgradable;
+  if (!pool.length) return null;
+  const result = grantSelectedTreasure(
+    player,
+    owned,
+    pickTreasure(pool, roll / chance)
+  );
+  return result
+    ? { ...result, difficultyTier: difficulty.tier, chance }
+    : null;
+}
+
+function pickTreasure(pool, roll) {
+  const index = Math.min(
+    pool.length - 1,
+    Math.floor(clamp(asNumber(roll), 0, 0.999999999) * pool.length)
+  );
+  return pool[index];
+}
+
+function grantSelectedTreasure(player, owned, treasure) {
+  const current = owned.find(item => item.id === treasure.id);
+  if (current) {
+    const level = Math.min(ENDLESS_TREASURE_LEVEL_CAP, current.level + 1);
+    if (level <= current.level) return null;
+    player[ENDLESS_TREASURE_FIELD] = owned.map(item =>
+      item.id === treasure.id ? { ...item, level } : item
     );
-    return { treasure, level, upgraded, name: treasure.name };
-  } else {
-    return null;
+    return { treasure, level, upgraded: true, name: treasure.name };
   }
   player[ENDLESS_TREASURE_FIELD] = [
     ...owned,
-    { id: treasure.id, name: treasure.name, level, gainedAt: Date.now() },
+    { id: treasure.id, name: treasure.name, level: 1, gainedAt: Date.now() },
   ];
-  return { treasure, level, upgraded, name: treasure.name };
+  return { treasure, level: 1, upgraded: false, name: treasure.name };
 }
 
 function ownsAbility(member, abilityId, requiredLevel) {
-  return asNumber(member?.abilities?.[abilityId]) >= asNumber(requiredLevel, 1);
+  const level = Math.max(
+    asNumber(member?.abilities?.[abilityId]),
+    member?.blessings?.includes(abilityId) ? 1 : 0
+  );
+  return level >= asNumber(requiredLevel, 1);
 }
 
 function abilityCount(member) {
@@ -861,11 +1197,11 @@ function abilityCount(member) {
 }
 
 function worldAbilityCount(member, world) {
-  // 无法在此处读取能力池，由调用方注入 counts（见 getTreasureStates）
+  // 能力池统计由调用方注入 counts（见 getTreasureStates）。
   return asNumber(member?.__worldAbilityCounts?.[world]);
 }
 
-function meetsRequirementGroup(member, group) {
+function meetsRequirementGroup(member, group, run) {
   if (group.requires) {
     if (!Object.entries(group.requires).every(([id, level]) => ownsAbility(member, id, level)))
       return false;
@@ -876,6 +1212,14 @@ function meetsRequirementGroup(member, group) {
     );
     if (!matched) return false;
   }
+  if (
+    group.requiresBoons?.some(boonId => !member?.blessings?.includes(boonId))
+  )
+    return false;
+  if (
+    group.requiresFusions?.some(fusionId => !run?.fusions?.includes(fusionId))
+  )
+    return false;
   if (group.minAbilities && abilityCount(member) < group.minAbilities) return false;
   if (group.minAbilitiesInWorld) {
     if (worldAbilityCount(member, group.minAbilitiesInWorld.world) < group.minAbilitiesInWorld.count)
@@ -903,12 +1247,15 @@ export function getTreasureStates(member, run) {
       const baseEffect = {};
       mergeEffect(baseEffect, treasure.baseEffect, effectScale(level));
       const stageEffect = {};
+      const stageNames = [];
       for (const stage of treasure.stages || []) {
-        if (meetsRequirementGroup(member, stage))
+        if (meetsRequirementGroup(member, stage, run)) {
           mergeEffect(stageEffect, stage.effect, effectScale(level));
+          stageNames.push(stage.name);
+        }
       }
       const awakenDef = treasure.awaken;
-      const awakenActive = awakenDef && meetsRequirementGroup(member, awakenDef);
+      const awakenActive = awakenDef && meetsRequirementGroup(member, awakenDef, run);
       const awaken = awakenActive
         ? {
             active: true,
@@ -926,6 +1273,7 @@ export function getTreasureStates(member, run) {
         level,
         baseEffect,
         stageEffect,
+        stageNames,
         awaken,
         alternate: treasure.alternate || null,
         transformChance: treasure.alternate?.transformChance || 0,
@@ -987,7 +1335,7 @@ export function getTreasureRunSummary(member, run) {
     level: state.level,
     awakened: state.awaken.active,
     formName: state.awaken.formName,
-    stageName: Object.keys(state.stageEffect).length ? '仙人模式' : null,
+    stageName: state.stageNames.join('、') || null,
   }));
 }
 
@@ -1007,6 +1355,12 @@ export function getPlayerTreasureViews(player) {
       nextCost: getEndlessTreasureUpgradeCost(item.level),
       equipped: equipped.has(item.id),
       desc: treasure.desc,
+      source: treasure.source,
+      dropTier: treasure.dropTier || null,
+      stageConditions: (treasure.stages || []).map(stage => ({
+        name: stage.name,
+        condition: formatAwakenCondition(stage),
+      })),
       awakenName: treasure.awaken?.name || null,
       awakenCondition: formatAwakenCondition(treasure.awaken),
     };
@@ -1034,6 +1388,18 @@ function formatAwakenCondition(awaken) {
       )
       .join(' 或 ');
     parts.push(`掌握 ${groupText} 任一`);
+  }
+  if (awaken.requiresBoons?.length) {
+    const boonNames = awaken.requiresBoons.map(
+      id => `「${SYNTHETIC_ABILITY_NAMES[id] || id}」`
+    );
+    parts.push(`持有 ${boonNames.join('、')}`);
+  }
+  if (awaken.requiresFusions?.length) {
+    const fusionNames = awaken.requiresFusions.map(
+      id => `「${SYNTHETIC_ABILITY_NAMES[id] || id}」`
+    );
+    parts.push(`激活 ${fusionNames.join('、')}`);
   }
   if (awaken.minAbilities) parts.push(`参悟 ${awaken.minAbilities} 项能力`);
   if (awaken.minAbilitiesInWorld)

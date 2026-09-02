@@ -1,6 +1,51 @@
 export const ENDLESS_TIER_MAX_LAYER = 150;
 export const ENDLESS_MAX_DIFFICULTY_TIER = 9;
 
+const EMPTY_TIER_FEATURE = Object.freeze({
+  specialAbilityTheme: '',
+  specialAbilityNames: Object.freeze([]),
+  specialTreasureChance: 0,
+});
+
+const ENDLESS_TIER_FEATURES = Object.freeze({
+  3: Object.freeze({
+    specialAbilityTheme: '斗战齐天与蜘蛛宇宙',
+    specialAbilityNames: Object.freeze([
+      '大品天仙诀',
+      '七十二变',
+      '蜘蛛感应',
+      '共生体战衣',
+    ]),
+    specialTreasureChance: 0.25,
+  }),
+  4: Object.freeze({
+    specialAbilityTheme: '显圣真君与氪星传承',
+    specialAbilityNames: Object.freeze([
+      '八九玄功',
+      '天眼',
+      '三尖两刃刀',
+      '黄太阳核心',
+      '钢铁之躯',
+    ]),
+    specialTreasureChance: 0.3,
+  }),
+  5: Object.freeze({
+    specialAbilityTheme: '荒无剑诀与崩玉进化',
+    specialAbilityNames: Object.freeze([
+      '平乱诀',
+      '仙劫剑诀',
+      '草字剑诀',
+      '崩玉',
+    ]),
+    specialTreasureChance: 0.35,
+  }),
+  6: Object.freeze({
+    specialAbilityTheme: '终极帝皇与生命方程式',
+    specialAbilityNames: Object.freeze(['帝皇铠甲', '白灯之力']),
+    specialTreasureChance: 0.4,
+  }),
+});
+
 export const ENDLESS_DIFFICULTIES = Object.freeze([
   '本初劫境',
   '梦魇劫境',
@@ -15,6 +60,7 @@ export const ENDLESS_DIFFICULTIES = Object.freeze([
   tier: index + 1,
   code: `A${index + 1}`,
   name,
+  ...(ENDLESS_TIER_FEATURES[index + 1] || EMPTY_TIER_FEATURE),
   enemyHpMultiplier: 1 + index * 0.35,
   enemyAttackMultiplier: 1 + index * 0.22,
   enemyDefenseMultiplier: 1 + index * 0.15,

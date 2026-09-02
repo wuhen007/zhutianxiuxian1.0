@@ -13,6 +13,7 @@ export const ENDLESS_META_NODES = Object.freeze([
   Object.freeze({ id: 'choice', name: '衍算天机', aliases: ['四选一', '选项'], maxRank: 1, costs: [800], gates: [20], description: '每次能力选择由三个增加至四个。' }),
   Object.freeze({ id: 'double', name: '一念双悟', aliases: ['双选', '多选'], maxRank: 1, costs: [1600], gates: [40], description: '每十层循环可额外选择一次能力。' }),
   Object.freeze({ id: 'reroll', name: '劫机重演', aliases: ['刷新', '刷新能力', '重置能力'], maxRank: 1, costs: [1000], gates: [20], description: '每次进入无尽劫境，可刷新一次当前能力奖励。' }),
+  Object.freeze({ id: 'three_pointed_blade', name: '三尖两刃刀', aliases: ['显圣神兵', '三尖刀'], maxRank: 1, costs: [5000], gates: [450], description: '参悟后，三尖两刃刀会在A4及以上劫境进入能力池。' }),
   Object.freeze({ id: 'branch_healer', name: '治疗师', aliases: ['治疗', '医者'], branch: 'healer', maxRank: 5, costs: BRANCH_COSTS, gates: BRANCH_GATES, description: '每级使全队每回合恢复16%最大生命。首次参悟后锁定流派。' }),
   Object.freeze({ id: 'branch_vanguard', name: '破阵师', aliases: ['输出', '攻伐'], branch: 'vanguard', maxRank: 5, costs: BRANCH_COSTS, gates: BRANCH_GATES, description: '每级提高自身16%攻击与8%暴击率。首次参悟后锁定流派。' }),
   Object.freeze({ id: 'branch_guardian', name: '守护者', aliases: ['坦克', '守护'], branch: 'guardian', maxRank: 5, costs: BRANCH_COSTS, gates: BRANCH_GATES, description: '每级提高自身12%生命、16%防御，并为全队增加10%开战护盾。首次参悟后锁定流派。' }),
@@ -63,7 +64,7 @@ export function normalizeEndlessMeta(value) {
     if (node.branch !== branch) nodes[node.id] = 0;
   }
   return {
-    version: 4,
+    version: 5,
     nodes,
     branch,
     equippedPuzzles,

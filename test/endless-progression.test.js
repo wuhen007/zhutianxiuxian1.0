@@ -14,8 +14,10 @@ import {
   getEndlessCelestialPrice,
 } from '../model/endlessCelestial.js';
 import {
+  applyEndlessChoice,
   createEndlessEnemy,
   createEndlessRun,
+  getEndlessContent,
   getMemberStats,
   resolveEndlessLayer,
 } from '../model/endlessRealm.js';
@@ -43,6 +45,52 @@ test('A1至A9采用确定命名且每阶固定150层', () => {
   assert.equal(formatEndlessDifficulty(1), 'A1·本初劫境');
   assert.equal(formatEndlessDifficulty(6), 'A6·轮回劫境');
   assert.equal(formatEndlessDifficulty(9), 'A9·彼岸劫境');
+});
+
+test('A3至A6专属能力声明阶位门槛且低阶无法强行选择', () => {
+  const expectedByTier = {
+    3: ['myth_great_sage_art', 'myth_seventy_two_transformations', 'multi_spider_sense', 'multi_symbiote_suit'],
+    4: ['art_eight_nine', 'myth_heaven_eye', 'myth_three_pointed_blade', 'multi_solar_core', 'multi_man_of_steel'],
+    5: ['perfect_peace_sword', 'perfect_immortal_tribulation_sword', 'art_grass_sword', 'anime_hogyoku'],
+    6: ['anime_emperor_armor', 'multi_white_lantern'],
+  };
+  const abilities = getEndlessContent().abilities.filter(ability =>
+    [3, 4, 5, 6].includes(Number(ability.minDifficultyTier))
+  );
+  assert.deepEqual(
+    [...new Set(abilities.map(ability => ability.minDifficultyTier))].sort((a, b) => a - b),
+    [3, 4, 5, 6]
+  );
+  for (const [tier, expectedIds] of Object.entries(expectedByTier)) {
+    assert.deepEqual(
+      abilities
+        .filter(ability => ability.minDifficultyTier === Number(tier))
+        .map(ability => ability.id),
+      expectedIds
+    );
+  }
+
+  const prepare = (ability, difficultyTier) => {
+    const run = createEndlessRun(runOptions({ difficultyTier }));
+    const member = run.members['1'];
+    Object.assign(member.abilities, ability.requires || {});
+    member.blessings = [...(ability.requiresBoons || [])];
+    run.fusions = [...(ability.requiresFusions || [])];
+    if (ability.requiredMetaNode) member.endlessMeta.nodes[ability.requiredMetaNode] = 1;
+    run.phase = 'choice';
+    run.pendingChoices = { '1': [ability.id] };
+    return run;
+  };
+
+  for (const ability of abilities) {
+    assert.throws(
+      () => applyEndlessChoice(prepare(ability, ability.minDifficultyTier - 1), '1', 1),
+      undefined,
+      `${ability.name}不应被低阶劫境选择`
+    );
+    const result = applyEndlessChoice(prepare(ability, ability.minDifficultyTier), '1', 1);
+    assert.equal(result.ability.id, ability.id, `${ability.name}应在对应阶位开放`);
+  }
 });
 
 test('每阶首通只结算一次限购加成并解锁下一阶', () => {

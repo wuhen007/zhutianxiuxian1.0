@@ -59,6 +59,7 @@ import {
   getTreasureAbilityName,
   getTreasureRunSummary,
   grantRandomEndlessTreasure,
+  grantRandomEndlessTierTreasure,
   normalizeEndlessTreasureLoadout,
   unequipEndlessTreasure,
   unlockEndlessTreasureSlot,
@@ -1945,6 +1946,15 @@ export class EndlessRealm extends plugin {
         player.无尽劫境结算记录 = [...records, settlement.id].slice(-30);
         if (Number(settlement.highestLayer) >= ENDLESS_TREASURE_UNLOCK_LAYER)
           grantRandomEndlessTreasure(player, Math.random);
+        if (
+          settlement.cleared &&
+          Number(settlement.highestLayer) >= ENDLESS_TIER_MAX_LAYER
+        )
+          grantRandomEndlessTierTreasure(
+            player,
+            settlement.difficultyTier,
+            Math.random
+          );
         if (Number(settlement.highestLayer) >= 30) {
           const serverMax = await this.getServerMaxEndlessLayer();
           if (player.无尽劫境最高层 >= Math.max(serverMax, Number(settlement.highestLayer)))
@@ -2222,6 +2232,10 @@ export class EndlessRealm extends plugin {
         `已首通：${highest ? progress.clearedTiers.map(formatEndlessDifficulty).join('、') : '暂无'}`,
         `当前选择：${formatEndlessDifficulty(team?.difficultyTier || progress.selectedTier)}`,
         `每阶均需打穿${ENDLESS_TIER_MAX_LAYER}层；每个首通使全部限购额度+10%，最低+1件。`,
+        ...[3, 4, 5, 6].map(tier => {
+          const difficulty = getEndlessDifficulty(tier);
+          return `${difficulty.code}：${difficulty.specialAbilityTheme}｜通关特殊至宝${Math.round(difficulty.specialTreasureChance * 100)}%`;
+        }),
         '#无尽难度 A2',
       ].join('\n'));
     }
@@ -3412,6 +3426,23 @@ export class EndlessRealm extends plugin {
               );
             }
           }
+          const clearedTier =
+            (reason === 'clear' || run.completed) &&
+            highestClearedLayer >= ENDLESS_TIER_MAX_LAYER;
+          if (clearedTier) {
+            const gain = grantRandomEndlessTierTreasure(
+              player,
+              run.difficultyTier,
+              Math.random
+            );
+            if (gain) {
+              run.settlement.extras.push(
+                `${team.memberNames?.[id] || id}从【${formatEndlessDifficulty(run.difficultyTier)}】通关秘藏获得特殊至宝【${gain.name}】${
+                  gain.upgraded ? `（升至Lv.${gain.level}）` : ''
+                }！`
+              );
+            }
+          }
           // 无尽劫境天尊：打穿第30关且全服排名第一
           if (highestClearedLayer >= 30) {
             const effectiveServerMax = Math.max(
@@ -3718,6 +3749,10 @@ export class EndlessRealm extends plugin {
         `${treasure.icon} 【${treasure.name}】Lv.${treasure.level} · ${treasure.rarity}${treasure.equipped ? ' [已装配]' : ''}`,
         `　当前属性效能：${Math.round(treasure.effectRate * 100)}%${treasure.nextCost === null ? '｜已满级' : `｜下级消耗：${treasure.nextCost}道痕`}`,
         `　${treasure.desc}`,
+        treasure.source ? `　来源：${treasure.source}` : null,
+        ...(treasure.stageConditions || []).map(stage =>
+          `　强化阶段【${stage.name}】：${stage.condition || '条件已满足'}`
+        ),
         treasure.awakenName
           ? `　觉醒条件：${treasure.awakenCondition || '未知'}`
           : null,
