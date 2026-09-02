@@ -92,6 +92,15 @@ test('至尊路新增第四关·载道之劫，外部道痕隐患由自身之道
   assert.match(src, /calcXianguCarryDaoFlaw\(player\)/);
 });
 
+test('至尊载道结算函数在渡劫模块建立本地导入', () => {
+  const src = readSource('apps/SecretPlace/xianguTribulation.js');
+  const settlementImport = src.match(
+    /import\s*\{([\s\S]*?)\}\s*from ['"]\.\/xianguTribulationSettlement\.js['"]/
+  );
+  assert.ok(settlementImport, '应存在仙古渡劫结算模块导入');
+  assert.match(settlementImport[1], /\bcalcXianguCarryDaoFlaw\b/);
+});
+
 test('冲关极境在虚道/斩我接续九天十地劫与斩仙铡刀劫入口', () => {
   const src = readSource('apps/User/xiangujinshi.js');
   assert.equal(

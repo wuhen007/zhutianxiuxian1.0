@@ -25,6 +25,7 @@ import { config, data } from '../../api/api.js';
 import { consumeBlackEmperorTribulationFormation } from '../../model/blackEmperor.js';
 import {
   applyXianguImperialWeaponDefense,
+  calcXianguCarryDaoFlaw,
   hasXianguGongfa,
   settleXianguWaveDamage,
   XIANGU_REALM_ROUTES,
