@@ -73,6 +73,7 @@ import {
   findXianguTopSeed,
   grantXianguSeed,
   normalizeXianguSeedName,
+  normalizeXianguSeedRecord,
   resolveXianguSeedExtremeName,
   shouldDropXianguSeed,
 } from './xianguSeed.js';
@@ -1957,7 +1958,10 @@ function getXianguUsableSeedEntries(player) {
   return [
     ...permanentSeeds.map((seed, index) => ({ seed, source: 'permanent', index })),
     ...bagSeeds.map((seed, index) => ({ seed, source: 'bag', index })),
-  ];
+  ].map(entry => ({
+    ...entry,
+    seed: normalizeXianguSeedRecord(entry.seed),
+  })).filter(entry => entry.seed);
 }
 
 function consumeXianguSeed(player, entry) {

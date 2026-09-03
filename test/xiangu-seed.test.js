@@ -11,6 +11,7 @@ import {
   getXianguTopSeedCatalog,
   grantXianguSeed,
   normalizeXianguSeedName,
+  normalizeXianguSeedRecord,
   resolveXianguSeedExtremeName,
 } from '../apps/SecretPlace/xianguSeed.js';
 
@@ -65,6 +66,37 @@ test('旧版道种名称可规范到顶级道种目录', () => {
     assert.equal(normalizeXianguSeedName(legacyName), canonicalName);
     assert.equal(findXianguTopSeed(config, legacyName)?.名称, canonicalName);
   }
+});
+
+test('道种记录兼容字符串与旧版英文字段', () => {
+  assert.deepEqual(normalizeXianguSeedRecord('生命之种'), { 名称: '生命之种' });
+
+  const legacy = normalizeXianguSeedRecord({
+    name: '天穹种',
+    quality: '神话',
+    type: '天穹/守御',
+    successRate: 0.85,
+    attrs: { 防御加成: 0.2 },
+    skill: '天穹镇世',
+    extra: '护持道基',
+  });
+
+  assert.equal(legacy.名称, '天穹种');
+  assert.equal(legacy.品质, '神话');
+  assert.equal(legacy.类型, '天穹/守御');
+  assert.equal(legacy.融合成功率, 0.85);
+  assert.deepEqual(legacy.属性加成, { 防御加成: 0.2 });
+  assert.equal(legacy.专属技能, '天穹镇世');
+  assert.equal(legacy.额外效果, '护持道基');
+});
+
+test('字符串道种转入永久存档后保留规范名称', () => {
+  const player = { xiangu_run: {} };
+  const stored = grantXianguSeed(player, '生命之种');
+
+  assert.equal(stored.名称, '生命之种');
+  assert.equal(player.xiangu_seeds[0].名称, '生命之种');
+  assert.deepEqual(player.xiangu_run.获得道种, ['生命之种']);
 });
 
 test('普通、稀有、传说道种不会命中神火极境', () => {

@@ -85,6 +85,30 @@ export function normalizeXianguSeedName(name) {
   return XIANGU_SEED_NAME_ALIASES[rawName] || rawName;
 }
 
+// Older runs stored seeds as strings or with the catalogue's English keys.
+// Keep one canonical shape for all consumers while preserving extra metadata.
+export function normalizeXianguSeedRecord(seed) {
+  if (typeof seed === 'string') {
+    const name = normalizeXianguSeedName(seed);
+    return name ? { 名称: name } : null;
+  }
+  if (!seed || typeof seed !== 'object' || Array.isArray(seed)) return null;
+
+  const name = normalizeXianguSeedName(seed.名称 ?? seed.name);
+  if (!name) return null;
+
+  const normalized = { ...seed, 名称: name };
+  if (normalized.品质 == null && seed.quality != null) normalized.品质 = seed.quality;
+  if (normalized.类型 == null && seed.type != null) normalized.类型 = seed.type;
+  if (normalized.融合成功率 == null && seed.successRate != null) {
+    normalized.融合成功率 = seed.successRate;
+  }
+  if (normalized.属性加成 == null && seed.attrs != null) normalized.属性加成 = seed.attrs;
+  if (normalized.专属技能 == null && seed.skill != null) normalized.专属技能 = seed.skill;
+  if (normalized.额外效果 == null && seed.extra != null) normalized.额外效果 = seed.extra;
+  return normalized;
+}
+
 export function getXianguTopSeedCatalog(config = {}) {
   return Array.isArray(config?.道种配置?.顶级道种) ? config.道种配置.顶级道种 : [];
 }
@@ -177,16 +201,18 @@ export function drawXianguSeed(config, options = {}) {
 }
 
 export function grantXianguSeed(player, seed) {
+  const normalized = normalizeXianguSeedRecord(seed);
+  if (!normalized) return null;
   player.xiangu_seeds = Array.isArray(player.xiangu_seeds) ? player.xiangu_seeds : [];
-  player.xiangu_seeds.push({ ...seed, 属性加成: { ...(seed.属性加成 || {}) } });
+  player.xiangu_seeds.push({ ...normalized, 属性加成: { ...(normalized.属性加成 || {}) } });
   if (player.xiangu_run && typeof player.xiangu_run === 'object') {
     const acquiredSeeds = Array.isArray(player.xiangu_run.获得道种)
       ? [...player.xiangu_run.获得道种]
       : [];
-    acquiredSeeds.push(seed.名称);
+    acquiredSeeds.push(normalized.名称);
     player.xiangu_run.获得道种 = acquiredSeeds;
   }
-  return seed;
+  return normalized;
 }
 
 export function getRegularXianguSeedNames(location) {
