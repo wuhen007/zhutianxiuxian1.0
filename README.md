@@ -120,9 +120,10 @@ YUNZAI_PM2_NAME=你的进程名 bash plugins/zhutianxiuxian1.0/scripts/update.sh
 ## 常见问题
 >如出现msgTask报错mark错误则是因为一些未知原因无法发送zhutianxiuxian1.0\resources\data\temp\temp.json的消息卡死，将该文件清空打入一个[]即可
 ## 交流/直接游玩
-- 官群1：[QQ群链接跳转](https://qm.qq.com/q/741UDjDZ72)
-- 官群2：[QQ群链接跳转](https://qm.qq.com/q/ifm5N9SZ8Y)
-- 衍生官群：[QQ群链接跳转](https://qm.qq.com/q/nCqYx36uvC)
+- 诸天体验服（暂时停止维护）：[QQ群链接跳转](https://qm.qq.com/q/741UDjDZ72)
+- 诸天三周目（作者官群）：[QQ群链接跳转](https://qm.qq.com/q/ifm5N9SZ8Y)
+- 萌信修仙界（联动官群）：[QQ群链接跳转]https://qm.qq.com/q/K9ACiqIWm6
+- 倒霉の妙妙屋4号屋（合作者衍生官群）：[QQ群链接跳转](https://qm.qq.com/q/nCqYx36uvC)
 
 ## 配置与存档
 > zhutianxiuxian1.0/ config / xiuxian / xiuxian.yaml       
