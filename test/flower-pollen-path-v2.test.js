@@ -19,12 +19,12 @@ import {
   getPlaneRealmLaw,
 } from '../model/planeRealmLaw.js';
 
-test('evolution cost follows 150000000 × 5^level with era multiplier', () => {
-  assert.equal(getFlowerEvolutionCost(1, 2), EVOLUTION_BASE_COST * 5);
-  assert.equal(getFlowerEvolutionCost(5, 2), EVOLUTION_BASE_COST * 5 ** 5);
-  assert.equal(getFlowerEvolutionCost(11, 2), EVOLUTION_BASE_COST * 5 ** 11);
-  assert.equal(getFlowerEvolutionCost(1, 0), EVOLUTION_BASE_COST * 5 * 0.75);
-  assert.equal(getFlowerEvolutionCost(1, 4), EVOLUTION_BASE_COST * 5 * 3);
+test('evolution cost follows 100000000 × 2^level with era multiplier', () => {
+  assert.equal(getFlowerEvolutionCost(1, 2), EVOLUTION_BASE_COST * 2);
+  assert.equal(getFlowerEvolutionCost(5, 2), EVOLUTION_BASE_COST * 2 ** 5);
+  assert.equal(getFlowerEvolutionCost(11, 2), EVOLUTION_BASE_COST * 2 ** 11);
+  assert.equal(getFlowerEvolutionCost(1, 0), EVOLUTION_BASE_COST * 2 * 0.75);
+  assert.equal(getFlowerEvolutionCost(1, 4), EVOLUTION_BASE_COST * 2 * 3);
   assert.equal(getFlowerEvolutionCost(0, 2), getFlowerEvolutionCost(1, 2));
 });
 

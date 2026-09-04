@@ -36,6 +36,9 @@ export const BREATHING_TIME_REDUCTION = Object.freeze({
   盗引呼吸法: 5,
 });
 
+// 圣墟唯一机缘：祖种掉落率保持在千分之一量级，仅由圣墟探索结算抽取。
+export const FLOWER_ANCESTOR_SEED_DROP_CHANCE = 0.0012;
+
 export const SHENGXU_EXPLORE_MIN_DURATION_MIN = 5;
 
 export function getShengxuDungeonPlane(dungeon) {
@@ -132,6 +135,7 @@ export function resolveShengxuDungeonReward(dungeon, random = Math.random) {
     herb: Number(random()) < (dungeon.herbChance || 0) ? '本源圣药' : '',
     // 呼吸法传承：概率直接获得；另走残页收集（5 张合成，见下方）
     gongfa: Number(random()) < dungeon.gongfaChance ? dungeon.gongfa : '',
+    ancestorSeed: Number(random()) < FLOWER_ANCESTOR_SEED_DROP_CHANCE ? '花粉路祖种' : '',
   };
 }
 

@@ -1,6 +1,8 @@
+import path from 'node:path';
 import { plugin, verc, data } from '../../api/api.js';
 import config from '../../model/Config.js';
 import {
+  __PATH,
   Add_najie_thing,
   Read_equipment,
   Read_player,
@@ -23,6 +25,11 @@ import {
 import {
   FLOWER_POLLEN_MEDIA,
   FLOWER_FRUITS,
+  FLOWER_ANCESTOR_SEED_NAME,
+  SUPER_FLOWER_FRUIT_NAME,
+  FLOWER_ANCESTOR_BREEDING_MS,
+  FLOWER_ANCESTOR_DORMANT_MS,
+  FLOWER_ANCESTOR_WUDAO_LIMIT,
   FLOWER_TRIBULATION_WAVES_PER_STAGE,
   FLOWER_TRIBULATION_WAVE_INTERVAL_MS,
   FLOWER_TRIBULATION_ERA_DIFFICULTY,
@@ -56,6 +63,11 @@ import {
   getFlowerTribulationGateState,
   getFlowerRootState,
   consumeFlowerFruit,
+  consumeSuperFlowerFruit,
+  beginFlowerAncestorBreeding,
+  settleFlowerAncestorSeed,
+  getFlowerAncestorSeedState,
+  applyAncestorWudao,
   repairFlowerRoot,
   recordFlowerBreathingPractice,
 } from '../../model/flowerPollenPath.js';
@@ -71,6 +83,7 @@ import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
 import { getTitleWudaoBonus } from '../../model/titleSystem.js';
 import { getKongtongModifiers, getPassiveTribulationDamageMultiplier } from '../../model/innateTreasure.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
+import { isFlowerAncestorSeedOwner } from '../../model/shengxuOpportunity.js';
 import {
   consumePlayerLifespan,
   formatSignedPercent,
@@ -89,6 +102,7 @@ import {
   getDaoHeartWudaoCostMultiplier,
   getDaoHeartWudaoGainMultiplier,
 } from '../../model/daoHeart.js';
+import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
 
 const MEDIA_BY_QUALITY = Object.entries(FLOWER_POLLEN_MEDIA)
   .sort((a, b) => a[1].quality - b[1].quality);
@@ -115,6 +129,70 @@ async function refreshAttributes(userId) {
   await Write_equipment(userId, equipment);
 }
 
+async function hasOwnedFlowerAncestorSeed(userId) {
+  return await isFlowerAncestorSeedOwner(userId)
+    && Number(await exist_najie_thing(userId, FLOWER_ANCESTOR_SEED_NAME, '道具')) > 0;
+}
+
+async function buildFlowerDaoGainContext(userId, player, ancestorSeed) {
+  const eraIndex = getCurrentEraIndex();
+  const stoneJar = Boolean(player.圣墟唯一机缘?.石罐本体);
+  const minggeEffects = getMinggeEffects(player, data.minggeList);
+  const technique = getTechniqueWudaoProfile(player.学习的功法, {
+    gongfaList: data.gongfa_list,
+    timeGongfaList: data.timegongfa_list,
+    dijingList: data.dijingList,
+  });
+  const equipmentBonuses = getFlowerDaoEquipmentBonuses(await Read_equipment(userId));
+  const titleBonus = getTitleWudaoBonus(player);
+  const rootRaw = Number(player.灵根?.悟道加成 ?? player.灵根?.eff) || 0;
+  const rootBonus = Math.max(-0.5, Math.min(0.5, Math.abs(rootRaw) > 1 ? rootRaw / 100 : rootRaw));
+  const physiqueBonus = getPhysiqueWudaoBonus(player.灵根?.name) || rootBonus;
+  const kongtong = getKongtongModifiers(player);
+  const imperialWudao = kongtong.decree?.type === '修炼'
+    && kongtong.decree.plane === getPlayerPlaneName(player);
+
+  ensureDaoHeart(player);
+  return {
+    eraIndex,
+    stoneJar,
+    minggeEffects,
+    technique,
+    equipmentBonuses,
+    titleBonus,
+    imperialWudao,
+    gainOptions: {
+      eraIndex,
+      ancestorSeed,
+      stoneJar,
+      physiqueBonus,
+      aptitudeBonus: getAptitudeWudaoBonus(player.天资等级),
+      techniqueBonus: technique.bonus,
+      minggeBonus: Number(minggeEffects.悟道收益) || 0,
+      titleBonus,
+      equipmentBonus: equipmentBonuses.equipment,
+      treasureBonus: equipmentBonuses.treasure + (imperialWudao ? 0.5 : 0) + (kongtong.wudaoMultiplier - 1),
+      worldBonus: Number(player.超维星界悟道加成) || 0,
+      daoHeartMultiplier: getDaoHeartWudaoGainMultiplier(player),
+    },
+  };
+}
+
+function getFlowerDaoTraceProfile(player) {
+  const used = Math.min(50, Math.max(0, Math.floor(Number(player.先天道痕) || 0)));
+  return { used, bonus: used * 0.006, multiplier: 1 + used * 0.006 };
+}
+
+function applyFlowerDaoTraceBonus(player, gain) {
+  const traces = getFlowerDaoTraceProfile(player);
+  if (!traces.used) return traces;
+  player.先天道痕 -= traces.used;
+  gain.bonuses.traces = traces.bonus;
+  gain.gain = Math.max(1, Math.floor(gain.gain * traces.multiplier));
+  gain.multiplier *= traces.multiplier;
+  return traces;
+}
+
 export class FlowerPollenPath extends plugin {
   constructor() {
     super({
@@ -130,21 +208,91 @@ export class FlowerPollenPath extends plugin {
         { reg: '^#进化(?:\\s+.+)?$', fnc: 'evolve' },
         { reg: '^#极尽蜕变$', fnc: 'extreme' },
         { reg: '^#花粉悟道$', fnc: 'flowerDao' },
+        { reg: '^#祖种悟道$', fnc: 'ancestorWudao' },
+        { reg: '^#(?:孕育超级异果|祖种孕育)$', fnc: 'breedAncestorFruit' },
         { reg: '^#花粉渡劫$', fnc: 'flowerTribulation' },
         { reg: '^#花粉渡劫状态$', fnc: 'flowerTribulationStatus' },
         { reg: '^#净化隐患$', fnc: 'purify' },
         { reg: '^#花粉根基$', fnc: 'flowerRootStatus' },
         { reg: '^#服用异果(?:\\s+.+)?$', fnc: 'eatFlowerFruit' },
+        { reg: '^#服用超级异果$', fnc: 'eatSuperFlowerFruit' },
         { reg: '^#重塑进化根基(?:\\s+.+)?$', fnc: 'repairFlowerRoot' },
       ],
     });
+    this.task = [{
+      cron: '*/20 * * * * *',
+      name: 'FlowerAncestorSeedTask',
+      fnc: () => this.tickAncestorSeed(),
+    }];
+    this.ticking = false;
+  }
+
+  ancestorSeedKey(userId) {
+    return `xiuxian:flower:ancestor:breeding:${userId}`;
+  }
+
+  async settleAncestorForUser(userId, player, now = Date.now(), grantFruit = true) {
+    ensureFlowerPollenState(player);
+    if (!(await hasOwnedFlowerAncestorSeed(userId))) {
+      return { changed: false, granted: 0, ownerDenied: true, state: player.花粉路祖种状态 };
+    }
+    const cycleId = Number(player.花粉路祖种状态.孕育完成时间)
+      || Number(player.花粉路祖种状态.上次孕育时间)
+      || Math.trunc(Number(now));
+    const result = settleFlowerAncestorSeed(player, now);
+    let granted = 0;
+    const pending = Math.max(0, Number(player.花粉路祖种状态.待领取异果) || 0);
+    if (grantFruit && pending > 0) {
+      await Add_najie_thing(
+        userId,
+        SUPER_FLOWER_FRUIT_NAME,
+        '道具',
+        pending,
+        undefined,
+        1,
+        { idempotencyKey: `flower-ancestor:${userId}:${cycleId}:fruit` },
+      );
+      granted = pending;
+      player.花粉路祖种状态.待领取异果 -= pending;
+    }
+    if (result.changed || granted > 0) await Write_player(userId, player);
+    return { ...result, granted, state: player.花粉路祖种状态 };
+  }
+
+  async tickAncestorSeed() {
+    if (this.ticking) return;
+    this.ticking = true;
+    try {
+      const keys = await redis.keys('xiuxian:flower:ancestor:breeding:*');
+      for (const key of keys) {
+        const userId = key.split(':').pop();
+        if (!userId) continue;
+        await withPlayerMutationLock(userId, async () => {
+          const player = await Read_player(userId);
+          if (!player) {
+            await redis.del(key);
+            return;
+          }
+          const settlement = await this.settleAncestorForUser(userId, player, Date.now(), true);
+          if (settlement.ownerDenied || !settlement.state.breeding) await redis.del(key);
+        });
+      }
+    } catch (error) {
+      console.error('[花粉路祖种] 孕育结算任务失败:', error);
+    } finally {
+      this.ticking = false;
+    }
   }
 
   async status(e) {
     if (!verc({ e })) return false;
     const userId = await resolveUserId(e);
     if (!(await existplayer(userId))) return e.reply('玩家不存在，请先创建角色。');
-    const player = await Read_player(userId);
+    const player = await withPlayerMutationLock(userId, async () => {
+      const fresh = await Read_player(userId);
+      await this.settleAncestorForUser(userId, fresh);
+      return fresh;
+    });
     ensureFlowerPollenState(player);
     const active = getActiveExtraCultivationPaths(player).map(getExtraCultivationPathName);
     if (!selectedFlowerPath(player)) {
@@ -169,6 +317,8 @@ export class FlowerPollenPath extends plugin {
     if (authorityLevel >= 21) authorities.push('造化万物');
     if (authorityLevel >= 22) authorities.push('开铸大道至宝');
     const daoDailyCount = daoGate.path.daily.date === getShanghaiDateKey() ? daoGate.path.daily.count : 0;
+    const ancestor = getFlowerAncestorSeedState(player);
+    const ancestorOwned = await hasOwnedFlowerAncestorSeed(userId);
     const lines = [
       '【花粉进化路】',
       `境界：${realmName(player.huafenlevel_id)}${player.花粉路分支 ? `（${player.花粉路分支}）` : ''}`,
@@ -177,7 +327,9 @@ export class FlowerPollenPath extends plugin {
       `始祖污染：${pollution.pollution}/100${pollution.polluted ? '（污染期·始祖低语）' : ''}${pollution.marked ? '（始祖印记·成功率-20%）' : ''}`,
       `道伤：${wound.wounds}（花粉属性-${Math.round((1 - wound.attrMultiplier) * 100)}%，进化/渡劫-${Math.round(wound.chancePenalty * 100)}%）`,
       `分支倾向：${branchProfile.name}｜${branchProfile.description}`,
-      daoGate.rule ? `花粉道则：${daoGate.rule.name} ${daoGate.exp}/${daoGate.rule.targetExp}（${daoGate.stage.name}，今日悟道${daoDailyCount}/3）` : '花粉道则：当前境界尚未开启',
+      daoGate.rule ? `花粉道则：${daoGate.rule.name} ${daoGate.exp}/${daoGate.rule.targetExp}（${daoGate.stage.name}，今日悟道${daoDailyCount}/${3 + (ancestorOwned ? 1 : 0)}）` : '花粉道则：当前境界尚未开启',
+      `祖种：${ancestorOwned ? (ancestor.breeding ? `孕育中，剩余${Math.ceil(ancestor.breedingRemainMs / 3600000)}小时` : ancestor.dormant ? `沉寂中，剩余${Math.ceil(ancestor.dormantRemainMs / 3600000)}小时` : '可用') : '未认主'}｜祖种悟道${ancestorOwned ? Math.min(FLOWER_ANCESTOR_WUDAO_LIMIT, ancestor.悟道次数) : 0}/${FLOWER_ANCESTOR_WUDAO_LIMIT}`,
+      ancestorOwned && ancestor.待领取异果 > 0 ? `待领取：${SUPER_FLOWER_FRUIT_NAME}×${ancestor.待领取异果}` : '',
       tribulationGate.rule ? `专属渡劫：${tribulationGate.rule.name}（${tribulationGate.completed ? '已渡过' : `待渡，失败${tribulationGate.failures}次`}）` : '专属渡劫：当前境界无需渡劫',
       `呼吸法：${breathing || '尚未掌握'}`,
       `极境：${player.花粉极境.length ? player.花粉极境.join('、') : '无'}`,
@@ -339,7 +491,7 @@ export class FlowerPollenPath extends plugin {
       if (Number(player.修为) < cost || Number(player.血气) < cost) {
         return e.reply(`进化需修为、血气各${bigNumberTransform(cost)}（含时代影响）。`);
       }
-      const ancestorSeed = Number(await exist_najie_thing(userId, '花粉路祖种', '道具')) > 0;
+      const ancestorSeed = await hasOwnedFlowerAncestorSeed(userId);
       const chance = getFlowerEvolutionChance(player, mediumName, { ancestorSeed, eraIndex });
       const beforeRealm = realmName(player.huafenlevel_id);
       const breakthrough = getFlowerBreakthroughRule(player.huafenlevel_id);
@@ -408,6 +560,166 @@ export class FlowerPollenPath extends plugin {
     });
   }
 
+  async ancestorWudao(e) {
+    if (!verc({ e })) return false;
+    const userId = await resolveUserId(e);
+    if (!(await existplayer(userId))) return e.reply('玩家不存在，请先创建角色。');
+    return withPlayerMutationLock(userId, async () => {
+      const player = await Read_player(userId);
+      if (!selectedFlowerPath(player)) return e.reply('你尚未踏上花粉进化路。');
+      const ancestorSettlement = await this.settleAncestorForUser(userId, player);
+      if (ancestorSettlement.ownerDenied) return e.reply(`缺少已认主的${FLOWER_ANCESTOR_SEED_NAME}，可在圣墟副本中寻得。`);
+      const realmId = Number(player.huafenlevel_id) || 1;
+      const gate = getFlowerDaoGateState(player, realmId);
+      if (!gate.rule) return e.reply('当前花粉境界尚未开启花粉道则，继续进化即可。');
+      if (gate.ok) return e.reply(`【花粉道则已圆满】${gate.rule.name}已经完成。`);
+      const state = getFlowerAncestorSeedState(player);
+      if (state.breeding) return e.reply(`祖种正在孕育中，剩余${Math.ceil(state.breedingRemainMs / 3600000)}小时。`);
+      if (state.dormant) return e.reply(`祖种处于沉寂期，剩余${Math.ceil(state.dormantRemainMs / 3600000)}小时。`);
+      if (state.悟道次数 >= FLOWER_ANCESTOR_WUDAO_LIMIT) return e.reply(`本轮祖种悟道已用尽（${FLOWER_ANCESTOR_WUDAO_LIMIT}次），孕育完成并度过沉寂后刷新。`);
+
+      const daoContext = await buildFlowerDaoGainContext(userId, player, true);
+      const { eraIndex, stoneJar } = daoContext;
+      const baseCost = getFlowerDaoAttemptCost(player, realmId, eraIndex);
+      const costRate = stoneJar ? 0.9 : 1;
+      const cost = {
+        potential: Math.max(1, Math.ceil(baseCost.potential * costRate)),
+        cultivation: Math.max(1, Math.ceil(baseCost.cultivation * costRate)),
+        blood: Math.max(1, Math.ceil(baseCost.blood * costRate)),
+        lifespan: Math.max(1, Math.floor(baseCost.lifespan * costRate)),
+        spirit: Math.max(1, Math.ceil(baseCost.spirit * costRate)),
+      };
+      const availableLifespan = getAvailableLifespan(player);
+      if (Number(player.仙道潜力) < cost.potential
+        || Number(player.修为) < cost.cultivation
+        || Number(player.血气) < cost.blood
+        || Number(player.元神) < cost.spirit
+        || availableLifespan <= cost.lifespan) {
+        return e.reply([
+          '【祖种悟道·资源不足】',
+          `潜力需${cost.potential.toLocaleString()}｜修为需${bigNumberTransform(cost.cultivation)}｜血气需${bigNumberTransform(cost.blood)}`,
+          `寿元需${cost.lifespan.toLocaleString()}年｜元神需${bigNumberTransform(cost.spirit)}`,
+        ].join('\n'));
+      }
+
+      const traces = getFlowerDaoTraceProfile(player);
+      const result = applyAncestorWudao(player, realmId, Math.random, {
+        ...daoContext.gainOptions,
+        now: Date.now(),
+        hasSeed: true,
+        postGainMultiplier: traces.multiplier,
+      });
+      if (!result.ok) {
+        const messages = {
+          dormant: '祖种尚在沉寂期，请等待冷却结束。',
+          breeding: '祖种正在孕育异果，完成后再来悟道。',
+          limit: `本轮祖种悟道已用尽（${FLOWER_ANCESTOR_WUDAO_LIMIT}次）。`,
+          complete: '当前花粉道则已经圆满。',
+        };
+        return e.reply(messages[result.reason] || '祖种悟道暂未响应。');
+      }
+      if (traces.used > 0) {
+        player.先天道痕 -= traces.used;
+        result.bonuses.traces = traces.bonus;
+      }
+      player.仙道潜力 = Math.max(0, Number(player.仙道潜力) - cost.potential);
+      player.修为 = Math.max(0, Number(player.修为) - cost.cultivation);
+      player.血气 = Math.max(0, Number(player.血气) - cost.blood);
+      player.元神 = Math.max(0, Number(player.元神) - cost.spirit);
+      consumePlayerLifespan(player, cost.lifespan);
+      await Write_player(userId, player);
+      await refreshAttributes(userId);
+      return e.reply([
+        `【祖种悟道·${result.gate.rule.name}】`,
+        `祖种共鸣三倍道韵，本次悟得${result.gain}点（原始${result.rawGain}点）。`,
+        `道则进度：${result.after}/${result.gate.rule.targetExp}${result.completed ? '（已圆满）' : ''}`,
+        `本轮次数：${result.state.悟道次数}/${FLOWER_ANCESTOR_WUDAO_LIMIT}`,
+        `消耗：潜力${cost.potential.toLocaleString()}｜修为${bigNumberTransform(cost.cultivation)}｜血气${bigNumberTransform(cost.blood)}｜寿元${cost.lifespan}年｜元神${bigNumberTransform(cost.spirit)}`,
+      ].join('\n'));
+    });
+  }
+
+  async breedAncestorFruit(e) {
+    if (!verc({ e })) return false;
+    const userId = await resolveUserId(e);
+    if (!(await existplayer(userId))) return e.reply('玩家不存在，请先创建角色。');
+    return withPlayerMutationLock(userId, async () => {
+      const player = await Read_player(userId);
+      if (!selectedFlowerPath(player)) return e.reply('你尚未踏上花粉进化路。');
+      const ancestorSettlement = await this.settleAncestorForUser(userId, player);
+      const stoneJar = Boolean(player.圣墟唯一机缘?.石罐本体)
+        || (Number(await exist_najie_thing(userId, '神秘石罐', '道具')) || 0) > 0;
+      if (ancestorSettlement.ownerDenied) return e.reply(`缺少已认主的${FLOWER_ANCESTOR_SEED_NAME}。`);
+      if (!stoneJar) return e.reply('孕育超级异果需要已经认主的神秘石罐。');
+      const result = beginFlowerAncestorBreeding(player, Date.now(), { hasSeed: true, hasStoneJar: true });
+      if (!result.ok) {
+        const messages = {
+          breeding: `祖种正在孕育中，剩余${Math.ceil((result.state.孕育完成时间 - Date.now()) / 3600000)}小时。`,
+          dormant: `祖种处于沉寂期，剩余${Math.ceil((result.state.沉寂结束时间 - Date.now()) / 3600000)}小时。`,
+          'fruit-pending': `已有${SUPER_FLOWER_FRUIT_NAME}待领取，请先领取并服用。`,
+        };
+        return e.reply(messages[result.reason] || '祖种暂未进入孕育状态。');
+      }
+      const ttl = Math.ceil((FLOWER_ANCESTOR_BREEDING_MS + FLOWER_ANCESTOR_DORMANT_MS) / 1000) + 3600;
+      await redis.set(this.ancestorSeedKey(userId), JSON.stringify({
+        userId,
+        startedAt: result.startedAt,
+        completeAt: result.completeAt,
+      }), { EX: ttl });
+      await Write_player(userId, player);
+      return e.reply([
+        '【祖种孕育·超级异果】',
+        '花粉路祖种与石罐本源相合，开始孕育超级异果。',
+        '孕育时长：8小时；完成后祖种沉寂24小时。',
+        `预计完成：${new Date(result.completeAt).toLocaleString('zh-CN')}`,
+      ].join('\n'));
+    });
+  }
+
+  async eatSuperFlowerFruit(e) {
+    if (!verc({ e })) return false;
+    const userId = await resolveUserId(e);
+    if (!(await existplayer(userId))) return e.reply('玩家不存在，请先创建角色。');
+    return withPlayerMutationLock(userId, async () => {
+      const player = await Read_player(userId);
+      if (!selectedFlowerPath(player)) return e.reply('你尚未踏上花粉进化路。');
+      const ancestorSettlement = await this.settleAncestorForUser(userId, player);
+      if (ancestorSettlement.ownerDenied) return e.reply(`只有${FLOWER_ANCESTOR_SEED_NAME}的认主者可服用${SUPER_FLOWER_FRUIT_NAME}。`);
+      const count = Number(await exist_najie_thing(userId, SUPER_FLOWER_FRUIT_NAME, '道具')) || 0;
+      if (count <= 0) return e.reply(`你尚未拥有${SUPER_FLOWER_FRUIT_NAME}。`);
+      const transaction = new FileRollbackTransaction();
+      transaction.capture(path.join(__PATH.player_path, `${userId}.json`));
+      transaction.capture(path.join(__PATH.najie_path, `${userId}.json`));
+      let result;
+      try {
+        result = consumeSuperFlowerFruit(player, Date.now(), { hasFruit: true });
+        if (!result.ok) {
+          transaction.commit();
+          return e.reply('超级异果尚未成熟。');
+        }
+        await Add_najie_thing(userId, SUPER_FLOWER_FRUIT_NAME, '道具', -1);
+        await Write_player(userId, player);
+        await refreshAttributes(userId);
+        transaction.commit();
+      } catch (error) {
+        try {
+          transaction.rollback();
+        } catch (rollbackError) {
+          console.error(`[超级异果] 玩家 ${userId} 消费回滚失败:`, rollbackError);
+        }
+        console.error(`[超级异果] 玩家 ${userId} 消费失败:`, error);
+        return e.reply('超级异果服用失败，果实与角色状态已回滚，请稍后再试。');
+      }
+      return e.reply([
+        `【服用${SUPER_FLOWER_FRUIT_NAME}】`,
+        `修为+${bigNumberTransform(result.cultivationGain)}｜血气+${bigNumberTransform(result.bloodGain)}`,
+        `仙道潜力+${result.potentialGain.toLocaleString()}｜悟道法则+${result.lawGain}`,
+        `练气×炼体×额外体系乘数：${result.extraLevels}｜当前花粉境界：${result.flowerLevel}`,
+        `道伤已完全修复（${result.before.wounds} → 0），此前未圆满法则已自动补齐。`,
+      ].join('\n'));
+    });
+  }
+
   async flowerDao(e) {
     if (!verc({ e })) return false;
     const userId = await resolveUserId(e);
@@ -420,32 +732,23 @@ export class FlowerPollenPath extends plugin {
       if (!gate.rule) return e.reply('当前境界尚未开启花粉道则，继续进化即可。');
       if (gate.ok) return e.reply(`【花粉道则已圆满】${gate.rule.name}已经完成，可继续冲击${gate.rule.nextRealm}。`);
       const dateKey = getShanghaiDateKey();
-      const ancestorSeed = Number(await exist_najie_thing(userId, '花粉路祖种', '道具')) > 0;
+      const ancestorSeed = await hasOwnedFlowerAncestorSeed(userId);
       const dailyLimit = 3 + (ancestorSeed ? 1 : 0);
       if (gate.path.daily.date === dateKey && gate.path.daily.count >= dailyLimit) {
         return e.reply(`今日花粉悟道次数已用尽（${gate.path.daily.count}/${dailyLimit}），明日再来。`);
       }
 
-      const eraIndex = getCurrentEraIndex();
+      const daoContext = await buildFlowerDaoGainContext(userId, player, ancestorSeed);
+      const {
+        eraIndex,
+        stoneJar,
+        minggeEffects,
+        technique,
+        equipmentBonuses,
+        titleBonus,
+        imperialWudao,
+      } = daoContext;
       const baseCosts = getFlowerDaoAttemptCost(player, realmId, eraIndex);
-      const stoneJar = Boolean(player.圣墟唯一机缘?.石罐本体);
-      const minggeEffects = getMinggeEffects(player, data.minggeList);
-      const technique = getTechniqueWudaoProfile(player.学习的功法, {
-        gongfaList: data.gongfa_list,
-        timeGongfaList: data.timegongfa_list,
-        dijingList: data.dijingList,
-      });
-      const equipment = await Read_equipment(userId);
-      const equipmentBonuses = getFlowerDaoEquipmentBonuses(equipment);
-      const titleBonus = getTitleWudaoBonus(player);
-      const rootRaw = Number(player.灵根?.悟道加成 ?? player.灵根?.eff) || 0;
-      const rootBonus = Math.max(-0.5, Math.min(0.5, Math.abs(rootRaw) > 1 ? rootRaw / 100 : rootRaw));
-      const physiqueBonus = getPhysiqueWudaoBonus(player.灵根?.name) || rootBonus;
-      const kongtong = getKongtongModifiers(player);
-      const imperialWudao = kongtong.decree?.type === '修炼'
-        && kongtong.decree.plane === getPlayerPlaneName(player);
-
-      ensureDaoHeart(player);
       const wudaoGongfa = getWudaoGongfaReduction(player);
       const costMultiplier = (1 - wudaoGongfa.rate)
         * getDaoHeartWudaoCostMultiplier(player)
@@ -489,27 +792,8 @@ export class FlowerPollenPath extends plugin {
         ].join('\n'));
       }
 
-      const gain = calculateFlowerDaoGain(player, realmId, Math.random, {
-        eraIndex,
-        ancestorSeed,
-        stoneJar,
-        physiqueBonus,
-        aptitudeBonus: getAptitudeWudaoBonus(player.天资等级),
-        techniqueBonus: technique.bonus,
-        minggeBonus: Number(minggeEffects.悟道收益) || 0,
-        titleBonus,
-        equipmentBonus: equipmentBonuses.equipment,
-        treasureBonus: equipmentBonuses.treasure + (imperialWudao ? 0.5 : 0) + (kongtong.wudaoMultiplier - 1),
-        worldBonus: Number(player.超维星界悟道加成) || 0,
-        daoHeartMultiplier: getDaoHeartWudaoGainMultiplier(player),
-      });
-      const tracesUsed = Math.min(50, Math.max(0, Math.floor(Number(player.先天道痕) || 0)));
-      if (tracesUsed > 0) {
-        player.先天道痕 -= tracesUsed;
-        gain.bonuses.traces = tracesUsed * 0.006;
-        gain.gain = Math.max(1, Math.floor(gain.gain * (1 + gain.bonuses.traces)));
-        gain.multiplier *= 1 + gain.bonuses.traces;
-      }
+      const gain = calculateFlowerDaoGain(player, realmId, Math.random, daoContext.gainOptions);
+      const { used: tracesUsed } = applyFlowerDaoTraceBonus(player, gain);
 
       player.仙道潜力 = current.potential - cost.potential;
       player.修为 = current.cultivation - cost.cultivation;
@@ -570,12 +854,15 @@ export class FlowerPollenPath extends plugin {
     if (!selectedFlowerPath(player)) return e.reply('你尚未踏上花粉进化路。');
     const root = getFlowerRootState(player);
     const fruits = Object.keys(FLOWER_FRUITS).map(name => name + '（' + FLOWER_FRUITS[name].accumulation + '积淀，根基损伤+' + FLOWER_FRUITS[name].rootDamage + '）');
+    const ancestor = getFlowerAncestorSeedState(player);
+    const ancestorOwned = await hasOwnedFlowerAncestorSeed(userId);
     return e.reply([
       '【花粉进化根基】',
       '根基损伤：' + root.damage + '/' + root.max + (root.critical ? '（临界）' : ''),
       '根基损伤会降低进化成功率，达到100时无法继续进化。',
       '可服用异果：' + fruits.join('、'),
       '发送 #服用异果 或 #服用异果 异果名。',
+      `超级异果：${ancestorOwned ? (ancestor.待领取异果 > 0 ? `待领取${ancestor.待领取异果}枚` : '需祖种与石罐孕育8小时') : '祖种尚未认主'}，发送 #服用超级异果。`,
       '发送 #重塑进化根基，使用净化花露或本源圣药修复。',
     ].join('\n'));
   }
@@ -584,11 +871,13 @@ export class FlowerPollenPath extends plugin {
     if (!verc({ e })) return false;
     const userId = await resolveUserId(e);
     if (!(await existplayer(userId))) return e.reply('玩家不存在，请先创建角色。');
+    const requestedFruit = e.msg.match(/^#服用异果(?:\s+(.+))?$/)?.[1]?.trim();
+    if (requestedFruit === SUPER_FLOWER_FRUIT_NAME) return this.eatSuperFlowerFruit(e);
     return withPlayerMutationLock(userId, async () => {
       const player = await Read_player(userId);
       if (!selectedFlowerPath(player)) return e.reply('你尚未踏上花粉进化路。');
       ensureFlowerPollenState(player);
-      const requested = e.msg.match(/^#服用异果(?:\s+(.+))?$/)?.[1]?.trim();
+      const requested = requestedFruit;
       let fruitName = requested;
       if (fruitName && !FLOWER_FRUITS[fruitName]) return e.reply('未知异果。可用：' + Object.keys(FLOWER_FRUITS).join('、'));
       if (!fruitName) {

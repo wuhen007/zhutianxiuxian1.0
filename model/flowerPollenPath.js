@@ -1,6 +1,7 @@
 import { addGongfaProficiency, getGongfaProficiencyProfile } from './gongfaProficiency.js';
 import { reduceTribulationDamageByDefense } from './tribulationDamage.js';
 import { getPassiveTribulationDamageMultiplier } from './innateTreasure.js';
+import { getExtraCultivationLevelProduct } from './extraCultivation.js';
 
 export const FLOWER_POLLEN_MEDIA = Object.freeze({
   普通进化花粉: Object.freeze({ quality: 1, chance: 0.05, risk: 12, accumulation: 10 }),
@@ -25,6 +26,14 @@ export const FLOWER_FRUITS = Object.freeze({
   祖种异果: Object.freeze({ quality: 3, accumulation: 280, rootDamage: 28, risk: 12, pollution: 9, description: '接近花粉祖种的禁忌果实' }),
 });
 export const FLOWER_ROOT_DAMAGE_MAX = 100;
+
+// 花粉路祖种：独立于普通异果的三次悟道与异果孕育状态。
+export const FLOWER_ANCESTOR_SEED_NAME = '花粉路祖种';
+export const SUPER_FLOWER_FRUIT_NAME = '超级异果';
+export const FLOWER_ANCESTOR_BREEDING_MS = 8 * 60 * 60 * 1000;
+export const FLOWER_ANCESTOR_DORMANT_MS = 24 * 60 * 60 * 1000;
+export const FLOWER_ANCESTOR_WUDAO_LIMIT = 3;
+export const FLOWER_ANCESTOR_WUDAO_MULTIPLIER = 3;
 
 const EXTREME_TRIALS = Object.freeze({
   2: [{ name: '本源觉醒', accumulation: 40 }],
@@ -203,7 +212,217 @@ export function ensureFlowerPollenState(player) {
   if (!Array.isArray(root.服用记录)) root.服用记录 = [];
   root.修复次数 = Math.max(0, Math.trunc(number(root.修复次数)));
   root.version = 1;
+  if (!player.花粉路祖种状态 || typeof player.花粉路祖种状态 !== 'object' || Array.isArray(player.花粉路祖种状态)) {
+    player.花粉路祖种状态 = {
+      version: 1,
+      悟道次数: 0,
+      孕育开始时间: 0,
+      孕育完成时间: 0,
+      沉寂结束时间: 0,
+      待领取异果: 0,
+      上次孕育时间: 0,
+    };
+  }
+  const ancestor = player.花粉路祖种状态;
+  ancestor.悟道次数 = Math.max(0, Math.min(FLOWER_ANCESTOR_WUDAO_LIMIT, Math.trunc(number(ancestor.悟道次数))));
+  ancestor.孕育开始时间 = Math.max(0, Math.trunc(number(ancestor.孕育开始时间)));
+  ancestor.孕育完成时间 = Math.max(0, Math.trunc(number(ancestor.孕育完成时间)));
+  ancestor.沉寂结束时间 = Math.max(0, Math.trunc(number(ancestor.沉寂结束时间)));
+  ancestor.待领取异果 = Math.max(0, Math.trunc(number(ancestor.待领取异果)));
+  ancestor.上次孕育时间 = Math.max(0, Math.trunc(number(ancestor.上次孕育时间)));
+  ancestor.version = 1;
+  player.花粉悟道法则 = Math.max(0, Math.trunc(number(player.花粉悟道法则)));
+  player.花粉道途.法则储备 = Math.max(0, Math.trunc(number(player.花粉道途.法则储备)));
   return player;
+}
+
+export function getFlowerAncestorSeedState(player, now = Date.now()) {
+  ensureFlowerPollenState(player);
+  const state = player.花粉路祖种状态;
+  const current = Math.trunc(number(now, Date.now()));
+  const breeding = state.孕育完成时间 > current;
+  const dormant = state.沉寂结束时间 > current;
+  return {
+    ...state,
+    breeding,
+    dormant,
+    ready: !breeding && !dormant && state.待领取异果 <= 0,
+    breedingRemainMs: breeding ? state.孕育完成时间 - current : 0,
+    dormantRemainMs: dormant ? state.沉寂结束时间 - current : 0,
+  };
+}
+
+/** 懒结算祖种的 8 小时孕育与完成后的 24 小时沉寂。 */
+export function settleFlowerAncestorSeed(player, now = Date.now()) {
+  ensureFlowerPollenState(player);
+  const state = player.花粉路祖种状态;
+  const current = Math.trunc(number(now, Date.now()));
+  const result = { changed: false, completed: false, awakened: false, state };
+  if (state.孕育完成时间 > 0 && current >= state.孕育完成时间) {
+    const completedAt = state.孕育完成时间;
+    state.孕育开始时间 = 0;
+    state.孕育完成时间 = 0;
+    state.待领取异果 += 1;
+    state.沉寂结束时间 = Math.max(state.沉寂结束时间, completedAt + FLOWER_ANCESTOR_DORMANT_MS);
+    state.悟道次数 = FLOWER_ANCESTOR_WUDAO_LIMIT;
+    state.上次孕育时间 = completedAt;
+    result.changed = true;
+    result.completed = true;
+  }
+  if (state.沉寂结束时间 > 0 && current >= state.沉寂结束时间) {
+    state.沉寂结束时间 = 0;
+    state.悟道次数 = 0;
+    result.changed = true;
+    result.awakened = true;
+  }
+  return result;
+}
+
+export function beginFlowerAncestorBreeding(player, now = Date.now(), options = {}) {
+  if (options.hasSeed !== true) return { ok: false, reason: 'seed' };
+  if (options.hasStoneJar !== true) return { ok: false, reason: 'stone-jar' };
+  ensureFlowerPollenState(player);
+  const settled = settleFlowerAncestorSeed(player, now);
+  const state = player.花粉路祖种状态;
+  const current = Math.trunc(number(now, Date.now()));
+  if (state.孕育完成时间 > current) return { ok: false, reason: 'breeding', state, settled };
+  if (state.沉寂结束时间 > current) return { ok: false, reason: 'dormant', state, settled };
+  if (state.待领取异果 > 0) return { ok: false, reason: 'fruit-pending', state, settled };
+  state.孕育开始时间 = current;
+  state.孕育完成时间 = current + FLOWER_ANCESTOR_BREEDING_MS;
+  return {
+    ok: true,
+    startedAt: state.孕育开始时间,
+    completeAt: state.孕育完成时间,
+    durationMs: FLOWER_ANCESTOR_BREEDING_MS,
+    state,
+  };
+}
+
+function applyFlowerDaoLawPoints(player, points, realmId) {
+  ensureFlowerPollenState(player);
+  const path = player.花粉道途;
+  const requested = Math.max(0, Math.trunc(number(points)));
+  const priorReserve = Math.max(0, Math.trunc(number(path.法则储备)));
+  let remaining = requested + priorReserve;
+  const filled = [];
+  for (const rule of FLOWER_DAO_RULES.filter(item => item.realmId <= Number(realmId)).sort((a, b) => a.realmId - b.realmId)) {
+    const before = Math.max(0, Math.min(rule.targetExp, Math.trunc(number(path.stages[rule.key]))));
+    const add = Math.min(Math.max(0, rule.targetExp - before), remaining);
+    if (add > 0) {
+      path.stages[rule.key] = before + add;
+      remaining -= add;
+      filled.push({ key: rule.key, name: rule.name, before, after: before + add, gain: add });
+    }
+  }
+  path.法则储备 = remaining;
+  player.花粉悟道法则 += requested;
+  return { requested, applied: requested + priorReserve - remaining, reserve: remaining, filled };
+}
+
+function completePriorFlowerDaoLaws(player, realmId) {
+  ensureFlowerPollenState(player);
+  const completed = [];
+  for (const rule of FLOWER_DAO_RULES.filter(item => item.realmId < Number(realmId))) {
+    const before = Math.max(0, Math.min(rule.targetExp, Math.trunc(number(player.花粉道途.stages[rule.key]))));
+    if (before >= rule.targetExp) continue;
+    player.花粉道途.stages[rule.key] = rule.targetExp;
+    completed.push({ key: rule.key, name: rule.name, before, after: rule.targetExp, gain: rule.targetExp - before });
+  }
+  return completed;
+}
+
+/** 将存下的法则点灌入当前及此前尚未圆满的道则。 */
+function settleFlowerDaoLawReserve(player, realmId) {
+  const reserve = Math.max(0, Math.trunc(number(player?.花粉道途?.法则储备)));
+  if (!reserve) return;
+  applyFlowerDaoLawPoints(player, 0, realmId);
+}
+
+export function consumeSuperFlowerFruit(player, now = Date.now(), options = {}) {
+  if (now && typeof now === 'object') {
+    options = now;
+    now = Date.now();
+  }
+  if (options.hasFruit !== true) return { ok: false, reason: 'fruit' };
+  ensureFlowerPollenState(player);
+  const settled = settleFlowerAncestorSeed(player, now);
+  const qiLevel = Math.max(1, Math.trunc(number(player.level_id, 1)));
+  const bodyLevel = Math.max(1, Math.trunc(number(player.Physique_id, 1)));
+  const extraLevels = Math.max(1, Math.trunc(number(getExtraCultivationLevelProduct(player), 1)));
+  const gain = qiLevel * bodyLevel * extraLevels * 2_000_000;
+  const potentialGain = extraLevels * 1000;
+  const flowerLevel = Math.max(1, Math.trunc(number(player.huafenlevel_id, 1)));
+  const completedPrior = completePriorFlowerDaoLaws(player, flowerLevel);
+  const law = applyFlowerDaoLawPoints(player, flowerLevel * 100, flowerLevel);
+  law.completedPrior = completedPrior;
+  const before = {
+    cultivation: number(player.修为),
+    blood: number(player.血气),
+    potential: number(player.仙道潜力),
+    wounds: number(player.道伤),
+  };
+  player.修为 = before.cultivation + gain;
+  player.血气 = before.blood + gain;
+  player.仙道潜力 = before.potential + potentialGain;
+  player.道伤 = 0;
+  delete player.道伤修复度;
+  if (player.花粉路祖种状态.待领取异果 > 0) player.花粉路祖种状态.待领取异果 -= 1;
+  player.花粉路祖种状态.服用超级异果次数 = Math.max(0, Math.trunc(number(player.花粉路祖种状态.服用超级异果次数))) + 1;
+  return {
+    ok: true,
+    cultivationGain: gain,
+    bloodGain: gain,
+    potentialGain,
+    lawGain: flowerLevel * 100,
+    law,
+    extraLevels,
+    flowerLevel,
+    before,
+    settled,
+  };
+}
+
+export function applyAncestorWudao(player, realmId = player?.huafenlevel_id, random = Math.random, options = {}) {
+  if (options.hasSeed !== true) return { ok: false, reason: 'seed' };
+  ensureFlowerPollenState(player);
+  const current = Math.trunc(number(options.now, Date.now()));
+  const settled = settleFlowerAncestorSeed(player, current);
+  const state = player.花粉路祖种状态;
+  if (state.孕育完成时间 > current) return { ok: false, reason: 'breeding', state, settled };
+  if (state.沉寂结束时间 > current) return { ok: false, reason: 'dormant', state, settled };
+  if (state.悟道次数 >= FLOWER_ANCESTOR_WUDAO_LIMIT) return { ok: false, reason: 'limit', state, settled };
+  const gain = calculateFlowerDaoGain(player, realmId, random, {
+    ...options,
+    ancestorSeed: true,
+    ancestorWudao: false,
+  });
+  if (!gain.rule) return { ok: false, reason: 'no-rule', state, settled };
+  const gate = getFlowerDaoGateState(player, realmId);
+  if (gate.ok) return { ok: false, reason: 'complete', gate, state, settled };
+  const postGainMultiplier = Number.isFinite(Number(options.postGainMultiplier))
+    ? Math.max(0, Number(options.postGainMultiplier))
+    : 1;
+  const normalGain = Math.max(1, Math.floor(gain.gain * postGainMultiplier));
+  const boostedGain = normalGain * FLOWER_ANCESTOR_WUDAO_MULTIPLIER;
+  const before = gate.exp;
+  const after = Math.min(gate.rule.targetExp, before + boostedGain);
+  gate.path.stages[gate.rule.key] = after;
+  state.悟道次数 += 1;
+  return {
+    ok: true,
+    gain: after - before,
+    rawGain: boostedGain,
+    normalGain,
+    multiplier: gain.multiplier * postGainMultiplier * FLOWER_ANCESTOR_WUDAO_MULTIPLIER,
+    bonuses: gain.bonuses,
+    before,
+    after,
+    completed: after >= gate.rule.targetExp,
+    gate: getFlowerDaoGateState(player, realmId),
+    state,
+    settled,
+  };
 }
 
 export function getFlowerRootState(player) {
@@ -381,6 +600,7 @@ function getFlowerDaoStage(exp, rule) {
 
 export function getFlowerDaoGateState(player, realmId = player?.huafenlevel_id) {
   ensureFlowerPollenState(player);
+  settleFlowerDaoLawReserve(player, realmId);
   const rule = getFlowerDaoRuleForRealm(realmId);
   const path = player.花粉道途;
   if (!rule) return { ok: true, rule: null, exp: 0, stage: null, path };
@@ -466,11 +686,12 @@ export function calculateFlowerDaoGain(player, realmId, random = Math.random, op
     0.1,
     5
   );
+  const ancestorWudaoMultiplier = options.ancestorWudao ? FLOWER_ANCESTOR_WUDAO_MULTIPLIER : 1;
   const randomFactor = 0.9 + clamp(number(random()), 0, 1) * 0.2;
   return {
-    gain: Math.max(1, Math.trunc(rule.baseGain * multiplier * randomFactor)),
+    gain: Math.max(1, Math.trunc(rule.baseGain * multiplier * randomFactor * ancestorWudaoMultiplier)),
     rule,
-    multiplier,
+    multiplier: multiplier * ancestorWudaoMultiplier,
     randomFactor,
     bonuses,
     era,

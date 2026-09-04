@@ -39,10 +39,14 @@ import {
   getFlowerFieldProfile,
 } from '../../model/flowerPollenField.js';
 import {
+  FLOWER_ANCESTOR_SEED_OPPORTUNITY,
   STONE_JAR_CLUE_REQUIREMENT,
   STONE_JAR_OPPORTUNITY,
-  claimShengxuOpportunity,
+  claimShengxuOpportunityAtomic,
+  getShengxuAncestorSeedSettlementResult,
   getShengxuOpportunityOwner,
+  persistShengxuAncestorSeedSettlementResult,
+  withShengxuOpportunityLock,
 } from '../../model/shengxuOpportunity.js';
 import {
   getFactionDateKey,
@@ -51,7 +55,14 @@ import {
   recordFactionJoin,
   wasFactionRewardClaimedToday,
 } from '../../model/factionSystem.js';
-import { PLACE_LOCATION_MAP, getShanghaiDateKey } from '../../model/weimianTravel.js';
+import { getLocationId, getLocationName, PLACE_LOCATION_MAP, getShanghaiDateKey } from '../../model/weimianTravel.js';
+import {
+  getActorPlane,
+  getFashanActionKey,
+  isFashanActionPending,
+  isFashanReady,
+  requireActorAtPlane,
+} from '../../model/fashanProxy.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 function battleExcerpt(messages) {
@@ -80,6 +91,108 @@ function stoneJarRequirements(player) {
   return { ok: reasons.length === 0, reasons, cleared, clues };
 }
 
+function getShengxuExploreKey(userId, actor = 'body') {
+  return `xiuxian:shengxu:explore:${userId}${actor === 'fashan' ? ':fashan' : ''}`;
+}
+
+function getActorActionKey(userId, actor = 'body') {
+  return actor === 'fashan'
+    ? getFashanActionKey(userId)
+    : `xiuxian:player:${userId}:action`;
+}
+
+function buildActorSnapshot(player, actor, actorPlane) {
+  if (actor !== 'fashan') return null;
+  const snapshot = structuredClone(player);
+  snapshot.power_place = actorPlane;
+  snapshot.法身位置 = actorPlane;
+  snapshot.法身状态 = '行动中';
+  snapshot.法身行动 = '圣墟副本探索';
+  return snapshot;
+}
+
+function mergeNumericDelta(target = {}, before = {}, after = {}, cap = Number.POSITIVE_INFINITY) {
+  const merged = { ...target };
+  for (const [name, value] of Object.entries(after || {})) {
+    const delta = Math.max(0, (Number(value) || 0) - (Number(before?.[name]) || 0));
+    if (delta > 0) merged[name] = Math.min(cap, (Number(merged[name]) || 0) + delta);
+  }
+  return merged;
+}
+
+function mergeCombatProficiency(fresh, beforeActor, afterActor) {
+  fresh.功法熟练度 = mergeNumericDelta(
+    fresh.功法熟练度,
+    beforeActor?.功法熟练度,
+    afterActor?.功法熟练度,
+    1000,
+  );
+  const beforeDaily = beforeActor?.功法熟练度每日;
+  const afterDaily = afterActor?.功法熟练度每日;
+  if (!afterDaily?.日期 || beforeDaily?.日期 !== afterDaily.日期) return;
+  fresh.功法熟练度每日 ??= { 日期: afterDaily.日期, 收益: {} };
+  if (fresh.功法熟练度每日.日期 !== afterDaily.日期) return;
+  fresh.功法熟练度每日.收益 = mergeNumericDelta(
+    fresh.功法熟练度每日.收益,
+    beforeDaily?.收益,
+    afterDaily.收益,
+    20,
+  );
+}
+
+function resolveShengxuSettlementReward(dungeon, persistedAncestorSeedRoll) {
+  let rewardRollIndex = 0;
+  return resolveShengxuDungeonReward(dungeon, () => {
+    rewardRollIndex++;
+    // resolveShengxuDungeonReward 的第四个随机槽固定用于祖种。
+    if (rewardRollIndex === 4 && persistedAncestorSeedRoll !== null) {
+      return persistedAncestorSeedRoll ? 0 : 1;
+    }
+    return Math.random();
+  });
+}
+
+async function reconcileFlowerAncestorSeedAward(userId, player, settlementId) {
+  return withShengxuOpportunityLock(`${FLOWER_ANCESTOR_SEED_OPPORTUNITY}:inventory`, async lease => {
+    const claim = await claimShengxuOpportunityAtomic(
+      FLOWER_ANCESTOR_SEED_OPPORTUNITY,
+      userId,
+    );
+    if (!claim.ownedBySelf) return { confirmed: false, added: false, ownerId: claim.ownerId };
+
+    await lease.assertOwned();
+    const before = Math.max(0, Number(await exist_najie_thing(userId, '花粉路祖种', '道具')) || 0);
+    if (before <= 0) {
+      await lease.assertOwned();
+      await Add_najie_thing(
+        userId,
+        '花粉路祖种',
+        '道具',
+        1,
+        undefined,
+        1,
+        { idempotencyKey: `shengxu:${settlementId}:ancestorSeed` },
+      );
+    }
+    let after = Math.max(0, Number(await exist_najie_thing(userId, '花粉路祖种', '道具')) || 0);
+    if (after <= 0) {
+      // 兼容“物品丢失但旧 reward claim 尚存”的存档；唯一物品检查仍会阻止重复增加。
+      await lease.assertOwned();
+      await Add_najie_thing(userId, '花粉路祖种', '道具', 1);
+      after = Math.max(0, Number(await exist_najie_thing(userId, '花粉路祖种', '道具')) || 0);
+    }
+    if (after <= 0) throw new Error(`祖种归属 ${userId} 已锁定，但库存确认失败`);
+
+    const markerRepaired = player.圣墟唯一机缘?.花粉路祖种 !== true
+      || player.圣墟唯一机缘?.花粉路祖种认主时间 === undefined;
+    await lease.assertOwned();
+    player.圣墟唯一机缘 ??= {};
+    player.圣墟唯一机缘.花粉路祖种 = true;
+    player.圣墟唯一机缘.花粉路祖种认主时间 ??= claim.claimedAt ?? Date.now();
+    return { confirmed: true, added: after > before, markerRepaired, ownerId: claim.ownerId };
+  });
+}
+
 export class ShengxuContent extends plugin {
   constructor() {
     super({
@@ -91,6 +204,8 @@ export class ShengxuContent extends plugin {
         { reg: '^#圣墟副本$', fnc: 'dungeons' },
         { reg: '^#探索圣墟\\s+.+$', fnc: 'explore' },
         { reg: '^#沉迷圣墟\\s+.+\\*\\d+$', fnc: 'addictedExplore' },
+        { reg: '^#法身探索圣墟\\s+.+$', fnc: 'fashanExplore' },
+        { reg: '^#法身沉迷圣墟\\s+.+\\*\\d+$', fnc: 'fashanAddictedExplore' },
         { reg: '^#圣墟势力$', fnc: 'factions' },
         { reg: '^#加入(?:菩提基因|大梦净土|阳间第一山)$', fnc: 'joinFaction' },
         { reg: '^#领取圣墟俸禄$', fnc: 'salary' },
@@ -147,7 +262,7 @@ export class ShengxuContent extends plugin {
     });
     const view = await new Show(e).get_shengxu_placeData({
       playerName: player.名号 || context.userId,
-      currentPlane: Object.keys(PLACE_LOCATION_MAP).find(name => PLACE_LOCATION_MAP[name] === Number(player.power_place)) || '未知之地',
+      currentPlane: getLocationName(player.power_place) || '未知之地',
       flowerLevel: Number(player.huafenlevel_id) || 1,
       dungeons,
     });
@@ -162,7 +277,7 @@ export class ShengxuContent extends plugin {
     if (!context) return e.reply('玩家不存在，请先创建角色。');
     const dungeon = getShengxuDungeon(e.msg.replace(/^#探索圣墟\s+/, ''));
     if (!dungeon) return e.reply(`未知地点。可用：${SHENGXU_DUNGEONS.map(item => item.name).join('、')}`);
-    return this.beginExplore(e, context, dungeon, 1);
+    return this.beginExplore(e, context, dungeon, 1, 'body');
   }
 
   async addictedExplore(e) {
@@ -174,25 +289,70 @@ export class ShengxuContent extends plugin {
     const batches = Number(match?.[2]);
     if (!dungeon) return e.reply(`未知地点。可用：${SHENGXU_DUNGEONS.map(item => item.name).join('、')}`);
     if (!Number.isInteger(batches) || batches < 1 || batches > 12) return e.reply('沉迷次数必须在1-12之间。');
-    return this.beginExplore(e, context, dungeon, batches * 10);
+    return this.beginExplore(e, context, dungeon, batches * 10, 'body');
   }
 
-  async beginExplore(e, context, dungeon, totalCount) {
+  async fashanExplore(e) {
+    if (!verc({ e })) return false;
+    const context = await this.getPlayer(e);
+    if (!context) return e.reply('玩家不存在，请先创建角色。');
+    const dungeon = getShengxuDungeon(e.msg.replace(/^#法身探索圣墟\s+/, ''));
+    if (!dungeon) return e.reply(`未知地点。可用：${SHENGXU_DUNGEONS.map(item => item.name).join('、')}`);
+    return this.beginExplore(e, context, dungeon, 1, 'fashan');
+  }
+
+  async fashanAddictedExplore(e) {
+    if (!verc({ e })) return false;
+    const context = await this.getPlayer(e);
+    if (!context) return e.reply('玩家不存在，请先创建角色。');
+    const match = e.msg.match(/^#法身沉迷圣墟\s+(.+?)\*(\d+)$/);
+    const dungeon = getShengxuDungeon(match?.[1]);
+    const batches = Number(match?.[2]);
+    if (!dungeon) return e.reply(`未知地点。可用：${SHENGXU_DUNGEONS.map(item => item.name).join('、')}`);
+    if (!Number.isInteger(batches) || batches < 1 || batches > 12) return e.reply('沉迷次数必须在1-12之间。');
+    return this.beginExplore(e, context, dungeon, batches * 10, 'fashan');
+  }
+
+  async beginExplore(e, context, dungeon, totalCount, actor = 'body') {
     const { userId } = context;
-    if (!(await Go(e))) return false;
+    if (actor !== 'fashan' && !(await Go(e))) return false;
     return withPlayerMutationLock(userId, async () => {
       const player = await Read_player(userId);
       if (!isCultivatingExtraPath(player, 'huafen')) return e.reply('只有花粉进化路修士可以进入圣墟副本。');
-      if (!isInShengxuPlane(player)) return e.reply('圣墟副本只存在于圣墟诸界（小阴间/大阴间/阳间），请先发送 #穿梭小阴间。');
       const dungeonPlane = getShengxuDungeonPlane(dungeon);
-      if (Number(player.power_place) !== PLACE_LOCATION_MAP[dungeonPlane]) {
-        return e.reply(`【位面不符】${dungeon.name}位于${dungeonPlane}，请先穿梭至${dungeonPlane}。`);
+      const expectedPlane = PLACE_LOCATION_MAP[dungeonPlane];
+      let actorPlane = getLocationId(player.power_place);
+      if (actor === 'fashan') {
+        const actionKey = getActorActionKey(userId, actor);
+        const activeAction = await redis.get(actionKey);
+        if (activeAction) {
+          try {
+            const parsed = JSON.parse(activeAction);
+            if (isFashanActionPending(parsed)) return e.reply(`法身正在${parsed.action || '代行'}中，请等待当前行动结算。`);
+            await redis.del(actionKey);
+          } catch {
+            await redis.del(actionKey);
+          }
+          player.法身状态 = '空闲中';
+          player.法身行动 = '无行动';
+        }
+        if (!isFashanReady(player)) return e.reply('法身尚未凝聚完成，或当前已有代行行动。');
+        const planeCheck = requireActorAtPlane(player, expectedPlane, 'fashan');
+        if (!planeCheck.ok) {
+          return e.reply(`【法身位面不符】${dungeon.name}位于${dungeonPlane}，当前法身位于${getLocationName(planeCheck.actual) || '未知之地'}。`);
+        }
+        actorPlane = planeCheck.actual;
+      } else {
+        if (!isInShengxuPlane(player)) return e.reply('圣墟副本只存在于圣墟诸界（小阴间/大阴间/阳间），请先发送 #穿梭小阴间。');
+        if (getLocationId(player.power_place) !== expectedPlane) {
+          return e.reply(`【位面不符】${dungeon.name}位于${dungeonPlane}，请先穿梭至${dungeonPlane}。`);
+        }
       }
       if (Number(player.huafenlevel_id) < dungeon.requiredLevel) {
         return e.reply(`探索${dungeon.name}需花粉进化序列达到${dungeon.requiredLevel}，当前为${player.huafenlevel_id}。`);
       }
-      // 探索中检查：同一时间只能探索一处圣墟副本
-      const exploreKey = `xiuxian:shengxu:explore:${userId}`;
+      // 真身与法身各自维护一条探索任务，互不覆盖。
+      const exploreKey = getShengxuExploreKey(userId, actor);
       const activeRaw = await redis.get(exploreKey);
       if (activeRaw) {
         try {
@@ -212,7 +372,7 @@ export class ShengxuContent extends plugin {
 
       // 单次探索保留每日限制；沉迷以十轮为一组，按资源和总耗时约束。
       const dailyKey = totalCount === 1
-        ? `xiuxian:shengxu:dungeon:${getShanghaiDateKey()}:${dungeon.name}:${userId}`
+        ? `xiuxian:shengxu:dungeon:${getShanghaiDateKey()}:${dungeon.name}:${userId}${actor === 'fashan' ? ':fashan' : ''}`
         : null;
       if (dailyKey && !(await redis.set(dailyKey, '1', { EX: 2 * 24 * 60 * 60, NX: true }))) {
         return e.reply(`你今日已经探索过${dungeon.name}。`);
@@ -230,8 +390,11 @@ export class ShengxuContent extends plugin {
       const now = Date.now();
       const endTime = now + totalDurationMin * 60 * 1000;
       const task = {
-        taskId: `${userId}:${dungeon.name}:${now}`,
+        taskId: `${userId}:${actor}:${dungeon.name}:${now}`,
         mode: totalCount > 1 ? 'addiction' : 'single',
+        actor,
+        actorPlane,
+        ...(actor === 'fashan' ? { 法身位置: actorPlane, actorSnapshot: buildActorSnapshot(player, actor, actorPlane) } : {}),
         qq: userId,
         playerName: player.名号 || userId,
         groupId: e.isGroup ? e.group_id : null,
@@ -251,8 +414,14 @@ export class ShengxuContent extends plugin {
       try {
         const ttl = Math.ceil(totalDurationMin * 60) + 24 * 60 * 60;
         await redis.set(exploreKey, JSON.stringify(task), { EX: ttl });
-        await redis.set(`xiuxian:player:${userId}:action`, JSON.stringify({
-          action: totalCount > 1 ? '圣墟沉迷' : '圣墟探索',
+        const actionKey = getActorActionKey(userId, actor);
+        await redis.set(actionKey, JSON.stringify({
+          action: actor === 'fashan'
+            ? (totalCount > 1 ? '法身沉迷圣墟' : '法身探索圣墟')
+            : (totalCount > 1 ? '圣墟沉迷' : '圣墟探索'),
+          actor,
+          actorPlane,
+          ...(actor === 'fashan' ? { isFashan: true, 法身位置: actorPlane } : {}),
           start_time: now,
           end_time: endTime,
           time: totalDurationMin * 60 * 1000,
@@ -260,17 +429,22 @@ export class ShengxuContent extends plugin {
           Place_address: { name: dungeon.name },
           shengxuTaskId: task.taskId,
         }), { EX: ttl });
+        if (actor === 'fashan') {
+          player.法身位置 = actorPlane;
+          player.法身行动 = totalCount > 1 ? `沉迷圣墟·${dungeon.name}` : `探索圣墟·${dungeon.name}`;
+          player.法身状态 = '行动中';
+        }
         await Write_player(userId, player);
       } catch (error) {
         await redis.del(exploreKey);
-        await redis.del(`xiuxian:player:${userId}:action`);
+        await redis.del(getActorActionKey(userId, actor));
         if (dailyKey) await redis.del(dailyKey);
         throw error;
       }
       const endLabel = new Date(endTime).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' });
       return e.reply([
-        `【${dungeon.name}·${totalCount > 1 ? '开始沉迷' : '开始探索'}】`,
-        `${player.名号 || userId}踏入${dungeon.name}，${dungeon.monster}的气息在深处隐现。${totalCount > 1 ? `将连续探索${totalCount}轮。` : ''}`,
+        `【${dungeon.name}·${actor === 'fashan' ? '法身' : ''}${totalCount > 1 ? '开始沉迷' : '开始探索'}】`,
+        `${player.名号 || userId}${actor === 'fashan' ? '的法身' : ''}踏入${dungeon.name}，${dungeon.monster}的气息在深处隐现。${totalCount > 1 ? `将连续探索${totalCount}轮。` : ''}`,
         `入场消耗：修为${bigNumberTransform(cost.xiuwei)}｜血气${bigNumberTransform(cost.xueqi)}｜灵石${bigNumberTransform(cost.lingshi)}｜寿元${cost.shouyuan}年`,
         `探索耗时：每轮${durationMin}分钟｜共${totalDurationMin}分钟`,
         `预计归来：${endLabel}`,
@@ -304,10 +478,16 @@ export class ShengxuContent extends plugin {
         await redis.del(key);
         continue;
       }
+      task.actor = task.actor === 'fashan' ? 'fashan' : 'body';
+      const normalizedActorPlane = getLocationId(task.actorPlane ?? task.法身位置);
+      if (task.actor === 'fashan' && Number.isFinite(normalizedActorPlane)) {
+        task.actorPlane = normalizedActorPlane;
+        task.法身位置 = normalizedActorPlane;
+      }
       const addictionComplete = task.mode === 'addiction' && Number(task.settled_count) >= Number(task.total_count);
       const dueAt = task.mode === 'addiction' ? task.next_settle_time : task.end_time;
       if (!addictionComplete && now < Number(dueAt)) continue;
-      const settleKey = `xiuxian:shengxu:settling:${task.qq}`;
+      const settleKey = `xiuxian:shengxu:settling:${task.qq}:${task.actor}`;
       const token = `${process.pid}:${Date.now()}:${Math.random()}`;
       if (!(await redis.set(settleKey, token, { EX: 120, NX: true }))) continue;
       try {
@@ -333,6 +513,11 @@ export class ShengxuContent extends plugin {
     while (task.settled_count < task.total_count && now >= Number(task.next_settle_time) && processed < 10) {
       const round = Number(task.settled_count) + 1;
       const result = await this.settleExplore({ ...task, taskId: `${task.taskId}:round:${round}` }, false);
+      if (result?.actorPlaneMismatch) {
+        task.stop_reason = result.stopReason;
+        task.settled_count = task.total_count;
+        break;
+      }
       task.settled_count = round;
       task.next_settle_time = Number(task.next_settle_time) + Number(task.interval);
       processed++;
@@ -349,6 +534,9 @@ export class ShengxuContent extends plugin {
 
   addAddictionSummary(summary, result) {
     if (!result?.settled) return;
+    if (result.ancestorSeedGranted) {
+      summary.items['花粉路祖种'] = (summary.items['花粉路祖种'] || 0) + 1;
+    }
     if (!result.won) {
       summary.losses++;
       return;
@@ -373,25 +561,46 @@ export class ShengxuContent extends plugin {
     const summary = task.summary || {};
     const items = Object.entries(summary.items || {}).map(([name, amount]) => `${name}×${amount}`);
     const message = [
-      `【${task.dungeonName}·沉迷结算完成】`,
+      `【${task.dungeonName}·${task.actor === 'fashan' ? '法身' : ''}沉迷结算完成】`,
       `连续探索：${task.total_count}轮｜胜${summary.wins || 0}｜负${summary.losses || 0}`,
       `修为+${bigNumberTransform(summary.xiuwei || 0)}｜血气+${bigNumberTransform(summary.xueqi || 0)}｜灵石+${bigNumberTransform(summary.lingshi || 0)}`,
       `进化积淀+${summary.accumulation || 0}`,
       items.length ? `物品：${items.join('｜')}` : '本次没有获得物品。',
+      task.stop_reason || '',
     ].join('\n');
     return this.sendExploreResult(task, message);
   }
 
   async clearShengxuAction(task) {
-    const key = `xiuxian:player:${task.qq}:action`;
+    const key = getActorActionKey(task.qq, task.actor);
     const raw = await redis.get(key);
-    if (!raw) return;
-    try {
-      const action = JSON.parse(raw);
-      if (action.shengxuTaskId === task.taskId) await redis.del(key);
-    } catch {
-      // 其他模块可能正在迁移动作数据，不在此处清理未知结构。
+    let matchesTask = !raw;
+    if (raw) {
+      try {
+        const action = JSON.parse(raw);
+        if (action.shengxuTaskId !== task.taskId) return;
+        matchesTask = true;
+      } catch {
+        // 专用法身键中的坏数据视为过期动作，继续恢复状态。
+        matchesTask = true;
+      }
     }
+    if (!matchesTask) return;
+    if (raw && (await redis.get(key)) === raw) await redis.del(key);
+    if (task.actor !== 'fashan') return;
+    await withPlayerMutationLock(String(task.qq), async () => {
+      const player = await Read_player(String(task.qq));
+      if (!player || player.法身状态 !== '行动中') return;
+      const currentLabel = String(player.法身行动 || '');
+      const expectedLabel = task.mode === 'addiction'
+        ? `沉迷圣墟·${task.dungeonName}`
+        : `探索圣墟·${task.dungeonName}`;
+      // 若清理期间已有新法身任务，不能误清新任务状态。
+      if (currentLabel && currentLabel !== expectedLabel && currentLabel !== '圣墟副本探索') return;
+      player.法身状态 = '空闲中';
+      player.法身行动 = '无行动';
+      await Write_player(String(task.qq), player);
+    });
   }
 
   async settleExplore(task, sendResult = true) {
@@ -400,16 +609,44 @@ export class ShengxuContent extends plugin {
     if (!player) return { settled: false };
     const dungeon = getShengxuDungeon(task.dungeonName);
     if (!dungeon) return { settled: false };
+    const actorType = task.actor === 'fashan' ? 'fashan' : 'body';
+    const actorSource = actorType === 'fashan' && task.actorSnapshot && typeof task.actorSnapshot === 'object'
+      ? task.actorSnapshot
+      : player;
+    const actorPlane = getLocationId(task.actorPlane ?? getActorPlane(actorSource, actorType));
     const settlementId = task.taskId || `${userId}:${dungeon.name}:${task.start_time}`;
-    if (player.圣墟副本最近结算?.[dungeon.name] === settlementId) return { settled: true, alreadySettled: true };
+    const settlementKey = actorType === 'fashan' ? `fashan:${dungeon.name}` : dungeon.name;
+    const persistedAncestorSeedRoll = await getShengxuAncestorSeedSettlementResult(settlementId);
+    if (player.圣墟副本最近结算?.[settlementKey] === settlementId) {
+      const ownerId = getShengxuOpportunityOwner(FLOWER_ANCESTOR_SEED_OPPORTUNITY);
+      if (persistedAncestorSeedRoll === true || ownerId === userId) {
+        let repair = { added: false };
+        await withPlayerMutationLock(userId, async () => {
+          const fresh = await Read_player(userId);
+          repair = await reconcileFlowerAncestorSeedAward(userId, fresh, settlementId);
+          if (repair.added || repair.markerRepaired) await Write_player(userId, fresh);
+        });
+        if (repair.added && sendResult) {
+          await this.sendExploreResult(task, '【全服唯一机缘】花粉路祖种库存已补齐。');
+        }
+        return { settled: true, alreadySettled: true, ancestorSeedGranted: repair.added };
+      }
+      return { settled: true, alreadySettled: true };
+    }
+    if (actorType === 'fashan' && getLocationId(player.法身位置) !== actorPlane) {
+      const stopReason = `【法身位面中断】法身已离开${getShengxuDungeonPlane(dungeon)}，本次${dungeon.name}探索终止。`;
+      if (sendResult) await this.sendExploreResult(task, stopReason);
+      return { settled: true, won: false, actorPlaneMismatch: true, stopReason };
+    }
 
-    const attacker = structuredClone(player);
-    attacker.当前血量 = Math.max(1, Number(player.血量上限 || player.当前血量) || 1);
-    const monster = createShengxuMonster(player, dungeon);
+    const attacker = structuredClone(actorSource);
+    attacker.power_place = Number.isFinite(actorPlane) ? actorPlane : getLocationId(attacker.power_place);
+    attacker.当前血量 = Math.max(1, Number(actorSource.血量上限 || actorSource.当前血量) || 1);
+    const monster = createShengxuMonster(actorSource, dungeon);
     const battle = await zd_battle(attacker, monster, { battleType: 'shengxu_dungeon' });
     const lines = [
-      `【${dungeon.name}·探索归来】`,
-      `${task.playerName}在${dungeon.name}深处遭遇【${monster.名号}】！`,
+      `【${dungeon.name}·${actorType === 'fashan' ? '法身' : ''}探索归来】`,
+      `${task.playerName}${actorType === 'fashan' ? '的法身' : ''}在${dungeon.name}深处遭遇【${monster.名号}】！`,
       ...battleExcerpt(battle.msg),
     ];
     let message = '';
@@ -417,23 +654,45 @@ export class ShengxuContent extends plugin {
     await withPlayerMutationLock(userId, async () => {
       const fresh = await Read_player(userId);
       fresh.圣墟副本最近结算 ??= {};
-      if (fresh.圣墟副本最近结算[dungeon.name] === settlementId) {
+      if (fresh.圣墟副本最近结算[settlementKey] === settlementId) {
         outcome = { settled: true, alreadySettled: true };
         return;
       }
-      fresh.当前血量 = battle.winner === 'A' ? Math.max(1, Math.trunc(battle.A_hp)) : 1;
-      fresh.功法熟练度 = attacker.功法熟练度;
-      fresh.功法熟练度每日 = attacker.功法熟练度每日;
-      fresh.圣墟副本最近结算[dungeon.name] = settlementId;
+      if (actorType !== 'fashan') {
+        fresh.当前血量 = battle.winner === 'A' ? Math.max(1, Math.trunc(battle.A_hp)) : 1;
+      }
+      mergeCombatProficiency(fresh, actorSource, attacker);
+      fresh.圣墟副本最近结算[settlementKey] = settlementId;
+      let ancestorSeedGranted = false;
+      let ancestorSeedReconciled = false;
+      const reconcileAncestorSeed = async () => {
+        if (ancestorSeedReconciled) return;
+        const result = await reconcileFlowerAncestorSeedAward(userId, fresh, settlementId);
+        ancestorSeedReconciled = result.confirmed;
+        ancestorSeedGranted = result.added;
+      };
+      let ancestorSeedRoll = persistedAncestorSeedRoll;
+      if (ancestorSeedRoll === null && battle.winner !== 'A') {
+        ancestorSeedRoll = await persistShengxuAncestorSeedSettlementResult(settlementId, false);
+      }
+      if (ancestorSeedRoll === true) await reconcileAncestorSeed();
       if (battle.winner !== 'A') {
         await Write_player(userId, fresh);
-        lines.push('【探索失败】你被异变生灵重创，当前血量降至1。');
+        lines.push(actorType === 'fashan'
+          ? '【法身探索失败】法身被异变生灵击退，真身未受影响。'
+          : '【探索失败】你被异变生灵重创，当前血量降至1。');
+        if (ancestorSeedGranted) lines.push('【全服唯一机缘】获得花粉路祖种×1，已接入祖种悟道与超级异果体系。');
         message = lines.join('\n');
-        outcome = { settled: true, won: false };
+        outcome = { settled: true, won: false, ancestorSeedGranted };
         return;
       }
 
-      const reward = resolveShengxuDungeonReward(dungeon);
+      const reward = resolveShengxuSettlementReward(dungeon, persistedAncestorSeedRoll);
+      const ancestorSeedRolled = await persistShengxuAncestorSeedSettlementResult(
+        settlementId,
+        Boolean(reward.ancestorSeed),
+      );
+      reward.ancestorSeed = ancestorSeedRolled ? '花粉路祖种' : '';
       const tierRates = config.getConfig('xiuxian', 'xiuxian')?.SecretPlace || {};
       const tierReward = resolveShengxuTierReward(dungeon, Math.random, tierRates);
       const addReward = (name, type, amount, slot) => Add_najie_thing(
@@ -444,6 +703,7 @@ export class ShengxuContent extends plugin {
       if (reward.herb) await addReward(reward.herb, '道具', 1, 'herb');
       if (reward.fruit) await addReward(reward.fruit, '道具', 1, 'fruit');
       if (tierReward) await addReward(tierReward.name, tierReward.class, tierReward.amount, `tier:${tierReward.tier}`);
+      if (reward.ancestorSeed) await reconcileAncestorSeed();
       fresh.进化积淀 = Math.max(0, Number(fresh.进化积淀) || 0) + reward.accumulation;
       fresh.修为 = Math.max(0, (Number(fresh.修为) || 0) + reward.xiuwei);
       fresh.血气 = Math.max(0, (Number(fresh.血气) || 0) + reward.xueqi);
@@ -464,6 +724,7 @@ export class ShengxuContent extends plugin {
         `${reward.medium}×${reward.amount}｜进化积淀+${reward.accumulation}｜石罐线索+1`,
         `修为+${bigNumberTransform(reward.xiuwei)}｜血气+${bigNumberTransform(reward.xueqi)}｜灵石+${bigNumberTransform(reward.lingshi)}`,
       );
+      if (ancestorSeedGranted) lines.push('【全服唯一机缘】获得花粉路祖种×1，已接入祖种悟道与超级异果体系。');
       if (reward.herb) lines.push('【本源圣药】灵性惊人，可净化始祖污染度−60。');
       if (reward.fruit) lines.push('【异果机缘】获得' + reward.fruit + '×1，可服用换取进化积淀。');
       if (tierReward) lines.push(`【${tierReward.tier}档奖励】${tierReward.name}×${tierReward.amount}`);
@@ -478,7 +739,7 @@ export class ShengxuContent extends plugin {
       }
       lines.push(reward.gongfa ? `获得传承：【${reward.gongfa}】` : '本次未直接寻得呼吸法传承。');
       message = lines.join('\n');
-      outcome = { settled: true, won: true, reward, tierReward };
+      outcome = { settled: true, won: true, reward, tierReward, ancestorSeedGranted };
     });
     if (message && sendResult) await this.sendExploreResult(task, message);
     return outcome;
@@ -666,13 +927,16 @@ export class ShengxuContent extends plugin {
       const requirements = stoneJarRequirements(player);
       if (!requirements.ok) return e.reply(`追寻条件未满足：${requirements.reasons.join('；')}`);
       if (currentOwner) return e.reply(`石罐本体已经被修士 ${currentOwner} 认主。`);
-      const lockKey = 'xiuxian:shengxu:unique:stone_jar';
-      if (!(await redis.set(lockKey, context.userId, { EX: 30, NX: true }))) {
-        return e.reply('石罐刚刚响应了另一位修士的呼唤，你来迟一步。');
+      let claim;
+      try {
+        claim = await claimShengxuOpportunityAtomic(STONE_JAR_OPPORTUNITY, context.userId);
+      } catch (error) {
+        if (error?.code === 'SHENGXU_OPPORTUNITY_BUSY') {
+          return e.reply('石罐刚刚响应了另一位修士的呼唤，你来迟一步。');
+        }
+        throw error;
       }
-      const claim = claimShengxuOpportunity(STONE_JAR_OPPORTUNITY, context.userId);
       if (!claim.ok) {
-        await redis.set(lockKey, claim.ownerId, { EX: 30 });
         return e.reply(`石罐本体已经被修士 ${claim.ownerId} 认主。`);
       }
       player.圣墟唯一机缘 ??= {};

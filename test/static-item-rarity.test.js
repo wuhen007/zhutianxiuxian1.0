@@ -19,7 +19,7 @@ const visit = (value, file) => {
   if (Array.isArray(value)) return value.forEach(item => visit(item, file));
   if (!value || typeof value !== 'object') return;
   const category = aliases.get(value.class) || value.class;
-  const lightweightReference = Object.hasOwn(value, 'amount') && !Object.hasOwn(value, 'type');
+  const lightweightReference = (Object.hasOwn(value, 'amount') || Object.hasOwn(value, '数量')) && !Object.hasOwn(value, 'type');
   if (typeof value.name === 'string' && categories.has(category) && !lightweightReference) {
     assert.ok(Number.isInteger(value.稀有度), `${file}/${value.name} 缺少稀有度`);
     assert.ok(value.稀有度 >= 1 && value.稀有度 <= 10, `${file}/${value.name} 稀有度越界`);
@@ -46,6 +46,6 @@ test('静态嵌套物品继承对应主目录稀有度', () => {
   const manuals = new Map(read('resources/data/item/功法列表.json').map(item => [item.name, item.稀有度]));
   const pills = new Map(read('resources/data/item/丹药列表.json').map(item => [item.name, item.稀有度]));
   assert.equal(find(read('resources/data/item/盒子列表.json'), '神盾果').稀有度, props.get('神盾果'));
-  assert.equal(find(read('resources/data/item/副本/界海列表.json'), '【仙帝】他化自在法').稀有度, manuals.get('【仙帝】他化自在法'));
+  assert.equal(find(read('resources/data/item/副本/界海列表.json'), '原始真解终极篇').稀有度, manuals.get('原始真解终极篇'));
   assert.equal(find(read('resources/data/item/商店/商品列表.json'), '还春丹').稀有度, pills.get('还春丹'));
 });

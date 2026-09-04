@@ -14,7 +14,7 @@ test('花粉专属渡劫拥有独立状态和成本', () => {
   assert.equal(gate.ok, false);
   assert.equal(gate.rule.name, '圣者花劫');
   assert.deepEqual(player.花粉渡劫.history, []);
-  assert.equal(getFlowerTribulationCost(9, 2).cultivation, 38400000);
+  assert.equal(getFlowerTribulationCost(9, 2).cultivation, 3_072_000_000);
 });
 
 test('高阶花粉渡劫必须先圆满花粉道则', () => {
@@ -33,7 +33,7 @@ test('渡过花粉专属劫会留下印记并净化本源', () => {
     进化积淀: 0,
   });
   player.花粉道途.stages.saintPrinciple = 600;
-  const result = resolveFlowerTribulation(player, () => 0, { now: 1000 });
+  const result = resolveFlowerTribulation(player, () => 0, { now: 1000, maxHp: 1000 });
   assert.equal(result.ok, true);
   assert.equal(result.stages.length, 3);
   assert.equal(getFlowerTribulationGateState(player, 9).ok, true);
