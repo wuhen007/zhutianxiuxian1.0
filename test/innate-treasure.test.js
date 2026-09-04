@@ -73,6 +73,42 @@ test('虚天舟为传承专属至宝并固定缩短5至10分钟', () => {
   assert.deepEqual(applyInnateTravelReduction({}, 20, () => 0), { travelTime: 20, reduction: 0 });
 });
 
+test('虚天舟/逐日仙辇穿梭维度壁垒时增强：20% / 15%~25%并含1%瞬间穿梭', () => {
+  // 虚天舟（维度壁垒）：固定减 20%
+  assert.deepEqual(applyInnateTravelReduction({ 当前先天至宝: '虚天舟' }, 100, () => 0.5, { dimensionBarrier: true }), {
+    travelTime: 80,
+    reduction: 20,
+  });
+  // 逐日仙辇（维度壁垒）：随机减 15%~25%
+  assert.deepEqual(applyInnateTravelReduction({ 当前先天至宝: '逐日仙辇' }, 100, () => 0.01, { dimensionBarrier: true }), {
+    travelTime: 85,
+    reduction: 15,
+  });
+  assert.deepEqual(applyInnateTravelReduction({ 当前先天至宝: '逐日仙辇' }, 100, () => 0.5, { dimensionBarrier: true }), {
+    travelTime: 80,
+    reduction: 20,
+  });
+  assert.deepEqual(applyInnateTravelReduction({ 当前先天至宝: '逐日仙辇' }, 100, () => 0.99, { dimensionBarrier: true }), {
+    travelTime: 75,
+    reduction: 25,
+  });
+  // 逐日仙辇（维度壁垒）：1% 极小概率瞬间穿梭
+  assert.deepEqual(applyInnateTravelReduction({ 当前先天至宝: '逐日仙辇' }, 100, () => 0.005, { dimensionBarrier: true }), {
+    travelTime: 0,
+    reduction: 100,
+    instant: true,
+  });
+  // 非维度壁垒行为保持不变
+  assert.deepEqual(applyInnateTravelReduction({ 当前先天至宝: '逐日仙辇' }, 100, () => 0.5), {
+    travelTime: 85,
+    reduction: 15,
+  });
+  assert.deepEqual(applyInnateTravelReduction({ 当前先天至宝: '虚天舟' }, 20, () => 0), {
+    travelTime: 15,
+    reduction: 5,
+  });
+});
+
 test('先天至宝实体绑定唯一主人并使用独立至宝槽', () => {
   const treasure = createInnateTreasure('混沌珠', '10001', 1234);
   assert.equal(treasure.type, '至宝');

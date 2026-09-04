@@ -952,16 +952,35 @@ export function getDungeonTimedActionMultiplier(player) {
   return Math.max(0.5, getTimedActionMultiplier(player) * (1 - technique.rate));
 }
 
-export function applyInnateTravelReduction(player, travelTime, random = Math.random) {
+// 逐日仙辇穿梭维度壁垒时「瞬间穿梭」的极小概率（1%）
+export const INSTANT_BARRIER_TRAVEL_CHANCE = 0.01;
+
+export function applyInnateTravelReduction(player, travelTime, random = Math.random, options = {}) {
   const original = Math.max(1, Math.ceil(Number(travelTime) || 1));
+  const dimensionBarrier = options.dimensionBarrier === true;
+  const roll = Math.min(Math.max(Number(random()) || 0, 0), 1 - Number.EPSILON);
   if (hasEquippedInnateTreasure(player, '逐日仙辇', '被动:1')) {
+    if (dimensionBarrier) {
+      // 维度壁垒航程：15%~25% 减免，且有极小概率（1%）瞬间穿梭
+      if (roll < INSTANT_BARRIER_TRAVEL_CHANCE) {
+        return { travelTime: 0, reduction: original, instant: true };
+      }
+      const reducePct = 0.15 + Math.floor(roll * 11) / 100;
+      const travelTime = Math.max(1, Math.ceil(original * (1 - reducePct)));
+      return { travelTime, reduction: original - travelTime };
+    }
     const travelTime = Math.max(1, Math.ceil(original * 0.85));
     return { travelTime, reduction: original - travelTime };
   }
   if (!hasEquippedInnateTreasure(player, '虚天舟', '被动:1')) {
     return { travelTime: original, reduction: 0 };
   }
-  const reduction = 5 + Math.floor(Math.min(Math.max(Number(random()) || 0, 0), 1 - Number.EPSILON) * 6);
+  if (dimensionBarrier) {
+    // 维度壁垒航程：固定减少 20%
+    const travelTime = Math.max(1, Math.ceil(original * 0.8));
+    return { travelTime, reduction: original - travelTime };
+  }
+  const reduction = 5 + Math.floor(roll * 6);
   return { travelTime: Math.max(1, original - reduction), reduction: Math.min(reduction, original - 1) };
 }
 

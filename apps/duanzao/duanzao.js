@@ -813,7 +813,7 @@ export class duanzao extends plugin {
         );
         // 炼器功法熟练度累加（封顶 100），影响系数加成
         if (gongfaName) {
-          player.炼器功法熟练度 = Math.min((player.炼器功法熟练度 || 0) + 1, 100);
+          player.炼器功法熟练度 = Math.min((player.炼器功法熟练度 || 0) + 2, 100);
           await Write_player(user_qq, player);
         }
         // 熟练度先落盘，再由 Add_职业经验 读取最新存档，避免旧 player 回写覆盖经验。

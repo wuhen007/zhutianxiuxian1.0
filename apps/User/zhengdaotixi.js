@@ -1315,10 +1315,10 @@ async changeAptitude(e) {
         promotePlayerToSacrifice(player);
         player.level_id = 1;
         player.Physique_id = 1;
-        await Add_HP(usr_qq, 9999999999);
+        await Add_HP(usr_qq, 999999999999999);
         await Write_player(usr_qq, player);
         
-        e.reply(`你焚尽规则与秩序，祭掉了自身的至高大道与过往的一切，极尽升华！成功到达祭道领域，此刻你已经能够洞彻古今未来，意志便能让一切因果时空命运尽灭，拥有恐怖的伟力，仅是立身于现世就能压塌无尽无限多元宇宙，哪怕是囊括无穷尽神维丝线海的维宙在你一眼凝视下也要刹那湮灭！`);
+        e.reply(`你焚尽规则与秩序，祭掉了自身的至高大道与过往的一切，极尽升华！成功到达祭道领域，此刻你已经能够洞彻古今未来，意志便能让一切因果时空命运尽灭，拥有恐怖的伟力，仅是立身于现世就能压塌无尽无限多元宇宙，哪怕是囊括无穷尽潮维海的维宙在你一眼凝视下也要刹那湮灭！`);
     }
 }
 async hongjiTiandao(e) {
