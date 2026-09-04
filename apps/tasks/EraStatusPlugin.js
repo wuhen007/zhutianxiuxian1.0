@@ -18,6 +18,7 @@ import {
   restoreAllPlayerLifespans,
   suppressAllPlayerLifespans,
 } from './juelingLifespanService.js';
+import { getPlaneDestructionInfo } from '../../model/planeDestruction.js';
 
 export class EraStatusPlugin extends plugin {
   constructor() {
@@ -138,6 +139,11 @@ export class EraStatusPlugin extends plugin {
     
     if (isNaN(epoch) || epoch < 1) {
       return e.reply("纪元无效！必须大于等于1");
+    }
+
+    const highland = getPlaneDestructionInfo(path.join(__PATH.data_path, '位面.json'), '厄土高原');
+    if (!highland.destroyed) {
+      return e.reply('【古今未来封锁】厄土高原尚未消灭，先终结高原后才能重塑古今未来。');
     }
     
     // 获取当前配置

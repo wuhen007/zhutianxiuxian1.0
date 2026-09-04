@@ -1,3 +1,5 @@
+import { getLocationId, PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
+
 /**
  * 雷劫基准攻击缩放系数
  *
@@ -300,7 +302,7 @@ export const BODY_TRIBULATION_SHIFT = Object.freeze({
  * 用法：返回整数偏移，加到随机整数后钳位
  */
 export function calcPlaneCoordinateShift(player) {
-  const planeId = Number(player?.power_place) || 0;
+  const planeId = getLocationId(player?.power_place);
   const coord = player?.[planeIdToCoordField(planeId)];
   if (!coord) return 0;
   return calcCoordinateShift(planeId, coord.x, coord.y);
@@ -316,17 +318,28 @@ export function calcCoordinateShift(planeId, x, y) {
   const py = Number(y);
   if (!Number.isFinite(px) || !Number.isFinite(py)) return 0;
   // planeId 可能是 1.5 / 2.5 / 3.5 这种半级，×2 归整避免浮点取模误差
-  const pid = Math.round((Number(planeId) || 0) * 2);
+  const normalizedPlaneId = getLocationId(planeId);
+  const pid = Math.round((Number.isFinite(normalizedPlaneId) ? normalizedPlaneId : 0) * 2);
   const hash = ((pid * 31 + Math.trunc(px) * 17 + Math.trunc(py) * 13) % 21 + 21) % 21;
   return hash - 10;
 }
 
 function planeIdToCoordField(planeId) {
+  planeId = getLocationId(planeId);
   const map = {
-    0: '凡间坐标', 1: '仙界坐标', 1.5: '下界八域坐标',
-    2: '遮天位面坐标', 2.5: '九天十地坐标', 3: '界海坐标',
-    3.5: '太初星墟坐标', 3.6: '时间长河坐标', 4: '小阴间坐标',
-    5: '大阴间坐标', 6: '仙域坐标', 6.5: '永恒未知之地坐标', 7: '阳间坐标',
+    [PLACE_LOCATION_MAP.凡间]: '凡间坐标',
+    [PLACE_LOCATION_MAP.仙界]: '仙界坐标',
+    [PLACE_LOCATION_MAP.下界八域]: '下界八域坐标',
+    [PLACE_LOCATION_MAP.遮天位面]: '遮天位面坐标',
+    [PLACE_LOCATION_MAP.九天十地]: '九天十地坐标',
+    [PLACE_LOCATION_MAP.界海]: '界海坐标',
+    [PLACE_LOCATION_MAP.太初星墟]: '太初星墟坐标',
+    [PLACE_LOCATION_MAP.时间长河]: '时间长河坐标',
+    [PLACE_LOCATION_MAP.小阴间]: '小阴间坐标',
+    [PLACE_LOCATION_MAP.大阴间]: '大阴间坐标',
+    [PLACE_LOCATION_MAP.仙域]: '仙域坐标',
+    [PLACE_LOCATION_MAP.永恒未知之地]: '永恒未知之地坐标',
+    [PLACE_LOCATION_MAP.阳间]: '阳间坐标',
   };
   return map[planeId] || null;
 }

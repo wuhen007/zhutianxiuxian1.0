@@ -36,7 +36,7 @@ test('每日任务潜力取两套体系较高等级的十倍', () => {
   assert.equal(getDailyTaskPotentialReward({ mijinglevel_id: 12, xiangulevel_id: 8 }), 120);
   assert.equal(getDailyTaskPotentialReward({ mijinglevel_id: 3, xiangulevel_id: 16 }), 160);
   assert.equal(getDailyTaskPotentialReward({}), 0);
-  assert.equal(DAILY_TASK_WENXIAN_EXP, 50);
+  assert.equal(DAILY_TASK_WENXIAN_EXP, 1500);
 });
 
 test('灵石任务分别累计收入和支出而不是余额净变化', () => {

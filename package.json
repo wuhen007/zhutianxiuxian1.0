@@ -1,7 +1,8 @@
 {
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "test:world-chat-live": "node scripts/world-chat-live.mjs"
   },
   "devDependencies": {
     "prettier": "2.8.7"

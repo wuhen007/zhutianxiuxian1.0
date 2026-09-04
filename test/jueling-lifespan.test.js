@@ -59,6 +59,13 @@ test('时代入口和新玩家入口共用加锁后的绝灵寿元服务', () =>
   assert.match(eraSource, /applyEraLifespanTransition/);
   assert.match(reshapeSource, /restoreAllPlayerLifespans/);
   assert.match(reshapeSource, /suppressAllPlayerLifespans/);
+  assert.match(
+    reshapeSource,
+    /const highland = getPlaneDestructionInfo\([\s\S]*?'厄土高原'[\s\S]*?if \(!highland\.destroyed\)/,
+  );
+  assert.ok(
+    reshapeSource.indexOf('if (!highland.destroyed)') < reshapeSource.indexOf("const set = config.getConfig('xiuxian', 'xiuxian')"),
+  );
   assert.match(serviceSource, /withPlayerLocks\(playerIds/);
   assert.match(serviceSource, /written\.reverse\(\)/);
 });

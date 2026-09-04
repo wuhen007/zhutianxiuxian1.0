@@ -78,6 +78,7 @@ import {
     COORDINATE_CLUE_COST,
     DEFAULT_KNOWN_LOCATIONS,
     PLACE_LOCATION_MAP,
+    PLACE_LOCATION_PATTERN,
     SAN_SHI_TONG_GUAN_NAME,
     SPECIAL_LOCATIONS,
     TRAVEL_REDUCE_MAX,
@@ -86,9 +87,12 @@ import {
     consumeTravelWind,
     getBaseTravelThreshold,
     getBodyTravelQuote,
+    getCoordinateLocations,
     getDimensionBarrierCount,
     getDimensionName,
+    getLocationId,
     getLocationThreshold,
+    getLocationName,
     getTokenTravelTime,
     getUnknownCoordinates,
     hasCoordinate,
@@ -104,12 +108,13 @@ import {
     isWenXianEligible,
 } from '../../model/wenxianling.js';
 import {
-    RED_DUST_FORTUNE_COST,
+  RED_DUST_FORTUNE_COST,
     RED_DUST_FORTUNES,
     createRedDustFortune,
     getActiveRedDustFortune,
     getRedDustFortuneType,
 } from '../../model/redDustFortune.js';
+import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import { BINGZI_FRAGMENT, BINGZI_TECHNIQUE } from '../../model/bingziLegacy.js';
 import {
     findSectWarProduct,
@@ -122,6 +127,7 @@ import {
 } from '../../model/planeDestruction.js';
 import { replyOfficialMessage } from '../../model/officialMessage.js';
 import { applySecretPlaceNotificationContext } from '../../model/secretPlaceNotification.js';
+import { isFashanActionPending } from '../../model/fashanProxy.js';
 import {
     calculateShangcangDuration,
     deductShangcangCost,
@@ -137,6 +143,16 @@ function isWeiMianDestroyed(planeName) {
 
 async function replyPlaneDestroyed(e, planeName) {
     return e.reply(buildPlaneDestroyedMessage(data.filePathMap.weimianList, planeName));
+}
+
+async function hasPendingFashanAction(playerId, now = Date.now()) {
+    const raw = await redis.get(`xiuxian:player:${playerId}:action:fashan`);
+    if (!raw) return false;
+    try {
+        return isFashanActionPending(JSON.parse(raw), now);
+    } catch {
+        return false;
+    }
 }
 
 // ==================== 位面穿梭·接引请求 ====================
@@ -352,7 +368,7 @@ export class SecretPlace extends plugin {
           fnc: 'handleDungeonDrop',
         },
        {
-  reg: '^#穿梭(凡间|仙界|下界八域|仙域|遮天位面|九天十地|界海|异域|太初星墟|时间长河|小阴间|大阴间|阳间|厄土高原|上苍之上|超维宇宙|永恒未知之地|百维真界|原初宇宙海|千维宙古界|万维梵宇界|神维丝线海)$',
+  reg: `^#穿梭(${PLACE_LOCATION_PATTERN})$`,
   fnc: 'goToLocation'
 },
 {
@@ -527,6 +543,7 @@ export class SecretPlace extends plugin {
   async startXutianPassengers(owner, ownerTask) {
     if (!ownerTask.travel_protected || !hasEquippedInnateTreasure(owner, '虚天舟', '被动:1')) return [];
     const passengerIds = [...new Set((owner.虚天舟乘员 || []).map(String))].slice(0, 3);
+    const ownerFromLocation = getLocationId(ownerTask.from_name || ownerTask.from_location);
     const boarded = [];
 
     for (const passengerQq of passengerIds) {
@@ -538,7 +555,7 @@ export class SecretPlace extends plugin {
         try { busy = Number(JSON.parse(actionRaw)?.end_time) > Date.now(); } catch { busy = false; }
       }
       const threshold = await this.checkLocationThreshold(passenger, ownerTask.to_name);
-      if (busy || passenger.power_place !== ownerTask.from_location || !threshold.ok) {
+      if (busy || Number(passenger.power_place) !== ownerFromLocation || !threshold.ok) {
         passenger.虚天舟船主 = '';
         await Write_player(passengerQq, passenger);
         continue;
@@ -576,8 +593,12 @@ async goToLocation(e) {
      usr_qq = await channel(usr_qq);
     const player = await Read_player(usr_qq);
     
+    const currentLocation = getLocationId(player?.power_place);
+    if (Number.isFinite(currentLocation)) player.power_place = currentLocation;
+
     // 解析目标地点
-    const location = e.msg.match(/^#穿梭(凡间|仙界|下界八域|九天十地|遮天位面|界海|异域|太初星墟|时间长河|仙域|小阴间|大阴间|阳间|厄土高原|上苍之上|超维宇宙|永恒未知之地|百维真界|原初宇宙海|千维宙古界|万维梵宇界|神维丝线海)$/)[1];
+    const location = e.msg.match(new RegExp(`^#穿梭(${PLACE_LOCATION_PATTERN})$`))?.[1];
+    if (!location) return false;
     
     // 地点映射表（统一引用模块级 PLACE_LOCATION_MAP，避免多处分散硬编码）
     const LOCATION_MAP = PLACE_LOCATION_MAP;
@@ -587,12 +608,21 @@ async goToLocation(e) {
         return e.reply(`无效地点：${location}\n可用地点：${Object.keys(LOCATION_MAP).join('、')}`);
     }
     
-    const targetLocation = LOCATION_MAP[location];
+    const targetLocation = getLocationId(location);
     const emperorFreeTravel = canImmortalEmperorFreeTravel(
         player,
         player.power_place,
         targetLocation,
     );
+    const leavingEternalGuard = emperorFreeTravel
+        && getLocationName(player.power_place) === '永恒未知之地'
+        && player.修仙状态 === '镇守永恒未知之地';
+    const clearEternalGuard = async () => {
+        if (!leavingEternalGuard) return;
+        player.修仙状态 = '空闲';
+        delete player.永恒镇守结束时间;
+        await redis.del(`xiuxian:player:${usr_qq}:action`);
+    };
     
     if (!emperorFreeTravel && !getBaseTravelThreshold(player).ok) {
         const messages = [`你必须成就地仙，肉身成圣后才能承受住穿梭空间的能量风暴`,];
@@ -602,7 +632,7 @@ async goToLocation(e) {
     }
 
     // 检查是否已在目标地点
-    if (player.power_place === targetLocation) {
+    if (getLocationId(player.power_place) === targetLocation) {
         return e.reply(`你已经在${location}了`);
     }
 
@@ -613,7 +643,7 @@ async goToLocation(e) {
     // =========================================================================
     
     // 检查是否可以前往
-    const flag = await Go(e);
+    const flag = await Go(e, { allowEternalGuard: emperorFreeTravel });
     if (!flag) {
         return false;
     }
@@ -713,7 +743,7 @@ async goToLocation(e) {
             end_time: new Date().getTime() + travelTime * 60 * 1000,
             from_location: player.power_place,
             to_location: targetLocation,
-            from_name: Object.keys(LOCATION_MAP).find(key => LOCATION_MAP[key] === player.power_place),
+            from_name: getLocationName(player.power_place),
             to_name: location,
             travel_time: travelTime,
             xiuwei_cost: 0,
@@ -768,7 +798,7 @@ async goToLocation(e) {
         );
     }
     if (emperorFreeTravel && !isInstantTravel) {
-        allMsgs.push('【仙帝权能·永恒直达】三组核心维度之间无需坐标与普通准入检验，计时航程减少70%。');
+        allMsgs.push('【仙帝权能·界壁直达】时间长河、上苍之上、厄土高原与永恒未知之地之间无需坐标与普通准入检验，计时航程减少70%。');
     } else if (isTimeRiverLocation(player.power_place) || isTimeRiverLocation(targetLocation)) {
         allMsgs.push('【时序界壁】时间长河是独立时序域，不属于诸天万界内部。');
     }
@@ -866,7 +896,7 @@ async goToLocation(e) {
     }
 
     // 根据不同地点构建不同传送描述
-    const fromLocation = Object.keys(LOCATION_MAP).find(key => LOCATION_MAP[key] === player.power_place);
+    const fromLocation = getLocationName(player.power_place) || '未知之地';
     let startMsg = [];
     let travelMsg = [];
 
@@ -884,7 +914,7 @@ async goToLocation(e) {
                 `前方浮现上苍之上的浩瀚疆域，彼岸将至`
             ];
             break;
-        case player.power_place === 0 && targetLocation === 1: // 凡间→仙界
+        case player.power_place === PLACE_LOCATION_MAP['凡间'] && targetLocation === PLACE_LOCATION_MAP['仙界']: // 凡间→仙界
             startMsg = [
                 `你祭出飞剑，化作一道流光直冲云霄`,
                 `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
@@ -898,8 +928,8 @@ async goToLocation(e) {
             ];
             break;
             
-        case targetLocation === 6: // 前往仙域
-            if (player.power_place === 3) { // 从界海→仙域
+        case targetLocation === PLACE_LOCATION_MAP['仙域']: // 前往仙域
+            if (player.power_place === PLACE_LOCATION_MAP['界海']) { // 从界海→仙域
                 startMsg = [
                     `你祭出帝兵，轰开界海尽头的混沌雾霭`,
                     `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
@@ -912,7 +942,7 @@ async goToLocation(e) {
                     `前方混沌气散开，露出仙域的一角`
                 ];
             } 
-            else if (player.power_place === 3.6) { // 从时间长河→仙域
+            else if (player.power_place === PLACE_LOCATION_MAP['时间长河']) { // 从时间长河→仙域
                 startMsg = [
                     `你逆溯时间长河，寻找仙域在乱古的坐标`,
                     `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
@@ -940,7 +970,7 @@ async goToLocation(e) {
             }
             break;
             
-        case player.power_place === 1 && targetLocation === 0: // 仙界→凡间
+        case player.power_place === PLACE_LOCATION_MAP['仙界'] && targetLocation === PLACE_LOCATION_MAP['凡间']: // 仙界→凡间
             startMsg = [
                 `你收敛仙气，化作凡人模样`,
                 `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
@@ -954,7 +984,7 @@ async goToLocation(e) {
             ];
             break;
             
-        case player.power_place === 1 && targetLocation === 2: // 仙界→遮天位面
+        case player.power_place === PLACE_LOCATION_MAP['仙界'] && targetLocation === PLACE_LOCATION_MAP['遮天位面']: // 仙界→遮天位面
             startMsg = [
                 `你激活五色祭坛，九龙拉棺破空而至`,
                 `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
@@ -968,7 +998,7 @@ async goToLocation(e) {
             ];
             break;
             
-        case player.power_place === 2 && targetLocation === 3: // 遮天位面→界海
+        case player.power_place === PLACE_LOCATION_MAP['遮天位面'] && targetLocation === PLACE_LOCATION_MAP['界海']: // 遮天位面→界海
             startMsg = [
                 `你撕裂虚空，踏足界海堤坝`,
                 `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
@@ -982,7 +1012,7 @@ async goToLocation(e) {
             ];
             break;
             
-        case player.power_place === 3 && targetLocation === 3.6: // 界海→时间长河
+        case player.power_place === PLACE_LOCATION_MAP['界海'] && targetLocation === PLACE_LOCATION_MAP['时间长河']: // 界海→时间长河
             startMsg = [
                 `你以无上伟力击穿时空壁垒`,
                 `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
@@ -996,7 +1026,7 @@ async goToLocation(e) {
             ];
             break;
             
-        case player.power_place === 3.6 && targetLocation === 6.5: // 时间长河→永恒未知之地
+        case player.power_place === PLACE_LOCATION_MAP['时间长河'] && targetLocation === PLACE_LOCATION_MAP['永恒未知之地']: // 时间长河→永恒未知之地
             startMsg = [
                 `你超脱诸天万界，向永恒未知之地进发`,
                 `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
@@ -1010,7 +1040,7 @@ async goToLocation(e) {
             ];
             break;
 
-        case player.power_place === 4 && targetLocation === 5: // 小阴间→大阴间
+        case player.power_place === PLACE_LOCATION_MAP['小阴间'] && targetLocation === PLACE_LOCATION_MAP['大阴间']: // 小阴间→大阴间
             startMsg = [
                 `你循着残破宇宙深处飘来的堕落气息前行`,
                 `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
@@ -1024,7 +1054,7 @@ async goToLocation(e) {
             ];
             break;
 
-        case player.power_place === 5 && targetLocation === 7: // 大阴间→阳间
+        case player.power_place === PLACE_LOCATION_MAP['大阴间'] && targetLocation === PLACE_LOCATION_MAP['阳间']: // 大阴间→阳间
             startMsg = [
                 `你仰望虚空尽头，那里有完整天地法则的璀璨大界`,
                 `消耗${xiuweiCost}修为与${qixueCost}血气以及${shouyuanCost}寿元`,
@@ -1057,6 +1087,9 @@ async goToLocation(e) {
     player.修为 -= xiuweiCost;
     player.血气 -= qixueCost;
     player.寿元 -= shouyuanCost;
+
+    // 离开永恒未知之地时解除真身镇守状态；所有准入、资源校验均已通过。
+    await clearEternalGuard();
 
     if (travelTime === 0) {
         player.power_place = targetLocation;
@@ -1172,12 +1205,8 @@ async Xiuxianstate(e) {
     usr_qq = await channel(usr_qq);
     const player = await Read_player(usr_qq);
     
-    const PLACE_STATES = Object.fromEntries(
-        Object.entries(PLACE_LOCATION_MAP).map(([name, location]) => [location, name])
-    );
-    
     // 获取真身位置
-    const truePlace = PLACE_STATES[player.power_place] || "未知之地";
+    const truePlace = getLocationName(player.power_place) || "未知之地";
     
     let replyMsg = [
         `【${player.名号}状态】`,
@@ -1186,7 +1215,7 @@ async Xiuxianstate(e) {
     
     // 法身状态
     if (player.法身 === 1) {
-        const fashanPlace = PLACE_STATES[player.法身位置] || "未知之地";
+        const fashanPlace = getLocationName(player.法身位置) || "未知之地";
         const fashanAction = player.法身行动 || "待命中";
         const fashanStatus = player.法身状态 || "未知";
         
@@ -1382,7 +1411,9 @@ async xunbao(e) {
         player.lastDungeonName = didian;
 
         const now = Date.now();
+        const taskId = `body:${usr_qq}:${now}:上苍之上:explore`;
         const action = {
+          taskId,
           action: SHANGCANG_NORMAL_ACTION,
           start_time: now,
           end_time: now + timing.durationMs,
@@ -1455,7 +1486,7 @@ async Gojiehaiplace(e) {
         return replyPlaneDestroyed(e, '界海');
     }
       // 检查是否已在目标地点
-    if (player.power_place != 3) {
+    if (player.power_place != PLACE_LOCATION_MAP['界海']) {
         return e.reply(`你不在界海`);
     }
 
@@ -1698,7 +1729,7 @@ async Gosecretplace(e) {
         return replyPlaneDestroyed(e, '凡间');
     }
       // 检查是否已在目标地点
-    if (player.power_place != 0) {
+    if (player.power_place != PLACE_LOCATION_MAP['凡间']) {
         return e.reply(`你不在凡间`);
     }
 
@@ -1760,6 +1791,7 @@ async Gosecretplace(e) {
     // 扣除资源
     await Add_寿元(usr_qq, -weizhi.shouyuan);
     await Add_灵石(usr_qq, -weizhi.Price);
+    Object.assign(player, await Read_player(usr_qq));
     
     // 获取基础时间
     const cf = config.getConfig('xiuxian', 'xiuxian');
@@ -1782,12 +1814,15 @@ async Gosecretplace(e) {
      // ==== 法身系统检查 ====
     if (player.法身 === 1) {
         // 检查法身状态是否为"空闲中"
-        if (player.法身状态 === "空闲中") {
-            // 法身空闲，使用法身探索
-            const time = baseTime - timeReduction; // 法身实际时间
+        if (player.法身状态 === "空闲中"
+            && Number(getLocationId(player.法身位置)) === Number(PLACE_LOCATION_MAP.凡间)
+            && !(await hasPendingFashanAction(usr_qq))) {
+        // 法身空闲，使用法身探索
+        const time = baseTime - timeReduction; // 法身实际时间
+            const targetPlane = PLACE_LOCATION_MAP.凡间;
             
             // 更新法身状态
-            player.法身位置 = 1; // 秘境位置编号
+            player.法身位置 = targetPlane;
             player.法身行动 = `探索${didian}`;
             player.法身状态 = `行动中`;
             await Write_player(usr_qq, player);
@@ -1806,6 +1841,9 @@ async Gosecretplace(e) {
             const arr = {
                 action: '秘境探索',
                 isFashan: true,
+                actor: 'fashan',
+                actorPlane: targetPlane,
+                法身位置: targetPlane,
                 end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
                 time: action_time,
                 shutup: '1',
@@ -1902,7 +1940,7 @@ async Goxiajie(e) {
         return replyPlaneDestroyed(e, '下界八域');
     }
       // 检查是否已在目标地点
-    if (player.power_place != 1.5) {
+    if (player.power_place != PLACE_LOCATION_MAP['下界八域']) {
         return e.reply(`你不在下界八域`);
     }
 
@@ -2028,7 +2066,7 @@ async Gojiutianshidi(e) {
         return replyPlaneDestroyed(e, '九天十地');
     }
       // 检查是否已在目标地点
-    if (player.power_place != 2.5) {
+    if (player.power_place != PLACE_LOCATION_MAP['九天十地']) {
         return e.reply(`你不在九天十地`);
     }
 
@@ -2151,13 +2189,14 @@ async Gozhetian(e) {
         return replyPlaneDestroyed(e, '遮天位面');
     }
 
-    if (player.power_place != 2) {
+    if (player.power_place != PLACE_LOCATION_MAP['遮天位面']) {
         allMsgs.push(`你不在遮天位面`);
         return e.reply(allMsgs.join('\n'));
     }
 
     // ==== 法身系统检查 ====
-    if (player.法身 === 1) {
+    if (player.法身 === 1
+        && Number(getLocationId(player.法身位置)) === Number(PLACE_LOCATION_MAP.遮天位面)) {
         const nowTime = new Date().getTime();
         
         // 检查法身恢复状态
@@ -2171,11 +2210,15 @@ async Gozhetian(e) {
             
             if (fashanAction) {
                 const parsedAction = JSON.parse(fashanAction);
-                if (parsedAction.end_time > nowTime) {
+                if (isFashanActionPending(parsedAction, nowTime)) {
                     isFashanBusy = true;
-                    const m = parseInt((parsedAction.end_time - nowTime) / 1000 / 60);
-                    const s = parseInt((parsedAction.end_time - nowTime - m * 60 * 1000) / 1000);
-                    allMsgs.push(`法身正在${parsedAction.action}中，剩余时间：${m}分${s}秒`);
+                    if (Number(parsedAction.end_time) > nowTime) {
+                        const m = parseInt((parsedAction.end_time - nowTime) / 1000 / 60);
+                        const s = parseInt((parsedAction.end_time - nowTime - m * 60 * 1000) / 1000);
+                        allMsgs.push(`法身正在${parsedAction.action}中，剩余时间：${m}分${s}秒`);
+                    } else {
+                        allMsgs.push(`法身的${parsedAction.action}已到结算时刻，正在等待结算。`);
+                    }
                 } else {
                     await redis.del('xiuxian:player:' + usr_qq + ':action:fashan');
                 }
@@ -2201,7 +2244,7 @@ async Gozhetian(e) {
                 let time = 12; // 基础时间（分钟）
 
               // 调用统一方法计算时间缩减
-    const { timeReduction, msgs } = await calculateTimeReduction(player);
+    let { timeReduction, msgs } = await calculateTimeReduction(player);
     allMsgs.push(...msgs);
                 
                 // 灵根效果
@@ -2220,7 +2263,8 @@ async Gozhetian(e) {
                 time -= timeReduction;
                 
                 // ==== 更新法身状态 ====
-                player.法身位置 = 2;
+                const targetPlane = PLACE_LOCATION_MAP.遮天位面;
+                player.法身位置 = targetPlane;
                 player.法身行动 = `探索遮天·${didian}`;
                 player.法身状态 = `行动中`;
                 await Write_player(usr_qq, player);
@@ -2239,6 +2283,9 @@ async Gozhetian(e) {
                 const arr = {
                     action: '法身探索遮天位面',
                     isFashan: true,
+                    actor: 'fashan',
+                    actorPlane: targetPlane,
+                    法身位置: targetPlane,
                     end_time: nowTime + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
                     time: action_time,
                     shutup: '1',
@@ -2479,23 +2526,22 @@ async Goforbiddenarea(e) {
     let usr_qq = e.user_id.toString().replace('qg_', '');
     usr_qq = await channel(usr_qq);
     
-    // 检查是否可以前往
+    const player = await Read_player(usr_qq);
+
     const flag = await Go(e);
     if (!flag) {
         return false;
     }
     
-    const player = await Read_player(usr_qq);
-    
     // 诡异大祭·崩灭检查：玩家当前所在位面被毁则封锁副本
-    const planeMap = { 0: '凡间', 1: '仙界', 1.5: '下界八域', 2: '遮天位面', 2.5: '九天十地', 3: '界海', 3.5: '太初星墟', 6: '仙域' };
-    const currentPlaneName = planeMap[player.power_place];
+    const currentPlaneName = getLocationName(player.power_place);
     if (currentPlaneName && isWeiMianDestroyed(currentPlaneName)) {
         return replyPlaneDestroyed(e, currentPlaneName);
     }
     
     // ==== 法身系统检查 ====
-    if (player.法身 === 1) {
+    if (player.法身 === 1
+        && Number(getLocationId(player.法身位置)) === Number(getLocationId(player.power_place))) {
         // 检查法身是否可行动
         const nowTime = new Date().getTime();
         if (player.法身恢复时间 && player.法身恢复时间 > nowTime) {
@@ -2511,11 +2557,15 @@ async Goforbiddenarea(e) {
         const fashanAction = await redis.get('xiuxian:player:' + usr_qq + ':action:fashan');
         if (fashanAction) {
             parsedAction = JSON.parse(fashanAction);
-            if (parsedAction.end_time > nowTime) {
+            if (isFashanActionPending(parsedAction, nowTime)) {
                 isFashanBusy = true;
-                const m = parseInt((parsedAction.end_time - nowTime) / 1000 / 60);
-                const s = parseInt((parsedAction.end_time - nowTime - m * 60 * 1000) / 1000);
-                e.reply(`法身正在${parsedAction.action}中，剩余时间：${m}分${s}秒`);
+                if (Number(parsedAction.end_time) > nowTime) {
+                    const m = parseInt((parsedAction.end_time - nowTime) / 1000 / 60);
+                    const s = parseInt((parsedAction.end_time - nowTime - m * 60 * 1000) / 1000);
+                    e.reply(`法身正在${parsedAction.action}中，剩余时间：${m}分${s}秒`);
+                } else {
+                    e.reply(`法身的${parsedAction.action}已到结算时刻，正在等待结算。`);
+                }
             } else {
                 // 法身行动已结束但未清除
                 await redis.del('xiuxian:player:' + usr_qq + ':action:fashan');
@@ -2542,7 +2592,14 @@ async Goforbiddenarea(e) {
             // ===== 结束时间减少计算 =====
             
             // 更新法身状态
-            player.法身位置 = 4; // 禁地位置
+            const storedPlane = getLocationId(player.法身位置);
+            const targetPlane = Number.isFinite(storedPlane)
+                ? storedPlane
+                : getLocationId(player.power_place);
+            if (!Number.isFinite(targetPlane)) {
+                return e.reply('法身尚未绑定有效位面，请先使用 #穿梭 前往一个已知位面。');
+            }
+            player.法身位置 = targetPlane;
             player.法身行动 = `探索禁地·${didian}`;
             player.法身状态 = `行动中`;
             
@@ -2562,6 +2619,9 @@ async Goforbiddenarea(e) {
             const arr = {
                 action: '法身探索禁地',
                 isFashan: true, // 标记为法身行动
+                actor: 'fashan',
+                actorPlane: targetPlane,
+                法身位置: targetPlane,
                 end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
                 time: action_time,
                 shutup: '1',
@@ -2750,16 +2810,16 @@ async GoTimeplace(e) {
     let usr_qq = e.user_id.toString().replace('qg_','');
     usr_qq = await channel(usr_qq);
     
-    // 检查是否可以前往
+    const player = await Read_player(usr_qq);
+
     const flag = await Go(e);
     if (!flag) {
         return false;
     }
     
-    const player = await Read_player(usr_qq);
-    
     // ==== 法身系统检查 ====
-    if (player.法身 === 1) {
+    if (player.法身 === 1
+        && Number(getLocationId(player.法身位置)) === Number(getLocationId(player.power_place))) {
         // 检查法身是否可行动
         const nowTime = new Date().getTime();
         if (player.法身恢复时间 && player.法身恢复时间 > nowTime) {
@@ -2775,11 +2835,15 @@ async GoTimeplace(e) {
         const fashanAction = await redis.get('xiuxian:player:' + usr_qq + ':action:fashan');
         if (fashanAction) {
             parsedAction = JSON.parse(fashanAction);
-            if (parsedAction.end_time > nowTime) {
+            if (isFashanActionPending(parsedAction, nowTime)) {
                 isFashanBusy = true;
-                const m = parseInt((parsedAction.end_time - nowTime) / 1000 / 60);
-                const s = parseInt((parsedAction.end_time - nowTime - m * 60 * 1000) / 1000);
-                e.reply(`法身正在${parsedAction.action}中，剩余时间：${m}分${s}秒`);
+                if (Number(parsedAction.end_time) > nowTime) {
+                    const m = parseInt((parsedAction.end_time - nowTime) / 1000 / 60);
+                    const s = parseInt((parsedAction.end_time - nowTime - m * 60 * 1000) / 1000);
+                    e.reply(`法身正在${parsedAction.action}中，剩余时间：${m}分${s}秒`);
+                } else {
+                    e.reply(`法身的${parsedAction.action}已到结算时刻，正在等待结算。`);
+                }
             } else {
                 // 法身行动已结束但未清除
                 await redis.del('xiuxian:player:' + usr_qq + ':action:fashan');
@@ -2810,7 +2874,14 @@ async GoTimeplace(e) {
             // ===== 结束时间减少计算 =====
             
             // 更新法身状态
-            player.法身位置 = 5; // 仙府位置
+            const storedPlane = getLocationId(player.法身位置);
+            const targetPlane = Number.isFinite(storedPlane)
+                ? storedPlane
+                : getLocationId(player.power_place);
+            if (!Number.isFinite(targetPlane)) {
+                return e.reply('法身尚未绑定有效位面，请先使用 #穿梭 前往一个已知位面。');
+            }
+            player.法身位置 = targetPlane;
             player.法身行动 = `探索仙府·${didian}`;
             player.法身状态 = `行动中`;
             
@@ -2830,6 +2901,9 @@ async GoTimeplace(e) {
             const arr = {
                 action: '法身探索仙府',
                 isFashan: true, // 标记为法身行动
+                actor: 'fashan',
+                actorPlane: targetPlane,
+                法身位置: targetPlane,
                 end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
                 time: action_time,
                 shutup: '1',
@@ -2995,7 +3069,7 @@ async Gofairyrealm(e) {
         return replyPlaneDestroyed(e, '仙界');
     }
      // 检查是否已在目标地点
-    if (player.power_place != 1) {
+    if (player.power_place != PLACE_LOCATION_MAP['仙界']) {
         return e.reply(`你不在仙界`);
     }
     
@@ -3173,6 +3247,7 @@ if (didian === "往世星海") {
     // 扣除资源
     await Add_灵石(usr_qq, -Price);
     await Add_寿元(usr_qq, -shouyuan);
+    Object.assign(player, await Read_player(usr_qq));
     
     // 收集消耗信息
     let costInfo = `消耗：${shouyuan}寿元`;
@@ -3191,7 +3266,8 @@ if (didian === "往世星海") {
 
     
     // ==== 法身系统检查 ====
-    if (player.法身 === 1) {
+    if (player.法身 === 1
+        && Number(getLocationId(player.法身位置)) === Number(PLACE_LOCATION_MAP.仙界)) {
         // 检查法身是否可行动
         const nowTime = new Date().getTime();
         if (player.法身恢复时间 && player.法身恢复时间 > nowTime) {
@@ -3206,11 +3282,15 @@ if (didian === "往世星海") {
             const fashanAction = await redis.get('xiuxian:player:' + usr_qq + ':action:fashan');
             if (fashanAction) {
                 parsedAction = JSON.parse(fashanAction);
-                if (parsedAction.end_time > nowTime) {
+                if (isFashanActionPending(parsedAction, nowTime)) {
                     isFashanBusy = true;
-                    const m = parseInt((parsedAction.end_time - nowTime) / 1000 / 60);
-                    const s = parseInt((parsedAction.end_time - nowTime - m * 60 * 1000) / 1000);
-                    e.reply(`法身正在${parsedAction.action}中，剩余时间：${m}分${s}秒`);
+                    if (Number(parsedAction.end_time) > nowTime) {
+                        const m = parseInt((parsedAction.end_time - nowTime) / 1000 / 60);
+                        const s = parseInt((parsedAction.end_time - nowTime - m * 60 * 1000) / 1000);
+                        e.reply(`法身正在${parsedAction.action}中，剩余时间：${m}分${s}秒`);
+                    } else {
+                        e.reply(`法身的${parsedAction.action}已到结算时刻，正在等待结算。`);
+                    }
                 } else {
                     // 法身行动已结束但未清除
                     await redis.del('xiuxian:player:' + usr_qq + ':action:fashan');
@@ -3223,7 +3303,8 @@ if (didian === "往世星海") {
                 const fashanTime = time - timeReduction; // 法身实际时间
                 
                 // 更新法身状态
-                player.法身位置 = 0; // 仙境位置编号
+                const targetPlane = PLACE_LOCATION_MAP.仙界;
+                player.法身位置 = targetPlane;
                 player.法身行动 = `镇守仙境·${didian}`;
                 player.法身状态 = `行动中`;
                 
@@ -3244,6 +3325,9 @@ if (didian === "往世星海") {
                 const arr = {
                     action: '法身镇守仙境',
                     isFashan: true,
+                    actor: 'fashan',
+                    actorPlane: targetPlane,
+                    法身位置: targetPlane,
                     end_time: new Date().getTime() + Math.floor(action_time * getDungeonTimedActionMultiplier(player)),
                     time: action_time,
                     shutup: '1',
@@ -3448,7 +3532,8 @@ if (action != null) {
         const shouyuanRefund = Math.floor(action.shouyuan_cost * (1 - progress) * 0.5);
         // 更新玩家资源，并恢复位置到出发地
         const player = await Read_player(usr_qq);
-        player.power_place = action.from_location; // 逃离后回到出发地，防止直接到达目标位面的bug
+        const restoredLocation = getLocationId(action.from_name || action.from_location);
+        player.power_place = Number.isFinite(restoredLocation) ? restoredLocation : action.from_location; // 逃离后回到出发地，防止直接到达目标位面的bug
         player.修为 += xiuweiRefund;
         player.血气 += qixueRefund;
          player.寿元 += shouyuanRefund;
@@ -3560,7 +3645,7 @@ async jieyinPlayer(e) {
   const player = await Read_player(usr_qq);
 
   // 检查操作者境界（仙王）
-  if (player.mijinglevel_id < 18) {
+  if (getRealmAuthorityLevel(player) < 18) {
     return e.reply([
       `【接引失败·境界不足】`,
       `唯有仙王级强者方可施展接引神通！`,
@@ -3589,15 +3674,21 @@ async jieyinPlayer(e) {
   const targetPlayer = await Read_player(targetQQ);
 
   // 接引目标位面 = 接引者当前位面
-  const targetLocationName = Object.keys(PLACE_LOCATION_MAP).find(key => PLACE_LOCATION_MAP[key] === player.power_place);
+    const targetLocationName = getLocationName(player.power_place);
   if (!targetLocationName) {
     return e.reply([
       `【接引失败·坐标迷失】`,
       `你当前所处的位面不在已知星图之中，无法锚定接引坐标。`
     ].join('\n'));
   }
+  const emperorFreeTravel = canImmortalEmperorFreeTravel(
+    targetPlayer,
+    targetPlayer.power_place,
+    player.power_place,
+  );
   if (getDimensionBarrierCount(targetPlayer.power_place, player.power_place) > 0
-    && !isInstantAllHeavensTravel(targetPlayer, targetPlayer.power_place, player.power_place)) {
+    && !isInstantAllHeavensTravel(targetPlayer, targetPlayer.power_place, player.power_place)
+    && !emperorFreeTravel) {
     return e.reply('接引神通无法越过维度壁垒，目标需自行使用 #穿梭 跨越界壁。');
   }
 
@@ -3606,7 +3697,7 @@ async jieyinPlayer(e) {
     return e.reply(buildPlaneDestroyedMsgs(targetLocationName));
   }
   const threshold = await this.checkLocationThreshold(targetPlayer, targetLocationName);
-  if (!threshold.ok) {
+  if (!threshold.ok && !emperorFreeTravel) {
     return e.reply([
       `【接引失败·位面壁垒】`,
       `道友${targetPlayer.名号 || targetQQ}无法承受${targetLocationName}的位面法则：`,
@@ -3666,7 +3757,7 @@ async sendPlayerToLocation(e) {
   const player = await Read_player(usr_qq);
 
   // 检查操作者境界（仙王）
-  if (player.mijinglevel_id < 18) {
+  if (getRealmAuthorityLevel(player) < 18) {
     return e.reply([
       `【传送失败·境界不足】`,
       `唯有仙王级强者方可施展传送神通！`,
@@ -3709,8 +3800,14 @@ async sendPlayerToLocation(e) {
 
   const targetPlayer = await Read_player(targetQQ);
 
+  const emperorFreeTravel = canImmortalEmperorFreeTravel(
+    targetPlayer,
+    targetPlayer.power_place,
+    PLACE_LOCATION_MAP[location],
+  );
   if (getDimensionBarrierCount(targetPlayer.power_place, PLACE_LOCATION_MAP[location]) > 0
-    && !isInstantAllHeavensTravel(targetPlayer, targetPlayer.power_place, PLACE_LOCATION_MAP[location])) {
+    && !isInstantAllHeavensTravel(targetPlayer, targetPlayer.power_place, PLACE_LOCATION_MAP[location])
+    && !emperorFreeTravel) {
     return e.reply('送往神通无法越过维度壁垒，目标需自行使用 #穿梭 跨越界壁。');
   }
 
@@ -3719,7 +3816,7 @@ async sendPlayerToLocation(e) {
     return e.reply(buildPlaneDestroyedMsgs(location));
   }
   const threshold = await this.checkLocationThreshold(targetPlayer, location);
-  if (!threshold.ok) {
+  if (!threshold.ok && !emperorFreeTravel) {
     return e.reply([
       `【传送失败·位面壁垒】`,
       `道友${targetPlayer.名号 || targetQQ}无法承受${location}的位面法则：`,
@@ -3765,36 +3862,37 @@ async sendPlayerToLocation(e) {
 // ==================== 接引/送往·共用门槛与确认逻辑 ====================
 // 位面准入门槛检查（与 goToLocation 完全一致的判定逻辑，单一真相源）
 async checkLocationThreshold(player, location) {
-    const threshold = getLocationThreshold(player, location);
+    const locationName = getLocationName(location) || String(location || '未知位面');
+    const threshold = getLocationThreshold(player, locationName);
     if (threshold.code === 'sealed') {
         return { ok: false, msgs: [
-            `【${location}·裂界封锁】`,
+            `【${locationName}·裂界封锁】`,
             `此界是彼岸古文明留下的奇异节点，常规位面通道无法锚定。`,
             `需身处太初星墟并唤醒完整裂界残忆，再以 #进入彼岸世界 横渡。`,
         ] };
     }
     if (threshold.code === 'dimension-barrier') {
         return { ok: false, msgs: [
-            `【${location}·维度壁垒】`,
+            `【${locationName}·维度壁垒】`,
             `此地已超出诸天万界层，常规位面通道在界壁前自行崩解。`,
             ...threshold.checks.map(item => `${item.label}：${item.display}`),
         ] };
     }
-    if (location === '小阴间' && threshold.code === 'shengxu') {
+    if (locationName === '小阴间' && threshold.code === 'shengxu') {
         return { ok: false, msgs: [
             `【小阴间·进化坐标未显】`,
             `这片天地只响应花粉进化路的生命波动。`,
             `需先以 #踏上花粉路 选择体系，并至少进化至觉醒境。`
         ] };
     }
-    if (location === '大阴间' && threshold.code === 'dayinjian') {
+    if (locationName === '大阴间' && threshold.code === 'dayinjian') {
         return { ok: false, msgs: [
             `【大阴间·境界不足】`,
             `大阴间的堕落气息会侵蚀未至神祇境的生命。`,
             `需花粉路进化至神祇境（12级）方可深入。`
         ] };
     }
-    if (location === '阳间' && threshold.code === 'yangjian') {
+    if (locationName === '阳间' && threshold.code === 'yangjian') {
         return { ok: false, msgs: [
             `【阳间·境界不足】`,
             `阳间法则完整而狂暴，神将境方可勉力立足。`,
@@ -3802,7 +3900,7 @@ async checkLocationThreshold(player, location) {
         ] };
     }
     // 时间长河：准仙帝
-    if (location === '时间长河') {
+    if (locationName === '时间长河') {
         if (threshold.code === 'time-river') {
             return { ok: false, msgs: [
                 `【时间长河·境界不足】`,
@@ -3812,19 +3910,8 @@ async checkLocationThreshold(player, location) {
             ] };
         }
     }
-    // 永恒未知之地：仙帝
-    if (location === '永恒未知之地') {
-        if (threshold.code === 'eternal-land') {
-            return { ok: false, msgs: [
-                `【永恒未知之地·境界不足】`,
-                `永恒未知之地乃超脱诸天之外的存在，`,
-                `唯有仙帝级强者方可踏足！`,
-                `你当前境界不足，无法进入。`,
-            ] };
-        }
-    }
     // 仙界：需成仙（轮回开启或境界达标）
-    if (location === '仙界') {
+    if (locationName === '仙界') {
         if (threshold.code === 'immortal-realm') {
             return { ok: false, msgs: [
                 `【轮回未启】`,
@@ -3834,7 +3921,7 @@ async checkLocationThreshold(player, location) {
         }
     }
     // 遮天位面：需圣人/天神/映照诸天等效权柄，或已寻得并激活五色祭坛
-    if (location === '遮天位面') {
+    if (locationName === '遮天位面') {
         if (threshold.code === 'zhetian') {
                 return { ok: false, msgs: [
                     `【遮天宇宙·前路未明】`,
@@ -3862,7 +3949,7 @@ async checkLocationThreshold(player, location) {
         }
     }
     // 仙域：仙王（秘境18 或 仙古16）
-    if (location === '仙域') {
+    if (locationName === '仙域') {
         if (threshold.code === 'immortal-domain') {
             return { ok: false, msgs: [
                 `【仙域壁垒·境界不足】`,
@@ -3878,14 +3965,14 @@ async checkLocationThreshold(player, location) {
             ] };
         }
     }
-    if (location === '太初星墟' && threshold.code === 'primordial-ruins') {
+    if (locationName === '太初星墟' && threshold.code === 'primordial-ruins') {
         return { ok: false, msgs: [
             `【太初星墟·界压难承】`,
             `星墟由破碎位面重叠而成，真仙以下踏入便会被界压撕碎。`,
             `需秘境体系或仙古今世法达到16级。`
         ] };
     }
-    if (location === '异域' && threshold.code === 'foreign-realm') {
+    if (locationName === '异域' && threshold.code === 'foreign-realm') {
         return { ok: false, msgs: [
             `【异域界壁·王境未至】`,
             `异域法则排斥仙王以下的真身，需达到仙王级权柄方可破界。`,
@@ -3959,8 +4046,14 @@ async confirmJieyin(e) {
         pendingJieyinMap.delete(targetQQ);
         return e.reply(buildPlaneDestroyedMsgs(req.locationName));
     }
+    const requestedLocationId = getLocationId(req.locationName);
+    const emperorFreeTravel = canImmortalEmperorFreeTravel(
+      targetPlayer,
+      targetPlayer.power_place,
+      requestedLocationId,
+    );
     const threshold = await this.checkLocationThreshold(targetPlayer, req.locationName);
-    if (!threshold.ok) {
+    if (!threshold.ok && !emperorFreeTravel) {
         pendingJieyinMap.delete(targetQQ);
         return e.reply([
             `【${req.fromName}的${req.type === 'jieyin' ? '接引' : '传送'}中止·位面壁垒】`,
@@ -3970,14 +4063,15 @@ async confirmJieyin(e) {
         ].join('\n'));
     }
 
-    if (getDimensionBarrierCount(targetPlayer.power_place, PLACE_LOCATION_MAP[req.locationName]) > 0
-      && !isInstantAllHeavensTravel(targetPlayer, targetPlayer.power_place, PLACE_LOCATION_MAP[req.locationName])) {
+    if (getDimensionBarrierCount(targetPlayer.power_place, requestedLocationId) > 0
+      && !isInstantAllHeavensTravel(targetPlayer, targetPlayer.power_place, requestedLocationId)
+      && !emperorFreeTravel) {
         pendingJieyinMap.delete(targetQQ);
         return e.reply('请求涉及跨维度壁垒，空间通道已自行崩解，请改用 #穿梭。');
     }
 
     // 执行传送
-    targetPlayer.power_place = PLACE_LOCATION_MAP[req.locationName];
+    targetPlayer.power_place = requestedLocationId;
     await Write_player(targetQQ, targetPlayer);
     pendingJieyinMap.delete(targetQQ);
 
@@ -4022,7 +4116,7 @@ async coordinateMemory(e) {
     let usr_qq = e.user_id.toString().replace('qg_', '');
     usr_qq = await channel(usr_qq);
     const player = await Read_player(usr_qq);
-    const known = ['凡间', ...getUnknownCoordinates({}).filter(location => hasCoordinate(player, location))];
+    const known = ['凡间', ...getCoordinateLocations().filter(location => hasCoordinate(player, location))];
     const unknown = getUnknownCoordinates(player);
     const event = RealmEvents.getActiveEvent('coordinateClue');
     const lines = [
@@ -5653,7 +5747,7 @@ async exploreCoordinateClue(e) {
     if (!match || match[1] !== event.location) {
         return e.reply(`当前线索位于「${formatRealmEventLocation(event)}」\n请抵达后发送：#探索位面线索 ${event.location}`);
     }
-    const currentPlane = Object.keys(PLACE_LOCATION_MAP).find(name => PLACE_LOCATION_MAP[name] === player.power_place);
+    const currentPlane = getLocationName(player.power_place);
     if (currentPlane !== event.sourcePlane) {
         return e.reply(`你当前身处${currentPlane || '未知位面'}，需先穿梭至${event.sourcePlane}才能前往${event.location}。`);
     }

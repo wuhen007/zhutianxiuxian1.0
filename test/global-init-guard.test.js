@@ -55,7 +55,7 @@ test('所有玩家/全局写入入口均受 assertGlobalInitIdle 保护', () => 
   for (const signature of [
     'export async function Write_channel(channel) {',
     'export async function Write_shop(shop) {',
-    'export async function Write_najie(usr_qq, najie) {',
+    'export async function Write_najie(',
     'export async function Write_qinmidu(qinmidu) {',
     'export async function Write_shitu(shitu) {',
     'export async function Write_danyao(usr_qq, danyao) {',

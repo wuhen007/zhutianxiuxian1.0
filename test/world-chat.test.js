@@ -454,10 +454,15 @@ test('永久失败的世界消息有限重试后释放并继续投递下一条',
   client.setDeliveryFailureHandler((message) => cleaned.push(message.id));
 
   try {
-    const results = await Promise.allSettled([
+    const resultsPromise = Promise.allSettled([
       client.enqueueDelivery({ id: 'permanent_failure', seq: 1 }),
       client.enqueueDelivery({ id: 'next_message', seq: 2 }),
     ]);
+    await waitFor(
+      () => cleaned.length === 1 && delivered.length === 1,
+      '失败消息未释放队列并继续投递'
+    );
+    const results = await resultsPromise;
 
     assert.equal(results[0].status, 'rejected');
     assert.equal(results[1].status, 'fulfilled');

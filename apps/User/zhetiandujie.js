@@ -40,7 +40,12 @@ import {
   submitManualRevivalChoice,
 } from '../../model/tribulationRevival.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
-import { PLACE_LOCATION_MAP, ZHETIAN_ENTRY_AUTHORITY_LEVEL } from '../../model/weimianTravel.js';
+import {
+  getLocationName,
+  getLocationThreshold,
+  PLACE_LOCATION_MAP,
+  ZHETIAN_ENTRY_AUTHORITY_LEVEL,
+} from '../../model/weimianTravel.js';
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import { getPlayerPlaneCoordinate } from '../../model/planeCoords.js';
 import { hasEquippedInnateTreasure } from '../../model/innateTreasure.js';
@@ -4404,7 +4409,8 @@ async command_datitingtianji(e) {
   const eraName = eraNames[eraIndex] || '天命时代';
 
   // ===== 位面通行要求 =====
-  // 仙域/界海 等用户口述要求与代码 getLocationThreshold 不一致，此处按用户设计意图呈现
+  // 高维位面统一复用穿梭入口的门槛，避免天机面板与实际路线出现分叉。
+  const sharedPlaneGate = (p, name) => getLocationThreshold(p, name).ok;
   const 位面列表 = [
     { name: '仙界',         要求: '地仙境或轮回',           需: (p) => Number(p.level_id) >= 42 || (Number(p?.lunhui) || 0) !== 0, 坐标字段: '仙界坐标' },
     { name: '下界八域',     要求: '默认通行',               需: () => true,                                                            坐标字段: '下界八域坐标' },
@@ -4416,8 +4422,17 @@ async command_datitingtianji(e) {
     { name: '界海',         要求: '仙王巨头（秘境≥19 / 仙古≥19 / 花粉≥20）', 需: (p) => p.mijinglevel_id >= 19 || p.xiangulevel_id >= 19 || p.huafenlevel_id >= 20, 坐标字段: '界海坐标' },
     { name: '太初星墟',     要求: '帝境（秘境≥16 / 仙古≥16 / 花粉≥15）', 需: (p) => p.mijinglevel_id >= 16 || p.xiangulevel_id >= 16 || p.huafenlevel_id >= 15, 坐标字段: '太初星墟坐标' },
     { name: '仙域',         要求: '仙王（秘境≥18 / 仙古≥16 / 花粉≥18）', 需: (p) => p.mijinglevel_id >= 18 || p.xiangulevel_id >= 16 || p.huafenlevel_id >= 18, 坐标字段: '仙域坐标' },
-    { name: '时间长河',     要求: '准仙帝（秘境≥20 / 仙古≥20 / 花粉≥21）', 需: (p) => p.mijinglevel_id >= 20 || p.xiangulevel_id >= 20 || p.huafenlevel_id >= 21, 坐标字段: '时间长河坐标' },
-    { name: '永恒未知之地', 要求: '仙帝（秘境≥21 / 仙古≥21 / 花粉≥22）', 需: (p) => p.mijinglevel_id >= 21 || p.xiangulevel_id >= 21 || p.huafenlevel_id >= 22, 坐标字段: '永恒未知之地坐标' }
+    { name: '时间长河',     要求: '准仙帝（秘境≥20 / 仙古≥20 / 花粉≥21）', 需: (p) => sharedPlaneGate(p, '时间长河'), 坐标字段: '时间长河坐标' },
+    { name: '异域',         要求: '准仙王等效权柄',       需: (p) => getRealmAuthorityLevel(p) >= 18, 坐标字段: '异域坐标' },
+    { name: '上苍之上',     要求: '仙帝（权柄≥21）',       需: (p) => sharedPlaneGate(p, '上苍之上'), 所需权柄: 21, 坐标字段: '上苍之上坐标' },
+    { name: '厄土高原',     要求: '仙帝（权柄≥21）',       需: (p) => sharedPlaneGate(p, '厄土高原'), 所需权柄: 21, 坐标字段: '厄土高原坐标' },
+    { name: '永恒未知之地', 要求: '仙帝（权柄≥21）',       需: (p) => sharedPlaneGate(p, '永恒未知之地'), 所需权柄: 21, 坐标字段: '永恒未知之地坐标' },
+    { name: '超维宇宙',     要求: '破界强度≥30（权柄≥20）', 需: (p) => sharedPlaneGate(p, '超维宇宙'), 所需权柄: 20, 坐标字段: '超维宇宙坐标' },
+    { name: '百维真界',     要求: '破界强度≥80（权柄≥22）', 需: (p) => sharedPlaneGate(p, '百维真界'), 所需权柄: 22, 坐标字段: '百维真界坐标' },
+    { name: '原初宇宙海',   要求: '破界强度≥90（权柄≥23）', 需: (p) => sharedPlaneGate(p, '原初宇宙海'), 所需权柄: 23, 坐标字段: '原初宇宙海坐标' },
+    { name: '千维宙古界',   要求: '破界强度≥100（权柄≥23）', 需: (p) => sharedPlaneGate(p, '千维宙古界'), 所需权柄: 23, 坐标字段: '千维宙古界坐标' },
+    { name: '万维梵宇界',   要求: '破界强度≥120（权柄≥24）', 需: (p) => sharedPlaneGate(p, '万维梵宇界'), 所需权柄: 24, 坐标字段: '万维梵宇界坐标' },
+    { name: '神维丝线海',   要求: '破界强度≥150（权柄≥25）', 需: (p) => sharedPlaneGate(p, '神维丝线海'), 所需权柄: 25, 坐标字段: '神维丝线海坐标' }
   ];
   const 位面状态 = 位面列表.map(p => {
     const 可去 = p.需(player);
@@ -4433,7 +4448,7 @@ async command_datitingtianji(e) {
   });
 
   // ===== 当前位面 =====
-  const 当前位面 = Object.entries(PLACE_LOCATION_MAP).find(([, id]) => Number(id) === Number(player.power_place))?.[0] || '凡间';
+  const 当前位面 = getLocationName(player.power_place) || '凡间';
   const 当前坐标 = getPlayerPlaneCoordinate(player);
 
   // ===== 组装输出 =====

@@ -88,6 +88,7 @@ import { findWudaoTeaItem } from './wudaoTea.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { replyOfficialMessage } from '../../model/officialMessage.js';
 import { addJuelingAwareLifespan } from '../../model/juelingLifespan.js';
+import { isFlowerAncestorSeedOwner } from '../../model/shengxuOpportunity.js';
 import { clearInterval } from 'timers';
 import { getRedDustDaoFruit, getRedDustPath, getRedDustVow } from '../../model/redDustPath.js';
 import {
@@ -687,10 +688,10 @@ async zhengdao(e) {
     
     if (targetLevel >= 18&&targetLevel < 20) {
         // 仙道领域需法则完整之地承载：
-        //   - 仙域（power_place=6）法则完整，恒可承载仙王与仙王巨头；
+        //   - 仙域（由共享位面定位表解析）法则完整，恒可承载仙王与仙王巨头；
         //   - 身处大宇宙时按其法则承载判定：仙王需至少「王境法域」、
         //     仙王巨头需至少「巨头天宇」，承载足够方可于此证道。
-        if (player.power_place !== 6) {
+        if (player.power_place !== PLACE_LOCATION_MAP.仙域) {
             const universeLocation = player.大宇宙位置;
             const hostWorld = universeLocation?.界主
                 ? (data.xiaoshijie || []).find(item => String(item.player_qq) === String(universeLocation.界主))
@@ -1343,8 +1344,9 @@ if (player.mijinglevel_id === 20) { // 路尽级仙帝境界
     player.纪元积累 -= 100
       // 添加法身系统
     player.法身 = 1; // 法身状态：1表示已凝聚
-    player.法身位置 = 0; // 法身位置（默认为仙界）
-    player.法身行动 = null; // 法身当前行动
+    player.法身位置 = PLACE_LOCATION_MAP.仙界;
+    player.法身状态 = '空闲中';
+    player.法身行动 = '无行动';
     player.power_place = PLACE_LOCATION_MAP.永恒未知之地;
     const eternalGuardAction = applyEternalGuardStatus(player);
     await redis.set(
@@ -2170,6 +2172,7 @@ async hudao(e) {
         return `${marker} ${rule.name}：${exp}/${rule.targetExp}（${stage.name}）`;
       });
     const hasFlowerAncestorSeed = daoRoute === 'huafen'
+      && await isFlowerAncestorSeedOwner(usr_qq)
       && Number(await exist_najie_thing(usr_qq, '花粉路祖种', '道具')) > 0;
     const dailyLimit = daoRoute === 'huafen'
       ? FLOWER_DAO_DAILY_LIMIT + (hasFlowerAncestorSeed ? 1 : 0)
@@ -4063,7 +4066,7 @@ async  fate_up(e) {
       now_level_id = now_level_id + 1;
       player.level_id = now_level_id;
       player.修为 -= need_exp;
-      player.power_place= 1;
+      player.power_place = PLACE_LOCATION_MAP.仙界;
       await Write_player(usr_qq, player);
       let equipment = await Read_equipment(usr_qq);
       await Write_equipment(usr_qq, equipment);
