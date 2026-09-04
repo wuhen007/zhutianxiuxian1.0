@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
 import { writeJsonAtomically } from '../utils/atomicJson.js';
+import { PLACE_LOCATION_NAMES } from './weimianTravel.js';
 
 export const PLANE_DESTRUCTION_RECORD_KEY = '位面毁灭记录';
 export const PLANE_DAMAGE_RECORD_KEY = '位面损坏记录';
@@ -14,10 +15,7 @@ export const PLANE_DESTRUCTION_SOURCES = Object.freeze({
   DIMENSION_CALAMITY: 'dimension_calamity',
 });
 
-const KNOWN_PLANES = Object.freeze([
-  '凡间', '仙界', '下界八域', '遮天位面', '九天十地', '界海', '太初星墟', '时间长河',
-  '小阴间', '大阴间', '仙域', '阳间', '上苍之上', '超维宇宙', '厄土高原', '永恒未知之地',
-]);
+const KNOWN_PLANES = PLACE_LOCATION_NAMES;
 
 const NATURALLY_REPAIRABLE_SOURCES = Object.freeze([
   PLANE_DESTRUCTION_SOURCES.DARK_REVOLT,
@@ -55,6 +53,10 @@ export function getPlaneDestructionInfo(filePath, planeName) {
     actor: record.actor || '',
     worldYear: normalizeWorldYear(record.worldYear),
   };
+}
+
+export function isEraReshapeUnlocked(filePath) {
+  return getPlaneDestructionInfo(filePath, '厄土高原').destroyed;
 }
 
 export function markPlaneDestroyed(filePath, planeName, {
