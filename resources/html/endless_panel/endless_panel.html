@@ -167,6 +167,9 @@
               {{/each}}
             </div>
             {{/if}}
+            {{if member.eventBuffs && member.eventBuffs.length}}
+            <div class="boon-line">{{each member.eventBuffs buff}}<span>商队遗物 · {{buff}}</span>{{/each}}</div>
+            {{/if}}
           </article>
           {{/each}}
         </div>

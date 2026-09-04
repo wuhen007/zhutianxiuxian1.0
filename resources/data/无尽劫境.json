@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "worlds": [
     {
       "id": "perfect",
@@ -1317,6 +1317,155 @@
         "regenPct": 0.02,
         "teamShieldPct": 0.06,
         "revivePct": 0.1
+      }
+    },
+    {
+      "id": "multi_kamar_taj_arts",
+      "name": "卡玛泰姬秘术",
+      "world": "multiverse",
+      "rarity": "核心",
+      "minDifficultyTier": 7,
+      "tags": [
+        "魔法",
+        "空间",
+        "规则"
+      ],
+      "description": "以悬戒与秘法重构空间，每四回合打开传送门发动维度突袭。",
+      "maxLevel": 3,
+      "effect": {
+        "attackPct": 0.08,
+        "defensePct": 0.06,
+        "damageReduction": 0.025
+      },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.72,
+        "label": "卡玛泰姬·维度突袭",
+        "verb": "开门",
+        "narration": "{member}转动悬戒折叠空间，无数秘法兵刃从传送门后贯穿{enemy}"
+      }
+    },
+    {
+      "id": "multi_mirror_dimension",
+      "name": "镜像维度",
+      "world": "multiverse",
+      "rarity": "禁忌",
+      "minDifficultyTier": 7,
+      "tags": [
+        "魔法",
+        "空间",
+        "领域"
+      ],
+      "description": "翻折现实并改变战场几何，强化闪避、反射与周期伤害。",
+      "maxLevel": 3,
+      "effect": {
+        "dodgeChance": 0.045,
+        "reflectChance": 0.07,
+        "reflectPct": 0.35
+      },
+      "proc": {
+        "everyRounds": 3,
+        "damagePct": 0.68,
+        "label": "镜像维度·万象折叠",
+        "verb": "折叠",
+        "narration": "{member}将整座战场折成无穷棱镜，错位的现实同时碾向{enemy}"
+      }
+    },
+    {
+      "id": "multi_eye_of_agamotto",
+      "name": "阿戈摩托之眼",
+      "world": "multiverse",
+      "rarity": "禁忌",
+      "minDifficultyTier": 7,
+      "tags": [
+        "时间",
+        "洞察",
+        "规则"
+      ],
+      "description": "观测胜利发生的时间线，以时间回环重演最关键的一击。",
+      "maxLevel": 3,
+      "effect": {
+        "critChance": 0.06,
+        "extraActionChance": 0.04,
+        "timeRewindChance": 0.05,
+        "timeRewindHealPct": 0.08
+      },
+      "proc": {
+        "everyRounds": 4,
+        "damagePct": 0.92,
+        "label": "阿戈摩托之眼·时间回环",
+        "verb": "回溯",
+        "narration": "{member}拨回阿戈摩托之眼，已经命中的攻势沿同一时间线再度落向{enemy}"
+      }
+    },
+    {
+      "id": "anime_mana_concealment",
+      "name": "魔力隐匿",
+      "world": "anime",
+      "rarity": "核心",
+      "minDifficultyTier": 8,
+      "tags": [
+        "魔法",
+        "隐匿",
+        "洞察"
+      ],
+      "description": "将庞大魔力压缩至近乎虚无，在敌人误判的瞬间夺取先机。",
+      "maxLevel": 3,
+      "effect": {
+        "attackPct": 0.07,
+        "dodgeChance": 0.04,
+        "critChance": 0.035
+      }
+    },
+    {
+      "id": "anime_zoltraak",
+      "name": "弑魔魔法",
+      "world": "anime",
+      "rarity": "禁忌",
+      "minDifficultyTier": 8,
+      "tags": [
+        "魔法",
+        "贯穿",
+        "爆发"
+      ],
+      "description": "将杀戮术式推演为现代通用魔法，每三回合释放高密度贯穿光束。",
+      "maxLevel": 3,
+      "effect": {
+        "attackPct": 0.1,
+        "critChance": 0.04
+      },
+      "proc": {
+        "everyRounds": 3,
+        "damagePct": 1.05,
+        "label": "弑魔魔法·Zoltraak",
+        "verb": "贯穿",
+        "narration": "{member}平静展开多重术式，漆黑光束以最短轨迹贯穿{enemy}"
+      }
+    },
+    {
+      "id": "anime_spell_analysis",
+      "name": "魔法解析",
+      "world": "anime",
+      "rarity": "禁忌",
+      "minDifficultyTier": 8,
+      "tags": [
+        "魔法",
+        "解析",
+        "防御"
+      ],
+      "description": "在交战中拆解术式与规则，持续提高防护并寻找追加施法窗口。",
+      "maxLevel": 3,
+      "effect": {
+        "defensePct": 0.1,
+        "damageReduction": 0.04,
+        "extraActionChance": 0.05
+      },
+      "proc": {
+        "everyRounds": 5,
+        "damagePct": 0.78,
+        "label": "解析完成·反制术式",
+        "verb": "解析",
+        "narration": "{member}读尽{enemy}的规则结构，将其弱点改写成一束反制魔法"
       }
     },
     {

@@ -55,7 +55,7 @@
       <section class="overview">
         <div><span>战斗回合</span><b>{{rounds}}</b><i>ROUND</i></div>
         <div><span>队伍总输出</span><b>{{totalDamage}}</b><i>DAMAGE</i></div>
-        <div><span>诸天共鸣</span><b>{{fusionDamage}}</b><i>FUSION</i></div>
+        <div><span>共鸣 / 强援</span><b>{{fusionDamage}} / {{assistDamage}}</b><i>FUSION · ASSIST</i></div>
         <div><span>共享命火</span><b>{{lifeFire}} / {{maxLifeFire}}</b><i>LIFE FIRE</i></div>
       </section>
 
@@ -83,8 +83,8 @@
           </div>
 
           <div class="battle-review">
-            <div><span>共鸣触发</span><b>{{fusionHits}}次</b></div>
-            <div><span>涅槃复活</span><b>{{revive}}次</b></div>
+            <div><span>共鸣 / 强援</span><b>{{fusionHits}} / {{assistHits}}次</b></div>
+            <div><span>复活 / 重放</span><b>{{revive}} / {{skillReplays}}次</b></div>
             <div><span>命火消耗</span><b>{{lifeFireUsed}}点</b></div>
           </div>
           {{if fusions.length}}<div class="fusion-list"><span>诸天共鸣</span>{{each fusions fusion}}<b>{{fusion}}</b>{{/each}}</div>{{/if}}
@@ -103,6 +103,7 @@
                 <span>造成 <b>{{round.enemyDamage}}</b></span>
                 <span>承受 <b>{{round.teamDamageTaken}}</b></span>
                 {{if round.fusionDamage != '0'}}<span>共鸣 <b>{{round.fusionDamage}}</b></span>{{/if}}
+                {{if round.assistDamage != '0'}}<span>强援 <b>{{round.assistDamage}}</b></span>{{/if}}
               </div>
               <div class="round-bars">
                 <div><span>敌方</span><i><em class="enemy-fill" style="width: {{round.enemyHpPct}}%"></em></i><b>{{round.enemyHp}} / {{round.enemyMaxHp}}</b></div>

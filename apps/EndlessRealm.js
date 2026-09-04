@@ -16,11 +16,13 @@ import {
 import {
   applyCheckpointChoice,
   applyEndlessChoice,
+  buyEndlessMerchantItem,
   createEndlessRun,
   ensureEndlessStarMapState,
   getAbility,
   getCheckpointBoon,
   getFusion,
+  getEndlessMerchantState,
   getMemberStats,
   getSettlement,
   getEndlessSweepReward,
@@ -174,7 +176,7 @@ export class EndlessRealm extends plugin {
         { reg: '^#创建无尽队伍$', fnc: 'createTeam' },
         { reg: '^#加入无尽队伍\\s*\\d{6}$', fnc: 'joinTeam' },
         { reg: '^#无尽队伍$', fnc: 'showTeam' },
-        { reg: '^#(?:无尽难度|劫境难度)(?:\\s*[Aa]?[1-9])?$', fnc: 'setEndlessDifficulty' },
+        { reg: '^#(?:无尽难度|劫境难度)(?:\\s*[Aa]?(?:10|[1-9]))?$', fnc: 'setEndlessDifficulty' },
         { reg: '^#(?:今日天象|无尽天象)$', fnc: 'showEndlessCelestial' },
         { reg: '^#离开无尽队伍$', fnc: 'leaveTeam' },
         { reg: '^#解散无尽队伍$', fnc: 'disbandTeam' },
@@ -188,6 +190,8 @@ export class EndlessRealm extends plugin {
         { reg: '^#退出无尽观战$', fnc: 'unwatchCrossEndless' },
         { reg: '^#跨服无尽选择\\s*[1-4]$', fnc: 'crossEndlessChoose' },
         { reg: '^#跨服星图建议\\s*[1-3]$', fnc: 'crossEndlessSuggest' },
+        { reg: '^#跨服劫境商人$', fnc: 'showCrossEndless' },
+        { reg: '^#跨服劫境购买\\s*[1-4]$', fnc: 'crossEndlessMerchant' },
         { reg: '^#跨服(?:刷新|重置)无尽能力$', fnc: 'crossEndlessReroll' },
         { reg: '^#开启无尽劫境$', fnc: 'startRun' },
         { reg: '^#使用他化自在体验卡$', fnc: 'useFreeTransformationCard' },
@@ -197,6 +201,8 @@ export class EndlessRealm extends plugin {
         { reg: '^#星图建议\\s*[1-3]$', fnc: 'suggestStarRoute' },
         { reg: '^#星图情报\\s*[1-3]$', fnc: 'showStarIntel' },
         { reg: '^#星图定途\\s*[1-3]$', fnc: 'selectStarRoute' },
+        { reg: '^#劫境商人$', fnc: 'showRunMerchant' },
+        { reg: '^#劫境购买\\s*[1-4]$', fnc: 'buyRunMerchantItem' },
         { reg: '^#无尽选择\\s*[1-4]$', fnc: 'chooseAbility' },
         { reg: '^#(?:刷新|重置)无尽能力$', fnc: 'rerollAbilityChoices' },
         { reg: '^#劫后(?:抉择|选择)\\s*[1-3]$', fnc: 'chooseCheckpoint' },
@@ -342,6 +348,7 @@ export class EndlessRealm extends plugin {
           buildCrossRaidSnapshot(team, run, {
             resolveAbility: getAbility,
             starOptions: getEndlessStarOptions(run),
+            merchant: getEndlessMerchantState(run),
           }),
           'in_battle'
         )
@@ -562,6 +569,17 @@ export class EndlessRealm extends plugin {
           .filter(Boolean)
           .map(boon => ({ kind: boon.kind, name: boon.name })),
         treasures: getTreasureRunSummary(member, run),
+        eventBuffs: [
+          member.eventBuffs?.freeTransformationOpeningCount >= 3
+            ? '三身映照·开场3尊'
+            : null,
+          member.eventBuffs?.skillReplayChance
+            ? `回响重放·${Math.round(member.eventBuffs.skillReplayChance * 100)}%`
+            : null,
+          member.eventBuffs?.attackPct
+            ? `破境战血·攻击+${Math.round(member.eventBuffs.attackPct * 100)}%`
+            : null,
+        ].filter(Boolean),
         titleId: member.titleId || null,
       };
     });
@@ -597,10 +615,13 @@ export class EndlessRealm extends plugin {
     if (selected)
       return [
         `劫途已锁定：【${selected.shortName}】${selected.worldName} · ${selected.risk}`,
+        selected.gambit ? `定轨赌约：${selected.gambit.name} · ${selected.gambit.description}` : null,
+        selected.merchant ? `界海商队已经开市，先发送 #劫境商人 分配孤品；也可直接继续。` : null,
+        selected.assist ? `${selected.assist.name}将以《${selected.assist.skill}》助战${selected.assist.rounds}回合。` : null,
         run.phase === 'ready'
           ? '队长发送 #无尽下一关 踏入该节点'
           : '完成全队能力选择后，由队长发送 #无尽下一关',
-      ];
+      ].filter(Boolean);
     return run.phase === 'ready'
       ? [
           '全队能力选择完成，但下一层因果尚未锁定。',
@@ -615,6 +636,9 @@ export class EndlessRealm extends plugin {
   formatStarMap(team, run) {
     const map = getEndlessStarMapView(run);
     if (!map) return ['劫途星图尚未显化'];
+    const nodesById = new Map(
+      map.rows.flatMap(row => row.nodes).map(node => [node.id, node])
+    );
     const targetLayer = this.starTargetLayer(run);
     const options = run.phase === 'checkpoint'
       ? []
@@ -635,11 +659,20 @@ export class EndlessRealm extends plugin {
         lines.push(
           `${index + 1}. [${node.risk}] ${node.name}（建议${votes.get(node.id) || 0}票）`,
           `   ${node.description}`,
-          `   ${node.rewardText}｜通往${node.nextNodeIds?.length || 0}条后继劫途`
+          `   赌约：${node.gambit?.name || '无'} · ${node.gambit?.description || '规则保持原状'}`,
+          `   ${node.rewardText}｜后继：${(node.nextNodeIds || []).map(id => nodesById.get(id)?.shortName || '迷雾').join('/') || '天关终点'}`
         );
     }
-    if (selected)
-      lines.push('', `已锁定：【${selected.shortName}】${selected.worldName}`);
+    if (selected) {
+      lines.push(
+        '',
+        `已锁定：【${selected.shortName}】${selected.worldName}`,
+        selected.decision ? `队伍博弈：${selected.decision.name} · ${selected.decision.description}` : null,
+        selected.calamity ? `灾厄显形：${selected.calamity.name} · ${selected.calamity.description}` : null,
+        selected.assist ? `异界强援：${selected.assist.name} · ${selected.assist.skill}（${selected.assist.rounds}回合）` : null,
+        selected.merchant ? `界海商人：${selected.merchant.name}｜发送 #劫境商人 查看货架` : null
+      );
+    }
     else if (options.length)
       lines.push(
         '',
@@ -647,7 +680,7 @@ export class EndlessRealm extends plugin {
       );
     if (run.phase === 'checkpoint')
       lines.push('', '本轮劫环已走完，请先完成 #劫后抉择1/2/3');
-    return lines;
+    return lines.filter(line => line !== null);
   }
 
   starMapPanelView(team, run, userId) {
@@ -695,6 +728,7 @@ export class EndlessRealm extends plugin {
             selected: node.id === selected?.id,
             votes: votes.get(node.id) || 0,
             voters: voters.join('、') || '尚无人建议',
+            rewardText: `${node.rewardText}｜${node.gambit?.name || '守成之契'}｜后继${node.nextNodeIds?.length || 0}路`,
             riskClass: /十死|大凶/.test(node.risk)
               ? 'fatal'
               : /凶险/.test(node.risk)
@@ -727,8 +761,8 @@ export class EndlessRealm extends plugin {
         selected
           ? {
               tone: 'danger',
-              title: selected.calamity?.name || '因果锁定',
-              text: selected.calamity?.description || `队伍将踏入【${selected.name}】，定途后本层无法更改。`,
+              title: selected.calamity?.name || selected.decision?.name || '因果锁定',
+              text: selected.calamity?.description || selected.decision?.description || `队伍将踏入【${selected.name}】，定途后本层无法更改。`,
             }
           : { tone: 'normal', title: '众念归一', text: '队员可以提出路线建议；建议不消耗次数，最终因果仅由队长锁定。' },
       ],
@@ -743,8 +777,10 @@ export class EndlessRealm extends plugin {
       },
       footerCommand: run.phase === 'checkpoint'
         ? '#劫后抉择1/2/3'
-        : selected
-          ? '#无尽下一关'
+        : selected?.merchant
+          ? '#劫境商人'
+          : selected
+            ? '#无尽下一关'
           : `#星图定途${commandRange}`,
       footerNote: run.phase === 'checkpoint'
         ? '十方天关已破，先完成劫后问道，下一轮劫环才会显化。'
@@ -796,7 +832,7 @@ export class EndlessRealm extends plugin {
         { tone: 'jade', title: '构筑法则', text: '每层独立选择能力；衍算天机可增加选项，一念双悟可在每个十层循环额外参悟一次。' },
         { tone: 'danger', title: '劫境警示', text: '主动撤离可带回全部战利品；团灭仅保留已封存奖励和30%未封存奖励。' },
         { tone: 'gold', title: '无尽至宝', text: `第25层开放首个装配槽；至宝可消耗道痕升至Lv.${ENDLESS_TREASURE_LEVEL_CAP}，每级显著提高属性效能。` },
-        { tone: 'danger', title: '因果岔路', text: '星图节点只连接部分后继道路；高层可能遭遇空劫、蚀痕、葬法与命血路税，选择后本轮无法反悔。' },
+        { tone: 'danger', title: '因果岔路', text: '星图加入随机分叉、定轨赌约、投票博弈、界海商队、异界强援与不可名状灾厄；选择后本轮无法反悔。' },
         { tone: 'jade', title: '无尽劫境天尊', text: '打穿第三十关且全服排名第一的队伍成员，将获得专属称号：无尽劫境内全属性+25%、道痕收益+25%，可自由佩戴与更换。' },
       ],
       commandGroups: [
@@ -827,6 +863,8 @@ export class EndlessRealm extends plugin {
             { command: '#星图建议1', description: '队员为下一条劫途提出建议' },
             { command: '#星图情报1', description: '查看路线代价、敌方增幅与奖励倍率' },
             { command: '#星图定途1', description: '由队长锁定下一层因果' },
+            { command: '#劫境商人', description: '查看当前商队的局内孤品货架' },
+            { command: '#劫境购买1', description: '消耗共享未封存道痕强化个人投影' },
           ],
         },
         {
@@ -927,8 +965,10 @@ export class EndlessRealm extends plugin {
           ? '#无尽选择 序号'
           : run.phase === 'checkpoint'
             ? '#劫后抉择 序号'
-            : selectedStar
-              ? '#无尽下一关'
+            : selectedStar?.merchant
+              ? '#劫境商人'
+              : selectedStar
+                ? '#无尽下一关'
               : '#劫途星图',
       footerNote: run ? '未封存战利品会在团灭时损失70%，抵达十层Boss并取胜即可封存。' : `队伍编号 ${team.id} 仅在当前群有效。`,
     };
@@ -966,7 +1006,9 @@ export class EndlessRealm extends plugin {
         unbankedSourceStone: this.formatAmount(run.unbanked.sourceStone),
         unbankedTokens: this.formatAmount(run.unbanked.tokens),
       },
-      footerCommand: run.phase === 'ready' ? '#无尽下一关' : '#无尽选择 序号',
+      footerCommand: run.phase === 'ready'
+        ? getEndlessMerchantState(run) ? '#劫境商人' : '#无尽下一关'
+        : '#无尽选择 序号',
       footerNote: '能力等级、天关机缘与局外道碑会共同参与最终战斗属性推演。',
     };
   }
@@ -1211,11 +1253,13 @@ export class EndlessRealm extends plugin {
         '#跨服队伍发言 内容',
         '#观战无尽 房间码 / #退出无尽观战',
         '#跨服无尽选择1 / #跨服星图建议1',
+        '#跨服劫境商人 / #跨服劫境购买1',
         '#跨服刷新无尽能力',
         '#开启无尽劫境',
         '#无尽问道',
         '#劫途星图 / #星图情报1',
         '#星图建议1 / #星图定途1',
+        '#劫境商人 / #劫境购买1',
         '#无尽选择1',
         '#刷新无尽能力',
         '#万劫道碑 / #参悟道碑 攻击',
@@ -1873,6 +1917,10 @@ export class EndlessRealm extends plugin {
     return this.sendCrossEndlessAction(e, 'suggest');
   }
 
+  crossEndlessMerchant(e) {
+    return this.sendCrossEndlessAction(e, 'merchant');
+  }
+
   crossEndlessReroll(e) {
     return this.sendCrossEndlessAction(e, 'reroll');
   }
@@ -2024,6 +2072,7 @@ export class EndlessRealm extends plugin {
         const memberId = entry[0];
         if (message.action === 'choose') applyEndlessChoice(run, memberId, message.value);
         else if (message.action === 'suggest') suggestEndlessStarRoute(run, memberId, message.value);
+        else if (message.action === 'merchant') buyEndlessMerchantItem(run, memberId, message.value);
         else if (message.action === 'reroll') rerollEndlessChoices(run, memberId);
         await this.saveRun(run);
       });
@@ -2220,7 +2269,7 @@ export class EndlessRealm extends plugin {
   async setEndlessDifficulty(e) {
     const userId = await this.checkPlayer(e);
     if (!userId) return false;
-    const targetMatch = String(e.msg || '').match(/A?([1-9])\s*$/i);
+    const targetMatch = String(e.msg || '').match(/A?(10|[1-9])\s*$/i);
     const team = await this.getPlayerTeam(userId);
     const player = await Read_player(userId);
     const progress = normalizeEndlessDifficultyProgress(player);
@@ -2232,7 +2281,7 @@ export class EndlessRealm extends plugin {
         `已首通：${highest ? progress.clearedTiers.map(formatEndlessDifficulty).join('、') : '暂无'}`,
         `当前选择：${formatEndlessDifficulty(team?.difficultyTier || progress.selectedTier)}`,
         `每阶均需打穿${ENDLESS_TIER_MAX_LAYER}层；每个首通使全部限购额度+10%，最低+1件。`,
-        ...[3, 4, 5, 6].map(tier => {
+        ...[3, 4, 5, 6, 7, 8, 9, 10].map(tier => {
           const difficulty = getEndlessDifficulty(tier);
           return `${difficulty.code}：${difficulty.specialAbilityTheme}｜通关特殊至宝${Math.round(difficulty.specialTreasureChance * 100)}%`;
         }),
@@ -2612,6 +2661,66 @@ export class EndlessRealm extends plugin {
     return this.replyStarMap(e, team, run, userId);
   }
 
+  formatRunMerchant(run) {
+    const merchant = getEndlessMerchantState(run);
+    if (!merchant) return null;
+    return [
+      `【${merchant.name}·局内孤品】`,
+      `共享余额：${this.formatAmount(merchant.balance)}未封存劫境道痕`,
+      '每件货物全队仅有一份，购买后立即作用于购买者的本局投影。',
+      '',
+      ...merchant.stock.map((good, index) =>
+        good.boughtBy
+          ? `${index + 1}. [已售] ${good.name}｜${good.buyerName || good.boughtBy}：${good.result || '交易完成'}`
+          : `${index + 1}. ${good.name} · ${good.price}道痕\n   ${good.description}`
+      ),
+      '',
+      `发送 #劫境购买${merchant.stock.map((_, index) => index + 1).join('/')}｜不购买可直接 #无尽下一关`,
+    ];
+  }
+
+  async showRunMerchant(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const team = await this.getPlayerTeam(userId);
+    if (!team || team.status !== 'running') return e.reply('你当前不在无尽劫境中');
+    if (!this.isTeamGroup(e, team)) return e.reply('请回到无尽队伍所在群与界海商人交易');
+    const run = await this.getRun(team.id);
+    if (!run) return e.reply('无尽劫境状态已经失效');
+    const lines = this.formatRunMerchant(run);
+    return e.reply(lines ? lines.join('\n') : '当前劫途没有显化界海商队');
+  }
+
+  async buyRunMerchantItem(e) {
+    const userId = await this.checkPlayer(e);
+    if (!userId) return false;
+    const current = await this.getPlayerTeam(userId);
+    if (!current || current.status !== 'running') return e.reply('你当前不在无尽劫境中');
+    if (!this.isTeamGroup(e, current)) return e.reply('请回到无尽队伍所在群与界海商人交易');
+    const choice = Number(String(e.msg || '').match(/[1-4]$/)?.[0]);
+    return this.withLock(e, `team:${current.id}`, async () => {
+      const team = await this.getTeam(current.id);
+      const run = await this.getRun(current.id);
+      if (!team || !run || !team.members.includes(userId))
+        return e.reply('无尽劫境状态已经失效');
+      let result;
+      try {
+        result = buyEndlessMerchantItem(run, userId, choice);
+      } catch (error) {
+        return e.reply(error.message);
+      }
+      await this.saveRun(run);
+      return e.reply([
+        `【${result.merchant}·交易完成】`,
+        `${run.members[userId].name}购得【${result.good.name}】`,
+        result.result,
+        `消耗：${result.good.price}未封存道痕｜共享余额：${result.balance}`,
+        '',
+        ...this.formatRunMerchant(run),
+      ].join('\n'));
+    });
+  }
+
   async suggestStarRoute(e) {
     const userId = await this.checkPlayer(e);
     if (!userId) return false;
@@ -2683,19 +2792,31 @@ export class EndlessRealm extends plugin {
       : targetLayer % 5 === 0
         ? 'elite'
         : type.stage;
-    const percent = value => `${Math.round((Number(value || 1) - 1) * 100)}%`;
+    const gambit = node.gambit || {};
+    const percent = value => {
+      const amount = Math.round((Number(value || 1) - 1) * 100);
+      return `${amount >= 0 ? '+' : ''}${amount}%`;
+    };
     const rewardMultiplier =
       Number(type.rewardMultiplier || 1) *
       Number(sky.rewardMultiplier || 1) *
+      Number(gambit.rewardMultiplier || 1) *
       bossSealMultiplier;
     return e.reply([
       `【星图情报${choice}·${node.name}】`,
       `危险：${node.risk}｜战场：${this.stageText(stage)}`,
       node.description,
-      `敌方增幅：生命+${percent(Number(type.enemyHpMultiplier || 1) * Number(sky.enemyHpMultiplier || 1) * bossSealMultiplier)} / 攻击+${percent(Number(type.enemyAttackMultiplier || 1) * Number(sky.enemyAttackMultiplier || 1) * bossSealMultiplier)} / 防御+${percent(Number(type.enemyDefenseMultiplier || 1) * Number(sky.enemyDefenseMultiplier || 1))}`,
+      `定轨赌约：${gambit.name || '守成之契'}｜${gambit.description || '规则保持原状'}`,
+      `敌方增幅：生命${percent(Number(type.enemyHpMultiplier || 1) * Number(sky.enemyHpMultiplier || 1) * Number(gambit.enemyHpMultiplier || 1) * bossSealMultiplier)} / 攻击${percent(Number(type.enemyAttackMultiplier || 1) * Number(sky.enemyAttackMultiplier || 1) * Number(gambit.enemyAttackMultiplier || 1) * bossSealMultiplier)} / 防御${percent(Number(type.enemyDefenseMultiplier || 1) * Number(sky.enemyDefenseMultiplier || 1) * Number(gambit.enemyDefenseMultiplier || 1))}`,
       `预期回响：奖励×${rewardMultiplier.toFixed(2)}｜${node.rewardText}`,
+      Number(gambit.tokenMultiplier || 1) !== 1 ? `道痕额外倍率：×${Number(gambit.tokenMultiplier).toFixed(2)}` : null,
+      node.assist ? `已观测强援：${node.assist.name}｜${node.assist.skill}·${node.assist.rounds}回合` : null,
+      node.typeId === 'merchant' ? '货架将在定途后开启，商品为全队共享孤品。' : null,
+      node.typeId === 'nameless' ? '具体禁忌规则将在定途后随机显形。' : null,
       type.monsterCountBonus ? `额外怪潮：+${type.monsterCountBonus}只` : null,
-      type.entryHpCostPct ? `不可逆代价：入场损失${Math.round(type.entryHpCostPct * 100)}%最大生命` : null,
+      Number(type.entryHpCostPct || 0) + Number(gambit.entryHpCostPct || 0) > 0
+        ? `不可逆代价：入场损失${Math.round((Number(type.entryHpCostPct || 0) + Number(gambit.entryHpCostPct || 0)) * 100)}%最大生命`
+        : null,
       '',
       `队员建议：#星图建议${choice}`,
       `队长定途：#星图定途${choice}`,
@@ -2855,7 +2976,7 @@ export class EndlessRealm extends plugin {
       '',
       '【伤害统计】',
       ...Object.entries(result.damageByMember)
-        .filter(([id, value]) => id !== '_fusion' && value > 0)
+        .filter(([id, value]) => !id.startsWith('_') && value > 0)
         .sort((a, b) => b[1] - a[1])
         .map(
           ([id, value]) =>
@@ -2865,6 +2986,13 @@ export class EndlessRealm extends plugin {
     if (result.damageByMember._fusion > 0) {
       lines.push(
         `诸天共鸣：${this.formatAmount(result.damageByMember._fusion)}`
+      );
+    }
+    if (result.damageByMember._assist > 0) {
+      lines.push(
+        `${result.assist?.name || '异界强援'}：${this.formatAmount(
+          result.damageByMember._assist
+        )}`
       );
     }
     const summary = result.summary || {};
@@ -2880,6 +3008,8 @@ export class EndlessRealm extends plugin {
               )}）`
             : null,
           summary.fusionHits ? `诸天共鸣触发：${summary.fusionHits}次` : null,
+          summary.assistHits ? `异界强援出手：${summary.assistHits}次` : null,
+          summary.skillReplays ? `技能因果重放：${summary.skillReplays}次` : null,
           summary.revive ? `涅槃/复活：${summary.revive}次` : null,
           summary.lifeFireUsed
             ? `消耗命火：${summary.lifeFireUsed}点`
@@ -2940,7 +3070,7 @@ export class EndlessRealm extends plugin {
     const maxDamage = Math.max(
       1,
       ...Object.entries(result.damageByMember)
-        .filter(([id]) => id !== '_fusion')
+        .filter(([id]) => !id.startsWith('_'))
         .map(([, damage]) => damage)
     );
     const members = Object.values(run.members)
@@ -2989,6 +3119,7 @@ export class EndlessRealm extends plugin {
       ...round,
       enemyDamage: this.formatAmount(round.enemyDamage),
       fusionDamage: this.formatAmount(round.fusionDamage),
+      assistDamage: this.formatAmount(round.assistDamage),
       teamDamageTaken: this.formatAmount(round.teamDamageTaken),
       enemyHp: this.formatAmount(round.enemyHp),
       enemyMaxHp: this.formatAmount(result.enemyMaxHp),
@@ -3061,9 +3192,13 @@ export class EndlessRealm extends plugin {
       logs: result.logs.map((text) => ({ text })),
       totalDamage: this.formatAmount(result.summary?.totalDamage || 0),
       fusionDamage: this.formatAmount(result.damageByMember._fusion || 0),
+      assistDamage: this.formatAmount(result.damageByMember._assist || 0),
+      assistName: result.assist?.name || '',
       mvpName: result.summary?.mvpName || '暂无',
       mvpDamage: this.formatAmount(result.summary?.mvpDamage || 0),
       fusionHits: result.summary?.fusionHits || 0,
+      assistHits: result.summary?.assistHits || 0,
+      skillReplays: result.summary?.skillReplays || 0,
       fusions: (run.fusions || []).map((id) => getFusion(id)?.name || id),
       revive: result.summary?.revive || 0,
       lifeFireUsed: result.summary?.lifeFireUsed || 0,
@@ -3285,7 +3420,14 @@ export class EndlessRealm extends plugin {
           ? `天关机缘：${blessings
               .map(boon => `[${boon.kind}]${boon.name}·${boon.origin}`)
               .join('、')}`
-          : '天关机缘：尚无'
+          : '天关机缘：尚无',
+        member.eventBuffs?.freeTransformationOpeningCount >= 3 || member.eventBuffs?.skillReplayChance || member.eventBuffs?.attackPct
+          ? `商队遗物：${[
+              member.eventBuffs?.freeTransformationOpeningCount >= 3 ? '三身映照·开场3尊' : null,
+              member.eventBuffs?.skillReplayChance ? `回响重放${Math.round(member.eventBuffs.skillReplayChance * 100)}%` : null,
+              member.eventBuffs?.attackPct ? `破境战血·攻击+${Math.round(member.eventBuffs.attackPct * 100)}%` : null,
+            ].filter(Boolean).join('、')}`
+          : '商队遗物：尚无'
       );
     }
     if (run.fusions.length) {
@@ -3408,7 +3550,7 @@ export class EndlessRealm extends plugin {
             const currentDifficulty = getEndlessDifficulty(run.difficultyTier);
             const unlockText = currentDifficulty.tier < ENDLESS_MAX_DIFFICULTY_TIER
               ? `，已解锁${formatEndlessDifficulty(currentDifficulty.tier + 1)}`
-              : '，九阶劫境已经全部贯通';
+              : `，${ENDLESS_MAX_DIFFICULTY_TIER}阶劫境已经全部贯通`;
             run.settlement.extras.push(
               `${team.memberNames?.[id] || id}首通【${formatEndlessDifficulty(currentDifficulty.tier)}】${unlockText}；限购额度永久再提高10%（最低+1）。`
             );

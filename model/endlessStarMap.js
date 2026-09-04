@@ -1,4 +1,4 @@
-const STAR_MAP_VERSION = 2;
+const STAR_MAP_VERSION = 3;
 
 export const ENDLESS_STAR_CALAMITIES = Object.freeze([
   Object.freeze({
@@ -21,6 +21,100 @@ export const ENDLESS_STAR_CALAMITIES = Object.freeze([
     description: '道路索取命血，全队入场额外损失18%最大生命。',
     entryHpCostPct: 0.18,
   }),
+]);
+
+export const ENDLESS_NAMELESS_CALAMITIES = Object.freeze([
+  Object.freeze({
+    id: 'starving_stars',
+    name: '不可名状·饥饿群星',
+    description: '群星睁开并吞食现实，敌方生命提高35%、攻击提高22%，总奖励提高30%。',
+    enemyHpMultiplier: 1.35,
+    enemyAttackMultiplier: 1.22,
+    rewardMultiplier: 1.3,
+  }),
+  Object.freeze({
+    id: 'forgotten_name',
+    name: '不可名状·失名之雾',
+    description: '所有称谓都在雾中腐烂，本场随机封禁两项能力，总奖励提高40%。',
+    sealedAbilityCount: 2,
+    rewardMultiplier: 1.4,
+  }),
+  Object.freeze({
+    id: 'backward_gaze',
+    name: '不可名状·逆视之瞳',
+    description: '某种目光从未来向此刻凝视，全队献祭22%最大生命，敌方攻击提高35%，总奖励提高45%。',
+    entryHpCostPct: 0.22,
+    enemyAttackMultiplier: 1.35,
+    rewardMultiplier: 1.45,
+  }),
+]);
+
+export const ENDLESS_STAR_GAMBITS = Object.freeze([
+  Object.freeze({
+    id: 'steady',
+    name: '守成之契',
+    description: '不向劫境追加筹码，本层规则保持原状。',
+  }),
+  Object.freeze({
+    id: 'greed',
+    name: '逐利之契',
+    description: '敌方全属性提高15%，本层总奖励提高25%。',
+    enemyHpMultiplier: 1.15,
+    enemyAttackMultiplier: 1.15,
+    enemyDefenseMultiplier: 1.15,
+    rewardMultiplier: 1.25,
+  }),
+  Object.freeze({
+    id: 'blood',
+    name: '血筹之契',
+    description: '全队入场献祭8%最大生命，本层总奖励提高40%。',
+    entryHpCostPct: 0.08,
+    rewardMultiplier: 1.4,
+  }),
+  Object.freeze({
+    id: 'shelter',
+    name: '避劫之契',
+    description: '敌方生命与攻击降低10%，但本层道痕产出降低25%。',
+    enemyHpMultiplier: 0.9,
+    enemyAttackMultiplier: 0.9,
+    tokenMultiplier: 0.75,
+  }),
+]);
+
+export const ENDLESS_MERCHANT_GOODS = Object.freeze([
+  Object.freeze({
+    id: 'treasure_temper', name: '天宝锻星砂', basePrice: 120,
+    description: '使一件本局装配至宝提升1级，最高Lv.10。',
+  }),
+  Object.freeze({
+    id: 'ability_crystal', name: '道法升华晶', basePrice: 90,
+    description: '随机使一项未满级能力提升1级。',
+  }),
+  Object.freeze({
+    id: 'triple_clone', name: '三身映照符', basePrice: 80,
+    description: '强化他化自在法，使残缺映照开场由1尊变为3尊。',
+  }),
+  Object.freeze({
+    id: 'skill_replay', name: '回响沙漏', basePrice: 75,
+    description: '能力追击有25%概率完整重放，最多叠加至50%。',
+  }),
+  Object.freeze({
+    id: 'healing_elixir', name: '涅槃仙露', basePrice: 45,
+    description: '立即恢复50%最大生命。',
+  }),
+  Object.freeze({
+    id: 'attack_elixir', name: '破境战血', basePrice: 65,
+    description: '本局基础攻击永久提高18%。',
+  }),
+]);
+
+export const ENDLESS_STAR_ASSISTS = Object.freeze([
+  Object.freeze({ id: 'shi_hao', name: '荒天帝投影', skill: '他化自在·独断万古', rounds: 3, damagePct: 1.05 }),
+  Object.freeze({ id: 'great_sage', name: '齐天大圣投影', skill: '如意金箍·大闹天宫', rounds: 4, damagePct: 0.78 }),
+  Object.freeze({ id: 'doctor_strange', name: '奇异博士', skill: '镜像维度·时间回环', rounds: 3, damagePct: 0.9 }),
+  Object.freeze({ id: 'frieren', name: '芙莉莲', skill: '弑魔魔法·解析齐射', rounds: 4, damagePct: 0.72 }),
+  Object.freeze({ id: 'superman', name: '超人投影', skill: '黄太阳·热视线', rounds: 3, damagePct: 0.96 }),
+  Object.freeze({ id: 'saitama', name: '埼玉投影', skill: '认真一拳·余波', rounds: 2, damagePct: 1.35 }),
 ]);
 
 export const ENDLESS_STAR_NODE_TYPES = Object.freeze({
@@ -77,6 +171,27 @@ export const ENDLESS_STAR_NODE_TYPES = Object.freeze({
     description: '强行横渡世界壁垒，后续能力将受到该位面牵引。',
     rewardText: '奖励×1.30，改变能力来源位面', seal: 'boundary',
   },
+  merchant: {
+    name: '界海商队', shortName: '商队', symbol: '商', kind: 'event',
+    risk: '机缘', stage: 'normal', rewardMultiplier: 0.85,
+    enemyHpMultiplier: 0.82, enemyAttackMultiplier: 0.82, enemyDefenseMultiplier: 0.88,
+    description: '万界行商在战场边缘开出一次性货架；全队共享道痕，也共享每件孤品的归属。',
+    rewardText: '可用未封存道痕购买局内遗物与消耗品', seal: null,
+  },
+  champion: {
+    name: '异界强援', shortName: '强援', symbol: '援', kind: 'event',
+    risk: '机缘', stage: 'normal', rewardMultiplier: 0.95,
+    enemyHpMultiplier: 1.08, enemyAttackMultiplier: 1.04, enemyDefenseMultiplier: 1,
+    description: '一位异界强者响应因果，在战斗最初数回合协同出手。',
+    rewardText: '随机强者助战2至4回合', seal: null,
+  },
+  nameless: {
+    name: '不可名状灾厄', shortName: '灾厄', symbol: '祸', kind: 'danger',
+    risk: '不可测', stage: 'elite', rewardMultiplier: 1.75,
+    enemyHpMultiplier: 1.22, enemyAttackMultiplier: 1.2, enemyDefenseMultiplier: 1.12,
+    description: '情报只能确认那里存在“某物”；定途后，它才会从三种禁忌规则中显露真容。',
+    rewardText: '灾厄锁定后显形，高风险并追加高额奖励', seal: 'defiance',
+  },
   heaven_gate: {
     name: '十方天关', shortName: '天关', symbol: '劫', kind: 'boss',
     risk: '十死无生', stage: 'boss', rewardMultiplier: 1,
@@ -115,10 +230,10 @@ export const ENDLESS_STAR_SKIES = Object.freeze([
 ]);
 
 const ROW_COUNTS = [2, 3, 3, 3, 3, 3, 3, 3, 2, 1];
-const STABLE_TYPES = ['conquest', 'conquest', 'relic', 'rift'];
-const RESONANT_TYPES = ['relic', 'rift', 'mirror', 'conquest'];
-const DANGER_TYPES = ['prodigy', 'tide', 'altar', 'mirror'];
-const NINTH_LAYER_TYPES = ['prodigy', 'tide', 'mirror'];
+const STABLE_TYPES = ['conquest', 'conquest', 'relic', 'rift', 'merchant', 'champion'];
+const RESONANT_TYPES = ['relic', 'rift', 'mirror', 'merchant', 'champion', 'conquest'];
+const DANGER_TYPES = ['prodigy', 'tide', 'altar', 'mirror', 'nameless'];
+const NINTH_LAYER_TYPES = ['prodigy', 'tide', 'mirror', 'nameless'];
 
 function clone(value) {
   return structuredClone(value);
@@ -166,10 +281,18 @@ function hashText(value) {
 }
 
 function calamityFor(run, node) {
-  if (node.stage === 'boss' || node.layer <= 10) return null;
   const random = createRandom((number(run.rngState) ^ hashText(node.id)) >>> 0);
+  if (node.typeId === 'nameless') {
+    const event = clone(pick(random, ENDLESS_NAMELESS_CALAMITIES));
+    event.chance = 1;
+    return event;
+  }
+  if (node.stage === 'boss' || node.layer <= 10 || node.kind === 'event') return null;
   const dangerBonus = node.kind === 'danger' ? 0.1 : node.kind === 'resonant' ? 0.04 : 0;
-  const chance = Math.min(0.72, (node.layer - 10) * 0.012 + dangerBonus);
+  const chance = Math.min(
+    0.82,
+    Math.max(0, (node.layer - 10) * 0.012 + dangerBonus + number(node.decision?.calamityChanceDelta))
+  );
   if (random() >= chance) return null;
   const event = clone(pick(random, ENDLESS_STAR_CALAMITIES));
   if (event.id === 'law_burial' && node.layer >= 60) event.sealedAbilityCount = 2;
@@ -177,7 +300,7 @@ function calamityFor(run, node) {
   return event;
 }
 
-function connectRows(rows) {
+function connectRows(rows, random) {
   for (let rowIndex = 0; rowIndex < rows.length - 1; rowIndex++) {
     const current = rows[rowIndex].nodes;
     const next = rows[rowIndex + 1].nodes;
@@ -186,8 +309,16 @@ function connectRows(rows) {
         ? 0
         : Math.round(index * (next.length - 1) / (current.length - 1));
       const linked = new Set([center]);
-      if (next.length > 1)
-        linked.add(Math.max(0, Math.min(next.length - 1, center + (index % 2 ? -1 : 1))));
+      if (next.length > 1) {
+        const directions = random() < 0.5 ? [-1, 1] : [1, -1];
+        for (const direction of directions) {
+          const target = center + direction;
+          if (target >= 0 && target < next.length) {
+            linked.add(target);
+            break;
+          }
+        }
+      }
       node.nextNodeIds = [...linked].map(slot => next[slot].id);
     }
     for (const target of next) {
@@ -202,7 +333,7 @@ function connectRows(rows) {
 
 function nodeTypeFor(random, rowOffset, slot, used) {
   if (rowOffset === 10) return 'heaven_gate';
-  if (slot === 0 && rowOffset !== 9) return 'conquest';
+  if (slot === 0 && rowOffset === 1) return 'conquest';
   const pool = rowOffset === 9
     ? NINTH_LAYER_TYPES
     : slot === 0
@@ -210,8 +341,69 @@ function nodeTypeFor(random, rowOffset, slot, used) {
       : slot === 1
         ? RESONANT_TYPES
         : DANGER_TYPES;
-  const available = pool.filter(type => !used.has(type));
+  const available = pool.filter(type =>
+    !used.has(type) && !(type === 'merchant' && rowOffset <= 2)
+  );
   return pick(random, available.length ? available : pool);
+}
+
+function merchantFor(random, cycle) {
+  const stock = [...ENDLESS_MERCHANT_GOODS];
+  for (let index = stock.length - 1; index > 0; index--) {
+    const target = Math.floor(random() * (index + 1));
+    [stock[index], stock[target]] = [stock[target], stock[index]];
+  }
+  const priceMultiplier = 1 + Math.max(0, cycle - 1) * 0.08;
+  return {
+    name: pick(random, ['万宝楼·界海分号', '康斯坦丁的神秘摊位', '时空管理局流动仓']),
+    currency: '未封存劫境道痕',
+    stock: stock.slice(0, 4).map(good => ({
+      ...clone(good),
+      price: Math.max(1, Math.round(good.basePrice * priceMultiplier)),
+      boughtBy: null,
+    })),
+  };
+}
+
+function eventFor(random, typeId, cycle) {
+  if (typeId === 'merchant') return { merchant: merchantFor(random, cycle) };
+  if (typeId === 'champion') return { assist: clone(pick(random, ENDLESS_STAR_ASSISTS)) };
+  return {};
+}
+
+function decisionFor(run, node) {
+  const votes = Object.values(run.starMap?.suggestions || {});
+  const counts = new Map();
+  for (const nodeId of votes) counts.set(nodeId, number(counts.get(nodeId)) + 1);
+  const selectedVotes = number(counts.get(node.id));
+  const highestVotes = Math.max(0, ...counts.values());
+  const leaders = [...counts.values()].filter(value => value === highestVotes).length;
+  const memberCount = Object.keys(run.members || {}).length;
+  if (memberCount > 0 && selectedVotes === memberCount) {
+    return {
+      id: 'consensus', name: '众意同归',
+      description: '全队建议完全一致，灾厄概率降低8%，总奖励提高8%。',
+      calamityChanceDelta: -0.08, rewardMultiplier: 1.08,
+      selectedVotes, highestVotes,
+    };
+  }
+  if (highestVotes > 0 && leaders === 1 && selectedVotes < highestVotes) {
+    return {
+      id: 'defy_vote', name: '逆议定轨',
+      description: '队长逆转唯一多数意见，灾厄概率提高12%，总奖励提高18%。',
+      calamityChanceDelta: 0.12, rewardMultiplier: 1.18,
+      selectedVotes, highestVotes,
+    };
+  }
+  return {
+    id: selectedVotes > 0 ? 'follow_vote' : 'uncharted',
+    name: selectedVotes > 0 ? '顺议定轨' : '独断未知',
+    description: selectedVotes > 0
+      ? '定轨顺应了队伍建议，风险与收益保持原状。'
+      : '没有形成有效多数意见，因果按原始权重结算。',
+    calamityChanceDelta: 0, rewardMultiplier: 1,
+    selectedVotes, highestVotes,
+  };
 }
 
 function generateStarMap(run, worlds, targetLayer) {
@@ -237,6 +429,9 @@ function generateStarMap(run, worlds, targetLayer) {
           ? pickOtherWorld(random, worldIds, primaryWorldId)
           : pick(random, worldIds);
       const world = worldRecord(worlds, worldId);
+      const gambit = typeId === 'heaven_gate'
+        ? null
+        : clone(pick(random, ENDLESS_STAR_GAMBITS));
       return {
         id: `c${cycle}-l${layer}-n${slot + 1}`,
         layer,
@@ -252,12 +447,14 @@ function generateStarMap(run, worlds, targetLayer) {
         stage: type.stage,
         description: type.description,
         rewardText: type.rewardText,
+        gambit,
+        ...eventFor(random, typeId, cycle),
         status: 'future',
       };
     });
     return { layer, offset, nodes };
   });
-  connectRows(rows);
+  connectRows(rows, random);
   return {
     version: STAR_MAP_VERSION,
     cycle,
@@ -274,14 +471,63 @@ function generateStarMap(run, worlds, targetLayer) {
   };
 }
 
+function migrateStarMap(run, previous, next, targetLayer) {
+  next.sky = clone(previous.sky || next.sky);
+  next.primaryWorldId = previous.primaryWorldId || next.primaryWorldId;
+  next.suggestions = clone(previous.suggestions || {});
+  next.seals = clone(previous.seals || next.seals);
+  next.lastClearedWorldId = previous.lastClearedWorldId || null;
+  next.consecutiveWorldId = previous.consecutiveWorldId || null;
+  next.consecutiveWorldCount = number(previous.consecutiveWorldCount);
+
+  for (const row of next.rows) {
+    const oldRow = previous.rows?.find(entry => entry.layer === row.layer);
+    if (!oldRow) continue;
+    if (row.layer < targetLayer) {
+      row.nodes = clone(oldRow.nodes);
+      continue;
+    }
+    if (row.layer !== targetLayer) continue;
+    for (const node of row.nodes) {
+      const oldNode = oldRow.nodes?.find(entry => entry.id === node.id);
+      if (!oldNode) continue;
+      node.status = oldNode.status || node.status;
+      if (oldNode.automatic) node.automatic = true;
+    }
+  }
+
+  const oldSelected = previous.rows
+    ?.find(row => row.layer === targetLayer)?.nodes
+    ?.find(node => node.id === previous.selectedNodeId);
+  const currentRow = next.rows.find(row => row.layer === targetLayer);
+  const selectedIndex = currentRow?.nodes.findIndex(node => node.id === oldSelected?.id) ?? -1;
+  if (oldSelected && selectedIndex >= 0) {
+    const generated = currentRow.nodes[selectedIndex];
+    const selected = {
+      ...clone(oldSelected),
+      gambit: clone(generated.gambit || ENDLESS_STAR_GAMBITS[0]),
+    };
+    currentRow.nodes[selectedIndex] = selected;
+    next.selectedNodeId = oldSelected.id;
+    const context = { ...run, starMap: next };
+    selected.decision = decisionFor(context, selected);
+    if (!Object.hasOwn(selected, 'calamity'))
+      selected.calamity = calamityFor(context, selected);
+  }
+  return next;
+}
+
 export function ensureEndlessStarMap(run, worlds, targetLayer = run.layer + 1) {
   const expectedCycle = cycleForLayer(targetLayer);
-  if (
-    !run.starMap ||
-    run.starMap.version !== STAR_MAP_VERSION ||
-    run.starMap.cycle !== expectedCycle
-  )
+  if (!run.starMap || run.starMap.cycle !== expectedCycle)
     run.starMap = generateStarMap(run, worlds, targetLayer);
+  else if (run.starMap.version !== STAR_MAP_VERSION)
+    run.starMap = migrateStarMap(
+      run,
+      run.starMap,
+      generateStarMap(run, worlds, targetLayer),
+      targetLayer
+    );
   run.starMap.suggestions ||= {};
   run.starMap.seals ||= { slaughter: 0, cause: 0, boundary: 0, defiance: 0 };
   return run.starMap;
@@ -310,7 +556,8 @@ function selectNode(run, choiceNumber, automatic = false, layer = run.layer + 1)
     current.status = current.id === node.id ? 'selected' : 'bypassed';
     current.automatic = current.id === node.id && automatic;
   }
-  node.calamity ||= calamityFor(run, node);
+  node.decision ||= decisionFor(run, node);
+  if (!Object.hasOwn(node, 'calamity')) node.calamity = calamityFor(run, node);
   return { ...clone(node), automatic };
 }
 
@@ -347,6 +594,8 @@ export function getEndlessStarEncounter(run, layer = run.layer + 1) {
   if (!node) return null;
   const type = ENDLESS_STAR_NODE_TYPES[node.typeId];
   const calamity = node.calamity || null;
+  const gambit = node.gambit || {};
+  const decision = node.decision || {};
   const sky = run.starMap.sky || {};
   const legacyFallback = Boolean(node.automatic);
   const sealTotal = Object.values(run.starMap.seals || {}).reduce(
@@ -361,20 +610,26 @@ export function getEndlessStarEncounter(run, layer = run.layer + 1) {
     monsterCountBonus: legacyFallback ? 0 : number(type.monsterCountBonus),
     entryHpCostPct: legacyFallback
       ? 0
-      : number(type.entryHpCostPct) + number(calamity?.entryHpCostPct),
-    tokenMultiplier: legacyFallback ? 1 : number(calamity?.tokenMultiplier, 1),
+      : number(type.entryHpCostPct) + number(calamity?.entryHpCostPct) + number(gambit.entryHpCostPct),
+    tokenMultiplier: legacyFallback
+      ? 1
+      : number(calamity?.tokenMultiplier, 1) * number(gambit.tokenMultiplier, 1),
     skipAbilityReward: legacyFallback ? false : Boolean(calamity?.skipAbilityReward),
     sealedAbilityCount: legacyFallback ? 0 : number(calamity?.sealedAbilityCount),
     calamity: legacyFallback ? null : calamity,
+    gambit: legacyFallback ? null : node.gambit || null,
+    decision: legacyFallback ? null : node.decision || null,
+    merchant: legacyFallback ? null : node.merchant || null,
+    assist: legacyFallback ? null : node.assist || null,
     victoryEffect: legacyFallback ? null : type.victoryEffect || null,
     enemyHpMultiplier:
-      legacyFallback ? 1 : number(type.enemyHpMultiplier, 1) * number(sky.enemyHpMultiplier, 1) * bossSealMultiplier,
+      legacyFallback ? 1 : number(type.enemyHpMultiplier, 1) * number(sky.enemyHpMultiplier, 1) * number(calamity?.enemyHpMultiplier, 1) * number(gambit.enemyHpMultiplier, 1) * bossSealMultiplier,
     enemyAttackMultiplier:
-      legacyFallback ? 1 : number(type.enemyAttackMultiplier, 1) * number(sky.enemyAttackMultiplier, 1) * bossSealMultiplier,
+      legacyFallback ? 1 : number(type.enemyAttackMultiplier, 1) * number(sky.enemyAttackMultiplier, 1) * number(calamity?.enemyAttackMultiplier, 1) * number(gambit.enemyAttackMultiplier, 1) * bossSealMultiplier,
     enemyDefenseMultiplier:
-      legacyFallback ? 1 : number(type.enemyDefenseMultiplier, 1) * number(sky.enemyDefenseMultiplier, 1),
+      legacyFallback ? 1 : number(type.enemyDefenseMultiplier, 1) * number(sky.enemyDefenseMultiplier, 1) * number(calamity?.enemyDefenseMultiplier, 1) * number(gambit.enemyDefenseMultiplier, 1),
     rewardMultiplier:
-      legacyFallback ? 1 : number(type.rewardMultiplier, 1) * number(sky.rewardMultiplier, 1) * bossSealMultiplier,
+      legacyFallback ? 1 : number(type.rewardMultiplier, 1) * number(sky.rewardMultiplier, 1) * number(calamity?.rewardMultiplier, 1) * number(gambit.rewardMultiplier, 1) * number(decision.rewardMultiplier, 1) * bossSealMultiplier,
     skyName: legacyFallback ? '旧途回响' : sky.name || '无名劫象',
   };
 }

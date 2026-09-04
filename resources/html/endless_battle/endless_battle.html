@@ -43,7 +43,7 @@
       <section class="overview">
         <div class="metric"><span>战斗回合</span><b>{{rounds}}</b></div>
         <div class="metric"><span>队伍总输出</span><b>{{totalDamage}}</b></div>
-        <div class="metric"><span>诸天共鸣</span><b>{{fusionDamage}}</b></div>
+        <div class="metric"><span>共鸣 / 强援</span><b>{{fusionDamage}} / {{assistDamage}}</b></div>
         <div class="metric"><span>共享命火</span><b>{{lifeFire}} / {{maxLifeFire}}</b></div>
       </section>
 
@@ -114,6 +114,9 @@
                 {{if round.fusionDamage != '0'}}
                 <span class="fusion">共鸣 <b>{{round.fusionDamage}}</b></span>
                 {{/if}}
+                {{if round.assistDamage != '0'}}
+                <span class="fusion">强援 <b>{{round.assistDamage}}</b></span>
+                {{/if}}
               </div>
               <div class="round-bars">
                 <div>
@@ -159,8 +162,8 @@
           <p>{{victory ? '再入诸天' : '本次征伐止步于此'}}</p>
         </div>
         <div class="review-grid">
-          <div><span>诸天共鸣触发</span><b>{{fusionHits}} 次</b></div>
-          <div><span>涅槃与复活</span><b>{{revive}} 次</b></div>
+          <div><span>共鸣 / 强援</span><b>{{fusionHits}} / {{assistHits}} 次</b></div>
+          <div><span>复活 / 重放</span><b>{{revive}} / {{skillReplays}} 次</b></div>
           <div><span>命火消耗</span><b>{{lifeFireUsed}} 点</b></div>
           <div><span>本场魁首</span><b>{{mvpName}}</b></div>
         </div>

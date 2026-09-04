@@ -55,7 +55,7 @@ function renderBattleSummary(battle) {
     ['总伤害', formatAmount(summary.totalDamage)],
     ['队伍承伤', formatAmount(Object.values(battle.damageTakenByMember || {}).reduce((sum, value) => sum + (Number(value) || 0), 0))],
     ['MVP', summary.mvpName || '未显化'],
-    ['关键触发', formatAmount((summary.fusionHits || 0) + (summary.bossRevive || 0) + (summary.revive || 0))],
+    ['关键触发', formatAmount((summary.fusionHits || 0) + (summary.assistHits || 0) + (summary.skillReplays || 0) + (summary.bossRevive || 0) + (summary.revive || 0))],
   ];
   for (const [label, value] of items) {
     const item = element('div', 'battle-summary-item');
@@ -189,6 +189,11 @@ function renderBuild(state) {
     item.append(element('b', '', ability.name), element('span', '', `Lv.${ability.level}`));
     abilities.append(item);
   }
+  for (const buff of viewer?.eventBuffs || []) {
+    const item = element('div', 'ability-item');
+    item.append(element('b', '', '商队遗物'), element('span', '', buff));
+    abilities.append(item);
+  }
   const fusions = $('#fusion-list');
   fusions.replaceChildren();
   if (!state.run.fusions.length) fusions.append(element('span', 'archive-empty', '尚未形成诸天共鸣'));
@@ -229,8 +234,12 @@ function renderBattle(state) {
   const damage = $('#damage-board');
   const damageRows = $('.damage-rows');
   damageRows.replaceChildren();
+  const sourceNames = {
+    _fusion: '诸天共鸣',
+    _assist: battle.assist?.name || '异界强援',
+  };
   const entries = Object.entries(battle.damageByMember || {})
-    .filter(([id, value]) => id !== '_fusion' && Number(value) > 0)
+    .filter(([, value]) => Number(value) > 0)
     .sort((a, b) => b[1] - a[1]);
   damage.hidden = !entries.length;
   const maximum = Math.max(1, ...entries.map(([, value]) => Number(value) || 0));
@@ -240,7 +249,7 @@ function renderBattle(state) {
     const fill = element('em');
     fill.style.width = `${Math.max(3, Math.round((Number(value) / maximum) * 100))}%`;
     track.append(fill);
-    row.append(element('span', '', state.team.memberNames[id] || id), track, element('b', '', formatAmount(value)));
+    row.append(element('span', '', sourceNames[id] || state.team.memberNames[id] || id), track, element('b', '', formatAmount(value)));
     damageRows.append(row);
   }
   if (damage.open && !damageRows.children.length) damage.open = false;
@@ -322,7 +331,10 @@ function renderStarMap(state) {
   setText('#star-map-cycle', `第 ${map.cycle} 轮劫环`);
   setText('#star-map-sky', `${map.sky.name} · 奖励×${Number(map.sky.rewardMultiplier || 1).toFixed(2)}`);
   setText('#star-map-omen-text', map.sky.omen || '因果回响尚未显化');
-  setText('#star-map-selected', map.selected ? `已锁定：${map.selected.name}` : `目标第${map.targetLayer}层 · 尚未定途`);
+  const selectedTags = map.selected
+    ? [map.selected.gambit?.name, map.selected.decision?.name, map.selected.calamity?.name, map.selected.assist?.name].filter(Boolean)
+    : [];
+  setText('#star-map-selected', map.selected ? `已锁定：${map.selected.name}${selectedTags.length ? ` · ${selectedTags.join(' · ')}` : ''}` : `目标第${map.targetLayer}层 · 尚未定途`);
 
   const track = $('#star-map-track');
   track.replaceChildren();
@@ -349,7 +361,8 @@ function renderStarMap(state) {
       const card = element('article', `star-route-card${route.selected ? ' is-selected' : ''}`);
       const top = element('div', 'star-route-top');
       top.append(element('span', '', `路线 ${route.index} · ${route.risk}`), element('b', '', `${route.votes} 票`));
-      card.append(top, element('h3', '', route.name), element('p', '', route.description), element('small', '', route.rewardText));
+      const routeMeta = [route.rewardText, route.gambit?.name && `赌约：${route.gambit.name}`, `后继${route.successorCount || 0}途`].filter(Boolean).join(' · ');
+      card.append(top, element('h3', '', route.name), element('p', '', route.description), element('small', '', routeMeta));
       const actions = element('div', 'star-route-actions');
       if (state.permissions.suggestRoute && !route.selected) actions.append(actionButton('提出建议', 'suggest', route.index, 'is-quiet'));
       if (state.permissions.selectRoute && !route.selected) actions.append(actionButton('星图定途', 'selectRoute', route.index));
@@ -407,6 +420,23 @@ function renderActions(state) {
       );
       button.append(footer);
       button.addEventListener('click', () => submitAction('choose', choice.index));
+      choices.append(button);
+    }
+  } else if (state.merchant) {
+    setText('#action-title', state.merchant.name || '界海商人');
+    setText('#action-note', `未封存劫境道痕 ${formatAmount(state.merchant.balance)}`);
+    for (const good of state.merchant.stock || []) {
+      const button = element('button', 'choice-card');
+      const sold = Boolean(good.boughtBy);
+      button.type = 'button';
+      button.disabled = busy || sold || !state.permissions.merchantPurchase;
+      button.append(
+        element('i', '', String(good.index)),
+        element('span', '', sold ? `已由${good.buyerName || '队友'}购得` : `${formatAmount(good.price)} 道痕`),
+        element('h3', '', good.name),
+        element('p', '', good.description)
+      );
+      if (!sold) button.addEventListener('click', () => submitAction('merchant', good.index));
       choices.append(button);
     }
   } else if (state.checkpoint && state.permissions.checkpoint) {

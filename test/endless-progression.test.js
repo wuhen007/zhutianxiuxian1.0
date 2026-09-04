@@ -5,7 +5,9 @@ import {
   ENDLESS_DIFFICULTIES,
   canEnterEndlessDifficulty,
   formatEndlessDifficulty,
+  getEndlessOverallLayer,
   getEndlessLimitedPurchaseLimit,
+  normalizeEndlessDifficultyTier,
   normalizeEndlessDifficultyProgress,
   recordEndlessDifficultyProgress,
 } from '../model/endlessDifficulty.js';
@@ -40,26 +42,32 @@ function runOptions(overrides = {}) {
   };
 }
 
-test('A1至A9采用确定命名且每阶固定150层', () => {
-  assert.equal(ENDLESS_DIFFICULTIES.length, 9);
+test('A1至A10采用确定命名且每阶固定150层', () => {
+  assert.equal(ENDLESS_DIFFICULTIES.length, 10);
   assert.equal(formatEndlessDifficulty(1), 'A1·本初劫境');
   assert.equal(formatEndlessDifficulty(6), 'A6·轮回劫境');
   assert.equal(formatEndlessDifficulty(9), 'A9·彼岸劫境');
+  assert.equal(formatEndlessDifficulty(10), 'A10·无量劫境');
+  assert.equal(normalizeEndlessDifficultyTier('A10'), 10);
+  assert.equal(getEndlessOverallLayer(10, 150), 1500);
 });
 
-test('A3至A6专属能力声明阶位门槛且低阶无法强行选择', () => {
+test('A3至A8专属能力声明阶位门槛且低阶无法强行选择', () => {
   const expectedByTier = {
     3: ['myth_great_sage_art', 'myth_seventy_two_transformations', 'multi_spider_sense', 'multi_symbiote_suit'],
     4: ['art_eight_nine', 'myth_heaven_eye', 'myth_three_pointed_blade', 'multi_solar_core', 'multi_man_of_steel'],
     5: ['perfect_peace_sword', 'perfect_immortal_tribulation_sword', 'art_grass_sword', 'anime_hogyoku'],
     6: ['anime_emperor_armor', 'multi_white_lantern'],
+    7: ['multi_kamar_taj_arts', 'multi_mirror_dimension', 'multi_eye_of_agamotto'],
+    8: ['anime_mana_concealment', 'anime_zoltraak', 'anime_spell_analysis'],
   };
+  const specialTiers = Object.keys(expectedByTier).map(Number);
   const abilities = getEndlessContent().abilities.filter(ability =>
-    [3, 4, 5, 6].includes(Number(ability.minDifficultyTier))
+    specialTiers.includes(Number(ability.minDifficultyTier))
   );
   assert.deepEqual(
     [...new Set(abilities.map(ability => ability.minDifficultyTier))].sort((a, b) => a - b),
-    [3, 4, 5, 6]
+    specialTiers
   );
   for (const [tier, expectedIds] of Object.entries(expectedByTier)) {
     assert.deepEqual(
@@ -93,6 +101,42 @@ test('A3至A6专属能力声明阶位门槛且低阶无法强行选择', () => {
   }
 });
 
+test('低阶随机能力选项不会混入A7与A8专属能力', () => {
+  const idsByTier = {
+    7: ['multi_kamar_taj_arts', 'multi_mirror_dimension', 'multi_eye_of_agamotto'],
+    8: ['anime_mana_concealment', 'anime_zoltraak', 'anime_spell_analysis'],
+  };
+  const a7Ids = new Set(idsByTier[7]);
+  const a8Ids = new Set(idsByTier[8]);
+  const lockedAtA6 = new Set([...a7Ids, ...a8Ids]);
+  const seenAtA7 = new Set();
+  const seenAtA8 = new Set();
+  const choicesOf = run => Object.values(run.pendingChoices).flat();
+
+  for (let seed = 1; seed <= 512; seed++) {
+    const a6Choices = choicesOf(createEndlessRun(runOptions({ seed, difficultyTier: 6 })));
+    assert.equal(
+      a6Choices.some(id => lockedAtA6.has(id)),
+      false,
+      `A6种子${seed}不应生成A7/A8能力`
+    );
+
+    const a7Choices = choicesOf(createEndlessRun(runOptions({ seed, difficultyTier: 7 })));
+    assert.equal(
+      a7Choices.some(id => a8Ids.has(id)),
+      false,
+      `A7种子${seed}不应生成A8能力`
+    );
+    for (const id of a7Choices) if (a7Ids.has(id)) seenAtA7.add(id);
+
+    const a8Choices = choicesOf(createEndlessRun(runOptions({ seed, difficultyTier: 8 })));
+    for (const id of a8Choices) if (a8Ids.has(id)) seenAtA8.add(id);
+  }
+
+  assert.deepEqual([...seenAtA7].sort(), idsByTier[7].sort());
+  assert.deepEqual([...seenAtA8].sort(), idsByTier[8].sort());
+});
+
 test('每阶首通只结算一次限购加成并解锁下一阶', () => {
   const account = player();
   const first = recordEndlessDifficultyProgress(account, 1, 150, { cleared: true });
@@ -118,6 +162,49 @@ test('旧累计层数会迁移为对应A阶进度', () => {
   assert.deepEqual(progress.clearedTiers, [1, 2, 3]);
   assert.equal(progress.unlockedTier, 4);
   assert.equal(progress.highestLayers[4], 1);
+});
+
+test('A9首通解锁A10且旧累计层数在A10封顶', () => {
+  const oldAccount = { 名号: '九阶旧档', 无尽劫境最高层: 1350 };
+  const oldProgress = normalizeEndlessDifficultyProgress(oldAccount);
+  assert.deepEqual(oldProgress.clearedTiers, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.equal(oldProgress.unlockedTier, 10);
+  assert.equal(oldProgress.highestLayers[9], 150);
+
+  for (const legacyLayer of [1500, 1501, 1600]) {
+    const capped = normalizeEndlessDifficultyProgress({
+      名号: `旧档${legacyLayer}`,
+      无尽劫境最高层: legacyLayer,
+    });
+    assert.deepEqual(
+      capped.clearedTiers,
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      `${legacyLayer}层旧档应按A10通关迁移`
+    );
+    assert.equal(capped.unlockedTier, 10);
+    assert.equal(capped.highestLayers[10], 150);
+  }
+
+  const account = {
+    名号: '逐阶挑战者',
+    无尽劫境进阶: {
+      unlockedTier: 9,
+      selectedTier: 9,
+      clearedTiers: [1, 2, 3, 4, 5, 6, 7, 8],
+      highestLayers: Object.fromEntries(
+        Array.from({ length: 8 }, (_, index) => [index + 1, 150])
+      ),
+    },
+  };
+  const ninth = recordEndlessDifficultyProgress(account, 9, 150, { cleared: true });
+  assert.equal(ninth.firstClear, true);
+  assert.equal(ninth.unlockedTier, 10);
+  assert.equal(canEnterEndlessDifficulty(account, 10), true);
+
+  const tenth = recordEndlessDifficultyProgress(account, 10, 150, { cleared: true });
+  assert.equal(tenth.firstClear, true);
+  assert.equal(tenth.unlockedTier, 10);
+  assert.equal(account.无尽劫境最高层, 1500);
 });
 
 test('每日天象全服确定且覆盖至宝、能力、道痕与商店规则', () => {

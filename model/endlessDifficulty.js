@@ -1,5 +1,5 @@
 export const ENDLESS_TIER_MAX_LAYER = 150;
-export const ENDLESS_MAX_DIFFICULTY_TIER = 9;
+export const ENDLESS_MAX_DIFFICULTY_TIER = 10;
 
 const EMPTY_TIER_FEATURE = Object.freeze({
   specialAbilityTheme: '',
@@ -44,6 +44,34 @@ const ENDLESS_TIER_FEATURES = Object.freeze({
     specialAbilityNames: Object.freeze(['帝皇铠甲', '白灯之力']),
     specialTreasureChance: 0.4,
   }),
+  7: Object.freeze({
+    specialAbilityTheme: '至尊法师与时间秘术',
+    specialAbilityNames: Object.freeze([
+      '卡玛泰姬秘术',
+      '镜像维度',
+      '阿戈摩托之眼',
+    ]),
+    specialTreasureChance: 0.45,
+  }),
+  8: Object.freeze({
+    specialAbilityTheme: '千年魔法使与弑魔术式',
+    specialAbilityNames: Object.freeze([
+      '魔力隐匿',
+      '弑魔魔法',
+      '魔法解析',
+    ]),
+    specialTreasureChance: 0.5,
+  }),
+  9: Object.freeze({
+    specialAbilityTheme: '以身为种与彼岸秘藏',
+    specialAbilityNames: Object.freeze([]),
+    specialTreasureChance: 0.55,
+  }),
+  10: Object.freeze({
+    specialAbilityTheme: '诸天终极秘藏',
+    specialAbilityNames: Object.freeze([]),
+    specialTreasureChance: 0.6,
+  }),
 });
 
 export const ENDLESS_DIFFICULTIES = Object.freeze([
@@ -56,6 +84,7 @@ export const ENDLESS_DIFFICULTIES = Object.freeze([
   '祭道劫境',
   '超脱劫境',
   '彼岸劫境',
+  '无量劫境',
 ].map((name, index) => Object.freeze({
   tier: index + 1,
   code: `A${index + 1}`,
@@ -111,7 +140,10 @@ export function normalizeEndlessDifficultyProgress(player) {
     (Array.isArray(saved.clearedTiers) ? saved.clearedTiers : [])
       .map(normalizeEndlessDifficultyTier)
   );
-  const legacyLayer = Math.max(0, integer(player?.无尽劫境最高层));
+  const legacyLayer = Math.min(
+    ENDLESS_MAX_DIFFICULTY_TIER * ENDLESS_TIER_MAX_LAYER,
+    Math.max(0, integer(player?.无尽劫境最高层))
+  );
   if (legacyLayer) {
     const legacyTier = Math.min(
       ENDLESS_MAX_DIFFICULTY_TIER,

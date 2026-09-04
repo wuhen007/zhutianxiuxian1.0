@@ -47,6 +47,8 @@ export const SYNTHETIC_ABILITY_NAMES = Object.freeze({
   treasure_true_lord: '二郎显圣真君',
   treasure_kryptonian_blood: '氪星血脉',
   treasure_body_seed: '以身为种',
+  treasure_sorcerer_supreme: '至尊法师传承',
+  treasure_frieren_grimoire: '芙莉莲的千年魔导书',
   myth_great_sage_art: '大品天仙诀',
   myth_seventy_two_transformations: '七十二变',
   anime_fiery_eyes: '火眼金睛',
@@ -65,6 +67,12 @@ export const SYNTHETIC_ABILITY_NAMES = Object.freeze({
   anime_hogyoku: '崩玉',
   anime_emperor_armor: '帝皇铠甲',
   multi_white_lantern: '白灯之力',
+  multi_kamar_taj_arts: '卡玛泰姬秘术',
+  multi_mirror_dimension: '镜像维度',
+  multi_eye_of_agamotto: '阿戈摩托之眼',
+  anime_mana_concealment: '魔力隐匿',
+  anime_zoltraak: '弑魔魔法',
+  anime_spell_analysis: '魔法解析',
 });
 
 /* 旧平成十年骑士（K触屏·神主形态召唤物） */
@@ -809,8 +817,9 @@ export const ENDLESS_SPECIAL_TREASURES = Object.freeze([
     name: '以身为种',
     icon: '🌱',
     rarity: '禁忌',
-    source: '无尽劫境·A5通关秘藏',
-    dropTier: 5,
+    source: '无尽劫境·A7至A10通关秘藏',
+    dropTier: 7,
+    dropTiers: [7, 8, 9, 10],
     desc: '不假外界道种，以自身开辟无上仙路。荒无剑诀、他化自在法与至尊骨齐聚后，体内诸门共鸣。',
     baseAbility: 'treasure_body_seed',
     baseLevel: 1,
@@ -919,6 +928,87 @@ export const ENDLESS_SPECIAL_TREASURES = Object.freeze([
           label: '白灯·生命创生',
           verb: '创生',
           narration: '{member}书写生命方程式，白色光潮冲刷{enemy}',
+        },
+      ],
+    },
+  }),
+  Object.freeze({
+    id: 'treasure_sorcerer_supreme',
+    name: '至尊法师传承',
+    icon: '🌀',
+    rarity: '禁忌',
+    source: '无尽劫境·A7/A9通关秘藏',
+    dropTier: 7,
+    dropTiers: [7, 9],
+    desc: '卡玛泰姬历代至尊法师的秘术结晶。集齐卡玛泰姬秘术、镜像维度与阿戈摩托之眼后，掌控时间宝石的完整回环。',
+    baseAbility: 'treasure_sorcerer_supreme',
+    baseLevel: 1,
+    baseEffect: { attackPct: 0.14, hpPct: 0.12, defensePct: 0.14, extraActionChance: 0.03 },
+    awaken: {
+      name: '奇异博士·至尊法师',
+      requires: {
+        multi_kamar_taj_arts: 1,
+        multi_mirror_dimension: 1,
+        multi_eye_of_agamotto: 1,
+      },
+      effect: { attackPct: 0.48, hpPct: 0.3, defensePct: 0.38, dodgeChance: 0.08, extraActionChance: 0.1 },
+      combat: [
+        {
+          type: 'domain',
+          damagePct: 0.03,
+          label: '镜像维度·无限回廊',
+          narration: '无穷镜面翻折现实，持续切割{enemy}所在的维度',
+        },
+        {
+          type: 'bigProc',
+          every: 4,
+          damagePct: 3.6,
+          ignoreDefense: true,
+          label: '时间宝石·胜利回环',
+          verb: '回环',
+          narration: '{member}以阿戈摩托之眼锁定唯一胜利时间线，将{enemy}困入永续败北',
+        },
+      ],
+    },
+  }),
+  Object.freeze({
+    id: 'treasure_frieren_grimoire',
+    name: '芙莉莲的千年魔导书',
+    icon: '📖',
+    rarity: '禁忌',
+    source: '无尽劫境·A8/A10通关秘藏',
+    dropTier: 8,
+    dropTiers: [8, 10],
+    desc: '记录千年旅途与无数民间魔法的古老魔导书。集齐魔力隐匿、弑魔魔法与魔法解析后，显化千年魔法使的完整术式库。',
+    baseAbility: 'treasure_frieren_grimoire',
+    baseLevel: 1,
+    baseEffect: { attackPct: 0.13, hpPct: 0.1, defensePct: 0.12, critChance: 0.04 },
+    awaken: {
+      name: '芙莉莲·千年魔法使',
+      requires: {
+        anime_mana_concealment: 1,
+        anime_zoltraak: 1,
+        anime_spell_analysis: 1,
+      },
+      effect: { attackPct: 0.5, hpPct: 0.3, defensePct: 0.38, critChance: 0.1, damageReduction: 0.08 },
+      combat: [
+        {
+          type: 'multiHit',
+          every: 3,
+          hits: 6,
+          damagePct: 0.58,
+          label: '千年术式库·六重齐射',
+          verb: '齐射',
+          narration: '{member}翻开千年魔导书，六种早已失传的攻击魔法同时锁定{enemy}',
+        },
+        {
+          type: 'bigProc',
+          every: 5,
+          damagePct: 4.2,
+          ignoreDefense: true,
+          label: '弑魔魔法·葬送',
+          verb: '葬送',
+          narration: '{member}隐藏千年的魔力完全解放，极致弑魔光束贯穿{enemy}',
         },
       ],
     },
@@ -1137,7 +1227,7 @@ export function grantRandomEndlessTierTreasure(
   if (!chance || roll >= chance) return null;
 
   const tierPool = ENDLESS_SPECIAL_TREASURES.filter(
-    treasure => treasure.dropTier === difficulty.tier
+    treasure => (treasure.dropTiers || [treasure.dropTier]).includes(difficulty.tier)
   );
   const owned = normalizePlayerTreasures(player);
   const ownedById = new Map(owned.map(item => [item.id, item]));

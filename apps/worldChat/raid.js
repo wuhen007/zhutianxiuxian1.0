@@ -103,6 +103,21 @@ export function buildCrossRaidSnapshot(team, run, options = {}) {
           .slice(-30),
       }
     : null;
+  const merchant = options.merchant
+    ? {
+        name: String(options.merchant.name || '界海商队').slice(0, 50),
+        balance: Math.max(0, Math.floor(Number(options.merchant.balance) || 0)),
+        stock: (options.merchant.stock || []).slice(0, 4).map((good, index) => ({
+          index: index + 1,
+          name: String(good?.name || '').slice(0, 50),
+          price: Math.max(0, Math.floor(Number(good?.price) || 0)),
+          description: String(good?.description || '').slice(0, 180),
+          boughtBy: good?.boughtBy ? String(good.boughtBy).slice(0, 80) : null,
+          buyerName: String(good?.buyerName || '').slice(0, 50),
+          result: String(good?.result || '').slice(0, 120),
+        })),
+      }
+    : null;
   return {
     layer: Math.max(0, Number(run?.layer) || 0),
     phase: String(run?.phase || team?.status || 'recruiting'),
@@ -118,6 +133,7 @@ export function buildCrossRaidSnapshot(team, run, options = {}) {
       risk: String(item?.risk || '').slice(0, 20),
       description: String(item?.description || '').slice(0, 160),
     })),
+    merchant,
     battle,
     updatedAt: Date.now(),
   };
@@ -154,6 +170,18 @@ export function formatCrossRaidSnapshot(raid) {
     lines.push('【劫途星图】', ...snapshot.starOptions.map((option) =>
       `${option.index}. ${option.name}${option.risk ? `｜${option.risk}` : ''}${option.description ? `：${option.description}` : ''}`
     ));
+  }
+  if (snapshot.merchant) {
+    lines.push(
+      `【${snapshot.merchant.name}·跨服货架】`,
+      `共享余额：${snapshot.merchant.balance}未封存劫境道痕`,
+      ...snapshot.merchant.stock.map((good) =>
+        good.boughtBy
+          ? `${good.index}. [已售] ${good.name}｜${good.buyerName || good.boughtBy}${good.result ? `：${good.result}` : ''}`
+          : `${good.index}. ${good.name} · ${good.price}道痕${good.description ? `：${good.description}` : ''}`
+      ),
+      `发送 #跨服劫境购买${snapshot.merchant.stock.map((good) => good.index).join('/')}`
+    );
   }
   if (snapshot.battle) {
     lines.push(

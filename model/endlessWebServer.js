@@ -8,6 +8,7 @@ import {
   ensureEndlessStarMapState,
   getAbility,
   getCheckpointBoon,
+  getEndlessMerchantState,
   getFusion,
   getMemberStats,
 } from './endlessRealm.js';
@@ -422,6 +423,11 @@ function memberView(run, member) {
       .map(id => getCheckpointBoon(id))
       .filter(Boolean)
       .map(boon => ({ name: boon.name, kind: boon.kind })),
+    eventBuffs: [
+      member.eventBuffs?.freeTransformationOpeningCount >= 3 ? '三身映照 · 开场3尊' : null,
+      member.eventBuffs?.skillReplayChance ? `回响重放 · ${Math.round(member.eventBuffs.skillReplayChance * 100)}%` : null,
+      member.eventBuffs?.attackPct ? `破境战血 · 攻击+${Math.round(member.eventBuffs.attackPct * 100)}%` : null,
+    ].filter(Boolean),
   };
 }
 
@@ -436,6 +442,7 @@ function battleView(run, userId) {
     stage: battle.stage,
     enemy: battle.enemy,
     starRoute: battle.starRoute || null,
+    assist: battle.assist || null,
     trait: battle.trait,
     baseTrait: battle.baseTrait || battle.trait,
     mechanisms: Array.isArray(battle.mechanisms) ? battle.mechanisms : [],
@@ -455,6 +462,7 @@ function battleView(run, userId) {
       round: Number(round.round) || 0,
       attacks: Array.isArray(round.attacks) ? round.attacks : [],
       fusionDamage: amount(round.fusionDamage),
+      assistDamage: amount(round.assistDamage),
       enemyDamage: amount(round.enemyDamage),
       teamDamageTaken: amount(round.teamDamageTaken),
       enemyHp: amount(round.enemyHp),
@@ -496,7 +504,17 @@ function starMapView(team, run) {
       rewardMultiplier: Number(map.sky?.rewardMultiplier) || 1,
     },
     selected: selected
-      ? { id: selected.id, name: selected.name, shortName: selected.shortName, worldName: selected.worldName }
+      ? {
+          id: selected.id,
+          name: selected.name,
+          shortName: selected.shortName,
+          worldName: selected.worldName,
+          calamity: selected.calamity || null,
+          gambit: selected.gambit || null,
+          decision: selected.decision || null,
+          merchant: selected.merchant || null,
+          assist: selected.assist || null,
+        }
       : null,
     rows: map.rows.map(row => ({
       layer: row.layer,
@@ -522,6 +540,10 @@ function starMapView(team, run) {
       risk: node.risk,
       description: node.description,
       rewardText: node.rewardText,
+      gambit: node.gambit || null,
+      assist: node.assist || null,
+      merchant: node.merchant || null,
+      successorCount: node.nextNodeIds?.length || 0,
       votes: votes.get(node.id) || 0,
       selected: node.id === selected?.id,
     })),
@@ -586,6 +608,16 @@ export function serializeEndlessWebState(realm, team, run, userId) {
       }
       : null;
   const starMap = starMapView(team, run);
+  const merchantState = getEndlessMerchantState(run);
+  const merchant = merchantState
+    ? {
+        ...merchantState,
+        stock: merchantState.stock.map((good, index) => ({
+          ...good,
+          index: index + 1,
+        })),
+      }
+    : null;
   return {
     team: {
       id: team.id,
@@ -618,6 +650,7 @@ export function serializeEndlessWebState(realm, team, run, userId) {
     checkpoint,
     battle: battleView(run, userId),
     starMap,
+    merchant,
     settlement: settlementView(run, userId),
     ended: ['settling', 'defeated'].includes(run.phase),
     permissions: {
@@ -627,6 +660,7 @@ export function serializeEndlessWebState(realm, team, run, userId) {
       withdraw: team.leader === userId,
       suggestRoute: Boolean(starMap?.canSuggest),
       selectRoute: Boolean(starMap?.canSelect && team.leader === userId),
+      merchantPurchase: Boolean(merchant),
     },
   };
 }
@@ -742,11 +776,12 @@ async function performAction(realm, session, action, value) {
     checkpoint: ['chooseCheckpoint', `#劫后抉择${Number(value)}`],
     suggest: ['suggestStarRoute', `#星图建议${Number(value)}`],
     selectRoute: ['selectStarRoute', `#星图定途${Number(value)}`],
+    merchant: ['buyRunMerchantItem', `#劫境购买${Number(value)}`],
     advance: ['nextLayer', '#无尽下一关'],
     withdraw: ['withdrawRun', '#退出无尽劫境'],
   };
   const selected = definitions[action];
-  const indexedActions = new Set(['choose', 'checkpoint', 'suggest', 'selectRoute']);
+  const indexedActions = new Set(['choose', 'checkpoint', 'suggest', 'selectRoute', 'merchant']);
   if (!selected || (indexedActions.has(action) && !Number.isInteger(Number(value)))) throw new Error('未知操作');
   const [method, msg] = selected;
   const event = webEvent(session, msg);

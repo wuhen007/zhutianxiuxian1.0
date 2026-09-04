@@ -93,7 +93,7 @@ for (const [domainLevel, puzzles, expectedPct] of [
 
 const content = getEndlessContent();
 assert.equal(content.worlds.length, 6);
-assert.equal(content.abilities.length, 51);
+assert.equal(content.abilities.length, 57);
 assert.equal(content.fusions.length, 11);
 assert.equal(content.checkpointBoons.length, 20);
 assert.equal(content.freeTransformationHeroes.length, 12);
@@ -121,6 +121,12 @@ for (const id of [
   'anime_fiery_eyes',
   'anime_shura_armor',
   'multi_spider_gene',
+  'multi_kamar_taj_arts',
+  'multi_mirror_dimension',
+  'multi_eye_of_agamotto',
+  'anime_mana_concealment',
+  'anime_zoltraak',
+  'anime_spell_analysis',
 ]) {
   assert.ok(content.abilities.some((ability) => ability.id === id));
 }

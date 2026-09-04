@@ -6,6 +6,7 @@ import {
   normalizeEndlessMeta,
 } from './endlessMeta.js';
 import {
+  ENDLESS_TREASURE_LEVEL_CAP,
   getTreasureAntiHeal,
   getTreasureBattleEntries,
   getTreasureById,
@@ -196,6 +197,7 @@ function computeWorldAbilityCounts(run) {
 function collectEffects(member, run) {
   const effects = {};
   mergeEffect(effects, member.endlessMetaEffects);
+  mergeEffect(effects, member.eventBuffs);
   if (getOwnedLevel(member, 'neutral_ghost_eye') > 0) {
     mergeEffect(effects, member.endlessMetaEffects?.puzzleEffects);
     const resonance = getGhostResonance(member);
@@ -519,6 +521,126 @@ export function getWorldForLayer(run, layer) {
 export function getMemberStats(run, memberId) {
   const member = run.members?.[memberId];
   return member ? calculateMemberStats(member, run) : null;
+}
+
+export function getEndlessMerchantState(run, layer = run.layer + 1) {
+  const node = getSelectedEndlessStarNode(run, layer);
+  if (run.phase !== 'ready' || node?.typeId !== 'merchant' || !node.merchant)
+    return null;
+  return clone({
+    layer,
+    nodeId: node.id,
+    ...node.merchant,
+    balance: Math.max(0, Math.floor(asNumber(run.unbanked?.tokens))),
+  });
+}
+
+function merchantUpgradeAbility(run, member) {
+  const candidates = Object.entries(member.abilities || {})
+    .map(([abilityId, level]) => ({ ability: ABILITIES.get(abilityId), level }))
+    .filter(({ ability, level }) => ability && level < asNumber(ability.maxLevel, 1));
+  if (!candidates.length) throw new Error('当前没有可继续强化的能力');
+  const oldMaximums = Object.fromEntries(
+    Object.values(run.members).map(current => [
+      current.id,
+      calculateMemberStats(current, run).maxHp,
+    ])
+  );
+  const selected = candidates[Math.floor(random(run) * candidates.length)];
+  member.abilities[selected.ability.id] += 1;
+  run.fusions = detectFusions(run);
+  computeWorldAbilityCounts(run);
+  refreshMemberVitals(run, oldMaximums);
+  return `${selected.ability.name}升至Lv.${member.abilities[selected.ability.id]}`;
+}
+
+function merchantTemperTreasure(run, member) {
+  const candidates = (member.treasureIds || [])
+    .filter(item => asNumber(item.level, 1) < ENDLESS_TREASURE_LEVEL_CAP)
+    .sort((a, b) => asNumber(a.level, 1) - asNumber(b.level, 1));
+  const selected = candidates[0];
+  if (!selected) throw new Error('当前没有可锻炼的装配至宝');
+  const oldMaximums = Object.fromEntries(
+    Object.values(run.members).map(current => [
+      current.id,
+      calculateMemberStats(current, run).maxHp,
+    ])
+  );
+  selected.level = Math.min(
+    ENDLESS_TREASURE_LEVEL_CAP,
+    Math.max(1, Math.floor(asNumber(selected.level, 1))) + 1
+  );
+  refreshMemberVitals(run, oldMaximums);
+  return `${getTreasureById(selected.id)?.name || selected.id}升至Lv.${selected.level}`;
+}
+
+function applyMerchantGood(run, member, good) {
+  switch (good.id) {
+    case 'treasure_temper':
+      return merchantTemperTreasure(run, member);
+    case 'ability_crystal':
+      return merchantUpgradeAbility(run, member);
+    case 'triple_clone':
+      if (!getOwnedLevel(member, 'perfect_free_transformation'))
+        throw new Error('需要先掌握【他化自在法】才能使用三身映照符');
+      if (asNumber(member.eventBuffs?.freeTransformationOpeningCount) >= 3)
+        throw new Error('三身映照已经强化至上限');
+      member.eventBuffs ||= {};
+      member.eventBuffs.freeTransformationOpeningCount = Math.max(
+        3,
+        asNumber(member.eventBuffs.freeTransformationOpeningCount)
+      );
+      return '他化自在法开场映照数量提升至3尊';
+    case 'skill_replay':
+      if (asNumber(member.eventBuffs?.skillReplayChance) >= 0.5)
+        throw new Error('能力追击重放概率已经达到上限');
+      member.eventBuffs ||= {};
+      member.eventBuffs.skillReplayChance = Math.min(
+        0.5,
+        asNumber(member.eventBuffs.skillReplayChance) + 0.25
+      );
+      return `能力追击重放概率提升至${Math.round(member.eventBuffs.skillReplayChance * 100)}%`;
+    case 'healing_elixir': {
+      if (!member.alive) throw new Error('残魂状态无法服用涅槃仙露');
+      const maxHp = calculateMemberStats(member, run).maxHp;
+      if (member.hp >= maxHp) throw new Error('当前生命已满，无需服用涅槃仙露');
+      const before = member.hp;
+      member.hp = Math.min(maxHp, member.hp + Math.round(maxHp * 0.5));
+      return `恢复${member.hp - before}生命`;
+    }
+    case 'attack_elixir':
+      member.eventBuffs ||= {};
+      member.eventBuffs.attackPct = asNumber(member.eventBuffs.attackPct) + 0.18;
+      return '本局基础攻击永久提高18%';
+    default:
+      throw new Error('这件商品的因果已经失效');
+  }
+}
+
+export function buyEndlessMerchantItem(run, memberId, choiceNumber) {
+  const merchant = getEndlessMerchantState(run);
+  if (!merchant) throw new Error('当前劫途没有可交易的界海商人');
+  const member = run.members?.[String(memberId)];
+  if (!member) throw new Error('未找到你的劫境投影');
+  const index = Math.floor(asNumber(choiceNumber)) - 1;
+  const node = getSelectedEndlessStarNode(run);
+  const good = node.merchant.stock[index];
+  if (!good) throw new Error(`请选择1至${node.merchant.stock.length}号商品`);
+  if (good.boughtBy) throw new Error(`【${good.name}】已经被队友买走`);
+  const balance = Math.max(0, Math.floor(asNumber(run.unbanked?.tokens)));
+  if (balance < good.price)
+    throw new Error(`购买【${good.name}】需要${good.price}未封存道痕，当前${balance}`);
+  const result = applyMerchantGood(run, member, good);
+  run.unbanked.tokens = balance - good.price;
+  good.boughtBy = String(memberId);
+  good.buyerName = member.name;
+  good.result = result;
+  return clone({
+    good,
+    result,
+    balance: run.unbanked.tokens,
+    merchant: node.merchant.name,
+  });
 }
 
 function getProcSelfDamageRate(proc, stats) {
@@ -962,6 +1084,10 @@ export function createEndlessEnemy(run, layer) {
       risk: encounter.risk,
       rewardMultiplier: encounter.rewardMultiplier,
       skyName: encounter.skyName,
+      gambit: encounter.gambit || null,
+      decision: encounter.decision || null,
+      calamity: encounter.calamity || null,
+      assist: encounter.assist || null,
     } : null,
     mechanisms,
     revivesLeft: mechanisms.includes('复活') ? 1 : 0,
@@ -1463,8 +1589,15 @@ function summonFreeTransformationBodies(run, member, round, logs) {
   const level = getOwnedLevel(member, 'perfect_free_transformation');
   if (!level) return;
   member.freeTransformationBodies ||= [];
-  const capacity = level >= 3 ? 4 : level === 2 ? 2 : 1;
-  const requested = round === 1 ? (level >= 3 ? 2 : 1) : round % 3 === 0 ? 1 : 0;
+  const openingCount = Math.max(
+    level >= 3 ? 2 : 1,
+    asNumber(member.eventBuffs?.freeTransformationOpeningCount)
+  );
+  const capacity = Math.max(
+    level >= 3 ? 4 : level === 2 ? 2 : 1,
+    openingCount
+  );
+  const requested = round === 1 ? openingCount : round % 3 === 0 ? 1 : 0;
   const count = Math.min(requested, capacity - member.freeTransformationBodies.length);
   if (count <= 0) return;
 
@@ -2548,6 +2681,29 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
         }
       );
     }
+    const replayChance = clamp(
+      asNumber(member.eventBuffs?.skillReplayChance),
+      0,
+      0.5
+    );
+    if (member.alive && enemy.hp > 0 && random(run) < replayChance) {
+      const replayResult = damageEnemy(enemy, procDamage);
+      dealt += replayResult.dealt;
+      damageByMember[member.id] += replayResult.dealt;
+      addBattleAction(run, {
+        side: 'player',
+        actor: member.name,
+        skill: `${skill}·回响重放`,
+        verb: '重演',
+        target: enemy.name,
+        damage: replayResult.damage,
+        absorbed: replayResult.absorbed,
+        narration: `${narrative.detail}，同一段因果被回响沙漏完整重演`,
+        note: `重放概率${Math.round(replayChance * 100)}%`,
+      });
+      addBattleLog(logs, `回响沙漏倒转，${skill}重放并追加${replayResult.dealt}点伤害！`);
+      if (run.__counters) run.__counters.skillReplays++;
+    }
   }
 
   if (!isSilenced && enemy.hp > 0)
@@ -3363,7 +3519,7 @@ function finishVictory(run, enemy, layer) {
   const encounter = getEndlessStarEncounter(run, layer);
   const difficulty = getEndlessDifficulty(run.difficultyTier);
   const rewardMultiplier =
-    Math.max(1, asNumber(encounter?.rewardMultiplier, 1)) *
+    Math.max(0, asNumber(encounter?.rewardMultiplier, 1)) *
     Math.max(1, asNumber(enemy?.rewardMultiplier, 1)) *
     difficulty.rewardMultiplier;
   const tokenMultiplier = Math.max(
@@ -3413,6 +3569,33 @@ function finishVictory(run, enemy, layer) {
     }
   }
   return layerReward;
+}
+
+function applyEndlessStarAssist(run, encounter, enemy, round, logs, damageByMember) {
+  const assist = encounter?.assist;
+  if (!assist || enemy.hp <= 0 || round > asNumber(assist.rounds)) return;
+  const living = Object.values(run.members).filter(member => member.alive);
+  if (!living.length) return;
+  const teamAttack = living.reduce(
+    (sum, member) => sum + calculateMemberStats(member, run, round).attack,
+    0
+  );
+  const damage = Math.max(1, Math.round(teamAttack * asNumber(assist.damagePct, 1)));
+  const result = damageEnemy(enemy, damage);
+  damageByMember._assist += result.dealt;
+  if (run.__counters) run.__counters.assistHits++;
+  addBattleAction(run, {
+    side: 'team',
+    kind: 'assist',
+    actor: assist.name,
+    skill: assist.skill,
+    verb: '助战',
+    target: enemy.name,
+    damage: result.damage,
+    absorbed: result.absorbed,
+    note: `第${round}/${assist.rounds}回合`,
+  });
+  addBattleLog(logs, `${assist.name}施展《${assist.skill}》助战，轰出${result.dealt}点伤害！`);
 }
 
 function applyFusionProc(run, enemy, round, logs, damageByMember) {
@@ -3465,6 +3648,7 @@ export function resolveEndlessLayer(run) {
     Object.keys(run.members).map((id) => [id, 0])
   );
   damageByMember._fusion = 0;
+  damageByMember._assist = 0;
   const damageTakenByMember = Object.fromEntries(
     Object.keys(run.members).map((id) => [id, 0])
   );
@@ -3483,6 +3667,8 @@ export function resolveEndlessLayer(run) {
     treasureRiderSummoned: 0,
     treasureRiderAttacks: 0,
     treasureRiderUltimates: 0,
+    skillReplays: 0,
+    assistHits: 0,
   };
   run.__damageTakenByMember = damageTakenByMember;
   run.__counters = counters;
@@ -3495,6 +3681,15 @@ export function resolveEndlessLayer(run) {
       addBattleLog(
         logs,
         `随机灾厄【${encounter.calamity.name}】降临：${encounter.calamity.description}`
+      );
+    if (encounter.gambit)
+      addBattleLog(logs, `定轨赌约【${encounter.gambit.name}】：${encounter.gambit.description}`);
+    if (encounter.decision)
+      addBattleLog(logs, `队伍博弈【${encounter.decision.name}】：${encounter.decision.description}`);
+    if (encounter.assist)
+      addBattleLog(
+        logs,
+        `异界强援【${encounter.assist.name}】响应召唤，将助战${encounter.assist.rounds}回合。`
       );
   }
   if (enemy.rivalTeam) {
@@ -3554,6 +3749,8 @@ export function resolveEndlessLayer(run) {
       if (enemy.hp <= 0 && !tryBossRevive(run, enemy, logs)) break;
     }
     if (enemy.hp > 0)
+      applyEndlessStarAssist(run, encounter, enemy, round, logs, damageByMember);
+    if (enemy.hp > 0)
       applyFusionProc(run, enemy, round, logs, damageByMember);
     if (enemy.hp <= 0) tryBossRevive(run, enemy, logs);
     if (enemy.hp > 0) enemyTurn(run, enemy, round, logs);
@@ -3598,6 +3795,10 @@ export function resolveEndlessLayer(run) {
       fusionDamage: Math.max(
         0,
         damageByMember._fusion - damageBefore._fusion
+      ),
+      assistDamage: Math.max(
+        0,
+        damageByMember._assist - damageBefore._assist
       ),
       enemyDamage: Math.max(
         0,
@@ -3680,7 +3881,7 @@ export function resolveEndlessLayer(run) {
   const totalDamage = livingIds.reduce(
     (sum, id) => sum + damageByMember[id],
     0
-  );
+  ) + damageByMember._fusion + damageByMember._assist;
   const mvpId = livingIds.length
     ? livingIds.reduce((best, id) =>
         damageByMember[id] > damageByMember[best] ? id : best
@@ -3714,6 +3915,8 @@ export function resolveEndlessLayer(run) {
     treasureRiderSummoned: counters.treasureRiderSummoned,
     treasureRiderAttacks: counters.treasureRiderAttacks,
     treasureRiderUltimates: counters.treasureRiderUltimates,
+    skillReplays: counters.skillReplays,
+    assistHits: counters.assistHits,
     analysis: analysis || null,
   };
 
@@ -3734,6 +3937,7 @@ export function resolveEndlessLayer(run) {
     rivalBuild: enemy.rivalBuild || [],
     rivalPower: enemy.rivalPower || null,
     starRoute: enemy.starNode,
+    assist: encounter?.assist || null,
     victory,
     rounds,
     enemyRemainingHp: enemy.hp,

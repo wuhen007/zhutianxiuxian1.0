@@ -165,6 +165,19 @@ test('劫途星图群聊指令与处理方法完整注册', () => {
   assert.ok(appSource.includes("{ reg: '^#星图建议\\\\s*[1-3]$', fnc: 'suggestStarRoute' }"));
   assert.ok(appSource.includes("{ reg: '^#星图情报\\\\s*[1-3]$', fnc: 'showStarIntel' }"));
   assert.ok(appSource.includes("{ reg: '^#星图定途\\\\s*[1-3]$', fnc: 'selectStarRoute' }"));
+  assert.ok(appSource.includes("{ reg: '^#劫境商人$', fnc: 'showRunMerchant' }"));
+  assert.ok(appSource.includes("{ reg: '^#跨服劫境商人$', fnc: 'showCrossEndless' }"));
+  assert.match(appSource, /跨服劫境购买\\\\s\*\[1-4\].*crossEndlessMerchant/);
+  assert.ok(appSource.includes("{ reg: '^#劫境购买\\\\s*[1-4]$', fnc: 'buyRunMerchantItem' }"));
   assert.match(appSource, /async showStarMap\(e\)/);
   assert.match(appSource, /async selectStarRoute\(e\)/);
+  assert.match(appSource, /async showRunMerchant\(e\)/);
+  assert.match(appSource, /async buyRunMerchantItem\(e\)/);
+});
+
+test('A10难度指令同时覆盖注册与两位数解析入口', () => {
+  assert.ok(appSource.includes(
+    "{ reg: '^#(?:无尽难度|劫境难度)(?:\\\\s*[Aa]?(?:10|[1-9]))?$', fnc: 'setEndlessDifficulty' }"
+  ));
+  assert.ok(appSource.includes("match(/A?(10|[1-9])\\s*$/i)"));
 });

@@ -37,9 +37,9 @@ import {
 
 const NORMAL_ENDLESS_TREASURES = ENDLESS_TREASURES.filter(treasure => !treasure.dropTier);
 
-test('普通至宝池保持19件，A3至A6特殊至宝共8件', () => {
+test('普通至宝池保持19件，A3至A10特殊至宝共10件', () => {
   assert.equal(NORMAL_ENDLESS_TREASURES.length, 19);
-  assert.equal(ENDLESS_SPECIAL_TREASURES.length, 8);
+  assert.equal(ENDLESS_SPECIAL_TREASURES.length, 10);
   assert.ok(NORMAL_ENDLESS_TREASURES.some(item => item.id === 'treasure_strongest_qi'));
   assert.deepEqual(
     ENDLESS_SPECIAL_TREASURES.map(treasure => treasure.id).sort(),
@@ -49,28 +49,57 @@ test('普通至宝池保持19件，A3至A6特殊至宝共8件', () => {
       'treasure_great_sage',
       'treasure_hogyoku',
       'treasure_kryptonian',
+      'treasure_frieren_grimoire',
+      'treasure_sorcerer_supreme',
       'treasure_spider_totem',
       'treasure_true_lord',
       'treasure_white_lantern',
     ].sort()
   );
-  for (const tier of [3, 4, 5, 6]) {
-    assert.equal(
-      ENDLESS_SPECIAL_TREASURES.filter(treasure => treasure.dropTier === tier).length,
-      2,
-      `A${tier}应有两件特殊至宝`
-    );
+  const byId = Object.fromEntries(
+    ENDLESS_SPECIAL_TREASURES.map(treasure => [treasure.id, treasure])
+  );
+  assert.deepEqual(byId.treasure_body_seed.dropTiers, [7, 8, 9, 10]);
+  assert.deepEqual(byId.treasure_sorcerer_supreme.dropTiers, [7, 9]);
+  assert.deepEqual(byId.treasure_frieren_grimoire.dropTiers, [8, 10]);
+  const expectedPoolByTier = {
+    3: ['treasure_great_sage', 'treasure_spider_totem'],
+    4: ['treasure_true_lord', 'treasure_kryptonian'],
+    5: ['treasure_hogyoku'],
+    6: ['treasure_five_elements', 'treasure_white_lantern'],
+    7: ['treasure_body_seed', 'treasure_sorcerer_supreme'],
+    8: ['treasure_body_seed', 'treasure_frieren_grimoire'],
+    9: ['treasure_body_seed', 'treasure_sorcerer_supreme'],
+    10: ['treasure_body_seed', 'treasure_frieren_grimoire'],
+  };
+  for (const [tier, expectedIds] of Object.entries(expectedPoolByTier)) {
+    const actualIds = ENDLESS_SPECIAL_TREASURES
+      .filter(treasure =>
+        (treasure.dropTiers || [treasure.dropTier]).includes(Number(tier))
+      )
+      .map(treasure => treasure.id)
+      .sort();
+    assert.deepEqual(actualIds, [...expectedIds].sort(), `A${tier}特殊至宝池应精确匹配`);
   }
   const ids = new Set(ENDLESS_TREASURES.map((t) => t.id));
   assert.equal(ids.size, ENDLESS_TREASURES.length, 'id不可重复');
 });
 
-test('A3至A6通关按25%、30%、35%、40%判定对应特殊至宝', () => {
+test('A3至A10通关按各阶概率判定对应特殊至宝', () => {
   const sequence = (...values) => {
     let index = 0;
     return () => values[index++] ?? values.at(-1) ?? 0;
   };
-  for (const [tier, chance] of [[3, 0.25], [4, 0.3], [5, 0.35], [6, 0.4]]) {
+  for (const [tier, chance] of [
+    [3, 0.25],
+    [4, 0.3],
+    [5, 0.35],
+    [6, 0.4],
+    [7, 0.45],
+    [8, 0.5],
+    [9, 0.55],
+    [10, 0.6],
+  ]) {
     assert.equal(getEndlessDifficulty(tier).specialTreasureChance, chance);
 
     const missed = { id: `miss-${tier}` };
@@ -87,18 +116,51 @@ test('A3至A6通关按25%、30%、35%、40%判定对应特殊至宝', () => {
       sequence(chance - 0.001, 0)
     );
     assert.ok(gained);
-    assert.equal(gained.treasure.dropTier, tier);
+    assert.ok(
+      (gained.treasure.dropTiers || [gained.treasure.dropTier]).includes(tier),
+      `${gained.treasure.name}应属于A${tier}掉落池`
+    );
     assert.ok(ENDLESS_SPECIAL_TREASURES.some(treasure => treasure.id === gained.treasure.id));
   }
 
-  for (const tier of [1, 2, 7, 9]) {
+  for (const tier of [1, 2]) {
     const player = { id: `tier-${tier}` };
     assert.equal(grantRandomEndlessTierTreasure(player, tier, () => 0), null);
     assert.deepEqual(player.无尽至宝列表 || [], []);
   }
 });
 
-test('普通随机至宝不会混入A3至A6特殊池', () => {
+test('以身为种可在A7至A10掉落且两件新至宝进入指定阶位池', () => {
+  for (const tier of [7, 8, 9, 10]) {
+    const otherTreasures = ENDLESS_SPECIAL_TREASURES
+      .filter(treasure =>
+        treasure.id !== 'treasure_body_seed' &&
+        (treasure.dropTiers || [treasure.dropTier]).includes(tier)
+      )
+      .map(treasure => ({ id: treasure.id, name: treasure.name, level: 1 }));
+    const gained = grantRandomEndlessTierTreasure({
+      id: `body-seed-${tier}`,
+      无尽至宝列表: otherTreasures,
+    }, tier, () => 0);
+    assert.equal(gained?.treasure.id, 'treasure_body_seed', `A${tier}应能掉落以身为种`);
+  }
+
+  for (const [treasureId, tiers] of [
+    ['treasure_sorcerer_supreme', [7, 9]],
+    ['treasure_frieren_grimoire', [8, 10]],
+  ]) {
+    for (const tier of tiers) {
+      const player = {
+        id: `${treasureId}-${tier}`,
+        无尽至宝列表: [{ id: 'treasure_body_seed', name: '以身为种', level: 1 }],
+      };
+      const gained = grantRandomEndlessTierTreasure(player, tier, () => 0);
+      assert.equal(gained?.treasure.id, treasureId, `A${tier}应能掉落${treasureId}`);
+    }
+  }
+});
+
+test('普通随机至宝不会混入A3至A10特殊池', () => {
   for (let index = 0; index < NORMAL_ENDLESS_TREASURES.length; index++) {
     const gained = grantRandomEndlessTreasure(
       { id: `normal-${index}` },
@@ -109,7 +171,7 @@ test('普通随机至宝不会混入A3至A6特殊池', () => {
   }
 });
 
-test('八件特殊至宝按能力、boon与融合条件逐项觉醒', () => {
+test('十件特殊至宝按能力、boon与融合条件逐项觉醒', () => {
   const byId = Object.fromEntries(ENDLESS_SPECIAL_TREASURES.map(treasure => [treasure.id, treasure]));
   const greatSageRequires = {
     myth_great_sage_art: 1,
@@ -134,6 +196,16 @@ test('八件特殊至宝按能力、boon与融合条件逐项觉醒', () => {
     multi_solar_core: 1,
     multi_man_of_steel: 1,
   };
+  const sorcererRequires = {
+    multi_kamar_taj_arts: 1,
+    multi_mirror_dimension: 1,
+    multi_eye_of_agamotto: 1,
+  };
+  const frierenRequires = {
+    anime_mana_concealment: 1,
+    anime_zoltraak: 1,
+    anime_spell_analysis: 1,
+  };
 
   assert.deepEqual(byId.treasure_great_sage.awaken.requires, greatSageRequires);
   assert.deepEqual(byId.treasure_true_lord.awaken.requires, trueLordRequires);
@@ -144,6 +216,8 @@ test('八件特殊至宝按能力、boon与融合条件逐项觉醒', () => {
   assert.deepEqual(byId.treasure_kryptonian.awaken.requires, kryptonianRequires);
   assert.deepEqual(byId.treasure_hogyoku.awaken.requires, { anime_hogyoku: 3 });
   assert.deepEqual(byId.treasure_white_lantern.awaken.requires, { multi_white_lantern: 3 });
+  assert.deepEqual(byId.treasure_sorcerer_supreme.awaken.requires, sorcererRequires);
+  assert.deepEqual(byId.treasure_frieren_grimoire.awaken.requires, frierenRequires);
 
   const stateFor = (treasureId, abilities, { blessings = [], fusions = [] } = {}) =>
     getTreasureStates({
@@ -160,6 +234,8 @@ test('八件特殊至宝按能力、boon与融合条件逐项觉醒', () => {
     ['treasure_true_lord', trueLordRequires],
     ['treasure_spider_totem', spiderRequires],
     ['treasure_kryptonian', kryptonianRequires],
+    ['treasure_sorcerer_supreme', sorcererRequires],
+    ['treasure_frieren_grimoire', frierenRequires],
   ]) {
     assert.equal(stateFor(treasureId, requirements).awaken.active, true);
     for (const missing of Object.keys(requirements)) {
@@ -172,6 +248,15 @@ test('八件特殊至宝按能力、boon与融合条件逐项觉醒', () => {
       );
     }
   }
+
+  assert.equal(
+    stateFor('treasure_sorcerer_supreme', sorcererRequires).awaken.formName,
+    '奇异博士·至尊法师'
+  );
+  assert.equal(
+    stateFor('treasure_frieren_grimoire', frierenRequires).awaken.formName,
+    '芙莉莲·千年魔法使'
+  );
 
   const staffStage = byId.treasure_great_sage.stages.find(stage =>
     stage.requiresBoons?.includes('relic_ruyi_staff')

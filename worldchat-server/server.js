@@ -1280,7 +1280,7 @@ export function createWorldChatServer(options = {}) {
         if (!raid || raid.status !== 'in_battle' || !member) {
           return send(ws, { type: 'RAID_ACTION_RESULT', request_id: requestId, ok: false, reason: 'raid_not_found' });
         }
-        if (!['choose', 'suggest', 'reroll'].includes(action)) {
+        if (!['choose', 'suggest', 'merchant', 'reroll'].includes(action)) {
           return send(ws, { type: 'RAID_ACTION_RESULT', request_id: requestId, ok: false, reason: 'invalid_action' });
         }
         if (!online.has(raid.host_server_id)) {

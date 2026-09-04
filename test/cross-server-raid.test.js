@@ -16,6 +16,7 @@ import { createWorldChatServer } from '../worldchat-server/server.js';
 
 const silentLogger = { info() {}, warn() {}, error() {} };
 const secret = () => crypto.randomBytes(32).toString('hex');
+const endlessRealmSource = fs.readFileSync(new URL('../apps/EndlessRealm.js', import.meta.url), 'utf8');
 
 async function waitFor(predicate, message) {
   const deadline = Date.now() + 5000;
@@ -79,12 +80,30 @@ test('跨服化身只携带战斗字段并恢复为匿名战斗单位', () => {
     {
       resolveAbility: () => ({ name: '鬼步', rarity: '稀有', description: '避开下一次攻击' }),
       starOptions: [{ name: '残月劫途', risk: '中危', description: '敌影增多' }],
+      merchant: {
+        name: '万宝楼·界海分号',
+        balance: 88,
+        stock: [
+          { name: '破境战血', price: 65, description: '本局攻击提高18%', boughtBy: null },
+          { name: '涅槃仙露', price: 45, boughtBy: 'two', buyerName: '同行者', result: '恢复500生命' },
+        ],
+      },
     }
   );
   const formatted = formatCrossRaidSnapshot({ code: '12345678', status: 'in_battle', local_members: 1, max_members: 4, members: [], snapshot }).join('\n');
   assert.match(formatted, /劫境鬼影/);
   assert.match(formatted, /鬼步/);
   assert.match(formatted, /残月劫途/);
+  assert.match(formatted, /万宝楼·界海分号/);
+  assert.match(formatted, /共享余额：88/);
+  assert.match(formatted, /跨服劫境购买1\/2/);
+  assert.match(formatted, /\[已售\] 涅槃仙露/);
+});
+
+test('跨服商人指令由宿主映射到局内购买并保存最新状态', () => {
+  assert.match(endlessRealmSource, /crossEndlessMerchant\(e\)[\s\S]{0,120}sendCrossEndlessAction\(e, 'merchant'\)/);
+  assert.match(endlessRealmSource, /message\.action === 'merchant'\)[\s\S]{0,120}buyEndlessMerchantItem\(run, memberId, message\.value\)/);
+  assert.match(endlessRealmSource, /merchant: getEndlessMerchantState\(run\)/);
 });
 
 test('世界总机完成跨服团本发布、化身加入与开战锁定', async (t) => {
@@ -150,6 +169,11 @@ test('世界总机完成跨服团本发布、化身加入与开战锁定', async
   assert.equal((await guest.raidAction(opened.raid.code, watcherTag, 'choose', 1)).ok, false);
   assert.equal((await guest.raidAction(opened.raid.code, 'b'.repeat(16), 'choose', 1)).ok, true);
   await waitFor(() => hostEvents.some((event) => event.type === 'RAID_ACTION'), '队长服未收到远程抉择');
+  assert.equal((await guest.raidAction(opened.raid.code, 'b'.repeat(16), 'merchant', 2)).ok, true);
+  await waitFor(
+    () => hostEvents.some((event) => event.type === 'RAID_ACTION' && event.action === 'merchant' && event.value === 2),
+    '队长服未收到远程购买'
+  );
 
   assert.equal((await guest.raidChat(opened.raid.code, 'b'.repeat(16), '乙修士', '诸位道友好')).ok, true);
   await waitFor(() => guestEvents.some((event) => event.type === 'RAID_CHAT'), '房间传音未广播');
