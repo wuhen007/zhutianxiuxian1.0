@@ -1,9 +1,14 @@
+import { createRequire } from 'node:module';
 import { isDaofaActive } from './daofa.js';
 import { getDungeonTimedActionMultiplier } from './innateTreasure.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from './mingge.js';
 import { addCappedEraAccumulation } from './selfDaoDeduction.js';
 
-export const SHANGCANG_PLANE_ID = 200;
+const SHANGCANG_REWARD_PLACES = createRequire(import.meta.url)(
+  '../resources/data/item/副本/上苍之上列表.json',
+);
+
+export const SHANGCANG_PLANE_ID = 40;
 export const SHANGCANG_NORMAL_ACTION = '上苍之上历练';
 export const SHANGCANG_ADDICTION_ACTION = '沉迷上苍之上';
 export const SHANGCANG_LOCATIONS = Object.freeze(['魂河', '天帝葬坑']);
@@ -15,26 +20,6 @@ export const SHANGCANG_COST = Object.freeze({
   元神: 120_000_000,
   寿元: 20_000_000,
 });
-
-const SOUL_RIVER_DROPS = Object.freeze([
-  { name: '天帝拳残页', class: '材料', chance: 0.12 },
-  { name: '诸世帝魂莲', class: '丹药', chance: 0.015 },
-  { name: '魂河渡世灯', class: '装备', chance: 0.006 },
-  { name: '诸世无痕符', class: '道具', chance: 0.003 },
-  { name: '花粉路祖种', class: '道具', chance: 0.0012 },
-  { name: '万劫轮回莲', class: '草药', chance: 0.001 },
-]);
-
-const BURIAL_PIT_DROPS = Object.freeze([
-  { name: '葬天古经残页', class: '材料', chance: 0.10 },
-  { name: '葬帝玄甲', class: '装备', chance: 0.006 },
-  { name: '天帝鼎', class: '装备', chance: 0.003 },
-  { name: '荒剑', class: '装备', chance: 0.003 },
-  { name: '雷池', class: '装备', chance: 0.003 },
-  { name: '时光炉', class: '道具', chance: 0.0012 },
-  { name: '祭道甲胄', class: '装备', chance: 0.0005 },
-  { name: '女帝战戟', class: '装备', chance: 0.0003 },
-]);
 
 export function isShangcangAction(action) {
   return action?.action === SHANGCANG_NORMAL_ACTION || action?.action === SHANGCANG_ADDICTION_ACTION;
@@ -81,15 +66,28 @@ export function calculateShangcangDuration(player, minggeList = []) {
   return { durationMs, minutes: Math.ceil(durationMs / 60_000), messages };
 }
 
-export function rollShangcangRewards(location, random = Math.random, quantityMultiplier = 1) {
-  const soulRiver = location === '魂河';
-  const guaranteed = soulRiver
-    ? { name: '魂河古晶', class: '材料' }
-    : { name: '葬帝黑金', class: '材料' };
+export function rollShangcangRewards(place, random = Math.random, quantityMultiplier = 1) {
+  const rewardPlace = typeof place === 'string'
+    ? SHANGCANG_REWARD_PLACES.find(item => item.name === place)
+    : place;
   const multiplier = Math.max(1, Number(quantityMultiplier) || 1);
-  const rewards = [{ ...guaranteed, count: Math.max(1, Math.trunc((1 + Math.floor(random() * 3)) * multiplier)) }];
-  for (const drop of soulRiver ? SOUL_RIVER_DROPS : BURIAL_PIT_DROPS) {
-    if (random() < drop.chance) rewards.push({ name: drop.name, class: drop.class, count: Math.max(1, Math.trunc(multiplier)) });
+  const tiers = ['one', 'two', 'three', 'four'];
+  const drops = tiers.flatMap(tier => Array.isArray(rewardPlace?.[tier]) ? rewardPlace[tier] : []);
+  const rewards = [];
+  for (const drop of drops) {
+    if (!drop?.name || !drop?.class) continue;
+    if (drop.guaranteed) {
+      rewards.push({
+        name: drop.name,
+        class: drop.class,
+        count: Math.max(1, Math.trunc((1 + Math.floor(random() * 3)) * multiplier)),
+      });
+      continue;
+    }
+    const chance = Math.max(0, Math.min(1, Number(drop.chance) || 0));
+    if (random() < chance) {
+      rewards.push({ name: drop.name, class: drop.class, count: Math.max(1, Math.trunc(multiplier)) });
+    }
   }
   return rewards;
 }

@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { plugin, config } from '../../api/api.js';
+import { plugin, config, data } from '../../api/api.js';
 import {
   Add_najie_thing,
   Read_player,
@@ -104,7 +104,8 @@ export class ShangcangTask extends plugin {
 
     if (battle.winner === 'A') {
       const multiplier = getDungeonFortuneMultiplier(player) * getInnateDungeonRewardMultiplier(player);
-      rewards.push(...rollShangcangRewards(location, Math.random, multiplier));
+      const rewardPlace = data.shangcang_list.find(place => place.name === location) || action.Place_address;
+      rewards.push(...rollShangcangRewards(rewardPlace, Math.random, multiplier));
       for (const reward of rewards) await Add_najie_thing(playerId, reward.name, reward.class, reward.count);
       player.副本通关次数 = Math.max(0, Number(player.副本通关次数) || 0) + 1;
       era = recordShangcangVictory(player);

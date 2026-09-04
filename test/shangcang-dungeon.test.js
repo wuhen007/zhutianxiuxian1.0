@@ -23,8 +23,10 @@ test('上苍副本成本、掉落和纪元进度闭环', () => {
   assert.deepEqual(Object.values(player), Object.values(SHANGCANG_COST).map(() => 0));
   assert.equal(getShangcangCostShortage(player)?.[0], '灵石');
 
-  const rolls = [0.8, 0, 0, 0, 0, 0, 0];
-  const rewards = rollShangcangRewards('魂河', () => rolls.shift() ?? 1);
+  const soulRiver = json('../resources/data/item/副本/上苍之上列表.json')
+    .find(place => place.name === '魂河');
+  const rolls = [0.8, 0, 0, 0, 0, 0, 0, 0];
+  const rewards = rollShangcangRewards(soulRiver, () => rolls.shift() ?? 1);
   assert.equal(rewards[0].name, '魂河古晶');
   assert.equal(rewards[0].count, 3);
   assert.ok(rewards.some(item => item.name === '天帝拳残页'));
@@ -39,6 +41,59 @@ test('上苍副本成本、掉落和纪元进度闭环', () => {
   assert.equal(progressPlayer.上苍之上纪元进度, 0);
   assert.equal(isShangcangAction({ action: SHANGCANG_NORMAL_ACTION }), true);
   assert.equal(isShangcangAction({ action: SHANGCANG_ADDICTION_ACTION }), true);
+});
+
+test('上苍四档奖励均由地点配置参与抽取', () => {
+  const dungeons = json('../resources/data/item/副本/上苍之上列表.json');
+  const expectedChances = {
+    魂河: {
+      one: { 天帝拳残页: 0.12 },
+      two: { 诸世帝魂莲: 0.015 },
+      three: { 魂河渡世灯: 0.006, 诸世无痕符: 0.003 },
+      four: { 花粉路祖种: 0.0012, 万劫轮回莲: 0.001 },
+    },
+    天帝葬坑: {
+      one: { 葬天古经残页: 0.1 },
+      two: { 天帝鼎: 0.003, 荒剑: 0.003, 雷池: 0.003 },
+      three: { 葬帝玄甲: 0.006 },
+      four: { 时光炉: 0.0012, 祭道甲胄: 0.0005, 女帝战戟: 0.0003 },
+    },
+  };
+  for (const dungeon of dungeons) {
+    const allDrops = ['one', 'two', 'three', 'four']
+      .flatMap(tier => dungeon[tier] || []);
+    assert.ok(dungeon.two.length > 0, `${dungeon.name}缺少中级奖励`);
+    assert.ok(dungeon.three.length > 0, `${dungeon.name}缺少高级奖励`);
+    assert.ok(dungeon.four.length > 0, `${dungeon.name}缺少最高奖励`);
+    assert.equal(allDrops.filter(drop => drop.guaranteed).length, 1);
+    assert.ok(allDrops.filter(drop => !drop.guaranteed)
+      .every(drop => Number(drop.chance) > 0 && Number(drop.chance) <= 1));
+    for (const tier of ['one', 'two', 'three', 'four']) {
+      assert.deepEqual(
+        Object.fromEntries(dungeon[tier].filter(drop => !drop.guaranteed)
+          .map(drop => [drop.name, drop.chance])),
+        expectedChances[dungeon.name][tier],
+      );
+    }
+
+    const allHit = rollShangcangRewards(dungeon, () => 0);
+    assert.deepEqual(
+      new Set(allHit.map(drop => `${drop.class}:${drop.name}`)),
+      new Set(allDrops.map(drop => `${drop.class}:${drop.name}`)),
+    );
+    assert.equal(rollShangcangRewards(dungeon, () => 0.999999).length, 1);
+  }
+});
+
+test('上苍掉落兼容旧地点字符串调用', () => {
+  assert.equal(rollShangcangRewards('魂河', () => 0.999999)[0]?.name, '魂河古晶');
+  assert.equal(rollShangcangRewards('天帝葬坑', () => 0.999999)[0]?.name, '葬帝黑金');
+});
+
+test('上苍结算使用当前地点奖励表', () => {
+  const source = fs.readFileSync(new URL('../apps/SecretPlace/ShangcangTask.js', import.meta.url), 'utf8');
+  assert.match(source, /data\.shangcang_list\.find\(/);
+  assert.match(source, /rollShangcangRewards\(rewardPlace,/);
 });
 
 test('上苍三胜奖励按己道阶段提升纪元积累上限', () => {
@@ -85,7 +140,7 @@ test('魂河和天帝葬坑资源、功法与合成配置齐全', () => {
   assert.ok(specialEquipment.some(item => item.name === '葬帝玄甲' && item.低血护盾 === 0.2));
   const catalogs = { 材料: materials, 丹药: pills, 道具: props, 草药: herbs, 装备: equipment };
   for (const dungeon of dungeons) {
-    for (const drop of [...dungeon.one, ...dungeon.two, ...dungeon.three]) {
+    for (const drop of [...dungeon.one, ...dungeon.two, ...dungeon.three, ...dungeon.four]) {
       const stored = catalogs[drop.class]?.find(item => item.name === drop.name);
       assert.ok(stored, `${dungeon.name}掉落${drop.name}未录入${drop.class}主目录`);
       assert.equal(drop.稀有度, stored.稀有度, `${drop.name}的副本稀有度与主目录不一致`);
