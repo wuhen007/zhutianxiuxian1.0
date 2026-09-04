@@ -8,10 +8,12 @@ import {
   drawXianguSeed,
   findXianguTopSeed,
   getRegularXianguSeedNames,
+  getXianguNajieSeedEntries,
   getXianguTopSeedCatalog,
   grantXianguSeed,
   normalizeXianguSeedName,
   normalizeXianguSeedRecord,
+  resolveXianguSeedRecord,
   resolveXianguSeedExtremeName,
 } from '../apps/SecretPlace/xianguSeed.js';
 
@@ -19,6 +21,7 @@ const testDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(testDir, '..');
 const config = JSON.parse(fs.readFileSync(path.join(rootDir, 'data', 'xianguSecretPlace.json'), 'utf8'));
 const levels = JSON.parse(fs.readFileSync(path.join(rootDir, 'resources', 'data', 'Level', '仙古今世法.json'), 'utf8'));
+const items = JSON.parse(fs.readFileSync(path.join(rootDir, 'resources', 'data', 'item', '道具列表.json'), 'utf8'));
 
 function seededRandom(seed) {
   let value = seed >>> 0;
@@ -97,6 +100,78 @@ test('字符串道种转入永久存档后保留规范名称', () => {
   assert.equal(stored.名称, '生命之种');
   assert.equal(player.xiangu_seeds[0].名称, '生命之种');
   assert.deepEqual(player.xiangu_run.获得道种, ['生命之种']);
+});
+
+test('纳戒神话道种可识别并补全仙古配置', () => {
+  const lifeSeedItem = items.find(item => item.name === '生命之种');
+  const skySeedItem = items.find(item => item.name === '天穹种');
+  const resolvedLifeSeed = resolveXianguSeedRecord(config, lifeSeedItem);
+
+  assert.equal(resolvedLifeSeed.品质, '神话');
+  assert.equal(resolvedLifeSeed.类型, '生命');
+  assert.equal(resolvedLifeSeed.融合成功率, 0.86);
+  assert.equal(resolvedLifeSeed.专属技能, '生生不息');
+  assert.equal(resolvedLifeSeed.顶级道种, true);
+
+  const entries = getXianguNajieSeedEntries(config, {
+    道具: [
+      { ...lifeSeedItem, type: '生命', 数量: 1 },
+      { ...skySeedItem, class: '道具', 数量: 2 },
+      { ...lifeSeedItem, 名称: '生命之种', class: '道具', type: '生命', 类型: '神话道种', 数量: 1 },
+      { ...lifeSeedItem, 数量: 0 },
+      { ...lifeSeedItem, 数量: undefined },
+      { ...lifeSeedItem, 数量: Number.NaN },
+      { name: '未知神话种', class: '道种', type: '神话道种', 数量: 1 },
+      { name: '伪装道具', class: '道具', type: '伪道种', 数量: 1 },
+      { name: '普通道具', class: '道具', type: '消耗品', 数量: 9 },
+    ],
+  });
+
+  assert.deepEqual(entries.map(entry => entry.index), [0, 1, 2]);
+  assert.deepEqual(entries.map(entry => entry.storageName), ['生命之种', '天穹种', '生命之种']);
+  assert.ok(entries.every(entry => entry.source === 'najie'));
+  assert.equal(entries[1].seed.类型, '天穹/守御');
+  assert.equal(entries[1].seed.融合成功率, 0.85);
+  assert.equal(entries[1].seed.专属技能, '天穹镇世');
+  assert.equal(entries[2].seed.类型, '生命');
+});
+
+test('纳戒普通与传说道种可补全融合字段', () => {
+  const [regularEntry, legendaryEntry] = getXianguNajieSeedEntries(config, {
+    道具: [
+      { ...items.find(item => item.name === '灵火灵种'), 数量: 1 },
+      { ...items.find(item => item.name === '朱雀焚天炎'), 数量: 1 },
+    ],
+  });
+  const regular = regularEntry.seed;
+  const legendary = legendaryEntry.seed;
+
+  assert.deepEqual(
+    {
+      品质: regular.品质,
+      类型: regular.类型,
+      融合成功率: regular.融合成功率,
+      属性加成: regular.属性加成,
+      专属技能: regular.专属技能,
+      额外效果: regular.额外效果,
+      顶级道种: regular.顶级道种,
+    },
+    {
+      品质: '普通',
+      类型: '火',
+      融合成功率: 0.6,
+      属性加成: { 攻击加成: 0.02, 血气加成: 0.03 },
+      专属技能: null,
+      额外效果: null,
+      顶级道种: false,
+    }
+  );
+  assert.equal(legendary.品质, '传说');
+  assert.equal(legendary.类型, '火');
+  assert.equal(legendary.融合成功率, 0.75);
+  assert.equal(legendary.专属技能, '朱雀降世');
+  assert.equal(legendary.额外效果, '修炼效率+20%');
+  assert.equal(legendary.顶级道种, false);
 });
 
 test('普通、稀有、传说道种不会命中神火极境', () => {

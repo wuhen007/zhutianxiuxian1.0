@@ -425,7 +425,12 @@ export async function convert2integer(amount) {
   }
 }
 
+export function normalizeNajieThingClass(thingClass) {
+  return thingClass === '道种' ? '道具' : thingClass;
+}
+
 export async function Locked_najie_thing(usr_qq, thing_name, thing_class,thing_pinji=null) {
+    thing_class = normalizeNajieThingClass(thing_class);
     let najie = await Read_najie(usr_qq);
     let ifexist;
     if (thing_class == "装备") {
@@ -5648,6 +5653,7 @@ export async function re_najie_thing(
   thing_pinji,
   lock
 ) {
+  thing_class = normalizeNajieThingClass(thing_class);
   return withPlayerMutationLock(usr_qq, async () => {
   let najie = await Read_najie(usr_qq);
   if (thing_class == '装备' && (thing_pinji || thing_pinji == 0)) {
@@ -5673,6 +5679,7 @@ export async function exist_najie_thing(
   thing_class,
   thing_pinji
 ) {
+  thing_class = normalizeNajieThingClass(thing_class);
   let najie = await Read_najie(usr_qq);
   let ifexist;
   if (thing_class == '装备' && (thing_pinji || thing_pinji == 0)) {
@@ -5737,6 +5744,7 @@ export async function Add_najie_thing(
   equipmentMultiplier = 1,
   options = {}
 ) {
+  thing_class = normalizeNajieThingClass(thing_class);
   return withPlayerMutationLock(usr_qq, async () => {
 
   const itemName = typeof name === 'object' ? name?.name : name;

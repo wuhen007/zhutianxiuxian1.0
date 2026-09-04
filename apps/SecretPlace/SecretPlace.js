@@ -847,7 +847,9 @@ async goToLocation(e) {
       windResult = consumeTravelWind(player, travelTime);
       travelTime = windResult.travelTime;
       travelTime = Math.max(1, Math.ceil(travelTime * getTimedActionMultiplier(player)));
-      shipResult = applyInnateTravelReduction(player, travelTime);
+      shipResult = applyInnateTravelReduction(player, travelTime, Math.random, {
+        dimensionBarrier: Number(travelQuote?.dimensionBarrierCount) > 0,
+      });
       travelTime = shipResult.travelTime;
     }
     if (windResult.consumed) {
@@ -857,7 +859,9 @@ async goToLocation(e) {
             `行程减少${windResult.reduction}分钟，剩余加速${windResult.remainingUses}次。`
         ].join('\n'));
     }
-    if (shipResult.reduction) {
+    if (shipResult.instant) {
+      allMsgs.push('【逐日仙辇·光阴一瞬】天光乍破，虚空在脚下坍缩又舒张，本次航程瞬间横渡！');
+    } else if (shipResult.reduction) {
       allMsgs.push(`【虚天舟·诸界无碍】行程缩短${shipResult.reduction}分钟，本次航程不受至尊与天骄截杀。`);
     }
 

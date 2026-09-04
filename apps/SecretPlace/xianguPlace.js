@@ -70,10 +70,10 @@ import {
 import {
   drawRegularSeed,
   drawXianguSeed,
-  findXianguTopSeed,
+  getXianguNajieSeedEntries,
   grantXianguSeed,
   normalizeXianguSeedName,
-  normalizeXianguSeedRecord,
+  resolveXianguSeedRecord,
   resolveXianguSeedExtremeName,
   shouldDropXianguSeed,
 } from './xianguSeed.js';
@@ -1952,20 +1952,31 @@ async function grantXianguBagSeed(player, seed, player_qq = '') {
   return { seed, replaced: false, claimant: '' };
 }
 
-function getXianguUsableSeedEntries(player) {
+function getXianguUsableSeedEntries(player, najie = null) {
   const permanentSeeds = Array.isArray(player.xiangu_seeds) ? player.xiangu_seeds : [];
   const bagSeeds = player.in_xiangu ? ensureXianguBag(player).seeds : [];
+  const config = getXianguSecretConfig();
   return [
     ...permanentSeeds.map((seed, index) => ({ seed, source: 'permanent', index })),
     ...bagSeeds.map((seed, index) => ({ seed, source: 'bag', index })),
+    ...getXianguNajieSeedEntries(config, najie),
   ].map(entry => ({
     ...entry,
-    seed: normalizeXianguSeedRecord(entry.seed),
+    seed: resolveXianguSeedRecord(config, entry.seed),
   })).filter(entry => entry.seed);
 }
 
-function consumeXianguSeed(player, entry) {
+async function consumeXianguSeed(player, entry, playerId) {
   if (!entry) return null;
+  if (entry.source === 'najie') {
+    await Add_najie_thing(
+      playerId,
+      entry.storageName || entry.seed.名称,
+      '道种',
+      -1,
+    );
+    return entry.seed;
+  }
   const seeds = entry.source === 'bag'
     ? ensureXianguBag(player).seeds
     : (Array.isArray(player.xiangu_seeds) ? player.xiangu_seeds : []);
@@ -4555,7 +4566,8 @@ async XianguViewSeeds(e) {
     }
 
     // 获取道种列表
-    const seeds = getXianguUsableSeedEntries(player).map(entry => entry.seed);
+    const najie = await readXianguNajie(player_qq);
+    const seeds = getXianguUsableSeedEntries(player, najie).map(entry => entry.seed);
     
     if (seeds.length === 0) {
       return e.reply([
@@ -4739,7 +4751,8 @@ async XianguJieZhuDaoZhong(e) {
     }
 
     // 获取道种列表
-    const seedEntries = getXianguUsableSeedEntries(player);
+    const najie = await readXianguNajie(player_qq);
+    const seedEntries = getXianguUsableSeedEntries(player, najie);
     const seeds = seedEntries.map(entry => entry.seed);
     
     if (seeds.length === 0) {
@@ -4816,21 +4829,6 @@ async XianguJieZhuDaoZhong(e) {
         `请使用 #借助XX道种点燃神火 并指定道种名称`
       ].join('\n'));
     }
-
-    // 兼容旧版名称，并用顶级道种目录补齐规范品质与融合信息。
-    const canonicalSeedName = normalizeXianguSeedName(selectedSeed.名称);
-    const topSeedDefinition = findXianguTopSeed(getXianguSecretConfig(), canonicalSeedName);
-    selectedSeed = topSeedDefinition ? {
-      ...selectedSeed,
-      名称: topSeedDefinition.名称,
-      品质: topSeedDefinition.品质,
-      类型: topSeedDefinition.类型,
-      融合成功率: topSeedDefinition.融合成功率,
-      属性加成: topSeedDefinition.属性加成 || {},
-      专属技能: topSeedDefinition.专属技能,
-      额外效果: topSeedDefinition.额外效果,
-      顶级道种: true,
-    } : { ...selectedSeed, 名称: canonicalSeedName };
 
     // 计算融合成功率
     const baseConfig = getXianguSecretConfig();
@@ -4938,7 +4936,7 @@ async XianguJieZhuDaoZhong(e) {
       ].join('\n'));
 
       // 移除损毁的道种
-      consumeXianguSeed(player, selectedEntry);
+      await consumeXianguSeed(player, selectedEntry, player_qq);
       await Write_player(player_qq, player);
 
       return true;
@@ -4971,7 +4969,7 @@ async XianguJieZhuDaoZhong(e) {
       ].join('\n'));
 
       // 移除损毁的道种
-      consumeXianguSeed(player, selectedEntry);
+      await consumeXianguSeed(player, selectedEntry, player_qq);
       await Write_player(player_qq, player);
 
       return true;
@@ -5019,7 +5017,7 @@ async XianguJieZhuDaoZhong(e) {
     }
 
     // 移除已融合的道种
-    consumeXianguSeed(player, selectedEntry);
+    await consumeXianguSeed(player, selectedEntry, player_qq);
     grantTitle(player, '神火境修士');
 
     await Write_player(player_qq, player);
@@ -10298,7 +10296,8 @@ async function XianguOfferSeedFn(e, player, player_qq) {
   const location = player.xiangu_location || '边缘区域';
   const seedName = e.msg.replace('#献祭道种', '').trim();
 
-  const seedEntries = getXianguUsableSeedEntries(player);
+  const najie = await readXianguNajie(player_qq);
+  const seedEntries = getXianguUsableSeedEntries(player, najie);
   const seeds = seedEntries.map(entry => entry.seed);
   if (seeds.length === 0) {
     return e.reply(`【献祭道种·无道种】你目前没有可献祭的道种，先去探索获取道种`);
@@ -10335,7 +10334,7 @@ async function XianguOfferSeedFn(e, player, player_qq) {
   };
 
   // 移除道种
-  consumeXianguSeed(player, seedEntries[targetIndex]);
+  await consumeXianguSeed(player, seedEntries[targetIndex], player_qq);
   player.xiangu_faction_rep = player.xiangu_faction_rep || { good: 0, neutral: 0, evil: 0 };
   player.xiangu_faction_rep.good = (player.xiangu_faction_rep.good || 0) + reward.rep;
 

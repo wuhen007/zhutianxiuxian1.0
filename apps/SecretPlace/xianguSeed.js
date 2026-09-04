@@ -118,6 +118,48 @@ export function findXianguTopSeed(config, name) {
   return getXianguTopSeedCatalog(config).find(seed => seed.名称 === canonicalName) || null;
 }
 
+function findRegularXianguSeed(name) {
+  const canonicalName = normalizeXianguSeedName(name);
+  return Object.values(REGULAR_SEED_POOLS)
+    .flat()
+    .find(seed => seed.name === canonicalName) || null;
+}
+
+export function resolveXianguSeedRecord(config, seed) {
+  const normalized = normalizeXianguSeedRecord(seed);
+  if (!normalized) return null;
+  const topSeed = findXianguTopSeed(config, normalized.名称);
+  if (topSeed) return { ...normalized, ...topSeed, 顶级道种: true };
+
+  const regularSeed = findRegularXianguSeed(normalized.名称);
+  return regularSeed ? {
+    ...normalized,
+    品质: regularSeed.quality,
+    类型: regularSeed.type,
+    融合成功率: regularSeed.successRate,
+    属性加成: regularSeed.attrs || {},
+    专属技能: regularSeed.skill || null,
+    额外效果: regularSeed.extra || null,
+    顶级道种: false,
+  } : normalized;
+}
+
+export function getXianguNajieSeedEntries(config, najie) {
+  const items = Array.isArray(najie?.道具) ? najie.道具 : [];
+  return items.flatMap((item, index) => {
+    const quantity = Number(item?.数量);
+    const storageName = String(item?.name ?? '').trim();
+    const isSeedType = [item?.type, item?.类型]
+      .some(type => String(type ?? '').trim().endsWith('道种'));
+    const isKnownSeed = findXianguTopSeed(config, storageName)
+      || findRegularXianguSeed(storageName);
+    if (!Number.isFinite(quantity) || quantity <= 0 || !storageName
+      || (item?.class !== '道种' && !isSeedType) || !isKnownSeed) return [];
+    const seed = resolveXianguSeedRecord(config, item);
+    return seed ? [{ seed, source: 'najie', index, storageName }] : [];
+  });
+}
+
 export function resolveXianguSeedExtremeName(config, levels, name) {
   const topSeed = findXianguTopSeed(config, name);
   if (!topSeed) return null;
