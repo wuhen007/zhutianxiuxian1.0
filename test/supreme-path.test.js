@@ -172,7 +172,7 @@ test('至尊伴生技能、材料与副本掉落配置完整', () => {
   assert.equal(punishment?.负面类型, '轮回之力');
   assert.equal(punishment?.负面回合, 3);
   assert.equal(hand?.beilv, 3);
-  assert.equal(punishment?.beilv, 2);
+  assert.equal(punishment?.beilv, 12);
 });
 
 test('涅槃至尊可通过斩骨获得涅槃至尊骨', () => {

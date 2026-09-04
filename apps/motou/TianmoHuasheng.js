@@ -417,8 +417,15 @@ export class TianmoHuasheng extends plugin {
         `法球倍率：${(result.previousOrb * 100).toFixed(0)}% -> ${(
           result.currentOrb * 100
         ).toFixed(0)}%`,
-        "灵根攻、防、生永久各提升 0.05",
       ];
+      if (result.attributeCapped) {
+        lines.push("灵根攻、防、生已达自身灵根1.5倍上限，本次不再增长");
+      } else {
+        lines.push("灵根攻、防、生永久各提升 0.05");
+      }
+      if (result.lifeSourceCapped) {
+        lines.push("生命本源已达上限（自身灵根本源2倍），本次所得本源散逸");
+      }
       if (result.evolved) {
         lines.push(
           "",

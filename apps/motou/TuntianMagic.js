@@ -15,6 +15,7 @@ import {
   getTuntianEligibility,
   hasTuntianTechnique,
 } from "../../model/tuntianMagic.js";
+import { PLACE_LOCATION_MAP } from "../../model/weimianTravel.js";
 import { withPlayerMutationLock } from "../../utils/playerMutationLock.js";
 
 const activeDevours = new Set();
@@ -100,7 +101,7 @@ export class TuntianMagic extends plugin {
       const player = await Read_player(qq);
       const eligibility = getTuntianEligibility(player);
       if (!eligibility.ok) return e.reply(formatTuntianFailure(eligibility));
-      if (Number(player.power_place) !== 2) {
+      if (Number(player.power_place) !== PLACE_LOCATION_MAP.遮天位面) {
         return e.reply("先贤祖陵皆在遮天位面，你需先抵达北斗星域。");
       }
       const actionRaw = await redis.get(`xiuxian:player:${qq}:action`);

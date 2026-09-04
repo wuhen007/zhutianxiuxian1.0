@@ -222,7 +222,7 @@ test('大宇宙按法则承载决定可否证道仙王/仙王巨头', () => {
 test('#证道 突破仙王/仙王巨头时认可承载足够的大宇宙（防回归）', () => {
   // 拦截不再只认仙域：仙域之外先查身处的大宇宙，承载足够即放行
   assert.match(levelSource, /import \{ canGrandUniverseCarryMijingRealm \} from '\.\.\/\.\.\/model\/grandUniverse\.js'/);
-  assert.match(levelSource, /if \(player\.power_place !== 6\) \{[\s\S]*?canGrandUniverseCarryMijingRealm\(hostWorld, targetLevel\)/);
+  assert.match(levelSource, /if \(player\.power_place !== PLACE_LOCATION_MAP\.仙域\) \{[\s\S]*?canGrandUniverseCarryMijingRealm\(hostWorld, targetLevel\)/);
   assert.match(levelSource, /if \(carry\?\.ok\) \{\s*\/\/ 身处法则足以承载目标境界的大宇宙，允许在此证道/);
   // 承载不足时应提示完善至目标法则阶段，而不是直接要求回仙域
   assert.match(levelSource, /【诸天有缺·宇宙难载】[\s\S]*?完善至【\$\{carry\.required\.name\}】（可承载\$\{carry\.required\.capacity\}）/);

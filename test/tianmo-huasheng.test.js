@@ -84,16 +84,16 @@ test("万灵怨胎按挑战者战力生成且不会继承功法", () => {
   assert.deepEqual(player.学习的功法, [TIANMO_HUASHENG_TECHNIQUE]);
 });
 
-test("炼化按潜力50%、其余10%真实转移并保留最低本源与小数", () => {
+test("炼化按潜力/修为/血气/本源20%、寿元10%真实转移并保留最低本源与小数", () => {
   const executor = makeTianmo();
   const target = makeTarget({ 生命本源: 51.5 });
   const expected = calculateEssenceTransfer(target);
   assert.deepEqual(expected, {
-    仙道潜力: 4,
-    修为: 100,
-    血气: 50,
+    仙道潜力: 1,
+    修为: 200,
+    血气: 100,
     寿元: 10,
-    生命本源: 5,
+    生命本源: 10,
   });
 
   const result = applyTianmoRefinement(executor, target, {
@@ -101,14 +101,14 @@ test("炼化按潜力50%、其余10%真实转移并保留最低本源与小数",
     targetId: "target",
   });
   assert.deepEqual(result.transfer, expected);
-  assert.equal(executor.修为, 100);
-  assert.equal(target.修为, 900);
+  assert.equal(executor.修为, 200);
+  assert.equal(target.修为, 800);
   assert.equal(executor.灵根.法球倍率, 2.1);
   assert.equal(executor.灵根.攻击, 3.05);
   assert.equal(executor.灵根.防御, 2.05);
   assert.equal(executor.灵根.生命, 2.05);
-  assert.equal(executor.生命本源, 255);
-  assert.equal(target.生命本源, 46.5);
+  assert.equal(executor.生命本源, 260);
+  assert.equal(target.生命本源, 41.5);
   assert.equal(target.天魔炼化保护至, 1000 + SAME_TARGET_COOLDOWN_MS);
 
   const exhausted = calculateEssenceTransfer(
@@ -129,8 +129,8 @@ test("十次灾厄炼化折算一次玩家炼化并实际增加生命本源", ()
 
   assert.equal(executor.天魔化生.炼化次数, 1);
   assert.equal(executor.天魔化生.灾厄炼化次数, 10);
-  assert.equal(executor.生命本源, 255);
-  assert.equal(executor.天魔化生.累计所得.生命本源, 5);
+  assert.equal(executor.生命本源, 260);
+  assert.equal(executor.天魔化生.累计所得.生命本源, 10);
   assert.equal(executor.灵根.法球倍率, 2.1);
   assert.deepEqual(
     [executor.灵根.攻击, executor.灵根.防御, executor.灵根.生命],
@@ -150,7 +150,7 @@ test("灾厄魔主炼化按0.5名玩家计入化生进度", () => {
   assert.equal(result.refinementWeight, 0.5);
   assert.equal(executor.天魔化生.炼化次数, 0.5);
   assert.equal(executor.天魔化生.灾厄炼化次数, 1);
-  assert.equal(executor.生命本源, 252.5);
+  assert.equal(executor.生命本源, 255);
   assert.equal(executor.灵根.法球倍率, 2.05);
   assert.deepEqual(
     [executor.灵根.攻击, executor.灵根.防御, executor.灵根.生命],
@@ -158,8 +158,8 @@ test("灾厄魔主炼化按0.5名玩家计入化生进度", () => {
   );
 
   applyTianmoRefinement(executor, makeTarget(), { now: 2000, targetId: "next" });
-  assert.equal(executor.生命本源, 257.5);
-  assert.equal(executor.天魔化生.累计所得.生命本源, 7.5);
+  assert.equal(executor.生命本源, 265);
+  assert.equal(executor.天魔化生.累计所得.生命本源, 15);
 });
 
 test("达到500%法球倍率时蜕变为无相万化天魔体", () => {
@@ -180,8 +180,62 @@ test("达到500%法球倍率时蜕变为无相万化天魔体", () => {
   assert.equal(executor.灵根.防御, 3.5);
   assert.equal(executor.灵根.生命, 8);
   assert.equal(executor.灵根.生命本源, 500);
-  assert.equal(executor.生命本源, 605);
+  assert.equal(executor.生命本源, 610);
   assert.equal(executor.天魔化生.已蜕变, true);
+});
+
+test("灵根攻防生封顶自身灵根1.5倍，生命本源封顶灵根本源2倍且不回退", () => {
+  // 极道天魔 caps：攻击 3×1.5=4.5 / 防御 2×1.5=3 / 生命 2×1.5=3；本源 150×2=300
+  const capExecutor = makeTianmo({
+    灵根: { ...makeTianmo().灵根, 攻击: 4.5, 防御: 3, 生命: 3 },
+  });
+  const capped = applyTianmoRefinement(capExecutor, makeTarget(), {
+    now: 5000,
+    targetId: "rich",
+  });
+  assert.equal(capped.applied, true);
+  assert.equal(capped.attributeCapped, true);
+  assert.deepEqual(
+    [capExecutor.灵根.攻击, capExecutor.灵根.防御, capExecutor.灵根.生命],
+    [4.5, 3, 3]
+  );
+
+  // 生命本源满 300 后不再入账，但目标仍被完整抽取
+  const fullExecutor = makeTianmo({ 生命本源: 300 });
+  const victim = makeTarget();
+  const full = applyTianmoRefinement(fullExecutor, victim, {
+    now: 6000,
+    targetId: "victim",
+  });
+  assert.equal(full.lifeSourceCapped, true);
+  assert.equal(full.transfer.生命本源, 0);
+  assert.equal(fullExecutor.生命本源, 300);
+  assert.equal(victim.生命本源, 41);
+
+  // 灾厄/魔主炼化同样封顶
+  const calamity = applyTianmoCalamityRefinement(fullExecutor, {
+    now: 7000,
+    sourceLifeEssence: 51,
+  });
+  assert.equal(calamity.lifeSourceGain, 0);
+  assert.equal(calamity.lifeSourceCapped, true);
+  assert.equal(fullExecutor.生命本源, 300);
+});
+
+test("灾厄炼化本源只入账上限内剩余部分", () => {
+  const executor = makeTianmo({ 生命本源: 295 });
+  const result = applyTianmoCalamityRefinement(executor, {
+    now: 1000,
+    sourceLifeEssence: 51,
+  });
+  assert.equal(result.lifeSourceGain, 1);
+  assert.equal(executor.生命本源, 296);
+  const result2 = applyTianmoCalamityRefinement(executor, {
+    now: 1001,
+    sourceLifeEssence: 51,
+  });
+  assert.equal(result2.lifeSourceGain, 1);
+  assert.equal(executor.生命本源, 297);
 });
 
 test("装载诸天化身时两类天魔炼化都不会改变灵根或目标", () => {

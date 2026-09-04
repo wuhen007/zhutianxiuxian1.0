@@ -29,6 +29,7 @@ import {
   getYongJiStats,
 } from './YongJiList.js';
 import { revokeBreakKingEmperorEligibility } from '../../model/realmAuthority.js';
+import { PLACE_LOCATION_PATTERN } from '../../model/weimianTravel.js';
 
 let WorldBOSSBattleCD = []; //CD
 let WorldBOSSBattleLock = 0; //BOSS战斗锁
@@ -72,7 +73,7 @@ export class BOSS3 extends plugin {
           fnc: 'RestoreAllPlanes',
         },
         {
-          reg: '^#恢复(?:凡间|仙界|下界八域|遮天位面|九天十地|界海|太初星墟|时间长河|小阴间|大阴间|仙域|阳间|上苍之上|超维宇宙|厄土高原|永恒未知之地)$',
+          reg: `^#恢复(?:${PLACE_LOCATION_PATTERN})$`,
           fnc: 'RestoreNamedPlane',
         },
         {

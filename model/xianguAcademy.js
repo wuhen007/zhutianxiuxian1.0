@@ -1,4 +1,6 @@
 export const XIANGU_ACADEMY_NAME = '天神书院';
+import { PLACE_LOCATION_MAP } from './weimianTravel.js';
+
 export const XIANGU_ACADEMY_BRANCHES = ['仙院', '圣院'];
 
 export const XIANGU_ACADEMY_RANKS = [
@@ -43,7 +45,7 @@ export function getAcademyAdmission(player = {}) {
   if (player.仙古院籍?.学院) {
     return { ok: false, reason: 'joined', message: '你已经拥有天神书院院籍。' };
   }
-  if (Number(player.power_place) !== 2.5) {
+  if (Number(player.power_place) !== PLACE_LOCATION_MAP.九天十地) {
     return {
       ok: false,
       reason: 'plane',

@@ -763,10 +763,13 @@ if (
     
     const weapon = equipment.帝兵;
     
-    // 检查帝兵品阶是否达到要求（仙古线对应天神兵位，遮天线对应圣兵；仙古玩家旧档"圣兵"视作天神兵）
-    const isXianguPlayer = Number(player.xiangulevel_id) >= 8;
-    const neededRank = isXianguPlayer ? "天神兵" : "圣兵";
-    const rankOK = isXianguPlayer
+    // 检查帝兵品阶是否达到要求（三线对齐雷劫洗礼：仙古/花粉走天神兵位，遮天走圣兵；仙古旧档"圣兵"视作天神兵）
+    const daoRoute = getRealmAuthorityPath(player);
+    const isFlowerPath = daoRoute === 'huafen' && Number(player.huafenlevel_id) > 1;
+    const isXianguPath = Number(player.xiangulevel_id) >= 8 || isFlowerPath;
+    const flowerAuthority = getFlowerPollenAuthorityLevel(player.huafenlevel_id);
+    const neededRank = isXianguPath ? "天神兵" : "圣兵";
+    const rankOK = isXianguPath
         ? (weapon.品阶 === "天神兵" || weapon.品阶 === "圣兵")
         : (weapon.品阶 === "圣兵");
     if (!rankOK) {
@@ -787,12 +790,27 @@ if (
         ].join('\n'));
     }
     
-    // 检查玩家境界是否足够
-    if (player.mijinglevel_id < 13) { // 大帝境界
+    // 检查玩家境界是否足够（三线各自对齐：遮天·圣人王13 / 仙古·天神11 / 花粉·对标12）
+    let realmLabel = "遮天秘境";
+    let realmNow = String(player.mijinglevel_id || 0);
+    let realmNeed = "13（圣人王）";
+    let realmOK = Number(player.mijinglevel_id) >= 13;
+    if (isFlowerPath) {
+        realmLabel = "花粉进化路";
+        realmNow = String(flowerAuthority);
+        realmNeed = "13（神将）";
+        realmOK = flowerAuthority >= 13;
+    } else if (Number(player.xiangulevel_id) >= 8) {
+        realmLabel = "仙古今世";
+        realmNow = String(player.xiangulevel_id || 0);
+        realmNeed = "12（虚道）";
+        realmOK = Number(player.xiangulevel_id) >= 12;
+    }
+    if (!realmOK) {
         return e.reply([
             `境界不足！`,
-            `刻写道法需要达到圣人王境界`,
-            `当前境界：${player.mijinglevel_id}`,
+            `刻写道法需要达到${realmLabel}·${realmNeed}境界`,
+            `当前境界：${realmLabel} ${realmNow}`,
             `请先提升境界`
         ].join('\n'));
     }

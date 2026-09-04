@@ -519,7 +519,7 @@ const baitConfigs = {
     effect: "排除普通渔获，只钓诸天稀有特产",
     rewards: [
       { name: "仙品道心果", class: "丹药", amount: 1, weight: 8 },
-      { name: "群星之沙", class: "道具", amount: 5, weight: 28, scalable: true },
+      { name: "群星之沙", class: "道具", amount: 5, weight: 20, scalable: true },
       { name: "世界石", class: "材料", amount: 1, weight: 22 },
       { name: "无尽秘钥", class: "道具", amount: 1, weight: 15 },
       { name: "超越宝盒", class: "盒子", amount: 1, weight: 12 },

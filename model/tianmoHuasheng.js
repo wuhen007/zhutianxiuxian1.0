@@ -31,12 +31,60 @@ export const WANHUA_TIANMO_ROOT = Object.freeze({
 });
 
 const TRANSFER_RULES = Object.freeze({
-  仙道潜力: { rate: 0.5, reserve: 0 },
-  修为: { rate: 0.1, reserve: 0 },
-  血气: { rate: 0.1, reserve: 0 },
+  仙道潜力: { rate: 0.2, reserve: 0 },
+  修为: { rate: 0.2, reserve: 0 },
+  血气: { rate: 0.2, reserve: 0 },
   寿元: { rate: 0.1, reserve: 1 },
-  生命本源: { rate: 0.1, reserve: 1 },
+  生命本源: { rate: 0.2, reserve: 1 },
 });
+
+// —— 炼化成长上限（杜绝无限炼化）——
+// 灵根模板基准：极道天魔 = 灵根列表 7010010，无相·万化天魔体 = 7010020（与 WANHUA_TIANMO_ROOT 同源）
+const TIANMO_ROOT_TEMPLATES = Object.freeze({
+  [JIDAO_TIANMO_PHYSIQUE]: Object.freeze({
+    法球倍率: 2,
+    攻击: 3,
+    防御: 2,
+    生命: 2,
+    生命本源: 150,
+  }),
+  [WANHUA_TIANMO_PHYSIQUE]: Object.freeze({
+    法球倍率: 5,
+    攻击: 8,
+    防御: 3.5,
+    生命: 8,
+    生命本源: 500,
+  }),
+});
+// 灵根 攻击/防御/生命 加成不得超过自身灵根模板对应加成 × 1.5
+export const REFINEMENT_ATTRIBUTE_CAP_RATIO = 1.5;
+// 生命本源不得超过自身灵根本源模板值 × 2
+export const REFINEMENT_LIFE_SOURCE_CAP_RATIO = 2;
+
+export function getTianmoRootTemplate(player) {
+  return TIANMO_ROOT_TEMPLATES[player?.灵根?.name] || null;
+}
+
+export function getRefinementGrowthCaps(player) {
+  const template = getTianmoRootTemplate(player);
+  if (!template) return null;
+  const attributes = {};
+  for (const key of ['攻击', '防御', '生命']) {
+    attributes[key] = roundGrowth(template[key] * REFINEMENT_ATTRIBUTE_CAP_RATIO);
+  }
+  return {
+    attributes,
+    lifeSource: roundGrowth(template.生命本源 * REFINEMENT_LIFE_SOURCE_CAP_RATIO),
+  };
+}
+
+// 计算生命本源实际可入账量（已达上限则 0，超出部分散逸）
+export function getLifeSourceCredit(executor, amount) {
+  const caps = getRefinementGrowthCaps(executor);
+  if (!caps) return Math.max(0, Number(amount) || 0);
+  const current = Math.max(0, Number(executor?.生命本源) || 0);
+  return Math.max(0, Math.min(Number(amount) || 0, caps.lifeSource - current));
+}
 
 function roundGrowth(value) {
   return Math.round((Number(value) || 0) * 1000) / 1000;
@@ -157,10 +205,14 @@ function applyRefinementGrowth(executor, state, now, weight) {
     REFINEMENT_ORB_TARGET,
     roundGrowth(previousOrb + REFINEMENT_ORB_GAIN * effectiveWeight)
   );
+  // 灵根 攻击/防御/生命 加成不得超过自身灵根模板 × REFINEMENT_ATTRIBUTE_CAP_RATIO（只拦增长、不回退）
+  const caps = getRefinementGrowthCaps(executor);
   for (const key of ["攻击", "防御", "生命"]) {
-    root[key] = roundGrowth(
-      (Number(root[key]) || 0) + REFINEMENT_ATTRIBUTE_GAIN * effectiveWeight
-    );
+    const base = Number(root[key]) || 0;
+    const gained = roundGrowth(base + REFINEMENT_ATTRIBUTE_GAIN * effectiveWeight);
+    root[key] = caps
+      ? roundGrowth(Math.min(gained, Math.max(base, caps.attributes[key])))
+      : gained;
   }
 
   let evolved = false;
@@ -179,11 +231,22 @@ function applyRefinementGrowth(executor, state, now, weight) {
     evolved = true;
   }
 
+  // 以（蜕变后）当前灵根模板判定是否已达成长上限
+  const finalCaps = getRefinementGrowthCaps(executor);
+  const attributeCapped = finalCaps
+    ? ["攻击", "防御", "生命"].every((key) => (Number(executor.灵根[key]) || 0) >= finalCaps.attributes[key])
+    : false;
+  const lifeSourceCapped = finalCaps
+    ? (Number(executor.生命本源) || 0) >= finalCaps.lifeSource
+    : false;
+
   return {
     evolved,
     previousOrb,
     currentOrb: executor.灵根.法球倍率,
     refinementCount: state.炼化次数,
+    attributeCapped,
+    lifeSourceCapped,
   };
 }
 
@@ -195,13 +258,15 @@ export function applyTianmoRefinement(executor, target, options = {}) {
   const now = Number(options.now) || Date.now();
   const targetId = String(options.targetId ?? target?.id ?? "unknown");
   const transfer = calculateEssenceTransfer(target);
+  // 执行者实际入账：生命本源受「不超过自身灵根本源 2 倍」封顶，超出部分散逸；修为血气等资源原额入账
+  const credited = {
+    ...transfer,
+    生命本源: getLifeSourceCredit(executor, transfer.生命本源),
+  };
   const state = ensureTianmoHuashengState(executor);
 
+  // 目标被完整抽取（掠夺行为照常发生，不因执行者饱和而减免）
   for (const [key, amount] of Object.entries(transfer)) {
-    const executorValue = Math.max(0, Number(executor[key]) || 0);
-    executor[key] = key === "生命本源"
-      ? roundGrowth(executorValue + amount)
-      : Math.floor(executorValue) + amount;
     const targetValue = Math.max(0, Number(target[key]) || 0);
     target[key] = key === "生命本源"
       ? roundGrowth(Math.max(0, targetValue - amount))
@@ -211,7 +276,12 @@ export function applyTianmoRefinement(executor, target, options = {}) {
   state.上次炼化 = now;
   state.炼化记录[targetId] = now;
   target.天魔炼化保护至 = now + SAME_TARGET_COOLDOWN_MS;
-  for (const [key, amount] of Object.entries(transfer)) {
+  // 执行者入账（以实际 credited 为准，避免在满上限时虚增累计所得）
+  for (const [key, amount] of Object.entries(credited)) {
+    const executorValue = Math.max(0, Number(executor[key]) || 0);
+    executor[key] = key === "生命本源"
+      ? roundGrowth(executorValue + amount)
+      : Math.floor(executorValue) + amount;
     state.累计所得[key] += amount;
   }
 
@@ -219,7 +289,7 @@ export function applyTianmoRefinement(executor, target, options = {}) {
 
   return {
     applied: true,
-    transfer,
+    transfer: credited,
     ...growth,
   };
 }
@@ -237,10 +307,12 @@ export function applyTianmoCalamityRefinement(executor, options = {}) {
   const refinementWeight = Math.max(0, Number(options.weight) || CALAMITY_REFINEMENT_WEIGHT);
   const state = ensureTianmoHuashengState(executor);
   const sourceLifeEssence = Math.max(1, Number(options.sourceLifeEssence) || 100);
-  const lifeSourceGain = roundGrowth(
+  const rawLifeSourceGain = roundGrowth(
     calculateDrain(sourceLifeEssence, TRANSFER_RULES.生命本源.rate, TRANSFER_RULES.生命本源.reserve)
       * refinementWeight
   );
+  // 生命本源受「不超过自身灵根本源 2 倍」封顶，超出部分散逸
+  const lifeSourceGain = roundGrowth(getLifeSourceCredit(executor, rawLifeSourceGain));
   executor.生命本源 = roundGrowth(Math.max(0, Number(executor.生命本源) || 0) + lifeSourceGain);
   state.累计所得.生命本源 = roundGrowth(state.累计所得.生命本源 + lifeSourceGain);
   state.灾厄炼化次数 += 1;

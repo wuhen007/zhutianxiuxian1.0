@@ -22,18 +22,51 @@ import path from 'path';
 import fs from 'fs';
 import { data } from '../../api/api.js';
 import { Write_player } from '../../model/xiuxian.js';
+import {
+  getLocationId,
+  getLocationName,
+  LEGACY_PLACE_LOCATION_NAMES,
+} from '../../model/weimianTravel.js';
 
 // Redis Key 前缀
 const YONGJI_HASH_KEY = 'xiuxian:yongji:list';
 const YONGJI_PLANE_PREFIX = 'xiuxian:yongji:byplane:';
 const YONGJI_COUNT_KEY = 'xiuxian:yongji:count';
 
-// 位面ID → 名称映射
-const PLANE_NAMES = {
-  0: '凡间', 1: '仙界', 1.5: '下界八域',
-  2: '遮天位面', 2.5: '九天十地', 3: '界海',
-  4: '时间长河', 5: '永恒未知之地', 6: '仙域',
-};
+function resolvePlane(planeId, planeName = '') {
+  // 名称是持久化记录里的语义来源，优先于可能过期的数字编号。
+  const namedId = getLocationId(planeName);
+  const rawId = getLocationId(planeId);
+  const canonicalId = Number.isFinite(namedId) ? namedId : rawId;
+  const id = Number.isFinite(canonicalId) ? canonicalId : planeId;
+  const name = getLocationName(canonicalId)
+    || getLocationName(planeId)
+    || getLocationName(planeName)
+    || (typeof planeName === 'string' && planeName.trim())
+    || `位面(${id})`;
+  return { id, name };
+}
+
+function planeIndexIds(planeId, planeName = '') {
+  const ids = new Set();
+  const add = value => {
+    if (value !== null && value !== undefined && value !== '') ids.add(String(value));
+  };
+  add(planeId);
+  add(planeName);
+  const namedId = getLocationId(planeName);
+  const rawId = getLocationId(planeId);
+  const canonical = Number.isFinite(namedId) ? namedId : rawId;
+  if (Number.isFinite(canonical)) add(canonical);
+
+  // 查询规范 ID 时兼容旧 Redis 索引（永恒未知之地历史上使用 6.5）。
+  const canonicalName = getLocationName(canonical) || getLocationName(planeName) || getLocationName(planeId);
+  add(canonicalName);
+  for (const [legacyId, legacyName] of Object.entries(LEGACY_PLACE_LOCATION_NAMES)) {
+    if (legacyName === canonicalName) add(legacyId);
+  }
+  return [...ids];
+}
 
 // ==================== 写入永寂 ====================
 
@@ -48,14 +81,15 @@ const PLANE_NAMES = {
  */
 export async function sendToYongJi(qq, playerData, planeId, planeName) {
   const playerName = playerData?.名号 || qq;
+  const plane = resolvePlane(planeId, planeName);
 
   try {
     // ===== 步骤1：构建永寂记录 =====
     const yongjiRecord = {
       qq,
       名号: playerName,
-      planeId,
-      planeName,
+      planeId: plane.id,
+      planeName: plane.name,
       yongjiTime: Date.now(),             // 永寂时间戳
       yongjiTimeStr: new Date().toLocaleString('zh-CN'),
       
@@ -84,7 +118,7 @@ export async function sendToYongJi(qq, playerData, planeId, planeName) {
     await redis.hSet(YONGJI_HASH_KEY, qq, JSON.stringify(yongjiRecord));
 
     // 按位面建立索引
-    const planeKey = `${YONGJI_PLANE_PREFIX}${planeId}`;
+    const planeKey = `${YONGJI_PLANE_PREFIX}${plane.id}`;
     await redis.sAdd(planeKey, qq);
 
     // 更新总数
@@ -93,7 +127,7 @@ export async function sendToYongJi(qq, playerData, planeId, planeName) {
     // ===== 步骤3：删除玩家正式数据 =====
     await erasePlayerData(qq, playerName);
 
-    logger.info(`[永寂之界] ${playerName}(${qq}) 于"${planeName}"崩灭时入永寂，存档已备份`);
+    logger.info(`[永寂之界] ${playerName}(${qq}) 于"${plane.name}"崩灭时入永寂，存档已备份`);
     return true;
 
   } catch (err) {
@@ -148,8 +182,9 @@ export async function reviveFromYongJi(qq) {
 
     // 从永寂列表移除
     await redis.hDel(YONGJI_HASH_KEY, qq);
-    const planeKey = `${YONGJI_PLANE_PREFIX}${planeId}`;
-    await redis.sRem(planeKey, qq);
+    for (const indexId of planeIndexIds(planeId, planeName)) {
+      await redis.sRem(`${YONGJI_PLANE_PREFIX}${indexId}`, qq);
+    }
     await redis.decr(YONGJI_COUNT_KEY);
 
     logger.info(`[映照归来] ${playerName}(${qq}) 已从"${planeName}"永寂中复活`);
@@ -168,14 +203,23 @@ export async function reviveFromYongJi(qq) {
  * @returns {{ count: number, names: string[], planeName: string }}
  */
 export async function revivePlaneFromYongJi(planeId) {
-  const planeKey = `${YONGJI_PLANE_PREFIX}${planeId}`;
-  const planeName = PLANE_NAMES[planeId] || `位面(${planeId})`;
+  const plane = resolvePlane(planeId);
+  const planeName = plane.name;
 
   let revived = 0;
   const names = [];
 
   try {
-    const qqList = await redis.sMembers(planeKey);
+    const qqList = [];
+    const seen = new Set();
+    for (const indexId of planeIndexIds(planeId)) {
+      for (const qq of (await redis.sMembers(`${YONGJI_PLANE_PREFIX}${indexId}`)) || []) {
+        if (!seen.has(String(qq))) {
+          seen.add(String(qq));
+          qqList.push(qq);
+        }
+      }
+    }
     if (!qqList || qqList.length === 0) {
       return { count: 0, names: [], planeName };
     }
@@ -212,9 +256,10 @@ export async function reviveAllFromYongJi() {
   for (const [qq, recordStr] of Object.entries(allRecords)) {
     try {
       const record = JSON.parse(recordStr);
-      const pid = record.planeId;
+      const plane = resolvePlane(record.planeId, record.planeName);
+      const pid = plane.id;
       if (!planeGroups.has(pid)) {
-        planeGroups.set(pid, { planeName: record.planeName || PLANE_NAMES[pid] || `位面(${pid})`, qqList: [] });
+        planeGroups.set(pid, { planeName: plane.name, qqList: [] });
       }
       planeGroups.get(pid).qqList.push(qq);
     } catch (e) {}
@@ -287,9 +332,10 @@ export async function getYongJiStats() {
 
     for (const recordStr of Object.values(allRecords)) {
       const record = JSON.parse(recordStr);
-      const pid = record.planeId;
+      const plane = resolvePlane(record.planeId, record.planeName);
+      const pid = plane.id;
       if (!planeCounts.has(pid)) {
-        planeCounts.set(pid, { planeId: pid, planeName: record.planeName || PLANE_NAMES[pid] || `位面(${pid})`, count: 0 });
+        planeCounts.set(pid, { planeId: pid, planeName: plane.name, count: 0 });
       }
       planeCounts.get(pid).count++;
     }
@@ -308,11 +354,20 @@ export async function getYongJiStats() {
  * @returns {{ planeName: string, list: Array<{ qq, 名号, yongjiTimeStr }> }}
  */
 export async function getYongJiByPlane(planeId, limit = 50) {
-  const planeKey = `${YONGJI_PLANE_PREFIX}${planeId}`;
-  const planeName = PLANE_NAMES[planeId] || `位面(${planeId})`;
+  const plane = resolvePlane(planeId);
+  const planeName = plane.name;
 
   try {
-    const qqList = await redis.sMembers(planeKey);
+    const qqList = [];
+    const seen = new Set();
+    for (const indexId of planeIndexIds(planeId)) {
+      for (const qq of (await redis.sMembers(`${YONGJI_PLANE_PREFIX}${indexId}`)) || []) {
+        if (!seen.has(String(qq))) {
+          seen.add(String(qq));
+          qqList.push(qq);
+        }
+      }
+    }
     if (!qqList || qqList.length === 0) return { planeName, list: [] };
 
     const list = [];
@@ -344,7 +399,9 @@ export async function clearYongJiList() {
       for (const recordStr of Object.values(allRecords)) {
         try {
           const record = JSON.parse(recordStr);
-          await redis.del(`${YONGJI_PLANE_PREFIX}${record.planeId}`);
+          for (const indexId of planeIndexIds(record.planeId, record.planeName)) {
+            await redis.del(`${YONGJI_PLANE_PREFIX}${indexId}`);
+          }
         } catch (e) {}
       }
     }

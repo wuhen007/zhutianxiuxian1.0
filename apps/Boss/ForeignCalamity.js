@@ -580,8 +580,10 @@ export class ForeignCalamity extends plugin {
           const attributeGain = Number((REFINEMENT_ATTRIBUTE_GAIN * weight).toFixed(3));
           lines.push(
             `天魔化生进度+${weight}人｜生命本源+${tianmoGrowth.lifeSourceGain}`,
-            `法球倍率 ${(tianmoGrowth.previousOrb * 100).toFixed(0)}%→${(tianmoGrowth.currentOrb * 100).toFixed(0)}%｜灵根攻、防、生各+${attributeGain}`,
+            `法球倍率 ${(tianmoGrowth.previousOrb * 100).toFixed(0)}%→${(tianmoGrowth.currentOrb * 100).toFixed(0)}%｜灵根攻、防、生各+${tianmoGrowth.attributeCapped ? '0' : attributeGain}`,
           );
+          if (tianmoGrowth.attributeCapped) lines.push('灵根攻、防、生已达自身灵根1.5倍上限，不再增长');
+          if (tianmoGrowth.lifeSourceCapped) lines.push('生命本源已达上限（自身灵根本源2倍），本次本源散逸');
           if (tianmoGrowth.evolved) lines.push('万灵归一，你已蜕变为【无相·万化天魔体】！');
         }
         return { message: lines.join('\n') };

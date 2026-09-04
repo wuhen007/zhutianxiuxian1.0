@@ -66,6 +66,7 @@ import {
 import { getDouziMimicChance, tryLearnTianjiaoGongfa } from '../../model/gongfaProficiency.js';
 import { getExtraCultivationLevelSum } from '../../model/extraCultivation.js';
 import { getTianjiaoRealmTier } from '../../model/realmAuthority.js';
+import { getLocationName as resolveLocationName } from '../../model/weimianTravel.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
 import { replyOfficialMessage } from '../../model/officialMessage.js';
@@ -167,19 +168,6 @@ export class BOSS4 extends plugin {
     this.userCooldownMs = 90 * 60 * 1000; // 90分钟个人冷却
     this.tianjiaoRefreshMs = 18 * 60 * 60 * 1000; // 18小时天骄刷新时间
     this.escapeRefreshMs = 6 * 60 * 60 * 1000; // 逃脱后6小时复活
-
-    // 地点映射表
-    this.LOCATION_MAP = {
-      '凡间': 0,
-      '仙界': 1,
-      '下界八域': 1.5,
-      '遮天位面': 2,
-      '九天十地': 2.5,
-      '界海': 3,
-      '时间长河': 4,
-      '永恒未知之地': 5,
-      '仙域': 6
-    };
 
     // 仇恨值系统配置
     this.HATRED_CONFIG = {
@@ -976,10 +964,7 @@ export class BOSS4 extends plugin {
   }
 
   getLocationName(locationId) {
-    for (const [name, id] of Object.entries(this.LOCATION_MAP)) {
-      if (id === locationId) return name;
-    }
-    return `未知位面(${locationId})`;
+    return resolveLocationName(locationId) || `未知位面(${locationId})`;
   }
 
   getAvailableTianjiaoTrace(player, tianjiao, now = Date.now()) {

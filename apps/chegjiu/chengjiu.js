@@ -15,6 +15,7 @@ import {
 import { Add_灵石, Add_修为, Add_血气, Add_najie_thing } from '../../model/xiuxian.js';
 import { canTeachGongfa } from '../../model/gongfaTeaching.js';
 import { replyOfficialButtons } from '../../model/officialMessage.js';
+import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
 
 const ASSISTANT_BUTTONS = [
     [
@@ -267,10 +268,10 @@ async chengjiu1(e) {
                 conditionMet = player.Physique_id > 41;
                 break;
             case 7: // 茫茫诸天何处是北斗
-                conditionMet = player.power_place == 2;
+                conditionMet = player.power_place == PLACE_LOCATION_MAP.遮天位面;
                 break;
             case 8: // 大荒中崛起
-                conditionMet = player.power_place == 1.5;
+                conditionMet = player.power_place == PLACE_LOCATION_MAP.下界八域;
                 break;
             case 9: // 诸法加身
                 conditionMet = player.mijinglevel_id > 1 || player.xiangulevel_id > 1 || player.huafenlevel_id > 1;

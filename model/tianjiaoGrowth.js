@@ -2,9 +2,13 @@ import { calculateEquippedStats } from './equipmentStats.js';
 import { createRealmEventLocation } from './realmEventLocation.js';
 import { getPlayerPlaneCoordinate, getPlayerPlaneName } from './planeCoords.js';
 import { getRealmAuthorityLevel, getRealmAuthorityPath } from './realmAuthority.js';
-import { PLACE_LOCATION_MAP } from './weimianTravel.js';
+import { getLocationId, getLocationName, PLACE_LOCATION_MAP } from './weimianTravel.js';
 
-export const TIANJIAO_PLANES = Object.freeze([2, 2.5, 7]);
+export const TIANJIAO_PLANES = Object.freeze([
+  PLACE_LOCATION_MAP.遮天位面,
+  PLACE_LOCATION_MAP.九天十地,
+  PLACE_LOCATION_MAP.阳间,
+]);
 export const HUAYUNFEI_DEVOUR_CHANCE = 0.4;
 export const TIANJIAO_BREAKTHROUGH_INTERVAL = 3000;
 export const TIANJIAO_IMPROVEMENT_INTERVAL = 3000;
@@ -116,7 +120,7 @@ function addStats(...stats) {
 }
 
 export function isIndependentTianjiao(tianjiao) {
-  return TIANJIAO_PLANES.includes(Number(tianjiao?.位面));
+  return TIANJIAO_PLANES.includes(getLocationId(tianjiao?.位面));
 }
 
 export function getTianjiaoBreakthroughChance(field, currentLevel, eraIndex) {
@@ -163,8 +167,7 @@ const ALLOWED_TIANJIAO_PLANES = Object.freeze(
 );
 
 function planeNameFromId(planeId) {
-  return Object.entries(PLACE_LOCATION_MAP)
-    .find(([, id]) => Number(id) === Number(planeId))?.[0] || null;
+  return getLocationName(planeId) || null;
 }
 
 export function createTianjiaoTrace(tianjiao, options = {}) {

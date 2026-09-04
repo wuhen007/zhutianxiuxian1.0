@@ -1,5 +1,7 @@
 ﻿import { getLearnedGongfaNames, recordGongfaCombatTrigger } from './gongfaProficiency.js';
 
+import { PLACE_LOCATION_MAP } from './weimianTravel.js';
+
 export const BLACK_EMPEROR_ENCOUNTER_CHANCE = 0.03;
 export const BLACK_EMPEROR_TEACHING_FAVOR = 80;
 
@@ -105,7 +107,7 @@ function recordEvent(character, event) {
 export function rollDuanDeEncounter(player, options = {}) {
   if (!player || typeof player !== 'object') return { encountered: false };
   const plane = options.plane ?? player.power_place;
-  if (Number(plane) !== 2) return { encountered: false }; // 仅遮天位面
+  if (Number(plane) !== PLACE_LOCATION_MAP.遮天位面) return { encountered: false }; // 仅遮天位面
   const random = options.random || Math.random;
   const chance = options.chance ?? 0.001; // 0.1%
   if (random() >= chance) return { encountered: false };
