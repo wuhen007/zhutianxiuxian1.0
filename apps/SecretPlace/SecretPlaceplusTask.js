@@ -24,7 +24,8 @@ import {
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
 import { runTaskOnce } from '../../utils/taskGuard.js';
-import { rollDailyDungeonCoordinate } from '../../model/weimianTravel.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { getLocationId, getLocationName, PLACE_LOCATION_MAP, rollDailyDungeonCoordinate } from '../../model/weimianTravel.js';
 import { consumeBlackEmperorBattleFormation, rollBlackEmperorDungeonEncounter, rollDuanDeEncounter } from '../../model/blackEmperor.js';
 import { rollSuLingDungeonEncounter } from '../../model/suLing.js';
 import { rollPlaneStoryCharacterEncounter } from '../../model/planeStoryCharacters.js';
@@ -33,7 +34,6 @@ import {
   recordWenXianTaskProgress,
   rollDailyDungeonWenXianClue,
 } from '../../model/wenxianling.js';
-import { getPlayerPlaneName } from '../../model/planeCoords.js';
 import { revokeBreakKingEmperorEligibility } from '../../model/realmAuthority.js';
 import {
   getDungeonFortuneMultiplier,
@@ -64,6 +64,28 @@ import {
 } from '../../model/najieDropMemory.js';
 import { sendSecretPlaceNotification } from '../../model/secretPlaceNotification.js';
 import { isShangcangAction } from '../../model/shangcangDungeon.js';
+import {
+  getFashanActionKey,
+  getFashanHistoryKey,
+  requireActorAtPlane,
+} from '../../model/fashanProxy.js';
+
+const FASHAN_TASK_RETENTION_SECONDS = 24 * 60 * 60;
+const FASHAN_ADDITIVE_PLAYER_FIELDS = new Set(['修为', '血气', '寿元']);
+const writePlayerRecord = Write_player;
+
+function getFashanTaskRedisOptions(action) {
+  const active = action?.Place_actionplus == '0' || action?.Place_action == '0';
+  return active ? null : { EX: FASHAN_TASK_RETENTION_SECONDS };
+}
+
+async function writeTaskJson(key, value, action, preserveTaskTtl = false) {
+  const json = JSON.stringify(value);
+  if (!preserveTaskTtl) return redis.set(key, json);
+  const redisOptions = getFashanTaskRedisOptions(action);
+  return redisOptions ? redis.set(key, json, redisOptions) : redis.set(key, json);
+}
+
 export class SecretPlaceplusTask extends plugin {
   constructor() {
     super({
@@ -77,11 +99,14 @@ export class SecretPlaceplusTask extends plugin {
     this.task = {
       cron: this.set.actionplus_task,
       name: 'SecretPlaceplusTask',
-      fnc: () => runTaskOnce('SecretPlaceplusTask', () => this.Secretplaceplustask()),
+      fnc: () => runTaskOnce('SecretPlaceplusTask', async () => {
+        await this.Secretplaceplustask();
+        await this.settleFashanProxies();
+      }),
     };
   }
 
-  async Secretplaceplustask(targetPlayerId = null) {
+  async Secretplaceplustask(targetPlayerId = null, options = {}) {
     //获取缓存中人物列表
     let playerList = targetPlayerId == null ? [] : [String(targetPlayerId)];
     if (targetPlayerId == null) {
@@ -100,13 +125,48 @@ export class SecretPlaceplusTask extends plugin {
         result = await withSecretPlaceSettlementLock(player_id, async () => {
       let log_mag = ''; //查询当前人物动作日志信息
       log_mag = log_mag + '查询' + player_id + '是否有动作,';
+      const actionKey = options.actionKey || ('xiuxian:player:' + player_id + ':action');
+      const historyKey = options.historyKey || ('xiuxian:player:' + player_id + ':addiction_history');
+      const preserveTaskTtl = options.preserveTaskTtl === true;
       //得到动作
-      let action = await redis.get('xiuxian:player:' + player_id + ':action');
+      let action = await redis.get(actionKey);
       action = await JSON.parse(action);
+      if (options.taskId && action?.taskId !== options.taskId) return false;
+      const ownsAction = async () => {
+        if (!options.taskId) return true;
+        const currentRaw = await redis.get(actionKey);
+        if (!currentRaw) return false;
+        try {
+          return JSON.parse(currentRaw)?.taskId === options.taskId;
+        } catch {
+          return false;
+        }
+      };
+      const writeAction = async value => await ownsAction()
+        ? writeTaskJson(actionKey, value, value, preserveTaskTtl)
+        : false;
+      const writeHistory = async value => {
+        if (options.taskId && value?.taskId && value.taskId !== options.taskId) return false;
+        return await ownsAction()
+          ? writeTaskJson(historyKey, value, action, preserveTaskTtl)
+          : false;
+      };
+      const recordItemToHistory = async (id, itemName, itemClass, count = 1) => {
+        if (!(await ownsAction())) return false;
+        return recordItemToHistoryAtKey(
+          historyKey,
+          id,
+          itemName,
+          itemClass,
+          count,
+          action,
+          preserveTaskTtl,
+        );
+      };
       const normalizedAction = normalizeLegacySecretPlaceAddictionAction(action);
       if (normalizedAction !== action) {
         action = normalizedAction;
-        await redis.set('xiuxian:player:' + player_id + ':action', JSON.stringify(action));
+        if (!await writeAction(action)) return false;
       }
       //不为空，存在动作
       if (action != null) {
@@ -120,6 +180,53 @@ export class SecretPlaceplusTask extends plugin {
          let usr_qq = player_id; //
         //用户信息
         let player = await Read_player(player_id);
+        const proxyActor = options.actor === 'fashan';
+        const actorState = options.actorState && typeof options.actorState === 'object'
+          ? options.actorState
+          : {};
+        const actorMaxHp = Math.max(1, Number(player.血量上限) || 1);
+        if (proxyActor) {
+          const savedActorHp = Number(options.actorCurrentHp ?? player.法身当前血量);
+          player.当前血量 = Number.isFinite(savedActorHp)
+            ? Math.min(actorMaxHp, Math.max(0, savedActorHp))
+            : actorMaxHp;
+          actorState.currentHp = player.当前血量;
+        }
+        let actorBaseline = proxyActor ? structuredClone(player) : null;
+        const Write_player = proxyActor
+          ? async (id, nextPlayer) => {
+            if (options.taskId && !(await ownsAction())) return false;
+            const storedPlayer = await Read_player(id);
+            const mergedPlayer = { ...storedPlayer };
+            const keys = new Set([
+              ...Object.keys(actorBaseline || {}),
+              ...Object.keys(nextPlayer || {}),
+            ]);
+            for (const key of keys) {
+              if (key === '当前血量' || key === '法身当前血量') continue;
+              if (JSON.stringify(actorBaseline?.[key]) === JSON.stringify(nextPlayer?.[key])) continue;
+              const before = Number(actorBaseline?.[key]);
+              const after = Number(nextPlayer?.[key]);
+              const current = Number(storedPlayer?.[key]);
+              if (FASHAN_ADDITIVE_PLAYER_FIELDS.has(key)
+                && Number.isFinite(before) && Number.isFinite(after) && Number.isFinite(current)) {
+                mergedPlayer[key] = current + after - before;
+              } else if (Object.hasOwn(nextPlayer, key)) {
+                mergedPlayer[key] = structuredClone(nextPlayer[key]);
+              } else {
+                delete mergedPlayer[key];
+              }
+            }
+            const nextActorHp = Number(nextPlayer?.当前血量);
+            actorState.currentHp = Number.isFinite(nextActorHp)
+              ? Math.min(actorMaxHp, Math.max(0, nextActorHp))
+              : 0;
+            mergedPlayer.法身当前血量 = actorState.currentHp;
+            await writePlayerRecord(id, mergedPlayer);
+            actorBaseline = structuredClone(nextPlayer);
+          }
+          : writePlayerRecord;
+        const settlementPlane = getLocationId(options.actorPlane ?? player.power_place);
         //有秘境状态:这个直接结算即可
         if (action.Place_actionplus == '0') {
         let now_time = new Date().getTime();
@@ -172,7 +279,9 @@ export class SecretPlaceplusTask extends plugin {
             player.功法熟练度 = A_player.功法熟练度;
             player.功法熟练度每日 = A_player.功法熟练度每日;
             const proficiencyGains = awardDungeonGongfaProficiency(player);
-            player.当前血量 = await Set_HP(player_id, Data_battle.A_hp);
+            player.当前血量 = proxyActor
+              ? Math.min(actorMaxHp, Math.max(0, Number(Data_battle.A_hp) || 0))
+              : await Set_HP(player_id, Data_battle.A_hp);
             await Write_player(player_id, player);
             let msgg = Data_battle.msg;
             var thing_name;
@@ -643,7 +752,7 @@ if (weizhi.name === "紫薇星域") {
                 }
             }
         }
-        if (player.power_place == 2 && player.古地府 && player.灵根.type === "圣体" && Math.random() < 0.3 && player.mijinglevel_id < 14) {
+        if (settlementPlane == PLACE_LOCATION_MAP.遮天位面 && player.古地府 && player.灵根.type === "圣体" && Math.random() < 0.3 && player.mijinglevel_id < 14) {
             try {
                 let penaltyMsg = [
                     '【古地府惊魂·圣体劫难】',
@@ -757,7 +866,7 @@ if (weizhi.name === "紫薇星域") {
                 await sendSecretPlaceNotification(action, usr_qq, '地府阴气扰乱天机！事件处理失败');
             }
         }
-        if (player.power_place == 2 && Math.random() < 0.01) {
+        if (settlementPlane == PLACE_LOCATION_MAP.遮天位面 && Math.random() < 0.01) {
     try {
         // 检查是否已经解锁张五爷
         let hasZhangwuye = false;
@@ -867,7 +976,7 @@ if (weizhi.name === "紫薇星域") {
     }
 }
            // 在荒古禁地探索事件中添加行字秘唯一性检查和天资要求
-                if (player.power_place == 2) {
+                if (settlementPlane == PLACE_LOCATION_MAP.遮天位面) {
                     let random = Math.random();
                     // 根据玩家的幸运值调整概率
                     let adjustedProbability = random ;
@@ -1748,7 +1857,9 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
               if (pupilOpponent) {
                 last_msg += ' 正欲离开大荒峡谷，一名重瞳者拦住去路，双瞳开阖间天地失色！';
                 const pupilBattle = await zd_battle(player, pupilOpponent);
-                player.当前血量 = await Set_HP(player_id, Math.max(1, pupilBattle.A_hp));
+                player.当前血量 = proxyActor
+                  ? Math.min(actorMaxHp, Math.max(1, Number(pupilBattle.A_hp) || 1))
+                  : await Set_HP(player_id, Math.max(1, pupilBattle.A_hp));
                 if (pupilBattle.winner === 'A') {
                   await Add_najie_thing(player_id, '重瞳本源', '材料', 1);
                   last_msg += ' 你以至尊骨镇压重瞳神光，将其击败，获得【重瞳本源】×1。';
@@ -1758,7 +1869,7 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
               }
               const blackEmperorEncounter = rollBlackEmperorDungeonEncounter(player, {
                 dungeon: weizhi?.name,
-                plane: player.power_place,
+                plane: settlementPlane,
               });
               if (blackEmperorEncounter.encountered) {
                 last_msg += blackEmperorEncounter.message;
@@ -1766,14 +1877,14 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
               }
               const planeStoryEncounter = rollPlaneStoryCharacterEncounter(player, {
                 dungeon: weizhi?.name,
-                plane: player.power_place,
+                plane: settlementPlane,
               });
               if (planeStoryEncounter.encountered) {
                 last_msg += planeStoryEncounter.message;
                 await Write_player(player_id, player);
               }
               const duandeEncounter = rollDuanDeEncounter(player, {
-                plane: player.power_place,
+                plane: settlementPlane,
               });
               if (duandeEncounter.encountered) {
                 await Add_najie_thing(player_id, duandeEncounter.item.name, duandeEncounter.item.class, duandeEncounter.item.amount);
@@ -1809,7 +1920,7 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
                   dungeon: weizhi.name || '未知秘境'
                 },
                 chanceMultiplier: seekingMultipliers.realmEvent,
-                preferredPlane: seekingMultipliers.realmEvent > 1 ? getPlayerPlaneName(player) : null,
+                preferredPlane: seekingMultipliers.realmEvent > 1 ? getLocationName(settlementPlane) : null,
               });
               if (realmEvent) {
                 await RealmEvents.broadcastEvent(realmEvent.message);
@@ -2272,8 +2383,10 @@ ${aptitudeEvaluations[newAptitude]}
   // 结算后更新动作状态
 action.settled_count++;
 
+  if (options.taskId && !(await ownsAction())) return false;
+
   // ==== 更新沉迷历史记录 ====
-  const addictionHistory = await redis.get('xiuxian:player:' + player_id + ':addiction_history');
+  const addictionHistory = await redis.get(historyKey);
   if (addictionHistory) {
     const history = JSON.parse(addictionHistory);
     history.settled_count = action.settled_count;
@@ -2299,7 +2412,7 @@ action.settled_count++;
       history.death_count++;
     }
     
-    await redis.set('xiuxian:player:' + player_id + ':addiction_history', JSON.stringify(history));
+    await writeHistory(history);
   }
 
 if (action.settled_count >= action.total_count) {
@@ -2307,12 +2420,12 @@ if (action.settled_count >= action.total_count) {
     action.Place_actionplus = '1';
     
     // ==== 完成沉迷历史记录 ====
-    const addictionHistory = await redis.get('xiuxian:player:' + player_id + ':addiction_history');
+    const addictionHistory = await redis.get(historyKey);
     if (addictionHistory) {
       const history = JSON.parse(addictionHistory);
       history.status = 'completed';
       history.end_time = new Date().getTime();
-      await redis.set('xiuxian:player:' + player_id + ':addiction_history', JSON.stringify(history));
+      await writeHistory(history);
     }
     
     // 关闭其他状态
@@ -2322,10 +2435,7 @@ if (action.settled_count >= action.total_count) {
     action.Place_action = 1; // 秘境
     
     // 保存更新后的动作状态
-    await redis.set(
-        'xiuxian:player:' + player_id + ':action',
-        JSON.stringify(action)
-    );
+    if (!await writeAction(action)) return false;
     // 先保存本轮事件状态，再追加结算属性，避免旧快照覆盖增量奖励
     await Write_player(player_id, player);
     await Add_血气(player_id, qixue);
@@ -2344,10 +2454,7 @@ if (action.settled_count >= action.total_count) {
     action.next_settle_time = Number(action.next_settle_time) + action.interval;
     
     // 保存更新后的动作状态
-    await redis.set(
-        'xiuxian:player:' + player_id + ':action',
-        JSON.stringify(action)
-    );
+    if (!await writeAction(action)) return false;
               // 先保存本轮事件状态，再追加增量奖励
               await Write_player(player_id, player);
               await Add_血气(player_id, qixue);
@@ -2384,7 +2491,7 @@ if (action.settled_count >= action.total_count) {
           }
         }
       }
-        });
+        }, options);
       } catch (error) {
         console.error(`[沉迷秘境结算] 玩家${player_id}结算失败，本轮继续处理其他玩家:`, error);
         if (targetPlayerId != null) targetResult = false;
@@ -2393,6 +2500,154 @@ if (action.settled_count >= action.total_count) {
       if (targetPlayerId != null) targetResult = result;
     }
     return targetResult;
+  }
+
+  async settleFashanProxies(targetPlayerId = null) {
+    let playerList = targetPlayerId == null ? [] : [String(targetPlayerId)];
+    if (targetPlayerId == null) {
+      playerList = fs
+        .readdirSync('./plugins/zhutianxiuxian1.0/resources/data/xiuxian_player')
+        .filter(file => file.endsWith('.json'))
+        .map(file => file.slice(0, -5));
+    }
+
+    for (const playerId of playerList) {
+      try {
+        await withSecretPlaceSettlementLock(playerId, () => withPlayerMutationLock(playerId, async () => {
+          const proxyActionKey = getFashanActionKey(playerId);
+          const proxyHistoryKey = getFashanHistoryKey(playerId);
+          const proxyRaw = await redis.get(proxyActionKey);
+          if (!proxyRaw) return false;
+
+          let proxyAction;
+          try {
+            proxyAction = JSON.parse(proxyRaw);
+          } catch {
+            await redis.del(proxyActionKey);
+            await redis.expire(proxyHistoryKey, FASHAN_TASK_RETENTION_SECONDS);
+            const corruptedPlayer = await Read_player(playerId);
+            if (corruptedPlayer.法身状态 === '行动中') {
+              corruptedPlayer.法身状态 = '空闲中';
+              corruptedPlayer.法身行动 = '无行动';
+              await writePlayerRecord(playerId, corruptedPlayer);
+            }
+            return false;
+          }
+          if (!proxyAction?.isFashan || isShangcangAction(proxyAction)) return false;
+
+          const player = await Read_player(playerId);
+          proxyAction.taskId ||= `fashan:${playerId}:${Number(proxyAction.start_time) || 0}`;
+          const taskId = proxyAction.taskId;
+          const readOwnedAction = async () => {
+            const raw = await redis.get(proxyActionKey);
+            if (!raw) return null;
+            try {
+              const current = JSON.parse(raw);
+              if (current?.taskId) return current.taskId === taskId ? current : null;
+              if (Number(current?.start_time) !== Number(proxyAction.start_time)) return null;
+              const currentLocation = current.Place_address?.name ?? current.Place_address;
+              const expectedLocation = proxyAction.Place_address?.name ?? proxyAction.Place_address;
+              const sameLocation = (currentLocation == null && expectedLocation == null)
+                || (currentLocation != null && expectedLocation != null
+                  && String(currentLocation) === String(expectedLocation));
+              return sameLocation ? current : null;
+            } catch {
+              return null;
+            }
+          };
+          const writeProxyAction = async value => await readOwnedAction()
+            ? writeTaskJson(proxyActionKey, value, value, true)
+            : false;
+          const writeProxyHistory = async value => {
+            if (value?.taskId && value.taskId !== taskId) return false;
+            return await readOwnedAction()
+              ? writeTaskJson(proxyHistoryKey, value, proxyAction, true)
+              : false;
+          };
+          if (proxyAction.Place_actionplus != '0') {
+            if (!await writeProxyAction(proxyAction)) return false;
+            await redis.expire(proxyHistoryKey, FASHAN_TASK_RETENTION_SECONDS);
+            if (player.法身状态 === '行动中') {
+              player.法身状态 = '空闲中';
+              player.法身行动 = '无行动';
+              await writePlayerRecord(playerId, player);
+            }
+            return false;
+          }
+
+          if (!await writeProxyAction(proxyAction)) return false;
+          const expectedPlane = proxyAction.actorPlane ?? proxyAction.法身位置;
+          if (!requireActorAtPlane(player, expectedPlane, 'fashan').ok) {
+            if (!await readOwnedAction()) return false;
+            proxyAction.Place_actionplus = '1';
+            proxyAction.end_time = Date.now();
+            if (!await writeProxyAction(proxyAction)) return false;
+            player.法身状态 = '空闲中';
+            player.法身行动 = '无行动';
+            await writePlayerRecord(playerId, player);
+            const historyRaw = await redis.get(proxyHistoryKey);
+            if (historyRaw) {
+              try {
+                const history = JSON.parse(historyRaw);
+                if (!history.taskId || history.taskId === taskId) {
+                  history.status = 'stopped';
+                  history.stop_reason = '法身已离开副本所在位面';
+                  history.end_time = Date.now();
+                  await writeProxyHistory(history);
+                }
+              } catch {
+              }
+            }
+            return false;
+          }
+
+          const maxHp = Math.max(1, Number(player.血量上限) || 1);
+          const savedFashanHp = Number(player.法身当前血量 ?? proxyAction.fashanCurrentHp);
+          const actorState = {
+            currentHp: Number.isFinite(savedFashanHp)
+              ? Math.min(maxHp, Math.max(0, savedFashanHp))
+              : maxHp,
+          };
+          let processedAction = proxyAction;
+          try {
+            await this.Secretplaceplustask(playerId, {
+              skipRedisLock: true,
+              actionKey: proxyActionKey,
+              historyKey: proxyHistoryKey,
+              preserveTaskTtl: true,
+              actor: 'fashan',
+              actorPlane: expectedPlane,
+              actorCurrentHp: actorState.currentHp,
+              actorState,
+              taskId,
+            });
+          } finally {
+            const ownedAction = await readOwnedAction();
+            if (ownedAction) {
+              processedAction = ownedAction;
+              const settledPlayer = await Read_player(playerId);
+              const settledHp = Number(actorState.currentHp);
+              const fashanHp = Number.isFinite(settledHp)
+                ? Math.min(maxHp, Math.max(0, settledHp))
+                : 0;
+              settledPlayer.法身当前血量 = fashanHp;
+              if (processedAction.Place_actionplus != '0') {
+                settledPlayer.法身状态 = '空闲中';
+                settledPlayer.法身行动 = '无行动';
+              }
+              await writePlayerRecord(playerId, settledPlayer);
+              if (await readOwnedAction()) {
+                processedAction.fashanCurrentHp = fashanHp;
+                await writeProxyAction(processedAction);
+              }
+            }
+          }
+          return true;
+        }));
+      } catch (error) {
+        console.error(`[法身沉迷结算] 玩家${playerId}结算失败:`, error);
+      }
+    }
   }
 
 }
@@ -2419,11 +2674,28 @@ if (action.settled_count >= action.total_count) {
              * @param {string} itemClass 物品类别
              * @param {number} count 数量
              */
-            async function recordItemToHistory(player_id, itemName, itemClass, count = 1) {
+            async function recordItemToHistoryAtKey(
+              historyKey,
+              player_id,
+              itemName,
+              itemClass,
+              count = 1,
+              action = null,
+              preserveTaskTtl = false,
+            ) {
                 try {
-                    const addictionHistory = await redis.get('xiuxian:player:' + player_id + ':addiction_history');
+                    const addictionHistory = await redis.get(historyKey);
                     if (addictionHistory) {
                         const history = JSON.parse(addictionHistory);
+                        if (action?.taskId) {
+                            if (history.taskId && history.taskId !== action.taskId) return;
+                            if (!history.taskId) {
+                                const location = action.Place_address?.name || action.Place_address;
+                                if (Number(history.start_time) !== Number(action.start_time)
+                                  || (history.location && location && history.location !== location)) return;
+                                history.taskId = action.taskId;
+                            }
+                        }
                         if (!history.items_gained) {
                             history.items_gained = [];
                         }
@@ -2439,7 +2711,7 @@ if (action.settled_count >= action.total_count) {
                             });
                         }
                         
-                        await redis.set('xiuxian:player:' + player_id + ':addiction_history', JSON.stringify(history));
+                        await writeTaskJson(historyKey, history, action, preserveTaskTtl);
                     }
                 } catch (err) {
                     console.error('记录物品到沉迷历史失败:', err);
@@ -2453,7 +2725,13 @@ if (action.settled_count >= action.total_count) {
              */
             async function recordSpecialRewards(player_id, rewards) {
                 for (const reward of rewards) {
-                    await recordItemToHistory(player_id, reward.name, reward.class, reward.count);
+                    await recordItemToHistoryAtKey(
+                      'xiuxian:player:' + player_id + ':addiction_history',
+                      player_id,
+                      reward.name,
+                      reward.class,
+                      reward.count,
+                    );
                 }
             }
             // 辅助函数：获取属性名称

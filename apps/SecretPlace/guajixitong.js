@@ -27,6 +27,7 @@ import {
   buildProxyPlunder,
   selectHostileTianjiao,
 } from '../../model/tianjiaoHostility.js';
+import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
 export class guajixitong extends plugin {
   constructor() {
     super({
@@ -272,6 +273,9 @@ async fashen(e) {
     }
     player.纪元积累 -= 10;
     player.法身 = 1;
+    player.法身位置 = PLACE_LOCATION_MAP.仙界;
+    player.法身状态 = '空闲中';
+    player.法身行动 = '无行动';
     
     await Write_player(usr_qq, player);
     e.reply([

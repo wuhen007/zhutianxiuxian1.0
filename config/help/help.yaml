@@ -174,6 +174,12 @@
       title: '#沉迷xx地点名*n'
       desc: 'xx为秘境、禁地、仙境和宗门秘境'
     - icon: help-icon_11
+      title: '#法身穿梭 位面'
+      desc: '将空闲法身移动到目标位面，法身代行副本前必须与副本处于同一位面'
+    - icon: help-icon_11
+      title: '#法身探索xx 地点 / #法身沉迷xx 地点*n'
+      desc: '由法身独立探索或连续刷取秘境、禁地、仙境及诸天位面副本，不占用真身行动'
+    - icon: help-icon_11
       title: '#逃离'
       desc: '支持放弃状态'
     - icon: help-icon_43

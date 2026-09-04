@@ -64,6 +64,15 @@ test('shengxu settlement is claimed and recorded idempotently', () => {
   assert.match(source, /idempotencyKey: `shengxu:/);
 });
 
+test('法身圣墟结算使用出发快照且保留实时位面校验', () => {
+  const source = fs.readFileSync(new URL('../apps/User/ShengxuContent.js', import.meta.url), 'utf8');
+  assert.match(source, /const actorSource = actorType === 'fashan' && task\.actorSnapshot/);
+  assert.doesNotMatch(source, /const actorSource = player;/);
+  assert.match(source, /getLocationId\(player\.法身位置\) !== actorPlane/);
+  assert.match(source, /createShengxuMonster\(actorSource, dungeon\)/);
+  assert.match(source, /mergeCombatProficiency\(fresh, actorSource, attacker\)/);
+});
+
 test('shengxu addiction uses per-round idempotent settlement and one final summary', () => {
   const source = fs.readFileSync(new URL('../apps/User/ShengxuContent.js', import.meta.url), 'utf8');
   assert.match(source, /#沉迷圣墟/);

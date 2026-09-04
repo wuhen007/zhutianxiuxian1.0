@@ -42,6 +42,7 @@ async function releaseSettlementLock(redisClient, key, token) {
 
 export async function withSecretPlaceSettlementLock(playerId, task, options = {}) {
   return withPlayerMutationLock(playerId, async () => {
+    if (options.skipRedisLock) return task();
     const redisClient = options.redisClient ?? globalThis.redis;
     if (!redisClient?.set) return task();
 

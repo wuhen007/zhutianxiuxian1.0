@@ -1,6 +1,13 @@
 import { plugin, verc, data } from '../../api/api.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
 import { isDaofaActive } from '../../model/daofa.js';
+import {
+  PLACE_LOCATION_MAP,
+  canImmortalEmperorFreeTravel,
+  getLocationId,
+  getLocationName,
+  getLocationThreshold,
+} from '../../model/weimianTravel.js';
 import { getDungeonGongfaReduction } from '../../model/gongfaProficiency.js';
 import {
   buildPlaneDestroyedMessage,
@@ -18,18 +25,28 @@ import {
   Add_灵石,
   Add_修为,
   Add_寿元,
-   Add_血气,
+  Add_血气,
   Goweizhi,
   get_addictionharvest_img,
-  channel
+  channel,
+  existplayer,
 } from '../../model/xiuxian.js';
 import { applySecretPlaceNotificationContext } from '../../model/secretPlaceNotification.js';
+import {
+  getFashanActionKey,
+  getFashanHistoryKey,
+  isFashanActionPending,
+  isFashanReady,
+  requireActorAtPlane,
+} from '../../model/fashanProxy.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import {
   calculateShangcangDuration,
   deductShangcangCost,
   formatShangcangCost,
   getShangcangCostShortage,
   SHANGCANG_ADDICTION_ACTION,
+  SHANGCANG_NORMAL_ACTION,
   SHANGCANG_PLANE_ID,
 } from '../../model/shangcangDungeon.js';
 
@@ -41,6 +58,40 @@ async function replyPlaneDestroyed(e, planeName) {
   return e.reply(buildPlaneDestroyedMessage(data.filePathMap.weimianList, planeName));
 }
 
+function parseFashanAddictionMessage(message) {
+  const match = /^#法身沉迷(秘境|禁地|仙境|遮天位面|下界八域|九天十地|上苍之上)\s*(.+?)(?:\*(\d+))?$/.exec(String(message || '').trim());
+  if (!match) return null;
+  const count = Number(match[3] || 1);
+  return { category: match[1], location: match[2].trim(), count };
+}
+
+function parseFashanExploreMessage(message) {
+  const match = /^#法身探索(秘境|禁地|仙境|遮天位面|下界八域|九天十地|上苍之上)\s*(.+)$/.exec(String(message || '').trim());
+  if (!match) return null;
+  return { category: match[1], location: match[2].trim(), count: 1 };
+}
+
+function getFashanDungeonDefinition(category, player) {
+  const fixed = {
+    秘境: { list: data.didian_list, plane: PLACE_LOCATION_MAP.凡间, baseUnit: 70 },
+    仙境: { list: data.Fairyrealm_list, plane: PLACE_LOCATION_MAP.仙界, baseUnit: 70 },
+    遮天位面: { list: data.zhetian_list, plane: PLACE_LOCATION_MAP.遮天位面, baseUnit: 70 },
+    下界八域: { list: data.xiajie_list, plane: PLACE_LOCATION_MAP.下界八域, baseUnit: 100 },
+    九天十地: { list: data.jiutianshidi_list, plane: PLACE_LOCATION_MAP.九天十地, baseUnit: 70 },
+    上苍之上: { list: data.shangcang_list, plane: SHANGCANG_PLANE_ID, baseUnit: 0 },
+  };
+  if (category === '禁地') {
+    return { list: data.forbiddenarea_list, plane: getLocationId(player?.法身位置), baseUnit: 70 };
+  }
+  return fixed[category] || null;
+}
+
+function getFashanHistoryKeyForActor(userId, actor = 'body') {
+  return actor === 'fashan'
+    ? getFashanHistoryKey(userId)
+    : `xiuxian:player:${userId}:addiction_history`;
+}
+
 export class SecretPlaceplus extends plugin {
   constructor() {
     super({
@@ -49,6 +100,18 @@ export class SecretPlaceplus extends plugin {
       event: 'message',
       priority: 600,
       rule: [
+        {
+          reg: '^#法身穿梭\\s+.+$',
+          fnc: 'fashanTravel',
+        },
+        {
+          reg: '^#法身探索(?:秘境|禁地|仙境|遮天位面|下界八域|九天十地|上苍之上).+$',
+          fnc: 'fashanExplore',
+        },
+        {
+          reg: '^#法身沉迷(?:秘境|禁地|仙境|遮天位面|下界八域|九天十地|上苍之上).*$',
+          fnc: 'fashanAddiction',
+        },
         {
           reg: '^#沉迷秘境.*$',
           fnc: 'Gosecretplace',
@@ -82,8 +145,16 @@ export class SecretPlaceplus extends plugin {
           fnc: 'CheckAddictionHarvest',
         },
         {
+          reg: '^#法身沉迷收获$',
+          fnc: 'CheckFashanAddictionHarvest',
+        },
+        {
           reg: '^#清除沉迷记录$',
           fnc: 'ClearAddictionHistory',
+        },
+        {
+          reg: '^#法身清除沉迷记录$',
+          fnc: 'ClearFashanAddictionHistory',
         },
       ],
     });
@@ -96,6 +167,307 @@ export class SecretPlaceplus extends plugin {
       return false;
     }
     return false;
+  }
+
+  async fashanTravel(e) {
+    if (!verc({ e })) return false;
+    let userId = String(e.user_id || '').replace('qg_', '');
+    userId = await channel(userId);
+    const requestedLocation = String(e.msg || '').replace(/^#法身穿梭\s*/, '').trim();
+    const location = getLocationName(requestedLocation);
+    if (!location || !Object.hasOwn(PLACE_LOCATION_MAP, location)) {
+      return e.reply(`无效位面：${requestedLocation}\n可用：${Object.keys(PLACE_LOCATION_MAP).join('、')}`);
+    }
+    const targetLocation = getLocationId(location);
+    if (!(await existplayer(userId))) {
+      return e.reply('玩家不存在，请先创建角色。');
+    }
+    return withPlayerMutationLock(userId, async () => {
+      const player = await Read_player(userId);
+      if (!player || Number(player.法身) !== 1) return e.reply('尚未凝聚法身，暂时无法让法身穿梭。');
+
+      const currentLocation = getLocationId(player.法身位置);
+      const emperorFreeTravel = canImmortalEmperorFreeTravel(player, currentLocation, targetLocation);
+      const threshold = getLocationThreshold(player, location);
+      if (!threshold.ok && !emperorFreeTravel) {
+        const checks = (threshold.checks || []).map(item => `${item.label}：${item.display}`);
+        return e.reply([
+          `【法身穿梭·${location}界壁未开】`,
+          ...checks,
+          `法身需由本体达到对应界壁门槛，仙帝权柄可在四大界壁区域之间自由往返。`,
+        ].join('\n'));
+      }
+      if (isWeiMianDestroyed(location)) return replyPlaneDestroyed(e, location);
+
+      const actionKey = getFashanActionKey(userId);
+      const raw = await redis.get(actionKey);
+      if (raw) {
+        try {
+          const action = JSON.parse(raw);
+          if (isFashanActionPending(action)) return e.reply(`法身正在${action.action || '代行'}中，请等待行动结算。`);
+        } catch {
+          // 坏的专用键不阻塞新的法身行动。
+        }
+        await redis.del(actionKey);
+      }
+      if (player.法身状态 === '行动中') {
+        player.法身状态 = '空闲中';
+        player.法身行动 = '无行动';
+      }
+      player.法身位置 = targetLocation;
+      player.法身状态 = '空闲中';
+      player.法身行动 = '无行动';
+      await Write_player(userId, player);
+      return e.reply(`【法身穿梭】法身已降临${location}，可发送对应的 #法身沉迷 指令。`);
+    });
+  }
+
+  async fashanExplore(e) {
+    return this.startFashanDungeon(e, 'explore');
+  }
+
+  async fashanAddiction(e) {
+    return this.startFashanDungeon(e, 'addiction');
+  }
+
+  async startFashanDungeon(e, mode) {
+    if (!verc({ e })) return false;
+    let userId = String(e.user_id || '').replace('qg_', '');
+    userId = await channel(userId);
+    if (!(await existplayer(userId))) return e.reply('玩家不存在，请先创建角色。');
+    const request = mode === 'explore'
+      ? parseFashanExploreMessage(e.msg)
+      : parseFashanAddictionMessage(e.msg);
+    if (!request || !Number.isInteger(request.count) || request.count < 1 || request.count > 12) {
+      return e.reply('法身沉迷次数必须在1-12之间。');
+    }
+    return withPlayerMutationLock(userId, async () => {
+      const player = await Read_player(userId);
+      if (!player || Number(player.法身) !== 1) return e.reply('尚未凝聚法身，暂时无法代行。');
+
+      const actionKey = getFashanActionKey(userId);
+      const activeRaw = await redis.get(actionKey);
+      if (activeRaw) {
+        try {
+          const active = JSON.parse(activeRaw);
+          if (isFashanActionPending(active)) return e.reply(`法身正在${active.action || '代行'}中，请等待当前行动结算。`);
+        } catch {
+          // 专用键损坏时清理后重建。
+        }
+        await redis.del(actionKey);
+        player.法身状态 = '空闲中';
+        player.法身行动 = '无行动';
+      }
+      if (!isFashanReady(player)) return e.reply('法身当前已有代行行动，请等待结算。');
+
+      const definition = getFashanDungeonDefinition(request.category, player);
+      if (!definition) return e.reply('未找到法身可用的副本类型。');
+      const place = definition.list?.find(item => item.name === request.location);
+      if (!place) return e.reply(`未找到${request.category}地点：${request.location}`);
+      const expectedPlane = Number(definition.plane);
+      const planeCheck = requireActorAtPlane(player, expectedPlane, 'fashan');
+      if (!planeCheck.ok) {
+        const current = Number.isFinite(planeCheck.actual) ? getLocationName(planeCheck.actual) : '未知之地';
+        const target = getLocationName(expectedPlane) || request.category;
+        return e.reply(`【法身位面不符】${request.location}位于${target}，当前法身位于${current || '未知之地'}。`);
+      }
+      const planeName = getLocationName(expectedPlane);
+      if (planeName && isWeiMianDestroyed(planeName)) return replyPlaneDestroyed(e, planeName);
+
+      if (request.category === '上苍之上') {
+        return this.startFashanShangcang(e, userId, player, place, request.count, expectedPlane, mode);
+      }
+
+      const count = request.count;
+      const rounds = mode === 'explore' ? 1 : 10 * count;
+      const entryCount = mode === 'explore' ? 0 : count;
+      const level = Number(player.level_id) || 1;
+      if (request.category === '禁地' && level < 22) return e.reply('练气境界不足，法身暂不能沉迷禁地。');
+      if (request.category === '仙境' && level < 42 && Number(player.lunhui) !== 1) return e.reply('轮回未启，法身难入仙境。');
+      if (request.category === '仙境' && request.location === '杀神崖' && level < 50) {
+        return e.reply('练气境界不足，法身尚不足以进入杀神崖。');
+      }
+      if (request.category === '仙境' && request.location === '诸天'
+        && player.灵根?.name !== '九转轮回体'
+        && player.灵根?.name !== '命运神道体'
+        && player.灵根?.type !== '神魔体') {
+        return e.reply('法身尚未具备进入诸天的轮回根基。');
+      }
+      if (request.category === '仙境' && request.location === '真魔殿'
+        && player.灵根?.name !== '九重魔功'
+        && player.灵根?.name !== '极道天魔'
+        && player.灵根?.type !== '神魔体') {
+        return e.reply('法身尚未具备进入真魔殿的真魔根基。');
+      }
+      if (request.category === '仙境' && request.location === '光阴之外'
+        && player.灵根?.type !== '命运'
+        && player.灵根?.type !== '天魔'
+        && player.灵根?.type !== '神魔体') {
+        return e.reply('法身尚未具备踏入光阴之外的超脱根基。');
+      }
+
+      const price = Math.max(0, Number(place.Price) || 0) * rounds;
+      const shouyuan = Math.max(0, Number(place.shouyuan) || 0) * rounds;
+      const experience = Math.max(0, Number(place.experience) || 0) * rounds;
+      const shortages = [];
+      if ((Number(player.灵石) || 0) < price) shortages.push(`灵石需${price}`);
+      if ((Number(player.寿元) || 0) < shouyuan) shortages.push(`寿元需${shouyuan}`);
+      if ((Number(player.修为) || 0) < experience) shortages.push(`修为需${experience}`);
+      if ((Number(player.血气) || 0) < experience) shortages.push(`血气需${experience}`);
+      const keyCount = Number(await exist_najie_thing(userId, '秘境之匙', '道具')) || 0;
+      if (keyCount < entryCount) shortages.push(`秘境之匙需${entryCount}`);
+      if (request.category === '秘境' && ['小千世界', '中千世界', '大千世界'].includes(request.location)) {
+        const workTickets = Number(await exist_najie_thing(userId, '打工券', '道具')) || 0;
+        if (workTickets < entryCount) shortages.push(`打工券需${entryCount}`);
+      }
+      const specialCosts = [];
+      if (request.category === '仙境') {
+        const itemByLocation = {
+          往世星海: ['群星秘钥', rounds],
+          神域星宫: ['神域令牌', rounds],
+          瑞泽云海: ['仙舟', rounds],
+          仙界矿场: ['打工券', entryCount],
+        };
+        const special = itemByLocation[request.location];
+        if (special) {
+          const [itemName, amount] = special;
+          if (['往世星海', '神域星宫'].includes(request.location) && level <= 54) {
+            return e.reply('万界道祖级法身方可踏入此地。');
+          }
+          const owned = Number(await exist_najie_thing(userId, itemName, '道具')) || 0;
+          if (owned < amount) shortages.push(`${itemName}需${amount}`);
+          specialCosts.push({ itemName, amount });
+        }
+      }
+      if (shortages.length) {
+        return e.reply([`【法身${mode === 'explore' ? '探索' : '沉迷'}·资源不足】`, ...shortages].join('\n'));
+      }
+
+      const baseTime = definition.baseUnit * (mode === 'explore' ? 0.1 : count);
+      const { timeReduction, msgs } = await calculateTimeReductionForAddiction(player, mode === 'explore' ? 0.1 : count);
+      const totalMinutes = applyAddictionGongfaReduction(player, baseTime, baseTime - timeReduction, msgs);
+      const now = Date.now();
+      const taskId = `fashan:${userId}:${now}:${request.category}:${mode}`;
+      const interval = totalMinutes * 60 * 1000 / rounds;
+      const action = {
+        taskId,
+        action: `法身${mode === 'explore' ? '探索' : '沉迷'}${request.category}`,
+        actor: 'fashan',
+        isFashan: true,
+        actorPlane: expectedPlane,
+        法身位置: expectedPlane,
+        start_time: now,
+        end_time: now + totalMinutes * 60 * 1000,
+        total_time: totalMinutes,
+        remaining_time: totalMinutes,
+        total_count: rounds,
+        settled_count: 0,
+        interval,
+        next_settle_time: now + interval,
+        shutup: '1', working: '1', power_up: '1',
+        Place_action: '1', Place_actionplus: '0',
+        mojie: '1', xijie: '1', plant: '1', mine: '1',
+        Place_address: place,
+      };
+      applySecretPlaceNotificationContext(action, e, userId);
+
+      if (entryCount > 0) await Add_najie_thing(userId, '秘境之匙', '道具', -entryCount);
+      if (request.category === '秘境' && ['小千世界', '中千世界', '大千世界'].includes(request.location)) {
+        await Add_najie_thing(userId, '打工券', '道具', -entryCount);
+      }
+      for (const special of specialCosts) {
+        await Add_najie_thing(userId, special.itemName, '道具', -special.amount);
+      }
+      player.灵石 = (Number(player.灵石) || 0) - price;
+      player.寿元 = (Number(player.寿元) || 0) - shouyuan;
+      player.修为 = (Number(player.修为) || 0) - experience;
+      player.血气 = (Number(player.血气) || 0) - experience;
+      player.法身位置 = expectedPlane;
+      player.法身状态 = '行动中';
+      player.法身行动 = `${mode === 'explore' ? '探索' : '沉迷'}${request.category}·${request.location}`;
+      await Write_player(userId, player);
+      await redis.set(actionKey, JSON.stringify(action));
+      await redis.set(getFashanHistoryKey(userId), JSON.stringify({
+        taskId,
+        start_time: now,
+        location: place.name,
+        location_type: request.category,
+        total_count: rounds,
+        settled_count: 0,
+        victory_count: 0,
+        death_count: 0,
+        xiuwei_gained: 0,
+        xueqi_gained: 0,
+        items_gained: [],
+        status: 'in_progress',
+        end_time: null,
+      }));
+      return e.reply([
+        `【法身${mode === 'explore' ? '探索' : '沉迷'}${request.category}·${request.location}】`,
+        `法身已在${planeName || '目标位面'}开始连续历练${rounds}轮。`,
+        `消耗：${shouyuan}寿元、${price}灵石、${experience}修为与血气${entryCount > 0 ? `、${entryCount}个秘境之匙` : ''}`,
+        `预计${totalMinutes}分钟后完成，每轮自动结算。`,
+        ...msgs,
+      ].join('\n'));
+    });
+  }
+
+  async startFashanShangcang(e, userId, player, place, count, expectedPlane, mode = 'addiction') {
+    const shortage = getShangcangCostShortage(player);
+    if (shortage) return e.reply(`${shortage[0]}不足，法身首轮需要${formatShangcangCost()}`);
+    const timing = calculateShangcangDuration(player, data.minggeList);
+    const now = Date.now();
+    const taskId = `fashan:${userId}:${now}:上苍之上:${mode}`;
+    const action = {
+      taskId,
+      action: mode === 'explore' ? SHANGCANG_NORMAL_ACTION : SHANGCANG_ADDICTION_ACTION,
+      actor: 'fashan',
+      isFashan: true,
+      actorPlane: expectedPlane,
+      法身位置: expectedPlane,
+      start_time: now,
+      end_time: now + timing.durationMs * count,
+      total_time: timing.durationMs * count / 60000,
+      remaining_time: timing.durationMs * count / 60000,
+      total_count: count,
+      settled_count: 0,
+      interval: timing.durationMs,
+      next_settle_time: now + timing.durationMs,
+      shutup: '1', working: '1', power_up: '1',
+      Place_action: mode === 'explore' ? '0' : '1', Place_actionplus: mode === 'explore' ? '1' : '0',
+      mojie: '1', xijie: '1', plant: '1', mine: '1',
+      Place_address: place,
+    };
+    applySecretPlaceNotificationContext(action, e, userId);
+    deductShangcangCost(player);
+    player.lastDungeonType = '上苍之上';
+    player.lastDungeonName = place.name;
+    player.法身位置 = expectedPlane;
+    player.法身状态 = '行动中';
+    player.法身行动 = `${mode === 'explore' ? '探索' : '沉迷'}上苍之上·${place.name}`;
+    await Write_player(userId, player);
+    await redis.set(getFashanActionKey(userId), JSON.stringify(action));
+    await redis.set(getFashanHistoryKey(userId), JSON.stringify({
+      taskId,
+      start_time: now,
+      location: place.name,
+      location_type: '上苍之上',
+      total_count: count,
+      settled_count: 0,
+      victory_count: 0,
+      death_count: 0,
+      xiuwei_gained: 0,
+      xueqi_gained: 0,
+      items_gained: [],
+      status: 'in_progress',
+      end_time: null,
+    }));
+    return e.reply([
+      `【法身${mode === 'explore' ? '探索' : '沉迷'}上苍之上·${place.name}】共${count}轮`,
+      `法身已降临上苍之上，首轮消耗：${formatShangcangCost()}`,
+      `每轮约${timing.minutes}分钟，预计${Math.ceil(action.total_time)}分钟后完成。`,
+      ...timing.messages,
+    ].join('\n'));
   }
 
   async GoShangcang(e) {
@@ -127,7 +499,9 @@ export class SecretPlaceplus extends plugin {
     player.lastDungeonType = '上苍之上';
     player.lastDungeonName = location;
     const now = Date.now();
+    const taskId = `body:${usr_qq}:${now}:上苍之上:addiction`;
     const action = {
+      taskId,
       action: SHANGCANG_ADDICTION_ACTION,
       start_time: now,
       end_time: now + totalDuration,
@@ -146,6 +520,7 @@ export class SecretPlaceplus extends plugin {
     await Write_player(usr_qq, player);
     await redis.set(`xiuxian:player:${usr_qq}:action`, JSON.stringify(action));
     await redis.set(`xiuxian:player:${usr_qq}:addiction_history`, JSON.stringify({
+      taskId,
       start_time: now,
       location,
       location_type: '上苍之上',
@@ -229,7 +604,7 @@ async Gosecretplace(e) {
     // 获取玩家数据
     const player = await Read_player(usr_qq);
          // 检查是否已在目标地点
-    if (player.power_place != 0) {
+    if (player.power_place != PLACE_LOCATION_MAP.凡间) {
         return e.reply(`你不在凡间`);
     }
 
@@ -414,7 +789,7 @@ async Goxiajie(e) {
     // 获取玩家数据
     const player = await Read_player(usr_qq);
          // 检查是否已在目标地点
-    if (player.power_place != 1.5) {
+    if (player.power_place != PLACE_LOCATION_MAP.下界八域) {
         return e.reply(`你不在下界八域`);
     }
 
@@ -591,7 +966,7 @@ async Gojiutianshidi(e) {
     // 获取玩家数据
     const player = await Read_player(usr_qq);
          // 检查是否已在目标地点
-    if (player.power_place != 2.5) {
+    if (player.power_place != PLACE_LOCATION_MAP.九天十地) {
         return e.reply(`你不在九天十地`);
     }
 
@@ -751,7 +1126,7 @@ async Gozhetian(e) {
     didian = code[0].trim();
     let i = parseInt(code[1]) || 1; // 默认1次
          // 检查是否已在目标地点
-    if (player.power_place != 2) {
+    if (player.power_place != PLACE_LOCATION_MAP.遮天位面) {
         return e.reply(`你不在遮天位面`);
     }
 
@@ -1014,11 +1389,7 @@ async Goforbiddenarea(e) {
 
     // 诡异大祭·崩灭检查：玩家当前所在位面被毁则封锁副本
     {
-        const PLANE_ID_TO_NAME = {
-            0: '凡间', 1: '仙界', 1.5: '下界八域',
-            2: '遮天位面', 2.5: '九天十地', 3: '界海', 3.5: '太初星墟', 6: '仙域'
-        };
-        const currentPlaneName = PLANE_ID_TO_NAME[player.power_place];
+        const currentPlaneName = getLocationName(player.power_place);
         if (currentPlaneName && isWeiMianDestroyed(currentPlaneName)) {
             return replyPlaneDestroyed(e, currentPlaneName);
         }
@@ -1221,7 +1592,7 @@ async Gofairyrealm(e) {
     let player = await Read_player(usr_qq);
     
     // 检查是否已在目标地点
-    if (player.power_place != 1) {
+    if (player.power_place != PLACE_LOCATION_MAP.仙界) {
         return e.reply(`你不在仙界`);
     }
 
@@ -1456,13 +1827,21 @@ if (didian === "往世星海") {
 
   // 沉迷收获功能
   async CheckAddictionHarvest(e) {
+    return this.CheckAddictionHarvestForActor(e, 'body');
+  }
+
+  async CheckFashanAddictionHarvest(e) {
+    return this.CheckAddictionHarvestForActor(e, 'fashan');
+  }
+
+  async CheckAddictionHarvestForActor(e, actor) {
     if (!verc({ e })) return false;
     
     let usr_qq = e.user_id.toString().replace('qg_', '');
      usr_qq = await channel(usr_qq);
     
     // 获取沉迷历史数据
-    const addictionHistory = await redis.get('xiuxian:player:' + usr_qq + ':addiction_history');
+    const addictionHistory = await redis.get(getFashanHistoryKeyForActor(usr_qq, actor));
     
     if (!addictionHistory) {
       return e.reply('暂无沉迷记录，请先进行沉迷活动');
@@ -1488,7 +1867,7 @@ if (didian === "往世星海") {
     
     // 构建图片数据
     let renderData = {
-      nickname: nickname,
+      nickname: actor === 'fashan' ? `${nickname}·法身` : nickname,
       location: history.location,
       location_type: history.location_type,
       settled_count: history.settled_count,
@@ -1523,13 +1902,22 @@ if (didian === "往世星海") {
 
   // 清除沉迷记录功能
   async ClearAddictionHistory(e) {
+    return this.ClearAddictionHistoryForActor(e, 'body');
+  }
+
+  async ClearFashanAddictionHistory(e) {
+    return this.ClearAddictionHistoryForActor(e, 'fashan');
+  }
+
+  async ClearAddictionHistoryForActor(e, actor) {
     if (!verc({ e })) return false;
     
     let usr_qq = e.user_id.toString().replace('qg_', '');
      usr_qq = await channel(usr_qq);
     
     // 获取沉迷历史数据
-    const addictionHistory = await redis.get('xiuxian:player:' + usr_qq + ':addiction_history');
+    const historyKey = getFashanHistoryKeyForActor(usr_qq, actor);
+    const addictionHistory = await redis.get(historyKey);
     
     if (!addictionHistory) {
       return e.reply('暂无沉迷记录可清除');
@@ -1543,7 +1931,7 @@ if (didian === "往世星海") {
     }
     
     // 清除记录
-    await redis.del('xiuxian:player:' + usr_qq + ':addiction_history');
+    await redis.del(historyKey);
     
     e.reply(`已清除沉迷记录：${history.location}（${history.location_type}）`);
     return false;

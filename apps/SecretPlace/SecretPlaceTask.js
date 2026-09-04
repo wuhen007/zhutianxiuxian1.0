@@ -26,7 +26,7 @@ import {
   buildAt
 } from '../../model/xiuxian.js';
 import { AppName } from '../../app.config.js';
-import { rollDailyDungeonCoordinate } from '../../model/weimianTravel.js';
+import { getLocationId, PLACE_LOCATION_MAP, rollDailyDungeonCoordinate } from '../../model/weimianTravel.js';
 import { consumeBlackEmperorBattleFormation, rollBlackEmperorDungeonEncounter, rollDuanDeEncounter } from '../../model/blackEmperor.js';
 import { rollSuLingDungeonEncounter } from '../../model/suLing.js';
 import { rollPlaneStoryCharacterEncounter } from '../../model/planeStoryCharacters.js';
@@ -128,7 +128,7 @@ export class SecretPlaceTask extends plugin {
     const parsedAction = JSON.parse(fashanAction);
     
     // 检查是否为法身探索行动
-    if (parsedAction.isFashan && parsedAction.Place_action === '0') {
+    if (!isShangcangAction(parsedAction) && parsedAction.isFashan && parsedAction.Place_action === '0') {
         const end_time = parsedAction.end_time;
         const now_time = new Date().getTime();
         
@@ -136,6 +136,16 @@ export class SecretPlaceTask extends plugin {
         if (now_time >= end_time) {
             // 读取玩家数据
             const player = await Read_player(player_id);
+            const actorPlane = getLocationId(
+              parsedAction.actorPlane ?? parsedAction.法身位置 ?? player.法身位置,
+            );
+            if (!Number.isFinite(actorPlane) || getLocationId(player.法身位置) !== actorPlane) {
+                player.法身行动 = '无行动';
+                player.法身状态 = '空闲中';
+                await Write_player(player_id, player);
+                await redis.del('xiuxian:player:' + player_id + ':action:fashan');
+                return;
+            }
             
             // 获取地点信息
             const place = parsedAction.Place_address;
@@ -727,7 +737,7 @@ if (weizhi.name === "万龙巢") {
                 }
             }
         }
-if (player.power_place == 2 && player.古地府 && player.灵根.type === "圣体" && Math.random() < 0.3 && player.mijinglevel_id < 14) {
+if (player.power_place == PLACE_LOCATION_MAP.遮天位面 && player.古地府 && player.灵根.type === "圣体" && Math.random() < 0.3 && player.mijinglevel_id < 14) {
     try {
         let penaltyMsg = [
             '【古地府惊魂·圣体劫难】',
@@ -841,7 +851,7 @@ if (player.power_place == 2 && player.古地府 && player.灵根.type === "圣�
         await sendSecretPlaceNotification(action, usr_qq, '地府阴气扰乱天机！事件处理失败');
     }
 }
-if (player.power_place == 2 && Math.random() < 0.01) {
+if (player.power_place == PLACE_LOCATION_MAP.遮天位面 && Math.random() < 0.01) {
     try {
         // 检查是否已经解锁张五爷
         let hasZhangwuye = false;
@@ -891,7 +901,7 @@ if (player.power_place == 2 && Math.random() < 0.01) {
         await sendSecretPlaceNotification(action, usr_qq, '源气紊乱，天机不显！事件处理失败');
     }
 }
-                if (player.power_place == 2) {
+                if (player.power_place == PLACE_LOCATION_MAP.遮天位面) {
                     let random = Math.random();
                     // 根据玩家的幸运值调整概率
                     let adjustedProbability = random ;
