@@ -1,3 +1,5 @@
+import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
+
 export const XIANGU_REALM_ROUTES = Object.freeze({
   8: Object.freeze({ targetLevelId: 9, targetName: '真一境', costMultiplier: 30, tribulationMethod: '_runZhenyiTribulation' }),
   9: Object.freeze({ targetLevelId: 10, targetName: '圣祭境', costMultiplier: 30, tribulationMethod: '_runShengjiTribulation' }),
@@ -27,7 +29,7 @@ export function resolveXianguBreakthroughCommand(currentLevelId, isExtreme = fal
 
 export function canBreakthroughXianguRealmHere(player, targetLevelId) {
   const target = Number(targetLevelId);
-  return target < 16 || target > 20 || Number(player?.power_place) === 6;
+  return target < 16 || target > 20 || Number(player?.power_place) === PLACE_LOCATION_MAP.仙域;
 }
 
 // 载道劫判定（至尊路第四关）：自身之道境界达到「至尊·真意」及以上（阶段 index>=3）

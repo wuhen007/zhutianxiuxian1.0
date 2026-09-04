@@ -2,14 +2,15 @@
  * 位面坐标系统 🗺️
  * 数据来源: resources/data/位面坐标.json
  *
- * 每个位面一张 1000×1000 地图（坐标 0-999），
- * x 轴向东递增，y 轴向南递增；(0,0) 西北隅，(999,999) 东南极。
- * 时间长河 / 永恒未知之地超脱坐标之外，不在本系统内。
+ * 实体方图覆盖已登记的 11 个诸天/圣墟位面，每张地图 1000×1000
+ * （坐标 0-999）；x 轴向东递增，y 轴向南递增。
+ * 时间长河、永恒未知之地及更高维位面没有实体方图，但仍可在
+ * model/weimianTravel.js 中记录抽象坐标锚点，供穿梭线索使用。
  */
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { PLACE_LOCATION_MAP } from './weimianTravel.js';
+import { COORDINATE_MAPPED_LOCATIONS, getLocationName } from './weimianTravel.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const COORD_FILE = path.join(__dirname, '..', 'resources', 'data', '位面坐标.json');
@@ -36,7 +37,8 @@ export function getCoordLimit() {
 
 /** 获取指定位面的全部地点列表；位面不存在返回 [] */
 export function getPlaneLocations(planeName) {
-  return getCoordData()[planeName]?.locations ?? [];
+  const name = getLocationName(planeName) || planeName;
+  return getCoordData()[name]?.locations ?? [];
 }
 
 /** 按 id / name 查找地点 */
@@ -97,20 +99,20 @@ export function calcLocationDistance(loc1, loc2) {
 
 /** 列出全部有位面坐标的位面名 */
 export function listMappedPlanes() {
-  return Object.keys(getCoordData()).filter(k => k !== '_meta');
+  const data = getCoordData();
+  return COORDINATE_MAPPED_LOCATIONS.filter(name => Array.isArray(data[name]?.locations));
 }
 
 /** 根据 power_place 取得正式位面名。 */
 export function getPlayerPlaneName(player) {
-  const planeId = Number(player?.power_place);
-  return Object.entries(PLACE_LOCATION_MAP)
-    .find(([, id]) => Number(id) === planeId)?.[0] ?? null;
+  return getLocationName(player?.power_place) || null;
 }
 
 /** 读取玩家在指定（默认当前）位面的坐标。 */
 export function getPlayerPlaneCoordinate(player, planeName = getPlayerPlaneName(player)) {
-  if (!planeName) return null;
-  const coordinate = player?.[`${planeName}坐标`];
+  const name = getLocationName(planeName) || planeName;
+  if (!name || !COORDINATE_MAPPED_LOCATIONS.includes(name)) return null;
+  const coordinate = player?.[`${name}坐标`];
   const x = Number(coordinate?.x);
   const y = Number(coordinate?.y);
   const { maxX, maxY } = getCoordLimit();
@@ -122,13 +124,14 @@ export function getPlayerPlaneCoordinate(player, planeName = getPlayerPlaneName(
 
 /** 保存玩家在指定（默认当前）位面的坐标。 */
 export function setPlayerPlaneCoordinate(player, coordinate, planeName = getPlayerPlaneName(player)) {
-  if (!planeName || !listMappedPlanes().includes(planeName)) return false;
+  const name = getLocationName(planeName) || planeName;
+  if (!name || !COORDINATE_MAPPED_LOCATIONS.includes(name) || !listMappedPlanes().includes(name)) return false;
   const x = Number(coordinate?.x);
   const y = Number(coordinate?.y);
   const { maxX, maxY } = getCoordLimit();
   if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x > maxX || y > maxY) {
     return false;
   }
-  player[`${planeName}坐标`] = { x, y };
+  player[`${name}坐标`] = { x, y };
   return true;
 }

@@ -31,6 +31,8 @@ import {
   FORBIDDEN_SUPREME_ATTENTION_THRESHOLD,
   applyForbiddenSupremePlunder,
   buildForbiddenSupreme,
+  getLocationName,
+  PLACE_LOCATION_MAP,
   recordUnfetteredJourney,
   registerForbiddenSupremeAttention,
   selectForbiddenSupreme,
@@ -46,6 +48,14 @@ import {
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { tryNpcProtectorIntervention } from '../../model/npcProtector.js';
 import { replyOfficialMessage } from '../../model/officialMessage.js';
+
+function resolveStoredLocation(value, name = '') {
+  const locationName = getLocationName(name) || getLocationName(value);
+  return locationName && Object.hasOwn(PLACE_LOCATION_MAP, locationName)
+    ? PLACE_LOCATION_MAP[locationName]
+    : value;
+}
+
 export class TravelTask extends plugin {
   constructor() {
     super({
@@ -1030,7 +1040,7 @@ this.FORMATION_NAMES = [
 
     const najie = await Read_najie(task.player_qq);
     const loss = applyForbiddenSupremePlunder(player, najie);
-    player.power_place = task.from_location;
+    player.power_place = resolveStoredLocation(task.from_location, task.from_name);
     await Write_najie(task.player_qq, najie);
     await Write_player(task.player_qq, player);
     try {
@@ -1105,7 +1115,7 @@ this.FORMATION_NAMES = [
       }
       
       // ===== 正常传送完成 =====
-      player.power_place = to_location;
+      player.power_place = resolveStoredLocation(to_location, to_name);
       const unfetteredJourneyProgress = recordUnfetteredJourney(player);
       await Write_player(player_qq, player);
       

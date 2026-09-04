@@ -210,8 +210,10 @@ import {
   getDimensionLayer,
   ensureDefaultCoordinates,
   getKunpengReduction,
+  getLocationId,
   getLocationThreshold,
   getLocationName,
+  normalizeLocationList,
   getTokenTier,
   getTokenTravelTime,
   hasCoordinate,
@@ -234,6 +236,7 @@ import {
 import { getCompanionAttackAction } from './companionCombat.js';
 import { getGodDemonStealRule, getRealmAuthorityLevel } from './realmAuthority.js';
 import { getRealmEventWorldYear } from './realmEventClock.js';
+import { isEternalGuardAction } from './dimensionGuard.js';
 import {
   applyHeavenWillSlashOnAdvancement,
   ensureStrangeSacrificeState,
@@ -242,7 +245,11 @@ import { ensureExtraCultivationState } from './extraCultivation.js';
 import { calculateFlowerExtremeBonus, ensureFlowerPollenState, getFlowerPathAttributeMultiplier } from './flowerPollenPath.js';
 import { calculateFlowerFieldBonus } from './flowerPollenField.js';
 import { FLOWER_POLLEN_SKILLS, handleFlowerPollenSkills } from './flowerPollenSkill.js';
-import { STONE_JAR_OPPORTUNITY, getShengxuOpportunityOwner } from './shengxuOpportunity.js';
+import {
+  FLOWER_ANCESTOR_SEED_OPPORTUNITY,
+  STONE_JAR_OPPORTUNITY,
+  getShengxuOpportunityOwner,
+} from './shengxuOpportunity.js';
 import { getTianjiaoRealmName } from './tianjiaoGrowth.js';
 import {
   consumeDeletedFateAction,
@@ -504,6 +511,22 @@ export async function Read_player(usr_qq) {
   });
   //将字符串数据转变成数组格式
   player = JSON.parse(player);
+  // 统一位面定位编号；旧存档的永恒未知之地 6.5 在读取时迁移为42。
+  const locationName = getLocationName(player.power_place);
+  if (locationName) player.power_place = PLACE_LOCATION_MAP[locationName];
+  for (const field of ['记忆坐标', '传送阵坐标']) {
+    if (Array.isArray(player[field])) player[field] = normalizeLocationList(player[field]);
+  }
+  // 法身与真身共用同一套位面编号；兼容旧值 6.5，并给旧法身存档补齐可用状态。
+  if (player.法身位置 !== undefined && player.法身位置 !== null && player.法身位置 !== '') {
+    const fashanPlane = getLocationId(player.法身位置);
+    if (Number.isFinite(fashanPlane)) player.法身位置 = fashanPlane;
+  }
+  if (Number(player.法身) === 1) {
+    if (!Number.isFinite(getLocationId(player.法身位置))) player.法身位置 = PLACE_LOCATION_MAP.仙界;
+    if (!player.法身状态) player.法身状态 = '空闲中';
+    if (!player.法身行动) player.法身行动 = '无行动';
+  }
   // 老存档可能没有身份字段；战斗熟练度结算依赖该字段回写原玩家。
   if (player.id == null || player.id === '') player.id = String(usr_qq).replace('qg_', '');
   ensureGongfaProficiency(player);
@@ -1823,12 +1846,14 @@ function idToCss(id) { return String(id).replace('.', '_'); }
 
 // 位面 ID → 徽章字
 function idToBadge(id) {
-  const m = {
-    0: '凡', 1: '仙', 1.5: '下', 2: '遮', 2.5: '九', 3: '界', 3.2: '异',
-    3.5: '墟', 3.6: '时', 4: '阴', 5: '冥', 6: '域', 6.5: '永', 7: '阳',
-    100: '厄', 200: '上', 400: '百', 500: '初', 600: '千', 700: '万', 800: '神',
+  const badges = {
+    '凡间': '凡', '仙界': '仙', '下界八域': '下', '遮天位面': '遮', '九天十地': '九',
+    '界海': '界', '异域': '异', '太初星墟': '墟', '彼岸世界': '彼', '时间长河': '时',
+    '小阴间': '阴', '大阴间': '冥', '仙域': '域', '永恒未知之地': '永', '阳间': '阳',
+    '厄土高原': '厄', '上苍之上': '上', '超维宇宙': '超', '百维真界': '百',
+    '原初宇宙海': '初', '千维宙古界': '千', '万维梵宇界': '万', '神维丝线海': '神',
   };
-  return m[id] || '?';
+  return badges[getLocationName(id)] || '?';
 }
 
 export async function get_weimian_img(e) {
@@ -1843,7 +1868,7 @@ export async function get_weimian_img(e) {
     const xianguLv = player.xiangulevel_id ?? 0;
     const huafenLv = player.huafenlevel_id ?? 1;
     const physiqueLv = player.Physique_id ?? 0;
-    const currentPlaceValue = Number(player.power_place ?? 0);
+    const currentPlaceValue = getLocationId(player.power_place);
     const currentPlace = Number.isFinite(currentPlaceValue) ? currentPlaceValue : 0;
     const travelTechniqueReduction = getKunpengReduction(player);
 
@@ -1859,105 +1884,105 @@ export async function get_weimian_img(e) {
 
     const REALM_DEFS = [
       {
-        id: 0, name: '凡间', icon: '🌍', description: '凡尘俗世，修仙起点。天地灵气稀薄但安全稳定，初入仙途的打基础之地。',
+        id: PLACE_LOCATION_MAP['凡间'], name: '凡间', icon: '🌍', description: '凡尘俗世，修仙起点。天地灵气稀薄但安全稳定，初入仙途的打基础之地。',
         danger: '极低', features: '凡人世界·王朝更替',
         isSpecial: false
       },
       {
-        id: 1, name: '仙界', icon: '🌌', description: '仙灵之气充盈之地，大教圣地、仙宫神殿林立，成仙后的主要舞台。',
+        id: PLACE_LOCATION_MAP['仙界'], name: '仙界', icon: '🌌', description: '仙灵之气充盈之地，大教圣地、仙宫神殿林立，成仙后的主要舞台。',
         danger: '中等', features: '仙气浓郁·大教林立',
         isSpecial: false
       },
       {
-        id: 1.5, name: '下界八域', icon: '🏔️', description: '法则残缺的古界，蕴含大机缘。古教传承遍布，成就天神的关键跳板。',
+        id: PLACE_LOCATION_MAP['下界八域'], name: '下界八域', icon: '🏔️', description: '法则残缺的古界，蕴含大机缘。古教传承遍布，成就天神的关键跳板。',
         danger: '高', features: '法则残缺·古教传承',
         isSpecial: false
       },
       {
-        id: 2, name: '遮天位面', icon: '🌟', description: '北斗星域，七大生命禁区。成就大帝、红尘仙的试炼场。',
+        id: PLACE_LOCATION_MAP['遮天位面'], name: '遮天位面', icon: '🌟', description: '北斗星域，七大生命禁区。成就大帝、红尘仙的试炼场。',
         danger: '极高', features: '生命禁区·帝路争锋',
         isSpecial: false
       },
       {
-        id: 2.5, name: '九天十地', icon: '🏛️', description: '乱古战场，仙古纪元遗迹。仙王传承地，异域前线。',
+        id: PLACE_LOCATION_MAP['九天十地'], name: '九天十地', icon: '🏛️', description: '乱古战场，仙古纪元遗迹。仙王传承地，异域前线。',
         danger: '极高', features: '仙王传承·乱古战场',
         isSpecial: false
       },
       {
-        id: 3, name: '界海', icon: '🌊', description: '诸天万界汇聚地，浪花间沉浮残破古界。准仙帝战场，黑暗源头。',
+        id: PLACE_LOCATION_MAP['界海'], name: '界海', icon: '🌊', description: '诸天万界汇聚地，浪花间沉浮残破古界。准仙帝战场，黑暗源头。',
         danger: '致命', features: '万界沉浮·准仙帝战场',
         isSpecial: false
       },
       {
-        id: 3.2, name: '异域', icon: '⚔️', description: '与九天十地对峙的古老大界，不朽之王盘踞，异域法则自成体系。',
+        id: PLACE_LOCATION_MAP['异域'], name: '异域', icon: '⚔️', description: '与九天十地对峙的古老大界，不朽之王盘踞，异域法则自成体系。',
         danger: '仙王级', features: '不朽王族·边荒战场',
         isSpecial: false
       },
       {
-        id: 3.5, name: '太初星墟', icon: '☄️', description: '开天前残界堆叠成的星海废墟，古老观测站仍在捕捉诸天裂隙。',
+        id: PLACE_LOCATION_MAP['太初星墟'], name: '太初星墟', icon: '☄️', description: '开天前残界堆叠成的星海废墟，古老观测站仍在捕捉诸天裂隙。',
         danger: '致命', features: '残界潮汐·裂界观测',
         isSpecial: false
       },
       {
-        id: 3.6, name: '时间长河', icon: '⏳', description: '贯穿古今未来的长河，超脱者的领域。可逆溯万古，窥探未来。',
+        id: PLACE_LOCATION_MAP['时间长河'], name: '时间长河', icon: '⏳', description: '贯穿古今未来的长河，超脱者的领域。可逆溯万古，窥探未来。',
         danger: '不可知', features: '时间领域·历史长河',
         isSpecial: true
       },
       {
-        id: 4, name: '小阴间', icon: '🌑', description: '圣墟进化路的起始天地，阳间眼中的残破宇宙，映照者可主宰一界沉浮。',
+        id: PLACE_LOCATION_MAP['小阴间'], name: '小阴间', icon: '🌑', description: '圣墟进化路的起始天地，阳间眼中的残破宇宙，映照者可主宰一界沉浮。',
         danger: '高', features: '映照诸天·花粉起源',
         isSpecial: true
       },
       {
-        id: 5, name: '大阴间', icon: '🌘', description: '比小阴间更完整的进化天地，法则厚重，神祗与大能留下无数道统。',
+        id: PLACE_LOCATION_MAP['大阴间'], name: '大阴间', icon: '🌘', description: '比小阴间更完整的进化天地，法则厚重，神祗与大能留下无数道统。',
         danger: '极高', features: '神祗道统·完整进化',
         isSpecial: true
       },
       {
-        id: 6, name: '仙域', icon: '✨', description: '完美世界至高净土，仙王巨头坐镇，诸天万界之核心。',
+        id: PLACE_LOCATION_MAP['仙域'], name: '仙域', icon: '✨', description: '完美世界至高净土，仙王巨头坐镇，诸天万界之核心。',
         danger: '仙王级', features: '仙王坐镇·至高净土',
         isSpecial: true
       },
       {
-        id: 7, name: '阳间', icon: '☀️', description: '圣墟体系法则完整的浩瀚主界，大能争渡，诸天道统在此交汇。',
+        id: PLACE_LOCATION_MAP['阳间'], name: '阳间', icon: '☀️', description: '圣墟体系法则完整的浩瀚主界，大能争渡，诸天道统在此交汇。',
         danger: '致命', features: '大宇宙·花粉盛世',
         isSpecial: true
       },
       {
-        id: 200, name: '上苍之上', icon: '☁️', description: '诸天万界之外的第一层维度壁垒，上苍诸域铺展于无尽古史之上。',
+        id: PLACE_LOCATION_MAP['上苍之上'], name: '上苍之上', icon: '☁️', description: '诸天万界之外的第一层维度壁垒，上苍诸域铺展于无尽古史之上。',
         danger: '不可知', features: '第一层壁垒·上苍诸域', isSpecial: true
       },
       {
-        id: 300, name: '超维宇宙', icon: '🌀', description: '穿过上苍之后的第二层维度壁垒，维度法则开始脱离诸天常理。',
+        id: PLACE_LOCATION_MAP['超维宇宙'], name: '超维宇宙', icon: '🌀', description: '穿过上苍之后的第二层维度壁垒，维度法则开始脱离诸天常理。',
         danger: '不可知', features: '第二层壁垒·超维法则', isSpecial: true
       },
       {
-        id: 100, name: '厄土高原', icon: '☠️', description: '第三层维度壁垒的诡异祖地，高原大祭与永恒未知彼此相望。',
+        id: PLACE_LOCATION_MAP['厄土高原'], name: '厄土高原', icon: '☠️', description: '第三层维度壁垒的诡异祖地，高原大祭与永恒未知彼此相望。',
         danger: '不可知', features: '第三层壁垒·高原大祭', isSpecial: true
       },
       {
-        id: 6.5, name: '永恒未知之地', icon: '♾️', description: '与厄土同属第三层维度壁垒的永恒战场，仙帝真身镇守之地。',
+        id: PLACE_LOCATION_MAP['永恒未知之地'], name: '永恒未知之地', icon: '♾️', description: '与厄土同属第三层维度壁垒的永恒战场，仙帝真身镇守之地。',
         danger: '不可知', features: '第三层壁垒·永恒镇守',
         isSpecial: true
       },
       {
-        id: 400, name: '百维真界', icon: '💠', description: '第四重维度壁垒后的真实界域，无穷位面仅是其投影。',
-        danger: '不可知', features: '百维真界·仙帝可渡', isSpecial: true
+        id: PLACE_LOCATION_MAP['百维真界'], name: '百维真界', icon: '💠', description: '第四重维度壁垒后的真实界域，无穷位面仅是其投影。',
+        danger: '不可知', features: '第四层壁垒·祭道可渡', isSpecial: true
       },
       {
-        id: 500, name: '原初宇宙海', icon: '🌌', description: '千维宙古界外的原初宇宙海，祭道之上方能击穿界壁。',
+        id: PLACE_LOCATION_MAP['原初宇宙海'], name: '原初宇宙海', icon: '🌌', description: '千维宙古界外的原初宇宙海，祭道之上方能击穿界壁。',
         danger: '不可知', features: '原初母海·祭道之上', isSpecial: true
       },
       {
-        id: 600, name: '千维宙古界', icon: '🔱', description: '无数古史与宇宙海叠加而成的千维界域。',
+        id: PLACE_LOCATION_MAP['千维宙古界'], name: '千维宙古界', icon: '🔱', description: '无数古史与宇宙海叠加而成的千维界域。',
         danger: '不可知', features: '千维古史·宙海叠合', isSpecial: true
       },
       {
-        id: 700, name: '万维梵宇界', icon: '🕸️', description: '万维规则共同编织的梵宇，只响应唯一道之上的权柄。',
+        id: PLACE_LOCATION_MAP['万维梵宇界'], name: '万维梵宇界', icon: '🕸️', description: '万维规则共同编织的梵宇，只响应唯一道之上的权柄。',
         danger: '不可知', features: '万维梵宇·唯一权柄', isSpecial: true
       },
       {
-        id: 800, name: '神维丝线海', icon: '🧵', description: '诸界最外层，无数维度如丝线漂浮于无边神海。',
+        id: PLACE_LOCATION_MAP['神维丝线海'], name: '神维丝线海', icon: '🧵', description: '诸界最外层，无数维度如丝线漂浮于无边神海。',
         danger: '不可知', features: '神维丝海·诸界尽头', isSpecial: true
       },
     ];
@@ -5748,8 +5773,13 @@ export async function Add_najie_thing(
   return withPlayerMutationLock(usr_qq, async () => {
 
   const itemName = typeof name === 'object' ? name?.name : name;
-  if (x > 0 && itemName === '神秘石罐' && getShengxuOpportunityOwner(STONE_JAR_OPPORTUNITY) !== String(usr_qq)) {
-    console.warn(`[圣墟唯一机缘] 拒绝向非持有者 ${usr_qq} 发放神秘石罐`);
+  const uniqueOpportunity = itemName === '神秘石罐'
+    ? STONE_JAR_OPPORTUNITY
+    : itemName === '花粉路祖种'
+      ? FLOWER_ANCESTOR_SEED_OPPORTUNITY
+      : '';
+  if (x > 0 && uniqueOpportunity && getShengxuOpportunityOwner(uniqueOpportunity) !== String(usr_qq)) {
+    console.warn(`[圣墟唯一机缘] ${itemName}未向非持有者 ${usr_qq} 发放`);
     return 0;
   }
 
@@ -5760,7 +5790,7 @@ export async function Add_najie_thing(
   }
   if (x == 0) return;
   let najie = await Read_najie(usr_qq);
-  if (x > 0 && itemName === '神秘石罐' && (najie.道具 || []).some(item => item.name === itemName && Number(item.数量) > 0)) {
+  if (x > 0 && uniqueOpportunity && (najie.道具 || []).some(item => item.name === itemName && Number(item.数量) > 0)) {
     return 0;
   }
   const idempotencyKey = options?.idempotencyKey;
@@ -7113,7 +7143,7 @@ export async function find_renwu(A) {
 /**
  * 常用查询合集
  */
-export async function Go(e) {
+export async function Go(e, options = {}) {
     let usr_qq = e.user_id.toString().replace('qg_', '');
     usr_qq = await channel(usr_qq);
     const player = await Read_player(usr_qq);
@@ -7165,7 +7195,8 @@ export async function Go(e) {
         // 沉迷副本（秘境历练）结构
         action_end_time = action.start_time + action.total_time * 60 * 1000;
     } 
-        if (now_time <= action_end_time) {
+        const bypassEternalGuard = options?.allowEternalGuard === true && isEternalGuardAction(action);
+        if (now_time <= action_end_time && !bypassEternalGuard) {
             const m = parseInt((action_end_time - now_time) / 1000 / 60);
             const s = parseInt((action_end_time - now_time - m * 60 * 1000) / 1000);
             const replyMsg = [

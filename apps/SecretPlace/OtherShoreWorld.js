@@ -134,9 +134,10 @@ import { inspectPlayerAction } from '../../model/playerActionState.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { FileRollbackTransaction } from './rebirthTransaction.js';
 import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
+import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
 
-const OTHER_SHORE_PLANE_ID = 3.8;
-const OTHER_SHORE_ORIGIN_PLANE_ID = 3.5;
+const OTHER_SHORE_PLANE_ID = PLACE_LOCATION_MAP.彼岸世界;
+const OTHER_SHORE_ORIGIN_PLANE_ID = PLACE_LOCATION_MAP.太初星墟;
 const WORLD_SEED = 'canglan-prime-v1';
 const ACTION_RECEIPT_LIMIT = 24;
 const THREAT_NEXT_CYCLE_DELAY_MS = 15 * 60 * 1000;

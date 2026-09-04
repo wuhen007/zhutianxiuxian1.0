@@ -1,5 +1,6 @@
 import { isDaofaActive } from './daofa.js';
 import { getDungeonGongfaReduction } from './gongfaProficiency.js';
+import { PLACE_LOCATION_MAP } from './weimianTravel.js';
 
 export const RIFT_DURATION_MS = 6 * 60 * 60 * 1000;
 export const RIFT_EXPLORE_MS = 15 * 60 * 1000;
@@ -81,7 +82,7 @@ export function parseMortalCoordinate(message) {
 
 export function isAtRift(player, rift) {
   const coord = player?.凡间坐标;
-  return Number(player?.power_place) === 0 &&
+  return Number(player?.power_place) === PLACE_LOCATION_MAP.凡间 &&
     Number(coord?.x) === Number(rift?.x) &&
     Number(coord?.y) === Number(rift?.y);
 }
@@ -91,7 +92,7 @@ export function canStartRiftExplore(player, rift, now = Date.now(), requiredMs =
   if (player?.yuanshenlevel_id == null || Number(player.yuanshenlevel_id) < 0) {
     return { ok: false, reason: 'yuanshen' };
   }
-  if (Number(player?.power_place) !== 0) return { ok: false, reason: 'plane' };
+  if (Number(player?.power_place) !== PLACE_LOCATION_MAP.凡间) return { ok: false, reason: 'plane' };
   if (!isAtRift(player, rift)) return { ok: false, reason: 'coordinate' };
   if (Number(rift.expiresAt) - now < requiredMs) return { ok: false, reason: 'time' };
   return { ok: true };
@@ -230,7 +231,7 @@ export function resolveRiftRewardBonus(player, random = Math.random) {
     multiplier += 1;
     messages.push('魔卡少女灵根：物品数量 ×2');
   } else if (rootType === '魔卡少女·觉醒') {
-    multiplier += 2;
+    multiplier += 1;
     messages.push('星之杖觉醒：物品数量 ×2');
   } else if (rootType === '魔卡少女·完全') {
     multiplier += 3;

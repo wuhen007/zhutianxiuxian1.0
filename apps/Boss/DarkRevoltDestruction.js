@@ -7,16 +7,17 @@ import {
   markPlaneDestroyed,
   PLANE_DESTRUCTION_SOURCES,
 } from '../../model/planeDestruction.js';
+import { PLACE_LOCATION_MAP, getLocationId } from '../../model/weimianTravel.js';
 
 export const DARK_REVOLT_DESTRUCTION = Object.freeze({
   intervalWorldYears: 5000,
   stateKey: 'Xiuxian:DarkRevoltPlaneDestruction',
   targets: Object.freeze([
-    { id: 0, name: '凡间', dataName: '凡间', hitsToDestroy: 1 },
-    { id: 1, name: '仙境', dataName: '仙界', hitsToDestroy: 1 },
-    { id: 1.5, name: '下界八域', dataName: '下界八域', hitsToDestroy: 1 },
-    { id: 3.5, name: '太初星墟', dataName: '太初星墟', hitsToDestroy: 1 },
-    { id: 2, name: '遮天位面', dataName: '遮天位面', hitsToDestroy: 3 },
+    { id: PLACE_LOCATION_MAP.凡间, name: '凡间', dataName: '凡间', hitsToDestroy: 1 },
+    { id: PLACE_LOCATION_MAP.仙界, name: '仙境', dataName: '仙界', hitsToDestroy: 1 },
+    { id: PLACE_LOCATION_MAP.下界八域, name: '下界八域', dataName: '下界八域', hitsToDestroy: 1 },
+    { id: PLACE_LOCATION_MAP.太初星墟, name: '太初星墟', dataName: '太初星墟', hitsToDestroy: 1 },
+    { id: PLACE_LOCATION_MAP.遮天位面, name: '遮天位面', dataName: '遮天位面', hitsToDestroy: 3 },
   ]),
 });
 
@@ -118,13 +119,13 @@ async function sendPlayersIntoReincarnation(target, supremeName, hit, worldYear)
     const qq = file.replace('.json', '');
     try {
       const player = await data.getData('player', qq);
-      if (!player || Number(player.power_place) !== Number(target.id)) continue;
+      if (!player || getLocationId(player.power_place) !== getLocationId(target.id)) continue;
       if (survivesDarkRevoltPlaneDestruction(player)) {
         logger.info(`[黑暗动乱] ${player.名号 || qq}(${qq})达到大帝级权柄，于至尊毁灭位面时存活`);
         survivorIds.push(qq);
         continue;
       }
-      player.power_place = 0;
+      player.power_place = PLACE_LOCATION_MAP.凡间;
       player.黑暗动乱轮回 = {
         状态: '轮回中',
         位面: target.name,

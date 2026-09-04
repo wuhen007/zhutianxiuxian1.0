@@ -36,12 +36,16 @@ import {
   markPlaneDestroyed,
   PLANE_DESTRUCTION_SOURCES,
 } from '../../model/planeDestruction.js';
+import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
 
 const STATE_PATH = path.join(__PATH.data_path, 'foreign_imperial_pass.json');
 const PLANE_PATH = path.join(__PATH.data_path, '位面.json');
 const SORTIE_COOLDOWN_MS = 10 * 60 * 1000;
 const SURRENDER_DEMAND_CHANCE = 0.3;
-const TARGET_PLANES = new Set([2, 2.5]);
+const TARGET_PLANES = new Set([
+  PLACE_LOCATION_MAP.遮天位面,
+  PLACE_LOCATION_MAP.九天十地,
+]);
 const FOREIGN_NAMES = [
   '鹤无双后裔', '赤蒙', '帝族无畏者', '黄金魔鸟', '吞天兽传人', '螭龙少主',
   '九头王族', '堕落血凰', '时间兽后裔', '古牧', '无殇帝族天骄', '蒲魔王后裔',

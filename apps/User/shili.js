@@ -3,6 +3,7 @@ import common from '../../../../lib/common/common.js';
 import fs from 'fs';
 import { getDispatchState } from '../../model/factionDispatch.js';
 import { replyOfficialMessage } from '../../model/officialMessage.js';
+import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
 import {
   applyFactionExit,
   formatFactionCooldown,
@@ -491,7 +492,7 @@ async yaochi(e) {
     const player = await Read_player(usr_qq);
     
     // 检查是否在遮天位面
-    if (player.power_place != 2) {
+    if (player.power_place != PLACE_LOCATION_MAP.遮天位面) {
         return e.reply(`你不在遮天位面，如何寻得到那隐于云雾间的瑶池圣地？`);
     }
     
@@ -601,7 +602,7 @@ async yaoguang(e) {
     const player = await Read_player(usr_qq);
     
     // 检查是否在遮天位面
-    if (player.power_place != 2) {
+    if (player.power_place != PLACE_LOCATION_MAP.遮天位面) {
         return e.reply(
             `你不在遮天位面，无法感应到摇光圣地的接引神虹。`,
         );

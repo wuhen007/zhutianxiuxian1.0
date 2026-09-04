@@ -1,13 +1,15 @@
+import { getLocationName } from './weimianTravel.js';
+
 export const PLANE_STORY_CHARACTER_ENCOUNTER_CHANCE = 0.02;
 
 const CHARACTERS = Object.freeze({
-  2: {
+  遮天位面: {
     name: '盖九幽',
     plane: '遮天位面',
     firstMessage: place => ` 【九幽仙曲】${place}深处传来一缕如泣如诉的仙音，沿途凶煞尽皆沉寂。一位病容老人立于星辉下，轻声提醒你前路杀机。剧情人物「盖九幽」关系已建立，好感度+10。`,
     repeatMessage: (place, gain) => ` 你在${place}再次听见九幽仙曲。盖九幽替你点破一处隐伏杀局，好感度+${gain}。`,
   },
-  2.5: {
+  九天十地: {
     name: '孟天正',
     plane: '九天十地',
     firstMessage: place => ` 【大长老巡关】${place}上空弓弦轻鸣，压得群山万壑一时无声。孟天正巡视归来，见你独自历练，出言指点了几处修行缺漏。剧情人物「孟天正」关系已建立，好感度+10。`,
@@ -16,9 +18,7 @@ const CHARACTERS = Object.freeze({
 });
 
 function getCharacterConfig(plane) {
-  if (plane === '遮天位面') return CHARACTERS[2];
-  if (plane === '九天十地') return CHARACTERS[2.5];
-  return CHARACTERS[Number(plane)] || null;
+  return CHARACTERS[getLocationName(plane)] || null;
 }
 
 function getRelationLevel(favor) {

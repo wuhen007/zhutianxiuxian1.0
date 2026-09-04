@@ -9,10 +9,12 @@
  *     必须身处阳间方可突破——圣墟主线：神将入阳间冲击神王，神王以上继续进化
  */
 
+import { getLocationId, PLACE_LOCATION_MAP } from './weimianTravel.js';
+
 export const PLANE_REALM_LAW = Object.freeze({
-  4: 11, // 小阴间
-  5: 13, // 大阴间
-  7: 17, // 阳间
+  [PLACE_LOCATION_MAP.小阴间]: 11,
+  [PLACE_LOCATION_MAP.大阴间]: 13,
+  [PLACE_LOCATION_MAP.阳间]: 17,
 });
 
 export const PLANE_REALM_LAW_DEFAULT = 25;
@@ -20,10 +22,10 @@ export const PLANE_REALM_LAW_DEFAULT = 25;
 /** 神王境（花粉路14级）：突破神王以上必须身处阳间（法则完整之地） */
 export const POLLEN_NEED_YANGJIAN_LEVEL = 14;
 /** 阳间位面编号 */
-export const YANGJIAN_PLANE_ID = 7;
+export const YANGJIAN_PLANE_ID = PLACE_LOCATION_MAP.阳间;
 
 export function getPlaneRealmLaw(planeId) {
-  const key = Number(planeId);
+  const key = getLocationId(planeId);
   if (Number.isFinite(key) && PLANE_REALM_LAW[key] !== undefined) return PLANE_REALM_LAW[key];
   return PLANE_REALM_LAW_DEFAULT;
 }
@@ -39,7 +41,7 @@ export function getPlaneRealmLaw(planeId) {
  * @param {number} targetHuafenLevel 目标花粉路等级
  */
 export function checkPlaneRealmLaw(player, targetHuafenLevel) {
-  const planeId = Number(player?.power_place);
+  const planeId = getLocationId(player?.power_place);
   const max = getPlaneRealmLaw(planeId);
   const target = Math.max(1, Math.trunc(Number(targetHuafenLevel) || 1));
   // 神王（14）以上需在阳间突破（防绕行未列位面，落实「14 神王以上需入阳间」）

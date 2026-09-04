@@ -1150,7 +1150,7 @@ export class InnateTreasureAuthorities extends plugin {
     if (String(targetQq) === String(ctx.qq)) return e.reply('你已经在掌舵虚天舟。');
     if (!await existplayer(targetQq)) return e.reply('目标尚未踏入修行。');
     const target = await Read_player(targetQq);
-    if (target.power_place !== ctx.player.power_place) return e.reply('虚天舟只能接引当前位面的道友登舟。');
+    if (getPlayerPlaneName(target) !== getPlayerPlaneName(ctx.player)) return e.reply('虚天舟只能接引当前位面的道友登舟。');
     if (await this.isPlayerBusy(targetQq)) return e.reply(`${target.名号}当前正在行动，无法登舟。`);
     const passengers = [...new Set((ctx.player.虚天舟乘员 || []).map(String))];
     if (!passengers.includes(String(targetQq)) && passengers.length >= 3) return e.reply('虚天舟至多搭载三名乘员。');
@@ -1176,7 +1176,7 @@ export class InnateTreasureAuthorities extends plugin {
     const owner = await Read_player(invitation.ownerQq);
     const passenger = await Read_player(qq);
     if (!hasEquippedInnateTreasure(owner, '虚天舟', '邀请登舟')) return e.reply('船主已经不再执掌虚天舟。');
-    if (owner.power_place !== passenger.power_place) return e.reply('你与虚天舟已不在同一位面。');
+    if (getPlayerPlaneName(owner) !== getPlayerPlaneName(passenger)) return e.reply('你与虚天舟已不在同一位面。');
     if (await this.isPlayerBusy(qq)) return e.reply('你当前正在行动，无法登舟。');
     owner.虚天舟乘员 = [...new Set((owner.虚天舟乘员 || []).map(String))];
     if (!owner.虚天舟乘员.includes(String(qq)) && owner.虚天舟乘员.length >= 3) return e.reply('虚天舟已经满载。');

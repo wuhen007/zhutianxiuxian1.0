@@ -6,6 +6,7 @@ import {
   ALL_HEAVENS_LOCATIONS,
   COORDINATE_CLUE_COST,
   DIMENSION_GROUPS,
+  EMPEROR_BOUNDARY_LOCATIONS,
   IMMORTAL_EMPEROR_TRAVEL_TIME_REDUCTION,
   PLACE_LOCATION_MAP,
   FORBIDDEN_SUPREME_ALL_ATTRIBUTE,
@@ -29,7 +30,10 @@ import {
   getDimensionName,
   getDimensionTradeCompatibility,
   getKunpengReduction,
+  getLocationId,
+  getLocationName,
   getLocationThreshold,
+  normalizeLocationList,
   getTokenTier,
   getTokenTravelTime,
   getUnknownCoordinates,
@@ -80,7 +84,10 @@ test('圣墟三级位面按花粉境界分档且准仙帝可跨越内部界壁',
   assert.equal(PLACE_LOCATION_MAP.大阴间, 5);
   assert.equal(PLACE_LOCATION_MAP.阳间, 7);
   assert.equal(PLACE_LOCATION_MAP.时间长河, 3.6);
-  assert.equal(PLACE_LOCATION_MAP.永恒未知之地, 6.5);
+  assert.equal(PLACE_LOCATION_MAP.永恒未知之地, 42);
+  assert.equal(getLocationName(42), '永恒未知之地');
+  assert.equal(getLocationName(6.5), '永恒未知之地');
+  assert.equal(getLocationId(6.5), 42);
   const flowerPlayer = {
     额外体系: 'huafen', mijinglevel_id: 1, xiangulevel_id: 1, huafenlevel_id: 2,
   };
@@ -160,6 +167,8 @@ test('每日副本只会发现当前权柄可触及的高维坐标', () => {
   assert.equal(getUnknownCoordinates({ mijinglevel_id: 18 }).includes('厄土高原'), false);
   const emperorUnknown = getUnknownCoordinates({ mijinglevel_id: 21 });
   assert.equal(emperorUnknown.includes('永恒未知之地'), false);
+  assert.equal(emperorUnknown.includes('厄土高原'), false);
+  assert.equal(emperorUnknown.includes('时间长河'), false);
   assert.equal(emperorUnknown.includes('百维真界'), false);
   assert.equal(emperorUnknown.includes('原初宇宙海'), false);
   assert.equal(getUnknownCoordinates({ mijinglevel_id: 23 }).includes('原初宇宙海'), true);
@@ -218,7 +227,7 @@ test('位面图鉴按诸天、时间长河、上苍、永恒未知与更高维�
   assert.match(getDimensionBarrierDescription('上苍之上'), /第一重空间壁垒/);
 });
 
-test('仙帝可直达诸天、上苍与永恒未知，诸天和上苍之间无需等待', () => {
+test('仙帝可在四大界壁区域之间自由穿梭，诸天和上苍之间无需等待', () => {
   const quasiEmperor = { ...traveler, mijinglevel_id: 20 };
   const immortalEmperor = { ...traveler, mijinglevel_id: 21 };
   const mortal = PLACE_LOCATION_MAP.凡间;
@@ -228,9 +237,20 @@ test('仙帝可直达诸天、上苍与永恒未知，诸天和上苍之间无�
 
   assert.equal(canImmortalEmperorFreeTravel(quasiEmperor, mortal, upper), false);
   assert.equal(canImmortalEmperorFreeTravel(immortalEmperor, mortal, upper), true);
-  assert.equal(canImmortalEmperorFreeTravel(immortalEmperor, upper, eternal), true);
-  assert.equal(canImmortalEmperorFreeTravel(immortalEmperor, mortal, timeRiver), false);
-  assert.equal(hasCoordinate(immortalEmperor, '永恒未知之地'), true);
+  const domains = ['永恒未知之地', '上苍之上', '厄土高原', '时间长河'];
+  for (const from of domains) {
+    for (const to of domains) {
+      if (from === to) continue;
+      assert.equal(
+        canImmortalEmperorFreeTravel(immortalEmperor, PLACE_LOCATION_MAP[from], PLACE_LOCATION_MAP[to]),
+        true,
+        `${from} → ${to}`,
+      );
+    }
+  }
+  assert.equal(canImmortalEmperorFreeTravel(quasiEmperor, eternal, upper), false);
+  assert.equal(canImmortalEmperorFreeTravel(immortalEmperor, mortal, timeRiver), true);
+  for (const domain of domains) assert.equal(hasCoordinate(immortalEmperor, domain), true);
   assert.equal(isInstantAllHeavensTravel(immortalEmperor, mortal, upper), true);
   assert.equal(isInstantAllHeavensTravel(immortalEmperor, mortal, eternal), false);
   assert.equal(isInstantAllHeavensTravel(quasiEmperor, mortal, upper), false);
@@ -247,9 +267,9 @@ test('维度壁垒航程按位面数值差×15分钟/级×壁垒层数×境界�
   const timeRiver = PLACE_LOCATION_MAP.时间长河;
 
   assert.equal(getDimensionBarrierCount(mortal, eternal), 3);
-  // 永恒未知之地：6.5 差 ×15×3 层×(1−0.7) ≈ 88
-  assert.equal(getDimensionBarrierTravelTime(immortalEmperor, mortal, eternal), 88);
-  assert.equal(getBodyTravelQuote(immortalEmperor, '凡间', '永恒未知之地').travelTime, 88);
+  // 永恒未知之地：42 差 ×15×3 层×(1−0.7) = 567
+  assert.equal(getDimensionBarrierTravelTime(immortalEmperor, mortal, eternal), 567);
+  assert.equal(getBodyTravelQuote(immortalEmperor, '凡间', '永恒未知之地').travelTime, 567);
   assert.equal(getDimensionBarrierCount(mortal, timeRiver), 1);
   // 时间长河（独立时序域）专属规则：1 小时/重×权柄系数，准仙帝 0.75、仙帝 0.3、极境 0.2
   assert.equal(getDimensionBarrierTravelTime(immortalEmperor, mortal, timeRiver), 18);
@@ -271,9 +291,29 @@ test('登仙、遨游、穿梭与位面图鉴入口均接入共享维度规则',
   assert.doesNotMatch(riverSource, /player\.power_place\s*=\s*PLACE_LOCATION_MAP\.时间长河/);
   assert.match(travelSource, /canImmortalEmperorFreeTravel/);
   assert.match(travelSource, /isInstantAllHeavensTravel/);
+  assert.match(travelSource, /Go\(e, \{ allowEternalGuard: emperorFreeTravel \}\)/);
+  assert.match(atlasSource, /isEternalGuardAction/);
   assert.match(travelSource, /本次需跨越\$\{travelQuote\.dimensionBarrierCount\}重界壁/);
   assert.match(atlasSource, /dimension_guide/);
   assert.match(atlasTemplate, /维度分层与壁垒/);
+});
+
+test('位面定位解析会把永恒未知之地旧编号规范到42并去重', () => {
+  assert.deepEqual(EMPEROR_BOUNDARY_LOCATIONS, ['上苍之上', '永恒未知之地', '厄土高原', '时间长河']);
+  assert.equal(getLocationName(' 42 '), '永恒未知之地');
+  assert.equal(getLocationId('6.5'), 42);
+  assert.deepEqual(
+    normalizeLocationList([6.5, '永恒未知之地', ' 仙界 ', '仙界', null, '']),
+    ['永恒未知之地', '仙界'],
+  );
+});
+
+test('接引与送往使用统一境界权柄门槛', () => {
+  const travelSource = fs.readFileSync(new URL('../apps/SecretPlace/SecretPlace.js', import.meta.url), 'utf8');
+  assert.match(travelSource, /import \{ getRealmAuthorityLevel \} from '..\/\.\.\/model\/realmAuthority\.js'/);
+  assert.equal((travelSource.match(/getRealmAuthorityLevel\(player\) < 18/g) || []).length, 2);
+  assert.doesNotMatch(travelSource, /if \(player\.mijinglevel_id < 18\)/);
+  assert.doesNotMatch(travelSource, /threshold\.code === 'eternal-land'/);
 });
 
 test('维度壁垒按仙帝、祭道之上与唯一道之上分层准入', () => {

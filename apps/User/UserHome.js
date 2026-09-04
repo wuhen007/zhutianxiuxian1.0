@@ -112,6 +112,7 @@ import {
 } from '../../model/immortalFishing.js';
 import { tryCreateFishKing } from '../../model/immortalFishKing.js';
 import { getPlayerPlaneName } from '../../model/planeCoords.js';
+import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
 import {
   consumeFishAtlasSets,
   getPendingFishAtlasRewards,
@@ -7174,7 +7175,7 @@ async Buy_yaochi(e) {
   }
   
   // 检查是否在遮天位面
-  if (player.power_place != 2) {
+  if (player.power_place != PLACE_LOCATION_MAP.遮天位面) {
     return e.reply([
       "瑶池仙楼管事：",
       "此乃九天之上的瑶池仙楼，你身处凡尘俗世，如何寻得？",
@@ -7335,7 +7336,7 @@ async Buy_yaoguang(e) {
   }
   
   // 检查是否在遮天位面
-  if (player.power_place != 2) {
+  if (player.power_place != PLACE_LOCATION_MAP.遮天位面) {
     return e.reply([
       "摇光圣殿执事：",
       "此乃东荒摇光圣殿，你身处凡尘俗世，如何寻得？",
@@ -7509,7 +7510,7 @@ async Buy_jianyunhai(e) {
     const player = await Read_player(usr_qq);
     
     // 检查是否在剑云海位面
-    //if (player.power_place != 3) {
+    //if (player.power_place != PLACE_LOCATION_MAP.界海) {
      //   return e.reply([
     //        "剑云海执事：",
      //       "此乃九天之上的剑云海，剑气纵横三万里！",

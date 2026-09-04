@@ -1,6 +1,7 @@
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'node:path';
+import { PLACE_LOCATION_MAP, getLocationName } from '../../model/weimianTravel.js';
 import {
   __PATH,
   existplayer,
@@ -1312,8 +1313,8 @@ async breakthroughExtremeZunzheRealm(e, usr_qq, player) {
         ].join("\n"));
     }
 
-    // 核心检查2：位面必须是九天十地（power_place等于2.5）
-    if (Number(player.power_place) !== 2.5) {
+    // 核心检查2：位面必须是九天十地
+    if (Number(player.power_place) !== PLACE_LOCATION_MAP.九天十地) {
         return e.reply([
             `【天地有缺·大道不全】`,
             `当前位面：${this.getPlaceName(player.power_place)}`,
@@ -1894,18 +1895,7 @@ async breakthroughUpperRealm(e, usr_qq, player) {
 }
 
 getPlaceName(power_place) {
-    const placeMap = {
-        '凡间': 0,
-        '仙界': 1, 
-        '下界八域': 1.5,
-        '遮天位面': 2,
-        '九天十地': 2.5,
-        '界海': 3,
-        '时间长河': 4,
-        '永恒未知之地': 5,
-        '仙域': 6
-    };
-    return placeMap[power_place] || `未知位面(${power_place})`;
+    return getLocationName(power_place) || `未知位面(${power_place})`;
 }
   // ========== 辅助工具函数 ==========
   async hasAtLeastOneBloodType(usr_qq, bloodTypes) {

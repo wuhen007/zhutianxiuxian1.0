@@ -22,6 +22,7 @@ import { Write_player } from '../../model/xiuxian.js';
 import { sendToYongJi } from './YongJiList.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { hasRealmAuthority } from '../../model/realmAuthority.js';
+import { PLACE_LOCATION_MAP, getLocationId, getLocationName } from '../../model/weimianTravel.js';
 import {
   markPlaneDestroyed,
   PLANE_DESTRUCTION_SOURCES,
@@ -44,26 +45,19 @@ const ZHUNXIAN_THRESHOLD = 20;
 
 /** 可被破坏的位面（按圣墟原著，越底层越先遭殃；仙域虽是终局，诡异大祭期间厄土仙帝亦能染指） */
 const DESTROYABLE_PLANES = [
-  { id: 0,   name: '凡间',       desc: '亿万生灵的起点，在厄土仙帝掌中不过一缕青烟' },
-  { id: 1,   name: '仙界',       desc: '仙道昌盛万古，此刻却成了最丰厚的祭品' },
-  { id: 1.5, name: '下界八域',   desc: '八域崩裂，古教传承化为劫灰，万灵哀嚎' },
-  { id: 2,   name: '遮天位面',   desc: '大帝道统，禁区林立，终究化为齑粉' },
-  { id: 2.5, name: '九天十地',   desc: '仙王故土，乱古战场，在祭道之力下土崩瓦解' },
-  { id: 3,   name: '界海',       desc: '准仙帝喋血之地，黑暗源头，终难逃破灭' },
-  { id: 6,   name: '仙域',       desc: '诸天至高之地，厄土仙帝的真正目标——万古仙域，就此陨落' },
+  { id: PLACE_LOCATION_MAP.凡间, name: '凡间', desc: '亿万生灵的起点，在厄土仙帝掌中不过一缕青烟' },
+  { id: PLACE_LOCATION_MAP.仙界, name: '仙界', desc: '仙道昌盛万古，此刻却成了最丰厚的祭品' },
+  { id: PLACE_LOCATION_MAP.下界八域, name: '下界八域', desc: '八域崩裂，古教传承化为劫灰，万灵哀嚎' },
+  { id: PLACE_LOCATION_MAP.遮天位面, name: '遮天位面', desc: '大帝道统，禁区林立，终究化为齑粉' },
+  { id: PLACE_LOCATION_MAP.九天十地, name: '九天十地', desc: '仙王故土，乱古战场，在祭道之力下土崩瓦解' },
+  { id: PLACE_LOCATION_MAP.界海, name: '界海', desc: '准仙帝喋血之地，黑暗源头，终难逃破灭' },
+  { id: PLACE_LOCATION_MAP.仙域, name: '仙域', desc: '诸天至高之地，厄土仙帝的真正目标——万古仙域，就此陨落' },
 ];
 
 /** 不可破坏的终局位面（仅时间长河与永恒未知，因果缠绕/超脱轮回） */
 const IMMUNE_PLANES = {
-  4: '时间长河',   // 超脱时间本质，因果缠绕，厄土仙帝亦难彻底抹去
-  5: '永恒未知',   // 一切终结之地，连诡异始祖都无法触碰
-};
-
-/** 位面ID→名称映射 */
-const PLANE_NAMES = {
-  0: '凡间', 1: '仙界', 1.5: '下界八域',
-  2: '遮天位面', 2.5: '九天十地', 3: '界海',
-  4: '时间长河', 5: '永恒未知之地', 6: '仙域',
+  [PLACE_LOCATION_MAP.时间长河]: '时间长河',
+  [PLACE_LOCATION_MAP.永恒未知之地]: '永恒未知之地',
 };
 
 // ==================== 运行时状态 ====================
@@ -142,8 +136,13 @@ async function loadDestructionState() {
       redis.get(DESTRUCTION_REDIS_KEYS.protected),
       redis.get(DESTRUCTION_REDIS_KEYS.nextWorldYear),
     ]);
-    destroyedPlanes = saved ? new Set(JSON.parse(saved)) : new Set();
-    protectedPlanes = savedProtected ? new Set(JSON.parse(savedProtected)) : new Set();
+    const normalizeIds = raw => new Set(
+      (Array.isArray(raw) ? raw : [])
+        .map(getLocationId)
+        .filter(Number.isFinite),
+    );
+    destroyedPlanes = saved ? normalizeIds(JSON.parse(saved)) : new Set();
+    protectedPlanes = savedProtected ? normalizeIds(JSON.parse(savedProtected)) : new Set();
     const parsedNext = Number(savedNext);
     nextDestructionWorldYear = Number.isFinite(parsedNext) && parsedNext > 0
       ? parsedNext
@@ -192,6 +191,11 @@ async function getWorldClockDestructionStatus() {
   let active = false;
   let rescueUsed = false;
   let lastRepairWorldYear = null;
+  const normalizeIds = raw => [...new Set(
+    (Array.isArray(raw) ? raw : [])
+      .map(getLocationId)
+      .filter(Number.isFinite),
+  )];
   try {
     const [timer, destroyed, protectedValue, next, used, lastRepair] = await Promise.all([
       redis.get(DESTRUCTION_REDIS_KEYS.timerActive),
@@ -202,8 +206,8 @@ async function getWorldClockDestructionStatus() {
       redis.get(DESTRUCTION_REDIS_KEYS.lastRepairWorldYear),
     ]);
     active = timer === 'true';
-    if (destroyed) destroyedList = JSON.parse(destroyed);
-    if (protectedValue) protectedList = JSON.parse(protectedValue);
+    if (destroyed) destroyedList = normalizeIds(JSON.parse(destroyed));
+    if (protectedValue) protectedList = normalizeIds(JSON.parse(protectedValue));
     const parsedNext = Number(next);
     if (Number.isFinite(parsedNext) && parsedNext > 0) savedNext = parsedNext;
     rescueUsed = Boolean(used);
@@ -214,9 +218,9 @@ async function getWorldClockDestructionStatus() {
   const immune = Object.keys(IMMUNE_PLANES).map(Number).map(id => IMMUNE_PLANES[id]);
   return {
     active,
-    destroyed: destroyedList.map(id => PLANE_NAMES[id] || `未知(${id})`),
+    destroyed: destroyedList.map(id => getLocationName(id) || `未知(${id})`),
     remaining: remaining.map(p => p.name),
-    protected: protectedList.map(id => PLANE_NAMES[id] || `未知(${id})`),
+    protected: protectedList.map(id => getLocationName(id) || `未知(${id})`),
     immune,
     totalDestroyable: DESTROYABLE_PLANES.length,
     destroyedCount: destroyedList.length,
@@ -262,7 +266,7 @@ export async function rescuePlaneForPlayer(qq) {
 
   await loadDestructionState();
   const remaining = DESTROYABLE_PLANES.filter(p => !destroyedPlanes.has(p.id) && !protectedPlanes.has(p.id));
-  const ownPlane = remaining.find(p => p.id === Number(player.power_place));
+  const ownPlane = remaining.find(p => p.id === getLocationId(player.power_place));
   const target = ownPlane || remaining[0];
   if (!target) return { ok: false, reason: '所有可救援位面均已毁灭或受到保护' };
 
@@ -273,7 +277,7 @@ export async function rescuePlaneForPlayer(qq) {
     for (const file of files) {
       const targetQq = file.replace('.json', '');
       const targetPlayer = await data.getData('player', targetQq);
-      if (!targetPlayer || Number(targetPlayer.power_place) !== Number(target.id)) continue;
+      if (!targetPlayer || getLocationId(targetPlayer.power_place) !== getLocationId(target.id)) continue;
       if (hasRealmAuthority(targetPlayer, ZHUNXIAN_THRESHOLD)) continue;
       targetPlayer.power_place = 0;
       targetPlayer.位面救援记录 = {
@@ -354,7 +358,8 @@ export async function getDestructionStatus() {
  * 检查指定位面是否已被破坏
  */
 export function isPlaneDestroyed(planeId) {
-  return destroyedPlanes.has(planeId);
+  const normalizedId = getLocationId(planeId);
+  return Number.isFinite(normalizedId) && destroyedPlanes.has(normalizedId);
 }
 
 /**
@@ -390,11 +395,11 @@ export async function repairAllDestroyedPlanes(options = {}) {
  * @returns {boolean} 是否成功修复（false表示该位面未被破坏）
  */
 export async function repairSinglePlane(planeId) {
-  planeId = Number(planeId);
-  const repairedPlaneName = PLANE_NAMES[planeId];
+  const normalizedId = getLocationId(planeId);
+  const repairedPlaneName = getLocationName(normalizedId);
   if (!repairedPlaneName || !repairPlane(data.filePathMap.weimianList, repairedPlaneName)) return false;
-  destroyedPlanes.delete(planeId);
-  protectedPlanes.delete(planeId);
+  destroyedPlanes.delete(normalizedId);
+  protectedPlanes.delete(normalizedId);
   try {
     await redis.set(DESTRUCTION_REDIS_KEYS.destroyed, JSON.stringify([...destroyedPlanes]));
     await redis.set(DESTRUCTION_REDIS_KEYS.protected, JSON.stringify([...protectedPlanes]));
@@ -406,12 +411,12 @@ export async function repairSinglePlane(planeId) {
 
 /** 管理员按位面名称修复，同时同步运行时毁灭状态。 */
 export async function repairDestroyedPlaneByName(planeName) {
-  const name = String(planeName || '').trim();
+  const name = getLocationName(planeName) || String(planeName || '').trim();
   if (!repairPlane(data.filePathMap.weimianList, name)) return false;
-  const planeId = Object.keys(PLANE_NAMES).find(id => PLANE_NAMES[id] === name);
-  if (planeId !== undefined) {
-    destroyedPlanes.delete(Number(planeId));
-    protectedPlanes.delete(Number(planeId));
+  const planeId = getLocationId(name);
+  if (Number.isFinite(planeId)) {
+    destroyedPlanes.delete(planeId);
+    protectedPlanes.delete(planeId);
   }
   try {
     await redis.set(DESTRUCTION_REDIS_KEYS.destroyed, JSON.stringify([...destroyedPlanes]));
@@ -508,7 +513,7 @@ async function destroyPlane(planeInfo) {
         if (!playerData) continue;
 
         // 检查是否在目标位面
-        if (Number(playerData.power_place) !== Number(planeInfo.id)) continue;
+        if (getLocationId(playerData.power_place) !== getLocationId(planeInfo.id)) continue;
 
         // 检查寂灭状态——如果玩家正在寂灭中，视为已在厄土高原（不在本位面）
         let inOblivion = false;

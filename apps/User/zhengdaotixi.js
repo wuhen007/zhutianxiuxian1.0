@@ -1,6 +1,7 @@
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'path';
+import { PLACE_LOCATION_MAP, getLocationName } from '../../model/weimianTravel.js';
 import {
   reviveFromYongJi,
   revivePlaneFromYongJi,
@@ -763,21 +764,9 @@ async hongjiChengxianlu(e) {
     }
     
     // ==== 新增：时空条件检查 ====
-    // 1. 检查是否在遮天位面（power_place=2）
-    if (player.power_place !== 2) {
-      const placeNames = {
-        '凡间': 0,
-        '仙界': 1,
-        '下界八域': 1.5,
-        '遮天位面': 2,
-        "九天十地":2.5,
-        '界海': 3,
-        '时间长河': 4,
-        '永恒未知之地': 5,
-        '仙域': 6
-      };
-      
-      const currentPlace = placeNames[player.power_place] || "未知位面";
+    // 1. 检查是否在遮天位面
+    if (player.power_place !== PLACE_LOCATION_MAP.遮天位面) {
+      const currentPlace = getLocationName(player.power_place) || "未知位面";
       
       return e.reply([
         `【时空错位·仙路难寻】`,
@@ -823,7 +812,7 @@ async hongjiChengxianlu(e) {
     }
 
     // 更新玩家位置
-    player.power_place = 6;
+    player.power_place = PLACE_LOCATION_MAP.仙域;
     await Write_player(player_qq, player);
 
     // 构建辰东风格文案
@@ -4303,12 +4292,12 @@ async resurrectPlayer(targetQQ, caster) {
 
 /** 位面级别映照：修复被诡异大祭崩灭的位面（不复活永寂者） */
 async handlePlaneYingzhao(e, caster, casterQQ, planeName) {
-    const PLANE_ID_MAP = {
-        '凡间': 0, '仙界': 1, '下界八域': 1.5,
-        '遮天位面': 2, '九天十地': 2.5, '界海': 3, '仙域': 6,
-    };
-    const planeId = PLANE_ID_MAP[planeName];
-    if (planeId === undefined) {
+    // 映照仍只作用于可被诡异大祭摧毁的七个诸天位面；编号统一从总表解析。
+    const canBeRepaired = new Set([
+        '凡间', '仙界', '下界八域', '遮天位面', '九天十地', '界海', '仙域',
+    ]);
+    const planeId = PLACE_LOCATION_MAP[planeName];
+    if (!canBeRepaired.has(planeName) || planeId === undefined) {
         await e.reply(`【映照·位面不明】\n「${planeName}」并非可映照的位面。`);
         return true;
     }

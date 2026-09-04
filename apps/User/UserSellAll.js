@@ -40,6 +40,7 @@ import {
 import { getMinggeEffects, getMinggeDirectMultiplier } from '../../model/mingge.js';
 import {
   getDimensionTradeCompatibility,
+  PLACE_LOCATION_MAP,
   rollDailyDungeonCoordinate,
 } from '../../model/weimianTravel.js';
 import { resolveZhetianDungeonVictory } from '../../model/zhetianInheritance.js';
@@ -2137,7 +2138,7 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
                 }
             }
         }
-        if (player.power_place == 2 && player.古地府 && player.灵根.type === "圣体" && Math.random() < 0.3 && player.mijinglevel_id < 14) {
+        if (player.power_place == PLACE_LOCATION_MAP.遮天位面 && player.古地府 && player.灵根.type === "圣体" && Math.random() < 0.3 && player.mijinglevel_id < 14) {
             try {
                 let penaltyMsg = [
                     '【古地府惊魂·圣体劫难】',
@@ -2255,7 +2256,7 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
                 await common.reply(e, "地府阴气扰乱天机！事件处理失败");
             }
         }
-if (player.power_place == 2 && Math.random() < 0.01) {
+if (player.power_place == PLACE_LOCATION_MAP.遮天位面 && Math.random() < 0.01) {
     try {
         // 检查是否已经解锁张五爷
         let hasZhangwuye = false;
@@ -2583,7 +2584,7 @@ if (weizhi.name === "紫薇星域") {
               }
           }
            // 在荒古禁地探索事件中添加行字秘唯一性检查和天资要求
-                if (player.power_place == 2) {
+        if (player.power_place == PLACE_LOCATION_MAP.遮天位面) {
                     let random = Math.random();
                     // 根据玩家的幸运值调整概率
                     let adjustedProbability = random ;
@@ -4221,7 +4222,7 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
                 }
             }
         }
-        if (player.power_place == 2 && player.古地府 && player.灵根.type === "圣体" && Math.random() < 0.3 && player.mijinglevel_id < 14) {
+        if (player.power_place == PLACE_LOCATION_MAP.遮天位面 && player.古地府 && player.灵根.type === "圣体" && Math.random() < 0.3 && player.mijinglevel_id < 14) {
             try {
                 let penaltyMsg = [
                     '【古地府惊魂·圣体劫难】',
@@ -4339,7 +4340,7 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
                 await common.reply(e, "地府阴气扰乱天机！事件处理失败");
             }
         }
-if (player.power_place == 2 && Math.random() < 0.01) {
+if (player.power_place == PLACE_LOCATION_MAP.遮天位面 && Math.random() < 0.01) {
     try {
         // 检查是否已经解锁张五爷
         let hasZhangwuye = false;
@@ -4721,7 +4722,7 @@ if (weizhi.name === "紫薇星域") {
                     }
                 }
            // 在荒古禁地探索事件中添加行字秘唯一性检查和天资要求
-                if (player.power_place == 2) {
+        if (player.power_place == PLACE_LOCATION_MAP.遮天位面) {
                     let random = Math.random();
                     // 根据玩家的幸运值调整概率
                     let adjustedProbability = random ;

@@ -16,7 +16,7 @@ export const PLACE_LOCATION_MAP = Object.freeze({
   '小阴间': 4,
   '大阴间': 5,
   '仙域': 6,
-  '永恒未知之地': 6.5,
+  '永恒未知之地': 42,
   '阳间': 7,
   '厄土高原': 20,
   '上苍之上': 40,
@@ -27,6 +27,9 @@ export const PLACE_LOCATION_MAP = Object.freeze({
   '万维梵宇界': 120,
   '神维丝线海': 150,
 });
+
+export const PLACE_LOCATION_NAMES = Object.freeze(Object.keys(PLACE_LOCATION_MAP));
+export const PLACE_LOCATION_PATTERN = PLACE_LOCATION_NAMES.join('|');
 
 export const DEFAULT_KNOWN_LOCATIONS = Object.freeze(['凡间']);
 export const SEALED_LOCATIONS = Object.freeze(['彼岸世界']);
@@ -41,18 +44,33 @@ export const ALL_HEAVENS_LOCATIONS = Object.freeze([
   '太初星墟', '小阴间', '大阴间', '仙域', '阳间',
 ]);
 
-// 时间长河是独立的时序域；仙帝可将诸天、上苍与永恒未知之地视为一组可达区域。
+// 仙帝可直接触及的四处界壁区域。名称只在此处维护，其他入口通过共享集合引用。
+export const EMPEROR_BOUNDARY_LOCATIONS = Object.freeze([
+  '上苍之上', '永恒未知之地', '厄土高原', '时间长河',
+]);
+
+// 方图坐标数据的实际覆盖范围。高维位面没有实体方图，但仍可记录抽象坐标锚点。
+export const COORDINATE_MAPPED_LOCATIONS = Object.freeze([
+  '凡间', '仙界', '下界八域', '遮天位面', '九天十地', '界海',
+  '太初星墟', '仙域', '小阴间', '大阴间', '阳间',
+]);
+
+// 时间长河是独立的时序域；仙帝可将四大界壁区域与诸天视为一组可达区域。
 export const TIME_RIVER_LOCATIONS = Object.freeze(['时间长河']);
 export const EMPEROR_FREE_TRAVEL_LOCATIONS = Object.freeze([
   ...ALL_HEAVENS_LOCATIONS,
-  '上苍之上',
-  '永恒未知之地',
+  ...EMPEROR_BOUNDARY_LOCATIONS,
 ]);
 export const EMPEROR_INSTANT_TRAVEL_LOCATIONS = Object.freeze([
   ...ALL_HEAVENS_LOCATIONS,
   '上苍之上',
 ]);
 export const IMMORTAL_EMPEROR_TRAVEL_TIME_REDUCTION = 0.7;
+
+// 旧存档曾把永恒未知之地写成 6.5。该值只作为读取兼容别名，新的写入一律使用42。
+export const LEGACY_PLACE_LOCATION_NAMES = Object.freeze({
+  6.5: '永恒未知之地',
+});
 
 export const DIMENSION_GROUPS = Object.freeze({
   allHeavens: Object.freeze({
@@ -146,7 +164,7 @@ export const TIME_RIVER_BARRIER_BASE_MINUTES = 60;
 export const SHENGXU_PLANES = Object.freeze(['小阴间', '大阴间', '阳间']);
 
 export function isShengxuPlane(location) {
-  return SHENGXU_PLANES.includes(location);
+  return SHENGXU_PLANES.includes(getLocationName(location));
 }
 
 export const TRAVEL_BASE_MIN_PER_LEVEL = 15;
@@ -165,10 +183,45 @@ export const FORBIDDEN_SUPREME_ALL_ATTRIBUTE = 75_000_000_000;
 export const FORBIDDEN_SUPREME_EQUIPMENT_MULTIPLIER = 150;
 
 export function getLocationName(location) {
-  if (Object.hasOwn(PLACE_LOCATION_MAP, location)) return String(location);
-  const numeric = Number(location);
-  return Object.entries(PLACE_LOCATION_MAP)
+  let value = location;
+  if (typeof value === 'string') {
+    value = value.trim();
+    if (!value) return '';
+    if (Object.hasOwn(PLACE_LOCATION_MAP, value)) return value;
+  } else if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '';
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '';
+  const current = Object.entries(PLACE_LOCATION_MAP)
     .find(([, value]) => Number(value) === numeric)?.[0] || '';
+  return current || LEGACY_PLACE_LOCATION_NAMES[numeric] || '';
+}
+
+// 将名称、当前编号与旧存档编号统一解析为当前规范编号。
+export function getLocationId(location) {
+  const name = getLocationName(location);
+  if (name) return Number(PLACE_LOCATION_MAP[name]);
+  if (typeof location === 'string' && !location.trim()) return NaN;
+  if (location === null || location === undefined) return NaN;
+  const numeric = Number(location);
+  return Number.isFinite(numeric) ? numeric : NaN;
+}
+
+// 将坐标记忆中的数字、名称和旧别名统一保存为规范名称，同时去重。
+export function normalizeLocationList(locations) {
+  if (!Array.isArray(locations)) return [];
+  const normalized = [];
+  for (const location of locations) {
+    const name = getLocationName(location);
+    let value = name;
+    if (!value && typeof location === 'string') value = location.trim();
+    if (!value && typeof location === 'number' && Number.isFinite(location)) value = location;
+    if (!value || normalized.includes(value)) continue;
+    normalized.push(value);
+  }
+  return normalized;
 }
 
 export function isSealedLocation(location) {
@@ -293,13 +346,11 @@ export function getDimensionBarrierTravelTime(player, fromLocation, toLocation) 
   }
   // 其余维度壁垒（上苍之上、永恒未知之地与高维位面）：
   // 位面数值差 × 15 分钟/级 × 壁垒层数 × 境界减免系数
-  const fromValue = Number.isFinite(Number(fromLocation))
-    ? Number(fromLocation)
-    : Number(PLACE_LOCATION_MAP[getLocationName(fromLocation)]);
-  const toValue = Number.isFinite(Number(toLocation))
-    ? Number(toLocation)
-    : Number(PLACE_LOCATION_MAP[getLocationName(toLocation)]);
-  const rawDistance = Math.abs(fromValue - toValue);
+  const fromValue = getLocationId(fromLocation);
+  const toValue = getLocationId(toLocation);
+  const rawDistance = Number.isFinite(fromValue) && Number.isFinite(toValue)
+    ? Math.abs(fromValue - toValue)
+    : 0;
   const realmMultiplier = 1 - calcRealmReducePct(player);
   return Math.max(
     1,
@@ -566,8 +617,13 @@ function level(player, key) {
 
 export function ensureDefaultCoordinates(player) {
   if (!player || typeof player !== 'object') return false;
-  if (!Array.isArray(player.记忆坐标)) player.记忆坐标 = [];
-  let changed = false;
+  const current = normalizeLocationList(player.记忆坐标);
+  const hadArray = Array.isArray(player.记忆坐标);
+  const changedByNormalization = !hadArray
+    || current.length !== player.记忆坐标.length
+    || current.some((location, index) => location !== player.记忆坐标[index]);
+  player.记忆坐标 = current;
+  let changed = changedByNormalization;
   for (const location of DEFAULT_KNOWN_LOCATIONS) {
     if (!player.记忆坐标.includes(location)) {
       player.记忆坐标.unshift(location);
@@ -578,18 +634,21 @@ export function ensureDefaultCoordinates(player) {
 }
 
 export function hasCoordinate(player, location) {
-  if (isSealedLocation(location)) return false;
-  if (getRealmAuthorityLevel(player) >= 21 && isEmperorFreeTravelLocation(location)) return true;
-  if (DEFAULT_KNOWN_LOCATIONS.includes(location)) return true;
-  if (location === '遮天位面' && Number(player?.五色祭坛激活) === 1) return true;
-  if (isShengxuPlane(location) && (
+  const locationName = getLocationName(location);
+  if (isSealedLocation(locationName)) return false;
+  if (getRealmAuthorityLevel(player) >= 21 && isEmperorFreeTravelLocation(locationName)) return true;
+  if (DEFAULT_KNOWN_LOCATIONS.includes(locationName)) return true;
+  if (locationName === '遮天位面' && Number(player?.五色祭坛激活) === 1) return true;
+  if (isShengxuPlane(locationName) && (
     isCultivatingExtraPath(player, 'huafen') || getRealmAuthorityLevel(player) >= 20
   )) return true;
-  return Array.isArray(player?.记忆坐标) && player.记忆坐标.includes(location);
+  if (!locationName || !Object.hasOwn(PLACE_LOCATION_MAP, locationName)) return false;
+  return Array.isArray(player?.记忆坐标)
+    && player.记忆坐标.some(value => getLocationName(value) === locationName);
 }
 
 export function getCoordinateLocations() {
-  return Object.keys(PLACE_LOCATION_MAP).filter(location =>
+  return PLACE_LOCATION_NAMES.filter(location =>
     !isShengxuPlane(location)
     && !isSealedLocation(location)
     && !DEFAULT_KNOWN_LOCATIONS.includes(location)
@@ -604,10 +663,13 @@ export function getUnknownCoordinates(player) {
 }
 
 export function rememberCoordinate(player, location) {
-  if (isShengxuPlane(location) || isSealedLocation(location) || !Object.hasOwn(PLACE_LOCATION_MAP, location) || DEFAULT_KNOWN_LOCATIONS.includes(location)) return false;
-  if (!Array.isArray(player.记忆坐标)) player.记忆坐标 = [];
-  if (player.记忆坐标.includes(location)) return false;
-  player.记忆坐标.push(location);
+  const locationName = getLocationName(location);
+  if (isShengxuPlane(locationName) || isSealedLocation(locationName)
+    || !locationName || !Object.hasOwn(PLACE_LOCATION_MAP, locationName)
+    || DEFAULT_KNOWN_LOCATIONS.includes(locationName)) return false;
+  player.记忆坐标 = normalizeLocationList(player.记忆坐标);
+  if (player.记忆坐标.some(value => getLocationName(value) === locationName)) return false;
+  player.记忆坐标.push(locationName);
   return true;
 }
 
@@ -640,19 +702,25 @@ export function rollDailyDungeonCoordinate(player, options = {}) {
 }
 
 export function purchaseCoordinateClue(player, location, cost = COORDINATE_CLUE_COST) {
-  if (isShengxuPlane(location) || isSealedLocation(location) || !Object.hasOwn(PLACE_LOCATION_MAP, location) || DEFAULT_KNOWN_LOCATIONS.includes(location)) {
+  const locationName = getLocationName(location);
+  if (isShengxuPlane(locationName) || isSealedLocation(locationName)
+    || !locationName || !Object.hasOwn(PLACE_LOCATION_MAP, locationName)
+    || DEFAULT_KNOWN_LOCATIONS.includes(locationName)) {
     return { ok: false, reason: 'invalid' };
   }
-  if (hasCoordinate(player, location)) return { ok: false, reason: 'known' };
+  if (hasCoordinate(player, locationName)) return { ok: false, reason: 'known' };
   if ((Number(player?.灵石) || 0) < cost) return { ok: false, reason: 'insufficient', cost };
 
   player.灵石 = Number(player.灵石) - cost;
-  rememberCoordinate(player, location);
-  return { ok: true, location, cost };
+  rememberCoordinate(player, locationName);
+  return { ok: true, location: locationName, cost };
 }
 
 export function hasEngravedCoordinate(player, location) {
-  return Array.isArray(player?.传送阵坐标) && player.传送阵坐标.includes(location);
+  const locationName = getLocationName(location);
+  if (!locationName) return false;
+  return Array.isArray(player?.传送阵坐标)
+    && player.传送阵坐标.some(value => getLocationName(value) === locationName);
 }
 
 export function getTokenTier(player) {
@@ -681,26 +749,29 @@ export function getBaseTravelThreshold(player) {
 }
 
 export function getLocationThreshold(player, location) {
+  const locationName = getLocationName(location);
   const mijing = level(player, 'mijinglevel_id');
   const xiangu = level(player, 'xiangulevel_id');
   const huafen = level(player, 'huafenlevel_id');
   const cultivation = level(player, 'level_id');
   const authority = getRealmAuthorityLevel(player);
-  const dimensionLayer = getDimensionLayer(location);
+  const dimensionLayer = getDimensionLayer(locationName);
   let code = null;
   let checks = [];
 
-  if (isSealedLocation(location)) {
+  if (!locationName || !Object.hasOwn(PLACE_LOCATION_MAP, locationName)) {
+    code = 'unknown';
+    checks = [{ label: '位面定位', display: '目标位面未登记', met: false }];
+  } else if (isSealedLocation(locationName)) {
     code = 'sealed';
     checks = [{ label: '裂界唯一通路', display: '需由太初星墟唤醒裂界残忆', met: false }];
-  } else if (authority >= 21 && isEmperorFreeTravelLocation(location)) {
+  } else if (authority >= 21 && isEmperorFreeTravelLocation(locationName)) {
     checks = [{
       label: '仙帝维度权能',
-      display: '诸天万界、上苍之上与永恒未知之地可直达',
+      display: `${EMPEROR_BOUNDARY_LOCATIONS.join('、')}及诸天万界可直达`,
       met: true,
     }];
   } else if (dimensionLayer > 0) {
-    const locationName = getLocationName(location);
     const required = DIMENSION_BARRIER_POWER_REQUIREMENTS[locationName] || 0;
     const breakingPower = getDimensionBreakingPower(player);
     const met = breakingPower >= required;
@@ -710,28 +781,28 @@ export function getLocationThreshold(player, location) {
       display: `破界强度 ${breakingPower}/${required}（等效权柄 ${authority}）`,
       met,
     }];
-  } else if (location === '小阴间') {
+  } else if (locationName === '小阴间') {
     const met = authority >= 20 || (isCultivatingExtraPath(player, 'huafen') && huafen >= 2);
     code = met ? null : 'shengxu';
     checks = [{ label: '花粉进化路', display: `花粉 ${huafen}/2，且未兼修其他额外体系`, met }];
-  } else if (location === '大阴间') {
+  } else if (locationName === '大阴间') {
     const met = authority >= 20 || (isCultivatingExtraPath(player, 'huafen') && huafen >= 12);
     code = met ? null : 'dayinjian';
     checks = [{ label: '花粉·神祇境', display: `花粉 ${huafen}/12`, met }];
-  } else if (location === '阳间') {
+  } else if (locationName === '阳间') {
     // 神将（13）即可入阳间，于法则完整之地冲击神王（14）
     const met = authority >= 20 || (isCultivatingExtraPath(player, 'huafen') && huafen >= 13);
     code = met ? null : 'yangjian';
     checks = [{ label: '花粉·神将境', display: `花粉 ${huafen}/13`, met }];
-  } else if (location === '时间长河') {
+  } else if (locationName === '时间长河') {
     const met = mijing >= 20 || xiangu >= 20 || huafen >= 21;
     code = met ? null : 'time-river';
     checks = [{ label: '准仙帝境界', display: `秘境 ${mijing}/20、仙古 ${xiangu}/20或花粉 ${huafen}/21`, met }];
-  } else if (location === '仙界') {
+  } else if (locationName === '仙界') {
     const met = cultivation >= 42 || (Number(player?.lunhui) || 0) !== 0;
     code = met ? null : 'immortal-realm';
     checks = [{ label: '成仙条件', display: met ? '已成仙' : '需地仙境或轮回', met }];
-  } else if (location === '遮天位面') {
+  } else if (locationName === '遮天位面') {
     const altarActive = Number(player?.五色祭坛激活) === 1;
     const authority = getRealmAuthorityLevel(player);
     const met = authority >= ZHETIAN_ENTRY_AUTHORITY_LEVEL || altarActive;
@@ -741,19 +812,19 @@ export function getLocationThreshold(player, location) {
       display: `等效权柄 ${authority}/${ZHETIAN_ENTRY_AUTHORITY_LEVEL}（秘境 ${mijing}/12、仙古 ${xiangu}/11、花粉 ${huafen}/11）或五色祭坛${altarActive ? '已激活' : '未激活'}`,
       met,
     }];
-  } else if (location === '仙域') {
+  } else if (locationName === '仙域') {
     const met = mijing >= 18 || xiangu >= 16 || huafen >= 18;
     code = met ? null : 'immortal-domain';
     checks = [{ label: '仙王境界', display: `秘境 ${mijing}/18、仙古 ${xiangu}/16或花粉 ${huafen}/18`, met }];
-  } else if (location === '异域') {
+  } else if (locationName === '异域') {
     const met = authority >= 18;
     code = met ? null : 'foreign-realm';
     checks = [{ label: '异域界壁', display: `等效权柄 ${authority}/18（仙王）`, met }];
-  } else if (location === '太初星墟') {
+  } else if (locationName === '太初星墟') {
     const met = mijing >= 16 || xiangu >= 16 || huafen >= 15;
     code = met ? null : 'primordial-ruins';
     checks = [{ label: '裂界承载', display: `秘境 ${mijing}/16、仙古 ${xiangu}/16或花粉 ${huafen}/15`, met }];
-  } else if (location === '凡间') {
+  } else if (locationName === '凡间') {
     const met = authority >= 20 || (mijing <= 20 && xiangu <= 20 && huafen <= 21);
     code = met ? null : 'mortal-realm';
     checks = [{ label: '天地承载', display: met ? '可收束权柄下凡' : '仙帝威压过强', met }];
@@ -775,13 +846,11 @@ export function getKunpengReduction(player) {
 
 export function getBodyTravelQuote(player, fromLocation, toLocation) {
   const barriers = getDimensionBarrierCount(fromLocation, toLocation);
-  const fromValue = Number.isFinite(Number(fromLocation))
-    ? Number(fromLocation)
-    : Number(PLACE_LOCATION_MAP[getLocationName(fromLocation)]);
-  const toValue = Number.isFinite(Number(toLocation))
-    ? Number(toLocation)
-    : Number(PLACE_LOCATION_MAP[getLocationName(toLocation)]);
-  const rawDistance = Math.abs(fromValue - toValue);
+  const fromValue = getLocationId(fromLocation);
+  const toValue = getLocationId(toLocation);
+  const rawDistance = Number.isFinite(fromValue) && Number.isFinite(toValue)
+    ? Math.abs(fromValue - toValue)
+    : 0;
   const distance = barriers || (Number.isFinite(rawDistance) ? rawDistance : 0);
   const instant = isInstantAllHeavensTravel(player, fromLocation, toLocation);
   if (distance === 0) {
@@ -824,13 +893,11 @@ export function getTokenTravelTime(player, fromLocation, toLocation, tier) {
   if (isInstantAllHeavensTravel(player, fromLocation, toLocation)) return 0;
   const barrierTime = getDimensionBarrierTravelTime(player, fromLocation, toLocation);
   if (barrierTime > 0) return barrierTime;
-  const fromValue = Number.isFinite(Number(fromLocation))
-    ? Number(fromLocation)
-    : Number(PLACE_LOCATION_MAP[getLocationName(fromLocation)]);
-  const toValue = Number.isFinite(Number(toLocation))
-    ? Number(toLocation)
-    : Number(PLACE_LOCATION_MAP[getLocationName(toLocation)]);
-  const distance = Math.abs(fromValue - toValue);
+  const fromValue = getLocationId(fromLocation);
+  const toValue = getLocationId(toLocation);
+  const distance = Number.isFinite(fromValue) && Number.isFinite(toValue)
+    ? Math.abs(fromValue - toValue)
+    : 0;
   if (distance === 0) return 0;
   const basePerLevel = tier === 'high' ? TOKEN_HIGH_MIN_PER_LEVEL : TOKEN_LOW_MIN_PER_LEVEL;
   return Math.round(Math.max(1, distance * basePerLevel * (1 - calcRealmReducePct(player))));
@@ -862,9 +929,7 @@ export function recordUnfetteredJourney(player) {
 }
 
 function getPlaneNameByLocation(location) {
-  const numericLocation = Number(location);
-  return Object.entries(PLACE_LOCATION_MAP)
-    .find(([, value]) => Number(value) === numericLocation)?.[0] || '';
+  return getLocationName(location);
 }
 
 function registerGroupAttention(player, group) {
@@ -886,8 +951,8 @@ function registerGroupAttention(player, group) {
 }
 
 export function registerLocalPowerAttention(player, task) {
-  const toPlane = task?.to_name || getPlaneNameByLocation(task?.to_location);
-  const fromPlane = task?.from_name || getPlaneNameByLocation(task?.from_location);
+  const toPlane = getLocationName(task?.to_name) || getPlaneNameByLocation(task?.to_location);
+  const fromPlane = getLocationName(task?.from_name) || getPlaneNameByLocation(task?.from_location);
   const group = LOCAL_POWER_GROUPS[toPlane] || LOCAL_POWER_GROUPS[fromPlane];
   if (!group) return { relevant: false, count: 0, intercept: false, warning: '' };
   return registerGroupAttention(player, group);
@@ -916,8 +981,10 @@ export function evaluateSupremeExemption(player) {
 }
 
 export function registerForbiddenSupremeAttention(player, task, options = {}) {
-  const touchesZhetian = Number(task?.from_location) === PLACE_LOCATION_MAP.遮天位面 ||
-    Number(task?.to_location) === PLACE_LOCATION_MAP.遮天位面;
+  const touchesZhetian = getLocationId(task?.from_location) === PLACE_LOCATION_MAP.遮天位面 ||
+    getLocationId(task?.to_location) === PLACE_LOCATION_MAP.遮天位面 ||
+    getLocationName(task?.from_name) === '遮天位面' ||
+    getLocationName(task?.to_name) === '遮天位面';
   if (!touchesZhetian) return { relevant: false, count: 0, intercept: false, warning: '' };
 
   const group = LOCAL_POWER_GROUPS.遮天位面;

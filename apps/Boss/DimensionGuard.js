@@ -64,6 +64,10 @@ function readAction(raw) {
   }
 }
 
+function isActiveTravelAction(action, now) {
+  return action?.action === '位面传送' && Number(action.end_time) > now;
+}
+
 async function findImmortalEmperors() {
   const emperors = [];
   for (const file of readPlayerFiles()) {
@@ -84,6 +88,9 @@ async function syncEternalGuardActions(emperors, now) {
     const actionKey = `xiuxian:player:${emperor.id}:action`;
     const currentAction = readAction(await redis.get(actionKey));
     const guarding = isGuardingEternal(emperor.player);
+
+    // 穿梭流程会先写入目标位面，再等待 TravelTask 结算；期间不能被镇守巡查接管。
+    if (guarding && isActiveTravelAction(currentAction, now)) continue;
 
     if (!guarding) {
       if (isEternalGuardAction(currentAction)) await redis.del(actionKey);

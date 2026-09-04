@@ -7,6 +7,7 @@ import test from 'node:test';
 import {
   buildPlaneDestroyedMessage,
   getPlaneDestructionInfo,
+  isEraReshapeUnlocked,
   markPlaneDestroyed,
   PLANE_DESTRUCTION_RECORD_KEY,
   PLANE_DESTRUCTION_SOURCES,
@@ -179,4 +180,15 @@ test('帝尊炼界有独立拦截文案且不会自然修复', t => {
     worldYear: 100_000,
     minAge: 2_000,
   }), []);
+});
+
+test('重塑古今未来仅在厄土高原被消灭后解锁', t => {
+  const fixture = createPlaneFile({ 厄土高原: 1 });
+  t.after(fixture.cleanup);
+
+  assert.equal(isEraReshapeUnlocked(fixture.filePath), false);
+  assert.equal(markPlaneDestroyed(fixture.filePath, '厄土高原', {
+    source: PLANE_DESTRUCTION_SOURCES.STRANGE_EMPEROR,
+  }), true);
+  assert.equal(isEraReshapeUnlocked(fixture.filePath), true);
 });

@@ -3,12 +3,13 @@ import { isDaofaActive } from './daofa.js';
 import { getDungeonTimedActionMultiplier } from './innateTreasure.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from './mingge.js';
 import { addCappedEraAccumulation } from './selfDaoDeduction.js';
+import { PLACE_LOCATION_MAP } from './weimianTravel.js';
 
 const SHANGCANG_REWARD_PLACES = createRequire(import.meta.url)(
   '../resources/data/item/副本/上苍之上列表.json',
 );
 
-export const SHANGCANG_PLANE_ID = 40;
+export const SHANGCANG_PLANE_ID = PLACE_LOCATION_MAP.上苍之上;
 export const SHANGCANG_NORMAL_ACTION = '上苍之上历练';
 export const SHANGCANG_ADDICTION_ACTION = '沉迷上苍之上';
 export const SHANGCANG_LOCATIONS = Object.freeze(['魂河', '天帝葬坑']);

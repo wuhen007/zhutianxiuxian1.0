@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'fs';
 import path from 'path';
 import { runTaskOnce } from '../../utils/taskGuard.js';
+import { PLACE_LOCATION_MAP, getLocationName } from '../../model/weimianTravel.js';
 
 import {
   Read_player,
@@ -2478,20 +2479,8 @@ export class xianguPlace extends plugin {
     }
     
     // 位面检查 - 完美世界设定
-    if (player.power_place !== 2.5) { // 九天十地
-      const placeNames = {
-        '凡间': 0,
-        '仙界': 1,
-        '下界八域': 1.5,
-        '遮天位面': 2,
-        "九天十地": 2.5,
-        '界海': 3,
-        '时间长河': 4,
-        '永恒未知之地': 5,
-        '仙域': 6
-      };
-      
-      const currentPlace = Object.entries(placeNames).find(([name, id]) => id === player.power_place)?.[0] || "未知位面";
+    if (player.power_place !== PLACE_LOCATION_MAP.九天十地) {
+      const currentPlace = getLocationName(player.power_place) || "未知位面";
       
       return e.reply([
         `【时空错乱·位面不符】`,
