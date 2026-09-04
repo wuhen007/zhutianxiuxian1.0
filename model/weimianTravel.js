@@ -139,7 +139,8 @@ export const DIMENSION_BREAKING_POWER_BY_AUTHORITY = Object.freeze({
 export const SAN_SHI_TONG_GUAN_NAME = '三世铜棺';
 export const SAN_SHI_TONG_GUAN_MIN_AUTHORITY = 20;
 
-export const DIMENSION_BARRIER_BASE_MINUTES = 8 * 60;
+// 时间长河是独立时序域，跨时序界壁航程基准按 1 小时/重计（仅时间长河生效）
+export const TIME_RIVER_BARRIER_BASE_MINUTES = 60;
 
 // 圣墟位面三级：小阴间（映照绝巅 11）/ 大阴间（13）/ 阳间（17）
 export const SHENGXU_PLANES = Object.freeze(['小阴间', '大阴间', '阳间']);
@@ -281,13 +282,28 @@ export function getDimensionBarrierTravelTime(player, fromLocation, toLocation) 
   const barriers = getDimensionBarrierCount(fromLocation, toLocation);
   if (barriers === 0) return 0;
   if (isInstantAllHeavensTravel(player, fromLocation, toLocation)) return 0;
-  let multiplier = getDimensionTravelMultiplier(player);
-  if (getRealmAuthorityLevel(player) >= 21) {
-    multiplier = Math.min(multiplier, 1 - IMMORTAL_EMPEROR_TRAVEL_TIME_REDUCTION);
+  // 时间长河（独立时序域）：维持 1 小时/重 × 权柄系数的专属规则
+  const involvesTimeRiver = isTimeRiverLocation(fromLocation) || isTimeRiverLocation(toLocation);
+  if (involvesTimeRiver) {
+    let multiplier = getDimensionTravelMultiplier(player);
+    if (getRealmAuthorityLevel(player) >= 21) {
+      multiplier = Math.min(multiplier, 1 - IMMORTAL_EMPEROR_TRAVEL_TIME_REDUCTION);
+    }
+    return Math.max(1, Math.round(barriers * TIME_RIVER_BARRIER_BASE_MINUTES * multiplier));
   }
+  // 其余维度壁垒（上苍之上、永恒未知之地与高维位面）：
+  // 位面数值差 × 15 分钟/级 × 壁垒层数 × 境界减免系数
+  const fromValue = Number.isFinite(Number(fromLocation))
+    ? Number(fromLocation)
+    : Number(PLACE_LOCATION_MAP[getLocationName(fromLocation)]);
+  const toValue = Number.isFinite(Number(toLocation))
+    ? Number(toLocation)
+    : Number(PLACE_LOCATION_MAP[getLocationName(toLocation)]);
+  const rawDistance = Math.abs(fromValue - toValue);
+  const realmMultiplier = 1 - calcRealmReducePct(player);
   return Math.max(
-    60 * barriers,
-    Math.round(barriers * DIMENSION_BARRIER_BASE_MINUTES * multiplier)
+    1,
+    Math.round(Math.max(2, rawDistance * TRAVEL_BASE_MIN_PER_LEVEL * realmMultiplier) * barriers),
   );
 }
 
@@ -774,14 +790,19 @@ export function getBodyTravelQuote(player, fromLocation, toLocation) {
 
   const multiplier = 1 - calcRealmReducePct(player);
   if (barriers > 0) {
+    // 维度壁垒航程同样可被鲲鹏宝术减免
+    const kunpengReduction = instant ? 0 : getKunpengReduction(player);
+    const barrierTime = instant ? 0 : getDimensionBarrierTravelTime(player, fromLocation, toLocation);
     return {
       distance,
       dimensionBarrierCount: barriers,
       xiuweiCost: Math.round(barriers * 1_000_000_000 * multiplier),
       qixueCost: Math.round(barriers * 1_500_000_000 * multiplier),
       shouyuanCost: Math.round(barriers * 100_000 * multiplier),
-      travelTime: instant ? 0 : getDimensionBarrierTravelTime(player, fromLocation, toLocation),
-      kunpengReduction: 0,
+      travelTime: barrierTime <= 0
+        ? 0
+        : Math.max(1, barrierTime - kunpengReduction),
+      kunpengReduction,
       instant,
     };
   }

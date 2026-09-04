@@ -238,19 +238,24 @@ test('仙帝可直达诸天、上苍与永恒未知，诸天和上苍之间无�
   assert.equal(getBodyTravelQuote(immortalEmperor, '凡间', '上苍之上').travelTime, 0);
 });
 
-test('仙帝仍需计时的跨维度航程统一减少70%', () => {
+test('维度壁垒航程按位面数值差×15分钟/级×壁垒层数×境界减免计算；时间长河维持1小时/重专属规则', () => {
   const immortalEmperor = { ...traveler, mijinglevel_id: 21 };
+  const quasiEmperor = { ...traveler, mijinglevel_id: 20 };
+  const supreme = { ...traveler, mijinglevel_id: 25 };
   const mortal = PLACE_LOCATION_MAP.凡间;
   const eternal = PLACE_LOCATION_MAP.永恒未知之地;
   const timeRiver = PLACE_LOCATION_MAP.时间长河;
 
-  assert.equal(IMMORTAL_EMPEROR_TRAVEL_TIME_REDUCTION, 0.7);
   assert.equal(getDimensionBarrierCount(mortal, eternal), 3);
-  assert.equal(getDimensionBarrierTravelTime(immortalEmperor, mortal, eternal), 432);
-  assert.equal(getBodyTravelQuote(immortalEmperor, '凡间', '永恒未知之地').travelTime, 432);
+  // 永恒未知之地：6.5 差 ×15×3 层×(1−0.7) ≈ 88
+  assert.equal(getDimensionBarrierTravelTime(immortalEmperor, mortal, eternal), 88);
+  assert.equal(getBodyTravelQuote(immortalEmperor, '凡间', '永恒未知之地').travelTime, 88);
   assert.equal(getDimensionBarrierCount(mortal, timeRiver), 1);
-  assert.equal(getDimensionBarrierTravelTime(immortalEmperor, mortal, timeRiver), 144);
-  assert.equal(getBodyTravelQuote(immortalEmperor, '凡间', '时间长河').travelTime, 144);
+  // 时间长河（独立时序域）专属规则：1 小时/重×权柄系数，准仙帝 0.75、仙帝 0.3、极境 0.2
+  assert.equal(getDimensionBarrierTravelTime(immortalEmperor, mortal, timeRiver), 18);
+  assert.equal(getBodyTravelQuote(immortalEmperor, '凡间', '时间长河').travelTime, 18);
+  assert.equal(getBodyTravelQuote(quasiEmperor, '凡间', '时间长河').travelTime, 45);
+  assert.equal(getBodyTravelQuote(supreme, '凡间', '时间长河').travelTime, 12);
 });
 
 test('登仙、遨游、穿梭与位面图鉴入口均接入共享维度规则', () => {
@@ -316,14 +321,15 @@ test('同层资产可流转，跨层赠送会被维度壁垒拦截', () => {
   assert.equal(getDimensionTradeCompatibility(upper, upper).ok, true);
 });
 
-test('更高维度壁垒仍受准入限制并按仙帝七成减时计算', () => {
+test('更高维度壁垒按位面数值差×15分钟/级×壁垒层数×境界减免计算', () => {
   const emperor = { ...traveler, mijinglevel_id: 21 };
   const target = PLACE_LOCATION_MAP.百维真界;
   assert.equal(getDimensionBarrierCount(PLACE_LOCATION_MAP.凡间, target), 4);
-  assert.equal(getDimensionBarrierTravelTime(emperor, PLACE_LOCATION_MAP.凡间, target), 576);
+  // 百维真界：60 差 ×15×4 层×(1−0.7) = 1080
+  assert.equal(getDimensionBarrierTravelTime(emperor, PLACE_LOCATION_MAP.凡间, target), 1080);
   const quote = getBodyTravelQuote(emperor, PLACE_LOCATION_MAP.凡间, target);
   assert.equal(quote.dimensionBarrierCount, 4);
-  assert.equal(quote.travelTime, 576);
+  assert.equal(quote.travelTime, 1080);
   assert.equal(isInstantAllHeavensTravel(emperor, PLACE_LOCATION_MAP.凡间, target), false);
 });
 
