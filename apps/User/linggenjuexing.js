@@ -39,7 +39,10 @@ import {
   getZhetianAwakeningStage,
   inspectZhetianAwakening,
 } from '../../model/zhetianPhysiquePath.js';
-import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
+import {
+  getActiveZhutianAvatarName,
+  syncCurrentZhutianAvatar,
+} from '../../model/zhutianMirror.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 function getAvatarRootGuardMessage(player) {
@@ -313,7 +316,10 @@ async zhenwojuexing(e) {
     return withPlayerMutationLock(usr_qq, async () => {
     const player = await Read_player(usr_qq);
     const guardMessage = getAvatarRootGuardMessage(player);
-    if (guardMessage) return e.reply(guardMessage);
+    // 爱莉希雅的二段觉醒本身就是化身内晋升：材料、境界和生命本源
+    // 仍由本流程校验，晋升后同步诸天镜阶段；其他灵根继续走本源保护。
+    const activeAvatar = getActiveZhutianAvatarName(player);
+    if (guardMessage && activeAvatar !== '爱莉希雅') return e.reply(guardMessage);
     if ( player.灵根.name !== '爱莉希雅'&& player.灵根.name !== '人之律者·爱莉希雅') {
         e.reply('只有无瑕之人·爱莉希雅才能开启真我觉醒'); return;
     }
@@ -363,6 +369,7 @@ async zhenwojuexing(e) {
             特殊效果: ['人之权柄', '始源领域']
         };
         player.生命本源 = 100 + player.灵根.生命本源;
+        syncCurrentZhutianAvatar(player);
         await Write_player(usr_qq, player);
 
         const txt = [
@@ -389,6 +396,7 @@ async zhenwojuexing(e) {
             特殊效果: ['因果干涉', '概念显现']
         };
         player.生命本源 = 100 + player.灵根.生命本源;
+        syncCurrentZhutianAvatar(player);
         await Write_player(usr_qq, player);
 
         const txt = [

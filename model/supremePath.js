@@ -88,6 +88,7 @@ export function getSupremeTitle(player) {
  * 重瞳与至尊骨共存时追加低倍率组合技，保留当前至尊骨阶段的本命神通。
  */
 export function hasSupremeInnate(player, skillName) {
+  if (player?._高境界压制) return false;
   const rootName = player?.灵根?.name;
   const path = getSupremeStage(player) > 0 ? player?.至尊之路 : null;
 

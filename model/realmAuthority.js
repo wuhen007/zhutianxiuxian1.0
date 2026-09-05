@@ -116,6 +116,9 @@ export function getGodDemonStealRule(attacker, defender) {
     chance: 1,
   };
 
+  if (gap > 0 && defenderLevel >= 20) {
+    return { ...base, allowed: false, chance: 0, maxGap: 0, reason: '境界天堑横断因果，低境神魔之力触及不到高境道果' };
+  }
   if (gap <= 0) return { ...base, allowed: true, reason: '目标境界不高于自身' };
   if (gap > maxGap) return { ...base, allowed: false, reason: '缺少对应九秘领域，无法跨境夺取' };
 

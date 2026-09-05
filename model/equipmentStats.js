@@ -145,8 +145,8 @@ export function getEquipmentAllAttributeMultiplier(player, slot) {
 export function isCanonicalDaluoSwordEmbryo(slot) {
   return slot?.name === '大罗剑胎'
     && (Number(slot.id) === 100054 || (
-      Number(slot.至尊体全属性倍率) === 15
-      && Number(slot.其他灵根全属性倍率) === 7.5
+      Number(slot.至尊体全属性倍率) === 7
+      && Number(slot.其他灵根全属性倍率) === 4.5
     ));
 }
 

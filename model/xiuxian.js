@@ -235,6 +235,11 @@ import {
 } from './decadeCombat.js';
 import { getCompanionAttackAction } from './companionCombat.js';
 import { getGodDemonStealRule, getRealmAuthorityLevel } from './realmAuthority.js';
+import {
+  getHighRealmBarrier,
+  mergeHighRealmRaidResult,
+  prepareHighRealmBattle,
+} from './highRealmBarrier.js';
 import { getRealmEventWorldYear } from './realmEventClock.js';
 import { isEternalGuardAction } from './dimensionGuard.js';
 import {
@@ -7714,54 +7719,8 @@ function tickLinzMijue(linziState, msgs) {
 }
 // P3-1: 收敛参数 - 删除未使用的 cnt/cnt2/A_临字秘触发/B_临字秘触发/A_临字秘加成/B_临字秘加成（6 个）
 // 临字秘状态通过 linziState 对象按引用传递
-function handleControlEffects(A_immune_control, B_immune_control, A_player, B_player, attacker, defender, msg, emperorFieldTriggered, context, linziState) {
-    if (emperorFieldTriggered.value === false && attacker.mijinglevel_id > 19 && defender.mijinglevel_id < 20) {
-      if (attacker.mijinglevel_id - defender.mijinglevel_id >= 2) {
-            // 计算夺取数值
-            let 夺取攻击 = Math.floor(defender.攻击 * 0.5);
-            let 夺取防御 = Math.floor(defender.防御 * 0.5);
-            let 夺取血量 = Math.floor(defender.当前血量 * 0.5);
-
-            // 执行夺取
-            defender.攻击 = Math.max(defender.攻击 - 夺取攻击, 0);
-            defender.防御 = Math.max(defender.防御 - 夺取防御, 0);
-            defender.当前血量 = Math.max(defender.当前血量 - 夺取血量, 0);
-      msg.push(`${defender.名号}受到帝之场域压制，一身战力被削去十之五六!`);
-       emperorFieldTriggered.value = true;
-    }
-}
-if (attacker.mijinglevel_id > 19 && defender.mijinglevel_id < 20 && Math.random() < 0.99) {
-  // 检查防御方是否有免疫控制效果
-  const isImmune = (defender === A_player && A_immune_control > 0) || 
-                   (defender === B_player && B_immune_control > 0);
-  
-  if (isImmune) {
-    // 秘境等级差距过大时，免疫失效
-    if (attacker.mijinglevel_id - defender.mijinglevel_id >= 2) {
-      if (tryApplyDinghaiControl(defender, msg, '强制控制')) defender.dongjie = true;
-      msg.push(`${attacker.名号}周身仙光亿万缕，大道符文压盖诸天，一缕气息崩断万古时空！`);
-      msg.push(`然而${defender.名号}的涅槃真火在绝对实力差距下黯然熄灭，如同萤火之于皓月！`);
-      msg.push(`${defender.名号}，在吾面前，纵有涅槃之力亦难逃镇压！`);
-      msg.push(`${attacker.名号}声震寰宇，言出法随！`);
-      msg.push(`${defender.名号}的身躯与神魂被永恒禁锢，万道哀鸣，诸天颤栗！`);
-    } else {
-      // 秘境等级差距不大时，免疫生效
-      msg.push(`${attacker.名号}眸中射出两道仙芒，撕裂虚空，欲定住${defender.名号}的万古道果！`);
-      msg.push(`${defender.名号}周身涅槃真火熊熊燃烧，焚尽万法，破灭一切禁锢！`);
-      msg.push(`区区小道，也敢在涅槃真火前逞威？`);
-      msg.push(`${defender.名号}冷笑，真火化作仙凰展翅，击穿永恒！`);
-    }
-  } else {
-    // 无免疫效果时正常触发
-    if (tryApplyDinghaiControl(defender, msg, '强制控制')) defender.dongjie = true;
-    msg.push(`${attacker.名号}身上散发出超越诸天极限的气息，一缕眸光压塌万古！`);
-    msg.push(`${defender.名号}的身躯与神魂被永恒禁锢，时间长河在此断流！`);
-    msg.push(`${defender.名号}，在吾面前，你连蝼蚁都不如！`);
-    msg.push(`${attacker.名号}的声音冰冷彻骨，震动诸天万界！`);
-  }
-}
-
-
+function handleControlEffects(A_immune_control, B_immune_control, A_player, B_player, attacker, defender, msg, context, linziState) {
+// 跨境压制统一在战斗开场按三体系等效权柄裁决，此处只处理普通控制。
 if ( defender.灵根&&defender.灵根.name === "命运神道体") {
       if (Math.random() > 0.7) {
         msg.push(`${defender.名号}推开了命运生死轮盘，改写了真实，局势发生了微妙的变化，${attacker.名号}被命运之力禁锢了！`);
@@ -8427,6 +8386,8 @@ function applySacrificeGrowth(attacker, skill, messages) {
 }
 
 export async function zd_battle(A_input, B_input, options = {}) {
+  const realmOpening = prepareHighRealmBattle(A_input, B_input);
+  if (realmOpening) return settleHighRealmBattle(realmOpening, A_input, B_input, options);
   const A_isArray = Array.isArray(A_input);
   const B_isArray = Array.isArray(B_input);
 
@@ -8454,6 +8415,60 @@ export async function zd_battle(A_input, B_input, options = {}) {
     _sourceATeam: A_team,
     _sourceBTeam: B_team,
   });
+}
+
+async function settleHighRealmBattle(opening, A_input, B_input, options) {
+  const isTeam = Array.isArray(A_input) || Array.isArray(B_input);
+  let result;
+  if (!opening.ended) {
+    // 低境单位在开场即退出战斗执行，防止直接扣血、反伤、复活等旁路跨境生效。
+    result = await zd_battle(opening.survivors[0], opening.survivors[1], options);
+    for (const [side, key] of [[0, 'A_team'], [1, 'B_team']]) {
+      const remaining = result[key];
+      opening.aliveIndices[side].forEach((index, position) => {
+        opening.teams[side][index] = remaining[position];
+      });
+      opening.teams[side].push(...remaining.slice(opening.aliveIndices[side].length));
+      result[key] = opening.teams[side];
+    }
+    result.msg.unshift(...opening.msg);
+  } else if (isTeam) {
+    result = {
+      ...createTeamBattleResult({ msg: opening.msg, A_team: opening.teams[0], B_team: opening.teams[1] }),
+      proficiencyGains: {},
+    };
+  } else {
+    const A_player = opening.teams[0][0];
+    const B_player = opening.teams[1][0];
+    result = create1v1BattleResult({
+      msg: opening.msg,
+      A_player,
+      B_player,
+      actionOrder: [],
+      A_speed: getBattleUnitSpeed(A_player),
+      B_speed: getBattleUnitSpeed(B_player),
+      extra: {
+        proficiencyGains: {},
+        A_revived: false,
+        B_revived: false,
+        playerAttacks: 0,
+        totalDamageTaken: B_player._高境界镇杀 ? Number(B_input.当前血量) : 0,
+      },
+    });
+  }
+  // 普通交锋已在原引擎结算；这里仅补结算开场境界镇杀的败者，避免重复炼魂。
+  const winnerSide = result.winner === 'A' ? 0 : result.winner === 'B' ? 1 : -1;
+  if (winnerSide >= 0) {
+    const loserSide = 1 - winnerSide;
+    for (const owner of opening.sources[winnerSide]) {
+      for (let index = 0; index < opening.sources[loserSide].length; index++) {
+        if (!opening.teams[loserSide][index]._高境界镇杀) continue;
+        const message = await settleWanhuaBannerHarvest(owner, opening.sources[loserSide][index]);
+        if (message) result.msg.push(message);
+      }
+    }
+  }
+  return result;
 }
 
 export async function settleBattleGongfaProficiency(pairs) {
@@ -8726,7 +8741,6 @@ let B_speed = getBattleUnitSpeed(B_player);
   let B_tahua_triggered = false;
   let A_yiqihua_triggered = false;
   let B_yiqihua_triggered = false;
-  let emperorFieldTriggered = { value: false };
   let emperorWeaponTriggered = false;
   let 轮回诸天拳触发 = false;
 
@@ -9192,12 +9206,12 @@ let B_speed = getBattleUnitSpeed(B_player);
     let isCritical = baoji > 1;
 
     if (!innateSilenced) {
-      handleControlEffects( A_immune_control, B_immune_control, A_player, B_player, attacker, defender, msg, emperorFieldTriggered, context, linziState);
+      handleControlEffects( A_immune_control, B_immune_control, A_player, B_player, attacker, defender, msg, context, linziState);
       if (!attacker._时间长河至宝失效 && await handleEmperorWeapon(attacker, defender, msg, emperorWeaponTriggered, attackerEquipment)) {
         emperorWeaponTriggered = true;
       }
       handleCircularGod(attacker, defender, msg, context);
-      handleSpecialSkills(attacker, defender, msg, teshujineng,emperorFieldTriggered);
+      handleSpecialSkills(attacker, defender, msg, teshujineng);
       handleFlowerPollenSkills(attacker, defender, msg);
     }
 
@@ -11333,37 +11347,6 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   // ====== 团队版控制效果处理 ======
   function handleTeamControlEffects(attacker, defender, round, attackMsgs) {
     const isA = attacker._team === 'A';
-    
-    // 仙帝领域效果
-    if (attacker.mijinglevel_id > 19 && defender.mijinglevel_id < 20) {
-      if (attacker.mijinglevel_id - defender.mijinglevel_id >= 2) {
-        let 夺取攻击 = Math.floor(defender.攻击 * 0.5);
-        let 夺取防御 = Math.floor(defender.防御 * 0.5);
-        let 夺取血量 = Math.floor(defender.当前血量 * 0.5);
-        
-        defender.攻击 = Math.max(defender.攻击 - 夺取攻击, 0);
-        defender.防御 = Math.max(defender.防御 - 夺取防御, 0);
-        defender.当前血量 = Math.max(defender.当前血量 - 夺取血量, 0);
-        attackMsgs.push(`${defender.名号}受到帝之场域压制，一身战力被削去十之五六!`);
-      }
-    }
-    
-    // 秘境压制冻结
-    if (attacker.mijinglevel_id > 19 && defender.mijinglevel_id < 20 && Math.random() < 0.99) {
-      const isImmune = defender._immune_control > 0;
-      
-      if (isImmune) {
-        if (attacker.mijinglevel_id - defender.mijinglevel_id >= 2) {
-          if (tryApplyDinghaiControl(defender, attackMsgs, '强制控制')) defender.dongjie = true;
-          attackMsgs.push(`${attacker.名号}周身仙光亿万缕，大道符文压盖诸天！`);
-          attackMsgs.push(`${defender.名号}的涅槃真火在绝对实力差距下黯然熄灭！`);
-        }
-      } else {
-        if (tryApplyDinghaiControl(defender, attackMsgs, '强制控制')) defender.dongjie = true;
-        attackMsgs.push(`${attacker.名号}身上散发出超越诸天极限的气息，一缕眸光压塌万古！`);
-        attackMsgs.push(`${defender.名号}的身躯与神魂被永恒禁锢！`);
-      }
-    }
 
     // 命运神道体反击
     if (defender.灵根 && defender.灵根.name === "命运神道体" && Math.random() > 0.7) {
@@ -12604,6 +12587,12 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
 // 团本战斗逻辑
 export async function tb_battle(players, boss, team) {
+  const realmOpening = prepareHighRealmBattle(players, boss);
+  if (realmOpening) {
+    const continued = realmOpening.ended ? null
+      : await tb_battle(realmOpening.survivors[0], boss, team);
+    return mergeHighRealmRaidResult(realmOpening, continued);
+  }
   // 深拷贝玩家和BOSS数据
   let teamData = players.map(p => JSON.parse(JSON.stringify(p)));
   let bossCopy = JSON.parse(JSON.stringify(boss));
@@ -13149,6 +13138,15 @@ async function calculateAttack(attacker, defender, actionIndex, jineng1, jineng2
 // 所有字段均带兜底（||0 / ??defender.防御），无来源时数值完全不变。
 export function calcDamage(attacker, defender, rawDamage, dmgTypeOrBuckets = '神通', ignoreDodge = false, ignoreReduction = false) {
   const msgs = [];
+  const realmBarrier = getHighRealmBarrier(attacker, defender);
+  if (realmBarrier) {
+    return {
+      actual_damage: realmBarrier.higherSide === 'A' ? Math.max(0, Number(defender.当前血量) || 0) : 0,
+      dodged: false,
+      realmBarrier: true,
+      msgs: [`【境界天堑】道果相隔，低境攻伐归于寂灭，高境一击直抵本源。`],
+    };
+  }
   // 闪避（防御端；整轮只判定一次；ignoreDodge 用于"不可防御"类技能）
   const firstDodge = defender.首次闪避 && !defender._首次闪避已触发;
   const robeDodge = !ignoreDodge && defender._逍遥仙袍闪避次数 > 0 ? 0.1 : 0;
@@ -14910,14 +14908,16 @@ export  function getTargetQQFromEvent(e, selfQQ = '') {
 export const ACTION_BAR_MAX = 5000;
 
 export function getBattleUnitSpeed(unit) {
-  const base = Number(unit?.速度 ?? 100) || 100;
-  if (unit?._忽略境界速度加成) return Math.max(1, Math.floor(base * getInnateSpeedMultiplier(unit)));
+  const base = Number((unit?._高境界压制 ? unit._高境界压制前速度 : unit?.速度) ?? 100) || 100;
+  const realmMultiplier = unit?._高境界压制 ? 0.1 : 1;
+  if (unit?._忽略境界速度加成) return Math.max(1, Math.floor(base * getInnateSpeedMultiplier(unit) * realmMultiplier));
   return Math.max(1, Math.floor(
     (base
     + (Number(unit?.mijinglevel_id) || 0) * 50
     + (Number(unit?.xiangulevel_id) || 0) * 50
     + Math.max(0, (Number(unit?.huafenlevel_id) || 1) - 1) * 50)
     * getInnateSpeedMultiplier(unit)
+    * realmMultiplier
   ));
 }
 

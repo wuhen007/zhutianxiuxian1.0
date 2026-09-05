@@ -8,6 +8,7 @@ import {
 } from '../tasks/EraChangeTask.js';
 import { hasSupremeInnate } from '../../model/supremePath.js';
 import { getGodDemonStealRule, getRealmAuthorityLevel } from '../../model/realmAuthority.js';
+import { mergeHighRealmRaidResult, prepareHighRealmBattle } from '../../model/highRealmBarrier.js';
 import { worldChatClient } from '../worldChat/client.js';
 import { createCrossRaidAvatar, hydrateCrossRaidAvatar } from '../worldChat/raid.js';
 import {
@@ -2461,6 +2462,15 @@ if (safeAttacker.灵根?.name === "小成·荒古圣体" || safeAttacker.灵根?
 
   // 团本战斗核心逻辑
 async tb_battle(players, boss, e) {
+  const realmOpening = prepareHighRealmBattle(players, boss);
+  if (realmOpening) {
+    await this.sendBattleImages(e, realmOpening.msg);
+    const continued = realmOpening.ended ? null
+      : await this.tb_battle(realmOpening.survivors[0], boss, e);
+    const result = mergeHighRealmRaidResult(realmOpening, continued);
+    if (realmOpening.ended) await this.sendBattleImages(e, [`战斗结束：${result.result}`]);
+    return { ...result, msg: [] };
+  }
   // 深拷贝玩家和BOSS数据，并进行数字安全处理
   const playersData = players.map(p => this.sanitizeCombatant(p));
   const bossCopy = this.sanitizeCombatant(boss);
