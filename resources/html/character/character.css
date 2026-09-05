@@ -144,6 +144,22 @@ body {
     font-size: 16px;
 }
 
+.character-portrait {
+    margin-bottom: 16px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.16);
+    overflow: hidden;
+}
+
+.character-portrait img {
+    display: block;
+    width: 100%;
+    max-width: 360px;
+    height: auto;
+    margin: 0 auto;
+    object-fit: contain;
+}
+
 .unlocked-badge {
     background: linear-gradient(90deg, #48BB78, #38A169);
     color: white;
@@ -290,6 +306,7 @@ body {
 
 .locked-overlay {
     position: absolute;
+    z-index: 1;
     top: 0;
     left: 0;
     right: 0;

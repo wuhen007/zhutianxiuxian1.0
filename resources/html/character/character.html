@@ -148,6 +148,22 @@
             margin-right: 8px;
             font-size: 16px;
         }
+
+        .character-portrait {
+            margin-bottom: 16px;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.16);
+            overflow: hidden;
+        }
+
+        .character-portrait img {
+            display: block;
+            width: 100%;
+            max-width: 360px;
+            height: auto;
+            margin: 0 auto;
+            object-fit: contain;
+        }
         
         .unlocked-badge {
             background: linear-gradient(90deg, #48BB78, #38A169);
@@ -295,6 +311,7 @@
         
         .locked-overlay {
             position: absolute;
+            z-index: 1;
             top: 0;
             left: 0;
             right: 0;
@@ -377,7 +394,15 @@
                         <span class="locked-badge">未解锁</span>
                         {{/if}}
                     </div>
-                    
+
+                    {{if character.立绘}}
+                    <div class="character-portrait">
+                        <img src="{{pluResPath}}img/character/{{character.立绘}}"
+                             alt="{{character.名号}}立绘" width="1024" height="1536"
+                             loading="eager" onerror="this.parentElement.style.display='none'">
+                    </div>
+                    {{/if}}
+
                     <div class="character-info">
                         <span class="info-label">身份:</span>
                         <span class="info-value identity-value">{{character.身份}}</span>
