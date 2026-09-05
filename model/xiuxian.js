@@ -5924,7 +5924,11 @@ export async function Add_najie_thing(
         return;
       }
   }
-  let exist = await exist_najie_thing(usr_qq, name, thing_class);
+  if (!Array.isArray(najie[thing_class])) najie[thing_class] = [];
+  // 必须只在本分类内查找。exist_najie_thing 会跨分类匹配：
+  // 若同名物品已存于其他分类（例如道具被误配成丹药后玩家已在道具栏持有），
+  // 它会返回真值、跳过下面的「新条目入库」分支，导致末尾 find 取到 undefined 而崩溃
+  let exist = najie[thing_class].find(item => item.name == name);
   if (x > 0 && !exist) {
     let thing;
     let list = [
@@ -5952,7 +5956,7 @@ export async function Add_najie_thing(
     'baoshi_list'
     ];
     for (let i of list) {
-      thing = data[i].find(item => item.name == name);
+      thing = data[i]?.find(item => item.name == name);
       if (thing) {
         najie[thing_class].push(thing);
         najie[thing_class].find(item => item.name == name).数量 = x;
@@ -5962,7 +5966,14 @@ export async function Add_najie_thing(
       }
     }
   }
-  najie[thing_class].find(item => item.name == name).数量 += x;
+  const target = najie[thing_class].find(item => item.name == name);
+  if (!target) {
+    throw new Error(
+      `纳戒分类「${thing_class}」中不存在物品「${name}」` +
+      `（物品表缺配置或已存于其他分类），无法${x >= 0 ? '发放' : '扣除'}`
+    );
+  }
+  target.数量 += x;
   najie[thing_class] = najie[thing_class].filter(item => item.数量 > 0);
   await persistNajie();
   return;

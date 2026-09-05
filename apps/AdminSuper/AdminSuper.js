@@ -933,6 +933,8 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
           JSON.stringify(arr)
         );
       }
+      // 清除时间长河（古史节点）锁定
+      await this.relieveTimeRiverLock(player_id);
     }
     e.reply('行动结束！');
   }
@@ -1037,6 +1039,7 @@ async relieveFashanAction(e) {
     //查询redis中的人物动作
     let action = await redis.get('xiuxian:player:' + qq + ':action');
     action = JSON.parse(action);
+    let relieved = false;
     //不为空，有状态
     if (action != null) {
       //把状态都关了
@@ -1050,11 +1053,44 @@ async relieveFashanAction(e) {
       arr.end_time = new Date().getTime(); //结束的时间也修改为当前时间
       delete arr.group_id; //结算完去除group_id
       await redis.set('xiuxian:player:' + qq + ':action', JSON.stringify(arr));
-      e.reply('已解除！');
+      relieved = true;
+    }
+    //清除时间长河（古史节点）锁定：真身已被古史节点锁定
+    const trCleared = await this.relieveTimeRiverLock(qq);
+    if (relieved || trCleared) {
+      let msg = '已解除！';
+      if (trCleared) msg += '\n已清除该玩家的时间长河状态（古史节点锁定已释放，可正常退出队伍）。';
+      e.reply(msg);
       return false;
     }
     e.reply('不需要解除！');
     return false;
+  }
+
+  // 清除指定玩家的时间长河（古史节点）锁定状态
+  async relieveTimeRiverLock(qq) {
+    try {
+      let cleared = false;
+      // 清除个人探索结束时间戳
+      if (await redis.del('xiuxian:time_river:end_time:' + qq)) cleared = true;
+      // 定位所在队伍
+      const teamId = await redis.get('xiuxian:time_river:player_team:' + qq);
+      if (teamId) {
+        const raw = await redis.get('xiuxian:time_river:team:' + teamId);
+        if (raw) {
+          const team = JSON.parse(raw);
+          if (team.status === 'exploring') {
+            team.status = 'recruiting'; // 释放古史节点锚定
+            delete team.startedAt;
+            await redis.set('xiuxian:time_river:team:' + team.id, JSON.stringify(team), 'EX', 24 * 60 * 60);
+            cleared = true;
+          }
+        }
+      }
+      return cleared;
+    } catch {
+      return false;
+    }
   }
 
   async Knockdown(e) {

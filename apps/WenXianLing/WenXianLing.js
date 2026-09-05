@@ -137,7 +137,7 @@ const BONUS_REWARDS = {
         name: '天道眷顾',
         desc: '天道偶有眷顾，赐予感悟',
         rewards: [
-             { kind: '道具', name: '轮回命签', count: 10, label: '轮回命签x10' },
+            { kind: '道具', name: '轮回命签', class: '道具', count: 10, label: '轮回命签x10' },
             { kind: '仙道潜力', value: 60, label: '仙道潜力+60' },
             { kind: '丹药', name: '化仙丹', count: 1, label: '化仙丹x1' },
         ],
@@ -146,7 +146,7 @@ const BONUS_REWARDS = {
         name: '先天元灵',
         desc: '太虚清气拓展识海，令灵台愈发广大',
         rewards: [
-             { kind: '道具', name: '命宫拓碑', count: 1, label: '命宫拓碑x1' },
+            { kind: '道具', name: '命宫拓碑', class: '道具', count: 1, label: '命宫拓碑x1' },
             { kind: '丹药', name: '太虚拓识丹', count: 1, label: '太虚拓识丹x1' },
         ],
     },
@@ -713,10 +713,12 @@ export class WenXianLing extends plugin {
                 player.仙道潜力 = (player.仙道潜力 || 0) + reward.value;
                 break;
             case '道具':
+                // 未显式声明 class 时按「道具」入库，绝不能退回「丹药」：
+                // 否则道具会被塞进丹药栏，既用不了也会在玩家已持有同名道具时触发崩溃
                 await Add_najie_thing(
                     usr_qq,
                     reward.name,
-                    reward.class || '丹药',
+                    reward.class || '道具',
                     reward.count,
                     0
                 );
