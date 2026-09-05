@@ -1,3 +1,5 @@
+import { getRealmAuthorityLevel } from './realmAuthority.js';
+
 export const SPIRIT_HEART_ENTRY_COST = 10;
 export const SPIRIT_HEART_BASE_MAX = 30;
 export const SPIRIT_HEART_LEVEL_BONUS = 3;
@@ -36,6 +38,8 @@ function clamp(value, min, max) {
 }
 
 export function getSpiritHeartBaseMax(player) {
+  // 仙帝祭道推演每次消耗500心神，容量须覆盖该单次消耗。
+  if (getRealmAuthorityLevel(player) >= 21) return 500;
   const level = Math.max(0, Math.floor(Number(player?.yuanshenlevel_id) || 0));
   const extra = Math.max(0, Math.floor(Number(player?.心神额外上限) || 0));
   return clamp(

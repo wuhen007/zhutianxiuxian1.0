@@ -5,6 +5,7 @@ import {
 } from './realmAuthority.js';
 import { destroyWorldline } from './worldlineAuthority.js';
 import { tryEternalFateRewrite } from './innateTreasure.js';
+import { getSacrificeDaoAttempts, SACRIFICE_DAO_REQUIRED_ATTEMPTS } from './selfDaoDeduction.js';
 
 export const STRANGE_SACRIFICE = Object.freeze({
   yearsPerEpoch: 50_000,
@@ -384,11 +385,13 @@ export function getSacrificePromotionGate(player) {
   const daoHeart = getDaoHeartStage(player);
   const selfDaoStage = integer(player?.自身之道阶段);
   const selfDaoCultivation = integer(player?.修炼次数);
+  const sacrificeAttempts = getSacrificeDaoAttempts(player);
   const checks = {
     immortalEmperor: authority === 21,
     emperorKills: kills >= STRANGE_SACRIFICE.immortalEmperorKillRequirement,
     daoHeart: daoHeart.key === '圆满',
     selfDao: selfDaoStage >= 7 && selfDaoCultivation >= 400,
+    deduction: sacrificeAttempts >= SACRIFICE_DAO_REQUIRED_ATTEMPTS,
   };
   return {
     ok: Object.values(checks).every(Boolean),
@@ -398,6 +401,8 @@ export function getSacrificePromotionGate(player) {
     daoHeart,
     selfDaoStage,
     selfDaoCultivation,
+    sacrificeAttempts,
+    requiredSacrificeAttempts: SACRIFICE_DAO_REQUIRED_ATTEMPTS,
   };
 }
 

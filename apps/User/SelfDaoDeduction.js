@@ -19,6 +19,7 @@ import {
   SELF_DAO_QUASI_EMPEROR_PEAK_ATTEMPT,
   SELF_DAO_RECOVERY_MS,
   SELF_DAO_REQUIRED_ATTEMPTS,
+  SACRIFICE_DAO_REQUIRED_ATTEMPTS,
   completeCorpseEmperorRecovery,
   consumeSelfDaoDeduction,
   ensureSelfDaoDeduction,
@@ -102,6 +103,8 @@ export class SelfDaoDeduction extends plugin {
   }
 
   gateMessage(gate) {
+    if (gate.reason === 'sacrifice_completed') return '仙帝阶段十次己道推演已圆满，请使用 #祭道 检查并冲击祭道门槛。';
+    if (gate.reason === 'sacrifice_own_way_cap') return '请先修满仙帝阶段自身之道：自身之道阶段7、修炼次数400，再继续十次祭道推演。';
     if (gate.reason === 'completed') return '你已踏尽此路，神胎圆满，道源唯一。';
     if (gate.reason === 'recovering') {
       const remaining = Math.max(0, Number(gate.state.recovery?.endAt) - Date.now());
@@ -164,6 +167,17 @@ export class SelfDaoDeduction extends plugin {
             return;
           }
           await Write_player(id, player, { trackDailyTask: false });
+          if (deduction.reason === 'sacrifice_deduced') {
+            response = [
+              `【祭道前路·己道推演${deduction.attempt}/${SACRIFICE_DAO_REQUIRED_ATTEMPTS}次】`,
+              '本阶段独立计数，每次消耗准仙帝基础单次资粮的十倍。',
+              costLine(deduction.costs),
+              deduction.attempt === SACRIFICE_DAO_REQUIRED_ATTEMPTS
+                ? '十次推演圆满，可发送 #祭道；仙帝击杀、道心与自身之道门槛仍需满足。'
+                : `还需推演${SACRIFICE_DAO_REQUIRED_ATTEMPTS - deduction.attempt}次。`,
+            ].join('\n');
+            return;
+          }
           if (deduction.attempt < SELF_DAO_REQUIRED_ATTEMPTS) {
             response = [
               `【推演己道·第${deduction.attempt}/${SELF_DAO_REQUIRED_ATTEMPTS}层】`,

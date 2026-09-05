@@ -2,6 +2,7 @@ import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'path';
 import { PLACE_LOCATION_MAP, getLocationName } from '../../model/weimianTravel.js';
+import { DIMENSION_CALAMITY_TARGETS } from '../../model/dimensionGuard.js';
 import {
   reviveFromYongJi,
   revivePlaneFromYongJi,
@@ -1182,6 +1183,7 @@ async changeAptitude(e) {
         if (!promotionGate.checks.emperorKills) missing.push(`击杀仙帝级强者10位（当前${promotionGate.kills}位）`);
         if (!promotionGate.checks.daoHeart) missing.push(`道心圆满（当前${promotionGate.daoHeart.name}）`);
         if (!promotionGate.checks.selfDao) missing.push(`自身之道修满仙帝阶段（当前${promotionGate.selfDaoCultivation}/400）`);
+        if (!promotionGate.checks.deduction) missing.push(`仙帝阶段另行 #推演己道 ${promotionGate.requiredSacrificeAttempts}次（当前${promotionGate.sacrificeAttempts}次；每次准仙帝基础消耗的十倍）`);
         e.reply(['【祭道门槛未满】', ...missing.map(item => `· ${item}`)].join('\n'));
         return;
     }
@@ -3681,8 +3683,8 @@ async yingzhao(e) {
     }
 
     // ===== 映照位面（无@时匹配位面名）=====
-    const planeMatch = rawMsg.match(/^#映照(?:复活)?(凡间|仙界|下界八域|遮天位面|九天十地|界海|仙域)$/);
-    if (planeMatch) {
+    const planeMatch = rawMsg.match(/^#映照(?:复活)?(.+)$/);
+    if (planeMatch && DIMENSION_CALAMITY_TARGETS.includes(planeMatch[1])) {
         return await this.handlePlaneYingzhao(e, caster, casterQQ, planeMatch[1]);
     }
 
@@ -4290,12 +4292,9 @@ async resurrectPlayer(targetQQ, caster) {
 
 // ==================== 映照位面 & 映照诸天（整合 YongJiList）====================
 
-/** 位面级别映照：修复被诡异大祭崩灭的位面（不复活永寂者） */
+/** 位面级别映照：修复大祭或维度灾厄崩灭的位面（不复活永寂者） */
 async handlePlaneYingzhao(e, caster, casterQQ, planeName) {
-    // 映照仍只作用于可被诡异大祭摧毁的七个诸天位面；编号统一从总表解析。
-    const canBeRepaired = new Set([
-        '凡间', '仙界', '下界八域', '遮天位面', '九天十地', '界海', '仙域',
-    ]);
+    const canBeRepaired = new Set(DIMENSION_CALAMITY_TARGETS);
     const planeId = PLACE_LOCATION_MAP[planeName];
     if (!canBeRepaired.has(planeName) || planeId === undefined) {
         await e.reply(`【映照·位面不明】\n「${planeName}」并非可映照的位面。`);
@@ -4358,7 +4357,7 @@ async handlePlaneYingzhao(e, caster, casterQQ, planeName) {
         `「此界，朕一言修复——！」`,
         ``,
         `轰隆！`,
-        `诡异大祭留下的创伤被帝威抹去，`,
+        `大祭与灾厄留下的创伤被帝威抹去，`,
         `「${planeName}」位面壁垒重铸，`,
         `崩灭状态已解除，修士可再次踏入！`,
         ``,
@@ -4433,9 +4432,11 @@ async handleZhuTianYingzhao(e, caster, casterQQ) {
 
     // ===== 执行全体复活 =====
     const reviveResult = await reviveAllFromYongJi();
+    // 灾厄毁界未必产生永寂者；修复独立于复活人数。
+    const repairResult = await repairAllDestroyedPlanes({ skipEmpty: reviveResult.total === 0 });
 
-    if (reviveResult.total === 0) {
-        // 无永寂者
+    if (reviveResult.total === 0 && repairResult.repairedCount === 0) {
+        // 既无永寂者，也无毁灭位面，才算虚发。
         if (isAboveJidao) {
             // 祭道之上不消耗，无需归还
             await e.reply([
@@ -4465,9 +4466,6 @@ async handleZhuTianYingzhao(e, caster, casterQQ) {
         return true;
     }
 
-    // ===== 修复所有被破坏的位面 =====
-    await repairAllDestroyedPlanes();
-
     // ===== 施加惩罚（祭道之上跳过） =====
     if (!isAboveJidao) {
         const now = Date.now();
@@ -4489,7 +4487,12 @@ async handleZhuTianYingzhao(e, caster, casterQQ) {
     // ===== 全服广播（传入境界） =====
     await this._broadcastYingZhaoSimple('all', caster.名号, '诸天', '诸天万界', reviveResult.total, level);
 
-    const planesRevived = reviveResult.byPlane.map(p => `  ◆ ${p.planeName}：${p.count}人`).join('\n');
+    const planesRevived = [
+        ...(reviveResult.total > 0
+            ? reviveResult.byPlane.map(p => `  ◆ ${p.planeName}：${p.count}人`)
+            : ['  ◆ 本次无永寂者，独立执行位面修复']),
+        `【位面修复】${repairResult.repairedCount}处：${repairResult.repaired.join('、') || '无毁灭位面'}`,
+    ].join('\n');
 
     // ===== 成功文案（境界分层） =====
     if (isAboveJidao) {

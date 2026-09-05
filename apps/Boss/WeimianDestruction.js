@@ -372,6 +372,10 @@ export async function repairAllDestroyedPlanes(options = {}) {
     ? Math.max(0, requestedWorldYear)
     : currentWorldYear();
   const repaired = repairDestroyedPlanes(data.filePathMap.weimianList);
+  // 无复活、无毁界的虚发不应刷新大祭时钟或清除位面保护。
+  if (options.skipEmpty && repaired.length === 0) {
+    return { repaired, repairedCount: 0, worldYear: repairWorldYear };
+  }
   destroyedPlanes.clear();
   protectedPlanes.clear();
   nextDestructionWorldYear = repairWorldYear + destructionWorldYearInterval();

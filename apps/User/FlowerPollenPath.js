@@ -432,6 +432,9 @@ export class FlowerPollenPath extends plugin {
       if (root.critical) return e.reply('【进化根基濒临崩溃】请先使用 #重塑进化根基，修复花粉根基后再继续进化。');
 
       const targetLevelId = player.huafenlevel_id + 1;
+      if (targetLevelId === 23) {
+        return e.reply('仙帝阶段需另行完成10次 #推演己道，再使用 #祭道；普通进化不代替祭道门槛。');
+      }
       if (targetLevelId === 22) {
         return e.reply([
           '【道祖绝巅·己道未尽】',

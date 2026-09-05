@@ -27,6 +27,7 @@ function emperor(overrides = {}) {
     厄土仙帝击杀数: 10,
     自身之道阶段: 7,
     修炼次数: 400,
+    己道推演: { sacrificeAttempts: 10 },
     ...overrides,
   };
 }
@@ -105,7 +106,7 @@ test('永恒仙图抵消祭礼身灭道消且不打灭时间线', () => {
   assert.equal(player.诡异祭礼身灭道消至, undefined);
 });
 
-test('祭道要求十位仙帝击杀、道心圆满与自身之道修满', () => {
+test('祭道要求十位仙帝击杀、道心圆满、自身之道修满和十次仙帝己道推演', () => {
   assert.equal(getSacrificePromotionGate(emperor()).ok, true);
   assert.equal(
     getSacrificePromotionGate(emperor({ 厄土仙帝击杀数: 9 })).ok,
@@ -116,6 +117,8 @@ test('祭道要求十位仙帝击杀、道心圆满与自身之道修满', () =>
     false,
   );
   assert.equal(getSacrificePromotionGate(emperor({ 修炼次数: 399 })).ok, false);
+  assert.equal(getSacrificePromotionGate(emperor({ 己道推演: { attempts: 20, completed: true } })).ok, false);
+  assert.equal(getSacrificePromotionGate(emperor({ 己道推演: { sacrificeAttempts: 9 } })).ok, false);
 
   const xiangu = emperor({
     mijinglevel_id: 1,

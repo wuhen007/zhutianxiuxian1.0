@@ -238,6 +238,9 @@ export class xiangujinshi extends plugin {
     const weimianLevel = weimianData["诸天位面"] || 10;
     const weimianyazhi = 10 - weimianLevel;
     const targetXianguLevel = Number(player.xiangulevel_id) + 1;
+    if (targetXianguLevel === 23) {
+      return e.reply('仙帝阶段需另行完成10次 #推演己道，再使用 #祭道；冲关与冲关极境不代替祭道门槛。');
+    }
     if (!canBreakthroughXianguRealmHere(player, targetXianguLevel)) {
       const targetName = data.xiangujinshi_list.find(item => item.level_id == targetXianguLevel)?.level || '仙道领域';
       return e.reply([

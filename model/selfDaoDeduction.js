@@ -3,6 +3,8 @@ import { synchronizeCausalFacts } from './worldlineAuthority.js';
 import { tryEternalFateRewrite } from './innateTreasure.js';
 
 export const SELF_DAO_REQUIRED_ATTEMPTS = 20;
+export const SACRIFICE_DAO_REQUIRED_ATTEMPTS = 10;
+export const SACRIFICE_DAO_COST_MULTIPLIER = 10;
 export const SELF_DAO_REALM_AWAKENING = 5;
 export const SELF_DAO_QUASI_EMPEROR_PEAK_ATTEMPT = 10;
 export const SELF_DAO_DIVINE_EMBRYO_ATTEMPT = 15;
@@ -26,6 +28,9 @@ export const SELF_DAO_COSTS = Object.freeze({
   cultivation: 3_000_000_000_000,
   blood: 3_000_000_000_000,
 });
+export const SACRIFICE_DAO_COSTS = Object.freeze(Object.fromEntries(
+  Object.entries(SELF_DAO_COSTS).map(([key, cost]) => [key, cost * SACRIFICE_DAO_COST_MULTIPLIER]),
+));
 export const SELF_DAO_PLANE_TARGETS = Object.freeze([
   '仙域', '九天十地', '遮天位面', '下界八域', '小阴间',
   '大阴间', '阳间', '仙界', '凡间', '界海',
@@ -102,6 +107,7 @@ export function ensureSelfDaoDeduction(player) {
   old.pathAwakened = old.attempts >= SELF_DAO_REALM_AWAKENING || Boolean(old.pathAwakened);
   old.battlePending = Boolean(old.battlePending);
   old.completed = Boolean(old.completed);
+  old.sacrificeAttempts = getSacrificeDaoAttempts(player);
   if (number(old.progressionVersion) < 2) {
     if (old.completed || old.recovery?.status === 'recovering') {
       old.attempts = SELF_DAO_REQUIRED_ATTEMPTS;
@@ -121,7 +127,13 @@ export function ensureSelfDaoDeduction(player) {
   return old;
 }
 
+export function getSacrificeDaoAttempts(player) {
+  return Math.max(0, Math.min(SACRIFICE_DAO_REQUIRED_ATTEMPTS,
+    Math.trunc(number(player?.己道推演?.sacrificeAttempts))));
+}
+
 export function getSelfDaoDeductionCosts(player) {
+  if (getRealmAuthorityLevel(player) >= 21) return SACRIFICE_DAO_COSTS;
   const attempts = Math.max(0, Math.trunc(number(player?.己道推演?.attempts)));
   if (attempts < SELF_DAO_REALM_AWAKENING) return SELF_DAO_COSTS;
   return Object.fromEntries(Object.entries(SELF_DAO_COSTS).map(([key, cost]) => [
@@ -134,17 +146,26 @@ export function getSelfDaoDeductionCosts(player) {
 
 export function getSelfDaoDeductionGate(player) {
   const state = ensureSelfDaoDeduction(player);
-  if (getRealmAuthorityLevel(player) >= 21 || state.completed) return { ok: false, reason: 'completed', state };
+  const authority = getRealmAuthorityLevel(player);
+  const sacrifice = authority === 21;
+  if (authority > 21 || (!sacrifice && state.completed)) return { ok: false, reason: 'completed', state };
   if (state.recovery?.status === 'recovering') return { ok: false, reason: 'recovering', state };
-  if (state.battlePending) return { ok: true, reason: 'battle', state };
-  if (getRealmAuthorityLevel(player) !== 20) return { ok: false, reason: 'realm', state };
-  if (!player?.已创自身之道) return { ok: false, reason: 'own_way', state };
-  if (!player?.自创修炼体系?.name) return { ok: false, reason: 'system', state };
-  if (number(player?.自身之道阶段) < 6 || number(player?.修炼次数) < 300) {
-    return { ok: false, reason: 'own_way_cap', state };
-  }
-  if (state.attempts >= SELF_DAO_REALM_AWAKENING && state.realms.length !== 6) {
-    return { ok: false, reason: 'realms', state };
+  if (sacrifice) {
+    if (state.sacrificeAttempts >= SACRIFICE_DAO_REQUIRED_ATTEMPTS) return { ok: false, reason: 'sacrifice_completed', state };
+    if (number(player?.自身之道阶段) < 7 || number(player?.修炼次数) < 400) {
+      return { ok: false, reason: 'sacrifice_own_way_cap', state };
+    }
+  } else {
+    if (state.battlePending) return { ok: true, reason: 'battle', state };
+    if (authority !== 20) return { ok: false, reason: 'realm', state };
+    if (!player?.已创自身之道) return { ok: false, reason: 'own_way', state };
+    if (!player?.自创修炼体系?.name) return { ok: false, reason: 'system', state };
+    if (number(player?.自身之道阶段) < 6 || number(player?.修炼次数) < 300) {
+      return { ok: false, reason: 'own_way_cap', state };
+    }
+    if (state.attempts >= SELF_DAO_REALM_AWAKENING && state.realms.length !== 6) {
+      return { ok: false, reason: 'realms', state };
+    }
   }
 
   const resources = {
@@ -161,7 +182,7 @@ export function getSelfDaoDeductionGate(player) {
     .filter(([key, cost]) => resources[key] < cost)
     .map(([key, cost]) => ({ key, have: resources[key], need: cost }));
   return missing.length ? { ok: false, reason: 'resources', missing, resources, costs, state }
-    : { ok: true, reason: 'deduce', resources, costs, state };
+    : { ok: true, reason: 'deduce', resources, costs, state, sacrifice };
 }
 
 export function consumeSelfDaoDeduction(player, now = Date.now()) {
@@ -180,6 +201,11 @@ export function consumeSelfDaoDeduction(player, now = Date.now()) {
   if (lifeField === '压制寿元') player.寿元 = Math.min(number(player.寿元), player.压制寿元, 9999);
 
   const state = gate.state;
+  if (gate.sacrifice) {
+    state.sacrificeAttempts += 1;
+    state.lastSacrificeDeductionAt = now;
+    return { ok: true, reason: 'sacrifice_deduced', state, costs, attempt: state.sacrificeAttempts };
+  }
   state.attempts += 1;
   state.lastDeductionAt = now;
   state.pathAwakened = state.attempts >= SELF_DAO_REALM_AWAKENING;
