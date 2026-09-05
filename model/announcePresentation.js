@@ -17,11 +17,21 @@ function splitPointSignals(text) {
   return segments;
 }
 
-export function buildAnnouncePresentation(updates = [], configuredCount = updates.length) {
+// overview 模块渲染上限：防止本期更新堆积过多时，整张公告图高度超出截图引擎上限
+// （实测 90 个模块会渲染出 34000px+ 的长图，puppeteer 直接报 unusable image 失败）
+export const ANNOUNCE_OVERVIEW_MODULE_LIMIT = 16;
+
+export function buildAnnouncePresentation(
+  updates = [],
+  configuredCount = updates.length,
+  displayLimit = ANNOUNCE_OVERVIEW_MODULE_LIMIT
+) {
   const parsedCount = Number.parseInt(configuredCount, 10);
-  const count = Number.isFinite(parsedCount)
+  const configured = Number.isFinite(parsedCount)
     ? Math.min(updates.length, Math.max(0, parsedCount))
     : updates.length;
+  // 实际渲染进 overview 的模块数：既受"本期配置数"约束，也不超过渲染上限
+  const count = Math.min(configured, Math.max(0, displayLimit));
   const groups = [];
 
   updates.slice(0, count).forEach((update, index) => {
