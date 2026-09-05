@@ -1,8 +1,10 @@
 import { plugin, verc, data, config } from '../../api/api.js';
 import { hasRealmAuthority } from '../../model/realmAuthority.js';
 import { TIME_RIVER_PHASE_DURATION_MS } from '../../model/timeRiverAdversary.js';
-import { isTimeRiverLocation } from '../../model/weimianTravel.js';
+import { isTimeRiverLocation, PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { getFashanActionKey, isFashanActionPending, isFashanReady, requireActorAtPlane } from '../../model/fashanProxy.js';
+import { buildPlaneDestroyedMessage, getPlaneDestructionInfo } from '../../model/planeDestruction.js';
 
 import {
   Read_player,
@@ -46,6 +48,7 @@ export class shijianchanghe extends plugin {
         { reg: '^#解散时间长河队伍$', fnc: 'disbandTimeRiverTeam' },
         { reg: '^#组队遨游时间长河$', fnc: 'startTeamTimeRiver' },
         { reg: '^#遨游时间长河$', fnc: 'roamTimeRiver' },
+        { reg: '^#法身遨游时间长河$', fnc: 'roamFashanTimeRiver' },
       ],
     });
   }
@@ -273,6 +276,67 @@ export class shijianchanghe extends plugin {
       `${players.map(item => item.player.名号).join('、')}同时踏入时间长河！`,
       '队伍已被同一古史节点锁定，首段探索将在15分钟后统一结算。',
     ].join('\n'));
+  }
+
+  async roamFashanTimeRiver(e) {
+    if (!verc({ e })) return false;
+    const userId = await this.getQq(e);
+    if (!await existplayer(userId)) return e.reply('请先创建修仙角色。');
+    return withPlayerMutationLock(userId, async () => {
+      const player = await Read_player(userId);
+      if (Number(player.法身) !== 1) return e.reply('请先凝聚无上法身。');
+      if (!hasRealmAuthority(player, 20)) return e.reply('法身遨游时间长河需要准仙帝及以上权柄。');
+      if (!requireActorAtPlane(player, PLACE_LOCATION_MAP.时间长河, 'fashan').ok) {
+        return e.reply('请先使用 #法身穿梭 时间长河，让法身抵达时间长河。');
+      }
+      if (getPlaneDestructionInfo(data.filePathMap.weimianList, '时间长河').destroyed) {
+        return e.reply(buildPlaneDestroyedMessage(data.filePathMap.weimianList, '时间长河'));
+      }
+      if (Number(player.法身恢复时间) > Date.now()) return e.reply('法身正在恢复中，请待恢复后再遨游。');
+      const actionKey = getFashanActionKey(userId);
+      const raw = await redis.get(actionKey);
+      if (raw) {
+        try {
+          const active = JSON.parse(raw);
+          if (isFashanActionPending(active)) return e.reply(`法身正在${active.action || '代行'}中，请等待结算。`);
+        } catch {
+          return e.reply('法身行动记录异常，请先修复该记录。');
+        }
+      }
+      if (!isFashanReady(player)) return e.reply('法身当前已有代行行动，请等待结算。');
+      const now = Date.now();
+      const action = {
+        taskId: `fashan-time-river:${userId}:${now}`,
+        action: '遨游时间长河',
+        actor: 'fashan',
+        isFashan: true,
+        actorPlane: PLACE_LOCATION_MAP.时间长河,
+        法身位置: PLACE_LOCATION_MAP.时间长河,
+        start_time: now,
+        end_time: now + TIME_RIVER_PHASE_DURATION_MS,
+        time: TIME_RIVER_PHASE_DURATION_MS,
+        time_river: '0',
+        Place_action: '1',
+        Place_actionplus: '1',
+        ...(e.isGroup ? { group_id: e.group_id } : {}),
+      };
+      player.法身状态 = '行动中';
+      player.法身行动 = '遨游时间长河';
+      await Write_player(userId, player);
+      await redis.set(actionKey, JSON.stringify(action));
+      await withPlayerMutationLock('time-river-active-index', async () => {
+        const key = 'xiuxian:time_river:active_players:fashan';
+        let active = [];
+        try {
+          const parsed = JSON.parse(await redis.get(key) || '[]');
+          if (Array.isArray(parsed)) active = parsed.map(String);
+        } catch {}
+        if (!active.includes(userId)) active.push(userId);
+        await redis.set(key, JSON.stringify(active));
+      });
+      await Add_renwu_progress(userId, 'jilu3');
+      return e.reply('【法身遨游时间长河】法身已逆流而上，首段探索15分钟后结算；真身保持原有行动。本玩法仅开放单次出发，帝战后续阶段仍按原规则推进。');
+    });
   }
 
   //遨游时间长河

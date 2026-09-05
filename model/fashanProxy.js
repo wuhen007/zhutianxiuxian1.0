@@ -22,7 +22,8 @@ export function isFashanReady(player) {
 
 export function isFashanActionPending(action, now = Date.now()) {
   if (!action || typeof action !== 'object' || action.is_jiesuan == 1) return false;
-  if (action.Place_action == '0' || action.Place_actionplus == '0' || action.shengxuTaskId) return true;
+  if (action.eternal_guard === '1') return true;
+  if (action.Place_action == '0' || action.Place_actionplus == '0' || action.time_river == '0' || action.shengxuTaskId) return true;
   const endTime = Number(action.end_time);
   return Number.isFinite(endTime) && endTime > Number(now);
 }

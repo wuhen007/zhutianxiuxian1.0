@@ -9,6 +9,7 @@ import {
   getLocationThreshold,
 } from '../../model/weimianTravel.js';
 import { getDungeonGongfaReduction } from '../../model/gongfaProficiency.js';
+import { hasRealmAuthority } from '../../model/realmAuthority.js';
 import {
   buildPlaneDestroyedMessage,
   getPlaneDestructionInfo,
@@ -66,7 +67,7 @@ function parseFashanAddictionMessage(message) {
 }
 
 function parseFashanExploreMessage(message) {
-  const match = /^#法身探索(秘境|禁地|仙境|遮天位面|下界八域|九天十地|上苍之上)\s*(.+)$/.exec(String(message || '').trim());
+  const match = /^#法身探索(秘境|禁地|仙境|遮天位面|下界八域|九天十地|上苍之上|界海)\s*(.+)$/.exec(String(message || '').trim());
   if (!match) return null;
   return { category: match[1], location: match[2].trim(), count: 1 };
 }
@@ -79,6 +80,7 @@ function getFashanDungeonDefinition(category, player) {
     下界八域: { list: data.xiajie_list, plane: PLACE_LOCATION_MAP.下界八域, baseUnit: 100 },
     九天十地: { list: data.jiutianshidi_list, plane: PLACE_LOCATION_MAP.九天十地, baseUnit: 70 },
     上苍之上: { list: data.shangcang_list, plane: SHANGCANG_PLANE_ID, baseUnit: 0 },
+    界海: { list: data.jiehai_list, plane: PLACE_LOCATION_MAP.界海, baseUnit: 300 },
   };
   if (category === '禁地') {
     return { list: data.forbiddenarea_list, plane: getLocationId(player?.法身位置), baseUnit: 70 };
@@ -105,8 +107,12 @@ export class SecretPlaceplus extends plugin {
           fnc: 'fashanTravel',
         },
         {
-          reg: '^#法身探索(?:秘境|禁地|仙境|遮天位面|下界八域|九天十地|上苍之上).+$',
+          reg: '^#法身探索(?:秘境|禁地|仙境|遮天位面|下界八域|九天十地|上苍之上|界海).+$',
           fnc: 'fashanExplore',
+        },
+        {
+          reg: '^#法身沉迷(?:界海|时间长河).*$',
+          fnc: 'fashanSingleExploreOnly',
         },
         {
           reg: '^#法身沉迷(?:秘境|禁地|仙境|遮天位面|下界八域|九天十地|上苍之上).*$',
@@ -218,7 +224,12 @@ export class SecretPlaceplus extends plugin {
       player.法身状态 = '空闲中';
       player.法身行动 = '无行动';
       await Write_player(userId, player);
-      return e.reply(`【法身穿梭】法身已降临${location}，可发送对应的 #法身沉迷 指令。`);
+      const command = location === '时间长河'
+        ? '#法身遨游时间长河'
+        : location === '界海'
+          ? '#法身探索界海 地点'
+          : '对应的 #法身探索 或 #法身沉迷 指令';
+      return e.reply(`【法身穿梭】法身已降临${location}，可发送${command}。`);
     });
   }
 
@@ -228,6 +239,10 @@ export class SecretPlaceplus extends plugin {
 
   async fashanAddiction(e) {
     return this.startFashanDungeon(e, 'addiction');
+  }
+
+  async fashanSingleExploreOnly(e) {
+    return e.reply('法身在界海、时间长河仅开放单次探索。请使用 #法身探索界海 地点 或 #法身遨游时间长河。');
   }
 
   async startFashanDungeon(e, mode) {
@@ -244,6 +259,7 @@ export class SecretPlaceplus extends plugin {
     return withPlayerMutationLock(userId, async () => {
       const player = await Read_player(userId);
       if (!player || Number(player.法身) !== 1) return e.reply('尚未凝聚法身，暂时无法代行。');
+      if (Number(player.法身恢复时间) > Date.now()) return e.reply('法身正在恢复中，请待恢复后再探索。');
 
       const actionKey = getFashanActionKey(userId);
       const activeRaw = await redis.get(actionKey);
@@ -277,6 +293,11 @@ export class SecretPlaceplus extends plugin {
       if (request.category === '上苍之上') {
         return this.startFashanShangcang(e, userId, player, place, request.count, expectedPlane, mode);
       }
+      const isJiehai = request.category === '界海';
+      if (isJiehai && (mode !== 'explore' || request.count !== 1)) return this.fashanSingleExploreOnly(e);
+      if (isJiehai && !hasRealmAuthority(player, request.location === '终极古地' ? 21 : 18)) {
+        return e.reply(`${request.location}需要${request.location === '终极古地' ? '仙帝' : '仙王'}及以上权柄。`);
+      }
 
       const count = request.count;
       const rounds = mode === 'explore' ? 1 : 10 * count;
@@ -307,8 +328,9 @@ export class SecretPlaceplus extends plugin {
       }
 
       const price = Math.max(0, Number(place.Price) || 0) * rounds;
-      const shouyuan = Math.max(0, Number(place.shouyuan) || 0) * rounds;
-      const experience = Math.max(0, Number(place.experience) || 0) * rounds;
+      // 界海单次探索与真身入口一致，只扣灵石。
+      const shouyuan = isJiehai ? 0 : Math.max(0, Number(place.shouyuan) || 0) * rounds;
+      const experience = isJiehai ? 0 : Math.max(0, Number(place.experience) || 0) * rounds;
       const shortages = [];
       if ((Number(player.灵石) || 0) < price) shortages.push(`灵石需${price}`);
       if ((Number(player.寿元) || 0) < shouyuan) shortages.push(`寿元需${shouyuan}`);
@@ -382,6 +404,12 @@ export class SecretPlaceplus extends plugin {
       player.寿元 = (Number(player.寿元) || 0) - shouyuan;
       player.修为 = (Number(player.修为) || 0) - experience;
       player.血气 = (Number(player.血气) || 0) - experience;
+      if (isJiehai) {
+        player.lastDungeonType = '界海';
+        player.lastDungeonName = request.location;
+        player.界海历练次数 = (Number(player.界海历练次数) || 0) + 1;
+        if (player.破王成帝 > 0) player.破王成帝 -= 1;
+      }
       player.法身位置 = expectedPlane;
       player.法身状态 = '行动中';
       player.法身行动 = `${mode === 'explore' ? '探索' : '沉迷'}${request.category}·${request.location}`;
@@ -404,7 +432,7 @@ export class SecretPlaceplus extends plugin {
       }));
       return e.reply([
         `【法身${mode === 'explore' ? '探索' : '沉迷'}${request.category}·${request.location}】`,
-        `法身已在${planeName || '目标位面'}开始连续历练${rounds}轮。`,
+        `法身已在${planeName || '目标位面'}开始${mode === 'explore' ? '单次探索' : `连续历练${rounds}轮`}。`,
         `消耗：${shouyuan}寿元、${price}灵石、${experience}修为与血气${entryCount > 0 ? `、${entryCount}个秘境之匙` : ''}`,
         `预计${totalMinutes}分钟后完成，每轮自动结算。`,
         ...msgs,

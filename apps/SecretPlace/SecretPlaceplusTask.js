@@ -2533,7 +2533,8 @@ if (action.settled_count >= action.total_count) {
             }
             return false;
           }
-          if (!proxyAction?.isFashan || isShangcangAction(proxyAction)) return false;
+          if (!proxyAction?.isFashan || isShangcangAction(proxyAction)
+            || proxyAction.time_river == '0' || proxyAction.eternal_guard === '1') return false;
 
           const player = await Read_player(playerId);
           proxyAction.taskId ||= `fashan:${playerId}:${Number(proxyAction.start_time) || 0}`;

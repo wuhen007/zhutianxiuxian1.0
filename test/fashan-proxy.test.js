@@ -27,6 +27,7 @@ test('readiness requires a formed body and accepts any non-running status', () =
 test('pending action remains occupied until settlement closes its state flags', () => {
   assert.equal(isFashanActionPending({ Place_action: '0', end_time: 1 }, 2), true);
   assert.equal(isFashanActionPending({ Place_actionplus: '0', end_time: 1 }, 2), true);
+  assert.equal(isFashanActionPending({ time_river: '0', end_time: 1 }, 2), true);
   assert.equal(isFashanActionPending({ shengxuTaskId: 'task', end_time: 1 }, 2), true);
   assert.equal(isFashanActionPending({ Place_action: '1', Place_actionplus: '1', end_time: 3 }, 2), true);
   assert.equal(isFashanActionPending({ Place_action: '1', Place_actionplus: '1', end_time: 1 }, 2), false);

@@ -62,6 +62,8 @@ import {
   TIME_RIVER_REVIVAL_TAUNTS,
 } from '../../model/timeRiverAdversary.js';
 import { destroyWorldline } from '../../model/worldlineAuthority.js';
+import { getFashanActionKey, requireActorAtPlane } from '../../model/fashanProxy.js';
+import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
 
 ensureTimeRiverSkills(data);
 
@@ -107,6 +109,41 @@ async checkTimeRiverActions() {
       console.error(`处理玩家${usr_qq}时出错:`, err);
     }
   }
+  for (const usr_qq of await this.getActiveTimeRiverPlayers('fashan')) {
+    try {
+      await withPlayerMutationLock(usr_qq, () => this.checkFashanTimeRiverPlayer(usr_qq, currentTime));
+    } catch (err) {
+      console.error(`处理法身时间长河${usr_qq}时出错:`, err);
+    }
+  }
+}
+
+async checkFashanTimeRiverPlayer(usr_qq, currentTime) {
+  let action;
+  try {
+    action = JSON.parse(await redis.get(getFashanActionKey(usr_qq)));
+  } catch {
+    // 异常记录保留排查，仅移除长河索引。
+  }
+  if (!action?.isFashan || action.time_river != '0') {
+    await this.clearTimeRiverTracking(usr_qq, { isFashan: true });
+    return;
+  }
+  if (!await existplayer(usr_qq)) {
+    await this.clearTimeRiverTracking(usr_qq, action);
+    return;
+  }
+  const player = await Read_player(usr_qq);
+  if (Number(player.法身) !== 1
+    || !requireActorAtPlane(player, PLACE_LOCATION_MAP.时间长河, 'fashan').ok
+    || !requireActorAtPlane({ 法身位置: action.actorPlane ?? action.法身位置 }, PLACE_LOCATION_MAP.时间长河, 'fashan').ok
+    || !Number.isFinite(Number(action.end_time)) || Number(action.end_time) <= 0) {
+    await this.clearTimeRiverTracking(usr_qq, action);
+    return;
+  }
+  if (Number(action.end_time) > currentTime) return;
+  const continuing = await this.handleTimeRiverCompletion(usr_qq, action);
+  if (!continuing) await this.clearTimeRiverTracking(usr_qq, action);
 }
 
 async checkTimeRiverPlayer(usr_qq, currentTime) {
@@ -162,29 +199,52 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
 }
 
   getTimeRiverMemberIds(usr_qq, action = {}) {
+    if (action.isFashan) return [String(usr_qq)];
     return [...new Set([
       String(action.timeRiverLeader || usr_qq),
       ...(Array.isArray(action.timeRiverTeamMembers) ? action.timeRiverTeamMembers.map(String) : []),
     ])].slice(0, 4);
   }
 
-  async getActiveTimeRiverPlayers() {
+  async getActiveTimeRiverPlayers(actor = 'body') {
     try {
-      return [...new Set(JSON.parse(await redis.get('xiuxian:time_river:active_players') || '[]').map(String))];
+      const key = `xiuxian:time_river:active_players${actor === 'fashan' ? ':fashan' : ''}`;
+      return [...new Set(JSON.parse(await redis.get(key) || '[]').map(String))];
     } catch {
       return [];
     }
   }
 
-  async addActiveTimeRiverPlayer(usr_qq) {
+  async addActiveTimeRiverPlayer(usr_qq, actor = 'body') {
     await withPlayerMutationLock('time-river-active-index', async () => {
-      const players = await this.getActiveTimeRiverPlayers();
+      const players = await this.getActiveTimeRiverPlayers(actor);
       if (!players.includes(String(usr_qq))) players.push(String(usr_qq));
-      await redis.set('xiuxian:time_river:active_players', JSON.stringify(players));
+      const key = `xiuxian:time_river:active_players${actor === 'fashan' ? ':fashan' : ''}`;
+      await redis.set(key, JSON.stringify(players));
     });
   }
 
   async clearTimeRiverTracking(usr_qq, sourceAction = null) {
+    if (sourceAction?.isFashan) {
+      const key = getFashanActionKey(usr_qq);
+      let current;
+      try { current = JSON.parse(await redis.get(key)); } catch {}
+      if (current?.isFashan && current.time_river == '0') {
+        if (sourceAction.taskId && current.taskId !== sourceAction.taskId) return;
+        if (await existplayer(usr_qq)) {
+          const player = await Read_player(usr_qq);
+          player.法身状态 = '空闲中';
+          player.法身行动 = '无行动';
+          await Write_player(usr_qq, player);
+        }
+        await redis.del(key);
+      }
+      await withPlayerMutationLock('time-river-active-index', async () => {
+        const players = (await this.getActiveTimeRiverPlayers('fashan')).filter(id => id !== String(usr_qq));
+        await redis.set('xiuxian:time_river:active_players:fashan', JSON.stringify(players));
+      });
+      return;
+    }
     let action = sourceAction;
     if (!action) {
       try {
@@ -321,10 +381,23 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
   }
 
   async handleTimeRiverCompletion(usr_qq, action) {
+    const isFashan = action.isFashan === true;
     const memberIds = this.getTimeRiverMemberIds(usr_qq, action);
     const members = [];
     for (const id of memberIds) {
-      if (await existplayer(id)) members.push({ id, player: await Read_player(id) });
+      if (await existplayer(id)) {
+        const player = await Read_player(id);
+        if (isFashan) {
+          const maxHp = Math.max(1, Number(player.血量上限) || 1);
+          const savedHp = Number(player.法身当前血量);
+          player.当前血量 = Number.isFinite(savedHp) ? Math.min(maxHp, Math.max(0, savedHp)) : maxHp;
+          if (player.当前血量 < maxHp * 0.3 && await exist_najie_thing(id, '起死回生丹', '丹药') > 0) {
+            await Add_najie_thing(id, '起死回生丹', '丹药', -1);
+            player.当前血量 = maxHp;
+          }
+        }
+        members.push({ id, player, baseline: isFashan ? structuredClone(player) : null });
+      }
     }
     if (!members.length) return false;
     const leader = members.find(member => member.id === String(action.timeRiverLeader || usr_qq)) || members[0];
@@ -386,7 +459,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     const resolvedTeam = Array.isArray(battleResult.A_team) ? battleResult.A_team : [combatants[0]];
     const memberResults = [];
     for (let index = 0; index < members.length; index++) {
-      const { id, player } = members[index];
+      const { id, player, baseline } = members[index];
       const resolvedPlayer = resolvedTeam[index] || combatants[index];
       player.功法熟练度 = resolvedPlayer.功法熟练度 || player.功法熟练度;
       player.功法熟练度每日 = resolvedPlayer.功法熟练度每日 || player.功法熟练度每日;
@@ -399,7 +472,10 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
 
       const specialEvents = {};
       const penalties = {};
-      if (outcome === 'defeat' && chainBattle) {
+      if (isFashan && outcome === 'defeat') {
+        // 法身败退只结算法身气血，不将真身送入待援、炼化或过去身抹除。
+        specialEvents.fashanDefeated = true;
+      } else if (outcome === 'defeat' && chainBattle) {
         specialEvents.rescueWindow = true;
         specialEvents.willowGuardian = index === 0
           && DARK_TRIAD_NAMES.every(name => enemyNames.includes(name))
@@ -420,7 +496,23 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
         }
       }
 
-      await Write_player(id, player);
+      if (isFashan) {
+        player.法身当前血量 = player.当前血量;
+        const body = await Read_player(id);
+        // 只合并本次战斗改动，保留真身在战斗期间更新的镇守、气血等字段。
+        for (const key of new Set([...Object.keys(baseline), ...Object.keys(player)])) {
+          if (['当前血量', '法身当前血量', '纪元积累'].includes(key)) continue;
+          if (JSON.stringify(baseline[key]) === JSON.stringify(player[key])) continue;
+          if (Object.hasOwn(player, key)) body[key] = structuredClone(player[key]);
+          else delete body[key];
+        }
+        Object.assign(era, addCappedEraAccumulation(body, era.gained));
+        player.纪元积累 = body.纪元积累;
+        body.法身当前血量 = player.法身当前血量;
+        await Write_player(id, body);
+      } else {
+        await Write_player(id, player);
+      }
       if (specialEvents.darkSuppression) {
         penalties.darkSuppression = await this.handleDarkSuppression(id, action, { worldlineCollapse: true, enemyNames });
       }
@@ -428,7 +520,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     }
 
     for (const result of memberResults) {
-      await this.sendResultMessage(result.id, action, this.generateResultMessage(result.player, primary, {
+      const message = this.generateResultMessage(result.player, primary, {
         ...battleResult,
         outcome,
         specialEvents: result.specialEvents,
@@ -437,7 +529,16 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
         eraAccumulationChange: result.era.gained,
         eraAccumulationCap: result.era.cap,
         newEraAccumulation: result.player.纪元积累,
-      }));
+      });
+      if (isFashan) {
+        try {
+          await this.sendResultMessage(result.id, action, `【法身代行】\n${message}`);
+        } catch (error) {
+          console.error(`[法身时间长河] 战报发送失败：${error.message}`);
+        }
+      } else {
+        await this.sendResultMessage(result.id, action, message);
+      }
     }
 
     if (memberResults.some(result => result.specialEvents.rescueWindow)) {
@@ -524,10 +625,14 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       willowGuardianTriggered: Boolean(previousAction.willowGuardianTriggered || details.willowGuardianTriggered),
     };
     for (const memberId of this.getTimeRiverMemberIds(usr_qq, action)) {
-      await redis.set(`xiuxian:player:${memberId}:action`, JSON.stringify(action));
-      await redis.set(`xiuxian:time_river:end_time:${memberId}`, endTime);
+      if (action.isFashan) {
+        await redis.set(getFashanActionKey(memberId), JSON.stringify(action));
+      } else {
+        await redis.set(`xiuxian:player:${memberId}:action`, JSON.stringify(action));
+        await redis.set(`xiuxian:time_river:end_time:${memberId}`, endTime);
+      }
     }
-    await this.addActiveTimeRiverPlayer(usr_qq);
+    await this.addActiveTimeRiverPlayer(usr_qq, action.isFashan ? 'fashan' : 'body');
     const text = details.enemyState
       ? '【血祭续战】魂血照亮断裂古史，敌方保留上一战的剩余气血，十五分钟后从败亡节点继续结算。'
       : stage === 'triad'
@@ -968,6 +1073,9 @@ async sendEncounterMessage(usr_qq, action, message) {
       message.push(`功法参悟：${formatGongfaProficiency(player, name)}（+${gained}）`);
     }
     
+    if (battleResult.specialEvents.fashanDefeated) {
+      message.push('【法身败退】本次只损耗法身气血，真身行动、血量与过去时间线保持原状；低血量时下次探索可消耗起死回生丹恢复法身。');
+    }
     // 添加特殊事件详细描述
 if (battleResult.specialEvents.pastBodyExposed && battleResult.penalties.pastBodyExposed) {
   const { lostItems, reductionLvl, worldlineCollapse } = battleResult.penalties.pastBodyExposed;

@@ -7,6 +7,7 @@ import {
 export const ETERNAL_GUARD_INTERVAL_MS = 60 * 60 * 1000;
 export const ETERNAL_GUARD_DURATION_MINUTES = 99999;
 export const ETERNAL_GUARD_DURATION_MS = ETERNAL_GUARD_DURATION_MINUTES * 60 * 1000;
+export const ETERNAL_GUARD_ERA_REWARD = 10;
 
 export const DIMENSION_THREAT_TYPES = Object.freeze({
   HIGHLAND_TERROR: 'highland-terror',
@@ -81,12 +82,17 @@ export function isImmortalEmperorPlayer(player) {
   return getRealmAuthorityLevel(player) >= 21;
 }
 
-export function isGuardingEternal(player) {
-  return isImmortalEmperorPlayer(player)
+export function isGuardingEternal(player, actor = 'body') {
+  if (!isImmortalEmperorPlayer(player)) return false;
+  if (actor === 'fashan') {
+    return Number(player?.法身) === 1 && player?.法身永恒镇守 === true
+      && getLocationName(player?.法身位置) === '永恒未知之地';
+  }
+  return player?.永恒镇守已结束 !== true
     && getLocationName(player?.power_place) === '永恒未知之地';
 }
 
-export function createEternalGuardAction(now = Date.now()) {
+export function createEternalGuardAction(now = Date.now(), actor = 'body') {
   return {
     action: '镇守永恒未知之地',
     start_time: now,
@@ -101,6 +107,7 @@ export function createEternalGuardAction(now = Date.now()) {
     power_up: '1',
     mojie: '1',
     xijie: '1',
+    ...(actor === 'fashan' ? { actor, isFashan: true, actorPlane: '永恒未知之地', 法身位置: '永恒未知之地' } : {}),
   };
 }
 
@@ -108,8 +115,15 @@ export function isEternalGuardAction(action) {
   return action?.eternal_guard === '1' || action?.action === '镇守永恒未知之地';
 }
 
-export function applyEternalGuardStatus(player, now = Date.now()) {
-  const action = createEternalGuardAction(now);
+export function applyEternalGuardStatus(player, now = Date.now(), actor = 'body') {
+  const action = createEternalGuardAction(now, actor);
+  if (actor === 'fashan') {
+    player.法身永恒镇守 = true;
+    player.法身状态 = '行动中';
+    player.法身行动 = action.action;
+    return action;
+  }
+  delete player.永恒镇守已结束;
   player.修仙状态 = '镇守永恒未知之地';
   player.永恒镇守开始时间 ||= now;
   player.永恒镇守结束时间 = action.end_time;
