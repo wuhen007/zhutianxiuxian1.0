@@ -30,6 +30,7 @@ import {
   FLOWER_ANCESTOR_BREEDING_MS,
   FLOWER_ANCESTOR_DORMANT_MS,
   FLOWER_ANCESTOR_WUDAO_LIMIT,
+  FLOWER_DAO_DAILY_LIMIT,
   FLOWER_TRIBULATION_WAVES_PER_STAGE,
   FLOWER_TRIBULATION_WAVE_INTERVAL_MS,
   FLOWER_TRIBULATION_ERA_DIFFICULTY,
@@ -319,6 +320,7 @@ export class FlowerPollenPath extends plugin {
     const daoDailyCount = daoGate.path.daily.date === getShanghaiDateKey() ? daoGate.path.daily.count : 0;
     const ancestor = getFlowerAncestorSeedState(player);
     const ancestorOwned = await hasOwnedFlowerAncestorSeed(userId);
+    const daoDailyLimit = FLOWER_DAO_DAILY_LIMIT + (ancestorOwned ? 1 : 0);
     const lines = [
       '【花粉进化路】',
       `境界：${realmName(player.huafenlevel_id)}${player.花粉路分支 ? `（${player.花粉路分支}）` : ''}`,
@@ -327,7 +329,7 @@ export class FlowerPollenPath extends plugin {
       `始祖污染：${pollution.pollution}/100${pollution.polluted ? '（污染期·始祖低语）' : ''}${pollution.marked ? '（始祖印记·成功率-20%）' : ''}`,
       `道伤：${wound.wounds}（花粉属性-${Math.round((1 - wound.attrMultiplier) * 100)}%，进化/渡劫-${Math.round(wound.chancePenalty * 100)}%）`,
       `分支倾向：${branchProfile.name}｜${branchProfile.description}`,
-      daoGate.rule ? `花粉道则：${daoGate.rule.name} ${daoGate.exp}/${daoGate.rule.targetExp}（${daoGate.stage.name}，今日悟道${daoDailyCount}/${3 + (ancestorOwned ? 1 : 0)}）` : '花粉道则：当前境界尚未开启',
+      daoGate.rule ? `花粉道则：${daoGate.rule.name} ${daoGate.exp}/${daoGate.rule.targetExp}（${daoGate.stage.name}，今日悟道${daoDailyCount}/${daoDailyLimit}${daoDailyCount >= daoDailyLimit ? '，可服大衍悟道丹续道' : ''}）` : '花粉道则：当前境界尚未开启',
       `祖种：${ancestorOwned ? (ancestor.breeding ? `孕育中，剩余${Math.ceil(ancestor.breedingRemainMs / 3600000)}小时` : ancestor.dormant ? `沉寂中，剩余${Math.ceil(ancestor.dormantRemainMs / 3600000)}小时` : '可用') : '未认主'}｜祖种悟道${ancestorOwned ? Math.min(FLOWER_ANCESTOR_WUDAO_LIMIT, ancestor.悟道次数) : 0}/${FLOWER_ANCESTOR_WUDAO_LIMIT}`,
       ancestorOwned && ancestor.待领取异果 > 0 ? `待领取：${SUPER_FLOWER_FRUIT_NAME}×${ancestor.待领取异果}` : '',
       tribulationGate.rule ? `专属渡劫：${tribulationGate.rule.name}（${tribulationGate.completed ? '已渡过' : `待渡，失败${tribulationGate.failures}次`}）` : '专属渡劫：当前境界无需渡劫',
@@ -736,9 +738,17 @@ export class FlowerPollenPath extends plugin {
       if (gate.ok) return e.reply(`【花粉道则已圆满】${gate.rule.name}已经完成，可继续冲击${gate.rule.nextRealm}。`);
       const dateKey = getShanghaiDateKey();
       const ancestorSeed = await hasOwnedFlowerAncestorSeed(userId);
-      const dailyLimit = 3 + (ancestorSeed ? 1 : 0);
+      const baseDailyLimit = FLOWER_DAO_DAILY_LIMIT + (ancestorSeed ? 1 : 0);
+      let dailyLimit = baseDailyLimit;
+      let usedWudaoDan = false;
       if (gate.path.daily.date === dateKey && gate.path.daily.count >= dailyLimit) {
-        return e.reply(`今日花粉悟道次数已用尽（${gate.path.daily.count}/${dailyLimit}），明日再来。`);
+        if (!(await exist_najie_thing(userId, '大衍悟道丹', '丹药'))) {
+          return e.reply(
+            `今日花粉悟道次数已用尽（${gate.path.daily.count}/${dailyLimit}），可服【大衍悟道丹】延续道途，再参一次大道。`,
+          );
+        }
+        usedWudaoDan = true;
+        dailyLimit = gate.path.daily.count + 1;
       }
 
       const daoContext = await buildFlowerDaoGainContext(userId, player, ancestorSeed);
@@ -808,6 +818,7 @@ export class FlowerPollenPath extends plugin {
       const breathingPractice = recordFlowerBreathingPractice(player, 3);
       const proficiencyGains = awardWudaoGongfaProficiency(player, 5, { dateKey });
       await Write_player(userId, player);
+      if (usedWudaoDan) await Add_najie_thing(userId, '大衍悟道丹', '丹药', -1);
       await refreshAttributes(userId);
       const factorLines = [
         `呼吸法 ${formatSignedPercent(gain.bonuses.breathing)}`,
@@ -840,10 +851,13 @@ export class FlowerPollenPath extends plugin {
         `消耗：潜力${cost.potential.toLocaleString()}｜修为${bigNumberTransform(cost.cultivation)}｜血气${bigNumberTransform(cost.blood)}`,
         `消耗：寿元${cost.lifespan.toLocaleString()}年｜元神${bigNumberTransform(cost.spirit)}`,
         `收益倍率：×${gain.multiplier.toFixed(2)}〔${factorLines.join('，')}〕`,
-        `今日次数：${result.gate.path.daily.count}/${dailyLimit}`,
+        usedWudaoDan
+          ? `今日次数：${result.gate.path.daily.count}/${baseDailyLimit}（服大衍悟道丹·续道）`
+          : `今日次数：${result.gate.path.daily.count}/${baseDailyLimit}`,
         breathingPractice.gained ? breathingPractice.name + '熟练度 +' + breathingPractice.gained + '（' + breathingPractice.profile.name + '）' : '呼吸法熟练度已达今日上限',
         proficiencyLine,
         result.completed ? `【道则圆满】下一步可冲击${gain.rule.nextRealm}。` : '道则尚未圆满，可继续 #花粉悟道。',
+        usedWudaoDan ? '「服下大衍悟道丹，道途再续一程，今日可多参一道」' : '',
       ].filter(Boolean).join('\n'));
     });
   }
