@@ -30,6 +30,7 @@ import {
   buildStrangeSacrificeEnemies,
   ensureStrangeSacrificeState,
   forceStartStrangeSacrifice,
+  formatHeavenWillSlashStatus,
   getStrangeSacrificeEncounter,
   getStrangeSacrificeInteractionLock,
   settleStrangeSacrifice,
@@ -197,11 +198,7 @@ function statusText(state, currentWorldYear) {
       `下一事件纪年：${due}年（尚余${Math.max(0, due - currentWorldYear)}年）`,
     );
   }
-  if (state.heavenSlashUntilWorldYear > currentWorldYear) {
-    lines.push(
-      `天意一刀：尚余${state.heavenSlashUntilWorldYear - currentWorldYear}年`,
-    );
-  }
+  lines.push(formatHeavenWillSlashStatus(state, currentWorldYear));
   return lines.join('\n');
 }
 
@@ -254,6 +251,7 @@ export class StrangeSacrifice extends plugin {
       rule: [
         { reg: '^#诡异祭礼状态$', fnc: 'showStatus' },
         { reg: '^#诡异始祖状态$', fnc: 'showStatus' },
+        { reg: '^#天意一刀(?:状态|影响)?$', fnc: 'showHeavenWillSlash' },
         { reg: '^#迎战诡异小祭$', fnc: 'fightSmall' },
         { reg: '^#迎战诡异大祭$', fnc: 'fightBig' },
         { reg: '^#迎战厄土高原$', fnc: 'fightBig' },
@@ -381,22 +379,20 @@ export class StrangeSacrifice extends plugin {
               '荒天帝喋血厄土祖地门前，柳神为救石昊被始祖击穿眉心，大批绝世人物相继战死。',
               '石昊恸哭后强行映照诸天，除身灭道消的仙帝玩家外，万灵与破碎诸界尽数归来。',
               '完成映照后，荒陷入不念不想的虚弱状态，自古史中彻底消失。',
-              `天意一刀将压制仙道领域至诸天纪年${state.heavenSlashUntilWorldYear}年。`,
             ]
           : !small && event.firstRound
           ? [
               '【大祭尾声·诸天绝灵】',
               '荒与叶血染祭海，狠人、无始残尸、柳神虚影、叶倾仙虚影及诸天绝世人物全部陨落。',
               '所有位面被彻底打灭，诸天进入绝灵时代。此后的小祭与大祭再无荒、叶等人现身。',
-              `天意一刀横压三万年，影响持续至诸天纪年${state.heavenSlashUntilWorldYear}年。`,
             ]
           : [
               `【${small ? '小祭' : '大祭'}尾声】`,
               event.defended
                 ? '当世至高强者击退诡异军团，诸天残界得以重聚。'
                 : '当世无人挡住最终血祭，所有位面崩灭，诸天坠入绝灵时代。',
-              `天意一刀影响持续至诸天纪年${state.heavenSlashUntilWorldYear}年。`,
             ];
+      lines.push(formatHeavenWillSlashStatus(state, currentWorldYear));
       return this.broadcast(lines.join('\n'));
     }
   }
@@ -448,6 +444,21 @@ export class StrangeSacrifice extends plugin {
   async showStatus(e) {
     await this.tick();
     return e.reply(statusText(readState(), worldYear()));
+  }
+
+  async showHeavenWillSlash(e) {
+    const id = String(await channel(String(e.user_id || '').replace('qg_', '')));
+    const messages = [formatHeavenWillSlashStatus(readState(), worldYear())];
+    if (await existplayer(id)) {
+      // 查询只看落盘记录，不触发伴生境界同步或额外保存。
+      const player = JSON.parse(fs.readFileSync(path.join(__PATH.player_path, `${id}.json`), 'utf8'));
+      messages.push(
+        `【个人记录】${player.名号 || '道友'}｜累计被斩${Number(player.天意一刀斩道次数) || 0}次`,
+        `当前血量：${Number(player.当前血量) || 0}｜当前道伤：${(Number(player.道伤) || 0).toFixed(1)}`,
+        player.天意一刀提示 ? `【最近一次斩道记录·非当前状态】\n${player.天意一刀提示}` : '尚无天意一刀斩道记录。',
+      );
+    }
+    return e.reply(messages.join('\n\n'));
   }
 
   async fightSmall(e) {

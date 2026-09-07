@@ -55,6 +55,12 @@ import {
   isDarkTriadEmperor,
   rollDarkTriadContinuation,
   rollTimeRiverEraReward,
+  getTimeRiverVictoryReward,
+  rollFutureQuasiEmperorInvasion,
+  rollHuangEmperorTeaching,
+  applyHuangEmperorTeaching,
+  TIME_RIVER_FUTURE_QUASI_NAMES,
+  TIME_RIVER_FUTURE_REWARD,
   scaleTimeRiverAdversary,
   getTimeRiverSacrificeRecovery,
   applyTimeRiverSacrificeBuff,
@@ -331,12 +337,18 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       names = [action.primaryName];
     } else if (stage === 'triad') {
       names = [...DARK_TRIAD_NAMES];
+    } else if (stage === 'future_quasi') {
+      names = ['灭世老人', ...DARK_TRIAD_NAMES, ...TIME_RIVER_FUTURE_QUASI_NAMES];
     } else {
       names = action.imperialPill ? ['灭世老人', ...DARK_TRIAD_NAMES] : ['灭世老人'];
     }
     const scaleFactor = this.calculateScaleFactor(getRealmAuthorityLevel(player));
     return names.map(name => {
-      const template = this.getEnemyTemplate(name);
+      const template = this.getEnemyTemplate(name)
+        || (name.startsWith('未来准仙帝·') ? {
+          ...this.getEnemyTemplate('未来准仙帝'),
+          name,
+        } : null);
       if (!template) throw new Error(`时间长河敌人配置缺失：${name}`);
       const enemy = buildTimeRiverAdversary(player, template, { scaleFactor });
       const built = action.imperialPill && isDarkTriadEmperor(name)
@@ -454,7 +466,9 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     let eraAccumulationChange = rollTimeRiverEraReward(outcome);
     if (outcome === 'victory' && stage === 'triad') eraAccumulationChange *= 3;
     if (outcome === 'victory' && stage === 'old_man') eraAccumulationChange = action.oldManReward || (action.imperialPill ? 30 : 10);
-    if (outcome === 'victory' && stage === 'initial' && primary.名号 === '荒天帝') eraAccumulationChange += 2;
+    if (outcome === 'victory' && stage === 'future_quasi') eraAccumulationChange = TIME_RIVER_FUTURE_REWARD;
+    const fixedReward = outcome === 'victory' ? getTimeRiverVictoryReward(primary.名号) : 0;
+    if (fixedReward) eraAccumulationChange = fixedReward;
     const enemyNames = getTimeRiverEnemyNames(primary.名号, enemies.slice(1));
     const resolvedTeam = Array.isArray(battleResult.A_team) ? battleResult.A_team : [combatants[0]];
     const memberResults = [];
@@ -472,6 +486,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
 
       const specialEvents = {};
       const penalties = {};
+      if (outcome === 'defeat' && stage === 'future_quasi') specialEvents.futureRescue = true;
       if (isFashan && outcome === 'defeat') {
         // 法身败退只结算法身气血，不将真身送入待援、炼化或过去身抹除。
         specialEvents.fashanDefeated = true;
@@ -496,6 +511,19 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
         }
       }
 
+      if (primary.名号 === '荒天帝') {
+        const teaching = rollHuangEmperorTeaching();
+        if (teaching) {
+          const teachingResult = applyHuangEmperorTeaching(player, teaching);
+          specialEvents.huangTeaching = {
+            name: teaching.name,
+            desc: teaching.desc,
+            gained: teachingResult.gained,
+            progress: teachingResult.progress,
+            mastered: teachingResult.mastered,
+          };
+        }
+      }
       if (isFashan) {
         player.法身当前血量 = player.当前血量;
         const body = await Read_player(id);
@@ -541,6 +569,16 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       }
     }
 
+    if (memberResults.some(result => result.specialEvents.futureRescue)) {
+      await this.openRescueWindow(usr_qq, action, {
+        retryStage: 'future_quasi',
+        primaryName: '未来准仙帝',
+        imperialPill: true,
+        enemyNames,
+        enemyState: this.captureEnemyState(enemies, battleResult),
+      });
+      return true;
+    }
     if (memberResults.some(result => result.specialEvents.rescueWindow)) {
       await this.openRescueWindow(usr_qq, action, {
         retryStage: stage === 'initial' ? 'solo' : stage,
@@ -570,11 +608,30 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
         return true;
       }
     }
+    if (outcome === 'victory' && stage === 'old_man' && action.imperialPill) {
+      const invasion = rollFutureQuasiEmperorInvasion();
+      if (invasion.summoned) {
+        await this.scheduleTimeRiverStage(usr_qq, action, 'future_quasi', {
+          primaryName: '未来准仙帝',
+          imperialPill: true,
+          enemyNames: invasion.enemyNames,
+          oldManReward: action.oldManReward,
+        });
+        return true;
+      }
+    }
     return false;
   }
 
   generateStageEncounter(player, action, enemies) {
     const stage = action.timeRiverStage || 'initial';
+    if (stage === 'future_quasi') {
+      return [
+        '【未来逆流·一打七】',
+        '灭世老人、苍帝、鸿帝、羽帝与未来三大准仙帝逆流而来，七尊黑暗身影同时封锁长河！',
+        '即便战败，时间长河下游的遮天三人组也会撕开时空前来救场。',
+      ];
+    }
     if (stage === 'triad') {
       const primaryName = action.primaryName || '黑暗准仙帝';
       const supporters = DARK_TRIAD_NAMES.filter(name => name !== primaryName).join('与');
@@ -1059,6 +1116,15 @@ async sendEncounterMessage(usr_qq, action, message) {
     } else {
       message.push(this.getDrawMessage(enemy));
     }
+    if (battleResult.specialEvents.futureRescue) {
+      message.push('【下游救场】你虽败于七尊黑暗身影，时间长河下游的遮天三人组已逆流而来，将你从炼化边缘救出；本阶段不触发炼化。');
+    }
+    if (battleResult.specialEvents.huangTeaching) {
+      const teach = battleResult.specialEvents.huangTeaching;
+      message.push(`【荒天帝赏识】荒天帝点头轻笑，传授${teach.name}一丝真意（${teach.gained}点，累计${teach.progress}/30）。`);
+      message.push(teach.desc);
+      if (teach.mastered) message.push(`【真意圆满】${teach.name}已掌握完整技能。`);
+    }
     // 神胎护道：已结出神胎的准仙帝以神胎道韵弹开厄土仙帝的推演
     if (battleResult.specialEvents.pastBodyResisted) {
       message.push('【神胎护道】');
@@ -1117,7 +1183,7 @@ if (battleResult.specialEvents.pastBodyExposed && battleResult.penalties.pastBod
       
       // 特殊敌人额外奖励提示
       if (enemy.名号 === "荒天帝") {
-        message.push(` 战胜绝世强者荒天帝，额外获得2点纪元积累！`);
+        message.push(` 荒天帝战斗奖励按15点纪元积累结算。`);
       }
     }
     message.push(`当前纪元积累：${battleResult.newEraAccumulation}/${battleResult.eraAccumulationCap}`);

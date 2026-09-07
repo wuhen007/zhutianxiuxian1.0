@@ -438,6 +438,11 @@ export function applyHeavenWillSlashOnAdvancement(
     自身之道阶段: 0,
     修炼次数: 0,
   };
+  const snapshot = (player) => Object.fromEntries(
+    [...Object.keys(realmDefaults), '修为', '血气', '当前血量', '道伤']
+      .map((field) => [field, number(player?.[field], realmDefaults[field] || 0)]),
+  );
+  const before = snapshot(next);
   for (const [field, fallback] of Object.entries(realmDefaults)) {
     next[field] = previous?.[field] ?? fallback;
   }
@@ -447,5 +452,69 @@ export function applyHeavenWillSlashOnAdvancement(
   next.道伤 = integer(next.道伤) + 3;
   next.道基状态 = '天意一刀·道基斩开';
   next.天意一刀斩道次数 = integer(next.天意一刀斩道次数) + 1;
-  return { triggered: true, untilWorldYear: state.heavenSlashUntilWorldYear };
+  return {
+    triggered: true,
+    untilWorldYear: state.heavenSlashUntilWorldYear,
+    worldYear: integer(worldYear),
+    name: String(next.名号 || '道友'),
+    count: next.天意一刀斩道次数,
+    before,
+    after: snapshot(next),
+  };
+}
+
+export function formatHeavenWillSlashStatus(state, worldYear) {
+  const now = integer(worldYear);
+  const until = integer(state?.heavenSlashUntilWorldYear);
+  if (until <= now) {
+    return [
+      '【天意一刀·仙路封锁未生效】',
+      until > 0 ? '横在仙门前的刀痕已不再拦路，但旧伤仍留在道基之中。' : '天门尚开，诸天之间未见那道截断仙路的刀痕。',
+      '当前未封锁人道晋入仙道；既有道伤、境界与资源损失不会随期限结束自动复原。',
+    ].join('\n');
+  }
+  return [
+    '【天意一刀·仙路横断】',
+    '祭火已熄，诸天却未等来黎明。一道无形刀痕横在仙门之前，截断新生的仙道秩序。',
+    '这不是雷劫尚未渡尽，而是劫后天地仍不容新仙立足。',
+    `诸天纪年${now}年｜尚余${until - now}个世界年｜至${until}年解除。`,
+    '【影响】人道跨入仙道时，进阶会在存档结算中被斩回；包括大帝成红尘仙、至尊成真仙等。',
+    '【代价】修为、血气清零；正常血量压至1；道伤取整后+3，并累计一次斩道记录。',
+    '已在仙道领域者，不会仅因本效果被主动降境。遗留道伤仍可能引发后续掉境界、损寿元与元神。',
+    '斩道次数按保存结算计数，境界自动同步也会参与判定，并不等于渡劫次数。',
+    '使用 #天意一刀状态 查看当前期限与个人最近一次斩道结算。',
+  ].join('\n');
+}
+
+export function formatHeavenWillSlashImpact(record, levels = {}) {
+  const before = record.before || {};
+  const after = record.after || {};
+  const value = (numberValue) => number(numberValue).toLocaleString('zh-CN', {
+    maximumFractionDigits: 2,
+  });
+  const realms = [
+    ['mijinglevel_id', '人体秘境', levels.Levelmijing_list],
+    ['xiangulevel_id', '仙古今世法', levels.xiangujinshi_list],
+    ['huafenlevel_id', '花粉进化路', levels.huafen_list],
+    ['自身之道阶段', '自身之道阶段'],
+    ['修炼次数', '己道修炼次数'],
+  ].filter(([field]) => before[field] !== after[field]).map(([field, label, list]) => {
+    const name = (id) => list?.find((realm) => Number(realm.level_id) === Number(id))?.level
+      || String(id);
+    return `${label}：${name(before[field])} → ${name(after[field])}`;
+  });
+  return [
+    '【天意一刀·仙基被斩】',
+    `${record.name || '道友'}身畔仙光方起，天幕深处便垂下一道苍白刀光。它越过血肉，斩在刚刚续上的仙道根基之中，万千道纹随之黯灭。`,
+    '此刀斩的是新生仙基；即便雷劫已经渡过，也不代表此次进阶已在现世落定。',
+    '【实际结算】本次仙道进阶被撤回，境界与己道进度按保存前回退：',
+    ...realms,
+    `修为：${value(before.修为)} → ${value(after.修为)}｜血气：${value(before.血气)} → ${value(after.血气)}`,
+    `当前血量：${value(before.当前血量)} → ${value(after.当前血量)}｜道伤：${value(before.道伤)} → ${value(after.道伤)}`,
+    `本轮连续结算触发${integer(record.occurrences) || 1}次｜累计被斩${integer(record.count)}次（按保存计数，并非渡劫次数）。`,
+    `触发于诸天纪年${integer(record.worldYear)}年，当时尚余${Math.max(0, integer(record.untilWorldYear) - integer(record.worldYear))}个世界年；至${integer(record.untilWorldYear)}年解除。`,
+    '道伤不是单纯扣血，仍可能引发境界跌落、寿元与元神损失；疗伤和封锁到期是两回事。',
+    '若回血或开启内景也出现此提示，说明存档结算再次触发了仙道判定，请先停止重复操作并联系管理核查。',
+    '使用 #天意一刀状态 查看最新期限与记录。',
+  ].join('\n');
 }

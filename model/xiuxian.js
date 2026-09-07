@@ -245,7 +245,9 @@ import { isEternalGuardAction } from './dimensionGuard.js';
 import {
   applyHeavenWillSlashOnAdvancement,
   ensureStrangeSacrificeState,
+  formatHeavenWillSlashImpact,
 } from './strangeSacrifice.js';
+import { queueHeavenWillSlashNotice } from './heavenWillSlashNotice.js';
 import { ensureExtraCultivationState } from './extraCultivation.js';
 import { calculateFlowerExtremeBonus, ensureFlowerPollenState, getFlowerPathAttributeMultiplier } from './flowerPollenPath.js';
 import { calculateFlowerFieldBonus } from './flowerPollenField.js';
@@ -1259,6 +1261,7 @@ export async function Write_player(usr_qq, player, options = {}) {
   await assertTribulationWriteAllowed(usr_qq, player);
   let dir = path.join(__PATH.player_path, `${usr_qq}.json`);
   let previousPlayer = null;
+  let heavenSlash = null;
   if (fs.existsSync(dir)) {
     try {
       previousPlayer = JSON.parse(fs.readFileSync(dir, 'utf8'));
@@ -1283,7 +1286,8 @@ export async function Write_player(usr_qq, player, options = {}) {
       );
       const slash = applyHeavenWillSlashOnAdvancement(previousPlayer, player, ritualState, currentWorldYear);
       if (slash.triggered) {
-        player.天意一刀提示 = `天意一刀持续至诸天纪年${slash.untilWorldYear}年，本次仙道进阶已被斩断。`;
+        heavenSlash = slash;
+        player.天意一刀提示 = formatHeavenWillSlashImpact(slash, data);
         console.warn(`[天意一刀] 玩家${usr_qq}强行进阶仙道领域，道基被斩开`);
       }
     } catch (error) {
@@ -1298,6 +1302,7 @@ export async function Write_player(usr_qq, player, options = {}) {
   releaseJuelingLifespanForAuthority(player);
   writeJsonAtomically(dir, player);
   markZhutianMirrorSnapshot(player);
+  if (heavenSlash) queueHeavenWillSlashNotice(usr_qq, heavenSlash, data, options.event);
   return;
   });
 }

@@ -22,9 +22,11 @@ export function repairSupremeBoneManifestation(player) {
   const reachedBloodExtreme = new Set((player?.极境 || []).map(String)).has('2');
   // 仅「天生至尊」(阶段 1) 在达到搬血极境后自动补齐并显化至尊骨；
   // 涅槃·至尊 / 终极涅槃·至尊 须走 #至尊试炼 进阶，不在此自动显化。
-  if (stage !== 1 || !reachedBloodExtreme || player?.至尊骨) return false;
+  if (stage !== 1 || !reachedBloodExtreme || player?.至尊之路?.试炼?.类型 === 'nirvana') return false;
+  // 洗回天生至尊时校正高阶残留骨状态，保留初现与已斩出的正常状态。
+  if (player?.至尊骨 && !['涅槃再生', '已舍入血肉', '血肉铭骨'].includes(player.至尊骨)) return false;
 
-  player.至尊骨 = [null, '初现', '涅槃再生', '血肉铭骨'][stage];
+  player.至尊骨 = '初现';
   return true;
 }
 
@@ -33,12 +35,13 @@ export function ensureSupremePath(player) {
   if (stage < 1) return null;
 
   const old = player.至尊之路 || {};
+  const trialStage = old.试炼?.类型 === 'nirvana' ? 1 : old.试炼?.类型 === 'ultimate' ? 2 : 0;
   player.至尊之路 = {
     阶段: stage,
     仙骨: Boolean(old.仙骨),
     重瞳: Boolean(old.重瞳),
     共鸣: Boolean(old.共鸣),
-    试炼: old.试炼 || null,
+    试炼: trialStage === stage ? old.试炼 : null,
   };
   player.至尊之路.称号 = getSupremeTitle(player);
   return player.至尊之路;

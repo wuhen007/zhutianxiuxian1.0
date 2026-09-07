@@ -9,6 +9,15 @@ export const CANG_EMPEROR_ATTRIBUTE_RATE = 0.8;
 export const CANG_EMPEROR_SUPPRESSION_ACTIONS = 2;
 export const TIME_RIVER_PHASE_DURATION_MS = 15 * 60 * 1000;
 export const TIME_RIVER_RESCUE_WINDOW_MS = 10 * 60 * 1000;
+export const TIME_RIVER_HUANG_REWARD = 15;
+export const TIME_RIVER_CORPSE_REWARD = 15;
+export const TIME_RIVER_FUTURE_REWARD = 45;
+export const TIME_RIVER_FUTURE_EVENT_RATE = 0.3;
+export const TIME_RIVER_TEACHING_GAIN = 2;
+export const TIME_RIVER_TEACHING_MAX = 30;
+export const TIME_RIVER_FUTURE_QUASI_NAMES = Object.freeze([
+  '未来准仙帝·甲', '未来准仙帝·乙', '未来准仙帝·丙',
+]);
 // 时间长河敌人速度改为定值，不再随玩家境界/倍率浮动
 export const TIME_RIVER_BASE_SPEED = 1150;
 export const TIME_RIVER_PEAK_SPEED = 1250;
@@ -33,6 +42,24 @@ export const TIME_RIVER_COUNTER_SKILLS = Object.freeze([
   '者字秘',
   '兵字秘',
 ]);
+
+export const TIME_RIVER_HUANG_TEACHINGS = Object.freeze({
+  荒无剑诀: Object.freeze({
+    name: '荒无剑诀',
+    type: '剑道',
+    desc: '荒天帝斩断万古因果的帝剑真意，剑出无我，独断万古。',
+  }),
+  岁月之钟: Object.freeze({
+    name: '岁月之钟',
+    type: '时间神通',
+    desc: '以自身道果为钟，钟声荡开岁月长河，定住因果、磨灭敌手。',
+  }),
+  仙帝他化自在法: Object.freeze({
+    name: '仙帝他化自在法',
+    type: '帝道秘法',
+    desc: '映照诸世他我，化出不同岁月的无上身，合击一念而镇压万古。',
+  }),
+});
 
 export const TIME_RIVER_ADVERSARY_PROFILES = Object.freeze({
   叶天帝: Object.freeze({
@@ -121,6 +148,51 @@ export const TIME_RIVER_SKILL_LIBRARY = Object.freeze([
     msg1: '祭灭万物！苍帝抬手祭尽诸天万象，黑暗火光将古今未来压成一线！',
     msg2: '被祭灭之力钉死于岁月源头，神魂与肉身同时崩解，复生印记剧烈震荡！',
     攻击类型: '元神',
+    稀有度: 10,
+  },
+  {
+    name: '荒无剑诀',
+    class: '功法',
+    pr: 0.12,
+    cnt: -1,
+    beilv: 18,
+    other: 0,
+    真意传授: true,
+    真意上限: TIME_RIVER_TEACHING_MAX,
+    传授真意每次: TIME_RIVER_TEACHING_GAIN,
+    msg1: '荒天帝抬手，帝剑真意横贯古今，一剑斩断万古因果！',
+    msg2: '剑光所至，因果、岁月与万法皆被斩开！',
+    攻击类型: '近战',
+    稀有度: 10,
+  },
+  {
+    name: '岁月之钟',
+    class: '功法',
+    pr: 0.1,
+    cnt: -1,
+    beilv: 16,
+    other: 0,
+    真意传授: true,
+    真意上限: TIME_RIVER_TEACHING_MAX,
+    传授真意每次: TIME_RIVER_TEACHING_GAIN,
+    msg1: '钟声自道果深处响起，岁月长河被一圈圈涟漪定住！',
+    msg2: '敌手困于自身因果，寿元、神魂与战意一同衰败！',
+    攻击类型: '时间',
+    稀有度: 10,
+  },
+  {
+    name: '仙帝他化自在法',
+    class: '功法',
+    pr: 0.01,
+    cnt: -1,
+    beilv: 22,
+    other: 0,
+    真意传授: true,
+    真意上限: TIME_RIVER_TEACHING_MAX,
+    传授真意每次: TIME_RIVER_TEACHING_GAIN,
+    msg1: '荒天帝映照诸世他我，万古时空中走出一道道无上身影！',
+    msg2: '他化自在，化尽诸世法与身，合击之下帝威镇压万古！',
+    攻击类型: '神通',
     稀有度: 10,
   },
 ]);
@@ -330,10 +402,51 @@ export function rollTimeRiverEraReward(outcome, random = Math.random) {
   return outcome === 'victory' ? randomInt(3, 5, random) : randomInt(1, 2, random);
 }
 
+export function getTimeRiverVictoryReward(enemyName) {
+  const name = normalizeTimeRiverSpeedName(enemyName);
+  if (name === '荒天帝') return TIME_RIVER_HUANG_REWARD;
+  if (name === '尸骸仙帝') return TIME_RIVER_CORPSE_REWARD;
+  return 0;
+}
+
 export function rollDarkTriadContinuation(random = Math.random) {
   if (number(random(), 1) >= 0.3) return { summoned: false, imperialPill: false, reward: 0 };
   const imperialPill = number(random(), 1) < 0.5;
   return { summoned: true, imperialPill, reward: imperialPill ? 30 : 10 };
+}
+
+export function rollFutureQuasiEmperorInvasion(random = Math.random) {
+  const summoned = number(random(), 1) < TIME_RIVER_FUTURE_EVENT_RATE;
+  return {
+    summoned,
+    enemyNames: summoned ? [...TIME_RIVER_FUTURE_QUASI_NAMES] : [],
+    reward: summoned ? TIME_RIVER_FUTURE_REWARD : 0,
+    rescue: summoned,
+  };
+}
+
+export function getFutureQuasiEmperorBattleRoster() {
+  return ['灭世老人', ...DARK_TRIAD_NAMES, ...TIME_RIVER_FUTURE_QUASI_NAMES];
+}
+
+export function rollHuangEmperorTeaching(random = Math.random) {
+  const roll = Math.min(0.999999999, Math.max(0, number(random(), 1)));
+  if (roll < 0.01) return { ...TIME_RIVER_HUANG_TEACHINGS.仙帝他化自在法 };
+  if (roll < 0.36) return { ...TIME_RIVER_HUANG_TEACHINGS.荒无剑诀 };
+  if (roll < 0.71) return { ...TIME_RIVER_HUANG_TEACHINGS.岁月之钟 };
+  return null;
+}
+
+export function applyHuangEmperorTeaching(player, teaching, gain = TIME_RIVER_TEACHING_GAIN) {
+  if (!player || !teaching?.name) return { gained: 0, progress: 0, mastered: false };
+  const store = player.时间长河真意 ||= {};
+  const current = Math.max(0, Math.trunc(number(store[teaching.name])));
+  const next = Math.min(TIME_RIVER_TEACHING_MAX, current + Math.max(0, Math.trunc(number(gain, TIME_RIVER_TEACHING_GAIN))));
+  store[teaching.name] = next;
+  player.学习的功法 ||= [];
+  const mastered = next >= TIME_RIVER_TEACHING_MAX && !player.学习的功法.includes(teaching.name);
+  if (mastered) player.学习的功法.push(teaching.name);
+  return { gained: next - current, progress: next, mastered };
 }
 
 export function scaleTimeRiverAdversary(enemy, ratio = 0.7) {

@@ -1,0 +1,18 @@
+{
+	"version": 2,
+	"emperorEraStartedAt": 0,
+	"highlandDestroyed": false,
+	"lastTickAt": 1788747360026,
+	"lastGuardedAt": 0,
+	"nextAssaultAt": null,
+	"nextCalamityAt": null,
+	"assaultCount": 0,
+	"calamityCount": 0,
+	"defenseCount": 0,
+	"highlandTerrorCount": 0,
+	"dimensionCalamityCount": 0,
+	"lastAssaultAt": 0,
+	"lastCalamityAt": 0,
+	"lastThreatType": "",
+	"lastOutcome": "dormant"
+}

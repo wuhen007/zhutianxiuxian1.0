@@ -4860,7 +4860,8 @@ async reshapeLinggen(e) {
      "无演无尽者", 
      "圆神", 
      "先天混沌圣体道胎", 
-     "如梦本尊"
+     "如梦本尊", 
+     "如梦化身"
    ];
    
    if (forbiddenLinggens.includes(linggenName) && authorityLevel < 23) {

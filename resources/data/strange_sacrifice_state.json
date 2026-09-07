@@ -1,0 +1,17 @@
+{
+	"version": 1,
+	"phase": "dormant",
+	"cycleStartedWorldYear": 0,
+	"firstImmortalEmperorWorldYear": null,
+	"smallDueWorldYear": 400000,
+	"bigDueWorldYear": null,
+	"activeEvent": null,
+	"heavenSlashUntilWorldYear": 0,
+	"smallCount": 0,
+	"bigCount": 0,
+	"warnedSmallDueWorldYear": null,
+	"warnedBigDueWorldYear": null,
+	"participants": {},
+	"successfulDefenders": 0,
+	"lastOutcome": null
+}

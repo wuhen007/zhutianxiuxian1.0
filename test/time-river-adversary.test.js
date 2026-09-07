@@ -32,6 +32,11 @@ import {
   rollDarkTriadContinuation,
   rollTimeRiverAttributeMultiplier,
   rollTimeRiverEraReward,
+  getTimeRiverVictoryReward,
+  rollFutureQuasiEmperorInvasion,
+  getFutureQuasiEmperorBattleRoster,
+  rollHuangEmperorTeaching,
+  applyHuangEmperorTeaching,
   scaleTimeRiverAdversary,
   tickCangEmperorOpeningSuppression,
   tryDarkTriadRevival,
@@ -227,6 +232,26 @@ test('时间长河阶段、奖励和三帝后续概率符合配置', () => {
   assert.deepEqual(rollDarkTriadContinuation(() => rolls.shift()), { summoned: true, imperialPill: true, reward: 30 });
   rolls = [0.29, 0.5];
   assert.deepEqual(rollDarkTriadContinuation(() => rolls.shift()), { summoned: true, imperialPill: false, reward: 10 });
+});
+
+test('荒天帝、尸骸仙帝与未来逆流奖励及真意传授', () => {
+  assert.equal(getTimeRiverVictoryReward('荒天帝'), 15);
+  assert.equal(getTimeRiverVictoryReward('尸骸仙帝'), 15);
+  assert.equal(getTimeRiverVictoryReward('未来准仙帝·甲'), 0);
+  assert.deepEqual(rollFutureQuasiEmperorInvasion(() => 0), {
+    summoned: true,
+    enemyNames: ['未来准仙帝·甲', '未来准仙帝·乙', '未来准仙帝·丙'],
+    reward: 45,
+    rescue: true,
+  });
+  assert.equal(getFutureQuasiEmperorBattleRoster().length, 7);
+  const player = { 学习的功法: [] };
+  const teaching = rollHuangEmperorTeaching(() => 0);
+  assert.equal(teaching.name, '仙帝他化自在法');
+  assert.equal(applyHuangEmperorTeaching(player, teaching).progress, 2);
+  for (let i = 0; i < 14; i++) applyHuangEmperorTeaching(player, teaching);
+  assert.equal(player.时间长河真意['仙帝他化自在法'], 30);
+  assert.ok(player.学习的功法.includes('仙帝他化自在法'));
 });
 
 test('帝丹恢复七成全属性，献祭按三体系境界分四档并满血增幅', () => {

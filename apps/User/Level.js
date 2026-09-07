@@ -105,6 +105,7 @@ import {
   getReverseLifeCostProfile,
 } from '../../model/daoHeart.js';
 import { consumePlaneFavorForWudao } from '../../model/foreignCalamity.js';
+import { flushHeavenWillSlashNotice } from '../../model/heavenWillSlashNotice.js';
 
 function consumeBreakthroughPill(player) {
   if (player.breakthrough !== true) return 0;
@@ -546,6 +547,7 @@ async nihuojiushi(e) {
     player.生命加成 += powerGain3;
     
     // 第九世成就红尘仙
+    let successMessage;
     if (currentLife === 9) {
         player.mijinglevel_id = 17;
         player.境界称号 = "红尘仙";
@@ -557,7 +559,7 @@ async nihuojiushi(e) {
         const items = ['羽化', '太上', '虚空'];
         const randomWord = items[Math.floor(Math.random() * items.length)];
 
-        await e.reply([
+        successMessage = [
             `九世圆满！红尘为仙！`,
             `九世所行汇聚为：【${player.红尘道果}】`,
             ...(companionMijing.changed ? [`人体秘境同步圆满：${companionMijingName}`] : []),
@@ -565,9 +567,9 @@ async nihuojiushi(e) {
             `掌缘生灭，万古长存`,
             `《葬仙纪元》记载：`,
            `「${player.名号}活出九世，于${eraNames[currentEra.index]}超脱红尘，成就不灭仙基」`
-        ].join("\n"));
+        ].join("\n");
     } else {
-        await e.reply([
+        successMessage = [
             `第${currentLife}世逆活成功！`,
             `获得仙道感悟：`,
             `  攻击 +${bigNumberTransform(powerGain)}`,
@@ -577,15 +579,21 @@ async nihuojiushi(e) {
             `距红尘仙还需：${9 - currentLife}世蜕变`,
             `当前仙基：${currentLife}/9`,
             `下次逆活需等待：5000年后`
-        ].join("\n"));
+        ].join("\n");
     }
     
     player.当前血量 = player.血量上限;
-    await Write_player(usr_qq, player);
+    const slashesBefore = Number(player.天意一刀斩道次数) || 0;
+    await Write_player(usr_qq, player, { event: e });
     await Write_equipment(usr_qq, equipment);
     const refreshedPlayer = await Read_player(usr_qq);
     refreshedPlayer.当前血量 = refreshedPlayer.血量上限;
-    await Write_player(usr_qq, refreshedPlayer);
+    await Write_player(usr_qq, refreshedPlayer, { event: e });
+    if ((Number(refreshedPlayer.天意一刀斩道次数) || 0) > slashesBefore) {
+      await flushHeavenWillSlashNotice(usr_qq, e);
+      return;
+    }
+    await e.reply(successMessage);
 }
 async zhengdao(e) {
     if (!e.isGroup) {

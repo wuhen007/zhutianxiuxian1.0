@@ -72,6 +72,60 @@ test('达到搬血极境的天生至尊自动补齐显化至尊骨，其余至�
   assert.equal(repairSupremeBoneManifestation({ 灵根: { name: '天生至尊' }, 极境: [] }), false);
 });
 
+test('高阶至尊洗掉灵根后再洗回天生至尊可重新开启涅槃', () => {
+  for (const [name, bone, trial] of [
+    ['涅槃·至尊', '涅槃再生', null],
+    ['涅槃·至尊', '已舍入血肉', { 类型: 'ultimate', 胜场: 2, 目标: 4 }],
+    ['终极涅槃·至尊', '血肉铭骨', null],
+  ]) {
+    const player = {
+      灵根: { name },
+      至尊骨: bone,
+      极境: [2, '3'],
+      学习的功法: ['原始真解神引篇', '上苍之手', '轮回宝术'],
+      至尊之路: { 仙骨: true, 重瞳: true, 共鸣: true, 试炼: trial },
+    };
+    ensureSupremePath(player);
+    const learned = [...player.学习的功法];
+
+    player.灵根 = { name: '混沌体' };
+    assert.equal(repairSupremeBoneManifestation(player), false);
+    assert.equal(ensureSupremePath(player), null);
+    assert.equal(player.至尊骨, bone);
+
+    player.灵根 = { name: '天生至尊' };
+    assert.equal(repairSupremeBoneManifestation(player), true, bone);
+    const path = ensureSupremePath(player);
+    assert.equal(player.至尊骨, '初现');
+    assert.equal(path.阶段, 1);
+    assert.equal(path.试炼, null);
+    assert.deepEqual(getNirvanaMissing(player), []);
+    assert.deepEqual(player.学习的功法, learned);
+    assert.ok(path.仙骨 && path.重瞳 && path.共鸣);
+    assert.equal(repairSupremeBoneManifestation(player), false);
+  }
+});
+
+test('至尊试炼仅保留当前阶段进度，进行失骨涅槃时保持无骨状态', () => {
+  for (const [name, kind, keep] of [
+    ['天生至尊', 'nirvana', true],
+    ['涅槃·至尊', 'ultimate', true],
+    ['天生至尊', 'ultimate', false],
+    ['涅槃·至尊', 'nirvana', false],
+    ['终极涅槃·至尊', 'ultimate', false],
+  ]) {
+    const trial = { 类型: kind, 胜场: 2, 目标: getSupremeTrialSpec(kind).target };
+    const player = { 灵根: { name }, 极境: [2], 至尊之路: { 试炼: trial } };
+    const path = ensureSupremePath(player);
+    assert.equal(path.试炼, keep ? trial : null);
+    if (keep) {
+      assert.equal(repairSupremeBoneManifestation(player), false);
+      assert.equal(player.至尊骨, undefined);
+      assert.equal(path.试炼.胜场, 2);
+    }
+  }
+});
+
 test('重瞳与仙骨使用组合技能但保留至尊骨本命神通', () => {
   const player = {
     灵根: { name: '终极涅槃·至尊' },

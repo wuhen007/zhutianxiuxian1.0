@@ -30,6 +30,7 @@ import { deletePlayerDataBundle } from './playerDeletion.js';
 import { getDailyTaskDateKey } from '../../model/dailyTask.js';
 import { buildUniqueItemRarityMap } from '../../model/najieRaritySync.js';
 import { backfillXianguEternalClaims } from '../../model/xianguEternalBackfill.js';
+import { reviveFromYongJi } from '../Boss/YongJiList.js';
 export class AdminSuper extends plugin {
   constructor() {
     super({
@@ -752,6 +753,12 @@ player.daofa = `已开启，当前剩余${remainingDays}天`;
     //对方qq
     let qq = atItem[0].qq.replace('qg_','');
     qq=await channel(qq)
+    // 永寂玩家正式存档已清除，先从永寂备份中解除并恢复
+    const yongjiRevived = await reviveFromYongJi(qq);
+    if (yongjiRevived.success) {
+      e.reply(`已解除！\n已将${yongjiRevived.playerName}从永寂中唤回，现世存档已恢复。`);
+      return true;
+    }
     //检查存档
     let ifexistplay = await existplayer(qq);
     if (!ifexistplay) return false;
