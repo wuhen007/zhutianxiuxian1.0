@@ -1,0 +1,25 @@
+[Unit]
+Description=Zhutian public web gateway
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+User=zhutian-web
+Group=zhutian-web
+WorkingDirectory=/opt/zhutian-web/current
+EnvironmentFile=/etc/zhutian-web/gateway.env
+ExecStart=/usr/bin/node web-gateway/server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/zhutian-web
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

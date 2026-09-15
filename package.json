@@ -2,7 +2,9 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "test:world-chat-live": "node scripts/world-chat-live.mjs"
+    "test:world-chat-live": "node scripts/world-chat-live.mjs",
+    "build:web-gateway": "node scripts/build-web-gateway.mjs",
+    "start:web-gateway": "node web-gateway/server.js"
   },
   "devDependencies": {
     "prettier": "2.8.7"

@@ -21,6 +21,12 @@ git clone https://gitee.com/mo-wuming/zhutianxiuxian1.0.git ./plugins/zhutianxiu
 pnpm i    
 ```
 
+## 无尽网页公共中转
+
+默认中继模式下，玩家共用核心服务器的网页入口，各区服机器人主动连接世界聊天总机；
+网页请求按票据回到原区服处理，机器人不再自动启动本机无尽网页端口。
+服务器管理员的独立网关构建、部署、健康检查和回滚说明见 [公共网页网关](web-gateway/README.md)。
+
 ## 一键安全更新
 
 机器人主人可直接发送：

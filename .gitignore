@@ -56,3 +56,7 @@ config/endless-web.local.json
 worldchat-server/clients.json
 worldchat-server/*.tmp
 apps/worldChat/*.tmp
+
+# Standalone public gateway releases and private runtime identity
+dist/web-gateway/
+gateway-data/
