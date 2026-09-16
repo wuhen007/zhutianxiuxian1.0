@@ -826,7 +826,8 @@ export async function createRelayTicket(
       }
       if (result?.ok && result.token) return result.token;
     }
-    if (result?.reason !== 'disconnected') break;
+    if (result?.reason === 'timeout') client.reconnect?.('ticket_timeout');
+    if (!['disconnected', 'timeout'].includes(result?.reason)) break;
   }
   throw new Error(`网页中继签发失败：${result?.reason || 'unknown'}`);
 }
@@ -1140,6 +1141,11 @@ export function createEndlessWebHttpServer({
   const worldPage = fs.readFileSync(path.join(worldWebRoot, 'index.html'), 'utf8')
     .replace(/src="\/world\/app\.js(?:\?[^"]*)?"/, `src="${worldScriptUrl}"`)
     .replace(/href="\/world\/style\.css(?:\?[^"]*)?"/, `href="${worldStyleUrl}"`);
+  const endlessScript = path.join(webRoot, 'app.js');
+  const endlessScriptHash = createHash('sha256').update(fs.readFileSync(endlessScript)).digest('hex').slice(0, 20);
+  const endlessScriptUrl = `/endless/app.${endlessScriptHash}.js`;
+  const endlessPage = fs.readFileSync(path.join(webRoot, 'index.html'), 'utf8')
+    .replace(/src="\/endless\/app\.js(?:\?[^"]*)?"/, `src="${endlessScriptUrl}"`);
   async function withWorldMedia(session, payload) {
     if (!worldMedia || !payload?.state) return payload;
     const { state, ids } = worldMedia.rewrite(payload.state);
@@ -1167,9 +1173,16 @@ export function createEndlessWebHttpServer({
         }
       }
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/endless')) {
-        return sendFile(res, path.join(webRoot, 'index.html'), 'text/html; charset=utf-8');
+        res.writeHead(200, {
+          ...securityHeaders('text/html; charset=utf-8', 'no-store'),
+          'Content-Length': Buffer.byteLength(endlessPage),
+        });
+        return res.end(endlessPage);
       }
-      if (req.method === 'GET' && url.pathname === '/endless/app.js') return sendFile(res, path.join(webRoot, 'app.js'), 'text/javascript; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === endlessScriptUrl)
+        return sendFile(res, endlessScript, 'text/javascript; charset=utf-8', 'public, max-age=31536000, immutable');
+      if (req.method === 'GET' && url.pathname === '/endless/app.js')
+        return sendFile(res, endlessScript, 'text/javascript; charset=utf-8', 'no-store');
       if (req.method === 'GET' && url.pathname === '/endless/style.css') return sendFile(res, path.join(webRoot, 'style.css'), 'text/css; charset=utf-8');
       if (req.method === 'GET' && url.pathname === '/endless/realm.jpg')
         return sendFile(res, path.join(pluginRoot, 'resources', 'img', 'help', 'zhutian.jpg'), 'image/jpeg');
