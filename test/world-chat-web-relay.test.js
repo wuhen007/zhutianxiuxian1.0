@@ -125,4 +125,31 @@ test('网页票据由总机单次消费并把请求转回签发区服', async t 
     targetId: 'star-1',
     operationId: 'canglan-relay-operation-0001',
   });
+
+  const worldTicket = await target.createWebTicket('world', {
+    userId: 'world-player', groupId: 'world-group',
+  });
+  assert.equal(worldTicket.ok, true);
+  const worldSession = await gateway.openWebSession(worldTicket.token);
+  assert.equal(worldSession.ok, true);
+  assert.equal(worldSession.kind, 'world');
+  for (const operation of ['state', 'message', 'trade.create', 'trade.accept', 'trade.cancel']) {
+    const result = await gateway.webRequest(worldSession.session_id, operation, {
+      operationId: crypto.randomUUID(),
+    });
+    assert.equal(result.ok, true, operation);
+    assert.equal(calls.at(-1).kind, 'world');
+    assert.equal(calls.at(-1).identity.userId, 'world-player');
+    assert.equal(calls.at(-1).identity.groupId, 'world-group');
+  }
+  const callCount = calls.length;
+  assert.equal((await gateway.webRequest(worldSession.session_id, 'action')).reason, 'invalid_web_operation');
+  assert.equal((await gateway.webRequest(opened.session_id, 'trade.create')).reason, 'invalid_web_operation');
+  assert.equal((await target.webRequest(worldSession.session_id, 'state')).reason, 'web_session_mismatch');
+  assert.equal((await gateway.openWebSession(worldTicket.token)).reason, 'web_ticket_expired');
+  assert.equal(calls.length, callCount);
+  target.close();
+  await waitFor(() => server.wss.clients.size === 1, 'source did not disconnect from the relay');
+  const afterClose = await gateway.webRequest(worldSession.session_id, 'state');
+  assert.equal(afterClose.reason, 'target_offline');
 });

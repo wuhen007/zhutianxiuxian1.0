@@ -110,17 +110,20 @@ test('public HTTP gateway serves two source bots without any local game controll
   });
   await waitFor(() => Object.values(clients).every(client => client.authed));
 
-  for (const asset of ['/endless', '/endless/app.js', '/endless/style.css', '/endless/realm.jpg', '/endless/number.ttf']) {
+  for (const asset of ['/endless', '/endless/app.js', '/endless/style.css', '/endless/realm.jpg', '/endless/number.ttf',
+    '/world', '/world/app.js', '/world/style.css', '/world/lucide.min.js', '/world/number.ttf']) {
     const response = await fetch(`${config.publicUrl}${asset}`);
     assert.equal(response.status, 200, asset);
     assert.ok((await response.arrayBuffer()).byteLength > 0, asset);
   }
   assert.equal((await fetch(`${config.publicUrl}/readyz`)).status, 200);
   assert.equal((await fetch(`${config.publicUrl}/api/endless/state`)).status, 401);
-  assert.equal((await fetch(`${config.publicUrl}/api/world/state`)).status, 503);
+  assert.equal((await fetch(`${config.publicUrl}/api/world/state`)).status, 401);
 
   async function openSession(client, kind, userId) {
-    const ticket = await client.createWebTicket(kind, { userId, teamId: `${userId}_team`, runId: `${userId}_run` });
+    const ticket = await client.createWebTicket(kind, {
+      userId, groupId: `${userId}_group`, teamId: `${userId}_team`, runId: `${userId}_run`,
+    });
     assert.equal(ticket.ok, true);
     const response = await fetch(`${config.publicUrl}/api/${kind}/session`, {
       method: 'POST',
@@ -158,10 +161,53 @@ test('public HTTP gateway serves two source bots without any local game controll
   }
   assert.deepEqual(calls.map(call => call.id), ['bot_a', 'bot_a', 'bot_b', 'bot_b', 'bot_b', 'bot_b']);
 
+  calls.length = 0;
+  for (const id of ['bot_a', 'bot_b']) {
+    const cookie = await openSession(clients[id], 'world', `${id}_viewer`);
+    const state = await fetch(`${config.publicUrl}/api/world/state`, { headers: { cookie } });
+    assert.equal(state.status, 200);
+    assert.deepEqual((await state.json()).state, { bot: id, userId: `${id}_viewer` });
+    assert.equal(calls.at(-1).kind, 'world');
+    assert.equal(calls.at(-1).identity.groupId, `${id}_viewer_group`);
+    assert.equal((await fetch(`${config.publicUrl}/api/endless/state`, { headers: { cookie } })).status, 401);
+
+    for (const [route, operation] of [
+      ['message', 'message'], ['trade', 'trade.create'],
+      ['trade/accept', 'trade.accept'], ['trade/cancel', 'trade.cancel'],
+    ]) {
+      const body = { operationId: crypto.randomUUID(), text: 'test', code: 'TEST-ONLY', userId: 'forged-user' };
+      const request = {
+        method: 'POST',
+        headers: { cookie, origin: config.publicUrl, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      };
+      const response = await fetch(`${config.publicUrl}/api/world/${route}`, request);
+      assert.equal(response.status, 200);
+      assert.deepEqual((await response.json()).state, { bot: id, userId: `${id}_viewer` });
+      assert.equal(calls.at(-1).operation, operation);
+      assert.equal(calls.at(-1).identity.userId, `${id}_viewer`);
+      assert.deepEqual(calls.at(-1).body, body);
+      const beforeDenied = calls.length;
+      const denied = await fetch(`${config.publicUrl}/api/world/${route}`, {
+        ...request, headers: { ...request.headers, origin: 'https://other.example' },
+      });
+      assert.equal(denied.status, 403);
+      assert.equal(calls.length, beforeDenied);
+    }
+    const unknown = await fetch(`${config.publicUrl}/api/world/remove-player`, {
+      method: 'POST', headers: { cookie, origin: config.publicUrl },
+    });
+    assert.equal(unknown.status, 404);
+  }
+  assert.deepEqual(calls.map(call => call.id), [
+    ...Array(5).fill('bot_a'), ...Array(5).fill('bot_b'),
+  ]);
+
   clients.gateway.authed = false;
   assert.equal((await fetch(`${config.publicUrl}/readyz`)).status, 503);
   assert.equal((await fetch(`${config.publicUrl}/healthz`)).status, 200);
   assert.equal((await fetch(`${config.publicUrl}/api/endless/state`)).status, 503);
+  assert.equal((await fetch(`${config.publicUrl}/api/world/state`)).status, 503);
   clients.gateway.authed = true;
   redisClient.isReady = false;
   assert.equal((await fetch(`${config.publicUrl}/readyz`)).status, 503);

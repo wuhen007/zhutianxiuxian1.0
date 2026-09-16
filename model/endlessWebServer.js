@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -34,6 +34,7 @@ const ACTION_PREFIX = 'Xiuxian:Endless:Web:Action:';
 const TEAM_CHAT_PREFIX = 'Xiuxian:Endless:Web:TeamChat:';
 const WORLD_TICKET_PREFIX = 'Xiuxian:World:Web:Ticket:';
 const WORLD_SESSION_PREFIX = 'Xiuxian:World:Web:Session:';
+const WORLD_ACTION_PREFIX = 'Xiuxian:World:Web:Action:';
 const SURVEY_TICKET_PREFIX = 'Xiuxian:Survey:Web:Ticket:';
 const SURVEY_SESSION_PREFIX = 'Xiuxian:Survey:Web:Session:';
 const CANGLAN_TICKET_PREFIX = 'Xiuxian:Canglan:Web:Ticket:';
@@ -833,6 +834,7 @@ export async function createRelayTicket(
 async function consumeLocalOrRelayTicket(redisClient, kind, token, client = worldChatClient) {
   const localConsumers = {
     endless: consumeEndlessWebTicket,
+    world: consumeWorldWebTicket,
     survey: consumeSurveyWebTicket,
     canglan: consumeCanglanWebTicket,
   };
@@ -860,6 +862,58 @@ async function requestWebRelay(session, operation, body = {}, client = worldChat
     throw new Error(`网页中继请求失败：${result?.reason || 'unknown'}`);
   }
   return result.result;
+}
+
+async function handleWorldWebRelay(controller, session, operation, body, redisClient) {
+  if (!controller) return { status: 503, payload: { error: '世界频道服务尚未就绪' } };
+  if (!session.userId || !session.groupId) {
+    return { status: 401, payload: { error: '世界网页身份不完整，请重新领取入口' } };
+  }
+  // Recheck source-realm membership even when returning a cached action receipt.
+  if (typeof controller.assertWorldWebSession === 'function') {
+    await controller.assertWorldWebSession(session);
+  }
+  if (operation === 'state') {
+    return { status: 200, payload: { ok: true, state: await controller.getWorldWebState(session) } };
+  }
+  const methods = {
+    message: 'sendWorldWebMessage',
+    'trade.create': 'createWorldWebTrade',
+    'trade.accept': 'acceptWorldWebTrade',
+    'trade.cancel': 'cancelWorldWebTrade',
+  };
+  const method = methods[operation];
+  if (!Object.hasOwn(methods, operation) || typeof controller[method] !== 'function') {
+    return { status: 404, payload: { error: '世界网页操作不存在' } };
+  }
+  const operationId = String(body?.operationId || '');
+  if (!/^[A-Za-z0-9-]{16,64}$/.test(operationId)) {
+    return { status: 400, payload: { error: '操作标识无效，请刷新网页后重试' } };
+  }
+  const requestHash = createHash('sha256').update(JSON.stringify([operation, body])).digest('hex');
+  const key = `${WORLD_ACTION_PREFIX}${session.token}:${operationId}`;
+  const ttl = getEndlessWebConfig().sessionTtlSeconds;
+  const acquired = await redisClient.set(key, JSON.stringify({ requestHash, pending: true }), { NX: true, EX: ttl });
+  if (!acquired) {
+    const receipt = JSON.parse(await redisClient.get(key) || 'null');
+    if (receipt?.requestHash !== requestHash) {
+      return { status: 409, payload: { error: '操作标识已用于其他请求' } };
+    }
+    if (receipt.pending) {
+      return { status: 409, payload: { error: '操作处理中或结果待确认，请先刷新交易列表核对' } };
+    }
+    return { status: receipt.status, payload: receipt.payload };
+  }
+  try {
+    const result = await controller[method](session, body || {});
+    const receipt = { status: result?.ok === false ? 400 : 200, payload: result || { ok: true } };
+    await redisClient.set(key, JSON.stringify({ requestHash, ...receipt }), { EX: ttl });
+    return receipt;
+  } catch (error) {
+    // Keep the pending receipt: a timed-out write may already have changed game assets.
+    globalThis.logger?.error?.('[世界网页] 操作结果待核对', error);
+    return { status: 503, payload: { error: '操作结果暂未确认，请先刷新交易列表核对，勿重复提交' } };
+  }
 }
 
 async function handleCanglanAction(controller, session, body, redisClient, sessionTtlSeconds) {
@@ -929,6 +983,10 @@ async function handleIncomingWebRelay({ kind, operation, sessionId, identity, bo
     ...(identity || {}),
     token: `relay:${sessionId}`,
   };
+
+  if (kind === 'world') {
+    return handleWorldWebRelay(currentWorldController(), session, operation, body || {}, redisClient);
+  }
 
   if (kind === 'canglan') {
     const controller = currentCanglanController();
@@ -1074,9 +1132,6 @@ export function createEndlessWebHttpServer({
         });
       }
       if (gatewayMode && url.pathname.startsWith('/api/')) {
-        if (url.pathname.startsWith('/api/world/')) {
-          return sendJson(res, 503, { error: '世界网页尚未接入公共中转' });
-        }
         if (!relayClient.authed || (healthCheck && !(await healthCheck()).redis)) {
           return sendJson(res, 503, { error: '公共中转连接恢复中，请稍后重试' });
         }
@@ -1263,7 +1318,12 @@ export function createEndlessWebHttpServer({
         if (!(await withinRateLimit(redisClient, `world-session:${clientAddress(req)}`, 10, 60)))
           return sendJson(res, 429, { error: '入口请求过于频繁，请稍后再试' });
         const body = await readJson(req);
-        const identity = await consumeWorldWebTicket(redisClient, String(body.token || ''));
+        const identity = await consumeLocalOrRelayTicket(
+          redisClient,
+          'world',
+          String(body.token || ''),
+          relayClient
+        );
         if (!identity) return sendJson(res, 401, { error: '入口已失效，请重新发送 #世界网页' });
         const session = randomToken();
         await redisClient.set(worldSessionKey(session), JSON.stringify(identity), {
@@ -1278,6 +1338,27 @@ export function createEndlessWebHttpServer({
       if (url.pathname.startsWith('/api/world/')) {
         const session = await loadWorldSession(redisClient, config, req);
         if (!session) return sendJson(res, 401, { error: '会话已失效，请重新发送 #世界网页' });
+        if (session.relay) {
+          if (req.method === 'GET' && url.pathname === '/api/world/state') {
+            const relayed = await requestWebRelay(session, 'state', {}, relayClient);
+            return sendJson(res, relayed.status, relayed.payload);
+          }
+          if (req.method === 'POST') {
+            const operations = {
+              '/api/world/message': 'message',
+              '/api/world/trade': 'trade.create',
+              '/api/world/trade/accept': 'trade.accept',
+              '/api/world/trade/cancel': 'trade.cancel',
+            };
+            if (!Object.hasOwn(operations, url.pathname)) return sendJson(res, 404, { error: '操作不存在' });
+            if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
+            if (!(await withinRateLimit(redisClient, `world-action:${session.token}`, 30, 10)))
+              return sendJson(res, 429, { error: '操作过于频繁，请稍后再试' });
+            const relayed = await requestWebRelay(session, operations[url.pathname], await readJson(req), relayClient);
+            return sendJson(res, relayed.status, relayed.payload);
+          }
+          return sendJson(res, 404, { error: '操作不存在' });
+        }
         const controller = currentWorldController(worldController);
         if (!controller) return sendJson(res, 503, { error: '世界频道服务尚未就绪' });
         if (req.method === 'GET' && url.pathname === '/api/world/state') {
@@ -1540,8 +1621,10 @@ export async function createWorldWebLink(controller, identity) {
   const redisClient = globalThis.redis;
   if (!redisClient) throw new Error('Redis 尚未就绪');
   registerWorldWebController(controller);
-  await ensureServer(activeRealm, redisClient, config);
-  const token = await issueWorldWebTicket(redisClient, config, identity);
+  if (!config.relayEnabled) await ensureServer(activeRealm, redisClient, config);
+  const token = config.relayEnabled
+    ? await createRelayTicket('world', identity)
+    : await issueWorldWebTicket(redisClient, config, identity);
   return `${config.publicUrl}/world?t=${encodeURIComponent(token)}`;
 }
 

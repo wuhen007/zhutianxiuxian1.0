@@ -35,6 +35,10 @@ function showToast(message) {
 }
 
 async function api(path, options = {}) {
+  if (options.method === 'POST' && path !== '/api/world/session' && options.body) {
+    const body = JSON.parse(options.body);
+    options = { ...options, body: JSON.stringify({ ...body, operationId: body.operationId || crypto.randomUUID() }) };
+  }
   const response = await fetch(path, {
     credentials: 'same-origin',
     ...options,
