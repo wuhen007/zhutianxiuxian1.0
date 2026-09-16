@@ -386,11 +386,11 @@ function sendJson(res, status, payload, extraHeaders = {}) {
   res.end(JSON.stringify(payload));
 }
 
-function sendFile(res, file, contentType) {
+function sendFile(res, file, contentType, cache = 'public, max-age=300') {
   try {
     const body = fs.readFileSync(file);
     res.writeHead(200, {
-      ...securityHeaders(contentType, 'public, max-age=300'),
+      ...securityHeaders(contentType, cache),
       'Content-Length': body.length,
     });
     res.end(body);
@@ -864,6 +864,18 @@ async function requestWebRelay(session, operation, body = {}, client = worldChat
   return result.result;
 }
 
+function withWorldOperationId(session, operation, body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.hasOwn(body, 'operationId')) {
+    return body;
+  }
+  // Cached pre-relay pages have no operation ID. Keep their identical writes
+  // within a session on one receipt instead of inventing a new ID on each retry.
+  const digest = createHash('sha256')
+    .update(JSON.stringify([session.relaySessionId, operation, body]))
+    .digest('hex');
+  return { ...body, operationId: `legacy-${digest.slice(0, 56)}` };
+}
+
 async function handleWorldWebRelay(controller, session, operation, body, redisClient) {
   if (!controller) return { status: 503, payload: { error: '世界频道服务尚未就绪' } };
   if (!session.userId || !session.groupId) {
@@ -1118,6 +1130,11 @@ export function createEndlessWebHttpServer({
   gatewayMode = false,
   healthCheck = null,
 }) {
+  const worldScript = path.join(worldWebRoot, 'app.js');
+  const worldScriptHash = createHash('sha256').update(fs.readFileSync(worldScript)).digest('hex').slice(0, 20);
+  const worldScriptUrl = `/world/app.${worldScriptHash}.js`;
+  const worldPage = fs.readFileSync(path.join(worldWebRoot, 'index.html'), 'utf8')
+    .replace(/src="\/world\/app\.js(?:\?[^"]*)?"/, `src="${worldScriptUrl}"`);
   return http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://localhost');
     const endlessRealm = activeRealm || realm;
@@ -1165,10 +1182,17 @@ export function createEndlessWebHttpServer({
         if (asset) return sendFile(res, asset, 'image/jpeg');
       }
 
-      if (req.method === 'GET' && (url.pathname === '/world' || url.pathname === '/world/'))
-        return sendFile(res, path.join(worldWebRoot, 'index.html'), 'text/html; charset=utf-8');
+      if (req.method === 'GET' && (url.pathname === '/world' || url.pathname === '/world/')) {
+        res.writeHead(200, {
+          ...securityHeaders('text/html; charset=utf-8', 'no-store'),
+          'Content-Length': Buffer.byteLength(worldPage),
+        });
+        return res.end(worldPage);
+      }
+      if (req.method === 'GET' && url.pathname === worldScriptUrl)
+        return sendFile(res, worldScript, 'text/javascript; charset=utf-8', 'public, max-age=31536000, immutable');
       if (req.method === 'GET' && url.pathname === '/world/app.js')
-        return sendFile(res, path.join(worldWebRoot, 'app.js'), 'text/javascript; charset=utf-8');
+        return sendFile(res, worldScript, 'text/javascript; charset=utf-8', 'no-store');
       if (req.method === 'GET' && url.pathname === '/world/lucide.min.js')
         return sendFile(res, path.join(worldWebRoot, 'lucide.min.js'), 'text/javascript; charset=utf-8');
       if (req.method === 'GET' && url.pathname === '/world/style.css')
@@ -1354,7 +1378,9 @@ export function createEndlessWebHttpServer({
             if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
             if (!(await withinRateLimit(redisClient, `world-action:${session.token}`, 30, 10)))
               return sendJson(res, 429, { error: '操作过于频繁，请稍后再试' });
-            const relayed = await requestWebRelay(session, operations[url.pathname], await readJson(req), relayClient);
+            const operation = operations[url.pathname];
+            const body = withWorldOperationId(session, operation, await readJson(req));
+            const relayed = await requestWebRelay(session, operation, body, relayClient);
             return sendJson(res, relayed.status, relayed.payload);
           }
           return sendJson(res, 404, { error: '操作不存在' });
