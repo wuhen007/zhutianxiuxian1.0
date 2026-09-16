@@ -8,6 +8,10 @@ let tradeView = 'incoming';
 let messageFilter = 'all';
 let loading = false;
 let toastTimer;
+let messagesInitialized = false;
+let followLatest = true;
+let latestRequested = false;
+const messageNodes = new Map();
 
 function node(tag, className, text) {
   const element = document.createElement(tag);
@@ -54,6 +58,19 @@ function selectView(view) {
   document.querySelectorAll('[data-view-target]').forEach((button) => {
     button.classList.toggle('is-active', button.dataset.viewTarget === view);
   });
+  if (view === 'chat' && followLatest) requestAnimationFrame(scrollToLatest);
+}
+
+function nearLatest(stream) {
+  return stream.scrollHeight - stream.clientHeight - stream.scrollTop <= 64;
+}
+
+function scrollToLatest() {
+  const stream = $('#message-stream');
+  if (!stream.clientHeight) return;
+  stream.scrollTop = stream.scrollHeight;
+  followLatest = true;
+  $('#latest-message').hidden = true;
 }
 
 function formatTime(value) {
@@ -133,11 +150,26 @@ function messageElement(message) {
   if (hasImages) {
     const images = node('div', 'message-image-list');
     for (const source of message.images.slice(0, 4)) {
+      const frame = node('figure', 'world-message-image');
       const image = node('img');
-      image.src = source;
       image.alt = `${message.sender_name || '道友'}的世界传音图片`;
       image.loading = 'lazy';
-      images.append(image);
+      image.decoding = 'async';
+      image.referrerPolicy = 'no-referrer';
+      const unavailable = node('figcaption', 'image-unavailable', '图片已失效或暂不可用，请原发送者重新发送');
+      unavailable.hidden = true;
+      image.addEventListener('error', () => {
+        image.hidden = true;
+        unavailable.hidden = false;
+        frame.classList.add('is-unavailable');
+        if (followLatest) requestAnimationFrame(scrollToLatest);
+      });
+      image.addEventListener('load', () => {
+        if (followLatest) requestAnimationFrame(scrollToLatest);
+      });
+      image.src = source;
+      frame.append(image, unavailable);
+      images.append(frame);
     }
     body.append(images);
   }
@@ -148,8 +180,47 @@ function messageElement(message) {
 function renderMessages() {
   const stream = $('#message-stream');
   const messages = state.messages.slice().sort((left, right) => Number(left.seq || left.ts) - Number(right.seq || right.ts));
-  stream.replaceChildren(...messages.map(messageElement));
+  const pinBottom = latestRequested || !messagesInitialized || followLatest;
+  const beforeTop = stream.scrollTop;
+  const streamTop = stream.getBoundingClientRect().top;
+  const anchor = [...stream.children].find(child => !child.hidden && child.getBoundingClientRect().bottom > streamTop);
+  const anchorKey = anchor?.dataset.messageKey;
+  const anchorTop = anchor?.getBoundingClientRect().top;
+  const retained = new Set();
+  const ordered = messages.map(message => {
+    const key = String(message.id || `${message.server_id || ''}:${message.seq ?? message.ts}`);
+    const signature = JSON.stringify(message);
+    retained.add(key);
+    let entry = messageNodes.get(key);
+    if (!entry || entry.signature !== signature) {
+      entry = { signature, element: messageElement(message) };
+      entry.element.dataset.messageKey = key;
+      messageNodes.set(key, entry);
+    }
+    entry.element.hidden = messageFilter !== 'all' && entry.element.dataset.messageKind !== messageFilter;
+    return entry.element;
+  });
+  for (const [key, entry] of messageNodes) {
+    if (!retained.has(key)) { entry.element.remove(); messageNodes.delete(key); }
+  }
+  const wanted = new Set(ordered);
+  for (const child of [...stream.children]) if (!wanted.has(child)) child.remove();
+  ordered.forEach((element, index) => {
+    if (stream.children[index] !== element) stream.insertBefore(element, stream.children[index] || null);
+  });
   if (!messages.length) stream.append(node('div', 'empty-state', '世界频道尚无传音，来留下第一道诸天回响吧'));
+  messagesInitialized = true;
+  latestRequested = false;
+  if (pinBottom) {
+    followLatest = true;
+    scrollToLatest();
+  } else {
+    const currentAnchor = messageNodes.get(anchorKey)?.element;
+    stream.scrollTop = currentAnchor
+      ? stream.scrollTop + currentAnchor.getBoundingClientRect().top - anchorTop
+      : beforeTop;
+    $('#latest-message').hidden = false;
+  }
 }
 
 function chooseOffer(asset, button) {
@@ -263,7 +334,8 @@ function render() {
   refreshIcons();
 }
 
-async function loadState({ quiet = false } = {}) {
+async function loadState({ quiet = false, latest = false } = {}) {
+  if (latest) latestRequested = true;
   if (loading) return;
   loading = true;
   $('#refresh-button').disabled = true;
@@ -297,6 +369,7 @@ document.querySelectorAll('[data-view-target]').forEach((button) => button.addEv
 document.querySelectorAll('[data-filter]').forEach((button) => button.addEventListener('click', () => {
   messageFilter = button.dataset.filter;
   document.querySelectorAll('[data-filter]').forEach((entry) => entry.classList.toggle('is-active', entry === button));
+  latestRequested = true;
   if (state) renderMessages();
 }));
 document.querySelectorAll('[data-trade-view]').forEach((button) => button.addEventListener('click', () => {
@@ -324,7 +397,7 @@ $('#chat-form').addEventListener('submit', async (event) => {
     input.value = '';
     $('#message-count').textContent = '0';
     showToast(result.message);
-    await loadState();
+    await loadState({ latest: true });
   } catch (error) {
     showToast(error.message);
   } finally {
@@ -372,6 +445,16 @@ $('#trade-form').addEventListener('submit', async (event) => {
 });
 
 $('#refresh-button').addEventListener('click', () => loadState());
+$('#latest-message').addEventListener('click', scrollToLatest);
+$('#message-stream').addEventListener('scroll', () => {
+  const stream = $('#message-stream');
+  if (!stream.clientHeight) return;
+  followLatest = nearLatest(stream);
+  $('#latest-message').hidden = followLatest;
+}, { passive: true });
+window.addEventListener('resize', () => {
+  if (followLatest) requestAnimationFrame(scrollToLatest);
+});
 $('#image-help').addEventListener('click', () => showToast('图片传音请回到群聊，发送“#世界发言”并附带图片。'));
 const savedTheme = localStorage.getItem('world-theme');
 const initialTheme = themes.has(savedTheme) ? savedTheme : 'celestial';
@@ -380,6 +463,7 @@ $('#theme-select').value = initialTheme;
 $('#theme-select').addEventListener('change', (event) => {
   document.body.dataset.theme = event.target.value;
   localStorage.setItem('world-theme', event.target.value);
+  if (followLatest) requestAnimationFrame(scrollToLatest);
 });
 
 async function start() {

@@ -1129,12 +1129,25 @@ export function createEndlessWebHttpServer({
   relayClient = worldChatClient,
   gatewayMode = false,
   healthCheck = null,
+  worldMedia = null,
 }) {
   const worldScript = path.join(worldWebRoot, 'app.js');
+  const worldStyle = path.join(worldWebRoot, 'style.css');
   const worldScriptHash = createHash('sha256').update(fs.readFileSync(worldScript)).digest('hex').slice(0, 20);
   const worldScriptUrl = `/world/app.${worldScriptHash}.js`;
+  const worldStyleHash = createHash('sha256').update(fs.readFileSync(worldStyle)).digest('hex').slice(0, 20);
+  const worldStyleUrl = `/world/style.${worldStyleHash}.css`;
   const worldPage = fs.readFileSync(path.join(worldWebRoot, 'index.html'), 'utf8')
-    .replace(/src="\/world\/app\.js(?:\?[^"]*)?"/, `src="${worldScriptUrl}"`);
+    .replace(/src="\/world\/app\.js(?:\?[^"]*)?"/, `src="${worldScriptUrl}"`)
+    .replace(/href="\/world\/style\.css(?:\?[^"]*)?"/, `href="${worldStyleUrl}"`);
+  async function withWorldMedia(session, payload) {
+    if (!worldMedia || !payload?.state) return payload;
+    const { state, ids } = worldMedia.rewrite(payload.state);
+    await Promise.all(ids.map(id => redisClient.set(
+      `Xiuxian:World:Web:Media:${session.token}:${id}`, '1', { EX: config.sessionTtlSeconds }
+    )));
+    return { ...payload, state };
+  }
   return http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://localhost');
     const endlessRealm = activeRealm || realm;
@@ -1195,8 +1208,10 @@ export function createEndlessWebHttpServer({
         return sendFile(res, worldScript, 'text/javascript; charset=utf-8', 'no-store');
       if (req.method === 'GET' && url.pathname === '/world/lucide.min.js')
         return sendFile(res, path.join(worldWebRoot, 'lucide.min.js'), 'text/javascript; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === worldStyleUrl)
+        return sendFile(res, worldStyle, 'text/css; charset=utf-8', 'public, max-age=31536000, immutable');
       if (req.method === 'GET' && url.pathname === '/world/style.css')
-        return sendFile(res, path.join(worldWebRoot, 'style.css'), 'text/css; charset=utf-8');
+        return sendFile(res, worldStyle, 'text/css; charset=utf-8', 'no-store');
       if (req.method === 'GET' && url.pathname === '/world/number.ttf')
         return sendFile(res, path.join(pluginRoot, 'resources', 'font', 'tttgbnumber.ttf'), 'font/ttf');
       if (req.method === 'GET' && url.pathname.startsWith('/world/assets/')) {
@@ -1362,10 +1377,26 @@ export function createEndlessWebHttpServer({
       if (url.pathname.startsWith('/api/world/')) {
         const session = await loadWorldSession(redisClient, config, req);
         if (!session) return sendJson(res, 401, { error: '会话已失效，请重新发送 #世界网页' });
+        if (req.method === 'GET' && url.pathname.startsWith('/api/world/media/')) {
+          const id = url.pathname.slice('/api/world/media/'.length);
+          if (!worldMedia || !/^[a-f0-9]{64}$/.test(id) ||
+            !(await redisClient.get(`Xiuxian:World:Web:Media:${session.token}:${id}`))) {
+            return sendJson(res, 404, { error: '图片未关联当前会话' });
+          }
+          if (!(await withinRateLimit(redisClient, `world-media:${session.token}`, 180, 60)))
+            return sendJson(res, 429, { error: '图片请求过于频繁' });
+          const image = await worldMedia.get(id);
+          if (!image) return sendJson(res, 410, { error: '图片已失效，请原发送者重新发送' });
+          res.writeHead(200, {
+            ...securityHeaders(image.type, 'private, max-age=3600'),
+            'Content-Length': image.bytes.length,
+          });
+          return res.end(image.bytes);
+        }
         if (session.relay) {
           if (req.method === 'GET' && url.pathname === '/api/world/state') {
             const relayed = await requestWebRelay(session, 'state', {}, relayClient);
-            return sendJson(res, relayed.status, relayed.payload);
+            return sendJson(res, relayed.status, await withWorldMedia(session, relayed.payload));
           }
           if (req.method === 'POST') {
             const operations = {
@@ -1388,7 +1419,9 @@ export function createEndlessWebHttpServer({
         const controller = currentWorldController(worldController);
         if (!controller) return sendJson(res, 503, { error: '世界频道服务尚未就绪' });
         if (req.method === 'GET' && url.pathname === '/api/world/state') {
-          return sendJson(res, 200, { ok: true, state: await controller.getWorldWebState(session) });
+          return sendJson(res, 200, await withWorldMedia(session, {
+            ok: true, state: await controller.getWorldWebState(session),
+          }));
         }
         if (req.method === 'POST') {
           if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });

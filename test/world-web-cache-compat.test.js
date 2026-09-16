@@ -96,6 +96,12 @@ test('world HTML uses a content-fingerprinted script and never caches the entry 
   const source = fs.readFileSync(new URL('../resources/web/world/app.js', import.meta.url));
   const hash = crypto.createHash('sha256').update(source).digest('hex').slice(0, 20);
   assert.ok(html.includes(`src="/world/app.${hash}.js"`));
+  const css = fs.readFileSync(new URL('../resources/web/world/style.css', import.meta.url));
+  const styleHash = crypto.createHash('sha256').update(css).digest('hex').slice(0, 20);
+  assert.ok(html.includes(`href="/world/style.${styleHash}.css"`));
+  const style = await fetch(`${base}/world/style.${styleHash}.css`);
+  assert.equal(style.status, 200);
+  assert.equal(await style.text(), css.toString('utf8'));
   assert.equal(html.includes('/world/app.js?v=20260820'), false);
   const script = await fetch(`${base}/world/app.${hash}.js`);
   assert.equal(script.status, 200);

@@ -11,6 +11,7 @@ process.env.WORLDCHAT_INSTALLATION_PATH ||= path.join(dataDir, 'installation.id'
 const { worldChatClient } = await import('../apps/worldChat/client.js');
 const { getEndlessWebConfig } = await import('../model/endlessWebServer.js');
 const { startWebGateway } = await import('./gateway.js');
+const { WorldWebMedia } = await import('../model/worldWebMedia.js');
 if (process.env.ZHUTIAN_WEB_RELAY_URL) {
   worldChatClient.cfg.url = process.env.ZHUTIAN_WEB_RELAY_URL;
 }
@@ -34,6 +35,7 @@ const runtime = await startWebGateway({
   config,
   redisClient,
   relayClient: worldChatClient,
+  worldMedia: new WorldWebMedia({ directory: path.join(dataDir, 'world-images') }),
 });
 
 let stopping = false;

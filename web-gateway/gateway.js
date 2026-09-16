@@ -1,6 +1,6 @@
 import { createEndlessWebHttpServer } from '../model/endlessWebServer.js';
 
-export async function startWebGateway({ config, redisClient, relayClient, logger = console }) {
+export async function startWebGateway({ config, redisClient, relayClient, worldMedia = null, logger = console }) {
   if (!config?.publicUrl || !['http:', 'https:'].includes(new URL(config.publicUrl).protocol)) {
     throw new Error('A valid ENDLESS_WEB_PUBLIC_URL is required');
   }
@@ -11,6 +11,7 @@ export async function startWebGateway({ config, redisClient, relayClient, logger
     relayClient,
     config,
     gatewayMode: true,
+    worldMedia,
     healthCheck: () => ({ redis: redisClient.isReady, relay: relayClient.authed }),
   });
   relayClient.cfg.enable = false;
@@ -31,9 +32,11 @@ export async function startWebGateway({ config, redisClient, relayClient, logger
     throw error;
   }
   logger.info(`[web-gateway] listening on ${config.host}:${server.address().port}`);
+  worldMedia?.start(relayClient);
   return {
     server,
     async close() {
+      worldMedia?.close();
       await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
       relayClient.close();
     },

@@ -79,7 +79,7 @@ a { color: inherit; }
 .world-brand b, .world-brand small { display: block; }
 .world-brand b { color: var(--text); font-family: "STKaiti", "KaiTi", serif; font-size: 20px; line-height: 1; }
 .world-brand small { margin-top: 6px; color: var(--quiet); font-size: 8px; }
-.primary-nav { height: var(--topbar-height); display: flex; justify-content: center; align-items: stretch; gap: 2px; }
+.primary-nav { height: calc(var(--topbar-height) - 1px); display: flex; justify-content: center; align-items: stretch; gap: 2px; }
 .nav-command { position: relative; min-width: 96px; padding: 0 15px; display: inline-flex; justify-content: center; align-items: center; gap: 7px; color: var(--muted); border: 0; background: transparent; font-size: 12px; }
 .nav-command::after { content: ""; position: absolute; left: 15px; right: 15px; bottom: 0; height: 2px; background: transparent; }
 .nav-command:hover { color: var(--text); background: var(--surface-subtle); }
@@ -130,7 +130,10 @@ a { color: inherit; }
 .text-button { margin-top: 14px; padding: 0; display: inline-flex; align-items: center; gap: 4px; color: var(--accent-strong); border: 0; background: transparent; font-size: 10px; }
 .text-button svg { width: 12px; }
 
-.chat-stage { grid-area: chat; min-height: 720px; display: flex; flex-direction: column; }
+.chat-stage { position: relative; grid-area: chat; height: calc(100dvh - var(--topbar-height)); min-height: 0; display: flex; flex-direction: column; }
+.chat-stage > :not(.message-stream) { flex-shrink: 0; }
+.latest-message { position: absolute; right: 24px; bottom: 80px; z-index: 6; color: var(--text); background: var(--surface-strong); box-shadow: 0 3px 12px rgba(0,0,0,.3); }
+.latest-message[hidden], .world-message-image [hidden] { display: none; }
 .chat-head { min-height: 76px; }
 .channel-filters, .market-tabs { padding: 3px; display: flex; gap: 2px; border: 1px solid var(--line); background: rgba(0,0,0,.1); }
 .channel-filters button, .market-tabs button { min-width: 48px; height: 27px; padding: 0 10px; color: var(--quiet); border: 0; background: transparent; font-size: 9px; }
@@ -141,7 +144,7 @@ a { color: inherit; }
 .world-notice p { margin: 0; font-size: 10px; line-height: 1.5; }
 .world-notice b { color: var(--accent-strong); }
 .world-notice time { color: var(--quiet); font-size: 9px; }
-.message-stream { flex: 1; min-height: 420px; max-height: calc(100dvh - 253px); padding: 7px 20px 18px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.message-stream { flex: 1 1 0; min-height: 0; padding: 7px 20px 18px; overflow-y: auto; overflow-anchor: none; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
 .message { padding: 16px 0; display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 11px; border-bottom: 1px solid var(--line); }
 .message[hidden] { display: none; }
 .sender-seal { width: 36px; height: 42px; display: grid; place-items: center; color: #0d1715; background: var(--accent); box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), inset 0 0 0 5px rgba(0,0,0,.12); font-family: "STKaiti", "KaiTi", serif; font-size: 16px; }
@@ -261,8 +264,10 @@ a { color: inherit; }
 .connection-copy.is-offline { color: var(--danger); }
 .trade-card.is-outgoing footer span { color: var(--accent); }
 .trade-card footer button[disabled], .primary-button[disabled], .send-button[disabled] { cursor: wait; opacity: .55; }
-.message-image-list { margin-top: 9px; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; }
-.message-image-list img { width: 100%; max-height: 210px; object-fit: cover; border: 1px solid var(--line); }
+.message-image-list { margin-top: 9px; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 280px)); gap: 6px; }
+.world-message-image { margin: 0; min-width: 0; aspect-ratio: 4 / 3; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--line); background: var(--surface-subtle); }
+.message-image-list img { display: block; width: 100%; height: 100%; max-height: 210px; object-fit: contain; }
+.image-unavailable { padding: 16px; color: var(--muted); font-size: 11px; line-height: 1.7; text-align: center; }
 
 /* A: Celestial Gate */
 .prototype-page[data-theme="celestial"] {
@@ -330,7 +335,7 @@ a { color: inherit; }
 .prototype-page[data-theme="forge"] .trade-grid { grid-template-columns: 1fr; }
 .prototype-page[data-theme="forge"] .trade-card { padding: 20px; border-right: 0; }
 .prototype-page[data-theme="forge"] .exchange-line { min-height: 80px; }
-.prototype-page[data-theme="forge"] .message-stream { max-height: calc(100dvh - 253px); }
+.prototype-page[data-theme="forge"] .message-stream { max-height: none; }
 
 /* C: Taixu Scroll */
 .prototype-page[data-theme="scroll"] {
@@ -368,8 +373,8 @@ a { color: inherit; }
 .prototype-page[data-theme="scroll"] .message-body > p { color: #44564f; }
 .prototype-page[data-theme="scroll"] .sender-seal { color: #fff; }
 .prototype-page[data-theme="scroll"] .realm-overview strong, .prototype-page[data-theme="scroll"] .currency-strip b { font-family: "STKaiti", "KaiTi", serif; }
-.prototype-page[data-theme="scroll"] .message-stream { max-height: 680px; }
-.prototype-page[data-theme="scroll"] .chat-stage { min-height: 760px; }
+.prototype-page[data-theme="scroll"] .message-stream { max-height: none; }
+.prototype-page[data-theme="scroll"] .chat-stage { min-height: 0; height: calc(100dvh - var(--topbar-height) - 18px); }
 .prototype-page[data-theme="scroll"] .realm-rail, .prototype-page[data-theme="scroll"] .inventory-panel { min-height: 0; }
 
 @media (max-width: 1240px) {
@@ -395,7 +400,7 @@ a { color: inherit; }
   .prototype-page[data-view="inventory"] [data-panel="inventory"],
   .prototype-page[data-view="realms"] [data-panel="realms"] { display: flex; }
   .prototype-page[data-view="market"] [data-panel="market"], .prototype-page[data-view="inventory"] [data-panel="inventory"], .prototype-page[data-view="realms"] [data-panel="realms"] { flex-direction: column; }
-  .chat-stage { min-height: calc(100dvh - var(--topbar-height) - 62px); }
+  .prototype-page[data-theme] .chat-stage { min-height: 0 !important; height: calc(100dvh - var(--topbar-height) - 62px - env(safe-area-inset-bottom)); }
   .message-stream, .prototype-page[data-theme="forge"] .message-stream, .prototype-page[data-theme="scroll"] .message-stream { max-height: none; }
   .market-panel { min-height: calc(100dvh - var(--topbar-height) - 62px); }
   .trade-grid, .prototype-page[data-theme="forge"] .trade-grid { grid-template-columns: 1fr; }
@@ -448,7 +453,7 @@ a { color: inherit; }
   .inline-trade { grid-template-columns: 1fr 18px 1fr; gap: 6px; padding: 9px; }
   .inline-trade button { grid-column: 1 / -1; width: 100%; }
   .raid-call button { margin-top: 3px; }
-  .chat-composer { position: sticky; bottom: 62px; z-index: 5; min-height: 60px; padding: 8px 10px; grid-template-columns: 34px 1fr auto; }
+  .chat-composer { position: relative; z-index: 5; min-height: 60px; padding: 8px 10px; grid-template-columns: 34px 1fr auto; }
   .composer-count { display: none; }
   .send-button { min-width: 42px; width: 42px; }
   .send-button span { display: none; }
