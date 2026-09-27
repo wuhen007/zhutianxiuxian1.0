@@ -85,6 +85,14 @@ import {
 } from '../../model/strangeSacrifice.js';
 import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import {
+  withSecretPlaceSettlementLock,
+  SECRET_PLACE_SETTLEMENT_BUSY,
+} from '../../model/secretPlaceAddiction.js';
+import {
+  isCompletedSecretPlaceAction,
+  formatBlockingAction,
+} from '../../model/completedSecretPlaceAction.js';
 
 function formatSoulSearchTribulation(player, result) {
   if (!result.triggered) return [];
@@ -2280,7 +2288,25 @@ async createEverything(e) {
     }
 
     const usr_qq = e.user_id.toString().replace('qg_','');
-    const player_qq = await channel(usr_qq);
+    const player_qq = String(await channel(usr_qq));
+    try {
+        // 与秘境结算共用玩家锁和Redis锁，等本轮奖励持久化结束再判断旧动作。
+        const result = await withSecretPlaceSettlementLock(
+            player_qq, () => this.createEverythingLocked(e, player_qq),
+        );
+        if (result === SECRET_PLACE_SETTLEMENT_BUSY) {
+            return e.reply('当前行动正在结算中，请稍后再试；本次未开始造化，也未扣资源。');
+        }
+        return result;
+    } catch (error) {
+        if (['wait_timeout', 'queue_full'].includes(error?.code)) {
+            return e.reply('当前玩家行动繁忙，请稍后重试；本次请求尚未开始。');
+        }
+        throw error;
+    }
+}
+
+async createEverythingLocked(e, player_qq) {
     const player = await Read_player(player_qq);
     const actionKey = `xiuxian:player:${player_qq}:action`;
     const actionRaw = await redis.get(actionKey);
@@ -2307,8 +2333,8 @@ async createEverything(e) {
                 `造化完成后发送 #造化万物 领取。`,
             ].join('\n'));
         }
-    } else if (actionRaw) {
-        return e.reply(`你当前正在进行【${action?.action || '其他修仙行动'}】，结束并结算后才能造化万物。`);
+    } else if (actionRaw && !isCompletedSecretPlaceAction(action, Date.now())) {
+        return e.reply(formatBlockingAction(action, Date.now()));
     }
 
     let authorityLevel = pendingCreation?.authorityLevel ?? getRealmAuthorityLevel(player);
