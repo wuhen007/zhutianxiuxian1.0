@@ -79,6 +79,7 @@ import { canEnterQuasiEmperor } from '../../model/worldlineAuthority.js';
 import { getShanghaiDateKey } from '../../model/weimianTravel.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
+import { wrapTribulationEvent } from '../../model/tribulationMessages.js';
 import { calculateMinggePotentialCost, getMinggeEffects } from '../../model/mingge.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
 import { getTitleWudaoBonus } from '../../model/titleSystem.js';
@@ -968,6 +969,7 @@ export class FlowerPollenPath extends plugin {
     if (!verc({ e })) return false;
     const userId = await resolveUserId(e);
     if (!(await existplayer(userId))) return e.reply('玩家不存在，请先创建角色。');
+    e = wrapTribulationEvent(userId, e);
     const run = () => withPlayerMutationLock(userId, async () => {
       let player = await Read_player(userId);
       if (!selectedFlowerPath(player)) return e.reply('你尚未踏上花粉进化路。');
@@ -1110,7 +1112,7 @@ export class FlowerPollenPath extends plugin {
         '专属渡劫印记已留下，发送 #进化 继续冲击下一境。',
       ].join('\n'));
     });
-    const result = await withTribulationLock(userId, run);
+    const result = await withTribulationLock(userId, run, { kind: '花粉渡劫' });
     if (result === TRIBULATION_LOCK_BUSY) return e.reply('【渡劫中】你已有一场渡劫正在进行，请等待结算完成。');
     return result;
   }

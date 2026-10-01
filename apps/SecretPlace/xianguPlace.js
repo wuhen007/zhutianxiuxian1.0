@@ -42,6 +42,7 @@ import Show from "../../model/show.js";
 import puppeteer from "../../../../lib/puppeteer/puppeteer.js";
 import { XianguTribulation } from "./xianguTribulation.js";
 import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
+import { wrapTribulationEvent } from '../../model/tribulationMessages.js';
 import {
   ensureXianqiState,
   getXianqiStrands,
@@ -2342,7 +2343,8 @@ export class xianguPlace extends plugin {
       this[methodName] = async function guardedXianguTribulation(e, ...args) {
         const rawId = String(e.user_id || '').replace('qg_', '');
         const playerId = await channel(rawId);
-        const result = await withTribulationLock(playerId, () => original.call(this, e, ...args));
+        e = wrapTribulationEvent(playerId, e);
+        const result = await withTribulationLock(playerId, () => original.call(this, e, ...args), { kind: '仙古秘境渡劫' });
         if (result === TRIBULATION_LOCK_BUSY) {
           return e.reply('【渡劫中】当前玩家已有一场仙古渡劫正在进行，请等待结算完成。');
         }

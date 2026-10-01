@@ -48,6 +48,7 @@ import {
   unlockXianguDaoRealm,
 } from './wudaoRules.js';
 import { TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
+import { wrapTribulationEvent } from '../../model/tribulationMessages.js';
 import { canEnterQuasiEmperor } from '../../model/worldlineAuthority.js';
 import {
   canCultivateExtraPath,
@@ -91,9 +92,10 @@ export class xiangujinshi extends plugin {
     });
     const original = this.chongguan;
     this.chongguan = async function guardedXianguBreakthrough(e, ...args) {
-      const playerId = String(e.user_id || '').replace('qg_', '');
+      const playerId = String(await channel(String(e.user_id || '').replace('qg_', '')));
+      e = wrapTribulationEvent(playerId, e);
       const result = await withPlayerMutationLock(playerId, () =>
-        withTribulationLock(playerId, () => original.call(this, e, ...args))
+        withTribulationLock(playerId, () => original.call(this, e, ...args), { kind: '仙古冲关' })
       );
       if (result === TRIBULATION_LOCK_BUSY) {
         return e.reply('【渡劫中】你已有一场仙古冲关正在进行，请等待结算完成。');
@@ -181,7 +183,7 @@ export class xiangujinshi extends plugin {
       return;
     }
     
-    const usr_qq = e.user_id.toString().replace('qg_', '');
+    const usr_qq = String(await channel(e.user_id.toString().replace('qg_', '')));
     const ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) {
       e.reply('玩家不存在，请先创建角色');
