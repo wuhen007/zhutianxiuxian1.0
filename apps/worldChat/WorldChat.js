@@ -13,6 +13,14 @@ import {
   __PATH,
 } from '../../model/xiuxian.js';
 import { worldChatClient as client } from './client.js';
+import {
+  WORLD_CHAT_HELP_PATTERN,
+  WORLD_CHAT_JOIN_PATTERN,
+  WORLD_CHAT_LEAVE_PATTERN,
+  buildWorldChatHelp,
+  joinWorldChatGroup,
+  worldChatConnectionHint,
+} from './onboarding.js';
 import { clientFilter } from './filter.js';
 import { formatWorldChatMessage } from './presentation.js';
 import {
@@ -302,14 +310,16 @@ export class WorldChat extends plugin {
         { reg: '^#世界\\s*网页$', fnc: 'web' },
         { reg: '^#世界\\s*(?:发言|留言)(?:\\s*[\\s\\S]*)?$', fnc: 'say' },
         { reg: '^#世界\\s*查看\\s*(\\d+)?$', fnc: 'view' },
-        { reg: '^#世界\\s*加入$', fnc: 'join' },
-        { reg: '^#世界\\s*退出$', fnc: 'leave' },
+        { reg: WORLD_CHAT_HELP_PATTERN, fnc: 'worldHelp' },
+        { reg: WORLD_CHAT_JOIN_PATTERN, fnc: 'join' },
+        { reg: WORLD_CHAT_LEAVE_PATTERN, fnc: 'leave' },
         { reg: '^#世界\\s*改名\\s*([\\s\\S]+)$', fnc: 'rename' },
         { reg: '^#世界\\s*公开群号$', fnc: 'exposeAdmin' },
         { reg: '^#世界\\s*群号全员公开$', fnc: 'exposePublic' },
         { reg: '^#世界\\s*关闭群号$', fnc: 'exposeOff' },
         { reg: '^#世界\\s*状态$', fnc: 'stat' },
         { reg: '^#世界\\s*开关$', fnc: 'toggle' },
+        { reg: '^#世界\\s*(?:开启|关闭)$', fnc: 'setWorldEnabled' },
         { reg: '^#跨服交易(?:\\s+[\\s\\S]*)?$', fnc: 'tradeCommand' },
       ],
     });
@@ -1259,13 +1269,23 @@ export class WorldChat extends plugin {
     await this.saveLedger();
   }
 
+  async worldHelp(e) {
+    return e.reply(buildWorldChatHelp({
+      status: client.status(),
+      isGroup: e.isGroup,
+      joined: Boolean(e.isGroup && client.isGroupJoined(e.group_id)),
+    }));
+  }
+
   async join(e) {
-    if (!e.isGroup) return e.reply('请在需要加入世界频道的群里发送该指令');
-    this.rememberGroupSender(e);
-    if (!canManageGroup(e))
-      return e.reply('仅机器人主人、群主或群管理员可让群聊加入世界频道');
-    if (!client.joinGroup(e.group_id)) return e.reply('本群已经加入世界频道');
-    e.reply('本群已加入诸天世界频道，之后将实时收取跨服消息');
+    return joinWorldChatGroup(client, e, event => this.rememberGroupSender(event));
+  }
+
+  async setWorldEnabled(e) {
+    if (!e.isMaster) return e.reply('仅机器人主人可修改世界频道总开关');
+    const enabled = /^#世界\s*开启$/.test(e.msg);
+    client.setEnable(enabled);
+    await e.reply(`世界频道已${enabled ? '开启' : '关闭'}。${enabled ? '已加入的群将在总机连接成功后自动接收。' : '已保存本群订阅，重新开启后恢复接收。'}`);
     return true;
   }
 
@@ -1295,6 +1315,8 @@ export class WorldChat extends plugin {
         e.isGroup && client.isGroupJoined(e.group_id) ? '已加入' : '未加入'
       }`,
       `已收取序号：${status.last_seen_seq}`,
+      worldChatConnectionHint(status),
+      '指令菜单：#世界帮助',
     ];
     if (e.isMaster) {
       if (!e.isGroup) {
