@@ -3,6 +3,8 @@ import path from 'path';
 import puppeteer from '../../../lib/puppeteer/puppeteer.js';
 import { writeJsonAtomically } from '../utils/atomicJson.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
+import { assertRevivalWriteCurrent, getRevivalCommandBlock } from './revivalEarth.js';
+import { assertTrialWriteCurrent, getTrialCommandBlock } from './trialUniverse.js';
 import {
   assertZhutianAvatarRootWriteAllowed,
   assertZhutianMirrorWriteCurrent,
@@ -26,6 +28,7 @@ import { FileRollbackTransaction } from '../apps/SecretPlace/rebirthTransaction.
 import { releaseJuelingLifespanForAuthority } from './juelingLifespan.js';
 import { applyClowWishBattleWeakness } from './clowWish.js';
 import { findTalentSynchronizationMatch } from './talentSynchronization.js';
+import { getSuiyunEffects } from './suiyun.js';
 // 道种专属技能全局池别名：战斗函数内 `data` 常被玩家参数遮蔽，故用 SKILL_DB 稳定引用 XiuxianData 单例
 const SKILL_DB = data;
 
@@ -244,6 +247,7 @@ import { getRealmEventWorldYear } from './realmEventClock.js';
 import { isEternalGuardAction } from './dimensionGuard.js';
 import {
   applyHeavenWillSlashOnAdvancement,
+  assertSacrificeBubbleWrite,
   ensureStrangeSacrificeState,
   formatHeavenWillSlashImpact,
 } from './strangeSacrifice.js';
@@ -1243,7 +1247,7 @@ export async function dujie(user_qq) {
   
   // 应用灵根加成
   const rootType = player.灵根.type || '伪灵根';
-  x *= rootBonus[rootType] || 1.0;
+  x *= getSuiyunEffects(player).madoka ? rootBonus['圆环之理'] : (rootBonus[rootType] || 1.0);
   
   // 虚实转化率加成
   if (player.虚实转化率 && player.虚实转化率 > 0) {
@@ -1274,6 +1278,9 @@ export async function Write_player(usr_qq, player, options = {}) {
     }
   }
   if (previousPlayer) {
+    if (previousPlayer.试炼宇宙) assertTrialWriteCurrent(previousPlayer, player);
+    if (previousPlayer.复活地球) assertRevivalWriteCurrent(previousPlayer, player);
+    assertSacrificeBubbleWrite(previousPlayer, player);
     try {
       const ritualFile = path.join(__PATH.data_path, 'strange_sacrifice_state.json');
       const ritualState = ensureStrangeSacrificeState(
@@ -5368,7 +5375,8 @@ function recordRewardClaim(target, key, amount) {
   if (!key) return;
   target._rewardClaims ??= {};
   target._rewardClaims[key] = { amount, claimedAt: Date.now() };
-  const keys = Object.keys(target._rewardClaims);
+  // 唯一传承的发放凭证终身保留，避免500条普通奖励轮转后重复补领。
+  const keys = Object.keys(target._rewardClaims).filter(key => !key.startsWith('suiyun:'));
   for (let i = 0; i < keys.length - MAX_REWARD_CLAIMS; i++) {
     delete target._rewardClaims[keys[i]];
   }
@@ -5807,7 +5815,9 @@ export async function Add_najie_thing(
   if (idempotencyKey && najie._rewardClaims?.[idempotencyKey]) return 0;
   const persistNajie = async () => {
     recordRewardClaim(najie, idempotencyKey, x);
-    await Write_najie(usr_qq, najie);
+    if (await Write_najie(usr_qq, najie) === false) {
+      throw new Error(`纳戒写入被封锁，物品尚未结算：${itemName}`);
+    }
   };
   //写入
   //这部分写得很冗余,但能跑
@@ -6104,8 +6114,10 @@ export async function getPlayerAptitudeData(player) {
     };
     
     const currentAptitude = player.天资等级 || '无化如是';
-    const currentIndex = aptitudeSequence.indexOf(currentAptitude);
-    const description = aptitudeDescriptions[currentAptitude] || '未知天资';
+    const currentIndex = aptitudeSequence.indexOf(currentAptitude === '岁云' ? '无演无尽' : currentAptitude);
+    const description = currentAptitude === '岁云'
+      ? '岁月云月同辉，天资等同无演无尽'
+      : aptitudeDescriptions[currentAptitude] || '未知天资';
     
     return {
         // 天资等级
@@ -6125,7 +6137,7 @@ export async function getPlayerAptitudeData(player) {
         
         // 判断是否达到指定资质
         isAtLeast: function(minGrade) {
-            const minIndex = aptitudeSequence.indexOf(minGrade);
+            const minIndex = aptitudeSequence.indexOf(minGrade === '岁云' ? '无演无尽' : minGrade);
             return this.index >= minIndex;
         },
         
@@ -7168,6 +7180,20 @@ export async function Go(e, options = {}) {
     let usr_qq = e.user_id.toString().replace('qg_', '');
     usr_qq = await channel(usr_qq);
     const player = await Read_player(usr_qq);
+    if (player.试炼宇宙) {
+        const block = getTrialCommandBlock(player, e.msg);
+        if (block) {
+            e.reply(block);
+            return 0;
+        }
+    }
+    if (player.复活地球) {
+        const block = getRevivalCommandBlock(player, e.msg);
+        if (block) {
+            e.reply(block);
+            return 0;
+        }
+    }
     
     // 获取当前位置名称
     const currentPlace = player.power_place || 0; // 默认为仙界
@@ -7447,7 +7473,7 @@ const DI_BING_RANKS = [
  * @returns {boolean} 是否触发了圆神效果
  */
 function handleCircularGod(attacker, defender, msg, context) {
-    if (context === "fenshen" || attacker.灵根?.name !== "圆神" || Math.random() >= 0.2) {
+    if (context === "fenshen" || (attacker.灵根?.name !== "圆神" && !getSuiyunEffects(attacker).madoka) || Math.random() >= 0.2) {
         return false;
     }
     
@@ -11694,7 +11720,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     }
 
     // 圆神特殊处理
-    if (attacker.灵根?.name === "圆神" && Math.random() >= 0.8) {
+    if ((attacker.灵根?.name === "圆神" || getSuiyunEffects(attacker).madoka) && Math.random() >= 0.8) {
       const lightCannonDmg = Math.trunc(attacker.攻击 * 10);
       defender.当前血量 = Math.max(0, defender.当前血量 - lightCannonDmg);
       
@@ -13869,6 +13895,7 @@ export async function synchronization(e) {
     if (player.灵根 && player.灵根.生命本源) {
       base_life_essence += player.灵根.生命本源;
     }
+    if (getSuiyunEffects(player).noDemonicValue) base_life_essence = getLifeSourceRepairMaximum(player);
     
     // 如果生命本源字段不存在或为0，设置基于灵根的初始值
     if (!isNotNull(player.生命本源) || player.生命本源 === 0) {

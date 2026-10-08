@@ -11,12 +11,20 @@ import {
   settleXianguWaveDamage,
 } from '../apps/SecretPlace/xianguTribulationSettlement.js';
 
-test('仙古真仙至帝光仙王必须身处仙域', () => {
+test('仙古真仙至帝光仙王必须身处仙域或法则足够的大宇宙', () => {
   assert.equal(canBreakthroughXianguRealmHere({ power_place: 5 }, 15), true);
   assert.equal(canBreakthroughXianguRealmHere({ power_place: 5 }, 16), false);
   assert.equal(canBreakthroughXianguRealmHere({ power_place: '6' }, 16), true);
   assert.equal(canBreakthroughXianguRealmHere({ power_place: 5 }, 20), false);
   assert.equal(canBreakthroughXianguRealmHere({ power_place: 5 }, 21), true);
+
+  const world = { 大宇宙: { 法则等级: 0 } };
+  assert.equal(canBreakthroughXianguRealmHere({ power_place: 5 }, 16, world), true);
+  assert.equal(canBreakthroughXianguRealmHere({ power_place: 5 }, 17, world), false);
+  world.大宇宙.法则等级 = 2;
+  assert.equal(canBreakthroughXianguRealmHere({ power_place: 5 }, 17, world), true);
+  world.大宇宙.法则等级 = 5;
+  assert.equal(canBreakthroughXianguRealmHere({ power_place: 5 }, 20, world), true);
 });
 
 function makePlayer(extra = {}) {
@@ -143,6 +151,23 @@ test('仙古渡劫兼容长期存档和战斗态两种功法记录', () => {
   assert.equal(hasXianguGongfa({ 学习的功法: ['柳神法'] }, '柳神法'), true);
   assert.equal(hasXianguGongfa({ 功法: { 者字秘: {} } }, '者字秘'), true);
   assert.equal(hasXianguGongfa({ 学习的功法: [] }, '真凰宝术'), false);
+});
+
+test('仙古上位境界路由完整接通真仙至帝光仙王', () => {
+  assert.deepEqual(
+    [15, 16, 17, 18, 19, 20].map((levelId) => {
+      const route = XIANGU_REALM_ROUTES[levelId];
+      return [route.targetLevelId, route.targetName, route.tribulationMethod];
+    }),
+    [
+      [16, '真仙境', '_runHighXianguTribulation'],
+      [17, '仙王', '_runHighXianguTribulation'],
+      [18, '绝顶仙王', '_runHighXianguTribulation'],
+      [19, '仙王巨头', '_runHighXianguTribulation'],
+      [20, '帝光仙王', '_runHighXianguTribulation'],
+      [21, '准仙帝', '_runPassedEmperorTribulation'],
+    ],
+  );
 });
 
 test('仙古上位境界路由完整接通斩我、遁一和至尊', () => {

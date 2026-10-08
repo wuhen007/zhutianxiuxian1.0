@@ -12,7 +12,7 @@ import { Add_灵石,  Add_najie_thing,channel} from '../../model/xiuxian.js'
 import { getMinggeEffects, getMinggeDirectMultiplier } from '../../model/mingge.js';
 import { DAILY_SIGN_BUTTONS, replyOfficialMessage } from '../../model/officialMessage.js';
 
-import { segment } from "oicq"
+import { segment } from "icqq"
 import { __PATH } from '../../model/xiuxian.js'
 import Show from '../../model/show.js';
 import puppeteer from '../../../../lib/puppeteer/puppeteer.js';
@@ -296,7 +296,7 @@ async zhaohuanailixiya(e) {
 
 
     if (random > 0.2) {
-        const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级);
+        const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
         let oldAptitude = player.天资等级;
         let oldDescription = player.天资评价;
         let newAptitude = oldAptitude;
@@ -436,7 +436,7 @@ async yijianzhaohuan(e) {
     
     // 统计变量
     let originalAptitude = player.天资等级;
-    let currentAptitudeIndex = aptitudeSequence.indexOf(originalAptitude);
+    let currentAptitudeIndex = aptitudeSequence.indexOf(originalAptitude === '岁云' ? '无演无尽' : originalAptitude);
     let aptitudeUpgrades = 0;
     let highestAptitudeReached = originalAptitude;
     let itemsObtained = {
@@ -459,7 +459,7 @@ async yijianzhaohuan(e) {
     for (let i = 1; i <= totalSummons; i++) {
         let random = Math.random();
         let currentAptitude = player.天资等级;
-        let currentIndex = aptitudeSequence.indexOf(currentAptitude);
+        let currentIndex = aptitudeSequence.indexOf(currentAptitude === '岁云' ? '无演无尽' : currentAptitude);
         
         if (random > 0.2) { // 80%成功率
             successfulSummons++;
@@ -478,7 +478,7 @@ async yijianzhaohuan(e) {
                 aptitudeUpgrades++;
                 currentAptitudeIndex = newAptitudeIndex;
                 
-                if (aptitudeSequence.indexOf(newAptitude) > aptitudeSequence.indexOf(highestAptitudeReached)) {
+                if (aptitudeSequence.indexOf(newAptitude) > aptitudeSequence.indexOf(highestAptitudeReached === '岁云' ? '无演无尽' : highestAptitudeReached)) {
                     highestAptitudeReached = newAptitude;
                 }
             }

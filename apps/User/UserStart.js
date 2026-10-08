@@ -71,6 +71,11 @@ import {
 import { parsePlayerLayoutCommand } from '../../model/playerLayout.js';
 import { withJuelingEraLock } from '../tasks/juelingLifespanService.js';
 import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
+import {
+  ARRIVAL_BUTTONS, ARRIVAL_CHOICES_TEXT, OPENING_ARRIVAL_MARKDOWN, OPENING_WORLD_PROLOGUE, parseArrivalChoice,
+} from '../../model/openingArrival.js';
+import { runRevivalCommand } from '../../model/revivalEarth.js';
+import { runTrialCommand } from '../../model/trialUniverse.js';
 
 function replyRecreateConfirmation(e) {
   const text = '一旦转世一切当世与你无缘,你真的要重生吗?回复:【断绝此生】或者【再继仙缘】进行选择';
@@ -118,6 +123,10 @@ export class UserStart extends plugin {
       rule: [
         {
           reg: '^#踏入仙途$',
+          fnc: 'Create_player',
+        },
+        {
+          reg: '^#(?:降临地|(?:选择降临地|降临).*)$',
           fnc: 'Create_player',
         },
         {
@@ -799,10 +808,23 @@ async daily_lottery(e) {
     usr_qq = await channel(usr_qq);
     //判断是否为匿名创建存档
     if (usr_qq == 80000000) return false;
+    // 与时代更新保持同一锁序；同时选择多个降临地只会创建一个角色。
+    return withJuelingEraLock(() => withPlayerMutationLock(usr_qq, async () => {
     //有无存档
     let ifexistplay = await existplayer(usr_qq);
     if (ifexistplay) {
-      this.Show_player(e);
+      const player = await Read_player(usr_qq);
+      if (player.试炼宇宙 || player.复活地球?.status === 'active') {
+        await e.reply(`你的降临记录已经存在，当前角色保留。发送 #${player.试炼宇宙 ? '试炼宇宙' : '复活地球'} 状态 查看进度。`);
+      } else {
+        await this.Show_player(e);
+      }
+      return false;
+    }
+    const arrival = isInitialEntry ? parseArrivalChoice(e.msg) : '修仙界';
+    if (!arrival) {
+      const text = `${OPENING_WORLD_PROLOGUE}\n\n${ARRIVAL_CHOICES_TEXT}`;
+      await replyOfficialMessage(e, { markdown: OPENING_ARRIVAL_MARKDOWN, text, buttons: ARRIVAL_BUTTONS });
       return false;
     }
     //初始化玩家信息
@@ -813,6 +835,7 @@ async daily_lottery(e) {
     const openingOmen = drawOpeningOmen(talent);
     let new_player = {
       id: usr_qq,
+      降临地: arrival,
       sex: 0, //性别
       名号: `路人甲${n}号`,
       宣言: '这个人很懒还没有写',
@@ -916,7 +939,18 @@ async daily_lottery(e) {
       传送阵坐标: [],
       星图: 0
     };
-    applyOpeningOmen(new_player, openingOmen);
+    if (arrival === '修仙界') applyOpeningOmen(new_player, openingOmen);
+    let arrivalMessage = '';
+    if (arrival !== '修仙界') {
+      const result = arrival === '地球'
+        ? runRevivalCommand(new_player, '入界 确认')
+        : runTrialCommand(new_player, '入界 确认');
+      if (!result.ok) {
+        await e.reply(result.message);
+        return false;
+      }
+      arrivalMessage = result.message;
+    }
 
     //初始化装备
     let new_equipment = {
@@ -960,9 +994,14 @@ async daily_lottery(e) {
       beiyong5: 0,
     };
     await Write_danyao(usr_qq, arr);
+    if (arrival !== '修仙界') {
+      await e.reply(`【降临·${arrival}】\n${arrivalMessage}\n\n发送 #${arrival === '地球' ? '复活地球' : '试炼宇宙'} 帮助 查看规则与行动。`);
+      return false;
+    }
     await e.reply(`${formatOpeningOmenMessage(openingOmen, new_player.名号)}\n\n命格尚未显化，请发送 #抽取命格词条。`);
     await this.Show_player(e);
     return false;
+    }));
   }
 // 强制重开指令 - 包含所有CD检查，但跳过确认直接重开
 async force_reCreate_player(e) {

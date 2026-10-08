@@ -197,6 +197,23 @@ test('自铸百分比武器即使同名大罗剑胎也不会触发仙古唯一�
   }), { 攻: 0, 防: 0, 血: 0 });
 });
 
+test('大罗剑胎识别兼容历史标记和当前目录，排除混搭倍率与普通同名武器', () => {
+  const catalog = JSON.parse(fs.readFileSync(new URL('../resources/data/item/装备列表.json', import.meta.url), 'utf8'));
+  const current = catalog.find(item => item.id === 100054);
+  assert.equal(isCanonicalDaluoSwordEmbryo(current), true);
+  assert.equal(isCanonicalDaluoSwordEmbryo({ ...current, id: undefined }), true);
+  const legacy = { name: '大罗剑胎', 至尊体全属性倍率: 7, 其他灵根全属性倍率: 4.5 };
+  assert.equal(isCanonicalDaluoSwordEmbryo(legacy), true);
+  assert.equal(getEquipmentAllAttributeMultiplier({ 灵根: { type: '至尊体' } }, legacy), 7);
+  for (const item of [
+    { name: '大罗剑胎' },
+    { name: '大罗剑胎', 至尊体全属性倍率: 15, 其他灵根全属性倍率: 4.5 },
+    { name: '大罗剑胎', 至尊体全属性倍率: 7, 其他灵根全属性倍率: 7.5 },
+    { ...current, name: '普通剑' },
+  ]) assert.equal(isCanonicalDaluoSwordEmbryo(item), false);
+  assert.deepEqual(calculateEquipmentSetBonuses({ 灵根: { type: '至尊体' } }, { 武器: current }), { 攻: 14, 防: 14, 血: 14 });
+});
+
 test('常规重算与渡劫共用套装增益规则', () => {
   assert.deepEqual(calculateEquipmentSetBonuses({
     魔道值: 1000,

@@ -18,6 +18,7 @@ import {
 
 } from '../../model/duanzaofu.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
+import { getSuiyunEffects } from '../../model/suiyun.js';
 export class Battle extends plugin {
   constructor() {
     super({
@@ -310,7 +311,7 @@ let now_mijinglevel_idAA;
       A_player.灵石 += lingshi;
       B_player.灵石 -= lingshi;
       A_player.血气 += qixue;
-      A_player.魔道值 += mdz;
+      if (!getSuiyunEffects(A_player).noDemonicValue) A_player.魔道值 += mdz;
       A_player.灵石 += mdzJL;
       await Write_player(A, A_player);
       await Write_player(B, B_player);

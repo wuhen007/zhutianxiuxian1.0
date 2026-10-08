@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#090908">
-  <title>沧澜界 · 大星图</title>
-  <link rel="stylesheet" href="/canglan/style.css?v=20260831a">
+  <title>沧澜界 · 彼岸群星</title>
+  <link rel="stylesheet" href="/canglan/style.css?v=20260930-planets">
 </head>
 <body>
   <main id="app" class="app-shell is-loading">
-    <canvas id="star-map" tabindex="0" aria-label="沧澜界六边星图，共六十一颗大星"></canvas>
+    <canvas id="star-map" tabindex="0" aria-label="沧澜界行星星图，共六十一颗古星；可拖动缩放，也可使用星球索引选择"></canvas>
 
     <header class="topbar">
       <div class="brand-lockup">
@@ -89,6 +89,31 @@
         <i data-lucide="chevron-up"></i>
       </button>
 
+      <header class="intel-head">
+        <div>
+          <span id="star-status" class="star-status">尚未定星</span>
+          <h2 id="star-name">择定一颗古星</h2>
+          <p id="star-coordinates">沧澜星图等待神念</p>
+        </div>
+        <span id="threat-mark" class="threat-mark">--</span>
+      </header>
+
+      <figure class="planet-dossier">
+        <div class="planet-dossier-orbit" aria-hidden="true"><span>彼岸星相</span><code id="planet-coordinate">0 / 0</code></div>
+        <canvas id="planet-portrait" width="640" height="470" role="img" aria-label="选中古星的行星近景"></canvas>
+        <figcaption><strong id="planet-type">未探明古星</strong><button id="planet-focus" type="button" title="在星图中放大当前古星">近观此星 <span aria-hidden="true">↗</span></button></figcaption>
+        <small id="planet-visual-note">星相演绎 · 非实测地貌</small>
+      </figure>
+
+      <p id="star-signal" class="signal-copy">星海寂静，因果尚未落向任何坐标。</p>
+
+      <div id="action-grid" class="action-grid">
+        <button type="button" data-action="observe" title="观测这颗大星"><i data-lucide="scan-eye"></i><span>观星</span></button>
+        <button type="button" data-action="move" class="primary-action" title="沿预览路线跃迁"><i data-lucide="navigation"></i><span>跃迁</span></button>
+        <button type="button" data-action="explore" title="探索当前大星"><i data-lucide="telescope"></i><span>探索</span></button>
+        <button type="button" data-action="anchor" title="建立当前大星星锚"><i data-lucide="anchor"></i><span>锚定</span></button>
+      </div>
+
       <section id="threat-console" class="threat-console" aria-labelledby="threat-title" hidden>
         <header class="threat-console-head">
           <div>
@@ -125,17 +150,6 @@
 
         <ol id="threat-history" class="threat-history" aria-label="最近战报"></ol>
       </section>
-
-      <header class="intel-head">
-        <div>
-          <span id="star-status" class="star-status">尚未定星</span>
-          <h2 id="star-name">择定一颗大星</h2>
-          <p id="star-coordinates">沧澜星图等待神念</p>
-        </div>
-        <span id="threat-mark" class="threat-mark">--</span>
-      </header>
-
-      <p id="star-signal" class="signal-copy">星海寂静，因果尚未落向任何坐标。</p>
 
       <section id="expedition-console" class="expedition-console" aria-labelledby="expedition-title" data-phase="empty">
         <header class="expedition-head">
@@ -358,13 +372,38 @@
         <p id="route-note">选择大星后显化航路。</p>
       </section>
 
-      <div id="action-grid" class="action-grid">
-        <button type="button" data-action="observe" title="观测这颗大星"><i data-lucide="scan-eye"></i><span>观星</span></button>
-        <button type="button" data-action="move" class="primary-action" title="沿预览路线跃迁"><i data-lucide="navigation"></i><span>跃迁</span></button>
-        <button type="button" data-action="explore" title="探索当前大星"><i data-lucide="telescope"></i><span>探索</span></button>
-        <button type="button" data-action="anchor" title="建立当前大星星锚"><i data-lucide="anchor"></i><span>锚定</span></button>
-      </div>
     </aside>
+
+    <nav class="story-tools" aria-label="剧情演绎设置">
+      <button id="story-auto" type="button" aria-pressed="true" title="开关行动后的剧情演绎">演绎：开</button>
+      <button id="story-motion" type="button" aria-pressed="false" title="开关动态效果；始终尊重系统减少动态效果设置">动效：开</button>
+      <button id="story-replay" type="button" disabled title="重看最近一次行动，不再次提交操作">回看</button>
+      <details id="story-history" class="story-history">
+        <summary>留影 <span id="story-history-count">0</span></summary>
+        <div><p>仅保留当前页面最近八段回声</p><ol id="story-history-list"></ol></div>
+      </details>
+    </nav>
+
+    <label class="planet-picker" for="planet-select"><span>星球索引</span><select id="planet-select" aria-label="选择古星"></select></label>
+
+    <section id="story-theater" class="story-theater" aria-labelledby="story-title" hidden>
+      <div class="story-sigil" aria-hidden="true"><i></i><i></i><i></i><span>澜</span></div>
+      <header class="story-head">
+        <span id="story-chapter">古史回声</span>
+        <button id="story-close" type="button" aria-label="收起剧情演绎" title="收起演绎（Esc）">收起 ×</button>
+      </header>
+      <p id="story-origin" class="story-origin">星海演绎 · 结果以回执为准</p>
+      <h2 id="story-title">星海有回声</h2>
+      <div class="story-beat" aria-live="polite" aria-atomic="true">
+        <span id="story-beat-label">星海演绎</span>
+        <p id="story-copy"></p>
+      </div>
+      <details id="story-all" class="story-all"><summary>展开完整记录</summary><div id="story-full-record"></div></details>
+      <footer class="story-footer">
+        <span id="story-page">01 / 02</span>
+        <div><button id="story-prev" type="button">上一幕</button><button id="story-next" type="button">查看回执</button></div>
+      </footer>
+    </section>
 
     <div id="jump-flash" class="jump-flash" aria-hidden="true"></div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -379,6 +418,6 @@
   </section>
 
   <script src="/world/lucide.min.js?v=20260820"></script>
-  <script src="/canglan/app.js?v=20260831a"></script>
+  <script type="module" src="/canglan/app.js?v=20260930-planets"></script>
 </body>
 </html>

@@ -23,6 +23,7 @@ import {
   dujie,
   LevelTask,
   get_log_img,
+  get_fight_img,
   channel,
   ForwardMsg,
   dj,
@@ -106,11 +107,32 @@ import {
 } from '../../model/daoHeart.js';
 import { consumePlaneFavorForWudao } from '../../model/foreignCalamity.js';
 import { flushHeavenWillSlashNotice } from '../../model/heavenWillSlashNotice.js';
+import { SACRIFICE_BUBBLE_GUIDANCE } from '../../model/strangeSacrifice.js';
 
 function consumeBreakthroughPill(player) {
   if (player.breakthrough !== true) return 0;
   player.breakthrough = false;
   return 0.2;
+}
+
+async function replyOneKeyBreakthroughLog(e, messages, resultMsg, failCount) {
+  const summary = ['【过程已截断，仅保留关键内容】', ...resultMsg.split('\n')];
+  const text = messages.join('\n');
+  // 只精简展示，不影响突破循环；长文本与多行特效也计入长图上限。
+  const compact = failCount >= 10 || text.length > 6000 || text.split('\n').length > 80;
+  const logs = compact ? [summary] : [messages, summary];
+  for (const log of logs) {
+    try {
+      const image = await get_fight_img(e, log);
+      if (image) {
+        const sent = await e.reply(image);
+        if (sent !== false) return sent;
+      }
+    } catch (error) {
+      console.warn('[一键突破/破体] 战报图片输出失败：', error);
+    }
+  }
+  return e.reply(summary.join('\n'));
 }
 
 export class Level extends plugin {
@@ -680,6 +702,7 @@ async zhengdao(e) {
     }
     // ==== 新增：红尘仙之上境界检查 ====
     const targetLevel = player.mijinglevel_id + 1;
+    if (Number(targetLevel) === 23) return e.reply(SACRIFICE_BUBBLE_GUIDANCE);
 
     // 红尘仙、仙王、仙王巨头的晋升必须先圆满当前高境道则。
     if ([17, 18].includes(Number(player.mijinglevel_id))) {
@@ -993,6 +1016,13 @@ const gongfaName = getRequiredGongfaName(player, "化龙");
 if (player.mijinglevel_id + 1 === 20) {
     const emperorGate = canEnterQuasiEmperor(player, 'mijing');
     if (!emperorGate.ok) {
+      if (emperorGate.reason === 'causal_suppression') {
+        return e.reply([
+          '【因果律之罚·帝路压制】',
+          `当前因果债已达「${emperorGate.punishment?.name || '高阶清算'}」，道果压制${emperorGate.punishment?.realmSuppression || 1}层。`,
+          '先用 #纪元消债 清理因果债，待压制解除后再冲击准仙帝。',
+        ].join('\n'));
+      }
       const guidance = emperorGate.reason === 'system'
         ? '先将诸天道则悟至圆满，再发送 #合道 体系名（体系名不超过五字）。'
         : '你已合道立下体系，还需发送 #破王成帝劫，经受帝劫洗礼。';
@@ -2467,6 +2497,8 @@ async OneKeyMaxUp(e) {
         `- 时代特性: 突破成功率 ${era.breakthrough.bodySuccessRate}%，消耗系数 ${era.breakthrough.bodyCostFactor}`
     ];
     let totalCost = 0, totalPotentialCost = 0, fail = 0, addShou = 0, pets = [];
+    let luckGrassUsed = 0;
+    let stopReason = '已达当前位面境界上限';
 
     e.reply(luck ? "一键幸运破体开始，正在积蓄气血..." : "一键破体开始，正在积蓄气血...");
 
@@ -2477,17 +2509,20 @@ async OneKeyMaxUp(e) {
     while (player.Physique_id < maxLv) {
         /* 每轮先查幸运草库存 —— 用完立即停 */
         if (luck && luckGrassCount <= 0) {
-            msg.push('幸运草已用完，停止破体');
+            msg.push(stopReason = '幸运草已用完，停止破体');
             break;
         }
 
         const nowInfo = data.LevelMax_list.find(i => i.level_id === player.Physique_id);
         const nextInfo = data.LevelMax_list.find(i => i.level_id === player.Physique_id + 1);
-        if (!nextInfo) break;
+        if (!nextInfo) {
+            msg.push(stopReason = '已达最高境界');
+            break;
+        }
 
         const potentialCost = calculateMinggePotentialCost(getBreakthroughPotentialCost(player.Physique_id), minggeEffects);
         if ((player.仙道潜力 || 0) < potentialCost) {
-            msg.push(`仙道潜力不足！本次破体需要 ${potentialCost} 点，当前 ${player.仙道潜力 || 0} 点`);
+            msg.push(stopReason = `仙道潜力不足！本次破体需要 ${potentialCost} 点，当前 ${player.仙道潜力 || 0} 点`);
             break;
         }
 
@@ -2496,7 +2531,7 @@ async OneKeyMaxUp(e) {
         const afterTalent = Math.round(base * talent.costReduction);
         const cost = Math.ceil(afterTalent * era.breakthrough.bodyCostFactor);
         if (player.血气 < cost) {
-            msg.push(`气血不足！需 ${cost}，当前 ${player.血气}`);
+            msg.push(stopReason = `气血不足！需 ${cost}，当前 ${player.血气}`);
             break;
         }
 
@@ -2516,6 +2551,7 @@ async OneKeyMaxUp(e) {
             prob = prob + (1 - prob) * 0.5;
             await Add_najie_thing(usr_qq, '幸运草', '道具', -1);
             luckGrassCount--;
+            luckGrassUsed++;
             msg.push(`使用幸运草：成功率从${Math.round(originalProb * 100)}%提升至${Math.round(prob * 100)}%`);
         }
 
@@ -2572,18 +2608,20 @@ async OneKeyMaxUp(e) {
         `时代影响：${era.name}`,
         `- 成功率：${era.breakthrough.bodySuccessRate}%`,
         `- 消耗系数：${era.breakthrough.bodyCostFactor}`,
+        `成功次数：${player.Physique_id - initialLevel}`,
         `失败次数：${fail}`,
         `总消耗气血：${bigNumberTransform(totalCost)}`,
         `总消耗仙道潜力：${totalPotentialCost} 点（剩余 ${player.仙道潜力 || 0} 点）`,
         `总增加寿元：${bigNumberTransform(addShou)}年`,
+        `结束原因：${stopReason}`,
     ].join('\n');
     if (pets.length) resultMsg += `\n获得仙宠：${pets.join('、')}`;
-    resultMsg += luck ? `\n使用幸运草：${luckGrassCount === 0 ? '全部' : '部分'}` : '';
+    if (luck) resultMsg += `\n使用幸运草：${luckGrassUsed}个（剩余 ${luckGrassCount} 个）`;
     if (currentEra.index >= 3) resultMsg += `\n在${era.name}破体极为艰难，请耐心沉淀`;
     else if (currentEra.index === 0) resultMsg += `\n神话时代加持，大道与你共鸣！`;
 
-    e.reply(resultMsg);
-    await ForwardMsg(e, msg);
+    await e.reply(resultMsg);
+    await replyOneKeyBreakthroughLog(e, msg, resultMsg, fail);
 }
 
 
@@ -2653,6 +2691,7 @@ const luck = e.msg.includes('幸运');
     let failCount = 0;
     let totalAddShouyuan = 0;
     let luckGrassUsed = 0; // 记录使用的幸运草数量
+    let stopReason = '已达当前位面境界上限';
 
     // 获取当前境界信息
     const startLevelId = player.level_id;
@@ -2704,31 +2743,31 @@ const luck = e.msg.includes('幸运');
     while (player.level_id < maxLevelId) {
         /* 每轮先查幸运草库存 —— 用完立即停 */
         if (luck && luckGrassCount <= 0) {
-            msg.push('幸运草已用完，停止突破');
+            msg.push(stopReason = '幸运草已用完，停止突破');
             break;
         }
 
         let now_level_info = data.Level_list.find(item => item.level_id == player.level_id);
         if (!now_level_info) {
-            msg.push("境界数据异常");
+            msg.push(stopReason = "境界数据异常");
             break;
         }
 
         let nextLevelId = player.level_id + 1;
         let next_level_info = data.Level_list.find(item => item.level_id == nextLevelId);
         if (!next_level_info) {
-            msg.push(`${now_level_info.level} → 已达最高境界`);
+            msg.push(stopReason = `${now_level_info.level} → 已达最高境界`);
             break;
         }
         if (nextLevelId == 42) {
-            msg.push(`已达渡劫期，需要先渡劫才能继续突破`);
+            msg.push(stopReason = `已达渡劫期，需要先渡劫才能继续突破`);
             break;
         }
 
         const minggeEffects = getMinggeEffects(player, data.minggeList);
         const potentialCost = calculateMinggePotentialCost(getBreakthroughPotentialCost(player.level_id), minggeEffects);
         if ((player.仙道潜力 || 0) < potentialCost) {
-            msg.push(`仙道潜力不足！本次突破需要 ${potentialCost} 点，当前 ${player.仙道潜力 || 0} 点`);
+            msg.push(stopReason = `仙道潜力不足！本次突破需要 ${potentialCost} 点，当前 ${player.仙道潜力 || 0} 点`);
             break;
         }
 
@@ -2738,7 +2777,7 @@ const luck = e.msg.includes('幸运');
         const actual_need_exp = Math.ceil(talentReducedExp * currentEraData.breakthrough.qiCostFactor);
 
         if (player.修为 < actual_need_exp) {
-            msg.push(`修为不足！需要 ${actual_need_exp}，当前 ${player.修为}`);
+            msg.push(stopReason = `修为不足！需要 ${actual_need_exp}，当前 ${player.修为}`);
             break;
         }
 
@@ -2825,18 +2864,20 @@ const luck = e.msg.includes('幸运');
         `时代影响：${currentEraData.name}`,
         `- 成功率：${currentEraData.breakthrough.qiSuccessRate}%`,
         `- 消耗系数：${currentEraData.breakthrough.qiCostFactor}`,
+        `成功次数：${player.level_id - startLevelId}`,
         `失败次数：${failCount}`,
         `总消耗修为：${bigNumberTransform(totalDeductedExp)}`,
         `总消耗仙道潜力：${totalPotentialCost} 点（剩余 ${player.仙道潜力 || 0} 点）`,
         `总增加寿元：${bigNumberTransform(totalAddShouyuan)}年`,
+        `结束原因：${stopReason}`,
     ].join("\n");
     if (petsObtained.length) resultMsg += `\n获得仙宠：${petsObtained.join('、')}`;
-    if (luckGrassUsed) resultMsg += `\n使用幸运草：${luckGrassUsed}个`;
+    if (luck) resultMsg += `\n使用幸运草：${luckGrassUsed}个（剩余 ${luckGrassCount} 个）`;
     if (currentEra.index >= 3) resultMsg += `\n在${currentEraData.name}突破极为艰难，请耐心沉淀`;
     else if (currentEra.index === 0) resultMsg += `\n神话时代加持，大道与你共鸣！`;
 
     await e.reply(resultMsg);
-    await ForwardMsg(e, msg);
+    await replyOneKeyBreakthroughLog(e, msg, resultMsg, failCount);
 }
 
 

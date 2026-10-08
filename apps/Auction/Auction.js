@@ -15,6 +15,7 @@ import {
 } from '../../model/xiuxian.js';
 import { convert2integer } from '../../model/xiuxian.js';
 import { compareAndSetRedisJson } from '../../utils/redisJsonCas.js';
+import { isItemTransferRestricted } from '../../model/equipmentTransfer.js';
 import {
   createAuctionId,
   reserveAuctionItem,
@@ -428,7 +429,7 @@ export class Auction extends plugin {
       e.reply(`你没有[${thing_name}]这样东西！`);
       return;
     }
-    if (thing_data.untradeble) {
+    if (thing_data.untradeble || isItemTransferRestricted(thing_data)) {
       e.reply(`[${thing_name}]已与你灵魂绑定，无法转移给仙友`);
       return;
     }

@@ -24,10 +24,6 @@ const staticShop = JSON.parse(fs.readFileSync(
   new URL('../resources/data/item/shop列表.json', import.meta.url),
   'utf8'
 ));
-const runtimeShop = JSON.parse(fs.readFileSync(
-  new URL('../resources/data/shop/shop.json', import.meta.url),
-  'utf8'
-));
 
 test('洗劫图鉴按地点汇总实时状态和掉落权重', () => {
   const atlas = buildXijieAtlasData([
@@ -102,9 +98,18 @@ test('商店刷新完整同步目录并让所有地点重新营业', () => {
   assert.equal(refreshed[1].state, 0);
 });
 
-test('静态商店列表与运行时商店完全同步', () => {
-  assert.deepEqual(staticShop, runtimeShop);
-  assert.ok(runtimeShop.some(place => place.name === '超维真界'));
+test('真实商店目录刷新完整同步资源，同时保留运行期戒备等级', () => {
+  // 运行期Grade、库存和占用状态会随游戏改变，测试不读取或覆盖真实运行数据。
+  const runtime = staticShop.map(place => ({
+    ...structuredClone(place), Grade: 2, state: 1, one: [],
+  }));
+  const before = structuredClone(runtime);
+  const refreshed = refreshXijieShop(runtime, staticShop);
+  assert.deepEqual(refreshed, staticShop.map(place => ({
+    ...structuredClone(place), Grade: 2, state: 0,
+  })));
+  assert.deepEqual(runtime, before);
+  assert.ok(refreshed.some(place => place.name === '超维真界'));
 });
 
 test('洗劫地点占用超时或缺少旧版时间戳时自动失效', () => {

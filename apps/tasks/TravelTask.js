@@ -647,6 +647,7 @@ this.FORMATION_NAMES = [
         token,
         playerId: String(usr_qq),
         tianjiaoName,
+        tianjiaoLife: Math.max(0, Number(tianjiaoData.轮回世数) || 0),
         offer,
         createdAt: Date.now(),
         expiresAt: Date.now() + 10 * 60 * 1000,

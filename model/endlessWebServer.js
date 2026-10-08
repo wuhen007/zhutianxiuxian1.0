@@ -1109,6 +1109,10 @@ export function createEndlessWebHttpServer({
         return sendFile(res, path.join(canglanWebRoot, 'index.html'), 'text/html; charset=utf-8');
       if (req.method === 'GET' && url.pathname === '/canglan/app.js')
         return sendFile(res, path.join(canglanWebRoot, 'app.js'), 'text/javascript; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/canglan/story.js')
+        return sendFile(res, path.join(canglanWebRoot, 'story.js'), 'text/javascript; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === '/canglan/planets.js')
+        return sendFile(res, path.join(canglanWebRoot, 'planets.js'), 'text/javascript; charset=utf-8');
       if (req.method === 'GET' && url.pathname === '/canglan/style.css')
         return sendFile(res, path.join(canglanWebRoot, 'style.css'), 'text/css; charset=utf-8');
 

@@ -1,3 +1,4 @@
+import { getSuiyunEffects } from '../../model/suiyun.js';
 import fs from 'fs';
 import { plugin, config, data } from '../../api/api.js';
 import {
@@ -302,7 +303,8 @@ export class ShangcangTask extends plugin {
     if (isFashan && !await ownsAction(action)) return false;
 
     if (battle.winner === 'A') {
-      const multiplier = getDungeonFortuneMultiplier(player) * getInnateDungeonRewardMultiplier(player);
+      const multiplier = getDungeonFortuneMultiplier(player) * getInnateDungeonRewardMultiplier(player)
+        * getSuiyunEffects(player).lootMultiplier;
       const rewardPlace = data.shangcang_list.find(place => place.name === location) || action.Place_address;
       rewards.push(...rollShangcangRewards(rewardPlace, Math.random, multiplier));
       for (const [index, reward] of rewards.entries()) {

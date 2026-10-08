@@ -168,6 +168,11 @@ export function readPlayerArchiveInventory({
   };
 }
 
+export function isArchiveItemWithdrawable(item) {
+  return Boolean(item) && !item.不可支取 && !item.全时间线唯一
+    && !['无上天阙枝', '岁云的残念', '岁云残念'].includes(item.name);
+}
+
 export function extractArchiveItem(snapshot, category, itemName) {
   if (!snapshot) return null;
   if (category === '灵石') {
@@ -181,7 +186,7 @@ export function extractArchiveItem(snapshot, category, itemName) {
 
   const items = snapshot.najie?.[category];
   if (!Array.isArray(items)) return null;
-  const item = items.find(value => value?.name === itemName && Number(value.数量) > 0);
+  const item = items.find(value => value?.name === itemName && Number(value.数量) > 0 && isArchiveItemWithdrawable(value));
   if (!item) return null;
   return {
     category,
@@ -193,6 +198,7 @@ export function extractArchiveItem(snapshot, category, itemName) {
 
 export function mergeArchiveItem({ player, najie }, entry) {
   if (!entry || entry.amount <= 0) return false;
+  if (!['灵石', '纳戒灵石'].includes(entry.category) && !isArchiveItemWithdrawable(entry.item)) return false;
   if (entry.category === '灵石') {
     player.灵石 = (Number(player.灵石) || 0) + entry.amount;
     return true;

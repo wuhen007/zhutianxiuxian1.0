@@ -12,6 +12,14 @@ export const RELIC_QUALITIES = Object.freeze({
   超脱: Object.freeze({ affixCount: 5, rarity: 5 }),
 });
 
+export const RELIC_FRAGMENT_RULES = Object.freeze({
+  凡耀: Object.freeze({ salvage: 1, synthesis: 10 }),
+  灵玄: Object.freeze({ salvage: 3, synthesis: 30 }),
+  至圣: Object.freeze({ salvage: 10, synthesis: 100 }),
+  大道: Object.freeze({ salvage: 30, synthesis: 300 }),
+  超脱: Object.freeze({ salvage: 100, synthesis: 1000 }),
+});
+
 export const RELIC_AFFIXES = Object.freeze({
   迅行: Object.freeze({ field: '速度加成', min: 0.02, max: 0.04 }),
   护道: Object.freeze({ field: '开战护盾率', min: 0.04, max: 0.08 }),
@@ -115,12 +123,17 @@ function rollValue(definition, random) {
   return Number(value.toFixed(4));
 }
 
+function isRetryableRelicReward(id) {
+  return typeof id === 'string' && /^(?:fish-king-relic|foreign-relic):\S+$/.test(id);
+}
+
 function normalizeRelic(relic) {
   if (!relic || typeof relic !== 'object') return null;
-  if (!RELIC_QUALITIES[relic.品质] || !RELIC_SETS[relic.套装]) return null;
+  if (typeof relic.品质 !== 'string' || !Object.hasOwn(RELIC_QUALITIES, relic.品质)
+    || typeof relic.套装 !== 'string' || !Object.hasOwn(RELIC_SETS, relic.套装)) return null;
   const affixes = Array.isArray(relic.副词条)
     ? relic.副词条
-      .filter(item => RELIC_AFFIXES[item?.name] && Number.isFinite(Number(item?.value)))
+      .filter(item => Object.hasOwn(RELIC_AFFIXES, item?.name) && Number.isFinite(Number(item?.value)))
       .slice(0, RELIC_QUALITIES[relic.品质].affixCount)
       .map(item => ({ name: item.name, value: Number(item.value) }))
     : [];
@@ -138,6 +151,8 @@ export function createEmptyRelicState() {
   return {
     version: 1,
     背包: [],
+    碎片: 0,
+    已分解奖励: [],
     铭刻: {
       武器: [null, null],
       护具: [null, null],
@@ -150,6 +165,11 @@ export function createEmptyRelicState() {
 export function normalizeRelicState(source) {
   const empty = createEmptyRelicState();
   const current = source && typeof source === 'object' ? source : {};
+  const fragments = Number(current.碎片);
+  empty.碎片 = Number.isSafeInteger(fragments) && fragments >= 0 ? fragments : 0;
+  // 待领取奖励没有过期时间，保留已分解 ID，避免重试领奖重复产出碎片；此记录不截断。
+  empty.已分解奖励 = [...new Set((Array.isArray(current.已分解奖励) ? current.已分解奖励 : [])
+    .filter(isRetryableRelicReward))];
   empty.背包 = (Array.isArray(current.背包) ? current.背包 : [])
     .map(normalizeRelic)
     .filter(Boolean)
@@ -167,9 +187,9 @@ export function normalizeRelicState(source) {
 }
 
 export function createRelic({ quality, setName, random = Math.random, id } = {}) {
+  if (typeof quality !== 'string' || !Object.hasOwn(RELIC_QUALITIES, quality)) throw new Error(`未知遗珍品质：${quality || '空'}`);
+  if (typeof setName !== 'string' || !Object.hasOwn(RELIC_SETS, setName)) throw new Error(`未知遗珍套装：${setName || '空'}`);
   const qualityConfig = RELIC_QUALITIES[quality];
-  if (!qualityConfig) throw new Error(`未知遗珍品质：${quality || '空'}`);
-  if (!RELIC_SETS[setName]) throw new Error(`未知遗珍套装：${setName || '空'}`);
   const pool = Object.keys(RELIC_AFFIXES);
   const affixes = [];
   for (let index = 0; index < qualityConfig.affixCount; index++) {
@@ -206,11 +226,56 @@ export function createFishKingRelic({ plane, random = Math.random, id } = {}) {
 
 export function addRelicToBag(state, relic) {
   const current = normalizeRelicState(state);
+  if (current.已分解奖励.includes(relic?.id)) return current;
   if (current.背包.length >= MAX_RELIC_BAG_SIZE) throw new Error('遗珍背包已满');
   const normalized = normalizeRelic(relic);
   if (!normalized) throw new Error('遗珍数据无效');
   current.背包.push(normalized);
   return current;
+}
+
+export function dismantleRelics(state, relicIds) {
+  if (!Array.isArray(relicIds) || relicIds.length === 0
+    || relicIds.some(id => typeof id !== 'string' || !id.trim())) {
+    throw new Error('请选择要分解的遗珍 ID');
+  }
+  const selected = new Set(relicIds);
+  if (selected.size !== relicIds.length) throw new Error('分解列表中有重复遗珍');
+  if (RELIC_PARTS.some(part => Array.isArray(state?.铭刻?.[part])
+    && state.铭刻[part].some(relic => relic && selected.has(String(relic.id))))) {
+    throw new Error('已铭刻的遗珍请先卸下再分解');
+  }
+  const current = normalizeRelicState(state);
+  // ponytail: 背包上限 200 件，逐 ID 扫描足够；显著提高容量时再改用 Map。
+  const relics = relicIds.map(id => {
+    const matches = current.背包.filter(relic => relic.id === id);
+    if (matches.length === 0) throw new Error(`遗珍背包中没有这个 ID：${id}`);
+    if (matches.length > 1) throw new Error(`遗珍 ID 重复，请检查背包：${id}`);
+    return matches[0];
+  });
+  const fragments = relics.reduce((sum, relic) => sum + RELIC_FRAGMENT_RULES[relic.品质].salvage, 0);
+  if (!Number.isSafeInteger(current.碎片 + fragments)) throw new Error('遗珍碎片数量超出上限');
+  current.已分解奖励 = [...new Set([...current.已分解奖励, ...relicIds.filter(isRetryableRelicReward)])];
+  current.背包 = current.背包.filter(relic => !selected.has(relic.id));
+  current.碎片 += fragments;
+  return { state: current, relics, fragments };
+}
+
+export function synthesizeRelics(state, { setName, quality, count = 1, random = Math.random } = {}) {
+  if (typeof setName !== 'string' || !Object.hasOwn(RELIC_SETS, setName)) throw new Error(`未知遗珍套装：${setName || '空'}`);
+  if (typeof quality !== 'string' || !Object.hasOwn(RELIC_FRAGMENT_RULES, quality)) throw new Error(`未知遗珍品质：${quality || '空'}`);
+  if (!Number.isSafeInteger(count) || count < 1 || count > MAX_RELIC_BAG_SIZE) {
+    throw new Error(`合成数量须为 1 至 ${MAX_RELIC_BAG_SIZE} 的整数`);
+  }
+  if (typeof random !== 'function') throw new Error('遗珍随机数生成器无效');
+  const current = normalizeRelicState(state);
+  const cost = RELIC_FRAGMENT_RULES[quality].synthesis * count;
+  if (current.背包.length + count > MAX_RELIC_BAG_SIZE) throw new Error('遗珍背包空位不足，请先分解遗珍');
+  if (current.碎片 < cost) throw new Error(`遗珍碎片不足，需要 ${cost}，当前 ${current.碎片}`);
+  const relics = Array.from({ length: count }, () => createRelic({ quality, setName, random }));
+  current.碎片 -= cost;
+  current.背包.push(...relics);
+  return { state: current, relics, cost };
 }
 
 export function engraveRelic(state, bagIndex, part, slotNumber = 1) {

@@ -85,6 +85,7 @@ import {
   hasShengfaPower,
   settleSuperdimensionalStarRealm,
 } from '../../model/shengfaFragment.js';
+import { ascendSuiyunPalace, getSuiyunStage, settleSuiyunPalace } from '../../model/suiyun.js';
 
 const SMALL_WORLD_BUTTONS = [
   [
@@ -1431,6 +1432,7 @@ async showEnvironmentHelp(e) {
       工坊: JSON.parse(JSON.stringify(DEFAULT_WORKSHOPS)) // 初始化工坊
     };
     if (hasShengfaPower(player)) ascendSuperdimensionalStarRealm(newWorld);
+    if (getSuiyunStage(player)) ascendSuiyunPalace(newWorld);
     
     // 添加到小世界列表
     data.xiaoshijie.push(newWorld);
@@ -2106,9 +2108,38 @@ async showEnvironmentHelp(e) {
       if (superdimensionalRewards.hours > 0) await Write_player(player_qq, latestPlayer);
       if (ascended || superdimensionalRewards.hours > 0) fs.writeFileSync(`${data.lib_path}/小世界列表.json`, JSON.stringify(data.xiaoshijie, null, 2));
     }
-    const superdimensionalLine = superdimensionalRewards.hours > 0
+    let superdimensionalLine = superdimensionalRewards.hours > 0
       ? `【超维星界】${superdimensionalRewards.hours}小时：修为+${superdimensionalRewards.cultivation.toLocaleString()}、血气+${superdimensionalRewards.blood.toLocaleString()}、超维之力+${superdimensionalRewards.power.toFixed(2)}`
       : '';
+    const suiyunRewards = await withPlayerMutationLock(player_qq, async () => {
+      const holder = await Read_player(player_qq);
+      if (!getSuiyunStage(holder)) return { hours: 0, power: 0 };
+      const snapshot = structuredClone(world);
+      const transaction = new FileRollbackTransaction();
+      transaction.capture(path.join(__PATH.player_path, `${player_qq}.json`));
+      try {
+        const changed = ascendSuiyunPalace(world, now.getTime());
+        const reward = settleSuiyunPalace(holder, world, { now: now.getTime() });
+        if (changed || reward.hours > 0) {
+          await Write_player(player_qq, holder);
+          fs.writeFileSync(path.join(data.lib_path, '小世界列表.json'), JSON.stringify(data.xiaoshijie, null, 2));
+        }
+        transaction.commit();
+        return reward;
+      } catch (error) {
+        for (const key of Object.keys(world)) delete world[key];
+        Object.assign(world, snapshot);
+        // 回滚本世界后写当前列表，保留其他玩家已完成的世界变更。
+        try { transaction.rollback(); }
+        finally { fs.writeFileSync(path.join(data.lib_path, '小世界列表.json'), JSON.stringify(data.xiaoshijie, null, 2)); }
+        throw error;
+      }
+    });
+    if (suiyunRewards.hours > 0) {
+      superdimensionalLine = [superdimensionalLine,
+        `【月华天宫】${suiyunRewards.hours}现实小时：岁云之力+${suiyunRewards.power.toFixed(2)}`,
+      ].filter(Boolean).join('\n');
+    }
 
     // 检查是否有分身
     if (!world.avatar) {
@@ -2452,7 +2483,7 @@ async showEnvironmentHelp(e) {
       `成功收获分身收集的资源：${resourceList}`,
       timeFlowInfo
     ];
-    if (superdimensionalRewards.hours > 0) {
+    if (superdimensionalRewards.hours > 0 || suiyunRewards.hours > 0) {
       replyMsg.push(superdimensionalLine);
     }
     

@@ -1,3 +1,5 @@
+import { getSuiyunEffects } from '../../model/suiyun.js';
+import { multiplySuiyunLoot } from '../../model/suiyunLoot.js';
 import { plugin, config ,data} from '../../api/api.js';
 import { existplayer, Read_player, Read_equipment, Write_player, Add_najie_thing, channel ,calculateHarm, ensureNumber, bigNumberTransform, exist_najie_thing, get_fight_img, initActionBar, advanceUnitBars, getReadyUnits, boostActionBar, pushBackActionBar, ACTION_BAR_MAX, applyXianguTurnRecovery, calcDamage, getSeedSkillEntry, settleBattleGongfaProficiency } from '../../model/xiuxian.js';
 import { segment } from "icqq"
@@ -1342,8 +1344,8 @@ async batchSettleDevilMonarch(e) {
       // 随机道具*3
       for (let j = 0; j < 3; j++) {
         const idxg  = Math.floor(Math.random() * firstGroup.length);
-        const cnt  = Math.floor(Math.random() * 5) + 1;
         const name = firstGroup[idxg];
+        const cnt = multiplySuiyunLoot(p, { name }, Math.floor(Math.random() * 5) + 1);
         target.first[name] = (target.first[name] || 0) + cnt;
         await Add_najie_thing(id, name, "道具", cnt);
       }
@@ -1351,8 +1353,8 @@ async batchSettleDevilMonarch(e) {
       // 随机丹药*2
       for (let j = 0; j < 2; j++) {
         const idxg  = Math.floor(Math.random() * secondGroup.length);
-        const cnt  = Math.floor(Math.random() * 5) + 1;
         const name = secondGroup[idxg];
+        const cnt = multiplySuiyunLoot(p, { name }, Math.floor(Math.random() * 5) + 1);
         target.second[name] = (target.second[name] || 0) + cnt;
         await Add_najie_thing(id, name, "丹药", cnt);
       }
@@ -1505,6 +1507,7 @@ async generatePlayerRewards(playerId, rewardPool, rewardCount) {
   
   // 深拷贝奖励列表，避免修改原始数据
   const poolCopy = JSON.parse(JSON.stringify(rewardPool));
+  const recipient = await Read_player(playerId);
   
   // 随机选择指定数量的奖励
   const selectedRewards = [];
@@ -1523,6 +1526,7 @@ async generatePlayerRewards(playerId, rewardPool, rewardCount) {
     // 随机选择一个奖励
     const randomIndex = Math.floor(Math.random() * poolCopy.length);
     const reward = poolCopy.splice(randomIndex, 1)[0];
+    reward.数量 = multiplySuiyunLoot(recipient, reward, reward.数量);
     
     // 添加到玩家纳戒
     await Add_najie_thing(
@@ -2968,7 +2972,7 @@ if (bossCopy.名号 === '帝尊') {
         
         await addBattleLog(...godDemonMsg);
       }
-      if (player.灵根?.name === "圆神" && Math.random() < 0.99) {
+      if ((player.灵根?.name === "圆神" || getSuiyunEffects(player).madoka) && Math.random() < 0.99) {
     const isFirstCast = !player.圆环之理激活; // 检测是否首次释放
     
     // ===== 核心效果 =====

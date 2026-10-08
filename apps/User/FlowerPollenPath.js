@@ -74,6 +74,7 @@ import {
 } from '../../model/flowerPollenPath.js';
 import { cooldownRevivalGongfas, resolveInteractiveGongfaRevival } from '../../model/tribulationRevival.js';
 import { checkPlaneRealmLaw } from '../../model/planeRealmLaw.js';
+import { getPlayerGrandUniverse } from '../../model/grandUniverse.js';
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import { canEnterQuasiEmperor } from '../../model/worldlineAuthority.js';
 import { getShanghaiDateKey } from '../../model/weimianTravel.js';
@@ -313,6 +314,7 @@ export class FlowerPollenPath extends plugin {
     const breakthrough = getFlowerBreakthroughRule(player.huafenlevel_id);
     const tribulationGate = getFlowerTribulationGateState(player, player.huafenlevel_id);
     const authorityLevel = getRealmAuthorityLevel(player);
+    const grandUniverse = getPlayerGrandUniverse(data.xiaoshijie, player, player.大宇宙位置?.界主 || userId);
     const authorities = [];
     if (authorityLevel >= 12) authorities.push('传授功法');
     if (authorityLevel >= 21) authorities.push('造化万物');
@@ -340,7 +342,7 @@ export class FlowerPollenPath extends plugin {
     if (nextRealm) {
       const required = getRequiredPollenQuality(nextRealm.level_id);
       const gate = checkGongfaGate(player, nextRealm.level_id);
-      const planeLaw = checkPlaneRealmLaw(player, nextRealm.level_id);
+      const planeLaw = checkPlaneRealmLaw(player, nextRealm.level_id, grandUniverse);
       lines.push(`下一境：${nextRealm.level}｜需${required}阶进化媒介｜修为、血气各${bigNumberTransform(getFlowerEvolutionCost(player.huafenlevel_id, era.index))}`);
       if (gate && !gate.ok) lines.push(`⚠ 突破${nextRealm.level}需掌握【${gate.gate.gongfa}】`);
       if (planeLaw && !planeLaw.ok) lines.push(`⚠ 此界法则不全，${nextRealm.level}需前往更高位面方可突破`);
@@ -434,6 +436,9 @@ export class FlowerPollenPath extends plugin {
       if (root.critical) return e.reply('【进化根基濒临崩溃】请先使用 #重塑进化根基，修复花粉根基后再继续进化。');
 
       const targetLevelId = player.huafenlevel_id + 1;
+      if (targetLevelId === 24) {
+        return e.reply('祭道之上须遭始祖彻底永祭，进入没有任何概念的空间泡影，现实时间720分钟后挣脱；普通进化不替代此条件。');
+      }
       if (targetLevelId === 23) {
         return e.reply('仙帝阶段需另行完成10次 #推演己道，再使用 #祭道；普通进化不代替祭道门槛。');
       }
@@ -446,6 +451,13 @@ export class FlowerPollenPath extends plugin {
       if (targetLevelId === 21) {
         const emperorGate = canEnterQuasiEmperor(player, 'huafen');
         if (!emperorGate.ok) {
+          if (emperorGate.reason === 'causal_suppression') {
+            return e.reply([
+              '【因果律之罚·花粉帝路压制】',
+              `当前因果债已达「${emperorGate.punishment?.name || '高阶清算'}」，道果压制${emperorGate.punishment?.realmSuppression || 1}层。`,
+              '先用 #纪元消债 清理因果债，待压制解除后再冲击花粉路准仙帝。',
+            ].join('\n'));
+          }
           const guidance = emperorGate.reason === 'system'
             ? '请先圆满仙王道则，再发送 #合道 体系名（体系名不超过五字）。'
             : '你已合道立下体系，还需发送 #破王成帝劫 完成最终洗礼。';
@@ -468,7 +480,8 @@ export class FlowerPollenPath extends plugin {
         return e.reply(`【功法未成】突破${realmName(targetLevelId)}需先掌握【${gate.gate.gongfa}】，可前往圣墟相关副本寻找机缘。`);
       }
       // 位面法则卡：当前位面法则不全则无法继续进化
-      const planeLaw = checkPlaneRealmLaw(player, targetLevelId);
+      const grandUniverse = getPlayerGrandUniverse(data.xiaoshijie, player, player.大宇宙位置?.界主 || userId);
+      const planeLaw = checkPlaneRealmLaw(player, targetLevelId, grandUniverse);
       if (!planeLaw.ok) {
         return e.reply(`【法则不全】此界最多容纳至「${realmName(planeLaw.max)}」，${realmName(planeLaw.max)}已是当前位面的进化绝巅，需前往更高位面方能再进一步。`);
       }

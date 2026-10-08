@@ -1,3 +1,4 @@
+import { getSuiyunEffects } from '../../model/suiyun.js';
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'path';
@@ -3784,6 +3785,14 @@ async poWangChengDi(e) {
     const seconds = Math.max(1, Math.ceil((emperorGate.retryAt - Date.now()) / 1000));
     return e.reply(`帝劫余波未散，${Math.floor(seconds / 60)}分${seconds % 60}秒后方可再次尝试。`);
   }
+  if (emperorGate.reason === 'causal_suppression') {
+    const punishment = emperorGate.punishment || {};
+    return e.reply([
+      '【因果律之罚·帝路压制】',
+      `当前因果债已达「${punishment.name || '高阶清算'}」，道果压制${punishment.realmSuppression || 1}层。`,
+      '先用 #纪元消债 清理因果债，待道果压制解除后再冲击破王成帝劫。',
+    ].join('\n'));
+  }
   /* ====== 界海历练前置：准仙帝须先横渡界海十次（与原著帝路一致） ====== */
   const 界海历练次数 = Math.max(0, Math.floor(Number(player.界海历练次数) || 0));
   if (界海历练次数 < 10) {
@@ -5290,8 +5299,12 @@ applyGongfaEffects(player, originalDamage, equipment = {}) {
   }
   };
 
-if (player.灵根?.name && bodyEffects[player.灵根.name]) {
-    const effect = bodyEffects[player.灵根.name];
+const suiyunEffects = getSuiyunEffects(player);
+const rootEffect = suiyunEffects.tribulationReduction > 0
+    ? { reduction: suiyunEffects.tribulationReduction, desc: '云月护体，岁月消劫', special: suiyunEffects.madoka ? '圆环之理' : null }
+    : bodyEffects[player.灵根?.name];
+if (rootEffect) {
+    const effect = rootEffect;
     const reducedDamage = finalDamage * effect.reduction;
     finalDamage -= reducedDamage;
 

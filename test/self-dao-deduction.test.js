@@ -7,6 +7,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { damagePlanes, PLANE_DAMAGE_RECORD_KEY } from '../model/planeDestruction.js';
+import { lowerRealmAuthority } from '../model/realmAuthority.js';
 import {
   ERA_ACCUMULATION_CAPS,
   SELF_DAO_COSTS,
@@ -59,6 +60,35 @@ function quasiEmperor(overrides = {}) {
     ...overrides,
   };
 }
+
+test('仙帝跌落准仙帝后重置己道推演，可再次开始证道', () => {
+  const player = quasiEmperor({
+    mijinglevel_id: 21,
+    自身之道境界: '仙帝·道源唯一',
+    自身之道根基: '道源唯一',
+    境界称号: '路尽级仙帝',
+    道果状态: '神胎圆满·道源唯一',
+    己道推演: {
+      progressionVersion: 2,
+      attempts: 20,
+      sacrificeAttempts: 10,
+      realms: ['启灵', '命轮', '道宫', '神桥', '天门', '路尽'],
+      quasiEmperorPeak: true,
+      divineEmbryo: '已结出',
+      halfImmortalEmperor: true,
+      completed: true,
+    },
+  });
+
+  assert.equal(lowerRealmAuthority(player), 'mijing');
+  assert.equal(player.mijinglevel_id, 20);
+  assert.equal(player.己道推演.attempts, 0);
+  assert.equal(player.己道推演.sacrificeAttempts, 0);
+  assert.equal(player.己道推演.completed, false);
+  assert.equal(player.己道推演.battlePending, false);
+  assert.deepEqual(player.己道推演.realms, ['启灵', '命轮', '道宫', '神桥', '天门', '路尽']);
+  assert.equal(getSelfDaoDeductionGate(player).reason, 'deduce');
+});
 
 test('己道前五层按原价，十/十五/二十层依次解锁极巅、神胎与半步仙帝', () => {
   const player = quasiEmperor();

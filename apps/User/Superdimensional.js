@@ -193,6 +193,7 @@ export class Superdimensional extends plugin {
       } else if (kind === '灵根') {
         const root = data.talent_list.find(item => item.name === name);
         if (!root) return e.reply(`未知灵根：${name}`);
+        if (root.唯一灵根 || root.不可随机获取) return e.reply('岁云一脉由唯一残念开启，并以 #岁云见证 晋升。');
         target.灵根 = { ...root };
         target.生命本源 = 100 + (Number(root.生命本源) || 0);
       } else {

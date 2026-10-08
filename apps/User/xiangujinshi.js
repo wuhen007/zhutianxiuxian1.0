@@ -35,6 +35,7 @@ import {
   canBreakthroughXianguRealmHere,
   resolveXianguBreakthroughCommand,
 } from '../SecretPlace/xianguTribulationSettlement.js';
+import { getPlayerGrandUniverse } from '../../model/grandUniverse.js';
 import {
   ensureXianqiState,
   getNextXianqiTrial,
@@ -238,15 +239,19 @@ export class xiangujinshi extends plugin {
     const weimianLevel = weimianData["诸天位面"] || 10;
     const weimianyazhi = 10 - weimianLevel;
     const targetXianguLevel = Number(player.xiangulevel_id) + 1;
+    if (targetXianguLevel === 24) {
+      return e.reply('祭道之上须遭始祖彻底永祭，进入没有任何概念的空间泡影，现实时间720分钟后挣脱；冲关不替代此条件。');
+    }
     if (targetXianguLevel === 23) {
       return e.reply('仙帝阶段需另行完成10次 #推演己道，再使用 #祭道；冲关与冲关极境不代替祭道门槛。');
     }
-    if (!canBreakthroughXianguRealmHere(player, targetXianguLevel)) {
+    const grandUniverse = getPlayerGrandUniverse(data.xiaoshijie, player, usr_qq);
+    if (!canBreakthroughXianguRealmHere(player, targetXianguLevel, grandUniverse)) {
       const targetName = data.xiangujinshi_list.find(item => item.level_id == targetXianguLevel)?.level || '仙道领域';
       return e.reply([
         '【仙域法则未至·仙道难成】',
-        `${player.名号}欲冲击${targetName}，却未身处仙域。`,
-        '真仙至帝光仙王的道果必须由完整仙道法则承载，请先前往仙域。',
+        `${player.名号}欲冲击${targetName}，当前所在之地尚不足以承载此道果。`,
+        '真仙至帝光仙王须身处仙域，或身处法则足够完整的玩家大宇宙。',
       ].join('\n'));
     }
     const targetingQuasiEmperor = targetXianguLevel === 21;
@@ -254,6 +259,13 @@ export class xiangujinshi extends plugin {
       ? canEnterQuasiEmperor(player, 'xiangu')
       : null;
     if (targetingQuasiEmperor && !quasiEmperorGate.ok) {
+      if (quasiEmperorGate.reason === 'causal_suppression') {
+        return e.reply([
+          '【因果律之罚·仙古帝路压制】',
+          `当前因果债已达「${quasiEmperorGate.punishment?.name || '高阶清算'}」，道果压制${quasiEmperorGate.punishment?.realmSuppression || 1}层。`,
+          '先用 #纪元消债 清理因果债，待压制解除后再冲击仙古准仙帝。',
+        ].join('\n'));
+      }
       const guidance = quasiEmperorGate.reason === 'system'
         ? '请先将诸天古则悟至圆满，再发送 #合道 体系名（体系名不超过五字）。'
         : '你已合道立下体系，还需发送 #破王成帝劫 完成最终洗礼。';

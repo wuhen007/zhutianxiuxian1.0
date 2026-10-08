@@ -1,6 +1,6 @@
 export const MAX_PERCENT_EQUIPMENT_STAT = 499;
 export const MAX_EQUIPMENT_PERCENT_BONUS = 500;
-import { getZhutianExclusiveEquipmentBonus } from './exclusiveEquipmentSets.js';
+import { getZhutianExclusiveEquipmentBonus, hasExclusiveEquipmentSet } from './exclusiveEquipmentSets.js';
 
 const EQUIPMENT_TYPES = new Set(['武器', '护具', '法宝']);
 const EQUIPMENT_STAT_FIELDS = ['atk', 'def', 'HP'];
@@ -144,10 +144,9 @@ export function getEquipmentAllAttributeMultiplier(player, slot) {
 
 export function isCanonicalDaluoSwordEmbryo(slot) {
   return slot?.name === '大罗剑胎'
-    && (Number(slot.id) === 100054 || (
-      Number(slot.至尊体全属性倍率) === 7
-      && Number(slot.其他灵根全属性倍率) === 4.5
-    ));
+    && (Number(slot.id) === 100054
+      || (Number(slot.至尊体全属性倍率) === 7 && Number(slot.其他灵根全属性倍率) === 4.5)
+      || (Number(slot.至尊体全属性倍率) === 15 && Number(slot.其他灵根全属性倍率) === 7.5));
 }
 
 export function calculateEquipmentSetBonuses(player, equipment = {}, options = {}) {
@@ -157,6 +156,10 @@ export function calculateEquipmentSetBonuses(player, equipment = {}, options = {
   const daoTreasure = equipment.至宝 || {};
   const root = player?.灵根 || {};
   const bonus = { 攻: 0, 防: 0, 血: 0 };
+
+  if (hasExclusiveEquipmentSet(player, equipment, '岁云剑尊套')) {
+    bonus.攻 += 8; bonus.防 += 8; bonus.血 += 8;
+  }
 
   if (weapon.name === '灭仙剑' && treasure.name === '灭仙符' && armor.name === '灭仙衣' && player.魔道值 > 999 && root.type === '魔头') {
     bonus.攻 += 0.15;

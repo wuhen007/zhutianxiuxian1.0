@@ -5,13 +5,17 @@ import { config, data, plugin, verc } from '../../api/api.js';
 import {
   ForwardMsg,
   Read_player,
+  Read_equipment,
   Write_player,
+  Write_equipment,
   __PATH,
   channel,
   existplayer,
   zd_battle,
 } from '../../model/xiuxian.js';
 import { writeJsonAtomically } from '../../utils/atomicJson.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import {
@@ -24,15 +28,18 @@ import {
   FIRST_SMALL_SACRIFICE_NPCS,
   STRANGE_SACRIFICE,
   STRANGE_SACRIFICE_PLANES,
+  SACRIFICE_BUBBLE_GUIDANCE,
   advanceStrangeSacrificeState,
   applyStrangeSacrificeDefeat,
   applyStrangeSacrificeVictory,
   buildStrangeSacrificeEnemies,
   ensureStrangeSacrificeState,
   forceStartStrangeSacrifice,
+  escapeSacrificeBubble,
   formatHeavenWillSlashStatus,
   getStrangeSacrificeEncounter,
   getStrangeSacrificeInteractionLock,
+  resolveHighlandFinale,
   settleStrangeSacrifice,
 } from '../../model/strangeSacrifice.js';
 
@@ -45,17 +52,61 @@ const RUNTIME = (globalThis[
 });
 
 function readState() {
+  let state;
   try {
-    return ensureStrangeSacrificeState(
+    state = ensureStrangeSacrificeState(
       JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')),
     );
   } catch {
-    return ensureStrangeSacrificeState(null);
+    state = ensureStrangeSacrificeState(null);
   }
+  // 兼容旧版大祭终结记录；永久覆灭不因切换事件入口而重新开启。
+  try {
+    if (JSON.parse(fs.readFileSync(PLANE_FILE, 'utf8')).高原彻底覆灭 === true) {
+      state.plateauDestroyed = true;
+    }
+  } catch {}
+  return state;
 }
 
 function saveState(state) {
   writeJsonAtomically(STATE_FILE, state);
+}
+
+async function resolvePlayerSacrificeBubble(id) {
+  return withPlayerMutationLock(id, async () => {
+    const player = await Read_player(id);
+    const result = escapeSacrificeBubble(player);
+    if (!result.ok) return result;
+    const transaction = new FileRollbackTransaction();
+    transaction.capture(path.join(__PATH.player_path, `${id}.json`));
+    transaction.capture(path.join(__PATH.equipment_path, `${id}.json`));
+    try {
+      await Write_player(id, player, { trackDailyTask: false });
+      await Write_equipment(id, await Read_equipment(id));
+      const refreshed = await Read_player(id);
+      refreshed.当前血量 = Math.max(1, Number(refreshed.血量上限) || 1);
+      await Write_player(id, refreshed, { trackDailyTask: false });
+      transaction.commit();
+      return { ...result, name: refreshed.名号 };
+    } catch (error) {
+      transaction.rollback();
+      throw error;
+    }
+  });
+}
+
+function bubbleStatusText(lock) {
+  return [
+    '【始祖永祭·空间泡影】',
+    '过去、现在、未来的痕迹已被始祖祭尽。此处没有空间、时间、因果与任何概念。',
+    `距挣脱泡影尚余${Math.ceil(lock.remainingMs / 60_000)}分钟（现实时间共720分钟，离线与重启继续计时）。`,
+    '泡影中暂停现世交互，外界映照与加速不替代自身超脱。可发送 #空间泡影状态 查询。',
+  ].join('\n');
+}
+
+function bubbleEscapeText(name) {
+  return `【挣脱泡影·祭道之上】\n${name || '道友'}从没有任何概念的泡影中挣脱而出，超越祭道，真身与道果重归现世。\n现实时间720分钟已满；如今可彻底摧毁厄土高原，终结其时间线回溯。`;
 }
 
 function worldYear() {
@@ -91,6 +142,7 @@ function readPlaneSnapshot() {
 }
 
 function isDoomedOutcome(event) {
+  if (event.destroyed) return false;
   if (event.type === 'small_ended' && event.firstRound) return false;
   if (event.type === 'big_ended' && event.firstRound) return true;
   return !event.defended;
@@ -111,6 +163,9 @@ function settlePlanes(state, event, currentWorldYear) {
     if (!(name in plane)) continue;
     if (shouldRestore) {
       if (snapshot[name] !== undefined) plane[name] = snapshot[name];
+      if (event.destroyed && plane.位面毁灭记录[name]?.source === 'strange_emperor') {
+        plane[name] = Math.max(1, Number(plane[name]) || 0);
+      }
       if (plane.位面毁灭记录[name]?.source === 'strange_emperor')
         delete plane.位面毁灭记录[name];
     } else {
@@ -127,6 +182,10 @@ function settlePlanes(state, event, currentWorldYear) {
   }
   if (Object.keys(plane.位面毁灭记录).length === 0) delete plane.位面毁灭记录;
   plane.诡异祭礼绝灵时代 = shouldRestore ? 0 : 1;
+  if (event.destroyed) {
+    plane.厄土高原 = 0;
+    plane.高原彻底覆灭 = true;
+  }
   plane.天意一刀结束总年份 = state.heavenSlashUntilWorldYear;
   writeJsonAtomically(PLANE_FILE, plane);
 }
@@ -184,6 +243,7 @@ function statusText(state, currentWorldYear) {
     '【诡异高原·祭礼状态】',
     `诸天纪年：${currentWorldYear}年`,
     `小祭次数：${state.smallCount}｜大祭次数：${state.bigCount}`,
+    `高原意志：${state.plateauDestroyed ? '已被祭道之上彻底摧毁' : '尚存，可逆转覆灭时间线'}｜累计回溯：${state.plateauRewinds || 0}次`,
   ];
   if (active) {
     lines.push(
@@ -199,6 +259,7 @@ function statusText(state, currentWorldYear) {
     );
   }
   lines.push(formatHeavenWillSlashStatus(state, currentWorldYear));
+  if (!state.plateauDestroyed) lines.push(SACRIFICE_BUBBLE_GUIDANCE);
   return lines.join('\n');
 }
 
@@ -219,6 +280,21 @@ export class StrangeSacrificeDeathLock extends plugin {
     if (!id || !(await existplayer(id))) return false;
     const player = await Read_player(id);
     const lock = getStrangeSacrificeInteractionLock(player);
+    if (lock.kind === 'bubble') {
+      if (lock.ready) {
+        const result = await resolvePlayerSacrificeBubble(id);
+        if (result.ok) await e.reply(bubbleEscapeText(result.name));
+      } else {
+        await e.reply(bubbleStatusText(lock));
+      }
+      return true;
+    }
+    if (/^#(?:空间泡影状态|挣脱空间泡影)$/.test(e.msg || '')) {
+      await e.reply(player.始祖永祭?.status === 'transcended'
+        ? '你已挣脱空间泡影，踏入祭道之上。'
+        : SACRIFICE_BUBBLE_GUIDANCE);
+      return true;
+    }
     if (lock.active) {
       await e.reply(
         `【身灭道消·诸法皆寂】过去时间线尚未重聚，${Math.ceil(
@@ -307,6 +383,16 @@ export class StrangeSacrifice extends plugin {
     if (this.ticking || RUNTIME.battleInProgress) return false;
     this.ticking = true;
     try {
+      for (const file of readPlayerFiles()) {
+        try {
+          const player = JSON.parse(fs.readFileSync(path.join(__PATH.player_path, file), 'utf8'));
+          if (!getStrangeSacrificeInteractionLock(player).ready) continue;
+          const result = await resolvePlayerSacrificeBubble(file.replace('.json', ''));
+          if (result.ok) await this.broadcast(bubbleEscapeText(result.name));
+        } catch (error) {
+          logger.warn(`[空间泡影] 玩家${file}结算失败：${error.message}`);
+        }
+      }
       const currentWorldYear = worldYear();
       const result = advanceStrangeSacrificeState(readState(), {
         worldYear: currentWorldYear,
@@ -364,6 +450,8 @@ export class StrangeSacrifice extends plugin {
                 )}与大批绝世人物立于诸天之前。`
               : '荒、叶等人已从古史中消失，当世再无原著援军。',
             '祭道对决十大始祖，仙帝迎战十大仙帝，道祖与准仙帝各自面对十位诡异道祖。',
+            '祭道及以下即使覆灭始祖，高原意志也将复苏，回溯至诡异族群未灭的时间线；唯有祭道之上能彻底摧毁。',
+            SACRIFICE_BUBBLE_GUIDANCE,
             '发送 #迎战诡异大祭。',
           ];
       return this.broadcast(lines.join('\n'));
@@ -371,9 +459,19 @@ export class StrangeSacrifice extends plugin {
     if (event.type.endsWith('_ended')) {
       await this.settlePlayers(state, event);
       settlePlanes(state, event, currentWorldYear);
+      if (event.destroyed) {
+        await redis.set('xiuxian:dajie_eternally_defeated', 'true');
+        await redis.del('guiyishizu', 'guiyishizu_ancestors', 'gaoyuan');
+      }
       const small = event.type === 'small_ended';
       const lines =
-        small && event.firstRound
+        event.destroyed
+          ? [
+              '【大祭终焉·高原永灭】',
+              '祭道之上的意志超越一切概念，将高原本源与诡异族群一并彻底摧毁。',
+              '高原再无复苏与回溯之机；诸天重聚，小祭与大祭的轮回就此终止。',
+            ]
+          : small && event.firstRound
           ? [
               '【小祭尾声·荒映照诸天】',
               '荒天帝喋血厄土祖地门前，柳神为救石昊被始祖击穿眉心，大批绝世人物相继战死。',
@@ -433,7 +531,13 @@ export class StrangeSacrifice extends plugin {
             await Write_player(id, player, { trackDailyTask: false });
           continue;
         }
-        applyStrangeSacrificeDefeat(player);
+        if (event.destroyed || getStrangeSacrificeInteractionLock(player).active) {
+          if (changed) await Write_player(id, player, { trackDailyTask: false });
+          continue;
+        }
+        applyStrangeSacrificeDefeat(player, {
+          enemyType: event.type === 'big_ended' && getRealmAuthorityLevel(player) === 22 ? 'ancestor' : undefined,
+        });
         await Write_player(id, player, { trackDailyTask: false });
       } catch (error) {
         logger.warn(`[诡异祭礼] 玩家${id}尾声结算失败：${error.message}`);
@@ -476,6 +580,7 @@ export class StrangeSacrifice extends plugin {
     if (!(await existplayer(id))) return e.reply('请先创建修仙角色。');
     const player = await Read_player(id);
     const lock = getStrangeSacrificeInteractionLock(player);
+    if (lock.kind === 'bubble') return e.reply(bubbleStatusText(lock));
     if (lock.active)
       return e.reply(
         `【身灭道消】尚需${Math.ceil(
@@ -484,10 +589,11 @@ export class StrangeSacrifice extends plugin {
       );
 
     const state = readState();
+    if (state.plateauDestroyed) return e.reply('高原与诡异族群已被祭道之上彻底摧毁，祭礼轮回已终结。');
     if (state.activeEvent?.type !== type) {
       return e.reply(`当前并未爆发诡异${type === 'small' ? '小祭' : '大祭'}。`);
     }
-    if (state.participants[id])
+    if (state.participants[id] && state.participants[id].result !== 'rewound')
       return e.reply('本轮祭礼已经留下你的战斗结果，不可重复迎战。');
 
     const encounter = getStrangeSacrificeEncounter(
@@ -514,7 +620,7 @@ export class StrangeSacrifice extends plugin {
     try {
       ensureTimeRiverSkills(data);
       const challenger = {
-        ...player,
+        ...structuredClone(player),
         id,
         当前血量: Math.max(1, Number(player.当前血量) || 1),
         血量上限: Math.max(
@@ -536,12 +642,22 @@ export class StrangeSacrifice extends plugin {
         (enemy) => enemy.当前血量 <= 0 && enemy._仙帝级强者,
       ).length;
       const won = playerAlive && Number(battle.B_hp) <= 0;
-      const progress = won
+      const finale = won && encounter.enemyType === 'ancestor'
+        ? resolveHighlandFinale(state, player) : null;
+      const progress = won && !finale?.rewound
         ? applyStrangeSacrificeVictory(player, encounter, killed)
         : { emperorKills: 0, totalEmperorKills: Number(player.厄土仙帝击杀数) || 0 };
       let conclusion;
 
-      if (won) {
+      if (finale?.rewound) {
+        conclusion = [
+          '【高原意志复苏·覆灭结局回溯】',
+          '十大始祖与诡异族群虽已覆灭，高原深处的意志却在此刻苏醒，扭转一切。',
+          '覆灭的历史被抹去，时间线回到大战之前：始祖与族群全部复归，本次击杀收益及守界成功不落定。',
+          '本轮祭礼仍在继续，可再次迎战；唯有祭道之上，方能留下不可回溯的终局。',
+        ].join('\n');
+        state.participants[id] = { result: 'rewound', killed: 0, at: Date.now() };
+      } else if (won) {
         player.当前血量 = Math.min(
           Number(player.血量上限) || 1,
           Number(playerCombatant.当前血量) || 1,
@@ -551,8 +667,10 @@ export class StrangeSacrifice extends plugin {
         conclusion = `【守界成功】斩杀${progress.emperorKills}位仙帝级强者，累计仙帝击杀${progress.totalEmperorKills}/10。`;
         state.participants[id] = { result: 'win', killed, at: Date.now() };
       } else {
-        const defeat = applyStrangeSacrificeDefeat(player);
-        conclusion = defeat.rewritten
+        const defeat = applyStrangeSacrificeDefeat(player, { enemyType: encounter.enemyType });
+        conclusion = defeat.eternallySacrificed
+          ? bubbleStatusText(getStrangeSacrificeInteractionLock(player))
+          : defeat.rewritten
           ? [
               '【永恒改命】本战仍判负且不结算击杀收益。',
               '永恒仙图抵消了身灭道消：时间线未被打灭，也未进入24小时交互封锁。',
@@ -566,7 +684,14 @@ export class StrangeSacrifice extends plugin {
         state.participants[id] = { result: 'loss', killed, at: Date.now() };
       }
       await Write_player(id, player, { trackDailyTask: false });
-      saveState(state);
+      if (finale?.destroyed) {
+        const settled = settleStrangeSacrifice(state, 'big', worldYear());
+        await this.applyEvent(settled.state, settled.event, worldYear());
+        saveState(settled.state);
+        conclusion += '\n【高原永灭】你以祭道之上的意志彻底摧毁高原，本次结局永久落定。';
+      } else {
+        saveState(state);
+      }
       await ForwardMsg(e, [
         `【${type === 'small' ? '五帝围猎' : '大祭决战'}】敌军速度固定为${
           STRANGE_SACRIFICE.immortalEmperorEnemySpeed
@@ -587,6 +712,7 @@ export class StrangeSacrifice extends plugin {
       type,
       currentWorldYear,
     );
+    if (!result.event) return e.reply('高原已经彻底覆灭，祭礼轮回已终结。');
     await this.applyEvent(result.state, result.event, currentWorldYear);
     saveState(result.state);
     return e.reply(

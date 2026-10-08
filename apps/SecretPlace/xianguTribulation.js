@@ -21,6 +21,7 @@
 
 import { sleep, bigNumberTransform } from '../../model/xiuxian.js';
 import { getXianqiStrands } from '../../model/xianguXianqi.js';
+import { getSuiyunEffects } from '../../model/suiyun.js';
 import { config, data } from '../../api/api.js';
 import { consumeBlackEmperorTribulationFormation } from '../../model/blackEmperor.js';
 import {
@@ -199,8 +200,11 @@ export class XianguTribulation {
     const msgs = [];
 
     const name = player.灵根?.name;
-    if (name && BODY_EFFECTS[name]) {
-      const eff = BODY_EFFECTS[name];
+    const suiyun = getSuiyunEffects(player);
+    const eff = suiyun.tribulationReduction > 0
+      ? { reduction: suiyun.tribulationReduction, desc: '云月护体，岁月消劫', special: suiyun.madoka ? '圆环之理' : null }
+      : BODY_EFFECTS[name];
+    if (eff) {
       const rd = finalDamage * eff.reduction;
       finalDamage -= rd;
       msgs.push(`【${name}】${eff.desc}｜灵根减伤 减免 ${bigNumberTransform(rd)}`);
@@ -858,6 +862,40 @@ export class XianguTribulation {
     };
   }
 
+  async _runHighXianguTribulation(e, player, fromLevelId) {
+    const route = XIANGU_REALM_ROUTES[Number(fromLevelId)];
+    const targetName = route?.targetName || '高阶仙道领域';
+    const name = player.名号 || '修士';
+    const dead = await this._stageWaves(e, player, [
+      `【${targetName}·仙道天关】`,
+      `${name}以真仙道果为基，连续叩问${targetName}的法则壁垒。`,
+      `仙域与大宇宙的万道同时显化，真我、道果与肉身经受高阶仙道洗礼。`,
+    ], [
+      { frac: 0.08, note: '仙道法则化作长河，冲刷真我道基' },
+      { frac: 0.10, note: '万古仙王烙印显化，围杀冲关者' },
+      { frac: 0.12, note: '帝光劫火贯穿肉身与元神，震动道果' },
+      { frac: 0.15, note: '高阶仙道壁垒合拢，降下最终审判' },
+    ], [
+      `${name}在仙道天关中稳住真我，${targetName}道果由此立定。`,
+      `此后若要叩问准仙帝，仍须先合道并渡过破王成帝劫。`,
+    ], {
+      reportTitle: `——${targetName}·高阶仙道洗礼——`,
+      sourceName: '高阶仙道劫力',
+      fatalName: '仙道天罚',
+      summaryText: `【${targetName}道果稳固】高阶仙道法则洗礼完成`,
+      waveInterval: 2500,
+      stageInterval: 2200,
+    });
+
+    return {
+      success: !dead,
+      revived: this.revived,
+      targetLevelId: route?.targetLevelId,
+      path: '高阶仙道冲关',
+      routeText: dead ? null : `高阶仙道洗礼渡尽，${targetName}道果稳固。`,
+    };
+  }
+
   async _runRealmBreakthrough(e, player, ctx = {}) {
     this.revived = false;
     this.dead = false;
@@ -868,11 +906,11 @@ export class XianguTribulation {
     if (!route || typeof this[route.tribulationMethod] !== 'function') {
       throw new Error('当前境界没有对应的仙古今世法渡劫');
     }
-    this._tribulationPower = fromLevelId >= 8 && fromLevelId <= 14
+    this._tribulationPower = fromLevelId >= 8 && fromLevelId <= 19
       ? calcXianguTribulationPower({ ...player, xiangulevel_id: fromLevelId }, data)
       : null;
     this._horrorMultiplier = getXianguUpperTribulationHorrorMultiplier(fromLevelId);
-    return this[route.tribulationMethod](e, player);
+    return this[route.tribulationMethod](e, player, fromLevelId);
   }
 
   async runXianqiCondensation(e, player, targetStrand, equipment = {}) {

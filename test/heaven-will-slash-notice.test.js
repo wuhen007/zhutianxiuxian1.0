@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import test from 'node:test';
 import {
   applyHeavenWillSlashOnAdvancement,
+  assertSacrificeBubbleWrite,
   ensureStrangeSacrificeState,
   formatHeavenWillSlashImpact,
   formatHeavenWillSlashStatus,
@@ -172,7 +173,7 @@ function reverseLifeFixture(active, failWrite = false) {
   const noop = () => {};
   const context = {
     ...extra, ...heart, ...dust, ...tribulationRules,
-    completeDaoByNineLives, applyHeavenWillSlashOnAdvancement,
+    completeDaoByNineLives, applyHeavenWillSlashOnAdvancement, assertSacrificeBubbleWrite,
     ensureStrangeSacrificeState, formatHeavenWillSlashImpact,
     queueHeavenWillSlashNotice, flushHeavenWillSlashNotice,
     data, path,

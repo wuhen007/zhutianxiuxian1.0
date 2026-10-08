@@ -121,6 +121,7 @@ export function getRecruitCost(association) {
 }
 
 export function recruitDisciple(association, { talentList = [], now = Date.now(), random = Math.random } = {}) {
+  talentList = talentList.filter(talent => !talent?.唯一灵根 && !talent?.不可随机获取);
   ensureSectDisciples(association);
   if (association.宗门弟子.length >= getDiscipleCapacity(association)) {
     return { ok: false, reason: "capacity", message: "宗门弟子名额已满，请先升级宗门。" };

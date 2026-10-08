@@ -14,6 +14,7 @@ import {
   markZhutianMirrorSnapshot,
 } from '../utils/zhutianMirrorVersion.js';
 import { mergeBattleSkillLists } from './battleSkillRegistry.js';
+import { assertTrialWriteCurrent } from './trialUniverse.js';
 
 /*
   数据封装
@@ -671,6 +672,7 @@ this.gongfa_list = JSON.parse(
     if (fs.existsSync(dir)) {
       if (file_name === 'player') {
         const previousPlayer = JSON.parse(fs.readFileSync(dir, 'utf8'));
+        if (previousPlayer.试炼宇宙) assertTrialWriteCurrent(previousPlayer, data);
         assertZhutianMirrorWriteCurrent(previousPlayer, data);
         assertZhutianAvatarRootWriteAllowed(previousPlayer, data);
       }

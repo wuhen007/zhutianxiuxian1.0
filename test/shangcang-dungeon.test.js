@@ -50,7 +50,7 @@ test('上苍四档奖励均由地点配置参与抽取', () => {
       one: { 天帝拳残页: 0.12 },
       two: { 诸世帝魂莲: 0.015 },
       three: { 魂河渡世灯: 0.006, 诸世无痕符: 0.003 },
-      four: { 花粉路祖种: 0.0012, 万劫轮回莲: 0.001 },
+      four: { 万劫轮回莲: 0.001 },
     },
     天帝葬坑: {
       one: { 葬天古经残页: 0.1 },
@@ -62,6 +62,7 @@ test('上苍四档奖励均由地点配置参与抽取', () => {
   for (const dungeon of dungeons) {
     const allDrops = ['one', 'two', 'three', 'four']
       .flatMap(tier => dungeon[tier] || []);
+    assert.equal(allDrops.some(drop => drop.name === '花粉路祖种'), false, '祖种由圣墟唯一机缘发放，不回流上苍普通掉落池');
     assert.ok(dungeon.two.length > 0, `${dungeon.name}缺少中级奖励`);
     assert.ok(dungeon.three.length > 0, `${dungeon.name}缺少高级奖励`);
     assert.ok(dungeon.four.length > 0, `${dungeon.name}缺少最高奖励`);

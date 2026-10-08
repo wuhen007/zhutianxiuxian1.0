@@ -78,7 +78,7 @@ import {
   DAO_TREASURE_STAGES,
   advanceDaoTreasureProject,
 } from '../../model/daoTreasure.js';
-import { spawnForeignCalamities } from '../../model/foreignCalamity.js';
+import { formatForeignCalamityCullReport, spawnForeignCalamities } from '../../model/foreignCalamity.js';
 
 export class EraChangeTask extends plugin {
   constructor() {
@@ -999,6 +999,13 @@ async checkJuelingLoss(e) {
       
       // 推进年份
       years += advanceYears;
+
+      const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
+      let foreignCullReport = null;
+      // 先生成并巡猎，失败时不推进纪年，也不重复执行本轮位面修复和绝灵物品侵蚀。
+      const foreignCalamities = await spawnForeignCalamities(previousWorldYear, currentWorldYear, {
+        onCull: report => { foreignCullReport = report; },
+      });
       
       // ==== 位面自我修复机制：累计年数推进 ====
       const repairInterval = era.weimianRepairInterval || 2000;
@@ -1103,17 +1110,18 @@ if (index === 4) { // 当前是绝灵时代
         () => this.persistEraCurrent(era, { index, years, epoch, totalYears }),
       );
 
-      const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
-      const foreignCalamities = await spawnForeignCalamities(previousWorldYear, currentWorldYear);
-      if (foreignCalamities.length > 0 && era.pushNotice) {
+      if ((foreignCalamities.length > 0 || foreignCullReport?.count) && era.pushNotice) {
         const counts = foreignCalamities.reduce((total, entity) => {
           total[entity.type] = (total[entity.type] || 0) + 1;
           return total;
         }, {});
         await this.broadcastMessage([
-          '【千年灾劫·域外来敌】',
-          `诸天纪年抵达${foreignCalamities[0].worldYear}年，界壁外降下${foreignCalamities.length}尊灾厄。`,
-          Object.entries(counts).map(([type, count]) => `${type}x${count}`).join('、'),
+          ...(foreignCalamities.length ? [
+            '【千年灾劫·域外来敌】',
+            `诸天纪年抵达${currentWorldYear}年，本轮界壁外共降下${foreignCalamities.length}尊灾厄。`,
+            Object.entries(counts).map(([type, count]) => `${type}x${count}`).join('、'),
+          ] : []),
+          ...(foreignCullReport?.count ? [formatForeignCalamityCullReport(foreignCullReport)] : []),
           '发送 #域外灾厄 查看，击败后可获得两组随机战利品、业力消减与位面青睐。',
         ].join('\n'));
       }

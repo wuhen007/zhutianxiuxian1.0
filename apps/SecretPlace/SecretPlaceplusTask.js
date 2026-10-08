@@ -41,6 +41,8 @@ import {
 } from '../../model/redDustFortune.js';
 import RealmEvents from '../tasks/RealmEvents.js';
 import { getInnateDungeonRewardMultiplier } from '../../model/innateTreasure.js';
+import { getSuiyunEffects } from '../../model/suiyun.js';
+import { rollAndGrantSuiyunRemnant } from '../../model/suiyunRegistry.js';
 import {
   awardDungeonGongfaProficiency,
   formatGongfaProficiency,
@@ -338,7 +340,7 @@ export class SecretPlaceplusTask extends plugin {
             z += 0.5;
             last_msg += '你是魔法少女，晓美焰不断轮回重启世界线叠加的因果使你能够在秘境中出金率提升 ';
           }
-               if (player.灵根.type === "圆环之理" ) {
+               if ((player.灵根.type === "圆环之理" || getSuiyunEffects(player).madoka) ) {
             y+=0.5
             last_msg += '你是超越宇宙法则的存在，圆环之理的秩序力量能使你看透秘境 ';
           }
@@ -471,7 +473,7 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
     await recordItemToHistory(player_id, twoReward.name, twoReward.class, 6);
     last_msg += `额外获得[${oneReward.name}][${twoReward.name}]x6`;
   }          
-    if (player.灵根.type === "圆环之理") {
+    if ((player.灵根.type === "圆环之理" || getSuiyunEffects(player).madoka)) {
     const oneReward = weizhi.one[Math.floor(Math.random() * weizhi.one.length)];
     const twoReward = weizhi.two[Math.floor(Math.random() * weizhi.two.length)];
     const threeReward = weizhi.three[Math.floor(Math.random() * weizhi.three.length)];
@@ -917,7 +919,7 @@ if (weizhi.name === "紫薇星域") {
         await sendSecretPlaceNotification(action, usr_qq, '源气紊乱，天机不显！事件处理失败');
     }
 }
-             if ((player.灵根.type === "圆环之理" ||player.灵根.type === "圣体道胎" ||player.灵根.type === "圣体" || player.灵根.type === "小成圣体" || player.灵根.type === "大成圣体"||player.灵根.type === "神慧者") && weizhi.name === "荒古禁地") {
+             if (((player.灵根.type === "圆环之理" || getSuiyunEffects(player).madoka) ||player.灵根.type === "圣体道胎" ||player.灵根.type === "圣体" || player.灵根.type === "小成圣体" || player.灵根.type === "大成圣体"||player.灵根.type === "神慧者") && weizhi.name === "荒古禁地") {
               let random = Math.random();
               // 根据玩家的幸运值调整概率
               let adjustedProbability = random < player.幸运 ? random * player.幸运 : random;
@@ -950,7 +952,7 @@ if (weizhi.name === "紫薇星域") {
                 await recordItemToHistory(player_id, '不死神泉', '道具', 1);
               }
           }
-          if ((player.灵根.type === "圆环之理" ||player.灵根.type === "圣体道胎" ||player.灵根.type === "圣体" || player.灵根.type === "小成圣体" || player.灵根.type === "大成圣体"||player.灵根.type === "神慧者") && weizhi.name === "北斗星紫山") {
+          if (((player.灵根.type === "圆环之理" || getSuiyunEffects(player).madoka) ||player.灵根.type === "圣体道胎" ||player.灵根.type === "圣体" || player.灵根.type === "小成圣体" || player.灵根.type === "大成圣体"||player.灵根.type === "神慧者") && weizhi.name === "北斗星紫山") {
             let random = Math.random();
             // 根据玩家的幸运值调整概率
             let adjustedProbability = random;
@@ -997,7 +999,7 @@ if (weizhi.name === "紫薇星域") {
                     ];
                     
                     // 获取玩家当前天资等级索引
-                    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级);
+                    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
                     // 最低要求天资等级索引（天纵之资，索引6）
                     const minAptitudeIndex = 6;
                      const tianxuanbufa = await checkGongfaInServer('天璇步法');
@@ -1780,7 +1782,7 @@ if (player.灵根.type === "魔卡少女·完全") {
             const redDustDungeonMultiplier = getDungeonFortuneMultiplier(player);
             player.副本通关次数 = (Number(player.副本通关次数) || 0) + 1;
             recordWenXianTaskProgress(player, 'dungeon');
-            const innateDungeonMultiplier = getInnateDungeonRewardMultiplier(player);
+            const innateDungeonMultiplier = getInnateDungeonRewardMultiplier(player) * getSuiyunEffects(player).lootMultiplier;
             dungeonFortuneMultiplier = redDustDungeonMultiplier * innateDungeonMultiplier;
             n *= dungeonFortuneMultiplier;
             if (redDustDungeonMultiplier > 1) last_msg += '红尘历练签显化，副本物品收益再度翻倍。';
@@ -1890,6 +1892,12 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
                 await Add_najie_thing(player_id, duandeEncounter.item.name, duandeEncounter.item.class, duandeEncounter.item.amount);
                 last_msg += duandeEncounter.message;
               }
+              const suiyunEncounter = await rollAndGrantSuiyunRemnant(
+                { ...player, id: player_id },
+                ({ idempotencyKey }) => Add_najie_thing(player_id, '岁云的残念', '道具', 1, undefined, undefined, { idempotencyKey }),
+                { location: weizhi?.name },
+              );
+              if (suiyunEncounter.encountered) last_msg += '\n往世星海深处，一缕【岁云的残念】落入纳戒。使用后可开启月华之体。';
               const shengfaEncounter = rollShengfaDungeonEncounter(player);
               if (shengfaEncounter.encountered) {
                 await Add_najie_thing(player_id, '圣法碎片', '道具', 1);
@@ -2010,7 +2018,7 @@ if (random < 0.0001) {
     ];
     
     // 获取当前天资位置
-    const currentIndex = aptitudeSequence.indexOf(player.天资等级);
+    const currentIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
     
     // 如果玩家天资不在序列中（可能是旧数据），统一修正到轮回最低档
     if (currentIndex === -1) {

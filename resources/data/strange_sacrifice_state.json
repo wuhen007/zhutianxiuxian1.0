@@ -13,5 +13,10 @@
 	"warnedBigDueWorldYear": null,
 	"participants": {},
 	"successfulDefenders": 0,
-	"lastOutcome": null
+	"lastOutcome": null,
+	"plateauDestroyed": false,
+	"plateauRewinds": 0,
+	"causalBigAdvanceWorldYears": 0,
+	"causalPressureCount": 0,
+	"lastCausalAdvanceAt": 0
 }

@@ -2,6 +2,8 @@ import { getRealmAuthorityLevel, getRealmAuthorityPath } from './realmAuthority.
 import { synchronizeCausalFacts } from './worldlineAuthority.js';
 import { tryEternalFateRewrite } from './innateTreasure.js';
 
+export { resetSelfDaoAfterImmortalEmperorFall } from './realmAuthority.js';
+
 export const SELF_DAO_REQUIRED_ATTEMPTS = 20;
 export const SACRIFICE_DAO_REQUIRED_ATTEMPTS = 10;
 export const SACRIFICE_DAO_COST_MULTIPLIER = 10;

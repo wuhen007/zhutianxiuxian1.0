@@ -1,9 +1,15 @@
+import { createStoryTheater } from './story.js?v=20260930-story';
+import { createPlanetPainter, planetMaterial } from './planets.js?v=20260930-planets';
+
 (() => {
   'use strict';
 
   const $ = selector => document.querySelector(selector);
   const canvas = $('#star-map');
   const context = canvas.getContext('2d', { alpha: false });
+  const planetPainter = createPlanetPainter();
+  const portrait = $('#planet-portrait');
+  let portraitKey = '';
   const app = $('#app');
   const gate = $('#gate');
   const intelPanel = $('#intel-panel');
@@ -87,6 +93,17 @@
   let toastTimer = 0;
   let travel = null;
   let lastFrame = 0;
+  let actionEffect = null;
+  const story = createStoryTheater({
+    root: app,
+    motionQuery,
+    preview: isPreview,
+    onEffect(effect, point) {
+      const target = point || currentNode();
+      if (target) actionEffect = { effect, x: target.x, y: target.y, startedAt: performance.now() };
+    },
+  });
+  const reducedMotion = () => motionQuery.matches || story.motionOff;
 
   const STAR_PREFIXES = ['赤霄', '归墟', '照夜', '长庚', '沉璧', '扶光', '玄阙', '烬海'];
   const STAR_SUFFIXES = ['天轮', '古曜', '孤辰', '界灯', '神炉', '道渊', '明墟', '帝垣'];
@@ -763,6 +780,7 @@
 
   function createPreviewState() {
     const campaignStars = {
+      '0,0': { name: '沧澜祖星', kind: 'origin', law: '万物生息', civilization: '先秦归航者', signal: '海陆之间仍有生灵繁衍。古老星锚守候着横越两岸的归航者。' },
       '1,-1': { name: '玄阙神炉', kind: '古文明神炉', law: '太初真火', civilization: '先秦炼气士遗脉', signal: '神炉灾痕连接着失落古航路，炉心深处有共享灾核正在复苏。' },
       '4,-4': { name: '彼岸渡口', kind: '裂界古渡', law: '两界折叠', civilization: '先秦归航者', signal: '残缺渡碑保存着先秦炼气士横穿灵界裂隙的返乡坐标。' },
       '0,-4': { name: '裂界母锚', kind: '维度母锚', law: '万隙归源', civilization: '彼岸古文明', signal: '诸灵界裂隙在此汇为同一根系，母锚背后隐约显出更高世界。' },
@@ -779,7 +797,7 @@
         : status === 'explored'
           ? Math.max(0, node.anchorRequirement - 1)
           : 0;
-      return { ...node, ...(campaignStars[node.id] || {}), status, contribution, viewerContributed: false };
+      return { ...node, kind: ['life', 'tide', 'ruin', 'rift', 'dead', 'civilization'][node.seed % 6], ...(campaignStars[node.id] || {}), status, contribution, viewerContributed: false };
     });
 
     const previewState = normalizeState({
@@ -1880,6 +1898,7 @@
 
   function render() {
     if (!state) return;
+    story.syncPreferences();
     const player = state.player;
     const current = currentNode();
     let selected = getNode(selectedId);
@@ -1910,11 +1929,20 @@
     const progress = explorationProgress(selected);
     setText('#star-status', selected ? selected.cleared ? '彻查' : STATUS_LABELS[selected.status] : '尚未定星');
     setText('#star-name', displayName(selected));
+    renderPlanetPortrait(selected);
+    const picker = $('#planet-select');
+    picker.replaceChildren(...state.nodes.map(node => {
+      const option = document.createElement('option');
+      option.value = node.id;
+      option.textContent = `${displayName(node)} · ${node.coordKey}`;
+      return option;
+    }));
+    picker.value = selected?.id || '';
     setText('#star-coordinates', selected ? `星标 Q${signed(selected.q)} · R${signed(selected.r)}` : '沧澜星图等待神念');
     setText('#threat-mark', unseen ? '--' : `危${Number(selected.threat) || '?'}`);
     setText('#star-signal', selected ? (unseen ? '星雾遮断神念，只能确认一颗大星正在边界之后燃烧。' : selected.signal || selected.description) : '星海寂静，因果尚未落向任何坐标。');
     setText('#star-law', unseen ? '未解析' : selected.law);
-    setText('#star-kind', unseen ? '未解析' : selected.kind);
+    setText('#star-kind', unseen ? '未解析' : planetMaterial(selected).label);
     setText('#star-civilization', unseen ? '未解析' : selected.civilization);
     setText('#star-threat', unseen ? '未解析' : threatLabel(selected.threat));
     setText('#star-contribution', unseen
@@ -1939,6 +1967,32 @@
     renderExpedition(selected);
     renderProgression();
     renderTrueWorld();
+    // 首屏和后台标签页也绘制一帧，持续动画仍在隐藏时暂停。
+    draw(performance.now());
+  }
+
+  function renderPlanetPortrait(node) {
+    if (!node) return;
+    const material = planetMaterial(node);
+    setText('#planet-type', material.label);
+    setText('#planet-coordinate', `${signed(node.q)} / ${signed(node.r)}`);
+    setText('#planet-visual-note', node.status === 'unseen' ? '星雾未散 · 表面尚待观测' : '星相演绎 · 非实测地貌');
+    portrait.setAttribute('aria-label', `${displayName(node)}的${node.status === 'unseen' ? '未知轮廓' : '行星近景'}`);
+    const key = `${node.id}:${node.status}:${node.kind}:${devicePixelRatio}`;
+    if (key === portraitKey) return;
+    portraitKey = key;
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    portrait.width = 320 * dpr;
+    portrait.height = 235 * dpr;
+    const ctx = portrait.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, 320, 235);
+    ctx.strokeStyle = 'rgba(199,167,95,.14)';
+    ctx.lineWidth = .6;
+    for (const r of [108, 139]) {
+      ctx.beginPath(); ctx.ellipse(160, 116, r, r * .31, -.36, 0, Math.PI * 2); ctx.stroke();
+    }
+    planetPainter.draw(ctx, node, 160, 113, 86, { quality: 320 });
   }
 
   function signed(value) {
@@ -1965,8 +2019,8 @@
     const panelWidth = desktop ? parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--panel-width')) || 370 : 0;
     const areaLeft = 20;
     const areaRight = view.width - panelWidth - 20;
-    const areaTop = desktop ? 112 : 92;
-    const areaBottom = view.height - (desktop ? 96 : 82);
+    const areaTop = desktop ? 214 : 246;
+    const areaBottom = view.height - 110;
     const mapWidth = BOUNDS.maxX - BOUNDS.minX;
     const mapHeight = BOUNDS.maxY - BOUNDS.minY;
     camera.zoom = Math.max(.34, Math.min(1.18, (areaRight - areaLeft) / mapWidth, (areaBottom - areaTop) / mapHeight));
@@ -2012,18 +2066,25 @@
     context.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
     context.fillStyle = PALETTE.void;
     context.fillRect(0, 0, view.width, view.height);
+    const glow = context.createRadialGradient(view.width * .38, view.height * .48, 0, view.width * .38, view.height * .48, view.height * .68);
+    glow.addColorStop(0, '#16272a55'); glow.addColorStop(.55, '#101b2228'); glow.addColorStop(1, '#09090800');
+    context.fillStyle = glow; context.fillRect(0, 0, view.width, view.height);
+    for (let i = 0; i < 240; i += 1) {
+      const hash = nodeHash(i, 23);
+      const x = (hash % 10000) / 10000 * view.width;
+      const y = ((hash >>> 8) % 10000) / 10000 * view.height;
+      context.globalAlpha = .15 + (hash % 5) * .075;
+      context.fillStyle = i % 4 ? '#adbbb9' : '#c7a75f';
+      context.fillRect(x, y, i % 17 ? .7 : 1.3, i % 17 ? .7 : 1.3);
+    }
+    context.globalAlpha = 1;
+    context.strokeStyle = 'rgba(138,165,165,.07)';
     context.lineWidth = 1;
-    context.strokeStyle = 'rgba(237,229,212,.035)';
-    context.beginPath();
-    context.moveTo(-40, view.height * .78);
-    context.lineTo(view.width * .72, view.height * .16);
-    context.lineTo(view.width + 50, view.height * .28);
-    context.stroke();
-    context.strokeStyle = 'rgba(189,69,52,.12)';
-    context.beginPath();
-    context.moveTo(0, view.height * .82);
-    context.lineTo(view.width * .33, view.height);
-    context.stroke();
+    for (let r = 1; r <= 3; r += 1) {
+      context.beginPath();
+      context.ellipse(view.width * .37, view.height * .52, view.height * (.2 + r * .16), view.height * (.16 + r * .11), -.25, 0, Math.PI * 2);
+      context.stroke();
+    }
   }
 
   function purgeRouteNodes(threat = state?.threat) {
@@ -2216,95 +2277,53 @@
     const selected = getNode(selectedId)?.id === node.id;
     const current = currentNode()?.id === node.id;
     const unknown = node.status === 'unseen';
+    const radius = unknown ? 12 : selected ? 27 : current ? 25 : 17 + (node.seed % 6);
     const color = starColor(node);
-    const pulse = motionQuery.matches ? 0 : Math.sin(now * .0015 + node.seed) * .8;
-    const core = unknown ? 2.2 : 3.3 + (node.seed % 3) * .55;
-
     context.save();
-    context.globalAlpha = unknown ? .42 : 1;
-    traceHex(node.x, node.y, HEX_RADIUS - .8 / camera.zoom);
-    context.lineWidth = (selected ? 1.7 : .7) / camera.zoom;
-    context.strokeStyle = selected ? PALETTE.goldBright : unknown ? 'rgba(237,229,212,.12)' : 'rgba(237,229,212,.22)';
-    context.stroke();
-
-    if (selected) {
-      traceHex(node.x, node.y, HEX_RADIUS - 5 / camera.zoom);
-      context.lineWidth = .7 / camera.zoom;
-      context.strokeStyle = PALETTE.cinnabar;
+    if (selected || current) {
+      context.strokeStyle = selected ? PALETTE.goldBright : 'rgba(199,167,95,.55)';
+      context.lineWidth = .9 / camera.zoom;
+      context.beginPath();
+      context.arc(node.x, node.y, radius + 9, 0, Math.PI * 2);
       context.stroke();
+      context.globalAlpha = .3;
+      context.beginPath();
+      context.arc(node.x, node.y, radius + 13, -.8, 3.8);
+      context.stroke();
+      context.globalAlpha = 1;
     }
-
-    context.strokeStyle = color;
-    context.lineWidth = .8 / camera.zoom;
-    context.globalAlpha = unknown ? .25 : .58;
-    context.beginPath();
-    context.arc(node.x, node.y, 10 + pulse, now * .00022 + node.seed, now * .00022 + node.seed + Math.PI * 1.35);
-    context.stroke();
-    context.beginPath();
-    context.arc(node.x, node.y, 15 - pulse * .4, -now * .00016 - node.seed, -now * .00016 - node.seed + Math.PI * .75);
-    context.stroke();
-
-    context.globalAlpha = unknown ? .45 : .86;
-    context.beginPath();
-    context.moveTo(node.x - (11 + core), node.y);
-    context.lineTo(node.x + (11 + core), node.y);
-    context.moveTo(node.x, node.y - (11 + core));
-    context.lineTo(node.x, node.y + (11 + core));
-    context.stroke();
-
-    context.globalAlpha = 1;
-    context.fillStyle = color;
-    context.beginPath();
-    context.arc(node.x, node.y, core, 0, Math.PI * 2);
-    context.fill();
-    context.fillStyle = PALETTE.void;
-    context.beginPath();
-    context.arc(node.x, node.y, Math.max(1, core * .28), 0, Math.PI * 2);
-    context.fill();
-
+    planetPainter.draw(context, node, node.x, node.y, radius, {
+      quality: camera.zoom > 1.65 ? 256 : 112,
+      opacity: unknown ? .6 : node.status === 'observed' ? .8 : 1,
+    });
+    if (node.status === 'anchored' || node.cleared) {
+      context.fillStyle = PALETTE.goldBright;
+      context.beginPath();
+      context.moveTo(node.x, node.y - radius - 9);
+      context.lineTo(node.x - 2.5, node.y - radius - 5);
+      context.lineTo(node.x + 2.5, node.y - radius - 5);
+      context.closePath(); context.fill();
+    }
     if (Number(node.threat) >= 7 && !unknown) {
       context.strokeStyle = PALETTE.cinnabar;
-      context.lineWidth = 1.2 / camera.zoom;
-      context.beginPath();
-      context.arc(node.x, node.y, 21, -.8, .8);
-      context.stroke();
-    }
-
-    if (node.cleared && !unknown) {
-      context.strokeStyle = PALETTE.goldBright;
-      context.lineWidth = 1.4 / camera.zoom;
-      context.globalAlpha = .82;
-      context.beginPath();
-      context.arc(node.x, node.y, 18, 0, Math.PI * 2);
-      context.stroke();
-    }
-
-    if (current) {
-      context.strokeStyle = PALETTE.goldBright;
       context.lineWidth = 1.7 / camera.zoom;
-      context.beginPath();
-      context.arc(node.x, node.y, 23, 0, Math.PI * 2);
-      context.stroke();
-      context.beginPath();
-      context.moveTo(node.x, node.y - 29);
-      context.lineTo(node.x - 3.5, node.y - 24);
-      context.lineTo(node.x + 3.5, node.y - 24);
-      context.closePath();
-      context.fillStyle = PALETTE.goldBright;
-      context.fill();
+      context.beginPath(); context.arc(node.x, node.y, radius + 5, -.65, .65); context.stroke();
     }
-
-    if (!unknown && camera.zoom >= .62) {
-      context.font = '600 9px "Microsoft YaHei UI", sans-serif';
-      context.textAlign = 'center';
-      context.textBaseline = 'top';
-      context.fillStyle = selected ? PALETTE.bone : PALETTE.boneSoft;
-      context.globalAlpha = selected ? 1 : .78;
-      context.fillText(String(node.name).slice(0, 6), node.x, node.y + 26, 66);
+    if ((!unknown && camera.zoom >= .53) || selected) {
+      const labelY = node.y + radius + 9;
+      context.textAlign = 'center'; context.textBaseline = 'top';
+      context.font = '500 9px "Microsoft YaHei UI", sans-serif';
+      context.fillStyle = '#090d10';
+      const label = unknown ? '未探明古星' : String(node.name).slice(0, 8);
+      const width = context.measureText(label).width;
+      context.globalAlpha = .8;
+      context.fillRect(node.x - width / 2 - 3, labelY - 2, width + 6, 14);
+      context.globalAlpha = 1;
+      context.fillStyle = selected ? PALETTE.goldBright : color;
+      context.fillText(label, node.x, labelY, 78);
     }
     context.restore();
   }
-
   function travelPosition(now) {
     if (!travel || travel.route.length < 2) return null;
     const linear = Math.min(1, Math.max(0, (now - travel.startedAt) / 1000));
@@ -2345,23 +2364,65 @@
   }
 
   function draw(now = 0) {
+    const animationTime = reducedMotion() ? 0 : now;
     drawBackground();
     context.save();
     context.translate(camera.x, camera.y);
     context.scale(camera.zoom, camera.zoom);
-    drawCampaignRoute(now);
-    drawPurgeRoute(now);
-    drawRoute(now);
-    (state?.nodes || BASE_NODES).forEach(node => drawNode(node, now));
-    drawThreatMarkers(now);
-    drawTravel(now);
+    drawCampaignRoute(animationTime);
+    drawPurgeRoute(animationTime);
+    drawRoute(animationTime);
+    (state?.nodes || BASE_NODES).forEach(node => drawNode(node, animationTime));
+    drawThreatMarkers(animationTime);
+    if (!reducedMotion()) {
+      drawTravel(now);
+      drawActionEffect(now);
+    }
+    context.restore();
+  }
+
+  function drawActionEffect(now) {
+    if (!actionEffect) return;
+    const progress = (now - actionEffect.startedAt) / 2200;
+    if (progress >= 1) { actionEffect = null; return; }
+    const { effect, x, y } = actionEffect;
+    const radius = 20 + progress * 125;
+    const danger = effect === 'battle';
+    context.save();
+    context.translate(x, y);
+    context.globalAlpha = Math.sin(progress * Math.PI) * .75;
+    context.strokeStyle = danger ? PALETTE.cinnabar : PALETTE.goldBright;
+    context.lineWidth = 1.4 / camera.zoom;
+    if (effect === 'anchor' || effect === 'forge' || effect === 'ancient') {
+      context.rotate(progress * Math.PI * .18);
+      traceHex(0, 0, 25 + progress * 38);
+      context.stroke();
+      traceHex(0, 0, 32 + progress * 50);
+      context.stroke();
+    }
+    context.beginPath();
+    context.arc(0, 0, radius, 0, Math.PI * 2);
+    context.stroke();
+    context.globalAlpha *= .55;
+    context.beginPath();
+    context.arc(0, 0, radius * .7, progress * 2, progress * 2 + Math.PI * 1.4);
+    context.stroke();
+    if (danger || effect === 'forge') {
+      context.beginPath();
+      for (let index = 0; index < 12; index += 1) {
+        const angle = index * Math.PI / 6;
+        context.moveTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
+        context.lineTo(Math.cos(angle) * (radius + 15), Math.sin(angle) * (radius + 15));
+      }
+      context.stroke();
+    }
     context.restore();
   }
 
   function frame(now) {
     requestAnimationFrame(frame);
     if (document.hidden) return;
-    if (!travel && motionQuery.matches && now - lastFrame < 500) return;
+    if (!travel && reducedMotion() && now - lastFrame < 500) return;
     if (now - lastFrame < 32) return;
     lastFrame = now;
     draw(now);
@@ -3069,7 +3130,7 @@
   }
 
   function playTravel(route) {
-    if (motionQuery.matches || route.length < 2) return Promise.resolve();
+    if (reducedMotion() || route.length < 2) return Promise.resolve();
     jumpFlash.classList.remove('is-active');
     void jumpFlash.offsetWidth;
     jumpFlash.classList.add('is-active');
@@ -3102,6 +3163,13 @@
               ? daoForgeTargetId(action)
               : getNode(selectedId)?.id;
     if (!targetId) return;
+    const before = state;
+    const requestId = operationId();
+    const effectNode = trueWorldAction || ancientEventAction || daoForgeAction ? currentNode() : getNode(targetId);
+    const targetName = trueWorldAction ? state.trueWorld?.currentSector?.name || '真世界'
+      : ancientEventAction ? '古文明遗迹'
+        : daoForgeAction ? '大道铸炉' : displayName(effectNode);
+    let acknowledged = null;
     const travelRoute = action === 'move' ? [...currentRoute] : [];
     busy = true;
     activeAction = action;
@@ -3111,8 +3179,9 @@
         ? previewAction(action, targetId)
         : await requestJson('/api/canglan/action', {
           method: 'POST',
-          body: JSON.stringify({ action, targetId, operationId: operationId() }),
+          body: JSON.stringify({ action, targetId, operationId: requestId }),
         });
+      acknowledged = payload;
       if (action === 'move') await playTravel(travelRoute);
       const nextState = payload.state || (!isPreview ? await fetchState() : state);
       state = normalizeState(nextState);
@@ -3126,8 +3195,16 @@
               ? selectedId
               : (getNode(targetId)?.id || state.player.positionId);
       showToast(payload.message || '星海因果已经更新。');
+      story.present({ action, message: payload.message, targetName, before, after: state, point: effectNode, operationId: requestId });
     } catch (error) {
       showToast(error.message || '本次神念未能落定。');
+      story.present({
+        action, targetName, operationId: requestId,
+        failed: !acknowledged, pendingSync: Boolean(acknowledged),
+        message: acknowledged
+          ? `${acknowledged.message || '行动已有响应。'}\n星图同步暂未完成，请先刷新核对，勿重复提交。\n${error.message || ''}`
+          : error.message || '本次响应未确认，请刷新星图核对。',
+      });
     } finally {
       busy = false;
       activeAction = '';
@@ -3172,6 +3249,22 @@
   $('#zoom-in').addEventListener('click', () => setZoom(camera.zoom * 1.2));
   $('#zoom-out').addEventListener('click', () => setZoom(camera.zoom / 1.2));
   $('#reset-view').addEventListener('click', resetView);
+  $('#planet-focus').addEventListener('click', () => {
+    const node = getNode(selectedId);
+    if (!node) return;
+    const desktop = view.width > 760;
+    const panelWidth = desktop ? parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--panel-width')) || 370 : 0;
+    camera.zoom = 2.3;
+    camera.x = (view.width - panelWidth) / 2 - node.x * camera.zoom;
+    camera.y = view.height * .52 - node.y * camera.zoom;
+    if (!desktop) setDrawer(false);
+    canvas.focus({ preventScroll: true });
+  });
+  $('#planet-select').addEventListener('change', event => {
+    selectedId = event.target.value;
+    render();
+    if (view.width <= 760) setDrawer(true);
+  });
   $('#refresh-state').addEventListener('click', refreshState);
   $('#focus-threat').addEventListener('click', focusThreat);
   $('#drawer-toggle').addEventListener('click', () => setDrawer(!intelPanel.classList.contains('is-open')));

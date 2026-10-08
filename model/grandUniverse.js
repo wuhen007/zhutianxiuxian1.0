@@ -27,6 +27,15 @@ export const GRAND_UNIVERSE_CARRY_REALM_STAGE = Object.freeze({
   19: 4,
 });
 
+// 仙古今世法高阶境界所需的大宇宙法则阶段。
+export const GRAND_UNIVERSE_CARRY_XIANGU_STAGE = Object.freeze({
+  16: 0,
+  17: 2,
+  18: 3,
+  19: 4,
+  20: 5,
+});
+
 const DUNGEON_EDIT_FIELDS = Object.freeze({
   '简介': 'description',
   '敌人': 'enemyName',
@@ -143,6 +152,32 @@ export function canGrandUniverseCarryMijingRealm(world, mijingLevel) {
     };
   }
   return { ok: true, target, stage };
+}
+
+export function canGrandUniverseCarryXianguRealm(world, xianguLevel) {
+  const universe = universeOf(world);
+  if (!universe) return { ok: false, reason: 'universe' };
+  const target = Math.trunc(Number(xianguLevel));
+  const requiredStage = GRAND_UNIVERSE_CARRY_XIANGU_STAGE[target];
+  if (requiredStage === undefined) return { ok: false, reason: 'unsupported', target };
+  const stage = lawStage(world);
+  if (stage.level < requiredStage) {
+    return {
+      ok: false,
+      reason: 'capacity',
+      target,
+      stage,
+      required: GRAND_UNIVERSE_LAW_STAGES[requiredStage],
+    };
+  }
+  return { ok: true, target, stage };
+}
+
+export function getPlayerGrandUniverse(worlds, player, playerId) {
+  const ownerId = playerId || player?.id;
+  return (Array.isArray(worlds) ? worlds : []).find(item => (
+    item?.大宇宙 && String(item.player_qq) === String(ownerId)
+  )) || null;
 }
 
 export function isGrandUniverseAbsoluteSpiritImmune(world) {

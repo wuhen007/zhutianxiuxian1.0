@@ -1,3 +1,4 @@
+import { getSuiyunEffects } from '../../model/suiyun.js';
 import { plugin,  verc, data, config } from '../../api/api.js';
 import {
   existplayer,
@@ -240,7 +241,7 @@ export class WDT extends plugin {
       await Add_灵石(B, JL);
       A;
       let A_player = await Read_player(A);
-      A_player.魔道值 += 1;
+      if (!getSuiyunEffects(A_player).noDemonicValue) A_player.魔道值 += 1;
       data.setData('player', A, A_player);
       final_msg.push(
         ` 经过一番大战,${A_win}获得了胜利,${A_player.名号}获得${qixue}气血，${B_player.名号}获得${qixue2}气血，双方都获得了${JL}的灵石。`
@@ -254,7 +255,7 @@ export class WDT extends plugin {
       await Add_灵石(A, JL);
       await Add_灵石(B, JL);
       let B_player = await Read_player(B);
-      B_player.魔道值 += 1;
+      if (!getSuiyunEffects(B_player).noDemonicValue) B_player.魔道值 += 1;
       data.setData('player', playerBB, B_player);
       final_msg.push(
         `经过一番大战,${B_win}获得了胜利,${B_player.名号}获得${qixue2}气血，${A_player.名号}获得${qixue}气血，双方都获得了${JL}的灵石。`

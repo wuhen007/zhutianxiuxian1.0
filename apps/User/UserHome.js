@@ -1,3 +1,4 @@
+import { getSuiyunEffects } from '../../model/suiyun.js';
 import { plugin,  verc, data, config } from '../../api/api.js';
 import {
   calculateMinggeCost,
@@ -1021,13 +1022,13 @@ async useLinggenToken(e) {
     const isLucky = Math.random() < luckChance;
     
    // 特殊体质特效
-if (isLucky || player.灵根.type === "圆环之理") { 
+if (isLucky || player.灵根.type === "圆环之理" || getSuiyunEffects(player).madoka) {
     // 圆环之理会强制触发幸运效果
-    if (player.灵根.type === "圆环之理") {
-        n = 5; // 圆环之理五倍奖励
+    if (player.灵根.type === "圆环之理" || getSuiyunEffects(player).madoka) {
+        n = getSuiyunEffects(player).madoka ? 1 : 5; // 圆环之理五倍奖励
         rewardMsg += "「全ての魔女は、生まれる前に消滅させておく」\n";
         rewardMsg += " 法则重构！圆环之理显现，钓竿化作因果之线！\n";
-        rewardMsg += " 神明垂钓！法则加持，本次钓获五倍珍宝！\n";
+        rewardMsg += getSuiyunEffects(player).madoka ? " 岁云法则显现，本次钓获十倍珍宝！\n" : " 神明垂钓！法则加持，本次钓获五倍珍宝！\n";
     } else {
         n = 2;
         if (player.灵根.type === "魔卡少女") {
@@ -1044,6 +1045,8 @@ if (isLucky || player.灵根.type === "圆环之理") {
     }
 }
     
+    n *= getSuiyunEffects(player).lootMultiplier;
+
     // 道法仙术提示（顺序与 CD 实际计算一致：先引潮灯减半，再道法-10）
     if (hasTideLamp) {
         rewardMsg += " 万界引潮灯照彻众生海，垂钓冷却缩短一半，愿鳞与仙饵收获翻倍！\n";
@@ -2619,7 +2622,7 @@ if (equipment.帝兵.name == "终古剑之主") {
     ];
 
     // 获取当前天资位置
-    const currentIndex = aptitudeSequence.indexOf(player.天资等级);
+    const currentIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
     
     // === 特殊天资处理 ===
     if (player.天资等级 === '无化如是') {
@@ -5377,7 +5380,7 @@ const aptitudeDescriptions = {
     await Add_najie_thing(usr_qq, "至尊血池浸泡资格", "道具", -1);
     
     // 获取玩家当前天资等级索引
-    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级);
+    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
     
     // 检查是否已经提升过天资
     const hasAptitudeBoost = player.至尊血池提升标记 || false;
@@ -5532,7 +5535,7 @@ if (thing_name === "神秘花粉") {
     await Add_najie_thing(usr_qq, "神秘花粉", "道具", -1);
     
     // 获取玩家当前天资等级索引
-    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级);
+    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
     
     // 检查是否已经提升过天资
     const hasAptitudeBoost = player.神秘花粉提升标记 || false;
@@ -6902,6 +6905,7 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
     "绝世天骄": 7,   // 可学十凶宝术(6)/仙王法(7)
     "万古无双": 8,   // 可学仙帝法(8)
     "无演无尽": 9,   // 可学神慧者(9)
+    "岁云": 9,
     "无化如是": -1   // 什么都学不了
   };
 

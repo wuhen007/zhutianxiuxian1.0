@@ -66,6 +66,7 @@ import {
 import {
   getRealmAuthorityLevel,
   getRealmAuthorityName,
+  getRealmAuthorityPath,
   hasRealmAuthority,
   lowerRealmAuthority,
   revokeBreakKingEmperorEligibility,
@@ -77,12 +78,17 @@ import {
   protectForbiddenTarget,
 } from '../../model/forbiddenSoul.js';
 import { adjustDaoHeart, getDaoHeartLearningChanceMultiplier } from '../../model/daoHeart.js';
-import { addCausalDebt } from '../../model/worldlineAuthority.js';
+import {
+  addCausalDebt,
+  formatCausalImpactLines,
+} from '../../model/worldlineAuthority.js';
 import { calculateCreationEverything, formatCreationDuration } from '../../model/createEverything.js';
 import {
   getSacrificePromotionGate,
   promotePlayerToSacrifice,
 } from '../../model/strangeSacrifice.js';
+import { persistCausalImpact } from '../../model/causalImpact.js';
+import { resetSelfDaoAfterImmortalEmperorFall } from '../../model/selfDaoDeduction.js';
 import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
@@ -935,11 +941,11 @@ async changeAptitude(e) {
   // 内联构建天资数据对象（替代不存在的 getPlayerAptitudeData 函数）
   const targetAptitudeData = {
     grade: targetPlayer.天资等级 || '平庸之资',
-    index: aptitudeSequence.indexOf(targetPlayer.天资等级 || '平庸之资')
+    index: aptitudeSequence.indexOf(targetPlayer.天资等级 === '岁云' ? '无演无尽' : (targetPlayer.天资等级 || '平庸之资'))
   };
   const invokerAptitudeData = {
     grade: invoker.天资等级 || '平庸之资',
-    index: aptitudeSequence.indexOf(invoker.天资等级 || '平庸之资')
+    index: aptitudeSequence.indexOf(invoker.天资等级 === '岁云' ? '无演无尽' : (invoker.天资等级 || '平庸之资'))
   };
 
   // 检查新的天资是否有效
@@ -985,7 +991,7 @@ async changeAptitude(e) {
   
   // === 特殊情况3：施法者天资不够 ===
   // 只有无演无尽才能将他人提升到无演无尽
-  if (newAptitude === '无演无尽' && invokerAptitudeData.grade !== '无演无尽') {
+  if (newAptitude === '无演无尽' && invokerAptitudeData.index < aptitudeSequence.indexOf('无演无尽')) {
     e.reply([
       `〖权限不足〗`,
       `你欲将${targetPlayer.名号}提升至【无演无尽】！`,
@@ -1296,7 +1302,14 @@ async changeAptitude(e) {
             player.修为 *= 0.3; 
             player.血气 *= 0.3; 
 
-             player.mijinglevel_id = 20;
+            const route = player?.自创修炼体系?.route || getRealmAuthorityPath(player);
+            if (route === 'xiangu') player.xiangulevel_id = 21;
+            else if (route === 'huafen') player.huafenlevel_id = 21;
+            else {
+              player.mijinglevel_id = 20;
+              revokeBreakKingEmperorEligibility(player, 'mijing');
+            }
+            resetSelfDaoAfterImmortalEmperorFall(player);
             await Write_player(usr_qq, player);
         }
     } else {
@@ -2500,6 +2513,9 @@ async createEverything(e) {
         })()
       : [];
     await Write_player(player_qq, player);
+    const causalImpact = await persistCausalImpact(player, causalDebtResult, {
+      actorId: player_qq,
+    });
     await redis.del(actionKey);
  if (authorityLevel < 22 && weimianData.现世承受力 < 1000000) {
         // 40%概率触发始祖扼杀
@@ -2661,6 +2677,7 @@ async createEverything(e) {
             `纳戒损失：${juelingItems.length ? juelingItems.map(item => `${item.name}x${item.amount}`).join('、') : '无可侵蚀之物'}`,
         );
     }
+    createTexts.push(...formatCausalImpactLines(causalImpact));
 
     e.reply(createTexts.join('\n'));
     return true;
@@ -2958,6 +2975,7 @@ async handleTeach(e, isAll = false) {
         "绝世天骄": 7,   // 可学十凶宝术(6)/仙王法(7)
         "万古无双": 8,   // 可学仙帝法(8)
         "无演无尽": 9,   // 可学神慧者(9)
+        "岁云": 9,
         "无化如是": -1   // 什么都学不了
     };
     
@@ -4898,6 +4916,7 @@ async reshapeLinggen(e) {
    if (!newLinggen) {
      return e.reply(`灵根【${linggenName}】不存在！`);
    }
+   if (newLinggen.唯一灵根 || newLinggen.不可随机获取) return e.reply('岁云一脉由唯一残念开启，并以 #岁云见证 晋升。');
    
    // 记录旧灵根信息
    const oldLinggen = targetPlayer.灵根;

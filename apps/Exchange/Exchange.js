@@ -1,4 +1,5 @@
 import { plugin, verc } from '../../api/api.js';
+import { isItemPermanentlyNonTradeable, isItemTransferRestricted } from '../../model/equipmentTransfer.js';
 import {
   existplayer,
   exist_najie_thing,
@@ -162,6 +163,7 @@ export class Exchange extends plugin {
       e.reply(`这方世界没有[${thing_name}]`);
       return false;
     }
+    if (isItemPermanentlyNonTradeable(thing_exist)) return e.reply(`【${thing_name}】已永久绑定，禁止上架。`);
     //确定数量和品级
     let pj = {
       劣: 0,
@@ -194,6 +196,9 @@ export class Exchange extends plugin {
       }
     } else if (thing_exist.class == '仙宠') {
       equ = najie.仙宠.find(item => item.name == thing_name);
+    }
+    if (isItemTransferRestricted(equ || najie[thing_exist.class]?.find(item => item.name === thing_name))) {
+      return e.reply(`【${thing_name}】已锁定或永久绑定，禁止上架。`);
     }
     thing_value = await convert2integer(thing_value);
     thing_amount = await convert2integer(thing_amount);

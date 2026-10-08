@@ -194,7 +194,7 @@ test('已锁定至宝更换后退回纳戒仍保持锁定', () => {
 
   const commandSource = fs.readFileSync(new URL('../apps/User/UserSellAll.js', import.meta.url), 'utf8');
   assert.match(commandSource, /thing_name === '至宝'/);
-  assert.match(commandSource, /un_lock === '解锁' && equipment\.至宝\.大道至宝本体/);
+  assert.match(commandSource, /un_lock === '解锁' && isItemPermanentlyNonTradeable\(equipment\.至宝\)/);
   assert.match(commandSource, /equipment\.至宝\.islockd = un_lock === '锁定' \? 1 : 0/);
 });
 

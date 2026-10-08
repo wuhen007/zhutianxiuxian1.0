@@ -16,6 +16,7 @@ export const STRANGE_SACRIFICE = Object.freeze({
   activeYears: 2_000,
   heavenSlashYears: 30_000,
   deathLockMs: 24 * 60 * 60 * 1000,
+  bubbleDurationMs: 720 * 60 * 1000,
   immortalEmperorKillRequirement: 10,
   immortalEmperorEnemySpeed: 100 + 21 * 50,
 });
@@ -84,6 +85,11 @@ function defaultState(worldYear = 0) {
     participants: {},
     successfulDefenders: 0,
     lastOutcome: null,
+    plateauDestroyed: false,
+    plateauRewinds: 0,
+    causalBigAdvanceWorldYears: 0,
+    causalPressureCount: 0,
+    lastCausalAdvanceAt: 0,
   };
 }
 
@@ -94,6 +100,11 @@ export function ensureStrangeSacrificeState(value, worldYear = 0) {
   const state = { ...base, ...source };
   state.smallCount = integer(state.smallCount);
   state.bigCount = integer(state.bigCount);
+  state.plateauDestroyed = state.plateauDestroyed === true;
+  state.plateauRewinds = integer(state.plateauRewinds);
+  state.causalBigAdvanceWorldYears = integer(state.causalBigAdvanceWorldYears);
+  state.causalPressureCount = integer(state.causalPressureCount);
+  state.lastCausalAdvanceAt = integer(state.lastCausalAdvanceAt);
   state.cycleStartedWorldYear = integer(state.cycleStartedWorldYear, worldYear);
   state.heavenSlashUntilWorldYear = integer(state.heavenSlashUntilWorldYear);
   state.participants =
@@ -108,6 +119,9 @@ function beginEvent(state, type, worldYear) {
     type === 'small' ? state.smallCount === 0 : state.bigCount === 0;
   if (type === 'small') state.smallCount++;
   else state.bigCount++;
+  const pendingBigAdvance = type === 'big'
+    ? integer(state.causalBigAdvanceWorldYears)
+    : 0;
   state.phase = `${type}_active`;
   state.activeEvent = {
     id: `${type}-${
@@ -116,8 +130,12 @@ function beginEvent(state, type, worldYear) {
     type,
     firstRound,
     startedWorldYear: worldYear,
-    endsWorldYear: worldYear + STRANGE_SACRIFICE.activeYears,
+    endsWorldYear: Math.max(
+      worldYear,
+      worldYear + STRANGE_SACRIFICE.activeYears - pendingBigAdvance,
+    ),
   };
+  if (type === 'big' && pendingBigAdvance) state.causalBigAdvanceWorldYears = 0;
   state.participants = {};
   state.successfulDefenders = 0;
   return { type: `${type}_started`, firstRound, event: state.activeEvent };
@@ -132,8 +150,9 @@ export function settleStrangeSacrifice(
   const state = ensureStrangeSacrificeState(stateValue, worldYear);
   const firstRound = Boolean(state.activeEvent?.firstRound);
   const defended =
-    number(outcome.successfulDefenders, state.successfulDefenders) > 0;
-  state.lastOutcome = { type, firstRound, defended, worldYear };
+    state.plateauDestroyed || number(outcome.successfulDefenders, state.successfulDefenders) > 0;
+  const destroyed = type === 'big' && state.plateauDestroyed;
+  state.lastOutcome = { type, firstRound, defended, destroyed, worldYear };
   state.lastParticipants = state.participants;
   state.lastPlaneSnapshot = state.planeSnapshot || null;
   state.activeEvent = null;
@@ -145,11 +164,22 @@ export function settleStrangeSacrifice(
     worldYear + STRANGE_SACRIFICE.heavenSlashYears,
   );
 
-  if (type === 'small') {
+  if (destroyed) {
+    state.phase = 'destroyed';
+    state.smallDueWorldYear = null;
+    state.bigDueWorldYear = null;
+    state.causalBigAdvanceWorldYears = 0;
+    state.heavenSlashUntilWorldYear = 0;
+  } else if (type === 'small') {
     state.phase = 'between_sacrifices';
-    state.bigDueWorldYear =
+    const due =
       worldYear +
       STRANGE_SACRIFICE.bigDelayEpochs * STRANGE_SACRIFICE.yearsPerEpoch;
+    state.bigDueWorldYear = Math.max(
+      worldYear,
+      due - integer(state.causalBigAdvanceWorldYears),
+    );
+    state.causalBigAdvanceWorldYears = 0;
     state.smallDueWorldYear = null;
   } else {
     state.phase = 'dormant';
@@ -159,11 +189,12 @@ export function settleStrangeSacrifice(
       STRANGE_SACRIFICE.smallIntervalEpochs * STRANGE_SACRIFICE.yearsPerEpoch;
     state.bigDueWorldYear = null;
   }
-  return { state, event: { type: `${type}_ended`, firstRound, defended } };
+  return { state, event: { type: `${type}_ended`, firstRound, defended, destroyed } };
 }
 
 export function forceStartStrangeSacrifice(stateValue, type, worldYear) {
   const state = ensureStrangeSacrificeState(stateValue, worldYear);
+  if (state.plateauDestroyed) return { state, event: null, reason: 'destroyed' };
   return {
     state,
     event: beginEvent(
@@ -174,12 +205,68 @@ export function forceStartStrangeSacrifice(stateValue, type, worldYear) {
   };
 }
 
+/**
+ * 将高阶因果债转换为大祭时间压力，并真正写入大祭状态机使用的字段。
+ */
+export function applyCausalHighlandPressure(
+  stateValue,
+  { debtDelta = 0, worldYear = 0, now = Date.now() } = {},
+) {
+  const state = ensureStrangeSacrificeState(stateValue, worldYear);
+  const advance = Math.max(0, Math.ceil(Number(debtDelta) || 0));
+  const result = {
+    changed: false,
+    advancedWorldYears: 0,
+    dueBefore: state.bigDueWorldYear,
+    dueAfter: state.bigDueWorldYear,
+    activeEventShortened: 0,
+    appliedTo: null,
+  };
+  if (!advance || state.plateauDestroyed) return { state, ...result };
+
+  state.causalPressureCount = integer(state.causalPressureCount) + 1;
+  state.lastCausalAdvanceAt = now;
+  result.advancedWorldYears = advance;
+  result.changed = true;
+
+  if (state.activeEvent?.type === 'big') {
+    const oldEnd = integer(state.activeEvent.endsWorldYear);
+    const started = integer(state.activeEvent.startedWorldYear, worldYear);
+    const nextEnd = Math.max(worldYear, started, oldEnd - advance);
+    state.activeEvent.endsWorldYear = nextEnd;
+    result.activeEventShortened = Math.max(0, oldEnd - nextEnd);
+    result.dueAfter = null;
+    result.appliedTo = 'active';
+    return { state, ...result };
+  }
+
+  if (state.bigDueWorldYear !== null && state.bigDueWorldYear !== undefined) {
+    const oldDue = integer(state.bigDueWorldYear, worldYear);
+    state.bigDueWorldYear = Math.max(worldYear, oldDue - advance);
+    state.warnedBigDueWorldYear = null;
+    result.dueBefore = oldDue;
+    result.dueAfter = state.bigDueWorldYear;
+    result.appliedTo = 'due';
+    return { state, ...result };
+  }
+
+  state.causalBigAdvanceWorldYears =
+    integer(state.causalBigAdvanceWorldYears) + advance;
+  result.dueBefore = null;
+  result.dueAfter = null;
+  result.appliedTo = 'pending';
+  return { state, ...result };
+}
+
 export function advanceStrangeSacrificeState(
   stateValue,
   { worldYear = 0, hasImmortalEmperor = false } = {},
 ) {
   const now = integer(worldYear);
   const state = ensureStrangeSacrificeState(stateValue, now);
+  if (state.plateauDestroyed) {
+    return state.activeEvent ? settleStrangeSacrifice(state, 'big', now) : { state, event: null };
+  }
 
   if (state.activeEvent && now >= integer(state.activeEvent.endsWorldYear)) {
     return settleStrangeSacrifice(state, state.activeEvent.type, now);
@@ -188,8 +275,14 @@ export function advanceStrangeSacrificeState(
 
   const awaitingBig = state.smallCount > state.bigCount;
   if (awaitingBig) {
-    state.bigDueWorldYear ??=
-      now + STRANGE_SACRIFICE.bigDelayEpochs * STRANGE_SACRIFICE.yearsPerEpoch;
+    if (state.bigDueWorldYear === null || state.bigDueWorldYear === undefined) {
+      state.bigDueWorldYear = Math.max(
+        now,
+        now + STRANGE_SACRIFICE.bigDelayEpochs * STRANGE_SACRIFICE.yearsPerEpoch
+          - integer(state.causalBigAdvanceWorldYears),
+      );
+      state.causalBigAdvanceWorldYears = 0;
+    }
     if (now >= state.bigDueWorldYear)
       return { state, event: beginEvent(state, 'big', now) };
     if (
@@ -348,12 +441,95 @@ export function applyStrangeSacrificeVictory(player, encounter, killedCount) {
   return { killed, emperorKills, totalEmperorKills: player.厄土仙帝击杀数 };
 }
 
+export function resolveHighlandFinale(state, player, now = Date.now()) {
+  if (getRealmAuthorityLevel(player) < 23) {
+    state.plateauRewinds = integer(state.plateauRewinds) + 1;
+    state.lastHighlandRewindAt = now;
+    return { destroyed: false, rewound: true };
+  }
+  state.plateauDestroyed = true;
+  state.plateauDestroyedAt = now;
+  state.plateauDestroyedBy = String(player.id || player.名号 || '');
+  return { destroyed: true, rewound: false };
+}
+
+export const SACRIFICE_BUBBLE_GUIDANCE =
+  '祭道之上须由祭道强者遭始祖彻底永祭，进入没有空间、时间、因果与任何概念的空间泡影；现实时间720分钟后挣脱而出。';
+
+export function enterSacrificeBubble(player, now = Date.now()) {
+  if (player.始祖永祭?.status === 'bubble') return player.始祖永祭;
+  if (getRealmAuthorityLevel(player) !== 22) return null;
+  player.始祖永祭 = {
+    status: 'bubble',
+    source: '始祖彻底永祭',
+    route: getRealmAuthorityPath(player),
+    startedAt: now,
+    readyAt: now + STRANGE_SACRIFICE.bubbleDurationMs,
+  };
+  delete player.诡异祭礼身灭道消至;
+  player.当前血量 = 0;
+  player.修仙状态 = '空间泡影';
+  player.道果状态 = '始祖永祭·一切概念皆无';
+  return player.始祖永祭;
+}
+
+export function escapeSacrificeBubble(player, now = Date.now()) {
+  const bubble = player?.始祖永祭;
+  if (bubble?.status !== 'bubble' || bubble.source !== '始祖彻底永祭'
+    || !Number.isFinite(bubble.startedAt) || !['mijing', 'xiangu', 'huafen'].includes(bubble.route)) {
+    return { ok: false, reason: 'not-sacrificed' };
+  }
+  const readyAt = Math.max(number(bubble.readyAt), number(bubble.startedAt) + STRANGE_SACRIFICE.bubbleDurationMs);
+  if (now < readyAt) return { ok: false, reason: 'waiting', remainingMs: readyAt - now };
+  const field = bubble.route === 'xiangu' ? 'xiangulevel_id'
+    : bubble.route === 'huafen' ? 'huafenlevel_id' : 'mijinglevel_id';
+  player[field] = Math.max(bubble.route === 'mijing' ? 23 : 24, integer(player[field]));
+  player.始祖永祭 = { ...bubble, status: 'transcended', completedAt: now };
+  delete player.诡异祭礼身灭道消至;
+  player.修仙状态 = '空闲';
+  player.道果状态 = '祭道之上·超脱一切';
+  player.境界称号 = '祭道之上';
+  player.当前血量 = Math.max(1, number(player.血量上限, 1));
+  return { ok: true, route: bubble.route };
+}
+
+// 落盘处校验，防止普通升级、映照和旧版短时寂灭绕过唯一晋升条件。
+export function assertSacrificeBubbleWrite(previous, next, now = Date.now()) {
+  const bubble = previous?.始祖永祭;
+  const completed = bubble?.status === 'bubble'
+    && bubble.source === '始祖彻底永祭'
+    && Number.isFinite(bubble.startedAt)
+    && now >= Math.max(number(bubble.readyAt), number(bubble.startedAt) + STRANGE_SACRIFICE.bubbleDurationMs)
+    && next.始祖永祭?.status === 'transcended'
+    && next.始祖永祭.source === bubble.source
+    && next.始祖永祭.route === bubble.route
+    && next.始祖永祭.startedAt === bubble.startedAt
+    && number(next.始祖永祭.completedAt) >= Math.max(number(bubble.readyAt), bubble.startedAt + STRANGE_SACRIFICE.bubbleDurationMs)
+    && number(next.始祖永祭.completedAt) <= now
+    && getRealmAuthorityLevel(next) === 23;
+  if (getRealmAuthorityLevel(previous) < 23 && getRealmAuthorityLevel(next) >= 23 && !completed) {
+    const error = new Error(SACRIFICE_BUBBLE_GUIDANCE);
+    error.code = 'SACRIFICE_BUBBLE_REQUIRED';
+    throw error;
+  }
+  if (bubble?.status === 'bubble' && !completed) {
+    next.始祖永祭 = { ...bubble };
+    next.当前血量 = 0;
+    next.修仙状态 = '空间泡影';
+    next.道果状态 = '始祖永祭·一切概念皆无';
+  }
+}
+
 export function applyStrangeSacrificeDefeat(
   player,
-  { now = Date.now(), random = Math.random, lineIds = [] } = {},
+  { now = Date.now(), random = Math.random, lineIds = [], enemyType } = {},
 ) {
   if (tryEternalFateRewrite(player, now)) {
     return { destroyed: [], count: 0, lockUntil: 0, rewritten: true };
+  }
+  if (enemyType === 'ancestor') {
+    const bubble = enterSacrificeBubble(player, now);
+    if (bubble) return { destroyed: [], count: 0, lockUntil: bubble.readyAt, eternallySacrificed: true };
   }
   const roll = Math.min(0.999999, Math.max(0, number(random(), 0)));
   const count = 3 + Math.floor(roll * 3);
@@ -371,6 +547,11 @@ export function applyStrangeSacrificeDefeat(
 }
 
 export function getStrangeSacrificeInteractionLock(player, now = Date.now()) {
+  if (player?.始祖永祭?.status === 'bubble') {
+    const bubble = player.始祖永祭;
+    const until = Math.max(number(bubble.readyAt), number(bubble.startedAt) + STRANGE_SACRIFICE.bubbleDurationMs);
+    return { active: true, kind: 'bubble', ready: now >= until, until, remainingMs: Math.max(0, until - now) };
+  }
   const until = number(player?.诡异祭礼身灭道消至);
   return {
     active: until > now,

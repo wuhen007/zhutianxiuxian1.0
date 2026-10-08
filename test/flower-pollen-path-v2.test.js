@@ -15,6 +15,7 @@ import {
 } from '../model/flowerPollenPath.js';
 import {
   PLANE_REALM_LAW,
+  PLANE_REALM_LAW_DEFAULT,
   checkPlaneRealmLaw,
   getPlaneRealmLaw,
 } from '../model/planeRealmLaw.js';
@@ -117,9 +118,44 @@ test('plane realm law caps pollen path by plane', () => {
   assert.equal(checkPlaneRealmLaw({ power_place: 5 }, 14).ok, false);
   assert.equal(checkPlaneRealmLaw({ power_place: 7 }, 17).ok, true); // 阳间容到 17
   assert.equal(checkPlaneRealmLaw({ power_place: 7 }, 18).ok, false);
+  assert.equal(checkPlaneRealmLaw({ power_place: 6 }, 18).ok, true); // 仙域默认承载宇究
+  assert.equal(checkPlaneRealmLaw({ power_place: 2 }, 18, { 大宇宙: { 法则等级: 0 } }).ok, true); // 玩家大宇宙默认承载宇究
   // 未列位面（遮天等）：13 级以下不卡，神王（14）以上需入阳间（防绕行）
   assert.equal(checkPlaneRealmLaw({ power_place: 2 }, 13).ok, true); // 遮天容神将
   assert.equal(checkPlaneRealmLaw({ power_place: 2 }, 14).ok, false); // 遮天不卡神王 → 需入阳间
   assert.equal(checkPlaneRealmLaw({ power_place: 2 }, 14).needYangJian, true);
   assert.equal(checkPlaneRealmLaw({ power_place: 7 }, 14).ok, true); // 阳间可突破神王
+});
+
+test('仙域和玩家大宇宙放行全部花粉境界，不要求法则等级', () => {
+  const locations = [
+    { player: { power_place: 6 } },
+    { player: { power_place: '仙域' } },
+    ...[2, 4, 5, 7].map(power_place => ({
+      player: { power_place },
+      world: { 大宇宙: { 法则等级: 0 } },
+    })),
+  ];
+  for (const { player, world } of locations) {
+    for (let target = 1; target <= 25; target++) {
+      const gate = checkPlaneRealmLaw(player, target, world);
+      assert.equal(gate.ok, true, `${player.power_place}应放行花粉${target}级`);
+      assert.equal(gate.needYangJian, false);
+      assert.equal(gate.restricted, false);
+      assert.equal(gate.max, PLANE_REALM_LAW_DEFAULT);
+      assert.equal(gate.grandUniverseException, true);
+    }
+  }
+});
+
+test('普通小世界和其他位面仍保留原有花粉突破限制', () => {
+  for (const world of [null, {}, { 大宇宙: null }]) {
+    for (const power_place of [2, 4, 5, 7]) {
+      for (const target of [19, 20, 21, 25]) {
+        const gate = checkPlaneRealmLaw({ power_place }, target, world);
+        assert.equal(gate.ok, false);
+        assert.equal(gate.grandUniverseException, false);
+      }
+    }
+  }
 });

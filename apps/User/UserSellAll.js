@@ -1,3 +1,5 @@
+import { getSuiyunEffects } from '../../model/suiyun.js';
+import { isItemPermanentlyNonTradeable } from '../../model/equipmentTransfer.js';
 import { plugin, verc, data,config} from '../../api/api.js';
 import fs from 'fs';
 import {
@@ -772,7 +774,7 @@ async all_shenyao(e) {
     
         // 遍历纳戒中的道具类别
         for (let l of najie['道具']) {
-            if (l && l.islockd == 0 && minerals.includes(l.name)) { // 检查是否是指定的矿石名称
+            if (l && l.islockd == 0 && !isItemPermanentlyNonTradeable(l) && minerals.includes(l.name)) { // 检查是否是指定的矿石名称
                 let quantity = l.数量;
                 commodities_price += l.出售价 * quantity; // 计算总价
                 await Add_najie_thing(usr_qq, l.name, l.class, -quantity, l.pinji); // 从纳戒中减去矿石
@@ -807,7 +809,7 @@ async all_shenyao(e) {
     
         // 遍历纳戒中的道具类别
         for (let l of najie['道具']) {
-            if (l && l.islockd == 0 && minerals.includes(l.name)) { // 检查是否是指定的矿石名称
+            if (l && l.islockd == 0 && !isItemPermanentlyNonTradeable(l) && minerals.includes(l.name)) { // 检查是否是指定的矿石名称
                 let quantity = l.数量;
                 commodities_price += l.出售价 * quantity; // 计算总价
                 await Add_najie_thing(usr_qq, l.name, l.class, -quantity, l.pinji); // 从纳戒中减去矿石
@@ -1070,7 +1072,7 @@ async all_shenyao(e) {
     for (var i of wupin) {
       for (let l of najie[i]) {
         //纳戒中的数量
-        l.islockd = 0;
+        l.islockd = isItemPermanentlyNonTradeable(l) ? 1 : 0;
       }
     }
     await Write_najie(usr_qq, najie);
@@ -1139,7 +1141,7 @@ async all_shenyao(e) {
     }
     for (var i of wupin) {
       for (let l of A_najie[i]) {
-        if (l && l.islockd == 0) {
+        if (l && l.islockd == 0 && !isItemPermanentlyNonTradeable(l)) {
           let quantity = l.数量;
           //纳戒中的数量
           if (i == '装备' || i == '仙宠') {
@@ -1204,6 +1206,7 @@ async all_shenyao(e) {
     for (var i of wupin) {
       for (let l of najie[i]) {
         //纳戒中的数量
+        if (isItemPermanentlyNonTradeable(l)) continue;
         let thing_exist = await foundthing(l.name);
         if (thing_exist) {
           continue;
@@ -1239,7 +1242,7 @@ async all_shenyao(e) {
         e.reply('当前至宝位没有可锁定的至宝');
         return false;
       }
-      if (un_lock === '解锁' && equipment.至宝.大道至宝本体) {
+      if (un_lock === '解锁' && isItemPermanentlyNonTradeable(equipment.至宝)) {
         e.reply(`大道至宝本体:${equipment.至宝.name}受规则保护，始终锁定`);
         return false;
       }
@@ -1298,6 +1301,7 @@ async all_shenyao(e) {
         return false;
       }
     } else if (un_lock == '解锁') {
+      if (isItemPermanentlyNonTradeable(thing_exist)) return e.reply('此物已永久认主，保持锁定。');
       ifexist = await re_najie_thing(
         usr_qq,
         thing_name,
@@ -1396,7 +1400,7 @@ async Sell_all_comodities(e) {
         for (let category of wupin) {
             if (!Array.isArray(najie[category])) continue;
             for (let item of najie[category]) {
-                if (!item || item.islockd != 0) continue;
+                if (!item || item.islockd != 0 || isItemPermanentlyNonTradeable(item)) continue;
                 
                 // 帝兵保护
                 if (category === '装备' && item.type === '帝兵' && item.author_name) {
@@ -1441,7 +1445,7 @@ async Sell_all_comodities(e) {
     for (let category of wupin) {
         if (!Array.isArray(najie[category])) continue;
         for (let item of najie[category]) {
-            if (!item || item.islockd != 0) continue;
+            if (!item || item.islockd != 0 || isItemPermanentlyNonTradeable(item)) continue;
             
             // 帝兵保护
             if (category === '装备' && item.type === '帝兵' && item.author_name) continue;
@@ -1586,7 +1590,7 @@ padLeft(str, length) {
     ];
     for (let i of wupin) {
       for (let l of najie[i]) {
-        if (l && l.islockd == 0) {
+        if (l && l.islockd == 0 && !isItemPermanentlyNonTradeable(l)) {
           if (i === '装备' && l.type === '帝兵' && l.author_name) continue;
           //纳戒中的数量
           let quantity = l.数量;
@@ -1735,7 +1739,8 @@ padLeft(str, length) {
     "旷世奇才": 5,   // 可学帝经(5)
     "绝世天骄": 7,   // 可学十凶宝术(6)/仙王法(7)
     "万古无双": 8,   // 可学仙帝法(8)
-    "无演无尽": 9,   // 可学神慧者(9)
+    "无演无尽": 9,
+    "岁云": 9,   // 可学神慧者(9)
     "无化如是": -1   // 什么都学不了
   };
   
@@ -1963,7 +1968,7 @@ if (totalPotentialCost > 0) {
             z += 0.5;
             last_msg += '你是魔法少女，晓美焰不断轮回重启世界线叠加的因果使你能够在秘境中出金率提升 ';
           }
-               if (player.灵根.type === "圆环之理" ) {
+               if ((player.灵根.type === "圆环之理" || getSuiyunEffects(player).madoka) ) {
             y+=0.5
             last_msg += '你是超越宇宙法则的存在，圆环之理的秩序力量能使你看透秘境。';
           }
@@ -2095,7 +2100,7 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
     await Add_najie_thing(player_id, twoReward.name, twoReward.class, 6);
     last_msg += `额外获得[${oneReward.name}][${twoReward.name}]x6`;
   }            
-    if (player.灵根.type === "圆环之理") {
+    if ((player.灵根.type === "圆环之理" || getSuiyunEffects(player).madoka)) {
     const oneReward = weizhi.one[Math.floor(Math.random() * weizhi.one.length)];
     const twoReward = weizhi.two[Math.floor(Math.random() * weizhi.two.length)];
     const threeReward = weizhi.three[Math.floor(Math.random() * weizhi.three.length)];
@@ -2533,7 +2538,7 @@ if (weizhi.name === "紫薇星域") {
             last_msg += '万龙巢龙气冲天，太古王族的威压令你寸步难行！一道苍老龙吟响彻："人族蝼蚁，也敢窥视龙皇道统？"你被龙威震得口吐鲜血！';
         }
     }
-            if ((player.灵根.type === "圆环之理" ||player.灵根.type === "圣体道胎" ||player.灵根.type === "圣体" || player.灵根.type === "小成圣体" || player.灵根.type === "大成圣体"||player.灵根.type === "神慧者") && weizhi.name === "荒古禁地") {
+            if (((player.灵根.type === "圆环之理" || getSuiyunEffects(player).madoka) ||player.灵根.type === "圣体道胎" ||player.灵根.type === "圣体" || player.灵根.type === "小成圣体" || player.灵根.type === "大成圣体"||player.灵根.type === "神慧者") && weizhi.name === "荒古禁地") {
               let random = Math.random();
               // 根据玩家的幸运值调整概率
               let adjustedProbability = random < player.幸运 ? random * player.幸运 : random;
@@ -2561,7 +2566,7 @@ if (weizhi.name === "紫薇星域") {
                 await Add_najie_thing(player_id, '不死神泉', '道具', 1);
               }
           }
-                 if ((player.灵根.type === "圆环之理" ||player.灵根.type === "圣体道胎" ||player.灵根.type === "圣体" || player.灵根.type === "小成圣体" || player.灵根.type === "大成圣体"||player.灵根.type === "神慧者") && weizhi.name === "北斗星紫山") {
+                 if (((player.灵根.type === "圆环之理" || getSuiyunEffects(player).madoka) ||player.灵根.type === "圣体道胎" ||player.灵根.type === "圣体" || player.灵根.type === "小成圣体" || player.灵根.type === "大成圣体"||player.灵根.type === "神慧者") && weizhi.name === "北斗星紫山") {
             let random = Math.random();
             // 根据玩家的幸运值调整概率
             let adjustedProbability = random;
@@ -2605,7 +2610,7 @@ if (weizhi.name === "紫薇星域") {
                     ];
                     
                     // 获取玩家当前天资等级索引
-                    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级);
+                    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
                     // 最低要求天资等级索引（天纵之资，索引6）
                     const minAptitudeIndex = 6;
                      const tianxuanbufa = await checkGongfaInServer('天璇步法');
@@ -3415,6 +3420,7 @@ if (player.灵根.type === "魔卡少女·完全") {
   last_msg += '梦之杖绽放出彩虹般的光辉，透明牌的力量让探索中额外获得三件奖励 ';
 }
             }
+            n *= getSuiyunEffects(player).lootMultiplier;
             // 条件：玩家境界>42，炼体>42，秘境<21，仙古<21，33%概率
 if (player.level_id > 42 && player.Physique_id > 42 && 
     player.mijinglevel_id < 14 && player.xiangulevel_id < 14 && 
@@ -3594,7 +3600,7 @@ if (random < 0.0001) {
     ];
     
     // 获取当前天资位置
-    const currentIndex = aptitudeSequence.indexOf(player.天资等级);
+    const currentIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
     
     // 如果玩家天资不在序列中（可能是旧数据），统一修正到轮回最低档
     if (currentIndex === -1) {
@@ -4048,7 +4054,7 @@ ${aptitudeEvaluations[newAptitude]}
             z += 0.5;
             last_msg += '你是魔法少女，晓美焰不断轮回重启世界线叠加的因果使你能够在秘境中出金率提升 ';
           }
-                         if (player.灵根.type === "圆环之理" ) {
+                         if ((player.灵根.type === "圆环之理" || getSuiyunEffects(player).madoka) ) {
             y+=0.5
             last_msg += '你是超越宇宙法则的存在，圆环之理的秩序力量能使你看透秘境 ';
           }
@@ -4179,7 +4185,7 @@ if (player["player.剑云海庇护"] && player["player.剑云海庇护"].副本�
     await Add_najie_thing(player_id, twoReward.name, twoReward.class, 6);
     last_msg += `额外获得[${oneReward.name}][${twoReward.name}]x6`;
   }            
-    if (player.灵根.type === "圆环之理") {
+    if ((player.灵根.type === "圆环之理" || getSuiyunEffects(player).madoka)) {
     const oneReward = weizhi.one[Math.floor(Math.random() * weizhi.one.length)];
     const twoReward = weizhi.two[Math.floor(Math.random() * weizhi.two.length)];
     const threeReward = weizhi.three[Math.floor(Math.random() * weizhi.three.length)];
@@ -4617,7 +4623,7 @@ if (weizhi.name === "紫薇星域") {
                  last_msg += '万龙巢龙气冲天，太古王族的威压令你寸步难行！一道苍老龙吟响彻："人族蝼蚁，也敢窥视龙皇道统？"你被龙威震得口吐鲜血！';
              }
          }
-             if ((player.灵根.type === "圆环之理" ||player.灵根.type === "圣体道胎" ||player.灵根.type === "圣体" || player.灵根.type === "小成圣体" || player.灵根.type === "大成圣体"||player.灵根.type === "神慧者") && weizhi.name === "荒古禁地") {
+             if (((player.灵根.type === "圆环之理" || getSuiyunEffects(player).madoka) ||player.灵根.type === "圣体道胎" ||player.灵根.type === "圣体" || player.灵根.type === "小成圣体" || player.灵根.type === "大成圣体"||player.灵根.type === "神慧者") && weizhi.name === "荒古禁地") {
               let random = Math.random();
               // 根据玩家的幸运值调整概率
               let adjustedProbability = random < player.幸运 ? random * player.幸运 : random;
@@ -4645,7 +4651,7 @@ if (weizhi.name === "紫薇星域") {
                 await Add_najie_thing(player_id, '不死神泉', '道具', 1);
               }
           }
-                 if ((player.灵根.type === "圆环之理" ||player.灵根.type === "圣体道胎" ||player.灵根.type === "圣体" || player.灵根.type === "小成圣体" || player.灵根.type === "大成圣体"||player.灵根.type === "神慧者") && weizhi.name === "北斗星紫山") {
+                 if (((player.灵根.type === "圆环之理" || getSuiyunEffects(player).madoka) ||player.灵根.type === "圣体道胎" ||player.灵根.type === "圣体" || player.灵根.type === "小成圣体" || player.灵根.type === "大成圣体"||player.灵根.type === "神慧者") && weizhi.name === "北斗星紫山") {
             let random = Math.random();
             // 根据玩家的幸运值调整概率
             let adjustedProbability = random;
@@ -4743,7 +4749,7 @@ if (weizhi.name === "紫薇星域") {
                     ];
                     
                     // 获取玩家当前天资等级索引
-                    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级);
+                    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
                     // 最低要求天资等级索引（天纵之资，索引6）
                     const minAptitudeIndex = 6;
                      const tianxuanbufa = await checkGongfaInServer('天璇步法');
@@ -5501,6 +5507,7 @@ if (player.灵根.type === "魔卡少女·完全") {
   last_msg += '梦之杖绽放出彩虹般的光辉，透明牌的力量让探索中额外获得三件奖励 ';
 }
             }
+            n *= getSuiyunEffects(player).lootMultiplier;
             // 条件：玩家境界>42，炼体>42，秘境<21，仙古<21，33%概率
 if (player.level_id > 42 && player.Physique_id > 42 && 
     player.mijinglevel_id < 14 && player.xiangulevel_id < 14 && 
@@ -5686,7 +5693,7 @@ if (random < 0.0001) {
     ];
     
     // 获取当前天资位置
-    const currentIndex = aptitudeSequence.indexOf(player.天资等级);
+    const currentIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
     
     // 如果玩家天资不在序列中（可能是旧数据），统一修正到轮回最低档
     if (currentIndex === -1) {

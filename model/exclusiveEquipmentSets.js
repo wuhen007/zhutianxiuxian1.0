@@ -1,4 +1,10 @@
 export const EXCLUSIVE_EQUIPMENT_SETS = Object.freeze({
+  岁云剑尊套: Object.freeze({
+    physique: '岁云剑尊',
+    weapon: '岁云剑',
+    armor: '岁云袍',
+    treasure: '云月之莲',
+  }),
   终焉神魔套: Object.freeze({
     physique: '终焉神魔体',
     weapon: '【终焉】诸神黄昏',
@@ -133,6 +139,14 @@ export function hasExclusiveEquipmentSet(player, equipment, setName) {
 }
 
 export function applyExclusiveSetOpening(player, equipment) {
+  if (hasExclusiveEquipmentSet(player, equipment, '岁云剑尊套')) {
+    player.全伤害类型加成 = number(player.全伤害类型加成) + 0.5;
+    player.全类型减免 = Math.min(0.9, number(player.全类型减免) + 0.3);
+    return {
+      setName: '岁云剑尊套',
+      messages: [`【岁云剑尊·云月天阙】${player.名号}执岁云剑、披岁云袍，云月之莲照彻诸世。全伤害提升50%，全类型减免提升30%。`],
+    };
+  }
   if (hasExclusiveEquipmentSet(player, equipment, '终焉神魔套')) {
     player.全伤害类型加成 = number(player.全伤害类型加成) + 0.4;
     player.全类型减免 = Math.min(0.9, number(player.全类型减免) + 0.2);

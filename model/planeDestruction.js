@@ -13,6 +13,7 @@ export const PLANE_DESTRUCTION_SOURCES = Object.freeze({
   CORPSE_EMPEROR_BREATH: 'corpse_emperor_breath',
   HIGHLAND_TERROR: 'highland_terror',
   DIMENSION_CALAMITY: 'dimension_calamity',
+  CAUSAL_BACKLASH: 'causal_backlash',
 });
 
 const KNOWN_PLANES = PLACE_LOCATION_NAMES;
@@ -48,6 +49,7 @@ export function getPlaneDestructionInfo(filePath, planeName) {
   const record = destructionRecord(state, planeName);
   return {
     destroyed: state?.[planeName] === 0,
+    permanent: planeName === '厄土高原' && state?.高原彻底覆灭 === true,
     planeName,
     source: record.source || 'unknown',
     actor: record.actor || '',
@@ -63,10 +65,12 @@ export function markPlaneDestroyed(filePath, planeName, {
   source = 'unknown',
   actor = '',
   worldYear = null,
+  permanent = false,
 } = {}) {
   const state = readState(filePath);
   if (!state || !(planeName in state)) return false;
   state[planeName] = 0;
+  if (planeName === '厄土高原' && permanent) state.高原彻底覆灭 = true;
   if (!state[PLANE_DESTRUCTION_RECORD_KEY] || typeof state[PLANE_DESTRUCTION_RECORD_KEY] !== 'object') {
     state[PLANE_DESTRUCTION_RECORD_KEY] = {};
   }
@@ -137,6 +141,7 @@ export function damagePlanes(filePath, planeNames, {
 export function repairPlane(filePath, planeName) {
   const state = readState(filePath);
   if (!state || state[planeName] !== 0) return false;
+  if (planeName === '厄土高原' && state.高原彻底覆灭 === true) return false;
   state[planeName] = 1;
   if (state[PLANE_DESTRUCTION_RECORD_KEY]) {
     delete state[PLANE_DESTRUCTION_RECORD_KEY][planeName];
@@ -155,6 +160,7 @@ export function repairDestroyedPlanes(filePath, { sources = null } = {}) {
   const repaired = [];
   for (const planeName of KNOWN_PLANES) {
     if (state[planeName] !== 0) continue;
+    if (planeName === '厄土高原' && state.高原彻底覆灭 === true) continue;
     const source = destructionRecord(state, planeName).source || 'unknown';
     if (allowedSources && !allowedSources.has(source)) continue;
     state[planeName] = 1;
@@ -180,6 +186,7 @@ export function repairNaturallyDestroyedPlanes(filePath, {
   const repaired = [];
   for (const planeName of KNOWN_PLANES) {
     if (state[planeName] !== 0) continue;
+    if (planeName === '厄土高原' && state.高原彻底覆灭 === true) continue;
     const record = destructionRecord(state, planeName);
     const destroyedYear = normalizeWorldYear(record.worldYear);
     if (!NATURALLY_REPAIRABLE_SOURCES.includes(record.source)) continue;
@@ -198,7 +205,9 @@ export function repairNaturallyDestroyedPlanes(filePath, {
 export function buildPlaneDestroyedMessage(filePath, planeName) {
   const info = getPlaneDestructionInfo(filePath, planeName);
   const lines = ['【虚空封锁·位面崩灭】', ''];
-  if (info.source === PLANE_DESTRUCTION_SOURCES.DARK_REVOLT) {
+  if (info.permanent) {
+    lines.push('厄土高原已被祭道之上的伟力彻底摧毁，诡异本源与意志永灭。', '此结局超越时间线，映照与岁月重塑均不再复原高原。');
+  } else if (info.source === PLANE_DESTRUCTION_SOURCES.DARK_REVOLT) {
     const actor = info.actor && info.actor !== '禁区至尊' ? `【${info.actor}】` : '';
     lines.push(
       `「${planeName}」已被禁区至尊${actor}彻底打爆。`,

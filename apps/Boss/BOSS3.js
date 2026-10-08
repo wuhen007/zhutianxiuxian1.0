@@ -1,11 +1,13 @@
 import { plugin, verc, data, config } from '../../api/api.js';
 import fs from 'fs';
+import { multiplySuiyunLoot } from '../../model/suiyunLoot.js';
 import {
   __PATH,
   Add_灵石,
   ForwardMsg,
   Add_HP,
   Write_player,
+  Read_player,
   Harm,
   zd_battle,
   channel, Add_najie_thing ,bigNumberTransform,
@@ -28,7 +30,12 @@ import {
 import {
   getYongJiStats,
 } from './YongJiList.js';
-import { revokeBreakKingEmperorEligibility } from '../../model/realmAuthority.js';
+import {
+  getRealmAuthorityLevel,
+  resetSelfDaoAfterImmortalEmperorFall,
+  revokeBreakKingEmperorEligibility,
+} from '../../model/realmAuthority.js';
+import { enterSacrificeBubble, resolveHighlandFinale, SACRIFICE_BUBBLE_GUIDANCE } from '../../model/strangeSacrifice.js';
 import { PLACE_LOCATION_PATTERN } from '../../model/weimianTravel.js';
 
 let WorldBOSSBattleCD = []; //CD
@@ -388,11 +395,14 @@ export class BOSS3 extends plugin {
           
           // 境界跌落
           if (player.mijinglevel_id > 1) {
+            const wasImmortalEmperor = player.己道推演?.completed === true
+              || String(player.自身之道境界 || '').includes('仙帝');
             player.mijinglevel_id = Math.max(1, player.mijinglevel_id - 1);
             player.level_id = Math.max(1, player.level_id - 1);
             player.Physique_id = Math.max(1, player.Physique_id - 1);
             // 境界跌落削帝路资格：需重渡破王成帝劫
             revokeBreakKingEmperorEligibility(player, 'mijing');
+            if (wasImmortalEmperor) resetSelfDaoAfterImmortalEmperorFall(player);
           }
           
           await Write_player(usr_qq, player);
@@ -459,6 +469,14 @@ export class BOSS3 extends plugin {
     if (oblivionData) {
       let oblivion = JSON.parse(oblivionData);
       let now = Date.now();
+      const sacrificedPlayer = await data.getData('player', usr_qq);
+      if (getRealmAuthorityLevel(sacrificedPlayer) === 22 && (oblivion.isByUltimate || oblivion.eternalEndTime)) {
+        enterSacrificeBubble(sacrificedPlayer, now);
+        await Write_player(usr_qq, sacrificedPlayer);
+        await redis.del(oblivionKey);
+        await e.reply(`【始祖彻底永祭·空间泡影】\n${SACRIFICE_BUBBLE_GUIDANCE}\n720分钟计时已写入存档。`);
+        return true;
+      }
       
       if (now < oblivion.endTime) {
         let remainMinutes = Math.ceil((oblivion.endTime - now) / 60000);
@@ -567,77 +585,7 @@ export class BOSS3 extends plugin {
         let isXiuDao = checkPlayer && checkPlayer.mijinglevel_id >= 22;
         let isByUltimate = oblivion.isByUltimate || false;
         
-        if (isXiuDao && isByUltimate) {
-          // ===== 祭道境被终极始祖永寂后复苏 =====
-          // 圣墟原著设定：寂灭中复苏，破败中崛起，踏入祭道之上
-          await e.reply([
-            `\n≡≡≡ 寂灭复苏 · 破败崛起 ≡≡≡`,
-            `你坠入了无尽的黑暗虚无……`,
-            `时间、空间、因果——一切皆无。`,
-            `你曾以为，这就是终点。`,
-            ``,
-            `但在那永恒的黑暗中，`,
-            `你听到了一声呼唤——`,
-            `那是诸天万界的悲鸣，`,
-            `是亿万生灵在血泪中呐喊！`,
-            `「归来吧……我等的希望……」`,
-            ``,
-            `你的残念在虚无中震颤！`,
-            `那被磨灭的念想，在绝望中重燃！`,
-            `「我……不该就此消亡……」`,
-            ``,
-            `【寂灭中复苏】`,
-            `你的道果在虚无中重新凝聚！`,
-            `纵然被终极始祖抹杀千次万次——`,
-            `你亦能从破败中崛起！`,
-          ].join("\n"));
-          
-          await sleep(3000);
-          
-          await e.reply([
-            `【破败中崛起】`,
-            `你的帝躯在高原黑雾中重组！`,
-            `但这一次，有什么不一样了……`,
-            `那被终极始祖击碎的道果，`,
-            `在寂灭中涅槃重生，化作更强大的存在！`,
-            ``,
-            `「被终极击溃的那一刻——」`,
-            `「我看到了……高原的本源……」`,
-            `「那道超越祭道的力量——」`,
-            `「原来一直就在我们心中！」`,
-            ``,
-            `【突破！祭道之上！】`,
-            `你突破了祭道的桎梏！`,
-            `从虚无中走出，踏入祭道之上的境界！`,
-            `那是一个全新的层次——`,
-            `超脱高原，凌驾诸世！`,
-          ].join("\n"));
-          
-          // 提升境界到祭道之上（23级）
-          checkPlayer.mijinglevel_id = 23;
-          checkPlayer.level_id = Math.max(checkPlayer.level_id || 1, 23);
-          checkPlayer.Physique_id = Math.max(checkPlayer.Physique_id || 1, 23);
-          checkPlayer.血量上限 = Math.trunc(checkPlayer.血量上限 * 10);
-          checkPlayer.当前血量 = checkPlayer.血量上限;
-          checkPlayer.攻击 = Math.trunc(checkPlayer.攻击 * 5);
-          checkPlayer.防御 = Math.trunc(checkPlayer.防御 * 5);
-          checkPlayer.名号 = `祭道之上·${checkPlayer.名号}`;
-          await Write_player(usr_qq, checkPlayer);
-          
-          await e.reply([
-            `【境界突破】`,
-            `恭喜！你突破了祭道桎梏，踏入祭道之上！`,
-            `境界：23级（祭道之上）`,
-            `称号：${checkPlayer.名号}`,
-            `血量上限：${bigNumberTransform(checkPlayer.血量上限)}`,
-            `攻击：${bigNumberTransform(checkPlayer.攻击)}`,
-            `防御：${bigNumberTransform(checkPlayer.防御)}`,
-            ``,
-            `「这一次，我要终结厄土高原的一切！」`,
-            `「终极始祖——我回来了！」`,
-          ].join("\n"));
-          
-        } else if (isXiuDao) {
+        if (isXiuDao) {
           await e.reply([
             `【祭道归来】`,
             `历经漫漫寂灭岁月，念想之力终于汇聚！`,
@@ -750,6 +698,7 @@ export class BOSS3 extends plugin {
       let TotalDamage = 0;
 
       // 获取始祖存活状态
+      const plateauPlayerSnapshot = structuredClone(player);
       let ancestorsStr = await redis.get('guiyishizu_ancestors');
       let ancestorsState = ancestorsStr ? JSON.parse(ancestorsStr) : { killed: [], alive: [0,1,2,3,4,5,6,7,8,9] };
       
@@ -1246,6 +1195,7 @@ export class BOSS3 extends plugin {
             }
             
             if (Data_battle2.A_hp > 0) {
+              if (await this.rewindHighland(e, player, WorldBossStatus, plateauPlayerSnapshot)) return true;
               // 彻底终结大祭！
               TotalDamage = Math.trunc(WorldBossStatus.Healthmax * 0.8);
               WorldBossStatus.Health = 0;
@@ -1479,6 +1429,7 @@ export class BOSS3 extends plugin {
         player.当前血量 = Data_battle2.A_team[0].当前血量;
         
         if (Data_battle2.A_hp > 0) {
+          if (await this.rewindHighland(e, player, WorldBossStatus, plateauPlayerSnapshot)) return true;
           // 彻底终结大祭！
           TotalDamage = Math.trunc(WorldBossStatus.Healthmax * 0.8);
           WorldBossStatus.Health = 0;
@@ -1692,9 +1643,30 @@ export class BOSS3 extends plugin {
   }
   
   // 处理最终奖励
+  async rewindHighland(e, player, status, snapshot = null) {
+    const finale = resolveHighlandFinale(status, player);
+    if (finale.destroyed) return false;
+    status.Health = status.Healthmax;
+    status.isEternallyDefeated = false;
+    status.reviveCount = 0;
+    status.isAngry = 0;
+    status.isWeak = 0;
+    if (snapshot) {
+      const id = await channel(String(e.user_id).replace('qg_', ''));
+      await Write_player(id, snapshot);
+    }
+    await redis.set('guiyishizu', JSON.stringify(status));
+    await redis.set('guiyishizu_ancestors', JSON.stringify({ killed: [], alive: [0,1,2,3,4,5,6,7,8,9] }));
+    await redis.del('xiuxian:dajie_eternally_defeated', 'xiuxian:epochs_since_dajie');
+    WorldBOSSBattleLock = 0;
+    await e.reply('【高原意志复苏·时间线回溯】诡异族群的覆灭结局被逆转，十大始祖与高原本源尽数复归；终结奖励不结算。唯有祭道之上，方能彻底摧毁高原。');
+    return true;
+  }
+
   async handleFinalRewards(e, PlayerRecordJSON, WorldBossStatus) {
     let killerId = PlayerRecordJSON.QQ[PlayerRecordJSON.QQ.length - 1];
     let killerPlayer = await data.getData('player', killerId);
+    if (await this.rewindHighland(e, killerPlayer, WorldBossStatus)) return;
     
     // 发放奖励
     killerPlayer.灵石 += 50000000;
@@ -1768,6 +1740,7 @@ export class BOSS3 extends plugin {
     markPlaneDestroyed(data.filePathMap.weimianList, '厄土高原', {
       source: PLANE_DESTRUCTION_SOURCES.STRANGE_EMPEROR,
       actor: killerPlayer.名号 || '终结高原者',
+      permanent: true,
     });
     
     // 广播终焉消息
@@ -1833,6 +1806,11 @@ export class BOSS3 extends plugin {
 
 // 辅助函数
 async function InitWorldBoss(e) {
+  const planeState = JSON.parse(fs.readFileSync(data.filePathMap.weimianList, 'utf8'));
+  if (planeState.高原彻底覆灭 === true) {
+    await e?.reply?.('高原已被祭道之上彻底摧毁，大祭不再重开。');
+    return -1;
+  }
   let AverageDamageStruct = await GetAverageDamage(e);
   let player_quantity = parseInt(AverageDamageStruct.player_quantity);
   let AverageDamage = parseInt(AverageDamageStruct.AverageDamage);
@@ -2094,9 +2072,11 @@ function getRandomItems(items, count) {
 
 async function addItemsToNajie(playerId, items) {
   if (!Array.isArray(items) || items.length === 0) return;
+  const recipient = await Read_player(playerId);
   for (let item of items) {
     if (item && item.name && item.class && item.quantity !== undefined) {
       try {
+        item.quantity = multiplySuiyunLoot(recipient, item, item.quantity);
         await Add_najie_thing(playerId, item.name, item.class, item.quantity);
       } catch (e) {
         console.error(`添加物品失败: ${item.name}`, e);

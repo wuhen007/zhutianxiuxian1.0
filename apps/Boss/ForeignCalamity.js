@@ -14,6 +14,7 @@ import {
 } from '../../model/xiuxian.js';
 import {
   FOREIGN_CALAMITY_BATTLE_COOLDOWN_MS,
+  FOREIGN_CALAMITY_MAX_ACTIVE,
   FOREIGN_OVERLORD_REFINEMENT_WEIGHT,
   FOREIGN_PAGE_REQUIREMENT,
   FOREIGN_TECHNIQUES,
@@ -21,6 +22,7 @@ import {
   createForeignOverlordCombatant,
   createForeignCalamityRewardPlan,
   drainPendingForeignCalamityDefeats,
+  formatForeignCalamityCullReport,
   getForeignOverlordRanking,
   getForeignOverlordRewardForPlayer,
   listForeignCalamities,
@@ -28,6 +30,7 @@ import {
   normalizeRiftMemoryState,
   readActiveForeignOverlord,
   readForeignCalamity,
+  readForeignCalamityCullReport,
   readForeignOverlord,
   readForeignOverlordProgress,
   registerForeignCalamityDefeat,
@@ -43,6 +46,8 @@ import { addRelicToBag, normalizeRelicState } from '../../model/relicSystem.js';
 import { isEvilCultivator } from '../../model/tianjiaoHostility.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
+import { getSuiyunStage } from '../../model/suiyun.js';
+import { multiplySuiyunLoot } from '../../model/suiyunLoot.js';
 
 const REFINE_KEY = (qq, kind = 'calamity') => kind === 'overlord'
   ? `xiuxian:foreign-calamity:overlord:refine:${qq}`
@@ -94,8 +99,8 @@ export class ForeignCalamity extends plugin {
       event: 'message',
       priority: 590,
       rule: [
-        { reg: '^#(?:域外灾厄|域外邪祟)$', fnc: 'showCalamities' },
-        { reg: '^#讨伐(?:域外灾厄|域外邪祟)(?:\\s+(.+))?$', fnc: 'battleCalamity' },
+        { reg: '^#(?:域外灾厄|域外邪祟|域外邪魔)$', fnc: 'showCalamities' },
+        { reg: '^#讨伐(?:域外灾厄|域外邪祟|域外邪魔)(?:\\s+(.+))?$', fnc: 'battleCalamity' },
         { reg: '^#领取域外战利品$', fnc: 'claimPendingRewards' },
         { reg: '^#灾厄魔主$', fnc: 'showOverlord' },
         { reg: '^#讨伐灾厄魔主$', fnc: 'battleOverlord' },
@@ -116,10 +121,13 @@ export class ForeignCalamity extends plugin {
 
   async showCalamities(e) {
     const active = await this.getActive();
-    if (!active.length) return e.reply('当前诸天安宁，尚未发现存世的域外灾厄。');
+    const report = await readForeignCalamityCullReport();
     return e.reply([
-      `【千年域外灾厄】现存${active.length}尊`,
+      `【千年域外灾厄】现存${active.length}/${FOREIGN_CALAMITY_MAX_ACTIVE}尊`,
+      '孽兽、域外邪魔与外道修士共享上限，超额目标由天骄或诸天强者优先讨灭旧敌。',
+      ...(!active.length ? ['当前诸天安宁，尚未发现存世的域外灾厄。'] : []),
       ...active.map(formatEntity),
+      ...(report?.count ? [`最近一次巡猎记录：\n${formatForeignCalamityCullReport(report)}`] : []),
       '使用 #讨伐域外灾厄 编号（或灾厄ID/名号）发起挑战。',
     ].join('\n\n'));
   }
@@ -136,7 +144,7 @@ export class ForeignCalamity extends plugin {
   async battleCalamity(e) {
     const qq = playerId(e);
     if (!await existplayer(qq)) return e.reply('玩家不存在，请先创建角色。');
-    const input = String(e.msg || '').replace(/^#讨伐(?:域外灾厄|域外邪祟)\s*/, '').trim();
+    const input = String(e.msg || '').replace(/^#讨伐(?:域外灾厄|域外邪祟|域外邪魔)\s*/, '').trim();
     const target = await this.resolveTarget(input);
     if (!target) return e.reply('未找到这尊灾厄，请先发送 #域外灾厄 查看编号。');
 
@@ -193,7 +201,7 @@ export class ForeignCalamity extends plugin {
             console.error(`[域外灾厄] 奖励结算暂缓 entity=${entity.id} player=${qq}`, error);
             reward = { pending: true, lines: ['奖励方案已经锁定，本次写盘暂缓。'] };
           }
-          if (isEvilCultivator(player)) {
+          if (isEvilCultivator(player) || getSuiyunStage(player)) {
             await redis.set(REFINE_KEY(qq), JSON.stringify({
               entityId: entity.id,
               name: entity.名号,
@@ -204,7 +212,7 @@ export class ForeignCalamity extends plugin {
             }), { EX: 5 * 60 });
           }
         }
-        return { battle, entity, reward, overlordSpawn, evil: battle.winner === 'A' && isEvilCultivator(player) };
+        return { battle, entity, reward, overlordSpawn, evil: battle.winner === 'A' && isEvilCultivator(player), suiyun: battle.winner === 'A' && getSuiyunStage(player) > 0 };
       });
     });
 
@@ -218,6 +226,7 @@ export class ForeignCalamity extends plugin {
       }
       if (result.reward?.pending) lines.push('遗珍背包清理后发送 #领取域外战利品，可继续结算已锁定的奖励。');
       if (result.evil) lines.push('魔念牵引其残存本源：5分钟内发送 #天魔炼化灾厄 可再炼其道果。');
+      if (result.suiyun) lines.push('月华笼罩灾厄本源：5分钟内发送 #月华炼化 灾厄，可获得月华值与生命本源。');
     } else {
       lines.push('', `【讨伐失利】${result.entity.名号}剩余气血：${bigNumberTransform(result.entity.当前血量)}/${bigNumberTransform(result.entity.血量上限)}`);
     }
@@ -308,7 +317,8 @@ export class ForeignCalamity extends plugin {
           now,
         });
         const evil = entity.status === 'defeated' && isEvilCultivator(player);
-        if (evil) {
+        const suiyun = entity.status === 'defeated' && getSuiyunStage(player) > 0;
+        if (evil || suiyun) {
           entity.refinement = {
             playerId: qq,
             expiresAt: Date.now() + 5 * 60 * 1000,
@@ -317,7 +327,7 @@ export class ForeignCalamity extends plugin {
           };
         }
         await saveForeignOverlord(entity);
-        if (evil) {
+        if (evil || suiyun) {
           try {
             await redis.set(REFINE_KEY(qq, 'overlord'), JSON.stringify({
               entityId: entity.id,
@@ -334,7 +344,7 @@ export class ForeignCalamity extends plugin {
         }
         let chainedSpawn = null;
         if (entity.status === 'defeated') chainedSpawn = await spawnForeignOverlordIfReady();
-        return { battle, entity, damage: settled.damage, revived: settled.revivedDuringBattle, chainedSpawn, evil };
+        return { battle, entity, damage: settled.damage, revived: settled.revivedDuringBattle, chainedSpawn, evil, suiyun };
       });
     });
 
@@ -346,6 +356,7 @@ export class ForeignCalamity extends plugin {
     if (result.entity.status === 'defeated') {
       lines.push('', `【灾厄魔主伏诛】${result.entity.名号}的道果开始崩解。`, '所有有效贡献者可发送 #领取魔主战利品 结算个人奖励与裂界残忆。');
       if (result.evil) lines.push('魔主本源已被你截留：5分钟内发送 #天魔炼化魔主；天魔化生一脉可折算0.5名玩家的化生进度。');
+      if (result.suiyun) lines.push('魔主本源已被月华截留：5分钟内发送 #月华炼化 魔主。');
       if (result.chainedSpawn?.spawned) lines.push(`积压的灾息再度汇聚，新的魔主【${result.chainedSpawn.entity.名号}】已经降临。`);
     } else {
       lines.push(`魔主共享气血：${bigNumberTransform(result.entity.当前血量)}/${bigNumberTransform(result.entity.血量上限)}`);
@@ -367,6 +378,7 @@ export class ForeignCalamity extends plugin {
         return { lines: ['这尊魔主的个人战利品此前已完整结算。'], already: true };
       }
 
+      reward.pageAmount = multiplySuiyunLoot(player, { name: reward.page }, reward.pageAmount);
       await Add_najie_thing(qq, reward.page, '道具', reward.pageAmount, undefined, 1, {
         idempotencyKey: `foreign-overlord:${entity.id}:${qq}:page`,
       });
@@ -449,7 +461,10 @@ export class ForeignCalamity extends plugin {
         return { lines: ['奖励此前已完整结算。'], already: true };
       }
 
-      const relicGroup = plan.groups.find(group => group.type === 'relic');
+      const rewardGroups = plan.groups.map(group => group.type === 'relic' ? group : {
+        ...group, amount: multiplySuiyunLoot(player, group, group.amount),
+      });
+      const relicGroup = rewardGroups.find(group => group.type === 'relic');
       let equipment = null;
       if (relicGroup) {
         equipment = await Read_equipment(qq);
@@ -465,8 +480,8 @@ export class ForeignCalamity extends plugin {
         }
       }
 
-      for (let index = 0; index < plan.groups.length; index++) {
-        const group = plan.groups[index];
+      for (let index = 0; index < rewardGroups.length; index++) {
+        const group = rewardGroups[index];
         if (group.type === 'relic') continue;
         await Add_najie_thing(qq, group.name, group.class, group.amount, undefined, 1, {
           idempotencyKey: `${plan.id}:${index}`,
@@ -482,7 +497,7 @@ export class ForeignCalamity extends plugin {
       await saveForeignCalamity(entity);
       return {
         lines: [
-          `随机奖励：${plan.groups.map(rewardGroupText).join('、')}`,
+          `随机奖励：${rewardGroups.map(rewardGroupText).join('、')}`,
           `固定收益：业力-${Math.min(oldKarma, plan.karmaReduction)}、位面青睐+${plan.planeFavor}`,
         ],
       };

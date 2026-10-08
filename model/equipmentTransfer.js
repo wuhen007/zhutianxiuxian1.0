@@ -18,6 +18,8 @@ function quantityOf(item) {
 
 export function isItemPermanentlyNonTradeable(item) {
   return Boolean(item) && (
+    ['无上天阙枝', '岁云的残念', '岁云残念'].includes(item.name) ||
+    Boolean(item.全时间线唯一) ||
     item.不可交易 === true ||
     Number(item.不可交易) > 0 ||
     item.全服唯一 === true ||

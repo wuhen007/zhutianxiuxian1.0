@@ -6,6 +6,8 @@ import path from 'path';
 import config from '../model/Config.js';
 import data from '../model/XiuxianData.js';
 import Show from '../model/show.js';
+import { getRevivalCommandBlock } from '../model/revivalEarth.js';
+import { getTrialCommandBlock } from '../model/trialUniverse.js';
 
 const screenshotQueueGuard = Symbol.for('zhutianxiuxian.puppeteerQueueGuard');
 if (!puppeteer[screenshotQueueGuard]) {
@@ -83,12 +85,43 @@ export const calculatorData = async (e) => {
 };
 
 export const verc = ({ e }) => {
-    const userId = String(e?.user_id || '').replace('qg_', '');
+    let userId = String(e?.user_id || '').replace('qg_', '');
     if (userId) {
-        const playerFile = getResourcePath(path.join('xiuxian_player', `${userId}.json`));
         try {
+            // 与 channel() 一致：绑定 QQ 存档存在时才切换，避免频道号绕开独立路线门禁。
+            const channelFile = getResourcePath(path.join('channel', 'channel.json'));
+            try {
+                if (fs.existsSync(channelFile)) {
+                    const records = JSON.parse(fs.readFileSync(channelFile, 'utf8'));
+                    const binding = Array.isArray(records) && records.find(record => String(record.频道_ID) === userId);
+                    if (binding && fs.existsSync(getResourcePath(path.join('xiuxian_player', `${binding.QQ_ID}.json`)))) {
+                        userId = String(binding.QQ_ID);
+                    }
+                }
+            } catch (error) {
+                console.warn(`[频道映射] 读取玩家 ${userId} 绑定失败：${error.message}`);
+            }
+            const playerFile = getResourcePath(path.join('xiuxian_player', `${userId}.json`));
             if (fs.existsSync(playerFile)) {
                 const player = JSON.parse(fs.readFileSync(playerFile, 'utf8'));
+                if (player.试炼宇宙) {
+                    const block = getTrialCommandBlock(player, e.msg);
+                    if (block) {
+                        e.reply?.(block);
+                        return false;
+                    }
+                }
+                if (player.复活地球) {
+                    const block = getRevivalCommandBlock(player, e.msg);
+                    if (block) {
+                        e.reply?.(block);
+                        return false;
+                    }
+                }
+                if (player.始祖永祭?.status === 'bubble') {
+                    e.reply?.('【始祖永祭·空间泡影】现世交互暂停；现实时间720分钟后方可挣脱。发送 #空间泡影状态 查看进度。');
+                    return false;
+                }
                 const sacrificeLockUntil = Number(player.诡异祭礼身灭道消至) || 0;
                 if (sacrificeLockUntil > Date.now()) {
                     const hours = Math.ceil((sacrificeLockUntil - Date.now()) / 3600000);

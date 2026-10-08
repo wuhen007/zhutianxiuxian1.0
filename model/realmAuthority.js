@@ -151,13 +151,59 @@ export function getRealmAuthorityName(player, mijingLevels = [], xianguLevels = 
     (path === 'huafen' ? '花粉进化路第' + currentLevel + '阶' : '未知境界');
 }
 
+export function resetSelfDaoAfterImmortalEmperorFall(player, now = Date.now()) {
+  if (!player || typeof player !== 'object') return { ok: false, reason: 'player' };
+  const state = player.己道推演 && typeof player.己道推演 === 'object'
+    ? player.己道推演
+    : {};
+  if (!state.completed && !String(player.自身之道境界 || '').includes('仙帝')) {
+    return { ok: false, reason: 'not-immortal-emperor', state };
+  }
+
+  state.attempts = 0;
+  state.sacrificeAttempts = 0;
+  state.pathAwakened = false;
+  state.battlePending = false;
+  state.completed = false;
+  state.recovery = null;
+  state.quasiEmperorPeak = false;
+  state.halfImmortalEmperor = false;
+  delete state.quasiEmperorPeakAt;
+  delete state.divineEmbryo;
+  delete state.divineEmbryoAt;
+  delete state.halfImmortalEmperorAt;
+  delete state.awakenedAt;
+  delete state.completedAt;
+  delete state.lastDeductionAt;
+  delete state.lastSacrificeDeductionAt;
+  delete state.terrorTriggered;
+  delete state.terrorTriggeredAt;
+  state.resetAt = now;
+  state.progressionVersion = 2;
+  player.己道推演 = state;
+
+  player.自身之道境界 = '准仙帝·自身道果';
+  player.自身之道根基 = '准仙帝道基';
+  player.境界称号 = '准仙帝';
+  player.道果状态 = '准仙帝·己道待重证';
+  if (player.自创修炼体系) {
+    player.自创修炼体系.stage = '六境圆满·准仙帝';
+    delete player.自创修炼体系.emperorAt;
+  }
+  return { ok: true, state };
+}
+
 export function lowerRealmAuthority(player, amount = 1) {
+  const previousAuthority = getRealmAuthorityLevel(player);
   const path = getRealmAuthorityPath(player);
   const field = path === 'xiangu' ? 'xiangulevel_id'
     : path === 'huafen' ? 'huafenlevel_id' : 'mijinglevel_id';
   player[field] = Math.max(1, levelId(player?.[field]) - Math.max(1, levelId(amount)));
   // 境界跌落即削帝路资格：清掉对应体系破王成帝的「passed」烙印，跌落玩家须重渡帝劫。
   revokeBreakKingEmperorEligibility(player, path);
+  if (previousAuthority >= 21 && getRealmAuthorityLevel(player) < 21) {
+    resetSelfDaoAfterImmortalEmperorFall(player);
+  }
   return path;
 }
 

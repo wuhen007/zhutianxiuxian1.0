@@ -1,8 +1,12 @@
+import { getSuiyunLifeMaximum } from './suiyun.js';
+
 const LIFE_SOURCE_TIER_SIZE = 50;
 const BASE_TIER_COST = 1500000000;
 const TIANMO_HUASHENG_PHYSIQUES = new Set(['极道天魔', '无相·万化天魔体']);
 
 export function getLifeSourceRepairMaximum(player, extraLifeSource = 0) {
+  const suiyunMaximum = getSuiyunLifeMaximum(player);
+  if (suiyunMaximum) return suiyunMaximum;
   const rootLifeSource = Math.max(0, Number(player?.灵根?.生命本源) || 0);
   const refinedLifeSource = TIANMO_HUASHENG_PHYSIQUES.has(player?.灵根?.name)
     ? Math.max(0, Number(player?.天魔化生?.累计所得?.生命本源) || 0)

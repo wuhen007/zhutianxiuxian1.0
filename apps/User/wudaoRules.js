@@ -1,5 +1,6 @@
 import { getRealmAuthorityLevel, getRealmAuthorityPath } from '../../model/realmAuthority.js';
 import { getFlowerDaoGateState } from '../../model/flowerPollenPath.js';
+import { getSuiyunEffects } from '../../model/suiyun.js';
 
 export const DAO_PATH_VERSION = 2;
 export const DAO_DAILY_LIMIT = 3;
@@ -153,6 +154,7 @@ const APTITUDE_BONUSES = Object.freeze({
   绝世天骄: 0.2,
   万古无双: 0.25,
   无演无尽: 0.3,
+  岁云: 0.3,
 });
 
 const ERA_PROFILES = Object.freeze([
@@ -467,7 +469,8 @@ export function recordDaoAttempt(path, dateKey = getShanghaiDateKey()) {
 }
 
 export function getPhysiqueWudaoBonus(physiqueName) {
-  return Number(PHYSIQUE_BONUSES[physiqueName]) || 0;
+  return getSuiyunEffects({ 灵根: { name: physiqueName } }).enlightenmentBonus
+    || Number(PHYSIQUE_BONUSES[physiqueName]) || 0;
 }
 
 export function getAptitudeWudaoBonus(aptitudeName) {

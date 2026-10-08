@@ -38,7 +38,13 @@ import {
   resolveAncientHistoryStrike,
   selectWithdrawableLines,
   setShapeSpiritDestroyed,
+  formatCausalImpactLines,
 } from '../../model/worldlineAuthority.js';
+import {
+  getCausalImpactStatus,
+  persistCausalImpact,
+  retryPendingCausalCompensations,
+} from '../../model/causalImpact.js';
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
 import { computeJuelingErasure } from '../../model/juelingLoss.js';
 import {
@@ -48,10 +54,8 @@ import {
   releaseInnateTreasure,
 } from '../../model/innateTreasure.js';
 import { Read_it, Writeit } from '../../model/duanzaofu.js';
-import { writeJsonAtomically } from '../../utils/atomicJson.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
-const CAUSAL_STATE_FILE = path.join(__PATH.data_path, 'worldline_causal_state.json');
 const ITEM_CATEGORIES = new Set(['装备', '丹药', '道具', '功法', '草药', '材料', '盒子', '仙宠']);
 const FACT_TYPES = new Set(['证道', '创道', '造化', '功法', '物品', '至宝']);
 const TIMELINE_SELECTION_TTL_MS = 10 * 60 * 1000;
@@ -281,48 +285,6 @@ function formatJuelingErasureLines(debt, items) {
   ];
 }
 
-async function persistCausalImpact(actor, debtResult) {
-  if (!debtResult?.delta) return;
-  await withPlayerMutationLock('worldline:causal-impact', async () => {
-    let state = {
-      version: 1,
-      absoluteSpiritAdvance: 0,
-      absoluteSpiritExtension: 0,
-      relatedIncidents: 0,
-      planeDamage: 0,
-      highlandSacrificeAdvance: 0,
-      history: [],
-    };
-    try {
-      if (fs.existsSync(CAUSAL_STATE_FILE)) {
-        state = { ...state, ...JSON.parse(fs.readFileSync(CAUSAL_STATE_FILE, 'utf8')) };
-      }
-    } catch {
-      // Corrupt aggregate state is rebuilt from the next valid event.
-    }
-    const tier = debtResult.tier.level;
-    if (tier >= 1) state.absoluteSpiritAdvance += debtResult.delta;
-    if (tier >= 2) {
-      state.absoluteSpiritExtension += Math.ceil(debtResult.delta / 2);
-      state.relatedIncidents += 1;
-    }
-    if (tier >= 3) state.planeDamage += debtResult.delta;
-    if (tier >= 4) state.highlandSacrificeAdvance += debtResult.delta;
-    state.history = [
-      ...(state.history || []),
-      {
-        actor: actor.名号 || '',
-        debt: debtResult.debt,
-        delta: debtResult.delta,
-        tier: debtResult.tier.name,
-        related: actor.因果牵连?.related || [],
-        at: Date.now(),
-      },
-    ].slice(-100);
-    writeJsonAtomically(CAUSAL_STATE_FILE, state);
-  });
-}
-
 function scanTimelineItems(actor, targetId, spec, lineIds, eraByLine = new Map()) {
   const hits = [];
   for (const lineId of lineIds) {
@@ -368,10 +330,10 @@ async function settleTimelineWithdrawal(actorId, actor, selected, spec) {
     itemName: spec.itemName,
     claims: [...grouped].map(([targetId, lines]) => ({ targetId, lines })),
   });
-  await persistCausalImpact(actor, debt);
   await Write_player(actorId, actor);
   await Write_najie(actorId, najie);
-  return { total, debt };
+  const impact = await persistCausalImpact(actor, debt, { actorId: actorId });
+  return { total, debt, impact };
 }
 
 export class WorldlineAuthority extends plugin {
@@ -383,6 +345,7 @@ export class WorldlineAuthority extends plugin {
       priority: 590,
       rule: [
         { reg: '^#(?:时间线权能|古史状态|因果债)$', fnc: 'worldlineStatus' },
+        { reg: '^#重试因果代偿$', fnc: 'retryCausalCompensation' },
         { reg: '^#确认支取时间线\\s*(?:全部|[\\d\\s,，、]+)$', fnc: 'confirmTimelineWithdrawal' },
         { reg: '^#取消支取时间线$', fnc: 'cancelTimelineWithdrawal' },
         { reg: '^#支取时间线(?:.|\n)+$', fnc: 'withdrawTimeline' },
@@ -398,8 +361,10 @@ export class WorldlineAuthority extends plugin {
     if (!(await existplayer(userId))) return e.reply('玩家不存在，请先创建角色。');
     return withPlayerMutationLock(userId, async () => {
       const player = await Read_player(userId);
+      await retryPendingCausalCompensations({ maxTasks: 8 });
       const status = getWorldlineStatus(player);
       const withdrawalBlock = getWorldlineWithdrawalBlock(player);
+      const impactStatus = getCausalImpactStatus();
       const lineIds = listBackupLineIds(__PATH.backup);
       await Write_player(userId, player);
       const abilities = [];
@@ -413,14 +378,29 @@ export class WorldlineAuthority extends plugin {
         `等效权柄：${status.level}重天`,
         `历史存档：${lineIds.length}条｜已毁：${status.destroyedLines.length}条`,
         `因果债：${status.causalDebt}（${status.debtTier.name}）`,
+        `因果惩罚：有效生命上限${status.punishment.effectiveMaxHp}｜道伤层数${status.punishment.woundStacks}｜支取税率${Math.round(status.punishment.withdrawalTaxRate * 100)}%${status.punishment.realmSuppression ? `｜道果压制${status.punishment.realmSuppression}层` : ''}`,
         `纪元消债：${status.debtReductionRate <= 0 ? '至少需要准仙帝级权柄' : Number.isFinite(status.debtReductionRate) ? `1点纪元积累消减${status.debtReductionRate}点因果债` : '祭道之上无因果代价'}`,
         withdrawalBlock.blocked ? `支取封禁：剩余${formatDuration(withdrawalBlock.remainingMs)}` : '支取封禁：无',
+        `待处理众生代偿：${impactStatus.pendingCompensations.length}项${impactStatus.pendingCompensations.length ? `（${impactStatus.pendingCompensations.slice(0, 5).map(item => item.targetName || item.targetId).join('、')}）` : ''}`,
+        `位面损伤累计：${impactStatus.planeDamage}｜大祭提前压力：${impactStatus.highlandSacrificeAdvance}年｜大祭状态：${impactStatus.sacrifice.plateauDestroyed ? '高原永灭' : impactStatus.sacrifice.phase}`,
+        status.tierCrossings.length ? `最近阈值跨越：${status.tierCrossings.slice(-3).map(item => `${item.name}@${item.debt}`).join('、')}` : '最近阈值跨越：无',
         `现世状态：${status.noReturn ? '绝无复生' : status.shapeSpiritDestroyed ? '形神俱灭' : '道标稳固'}`,
         `权能：${abilities.join('；') || '尚未触及时光长河'}`,
         `关键事实：${facts.length ? facts.map(fact => `${fact.type}·${fact.name}`).join('、') : '尚未形成可见锚点'}`,
         `反噬预兆：${status.debtTier.effect}`,
       ].join('\n'));
     });
+  }
+
+  async retryCausalCompensation(e) {
+    if (!verc({ e })) return false;
+    const result = await retryPendingCausalCompensations({ maxTasks: 32 });
+    return e.reply([
+      '【因果代偿·持久队列重试】',
+      `本轮处理${result.attempted}项，成功${result.applied.length + result.deduped.length}项，空间泡影跳过${result.skippedBubble.length}项，失败${result.failed.length}项。`,
+      `队列剩余${result.pending}项。`,
+      result.failed.length ? `待下次重试：${result.failed.map(item => item.name || item.id).join('、')}` : '当前没有失败代偿。',
+    ].join('\n'));
   }
 
   async withdrawTimeline(e) {
@@ -475,13 +455,14 @@ export class WorldlineAuthority extends plugin {
           if (comparison.reason === 'higher_target' && comparison.targetLevel >= 21) {
             setShapeSpiritDestroyed(actor, '支取路尽级过去时遭本体抹杀');
           }
-          await persistCausalImpact(actor, debt);
           await Write_player(actorId, actor);
+          const impact = await persistCausalImpact(actor, debt, { actorId: actorId });
           return e.reply([
             comparison.reason === 'same_level'
             ? '同级本体循因果降临，支取中止；若要强取，只能先与其当世本体分出胜负。'
             : '目标的高境本体护持过去，你的时间线法身已被当场抹灭。',
             ...formatCausalDebtResult(debt),
+            ...formatCausalImpactLines(impact),
             ...formatJuelingErasureLines(debt, juelingItems),
           ].filter(Boolean).join('\n'));
         }
@@ -531,12 +512,13 @@ export class WorldlineAuthority extends plugin {
           spec.itemName,
         ));
         const selected = hits.filter(hit => selectedLineIds.has(hit.lineId));
-        const { total, debt } = await settleTimelineWithdrawal(actorId, actor, selected, spec);
+        const { total, debt, impact } = await settleTimelineWithdrawal(actorId, actor, selected, spec);
         return e.reply([
           '【时间线支取·既定化虚】',
           `准仙帝法身朦胧感知：${labels.get(targetId) || targetId}可能有${hits.length}条时间线存在【${spec.itemName}】。`,
           `无法辨清具体古史，只得随机支取其中一条，获得×${total}。`,
           ...formatCausalDebtResult(debt),
+          ...formatCausalImpactLines(impact),
           debt.tier.level >= 2 ? `因果已开始牵连：${actor.因果牵连?.related?.join('、') || '宗门与身边之人'}。` : '',
         ].filter(Boolean).join('\n'));
       }
@@ -625,13 +607,14 @@ export class WorldlineAuthority extends plugin {
         return e.reply('部分候选时间线已经被支取，本次清单失效，请重新推演。');
       }
 
-      const { total, debt } = await settleTimelineWithdrawal(actorId, actor, selected, pending.spec);
+      const { total, debt, impact } = await settleTimelineWithdrawal(actorId, actor, selected, pending.spec);
       pendingTimelineWithdrawals.delete(sessionKey);
       return e.reply([
         '【时间线支取·既定化虚】',
         `已支取${selected.length}条古史时间线，获得【${pending.spec.itemName}】×${total}。`,
         `逐线因果债已叠加结算。`,
         ...formatCausalDebtResult(debt),
+        ...formatCausalImpactLines(impact),
         debt.tier.level >= 2 ? `因果已开始牵连：${actor.因果牵连?.related?.join('、') || '宗门与身边之人'}。` : '',
       ].filter(Boolean).join('\n'));
     });
@@ -695,24 +678,26 @@ export class WorldlineAuthority extends plugin {
         availableLineIds: lineIds,
         currentEternalSilence: target.永寂状态 === '永寂' || target.永寂状态 === '绝无复生',
       });
-      await persistCausalImpact(actor, result.debt);
-
       if (!result.ok) {
         await Write_player(actorId, actor);
         if (result.outcome === 'obliterated') {
           const actorNajie = await Read_najie(actorId);
           actorNajie.时间线封锁 = actor.纳戒封锁;
           await Write_najie(actorId, actorNajie);
+          const impact = await persistCausalImpact(actor, result.debt, { actorId: actorId });
           return e.reply([
             '路尽级力量沿因果反斩，你的法身、真身与神魂一并被抹灭。',
             ...formatCausalDebtResult(result.debt),
+            ...formatCausalImpactLines(impact),
           ].join('\n'));
         }
+        const impact = await persistCausalImpact(actor, result.debt, { actorId: actorId });
         return e.reply([
           result.outcome === 'body_clash'
             ? '目标当世本体循古史波动降临，双方权柄同级，本次改写转化为本体对峙。'
             : '目标境界压过施术者，过去法身自行显化并挡下了古史打击。',
           ...formatCausalDebtResult(result.debt),
+          ...formatCausalImpactLines(impact),
         ].join('\n'));
       }
 
@@ -727,6 +712,7 @@ export class WorldlineAuthority extends plugin {
       }
       await Write_player(actorId, actor);
       await Write_player(targetId, target);
+      const impact = await persistCausalImpact(actor, result.debt, { actorId: actorId });
       return e.reply([
         '【古史打击·既定事实改写】',
         `目标：${target.名号}｜锚点：${spec.type}·${spec.name}`,
@@ -734,6 +720,7 @@ export class WorldlineAuthority extends plugin {
         result.line?.presentEffect === 'quasi_emperor_flaw' ? '准仙帝现世道果受到牵连，新增一道古史创伤。' : '',
         result.line?.allLinesDestroyed ? '目标的所有可见时间线均已熄灭；若当世再陷永寂，将绝无复生可能。' : '',
         ...formatCausalDebtResult(result.debt),
+        ...formatCausalImpactLines(impact),
       ].filter(Boolean).join('\n'));
     });
   }
@@ -762,15 +749,16 @@ export class WorldlineAuthority extends plugin {
         : [];
       const najie = await Read_najie(targetId);
       delete najie.时间线封锁;
-      await persistCausalImpact(actor, debt);
       await Write_player(actorId, actor);
       await Write_player(targetId, target);
       await Write_najie(targetId, najie, { allowWorldlineUnlock: true });
+      const impact = await persistCausalImpact(actor, debt, { actorId: actorId });
       return e.reply([
         '【映照诸天·重塑形神】',
         `${actor.名号}以路尽之光重聚${target.名号}的肉身与神魂。`,
         `目标恢复至${rebuilt.currentHp}点生命，练气存档与纳戒重新可用。`,
         ...formatCausalDebtResult(debt),
+        ...formatCausalImpactLines(impact),
         ...formatJuelingErasureLines(debt, juelingItems),
       ].filter(Boolean).join('\n'));
     });

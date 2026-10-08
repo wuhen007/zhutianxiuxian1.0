@@ -1,3 +1,4 @@
+import { getSuiyunEffects } from './suiyun.js';
 import { isDaofaActive } from './daofa.js';
 import { getDungeonGongfaReduction } from './gongfaProficiency.js';
 import { PLACE_LOCATION_MAP } from './weimianTravel.js';
@@ -226,6 +227,11 @@ export function resolveRiftRewardBonus(player, random = Math.random) {
   let multiplier = 1;
   let stateChanged = false;
   const rootType = player?.灵根?.type;
+  const suiyunMultiplier = getSuiyunEffects(player).lootMultiplier;
+  if (suiyunMultiplier > 1) {
+    multiplier *= suiyunMultiplier;
+    messages.push(`云月造化：物品数量 ×${suiyunMultiplier}`);
+  }
 
   if (rootType === '魔卡少女') {
     multiplier += 1;

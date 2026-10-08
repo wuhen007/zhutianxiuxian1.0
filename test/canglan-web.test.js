@@ -215,7 +215,7 @@ test('沧澜网页会话可读取状态并幂等提交星图操作', async t => 
   const base = `http://127.0.0.1:${server.address().port}`;
   config.publicUrl = base;
 
-  for (const asset of ['/canglan', '/canglan/app.js', '/canglan/style.css']) {
+  for (const asset of ['/canglan', '/canglan/app.js', '/canglan/story.js', '/canglan/planets.js', '/canglan/style.css']) {
     const response = await fetch(`${base}${asset}`);
     assert.equal(response.status, 200);
   }

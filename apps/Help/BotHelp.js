@@ -3,7 +3,7 @@ import Help from '../../model/help.js';
 import Help2 from '../../model/shituhelp.js';
 import Help3 from '../../model/zhutianhelp.js';
 import ActivityHelp from '../../model/huodonghelp.js';
-import md5 from 'md5';
+import { createHash } from 'node:crypto';
 
 const HELP_TEMPLATE = 'celestial-codex';
 let helpData = {
@@ -172,7 +172,7 @@ async xiaoshijiehelp(e) {
 
   async cache(data) {
     data.tplFile = `./plugins/zhutianxiuxian1.0/resources/html/help-variants/${HELP_TEMPLATE}.html`;
-    let tmp = md5(JSON.stringify(data));
+    const tmp = createHash('md5').update(JSON.stringify(data), 'utf8').digest('hex');
     if (helpData.md5 == tmp) return helpData.img;
     helpData.img = await puppeteer.screenshots('help', data);
     helpData.md5 = tmp;

@@ -2331,7 +2331,7 @@ button:active:not(:disabled) {
   .toast {
     left: 12px;
     right: 12px;
-    top: calc(var(--top-height) + 90px);
+    top: calc(var(--top-height) + 195px);
     max-width: none;
   }
 }
@@ -2357,4 +2357,148 @@ button:active:not(:disabled) {
     animation-iteration-count: 1 !important;
     transition-duration: .001ms !important;
   }
+}
+
+/* 延续现有层级：星图控制4、信息栏5、演绎8、提示9、接驳页20。 */
+.story-tools {
+  position: fixed;
+  z-index: 4;
+  left: 24px;
+  top: calc(var(--top-height) + 100px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  max-width: calc(100vw - var(--panel-width) - 48px);
+  border: 1px solid var(--line);
+  background: var(--void);
+}
+.story-tools > button, .story-history > summary {
+  min-height: 38px;
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 11px;
+}
+.story-tools button:hover:not(:disabled), .story-history > summary:hover { color: var(--gold-bright); background: var(--void-soft); }
+.story-tools [aria-pressed="true"] { color: var(--gold-bright); }
+.story-history > summary::marker { content: ''; }
+.story-history > summary::-webkit-details-marker { display: none; }
+.story-history > summary:focus-visible, .story-all > summary:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: -2px; }
+.story-history > div {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 5px);
+  width: min(310px, calc(100vw - 32px));
+  max-height: 45dvh;
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid var(--line-strong);
+  background: var(--void-soft);
+  box-shadow: 0 16px 35px #0008;
+}
+.story-history p { margin: 0 0 10px; color: var(--ink-soft); font-size: 11px; }
+.story-history ol { list-style: none; margin: 0; padding: 0; }
+.story-history li + li { border-top: 1px solid var(--line); }
+.story-history li button { width: 100%; min-height: 42px; text-align: left; padding: 8px 2px; border: 0; background: transparent; color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
+
+.story-theater {
+  --scene-accent: var(--gold-bright);
+  position: fixed;
+  z-index: 8;
+  left: clamp(24px, 5vw, 80px);
+  bottom: 115px;
+  width: min(560px, calc(100vw - var(--panel-width) - 70px));
+  max-height: min(530px, calc(100dvh - 250px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 24px 28px 20px;
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-top: 2px solid var(--scene-accent);
+  background: linear-gradient(110deg, #191812 0%, #11110ff8 78%);
+  box-shadow: 0 22px 70px #0009;
+}
+.story-theater[data-effect="battle"] { --scene-accent: #e48769; background: linear-gradient(110deg, #231614, #11110ff8 78%); }
+.story-theater[data-effect="quiet"] { --scene-accent: var(--ink-soft); }
+.story-head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.story-head > span { max-width: 75%; color: var(--scene-accent); font-size: 11px; overflow-wrap: anywhere; }
+.story-head > button { flex-shrink: 0; min-height: 36px; padding: 0 7px; color: var(--ink-soft); background: var(--void); border: 1px solid var(--line); font-size: 11px; cursor: pointer; }
+.story-origin { position: relative; margin: 20px 0 7px; color: var(--ink-soft); font-size: 10px; }
+.story-theater h2 { position: relative; margin: 0 45px 23px 0; color: var(--ink); font: 500 clamp(24px, 2.6vw, 34px)/1.3 "Noto Serif SC", "Songti SC", SimSun, serif; text-wrap: balance; }
+.story-beat { position: relative; padding: 17px 0 16px; border-top: 1px solid var(--line); }
+.story-beat > span { font-size: 10px; color: var(--scene-accent); }
+.story-beat p { min-height: 4em; margin: 9px 0 0; font-size: 14px; line-height: 1.9; white-space: pre-wrap; overflow-wrap: anywhere; }
+.story-all { position: relative; color: var(--ink-soft); font-size: 11px; }
+.story-all summary { width: fit-content; padding: 7px 0; cursor: pointer; }
+#story-full-record p { padding-top: 9px; margin: 8px 0; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+#story-full-record strong { display: block; margin-bottom: 5px; color: var(--scene-accent); font-size: 10px; font-weight: 500; }
+.story-footer { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding-top: 15px; border-top: 1px solid var(--line); }
+.story-footer > span { color: var(--ink-soft); font: 11px Consolas, monospace; }
+.story-footer > div { display: flex; gap: 8px; }
+.story-footer button { min-height: 40px; padding: 0 13px; color: var(--ink); border: 1px solid var(--line-strong); background: transparent; font-size: 12px; cursor: pointer; }
+.story-footer #story-next { color: var(--void); background: var(--scene-accent); border-color: var(--scene-accent); font-weight: 600; }
+.story-sigil { position: absolute; right: 21px; top: 82px; width: 100px; height: 100px; opacity: .24; color: var(--scene-accent); pointer-events: none; }
+.story-sigil i { position: absolute; inset: 0; border: 1px solid currentColor; border-radius: 50%; }
+.story-sigil i:nth-child(2) { inset: 12px; border-radius: 0; transform: rotate(45deg); }
+.story-sigil i:nth-child(3) { inset: 23px; }
+.story-sigil span { position: absolute; inset: 0; display: grid; place-items: center; font: 34px SimSun, serif; }
+@media (prefers-reduced-motion: no-preference) {
+  .story-theater.is-performing { animation: story-arrive .45s ease-out both; }
+  .story-theater.is-performing .story-sigil i:first-child { animation: story-ring 2.2s ease-out both; }
+  .story-theater.is-performing .story-sigil i:nth-child(2) { animation: story-rune 2.2s ease-out both; }
+}
+@keyframes story-arrive { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes story-ring { from { transform: scale(.7); opacity: 0; } 30% { opacity: 1; } to { transform: scale(1.2); opacity: .65; } }
+@keyframes story-rune { from { transform: rotate(0) scale(.8); } to { transform: rotate(45deg) scale(1); } }
+[data-motion="off"] *, [data-motion="off"] *::before, [data-motion="off"] *::after { animation: none !important; transition: none !important; }
+@media (max-width: 760px) {
+  .story-tools { left: 12px; top: calc(var(--top-height) + 90px); max-width: calc(100vw - 24px); }
+  .story-tools > button, .story-history > summary { min-height: 42px; padding-inline: 10px; }
+  .story-theater { left: 12px; right: 12px; bottom: calc(83px + env(safe-area-inset-bottom)); width: auto; max-height: calc(100dvh - 245px); padding: 15px 18px; }
+  .story-theater h2 { font-size: 26px; margin-bottom: 15px; }
+  .story-origin { margin-top: 13px; }
+  .story-beat { padding-block: 12px; }
+  .story-beat p { font-size: 13px; line-height: 1.8; }
+  .story-head > button, .story-footer button { min-height: 44px; }
+  .story-sigil { width: 80px; height: 80px; top: 76px; right: 13px; }
+  .story-footer { margin-top: 10px; }
+}
+@media (max-height: 520px) {
+  .story-theater { top: 12px; bottom: 12px; max-height: calc(100dvh - 24px); }
+}
+
+/* 古星近景：保留黑金星图，海陆冷色仅用于行星材质。 */
+.intel-panel > * { flex-shrink: 0; }
+.intel-panel .intel-head { padding-top: 0; }
+.planet-dossier { position: relative; margin: 16px -6px 0; padding: 0 6px 15px; border-bottom: 1px solid var(--line); background: radial-gradient(ellipse at 50% 40%, #12202770, transparent 70%); }
+.planet-dossier canvas { width: 100%; height: 235px; object-fit: contain; display: block; }
+.planet-dossier-orbit { position: absolute; top: 12px; left: 6px; right: 6px; display: flex; justify-content: space-between; color: var(--ink-soft); font-size: 9px; }
+.planet-dossier-orbit code { color: var(--gold); }
+.planet-dossier figcaption { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: -7px; }
+.planet-dossier figcaption strong { color: var(--ink); font-size: 13px; font-weight: 500; }
+.planet-dossier button { min-height: 38px; padding: 0 10px; background: transparent; border: 1px solid var(--line-strong); color: var(--gold-bright); font-size: 11px; cursor: pointer; }
+.planet-dossier button:hover { background: #c7a75f12; }
+.planet-dossier button span { margin-left: 8px; }
+.planet-dossier small { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; }
+.intel-panel > .signal-copy { margin-top: 17px; min-height: 0; font-size: 12px; line-height: 1.85; }
+.intel-panel > .action-grid { margin: 18px 0 25px; }
+.planet-picker { position: fixed; z-index: 4; left: 24px; top: calc(var(--top-height) + 151px); display: grid; gap: 7px; }
+.planet-picker > span { color: var(--muted); font-size: 9px; }
+.planet-picker select { width: 208px; min-height: 38px; padding: 0 10px; color: var(--ink-soft); border: 1px solid var(--line); border-radius: 0; background: var(--void); font: 11px "Microsoft YaHei UI", sans-serif; cursor: pointer; }
+.planet-picker select:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 3px; }
+.map-legend i { border-radius: 50%; transform: none; }
+.brand-lockup .kicker { color: var(--gold); }
+@media (max-width: 760px) {
+  .planet-picker { left: 12px; top: calc(var(--top-height) + 141px); }
+  .planet-picker > span { display: none; }
+  .planet-picker select { width: 192px; min-height: 42px; }
+  .planet-dossier { margin-top: 12px; }
+  .planet-dossier canvas { height: 210px; }
+  .planet-dossier button { min-height: 44px; }
+  .intel-panel .intel-head { padding-top: 4px; }
 }

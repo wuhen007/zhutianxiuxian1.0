@@ -1,11 +1,13 @@
 import { plugin, verc, data, config } from '../../api/api.js';
 import fs from 'fs';
+import { multiplySuiyunLoot } from '../../model/suiyunLoot.js';
 import { consumeBlackEmperorBattleFormation } from '../../model/blackEmperor.js';
 import {
   Add_灵石,
   ForwardMsg,
   Add_HP,
   Write_player,
+  Read_player,
   Harm,
   zd_battle,
   channel, Add_najie_thing 
@@ -650,11 +652,13 @@ async function addItemsToNajie(playerId, items) {
     return;
   }
   
+  const recipient = await Read_player(playerId);
   for (let item of items) {
     // 确保物品有效
     if (item && item.name && item.class && item.quantity !== undefined) {
       try {
         // 使用 item.quantity 作为添加物品的数量
+        item.quantity = multiplySuiyunLoot(recipient, item, item.quantity);
         await Add_najie_thing(playerId, item.name, item.class, item.quantity);
       } catch (e) {
         console.error(`添加物品失败: ${item.name}`, e);

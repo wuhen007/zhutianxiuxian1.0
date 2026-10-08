@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { multiplySuiyunLoot } from '../../model/suiyunLoot.js';
 import { plugin, verc, data, config } from '../../api/api.js';
 import {
   Add_灵石,
@@ -68,6 +69,7 @@ import { getExtraCultivationLevelSum } from '../../model/extraCultivation.js';
 import { getTianjiaoRealmTier } from '../../model/realmAuthority.js';
 import { getLocationName as resolveLocationName } from '../../model/weimianTravel.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { compareAndDeleteRedisJson } from '../../utils/redisJsonCas.js';
 import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
 import { replyOfficialMessage } from '../../model/officialMessage.js';
 import { addRelicToBag, createFishKingRelic } from '../../model/relicSystem.js';
@@ -621,6 +623,7 @@ export class BOSS4 extends plugin {
   }
 
   async grantTianjiaoDrop(qq, item, amount, idempotencyKey) {
+    amount = multiplySuiyunLoot(await Read_player(qq), item, amount);
     if (item.class !== '遗珍') {
       await Add_najie_thing(qq, item.name, item.class, amount, undefined, 1, { idempotencyKey });
       return `${item.name} x${amount}`;
@@ -680,14 +683,18 @@ export class BOSS4 extends plugin {
       if (!pending) return e.reply('当前没有等待处理的天骄求饶。');
       if (!await this.claimPendingEncounter(pending)) return e.reply('这次求饶正在结算，请稍候查看纳戒。');
       try {
-        const rewards = Array.isArray(pending.offer?.all) ? pending.offer.all : [];
+        const recipient = await Read_player(qq);
+        const rewards = (Array.isArray(pending.offer?.all) ? pending.offer.all : []).map(item => ({
+          ...item,
+          amount: multiplySuiyunLoot(recipient, item, Math.max(1, Math.min(20, Math.floor(Number(item.amount) || 1)))),
+        }));
         for (let index = 0; index < rewards.length; index++) {
           const item = rewards[index];
           await Add_najie_thing(
             qq,
             item.name,
             item.class,
-            Math.max(1, Math.min(20, Math.floor(Number(item.amount) || 1))),
+            item.amount,
             undefined,
             1,
             { idempotencyKey: `tianjiao-surrender:${pending.token}:${index}` },
@@ -917,9 +924,25 @@ export class BOSS4 extends plugin {
     });
   }
 
-  async finalizePendingTianjiaoDeath(e, pending, qq, suppressRewards) {
+  async finalizePendingTianjiaoDeath(e, pending, qq, suppressRewards, { suiyun = false } = {}) {
+    const lockKey = 'tianjiao:battle:lock';
+    const lockToken = `pending:${qq}:${pending.token}:${Date.now()}:${Math.random()}`;
+    if (!await redis.set(lockKey, lockToken, { NX: true, EX: 180 })) return null;
+    try {
     const tianjiaoData = data.weimiantianjiao_list.find(item => item.名号 === pending.tianjiaoName);
     if (!tianjiaoData) return null;
+    if (pending.playerId && String(pending.playerId) !== String(qq)) return null;
+    const receiptKey = `suiyun:tianjiao-death:${pending.token}`;
+    if (suiyun) {
+      const receiptRaw = await redis.get(receiptKey);
+      if (receiptRaw) {
+        const receipt = JSON.parse(receiptRaw);
+        if (receipt.ownerId !== String(qq) || receipt.token !== pending.token || receipt.name !== pending.tianjiaoName) return null;
+        return { ...receipt, replayed: true };
+      }
+      if (Number(pending.suiyunOriginalExpiresAt || pending.expiresAt) <= Date.now()) return null;
+      if (pending.tianjiaoLife != null && Number(pending.tianjiaoLife) !== (Number(tianjiaoData.轮回世数) || 0)) return null;
+    }
     const globalReviveKey = `tianjiao:global:revive:${pending.tianjiaoName}`;
     if ((Number(await redis.get(globalReviveKey)) || 0) > Date.now()) return null;
     const statusKey = `tianjiao:status:${pending.tianjiaoName}`;
@@ -931,7 +954,15 @@ export class BOSS4 extends plugin {
     }
     status.currentHP = 0;
     status.isAlive = true;
-    return this.finalizeTianjiaoDefeat(e, {
+    let deathReceipt;
+    if (suiyun) {
+      pending.suiyunOriginalExpiresAt ||= pending.expiresAt;
+      pending.stage = 'suiyun-settlement';
+      pending.expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+      await redis.set(this.getPendingEncounterKey(qq), JSON.stringify(pending), { EX: 24 * 3600 });
+      deathReceipt = { key: receiptKey, ownerId: String(qq), token: pending.token, name: pending.tianjiaoName, sourceLifeEssence: Number(tianjiaoData.生命本源) || 100 };
+    }
+    return await this.finalizeTianjiaoDefeat(e, {
       tianjiaoName: pending.tianjiaoName,
       tianjiaoData,
       status,
@@ -940,7 +971,11 @@ export class BOSS4 extends plugin {
       killerQQ: qq,
       rewardMultiplier: 1,
       suppressRewards,
+      deathReceipt,
     });
+    } finally {
+      await compareAndDeleteRedisJson(redis, lockKey, lockToken);
+    }
   }
 
   // ========== 显示方法 ==========
@@ -1430,6 +1465,7 @@ export class BOSS4 extends plugin {
       killerQQ,
       rewardMultiplier = 1,
       suppressRewards = false,
+      deathReceipt,
     } = options;
     const reviveTime = Date.now() + this.tianjiaoRefreshMs;
     const settlementId = reviveTime.toString();
@@ -1443,7 +1479,17 @@ export class BOSS4 extends plugin {
     delete status.下次证道阻断;
     delete status.护身法宝已碎;
 
-    await redis.set(globalReviveKey, settlementId);
+    if (deathReceipt) {
+      // 死亡标记、本世状态与来源回执原子落盘；随后玩家写入失败可凭同一回执补领。
+      const { key, ...receipt } = deathReceipt;
+      await redis.multi()
+        .set(globalReviveKey, settlementId)
+        .set(statusKey, JSON.stringify(status))
+        .set(key, JSON.stringify({ ...receipt, reviveTime, settlementId }), { EX: 24 * 3600 })
+        .exec();
+    } else {
+      await redis.set(globalReviveKey, settlementId);
+    }
     await redis.del(`tianjiao:reincarnation:announced:${tianjiaoName}`);
     await redis.del(this.getTianjiaoEscapeKey(tianjiaoName));
     await redis.set(statusKey, JSON.stringify(status));
@@ -1553,7 +1599,7 @@ export class BOSS4 extends plugin {
       console.error(`[天骄轮回] ${tianjiaoName} 重置初始模板失败:`, error);
     }
 
-    return { reviveTime, settlementId, reincarnation };
+    return { reviveTime, settlementId, reincarnation, ...(deathReceipt ? { sourceLifeEssence: deathReceipt.sourceLifeEssence } : {}) };
   }
 
   /** 至宝重出预告：夺回失败时全服公告该至宝已遁入诸天，等待再次出世 */
@@ -1810,6 +1856,10 @@ export class BOSS4 extends plugin {
     SetWorldBOSSBattleUnLockTimer(e, lockToken);
 
     try {
+      // 取得同一把死亡锁后重验，避免排查踪迹期间本世已被另一处置终结。
+      if ((Number(await redis.get(globalReviveKey)) || 0) > Date.now()) {
+        return e.reply(`${tianjiaoName}本世道身刚刚已经陨落，请等待转世归来。`);
+      }
       // 创建玩家角色
       const A_player = {
         ...player,

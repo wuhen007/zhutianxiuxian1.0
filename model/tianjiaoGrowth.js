@@ -526,7 +526,8 @@ function improveEquipment(tianjiao, context, random) {
   if (random() < washChance) return washPercentageEquipment(tianjiao, equipment, slot, random);
 
   const candidates = [...(context.equipmentList || []), ...(context.specialEquipmentList || [])]
-    .filter(item => item?.type === slot && itemScore(item, realm.base) > itemScore(current, realm.base));
+    .filter(item => item?.type === slot && !item.岁云专属 && !item.不可随机获取
+      && itemScore(item, realm.base) > itemScore(current, realm.base));
   if (candidates.length === 0) return improveEquipment(tianjiao, context, () => 0);
   const found = candidates[Math.floor(random() * candidates.length)];
   equipment[slot] = cloneItem(found);

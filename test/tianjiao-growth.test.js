@@ -73,37 +73,29 @@ const context = {
   ],
 };
 
-test('旧位面天骄装备按当前阈值保持固定数值语义', () => {
-  const tianjiaoList = JSON.parse(fs.readFileSync(
-    new URL('../resources/data/item/位面boss列表.json', import.meta.url),
+test('天骄入门装备和高阶替换保持固定数值语义，百分比装备仍独立判定', () => {
+  // NPC运行表会随成长更换装备；验证稳定目录与隔离样本，不要求活跃NPC保持初始装备。
+  const equipmentList = JSON.parse(fs.readFileSync(
+    new URL('../resources/data/item/装备列表.json', import.meta.url),
     'utf8',
   ));
   const migrated = [
-    ['金翅小鹏王', '法宝', 'HP', 520],
-    ['华云飞', '武器', 'atk', 510],
-    ['华云飞', '法宝', 'HP', 520],
-    ['王腾', '武器', 'atk', 510],
-    ['王腾', '护具', 'def', 510],
-    ['霸王浑战', '护具', 'def', 510],
-    ['十冠王天子', '武器', 'atk', 510],
-    ['十冠王天子', '法宝', 'HP', 520],
-    ['鹤无双', '武器', 'atk', 510],
+    [1002, 'atk', 510],
+    [1004, 'def', 510],
+    [1005, 'HP', 520],
   ];
 
-  for (const [name, slot, field, expected] of migrated) {
-    const item = tianjiaoList.find(entry => entry.名号 === name)?.装备?.[slot];
-    assert.equal(item?.[field], expected, `${name}的${slot}迁移值错误`);
-    assert.equal(isFixedStatEquipment(item), true, `${name}的${slot}应按固定数值计算`);
+  for (const [id, field, expected] of migrated) {
+    const item = equipmentList.find(entry => entry.id === id);
+    assert.equal(item?.[field], expected, `${id}的迁移值错误`);
+    assert.equal(isFixedStatEquipment(item), true, `${id}应按固定数值计算`);
   }
 
-  const wufengzi = tianjiaoList.find(entry => entry.名号 === '武疯子');
-  for (const slot of ['武器', '护具', '法宝']) {
-    assert.equal(
-      isFixedStatEquipment(wufengzi?.装备?.[slot]),
-      false,
-      `武疯子的${slot}应继续按百分比计算`,
-    );
-  }
+  const upgraded = equipmentList.find(item => item.id === 100054); // 同一稳定目录中的高阶固定装备
+  assert.ok(upgraded);
+  assert.equal(isFixedStatEquipment(upgraded), true);
+  for (const item of [{ atk: 8, def: 2, HP: 2 }, { atk: 2, def: 8, HP: 10 }, { atk: 3, def: 3, HP: 5 }])
+    assert.equal(isFixedStatEquipment(item), false);
 });
 
 function sequenceRandom(...values) {

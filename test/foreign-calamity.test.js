@@ -50,7 +50,17 @@ test('跨过多个千年节点会逐波生成，重复执行不会再生成', as
   const sets = new Map();
   globalThis.redis = {
     async get(key) { return values.get(key) ?? null; },
-    async set(key, value) { values.set(key, value); return 'OK'; },
+    async set(key, value, options = {}) {
+      if (options.NX && values.has(key)) return null;
+      values.set(key, value);
+      return 'OK';
+    },
+    async del(key) { return Number(values.delete(key)); },
+    async eval(_script, { keys, arguments: args }) {
+      return values.get(keys[0]) === args[0] ? this.del(keys[0]) : 0;
+    },
+    async sMembers(key) { return [...(sets.get(key) || [])]; },
+    async sRem(key, value) { return Number(sets.get(key)?.delete(value) || false); },
     async sAdd(key, value) {
       if (!sets.has(key)) sets.set(key, new Set());
       sets.get(key).add(value);
@@ -74,7 +84,15 @@ test('已领奖和失效灾厄会从活动索引清理', async () => {
   }));
   globalThis.redis = {
     async get(key) { return values.get(key) ?? null; },
-    async set(key, value) { values.set(key, value); return 'OK'; },
+    async set(key, value, options = {}) {
+      if (options.NX && values.has(key)) return null;
+      values.set(key, value);
+      return 'OK';
+    },
+    async del(key) { return Number(values.delete(key)); },
+    async eval(_script, { keys, arguments: args }) {
+      return values.get(keys[0]) === args[0] ? this.del(keys[0]) : 0;
+    },
     async sMembers(key) { return [...(sets.get(key) || [])]; },
     async sAdd(key, value) {
       if (!sets.has(key)) sets.set(key, new Set());

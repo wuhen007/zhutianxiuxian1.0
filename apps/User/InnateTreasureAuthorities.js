@@ -552,7 +552,8 @@ export class InnateTreasureAuthorities extends plugin {
     if (!found || Number(found.item.数量) < input.amount) return e.reply('纳戒中没有足够的该物品。');
     const pool = nativePool(found.itemClass);
     const rank = getChaosItemRarity(found.item);
-    const candidates = pool.filter(item => getChaosItemRarity(item) === rank && item.name !== input.name);
+    const candidates = pool.filter(item => getChaosItemRarity(item) === rank && item.name !== input.name
+      && !item.全服唯一 && !item.全时间线唯一 && !item.不可创造 && !item.不可支取);
     if (!candidates.length) return e.reply('该类别与品阶暂时没有可变幻的其他物品。');
     const target = candidates[Math.floor(Math.random() * candidates.length)];
     removeInventoryItem(najie, found.itemClass, found.item, input.amount);

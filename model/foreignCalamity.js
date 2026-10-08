@@ -1,7 +1,10 @@
 import { createFishKingRelic } from './relicSystem.js';
 import { readPlayerArchives } from './riftGuardian.js';
+import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 
 export const FOREIGN_CALAMITY_INDEX_KEY = 'xiuxian:foreign-calamity:index';
+export const FOREIGN_CALAMITY_MAX_ACTIVE = 30;
+export const FOREIGN_CALAMITY_CULL_REPORT_KEY = 'xiuxian:foreign-calamity:last-cull';
 export const FOREIGN_PAGE_REQUIREMENT = 10;
 export const FOREIGN_CALAMITY_BATTLE_COOLDOWN_MS = 15 * 60 * 1000;
 export const FOREIGN_OVERLORD_KILLS_REQUIRED = 10;
@@ -27,6 +30,26 @@ return redis.call('INCR', KEYS[2])
 const COMPARE_DELETE_SCRIPT = `
 if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
 return redis.call('DEL', KEYS[1])
+`;
+
+const CULL_FOREIGN_CALAMITY_SCRIPT = `
+local activeCount = 0
+local targetActive = false
+for index = 4, #KEYS do
+  local raw = redis.call('GET', KEYS[index])
+  if raw then
+    local ok, entity = pcall(cjson.decode, raw)
+    if ok and type(entity) == 'table' and entity.status == 'active' then
+      activeCount = activeCount + 1
+      if KEYS[index] == KEYS[1] then targetActive = true end
+    end
+  end
+end
+if activeCount <= tonumber(ARGV[1]) or not targetActive then return {0, activeCount} end
+redis.call('DEL', KEYS[1])
+redis.call('SREM', KEYS[2], ARGV[2])
+redis.call('SREM', KEYS[3], ARGV[2])
+return {1, activeCount - 1}
 `;
 
 async function compareDeleteRedisKey(key, expected) {
@@ -613,21 +636,34 @@ export function consumePlaneFavorForWudao(player, rawGain, remaining) {
 export async function spawnForeignCalamities(previousWorldYear, currentWorldYear, options = {}) {
   const before = Math.floor(Math.max(0, finite(previousWorldYear)) / 1000);
   const after = Math.floor(Math.max(0, finite(currentWorldYear)) / 1000);
-  const spawned = [];
-  for (let step = before + 1; step <= after; step++) {
-    const worldYear = step * 1000;
-    const markerKey = `xiuxian:foreign-calamity:spawn:${worldYear}`;
-    if (await redis.get(markerKey)) continue;
-    const wave = createForeignCalamityWave({ worldYear, players: options.players, random: options.random });
-    for (const entity of wave) {
-      const key = `xiuxian:foreign-calamity:entity:${entity.id}`;
-      if (!await redis.get(key)) await redis.set(key, JSON.stringify(entity));
-      await redis.sAdd(FOREIGN_CALAMITY_INDEX_KEY, entity.id);
-      spawned.push(entity);
+  const result = await withForeignPopulationLock(async () => {
+    const spawned = [];
+    const report = createForeignCullReport(options);
+    // 旧版积压无需等到下个千年；即使本轮没有新来敌也照常巡猎。
+    await cullForeignCalamities(report, options);
+    for (let step = before + 1; step <= after; step++) {
+      const worldYear = step * 1000;
+      const markerKey = `xiuxian:foreign-calamity:spawn:${worldYear}`;
+      if (await redis.get(markerKey)) continue;
+      const wave = createForeignCalamityWave({ worldYear, players: options.players, random: options.random });
+      for (const entity of wave) {
+        const existing = await readForeignCalamity(entity.id);
+        if (!existing) {
+          await saveForeignCalamity(entity);
+          spawned.push(entity);
+        } else if (!(existing.status === 'defeated' && existing.rewardClaimedAt)) {
+          await redis.sAdd(FOREIGN_CALAMITY_INDEX_KEY, existing.id);
+        }
+      }
+      // 先锁定本波已生成，巡猎删除实体后重试同一年也不会重新刷出。
+      await redis.set(markerKey, '1');
+      await cullForeignCalamities(report, options);
     }
-    await redis.set(markerKey, '1');
-  }
-  return spawned;
+    await saveForeignCullReport(report);
+    return { spawned, report };
+  });
+  if (result.report.count && options.onCull) await options.onCull(result.report);
+  return result.spawned;
 }
 
 export async function readForeignCalamity(id) {
@@ -655,7 +691,7 @@ export async function saveForeignCalamity(entity) {
   return entity;
 }
 
-export async function listForeignCalamities() {
+async function readIndexedForeignCalamities() {
   const ids = await redis.sMembers(FOREIGN_CALAMITY_INDEX_KEY);
   const entities = [];
   for (let offset = 0; offset < ids.length; offset += FOREIGN_CALAMITY_READ_BATCH_SIZE) {
@@ -671,6 +707,101 @@ export async function listForeignCalamities() {
     }
   }
   return entities;
+}
+
+// 生成与巡猎共用队列，逐实体仍沿用战斗锁；持实体锁的结算不反向申请此锁。
+async function withForeignPopulationLock(task) {
+  return withPlayerMutationLock('foreign-calamity:population', async () => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const result = await withForeignCalamityLock('population', task);
+      if (!result?.busy) return result;
+      await new Promise(resolve => setTimeout(resolve, (attempt + 1) * 25));
+    }
+    throw new Error('域外灾厄正在更新，请稍后再试。');
+  });
+}
+
+function createForeignCullReport({ now = Date.now() } = {}) {
+  return { at: now, count: 0, remaining: 0, victims: [] };
+}
+
+async function cullForeignCalamities(report, { random = Math.random } = {}) {
+  const entities = await readIndexedForeignCalamities();
+  const active = entities.filter(entity => entity.status === 'active')
+    .sort((a, b) => finite(a.worldYear) - finite(b.worldYear)
+      || finite(a.spawnedAt) - finite(b.spawnedAt)
+      || String(a.id).localeCompare(String(b.id)));
+  const activeKeys = active.map(entity => `xiuxian:foreign-calamity:entity:${entity.id}`);
+  let remaining = active.length;
+  for (const candidate of active) {
+    if (remaining <= FOREIGN_CALAMITY_MAX_ACTIVE) break;
+    const outcome = await withForeignCalamityLock(candidate.id, async () => {
+      const entity = await readForeignCalamity(candidate.id);
+      if (!entity || entity.status !== 'active') return { inactive: true };
+      const victim = {
+        id: entity.id,
+        name: entity.名号 || entity.id,
+        type: entity.type,
+        killer: pick(['巡天的绝世天骄', '镇界的诸天强者'], random),
+      };
+      // 实时计数与退场原子提交，其他目标刚被玩家击败时不再多杀；NPC不产战利品或魔主进度。
+      const [removed, count] = await redis.eval(CULL_FOREIGN_CALAMITY_SCRIPT, {
+        keys: [
+          `xiuxian:foreign-calamity:entity:${entity.id}`,
+          FOREIGN_CALAMITY_INDEX_KEY,
+          FOREIGN_OVERLORD_PENDING_DEFEATS_KEY,
+          ...activeKeys,
+        ],
+        arguments: [String(FOREIGN_CALAMITY_MAX_ACTIVE), entity.id],
+      });
+      return { victim: Number(removed) ? victim : null, remaining: Number(count) };
+    });
+    if (outcome?.busy) continue; // 正在讨伐的目标保留，转向下一尊闲置灾厄。
+    remaining = outcome.remaining ?? remaining - 1;
+    if (outcome?.victim) {
+      report.count++;
+      report.victims.push(outcome.victim);
+      if (report.victims.length > 5) report.victims.shift();
+    }
+  }
+  const current = await readIndexedForeignCalamities();
+  report.remaining = current.filter(entity => entity.status === 'active').length;
+  return current;
+}
+
+async function saveForeignCullReport(report) {
+  if (report.count) {
+    // 仅覆盖最近一轮的摘要，NPC退场记录本身不再无限堆积。
+    await redis.set(FOREIGN_CALAMITY_CULL_REPORT_KEY, JSON.stringify(report));
+  }
+}
+
+export async function enforceForeignCalamityLimit(options = {}) {
+  return withForeignPopulationLock(async () => {
+    const report = createForeignCullReport(options);
+    const entities = await cullForeignCalamities(report, options);
+    await saveForeignCullReport(report);
+    return { entities, report };
+  });
+}
+
+export async function listForeignCalamities() {
+  return (await enforceForeignCalamityLimit()).entities;
+}
+
+export async function readForeignCalamityCullReport() {
+  const raw = await redis.get(FOREIGN_CALAMITY_CULL_REPORT_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+export function formatForeignCalamityCullReport(report) {
+  if (!report?.count) return '';
+  return [
+    `【诸天巡猎】天骄与诸天强者出手，已击杀${report.count}尊超额域外灾厄。`,
+    ...(report.victims || []).map(victim => `${victim.killer}斩灭了【${victim.name}】。`),
+    `巡猎后存世${report.remaining}尊；普通灾厄与域外邪魔合计上限${FOREIGN_CALAMITY_MAX_ACTIVE}尊。`,
+  ].join('\n');
 }
 
 export async function withForeignCalamityLock(id, task) {

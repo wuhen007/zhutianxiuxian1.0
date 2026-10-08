@@ -16,6 +16,11 @@ export const CAUSAL_JUELING_EXTRA_YEARS = 3000;
 export const CAUSAL_JUELING_CHANCE_BASE = 0.5;
 export const CAUSAL_JUELING_CHANCE_STEP = 0.1;
 export const CAUSAL_JUELING_CHANCE_CAP = 0.85;
+export const CAUSAL_COMPENSATION_MAX_RATIO = 0.35;
+export const CAUSAL_COMPENSATION_MIN_RATIO = 0.05;
+export const CAUSAL_COMPENSATION_MAX_TARGETS = 32;
+export const CAUSAL_PUNISHMENT_MAX_HP_PENALTY = 0.3;
+export const CAUSAL_PUNISHMENT_MAX_WOUND_STACKS = 4;
 
 export const PRE_QUASI_EMPEROR_REALMS = Object.freeze({
   mijing: Object.freeze({ field: 'mijinglevel_id', realmId: 19, targetRealmId: 20, name: '秘境体系' }),
@@ -60,7 +65,22 @@ export function ensureWorldlineState(player) {
   old.tribulations = old.tribulations && typeof old.tribulations === 'object' ? old.tribulations : {};
   old.history = Array.isArray(old.history) ? old.history : [];
   old.causalDebt = Math.max(0, number(old.causalDebt));
+  old.causalTier = Math.max(0, Math.min(4, Math.trunc(number(old.causalTier))));
+  old.tierCrossings = Array.isArray(old.tierCrossings) ? old.tierCrossings : [];
+  old.causalPunishment = old.causalPunishment && typeof old.causalPunishment === 'object'
+    ? old.causalPunishment
+    : {};
+  // 旧存档只保存了 woundStacks；迁移为因果专属层数，避免降债时误伤其他来源的道伤。
+  old.causalPunishment.causalWoundStacks = Math.max(
+    0,
+    Math.trunc(number(
+      old.causalPunishment.causalWoundStacks,
+      old.causalPunishment.woundStacks,
+    )),
+  );
+  old.causalPunishment.woundStacks = old.causalPunishment.causalWoundStacks;
   old.withdrawalBlockedUntil = Math.max(0, number(old.withdrawalBlockedUntil));
+  old.riverBacklashCount = Math.max(0, Math.trunc(number(old.riverBacklashCount)));
   old.noReturn = Boolean(old.noReturn);
   player.时间线权能 = old;
   return old;
@@ -130,6 +150,18 @@ export function getBreakKingEmperorGate(player, forcedRoute, now = Date.now()) {
   if (!system || (system.route && system.route !== route)) {
     return { ok: false, reason: 'system', route, config, realmId };
   }
+  const punishment = getCausalPunishmentStatus(player);
+  if (punishment.realmSuppression > 0) {
+    return {
+      ok: false,
+      reason: 'causal_suppression',
+      route,
+      config,
+      realmId,
+      tribulation,
+      punishment,
+    };
+  }
   if (tribulation?.status === 'passed') {
     return { ok: true, reason: 'passed', route, config, realmId, tribulation };
   }
@@ -154,6 +186,7 @@ export function canEnterQuasiEmperor(player, route = getRealmAuthorityPath(playe
   if (!player.自创修炼体系 || (player.自创修炼体系.route && player.自创修炼体系.route !== route)) {
     return { ...gate, ok: false, reason: 'system' };
   }
+  if (gate.reason === 'causal_suppression') return gate;
   if (gate.tribulation?.status !== 'passed') return { ...gate, ok: false, reason: 'tribulation' };
   return { ...gate, ok: true, reason: 'passed' };
 }
@@ -305,8 +338,99 @@ export function getCausalDebtTier(debt) {
   return { level: 0, name: '因果平稳', effect: '尚未形成显著反噬' };
 }
 
+const CAUSAL_PUNISHMENT_PROFILES = Object.freeze({
+  0: Object.freeze({ maxHpPenaltyRatio: 0, withdrawalTaxRate: 0, realmSuppression: 0, woundStacks: 0 }),
+  1: Object.freeze({ maxHpPenaltyRatio: 0, withdrawalTaxRate: 0.05, realmSuppression: 0, woundStacks: 0 }),
+  2: Object.freeze({ maxHpPenaltyRatio: 0.05, withdrawalTaxRate: 0.1, realmSuppression: 0, woundStacks: 1 }),
+  3: Object.freeze({ maxHpPenaltyRatio: 0.15, withdrawalTaxRate: 0.25, realmSuppression: 1, woundStacks: 2 }),
+  4: Object.freeze({ maxHpPenaltyRatio: CAUSAL_PUNISHMENT_MAX_HP_PENALTY, withdrawalTaxRate: 0.5, realmSuppression: 2, woundStacks: CAUSAL_PUNISHMENT_MAX_WOUND_STACKS }),
+});
+
+export function getCausalPunishmentProfile(debt) {
+  const tier = getCausalDebtTier(debt);
+  const profile = CAUSAL_PUNISHMENT_PROFILES[tier.level] || CAUSAL_PUNISHMENT_PROFILES[0];
+  return { ...profile, tier: tier.level, name: tier.name };
+}
+
+export function getCausalEffectiveMaxHp(player) {
+  const base = Math.max(1, number(player?.血量上限, number(player?.血气上限, 1)));
+  const debt = ensureWorldlineState(player).causalDebt;
+  const profile = getCausalPunishmentProfile(debt);
+  const ratio = Math.min(
+    CAUSAL_PUNISHMENT_MAX_HP_PENALTY,
+    Math.max(0, number(profile.maxHpPenaltyRatio)),
+  );
+  return Math.max(1, Math.floor(base * (1 - ratio)));
+}
+
+/**
+ * 将因果债层级映射为可落盘的自身惩罚；只调整因果专属字段，不篡改基础血量上限。
+ */
+export function applyCausalPunishment(player, debt, now = Date.now(), { recover = true } = {}) {
+  const state = ensureWorldlineState(player);
+  const normalizedDebt = Math.max(0, number(debt));
+  const tier = getCausalDebtTier(normalizedDebt);
+  const profile = getCausalPunishmentProfile(normalizedDebt);
+  const previous = state.causalPunishment || {};
+  const previousWounds = Math.max(0, Math.trunc(number(
+    previous.causalWoundStacks,
+    previous.woundStacks,
+  )));
+  const nextWounds = profile.woundStacks;
+  const woundDelta = nextWounds - previousWounds;
+
+  if (woundDelta > 0) {
+    player.道伤 = Math.max(0, number(player.道伤)) + woundDelta;
+  }
+
+  const punishment = {
+    debt: normalizedDebt,
+    tier: tier.level,
+    name: tier.name,
+    maxHpPenaltyRatio: profile.maxHpPenaltyRatio,
+    effectiveMaxHp: Math.max(1, Math.floor(
+      Math.max(1, number(player.血量上限, number(player.血气上限, 1)))
+      * (1 - profile.maxHpPenaltyRatio),
+    )),
+    withdrawalTaxRate: profile.withdrawalTaxRate,
+    realmSuppression: profile.realmSuppression,
+    woundStacks: nextWounds,
+    causalWoundStacks: nextWounds,
+    lastAppliedAt: now,
+    recoveredAt: recover && woundDelta < 0 ? now : previous.recoveredAt || 0,
+  };
+  state.causalDebt = normalizedDebt;
+  state.causalPunishment = punishment;
+  state.causalTier = tier.level;
+  player.因果惩罚 = { ...punishment };
+  player.因果支取税率 = profile.withdrawalTaxRate;
+  player.因果道果压制 = profile.realmSuppression;
+  player.因果道伤层数 = nextWounds;
+  player.因果有效血量上限 = punishment.effectiveMaxHp;
+  if (number(player.当前血量) > punishment.effectiveMaxHp) {
+    player.当前血量 = punishment.effectiveMaxHp;
+  }
+  return punishment;
+}
+
+export function getCausalPunishmentStatus(player) {
+  const state = ensureWorldlineState(player);
+  const profile = getCausalPunishmentProfile(state.causalDebt);
+  const stored = state.causalPunishment || {};
+  const base = Math.max(1, number(player?.血量上限, number(player?.血气上限, 1)));
+  return {
+    ...profile,
+    effectiveMaxHp: Math.max(1, Math.floor(base * (1 - profile.maxHpPenaltyRatio))),
+    woundStacks: profile.woundStacks,
+    causalWoundStacks: profile.woundStacks,
+    lastAppliedAt: number(stored.lastAppliedAt),
+    recoveredAt: number(stored.recoveredAt),
+  };
+}
+
 function updateCausalDebtProjection(player, state, now = Date.now()) {
   const tier = getCausalDebtTier(state.causalDebt);
+  applyCausalPunishment(player, state.causalDebt, now);
   player.因果反噬 = { debt: state.causalDebt, ...tier, updatedAt: now };
   if (tier.level >= 2) {
     player.因果牵连 = {
@@ -337,7 +461,7 @@ export function resolveCausalDebtBacklash(player, now = Date.now(), random = Mat
     return { triggered: false, debt: state.causalDebt };
   }
 
-  const maxHp = Math.max(1, number(player.血量上限, number(player.血气上限, 1)));
+  const maxHp = getCausalEffectiveMaxHp(player);
   const damagePerBolt = Math.ceil(maxHp * TIME_RIVER_BACKLASH_DAMAGE_RATIO);
   const currentHp = Math.max(0, number(player.当前血量, maxHp));
   const totalDamage = damagePerBolt * TIME_RIVER_BACKLASH_BOLTS;
@@ -410,7 +534,16 @@ export function reduceCausalDebtWithEraAccumulation(player, requestedAmount = 1,
     const tier = updateCausalDebtProjection(player, state, now);
     state.history.push({ type: '纪元消债', spent: 0, reduced, rate: 'free', at: now });
     trimHistory(state.history);
-    return { ok: true, spent: 0, reduced, debt: 0, rate, tier, costFree: true };
+    return {
+      ok: true,
+      spent: 0,
+      reduced,
+      debt: 0,
+      rate,
+      tier,
+      punishment: getCausalPunishmentStatus(player),
+      costFree: true,
+    };
   }
 
   const requested = Math.max(1, Math.floor(number(requestedAmount, 1)));
@@ -423,19 +556,53 @@ export function reduceCausalDebtWithEraAccumulation(player, requestedAmount = 1,
   const tier = updateCausalDebtProjection(player, state, now);
   state.history.push({ type: '纪元消债', spent, reduced, rate, at: now });
   trimHistory(state.history);
-  return { ok: true, spent, reduced, debt: state.causalDebt, rate, tier, costFree: false };
+  return {
+    ok: true,
+    spent,
+    reduced,
+    debt: state.causalDebt,
+    rate,
+    tier,
+    punishment: getCausalPunishmentStatus(player),
+    costFree: false,
+  };
 }
 
 export function addCausalDebt(player, amount, reason, now = Date.now(), random = Math.random) {
   const state = ensureWorldlineState(player);
+  const previousDebt = state.causalDebt;
+  const previousTier = getCausalDebtTier(previousDebt).level;
   const costFree = getRealmAuthorityLevel(player) >= 23;
   const delta = costFree ? 0 : Math.ceil(Math.max(0, number(amount)) * getCausalDebtMultiplier(player));
   state.causalDebt += delta;
   state.history.push({ type: '因果债', amount: delta, reason: reason || '', at: now });
   trimHistory(state.history);
   const tier = updateCausalDebtProjection(player, state, now);
+  const crossedTiers = [];
+  for (let level = previousTier + 1; level <= tier.level; level += 1) {
+    const crossing = {
+      level,
+      name: getCausalDebtTier(level === 1 ? 100 : level === 2 ? 300 : level === 3 ? 600 : 1000).name,
+      debt: state.causalDebt,
+      reason: reason || '',
+      at: now,
+    };
+    crossedTiers.push(crossing);
+    state.tierCrossings.push(crossing);
+    state.history.push({ type: '因果阈值跨越', ...crossing });
+  }
+  state.tierCrossings = state.tierCrossings.slice(-32);
+  trimHistory(state.history);
   const backlash = delta > 0 ? resolveCausalDebtBacklash(player, now, random) : { triggered: false };
-  return { debt: state.causalDebt, delta, tier, backlash, costFree };
+  return {
+    debt: state.causalDebt,
+    delta,
+    tier,
+    crossedTiers,
+    punishment: getCausalPunishmentStatus(player),
+    backlash,
+    costFree,
+  };
 }
 
 export function collectRelatedNames(player) {
@@ -443,9 +610,13 @@ export function collectRelatedNames(player) {
   const candidates = [
     player?.道侣?.name,
     player?.道侣?.名号,
+    player?.道侣?.名字,
     player?.师父?.name,
     player?.师父?.名号,
+    player?.师父?.名字,
     player?.宗门?.宗门名称,
+    player?.护法玩家?.name,
+    player?.护法玩家?.名号,
     player?.护法玩家?.名字,
   ];
   for (const value of candidates) {
@@ -453,6 +624,112 @@ export function collectRelatedNames(player) {
     if (name && !names.includes(name)) names.push(name);
   }
   return names.slice(0, 8);
+}
+
+/**
+ * 对因果牵连的现世玩家施加一次代偿。
+ * 这里只改目标存档，不重新增加因果债，避免代偿递归触发。
+ */
+export function applyCausalCompensation(player, {
+  sourceId = '',
+  sourceName = '',
+  relation = '因果关联',
+  amount = 1,
+  eventId = '',
+  now = Date.now(),
+} = {}) {
+  const record = player.因果代偿 && typeof player.因果代偿 === 'object'
+    ? player.因果代偿
+    : {};
+  record.事件 = Array.isArray(record.事件) ? record.事件.map(String).slice(-64) : [];
+  const normalizedEventId = String(eventId || '');
+  // 先去重再改生命与道伤；写入成功但调用方超时重试时，不会再次受罚。
+  if (normalizedEventId && record.事件.includes(normalizedEventId)) {
+    return {
+      damage: 0,
+      daoWound: 0,
+      currentHp: Math.max(0, number(player.当前血量)),
+      sourceId: record.来源ID || String(sourceId || ''),
+      sourceName: record.来源 || String(sourceName || ''),
+      relation: record.关系 || String(relation || '因果关联'),
+      count: Math.max(0, number(record.次数)),
+      deduped: true,
+    };
+  }
+
+  const causalAmount = Math.max(1, number(amount, 1));
+  const maxHp = Math.max(1, number(player?.血量上限, number(player?.血气上限, 1)));
+  const ratio = Math.min(
+    CAUSAL_COMPENSATION_MAX_RATIO,
+    Math.max(CAUSAL_COMPENSATION_MIN_RATIO, causalAmount / 1000),
+  );
+  const damage = Math.max(1, Math.min(maxHp, Math.ceil(maxHp * ratio)));
+  const currentHp = Math.max(0, number(player?.当前血量, maxHp));
+  const daoWound = Math.max(1, Math.ceil(causalAmount / 300));
+  player.当前血量 = Math.max(0, currentHp - damage);
+  player.道伤 = Math.max(0, number(player?.道伤)) + daoWound;
+
+  record.来源ID = String(sourceId || record.来源ID || '');
+  record.来源 = String(sourceName || record.来源 || '');
+  record.关系 = String(relation || record.关系 || '因果关联');
+  record.次数 = Math.max(0, number(record.次数)) + 1;
+  record.最近时间 = now;
+  record.累计代价 = Math.max(0, number(record.累计代价)) + causalAmount;
+  record.累计伤害 = Math.max(0, number(record.累计伤害)) + damage;
+  record.累计道伤 = Math.max(0, number(record.累计道伤)) + daoWound;
+  record.上次伤害 = damage;
+  record.上次道伤 = daoWound;
+  if (normalizedEventId) record.事件.push(normalizedEventId);
+  record.事件 = record.事件.slice(-64);
+  player.因果代偿 = record;
+
+  return {
+    damage,
+    daoWound,
+    currentHp: player.当前血量,
+    sourceId: record.来源ID,
+    sourceName: record.来源,
+    relation: record.关系,
+    count: record.次数,
+  };
+}
+
+export function formatCausalImpactLines(impact) {
+  if (!impact) return [];
+  const lines = [];
+  const compensation = impact.compensation || {};
+  const applied = Array.isArray(compensation.applied) ? compensation.applied : [];
+  if (applied.length) {
+    lines.push(
+      `【众生代偿】${applied.map(item => `${item.name || item.id}（${item.relation}）生命-${item.damage}、道伤+${item.daoWound}`).join('；')}`,
+    );
+  }
+  const skippedBubble = Array.isArray(compensation.skippedBubble) ? compensation.skippedBubble : [];
+  if (skippedBubble.length) {
+    lines.push(`空间泡影隔绝代偿：${skippedBubble.map(item => item.name || item.id).join('、')}。`);
+  }
+  const pending = Array.isArray(compensation.pending) ? compensation.pending : [];
+  if (pending.length) {
+    lines.push(`尚未找到现世存档的牵连对象：${pending.join('、')}。`);
+  }
+  const planes = impact.planes || {};
+  if (Array.isArray(planes.damaged) && planes.damaged.length) {
+    lines.push(
+      `【古史清算·位面损伤】${planes.damaged.join('、')}受损，现世承受力${planes.bearingBefore}→${planes.bearingAfter}。`,
+    );
+  }
+  const highland = impact.highland || {};
+  if (highland.advancedWorldYears > 0) {
+    const target = highland.activeEventShortened
+      ? `大祭进行期限缩短${highland.activeEventShortened}个世界年`
+      : highland.dueAfter != null
+        ? `大祭提前${highland.advancedWorldYears}个世界年（预定纪年${highland.dueAfter}）`
+        : `大祭提前压力累计${highland.advancedWorldYears}个世界年`;
+    lines.push(`【厄土大祭提前】${target}。`);
+  }
+  const failed = Array.isArray(compensation.failed) ? compensation.failed : [];
+  if (failed.length) lines.push(`部分代偿待重试：${failed.map(item => item.name || item.id).join('、')}。`);
+  return lines;
 }
 
 export function removeArtifactRankingEntries(ranking, itemName) {
@@ -646,13 +923,15 @@ export function recordTimelineWithdrawals(player, {
   let lineCount = 0;
   let causalCost = 0;
   const ownId = String(playerId || player.qq || player.id || '');
+  const causalTaxRate = getCausalPunishmentStatus(player).withdrawalTaxRate;
   for (const claim of normalizedClaims) {
     const multiplier = claim.targetId === ownId ? 1 : 2;
     lineCount += claim.lines.length;
     for (const line of claim.lines) {
       const key = `${claim.targetId}:${String(category)}:${String(itemName)}:${line.lineId}`;
       state.withdrawals[key] = { at: now, amount: line.amount };
-      causalCost += Math.max(10, Math.ceil(12 + Math.log10(Math.max(1, line.amount)) * 8)) * multiplier;
+      const baseCost = Math.max(10, Math.ceil(12 + Math.log10(Math.max(1, line.amount)) * 8)) * multiplier;
+      causalCost += Math.ceil(baseCost * (1 + causalTaxRate));
     }
   }
   return addCausalDebt(
@@ -667,6 +946,7 @@ export function getWorldlineStatus(player) {
   synchronizeCausalFacts(player);
   const state = ensureWorldlineState(player);
   const level = getRealmAuthorityLevel(player);
+  const punishment = applyCausalPunishment(player, state.causalDebt);
   return {
     level,
     route: getRealmAuthorityPath(player),
@@ -674,6 +954,8 @@ export function getWorldlineStatus(player) {
     destroyedLines: state.destroyedLines,
     causalDebt: state.causalDebt,
     debtTier: getCausalDebtTier(state.causalDebt),
+    tierCrossings: state.tierCrossings.slice(-8),
+    punishment,
     debtReductionRate: getCausalDebtReductionRate(player),
     withdrawalLimit: getWithdrawalLimit(player),
     withdrawalBlockedUntil: state.withdrawalBlockedUntil,

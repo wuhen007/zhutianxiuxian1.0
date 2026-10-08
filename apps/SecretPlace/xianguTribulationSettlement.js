@@ -1,4 +1,5 @@
 import { PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
+import { canGrandUniverseCarryXianguRealm } from '../../model/grandUniverse.js';
 
 export const XIANGU_REALM_ROUTES = Object.freeze({
   8: Object.freeze({ targetLevelId: 9, targetName: '真一境', costMultiplier: 30, tribulationMethod: '_runZhenyiTribulation' }),
@@ -8,6 +9,11 @@ export const XIANGU_REALM_ROUTES = Object.freeze({
   12: Object.freeze({ targetLevelId: 13, targetName: '斩我境', costMultiplier: 30, tribulationMethod: '_runZhanwoTribulation' }),
   13: Object.freeze({ targetLevelId: 14, targetName: '遁一境', costMultiplier: 30, tribulationMethod: '_runDunyiTribulation' }),
   14: Object.freeze({ targetLevelId: 15, targetName: '至尊境', costMultiplier: 30, tribulationMethod: '_runZhizunTribulation' }),
+  15: Object.freeze({ targetLevelId: 16, targetName: '真仙境', costMultiplier: 300, tribulationMethod: '_runHighXianguTribulation' }),
+  16: Object.freeze({ targetLevelId: 17, targetName: '仙王', costMultiplier: 300, tribulationMethod: '_runHighXianguTribulation' }),
+  17: Object.freeze({ targetLevelId: 18, targetName: '绝顶仙王', costMultiplier: 300, tribulationMethod: '_runHighXianguTribulation' }),
+  18: Object.freeze({ targetLevelId: 19, targetName: '仙王巨头', costMultiplier: 300, tribulationMethod: '_runHighXianguTribulation' }),
+  19: Object.freeze({ targetLevelId: 20, targetName: '帝光仙王', costMultiplier: 300, tribulationMethod: '_runHighXianguTribulation' }),
   20: Object.freeze({ targetLevelId: 21, targetName: '准仙帝', costMultiplier: 300, tribulationMethod: '_runPassedEmperorTribulation' }),
 });
 
@@ -27,9 +33,12 @@ export function resolveXianguBreakthroughCommand(currentLevelId, isExtreme = fal
     : null;
 }
 
-export function canBreakthroughXianguRealmHere(player, targetLevelId) {
+export function canBreakthroughXianguRealmHere(player, targetLevelId, grandUniverse = null) {
   const target = Number(targetLevelId);
-  return target < 16 || target > 20 || Number(player?.power_place) === PLACE_LOCATION_MAP.仙域;
+  return target < 16
+    || target > 20
+    || Number(player?.power_place) === PLACE_LOCATION_MAP.仙域
+    || canGrandUniverseCarryXianguRealm(grandUniverse, target).ok;
 }
 
 // 载道劫判定（至尊路第四关）：自身之道境界达到「至尊·真意」及以上（阶段 index>=3）

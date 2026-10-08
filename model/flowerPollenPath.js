@@ -982,6 +982,7 @@ export function getFlowerBreakthroughRule(currentLevelId) {
 }
 
 export function resolveFlowerBreakthrough(player, mediumName, random = Math.random, options = {}) {
+  if (Number(player?.huafenlevel_id) === 23) return { ok: false, reason: 'sacrifice-bubble-required' };
   ensureFlowerPollenState(player);
   const rule = getFlowerBreakthroughRule(player.huafenlevel_id);
   if (!rule) return { ok: false, reason: 'not-required' };
@@ -1023,6 +1024,7 @@ export function resolveFlowerBreakthrough(player, mediumName, random = Math.rand
 }
 
 export function resolveFlowerEvolution(player, mediumName, random = Math.random, options = {}) {
+  if (Number(player?.huafenlevel_id) === 23) return { ok: false, reason: 'sacrifice-bubble-required' };
   ensureFlowerPollenState(player);
   const medium = FLOWER_POLLEN_MEDIA[mediumName];
   if (!medium) return { ok: false, reason: 'unknown-medium' };
