@@ -16,7 +16,7 @@ const copy = value => structuredClone(value);
 function fixture() {
   const state = {
     players: { owner: { 学习的功法: ['月华炼天功'], 血量上限: 1000, 当前血量: 1000, 名号: '月下修士' } },
-    values: new Map(), writes: 0, finalized: 0, failWrite: false,
+    values: new Map(), writes: 0, finalized: 0, failWrite: false, equipmentWrites: 0,
     inventories: { owner: { 装备: [] } }, equipment: { owner: { 至宝: { name: '原本至宝', type: '至宝', pinji: 6 } } },
     itemClaims: new Set(), grants: 0, settings: { Era: { current: { index: 1, years: 300, epoch: 2 } } },
   };
@@ -39,6 +39,7 @@ function fixture() {
     Write_najie: async (id, inventory) => { state.inventories[id] = copy(inventory); return true; },
     Read_equipment: async id => copy(state.equipment[id]),
     Write_equipment: async (id, equipment) => {
+      state.equipmentWrites++;
       state.equipment[id] = copy(equipment);
       state.players[id].攻击 = 123456;
       if (state.failEquipment) { state.failEquipment = false; throw new Error('injected-equipment-error'); }
@@ -129,7 +130,7 @@ function fixture() {
 
 test('岁云命令注册完整，改写解析兼容前后艾特且不吞目标名字', () => {
   const f = fixture();
-  for (const command of ['#消耗岁云的残念', '#岁云见证', '#引月入体', '#化霜入剑', '#月之见证', '#云月修炼', '#月华炼化 灾厄', '#岁云之力 兑换 20000', '#岁云更改 命格 道心通明']) {
+  for (const command of ['#消耗岁云的残念', '#岁云见证', '#引月入体', '#化霜入剑', '#月之见证', '#云月修炼', '#云月之莲', '#月华炼化 灾厄', '#岁云之力 兑换 20000', '#岁云更改 命格 道心通明']) {
     assert.ok(f.app.rule.some(rule => new RegExp(rule.reg).test(command)), command);
   }
   assert.deepEqual(f.parse(f.event('#岁云更改 天资 @123 无演无尽')), { kind: '天资', name: '无演无尽' });
@@ -354,4 +355,53 @@ test('岁云应用模块完整装载并注册残念与阶段命令', () => {
     cwd: fileURLToPath(new URL('../../..', import.meta.url)), encoding: 'utf8', timeout: 10000,
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+test('已装云月莲的灾厄炼化立即刷新；刷新失败重试保留累计且不双领', async () => {
+  const f = fixture();
+  f.players.owner.id = 'owner';
+  f.equipment.owner.法宝 = { name: '云月之莲', id: 9600303, 绑定者: 'owner' };
+  const key = 'xiuxian:foreign-calamity:refine:owner';
+  f.values.set(key, JSON.stringify({ entityId: 'lotus-retry', name: '测试灾厄', lifeSource: 200 }));
+  f.failEquipment = true;
+  await assert.rejects(f.app.refine(f.event('#月华炼化 灾厄')), /injected-equipment-error/);
+  const total = f.players.owner.岁云.累计炼化月华;
+  assert.ok(total >= 100 && total <= 300);
+  assert.ok(f.values.has(key));
+  assert.equal(f.equipmentWrites, 1);
+  await f.app.refine(f.event('#月华炼化 灾厄'));
+  assert.equal(f.equipmentWrites, 2);
+  assert.equal(f.values.has(key), false);
+  assert.equal(f.players.owner.岁云.累计炼化月华, total);
+  assert.equal(f.players.owner.月华值, total);
+});
+
+test('天骄死亡收益后莲成长刷新失败仍凭原死亡回执续结算一次', async () => {
+  const f = fixture();
+  f.players.owner.id = 'owner';
+  f.equipment.owner.法宝 = { name: '云月之莲', 绑定者: 'owner' };
+  const key = 'tianjiao:pending:owner';
+  f.values.set(key, JSON.stringify({ token: 'lotus-death', stage: 'offered', tianjiaoName: '测试天骄', expiresAt: Date.now() + 300000 }));
+  f.failEquipment = true;
+  await assert.rejects(f.app.refine(f.event('#月华炼化 天骄')), /injected-equipment-error/);
+  const total = f.players.owner.岁云.累计炼化月华;
+  assert.ok(total >= 100 && total <= 300);
+  await f.app.refine(f.event('#月华炼化 天骄'));
+  assert.equal(f.finalized, 1);
+  assert.equal(f.equipmentWrites, 2);
+  assert.equal(f.players.owner.岁云.累计炼化月华, total);
+  assert.equal(f.values.has(key), false);
+});
+
+test('云月之莲状态及岁云面板可补刷新，未装备仅显示已保存成长', async () => {
+  const f = fixture();
+  f.players.owner.id = 'owner';
+  f.players.owner.岁云.累计炼化月华 = 250;
+  assert.match(await f.app.showLotus(f.event('#云月之莲')), /累计炼化月华：250/);
+  assert.equal(f.equipmentWrites, 0);
+  f.equipment.owner.法宝 = { name: '云月之莲', 绑定者: 'owner' };
+  assert.match(await f.app.showLotus(f.event('#云月之莲')), /已装备/);
+  await f.app.power(f.event('#岁云之力'));
+  assert.equal(f.equipmentWrites, 2);
+  assert.equal(f.players.owner.岁云.累计炼化月华, 250);
 });

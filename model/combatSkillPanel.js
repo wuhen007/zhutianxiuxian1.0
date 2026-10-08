@@ -21,6 +21,8 @@ import {
   ensureCombatSkillLoadout,
   getCombatSkillOptions,
 } from './combatSkillLoadout.js';
+import { getSuiyunStage } from './suiyun.js';
+import { SUIYUN_COMBAT } from './suiyunCombat.js';
 
 function percent(value, digits = 0) {
   return `${(Math.max(0, Number(value) || 0) * 100).toFixed(digits)}%`;
@@ -242,10 +244,39 @@ function buildSpecialSection(player) {
       triggers: [trigger],
     };
   });
+  if (getSuiyunStage(player)) {
+    const skills = [
+      {
+        name: '霜剑入月',
+        when: '攻击行动时',
+        effect: `最多${SUIYUN_COMBAT.targets}名敌人，每目标${SUIYUN_COMBAT.hits}击，不衰减、不可防御；绝对控制${SUIYUN_COMBAT.controlTurns}次行动，推条${SUIYUN_COMBAT.pushback}（每次施展一次）；霜寒每全局回合使当前生命、攻击、防御和速度降低${percent(SUIYUN_COMBAT.frostRatio)}，不降低生命上限`,
+        multiplier: `每击 ${multiplier(SUIYUN_COMBAT.multiplier)}`,
+      },
+      {
+        name: '岁云归一',
+        when: '承受攻击时',
+        effect: `减伤${percent(SUIYUN_COMBAT.defenseReduction)}，反弹实际承伤的${percent(SUIYUN_COMBAT.reflectionRatio)}；反伤不连锁`,
+        multiplier: `承伤 ${multiplier(1 - SUIYUN_COMBAT.defenseReduction)}`,
+      },
+      {
+        name: '白云苍狗',
+        when: `生命归零时（每战最多${SUIYUN_COMBAT.revives}次）`,
+        effect: '每次复活攻击、防御、生命上限和速度各乘1.5；三次累计复活增幅×3.375，不改变其他资源与永久属性',
+        multiplier: `每次 ${multiplier(SUIYUN_COMBAT.reviveMultiplier)}`,
+      },
+    ];
+    for (const skill of skills) items.push({
+      index: items.length + 1, name: skill.name,
+      equipped: true, automatic: true, innate: true,
+      stage: '岁云五阶段共有 · 灵根自带', proficiency: 0, progress: 0,
+      triggerBoost: '自动', combatBoost: '固定规则', effectBoost: '无需修炼', moveProgress: '',
+      triggers: [{ when: skill.when, chance: '100%', effect: skill.effect, multiplier: skill.multiplier }],
+    });
+  }
   return {
     key: 'special',
     label: '特殊秘法',
-    note: '无需占用技能槽，掌握后自动参与战斗',
+    note: '无需占用技能槽，功法掌握后或灵根自带时自动参与战斗',
     limit: 3,
     equippedCount: items.length,
     summary: `${items.length} 门`,

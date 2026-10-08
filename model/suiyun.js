@@ -8,6 +8,8 @@ export const SUIYUN_DROP_CHANCE = 0.00001;
 export const SUIYUN_HOUR_MS = 3_600_000;
 export const SUIYUN_DAY_MS = 24 * SUIYUN_HOUR_MS;
 export const SUIYUN_EQUIPMENT = Object.freeze(['岁云袍', '岁云剑', '云月之莲']);
+export const SUIYUN_LOTUS_NAME = '云月之莲';
+export const SUIYUN_LOTUS_STAT_PER_MOONLIGHT = 200_000;
 
 export const SUIYUN_STAGES = Object.freeze([
   { name: '月华之体', realm: 0, realmName: '无', life: 200, cap: 600, enlightenmentBonus: .2, tribulationReduction: .2, lootMultiplier: 1, eff: 20, orb: 1.5, stats: 2 },
@@ -62,10 +64,26 @@ export function ensureSuiyunState(player) {
     state[trial.field] = Math.min(trial.count, Math.trunc(positive(state[trial.field])));
   }
   state.炼化本源 = positive(state.炼化本源);
+  // 旧档没有每次炼化所得的准确月华数，不用混有日修炼收益的余额反推。
+  state.累计炼化月华 = Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(positive(state.累计炼化月华)));
   state.炼化记录 = Array.isArray(state.炼化记录) ? [...new Set(state.炼化记录.map(String))] : [];
   player.月华值 = positive(player.月华值);
   player.岁云之力 = getSuiyunPower(player);
   return state;
+}
+
+/** 成长独立于可消费余额；只在装备重算末段加一次，不回写法宝基础三围。 */
+export function getSuiyunLotusBonus(player, equipment) {
+  const moonlight = Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(positive(player?.岁云?.累计炼化月华)));
+  const lotus = equipment?.法宝;
+  const binding = lotus?.绑定者 || lotus?.author_name;
+  const active = getSuiyunStage(player) > 0 && lotus?.name === SUIYUN_LOTUS_NAME
+    && (lotus.id == null || Number(lotus.id) === 9600303)
+    && (!binding || String(binding) === String(player?.id));
+  return {
+    active, moonlight, statBonus: active ? moonlight * SUIYUN_LOTUS_STAT_PER_MOONLIGHT : 0,
+    perMoonlight: SUIYUN_LOTUS_STAT_PER_MOONLIGHT,
+  };
 }
 
 export function getSuiyunLifeMaximum(player) {
@@ -181,6 +199,7 @@ export function refineSuiyun(player, { targetId, kind = '天骄', sourceLifeEsse
   state.炼化本源 += lifeGain;
   state.炼化记录.push(record);
   state.上次炼化 = now;
+  state.累计炼化月华 = Math.min(Number.MAX_SAFE_INTEGER, state.累计炼化月华 + gain);
   player.月华值 += gain;
   player.生命本源 = Math.min(getSuiyunLifeMaximum(player), positive(player.生命本源) + lifeGain);
   return { ok: true, gain, moonlight: gain, lifeGain, lifeSourceGain: lifeGain, lifeMaximum: getSuiyunLifeMaximum(player) };

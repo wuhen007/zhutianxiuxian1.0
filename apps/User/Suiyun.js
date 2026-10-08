@@ -9,7 +9,7 @@ import {
 import {
   activateSuiyun, advanceSuiyun, applySuiyunTrialResult, ascendSuiyunPalace,
   buildSuiyunTrialBattle, convertSuiyunPower, cultivateSuiyun, ensureSuiyunState,
-  getSuiyunEffects, getSuiyunLifeMaximum, getSuiyunPower, getSuiyunStage, refineSuiyun,
+  getSuiyunEffects, getSuiyunLifeMaximum, getSuiyunLotusBonus, getSuiyunPower, getSuiyunStage, refineSuiyun,
   settleSuiyunPalace, spendSuiyunPower,
 } from '../../model/suiyun.js';
 import { claimSuiyunUnique, releaseSuiyunUnique } from '../../model/suiyunRegistry.js';
@@ -86,6 +86,7 @@ export class Suiyun extends plugin {
         { reg: '^#月之见证$', fnc: 'witnessTrial' },
         { reg: '^#月华炼化.*$', fnc: 'refine' },
         { reg: '^#云月修炼$', fnc: 'cultivate' },
+        { reg: '^#云月之莲$', fnc: 'showLotus' },
         { reg: '^#岁云之力(?:\\s*兑换(?:\\s+\\d+)?)?$', fnc: 'power' },
         { reg: '^#岁云更改.*$', fnc: 'rewrite' },
       ],
@@ -109,6 +110,33 @@ export class Suiyun extends plugin {
   async refreshAttributes(qq) {
     await Write_equipment(qq, await Read_equipment(qq));
     await player_efficiency(qq);
+  }
+
+  async refreshLotusAttributes(qq, player) {
+    const equipment = await Read_equipment(qq);
+    const bonus = getSuiyunLotusBonus(player, equipment);
+    if (bonus.active) await Write_equipment(qq, equipment);
+    return bonus;
+  }
+
+  async showLotus(e) {
+    const ctx = await this.context(e);
+    if (!ctx) return false;
+    return withPlayerMutationLock(ctx.qq, async () => {
+      const player = await Read_player(ctx.qq);
+      const error = this.holderError(player);
+      if (error) return e.reply(error);
+      const bonus = await this.refreshLotusAttributes(ctx.qq, player);
+      return e.reply([
+        '【云月之莲·月华养器】',
+        `累计炼化月华：${bonus.moonlight}点（独立于可消费余额）`,
+        `每点累计月华：攻击、防御、生命上限各+${bonus.perMoonlight.toLocaleString('zh-CN')}`,
+        `已积累成长：攻、防、生各+${(bonus.moonlight * bonus.perMoonlight).toLocaleString('zh-CN')}`,
+        bonus.active ? '当前共鸣：已装备，成长属性已生效。' : '当前共鸣：未装备本人云月之莲，成长已保存，装备后生效。',
+        '通过 #月华炼化 玩家/天骄/灾厄 累积；不额外消耗月华，兑换岁云之力不削减成长。',
+        '云月修炼不计入炼化成长；旧档从新增统计时开始记录，不按余额猜补历史。',
+      ].join('\n'));
+    });
   }
 
   async sendBattle(e, battle) {
@@ -291,10 +319,13 @@ export class Suiyun extends plugin {
         if (!result.ok) return e.reply(result.reason);
         await Write_player(ctx.qq, player);
       }
+      const lotus = await this.refreshLotusAttributes(ctx.qq, player);
       const effects = getSuiyunEffects(player);
       return e.reply([
         `【岁云之力】${getSuiyunPower(player).toFixed(2)}点`, this.status(player),
+        `云月之莲累计炼化：${lotus.moonlight}月华｜${lotus.active ? '成长已生效' : '装备后生效'}；#云月之莲 查看成长。`,
         `悟道加成${Math.round(effects.enlightenmentBonus * 100)}%｜渡劫减伤${Math.round(effects.tribulationReduction * 100)}%｜物品获取${effects.lootMultiplier}倍`,
+        '自带战技：霜剑入月（至多9敌各9剑、每剑25倍、绝控霜寒）；岁云归一（防御反伤）；白云苍狗（每战3次复活，每次全属性+50%）。#战斗技能 查看详情。',
         '月华天宫每现实小时产出0.5点；#岁云之力 兑换 10000（月华值→0.1点岁云之力，可填10000的倍数）。',
         '#岁云更改 时代 时代名：5点；#岁云更改 至宝线索：10点。',
         '#岁云更改 命格/天资/灵根 名称：20点，可@目标。唯一灵根不参与改写。',
@@ -340,6 +371,8 @@ export class Suiyun extends plugin {
           await Write_player(qq, latest);
           message = this.refinementMessage(result, latest);
         }
+        // 收益已落盘的重试也重算法宝，装备写入中断不会吞掉成长或重复炼化。
+        await this.refreshLotusAttributes(qq, latest);
         await redis.del(boss.getPendingEncounterKey(qq));
         await redis.set(`tianjiao:pending:resolved:${pending.token}`, 'suiyun', { EX: 24 * 3600 });
         return e.reply(`【月华炼化】${pending.tianjiaoName}的本源化为清月。\n${message}`);
@@ -358,6 +391,7 @@ export class Suiyun extends plugin {
       const pending = JSON.parse(raw);
       if (!pending.entityId) return { message: '这份灾厄记录缺失来源，请重新讨伐。' };
       if (player._foreignCalamityRefines?.[pending.entityId]) {
+        await this.refreshLotusAttributes(qq, player);
         await redis.del(key);
         return { message: '这份灾厄本源此前已经炼化。' };
       }
@@ -366,6 +400,7 @@ export class Suiyun extends plugin {
       player._foreignCalamityRefines ||= {};
       player._foreignCalamityRefines[pending.entityId] = Date.now();
       await Write_player(qq, player);
+      await this.refreshLotusAttributes(qq, player);
       await redis.del(key);
       return { message: `【月华炼化】${pending.name}化为月华。\n${this.refinementMessage(refined, player)}` };
     }));
@@ -373,7 +408,8 @@ export class Suiyun extends plugin {
   }
 
   refinementMessage(result, player) {
-    return result.message || `月华值+${result.gain}，当前${player.月华值}；生命本源+${result.lifeSourceGain || 0}，当前${player.生命本源}。`;
+    const base = result.message || `月华值+${result.gain}，当前${player.月华值}；生命本源+${result.lifeSourceGain || 0}，当前${player.生命本源}。`;
+    return `${base}\n云月之莲累计炼化月华：${getSuiyunLotusBonus(player).moonlight}点，成长随法宝装备生效。`;
   }
 
   async refinePlayer(e, qq, targetQQ) {
@@ -408,6 +444,7 @@ export class Suiyun extends plugin {
         protectForbiddenTarget(target, now);
       }
       await savePlayers([[qq, player], [targetQQ, target]]);
+      if (result) await this.refreshLotusAttributes(qq, player);
       await this.sendBattle(e, battle);
       return e.reply(result ? `【月华炼化】战胜${target.名号}，其本源融入月华。\n${this.refinementMessage(result, player)}` : '炼化战斗失利，本次未获得月华。');
     });

@@ -45,11 +45,19 @@
               <b>{{item.automatic ? '自动生效' : (item.equipped ? '已装备' : '未装备')}}</b>
             </header>
 
+            {{if item.innate}}
+            <div class="proficiency-row">
+              <span>灵根自带</span>
+              <span>无需学习或装备</span>
+              <strong>自动生效</strong>
+            </div>
+            {{else}}
             <div class="proficiency-row">
               <span>当前熟练度</span>
               <i><em style="width: {{item.progress}}%"></em></i>
               <strong>{{item.proficiency}} / 1000</strong>
             </div>
+            {{/if}}
 
             <div class="boost-row">
               <span>触发 {{item.triggerBoost}}</span>

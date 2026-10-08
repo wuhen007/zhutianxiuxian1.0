@@ -28,7 +28,27 @@ import { FileRollbackTransaction } from '../apps/SecretPlace/rebirthTransaction.
 import { releaseJuelingLifespanForAuthority } from './juelingLifespan.js';
 import { applyClowWishBattleWeakness } from './clowWish.js';
 import { findTalentSynchronizationMatch } from './talentSynchronization.js';
-import { getSuiyunEffects } from './suiyun.js';
+import { getSuiyunEffects, getSuiyunLotusBonus } from './suiyun.js';
+import {
+  castSuiyunMoonSword, consumeSuiyunControl, reduceSuiyunDamage,
+  reflectSuiyunDamage, resetSuiyunCombat, tickSuiyunFrost, trySuiyunRevival,
+} from './suiyunCombat.js';
+
+// Final HP loss is shared by ordinary hits and unavoidable root techniques.
+// Reflection uses actual HP lost, not shield absorption or overkill damage.
+function applySuiyunBattleDamage(attacker, defender, damage, messages, { reflection = true } = {}) {
+  const reduced = reduceSuiyunDamage(defender, damage);
+  const before = Math.max(0, Number(defender.当前血量) || 0);
+  defender.当前血量 = Math.max(0, before - reduced);
+  const lost = before - defender.当前血量;
+  if (reduced < damage) messages.push(`【岁云归一】${defender.名号}化去五成来袭伤害。`);
+  if (reflection && attacker && lost > 0) {
+    const reflected = reflectSuiyunDamage(defender, attacker, lost);
+    messages.push(...reflected.messages);
+  }
+  // Preserve ordinary hit/DPS return semantics; only reflection clamps to HP loss.
+  return reduced;
+}
 // 道种专属技能全局池别名：战斗函数内 `data` 常被玩家参数遮蔽，故用 SKILL_DB 稳定引用 XiuxianData 单例
 const SKILL_DB = data;
 
@@ -1698,6 +1718,13 @@ export async function Write_equipment(usr_qq, equipment) {
   player._造化仙池治疗加成 = hasEquippedInnateTreasure(player, '造化仙池', '被动:1') ? 0.25 : 0;
   player.治疗效果加成 += player._造化仙池治疗加成;
   applyRelicEffectsToPlayer(player, equipment, { rebuiltCombatStats: true });
+  // 云月之莲只按真实炼化的累计月华成长；重算时最终加算，不修改器物基础值。
+  const lotusGrowth = getSuiyunLotusBonus(player, equipment);
+  if (lotusGrowth.active && lotusGrowth.statBonus > 0) {
+    player.攻击 += lotusGrowth.statBonus;
+    player.防御 += lotusGrowth.statBonus;
+    player.血量上限 += lotusGrowth.statBonus;
+  }
     await Write_player(usr_qq, player);
     await Add_HP(usr_qq, 0);
     let dir = path.join(__PATH.equipment_path, `${usr_qq}.json`);
@@ -7355,12 +7382,12 @@ const DI_BING_RANKS = [
     if (equipment.帝兵.name === "无始钟") {
         msg.push(`钟声悠悠，震动万古，时间长河为之倒流！`);
         msg.push(`${defender.名号}周身时光碎片飞舞，寿元被斩去千年！`);
-        defender.当前血量 = Math.max(defender.当前血量 * 0.7, 0);
+        applySuiyunBattleDamage(attacker, defender, defender.当前血量 * 0.3, msg);
     } 
     else if (equipment.帝兵.name === "吞天魔罐") {
         msg.push(`魔罐吞天，万灵哀嚎，吞噬一切精气！`);
         const 吞噬伤害 = Math.trunc(defender.当前血量 * 0.2);
-        defender.当前血量 -= 吞噬伤害;
+        applySuiyunBattleDamage(attacker, defender, 吞噬伤害, msg);
         attacker.当前血量 += 吞噬伤害;
         msg.push(`${defender.名号}被吞噬${bigNumberTransform(吞噬伤害)}点生命，${attacker.名号}恢复等量生命！`);
     }
@@ -7392,7 +7419,7 @@ const DI_BING_RANKS = [
  * @param {string} context 上下文（"main"或"fenshen"）
  * @returns {boolean} 是否触发了圆神效果
  */
-function handleCircularGod(attacker, defender, msg, context) {
+function handleCircularGod(attacker, defender, msg, context, dealDamage = null) {
     if (context === "fenshen" || (attacker.灵根?.name !== "圆神" && !getSuiyunEffects(attacker).madoka) || Math.random() >= 0.2) {
         return false;
     }
@@ -7402,7 +7429,8 @@ function handleCircularGod(attacker, defender, msg, context) {
     
     // 光炮伤害
     const lightCannonDmg = Math.trunc(attacker.攻击 * 10);
-    defender.当前血量 = Math.max(0, defender.当前血量 - lightCannonDmg);
+    if (dealDamage) dealDamage(defender, lightCannonDmg, attacker);
+    else defender.当前血量 = Math.max(0, defender.当前血量 - lightCannonDmg);
     
     // 治疗效果
     if (attacker.当前血量 > 0) {
@@ -7935,7 +7963,7 @@ const 技能效果处理 = {
       // 终焉之力效果
       if (Math.random() > 0.1) {
         let 终焉伤害 = Math.floor(夺取攻击 + 夺取防御 + 夺取当前血量);
-        defender.当前血量 = Math.max(defender.当前血量 - 终焉伤害, 0);
+        applySuiyunBattleDamage(attacker, defender, 终焉伤害, msg);
         godDemonMsg.push(`${attacker.名号}将夺取的三维属性转化为终焉之力，对${defender.名号}造成额外${bigNumberTransform(终焉伤害)}点伤害`);
       }
     }
@@ -8001,7 +8029,7 @@ const 技能效果处理 = {
         const 减少攻击 = Math.floor(defender.攻击 * 0.2);
         
         // 应用效果（确保不低于0）
-        defender.当前血量 = Math.max(defender.当前血量 - 伤害, 0);
+        applySuiyunBattleDamage(attacker, defender, 伤害, msg);
         defender.防御 = Math.max(defender.防御 - 减少防御, 0);
         defender.攻击 = Math.max(defender.攻击 - 减少攻击, 0);
         
@@ -8039,7 +8067,7 @@ const 技能效果处理 = {
     
     defender.攻击 = Math.max(defender.攻击 - 减少攻击, 0);
     defender.防御 = Math.max(defender.防御 - 减少防御, 0);
-    defender.当前血量 = Math.max(defender.当前血量 - 减少血量, 0);
+    applySuiyunBattleDamage(attacker, defender, 减少血量, msg);
     
     msg.push(`${defender.名号}道基受损，全属性下降${侵蚀比例 * 100}%！`);
     msg.push(`攻击：-${bigNumberTransform(减少攻击)}`);
@@ -8534,6 +8562,8 @@ async function zd_battle_1v1(AA_player, BB_player, options = {}) {
   // 保持输入、战斗状态与返回字段的 A/B 归属一致。
   let A_player = JSON.parse(JSON.stringify(AA_player));
   let B_player = JSON.parse(JSON.stringify(BB_player));
+  resetSuiyunCombat(A_player);
+  resetSuiyunCombat(B_player);
   resetSelfDaoBattleState(A_player);
   resetSelfDaoBattleState(B_player);
   normalizeBattleOrbMultiplier(A_player);
@@ -8801,6 +8831,12 @@ let B_speed = getBattleUnitSpeed(B_player);
       { source: AA_player, combatant: A_player },
       { source: BB_player, combatant: B_player },
     ]);
+    // Revival amplification is battle-local; callers persist the returned HP only.
+    for (const [unit, original] of [[A_player, AA_player], [B_player, BB_player]]) {
+      if (getSuiyunEffects(unit).noDemonicValue && Number(original.血量上限) > 0) {
+        unit.当前血量 = Math.min(unit.当前血量, Number(original.血量上限));
+      }
+    }
     const result = create1v1BattleResult({
       msg,
       A_player,
@@ -9089,6 +9125,32 @@ let B_speed = getBattleUnitSpeed(B_player);
     if (context === 'main') tickTimedSkillDebuffs(attacker);
 
     if (context === 'main') {
+      const revive = unit => {
+        if (unit.当前血量 > 0) return;
+        const result = checkRevival(unit, 'main');
+        if (result.revived) msg.push(...(Array.isArray(result.message) ? result.message : [result.message]));
+      };
+      const sword = castSuiyunMoonSword(attacker, [defender, ...(defender === A_player ? A_tahua_entities : B_tahua_entities), ...(defender.分身 || [])], {
+        applyDamage: (target, raw, source) => {
+          return applyDamage(target, raw, 'main', source).hp_lost || 0;
+        },
+        revive,
+        pushActionBar: (target, amount) => {
+          // Absolute pushback bypasses all ordinary control-immunity gates.
+          if (target === A_player) A_actionBar = Math.max(0, A_actionBar - amount);
+          else if (target === B_player) B_actionBar = Math.max(0, B_actionBar - amount);
+          else target._actionBar = Math.max(0, (Number(target._actionBar) || 0) - amount);
+        },
+      });
+      msg.push(...sword.messages);
+      if (sword.active && (attacker.当前血量 <= 0 || defender.当前血量 <= 0)) {
+        return { 伤害: 0, isCritical: false, baoji: 1, battleEnded: true,
+          winner: attacker.当前血量 > 0 ? (attacker === A_player ? 'A' : 'B')
+            : defender.当前血量 > 0 ? (defender === A_player ? 'A' : 'B') : 'draw' };
+      }
+    }
+
+    if (context === 'main') {
       const bannerAttack = rollWanhuaBannerActiveAttack(attacker, defender);
       if (bannerAttack) {
         const bannerDamage = calcDamage(attacker, defender, bannerAttack.rawDamage, '元神');
@@ -9161,7 +9223,8 @@ let B_speed = getBattleUnitSpeed(B_player);
       if (!attacker._时间长河至宝失效 && await handleEmperorWeapon(attacker, defender, msg, emperorWeaponTriggered, attackerEquipment)) {
         emperorWeaponTriggered = true;
       }
-      handleCircularGod(attacker, defender, msg, context);
+      handleCircularGod(attacker, defender, msg, context,
+        (target, raw, source) => applyDamage(target, raw, 'main', source));
       handleSpecialSkills(attacker, defender, msg, teshujineng);
       handleFlowerPollenSkills(attacker, defender, msg);
     }
@@ -9185,7 +9248,7 @@ let B_speed = getBattleUnitSpeed(B_player);
           
           defender.攻击 = Math.max(defender.攻击 - 夺取攻击, 0);
           defender.防御 = Math.max(defender.防御 - 夺取防御, 0);
-          defender.当前血量 = Math.max(defender.当前血量 - 夺取血量, 0);
+          applyDuelSuiyunDamage(attacker, defender, 夺取血量, msg);
           
           godDemonMsg.push(`${defender.名号}受到诸天生死轮盘压制，一身气势在克泄，神与意都将被磨灭`);
           godDemonMsg.push(`攻击：${defender.名号}-${夺取攻击}`);
@@ -9203,7 +9266,7 @@ let B_speed = getBattleUnitSpeed(B_player);
           let 夺取血量 = Math.floor(defender.当前血量 * 夺取比例);
           let 终焉伤害 = Math.floor(夺取攻击 + 夺取防御 + 夺取血量) + attacker.攻击 * 100;
           
-          defender.当前血量 = Math.max(defender.当前血量 - 终焉伤害, 0);
+          applyDuelSuiyunDamage(attacker, defender, 终焉伤害, msg);
           godDemonMsg.push(`${defender.名号}眼眸刹那晦暗，意识在无尽冰冷的黑暗中不断下坠，被轮回诸天拳打的当空炸开！存在的概念都被磨灭殆尽了，失去了${bigNumberTransform(终焉伤害)}生命，当前血量${bigNumberTransform(defender.当前血量)}`);
 
           if (defender.当前血量 <= 0) {
@@ -9286,7 +9349,7 @@ let B_speed = getBattleUnitSpeed(B_player);
 
         if (ran > 0.85) {
           const counterDamage = Math.trunc(defender.攻击 * 0.8);
-          defender.当前血量 = Math.max(defender.当前血量 - counterDamage, 0);
+          applyDuelSuiyunDamage(attacker, defender, counterDamage, msg);
 
           msg.push(`【星辰反噬·星陨天罚】`);
           msg.push(`周天星斗大阵逆转，星辰之力化作毁灭光束！`);
@@ -9307,7 +9370,7 @@ let B_speed = getBattleUnitSpeed(B_player);
         if (healed > 0) msg.push(`${attacker.名号}触发了少阴玉剑被动,恢复${bigNumberTransform(healed)}点血量`);
       } else if (equipment?.武器?.name == '荒剑' && (attacker.mijinglevel_id>20||attacker.xiangulevel_id>20) && ran > 0.75) {
         let 武器伤害 = attacker.攻击 * attacker.法球倍率 * 100;
-        defender.当前血量 = Math.max(defender.当前血量 - 武器伤害, 0);
+        applyDuelSuiyunDamage(attacker, defender, 武器伤害, msg);
         msg.push(`${attacker.名号}眼眸开阖间挥动帝剑，煌煌剑光仿佛截断了永恒，斩开了时间长河，无穷大宇宙都在这一剑的滔天伟力下毁灭了，${defender.名号}在过去现在未来都受到了这毁天灭地的一击，仙躯与元神瞬间炸开！失去了${bigNumberTransform(武器伤害)}点血量,${defender.名号}当前血量${defender.当前血量}`);
 
         if (defender.当前血量 <= 0) {
@@ -9332,6 +9395,13 @@ let B_speed = getBattleUnitSpeed(B_player);
 
         defender.当前血量 = 0;
         msg.push(`${defender.名号}的存在痕迹被从所有时间线上彻底抹除！`);
+        if (getSuiyunEffects(defender).noDemonicValue) {
+          const revival = checkRevival(defender, 'main');
+          if (revival.revived) {
+            msg.push(...(Array.isArray(revival.message) ? revival.message : [revival.message]));
+            return { 伤害: 0, isCritical: false, baoji: 1, actionInterrupted: true };
+          }
+        }
         // 统一返回结构
         return { 伤害: 0, isCritical: false, baoji: 1, battleEnded: true, winner: attacker === A_player ? "A" : "B", msg };
       }
@@ -9548,7 +9618,7 @@ let B_speed = getBattleUnitSpeed(B_player);
           
           // 反击造成部分伤害
           if (反击最终伤害 > 0) {
-            attacker.当前血量 = Math.max(attacker.当前血量 - 反击最终伤害, 0);
+            applyDuelSuiyunDamage(defender, attacker, 反击最终伤害, msg);
             msg.push(`对轰的余波震伤了${attacker.名号}，造成${bigNumberTransform(反击最终伤害)}点伤害！`);
             msg.push(`${attacker.名号}剩余血量：${bigNumberTransform(attacker.当前血量)}`);
           }
@@ -9574,7 +9644,7 @@ let B_speed = getBattleUnitSpeed(B_player);
           // 反击失败，防御方额外受伤
           const 反噬伤害 = Math.trunc(反击最终伤害 * 0.3);
           if (反噬伤害 > 0) {
-            defender.当前血量 = Math.max(defender.当前血量 - 反噬伤害, 0);
+            applyDuelSuiyunDamage(attacker, defender, 反噬伤害, msg);
             msg.push(`${defender.名号}神通被破，受到反噬，损失${bigNumberTransform(反噬伤害)}点生命！`);
           }
           
@@ -9670,7 +9740,7 @@ let B_speed = getBattleUnitSpeed(B_player);
             defender.反弹比例 = Math.min(1, skill.反弹伤害 * getGongfaNumericMultiplier(defender, skill));
             反弹伤害 = Math.floor(伤害 * defender.反弹比例);
             const 攻击者原始血量 = attacker.当前血量;
-            attacker.当前血量 = Math.max(attacker.当前血量 - 反弹伤害, 0);
+            applyDuelSuiyunDamage(defender, attacker, 反弹伤害, msg, { reflection: false });
             const 攻击者损失血量 = 攻击者原始血量 - attacker.当前血量;
 
             msg.push(`${attacker.名号}受到${bigNumberTransform(反弹伤害)}点反弹伤害！`);
@@ -9771,6 +9841,16 @@ let B_speed = getBattleUnitSpeed(B_player);
   }
 
   // ==================== 伤害应用函数 ====================
+  function applyDuelSuiyunDamage(attacker, defender, damage, messages, options) {
+    const applied = applySuiyunBattleDamage(attacker, defender, damage, messages, options);
+    for (const unit of [defender, attacker]) {
+      if (!unit || unit.当前血量 > 0 || !getSuiyunEffects(unit).noDemonicValue) continue;
+      const revival = checkRevival(unit, 'main');
+      if (revival.revived) messages.push(...(Array.isArray(revival.message) ? revival.message : [revival.message]));
+    }
+    return applied;
+  }
+
   function applyDamage(defender, 伤害, context, source = null) {
     enforceSelfDaoBuffSuppression(defender);
     let fenshen_blocked = false;
@@ -9903,11 +9983,11 @@ let B_speed = getBattleUnitSpeed(B_player);
       if (curtain.message) msg.push(curtain.message);
     }
 
-    // DPS 测试：累计木桩（B 方）承受的伤害
+    const hpBefore = Math.max(0, Number(defender.当前血量) || 0);
+    actual_damage = applyDuelSuiyunDamage(source, defender, actual_damage, msg);
+    const hp_lost = Math.min(hpBefore, actual_damage);
+    // DPS 测试：减伤结算后再累计，保留既有过量伤害统计口径。
     if (defender === B_player) B_total_damage_taken += actual_damage;
-
-    defender.当前血量 -= actual_damage;
-    if (defender.当前血量 < 0) defender.当前血量 = 0;
     if (
       defender.当前血量 > 0 &&
       Number(defender._装备低血护盾比例) > 0 &&
@@ -9924,7 +10004,7 @@ let B_speed = getBattleUnitSpeed(B_player);
       triggerVitalityRecovery(defender, '受击后');
     }
 
-    return { actual_damage, fenshen_blocked };
+    return { actual_damage, hp_lost, fenshen_blocked };
   }
 
   // ==================== 战斗消息生成（保持原样） ====================
@@ -9951,6 +10031,14 @@ let B_speed = getBattleUnitSpeed(B_player);
 
   // ==================== 复活检查函数 ====================
   function checkRevival(player, context = "main") {
+    if (context !== 'fenshen') {
+      const suiyun = trySuiyunRevival(player);
+      if (suiyun.revived) {
+        if (player === A_player) A_speed *= suiyun.speedMultiplier;
+        if (player === B_player) B_speed *= suiyun.speedMultiplier;
+        return suiyun;
+      }
+    }
     const darkTriadRevival = tryDarkTriadRevival(player);
     if (darkTriadRevival.revived) return { revived: true, message: darkTriadRevival.message };
     if (context !== 'fenshen') {
@@ -10308,6 +10396,18 @@ msg.push(bSpeedMsg);
       }
       break;
     }
+    // 霜寒按外层战斗回合结算，未能出手的受控单位也会衰减。
+    for (const unit of [A_player, B_player, ...A_tahua_entities, ...B_tahua_entities]) {
+      const frost = tickSuiyunFrost(unit, `duel:${cnt}`);
+      msg.push(...frost.messages);
+      if (unit === A_player) A_speed *= frost.speedMultiplier;
+      if (unit === B_player) B_speed *= frost.speedMultiplier;
+      if (unit.当前血量 <= 0 && [A_player, B_player].includes(unit)) {
+        const revival = checkRevival(unit, 'main');
+        if (revival.revived) msg.push(...(Array.isArray(revival.message) ? revival.message : [revival.message]));
+      }
+    }
+    if (A_player.当前血量 <= 0 || B_player.当前血量 <= 0) break;
     // ===== 推进行动条 =====
     let actionResult = null;
     let roundsAdvanced = 0;
@@ -10335,6 +10435,12 @@ msg.push(bSpeedMsg);
     
     resetActionBar(attackerBar);
 
+    if (consumeSuiyunControl(attacker)) {
+      msg.push(`【霜剑入月·绝对封锁】${attacker.名号}本次行动被封锁，免控之力亦难挪移。`);
+      cnt++;
+      continue;
+    }
+
     const deletedFateAction = consumeDeletedFateAction(attacker);
     if (deletedFateAction.skipped) {
       msg.push(deletedFateAction.message);
@@ -10359,7 +10465,7 @@ msg.push(bSpeedMsg);
 
     if (attacker._绝仙流血) {
       const bleedDamage = Math.floor((Number(attacker.血量上限) || 0) * 0.2);
-      attacker.当前血量 = Math.max(0, attacker.当前血量 - bleedDamage);
+      applyDuelSuiyunDamage(defender, attacker, bleedDamage, msg);
       msg.push(`【绝仙剑】${attacker.名号}本源流血，损失${bigNumberTransform(bleedDamage)}点生命。`);
       if (attacker.当前血量 <= 0) {
         const revival = checkRevival(attacker, 'main');
@@ -10381,7 +10487,7 @@ msg.push(bSpeedMsg);
         default: effectMsg = `受到${attacker.fumian_type}影响`;
       }
       
-      attacker.当前血量 = Math.max(attacker.当前血量 - attacker.fumian_damage, 0);
+      applyDuelSuiyunDamage(defender, attacker, attacker.fumian_damage, msg);
       msg.push(`${attacker.名号}${effectMsg}，损失了${bigNumberTransform(attacker.fumian_damage)}点生命值！`);
       
       attacker.fumianhuihe--;
@@ -10475,7 +10581,7 @@ msg.push(bSpeedMsg);
           let 法球伤害 = Math.trunc(伤害 * attacker.法球倍率);
           伤害 = Math.trunc(1.5 * 法球伤害);
           
-          defender.当前血量 -= 伤害;
+          伤害 = applyDuelSuiyunDamage(attacker, defender, 伤害, msg);
           defender.当前血量 = Math.max(defender.当前血量, 0);
           if (defender === B_player) B_total_damage_taken += 伤害;
           
@@ -10506,7 +10612,7 @@ msg.push(bSpeedMsg);
           let 法球伤害 = Math.trunc(伤害 * attacker.法球倍率);
           伤害 = Math.trunc(2 * 法球伤害);
           
-          defender.当前血量 -= 伤害;
+          伤害 = applyDuelSuiyunDamage(attacker, defender, 伤害, msg);
           if (defender === B_player) B_total_damage_taken += 伤害;
           defender.当前血量 = Math.max(defender.当前血量, 0);
           
@@ -11001,6 +11107,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
   function initTeam(team, teamName) {
     for (let p of team) {
+      resetSuiyunCombat(p);
       resetSelfDaoBattleState(p);
       const clowWeakness = applyClowWishBattleWeakness(p);
       if (clowWeakness.message) msg.push(clowWeakness.message);
@@ -11369,10 +11476,10 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       
       if (equipment.帝兵.name === "无始钟") {
         attackMsgs.push(`钟声悠悠，${defender.名号}周身时光碎片飞舞！`);
-        defender.当前血量 = Math.max(defender.当前血量 * 0.7, 0);
+        applyTeamSuiyunDamage(attacker, defender, defender.当前血量 * 0.3, attackMsgs);
       } else if (equipment.帝兵.name === "吞天魔罐") {
         const 吞噬伤害 = Math.trunc(defender.当前血量 * 0.2);
-        defender.当前血量 -= 吞噬伤害;
+        applyTeamSuiyunDamage(attacker, defender, 吞噬伤害, attackMsgs);
         attacker.当前血量 += 吞噬伤害;
         attackMsgs.push(`魔罐吞天，${defender.名号}被吞噬${bigNumberTransform(吞噬伤害)}点生命！`);
       }
@@ -11401,13 +11508,13 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         
         defender.攻击 = Math.max(defender.攻击 - 夺取攻击, 0);
         defender.防御 = Math.max(defender.防御 - 夺取防御, 0);
-        defender.当前血量 = Math.max(defender.当前血量 - 夺取血量, 0);
+        applyTeamSuiyunDamage(attacker, defender, 夺取血量, attackMsgs);
         
         attackMsgs.push(`${defender.名号}受到诸天生死轮盘压制！`);
         attackMsgs.push(`攻击-${bigNumberTransform(夺取攻击)}，防御-${bigNumberTransform(夺取防御)}，生命-${bigNumberTransform(夺取血量)}`);
         
         let 终焉伤害 = Math.floor(夺取攻击 + 夺取防御 + 夺取血量) + attacker.攻击 * 100;
-        defender.当前血量 = Math.max(defender.当前血量 - 终焉伤害, 0);
+        applyTeamSuiyunDamage(attacker, defender, 终焉伤害, attackMsgs);
         attackMsgs.push(`${attacker.名号}断喝一声，递出恐怖一拳！`);
         attackMsgs.push(`${defender.名号}被打的当空炸开，失去了${bigNumberTransform(终焉伤害)}生命！`);
         
@@ -11521,6 +11628,34 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     triggerTeamVitalityRecovery(attacker, '行动前', attackMsgs);
     tickTeamTimedSkillDebuffs(attacker);
 
+    const sword = castSuiyunMoonSword(attacker, allEnemies, {
+      applyDamage: (target, raw, source) => {
+        if (target._荒无看破攻击 || target.法力免疫) {
+          target._荒无看破攻击 = false;
+          target.法力免疫 = null;
+          return 0;
+        }
+        const shield = Math.max(0, Number(target._护盾值) || 0);
+        const absorbed = Math.min(shield, raw);
+        target._护盾值 = shield - absorbed;
+        appendDinghaiResolution(attackMsgs, recordDinghaiShieldAbsorption(target, source, absorbed));
+        const before = Math.max(0, Number(target.当前血量) || 0);
+        applySuiyunBattleDamage(source, target, raw - absorbed, attackMsgs);
+        return Math.max(0, before - target.当前血量);
+      },
+      revive: unit => {
+        if (unit.当前血量 > 0) return;
+        const result = checkTeamRevival(unit);
+        if (result.revived) attackMsgs.push(...result.message);
+      },
+      pushActionBar: (target, amount) => { target._actionBar = Math.max(0, (Number(target._actionBar) || 0) - amount); },
+    });
+    attackMsgs.push(...sword.messages);
+    if (sword.active && (attacker.当前血量 <= 0 || defender.当前血量 <= 0)) {
+      return { msgs: attackMsgs, damage: sword.totalDamage, killed: defender.当前血量 <= 0,
+        aoeKilled: allEnemies.filter(unit => unit !== defender && unit.当前血量 <= 0) };
+    }
+
     const bannerAttack = rollWanhuaBannerActiveAttack(attacker, defender);
     if (bannerAttack) {
       const bannerDamage = calcDamage(attacker, defender, bannerAttack.rawDamage, '元神');
@@ -11541,7 +11676,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       actualDamage -= absorbed;
       appendDinghaiResolution(attackMsgs, recordDinghaiShieldAbsorption(defender, attacker, absorbed));
       actualDamage = applyHuangwuLethalDefense(defender, attacker, actualDamage, attackMsgs);
-      defender.当前血量 = Math.max(0, defender.当前血量 - actualDamage);
+      actualDamage = applyTeamSuiyunDamage(attacker, defender, actualDamage, attackMsgs);
       triggerTeamEquipmentLowHpShield(defender, attackMsgs);
       const pushed = tryApplyDinghaiControl(defender, attackMsgs, '行动条推退');
       if (pushed) defender._actionBar = Math.max(0, (Number(defender._actionBar) || 0) - bannerAttack.actionBarReduction);
@@ -11612,7 +11747,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         let 伤害 = Harm(attacker.攻击 * 0.85, defender.防御);
         let 法球伤害 = Math.trunc(伤害 * attacker.法球倍率);
         伤害 = Math.trunc(1.5 * 法球伤害);
-        defender.当前血量 -= 伤害;
+        伤害 = applyTeamSuiyunDamage(attacker, defender, 伤害, attackMsgs);
         attackMsgs.push(`${attacker.名号}演化阴阳生死图，撕开了天地混沌！`);
         attackMsgs.push(`${defender.名号}损失了${bigNumberTransform(伤害)}生命`);
         if (defender.当前血量 <= 0) {
@@ -11642,7 +11777,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     // 圆神特殊处理
     if ((attacker.灵根?.name === "圆神" || getSuiyunEffects(attacker).madoka) && Math.random() >= 0.8) {
       const lightCannonDmg = Math.trunc(attacker.攻击 * 10);
-      defender.当前血量 = Math.max(0, defender.当前血量 - lightCannonDmg);
+      applyTeamSuiyunDamage(attacker, defender, lightCannonDmg, attackMsgs);
       
       const healAmount = Math.trunc(attacker.血量上限 * 0.3);
       attacker.当前血量 = Math.min(attacker.当前血量 + healAmount, attacker.血量上限);
@@ -11686,7 +11821,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
           
           if (ran > 0.85) {
             const counterDamage = Math.trunc(defender.攻击 * 0.8);
-            defender.当前血量 = Math.max(defender.当前血量 - counterDamage, 0);
+            applyTeamSuiyunDamage(attacker, defender, counterDamage, attackMsgs);
             attackMsgs.push(`【星辰反噬】对${defender.名号}造成${counterDamage}反弹伤害！`);
             if (defender.当前血量 <= 0) {
               return { msgs: attackMsgs, damage: counterDamage, killed: true, aoeKilled: [] };
@@ -11706,7 +11841,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
           if (healed > 0) attackMsgs.push(`${attacker.名号}触发了少阴玉剑被动,恢复${bigNumberTransform(healed)}点血量`);
         } else if (equipment.武器.name == '荒剑' && (attacker.mijinglevel_id > 20 || attacker.xiangulevel_id > 20) && ran > 0.75) {
           let 武器伤害 = attacker.攻击 * attacker.法球倍率 * 100;
-          defender.当前血量 = Math.max(defender.当前血量 - 武器伤害, 0);
+          applyTeamSuiyunDamage(attacker, defender, 武器伤害, attackMsgs);
           attackMsgs.push(`${attacker.名号}眼眸开阖间挥动荒剑，一剑截断永恒！`);
           attackMsgs.push(`${defender.名号}在过去现在未来都受到毁灭一击，失去了${bigNumberTransform(武器伤害)}点血量`);
           if (defender.当前血量 <= 0) {
@@ -11911,7 +12046,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
           if (skill.反弹伤害) {
             defender._反弹比例 = Math.min(1, skill.反弹伤害 * getGongfaNumericMultiplier(defender, skill));
             let 反弹伤害 = Math.floor(伤害 * defender._反弹比例);
-            attacker.当前血量 = Math.max(attacker.当前血量 - 反弹伤害, 0);
+            applyTeamSuiyunDamage(defender, attacker, 反弹伤害, attackMsgs, { reflection: false });
             伤害 = 伤害 * getDefenseSkillMultiplier(defender, skill) + skill.other;
             attackMsgs.push(`${attacker.名号}受到${bigNumberTransform(反弹伤害)}点反弹伤害！`);
           } else {
@@ -12028,8 +12163,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
           });
           群攻伤害 = curtain.damage;
           if (curtain.message) attackMsgs.push(curtain.message);
-          t.当前血量 -= 群攻伤害;
-          if (t.当前血量 < 0) t.当前血量 = 0;
+          群攻伤害 = applyTeamSuiyunDamage(attacker, t, 群攻伤害, attackMsgs);
           triggerTeamEquipmentLowHpShield(t, attackMsgs);
           if (群攻伤害 > 0 && t.当前血量 > 0) triggerTeamVitalityRecovery(t, '受击后', attackMsgs);
           attackMsgs.push(`【群攻】${attacker.名号}的余波扫中${t.名号}，造成${bigNumberTransform(群攻伤害)}伤害`);
@@ -12082,7 +12216,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
       Math.random() < 0.3
     ) {
       const counterDamage = Math.max(1, Harm((Number(defender.攻击) || 1) * 0.85, Number(attacker.防御) || 0));
-      attacker.当前血量 = Math.max(0, attacker.当前血量 - counterDamage);
+      applyTeamSuiyunDamage(defender, attacker, counterDamage, attackMsgs);
       attackMsgs.push(`【太极·阴】${defender.名号}化去伤害并反击${bigNumberTransform(counterDamage)}点。`);
       actual_damage = 0;
     }
@@ -12099,7 +12233,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     if (defender._阴阳逆转护命 && actual_damage >= defender.当前血量) {
       defender._阴阳逆转护命 = false;
       defender.当前血量 = Math.min(defender.血量上限 || defender.当前血量, defender.当前血量 + actual_damage);
-      attacker.当前血量 = Math.max(0, attacker.当前血量 - actual_damage);
+      applyTeamSuiyunDamage(defender, attacker, actual_damage, attackMsgs);
       attackMsgs.push(`【阴阳逆转】致命伤害化为治疗，并等量返还给${attacker.名号}！`);
       actual_damage = 0;
     }
@@ -12114,8 +12248,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     actual_damage = curtain.damage;
     if (curtain.message) attackMsgs.push(curtain.message);
 
-    defender.当前血量 -= actual_damage;
-    if (defender.当前血量 < 0) defender.当前血量 = 0;
+    actual_damage = applyTeamSuiyunDamage(attacker, defender, actual_damage, attackMsgs);
     triggerTeamEquipmentLowHpShield(defender, attackMsgs);
 
     // —— 草字剑诀·斩真我：命中后残血斩杀 ——
@@ -12160,7 +12293,19 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   }
 
   // 检查复活（简化版）
+  function applyTeamSuiyunDamage(attacker, defender, damage, messages, options) {
+    const applied = applySuiyunBattleDamage(attacker, defender, damage, messages, options);
+    for (const unit of [defender, attacker]) {
+      if (!unit || unit.当前血量 > 0 || !getSuiyunEffects(unit).noDemonicValue) continue;
+      const revival = checkTeamRevival(unit);
+      if (revival.revived) messages.push(...revival.message);
+    }
+    return applied;
+  }
+
   function checkTeamRevival(player) {
+    const suiyun = trySuiyunRevival(player);
+    if (suiyun.revived) return { ...suiyun, message: [suiyun.message] };
     const darkTriadRevival = tryDarkTriadRevival(player);
     if (darkTriadRevival.revived) return { revived: true, message: [darkTriadRevival.message] };
     const divineEmbryoRevival = trySelfDaoDivineEmbryoRevival(player);
@@ -12317,6 +12462,16 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   while (isTeamAlive(A_team) && isTeamAlive(B_team)) {
     cnt++;
 
+    for (const unit of allUnits) {
+      const frost = tickSuiyunFrost(unit, `team:${cnt}`);
+      msg.push(...frost.messages);
+      if (unit.当前血量 <= 0) {
+        const revival = checkTeamRevival(unit);
+        if (revival.revived) msg.push(...revival.message);
+      }
+    }
+    if (!isTeamAlive(A_team) || !isTeamAlive(B_team)) break;
+
     // 九秘持续回合结算（每回合末）：皆字秘爆发/力竭递减 + 临字秘领域递减与到期还原
     for (const _u of allUnits) {
       if (_u.当前血量 <= 0) continue;
@@ -12356,6 +12511,11 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     readyUnit._actionBar -= ACTION_BAR_MAX;
     const roundIndex = consumeBattleActionIndex(readyUnit);
 
+    if (consumeSuiyunControl(readyUnit)) {
+      msg.push(`【霜剑入月·绝对封锁】${readyUnit.名号}本次行动被封锁，免控之力亦难挪移。`);
+      continue;
+    }
+
     const enemies = getAliveEnemies(readyUnit);
     if (enemies.length === 0) break;
 
@@ -12369,7 +12529,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     if (readyUnit._绝仙流血) {
       const bleedDamage = Math.floor((Number(readyUnit.血量上限) || 0) * 0.2);
-      readyUnit.当前血量 = Math.max(0, readyUnit.当前血量 - bleedDamage);
+      applyTeamSuiyunDamage(getAliveEnemies(readyUnit)[0], readyUnit, bleedDamage, msg);
       msg.push(`【绝仙剑】${readyUnit.名号}本源流血，损失${bigNumberTransform(bleedDamage)}点生命。`);
       if (readyUnit.当前血量 <= 0) {
         const revival = checkTeamRevival(readyUnit);
@@ -12391,7 +12551,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
 
     // 负面效果
     if (readyUnit._fumianhuihe > 0) {
-      readyUnit.当前血量 -= readyUnit._fumian_damage;
+      applyTeamSuiyunDamage(getAliveEnemies(readyUnit)[0], readyUnit, readyUnit._fumian_damage, msg);
       readyUnit.当前血量 = Math.max(readyUnit.当前血量, 0);
       let effectMsg = "";
       switch (readyUnit._fumian_type) {
@@ -12442,7 +12602,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     msg.push(...attackResult.msgs);
     const dinghaiResult = attackResult.skipped ? null : tickDinghaiEvolution(readyUnit);
     appendDinghaiResolution(msg, dinghaiResult);
-    if (dinghaiResult.target?.当前血量 <= 0 && dinghaiResult.target !== target) {
+    if (dinghaiResult?.target?.当前血量 <= 0 && dinghaiResult.target !== target) {
       const reviveResult = checkTeamRevival(dinghaiResult.target);
       if (reviveResult.revived) msg.push(...reviveResult.message);
       else msg.push(`${dinghaiResult.target.名号}被定海珠返回的诸海之力击溃！`);
@@ -12497,6 +12657,12 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   }
 
   // 结果
+  for (const [combatants, sources] of [[A_team, options._sourceATeam], [B_team, options._sourceBTeam]]) {
+    combatants.forEach((unit, index) => {
+      const cap = Number(sources?.[index]?.血量上限);
+      if (getSuiyunEffects(unit).noDemonicValue && cap > 0) unit.当前血量 = Math.min(unit.当前血量, cap);
+    });
+  }
   const A_alive = A_team.filter(p => p.当前血量 > 0);
   const B_alive = B_team.filter(p => p.当前血量 > 0);
 
@@ -12547,6 +12713,8 @@ export async function tb_battle(players, boss, team) {
   // 深拷贝玩家和BOSS数据
   let teamData = players.map(p => JSON.parse(JSON.stringify(p)));
   let bossCopy = JSON.parse(JSON.stringify(boss));
+  for (const unit of [...teamData, bossCopy]) resetSuiyunCombat(unit);
+  bossCopy.初始血量 = bossCopy.当前血量;
   teamData.forEach(normalizeBattleOrbMultiplier);
   normalizeBattleOrbMultiplier(bossCopy);
   
@@ -12554,6 +12722,32 @@ export async function tb_battle(players, boss, team) {
   let msg = []; // 战斗日志
   let jineng1 = data.jineng1; // 玩家技能库
   let jineng2 = data.jineng2; // BOSS技能库
+
+  function reviveSuiyunRaid(unit) {
+    const revival = trySuiyunRevival(unit);
+    if (revival.revived) msg.push(revival.message);
+  }
+
+  function castRaidMoonSword(attacker, enemies) {
+    const sword = castSuiyunMoonSword(attacker, enemies, {
+      applyDamage: (target, raw, source) => {
+        if (target._荒无看破攻击 || target.法力免疫) {
+          target._荒无看破攻击 = false;
+          target.法力免疫 = null;
+          return 0;
+        }
+        const shield = Math.max(0, Number(target.护盾值) || 0);
+        const absorbed = Math.min(shield, raw);
+        target.护盾值 = shield - absorbed;
+        const before = Math.max(0, Number(target.当前血量) || 0);
+        applySuiyunBattleDamage(source, target, raw - absorbed, msg);
+        return Math.max(0, before - target.当前血量);
+      },
+      revive: reviveSuiyunRaid,
+    });
+    msg.push(...sword.messages);
+    return sword;
+  }
 
   // 初始化玩家属性
   for (let player of teamData) {
@@ -12603,6 +12797,13 @@ export async function tb_battle(players, boss, team) {
     }
     msg.push(`\n===== 第 ${cnt} 回合开始 =====`);
 
+    for (const unit of [...teamData, bossCopy]) {
+      const frost = tickSuiyunFrost(unit, `raid:${cnt}`);
+      msg.push(...frost.messages);
+      reviveSuiyunRaid(unit);
+    }
+    if (bossCopy.当前血量 <= 0 || !teamData.some(unit => unit.当前血量 > 0)) break;
+
     // 道种·厚土无敌 持续减伤回合递减（每回合初，玩家与BOSS统一结算）
     for (const _u of [...teamData, bossCopy]) {
       if (_u && _u._持续减伤回合 > 0) {
@@ -12627,6 +12828,11 @@ export async function tb_battle(players, boss, team) {
         continue;
       }
 
+      if (consumeSuiyunControl(player)) {
+        msg.push(`【霜剑入月·绝对封锁】${player.名号}本回合行动被封锁。`);
+        continue;
+      }
+
       const playerDeletedAction = consumeDeletedFateAction(player);
       if (playerDeletedAction.skipped) {
         msg.push(playerDeletedAction.message);
@@ -12634,6 +12840,11 @@ export async function tb_battle(players, boss, team) {
       }
       const playerFateTransfer = transferSuLingFateEffects(player, bossCopy);
       if (playerFateTransfer.triggered) msg.push(playerFateTransfer.message);
+
+      const moonSword = castRaidMoonSword(player, [bossCopy]);
+      hatred[i] += moonSword.totalDamage;
+      if (bossCopy.当前血量 <= 0) break;
+      if (player.当前血量 <= 0) continue;
       
       // 玩家攻击BOSS
       const result = await calculateAttack(player, bossCopy, consumeBattleActionIndex(player), jineng1, jineng2);
@@ -12656,8 +12867,7 @@ export async function tb_battle(players, boss, team) {
       result.damage = bossFate.damage;
       
       // 更新BOSS血量
-      bossCopy.当前血量 -= result.damage;
-      if (bossCopy.当前血量 < 0) bossCopy.当前血量 = 0;
+      result.damage = applySuiyunBattleDamage(player, bossCopy, result.damage, msg);
 
       // 草字剑诀·斩真我：命中后残血斩杀
       if (result.斩杀阈值 > 0 && bossCopy.当前血量 > 0 && bossCopy.当前血量 <= result.斩杀阈值 * bossCopy.血量上限) {
@@ -12671,6 +12881,9 @@ export async function tb_battle(players, boss, team) {
 
       // 更新仇恨值（伤害越高仇恨越高）
       hatred[i] += result.damage;
+
+      reviveSuiyunRaid(bossCopy);
+      reviveSuiyunRaid(player);
       
       msg.push(`${player.名号}对${bossCopy.名号}造成${result.damage}点伤害，BOSS剩余血量：${bossCopy.当前血量}`);
       
@@ -12686,6 +12899,12 @@ export async function tb_battle(players, boss, team) {
     
     // ---------- BOSS阶段 ----------
     msg.push(`\n【BOSS阶段】`);
+
+    if (!teamData.some(unit => unit.当前血量 > 0)) break;
+    if (consumeSuiyunControl(bossCopy)) {
+      msg.push(`【霜剑入月·绝对封锁】${bossCopy.名号}本回合行动被封锁。`);
+      continue;
+    }
     
     // 选择仇恨目标（仇恨值最高的存活玩家）
     currentTarget = selectTarget(teamData, hatred);
@@ -12698,6 +12917,10 @@ export async function tb_battle(players, boss, team) {
     }
     const bossFateTransfer = transferSuLingFateEffects(bossCopy, targetPlayer);
     if (bossFateTransfer.triggered) msg.push(bossFateTransfer.message);
+
+    castRaidMoonSword(bossCopy, teamData);
+    if (bossCopy.当前血量 <= 0 || !teamData.some(unit => unit.当前血量 > 0)) break;
+    if (targetPlayer.当前血量 <= 0) continue;
     
     // BOSS攻击仇恨目标
     const result = await calculateAttack(bossCopy, targetPlayer, consumeBattleActionIndex(bossCopy), jineng1, jineng2);
@@ -12733,8 +12956,7 @@ export async function tb_battle(players, boss, team) {
     result.damage = applyHuangwuLethalDefense(targetPlayer, bossCopy, result.damage, msg);
     
     // 更新玩家血量
-    targetPlayer.当前血量 -= result.damage;
-    if (targetPlayer.当前血量 < 0) targetPlayer.当前血量 = 0;
+    result.damage = applySuiyunBattleDamage(bossCopy, targetPlayer, result.damage, msg);
 
     // 草字剑诀·斩真我：BOSS 也可触发残血斩杀
     if (result.斩杀阈值 > 0 && targetPlayer.当前血量 > 0 && targetPlayer.当前血量 <= result.斩杀阈值 * targetPlayer.血量上限) {
@@ -12747,6 +12969,9 @@ export async function tb_battle(players, boss, team) {
     }
 
     msg.push(`${bossCopy.名号}攻击${targetPlayer.名号}，造成${result.damage}点伤害，${targetPlayer.名号}剩余血量：${targetPlayer.当前血量}`);
+
+    reviveSuiyunRaid(targetPlayer);
+    reviveSuiyunRaid(bossCopy);
     
     // 检查玩家是否全部死亡
     if (teamData.every(p => p.当前血量 <= 0)) {
@@ -12756,8 +12981,10 @@ export async function tb_battle(players, boss, team) {
   }
   
   // 计算血量变化
-  const playersHpChange = teamData.map(p => p.当前血量 - p.初始血量);
-  const bossHpChange = bossCopy.当前血量 - bossCopy.初始血量;
+  const playersHpChange = teamData.map((p, index) =>
+    (getSuiyunEffects(p).noDemonicValue ? Math.min(p.当前血量, players[index].血量上限) : p.当前血量) - p.初始血量);
+  const bossHpChange = (getSuiyunEffects(bossCopy).noDemonicValue
+    ? Math.min(bossCopy.当前血量, boss.血量上限) : bossCopy.当前血量) - bossCopy.初始血量;
   
   // 确定战斗结果
   const result = bossCopy.当前血量 <= 0 ? "玩家胜利" : "BOSS胜利";
