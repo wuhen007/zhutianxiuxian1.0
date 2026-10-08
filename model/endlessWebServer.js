@@ -4,6 +4,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { worldChatClient } from '../apps/worldChat/client.js';
+import { loadAnnouncement } from './announcePresentation.js';
 import {
   ensureEndlessStarMapState,
   getAbility,
@@ -26,6 +27,7 @@ const wendaoAudioRoot = path.join(wendaoWebRoot, 'audio');
 const worldWebRoot = path.join(pluginRoot, 'resources', 'web', 'world');
 const surveyWebRoot = path.join(pluginRoot, 'resources', 'web', 'survey');
 const canglanWebRoot = path.join(pluginRoot, 'resources', 'web', 'canglan');
+const announcementWebRoot = path.join(pluginRoot, 'resources', 'web', 'announce');
 const configPath = path.join(pluginRoot, 'config', 'endless-web.json');
 const localConfigPath = path.join(pluginRoot, 'config', 'endless-web.local.json');
 const TICKET_PREFIX = 'Xiuxian:Endless:Web:Ticket:';
@@ -397,6 +399,41 @@ function sendFile(res, file, contentType, cache = 'public, max-age=300') {
   } catch {
     sendJson(res, 404, { error: '资源不存在' });
   }
+}
+
+function publicAnnouncement(source) {
+  if (!source || typeof source !== 'object' || Array.isArray(source) || !Array.isArray(source.updates)) {
+    throw new Error('公告格式无效');
+  }
+  const text = value => typeof value === 'string' ? value : '';
+  const objects = value => Array.isArray(value)
+    ? value.filter(item => item && typeof item === 'object' && !Array.isArray(item))
+    : [];
+  const updates = objects(source.updates).map(item => ({
+    tag: text(item.tag),
+    title: text(item.title),
+    summary: text(item.summary),
+    points: Array.isArray(item.points) ? item.points.filter(point => typeof point === 'string') : [],
+  }));
+  const count = Number(source.currentUpdateCount);
+  return {
+    version: text(source.version),
+    date: text(source.date),
+    edition: text(source.edition),
+    intro: text(source.intro),
+    currentUpdateCount: Number.isFinite(count)
+      ? Math.min(updates.length, Math.max(0, Math.trunc(count)))
+      : updates.length,
+    updates,
+    changelog: objects(source.changelog).map(group => ({
+      date: text(group.date),
+      items: objects(group.items).map(item => ({
+        hash: text(item.hash),
+        msg: text(item.msg),
+        detail: text(item.detail),
+      })),
+    })),
+  };
 }
 
 function amount(value) {
@@ -1131,6 +1168,7 @@ export function createEndlessWebHttpServer({
   gatewayMode = false,
   healthCheck = null,
   worldMedia = null,
+  announcementPath = path.join(pluginRoot, 'data', 'announce.json'),
 }) {
   const worldScript = path.join(worldWebRoot, 'app.js');
   const worldStyle = path.join(worldWebRoot, 'style.css');
@@ -1158,6 +1196,29 @@ export function createEndlessWebHttpServer({
     const url = new URL(req.url || '/', 'http://localhost');
     const endlessRealm = activeRealm || realm;
     try {
+      // Public release notes stay readable even when Redis or the relay is offline.
+      if (url.pathname === '/api/announce') {
+        if (req.method !== 'GET') return sendJson(res, 405, { error: '公告仅支持读取' }, { Allow: 'GET' });
+        try {
+          return sendJson(res, 200, publicAnnouncement(loadAnnouncement(announcementPath)));
+        } catch (error) {
+          globalThis.logger?.warn?.('[更新公告网页] 公告读取失败', error);
+          return sendJson(res, 503, { ok: false, error: '更新公告暂时未就绪，请稍后重试' });
+        }
+      }
+      const announcementAssets = {
+        '/announce': ['index.html', 'text/html; charset=utf-8'],
+        '/announce/': ['index.html', 'text/html; charset=utf-8'],
+        '/announce/app.js': ['app.js', 'text/javascript; charset=utf-8'],
+        '/announce/style.css': ['style.css', 'text/css; charset=utf-8'],
+      };
+      if (Object.hasOwn(announcementAssets, url.pathname)) {
+        if (req.method !== 'GET') return sendJson(res, 405, { error: '公告仅支持读取' }, { Allow: 'GET' });
+        const [file, contentType] = announcementAssets[url.pathname];
+        return sendFile(res, path.join(announcementWebRoot, file), contentType, 'no-store');
+      }
+      // An announcement link may have started the local server before Redis was ready.
+      redisClient ??= globalThis.redis;
       if (req.method === 'GET' && healthCheck && ['/healthz', '/readyz'].includes(url.pathname)) {
         const health = await healthCheck();
         const ready = Boolean(health.redis && health.relay);
@@ -1706,6 +1767,12 @@ export async function createWorldWebLink(controller, identity) {
 
 export function createEndlessWendaoLink(config = getEndlessWebConfig()) {
   return `${config.publicUrl}/wendao`;
+}
+
+export async function createAnnouncementWebLink(config = getEndlessWebConfig()) {
+  if (!config.enabled) throw new Error('更新公告网页功能尚未开启');
+  if (!config.relayEnabled) await ensureServer(activeRealm, globalThis.redis, config);
+  return `${String(config.publicUrl).replace(/\/+$/, '')}/announce`;
 }
 
 worldChatClient.setWebRelayHandler(handleIncomingWebRelay);

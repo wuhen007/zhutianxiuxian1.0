@@ -19,7 +19,7 @@ import data from './XiuxianData.js';
 import { cooldownRevivalGongfas, resolveInteractiveGongfaRevival } from './tribulationRevival.js';
 import { buildLinggenAtlasData, parseLinggenAtlasCommand } from './linggenAtlas.js';
 import { enrichNajieDisplayRarity } from './najieRarity.js';
-import { buildAnnouncePresentation, splitAnnounceDetail } from './announcePresentation.js';
+import { buildAnnouncePage, loadAnnouncement } from './announcePresentation.js';
 import { refreshDaofaStatus } from './daofa.js';
 import { getFlowerRealmDisplay, getXianguRealmDisplay } from './playerRealmDisplay.js';
 import { getPlayerLayout } from './playerLayout.js';
@@ -3114,93 +3114,13 @@ export async function get_character_img(e) {
 }
 export async function get_announce_img(e) {
     try {
-        // 1. 获取玩家数据
-        let usr_qq = e.user_id.toString().replace('qg_', '');
-        usr_qq = await channel(usr_qq);
-
-        // 验证玩家是否存在
-        if (!data.existData('player', usr_qq)) return;
-
-        const player = await data.getData('player', usr_qq);
-
-        // 2. 读取公告数据（后端存储于 data/announce.json，缺失时回退空结构）
-        function loadAnnounce() {
-            try {
-                return JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'announce.json'), 'utf8'));
-            } catch (err) {
-                console.error('读取更新公告数据失败，使用空结构：', err.message);
-                return { version: 'v1.0 诸天修仙', date: '2026.08', updates: [], changelog: [] };
-            }
-        }
-        const ann = loadAnnounce();
-        const updates = ann.updates || [];
-        const rawGroups = ann.changelog || [];
-        const presentation = buildAnnouncePresentation(updates, ann.currentUpdateCount);
-
-        // 3. 扁平化提交日志（已是时间倒序），用于分页
-        const allEntries = [];
-        for (const g of rawGroups) {
-            for (const it of (g.items || [])) {
-                allEntries.push({
-                    date: g.date,
-                    hash: it.hash,
-                    msg: it.msg,
-                    detail: it.detail || '',
-                    detailSections: splitAnnounceDetail(it.detail || '')
-                });
-            }
-        }
-
-        // 4. 解析页码（#更新公告=1，#更新公告2=2...）并切片
-        const pageMatch = e.msg.match(/#更新公告\s*(\d+)/);
-        const requestedPage = pageMatch ? parseInt(pageMatch[1], 10) : 1;
-        const PAGE_SIZE = 4;
-        const totalPages = Math.max(1, Math.ceil(allEntries.length / PAGE_SIZE));
-        const page = Math.min(Math.max(requestedPage, 1), totalPages);
-        const segStart = (page - 1) * PAGE_SIZE;
-        const pageEntries = allEntries.slice(segStart, segStart + PAGE_SIZE);
-        const showOverview = page === 1;
-
-        // 5. 本页按日期重新分组，供前端遍历
-        const changelog = [];
-        for (const entry of pageEntries) {
-            let last = changelog[changelog.length - 1];
-            if (!last || last.date !== entry.date) {
-                last = { date: entry.date, items: [] };
-                changelog.push(last);
-            }
-            last.items.push({
-                hash: entry.hash,
-                msg: entry.msg,
-                detail: entry.detail,
-                detailSections: entry.detailSections
-            });
-        }
-
-        // 6. 构建模板数据
-        const renderData = {
-            nickname: player.名号 || '无名修士',
-            version: ann.version || 'v1.0 诸天修仙',
-            date: ann.date || '2026.08',
-            edition: ann.edition || '诸天修仙更新公告',
-            intro: ann.intro || '本期新增玩法、数值调整与问题修复已按模块整理。',
-            updateGroups: showOverview ? presentation.groups : [],
-            overviewStats: showOverview ? presentation.stats : [],
-            updateCount: presentation.count,
-            changelog,
-            showOverview,
-            page,
-            totalPages,
-            hasMore: page < totalPages
-        };
-
-        // 7. 渲染并截图
+        const match = String(e.msg || '').match(/#更新公告\s*(\d+)/);
+        const renderData = buildAnnouncePage(loadAnnouncement(), match?.[1] || 1);
         const templateData = await new Show(e).get_announceData(renderData);
         return await puppeteer.screenshot('announce', templateData);
-
     } catch (err) {
         console.error('生成更新公告失败:', err);
-        return `生成更新公告失败: ${err.message}`;
+        return '公告图暂未生成，请稍后重试，或发送 #公告网页 阅读完整更新。';
     }
 }
 export async function get_power_img(e) {

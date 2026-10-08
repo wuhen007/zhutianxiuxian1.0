@@ -143,6 +143,8 @@ a { color: inherit; }
 .world-notice svg { width: 14px; color: var(--accent-strong); stroke-width: 1.5; }
 .world-notice p { margin: 0; font-size: 10px; line-height: 1.5; }
 .world-notice b { color: var(--accent-strong); }
+.world-notice a { color: var(--accent-strong); text-underline-offset: 3px; }
+.world-notice a:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 3px; }
 .world-notice time { color: var(--quiet); font-size: 9px; }
 .message-stream { flex: 1 1 0; min-height: 0; padding: 7px 20px 18px; overflow-y: auto; overflow-anchor: none; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
 .message { padding: 16px 0; display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 11px; border-bottom: 1px solid var(--line); }

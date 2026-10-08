@@ -19,6 +19,7 @@ const assets = [
   'apps/worldChat/client.js',
   'apps/worldChat/enrollment.local.json',
   'config/endless-web.json',
+  'data/announce.json',
 ];
 // Only tracked source assets enter a release, never runtime saves or backups.
 const files = execFileSync('git', ['ls-files', '-z', '--', ...assets], {

@@ -111,7 +111,10 @@
       desc: '查看所有剧情人物' 
     - icon: help-icon_13
       title: '#更新公告'
-      desc: '查看近期最大更新与版本内容' 
+      desc: '本期更新分章图文，每页两块；发送 #更新公告2 继续阅读'
+    - icon: help-icon_13
+      title: '#公告网页'
+      desc: 'HTML公告中心：目录跳转、分章翻页与历史查阅；也可发送 #更新公告网页'
     - icon: help-icon_13
       title: '#练气皮肤图鉴'
       desc: '查看所有练气皮肤'                                    

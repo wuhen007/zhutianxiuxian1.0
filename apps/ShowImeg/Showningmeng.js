@@ -1,6 +1,7 @@
 import { plugin, verc } from '../../api/api.js';
 import { __PATH } from '../../model/xiuxian.js';
 import { replyImageWithButtons } from '../../model/officialMessage.js';
+import { createAnnouncementWebLink } from '../../model/endlessWebServer.js';
 import {
   get_gongfa_img,
   get_duanzaocailiao_img,
@@ -140,6 +141,10 @@ export class Showningmeng extends plugin {
           {
           reg: '^#更新公告\\s*(\\d*)$',
           fnc: 'Show_announce',
+        },
+        {
+          reg: '^#(?:公告网页|更新公告\\s*(?:网页|[Hh][Tt][Mm][Ll]))$',
+          fnc: 'Show_announce_web',
         },
       ],
     });
@@ -292,9 +297,18 @@ export class Showningmeng extends plugin {
   }
     //更新公告
   async Show_announce(e) {
-    if (!verc({ e })) return false;
     let img = await get_announce_img(e);
-    e.reply(img);
+    await e.reply(img);
+    return false;
+  }
+  async Show_announce_web(e) {
+    try {
+      const url = await createAnnouncementWebLink();
+      await e.reply(`【诸天修仙 · 更新公告】\n${url}\n按章节翻页，支持目录跳转与历史查阅。\n群内图文：#更新公告 / #更新公告2`);
+    } catch (error) {
+      globalThis.logger?.warn?.(`[更新公告] 网页入口暂未就绪：${error.message}`);
+      await e.reply('公告网页暂未就绪，请管理员检查公共网页配置并更新网关。\n仍可发送 #更新公告 查看本期分页图文。');
+    }
     return false;
   }
   //道具楼

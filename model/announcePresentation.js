@@ -1,8 +1,46 @@
+import fs from 'node:fs';
+
 const GROUP_DESCRIPTIONS = {
   新玩法: '从修炼路线到诸天奇遇，本期新增内容都归在这里。',
-  调整: '价格、稀有度与养成规则统一重算，涉及交易和成长成本。',
+  调整: '成长门槛、玩法规则与奖励体验的调整。',
   修复: '把会影响结算、成长和日常操作的问题集中收口。',
 };
+
+export const ANNOUNCE_PAGE_SIZE = 2;
+
+export function loadAnnouncement(source = new URL('../data/announce.json', import.meta.url)) {
+  return JSON.parse(fs.readFileSync(source, 'utf8'));
+}
+
+// 群内逐页展示本期模块；完整旧内容保留在同源公告网页中。
+export function buildAnnouncePage(announcement = {}, requestedPage = 1) {
+  const updates = Array.isArray(announcement.updates) ? announcement.updates : [];
+  const configured = Number.parseInt(announcement.currentUpdateCount, 10);
+  const updateCount = Number.isFinite(configured)
+    ? Math.min(updates.length, Math.max(0, configured)) : updates.length;
+  const totalPages = Math.max(1, Math.ceil(updateCount / ANNOUNCE_PAGE_SIZE));
+  const requested = Number.parseInt(requestedPage, 10);
+  const page = Math.min(totalPages, Math.max(1, Number.isFinite(requested) ? requested : 1));
+  const start = (page - 1) * ANNOUNCE_PAGE_SIZE;
+  const current = updates.slice(start, Math.min(start + ANNOUNCE_PAGE_SIZE, updateCount));
+  const presentation = buildAnnouncePresentation(current, current.length, ANNOUNCE_PAGE_SIZE);
+  for (const group of presentation.groups) {
+    for (const item of group.modules) item.no = String(start + Number(item.no)).padStart(2, '0');
+  }
+  return {
+    version: announcement.version || '诸天修仙',
+    date: announcement.date || '',
+    edition: announcement.edition || '版本更新公告',
+    intro: announcement.intro || '本期玩法与体验调整，分章阅读。',
+    updateGroups: presentation.groups,
+    updateCount,
+    page,
+    totalPages,
+    pageStart: updateCount ? start + 1 : 0,
+    pageEnd: start + current.length,
+    hasMore: page < totalPages,
+  };
+}
 
 function splitPointSignals(text) {
   const pattern = /(#[^\s，。；：]+|\d+(?:\.\d+)?\s*(?:万|亿|%|小时|点|枚|个|条)?(?:\s*→\s*\d+(?:\.\d+)?\s*%)?)/g;
