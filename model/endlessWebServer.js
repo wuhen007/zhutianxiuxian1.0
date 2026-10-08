@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -34,6 +34,7 @@ const ACTION_PREFIX = 'Xiuxian:Endless:Web:Action:';
 const TEAM_CHAT_PREFIX = 'Xiuxian:Endless:Web:TeamChat:';
 const WORLD_TICKET_PREFIX = 'Xiuxian:World:Web:Ticket:';
 const WORLD_SESSION_PREFIX = 'Xiuxian:World:Web:Session:';
+const WORLD_ACTION_PREFIX = 'Xiuxian:World:Web:Action:';
 const SURVEY_TICKET_PREFIX = 'Xiuxian:Survey:Web:Ticket:';
 const SURVEY_SESSION_PREFIX = 'Xiuxian:Survey:Web:Session:';
 const CANGLAN_TICKET_PREFIX = 'Xiuxian:Canglan:Web:Ticket:';
@@ -385,11 +386,11 @@ function sendJson(res, status, payload, extraHeaders = {}) {
   res.end(JSON.stringify(payload));
 }
 
-function sendFile(res, file, contentType) {
+function sendFile(res, file, contentType, cache = 'public, max-age=300') {
   try {
     const body = fs.readFileSync(file);
     res.writeHead(200, {
-      ...securityHeaders(contentType, 'public, max-age=300'),
+      ...securityHeaders(contentType, cache),
       'Content-Length': body.length,
     });
     res.end(body);
@@ -825,14 +826,16 @@ export async function createRelayTicket(
       }
       if (result?.ok && result.token) return result.token;
     }
-    if (result?.reason !== 'disconnected') break;
+    if (result?.reason === 'timeout') client.reconnect?.('ticket_timeout');
+    if (!['disconnected', 'timeout'].includes(result?.reason)) break;
   }
   throw new Error(`网页中继签发失败：${result?.reason || 'unknown'}`);
 }
 
-async function consumeLocalOrRelayTicket(redisClient, kind, token) {
+async function consumeLocalOrRelayTicket(redisClient, kind, token, client = worldChatClient) {
   const localConsumers = {
     endless: consumeEndlessWebTicket,
+    world: consumeWorldWebTicket,
     survey: consumeSurveyWebTicket,
     canglan: consumeCanglanWebTicket,
   };
@@ -840,8 +843,8 @@ async function consumeLocalOrRelayTicket(redisClient, kind, token) {
   if (!localConsumer) return null;
   const identity = await localConsumer(redisClient, token);
   if (identity) return identity;
-  if (!worldChatClient.authed) return null;
-  const result = await worldChatClient.openWebSession(token);
+  if (!client.authed) return null;
+  const result = await client.openWebSession(token);
   if (!result?.ok || result.kind !== kind || !result.session_id) return null;
   return {
     relay: true,
@@ -850,8 +853,8 @@ async function consumeLocalOrRelayTicket(redisClient, kind, token) {
   };
 }
 
-async function requestWebRelay(session, operation, body = {}) {
-  const result = await worldChatClient.webRequest(
+async function requestWebRelay(session, operation, body = {}, client = worldChatClient) {
+  const result = await client.webRequest(
     session.relaySessionId,
     operation,
     body
@@ -860,6 +863,70 @@ async function requestWebRelay(session, operation, body = {}) {
     throw new Error(`网页中继请求失败：${result?.reason || 'unknown'}`);
   }
   return result.result;
+}
+
+function withWorldOperationId(session, operation, body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.hasOwn(body, 'operationId')) {
+    return body;
+  }
+  // Cached pre-relay pages have no operation ID. Keep their identical writes
+  // within a session on one receipt instead of inventing a new ID on each retry.
+  const digest = createHash('sha256')
+    .update(JSON.stringify([session.relaySessionId, operation, body]))
+    .digest('hex');
+  return { ...body, operationId: `legacy-${digest.slice(0, 56)}` };
+}
+
+async function handleWorldWebRelay(controller, session, operation, body, redisClient) {
+  if (!controller) return { status: 503, payload: { error: '世界频道服务尚未就绪' } };
+  if (!session.userId || !session.groupId) {
+    return { status: 401, payload: { error: '世界网页身份不完整，请重新领取入口' } };
+  }
+  // Recheck source-realm membership even when returning a cached action receipt.
+  if (typeof controller.assertWorldWebSession === 'function') {
+    await controller.assertWorldWebSession(session);
+  }
+  if (operation === 'state') {
+    return { status: 200, payload: { ok: true, state: await controller.getWorldWebState(session) } };
+  }
+  const methods = {
+    message: 'sendWorldWebMessage',
+    'trade.create': 'createWorldWebTrade',
+    'trade.accept': 'acceptWorldWebTrade',
+    'trade.cancel': 'cancelWorldWebTrade',
+  };
+  const method = methods[operation];
+  if (!Object.hasOwn(methods, operation) || typeof controller[method] !== 'function') {
+    return { status: 404, payload: { error: '世界网页操作不存在' } };
+  }
+  const operationId = String(body?.operationId || '');
+  if (!/^[A-Za-z0-9-]{16,64}$/.test(operationId)) {
+    return { status: 400, payload: { error: '操作标识无效，请刷新网页后重试' } };
+  }
+  const requestHash = createHash('sha256').update(JSON.stringify([operation, body])).digest('hex');
+  const key = `${WORLD_ACTION_PREFIX}${session.token}:${operationId}`;
+  const ttl = getEndlessWebConfig().sessionTtlSeconds;
+  const acquired = await redisClient.set(key, JSON.stringify({ requestHash, pending: true }), { NX: true, EX: ttl });
+  if (!acquired) {
+    const receipt = JSON.parse(await redisClient.get(key) || 'null');
+    if (receipt?.requestHash !== requestHash) {
+      return { status: 409, payload: { error: '操作标识已用于其他请求' } };
+    }
+    if (receipt.pending) {
+      return { status: 409, payload: { error: '操作处理中或结果待确认，请先刷新交易列表核对' } };
+    }
+    return { status: receipt.status, payload: receipt.payload };
+  }
+  try {
+    const result = await controller[method](session, body || {});
+    const receipt = { status: result?.ok === false ? 400 : 200, payload: result || { ok: true } };
+    await redisClient.set(key, JSON.stringify({ requestHash, ...receipt }), { EX: ttl });
+    return receipt;
+  } catch (error) {
+    // Keep the pending receipt: a timed-out write may already have changed game assets.
+    globalThis.logger?.error?.('[世界网页] 操作结果待核对', error);
+    return { status: 503, payload: { error: '操作结果暂未确认，请先刷新交易列表核对，勿重复提交' } };
+  }
 }
 
 async function handleCanglanAction(controller, session, body, redisClient, sessionTtlSeconds) {
@@ -929,6 +996,10 @@ async function handleIncomingWebRelay({ kind, operation, sessionId, identity, bo
     ...(identity || {}),
     token: `relay:${sessionId}`,
   };
+
+  if (kind === 'world') {
+    return handleWorldWebRelay(currentWorldController(), session, operation, body || {}, redisClient);
+  }
 
   if (kind === 'canglan') {
     const controller = currentCanglanController();
@@ -1056,15 +1127,62 @@ export function createEndlessWebHttpServer({
   worldController = null,
   surveyController = null,
   canglanController = null,
+  relayClient = worldChatClient,
+  gatewayMode = false,
+  healthCheck = null,
+  worldMedia = null,
 }) {
+  const worldScript = path.join(worldWebRoot, 'app.js');
+  const worldStyle = path.join(worldWebRoot, 'style.css');
+  const worldScriptHash = createHash('sha256').update(fs.readFileSync(worldScript)).digest('hex').slice(0, 20);
+  const worldScriptUrl = `/world/app.${worldScriptHash}.js`;
+  const worldStyleHash = createHash('sha256').update(fs.readFileSync(worldStyle)).digest('hex').slice(0, 20);
+  const worldStyleUrl = `/world/style.${worldStyleHash}.css`;
+  const worldPage = fs.readFileSync(path.join(worldWebRoot, 'index.html'), 'utf8')
+    .replace(/src="\/world\/app\.js(?:\?[^"]*)?"/, `src="${worldScriptUrl}"`)
+    .replace(/href="\/world\/style\.css(?:\?[^"]*)?"/, `href="${worldStyleUrl}"`);
+  const endlessScript = path.join(webRoot, 'app.js');
+  const endlessScriptHash = createHash('sha256').update(fs.readFileSync(endlessScript)).digest('hex').slice(0, 20);
+  const endlessScriptUrl = `/endless/app.${endlessScriptHash}.js`;
+  const endlessPage = fs.readFileSync(path.join(webRoot, 'index.html'), 'utf8')
+    .replace(/src="\/endless\/app\.js(?:\?[^"]*)?"/, `src="${endlessScriptUrl}"`);
+  async function withWorldMedia(session, payload) {
+    if (!worldMedia || !payload?.state) return payload;
+    const { state, ids } = worldMedia.rewrite(payload.state);
+    await Promise.all(ids.map(id => redisClient.set(
+      `Xiuxian:World:Web:Media:${session.token}:${id}`, '1', { EX: config.sessionTtlSeconds }
+    )));
+    return { ...payload, state };
+  }
   return http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://localhost');
     const endlessRealm = activeRealm || realm;
     try {
-      if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/endless')) {
-        return sendFile(res, path.join(webRoot, 'index.html'), 'text/html; charset=utf-8');
+      if (req.method === 'GET' && healthCheck && ['/healthz', '/readyz'].includes(url.pathname)) {
+        const health = await healthCheck();
+        const ready = Boolean(health.redis && health.relay);
+        return sendJson(res, url.pathname === '/readyz' && !ready ? 503 : 200, {
+          ok: url.pathname === '/healthz' || ready,
+          service: 'zhutian-web-gateway',
+          ready,
+        });
       }
-      if (req.method === 'GET' && url.pathname === '/endless/app.js') return sendFile(res, path.join(webRoot, 'app.js'), 'text/javascript; charset=utf-8');
+      if (gatewayMode && url.pathname.startsWith('/api/')) {
+        if (!relayClient.authed || (healthCheck && !(await healthCheck()).redis)) {
+          return sendJson(res, 503, { error: '公共中转连接恢复中，请稍后重试' });
+        }
+      }
+      if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/endless')) {
+        res.writeHead(200, {
+          ...securityHeaders('text/html; charset=utf-8', 'no-store'),
+          'Content-Length': Buffer.byteLength(endlessPage),
+        });
+        return res.end(endlessPage);
+      }
+      if (req.method === 'GET' && url.pathname === endlessScriptUrl)
+        return sendFile(res, endlessScript, 'text/javascript; charset=utf-8', 'public, max-age=31536000, immutable');
+      if (req.method === 'GET' && url.pathname === '/endless/app.js')
+        return sendFile(res, endlessScript, 'text/javascript; charset=utf-8', 'no-store');
       if (req.method === 'GET' && url.pathname === '/endless/style.css') return sendFile(res, path.join(webRoot, 'style.css'), 'text/css; charset=utf-8');
       if (req.method === 'GET' && url.pathname === '/endless/realm.jpg')
         return sendFile(res, path.join(pluginRoot, 'resources', 'img', 'help', 'zhutian.jpg'), 'image/jpeg');
@@ -1090,14 +1208,23 @@ export function createEndlessWebHttpServer({
         if (asset) return sendFile(res, asset, 'image/jpeg');
       }
 
-      if (req.method === 'GET' && (url.pathname === '/world' || url.pathname === '/world/'))
-        return sendFile(res, path.join(worldWebRoot, 'index.html'), 'text/html; charset=utf-8');
+      if (req.method === 'GET' && (url.pathname === '/world' || url.pathname === '/world/')) {
+        res.writeHead(200, {
+          ...securityHeaders('text/html; charset=utf-8', 'no-store'),
+          'Content-Length': Buffer.byteLength(worldPage),
+        });
+        return res.end(worldPage);
+      }
+      if (req.method === 'GET' && url.pathname === worldScriptUrl)
+        return sendFile(res, worldScript, 'text/javascript; charset=utf-8', 'public, max-age=31536000, immutable');
       if (req.method === 'GET' && url.pathname === '/world/app.js')
-        return sendFile(res, path.join(worldWebRoot, 'app.js'), 'text/javascript; charset=utf-8');
+        return sendFile(res, worldScript, 'text/javascript; charset=utf-8', 'no-store');
       if (req.method === 'GET' && url.pathname === '/world/lucide.min.js')
         return sendFile(res, path.join(worldWebRoot, 'lucide.min.js'), 'text/javascript; charset=utf-8');
+      if (req.method === 'GET' && url.pathname === worldStyleUrl)
+        return sendFile(res, worldStyle, 'text/css; charset=utf-8', 'public, max-age=31536000, immutable');
       if (req.method === 'GET' && url.pathname === '/world/style.css')
-        return sendFile(res, path.join(worldWebRoot, 'style.css'), 'text/css; charset=utf-8');
+        return sendFile(res, worldStyle, 'text/css; charset=utf-8', 'no-store');
       if (req.method === 'GET' && url.pathname === '/world/number.ttf')
         return sendFile(res, path.join(pluginRoot, 'resources', 'font', 'tttgbnumber.ttf'), 'font/ttf');
       if (req.method === 'GET' && url.pathname.startsWith('/world/assets/')) {
@@ -1133,7 +1260,8 @@ export function createEndlessWebHttpServer({
         const identity = await consumeLocalOrRelayTicket(
           redisClient,
           'canglan',
-          String(body.ticket || '')
+          String(body.ticket || ''),
+          relayClient
         );
         if (!identity || (!identity.relay && (!identity.userId || !identity.runId)))
           return sendJson(res, 401, { error: '入口已失效，请重新领取沧澜星图入口' });
@@ -1153,14 +1281,14 @@ export function createEndlessWebHttpServer({
           return sendJson(res, 401, { error: '会话已失效，请重新领取沧澜星图入口' });
         if (session.relay) {
           if (req.method === 'GET' && url.pathname === '/api/canglan/state') {
-            const relayed = await requestWebRelay(session, 'state');
+            const relayed = await requestWebRelay(session, 'state', {}, relayClient);
             return sendJson(res, relayed.status, relayed.payload);
           }
           if (req.method === 'POST' && url.pathname === '/api/canglan/action') {
             if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
             if (!(await withinRateLimit(redisClient, `canglan-action:${session.token}`, 30, 10)))
               return sendJson(res, 429, { error: '操作过于频繁，请稍后再试' });
-            const relayed = await requestWebRelay(session, 'action', await readJson(req));
+            const relayed = await requestWebRelay(session, 'action', await readJson(req), relayClient);
             return sendJson(res, relayed.status, relayed.payload);
           }
         }
@@ -1197,7 +1325,8 @@ export function createEndlessWebHttpServer({
         const identity = await consumeLocalOrRelayTicket(
           redisClient,
           'survey',
-          String(body.token || '')
+          String(body.token || ''),
+          relayClient
         );
         if (!identity) return sendJson(res, 401, { error: '入口已失效，请重新发送 #诸天调研问卷' });
         const session = randomToken();
@@ -1215,14 +1344,14 @@ export function createEndlessWebHttpServer({
         if (!session) return sendJson(res, 401, { error: '会话已失效，请重新发送 #诸天调研问卷' });
         if (session.relay) {
           if (req.method === 'GET' && url.pathname === '/api/survey/state') {
-            const relayed = await requestWebRelay(session, 'state');
+            const relayed = await requestWebRelay(session, 'state', {}, relayClient);
             return sendJson(res, relayed.status, relayed.payload);
           }
           if (req.method === 'POST' && url.pathname === '/api/survey/submit') {
             if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
             if (!(await withinRateLimit(redisClient, `survey-submit:${session.token}`, 5, 60)))
               return sendJson(res, 429, { error: '提交过于频繁，请稍后再试' });
-            const relayed = await requestWebRelay(session, 'submit', await readJson(req));
+            const relayed = await requestWebRelay(session, 'submit', await readJson(req), relayClient);
             return sendJson(res, relayed.status, relayed.payload);
           }
         }
@@ -1245,7 +1374,12 @@ export function createEndlessWebHttpServer({
         if (!(await withinRateLimit(redisClient, `world-session:${clientAddress(req)}`, 10, 60)))
           return sendJson(res, 429, { error: '入口请求过于频繁，请稍后再试' });
         const body = await readJson(req);
-        const identity = await consumeWorldWebTicket(redisClient, String(body.token || ''));
+        const identity = await consumeLocalOrRelayTicket(
+          redisClient,
+          'world',
+          String(body.token || ''),
+          relayClient
+        );
         if (!identity) return sendJson(res, 401, { error: '入口已失效，请重新发送 #世界网页' });
         const session = randomToken();
         await redisClient.set(worldSessionKey(session), JSON.stringify(identity), {
@@ -1260,10 +1394,51 @@ export function createEndlessWebHttpServer({
       if (url.pathname.startsWith('/api/world/')) {
         const session = await loadWorldSession(redisClient, config, req);
         if (!session) return sendJson(res, 401, { error: '会话已失效，请重新发送 #世界网页' });
+        if (req.method === 'GET' && url.pathname.startsWith('/api/world/media/')) {
+          const id = url.pathname.slice('/api/world/media/'.length);
+          if (!worldMedia || !/^[a-f0-9]{64}$/.test(id) ||
+            !(await redisClient.get(`Xiuxian:World:Web:Media:${session.token}:${id}`))) {
+            return sendJson(res, 404, { error: '图片未关联当前会话' });
+          }
+          if (!(await withinRateLimit(redisClient, `world-media:${session.token}`, 180, 60)))
+            return sendJson(res, 429, { error: '图片请求过于频繁' });
+          const image = await worldMedia.get(id);
+          if (!image) return sendJson(res, 410, { error: '图片已失效，请原发送者重新发送' });
+          res.writeHead(200, {
+            ...securityHeaders(image.type, 'private, max-age=3600'),
+            'Content-Length': image.bytes.length,
+          });
+          return res.end(image.bytes);
+        }
+        if (session.relay) {
+          if (req.method === 'GET' && url.pathname === '/api/world/state') {
+            const relayed = await requestWebRelay(session, 'state', {}, relayClient);
+            return sendJson(res, relayed.status, await withWorldMedia(session, relayed.payload));
+          }
+          if (req.method === 'POST') {
+            const operations = {
+              '/api/world/message': 'message',
+              '/api/world/trade': 'trade.create',
+              '/api/world/trade/accept': 'trade.accept',
+              '/api/world/trade/cancel': 'trade.cancel',
+            };
+            if (!Object.hasOwn(operations, url.pathname)) return sendJson(res, 404, { error: '操作不存在' });
+            if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
+            if (!(await withinRateLimit(redisClient, `world-action:${session.token}`, 30, 10)))
+              return sendJson(res, 429, { error: '操作过于频繁，请稍后再试' });
+            const operation = operations[url.pathname];
+            const body = withWorldOperationId(session, operation, await readJson(req));
+            const relayed = await requestWebRelay(session, operation, body, relayClient);
+            return sendJson(res, relayed.status, relayed.payload);
+          }
+          return sendJson(res, 404, { error: '操作不存在' });
+        }
         const controller = currentWorldController(worldController);
         if (!controller) return sendJson(res, 503, { error: '世界频道服务尚未就绪' });
         if (req.method === 'GET' && url.pathname === '/api/world/state') {
-          return sendJson(res, 200, { ok: true, state: await controller.getWorldWebState(session) });
+          return sendJson(res, 200, await withWorldMedia(session, {
+            ok: true, state: await controller.getWorldWebState(session),
+          }));
         }
         if (req.method === 'POST') {
           if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
@@ -1288,7 +1463,8 @@ export function createEndlessWebHttpServer({
         const identity = await consumeLocalOrRelayTicket(
           redisClient,
           'endless',
-          String(body.token || '')
+          String(body.token || ''),
+          relayClient
         );
         if (!identity)
           return sendJson(res, 401, {
@@ -1319,20 +1495,20 @@ export function createEndlessWebHttpServer({
           });
         if (session.relay) {
           if (req.method === 'GET' && url.pathname === '/api/endless/state') {
-            const relayed = await requestWebRelay(session, 'state');
+            const relayed = await requestWebRelay(session, 'state', {}, relayClient);
             if (relayed.status === 410) await redisClient.del(sessionKey(session.token));
             return sendJson(res, relayed.status, relayed.payload);
           }
           if (url.pathname === '/api/endless/chat') {
             if (req.method === 'GET') {
-              const relayed = await requestWebRelay(session, 'chat.get');
+              const relayed = await requestWebRelay(session, 'chat.get', {}, relayClient);
               return sendJson(res, relayed.status, relayed.payload);
             }
             if (req.method === 'POST') {
               if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
               if (!(await withinRateLimit(redisClient, `chat:${session.token}`, 60, 60)))
                 return sendJson(res, 429, { error: '队伍聊天过于频繁，请稍后再试' });
-              const relayed = await requestWebRelay(session, 'chat.post', await readJson(req));
+              const relayed = await requestWebRelay(session, 'chat.post', await readJson(req), relayClient);
               return sendJson(res, relayed.status, relayed.payload);
             }
           }
@@ -1340,7 +1516,7 @@ export function createEndlessWebHttpServer({
             if (!sameOrigin(req, config)) return sendJson(res, 403, { error: '请求来源无效' });
             if (!(await withinRateLimit(redisClient, `action:${session.token}`, 30, 10)))
               return sendJson(res, 429, { error: '操作过于频繁，请稍后再试' });
-            const relayed = await requestWebRelay(session, 'action', await readJson(req));
+            const relayed = await requestWebRelay(session, 'action', await readJson(req), relayClient);
             if (relayed.payload?.ended) await redisClient.del(sessionKey(session.token));
             return sendJson(res, relayed.status, relayed.payload);
           }
@@ -1447,8 +1623,9 @@ async function ensureServer(realm, redisClient, config) {
 }
 
 export async function startEndlessWebServer(realm) {
+  if (realm) activeRealm = realm;
   const config = getEndlessWebConfig();
-  if (!config.enabled) return null;
+  if (!config.enabled || config.relayEnabled) return null;
   const redisClient = globalThis.redis;
   if (!redisClient) throw new Error('Redis 尚未就绪');
   return ensureServer(realm, redisClient, config);
@@ -1520,8 +1697,10 @@ export async function createWorldWebLink(controller, identity) {
   const redisClient = globalThis.redis;
   if (!redisClient) throw new Error('Redis 尚未就绪');
   registerWorldWebController(controller);
-  await ensureServer(activeRealm, redisClient, config);
-  const token = await issueWorldWebTicket(redisClient, config, identity);
+  if (!config.relayEnabled) await ensureServer(activeRealm, redisClient, config);
+  const token = config.relayEnabled
+    ? await createRelayTicket('world', identity)
+    : await issueWorldWebTicket(redisClient, config, identity);
   return `${config.publicUrl}/world?t=${encodeURIComponent(token)}`;
 }
 

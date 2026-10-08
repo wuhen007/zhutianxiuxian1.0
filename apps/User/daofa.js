@@ -2,6 +2,12 @@ import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'path';
 import { ensureDaoPath } from './wudaoRules.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import {
+    normalizeReincarnationWay, getReincarnationStatus, getReincarnationStep,
+    parseReincarnationBatch, planReincarnationCultivation,
+    canControlLifeDeath, canAdvanceReincarnationEra, getReincarnationEraTarget,
+} from '../../model/reincarnationWay.js';
 import {
   existplayer,
   Write_player,
@@ -252,13 +258,18 @@ export class daofa extends plugin {
                     fnc: 'viewReincarnationWay',
                     dsc: '查看当前轮回大道境界'
                 },
+            {
+                reg: '^#同步轮回大道$',
+                fnc: 'syncReincarnationWay',
+                dsc: '校准旧轮回大道字段，不扣资源'
+            },
                 {
-                    reg: '^#修炼轮回大道(?:\\*(\\d+))?$',
+                    reg: '^#修炼轮回大道(?:\\s*\\*.*)?$',
                     fnc: 'cultivateReincarnationWay',
                     dsc: '修炼轮回大道'
                 },
                 {
-                    reg: '^#掌控生死\\s+@(\\d+)\\s+(\\d+)$',
+                    reg: '^#掌控生死(?:\\s+.*)?$',
                     fnc: 'controlLifeDeath',
                     dsc: '掌控目标玩家的生死（延长或缩短寿元）',
                     permission: 'master' // 仅管理员可用
@@ -389,356 +400,177 @@ async  checkGongfaRequirements(player) {
     
     return validGongfaCount;
 }
-    // 查看轮回大道状态
+    async getReincarnationPlayerId(e) {
+        const id = String(e.user_id || '').replace(/^qg_/, '');
+        return String(await channel(id));
+    }
+
+    // 展示只读；旧字段补齐和名称校准不会在查询时改写玩家档案。
     async viewReincarnationWay(e) {
-        const usr_qq = e.user_id.toString().replace('qg_', '');
+        if (!verc({ e })) return false;
+        const usr_qq = await this.getReincarnationPlayerId(e);
+        if (!await existplayer(usr_qq)) return e.reply('请先创建修仙角色。');
         const player = await Read_player(usr_qq);
-        
-        const reincarnation = player.轮回大道 || {
-            境界: "未入门",
-            生死境: {阶段: 0, 进度: 0},
-            岁月境: {阶段: 0, 进度: 0}
-        };
-        
-        let message = [
-            `【轮回大道·当前境界】`,
-            `境界：${reincarnation.境界}`,
-            ``
+        const { state, realm, current, entered, maxed } = getReincarnationStatus(player.轮回大道);
+        const cost = getReincarnationStep(state);
+        const message = [
+            '【轮回大道·当前境界】',
+            `境界：${state.境界}`,
+            entered ? `${realm}进度：${current.进度.toFixed(1)}%${maxed ? '（已圆满封顶）' : ''}` : '需达到准帝或其他体系同等权柄方可修炼。',
         ];
-        
-        if (reincarnation.境界.includes("生死境")) {
-            const stageNames = ["初期", "中期", "后期", "大圆满"];
-            const stage = reincarnation.生死境.阶段;
-            const progress = reincarnation.生死境.进度;
-            
-            message.push(
-                `生死境：${stageNames[stage]}（${progress}%）`,
-                `掌控生死：${reincarnation.生死境.掌控生死.toFixed(1)}`,
-                `突破寿元压制：${reincarnation.生死境.突破寿元压制.toFixed(1)}`,
-                ``,
-                `境界能力：`,
-                `- 延长自身寿元（最高${(reincarnation.生死境.掌控生死 * 100).toFixed(0)}%）`,
-                `- 突破绝灵时代寿元压制（最高${(reincarnation.生死境.突破寿元压制 * 100).toFixed(0)}%）`
-            );
-            
-            if (stage === 3) {
-                message.push(`- 掌控往生（可复活死亡时间不超过1小时的玩家）`);
-            }
+        if (entered) {
+            message.push(`掌控生死：${state.生死境.掌控生死.toFixed(2)}`,
+                `突破寿元压制系数：${state.生死境.突破寿元压制.toFixed(2)}`);
+            if (realm === '岁月境') message.push(
+                `掌控时间：${state.岁月境.掌控时间.toFixed(2)}`,
+                `改变时代系数：${state.岁月境.改变时代.toFixed(2)}`);
         }
-        
-        if (reincarnation.境界.includes("岁月境")) {
-            const stageNames = ["初期", "中期", "后期", "大圆满"];
-            const stage = reincarnation.岁月境.阶段;
-            const progress = reincarnation.岁月境.进度;
-            
-            message.push(
-                `岁月境：${stageNames[stage]}（${progress}%）`,
-                `掌控时间：${reincarnation.岁月境.掌控时间.toFixed(1)}`,
-                `改变时代：${reincarnation.岁月境.改变时代.toFixed(1)}`,
-                ``,
-                `境界能力：`,
-                `- 加速或减缓局部时间流速`,
-                `- 短暂推进个人时间（加速修炼）`
-            );
-            
-            if (stage === 3) {
-                message.push(`- 直接改变时代（需满足特定条件）`);
-            }
-        }
-        
-        if (reincarnation.境界 === "未入门") {
-            message.push(
-                `轮回大道尚未入门`,
-                `需达到准帝境界方可开始修炼`,
-                `使用指令：#修炼轮回大道 开始修炼`
-            );
-        }
-        
-        e.reply(message.join('\n'));
-        return true;
-    }
-    
-    // 修炼轮回大道
-    async cultivateReincarnationWay(e) {
-        const usr_qq = e.user_id.toString().replace('qg_', '');
-        const player = await Read_player(usr_qq);
-        
-        // 检查境界是否足够（准帝以上）
-        if (!hasRealmAuthority(player, 15)) {
-            return e.reply([
-                `欲修轮回大道，需先登临准帝之境！`,
-                `你当前境界仅为${player.mijinglevel_id}，`,
-                `需达到准帝境界方可修炼轮回大道`
-            ].join('\n'));
-        }
-        
-        // 解析倍数参数
-        const match = e.msg.match(/#修炼轮回大道\*(\d+)/);
-        const batchTimes = match ? Math.min(parseInt(match[1]), 99) : 1; // 限制最大99次
-        
-        // 初始化轮回大道数据
-        if (!player.轮回大道) {
-            player.轮回大道 = {
-                境界: "生死境初期",
-                生死境: {
-                    阶段: 0,
-                    进度: 0,
-                    掌控生死: 0.1,
-                    突破寿元压制: 0
-                },
-                岁月境: {
-                    阶段: 0,
-                    进度: 0,
-                    掌控时间: 0,
-                    改变时代: 0
-                },
-                修炼记录: []
-            };
-        }
-        
-        const reincarnation = player.轮回大道;
-        
-        // 计算总消耗
-        const costPerTime = this.getReincarnationCost(reincarnation);
-        const totalCost = costPerTime * batchTimes;
-        
-        // 检查资源是否足够
-        if (player.修为 < totalCost || player.寿元 < totalCost * 100) {
-            return e.reply([
-                `修炼轮回大道需消耗大量修为和寿元！`,
-                `单次消耗：${bigNumberTransform(costPerTime)}修为 + ${costPerTime * 100}年寿元`,
-                `批量消耗：${batchTimes}×${bigNumberTransform(costPerTime)} = ${bigNumberTransform(totalCost)}修为`,
-                `         ${batchTimes}×${costPerTime * 100} = ${totalCost * 100}年寿元`,
-                `当前修为：${bigNumberTransform(player.修为)}`,
-                `当前寿元：${player.寿元}年`,
-                `所需修为：${bigNumberTransform(totalCost)}`,
-                `所需寿元：${totalCost * 100}年`
-            ].join('\n'));
-        }
-        
-        // 扣除资源
-        player.修为 -= totalCost;
-        player.寿元 -= totalCost * 100;
-        
-        // 记录修炼过程
-        let progressGain = 0;
-        let stageUp = false;
-        let newStage = reincarnation.生死境.阶段;
-        let newProgress = reincarnation.生死境.进度;
-        let newRealm = reincarnation.境界;
-        
-        for (let i = 0; i < batchTimes; i++) {
-            // 增加进度
-            newProgress += this.getProgressPerCultivation(reincarnation);
-            
-            // 检查是否突破阶段
-            if (newProgress >= 100) {
-                newProgress = 0;
-                newStage++;
-                stageUp = true;
-                
-                // 生死境突破到岁月境
-                if (reincarnation.境界.includes("生死境") && newStage > 3) {
-                    reincarnation.境界 = "岁月境初期";
-                    reincarnation.岁月境.阶段 = 0;
-                    reincarnation.岁月境.进度 = 0;
-                    newStage = 0;
-                    newRealm = "岁月境初期";
-                }
-                
-                // 更新能力值
-                this.updateReincarnationAbilities(reincarnation);
-            }
-            
-            // 记录每次修炼
-            reincarnation.修炼记录.push({
-                时间: new Date().toLocaleString(),
-                消耗修为: costPerTime,
-                消耗寿元: costPerTime * 100,
-                进度增加: this.getProgressPerCultivation(reincarnation)
-            });
-        }
-        
-        // 更新数据
-        if (reincarnation.境界.includes("生死境")) {
-            reincarnation.生死境.阶段 = newStage;
-            reincarnation.生死境.进度 = newProgress;
-        } else {
-            reincarnation.岁月境.阶段 = newStage;
-            reincarnation.岁月境.进度 = newProgress;
-        }
-        
-        reincarnation.境界 = newRealm;
-        
-        // 保存数据
-        await Write_player(usr_qq, player);
-        
-        // 构建回复消息
-        let message = [
-            `【轮回大道·精进修炼】`,
-            `消耗：${bigNumberTransform(totalCost)}修为 + ${totalCost * 100}年寿元`,
-            `当前境界：${newRealm}`
-        ];
-        
-        if (reincarnation.境界.includes("生死境")) {
-            const stageNames = ["初期", "中期", "后期", "大圆满"];
-            message.push(
-                `生死境：${stageNames[newStage]}（${newProgress.toFixed(1)}%）`,
-                `掌控生死：${reincarnation.生死境.掌控生死.toFixed(2)}`,
-                `突破寿元压制：${reincarnation.生死境.突破寿元压制.toFixed(2)}`
-            );
-        } else {
-            const stageNames = ["初期", "中期", "后期", "大圆满"];
-            message.push(
-                `岁月境：${stageNames[newStage]}（${newProgress.toFixed(1)}%）`,
-                `掌控时间：${reincarnation.岁月境.掌控时间.toFixed(2)}`,
-                `改变时代：${reincarnation.岁月境.改变时代.toFixed(2)}`
-            );
-        }
-        
-        if (stageUp) {
-            message.push(
-                ``,
-                `【境界突破】`,
-                `轮回大道境界提升！`,
-                `获得新的天地感悟！`
-            );
-        }
-        
-        e.reply(message.join('\n'));
-        return true;
-    }
-    
-    // 获取轮回大道修炼消耗
-    getReincarnationCost(reincarnation) {
-        if (reincarnation.境界.includes("生死境")) {
-            const stage = reincarnation.生死境.阶段;
-            // 基础消耗：1亿修为
-            // 每阶段增加50%
-            return 1e8 * Math.pow(1.5, stage);
-        } else {
-            const stage = reincarnation.岁月境.阶段;
-            // 基础消耗：10亿修为
-            // 每阶段增加100%
-            return 1e9 * Math.pow(2, stage);
-        }
-    }
-    
-    // 获取每次修炼增加的进度
-    getProgressPerCultivation(reincarnation) {
-        if (reincarnation.境界.includes("生死境")) {
-            const stage = reincarnation.生死境.阶段;
-            // 初期：每次5%，中期：4%，后期：3%，大圆满：2%
-            return [5, 4, 3, 2][stage];
-        } else {
-            const stage = reincarnation.岁月境.阶段;
-            // 初期：每次4%，中期：3%，后期：2%，大圆满：1%
-            return [4, 3, 2, 1][stage];
-        }
-    }
-    
-    // 更新轮回大道能力值
-    updateReincarnationAbilities(reincarnation) {
-        if (reincarnation.境界.includes("生死境")) {
-            const stage = reincarnation.生死境.阶段;
-            // 掌控生死：初期0.1，中期0.3，后期0.6，大圆满1.0
-            reincarnation.生死境.掌控生死 = [0.1, 0.3, 0.6, 1.0][stage];
-            // 突破寿元压制：初期0，中期0.1，后期0.3，大圆满0.5
-            reincarnation.生死境.突破寿元压制 = [0, 0.1, 0.3, 0.5][stage];
-        } else {
-            const stage = reincarnation.岁月境.阶段;
-            // 掌控时间：初期0.1，中期0.3，后期0.6，大圆满1.0
-            reincarnation.岁月境.掌控时间 = [0.1, 0.3, 0.6, 1.0][stage];
-            // 改变时代：初期0，中期0.1，后期0.3，大圆满0.5
-            reincarnation.岁月境.改变时代 = [0, 0.1, 0.3, 0.5][stage];
-        }
-    }
-    
-    // 掌控生死（管理员指令）
-    async controlLifeDeath(e) {
-        const match = e.msg.match(/^#掌控生死\s+@(\d+)\s+(\d+)$/);
-        if (!match) return;
-        
-        const targetQQ = match[1];
-        const years = parseInt(match[2]);
-        
-        const usr_qq = e.user_id.toString().replace('qg_', '');
-        const player = await Read_player(usr_qq);
-        
-        // 检查是否达到生死境大圆满
-        if (!player.轮回大道 || !player.轮回大道.境界.includes("生死境大圆满")) {
-            return e.reply('只有达到生死境大圆满境界才能掌控生死！');
-        }
-        
-        const targetPlayer = await Read_player(targetQQ);
-        if (!targetPlayer) {
-            return e.reply(`未找到目标玩家：${targetQQ}`);
-        }
-        
-        // 延长或缩短寿元
-        targetPlayer.寿元 += years;
-        
-        // 寿元不能低于0
-        if (targetPlayer.寿元 < 0) targetPlayer.寿元 = 0;
-        
-        await Write_player(targetQQ, targetPlayer);
-        
-        e.reply([
-            `【生死掌控·轮回大道】`,
-            `${player.名号}施展无上轮回大道！`,
-            `目标玩家：${targetPlayer.名号}`,
-            `寿元${years > 0 ? '增加' : '减少'}：${Math.abs(years)}年`,
-            `当前寿元：${targetPlayer.寿元}年`
-        ].join('\n'));
-        
-        return true;
-    }
-    
-    // 推进时代（管理员指令）
-    async advanceEra2(e) {
-        const match = e.msg.match(/^#推进时代\s+(\d+)$/);
-        if (!match) return;
-        
-        const years = parseInt(match[1]);
-        
-        const usr_qq = e.user_id.toString().replace('qg_', '');
-        const player = await Read_player(usr_qq);
-        
-        // 检查是否达到岁月境大圆满
-        if (!player.轮回大道 || !player.轮回大道.境界.includes("岁月境大圆满")) {
-            return e.reply('只有达到岁月境大圆满境界才能推进时代！');
-        }
-        
-        // 获取当前时代配置
-        const eraConfig = config.getConfig('xiuxian', 'Era') || {
-            current: { index: 0, years: 0 }
-        };
-        
-        // 推进时代
-        eraConfig.current.years += years;
-        
-        // 检查是否进入新时代
-        if (eraConfig.current.years >= 10000) {
-            const eraCount = Math.floor(eraConfig.current.years / 10000);
-            eraConfig.current.years %= 10000;
-            eraConfig.current.index = (eraConfig.current.index + eraCount) % this.eras.length;
-        }
-        
-        // 保存配置
-        config.setConfig('xiuxian', 'Era', eraConfig);
-        
-        e.reply([
-            `【岁月流转·轮回大道】`,
-            `${player.名号}施展无上轮回大道！`,
-            `时间长河奔涌向前！`,
-            `时代推进：${years}年`,
-            `当前时代：${this.eras[eraConfig.current.index].name}`,
-            `当前年份：${eraConfig.current.years}/10000年`
-        ].join('\n'));
-        
+        if (!maxed) message.push(
+            `下次修炼：${bigNumberTransform(cost.cultivation)}修为 + ${bigNumberTransform(cost.lifespan)}年寿元，进度 +${cost.progress}%`,
+            '指令：#修炼轮回大道 或 #修炼轮回大道*10（1～99次）',
+            '跨阶段逐次计算消耗；批量资源不足则不扣费，满级自动停止。');
+        if (canControlLifeDeath(state)) message.push('已解锁掌控生死：主人可用 #掌控生死 @QQ +年数 / -年数。');
+        if (canAdvanceReincarnationEra(state)) message.push('已解锁时代推进：你可用 #推进时代 年数（1～10000，影响全服）；岁月境大圆满即可，无需进度100%。');
+        message.push('生死境初期→中期→后期→大圆满→岁月境初期→中期→后期→大圆满100%。',
+            '能力系数随境界同步；当前仅已接入上述主动指令，不代表已自动复活或自动增加寿元。',
+            '旧档显示异常可用 #同步轮回大道 校准字段（不扣资源、不依据日志补发等级）。');
+        await e.reply(message.join('\n'));
         return true;
     }
 
+    async syncReincarnationWay(e) {
+        if (!verc({ e })) return false;
+        const usr_qq = await this.getReincarnationPlayerId(e);
+        const message = await withPlayerMutationLock(usr_qq, async () => {
+            if (!await existplayer(usr_qq)) return '请先创建修仙角色。';
+            const player = await Read_player(usr_qq);
+            const normalized = normalizeReincarnationWay(player.轮回大道);
+            if (JSON.stringify(player.轮回大道) === JSON.stringify(normalized)) return `轮回大道数据正常：${normalized.境界}。`;
+            player.轮回大道 = normalized;
+            await Write_player(usr_qq, player);
+            return `轮回大道字段已同步：${normalized.境界}。修为、寿元不变；未按旧修炼记录推算或补发境界。`;
+        });
+        await e.reply(message);
+        return true;
+    }
+
+    async cultivateReincarnationWay(e) {
+        if (!verc({ e })) return false;
+        const count = parseReincarnationBatch(e.msg);
+        if (count === null) return e.reply('用法：#修炼轮回大道 或 #修炼轮回大道*10，次数为1～99的整数。');
+        const usr_qq = await this.getReincarnationPlayerId(e);
+        const message = await withPlayerMutationLock(usr_qq, async () => {
+            if (!await existplayer(usr_qq)) return '请先创建修仙角色。';
+            // 锁内读最新档案，防止同时发两条修炼指令覆盖扣费与进度。
+            const player = await Read_player(usr_qq);
+            if (!hasRealmAuthority(player, 15)) {
+                return `需达到准帝或其他体系同等权柄方可修炼轮回大道；当前权柄等级：${getRealmAuthorityLevel(player)}。`;
+            }
+            const result = planReincarnationCultivation(player, count);
+            if (!result.ok) {
+                if (result.reason === 'maxed') return '岁月境大圆满已达100%，轮回大道修炼已封顶，本次不扣资源。';
+                if (result.reason === 'resources') return [
+                    `批量修炼资源不足，本次未扣费（预计实际修炼 ${result.actualCount} 次）。`,
+                    `需要：${bigNumberTransform(result.total.cultivation)}修为 + ${bigNumberTransform(result.total.lifespan)}年寿元`,
+                    `持有：${bigNumberTransform(Number(player.修为))}修为 + ${bigNumberTransform(Number(player.寿元))}年寿元`,
+                    '跨境界费用按每次当前阶段计算，可减少修炼次数。',
+                ].join('\n');
+                if (result.reason === 'precision') return '资源数值超出当前数值精度，暂缓扣费，请先核对存档资源格式。';
+                return '修炼参数或资源字段异常，本次未扣费，请先核对角色数据。';
+            }
+            player.修为 = result.cultivationAfter;
+            player.寿元 = result.lifespanAfter;
+            player.轮回大道 = result.state;
+            await Write_player(usr_qq, player);
+            const status = getReincarnationStatus(result.state);
+            return [
+                '【轮回大道·精进修炼】',
+                `实际修炼：${result.actualCount}/${result.requestedCount}次`,
+                `消耗：${bigNumberTransform(result.total.cultivation)}修为 + ${bigNumberTransform(result.total.lifespan)}年寿元`,
+                `境界：${result.beforeRealm} → ${result.afterRealm}`,
+                `当前进度：${status.current.进度.toFixed(1)}%`,
+                `掌控生死：${result.state.生死境.掌控生死.toFixed(2)}；寿元压制系数：${result.state.生死境.突破寿元压制.toFixed(2)}`,
+                ...(status.realm === '岁月境' ? [`掌控时间：${result.state.岁月境.掌控时间.toFixed(2)}；改变时代系数：${result.state.岁月境.改变时代.toFixed(2)}`] : []),
+                ...(result.stageUp ? ['境界提升，能力系数已同步。'] : []),
+                ...(result.maxed ? ['岁月境大圆满100%，已封顶；未执行的修炼次数不收费。'] : []),
+            ].join('\n');
+        });
+        await e.reply(message);
+        return true;
+    }
+
+    getReincarnationCost(reincarnation) {
+        return getReincarnationStep(reincarnation).cultivation;
+    }
+
+    getProgressPerCultivation(reincarnation) {
+        return getReincarnationStep(reincarnation).progress;
+    }
+
+    updateReincarnationAbilities(reincarnation) {
+        Object.assign(reincarnation, normalizeReincarnationWay(reincarnation));
+    }
+
+    // 主人主动调用才生效；进入岁月境后不再丢失生死境已解锁权限。
+    async controlLifeDeath(e) {
+        if (!e.isMaster) return e.reply('此指令仅限机器人主人。');
+        if (!verc({ e })) return false;
+        const match = /^#掌控生死\s+@?(\d+)\s+([+-]?\d+)$/.exec(String(e.msg || ''));
+        const mentioned = typeof e.at === 'object' ? e.at?.qq || e.at?.user_id : e.at;
+        const targetRaw = mentioned || match?.[1];
+        const amountText = match?.[2] || (mentioned ? /^#掌控生死\s+([+-]?\d+)$/.exec(String(e.msg || '').trim())?.[1] : undefined);
+        const years = Number(amountText);
+        if (!targetRaw || !/^\d+$/.test(String(targetRaw)) || !Number.isSafeInteger(years) || years === 0) {
+            return e.reply('用法：#掌控生死 @QQ +年数 或 -年数；年数应为非零整数。');
+        }
+        const usr_qq = await this.getReincarnationPlayerId(e);
+        if (!await existplayer(usr_qq)) return e.reply('请先创建修仙角色。');
+        const player = await Read_player(usr_qq);
+        if (!canControlLifeDeath(player.轮回大道)) return e.reply('需达到生死境大圆满或更高境界才能掌控生死。');
+        const targetQQ = String(await channel(String(targetRaw)));
+        const message = await withPlayerMutationLock(targetQQ, async () => {
+            if (!await existplayer(targetQQ)) return '目标角色不存在。';
+            const targetPlayer = await Read_player(targetQQ);
+            const current = Number(targetPlayer.寿元);
+            const next = Math.max(0, current + years);
+            if (!Number.isFinite(current) || current < 0 || !Number.isFinite(next) || next === current) {
+                return '目标寿元字段或计算精度异常，未修改存档。';
+            }
+            targetPlayer.寿元 = next;
+            await Write_player(targetQQ, targetPlayer);
+            return `【生死掌控·轮回大道】\n目标玩家：${targetPlayer.名号}\n寿元变化：${next - current}年\n当前寿元：${next}年`;
+        });
+        await e.reply(message);
+        return true;
+    }
+
+    async getReincarnationEraManager() {
+        const { EraChangeTask } = await import('../tasks/EraChangeTask.js');
+        return new EraChangeTask();
+    }
+
+    // 不写孤立的 Era.yaml，不凭空使用 this.eras；交给既有世界时代管理器处理迁移副作用。
+    async advanceEra2(e) {
+        if (!verc({ e })) return false;
+        const match = /^#推进时代\s+(\d+)$/.exec(String(e.msg || ''));
+        const years = Number(match?.[1]);
+        if (!Number.isSafeInteger(years) || years < 1 || years > 10000) return e.reply('用法：#推进时代 年数，每次为1～10000的整数年。');
+        const usr_qq = await this.getReincarnationPlayerId(e);
+        if (!await existplayer(usr_qq)) return e.reply('请先创建修仙角色。');
+        const player = await Read_player(usr_qq);
+        if (!canAdvanceReincarnationEra(player.轮回大道)) return e.reply('需达到岁月境大圆满才能推进时代。');
+        const manager = await this.getReincarnationEraManager();
+        try {
+            return await manager.advanceReincarnationEra({
+                playerId: usr_qq, years, reply: (...args) => e.reply(...args),
+            });
+        } catch (error) {
+            if (['queue_full', 'wait_timeout'].includes(error?.code)) {
+                return e.reply('当前正在结算其他时代请求，请稍后再试；本次未开始推进。');
+            }
+            throw error;
+        }
+    }
 
 
 async  createOwnWay(e) {

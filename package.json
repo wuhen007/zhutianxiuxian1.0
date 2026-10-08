@@ -6,7 +6,9 @@
     "check:env": "node scripts/check-environment.mjs",
     "test:environment": "node --test test/environment-check.test.js",
     "test:ui": "node --test test/character-portraits.test.js test/endless-battle-template.test.js test/endless-panel.test.js test/endless-reincarnation-panel.test.js test/forge-material-atlas.test.js test/help-template.test.js test/html-equipment-display.test.js test/player-layout.test.js test/skin-help-coverage.test.js test/xijie-atlas.test.js",
-    "test:world-chat-live": "node scripts/world-chat-live.mjs"
+    "test:world-chat-live": "node scripts/world-chat-live.mjs",
+    "build:web-gateway": "node scripts/build-web-gateway.mjs",
+    "start:web-gateway": "node web-gateway/server.js"
   },
   "devDependencies": {
     "art-template": "4.13.2",

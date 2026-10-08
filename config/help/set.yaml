@@ -1,3 +1,15 @@
+- group: 世界聊天管理
+  list:
+    - icon: help-icon_9
+      title: '#世界帮助 / #加入世界聊天'
+      desc: '查看接入说明，在指定群开启世界消息接收；不会自动加入机器人所有群'
+    - icon: help-icon_9
+      title: '#世界开启 / #世界关闭'
+      desc: '仅机器人主人设置全局开关；已加入群的订阅会保留，重启后无需重新加入'
+    - icon: help-icon_9
+      title: '#世界状态 / #世界改名 区服名'
+      desc: '核验接入状态；主人私聊可看区服诊断，不在群内公开接入凭据'
+
 - group: 灵石设置
   list:
     - icon: help-icon_8

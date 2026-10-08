@@ -50,6 +50,17 @@ try {
     fs.symlinkSync(modules, path.join(destination, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
   }
 
+  // 测试保留插件cwd；app.config.js仍按cwd/plugins/AppName解析运行配置。
+  // 仅在副本提供无账号信息的有效夹具，不放宽生产环境缺配置即报错的规则。
+  const runtimeConfig = path.join(pluginCopy, 'plugins', path.basename(path.resolve(pluginRoot)), 'config/xiuxian/xiuxian.yaml');
+  fs.mkdirSync(path.dirname(runtimeConfig), { recursive: true });
+  fs.writeFileSync(runtimeConfig, JSON.stringify({
+    CD: {}, percentage: {}, size: {}, switch: { play: false }, biguan: {}, work: {}, Sign: {},
+    Auction: { Auction_task: '0 * * * * *' }, Auction2: { Auction_task: '0 * * * * *' },
+    SecretPlace: { one: 0.99, two: 0.5, three: 0.25 }, Era: { current: { totalYears: 0 } },
+    AutoDailyTask: { cron: '0 18 18 * * *' }, BotType: 'onebot',
+  }));
+
   const worldChatData = path.join(hostCopy, 'data/zhutian-worldchat');
   fs.mkdirSync(worldChatData, { recursive: true });
   fs.writeFileSync(path.join(worldChatData, 'config.local.json'), JSON.stringify({

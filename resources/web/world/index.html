@@ -51,11 +51,12 @@
       <div class="world-notice"><i data-lucide="sparkles"></i><p>世界记录由诸天总机同步，页面每五秒自动刷新。</p><time id="last-sync">--:--</time></div>
       <div id="world-errors" hidden></div>
       <div class="message-stream" id="message-stream" aria-live="polite"><div class="loading-state">正在聆听诸天回响</div></div>
+      <button class="icon-button latest-message" id="latest-message" type="button" title="显示最新消息" aria-label="显示最新消息" hidden><i data-lucide="arrow-down"></i></button>
       <form class="chat-composer" id="chat-form">
         <button class="icon-button subtle" id="image-help" type="button" title="图片传音请在群聊中附图发送" aria-label="图片传音说明"><i data-lucide="image-plus"></i></button>
         <label><span class="sr-only">世界发言内容</span><textarea id="chat-input" rows="1" maxlength="300" placeholder="向诸天万界传音..."></textarea></label>
         <span class="composer-count"><b id="message-count">0</b>/300</span>
-        <button class="send-button" type="submit"><i data-lucide="send"></i><span>传音</span></button>
+        <button class="send-button" type="submit" aria-label="发送世界传音"><i data-lucide="send"></i><span>传音</span></button>
       </form>
     </section>
 

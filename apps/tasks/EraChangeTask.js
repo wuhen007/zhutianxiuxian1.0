@@ -40,6 +40,7 @@ import {
 } from '../Boss/DarkRevoltDestruction.js';
 import { triggerPeriodicRiftsForEra } from '../../model/planeRiftFestival.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { canAdvanceReincarnationEra, getReincarnationEraTarget } from '../../model/reincarnationWay.js';
 import {
   restoreAllPlayerLifespans,
   suppressAllPlayerLifespans,
@@ -79,6 +80,12 @@ import {
   advanceDaoTreasureProject,
 } from '../../model/daoTreasure.js';
 import { formatForeignCalamityCullReport, spawnForeignCalamities } from '../../model/foreignCalamity.js';
+
+// 所有本类时代写入共用同一个进程内队列。玩家技能不冒用管理员身份。
+const ERA_PROGRESS_LOCK = 'zhutian:world:era-progress';
+function withEraProgressLock(action) {
+  return withPlayerMutationLock(ERA_PROGRESS_LOCK, action);
+}
 
 export class EraChangeTask extends plugin {
   constructor() {
@@ -982,6 +989,11 @@ async checkJuelingLoss(e) {
 // 例如在某个指令路由中添加：
 // if (e.msg === "#查看损失信息") return await checkJuelingLoss(e);
   async advanceEra(e) {
+    return withEraProgressLock(() => this.advanceEraLocked(e));
+  }
+
+  async advanceEraLocked(e) {
+    this.loadEraConfig();
     if (!this.set.Era?.enabled) return;
     
     try {
@@ -1766,6 +1778,10 @@ if (index === 4) { // 当前是绝灵时代
   
   /** 设置时代进度（管理员命令） */
   async setEraProgress(e) {
+    return withEraProgressLock(() => this.setEraProgressLocked(e));
+  }
+
+  async setEraProgressLocked(e) {
     // 权限检查：只有机器人管理员或修仙管理员可以使用
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
@@ -1774,6 +1790,7 @@ if (index === 4) { // 当前是绝灵时代
       return e.reply('你没有权限使用此命令');
     }
 
+    this.loadEraConfig();
     const params = e.msg.replace(/^#?设置时代(进度)?\s*/, '').trim();
     
     if (!params) {
@@ -1807,6 +1824,14 @@ if (index === 4) { // 当前是绝灵时代
       return e.reply('参数错误！请提供有效的时代索引(0-4)、年份(0-10000)和纪元(≥1)');
     }
     
+    return this.applyEraProgress(
+      { index: eraIndex, years, epoch }, (...args) => e.reply(...args),
+    );
+  }
+
+  // Internal transition service. Callers separately check role or realm, then hold the world lock.
+  async applyEraProgress(next, reply, headline = '时代设置成功！') {
+    const { index: eraIndex, years, epoch } = next;
     // 记录旧时代索引
     const oldIndex = this.set.Era.current.index;
     
@@ -1848,8 +1873,8 @@ if (index === 4) { // 当前是绝灵时代
       ].join("\n");
     }
     
-    return e.reply([
-      `时代设置成功！`,
+    return reply([
+      headline,
       `新纪元: 第${epoch}纪元`,
       `新时代: ${era.name} ${era.icon}`,
       `新年份: ${years}/10000年`,
@@ -1861,8 +1886,38 @@ if (index === 4) { // 当前是绝灵时代
     ].join('\n'));
   }
   
+  // 玩家技能独立校验角色资格，不调用/放开管理员的设置时代入口。
+  async advanceReincarnationEra({ playerId, years, reply }) {
+    if (typeof reply !== 'function') throw new TypeError('Missing reply callback');
+    if (!Number.isSafeInteger(years) || years < 1 || years > 10000) {
+      return reply('每次推进应为1～10000的整数年。');
+    }
+    const id = String(playerId || '');
+    if (!/^[A-Za-z0-9_-]+$/.test(id)) return reply('角色身份格式异常，请先完成账号绑定。');
+    return withEraProgressLock(async () => {
+      if (!await existplayer(id)) return reply('请先创建修仙角色。');
+      // 排队后重新读角色与世界，避免使用排队前的境界或过期时代快照。
+      const player = await Read_player(id);
+      if (!canAdvanceReincarnationEra(player?.轮回大道)) {
+        return reply('需达到岁月境大圆满才能推进时代，无需进度100%。');
+      }
+      this.loadEraConfig();
+      if (this.set.Era?.enabled === false) return reply('世界时代功能已关闭，暂不推进。');
+      let next;
+      try { next = getReincarnationEraTarget(this.set.Era?.current, years); }
+      catch (error) { return reply(error.message); }
+      return this.applyEraProgress(
+        next, reply, `【轮回大道·岁月流转】已推进 ${years} 年！`,
+      );
+    });
+  }
+
  /** 推进一千年 */
   async advanceOneThousandYears(e) {
+    return withEraProgressLock(() => this.advanceOneThousandYearsLocked(e));
+  }
+
+  async advanceOneThousandYearsLocked(e) {
     // 权限检查：只有机器人管理员或修仙管理员可以使用
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];
@@ -2114,6 +2169,10 @@ if (index === 4) { // 当前是绝灵时代
   }
   
   async advanceToNextEra(e) {
+    return withEraProgressLock(() => this.advanceToNextEraLocked(e));
+  }
+
+  async advanceToNextEraLocked(e) {
     // 权限检查：只有机器人管理员或修仙管理员可以使用
     const xiuxianConfig = config.getConfig('xiuxian', 'xiuxian');
     const masterList = xiuxianConfig.Master || [];

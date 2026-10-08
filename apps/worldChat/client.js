@@ -3,6 +3,7 @@ import WebSocket from 'ws';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { isIP } from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -243,6 +244,8 @@ export class WorldChatClient {
     this.maxDelay = 60_000;
     this.pingTimer = null;
     this.reconnectTimer = null;
+    this.connectionTimer = null;
+    this.lastReceivedAt = 0;
     this.pending = new Map();
     this.seenMessageIds = new Set();
     this.messageHandler = null;
@@ -413,16 +416,38 @@ export class WorldChatClient {
 
     let ws;
     try {
-      ws = new this.WebSocket(this.cfg.url, { maxPayload: 1024 * 1024 });
+      const address = String(this.cfg.connect_address || '').trim();
+      if (address && !isIP(address)) throw new Error('invalid_connect_address');
+      const options = { maxPayload: 1024 * 1024, handshakeTimeout: 15000 };
+      if (address) {
+        const family = isIP(address);
+        // Only override routing. The original URL still controls TLS SNI,
+        // certificate hostname validation and the HTTP Host header.
+        options.lookup = (_hostname, lookupOptions, callback) => {
+          if (lookupOptions?.all) callback(null, [{ address, family }]);
+          else callback(null, address, family);
+        };
+      }
+      ws = new this.WebSocket(this.cfg.url, options);
     } catch (error) {
       this.lastError = error.message;
       this.scheduleReconnect();
       return;
     }
     this.ws = ws;
+    this.connected = false;
+    this.authed = false;
+    clearTimeout(this.connectionTimer);
+    this.connectionTimer = setTimeout(() => this.reconnect('handshake_timeout', ws), 16000);
+    this.connectionTimer.unref?.();
 
     ws.on('open', () => {
+      if (this.ws !== ws) return;
       this.connected = true;
+      this.lastReceivedAt = Date.now();
+      clearTimeout(this.connectionTimer);
+      this.connectionTimer = setTimeout(() => this.reconnect('authentication_timeout', ws), 10000);
+      this.connectionTimer.unref?.();
       const ts = Date.now();
       const nonce = crypto.randomBytes(16).toString('hex');
       ws.send(
@@ -437,18 +462,28 @@ export class WorldChatClient {
         })
       );
     });
-    ws.on('message', (raw) => this.onMessage(raw));
+    ws.on('message', (raw) => {
+      if (this.ws !== ws) return;
+      this.lastReceivedAt = Date.now();
+      this.onMessage(raw);
+    });
     ws.on('close', (code, reason) => {
+      if (this.ws !== ws) return;
       const closeReason = reason?.toString?.().trim();
       if (closeReason) this.lastError = closeReason;
       else if (code !== 1000) this.lastError = `connection_closed_${code}`;
+      globalThis.logger?.warn?.(`[worldchat] Connection closed (${code}): ${closeReason.slice(0, 80) || 'no reason'}`);
       this.connected = false;
       this.authed = false;
+      this.ws = null;
+      clearTimeout(this.connectionTimer);
+      this.connectionTimer = null;
       this.stopPing();
       this.rejectPending('disconnected');
       this.scheduleReconnect();
     });
     ws.on('error', (error) => {
+      if (this.ws !== ws) return;
       this.lastError = error.message;
     });
   }
@@ -489,6 +524,9 @@ export class WorldChatClient {
         return;
       }
       this.authed = true;
+      clearTimeout(this.connectionTimer);
+      this.connectionTimer = null;
+      this.lastReceivedAt = Date.now();
       this.lastError = null;
       if (this.cfg.enrollment_token) {
         this.cfg.identity_verified = true;
@@ -572,12 +610,34 @@ export class WorldChatClient {
 
   startPing() {
     this.stopPing();
-    this.pingTimer = setInterval(() => {
-      if (this.ws?.readyState === this.WebSocket.OPEN) {
-        this.ws.send(JSON.stringify({ type: 'PING' }));
-      }
-    }, 25_000);
+    this.pingTimer = setInterval(() => this.heartbeat(), 15_000);
     this.pingTimer.unref?.();
+  }
+
+  heartbeat() {
+    const socket = this.ws;
+    if (!socket) return;
+    if (socket.readyState !== this.WebSocket.OPEN || Date.now() - this.lastReceivedAt >= 45000) {
+      this.reconnect('heartbeat_timeout', socket);
+      return;
+    }
+    try { socket.send(JSON.stringify({ type: 'PING' })); }
+    catch { this.reconnect('connection_send_failed', socket); }
+  }
+
+  reconnect(reason = 'disconnected', socket = this.ws) {
+    if (!socket || socket !== this.ws) return;
+    this.ws = null;
+    this.connected = false;
+    this.authed = false;
+    this.lastError = reason;
+    globalThis.logger?.warn?.(`[worldchat] Reconnecting: ${reason}`);
+    clearTimeout(this.connectionTimer);
+    this.connectionTimer = null;
+    this.stopPing();
+    this.rejectPending('disconnected');
+    socket.terminate?.();
+    this.scheduleReconnect();
   }
 
   stopPing() {
@@ -617,7 +677,8 @@ export class WorldChatClient {
       }, timeout);
       timer.unref?.();
       this.pending.set(requestId, { type: responseType, resolve, timer });
-      this.ws.send(JSON.stringify({ type, request_id: requestId, ...body }));
+      try { this.ws.send(JSON.stringify({ type, request_id: requestId, ...body })); }
+      catch { this.reconnect('connection_send_failed'); }
     });
   }
 
@@ -1121,6 +1182,8 @@ export class WorldChatClient {
       this.clearDeliveryQueue('delivery_disabled');
       if (this.cfg.web_relay_enabled) this.syncPresence();
       else {
+        clearTimeout(this.connectionTimer);
+        this.connectionTimer = null;
         if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
         this.reconnectTimer = null;
         this.ws?.close();
@@ -1139,12 +1202,15 @@ export class WorldChatClient {
     this.cfg.web_relay_enabled = false;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+    clearTimeout(this.connectionTimer);
+    this.connectionTimer = null;
     this.stopPing();
     this.rejectPending('closed');
     this.cancelDeliveryRetry();
     this.clearDeliveryQueue('closed');
-    this.ws?.terminate?.();
+    const socket = this.ws;
     this.ws = null;
+    socket?.terminate?.();
     this.connected = false;
     this.authed = false;
   }

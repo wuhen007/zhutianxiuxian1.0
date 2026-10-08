@@ -101,6 +101,12 @@ import {
   dj_players
 } from '../../model/xiuxian.js';
 import { isTribulationLocked, TRIBULATION_LOCK_BUSY, withTribulationLock } from '../../model/tribulationLock.js';
+import { wrapTribulationEvent } from '../../model/tribulationMessages.js';
+import {
+  createTribulationCheckpoint,
+  recoverTribulationCheckpoint,
+  settleTribulationCheckpoint,
+} from '../../model/tribulationCheckpoint.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { adjustDaoHeart, getDaoHeartDamageMultiplier } from '../../model/daoHeart.js';
 import { refreshSpiritHeart } from '../../model/spiritUniverse.js';
@@ -111,6 +117,7 @@ import {
   parseTribulationLocation,
   selectHostileTianjiao,
 } from '../../model/tianjiaoHostility.js';
+import { runSequentialInterval } from '../../utils/sequentialInterval.js';
 
 const TRIBULATION_METHODS = [
   'duzhendaoLeijie',
@@ -230,7 +237,8 @@ export class zhetiandujie extends plugin {
       const original = this[methodName];
       if (typeof original !== 'function') continue;
       this[methodName] = async function guardedTribulation(e, ...args) {
-        const playerId = String(e.user_id || '').replace('qg_', '');
+        const playerId = String(await channel(String(e.user_id || '').replace('qg_', '')));
+        e = wrapTribulationEvent(playerId, e);
         const location = parseTribulationLocation(e.msg);
         const result = await withTribulationLock(playerId, async () => {
           this.activeTribulationContexts.set(playerId, { e, location });
@@ -244,7 +252,7 @@ export class zhetiandujie extends plugin {
           } finally {
             this.activeTribulationContexts.delete(playerId);
           }
-        });
+        }, { kind: '遮天渡劫' });
         if (result === TRIBULATION_LOCK_BUSY) {
           return e.reply('【渡劫中】你已有一场渡劫正在进行，请等待结算完成。');
         }
@@ -304,6 +312,15 @@ async command_revival_choice(e) {
       return e.reply(`选择无效，可选：${result.choices.map((name, index) => `${index + 1}.${name}`).join('、')}`);
     }
     return e.reply('当前没有等待处理的复活选择。');
+}
+
+async restoreInterruptedTribulation(playerId, expectedAttemptId = null) {
+  return recoverTribulationCheckpoint(playerId, {
+    expectedAttemptId,
+    restoreEquipment: equipment => Write_equipment(playerId, equipment),
+    restoreNajie: najie => Write_najie(playerId, najie, { allowWorldlineUnlock: true }),
+    restorePlayer: player => Write_player(playerId, player, { trackDailyTask: false }),
+  });
 }
 
 // ==== 遮天风格功法复活逻辑（生命本源消耗版）====
@@ -1150,6 +1167,10 @@ async shengrenwangleijie(e) {
     if (!e.isGroup) return e.reply('需在群聊中渡劫');
     
     const usr_qq = e.user_id.toString().replace('qg_', '');
+    const interrupted = await this.restoreInterruptedTribulation(usr_qq);
+    if (interrupted.recovered) {
+      return e.reply('【渡劫中断已恢复】检测到机器人重启前未结算的圣人王劫，修为、血气、装备与纳戒已恢复到开劫前，请重新发起渡劫。');
+    }
     const player = await Read_player(usr_qq);
     const equipment = await Read_equipment(usr_qq);
         if (player.mijinglevel_id >= 13) {
@@ -1224,6 +1245,22 @@ async shengrenwangleijie(e) {
       ].join("\n"));
     }
 
+    const najie = await Read_najie(usr_qq);
+    const checkpoint = await createTribulationCheckpoint(
+      usr_qq,
+      player,
+      equipment,
+      {
+        tribulation: '圣人王劫',
+        cultivationCost: actual_need_exp,
+        bloodCost: actual_blood_need,
+      },
+      { najie },
+    );
+
+    let finalBattleLog;
+    let deferredAmbushFinalMessage;
+    try {
     // ==== 扣除资源 ====
     player.修为 -= actual_need_exp;
     player.血气 -= actual_blood_need;
@@ -1233,6 +1270,7 @@ async shengrenwangleijie(e) {
 
     // ===== 计算理论最大攻击（雷劫威力不再依赖玩家当前攻击） =====
     const { maxAtk, formationShift, kuluoShift, qitianMessage } = this.calcMaxAtkWithTribulationShifts(player, equipment);
+    await Write_player(usr_qq, player, { trackDailyTask: false });
 
     // ==== 开始渡劫 ====
     let battleLog = [
@@ -1502,35 +1540,9 @@ async shengrenwangleijie(e) {
     }
 
     // ==== 渡劫结果判定 ====
-    if (player.当前血量 > 1) {
+    const tribulationSucceeded = player.当前血量 > 1;
+    if (tribulationSucceeded) {
       player.mijinglevel_id = 13; // 圣人王境界
-      unlockDaoRealm(player, 13);
-      // 扣除仙道潜力（渡圣人王=3点）
-      player.仙道潜力 = Math.max(0, (player.仙道潜力 || 0) - applyQuestionFortuneCost(player, 3));
-      battleLog.push(`【劫尽成王】`);
-      battleLog.push(`雷劫散去，${player.名号}屹立星空，圣王之威震慑九天十地！`);
-      battleLog.push(`肉身经过万道锤炼，已近不灭，圣王道果圆满，`);
-      battleLog.push(`一念间可穿梭星域，徒手撕裂星辰！`);
-      battleLog.push(`「这一世，我为圣王！」道音传遍宇宙边荒！`);
-      player.道伤=0;
-      // 本命帝兵淬炼
-      if (equipment.帝兵 &&!equipment.帝兵.圣人王&&equipment.帝兵.author_name === player.id) {
-        const 淬体增益 = actual_need_exp * 0.3;
-        equipment.帝兵.atk += Math.floor(淬体增益 * 0.7);
-        equipment.帝兵.def += Math.floor(淬体增益 * 0.7);
-        equipment.帝兵.HP += Math.floor(淬体增益 * 0.7);
-        equipment.帝兵.全属性 += 10;
-        equipment.帝兵.圣人王 = true;
-        await Write_equipment(usr_qq, equipment);
-        battleLog.push(
-          `${player.名号}的本命帝兵${equipment.帝兵.name}经历圣王劫淬炼，`,
-          `攻击永久+${bigNumberTransform(淬体增益 * 0.7)}`,
-          `防御永久+${bigNumberTransform(淬体增益 * 0.7)}`,
-          `生命永久+${bigNumberTransform(淬体增益 * 0.7)}`,
-          `全属性增加至${equipment.帝兵.全属性}`
-        );
-      }
-      
     } else {
       battleLog.push(`【渡劫失败】`);
       battleLog.push(`${player.名号}被圣人王劫劈碎圣王道果，从星空坠落！`);
@@ -1544,9 +1556,77 @@ async shengrenwangleijie(e) {
 
     this.clearTempEffects(player);
     await Write_player(usr_qq, player);
-    e.reply(battleLog.join('\n'));
     // ===== 渡劫结束，重算全装属性 =====
-    await this.exitTribulationState(player, _tribSnap3, usr_qq, equipment);
+    const exitOutcome = await this.exitTribulationState(
+      player,
+      _tribSnap3,
+      usr_qq,
+      equipment,
+      { deferFinalReply: true },
+    );
+    let finalPlayer = await Read_player(usr_qq);
+    const advancementSucceeded = finalPlayer.mijinglevel_id > _tribSnap3.mijinglevel_id;
+
+    // 截道结算完成后再提交成功专属奖励，避免境界回退却保留奖励。
+    if (advancementSucceeded) {
+      unlockDaoRealm(finalPlayer, 13);
+      finalPlayer.仙道潜力 = Math.max(
+        0,
+        (finalPlayer.仙道潜力 || 0) - applyQuestionFortuneCost(finalPlayer, 3),
+      );
+      finalPlayer.道伤 = 0;
+      await Write_player(usr_qq, finalPlayer);
+
+      battleLog.push(`【劫尽成王】`);
+      battleLog.push(`雷劫散去，${finalPlayer.名号}屹立星空，圣王之威震慑九天十地！`);
+      battleLog.push(`肉身经过万道锤炼，已近不灭，圣王道果圆满，`);
+      battleLog.push(`一念间可穿梭星域，徒手撕裂星辰！`);
+      battleLog.push(`「这一世，我为圣王！」道音传遍宇宙边荒！`);
+
+      if (equipment.帝兵 && !equipment.帝兵.圣人王 && equipment.帝兵.author_name === finalPlayer.id) {
+        const 淬体增益 = actual_need_exp * 0.3;
+        equipment.帝兵.atk += Math.floor(淬体增益 * 0.7);
+        equipment.帝兵.def += Math.floor(淬体增益 * 0.7);
+        equipment.帝兵.HP += Math.floor(淬体增益 * 0.7);
+        equipment.帝兵.全属性 += 10;
+        equipment.帝兵.圣人王 = true;
+        await Write_equipment(usr_qq, equipment);
+        battleLog.push(
+          `${finalPlayer.名号}的本命帝兵${equipment.帝兵.name}经历圣王劫淬炼，`,
+          `攻击永久+${bigNumberTransform(淬体增益 * 0.7)}`,
+          `防御永久+${bigNumberTransform(淬体增益 * 0.7)}`,
+          `生命永久+${bigNumberTransform(淬体增益 * 0.7)}`,
+          `全属性增加至${equipment.帝兵.全属性}`
+        );
+      }
+    } else if (tribulationSucceeded && exitOutcome.reason === 'ambushed') {
+      battleLog.push('【截道败退】雷劫虽已渡尽，最终境界仍被死敌逆转。');
+    }
+
+    finalPlayer = await Read_player(usr_qq);
+    const finalSucceeded = finalPlayer.mijinglevel_id > _tribSnap3.mijinglevel_id;
+    await settleTribulationCheckpoint(usr_qq, checkpoint.attemptId, {
+      result: finalSucceeded ? 'success' : 'failure',
+      ...(exitOutcome.reason && !finalSucceeded ? { reason: exitOutcome.reason } : {}),
+      nextLevel: finalPlayer.mijinglevel_id,
+    });
+    deferredAmbushFinalMessage = exitOutcome.ambush?.finalMessage;
+    finalBattleLog = battleLog.join('\n');
+    } catch (error) {
+      try {
+        await this.restoreInterruptedTribulation(usr_qq, checkpoint.attemptId);
+      } catch (recoveryError) {
+        throw new AggregateError(
+          [error, recoveryError],
+          `圣人王劫异常且检查点恢复失败：${usr_qq}`,
+        );
+      }
+      throw error;
+    }
+    if (deferredAmbushFinalMessage) {
+      await e.reply(deferredAmbushFinalMessage);
+    }
+    await e.reply(finalBattleLog);
   }
   // ==== 渡大圣雷劫主逻辑 ====
 async dashengleijie(e) {
@@ -3835,6 +3915,20 @@ async poWangChengDi(e) {
       `当前血气：${player.血气.toLocaleString()}`
     ].join('\n'));
 
+  const najie = await Read_najie(usr_qq);
+  const checkpoint = await createTribulationCheckpoint(
+    usr_qq,
+    player,
+    equipment,
+    {
+      tribulation: '破王成帝',
+      cultivationCost: realNeed,
+      bloodCost: bloodNeed,
+    },
+    { najie },
+  );
+
+  try {
 /* ====== 扣资源 & 初始化 ====== */
 player.修为 -= realNeed;
 player.血气 -= bloodNeed;
@@ -3889,116 +3983,98 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
 
   /* ====== 枷锁循环（30 道，30 s 一道） ====== */
   let broken = 0;
-  let checkDone = null;
-  let running = false;
-  let finished = false;
-  let finishTribulation;
-  const completion = new Promise(resolve => {
-    finishTribulation = () => {
-      if (finished) return;
-      finished = true;
-      clearInterval(lockInterval);
-      if (checkDone) clearInterval(checkDone);
-      resolve(true);
-    };
-  });
-  const lockInterval = setInterval(async () => {
-    if (running || finished) return;
-    running = true;
-    try {
-          /* ------ 新增：护法血量同步（防止护法者中途回血/受伤） ------ */
-    if (player.护法玩家) {
-      const prot = await Read_player(player.护法玩家.名字); // 用名号反查 QQ
-      player.护法玩家.当前血量 = Math.floor(prot.当前血量 * 3);
-      player.护法玩家.血量上限 = player.护法玩家.当前血量;
-    }
-      if (broken >= totalShackles) { clearInterval(lockInterval); return; }
+  const outcome = await runSequentialInterval(async ({ fail, finish }) => {
+    if (broken < totalShackles) {
+      try {
+        /* ------ 新增：护法血量同步（防止护法者中途回血/受伤） ------ */
+        if (player.护法玩家) {
+          const prot = await Read_player(player.护法玩家.名字); // 用名号反查 QQ
+          player.护法玩家.当前血量 = Math.floor(prot.当前血量 * 3);
+          player.护法玩家.血量上限 = player.护法玩家.当前血量;
+        }
 
-      /* 破王劫倍率始终不低于证道成帝劫 */
-      let raw = player.当前血量 * 0.55 * getKingToEmperorTribulationRatio();
-      const { damage: dmg, messages } = await this.applyTribulationDamage(player, raw, equipment);
-      player.当前血量 = Math.max(1, player.当前血量 - dmg);
-      broken++;
-      player.神明枷锁--;
+        /* 破王劫倍率始终不低于证道成帝劫 */
+        let raw = player.当前血量 * 0.55 * getKingToEmperorTribulationRatio();
+        const { damage: dmg, messages } = await this.applyTribulationDamage(player, raw, equipment);
+        player.当前血量 = Math.max(1, player.当前血量 - dmg);
+        broken++;
+        player.神明枷锁--;
 
-      log.push(
-        `【第 ${broken} 道枷锁崩断！】`,
-        `- 周身诸境剧烈摇颤，天地大道哀鸣！`,
-        `- 体魄龟裂，满身伤痕，几乎要炸开了，王血染红虚空！`,
-        `- 头顶神明小人光芒大盛，大道符文流转不息！`,
-        `造成 ${bigNumberTransform(dmg)} 点道伤 剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`
-      );
-      if (messages.length) log.push(...messages);
+        log.push(
+          `【第 ${broken} 道枷锁崩断！】`,
+          `- 周身诸境剧烈摇颤，天地大道哀鸣！`,
+          `- 体魄龟裂，满身伤痕，几乎要炸开了，王血染红虚空！`,
+          `- 头顶神明小人光芒大盛，大道符文流转不息！`,
+          `造成 ${bigNumberTransform(dmg)} 点道伤 剩余血量：${bigNumberTransform(player.当前血量)}/${bigNumberTransform(player.血量上限)}`
+        );
+        if (messages.length) log.push(...messages);
 
-      /* 每 10 层神明下降一尺 */
-      if (broken % 10 === 0) log.push(`【神明降临】头顶小人下降 ${broken / 10} 尺！神威浩荡，整片宇宙都在颤栗！！`);
+        /* 每 10 层神明下降一尺 */
+        if (broken % 10 === 0) log.push(`【神明降临】头顶小人下降 ${broken / 10} 尺！神威浩荡，整片宇宙都在颤栗！！`);
 
-      /* 神明小人下降一尺后，诸王从第 11 道起每道阻击；第 30 道八王合击 */
-      if (broken > 10) {
-        log.push(...(await this.attackBySupremes(player, diffRate, broken)));
-      }
+        /* 神明小人下降一尺后，诸王从第 11 道起每道阻击；第 30 道八王合击 */
+        if (broken > 10) {
+          log.push(...(await this.attackBySupremes(player, diffRate, broken)));
+        }
 
-      await Write_player(usr_qq, player);
-      await e.reply(log.join('\n'));
-      log = [];
+        await Write_player(usr_qq, player);
+        await e.reply(log.join('\n'));
+        log = [];
 
-      /* ====== 死亡判定：生命本源 ≤ 0 ====== */
-      if (player.当前血量 <= 1) {
-        const resurrected = await this.checkGongfaResurrection(e, player);
-        if (!resurrected) {
-          /* 失败惩罚 */
-          player.生命本源 -= 50;
-          player.修为 *= 0.7;
-          player.血气 *= 0.7;
-          player.破王成帝 = Math.floor(Date.now() / 1000) + 86400; // 24 h CD
-          const failure = resolveBreakKingEmperorFailure(player, emperorGate.route);
-          if (failure.outcome === 'flaw') player.当前血量 = 1;
-          /* ------ 新增：解除双方护法关系 ------ */
-          await this.clearProtectorRelation(player);
-          await Write_player(usr_qq, player);
-          const consequence = failure.outcome === 'destroyed'
-            ? ['【形神俱灭】肉身毁灭，神魂炸碎；练气存档与纳戒已经封锁。', '唯有仙帝级生灵能够强行重塑形神。']
-            : failure.outcome === 'severe'
-              ? ['【身魂重创】肉身濒碎，神魂留下一道不可逆裂痕。']
-              : [`【道果有瑕】当前道果瑕疵：${player.道果瑕疵 || 1}。`];
-          await e.reply([
-            `【帝路崩断·道基受损】`,
-            `${player.名号}终究未能打破桎梏，帝路崩断！`,
-            `生命本源 -50（剩余 ${player.生命本源}）`,
-            ...consequence,
-            `需修养 24 时辰，以无上神物修复道基方能再战帝路！`
-          ].join('\n'));
-          // ===== 渡劫结束，重算全装属性 =====
-          await this.exitTribulationState(player, _tribSnap7, usr_qq, equipment);
-          if (failure.outcome === 'destroyed') {
-            const destroyedPlayer = await Read_player(usr_qq);
-            destroyedPlayer.当前血量 = 0;
-            destroyedPlayer.修仙状态 = player.修仙状态;
-            destroyedPlayer.练气存档状态 = player.练气存档状态;
-            destroyedPlayer.纳戒封锁 = player.纳戒封锁;
-            destroyedPlayer.时间线权能 = player.时间线权能;
-            await Write_player(usr_qq, destroyedPlayer);
-            const najie = await Read_najie(usr_qq);
-            najie.时间线封锁 = player.纳戒封锁;
-            await Write_najie(usr_qq, najie);
+        /* ====== 死亡判定：生命本源 ≤ 0 ====== */
+        if (player.当前血量 <= 1) {
+          const resurrected = await this.checkGongfaResurrection(e, player);
+          if (!resurrected) {
+            /* 失败惩罚 */
+            player.生命本源 -= 50;
+            player.修为 *= 0.7;
+            player.血气 *= 0.7;
+            player.破王成帝 = Math.floor(Date.now() / 1000) + 86400; // 24 h CD
+            const failure = resolveBreakKingEmperorFailure(player, emperorGate.route);
+            if (failure.outcome === 'flaw') player.当前血量 = 1;
+            /* ------ 新增：解除双方护法关系 ------ */
+            await this.clearProtectorRelation(player);
+            await Write_player(usr_qq, player);
+            const consequence = failure.outcome === 'destroyed'
+              ? ['【形神俱灭】肉身毁灭，神魂炸碎；练气存档与纳戒已经封锁。', '唯有仙帝级生灵能够强行重塑形神。']
+              : failure.outcome === 'severe'
+                ? ['【身魂重创】肉身濒碎，神魂留下一道不可逆裂痕。']
+                : [`【道果有瑕】当前道果瑕疵：${player.道果瑕疵 || 1}。`];
+            await e.reply([
+              `【帝路崩断·道基受损】`,
+              `${player.名号}终究未能打破桎梏，帝路崩断！`,
+              `生命本源 -50（剩余 ${player.生命本源}）`,
+              ...consequence,
+              `需修养 24 时辰，以无上神物修复道基方能再战帝路！`
+            ].join('\n'));
+            // ===== 渡劫结束，重算全装属性 =====
+            await this.exitTribulationState(player, _tribSnap7, usr_qq, equipment);
+            if (failure.outcome === 'destroyed') {
+              const destroyedPlayer = await Read_player(usr_qq);
+              destroyedPlayer.当前血量 = 0;
+              destroyedPlayer.修仙状态 = player.修仙状态;
+              destroyedPlayer.练气存档状态 = player.练气存档状态;
+              destroyedPlayer.纳戒封锁 = player.纳戒封锁;
+              destroyedPlayer.时间线权能 = player.时间线权能;
+              await Write_player(usr_qq, destroyedPlayer);
+              const najie = await Read_najie(usr_qq);
+              najie.时间线封锁 = player.纳戒封锁;
+              await Write_najie(usr_qq, najie);
+            }
+            finish(false);
+            return;
           }
-          finishTribulation();
-        } else {
           log.push(`【向死而生】重燃生命之火，继续迎战枷锁！`);
         }
+      } catch (err) {
+        console.error('枷锁阶段出错：', err);
+        fail(err);
+        return;
       }
-    } catch (err) {
-      console.error('枷锁阶段出错：', err);
-      finishTribulation();
-    } finally {
-      running = false;
     }
-  }, 30000);
 
-  /* ====== 突破完成检查 ====== */
-  checkDone = setInterval(async () => {
-    if (running || finished || broken < totalShackles || player.当前血量 <= 1) return;
-    running = true;
+    if (broken < totalShackles || player.当前血量 <= 1) return;
+
     try {
       const passed = markBreakKingEmperorTribulationPassed(player, emperorGate.route);
       player[passed.gate.config.field] = passed.gate.config.targetRealmId;
@@ -4018,15 +4094,33 @@ const _tribSnap7 = this.enterTribulationState(player, equipment);
       ].join('\n'));
       // ===== 渡劫结束，重算全装属性 =====
       await this.exitTribulationState(player, _tribSnap7, usr_qq, equipment);
-      finishTribulation();
+      finish(true);
     } catch (err) {
       console.error('帝劫结算出错：', err);
-      finishTribulation();
-    } finally {
-      running = false;
+      fail(err);
     }
-  }, 1000);
-  return completion;
+  }, {
+    initialDelayMs: 30000,
+    intervalMs: 30000,
+  });
+  await settleTribulationCheckpoint(usr_qq, checkpoint.attemptId, {
+    result: outcome ? 'success' : 'failure',
+    brokenShackles: broken,
+  });
+  return outcome;
+  } catch (error) {
+    try {
+      await this.restoreInterruptedTribulation(usr_qq, checkpoint.attemptId);
+    } catch (recoveryError) {
+      throw new AggregateError(
+        [error, recoveryError],
+        `破王成帝异常且检查点恢复失败：${usr_qq}`,
+      );
+    }
+    console.error(`破王成帝异常，已恢复玩家 ${usr_qq} 的开劫前存档：`, error);
+    await e.reply('【帝劫中断已恢复】本次破王成帝流程异常，修为、血气、装备与纳戒已恢复到开劫前。');
+    return false;
+  }
 }
 // 解除护法双向绑定
 async clearProtectorRelation(player) {
@@ -4725,7 +4819,14 @@ enterTribulationState(player, equipment) {
  * @param {string} usr_qq
  * @param {Object} equipment
  */
-async exitTribulationState(player, snapshot, usr_qq, equipment) {
+async exitTribulationState(player, snapshot, usr_qq, equipment, options = {}) {
+  const deferFinalReply = options?.deferFinalReply === true;
+  const replyWithAmbushOutcome = async ambush => {
+    if (deferFinalReply || !ambush?.finalMessage) return;
+    const context = this.activeTribulationContexts.get(String(usr_qq));
+    if (context?.e) await context.e.reply(ambush.finalMessage);
+  };
+
   // 判断是否渡劫成功（mijinglevel_id 提升了 = 成功）
   const success = player.mijinglevel_id > snapshot.mijinglevel_id
     || player.xiangulevel_id > snapshot.xiangulevel_id
@@ -4737,8 +4838,9 @@ async exitTribulationState(player, snapshot, usr_qq, equipment) {
   // 清除本次玄黄护道；成功渡劫时按重算后的血量上限补满。
   const refreshed = await Read_player(usr_qq);
   delete refreshed._玄黄护道渡劫;
+  let ambush = { triggered: false, defeated: false };
   if (success) {
-    const ambush = await this.resolveTianjiaoTribulationAmbush(refreshed, snapshot, usr_qq);
+    ambush = await this.resolveTianjiaoTribulationAmbush(refreshed, snapshot, usr_qq);
     if (ambush.defeated) {
       await Write_player(usr_qq, refreshed);
       await Write_equipment(usr_qq, equipment);
@@ -4748,11 +4850,24 @@ async exitTribulationState(player, snapshot, usr_qq, equipment) {
       if (refreshed.护法玩家) rolledBack.护法玩家 = refreshed.护法玩家;
       else delete rolledBack.护法玩家;
       await Write_player(usr_qq, rolledBack);
-      return;
+      await replyWithAmbushOutcome(ambush);
+      return {
+        success: false,
+        result: 'failure',
+        reason: 'ambushed',
+        ambush,
+      };
     }
     refreshed.当前血量 = refreshed.血量上限;
   }
   await Write_player(usr_qq, refreshed);
+  await replyWithAmbushOutcome(ambush);
+  return {
+    success,
+    result: success ? 'success' : 'failure',
+    reason: success ? null : 'tribulation_failed',
+    ambush,
+  };
 }
 
 async resolveTianjiaoTribulationAmbush(player, snapshot, usr_qq) {
@@ -4812,8 +4927,13 @@ async resolveTianjiaoTribulationAmbush(player, snapshot, usr_qq) {
     }
   }
   if (battle.winner === 'A') {
-    await context.e.reply(`【护劫成功】你${guard ? `与${guard.名号}` : ''}击退${retaliation.name}，终于稳住新境界。`);
-    return { triggered: true, defeated: false, chance, retaliation };
+    return {
+      triggered: true,
+      defeated: false,
+      chance,
+      retaliation,
+      finalMessage: `【护劫成功】你${guard ? `与${guard.名号}` : ''}击退${retaliation.name}，终于稳住新境界。`,
+    };
   }
 
   player.mijinglevel_id = snapshot.mijinglevel_id;
@@ -4830,12 +4950,17 @@ async resolveTianjiaoTribulationAmbush(player, snapshot, usr_qq) {
   player.道果瑕疵 = Math.max(0, Number(player.道果瑕疵) || 0) + 1;
   player.当前血量 = 1;
   player.道伤 = Math.max(0, Math.floor(Number(player.道伤) || 0)) + 1;
-  await context.e.reply([
-    '【截道成功·功亏一篑】',
-    `${retaliation.name}在天劫最后关头将你打落劫云，本次境界突破被逆转。`,
-    '当前血量降至1，道伤+1；下次可前往偏僻星系，并提前请人护法。',
-  ].join('\n'));
-  return { triggered: true, defeated: true, chance, retaliation };
+  return {
+    triggered: true,
+    defeated: true,
+    chance,
+    retaliation,
+    finalMessage: [
+      '【截道成功·功亏一篑】',
+      `${retaliation.name}在天劫最后关头将你打落劫云，本次境界突破被逆转。`,
+      '当前血量降至1，道伤+1；下次可前往偏僻星系，并提前请人护法。',
+    ].join('\n'),
+  };
 }
 
 // ==== 理论最大攻击计算 ====

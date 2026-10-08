@@ -6,6 +6,9 @@ let currentState = null;
 let busy = false;
 let toastTimer = null;
 let refreshTimer = null;
+let refreshing = false;
+let refreshFailures = 0;
+let pollingStopped = false;
 let terminal = false;
 let chatTimer = null;
 let activeView = 'overview';
@@ -128,11 +131,16 @@ function setConnection(status, text) {
 async function api(path, options = {}) {
   const response = await fetch(path, {
     credentials: 'same-origin',
+    signal: AbortSignal.timeout(25000),
     ...options,
     headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `请求失败（${response.status}）`);
+  if (!response.ok) {
+    const error = new Error(payload.error || `请求失败（${response.status}）`);
+    error.status = response.status;
+    throw error;
+  }
   return payload;
 }
 
@@ -600,13 +608,33 @@ async function submitAction(action, value) {
 }
 
 async function refresh() {
-  if (busy || terminal) return;
+  if (terminal || pollingStopped || refreshing) return;
+  if (refreshTimer) clearTimeout(refreshTimer);
+  if (busy) {
+    refreshTimer = setTimeout(refresh, 2500);
+    return;
+  }
+  refreshing = true;
   try {
     const payload = await api('/api/endless/state');
+    refreshFailures = 0;
     render(payload.state);
   } catch (error) {
-    setConnection('error', '连接中断');
-    showGate('无法进入无尽劫境', error.message, true);
+    if ([401, 410].includes(error.status)) {
+      pollingStopped = true;
+      setConnection('error', '入口已失效');
+      showGate('请重新领取无尽入口', error.message, false);
+    } else {
+      refreshFailures++;
+      setConnection('error', '连接恢复中');
+      if (!currentState) showGate('正在恢复劫境连接', '中转响应暂时变慢，正在自动重试。', true);
+    }
+  } finally {
+    refreshing = false;
+    if (!terminal && !pollingStopped) {
+      const delay = Math.min(15000, 2500 * (2 ** Math.min(refreshFailures, 3)));
+      refreshTimer = setTimeout(refresh, delay);
+    }
   }
 }
 
@@ -623,7 +651,6 @@ async function boot() {
       history.replaceState(null, '', '/endless');
     }
     await refresh();
-    refreshTimer = setInterval(refresh, 2500);
   } catch (error) {
     setConnection('error', '入口失效');
     showGate('入口已经消散', error.message, true);

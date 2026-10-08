@@ -765,8 +765,8 @@ test('诸天投影使用明确境界ID并在帮助中列出完整主流程', asy
   assert.doesNotMatch(projection, /至少需要筑基期/);
   assert.ok((projection.match(/hasProjectionRealm/g) || []).length >= 4);
   const helpData = YAML.parse(help);
-  assert.deepEqual(helpData.slice(0, 5).map(group => group.group), [
-    '诸天镜总览', '诸天化身', '友枝町与木之本樱', '见泷原与鹿目圆', '骑士世界与帝骑',
+  assert.deepEqual(helpData.slice(0, 6).map(group => group.group), [
+    '世界聊天 · 跨服消息', '诸天镜总览', '诸天化身', '友枝町与木之本樱', '见泷原与鹿目圆', '骑士世界与帝骑',
   ]);
   for (const command of ['#诸天镜', '#淬炼诸天镜', '#诸天世界', '#投影诸天', '#诸天化身', '#友枝町', '#见泷原', '#骑士世界']) {
     assert.match(help, new RegExp(command));
