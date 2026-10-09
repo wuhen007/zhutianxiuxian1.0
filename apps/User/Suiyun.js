@@ -395,7 +395,7 @@ export class Suiyun extends plugin {
         await redis.del(key);
         return { message: '这份灾厄本源此前已经炼化。' };
       }
-      const refined = refineSuiyun(player, { targetId: `calamity:${pending.entityId}`, kind: '灾厄', sourceLifeEssence: pending.lifeSource });
+      const refined = refineSuiyun(player, { targetId: `calamity:${pending.entityId}`, kind: '灾厄', sourceLifeEssence: pending.lifeSource, weight: pending.weight });
       if (!refined.ok) return { message: refined.reason };
       player._foreignCalamityRefines ||= {};
       player._foreignCalamityRefines[pending.entityId] = Date.now();
@@ -409,7 +409,9 @@ export class Suiyun extends plugin {
 
   refinementMessage(result, player) {
     const base = result.message || `月华值+${result.gain}，当前${player.月华值}；生命本源+${result.lifeSourceGain || 0}，当前${player.生命本源}。`;
-    return `${base}\n云月之莲累计炼化月华：${getSuiyunLotusBonus(player).moonlight}点，成长随法宝装备生效。`;
+    const gains = result.resourceGains;
+    const cultivation = gains ? `\n修为+${gains.cultivation}｜血气+${gains.blood}｜元神+${gains.soul}｜仙道潜力+${gains.potential}；魔道值不变。` : '';
+    return `${base}${cultivation}\n云月之莲累计炼化月华：${getSuiyunLotusBonus(player).moonlight}点，成长随法宝装备生效。`;
   }
 
   async refinePlayer(e, qq, targetQQ) {

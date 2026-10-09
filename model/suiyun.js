@@ -1,5 +1,6 @@
 import { getRealmAuthorityLevel } from './realmAuthority.js';
 import { getActiveZhutianAvatarName } from './zhutianMirror.js';
+import { calculateCalamityLifeSourceGain, getCalamityRefinementResourceGains } from './tianmoHuasheng.js';
 
 export const SUIYUN_REMNANT = '岁云的残念';
 export const SUIYUN_TECHNIQUE = '月华炼天功';
@@ -27,6 +28,7 @@ export const SUIYUN_TRIALS = Object.freeze({
 
 const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const positive = value => Math.max(0, finite(value));
+const roundOrigin = value => Math.round(value * 1000) / 1000;
 const fail = reason => ({ ok: false, reason });
 const randomInteger = (min, max, random) => min + Math.floor(Math.min(1 - Number.EPSILON, Math.max(0, finite(random()))) * (max - min + 1));
 
@@ -185,7 +187,7 @@ export function cultivateSuiyun(player, { now = Date.now(), random = Math.random
   return { ok: true, gain, moonlight: gain, retryAt: now + SUIYUN_DAY_MS };
 }
 
-export function refineSuiyun(player, { targetId, kind = '天骄', sourceLifeEssence = 100, now = Date.now(), random = Math.random } = {}) {
+export function refineSuiyun(player, { targetId, kind = '天骄', sourceLifeEssence = 100, weight, now = Date.now(), random = Math.random } = {}) {
   if (!getSuiyunStage(player)) return fail('月华之体觉醒后才可炼化。');
   if (!player.学习的功法?.includes(SUIYUN_TECHNIQUE)) return fail('请先习得《月华炼天功》。');
   if (!['玩家', '天骄', '灾厄'].includes(kind) || !String(targetId || '').trim()) return fail('请选择已击败的玩家、天骄或灾厄。');
@@ -194,15 +196,29 @@ export function refineSuiyun(player, { targetId, kind = '天骄', sourceLifeEsse
   if (state.炼化记录.includes(record)) return fail('这一份本源已经炼化。');
   const spec = SUIYUN_STAGES[getSuiyunStage(player) - 1];
   const gain = randomInteger(100, 300, random);
-  // 每个真实目标吸纳其生命本源的10%，至少1点；本源增量仅来自天骄和灾厄。
-  const lifeGain = kind === '玩家' ? 0 : Math.max(0, Math.min(spec.cap - getSuiyunLifeMaximum(player), Math.max(1, Math.floor(positive(sourceLifeEssence) * .1))));
-  state.炼化本源 += lifeGain;
+  // 灾厄沿用天魔本源抽取与权重公式，但仍保留岁云五阶自己的本源上限。
+  const rawLifeGain = kind === '灾厄'
+    ? calculateCalamityLifeSourceGain(sourceLifeEssence, weight)
+    : kind === '玩家' ? 0 : Math.max(1, Math.floor(positive(sourceLifeEssence) * .1));
+  const lifeGain = roundOrigin(Math.max(0, Math.min(spec.cap - getSuiyunLifeMaximum(player), rawLifeGain)));
+  const resourceGains = kind === '灾厄' ? getCalamityRefinementResourceGains(player) : null;
+  state.炼化本源 = roundOrigin(state.炼化本源 + lifeGain);
   state.炼化记录.push(record);
   state.上次炼化 = now;
   state.累计炼化月华 = Math.min(Number.MAX_SAFE_INTEGER, state.累计炼化月华 + gain);
   player.月华值 += gain;
-  player.生命本源 = Math.min(getSuiyunLifeMaximum(player), positive(player.生命本源) + lifeGain);
-  return { ok: true, gain, moonlight: gain, lifeGain, lifeSourceGain: lifeGain, lifeMaximum: getSuiyunLifeMaximum(player) };
+  const previousLife = positive(player.生命本源);
+  player.生命本源 = roundOrigin(Math.min(getSuiyunLifeMaximum(player), previousLife + lifeGain));
+  const actualLifeGain = roundOrigin(Math.max(0, player.生命本源 - previousLife));
+  if (resourceGains) {
+    player.修为 = positive(player.修为) + resourceGains.cultivation;
+    player.血气 = positive(player.血气) + resourceGains.blood;
+    player.元神 = positive(player.元神) + resourceGains.soul;
+    resourceGains.potential = actualLifeGain;
+    // 与本源实增精确等量，不叠命格/物品倍率，不触碰元神上限或魔道值。
+    player.仙道潜力 = roundOrigin(positive(player.仙道潜力) + actualLifeGain);
+  }
+  return { ok: true, gain, moonlight: gain, lifeGain: actualLifeGain, lifeSourceGain: actualLifeGain, lifeMaximum: getSuiyunLifeMaximum(player), resourceGains };
 }
 
 export function getSuiyunPower(player) {

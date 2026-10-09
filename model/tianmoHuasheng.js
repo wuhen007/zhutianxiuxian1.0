@@ -96,6 +96,23 @@ function calculateDrain(value, rate, reserve) {
   return Math.min(available, Math.max(1, Math.floor(available * rate)));
 }
 
+export function getCalamityRefinementResourceGains(player) {
+  return {
+    cultivation: Math.max(1, Math.floor((Number(player?.修为) || 0) * 0.02)),
+    blood: Math.max(1, Math.floor((Number(player?.血气) || 0) * 0.02)),
+    soul: Math.max(1, Math.floor((Number(player?.元神) || 0) * 0.01)),
+  };
+}
+
+export function calculateCalamityLifeSourceGain(sourceLifeEssence, weight = CALAMITY_REFINEMENT_WEIGHT) {
+  const source = Math.max(1, Number(sourceLifeEssence) || 100);
+  const effectiveWeight = Math.max(0, Number(weight) || 0);
+  return roundGrowth(
+    calculateDrain(source, TRANSFER_RULES.生命本源.rate, TRANSFER_RULES.生命本源.reserve)
+      * effectiveWeight
+  );
+}
+
 export function isTianmoHuashengPhysique(player) {
   return [JIDAO_TIANMO_PHYSIQUE, WANHUA_TIANMO_PHYSIQUE].includes(
     player?.灵根?.name
@@ -306,11 +323,7 @@ export function applyTianmoCalamityRefinement(executor, options = {}) {
   const now = Number(options.now) || Date.now();
   const refinementWeight = Math.max(0, Number(options.weight) || CALAMITY_REFINEMENT_WEIGHT);
   const state = ensureTianmoHuashengState(executor);
-  const sourceLifeEssence = Math.max(1, Number(options.sourceLifeEssence) || 100);
-  const rawLifeSourceGain = roundGrowth(
-    calculateDrain(sourceLifeEssence, TRANSFER_RULES.生命本源.rate, TRANSFER_RULES.生命本源.reserve)
-      * refinementWeight
-  );
+  const rawLifeSourceGain = calculateCalamityLifeSourceGain(options.sourceLifeEssence, refinementWeight);
   // 生命本源受「不超过自身灵根本源 2 倍」封顶，超出部分散逸
   const lifeSourceGain = roundGrowth(getLifeSourceCredit(executor, rawLifeSourceGain));
   executor.生命本源 = roundGrowth(Math.max(0, Number(executor.生命本源) || 0) + lifeSourceGain);

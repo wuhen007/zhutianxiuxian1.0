@@ -41,7 +41,7 @@ import {
   withForeignCalamityLock,
   withForeignOverlordLock,
 } from '../../model/foreignCalamity.js';
-import { REFINEMENT_ATTRIBUTE_GAIN, applyTianmoCalamityRefinement } from '../../model/tianmoHuasheng.js';
+import { REFINEMENT_ATTRIBUTE_GAIN, applyTianmoCalamityRefinement, getCalamityRefinementResourceGains } from '../../model/tianmoHuasheng.js';
 import { addRelicToBag, normalizeRelicState } from '../../model/relicSystem.js';
 import { isEvilCultivator } from '../../model/tianjiaoHostility.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
@@ -571,9 +571,7 @@ export class ForeignCalamity extends plugin {
           await redis.del(key);
           return { message: `这尊${kind === 'overlord' ? '魔主' : '灾厄'}的本源此前已经炼化。` };
         }
-        const cultivation = Math.max(1, Math.floor((Number(player.修为) || 0) * 0.02));
-        const blood = Math.max(1, Math.floor((Number(player.血气) || 0) * 0.02));
-        const soul = Math.max(1, Math.floor((Number(player.元神) || 0) * 0.01));
+        const { cultivation, blood, soul } = getCalamityRefinementResourceGains(player);
         player.修为 = (Number(player.修为) || 0) + cultivation;
         player.血气 = (Number(player.血气) || 0) + blood;
         player.元神 = (Number(player.元神) || 0) + soul;
