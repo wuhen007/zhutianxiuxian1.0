@@ -1,5 +1,7 @@
 import { getSuiyunEffects } from '../../model/suiyun.js';
 import { isItemPermanentlyNonTradeable } from '../../model/equipmentTransfer.js';
+import { applyItemDiscard, DISCARD_USAGE, formatDiscardChoice, planItemDiscard } from '../../model/itemDiscard.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { plugin, verc, data,config} from '../../api/api.js';
 import fs from 'fs';
 import {
@@ -91,6 +93,10 @@ export class UserSellAll extends plugin {
       event: 'message',
       priority: 1000,
       rule: [
+        {
+          reg: '^#?(?:丢弃.*|取消丢弃)$',
+          fnc: 'discard_item',
+        },
         {
           reg: '^#一键出售(.*)$',
           fnc: 'Sell_all_comodities',
@@ -1223,6 +1229,103 @@ async all_shenyao(e) {
     e.reply(`回收成功!  获得${lingshi}灵石 `);
     return false;
   }
+  async discard_item(e) {
+    if (!verc({ e })) return false;
+    const usr_qq = await channel(String(e.user_id).replace('qg_', ''));
+    if (!await existplayer(usr_qq)) return false;
+    const command = e.msg.trim();
+    let message;
+    try {
+      message = await withPlayerMutationLock(usr_qq, async () => {
+        this.finish('discard_select');
+        if (/^#?取消丢弃$/.test(command)) return '已取消丢弃，物品保留。';
+        const input = command.replace(/^#?丢弃/, '').trim();
+        if (!input || input === '帮助') return DISCARD_USAGE;
+        const najie = await Read_najie(usr_qq);
+        const plan = planItemDiscard(najie, input);
+        if (plan.needsSelection) {
+          const context = this.setContext('discard_select', false, 60, '丢弃选择已超时，物品保留。');
+          context.discardPending = { ...plan, playerId: String(usr_qq), stage: 'choice' };
+          return [
+            `您拥有以下【${plan.name}】：`,
+            ...plan.choices.map((choice, index) => formatDiscardChoice(choice, index + 1)),
+            `请在60秒内回复 序号*数量，例如 1*2；也可先回复序号，再输入数量（预设${plan.quantity}件）。`,
+            '丢弃永久生效，无灵石返还；回复 取消 或 #取消丢弃 保留物品。',
+          ].join('\n');
+        }
+        const result = applyItemDiscard(najie, plan.choices[0], plan.quantity);
+        if (!await Write_najie(usr_qq, najie)) throw new Error('纳戒写入受限，本次丢弃未生效。');
+        return `已丢弃【${result.name}】×${result.quantity}。本次丢弃无灵石返还。`;
+      });
+    } catch (error) {
+      message = `丢弃未完成：${error.message}`;
+    }
+    await e.reply(message);
+    return true;
+  }
+
+  async discard_select(context) {
+    // 宿主把旧事件传给上下文回调；本条回复来自新插件实例的 this.e。
+    const e = this.e;
+    const input = e.msg.trim();
+    if (/^#?(?:丢弃|取消丢弃)/.test(input)) return this.discard_item(e);
+    if (input.startsWith('#')) {
+      // 让其他命令接管会话，避免其数字确认被旧的丢弃选单消费。
+      if (this.getContext('discard_select') === context) this.finish('discard_select');
+      return 'continue';
+    }
+    if (String(e.group_id || '') !== String(context.group_id || '') || Boolean(e.isGroup) !== Boolean(context.isGroup)) {
+      return 'continue';
+    }
+    if (input !== '取消' && input !== '默认' && !/^[\d+\-.*\s]+$/.test(input)) return 'continue';
+    if (!verc({ e })) return false;
+    const usr_qq = await channel(String(e.user_id).replace('qg_', ''));
+    let message;
+    try {
+      message = await withPlayerMutationLock(usr_qq, async () => {
+        if (this.getContext('discard_select') !== context || !context.discardPending) {
+          return '丢弃选择已结束或超时，请重新发送 #丢弃物品名。';
+        }
+        const pending = context.discardPending;
+        if (pending.playerId !== String(usr_qq)) throw new Error('当前角色已变化，请重新发起丢弃。');
+        if (input === '取消') {
+          this.finish('discard_select');
+          return '已取消丢弃，物品保留。';
+        }
+        const combined = input.match(/^(\d+)\s*\*\s*(\d+)$/);
+        let index = pending.index;
+        let quantity;
+        if (combined || pending.stage === 'choice') {
+          if (!combined && !/^\d+$/.test(input)) return '请回复物品序号，或 序号*数量，例如 1*2。';
+          index = Number(combined ? combined[1] : input) - 1;
+          if (!Number.isSafeInteger(index) || index < 0 || index >= pending.choices.length) {
+            return `请从1到${pending.choices.length}中选择物品序号。`;
+          }
+          if (!combined) {
+            this.finish('discard_select');
+            const next = this.setContext('discard_select', false, 60, '丢弃选择已超时，物品保留。');
+            next.discardPending = { ...pending, stage: 'quantity', index };
+            return `已选择：${formatDiscardChoice(pending.choices[index], index + 1)}\n请输入丢弃数量，回复 默认 则丢弃${pending.quantity}件；回复 取消 保留物品。`;
+          }
+          quantity = Number(combined[2]);
+        } else {
+          if (input !== '默认' && !/^\d+$/.test(input)) return '请输入正整数数量，或回复 默认 / 取消。';
+          quantity = input === '默认' ? pending.quantity : Number(input);
+        }
+        const najie = await Read_najie(usr_qq);
+        const result = applyItemDiscard(najie, pending.choices[index], quantity);
+        this.finish('discard_select');
+        if (!await Write_najie(usr_qq, najie)) throw new Error('纳戒写入受限，本次丢弃未生效。');
+        return `已丢弃【${result.name}】×${result.quantity}。本次丢弃无灵石返还。`;
+      });
+    } catch (error) {
+      if (this.getContext('discard_select') === context) this.finish('discard_select');
+      message = `丢弃未完成：${error.message}`;
+    }
+    await e.reply(message);
+    return true;
+  }
+
   async locked(e) {
     if (!verc({ e })) return false;
     let usr_qq = e.user_id.toString().replace('qg_','');

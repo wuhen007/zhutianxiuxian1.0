@@ -24,6 +24,12 @@
     - icon: help-icon_1
       title: '#我的纳戒'
       desc: '物品查询'
+    - icon: help-icon_1
+      title: '#丢弃物品名*数量'
+      desc: '数量默认1件；支持纳戒任意物品，包含锁定、绑定及帝兵；有品级时列出库存供选择'
+    - icon: help-icon_1
+      title: '丢弃选择：序号*数量 / #取消丢弃'
+      desc: '60秒内回复序号*数量，或先选序号再输入数量；永久丢弃无返还，穿戴装备先换回纳戒'
     - icon: help-icon_7
       title: '#我的装备'
       desc: '查看身上的装备'               
