@@ -10,7 +10,7 @@ import {
 } from './xiuxian.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 import { FileRollbackTransaction } from '../apps/SecretPlace/rebirthTransaction.js';
-import { computeCorrectLucky, computePetStoredBonus } from './petLuckyCalc.js';
+import { rebuildPlayerLucky, computePetStoredBonus } from './petLuckyCalc.js';
 
 /**
  * 同步全体玩家的正确幸运值（#同步幸运 后端逻辑）
@@ -18,7 +18,7 @@ import { computeCorrectLucky, computePetStoredBonus } from './petLuckyCalc.js';
  * 对每个玩家：
  *  1. 规范化 2931-2935 幸运仙宠（初始加成/每级增加 固定 0.002，与一键同步一致）
  *  2. 出战宠 + 纳戒宠的 加成 统一重算为「每级增加 × 等级」
- *  3. player.幸运 重算为「福源丹药力 + 出战宠加成 + 炼妖继承加成」
+ *  3. player.幸运 重算为「福源丹药力 + 出战宠加成 + 炼妖继承加成 + 灵根幸运」
  *  4. 仅当数值实际变化时才写盘；全程加锁 + 事务回滚
  *
  * @returns {Promise<{
@@ -45,6 +45,8 @@ export async function syncAllPlayerLucky() {
         transaction.capture(path.join(__PATH.player_path, `${usr_qq}.json`));
         transaction.capture(path.join(__PATH.najie_path, `${usr_qq}.json`));
         try {
+          // Read_player 会迁移旧档灵根幸运；用原落盘值比较，确保迁移真实持久化。
+          const storedPlayer = JSON.parse(fs.readFileSync(path.join(__PATH.player_path, `${usr_qq}.json`), 'utf8'));
           const player = await Read_player(usr_qq);
           if (!player || !player.id) return;
           const najie = await Read_najie(usr_qq);
@@ -81,12 +83,12 @@ export async function syncAllPlayerLucky() {
           }
 
           // —— player.幸运 重算 ——
-          const oldLucky = Number(player.幸运) || 0;
-          const correctLucky = computeCorrectLucky(player);
+          const oldLucky = Number(storedPlayer.幸运) || 0;
+          const correctLucky = rebuildPlayerLucky(player);
           const luckyChanged = Math.abs(oldLucky - correctLucky) > 1e-9;
-          if (luckyChanged) player.幸运 = correctLucky;
+          const rootChanged = (Number(storedPlayer._岁云幸运加成) || 0) !== (Number(player._岁云幸运加成) || 0);
 
-          if (petChanged || luckyChanged) {
+          if (petChanged || luckyChanged || rootChanged) {
             await Write_najie(usr_qq, najie);
             await Write_player(usr_qq, player);
             transaction.commit();

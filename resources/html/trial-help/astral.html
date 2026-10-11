@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1000">
+  <title>试炼宇宙 · {{theme.name}}</title>
+  <link rel="stylesheet" href="{{pluResPath}}html/trial-help/astral.css">
+</head>
+<body>
+  <main id="container" data-theme="{{theme.id}}">
+    <header class="masthead">
+      <span class="publication">诸天修仙 · 试炼者航行手册</span>
+      <span class="edition">{{theme.name}}</span>
+    </header>
+
+    <section class="hero" aria-labelledby="page-title">
+      <div class="hero-copy">
+        <p class="overline">万界皆为考场，生者方有归途</p>
+        <h1 id="page-title">试炼宇宙<span>诸界星图</span></h1>
+        <p class="intro">{{intro}}</p>
+      </div>
+      <div class="astrolabe" aria-hidden="true">
+        <div class="axis axis-horizontal"></div>
+        <div class="axis axis-vertical"></div>
+        <div class="degree-ring"></div>
+        <div class="orbit orbit-outer"></div>
+        <div class="orbit orbit-middle"></div>
+        <div class="orbit orbit-slant"></div>
+        <div class="orbit orbit-reverse"></div>
+        <div class="celestial-core"><span>主神</span><span>空间</span></div>
+        <i class="celestial-node node-one"></i>
+        <i class="celestial-node node-two"></i>
+        <i class="celestial-node node-three"></i>
+        <span class="orbit-caption caption-top">诸界之门</span>
+        <span class="orbit-caption caption-bottom">归途在此</span>
+      </div>
+    </section>
+
+    <section class="departure" aria-label="启程指令">
+      <div class="departure-label">第一道门</div>
+      <div class="departure-content">
+        <code>{{quickstart.command}}</code>
+        <p>{{quickstart.text}}</p>
+      </div>
+    </section>
+
+    <section class="world-chart" aria-labelledby="world-title">
+      <div class="section-heading">
+        <p class="overline">星图卷</p>
+        <h2 id="world-title">六界，六种未知</h2>
+      </div>
+      <div class="world-list">
+        {{each worlds world}}
+        <article class="world-entry">
+          <div class="world-heading"><span class="world-type">{{world.type}}</span><h3>{{world.name}}</h3></div>
+          <p>{{world.intro}}</p>
+        </article>
+        {{/each}}
+      </div>
+    </section>
+
+    <section class="navigation" aria-labelledby="navigation-title">
+      <div class="section-heading">
+        <p class="overline">航行卷</p>
+        <h2 id="navigation-title">每一步，都由你选择</h2>
+      </div>
+      <div class="command-groups">
+        {{each groups group}}
+        <section class="command-group" aria-labelledby="group-{{group.id}}">
+          <div class="group-heading"><h3 id="group-{{group.id}}">{{group.title}}</h3><p>{{group.kicker}}</p></div>
+          <dl>
+            {{each group.items item}}
+            <div class="command-entry"><dt><code>{{item.command}}</code></dt><dd>{{item.desc}}</dd></div>
+            {{/each}}
+          </dl>
+        </section>
+        {{/each}}
+      </div>
+    </section>
+
+    <section class="covenant" aria-labelledby="covenant-title">
+      <div class="section-heading">
+        <p class="overline">生死卷</p>
+        <h2 id="covenant-title">穿过星门之前</h2>
+      </div>
+      <dl class="rule-list">
+        {{each rules rule}}
+        <div class="rule-entry"><dt>{{rule.label}}</dt><dd>{{rule.text}}</dd></div>
+        {{/each}}
+      </dl>
+    </section>
+
+    <section class="ascension" aria-labelledby="ascension-title">
+      <div class="ascension-seal" aria-hidden="true"><span>神</span><i></i></div>
+      <div class="ascension-copy">
+        <p class="overline">星图尽处</p>
+        <h2 id="ascension-title">{{ascension.title}}</h2>
+        <p>{{ascension.requirements}}</p>
+        <p class="ascension-note">{{ascension.note}}</p>
+        <code>{{ascension.command}}</code>
+      </div>
+    </section>
+
+    <footer class="colophon"><span>诸天修仙 · {{theme.name}}</span><p>{{footer}}</p></footer>
+  </main>
+</body>
+</html>

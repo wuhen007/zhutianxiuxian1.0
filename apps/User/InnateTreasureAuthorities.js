@@ -587,7 +587,7 @@ export class InnateTreasureAuthorities extends plugin {
       加成: Number((secondaryEffectiveBonus * 0.5).toFixed(6)),
     };
     // 若主宠即当前出战宠，立即把继承的幸运反映到 player.幸运，避免需等下次数据同步才生效
-    if (main.name === ctx.player.仙宠?.name) {
+    if (main.炼妖继承能力.type === '幸运' && main.name === ctx.player.仙宠?.name) {
       ctx.player.幸运 += Number(main.炼妖继承能力.加成) || 0;
     }
     removeInventoryItem(najie, '仙宠', secondary, 1);

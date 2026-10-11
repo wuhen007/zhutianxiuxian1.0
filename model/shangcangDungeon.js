@@ -4,6 +4,7 @@ import { getDungeonTimedActionMultiplier } from './innateTreasure.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from './mingge.js';
 import { addCappedEraAccumulation } from './selfDaoDeduction.js';
 import { PLACE_LOCATION_MAP } from './weimianTravel.js';
+import { hasSuiyunFreeDungeonEntry } from './suiyun.js';
 
 const SHANGCANG_REWARD_PLACES = createRequire(import.meta.url)(
   '../resources/data/item/副本/上苍之上列表.json',
@@ -27,16 +28,19 @@ export function isShangcangAction(action) {
 }
 
 export function getShangcangCostShortage(player) {
+  if (hasSuiyunFreeDungeonEntry(player)) return null;
   return Object.entries(SHANGCANG_COST).find(([field, cost]) => (Number(player?.[field]) || 0) < cost) || null;
 }
 
 export function deductShangcangCost(player) {
+  if (hasSuiyunFreeDungeonEntry(player)) return true;
   if (getShangcangCostShortage(player)) return false;
   for (const [field, cost] of Object.entries(SHANGCANG_COST)) player[field] = Number(player[field]) - cost;
   return true;
 }
 
-export function formatShangcangCost() {
+export function formatShangcangCost(player) {
+  if (hasSuiyunFreeDungeonEntry(player)) return '岁云灵根免耗通行（资源消耗为0）';
   return '100亿灵石、20亿源石、3亿修为、3亿血气、1.2亿元神、2000万寿元';
 }
 

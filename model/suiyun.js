@@ -11,6 +11,9 @@ export const SUIYUN_DAY_MS = 24 * SUIYUN_HOUR_MS;
 export const SUIYUN_EQUIPMENT = Object.freeze(['岁云袍', '岁云剑', '云月之莲']);
 export const SUIYUN_LOTUS_NAME = '云月之莲';
 export const SUIYUN_LOTUS_STAT_PER_MOONLIGHT = 200_000;
+export const SUIYUN_PET_NAME = '霜月剑灵';
+export const SUIYUN_PET_STAGE = 3;
+export const SUIYUN_PALACE_POTENTIAL_PER_HOUR = 50;
 
 export const SUIYUN_STAGES = Object.freeze([
   { name: '月华之体', realm: 0, realmName: '无', life: 200, cap: 600, enlightenmentBonus: .2, tribulationReduction: .2, lootMultiplier: 1, eff: 20, orb: 1.5, stats: 2 },
@@ -36,6 +39,18 @@ export function getSuiyunStage(player) {
   return SUIYUN_STAGES.findIndex(stage => stage.name === player?.灵根?.name) + 1;
 }
 
+export function hasSuiyunFreeDungeonEntry(player) {
+  return getSuiyunStage(player) >= SUIYUN_PET_STAGE;
+}
+
+export function getSuiyunDungeonEntryPlace(player, place) {
+  if (!place) return place;
+  return {
+    ...place,
+    ...(hasSuiyunFreeDungeonEntry(player) ? { Price: 0, shouyuan: 0, experience: 0 } : {}),
+  };
+}
+
 export function getSuiyunEffects(player) {
   const stage = getSuiyunStage(player);
   return {
@@ -44,6 +59,8 @@ export function getSuiyunEffects(player) {
     lootMultiplier: SUIYUN_STAGES[stage - 1]?.lootMultiplier || 1,
     noDemonicValue: stage > 0,
     madoka: stage === 5,
+    luckBonus: stage > 0 ? 1 : 0,
+    freeDungeonEntry: hasSuiyunFreeDungeonEntry(player),
   };
 }
 
@@ -126,7 +143,7 @@ export function advanceSuiyun(player) {
     player.已领悟法则 = Array.isArray(player.已领悟法则) ? player.已领悟法则 : [];
     if (!player.已领悟法则.includes('岁云法则')) player.已领悟法则.push('岁云法则');
   }
-  return { ok: true, stage: current + 1, name: next.name, grantEquipment: current + 1 === 5 };
+  return { ok: true, stage: current + 1, name: next.name, grantPet: current + 1 === SUIYUN_PET_STAGE, grantEquipment: current + 1 === 5 };
 }
 
 function trialEligibility(player, route, now) {
@@ -253,17 +270,19 @@ export function ascendSuiyunPalace(world, now = Date.now()) {
 }
 
 export function settleSuiyunPalace(player, world, { now = Date.now() } = {}) {
-  if (!getSuiyunStage(player) || !world?.月华天宫) return { hours: 0, power: 0 };
+  if (!getSuiyunStage(player) || !world?.月华天宫) return { hours: 0, power: 0, potentialGain: 0 };
   if (world.月华天宫上次结算时间 == null || !Number.isFinite(Number(world.月华天宫上次结算时间))) {
     world.月华天宫上次结算时间 = now;
-    return { hours: 0, power: 0 };
+    return { hours: 0, power: 0, potentialGain: 0 };
   }
   const last = Number(world.月华天宫上次结算时间);
   const hours = Math.floor(Math.max(0, now - last) / SUIYUN_HOUR_MS);
   const power = hours * .5;
+  const potentialGain = hours * SUIYUN_PALACE_POTENTIAL_PER_HOUR;
   if (hours) {
     player.岁云之力 = Math.round((getSuiyunPower(player) + power) * 1000) / 1000;
+    player.仙道潜力 = positive(player.仙道潜力) + potentialGain;
     world.月华天宫上次结算时间 = last + hours * SUIYUN_HOUR_MS;
   }
-  return { hours, power };
+  return { hours, power, potentialGain };
 }

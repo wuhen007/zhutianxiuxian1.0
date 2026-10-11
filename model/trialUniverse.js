@@ -60,7 +60,7 @@ export function isTrialUniverseActive(player) {
 
 export function getTrialCommandBlock(player, message) {
   if (!isTrialUniverseActive(player)) return '';
-  if (/^#(?:试炼宇宙(?:\s|$)|我的练气$|我$|诸天帮助$|修仙帮助$|帮助$|世界(?:\s|$))/.test(String(message || '').trim())) return '';
+  if (/^#(?:试炼宇宙(?:\s|帮助(?:\s|$)|$)|我的练气$|我$|诸天帮助$|修仙帮助$|帮助$|世界(?:\s|$))/.test(String(message || '').trim())) return '';
   return '你已进入试炼宇宙，使用独立生命、积分与强化。普通修仙和穿梭暂停；发送 #试炼宇宙 状态 或 #试炼宇宙 帮助。';
 }
 

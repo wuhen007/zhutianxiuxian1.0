@@ -1,3 +1,4 @@
+import { hasSuiyunFreeDungeonEntry, getSuiyunDungeonEntryPlace } from '../../model/suiyun.js';
 import { plugin, verc, data } from '../../api/api.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
 import { isDaofaActive } from '../../model/daofa.js';
@@ -278,7 +279,7 @@ export class SecretPlaceplus extends plugin {
 
       const definition = getFashanDungeonDefinition(request.category, player);
       if (!definition) return e.reply('未找到法身可用的副本类型。');
-      const place = definition.list?.find(item => item.name === request.location);
+      const place = getSuiyunDungeonEntryPlace(player, definition.list?.find(item => item.name === request.location));
       if (!place) return e.reply(`未找到${request.category}地点：${request.location}`);
       const expectedPlane = Number(definition.plane);
       const planeCheck = requireActorAtPlane(player, expectedPlane, 'fashan');
@@ -302,6 +303,7 @@ export class SecretPlaceplus extends plugin {
       const count = request.count;
       const rounds = mode === 'explore' ? 1 : 10 * count;
       const entryCount = mode === 'explore' ? 0 : count;
+      const chargedEntryCount = hasSuiyunFreeDungeonEntry(player) ? 0 : entryCount;
       const level = Number(player.level_id) || 1;
       if (request.category === '禁地' && level < 22) return e.reply('练气境界不足，法身暂不能沉迷禁地。');
       if (request.category === '仙境' && level < 42 && Number(player.lunhui) !== 1) return e.reply('轮回未启，法身难入仙境。');
@@ -337,10 +339,10 @@ export class SecretPlaceplus extends plugin {
       if ((Number(player.修为) || 0) < experience) shortages.push(`修为需${experience}`);
       if ((Number(player.血气) || 0) < experience) shortages.push(`血气需${experience}`);
       const keyCount = Number(await exist_najie_thing(userId, '秘境之匙', '道具')) || 0;
-      if (keyCount < entryCount) shortages.push(`秘境之匙需${entryCount}`);
+      if (keyCount < chargedEntryCount) shortages.push(`秘境之匙需${entryCount}`);
       if (request.category === '秘境' && ['小千世界', '中千世界', '大千世界'].includes(request.location)) {
         const workTickets = Number(await exist_najie_thing(userId, '打工券', '道具')) || 0;
-        if (workTickets < entryCount) shortages.push(`打工券需${entryCount}`);
+        if (workTickets < chargedEntryCount) shortages.push(`打工券需${entryCount}`);
       }
       const specialCosts = [];
       if (request.category === '仙境') {
@@ -357,8 +359,8 @@ export class SecretPlaceplus extends plugin {
             return e.reply('万界道祖级法身方可踏入此地。');
           }
           const owned = Number(await exist_najie_thing(userId, itemName, '道具')) || 0;
-          if (owned < amount) shortages.push(`${itemName}需${amount}`);
-          specialCosts.push({ itemName, amount });
+          if (!hasSuiyunFreeDungeonEntry(player) && owned < amount) shortages.push(`${itemName}需${amount}`);
+          if (!hasSuiyunFreeDungeonEntry(player)) specialCosts.push({ itemName, amount });
         }
       }
       if (shortages.length) {
@@ -393,9 +395,9 @@ export class SecretPlaceplus extends plugin {
       };
       applySecretPlaceNotificationContext(action, e, userId);
 
-      if (entryCount > 0) await Add_najie_thing(userId, '秘境之匙', '道具', -entryCount);
+      if (chargedEntryCount > 0) await Add_najie_thing(userId, '秘境之匙', '道具', -chargedEntryCount);
       if (request.category === '秘境' && ['小千世界', '中千世界', '大千世界'].includes(request.location)) {
-        await Add_najie_thing(userId, '打工券', '道具', -entryCount);
+        if (chargedEntryCount > 0) await Add_najie_thing(userId, '打工券', '道具', -chargedEntryCount);
       }
       for (const special of specialCosts) {
         await Add_najie_thing(userId, special.itemName, '道具', -special.amount);
@@ -433,7 +435,7 @@ export class SecretPlaceplus extends plugin {
       return e.reply([
         `【法身${mode === 'explore' ? '探索' : '沉迷'}${request.category}·${request.location}】`,
         `法身已在${planeName || '目标位面'}开始${mode === 'explore' ? '单次探索' : `连续历练${rounds}轮`}。`,
-        `消耗：${shouyuan}寿元、${price}灵石、${experience}修为与血气${entryCount > 0 ? `、${entryCount}个秘境之匙` : ''}`,
+        `消耗：${shouyuan}寿元、${price}灵石、${experience}修为与血气${chargedEntryCount > 0 ? `、${chargedEntryCount}个秘境之匙` : ''}`,
         `预计${totalMinutes}分钟后完成，每轮自动结算。`,
         ...msgs,
       ].join('\n'));
@@ -442,7 +444,7 @@ export class SecretPlaceplus extends plugin {
 
   async startFashanShangcang(e, userId, player, place, count, expectedPlane, mode = 'addiction') {
     const shortage = getShangcangCostShortage(player);
-    if (shortage) return e.reply(`${shortage[0]}不足，法身首轮需要${formatShangcangCost()}`);
+    if (shortage) return e.reply(`${shortage[0]}不足，法身首轮需要${formatShangcangCost(player)}`);
     const timing = calculateShangcangDuration(player, data.minggeList);
     const now = Date.now();
     const taskId = `fashan:${userId}:${now}:上苍之上:${mode}`;
@@ -492,7 +494,7 @@ export class SecretPlaceplus extends plugin {
     }));
     return e.reply([
       `【法身${mode === 'explore' ? '探索' : '沉迷'}上苍之上·${place.name}】共${count}轮`,
-      `法身已降临上苍之上，首轮消耗：${formatShangcangCost()}`,
+      `法身已降临上苍之上，首轮消耗：${formatShangcangCost(player)}`,
       `每轮约${timing.minutes}分钟，预计${Math.ceil(action.total_time)}分钟后完成。`,
       ...timing.messages,
     ].join('\n'));
@@ -515,7 +517,7 @@ export class SecretPlaceplus extends plugin {
     const weizhi = data.shangcang_list.find(item => item.name === location);
     if (!weizhi) return e.reply(`未找到地点：${location}`);
     const shortage = getShangcangCostShortage(player);
-    if (shortage) return e.reply(`${shortage[0]}不足，首轮需要${formatShangcangCost()}`);
+    if (shortage) return e.reply(`${shortage[0]}不足，首轮需要${formatShangcangCost(player)}`);
 
     const timing = calculateShangcangDuration(player, data.minggeList);
     const totalDuration = timing.durationMs * count;
@@ -564,7 +566,7 @@ export class SecretPlaceplus extends plugin {
     }));
     return e.reply([
       `【沉迷上苍之上·${location}】共${count}轮`,
-      `已扣除首轮：${formatShangcangCost()}`,
+      `已扣除首轮：${formatShangcangCost(player)}`,
       `每轮${timing.minutes}分钟，后续将在结算前逐轮扣费；资源不足时自动停止。`,
       ...timing.messages,
     ].join('\n'));
@@ -618,7 +620,7 @@ async Gosecretplace(e) {
     }
     
     // 获取秘境信息
-    const weizhi = data.didian_list.find(item => item.name == didian);
+    let weizhi = data.didian_list.find(item => item.name == didian);
     if (!weizhi) {
         return e.reply(`未找到秘境：${didian}`);
     }
@@ -631,6 +633,8 @@ async Gosecretplace(e) {
     
     // 获取玩家数据
     const player = await Read_player(usr_qq);
+    const entryKeys = hasSuiyunFreeDungeonEntry(player) ? 0 : i;
+    weizhi = getSuiyunDungeonEntryPlace(player, weizhi);
          // 检查是否已在目标地点
     if (player.power_place != PLACE_LOCATION_MAP.凡间) {
         return e.reply(`你不在凡间`);
@@ -671,8 +675,8 @@ async Gosecretplace(e) {
     
     // 检查秘境之匙
     const keyCount = await exist_najie_thing(usr_qq, '秘境之匙', '道具');
-    if (!keyCount || keyCount < i) {
-        return e.reply(`你需要${i}个秘境之匙才能沉迷此秘境`);
+    if (entryKeys > 0 && (!keyCount || keyCount < entryKeys)) {
+        return e.reply(`你需要${entryKeys}个秘境之匙才能沉迷此秘境`);
     }
     
     // ==== 真身沉迷逻辑 ====
@@ -683,20 +687,20 @@ async Gosecretplace(e) {
     // 特殊秘境处理
     if (didian == "小千世界" || didian == "中千世界" || didian == "大千世界") {
         const dagongCount = await exist_najie_thing(usr_qq, "打工券", "道具");
-        if (!dagongCount || dagongCount < i) {
+        if (entryKeys > 0 && (!dagongCount || dagongCount < entryKeys)) {
             return e.reply(`没有足够打工券的话打工本不支持沉迷哦`);
         }
-        await Add_najie_thing(usr_qq, "打工券", "道具", -i);
-        allMsgs.push(`${player.名号}消耗了${i}张打工券，开始前往苦逼打工`);
+        if (entryKeys > 0) await Add_najie_thing(usr_qq, "打工券", '道具', -entryKeys);
+        allMsgs.push(`${player.名号}消耗了${entryKeys}张打工券，开始前往苦逼打工`);
     }
     
     // 扣除资源
-    await Add_najie_thing(usr_qq, '秘境之匙', '道具', -i);
+    if (entryKeys > 0) await Add_najie_thing(usr_qq, '秘境之匙', '道具', -entryKeys);
     await Add_寿元(usr_qq, -baseShouyuan);
     await Add_灵石(usr_qq, -basePrice);
     
     // 收集消耗信息
-    let costInfo = `消耗：${baseShouyuan}寿元，${basePrice}灵石，${i}个秘境之匙`;
+    let costInfo = `消耗：${baseShouyuan}寿元，${basePrice}灵石，${entryKeys}个秘境之匙`;
     
     // 计算基础时间
     let baseTime = i * 10 * 7; // 基础时间（分钟）
@@ -803,7 +807,7 @@ async Goxiajie(e) {
     }
     
     // 获取秘境信息
-    const weizhi = data.xiajie_list.find(item => item.name == didian);
+    let weizhi = data.xiajie_list.find(item => item.name == didian);
     if (!weizhi) {
         return e.reply(`未找到地点：${didian}`);
     }
@@ -816,6 +820,8 @@ async Goxiajie(e) {
     
     // 获取玩家数据
     const player = await Read_player(usr_qq);
+    const entryKeys = hasSuiyunFreeDungeonEntry(player) ? 0 : i;
+    weizhi = getSuiyunDungeonEntryPlace(player, weizhi);
          // 检查是否已在目标地点
     if (player.power_place != PLACE_LOCATION_MAP.下界八域) {
         return e.reply(`你不在下界八域`);
@@ -857,8 +863,8 @@ async Goxiajie(e) {
     }
     // 检查秘境之匙
     const keyCount = await exist_najie_thing(usr_qq, '秘境之匙', '道具');
-    if (!keyCount || keyCount < i) {
-        return e.reply(`你需要${i}个秘境之匙才能沉迷此秘境`);
+    if (entryKeys > 0 && (!keyCount || keyCount < entryKeys)) {
+        return e.reply(`你需要${entryKeys}个秘境之匙才能沉迷此秘境`);
     }
     
     // ==== 真身沉迷逻辑 ====
@@ -867,14 +873,14 @@ async Goxiajie(e) {
 
     
     // 扣除资源
-    await Add_najie_thing(usr_qq, '秘境之匙', '道具', -i);
+    if (entryKeys > 0) await Add_najie_thing(usr_qq, '秘境之匙', '道具', -entryKeys);
     await Add_寿元(usr_qq, -baseShouyuan);
     await Add_灵石(usr_qq, -basePrice);
     await Add_修为(usr_qq, -baseexperience);
     await Add_血气(usr_qq, -baseexperience);
     
     // 收集消耗信息
-    let costInfo = `消耗：${baseShouyuan}寿元，${basePrice}灵石，${baseexperience}修为与血气，${i}个秘境之匙`;
+    let costInfo = `消耗：${baseShouyuan}寿元，${basePrice}灵石，${baseexperience}修为与血气，${entryKeys}个秘境之匙`;
     
     // 计算基础时间
     let baseTime = i * 10 * 10; // 基础时间（分钟）
@@ -980,7 +986,7 @@ async Gojiutianshidi(e) {
     }
     
     // 获取秘境信息
-    const weizhi = data.jiutianshidi_list.find(item => item.name == didian);
+    let weizhi = data.jiutianshidi_list.find(item => item.name == didian);
     if (!weizhi) {
         return e.reply(`未找到地点：${didian}`);
     }
@@ -993,6 +999,8 @@ async Gojiutianshidi(e) {
     
     // 获取玩家数据
     const player = await Read_player(usr_qq);
+    const entryKeys = hasSuiyunFreeDungeonEntry(player) ? 0 : i;
+    weizhi = getSuiyunDungeonEntryPlace(player, weizhi);
          // 检查是否已在目标地点
     if (player.power_place != PLACE_LOCATION_MAP.九天十地) {
         return e.reply(`你不在九天十地`);
@@ -1031,8 +1039,8 @@ async Gojiutianshidi(e) {
     }
     // 检查秘境之匙
     const keyCount = await exist_najie_thing(usr_qq, '秘境之匙', '道具');
-    if (!keyCount || keyCount < i) {
-        return e.reply(`你需要${i}个秘境之匙才能沉迷此秘境`);
+    if (entryKeys > 0 && (!keyCount || keyCount < entryKeys)) {
+        return e.reply(`你需要${entryKeys}个秘境之匙才能沉迷此秘境`);
     }
     
     // ==== 真身沉迷逻辑 ====
@@ -1041,14 +1049,14 @@ async Gojiutianshidi(e) {
 
     
     // 扣除资源
-    await Add_najie_thing(usr_qq, '秘境之匙', '道具', -i);
+    if (entryKeys > 0) await Add_najie_thing(usr_qq, '秘境之匙', '道具', -entryKeys);
     await Add_寿元(usr_qq, -baseShouyuan);
     await Add_灵石(usr_qq, -basePrice);
     await Add_修为(usr_qq, -baseexperience);
     await Add_血气(usr_qq, -baseexperience);
     
     // 收集消耗信息
-    let costInfo = `消耗：${baseShouyuan}寿元，${basePrice}灵石，${baseexperience}修为与血气，${i}个秘境之匙`;
+    let costInfo = `消耗：${baseShouyuan}寿元，${basePrice}灵石，${baseexperience}修为与血气，${entryKeys}个秘境之匙`;
     
     // 计算基础时间
     let baseTime = i * 10 * 10; // 基础时间（分钟）
@@ -1152,7 +1160,8 @@ async Gozhetian(e) {
     let didian = e.msg.replace('#沉迷遮天位面', '').trim();
     let code = didian.split('*');
     didian = code[0].trim();
-    let i = parseInt(code[1]) || 1; // 默认1次
+    let i = parseInt(code[1]) || 1;
+    const entryKeys = hasSuiyunFreeDungeonEntry(player) ? 0 : i; // 默认1次
          // 检查是否已在目标地点
     if (player.power_place != PLACE_LOCATION_MAP.遮天位面) {
         return e.reply(`你不在遮天位面`);
@@ -1169,7 +1178,7 @@ async Gozhetian(e) {
     }
     
     // 获取目标地点信息
-    const weizhi = data.zhetian_list.find(item => item.name == didian);
+    const weizhi = getSuiyunDungeonEntryPlace(player, data.zhetian_list.find(item => item.name == didian));
     if (!weizhi) {
         return e.reply(`未找到地点：${didian}`);
     }
@@ -1215,8 +1224,8 @@ async Gozhetian(e) {
     }
     // ==== 秘境之匙检查 ====
     const keyCount = await exist_najie_thing(usr_qq, "秘境之匙", "道具");
-    if (!keyCount || keyCount < i) {
-        return e.reply(`你需要${i}个秘境之匙才能沉迷此秘境`);
+    if (entryKeys > 0 && (!keyCount || keyCount < entryKeys)) {
+        return e.reply(`你需要${entryKeys}个秘境之匙才能沉迷此秘境`);
     }
     
 
@@ -1286,7 +1295,7 @@ async Gozhetian(e) {
         }
         
         // 不死神泉效果
-        if (await exist_najie_thing(usr_qq, "不死神泉", "道具")) {
+        if (!hasSuiyunFreeDungeonEntry(player) && await exist_najie_thing(usr_qq, "不死神泉", "道具")) {
             actualExperience = Math.ceil(actualExperience * 0.8);
             allMsgs.push("饮下不死神泉，生命禁区的诅咒与道则压制大幅减弱！");
             await Add_najie_thing(usr_qq, "不死神泉", "道具", -1);
@@ -1316,7 +1325,7 @@ async Gozhetian(e) {
     }
     
     // 扣除资源
-    await Add_najie_thing(usr_qq, "秘境之匙", "道具", -i);
+    if (entryKeys > 0) await Add_najie_thing(usr_qq, "秘境之匙", '道具', -entryKeys);
     await Add_寿元(usr_qq, -actualShouyuan);
     await Add_灵石(usr_qq, -actualPrice);
     await Add_修为(usr_qq, -actualExperience);
@@ -1330,7 +1339,7 @@ async Gozhetian(e) {
     if (actualExperience > 0) {
         costInfo += `，${actualExperience}修为，${actualExperience}血气`;
     }
-    costInfo += `，${i}个秘境之匙`;
+    costInfo += `，${entryKeys}个秘境之匙`;
     
     allMsgs.push(`${player.名号}${costInfo}`);
     
@@ -1413,7 +1422,8 @@ async Goforbiddenarea(e) {
     const msg = e.msg.replace('#沉迷禁地', '').trim();
     const parts = msg.split('*');
     const didian = parts[0].trim();
-    const i = parseInt(parts[1]) || 1; // 默认1次
+    const i = parseInt(parts[1]) || 1;
+    const entryKeys = hasSuiyunFreeDungeonEntry(player) ? 0 : i; // 默认1次
 
     // 诡异大祭·崩灭检查：玩家当前所在位面被毁则封锁副本
     {
@@ -1429,7 +1439,7 @@ async Goforbiddenarea(e) {
     }
     
     // 获取禁地信息
-    const weizhi = data.forbiddenarea_list.find(item => item.name == didian);
+    const weizhi = getSuiyunDungeonEntryPlace(player, data.forbiddenarea_list.find(item => item.name == didian));
     if (!weizhi) {
         return e.reply(`未找到禁地：${didian}`);
     }
@@ -1471,8 +1481,8 @@ async Goforbiddenarea(e) {
     
     // 检查秘境之匙
     const keyCount = await exist_najie_thing(usr_qq, '秘境之匙', '道具');
-    if (!keyCount || keyCount < i) {
-        return e.reply(`你需要${i}个秘境之匙才能沉迷此禁地`);
+    if (entryKeys > 0 && (!keyCount || keyCount < entryKeys)) {
+        return e.reply(`你需要${entryKeys}个秘境之匙才能沉迷此禁地`);
     }
     
     // 统一计算时间缩减效果
@@ -1491,13 +1501,13 @@ async Goforbiddenarea(e) {
     }
     
     // 扣除资源
-    await Add_najie_thing(usr_qq, '秘境之匙', '道具', -i);
+    if (entryKeys > 0) await Add_najie_thing(usr_qq, '秘境之匙', '道具', -entryKeys);
     await Add_寿元(usr_qq, -baseShouyuan);
     await Add_灵石(usr_qq, -basePrice);
     await Add_修为(usr_qq, -baseExperience);
     
     // 收集消耗信息
-    const costInfo = `消耗：${baseShouyuan}寿元，${basePrice}灵石，${baseExperience}修为，${i}个秘境之匙`;
+    const costInfo = `消耗：${baseShouyuan}寿元，${basePrice}灵石，${baseExperience}修为，${entryKeys}个秘境之匙`;
     allMsgs.push(`${player.名号}${costInfo}`);
     
     // ==== 修改点：使用新的沉迷状态定义 ====
@@ -1618,6 +1628,8 @@ async Gofairyrealm(e) {
     
     // 获取玩家数据
     let player = await Read_player(usr_qq);
+    const entryKeys = hasSuiyunFreeDungeonEntry(player) ? 0 : i;
+    weizhi = getSuiyunDungeonEntryPlace(player, weizhi);
     
     // 检查是否已在目标地点
     if (player.power_place != PLACE_LOCATION_MAP.仙界) {
@@ -1689,8 +1701,8 @@ async Gofairyrealm(e) {
     
     // 检查秘境之匙
     let keyCount = await exist_najie_thing(usr_qq, '秘境之匙', '道具');
-    if (!keyCount || keyCount < i) {
-        return e.reply(`你需要${i}个秘境之匙才能沉迷此仙境`);
+    if (entryKeys > 0 && (!keyCount || keyCount < entryKeys)) {
+        return e.reply(`你需要${entryKeys}个秘境之匙才能沉迷此仙境`);
     }
     
     // 特殊仙境检查
@@ -1698,65 +1710,65 @@ async Gofairyrealm(e) {
     let specialCost = "";
 
 if (didian === "往世星海") {
-    const requiredKeys = i * 10;           // 每次消耗 5 枚，可随 i 叠加
+    const requiredKeys = hasSuiyunFreeDungeonEntry(player) ? 0 : i * 10;           // 每次消耗 5 枚，可随 i 叠加
     const keyCount = await exist_najie_thing(usr_qq, "群星秘钥", "道具");
-    if (!keyCount || keyCount < requiredKeys) {
+    if (requiredKeys > 0 && (!keyCount || keyCount < requiredKeys)) {
         return e.reply(`你需要${requiredKeys}个群星秘钥才能前往往世星海`);
     }
     if (player.level_id <= 54) {
         return e.reply("只有万界道祖级强者才能踏入星海");
     }
-    await Add_najie_thing(usr_qq, "群星秘钥", "道具", -requiredKeys);
+    if (requiredKeys > 0) await Add_najie_thing(usr_qq, "群星秘钥", "道具", -requiredKeys);
     specialMsg = `${player.名号}消耗了${requiredKeys}个群星秘钥，神魂受到无瑕之刻印指引，脱离万界遨游混沌海前往往世星海`;
     specialCost = `，${requiredKeys}个群星秘钥`;
 }
 
 
     if (didian === "神域星宫") {
-        const requiredTokens = i * 10;
+        const requiredTokens = hasSuiyunFreeDungeonEntry(player) ? 0 : i * 10;
         let shenyuCount = await exist_najie_thing(usr_qq, "神域令牌", "道具");
-        if (!shenyuCount || shenyuCount < requiredTokens) {
+        if (requiredTokens > 0 && (!shenyuCount || shenyuCount < requiredTokens)) {
             return e.reply(`你需要${requiredTokens}个神域令牌才能前往神域星宫`);
         }
         if (player.level_id <= 54) {
             return e.reply("只有万界道祖级强者才能前往天外天");
         }
-        await Add_najie_thing(usr_qq, "神域令牌", "道具", -requiredTokens);
+        if (requiredTokens > 0) await Add_najie_thing(usr_qq, "神域令牌", "道具", -requiredTokens);
         specialMsg = `${player.名号}消耗了${requiredTokens}个神域令牌，神魂受到神域主宰感召指引，脱离万界遨游混沌海前往神域星宫`;
         specialCost = `,${requiredTokens}个神域令牌`;
     }
     
     // 瑞泽云海
     if (didian === "瑞泽云海") {
-        const requiredShips = i * 10;
+        const requiredShips = hasSuiyunFreeDungeonEntry(player) ? 0 : i * 10;
         let xianzhouCount = await exist_najie_thing(usr_qq, "仙舟", "道具");
-        if (!xianzhouCount || xianzhouCount < requiredShips) {
+        if (requiredShips > 0 && (!xianzhouCount || xianzhouCount < requiredShips)) {
             return e.reply(`你需要${requiredShips}艘仙舟才能前往瑞泽云海`);
         }
-        await Add_najie_thing(usr_qq, "仙舟", "道具", -requiredShips);
+        if (requiredShips > 0) await Add_najie_thing(usr_qq, "仙舟", "道具", -requiredShips);
         specialMsg = `${player.名号}乘坐仙舟前往瑞泽云海寻找仙兽们留下的福泽`;
         specialCost = `，${requiredShips}艘仙舟`;
     }
     
     // 仙界矿场
     if (didian === "仙界矿场") {
-        const requiredTickets = i;
+        const requiredTickets = entryKeys;
         let dagongCount = await exist_najie_thing(usr_qq, "打工券", "道具");
-        if (!dagongCount || dagongCount < requiredTickets) {
+        if (requiredTickets > 0 && (!dagongCount || dagongCount < requiredTickets)) {
             return e.reply(`你需要${requiredTickets}张打工券才能前往仙界矿场`);
         }
-        await Add_najie_thing(usr_qq, "打工券", "道具", -requiredTickets);
+        if (requiredTickets > 0) await Add_najie_thing(usr_qq, "打工券", "道具", -requiredTickets);
         specialMsg = `${player.名号}消耗了${requiredTickets}张打工券，开始前往苦逼打工`;
         specialCost = `，${requiredTickets}张打工券`;
     }
     
     // 扣除资源
-    await Add_najie_thing(usr_qq, '秘境之匙', '道具', -i);
+    if (entryKeys > 0) await Add_najie_thing(usr_qq, '秘境之匙', '道具', -entryKeys);
     await Add_寿元(usr_qq, -baseShouyuan);
     await Add_灵石(usr_qq, -basePrice);
     
     // 收集消耗信息
-    let costInfo = `消耗：${baseShouyuan}寿元，${basePrice}灵石，${i}个秘境之匙${specialCost}`;
+    let costInfo = `消耗：${baseShouyuan}寿元，${basePrice}灵石，${entryKeys}个秘境之匙${specialCost}`;
     
     // 计算基础时间
     let baseTime = i * 10 * 7; // 基础时间（分钟）

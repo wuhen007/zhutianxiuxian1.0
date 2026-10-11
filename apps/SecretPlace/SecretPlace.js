@@ -1,3 +1,4 @@
+import { hasSuiyunFreeDungeonEntry, getSuiyunDungeonEntryPlace } from '../../model/suiyun.js';
 import fs from 'fs';
 import path from 'path';
 import { plugin, verc, data, config } from '../../api/api.js';
@@ -1400,11 +1401,11 @@ async xunbao(e) {
         const player = await Read_player(usr_qq);
         if (Number(player.power_place) !== SHANGCANG_PLANE_ID) return e.reply('你当前不在上苍之上');
         const didian = e.msg.replace('#前往上苍之上', '').trim();
-        const weizhi = data.shangcang_list.find(item => item.name === didian);
+        const weizhi = getSuiyunDungeonEntryPlace(player, data.shangcang_list.find(item => item.name === didian));
         if (!weizhi) return e.reply(`未知的上苍之上地点：${didian}，可前往魂河或天帝葬坑`);
 
         const shortage = getShangcangCostShortage(player);
-        if (shortage) return e.reply(`${shortage[0]}不足，本次需要${formatShangcangCost()}`);
+        if (shortage) return e.reply(`${shortage[0]}不足，本次需要${formatShangcangCost(player)}`);
         const timing = calculateShangcangDuration(player, data.minggeList);
         deductShangcangCost(player);
         player.lastDungeonType = '上苍之上';
@@ -1429,7 +1430,7 @@ async xunbao(e) {
         await redis.set(`xiuxian:player:${usr_qq}:action`, JSON.stringify(action));
         return e.reply([
           `【上苍之上·${didian}】`,
-          `已消耗：${formatShangcangCost()}`,
+          `已消耗：${formatShangcangCost(player)}`,
           ...timing.messages,
           `${timing.minutes}分钟后归来。`,
         ].join('\n'));
@@ -1496,7 +1497,7 @@ async Gojiehaiplace(e) {
     const didian = msg; // 玩家输入的地点
     
     // 检查地点是否存在
-    const weizhi = data.jiehai_list .find(item => item.name == didian);
+    const weizhi = getSuiyunDungeonEntryPlace(player, data.jiehai_list .find(item => item.name == didian));
     if (!weizhi) {
         e.reply(`未知的界海地点：${didian}`);
         return false;
@@ -1734,7 +1735,7 @@ async Gosecretplace(e) {
     }
 
     const didian = e.msg.replace('#降临秘境', '').trim();
-    const weizhi = data.didian_list.find(item => item.name == didian);
+    const weizhi = getSuiyunDungeonEntryPlace(player, data.didian_list.find(item => item.name == didian));
     
     // 检查地点是否存在
     if (!weizhi) {
@@ -1779,7 +1780,7 @@ async Gosecretplace(e) {
             e.reply('少侠还是先和道侣再联络联络感情吧');
             return false;
         }
-        await add_qinmidu(usr_qq, exist_B, -50);
+        if (!hasSuiyunFreeDungeonEntry(player)) await add_qinmidu(usr_qq, exist_B, -50);
     }
     
     // 更新任务记录
@@ -1945,7 +1946,7 @@ async Goxiajie(e) {
     }
 
     const didian = e.msg.replace('#前往下界八域', '').trim();
-    const weizhi = data.xiajie_list.find(item => item.name == didian);
+    const weizhi = getSuiyunDungeonEntryPlace(player, data.xiajie_list.find(item => item.name == didian));
     
     // 检查地点是否存在
     if (!weizhi) {
@@ -2071,7 +2072,7 @@ async Gojiutianshidi(e) {
     }
 
     const didian = e.msg.replace('#前往九天十地', '').trim();
-    const weizhi = data.jiutianshidi_list.find(item => item.name == didian);
+    const weizhi = getSuiyunDungeonEntryPlace(player, data.jiutianshidi_list.find(item => item.name == didian));
     
     // 检查地点是否存在
     if (!weizhi) {
@@ -2227,7 +2228,7 @@ async Gozhetian(e) {
             // 法身可用时的处理
             if (!isFashanBusy) {
                 const didian = e.msg.replace('#前往遮天位面', '').trim();
-                const weizhi = data.zhetian_list.find(item => item.name == didian);
+                const weizhi = getSuiyunDungeonEntryPlace(player, data.zhetian_list.find(item => item.name == didian));
                 
                 if (!weizhi) {
                     allMsgs.push(`未找到地点：${didian}`);
@@ -2310,7 +2311,7 @@ async Gozhetian(e) {
 
     // ==== 真身探索逻辑 ====
     const didian = e.msg.replace('#前往遮天位面', '').trim();
-    const weizhi = data.zhetian_list.find(item => item.name == didian);
+    const weizhi = getSuiyunDungeonEntryPlace(player, data.zhetian_list.find(item => item.name == didian));
     
     if (!weizhi) {
         allMsgs.push(`未找到地点：${didian}`);
@@ -2413,7 +2414,7 @@ async Gozhetian(e) {
         allMsgs.push(adjustMsg);
         
         // 不死神泉效果
-        if (await exist_najie_thing(usr_qq, "不死神泉", "道具")) {
+        if (!hasSuiyunFreeDungeonEntry(player) && await exist_najie_thing(usr_qq, "不死神泉", "道具")) {
             weizhiExperience = Math.ceil(weizhiExperience * 0.8);
             allMsgs.push("饮下不死神泉，生命禁区的诅咒与道则压制大幅减弱！");
             await Add_najie_thing(usr_qq, "不死神泉", "道具", -1);
@@ -2576,7 +2577,7 @@ async Goforbiddenarea(e) {
         if (!isFashanBusy) {
             // 法身代行
             const didian = e.msg.replace('#前往禁地', '').trim();
-            const weizhi = data.forbiddenarea_list.find(item => item.name == didian);
+            const weizhi = getSuiyunDungeonEntryPlace(player, data.forbiddenarea_list.find(item => item.name == didian));
             if (!weizhi) {
                 return e.reply(`未找到禁地：${didian}`);
             }
@@ -2648,7 +2649,7 @@ async Goforbiddenarea(e) {
     
     // ==== 真身探索逻辑 ====
     const didian = e.msg.replace('#前往禁地', '').trim();
-    const weizhi = data.forbiddenarea_list.find(item => item.name == didian);
+    const weizhi = getSuiyunDungeonEntryPlace(player, data.forbiddenarea_list.find(item => item.name == didian));
     
     // 检查地点是否存在
     if (!weizhi) {
@@ -2811,6 +2812,7 @@ async GoTimeplace(e) {
     usr_qq = await channel(usr_qq);
     
     const player = await Read_player(usr_qq);
+    const allMsgs = [];
 
     const flag = await Go(e);
     if (!flag) {
@@ -2856,7 +2858,7 @@ async GoTimeplace(e) {
             const didianlist = ['无欲天仙', '仙遗之地'];
             const suiji = Math.round(Math.random()); // 随机一个地方
             const didian = didianlist[suiji]; // 赋值
-            const weizhi = data.timeplace_list.find(item => item.name == didian);
+            const weizhi = getSuiyunDungeonEntryPlace(player, data.timeplace_list.find(item => item.name == didian));
             
             if (!weizhi) {
                 return e.reply(`未找到仙府：${didian}`);
@@ -2944,15 +2946,17 @@ async GoTimeplace(e) {
     await sleep(1000);
     if (yunqi > 0.9) {
         // 10%寄
-        if (player.灵石 < 50000) {
+        if (!hasSuiyunFreeDungeonEntry(player) && player.灵石 < 50000) {
             e.reply('还没看两眼就被看堂的打手撵了出去说:"哪来的穷小子,不买别看"');
             return false;
         }
         
         e.reply(
-            '价格为5w,你觉得特别特别便宜,赶紧全款拿下了,历经九九八十天,到了后发现居然是仙湖游乐场！'
+            hasSuiyunFreeDungeonEntry(player)
+                ? '岁云灵根免去地图费用，但沿图抵达后发现居然是仙湖游乐场，本次未进入仙府。'
+                : '价格为5w,你觉得特别特别便宜,赶紧全款拿下了,历经九九八十天,到了后发现居然是仙湖游乐场！'
         );
-        await Add_灵石(usr_qq, -50000);
+        if (!hasSuiyunFreeDungeonEntry(player)) await Add_灵石(usr_qq, -50000);
         return false;
     }
     
@@ -2965,7 +2969,7 @@ async GoTimeplace(e) {
         return false;
     }
     
-    const weizhi = data.timeplace_list.find(item => item.name == didian);
+    const weizhi = getSuiyunDungeonEntryPlace(player, data.timeplace_list.find(item => item.name == didian));
     if (!weizhi) {
         e.reply('报错！地点错误，请找群主反馈');
         return false;
@@ -2976,7 +2980,7 @@ async GoTimeplace(e) {
         return false;
     }
     
-    if (player.修为 < 100000) {
+    if (!hasSuiyunFreeDungeonEntry(player) && player.修为 < 100000) {
         e.reply(
             '到了地图上的地点，发现洞府前有一句前人留下的遗言:"至少有10w修为才能抵御仙威！"'
         );
@@ -2985,7 +2989,7 @@ async GoTimeplace(e) {
     
     let dazhe = 1;
     if (
-        (await exist_najie_thing(usr_qq, '仙府通行证', '道具')) &&
+        !hasSuiyunFreeDungeonEntry(player) && (await exist_najie_thing(usr_qq, '仙府通行证', '道具')) &&
         player.魔道值 < 1 &&
         (player.灵根.type == '转生' || player.level_id > 41)
     ) {
@@ -2999,7 +3003,7 @@ async GoTimeplace(e) {
     player.lastDungeonName = didian;
     await Write_player(usr_qq, player);
     await Add_灵石(usr_qq, -Price);
-    await Add_修为(usr_qq, -100000);
+    if (!hasSuiyunFreeDungeonEntry(player)) await Add_修为(usr_qq, -100000);
     
     const cf = config.getConfig('xiuxian', 'xiuxian');
     let time = cf.CD.timeplace; // 时间（分钟）
@@ -3049,6 +3053,9 @@ async GoTimeplace(e) {
             '分钟后归来!';
     }
 
+    if (hasSuiyunFreeDungeonEntry(player)) {
+        replyMsg = `【岁云免耗】你循月华抵达${weizhi.name}，本次不消耗入场资源，${time}分钟后归来。`;
+    }
     e.reply(replyMsg);
     return false;
 }
@@ -3076,7 +3083,7 @@ async Gofairyrealm(e) {
     const didian = e.msg.replace('#镇守仙境', '').trim();
     
     // 获取仙境信息
-    const weizhi = data.Fairyrealm_list.find(item => item.name == didian);
+    const weizhi = getSuiyunDungeonEntryPlace(player, data.Fairyrealm_list.find(item => item.name == didian));
     if (!weizhi) {
         return e.reply(`未找到仙境：${didian}`);
     }
@@ -3152,16 +3159,16 @@ async Gofairyrealm(e) {
 let specialMsg = "";
 if (didian === "往世星海") {
     const shenyu = await exist_najie_thing(usr_qq, "群星秘钥", "道具");
-    if (!shenyu || shenyu < 1) {
+    if (!hasSuiyunFreeDungeonEntry(player) && (!shenyu || shenyu < 1)) {
         return e.reply("群星秘钥缺失，星海之门拒绝开启。");
     }
     if (player.level_id <= 54) {
         return e.reply("万界道祖方可踏入星海，当前境界不足。");
     }
-    await Add_najie_thing(usr_qq, "群星秘钥", "道具", -1);
+    if (!hasSuiyunFreeDungeonEntry(player)) await Add_najie_thing(usr_qq, "群星秘钥", "道具", -1);
     specialMsg = [
         `【星海归航】`,
-        `你以群星秘钥叩响天穹，亿万星辉垂落，`,
+        hasSuiyunFreeDungeonEntry(player) ? `岁云月华叩响天穹，无需群星秘钥，亿万星辉垂落，` : `你以群星秘钥叩响天穹，亿万星辉垂落，`,
         `混沌海分开一条璀璨光道，直指星海核心。`,
         `刹那之间，神魂超脱万界，抵达往世星海！`
     ].join('\n');
@@ -3170,16 +3177,16 @@ if (didian === "往世星海") {
 
     if (didian === "神域星宫") {
         const shenyu = await exist_najie_thing(usr_qq, "神域令牌", "道具");
-        if (!shenyu || shenyu < 1) {
+        if (!hasSuiyunFreeDungeonEntry(player) && (!shenyu || shenyu < 1)) {
             return e.reply("你需要神域令牌才能前往神域星宫");
         }
         if (player.level_id <= 54) {
             return e.reply("只有万界道祖级强者才能前往天外天");
         }
-        await Add_najie_thing(usr_qq, "神域令牌", "道具", -1);
+        if (!hasSuiyunFreeDungeonEntry(player)) await Add_najie_thing(usr_qq, "神域令牌", "道具", -1);
         specialMsg = [
             `【神域感召】`,
-            `${player.名号}消耗了1个神域令牌，`,
+            hasSuiyunFreeDungeonEntry(player) ? `${player.名号}凭岁云灵根免耗通行，` : `${player.名号}消耗了1个神域令牌，`,
             `神魂受到神域主宰感召指引，`,
             `脱离万界遨游混沌海前往神域星宫！`,
         ].join('\n');
@@ -3188,10 +3195,10 @@ if (didian === "往世星海") {
     
     if (didian === "瑞泽云海") {
         const xianzhou = await exist_najie_thing(usr_qq, "仙舟", "道具");
-        if (!xianzhou || xianzhou < 1) {
+        if (!hasSuiyunFreeDungeonEntry(player) && (!xianzhou || xianzhou < 1)) {
             return e.reply("你需要仙舟才能前往瑞泽云海");
         }
-        await Add_najie_thing(usr_qq, "仙舟", "道具", -1);
+        if (!hasSuiyunFreeDungeonEntry(player)) await Add_najie_thing(usr_qq, "仙舟", "道具", -1);
         specialMsg = [
             `【仙舟渡海】`,
             `${player.名号}乘坐仙舟，`,
@@ -3205,7 +3212,7 @@ if (didian === "往世星海") {
     let discountMsg = "";
     
     if (didian === '杀神崖') {
-        if (await exist_najie_thing(usr_qq, '杀神崖通行证', '道具') && 
+        if (!hasSuiyunFreeDungeonEntry(player) && await exist_najie_thing(usr_qq, '杀神崖通行证', '道具') &&
             player.魔道值 < 1 && 
             (player.灵根.type == '转生' || player.level_id > 41)) {
             dazhe = 0;
@@ -3217,7 +3224,7 @@ if (didian === "往世星海") {
             await Add_najie_thing(usr_qq, '杀神崖通行证', '道具', -1);
         }
     } else {
-        if (await exist_najie_thing(usr_qq, '仙境优惠券', '道具') && 
+        if (!hasSuiyunFreeDungeonEntry(player) && await exist_najie_thing(usr_qq, '仙境优惠券', '道具') &&
             player.魔道值 < 1 && 
             (player.灵根.type == '转生' || player.level_id > 41)) {
             dazhe = 0.5;

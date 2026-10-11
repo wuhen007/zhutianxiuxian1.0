@@ -1,3 +1,5 @@
+import { getSuiyunEffects } from './suiyun.js';
+
 /**
  * 仙宠幸运加成计算（统一公式：加成 = 每级增加 × 等级，初始加成不参与计算）
  *
@@ -59,16 +61,35 @@ export function computePetStoredBonus(pet) {
 
 /**
  * 计算玩家正确的 player.幸运：
- * 福源丹药力(addluckyNo) + 出战仙宠幸运加成 + 炼妖继承幸运加成。
+ * 福源丹药力(addluckyNo) + 出战仙宠幸运加成 + 炼妖继承幸运加成 + 灵根幸运。
  * @param {object} player 玩家存档对象
  * @returns {number} 正确的幸运值
  */
 export function computeCorrectLucky(player) {
-  let lucky = Number(player?.addluckyNo) || 0;
+  let lucky = (Number(player?.addluckyNo) || 0) + getSuiyunEffects(player).luckBonus;
   const pet = player?.仙宠;
   if (pet && pet.id) {
     const { bonus, inheritBonus } = computePetLuckyBonus(pet);
     lucky += bonus + inheritBonus;
   }
   return lucky;
+}
+
+/** 只替换岁云来源，保留药力、仙宠、命格与其他既有幸运。旧档首次读取补入。 */
+export function syncSuiyunLuckyBonus(player) {
+  if (!player || typeof player !== 'object') return false;
+  const previous = Number(player._岁云幸运加成) || 0;
+  const current = getSuiyunEffects(player).luckBonus;
+  if (previous === current) return false;
+  player.幸运 = (Number(player.幸运) || 0) - previous + current;
+  player._岁云幸运加成 = current;
+  return true;
+}
+
+/** 完整同步已包含灵根项，登记来源以免后续写档再次补入。 */
+export function rebuildPlayerLucky(player) {
+  player.幸运 = computeCorrectLucky(player);
+  const rootBonus = getSuiyunEffects(player).luckBonus;
+  if (rootBonus || player._岁云幸运加成 != null) player._岁云幸运加成 = rootBonus;
+  return player.幸运;
 }

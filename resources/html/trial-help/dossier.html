@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1000, initial-scale=1" />
+    <title>试炼宇宙 · {{theme.name}}</title>
+    <link rel="stylesheet" href="{{pluResPath}}html/trial-help/dossier.css" />
+  </head>
+  <body>
+    <main id="container" class="dossier">
+      <header class="dossier-header">
+        <div class="archive-strip">
+          <span>诸天档案馆 / 生存指引</span>
+          <span>卷宗 {{theme.index}} · {{theme.id}}</span>
+        </div>
+        <div class="title-block">
+          <div>
+            <h1>试炼宇宙</h1>
+            <p class="document-name">{{theme.name}}</p>
+          </div>
+          <div class="archive-stamp" aria-hidden="true">
+            <span>生存档案</span>
+            <strong>阅后入界</strong>
+            <span>诸界试炼记录</span>
+          </div>
+        </div>
+        <p class="intro">{{intro}}</p>
+      </header>
+
+      <section class="entry-strip" aria-labelledby="entry-title">
+        <div class="entry-label">
+          <span>入界前</span>
+          <h2 id="entry-title">从这里开始</h2>
+        </div>
+        <div class="entry-content">
+          <code>{{quickstart.command}}</code>
+          <p>{{quickstart.text}}</p>
+        </div>
+      </section>
+
+      <section class="command-section" aria-labelledby="commands-title">
+        <h2 class="section-title" id="commands-title">行动指令索引</h2>
+        <div class="command-columns">
+          {{each groups group}}
+          <section class="command-group" id="group-{{group.id}}">
+            <header class="group-heading">
+              <span class="group-number">{{group.id}}</span>
+              <div>
+                <h3>{{group.title}}</h3>
+                <p>{{group.kicker}}</p>
+              </div>
+            </header>
+            <dl class="command-list">
+              {{each group.items item}}
+              <div class="command-item">
+                <dt><code>{{item.command}}</code></dt>
+                <dd>{{item.desc}}</dd>
+              </div>
+              {{/each}}
+            </dl>
+          </section>
+          {{/each}}
+        </div>
+      </section>
+
+      <section class="world-section" aria-labelledby="worlds-title">
+        <div class="world-heading">
+          <h2 class="section-title" id="worlds-title">诸界档案</h2>
+          <span>按类型检索世界</span>
+        </div>
+        <div class="world-index">
+          {{each worlds world worldIndex}}
+          <article class="world-record">
+            <div class="world-type">
+              <strong>{{world.type}}</strong>
+              <span>档 {{worldIndex + 1}}</span>
+            </div>
+            <h3>{{world.name}}</h3>
+            <p>{{world.intro}}</p>
+          </article>
+          {{/each}}
+        </div>
+      </section>
+
+      <section class="rules-section" aria-labelledby="rules-title">
+        <h2 class="section-title" id="rules-title">生存条款 · 务必查阅</h2>
+        <dl class="rules-list">
+          {{each rules rule}}
+          <div class="rule-item">
+            <dt>{{rule.label}}</dt>
+            <dd>{{rule.text}}</dd>
+          </div>
+          {{/each}}
+        </dl>
+      </section>
+
+      <section class="ascension-section" aria-labelledby="ascension-title">
+        <div class="ascension-label">终局档案</div>
+        <div class="ascension-copy">
+          <h2 id="ascension-title">{{ascension.title}}</h2>
+          <p>{{ascension.requirements}}</p>
+          <code>{{ascension.command}}</code>
+          <p class="ascension-note">{{ascension.note}}</p>
+        </div>
+      </section>
+
+      <footer class="dossier-footer">
+        <p>{{footer}}</p>
+        <span>{{theme.name}} / {{theme.index}}</span>
+      </footer>
+    </main>
+  </body>
+</html>

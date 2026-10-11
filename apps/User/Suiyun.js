@@ -10,7 +10,7 @@ import {
   activateSuiyun, advanceSuiyun, applySuiyunTrialResult, ascendSuiyunPalace,
   buildSuiyunTrialBattle, convertSuiyunPower, cultivateSuiyun, ensureSuiyunState,
   getSuiyunEffects, getSuiyunLifeMaximum, getSuiyunLotusBonus, getSuiyunPower, getSuiyunStage, refineSuiyun,
-  settleSuiyunPalace, spendSuiyunPower,
+  settleSuiyunPalace, spendSuiyunPower, SUIYUN_PET_NAME, SUIYUN_PET_STAGE,
 } from '../../model/suiyun.js';
 import { claimSuiyunUnique, releaseSuiyunUnique } from '../../model/suiyunRegistry.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
@@ -183,10 +183,34 @@ export class Suiyun extends plugin {
       return e.reply([
         '【月华初生】岁云残念融入本源，你获得【月华之体】，天资化作【岁云】！',
         '获得《月华炼天功》x1，请发送 #学习月华炼天功。',
-        world ? '小世界升华为【月华天宫】，每现实小时产出0.5点岁云之力。' : '开辟小世界后将自动升华为月华天宫。',
+        world ? '小世界升华为【月华天宫】，每现实小时产出0.5点岁云之力与50点仙道潜力。' : '开辟小世界后将自动升华为月华天宫。',
         '发送 #岁云之力 查看传承；依次完成 #引月入体、#化霜入剑、#月之见证 后，以 #岁云见证 晋升。',
       ].join('\n'));
     });
+  }
+
+  async grantStagePet(qq, player) {
+    if (getSuiyunStage(player) < SUIYUN_PET_STAGE || player.岁云?.仙宠已领取) return false;
+    const najie = await Read_najie(qq);
+    if (najie.时间线封锁?.locked) throw new Error('纳戒当前被封锁，请解锁后再次发送 #岁云见证 领取仙宠');
+    // 已有奖励在出战、纳戒或栖息地时只补领取标记，避免旧档补领产生第二只。
+    const world = data.xiaoshijie.find(item => String(item.player_qq) === String(qq));
+    const alreadyPresent = player.仙宠?.name === SUIYUN_PET_NAME
+      || najie.仙宠?.some(item => item.name === SUIYUN_PET_NAME && Number(item.数量) > 0)
+      || world?.栖息地?.some(item => (item.仙宠?.name || item.pet?.name || item.name) === SUIYUN_PET_NAME);
+    if (!alreadyPresent) {
+      const definition = data.xianchon.find(item => item.name === SUIYUN_PET_NAME);
+      if (!definition) throw new Error(`仙宠资源缺失：${SUIYUN_PET_NAME}`);
+      await Add_najie_thing(qq, {
+        ...structuredClone(definition), 绑定者: String(qq), 不可交易: true, 不可支取: true,
+      }, '仙宠', 1, undefined, 1, { idempotencyKey: `suiyun:pet:${SUIYUN_PET_NAME}` });
+    }
+    // 纳戒幂等回执先落盘；玩家标记失败时重试只补写标记，不重新发放。
+    const latest = await Read_player(qq);
+    ensureSuiyunState(latest).仙宠已领取 = true;
+    await Write_player(qq, latest);
+    Object.assign(player, latest);
+    return !alreadyPresent;
   }
 
   async grantFinalEquipment(qq, player) {
@@ -230,12 +254,21 @@ export class Suiyun extends plugin {
       const player = await Read_player(ctx.qq);
       const error = this.holderError(player);
       if (error) return e.reply(error);
+      let petGranted = await this.grantStagePet(ctx.qq, player);
       const result = getSuiyunStage(player) === 5 ? { ok: true, name: '岁云剑尊' } : advanceSuiyun(player);
-      if (!result.ok) return e.reply(result.reason);
+      if (!result.ok) return e.reply([
+        result.reason,
+        petGranted ? `已补领攻击仙宠【${SUIYUN_PET_NAME}】x1，发送 #出战仙宠${SUIYUN_PET_NAME} 出战。` : '',
+      ].filter(Boolean).join('\n'));
       await Write_player(ctx.qq, player);
+      petGranted = await this.grantStagePet(ctx.qq, player) || petGranted;
       await this.grantFinalEquipment(ctx.qq, player);
       await this.refreshAttributes(ctx.qq);
-      return e.reply(`【岁云见证】当前传承：${player.灵根.name}。${getSuiyunStage(player) === 5 ? '\n岁云袍、岁云剑、云月之莲已入纳戒，无上天阙枝自动认主，皆为绑定专属。' : ''}`);
+      return e.reply([
+        `【岁云见证】当前传承：${player.灵根.name}。`,
+        petGranted ? `获得攻击仙宠【${SUIYUN_PET_NAME}】x1；发送 #出战仙宠${SUIYUN_PET_NAME} 出战。` : '',
+        getSuiyunStage(player) === 5 ? '岁云袍、岁云剑、云月之莲已入纳戒，无上天阙枝自动认主，皆为绑定专属。' : '',
+      ].filter(Boolean).join('\n'));
     });
   }
 
@@ -311,7 +344,8 @@ export class Suiyun extends plugin {
       const player = await Read_player(ctx.qq);
       const error = this.holderError(player);
       if (error) return e.reply(error);
-      await this.settlePalace(ctx.qq, player);
+      const petGranted = await this.grantStagePet(ctx.qq, player);
+      const palace = await this.settlePalace(ctx.qq, player);
       const exchange = String(e.msg).match(/兑换(?:\s+(\d+))?$/);
       if (exchange) {
         const amount = exchange[1] ? Number(exchange[1]) : 10000;
@@ -323,14 +357,19 @@ export class Suiyun extends plugin {
       const effects = getSuiyunEffects(player);
       return e.reply([
         `【岁云之力】${getSuiyunPower(player).toFixed(2)}点`, this.status(player),
+        palace.hours > 0 ? `本次月华天宫结算${palace.hours}小时：岁云之力+${palace.power}、仙道潜力+${palace.potentialGain}。` : '',
+        petGranted ? `已补领【${SUIYUN_PET_NAME}】x1；#出战仙宠${SUIYUN_PET_NAME}。`
+          : getSuiyunStage(player) >= SUIYUN_PET_STAGE ? `传承仙宠：${SUIYUN_PET_NAME}已领取；#出战仙宠${SUIYUN_PET_NAME}。`
+            : `晋升霜月剑尊时赠送攻击仙宠【${SUIYUN_PET_NAME}】。`,
         `云月之莲累计炼化：${lotus.moonlight}月华｜${lotus.active ? '成长已生效' : '装备后生效'}；#云月之莲 查看成长。`,
         `悟道加成${Math.round(effects.enlightenmentBonus * 100)}%｜渡劫减伤${Math.round(effects.tribulationReduction * 100)}%｜物品获取${effects.lootMultiplier}倍`,
+        `灵根幸运+${Math.round(effects.luckBonus * 100)}%｜秘境通行：${effects.freeDungeonEntry ? '免入场资源消耗' : '霜月剑尊起免入场资源消耗'}`,
         '自带战技：霜剑入月（至多9敌各9剑、每剑25倍、绝控霜寒）；岁云归一（防御反伤）；白云苍狗（每战3次复活，每次全属性+50%）。#战斗技能 查看详情。',
-        '月华天宫每现实小时产出0.5点；#岁云之力 兑换 10000（月华值→0.1点岁云之力，可填10000的倍数）。',
+        '月华天宫每现实小时产出0.5点岁云之力与50点仙道潜力；#岁云之力 兑换 10000（月华值→0.1点岁云之力，可填10000的倍数）。',
         '#岁云更改 时代 时代名：5点；#岁云更改 至宝线索：10点。',
         '#岁云更改 命格/天资/灵根 名称：20点，可@目标。唯一灵根不参与改写。',
         '#云月修炼：24小时一次；#月华炼化 @目标 / 天骄 / 灾厄 / 魔主。',
-      ].join('\n'));
+      ].filter(Boolean).join('\n'));
     });
   }
 

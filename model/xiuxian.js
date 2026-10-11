@@ -29,6 +29,7 @@ import { releaseJuelingLifespanForAuthority } from './juelingLifespan.js';
 import { applyClowWishBattleWeakness } from './clowWish.js';
 import { findTalentSynchronizationMatch } from './talentSynchronization.js';
 import { getSuiyunEffects, getSuiyunLotusBonus } from './suiyun.js';
+import { computePetStoredBonus, rebuildPlayerLucky, syncSuiyunLuckyBonus } from './petLuckyCalc.js';
 import {
   castSuiyunMoonSword, consumeSuiyunControl, reduceSuiyunDamage,
   reflectSuiyunDamage, resetSuiyunCombat, tickSuiyunFrost, trySuiyunRevival,
@@ -582,6 +583,7 @@ export async function Read_player(usr_qq) {
     player.先天至宝失效时间 = 0;
   }
   ensureDefaultCoordinates(player);
+  syncSuiyunLuckyBonus(player);
   return markTribulationSnapshot(usr_qq, markZhutianMirrorSnapshot(player));
 }
 export async function LevelTask(e, power_n, power_m, power_Grade, aconut, illusionRate) {
@@ -1327,6 +1329,7 @@ export async function Write_player(usr_qq, player, options = {}) {
     });
   }
   releaseJuelingLifespanForAuthority(player);
+  syncSuiyunLuckyBonus(player);
   writeJsonAtomically(dir, player);
   markZhutianMirrorSnapshot(player);
   if (heavenSlash) queueHeavenWillSlashNotice(usr_qq, heavenSlash, data, options.event);
@@ -14147,35 +14150,17 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
       });
     }
     
-    // 仙宠幸运加成同步
-    let pet = player.仙宠;
+    // 仙宠成长与幸运使用共享公式；攻击宠的成长不会计入幸运。
+    const pet = player.仙宠;
     if (pet && pet.id) {
-      const isLuckyPet = pet.type === '幸运';
-      // 原有ID范围内的幸运仙宠（2931-2935）
       if (pet.id > 2930 && pet.id < 2936) {
         pet.初始加成 = 0.002;
         pet.每级增加 = 0.002;
-        pet.加成 = pet.每级增加 * (pet.等级 || 1);
-        player.幸运 = (Number(player.addluckyNo) || 0) + (isLuckyPet ? (Number(pet.加成) || 0) : 0);
       }
-      // 其他成长型仙宠（麒麟、鲲鹏等，根据初始加成属性判断）
-      else if (isNotNull(pet.初始加成) && isNotNull(pet.每级增加)) {
-        pet.加成 = pet.每级增加 * (pet.等级 || 1);
-        player.幸运 = (Number(player.addluckyNo) || 0) + (isLuckyPet ? (Number(pet.加成) || 0) : 0);
-      }
-      // 非幸运类型仙宠
-      else {
-        player.幸运 = Number(player.addluckyNo) || 0;
-      }
-      // 炼妖融合继承的幸运加成（type 匹配才生效，主宠自身是否幸运均可）
-      const inheritLucky = pet?.炼妖继承能力;
-      if (inheritLucky && inheritLucky.type === '幸运') {
-        player.幸运 += Number(inheritLucky.加成) || 0;
-      }
-    } else {
-      player.幸运 = Number(player.addluckyNo) || 0;
+      pet.加成 = computePetStoredBonus(pet);
     }
-    
+    rebuildPlayerLucky(player);
+
     // 纳戒中仙宠的加成同步
     for (let j of najie.仙宠) {
       if (j.id > 2930 && j.id < 2936) {

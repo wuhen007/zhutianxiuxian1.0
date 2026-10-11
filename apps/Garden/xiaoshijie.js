@@ -2137,7 +2137,7 @@ async showEnvironmentHelp(e) {
     });
     if (suiyunRewards.hours > 0) {
       superdimensionalLine = [superdimensionalLine,
-        `【月华天宫】${suiyunRewards.hours}现实小时：岁云之力+${suiyunRewards.power.toFixed(2)}`,
+        `【月华天宫】${suiyunRewards.hours}现实小时：岁云之力+${suiyunRewards.power.toFixed(2)}、仙道潜力+${suiyunRewards.potentialGain}`,
       ].filter(Boolean).join('\n');
     }
 
