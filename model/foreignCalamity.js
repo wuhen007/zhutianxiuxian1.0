@@ -3,7 +3,7 @@ import { readPlayerArchives } from './riftGuardian.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 
 export const FOREIGN_CALAMITY_INDEX_KEY = 'xiuxian:foreign-calamity:index';
-export const FOREIGN_CALAMITY_MAX_ACTIVE = 30;
+export const FOREIGN_CALAMITY_MAX_ACTIVE = 100;
 export const FOREIGN_CALAMITY_CULL_REPORT_KEY = 'xiuxian:foreign-calamity:last-cull';
 export const FOREIGN_PAGE_REQUIREMENT = 10;
 export const FOREIGN_CALAMITY_BATTLE_COOLDOWN_MS = 15 * 60 * 1000;

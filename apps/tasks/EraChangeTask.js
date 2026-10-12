@@ -1834,13 +1834,29 @@ if (index === 4) { // 当前是绝灵时代
     const { index: eraIndex, years, epoch } = next;
     // 记录旧时代索引
     const oldIndex = this.set.Era.current.index;
+    const previousWorldYear = getRealmEventWorldYear(
+      oldIndex, this.set.Era.current.years, this.set.Era.current.epoch,
+    );
     
     const worldYear = getRealmEventWorldYear(eraIndex, years, epoch);
+    const foreignCalamities = worldYear > previousWorldYear
+      ? await spawnForeignCalamities(previousWorldYear, worldYear)
+      : [];
     const lifespanTransition = await this.applyEraLifespanTransition(
       oldIndex,
       eraIndex,
       () => this.persistEraCurrent(this.set.Era, { index: eraIndex, years, epoch, totalYears: worldYear }),
     );
+    // 玩家岁月推进与管理员前进同样参与自然事件判定，保持原有概率和冷却。
+    let realmEventMessage = '';
+    if (worldYear > previousWorldYear) {
+      try {
+        const eventResult = await RealmEvents.triggerRandomEvent(eraIndex, years, epoch);
+        realmEventMessage = eventResult?.message || '';
+      } catch (error) {
+        console.error('触发位面大事件失败:', error);
+      }
+    }
     await this.processDaoTreasureLifecycle(worldYear, epoch);
     const darkRevoltDestructionMessage = await this.processDarkRevoltDestruction(worldYear);
     const emperorRefinementMessage = await processEmperorRefinement(worldYear);
@@ -1883,6 +1899,8 @@ if (index === 4) { // 当前是绝灵时代
       restoreMsg,
       darkRevoltDestructionMessage,
       emperorRefinementMessage,
+      ...(foreignCalamities.length ? [`本轮降下${foreignCalamities.length}尊域外灾厄，发送 #域外灾厄 查看。`] : []),
+      realmEventMessage,
     ].join('\n'));
   }
   
@@ -1973,6 +1991,7 @@ if (index === 4) { // 当前是绝灵时代
       }
       
       const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
+      const foreignCalamities = await spawnForeignCalamities(previousWorldYear, currentWorldYear);
       const lifespanTransition = await this.applyEraLifespanTransition(
         oldIndex,
         index,
@@ -2013,6 +2032,7 @@ if (index === 4) { // 当前是绝灵时代
         `新年份: ${years}/10000年`,
         `进度: ${this.createProgressBar(years)} ${Math.round((years/10000)*100)}%`
       ].join('\n');
+      if (foreignCalamities.length) message += `\n本轮降下${foreignCalamities.length}尊域外灾厄，发送 #域外灾厄 查看。`;
       
       // ==== 新增：绝灵时代物品损失 ====
       let lossMessage = '';
@@ -2204,6 +2224,7 @@ if (index === 4) { // 当前是绝灵时代
       
       // 更新配置
       const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
+      const foreignCalamities = await spawnForeignCalamities(previousWorldYear, currentWorldYear);
       const lifespanTransition = await this.applyEraLifespanTransition(
         oldIndex,
         index,
@@ -2259,6 +2280,7 @@ if (index === 4) { // 当前是绝灵时代
         `年份: 0/10000 年`,
         `天心印记已重置，新时代将诞生新的大帝！`
       ].join("\n");
+      if (foreignCalamities.length) message += `\n本轮降下${foreignCalamities.length}尊域外灾厄，发送 #域外灾厄 查看。`;
       
       // ==== 新增：寿元压制逻辑 ====
       // 检查是否进入绝灵时代
@@ -2307,9 +2329,9 @@ if (index === 4) { // 当前是绝灵时代
       
       await e.reply(message);
       
-    } catch (e) {
-      console.error("手动推进时代失败:", e);
-      await e.reply(`手动推进时代失败: ${e.message}`);
+    } catch (error) {
+      console.error("手动推进时代失败:", error);
+      await e.reply(`手动推进时代失败: ${error.message}`);
     }
   }
   

@@ -911,6 +911,13 @@ export class RealmEvents {
             const currentWorldYear = getRealmEventWorldYear(eraIndex, currentYears, epoch);
             const random = options.random || Math.random;
             if (!config.enableEvents) return null;
+
+            // 管理员回调时代后，冷却从当前年份重新计算，避免等待旧时间线追平。
+            if (Number(config.lastEventWorldYear) > currentWorldYear) {
+                config.lastEventTime = currentYears;
+                config.lastEventWorldYear = currentWorldYear;
+                if (!this.saveEventConfig(config)) return null;
+            }
             
             // 检查冷却
             if (!options.ignoreCooldown && !this.checkCooldown(config, currentWorldYear, currentYears)) {
@@ -928,7 +935,9 @@ export class RealmEvents {
                 hasPendingEventSettlement(event)
             );
             const maxActiveEvents = Math.max(1, Number(config.maxActiveEvents) || DEFAULT_MAX_ACTIVE_EVENTS);
-            if (activeEvents.length >= maxActiveEvents) return null;
+            // 待结算记录保留以便补发奖励，但过期后不再占用新事件名额。
+            const ongoingEvents = activeEvents.filter(event => !event.expiresAt || Number(event.expiresAt) > now);
+            if (ongoingEvents.length >= maxActiveEvents) return null;
             
             // 根据当前时代调整事件概率和类型
             const activeTypes = new Set(activeEvents.map(event => event.type));
@@ -1045,7 +1054,7 @@ export class RealmEvents {
                 config.eventHistory = config.eventHistory.slice(-100);
             }
             
-            this.saveEventConfig(config);
+            if (!this.saveEventConfig(config)) return null;
             
             return result;
             

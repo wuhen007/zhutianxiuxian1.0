@@ -125,7 +125,7 @@ export class ForeignCalamity extends plugin {
     return e.reply([
       `【千年域外灾厄】现存${active.length}/${FOREIGN_CALAMITY_MAX_ACTIVE}尊`,
       '孽兽、域外邪魔与外道修士共享上限，超额目标由天骄或诸天强者优先讨灭旧敌。',
-      ...(!active.length ? ['当前诸天安宁，尚未发现存世的域外灾厄。'] : []),
+      ...(!active.length ? ['当前诸天安宁，尚未发现存世的域外灾厄；跨过新的千年节点后会再次降临。'] : []),
       ...active.map(formatEntity),
       ...(report?.count ? [`最近一次巡猎记录：\n${formatForeignCalamityCullReport(report)}`] : []),
       '使用 #讨伐域外灾厄 编号（或灾厄ID/名号）发起挑战。',
