@@ -7,7 +7,7 @@ import {
   SUIYUN_STAGES, SUIYUN_HOUR_MS, SUIYUN_DAY_MS, activateSuiyun, advanceSuiyun,
   getSuiyunStage, getSuiyunEffects, ensureSuiyunState, createSuiyunRoot,
   buildSuiyunTrialBattle, applySuiyunTrialResult, cultivateSuiyun, refineSuiyun,
-  convertSuiyunPower, getSuiyunPower, spendSuiyunPower,
+  convertSuiyunPotential, getSuiyunPower, spendSuiyunPower,
   ascendSuiyunPalace, settleSuiyunPalace, getSuiyunLifeMaximum,
 } from '../model/suiyun.js';
 import { getLifeSourceRepairMaximum } from '../model/lifeSourceRepair.js';
@@ -115,14 +115,16 @@ test('炼化须学功法、真实目标ID防重复，奖励100到300，本源封
   assert.equal(p.生命本源, 15000);
 });
 
-test('兑换整万月华、精确小数、负数非数及透支保护', () => {
+test('每100月华兑换1潜力，负数非数及透支保护，岁云之力独立保留', () => {
   const p = player();
-  p.月华值 = 30000;
-  for (const bad of [0, -10000, 10001, Infinity, NaN]) assert.equal(convertSuiyunPower(p, bad).ok, false);
-  for (let i = 0; i < 3; i++) assert.equal(convertSuiyunPower(p).ok, true);
+  p.月华值 = 300;
+  p.岁云之力 = .3;
+  for (const bad of [0, -100, 101, Infinity, NaN]) assert.equal(convertSuiyunPotential(p, bad).ok, false);
+  for (let i = 0; i < 3; i++) assert.equal(convertSuiyunPotential(p).ok, true);
   assert.equal(p.月华值, 0);
+  assert.equal(p.仙道潜力, 3);
   assert.equal(getSuiyunPower(p), .3);
-  assert.equal(convertSuiyunPower(p).ok, false);
+  assert.equal(convertSuiyunPotential(p).ok, false);
   assert.equal(spendSuiyunPower(p, -.1), false);
   assert.equal(spendSuiyunPower(p, Infinity), false);
   assert.equal(spendSuiyunPower(p, .4), false);
@@ -132,7 +134,7 @@ test('兑换整万月华、精确小数、负数非数及透支保护', () => {
 
 test('月华天宫只结算已存在世界、保留不足一小时、重复读取无重复收益', () => {
   const p = player();
-  assert.deepEqual(settleSuiyunPalace(p, null), { hours: 0, power: 0 });
+  assert.deepEqual(settleSuiyunPalace(p, null), { hours: 0, power: 0, potentialGain: 0 });
   const world = { world_name: '旧世界' };
   assert.equal(ascendSuiyunPalace(world, 0), true);
   assert.equal(ascendSuiyunPalace(world, 999), false);

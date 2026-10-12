@@ -21,7 +21,7 @@ import {
   ensureCombatSkillLoadout,
   getCombatSkillOptions,
 } from './combatSkillLoadout.js';
-import { getSuiyunStage } from './suiyun.js';
+import { getSuiyunStage, hasSuiyunSkills } from './suiyun.js';
 import { SUIYUN_COMBAT } from './suiyunCombat.js';
 
 function percent(value, digits = 0) {
@@ -244,7 +244,9 @@ function buildSpecialSection(player) {
       triggers: [trigger],
     };
   });
-  if (getSuiyunStage(player)) {
+  if (hasSuiyunSkills(player)) {
+    const inherited = !getSuiyunStage(player);
+    const sourceLabel = inherited ? '月华赐予' : '灵根自带';
     const skills = [
       {
         name: '霜剑入月',
@@ -268,7 +270,8 @@ function buildSpecialSection(player) {
     for (const skill of skills) items.push({
       index: items.length + 1, name: skill.name,
       equipped: true, automatic: true, innate: true,
-      stage: '岁云五阶段共有 · 灵根自带', proficiency: 0, progress: 0,
+      sourceLabel,
+      stage: inherited ? `月华传承 · 第${player.月华传承.名额}位受赐者` : '岁云五阶段共有 · 灵根自带', proficiency: 0, progress: 0,
       triggerBoost: '自动', combatBoost: '固定规则', effectBoost: '无需修炼', moveProgress: '',
       triggers: [{ when: skill.when, chance: '100%', effect: skill.effect, multiplier: skill.multiplier }],
     });
@@ -276,7 +279,7 @@ function buildSpecialSection(player) {
   return {
     key: 'special',
     label: '特殊秘法',
-    note: '无需占用技能槽，功法掌握后或灵根自带时自动参与战斗',
+    note: '无需占用技能槽，功法掌握、灵根自带或月华赐予后自动参与战斗',
     limit: 3,
     equippedCount: items.length,
     summary: `${items.length} 门`,

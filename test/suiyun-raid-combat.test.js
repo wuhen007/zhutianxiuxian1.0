@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import * as suiyun from '../model/suiyunCombat.js';
-import { createSuiyunRoot, getSuiyunEffects } from '../model/suiyun.js';
+import { createSuiyunRoot, getSuiyunEffects, hasSuiyunSkills, SUIYUN_EXCLUSIVE_SKILLS } from '../model/suiyun.js';
 import { mergeHighRealmRaidResult, prepareHighRealmBattle } from '../model/highRealmBarrier.js';
 
 const source = fs.readFileSync(new URL('../apps/Battle/tuanben.js', import.meta.url), 'utf8');
@@ -18,7 +18,7 @@ function actionFunction(name) {
 
 function loadRaid() {
   const dependencies = {
-    ...suiyun, getSuiyunEffects, prepareHighRealmBattle, mergeHighRealmRaidResult,
+    ...suiyun, getSuiyunEffects, hasSuiyunSkills, prepareHighRealmBattle, mergeHighRealmRaidResult,
     plugin: class {}, data: { jineng1: [], jineng2: [], jineng3: [], jineng_heal: [] },
     ensureNumber: (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback,
     bigNumberTransform: value => String(value),
@@ -249,4 +249,19 @@ test('真实团本模块可以完整装载，无缺失共享技能导出', () =>
     process.exit(0);
   `], { cwd: fileURLToPath(new URL('../../..', import.meta.url)), encoding: 'utf8', timeout: 10000 });
   assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+test('非岁云月华受赐者在独立团本同样施放九剑、防反并复生三次', async () => {
+  const gift = {
+    id: 'gift-raid', 灵根: { name: '普通灵根', type: '普通' },
+    月华传承: { 授予者: 'owner', 受赐者: 'gift-raid', 名额: 1, 传授时间: 1000, 技能: [...SUIYUN_EXCLUSIVE_SKILLS] },
+  };
+  const attack = await runBattle(owner({ ...gift, 速度: 10000 }), enemy({ 速度: 1, 防御: 1e15 }));
+  assert.ok(attack.logs.some(line => /霜剑击中试炼首领9次，实际伤害合计22500/.test(line)));
+  const revival = await runBattle(owner({ ...gift, 当前血量: 100, 血量上限: 100, 速度: 1 }),
+    enemy({ 当前血量: 1e15, 血量上限: 1e15, 攻击: 1e10, 速度: 10000 }), { bossDamage: 1e12 });
+  assert.equal(revival.logs.filter(line => line.includes('【白云苍狗】')).length, 3);
+  assert.ok(revival.logs.some(line => line.includes('【岁云归一】')));
+  assert.equal(revival.result.result, 'BOSS胜利');
+  assert.equal(revival.result.players_hp_change[0], -100);
 });

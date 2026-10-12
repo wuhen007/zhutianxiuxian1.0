@@ -55,7 +55,7 @@ test('HTML实际渲染自带技能，无需秘籍或虚构熟练度，文字回�
   for (const name of names) assert.ok(html.includes(name));
   assert.equal((html.match(/无需学习或装备/g) || []).length, 3);
   assert.doesNotMatch(html, /当前熟练度|0 \/ 1000/);
-  assert.match(read('apps/User/GongfaProficiency.js'), /item\.innate \? '灵根自带，无需学习或装备'/);
+  assert.match(read('apps/User/GongfaProficiency.js'), /item\.sourceLabel \|\| '灵根自带'/);
 });
 
 test('帮助与说明准确写明灵根自带三战技及未指定数值的默认规则', () => {

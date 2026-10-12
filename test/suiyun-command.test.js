@@ -164,7 +164,7 @@ test('炼化真实灾厄消费凭证，与天魔炼化共用去重记录', async
   assert.equal(f.values.has(key), false);
   const firstGain = f.players.owner.月华值;
   assert.ok(firstGain >= 100 && firstGain <= 300);
-  assert.equal(f.players.owner.生命本源, 220);
+  assert.equal(f.players.owner.生命本源, 203.9);
   f.values.set(key, proof);
   assert.match(await f.app.refine(f.event('#月华炼化 灾厄')), /此前已经炼化/);
   assert.equal(f.players.owner.月华值, firstGain);
@@ -267,16 +267,41 @@ test('真实天骄死亡函数将死亡标记、状态和来源回执原子提�
   assert.equal(JSON.parse(values.get('status')).isAlive, false);
 });
 
-test('月华兑换核验余额和整数批次，查看面板无小世界不积累收益', async () => {
+test('新旧兑换指令均按100月华换1潜力，保留岁云之力与莲花成长', async () => {
   const f = fixture();
   f.players.owner.月华值 = 25000;
-  assert.match(await f.app.power(f.event('#岁云之力 兑换 20000')), /0\.20点/);
+  f.players.owner.岁云之力 = .2;
+  f.players.owner.岁云.累计炼化月华 = 1234;
+  assert.match(await f.app.power(f.event('#岁云之力 兑换 20000')), /仙道潜力\+200/);
   assert.equal(f.players.owner.月华值, 5000);
   await f.app.power(f.event('#岁云之力 兑换 10000'));
   await f.app.power(f.event('#岁云之力 兑换 3'));
   await f.app.power(f.event('#岁云之力'));
   assert.equal(f.players.owner.岁云之力, .2);
   assert.equal(f.players.owner.月华值, 5000);
+  assert.equal(f.players.owner.仙道潜力, 200);
+  assert.match(await f.app.power(f.event('#月华兑换100')), /仙道潜力\+1/);
+  assert.match(await f.app.power(f.event('#月华兑换')), /仙道潜力\+1/);
+  assert.equal(f.players.owner.仙道潜力, 202);
+  assert.equal(f.players.owner.月华值, 4800);
+  assert.equal(f.players.owner.岁云.累计炼化月华, 1234);
+  assert.equal(f.players.owner.岁云之力, .2);
+});
+
+test('月华兑换并发不透支，写入失败不扣余额，非法格式不悄悄兑换', async () => {
+  const f = fixture();
+  f.players.owner.月华值 = 100;
+  f.failWrite = true;
+  await assert.rejects(f.app.power(f.event('#月华兑换100')), /injected-write-error/);
+  assert.equal(f.players.owner.月华值, 100);
+  assert.equal(f.players.owner.仙道潜力, undefined);
+  for (const command of ['#月华兑换-100', '#月华兑换1.5', '#月华兑换1e2', '#月华兑换100 abc']) {
+    assert.match(await f.app.power(f.event(command)), /用法/);
+  }
+  const replies = await Promise.all([f.app.power(f.event('#月华兑换100')), f.app.power(f.event('#月华兑换100'))]);
+  assert.ok(replies.some(reply => reply.includes('月华值不足')));
+  assert.equal(f.players.owner.月华值, 0);
+  assert.equal(f.players.owner.仙道潜力, 1);
 });
 
 test('灾厄来源和小世界的生产接线均覆盖岁云传承', () => {
@@ -292,6 +317,7 @@ test('灾厄来源和小世界的生产接线均覆盖岁云传承', () => {
 test('最终奖励幂等，自动装备无上天阙枝并保留原至宝、重建属性', async () => {
   const f = fixture();
   f.players.owner.灵根 = core.createSuiyunRoot(5);
+  f.players.owner.岁云.仙宠已领取 = true;
   await f.app.advance(f.event('#岁云见证'));
   assert.equal(f.equipment.owner.至宝.name, '无上天阙枝');
   assert.equal(f.equipment.owner.至宝.绑定者, 'owner');
@@ -307,6 +333,7 @@ test('最终奖励幂等，自动装备无上天阙枝并保留原至宝、重�
 test('自动认主换装失败回滚装备与领取标志，奖励保留且重试不重复发放', async () => {
   const f = fixture();
   f.players.owner.灵根 = core.createSuiyunRoot(5);
+  f.players.owner.岁云.仙宠已领取 = true;
   f.failEquipment = true;
   await assert.rejects(f.app.advance(f.event('#岁云见证')), /injected-equipment-error/);
   assert.equal(f.equipment.owner.至宝.name, '原本至宝');

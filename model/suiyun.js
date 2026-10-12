@@ -14,6 +14,9 @@ export const SUIYUN_LOTUS_STAT_PER_MOONLIGHT = 200_000;
 export const SUIYUN_PET_NAME = '霜月剑灵';
 export const SUIYUN_PET_STAGE = 3;
 export const SUIYUN_PALACE_POTENTIAL_PER_HOUR = 50;
+export const SUIYUN_EXCLUSIVE_SKILLS = Object.freeze(['霜剑入月', '岁云归一', '白云苍狗']);
+export const SUIYUN_GIFT_LIMIT = 3;
+export const SUIYUN_POTENTIAL_EXCHANGE_RATE = 100;
 
 export const SUIYUN_STAGES = Object.freeze([
   { name: '月华之体', realm: 0, realmName: '无', life: 200, cap: 600, enlightenmentBonus: .2, tribulationReduction: .2, lootMultiplier: 1, eff: 20, orb: 1.5, stats: 2 },
@@ -37,6 +40,21 @@ const randomInteger = (min, max, random) => min + Math.floor(Math.min(1 - Number
 
 export function getSuiyunStage(player) {
   return SUIYUN_STAGES.findIndex(stage => stage.name === player?.灵根?.name) + 1;
+}
+
+/** 赐予仅传授三项战技，不赋予岁云灵根的其他被动或再传授资格。 */
+export function hasSuiyunSkills(player) {
+  if (getSuiyunStage(player) > 0) return true;
+  if (player?._tahua_type || player?._yiqihua_entity || player?._万灵魔幡主魂
+    || player?._帝骑分身 || player?._圆神分身 || player?.分身 === true) return false;
+  const gift = player?.月华传承;
+  const recipient = String(player?.id || '');
+  return Boolean(recipient && gift && typeof gift === 'object' && !Array.isArray(gift)
+    && String(gift.受赐者 || '') === recipient
+    && String(gift.授予者 || '').trim() && String(gift.授予者) !== recipient
+    && Number.isInteger(gift.名额) && gift.名额 >= 1 && gift.名额 <= SUIYUN_GIFT_LIMIT
+    && Number.isFinite(gift.传授时间) && gift.传授时间 >= 0
+    && Array.isArray(gift.技能) && SUIYUN_EXCLUSIVE_SKILLS.every(name => gift.技能.includes(name)));
 }
 
 export function hasSuiyunFreeDungeonEntry(player) {
@@ -248,16 +266,26 @@ export function spendSuiyunPower(player, cost) {
   return true;
 }
 
-export function convertSuiyunPower(player, amount = 10000) {
+export function convertSuiyunPotential(player, amount = SUIYUN_POTENTIAL_EXCHANGE_RATE) {
   if (!getSuiyunStage(player)) return fail('月华之体觉醒后才可转化。');
   const count = Number(amount);
-  if (!Number.isSafeInteger(count) || count <= 0 || count % 10000 !== 0) return fail('兑换月华值须为10000的正整数倍。');
-  ensureSuiyunState(player);
-  if (player.月华值 < count) return fail('月华值不足。');
-  const power = count / 100000;
-  player.月华值 -= count;
-  player.岁云之力 = Math.round((getSuiyunPower(player) + power) * 1000) / 1000;
-  return { ok: true, spent: count, power, gain: power };
+  if (!Number.isSafeInteger(count) || count <= 0 || count % SUIYUN_POTENTIAL_EXCHANGE_RATE !== 0) {
+    return fail('兑换月华值须为100的正整数倍。');
+  }
+  const current = Number(player.月华值 ?? 0);
+  const potential = Number(player.仙道潜力 ?? 0);
+  if (!Number.isFinite(current) || current < 0 || !Number.isFinite(potential) || potential < 0) {
+    return fail('月华或仙道潜力数据异常，请先核对角色存档。');
+  }
+  if (current < count) return fail('月华值不足。');
+  const potentialGain = count / SUIYUN_POTENTIAL_EXCHANGE_RATE;
+  const nextPotential = potential + potentialGain;
+  if (!Number.isFinite(nextPotential) || nextPotential > Number.MAX_SAFE_INTEGER || current > Number.MAX_SAFE_INTEGER) {
+    return fail('资源数值超出精确结算范围，请先核对角色存档。');
+  }
+  player.月华值 = current - count;
+  player.仙道潜力 = nextPotential;
+  return { ok: true, spent: count, potentialGain, gain: potentialGain };
 }
 
 export function ascendSuiyunPalace(world, now = Date.now()) {

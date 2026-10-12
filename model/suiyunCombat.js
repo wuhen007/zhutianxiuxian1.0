@@ -1,7 +1,7 @@
-import { getSuiyunStage } from './suiyun.js';
+import { hasSuiyunSkills } from './suiyun.js';
 import { getHighRealmBarrier } from './highRealmBarrier.js';
 
-// 未指定的推条/控制时长/防反比例集中于此；技能随岁云灵根自带，不占功法槽。
+// 未指定的推条/控制时长/防反比例集中于此；岁云灵根与月华受赐者不占功法槽。
 export const SUIYUN_COMBAT = Object.freeze({
   targets: 9, hits: 9, multiplier: 25,
   pushback: 2500, controlTurns: 1, frostRatio: .2,
@@ -12,7 +12,7 @@ export const SUIYUN_COMBAT = Object.freeze({
 const value = (number, fallback = 0) => Number.isFinite(Number(number)) ? Math.max(0, Number(number)) : fallback;
 const scaled = (number, ratio, minimum = 0) => Math.max(minimum, Math.min(Number.MAX_VALUE, value(number) * ratio));
 const living = unit => value(unit?.当前血量) > 0;
-const eligible = unit => getSuiyunStage(unit) > 0 && !unit?._高境界镇杀 && !unit?._高境界压制;
+const eligible = unit => hasSuiyunSkills(unit) && !unit?._高境界镇杀 && !unit?._高境界压制;
 const label = unit => unit?.名号 || unit?.name || '修士';
 
 /** 仅对本场战斗副本调用；下场不继承控制、霜寒或复活计数。 */

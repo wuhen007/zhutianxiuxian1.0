@@ -173,7 +173,7 @@ export class GongfaProficiency extends plugin {
           .map(row => `${row.when} ${row.chance}｜${row.effect}｜${row.multiplier}`)
           .join('；');
         const status = item.automatic ? '[自动生效]' : item.equipped ? '[已装备]' : '[未装备]';
-        lines.push(`${item.index}. ${status}${item.name}｜${item.innate ? '灵根自带，无需学习或装备' : `熟练度${item.proficiency}/1000`}｜${triggers}`);
+        lines.push(`${item.index}. ${status}${item.name}｜${item.innate ? `${item.sourceLabel || '灵根自带'}，无需学习或装备` : `熟练度${item.proficiency}/1000`}｜${triggers}`);
       }
     }
     return e.reply(lines.join('\n'));

@@ -1,4 +1,4 @@
-import { getSuiyunEffects } from '../../model/suiyun.js';
+import { getSuiyunEffects, hasSuiyunSkills } from '../../model/suiyun.js';
 import {
   castSuiyunMoonSword, consumeSuiyunControl, reduceSuiyunDamage,
   reflectSuiyunDamage, resetSuiyunCombat, tickSuiyunFrost, trySuiyunRevival,
@@ -4055,8 +4055,8 @@ if (targetPlayer.分身 && targetPlayer.分身.length > 0) {
   
   // 计算血量变化
   const playersHpChange = playersData.map((p, index) => ensureNumber(
-    (getSuiyunEffects(p).noDemonicValue ? Math.min(p.当前血量, players[index].血量上限) : p.当前血量) - p.初始血量, 0));
-  const bossHpChange = ensureNumber((getSuiyunEffects(bossCopy).noDemonicValue
+    (hasSuiyunSkills(p) ? Math.min(p.当前血量, players[index].血量上限) : p.当前血量) - p.初始血量, 0));
+  const bossHpChange = ensureNumber((hasSuiyunSkills(bossCopy)
     ? Math.min(bossCopy.当前血量, boss.血量上限) : bossCopy.当前血量) - bossCopy.初始血量, 0);
   
   // 确定战斗结果

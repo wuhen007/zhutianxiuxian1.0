@@ -8,11 +8,13 @@ import {
 } from '../../model/xiuxian.js';
 import {
   activateSuiyun, advanceSuiyun, applySuiyunTrialResult, ascendSuiyunPalace,
-  buildSuiyunTrialBattle, convertSuiyunPower, cultivateSuiyun, ensureSuiyunState,
+  buildSuiyunTrialBattle, convertSuiyunPotential, cultivateSuiyun, ensureSuiyunState,
   getSuiyunEffects, getSuiyunLifeMaximum, getSuiyunLotusBonus, getSuiyunPower, getSuiyunStage, refineSuiyun,
   settleSuiyunPalace, spendSuiyunPower, SUIYUN_PET_NAME, SUIYUN_PET_STAGE,
 } from '../../model/suiyun.js';
 import { claimSuiyunUnique, releaseSuiyunUnique } from '../../model/suiyunRegistry.js';
+import { readSuiyunGifts, withSuiyunGiftClaim, SUIYUN_GIFT_LIMIT } from '../../model/suiyunGift.js';
+import { SUIYUN_EXCLUSIVE_SKILLS } from '../../model/suiyun.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { swapEquipmentState } from '../../model/equipmentSwap.js';
 import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
@@ -87,7 +89,9 @@ export class Suiyun extends plugin {
         { reg: '^#月华炼化.*$', fnc: 'refine' },
         { reg: '^#云月修炼$', fnc: 'cultivate' },
         { reg: '^#云月之莲$', fnc: 'showLotus' },
-        { reg: '^#岁云之力(?:\\s*兑换(?:\\s+\\d+)?)?$', fnc: 'power' },
+        { reg: '^#赐予月华.*$', fnc: 'gift' },
+        { reg: '^#岁云之力(?:\\s*兑换(?:\\s*\\d+)?)?$', fnc: 'power' },
+        { reg: '^#月华兑换(?:\\s*\\d+)?$', fnc: 'power' },
         { reg: '^#岁云更改.*$', fnc: 'rewrite' },
       ],
     });
@@ -112,6 +116,51 @@ export class Suiyun extends plugin {
     await player_efficiency(qq);
   }
 
+  async gift(e) {
+    const ctx = await this.context(e);
+    if (!ctx) return false;
+    if (e.at === 'all' || e.message?.some(item => item.type === 'at' && item.qq === 'all')) {
+      return e.reply('请单独@一位修士承接月华传承。');
+    }
+    const mentions = new Set((e.message || []).filter(item => item.type === 'at').map(item => String(item.qq)));
+    if (e.at) mentions.add(String(e.at));
+    if (mentions.size > 1) return e.reply('一次只能@一位修士，避免把永久名额授予错误目标。');
+    const at = getSuperdimensionalRewriteTarget(e, '');
+    const targetQQ = at ? String(await channel(at)) : '';
+    return withPlayerLocks(targetQQ ? [ctx.qq, targetQQ] : [ctx.qq], async () => {
+      const player = await Read_player(ctx.qq);
+      const error = this.holderError(player);
+      if (error) return e.reply(error);
+      if (!targetQQ) {
+        const claims = readSuiyunGifts();
+        return e.reply([
+          `【赐予月华】全服名额 ${claims.length}/${SUIYUN_GIFT_LIMIT}`,
+          ...Array.from({ length: SUIYUN_GIFT_LIMIT }, (_, index) => {
+            const claim = claims.find(entry => entry.slot === index + 1);
+            return `${index + 1}：${claim ? `${claim.recipientName}（${claim.delivered ? '已传授' : '待原目标重试完成'}）` : '空缺'}`;
+          }),
+          `用法：#赐予月华 @目标，一次传授${SUIYUN_EXCLUSIVE_SKILLS.join('、')}；每位目标占一个永久名额。`,
+        ].join('\n'));
+      }
+      if (targetQQ === ctx.qq) return e.reply('你已掌握月华三技，请选择另一位修士。');
+      if (!await existplayer(targetQQ)) return e.reply('目标尚未踏入修行。');
+      const target = await Read_player(targetQQ);
+      if (getSuiyunStage(target) || getSuiyunStage({ 灵根: target.诸天镜系统?.本源灵根 })) {
+        return e.reply('目标已持有岁云灵根，自带月华三技，无需占用传承名额。');
+      }
+      const result = await withSuiyunGiftClaim(ctx.qq, targetQQ, target.名号, async claim => {
+        target.月华传承 = {
+          授予者: claim.ownerId, 受赐者: claim.recipientId, 名额: claim.slot,
+          传授时间: claim.at, 技能: [...SUIYUN_EXCLUSIVE_SKILLS],
+        };
+        return await Write_player(targetQQ, target);
+      });
+      if (!result.ok) return e.reply(result.reason);
+      if (result.alreadyGranted) return e.reply(`${target.名号 || targetQQ}此前已获月华三技，仍占用第${result.claim.slot}席，本次未新增名额。`);
+      return e.reply(`【赐予月华】${target.名号 || targetQQ}承接第${result.claim.slot}席传承，获得${SUIYUN_EXCLUSIVE_SKILLS.join('、')}。\n三技自动参与战斗；#战斗技能 查看详情。`);
+    });
+  }
+
   async refreshLotusAttributes(qq, player) {
     const equipment = await Read_equipment(qq);
     const bonus = getSuiyunLotusBonus(player, equipment);
@@ -133,7 +182,7 @@ export class Suiyun extends plugin {
         `每点累计月华：攻击、防御、生命上限各+${bonus.perMoonlight.toLocaleString('zh-CN')}`,
         `已积累成长：攻、防、生各+${(bonus.moonlight * bonus.perMoonlight).toLocaleString('zh-CN')}`,
         bonus.active ? '当前共鸣：已装备，成长属性已生效。' : '当前共鸣：未装备本人云月之莲，成长已保存，装备后生效。',
-        '通过 #月华炼化 玩家/天骄/灾厄 累积；不额外消耗月华，兑换岁云之力不削减成长。',
+        '通过 #月华炼化 玩家/天骄/灾厄 累积；不额外消耗月华，兑换仙道潜力不削减成长。',
         '云月修炼不计入炼化成长；旧档从新增统计时开始记录，不按余额猜补历史。',
       ].join('\n'));
     });
@@ -338,6 +387,9 @@ export class Suiyun extends plugin {
   }
 
   async power(e) {
+    const text = String(e.msg || '').trim();
+    const exchange = text.match(/^#(?:月华兑换|岁云之力\s*兑换)\s*(\d+)?$/);
+    if (text !== '#岁云之力' && !exchange) return e.reply('用法：#月华兑换 100；兑换数量为月华值，需为100的正整数倍。');
     const ctx = await this.context(e);
     if (!ctx) return false;
     return withPlayerMutationLock(ctx.qq, async () => {
@@ -346,17 +398,18 @@ export class Suiyun extends plugin {
       if (error) return e.reply(error);
       const petGranted = await this.grantStagePet(ctx.qq, player);
       const palace = await this.settlePalace(ctx.qq, player);
-      const exchange = String(e.msg).match(/兑换(?:\s+(\d+))?$/);
+      let exchangeResult;
       if (exchange) {
-        const amount = exchange[1] ? Number(exchange[1]) : 10000;
-        const result = convertSuiyunPower(player, amount);
-        if (!result.ok) return e.reply(result.reason);
+        const amount = exchange[1] ? Number(exchange[1]) : 100;
+        exchangeResult = convertSuiyunPotential(player, amount);
+        if (!exchangeResult.ok) return e.reply(exchangeResult.reason);
         await Write_player(ctx.qq, player);
       }
       const lotus = await this.refreshLotusAttributes(ctx.qq, player);
       const effects = getSuiyunEffects(player);
       return e.reply([
         `【岁云之力】${getSuiyunPower(player).toFixed(2)}点`, this.status(player),
+        exchangeResult ? `已消耗${exchangeResult.spent}月华，仙道潜力+${exchangeResult.potentialGain}，当前${player.仙道潜力}点。` : '',
         palace.hours > 0 ? `本次月华天宫结算${palace.hours}小时：岁云之力+${palace.power}、仙道潜力+${palace.potentialGain}。` : '',
         petGranted ? `已补领【${SUIYUN_PET_NAME}】x1；#出战仙宠${SUIYUN_PET_NAME}。`
           : getSuiyunStage(player) >= SUIYUN_PET_STAGE ? `传承仙宠：${SUIYUN_PET_NAME}已领取；#出战仙宠${SUIYUN_PET_NAME}。`
@@ -365,7 +418,8 @@ export class Suiyun extends plugin {
         `悟道加成${Math.round(effects.enlightenmentBonus * 100)}%｜渡劫减伤${Math.round(effects.tribulationReduction * 100)}%｜物品获取${effects.lootMultiplier}倍`,
         `灵根幸运+${Math.round(effects.luckBonus * 100)}%｜秘境通行：${effects.freeDungeonEntry ? '免入场资源消耗' : '霜月剑尊起免入场资源消耗'}`,
         '自带战技：霜剑入月（至多9敌各9剑、每剑25倍、绝控霜寒）；岁云归一（防御反伤）；白云苍狗（每战3次复活，每次全属性+50%）。#战斗技能 查看详情。',
-        '月华天宫每现实小时产出0.5点岁云之力与50点仙道潜力；#岁云之力 兑换 10000（月华值→0.1点岁云之力，可填10000的倍数）。',
+        '月华天宫每现实小时产出0.5点岁云之力与50点仙道潜力；#月华兑换 100：100月华兑换1点仙道潜力，可填100的正整数倍。',
+        '#赐予月华 @目标：传授三项专属战技，全服限定三名；不带@查看名额。',
         '#岁云更改 时代 时代名：5点；#岁云更改 至宝线索：10点。',
         '#岁云更改 命格/天资/灵根 名称：20点，可@目标。唯一灵根不参与改写。',
         '#云月修炼：24小时一次；#月华炼化 @目标 / 天骄 / 灾厄 / 魔主。',

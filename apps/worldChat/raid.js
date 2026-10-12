@@ -1,3 +1,5 @@
+import { hasSuiyunSkills, SUIYUN_EXCLUSIVE_SKILLS } from '../../model/suiyun.js';
+
 const NUMBER_FIELDS = [
   '攻击', '防御', '当前血量', '血量上限', '速度', '暴击率', '暴击伤害',
   '法球倍率', '魔道值', '神石', 'level_id', 'Physique_id', 'mijinglevel_id',
@@ -46,6 +48,15 @@ export function createCrossRaidAvatar(player) {
     花粉路分支: String(player?.花粉路分支 || '').slice(0, 10),
   };
   for (const field of NUMBER_FIELDS) avatar[field] = finiteNumber(player?.[field]);
+  // Export only a validated recipient's skill grant, without exposing either QQ.
+  if (hasSuiyunSkills({ ...player, 灵根: { name: '跨服月华资格校验' } })) {
+    avatar.月华传承 = {
+      授予者: 'cross_suiyun', 受赐者: 'cross_snapshot',
+      名额: Number(player.月华传承.名额),
+      传授时间: Number(player.月华传承.传授时间),
+      技能: [...SUIYUN_EXCLUSIVE_SKILLS],
+    };
+  }
   avatar.当前血量 = avatar.血量上限;
   return avatar;
 }
@@ -55,10 +66,15 @@ export function hydrateCrossRaidAvatar(source, identity = {}) {
   const safeId = `${identity.serverId || 'world'}_${identity.memberTag || 'avatar'}`
     .replace(/[^A-Za-z0-9_-]/g, '_')
     .slice(0, 80);
+  const crossId = `cross_${safeId}`;
+  if (source?.月华传承?.授予者 === 'cross_suiyun'
+    && hasSuiyunSkills({ ...source, id: 'cross_snapshot', 灵根: { name: '跨服月华资格校验' } })) {
+    avatar.月华传承 = { ...cleanObject(source.月华传承, 1000), 受赐者: crossId };
+  }
   return {
     ...avatar,
-    id: `cross_${safeId}`,
-    user_id: `cross_${safeId}`,
+    id: crossId,
+    user_id: crossId,
     名号: `${avatar.名号}【${String(identity.serverName || '异界').slice(0, 20)}·化身】`,
     _跨服化身: true,
   };

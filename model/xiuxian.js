@@ -28,7 +28,7 @@ import { FileRollbackTransaction } from '../apps/SecretPlace/rebirthTransaction.
 import { releaseJuelingLifespanForAuthority } from './juelingLifespan.js';
 import { applyClowWishBattleWeakness } from './clowWish.js';
 import { findTalentSynchronizationMatch } from './talentSynchronization.js';
-import { getSuiyunEffects, getSuiyunLotusBonus } from './suiyun.js';
+import { getSuiyunEffects, getSuiyunLotusBonus, hasSuiyunSkills } from './suiyun.js';
 import { computePetStoredBonus, rebuildPlayerLucky, syncSuiyunLuckyBonus } from './petLuckyCalc.js';
 import {
   castSuiyunMoonSword, consumeSuiyunControl, reduceSuiyunDamage,
@@ -8540,6 +8540,7 @@ export function createTahuaAvatarEntity(caster, opponent, avatar, duration, mast
   const isMirror = isSelfMirror || isEnemyMirror;
   const source = isEnemyMirror ? opponent : caster;
   const entity = JSON.parse(JSON.stringify(source));
+  delete entity.月华传承;
 
   entity.名号 = isEnemyMirror
     ? `${caster.名号}·他化自在身(${opponent.名号}映照)`
@@ -8836,7 +8837,7 @@ let B_speed = getBattleUnitSpeed(B_player);
     ]);
     // Revival amplification is battle-local; callers persist the returned HP only.
     for (const [unit, original] of [[A_player, AA_player], [B_player, BB_player]]) {
-      if (getSuiyunEffects(unit).noDemonicValue && Number(original.血量上限) > 0) {
+      if (hasSuiyunSkills(unit) && Number(original.血量上限) > 0) {
         unit.当前血量 = Math.min(unit.当前血量, Number(original.血量上限));
       }
     }
@@ -9398,7 +9399,7 @@ let B_speed = getBattleUnitSpeed(B_player);
 
         defender.当前血量 = 0;
         msg.push(`${defender.名号}的存在痕迹被从所有时间线上彻底抹除！`);
-        if (getSuiyunEffects(defender).noDemonicValue) {
+        if (hasSuiyunSkills(defender)) {
           const revival = checkRevival(defender, 'main');
           if (revival.revived) {
             msg.push(...(Array.isArray(revival.message) ? revival.message : [revival.message]));
@@ -9847,7 +9848,7 @@ let B_speed = getBattleUnitSpeed(B_player);
   function applyDuelSuiyunDamage(attacker, defender, damage, messages, options) {
     const applied = applySuiyunBattleDamage(attacker, defender, damage, messages, options);
     for (const unit of [defender, attacker]) {
-      if (!unit || unit.当前血量 > 0 || !getSuiyunEffects(unit).noDemonicValue) continue;
+      if (!unit || unit.当前血量 > 0 || !hasSuiyunSkills(unit)) continue;
       const revival = checkRevival(unit, 'main');
       if (revival.revived) messages.push(...(Array.isArray(revival.message) ? revival.message : [revival.message]));
     }
@@ -10735,6 +10736,7 @@ msg.push(bSpeedMsg);
               const tahuaEntities = isA ? A_tahua_entities : B_tahua_entities;
               for (let index = 0; index < config.count; index++) {
                 const entity = JSON.parse(JSON.stringify(attacker));
+                delete entity.月华传承;
                 entity.名号 = `${attacker.名号}·道身${config.count > 1 ? `(${index + 1})` : ''}`;
                 scaleDaoBodyStats(entity, config.ratio);
                 entity.血量上限 = Math.max(1, entity.血量上限 || 1);
@@ -12299,7 +12301,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   function applyTeamSuiyunDamage(attacker, defender, damage, messages, options) {
     const applied = applySuiyunBattleDamage(attacker, defender, damage, messages, options);
     for (const unit of [defender, attacker]) {
-      if (!unit || unit.当前血量 > 0 || !getSuiyunEffects(unit).noDemonicValue) continue;
+      if (!unit || unit.当前血量 > 0 || !hasSuiyunSkills(unit)) continue;
       const revival = checkTeamRevival(unit);
       if (revival.revived) messages.push(...revival.message);
     }
@@ -12415,6 +12417,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     const entities = attacker._team === 'A' ? A_yiqihua_entities : B_yiqihua_entities;
     for (let index = 0; index < config.count; index++) {
       const entity = JSON.parse(JSON.stringify(attacker));
+      delete entity.月华传承;
       entity.名号 = `${attacker.名号}·道身${config.count > 1 ? `(${index + 1})` : ''}`;
       scaleDaoBodyStats(entity, config.ratio);
       entity.血量上限 = Math.max(1, entity.血量上限 || 1);
@@ -12663,7 +12666,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   for (const [combatants, sources] of [[A_team, options._sourceATeam], [B_team, options._sourceBTeam]]) {
     combatants.forEach((unit, index) => {
       const cap = Number(sources?.[index]?.血量上限);
-      if (getSuiyunEffects(unit).noDemonicValue && cap > 0) unit.当前血量 = Math.min(unit.当前血量, cap);
+      if (hasSuiyunSkills(unit) && cap > 0) unit.当前血量 = Math.min(unit.当前血量, cap);
     });
   }
   const A_alive = A_team.filter(p => p.当前血量 > 0);
@@ -12985,8 +12988,8 @@ export async function tb_battle(players, boss, team) {
   
   // 计算血量变化
   const playersHpChange = teamData.map((p, index) =>
-    (getSuiyunEffects(p).noDemonicValue ? Math.min(p.当前血量, players[index].血量上限) : p.当前血量) - p.初始血量);
-  const bossHpChange = (getSuiyunEffects(bossCopy).noDemonicValue
+    (hasSuiyunSkills(p) ? Math.min(p.当前血量, players[index].血量上限) : p.当前血量) - p.初始血量);
+  const bossHpChange = (hasSuiyunSkills(bossCopy)
     ? Math.min(bossCopy.当前血量, boss.血量上限) : bossCopy.当前血量) - bossCopy.初始血量;
   
   // 确定战斗结果
