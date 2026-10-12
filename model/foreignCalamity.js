@@ -1,6 +1,7 @@
 import { createFishKingRelic } from './relicSystem.js';
 import { readPlayerArchives } from './riftGuardian.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
+import { randomUUID } from 'node:crypto';
 
 export const FOREIGN_CALAMITY_INDEX_KEY = 'xiuxian:foreign-calamity:index';
 export const FOREIGN_CALAMITY_MAX_ACTIVE = 100;
@@ -159,23 +160,26 @@ export function averageForeignCalamityPlayers(players) {
   return result;
 }
 
-export function createForeignCalamityWave({ worldYear, players = readPlayerArchives(), random = Math.random } = {}) {
-  const year = Math.max(1000, Math.floor(finite(worldYear, 1000) / 1000) * 1000);
+export function createForeignCalamityWave({ worldYear, players = readPlayerArchives(), random = Math.random, count, idPrefix, now } = {}) {
+  const year = idPrefix
+    ? Math.max(0, Math.floor(finite(worldYear)))
+    : Math.max(1000, Math.floor(finite(worldYear, 1000) / 1000) * 1000);
   const average = averageForeignCalamityPlayers(players);
-  const count = randomInt(1, 10, random);
-  return Array.from({ length: count }, (_, index) => {
+  const waveCount = count ?? randomInt(1, 10, random);
+  if (!Number.isInteger(waveCount) || waveCount < 1 || waveCount > 10) throw new RangeError('灾厄数量应为1至10的整数');
+  return Array.from({ length: waveCount }, (_, index) => {
     const profile = pick(PROFILES, random);
     const swing = 0.9 + clampRandom(random) * 0.2;
     const scaled = field => Math.max(1, Math.round(average[field] * (profile.multipliers[field] || 1) * swing));
     const maxHp = scaled('血量上限');
     const realm = field => Math.max(1, Math.round(finite(average[field], 1) * swing));
     return {
-      id: `foreign-${year}-${index + 1}`,
+      id: `${idPrefix || `foreign-${year}`}-${index + 1}`,
       worldYear: year,
-      spawnedAt: Date.now(),
+      spawnedAt: now ?? Date.now(),
       status: 'active',
       type: profile.type,
-      名号: `${pick(profile.names, random)}·${year.toString(36).toUpperCase()}${index + 1}`,
+      名号: `${pick(profile.names, random)}·${idPrefix ? idPrefix.slice(-8).toUpperCase() : year.toString(36).toUpperCase()}${index + 1}`,
       攻击: scaled('攻击'),
       防御: scaled('防御'),
       当前血量: maxHp,
@@ -633,19 +637,38 @@ export function consumePlaneFavorForWudao(player, rawGain, remaining) {
   };
 }
 
-export async function spawnForeignCalamities(previousWorldYear, currentWorldYear, options = {}) {
-  const before = Math.floor(Math.max(0, finite(previousWorldYear)) / 1000);
-  const after = Math.floor(Math.max(0, finite(currentWorldYear)) / 1000);
+/** 只接收定时流逝的累计自然年；世界纪年用于展示，不参与刷新去重。 */
+export async function spawnForeignCalamities(previousNaturalYears, currentNaturalYears, options = {}) {
+  const naturalYears = Math.max(0, finite(currentNaturalYears));
+  const before = Math.floor(Math.max(0, finite(previousNaturalYears)) / 1000);
+  const after = Math.floor(naturalYears / 1000);
+  const currentWorldYear = Math.max(0, finite(options.worldYear, naturalYears));
   const result = await withForeignPopulationLock(async () => {
     const spawned = [];
     const report = createForeignCullReport(options);
     // 旧版积压无需等到下个千年；即使本轮没有新来敌也照常巡猎。
     await cullForeignCalamities(report, options);
     for (let step = before + 1; step <= after; step++) {
-      const worldYear = step * 1000;
-      const markerKey = `xiuxian:foreign-calamity:spawn:${worldYear}`;
-      if (await redis.get(markerKey)) continue;
-      const wave = createForeignCalamityWave({ worldYear, players: options.players, random: options.random });
+      const milestone = step * 1000;
+      const markerKey = `xiuxian:foreign-calamity:spawn-natural:${milestone}`;
+      const marker = await redis.get(markerKey);
+      if (marker === '1') continue;
+      let wave;
+      if (marker) {
+        // 保存中断时沿用已确定的整波，不因重试重新抽取数量或战力。
+        const pending = JSON.parse(marker);
+        if (pending.status !== 'pending' || !Array.isArray(pending.entities)) {
+          throw new Error(`自然灾厄第${milestone}年生成记录损坏`);
+        }
+        wave = pending.entities;
+      } else {
+        const worldYear = Math.max(0, Math.floor(currentWorldYear - (naturalYears - milestone)));
+        wave = createForeignCalamityWave({
+          worldYear, players: options.players, random: options.random, now: options.now,
+          idPrefix: `foreign-natural-${milestone}`,
+        }).map(entity => ({ ...entity, source: 'natural', naturalYears: milestone }));
+        await redis.set(markerKey, JSON.stringify({ status: 'pending', entities: wave }));
+      }
       for (const entity of wave) {
         const existing = await readForeignCalamity(entity.id);
         if (!existing) {
@@ -655,7 +678,7 @@ export async function spawnForeignCalamities(previousWorldYear, currentWorldYear
           await redis.sAdd(FOREIGN_CALAMITY_INDEX_KEY, existing.id);
         }
       }
-      // 先锁定本波已生成，巡猎删除实体后重试同一年也不会重新刷出。
+      // 先锁定自然里程已生成，世界改年或巡猎退场后重试也不会重新刷出。
       await redis.set(markerKey, '1');
       await cullForeignCalamities(report, options);
     }
@@ -664,6 +687,34 @@ export async function spawnForeignCalamities(previousWorldYear, currentWorldYear
   });
   if (result.report.count && options.onCull) await options.onCull(result.report);
   return result.spawned;
+}
+
+/** 管理员主动召唤独立批次，使用正常属性与巡猎上限，不占用千年自然刷新。 */
+export async function summonForeignCalamities({ worldYear, count = 1, players, random = Math.random, now = Date.now(), summonedBy = '' } = {}) {
+  if (!Number.isInteger(count) || count < 1 || count > 10) {
+    return { ok: false, reason: 'invalid_count', entities: [], report: null };
+  }
+  if (!Number.isFinite(Number(worldYear)) || Number(worldYear) < 0) {
+    return { ok: false, reason: 'invalid_world_year', entities: [], report: null };
+  }
+  return withForeignPopulationLock(async () => {
+    const options = { random, now };
+    const report = createForeignCullReport(options);
+    await cullForeignCalamities(report, options);
+    const entities = createForeignCalamityWave({
+      worldYear: Number(worldYear), count, players, random, now,
+      idPrefix: `foreign-manual-${randomUUID()}`,
+    });
+    for (const entity of entities) {
+      entity.source = 'manual';
+      entity.summonedBy = String(summonedBy || '');
+      await saveForeignCalamity(entity);
+    }
+    const retained = await cullForeignCalamities(report, options);
+    const activeIds = new Set(retained.filter(entity => entity.status === 'active').map(entity => entity.id));
+    await saveForeignCullReport(report);
+    return { ok: true, reason: '', entities: entities.filter(entity => activeIds.has(entity.id)), generatedCount: count, report };
+  });
 }
 
 export async function readForeignCalamity(id) {
@@ -728,8 +779,9 @@ function createForeignCullReport({ now = Date.now() } = {}) {
 async function cullForeignCalamities(report, { random = Math.random } = {}) {
   const entities = await readIndexedForeignCalamities();
   const active = entities.filter(entity => entity.status === 'active')
-    .sort((a, b) => finite(a.worldYear) - finite(b.worldYear)
-      || finite(a.spawnedAt) - finite(b.spawnedAt)
+    // 世界纪年可回拨，巡猎优先清理实际更早生成的目标。
+    .sort((a, b) => finite(a.spawnedAt) - finite(b.spawnedAt)
+      || finite(a.worldYear) - finite(b.worldYear)
       || String(a.id).localeCompare(String(b.id)));
   const activeKeys = active.map(entity => `xiuxian:foreign-calamity:entity:${entity.id}`);
   let remaining = active.length;

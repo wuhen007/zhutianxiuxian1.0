@@ -570,10 +570,11 @@ export class Suiyun extends plugin {
           settings.Era.current.index = index;
           settings.Era.current.years = 0;
           const transaction = transactionFor([ctx.qq]);
-          transaction.capture(config.getConfigPath('xiuxian', 'xiuxian'));
           try {
             spendSuiyunPower(player, cost);
             await Write_player(ctx.qq, player);
+            // 玩家保存期间自然纪年可能推进；回滚只恢复配置写入前的最新快照。
+            transaction.capture(config.getConfigPath('xiuxian', 'xiuxian'));
             config.setConfig('xiuxian', 'xiuxian', settings);
             transaction.commit();
           } catch (error) {

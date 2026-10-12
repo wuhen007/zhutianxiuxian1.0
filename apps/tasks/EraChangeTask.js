@@ -442,13 +442,19 @@ export class EraChangeTask extends plugin {
     return { suppressedCount: 0, restoredCount: 0 };
   }
 
-  persistEraCurrent(era, current) {
+  persistEraCurrent(era, current, naturalYears) {
     const previous = era.current;
+    const previousNaturalYears = era.foreignCalamityNaturalYears;
     era.current = current;
+    if (naturalYears !== undefined) era.foreignCalamityNaturalYears = naturalYears;
     try {
       config.setConfig(this.configKey, 'xiuxian', this.set);
     } catch (error) {
       era.current = previous;
+      if (naturalYears !== undefined) {
+        if (previousNaturalYears === undefined) delete era.foreignCalamityNaturalYears;
+        else era.foreignCalamityNaturalYears = previousNaturalYears;
+      }
       throw error;
     }
   }
@@ -1002,7 +1008,14 @@ async checkJuelingLoss(e) {
       
       const era = this.set.Era;
       let { index, years, epoch } = era.current;
-      const advanceYears = era.yearlyAdvance || 1000;
+      const advanceYears = Number(era.yearlyAdvance ?? 1000);
+      const naturalYearsBefore = Number(era.foreignCalamityNaturalYears ?? 0);
+      const naturalYearsAfter = naturalYearsBefore + advanceYears;
+      if (!Number.isSafeInteger(advanceYears) || advanceYears <= 0
+        || !Number.isSafeInteger(naturalYearsBefore) || naturalYearsBefore < 0
+        || !Number.isSafeInteger(naturalYearsAfter)) {
+        throw new Error('自然时代推进年数异常，请核对yearlyAdvance与foreignCalamityNaturalYears。');
+      }
       const previousWorldYear = getRealmEventWorldYear(index, years, epoch);
       
       // 记录旧时代索引
@@ -1015,7 +1028,9 @@ async checkJuelingLoss(e) {
       const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
       let foreignCullReport = null;
       // 先生成并巡猎，失败时不推进纪年，也不重复执行本轮位面修复和绝灵物品侵蚀。
-      const foreignCalamities = await spawnForeignCalamities(previousWorldYear, currentWorldYear, {
+      // 只计算定时任务实际推进的自然年；玩家回拨世界纪年不重置这一累计值。
+      const foreignCalamities = await spawnForeignCalamities(naturalYearsBefore, naturalYearsAfter, {
+        worldYear: currentWorldYear,
         onCull: report => { foreignCullReport = report; },
       });
       
@@ -1119,7 +1134,7 @@ if (index === 4) { // 当前是绝灵时代
       const lifespanTransition = await this.applyEraLifespanTransition(
         oldIndex,
         index,
-        () => this.persistEraCurrent(era, { index, years, epoch, totalYears }),
+        () => this.persistEraCurrent(era, { index, years, epoch, totalYears }, naturalYearsAfter),
       );
 
       if ((foreignCalamities.length > 0 || foreignCullReport?.count) && era.pushNotice) {
@@ -1839,9 +1854,6 @@ if (index === 4) { // 当前是绝灵时代
     );
     
     const worldYear = getRealmEventWorldYear(eraIndex, years, epoch);
-    const foreignCalamities = worldYear > previousWorldYear
-      ? await spawnForeignCalamities(previousWorldYear, worldYear)
-      : [];
     const lifespanTransition = await this.applyEraLifespanTransition(
       oldIndex,
       eraIndex,
@@ -1899,7 +1911,6 @@ if (index === 4) { // 当前是绝灵时代
       restoreMsg,
       darkRevoltDestructionMessage,
       emperorRefinementMessage,
-      ...(foreignCalamities.length ? [`本轮降下${foreignCalamities.length}尊域外灾厄，发送 #域外灾厄 查看。`] : []),
       realmEventMessage,
     ].join('\n'));
   }
@@ -1991,7 +2002,6 @@ if (index === 4) { // 当前是绝灵时代
       }
       
       const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
-      const foreignCalamities = await spawnForeignCalamities(previousWorldYear, currentWorldYear);
       const lifespanTransition = await this.applyEraLifespanTransition(
         oldIndex,
         index,
@@ -2032,7 +2042,6 @@ if (index === 4) { // 当前是绝灵时代
         `新年份: ${years}/10000年`,
         `进度: ${this.createProgressBar(years)} ${Math.round((years/10000)*100)}%`
       ].join('\n');
-      if (foreignCalamities.length) message += `\n本轮降下${foreignCalamities.length}尊域外灾厄，发送 #域外灾厄 查看。`;
       
       // ==== 新增：绝灵时代物品损失 ====
       let lossMessage = '';
@@ -2224,7 +2233,6 @@ if (index === 4) { // 当前是绝灵时代
       
       // 更新配置
       const currentWorldYear = getRealmEventWorldYear(index, years, epoch);
-      const foreignCalamities = await spawnForeignCalamities(previousWorldYear, currentWorldYear);
       const lifespanTransition = await this.applyEraLifespanTransition(
         oldIndex,
         index,
@@ -2280,7 +2288,6 @@ if (index === 4) { // 当前是绝灵时代
         `年份: 0/10000 年`,
         `天心印记已重置，新时代将诞生新的大帝！`
       ].join("\n");
-      if (foreignCalamities.length) message += `\n本轮降下${foreignCalamities.length}尊域外灾厄，发送 #域外灾厄 查看。`;
       
       // ==== 新增：寿元压制逻辑 ====
       // 检查是否进入绝灵时代

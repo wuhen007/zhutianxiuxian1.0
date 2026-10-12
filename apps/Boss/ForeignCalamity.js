@@ -1,4 +1,5 @@
-import { plugin, data } from '../../api/api.js';
+import { plugin, data, config } from '../../api/api.js';
+import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import {
   Add_najie_thing,
   Read_equipment,
@@ -37,6 +38,7 @@ import {
   resolveRiftMemoryReward,
   saveForeignOverlord,
   spawnForeignOverlordIfReady,
+  summonForeignCalamities,
   saveForeignCalamity,
   withForeignCalamityLock,
   withForeignOverlordLock,
@@ -99,6 +101,8 @@ export class ForeignCalamity extends plugin {
       event: 'message',
       priority: 590,
       rule: [
+        // 在处理函数内同时校验机器人主人与修仙 Master，避免路由层排除配置管理员。
+        { reg: '^#召唤(?:域外)?灾厄.*$', fnc: 'summonCalamities' },
         { reg: '^#(?:域外灾厄|域外邪祟|域外邪魔)$', fnc: 'showCalamities' },
         { reg: '^#讨伐(?:域外灾厄|域外邪祟|域外邪魔)(?:\\s+(.+))?$', fnc: 'battleCalamity' },
         { reg: '^#领取域外战利品$', fnc: 'claimPendingRewards' },
@@ -113,10 +117,43 @@ export class ForeignCalamity extends plugin {
     });
   }
 
+  async summonCalamities(e) {
+    const settings = config.getConfig('xiuxian', 'xiuxian') || {};
+    const qq = playerId(e);
+    const masters = (Array.isArray(settings.Master) ? settings.Master : [settings.Master])
+      .filter(value => value != null).map(value => String(value).replace(/^qg_/, ''));
+    if (!e.isMaster && !masters.includes(qq)) return e.reply('此指令仅限机器人主人或修仙管理员。');
+    const match = String(e.msg || '').trim().match(/^#召唤(?:域外)?灾厄\s*(\d+)?$/);
+    const count = match?.[1] == null ? 1 : Number(match[1]);
+    if (!match || !Number.isSafeInteger(count) || count < 1 || count > 10) {
+      return e.reply('用法：#召唤灾厄 [数量]，不填召唤1尊，单次可召唤1～10尊。');
+    }
+    const current = settings.Era?.current || {};
+    const worldYear = getRealmEventWorldYear(current.index, current.years, current.epoch);
+    let result;
+    try {
+      result = await summonForeignCalamities({ count, worldYear, summonedBy: qq });
+    } catch (error) {
+      console.error('[管理员召唤灾厄] 结算中断:', error);
+      return e.reply('本次召唤结算中断，请先用 #域外灾厄 核对现存目标后再试。');
+    }
+    if (!result.ok) return e.reply(result.reason === 'invalid_count'
+      ? '召唤数量需为1～10的整数。'
+      : result.reason === 'invalid_world_year' ? '当前世界年份异常，请先核对时代配置。' : result.reason);
+    return e.reply([
+      `【管理员召唤灾厄】本次生成${result.generatedCount ?? result.entities.length}尊，世界年${worldYear}。`,
+      result.generatedCount > result.entities.length ? `其中${result.generatedCount - result.entities.length}尊已按全服上限巡猎退场；下列为本次仍存世目标。` : '',
+      ...result.entities.map(entity => `【${entity.type}】${entity.名号}（${entity.id}）`),
+      result.report?.count ? formatForeignCalamityCullReport(result.report) : '',
+      '已进入正常灾厄列表；使用 #域外灾厄 查看，#讨伐域外灾厄 编号/ID 挑战。',
+    ].filter(Boolean).join('\n'));
+  }
+
   async getActive() {
     return (await listForeignCalamities())
       .filter(entity => entity.status === 'active' && Number(entity.当前血量) > 0)
-      .sort((a, b) => Number(b.worldYear) - Number(a.worldYear) || a.id.localeCompare(b.id));
+      .sort((a, b) => (Number(b.spawnedAt) || 0) - (Number(a.spawnedAt) || 0)
+        || Number(b.worldYear) - Number(a.worldYear) || a.id.localeCompare(b.id));
   }
 
   async showCalamities(e) {
@@ -125,7 +162,7 @@ export class ForeignCalamity extends plugin {
     return e.reply([
       `【千年域外灾厄】现存${active.length}/${FOREIGN_CALAMITY_MAX_ACTIVE}尊`,
       '孽兽、域外邪魔与外道修士共享上限，超额目标由天骄或诸天强者优先讨灭旧敌。',
-      ...(!active.length ? ['当前诸天安宁，尚未发现存世的域外灾厄；跨过新的千年节点后会再次降临。'] : []),
+      ...(!active.length ? ['当前诸天安宁，尚未发现存世的域外灾厄；自然流逝累计满一千年后会再次降临。'] : []),
       ...active.map(formatEntity),
       ...(report?.count ? [`最近一次巡猎记录：\n${formatForeignCalamityCullReport(report)}`] : []),
       '使用 #讨伐域外灾厄 编号（或灾厄ID/名号）发起挑战。',
