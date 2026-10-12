@@ -24,6 +24,7 @@ const LOCK_PREFIX = 'xiuxian:foreign-calamity:lock:';
 const POPULATION_LOCK = `${LOCK_PREFIX}population`;
 const keyFor = id => `${ENTITY_PREFIX}${id}`;
 const killers = ['巡天的绝世天骄', '镇界的诸天强者'];
+const EXPECTED_ACTIVE_LIMIT = 100;
 
 function entity(index, extra = {}) {
   const id = `fixture-${String(index).padStart(4, '0')}`;
@@ -132,19 +133,19 @@ function fixture(t, initial = []) {
   };
 }
 
-for (const count of [0, 29, 30, 31]) {
-  test(`${count} 尊普通灾厄按共享 30 尊上限处理，阈值内不产生巡猎报告`, async t => {
+for (const count of [0, EXPECTED_ACTIVE_LIMIT - 1, EXPECTED_ACTIVE_LIMIT, EXPECTED_ACTIVE_LIMIT + 1]) {
+  test(`${count} 尊普通灾厄按共享 100 尊上限处理，阈值内不产生巡猎报告`, async t => {
     const f = fixture(t, Array.from({ length: count }, (_, index) => entity(index)));
-    assert.equal(FOREIGN_CALAMITY_MAX_ACTIVE, 30);
+    assert.equal(FOREIGN_CALAMITY_MAX_ACTIVE, EXPECTED_ACTIVE_LIMIT);
     const result = await enforceForeignCalamityLimit({ random: () => 0, now: 123 });
-    assert.equal(result.entities.filter(item => item.status === 'active').length, Math.min(count, 30));
-    assert.equal(f.active().length, Math.min(count, 30));
-    if (count <= 30) {
+    assert.equal(result.entities.filter(item => item.status === 'active').length, Math.min(count, EXPECTED_ACTIVE_LIMIT));
+    assert.equal(f.active().length, Math.min(count, EXPECTED_ACTIVE_LIMIT));
+    if (count <= EXPECTED_ACTIVE_LIMIT) {
       assert.equal(result.report?.count || 0, 0);
       assert.equal(f.reportWrites().length, 0);
     } else {
       assert.equal(result.report.count, 1);
-      assert.equal(result.report.remaining, 30);
+      assert.equal(result.report.remaining, EXPECTED_ACTIVE_LIMIT);
       assert.equal(result.report.at, 123);
       assert.equal(f.values.has(keyFor(entity(0).id)), false);
     }
@@ -158,66 +159,66 @@ test('三类普通灾厄共用上限，并按 worldYear、spawnedAt、id 先后�
     entity(3, { id: 'earliest-time', worldYear: 1000, spawnedAt: 10 }),
     entity(4, { id: 'later-year', worldYear: 2000, spawnedAt: 1 }),
   ];
-  const f = fixture(t, [...early, ...Array.from({ length: 29 }, (_, index) => entity(index + 10))]);
+  const f = fixture(t, [...early, ...Array.from({ length: EXPECTED_ACTIVE_LIMIT - 1 }, (_, index) => entity(index + 10))]);
   const { report } = await enforceForeignCalamityLimit({ random: () => 0, now: 456 });
   assert.equal(report.count, 3);
   assert.deepEqual(report.victims.map(item => item.id), ['earliest-time', 'same-year-a', 'same-year-b']);
   assert.ok(f.values.has(keyFor('later-year')));
-  assert.equal(f.active().length, 30);
+  assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT);
   assert.equal(new Set(f.active().map(item => item.type)).size, 3);
 });
 
-test('列表读取使 100 尊历史积压收敛至 30，真正删除 NPC 数据与普通索引', async t => {
-  const f = fixture(t, Array.from({ length: 100 }, (_, index) => entity(index)));
+test('列表读取使 170 尊历史积压收敛至 100，真正删除 NPC 数据与普通索引', async t => {
+  const f = fixture(t, Array.from({ length: EXPECTED_ACTIVE_LIMIT + 70 }, (_, index) => entity(index)));
   const rows = await listForeignCalamities();
-  assert.equal(rows.length, 30);
-  assert.equal(f.active().length, 30);
-  assert.equal(f.sets.get(FOREIGN_CALAMITY_INDEX_KEY).size, 30);
-  assert.equal([...f.values.keys()].filter(key => key.startsWith(ENTITY_PREFIX)).length, 30);
-  assert.deepEqual(rows.map(item => item.id).sort(), Array.from({ length: 30 }, (_, index) => entity(index + 70).id));
+  assert.equal(rows.length, EXPECTED_ACTIVE_LIMIT);
+  assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT);
+  assert.equal(f.sets.get(FOREIGN_CALAMITY_INDEX_KEY).size, EXPECTED_ACTIVE_LIMIT);
+  assert.equal([...f.values.keys()].filter(key => key.startsWith(ENTITY_PREFIX)).length, EXPECTED_ACTIVE_LIMIT);
+  assert.deepEqual(rows.map(item => item.id).sort(), Array.from({ length: EXPECTED_ACTIVE_LIMIT }, (_, index) => entity(index + 70).id));
   const report = await readForeignCalamityCullReport();
   assert.equal(report.count, 70);
-  assert.equal(report.remaining, 30);
+  assert.equal(report.remaining, EXPECTED_ACTIVE_LIMIT);
   assert.equal(report.victims.length, 5);
 });
 
-test('跨越十个千年逐波生成 100 尊；每波结束活跃不超 30 且生成标记先于清理', async t => {
+test('跨越十七个千年逐波生成 170 尊；每波结束活跃不超 100 且生成标记先于清理', async t => {
   const f = fixture(t);
   const reports = [];
-  const spawned = await spawnForeignCalamities(0, 10_000, {
+  const spawned = await spawnForeignCalamities(0, 17_000, {
     players: [], random: () => 0.999999,
     onCull(report) {
       reports.push(structuredClone(report));
-      assert.equal(f.active().length, 30);
+      assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT);
       for (const current of f.active()) {
         assert.equal(f.values.get(`xiuxian:foreign-calamity:spawn:${current.worldYear}`), '1');
       }
     },
   });
-  assert.equal(spawned.length, 100);
-  assert.equal(new Set(spawned.map(item => item.id)).size, 100);
-  assert.equal(f.active().length, 30);
-  assert.deepEqual([...new Set(f.active().map(item => item.worldYear))].sort((a, b) => a - b), [8000, 9000, 10_000]);
+  assert.equal(spawned.length, EXPECTED_ACTIVE_LIMIT + 70);
+  assert.equal(new Set(spawned.map(item => item.id)).size, EXPECTED_ACTIVE_LIMIT + 70);
+  assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT);
+  assert.deepEqual([...new Set(f.active().map(item => item.worldYear))].sort((a, b) => a - b), Array.from({ length: 10 }, (_, index) => (index + 8) * 1000));
   assert.equal(reports.reduce((total, report) => total + report.count, 0), 70);
-  assert.deepEqual(await spawnForeignCalamities(0, 10_000, { players: [], random: () => 0.999999 }), []);
-  assert.equal(f.active().length, 30);
+  assert.deepEqual(await spawnForeignCalamities(0, 17_000, { players: [], random: () => 0.999999 }), []);
+  assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT);
 });
 
 test('没有跨过新千年仍会先清历史存量，并透传本次巡猎回调', async t => {
-  const f = fixture(t, Array.from({ length: 35 }, (_, index) => entity(index)));
+  const f = fixture(t, Array.from({ length: EXPECTED_ACTIVE_LIMIT + 5 }, (_, index) => entity(index)));
   const reports = [];
   const spawned = await spawnForeignCalamities(5500, 5600, {
     players: [], random: () => 0, onCull: report => reports.push(report),
   });
   assert.deepEqual(spawned, []);
-  assert.equal(f.active().length, 30);
+  assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT);
   assert.equal(reports.length, 1);
   assert.equal(reports[0].count, 5);
 });
 
 test('已败待领奖、独立魔主及魔主击杀进度保持原样，NPC 巡猎不走玩家奖励队列', async t => {
   const pending = entity(1000, { id: 'pending-reward', status: 'defeated', 当前血量: 0, defeatedBy: 'player', rewardPlan: { groups: ['locked'] } });
-  const f = fixture(t, [...Array.from({ length: 35 }, (_, index) => entity(index)), pending]);
+  const f = fixture(t, [...Array.from({ length: EXPECTED_ACTIVE_LIMIT + 5 }, (_, index) => entity(index)), pending]);
   const overlordKey = 'xiuxian:foreign-calamity:overlord:entity:boss';
   const overlord = JSON.stringify({ id: 'boss', status: 'active', type: '灾厄魔主', 当前血量: 999 });
   f.values.set(overlordKey, overlord);
@@ -226,7 +227,7 @@ test('已败待领奖、独立魔主及魔主击杀进度保持原样，NPC 巡�
   f.sets.set(FOREIGN_OVERLORD_INDEX_KEY, new Set(['boss']));
   f.sets.set(FOREIGN_OVERLORD_PENDING_DEFEATS_KEY, new Set(['pending-reward']));
   const rows = await listForeignCalamities();
-  assert.equal(rows.length, 31);
+  assert.equal(rows.length, EXPECTED_ACTIVE_LIMIT + 1);
   assert.deepEqual(rows.find(item => item.id === pending.id), pending);
   assert.equal(f.values.get(keyFor(pending.id)), JSON.stringify(pending));
   assert.equal(f.values.get(overlordKey), overlord);
@@ -240,29 +241,29 @@ test('已败待领奖、独立魔主及魔主击杀进度保持原样，NPC 巡�
 });
 
 test('最旧灾厄正在战斗时跳过它，巡猎其他目标补足清理数', async t => {
-  const initial = Array.from({ length: 32 }, (_, index) => entity(index));
+  const initial = Array.from({ length: EXPECTED_ACTIVE_LIMIT + 2 }, (_, index) => entity(index));
   const f = fixture(t, initial);
   f.values.set(`${LOCK_PREFIX}${initial[0].id}`, 'active-battle');
   const { report } = await enforceForeignCalamityLimit({ random: () => 0 });
   assert.deepEqual(report.victims.map(item => item.id), [initial[1].id, initial[2].id]);
   assert.equal(f.values.get(keyFor(initial[0].id)), JSON.stringify(initial[0]));
   assert.equal(f.values.get(`${LOCK_PREFIX}${initial[0].id}`), 'active-battle');
-  assert.equal(f.active().length, 30);
+  assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT);
 });
 
 test('全部目标正在战斗时保留战局，下一次空闲列表读取再收敛', async t => {
-  const initial = Array.from({ length: 31 }, (_, index) => entity(index));
+  const initial = Array.from({ length: EXPECTED_ACTIVE_LIMIT + 1 }, (_, index) => entity(index));
   const f = fixture(t, initial);
   for (const item of initial) f.values.set(`${LOCK_PREFIX}${item.id}`, 'active-battle');
   const first = await enforceForeignCalamityLimit();
   assert.equal(first.report?.count || 0, 0);
-  assert.equal(f.active().length, 31);
+  assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT + 1);
   for (const item of initial) f.values.delete(`${LOCK_PREFIX}${item.id}`);
-  assert.equal((await listForeignCalamities()).length, 30);
+  assert.equal((await listForeignCalamities()).length, EXPECTED_ACTIVE_LIMIT);
 });
 
 test('扫描后刚被玩家击败的目标在实体锁内复核保留，不额外清理已达上限的剩余池', async t => {
-  const initial = Array.from({ length: 31 }, (_, index) => entity(index));
+  const initial = Array.from({ length: EXPECTED_ACTIVE_LIMIT + 1 }, (_, index) => entity(index));
   const f = fixture(t, initial);
   const defeated = { ...initial[0], status: 'defeated', 当前血量: 0, defeatedBy: 'winner', rewardPlan: { locked: true } };
   let changed = false;
@@ -276,13 +277,13 @@ test('扫描后刚被玩家击败的目标在实体锁内复核保留，不额�
   const result = await enforceForeignCalamityLimit();
   assert.ok(changed);
   assert.equal(f.values.get(keyFor(defeated.id)), JSON.stringify(defeated));
-  assert.equal(f.active().length, 30);
+  assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT);
   assert.equal(result.report?.count || 0, 0);
   assert.deepEqual([...f.sets.get(FOREIGN_OVERLORD_PENDING_DEFEATS_KEY)], [defeated.id]);
 });
 
-test('获取最旧实体锁时另一个最新目标刚被玩家击败，原子计数阻止多杀并报告真实剩余 30', async t => {
-  const initial = Array.from({ length: 31 }, (_, index) => entity(index));
+test('获取最旧实体锁时另一个最新目标刚被玩家击败，原子计数阻止多杀并报告真实剩余 100', async t => {
+  const initial = Array.from({ length: EXPECTED_ACTIVE_LIMIT + 1 }, (_, index) => entity(index));
   const f = fixture(t, initial);
   const defeated = { ...initial.at(-1), status: 'defeated', 当前血量: 0, defeatedBy: 'winner', rewardPlan: { locked: true } };
   let changed = false;
@@ -297,17 +298,17 @@ test('获取最旧实体锁时另一个最新目标刚被玩家击败，原子�
   assert.ok(changed);
   assert.equal(f.values.get(keyFor(initial[0].id)), JSON.stringify(initial[0]));
   assert.equal(f.values.get(keyFor(defeated.id)), JSON.stringify(defeated));
-  assert.equal(f.active().length, 30);
-  assert.equal(result.entities.filter(item => item.status === 'active').length, 30);
+  assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT);
+  assert.equal(result.entities.filter(item => item.status === 'active').length, EXPECTED_ACTIVE_LIMIT);
   assert.equal(result.report.count, 0);
-  assert.equal(result.report.remaining, 30);
+  assert.equal(result.report.remaining, EXPECTED_ACTIVE_LIMIT);
   assert.equal(f.reportWrites().length, 0);
   assert.equal(f.operations.filter(item => item.method === 'del' && item.key.startsWith(ENTITY_PREFIX)).length, 0);
   assert.deepEqual([...f.sets.get(FOREIGN_OVERLORD_PENDING_DEFEATS_KEY)], [defeated.id]);
 });
 
 test('Lua 提交前当前目标已败时保留奖励，即使另有超额活跃目标也只清理仍存活者', async t => {
-  const initial = Array.from({ length: 32 }, (_, index) => entity(index));
+  const initial = Array.from({ length: EXPECTED_ACTIVE_LIMIT + 2 }, (_, index) => entity(index));
   const f = fixture(t, initial);
   const defeated = { ...initial[0], status: 'defeated', 当前血量: 0, defeatedBy: 'winner', rewardPlan: { locked: true } };
   let changed = false;
@@ -321,9 +322,9 @@ test('Lua 提交前当前目标已败时保留奖励，即使另有超额活跃�
   const result = await enforceForeignCalamityLimit();
   assert.ok(changed);
   assert.equal(f.values.get(keyFor(defeated.id)), JSON.stringify(defeated));
-  assert.equal(f.active().length, 30);
+  assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT);
   assert.equal(result.report.count, 1);
-  assert.equal(result.report.remaining, 30);
+  assert.equal(result.report.remaining, EXPECTED_ACTIVE_LIMIT);
   assert.deepEqual(result.report.victims.map(item => item.id), [initial[1].id]);
   assert.deepEqual([...f.sets.get(FOREIGN_OVERLORD_PENDING_DEFEATS_KEY)], [defeated.id]);
 });
@@ -333,21 +334,21 @@ test('两个相同年份的并发生成调用串行提交，不重复生成或�
   const reports = [];
   const options = { players: [], random: () => 0.999999, onCull: report => reports.push(report) };
   const results = await Promise.all([
-    spawnForeignCalamities(0, 5000, options),
-    spawnForeignCalamities(0, 5000, options),
+    spawnForeignCalamities(0, 12_000, options),
+    spawnForeignCalamities(0, 12_000, options),
   ]);
   const all = results.flat();
-  assert.equal(all.length, 50);
-  assert.equal(new Set(all.map(item => item.id)).size, 50);
-  assert.equal(f.active().length, 30);
+  assert.equal(all.length, EXPECTED_ACTIVE_LIMIT + 20);
+  assert.equal(new Set(all.map(item => item.id)).size, EXPECTED_ACTIVE_LIMIT + 20);
+  assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT);
   assert.equal(reports.reduce((sum, report) => sum + report.count, 0), 20);
-  assert.equal([...f.values.keys()].filter(key => key.startsWith('xiuxian:foreign-calamity:spawn:')).length, 5);
+  assert.equal([...f.values.keys()].filter(key => key.startsWith('xiuxian:foreign-calamity:spawn:')).length, 12);
 });
 
 test('并发列表清理和重复清理不超杀，不重复写最近巡猎报告', async t => {
-  const f = fixture(t, Array.from({ length: 31 }, (_, index) => entity(index)));
+  const f = fixture(t, Array.from({ length: EXPECTED_ACTIVE_LIMIT + 1 }, (_, index) => entity(index)));
   await Promise.all([listForeignCalamities(), listForeignCalamities()]);
-  assert.equal(f.active().length, 30);
+  assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT);
   assert.equal(f.reportWrites().length, 1);
   const raw = f.values.get(FOREIGN_CALAMITY_CULL_REPORT_KEY);
   const result = await enforceForeignCalamityLimit({ now: 999999 });
@@ -357,9 +358,9 @@ test('并发列表清理和重复清理不超杀，不重复写最近巡猎报�
 });
 
 test('巡猎报告只覆盖最新一份、最多保留 5 个目标，并可显示指定 NPC 称谓', async t => {
-  const f = fixture(t, Array.from({ length: 100 }, (_, index) => entity(index)));
+  const f = fixture(t, Array.from({ length: EXPECTED_ACTIVE_LIMIT + 70 }, (_, index) => entity(index)));
   const first = await enforceForeignCalamityLimit({ now: 100, random: () => 0 });
-  for (let index = 100; index < 135; index++) f.put(entity(index));
+  for (let index = EXPECTED_ACTIVE_LIMIT + 70; index < EXPECTED_ACTIVE_LIMIT + 105; index++) f.put(entity(index));
   const second = await enforceForeignCalamityLimit({ now: 200, random: () => 0.999999 });
   const stored = await readForeignCalamityCullReport();
   assert.deepEqual(stored, second.report);
@@ -396,8 +397,8 @@ test('population Redis 锁持续占用时重试后报错，既不伪装空波也
   assert.equal((await spawnForeignCalamities(0, 1000, { players: [], random: () => 0 })).length, 1);
 });
 
-test('实际命令类的三种灾厄别名共用列表、显示 30 上限与最近巡猎，邪魔讨伐正确取参数', async t => {
-  const f = fixture(t, Array.from({ length: 31 }, (_, index) => entity(index)));
+test('实际命令类的三种灾厄别名共用列表、显示 100 上限与最近巡猎，邪魔讨伐正确取参数', async t => {
+  const f = fixture(t, Array.from({ length: EXPECTED_ACTIVE_LIMIT + 1 }, (_, index) => entity(index)));
   const source = fs.readFileSync(new URL('../apps/Boss/ForeignCalamity.js', import.meta.url), 'utf8')
     .replace(/import[\s\S]*?from\s+['"][^'"]+['"];?/g, '')
     .replace('export class', 'class');
@@ -416,7 +417,7 @@ test('实际命令类的三种灾厄别名共用列表、显示 30 上限与最�
   };
   for (const name of ['域外灾厄', '域外邪祟', '域外邪魔']) {
     await send(`#${name}`);
-    assert.match(replies.at(-1), /30\/30/);
+    assert.match(replies.at(-1), /100\/100/);
     assert.match(replies.at(-1), /最近.*巡猎/);
     assert.match(replies.at(-1), /巡天的绝世天骄|镇界的诸天强者/);
   }
@@ -426,7 +427,7 @@ test('实际命令类的三种灾厄别名共用列表、显示 30 上限与最�
   assert.deepEqual(inputs, ['1', '1', '1']);
   for (const item of f.active()) f.values.delete(keyFor(item.id));
   await send('#域外邪魔');
-  assert.match(replies.at(-1), /0\/30/);
+  assert.match(replies.at(-1), /0\/100/);
   assert.match(replies.at(-1), /最近.*巡猎/);
 });
 
@@ -440,7 +441,7 @@ test('时代推进先生成再修复位面、绝灵侵蚀和持久化；失败�
   for (const fail of [false, true]) {
     const events = [];
     const messages = [];
-    const report = { count: 1, remaining: 30, at: 1, victims: [{ id: 'old', name: '旧敌', type: '孽兽', killer: killers[0] }] };
+    const report = { count: 1, remaining: EXPECTED_ACTIVE_LIMIT, at: 1, victims: [{ id: 'old', name: '旧敌', type: '孽兽', killer: killers[0] }] };
     const run = vm.runInNewContext(`(async function () { ${block} })`, {
       getRealmEventWorldYear: (index, years) => index * 10_000 + years,
       fs: { existsSync: () => false },

@@ -22,7 +22,7 @@ function harness({ player = complete(1), current, master = [], enabled = true, s
     OtherCustom: { keep: true },
   };
   const players = new Map([['p', structuredClone(player)]]);
-  const messages = [], writes = [], transitions = [];
+  const messages = [], writes = [], transitions = [], calamityWaves = [], realmEvents = [];
   let readCount = 0, playerWrites = 0;
   const config = {
     getConfig(app, name) { assert.equal(app, 'xiuxian'); assert.equal(name, 'xiuxian'); return structuredClone(store); },
@@ -44,6 +44,8 @@ function harness({ player = complete(1), current, master = [], enabled = true, s
     verc: () => guarded,
     ensureDaoPath() {},
     bigNumberTransform: v => String(v),
+    spawnForeignCalamities: async (from, to) => { calamityWaves.push([from, to]); return []; },
+    RealmEvents: { triggerRandomEvent: async (...args) => { realmEvents.push(args); return null; } },
   };
   const clean = text => text.replace(/^import[\s\S]*?from\s+['"][^'"]+['"];\s*/gm, '').replace(/^export /gm, '');
   const managerText = clean(fs.readFileSync(path.join(patch, 'apps/tasks/EraChangeTask.js'), 'utf8'));
@@ -71,7 +73,7 @@ function harness({ player = complete(1), current, master = [], enabled = true, s
   const event = (msg = '#推进时代 1000', extra = {}) => ({
     user_id: 'p', msg, isMaster: false, reply: async text => { messages.push(text); return true; }, ...extra,
   });
-  return { app, manager, event, store, players, writes, transitions, messages,
+  return { app, manager, event, store, players, writes, transitions, messages, calamityWaves, realmEvents,
     reads: () => readCount, playerWrites: () => playerWrites };
 }
 
@@ -89,6 +91,8 @@ test('截图场景：非主人、大圆满1%从命令规则到权威世界配置
   assert.equal(e.isMaster, false);
   assert.match(h.messages[0], /轮回大道.*已推进 1000 年/);
   assert.deepEqual(h.store.OtherCustom, { keep: true });
+  assert.deepEqual(h.calamityWaves, [[61000, 62000]]);
+  assert.deepEqual(h.realmEvents, [[1, 2000, 2]]);
 });
 test('0%、1%、100%均属于岁月大圆满阶段，非主人均可用', async () => {
   for (const progress of [0, 1, 100]) {

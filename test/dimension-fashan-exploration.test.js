@@ -15,6 +15,7 @@ import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 import { applySecretPlaceNotificationContext } from '../model/secretPlaceNotification.js';
 import { consumeBlackEmperorBattleFormation } from '../model/blackEmperor.js';
 import { awardDungeonGongfaProficiency } from '../model/gongfaProficiency.js';
+import { getSuiyunDungeonEntryPlace, hasSuiyunFreeDungeonEntry } from '../model/suiyun.js';
 
 const source = file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 const copy = value => JSON.parse(JSON.stringify(value));
@@ -66,6 +67,7 @@ function fixture(t, overrides = {}) {
     ...planes, ...locations, ...fashan, ...realms, ...river,
     DIMENSION_CALAMITY_TARGETS, addCappedEraAccumulation,
     withPlayerMutationLock, applySecretPlaceNotificationContext,
+    getSuiyunDungeonEntryPlace, hasSuiyunFreeDungeonEntry,
     structuredClone, Date, Math, console, redis, data,
     plugin: class { constructor(options) { Object.assign(this, options); } },
     verc: () => true,

@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import test from 'node:test';
 import * as trial from '../model/trialUniverse.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
+import { syncSuiyunLuckyBonus } from '../model/petLuckyCalc.js';
 import {
   getLocationName, getLocationId, getCoordinateLocations, getLocationThreshold,
   hasCoordinate, rememberCoordinate, purchaseCoordinateClue, canImmortalEmperorFreeTravel,
@@ -207,7 +208,7 @@ test('实际Write_player拒绝试炼旧快照与路线删除，但保留派生�
   let writes = 0;
   const noop = () => {};
   const Write_player = vm.runInNewContext(`${fn}\nWrite_player`, {
-    path, withPlayerMutationLock, __PATH: { player_path: 'players', data_path: 'data' },
+    path, withPlayerMutationLock, syncSuiyunLuckyBonus, __PATH: { player_path: 'players', data_path: 'data' },
     fs: { existsSync: file => file === path.join('players', 'trial.json'), readFileSync: () => JSON.stringify(disk) },
     assertGlobalInitIdle: noop, assertTribulationWriteAllowed: noop,
     assertZhutianMirrorWriteCurrent: noop, assertZhutianAvatarRootWriteAllowed: noop,

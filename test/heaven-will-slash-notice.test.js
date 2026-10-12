@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import test from 'node:test';
+import { syncSuiyunLuckyBonus } from '../model/petLuckyCalc.js';
 import {
   applyHeavenWillSlashOnAdvancement,
   assertSacrificeBubbleWrite,
@@ -176,7 +177,7 @@ function reverseLifeFixture(active, failWrite = false) {
     completeDaoByNineLives, applyHeavenWillSlashOnAdvancement, assertSacrificeBubbleWrite,
     ensureStrangeSacrificeState, formatHeavenWillSlashImpact,
     queueHeavenWillSlashNotice, flushHeavenWillSlashNotice,
-    data, path,
+    data, path, syncSuiyunLuckyBonus,
     __PATH: { player_path: 'memory/players', data_path: 'memory/data' },
     fs: {
       existsSync: () => true,
