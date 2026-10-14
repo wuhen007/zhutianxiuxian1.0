@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { getSuiyunEffects, getSuiyunStage } from '../model/suiyun.js';
+import { getMemoryEffects } from '../model/memoryPath.js';
 import { calculateWudaoResult, getPhysiqueWudaoBonus, getAptitudeWudaoBonus } from '../apps/User/wudaoRules.js';
 import { resolveRiftRewardBonus } from '../model/lingjieRift.js';
 import { multiplySuiyunLoot } from '../model/suiyunLoot.js';
@@ -42,8 +43,8 @@ test('仙古渡劫真实减伤逐阶结算，终阶保留圆神特殊异象', ()
   const source = read('apps/SecretPlace/xianguTribulation.js');
   const start = source.indexOf('  _applyBodyDefenses(player, base) {');
   const end = source.indexOf('\n  }', start) + '\n  }'.length;
-  const handler = new Function('getSuiyunEffects', 'BODY_EFFECTS', 'bigNumberTransform',
-    `return ({${source.slice(start, end)}})._applyBodyDefenses;`)(getSuiyunEffects, {}, String);
+  const handler = new Function('getSuiyunEffects', 'getMemoryEffects', 'BODY_EFFECTS', 'bigNumberTransform',
+    `return ({${source.slice(start, end)}})._applyBodyDefenses;`)(getSuiyunEffects, getMemoryEffects, {}, String);
   for (const [index, name] of names.entries()) {
     let special;
     const result = handler.call({

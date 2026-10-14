@@ -33,7 +33,7 @@ test('受赠资格校验本人身份与完整三技，只有技能不获得任�
   assert.equal(hasSuiyunSkills(player), true);
   assert.deepEqual(getSuiyunEffects(player), {
     enlightenmentBonus: 0, tribulationReduction: 0, lootMultiplier: 1, noDemonicValue: false,
-    madoka: false, luckBonus: 0, freeDungeonEntry: false,
+    madoka: false, luckBonus: 0, freeDungeonEntry: false, absoluteSpiritImmune: false,
   });
   assert.equal(convertSuiyunPotential(player).ok, false);
   assert.equal(hasSuiyunSkills({ ...player, id: 'other' }), false);

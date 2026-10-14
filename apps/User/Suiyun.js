@@ -1,20 +1,24 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { plugin, verc, data, config } from '../../api/api.js';
 import {
   Add_najie_thing, ForwardMsg, Read_equipment, Read_najie, Read_player,
   Write_equipment, Write_najie, Write_player, __PATH, channel, existplayer,
-  invalidateBattleEquipmentCache, player_efficiency, zd_battle,
+  invalidateBattleEquipmentCache, player_efficiency, zd_battle, foundthing, GetPower,
 } from '../../model/xiuxian.js';
 import {
   activateSuiyun, advanceSuiyun, applySuiyunTrialResult, ascendSuiyunPalace,
   buildSuiyunTrialBattle, convertSuiyunPotential, cultivateSuiyun, ensureSuiyunState,
   getSuiyunEffects, getSuiyunLifeMaximum, getSuiyunLotusBonus, getSuiyunPower, getSuiyunStage, refineSuiyun,
   settleSuiyunPalace, spendSuiyunPower, SUIYUN_PET_NAME, SUIYUN_PET_STAGE,
+  receiveSuiyunYears, SUIYUN_PALACE_DUNGEON,
 } from '../../model/suiyun.js';
 import { claimSuiyunUnique, releaseSuiyunUnique } from '../../model/suiyunRegistry.js';
 import { readSuiyunGifts, withSuiyunGiftClaim, SUIYUN_GIFT_LIMIT } from '../../model/suiyunGift.js';
 import { SUIYUN_EXCLUSIVE_SKILLS } from '../../model/suiyun.js';
+import { canRefineMemoryTarget } from '../../model/memoryPath.js';
+import { getSuiyunCreationRestriction, SUIYUN_CREATION_COST } from '../../model/suiyunCreation.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { swapEquipmentState } from '../../model/equipmentSwap.js';
 import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
@@ -30,6 +34,12 @@ import {
 import { withForeignCalamityLock } from '../../model/foreignCalamity.js';
 import { BOSS4 } from '../Boss/BOSS4.js';
 import RealmEvents from '../tasks/RealmEvents.js';
+import { getPlayerPlaneName } from '../../model/planeCoords.js';
+import { FISHING_PLANE_NAMES, getPlaneFishConfig } from '../../model/immortalFishing.js';
+import {
+  deleteActiveFishKing, findFishKingByMemberId, readActiveFishKing,
+  tryCreateFishKing, withFishKingLock,
+} from '../../model/immortalFishKing.js';
 
 const STAGES = ['月华之体', '月华似剑', '霜月剑尊', '岁云化身', '岁云剑尊'];
 const ERAS = ['神话时代', '太古时代', '天命时代', '末法时代', '绝灵时代'];
@@ -88,11 +98,15 @@ export class Suiyun extends plugin {
         { reg: '^#月之见证$', fnc: 'witnessTrial' },
         { reg: '^#月华炼化.*$', fnc: 'refine' },
         { reg: '^#云月修炼$', fnc: 'cultivate' },
+        { reg: '^#岁岁年年.*$', fnc: 'yearGift' },
+        { reg: '^#刻舟求剑$', fnc: 'palaceExplore' },
+        { reg: '^#月华垂钓$', fnc: 'moonFishing' },
         { reg: '^#云月之莲$', fnc: 'showLotus' },
         { reg: '^#赐予月华.*$', fnc: 'gift' },
         { reg: '^#岁云之力(?:\\s*兑换(?:\\s*\\d+)?)?$', fnc: 'power' },
         { reg: '^#月华兑换(?:\\s*\\d+)?$', fnc: 'power' },
         { reg: '^#岁云更改.*$', fnc: 'rewrite' },
+        { reg: '^#岁云造物.*$', fnc: 'createItem' },
       ],
     });
   }
@@ -114,6 +128,145 @@ export class Suiyun extends plugin {
   async refreshAttributes(qq) {
     await Write_equipment(qq, await Read_equipment(qq));
     await player_efficiency(qq);
+  }
+
+  async yearGift(e) {
+    const ctx = await this.context(e);
+    if (!ctx) return false;
+    return withPlayerMutationLock(ctx.qq, async () => {
+      const player = await Read_player(ctx.qq);
+      const error = this.holderError(player);
+      if (error) return e.reply(error);
+      const selection = String(e.msg || '').replace(/^#岁岁年年\s*/, '').trim();
+      const result = receiveSuiyunYears(player, selection);
+      if (!result.ok) return e.reply(result.reason);
+      const transaction = transactionFor([ctx.qq], true);
+      const key = `suiyun-years:${randomUUID()}`;
+      try {
+        await Add_najie_thing(ctx.qq, result.item.name, result.item.class, result.amount, undefined, 1, { idempotencyKey: key });
+        await Write_player(ctx.qq, player);
+        transaction.commit();
+      } catch (error) {
+        transaction.rollback();
+        throw error;
+      }
+      return e.reply(`【岁岁年年】获得${result.item.name}×1，下一次领取在现实1小时后。`);
+    });
+  }
+
+  async palaceExplore(e) {
+    const ctx = await this.context(e);
+    if (!ctx) return false;
+    const error = this.holderError(await Read_player(ctx.qq));
+    if (error) return e.reply(error);
+    const { SecretPlace } = await import('../SecretPlace/SecretPlace.js');
+    return new SecretPlace().Gofairyrealm({ ...e, msg: `#镇守仙境${SUIYUN_PALACE_DUNGEON}`, reply: e.reply.bind(e) });
+  }
+
+  async moonFishing(e) {
+    if (!e.isGroup || !e.group_id) return e.reply('月华垂钓在群聊中进行，鱼王现身后可邀请群友讨伐。');
+    const ctx = await this.context(e);
+    if (!ctx) return false;
+    const groupId = String(e.group_id);
+    const result = await withFishKingLock(groupId, () => withPlayerMutationLock(ctx.qq, async () => {
+      let player = await Read_player(ctx.qq);
+      const error = this.holderError(player);
+      if (error) return { message: error };
+      const current = await readActiveFishKing(groupId);
+      if (current) return { message: `本群已有【${current.name}】（编号${current.teamId}），请先完成当前讨伐；岁云之力未消耗。` };
+      const joined = await findFishKingByMemberId(ctx.qq);
+      if (joined) return { message: `你已在编号${joined.teamId}的鱼王讨伐队伍中，请先退出或完成讨伐；岁云之力未消耗。` };
+      const currentPlane = getPlayerPlaneName(player);
+      // 无实体水域的位面，以月华钓线随机连通已有水域，保证成功时必出鱼王。
+      const plane = getPlaneFishConfig(currentPlane)?.king ? currentPlane
+        : FISHING_PLANE_NAMES[Math.floor(Math.random() * FISHING_PLANE_NAMES.length)];
+      const king = getPlaneFishConfig(plane)?.king;
+      if (!king) return { message: '诸天水域资料尚未就绪，请稍后再试；岁云之力未消耗。' };
+      await this.settlePalace(ctx.qq, player);
+      player = await Read_player(ctx.qq);
+      const freshError = this.holderError(player);
+      if (freshError) return { message: freshError };
+      if (getSuiyunPower(player) < 3) return { message: '月华垂钓需要3点岁云之力，当前余额不足。' };
+      const transaction = transactionFor([ctx.qq]);
+      let created;
+      try {
+        if (!spendSuiyunPower(player, 3)) throw new Error('岁云之力余额已变化');
+        await Write_player(ctx.qq, player);
+        created = await tryCreateFishKing({
+          groupId, ownerId: ctx.qq, ownerName: player.名号, plane, king,
+          ownerPower: GetPower(player.攻击, player.防御, player.血量上限, player.暴击率),
+        });
+        if (!created) {
+          transaction.rollback();
+          return { message: '鱼王现身过程被打断，本次3点岁云之力已退回，请重试。' };
+        }
+        transaction.commit();
+      } catch (error) {
+        try {
+          if (created && (await readActiveFishKing(groupId))?.id === created.id) await deleteActiveFishKing(groupId);
+        } finally { transaction.rollback(); }
+        throw error;
+      }
+      return { message: [
+        `【月华垂钓·${king.name}】`,
+        `消耗3点岁云之力，月华钓线贯穿${plane}水脉，必定钓起鱼王；剩余${getSuiyunPower(player)}点。`,
+        `你已成为垂钓者并自动入队，讨伐编号：${created.teamId}。`,
+        `群友发送 #加入鱼王讨伐 ${created.teamId}，再用 #讨伐鱼王。`,
+      ].join('\n') };
+    }));
+    return e.reply(result.busy ? '鱼王正在翻动界潮，请稍后再试；岁云之力未消耗。' : result.message);
+  }
+
+  async createItem(e) {
+    const ctx = await this.context(e);
+    if (!ctx) return false;
+    return withPlayerMutationLock(ctx.qq, async () => {
+      let player = await Read_player(ctx.qq);
+      const holderError = this.holderError(player);
+      if (holderError) return e.reply(holderError);
+      if (getSuiyunStage(player) !== 5) return e.reply('岁云造物仅向【岁云剑尊】开放。');
+      const name = String(e.msg || '').replace(/^#岁云造物\s*/, '').trim();
+      if (!name || /[*×\r\n]|\s[+-]?\d+(?:\.\d+)?$/.test(name)
+        || e.at || e.message?.some(item => item.type === 'at') || /@|\[CQ:at/.test(name)) {
+        return e.reply('用法：#岁云造物 物品名；每次固定1件，消耗10点岁云之力，不填写数量或艾特。');
+      }
+      const item = await foundthing(name, { readOnly: true });
+      if (!item || item.name !== name) return e.reply('未找到该物品，请使用完整物品名。');
+      const restriction = getSuiyunCreationRestriction(item);
+      if (restriction) return e.reply(restriction);
+      const before = await Read_najie(ctx.qq);
+      if (before.时间线封锁?.locked) return e.reply('纳戒当前被时间线封锁，请先解除封锁。');
+      // 天宫产出单独结算，造物失败仅回滚本次扣费与发放。
+      await this.settlePalace(ctx.qq, player);
+      player = await Read_player(ctx.qq);
+      if (getSuiyunStage(player) !== 5 || getActiveZhutianAvatarName(player)) return e.reply('请装载本源岁云剑尊后再造物。');
+      if (getSuiyunPower(player) < SUIYUN_CREATION_COST) return e.reply('岁云之力不足10点。');
+      const itemClass = item.class === '道种' ? '道具' : item.class;
+      const quantity = inventory => (inventory[itemClass] || [])
+        .filter(entry => entry.name === name).reduce((total, entry) => total + Math.max(0, Number(entry.数量) || 0), 0);
+      const previousQuantity = quantity(before);
+      const transaction = transactionFor([ctx.qq], true);
+      const idempotencyKey = `suiyun-create:${randomUUID()}`;
+      try {
+        if (!spendSuiyunPower(player, SUIYUN_CREATION_COST)) throw new Error('岁云之力余额已变化');
+        await Write_player(ctx.qq, player);
+        await Add_najie_thing(ctx.qq, name, itemClass, 1, undefined, 1, { idempotencyKey, readOnlyLookup: true });
+        const delivered = await Read_najie(ctx.qq);
+        if (delivered._rewardClaims?.[idempotencyKey]?.amount !== 1 || quantity(delivered) !== previousQuantity + 1) {
+          throw new Error('造物发放回执或数量未核实');
+        }
+        transaction.commit();
+      } catch (error) {
+        console.error('[岁云造物] 结算失败:', error);
+        try { transaction.rollback(); }
+        catch (rollbackError) {
+          console.error('[岁云造物] 回滚失败:', rollbackError);
+          return e.reply('造物结算与恢复发生异常，请先联系管理员核对岁云之力与纳戒。');
+        }
+        return e.reply('造物结算中断，本次消耗与物品已恢复，请稍后重试。');
+      }
+      return e.reply(`【岁云造物】获得【${name}】×1，消耗10点岁云之力，剩余${getSuiyunPower(player)}点。`);
+    });
   }
 
   async gift(e) {
@@ -417,9 +570,12 @@ export class Suiyun extends plugin {
         `云月之莲累计炼化：${lotus.moonlight}月华｜${lotus.active ? '成长已生效' : '装备后生效'}；#云月之莲 查看成长。`,
         `悟道加成${Math.round(effects.enlightenmentBonus * 100)}%｜渡劫减伤${Math.round(effects.tribulationReduction * 100)}%｜物品获取${effects.lootMultiplier}倍`,
         `灵根幸运+${Math.round(effects.luckBonus * 100)}%｜秘境通行：${effects.freeDungeonEntry ? '免入场资源消耗' : '霜月剑尊起免入场资源消耗'}`,
-        '自带战技：霜剑入月（至多9敌各9剑、每剑25倍、绝控霜寒）；岁云归一（防御反伤）；白云苍狗（每战3次复活，每次全属性+50%）。#战斗技能 查看详情。',
+        '自带战技：霜剑入月（至多9敌各9剑、每剑25倍、绝控霜寒，低于15%斩杀禁复活）；岁云归一（防御反伤）；白云苍狗（每战3次复活）；岁云常青（免疫即死、禁复活、禁疗）。#战斗技能 查看详情。',
+        '全系列被动：免疫绝灵侵蚀与寿元压制。#岁岁年年 [材料/潜力丹/大衍悟道丹/悟道古茶]：每现实小时领取1件；#刻舟求剑：探索岁云殿堂。',
+        '#月华垂钓：群内消耗3点岁云之力，必出鱼王并自动成为垂钓者；无需鱼钩或饵料。',
         '月华天宫每现实小时产出0.5点岁云之力与50点仙道潜力；#月华兑换 100：100月华兑换1点仙道潜力，可填100的正整数倍。',
         '#赐予月华 @目标：传授三项专属战技，全服限定三名；不带@查看名额。',
+        '#岁云造物 物品名：岁云剑尊专属，每次10点岁云之力造1件，稀有度不限，唯一归属规则保留。',
         '#岁云更改 时代 时代名：5点；#岁云更改 至宝线索：10点。',
         '#岁云更改 命格/天资/灵根 名称：20点，可@目标。唯一灵根不参与改写。',
         '#云月修炼：24小时一次；#月华炼化 @目标 / 天骄 / 灾厄 / 魔主。',
@@ -432,11 +588,16 @@ export class Suiyun extends plugin {
     if (!ctx) return false;
     const at = getSuperdimensionalRewriteTarget(e, '');
     if (at) return this.refinePlayer(e, ctx.qq, String(await channel(at)));
-    const kind = String(e.msg).replace(/^#月华炼化\s*/, '').trim();
+    const { command, label } = this.refinementConfig();
+    const kind = String(e.msg).replace(`#${command}`, '').trim();
     if (kind === '天骄') return this.refineTianjiao(e, ctx.qq);
     if (['灾厄', '邪祟', '魔主', '灾厄魔主'].includes(kind)) return this.refineCalamity(e, ctx.qq, kind.includes('魔主'));
-    return e.reply('用法：#月华炼化 @目标；#月华炼化 天骄（已镇压的求饶天骄）；#月华炼化 灾厄/魔主（讨伐获胜后5分钟内）。');
+    return e.reply(`用法：#${command} @目标；#${command} 天骄（已镇压的求饶天骄）；#${command} 灾厄/魔主（讨伐获胜后5分钟内）。`);
   }
+
+  refinementConfig() { return { prefix: 'suiyun', command: '月华炼化', label: '月华' }; }
+  refineReward(player, options) { return refineSuiyun(player, options); }
+  afterRefinement(qq, player) { return this.refreshLotusAttributes(qq, player); }
 
   async refineTianjiao(e, qq) {
     return withPlayerMutationLock(qq, async () => {
@@ -445,19 +606,20 @@ export class Suiyun extends plugin {
       if (error) return e.reply(error);
       const boss = new BOSS4();
       const pending = await boss.readPendingEncounter(qq);
-      if (!pending || !['offered', 'execution', 'suiyun-settlement'].includes(pending.stage)) return e.reply('当前没有被你镇压、等待处置的天骄。');
+      const { prefix, command, label } = this.refinementConfig();
+      if (!pending || !['offered', 'execution', `${prefix}-settlement`].includes(pending.stage)) return e.reply('当前没有被你镇压、等待处置的天骄。');
       if (!await boss.claimPendingEncounter(pending)) return e.reply('这份天骄本源正在结算，请稍候。');
       try {
         const target = data.weimiantianjiao_list.find(item => item.名号 === pending.tianjiaoName);
         if (!target) return e.reply('该天骄已离开当前世界。');
-        const claimKey = `suiyun:tianjiao:${pending.token}`;
-        const death = await boss.finalizePendingTianjiaoDeath(e, pending, qq, true, { suiyun: true });
-        if (!death?.settlementId) return e.reply('该天骄本世已结束或死亡结算正被占用，本次未获得月华。');
+        const claimKey = `${prefix}:tianjiao:${pending.token}`;
+        const death = await boss.finalizePendingTianjiaoDeath(e, pending, qq, true, { suiyun: true, namespace: prefix });
+        if (!death?.settlementId) return e.reply(`该天骄本世已结束或死亡结算正被占用，本次未获得${label}。`);
         // 死亡结算可能重建装备/属性，重新读取避免覆盖其持久化副作用。
         const latest = await Read_player(qq);
-        let message = '此前月华收益已入账，继续结算天骄本源。';
+        let message = `此前${label}收益已入账，继续结算天骄本源。`;
         if (!latest._rewardClaims?.[claimKey]) {
-          const result = refineSuiyun(latest, { targetId: claimKey, kind: '天骄', sourceLifeEssence: death.sourceLifeEssence });
+          const result = this.refineReward(latest, { targetId: claimKey, kind: '天骄', sourceLifeEssence: death.sourceLifeEssence });
           if (!result.ok) return e.reply(result.reason);
           latest._rewardClaims ||= {};
           latest._rewardClaims[claimKey] = Date.now();
@@ -465,15 +627,16 @@ export class Suiyun extends plugin {
           message = this.refinementMessage(result, latest);
         }
         // 收益已落盘的重试也重算法宝，装备写入中断不会吞掉成长或重复炼化。
-        await this.refreshLotusAttributes(qq, latest);
+        await this.afterRefinement(qq, latest);
         await redis.del(boss.getPendingEncounterKey(qq));
-        await redis.set(`tianjiao:pending:resolved:${pending.token}`, 'suiyun', { EX: 24 * 3600 });
-        return e.reply(`【月华炼化】${pending.tianjiaoName}的本源化为清月。\n${message}`);
+        await redis.set(`tianjiao:pending:resolved:${pending.token}`, prefix, { EX: 24 * 3600 });
+        return e.reply(`【${command}】${pending.tianjiaoName}的本源化为${label}。\n${message}`);
       } finally { await boss.releasePendingEncounterClaim(pending); }
     });
   }
 
   async refineCalamity(e, qq, overlord) {
+    const { command, label } = this.refinementConfig();
     const key = overlord ? `xiuxian:foreign-calamity:overlord:refine:${qq}` : `xiuxian:foreign-calamity:refine:${qq}`;
     const result = await withForeignCalamityLock(`refine:${qq}`, () => withPlayerMutationLock(qq, async () => {
       const player = await Read_player(qq);
@@ -484,18 +647,18 @@ export class Suiyun extends plugin {
       const pending = JSON.parse(raw);
       if (!pending.entityId) return { message: '这份灾厄记录缺失来源，请重新讨伐。' };
       if (player._foreignCalamityRefines?.[pending.entityId]) {
-        await this.refreshLotusAttributes(qq, player);
+        await this.afterRefinement(qq, player);
         await redis.del(key);
         return { message: '这份灾厄本源此前已经炼化。' };
       }
-      const refined = refineSuiyun(player, { targetId: `calamity:${pending.entityId}`, kind: '灾厄', sourceLifeEssence: pending.lifeSource, weight: pending.weight });
+      const refined = this.refineReward(player, { targetId: `calamity:${pending.entityId}`, kind: '灾厄', sourceLifeEssence: pending.lifeSource, weight: pending.weight });
       if (!refined.ok) return { message: refined.reason };
       player._foreignCalamityRefines ||= {};
       player._foreignCalamityRefines[pending.entityId] = Date.now();
       await Write_player(qq, player);
-      await this.refreshLotusAttributes(qq, player);
+      await this.afterRefinement(qq, player);
       await redis.del(key);
-      return { message: `【月华炼化】${pending.name}化为月华。\n${this.refinementMessage(refined, player)}` };
+      return { message: `【${command}】${pending.name}化为${label}。\n${this.refinementMessage(refined, player)}` };
     }));
     return e.reply(result.busy ? '这份灾厄本源正在结算，请稍候。' : result.message);
   }
@@ -508,6 +671,7 @@ export class Suiyun extends plugin {
   }
 
   async refinePlayer(e, qq, targetQQ) {
+    const { command, label } = this.refinementConfig();
     if (!e.isGroup) return e.reply('玩家炼化请在群聊中使用。');
     if (qq === targetQQ) return e.reply('请指定另一位修士作为炼化目标。');
     if (!await existplayer(targetQQ)) return e.reply('目标尚未踏入修行。');
@@ -516,6 +680,7 @@ export class Suiyun extends plugin {
       const target = await Read_player(targetQQ);
       const error = this.holderError(player, true);
       if (error) return e.reply(error);
+      if (!canRefineMemoryTarget(player, target)) return e.reply('天空因子护持目标本源，当前境界不足以炼化。');
       const now = Date.now();
       if ((Number(player.当前血量) || 0) <= 0 || (Number(target.当前血量) || 0) <= 0) return e.reply('双方需先恢复气血再进行炼化战斗。');
       if ((player.level_id > 41 && target.level_id <= 41) || (player.level_id >= 12 && target.level_id < 12)) return e.reply('该目标处于弱者保护境界。');
@@ -532,16 +697,16 @@ export class Suiyun extends plugin {
       target.当前血量 = Math.max(0, Number(battle.B_hp) || 0);
       let result = null;
       if (battle.winner === 'A') {
-        result = refineSuiyun(player, { targetId: `player:${targetQQ}:${now}`, kind: '玩家', sourceLifeEssence: target.生命本源, now });
+        result = this.refineReward(player, { targetId: `player:${targetQQ}:${now}`, kind: '玩家', sourceLifeEssence: target.生命本源, now });
         if (!result.ok) return e.reply(result.reason);
         target.当前血量 = 0;
         target.生命本源 = Math.max(0, (Number(target.生命本源) || 0) - Math.max(0, Number(result.lifeSourceGain) || 0));
         protectForbiddenTarget(target, now);
       }
       await savePlayers([[qq, player], [targetQQ, target]]);
-      if (result) await this.refreshLotusAttributes(qq, player);
+      if (result) await this.afterRefinement(qq, player);
       await this.sendBattle(e, battle);
-      return e.reply(result ? `【月华炼化】战胜${target.名号}，其本源融入月华。\n${this.refinementMessage(result, player)}` : '炼化战斗失利，本次未获得月华。');
+      return e.reply(result ? `【${command}】战胜${target.名号}，其本源融入${label}。\n${this.refinementMessage(result, player)}` : `炼化战斗失利，本次未获得${label}。`);
     });
   }
 
@@ -602,12 +767,12 @@ export class Suiyun extends plugin {
           if (getActiveZhutianAvatarName(target)) return e.reply('目标需先发送 #装载化身 本源，再改写灵根。');
           const root = data.talent_list.find(item => item.name === name);
           if (!root) return e.reply(`未知灵根：${name}`);
-          if (STAGES.includes(name) || getSuiyunStage(target)) return e.reply('岁云一脉为唯一传承，仅由岁云残念与阶段见证承接。');
+          if (root.唯一灵根 || root.不可随机获取 || target.灵根?.唯一灵根 || STAGES.includes(name) || getSuiyunStage(target)) return e.reply('唯一灵根仅由对应传承与阶段见证承接。');
           target.灵根 = structuredClone(root);
           target.生命本源 = 100 + (Number(root.生命本源) || 0);
         } else if (kind === '天资') {
           if (!APTITUDES.includes(name)) return e.reply(`天资名：${APTITUDES.join('、')}。岁云天资仅随唯一传承获得。`);
-          if (getSuiyunStage(target)) return e.reply('岁云传承的专属天资随灵根绑定。');
+          if (getSuiyunStage(target) || target.灵根?.唯一灵根) return e.reply('唯一传承的专属天资随灵根绑定。');
           target.天资等级 = name;
           target.天资评价 = `岁云法则重写为【${name}】`;
         } else {

@@ -308,7 +308,7 @@ test('灾厄来源和小世界的生产接线均覆盖岁云传承', () => {
   const foreign = fs.readFileSync(new URL('../apps/Boss/ForeignCalamity.js', import.meta.url), 'utf8');
   const world = fs.readFileSync(new URL('../apps/Garden/xiaoshijie.js', import.meta.url), 'utf8');
   assert.match(foreign, /isEvilCultivator\(player\) \|\| getSuiyunStage\(player\)/);
-  assert.match(foreign, /if \(evil \|\| suiyun\)/);
+  assert.match(foreign, /if \(evil \|\| suiyun(?: \|\| memory)?\)/);
   assert.match(world, /getSuiyunStage\(player\)\) ascendSuiyunPalace\(newWorld\)/);
   assert.match(world, /settleSuiyunPalace\(holder, world/);
   assert.match(world, /superdimensionalRewards\.hours > 0 \|\| suiyunRewards\.hours > 0/);

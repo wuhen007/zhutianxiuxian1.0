@@ -17,6 +17,14 @@ export const SUIYUN_PALACE_POTENTIAL_PER_HOUR = 50;
 export const SUIYUN_EXCLUSIVE_SKILLS = Object.freeze(['霜剑入月', '岁云归一', '白云苍狗']);
 export const SUIYUN_GIFT_LIMIT = 3;
 export const SUIYUN_POTENTIAL_EXCHANGE_RATE = 100;
+export const SUIYUN_PALACE_DUNGEON = '岁云殿堂';
+export const SUIYUN_METALS = Object.freeze(['仙泪绿金', '凰血赤金', '龙纹黑金', '永恒蓝金', '神痕紫金', '道劫黄金', '羽化青金', '太阴天金', '太阳天金']);
+export const SUIYUN_YEAR_REWARDS = Object.freeze([
+  ...SUIYUN_METALS.map(name => Object.freeze({ name, class: '材料' })),
+  Object.freeze({ name: '潜力丹', class: '丹药' }),
+  Object.freeze({ name: '大衍悟道丹', class: '丹药' }),
+  Object.freeze({ name: '悟道古茶叶', class: '道具' }),
+]);
 
 export const SUIYUN_STAGES = Object.freeze([
   { name: '月华之体', realm: 0, realmName: '无', life: 200, cap: 600, enlightenmentBonus: .2, tribulationReduction: .2, lootMultiplier: 1, eff: 20, orb: 1.5, stats: 2 },
@@ -79,6 +87,7 @@ export function getSuiyunEffects(player) {
     madoka: stage === 5,
     luckBonus: stage > 0 ? 1 : 0,
     freeDungeonEntry: hasSuiyunFreeDungeonEntry(player),
+    absoluteSpiritImmune: stage > 0,
   };
 }
 
@@ -220,6 +229,22 @@ export function cultivateSuiyun(player, { now = Date.now(), random = Math.random
   player.月华值 += gain;
   state.上次修炼 = now;
   return { ok: true, gain, moonlight: gain, retryAt: now + SUIYUN_DAY_MS };
+}
+
+/** 每小时领取一份；可指定类别或物品，不叠秘境掉落倍率。 */
+export function receiveSuiyunYears(player, selection = '', { now = Date.now(), random = Math.random } = {}) {
+  if (!getSuiyunStage(player)) return fail('请先开启岁云月华传承。');
+  const name = String(selection || '').trim().replace(/^九大仙金材料$/, '材料').replace(/^悟道古茶$/, '悟道古茶叶');
+  const pool = name === '材料' || name === '仙金' ? SUIYUN_YEAR_REWARDS.slice(0, 9)
+    : name ? SUIYUN_YEAR_REWARDS.filter(item => item.name === name) : SUIYUN_YEAR_REWARDS;
+  if (!pool.length) return fail('用法：#岁岁年年 [材料/潜力丹/大衍悟道丹/悟道古茶]；不填时随机领取。');
+  const state = ensureSuiyunState(player);
+  if (state.上次岁岁年年 != null && now < finite(state.上次岁岁年年) + SUIYUN_HOUR_MS) {
+    return { ...fail('岁岁年年每现实小时可领取一次。'), retryAt: finite(state.上次岁岁年年) + SUIYUN_HOUR_MS };
+  }
+  const item = pool[randomInteger(0, pool.length - 1, random)];
+  state.上次岁岁年年 = now;
+  return { ok: true, item, amount: 1, retryAt: now + SUIYUN_HOUR_MS };
 }
 
 export function refineSuiyun(player, { targetId, kind = '天骄', sourceLifeEssence = 100, weight, now = Date.now(), random = Math.random } = {}) {
