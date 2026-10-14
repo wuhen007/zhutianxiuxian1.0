@@ -1,6 +1,7 @@
 export const MAX_PERCENT_EQUIPMENT_STAT = 499;
 export const MAX_EQUIPMENT_PERCENT_BONUS = 500;
 import { getZhutianExclusiveEquipmentBonus, hasExclusiveEquipmentSet } from './exclusiveEquipmentSets.js';
+import { getMemoryFactorTier } from './memoryPath.js';
 
 const EQUIPMENT_TYPES = new Set(['武器', '护具', '法宝']);
 const EQUIPMENT_STAT_FIELDS = ['atk', 'def', 'HP'];
@@ -156,6 +157,20 @@ export function calculateEquipmentSetBonuses(player, equipment = {}, options = {
   const daoTreasure = equipment.至宝 || {};
   const root = player?.灵根 || {};
   const bonus = { 攻: 0, 防: 0, 血: 0 };
+
+  const memorySets = [
+    ['逐火之刃', '逐火之甲', '逐火圣杖', 9610101, 3],
+    ['泰坦之刃', '泰坦胸甲', '泰坦权杖', 9610104, 6],
+    ['星神长弓', '星神圣衣', '星神权杖', 9610107, 13],
+  ];
+  const romanceTier = getMemoryFactorTier(player, '浪漫');
+  for (const [index, [weaponName, armorName, treasureName, id, amount]] of memorySets.entries()) {
+    if (romanceTier >= index + 1 && weapon.name === weaponName && Number(weapon.id) === id
+      && armor.name === armorName && Number(armor.id) === id + 1
+      && treasure.name === treasureName && Number(treasure.id) === id + 2) {
+      bonus.攻 += amount; bonus.防 += amount; bonus.血 += amount;
+    }
+  }
 
   if (hasExclusiveEquipmentSet(player, equipment, '岁云剑尊套')) {
     bonus.攻 += 8; bonus.防 += 8; bonus.血 += 8;

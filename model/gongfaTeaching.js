@@ -1,4 +1,5 @@
 import { hasRealmAuthority } from './realmAuthority.js';
+import { getMemoryEffects } from './memoryPath.js';
 
 export const TEACH_MIN_MIJING_LEVEL = 12;
 export const TEACH_MIN_XIANGU_LEVEL = 11;
@@ -42,15 +43,19 @@ export function getTeachingSuccessRate(level, aptitude) {
   return 1;
 }
 
-export function getTeachingCosts(level) {
+export function getLearningPotentialCost(player, baseCost) {
+  return Math.max(0, Math.ceil(Math.max(0, Number(baseCost) || 0) * getMemoryEffects(player).learnCostMultiplier));
+}
+
+export function getTeachingCosts(level, learner) {
   return {
-    potential: level + 1,
+    potential: getLearningPotentialCost(learner, level + 1),
     spirit: 100000 * (level + 1) * (level + 1),
   };
 }
 
-export function reserveTeachingCosts(state, level) {
-  const costs = getTeachingCosts(level);
+export function reserveTeachingCosts(state, level, learner) {
+  const costs = getTeachingCosts(level, learner);
   if (state.remainingPotential < costs.potential) {
     return { ok: false, reason: 'potential', ...state, costs };
   }

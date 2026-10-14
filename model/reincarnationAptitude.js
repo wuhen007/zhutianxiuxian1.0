@@ -24,7 +24,7 @@ export function resolveReincarnationAptitudeLoss(aptitude) {
     return { current, next: null, extinguished: true };
   }
 
-  const currentIndex = REINCARNATION_APTITUDE_ORDER.indexOf(current === '岁云' ? '无演无尽' : current);
+  const currentIndex = REINCARNATION_APTITUDE_ORDER.indexOf(['岁云', '星神之资'].includes(current) ? '无演无尽' : current);
   const safeIndex = currentIndex >= 0
     ? currentIndex
     : REINCARNATION_APTITUDE_ORDER.indexOf('平庸之资');

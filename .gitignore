@@ -42,6 +42,8 @@ _backups/
 # 月华传承名额为本服玩家运行状态，独立于代码版本。
 resources/data/suiyun_gift.*.json
 resources/data/suiyun_gift.*.tmp
+resources/data/memory_unique.*.json
+resources/data/memory_unique.*.tmp
 
 # 世界聊天运行时数据（禁言名单/留言缓存，不入库）
 banned.json

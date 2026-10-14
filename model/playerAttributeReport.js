@@ -210,6 +210,7 @@ export function calculateWudaoCosts(player, context = {}) {
 
   const technique = context.technique || { name: '无', bonus: 0 };
   const result = calculateWudaoResult({
+    player,
     rule,
     physiqueName: player?.灵根?.name,
     aptitudeName: player?.天资等级,
