@@ -72,7 +72,7 @@ test('真实公告分章模板完整渲染，图文与后端使用同一本期�
     assert.equal((output.match(/<article class="module">/g) || []).length, data.pageEnd - data.pageStart + 1);
     assert.match(output, /#公告网页/);
     assert.ok(output.includes(`第 ${page} / ${data.totalPages} 页`));
-    for (const item of ann.updates.slice((page - 1) * 2, page * 2)) assert.ok(output.includes(item.title));
+    for (const item of ann.updates.slice(data.pageStart - 1, data.pageEnd)) assert.ok(output.includes(item.title));
     if (page > 1) assert.ok(!output.includes(ann.intro));
   }
   const escaped = template.render(html, buildAnnouncePage({ updates: [{ tag: '测试', title: '<script>alert(1)</script>', points: ['<img onerror=alert(1)>'] }] }));
