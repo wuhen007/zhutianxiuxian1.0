@@ -1,6 +1,7 @@
 import { getRealmAuthorityLevel } from './realmAuthority.js';
 import { getActiveZhutianAvatarName } from './zhutianMirror.js';
 import { calculateCalamityLifeSourceGain, getCalamityRefinementResourceGains } from './tianmoHuasheng.js';
+import { getMemoryDungeonCost } from './memoryPath.js';
 
 export const SUIYUN_REMNANT = '岁云的残念';
 export const SUIYUN_TECHNIQUE = '月华炼天功';
@@ -9,6 +10,7 @@ export const SUIYUN_DROP_CHANCE = 0.00001;
 export const SUIYUN_HOUR_MS = 3_600_000;
 export const SUIYUN_DAY_MS = 24 * SUIYUN_HOUR_MS;
 export const SUIYUN_EQUIPMENT = Object.freeze(['岁云袍', '岁云剑', '云月之莲']);
+export const SUIYUN_FROST_EQUIPMENT = Object.freeze(['霜月剑', '霜月剑袍', '霜月之莲']);
 export const SUIYUN_LOTUS_NAME = '云月之莲';
 export const SUIYUN_LOTUS_STAT_PER_MOONLIGHT = 200_000;
 export const SUIYUN_PET_NAME = '霜月剑灵';
@@ -18,6 +20,7 @@ export const SUIYUN_EXCLUSIVE_SKILLS = Object.freeze(['霜剑入月', '岁云归
 export const SUIYUN_GIFT_LIMIT = 3;
 export const SUIYUN_POTENTIAL_EXCHANGE_RATE = 100;
 export const SUIYUN_PALACE_DUNGEON = '岁云殿堂';
+export const SUIYUN_NINE_SECRETS = Object.freeze(['临字秘', '兵字秘', '斗字秘', '者字秘', '皆字秘', '数字秘', '组字秘', '前字秘', '行字秘']);
 export const SUIYUN_METALS = Object.freeze(['仙泪绿金', '凰血赤金', '龙纹黑金', '永恒蓝金', '神痕紫金', '道劫黄金', '羽化青金', '太阴天金', '太阳天金']);
 export const SUIYUN_YEAR_REWARDS = Object.freeze([
   ...SUIYUN_METALS.map(name => Object.freeze({ name, class: '材料' })),
@@ -71,10 +74,12 @@ export function hasSuiyunFreeDungeonEntry(player) {
 
 export function getSuiyunDungeonEntryPlace(player, place) {
   if (!place) return place;
-  return {
-    ...place,
-    ...(hasSuiyunFreeDungeonEntry(player) ? { Price: 0, shouyuan: 0, experience: 0 } : {}),
-  };
+  const adjusted = { ...place };
+  for (const field of ['Price', 'shouyuan', 'experience']) {
+    if (hasSuiyunFreeDungeonEntry(player)) adjusted[field] = 0;
+    else if (place[field] != null) adjusted[field] = getMemoryDungeonCost(player, place[field]);
+  }
+  return adjusted;
 }
 
 export function getSuiyunEffects(player) {
@@ -234,10 +239,12 @@ export function cultivateSuiyun(player, { now = Date.now(), random = Math.random
 /** 每小时领取一份；可指定类别或物品，不叠秘境掉落倍率。 */
 export function receiveSuiyunYears(player, selection = '', { now = Date.now(), random = Math.random } = {}) {
   if (!getSuiyunStage(player)) return fail('请先开启岁云月华传承。');
-  const name = String(selection || '').trim().replace(/^九大仙金材料$/, '材料').replace(/^悟道古茶$/, '悟道古茶叶');
-  const pool = name === '材料' || name === '仙金' ? SUIYUN_YEAR_REWARDS.slice(0, 9)
+  const name = String(selection || '').trim().replace(/^祈愿\s*/, '').replace(/^九大仙金材料$/, '材料').replace(/^悟道古茶$/, '悟道古茶叶');
+  const secrets = name === '九秘' ? SUIYUN_NINE_SECRETS : SUIYUN_NINE_SECRETS.includes(name) ? [name] : null;
+  const pool = secrets ? secrets.map(name => ({ name, class: '功法' }))
+    : name === '材料' || name === '仙金' ? SUIYUN_YEAR_REWARDS.slice(0, 9)
     : name ? SUIYUN_YEAR_REWARDS.filter(item => item.name === name) : SUIYUN_YEAR_REWARDS;
-  if (!pool.length) return fail('用法：#岁岁年年 [材料/潜力丹/大衍悟道丹/悟道古茶]；不填时随机领取。');
+  if (!pool.length) return fail('用法：#岁岁年年 [材料/潜力丹/大衍悟道丹/悟道古茶]，或 #岁岁年年 祈愿 九秘/临字秘等；不填时随机领取原奖池。');
   const state = ensureSuiyunState(player);
   if (state.上次岁岁年年 != null && now < finite(state.上次岁岁年年) + SUIYUN_HOUR_MS) {
     return { ...fail('岁岁年年每现实小时可领取一次。'), retryAt: finite(state.上次岁岁年年) + SUIYUN_HOUR_MS };

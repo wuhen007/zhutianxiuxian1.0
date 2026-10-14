@@ -13,6 +13,7 @@ import {
   getSuiyunEffects, getSuiyunLifeMaximum, getSuiyunLotusBonus, getSuiyunPower, getSuiyunStage, refineSuiyun,
   settleSuiyunPalace, spendSuiyunPower, SUIYUN_PET_NAME, SUIYUN_PET_STAGE,
   receiveSuiyunYears, SUIYUN_PALACE_DUNGEON,
+  SUIYUN_FROST_EQUIPMENT,
 } from '../../model/suiyun.js';
 import { claimSuiyunUnique, releaseSuiyunUnique } from '../../model/suiyunRegistry.js';
 import { readSuiyunGifts, withSuiyunGiftClaim, SUIYUN_GIFT_LIMIT } from '../../model/suiyunGift.js';
@@ -100,6 +101,7 @@ export class Suiyun extends plugin {
         { reg: '^#云月修炼$', fnc: 'cultivate' },
         { reg: '^#岁岁年年.*$', fnc: 'yearGift' },
         { reg: '^#刻舟求剑$', fnc: 'palaceExplore' },
+        { reg: '^#朝花夕拾.*$', fnc: 'palaceAddiction' },
         { reg: '^#月华垂钓$', fnc: 'moonFishing' },
         { reg: '^#云月之莲$', fnc: 'showLotus' },
         { reg: '^#赐予月华.*$', fnc: 'gift' },
@@ -161,6 +163,22 @@ export class Suiyun extends plugin {
     if (error) return e.reply(error);
     const { SecretPlace } = await import('../SecretPlace/SecretPlace.js');
     return new SecretPlace().Gofairyrealm({ ...e, msg: `#镇守仙境${SUIYUN_PALACE_DUNGEON}`, reply: e.reply.bind(e) });
+  }
+
+  async palaceAddiction(e) {
+    const match = String(e.msg || '').trim().match(/^#朝花夕拾(?:(?:\s*[*＊]\s*|\s+)(\d+))?$/);
+    const count = Number(match?.[1] || 1);
+    if (!match || !Number.isSafeInteger(count) || count < 1 || count > 12) return e.reply('用法：#朝花夕拾*1；每组10轮，可填1～12组，省略数量为1组。');
+    const ctx = await this.context(e);
+    if (!ctx) return false;
+    return withPlayerMutationLock(ctx.qq, async () => {
+      const error = this.holderError(await Read_player(ctx.qq));
+      if (error) return e.reply(error);
+      const { SecretPlaceplus } = await import('../SecretPlace/SecretPlaceplus.js');
+      return new SecretPlaceplus().Gofairyrealm({
+        ...e, msg: `#沉迷仙境${SUIYUN_PALACE_DUNGEON}*${count}`, reply: e.reply.bind(e),
+      });
+    });
   }
 
   async moonFishing(e) {
@@ -449,6 +467,25 @@ export class Suiyun extends plugin {
     }
   }
 
+  async grantFrostEquipment(qq, player) {
+    if (getSuiyunStage(player) < 3 || player.岁云?.霜月套装已领取) return false;
+    const najie = await Read_najie(qq);
+    if (najie.时间线封锁?.locked) throw new Error('纳戒当前被封锁，请解锁后再次领取霜月套装');
+    for (const name of SUIYUN_FROST_EQUIPMENT) {
+      const definition = data.tszb_list.find(item => item.name === name);
+      if (!definition) throw new Error(`霜月装备资源缺失：${name}`);
+      await Add_najie_thing(qq, {
+        ...structuredClone(definition), 绑定者: String(qq), author_name: String(qq),
+      }, '装备', 1, 6, 1, { idempotencyKey: `suiyun:frost:${name}` });
+    }
+    // 三件回执先入库；中断重试只补尚缺的装备，旧角色查看面板即可补领。
+    const latest = await Read_player(qq);
+    ensureSuiyunState(latest).霜月套装已领取 = true;
+    await Write_player(qq, latest);
+    Object.assign(player, latest);
+    return true;
+  }
+
   async advance(e) {
     const ctx = await this.context(e);
     if (!ctx) return false;
@@ -457,18 +494,26 @@ export class Suiyun extends plugin {
       const error = this.holderError(player);
       if (error) return e.reply(error);
       let petGranted = await this.grantStagePet(ctx.qq, player);
+      let frostGranted = await this.grantFrostEquipment(ctx.qq, player);
       const result = getSuiyunStage(player) === 5 ? { ok: true, name: '岁云剑尊' } : advanceSuiyun(player);
       if (!result.ok) return e.reply([
         result.reason,
         petGranted ? `已补领攻击仙宠【${SUIYUN_PET_NAME}】x1，发送 #出战仙宠${SUIYUN_PET_NAME} 出战。` : '',
+        frostGranted ? '已补领霜月剑、霜月剑袍、霜月之莲，三件齐备全属性10倍。' : '',
       ].filter(Boolean).join('\n'));
       await Write_player(ctx.qq, player);
-      petGranted = await this.grantStagePet(ctx.qq, player) || petGranted;
-      await this.grantFinalEquipment(ctx.qq, player);
-      await this.refreshAttributes(ctx.qq);
+      try {
+        petGranted = await this.grantStagePet(ctx.qq, player) || petGranted;
+        frostGranted = await this.grantFrostEquipment(ctx.qq, player) || frostGranted;
+        await this.grantFinalEquipment(ctx.qq, player);
+      } finally {
+        // 灵根已晋升落盘，奖品发放中断也要按新阶段重算；重试只补缺失装备。
+        await this.refreshAttributes(ctx.qq);
+      }
       return e.reply([
         `【岁云见证】当前传承：${player.灵根.name}。`,
         petGranted ? `获得攻击仙宠【${SUIYUN_PET_NAME}】x1；发送 #出战仙宠${SUIYUN_PET_NAME} 出战。` : '',
+        frostGranted ? '霜月剑、霜月剑袍、霜月之莲已入纳戒，穿戴三件时攻、防、生命倍率为10倍。' : '',
         getSuiyunStage(player) === 5 ? '岁云袍、岁云剑、云月之莲已入纳戒，无上天阙枝自动认主，皆为绑定专属。' : '',
       ].filter(Boolean).join('\n'));
     });
@@ -550,6 +595,7 @@ export class Suiyun extends plugin {
       const error = this.holderError(player);
       if (error) return e.reply(error);
       const petGranted = await this.grantStagePet(ctx.qq, player);
+      const frostGranted = await this.grantFrostEquipment(ctx.qq, player);
       const palace = await this.settlePalace(ctx.qq, player);
       let exchangeResult;
       if (exchange) {
@@ -564,6 +610,7 @@ export class Suiyun extends plugin {
         `【岁云之力】${getSuiyunPower(player).toFixed(2)}点`, this.status(player),
         exchangeResult ? `已消耗${exchangeResult.spent}月华，仙道潜力+${exchangeResult.potentialGain}，当前${player.仙道潜力}点。` : '',
         palace.hours > 0 ? `本次月华天宫结算${palace.hours}小时：岁云之力+${palace.power}、仙道潜力+${palace.potentialGain}。` : '',
+        frostGranted ? '已补领霜月三件套，使用原装备指令穿戴，齐套全属性10倍。' : '',
         petGranted ? `已补领【${SUIYUN_PET_NAME}】x1；#出战仙宠${SUIYUN_PET_NAME}。`
           : getSuiyunStage(player) >= SUIYUN_PET_STAGE ? `传承仙宠：${SUIYUN_PET_NAME}已领取；#出战仙宠${SUIYUN_PET_NAME}。`
             : `晋升霜月剑尊时赠送攻击仙宠【${SUIYUN_PET_NAME}】。`,
@@ -572,11 +619,14 @@ export class Suiyun extends plugin {
         `灵根幸运+${Math.round(effects.luckBonus * 100)}%｜秘境通行：${effects.freeDungeonEntry ? '免入场资源消耗' : '霜月剑尊起免入场资源消耗'}`,
         '自带战技：霜剑入月（至多9敌各9剑、每剑25倍、绝控霜寒，低于15%斩杀禁复活）；岁云归一（防御反伤）；白云苍狗（每战3次复活）；岁云常青（免疫即死、禁复活、禁疗）。#战斗技能 查看详情。',
         '全系列被动：免疫绝灵侵蚀与寿元压制。#岁岁年年 [材料/潜力丹/大衍悟道丹/悟道古茶]：每现实小时领取1件；#刻舟求剑：探索岁云殿堂。',
+        'PVP同境裁决：对手额外体系等效境界高于自己时，本场强制压到同境；PVE不生效，双方存档境界不变。',
+        '#岁岁年年 祈愿 临字秘：指定九秘之一，或 #岁岁年年 祈愿 九秘 随机一本；与原奖励共用一小时冷却。',
         '#月华垂钓：群内消耗3点岁云之力，必出鱼王并自动成为垂钓者；无需鱼钩或饵料。',
+        '#朝花夕拾*1：沉迷岁云殿堂，每组10轮，可填1～12组，免入场资源消耗。',
         '月华天宫每现实小时产出0.5点岁云之力与50点仙道潜力；#月华兑换 100：100月华兑换1点仙道潜力，可填100的正整数倍。',
         '#赐予月华 @目标：传授三项专属战技，全服限定三名；不带@查看名额。',
         '#岁云造物 物品名：岁云剑尊专属，每次10点岁云之力造1件，稀有度不限，唯一归属规则保留。',
-        '#岁云更改 时代 时代名：5点；#岁云更改 至宝线索：10点。',
+        '#岁云更改（霜月剑尊起开放）时代 时代名：5点；#岁云更改 至宝线索：10点。',
         '#岁云更改 命格/天资/灵根 名称：20点，可@目标。唯一灵根不参与改写。',
         '#云月修炼：24小时一次；#月华炼化 @目标 / 天骄 / 灾厄 / 魔主。',
       ].filter(Boolean).join('\n'));
@@ -595,7 +645,7 @@ export class Suiyun extends plugin {
     return e.reply(`用法：#${command} @目标；#${command} 天骄（已镇压的求饶天骄）；#${command} 灾厄/魔主（讨伐获胜后5分钟内）。`);
   }
 
-  refinementConfig() { return { prefix: 'suiyun', command: '月华炼化', label: '月华' }; }
+  refinementConfig() { return { prefix: 'suiyun', command: '月华炼化', label: '月华', ignoreTargetProtection: true }; }
   refineReward(player, options) { return refineSuiyun(player, options); }
   afterRefinement(qq, player) { return this.refreshLotusAttributes(qq, player); }
 
@@ -671,7 +721,7 @@ export class Suiyun extends plugin {
   }
 
   async refinePlayer(e, qq, targetQQ) {
-    const { command, label } = this.refinementConfig();
+    const { command, label, ignoreTargetProtection } = this.refinementConfig();
     if (!e.isGroup) return e.reply('玩家炼化请在群聊中使用。');
     if (qq === targetQQ) return e.reply('请指定另一位修士作为炼化目标。');
     if (!await existplayer(targetQQ)) return e.reply('目标尚未踏入修行。');
@@ -680,19 +730,21 @@ export class Suiyun extends plugin {
       const target = await Read_player(targetQQ);
       const error = this.holderError(player, true);
       if (error) return e.reply(error);
-      if (!canRefineMemoryTarget(player, target)) return e.reply('天空因子护持目标本源，当前境界不足以炼化。');
+      if (!ignoreTargetProtection && !canRefineMemoryTarget(player, target)) return e.reply('天空因子护持目标本源，当前境界不足以炼化。');
       const now = Date.now();
       if ((Number(player.当前血量) || 0) <= 0 || (Number(target.当前血量) || 0) <= 0) return e.reply('双方需先恢复气血再进行炼化战斗。');
-      if ((player.level_id > 41 && target.level_id <= 41) || (player.level_id >= 12 && target.level_id < 12)) return e.reply('该目标处于弱者保护境界。');
-      const protection = getForbiddenProtection(target, now);
-      if (protection.protected) return e.reply(`目标仍受本源保护，还需${duration(protection.waitMs)}。`);
+      if (!ignoreTargetProtection) {
+        if ((player.level_id > 41 && target.level_id <= 41) || (player.level_id >= 12 && target.level_id < 12)) return e.reply('该目标处于弱者保护境界。');
+        const protection = getForbiddenProtection(target, now);
+        if (protection.protected) return e.reply(`目标仍受本源保护，还需${duration(protection.waitMs)}。`);
+      }
       for (const id of [qq, targetQQ]) {
         const raw = await redis.get(`xiuxian:player:${id}:action`);
         if (raw && Number(JSON.parse(raw)?.end_time) > now) return e.reply('相关修士正在其他行动中，请待行动结束。');
       }
       const cooldownKey = forbiddenCooldownKey(qq);
       if (await redis.set(cooldownKey, String(now + FORBIDDEN_COOLDOWN_MS), { NX: true, EX: Math.ceil(FORBIDDEN_COOLDOWN_MS / 1000) }) !== 'OK') return e.reply('本源炼化尚在调息，请稍后再试。');
-      const battle = await zd_battle({ ...structuredClone(player), 法球倍率: player.灵根?.法球倍率 || 1, _万灵魔幡不可炼化: true }, { ...structuredClone(target), 法球倍率: target.灵根?.法球倍率 || 1, _万灵魔幡不可炼化: true }, { disableWanhuaHarvest: true });
+      const battle = await zd_battle({ ...structuredClone(player), 法球倍率: player.灵根?.法球倍率 || 1, _万灵魔幡不可炼化: true }, { ...structuredClone(target), 法球倍率: target.灵根?.法球倍率 || 1, _万灵魔幡不可炼化: true }, { disableWanhuaHarvest: true, pvp: true });
       player.当前血量 = Math.max(0, Number(battle.A_hp) || 0);
       target.当前血量 = Math.max(0, Number(battle.B_hp) || 0);
       let result = null;
@@ -722,6 +774,7 @@ export class Suiyun extends plugin {
       const player = await Read_player(ctx.qq);
       const error = this.holderError(player);
       if (error) return e.reply(error);
+      if (getSuiyunStage(player) < 3) return e.reply('岁云更改从【霜月剑尊】阶段开放，请先 #岁云见证。');
       await this.settlePalace(ctx.qq, player);
       const cost = kind === '时代' ? 5 : kind === '至宝线索' ? 10 : 20;
       if (getSuiyunPower(player) < cost) return e.reply(`岁云之力不足${cost}点。`);

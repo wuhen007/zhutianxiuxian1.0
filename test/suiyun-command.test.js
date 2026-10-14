@@ -50,7 +50,9 @@ function fixture() {
       state.itemClaims.add(options.idempotencyKey);
       state.grants++;
       state.inventories[id][itemClass] ||= [];
-      state.inventories[id][itemClass].push({ name, 数量: quantity, pinji, type: name === '无上天阙枝' ? '至宝' : '护具', 大道至宝本体: name === '无上天阙枝' });
+      state.inventories[id][itemClass].push({ ...(typeof name === 'object' ? copy(name) : {
+        name, type: name === '无上天阙枝' ? '至宝' : '护具', 大道至宝本体: name === '无上天阙枝',
+      }), 数量: quantity, pinji });
     },
     config: {
       getConfig: () => copy(state.settings),
@@ -78,7 +80,8 @@ function fixture() {
     getActiveZhutianAvatarName: player => player?.诸天镜系统?.当前化身 || '',
     getSuperdimensionalRewriteTarget: (e, fallback) => e?.at || e?.message?.find(item => item.type === 'at')?.qq || fallback,
     withForeignCalamityLock: async (_id, task) => task(),
-    data: { xiaoshijie: [], weimiantianjiao_list: [{ 名号: '测试天骄', 生命本源: 200 }], talent_list: [], minggeList: [] },
+    data: { xiaoshijie: [], tszb_list: JSON.parse(fs.readFileSync(new URL('../resources/data/item/特殊装备列表.json', import.meta.url), 'utf8')),
+      weimiantianjiao_list: [{ 名号: '测试天骄', 生命本源: 200 }], talent_list: [], minggeList: [] },
     redis: {
       get: async key => state.values.get(key) ?? null,
       set: async (key, value, options) => {
@@ -325,9 +328,9 @@ test('最终奖励幂等，自动装备无上天阙枝并保留原至宝、重�
   assert.ok(f.inventories.owner.装备.some(item => item.name === '原本至宝'));
   assert.equal(f.players.owner.攻击, 123456);
   assert.equal(f.players.owner.岁云.套装已领取, true);
-  assert.equal(f.grants, 4);
+  assert.equal(f.grants, 7);
   await f.app.advance(f.event('#岁云见证'));
-  assert.equal(f.grants, 4);
+  assert.equal(f.grants, 7);
 });
 
 test('自动认主换装失败回滚装备与领取标志，奖励保留且重试不重复发放', async () => {
@@ -338,15 +341,16 @@ test('自动认主换装失败回滚装备与领取标志，奖励保留且重�
   await assert.rejects(f.app.advance(f.event('#岁云见证')), /injected-equipment-error/);
   assert.equal(f.equipment.owner.至宝.name, '原本至宝');
   assert.equal(f.players.owner.岁云.套装已领取, undefined);
-  assert.equal(f.inventories.owner.装备.length, 4);
-  assert.equal(f.grants, 4);
+  assert.equal(f.inventories.owner.装备.length, 7);
+  assert.equal(f.grants, 7);
   await f.app.advance(f.event('#岁云见证'));
   assert.equal(f.equipment.owner.至宝.name, '无上天阙枝');
-  assert.equal(f.grants, 4);
+  assert.equal(f.grants, 7);
 });
 
 test('时代写入失败原时代与5点消耗共同回滚', async () => {
   const f = fixture();
+  f.players.owner.灵根 = core.createSuiyunRoot(3);
   f.players.owner.岁云之力 = 20;
   f.failConfig = true;
   await assert.rejects(f.app.rewrite(f.event('#岁云更改 时代 神话时代')), /injected-config-error/);
@@ -360,6 +364,7 @@ test('时代写入失败原时代与5点消耗共同回滚', async () => {
 
 test('至宝线索先付费，明确失败退款，未知失败保留付费防免费重放', async () => {
   const f = fixture();
+  f.players.owner.灵根 = core.createSuiyunRoot(3);
   f.players.owner.岁云之力 = 20;
   f.eventResult = { ok: false, reason: 'all_claimed' };
   await f.app.rewrite(f.event('#岁云更改 至宝线索'));

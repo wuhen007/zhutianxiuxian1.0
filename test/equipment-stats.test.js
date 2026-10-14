@@ -12,6 +12,38 @@ import {
   rebalancePercentBonuses,
 } from '../model/equipmentStats.js';
 
+for (const [setName, multiplier, rootNames, romanceTier] of [
+  ['岁云剑尊套', 20, ['岁云剑尊'], 0],
+  ['霜月剑尊套', 10, ['霜月剑尊', '岁云化身', '岁云剑尊'], 0],
+  ['泰坦记忆套', 3, ['无漏净子'], 2],
+  ['星神记忆套', 10, ['无漏净子'], 3],
+]) {
+  test(`${setName}齐套攻防生命总倍率为${multiplier}倍，保留灵根与因子门槛`, () => {
+    const items = JSON.parse(fs.readFileSync(new URL('../resources/data/item/特殊装备列表.json', import.meta.url), 'utf8'))
+      .filter(item => item.套装 === setName);
+    assert.equal(items.length, 3);
+    const equipment = Object.fromEntries(items.map(item => [item.type, { ...item, 绑定者: 'owner' }]));
+    for (const item of items) assert.ok(item.desc.includes(`总倍率×${multiplier}（加成+${multiplier - 1}）`));
+    for (const name of rootNames) {
+      const player = { id: 'owner', 灵根: { name }, 记忆命途: { 因子: { 浪漫: romanceTier } } };
+      const bonus = calculateEquipmentSetBonuses(player, equipment);
+      assert.deepEqual(bonus, { 攻: multiplier - 1, 防: multiplier - 1, 血: multiplier - 1 });
+      assert.deepEqual(Object.values(bonus).map(value => 100 * (1 + value)), Array(3).fill(100 * multiplier));
+      assert.deepEqual(calculateEquipmentSetBonuses(player, { ...equipment, 法宝: {} }), { 攻: 0, 防: 0, 血: 0 });
+      if (romanceTier) {
+        player.记忆命途.因子.浪漫 = romanceTier - 1;
+        assert.deepEqual(calculateEquipmentSetBonuses(player, equipment), { 攻: 0, 防: 0, 血: 0 });
+      }
+      player.灵根.name = '普通灵根';
+      assert.deepEqual(calculateEquipmentSetBonuses(player, equipment), { 攻: 0, 防: 0, 血: 0 });
+    }
+    if (setName === '霜月剑尊套') {
+      equipment.武器.绑定者 = 'other';
+      assert.deepEqual(calculateEquipmentSetBonuses({ id: 'owner', 灵根: { name: rootNames[0] } }, equipment), { 攻: 0, 防: 0, 血: 0 });
+    }
+  });
+}
+
 test('装备百分比统一加算后只乘一次基础属性', () => {
   const base = { 攻击: 1000, 防御: 1000, 血量上限: 1000 };
 

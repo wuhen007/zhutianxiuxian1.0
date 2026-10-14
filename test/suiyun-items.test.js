@@ -63,7 +63,7 @@ test('岁云套逐件基础属性与套装倍率均高于终焉套，限最终�
   }
   const player = { 名号: '剑尊', 灵根: { name: '岁云剑尊' } };
   assert.equal(hasExclusiveEquipmentSet(player, equipment, '岁云剑尊套'), true);
-  assert.deepEqual(calculateEquipmentSetBonuses(player, equipment), { 攻: 8, 防: 8, 血: 8 });
+  assert.deepEqual(calculateEquipmentSetBonuses(player, equipment), { 攻: 19, 防: 19, 血: 19 });
   const opening = applyExclusiveSetOpening(player, equipment);
   assert.equal(opening.setName, '岁云剑尊套');
   assert.equal(player.全伤害类型加成, 0.5);

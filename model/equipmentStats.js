@@ -160,8 +160,8 @@ export function calculateEquipmentSetBonuses(player, equipment = {}, options = {
 
   const memorySets = [
     ['逐火之刃', '逐火之甲', '逐火圣杖', 9610101, 3],
-    ['泰坦之刃', '泰坦胸甲', '泰坦权杖', 9610104, 6],
-    ['星神长弓', '星神圣衣', '星神权杖', 9610107, 13],
+    ['泰坦之刃', '泰坦胸甲', '泰坦权杖', 9610104, 2],
+    ['星神长弓', '星神圣衣', '星神权杖', 9610107, 9],
   ];
   const romanceTier = getMemoryFactorTier(player, '浪漫');
   for (const [index, [weaponName, armorName, treasureName, id, amount]] of memorySets.entries()) {
@@ -173,7 +173,11 @@ export function calculateEquipmentSetBonuses(player, equipment = {}, options = {
   }
 
   if (hasExclusiveEquipmentSet(player, equipment, '岁云剑尊套')) {
-    bonus.攻 += 8; bonus.防 += 8; bonus.血 += 8;
+    bonus.攻 += 19; bonus.防 += 19; bonus.血 += 19;
+  }
+  if (hasExclusiveEquipmentSet(player, equipment, '霜月剑尊套')) {
+    // 套装层按(1+加成)重算，+9对应总倍率10；不按每件再叠三份。
+    bonus.攻 += 9; bonus.防 += 9; bonus.血 += 9;
   }
 
   if (weapon.name === '灭仙剑' && treasure.name === '灭仙符' && armor.name === '灭仙衣' && player.魔道值 > 999 && root.type === '魔头') {

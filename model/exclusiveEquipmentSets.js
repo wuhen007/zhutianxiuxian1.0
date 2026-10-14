@@ -1,4 +1,9 @@
 export const EXCLUSIVE_EQUIPMENT_SETS = Object.freeze({
+  霜月剑尊套: Object.freeze({
+    physiques: Object.freeze(['霜月剑尊', '岁云化身', '岁云剑尊']),
+    weapon: '霜月剑', armor: '霜月剑袍', treasure: '霜月之莲',
+    ids: Object.freeze([9600311, 9600312, 9600313]),
+  }),
   岁云剑尊套: Object.freeze({
     physique: '岁云剑尊',
     weapon: '岁云剑',
@@ -131,10 +136,12 @@ export function hasExclusiveEquipmentSet(player, equipment, setName) {
   const set = EXCLUSIVE_EQUIPMENT_SETS[setName];
   return Boolean(
     set &&
-    player?.灵根?.name === set.physique &&
+    (set.physiques ? set.physiques.includes(player?.灵根?.name) : player?.灵根?.name === set.physique) &&
     equipment?.武器?.name === set.weapon &&
     equipment?.护具?.name === set.armor &&
-    equipment?.法宝?.name === set.treasure
+    equipment?.法宝?.name === set.treasure &&
+    (!set.ids || [equipment.武器, equipment.护具, equipment.法宝].every((item, index) =>
+      Number(item?.id) === set.ids[index] && (!item.绑定者 || String(item.绑定者) === String(player.id))))
   );
 }
 
