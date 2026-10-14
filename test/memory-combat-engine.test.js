@@ -66,9 +66,9 @@ test('仙古与遮天真实渡劫结算使用记忆减伤，时间因子满血�
       学习的功法: [], 功法: {}, 道心: 500, _雷池真液已用: true,
     };
     const trib = new XianguTribulation();
-    assert.ok(Math.abs(trib._applyBodyDefenses(player, 1000).damage - 470) < 1e-8);
+    assert.ok(Math.abs(trib._applyBodyDefenses(player, 1000).damage - 670) < 1e-8);
     const full = { ...player, 记忆命途: { 因子: Object.fromEntries(MEMORY_FACTORS.map(name => [name, 3])) } };
-    assert.ok(Math.abs(trib._applyBodyDefenses(full, 1000).damage - 140) < 1e-8);
+    assert.ok(Math.abs(trib._applyBodyDefenses(full, 1000).damage - 340) < 1e-8);
     const first = await trib._dealWave({}, player, 10, 1, '记忆测试劫');
     assert.equal(first.dead, false);
     assert.equal(player.当前血量, 1000);

@@ -109,72 +109,75 @@ function fixture() {
   return state;
 }
 
-test('记忆命途命令完整注册，父类岁云命令未混入', () => {
+test('保留因子成长命令，暂停经济与终阶命令且父类岁云命令未混入', () => {
   const f = fixture();
-  for (const command of ['#消耗奇怪的数据', '#命途模拟', '#逐火之旅', '#行者之旅', '#泰坦试炼', '#命途行进', '#星神觐见', '#六相冰封 灾厄', '#记忆碎片 兑换 潜力 100', '#记忆更改 至宝线索', '#记忆造物 测试灵草', '#记忆回溯']) {
+  for (const command of ['#命途模拟', '#逐火之旅', '#行者之旅', '#泰坦试炼', '#命途行进', '#记忆因子']) {
     assert.ok(f.app.rule.some(rule => new RegExp(rule.reg).test(command)), command);
   }
-  assert.equal(f.app.rule.some(rule => new RegExp(rule.reg).test('#岁云见证')), false);
+  for (const command of ['#消耗奇怪的数据', '#星神觐见', '#六相冰封 灾厄', '#记忆碎片', '#记忆碎片 兑换 潜力 100', '#记忆更改 至宝线索', '#记忆造物 测试灵草', '#记忆回溯', '#岁云见证']) {
+    assert.equal(f.app.rule.some(rule => new RegExp(rule.reg).test(command)), false, command);
+  }
 });
 
-test('数据消耗与觉醒秘籍原子写入，唯一占用失败不扣物品', async () => {
+test('旧奇怪的数据保留，直接调用也不觉醒或发放秘籍', async () => {
   const f = fixture();
   f.player = { 名号: '新承继者', 学习的功法: [], 灵根: { name: '木灵根' } };
   f.inventory.道具.push({ name: '奇怪的数据', 数量: 1 });
-  f.failWrite = true;
-  await assert.rejects(f.app.consumeData(f.event('#消耗奇怪的数据')), /player-write-failed/);
+  const before = clone(f.player);
+  assert.match(await f.app.consumeData(f.event('#消耗奇怪的数据')), /暂停/);
   assert.equal(f.inventory.道具[0].数量, 1);
   assert.equal(f.roots.size, 0);
   assert.equal(f.inventory.功法.length, 0);
-  await f.app.consumeData(f.event('#消耗奇怪的数据'));
-  assert.equal(f.player.灵根.name, '金血之体');
-  assert.equal(f.player.天资等级, '星神之资');
-  assert.equal(f.inventory.道具[0].数量, 0);
-  assert.equal(f.inventory.功法[0].name, '六相冰封');
-  await f.app.consumeData(f.event('#消耗奇怪的数据'));
-  assert.equal(f.inventory.功法.length, 1);
+  assert.deepEqual(f.player, before);
+  assert.equal(f.writes, 0);
 });
 
-test('并发星神觐见仅获得一次日奖励，命途模拟满值才抽因子', async () => {
+test('暂停星神觐见后，命途模拟仍在满值时抽取因子', async () => {
   const f = fixture();
   await Promise.all([f.app.cultivate(f.event('#星神觐见')), f.app.cultivate(f.event('#星神觐见'))]);
-  assert.ok(f.player.记忆棱镜 >= 2000 && f.player.记忆棱镜 <= 5000);
+  assert.equal(f.player.记忆棱镜 || 0, 0);
+  assert.equal(f.writes, 0);
   await f.app.simulate(f.event('#命途模拟'));
   assert.equal(Object.keys(f.player.记忆命途.因子).length, 0);
   f.player.模拟值 = 100;
   await f.app.simulate(f.event('#命途模拟'));
   assert.equal(Object.keys(f.player.记忆命途.因子).length, 1);
   assert.equal(f.player.模拟值, 0);
-  assert.equal(f.player.生命本源, 350);
+  assert.equal(f.player.生命本源, memory.getMemoryLifeMaximum(f.player));
 });
 
-test('浪漫三层奖励和诗篇可以补发，重复面板及发放中断不复制已入库装备', async () => {
+test('浪漫三层奖励仍可补发，重复命令不复制装备且旧诗篇不再产出', async () => {
   const f = fixture();
   f.player.灵根 = memory.createMemoryRoot(4);
   f.player.记忆命途.因子 = { 浪漫: 3 };
   f.player.记忆命途.已获诗篇 = true;
-  f.player.记忆命途.碎片结算时间 = Date.now();
+  f.player.记忆命途.碎片结算时间 = Date.now() - 10 * memory.MEMORY_HOUR_MS;
+  f.player.记忆碎片 = 12;
+  f.inventory.道具.push({ name: '记忆之诗篇', 数量: 1 });
   f.failGrant = true;
-  await assert.rejects(f.app.power(f.event('#记忆碎片')), /grant-failed/);
-  await f.app.power(f.event('#记忆碎片'));
-  await f.app.power(f.event('#记忆碎片'));
+  await assert.rejects(f.app.simulate(f.event('#命途模拟')), /grant-failed/);
+  await f.app.simulate(f.event('#命途模拟'));
+  await f.app.simulate(f.event('#命途模拟'));
   assert.equal(f.inventory.装备.length, 9);
   assert.ok(f.inventory.装备.every(item => item.绑定者 === 'owner'));
   assert.equal(f.inventory.道具.filter(item => item.name === '记忆之诗篇').length, 1);
-  assert.equal(f.grants, 10);
+  assert.equal(f.grants, 9);
+  assert.equal(f.player.记忆碎片, 12);
 });
 
-test('棱镜兑换两种货币，失败及并发请求不会透支或重复转换', async () => {
+test('旧棱镜和碎片保留，兑换直调不改变潜力或余额', async () => {
   const f = fixture();
   f.player.记忆棱镜 = 10100;
+  f.player.记忆碎片 = 20;
   await f.app.power(f.event('#记忆碎片 兑换 潜力 100'));
-  assert.equal(f.player.仙道潜力, 2);
+  assert.equal(f.player.仙道潜力 || 0, 0);
   await Promise.all([f.app.power(f.event('#记忆碎片 兑换 碎片 10000')), f.app.power(f.event('#记忆碎片 兑换 碎片 10000'))]);
-  assert.equal(f.player.记忆棱镜, 0);
-  assert.equal(f.player.记忆碎片, .1);
+  assert.equal(f.player.记忆棱镜, 10100);
+  assert.equal(f.player.记忆碎片, 20);
+  assert.equal(f.writes, 0);
 });
 
-test('晋阶发奖中断仍刷新新阶段属性，条件不足和面板也可修复旧档属性', async () => {
+test('晋阶发奖中断仍刷新新阶段属性，条件不足的成长命令也可修复旧档属性', async () => {
   const f = fixture();
   f.player.mijinglevel_id = 10;
   f.player.记忆命途.因子 = { 门径: 1, 浪漫: 1, 理性: 1 };
@@ -187,7 +190,7 @@ test('晋阶发奖中断仍刷新新阶段属性，条件不足和面板也可�
   assert.equal(f.attributeStage, 2);
   assert.equal(f.inventory.装备.length, 3);
   f.attributeStage = 1;
-  await f.app.power(f.event('#记忆碎片'));
+  await f.app.simulate(f.event('#命途模拟'));
   assert.equal(f.attributeStage, 2);
   assert.equal(f.inventory.装备.length, 3);
 });
@@ -219,80 +222,77 @@ test('逐火与泰坦命令执行冷却、失败保留进度，半神与无漏�
   f.player.记忆命途.因子 = Object.fromEntries(memory.MEMORY_FACTORS.slice(0, 9).map(name => [name, 3]));
   await f.app.advance(f.event('#命途行进'));
   assert.equal(f.player.灵根.name, '无漏净子');
-  assert.equal(f.inventory.道具.filter(item => item.name === '记忆之诗篇').length, 1);
+  assert.equal(f.inventory.道具.filter(item => item.name === '记忆之诗篇').length, 0);
 });
 
-test('时代改写配置异常同时退款，配置快照保持玩家等待期间的自然纪年', async () => {
+test('旧碎片的时代改写与至宝显化直调均暂停', async () => {
   const f = fixture();
-  f.player.记忆碎片 = 5;
-  f.advanceClockOnWrite = true;
-  f.failConfig = true;
-  await assert.rejects(f.app.rewrite(f.event('#记忆更改 时代 神话时代')), /config-write-failed/);
-  assert.equal(f.player.记忆碎片, 5);
-  assert.equal(f.settings.Era.current.years, 8);
-  assert.equal(f.settings.Era.current.index, 1);
-  f.failConfig = false;
+  f.player.记忆碎片 = 50;
+  const before = clone(f.settings);
   await f.app.rewrite(f.event('#记忆更改 时代 神话时代'));
-  assert.equal(f.player.记忆碎片, 0);
-  assert.equal(f.settings.Era.current.index, 0);
-  assert.equal(f.settings.Era.current.years, 0);
+  await f.app.rewrite(f.event('#记忆更改 至宝线索'));
+  assert.equal(f.player.记忆碎片, 50);
+  assert.deepEqual(f.settings, before);
+  assert.equal(f.events, 0);
+  assert.equal(f.writes, 0);
 });
 
-test('六相冰封复用真实灾厄凭证和天骄死亡回执，既有岁云数据不受影响', async () => {
+test('六相冰封与继承的炼化分支均暂停，保留灾厄凭证和天骄待处理记录', async () => {
   const f = fixture();
   const key = 'xiuxian:foreign-calamity:refine:owner';
   f.values.set(key, JSON.stringify({ entityId: 'actual-calamity', name: '真实灾厄', lifeSource: 200 }));
-  await f.app.refine(f.event('#六相冰封 灾厄'));
-  const first = f.player.记忆棱镜;
-  assert.ok(first >= 100 && first <= 300);
-  assert.equal(f.player.月华值, undefined);
-  assert.equal(f.player.生命本源, 250);
-  assert.equal(f.values.has(key), false);
-  await f.app.refine(f.event('#六相冰封 灾厄'));
-  assert.equal(f.player.记忆棱镜, first);
   f.values.set('tianjiao:pending:owner', JSON.stringify({ token: 'capture', stage: 'offered', tianjiaoName: '被俘天骄' }));
-  f.deadTianjiao = true;
+  f.player.记忆棱镜 = 123;
+  const before = clone({ player: f.player, values: [...f.values] });
+  await f.app.refine(f.event('#六相冰封 灾厄'));
   await f.app.refine(f.event('#六相冰封 天骄'));
-  assert.equal(f.player.记忆棱镜, first);
-  f.deadTianjiao = false;
-  await f.app.refine(f.event('#六相冰封 天骄'));
-  assert.ok(f.player.记忆棱镜 > first);
-  assert.ok(f.player._rewardClaims['memory:tianjiao:capture']);
-  assert.equal(f.values.has('tianjiao:pending:owner'), false);
+  await f.app.refineCalamity(f.event('#六相冰封 灾厄'), 'owner', false);
+  await f.app.refineTianjiao(f.event('#六相冰封 天骄'), 'owner');
+  assert.equal(f.app.refineReward(f.player, { targetId: 'old', kind: '天骄' }).ok, false);
+  assert.deepEqual({ player: f.player, values: [...f.values] }, before);
+  assert.equal(f.writes, 0);
 });
 
-test('记忆造物仅第五阶段十碎片一件，发放失败退回扣款且不制造唯一数据', async () => {
+test('第五阶段旧档与旧碎片不再造物', async () => {
   const f = fixture();
+  f.player.灵根 = { name: '星神·记忆', type: '记忆命途' };
   f.player.记忆碎片 = 10;
   await f.app.createItem(f.event('#记忆造物 测试灵草'));
-  assert.equal(f.grants, 0);
-  f.player.灵根 = memory.createMemoryRoot(5);
   await f.app.createItem(f.event('#记忆造物 近似查询'));
-  assert.equal(f.player.记忆碎片, 10);
-  assert.equal(f.grants, 0);
-  f.failGrant = true;
-  await assert.rejects(f.app.createItem(f.event('#记忆造物 测试灵草')), /grant-failed/);
-  assert.equal(f.player.记忆碎片, 10);
   await f.app.createItem(f.event('#记忆造物 奇怪的数据'));
   assert.equal(f.player.记忆碎片, 10);
-  await f.app.createItem(f.event('#记忆造物 测试灵草'));
-  assert.equal(f.player.记忆碎片, 0);
-  assert.equal(f.inventory.草药[0].数量, 1);
+  assert.equal(f.grants, 0);
+  assert.equal(f.writes, 0);
 });
 
-test('记忆回溯修复本源道伤与指定牢笼，普通探索行动不被删除', async () => {
+test('第五阶段旧档不再修复自身或解除牢笼', async () => {
   const f = fixture();
-  f.player.灵根 = memory.createMemoryRoot(5);
+  f.player.灵根 = { name: '星神·记忆', type: '记忆命途' };
   f.player.道伤 = 4; f.player.生命本源 = 1; f.player.当前血量 = 1;
   f.values.set('xiuxian:player:owner:action', JSON.stringify({ action: '天牢' }));
+  const before = clone({ player: f.player, values: [...f.values] });
   await f.app.restore(f.event('#记忆回溯'));
-  assert.equal(f.player.生命本源, 5400);
-  assert.equal(f.player.道伤, 0);
-  assert.equal(f.player.当前血量, 1000);
-  assert.equal(f.values.has('xiuxian:player:owner:action'), false);
-  f.values.set('xiuxian:player:owner:action', JSON.stringify({ action: '秘境探索' }));
-  await f.app.restore(f.event('#记忆回溯'));
-  assert.equal(f.values.has('xiuxian:player:owner:action'), true);
+  assert.deepEqual({ player: f.player, values: [...f.values] }, before);
+  assert.equal(f.writes, 0);
+});
+
+test('因子面板保留有效成长指引，不显示暂停的经济项目且不发奖励', async () => {
+  const f = fixture();
+  f.player.灵根 = memory.createMemoryRoot(4);
+  f.player.记忆命途.因子 = { 浪漫: 3, 门径: 2 };
+  f.player.记忆命途.已获诗篇 = true;
+  f.player.记忆命途.碎片结算时间 = Date.now() - memory.MEMORY_HOUR_MS;
+  f.player.记忆棱镜 = 300;
+  f.player.记忆碎片 = 12;
+  const before = clone(f.player);
+  const message = await f.app.viewFactors(f.event('#记忆因子'));
+  assert.match(message, /浪漫·泰坦/);
+  assert.match(message, /门径·强化/);
+  assert.match(message, /2%模拟值，逃离不累计/);
+  assert.doesNotMatch(message, /记忆棱镜|记忆碎片|诗篇|星神觐见|奇怪的数据|六相冰封|记忆造物|记忆回溯/);
+  assert.deepEqual(f.player, before);
+  assert.equal(f.grants, 0);
+  assert.equal(f.writes, 0);
 });
 
 test('记忆应用真实完整装载，共享父类和核心接口均存在', () => {

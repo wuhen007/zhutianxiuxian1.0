@@ -6,53 +6,50 @@ import test from 'node:test';
 import { claimMemoryUnique, readMemoryUnique, rollAndGrantMemoryData } from '../model/memoryRegistry.js';
 import { createMemoryRoot, MEMORY_ROMANCE_SETS } from '../model/memoryPath.js';
 
-test('数据掉落严格限星海万分之一、同时间线只一件且不同时间线独立', async () => {
+test('奇怪的数据暂停掉落，概率命中与切换时间线均不发放或占用', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'memory-registry-'));
   try {
     const options = { file: path.join(directory, 'claims'), timeline: 'A', location: '往世星海', random: () => 0 };
-    const grants = [];
-    const grant = async result => grants.push(result.idempotencyKey);
-    assert.equal((await rollAndGrantMemoryData({ id: 'one' }, grant, { ...options, location: '普通秘境' })).encountered, false);
-    assert.equal((await rollAndGrantMemoryData({ id: 'one' }, grant, { ...options, random: () => .0001 })).encountered, false);
-    const results = await Promise.all(['one', 'two'].map(id => rollAndGrantMemoryData({ id }, grant, options)));
-    assert.equal(results.filter(result => result.encountered).length, 1);
-    assert.equal(grants.length, 1);
-    assert.match(grants[0], /^memory:data:A:/);
-    assert.equal((await rollAndGrantMemoryData({ id: 'one' }, grant, options)).encountered, false);
-    assert.equal((await rollAndGrantMemoryData({ id: 'two' }, grant, { ...options, timeline: 'B' })).encountered, true);
-    assert.equal(grants.length, 2);
+    const grant = async () => assert.fail('暂停条目不应发放');
+    for (const timeline of ['A', 'B']) {
+      const results = await Promise.all(['one', 'two'].map(id => rollAndGrantMemoryData({ id }, grant, { ...options, timeline })));
+      assert.ok(results.every(result => result.encountered === false && result.reason === 'disabled'));
+    }
+    assert.deepEqual(fs.readdirSync(directory), []);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
-test('数据发放中断占用原归属，原玩家无须再次命中概率即可补发', async () => {
+test('旧数据待补发记录保留归属，但暂停历史补发', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'memory-registry-'));
   try {
     const options = { file: path.join(directory, 'claims'), location: '往世星海', random: () => 0 };
-    await assert.rejects(rollAndGrantMemoryData({ id: 'one' }, async () => { throw new Error('disk'); }, options), /disk/);
+    assert.equal(claimMemoryUnique('data', 'one', options).ok, true);
     assert.equal(readMemoryUnique('data', options).ownerId, 'one');
-    assert.equal((await rollAndGrantMemoryData({ id: 'two' }, async () => {}, options)).encountered, false);
-    assert.equal((await rollAndGrantMemoryData({ id: 'one' }, async () => {}, { ...options, random: () => 1 })).encountered, true);
+    const before = readMemoryUnique('data', options);
+    for (const id of ['one', 'two']) {
+      const result = await rollAndGrantMemoryData({ id }, async () => assert.fail('历史补发也已暂停'), options);
+      assert.equal(result.encountered, false);
+    }
+    assert.deepEqual(readMemoryUnique('data', options), before);
     assert.equal(claimMemoryUnique('root', 'one', options).ok, true);
     assert.equal(claimMemoryUnique('root', 'two', options).ok, false);
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
-test('记忆命途目录与核心五阶段一致，唯一传承与三阶浪漫九件套齐备', () => {
+test('记忆目录仅保留四阶段与浪漫九件套，暂停物品和秘籍撤下注册', () => {
   const read = name => JSON.parse(fs.readFileSync(new URL(`../resources/data/item/${name}.json`, import.meta.url), 'utf8'));
   const roots = read('灵根列表');
-  for (let stage = 1; stage <= 5; stage++) {
+  for (let stage = 1; stage <= 4; stage++) {
     const expected = createMemoryRoot(stage);
     assert.deepEqual(roots.find(item => item.name === expected.name), expected);
     assert.equal(roots.filter(item => item.id === expected.id).length, 1);
   }
+  assert.equal(roots.some(item => item.name === '星神·记忆'), false);
   const items = read('道具列表');
   for (const name of ['奇怪的数据', '记忆之诗篇']) {
-    const item = items.find(entry => entry.name === name);
-    assert.equal(item.不可创造, 1);
-    assert.equal(item.不可交易, true);
-    assert.equal(item.不可支取, true);
+    assert.equal(items.some(entry => entry.name === name), false);
   }
-  assert.equal(read('功法列表').find(item => item.name === '六相冰封').不可外传, true);
+  assert.equal(read('功法列表').some(item => item.name === '六相冰封'), false);
   const equipment = read('特殊装备列表');
   for (const name of MEMORY_ROMANCE_SETS.flat()) {
     const item = equipment.find(entry => entry.name === name);

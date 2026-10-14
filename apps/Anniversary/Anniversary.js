@@ -296,7 +296,7 @@ async zhaohuanailixiya(e) {
 
 
     if (random > 0.2) {
-        const currentAptitudeIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
+        const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
         let oldAptitude = player.天资等级;
         let oldDescription = player.天资评价;
         let newAptitude = oldAptitude;
@@ -436,7 +436,7 @@ async yijianzhaohuan(e) {
     
     // 统计变量
     let originalAptitude = player.天资等级;
-    let currentAptitudeIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(originalAptitude) ? '无演无尽' : originalAptitude);
+    let currentAptitudeIndex = aptitudeSequence.indexOf(originalAptitude === '岁云' ? '无演无尽' : originalAptitude);
     let aptitudeUpgrades = 0;
     let highestAptitudeReached = originalAptitude;
     let itemsObtained = {
@@ -459,7 +459,7 @@ async yijianzhaohuan(e) {
     for (let i = 1; i <= totalSummons; i++) {
         let random = Math.random();
         let currentAptitude = player.天资等级;
-        let currentIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(currentAptitude) ? '无演无尽' : currentAptitude);
+        let currentIndex = aptitudeSequence.indexOf(currentAptitude === '岁云' ? '无演无尽' : currentAptitude);
         
         if (random > 0.2) { // 80%成功率
             successfulSummons++;
@@ -478,7 +478,7 @@ async yijianzhaohuan(e) {
                 aptitudeUpgrades++;
                 currentAptitudeIndex = newAptitudeIndex;
                 
-                if (aptitudeSequence.indexOf(newAptitude) > aptitudeSequence.indexOf(['岁云', '星神之资'].includes(highestAptitudeReached) ? '无演无尽' : highestAptitudeReached)) {
+                if (aptitudeSequence.indexOf(newAptitude) > aptitudeSequence.indexOf(highestAptitudeReached === '岁云' ? '无演无尽' : highestAptitudeReached)) {
                     highestAptitudeReached = newAptitude;
                 }
             }

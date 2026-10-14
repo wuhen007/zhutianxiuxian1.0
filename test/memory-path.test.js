@@ -6,7 +6,7 @@ import {
   getMemoryFactorTier, advanceMemoryPath, recordMemoryDungeon, simulateMemoryPath,
   runMemoryJourney, buildMemoryTitanTrial, applyMemoryTitanTrial, cultivateMemoryPath,
   refineMemoryPath, settleMemoryFragments, convertMemoryPrisms, spendMemoryFragments,
-  canRefineMemoryTarget,
+  canRefineMemoryTarget, normalizeMemoryPlayer, getMemoryDungeonCost,
 } from '../model/memoryPath.js';
 import { createCrossRaidAvatar, hydrateCrossRaidAvatar } from '../apps/worldChat/raid.js';
 
@@ -23,13 +23,13 @@ function draw(p, n, random = () => 0) {
   }
 }
 
-test('初始金血250本源、星神之资，完整五阶境界/因子/十二试炼流程不死锁', () => {
-  const p = player();
-  assert.equal(p.生命本源, 250);
-  assert.equal(p.天资等级, '星神之资');
+test('四阶保留普通天资，黄金+10与泰坦+20本源，最终止于无漏净子', () => {
+  const p = player({ 天资等级: '万古无双' });
+  assert.equal(p.生命本源, 50);
+  assert.equal(p.天资等级, '万古无双');
   assert.equal(activateMemoryPath(p).ok, false);
   draw(p, 3);
-  assert.equal(p.生命本源, 550);
+  assert.equal(p.生命本源, 80);
   p.模拟值 = 100;
   assert.equal(simulateMemoryPath(p).ok, false);
   assert.equal(p.模拟值, 100);
@@ -37,16 +37,16 @@ test('初始金血250本源、星神之资，完整五阶境界/因子/十二试
   assert.equal(advanceMemoryPath(p).ok, false);
   p.mijinglevel_id = 10;
   assert.equal(advanceMemoryPath(p).stage, 2);
-  assert.equal(p.生命本源, 900);
+  assert.equal(p.生命本源, 180);
   draw(p, 3);
-  assert.equal(p.生命本源, 1200);
+  assert.equal(p.生命本源, 210);
   p.mijinglevel_id = 12;
   assert.equal(advanceMemoryPath(p).ok, false);
   for (let i = 0; i < 12; i++) assert.equal(runMemoryJourney(p, { now: i * 6 * MEMORY_HOUR_MS, random: () => 0 }).progress, i + 1);
   assert.equal(Object.keys(p.记忆命途.因子).length, 6);
   assert.ok(Object.values(p.记忆命途.因子).every(tier => tier === 2));
   assert.equal(advanceMemoryPath(p).stage, 3);
-  assert.equal(p.生命本源, 1200);
+  assert.equal(p.生命本源, 300);
   draw(p, 3);
   assert.ok(Object.values(p.记忆命途.因子).every(tier => tier === 2));
   p.mijinglevel_id = 16;
@@ -56,31 +56,31 @@ test('初始金血250本源、星神之资，完整五阶境界/因子/十二试
     assert.equal(battle.ok, true);
     assert.equal(applyMemoryTitanTrial(p, true, { now: i * MEMORY_HOUR_MS, expectedIndex: i, random: () => 0 }).progress, i + 1);
   }
-  assert.equal(p.生命本源, 3000);
+  assert.equal(p.生命本源, 480);
   assert.ok(Object.values(p.记忆命途.因子).every(tier => tier === 3));
   const upgrade = advanceMemoryPath(p, { now: 0 });
   assert.equal(upgrade.stage, 4);
-  assert.equal(upgrade.grantPoem, true);
-  assert.equal(p.生命本源, 4200);
+  assert.equal(upgrade.grantPoem, false);
+  assert.equal(p.生命本源, 680);
   draw(p, 3);
-  assert.equal(p.生命本源, 4800);
-  p.mijinglevel_id = 19;
-  assert.equal(advanceMemoryPath(p).ok, false);
+  assert.equal(p.生命本源, 740);
   p.mijinglevel_id = 20;
-  assert.equal(advanceMemoryPath(p).stage, 5);
-  assert.equal(p.生命本源, 7800);
-  assert.equal(getMemoryLifeMaximum(p), 7800);
+  assert.equal(MEMORY_STAGES.length, 4);
+  assert.throws(() => createMemoryRoot(5), RangeError);
+  assert.equal(getMemoryLifeMaximum(p), 740);
   assert.equal(advanceMemoryPath(p).ok, false);
 });
 
-test('成功秘境记录每次5%，满100且同结算ID不重复累积', () => {
+test('非逃离秘境每次2%，50次满值，同结算ID与逃离均不重复累积', () => {
   const p = player();
-  assert.equal(recordMemoryDungeon(p, { token: 'single1' }).gain, 5);
+  assert.equal(recordMemoryDungeon(p, { token: 'escaped', escaped: true }).gain, 0);
+  assert.equal(p.记忆命途.秘境记录.includes('escaped'), false);
+  assert.equal(recordMemoryDungeon(p, { token: 'single1' }).gain, 2);
   assert.equal(recordMemoryDungeon(p, { token: 'single1' }).gain, 0);
-  assert.equal(recordMemoryDungeon(p, { token: 'batch', rounds: 18 }).gain, 90);
-  assert.equal(p.模拟值, 95);
+  assert.equal(recordMemoryDungeon(p, { token: 'batch', rounds: 48 }).gain, 96);
+  assert.equal(p.模拟值, 98);
   assert.equal(simulateMemoryPath(p).ok, false);
-  assert.equal(recordMemoryDungeon(p, { token: 'single2' }).gain, 5);
+  assert.equal(recordMemoryDungeon(p, { token: 'single2' }).gain, 2);
   assert.equal(recordMemoryDungeon(p, { token: 'overflow' }).gain, 0);
   assert.equal(simulateMemoryPath(p, { random: () => 0 }).factor, '门径');
   assert.equal(p.模拟值, 0);
@@ -113,17 +113,20 @@ test('逐火6小时、泰坦1小时边界，失败与旧战报不推进', () => 
   assert.equal(applyMemoryTitanTrial(p, true, { now: MEMORY_HOUR_MS, expectedIndex: 0 }).progress, 1);
 });
 
-test('12因子三个级别的生活加成，金泰坦掉落不双加', () => {
+test('12因子保留额外悟道减伤，黄金按件数、泰坦按倍率分别结算', () => {
   const p = player();
-  p.灵根 = createMemoryRoot(5);
+  p.灵根 = createMemoryRoot(4);
   for (const tier of [1, 2, 3]) {
     p.记忆命途.因子 = Object.fromEntries(MEMORY_FACTORS.map(name => [name, tier]));
     const effects = getMemoryEffects(p);
-    assert.equal(effects.enlightenmentBonus, .56);
-    assert.equal(effects.tribulationReduction, .86);
-    assert.equal(effects.lootMultiplier, tier === 3 ? 15 : 11);
+    assert.equal(effects.enlightenmentBonus, .36);
+    assert.ok(Math.abs(effects.tribulationReduction - .66) < 1e-12);
+    assert.equal(effects.lootMultiplier, tier === 3 ? 14 : 2);
+    assert.equal(effects.lootBonus, 2);
     assert.equal(effects.fishingMultiplier, tier + 1);
-    assert.equal(effects.dungeonSpeed, [0, 2, 3, 5][tier]);
+    assert.equal(effects.dungeonSpeed, 1);
+    assert.equal(effects.dungeonTimeMultiplier, 1);
+    assert.equal(effects.dungeonCostReduction, [0, .2, .3, .4][tier]);
     assert.equal(effects.learnCostMultiplier, tier === 1 ? .5 : 0);
     assert.equal(effects.teachCooldownMultiplier, tier === 3 ? .5 : 1);
     assert.equal(effects.guaranteedDrops.length, tier);
@@ -131,6 +134,20 @@ test('12因子三个级别的生活加成，金泰坦掉落不双加', () => {
   p.灵根 = { name: '凡体' };
   assert.equal(getMemoryEffects(p).lootMultiplier, 1);
   assert.equal(getMemoryFactorTier(p, '浪漫'), 0);
+});
+
+test('门径三阶仅折算入场成本，整数向上取整，无因子保留原价', () => {
+  const p = player();
+  for (const [tier, cost] of [[0, 101], [1, 81], [2, 71], [3, 61]]) {
+    p.记忆命途.因子 = { 门径: tier };
+    assert.equal(getMemoryDungeonCost(p, 101), cost);
+    assert.equal(getMemoryDungeonCost(p, 1), 1);
+    assert.equal(getMemoryDungeonCost(p, 0), 0);
+    assert.equal(getMemoryDungeonCost(p, -100), -100);
+  }
+  assert.equal(getMemoryDungeonCost({ 灵根: { name: '凡体' }, 记忆命途: { 因子: { 门径: 3 } } }, 100), 100);
+  p.记忆命途.因子 = { 门径: 2 };
+  assert.equal(getMemoryDungeonCost(p, 100), 70);
 });
 
 test('天空炼化护持精确三/四/五权柄差，超出门槛才放行', () => {
@@ -142,61 +159,56 @@ test('天空炼化护持精确三/四/五权柄差，超出门槛才放行', () 
   }
 });
 
-test('逐个因子蜕变泰坦不会降低已有掉落倍率，也不把两种倍率相加', () => {
+test('因子强化保留黄金额外件数，每三泰坦按原规则增加倍率', () => {
   const p = player();
   p.灵根 = createMemoryRoot(4);
   p.记忆命途.因子 = Object.fromEntries(MEMORY_FACTORS.slice(0, 9).map(name => [name, 2]));
   let previous = getMemoryEffects(p).lootMultiplier;
-  assert.equal(previous, 9);
+  assert.equal(previous, 2);
   for (const name of MEMORY_FACTORS.slice(0, 9)) {
     p.记忆命途.因子[name] = 3;
     const current = getMemoryEffects(p).lootMultiplier;
+    assert.equal(getMemoryEffects(p).lootBonus, 1);
     assert.ok(current >= previous);
     previous = current;
   }
-  assert.equal(previous, 12);
+  assert.equal(previous, 11);
 });
 
-test('诗篇从第四阶实际取得时计时，现实小时0.1，重启不重复发', () => {
-  const p = player();
-  assert.equal(settleMemoryFragments(p, { now: MEMORY_HOUR_MS }).hours, 0);
+test('停用诗篇、炼化、觐见和兑换后，旧余额不增不减也不消耗凭证', () => {
+  const p = player({ 记忆棱镜: 10200, 记忆碎片: 20, 仙道潜力: 8 });
   p.灵根 = createMemoryRoot(4);
   Object.assign(p.记忆命途, { 已获诗篇: true, 碎片结算时间: 0 });
-  assert.deepEqual(settleMemoryFragments(p, { now: 2.5 * MEMORY_HOUR_MS }), { hours: 2, fragments: .2 });
-  assert.equal(p.记忆碎片, .2);
-  assert.equal(settleMemoryFragments(p, { now: 2.5 * MEMORY_HOUR_MS }).hours, 0);
-  const restored = structuredClone(p);
-  restored.记忆命途.碎片结算时间 = String(restored.记忆命途.碎片结算时间);
-  assert.equal(settleMemoryFragments(restored, { now: 3 * MEMORY_HOUR_MS }).fragments, .1);
-  assert.equal(restored.记忆碎片, .3);
-  assert.equal(settleMemoryFragments(restored, { now: 4 * MEMORY_HOUR_MS }).fragments, .1);
+  const before = structuredClone(p);
+  assert.deepEqual(settleMemoryFragments(p, { now: 1000 * MEMORY_HOUR_MS }), { hours: 0, fragments: 0 });
+  assert.equal(convertMemoryPrisms(p, 10000, '碎片').ok, false);
+  assert.equal(convertMemoryPrisms(p, 100, '潜力').ok, false);
+  assert.equal(spendMemoryFragments(p, 10), false);
+  assert.equal(refineMemoryPath(p, { targetId: 'real-proof', kind: '灾厄' }).ok, false);
+  assert.equal(cultivateMemoryPath(p, { now: 1000 * MEMORY_HOUR_MS }).ok, false);
+  assert.deepEqual(p, before);
 });
 
-test('棱镜两种兑换10000换0.1/100换2，非法和不足不扣余额', () => {
-  const p = player(); p.记忆棱镜 = 10200;
-  assert.equal(convertMemoryPrisms(p, 10000, '碎片').gain, .1);
-  assert.equal(convertMemoryPrisms(p, 100, '潜力').gain, 2);
-  assert.equal(p.仙道潜力, 2);
-  assert.equal(p.记忆碎片, .1);
-  for (const amount of [0, -100, 1.5, 99, Infinity, 300]) assert.equal(convertMemoryPrisms(p, amount, '潜力').ok, false);
-  assert.equal(p.记忆棱镜, 100);
-  assert.equal(spendMemoryFragments(p, -1), false);
-  assert.equal(spendMemoryFragments(p, .2), false);
-  assert.equal(spendMemoryFragments(p, .1), true);
-  assert.equal(p.记忆碎片, 0);
-});
-
-test('六相冰封只消费真实本源一次、随机100至300；每日觐见冷却24小时', () => {
-  const p = player();
-  assert.equal(refineMemoryPath(p, { targetId: 'a', random: () => 0 }).gain, 100);
-  assert.equal(refineMemoryPath(p, { targetId: 'a' }).ok, false);
-  assert.equal(refineMemoryPath(p, { targetId: 'b', kind: '灾厄', random: () => 1 }).gain, 300);
-  p.学习的功法 = [];
-  assert.equal(refineMemoryPath(p, { targetId: 'c' }).ok, false);
-  assert.equal(cultivateMemoryPath(p, { now: 0, random: () => 0 }).gain, 2000);
-  assert.equal(cultivateMemoryPath(p, { now: 24 * MEMORY_HOUR_MS - 1 }).ok, false);
-  assert.equal(cultivateMemoryPath(p, { now: 24 * MEMORY_HOUR_MS, random: () => 1 }).gain, 5000);
-  assert.equal(p.记忆棱镜, 7400);
+test('旧星神根与镜中本源转为无漏净子，超额本源下修且余额因子保留', () => {
+  const oldRoot = { id: 7092005, name: '星神·记忆', type: '记忆命途', 攻击: 5000, 防御: 5000, 生命: 5000, eff: 30000, 法球倍率: 1000 };
+  const p = { 灵根: oldRoot, 生命本源: 7800, 天资等级: '星神之资',
+    记忆命途: { 因子: Object.fromEntries(MEMORY_FACTORS.map(name => [name, 3])) },
+    诸天镜系统: { 本源灵根: structuredClone(oldRoot) }, 记忆棱镜: 999, 记忆碎片: 10 };
+  assert.equal(normalizeMemoryPlayer(p), true);
+  assert.equal(getMemoryStage(p), 4);
+  assert.deepEqual(p.灵根, createMemoryRoot(4));
+  assert.deepEqual(p.诸天镜系统.本源灵根, createMemoryRoot(4));
+  assert.equal(p.生命本源, 740);
+  assert.equal(p.天资等级, '平庸之资');
+  assert.equal(Object.keys(p.记忆命途.因子).length, 12);
+  assert.equal(p.记忆棱镜, 999);
+  assert.equal(p.记忆碎片, 10);
+  const settled = structuredClone(p);
+  assert.equal(normalizeMemoryPlayer(p), false);
+  assert.deepEqual(p, settled);
+  p.生命本源 = 1;
+  normalizeMemoryPlayer(p);
+  assert.equal(p.生命本源, 1);
 });
 
 test('跨服战斗只携带因子，不输出棱镜余额、碎片或炼化身份记录', () => {

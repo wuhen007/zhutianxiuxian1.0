@@ -476,7 +476,7 @@ export function getPhysiqueWudaoBonus(physiqueName, player = { 灵根: { name: p
 }
 
 export function getAptitudeWudaoBonus(aptitudeName) {
-  return Number(APTITUDE_BONUSES[aptitudeName === '星神之资' ? '无演无尽' : aptitudeName]) || 0;
+  return Number(APTITUDE_BONUSES[aptitudeName]) || 0;
 }
 
 export function getEraWudaoProfile(eraIndex) {

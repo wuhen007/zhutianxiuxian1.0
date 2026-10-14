@@ -8,26 +8,27 @@ import { calculateEquipmentSetBonuses } from '../model/equipmentStats.js';
 import { calculateWudaoResult, getAptitudeWudaoBonus, getPhysiqueWudaoBonus } from '../apps/User/wudaoRules.js';
 import { calculateCropGrowthState } from '../apps/Garden/smallWorldGrowth.js';
 import { getDungeonTimedActionMultiplier } from '../model/innateTreasure.js';
-import { multiplySuiyunLoot } from '../model/suiyunLoot.js';
+import { addMemoryLootBonus, multiplySuiyunLoot } from '../model/suiyunLoot.js';
 import { isItemPermanentlyNonTradeable } from '../model/equipmentTransfer.js';
 import { getRefinementAvailability } from '../model/tianmoHuasheng.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
+import { accelerateSecretPlaceAction } from '../model/secretPlaceAddiction.js';
 
 const read = file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 const player = (stage = 2, factors = {}) => ({
   id: 'memory-economy', 灵根: createMemoryRoot(stage), 记忆命途: { 因子: factors },
-  学习的功法: [], 仙道潜力: 0, 天资等级: '星神之资',
+  学习的功法: [], 仙道潜力: 0, 模拟值: 0, 天资等级: '无演无尽',
 });
 
-test('悟道使用真实因子上下文，修复本源按总量而非再加100，星神天资等同顶级', () => {
+test('悟道仅保留因子加成，本源按削弱后的基础及因子计，旧星神天资无额外收益', () => {
   const p = player(2, { 门径: 1, 浪漫: 2, 理性: 3 });
-  assert.ok(Math.abs(getPhysiqueWudaoBonus(p.灵根.name, p) - .29) < 1e-12);
-  assert.equal(getLifeSourceRepairMaximum(p), 900);
-  assert.equal(getAptitudeWudaoBonus('星神之资'), getAptitudeWudaoBonus('无演无尽'));
+  assert.ok(Math.abs(getPhysiqueWudaoBonus(p.灵根.name, p) - .09) < 1e-12);
+  assert.equal(getLifeSourceRepairMaximum(p), 180);
+  assert.equal(getAptitudeWudaoBonus('星神之资'), 0);
   const result = calculateWudaoResult({ player: p, physiqueName: p.灵根.name,
     rule: { baseGain: 100, lifespanCost: 1 }, random: () => .5 });
-  assert.ok(Math.abs(result.bonuses.physique - .29) < 1e-12);
-  assert.equal(getLifeSourceRepairMaximum(player(3, { 门径: 1, 理性: 3 })), 1400);
+  assert.ok(Math.abs(result.bonuses.physique - .09) < 1e-12);
+  assert.equal(getLifeSourceRepairMaximum(player(3, { 门径: 1, 理性: 3 })), 320);
   assert.equal(getLifeSourceRepairMaximum({ 灵根: { name: '凡体', 生命本源: 10 } }), 110);
 });
 
@@ -40,7 +41,7 @@ test('理性学习半价/免费同时影响传功目标潜力，施法者元神�
   assert.match(app, /24 \* getMemoryEffects\(caster\)\.teachCooldownMultiplier/);
 });
 
-test('真实一键学习免费时仍保存已学功法，不受星神天资默认低阶限制', async () => {
+test('普通顶级天资真实一键学习免费时仍保存已学功法', async () => {
   const source = read('apps/User/UserSellAll.js');
   const start = source.indexOf('async all_learn(e)');
   const end = source.indexOf('async regressionLegacy(', start);
@@ -63,8 +64,8 @@ test('真实一键学习免费时仍保存已学功法，不受星神天资默�
   assert.equal(inventory[0].数量, 0);
 });
 
-test('浪漫三套按完整匹配与因子等级各给一份300/600/1300%加成', () => {
-  const sets = [['逐火之刃', '逐火之甲', '逐火圣杖', 9610101, 3], ['泰坦之刃', '泰坦胸甲', '泰坦权杖', 9610104, 6], ['星神长弓', '星神圣衣', '星神权杖', 9610107, 13]];
+test('浪漫三套按完整匹配与因子等级各给一份300/200/900%加成', () => {
+  const sets = [['逐火之刃', '逐火之甲', '逐火圣杖', 9610101, 3], ['泰坦之刃', '泰坦胸甲', '泰坦权杖', 9610104, 2], ['星神长弓', '星神圣衣', '星神权杖', 9610107, 9]];
   sets.forEach(([weapon, armor, treasure, id, bonus], index) => {
     const p = player(4, { 浪漫: index + 1 });
     const equipment = { 武器: { name: weapon, id }, 护具: { name: armor, id: id + 1 }, 法宝: { name: treasure, id: id + 2 } };
@@ -74,22 +75,22 @@ test('浪漫三套按完整匹配与因子等级各给一份300/600/1300%加成'
   });
 });
 
-test('门径正常与沉迷分别除2/3/5，独立于原50%减时上限', () => {
+test('门径三阶不再缩短正常或沉迷耗时，已有功法减时照常生效', () => {
   const source = read('apps/SecretPlace/SecretPlaceplus.js');
   const start = source.indexOf('function applyAddictionGongfaReduction(');
   const end = source.indexOf('/**', start);
   const helper = new Function('getMemoryEffects', 'getDungeonGongfaReduction', `${source.slice(start, end)};return applyAddictionGongfaReduction;`)(getMemoryEffects, () => ({ rate: 0 }));
-  for (const [tier, speed] of [[1, 2], [2, 3], [3, 5]]) {
+  for (const tier of [1, 2, 3]) {
     const p = player(2, { 门径: tier });
-    assert.equal(getDungeonTimedActionMultiplier(p), 1 / speed);
-    assert.equal(helper(p, 100, 100, []), 100 / speed);
-    assert.equal(helper(p, 100, 10, []), 50 / speed);
+    assert.equal(getDungeonTimedActionMultiplier(p), 1);
+    assert.equal(helper(p, 100, 100, []), 100);
+    assert.equal(helper(p, 100, 10, []), 50);
   }
 });
 
 test('总体掉落加成只进入生成物，不复制唯一品；海洋各阶段额外2/3/4倍', () => {
   const p = player(2, { 海洋: 1, 门径: 1, 大地: 1 });
-  assert.equal(multiplySuiyunLoot(p, { name: '普通材料' }, 2), 10);
+  assert.equal(multiplySuiyunLoot(p, { name: '普通材料' }, 2), 4);
   assert.equal(multiplySuiyunLoot(p, { name: '唯一物', 全服唯一: true }, 1), 1);
   assert.deepEqual([1, 2, 3].map(tier => getMemoryEffects(player(4, { 海洋: tier })).fishingMultiplier), [2, 3, 4]);
   assert.match(read('apps/User/UserHome.js'), /lootMultiplier \* getMemoryEffects\(player\)\.fishingMultiplier/);
@@ -136,28 +137,51 @@ test('天空护持在真实天魔资格检查前拦截本源炼化，边界为�
   }
 });
 
-test('真实单次入场记录并发重试只增5，沉迷记录按实结算轮数去重', async () => {
-  const source = read('apps/SecretPlace/SecretPlace.js');
-  const start = source.indexOf('async function recordMemoryEntry(');
-  const end = source.indexOf('\nasync function replyPlaneDestroyed', start);
+test('真实单次结算只增2且逃离不计，沉迷记录按实结算轮数去重', async () => {
+  assert.doesNotMatch(read('apps/SecretPlace/SecretPlace.js'), /recordMemoryEntry|recordMemoryDungeon/);
+  const source = read('apps/SecretPlace/SecretPlaceTask.js');
+  const start = source.indexOf('recordMemoryDungeon(player, {', source.indexOf('let Data_battle ='));
+  const end = source.indexOf('await Write_player(player_id, player);', start);
+  assert.ok(start > 0 && end > start);
   let stored = player();
-  const bindings = { getMemoryStage, recordMemoryDungeon, withPlayerMutationLock,
-    Read_player: async () => structuredClone(stored), Write_player: async (_id, value) => { stored = structuredClone(value); },
-  };
-  const helper = new Function(...Object.keys(bindings), `${source.slice(start, end)};return recordMemoryEntry;`)(...Object.values(bindings));
+  const helper = new Function('recordMemoryDungeon', 'player', 'action', 'weizhi', 'Data_battle', source.slice(start, end));
   const action = { taskId: 'entry-proof', Place_address: { name: '测试秘境' } };
-  await Promise.all([helper('fixture', action), helper('fixture', action)]);
-  assert.equal(stored.模拟值, 5);
+  helper(recordMemoryDungeon, stored, { ...action, escaped: true }, action.Place_address, {});
+  assert.equal(stored.模拟值, 0);
+  helper(recordMemoryDungeon, stored, action, action.Place_address, { winner: 'B' });
+  helper(recordMemoryDungeon, stored, action, action.Place_address, { winner: 'B' });
+  assert.equal(stored.模拟值, 2);
   const plus = read('apps/SecretPlace/SecretPlaceplusTask.js');
   const from = plus.indexOf('// 结算后更新动作状态');
   const to = plus.indexOf('if (options.taskId', from);
-  const round = new Function('recordMemoryDungeon', 'player', 'action', 'weizhi', plus.slice(from, to));
+  const round = new Function('recordMemoryDungeon', 'player', 'action', 'weizhi', 'Data_battle', plus.slice(from, to));
   const roundAction = { taskId: 'batch-proof', settled_count: 0 };
-  round(recordMemoryDungeon, stored, roundAction, { name: '测试秘境' });
-  assert.equal(stored.模拟值, 10);
+  round(recordMemoryDungeon, stored, roundAction, { name: '测试秘境' }, { winner: 'B' });
+  assert.equal(stored.模拟值, 4);
   roundAction.settled_count = 0;
-  round(recordMemoryDungeon, stored, roundAction, { name: '测试秘境' });
-  assert.equal(stored.模拟值, 10);
+  round(recordMemoryDungeon, stored, roundAction, { name: '测试秘境' }, { winner: 'B' });
+  assert.equal(stored.模拟值, 4);
+  round(recordMemoryDungeon, stored, { ...roundAction, escaped: true }, { name: '测试秘境' }, {});
+  assert.equal(stored.模拟值, 4);
+});
+
+test('旧普通任务使用结算卡加速后沿用原身份，入场已记进度不再追加', () => {
+  const p = player();
+  p.模拟值 = 5;
+  p.记忆命途.秘境记录 = ['entry:100000:测试秘境:body'];
+  const action = { Place_action: '0', end_time: 100000, Place_address: { name: '测试秘境' } };
+  const first = accelerateSecretPlaceAction(action, 10000, 1000).action;
+  const second = accelerateSecretPlaceAction(first, 10000, 1000).action;
+  assert.equal(second.end_time, 80000);
+  assert.equal(second.memoryEntryToken, 'entry:100000:测试秘境:body');
+  const source = read('apps/SecretPlace/SecretPlaceTask.js');
+  const start = source.indexOf('            recordMemoryDungeon(player, {');
+  const end = source.indexOf('            await Write_player(', start);
+  new Function('recordMemoryDungeon', 'player', 'action', 'weizhi', 'Data_battle', source.slice(start, end))(
+    recordMemoryDungeon, p, second, action.Place_address, {},
+  );
+  assert.equal(p.模拟值, 5);
+  assert.deepEqual(p.记忆命途.秘境记录, ['entry:100000:测试秘境:body']);
 });
 
 test('律法真实胜利保底按三档发放，身份相同重试复用物品与幂等键', async () => {
@@ -166,8 +190,8 @@ test('律法真实胜利保底按三档发放，身份相同重试复用物品�
     const start = source.indexOf('for (const tier of getMemoryEffects(player).guaranteedDrops)');
     const end = source.indexOf('const zhetianResult', start);
     const sent = [];
-    const award = new Function('getMemoryEffects', 'isItemPermanentlyNonTradeable', 'Add_najie_thing', 'recordItemToHistory', 'player', 'action', 'weizhi', 'thing_name', `return (async()=>{let last_msg='';const player_id='law',n=1;${source.slice(start, end)}})();`);
-    const args = [getMemoryEffects, isItemPermanentlyNonTradeable, async (...params) => sent.push(params), async () => {}, player(4, { 律法: 3 }), { taskId: 'law-round', settled_count: 0 },
+    const award = new Function('getMemoryEffects', 'addMemoryLootBonus', 'isItemPermanentlyNonTradeable', 'Add_najie_thing', 'recordItemToHistory', 'player', 'action', 'weizhi', 'thing_name', `return (async()=>{let last_msg='';const player_id='law',n=1;${source.slice(start, end)}})();`);
+    const args = [getMemoryEffects, addMemoryLootBonus, isItemPermanentlyNonTradeable, async (...params) => sent.push(params), async () => {}, player(4, { 律法: 3 }), { taskId: 'law-round', settled_count: 0 },
       { name: '测试秘境', one: [{ name: '低奖', class: '材料' }], two: [{ name: '中奖', class: '材料' }], three: [{ name: '唯一', class: '道具', 全服唯一: true }, { name: '高奖', class: '材料' }] }];
     await award(...args); await award(...args);
     assert.deepEqual(sent.slice(0, 3).map(params => params[1]), ['低奖', '中奖', '高奖']);
@@ -180,17 +204,17 @@ test('律法真实胜利保底按三档发放，身份相同重试复用物品�
   }
 });
 
-test('秘境奇遇认可星神之资为最高天资，不因旧天资兼容逻辑将其降级', async () => {
+test('移除星神之资后，秘境奇遇仍保留普通顶级天资', async () => {
   for (const file of ['SecretPlaceTask.js', 'SecretPlaceplusTask.js']) {
     const source = read(`apps/SecretPlace/${file}`);
     const start = source.indexOf('aptitudeEncounter: {');
     const end = source.indexOf('if (random > 0.1 && random < 0.1002)', start);
     const p = player();
-    p.天资等级 = '星神之资';
+    p.天资等级 = '无演无尽';
     let writes = 0;
     const encounter = new Function('player', 'Write_player', `return (async()=>{let last_msg='';const random=0,usr_qq='fixture',B_player={名号:'试炼投影'};${source.slice(start, end)};return last_msg;})();`);
     const message = await encounter(p, async () => { writes++; });
-    assert.equal(p.天资等级, '星神之资');
+    assert.equal(p.天资等级, '无演无尽');
     assert.equal(writes, 0);
     assert.match(message, /资质已臻至境/);
   }

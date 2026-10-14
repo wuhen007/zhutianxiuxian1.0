@@ -950,11 +950,11 @@ async changeAptitude(e) {
   // 内联构建天资数据对象（替代不存在的 getPlayerAptitudeData 函数）
   const targetAptitudeData = {
     grade: targetPlayer.天资等级 || '平庸之资',
-    index: aptitudeSequence.indexOf(['岁云', '星神之资'].includes(targetPlayer.天资等级) ? '无演无尽' : (targetPlayer.天资等级 || '平庸之资'))
+    index: aptitudeSequence.indexOf(targetPlayer.天资等级 === '岁云' ? '无演无尽' : (targetPlayer.天资等级 || '平庸之资'))
   };
   const invokerAptitudeData = {
     grade: invoker.天资等级 || '平庸之资',
-    index: aptitudeSequence.indexOf(['岁云', '星神之资'].includes(invoker.天资等级) ? '无演无尽' : (invoker.天资等级 || '平庸之资'))
+    index: aptitudeSequence.indexOf(invoker.天资等级 === '岁云' ? '无演无尽' : (invoker.天资等级 || '平庸之资'))
   };
 
   // 检查新的天资是否有效
@@ -3003,7 +3003,6 @@ async handleTeach(e, isAll = false) {
         "万古无双": 8,   // 可学仙帝法(8)
         "无演无尽": 9,   // 可学神慧者(9)
         "岁云": 9,
-    "星神之资": 9,
         "无化如是": -1   // 什么都学不了
     };
     
@@ -5407,7 +5406,7 @@ async soulSearch(e) {
 
   executor.法球倍率 = executor.灵根?.法球倍率 ?? executor.法球倍率 ?? 1;
   target.法球倍率 = target.灵根?.法球倍率 ?? target.法球倍率 ?? 1;
-  const battleResult = await zd_battle(executor, target);
+  const battleResult = await zd_battle(executor, target, { pvp: true });
   if (Array.isArray(battleResult.msg) && battleResult.msg.length > 0) {
     await ForwardMsg(e, battleResult.msg.slice(0, 35));
     if (battleResult.msg.length > 35) e.reply('战斗过长，仅展示前35条战报。');

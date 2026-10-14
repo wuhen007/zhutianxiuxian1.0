@@ -53,29 +53,34 @@ export class MemoryPath extends Suiyun {
     this.name = '记忆命途';
     this.dsc = '金血因子、逐火与泰坦见证';
     this.rule = [
-      { reg: '^#(?:消耗|使用|服用|炼化)\\s*奇怪的数据(?:\\s*\\*?1)?$', fnc: 'consumeData' },
+      // 记忆经济与星神终阶暂停，旧物品和余额保留。
+      // { reg: '^#(?:消耗|使用|服用|炼化)\\s*奇怪的数据(?:\\s*\\*?1)?$', fnc: 'consumeData' },
       { reg: '^#命途模拟$', fnc: 'simulate' },
       { reg: '^#(?:逐火之旅|行者之旅)$', fnc: 'journey' },
       { reg: '^#泰坦试炼$', fnc: 'titanTrial' },
       { reg: '^#命途行进$', fnc: 'advance' },
-      { reg: '^#星神觐见$', fnc: 'cultivate' },
-      { reg: '^#记忆碎片(?:\\s+兑换(?:\\s+(?:碎片|潜力))?(?:\\s+\\d+)?)?$', fnc: 'power' },
-      { reg: '^#六相冰封.*$', fnc: 'refine' },
-      { reg: '^#记忆更改.*$', fnc: 'rewrite' },
-      { reg: '^#记忆造物.*$', fnc: 'createItem' },
-      { reg: '^#记忆回溯.*$', fnc: 'restore' },
+      { reg: '^#记忆因子$', fnc: 'viewFactors' },
+      // { reg: '^#星神觐见$', fnc: 'cultivate' },
+      // { reg: '^#记忆碎片(?:\\s+兑换(?:\\s+(?:碎片|潜力))?(?:\\s+\\d+)?)?$', fnc: 'power' },
+      // { reg: '^#六相冰封.*$', fnc: 'refine' },
+      // { reg: '^#记忆更改.*$', fnc: 'rewrite' },
+      // { reg: '^#记忆造物.*$', fnc: 'createItem' },
+      // { reg: '^#记忆回溯.*$', fnc: 'restore' },
     ];
   }
 
   holderError(player, technique = false) {
+    // 父类的炼化分支也从此处拦截，旧秘籍和凭证不再消耗。
+    if (technique) return '六相冰封已暂停。';
     if (getActiveZhutianAvatarName(player)) return '请先发送 #装载化身 本源，再行走记忆命途。';
-    if (!getMemoryStage(player)) return '先在往世星海寻得并消耗【奇怪的数据】，开启金血之体。';
-    if (technique && !player.学习的功法?.includes('六相冰封')) return '请先学习《六相冰封》，再炼化真实本源。';
+    if (!getMemoryStage(player)) return '当前尚未开启记忆命途。';
     return '';
   }
 
   refinementConfig() { return { prefix: 'memory', command: '六相冰封', label: '记忆棱镜' }; }
-  refineReward(player, options) { return refineMemoryPath(player, options); }
+  // 暂停父类命令分派与直接奖励调用，保留旧炼化存档。
+  refine(e) { return e.reply('六相冰封已暂停。'); }
+  refineReward() { return { ok: false, reason: '六相冰封已暂停。' }; }
   async afterRefinement() {}
   refinementMessage(result, player) {
     return `记忆棱镜+${result.gain}，当前${player.记忆棱镜 || 0}；生命本源${player.生命本源}/${getMemoryLifeMaximum(player)}。`;
@@ -87,9 +92,10 @@ export class MemoryPath extends Suiyun {
     const factors = Object.entries(state.因子 || {}).map(([name, tier]) => `${name}·${FACTOR_TIERS[tier] || tier}`);
     return [
       `【${player.灵根.name}】生命本源 ${player.生命本源}/${getMemoryLifeMaximum(player)}`,
-      `模拟值 ${player.模拟值 || 0}/100｜记忆棱镜 ${player.记忆棱镜 || 0}｜记忆碎片 ${getMemoryFragments(player).toFixed(2)}`,
+      `模拟值 ${player.模拟值 || 0}/100`,
       `因子：${factors.join('、') || '尚未模拟'}；逐火 ${state.逐火次数 || 0}/12，泰坦 ${state.泰坦次数 || 0}/12。`,
-      `悟道+${Math.round(effects.enlightenmentBonus * 100)}%｜渡劫减伤${Math.round(effects.tribulationReduction * 100)}%｜物品${effects.lootMultiplier}倍。`,
+      `悟道+${Math.round(effects.enlightenmentBonus * 100)}%｜渡劫减伤${Math.round(effects.tribulationReduction * 100)}%｜物品${effects.lootMultiplier}倍，普通物品额外+${effects.lootBonus}件。`,
+      `门径：副本修为、血气、灵石、寿元代价减少${Math.round(effects.dungeonCostReduction * 100)}%。`,
     ].join('\n');
   }
 
@@ -104,12 +110,15 @@ export class MemoryPath extends Suiyun {
         });
       }
     }
-    if (getMemoryStage(player) >= 4) {
-      await Add_najie_thing(qq, '记忆之诗篇', '道具', 1, undefined, 1, { idempotencyKey: 'memory:poem' });
-    }
+    // 记忆之诗篇暂停发放，浪漫因子套装继续保留。
+    // if (getMemoryStage(player) >= 4) {
+    //   await Add_najie_thing(qq, '记忆之诗篇', '道具', 1, undefined, 1, { idempotencyKey: 'memory:poem' });
+    // }
   }
 
   async consumeData(e) {
+    // 暂停入口，旧物品不消耗；原流程保留供后续调整。
+    return e.reply('奇怪的数据已暂停使用。');
     const ctx = await this.context(e);
     if (!ctx) return false;
     return withPlayerMutationLock(ctx.qq, async () => {
@@ -138,7 +147,7 @@ export class MemoryPath extends Suiyun {
         throw error;
       }
       await this.refreshAttributes(ctx.qq);
-      return e.reply('【金血之体】奇怪的数据化入命途，天资成为【星神之资】，获得《六相冰封》。\n#学习六相冰封；进入秘境每次积累5%模拟值，满100后 #命途模拟 抽取不重复因子。');
+      return e.reply('【金血之体】奇怪的数据化入命途，天资成为【星神之资】，获得《六相冰封》。\n#学习六相冰封；完成秘境每次积累2%模拟值，满100后 #命途模拟 抽取不重复因子。');
     });
   }
 
@@ -149,22 +158,36 @@ export class MemoryPath extends Suiyun {
       const player = await Read_player(ctx.qq);
       const error = this.holderError(player);
       if (error) return e.reply(error);
-      settleMemoryFragments(player);
+      // 诗篇收益暂停；继续保留模拟、旅程、试炼和晋升。
       const result = operation(player);
-      // 已晋升旧档可补发浪漫套装或诗篇，失败不改变因子和冷却。
+      // 已晋升旧档可补发浪漫套装，失败不改变因子和冷却。
       await Write_player(ctx.qq, player);
       await this.refreshAttributes(ctx.qq);
       await this.grantRewards(ctx.qq, player);
       if (!result.ok) return e.reply(result.reason);
       return e.reply([result.message || (result.factor ? `获得【${FACTOR_TIERS[result.tier]}·${result.factor}】因子。`
-        : result.gain ? `获得${result.gain}记忆棱镜。` : '命途见证已经铭刻。'), this.status(player)].join('\n'));
+        : '命途见证已经铭刻。'), this.status(player)].join('\n'));
     });
   }
 
   simulate(e) { return this.mutate(e, player => simulateMemoryPath(player)); }
   journey(e) { return this.mutate(e, player => runMemoryJourney(player)); }
   advance(e) { return this.mutate(e, player => advanceMemoryPath(player)); }
-  cultivate(e) { return this.mutate(e, player => cultivateMemoryPath(player)); }
+  // 星神觐见暂停，直接调用同样不产生收益。
+  cultivate(e) { return e.reply('星神觐见已暂停。'); }
+
+  async viewFactors(e) {
+    const ctx = await this.context(e);
+    if (!ctx) return false;
+    const player = await Read_player(ctx.qq);
+    const error = this.holderError(player);
+    if (error) return e.reply(error);
+    return e.reply([
+      this.status(player),
+      '完成秘境每次+2%模拟值，逃离不累计；#命途模拟 抽取唯一因子。',
+      '#逐火之旅（6小时一次，共12次）→ #泰坦试炼（1小时一次，共12次）→ #命途行进。',
+    ].join('\n'));
+  }
 
   async titanTrial(e) {
     const ctx = await this.context(e);
@@ -187,6 +210,8 @@ export class MemoryPath extends Suiyun {
   }
 
   async power(e) {
+    // 经济兑换与诗篇结算暂停；查看因子使用独立面板。
+    return e.reply('记忆碎片与棱镜兑换已暂停，发送 #记忆因子 查看命途。');
     const ctx = await this.context(e);
     if (!ctx) return false;
     return withPlayerMutationLock(ctx.qq, async () => {
@@ -208,7 +233,7 @@ export class MemoryPath extends Suiyun {
       return e.reply([
         this.status(player), result ? `消耗${result.spent}记忆棱镜，获得${result.gain}${result.kind === '潜力' ? '仙道潜力' : '记忆碎片'}。` : '',
         income.hours > 0 ? `记忆之诗篇结算${income.hours}小时。` : '',
-        '进入秘境每次+5%模拟值；#命途模拟 抽取唯一因子。',
+        '完成秘境每次+2%模拟值，逃离不累计；#命途模拟 抽取唯一因子。',
         '#逐火之旅（6小时一次，共12次）→ #泰坦试炼（1小时一次，共12次）→ #命途行进。',
         '#星神觐见：24小时一次，2000～5000记忆棱镜。',
         '#记忆碎片 兑换 碎片 10000：兑换0.1碎片；#记忆碎片 兑换 潜力 100：兑换2潜力。',
@@ -219,6 +244,8 @@ export class MemoryPath extends Suiyun {
   }
 
   async rewrite(e) {
+    // 旧碎片保留，暂停改写入口与全部外部效果。
+    return e.reply('记忆更改已暂停。');
     const ctx = await this.context(e);
     if (!ctx) return false;
     const text = (e.message?.filter(item => item.type === 'text').map(item => item.text).join(' ') || e.msg).replace(/^#记忆更改/, '#岁云更改');
@@ -294,6 +321,8 @@ export class MemoryPath extends Suiyun {
   }
 
   async createItem(e) {
+    // 星神终阶移除，旧碎片不再用于造物。
+    return e.reply('记忆造物已暂停。');
     const ctx = await this.context(e);
     if (!ctx) return false;
     return withPlayerMutationLock(ctx.qq, async () => {
@@ -329,6 +358,8 @@ export class MemoryPath extends Suiyun {
   }
 
   async restore(e) {
+    // 星神终阶移除，旧存档不再提供回溯效果。
+    return e.reply('记忆回溯已暂停。');
     const ctx = await this.context(e);
     if (!ctx) return false;
     const targetId = String(await channel(getSuperdimensionalRewriteTarget(e, ctx.qq)));

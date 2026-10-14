@@ -1,5 +1,6 @@
 import { getSuiyunEffects } from '../../model/suiyun.js';
 import { getMemoryEffects } from '../../model/memoryPath.js';
+import { addMemoryLootBonus } from '../../model/suiyunLoot.js';
 import { getLearningPotentialCost } from '../../model/gongfaTeaching.js';
 import { isItemPermanentlyNonTradeable } from '../../model/equipmentTransfer.js';
 import { applyItemDiscard, DISCARD_USAGE, formatDiscardChoice, planItemDiscard } from '../../model/itemDiscard.js';
@@ -1846,7 +1847,6 @@ padLeft(str, length) {
     "万古无双": 8,   // 可学仙帝法(8)
     "无演无尽": 9,
     "岁云": 9,
-    "星神之资": 9,   // 可学神慧者(9)
     "无化如是": -1   // 什么都学不了
   };
   
@@ -2716,7 +2716,7 @@ if (weizhi.name === "紫薇星域") {
                     ];
                     
                     // 获取玩家当前天资等级索引
-                    const currentAptitudeIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
+                    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
                     // 最低要求天资等级索引（天纵之资，索引6）
                     const minAptitudeIndex = 6;
                      const tianxuanbufa = await checkGongfaInServer('天璇步法');
@@ -3548,6 +3548,7 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
     last_msg += `黑影袖袍一卷，将你探索所得的[${stolenAmount}个${thing_name}]夺走！`;
     last_msg += `你拼死抵抗，最终保住了[${n}个${thing_name}]。`;
 }
+ if (thing_name) n = addMemoryLootBonus(player, await foundthing(thing_name, { readOnly: true }), n);
  m += `]×${n}个。`;
             let xiuwei = 0;
             //默认结算装备数
@@ -3706,7 +3707,7 @@ if (random < 0.0001) {
     ];
     
     // 获取当前天资位置
-    const currentIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
+    const currentIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
     
     // 如果玩家天资不在序列中（可能是旧数据），统一修正到轮回最低档
     if (currentIndex === -1) {
@@ -4855,7 +4856,7 @@ if (weizhi.name === "紫薇星域") {
                     ];
                     
                     // 获取玩家当前天资等级索引
-                    const currentAptitudeIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
+                    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
                     // 最低要求天资等级索引（天纵之资，索引6）
                     const minAptitudeIndex = 6;
                      const tianxuanbufa = await checkGongfaInServer('天璇步法');
@@ -5635,6 +5636,7 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
     last_msg += `黑影袖袍一卷，将你探索所得的[${stolenAmount}个${thing_name}]夺走！`;
     last_msg += `你拼死抵抗，最终保住了[${n}个${thing_name}]。`;
 }
+ if (thing_name) n = addMemoryLootBonus(player, await foundthing(thing_name, { readOnly: true }), n);
  m += `]×${n}个。`;
             let xiuwei = 0;
             //默认结算装备数
@@ -5799,7 +5801,7 @@ if (random < 0.0001) {
     ];
     
     // 获取当前天资位置
-    const currentIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
+    const currentIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
     
     // 如果玩家天资不在序列中（可能是旧数据），统一修正到轮回最低档
     if (currentIndex === -1) {

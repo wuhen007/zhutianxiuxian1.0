@@ -1,5 +1,6 @@
 import { getSuiyunEffects } from '../../model/suiyun.js';
 import { getMemoryEffects } from '../../model/memoryPath.js';
+import { addMemoryLootBonus } from '../../model/suiyunLoot.js';
 import { getLearningPotentialCost } from '../../model/gongfaTeaching.js';
 import { plugin,  verc, data, config } from '../../api/api.js';
 import {
@@ -1049,6 +1050,14 @@ if (isLucky || player.灵根.type === "圆环之理" || getSuiyunEffects(player)
     
     n *= getSuiyunEffects(player).lootMultiplier * getMemoryEffects(player).lootMultiplier * getMemoryEffects(player).fishingMultiplier;
 
+    // 黄金因子只加最终件数，不并入随后会乘100的奖励倍数。
+    const grantFishingLoot = async (name, itemClass, baseAmount, unique = false) => {
+        const item = unique ? { name, 全服唯一: true } : await foundthing(name, { readOnly: true });
+        const amount = addMemoryLootBonus(player, item, baseAmount);
+        await Add_najie_thing(usr_qq, name, itemClass, amount);
+        return amount;
+    };
+
     // 道法仙术提示（顺序与 CD 实际计算一致：先引潮灯减半，再道法-10）
     if (hasTideLamp) {
         rewardMsg += " 万界引潮灯照彻众生海，垂钓冷却缩短一半，愿鳞与仙饵收获翻倍！\n";
@@ -1068,9 +1077,9 @@ if (isLucky || player.灵根.type === "圆环之理" || getSuiyunEffects(player)
             ownsXianwuCoordinate:
                 Boolean(player.仙武界坐标已获得) || coordinateCount > 0,
         });
-        const amount = rollBaitRewardAmount(hasTideLamp) * (reward.uniqueFlag ? 1
+        const baseAmount = rollBaitRewardAmount(hasTideLamp) * (reward.uniqueFlag ? 1
           : getMemoryEffects(player).lootMultiplier * getMemoryEffects(player).fishingMultiplier);
-        await Add_najie_thing(usr_qq, reward.name, reward.class, amount);
+        const amount = await grantFishingLoot(reward.name, reward.class, baseAmount, Boolean(reward.uniqueFlag));
         if (reward.uniqueFlag) {
             player[reward.uniqueFlag] = true;
             playerChanged = true;
@@ -1078,46 +1087,45 @@ if (isLucky || player.灵根.type === "圆环之理" || getSuiyunEffects(player)
         rewardMsg += `\n 【${baitName}】牵动诸天水脉，钓得【${reward.name}】x${amount}`;
     }
     else if (random < 50) {
-        await Add_najie_thing(usr_qq, "仙晶矿", "道具", 100 * n);
-        rewardMsg += `\n 钓起仙晶矿脉！获得【仙晶矿】x${100 * n}`;
+        const amount = await grantFishingLoot("仙晶矿", "道具", 100 * n);
+        rewardMsg += `\n 钓起仙晶矿脉！获得【仙晶矿】x${amount}`;
     } 
     else if (random < 60) {
-        await Add_najie_thing(usr_qq, "七彩流晶矿", "道具", 10 * n);
-        rewardMsg += `\n 虹光贯日！钓起太古矿精【七彩流晶矿】x${10 * n}`;
+        const amount = await grantFishingLoot("七彩流晶矿", "道具", 10 * n);
+        rewardMsg += `\n 虹光贯日！钓起太古矿精【七彩流晶矿】x${amount}`;
     } 
      else if (random < 65) {
-        await Add_najie_thing(usr_qq, "玄品秘境结算卡", "道具", 5 * n);
-        rewardMsg += `\n 仙光大放！钓起众生仙宝【玄品秘境结算卡】x${5 * n}`;
+        const amount = await grantFishingLoot("玄品秘境结算卡", "道具", 5 * n);
+        rewardMsg += `\n 仙光大放！钓起众生仙宝【玄品秘境结算卡】x${amount}`;
     } 
     else if (random < 75) {
-        await Add_najie_thing(usr_qq, "帝品真器丹", "丹药", 3 * n);
-        rewardMsg += `\n 丹霞漫天！钓起荒古丹炉【帝品真器丹】x${3 * n}`;
+        const amount = await grantFishingLoot("帝品真器丹", "丹药", 3 * n);
+        rewardMsg += `\n 丹霞漫天！钓起荒古丹炉【帝品真器丹】x${amount}`;
     } 
     else if (random < 80) {
-        await Add_najie_thing(usr_qq, "遣龙令", "道具", 10 * n);
-        rewardMsg += `\n 龙吟九霄！钓起太古龙巢【遣龙令】x${10 * n}`;
+        const amount = await grantFishingLoot("遣龙令", "道具", 10 * n);
+        rewardMsg += `\n 龙吟九霄！钓起太古龙巢【遣龙令】x${amount}`;
     } 
     else if (random < 85) {
-        await Add_najie_thing(usr_qq, "遣虎令", "道具", 10 * n);
-        rewardMsg += `\n 煞气冲斗！钓起白虎杀星【遣虎令】x${10 * n}`;
+        const amount = await grantFishingLoot("遣虎令", "道具", 10 * n);
+        rewardMsg += `\n 煞气冲斗！钓起白虎杀星【遣虎令】x${amount}`;
     } 
     else if (random < 87) {
-        await Add_najie_thing(usr_qq, "天命轮回丹", "丹药", 5 * n);
-        rewardMsg += `\n 轮回逆转！钓起禁忌丹药【天命轮回丹】x${5 * n}`;
+        const amount = await grantFishingLoot("天命轮回丹", "丹药", 5 * n);
+        rewardMsg += `\n 轮回逆转！钓起禁忌丹药【天命轮回丹】x${amount}`;
     } 
     
     else if (random < 95) {
-        await Add_najie_thing(usr_qq, "天药", "丹药", 30 * n);
-        await Add_najie_thing(usr_qq, "无上九转仙丹药引", "丹药", 1 * n);
-        rewardMsg += `\n 神霞喷薄！钓起精神天药【天药】x${30 * n} + 【无上九转仙丹药引】x${1 * n}`;
+        const medicine = await grantFishingLoot("天药", "丹药", 30 * n);
+        const catalyst = await grantFishingLoot("无上九转仙丹药引", "丹药", n);
+        rewardMsg += `\n 神霞喷薄！钓起精神天药【天药】x${medicine} + 【无上九转仙丹药引】x${catalyst}`;
     } 
     else {
-        await Add_najie_thing(usr_qq, "超越宝盒", "盒子", 10 * n);
-        rewardMsg += `\n 海浪翻涌！钓起诸天至宝【超越宝盒】x${10 * n}`;
+        const amount = await grantFishingLoot("超越宝盒", "盒子", 10 * n);
+        rewardMsg += `\n 海浪翻涌！钓起诸天至宝【超越宝盒】x${amount}`;
     }
 
-    const wishScaleAmount = rollWishScaleAmount(hasTideLamp);
-    await Add_najie_thing(usr_qq, "众生愿鳞", "道具", wishScaleAmount);
+    const wishScaleAmount = await grantFishingLoot("众生愿鳞", "道具", rollWishScaleAmount(hasTideLamp));
     rewardMsg += `\n 众生愿力凝成鳞光，获得【众生愿鳞】x${wishScaleAmount}`;
 
     const planeName = getPlayerPlaneName(player);
@@ -2203,6 +2211,8 @@ if (func == "打开") {
       thing_name = selected.item.name;
     }
     //看看物品名称有没有设定,是不是瞎说的
+    // 记忆条目暂停使用，旧纳戒物品保留，通用使用命令同样拦截。
+    if (['奇怪的数据', '记忆之诗篇', '六相冰封'].includes(thing_name)) return e.reply('该记忆命途物品已暂停使用。');
     let thing_exist = await foundthing(thing_name);
     const activeAvatar = getActiveZhutianAvatarName(player);
     const mutatesRoot =
@@ -2625,7 +2635,7 @@ if (equipment.帝兵.name == "终古剑之主") {
     ];
 
     // 获取当前天资位置
-    const currentIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
+    const currentIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
     
     // === 特殊天资处理 ===
     if (player.天资等级 === '无化如是') {
@@ -2782,9 +2792,12 @@ if (equipment.帝兵.name == "终古剑之主") {
              await Add_najie_thing(usr_qq, thing_name, '丹药', -quantity);
             player.出金率 = thing_exist.chujin;
             player.出金次数 += 10*quantity;
+            if (thing_exist.name === '岁月的馈赠') {
+              player.岁月馈赠次数 = Math.max(0, Math.floor(Number(player.岁月馈赠次数) || 0)) + 10 * quantity;
+            }
             let 冒险出金次数 = 10*quantity;
             await Write_player(usr_qq, player);
-            e.reply(`服用成功,下${冒险出金次数}次冒险出金率增加${player.出金率}%，目前剩余出金次数${player.出金次数}`);
+            e.reply(`服用成功,下${冒险出金次数}次冒险出金率增加${player.出金率}%，目前剩余出金次数${player.出金次数}${thing_exist.name === '岁月的馈赠' ? '；胜利探索另有50%概率获得隐藏物品' : ''}`);
             return false;
           }
        if (thing_exist.type == '寿命') {
@@ -3469,6 +3482,11 @@ if (thing_exist.type == '神药') {
                     return;
                 }
             }
+            const grantMapFishingLoot = async (name, itemClass, baseAmount) => {
+                const amount = addMemoryLootBonus(player, await foundthing(name, { readOnly: true }), baseAmount);
+                await Add_najie_thing(usr_qq, name, itemClass, amount);
+                return amount;
+            };
             if (thing_name == "天臂池") {
                 n *= getMemoryEffects(player).lootMultiplier * getMemoryEffects(player).fishingMultiplier;
                 if (player.饱食度 < 1000) {
@@ -3483,26 +3501,26 @@ if (thing_exist.type == '神药') {
                 if (futou > 0) {
                     await Add_饱食度(usr_qq, -1000)
                     await redis.set("xiuxian:player:" + usr_qq + "xunbaocd", now_Time);
-                    await Add_najie_thing(usr_qq, "鱼肉", "食材", 100 * n);
+                    const fishCount = await grantMapFishingLoot("鱼肉", "食材", 100 * n);
                     await Add_najie_thing(usr_qq, "钓鱼竿", "道具", -1);
                     await Add_najie_thing(usr_qq, "天臂池", "道具", -1);
                     await Add_血气(usr_qq, xueqi)
                     await Add_修为(usr_qq, xiuwei)
                     if (math > 0.7 && math <= 1) {
-                        await Add_najie_thing(usr_qq, "经验瓶", "丹药", n);
-                        e.reply(`${last_msg}${fyd_msg}你运气真好，在天臂池钓到经验瓶${n}个,鱼肉${100 * n},获得了修为${xiuwei}血气${xueqi}`)
+                        const amount = await grantMapFishingLoot("经验瓶", "丹药", n);
+                        e.reply(`${last_msg}${fyd_msg}你运气真好，在天臂池钓到经验瓶${amount}个,鱼肉${fishCount},获得了修为${xiuwei}血气${xueqi}`)
                         return;
                     } else if (math > 0.3 && math <= 0.7) {
-                        await Add_najie_thing(usr_qq, "经验球", "丹药", n);
-                        e.reply(`${last_msg}${fyd_msg}你在天臂池钓到经验球${n}个,鱼肉${100 * n},获得了修为${xiuwei}血气${xueqi}`)
+                        const amount = await grantMapFishingLoot("经验球", "丹药", n);
+                        e.reply(`${last_msg}${fyd_msg}你在天臂池钓到经验球${amount}个,鱼肉${fishCount},获得了修为${xiuwei}血气${xueqi}`)
                         return;
                     } else if (math > 0.01 && math <= 0.3) {
-                        await Add_najie_thing(usr_qq, "血气瓶", "丹药", n);
-                        e.reply(`${last_msg}${fyd_msg}你在天臂池钓到血气瓶${n}个,鱼肉${100 * n},获得了修为${xiuwei}血气${xueqi}`)
+                        const amount = await grantMapFishingLoot("血气瓶", "丹药", n);
+                        e.reply(`${last_msg}${fyd_msg}你在天臂池钓到血气瓶${amount}个,鱼肉${fishCount},获得了修为${xiuwei}血气${xueqi}`)
                         return;
                     } else if (math > 0 && math <= 0.01) {
-                        await Add_najie_thing(usr_qq, "经验瓶", "丹药", n * 10);
-                        e.reply(`${last_msg}${fyd_msg}你运气爆棚了！在天臂池钓到经验瓶${n * 10}个,鱼肉${100 * n},获得了修为${xiuwei}血气${xueqi}`)
+                        const amount = await grantMapFishingLoot("经验瓶", "丹药", n * 10);
+                        e.reply(`${last_msg}${fyd_msg}你运气爆棚了！在天臂池钓到经验瓶${amount}个,鱼肉${fishCount},获得了修为${xiuwei}血气${xueqi}`)
                         return;
                     }
                 } else {
@@ -3524,26 +3542,26 @@ if (thing_exist.type == '神药') {
                 if (futou > 0) {
                     await Add_饱食度(usr_qq, -5000)
                     await redis.set("xiuxian:player:" + usr_qq + "xunbaocd", now_Time);
-                    await Add_najie_thing(usr_qq, "鱼肉", "食材", 500 * n);
+                    const fishCount = await grantMapFishingLoot("鱼肉", "食材", 500 * n);
                     await Add_najie_thing(usr_qq, "钓鱼竿", "道具", -1);
                     await Add_najie_thing(usr_qq, "沉沦之海", "道具", -1);
                     await Add_血气(usr_qq, xueqi)
                     await Add_修为(usr_qq, xiuwei)
                     if (math > 0.7 && math <= 1) {
-                        await Add_najie_thing(usr_qq, "利维坦之心", "丹药", n * 10 );
-                        e.reply(`${last_msg}${fyd_msg}你运气真好，在沉沦之海钓到利维坦之心${n * 10}个,鱼肉${500 * n},获得了修为${xiuwei}血气${xueqi}`)
+                        const amount = await grantMapFishingLoot("利维坦之心", "丹药", n * 10);
+                        e.reply(`${last_msg}${fyd_msg}你运气真好，在沉沦之海钓到利维坦之心${amount}个,鱼肉${fishCount},获得了修为${xiuwei}血气${xueqi}`)
                         return;
                     } else if (math > 0.3 && math <= 0.7) {
-                        await Add_najie_thing(usr_qq, "利维坦之心", "丹药", n*2);
-                        e.reply(`${last_msg}${fyd_msg}你在沉沦之海钓到利维坦之心${n*2}个,鱼肉${500 * n},获得了修为${xiuwei}血气${xueqi}`)
+                        const amount = await grantMapFishingLoot("利维坦之心", "丹药", n * 2);
+                        e.reply(`${last_msg}${fyd_msg}你在沉沦之海钓到利维坦之心${amount}个,鱼肉${fishCount},获得了修为${xiuwei}血气${xueqi}`)
                         return;
                     } else if (math > 0.01 && math <= 0.3) {
-                        await Add_najie_thing(usr_qq, "海神之血", "丹药", n*2);
-                        e.reply(`${last_msg}${fyd_msg}你在沉沦之海钓到海神之血${n*2}个,鱼肉${500 * n},获得了修为${xiuwei}血气${xueqi}`)
+                        const amount = await grantMapFishingLoot("海神之血", "丹药", n * 2);
+                        e.reply(`${last_msg}${fyd_msg}你在沉沦之海钓到海神之血${amount}个,鱼肉${fishCount},获得了修为${xiuwei}血气${xueqi}`)
                         return;
                     } else if (math > 0 && math <= 0.01) {
-                        await Add_najie_thing(usr_qq, "海神之血", "丹药", n * 10);
-                        e.reply(`${last_msg}${fyd_msg}你运气爆棚了！在沉沦之海钓到海神之血${n * 10}个,鱼肉${500 * n},获得了修为${xiuwei}血气${xueqi}`)
+                        const amount = await grantMapFishingLoot("海神之血", "丹药", n * 10);
+                        e.reply(`${last_msg}${fyd_msg}你运气爆棚了！在沉沦之海钓到海神之血${amount}个,鱼肉${fishCount},获得了修为${xiuwei}血气${xueqi}`)
                         return;
                     }
                 } else {
@@ -3569,18 +3587,18 @@ if (thing_exist.type == '神药') {
                 if (futou > 0) {
                     await Add_饱食度(usr_qq, -1000)
                     await redis.set("xiuxian:player:" + usr_qq + "xunbaocd", now_Time);
-                    await Add_najie_thing(usr_qq, "鱼肉", "食材", 100 * n);
+                    const fishCount = await grantMapFishingLoot("鱼肉", "食材", 100 * n);
                     await Add_najie_thing(usr_qq, "钓鱼竿", "道具", -1);
                     await Add_najie_thing(usr_qq, "星落湖", "道具", -1);
                     await Add_血气(usr_qq, xueqi)
                     await Add_修为(usr_qq, xiuwei)
                     if (math > 0.9 && math <= 1) {
-                        await Add_najie_thing(usr_qq, "钓鱼掉上来的奇怪盒子", "道具", n * 2);
-                        e.reply(`${last_msg}${fyd_msg}你运气太好了,钓上来了钓鱼掉上来的奇怪盒子${2 * n}个,还有一些鱼肉`)
+                        const amount = await grantMapFishingLoot("钓鱼掉上来的奇怪盒子", "道具", n * 2);
+                        e.reply(`${last_msg}${fyd_msg}你运气太好了,钓上来了钓鱼掉上来的奇怪盒子${amount}个,鱼肉${fishCount}`)
                         return;
                     } else {
-                        await Add_najie_thing(usr_qq, "钓鱼掉上来的奇怪盒子", "道具", n);
-                        e.reply(`${last_msg}${fyd_msg}你钓到了一些鱼,钓鱼掉上来的奇怪盒子${n}个`)
+                        const amount = await grantMapFishingLoot("钓鱼掉上来的奇怪盒子", "道具", n);
+                        e.reply(`${last_msg}${fyd_msg}你钓到鱼肉${fishCount},钓鱼掉上来的奇怪盒子${amount}个`)
                         return;
                     }
                 } else {
@@ -5386,7 +5404,7 @@ const aptitudeDescriptions = {
     await Add_najie_thing(usr_qq, "至尊血池浸泡资格", "道具", -1);
     
     // 获取玩家当前天资等级索引
-    const currentAptitudeIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
+    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
     
     // 检查是否已经提升过天资
     const hasAptitudeBoost = player.至尊血池提升标记 || false;
@@ -5541,7 +5559,7 @@ if (thing_name === "神秘花粉") {
     await Add_najie_thing(usr_qq, "神秘花粉", "道具", -1);
     
     // 获取玩家当前天资等级索引
-    const currentAptitudeIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
+    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
     
     // 检查是否已经提升过天资
     const hasAptitudeBoost = player.神秘花粉提升标记 || false;
@@ -6912,7 +6930,6 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
     "万古无双": 8,   // 可学仙帝法(8)
     "无演无尽": 9,   // 可学神慧者(9)
     "岁云": 9,
-    "星神之资": 9,
     "无化如是": -1   // 什么都学不了
   };
 
