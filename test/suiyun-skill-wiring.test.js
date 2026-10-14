@@ -9,10 +9,10 @@ import { createSuiyunRoot, SUIYUN_STAGES } from '../model/suiyun.js';
 import { SUIYUN_COMBAT } from '../model/suiyunCombat.js';
 
 const read = file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
-const names = ['霜剑入月', '岁云归一', '白云苍狗'];
+const names = ['霜剑入月', '岁云归一', '白云苍狗', '岁云常青'];
 const innateItems = panel => panel.sections.flatMap(section => section.items).filter(item => item.innate);
 
-test('岁云五阶段自动展示三战技，不要求功法且不占技能槽', () => {
+test('岁云五阶段自动展示四战技，不要求功法且不占技能槽', () => {
   for (let stage = 1; stage <= SUIYUN_STAGES.length; stage++) {
     const player = { 灵根: createSuiyunRoot(stage), 学习的功法: [] };
     const panel = buildCombatSkillPanel(player);
@@ -29,7 +29,7 @@ test('岁云五阶段自动展示三战技，不要求功法且不占技能槽',
 
 test('岁云战技不会因伪造学习记录或离开岁云灵根继续显示', () => {
   const player = { 灵根: createSuiyunRoot(1), 学习的功法: [...names], 岁云: { 已觉醒: true } };
-  assert.equal(innateItems(buildCombatSkillPanel(player)).length, 3);
+  assert.equal(innateItems(buildCombatSkillPanel(player)).length, 4);
   player.灵根 = { name: '凡体', type: '体质' };
   assert.equal(innateItems(buildCombatSkillPanel(player)).length, 0);
 });
@@ -53,7 +53,7 @@ test('HTML实际渲染自带技能，无需秘籍或虚构熟练度，文字回�
   const panel = buildCombatSkillPanel({ 灵根: createSuiyunRoot(1), 学习的功法: [] });
   const html = template.render(read('resources/html/combat_skill/combat_skill.html'), { panel, pluResPath: '/fixture' });
   for (const name of names) assert.ok(html.includes(name));
-  assert.equal((html.match(/无需学习或装备/g) || []).length, 3);
+  assert.equal((html.match(/无需学习或装备/g) || []).length, 4);
   assert.doesNotMatch(html, /当前熟练度|0 \/ 1000/);
   assert.match(read('apps/User/GongfaProficiency.js'), /item\.sourceLabel \|\| '灵根自带'/);
 });

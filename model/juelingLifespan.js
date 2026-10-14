@@ -1,4 +1,5 @@
 import { hasRealmAuthority } from './realmAuthority.js';
+import { getSuiyunEffects } from './suiyun.js';
 
 export const JUELING_ERA_INDEX = 4;
 export const JUELING_LIFESPAN_LIMIT = 9999;
@@ -8,11 +9,12 @@ export function hasJuelingLifespan(player) {
 }
 
 export function shouldSuppressJuelingLifespan(player, eraIndex) {
-  return Number(eraIndex) === JUELING_ERA_INDEX && !hasRealmAuthority(player, 18);
+  return Number(eraIndex) === JUELING_ERA_INDEX && !hasRealmAuthority(player, 18) && !getSuiyunEffects(player).absoluteSpiritImmune;
 }
 
 export function suppressJuelingLifespan(player) {
-  if (!player || hasRealmAuthority(player, 18)) return false;
+  if (!player) return false;
+  if (hasRealmAuthority(player, 18) || getSuiyunEffects(player).absoluteSpiritImmune) return restoreJuelingLifespan(player);
   const lifespan = Number(player.寿元) || 0;
   const wasSuppressed = hasJuelingLifespan(player);
   if (!wasSuppressed) player.压制寿元 = lifespan;
@@ -29,7 +31,7 @@ export function restoreJuelingLifespan(player) {
 }
 
 export function releaseJuelingLifespanForAuthority(player) {
-  return hasRealmAuthority(player, 18) && restoreJuelingLifespan(player);
+  return (hasRealmAuthority(player, 18) || getSuiyunEffects(player).absoluteSpiritImmune) && restoreJuelingLifespan(player);
 }
 
 export function addJuelingAwareLifespan(player, amount, eraIndex) {

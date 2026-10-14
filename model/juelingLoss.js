@@ -8,6 +8,8 @@
  * 每组随机类目随机物品，损失该物品数量的 10%（至少 1 个），跳过已锁定物品。
  */
 
+import { getSuiyunEffects } from './suiyun.js';
+
 const LOSS_CATEGORIES = Object.freeze([
   '丹药', '道具', '功法', '草药', '材料', '食材', '仙宠', '仙宠口粮', '盒子',
 ]);
@@ -25,6 +27,7 @@ function number(value, fallback = 0) {
  * @returns {{ items: Array<{name, category, amount}>, groups: number }}
  */
 export function computeJuelingErasure(najie, eraYears, options = {}) {
+  if (getSuiyunEffects(options.player).absoluteSpiritImmune) return { items: [], groups: 0 };
   const random = options.random || Math.random;
   const years = Math.max(0, number(eraYears));
   const extraGroups = Math.floor(years / 1000) * 2;

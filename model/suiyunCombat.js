@@ -1,4 +1,4 @@
-import { hasSuiyunSkills } from './suiyun.js';
+import { getSuiyunStage, hasSuiyunSkills } from './suiyun.js';
 import { getHighRealmBarrier } from './highRealmBarrier.js';
 
 // 未指定的推条/控制时长/防反比例集中于此；岁云灵根与月华受赐者不占功法槽。
@@ -7,6 +7,7 @@ export const SUIYUN_COMBAT = Object.freeze({
   pushback: 2500, controlTurns: 1, frostRatio: .2,
   defenseReduction: .5, reflectionRatio: 1,
   revives: 3, reviveMultiplier: 1.5,
+  executionThreshold: .15,
 });
 
 const value = (number, fallback = 0) => Number.isFinite(Number(number)) ? Math.max(0, Number(number)) : fallback;
@@ -15,10 +16,58 @@ const living = unit => value(unit?.当前血量) > 0;
 const eligible = unit => hasSuiyunSkills(unit) && !unit?._高境界镇杀 && !unit?._高境界压制;
 const label = unit => unit?.名号 || unit?.name || '修士';
 
+/** 常青属于灵根本人，不随月华三技或召唤物复制。 */
+export function hasSuiyunEvergreen(unit) {
+  return getSuiyunStage(unit) > 0 && !unit?._高境界镇杀 && !unit?._高境界压制
+    && !unit?._tahua_type && !unit?._yiqihua_entity && !unit?._万灵魔幡主魂
+    && !unit?._帝骑分身 && !unit?._圆神分身 && unit?.分身 !== true;
+}
+
+export function clearSuiyunBattleRestrictions(unit) {
+  if (!hasSuiyunEvergreen(unit)) return false;
+  unit.不可复活 = false;
+  unit.禁疗 = 0;
+  for (const field of ['_先天禁疗', '_技能禁疗回合', '_技能禁疗原值', '_帝骑禁疗回合', '_帝骑原禁疗', '_大道生死断轮回', '_suiyunExecutionBlocked']) delete unit[field];
+  return true;
+}
+
+export function getSuiyunHealingMultiplier(unit) {
+  if (clearSuiyunBattleRestrictions(unit)) return 1;
+  return unit?._先天禁疗 ? 0 : 1 - Math.min(1, value(unit?.禁疗));
+}
+
+export function canExecuteCombatTarget(unit, messages, source = '斩杀') {
+  if (!unit || !living(unit)) return false;
+  if (hasSuiyunEvergreen(unit)) {
+    messages?.push(`【岁云常青】${label(unit)}免疫${source}的即死裁决。`);
+    return false;
+  }
+  return true;
+}
+
+export function executeCombatTarget(unit, messages, source = '斩杀', blockRevival = false) {
+  if (!canExecuteCombatTarget(unit, messages, source)) return false;
+  if (blockRevival) unit.不可复活 = true;
+  unit.当前血量 = 0;
+  return true;
+}
+
+/** 也在霜剑伤害扣血后、复活前调用，避免致命连击提前复生。 */
+export function executeSuiyunMoonTarget(unit, messages) {
+  if (!unit || value(unit.当前血量) >= value(unit.血量上限) * SUIYUN_COMBAT.executionThreshold || hasSuiyunEvergreen(unit)) return false;
+  if (value(unit.血量上限) <= 0) return false;
+  unit.不可复活 = true;
+  unit._suiyunExecutionBlocked = true;
+  unit.当前血量 = 0;
+  messages?.push(`【霜剑入月·斩月】${label(unit)}生命低于15%，直接斩杀并封禁复活。`);
+  return true;
+}
+
 /** 仅对本场战斗副本调用；下场不继承控制、霜寒或复活计数。 */
 export function resetSuiyunCombat(unit) {
   if (!unit) return unit;
-  for (const field of ['_suiyunFrost', '_suiyunFrostTurn', '_suiyunControl', '_suiyunRevives']) delete unit[field];
+  for (const field of ['_suiyunFrost', '_suiyunFrostTurn', '_suiyunControl', '_suiyunRevives', '_suiyunMoonHit', '_suiyunExecutionBlocked']) delete unit[field];
+  clearSuiyunBattleRestrictions(unit);
   return unit;
 }
 
@@ -68,6 +117,7 @@ export function reflectSuiyunDamage(defender, attacker, actualLost) {
 }
 
 export function trySuiyunRevival(unit) {
+  clearSuiyunBattleRestrictions(unit);
   const used = Math.max(0, Math.trunc(value(unit?._suiyunRevives)));
   const inactive = { revived: false, message: '', speedMultiplier: 1, remaining: Math.max(0, SUIYUN_COMBAT.revives - used) };
   if (!eligible(unit) || living(unit) || unit?.不可复活 || used >= SUIYUN_COMBAT.revives) return inactive;
@@ -127,10 +177,15 @@ export function castSuiyunMoonSword(attacker, enemies, { applyDamage, revive, pu
     result.messages.push(`【霜寒绝控】${label(target)}下一次行动被封禁，行动条降低2500点，霜寒持续本场战斗。`);
     let damage = 0;
     let hits = 0;
+    if (executeSuiyunMoonTarget(target, result.messages)) continue;
     for (let index = 0; index < SUIYUN_COMBAT.hits && living(attacker) && living(target); index++) {
-      const actual = deal(target, scaled(attacker.攻击, SUIYUN_COMBAT.multiplier), attacker);
+      let actual;
+      target._suiyunMoonHit = true;
+      try { actual = deal(target, scaled(attacker.攻击, SUIYUN_COMBAT.multiplier), attacker); }
+      finally { delete target._suiyunMoonHit; }
       damage += value(actual);
       hits++;
+      executeSuiyunMoonTarget(target, result.messages);
       reviveUnit(target);
       reviveUnit(attacker);
     }

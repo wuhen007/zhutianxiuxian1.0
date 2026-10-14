@@ -18,6 +18,7 @@ import RealmEvents from './RealmEvents.js';
 import { formatRealmEventLocation } from '../../model/realmEventLocation.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { getRealmAuthorityLevel, hasRealmAuthority } from '../../model/realmAuthority.js';
+import { getSuiyunEffects } from '../../model/suiyun.js';
 import {
   getPlaneDestructionInfo,
   markPlaneDestroyed,
@@ -517,10 +518,10 @@ export class EraChangeTask extends plugin {
             const player = await Read_player(targetQQ);
             
             // 仙王及以上境界不损失物品
-            if (hasRealmAuthority(player, 19)) {
+            if (hasRealmAuthority(player, 19) || getSuiyunEffects(player).absoluteSpiritImmune) {
                 return { 
                     success: false, 
-                    message: `玩家 ${player.名号} 已达到仙王境界，免疫绝灵时代影响` 
+                    message: `玩家 ${player.名号}具有绝灵免疫，纳戒保留完整`
                 };
             }
             
@@ -541,7 +542,7 @@ export class EraChangeTask extends plugin {
             const player = await Read_player(qq);
             
             // 仙王及以上境界不损失物品
-            if (hasRealmAuthority(player, 19)) continue;
+            if (hasRealmAuthority(player, 19) || getSuiyunEffects(player).absoluteSpiritImmune) continue;
             
             const najie = await Read_najie(qq);
             
@@ -678,7 +679,7 @@ async handleJuelingEraLoss() {
             }
             
             // 仙王及以上境界不损失物品
-            if (hasRealmAuthority(player, 19)) continue;
+            if (hasRealmAuthority(player, 19) || getSuiyunEffects(player).absoluteSpiritImmune) continue;
 
             // === 星宇护身符：绝灵免疫护盾（消耗一层挡下本次纳戒损失）===
             const immuneKey = `jueling_loss_immune:${qq}`;

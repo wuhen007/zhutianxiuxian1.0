@@ -268,8 +268,9 @@ async function buildEternalFactRecord(targetId, target, type, name) {
  * @returns {Promise<Array<{name, category, amount}>>} 损失的物品列表
  */
 async function applyCausalJuelingErasure(qq, jueling) {
+  const player = await Read_player(qq);
   const najie = await Read_najie(qq);
-  const { items } = computeJuelingErasure(najie, jueling.years);
+  const { items } = computeJuelingErasure(najie, jueling.years, { player });
   if (items.length > 0) await Write_najie(qq, najie);
   return items;
 }

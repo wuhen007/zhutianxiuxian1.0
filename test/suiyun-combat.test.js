@@ -130,7 +130,7 @@ test('每剑结算死亡与复活，三次耗尽后才结束该目标连击', ()
 });
 
 test('反伤导致施法者耗尽复活后立即终止后续攻击', () => {
-  const attacker = unit({ 当前血量: 1, 血量上限: 1, 不可复活: true });
+  const attacker = unit({ 当前血量: 1, 血量上限: 1, _suiyunRevives: 3 });
   const defender = unit();
   const untouched = enemy();
   const result = castSuiyunMoonSword(attacker, [defender, untouched]);
@@ -140,12 +140,13 @@ test('反伤导致施法者耗尽复活后立即终止后续攻击', () => {
   assert.equal(untouched.当前血量, 100000);
 });
 
-test('境界镇杀、禁复活保留，低境霜剑与反伤不跨越道果屏障', () => {
+test('境界镇杀保留，常青免疫禁复活，低境霜剑与反伤不跨越道果屏障', () => {
   const lower = unit({ mijinglevel_id: 19 });
   const higher = enemy({ mijinglevel_id: 20 });
   assert.equal(castSuiyunMoonSword(lower, [higher]).active, false);
   assert.equal(reflectSuiyunDamage(lower, higher, 100).reflected, false);
-  for (const extra of [{ 不可复活: true }, { _高境界镇杀: true }, { _高境界压制: true }]) {
+  assert.equal(trySuiyunRevival(unit({ 当前血量: 0, 不可复活: true })).revived, true);
+  for (const extra of [{ _高境界镇杀: true }, { _高境界压制: true }]) {
     const holder = unit({ 当前血量: 0, ...extra });
     assert.equal(trySuiyunRevival(holder).revived, false);
   }

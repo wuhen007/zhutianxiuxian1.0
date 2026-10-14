@@ -4,7 +4,9 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import * as suiyun from '../model/suiyunCombat.js';
+import * as memoryCombat from '../model/memoryCombat.js';
 import { createSuiyunRoot, getSuiyunEffects, hasSuiyunSkills, SUIYUN_EXCLUSIVE_SKILLS } from '../model/suiyun.js';
+import { createMemoryRoot } from '../model/memoryPath.js';
 import { mergeHighRealmRaidResult, prepareHighRealmBattle } from '../model/highRealmBarrier.js';
 
 const source = fs.readFileSync(new URL('../apps/Battle/tuanben.js', import.meta.url), 'utf8');
@@ -18,7 +20,7 @@ function actionFunction(name) {
 
 function loadRaid() {
   const dependencies = {
-    ...suiyun, getSuiyunEffects, hasSuiyunSkills, prepareHighRealmBattle, mergeHighRealmRaidResult,
+    ...suiyun, ...memoryCombat, getSuiyunEffects, hasSuiyunSkills, prepareHighRealmBattle, mergeHighRealmRaidResult,
     plugin: class {}, data: { jineng1: [], jineng2: [], jineng3: [], jineng_heal: [] },
     ensureNumber: (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback,
     bigNumberTransform: value => String(value),
@@ -127,7 +129,7 @@ test('双方反弹同时致死先结算各自剩余复活，三次用完后均�
   assert.equal(messages.filter(line => line.includes('白云苍狗')).length, 2);
 });
 
-test('每个岁云阶段每次行动霜剑九击，无防御公式与伤害衰减，并按真实行动计数', async () => {
+test('每个岁云阶段霜剑不受防御衰减，第八剑跌破15%立即斩杀收尾', async () => {
   for (let stage = 1; stage <= 5; stage++) {
     const player = owner({ 灵根: createSuiyunRoot(stage), 速度: 10000 });
     const boss = enemy({ 当前血量: 22500, 血量上限: 22500, 防御: 1e30, 速度: 1, 免疫控制: 999 });
@@ -135,7 +137,8 @@ test('每个岁云阶段每次行动霜剑九击，无防御公式与伤害衰�
     const run = await runBattle(player, boss);
     assert.equal(run.result.result, '玩家胜利');
     assert.equal(run.result.boss_hp_change, -22500);
-    assert.ok(run.logs.some(line => line.includes('霜剑击中试炼首领9次') && line.includes('22500')));
+    assert.ok(run.logs.some(line => line.includes('霜剑击中试炼首领8次') && line.includes('20000')));
+    assert.ok(run.logs.some(line => line.includes('低于15%') && line.includes('封禁复活')));
     assert.deepEqual(player, before, '战斗副本不改原始玩家属性或复活次数');
   }
 });
@@ -264,4 +267,21 @@ test('非岁云月华受赐者在独立团本同样施放九剑、防反并复�
   assert.ok(revival.logs.some(line => line.includes('【岁云归一】')));
   assert.equal(revival.result.result, 'BOSS胜利');
   assert.equal(revival.result.players_hp_change[0], -100);
+});
+
+test('独立团本真实入口消费记忆因子成长、下一击取消与两种一次保命', async () => {
+  const memory = { 灵根: createMemoryRoot(2), 记忆命途: { 因子: { 负世: 3, 纷争: 3, 诡计: 3, 死亡: 3 } } };
+  const attacker = owner({ ...memory, 速度: 5000, 当前血量: 100000, 血量上限: 100000 });
+  const battle = await runBattle(attacker, enemy({ 速度: 4999, 当前血量: 1000000, 血量上限: 1000000 }), { playerDamage: 100, bossDamage: 1 });
+  assert.ok(battle.logs.some(line => line.includes('【负世】')));
+  assert.ok(battle.logs.some(line => line.includes('【纷争】')));
+  assert.ok(battle.logs.some(line => line.includes('本次攻击取消')));
+  assert.equal(attacker.攻击, 100);
+  assert.equal(attacker.血量上限, 100000);
+  const fragile = await runBattle(owner({ ...memory, 速度: 1, 当前血量: 100, 血量上限: 100 }),
+    enemy({ 速度: 10000, 攻击: 1e10, 当前血量: 1e15, 血量上限: 1e15 }), { bossDamage: 1e12 });
+  assert.equal(fragile.logs.filter(line => line.includes('【死亡·拒绝终结】')).length, 1);
+  assert.equal(fragile.logs.filter(line => line.includes('【纷争·再起】')).length, 1);
+  assert.equal(fragile.result.result, 'BOSS胜利');
+  assert.equal(fragile.result.players_hp_change[0], -100);
 });

@@ -251,7 +251,7 @@ function buildSpecialSection(player) {
       {
         name: '霜剑入月',
         when: '攻击行动时',
-        effect: `最多${SUIYUN_COMBAT.targets}名敌人，每目标${SUIYUN_COMBAT.hits}击，不衰减、不可防御；绝对控制${SUIYUN_COMBAT.controlTurns}次行动，推条${SUIYUN_COMBAT.pushback}（每次施展一次）；霜寒每全局回合使当前生命、攻击、防御和速度降低${percent(SUIYUN_COMBAT.frostRatio)}，不降低生命上限`,
+        effect: `最多${SUIYUN_COMBAT.targets}名敌人，每目标${SUIYUN_COMBAT.hits}击，不衰减、不可防御；绝对控制${SUIYUN_COMBAT.controlTurns}次行动，推条${SUIYUN_COMBAT.pushback}（每次施展一次）；霜寒每全局回合使当前生命、攻击、防御和速度降低${percent(SUIYUN_COMBAT.frostRatio)}，不降低生命上限；生命低于${percent(SUIYUN_COMBAT.executionThreshold)}直接斩杀并禁止复活`,
         multiplier: `每击 ${multiplier(SUIYUN_COMBAT.multiplier)}`,
       },
       {
@@ -266,6 +266,11 @@ function buildSpecialSection(player) {
         effect: '每次复活攻击、防御、生命上限和速度各乘1.5；三次累计复活增幅×3.375，不改变其他资源与永久属性',
         multiplier: `每次 ${multiplier(SUIYUN_COMBAT.reviveMultiplier)}`,
       },
+      ...(getSuiyunStage(player) ? [{
+        name: '岁云常青', when: '受到即死、禁复活或禁疗时',
+        effect: '免疫即死裁决、禁止复活与禁疗；普通伤害仍结算，白云苍狗仍每战最多三次',
+        multiplier: '常驻免疫',
+      }] : []),
     ];
     for (const skill of skills) items.push({
       index: items.length + 1, name: skill.name,
