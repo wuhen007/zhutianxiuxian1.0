@@ -114,6 +114,30 @@ export function ensureStrangeSacrificeState(value, worldYear = 0) {
   return state;
 }
 
+export function restoreHighlandSacrificeState(value, worldYear = 0) {
+  const state = ensureStrangeSacrificeState(value, worldYear);
+  const wasDestroyed = state.plateauDestroyed || state.phase === 'destroyed';
+  state.plateauDestroyed = false;
+  delete state.plateauDestroyedAt;
+  delete state.plateauDestroyedBy;
+  if (wasDestroyed) {
+    const now = integer(worldYear);
+    state.activeEvent = null;
+    state.participants = {};
+    state.successfulDefenders = 0;
+    state.phase = state.smallCount > state.bigCount ? 'between_sacrifices' : 'dormant';
+    state.cycleStartedWorldYear = now;
+    state.smallDueWorldYear = now + STRANGE_SACRIFICE.smallIntervalEpochs * STRANGE_SACRIFICE.yearsPerEpoch;
+    state.bigDueWorldYear = state.smallCount > state.bigCount
+      ? now + STRANGE_SACRIFICE.bigDelayEpochs * STRANGE_SACRIFICE.yearsPerEpoch : null;
+    state.warnedSmallDueWorldYear = null;
+    state.warnedBigDueWorldYear = null;
+    state.causalBigAdvanceWorldYears = 0;
+    delete state.planeSnapshot;
+  }
+  return state;
+}
+
 function beginEvent(state, type, worldYear) {
   const firstRound =
     type === 'small' ? state.smallCount === 0 : state.bigCount === 0;

@@ -152,7 +152,7 @@ for (const count of [0, EXPECTED_ACTIVE_LIMIT - 1, EXPECTED_ACTIVE_LIMIT, EXPECT
   });
 }
 
-test('三类普通灾厄共用上限，并按 worldYear、spawnedAt、id 先后巡猎旧目标', async t => {
+test('三类普通灾厄共用上限，并按 spawnedAt、worldYear、id 先后巡猎旧目标', async t => {
   const early = [
     entity(1, { id: 'same-year-b', worldYear: 1000, spawnedAt: 20 }),
     entity(2, { id: 'same-year-a', worldYear: 1000, spawnedAt: 20 }),
@@ -162,8 +162,8 @@ test('三类普通灾厄共用上限，并按 worldYear、spawnedAt、id 先后�
   const f = fixture(t, [...early, ...Array.from({ length: EXPECTED_ACTIVE_LIMIT - 1 }, (_, index) => entity(index + 10))]);
   const { report } = await enforceForeignCalamityLimit({ random: () => 0, now: 456 });
   assert.equal(report.count, 3);
-  assert.deepEqual(report.victims.map(item => item.id), ['earliest-time', 'same-year-a', 'same-year-b']);
-  assert.ok(f.values.has(keyFor('later-year')));
+  assert.deepEqual(report.victims.map(item => item.id), ['later-year', 'earliest-time', 'same-year-a']);
+  assert.ok(f.values.has(keyFor('same-year-b')));
   assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT);
   assert.equal(new Set(f.active().map(item => item.type)).size, 3);
 });
@@ -191,7 +191,7 @@ test('跨越十七个千年逐波生成 170 尊；每波结束活跃不超 100 �
       reports.push(structuredClone(report));
       assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT);
       for (const current of f.active()) {
-        assert.equal(f.values.get(`xiuxian:foreign-calamity:spawn:${current.worldYear}`), '1');
+        assert.equal(f.values.get(`xiuxian:foreign-calamity:spawn-natural:${current.naturalYears}`), '1');
       }
     },
   });
@@ -342,7 +342,7 @@ test('两个相同年份的并发生成调用串行提交，不重复生成或�
   assert.equal(new Set(all.map(item => item.id)).size, EXPECTED_ACTIVE_LIMIT + 20);
   assert.equal(f.active().length, EXPECTED_ACTIVE_LIMIT);
   assert.equal(reports.reduce((sum, report) => sum + report.count, 0), 20);
-  assert.equal([...f.values.keys()].filter(key => key.startsWith('xiuxian:foreign-calamity:spawn:')).length, 12);
+  assert.equal([...f.values.keys()].filter(key => key.startsWith('xiuxian:foreign-calamity:spawn-natural:')).length, 12);
 });
 
 test('并发列表清理和重复清理不超杀，不重复写最近巡猎报告', async t => {
@@ -392,7 +392,7 @@ test('population Redis 锁持续占用时重试后报错，既不伪装空波也
   assert.ok(attempts.length >= 4 && attempts.length <= 5);
   assert.equal(f.active().length, 0);
   assert.equal(f.values.get(POPULATION_LOCK), 'other-process');
-  assert.equal(f.values.has('xiuxian:foreign-calamity:spawn:1000'), false);
+  assert.equal(f.values.has('xiuxian:foreign-calamity:spawn-natural:1000'), false);
   f.values.delete(POPULATION_LOCK);
   assert.equal((await spawnForeignCalamities(0, 1000, { players: [], random: () => 0 })).length, 1);
 });

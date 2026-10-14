@@ -153,6 +153,21 @@ export function repairPlane(filePath, planeName) {
   return true;
 }
 
+/** 管理员显式复苏高原；普通映照、自然修复仍保留永久覆灭规则。 */
+export function restoreHighlandForAdmin(filePath) {
+  const state = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  if (!state || typeof state !== 'object' || Array.isArray(state)) throw new TypeError('位面记录格式异常');
+  state.厄土高原 = 1;
+  delete state.高原彻底覆灭;
+  for (const field of [PLANE_DESTRUCTION_RECORD_KEY, PLANE_DAMAGE_RECORD_KEY]) {
+    if (!state[field] || typeof state[field] !== 'object') continue;
+    delete state[field].厄土高原;
+    if (!Object.keys(state[field]).length) delete state[field];
+  }
+  writeJsonAtomically(filePath, state);
+  return true;
+}
+
 export function repairDestroyedPlanes(filePath, { sources = null } = {}) {
   const state = readState(filePath);
   if (!state) return [];

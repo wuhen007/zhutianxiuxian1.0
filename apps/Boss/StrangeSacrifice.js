@@ -18,6 +18,7 @@ import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
 import { getRealmEventWorldYear } from '../../model/realmEventClock.js';
 import { getRealmAuthorityLevel } from '../../model/realmAuthority.js';
+import { restoreHighlandForAdmin } from '../../model/planeDestruction.js';
 import {
   restoreJuelingLifespan,
   suppressJuelingLifespan,
@@ -41,6 +42,7 @@ import {
   getStrangeSacrificeInteractionLock,
   resolveHighlandFinale,
   settleStrangeSacrifice,
+  restoreHighlandSacrificeState,
 } from '../../model/strangeSacrifice.js';
 
 const STATE_FILE = path.join(__PATH.data_path, 'strange_sacrifice_state.json');
@@ -339,6 +341,7 @@ export class StrangeSacrifice extends plugin {
           permission: 'master',
         },
         { reg: '^#结算诡异祭礼$', fnc: 'adminSettle', permission: 'master' },
+        { reg: '^#复苏[厄额]土高原$', fnc: 'restoreHighland' },
       ],
     });
     this.task = {
@@ -380,6 +383,10 @@ export class StrangeSacrifice extends plugin {
   }
 
   async tick() {
+    return withPlayerMutationLock('system:strange-sacrifice', () => this.tickLocked());
+  }
+
+  async tickLocked() {
     if (this.ticking || RUNTIME.battleInProgress) return false;
     this.ticking = true;
     try {
@@ -574,6 +581,10 @@ export class StrangeSacrifice extends plugin {
   }
 
   async fight(e, type) {
+    return withPlayerMutationLock('system:strange-sacrifice', () => this.fightLocked(e, type));
+  }
+
+  async fightLocked(e, type) {
     if (!verc({ e })) return false;
     let id = String(e.user_id).replace('qg_', '');
     id = String(await channel(id));
@@ -706,6 +717,10 @@ export class StrangeSacrifice extends plugin {
   }
 
   async forceOpen(e, type) {
+    return withPlayerMutationLock('system:strange-sacrifice', () => this.forceOpenLocked(e, type));
+  }
+
+  async forceOpenLocked(e, type) {
     const currentWorldYear = worldYear();
     const result = forceStartStrangeSacrifice(
       readState(),
@@ -729,6 +744,10 @@ export class StrangeSacrifice extends plugin {
   }
 
   async adminSettle(e) {
+    return withPlayerMutationLock('system:strange-sacrifice', () => this.adminSettleLocked(e));
+  }
+
+  async adminSettleLocked(e) {
     const state = readState();
     if (!state.activeEvent) return e.reply('当前没有正在进行的诡异祭礼。');
     const currentWorldYear = worldYear();
@@ -740,5 +759,38 @@ export class StrangeSacrifice extends plugin {
     await this.applyEvent(result.state, result.event, currentWorldYear);
     saveState(result.state);
     return e.reply('本轮诡异祭礼已完成尾声结算。');
+  }
+
+  async restoreHighland(e) {
+    const rawId = String(e.user_id || '').replace('qg_', '');
+    const id = String(await channel(rawId));
+    const masters = (config.getConfig('xiuxian', 'xiuxian')?.Master || []).map(String);
+    if (!e.isMaster && !masters.includes(id) && !masters.includes(rawId)) return e.reply('此指令仅限机器人主人或修仙管理员。');
+    return withPlayerMutationLock('system:strange-sacrifice', async () => {
+      // 与祭礼巡查/战斗结算同锁，先等当前结算完成，避免旧状态再次覆盖复苏结果。
+      const legacyKeys = ['xiuxian:dajie_eternally_defeated', 'xiuxian:epochs_since_dajie'];
+      const legacyBoss = await redis.get('guiyishizu');
+      let boss;
+      try { boss = legacyBoss ? JSON.parse(legacyBoss) : null; } catch {}
+      if (boss?.isEternallyDefeated) legacyKeys.push('guiyishizu', 'gaoyuan', 'guiyishizu_ancestors');
+      const previousRedis = await Promise.all(legacyKeys.map(async key => [key, await redis.get(key)]));
+      const transaction = new FileRollbackTransaction();
+      transaction.capture(PLANE_FILE);
+      transaction.capture(STATE_FILE);
+      try {
+        const restored = restoreHighlandSacrificeState(readState(), worldYear());
+        restoreHighlandForAdmin(PLANE_FILE);
+        saveState(restored);
+        await redis.del(...legacyKeys);
+        transaction.commit();
+      } catch (error) {
+        transaction.rollback();
+        for (const [key, value] of previousRedis) {
+          if (value !== null && value !== undefined) await redis.set(key, value);
+        }
+        throw error;
+      }
+      return e.reply('【厄土高原·管理员复苏】高原与诡异本源已恢复，祭道之上的永久覆灭和大祭终结标记已解除，后续祭礼重新按原周期推进。');
+    });
   }
 }

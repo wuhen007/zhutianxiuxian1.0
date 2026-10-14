@@ -91,7 +91,7 @@ test('截图场景：非主人、大圆满1%从命令规则到权威世界配置
   assert.equal(e.isMaster, false);
   assert.match(h.messages[0], /轮回大道.*已推进 1000 年/);
   assert.deepEqual(h.store.OtherCustom, { keep: true });
-  assert.deepEqual(h.calamityWaves, [[61000, 62000]]);
+  assert.deepEqual(h.calamityWaves, [], '手动推进时代不计入灾厄自然千年');
   assert.deepEqual(h.realmEvents, [[1, 2000, 2]]);
 });
 test('0%、1%、100%均属于岁月大圆满阶段，非主人均可用', async () => {
