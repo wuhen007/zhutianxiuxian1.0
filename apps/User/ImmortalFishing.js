@@ -21,7 +21,7 @@ import {
   getPlaneFishingEventById,
   getPlaneFishingEventChoice,
   getWishScaleExchangeConfig,
-  parseWishScaleExchange,
+  parseWishScaleExchangeRequest,
 } from "../../model/immortalFishing.js";
 import { getPlayerPlaneName } from "../../model/planeCoords.js";
 import { getRealmEventWorldYear } from "../../model/realmEventClock.js";
@@ -58,7 +58,7 @@ export class ImmortalFishing extends plugin {
         { reg: "^#(?:领取鱼图鉴奖励|领取众生鱼谱奖励)$", fnc: "claimFishAtlasRewards" },
         { reg: "^#万界潮汐$", fnc: "showFishingTide" },
         { reg: "^#垂钓奇遇(?:\\s*[1-3])?$", fnc: "chooseFishingEvent" },
-        { reg: "^#愿鳞兑换(?:\\s+.*)?$", fnc: "wishScaleExchange" },
+        { reg: "^#愿鳞兑换.*$", fnc: "wishScaleExchange" },
         { reg: "^#寻找武祖$", fnc: "seekWuzu" },
       ],
     });
@@ -303,8 +303,8 @@ export class ImmortalFishing extends plugin {
       }
 
       const scaleCount = await exist_najie_thing(usr_qq, "众生愿鳞", "道具");
-      const exchangeName = parseWishScaleExchange(e.msg);
-      if (!exchangeName) {
+      const request = parseWishScaleExchangeRequest(e.msg);
+      if (!request) {
         const lines = WISH_SCALE_EXCHANGE_NAMES.map(name => {
           const config = getWishScaleExchangeConfig(name);
           return `${config.cost}愿鳞：${name}x${config.reward.amount}`;
@@ -314,17 +314,29 @@ export class ImmortalFishing extends plugin {
             `【众生愿鳞兑换】当前持有：${scaleCount}`,
             ...lines,
             "炼器材料为四选一，直接发送：#愿鳞兑换 宇宙核心（或界核/鸿蒙道火/三千弱水）",
+            "批量：#愿鳞兑换 宇宙核心*3 或 #愿鳞兑换 宇宙核心 3；数量为兑换份数，省略时兑换1份。",
+            "万界引潮灯与大衍悟道丹配方每次仅可兑换1份，已持有或已解锁时不重复兑换。",
           ].join("\n")
         );
         return true;
       }
+
+      if (request.error) return e.reply(request.error);
+      const { name: exchangeName, quantity } = request;
 
       const config = getWishScaleExchangeConfig(exchangeName);
       if (!config) {
         await e.reply(`兑换表中没有【${exchangeName}】，发送【#愿鳞兑换】查看。`);
         return true;
       }
+      const totalCost = config.cost * quantity;
+      const totalReward = config.reward.amount * quantity;
+      if (!Number.isSafeInteger(totalCost) || !Number.isSafeInteger(totalReward)
+        || totalCost <= 0 || totalReward <= 0) {
+        return e.reply('兑换总价或物品数量超出精确结算范围，请减少份数。');
+      }
       if (config.unique) {
+        if (quantity !== 1) return e.reply(`【${config.reward.name}】属于限购道具，每次仅可兑换1份。`);
         if (config.unlockFlag && player[config.unlockFlag]) {
           await e.reply(`你已经参悟【${config.reward.name}】，无需重复兑换。`);
           return true;
@@ -339,20 +351,27 @@ export class ImmortalFishing extends plugin {
           return true;
         }
       }
-      if (scaleCount < config.cost) {
-        await e.reply(`众生愿鳞不足：${scaleCount}/${config.cost}。`);
+      if (!Number.isSafeInteger(Number(scaleCount)) || Number(scaleCount) < 0) {
+        return e.reply('众生愿鳞数量超出精确结算范围，请核对纳戒。');
+      }
+      if (scaleCount < totalCost) {
+        await e.reply(`众生愿鳞不足：${scaleCount}/${totalCost}（${quantity}份）。`);
         return true;
+      }
+      const rewardOwned = Number(await exist_najie_thing(usr_qq, config.reward.name, config.reward.class)) || 0;
+      if (!Number.isSafeInteger(rewardOwned) || rewardOwned < 0 || !Number.isSafeInteger(rewardOwned + totalReward)) {
+        return e.reply('兑换后物品数量超出精确结算范围，请减少份数或先整理纳戒。');
       }
 
       const transaction = new FileRollbackTransaction();
       transaction.capture(path.join(__PATH.najie_path, `${usr_qq}.json`));
       try {
-        await Add_najie_thing(usr_qq, "众生愿鳞", "道具", -config.cost);
+        await Add_najie_thing(usr_qq, "众生愿鳞", "道具", -totalCost);
         await Add_najie_thing(
           usr_qq,
           config.reward.name,
           config.reward.class,
-          config.reward.amount
+          totalReward
         );
         transaction.commit();
       } catch (error) {
@@ -361,7 +380,7 @@ export class ImmortalFishing extends plugin {
       }
 
       await e.reply(
-        `兑换成功：消耗众生愿鳞x${config.cost}，获得【${config.reward.name}】x${config.reward.amount}。`
+        `兑换成功：${quantity}份，消耗众生愿鳞x${totalCost}，获得【${config.reward.name}】x${totalReward}。`
       );
       return true;
     });

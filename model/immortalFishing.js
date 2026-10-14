@@ -412,7 +412,7 @@ export const WISH_SCALE_EXCHANGE_NAMES = Object.freeze(
 );
 
 export function getWishScaleExchangeConfig(name) {
-  return wishScaleExchangeConfigs[name] || null;
+  return Object.hasOwn(wishScaleExchangeConfigs, name) ? wishScaleExchangeConfigs[name] : null;
 }
 
 export function parseWishScaleExchange(message) {
@@ -420,6 +420,19 @@ export function parseWishScaleExchange(message) {
     .replace(/^#愿鳞兑换\s*/, "")
     .trim();
   return name || null;
+}
+
+export function parseWishScaleExchangeRequest(message) {
+  const input = parseWishScaleExchange(message);
+  if (!input) return null;
+  const match = input.match(/^([^\s*＊]+)(?:\s*[*＊]\s*|\s+)(.*)$/);
+  const name = match ? match[1] : input;
+  const rawQuantity = match ? match[2].trim() : '1';
+  const quantity = Number(rawQuantity);
+  if (!/^\d+$/.test(rawQuantity) || !Number.isSafeInteger(quantity) || quantity <= 0) {
+    return { error: '兑换份数必须为正安全整数，例如 #愿鳞兑换 宇宙核心*3。' };
+  }
+  return { name, quantity };
 }
 
 export function getImmortalFishingCooldown({ hasTideLamp = false, hasDaoArt = false } = {}) {

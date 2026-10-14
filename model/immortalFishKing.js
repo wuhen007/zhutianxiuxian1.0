@@ -262,20 +262,31 @@ export async function tryCreateFishKing(input) {
   const team = await generateUniqueTeamId(input.groupId);
   if (!team) return null;
   state.teamId = team.id;
-  const created = await redis.set(stateKey(input.groupId), JSON.stringify(state), {
-    EX: FISH_KING_TTL_SECONDS,
-    NX: true,
-  });
-  if (!created) {
-    if (await redis.get(teamIndexKey(team.id)) === team.token) {
-      await redis.del(teamIndexKey(team.id));
+  try {
+    const created = await redis.set(stateKey(input.groupId), JSON.stringify(state), {
+      EX: FISH_KING_TTL_SECONDS,
+      NX: true,
+    });
+    if (!created) {
+      if (await redis.get(teamIndexKey(team.id)) === team.token) {
+        await redis.del(teamIndexKey(team.id));
+      }
+      return null;
     }
-    return null;
+    await redis.set(teamIndexKey(team.id), String(state.groupId), {
+      EX: FISH_KING_TTL_SECONDS,
+    });
+    return state;
+  } catch (error) {
+    // 创建末段索引写入中断时，同时清理本人新建鱼王，扣费方才能完整退款。
+    const activeRaw = await redis.get(stateKey(input.groupId));
+    let active;
+    try { active = activeRaw ? JSON.parse(activeRaw) : null; } catch {}
+    if (active?.id === state.id && active?.teamId === state.teamId) await redis.del(stateKey(input.groupId));
+    const indexed = await redis.get(teamIndexKey(team.id));
+    if (indexed === team.token || indexed === String(state.groupId)) await redis.del(teamIndexKey(team.id));
+    throw error;
   }
-  await redis.set(teamIndexKey(team.id), String(state.groupId), {
-    EX: FISH_KING_TTL_SECONDS,
-  });
-  return state;
 }
 
 export async function saveActiveFishKing(state, now = Date.now()) {
