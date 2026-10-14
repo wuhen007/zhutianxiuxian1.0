@@ -7,6 +7,7 @@ import {
   channel,
   exist_najie_thing,
   existplayer,
+  foundthing,
   zd_battle,
 } from '../../model/xiuxian.js';
 import {
@@ -39,6 +40,7 @@ import {
 } from '../../model/gongfaProficiency.js';
 import { adjustDaoHeart } from '../../model/daoHeart.js';
 import { recordMemoryDungeon } from '../../model/memoryPath.js';
+import { addMemoryLootBonus } from '../../model/suiyunLoot.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
 import {
@@ -306,6 +308,7 @@ export class LingjieRift extends plugin {
     const now = Date.now();
     const task = {
       taskId: `rift:${rift.id}:${qq}:${now}:${attempts.used + 1}`,
+      memoryEntryRecorded: false,
       qq,
       playerName: player.名号,
       groupId: e.group_id || null,
@@ -329,9 +332,6 @@ export class LingjieRift extends plugin {
         .set(taskKey, JSON.stringify(task), { EX: 24 * 60 * 60 })
         .set(`xiuxian:player:${qq}:action`, JSON.stringify(playerAction))
         .exec();
-      if (recordMemoryDungeon(player, { token: `entry:${task.taskId}` }).applied) {
-        await Write_player(qq, player);
-      }
     } catch (error) {
       await redis.del(taskKey);
       await this.clearRiftAction(task);
@@ -438,9 +438,14 @@ export class LingjieRift extends plugin {
   }
 
   async completeExploration(task) {
+    return withPlayerMutationLock(String(task.qq), async () => {
+    const actionRaw = await redis.get(`xiuxian:player:${task.qq}:action`);
+    const action = actionRaw ? JSON.parse(actionRaw) : null;
+    if (task.escaped || (action?.escaped && action.riftId === task.rift.id)) return;
+    if (task.memoryEntryRecorded === false && (action?.riftId !== task.rift.id
+      || action.Place_action != '0' || Number(action.start_time) !== Number(task.start_time))) return;
     const player = await Read_player(task.qq);
     if (!player) return;
-    await this.clearRiftAction(task);
 
     const monster = createRiftMonster();
     const A_player = this.battlePlayer(player);
@@ -452,6 +457,10 @@ export class LingjieRift extends plugin {
     player.功法熟练度每日 = A_player.功法熟练度每日;
     const proficiencyGains = awardDungeonGongfaProficiency(player);
     player.当前血量 = battle.winner === 'A' ? Math.max(1, Math.trunc(battle.A_hp)) : 1;
+    recordMemoryDungeon(player, {
+      token: `entry:${task.taskId}`,
+      escaped: task.escaped || battle.escaped,
+    });
     await Write_player(task.qq, player);
 
     const lines = [
@@ -473,7 +482,7 @@ export class LingjieRift extends plugin {
       adjustDaoHeart(player, 10, '战胜灵界裂缝天骄');
       player.灵界裂缝通关次数 = (Number(player.灵界裂缝通关次数) || 0) + 1;
       const rewardBonus = resolveRiftRewardBonus(player);
-      lines.push(...await this.grantMainRewards(task.qq, rewardBonus));
+      lines.push(...await this.grantMainRewards(task.qq, rewardBonus, player));
       lines.push(...await this.resolveAftermath(task, player, rewardBonus));
       await Write_player(task.qq, player);
     }
@@ -489,7 +498,9 @@ export class LingjieRift extends plugin {
         `使用【${RIFT_ANCHOR_ITEM}】可重新锚定一次：#使用${RIFT_ANCHOR_ITEM}`
       );
     }
+    await this.clearRiftAction(task);
     return this.sendResult(task, lines.join('\n'));
+    });
   }
 
   battlePlayer(player) {
@@ -504,7 +515,7 @@ export class LingjieRift extends plugin {
     };
   }
 
-  async grantMainRewards(qq, rewardBonus) {
+  async grantMainRewards(qq, rewardBonus, player) {
     const potential = pickRandom(RIFT_POTENTIAL_PILLS);
     const xiuwei = pickRandom(RIFT_XIUWEI_PILLS);
     const xueqi = pickRandom(RIFT_XUEQI_PILLS);
@@ -524,6 +535,7 @@ export class LingjieRift extends plugin {
 
     for (const reward of rewards) {
       if (reward.class !== '功法' && !reward.fixedCount) reward.count *= rewardBonus.multiplier;
+      reward.count = addMemoryLootBonus(player, await foundthing(reward.name, { readOnly: true }), reward.count);
       await Add_najie_thing(qq, reward.name, reward.class, reward.count);
     }
     return [
@@ -536,7 +548,7 @@ export class LingjieRift extends plugin {
   async resolveAftermath(task, player, rewardBonus) {
     const event = rollRiftAftermath();
     if (event === 'none') return ['', '你收敛气息离开裂缝，归途并无异变。'];
-    if (event === 'corpse') return this.grantCorpseLoot(task.qq, rewardBonus);
+    if (event === 'corpse') return this.grantCorpseLoot(task.qq, rewardBonus, player);
 
     const level = data.Level_list.find(item => Number(item.level_id) === 30);
     const physique = data.LevelMax_list.find(item => Number(item.level_id) === 30);
@@ -561,7 +573,7 @@ export class LingjieRift extends plugin {
     ];
   }
 
-  async grantCorpseLoot(qq, rewardBonus) {
+  async grantCorpseLoot(qq, rewardBonus, player) {
     const xiuwei = pickRandom(RIFT_XIUWEI_PILLS);
     const xueqi = pickRandom(RIFT_XUEQI_PILLS);
     const material = pickAffordableForgeMaterial(data.duanzhaocailiao);
@@ -580,6 +592,7 @@ export class LingjieRift extends plugin {
 
     for (const reward of rewards) {
       reward.count *= rewardBonus.multiplier;
+      reward.count = addMemoryLootBonus(player, await foundthing(reward.name, { readOnly: true }), reward.count);
       await Add_najie_thing(qq, reward.name, reward.class, reward.count);
     }
     await Add_源石(qq, source);

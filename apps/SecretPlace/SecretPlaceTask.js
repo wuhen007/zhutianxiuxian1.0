@@ -5,6 +5,7 @@ import {
   Read_player,
   Read_najie,
   Add_najie_thing,
+  foundthing,
   Add_修为,
   Add_血气,
   Reduse_player_学习功法,
@@ -44,7 +45,9 @@ import {
 import RealmEvents from '../tasks/RealmEvents.js';
 import { getInnateDungeonRewardMultiplier } from '../../model/innateTreasure.js';
 import { getSuiyunEffects } from '../../model/suiyun.js';
-import { getMemoryEffects } from '../../model/memoryPath.js';
+import { settleSuiyunGiftDrop } from '../../model/suiyunGiftDrop.js';
+import { getMemoryEffects, recordMemoryDungeon } from '../../model/memoryPath.js';
+import { addMemoryLootBonus } from '../../model/suiyunLoot.js';
 import { isItemPermanentlyNonTradeable } from '../../model/equipmentTransfer.js';
 import { rollAndGrantSuiyunRemnant } from '../../model/suiyunRegistry.js';
 import { rollAndGrantMemoryData } from '../../model/memoryRegistry.js';
@@ -161,6 +164,10 @@ export class SecretPlaceTask extends plugin {
             
             // 法身必赢处理
             const resultMsg = await handleFashanSecretPlace(player, place, parsedAction);
+            if (!parsedAction.memoryEntryRecorded) recordMemoryDungeon(player, {
+              token: parsedAction.memoryEntryToken || `entry:${parsedAction.taskId || parsedAction.end_time}:${place?.name}:${parsedAction.actor || 'body'}`,
+              escaped: parsedAction.escaped,
+            });
             const proficiencyGains = awardDungeonGongfaProficiency(player);
             const proficiencyMsg = Object.entries(proficiencyGains)
                 .map(([name, gained]) => `${formatGongfaProficiency(player, name)}（+${gained}）`)
@@ -251,6 +258,10 @@ let A_player = {
             player.功法熟练度每日 = A_player.功法熟练度每日;
             const proficiencyGains = awardDungeonGongfaProficiency(player);
             player.当前血量 = await Set_HP(player_id, Data_battle.A_hp);
+            recordMemoryDungeon(player, {
+              token: action.memoryEntryToken || `entry:${action.taskId || action.end_time}:${weizhi?.name}:${action.actor || 'body'}`,
+              escaped: action.escaped || Data_battle.escaped,
+            });
             await Write_player(player_id, player);
             let msgg = Data_battle.msg;
             var thing_name;
@@ -271,6 +282,12 @@ let A_player = {
             var n = 1;
             let dungeonFortuneMultiplier = 1;
             let last_msg = '';
+            last_msg += await settleSuiyunGiftDrop(player, {
+              token: `entry:${player_id}:${action.taskId || action.start_time || action.end_time}:${weizhi.name}`,
+              won: Data_battle.winner === 'A',
+              save: () => Write_player(player_id, player),
+              grant: (reward, options) => Add_najie_thing(player_id, reward.name, reward.class, reward.amount, undefined, 1, options),
+            });
             if (blackEmperorFormation.message) last_msg += blackEmperorFormation.message;
             const suLingEncounter = rollSuLingDungeonEncounter(player, { dungeon: weizhi?.name });
             if (suLingEncounter.encountered) {
@@ -929,7 +946,7 @@ if (player.power_place == PLACE_LOCATION_MAP.遮天位面 && Math.random() < 0.0
                     ];
                     
                     // 获取玩家当前天资等级索引
-                    const currentAptitudeIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
+                    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
                     // 最低要求天资等级索引（天纵之资，索引6）
                     const minAptitudeIndex = 6;
                      const tianxuanbufa = await checkGongfaInServer('天璇步法');
@@ -1735,6 +1752,7 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
     last_msg += `黑影袖袍一卷，将你探索所得的[${stolenAmount}个${thing_name}]夺走！`;
     last_msg += `你拼死抵抗，最终保住了[${n}个${thing_name}]。`;
 }
+ if (thing_name) n = addMemoryLootBonus(player, await foundthing(thing_name, { readOnly: true }), n);
  m += `]×${n}个。`;
             let xiuwei = 0;
             //默认结算装备数
@@ -1765,7 +1783,7 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
                 const token = `memory-law:${action.taskId || action.start_time || action.end_time}:${weizhi.name}:${tier}`;
                 const seed = [...token].reduce((value, char) => (value * 31 + char.charCodeAt(0)) >>> 0, 0);
                 const item = pool[seed % pool.length];
-                const amount = getMemoryEffects(player).lootMultiplier;
+                const amount = addMemoryLootBonus(player, item, getMemoryEffects(player).lootMultiplier);
                 await Add_najie_thing(player_id, item.name, item.class, amount, undefined, 1, { idempotencyKey: token });
                 last_msg += ` 律法因子保底获得【${item.name}】×${amount}。`;
               }
@@ -1953,7 +1971,7 @@ if (random < 0.0001) {
     ];
     
     // 获取当前天资位置
-    const currentIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
+    const currentIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
     
     // 如果玩家天资不在序列中（可能是旧数据），统一修正到轮回最低档
     if (currentIndex === -1) {
@@ -2562,13 +2580,20 @@ async function handleFashanSecretPlace(player, weizhi, action = {}) {
         `诸天大道为之臣服，万古时空为之凝固！`,
         `秘境中所有宝物自动归附法身！`
     ];
+    const hiddenMessage = await settleSuiyunGiftDrop(player, {
+      token: `fashan:${player.id}:${action.taskId || action.end_time}:${weizhi.name}`,
+      won: true,
+      save: () => Write_player(player.id, player),
+      grant: (reward, options) => Add_najie_thing(player.id, reward.name, reward.class, reward.amount, undefined, 1, options),
+    });
+    if (hiddenMessage) victoryMsg.push(hiddenMessage);
     
     // 确保秘境等级存在
     const placeLevel = weizhi.level || 1;
     
     // 根据秘境等级确定奖励数量
     const rewardMultiplier = Math.max(1, Math.floor(placeLevel / 10));
-    const itemCount = Math.max(1, 3 * rewardMultiplier) * getSuiyunEffects(player).lootMultiplier * getMemoryEffects(player).lootMultiplier; // 至少1件
+    const itemCount = Math.max(1, 3 * rewardMultiplier) * getSuiyunEffects(player).lootMultiplier * getMemoryEffects(player).lootMultiplier;
     
     // 获取秘境奖励物品 - 兼容多种结构
     let allItems = [];
@@ -2617,6 +2642,13 @@ async function handleFashanSecretPlace(player, weizhi, action = {}) {
         await Add_najie_thing(player.id, item.name, item.class, 1);
         console.log(`添加物品: ${item.name}`);
     }
+    // 黄金额外件数从普通奖池抽取，不扩大唯一物品的抽取次数。
+    const extraPool = allItems.filter(item => !isItemPermanentlyNonTradeable(item));
+    for (let i = 0; i < getMemoryEffects(player).lootBonus && extraPool.length; i++) {
+        const item = extraPool[Math.floor(Math.random() * extraPool.length)];
+        rewards.push(item);
+        await Add_najie_thing(player.id, item.name, item.class, 1);
+    }
     
     for (const tier of getMemoryEffects(player).guaranteedDrops) {
         const pool = (weizhi?.[tier] || []).filter(item => !isItemPermanentlyNonTradeable(item));
@@ -2624,7 +2656,7 @@ async function handleFashanSecretPlace(player, weizhi, action = {}) {
         const token = `memory-law:fashan:${action.taskId || action.end_time}:${weizhi.name}:${tier}`;
         const seed = [...token].reduce((value, char) => (value * 31 + char.charCodeAt(0)) >>> 0, 0);
         const item = pool[seed % pool.length];
-        const amount = getMemoryEffects(player).lootMultiplier;
+        const amount = addMemoryLootBonus(player, item, getMemoryEffects(player).lootMultiplier);
         await Add_najie_thing(player.id, item.name, item.class, amount, undefined, 1, { idempotencyKey: token });
         victoryMsg.push(`律法因子保底获得【${item.name}】×${amount}。`);
     }

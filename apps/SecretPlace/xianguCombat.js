@@ -44,7 +44,7 @@ function consumeTeammate(owner, allies, enemies, random) {
     return { name, betrayed: false, missing: true };
   }
 
-  const teammate = buildXianguCombatant({ ...teammateData, 名号: teammateData.名号 || name });
+  const teammate = buildXianguCombatant({ ...teammateData, 名号: teammateData.名号 || name, _xianguNpcCompanion: true });
   const betrayed = Number(random()) < betrayChance;
   (betrayed ? enemies : allies).push(teammate);
   return { name, betrayed, missing: false };

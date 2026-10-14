@@ -1,5 +1,4 @@
-import { hasSuiyunFreeDungeonEntry, getSuiyunDungeonEntryPlace } from '../../model/suiyun.js';
-import { getMemoryEffects, getMemoryStage, recordMemoryDungeon } from '../../model/memoryPath.js';
+import { hasSuiyunFreeDungeonEntry, getSuiyunDungeonEntryPlace, getSuiyunStage } from '../../model/suiyun.js';
 import { plugin, verc, data } from '../../api/api.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
 import { isDaofaActive } from '../../model/daofa.js';
@@ -394,7 +393,7 @@ export class SecretPlaceplus extends plugin {
         Place_action: '1', Place_actionplus: '0',
         mojie: '1', xijie: '1', plant: '1', mine: '1',
         Place_address: place,
-        memoryEntryRecorded: mode === 'explore',
+        memoryEntryRecorded: false,
       };
       applySecretPlaceNotificationContext(action, e, userId);
 
@@ -420,9 +419,6 @@ export class SecretPlaceplus extends plugin {
       player.法身行动 = `${mode === 'explore' ? '探索' : '沉迷'}${request.category}·${request.location}`;
       await Write_player(userId, player);
       await redis.set(actionKey, JSON.stringify(action));
-      if (mode === 'explore' && getMemoryStage(player)) {
-        if (recordMemoryDungeon(player, { token: `entry:${taskId}` }).applied) await Write_player(userId, player);
-      }
       await redis.set(getFashanHistoryKey(userId), JSON.stringify({
         taskId,
         start_time: now,
@@ -473,7 +469,7 @@ export class SecretPlaceplus extends plugin {
       Place_action: mode === 'explore' ? '0' : '1', Place_actionplus: mode === 'explore' ? '1' : '0',
       mojie: '1', xijie: '1', plant: '1', mine: '1',
       Place_address: place,
-      memoryEntryRecorded: mode === 'explore',
+      memoryEntryRecorded: false,
     };
     applySecretPlaceNotificationContext(action, e, userId);
     deductShangcangCost(player);
@@ -484,9 +480,6 @@ export class SecretPlaceplus extends plugin {
     player.法身行动 = `${mode === 'explore' ? '探索' : '沉迷'}上苍之上·${place.name}`;
     await Write_player(userId, player);
     await redis.set(getFashanActionKey(userId), JSON.stringify(action));
-    if (mode === 'explore' && getMemoryStage(player)) {
-      if (recordMemoryDungeon(player, { token: `entry:${taskId}` }).applied) await Write_player(userId, player);
-    }
     await redis.set(getFashanHistoryKey(userId), JSON.stringify({
       taskId,
       start_time: now,
@@ -1311,14 +1304,9 @@ async Gozhetian(e) {
             await Add_najie_thing(usr_qq, "不死神泉", "道具", -1);
         }
         
-        // 检查修为和血气是否足够
-        if (player.修为 < actualExperience) {
-            return e.reply(`你需要积累${actualExperience}修为，才能抵抗生命禁区！`);
-        }
-        if (player.血气 < actualExperience) {
-            return e.reply(`你需要积累${actualExperience}血气，才能抵抗生命禁区！`);
-        }
     }
+    if (player.修为 < actualExperience) return e.reply(`修为不足，本次需要${actualExperience}修为。`);
+    if (player.血气 < actualExperience) return e.reply(`血气不足，本次需要${actualExperience}血气。`);
     
 
     
@@ -1635,20 +1623,21 @@ async Gofairyrealm(e) {
     if (!weizhi) {
         return e.reply(`未找到仙境：${didian}`);
     }
-    if (didian === '岁云殿堂') return e.reply('岁云殿堂使用 #刻舟求剑 单次探索。');
     
     // 获取玩家数据
     let player = await Read_player(usr_qq);
-    const entryKeys = hasSuiyunFreeDungeonEntry(player) ? 0 : i;
+    const privatePalace = didian === '岁云殿堂';
+    if (privatePalace && !getSuiyunStage(player)) return e.reply('岁云殿堂只接纳岁云月华五阶段传承者。');
+    const entryKeys = privatePalace || hasSuiyunFreeDungeonEntry(player) ? 0 : i;
     weizhi = getSuiyunDungeonEntryPlace(player, weizhi);
     
     // 检查是否已在目标地点
-    if (player.power_place != PLACE_LOCATION_MAP.仙界) {
+    if (!privatePalace && player.power_place != PLACE_LOCATION_MAP.仙界) {
         return e.reply(`你不在仙界`);
     }
 
     // 诡异大祭·崩灭检查
-    if (isWeiMianDestroyed('仙界')) {
+    if (!privatePalace && isWeiMianDestroyed('仙界')) {
         return replyPlaneDestroyed(e, '仙界');
     }
     
@@ -1657,7 +1646,7 @@ async Gofairyrealm(e) {
         item => item.level_id == player.level_id
     ).level_id;
 
-    if (now_level_id < 42 && player.lunhui == 0) {
+    if (!privatePalace && now_level_id < 42 && player.lunhui == 0) {
         return e.reply('轮回未启，仙境难入');
     }
     if (didian == "杀神崖" && now_level_id < 50) {
@@ -1798,6 +1787,10 @@ if (didian === "往世星海") {
     // 设置行动状态
     let arr = {
         action: '镇守仙境',
+        ...(privatePalace ? {
+            taskId: `suiyun-palace:${usr_qq}:${Date.now()}`,
+            end_time: Date.now() + time * 60 * 1000,
+        } : {}),
         start_time: new Date().getTime(), // 开始时间
         total_time: time, // 总时间（分钟）
         remaining_time: time, // 剩余时间（分钟）
@@ -1823,6 +1816,7 @@ if (didian === "往世星海") {
     
     // ==== 记录沉迷历史数据 ====
     const addictionHistory = {
+        ...(arr.taskId ? { taskId: arr.taskId } : {}),
         start_time: new Date().getTime(),
         location: weizhi.name,
         location_type: '仙境',
@@ -1993,15 +1987,15 @@ function applyAddictionGongfaReduction(player, baseTime, time, messages) {
     const currentTime = Math.max(minimumTime, time);
     const technique = getDungeonGongfaReduction(player);
     if (technique.rate <= 0) {
-        return currentTime / getMemoryEffects(player).dungeonSpeed;
+        return currentTime;
     }
 
     const reduction = Math.min(currentTime - minimumTime, currentTime * technique.rate);
     if (reduction <= 0) {
-        return currentTime / getMemoryEffects(player).dungeonSpeed;
+        return currentTime;
     }
     messages.push(`【功法火候】${technique.name}额外缩短${reduction.toFixed(1)}分钟`);
-    return (currentTime - reduction) / getMemoryEffects(player).dungeonSpeed;
+    return currentTime - reduction;
 }
 
 /**

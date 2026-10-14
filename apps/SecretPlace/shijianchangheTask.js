@@ -33,6 +33,7 @@ import {
 } from '../../model/realmAuthority.js';
 import { addCappedEraAccumulation } from '../../model/selfDaoDeduction.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { recordMemoryDungeon } from '../../model/memoryPath.js';
 import { runTaskOnce } from '../../utils/taskGuard.js';
 import {
   beginDarkSuppression,
@@ -131,7 +132,7 @@ async checkFashanTimeRiverPlayer(usr_qq, currentTime) {
   } catch {
     // 异常记录保留排查，仅移除长河索引。
   }
-  if (!action?.isFashan || action.time_river != '0') {
+  if (!action?.isFashan || action.escaped || action.time_river != '0') {
     await this.clearTimeRiverTracking(usr_qq, { isFashan: true });
     return;
   }
@@ -177,7 +178,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
         }
         return;
       }
-      if (!TIME_RIVER_ACTIVE_ACTIONS.includes(action.action)) {
+      if (action.escaped || !TIME_RIVER_ACTIVE_ACTIONS.includes(action.action)) {
         await this.clearTimeRiverTracking(usr_qq);
         return;
       }
@@ -196,6 +197,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
         await this.notifyPlayer(usr_qq, action, memberIds.length > 1
           ? '【十息成劫】十分钟内无人献祭魂与血，整支队伍的元神均被拘入黑暗古国，开始炼化道果！'
           : '【十息成劫】十分钟内无人献祭魂与血，你的元神已被拘入黑暗古国，开始炼化道果！');
+        await this.settleMemoryTimeRiver(usr_qq, action);
         await this.clearTimeRiverTracking(usr_qq, action);
         return;
       }
@@ -210,6 +212,15 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       String(action.timeRiverLeader || usr_qq),
       ...(Array.isArray(action.timeRiverTeamMembers) ? action.timeRiverTeamMembers.map(String) : []),
     ])].slice(0, 4);
+  }
+
+  async settleMemoryTimeRiver(usr_qq, action) {
+    const token = action.memoryDungeonToken || `time-river-entry:${action.taskId || action.timeRiverTeamId || 'body'}:${action.start_time || action.end_time}`;
+    for (const memberId of this.getTimeRiverMemberIds(usr_qq, action)) {
+      if (!await existplayer(memberId)) continue;
+      const player = await Read_player(memberId);
+      if (recordMemoryDungeon(player, { token }).applied) await Write_player(memberId, player);
+    }
   }
 
   async getActiveTimeRiverPlayers(actor = 'body') {
@@ -593,7 +604,10 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
       });
       return true;
     }
-    if (memberResults.some(result => result.specialEvents.darkSuppression)) return false;
+    if (memberResults.some(result => result.specialEvents.darkSuppression)) {
+      await this.settleMemoryTimeRiver(usr_qq, action);
+      return false;
+    }
     if (outcome === 'victory' && stage === 'initial' && isDarkTriadEmperor(primary.名号)) {
       await this.scheduleTimeRiverStage(usr_qq, action, 'triad', { primaryName: primary.名号 });
       return true;
@@ -620,6 +634,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
         return true;
       }
     }
+    await this.settleMemoryTimeRiver(usr_qq, action);
     return false;
   }
 
@@ -672,6 +687,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     const action = {
       ...previousAction,
       ...details,
+      memoryDungeonToken: previousAction.memoryDungeonToken || `time-river-entry:${previousAction.taskId || previousAction.timeRiverTeamId || 'body'}:${previousAction.start_time || previousAction.end_time}`,
       action: '遨游时间长河',
       timeRiverStage: stage,
       start_time: Date.now(),
@@ -705,6 +721,7 @@ async checkTimeRiverPlayer(usr_qq, currentTime) {
     const action = {
       ...previousAction,
       ...details,
+      memoryDungeonToken: previousAction.memoryDungeonToken || `time-river-entry:${previousAction.taskId || previousAction.timeRiverTeamId || 'body'}:${previousAction.start_time || previousAction.end_time}`,
       action: '时间长河战败待援',
       start_time: Date.now(),
       end_time: endTime,

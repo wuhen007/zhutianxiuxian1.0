@@ -134,9 +134,7 @@ export function calculateRiftExploreDuration(player, minggeReductionMs = 0) {
     messages.push(`命格·秘境加速：-${Math.round(safeMinggeReductionMs / 1000)}秒`);
   }
 
-  const speed = getMemoryEffects(player).dungeonSpeed;
-  const durationMs = Math.max(RIFT_MIN_EXPLORE_MS, RIFT_EXPLORE_MS - reductionMs) / speed;
-  if (speed > 1) messages.push(`门径因子：探索速度×${speed}`);
+  const durationMs = Math.max(RIFT_MIN_EXPLORE_MS, RIFT_EXPLORE_MS - reductionMs);
   return {
     durationMs,
     reductionMs: RIFT_EXPLORE_MS - durationMs,
@@ -235,11 +233,12 @@ export function resolveRiftRewardBonus(player, random = Math.random) {
     multiplier *= suiyunMultiplier;
     messages.push(`云月造化：物品数量 ×${suiyunMultiplier}`);
   }
-  const memoryMultiplier = getMemoryEffects(player).lootMultiplier;
+  const { lootMultiplier: memoryMultiplier, lootBonus } = getMemoryEffects(player);
   if (memoryMultiplier > 1) {
     multiplier *= memoryMultiplier;
     messages.push(`记忆命途：物品数量×${memoryMultiplier}`);
   }
+  if (lootBonus > 0) messages.push(`黄金因子：每种普通物品额外+${lootBonus}件`);
 
   if (rootType === '魔卡少女') {
     multiplier += 1;
@@ -291,7 +290,7 @@ export function resolveRiftRewardBonus(player, random = Math.random) {
     }
   }
 
-  return { multiplier, messages, stateChanged };
+  return { multiplier, lootBonus, messages, stateChanged };
 }
 
 export function pickAffordableForgeMaterial(materials, random = Math.random) {

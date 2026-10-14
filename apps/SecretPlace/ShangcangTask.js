@@ -1,10 +1,13 @@
 import { getSuiyunEffects } from '../../model/suiyun.js';
+import { settleSuiyunGiftDrop } from '../../model/suiyunGiftDrop.js';
 import { getMemoryEffects, recordMemoryDungeon } from '../../model/memoryPath.js';
+import { addMemoryLootBonus } from '../../model/suiyunLoot.js';
 import { isItemPermanentlyNonTradeable } from '../../model/equipmentTransfer.js';
 import fs from 'fs';
 import { plugin, config, data } from '../../api/api.js';
 import {
   Add_najie_thing,
+  foundthing,
   Read_player,
   Write_player,
   getMonsterByLocation,
@@ -237,6 +240,7 @@ export class ShangcangTask extends plugin {
       }
     }
     if (isFashan && !await ownsAction(action)) return false;
+
     const settlementId = `shangcang:${actor}:${action.taskId}:round:${round}`;
     const legacySettlementId = `shangcang:${action.taskId}:round:${round}`;
     if (!player._shangcangSettlements || typeof player._shangcangSettlements !== 'object'
@@ -304,6 +308,16 @@ export class ShangcangTask extends plugin {
 
     if (isFashan && !await ownsAction(action)) return false;
 
+    const hiddenMessage = await settleSuiyunGiftDrop(player, {
+      token: settlementId, won: battle.winner === 'A',
+      save: () => Write_player(playerId, { ...player, ...(isFashan ? { 当前血量: bodyHp } : {}) }),
+      grant: async (reward, options) => {
+        await Add_najie_thing(playerId, reward.name, reward.class, reward.amount, undefined, 1, options);
+        rewards.push({ name: reward.name, class: reward.class, count: reward.amount, alreadyGranted: true });
+      },
+    });
+    if (hiddenMessage && Array.isArray(battle.msg)) battle.msg.push(hiddenMessage);
+
     if (battle.winner === 'A') {
       const multiplier = getDungeonFortuneMultiplier(player) * getInnateDungeonRewardMultiplier(player)
         * getSuiyunEffects(player).lootMultiplier * getMemoryEffects(player).lootMultiplier;
@@ -319,6 +333,8 @@ export class ShangcangTask extends plugin {
         }
       }
       for (const [index, reward] of rewards.entries()) {
+        if (reward.alreadyGranted) continue;
+        reward.count = addMemoryLootBonus(player, await foundthing(reward.name, { readOnly: true }), reward.count);
         await Add_najie_thing(
           playerId,
           reward.name,
@@ -334,7 +350,10 @@ export class ShangcangTask extends plugin {
     }
 
     action.settled_count = Math.max(0, Number(action.settled_count) || 0) + 1;
-    if (addiction) recordMemoryDungeon(player, { token: settlementId });
+    if (!action.memoryEntryRecorded) recordMemoryDungeon(player, {
+      token: addiction ? settlementId : `entry:${action.taskId || action.end_time}:${location}:${action.actor || 'body'}`,
+      escaped: action.escaped || battle.escaped,
+    });
     let stopReason = '';
     if (addiction && action.settled_count < Number(action.total_count)) {
       const shortage = getShangcangCostShortage(player);

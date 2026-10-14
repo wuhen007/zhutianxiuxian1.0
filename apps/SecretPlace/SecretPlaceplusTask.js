@@ -3,6 +3,7 @@ import fs from 'fs';
 import {__PATH} from '../../model/xiuxian.js';
 import {
   Add_najie_thing,
+  foundthing,
   Add_修为,
   Add_血气,
   Set_HP,
@@ -42,7 +43,9 @@ import {
 import RealmEvents from '../tasks/RealmEvents.js';
 import { getInnateDungeonRewardMultiplier } from '../../model/innateTreasure.js';
 import { getSuiyunEffects } from '../../model/suiyun.js';
+import { settleSuiyunGiftDrop } from '../../model/suiyunGiftDrop.js';
 import { getMemoryEffects, recordMemoryDungeon } from '../../model/memoryPath.js';
+import { addMemoryLootBonus } from '../../model/suiyunLoot.js';
 import { isItemPermanentlyNonTradeable } from '../../model/equipmentTransfer.js';
 import { rollAndGrantSuiyunRemnant } from '../../model/suiyunRegistry.js';
 import { rollAndGrantMemoryData } from '../../model/memoryRegistry.js';
@@ -318,6 +321,15 @@ export class SecretPlaceplusTask extends plugin {
             var n = 1;
             let dungeonFortuneMultiplier = 1;
             let last_msg = '';
+            last_msg += await settleSuiyunGiftDrop(player, {
+              token: `round:${player_id}:${action.taskId || action.start_time || action.end_time}:${weizhi.name}:${action.settled_count}`,
+              won: Data_battle.winner === 'A',
+              save: () => Write_player(player_id, player),
+              grant: async (reward, options) => {
+                const added = await Add_najie_thing(player_id, reward.name, reward.class, reward.amount, undefined, 1, options);
+                if (added !== 0) await recordItemToHistory(player_id, reward.name, reward.class, reward.amount);
+              },
+            });
             if (blackEmperorFormation.message) last_msg += blackEmperorFormation.message;
             const suLingEncounter = rollSuLingDungeonEncounter(player, { dungeon: weizhi?.name });
             if (suLingEncounter.encountered) {
@@ -1004,7 +1016,7 @@ if (weizhi.name === "紫薇星域") {
                     ];
                     
                     // 获取玩家当前天资等级索引
-                    const currentAptitudeIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
+                    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
                     // 最低要求天资等级索引（天纵之资，索引6）
                     const minAptitudeIndex = 6;
                      const tianxuanbufa = await checkGongfaInServer('天璇步法');
@@ -1816,6 +1828,7 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
     last_msg += `黑影袖袍一卷，将你探索所得的[${stolenAmount}个${thing_name}]夺走！`;
     last_msg += `你拼死抵抗，最终保住了[${n}个${thing_name}]。`;
 }
+ if (thing_name) n = addMemoryLootBonus(player, await foundthing(thing_name, { readOnly: true }), n);
  m += `]×${n}个。`;
             let xiuwei = 0;
             //默认结算装备数
@@ -1846,7 +1859,7 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
                 const token = `memory-law:${action.taskId || action.start_time || action.end_time}:${weizhi.name}:${action.settled_count}:${tier}`;
                 const seed = [...token].reduce((value, char) => (value * 31 + char.charCodeAt(0)) >>> 0, 0);
                 const item = pool[seed % pool.length];
-                const amount = getMemoryEffects(player).lootMultiplier;
+                const amount = addMemoryLootBonus(player, item, getMemoryEffects(player).lootMultiplier);
                 await Add_najie_thing(player_id, item.name, item.class, amount, undefined, 1, { idempotencyKey: token });
                 await recordItemToHistory(player_id, item.name, item.class, amount);
                 last_msg += ` 律法因子保底获得【${item.name}】×${amount}。`;
@@ -2041,7 +2054,7 @@ if (random < 0.0001) {
     ];
     
     // 获取当前天资位置
-    const currentIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
+    const currentIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
     
     // 如果玩家天资不在序列中（可能是旧数据），统一修正到轮回最低档
     if (currentIndex === -1) {
@@ -2415,6 +2428,7 @@ ${aptitudeEvaluations[newAptitude]}
 action.settled_count++;
 if (!action.memoryEntryRecorded) recordMemoryDungeon(player, {
   token: `round:${action.taskId || action.start_time || action.end_time}:${weizhi?.name}:${action.settled_count}`,
+  escaped: action.escaped || Data_battle?.escaped,
 });
 
   if (options.taskId && !(await ownsAction())) return false;
@@ -2493,7 +2507,7 @@ if (action.settled_count >= action.total_count) {
               await Write_player(player_id, player);
               await Add_血气(player_id, qixue);
               await Add_修为(player_id, xiuwei);
-              await Add_寿元(player_id,-Math.max(x,1))
+              if (weizhi?.name !== '岁云殿堂') await Add_寿元(player_id,-Math.max(x,1))
               //发送消息
               try {
                 let temp = await Read_temp();

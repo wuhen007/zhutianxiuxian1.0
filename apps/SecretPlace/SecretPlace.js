@@ -1,5 +1,5 @@
 import { hasSuiyunFreeDungeonEntry, getSuiyunDungeonEntryPlace, getSuiyunStage } from '../../model/suiyun.js';
-import { getMemoryStage, recordMemoryDungeon } from '../../model/memoryPath.js';
+import { getMemoryDungeonCost } from '../../model/memoryPath.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import fs from 'fs';
 import path from 'path';
@@ -142,15 +142,6 @@ import {
 
 function isWeiMianDestroyed(planeName) {
     return getPlaneDestructionInfo(data.filePathMap.weimianList, planeName).destroyed;
-}
-
-async function recordMemoryEntry(playerId, action) {
-  return withPlayerMutationLock(playerId, async () => {
-    const player = await Read_player(playerId);
-    if (!getMemoryStage(player)) return;
-    const token = `entry:${action.taskId || action.end_time}:${action.Place_address?.name}:${action.actor || 'body'}`;
-    if (recordMemoryDungeon(player, { token }).applied) await Write_player(playerId, player);
-  });
 }
 
 async function replyPlaneDestroyed(e, planeName) {
@@ -1439,7 +1430,6 @@ async xunbao(e) {
         applySecretPlaceNotificationContext(action, e, usr_qq);
         await Write_player(usr_qq, player);
         await redis.set(`xiuxian:player:${usr_qq}:action`, JSON.stringify(action));
-    await recordMemoryEntry(usr_qq, action);
         return e.reply([
           `【上苍之上·${didian}】`,
           `已消耗：${formatShangcangCost(player)}`,
@@ -1608,7 +1598,6 @@ async Gojiehaiplace(e) {
     
     // 使用原键名存储真身行动
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
-    await recordMemoryEntry(usr_qq, arr);
     
     // 构建主文案
     const playerLevel = player.mijinglevel_id;
@@ -1875,7 +1864,6 @@ async Gosecretplace(e) {
             applySecretPlaceNotificationContext(arr, e, usr_qq);
             
             await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
-    await recordMemoryEntry(usr_qq, arr);
             
             // 发送消息
             e.reply(allMsgs.join('\n\n'));
@@ -1935,7 +1923,6 @@ async Gosecretplace(e) {
     applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
-    await recordMemoryEntry(usr_qq, arr);
 
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
@@ -2062,7 +2049,6 @@ async Goxiajie(e) {
     applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
-    await recordMemoryEntry(usr_qq, arr);
 
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
@@ -2184,7 +2170,6 @@ async Gojiutianshidi(e) {
     applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
-    await recordMemoryEntry(usr_qq, arr);
 
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
@@ -2321,7 +2306,6 @@ async Gozhetian(e) {
                 applySecretPlaceNotificationContext(arr, e, usr_qq);
                 
                 await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
-    await recordMemoryEntry(usr_qq, arr);
                 return e.reply(allMsgs.join('\n\n'));
             }
         }
@@ -2532,7 +2516,6 @@ async Gozhetian(e) {
     applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
-    await recordMemoryEntry(usr_qq, arr);
     
     // ==== 最终消息 ====
     allMsgs.push(`开始前往${didian}，${time}分钟后归来！`);
@@ -2660,7 +2643,6 @@ async Goforbiddenarea(e) {
             
             // 使用专用键存储法身行动
             await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
-    await recordMemoryEntry(usr_qq, arr);
             
             e.reply(fashanMsg);
             return true;
@@ -2763,7 +2745,6 @@ async Goforbiddenarea(e) {
     
     // 使用原键名存储真身行动
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
-    await recordMemoryEntry(usr_qq, arr);
     
     // 根据禁地类型添加特殊描述
     let locationDesc = "";
@@ -2945,7 +2926,6 @@ async GoTimeplace(e) {
             
             // 使用专用键存储法身行动
             await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
-    await recordMemoryEntry(usr_qq, arr);
             
             e.reply(fashanMsg);
             return true;
@@ -2968,7 +2948,8 @@ async GoTimeplace(e) {
     await sleep(1000);
     if (yunqi > 0.9) {
         // 10%寄
-        if (!hasSuiyunFreeDungeonEntry(player) && player.灵石 < 50000) {
+        const mapPrice = hasSuiyunFreeDungeonEntry(player) ? 0 : 50000;
+        if (player.灵石 < mapPrice) {
             e.reply('还没看两眼就被看堂的打手撵了出去说:"哪来的穷小子,不买别看"');
             return false;
         }
@@ -2976,9 +2957,9 @@ async GoTimeplace(e) {
         e.reply(
             hasSuiyunFreeDungeonEntry(player)
                 ? '岁云灵根免去地图费用，但沿图抵达后发现居然是仙湖游乐场，本次未进入仙府。'
-                : '价格为5w,你觉得特别特别便宜,赶紧全款拿下了,历经九九八十天,到了后发现居然是仙湖游乐场！'
+                : `价格为${mapPrice}灵石,你觉得特别特别便宜,赶紧全款拿下了,历经九九八十天,到了后发现居然是仙湖游乐场！`
         );
-        if (!hasSuiyunFreeDungeonEntry(player)) await Add_灵石(usr_qq, -50000);
+        if (mapPrice > 0) await Add_灵石(usr_qq, -mapPrice);
         return false;
     }
     
@@ -2997,35 +2978,32 @@ async GoTimeplace(e) {
         return false;
     }
     
-    if (player.灵石 < weizhi.Price) {
-        e.reply('你发现标价是' + weizhi.Price + ',你买不起赶紧溜了');
+    const experienceCost = hasSuiyunFreeDungeonEntry(player) ? 0 : getMemoryDungeonCost(player, 100000);
+    const usePass = !hasSuiyunFreeDungeonEntry(player) && (await exist_najie_thing(usr_qq, '仙府通行证', '道具')) &&
+        player.魔道值 < 1 && (player.灵根.type == '转生' || player.level_id > 41);
+    const Price = usePass ? 0 : weizhi.Price;
+    if (player.灵石 < Price) {
+        e.reply('你发现标价是' + Price + ',你买不起赶紧溜了');
         return false;
     }
     
-    if (!hasSuiyunFreeDungeonEntry(player) && player.修为 < 100000) {
+    if (player.修为 < experienceCost) {
         e.reply(
-            '到了地图上的地点，发现洞府前有一句前人留下的遗言:"至少有10w修为才能抵御仙威！"'
+            `到了地图上的地点，发现洞府前有一句前人留下的遗言:"至少有${experienceCost}修为才能抵御仙威！"`
         );
         return false;
     }
     
-    let dazhe = 1;
-    if (
-        !hasSuiyunFreeDungeonEntry(player) && (await exist_najie_thing(usr_qq, '仙府通行证', '道具')) &&
-        player.魔道值 < 1 &&
-        (player.灵根.type == '转生' || player.level_id > 41)
-    ) {
-        dazhe = 0;
+    if (usePass) {
         e.reply(player.名号 + '使用了道具仙府通行证,本次仙府免费');
         await Add_najie_thing(usr_qq, '仙府通行证', '道具', -1);
     }
     
-    const Price = weizhi.Price * dazhe;
             player.lastDungeonType = '仙府';
     player.lastDungeonName = didian;
     await Write_player(usr_qq, player);
     await Add_灵石(usr_qq, -Price);
-    if (!hasSuiyunFreeDungeonEntry(player)) await Add_修为(usr_qq, -100000);
+    if (experienceCost > 0) await Add_修为(usr_qq, -experienceCost);
     
     const cf = config.getConfig('xiuxian', 'xiuxian');
     let time = cf.CD.timeplace; // 时间（分钟）
@@ -3060,18 +3038,17 @@ async GoTimeplace(e) {
     
     // 使用原键名存储真身行动
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
-    await recordMemoryEntry(usr_qq, arr);
     
     // 构建回复消息
     let replyMsg = '';
     if (suiji === 0) {
         replyMsg = '你买下了那份地图,历经九九八十一天,终于到达了地图上的仙府,洞府上模糊得刻着[' +
             weizhi.name +
-            '仙府]你兴奋地冲进去探索机缘,被强大的仙气压制，消耗了100000修为成功突破封锁闯了进去' +
+            `仙府]你兴奋地冲进去探索机缘,被强大的仙气压制，消耗了${experienceCost}修为成功突破封锁闯了进去` +
             time +
             '分钟后归来!';
     } else {
-        replyMsg = '你买下了那份地图,历经九九八十一天,终于到达了地图上的地点,这座洞府仿佛是上个末法时代某个仙人留下的遗迹,你兴奋地冲进去探索机缘,被强大的仙气压制，消耗了100000修为成功突破封锁闯了进去' +
+        replyMsg = `你买下了那份地图,历经九九八十一天,终于到达了地图上的地点,这座洞府仿佛是上个末法时代某个仙人留下的遗迹,你兴奋地冲进去探索机缘,被强大的仙气压制，消耗了${experienceCost}修为成功突破封锁闯了进去` +
             time +
             '分钟后归来!';
     }
@@ -3172,9 +3149,14 @@ async Gofairyrealm(e) {
             ].join('\n'));
         }
     }
-    // 检查资源是否足够
-    if (player.灵石 < weizhi.Price) {
-        return e.reply(`没有灵石寸步难行，攒到${weizhi.Price}灵石才够哦~`);
+    // 门径折扣已由地点包装计算；优惠券只叠加一次，并用最终价格检查余额。
+    const couponName = didian === '杀神崖' ? '杀神崖通行证' : '仙境优惠券';
+    const useCoupon = !privatePalace && !hasSuiyunFreeDungeonEntry(player) && player.魔道值 < 1 &&
+        (player.灵根.type == '转生' || player.level_id > 41) && await exist_najie_thing(usr_qq, couponName, '道具');
+    const dazhe = useCoupon ? (didian === '杀神崖' ? 0 : 0.5) : 1;
+    const Price = Math.floor(weizhi.Price * dazhe);
+    if (player.灵石 < Price) {
+        return e.reply(`没有灵石寸步难行，攒到${Price}灵石才够哦~`);
     }
     if (player.寿元 < weizhi.shouyuan) {
         return e.reply('道友这点寿元就不要去了吧，免得原地坐化了');
@@ -3232,38 +3214,13 @@ if (didian === "往世星海") {
         allMsgs.push(specialMsg);
     }
     
-    // 折扣处理
-    let dazhe = 1; // 默认无折扣
-    let discountMsg = "";
-    
-    if (didian === '杀神崖') {
-        if (!hasSuiyunFreeDungeonEntry(player) && await exist_najie_thing(usr_qq, '杀神崖通行证', '道具') &&
-            player.魔道值 < 1 && 
-            (player.灵根.type == '转生' || player.level_id > 41)) {
-            dazhe = 0;
-            discountMsg = [
-                `【通行证特权】`,
-                `${player.名号}使用了杀神崖通行证，`,
-                `本次镇守免费！`,
-            ].join('\n');
-            await Add_najie_thing(usr_qq, '杀神崖通行证', '道具', -1);
-        }
-    } else {
-        if (!privatePalace && !hasSuiyunFreeDungeonEntry(player) && await exist_najie_thing(usr_qq, '仙境优惠券', '道具') &&
-            player.魔道值 < 1 && 
-            (player.灵根.type == '转生' || player.level_id > 41)) {
-            dazhe = 0.5;
-            discountMsg = [
-                `【优惠券特权】`,
-                `${player.名号}使用了仙境优惠券，`,
-                `本次消耗减少50%！`,
-            ].join('\n');
-            await Add_najie_thing(usr_qq, '仙境优惠券', '道具', -1);
-        }
-    }
-    
-    if (discountMsg) {
-        allMsgs.push(discountMsg);
+    if (useCoupon) {
+        await Add_najie_thing(usr_qq, couponName, '道具', -1);
+        allMsgs.push([
+            `【${didian === '杀神崖' ? '通行证' : '优惠券'}特权】`,
+            `${player.名号}使用了${couponName}，`,
+            didian === '杀神崖' ? '本次灵石消耗为0！' : '本次灵石消耗再减少50%！',
+        ].join('\n'));
     }
     
     // 调用统一方法计算时间缩减
@@ -3271,7 +3228,6 @@ if (didian === "往世星海") {
     allMsgs.push(...msgs);
     
     // 计算实际消耗
-    let Price = Math.floor(weizhi.Price * dazhe);
     let shouyuan = weizhi.shouyuan;
             player.lastDungeonType = '仙境';
     player.lastDungeonName = didian;
@@ -3377,7 +3333,6 @@ if (didian === "往世星海") {
                 applySecretPlaceNotificationContext(arr, e, usr_qq);
                 
                 await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
-    await recordMemoryEntry(usr_qq, arr);
                 
                 // 发送消息
                 e.reply(allMsgs.join('\n\n'));
@@ -3422,7 +3377,6 @@ if (didian === "往世星海") {
     
     // 使用原键名存储真身行动
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
-    await recordMemoryEntry(usr_qq, arr);
     
     // 根据仙境类型添加特殊描述
     let locationDesc = "";
@@ -3501,6 +3455,7 @@ if (didian === "往世星海") {
       e.reply('没存档你逃个锤子!');
       return false;
     }
+    return withPlayerMutationLock(usr_qq, async () => {
       // 读取玩家数据
     const player = await Read_player(usr_qq);
     
@@ -3599,11 +3554,13 @@ if (action != null) {
     if (
         action.Place_action == '0' ||
         action.Place_actionplus == '0' ||
-        action.mojie == '0'
+        action.mojie == '0' ||
+        Boolean(action.shengxuTaskId)
     ) {
         // 把状态都关了
         let arr = action;
         arr.is_jiesuan = 1; // 结算状态
+        arr.escaped = true;
         arr.shutup = 1; // 闭关状态
         arr.working = 1; // 降妖状态
         arr.power_up = 1; // 渡劫状态
@@ -3617,12 +3574,15 @@ if (action != null) {
             'xiuxian:player:' + usr_qq + ':action',
             JSON.stringify(arr)
         );
+        if (action.action === '探索灵界裂缝') await redis.del(`xiuxian:lingjie_rift:explore:${usr_qq}`);
+        if (action.shengxuTaskId) await redis.del(`xiuxian:shengxu:explore:${usr_qq}`);
         
         e.reply('你已逃离秘境！');
         return false;
     }
 }
     return false;
+    });
   }
   async quickReplay(e) {
   if (!verc({ e })) return false;

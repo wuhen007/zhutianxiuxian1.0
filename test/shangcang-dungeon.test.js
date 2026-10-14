@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 import {
   deductShangcangCost,
+  formatShangcangCost,
   getShangcangCostShortage,
   isShangcangAction,
   recordShangcangVictory,
@@ -11,10 +12,37 @@ import {
   SHANGCANG_COST,
   SHANGCANG_NORMAL_ACTION,
 } from '../model/shangcangDungeon.js';
+import { createMemoryRoot } from '../model/memoryPath.js';
+import { createSuiyunRoot } from '../model/suiyun.js';
 
 function json(path) {
   return JSON.parse(fs.readFileSync(new URL(path, import.meta.url), 'utf8'));
 }
+
+test('上苍门径折扣每轮只计算一次，短缺检查不扣款，源石元神不减且岁云仍免耗', () => {
+  const quote = { 灵石: 6_000_000_000, 源石: 2_000_000_000, 修为: 180_000_000,
+    血气: 180_000_000, 元神: 120_000_000, 寿元: 12_000_000 };
+  const player = { 灵根: createMemoryRoot(4), 记忆命途: { 因子: { 门径: 3 } },
+    ...Object.fromEntries(Object.entries(quote).map(([field, amount]) => [field, amount * 2])) };
+  const message = formatShangcangCost(player);
+  for (let round = 0; round < 2; round++) {
+    assert.equal(getShangcangCostShortage(player), null);
+    assert.equal(deductShangcangCost(player), true);
+    for (const [field, amount] of Object.entries(quote)) assert.equal(player[field], amount * (1 - round));
+    assert.equal(formatShangcangCost(player), message);
+  }
+  for (const field of Object.keys(quote)) {
+    const short = { ...player, ...quote, [field]: quote[field] - 1 };
+    const before = structuredClone(short);
+    assert.equal(getShangcangCostShortage(short)[0], field);
+    assert.equal(deductShangcangCost(short), false);
+    assert.deepEqual(short, before);
+  }
+  player.灵根 = createSuiyunRoot(3);
+  assert.equal(deductShangcangCost(player), true);
+  assert.equal(getShangcangCostShortage(player), null);
+  assert.match(formatShangcangCost(player), /资源消耗为0/);
+});
 
 test('上苍副本成本、掉落和纪元进度闭环', () => {
   const player = Object.fromEntries(Object.entries(SHANGCANG_COST).map(([field, amount]) => [field, amount]));

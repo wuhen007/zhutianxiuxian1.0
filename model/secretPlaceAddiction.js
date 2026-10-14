@@ -111,6 +111,10 @@ export function accelerateSecretPlaceAction(action, requestedReduceMs, now = Dat
     return { action: next, actualReduceMs, endTime: startTime + durationMs };
   }
 
+  // 普通秘境旧档以原结束时间作为模拟记录ID；加速只改时间，不改变历练身份。
+  if (!next.taskId && next.Place_address?.name) {
+    next.memoryEntryToken ||= `entry:${next.end_time}:${next.Place_address.name}:${next.actor || 'body'}`;
+  }
   next.end_time = endTime - actualReduceMs;
   return { action: next, actualReduceMs, endTime: next.end_time };
 }

@@ -242,7 +242,7 @@ export class ShengxuContent extends plugin {
     if (!context) return e.reply('玩家不存在，请先创建角色。');
     const { player } = context;
     const dungeons = SHENGXU_DUNGEONS.map(dungeon => {
-      const cost = getShengxuExploreCost(dungeon);
+      const cost = getShengxuExploreCost(dungeon, player);
       const plane = getShengxuDungeonPlane(dungeon);
       const shortages = getShengxuExploreShortages(player, cost);
       const realmReady = Number(player.huafenlevel_id) >= dungeon.requiredLevel;
@@ -381,7 +381,7 @@ export class ShengxuContent extends plugin {
         return e.reply(`你今日已经探索过${dungeon.name}。`);
       }
 
-      const unitCost = getShengxuExploreCost(dungeon);
+      const unitCost = getShengxuExploreCost(dungeon, player);
       const cost = Object.fromEntries(Object.entries(unitCost).map(([key, value]) => [key, value * totalCount]));
       const totalShortages = getShengxuExploreShortages(player, cost);
       if (totalShortages.length) {
@@ -394,7 +394,7 @@ export class ShengxuContent extends plugin {
       const endTime = now + totalDurationMin * 60 * 1000;
       const task = {
         taskId: `${userId}:${actor}:${dungeon.name}:${now}`,
-        memoryEntryRecorded: totalCount === 1,
+        memoryEntryRecorded: false,
         mode: totalCount > 1 ? 'addiction' : 'single',
         actor,
         actorPlane,
@@ -438,7 +438,6 @@ export class ShengxuContent extends plugin {
           player.法身行动 = totalCount > 1 ? `沉迷圣墟·${dungeon.name}` : `探索圣墟·${dungeon.name}`;
           player.法身状态 = '行动中';
         }
-        if (task.memoryEntryRecorded) recordMemoryDungeon(player, { token: `entry:shengxu:${task.taskId}` });
         await Write_player(userId, player);
       } catch (error) {
         await redis.del(exploreKey);
@@ -518,6 +517,10 @@ export class ShengxuContent extends plugin {
     while (task.settled_count < task.total_count && now >= Number(task.next_settle_time) && processed < 10) {
       const round = Number(task.settled_count) + 1;
       const result = await this.settleExplore({ ...task, taskId: `${task.taskId}:round:${round}` }, false);
+      if (result?.escaped) {
+        await redis.del(key);
+        return;
+      }
       if (result?.actorPlaneMismatch) {
         task.stop_reason = result.stopReason;
         task.settled_count = task.total_count;
@@ -609,6 +612,7 @@ export class ShengxuContent extends plugin {
   }
 
   async settleExplore(task, sendResult = true) {
+    if (task.escaped) return { settled: true, escaped: true };
     const userId = String(task.qq);
     const player = await Read_player(userId);
     if (!player) return { settled: false };
@@ -657,6 +661,14 @@ export class ShengxuContent extends plugin {
     let message = '';
     let outcome = { settled: false };
     await withPlayerMutationLock(userId, async () => {
+      const actionRaw = await redis.get(getActorActionKey(userId, actorType));
+      const action = actionRaw ? JSON.parse(actionRaw) : null;
+      const ownsAction = action?.shengxuTaskId
+        && (settlementId === action.shengxuTaskId || settlementId.startsWith(`${action.shengxuTaskId}:round:`));
+      if ((ownsAction && action.escaped) || (task.memoryEntryRecorded === false && !ownsAction)) {
+        outcome = { settled: true, escaped: true };
+        return;
+      }
       const fresh = await Read_player(userId);
       fresh.圣墟副本最近结算 ??= {};
       if (fresh.圣墟副本最近结算[settlementKey] === settlementId) {
@@ -668,9 +680,12 @@ export class ShengxuContent extends plugin {
       }
       mergeCombatProficiency(fresh, actorSource, attacker);
       fresh.圣墟副本最近结算[settlementKey] = settlementId;
-      if (task.mode === 'addiction' && !task.memoryEntryRecorded) {
+      if (!task.memoryEntryRecorded) {
         // 每个真实执行轮次使用现成round taskId；法身收益始终写回fresh主存档。
-        recordMemoryDungeon(fresh, { token: `round:shengxu:${settlementId}` });
+        recordMemoryDungeon(fresh, {
+          token: `round:shengxu:${settlementId}`,
+          escaped: task.escaped || battle.escaped,
+        });
       }
       let ancestorSeedGranted = false;
       let ancestorSeedReconciled = false;

@@ -2465,7 +2465,6 @@ export class EndlessRealm extends plugin {
         for (const entry of players) {
           const { id, player, heartCost, freeAvailable, cross } = entry;
           if (cross) continue;
-          recordMemoryDungeon(player, { token: `endless-entry:${run.id}` });
           if (freeAvailable) {
             // 周末免费：不扣秘钥与心神，仅标记本周额度已用
             player[WEEKEND_FREE_FIELD] = freeWeekKey;
@@ -3558,6 +3557,9 @@ export class EndlessRealm extends plugin {
             );
           }
           player.无尽劫境次数 = (Number(player.无尽劫境次数) || 0) + 1;
+          if (['clear', 'defeat'].includes(run.settlement.reason)) {
+            recordMemoryDungeon(player, { token: `endless-entry:${run.id}` });
+          }
           player.无尽劫境结算记录 = [...records, run.settlement.id].slice(-30);
           // 无尽至宝：本趟打到第25关 → 解锁一件永久随机至宝（已全收集则升级）
           if (highestClearedLayer >= ENDLESS_TREASURE_UNLOCK_LAYER) {

@@ -1297,6 +1297,13 @@ function buildXianguDefeatChoiceMenu(pending) {
   ].join('\n');
 }
 
+function recordXianguMemoryCompletion(player, playerId, summary) {
+  if (!['normal', 'forced'].includes(summary?.exitMode)) return;
+  const startedAt = summary.startedAt ?? player.xiangu_entry_time;
+  if (!Number.isFinite(Number(startedAt)) || Number(startedAt) <= 0) return;
+  recordMemoryDungeon(player, { token: `xiangu-entry:${playerId}:${startedAt}` });
+}
+
 async function ejectXianguPlayerKilled(player, player_qq, reason, victim = null) {
   // 原著NPC胜利剧情记录需在清理会话之前完成
   if (victim?.npcId) {
@@ -1317,6 +1324,7 @@ async function ejectXianguPlayerKilled(player, player_qq, reason, victim = null)
   summary.exitMode = 'forced';
   summary.exitReason = reason || 'npc_slaughter';
   summary.lostLootUnits = summary.lootUnits;
+  recordXianguMemoryCompletion(player, player_qq, summary);
   clearXianguSessionState(player, summary);
   await Write_player(player_qq, player);
   try {
@@ -2067,6 +2075,7 @@ async function applyXianguEvacuationSettlement(player, playerId, receipt) {
     player.学习的功法 = learned;
   }
 
+  recordXianguMemoryCompletion(player, playerId, payload.summary);
   clearXianguSessionState(player, payload.summary || {});
   return cloneXianguSettlementData(settlement);
 }
@@ -2652,7 +2661,6 @@ export class xianguPlace extends plugin {
     initXianguRealmMap(player);
     await syncXianguSharedMapState(player);
 
-    recordMemoryDungeon(player, { token: `xiangu-entry:${player_qq}:${nowTime}` });
     await Write_player(player_qq, player);
     await recoverXianguClaimBagRewards(player, player_qq);
 
@@ -5931,6 +5939,7 @@ async XianguYiShenWeiZhong(e) {
           targetSummary.exitMode = 'forced';
           targetSummary.exitReason = 'defeated';
           targetSummary.lostLootUnits = targetSummary.lootUnits;
+          recordXianguMemoryCompletion(targetPlayer, targetId, targetSummary);
           clearXianguSessionState(targetPlayer, targetSummary);
           resultMsg.push(`对方未能安全撤离，秘境背包中的${targetSummary.lootUnits}份收获全部遗失。`);
           targetForcedExit = true;
@@ -5993,6 +6002,7 @@ async XianguYiShenWeiZhong(e) {
           playerSummary.exitMode = 'forced';
           playerSummary.exitReason = 'defeated';
           playerSummary.lostLootUnits = playerSummary.lootUnits;
+          recordXianguMemoryCompletion(player, player_qq, playerSummary);
           clearXianguSessionState(player, playerSummary);
           resultMsg.push(`你未能安全撤离，秘境背包中的${playerSummary.lootUnits}份收获全部遗失。`);
           playerForcedExit = true;

@@ -1,4 +1,4 @@
-import { getMemoryEffects } from './memoryPath.js';
+import { getMemoryDungeonCost } from './memoryPath.js';
 
 function withRewardTiers(dungeon) {
   const level = Math.max(1, Number(dungeon.requiredLevel) || 1);
@@ -48,14 +48,14 @@ export function getShengxuDungeonPlane(dungeon) {
 }
 
 /** 入场成本随花粉境界与怪物强度增长，寿元成本随基础探索时长增长。 */
-export function getShengxuExploreCost(dungeon) {
+export function getShengxuExploreCost(dungeon, player) {
   const level = Math.max(1, Math.trunc(Number(dungeon?.requiredLevel) || 1));
   const scale = Math.max(0.1, Number(dungeon?.scale) || 1);
   return {
-    xiuwei: Math.max(1, Math.round(1000000 * level * scale)),
-    xueqi: Math.max(1, Math.round(1000000 * level * scale)),
-    lingshi: Math.max(1, Math.round(500000 * level * scale)),
-    shouyuan: Math.max(1, Math.ceil((Number(dungeon?.duration) || 5) / 5)),
+    xiuwei: getMemoryDungeonCost(player, Math.max(1, Math.round(1000000 * level * scale))),
+    xueqi: getMemoryDungeonCost(player, Math.max(1, Math.round(1000000 * level * scale))),
+    lingshi: getMemoryDungeonCost(player, Math.max(1, Math.round(500000 * level * scale))),
+    shouyuan: getMemoryDungeonCost(player, Math.max(1, Math.ceil((Number(dungeon?.duration) || 5) / 5))),
   };
 }
 
@@ -78,7 +78,7 @@ export function getShengxuExploreDuration(player, dungeon) {
   const reduction = Object.entries(BREATHING_TIME_REDUCTION)
     .filter(([name]) => learned.includes(name))
     .reduce((max, [, value]) => Math.max(max, value), 0);
-  return Math.max(SHENGXU_EXPLORE_MIN_DURATION_MIN, base - reduction) / getMemoryEffects(player).dungeonSpeed;
+  return Math.max(SHENGXU_EXPLORE_MIN_DURATION_MIN, base - reduction);
 }
 
 export const SHENGXU_FACTIONS = Object.freeze({
