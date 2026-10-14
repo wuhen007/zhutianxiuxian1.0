@@ -1,4 +1,5 @@
 import { data, plugin, puppeteer, Show } from '../api/api.js';
+import { recordMemoryDungeon } from '../model/memoryPath.js';
 import {
   Add_najie_thing,
   Read_equipment,
@@ -2464,6 +2465,7 @@ export class EndlessRealm extends plugin {
         for (const entry of players) {
           const { id, player, heartCost, freeAvailable, cross } = entry;
           if (cross) continue;
+          recordMemoryDungeon(player, { token: `endless-entry:${run.id}` });
           if (freeAvailable) {
             // 周末免费：不扣秘钥与心神，仅标记本周额度已用
             player[WEEKEND_FREE_FIELD] = freeWeekKey;
@@ -3793,6 +3795,7 @@ export class EndlessRealm extends plugin {
           (Number(player[ENDLESS_TOKEN]) || 0) + reward.tokens;
         player.无尽劫境扫荡次数 =
           (Number(player.无尽劫境扫荡次数) || 0) + 1;
+        recordMemoryDungeon(player, { token: `endless-sweep:${userId}:${player.无尽劫境扫荡次数}` });
         await Write_player(userId, player);
       } catch (error) {
         const failures = [];

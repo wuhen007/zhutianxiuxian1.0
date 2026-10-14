@@ -150,7 +150,9 @@ async function buildFlowerDaoGainContext(userId, player, ancestorSeed) {
   const titleBonus = getTitleWudaoBonus(player);
   const rootRaw = Number(player.灵根?.悟道加成 ?? player.灵根?.eff) || 0;
   const rootBonus = Math.max(-0.5, Math.min(0.5, Math.abs(rootRaw) > 1 ? rootRaw / 100 : rootRaw));
-  const physiqueBonus = getPhysiqueWudaoBonus(player.灵根?.name) || rootBonus;
+  const physiqueBonus = player.灵根?.type === '记忆命途'
+    ? getPhysiqueWudaoBonus(player.灵根?.name, player)
+    : getPhysiqueWudaoBonus(player.灵根?.name, player) || rootBonus;
   const kongtong = getKongtongModifiers(player);
   const imperialWudao = kongtong.decree?.type === '修炼'
     && kongtong.decree.plane === getPlayerPlaneName(player);

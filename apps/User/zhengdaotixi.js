@@ -1,3 +1,4 @@
+import { getMemoryEffects } from '../../model/memoryPath.js';
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'path';
@@ -949,11 +950,11 @@ async changeAptitude(e) {
   // 内联构建天资数据对象（替代不存在的 getPlayerAptitudeData 函数）
   const targetAptitudeData = {
     grade: targetPlayer.天资等级 || '平庸之资',
-    index: aptitudeSequence.indexOf(targetPlayer.天资等级 === '岁云' ? '无演无尽' : (targetPlayer.天资等级 || '平庸之资'))
+    index: aptitudeSequence.indexOf(['岁云', '星神之资'].includes(targetPlayer.天资等级) ? '无演无尽' : (targetPlayer.天资等级 || '平庸之资'))
   };
   const invokerAptitudeData = {
     grade: invoker.天资等级 || '平庸之资',
-    index: aptitudeSequence.indexOf(invoker.天资等级 === '岁云' ? '无演无尽' : (invoker.天资等级 || '平庸之资'))
+    index: aptitudeSequence.indexOf(['岁云', '星神之资'].includes(invoker.天资等级) ? '无演无尽' : (invoker.天资等级 || '平庸之资'))
   };
 
   // 检查新的天资是否有效
@@ -2533,7 +2534,7 @@ async createEverythingLocked(e, player_qq) {
     const juelingItems = causalDebtResult.backlash?.jueling
       ? await (async () => {
           const najie = await Read_najie(player_qq);
-          const { items } = computeJuelingErasure(najie, causalDebtResult.backlash.jueling.years);
+          const { items } = computeJuelingErasure(najie, causalDebtResult.backlash.jueling.years, { player });
           if (items.length > 0) await Write_najie(player_qq, najie);
           return items;
         })()
@@ -2892,7 +2893,7 @@ async handleTeach(e, isAll = false) {
     }
 
     // === 传授冷却检查（累计10门功法后进入24小时冷却） ===
-    const TEACH_COOLDOWN_HOURS = 24;
+    const TEACH_COOLDOWN_HOURS = 24 * getMemoryEffects(caster).teachCooldownMultiplier;
     const TEACH_COUNT_THRESHOLD = 10;
     const teachCDKey = `xiuxian:player:${casterQQ}:teach_cooldown_until`;
     const teachCountKey = `xiuxian:player:${casterQQ}:teach_count`;
@@ -3002,6 +3003,7 @@ async handleTeach(e, isAll = false) {
         "万古无双": 8,   // 可学仙帝法(8)
         "无演无尽": 9,   // 可学神慧者(9)
         "岁云": 9,
+    "星神之资": 9,
         "无化如是": -1   // 什么都学不了
     };
     
@@ -3175,7 +3177,7 @@ async handleTeach(e, isAll = false) {
         }
         
         // === 施法者元神消耗（按功法难度递增） ===
-        const { potential: potentialCost, spirit: casterSpiritCost } = getTeachingCosts(gongfaLevel);
+        const { potential: potentialCost, spirit: casterSpiritCost } = getTeachingCosts(gongfaLevel, target);
         const casterYuanShen = caster.元神 || 0;
         if (casterYuanShen < casterSpiritCost) {
             e.reply([
@@ -3368,7 +3370,7 @@ async handleTeach(e, isAll = false) {
             continue;
         }
         
-        const reservation = reserveTeachingCosts({ remainingPotential, remainingSpirit }, gongfaLevel);
+        const reservation = reserveTeachingCosts({ remainingPotential, remainingSpirit }, gongfaLevel, target);
         if (!reservation.ok && reservation.reason === 'potential') {
             failedByPotential.push(`${gongfaName}(潜力不足)`);
             continue;

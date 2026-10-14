@@ -3,6 +3,7 @@ import { hasRealmAuthority } from '../../model/realmAuthority.js';
 import { TIME_RIVER_PHASE_DURATION_MS } from '../../model/timeRiverAdversary.js';
 import { isTimeRiverLocation, PLACE_LOCATION_MAP } from '../../model/weimianTravel.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { recordMemoryDungeon } from '../../model/memoryPath.js';
 import { getFashanActionKey, isFashanActionPending, isFashanReady, requireActorAtPlane } from '../../model/fashanProxy.js';
 import { buildPlaneDestroyedMessage, getPlaneDestructionInfo } from '../../model/planeDestruction.js';
 
@@ -33,6 +34,15 @@ import {
 } from '../../model/xiuxian.js';
 import Show from "../../model/show.js";
 import puppeteer from "../../../../lib/puppeteer/puppeteer.js";
+
+async function recordMemoryTimeRiverEntry(playerId, action) {
+  return withPlayerMutationLock(playerId, async () => {
+    const player = await Read_player(playerId);
+    const token = `time-river-entry:${action.taskId || action.timeRiverTeamId || 'body'}:${action.start_time || action.end_time}`;
+    if (recordMemoryDungeon(player, { token }).applied) await Write_player(playerId, player);
+  });
+}
+
 export class shijianchanghe extends plugin {
   constructor() {
     super({
@@ -257,6 +267,7 @@ export class shijianchanghe extends plugin {
     for (const { id, player } of players) {
       await Write_player(id, player);
       await redis.set(`xiuxian:player:${id}:action`, JSON.stringify(action));
+      await recordMemoryTimeRiverEntry(id, action);
       await redis.set(`xiuxian:time_river:end_time:${id}`, endTime);
       await Add_renwu_progress(id, 'jilu3');
     }
@@ -324,6 +335,7 @@ export class shijianchanghe extends plugin {
       player.法身行动 = '遨游时间长河';
       await Write_player(userId, player);
       await redis.set(actionKey, JSON.stringify(action));
+      await recordMemoryTimeRiverEntry(userId, action);
       await withPlayerMutationLock('time-river-active-index', async () => {
         const key = 'xiuxian:time_river:active_players:fashan';
         let active = [];
@@ -416,6 +428,7 @@ export class shijianchanghe extends plugin {
     await redis.set('xiuxian:time_river:active_players', JSON.stringify(playersList));
   });
   await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
+  await recordMemoryTimeRiverEntry(usr_qq, arr);
        // 回复玩家
       e.reply([
           `你的真身踏入了时间长河，逆流而上！`,

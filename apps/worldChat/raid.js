@@ -1,4 +1,5 @@
 import { hasSuiyunSkills, SUIYUN_EXCLUSIVE_SKILLS } from '../../model/suiyun.js';
+import { getMemoryStage, getMemoryFactorTier, MEMORY_FACTORS } from '../../model/memoryPath.js';
 
 const NUMBER_FIELDS = [
   '攻击', '防御', '当前血量', '血量上限', '速度', '暴击率', '暴击伤害',
@@ -48,6 +49,12 @@ export function createCrossRaidAvatar(player) {
     花粉路分支: String(player?.花粉路分支 || '').slice(0, 10),
   };
   for (const field of NUMBER_FIELDS) avatar[field] = finiteNumber(player?.[field]);
+  if (getMemoryStage(player)) {
+    avatar.记忆命途 = { 因子: Object.fromEntries(MEMORY_FACTORS.flatMap(name => {
+      const tier = getMemoryFactorTier(player, name);
+      return tier ? [[name, tier]] : [];
+    })) };
+  }
   // Export only a validated recipient's skill grant, without exposing either QQ.
   if (hasSuiyunSkills({ ...player, 灵根: { name: '跨服月华资格校验' } })) {
     avatar.月华传承 = {

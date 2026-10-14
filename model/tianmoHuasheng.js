@@ -1,4 +1,5 @@
 import { getActiveZhutianAvatarName } from "./zhutianMirror.js";
+import { canRefineMemoryTarget } from './memoryPath.js';
 
 export const TIANMO_HUASHENG_TECHNIQUE = "天魔化生功";
 export const JIDAO_TIANMO_PHYSIQUE = "极道天魔";
@@ -173,6 +174,9 @@ export function getRefinementAvailability(
   now = Date.now(),
   target = null
 ) {
+  if (target && !canRefineMemoryTarget(player, target)) {
+    return { ok: false, reason: '天空因子护持目标本源，当前境界不足以炼化。', waitMs: 0 };
+  }
   const avatarName = getActiveZhutianAvatarName(player);
   if (avatarName) {
     return { ok: false, reason: "avatar_loaded", avatarName, waitMs: 0 };

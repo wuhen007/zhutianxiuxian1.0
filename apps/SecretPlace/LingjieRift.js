@@ -38,6 +38,8 @@ import {
   formatGongfaProficiency,
 } from '../../model/gongfaProficiency.js';
 import { adjustDaoHeart } from '../../model/daoHeart.js';
+import { recordMemoryDungeon } from '../../model/memoryPath.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
 import {
   getLocationByCoord,
@@ -259,7 +261,9 @@ export class LingjieRift extends plugin {
   async exploreRift(e) {
     const result = await this.getPlayer(e);
     if (result.error) return e.reply(result.error);
-    const { qq, player } = result;
+    const { qq } = result;
+    return withPlayerMutationLock(qq, async () => {
+    const player = await Read_player(qq);
     const rift = await this.readRift();
     const requestedCoordinate = e.msg === '#探索灵界裂缝'
       ? null
@@ -301,6 +305,7 @@ export class LingjieRift extends plugin {
 
     const now = Date.now();
     const task = {
+      taskId: `rift:${rift.id}:${qq}:${now}:${attempts.used + 1}`,
       qq,
       playerName: player.名号,
       groupId: e.group_id || null,
@@ -319,10 +324,19 @@ export class LingjieRift extends plugin {
       Place_actionplus: '1',
       riftId: rift.id,
     };
-    await redis.multi()
-      .set(taskKey, JSON.stringify(task), { EX: 24 * 60 * 60 })
-      .set(`xiuxian:player:${qq}:action`, JSON.stringify(playerAction))
-      .exec();
+    try {
+      await redis.multi()
+        .set(taskKey, JSON.stringify(task), { EX: 24 * 60 * 60 })
+        .set(`xiuxian:player:${qq}:action`, JSON.stringify(playerAction))
+        .exec();
+      if (recordMemoryDungeon(player, { token: `entry:${task.taskId}` }).applied) {
+        await Write_player(qq, player);
+      }
+    } catch (error) {
+      await redis.del(taskKey);
+      await this.clearRiftAction(task);
+      throw error;
+    }
 
     return e.reply([
       '【灵界裂缝·开始探索】',
@@ -333,6 +347,7 @@ export class LingjieRift extends plugin {
       `预计完成：${new Date(task.end_time).toLocaleString('zh-CN')}`,
       '探索结束后将自动遭遇裂缝生灵。',
     ].join('\n'));
+    });
   }
 
   async tick() {

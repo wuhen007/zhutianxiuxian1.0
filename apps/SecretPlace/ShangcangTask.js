@@ -1,4 +1,6 @@
 import { getSuiyunEffects } from '../../model/suiyun.js';
+import { getMemoryEffects, recordMemoryDungeon } from '../../model/memoryPath.js';
+import { isItemPermanentlyNonTradeable } from '../../model/equipmentTransfer.js';
 import fs from 'fs';
 import { plugin, config, data } from '../../api/api.js';
 import {
@@ -304,9 +306,18 @@ export class ShangcangTask extends plugin {
 
     if (battle.winner === 'A') {
       const multiplier = getDungeonFortuneMultiplier(player) * getInnateDungeonRewardMultiplier(player)
-        * getSuiyunEffects(player).lootMultiplier;
+        * getSuiyunEffects(player).lootMultiplier * getMemoryEffects(player).lootMultiplier;
       const rewardPlace = data.shangcang_list.find(place => place.name === location) || action.Place_address;
       rewards.push(...rollShangcangRewards(rewardPlace, Math.random, multiplier));
+      for (const tier of getMemoryEffects(player).guaranteedDrops) {
+        const pool = (rewardPlace?.[tier] || []).filter(item => !isItemPermanentlyNonTradeable(item));
+        if (!pool.length || rewards.some(reward => pool.some(item => item.name === reward.name))) continue;
+        const seed = [...`${settlementId}:${tier}`].reduce((value, char) => (value * 31 + char.charCodeAt(0)) >>> 0, 0);
+        const item = pool[seed % pool.length];
+        if (!rewards.some(reward => reward.name === item.name)) {
+          rewards.push({ name: item.name, class: item.class, count: getMemoryEffects(player).lootMultiplier });
+        }
+      }
       for (const [index, reward] of rewards.entries()) {
         await Add_najie_thing(
           playerId,
@@ -323,6 +334,7 @@ export class ShangcangTask extends plugin {
     }
 
     action.settled_count = Math.max(0, Number(action.settled_count) || 0) + 1;
+    if (addiction) recordMemoryDungeon(player, { token: settlementId });
     let stopReason = '';
     if (addiction && action.settled_count < Number(action.total_count)) {
       const shortage = getShangcangCostShortage(player);

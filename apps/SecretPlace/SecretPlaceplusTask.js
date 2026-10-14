@@ -42,7 +42,10 @@ import {
 import RealmEvents from '../tasks/RealmEvents.js';
 import { getInnateDungeonRewardMultiplier } from '../../model/innateTreasure.js';
 import { getSuiyunEffects } from '../../model/suiyun.js';
+import { getMemoryEffects, recordMemoryDungeon } from '../../model/memoryPath.js';
+import { isItemPermanentlyNonTradeable } from '../../model/equipmentTransfer.js';
 import { rollAndGrantSuiyunRemnant } from '../../model/suiyunRegistry.js';
+import { rollAndGrantMemoryData } from '../../model/memoryRegistry.js';
 import {
   awardDungeonGongfaProficiency,
   formatGongfaProficiency,
@@ -263,6 +266,8 @@ export class SecretPlaceplusTask extends plugin {
               命运终章已领悟: player.命运终章已领悟,
               神慧: player.神慧,
               圣法碎片: player.圣法碎片,
+              记忆命途: structuredClone(player.记忆命途),
+              生命本源: player.生命本源,
               速度: player.速度,
               mijinglevel_id: player.mijinglevel_id,
               xiangulevel_id: player.xiangulevel_id,
@@ -999,7 +1004,7 @@ if (weizhi.name === "紫薇星域") {
                     ];
                     
                     // 获取玩家当前天资等级索引
-                    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
+                    const currentAptitudeIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
                     // 最低要求天资等级索引（天纵之资，索引6）
                     const minAptitudeIndex = 6;
                      const tianxuanbufa = await checkGongfaInServer('天璇步法');
@@ -1785,6 +1790,7 @@ if (player.灵根.type === "魔卡少女·完全") {
             const innateDungeonMultiplier = getInnateDungeonRewardMultiplier(player) * getSuiyunEffects(player).lootMultiplier;
             dungeonFortuneMultiplier = redDustDungeonMultiplier * innateDungeonMultiplier;
             n *= dungeonFortuneMultiplier;
+            n *= getMemoryEffects(player).lootMultiplier;
             if (redDustDungeonMultiplier > 1) last_msg += '红尘历练签显化，副本物品收益再度翻倍。';
             if (innateDungeonMultiplier > 1) last_msg += '先天至宝权柄显化，副本物品收益获得加成。';
             if (player.先天权柄?.盘古开天待用) delete player.先天权柄.盘古开天待用;
@@ -1834,6 +1840,17 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
               }],经过一番战斗，击败对手,获得修为${xiuwei},气血${qixue},剩余血量${
     Data_battle.A_hp
               },剩余次数${action.total_count - action.settled_count - 1}`;
+              for (const tier of getMemoryEffects(player).guaranteedDrops) {
+                const pool = (weizhi?.[tier] || []).filter(item => !isItemPermanentlyNonTradeable(item));
+                if (!pool.length || (n > 0 && pool.some(item => item.name === thing_name))) continue;
+                const token = `memory-law:${action.taskId || action.start_time || action.end_time}:${weizhi.name}:${action.settled_count}:${tier}`;
+                const seed = [...token].reduce((value, char) => (value * 31 + char.charCodeAt(0)) >>> 0, 0);
+                const item = pool[seed % pool.length];
+                const amount = getMemoryEffects(player).lootMultiplier;
+                await Add_najie_thing(player_id, item.name, item.class, amount, undefined, 1, { idempotencyKey: token });
+                await recordItemToHistory(player_id, item.name, item.class, amount);
+                last_msg += ` 律法因子保底获得【${item.name}】×${amount}。`;
+              }
               const zhetianResult = resolveZhetianDungeonVictory(player, {
                 dungeon: weizhi?.name,
                 hasCrystal: weizhi?.name === '火域'
@@ -1898,6 +1915,12 @@ if (player.level_id > 42 && player.Physique_id > 42 &&
                 { location: weizhi?.name },
               );
               if (suiyunEncounter.encountered) last_msg += '\n往世星海深处，一缕【岁云的残念】落入纳戒。使用后可开启月华之体。';
+              const memoryEncounter = await rollAndGrantMemoryData(
+                { ...player, id: player_id },
+                ({ idempotencyKey }) => Add_najie_thing(player_id, '奇怪的数据', '道具', 1, undefined, undefined, { idempotencyKey }),
+                { location: weizhi?.name },
+              );
+              if (memoryEncounter.encountered) last_msg += '\n往世星海中捕获【奇怪的数据】×1，消耗后开启记忆命途。';
               const shengfaEncounter = rollShengfaDungeonEncounter(player);
               if (shengfaEncounter.encountered) {
                 await Add_najie_thing(player_id, '圣法碎片', '道具', 1);
@@ -2018,7 +2041,7 @@ if (random < 0.0001) {
     ];
     
     // 获取当前天资位置
-    const currentIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
+    const currentIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
     
     // 如果玩家天资不在序列中（可能是旧数据），统一修正到轮回最低档
     if (currentIndex === -1) {
@@ -2390,6 +2413,9 @@ ${aptitudeEvaluations[newAptitude]}
 
   // 结算后更新动作状态
 action.settled_count++;
+if (!action.memoryEntryRecorded) recordMemoryDungeon(player, {
+  token: `round:${action.taskId || action.start_time || action.end_time}:${weizhi?.name}:${action.settled_count}`,
+});
 
   if (options.taskId && !(await ownsAction())) return false;
 

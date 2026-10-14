@@ -512,7 +512,7 @@ async yaochi(e) {
         '无化如是', '生而愚痴','天弃之人', '先天不足', '平庸之资', '超凡资质', 
         '天纵之资', '旷世奇才', '绝世天骄', '万古无双', '无演无尽'
     ];
-    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
+    const currentAptitudeIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
     
     // 瑶池入门基础资质要求：至少平庸之资
     if (currentAptitudeIndex < 4) {
@@ -976,7 +976,7 @@ async zhiweijinsheng(e) {
     }
     
     // 获取玩家当前天资等级索引
-    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
+    const currentAptitudeIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
     
     // 检查境界是否足够
     if (!player.mijinglevel_id || player.mijinglevel_id < positionInfo.level_required) {

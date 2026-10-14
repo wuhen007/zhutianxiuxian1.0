@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getPlayerPlaneName } from './planeCoords.js';
 import { getDungeonGongfaReduction } from './gongfaProficiency.js';
+import { getMemoryEffects } from './memoryPath.js';
 import { hasPercentageStats } from './tianjiaoTaint.js';
 import { isNameablePercentageEquipment } from './equipmentStats.js';
 import { writeJsonAtomically } from '../utils/atomicJson.js';
@@ -949,7 +950,7 @@ export function applyNewTreasureDamageRules(attacker, defender, damage) {
 
 export function getDungeonTimedActionMultiplier(player) {
   const technique = getDungeonGongfaReduction(player);
-  return Math.max(0.5, getTimedActionMultiplier(player) * (1 - technique.rate));
+  return Math.max(0.5, getTimedActionMultiplier(player) * (1 - technique.rate)) / getMemoryEffects(player).dungeonSpeed;
 }
 
 // 逐日仙辇穿梭维度壁垒时「瞬间穿梭」的极小概率（1%）

@@ -1,4 +1,6 @@
 import { getSuiyunEffects } from '../../model/suiyun.js';
+import { getMemoryEffects } from '../../model/memoryPath.js';
+import { getLearningPotentialCost } from '../../model/gongfaTeaching.js';
 import { isItemPermanentlyNonTradeable } from '../../model/equipmentTransfer.js';
 import { applyItemDiscard, DISCARD_USAGE, formatDiscardChoice, planItemDiscard } from '../../model/itemDiscard.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
@@ -1843,7 +1845,8 @@ padLeft(str, length) {
     "绝世天骄": 7,   // 可学十凶宝术(6)/仙王法(7)
     "万古无双": 8,   // 可学仙帝法(8)
     "无演无尽": 9,
-    "岁云": 9,   // 可学神慧者(9)
+    "岁云": 9,
+    "星神之资": 9,   // 可学神慧者(9)
     "无化如是": -1   // 什么都学不了
   };
   
@@ -1929,7 +1932,7 @@ const playerAptitudeLevel = aptitudeLevels[aptitudeLevel] ?? 2; // 默认为平�
   }
 
   // ========== 仙道潜力检查（批量学习） ==========
-  const potentialCost = gongfaLevel + 1; // 难度越高消耗越多（武学1点，神慧者10点）
+  const potentialCost = getLearningPotentialCost(player, gongfaLevel + 1);
   const currentPotential = player.仙道潜力 || 0;
   if (currentPotential < potentialCost) {
     failedGongfa.push(`${l.name}(仙道潜力不足，需${potentialCost}点，剩余${currentPotential}点)`);
@@ -1947,7 +1950,7 @@ const playerAptitudeLevel = aptitudeLevels[aptitudeLevel] ?? 2; // 默认为平�
     learnedGongfa.push(l.name);
   }
   // 保存数据
-if (totalPotentialCost > 0) {
+if (learnedGongfa.length > 0) {
     await Write_player(usr_qq, player);
     await player_efficiency(usr_qq);      // 更新效率（Add_player_学习功法原本做的）
 }
@@ -2713,7 +2716,7 @@ if (weizhi.name === "紫薇星域") {
                     ];
                     
                     // 获取玩家当前天资等级索引
-                    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
+                    const currentAptitudeIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
                     // 最低要求天资等级索引（天纵之资，索引6）
                     const minAptitudeIndex = 6;
                      const tianxuanbufa = await checkGongfaInServer('天璇步法');
@@ -3523,7 +3526,7 @@ if (player.灵根.type === "魔卡少女·完全") {
   last_msg += '梦之杖绽放出彩虹般的光辉，透明牌的力量让探索中额外获得三件奖励 ';
 }
             }
-            n *= getSuiyunEffects(player).lootMultiplier;
+            n *= getSuiyunEffects(player).lootMultiplier * getMemoryEffects(player).lootMultiplier;
             // 条件：玩家境界>42，炼体>42，秘境<21，仙古<21，33%概率
 if (player.level_id > 42 && player.Physique_id > 42 && 
     player.mijinglevel_id < 14 && player.xiangulevel_id < 14 && 
@@ -3703,7 +3706,7 @@ if (random < 0.0001) {
     ];
     
     // 获取当前天资位置
-    const currentIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
+    const currentIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
     
     // 如果玩家天资不在序列中（可能是旧数据），统一修正到轮回最低档
     if (currentIndex === -1) {
@@ -4852,7 +4855,7 @@ if (weizhi.name === "紫薇星域") {
                     ];
                     
                     // 获取玩家当前天资等级索引
-                    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
+                    const currentAptitudeIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
                     // 最低要求天资等级索引（天纵之资，索引6）
                     const minAptitudeIndex = 6;
                      const tianxuanbufa = await checkGongfaInServer('天璇步法');
@@ -5610,7 +5613,7 @@ if (player.灵根.type === "魔卡少女·完全") {
   last_msg += '梦之杖绽放出彩虹般的光辉，透明牌的力量让探索中额外获得三件奖励 ';
 }
             }
-            n *= getSuiyunEffects(player).lootMultiplier;
+            n *= getSuiyunEffects(player).lootMultiplier * getMemoryEffects(player).lootMultiplier;
             // 条件：玩家境界>42，炼体>42，秘境<21，仙古<21，33%概率
 if (player.level_id > 42 && player.Physique_id > 42 && 
     player.mijinglevel_id < 14 && player.xiangulevel_id < 14 && 
@@ -5796,7 +5799,7 @@ if (random < 0.0001) {
     ];
     
     // 获取当前天资位置
-    const currentIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
+    const currentIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
     
     // 如果玩家天资不在序列中（可能是旧数据），统一修正到轮回最低档
     if (currentIndex === -1) {

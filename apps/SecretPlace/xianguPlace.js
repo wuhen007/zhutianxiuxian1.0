@@ -1,4 +1,5 @@
 import { plugin, verc, data, config } from '../../api/api.js';
+import { recordMemoryDungeon } from '../../model/memoryPath.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'fs';
 import path from 'path';
@@ -2651,6 +2652,7 @@ export class xianguPlace extends plugin {
     initXianguRealmMap(player);
     await syncXianguSharedMapState(player);
 
+    recordMemoryDungeon(player, { token: `xiangu-entry:${player_qq}:${nowTime}` });
     await Write_player(player_qq, player);
     await recoverXianguClaimBagRewards(player, player_qq);
 

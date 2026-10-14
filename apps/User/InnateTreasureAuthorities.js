@@ -795,6 +795,7 @@ export class InnateTreasureAuthorities extends plugin {
     const eraIndex = Number(set.Era?.current?.index ?? 2);
     const minggeEffects = getMinggeEffects(player, data.minggeList);
     const result = calculateWudaoResult({
+      player,
       rule,
       physiqueName: player.灵根?.name,
       eraIndex,

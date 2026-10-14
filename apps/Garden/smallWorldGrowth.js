@@ -1,5 +1,10 @@
 const BASE_GROWTH_SECONDS_PER_1000_AURA = 4 * 60 * 60;
 
+export function getMemoryCropGrowthMultiplier(crop) {
+  const multiplier = Number(crop?.记忆生长倍率);
+  return [1.5, 2, 3].includes(multiplier) ? multiplier : 1;
+}
+
 function parseTimeRatio(timeFlow = '1:1') {
   const [source, target] = String(timeFlow).split(':').map(Number);
   if (!Number.isFinite(source) || !Number.isFinite(target) || source <= 0 || target <= 0) {
@@ -13,7 +18,7 @@ export function calculateCropGrowthState(crop, seedConfig, world, now = new Date
   const worldAura = Number(world?.attributes?.灵气浓度) || 0;
   const requiredTime = (requiredAura / 1000) * BASE_GROWTH_SECONDS_PER_1000_AURA;
   const timeRatio = parseTimeRatio(world?.attributes?.时间流速);
-  const growthRate = worldAura / requiredAura;
+  const growthRate = worldAura / requiredAura * getMemoryCropGrowthMultiplier(crop);
 
   const startTime = new Date(crop?.种植时间 || crop?.阶段开始时间).getTime();
   const nowTime = now instanceof Date ? now.getTime() : new Date(now).getTime();

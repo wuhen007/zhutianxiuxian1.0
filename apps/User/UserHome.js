@@ -1,4 +1,6 @@
 import { getSuiyunEffects } from '../../model/suiyun.js';
+import { getMemoryEffects } from '../../model/memoryPath.js';
+import { getLearningPotentialCost } from '../../model/gongfaTeaching.js';
 import { plugin,  verc, data, config } from '../../api/api.js';
 import {
   calculateMinggeCost,
@@ -1045,7 +1047,7 @@ if (isLucky || player.灵根.type === "圆环之理" || getSuiyunEffects(player)
     }
 }
     
-    n *= getSuiyunEffects(player).lootMultiplier;
+    n *= getSuiyunEffects(player).lootMultiplier * getMemoryEffects(player).lootMultiplier * getMemoryEffects(player).fishingMultiplier;
 
     // 道法仙术提示（顺序与 CD 实际计算一致：先引潮灯减半，再道法-10）
     if (hasTideLamp) {
@@ -1066,7 +1068,8 @@ if (isLucky || player.灵根.type === "圆环之理" || getSuiyunEffects(player)
             ownsXianwuCoordinate:
                 Boolean(player.仙武界坐标已获得) || coordinateCount > 0,
         });
-        const amount = rollBaitRewardAmount(hasTideLamp);
+        const amount = rollBaitRewardAmount(hasTideLamp) * (reward.uniqueFlag ? 1
+          : getMemoryEffects(player).lootMultiplier * getMemoryEffects(player).fishingMultiplier);
         await Add_najie_thing(usr_qq, reward.name, reward.class, amount);
         if (reward.uniqueFlag) {
             player[reward.uniqueFlag] = true;
@@ -2622,7 +2625,7 @@ if (equipment.帝兵.name == "终古剑之主") {
     ];
 
     // 获取当前天资位置
-    const currentIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
+    const currentIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
     
     // === 特殊天资处理 ===
     if (player.天资等级 === '无化如是') {
@@ -3467,6 +3470,7 @@ if (thing_exist.type == '神药') {
                 }
             }
             if (thing_name == "天臂池") {
+                n *= getMemoryEffects(player).lootMultiplier * getMemoryEffects(player).fishingMultiplier;
                 if (player.饱食度 < 1000) {
                     e.reply('你快饿死了,还是先吃点东西吧');
                     return;
@@ -3507,6 +3511,7 @@ if (thing_exist.type == '神药') {
                 }
             }
             if (thing_name == "沉沦之海") {
+                n *= getMemoryEffects(player).lootMultiplier * getMemoryEffects(player).fishingMultiplier;
                 if (player.饱食度 < 5000) {
                     e.reply('你快饿死了,还是先吃点东西吧');
                     return;
@@ -3547,6 +3552,7 @@ if (thing_exist.type == '神药') {
                 }
             }
             if (thing_name == "星落湖") {
+                n *= getMemoryEffects(player).lootMultiplier * getMemoryEffects(player).fishingMultiplier;
                 if (player.饱食度 < 1000) {
                     e.reply('你快饿死了,还是先吃点东西吧');
                     return;
@@ -5380,7 +5386,7 @@ const aptitudeDescriptions = {
     await Add_najie_thing(usr_qq, "至尊血池浸泡资格", "道具", -1);
     
     // 获取玩家当前天资等级索引
-    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
+    const currentAptitudeIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
     
     // 检查是否已经提升过天资
     const hasAptitudeBoost = player.至尊血池提升标记 || false;
@@ -5535,7 +5541,7 @@ if (thing_name === "神秘花粉") {
     await Add_najie_thing(usr_qq, "神秘花粉", "道具", -1);
     
     // 获取玩家当前天资等级索引
-    const currentAptitudeIndex = aptitudeSequence.indexOf(player.天资等级 === '岁云' ? '无演无尽' : player.天资等级);
+    const currentAptitudeIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(player.天资等级) ? '无演无尽' : player.天资等级);
     
     // 检查是否已经提升过天资
     const hasAptitudeBoost = player.神秘花粉提升标记 || false;
@@ -6906,6 +6912,7 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
     "万古无双": 8,   // 可学仙帝法(8)
     "无演无尽": 9,   // 可学神慧者(9)
     "岁云": 9,
+    "星神之资": 9,
     "无化如是": -1   // 什么都学不了
   };
 
@@ -7019,7 +7026,7 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
 
   // ========== 仙道潜力检查（功法学习） ==========
   {
-    const potentialCost = gongfaLevel + 1; // 难度越高消耗越多（武学1点，神慧者10点）
+    const potentialCost = getLearningPotentialCost(player, gongfaLevel + 1);
     const currentPotential = player.仙道潜力 || 0;
     if (currentPotential < potentialCost) {
       e.reply([
@@ -7037,7 +7044,7 @@ if (thing_name == '道法仙术一日卡' ||thing_name == '道法仙术三日卡
   // ========== 仙道潜力检查结束 ==========
 
   // 计算本次学习消耗的潜力
-  const learnPotentialCost = 9 - gongfaLevel;
+  const learnPotentialCost = getLearningPotentialCost(player, 9 - gongfaLevel);
 
   // 学习功法
   await Add_najie_thing(usr_qq, thing_name, '功法', -1);

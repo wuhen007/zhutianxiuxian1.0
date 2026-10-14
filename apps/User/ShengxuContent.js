@@ -64,6 +64,9 @@ import {
   requireActorAtPlane,
 } from '../../model/fashanProxy.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { getMemoryEffects, recordMemoryDungeon } from '../../model/memoryPath.js';
+import { multiplySuiyunLoot } from '../../model/suiyunLoot.js';
+import { isItemPermanentlyNonTradeable } from '../../model/equipmentTransfer.js';
 
 function battleExcerpt(messages) {
   if (!Array.isArray(messages)) return [];
@@ -391,6 +394,7 @@ export class ShengxuContent extends plugin {
       const endTime = now + totalDurationMin * 60 * 1000;
       const task = {
         taskId: `${userId}:${actor}:${dungeon.name}:${now}`,
+        memoryEntryRecorded: totalCount === 1,
         mode: totalCount > 1 ? 'addiction' : 'single',
         actor,
         actorPlane,
@@ -434,6 +438,7 @@ export class ShengxuContent extends plugin {
           player.法身行动 = totalCount > 1 ? `沉迷圣墟·${dungeon.name}` : `探索圣墟·${dungeon.name}`;
           player.法身状态 = '行动中';
         }
+        if (task.memoryEntryRecorded) recordMemoryDungeon(player, { token: `entry:shengxu:${task.taskId}` });
         await Write_player(userId, player);
       } catch (error) {
         await redis.del(exploreKey);
@@ -663,6 +668,10 @@ export class ShengxuContent extends plugin {
       }
       mergeCombatProficiency(fresh, actorSource, attacker);
       fresh.圣墟副本最近结算[settlementKey] = settlementId;
+      if (task.mode === 'addiction' && !task.memoryEntryRecorded) {
+        // 每个真实执行轮次使用现成round taskId；法身收益始终写回fresh主存档。
+        recordMemoryDungeon(fresh, { token: `round:shengxu:${settlementId}` });
+      }
       let ancestorSeedGranted = false;
       let ancestorSeedReconciled = false;
       const reconcileAncestorSeed = async () => {
@@ -695,14 +704,28 @@ export class ShengxuContent extends plugin {
       reward.ancestorSeed = ancestorSeedRolled ? '花粉路祖种' : '';
       const tierRates = config.getConfig('xiuxian', 'xiuxian')?.SecretPlace || {};
       const tierReward = resolveShengxuTierReward(dungeon, Math.random, tierRates);
-      const addReward = (name, type, amount, slot) => Add_najie_thing(
-        userId, name, type, amount, undefined, 1, { idempotencyKey: `shengxu:${settlementId}:${slot}` }
-      );
-      await addReward(reward.medium, '道具', reward.amount, 'medium');
+      const addReward = async (name, type, amount, slot) => {
+        const count = multiplySuiyunLoot(fresh, { name, class: type }, amount);
+        await Add_najie_thing(userId, name, type, count, undefined, 1, { idempotencyKey: `shengxu:${settlementId}:${slot}` });
+        return count;
+      };
+      reward.amount = await addReward(reward.medium, '道具', reward.amount, 'medium');
       if (reward.gongfa) await addReward(reward.gongfa, '功法', 1, 'gongfa');
       if (reward.herb) await addReward(reward.herb, '道具', 1, 'herb');
       if (reward.fruit) await addReward(reward.fruit, '道具', 1, 'fruit');
-      if (tierReward) await addReward(tierReward.name, tierReward.class, tierReward.amount, `tier:${tierReward.tier}`);
+      if (tierReward) tierReward.amount = await addReward(tierReward.name, tierReward.class, tierReward.amount, `tier:${tierReward.tier}`);
+      const awardedNames = [reward.medium, reward.gongfa, reward.herb, reward.fruit, tierReward?.name].filter(Boolean);
+      for (const tier of getMemoryEffects(fresh).guaranteedDrops) {
+        const pool = (dungeon[tier] || []).filter(item => !isItemPermanentlyNonTradeable(item));
+        if (!pool.length || pool.some(item => awardedNames.includes(item.name))) continue;
+        const token = `memory-law:shengxu:${settlementId}:${tier}`;
+        const seed = [...token].reduce((value, char) => (value * 31 + char.charCodeAt(0)) >>> 0, 0);
+        const item = pool[seed % pool.length];
+        const count = multiplySuiyunLoot(fresh, item, item.amount || 1);
+        await Add_najie_thing(userId, item.name, item.class, count, undefined, 1, { idempotencyKey: token });
+        awardedNames.push(item.name);
+        lines.push(`律法因子保底获得【${item.name}】×${count}。`);
+      }
       if (reward.ancestorSeed) await reconcileAncestorSeed();
       fresh.进化积淀 = Math.max(0, Number(fresh.进化积淀) || 0) + reward.accumulation;
       fresh.修为 = Math.max(0, (Number(fresh.修为) || 0) + reward.xiuwei);

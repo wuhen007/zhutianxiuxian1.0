@@ -49,6 +49,7 @@ import { isEvilCultivator } from '../../model/tianjiaoHostility.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
 import { getSuiyunStage } from '../../model/suiyun.js';
+import { getMemoryStage } from '../../model/memoryPath.js';
 import { multiplySuiyunLoot } from '../../model/suiyunLoot.js';
 
 const REFINE_KEY = (qq, kind = 'calamity') => kind === 'overlord'
@@ -238,7 +239,7 @@ export class ForeignCalamity extends plugin {
             console.error(`[域外灾厄] 奖励结算暂缓 entity=${entity.id} player=${qq}`, error);
             reward = { pending: true, lines: ['奖励方案已经锁定，本次写盘暂缓。'] };
           }
-          if (isEvilCultivator(player) || getSuiyunStage(player)) {
+          if (isEvilCultivator(player) || getSuiyunStage(player) || getMemoryStage(player)) {
             await redis.set(REFINE_KEY(qq), JSON.stringify({
               entityId: entity.id,
               name: entity.名号,
@@ -249,7 +250,7 @@ export class ForeignCalamity extends plugin {
             }), { EX: 5 * 60 });
           }
         }
-        return { battle, entity, reward, overlordSpawn, evil: battle.winner === 'A' && isEvilCultivator(player), suiyun: battle.winner === 'A' && getSuiyunStage(player) > 0 };
+        return { battle, entity, reward, overlordSpawn, evil: battle.winner === 'A' && isEvilCultivator(player), suiyun: battle.winner === 'A' && getSuiyunStage(player) > 0, memory: battle.winner === 'A' && getMemoryStage(player) > 0 };
       });
     });
 
@@ -264,6 +265,7 @@ export class ForeignCalamity extends plugin {
       if (result.reward?.pending) lines.push('遗珍背包清理后发送 #领取域外战利品，可继续结算已锁定的奖励。');
       if (result.evil) lines.push('魔念牵引其残存本源：5分钟内发送 #天魔炼化灾厄 可再炼其道果。');
       if (result.suiyun) lines.push('月华笼罩灾厄本源：5分钟内发送 #月华炼化 灾厄，可获得月华值与生命本源。');
+      if (result.memory) lines.push('记忆封存灾厄本源：5分钟内发送 #六相冰封 灾厄。');
     } else {
       lines.push('', `【讨伐失利】${result.entity.名号}剩余气血：${bigNumberTransform(result.entity.当前血量)}/${bigNumberTransform(result.entity.血量上限)}`);
     }
@@ -355,7 +357,8 @@ export class ForeignCalamity extends plugin {
         });
         const evil = entity.status === 'defeated' && isEvilCultivator(player);
         const suiyun = entity.status === 'defeated' && getSuiyunStage(player) > 0;
-        if (evil || suiyun) {
+        const memory = entity.status === 'defeated' && getMemoryStage(player) > 0;
+        if (evil || suiyun || memory) {
           entity.refinement = {
             playerId: qq,
             expiresAt: Date.now() + 5 * 60 * 1000,
@@ -364,7 +367,7 @@ export class ForeignCalamity extends plugin {
           };
         }
         await saveForeignOverlord(entity);
-        if (evil || suiyun) {
+        if (evil || suiyun || memory) {
           try {
             await redis.set(REFINE_KEY(qq, 'overlord'), JSON.stringify({
               entityId: entity.id,
@@ -381,7 +384,7 @@ export class ForeignCalamity extends plugin {
         }
         let chainedSpawn = null;
         if (entity.status === 'defeated') chainedSpawn = await spawnForeignOverlordIfReady();
-        return { battle, entity, damage: settled.damage, revived: settled.revivedDuringBattle, chainedSpawn, evil, suiyun };
+        return { battle, entity, damage: settled.damage, revived: settled.revivedDuringBattle, chainedSpawn, evil, suiyun, memory };
       });
     });
 
@@ -394,6 +397,7 @@ export class ForeignCalamity extends plugin {
       lines.push('', `【灾厄魔主伏诛】${result.entity.名号}的道果开始崩解。`, '所有有效贡献者可发送 #领取魔主战利品 结算个人奖励与裂界残忆。');
       if (result.evil) lines.push('魔主本源已被你截留：5分钟内发送 #天魔炼化魔主；天魔化生一脉可折算0.5名玩家的化生进度。');
       if (result.suiyun) lines.push('魔主本源已被月华截留：5分钟内发送 #月华炼化 魔主。');
+      if (result.memory) lines.push('魔主本源已被记忆封存：5分钟内发送 #六相冰封 魔主。');
       if (result.chainedSpawn?.spawned) lines.push(`积压的灾息再度汇聚，新的魔主【${result.chainedSpawn.entity.名号}】已经降临。`);
     } else {
       lines.push(`魔主共享气血：${bigNumberTransform(result.entity.当前血量)}/${bigNumberTransform(result.entity.血量上限)}`);

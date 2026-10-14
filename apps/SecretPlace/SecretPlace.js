@@ -1,4 +1,6 @@
-import { hasSuiyunFreeDungeonEntry, getSuiyunDungeonEntryPlace } from '../../model/suiyun.js';
+import { hasSuiyunFreeDungeonEntry, getSuiyunDungeonEntryPlace, getSuiyunStage } from '../../model/suiyun.js';
+import { getMemoryStage, recordMemoryDungeon } from '../../model/memoryPath.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import fs from 'fs';
 import path from 'path';
 import { plugin, verc, data, config } from '../../api/api.js';
@@ -140,6 +142,15 @@ import {
 
 function isWeiMianDestroyed(planeName) {
     return getPlaneDestructionInfo(data.filePathMap.weimianList, planeName).destroyed;
+}
+
+async function recordMemoryEntry(playerId, action) {
+  return withPlayerMutationLock(playerId, async () => {
+    const player = await Read_player(playerId);
+    if (!getMemoryStage(player)) return;
+    const token = `entry:${action.taskId || action.end_time}:${action.Place_address?.name}:${action.actor || 'body'}`;
+    if (recordMemoryDungeon(player, { token }).applied) await Write_player(playerId, player);
+  });
 }
 
 async function replyPlaneDestroyed(e, planeName) {
@@ -1428,6 +1439,7 @@ async xunbao(e) {
         applySecretPlaceNotificationContext(action, e, usr_qq);
         await Write_player(usr_qq, player);
         await redis.set(`xiuxian:player:${usr_qq}:action`, JSON.stringify(action));
+    await recordMemoryEntry(usr_qq, action);
         return e.reply([
           `【上苍之上·${didian}】`,
           `已消耗：${formatShangcangCost(player)}`,
@@ -1596,6 +1608,7 @@ async Gojiehaiplace(e) {
     
     // 使用原键名存储真身行动
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
+    await recordMemoryEntry(usr_qq, arr);
     
     // 构建主文案
     const playerLevel = player.mijinglevel_id;
@@ -1862,6 +1875,7 @@ async Gosecretplace(e) {
             applySecretPlaceNotificationContext(arr, e, usr_qq);
             
             await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
+    await recordMemoryEntry(usr_qq, arr);
             
             // 发送消息
             e.reply(allMsgs.join('\n\n'));
@@ -1921,6 +1935,7 @@ async Gosecretplace(e) {
     applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
+    await recordMemoryEntry(usr_qq, arr);
 
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
@@ -2047,6 +2062,7 @@ async Goxiajie(e) {
     applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
+    await recordMemoryEntry(usr_qq, arr);
 
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
@@ -2168,6 +2184,7 @@ async Gojiutianshidi(e) {
     applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
+    await recordMemoryEntry(usr_qq, arr);
 
     // 一次性发送所有消息
     e.reply(allMsgs.join('\n\n'));
@@ -2304,6 +2321,7 @@ async Gozhetian(e) {
                 applySecretPlaceNotificationContext(arr, e, usr_qq);
                 
                 await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
+    await recordMemoryEntry(usr_qq, arr);
                 return e.reply(allMsgs.join('\n\n'));
             }
         }
@@ -2514,6 +2532,7 @@ async Gozhetian(e) {
     applySecretPlaceNotificationContext(arr, e, usr_qq);
     
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
+    await recordMemoryEntry(usr_qq, arr);
     
     // ==== 最终消息 ====
     allMsgs.push(`开始前往${didian}，${time}分钟后归来！`);
@@ -2641,6 +2660,7 @@ async Goforbiddenarea(e) {
             
             // 使用专用键存储法身行动
             await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
+    await recordMemoryEntry(usr_qq, arr);
             
             e.reply(fashanMsg);
             return true;
@@ -2743,6 +2763,7 @@ async Goforbiddenarea(e) {
     
     // 使用原键名存储真身行动
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
+    await recordMemoryEntry(usr_qq, arr);
     
     // 根据禁地类型添加特殊描述
     let locationDesc = "";
@@ -2924,6 +2945,7 @@ async GoTimeplace(e) {
             
             // 使用专用键存储法身行动
             await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
+    await recordMemoryEntry(usr_qq, arr);
             
             e.reply(fashanMsg);
             return true;
@@ -3038,6 +3060,7 @@ async GoTimeplace(e) {
     
     // 使用原键名存储真身行动
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
+    await recordMemoryEntry(usr_qq, arr);
     
     // 构建回复消息
     let replyMsg = '';
@@ -3066,21 +3089,23 @@ async Gofairyrealm(e) {
     let usr_qq = e.user_id.toString().replace('qg_', '');
     usr_qq = await channel(usr_qq);
     const player = await Read_player(usr_qq);
+    const didian = e.msg.replace('#镇守仙境', '').trim();
+    const privatePalace = didian === '岁云殿堂';
+    if (privatePalace && !getSuiyunStage(player)) return e.reply('岁云殿堂只接纳岁云月华五阶段传承者。');
     // 检查是否可以前往
     const flag = await Go(e);
     if (!flag) {
         return false;
     }
     // 诡异大祭·崩灭检查
-    if (isWeiMianDestroyed('仙界')) {
+    if (!privatePalace && isWeiMianDestroyed('仙界')) {
         return replyPlaneDestroyed(e, '仙界');
     }
      // 检查是否已在目标地点
-    if (player.power_place != PLACE_LOCATION_MAP['仙界']) {
+    if (!privatePalace && player.power_place != PLACE_LOCATION_MAP['仙界']) {
         return e.reply(`你不在仙界`);
     }
     
-    const didian = e.msg.replace('#镇守仙境', '').trim();
     
     // 获取仙境信息
     const weizhi = getSuiyunDungeonEntryPlace(player, data.Fairyrealm_list.find(item => item.name == didian));
@@ -3098,7 +3123,7 @@ async Gofairyrealm(e) {
     ).level_id;
     
     // 境界不足检查
-    if (now_level_id < 42 && player.lunhui == 0) {
+    if (!privatePalace && now_level_id < 42 && player.lunhui == 0) {
         return e.reply([
             `【轮回未启】`,
             `仙境乃仙人之地，非成仙者不可入！`,
@@ -3224,7 +3249,7 @@ if (didian === "往世星海") {
             await Add_najie_thing(usr_qq, '杀神崖通行证', '道具', -1);
         }
     } else {
-        if (!hasSuiyunFreeDungeonEntry(player) && await exist_najie_thing(usr_qq, '仙境优惠券', '道具') &&
+        if (!privatePalace && !hasSuiyunFreeDungeonEntry(player) && await exist_najie_thing(usr_qq, '仙境优惠券', '道具') &&
             player.魔道值 < 1 && 
             (player.灵根.type == '转生' || player.level_id > 41)) {
             dazhe = 0.5;
@@ -3352,6 +3377,7 @@ if (didian === "往世星海") {
                 applySecretPlaceNotificationContext(arr, e, usr_qq);
                 
                 await redis.set('xiuxian:player:' + usr_qq + ':action:fashan', JSON.stringify(arr));
+    await recordMemoryEntry(usr_qq, arr);
                 
                 // 发送消息
                 e.reply(allMsgs.join('\n\n'));
@@ -3396,6 +3422,7 @@ if (didian === "往世星海") {
     
     // 使用原键名存储真身行动
     await redis.set('xiuxian:player:' + usr_qq + ':action', JSON.stringify(arr));
+    await recordMemoryEntry(usr_qq, arr);
     
     // 根据仙境类型添加特殊描述
     let locationDesc = "";

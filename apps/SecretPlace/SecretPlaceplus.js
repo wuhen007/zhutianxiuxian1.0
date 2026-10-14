@@ -1,4 +1,5 @@
 import { hasSuiyunFreeDungeonEntry, getSuiyunDungeonEntryPlace } from '../../model/suiyun.js';
+import { getMemoryEffects, getMemoryStage, recordMemoryDungeon } from '../../model/memoryPath.js';
 import { plugin, verc, data } from '../../api/api.js';
 import { getMinggeEffects, getMinggeSecretPlaceReductionMs } from '../../model/mingge.js';
 import { isDaofaActive } from '../../model/daofa.js';
@@ -281,6 +282,7 @@ export class SecretPlaceplus extends plugin {
       if (!definition) return e.reply('未找到法身可用的副本类型。');
       const place = getSuiyunDungeonEntryPlace(player, definition.list?.find(item => item.name === request.location));
       if (!place) return e.reply(`未找到${request.category}地点：${request.location}`);
+      if (place.name === '岁云殿堂') return e.reply('岁云殿堂使用 #刻舟求剑 单次探索。');
       const expectedPlane = Number(definition.plane);
       const planeCheck = requireActorAtPlane(player, expectedPlane, 'fashan');
       if (!planeCheck.ok) {
@@ -392,6 +394,7 @@ export class SecretPlaceplus extends plugin {
         Place_action: '1', Place_actionplus: '0',
         mojie: '1', xijie: '1', plant: '1', mine: '1',
         Place_address: place,
+        memoryEntryRecorded: mode === 'explore',
       };
       applySecretPlaceNotificationContext(action, e, userId);
 
@@ -417,6 +420,9 @@ export class SecretPlaceplus extends plugin {
       player.法身行动 = `${mode === 'explore' ? '探索' : '沉迷'}${request.category}·${request.location}`;
       await Write_player(userId, player);
       await redis.set(actionKey, JSON.stringify(action));
+      if (mode === 'explore' && getMemoryStage(player)) {
+        if (recordMemoryDungeon(player, { token: `entry:${taskId}` }).applied) await Write_player(userId, player);
+      }
       await redis.set(getFashanHistoryKey(userId), JSON.stringify({
         taskId,
         start_time: now,
@@ -467,6 +473,7 @@ export class SecretPlaceplus extends plugin {
       Place_action: mode === 'explore' ? '0' : '1', Place_actionplus: mode === 'explore' ? '1' : '0',
       mojie: '1', xijie: '1', plant: '1', mine: '1',
       Place_address: place,
+      memoryEntryRecorded: mode === 'explore',
     };
     applySecretPlaceNotificationContext(action, e, userId);
     deductShangcangCost(player);
@@ -477,6 +484,9 @@ export class SecretPlaceplus extends plugin {
     player.法身行动 = `${mode === 'explore' ? '探索' : '沉迷'}上苍之上·${place.name}`;
     await Write_player(userId, player);
     await redis.set(getFashanActionKey(userId), JSON.stringify(action));
+    if (mode === 'explore' && getMemoryStage(player)) {
+      if (recordMemoryDungeon(player, { token: `entry:${taskId}` }).applied) await Write_player(userId, player);
+    }
     await redis.set(getFashanHistoryKey(userId), JSON.stringify({
       taskId,
       start_time: now,
@@ -1625,6 +1635,7 @@ async Gofairyrealm(e) {
     if (!weizhi) {
         return e.reply(`未找到仙境：${didian}`);
     }
+    if (didian === '岁云殿堂') return e.reply('岁云殿堂使用 #刻舟求剑 单次探索。');
     
     // 获取玩家数据
     let player = await Read_player(usr_qq);
@@ -1982,15 +1993,15 @@ function applyAddictionGongfaReduction(player, baseTime, time, messages) {
     const currentTime = Math.max(minimumTime, time);
     const technique = getDungeonGongfaReduction(player);
     if (technique.rate <= 0) {
-        return currentTime;
+        return currentTime / getMemoryEffects(player).dungeonSpeed;
     }
 
     const reduction = Math.min(currentTime - minimumTime, currentTime * technique.rate);
     if (reduction <= 0) {
-        return currentTime;
+        return currentTime / getMemoryEffects(player).dungeonSpeed;
     }
     messages.push(`【功法火候】${technique.name}额外缩短${reduction.toFixed(1)}分钟`);
-    return currentTime - reduction;
+    return (currentTime - reduction) / getMemoryEffects(player).dungeonSpeed;
 }
 
 /**

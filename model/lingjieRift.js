@@ -1,4 +1,5 @@
 import { getSuiyunEffects } from './suiyun.js';
+import { getMemoryEffects } from './memoryPath.js';
 import { isDaofaActive } from './daofa.js';
 import { getDungeonGongfaReduction } from './gongfaProficiency.js';
 import { PLACE_LOCATION_MAP } from './weimianTravel.js';
@@ -133,7 +134,9 @@ export function calculateRiftExploreDuration(player, minggeReductionMs = 0) {
     messages.push(`命格·秘境加速：-${Math.round(safeMinggeReductionMs / 1000)}秒`);
   }
 
-  const durationMs = Math.max(RIFT_MIN_EXPLORE_MS, RIFT_EXPLORE_MS - reductionMs);
+  const speed = getMemoryEffects(player).dungeonSpeed;
+  const durationMs = Math.max(RIFT_MIN_EXPLORE_MS, RIFT_EXPLORE_MS - reductionMs) / speed;
+  if (speed > 1) messages.push(`门径因子：探索速度×${speed}`);
   return {
     durationMs,
     reductionMs: RIFT_EXPLORE_MS - durationMs,
@@ -231,6 +234,11 @@ export function resolveRiftRewardBonus(player, random = Math.random) {
   if (suiyunMultiplier > 1) {
     multiplier *= suiyunMultiplier;
     messages.push(`云月造化：物品数量 ×${suiyunMultiplier}`);
+  }
+  const memoryMultiplier = getMemoryEffects(player).lootMultiplier;
+  if (memoryMultiplier > 1) {
+    multiplier *= memoryMultiplier;
+    messages.push(`记忆命途：物品数量×${memoryMultiplier}`);
   }
 
   if (rootType === '魔卡少女') {

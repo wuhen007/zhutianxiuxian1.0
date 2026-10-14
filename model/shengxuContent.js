@@ -1,3 +1,5 @@
+import { getMemoryEffects } from './memoryPath.js';
+
 function withRewardTiers(dungeon) {
   const level = Math.max(1, Number(dungeon.requiredLevel) || 1);
   const fruit = level >= 14 ? '祖种异果' : level >= 7 ? '本源异果' : '进化异果';
@@ -76,7 +78,7 @@ export function getShengxuExploreDuration(player, dungeon) {
   const reduction = Object.entries(BREATHING_TIME_REDUCTION)
     .filter(([name]) => learned.includes(name))
     .reduce((max, [, value]) => Math.max(max, value), 0);
-  return Math.max(SHENGXU_EXPLORE_MIN_DURATION_MIN, base - reduction);
+  return Math.max(SHENGXU_EXPLORE_MIN_DURATION_MIN, base - reduction) / getMemoryEffects(player).dungeonSpeed;
 }
 
 export const SHENGXU_FACTIONS = Object.freeze({

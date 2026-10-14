@@ -1,4 +1,6 @@
 import { plugin } from '../api/api.js';
+import { recordMemoryDungeon } from '../model/memoryPath.js';
+import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import yaml from 'yaml';
@@ -251,6 +253,12 @@ export class PlaneRiftFestival extends plugin {
     if (!result.ok) return e.reply(result.reason === 'used' ? '本次裂界你已经探索过了。' : '裂界已经闭合。');
     await Add_najie_thing(qq, PASS_NAME, '道具', -1);
     saveRiftState(state);
+    await withPlayerMutationLock(qq, async () => {
+      const currentPlayer = await Read_player(qq);
+      if (recordMemoryDungeon(currentPlayer, { token: `plane-rift-entry:${rift.id}` }).applied) {
+        await Write_player(qq, currentPlayer);
+      }
+    });
     return e.reply([
       `【踏入${rift.name}】`,
       `${PASS_NAME}化作一道稳定界门，你抵达裂界第一层。`,

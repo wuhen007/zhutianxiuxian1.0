@@ -1,4 +1,6 @@
 import { getSuiyunEffects } from '../../model/suiyun.js';
+import { getMemoryEffects } from '../../model/memoryPath.js';
+import { createMemoryTribulationState, tickMemoryTribulationRound, tryMemoryTimeRevival } from '../../model/memoryCombat.js';
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'path';
@@ -326,6 +328,14 @@ async restoreInterruptedTribulation(playerId, expectedAttemptId = null) {
 // ==== 遮天风格功法复活逻辑（生命本源消耗版）====
 async checkGongfaResurrection(e, player) {
     const playerId = await channel(String(e.user_id).replace('qg_', ''));
+    this.memoryTribulationStates ??= new WeakMap();
+    if (!this.memoryTribulationStates.has(player)) this.memoryTribulationStates.set(player, createMemoryTribulationState());
+    const memoryTime = tryMemoryTimeRevival(player, this.memoryTribulationStates.get(player));
+    if (memoryTime.revived) {
+      await Write_player(playerId, player);
+      await e.reply(memoryTime.message);
+      return true;
+    }
     console.log('【DEBUG】开始检查复活功法，当前生命本源：', player.生命本源 || 0);
 
     // 命格复活每次渡劫只判定一次，不消耗生命本源，也不占用功法冷却。
@@ -4785,6 +4795,8 @@ async command_kuluoqiyuan(e) {
  */
 enterTribulationState(player, equipment) {
   resetTribulationGongfaCooldowns(player);
+  this.memoryTribulationStates ??= new WeakMap();
+  this.memoryTribulationStates.set(player, createMemoryTribulationState());
 
   const snapshot = {
     攻击: player.攻击,
@@ -5092,7 +5104,9 @@ calcMaxAtkWithTribulationShifts(player, equipment = {}) {
  * 持有雷池真液时，本次渡劫按滴数减伤（每滴10%，上限50%，一次渡劫只扣一次）。
  */
 async applyTribulationDamage(player, originalDamage, equipment = {}) {
-  const { damage, messages } = this.applyGongfaEffects(player, originalDamage, equipment);
+  const resolved = this.applyGongfaEffects(player, originalDamage, equipment);
+  let damage = resolved.damage;
+  const messages = resolved.messages;
   if (player && !player._雷池真液已用) {
     try {
       const qq = String(player.id || player.qq || '');
@@ -5101,14 +5115,19 @@ async applyTribulationDamage(player, originalDamage, equipment = {}) {
         player._雷池真液已用 = true;
         const use = Math.min(5, Number(qty));
         await Add_najie_thing(qq, '雷池真液', '道具', -use);
-        const finalDamage = Math.max(1, Math.floor(damage * (1 - use * 0.1)));
+        damage = Math.max(1, Math.floor(damage * (1 - use * 0.1)));
         messages.push(`【雷池真液】淬体护道，减免${use * 10}%雷劫伤害（消耗${use}滴）`);
-        return { damage: finalDamage, messages };
       }
     } catch (error) {
       console.warn('[雷池真液] 渡劫减伤结算失败:', error);
     }
   }
+  this.memoryTribulationStates ??= new WeakMap();
+  if (!this.memoryTribulationStates.has(player)) this.memoryTribulationStates.set(player, createMemoryTribulationState());
+  const memoryState = this.memoryTribulationStates.get(player);
+  tickMemoryTribulationRound(memoryState);
+  const memoryTime = tryMemoryTimeRevival(player, memoryState, { damage });
+  if (memoryTime.revived) { messages.push(memoryTime.message); return { damage: 0, messages }; }
   return { damage, messages };
 }
 
@@ -5425,9 +5444,12 @@ applyGongfaEffects(player, originalDamage, equipment = {}) {
   };
 
 const suiyunEffects = getSuiyunEffects(player);
+const memoryEffects = getMemoryEffects(player);
 const rootEffect = suiyunEffects.tribulationReduction > 0
     ? { reduction: suiyunEffects.tribulationReduction, desc: '云月护体，岁月消劫', special: suiyunEffects.madoka ? '圆环之理' : null }
-    : bodyEffects[player.灵根?.name];
+    : memoryEffects.tribulationReduction > 0
+      ? { reduction: memoryEffects.tribulationReduction, desc: '记忆因子铭刻本源，抵御劫数', special: null }
+      : bodyEffects[player.灵根?.name];
 if (rootEffect) {
     const effect = rootEffect;
     const reducedDamage = finalDamage * effect.reduction;

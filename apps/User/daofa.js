@@ -102,7 +102,8 @@ const aptitudeMap = {
 '绝世天骄': 8,
 '万古无双': 9,
 '无演无尽': 10,
-'岁云': 10
+'岁云': 10,
+'星神之资': 10
 };
 // 天资等级序列
 const aptitudeSequence = [

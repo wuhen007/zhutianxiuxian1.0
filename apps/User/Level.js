@@ -1910,6 +1910,7 @@ async hudao(e) {
         dijingList: data.dijingList,
       });
       const result = calculateWudaoResult({
+        player,
         rule,
         physiqueName: player.灵根?.name,
         eraIndex,

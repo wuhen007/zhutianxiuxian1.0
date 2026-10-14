@@ -924,7 +924,8 @@ export class BOSS4 extends plugin {
     });
   }
 
-  async finalizePendingTianjiaoDeath(e, pending, qq, suppressRewards, { suiyun = false } = {}) {
+  async finalizePendingTianjiaoDeath(e, pending, qq, suppressRewards, { suiyun = false, namespace = 'suiyun' } = {}) {
+    if (!['suiyun', 'memory'].includes(namespace)) throw new Error('未知本源炼化来源');
     const lockKey = 'tianjiao:battle:lock';
     const lockToken = `pending:${qq}:${pending.token}:${Date.now()}:${Math.random()}`;
     if (!await redis.set(lockKey, lockToken, { NX: true, EX: 180 })) return null;
@@ -932,7 +933,7 @@ export class BOSS4 extends plugin {
     const tianjiaoData = data.weimiantianjiao_list.find(item => item.名号 === pending.tianjiaoName);
     if (!tianjiaoData) return null;
     if (pending.playerId && String(pending.playerId) !== String(qq)) return null;
-    const receiptKey = `suiyun:tianjiao-death:${pending.token}`;
+    const receiptKey = `${namespace}:tianjiao-death:${pending.token}`;
     if (suiyun) {
       const receiptRaw = await redis.get(receiptKey);
       if (receiptRaw) {
@@ -957,7 +958,7 @@ export class BOSS4 extends plugin {
     let deathReceipt;
     if (suiyun) {
       pending.suiyunOriginalExpiresAt ||= pending.expiresAt;
-      pending.stage = 'suiyun-settlement';
+      pending.stage = `${namespace}-settlement`;
       pending.expiresAt = Date.now() + 24 * 60 * 60 * 1000;
       await redis.set(this.getPendingEncounterKey(qq), JSON.stringify(pending), { EX: 24 * 3600 });
       deathReceipt = { key: receiptKey, ownerId: String(qq), token: pending.token, name: pending.tianjiaoName, sourceLifeEssence: Number(tianjiaoData.生命本源) || 100 };

@@ -29,10 +29,16 @@ import { releaseJuelingLifespanForAuthority } from './juelingLifespan.js';
 import { applyClowWishBattleWeakness } from './clowWish.js';
 import { findTalentSynchronizationMatch } from './talentSynchronization.js';
 import { getSuiyunEffects, getSuiyunLotusBonus, hasSuiyunSkills } from './suiyun.js';
+import { getMemoryStage } from './memoryPath.js';
 import { computePetStoredBonus, rebuildPlayerLucky, syncSuiyunLuckyBonus } from './petLuckyCalc.js';
+import {
+  consumeMemoryTrick, hasMemoryCombatEffects, recordMemoryAttack,
+  resetMemoryCombat, tickMemoryCombatRound, tryMemoryLethalSurvival,
+} from './memoryCombat.js';
 import {
   castSuiyunMoonSword, consumeSuiyunControl, reduceSuiyunDamage,
   reflectSuiyunDamage, resetSuiyunCombat, tickSuiyunFrost, trySuiyunRevival,
+  clearSuiyunBattleRestrictions, canExecuteCombatTarget, executeSuiyunMoonTarget, getSuiyunHealingMultiplier,
 } from './suiyunCombat.js';
 
 // Final HP loss is shared by ordinary hits and unavoidable root techniques.
@@ -47,6 +53,7 @@ function applySuiyunBattleDamage(attacker, defender, damage, messages, { reflect
     const reflected = reflectSuiyunDamage(defender, attacker, lost);
     messages.push(...reflected.messages);
   }
+  if (defender._suiyunMoonHit) executeSuiyunMoonTarget(defender, messages);
   // Preserve ordinary hit/DPS return semantics; only reflection clamps to HP loss.
   return reduced;
 }
@@ -128,13 +135,13 @@ export function getSeedSkillEntry(name) {
 }
 
 export function applyXianguTurnRecovery(unit, messages) {
-  if (!unit || unit._先天禁疗) return;
+  if (!unit || getSuiyunHealingMultiplier(unit) <= 0) return;
   const maxHp = Number(unit.血量上限) || 0;
   const currentHp = Number(unit.当前血量) || 0;
   const recoveryRate = Math.max(0, Number(unit.每回合恢复) || 0);
   if (maxHp <= 0 || recoveryRate <= 0 || currentHp >= maxHp) return;
   const recoveryBonus = Math.max(0, Number(unit.治疗效果加成) || 0);
-  const healingMultiplier = 1 - Math.min(1, Math.max(0, Number(unit.禁疗) || 0));
+  const healingMultiplier = getSuiyunHealingMultiplier(unit);
   const amount = Math.trunc(maxHp * recoveryRate * (1 + recoveryBonus) * healingMultiplier);
   if (amount <= 0) return;
   const actual = Math.min(maxHp, currentHp + amount) - currentHp;
@@ -5326,7 +5333,7 @@ function recordRewardClaim(target, key, amount) {
   target._rewardClaims ??= {};
   target._rewardClaims[key] = { amount, claimedAt: Date.now() };
   // 唯一传承的发放凭证终身保留，避免500条普通奖励轮转后重复补领。
-  const keys = Object.keys(target._rewardClaims).filter(key => !key.startsWith('suiyun:'));
+  const keys = Object.keys(target._rewardClaims).filter(key => !key.startsWith('suiyun:') && !key.startsWith('memory:'));
   for (let i = 0; i < keys.length - MAX_REWARD_CLAIMS; i++) {
     delete target._rewardClaims[keys[i]];
   }
@@ -5754,7 +5761,7 @@ export async function Add_najie_thing(
   let wupin = null;
   if (x > 0) {
     // foundthing also reads custom.json, so newly named equipment works without a restart.
-    wupin = await foundthing(name);
+    wupin = await foundthing(name, { readOnly: options.readOnlyLookup === true });
   }
   if (x == 0) return;
   let najie = await Read_najie(usr_qq);
@@ -6064,9 +6071,10 @@ export async function getPlayerAptitudeData(player) {
     };
     
     const currentAptitude = player.天资等级 || '无化如是';
-    const currentIndex = aptitudeSequence.indexOf(currentAptitude === '岁云' ? '无演无尽' : currentAptitude);
+    const currentIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(currentAptitude) ? '无演无尽' : currentAptitude);
     const description = currentAptitude === '岁云'
       ? '岁月云月同辉，天资等同无演无尽'
+      : currentAptitude === '星神之资' ? '演尽万象，铭刻诸世；天资等同无演无尽'
       : aptitudeDescriptions[currentAptitude] || '未知天资';
     
     return {
@@ -6087,7 +6095,7 @@ export async function getPlayerAptitudeData(player) {
         
         // 判断是否达到指定资质
         isAtLeast: function(minGrade) {
-            const minIndex = aptitudeSequence.indexOf(minGrade === '岁云' ? '无演无尽' : minGrade);
+            const minIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(minGrade) ? '无演无尽' : minGrade);
             return this.index >= minIndex;
         },
         
@@ -8568,6 +8576,8 @@ async function zd_battle_1v1(AA_player, BB_player, options = {}) {
   let B_player = JSON.parse(JSON.stringify(BB_player));
   resetSuiyunCombat(A_player);
   resetSuiyunCombat(B_player);
+  resetMemoryCombat(A_player);
+  resetMemoryCombat(B_player);
   resetSelfDaoBattleState(A_player);
   resetSelfDaoBattleState(B_player);
   normalizeBattleOrbMultiplier(A_player);
@@ -8749,9 +8759,7 @@ let B_speed = getBattleUnitSpeed(B_player);
     const skill = filterEquippedVitalitySkills(player, data.jineng_heal)
       .find(item => item.触发时机 === timing && hasLearnedGongfa(player, item.熟练度归属 || item.name));
     if (!skill) return false;
-    const healingMultiplier = player._先天禁疗
-      ? 0
-      : 1 - Math.min(1, Math.max(0, Number(player.禁疗) || 0));
+    const healingMultiplier = getSuiyunHealingMultiplier(player);
     const result = tryVitalityRecovery(player, skill, timing, Math.random, healingMultiplier);
     if (!result.triggered) return false;
     msg.push(`${player.名号}${skill.msg1}恢复${bigNumberTransform(result.amount)}点生命（最大生命${Math.round(result.rate * 100)}%）！`);
@@ -8837,7 +8845,7 @@ let B_speed = getBattleUnitSpeed(B_player);
     ]);
     // Revival amplification is battle-local; callers persist the returned HP only.
     for (const [unit, original] of [[A_player, AA_player], [B_player, BB_player]]) {
-      if (hasSuiyunSkills(unit) && Number(original.血量上限) > 0) {
+      if ((hasSuiyunSkills(unit) || hasMemoryCombatEffects(unit)) && Number(original.血量上限) > 0) {
         unit.当前血量 = Math.min(unit.当前血量, Number(original.血量上限));
       }
     }
@@ -9129,6 +9137,23 @@ let B_speed = getBattleUnitSpeed(B_player);
     if (context === 'main') tickTimedSkillDebuffs(attacker);
 
     if (context === 'main') {
+      const memoryAttack = recordMemoryAttack(attacker, defender, cnt2, {
+        applyDamage: (target, amount, source) => applyDamage(target, amount, 'main', source).actual_damage,
+        revive: unit => {
+          if (unit.当前血量 > 0) return;
+          const revival = checkRevival(unit, 'main');
+          if (revival.revived) msg.push(...(Array.isArray(revival.message) ? revival.message : [revival.message]));
+        },
+      });
+      msg.push(...memoryAttack.messages);
+      if (attacker.当前血量 <= 0 || defender.当前血量 <= 0) {
+        return { 伤害: 0, isCritical: false, baoji: 1, battleEnded: true,
+          winner: attacker.当前血量 > 0 ? (attacker === A_player ? 'A' : 'B')
+            : defender.当前血量 > 0 ? (defender === A_player ? 'A' : 'B') : 'draw' };
+      }
+    }
+
+    if (context === 'main') {
       const revive = unit => {
         if (unit.当前血量 > 0) return;
         const result = checkRevival(unit, 'main');
@@ -9205,7 +9230,7 @@ let B_speed = getBattleUnitSpeed(B_player);
     // —— 道种·治疗技：回合起手持续回血（生生不息/乙木逢春）——
     if (attacker.xiangu_shenhuo && attacker.xiangu_shenhuo.专属技能) {
       const 治疗条目 = getSeedSkillEntry(attacker.xiangu_shenhuo.专属技能);
-      if (!attacker._先天禁疗 && 治疗条目 && 治疗条目.技能分类 === '治疗' && 治疗条目.回复比例 && attacker.当前血量 < attacker.血量上限) {
+      if (getSuiyunHealingMultiplier(attacker) > 0 && 治疗条目 && 治疗条目.技能分类 === '治疗' && 治疗条目.回复比例 && attacker.当前血量 < attacker.血量上限) {
         const 回血量 = Math.trunc(attacker.血量上限 * 治疗条目.回复比例 * (1 + (attacker.治疗效果加成 || 0)));
         if (回血量 > 0) {
           const _before = attacker.当前血量;
@@ -9391,7 +9416,7 @@ let B_speed = getBattleUnitSpeed(B_player);
         }
       }
 
-      if (equipment?.帝兵 && equipment.帝兵.name === "如梦的诸天棋盘") {
+      if (equipment?.帝兵 && equipment.帝兵.name === "如梦的诸天棋盘" && canExecuteCombatTarget(defender, msg, '诸天棋盘')) {
         msg.push(`「诸天为盘，众生为子！」${attacker.名号}轻语，抬手间祭出如梦的诸天棋盘`);
         msg.push(`棋盘上星罗棋布，每一颗棋子都映照着一方大千世界`);
         msg.push(`一道贯穿古今未来的光芒从棋盘射出，锁定${defender.名号}的所有时空存在，刹那间，风不转，云不动，一切都静止了`);
@@ -9399,7 +9424,7 @@ let B_speed = getBattleUnitSpeed(B_player);
 
         defender.当前血量 = 0;
         msg.push(`${defender.名号}的存在痕迹被从所有时间线上彻底抹除！`);
-        if (hasSuiyunSkills(defender)) {
+        if ((hasSuiyunSkills(defender) || hasMemoryCombatEffects(defender))) {
           const revival = checkRevival(defender, 'main');
           if (revival.revived) {
             msg.push(...(Array.isArray(revival.message) ? revival.message : [revival.message]));
@@ -9848,7 +9873,7 @@ let B_speed = getBattleUnitSpeed(B_player);
   function applyDuelSuiyunDamage(attacker, defender, damage, messages, options) {
     const applied = applySuiyunBattleDamage(attacker, defender, damage, messages, options);
     for (const unit of [defender, attacker]) {
-      if (!unit || unit.当前血量 > 0 || !hasSuiyunSkills(unit)) continue;
+      if (!unit || unit.当前血量 > 0 || !(hasSuiyunSkills(unit) || hasMemoryCombatEffects(unit))) continue;
       const revival = checkRevival(unit, 'main');
       if (revival.revived) messages.push(...(Array.isArray(revival.message) ? revival.message : [revival.message]));
     }
@@ -10035,6 +10060,12 @@ let B_speed = getBattleUnitSpeed(B_player);
 
   // ==================== 复活检查函数 ====================
   function checkRevival(player, context = "main") {
+    clearSuiyunBattleRestrictions(player);
+    if (player?._suiyunExecutionBlocked) return { revived: false };
+    if (context !== 'fenshen') {
+      const memory = tryMemoryLethalSurvival(player);
+      if (memory.revived) return memory;
+    }
     if (context !== 'fenshen') {
       const suiyun = trySuiyunRevival(player);
       if (suiyun.revived) {
@@ -10402,6 +10433,7 @@ msg.push(bSpeedMsg);
     }
     // 霜寒按外层战斗回合结算，未能出手的受控单位也会衰减。
     for (const unit of [A_player, B_player, ...A_tahua_entities, ...B_tahua_entities]) {
+      msg.push(...tickMemoryCombatRound(unit, `duel:${cnt}`).messages);
       const frost = tickSuiyunFrost(unit, `duel:${cnt}`);
       msg.push(...frost.messages);
       if (unit === A_player) A_speed *= frost.speedMultiplier;
@@ -10558,6 +10590,9 @@ msg.push(bSpeedMsg);
         continue;
       }
     }
+
+    const memoryCancelled = consumeMemoryTrick(attacker);
+    if (memoryCancelled.skipped) { msg.push(memoryCancelled.message); cnt++; continue; }
 
     // ===== 执行攻击（保持原样） =====
     if (!attacker.dongjie) {
@@ -10860,7 +10895,7 @@ msg.push(bSpeedMsg);
       if (daoDeduction.message) msg.push(daoDeduction.message);
       const { actual_damage, fenshen_blocked } = applyDamage(defender, 伤害, "main", attacker);
       // 吸血（批次1：基于实际造成伤害回复，封顶血量上限）
-      if (!attacker._先天禁疗 && attacker.吸血率 > 0 && actual_damage > 0) {
+      if (getSuiyunHealingMultiplier(attacker) > 0 && attacker.吸血率 > 0 && actual_damage > 0) {
         const _heal = Math.trunc(actual_damage * attacker.吸血率);
         const _max = attacker.血量上限 || attacker.当前血量;
         attacker.当前血量 = Math.min(attacker.当前血量 + _heal, _max);
@@ -10873,14 +10908,14 @@ msg.push(bSpeedMsg);
       if (
         hasEquippedInnateTreasure(attacker, '诛仙四剑', '被动:1') &&
         defender.当前血量 > 0 &&
-        defender.当前血量 < defender.血量上限 * 0.25
+        defender.当前血量 < defender.血量上限 * 0.25 && canExecuteCombatTarget(defender, msg, '诛仙斩命')
       ) {
         defender.当前血量 = 0;
         msg.push(`【诛仙斩命】${defender.名号}气血低于25%，本源被诛仙四剑直接斩灭！`);
       }
 
       // —— 草字剑诀·斩真我：命中后残血斩杀 ——
-      if (斩杀阈值 > 0 && defender.当前血量 > 0 && defender.当前血量 <= 斩杀阈值 * defender.血量上限) {
+      if (斩杀阈值 > 0 && defender.当前血量 > 0 && defender.当前血量 <= 斩杀阈值 * defender.血量上限 && canExecuteCombatTarget(defender, msg, '残血斩杀')) {
         defender.当前血量 = 0;
         msg.push(`${attacker.名号}一剑「草字剑诀」斩落真我，${defender.名号}气血已衰竭至极，本源被当场斩断！`);
       }
@@ -11113,6 +11148,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   function initTeam(team, teamName) {
     for (let p of team) {
       resetSuiyunCombat(p);
+      resetMemoryCombat(p);
       resetSelfDaoBattleState(p);
       const clowWeakness = applyClowWishBattleWeakness(p);
       if (clowWeakness.message) msg.push(clowWeakness.message);
@@ -11544,9 +11580,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     const skill = filterEquippedVitalitySkills(player, data.jineng_heal)
       .find(item => item.触发时机 === timing && hasLearnedGongfa(player, item.熟练度归属 || item.name));
     if (!skill) return false;
-    const healingMultiplier = player._先天禁疗
-      ? 0
-      : 1 - Math.min(1, Math.max(0, Number(player.禁疗) || 0));
+    const healingMultiplier = getSuiyunHealingMultiplier(player);
     const result = tryVitalityRecovery(player, skill, timing, Math.random, healingMultiplier);
     if (!result.triggered) return false;
     messages.push(`${player.名号}${skill.msg1}恢复${bigNumberTransform(result.amount)}点生命（最大生命${Math.round(result.rate * 100)}%）！`);
@@ -11633,6 +11667,21 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     triggerTeamVitalityRecovery(attacker, '行动前', attackMsgs);
     tickTeamTimedSkillDebuffs(attacker);
 
+    const cancelledMemory = consumeMemoryTrick(attacker);
+    if (cancelledMemory.skipped) return { msgs: [...attackMsgs, cancelledMemory.message], damage: 0, killed: false, aoeKilled: [], skipped: true };
+    const memoryAttack = recordMemoryAttack(attacker, defender, round, {
+      applyDamage: (target, amount, source) => applyTeamSuiyunDamage(source, target, amount, attackMsgs),
+      revive: unit => {
+        if (unit.当前血量 > 0) return;
+        const revival = checkTeamRevival(unit);
+        if (revival.revived) attackMsgs.push(...revival.message);
+      },
+    });
+    attackMsgs.push(...memoryAttack.messages);
+    if (attacker.当前血量 <= 0 || defender.当前血量 <= 0) {
+      return { msgs: attackMsgs, damage: 0, killed: defender.当前血量 <= 0, aoeKilled: [] };
+    }
+
     const sword = castSuiyunMoonSword(attacker, allEnemies, {
       applyDamage: (target, raw, source) => {
         if (target._荒无看破攻击 || target.法力免疫) {
@@ -11700,7 +11749,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     // —— 道种·治疗技：回合起手持续回血（生生不息/乙木逢春）——
     if (attacker.xiangu_shenhuo && attacker.xiangu_shenhuo.专属技能) {
       const 治疗条目 = getSeedSkillEntry(attacker.xiangu_shenhuo.专属技能);
-      if (!attacker._先天禁疗 && 治疗条目 && 治疗条目.技能分类 === '治疗' && 治疗条目.回复比例 && attacker.当前血量 < attacker.血量上限) {
+      if (getSuiyunHealingMultiplier(attacker) > 0 && 治疗条目 && 治疗条目.技能分类 === '治疗' && 治疗条目.回复比例 && attacker.当前血量 < attacker.血量上限) {
         const 回血量 = Math.trunc(attacker.血量上限 * 治疗条目.回复比例 * (1 + (attacker.治疗效果加成 || 0)));
         if (回血量 > 0) {
           const _before = attacker.当前血量;
@@ -12257,7 +12306,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     triggerTeamEquipmentLowHpShield(defender, attackMsgs);
 
     // —— 草字剑诀·斩真我：命中后残血斩杀 ——
-    if (斩杀阈值 > 0 && defender.当前血量 > 0 && defender.当前血量 <= 斩杀阈值 * defender.血量上限) {
+    if (斩杀阈值 > 0 && defender.当前血量 > 0 && defender.当前血量 <= 斩杀阈值 * defender.血量上限 && canExecuteCombatTarget(defender, attackMsgs, '残血斩杀')) {
       const executeFate = resolveSuLingFatalFate(defender, attacker, defender.当前血量);
       if (executeFate.triggered) attackMsgs.push(executeFate.message);
       else {
@@ -12265,7 +12314,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
         attackMsgs.push(`${attacker.名号}一剑「草字剑诀」斩落真我，${defender.名号}气血已衰竭至极，本源被当场斩断！`);
       }
     }
-    if (hasEquippedInnateTreasure(attacker, '诛仙四剑', '被动:1') && defender.当前血量 > 0 && defender.当前血量 < defender.血量上限 * 0.25) {
+    if (hasEquippedInnateTreasure(attacker, '诛仙四剑', '被动:1') && defender.当前血量 > 0 && defender.当前血量 < defender.血量上限 * 0.25 && canExecuteCombatTarget(defender, attackMsgs, '诛仙斩命')) {
       const executeFate = resolveSuLingFatalFate(defender, attacker, defender.当前血量);
       if (executeFate.triggered) attackMsgs.push(executeFate.message);
       else {
@@ -12279,7 +12328,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     }
 
     // 吸血（批次1：基于实际造成伤害回复，封顶血量上限）
-    if (!attacker._先天禁疗 && attacker.吸血率 > 0 && actual_damage > 0) {
+    if (getSuiyunHealingMultiplier(attacker) > 0 && attacker.吸血率 > 0 && actual_damage > 0) {
       const _heal = Math.trunc(actual_damage * attacker.吸血率);
       const _max = attacker.血量上限 || attacker.当前血量;
       attacker.当前血量 = Math.min(attacker.当前血量 + _heal, _max);
@@ -12301,7 +12350,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   function applyTeamSuiyunDamage(attacker, defender, damage, messages, options) {
     const applied = applySuiyunBattleDamage(attacker, defender, damage, messages, options);
     for (const unit of [defender, attacker]) {
-      if (!unit || unit.当前血量 > 0 || !hasSuiyunSkills(unit)) continue;
+      if (!unit || unit.当前血量 > 0 || !(hasSuiyunSkills(unit) || hasMemoryCombatEffects(unit))) continue;
       const revival = checkTeamRevival(unit);
       if (revival.revived) messages.push(...revival.message);
     }
@@ -12309,6 +12358,10 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   }
 
   function checkTeamRevival(player) {
+    clearSuiyunBattleRestrictions(player);
+    if (player?._suiyunExecutionBlocked) return { revived: false, message: [] };
+    const memory = tryMemoryLethalSurvival(player);
+    if (memory.revived) return { ...memory, message: [memory.message] };
     const suiyun = trySuiyunRevival(player);
     if (suiyun.revived) return { ...suiyun, message: [suiyun.message] };
     const darkTriadRevival = tryDarkTriadRevival(player);
@@ -12469,6 +12522,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     cnt++;
 
     for (const unit of allUnits) {
+      msg.push(...tickMemoryCombatRound(unit, `team:${cnt}`).messages);
       const frost = tickSuiyunFrost(unit, `team:${cnt}`);
       msg.push(...frost.messages);
       if (unit.当前血量 <= 0) {
@@ -12666,7 +12720,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   for (const [combatants, sources] of [[A_team, options._sourceATeam], [B_team, options._sourceBTeam]]) {
     combatants.forEach((unit, index) => {
       const cap = Number(sources?.[index]?.血量上限);
-      if (hasSuiyunSkills(unit) && cap > 0) unit.当前血量 = Math.min(unit.当前血量, cap);
+      if ((hasSuiyunSkills(unit) || hasMemoryCombatEffects(unit)) && cap > 0) unit.当前血量 = Math.min(unit.当前血量, cap);
     });
   }
   const A_alive = A_team.filter(p => p.当前血量 > 0);
@@ -12719,7 +12773,7 @@ export async function tb_battle(players, boss, team) {
   // 深拷贝玩家和BOSS数据
   let teamData = players.map(p => JSON.parse(JSON.stringify(p)));
   let bossCopy = JSON.parse(JSON.stringify(boss));
-  for (const unit of [...teamData, bossCopy]) resetSuiyunCombat(unit);
+  for (const unit of [...teamData, bossCopy]) { resetSuiyunCombat(unit); resetMemoryCombat(unit); }
   bossCopy.初始血量 = bossCopy.当前血量;
   teamData.forEach(normalizeBattleOrbMultiplier);
   normalizeBattleOrbMultiplier(bossCopy);
@@ -12730,6 +12784,8 @@ export async function tb_battle(players, boss, team) {
   let jineng2 = data.jineng2; // BOSS技能库
 
   function reviveSuiyunRaid(unit) {
+    const memory = tryMemoryLethalSurvival(unit);
+    if (memory.revived) { msg.push(memory.message); return; }
     const revival = trySuiyunRevival(unit);
     if (revival.revived) msg.push(revival.message);
   }
@@ -12804,6 +12860,7 @@ export async function tb_battle(players, boss, team) {
     msg.push(`\n===== 第 ${cnt} 回合开始 =====`);
 
     for (const unit of [...teamData, bossCopy]) {
+      msg.push(...tickMemoryCombatRound(unit, `raid:${cnt}`).messages);
       const frost = tickSuiyunFrost(unit, `raid:${cnt}`);
       msg.push(...frost.messages);
       reviveSuiyunRaid(unit);
@@ -12847,6 +12904,15 @@ export async function tb_battle(players, boss, team) {
       const playerFateTransfer = transferSuLingFateEffects(player, bossCopy);
       if (playerFateTransfer.triggered) msg.push(playerFateTransfer.message);
 
+      const memoryCancelled = consumeMemoryTrick(player);
+      if (memoryCancelled.skipped) { msg.push(memoryCancelled.message); continue; }
+      msg.push(...recordMemoryAttack(player, bossCopy, `raid:${cnt}`, {
+        applyDamage: (target, amount, source) => applySuiyunBattleDamage(source, target, amount, msg),
+        revive: reviveSuiyunRaid,
+      }).messages);
+      if (bossCopy.当前血量 <= 0) break;
+      if (player.当前血量 <= 0) continue;
+
       const moonSword = castRaidMoonSword(player, [bossCopy]);
       hatred[i] += moonSword.totalDamage;
       if (bossCopy.当前血量 <= 0) break;
@@ -12876,7 +12942,7 @@ export async function tb_battle(players, boss, team) {
       result.damage = applySuiyunBattleDamage(player, bossCopy, result.damage, msg);
 
       // 草字剑诀·斩真我：命中后残血斩杀
-      if (result.斩杀阈值 > 0 && bossCopy.当前血量 > 0 && bossCopy.当前血量 <= result.斩杀阈值 * bossCopy.血量上限) {
+      if (result.斩杀阈值 > 0 && bossCopy.当前血量 > 0 && bossCopy.当前血量 <= result.斩杀阈值 * bossCopy.血量上限 && canExecuteCombatTarget(bossCopy, msg, '残血斩杀')) {
         const executeFate = resolveSuLingFatalFate(bossCopy, player, bossCopy.当前血量);
         if (executeFate.triggered) msg.push(executeFate.message);
         else {
@@ -12924,6 +12990,15 @@ export async function tb_battle(players, boss, team) {
     const bossFateTransfer = transferSuLingFateEffects(bossCopy, targetPlayer);
     if (bossFateTransfer.triggered) msg.push(bossFateTransfer.message);
 
+    const memoryCancelled = consumeMemoryTrick(bossCopy);
+    if (memoryCancelled.skipped) { msg.push(memoryCancelled.message); continue; }
+    msg.push(...recordMemoryAttack(bossCopy, targetPlayer, `raid:${cnt}`, {
+      applyDamage: (target, amount, source) => applySuiyunBattleDamage(source, target, amount, msg),
+      revive: reviveSuiyunRaid,
+    }).messages);
+    if (bossCopy.当前血量 <= 0 || !teamData.some(unit => unit.当前血量 > 0)) break;
+    if (targetPlayer.当前血量 <= 0) continue;
+
     castRaidMoonSword(bossCopy, teamData);
     if (bossCopy.当前血量 <= 0 || !teamData.some(unit => unit.当前血量 > 0)) break;
     if (targetPlayer.当前血量 <= 0) continue;
@@ -12965,7 +13040,7 @@ export async function tb_battle(players, boss, team) {
     result.damage = applySuiyunBattleDamage(bossCopy, targetPlayer, result.damage, msg);
 
     // 草字剑诀·斩真我：BOSS 也可触发残血斩杀
-    if (result.斩杀阈值 > 0 && targetPlayer.当前血量 > 0 && targetPlayer.当前血量 <= result.斩杀阈值 * targetPlayer.血量上限) {
+    if (result.斩杀阈值 > 0 && targetPlayer.当前血量 > 0 && targetPlayer.当前血量 <= result.斩杀阈值 * targetPlayer.血量上限 && canExecuteCombatTarget(targetPlayer, msg, '残血斩杀')) {
       const executeFate = resolveSuLingFatalFate(targetPlayer, bossCopy, targetPlayer.当前血量);
       if (executeFate.triggered) msg.push(executeFate.message);
       else {
@@ -12988,8 +13063,8 @@ export async function tb_battle(players, boss, team) {
   
   // 计算血量变化
   const playersHpChange = teamData.map((p, index) =>
-    (hasSuiyunSkills(p) ? Math.min(p.当前血量, players[index].血量上限) : p.当前血量) - p.初始血量);
-  const bossHpChange = (hasSuiyunSkills(bossCopy)
+    ((hasSuiyunSkills(p) || hasMemoryCombatEffects(p)) ? Math.min(p.当前血量, players[index].血量上限) : p.当前血量) - p.初始血量);
+  const bossHpChange = ((hasSuiyunSkills(bossCopy) || hasMemoryCombatEffects(bossCopy))
     ? Math.min(bossCopy.当前血量, boss.血量上限) : bossCopy.当前血量) - bossCopy.初始血量;
   
   // 确定战斗结果
@@ -13054,7 +13129,7 @@ async function calculateAttack(attacker, defender, actionIndex, jineng1, jineng2
   // —— 道种·治疗技：回合起手持续回血（生生不息/乙木逢春）——
   if (attacker.xiangu_shenhuo && attacker.xiangu_shenhuo.专属技能) {
     const 治疗条目 = getSeedSkillEntry(attacker.xiangu_shenhuo.专属技能);
-    if (!attacker._先天禁疗 && 治疗条目 && 治疗条目.技能分类 === '治疗' && 治疗条目.回复比例 && attacker.当前血量 < attacker.血量上限) {
+    if (getSuiyunHealingMultiplier(attacker) > 0 && 治疗条目 && 治疗条目.技能分类 === '治疗' && 治疗条目.回复比例 && attacker.当前血量 < attacker.血量上限) {
       const 回血量 = Math.trunc(attacker.血量上限 * 治疗条目.回复比例 * (1 + (attacker.治疗效果加成 || 0)));
       if (回血量 > 0) {
         const _before = attacker.当前血量;
@@ -14048,7 +14123,7 @@ export async function synchronization(e) {
     if (player.灵根 && player.灵根.生命本源) {
       base_life_essence += player.灵根.生命本源;
     }
-    if (getSuiyunEffects(player).noDemonicValue) base_life_essence = getLifeSourceRepairMaximum(player);
+    if (getSuiyunEffects(player).noDemonicValue || getMemoryStage(player)) base_life_essence = getLifeSourceRepairMaximum(player);
     
     // 如果生命本源字段不存在或为0，设置基于灵根的初始值
     if (!isNotNull(player.生命本源) || player.生命本源 === 0) {
@@ -14289,7 +14364,7 @@ export async function channel(usr_qq) {
  * @returns
  */
 //遍历物品
-export async function foundthing(thing_name) {
+export async function foundthing(thing_name, options = {}) {
   const daoState = readDaoTreasureState();
   if (daoState.treasure?.name === thing_name) return createDaoTreasureItem(daoState.treasure);
   let thing = [
@@ -14331,6 +14406,7 @@ export async function foundthing(thing_name) {
   try {
     A = await Read_it();
   } catch {
+    if (options.readOnly) return false;
     await Writeit([]);
     A = await Read_it();
   }

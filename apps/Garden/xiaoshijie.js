@@ -3,7 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import Show from '../../model/show.js';
 import { replyImageWithButtons } from '../../model/officialMessage.js';
-import { calculateCropGrowthState } from './smallWorldGrowth.js';
+import { calculateCropGrowthState, getMemoryCropGrowthMultiplier } from './smallWorldGrowth.js';
+import { getMemoryEffects } from '../../model/memoryPath.js';
 import {
   pickSmallWorldPill,
 } from './smallWorldAlchemy.js';
@@ -2848,6 +2849,7 @@ async plantShenyao(e) {
     
     world.药田.push({
         种子: seedConfig.name,
+        记忆生长倍率: getMemoryEffects(await Read_player(player_qq)).plantGrowthMultiplier,
         当前阶段: 1,
         阶段开始时间: new Date().toLocaleString(),
         种植时间: new Date().toLocaleString(),
@@ -2865,7 +2867,7 @@ async plantShenyao(e) {
         `成功种植【${seedConfig.name}】！`,
         `当前阶段：${stageInfo.name}`,
         `阶段描述：${stageInfo.desc}`,
-        `预计成熟：${this.calculateGrowthTime(seedConfig, world)}`
+        `预计成熟：${this.calculateGrowthTime(seedConfig, world, world.药田.at(-1))}`
     ];
     
     if (world.药田.length >= maxFields) {
@@ -2877,12 +2879,12 @@ async plantShenyao(e) {
 }
 
 // 计算预计收获剩余时间（种植时展示，基于每1000灵气浓度=4小时）
-calculateGrowthTime(seedConfig, world) {
+calculateGrowthTime(seedConfig, world, crop) {
     const requiredTime = this.calculateHarvestTime(seedConfig, world);
 
     const timeFlow = world.attributes.时间流速.split(':');
     const timeRatio = parseInt(timeFlow[1]) / parseInt(timeFlow[0]);
-    const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1);
+    const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1) * getMemoryCropGrowthMultiplier(crop);
 
     // requiredTime是有效秒数，转换为真实秒数
     const realSeconds = requiredTime / (timeRatio * growthRate);
@@ -3051,6 +3053,7 @@ async batchPlantAll(e) {
         // 添加到药田
         world.药田.push({
             种子: seedConfig.name,
+            记忆生长倍率: getMemoryEffects(await Read_player(player_qq)).plantGrowthMultiplier,
             当前阶段: 1,
             阶段开始时间: new Date().toLocaleString(),
             种植时间: new Date().toLocaleString(),
@@ -3153,7 +3156,7 @@ async batchWaterAll(e) {
         
         for (const crop of immatureCrops) {
             const seedConfig = SHENYAO_SEEDS[crop.种子];
-            const growthRate = seedConfig ? world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1) : 1;
+            const growthRate = seedConfig ? world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1) * getMemoryCropGrowthMultiplier(crop) : 1;
             const effectiveReduce = timeReduce * timeRatio * growthRate; // 有效秒数
             
             // 累加时间加成（有效秒数）
@@ -3225,7 +3228,7 @@ async batchWaterAll(e) {
     // 执行道具浇灌
     for (const crop of immatureCrops) {
         const seedConfig = SHENYAO_SEEDS[crop.种子];
-        const growthRate = seedConfig ? world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1) : 1;
+        const growthRate = seedConfig ? world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1) * getMemoryCropGrowthMultiplier(crop) : 1;
         const effectiveReduce = config.timeReduce * timeRatio * growthRate; // 有效秒数
         
         // 累加时间加成（有效秒数）
@@ -3360,7 +3363,7 @@ async harvestCropBonus(player_qq, crop, seedConfig) {
     // 返种判定
     let seedReturned = false;
     const roll = Math.random() * 100;
-    if (roll < bonuses.seedReturnChance) {
+    if (roll < Math.min(100, bonuses.seedReturnChance * getMemoryEffects(player).seedMultiplier)) {
         await Add_najie_thing(player_qq, seedConfig.name, "草药", 1);
         seedReturned = true;
     }
@@ -3949,7 +3952,7 @@ function generateMedicineFieldHTML(world, timeRatio) {
         const elapsedSeconds = elapsedMs / 1000;
 
         // 计算生长速率
-        const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1);
+        const growthRate = world.attributes.灵气浓度 / (seedConfig.requirements?.灵气浓度 || 1) * getMemoryCropGrowthMultiplier(plant);
         const bonusSeconds = plant.时间加成 || 0;
         const totalGrowthTime = elapsedSeconds * timeRatio * growthRate + bonusSeconds;
 

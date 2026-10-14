@@ -1,6 +1,7 @@
 import { getRealmAuthorityLevel, getRealmAuthorityPath } from '../../model/realmAuthority.js';
 import { getFlowerDaoGateState } from '../../model/flowerPollenPath.js';
 import { getSuiyunEffects } from '../../model/suiyun.js';
+import { getMemoryEffects } from '../../model/memoryPath.js';
 
 export const DAO_PATH_VERSION = 2;
 export const DAO_DAILY_LIMIT = 3;
@@ -468,13 +469,14 @@ export function recordDaoAttempt(path, dateKey = getShanghaiDateKey()) {
   return path.daily.count;
 }
 
-export function getPhysiqueWudaoBonus(physiqueName) {
-  return getSuiyunEffects({ 灵根: { name: physiqueName } }).enlightenmentBonus
+export function getPhysiqueWudaoBonus(physiqueName, player = { 灵根: { name: physiqueName } }) {
+  return getMemoryEffects(player).enlightenmentBonus
+    || getSuiyunEffects({ 灵根: { name: physiqueName } }).enlightenmentBonus
     || Number(PHYSIQUE_BONUSES[physiqueName]) || 0;
 }
 
 export function getAptitudeWudaoBonus(aptitudeName) {
-  return Number(APTITUDE_BONUSES[aptitudeName]) || 0;
+  return Number(APTITUDE_BONUSES[aptitudeName === '星神之资' ? '无演无尽' : aptitudeName]) || 0;
 }
 
 export function getEraWudaoProfile(eraIndex) {
@@ -546,7 +548,7 @@ export function calculateWudaoResult(options) {
 
   const era = getEraWudaoProfile(eraIndex);
   const bonuses = {
-    physique: getPhysiqueWudaoBonus(physiqueName),
+    physique: getPhysiqueWudaoBonus(physiqueName, options.player),
     era: era.bonus,
     aptitude: getAptitudeWudaoBonus(aptitudeName),
     technique: clamp(techniqueBonus, -0.5, 0.5),

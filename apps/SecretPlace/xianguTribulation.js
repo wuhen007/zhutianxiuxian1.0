@@ -22,6 +22,8 @@
 import { sleep, bigNumberTransform } from '../../model/xiuxian.js';
 import { getXianqiStrands } from '../../model/xianguXianqi.js';
 import { getSuiyunEffects } from '../../model/suiyun.js';
+import { getMemoryEffects } from '../../model/memoryPath.js';
+import { createMemoryTribulationState, tickMemoryTribulationRound, tryMemoryTimeRevival } from '../../model/memoryCombat.js';
 import { config, data } from '../../api/api.js';
 import { consumeBlackEmperorTribulationFormation } from '../../model/blackEmperor.js';
 import {
@@ -201,9 +203,12 @@ export class XianguTribulation {
 
     const name = player.灵根?.name;
     const suiyun = getSuiyunEffects(player);
+    const memory = getMemoryEffects(player);
     const eff = suiyun.tribulationReduction > 0
       ? { reduction: suiyun.tribulationReduction, desc: '云月护体，岁月消劫', special: suiyun.madoka ? '圆环之理' : null }
-      : BODY_EFFECTS[name];
+      : memory.tribulationReduction > 0
+        ? { reduction: memory.tribulationReduction, desc: '记忆因子铭刻本源，抵御劫数', special: null }
+        : BODY_EFFECTS[name];
     if (eff) {
       const rd = finalDamage * eff.reduction;
       finalDamage -= rd;
@@ -401,6 +406,8 @@ export class XianguTribulation {
   }
 
   async _withTransientTribulationEffects(player, action) {
+    this.memoryTribulationStates ??= new WeakMap();
+    this.memoryTribulationStates.set(player, createMemoryTribulationState());
     const snapshot = new Map();
     for (const key of this._getTransientTribulationEffectKeys()) {
       if (Object.prototype.hasOwnProperty.call(player, key)) snapshot.set(key, player[key]);
@@ -422,6 +429,10 @@ export class XianguTribulation {
 
   async _tryRevive(e, player) {
     const M = this._M(player);
+    this.memoryTribulationStates ??= new WeakMap();
+    if (!this.memoryTribulationStates.has(player)) this.memoryTribulationStates.set(player, createMemoryTribulationState());
+    const memoryTime = tryMemoryTimeRevival(player, this.memoryTribulationStates.get(player), { lethal: true });
+    if (memoryTime.revived) return memoryTime.message;
 
     // 1. 免死效果（真凰/万化圣诀）
     if (player.真凰效果 && player.真凰效果.免死) {
@@ -503,6 +514,9 @@ export class XianguTribulation {
 
   // ============ 一道劫：常规防御 → 已激活功法被动 → 致死复活并避开本劫 ============
   async _dealWave(e, player, frac, wave, note, opts = {}) {
+    this.memoryTribulationStates ??= new WeakMap();
+    if (!this.memoryTribulationStates.has(player)) this.memoryTribulationStates.set(player, createMemoryTribulationState());
+    tickMemoryTribulationRound(this.memoryTribulationStates.get(player));
     const M = this._M(player);
     // 上位冲关与遮天一致，使用理论攻击作为每道劫的伤害基准。
     const attackBase = this._tribulationPower?.attack || M;
