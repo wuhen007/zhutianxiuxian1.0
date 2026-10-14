@@ -603,7 +603,7 @@ async daozhengXuying(e) {
         player.法球倍率 = player.灵根?.法球倍率 || 1;
         targetPlayer.法球倍率 = targetPlayer.灵根?.法球倍率 || 1;
         
-        const battleResult = await zd_battle(player, targetPlayer);
+        const battleResult = await zd_battle(player, targetPlayer, { pvp: true });
         
         // 转发战斗过程
         if (battleResult.msg && battleResult.msg.length > 0) {

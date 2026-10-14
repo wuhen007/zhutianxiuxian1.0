@@ -280,7 +280,7 @@ let now_mijinglevel_idAA;
     A_player.法球倍率 = A_player.灵根.法球倍率;
     B_player.法球倍率 = B_player.灵根.法球倍率;
 
-    let Data_battle = await zd_battle(A_player, B_player);
+    let Data_battle = await zd_battle(A_player, B_player, { pvp: true });
     let msg = Data_battle.msg;
     //战斗回合过长会导致转发失败报错，所以超过30回合的就不转发了
     if (msg.length > 35) {
@@ -465,7 +465,7 @@ let now_mijinglevel_idAA;
     B_player.法球倍率 = B_player.灵根.法球倍率;
     A_player.当前血量 = A_player.血量上限;
     B_player.当前血量 = B_player.血量上限;
-    let Data_battle = await zd_battle(A_player, B_player);
+    let Data_battle = await zd_battle(A_player, B_player, { pvp: true });
     let msg = Data_battle.msg;
     await ForwardMsg(e, msg);
     //最后发送消息

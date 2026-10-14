@@ -308,6 +308,9 @@ async duihuan(e) {
       ).level_id;
       let A_player = {
         名号: player.名号,
+        mijinglevel_id: player.mijinglevel_id,
+        xiangulevel_id: player.xiangulevel_id,
+        huafenlevel_id: player.huafenlevel_id,
         境界: level_id,
         攻击: player.攻击,
         防御: player.防御,
@@ -552,7 +555,15 @@ async duihuan(e) {
           法球倍率: tiandibang[x].法球倍率,
         };
       }
-      let Data_battle = await zd_battle(A_player, B_player);
+      if (k !== -1) {
+        // 老榜单未记录额外体系，真人榜战只补实时境界，不改榜单原有面板。
+        for (const [combatant, id] of [[A_player, usr_qq], [B_player, tiandibang[k].qq]]) {
+          if (!await existplayer(id)) continue;
+          const live = await Read_player(id);
+          for (const field of ['mijinglevel_id', 'xiangulevel_id', 'huafenlevel_id']) combatant[field] = live[field];
+        }
+      }
+      let Data_battle = await zd_battle(A_player, B_player, { pvp: k !== -1 });
       let msg = Data_battle.msg;
       if (Data_battle.winner === 'A') {
         if (k == -1) {
@@ -706,6 +717,7 @@ tiandibang[m].血量上限 = player.血量上限;   // 新增：更新血量上�
     tiandibang[m].暴击率 = player.暴击率;
     tiandibang[m].学习的功法 = player.学习的功法;
     tiandibang[m].灵根 = player.灵根;
+    for (const field of ['mijinglevel_id', 'xiangulevel_id', 'huafenlevel_id']) tiandibang[m][field] = player[field];
     tiandibang[m].法球倍率 = player.灵根.法球倍率;
     await Write_tiandibang(tiandibang);
     tiandibang = await Read_tiandibang();

@@ -150,7 +150,7 @@ test('玩家搜魂必须战斗获胜后才进行元神判定', () => {
     source.indexOf('async soulSearch(e)'),
     source.indexOf('async guanding(e)')
   );
-  const battle = soulSearch.indexOf('await zd_battle(executor, target)');
+  const battle = soulSearch.indexOf('await zd_battle(executor, target, { pvp: true })');
   const victoryGate = soulSearch.indexOf("if (battleResult.winner !== 'A')");
   const soulCheck = soulSearch.indexOf('calculateSoulSearchSuccessRate(executor, target)');
 

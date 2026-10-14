@@ -3834,6 +3834,9 @@ async zhizuo_fu(e) {
       let buff = 1 + player.occupation_level * 0.055;
       let player_A = {
         id: player.id,
+        mijinglevel_id: player.mijinglevel_id,
+        xiangulevel_id: player.xiangulevel_id,
+        huafenlevel_id: player.huafenlevel_id,
         名号: player.名号,
         攻击: parseInt(player.攻击 * buff),
         防御: parseInt(player.防御),
@@ -3849,7 +3852,7 @@ async zhizuo_fu(e) {
         仙宠: player.仙宠,
         神石: player.神石,
       };
-      let Data_battle = await zd_battle(player_A, player_B);
+      let Data_battle = await zd_battle(player_A, player_B, { pvp: true });
       player.功法熟练度 = player_A.功法熟练度;
       player.功法熟练度每日 = player_A.功法熟练度每日;
       let msg = Data_battle.msg;
@@ -4079,6 +4082,9 @@ async zhizuo_fu(e) {
     player_B.当前血量 = player_B.血量上限;
     let player_A = {
       id: player.id,
+      mijinglevel_id: player.mijinglevel_id,
+      xiangulevel_id: player.xiangulevel_id,
+      huafenlevel_id: player.huafenlevel_id,
       名号: player.名号,
       攻击: parseInt(player.攻击 * buff),
       防御: parseInt(player.防御),
@@ -4094,7 +4100,7 @@ async zhizuo_fu(e) {
       法球倍率: player.灵根.法球倍率,
       仙宠: player.仙宠,
     };
-    let Data_battle = await zd_battle(player_A, player_B);
+    let Data_battle = await zd_battle(player_A, player_B, { pvp: true });
     player.功法熟练度 = player_A.功法熟练度;
     player.功法熟练度每日 = player_A.功法熟练度每日;
     let msg = Data_battle.msg;

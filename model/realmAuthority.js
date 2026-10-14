@@ -61,6 +61,25 @@ export function getRealmAuthorityLevel(player) {
   );
 }
 
+/** 仅作用战斗副本；按等效权柄压低三体系，保留各自编号映射。 */
+export function capRealmAuthorityForBattle(player, authorityLevel) {
+  const limit = levelId(authorityLevel);
+  const rawLimit = map => {
+    const index = map.findIndex(([, rank]) => rank <= limit);
+    return index < 0 ? Math.min(limit, map.at(-1)[0] - 1)
+      : index === 0 ? Number.MAX_SAFE_INTEGER : map[index - 1][0] - 1;
+  };
+  for (const [field, cap] of [
+    ['mijinglevel_id', limit],
+    ['xiangulevel_id', rawLimit(XIANGU_AUTHORITY_MAP)],
+    ['huafenlevel_id', rawLimit(HUAFEN_AUTHORITY_MAP)],
+  ]) {
+    player[field] = Math.min(levelId(player[field]), cap);
+  }
+  // 某些路线没有逐一对应的低境档位，以秘境等效档锚定同境，不抬高总体权柄。
+  if (getRealmAuthorityLevel(player) < limit) player.mijinglevel_id = limit;
+}
+
 export function hasRealmAuthority(player, requiredLevel) {
   return getRealmAuthorityLevel(player) >= levelId(requiredLevel);
 }

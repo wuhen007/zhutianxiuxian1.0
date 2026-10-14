@@ -373,7 +373,7 @@ export class TianmoHuasheng extends plugin {
 
       executor.法球倍率 = Number(executor.灵根.法球倍率) || 0;
       target.法球倍率 = Number(target.灵根?.法球倍率) || 0;
-      const battle = await zd_battle(executor, target);
+      const battle = await zd_battle(executor, target, { pvp: true });
       if (battle.msg?.length <= 35) await ForwardMsg(e, battle.msg);
 
       executor.当前血量 = Math.max(0, Number(battle.A_hp) || 0);

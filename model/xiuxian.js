@@ -29,7 +29,8 @@ import { releaseJuelingLifespanForAuthority } from './juelingLifespan.js';
 import { applyClowWishBattleWeakness } from './clowWish.js';
 import { findTalentSynchronizationMatch } from './talentSynchronization.js';
 import { getSuiyunEffects, getSuiyunLotusBonus, hasSuiyunSkills } from './suiyun.js';
-import { getMemoryStage } from './memoryPath.js';
+import { getMemoryStage, normalizeMemoryPlayer } from './memoryPath.js';
+import { getSuiyunPvpSource, prepareSuiyunPvpBattle, restoreSuiyunPvpResult } from './suiyunPvp.js';
 import { computePetStoredBonus, rebuildPlayerLucky, syncSuiyunLuckyBonus } from './petLuckyCalc.js';
 import {
   consumeMemoryTrick, hasMemoryCombatEffects, recordMemoryAttack,
@@ -591,6 +592,15 @@ export async function Read_player(usr_qq) {
   }
   ensureDefaultCoordinates(player);
   syncSuiyunLuckyBonus(player);
+  const previousMemoryEfficiency = Number(player.灵根?.eff) || 0;
+  if (normalizeMemoryPlayer(player)) {
+    // 旧记忆灵根按现行公式只重算本次读取的属性，不在读档时写玩家或装备。
+    await Write_equipment(usr_qq, await Read_equipment(usr_qq), player);
+    if (Number.isFinite(Number(player.修炼效率提升))) {
+      player.修炼效率提升 = Math.max(0, Number(player.修炼效率提升)
+        + (Number(player.灵根.eff) - previousMemoryEfficiency) * getForbiddenCultivationMultiplier(player));
+    }
+  }
   return markTribulationSnapshot(usr_qq, markZhutianMirrorSnapshot(player));
 }
 export async function LevelTask(e, power_n, power_m, power_Grade, aconut, illusionRate) {
@@ -1510,11 +1520,11 @@ export function calculateXianguExtremeBonus(player, levels = data.xiangujinshi_l
 }
 
 //写入装备信息,第二个参数是一个JavaScript对象
-export async function Write_equipment(usr_qq, equipment) {
-  assertGlobalInitIdle();
-  return withPlayerMutationLock(usr_qq, async () => {
-  await assertTribulationWriteAllowed(usr_qq, equipment);
-  let player = await Read_player(usr_qq);
+export async function Write_equipment(usr_qq, equipment, previewPlayer = null) {
+  if (!previewPlayer) assertGlobalInitIdle();
+  const update = async () => {
+  if (!previewPlayer) await assertTribulationWriteAllowed(usr_qq, equipment);
+  let player = previewPlayer || await Read_player(usr_qq);
   equipment = normalizeEquipment(equipment);
 
   const projectionName = getInnateTreasureProjectionName(equipment.至宝);
@@ -1539,9 +1549,9 @@ export async function Write_equipment(usr_qq, equipment) {
   player.先天至宝失效时间 = projectionName
     ? Number(equipment.至宝.先天投影截止)
     : 0;
-  if (projectionName) {
+  if (!previewPlayer && projectionName) {
     updateEquippedInnateTreasure(usr_qq, '');
-  } else {
+  } else if (!previewPlayer) {
     updateEquippedInnateTreasure(
       usr_qq,
       innateTreasureName,
@@ -1735,13 +1745,18 @@ export async function Write_equipment(usr_qq, equipment) {
     player.防御 += lotusGrowth.statBonus;
     player.血量上限 += lotusGrowth.statBonus;
   }
+    if (previewPlayer) {
+      player.当前血量 = Math.min(Number(player.当前血量) || 0, player.血量上限);
+      return player;
+    }
     await Write_player(usr_qq, player);
     await Add_HP(usr_qq, 0);
     let dir = path.join(__PATH.equipment_path, `${usr_qq}.json`);
     writeJsonAtomically(dir, equipment);
     invalidateBattleEquipmentCache(usr_qq);
     return;
-  });
+  };
+  return previewPlayer ? update() : withPlayerMutationLock(usr_qq, update);
 }
 
 export async function Write_linggen(usr_qq) {
@@ -5573,7 +5588,7 @@ export async function Reduse_player_学习功法(usr_qq, gongfa_name) {
 export async function player_efficiency(usr_qq) {
   return withPlayerMutationLock(usr_qq, async () => {
   //这里有问题
-  let player = await data.getData('player', usr_qq); //修仙个人信息
+  let player = await Read_player(usr_qq); // 包含停用记忆灵根的旧档兼容
   let ass;
   let Assoc_efficiency; //宗门效率加成
   let linggen_efficiency; //灵根效率加成
@@ -5604,6 +5619,7 @@ export async function player_efficiency(usr_qq) {
       .map(skill => skill.熟练度归属 || skill.name)
   );
   label1: for (let i in player.学习的功法) {
+    if (player.学习的功法[i] === '六相冰封') continue; // 已停用：保留旧习得记录，不计修炼加成。
     //存在功法，遍历功法加成
     let gongfa = ['gongfa_list', 'timegongfa_list', 'dijingList'];
     //这里是查看了功法表
@@ -6071,10 +6087,9 @@ export async function getPlayerAptitudeData(player) {
     };
     
     const currentAptitude = player.天资等级 || '无化如是';
-    const currentIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(currentAptitude) ? '无演无尽' : currentAptitude);
+    const currentIndex = aptitudeSequence.indexOf(currentAptitude === '岁云' ? '无演无尽' : currentAptitude);
     const description = currentAptitude === '岁云'
       ? '岁月云月同辉，天资等同无演无尽'
-      : currentAptitude === '星神之资' ? '演尽万象，铭刻诸世；天资等同无演无尽'
       : aptitudeDescriptions[currentAptitude] || '未知天资';
     
     return {
@@ -6095,7 +6110,7 @@ export async function getPlayerAptitudeData(player) {
         
         // 判断是否达到指定资质
         isAtLeast: function(minGrade) {
-            const minIndex = aptitudeSequence.indexOf(['岁云', '星神之资'].includes(minGrade) ? '无演无尽' : minGrade);
+            const minIndex = aptitudeSequence.indexOf(minGrade === '岁云' ? '无演无尽' : minGrade);
             return this.index >= minIndex;
         },
         
@@ -8376,6 +8391,11 @@ function applySacrificeGrowth(attacker, skill, messages) {
 }
 
 export async function zd_battle(A_input, B_input, options = {}) {
+  const pvpOpening = prepareSuiyunPvpBattle(A_input, B_input, options);
+  if (pvpOpening) {
+    const result = await zd_battle(pvpOpening.A_input, pvpOpening.B_input, { ...options, _suiyunPvpPrepared: true });
+    return restoreSuiyunPvpResult(result, pvpOpening);
+  }
   const realmOpening = prepareHighRealmBattle(A_input, B_input);
   if (realmOpening) return settleHighRealmBattle(realmOpening, A_input, B_input, options);
   const A_isArray = Array.isArray(A_input);
@@ -8402,8 +8422,8 @@ export async function zd_battle(A_input, B_input, options = {}) {
 
   return await zd_battle_team(A_copy, B_copy, {
     ...options,
-    _sourceATeam: A_team,
-    _sourceBTeam: B_team,
+    _sourceATeam: A_team.map(getSuiyunPvpSource),
+    _sourceBTeam: B_team.map(getSuiyunPvpSource),
   });
 }
 
@@ -8469,7 +8489,7 @@ export async function settleBattleGongfaProficiency(pairs) {
     if (!source || names.size === 0) continue;
     const id = source.id == null ? '' : String(source.id).replace('qg_', '');
     const key = id || `anonymous:${anonymousIndex++}`;
-    const group = groups.get(key) || { id, source, names: new Set() };
+    const group = groups.get(key) || { id, source: getSuiyunPvpSource(source), names: new Set() };
     for (const name of names) group.names.add(name);
     groups.set(key, group);
   }
@@ -8515,6 +8535,8 @@ export async function settleBattleGongfaProficiency(pairs) {
 }
 
 async function settleWanhuaBannerHarvest(ownerSource, defeatedSource) {
+  ownerSource = getSuiyunPvpSource(ownerSource);
+  defeatedSource = getSuiyunPvpSource(defeatedSource);
   if (!ownerSource || !defeatedSource || defeatedSource._万灵魔幡主魂 || defeatedSource._万灵魔幡不可炼化) return null;
   const ownerId = ownerSource.id == null ? '' : String(ownerSource.id).replace('qg_', '');
   const playerFile = ownerId && path.join(__PATH.player_path, `${ownerId}.json`);
@@ -14024,6 +14046,7 @@ export async function synchronization(e) {
     transaction.capture(path.join(__PATH.equipment_path, `${usr_qq}.json`));
     transaction.capture(path.join(__PATH.danyao_path, `${usr_qq}.json`));
     let player = await data.getData('player', usr_qq);
+    normalizeMemoryPlayer(player);
     const activeZhutianAvatar = getActiveZhutianAvatarName(player);
     if (isTianmoHuashengPhysique(player)) {
       ensureTianmoHuashengState(player, {
@@ -14307,6 +14330,7 @@ if (Array.isArray(player.势力职位) && player.势力职位.length === 0) {
     await Write_najie(usr_qq, najie);
     await Write_player(usr_qq, player);
     await Write_equipment(usr_qq, equipment);
+    await player_efficiency(usr_qq);
     transaction.commit();
     result.succeeded++;
 

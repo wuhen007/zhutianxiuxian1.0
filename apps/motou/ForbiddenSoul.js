@@ -237,7 +237,7 @@ export class ForbiddenSoul extends plugin {
 
       let battle;
       try {
-        battle = await zd_battle(attacker, target);
+        battle = await zd_battle(attacker, target, { pvp: true });
       } catch (error) {
         console.error('镇魂战斗失败:', error);
         return e.reply(`镇魂战斗异常：${error.message}`);
