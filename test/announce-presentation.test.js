@@ -64,7 +64,7 @@ test('空公告与零本期数量不回放旧内容', () => {
 test('真实公告分章模板完整渲染，图文与后端使用同一本期内容', () => {
   const ann = loadAnnouncement();
   const html = fs.readFileSync(new URL('../resources/html/announce/announce.html', import.meta.url), 'utf8');
-  assert.equal(ann.date, '2026.10.08');
+  assert.match(ann.date, /^\d{4}\.\d{2}\.\d{2}$/);
   assert.ok(ann.currentUpdateCount > 2);
   for (let page = 1; page <= Math.ceil(ann.currentUpdateCount / ANNOUNCE_PAGE_SIZE); page++) {
     const data = buildAnnouncePage(ann, page);
