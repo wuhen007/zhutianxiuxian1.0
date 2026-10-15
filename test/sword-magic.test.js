@@ -185,8 +185,9 @@ test('独立路线旧写屏障保护职业、背包、位置与原修仙等级',
     const next = structuredClone(f.player); mutate(next);
     assert.throws(() => assertSwordMagicWriteCurrent(f.player, next), { code: 'SWORD_MAGIC_STALE_WRITE' });
   }
-  for (const command of ['#闭关', '#修仙签到', '#复活地球 入界 确认', '#降临 修仙界', '#再入仙途']) assert.ok(getSwordMagicCommandBlock(f.player, command));
-  for (const command of ['#剑与魔法 帮助', '#我的纳戒', '#抽取命格词条', '#我']) assert.equal(getSwordMagicCommandBlock(f.player, command), '');
+  for (const command of ['#闭关', '#修仙签到', '#复活地球 入界 确认', '#降临 修仙界']) assert.ok(getSwordMagicCommandBlock(f.player, command));
+  // 转世确认流程是合法出口，不得拦截
+  for (const command of ['#剑与魔法 帮助', '#我的纳戒', '#抽取命格词条', '#我', '#再入仙途', '#强制再入仙途', '断绝此生', '再继仙缘']) assert.equal(getSwordMagicCommandBlock(f.player, command), '');
 });
 
 for (const profession of ['剑士', '魔法师', '僧侣', '游侠']) {
@@ -213,3 +214,76 @@ for (const profession of ['剑士', '魔法师', '僧侣', '游侠']) {
     assert.equal(f.player.灵石, 10000);
   });
 }
+
+test('飞升需要完整通关与二次确认，毕业后落仙界且拦截解除', () => {
+  const f = fixture('剑士');
+  assert.equal(f.send('飞升 确认').ok, false); // 未通关直接确认：拒绝
+  const state = f.player.剑与魔法;
+  state.chapter = 6; state.lore = SWORD_MAGIC_REGIONS.map(region => region.name);
+  state.ending = '黎明勇者'; state.level = 8; // 模拟已通关角色；尚缺职业武装
+  assert.equal(f.send('飞升 确认').ok, false);
+  state.weapon = true;
+  const info = f.send('飞升');
+  assert.equal(info.changed, false);
+  assert.match(info.message, /飞升 确认/);
+  const before = structuredClone(f.player);
+  const result = f.act('飞升 确认');
+  assert.match(result.message, /真界境后期/);
+  // 毕业效果：境界跳变、修为清零、落仙界、铜币折灵石（120×100）
+  assert.equal(f.player.剑与魔法.status, 'ascended');
+  assert.equal(f.player.level_id, 39);
+  assert.equal(f.player.修为, 0);
+  assert.equal(f.player.power, 0);
+  assert.equal(f.player.power_place, 1);
+  assert.equal(f.player.灵石, 10000 + 120 * 100);
+  // 写保护：active→ascended 的一次性跳变合法
+  assert.doesNotThrow(() => assertSwordMagicWriteCurrent(before, f.player));
+  // 拦截解除：普通修仙指令放行，#剑与魔法 前缀仍可查档案
+  assert.equal(getSwordMagicCommandBlock(f.player, '#闭关'), '');
+  assert.equal(getSwordMagicCommandBlock(f.player, '#剑与魔法 状态'), '');
+  const archived = f.act('状态');
+  assert.match(archived.message, /档案封存/);
+  assert.match(f.act('回顾').message, /飞升诸天/);
+});
+
+test('飞升幂等防重：重复确认不发奖，旧消息重放走回执', () => {
+  const f = fixture('僧侣');
+  const state = f.player.剑与魔法;
+  state.chapter = 6; state.lore = SWORD_MAGIC_REGIONS.map(region => region.name);
+  state.ending = '守隙魔王'; state.level = 10; state.weapon = true;
+  f.act('飞升 确认');
+  const stones = f.player.灵石;
+  // 新消息再次确认：档案守卫拒绝，不重复发放
+  const again = f.send('飞升 确认');
+  assert.equal(again.ok, false);
+  assert.equal(f.player.灵石, stones);
+  // 同一 requestId 重放：命中回执，不重复发放
+  const replay = runSwordMagicCommand(f.player, '飞升 确认', { now: 1, requestId: 'msg-4' });
+  assert.equal(replay.changed, false);
+  assert.match(replay.message, /已处理消息/);
+  assert.equal(f.player.灵石, stones);
+  // 毕业后行动类指令全部拒绝
+  for (const command of ['训练 祷告', '探索 风鸣林', '抽取词条', '购买 疗伤药 1']) {
+    assert.equal(f.send(command).ok, false, command);
+  }
+  assert.equal(f.player.灵石, stones);
+  // 飞升后存档仍受版本保护：revision 倒退与删档照样拒绝
+  const stale = structuredClone(f.player); stale.剑与魔法.revision--;
+  assert.throws(() => assertSwordMagicWriteCurrent(f.player, stale), { code: 'SWORD_MAGIC_STALE_WRITE' });
+  const deleted = structuredClone(f.player); delete deleted.剑与魔法;
+  assert.throws(() => assertSwordMagicWriteCurrent(f.player, deleted), { code: 'SWORD_MAGIC_STALE_WRITE' });
+});
+
+test('旧档缺少篇章状态字段时按在籍处理，飞升后不再锚定位面', () => {
+  const f = fixture('游侠');
+  delete f.player.剑与魔法.status; // 模拟飞升功能上线前的旧档
+  const result = f.act('状态');
+  assert.equal(result.ok, true);
+  assert.equal(f.player.power_place, 0.7);
+  const state = f.player.剑与魔法;
+  state.chapter = 6; state.lore = SWORD_MAGIC_REGIONS.map(region => region.name);
+  state.ending = '地脉贤者'; state.level = 9; state.weapon = true;
+  f.act('飞升 确认');
+  assert.equal(f.player.power_place, 1);
+  assert.equal(f.player.剑与魔法.status, 'ascended');
+});

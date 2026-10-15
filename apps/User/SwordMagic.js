@@ -37,7 +37,11 @@ export class SwordMagic extends plugin {
     try {
       const response = await withPlayerMutationLock(id, async () => {
         const player = await Read_player(id);
-        if (!isSwordMagicActive(player)) return direct ? '这条路线从 #降临 剑与魔法 创建新角色；当前存档沿原路线继续。' : null;
+        if (!isSwordMagicActive(player)) {
+          if (!player.剑与魔法) return direct ? '这条路线从 #降临 剑与魔法 创建新角色；当前存档沿原路线继续。' : null;
+          // 已飞升：只有 #剑与魔法 前缀指令进入档案查询，别名指令交还主线路线。
+          if (!direct) return null;
+        }
         const command = /^#抽取(?:异界词条|词条|命格词条)$/.test(e.msg) ? '抽取词条'
           : /^#(?:我的纳戒|纳戒|背包)$/.test(e.msg) ? '背包'
             : /^#(?:我的练气|我)$/.test(e.msg) ? '状态' : e.msg.replace(/^#剑与魔法/, '').trim() || '状态';

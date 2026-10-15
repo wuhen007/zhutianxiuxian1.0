@@ -1,5 +1,8 @@
 // 原创独立位面；所有战斗、修炼、探索都先保存行动，到期再兑现。
 export const SWORD_MAGIC_LOCATION = 0.7;
+// 飞升落点：练气 39 级「真界境后期」，比复活地球毕业（42 地仙）低一档，体现两条路线的难度差。
+export const SWORD_MAGIC_ASCENSION_LEVEL_ID = 39;
+export const SWORD_MAGIC_ASCENSION_COIN_RATE = 100;
 const MINUTE = 60_000;
 const MAX = 1_000_000_000;
 const ok = (condition, message) => { if (!condition) throw new Error(message); };
@@ -72,6 +75,7 @@ export const SWORD_MAGIC_HELP = [
   '#剑与魔法 训练 剑术|魔法|祷告|侦察：5分钟；帮工5分钟赚15铜币；休养10分钟免费。',
   '#剑与魔法 探索 风鸣林：到期出现事件；#剑与魔法 抉择 选项：继续计时。',
   '#剑与魔法 状态 或 结算：到期自动核对结果；途中可 #剑与魔法 撤离。',
+  '#剑与魔法 飞升：完成六地区主线与终局、锻造职业武装并达到等级8后，飞升诸天落入仙界（真界境后期，铜币折灵石）；档案封存，可 #剑与魔法 回顾。',
   '#剑与魔法 商店 / 购买 野营口粮 2 / 使用 疗伤药 / 锻造',
   '#我的纳戒 或 #剑与魔法 背包：查看随身、仓储与探索收获。',
   '#剑与魔法 存入 物品 数量 / 取出 物品 数量 / 丢弃 物品 数量',
@@ -105,7 +109,7 @@ function gainExp(state, amount) {
 }
 export function createSwordMagicState(now = Date.now()) {
   ok(integer(now, Number.MAX_SAFE_INTEGER), '时间异常。');
-  return { version: 1, revision: 0, createdAt: now, profession: '', traits: [], drawnAt: null,
+  return { version: 1, revision: 0, createdAt: now, status: 'active', profession: '', traits: [], drawnAt: null,
     level: 1, exp: 0, coins: 120, hp: 100, mp: 60, wounded: false,
     skills: { 剑术: 0, 魔法: 0, 祷告: 0, 侦察: 0 }, place: '白桦镇', chapter: 0,
     bag: { 野营口粮: 2, 疗伤药: 2, 魔力药: 1 }, storage: {}, cargo: {}, weapon: false,
@@ -136,8 +140,10 @@ function validateState(state) {
   ok(['白桦镇', ...SWORD_MAGIC_REGIONS.map(region => region.name)].includes(state.place), '异界位置异常。');
   ok(Array.isArray(state.lore) && state.lore.length === state.chapter
     && state.lore.every((name, i) => name === SWORD_MAGIC_REGIONS[i].name), '主线见闻记录异常。');
+  ok(state.status === undefined || state.status === 'active' || state.status === 'ascended', '异界篇章状态异常。');
   ok(['', '黎明勇者', '地脉贤者', '守隙魔王'].includes(state.ending)
     && (state.chapter === 6) === Boolean(state.ending), '异界终局异常。');
+  ok(state.status !== 'ascended' || (state.chapter === 6 && Boolean(state.ending)), '飞升记录异常。');
   const a = state.action;
   ok(a === null || (a && ['train', 'work', 'rest', 'use', 'explore', 'choice', 'forge', 'return'].includes(a.kind)
     && integer(a.startedAt, Number.MAX_SAFE_INTEGER) && integer(a.endAt, Number.MAX_SAFE_INTEGER)
@@ -161,23 +167,32 @@ function validateState(state) {
 }
 
 export function isSwordMagicActive(player) {
-  return Boolean(player?.剑与魔法) || Number(player?.power_place) === SWORD_MAGIC_LOCATION;
+  const state = player?.剑与魔法;
+  if (state) return state.status !== 'ascended';
+  return Number(player?.power_place) === SWORD_MAGIC_LOCATION;
 }
 export function getSwordMagicCommandBlock(player, message) {
   if (!isSwordMagicActive(player)) return '';
-  if (/^#(?:剑与魔法(?:\s|帮助(?:\s|$)|$)|抽取异界词条$|抽取词条$|抽取命格词条$|我的练气$|我$|我的纳戒$|纳戒$|背包$|修仙帮助$|诸天帮助$|世界(?:\s|$))/.test(String(message || '').trim())) return '';
-  return '你正身处「剑与魔法」，使用独立职业、魔力与背包。发送 #剑与魔法 帮助 查看冒险指令。';
+  const text = String(message || '').trim();
+  // 转世确认流程对异界角色放行：断绝此生会清空整档，是离开本条路线的合法出口。
+  if (/^(?:断绝此生|再继仙缘)$/.test(text)) return '';
+  if (/^#(?:剑与魔法(?:\s|帮助(?:\s|$)|$)|抽取异界词条$|抽取词条$|抽取命格词条$|我的练气$|我$|我的纳戒$|纳戒$|背包$|修仙帮助$|诸天帮助$|再入仙途$|强制再入仙途$|世界(?:\s|$))/.test(text)) return '';
+  return '你正身处「剑与魔法」，使用独立职业、魔力与背包。发送 #剑与魔法 帮助 查看冒险指令；通关终局后可 #剑与魔法 飞升 前往仙界。';
 }
 export function assertSwordMagicWriteCurrent(previous, next) {
   if (!previous?.剑与魔法) return;
   const before = previous.剑与魔法, after = next?.剑与魔法;
   let valid = true;
   try { validateState(after); } catch { valid = false; }
+  // 境界字段与位面锚定只在「前后都在籍」时校验；飞升（active→ascended）是合法的一次性跳变。
+  const bothActive = before.status !== 'ascended' && after?.status !== 'ascended';
+  const changedNativeRealm = bothActive
+    && ['level_id', 'Physique_id', 'mijinglevel_id', 'xiangulevel_id', 'huafenlevel_id', 'lunhui']
+      .some(key => Number(previous[key] || 0) !== Number(next[key] || 0));
   if (!valid || after.revision < before.revision || after.revision > before.revision + 1
     || (after.revision === before.revision && JSON.stringify(after) !== JSON.stringify(before))
-    || Number(next.power_place) !== SWORD_MAGIC_LOCATION
-    || ['level_id', 'Physique_id', 'mijinglevel_id', 'xiangulevel_id', 'huafenlevel_id', 'lunhui']
-      .some(key => Number(previous[key] || 0) !== Number(next[key] || 0))) {
+    || (after.status !== 'ascended' && Number(next.power_place) !== SWORD_MAGIC_LOCATION)
+    || changedNativeRealm) {
     const error = new Error('剑与魔法存档已变化，请读取最新记录再操作。');
     error.code = 'SWORD_MAGIC_STALE_WRITE';
     throw error;
@@ -340,6 +355,16 @@ function perform(state, command, now, random) {
     return begin(state, 'use', `使用${target}`, 3, target, now, random);
   }
   ok(!state.encounter && state.place === '白桦镇', '先完成当前遭遇或撤离回白桦镇。');
+  if (verb === '飞升') {
+    ok(target === '确认' && !countText, '飞升将离开艾瑟兰、落入仙界继续修行，异界档案封存不再行动。确认请发送 #剑与魔法 飞升 确认。');
+    ok(state.chapter === 6 && state.ending, '飞升需要完成六地区主线并写下终局。');
+    ok(state.weapon, '飞升需要已锻造的职业武装——它将成为你跨入诸天的信物。');
+    ok(state.level >= 8, `飞升需要等级8，当前等级${state.level}。`);
+    state.status = 'ascended';
+    return '裂月之光落在你的肩上，职业武装化作流光缠于腕间，白桦镇的钟声为异乡人送行。\n'
+      + `【飞升诸天】你落入仙界，境界定为「真界境后期」（修为需重新积累）；异界铜币按1:${SWORD_MAGIC_ASCENSION_COIN_RATE}折为灵石入账。\n`
+      + '此世档案已封存，发送 #剑与魔法 回顾 可随时翻看。愿你在诸天之上，仍记得艾瑟兰的春天。';
+  }
   if (verb === '休养') {
     ok(!target, '用法：#剑与魔法 休养。');
     return begin(state, 'rest', '在白桦镇休养', 10, '', now, random);
@@ -386,7 +411,7 @@ function perform(state, command, now, random) {
 }
 
 export function runSwordMagicCommand(player, command = '状态', { now = Date.now(), random = Math.random, requestId = '' } = {}) {
-  let state, messages = [], progressed = false;
+  let state, messages = [], progressed = false, wasAscended = false;
   const commit = (success, message) => {
     if (progressed) {
       state.revision++;
@@ -394,7 +419,18 @@ export function runSwordMagicCommand(player, command = '状态', { now = Date.no
       // ponytail: 保留最近64条指令回执；核心天赋、主线和行动状态另外独立防重。
       if (requestId) state.receipts = [...state.receipts, { id: requestId, message }].slice(-64);
       validateState(state);
-      player.剑与魔法 = state; player.power_place = SWORD_MAGIC_LOCATION;
+      player.剑与魔法 = state;
+      if (state.status === 'ascended' && !wasAscended) {
+        // 飞升是一次性跳变：落仙界、修为重新积累、铜币折灵石；档案封存。
+        player.level_id = SWORD_MAGIC_ASCENSION_LEVEL_ID;
+        player.修为 = 0;
+        player.power = 0;
+        player.power_place = 1;
+        player.灵石 = (Number.isSafeInteger(player.灵石) ? player.灵石 : 0)
+          + state.coins * SWORD_MAGIC_ASCENSION_COIN_RATE;
+      } else {
+        player.power_place = SWORD_MAGIC_LOCATION;
+      }
     }
     return { ok: success, changed: progressed, message };
   };
@@ -413,15 +449,30 @@ export function runSwordMagicCommand(player, command = '状态', { now = Date.no
       return commit(true, '你在艾瑟兰的白桦镇醒来，公会为异乡人准备了基础补给。\n发送 #抽取异界词条 抽取两条开局天赋，再发送 #剑与魔法 就职 职业。\n#剑与魔法 世界观 查看断冠纪元的秘密。');
     }
     validateState(player.剑与魔法);
-    ok(Number(player.power_place) === SWORD_MAGIC_LOCATION, '位面与角色记录不一致，请保留存档检查。');
+    ok(Number(player.power_place) === SWORD_MAGIC_LOCATION
+      || player.剑与魔法.status === 'ascended', '位面与角色记录不一致，请保留存档检查。');
     const receipt = requestId && player.剑与魔法.receipts.find(item => item.id === requestId);
     if (receipt) return { ok: true, changed: false, message: `【已处理消息】${receipt.message}` };
+    wasAscended = player.剑与魔法.status === 'ascended';
     state = structuredClone(player.剑与魔法);
+    state.status ??= 'active';
+    if (state.status === 'ascended'
+      && !['状态', '结算', '背包', '词条', '地图', '见闻', '回顾', '飞升'].includes(command)) {
+      return { ok: false, changed: false, message: '本篇已结束，你已飞升诸天。异界档案封存不再行动，可发送 #剑与魔法 回顾 翻看履历；修行请在仙界继续。' };
+    }
     if (state.action && now >= state.action.endAt) {
       messages.push(settle(state)); progressed = true;
     }
     let message;
-    if (command === '状态' || command === '结算') message = status(state, now);
+    if (command === '状态' || command === '结算') message = state.status === 'ascended'
+      ? `【剑与魔法·档案封存】${state.profession} Lv.${state.level}｜终局：${state.ending}\n你已飞升诸天，落入仙界「真界境后期」，修为重新积累。艾瑟兰的一切化为履历：主线${state.chapter}/6｜公会委托${state.commissions}次｜重伤撤回${state.defeats}次。\n发送 #剑与魔法 回顾 查看冒险履历；见闻与地图仍可查阅。`
+      : status(state, now);
+    else if (command === '飞升') message = state.status === 'ascended'
+      ? '你已飞升诸天，此世档案封存。修行请在仙界继续；#剑与魔法 回顾 可翻看履历。'
+      : `【飞升诸天】完成六地区主线与终局、锻造职业武装、等级达到8后，发送 #剑与魔法 飞升 确认 离开艾瑟兰。\n落点：仙界，境界定为「真界境后期」（练气39级），修为重新积累；随身铜币按1:${SWORD_MAGIC_ASCENSION_COIN_RATE}折为灵石。\n当前进度：主线${state.chapter}/6｜终局${state.ending || '未定'}｜职业武装${state.weapon ? '已锻造' : '未锻造'}｜等级${state.level}。`;
+    else if (command === '回顾') message = state.history.length
+      ? `【剑与魔法·冒险履历】\n${state.history.map(item => item.message).join('\n\n')}`
+      : '尚无履历。';
     else if (command === '背包') message = `【异界随身物资】${load(state)}/12格\n${items(state.bag)}\n【白桦镇仓储】${items(state.storage)}\n【探索收获】${items(state.cargo)}\n取放仅在白桦镇空闲时进行；休养、治疗、锻造与探索都需时间。`;
     else if (command === '词条') message = `每个角色抽取2条不重复天赋。下表是首抽权重，第二抽剔除已抽词条后按剩余权重归一；并非两次均为相同概率。\n${SWORD_MAGIC_TRAITS.map(trait => `${trait.name} ${trait.weight}/100：${trait.desc}`).join('\n')}\n已获得：${traitNames(state).join('、') || '尚未抽取'}`;
     else if (command === '地图') message = SWORD_MAGIC_REGIONS.map((region, i) =>
