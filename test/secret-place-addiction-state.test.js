@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import fs from 'node:fs';
 
 import {
   accelerateSecretPlaceAction,
@@ -96,6 +97,54 @@ test('结算卡按新总时长重排节点且不会推迟下一轮', () => {
   assert.equal(result.action.next_settle_time, 331_000);
   assert.ok(result.action.next_settle_time <= previousNext);
   assert.equal(result.endTime, 1_000 + 55 * 60 * 1000);
+  assert.equal(result.action.end_time, result.endTime);
+});
+
+test('岁云殿堂27张仙品卡同步旧结束时间，剩余4分27秒', () => {
+  const start = 1_000_000_000_000;
+  const action = {
+    ...createSecretPlaceAddictionAction({ durationMinutes: 140, totalCount: 40,
+      place: { name: '岁云殿堂' }, now: start }),
+    end_time: start + 140 * 60_000,
+  };
+  const result = accelerateSecretPlaceAction(action, 135 * 60_000, start + 33_000);
+  assert.equal(result.action.end_time - (start + 33_000), 267_000);
+  assert.equal(result.action.end_time, result.endTime);
+  assert.equal(action.end_time, start + 140 * 60_000);
+  const completed = accelerateSecretPlaceAction(action, 200 * 60_000, start + 33_000);
+  assert.equal(completed.action.end_time, start + 33_000);
+});
+
+test('修仙状态兼容已完成旧沉迷记录，并保留进行中行动显示', async () => {
+  const source = fs.readFileSync(new URL('../apps/SecretPlace/SecretPlace.js', import.meta.url), 'utf8');
+  const method = source.slice(source.indexOf('async Xiuxianstate(e) {'), source.indexOf('  //秘境地点'));
+  let action;
+  const dependencies = {
+    verc: () => true,
+    channel: async id => id,
+    Read_player: async () => ({ 名号: '测试', power_place: '遮天位面' }),
+    getLocationName: value => value,
+    formatTime: value => String(value),
+    redis: { get: async key => key.endsWith(':fashan') ? null : JSON.stringify(action) },
+  };
+  const app = new (new Function(...Object.keys(dependencies), `return class { ${method} }`)(...Object.values(dependencies)))();
+  const future = Date.now() + 140 * 60_000;
+  for (const [flags, expected] of [
+    [{ Place_actionplus: '1', Place_action: 1, settled_count: 40 }, '真身沉迷行动已结束'],
+    [{ Place_actionplus: 1, Place_action: '1', settled_count: 40 }, '真身沉迷行动已结束'],
+    [{ Place_actionplus: '0', Place_action: '1', settled_count: 3 }, '真身正在沉迷【岁云殿堂】'],
+    [{ Place_actionplus: 0, Place_action: '1', settled_count: 3 }, '真身正在沉迷【岁云殿堂】'],
+    [{ Place_actionplus: '1', Place_action: '0', settled_count: 40 }, '真身正在镇守仙境中'],
+    [{ Place_actionplus: '1', Place_action: '1', total_count: undefined, settled_count: undefined,
+      action: '闭关' }, '真身正在闭关中'],
+  ]) {
+    action = { action: '镇守仙境', total_count: 40, start_time: Date.now(), total_time: 140,
+      end_time: future, next_settle_time: future, Place_address: { name: '岁云殿堂' }, ...flags };
+    let reply;
+    await app.Xiuxianstate({ user_id: 'test', reply: value => { reply = value; } });
+    assert.ok(reply.includes(expected), reply);
+    if (expected === '真身沉迷行动已结束') assert.ok(!reply.includes('剩余时间'), reply);
+  }
 });
 
 test('同一玩家的秘境结算在进程内串行执行', async () => {

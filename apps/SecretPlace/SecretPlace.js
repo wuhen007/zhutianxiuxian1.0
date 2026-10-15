@@ -1247,7 +1247,13 @@ replyMsg.push(
         const now_time = new Date().getTime();
         
         // ==== 修改点：适应新的状态定义 ====
-        if (trueBodyAction.Place_actionplus === '0') {
+        // 兼容已结算但仍保留加速前 end_time 的旧沉迷记录。
+        if (trueBodyAction.Place_actionplus == '1' &&
+            trueBodyAction.Place_action == '1' &&
+            Number(trueBodyAction.total_count) > 0 &&
+            Number(trueBodyAction.settled_count) >= Number(trueBodyAction.total_count)) {
+            replyMsg.push(`真身沉迷行动已结束`);
+        } else if (trueBodyAction.Place_actionplus == '0') {
             // 沉迷状态
             const totalEndTime = trueBodyAction.start_time + (trueBodyAction.total_time * 60 * 1000);
             

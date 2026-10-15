@@ -2466,6 +2466,8 @@ if (!action.memoryEntryRecorded) recordMemoryDungeon(player, {
 if (action.settled_count >= action.total_count) {
     // 所有结算完成，结束动作
     action.Place_actionplus = '1';
+    action.end_time = Date.now();
+    action.remaining_time = 0;
     
     // ==== 完成沉迷历史记录 ====
     const addictionHistory = await redis.get(historyKey);

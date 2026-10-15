@@ -105,6 +105,7 @@ export function accelerateSecretPlaceAction(action, requestedReduceMs, now = Dat
     const durationMs = Math.max(0, Number(next.total_time) * MINUTE_MS - actualReduceMs);
     const interval = durationMs / totalCount;
     next.total_time = durationMs / MINUTE_MS;
+    next.end_time = startTime + durationMs;
     next.remaining_time = Math.max(0, (startTime + durationMs - timestamp) / MINUTE_MS);
     next.interval = interval;
     next.next_settle_time = Math.max(timestamp, startTime + interval * (settledCount + 1));
