@@ -4,6 +4,7 @@ import {
   runSwordMagicCommand, SWORD_MAGIC_TRAITS, SWORD_MAGIC_REGIONS,
   assertSwordMagicWriteCurrent, getSwordMagicCommandBlock,
   getPendingMemorial, clearPendingMemorial,
+  SWORD_MAGIC_ENDGAME_FATES as swordMagicEndgameFates,
 } from '../model/swordMagic.js';
 
 function fixture(profession = '剑士', rolls = () => 0.999) {
@@ -237,9 +238,9 @@ test('飞升需要完整通关与二次确认，毕业后落仙界且拦截解�
   assert.equal(f.player.power, 0);
   assert.equal(f.player.power_place, 1);
   assert.equal(f.player.灵石, 10000 + 120 * 100);
-  // 毕业专属命格：附加命宫 + 上限额外开一格
-  assert.deepEqual(f.player.附加命格, ['otherworld_returnee']);
-  assert.equal(f.player.命格词条上限, 2);
+  // 毕业专属命格：异界归人 + 终局专属词条；额外开对应格数
+  assert.deepEqual(f.player.附加命格, ['otherworld_returnee', 'dawn_oath']);
+  assert.equal(f.player.命格词条上限, 3);
   // 写保护：active→ascended 的一次性跳变合法
   assert.doesNotThrow(() => assertSwordMagicWriteCurrent(before, f.player));
   // 待发信物标记按终局登记，清空时才推进 revision
@@ -266,6 +267,11 @@ test('飞升幂等防重：重复确认不发奖，旧消息重放走回执', ()
   state.ending = '守隙魔王'; state.level = 10; state.weapon = true;
   f.act('飞升 确认');
   const stones = f.player.灵石;
+  // 终局专属词条按结局发放
+  assert.deepEqual(f.player.附加命格, ['otherworld_returnee', 'riftward_vow']);
+  assert.equal(f.player.命格词条上限, 3);
+  assert.deepEqual(Object.keys(swordMagicEndgameFates), ['黎明勇者', '地脉贤者', '守隙魔王']);
+  assert.equal(swordMagicEndgameFates['地脉贤者'].id, 'leyline_promise');
   // 新消息再次确认：档案守卫拒绝，不重复发放
   const again = f.send('飞升 确认');
   assert.equal(again.ok, false);
