@@ -6,6 +6,7 @@ import {
   formatRevivalStatus, isRevivalEarthActive, runRevivalCommand,
 } from '../../model/revivalEarth.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { getArrivalEntryBlock } from '../../model/openingArrival.js';
 
 export class RevivalEarth extends plugin {
   constructor() {
@@ -25,7 +26,7 @@ export class RevivalEarth extends plugin {
     const userId = String(await channel(String(e.user_id).replace('qg_', '')));
     if (!(await existplayer(userId))) {
       if (/^#(?:我的练气|我)$/.test(e.msg)) return false;
-      await e.reply('请先 #踏入仙途 创建凡人角色，再选择复活地球开局。');
+      await e.reply(getArrivalEntryBlock('地球'));
       return true;
     }
     const profileQuery = /^#(?:我的练气|我)$/.test(e.msg);
@@ -35,6 +36,7 @@ export class RevivalEarth extends plugin {
         if (profileQuery && !isRevivalEarthActive(player)) return null;
         const command = profileQuery || e.msg === '#复活全人类'
           ? '状态' : e.msg.replace(/^#复活地球/, '').trim() || '状态';
+        if (/^入界(?:\s|$)/.test(command) && !player.复活地球) return getArrivalEntryBlock('地球');
         // 原路线存在待结算行动时，先完成原结算再选开局，防止晚到的旧任务覆盖存档。
         if (/^入界(?:\s|$)/.test(command)
           && await redis.get(`xiuxian:player:${userId}:action`)) {

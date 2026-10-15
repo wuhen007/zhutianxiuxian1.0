@@ -72,10 +72,9 @@ import { parsePlayerLayoutCommand } from '../../model/playerLayout.js';
 import { withJuelingEraLock } from '../tasks/juelingLifespanService.js';
 import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
 import {
-  ARRIVAL_BUTTONS, ARRIVAL_CHOICES_TEXT, OPENING_ARRIVAL_MARKDOWN, OPENING_WORLD_PROLOGUE, parseArrivalChoice,
+  ARRIVAL_BUTTONS, ARRIVAL_CHOICES_TEXT, OPENING_ARRIVAL_MARKDOWN, OPENING_WORLD_PROLOGUE, parseArrivalChoice, getArrivalEntryBlock,
 } from '../../model/openingArrival.js';
-import { runRevivalCommand } from '../../model/revivalEarth.js';
-import { runTrialCommand } from '../../model/trialUniverse.js';
+import { runSwordMagicCommand } from '../../model/swordMagic.js';
 
 function replyRecreateConfirmation(e) {
   const text = '一旦转世一切当世与你无缘,你真的要重生吗?回复:【断绝此生】或者【再继仙缘】进行选择';
@@ -814,8 +813,8 @@ async daily_lottery(e) {
     let ifexistplay = await existplayer(usr_qq);
     if (ifexistplay) {
       const player = await Read_player(usr_qq);
-      if (player.试炼宇宙 || player.复活地球?.status === 'active') {
-        await e.reply(`你的降临记录已经存在，当前角色保留。发送 #${player.试炼宇宙 ? '试炼宇宙' : '复活地球'} 状态 查看进度。`);
+      if (player.剑与魔法 || player.试炼宇宙 || player.复活地球?.status === 'active') {
+        await e.reply(`你的降临记录已经存在，当前角色保留。发送 #${player.剑与魔法 ? '剑与魔法' : player.试炼宇宙 ? '试炼宇宙' : '复活地球'} 状态 查看进度。`);
       } else {
         await this.Show_player(e);
       }
@@ -825,6 +824,11 @@ async daily_lottery(e) {
     if (!arrival) {
       const text = `${OPENING_WORLD_PROLOGUE}\n\n${ARRIVAL_CHOICES_TEXT}`;
       await replyOfficialMessage(e, { markdown: OPENING_ARRIVAL_MARKDOWN, text, buttons: ARRIVAL_BUTTONS });
+      return false;
+    }
+    const entryBlock = getArrivalEntryBlock(arrival);
+    if (entryBlock) {
+      await e.reply(entryBlock);
       return false;
     }
     //初始化玩家信息
@@ -941,10 +945,8 @@ async daily_lottery(e) {
     };
     if (arrival === '修仙界') applyOpeningOmen(new_player, openingOmen);
     let arrivalMessage = '';
-    if (arrival !== '修仙界') {
-      const result = arrival === '地球'
-        ? runRevivalCommand(new_player, '入界 确认')
-        : runTrialCommand(new_player, '入界 确认');
+    if (arrival === '剑与魔法') {
+      const result = runSwordMagicCommand(new_player, '入界 确认');
       if (!result.ok) {
         await e.reply(result.message);
         return false;
@@ -995,7 +997,15 @@ async daily_lottery(e) {
     };
     await Write_danyao(usr_qq, arr);
     if (arrival !== '修仙界') {
-      await e.reply(`【降临·${arrival}】\n${arrivalMessage}\n\n发送 #${arrival === '地球' ? '复活地球' : '试炼宇宙'} 帮助 查看规则与行动。`);
+      await replyOfficialMessage(e, {
+        markdown: `# 降临 · ${arrival}\n\n${arrivalMessage}\n\n> 从两条天赋和一次职业选择开始，书写你的断冠纪元。`,
+        text: `【降临·${arrival}】\n${arrivalMessage}\n\n发送 #剑与魔法 帮助 查看规则与行动。`,
+        buttons: [[
+          { text: '抽取天赋', command: '#抽取异界词条' },
+          { text: '世界观', command: '#剑与魔法 世界观' },
+          { text: '冒险帮助', command: '#剑与魔法 帮助' },
+        ]],
+      });
       return false;
     }
     await e.reply(`${formatOpeningOmenMessage(openingOmen, new_player.名号)}\n\n命格尚未显化，请发送 #抽取命格词条。`);

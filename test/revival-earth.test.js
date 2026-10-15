@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
+import { getArrivalEntryBlock } from '../model/openingArrival.js';
 import * as earth from '../model/revivalEarth.js';
 import {
   getLocationId, getLocationName, getLocationThreshold, getCoordinateLocations,
@@ -472,7 +473,7 @@ function appFixture(initial, { failWrite = false, failSync = false, pending = nu
     .replace(/import[\s\S]*?from\s+['"][^'"]+['"];?/g, '')
     .replace('export class', 'class');
   const bindings = {
-    ...earth, console: { warn() {} },
+    ...earth, getArrivalEntryBlock, console: { warn() {} },
     plugin: class { constructor(options) { Object.assign(this, options); } },
     verc: () => true, channel: async id => id, existplayer: async () => true,
     Read_player: async () => structuredClone(disk),
@@ -531,7 +532,7 @@ test('落盘失败不发成功回执；旧行动未结算时阻止换路线', as
   const entry = appFixture(newPlayer(), { pending: '{"action":"闭关"}' });
   await entry.send('#复活地球 入界 确认');
   assert.equal(entry.writes(), 0);
-  assert.match(entry.replies.at(-1), /原路线尚有行动记录/);
+  assert.match(entry.replies.at(-1), /暂缓接纳新角色/);
 });
 
 test('离界先持久化后同步派生属性；同步失败状态可重试，且不重复转换', async () => {

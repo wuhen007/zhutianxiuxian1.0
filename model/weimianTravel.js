@@ -3,11 +3,13 @@ import { getRealmAuthorityLevel } from './realmAuthority.js';
 import { isCultivatingExtraPath } from './extraCultivation.js';
 import { isRevivalEarthActive, REVIVAL_EARTH_LOCATION } from './revivalEarth.js';
 import { isTrialUniverseActive } from './trialUniverse.js';
+import { isSwordMagicActive } from './swordMagic.js';
 
 export const PLACE_LOCATION_MAP = Object.freeze({
   '凡间': 0,
   '复活地球': REVIVAL_EARTH_LOCATION,
   '试炼宇宙': 0.6,
+  '剑与魔法': 0.7,
   '仙界': 1,
   '下界八域': 1.5,
   '遮天位面': 2,
@@ -36,7 +38,7 @@ export const PLACE_LOCATION_NAMES = Object.freeze(Object.keys(PLACE_LOCATION_MAP
 export const PLACE_LOCATION_PATTERN = PLACE_LOCATION_NAMES.join('|');
 
 export const DEFAULT_KNOWN_LOCATIONS = Object.freeze(['凡间']);
-export const SEALED_LOCATIONS = Object.freeze(['彼岸世界', '复活地球', '试炼宇宙']);
+export const SEALED_LOCATIONS = Object.freeze(['彼岸世界', '复活地球', '试炼宇宙', '剑与魔法']);
 export const SPECIAL_LOCATIONS = Object.freeze([
   '仙域', '异域', '时间长河', '永恒未知之地', '小阴间', '大阴间', '阳间',
   '厄土高原', '上苍之上', '超维宇宙', '百维真界', '原初宇宙海',
@@ -766,6 +768,9 @@ export function getLocationThreshold(player, location) {
   if (!locationName || !Object.hasOwn(PLACE_LOCATION_MAP, locationName)) {
     code = 'unknown';
     checks = [{ label: '位面定位', display: '目标位面未登记', met: false }];
+  } else if (isSwordMagicActive(player) || locationName === '剑与魔法') {
+    code = 'sword-magic';
+    checks = [{ label: '独立异界路线', display: '由 #降临 剑与魔法 创建异界角色，按大陆主线冒险', met: false }];
   } else if (isTrialUniverseActive(player) || locationName === '试炼宇宙') {
     code = 'trial-universe';
     checks = [{ label: '独立试炼路线', display: '由 #降临 试炼宇宙 选择开局；试炼空间不接通常规传送', met: false }];

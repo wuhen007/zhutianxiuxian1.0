@@ -6,6 +6,7 @@ import {
 } from '../../model/trialUniverse.js';
 import { getTrialHelpData } from '../../model/trialUniverseHelp.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { getArrivalEntryBlock } from '../../model/openingArrival.js';
 
 export class TrialUniverse extends plugin {
   constructor() {
@@ -32,7 +33,7 @@ export class TrialUniverse extends plugin {
     const userId = String(await channel(String(e.user_id).replace('qg_', '')));
     if (!(await existplayer(userId))) {
       if (profileQuery) return false;
-      await e.reply('请先发送 #踏入仙途，再发送 #降临 试炼宇宙 选择降临地。');
+      await e.reply(getArrivalEntryBlock('试炼宇宙'));
       return true;
     }
     try {
@@ -40,6 +41,7 @@ export class TrialUniverse extends plugin {
         const player = await Read_player(userId);
         if (profileQuery && !isTrialUniverseActive(player)) return null;
         const command = profileQuery ? '状态' : e.msg.replace(/^#试炼宇宙/, '').trim() || '状态';
+        if (/^入界(?:\s|$)/.test(command) && !player.试炼宇宙) return getArrivalEntryBlock('试炼宇宙');
         // 旧路线行动必须先结算，避免迟到任务覆盖新降临记录。
         if (/^入界(?:\s|$)/.test(command)
           && await redis.get(`xiuxian:player:${userId}:action`)) {

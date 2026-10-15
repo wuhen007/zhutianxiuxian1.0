@@ -5,6 +5,7 @@ import { writeJsonAtomically } from '../utils/atomicJson.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 import { assertRevivalWriteCurrent, getRevivalCommandBlock } from './revivalEarth.js';
 import { assertTrialWriteCurrent, getTrialCommandBlock } from './trialUniverse.js';
+import { assertSwordMagicWriteCurrent, getSwordMagicCommandBlock } from './swordMagic.js';
 import {
   assertZhutianAvatarRootWriteAllowed,
   assertZhutianMirrorWriteCurrent,
@@ -1317,6 +1318,7 @@ export async function Write_player(usr_qq, player, options = {}) {
     }
   }
   if (previousPlayer) {
+    if (previousPlayer.剑与魔法) assertSwordMagicWriteCurrent(previousPlayer, player);
     if (previousPlayer.试炼宇宙) assertTrialWriteCurrent(previousPlayer, player);
     if (previousPlayer.复活地球) assertRevivalWriteCurrent(previousPlayer, player);
     assertSacrificeBubbleWrite(previousPlayer, player);
@@ -7153,6 +7155,13 @@ export async function Go(e, options = {}) {
     let usr_qq = e.user_id.toString().replace('qg_', '');
     usr_qq = await channel(usr_qq);
     const player = await Read_player(usr_qq);
+    if (player.剑与魔法) {
+        const block = getSwordMagicCommandBlock(player, e.msg);
+        if (block) {
+            e.reply(block);
+            return 0;
+        }
+    }
     if (player.试炼宇宙) {
         const block = getTrialCommandBlock(player, e.msg);
         if (block) {

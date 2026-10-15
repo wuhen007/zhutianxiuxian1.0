@@ -4,6 +4,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import test from 'node:test';
 import * as trial from '../model/trialUniverse.js';
+import { getArrivalEntryBlock } from '../model/openingArrival.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 import { syncSuiyunLuckyBonus } from '../model/petLuckyCalc.js';
 import {
@@ -32,7 +33,7 @@ function appFixture(initial, { failWrite = false, pending = null, exists = true,
     .replace(/import[\s\S]*?from\s+['"][^'"]+['"];?/g, '')
     .replace('export class', 'class');
   const Constructor = vm.runInNewContext(`${source}\nTrialUniverse`, {
-    ...trial, console: { warn() {} }, withPlayerMutationLock,
+    ...trial, getArrivalEntryBlock, console: { warn() {} }, withPlayerMutationLock,
     plugin: class { constructor(options) { Object.assign(this, options); } },
     verc: () => true, channel: async () => mappedId, existplayer: async () => exists,
     Read_player: async id => { accounts.push(id); return clone(disk); },
@@ -72,30 +73,31 @@ test('未建档命令引导踏入仙途与选择降临地，人物别名不截�
   const app = appFixture(newPlayer(), { exists: false });
   assert.equal(await app.send('#我'), false);
   assert.equal(await app.send('#试炼宇宙'), true);
-  assert.match(app.replies.at(-1), /#踏入仙途/);
-  assert.match(app.replies.at(-1), /#降临 试炼宇宙/);
+  assert.match(app.replies.at(-1), /暂缓接纳新角色/);
+  assert.match(app.replies.at(-1), /#降临 剑与魔法/);
   assert.equal(app.writes(), 0);
 });
 
-test('实际命令入口映射频道账号；相同消息并发入界仅保存一次', async () => {
+test('频道映射后直接试炼入界同样暂停，新角色不会绕过开局维护', async () => {
   const app = appFixture(newPlayer(), { mappedId: 'mapped-trial' });
   await Promise.all([
     app.send('#试炼宇宙 入界 确认', 'entry-once'),
     app.send('#试炼宇宙 入界 确认', 'entry-once'),
   ]);
-  assert.equal(app.writes(), 1);
-  assert.equal(app.disk().power_place, 0.6);
-  assert.ok(app.disk().试炼宇宙);
+  assert.equal(app.writes(), 0);
+  assert.equal(app.disk().power_place, 0);
+  assert.equal(app.disk().试炼宇宙, undefined);
+  assert.match(app.replies.at(-1), /暂缓接纳新角色/);
   assert.ok(app.accounts.every(id => id === 'mapped-trial'));
-  assert.ok(app.actions.every(key => key === 'xiuxian:player:mapped-trial:action'));
+  assert.equal(app.actions.length, 0);
 });
 
 test('缺少message_id时沿用群号时间序列去重，不重复创建试炼记录', async () => {
-  const app = appFixture(newPlayer());
+  const app = appFixture(activePlayer());
   const event = { group_id: 'test-group', time: 100, seq: 2 };
   await Promise.all([
-    app.send('#试炼宇宙 入界 确认', '', event),
-    app.send('#试炼宇宙 入界 确认', '', event),
+    app.send('#试炼宇宙 进入 末日 确认', '', event),
+    app.send('#试炼宇宙 进入 末日 确认', '', event),
   ]);
   assert.equal(app.writes(), 1);
 });
@@ -124,20 +126,20 @@ test('实际试炼进入与行动消息并发去重，结算前保存后才回�
 });
 
 test('试炼落盘失败只发核对提示，重试沿用原存档；旧行动阻止入界', async () => {
-  const player = newPlayer();
+  const player = activePlayer();
   const failed = appFixture(player, { failWrite: true });
-  await failed.send('#试炼宇宙 入界 确认', 'entry-fail');
+  await failed.send('#试炼宇宙 进入 末日 确认', 'entry-fail');
   assert.equal(failed.writes(), 0);
   assert.deepEqual(failed.disk(), player);
   assert.equal(failed.replies.length, 1);
   assert.match(failed.replies[0], /未确认完成/);
   const retry = appFixture(failed.disk());
-  await retry.send('#试炼宇宙 入界 确认', 'entry-fail');
+  await retry.send('#试炼宇宙 进入 末日 确认', 'entry-fail');
   assert.equal(retry.writes(), 1);
   const pending = appFixture(newPlayer(), { pending: '{"action":"闭关"}' });
   await pending.send('#试炼宇宙 入界 确认');
   assert.equal(pending.writes(), 0);
-  assert.match(pending.replies.at(-1), /原路线尚有行动记录/);
+  assert.match(pending.replies.at(-1), /暂缓接纳新角色/);
 });
 
 test('实际Go入口在频道映射后阻断普通修炼，避免在原路线发起行动', async () => {

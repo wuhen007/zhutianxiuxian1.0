@@ -8,6 +8,7 @@ import data from '../model/XiuxianData.js';
 import Show from '../model/show.js';
 import { getRevivalCommandBlock } from '../model/revivalEarth.js';
 import { getTrialCommandBlock } from '../model/trialUniverse.js';
+import { getSwordMagicCommandBlock } from '../model/swordMagic.js';
 
 const screenshotQueueGuard = Symbol.for('zhutianxiuxian.puppeteerQueueGuard');
 if (!puppeteer[screenshotQueueGuard]) {
@@ -104,6 +105,13 @@ export const verc = ({ e }) => {
             const playerFile = getResourcePath(path.join('xiuxian_player', `${userId}.json`));
             if (fs.existsSync(playerFile)) {
                 const player = JSON.parse(fs.readFileSync(playerFile, 'utf8'));
+                if (player.剑与魔法) {
+                    const block = getSwordMagicCommandBlock(player, e.msg);
+                    if (block) {
+                        e.reply?.(block);
+                        return false;
+                    }
+                }
                 if (player.试炼宇宙) {
                     const block = getTrialCommandBlock(player, e.msg);
                     if (block) {
