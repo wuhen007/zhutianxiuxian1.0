@@ -110,6 +110,7 @@ export function getMemoryEffects(player) {
     // 保留中性字段兼容旧调用；门径不再改变副本耗时。
     dungeonSpeed: 1,
     dungeonTimeMultiplier: 1,
+    // 只加成基础渔获（众生海奖池、钓鱼地图），仙饵产物不吃这条倍率。
     fishingMultiplier: [1, 2, 3, 4][tier('海洋')],
     plantGrowthMultiplier: [1, 1.5, 2, 3][tier('大地')],
     seedMultiplier: [1, 1.5, 2, 3][tier('大地')],

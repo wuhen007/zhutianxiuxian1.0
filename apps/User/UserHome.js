@@ -1066,27 +1066,8 @@ if (isLucky || player.灵根.type === "圆环之理" || getSuiyunEffects(player)
         rewardMsg += " 道法仙术运转周天，本次垂钓冷却再减少10分钟！\n";
     }
     
-    // 特殊仙饵使用独立奖池；不带仙饵时沿用原奖池。
-    if (baitName) {
-        const coordinateCount = await exist_najie_thing(
-            usr_qq,
-            "仙武界坐标",
-            "道具"
-        );
-        const reward = rollImmortalBaitReward(baitName, {
-            ownsXianwuCoordinate:
-                Boolean(player.仙武界坐标已获得) || coordinateCount > 0,
-        });
-        const baseAmount = rollBaitRewardAmount(hasTideLamp) * (reward.uniqueFlag ? 1
-          : getMemoryEffects(player).lootMultiplier * getMemoryEffects(player).fishingMultiplier);
-        const amount = await grantFishingLoot(reward.name, reward.class, baseAmount, Boolean(reward.uniqueFlag));
-        if (reward.uniqueFlag) {
-            player[reward.uniqueFlag] = true;
-            playerChanged = true;
-        }
-        rewardMsg += `\n 【${baitName}】牵动诸天水脉，钓得【${reward.name}】x${amount}`;
-    }
-    else if (random < 50) {
+    // 基础奖池：无论是否使用仙饵都会结算，幸运翻倍与海洋垂钓倍率照常生效。
+    if (random < 50) {
         const amount = await grantFishingLoot("仙晶矿", "道具", 100 * n);
         rewardMsg += `\n 钓起仙晶矿脉！获得【仙晶矿】x${amount}`;
     } 
@@ -1123,6 +1104,27 @@ if (isLucky || player.灵根.type === "圆环之理" || getSuiyunEffects(player)
     else {
         const amount = await grantFishingLoot("超越宝盒", "盒子", 10 * n);
         rewardMsg += `\n 海浪翻涌！钓起诸天至宝【超越宝盒】x${amount}`;
+    }
+
+    // 仙饵产物与基础产物叠加发放：仙饵走独立奖池，且不吃海洋因子的垂钓加成。
+    if (baitName) {
+        const coordinateCount = await exist_najie_thing(
+            usr_qq,
+            "仙武界坐标",
+            "道具"
+        );
+        const reward = rollImmortalBaitReward(baitName, {
+            ownsXianwuCoordinate:
+                Boolean(player.仙武界坐标已获得) || coordinateCount > 0,
+        });
+        const baseAmount = reward.uniqueFlag ? 1
+          : rollBaitRewardAmount(hasTideLamp) * getMemoryEffects(player).lootMultiplier;
+        const amount = await grantFishingLoot(reward.name, reward.class, baseAmount, Boolean(reward.uniqueFlag));
+        if (reward.uniqueFlag) {
+            player[reward.uniqueFlag] = true;
+            playerChanged = true;
+        }
+        rewardMsg += `\n 【${baitName}】牵动诸天水脉，钓得【${reward.name}】x${amount}`;
     }
 
     const wishScaleAmount = await grantFishingLoot("众生愿鳞", "道具", rollWishScaleAmount(hasTideLamp));

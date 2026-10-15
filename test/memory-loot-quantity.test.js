@@ -44,7 +44,7 @@ function lootFixture(p = player()) {
   };
 }
 
-test('众生海钓鱼最终100倍基础奖励仅加一件，唯一仙饵奖励与消息数量一致', async () => {
+test('众生海钓鱼最终100倍基础奖励仅加一件，仙饵产物叠加发放且不重复享受翻倍', async () => {
   const source = read('apps/User/UserHome.js');
   const start = source.indexOf('    n *= getSuiyunEffects(player).lootMultiplier');
   const end = source.indexOf('    const planeName = getPlayerPlaneName(player);', start);
@@ -62,15 +62,52 @@ test('众生海钓鱼最终100倍基础奖励仅加一件，唯一仙饵奖励�
     });
     return { ...f, message };
   };
+  const amountOf = (result, name) => result.grants.find(item => item.name === name)?.amount;
   const normal = await run();
-  assert.equal(normal.grants.find(item => item.name === '仙晶矿').amount, 201);
+  assert.equal(amountOf(normal, '仙晶矿'), 201);
+  assert.equal(amountOf(normal, '仙饵奖励'), undefined);
   assert.match(normal.message, /仙晶矿】x201/);
+  // 使用仙饵时基础产物与仙饵产物同时发放，基础产物仍吃到倍率与黄金件数。
   const bait = await run('测试仙饵');
-  assert.equal(bait.grants[0].amount, 3);
+  assert.equal(amountOf(bait, '仙晶矿'), 201);
+  assert.equal(amountOf(bait, '仙饵奖励'), 3);
+  assert.match(bait.message, /仙晶矿】x201/);
   assert.match(bait.message, /仙饵奖励】x3/);
   const unique = await run('测试仙饵', '唯一奖励已获');
-  assert.equal(unique.grants[0].amount, 1);
+  assert.equal(amountOf(unique, '仙晶矿'), 201);
+  assert.equal(amountOf(unique, '仙饵奖励'), 1);
   assert.match(unique.message, /仙饵奖励】x1/);
+});
+
+test('海洋因子只加成基础渔获，仙饵产物不吃海洋垂钓倍率', async () => {
+  const source = read('apps/User/UserHome.js');
+  const start = source.indexOf('    n *= getSuiyunEffects(player).lootMultiplier');
+  const end = source.indexOf('    const planeName = getPlayerPlaneName(player);', start);
+  assert.ok(start >= 0 && end > start);
+  const run = async oceanTier => {
+    const p = player(6);
+    if (oceanTier > 0) p.记忆命途.因子.海洋 = oceanTier;
+    const f = lootFixture(p);
+    const message = await evaluate(`return (async () => {
+      let n = 1, rewardMsg = '', playerChanged = false;
+      ${source.slice(start, end)}
+      return rewardMsg;
+    })();`, {
+      ...f.dependencies, baitName: '测试仙饵', hasTideLamp: false, random: 0,
+      rollWishScaleAmount: () => 1, rollBaitRewardAmount: () => 1,
+      rollImmortalBaitReward: () => ({ name: '仙饵奖励', class: '道具' }),
+    });
+    return { ...f, message };
+  };
+  const amountOf = (result, name) => result.grants.find(item => item.name === name)?.amount;
+  const withoutOcean = await run(0);
+  const withOcean = await run(3);
+  assert.equal(amountOf(withoutOcean, '仙晶矿'), 201);
+  assert.equal(amountOf(withOcean, '仙晶矿'), 801);
+  // 仙饵产物恒定，不随海洋因子放大。
+  assert.equal(amountOf(withoutOcean, '仙饵奖励'), 3);
+  assert.equal(amountOf(withOcean, '仙饵奖励'), 3);
+  assert.match(withOcean.message, /仙饵奖励】x3/);
 });
 
 test('三处地图钓鱼最终鱼肉与丹药各加一件，工具与地图消耗保持负一', async () => {

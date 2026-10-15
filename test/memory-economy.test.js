@@ -93,7 +93,12 @@ test('总体掉落加成只进入生成物，不复制唯一品；海洋各阶�
   assert.equal(multiplySuiyunLoot(p, { name: '普通材料' }, 2), 4);
   assert.equal(multiplySuiyunLoot(p, { name: '唯一物', 全服唯一: true }, 1), 1);
   assert.deepEqual([1, 2, 3].map(tier => getMemoryEffects(player(4, { 海洋: tier })).fishingMultiplier), [2, 3, 4]);
-  assert.match(read('apps/User/UserHome.js'), /lootMultiplier \* getMemoryEffects\(player\)\.fishingMultiplier/);
+  const source = read('apps/User/UserHome.js');
+  assert.match(source, /lootMultiplier \* getMemoryEffects\(player\)\.fishingMultiplier/);
+  // 海洋只加成基础渔获，仙饵产物不参与该倍率。
+  const baitLine = source.split('\n').find(line => line.includes('rollBaitRewardAmount(hasTideLamp)'));
+  assert.ok(baitLine, '未找到仙饵数量计算');
+  assert.equal(baitLine.includes('fishingMultiplier'), false);
 });
 
 test('大地播种倍率保留为快照，三档成熟时间与老作物默认不变', () => {
