@@ -90,6 +90,7 @@ import {
     consumeTravelWind,
     getBaseTravelThreshold,
     getBodyTravelQuote,
+    hasSuiyunSovereignTravelSet,
     getCoordinateLocations,
     getDimensionBarrierCount,
     getDimensionName,
@@ -612,6 +613,9 @@ async goToLocation(e) {
     }
     
     const targetLocation = getLocationId(location);
+    // 岁云剑尊套：横渡诸天只耗修为与血气，不耗寿元、无需等待、不必先记坐标。
+    const equipment = await Read_equipment(usr_qq);
+    const suiyunTravelSet = hasSuiyunSovereignTravelSet(player, equipment);
     const emperorFreeTravel = canImmortalEmperorFreeTravel(
         player,
         player.power_place,
@@ -658,7 +662,7 @@ async goToLocation(e) {
     
     // ========== 坐标记忆校验（凡间默认已知，其余需先记坐标；五色祭坛激活可免记直抵遮天） ==========
     const altarBypassZhatian = (location === '遮天位面' && player.五色祭坛激活 === 1);
-    if (!hasCoordinate(player, location) && !altarBypassZhatian && !useSanShiTongGuan && !emperorFreeTravel) {
+    if (!hasCoordinate(player, location) && !altarBypassZhatian && !useSanShiTongGuan && !emperorFreeTravel && !suiyunTravelSet) {
         return e.reply([
             `【坐标未知·星路迷茫】`,
             `你并不知道「${location}」的星空坐标，无法定位彼岸。`,
@@ -686,7 +690,8 @@ async goToLocation(e) {
     const isSpecialLocation = SPECIAL_LOCATIONS.includes(location);
     const isInstantTravel = isInstantAllHeavensTravel(player, player.power_place, targetLocation);
 
-    if (tokenTier && !isSpecialLocation && !isInstantTravel && !emperorFreeTravel) {
+    // 岁云剑尊套直接以肉身横渡（只付修为血气且瞬达），不消耗传送令牌。
+    if (tokenTier && !isSpecialLocation && !isInstantTravel && !emperorFreeTravel && !suiyunTravelSet) {
         // 传送阵要求：目标位面已在传送阵上"刻画"坐标
         const engraved = Array.isArray(player.传送阵坐标) ? player.传送阵坐标 : [];
         if (!engraved.includes(location)) {
@@ -789,10 +794,13 @@ async goToLocation(e) {
     // =====================================================================
     
     // 计算传送消耗（随境界递减）
-    const travelQuote = getBodyTravelQuote(player, player.power_place, targetLocation);
+    const travelQuote = getBodyTravelQuote(player, player.power_place, targetLocation, equipment);
     const { xiuweiCost, qixueCost, shouyuanCost } = travelQuote;
     let travelTime = travelQuote.travelTime;
     let allMsgs = [];
+    if (suiyunTravelSet) {
+        allMsgs.push('【岁云剑尊·云月横渡】云月之莲照彻星路，本次穿梭无需坐标、不耗寿元，亦不必等待。');
+    }
 
     if (travelQuote.dimensionBarrierCount > 0) {
         allMsgs.push(
@@ -1097,6 +1105,13 @@ async goToLocation(e) {
     if (travelTime === 0) {
         player.power_place = targetLocation;
         await Write_player(usr_qq, player);
+        if (suiyunTravelSet) {
+            return e.reply([
+                `【岁云剑尊·云月横渡】`,
+                `${player.名号}执岁云剑劈开星路，云月之莲照彻诸天，一步自${fromLocation}降临${location}。`,
+                `消耗修为${xiuweiCost}、血气${qixueCost}，不耗寿元，本次穿梭无需等待。`
+            ].join('\n'));
+        }
         return e.reply([
             `【${emperorFreeTravel ? '仙帝' : '准仙帝'}权能·诸天无距】`,
             `${player.名号}一念收束诸天坐标，从${fromLocation}直接降临${location}。`,

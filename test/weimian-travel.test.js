@@ -33,6 +33,7 @@ import {
   getLocationId,
   getLocationName,
   getLocationThreshold,
+  hasSuiyunSovereignTravelSet,
   normalizeLocationList,
   getTokenTier,
   getTokenTravelTime,
@@ -276,6 +277,47 @@ test('维度壁垒航程按位面数值差×15分钟/级×壁垒层数×境界�
   assert.equal(getBodyTravelQuote(immortalEmperor, '凡间', '时间长河').travelTime, 18);
   assert.equal(getBodyTravelQuote(quasiEmperor, '凡间', '时间长河').travelTime, 45);
   assert.equal(getBodyTravelQuote(supreme, '凡间', '时间长河').travelTime, 12);
+});
+
+test('岁云剑尊齐套只付修为与血气：寿元归零、航程归零、传送阵亦不计时', () => {
+  const sovereign = { ...traveler, mijinglevel_id: 20, 灵根: { name: '岁云剑尊' } };
+  // 权柄 0：避免命中准仙帝「诸天瞬达」，用来验证普通位面航程
+  const rookie = { ...traveler, 灵根: { name: '岁云剑尊' } };
+  const fullSet = { 武器: { name: '岁云剑' }, 护具: { name: '岁云袍' }, 法宝: { name: '云月之莲' } };
+  const brokenSet = { ...fullSet, 法宝: { name: '霜月之莲' } };
+
+  assert.equal(hasSuiyunSovereignTravelSet(sovereign, fullSet), true);
+  assert.equal(hasSuiyunSovereignTravelSet(sovereign, brokenSet), false);
+  assert.equal(hasSuiyunSovereignTravelSet({ ...sovereign, 灵根: { name: '岁云化身' } }, fullSet), false);
+
+  const mortal = PLACE_LOCATION_MAP.凡间;
+  const xianyu = PLACE_LOCATION_MAP.仙域;
+  const upper = PLACE_LOCATION_MAP.上苍之上;
+  const timeRiver = PLACE_LOCATION_MAP.时间长河;
+
+  // 普通位面：修为血气照收，寿元与航程归零
+  const plain = getBodyTravelQuote(rookie, mortal, xianyu, fullSet);
+  assert.ok(plain.xiuweiCost > 0 && plain.qixueCost > 0);
+  assert.equal(plain.shouyuanCost, 0);
+  assert.equal(plain.travelTime, 0);
+  assert.equal(plain.suiyunInstant, true);
+  const plainWithoutSet = getBodyTravelQuote(rookie, mortal, xianyu, brokenSet);
+  assert.equal(plainWithoutSet.suiyunInstant, false);
+  assert.ok(plainWithoutSet.shouyuanCost > 0 && plainWithoutSet.travelTime > 0);
+
+  // 维度壁垒（上苍之上、时间长河）同样只收修为血气
+  const barrier = getBodyTravelQuote(sovereign, mortal, upper, fullSet);
+  assert.ok(barrier.dimensionBarrierCount > 0);
+  assert.ok(barrier.xiuweiCost > 0 && barrier.qixueCost > 0);
+  assert.equal(barrier.shouyuanCost, 0);
+  assert.equal(barrier.travelTime, 0);
+  assert.ok(getBodyTravelQuote(sovereign, mortal, upper, brokenSet).travelTime > 0);
+  assert.equal(getBodyTravelQuote(sovereign, mortal, timeRiver, fullSet).travelTime, 0);
+
+  // 传送阵两档也不再计时
+  assert.ok(getTokenTravelTime(sovereign, mortal, upper, 'low') > 0);
+  assert.equal(getTokenTravelTime(sovereign, mortal, upper, 'low', fullSet), 0);
+  assert.equal(getTokenTravelTime(sovereign, mortal, upper, 'high', fullSet), 0);
 });
 
 test('登仙、遨游、穿梭与位面图鉴入口均接入共享维度规则', () => {

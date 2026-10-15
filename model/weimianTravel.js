@@ -1,3 +1,4 @@
+import { hasExclusiveEquipmentSet } from './exclusiveEquipmentSets.js';
 import { getGongfaNumericMultiplier } from './gongfaProficiency.js';
 import { getRealmAuthorityLevel } from './realmAuthority.js';
 import { isCultivatingExtraPath } from './extraCultivation.js';
@@ -848,6 +849,14 @@ export function getLocationThreshold(player, location) {
   return { ok: code === null, code, checks };
 }
 
+/**
+ * 岁云剑尊套（岁云剑 + 岁云袍 + 云月之莲）。
+ * 齐套者横渡诸天只付修为与血气：不耗寿元、无需等待、不必先记坐标。
+ */
+export function hasSuiyunSovereignTravelSet(player, equipment) {
+  return hasExclusiveEquipmentSet(player, equipment, '岁云剑尊套');
+}
+
 export function getKunpengReduction(player) {
   if (!player?.学习的功法?.includes('鲲鹏宝术')) return 0;
   const mijing = level(player, 'mijinglevel_id');
@@ -859,7 +868,7 @@ export function getKunpengReduction(player) {
   return Number((reduction * getGongfaNumericMultiplier(player, '鲲鹏宝术')).toFixed(2));
 }
 
-export function getBodyTravelQuote(player, fromLocation, toLocation) {
+export function getBodyTravelQuote(player, fromLocation, toLocation, equipment) {
   const barriers = getDimensionBarrierCount(fromLocation, toLocation);
   const fromValue = getLocationId(fromLocation);
   const toValue = getLocationId(toLocation);
@@ -869,27 +878,39 @@ export function getBodyTravelQuote(player, fromLocation, toLocation) {
   const distance = barriers || (Number.isFinite(rawDistance) ? rawDistance : 0);
   const instant = isInstantAllHeavensTravel(player, fromLocation, toLocation);
   if (distance === 0) {
-    return { distance, dimensionBarrierCount: 0, xiuweiCost: 0, qixueCost: 0, shouyuanCost: 0, travelTime: 0, kunpengReduction: 0 };
+    return { distance, dimensionBarrierCount: 0, xiuweiCost: 0, qixueCost: 0, shouyuanCost: 0, travelTime: 0, kunpengReduction: 0, suiyunInstant: false };
   }
 
   const multiplier = 1 - calcRealmReducePct(player);
-  if (barriers > 0) {
-    // 维度壁垒航程同样可被鲲鹏宝术减免
-    const kunpengReduction = instant ? 0 : getKunpengReduction(player);
-    const barrierTime = instant ? 0 : getDimensionBarrierTravelTime(player, fromLocation, toLocation);
-    return {
-      distance,
-      dimensionBarrierCount: barriers,
-      xiuweiCost: Math.round(barriers * 1_000_000_000 * multiplier),
-      qixueCost: Math.round(barriers * 1_500_000_000 * multiplier),
-      shouyuanCost: Math.round(barriers * 100_000 * multiplier),
-      travelTime: barrierTime <= 0
-        ? 0
-        : Math.max(1, barrierTime - kunpengReduction),
-      kunpengReduction,
-      instant,
-    };
+  const quote = barriers > 0
+    ? buildBarrierTravelQuote(distance, barriers, multiplier, player, fromLocation, toLocation, instant)
+    : buildDistanceTravelQuote(distance, multiplier, instant, player);
+  // 岁云剑尊套：只保留修为与血气，寿元归零、航程归零。
+  if (hasSuiyunSovereignTravelSet(player, equipment)) {
+    return { ...quote, shouyuanCost: 0, travelTime: 0, kunpengReduction: 0, suiyunInstant: true };
   }
+  return { ...quote, suiyunInstant: false };
+}
+
+function buildBarrierTravelQuote(distance, barriers, multiplier, player, fromLocation, toLocation, instant) {
+  // 维度壁垒航程同样可被鲲鹏宝术减免
+  const kunpengReduction = instant ? 0 : getKunpengReduction(player);
+  const barrierTime = instant ? 0 : getDimensionBarrierTravelTime(player, fromLocation, toLocation);
+  return {
+    distance,
+    dimensionBarrierCount: barriers,
+    xiuweiCost: Math.round(barriers * 1_000_000_000 * multiplier),
+    qixueCost: Math.round(barriers * 1_500_000_000 * multiplier),
+    shouyuanCost: Math.round(barriers * 100_000 * multiplier),
+    travelTime: barrierTime <= 0
+      ? 0
+      : Math.max(1, barrierTime - kunpengReduction),
+    kunpengReduction,
+    instant,
+  };
+}
+
+function buildDistanceTravelQuote(distance, multiplier, instant, player) {
   const kunpengReduction = getKunpengReduction(player);
   return {
     distance,
@@ -904,8 +925,9 @@ export function getBodyTravelQuote(player, fromLocation, toLocation) {
   };
 }
 
-export function getTokenTravelTime(player, fromLocation, toLocation, tier) {
+export function getTokenTravelTime(player, fromLocation, toLocation, tier, equipment) {
   if (isInstantAllHeavensTravel(player, fromLocation, toLocation)) return 0;
+  if (hasSuiyunSovereignTravelSet(player, equipment)) return 0;
   const barrierTime = getDimensionBarrierTravelTime(player, fromLocation, toLocation);
   if (barrierTime > 0) return barrierTime;
   const fromValue = getLocationId(fromLocation);
