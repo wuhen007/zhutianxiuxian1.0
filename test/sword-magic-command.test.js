@@ -31,10 +31,11 @@ function fixture({ initial = player(), exists = true, failWrite = false } = {}) 
     deliverMemorial: async (_id, player) => {
       const pending = sword.getPendingMemorial(player);
       if (!pending) return '';
-      gifts.push(pending.name);
+      const pet = sword.getGraduationPet(player.剑与魔法);
+      gifts.push(pending.name, pet.name);
       const latest = structuredClone(disk);
       if (sword.clearPendingMemorial(latest)) disk = structuredClone(latest);
-      return `【飞升赠礼】${pending.name} 已入纳戒（绑定本人，不可交易）。`;
+      return `【飞升赠礼】${pending.name} 与 ${pet.name} 已入纳戒（绑定本人，不可交易）。`;
     },
     withPlayerMutationLock, console: { warn() {} },
     replyOfficialMessage: async (e, payload) => e.reply(payload.text),
@@ -45,29 +46,38 @@ function fixture({ initial = player(), exists = true, failWrite = false } = {}) 
     send: (msg, id = '') => app.handle({ user_id: 'qg_original', msg, message_id: id || undefined, reply: async text => replies.push(text) }) };
 }
 
-test('飞升信物按终局发放一次并清空待发标记', async () => {
+test('飞升信物与际遇仙宠按终局发放一次并清空待发标记', async () => {
   const initial = player();
   const state = initial.剑与魔法;
   state.chapter = 6; state.lore = sword.SWORD_MAGIC_REGIONS.map(region => region.name);
   state.ending = '守隙魔王'; state.level = 10; state.weapon = true;
   const f = fixture({ initial });
   await f.send('#剑与魔法 飞升 确认', 'ascend-1');
-  assert.deepEqual(f.gifts, ['守隙王冠']);
+  assert.deepEqual(f.gifts, ['守隙王冠', '白桦镇信使雀']); // 未救援也未交涉：走信使雀分支
   assert.match(f.replies.at(-1), /飞升赠礼/);
   assert.equal(f.disk().剑与魔法.memorial, '');
   assert.equal(f.disk().剑与魔法.status, 'ascended');
   // 再次确认：档案守卫拒绝，标记已清空不会重复发放
   await f.send('#剑与魔法 飞升 确认', 'ascend-2');
-  assert.deepEqual(f.gifts, ['守隙王冠']);
-  // 三条终局各有对应信物
+  assert.deepEqual(f.gifts, ['守隙王冠', '白桦镇信使雀']);
+  // 三条终局各有对应信物；际遇决定仙宠
   for (const [ending, name, id] of [['黎明勇者', '黎明誓约剑', 9600501], ['地脉贤者', '地脉织针', 9600502]]) {
     const save = player();
     Object.assign(save.剑与魔法, { chapter: 6, lore: sword.SWORD_MAGIC_REGIONS.map(r => r.name),
       ending, level: 10, weapon: true });
     const g = fixture({ initial: save });
     await g.send('#剑与魔法 飞升 确认', `ascend-${name}`);
-    assert.deepEqual(g.gifts, [name]);
+    assert.deepEqual(g.gifts, [name, '白桦镇信使雀']);
     assert.equal(sword.SWORD_MAGIC_MEMORIALS[ending].id, id);
+  }
+  for (const [flag, pet] of [['companion', '巡礼僧侣莉娅'], ['pact', '风精灵希露']]) {
+    const save = player();
+    Object.assign(save.剑与魔法, { chapter: 6, lore: sword.SWORD_MAGIC_REGIONS.map(r => r.name),
+      ending: '黎明勇者', level: 10, weapon: true, [flag]: true });
+    const g = fixture({ initial: save });
+    await g.send('#剑与魔法 飞升 确认', `ascend-${flag}`);
+    assert.deepEqual(g.gifts, ['黎明誓约剑', pet]);
+    assert.equal(sword.getGraduationPet(g.disk().剑与魔法).name, pet);
   }
 });
 

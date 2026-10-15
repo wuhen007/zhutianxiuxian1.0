@@ -9,6 +9,17 @@ export const SWORD_MAGIC_MEMORIALS = Object.freeze({
   地脉贤者: { id: 9600502, name: '地脉织针', pinji: 6 },
   守隙魔王: { id: 9600503, name: '守隙王冠', pinji: 6 },
 });
+// 飞升彩蛋仙宠：按风鸣林际遇发放；三条分支都有，不因当时的抉择永久亏待玩家。
+export const SWORD_MAGIC_MEMORIAL_PETS = Object.freeze({
+  companion: { id: 7091401, name: '巡礼僧侣莉娅' },
+  pact: { id: 7091402, name: '风精灵希露' },
+  wanderer: { id: 7091403, name: '白桦镇信使雀' },
+});
+export function getGraduationPet(state) {
+  if (state?.pact) return SWORD_MAGIC_MEMORIAL_PETS.pact;
+  if (state?.companion) return SWORD_MAGIC_MEMORIAL_PETS.companion;
+  return SWORD_MAGIC_MEMORIAL_PETS.wanderer;
+}
 const MINUTE = 60_000;
 const MAX = 1_000_000_000;
 const ok = (condition, message) => { if (!condition) throw new Error(message); };
