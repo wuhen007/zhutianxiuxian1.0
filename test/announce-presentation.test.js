@@ -65,7 +65,7 @@ test('真实公告分章模板完整渲染，图文与后端使用同一本期�
   const ann = loadAnnouncement();
   const html = fs.readFileSync(new URL('../resources/html/announce/announce.html', import.meta.url), 'utf8');
   assert.match(ann.date, /^\d{4}\.\d{2}\.\d{2}$/);
-  assert.ok(ann.currentUpdateCount > 2);
+  assert.ok(ann.currentUpdateCount > 0);
   for (let page = 1; page <= Math.ceil(ann.currentUpdateCount / ANNOUNCE_PAGE_SIZE); page++) {
     const data = buildAnnouncePage(ann, page);
     const output = template.render(html, data);
@@ -73,6 +73,22 @@ test('真实公告分章模板完整渲染，图文与后端使用同一本期�
     assert.match(output, /#公告网页/);
     assert.ok(output.includes(`第 ${page} / ${data.totalPages} 页`));
     for (const item of ann.updates.slice(data.pageStart - 1, data.pageEnd)) assert.ok(output.includes(item.title));
+    if (page > 1) assert.ok(!output.includes(ann.intro));
+  }
+  // 真实公告本期条数每版都会变，多页渲染改用构造数据覆盖，避免用例被条数绑架
+  const many = {
+    ...ann,
+    updates: Array.from({ length: 7 }, (_, i) => ({ tag: '测试', title: `模块${i + 1}`, summary: '摘要', points: ['要点'] })),
+    currentUpdateCount: 7,
+  };
+  const lastPage = Math.ceil(many.currentUpdateCount / ANNOUNCE_PAGE_SIZE);
+  assert.ok(lastPage > 1);
+  for (let page = 1; page <= lastPage; page++) {
+    const data = buildAnnouncePage(many, page);
+    const output = template.render(html, data);
+    assert.equal((output.match(/<article class="module">/g) || []).length, data.pageEnd - data.pageStart + 1);
+    assert.ok(output.includes(`第 ${page} / ${lastPage} 页`));
+    for (const item of many.updates.slice(data.pageStart - 1, data.pageEnd)) assert.ok(output.includes(item.title));
     if (page > 1) assert.ok(!output.includes(ann.intro));
   }
   const escaped = template.render(html, buildAnnouncePage({ updates: [{ tag: '测试', title: '<script>alert(1)</script>', points: ['<img onerror=alert(1)>'] }] }));

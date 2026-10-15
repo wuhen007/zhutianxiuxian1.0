@@ -141,9 +141,12 @@ test('历史记录每页四条，所有后端文案以 textContent 渲染', asyn
 });
 
 test('请求失败显示重试，重试成功保留页码，并正确结束 busy 状态', async () => {
+  // 本期条数每版都会变，页码取本期实际末页，避免写成死数字
+  const lastUpdatePage = Math.max(1, Math.ceil(fixture.currentUpdateCount / 2));
+  const updateHash = `#updates/${lastUpdatePage}`;
   for (const failure of [new Error('network offline'), { ok: false, status: 503 }]) {
     const ui = browser(fixture, [failure]);
-    ui.location.hash = '#updates/2';
+    ui.location.hash = updateHash;
     await ui.load();
     assert.equal(ui.get('#reader').getAttribute('aria-busy'), 'false');
     assert.equal(ui.get('#pagination').hidden, true);
@@ -157,7 +160,7 @@ test('请求失败显示重试，重试成功保留页码，并正确结束 busy
     assert.equal(ui.requests[1].options.cache, 'no-store');
     assert.equal(ui.get('#pagination').hidden, false);
     assert.equal(ui.get('#reader').getAttribute('aria-busy'), 'false');
-    assert.equal(ui.location.hash, '#updates/2');
+    assert.equal(ui.location.hash, updateHash);
   }
 });
 
