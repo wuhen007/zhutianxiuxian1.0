@@ -17,7 +17,7 @@ function player() {
 }
 function fixture({ initial = player(), exists = true, failWrite = false } = {}) {
   let disk = structuredClone(initial), now = 1, writes = 0;
-  const replies = [], accounts = [];
+  const replies = [], accounts = [], gifts = [];
   const App = vm.runInNewContext(`${script('apps/User/SwordMagic.js')}\nSwordMagic`, {
     ...sword, plugin: class { constructor(options) { Object.assign(this, options); } },
     verc: () => true, channel: async () => 'fantasy-command', existplayer: async () => exists,
@@ -27,14 +27,49 @@ function fixture({ initial = player(), exists = true, failWrite = false } = {}) 
       sword.assertSwordMagicWriteCurrent(disk, next); disk = structuredClone(next); writes++;
     },
     runSwordMagicCommand: (p, c, options = {}) => sword.runSwordMagicCommand(p, c, { ...options, now, random: () => .999 }),
+    // 真实发放走纳戒层；测试以等价的存根记录调用并复现标记清空语义。
+    deliverMemorial: async (_id, player) => {
+      const pending = sword.getPendingMemorial(player);
+      if (!pending) return '';
+      gifts.push(pending.name);
+      const latest = structuredClone(disk);
+      if (sword.clearPendingMemorial(latest)) disk = structuredClone(latest);
+      return `【飞升赠礼】${pending.name} 已入纳戒（绑定本人，不可交易）。`;
+    },
     withPlayerMutationLock, console: { warn() {} },
     replyOfficialMessage: async (e, payload) => e.reply(payload.text),
   });
   const app = new App();
-  return { app, replies, accounts, disk: () => disk, writes: () => writes,
+  return { app, replies, accounts, gifts, disk: () => disk, writes: () => writes,
     complete: () => { now = disk.剑与魔法.action.endAt; },
     send: (msg, id = '') => app.handle({ user_id: 'qg_original', msg, message_id: id || undefined, reply: async text => replies.push(text) }) };
 }
+
+test('飞升信物按终局发放一次并清空待发标记', async () => {
+  const initial = player();
+  const state = initial.剑与魔法;
+  state.chapter = 6; state.lore = sword.SWORD_MAGIC_REGIONS.map(region => region.name);
+  state.ending = '守隙魔王'; state.level = 10; state.weapon = true;
+  const f = fixture({ initial });
+  await f.send('#剑与魔法 飞升 确认', 'ascend-1');
+  assert.deepEqual(f.gifts, ['守隙王冠']);
+  assert.match(f.replies.at(-1), /飞升赠礼/);
+  assert.equal(f.disk().剑与魔法.memorial, '');
+  assert.equal(f.disk().剑与魔法.status, 'ascended');
+  // 再次确认：档案守卫拒绝，标记已清空不会重复发放
+  await f.send('#剑与魔法 飞升 确认', 'ascend-2');
+  assert.deepEqual(f.gifts, ['守隙王冠']);
+  // 三条终局各有对应信物
+  for (const [ending, name, id] of [['黎明勇者', '黎明誓约剑', 9600501], ['地脉贤者', '地脉织针', 9600502]]) {
+    const save = player();
+    Object.assign(save.剑与魔法, { chapter: 6, lore: sword.SWORD_MAGIC_REGIONS.map(r => r.name),
+      ending, level: 10, weapon: true });
+    const g = fixture({ initial: save });
+    await g.send('#剑与魔法 飞升 确认', `ascend-${name}`);
+    assert.deepEqual(g.gifts, [name]);
+    assert.equal(sword.SWORD_MAGIC_MEMORIALS[ending].id, id);
+  }
+});
 
 test('新路线入口与别名发现，普通角色面板和命格抽取正常透传', async () => {
   const f = fixture();

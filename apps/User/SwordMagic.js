@@ -1,6 +1,7 @@
 import { plugin, verc } from '../../api/api.js';
 import { channel, existplayer, Read_player, Write_player } from '../../model/xiuxian.js';
 import { isSwordMagicActive, runSwordMagicCommand } from '../../model/swordMagic.js';
+import { deliverMemorial } from '../../model/swordMagicMemorial.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { replyOfficialMessage } from '../../model/officialMessage.js';
 
@@ -49,10 +50,13 @@ export class SwordMagic extends plugin {
           : e.seq != null && e.time != null ? `${e.group_id || 'private'}:${e.time}:${e.seq}` : '';
         const result = runSwordMagicCommand(player, command, { requestId });
         if (result.changed) await Write_player(id, player);
-        return result.message;
+        return { message: result.message, player };
       });
       if (response === null) return false;
-      await e.reply(response);
+      let reply = response.message;
+      const gift = await deliverMemorial(id, response.player);
+      if (gift) reply += `\n${gift}`;
+      await e.reply(reply);
       return true;
     } catch (error) {
       console.warn(`[剑与魔法] 玩家${id}：${error.message}`);

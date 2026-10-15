@@ -3,6 +3,12 @@ export const SWORD_MAGIC_LOCATION = 0.7;
 // 飞升落点：练气 39 级「真界境后期」，比复活地球毕业（42 地仙）低一档，体现两条路线的难度差。
 export const SWORD_MAGIC_ASCENSION_LEVEL_ID = 39;
 export const SWORD_MAGIC_ASCENSION_COIN_RATE = 100;
+// 三条终局各留一件绑定信物；发放走纳戒层并按 idempotencyKey 防重。
+export const SWORD_MAGIC_MEMORIALS = Object.freeze({
+  黎明勇者: { id: 9600501, name: '黎明誓约剑', pinji: 6 },
+  地脉贤者: { id: 9600502, name: '地脉织针', pinji: 6 },
+  守隙魔王: { id: 9600503, name: '守隙王冠', pinji: 6 },
+});
 const MINUTE = 60_000;
 const MAX = 1_000_000_000;
 const ok = (condition, message) => { if (!condition) throw new Error(message); };
@@ -115,7 +121,7 @@ export function createSwordMagicState(now = Date.now()) {
     bag: { 野营口粮: 2, 疗伤药: 2, 魔力药: 1 }, storage: {}, cargo: {}, weapon: false,
     companion: false, pact: false,
     action: null, encounter: null, lore: [], ending: '', defeats: 0, commissions: 0,
-    history: [], receipts: [] };
+    history: [], receipts: [], memorial: '' };
 }
 
 function validateState(state) {
@@ -144,6 +150,9 @@ function validateState(state) {
   ok(['', '黎明勇者', '地脉贤者', '守隙魔王'].includes(state.ending)
     && (state.chapter === 6) === Boolean(state.ending), '异界终局异常。');
   ok(state.status !== 'ascended' || (state.chapter === 6 && Boolean(state.ending)), '飞升记录异常。');
+  // memorial 是飞升信物的待发标记：只在飞升后可存在，发放成功后清空；旧档无此字段视为已清空。
+  ok(state.memorial === undefined || state.memorial === ''
+    || (state.status === 'ascended' && own(SWORD_MAGIC_MEMORIALS, state.memorial)), '飞升信物记录异常。');
   const a = state.action;
   ok(a === null || (a && ['train', 'work', 'rest', 'use', 'explore', 'choice', 'forge', 'return'].includes(a.kind)
     && integer(a.startedAt, Number.MAX_SAFE_INTEGER) && integer(a.endAt, Number.MAX_SAFE_INTEGER)
@@ -170,6 +179,19 @@ export function isSwordMagicActive(player) {
   const state = player?.剑与魔法;
   if (state) return state.status !== 'ascended';
   return Number(player?.power_place) === SWORD_MAGIC_LOCATION;
+}
+// 飞升信物的待发查询与清空：清空必须自行推进 revision，写保护只允许 +1。
+export function getPendingMemorial(player) {
+  const state = player?.剑与魔法;
+  if (!state || state.status !== 'ascended' || !state.memorial) return null;
+  const item = SWORD_MAGIC_MEMORIALS[state.memorial];
+  return item ? { ...item, ending: state.memorial } : null;
+}
+export function clearPendingMemorial(player) {
+  if (!getPendingMemorial(player)) return false;
+  player.剑与魔法.memorial = '';
+  player.剑与魔法.revision += 1;
+  return true;
 }
 export function getSwordMagicCommandBlock(player, message) {
   if (!isSwordMagicActive(player)) return '';
@@ -361,6 +383,7 @@ function perform(state, command, now, random) {
     ok(state.weapon, '飞升需要已锻造的职业武装——它将成为你跨入诸天的信物。');
     ok(state.level >= 8, `飞升需要等级8，当前等级${state.level}。`);
     state.status = 'ascended';
+    state.memorial = state.ending; // 待发信物标记：发放成功后才清空，进程中断也能补发。
     return '裂月之光落在你的肩上，职业武装化作流光缠于腕间，白桦镇的钟声为异乡人送行。\n'
       + `【飞升诸天】你落入仙界，境界定为「真界境后期」（修为需重新积累）；异界铜币按1:${SWORD_MAGIC_ASCENSION_COIN_RATE}折为灵石入账。\n`
       + '命宫额外显化传说词条【异界归人】（不占原有命格位）：见过另一种力量体系的尽头，道心因此宽广。\n'

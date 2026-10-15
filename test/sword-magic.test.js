@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   runSwordMagicCommand, SWORD_MAGIC_TRAITS, SWORD_MAGIC_REGIONS,
   assertSwordMagicWriteCurrent, getSwordMagicCommandBlock,
+  getPendingMemorial, clearPendingMemorial,
 } from '../model/swordMagic.js';
 
 function fixture(profession = '剑士', rolls = () => 0.999) {
@@ -241,6 +242,15 @@ test('飞升需要完整通关与二次确认，毕业后落仙界且拦截解�
   assert.equal(f.player.命格词条上限, 2);
   // 写保护：active→ascended 的一次性跳变合法
   assert.doesNotThrow(() => assertSwordMagicWriteCurrent(before, f.player));
+  // 待发信物标记按终局登记，清空时才推进 revision
+  assert.equal(f.player.剑与魔法.memorial, '黎明勇者');
+  assert.deepEqual(getPendingMemorial(f.player), { id: 9600501, name: '黎明誓约剑', pinji: 6, ending: '黎明勇者' });
+  const revision = f.player.剑与魔法.revision;
+  assert.equal(clearPendingMemorial(f.player), true);
+  assert.equal(f.player.剑与魔法.memorial, '');
+  assert.equal(f.player.剑与魔法.revision, revision + 1);
+  assert.equal(clearPendingMemorial(f.player), false);
+  assert.equal(f.player.剑与魔法.revision, revision + 1);
   // 拦截解除：普通修仙指令放行，#剑与魔法 前缀仍可查档案
   assert.equal(getSwordMagicCommandBlock(f.player, '#闭关'), '');
   assert.equal(getSwordMagicCommandBlock(f.player, '#剑与魔法 状态'), '');
