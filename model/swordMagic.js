@@ -363,6 +363,7 @@ function perform(state, command, now, random) {
     state.status = 'ascended';
     return '裂月之光落在你的肩上，职业武装化作流光缠于腕间，白桦镇的钟声为异乡人送行。\n'
       + `【飞升诸天】你落入仙界，境界定为「真界境后期」（修为需重新积累）；异界铜币按1:${SWORD_MAGIC_ASCENSION_COIN_RATE}折为灵石入账。\n`
+      + '命宫额外显化传说词条【异界归人】（不占原有命格位）：见过另一种力量体系的尽头，道心因此宽广。\n'
       + '此世档案已封存，发送 #剑与魔法 回顾 可随时翻看。愿你在诸天之上，仍记得艾瑟兰的春天。';
   }
   if (verb === '休养') {
@@ -428,6 +429,9 @@ export function runSwordMagicCommand(player, command = '状态', { now = Date.no
         player.power_place = 1;
         player.灵石 = (Number.isSafeInteger(player.灵石) ? player.灵石 : 0)
           + state.coins * SWORD_MAGIC_ASCENSION_COIN_RATE;
+        // 毕业专属命格「异界归人」：额外开一格命宫，不挤占原有命格词条上限。
+        player.附加命格 = [...(Array.isArray(player.附加命格) ? player.附加命格 : []), 'otherworld_returnee'];
+        player.命格词条上限 = Math.max(1, Math.trunc(Number(player.命格词条上限) || 1)) + 1;
       } else {
         player.power_place = SWORD_MAGIC_LOCATION;
       }

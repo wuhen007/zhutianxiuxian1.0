@@ -236,6 +236,9 @@ test('飞升需要完整通关与二次确认，毕业后落仙界且拦截解�
   assert.equal(f.player.power, 0);
   assert.equal(f.player.power_place, 1);
   assert.equal(f.player.灵石, 10000 + 120 * 100);
+  // 毕业专属命格：附加命宫 + 上限额外开一格
+  assert.deepEqual(f.player.附加命格, ['otherworld_returnee']);
+  assert.equal(f.player.命格词条上限, 2);
   // 写保护：active→ascended 的一次性跳变合法
   assert.doesNotThrow(() => assertSwordMagicWriteCurrent(before, f.player));
   // 拦截解除：普通修仙指令放行，#剑与魔法 前缀仍可查档案
