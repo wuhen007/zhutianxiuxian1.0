@@ -198,6 +198,10 @@ export class UserHome extends plugin {
           reg: '^#剑云海兑换((.*)|(.*)*(.*))$',
           fnc: 'Buy_jianyunhai',
         },
+         {
+          reg: '^#剑宫兑换((.*)|(.*)*(.*))$',
+          fnc: 'Buy_suiyunjianGong',
+        },
         {
           reg: '^#出售.*$',
           fnc: 'Sell_comodities',
@@ -7614,6 +7618,67 @@ async Buy_jianyunhai(e) {
     ].join("\n");
     
     return e.reply(successMessage);
+}
+//岁云剑宫宝库兑换
+async Buy_suiyunjianGong(e) {
+    if (!verc({ e })) return false;
+    const usr_qq = await channel(e.user_id.toString().replace('qg_',''));
+
+    if (!await existplayer(usr_qq)) {
+        return e.reply("岁云剑宫执事：阁下尚未踏入修行之路，请先创建角色");
+    }
+
+    const player = await Read_player(usr_qq);
+    if (player.势力 !== "岁云剑宫") {
+        return e.reply([
+            "岁云剑宫执事：",
+            "此乃岁云剑宫宝库，非本宫宫主不得入内。",
+        ].join("\n"));
+    }
+
+    const shop = Array.isArray(data.suiyunjianGongshangdian) ? data.suiyunjianGongshangdian : [];
+    const body = e.msg.replace('#剑宫兑换', '').trim();
+    if (!body) {
+        return e.reply([
+            "【岁云剑宫宝库】",
+            ...shop.map(item => `${item.name}（${item.class}）｜${(Number(item.出售价) || 0).toLocaleString()}源石`),
+            "用法：#剑宫兑换 物品名[*数量]",
+        ].join("\n"));
+    }
+
+    const code = body.split('*');
+    const thing_name = code[0].trim();
+    const quantity = await convert2integer(code[1]) || 1;
+    const ifexist = shop.find(item => item.name == thing_name);
+    if (!ifexist) {
+        return e.reply([
+            `岁云剑宫执事：`,
+            `"${thing_name}"？此物不在我岁云剑宫宝库名录之中`,
+            `发送【#剑宫兑换】查看可兑换之物`,
+        ].join("\n"));
+    }
+
+    const price = Math.trunc(ifexist.出售价 * quantity);
+    if (player.源石 < price) {
+        return e.reply([
+            `岁云剑宫执事：`,
+            `宫主，此物需${price.toLocaleString()}源石`,
+            `您纳戒中仅有${(Number(player.源石) || 0).toLocaleString()}源石，尚缺${(price - player.源石).toLocaleString()}源石`,
+            `待源石充足再来吧`,
+        ].join("\n"));
+    }
+
+    await Add_najie_thing(usr_qq, thing_name, ifexist.class, quantity);
+    await Add_源石(usr_qq, -price);
+    const updatedPlayer = await Read_player(usr_qq);
+
+    return e.reply([
+        `岁云剑宫执事恭敬奉上月华玉匣：`,
+        `"宫主，这是您要的${thing_name}×${quantity}"`,
+        `"已从您纳戒中扣除${price.toLocaleString()}源石"`,
+        `"您纳戒中尚有${(Number(updatedPlayer.源石) || 0).toLocaleString()}源石"`,
+        `"月华万古，岁云化月，愿宫主证得无上道果"`,
+    ].join("\n"));
 }
 //出售商品
 async Sell_comodities(e) {

@@ -7,6 +7,8 @@ import test from 'node:test';
 import * as core from '../model/suiyun.js';
 import { swapEquipmentState } from '../model/equipmentSwap.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
+import { getLifeSourceRepairMaximum } from '../model/lifeSourceRepair.js';
+import { recordFactionJoin } from '../model/factionSystem.js';
 
 const source = fs.readFileSync(new URL('../apps/User/Suiyun.js', import.meta.url), 'utf8');
 const bossSource = fs.readFileSync(new URL('../apps/Boss/BOSS4.js', import.meta.url), 'utf8');
@@ -23,6 +25,7 @@ function fixture() {
   core.activateSuiyun(state.players.owner);
   const dependencies = {
     ...core, fs, path, withPlayerMutationLock, swapEquipmentState,
+    getLifeSourceRepairMaximum, recordFactionJoin,
     __PATH: { player_path: '/fixture/player', najie_path: '/fixture/najie', equipment_path: '/fixture/equipment' },
     FileRollbackTransaction: class {
       constructor() {
@@ -133,7 +136,7 @@ function fixture() {
 
 test('岁云命令注册完整，改写解析兼容前后艾特且不吞目标名字', () => {
   const f = fixture();
-  for (const command of ['#消耗岁云的残念', '#岁云见证', '#引月入体', '#化霜入剑', '#月之见证', '#云月修炼', '#云月之莲', '#月华炼化 灾厄', '#岁云之力 兑换 20000', '#岁云更改 命格 道心通明']) {
+  for (const command of ['#消耗岁云的残念', '#岁云见证', '#引月入体', '#化霜入剑', '#月之见证', '#云月修炼', '#云月之莲', '#月华炼化 灾厄', '#月华救赎', '#岁云更改 命格 道心通明']) {
     assert.ok(f.app.rule.some(rule => new RegExp(rule.reg).test(command)), command);
   }
   assert.deepEqual(f.parse(f.event('#岁云更改 天资 @123 无演无尽')), { kind: '天资', name: '无演无尽' });
@@ -270,41 +273,73 @@ test('真实天骄死亡函数将死亡标记、状态和来源回执原子提�
   assert.equal(JSON.parse(values.get('status')).isAlive, false);
 });
 
-test('新旧兑换指令均按100月华换1潜力，保留岁云之力与莲花成长', async () => {
+test('月华救赎按100点兑满生命本源，可指向他人，保留岁云之力与莲花成长', async () => {
   const f = fixture();
-  f.players.owner.月华值 = 25000;
+  f.players.owner.月华值 = 2500;
   f.players.owner.岁云之力 = .2;
   f.players.owner.岁云.累计炼化月华 = 1234;
-  assert.match(await f.app.power(f.event('#岁云之力 兑换 20000')), /仙道潜力\+200/);
-  assert.equal(f.players.owner.月华值, 5000);
-  await f.app.power(f.event('#岁云之力 兑换 10000'));
-  await f.app.power(f.event('#岁云之力 兑换 3'));
-  await f.app.power(f.event('#岁云之力'));
-  assert.equal(f.players.owner.岁云之力, .2);
-  assert.equal(f.players.owner.月华值, 5000);
-  assert.equal(f.players.owner.仙道潜力, 200);
-  assert.match(await f.app.power(f.event('#月华兑换100')), /仙道潜力\+1/);
-  assert.match(await f.app.power(f.event('#月华兑换')), /仙道潜力\+1/);
-  assert.equal(f.players.owner.仙道潜力, 202);
-  assert.equal(f.players.owner.月华值, 4800);
+  f.players.owner.生命本源 = 30;
+  assert.match(await f.app.redeem(f.event('#月华救赎')), /生命本源恢复至200/);
+  assert.equal(f.players.owner.生命本源, 200);
+  assert.equal(f.players.owner.月华值, 2400);
   assert.equal(f.players.owner.岁云.累计炼化月华, 1234);
   assert.equal(f.players.owner.岁云之力, .2);
+  f.players.other = { 灵根: core.createSuiyunRoot(3), 名号: '同门', 生命本源: 10, 血量上限: 500, 当前血量: 20 };
+  assert.match(await f.app.redeem(f.event('#月华救赎', { at: 'other' })), /同门的生命本源重归圆满/);
+  assert.equal(f.players.other.生命本源, 1800);
+  assert.equal(f.players.owner.月华值, 2300);
 });
 
-test('月华兑换并发不透支，写入失败不扣余额，非法格式不悄悄兑换', async () => {
+test('月华救赎可从大牢捞人：消耗200点、清空关押态、气血归满、修为保留85%', async () => {
   const f = fixture();
+  f.players.owner.月华值 = 500;
+  f.players.other = { 灵根: core.createSuiyunRoot(3), 名号: '同门', 生命本源: 10, 血量上限: 500, 当前血量: 1, 修为: 10000 };
+  f.values.set('xiuxian:player:other:action', JSON.stringify({ heianlaolong: true }));
+  assert.match(await f.app.redeem(f.event('#月华救赎', { at: 'other' })), /已脱离黑暗牢笼/);
+  assert.equal(f.players.owner.月华值, 300);
+  assert.equal(f.players.other.当前血量, 500);
+  assert.equal(f.players.other.修为, 8500);
+  assert.equal(f.values.has('xiuxian:player:other:action'), false);
+  assert.equal(f.players.other.救赎记录.at(-1).类型, '岁云剑宫月华救赎·解放');
+});
+
+test('月华救赎余额不足拒绝且零扣费，写入失败不扣月华', async () => {
+  const f = fixture();
+  f.players.owner.月华值 = 99;
+  f.players.owner.生命本源 = 50;
+  assert.match(await f.app.redeem(f.event('#月华救赎')), /恢复满生命本源需要100点月华值/);
+  assert.equal(f.players.owner.月华值, 99);
+  assert.equal(f.players.owner.生命本源, 50);
   f.players.owner.月华值 = 100;
   f.failWrite = true;
-  await assert.rejects(f.app.power(f.event('#月华兑换100')), /injected-write-error/);
+  await assert.rejects(f.app.redeem(f.event('#月华救赎')), /injected-write-error/);
   assert.equal(f.players.owner.月华值, 100);
-  assert.equal(f.players.owner.仙道潜力, undefined);
-  for (const command of ['#月华兑换-100', '#月华兑换1.5', '#月华兑换1e2', '#月华兑换100 abc']) {
-    assert.match(await f.app.power(f.event(command)), /用法/);
-  }
-  const replies = await Promise.all([f.app.power(f.event('#月华兑换100')), f.app.power(f.event('#月华兑换100'))]);
-  assert.ok(replies.some(reply => reply.includes('月华值不足')));
+  assert.equal(f.players.owner.生命本源, 50);
+  f.failWrite = false;
+  assert.match(await f.app.redeem(f.event('#月华救赎')), /生命本源恢复至200/);
   assert.equal(f.players.owner.月华值, 0);
-  assert.equal(f.players.owner.仙道潜力, 1);
+  assert.equal(f.players.owner.生命本源, 200);
+  assert.match(await f.app.redeem(f.event('#月华救赎')), /恢复满生命本源需要100点月华值/);
+  assert.equal(f.players.owner.月华值, 0);
+});
+
+test('消耗岁云残念自动入主岁云剑宫，位登宫主并获授帝经《岁云化月》', async () => {
+  const f = fixture();
+  f.players.newbie = { 学习的功法: [], 血量上限: 1000, 当前血量: 1000, 名号: '新晋修士' };
+  f.inventories.newbie = { 装备: [], 道具: [{ name: '岁云的残念', class: '道具', 数量: 1 }] };
+  const event = msg => f.event(msg, { user_id: 'newbie' });
+  const reply = await f.app.consumeRemnant(event('#消耗岁云的残念'));
+  assert.match(reply, /岁云剑宫/);
+  assert.match(reply, /宫主/);
+  assert.match(reply, /岁云化月/);
+  assert.equal(f.players.newbie.势力, '岁云剑宫');
+  assert.equal(f.players.newbie.势力职位, '宫主');
+  assert.ok(f.players.newbie.势力履历?.['岁云剑宫']);
+  const 功法 = f.inventories.newbie.功法 || [];
+  assert.ok(功法.some(item => item.name === '月华炼天功'));
+  assert.ok(功法.some(item => item.name === '岁云化月'));
+  assert.equal(f.inventories.newbie.道具.find(item => item.name === '岁云的残念').数量, 0);
+  assert.match(await f.app.consumeRemnant(event('#消耗岁云的残念')), /无需重复消耗残念/);
 });
 
 test('灾厄来源和小世界的生产接线均覆盖岁云传承', () => {

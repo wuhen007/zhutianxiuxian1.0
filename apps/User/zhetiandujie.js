@@ -36,12 +36,16 @@ import { consumeBlackEmperorTribulationFormation } from '../../model/blackEmpero
 import { reduceTribulationDamageByDefense } from '../../model/tribulationDamage.js';
 import {
   getAvailableRevivalGongfas,
+  getRevivalEffectLabel,
+  getSuiyunRevivalEffect,
   getTribulationRevivalMode,
   getTribulationRevivalCandidates,
   requestManualRevivalChoice,
   REVIVAL_GONGFA_NAMES,
+  SUIYUN_REVIVAL_SKILL,
   submitManualRevivalChoice,
 } from '../../model/tribulationRevival.js';
+import { getSuiyunStage } from '../../model/suiyun.js';
 import { applyQuestionFortuneCost } from '../../model/redDustFortune.js';
 import {
   getLocationName,
@@ -212,6 +216,11 @@ export class zhetiandujie extends plugin {
         resurrectTimes: 1,
          cooldown: 5,  
         desc: "仙古纪元祖祭灵的功法，习练者拥有强大的生命本源力量"
+      },
+      "如月长存": {
+        resurrectTimes: 1,
+        cooldown: 5,
+        desc: "岁云剑宫宫主被动，月华不灭；仅在渡劫濒死时自行护主复活"
       },
           "补天术": {
         resurrectTimes: 1,
@@ -491,6 +500,28 @@ const tryResurrect = async (gongfaName, effectFunc) => {
             免疫控制: true
         };
     })) return true;
+
+    // ==== 如月长存复活（岁云灵根自带被动，与柳神法同源）====
+    if (await tryResurrect(SUIYUN_REVIVAL_SKILL, async () => {
+        const healAmount = Math.floor(player.血量上限 * 0.6);
+        player.当前血量 = healAmount;
+
+        await e.reply([
+            `【${SUIYUN_REVIVAL_SKILL}】`,
+            `消耗50点生命本源（剩余：${player.生命本源}）`,
+            `冷却时间：${this.gongfa[SUIYUN_REVIVAL_SKILL].cooldown}回合`,
+            `一轮明月自识海升起，月华垂落如瀑，护住将碎的道基！`,
+            `「岁云不散，明月长存...」月音浩荡，雷海为之凝滞。`,
+            `恢复血量：${healAmount}/${player.血量上限}`,
+            `附加效果：`,
+            `1. 获得3层「月华庇护」（每层减伤45%，每次落雷消耗1层）`,
+            `2. 每道雷劫恢复15%最大生命值，持续5道`,
+            `3. 免疫控制效果`,
+        ].join("\n"));
+
+        player.柳神效果 = getSuiyunRevivalEffect(player.血量上限);
+    })) return true;
+
     // ==== 不灭经复活 ====
     if (await tryResurrect("不灭经", async () => {
         player.当前血量 = player.血量上限;
@@ -606,8 +637,9 @@ async checkGongfaExist(player, gongfaName) {
     player.功法 = player.功法 || {};
     player.学习的功法 = player.学习的功法 || [];
     
-    // 检查是否学习过该功法
-    if (!player.学习的功法.includes(gongfaName)) {
+    // 检查是否学习过该功法（岁云灵根本人自带的如月长存不占学习位）
+    if (!player.学习的功法.includes(gongfaName)
+        && !(gongfaName === SUIYUN_REVIVAL_SKILL && getSuiyunStage(player) > 0)) {
         return false;
     }
     
@@ -4245,6 +4277,7 @@ isEffectActive(player, effectName) {
     const effectMap = {
         "者字秘": "者字秘效果",
         "柳神法": "柳神效果",
+        "如月长存": "柳神效果",
         "雷帝宝术": "雷帝效果",
         "不灭经": "不灭经效果",
         "补天术": "补天术效果",
@@ -4265,6 +4298,7 @@ isEffectActive(player, effectName) {
         case "涅槃仙功":
             return player[effectKey].剩余次数 > 0;
         case "柳神法":
+        case "如月长存":
             return player[effectKey].庇护层数 > 0 || 
                   (player[effectKey].持续恢复 && player[effectKey].持续恢复.回合数 > 0);
         case "真凰宝术":
@@ -6001,7 +6035,7 @@ if (equipment.帝兵 && equipment.帝兵.author_name === player.id) {
       finalDamage -= 减伤值;
       
       effectMessages.push(
-        `【柳神庇护】抵消${bigNumberTransform(减伤值)}伤害`,
+        `【${getRevivalEffectLabel(player.柳神效果, '柳神')}庇护】抵消${bigNumberTransform(减伤值)}伤害`,
         `剩余庇护层数：${--player.柳神效果.庇护层数}`
       );
     }

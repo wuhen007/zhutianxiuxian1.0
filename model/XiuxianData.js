@@ -96,6 +96,7 @@ class XiuxianData {
          this.yaochishangdian = JSON.parse(fs.readFileSync(`${this.lib_path}/势力商店/瑶池商店.json`));
         this.yaoguangshangdian = JSON.parse(fs.readFileSync(`${this.lib_path}/势力商店/摇光商店.json`)); 
           this.jianyunhaishangdian = JSON.parse(fs.readFileSync(`${this.lib_path}/势力商店/剑云海商店.json`));
+          this.suiyunjianGongshangdian = JSON.parse(fs.readFileSync(`${this.lib_path}/势力商店/岁云剑宫商店.json`));
  //加载时间长河列表
           this.shijianchanghe_list = JSON.parse(fs.readFileSync(`${this.lib_path}/副本/时间长河列表.json`));
      //加载材料列表

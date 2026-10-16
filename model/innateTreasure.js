@@ -995,7 +995,11 @@ export function getPetAbilityBonus(pet, type) {
   const nativeBonus = pet?.type === type ? Number(pet?.加成) || 0 : 0;
   const inherited = pet?.炼妖继承能力;
   const inheritedBonus = inherited?.type === type ? Number(inherited?.加成) || 0 : 0;
-  return nativeBonus + inheritedBonus;
+  // 岁云剑灵等仙宠可自带「附加能力」（如炼器0.4），与战斗三维加成并存，互不覆盖炼妖继承位。
+  const extraBonus = (Array.isArray(pet?.附加能力) ? pet.附加能力 : [])
+    .reduce((sum, entry) => entry?.type === type
+      ? sum + (Number(entry?.成长值 ?? entry?.加成) || 0) : sum, 0);
+  return nativeBonus + inheritedBonus + extraBonus;
 }
 
 export function getSmallWorldYieldMultiplier(player) {

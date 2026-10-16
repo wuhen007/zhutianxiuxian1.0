@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { multiplySuiyunLoot } from '../../model/suiyunLoot.js';
+import { getTianjiaoProgressPenalty } from '../../model/suiyunCombat.js';
 import { plugin, verc, data, config } from '../../api/api.js';
 import {
   Add_灵石,
@@ -1785,6 +1786,8 @@ export class BOSS4 extends plugin {
       const player = await Read_player(usr_qq);
       const panguRewardMultiplier = hasEquippedInnateTreasure(player, '盘古幡', '开天') && player.先天权柄?.盘古开天待用 ? 2 : 1;
       const zhuxianTianjiao = hasEquippedInnateTreasure(player, '诛仙四剑', '被动:1');
+      // 岁云常青（岁云灵根自带）在天骄讨伐中与诛仙四剑被动同级：单次至多斩落40%气血，两者并存不叠加。
+      const tianjiaoProgress = getTianjiaoProgressPenalty(player, { zhuxian: zhuxianTianjiao });
     
     const tianjiaoData = data.weimiantianjiao_list.find(tj => tj.名号 === tianjiaoName);
     if (!tianjiaoData) {
@@ -2064,7 +2067,7 @@ export class BOSS4 extends plugin {
         
         if (!talismanTriggered) {
           // 护身法宝未触发，正常扣血
-          status.currentHP = Math.max(0, status.currentHP - (zhuxianTianjiao ? 40 : 20));
+          status.currentHP = Math.max(0, status.currentHP - tianjiaoProgress.win);
         }
 
         const defeatResult = registerTianjiaoDefeat(tianjiaoData, status, this.getTianjiaoWorldYear());
@@ -2105,9 +2108,12 @@ export class BOSS4 extends plugin {
           panguTalismanShattered
             ? `【盘古幡·开天碎宝】开天气刃斩碎${this.getEscapeTreasure(tianjiaoName)}，此宝本世无法再护体！`
             : '',
+          tianjiaoProgress.source === '岁云常青'
+            ? '【岁云常青】月华不熄，杀伐自与诛仙四剑同锋，这一战胜果额外斩落天骄气血。'
+            : '',
           talismanTriggered 
             ? `护体法宝生效，天骄血量未减少，当前剩余${status.currentHP}%`
-            : `天骄血量减少${zhuxianTianjiao ? 40 : 20}%，当前剩余${status.currentHP}%`,
+            : `天骄血量减少${tianjiaoProgress.win}%，当前剩余${status.currentHP}%`,
           `仇恨值${hatredResult.gain >= 0 ? '+' : ''}${hatredResult.gain}（当前：${hatredResult.new}，关系：${newLevel}）`
         ].filter(Boolean);
         if (setbackLines.length > 0) winMsg.push(...setbackLines);
@@ -2279,7 +2285,7 @@ export class BOSS4 extends plugin {
 
       } else {
         // 玩家失败
-        status.currentHP = Math.max(0, status.currentHP - (zhuxianTianjiao ? 2 : 1));
+        status.currentHP = Math.max(0, status.currentHP - tianjiaoProgress.lose);
         if (status.currentHP <= 0) {
           tianjiaoDefeated = true;
           await this.finalizeTianjiaoDefeat(e, {
@@ -2309,7 +2315,7 @@ export class BOSS4 extends plugin {
         }
 
         await e.reply([
-          `你未能战胜${tianjiaoName}，天骄血量减少${zhuxianTianjiao ? 2 : 1}%，当前剩余${status.currentHP}%`,
+          `你未能战胜${tianjiaoName}，天骄血量减少${tianjiaoProgress.lose}%，当前剩余${status.currentHP}%${tianjiaoProgress.source === '岁云常青' ? '（岁云常青·诛仙级杀伐）' : ''}`,
           `仇恨值${hatredResult.gain >= 0 ? '+' : ''}${hatredResult.gain}（当前：${hatredResult.new}，关系：${newLevel}）`
         ].join('\n'));
 

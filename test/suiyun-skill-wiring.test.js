@@ -6,7 +6,7 @@ import YAML from 'yaml';
 import { buildCombatSkillPanel } from '../model/combatSkillPanel.js';
 import { ensureCombatSkillLoadout, getCombatSkillOptions } from '../model/combatSkillLoadout.js';
 import { createSuiyunRoot, SUIYUN_STAGES } from '../model/suiyun.js';
-import { SUIYUN_COMBAT } from '../model/suiyunCombat.js';
+import { SUIYUN_COMBAT, SUIYUN_TIANJIAO_PROGRESS, getTianjiaoProgressPenalty } from '../model/suiyunCombat.js';
 
 const read = file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 const names = ['霜剑入月', '岁云归一', '白云苍狗', '岁云常青'];
@@ -111,4 +111,44 @@ test('独立团本含玩家和首领双方的霜剑入口，归一按真实扣�
   assert.match(damage, /reviveRaidSuiyun\(defender, messages\)/);
   const revival = source.slice(source.indexOf('async checkPlayerRevival('));
   assert.ok(revival.indexOf('trySuiyunRevival(player)') < revival.indexOf('!player.已复活'));
+});
+
+test('岁云常青自带天骄杀伐，单次至多斩落40%气血且与诛仙四剑不叠加', () => {
+  assert.deepEqual(getTianjiaoProgressPenalty({}), { win: 20, lose: 1, empowered: false, source: '' });
+  assert.equal(getTianjiaoProgressPenalty({ 灵根: { name: '凡体', type: '体质' } }).empowered, false);
+  assert.equal(SUIYUN_TIANJIAO_PROGRESS.win, 40);
+
+  for (let stage = 1; stage <= SUIYUN_STAGES.length; stage++) {
+    const evergreen = getTianjiaoProgressPenalty({ 灵根: createSuiyunRoot(stage) });
+    assert.deepEqual(evergreen, { win: 40, lose: 2, empowered: true, source: '岁云常青' });
+  }
+
+  const zhuxian = getTianjiaoProgressPenalty({ 灵根: { name: '凡体' } }, { zhuxian: true });
+  assert.deepEqual(zhuxian, { win: 40, lose: 2, empowered: true, source: '诛仙四剑' });
+  // 并存不叠加：40% 即单次上限，来源仍标注诛仙四剑。
+  assert.deepEqual(getTianjiaoProgressPenalty({ 灵根: createSuiyunRoot(5) }, { zhuxian: true }), zhuxian);
+  // 化身与分身不享有灵根被动。
+  assert.equal(getTianjiaoProgressPenalty({ 灵根: createSuiyunRoot(5), _tahua_type: '门矢士' }).empowered, false);
+  assert.equal(getTianjiaoProgressPenalty({ 灵根: createSuiyunRoot(5), 分身: true }).empowered, false);
+  assert.equal(getTianjiaoProgressPenalty({ 灵根: createSuiyunRoot(5), _高境界压制: true }).empowered, false);
+});
+
+test('天骄讨伐接线共用进度规则，降仇恨与畏惧仍只归诛仙四剑', () => {
+  const boss = read('apps/Boss/BOSS4.js');
+  assert.ok(boss.includes("import { getTianjiaoProgressPenalty } from '../../model/suiyunCombat.js';"));
+  assert.match(boss, /getTianjiaoProgressPenalty\(player, \{ zhuxian: zhuxianTianjiao \}\)/);
+  assert.match(boss, /status\.currentHP - tianjiaoProgress\.win/);
+  assert.match(boss, /status\.currentHP - tianjiaoProgress\.lose/);
+  assert.match(boss, /天骄血量减少\$\{tianjiaoProgress\.win\}%/);
+  assert.match(boss, /天骄血量减少\$\{tianjiaoProgress\.lose\}%/);
+  assert.doesNotMatch(boss, /zhuxianTianjiao \? 40 : 20/);
+  assert.doesNotMatch(boss, /zhuxianTianjiao \? 2 : 1/);
+  assert.match(boss, /if \(zhuxianTianjiao\) \{[\s\S]{0,120}?new - 50\)/);
+  assert.match(boss, /tianjiaoProgress\.source === '岁云常青'/);
+
+  const panel = read('model/combatSkillPanel.js');
+  assert.match(panel, /SUIYUN_TIANJIAO_PROGRESS\.win/);
+  const yaml = read('config/help/linggenhelp.yaml');
+  assert.match(yaml, /单次至多斩落40%气血/);
+  assert.match(read('docs/岁云灵根说明.md'), /胜利40%／失败2%/);
 });

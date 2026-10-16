@@ -134,6 +134,10 @@ export class shilitixi extends plugin {
     fnc: 'lingqujianyunhai'
 },
 {
+    reg: '^#开启剑宫宝库$',
+    fnc: 'lingqujianGong'
+},
+{
     reg: '^#脱离势力$',
     fnc: 'requestFactionExit'
 },
@@ -482,6 +486,86 @@ async lingqujianyunhai(e) {
     // 添加宗门律令
     rewardMsg += `\n\n【剑云海律令】真传弟子每日可开启一次秘库，以彰宗门恩典。`;
     
+    e.reply(rewardMsg);
+    return true;
+}
+// 岁云剑宫俸禄：与剑云海秘库同机制，仅限宫主，每日一次
+async lingqujianGong(e) {
+    if (!verc({ e })) return false;
+    const usr_qq = (await channel(e.user_id.toString().replace('qg_',''))).toString();
+    if (!await existplayer(usr_qq)) return false;
+
+    const player = await Read_player(usr_qq);
+    if (player.势力 !== "岁云剑宫") {
+        return e.reply([
+            `【岁云剑宫禁地】`,
+            `非我剑宫宫主，不得擅入宝库。`,
+        ].join('\n'));
+    }
+
+    const now = Date.now();
+    const claimKey = await reserveDailyFactionReward(usr_qq, 'jianGong_open_day', now);
+    if (!claimKey) {
+        return e.reply([
+            `【岁云剑宫禁令】`,
+            `今日宝库已为宫主开启。`,
+            `岁云剑宫法则：每日仅限一次，望宫主明日再来。`
+        ].join('\n'));
+    }
+
+    player.源石 += 30000000;
+    let rewardMsg = "【岁云剑宫宝库·开启】";
+    rewardMsg += ` 身为剑宫宫主，您获得3000万源石供奉\n`;
+
+    const isXianpin = Math.random() < 0.5;
+    const settlementCard = isXianpin ? "仙品秘境结算卡" : "圣品秘境结算卡";
+    const cardDesc = isXianpin
+        ? "仙品秘境结算卡：可缩减秘境探索时间"
+        : "圣品秘境结算卡：可大幅缩减秘境探索时间";
+
+    const rewardGroups = [
+        ["众生仙钓", "道具", "诸天仙宝，可垂钓众生"],
+        ["剑云海圣药", "丹药", "宗门秘传圣药，可增进修为血气"],
+        [settlementCard, "道具", cardDesc]
+    ];
+
+    const random = Math.random();
+    let rewardLevel = "";
+    let rewardMultiplier = 1;
+
+    if (random < 0.7) {
+        rewardLevel = "【基础赏赐】";
+        rewardMultiplier = 3;
+    } else if (random < 0.9) {
+        rewardLevel = "【鸿运嘉赏】";
+        rewardMultiplier = 5;
+    } else {
+        rewardLevel = "【天选厚赐】";
+        rewardMultiplier = 5;
+    }
+
+    for (const [itemName, itemType] of rewardGroups) {
+        await Add_najie_thing(usr_qq, itemName, itemType, rewardMultiplier);
+    }
+
+    if (rewardLevel === "【天选厚赐】") {
+        await Add_najie_thing(usr_qq, "超越宝盒", "盒子", 10);
+    }
+
+    rewardMsg += ` 奖励等级：${rewardLevel}\n`;
+    for (const [itemName, , desc] of rewardGroups) {
+        rewardMsg += ` - ${itemName} x${rewardMultiplier}：${desc}\n`;
+    }
+    if (rewardLevel === "【天选厚赐】") {
+        rewardMsg += ` - 超越宝盒 x10：蕴含无上道机的秘宝\n`;
+    }
+    rewardMsg += `\n 本次宝库开启，随机赐予${isXianpin ? "仙品" : "圣品"}秘境结算卡`;
+
+    await Write_player(usr_qq, player);
+    await markDailyFactionReward(usr_qq, 'jianGong_open_day', now);
+
+    rewardMsg += `\n\n【岁云剑宫律令】宫主每日可开启一次宝库，月华垂落，以彰剑宫恩典。`;
+
     e.reply(rewardMsg);
     return true;
 }

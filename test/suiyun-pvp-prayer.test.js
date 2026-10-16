@@ -174,6 +174,22 @@ test('祈愿九秘之一按真实秘籍发放，原奖励共享小时冷却，�
   assert.equal(f.player.学习的功法,undefined);
 });
 
+test('祈愿十凶宝术按真实功法发放，单名可取指定，随机覆盖全十族', () => {
+  const items = JSON.parse(read('resources/data/item/功法列表.json'));
+  for (const name of core.SUIYUN_TEN_XIONG) {
+    assert.ok(items.some(item => item.name === name && item.class === '功法' && item.type === '十凶宝术'), name);
+    const result = core.receiveSuiyunYears(holder(), '祈愿 ' + name, { now: 0 });
+    assert.deepEqual(result.item, { name, class: '功法' });
+    assert.equal(result.amount, 1);
+  }
+  assert.equal(core.receiveSuiyunYears(holder(), '祈愿 十凶宝术', { now: 0, random: () => 0 }).item.name, '真龙宝术');
+  assert.equal(core.receiveSuiyunYears(holder(), '祈愿 十凶', { now: 0, random: () => 0.999 }).item.name, '九叶剑草宝术');
+  const randomNames = new Set(Array.from({ length: 10 }, (_, index) => core.receiveSuiyunYears(holder(), '祈愿 十凶宝术', { random: () => index / 10 }).item.name));
+  assert.equal(randomNames.size, 10);
+  assert.equal(core.receiveSuiyunYears(holder(), '祈愿 十凶宝术', { now: 0 }).ok, true);
+  assert.equal(core.receiveSuiyunYears({ ...holder(), 灵根: { name: '凡体' } }, '祈愿 十凶宝术', { now: 0 }).ok, false);
+});
+
 test('全部真人对战调用明确启用PVP，NPC副本/试炼不凭ID触发', () => {
   for(const [file,call] of [
     ['apps/Battle/Battle.js','A_player, B_player'],

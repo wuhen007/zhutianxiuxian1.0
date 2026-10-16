@@ -10,6 +10,10 @@ export const SUIYUN_COMBAT = Object.freeze({
   executionThreshold: .15,
 });
 
+/** 岁云常青的杀伐延伸：讨伐天骄与诛仙四剑被动同级，单次至多斩落 40% 气血。 */
+export const SUIYUN_TIANJIAO_PROGRESS = Object.freeze({ win: 40, lose: 2 });
+export const TIANJIAO_BASE_PROGRESS = Object.freeze({ win: 20, lose: 1 });
+
 const value = (number, fallback = 0) => Number.isFinite(Number(number)) ? Math.max(0, Number(number)) : fallback;
 const scaled = (number, ratio, minimum = 0) => Math.max(minimum, Math.min(Number.MAX_VALUE, value(number) * ratio));
 const living = unit => value(unit?.当前血量) > 0;
@@ -21,6 +25,16 @@ export function hasSuiyunEvergreen(unit) {
   return getSuiyunStage(unit) > 0 && !unit?._高境界镇杀 && !unit?._高境界压制
     && !unit?._tahua_type && !unit?._yiqihua_entity && !unit?._万灵魔幡主魂
     && !unit?._帝骑分身 && !unit?._圆神分身 && unit?.分身 !== true;
+}
+
+/**
+ * 讨伐天骄的单次进度伤害。岁云常青与诛仙四剑被动同级，两者并存不叠加，40% 即上限。
+ * 只共享“斩落气血”这一路，诛仙四剑的降仇恨与畏惧仍由至宝自己结算。
+ */
+export function getTianjiaoProgressPenalty(player, { zhuxian = false } = {}) {
+  if (zhuxian) return { win: SUIYUN_TIANJIAO_PROGRESS.win, lose: SUIYUN_TIANJIAO_PROGRESS.lose, empowered: true, source: '诛仙四剑' };
+  if (hasSuiyunEvergreen(player)) return { win: SUIYUN_TIANJIAO_PROGRESS.win, lose: SUIYUN_TIANJIAO_PROGRESS.lose, empowered: true, source: '岁云常青' };
+  return { win: TIANJIAO_BASE_PROGRESS.win, lose: TIANJIAO_BASE_PROGRESS.lose, empowered: false, source: '' };
 }
 
 export function clearSuiyunBattleRestrictions(unit) {

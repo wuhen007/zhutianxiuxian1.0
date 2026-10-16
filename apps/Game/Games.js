@@ -25,6 +25,7 @@ import {
 import { Add_灵石, Add_修为 } from '../../model/xiuxian.js';
 import { recordWenXianTaskProgress } from '../../model/wenxianling.js';
 import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
+import { getSuiyunStage, SUIYUN_REVIVAL_SKILL, SUIYUN_REVIVAL_TEACH_CHANCE } from '../../model/suiyun.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import {
   SOURCE_DUEL_COOLDOWN_MS,
@@ -1602,6 +1603,28 @@ if (!fusionHit) {
         e.reply(`你们双方努力修炼，但是并进不了状态，都增加了${y}修为，亲密度+10`);
     } else {
         e.reply('你们双修时心神合一，但是不知道哪来的小孩，惊断了状态');
+    }
+
+    // ==========  岁云月华传承：与岁云剑尊双修，有概率习得【如月长存】 ==========
+    if (option <= 0.9) {
+        const pairs = [
+            { holder: playerA, learner: playerB, learnerId: B },
+            { holder: playerB, learner: playerA, learnerId: A },
+        ];
+        for (const { holder, learner, learnerId } of pairs) {
+            if (getSuiyunStage(holder) <= 0) continue;
+            if (getSuiyunStage(learner) > 0) continue;
+            const learned = Array.isArray(learner.学习的功法) ? learner.学习的功法 : [];
+            if (learned.includes(SUIYUN_REVIVAL_SKILL)) continue;
+            if (Math.random() >= SUIYUN_REVIVAL_TEACH_CHANCE) continue;
+            learner.学习的功法 = [...learned, SUIYUN_REVIVAL_SKILL];
+            await Write_player(learnerId, learner);
+            e.reply([
+                `【${SUIYUN_REVIVAL_SKILL}·月华传承】`,
+                `${holder.名号 || '对方'}引月华入你识海，你于双修中悟得【${SUIYUN_REVIVAL_SKILL}】！`,
+                '此为被动复活秘术，渡劫濒死时会自行引月华护主；#战斗技能 查看详情。',
+            ].join('\n'));
+        }
     }
     return false;
     });

@@ -9,15 +9,19 @@ import {
 } from '../../model/xiuxian.js';
 import {
   activateSuiyun, advanceSuiyun, applySuiyunTrialResult, ascendSuiyunPalace,
-  buildSuiyunTrialBattle, convertSuiyunPotential, cultivateSuiyun, ensureSuiyunState,
+  buildSuiyunTrialBattle, cultivateSuiyun, ensureSuiyunState,
   getSuiyunEffects, getSuiyunLifeMaximum, getSuiyunLotusBonus, getSuiyunPower, getSuiyunStage, refineSuiyun,
-  settleSuiyunPalace, spendSuiyunPower, SUIYUN_PET_NAME, SUIYUN_PET_STAGE,
+  settleSuiyunPalace, spendSuiyunPower, spendMoonlight, SUIYUN_PET_NAME, SUIYUN_PET_LEGACY_NAME,
+  SUIYUN_PET_STAGE, SUIYUN_PET_FORGING_GROWTH,
   receiveSuiyunYears, SUIYUN_PALACE_DUNGEON,
-  SUIYUN_FROST_EQUIPMENT,
+  SUIYUN_FROST_EQUIPMENT, SUIYUN_PALACE_FACTION, SUIYUN_PALACE_POSITION, SUIYUN_PALACE_TECHNIQUE,
+  SUIYUN_REDEEM_LIFE_COST, SUIYUN_REDEEM_RESCUE_COST,
 } from '../../model/suiyun.js';
 import { claimSuiyunUnique, releaseSuiyunUnique } from '../../model/suiyunRegistry.js';
 import { readSuiyunGifts, withSuiyunGiftClaim, SUIYUN_GIFT_LIMIT } from '../../model/suiyunGift.js';
 import { SUIYUN_EXCLUSIVE_SKILLS } from '../../model/suiyun.js';
+import { getLifeSourceRepairMaximum } from '../../model/lifeSourceRepair.js';
+import { recordFactionJoin } from '../../model/factionSystem.js';
 import { canRefineMemoryTarget } from '../../model/memoryPath.js';
 import { getSuiyunCreationRestriction, SUIYUN_CREATION_COST } from '../../model/suiyunCreation.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
@@ -105,8 +109,8 @@ export class Suiyun extends plugin {
         { reg: '^#月华垂钓$', fnc: 'moonFishing' },
         { reg: '^#云月之莲$', fnc: 'showLotus' },
         { reg: '^#赐予月华.*$', fnc: 'gift' },
-        { reg: '^#岁云之力(?:\\s*兑换(?:\\s*\\d+)?)?$', fnc: 'power' },
-        { reg: '^#月华兑换(?:\\s*\\d+)?$', fnc: 'power' },
+        { reg: '^#岁云之力$', fnc: 'power' },
+        { reg: '^#月华救赎.*$', fnc: 'redeem' },
         { reg: '^#岁云更改.*$', fnc: 'rewrite' },
         { reg: '^#岁云造物.*$', fnc: 'createItem' },
       ],
@@ -242,7 +246,7 @@ export class Suiyun extends plugin {
       let player = await Read_player(ctx.qq);
       const holderError = this.holderError(player);
       if (holderError) return e.reply(holderError);
-      if (getSuiyunStage(player) !== 5) return e.reply('岁云造物仅向【岁云剑尊】开放。');
+      if (getSuiyunStage(player) < SUIYUN_PET_STAGE) return e.reply('岁云造物自【霜月剑尊】阶段起开放，请先 #岁云见证。');
       const name = String(e.msg || '').replace(/^#岁云造物\s*/, '').trim();
       if (!name || /[*×\r\n]|\s[+-]?\d+(?:\.\d+)?$/.test(name)
         || e.at || e.message?.some(item => item.type === 'at') || /@|\[CQ:at/.test(name)) {
@@ -257,7 +261,7 @@ export class Suiyun extends plugin {
       // 天宫产出单独结算，造物失败仅回滚本次扣费与发放。
       await this.settlePalace(ctx.qq, player);
       player = await Read_player(ctx.qq);
-      if (getSuiyunStage(player) !== 5 || getActiveZhutianAvatarName(player)) return e.reply('请装载本源岁云剑尊后再造物。');
+      if (getSuiyunStage(player) < SUIYUN_PET_STAGE || getActiveZhutianAvatarName(player)) return e.reply('请装载本源、且达到霜月剑尊以上阶段后再造物。');
       if (getSuiyunPower(player) < SUIYUN_CREATION_COST) return e.reply('岁云之力不足10点。');
       const itemClass = item.class === '道种' ? '道具' : item.class;
       const quantity = inventory => (inventory[itemClass] || [])
@@ -385,10 +389,14 @@ export class Suiyun extends plugin {
       try {
         const result = activateSuiyun(player);
         if (!result.ok) throw new Error(result.reason);
+        recordFactionJoin(player, SUIYUN_PALACE_FACTION, SUIYUN_PALACE_POSITION, Date.now(), true);
         remnant.数量 -= 1;
         if (await Write_najie(ctx.qq, najie) === false) throw new Error('纳戒写入被封锁');
         await Add_najie_thing(ctx.qq, '月华炼天功', '功法', 1, undefined, 1, {
           idempotencyKey: 'suiyun:initial-technique',
+        });
+        await Add_najie_thing(ctx.qq, SUIYUN_PALACE_TECHNIQUE, '功法', 1, undefined, 1, {
+          idempotencyKey: 'suiyun:palace-technique',
         });
         await Write_player(ctx.qq, player);
         transaction.commit();
@@ -402,11 +410,49 @@ export class Suiyun extends plugin {
       await this.refreshAttributes(ctx.qq);
       return e.reply([
         '【月华初生】岁云残念融入本源，你获得【月华之体】，天资化作【岁云】！',
-        '获得《月华炼天功》x1，请发送 #学习月华炼天功。',
+        `获得《月华炼天功》x1，请发送 #学习月华炼天功。`,
+        `月华映照宗庭，你自动入主【${SUIYUN_PALACE_FACTION}】，位登【${SUIYUN_PALACE_POSITION}】；并得宫主帝经《${SUIYUN_PALACE_TECHNIQUE}》x1。`,
+        '宫主权限：#剑宫兑换 物品名（岁云剑宫宝库）；#开启剑宫宝库（每日供奉）。',
         world ? '小世界升华为【月华天宫】，每现实小时产出0.5点岁云之力与50点仙道潜力。' : '开辟小世界后将自动升华为月华天宫。',
         '发送 #岁云之力 查看传承；依次完成 #引月入体、#化霜入剑、#月之见证 后，以 #岁云见证 晋升。',
       ].join('\n'));
     });
+  }
+
+  /**
+   * 旧档剑灵改名与双能力补写：把「霜月剑灵」统一为【岁云剑灵】，并补齐炼器成长，
+   * 避免改名后被判定为未持有、重复发放第二只。
+   */
+  async migrateSuiyunPet(qq, najie, player, world) {
+    let changed = false;
+    const patch = pet => {
+      if (!pet || typeof pet !== 'object') return;
+      if (pet.name === SUIYUN_PET_LEGACY_NAME) {
+        pet.name = SUIYUN_PET_NAME;
+        changed = true;
+      }
+      if (pet.name !== SUIYUN_PET_NAME) return;
+      if (pet.来源 === '岁云传承·霜月剑尊') { pet.来源 = '岁云传承·岁云剑宫'; changed = true; }
+      if (!Array.isArray(pet.附加能力) || !pet.附加能力.some(entry => entry?.type === '炼器')) {
+        pet.附加能力 = [{ type: '炼器', 成长值: SUIYUN_PET_FORGING_GROWTH }];
+        changed = true;
+      }
+    };
+    for (const pet of najie?.仙宠 || []) patch(pet);
+    let worldChanged = false;
+    for (const slot of world?.栖息地 || []) {
+      const before = changed;
+      patch(slot?.仙宠 || slot?.pet || slot);
+      if (changed !== before) worldChanged = true;
+    }
+    patch(player?.仙宠);
+    if (changed) {
+      if (await Write_najie(qq, najie) === false) throw new Error('纳戒当前被封锁，请解锁后再次发送 #岁云见证');
+      // 出战仙宠改名同样落盘，否则后续重读会把它当成未持有并二次发放。
+      await Write_player(qq, player);
+      if (worldChanged) saveWorlds();
+    }
+    return changed;
   }
 
   async grantStagePet(qq, player) {
@@ -415,6 +461,8 @@ export class Suiyun extends plugin {
     if (najie.时间线封锁?.locked) throw new Error('纳戒当前被封锁，请解锁后再次发送 #岁云见证 领取仙宠');
     // 已有奖励在出战、纳戒或栖息地时只补领取标记，避免旧档补领产生第二只。
     const world = data.xiaoshijie.find(item => String(item.player_qq) === String(qq));
+    const migrated = await this.migrateSuiyunPet(qq, najie, player, world);
+    if (migrated) Object.assign(player, await Read_player(qq));
     const alreadyPresent = player.仙宠?.name === SUIYUN_PET_NAME
       || najie.仙宠?.some(item => item.name === SUIYUN_PET_NAME && Number(item.数量) > 0)
       || world?.栖息地?.some(item => (item.仙宠?.name || item.pet?.name || item.name) === SUIYUN_PET_NAME);
@@ -498,7 +546,7 @@ export class Suiyun extends plugin {
       const result = getSuiyunStage(player) === 5 ? { ok: true, name: '岁云剑尊' } : advanceSuiyun(player);
       if (!result.ok) return e.reply([
         result.reason,
-        petGranted ? `已补领攻击仙宠【${SUIYUN_PET_NAME}】x1，发送 #出战仙宠${SUIYUN_PET_NAME} 出战。` : '',
+        petGranted ? `已补领仙宠【${SUIYUN_PET_NAME}】x1，发送 #出战仙宠${SUIYUN_PET_NAME} 出战。` : '',
         frostGranted ? '已补领霜月剑、霜月剑袍、霜月之莲，三件齐备全属性10倍。' : '',
       ].filter(Boolean).join('\n'));
       await Write_player(ctx.qq, player);
@@ -512,7 +560,7 @@ export class Suiyun extends plugin {
       }
       return e.reply([
         `【岁云见证】当前传承：${player.灵根.name}。`,
-        petGranted ? `获得攻击仙宠【${SUIYUN_PET_NAME}】x1；发送 #出战仙宠${SUIYUN_PET_NAME} 出战。` : '',
+        petGranted ? `获得仙宠【${SUIYUN_PET_NAME}】x1；发送 #出战仙宠${SUIYUN_PET_NAME} 出战。` : '',
         frostGranted ? '霜月剑、霜月剑袍、霜月之莲已入纳戒，穿戴三件时攻、防、生命倍率为10倍。' : '',
         getSuiyunStage(player) === 5 ? '岁云袍、岁云剑、云月之莲已入纳戒，无上天阙枝自动认主，皆为绑定专属。' : '',
       ].filter(Boolean).join('\n'));
@@ -586,8 +634,7 @@ export class Suiyun extends plugin {
 
   async power(e) {
     const text = String(e.msg || '').trim();
-    const exchange = text.match(/^#(?:月华兑换|岁云之力\s*兑换)\s*(\d+)?$/);
-    if (text !== '#岁云之力' && !exchange) return e.reply('用法：#月华兑换 100；兑换数量为月华值，需为100的正整数倍。');
+    if (text !== '#岁云之力') return e.reply('用法：#岁云之力 查看传承面板。');
     const ctx = await this.context(e);
     if (!ctx) return false;
     return withPlayerMutationLock(ctx.qq, async () => {
@@ -597,41 +644,102 @@ export class Suiyun extends plugin {
       const petGranted = await this.grantStagePet(ctx.qq, player);
       const frostGranted = await this.grantFrostEquipment(ctx.qq, player);
       const palace = await this.settlePalace(ctx.qq, player);
-      let exchangeResult;
-      if (exchange) {
-        const amount = exchange[1] ? Number(exchange[1]) : 100;
-        exchangeResult = convertSuiyunPotential(player, amount);
-        if (!exchangeResult.ok) return e.reply(exchangeResult.reason);
-        await Write_player(ctx.qq, player);
-      }
       const lotus = await this.refreshLotusAttributes(ctx.qq, player);
       const effects = getSuiyunEffects(player);
       return e.reply([
         `【岁云之力】${getSuiyunPower(player).toFixed(2)}点`, this.status(player),
-        exchangeResult ? `已消耗${exchangeResult.spent}月华，仙道潜力+${exchangeResult.potentialGain}，当前${player.仙道潜力}点。` : '',
         palace.hours > 0 ? `本次月华天宫结算${palace.hours}小时：岁云之力+${palace.power}、仙道潜力+${palace.potentialGain}。` : '',
         frostGranted ? '已补领霜月三件套，使用原装备指令穿戴，齐套全属性10倍。' : '',
         petGranted ? `已补领【${SUIYUN_PET_NAME}】x1；#出战仙宠${SUIYUN_PET_NAME}。`
-          : getSuiyunStage(player) >= SUIYUN_PET_STAGE ? `传承仙宠：${SUIYUN_PET_NAME}已领取；#出战仙宠${SUIYUN_PET_NAME}。`
-            : `晋升霜月剑尊时赠送攻击仙宠【${SUIYUN_PET_NAME}】。`,
+          : getSuiyunStage(player) >= SUIYUN_PET_STAGE ? `传承仙宠：${SUIYUN_PET_NAME}已领取；#出战仙宠${SUIYUN_PET_NAME}（战斗三维＋炼器成长${SUIYUN_PET_FORGING_GROWTH}）。`
+            : `晋升霜月剑尊时赠送仙宠【${SUIYUN_PET_NAME}】，兼具战斗与炼器成长。`,
         `云月之莲累计炼化：${lotus.moonlight}月华｜${lotus.active ? '成长已生效' : '装备后生效'}；#云月之莲 查看成长。`,
         `悟道加成${Math.round(effects.enlightenmentBonus * 100)}%｜渡劫减伤${Math.round(effects.tribulationReduction * 100)}%｜物品获取${effects.lootMultiplier}倍`,
         `灵根幸运+${Math.round(effects.luckBonus * 100)}%｜秘境通行：${effects.freeDungeonEntry ? '免入场资源消耗' : '霜月剑尊起免入场资源消耗'}`,
-        '自带战技：霜剑入月（至多9敌各9剑、每剑25倍、绝控霜寒，低于15%斩杀禁复活）；岁云归一（防御反伤）；白云苍狗（每战3次复活）；岁云常青（免疫即死、禁复活、禁疗）。#战斗技能 查看详情。',
+        '自带战技：霜剑入月（至多9敌各9剑、每剑25倍、绝控霜寒，低于15%斩杀禁复活）；岁云归一（防御反伤）；白云苍狗（每战3次复活）；岁云常青（免疫即死、禁复活、禁疗，讨伐天骄单次至多斩落40%气血）；如月长存（渡劫濒死自保复活）。#战斗技能 查看详情。',
+        `宫主权柄：#剑宫兑换 物品名（岁云剑宫宝库）、#开启剑宫宝库（每日一次供奉）；宫主帝经《${SUIYUN_PALACE_TECHNIQUE}》。`,
         '全系列被动：免疫绝灵侵蚀与寿元压制。#岁岁年年 [材料/潜力丹/大衍悟道丹/悟道古茶]：每现实小时领取1件；#刻舟求剑：探索岁云殿堂。',
         '岁云剑尊齐套（岁云剑＋岁云袍＋云月之莲）：位面穿梭只耗修为与血气，不耗寿元、无需等待、不必先记坐标。',
         'PVP同境裁决：对手额外体系等效境界高于自己时，本场强制压到同境；PVE不生效，双方存档境界不变。',
-        '#岁岁年年 祈愿 临字秘：指定九秘之一，或 #岁岁年年 祈愿 九秘 随机一本；与原奖励共用一小时冷却。',
+        '#岁岁年年 祈愿 临字秘/九秘：指定九秘之一或随机一本；祈愿 真龙宝术/十凶宝术 可取十凶一族宝术；与原奖励共用一小时冷却。',
+        '#月华救赎：100点月华恢复满生命本源，可对他人；目标被关押时200点即可从大牢捞人。',
         '#月华垂钓：群内消耗3点岁云之力，必出鱼王并自动成为垂钓者；无需鱼钩或饵料。',
         '#朝花夕拾*1：沉迷岁云殿堂，每组10轮，可填1～12组，免入场资源消耗。',
-        '月华天宫每现实小时产出0.5点岁云之力与50点仙道潜力；#月华兑换 100：100月华兑换1点仙道潜力，可填100的正整数倍。',
+        '月华天宫每现实小时产出0.5点岁云之力与50点仙道潜力。月华值只用于月华救赎，不再兑换潜力。',
         '#赐予月华 @目标：传授三项专属战技，全服限定三名；不带@查看名额。',
-        '#岁云造物 物品名：岁云剑尊专属，每次10点岁云之力造1件，稀有度不限，唯一归属规则保留。',
+        `#岁云造物 物品名：霜月剑尊起开放，每次10点岁云之力造1件，稀有度不限，唯一归属规则保留。`,
         '#岁云更改（霜月剑尊起开放）时代 时代名：5点；#岁云更改 至宝线索：10点。',
         '#岁云更改 命格/天资/灵根 名称：20点，可@目标。唯一灵根不参与改写。',
         '#云月修炼：24小时一次；#月华炼化 @目标 / 天骄 / 灾厄 / 魔主。',
       ].filter(Boolean).join('\n'));
     });
+  }
+
+  /** 月华救赎：100点月华兑满生命本源，可指向他人；目标被关押时200点从大牢捞人。 */
+  async redeem(e) {
+    const ctx = await this.context(e);
+    if (!ctx) return false;
+    const targetQQ = String(await channel(getSuperdimensionalRewriteTarget(e, ctx.qq)));
+    if (!await existplayer(targetQQ)) return e.reply('目标尚未踏入修行。');
+    return withPlayerLocks(targetQQ === ctx.qq ? [ctx.qq] : [ctx.qq, targetQQ], async () => {
+      const player = await Read_player(ctx.qq);
+      const error = this.holderError(player);
+      if (error) return e.reply(error);
+      const isSelf = targetQQ === ctx.qq;
+      const target = isSelf ? player : await Read_player(targetQQ);
+      const name = target.名号 || targetQQ;
+      await this.settlePalace(ctx.qq, player);
+      const prison = await this.readPrisonState(targetQQ);
+      const cost = prison.jailed ? SUIYUN_REDEEM_RESCUE_COST : SUIYUN_REDEEM_LIFE_COST;
+      if (Number(player.月华值 || 0) < cost) {
+        return e.reply(`【月华救赎】${prison.jailed ? '从大牢捞人' : '恢复满生命本源'}需要${cost}点月华值，当前仅有${Math.floor(Number(player.月华值) || 0)}点。`);
+      }
+      const transaction = transactionFor(isSelf ? [ctx.qq] : [ctx.qq, targetQQ]);
+      try {
+        if (!spendMoonlight(player, cost)) throw new Error('月华值余额已变化');
+        if (prison.jailed) {
+          if (prison.actionKey) await redis.del(prison.actionKey);
+          const maxHp = Math.max(1, Number(target.血量上限) || 1);
+          target.当前血量 = maxHp;
+          target.修为 = Math.floor((Number(target.修为) || 0) * 0.85);
+          target.救赎记录 = Array.isArray(target.救赎记录) ? target.救赎记录 : [];
+          target.救赎记录.push({ 类型: `${SUIYUN_PALACE_FACTION}月华救赎·解放`, 时间: new Date().toLocaleString('zh-CN') });
+        } else {
+          const maximum = getLifeSourceRepairMaximum(target);
+          target.生命本源 = maximum;
+        }
+        await savePlayers(isSelf ? [[ctx.qq, player]] : [[ctx.qq, player], [targetQQ, target]]);
+        transaction.commit();
+      } catch (err) {
+        transaction.rollback();
+        throw err;
+      }
+      if (prison.jailed) {
+        return e.reply([
+          `【月华救赎·解放】月华垂落，斩断${name}身周的永寂锁链。`,
+          `消耗${cost}点月华值，${name}已脱离${prison.label}，气血归满、修为保留85%。`,
+          `剩余月华值：${Math.floor(Number(player.月华值) || 0)}点。`,
+        ].join('\n'));
+      }
+      return e.reply([
+        `【月华救赎·本源】月华化作柔和光雨，${isSelf ? '你的' : `${name}的`}生命本源重归圆满。`,
+        `消耗${cost}点月华值，生命本源恢复至${target.生命本源}。`,
+        `剩余月华值：${Math.floor(Number(player.月华值) || 0)}点。`,
+      ].join('\n'));
+    });
+  }
+
+  /** 读取目标关押状态（黑暗牢笼、天牢、禁闭）。 */
+  async readPrisonState(qq) {
+    const actionKey = `xiuxian:player:${qq}:action`;
+    const raw = await redis.get(actionKey);
+    if (!raw) return { jailed: false, label: '', actionKey };
+    let action;
+    try { action = JSON.parse(raw); } catch { return { jailed: false, label: '', actionKey }; }
+    if (action?.heianlaolong) return { jailed: true, label: '黑暗牢笼', actionKey };
+    if (action?.action === '天牢') return { jailed: true, label: '天牢', actionKey };
+    if (action?.action === '禁闭') return { jailed: true, label: '禁闭', actionKey };
+    return { jailed: false, label: '', actionKey };
   }
 
   async refine(e) {

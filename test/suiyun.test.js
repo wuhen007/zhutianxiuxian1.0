@@ -7,7 +7,7 @@ import {
   SUIYUN_STAGES, SUIYUN_HOUR_MS, SUIYUN_DAY_MS, activateSuiyun, advanceSuiyun,
   getSuiyunStage, getSuiyunEffects, ensureSuiyunState, createSuiyunRoot,
   buildSuiyunTrialBattle, applySuiyunTrialResult, cultivateSuiyun, refineSuiyun,
-  convertSuiyunPotential, getSuiyunPower, spendSuiyunPower,
+  spendMoonlight, getSuiyunPower, spendSuiyunPower,
   ascendSuiyunPalace, settleSuiyunPalace, getSuiyunLifeMaximum,
 } from '../model/suiyun.js';
 import { getLifeSourceRepairMaximum } from '../model/lifeSourceRepair.js';
@@ -115,16 +115,19 @@ test('炼化须学功法、真实目标ID防重复，奖励100到300，本源封
   assert.equal(p.生命本源, 15000);
 });
 
-test('每100月华兑换1潜力，负数非数及透支保护，岁云之力独立保留', () => {
+test('月华不再兑换潜力，只按救赎扣减并保留透支保护，岁云之力独立保留', () => {
   const p = player();
   p.月华值 = 300;
   p.岁云之力 = .3;
-  for (const bad of [0, -100, 101, Infinity, NaN]) assert.equal(convertSuiyunPotential(p, bad).ok, false);
-  for (let i = 0; i < 3; i++) assert.equal(convertSuiyunPotential(p).ok, true);
+  for (const bad of [0, -100, Infinity, NaN, 'x', undefined]) assert.equal(spendMoonlight(p, bad), false);
+  assert.equal(p.月华值, 300);
+  assert.equal(spendMoonlight(p, 301), false);
+  assert.equal(p.月华值, 300);
+  for (let i = 0; i < 3; i++) assert.equal(spendMoonlight(p, 100), true);
   assert.equal(p.月华值, 0);
-  assert.equal(p.仙道潜力, 3);
+  assert.equal(p.仙道潜力, undefined);
   assert.equal(getSuiyunPower(p), .3);
-  assert.equal(convertSuiyunPotential(p).ok, false);
+  assert.equal(spendMoonlight(p, 100), false);
   assert.equal(spendSuiyunPower(p, -.1), false);
   assert.equal(spendSuiyunPower(p, Infinity), false);
   assert.equal(spendSuiyunPower(p, .4), false);

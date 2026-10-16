@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   activateSuiyun, advanceSuiyun, ensureSuiyunState, refineSuiyun,
-  cultivateSuiyun, convertSuiyunPotential, getSuiyunLotusBonus,
+  cultivateSuiyun, spendMoonlight, getSuiyunLotusBonus,
 } from '../model/suiyun.js';
 
 function player() {
@@ -27,7 +27,7 @@ test('只有成功的真实本源炼化计入莲成长，玩家天骄灾厄均�
   assert.equal(p.岁云.累计炼化月华, 600);
 });
 
-test('日修炼和直接增加余额不养器，兑换后成长不降、反复查看不复利', () => {
+test('日修炼和直接增加余额不养器，消费月华后成长不降、反复查看不复利', () => {
   const p = player();
   const original = structuredClone(equipment);
   cultivateSuiyun(p, { now: 0, random: () => 1 });
@@ -36,9 +36,9 @@ test('日修炼和直接增加余额不养器，兑换后成长不降、反复�
   refineSuiyun(p, { targetId: 'one', random: () => 0 });
   p.月华值 = 10000;
   const before = getSuiyunLotusBonus(p, equipment);
-  assert.equal(convertSuiyunPotential(p, 10000).ok, true);
+  assert.equal(spendMoonlight(p, 10000), true);
   assert.equal(p.月华值, 0);
-  assert.equal(p.仙道潜力, 100);
+  assert.equal(p.仙道潜力, undefined);
   assert.deepEqual(getSuiyunLotusBonus(p, equipment), before);
   assert.deepEqual(getSuiyunLotusBonus(p, equipment), before);
   assert.deepEqual(equipment, original);

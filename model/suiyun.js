@@ -13,14 +13,26 @@ export const SUIYUN_EQUIPMENT = Object.freeze(['岁云袍', '岁云剑', '云月
 export const SUIYUN_FROST_EQUIPMENT = Object.freeze(['霜月剑', '霜月剑袍', '霜月之莲']);
 export const SUIYUN_LOTUS_NAME = '云月之莲';
 export const SUIYUN_LOTUS_STAT_PER_MOONLIGHT = 200_000;
-export const SUIYUN_PET_NAME = '霜月剑灵';
+export const SUIYUN_PET_NAME = '岁云剑灵';
+export const SUIYUN_PET_LEGACY_NAME = '霜月剑灵';
+export const SUIYUN_PET_FORGING_GROWTH = 0.4;
 export const SUIYUN_PET_STAGE = 3;
 export const SUIYUN_PALACE_POTENTIAL_PER_HOUR = 50;
 export const SUIYUN_EXCLUSIVE_SKILLS = Object.freeze(['霜剑入月', '岁云归一', '白云苍狗']);
 export const SUIYUN_GIFT_LIMIT = 3;
-export const SUIYUN_POTENTIAL_EXCHANGE_RATE = 100;
 export const SUIYUN_PALACE_DUNGEON = '岁云殿堂';
+// 第6条：觉醒残念即自动入主「岁云剑宫」，宫主专属帝经与势力商店。
+export const SUIYUN_PALACE_FACTION = '岁云剑宫';
+export const SUIYUN_PALACE_POSITION = '宫主';
+export const SUIYUN_PALACE_TECHNIQUE = '岁云化月';
+// 第2条：月华救赎——100点月华恢复满生命本源（可对他人），200点从大牢捞人。
+export const SUIYUN_REDEEM_LIFE_COST = 100;
+export const SUIYUN_REDEEM_RESCUE_COST = 200;
+// 第7条：如月长存为岁云灵根自带的渡劫复活被动，亦可由他人双修习得。
+export const SUIYUN_REVIVAL_SKILL = '如月长存';
+export const SUIYUN_REVIVAL_TEACH_CHANCE = 0.15;
 export const SUIYUN_NINE_SECRETS = Object.freeze(['临字秘', '兵字秘', '斗字秘', '者字秘', '皆字秘', '数字秘', '组字秘', '前字秘', '行字秘']);
+export const SUIYUN_TEN_XIONG = Object.freeze(['真龙宝术', '真凰宝术', '鲲鹏宝术', '雷帝宝术', '麒麟宝术', '天角蚁宝术', '蛄之宝术', '九幽獓宝术', '打神石宝术', '九叶剑草宝术']);
 export const SUIYUN_METALS = Object.freeze(['仙泪绿金', '凰血赤金', '龙纹黑金', '永恒蓝金', '神痕紫金', '道劫黄金', '羽化青金', '太阴天金', '太阳天金']);
 export const SUIYUN_YEAR_REWARDS = Object.freeze([
   ...SUIYUN_METALS.map(name => Object.freeze({ name, class: '材料' })),
@@ -31,9 +43,9 @@ export const SUIYUN_YEAR_REWARDS = Object.freeze([
 
 export const SUIYUN_STAGES = Object.freeze([
   { name: '月华之体', realm: 0, realmName: '无', life: 200, cap: 600, enlightenmentBonus: .2, tribulationReduction: .2, lootMultiplier: 1, eff: 20, orb: 1.5, stats: 2 },
-  { name: '月华似剑', realm: 10, realmName: '仙台大能', life: 600, cap: 1800, enlightenmentBonus: .2, tribulationReduction: .3, lootMultiplier: 5, eff: 100, orb: 3, stats: 10 },
-  { name: '霜月剑尊', realm: 12, realmName: '圣人', life: 1800, cap: 5400, enlightenmentBonus: .2, tribulationReduction: .5, lootMultiplier: 10, eff: 300, orb: 10, stats: 50 },
-  { name: '岁云化身', realm: 16, realmName: '大帝', life: 5400, cap: 15000, enlightenmentBonus: .45, tribulationReduction: .6, lootMultiplier: 10, eff: 3000, orb: 100, stats: 500 },
+  { name: '月华似剑', realm: 10, realmName: '神火境', life: 600, cap: 1800, enlightenmentBonus: .2, tribulationReduction: .3, lootMultiplier: 5, eff: 100, orb: 3, stats: 10 },
+  { name: '霜月剑尊', realm: 12, realmName: '天神境', life: 1800, cap: 5400, enlightenmentBonus: .2, tribulationReduction: .5, lootMultiplier: 10, eff: 300, orb: 10, stats: 50 },
+  { name: '岁云化身', realm: 16, realmName: '至尊境', life: 5400, cap: 15000, enlightenmentBonus: .45, tribulationReduction: .6, lootMultiplier: 10, eff: 3000, orb: 100, stats: 500 },
   { name: '岁云剑尊', realm: 20, realmName: '准仙帝', life: 15000, cap: 15000, enlightenmentBonus: .45, tribulationReduction: .85, lootMultiplier: 10, eff: 30000, orb: 1000, stats: 5000 },
 ].map(Object.freeze));
 
@@ -154,7 +166,11 @@ export function activateSuiyun(player, { now = Date.now() } = {}) {
   player.生命本源 = 200;
   player.天资等级 = '岁云';
   player.天资评价 = '月华照见诸世，岁云演尽万法；等同无演无尽级天资。';
-  return { ok: true, stage: 1, name: '月华之体' };
+  // 残念融入本源即入主岁云剑宫，位同宫主；势力履历由指令层落盘。
+  player.势力 = SUIYUN_PALACE_FACTION;
+  player.势力职位 = SUIYUN_PALACE_POSITION;
+  delete player.势力脱离冷却至;
+  return { ok: true, stage: 1, name: '月华之体', faction: SUIYUN_PALACE_FACTION, position: SUIYUN_PALACE_POSITION };
 }
 
 export function advanceSuiyun(player) {
@@ -163,7 +179,9 @@ export function advanceSuiyun(player) {
   if (current === 5) return fail('岁云剑尊已经圆满。');
   const state = ensureSuiyunState(player);
   const next = SUIYUN_STAGES[current];
-  if (getRealmAuthorityLevel(player) < next.realm) return fail(`下一阶段需达到${next.realmName}级境界。`);
+  if (getRealmAuthorityLevel(player) < next.realm) {
+    return fail(`下一阶段需达到仙古·${next.realmName}境界（跨体系等效权柄${next.realm}级）。`);
+  }
   if (current === 1 && Object.values(SUIYUN_TRIALS).some(trial => state[trial.field] < trial.count)) {
     return fail('先依次完成引月入体12次、化霜入剑12关、月之见证9战。');
   }
@@ -241,10 +259,13 @@ export function receiveSuiyunYears(player, selection = '', { now = Date.now(), r
   if (!getSuiyunStage(player)) return fail('请先开启岁云月华传承。');
   const name = String(selection || '').trim().replace(/^祈愿\s*/, '').replace(/^九大仙金材料$/, '材料').replace(/^悟道古茶$/, '悟道古茶叶');
   const secrets = name === '九秘' ? SUIYUN_NINE_SECRETS : SUIYUN_NINE_SECRETS.includes(name) ? [name] : null;
+  const tenXiong = name === '十凶宝术' || name === '十凶' ? SUIYUN_TEN_XIONG
+    : SUIYUN_TEN_XIONG.includes(name) ? [name] : null;
   const pool = secrets ? secrets.map(name => ({ name, class: '功法' }))
+    : tenXiong ? tenXiong.map(name => ({ name, class: '功法' }))
     : name === '材料' || name === '仙金' ? SUIYUN_YEAR_REWARDS.slice(0, 9)
     : name ? SUIYUN_YEAR_REWARDS.filter(item => item.name === name) : SUIYUN_YEAR_REWARDS;
-  if (!pool.length) return fail('用法：#岁岁年年 [材料/潜力丹/大衍悟道丹/悟道古茶]，或 #岁岁年年 祈愿 九秘/临字秘等；不填时随机领取原奖池。');
+  if (!pool.length) return fail('用法：#岁岁年年 [材料/潜力丹/大衍悟道丹/悟道古茶]，或 #岁岁年年 祈愿 九秘/十凶宝术/临字秘/真龙宝术等；不填时随机领取原奖池。');
   const state = ensureSuiyunState(player);
   if (state.上次岁岁年年 != null && now < finite(state.上次岁岁年年) + SUIYUN_HOUR_MS) {
     return { ...fail('岁岁年年每现实小时可领取一次。'), retryAt: finite(state.上次岁岁年年) + SUIYUN_HOUR_MS };
@@ -298,26 +319,14 @@ export function spendSuiyunPower(player, cost) {
   return true;
 }
 
-export function convertSuiyunPotential(player, amount = SUIYUN_POTENTIAL_EXCHANGE_RATE) {
-  if (!getSuiyunStage(player)) return fail('月华之体觉醒后才可转化。');
-  const count = Number(amount);
-  if (!Number.isSafeInteger(count) || count <= 0 || count % SUIYUN_POTENTIAL_EXCHANGE_RATE !== 0) {
-    return fail('兑换月华值须为100的正整数倍。');
-  }
-  const current = Number(player.月华值 ?? 0);
-  const potential = Number(player.仙道潜力 ?? 0);
-  if (!Number.isFinite(current) || current < 0 || !Number.isFinite(potential) || potential < 0) {
-    return fail('月华或仙道潜力数据异常，请先核对角色存档。');
-  }
-  if (current < count) return fail('月华值不足。');
-  const potentialGain = count / SUIYUN_POTENTIAL_EXCHANGE_RATE;
-  const nextPotential = potential + potentialGain;
-  if (!Number.isFinite(nextPotential) || nextPotential > Number.MAX_SAFE_INTEGER || current > Number.MAX_SAFE_INTEGER) {
-    return fail('资源数值超出精确结算范围，请先核对角色存档。');
-  }
-  player.月华值 = current - count;
-  player.仙道潜力 = nextPotential;
-  return { ok: true, spent: count, potentialGain, gain: potentialGain };
+/** 直接扣减可消费月华余额；不足返回 false。云月之莲的累计炼化成长不受影响。 */
+export function spendMoonlight(player, cost) {
+  const amount = Number(cost);
+  if (!Number.isFinite(amount) || amount <= 0) return false;
+  const current = positive(player?.月华值);
+  if (current < amount) return false;
+  player.月华值 = Math.round((current - amount) * 1000) / 1000;
+  return true;
 }
 
 export function ascendSuiyunPalace(world, now = Date.now()) {

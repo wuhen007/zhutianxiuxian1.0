@@ -370,7 +370,7 @@ async isAutoTaskEnabled(usr_qq) {
                 console.log(`玩家 ${usr_qq} 未加入势力，跳过俸禄领取`);
                 return false;
             }
-            if (!['瑶池', '摇光圣地', '剑云海'].includes(player.势力)) {
+            if (!['瑶池', '摇光圣地', '剑云海', '岁云剑宫'].includes(player.势力)) {
                 console.log(`玩家 ${usr_qq} 当前势力没有自动俸禄，跳过`);
                 return false;
             }
@@ -458,8 +458,8 @@ async isAutoTaskEnabled(usr_qq) {
                 }
             }
 
-            // 处理剑云海秘库
-            if (player.势力 === "剑云海") {
+            // 处理剑云海秘库与岁云剑宫宝库
+            if (["剑云海", "岁云剑宫"].includes(player.势力)) {
                 const jianyunhaiResult = await this.autoOpenJianyunhai(usr_qq, player);
                 if (jianyunhaiResult) {
                     success = true;
@@ -474,19 +474,23 @@ async isAutoTaskEnabled(usr_qq) {
     }
 
     /**
-     * 自动开启剑云海秘库
+     * 自动开启剑云海秘库 / 岁云剑宫宝库（机制相同，仅名称与记录键不同）
      */
     async autoOpenJianyunhai(usr_qq, player) {
+        const isPalace = player?.势力 === "岁云剑宫";
+        const dayKey = isPalace ? 'jianGong_open_day' : 'jianyunhai_open_day';
+        const msgPrefix = isPalace ? 'jianGong_msg' : 'jianyunhai_msg';
+        const vaultName = isPalace ? '岁云剑宫宝库' : '剑云海秘库';
         try {
             // 获取当前本地日期字符串 YYYY-MM-DD（统一基准，避免跨月 day-of-month 重复判定）
             const todayStr = this.getLocalDateStr();
             
             // 获取上次开启的日期
-            const lastOpenDay = await redis.get(`xiuxian:player:${usr_qq}:jianyunhai_open_day`);
+            const lastOpenDay = await redis.get(`xiuxian:player:${usr_qq}:${dayKey}`);
             
             // 检查今日是否已开启秘库（比较完整本地日期，避免跨月 day-of-month 歧义）
             if (lastOpenDay && lastOpenDay === todayStr) {
-                console.log(`玩家 ${usr_qq} 今日已开启剑云海秘库，跳过`);
+                console.log(`玩家 ${usr_qq} 今日已开启${vaultName}，跳过`);
                 return false;
             }
 
@@ -531,25 +535,25 @@ async isAutoTaskEnabled(usr_qq) {
             }
             
             // 记录开启日期（存储完整本地日期字符串）
-            await redis.set(`xiuxian:player:${usr_qq}:jianyunhai_open_day`, todayStr);
+            await redis.set(`xiuxian:player:${usr_qq}:${dayKey}`, todayStr);
             await redis.set(`xiuxian:player:${usr_qq}:faction_salary_date`, todayStr);
             
             // 保存玩家数据（源石增加）
             await Write_player(usr_qq, player);
 
-            // 记录剑云海秘库消息文本（todayStr 已在上方声明，统一本地日期）
-            let jianyunhaiMsg = `剑云海秘库开启成功：您获得了3000万源石供奉、${rewardMultiplier}个众生仙钓、${rewardMultiplier}个剑云海圣药、${rewardMultiplier}个${isXianpin ? "仙品" : "圣品"}秘境结算卡`;
+            // 记录宝库消息文本（todayStr 已在上方声明，统一本地日期）
+            let jianyunhaiMsg = `${vaultName}开启成功：您获得了3000万源石供奉、${rewardMultiplier}个众生仙钓、${rewardMultiplier}个剑云海圣药、${rewardMultiplier}个${isXianpin ? "仙品" : "圣品"}秘境结算卡`;
             
             if (extraRewards) {
                 jianyunhaiMsg += `、${extraRewards}`;
             }
 
-            await redis.set(`xiuxian:player:${usr_qq}:jianyunhai_msg:${todayStr}`, JSON.stringify({ msg: jianyunhaiMsg, ts: Date.now() }));
+            await redis.set(`xiuxian:player:${usr_qq}:${msgPrefix}:${todayStr}`, JSON.stringify({ msg: jianyunhaiMsg, ts: Date.now() }));
 
-            console.log(`玩家 ${usr_qq} 自动开启剑云海秘库完成`);
+            console.log(`玩家 ${usr_qq} 自动开启${vaultName}完成`);
             return true;
         } catch (error) {
-            console.error(`玩家 ${usr_qq} 自动开启剑云海秘库失败:`, error);
+            console.error(`玩家 ${usr_qq} 自动开启${vaultName}失败:`, error);
             return false;
         }
     }
@@ -1164,12 +1168,14 @@ async isAutoTaskEnabled(usr_qq) {
             // 删除摇光圣地俸禄记录
             await redis.del(`xiuxian:player:${usr_qq}:yaoguang_salary_date`);
             
-            // 删除剑云海秘库记录
+            // 删除剑云海秘库与岁云剑宫宝库记录
             await redis.del(`xiuxian:player:${usr_qq}:jianyunhai_open_day`);
+            await redis.del(`xiuxian:player:${usr_qq}:jianGong_open_day`);
             await redis.del(`xiuxian:player:${usr_qq}:faction_salary_claim:${this.getLocalDateStr()}`);
 
-            // 删除剑云海秘库详情消息（按模式清理整个 key 族，防止永久堆积在 redis）
+            // 删除宝库详情消息（按模式清理整个 key 族，防止永久堆积在 redis）
             await this._delMsgPattern(usr_qq, 'jianyunhai_msg');
+            await this._delMsgPattern(usr_qq, 'jianGong_msg');
 
             // 删除势力俸禄详情消息（按模式清理整个 key 族）
             await this._delMsgPattern(usr_qq, 'salary_msg');
@@ -1371,7 +1377,7 @@ async isAutoTaskEnabled(usr_qq) {
                 }
             }
 
-            // 3. 剑云海秘库记录（直接用完整本地日期串比对，与写入基准一致）
+            // 3. 剑云海秘库 / 岁云剑宫宝库记录（直接用完整本地日期串比对，与写入基准一致）
             const lastJianyunhaiDay = await redis.get(`xiuxian:player:${usr_qq}:jianyunhai_open_day`);
             if (lastJianyunhaiDay && lastJianyunhaiDay === dateStr) {
                     const jianyunhaiData = await this._readClaimMsg(usr_qq, 'jianyunhai_msg', dateStr);
@@ -1379,6 +1385,15 @@ async isAutoTaskEnabled(usr_qq) {
                         result.tasks.push({ type: 'jianyunhai', typeName: '剑云海', msg: jianyunhaiData.msg, ts: jianyunhaiData.ts });
                     } else {
                         result.tasks.push({ type: 'jianyunhai', typeName: '剑云海', msg: '剑云海秘库开启成功' });
+                    }
+            }
+            const lastJianGongDay = await redis.get(`xiuxian:player:${usr_qq}:jianGong_open_day`);
+            if (lastJianGongDay && lastJianGongDay === dateStr) {
+                    const jianGongData = await this._readClaimMsg(usr_qq, 'jianGong_msg', dateStr);
+                    if (jianGongData) {
+                        result.tasks.push({ type: 'jianyunhai', typeName: '岁云剑宫', msg: jianGongData.msg, ts: jianGongData.ts });
+                    } else {
+                        result.tasks.push({ type: 'jianyunhai', typeName: '岁云剑宫', msg: '岁云剑宫宝库开启成功' });
                     }
             }
 

@@ -325,6 +325,15 @@ test('炼妖融合按能力类型叠加主宠与继承能力', () => {
   assert.equal(getPetAbilityBonus(pet, '幸运'), 0);
 });
 
+test('仙宠自带附加能力与三维战斗加成并存，不占用炼妖继承位', () => {
+  const pet = { type: '战斗', 加成: 0.35, 附加能力: [{ type: '炼器', 成长值: 0.4 }] };
+  assert.equal(getPetAbilityBonus(pet, '战斗'), 0.35);
+  assert.equal(getPetAbilityBonus(pet, '炼器'), 0.4);
+  assert.equal(getPetAbilityBonus(pet, '修炼'), 0);
+  assert.equal(getPetAbilityBonus({ ...pet, 附加能力: [{ type: '炼器', 成长值: 0.4 }, { type: '炼器', 成长值: 0.1 }] }, '炼器'), 0.5);
+  assert.equal(getPetAbilityBonus({ type: '战斗', 加成: 0.35, 附加能力: '炼器' }, '炼器'), 0);
+});
+
 test('玄黄护道按失败率降低30%换算开启概率', () => {
   const player = {
     当前先天至宝: '天地玄黄玲珑塔',

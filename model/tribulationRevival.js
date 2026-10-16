@@ -5,6 +5,10 @@
 import { rollZhetianMinggeRevival } from '../apps/User/zhetianTribulationMingge.js';
 import { getMinggeEffects } from './mingge.js';
 import { replyOfficialMessage } from './officialMessage.js';
+import { getSuiyunStage, SUIYUN_REVIVAL_SKILL } from './suiyun.js';
+
+// 供遮天/仙古渡劫插件直接引用，避免各处再从 suiyun.js 单独导入复活技能名。
+export { SUIYUN_REVIVAL_SKILL };
 
 // 复活功法冷却（回合），与 zhetiandujie.js this.gongfa 保持一致
 export const REVIVAL_GONGFA_CD = Object.freeze({
@@ -12,6 +16,7 @@ export const REVIVAL_GONGFA_CD = Object.freeze({
   真凰宝术: 5,
   雷帝宝术: 5,
   柳神法: 5,
+  如月长存: 5,
   不灭经: 4,
   补天术: 9,
   万化圣诀: 9,
@@ -19,6 +24,25 @@ export const REVIVAL_GONGFA_CD = Object.freeze({
 });
 
 export const REVIVAL_GONGFA_NAMES = Object.freeze(Object.keys(REVIVAL_GONGFA_CD));
+
+/** 如月长存与柳神法同源（月华系生机秘术），复用同一套渡劫庇护结算，仅以「名称」区分文案。 */
+export function getSuiyunRevivalEffect(maxHp) {
+  const maximum = Math.max(1, Math.floor(Number(maxHp) || 0));
+  return {
+    庇护层数: 3, 减伤比例: 0.45,
+    持续恢复: { 回合数: 5, 治疗量: Math.floor(maximum * 0.15) },
+    免疫控制: true, 名称: SUIYUN_REVIVAL_SKILL,
+  };
+}
+
+export function getRevivalEffectLabel(effect, fallback = '柳神法') {
+  return effect?.名称 || fallback;
+}
+
+/** 岁云五阶本人自带【如月长存】，无需学习秘籍即可参与渡劫复活。 */
+export function hasInnateRevivalGongfa(player, name) {
+  return name === SUIYUN_REVIVAL_SKILL && getSuiyunStage(player) > 0;
+}
 
 const pendingManualChoices = new Map();
 
@@ -35,7 +59,8 @@ export function checkRevivalGongfa(player, name) {
   if (!player || typeof player !== 'object') return false;
   player.功法 ??= {};
   player.学习的功法 ??= [];
-  if (!player.学习的功法.includes(name) && !Object.hasOwn(player.功法, name)) return false;
+  if (!hasInnateRevivalGongfa(player, name)
+    && !player.学习的功法.includes(name) && !Object.hasOwn(player.功法, name)) return false;
   player.功法[name] ??= { 冷却回合: 0 };
   return Number(player.功法[name].冷却回合 || 0) <= 0;
 }
@@ -231,6 +256,19 @@ export function resolveGongfaRevival(player, options = {}) {
     ] };
   });
   if (ls) return { revived: true, ...ls };
+
+  const ryc = attempt(SUIYUN_REVIVAL_SKILL, () => {
+    const M = Number(player.血量上限 || 0);
+    const healAmount = Math.floor(M * 0.6);
+    player.当前血量 = healAmount;
+    player.柳神效果 = getSuiyunRevivalEffect(M);
+    return { source: '如月长存·月华不灭', healAmount, messages: [
+      `【${SUIYUN_REVIVAL_SKILL}】`, '消耗50点生命本源（剩余：' + player.生命本源 + '）', '冷却时间：' + REVIVAL_GONGFA_CD[SUIYUN_REVIVAL_SKILL] + '回合',
+      '一轮明月自识海升起，月华垂落如瀑，护住将碎的道基！', '「岁云不散，明月长存...」月音浩荡，雷海为之凝滞。',
+      '恢复血量：' + healAmount.toLocaleString(), '附加效果：', '1. 获得3层「月华庇护」（每层减伤45%，每次落雷消耗1层）', '2. 每道雷劫恢复15%最大生命值，持续5道', '3. 免疫控制效果',
+    ] };
+  });
+  if (ryc) return { revived: true, ...ryc };
 
   const bmj = attempt('不灭经', () => {
     player.当前血量 = Number(player.血量上限 || 0);

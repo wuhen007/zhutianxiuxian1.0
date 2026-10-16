@@ -94,19 +94,21 @@ test('岁云剑尊用10点造一件真实高稀有度物品，原十倍掉落不
   assert.equal(f.readInventory().丹药.reduce((sum, item) => sum + item.数量, 0), 2);
 });
 
-test('其余四阶段与仅获赠战技者没有造物权限，化身装载时先回本源', async t => {
+test('低阶与仅获赠战技者没有造物权限，霜月剑尊起开放，化身装载时先回本源', async t => {
   const f = fixture(t);
-  for (let stage = 1; stage <= 4; stage++) {
+  for (let stage = 1; stage <= 2; stage++) {
     f.writePlayer({ id: 'owner', 灵根: core.createSuiyunRoot(stage), 岁云之力: 20 });
-    assert.match(await f.run(), /仅向【岁云剑尊】开放/);
+    assert.match(await f.run(), /岁云造物自【霜月剑尊】阶段起开放/);
   }
   f.writePlayer({ id: 'owner', 灵根: { name: '凡体' }, 岁云之力: 20,
     月华传承: { 授予者: 'teacher', 受赐者: 'owner', 名额: 1, 传授时间: 0, 技能: [...core.SUIYUN_EXCLUSIVE_SKILLS] } });
-  await f.run();
+  assert.match(await f.run(), /岁云的残念/);
+  for (let stage = 3; stage <= 4; stage++) {
+    f.writePlayer({ id: 'owner', 灵根: core.createSuiyunRoot(stage), 岁云之力: 20 });
+    assert.match(await f.run(), /获得【.*】×1，消耗10点/);
+  }
   f.writePlayer({ id: 'owner', 灵根: core.createSuiyunRoot(5), 岁云之力: 20, 诸天镜系统: { 当前化身: '门矢士' } });
   assert.match(await f.run(), /装载化身 本源/);
-  assert.equal(f.grants.length, 0);
-  assert.equal(f.lookups.length, 0);
 });
 
 test('数量后缀、艾特、未知物品、近似名称和不足余额均不扣费', async t => {

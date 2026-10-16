@@ -22,7 +22,7 @@ import {
   getCombatSkillOptions,
 } from './combatSkillLoadout.js';
 import { getSuiyunStage, hasSuiyunSkills } from './suiyun.js';
-import { SUIYUN_COMBAT } from './suiyunCombat.js';
+import { SUIYUN_COMBAT, SUIYUN_TIANJIAO_PROGRESS } from './suiyunCombat.js';
 
 function percent(value, digits = 0) {
   return `${(Math.max(0, Number(value) || 0) * 100).toFixed(digits)}%`;
@@ -268,7 +268,7 @@ function buildSpecialSection(player) {
       },
       ...(getSuiyunStage(player) ? [{
         name: '岁云常青', when: '受到即死、禁复活或禁疗时',
-        effect: '免疫即死裁决、禁止复活与禁疗；普通伤害仍结算，白云苍狗仍每战最多三次',
+        effect: `免疫即死裁决、禁止复活与禁疗；普通伤害仍结算，白云苍狗仍每战最多三次；讨伐天骄时与诛仙四剑被动同级，单次至多斩落${SUIYUN_TIANJIAO_PROGRESS.win}%气血（两者并存不叠加，亦不继承降仇恨与畏惧）`,
         multiplier: '常驻免疫',
       }] : []),
     ];

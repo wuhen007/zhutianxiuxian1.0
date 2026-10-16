@@ -46,10 +46,14 @@ import { getPassiveTribulationDamageMultiplier } from '../../model/innateTreasur
 import {
   cooldownRevivalGongfas,
   getAvailableRevivalGongfas,
+  getRevivalEffectLabel,
+  getSuiyunRevivalEffect,
   getTribulationRevivalMode,
   requestManualRevivalChoice,
   REVIVAL_GONGFA_CD,
+  SUIYUN_REVIVAL_SKILL,
 } from '../../model/tribulationRevival.js';
+import { getSuiyunStage } from '../../model/suiyun.js';
 
 export { XIANGU_REALM_ROUTES, calcXianguCarryDaoFlaw } from './xianguTribulationSettlement.js';
 
@@ -122,7 +126,7 @@ const BODY_EFFECTS = {
 };
 
 // 拥有以下任一功法（已习）即可在渡劫濒死时触发「生命本源」版功法复活
-const REVIVE_GONGFA = ['者字秘', '真凰宝术', '雷帝宝术', '柳神法', '不灭经', '补天术', '万化圣诀', '涅槃仙功'];
+const REVIVE_GONGFA = ['者字秘', '真凰宝术', '雷帝宝术', '柳神法', SUIYUN_REVIVAL_SKILL, '不灭经', '补天术', '万化圣诀', '涅槃仙功'];
 
 export class XianguTribulation {
   constructor() {
@@ -338,12 +342,13 @@ export class XianguTribulation {
       msgs.push(`【真凰宝术】减伤 ${bigNumberTransform(r)}`);
     }
 
-    // 柳神法
+    // 柳神法 / 如月长存（同源月华系生机秘术，共用「柳神效果」庇护结算）
     if (player.柳神效果 && player.柳神效果.庇护层数 > 0) {
+      const label = getRevivalEffectLabel(player.柳神效果, '柳神法');
       const r = finalDamage * (player.柳神效果.减伤比例 || 0.45);
       finalDamage -= r;
       player.柳神效果.庇护层数--;
-      msgs.push(`【柳神法】庇护·减伤 ${bigNumberTransform(r)}（剩余${player.柳神效果.庇护层数}层）`);
+      msgs.push(`【${label}】庇护·减伤 ${bigNumberTransform(r)}（剩余${player.柳神效果.庇护层数}层）`);
     }
     if (player.柳神效果?.持续恢复?.回合数 > 0) {
       const heal = Math.min(
@@ -352,7 +357,7 @@ export class XianguTribulation {
       );
       player.当前血量 = Math.min(M, (player.当前血量 || 0) + heal);
       player.柳神效果.持续恢复.回合数--;
-      msgs.push(`【柳神法】生机流转，恢复 ${bigNumberTransform(heal)} 生命`);
+      msgs.push(`【${getRevivalEffectLabel(player.柳神效果, '柳神法')}】生机流转，恢复 ${bigNumberTransform(heal)} 生命`);
     }
 
     // 涅槃仙功
@@ -424,6 +429,7 @@ export class XianguTribulation {
   // ============ 功法复活（与遮天 checkGongfaResurrection 同源，作用于 player.当前血量 池）============
   // 返回复活方式描述字符串；无可用复活则返回 null（渡劫失败）
   _hasGongfa(player, gongfa) {
+    if (gongfa === SUIYUN_REVIVAL_SKILL && getSuiyunStage(player) > 0) return true;
     return hasXianguGongfa(player, gongfa);
   }
 
@@ -488,6 +494,10 @@ export class XianguTribulation {
             减伤比例: 0.45,
             持续恢复: { 回合数: 5, 治疗量: Math.floor(M * 0.15) },
           };
+          break;
+        case SUIYUN_REVIVAL_SKILL:
+          player.当前血量 = Math.floor(M * 0.6);
+          player.柳神效果 = getSuiyunRevivalEffect(M);
           break;
         case '不灭经':
           player.当前血量 = M;
