@@ -130,6 +130,40 @@ Six game item icons in a row on a pure white background, evenly spaced and indep
 A game UI status bar asset on a pure white background: a long bar framed in dark ruby and brass with flowing crimson liquid light inside, a small abstract heart/vein emblem on the left end; below it a matching bar filled with lapis-blue arcane fluid with a diamond spell emblem on the left. Flat frame with glowing inner gradient, fantasy JRPG interface style. No text.
 ```
 
+### 3.4 标题徽记 / 公会徽章（可选替换，正方形 1:1）
+
+**用途**：替换面板左上角当前的矢量徽记（`resources/html/sword_magic/sword_magic.html` 里那段内联 `<svg>`）。
+出图后命名为 **`crest.png`** 放进 `resources/img/swordmagic/`，模板会自动接管，**不需要改任何代码**（机制见 §11.7）。
+它最终只在 **128×128** 显示——画布越小，越要简洁，不要细节。
+
+**参考图**：用 §2 的**主面板背景**当参考（同为厚涂绘本，锁的是颜料质感）。
+**不要**用 §3.1 的边框当参考——那是一张「框」，会把圆形徽记带成方框 / 带包边的造型。
+
+```
+一枚圆形的冒险者公会徽章，正对镜头、完全居中，正方形构图。金色圆环内是一顶三峰王冠：王冠最左一峰从根部折断（断冠），冠身有一道旧裂纹与锤打凹痕；王冠下方两把长剑交叉成 X 形，一把做旧黄铜金色，一把青金石蓝。环内底色是深黑褐。金属有做旧黄铜光泽、磨痕与淡淡铜绿，但整体完整、不过度破损。厚涂绘本质感，笔触清晰可见，颜料堆叠的厚度与轻微颗粒；暖色定向光，金属高光与浮雕倒角感。背景是纯净平涂的纯白（#FFFFFF），无阴影、无渐变、无地面、无任何杂物。画面中没有任何文字、字母、符文或数字。正方形画布，徽记约占画面 85%，四周留均匀窄边。
+```
+
+```
+A circular adventurers' guild badge, straight-on front view, perfectly centred, square composition. Inside a gold ring: a three-peak crown whose leftmost peak is snapped off at the root (a broken crown), the crown body carrying an old crack and hammered dents; below the crown two swords crossed in an X — one antique brass-gold, one lapis-lazuli blue. The field inside the ring is deep black-brown. Aged brass with patina, scuffs and faint verdigris, but the piece reads as intact, not heavily damaged. Painterly gouache/oil impasto, visible brushwork, thick layered pigment with subtle grain; warm directional light, metallic specular highlights and an embossed bevel. Background: pure flat white (#FFFFFF) — no cast shadow, no gradient, no ground, no clutter. Absolutely no text, letters, runes or numbers. Square canvas, the badge fills about 85% of the frame with an even narrow margin.
+```
+
+**若能出透明底就直接要**：追加一句「把这枚徽章放在透明背景上，导出 PNG 透明底」最省事。
+出不了也没关系，纯白底我用**边缘泛洪抠底**（与 §3.2 图标同一套管线，见 §10.2 第 5 条）。
+
+**变体 · 想与原矢量稿完全一致**（不改造型，只换质感）：把中文版里「王冠最左一峰从根部折断（断冠），冠身有一道旧裂纹与锤打凹痕」整句删掉，英文版删 `whose leftmost peak is snapped off at the root (a broken crown), the crown body carrying an old crack and hammered dents`，其余不动 → 得到完整三峰冠。
+**但建议就用断冠**：段落末的世界观招牌是「**断冠纪元** 417 年」，§3.2 的铜币也刻着断冠纹章，三者串起来才成立。
+
+**自检清单（任一条不符就重出，不要将就）**
+
+- [ ] 是**正圆**徽记，不是盾形 / 方形 / 带缎带
+- [ ] **正面平视**，没有 3/4 侧视、没有透视变形
+- [ ] 王冠 + 两把交叉剑的图示在（与面板标题的既有语言一致）
+- [ ] 交叉的两把剑是**一金一蓝**，不是同色、不是两把都金
+- [ ] 是**厚涂**颜料质感（笔触可见），不是 3D 渲染、不是塑料 CG
+- [ ] 底色**纯白**或透明，可直接抠底
+- [ ] **没有任何文字 / 符文 / 数字**
+- [ ] **缩到 128px 仍能一眼认出「王冠 + 交叉剑」**——做不到就重出，这是能否上机的唯一硬标准
+
 ---
 
 ## 4. 职业立绘（4 张，半身，竖版 2:3，纯色底）
@@ -246,6 +280,8 @@ resources/img/swordmagic/
   portraits/mage.jpg         魔法师立绘 同规格
   portraits/cleric.jpg       僧侣立绘   同规格
   portraits/ranger.jpg       游侠立绘   同规格（左半=女版；取右半即男版）
+  ══ 可选替换（放上去即自动接管，见 §3.4 / §11.7）══
+  crest.png                  标题徽记   正方形 ≥512×512，纯白底或透明底
   ══ 待出图 ══
   region_01_fengming.png  风鸣林（1920×1080）
   region_02_greybell.png  灰钟地窟
@@ -291,6 +327,7 @@ resources/img/swordmagic/portraits/   # 四职业 2:3 立绘（由 job_*.jpg 左
 | §3.2 图标组 | ✅ 已加工 | 1920×640 | 源图六枚齐；已拆 6 张 256×256 透明底（边缘泛洪去背），见 §10.2 第 5 条 |
 | §3.3 生命/魔力条 | ✅ 已加工 | 1920×714 | 已拆徽记 + 条身 + 压暗空槽底；合成验收通过（面板内容余 84px） |
 | §4 四职业立绘 | ✅ 四职业齐 | 1774×887（女左男右双人图） | 裁 2:3 后与羊皮纸卡合成良好，见 §10.2 第 7、8 条 |
+| §3.4 标题徽记 | ⬜ 待出（可选） | — | 当前用内联 SVG 顶着；出图后放 `crest.png` 即换，见 §3.4 |
 | §5 / §6 / §7 | ⬜ 待出 | — | — |
 
 ### 10.2 九条实测经验（均为合成后才暴露，光看图看不出）
@@ -338,7 +375,7 @@ CSS 内的静态素材走 `../../img/swordmagic/` 相对路径（CSS 文件本�
 
 | 区块 | 位置 | 说明 |
 |---|---|---|
-| `.head` 标题带 | y 36，高 160 | 断冠纹章 SVG + 中英双标题 + 玩家名与 LV 徽章 |
+| `.head` 标题带 | y 36，高 160 | 断冠纹章（内联 SVG，可被 `crest.png` 替换，见 §11.7）+ 中英双标题 + 玩家名与 LV 徽章 |
 | `.scene` 场景带 | y 206，高 520 | 左「地区卡」（400 宽）+ 右「职业立绘」（336×504）；下方职业四缩略 |
 | `.panel` 状态面板 | y 736，**1048×1004** | 九宫格边框 + 数据块 |
 | `.footer` 资源栏 | y 1750 | 5 枚圆形资源位 + 指令小字 + ATHERAN 花饰，底部 1908 收尾 |
@@ -388,4 +425,28 @@ CSS 内的静态素材走 `../../img/swordmagic/` 相对路径（CSS 文件本�
 - `model/swordMagicPanel.js` 12 条单测（上限公式 / pct 钳制 / 三种行动态 / 地区卡三态 / 未就职 / 资源栏空槽 / 负载 / 熟练度封顶）。
 - 全量 `npm test`：新增失败 0。现存 5 条失败与本模块无依赖关系（2 条缺「修仙主配置」、1 条由别的在改模块引起、2 条法身/永恒镇守）。
 - 渲染实测三态（中局探索 / 刚入界未就职 / 裂月王庭遭遇抉择）均无溢出，素材全部加载。
+
+### 11.7 标题徽记的替换槽（放图即生效）
+
+`.head` 的徽记**默认用内联 SVG**（矢量、零外部依赖、文件缺失也不会开天窗）。
+模板末尾另有一段**探针脚本**：若 `resources/img/swordmagic/crest.png` 存在，就给 `.crest` 加 `painterly` 类，
+SVG 隐藏、厚涂位图顶上；不存在则保持矢量。
+
+```html
+<img class="crest-art" src="{{pluResPath}}/img/swordmagic/crest.png" alt="" />
+```
+```css
+.crest .crest-art{display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.crest.painterly svg{display:none}
+.crest.painterly .crest-art{display:block}
+```
+
+要点：
+
+- 徽记显示框固定 **128×128**，位图用 `object-fit:contain` 等比装入即可，**不必事先裁成 1:1 像素**。
+- `.crest` 上的 `filter:drop-shadow` 对位图同样生效（阴影子跟随 alpha），换厚涂版后仍保有浮起感。
+- 探针的图片地址与 `<img>` 同址，命中缓存 → **不会出现可见的换图闪烁**。
+- 截图管线是 `waitUntil:networkidle2`，探针请求算一次网络活动，**加类一定发生在截图之前**（已实测）。
+- **为什么用探针而不是 `{{if}}`**：视图模型 `swordMagicPanel.js` 是纯函数、不碰文件系统。探针把「图在不在」留在浏览器侧判断，模型与适配器都不用动。
+- **已实测两态**：无 `crest.png` → 与改动前逐像素一致（矢量稿）；放入一张 512×512 白底假图 → 位图接管成功（白底会露出白方块，故 §3.4 才强调**用透明底**）。
 
