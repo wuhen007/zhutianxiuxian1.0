@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>剑与魔法 · 艾瑟兰 面板样张（静态）</title>
+<style>
+/* ==========================================================================
+   剑与魔法 · 艾瑟兰 面板样张
+   画布：1080 x 1920 px（9:16），与 resources/html/<名>/ 模板同规格。
+   真接入时：去掉 .frame 缩放包装与 .notes 说明条，直接以 1080x1920 交给 puppeteer。
+   美术槽位以 .art-slot 标注，对应 resources/img/swordmagic/ 下的文件名。
+   ========================================================================== */
+
+:root{
+  /* 主色：暖琥珀金 + 青金石蓝 */
+  --gold:      #d9a441;
+  --gold-lt:   #f4d68d;
+  --gold-dp:   #8a6520;
+  --lapis:     #2f5f9e;
+  --lapis-lt:  #74bdf0;
+  --lapis-dp:  #16304f;
+  /* 羊皮纸 + 深棕 */
+  --parch:     #e9dbb8;
+  --parch-lt:  #f7efdc;
+  --parch-dp:  #c9b489;
+  --wood:      #4e3625;
+  --wood-dp:   #241710;
+  /* 墨色 */
+  --ink:       #3b2a19;
+  --ink-soft:  #6f5a3e;
+  /* 血 / 魔 */
+  --hp:        #a82b28;
+  --hp-lt:     #ff6a5e;
+  --mp:        #2a6bb4;
+  --mp-lt:     #66c2ff;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+
+body{
+  background:#100d0a;
+  font-family:"Microsoft YaHei","PingFang SC",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+
+.page{min-height:100vh;display:flex;flex-direction:column;align-items:center;gap:16px;padding:18px}
+.frame{flex:0 0 auto;position:relative}
+.board{
+  width:1080px;height:1920px;position:relative;overflow:hidden;
+  transform-origin:top left;background:#1b1410;
+  border-radius:6px;
+  box-shadow:0 30px 80px rgba(0,0,0,.75);
+}
+
+/* 通用层 */
+.layer{position:absolute;inset:0;pointer-events:none}
+
+/* ---------- 1. 背景：公会大厅黄昏 ---------- */
+.bg-base{background:
+  linear-gradient(180deg,#2b1e14 0%,#4a3220 24%,#6d4f2d 46%,#553d26 66%,#2c1d13 88%,#150f0a 100%);}
+
+/* 顶部木质拱梁 */
+.bg-arches{
+  background:
+    radial-gradient(ellipse 300px 420px at 18% 4%, rgba(20,13,8,.92) 58%, transparent 60%),
+    radial-gradient(ellipse 300px 420px at 42% 2%, rgba(20,13,8,.92) 58%, transparent 60%),
+    radial-gradient(ellipse 300px 420px at 66% 2%, rgba(20,13,8,.92) 58%, transparent 60%),
+    radial-gradient(ellipse 300px 420px at 90% 4%, rgba(20,13,8,.92) 58%, transparent 60%);
+  mask-image:linear-gradient(180deg,#000 0%,#000 20%,transparent 34%);
+}
+/* 拱梁横木 */
+.bg-beams{
+  background:repeating-linear-gradient(180deg,
+    rgba(12,8,5,.85) 0 14px, rgba(70,48,30,.55) 14px 22px, rgba(12,8,5,.85) 22px 26px);
+  height:210px;bottom:auto;
+  mask-image:linear-gradient(180deg,#000 0%,transparent 100%);
+  opacity:.75;
+}
+
+/* 高窗 + 雪山剪影 */
+.bg-window{
+  left:50%;top:96px;right:auto;bottom:auto;transform:translateX(-50%);
+  width:420px;height:300px;border-radius:210px 210px 10px 10px;
+  background:linear-gradient(180deg,#ffe6ae 0%,#f6c778 30%,#d9914a 58%,#8c5f36 100%);
+  box-shadow:0 0 70px 26px rgba(255,205,130,.42), inset 0 0 40px rgba(255,255,255,.35);
+  opacity:.9;
+}
+.bg-window::after{ /* 雪山剪影 */
+  content:"";position:absolute;inset:auto 0 0 0;height:56%;
+  background:linear-gradient(180deg,rgba(255,255,255,.85),rgba(150,140,140,.75));
+  clip-path:polygon(0 100%,0 62%,10% 40%,19% 60%,30% 26%,41% 58%,52% 34%,64% 62%,74% 44%,86% 64%,100% 38%,100% 100%);
+  opacity:.55;
+}
+.bg-window::before{ /* 窗棂 */
+  content:"";position:absolute;inset:0;border-radius:210px 210px 10px 10px;
+  background:
+    linear-gradient(90deg,transparent 49.4%,rgba(60,38,22,.85) 49.4% 50.6%,transparent 50.6%),
+    linear-gradient(180deg,transparent 32%,rgba(60,38,22,.85) 32% 33.2%,transparent 33.2%),
+    linear-gradient(180deg,transparent 66%,rgba(60,38,22,.85) 66% 67.2%,transparent 67.2%);
+  box-shadow:inset 0 0 0 6px rgba(60,38,22,.9);
+}
+
+/* 丁达尔光柱 */
+.bg-rays{overflow:hidden;mix-blend-mode:screen;opacity:.5;filter:blur(18px)}
+.bg-rays i{position:absolute;top:-160px;width:130px;height:1400px;transform:rotate(17deg);
+  background:linear-gradient(180deg,rgba(255,214,140,.55),rgba(255,214,140,.10) 60%,transparent);}
+.bg-rays i:nth-child(1){left:180px;width:100px;opacity:.85}
+.bg-rays i:nth-child(2){left:392px;width:74px;opacity:.6}
+.bg-rays i:nth-child(3){left:566px;width:118px;opacity:.75}
+.bg-rays i:nth-child(4){left:760px;width:64px;opacity:.5}
+/* 尘埃 */
+.bg-dust{
+  background-image:
+    radial-gradient(2.5px 2.5px at 20% 32%, rgba(255,232,180,.85), transparent),
+    radial-gradient(2px 2px at 33% 44%, rgba(255,232,180,.7), transparent),
+    radial-gradient(3px 3px at 47% 28%, rgba(255,232,180,.8), transparent),
+    radial-gradient(2px 2px at 61% 51%, rgba(255,232,180,.65), transparent),
+    radial-gradient(2.5px 2.5px at 74% 37%, rgba(255,232,180,.75), transparent),
+    radial-gradient(2px 2px at 86% 56%, rgba(255,232,180,.55), transparent);
+  opacity:.85;
+}
+
+/* 公会徽记旗帜 */
+.bg-banner{
+  left:34px;top:0;right:auto;bottom:auto;width:124px;height:286px;
+  background:linear-gradient(180deg,#7d1f1c 0%,#5d1512 62%,#430e0c 100%);
+  clip-path:polygon(0 0,100% 0,100% 88%,50% 100%,0 88%);
+  box-shadow:0 8px 26px rgba(0,0,0,.6);
+  border-top:5px solid var(--gold-dp);
+}
+.bg-banner::after{
+  content:"";position:absolute;left:50%;top:46px;transform:translateX(-50%);
+  width:70px;height:70px;border-radius:50%;
+  background:radial-gradient(circle at 36% 32%, var(--gold-lt), var(--gold) 52%, var(--gold-dp));
+  box-shadow:0 0 22px rgba(217,164,65,.65);
+}
+.bg-banner::before{
+  content:"";position:absolute;left:50%;top:74px;transform:translateX(-50%);
+  width:36px;height:28px;
+  background:linear-gradient(180deg,#5d1512,transparent);
+  clip-path:polygon(0 100%,0 0,18% 42%,34% 6%,50% 46%,66% 6%,82% 42%,100% 0,100% 100%);
+}
+
+/* 铜制提灯 */
+.bg-lantern{position:absolute;right:auto;bottom:auto;border-radius:50%;width:58px;height:78px;
+  background:radial-gradient(ellipse at 50% 44%, #fff0bf 0%, #ffcc70 34%, #b3762a 74%, #4a2f12 100%);
+  box-shadow:0 0 44px 16px rgba(255,186,88,.5), 0 0 90px 40px rgba(255,150,50,.22);
+  border:3px solid #6d4a1c;}
+.bg-lantern::before{content:"";position:absolute;left:50%;top:-52px;width:3px;height:52px;
+  background:linear-gradient(180deg,transparent,#6d4a1c);transform:translateX(-50%)}
+.bg-lantern.l{left:8px;top:286px}
+.bg-lantern.r{right:8px;left:auto;top:286px}
+
+/* 摊开羊皮纸的台面 */
+.bg-desk{
+  position:absolute;left:50%;top:1180px;right:auto;bottom:auto;transform:translateX(-50%);
+  width:1500px;height:820px;border-radius:50% 50% 0 0/38% 38% 0 0;
+  background:linear-gradient(180deg,#6a4b2c 0%,#4c3420 34%,#2d1e12 78%,#1a1209 100%);
+  box-shadow:0 -22px 70px rgba(0,0,0,.7);
+}
+.bg-desk::after{ /* 摊开的羊皮纸 */
+  content:"";position:absolute;left:50%;top:70px;transform:translateX(-50%);
+  width:760px;height:430px;border-radius:40px;
+  background:linear-gradient(180deg,#e3d3ab,#cdb98d 70%,#b9a276);
+  transform:translateX(-50%) rotate(-3deg);
+  opacity:.28;filter:blur(2px);
+  box-shadow:0 14px 34px rgba(0,0,0,.45);
+}
+
+/* 暖色环境光（让大厅不发闷） */
+.bg-ambient{
+  background:
+    radial-gradient(ellipse 62% 30% at 50% 20%, rgba(255,198,116,.30), transparent 70%),
+    radial-gradient(ellipse 80% 22% at 50% 46%, rgba(255,176,92,.16), transparent 72%);
+  mix-blend-mode:screen;
+}
+
+/* 暗角 + 颗粒 */
+.bg-vignette{background:radial-gradient(ellipse 86% 68% at 50% 40%, transparent 52%, rgba(8,5,3,.66) 100%)}
+.bg-grain{
+  opacity:.16;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* 中央偏下留白保护区（真接入时删除本块，仅作占位示意） */
+.safe-zone{
+  position:absolute;left:50%;top:820px;transform:translateX(-50%);
+  width:952px;height:830px;border-radius:14px;
+  background:linear-gradient(180deg,rgba(12,8,5,.16),rgba(12,8,5,.30));
+}
+
+/* ---------- 2. 顶部标题带 ---------- */
+.head{position:absolute;left:64px;right:64px;top:48px;height:200px;display:flex;align-items:center;gap:26px}
+
+.crest{width:128px;height:128px;flex:0 0 128px;position:relative;filter:drop-shadow(0 6px 14px rgba(0,0,0,.7))}
+.crest svg{width:100%;height:100%;display:block}
+
+.title-block{flex:1;min-width:0}
+.kicker{
+  font-size:15px;letter-spacing:.42em;color:var(--gold-lt);opacity:.82;
+  text-shadow:0 2px 6px #000;margin-bottom:6px;
+}
+.title-cn{
+  font-family:"Noto Serif SC","Source Han Serif CN","STSong","SimSun",serif;
+  font-size:58px;font-weight:700;line-height:1.06;letter-spacing:.06em;
+  color:#fff3d6;
+  text-shadow:0 3px 0 #4a2f10, 0 6px 22px rgba(0,0,0,.85), 0 0 40px rgba(217,164,65,.45);
+}
+.title-sub{
+  margin-top:10px;font-size:19px;letter-spacing:.16em;color:#e8cfa0;opacity:.92;
+  text-shadow:0 2px 8px #000;
+}
+.rule{height:3px;margin-top:14px;border-radius:2px;
+  background:linear-gradient(90deg,var(--gold) 0%,var(--gold-lt) 34%,transparent 100%);
+  box-shadow:0 0 12px rgba(217,164,65,.6);
+}
+
+.name-block{flex:0 0 auto;text-align:right}
+.name-cn{
+  font-family:"Noto Serif SC","STSong",serif;font-size:34px;font-weight:700;color:#fff3d6;
+  text-shadow:0 3px 0 #4a2f10,0 5px 16px #000;
+}
+.name-tag{font-size:16px;color:#e8cfa0;letter-spacing:.14em;margin-top:6px;opacity:.9}
+.lv-badge{
+  margin-top:12px;display:inline-flex;align-items:center;gap:10px;
+  padding:8px 20px;border-radius:999px;
+  background:linear-gradient(180deg,#3b2a19,#20150d);
+  border:2px solid var(--gold);box-shadow:0 0 18px rgba(217,164,65,.4), inset 0 1px 0 rgba(255,255,255,.18);
+}
+.lv-badge b{font-size:15px;letter-spacing:.2em;color:var(--gold-lt)}
+.lv-badge span{font-size:22px;font-weight:700;color:#fff;font-family:Georgia,serif}
+
+/* ---------- 3. 场景带：地区信息 + 职业立绘 ---------- */
+.scene{position:absolute;left:64px;right:64px;top:272px;height:540px}
+
+.region-card{
+  position:absolute;left:0;top:44px;width:392px;padding:24px 26px;border-radius:12px;
+  background:linear-gradient(180deg,rgba(28,18,11,.86),rgba(14,9,6,.9));
+  border:1px solid rgba(217,164,65,.42);
+  box-shadow:0 12px 34px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,215,140,.14);
+  backdrop-filter:blur(2px);
+}
+.region-label{font-size:14px;letter-spacing:.3em;color:var(--gold);opacity:.9}
+.region-name{
+  font-family:"Noto Serif SC","STSong",serif;font-size:42px;font-weight:700;color:#fff3d6;
+  margin:8px 0 4px;text-shadow:0 3px 0 #40280f,0 5px 16px #000;
+}
+.region-meta{font-size:16px;color:#d8c197;letter-spacing:.06em}
+.region-desc{margin-top:14px;font-size:15px;line-height:1.75;color:#c3ab84;text-align:justify}
+
+.chapter-track{display:flex;gap:8px;margin-top:18px}
+.chapter-track i{width:44px;height:9px;border-radius:5px;background:rgba(255,255,255,.14);
+  border:1px solid rgba(217,164,65,.3)}
+.chapter-track i.on{background:linear-gradient(90deg,var(--gold),var(--gold-lt));
+  box-shadow:0 0 12px rgba(217,164,65,.7)}
+.chapter-track i.cur{background:linear-gradient(90deg,var(--lapis-lt),var(--lapis));
+  box-shadow:0 0 12px rgba(116,189,240,.7);border-color:var(--lapis-lt)}
+.chapter-cap{margin-top:8px;font-size:14px;color:#a9916c;letter-spacing:.1em}
+
+/* 职业立绘槽位（2:3） */
+.portrait{
+  position:absolute;right:0;top:6px;width:352px;height:528px;border-radius:10px;
+  overflow:hidden;
+  border:2px solid rgba(217,164,65,.5);
+  box-shadow:0 18px 48px rgba(0,0,0,.7), 0 0 0 6px rgba(36,23,16,.7);
+}
+.portrait .glow-ring{
+  position:absolute;inset:-40% -40% auto -40%;height:120%;
+  background:radial-gradient(ellipse at 50% 78%, rgba(255,205,130,.34), transparent 62%);
+}
+.portrait .name-plate{
+  position:absolute;left:0;right:0;bottom:0;padding:16px 20px 18px;
+  background:linear-gradient(180deg,transparent,rgba(16,10,6,.94) 42%);
+}
+.portrait .p-name{font-family:"Noto Serif SC","STSong",serif;font-size:30px;font-weight:700;color:#fff3d6;
+  text-shadow:0 3px 0 #40280f,0 4px 14px #000}
+.portrait .p-role{font-size:15px;color:var(--gold-lt);letter-spacing:.24em;margin-top:6px}
+.portrait .p-desc{font-size:14px;color:#c9b28c;line-height:1.7;margin-top:8px;text-align:justify}
+
+/* 职业切换缩略 */
+.job-row{position:absolute;left:0;top:412px;display:flex;gap:14px}
+.job-thumb{
+  width:82px;height:112px;border-radius:8px;overflow:hidden;position:relative;
+  border:2px solid rgba(217,164,65,.32);background:rgba(20,13,8,.8);
+}
+.job-thumb.on{border-color:var(--gold);box-shadow:0 0 16px rgba(217,164,65,.6)}
+.job-thumb .art-slot{padding:0;border:0;
+  background:linear-gradient(180deg,rgba(52,36,22,.92),rgba(20,13,8,.96));}
+.job-thumb .art-slot::after{
+  content:"";width:24px;height:24px;transform:rotate(45deg);
+  border:2px solid rgba(217,164,65,.5);border-radius:4px;
+}
+.job-thumb.on .art-slot::after{border-color:var(--gold-lt);box-shadow:0 0 14px rgba(217,164,65,.85)}
+.job-thumb em{
+  position:absolute;left:0;right:0;bottom:0;text-align:center;font-style:normal;
+  font-size:13px;padding:4px 0;background:rgba(12,8,5,.9);color:#e8cfa0;letter-spacing:.08em;
+}
+.job-thumb.on em{color:#2a1b0d;background:linear-gradient(180deg,var(--gold-lt),var(--gold))}
+
+/* ---------- 4. 美术槽位通用样式 ---------- */
+.art-slot{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;text-align:center;padding:20px;
+  background:
+    repeating-linear-gradient(45deg, rgba(217,164,65,.055) 0 12px, transparent 12px 24px),
+    linear-gradient(180deg,rgba(30,20,13,.9),rgba(14,9,6,.94));
+  border:2px dashed rgba(217,164,65,.45);
+}
+.art-slot .fn{
+  font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:14px;
+  color:var(--gold-lt);background:rgba(0,0,0,.5);padding:5px 12px;border-radius:999px;
+  border:1px solid rgba(217,164,65,.35);letter-spacing:.02em;
+}
+.art-slot .hint{font-size:13px;line-height:1.7;color:#a9916c;max-width:88%}
+.art-slot .size{font-size:12px;color:#8a755a;letter-spacing:.14em}
+
+/* ---------- 5. 羊皮纸状态面板 ---------- */
+.panel{
+  position:absolute;left:64px;right:64px;top:832px;height:800px;border-radius:16px;
+  background:
+    radial-gradient(ellipse 60% 40% at 50% 0%, rgba(255,244,214,.85), transparent 70%),
+    linear-gradient(180deg,var(--parch-lt) 0%,var(--parch) 46%,var(--parch-dp) 100%);
+  box-shadow:
+    0 24px 60px rgba(0,0,0,.66),
+    inset 0 0 0 8px rgba(78,54,37,.95),
+    inset 0 0 0 11px rgba(217,164,65,.55),
+    inset 0 0 0 20px rgba(201,180,137,.9),
+    inset 0 0 60px rgba(120,88,48,.35);
+  padding:38px 44px 30px;
+}
+/* 羊皮纸颗粒 */
+.panel::after{
+  content:"";position:absolute;inset:0;border-radius:16px;pointer-events:none;opacity:.14;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23p)'/%3E%3C/svg%3E");
+  mix-blend-mode:multiply;
+}
+/* 黄铜角饰 */
+.corner{position:absolute;width:54px;height:54px;border:5px solid var(--gold-dp);opacity:.95}
+.corner::after{content:"";position:absolute;inset:8px;border:2px solid rgba(217,164,65,.8);border-radius:4px}
+.corner.tl{left:12px;top:12px;border-right:0;border-bottom:0;border-radius:10px 0 0 0}
+.corner.tr{right:12px;top:12px;border-left:0;border-bottom:0;border-radius:0 10px 0 0}
+.corner.bl{left:12px;bottom:12px;border-right:0;border-top:0;border-radius:0 0 0 10px}
+.corner.br{right:12px;bottom:12px;border-left:0;border-top:0;border-radius:0 0 10px 0}
+
+.panel-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:20px;padding-bottom:12px;
+  border-bottom:2px solid rgba(78,54,37,.3)}
+.panel-title{font-family:"Noto Serif SC","STSong",serif;font-size:27px;font-weight:700;color:var(--ink);letter-spacing:.16em}
+.panel-title span{font-size:15px;font-weight:400;letter-spacing:.24em;color:var(--ink-soft);margin-left:14px}
+.panel-chip{
+  font-size:14px;letter-spacing:.14em;color:#f4e7c8;padding:5px 16px;border-radius:999px;
+  background:linear-gradient(180deg,#5d4227,#3b2a19);border:1px solid var(--gold-dp);
+}
+
+/* 生命 / 魔力 */
+.vitals{display:flex;gap:26px}
+.vital{flex:1}
+.vital .row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+.vital .k{font-family:"Noto Serif SC","STSong",serif;font-size:20px;font-weight:700;letter-spacing:.14em}
+.vital .k.hp{color:var(--hp)}
+.vital .k.mp{color:var(--mp)}
+.vital .v{font-family:Georgia,serif;font-size:21px;font-weight:700;color:var(--ink);letter-spacing:.02em}
+.vital .v small{font-size:14px;color:var(--ink-soft);font-weight:400}
+.bar{
+  height:26px;border-radius:13px;position:relative;overflow:hidden;
+  background:linear-gradient(180deg,#3b2a19,#241710);
+  box-shadow:inset 0 2px 6px rgba(0,0,0,.7), 0 0 0 2px rgba(217,164,65,.5);
+}
+.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:13px 0 0 13px;
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.35), inset 0 -6px 12px rgba(0,0,0,.35);}
+.bar.hp i{background:linear-gradient(180deg,var(--hp-lt),var(--hp) 55%,#7a1414)}
+.bar.mp i{background:linear-gradient(180deg,var(--mp-lt),var(--mp) 55%,#123a70)}
+.bar.hp i::after,.bar.mp i::after{content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(115deg, rgba(255,255,255,.16) 0 10px, transparent 10px 26px)}
+.bar .emblem{position:absolute;left:6px;top:50%;transform:translateY(-50%);
+  width:18px;height:18px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff,#f0d79c 40%,#8a6520);
+  box-shadow:0 0 8px rgba(0,0,0,.6);z-index:2}
+
+/* 资源小卡 */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:22px}
+.stat{
+  padding:12px 16px;border-radius:10px;background:rgba(78,54,37,.10);
+  border:1px solid rgba(78,54,37,.26);
+}
+.stat .sk{font-size:13px;letter-spacing:.2em;color:var(--ink-soft)}
+.stat .sv{font-family:Georgia,serif;font-size:26px;font-weight:700;color:var(--ink);margin-top:4px;
+  display:flex;align-items:baseline;gap:6px}
+.stat .sv small{font-size:13px;color:var(--ink-soft);font-weight:400;font-family:inherit}
+.stat .sv .ok{color:#2f7040}
+.stat .sv .no{color:#9a4a22}
+
+/* 天赋 */
+.sec{margin-top:22px}
+.sec-title{font-size:14px;letter-spacing:.28em;color:var(--ink-soft);margin-bottom:10px;
+  display:flex;align-items:center;gap:12px}
+.sec-title::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,rgba(78,54,37,.36),transparent)}
+.traits{display:flex;gap:12px;flex-wrap:wrap}
+.trait{
+  display:inline-flex;align-items:center;gap:9px;padding:8px 16px;border-radius:8px;
+  background:linear-gradient(180deg,#fff8e6,#ecdcb6);
+  border:1px solid rgba(138,101,32,.55);
+  box-shadow:0 2px 6px rgba(78,54,37,.18), inset 0 1px 0 #fff;
+  font-size:16px;font-weight:700;color:#5b3f1c;letter-spacing:.06em;
+}
+.trait::before{content:"";width:12px;height:12px;transform:rotate(45deg);
+  background:linear-gradient(135deg,var(--gold-lt),var(--gold-dp));border-radius:2px;
+  box-shadow:0 0 6px rgba(217,164,65,.7)}
+.trait.empty{font-weight:400;color:var(--ink-soft);background:rgba(78,54,37,.07);border-style:dashed}
+.trait.empty::before{background:none;box-shadow:none;border:1px dashed var(--ink-soft)}
+
+/* 熟练度 */
+.skills{display:grid;grid-template-columns:repeat(2,1fr);gap:12px 30px}
+.skill .sl{display:flex;justify-content:space-between;font-size:15px;color:#4b3823;margin-bottom:5px;
+  letter-spacing:.1em}
+.skill .sl b{font-family:Georgia,serif;font-size:16px;color:var(--ink)}
+.skill .track{height:12px;border-radius:6px;background:rgba(78,54,37,.18);overflow:hidden;
+  box-shadow:inset 0 1px 3px rgba(78,54,37,.4)}
+.skill .track i{display:block;height:100%;border-radius:6px;
+  background:linear-gradient(90deg,var(--gold-dp),var(--gold),var(--gold-lt));
+  box-shadow:0 0 8px rgba(217,164,65,.55)}
+.skill.main .track i{background:linear-gradient(90deg,#2f7040,#6fbf7c,#c8f0cf);box-shadow:0 0 8px rgba(111,191,124,.6)}
+
+/* 行动状态条 */
+.action{
+  margin-top:24px;padding:18px 22px;border-radius:12px;
+  background:linear-gradient(180deg,#3b2a19,#241710);
+  box-shadow:inset 0 0 0 2px rgba(217,164,65,.5), 0 8px 22px rgba(0,0,0,.35);
+  display:flex;align-items:center;gap:20px;
+}
+.action .pulse{
+  width:16px;height:16px;border-radius:50%;flex:0 0 16px;
+  background:radial-gradient(circle at 35% 30%,#fff2c4,var(--gold) 45%,#8a6520);
+  box-shadow:0 0 14px 4px rgba(217,164,65,.75);
+  animation:pulse 1.5s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.78)}}
+.action .a-main{flex:1;min-width:0}
+.action .a-t{font-size:19px;color:#fff3d6;font-weight:700;letter-spacing:.08em}
+.action .a-t small{font-size:14px;font-weight:400;color:#d8c197;letter-spacing:.06em;margin-left:10px}
+.action .a-track{margin-top:10px;height:10px;border-radius:5px;background:rgba(255,255,255,.12);overflow:hidden}
+.action .a-track i{display:block;height:100%;width:38%;border-radius:5px;
+  background:linear-gradient(90deg,var(--lapis),var(--lapis-lt));box-shadow:0 0 12px rgba(116,189,240,.7)}
+.action .a-time{font-family:Georgia,serif;font-size:30px;font-weight:700;color:var(--gold-lt);
+  letter-spacing:.04em;text-shadow:0 0 18px rgba(217,164,65,.55)}
+.action.idle .pulse{background:radial-gradient(circle at 35% 30%,#dfe8f0,#8fa2b4 45%,#4d5b68);box-shadow:none;animation:none}
+.action.idle .a-t{color:#e3d6bb;font-weight:400}
+
+/* 羁绊行 */
+.bonds{display:flex;gap:14px;margin-top:16px;flex-wrap:wrap}
+.bond{
+  display:inline-flex;align-items:center;gap:10px;padding:7px 16px;border-radius:999px;
+  font-size:15px;color:#4b3823;background:rgba(255,248,230,.75);
+  border:1px solid rgba(138,101,32,.4);
+}
+.bond.off{color:#9c8869;background:rgba(78,54,37,.06);border-style:dashed}
+.bond::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--gold);
+  box-shadow:0 0 8px rgba(217,164,65,.8)}
+.bond.off::before{background:#b8a58a;box-shadow:none}
+
+/* ---------- 6. 底部资源栏 ---------- */
+.footer{position:absolute;left:64px;right:64px;top:1672px}
+.icons{display:flex;justify-content:center;gap:22px}
+.icon{
+  width:96px;text-align:center;position:relative;
+}
+.icon .disc{
+  width:72px;height:72px;margin:0 auto;border-radius:50%;position:relative;
+  background:linear-gradient(180deg,rgba(28,18,11,.9),rgba(12,8,5,.95));
+  border:2px solid rgba(217,164,65,.45);
+  box-shadow:0 8px 20px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,215,140,.15);
+  display:flex;align-items:center;justify-content:center;
+}
+.icon .disc svg{width:44px;height:44px}
+.icon .cnt{
+  position:absolute;right:2px;top:52px;min-width:30px;padding:2px 8px;border-radius:999px;
+  font-family:Georgia,serif;font-size:15px;font-weight:700;color:#fff3d6;
+  background:linear-gradient(180deg,#5d1512,#3a0d0b);border:1px solid var(--gold-dp);
+  box-shadow:0 3px 8px rgba(0,0,0,.6);
+}
+.icon .lb{margin-top:8px;font-size:13px;color:#c9b28c;letter-spacing:.06em}
+.icon.empty .disc{opacity:.35}
+.icon.empty .cnt{display:none}
+
+.hintbar{
+  margin-top:20px;text-align:center;font-size:15px;color:#b8a382;letter-spacing:.1em;
+  text-shadow:0 2px 6px #000;
+}
+.hintbar b{color:var(--gold-lt);font-weight:700;letter-spacing:.02em}
+.flourish{display:flex;align-items:center;gap:14px;justify-content:center;margin-top:14px}
+.flourish::before,.flourish::after{content:"";height:1px;width:180px;
+  background:linear-gradient(90deg,transparent,rgba(217,164,65,.6))}
+.flourish::after{background:linear-gradient(90deg,rgba(217,164,65,.6),transparent)}
+.flourish span{font-size:13px;letter-spacing:.34em;color:rgba(217,164,65,.85)}
+
+/* ---------- 7. 页脚说明（不属于面板，真接入时删除） ---------- */
+.notes{max-width:1080px;color:#8d7a5f;font-size:13px;line-height:1.85;text-align:center}
+.notes b{color:#c9ab72}
+.notes code{font-family:ui-monospace,Consolas,monospace;color:#d9c9a4;background:rgba(217,164,65,.1);
+  padding:1px 6px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="frame" id="frame">
+    <div class="board" id="board">
+
+      <!-- 背景 -->
+      <div class="layer bg-base"></div>
+      <div class="layer bg-window"></div>
+      <div class="layer bg-arches"></div>
+      <div class="layer bg-beams"></div>
+      <div class="layer bg-ambient"></div>
+      <div class="layer bg-rays"><i></i><i></i><i></i><i></i></div>
+      <div class="layer bg-dust"></div>
+      <div class="layer bg-banner"></div>
+      <div class="layer"><div class="bg-lantern l"></div><div class="bg-lantern r"></div></div>
+      <div class="layer bg-desk"></div>
+      <div class="layer safe-zone"></div>
+      <div class="layer bg-vignette"></div>
+      <div class="layer bg-grain"></div>
+
+      <!-- 标题带 -->
+      <div class="head">
+        <div class="crest">
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <defs>
+              <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#f4d68d"/><stop offset=".55" stop-color="#d9a441"/>
+                <stop offset="1" stop-color="#8a6520"/>
+              </linearGradient>
+            </defs>
+            <circle cx="50" cy="50" r="46" fill="#1d1410" stroke="url(#g1)" stroke-width="4"/>
+            <circle cx="50" cy="50" r="38" fill="none" stroke="#d9a441" stroke-width="1.4" opacity=".55"/>
+            <!-- 断冠 -->
+            <path d="M20 58 L27 34 L36 48 L46 28 L56 48 L65 34 L72 58 Z" fill="url(#g1)"/>
+            <rect x="20" y="58" width="52" height="8" rx="2" fill="url(#g1)"/>
+            <path d="M46 28 L50 20 L56 28" fill="none" stroke="#1d1410" stroke-width="3"/>
+            <!-- 交叉剑与杖 -->
+            <path d="M22 84 L78 66" stroke="#d9a441" stroke-width="2.4" opacity=".8"/>
+            <path d="M22 66 L78 84" stroke="#74bdf0" stroke-width="2.4" opacity=".8"/>
+          </svg>
+        </div>
+        <div class="title-block">
+          <div class="kicker">ISEKAI CHRONICLE</div>
+          <div class="title-cn">剑与魔法 · 艾瑟兰</div>
+          <div class="title-sub">断冠纪元 417 年 · 白桦镇公会登记</div>
+          <div class="rule"></div>
+        </div>
+        <div class="name-block">
+          <div class="name-cn">莫无铭</div>
+          <div class="name-tag">白桦镇的异乡人</div>
+          <div class="lv-badge"><b>LV</b><span>5</span></div>
+        </div>
+      </div>
+
+      <!-- 场景带 -->
+      <div class="scene">
+        <div class="region-card">
+          <div class="region-label">CURRENT REGION</div>
+          <div class="region-name">雾桥驿</div>
+          <div class="region-meta">威胁 25 ｜ 单程 10 分钟 ｜ 推荐 Lv.3</div>
+          <div class="region-desc">雾气弥漫的石拱桥驿站。商路上出现魔族难民，领主要求封桥，公会却要你护送持有旧地图的孩子。</div>
+          <div class="chapter-track">
+            <i class="on"></i><i class="on"></i><i class="on"></i>
+            <i class="cur"></i><i></i><i></i>
+          </div>
+          <div class="chapter-cap">主线 3 / 6 ｜ 公会委托 4 次 ｜ 重伤撤回 1 次</div>
+        </div>
+
+        <div class="portrait">
+          <div class="glow-ring"></div>
+          <div class="art-slot">
+            <div class="fn">job_swordsman.png</div>
+            <div class="hint">剑士 · 斗气之姿<br>半身 3/4 侧，阔刃长剑缠绕琥珀斗气<br>纯白底抠图</div>
+            <div class="size">800 × 1200</div>
+          </div>
+          <div class="name-plate">
+            <div class="p-name">剑士</div>
+            <div class="p-role">SWORDSMAN</div>
+            <div class="p-desc">以斗气和身法迎战，正面突破最为稳健。</div>
+          </div>
+        </div>
+
+        <div class="job-row">
+          <div class="job-thumb on">
+            <div class="art-slot"></div>
+            <em>剑士</em>
+          </div>
+          <div class="job-thumb">
+            <div class="art-slot"></div>
+            <em>魔法师</em>
+          </div>
+          <div class="job-thumb">
+            <div class="art-slot"></div>
+            <em>僧侣</em>
+          </div>
+          <div class="job-thumb">
+            <div class="art-slot"></div>
+            <em>游侠</em>
+          </div>
+        </div>
+      </div>
+
+      <!-- 羊皮纸状态面板 -->
+      <div class="panel">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+
+        <div class="panel-head">
+          <div class="panel-title">冒险者状态<span>ADVENTURER</span></div>
+          <div class="panel-chip">职业武装 · 已锻造</div>
+        </div>
+
+        <div class="vitals">
+          <div class="vital">
+            <div class="row"><span class="k hp">生命</span><span class="v">72 <small>/ 132</small></span></div>
+            <div class="bar hp"><i style="width:54.5%"></i><span class="emblem"></span></div>
+          </div>
+          <div class="vital">
+            <div class="row"><span class="k mp">魔力</span><span class="v">41 <small>/ 84</small></span></div>
+            <div class="bar mp"><i style="width:48.8%"></i><span class="emblem"></span></div>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><div class="sk">COIN</div><div class="sv">340 <small>铜币</small></div></div>
+          <div class="stat"><div class="sk">EXP</div><div class="sv">52 <small>/ 175</small></div></div>
+          <div class="stat"><div class="sk">LOAD</div><div class="sv">5 <small>/ 12 格</small></div></div>
+          <div class="stat"><div class="sk">WEAPON</div><div class="sv"><span class="ok">已锻造</span></div></div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-title">异界天赋 / TRAITS</div>
+          <div class="traits">
+            <span class="trait">剑术直觉</span>
+            <span class="trait">旅人洞察</span>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-title">熟练度 / PROFICIENCY</div>
+          <div class="skills">
+            <div class="skill main">
+              <div class="sl"><span>剑术 <small>（本职）</small></span><b>19 / 30</b></div>
+              <div class="track"><i style="width:63.3%"></i></div>
+            </div>
+            <div class="skill">
+              <div class="sl"><span>魔法</span><b>6 / 30</b></div>
+              <div class="track"><i style="width:20%"></i></div>
+            </div>
+            <div class="skill">
+              <div class="sl"><span>祷告</span><b>4 / 30</b></div>
+              <div class="track"><i style="width:13.3%"></i></div>
+            </div>
+            <div class="skill">
+              <div class="sl"><span>侦察</span><b>11 / 30</b></div>
+              <div class="track"><i style="width:36.7%"></i></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="action">
+          <span class="pulse"></span>
+          <div class="a-main">
+            <div class="a-t">探索 雾桥驿 <small>到期自动兑现，途中可 #剑与魔法 撤离</small></div>
+            <div class="a-track"><i></i></div>
+          </div>
+          <div class="a-time">04:12</div>
+        </div>
+
+        <div class="bonds">
+          <span class="bond">巡礼僧侣莉娅同行 · 战后治疗 5</span>
+          <span class="bond off">尚未缔结精灵契约</span>
+        </div>
+      </div>
+
+      <!-- 底部资源栏 -->
+      <div class="footer">
+        <div class="icons">
+          <div class="icon">
+            <div class="disc">
+              <svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="#d9a441" stroke-width="2.5"/>
+              <circle cx="20" cy="20" r="10" fill="none" stroke="#d9a441" stroke-width="1.4" opacity=".6"/>
+              <path d="M14 21 L17 15 L20 19 L23 14 L26 21 Z" fill="#f4d68d"/></svg>
+            </div>
+            <div class="cnt">340</div><div class="lb">铜币</div>
+          </div>
+          <div class="icon">
+            <div class="disc">
+              <svg viewBox="0 0 40 40"><path d="M20 4 L31 20 L20 36 L9 20 Z" fill="none" stroke="#74bdf0" stroke-width="2.4"/>
+              <path d="M20 11 L26 20 L20 29 L14 20 Z" fill="#74bdf0" opacity=".7"/></svg>
+            </div>
+            <div class="cnt">3</div><div class="lb">古代晶片</div>
+          </div>
+          <div class="icon">
+            <div class="disc">
+              <svg viewBox="0 0 40 40"><rect x="8" y="13" width="24" height="18" rx="3" fill="none" stroke="#c9a86a" stroke-width="2.2"/>
+              <path d="M8 19 H32 M14 13 L20 6 L26 13" fill="none" stroke="#c9a86a" stroke-width="2" opacity=".8"/></svg>
+            </div>
+            <div class="cnt">2</div><div class="lb">野营口粮</div>
+          </div>
+          <div class="icon">
+            <div class="disc">
+              <svg viewBox="0 0 40 40"><path d="M16 6 h8 v6 l4 5 v15 a3 3 0 0 1 -3 3 h-10 a3 3 0 0 1 -3 -3 v-15 l4 -5 z"
+                fill="none" stroke="#e8847a" stroke-width="2.2"/><path d="M14 22 h12 v10 a1 1 0 0 1 -1 1 h-10 a1 1 0 0 1 -1 -1 z" fill="#c93a2e"/></svg>
+            </div>
+            <div class="cnt">2</div><div class="lb">疗伤药</div>
+          </div>
+          <div class="icon">
+            <div class="disc">
+              <svg viewBox="0 0 40 40"><path d="M16 6 h8 v6 l4 5 v15 a3 3 0 0 1 -3 3 h-10 a3 3 0 0 1 -3 -3 v-15 l4 -5 z"
+                fill="none" stroke="#8ec8f0" stroke-width="2.2"/><path d="M14 22 h12 v10 a1 1 0 0 1 -1 1 h-10 a1 1 0 0 1 -1 -1 z" fill="#2f6fb8"/></svg>
+            </div>
+            <div class="cnt">1</div><div class="lb">魔力药</div>
+          </div>
+          <div class="icon">
+            <div class="disc">
+              <svg viewBox="0 0 40 40"><rect x="7" y="11" width="26" height="18" rx="2" fill="none" stroke="#e0d2b0" stroke-width="2.2"/>
+              <path d="M7 14 L20 23 L33 14" fill="none" stroke="#e0d2b0" stroke-width="2"/>
+              <circle cx="28" cy="25" r="4.5" fill="#c93a2e" opacity=".85"/></svg>
+            </div>
+            <div class="cnt">1</div><div class="lb">旧契约信</div>
+          </div>
+        </div>
+
+        <div class="hintbar">
+          发送 <b>#剑与魔法 帮助</b> 查看规则 ｜ <b>#抽取异界词条</b> 抽天赋 ｜ <b>#我的纳戒</b> 查看物资
+        </div>
+        <div class="flourish"><span>ATHERAN</span></div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="notes">
+    <b>这是静态样张</b>：背景、羊皮纸边框、状态条、图标全部由 CSS/SVG 现场绘制，斜纹虚线框为<b>美术槽位</b>，
+    出图后按槽位标签的文件名替换即可。画布规格 <code>1080 × 1920</code>（9:16），与后续 <code>resources/html/sword_magic/</code> 模板一致。
+  </div>
+</div>
+
+<script>
+/* 仅用于样张在浏览器里自适应缩放；真接入 puppeteer 时删除本段与 .frame 包装。 */
+(function () {
+  var frame = document.getElementById('frame');
+  var board = document.getElementById('board');
+  function fit() {
+    var availW = Math.min(window.innerWidth - 36, 1080);
+    var availH = window.innerHeight - 150;
+    var s = Math.min(availW / 1080, availH / 1920);
+    s = Math.max(s, 0.16);
+    board.style.transform = 'scale(' + s + ')';
+    frame.style.width = (1080 * s) + 'px';
+    frame.style.height = (1920 * s) + 'px';
+  }
+  window.addEventListener('resize', fit);
+  fit();
+})();
+</script>
+</body>
+</html>
