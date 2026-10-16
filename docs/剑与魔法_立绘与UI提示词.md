@@ -35,6 +35,53 @@ Negative: any text, letters, watermark, signature, logo, 3D render, photorealist
 An anime isekai fantasy art style sheet, divided into four tiles: top-left a medieval border town at golden dusk, top-right a half-body hero character illustration, bottom-left a parchment UI panel frame with abstract magic-engraved borders, bottom-right blue magic circle runes and amber battle-aura glow. Cel shading with painterly lighting, clean linework, crisp rim light, light-novel illustration quality, retro fantasy JRPG mood. Palette: warm amber gold + lapis blue, parchment beige and deep brown accents. Subtle parchment grain. Absolutely no text or readable symbols anywhere.
 ```
 
+**实测提醒（2026-10-16 出图后修正）**
+
+风格锚卡只锁**画风与配色**，不锁**角色**。已出的一版锚卡里，四格分别出现了：黄昏边城远景 / 长发金甲蓝披风少女 / 金线羊皮纸 UI / 3D 辉光法阵。其中两处会污染后续：
+
+1. **角色格会把四职业立绘带成「圣殿骑士」**——参考图里的长发、华丽肩甲、蓝披风会被一起抄走，与白桦镇边境公会穷冒险者的设定冲突。故新增 §1.1。
+2. **法阵格是 3D 渲染辉光**，撞在统一负面词的「3D渲染 / CG塑料感 / 过饱和荧光色」上。**当参考图前先裁掉这一格**。
+
+---
+
+### 1.1 角色锚卡（第二张参考图，强烈建议做）
+
+**三级参考链（按顺序做，不要跳）**
+
+```
+① 风格锚卡（§1）      锁画风与配色；裁掉右下角法阵格后再用
+        ↓ 作为参考图上传
+② 角色锚卡（本节）     纯白底，只画角色本体，不含任何华丽装备
+        ↓ 作为参考图上传
+③ 四职业立绘（§4）     拿②当参考，只换姿势与手中道具
+```
+
+§4 的文字角色锚**仍要保留在每条提示词里**，参考图与文字锚双管齐下才稳。
+
+**生成提示词（先出女版）**
+
+```
+纯白背景的角色设定立绘，正侧 3/4 角度的半身像，一名十六七岁少女冒险者：及肩的浅金栗色短发被风吹得略乱，灰蓝色眼睛，左眉尾有一道很淡的细疤，浅肤色，脸上带着赶路后的浅尘。穿着白色亚麻内衬与深棕色皮质轻甲，皮甲上有明显的磨损与补线痕迹，肩部是简单的皮质护肩；颈间用皮绳挂着一枚手工雕刻的白桦木公会徽章。腰间系着旧皮带与一只粗布小袋。装备朴素——没有金属板甲、没有披风、没有宝石、没有华丽金饰。站姿自然，神情是边境少年人那种警觉又逞强的样子。日系二次元赛璐璐上色＋厚涂光影，干净描线，柔和轮廓光，轻小说插画质感。画面中没有任何文字。
+```
+
+```
+A character sheet bust illustration on a pure white background, three-quarter view. A 16-17 year old adventurer girl: ash-blonde shoulder-length short hair slightly tousled by wind, grey-blue eyes, a very faint thin scar at the tail of her left eyebrow, light skin with a little travel dust. She wears a white linen undershirt with dark brown leather light armor that is visibly scuffed and repaired with stitching, simple leather shoulder pads; a hand-carved birch-wood guild badge hangs from a leather cord at her neck. An old leather belt and a rough cloth pouch at her waist. Plain gear — no metal plate armor, no cape, no gems, no ornate gold trim. Natural stance, a wary but stubborn frontier-teen expression. Anime cel shading with painterly lighting, clean linework, soft rim light, light-novel illustration quality. No text anywhere.
+```
+
+男版只改两处：「少女」→「少年」，「及肩的浅金栗色短发」→「浅金栗色短发」；英文版 `girl`→`boy`，`shoulder-length short hair`→`short hair`。其余不动。
+
+**自检清单（出图后逐条核对，任一条不符就重出，不要将就）**
+
+- [ ] 头发是**及肩短**发，不是长发、不是扎起来的
+- [ ] 眼睛是**灰蓝**，不是纯亮蓝
+- [ ] 左眉尾**有细疤**
+- [ ] 护甲是**深棕皮质**且有磨损痕迹，不是金属板甲
+- [ ] 颈间挂着**木质**徽章（不是金质、不带宝石）
+- [ ] 没有披风、没有宝石、没有华丽金饰
+- [ ] 纯白底，可直接抠图
+
+**判断依据**：模型会把参考图里的**非风格特征**（发型、服装、配饰）一起迁移过去。若四张职业立绘最终出现了统一的披风 / 板甲 / 宝石，即说明本节被跳过。
+
 ---
 
 ## 2. 主面板背景（最重要，1 张，竖版 9:16 / 1080×1920）
@@ -86,6 +133,8 @@ A game UI status bar asset on a pure white background: a long bar framed in dark
 ---
 
 ## 4. 职业立绘（4 张，半身，竖版 2:3，纯色底）
+
+**先做 §1.1 的角色锚卡**，再拿它当参考图生下面四张；文字角色锚仍要原样保留在每条提示词里。
 
 **角色锚（每张都要带，保证是"同一个角色"）**
 
@@ -164,6 +213,9 @@ Character anchor (male): a 16-17 year old adventurer boy, ash-blonde short hair,
 
 ```
 resources/img/swordmagic/
+  _ref/                   参考图归档，不参与插件打包（生图链路用）
+    style_anchor.jpg      风格锚卡（§1 出图产物，裁掉法阵格后的版本）
+    char_anchor.png       角色锚卡（§1.1 出图产物）
   bg_panel.png            主面板背景（1080×1920）
   ui_frame.png            九宫格面板框（1024×1024）
   ui_icons.png            资源图标组（或拆分 icons/*.png）
