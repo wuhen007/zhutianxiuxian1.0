@@ -1,0 +1,281 @@
+/* ==========================================================================
+   剑与魔法 · 艾瑟兰 —— 状态面板
+   画布：1080 x 1920（9:16）。截图目标为 #container。
+   美术：resources/img/swordmagic/（背景 bg_panel、职业立绘 portraits/、
+        生命魔力条 bars/、资源图标 icons/）
+   ========================================================================== */
+
+@font-face { font-family: "Aetheran Serif"; src: url("../../font/华文中宋.TTF"); font-display: swap; }
+@font-face { font-family: "Aetheran Text"; src: url("../../font/HYWenHei-55W.ttf"); font-display: swap; }
+
+:root{
+  /* 主色：暖琥珀金 + 青金石蓝 */
+  --gold:      #d9a441;
+  --gold-lt:   #f4d68d;
+  --gold-dp:   #8a6520;
+  --lapis:     #2f5f9e;
+  --lapis-lt:  #74bdf0;
+  /* 羊皮纸 + 深棕 */
+  --parch:     #e9dbb8;
+  --parch-lt:  #f7efdc;
+  --parch-dp:  #c9b489;
+  --wood:      #4e3625;
+  /* 墨色 */
+  --ink:       #3b2a19;
+  --ink-soft:  #6f5a3e;
+  /* 血 / 魔 */
+  --hp:        #a82b28;
+  --mp:        #2a6bb4;
+  /* 条身：与 bars/*_body.png 的 1613x166 等比，固定像素避免拉伸 */
+  --bar-w:     380px;
+  --bar-h:     39px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1080px;background:#100d0a}
+body{font-family:"Aetheran Text","Microsoft YaHei","PingFang SC",sans-serif;-webkit-font-smoothing:antialiased}
+
+#container{
+  position:relative;width:1080px;height:1920px;overflow:hidden;background:#1b1410;
+}
+
+/* 通用层 */
+.layer{position:absolute;inset:0;pointer-events:none}
+
+/* ---------- 背景 ---------- */
+/* CSS 渐变兜底：正式背景图缺失时仍可读 */
+.bg-base{background:linear-gradient(180deg,#2b1e14 0%,#4a3220 24%,#6d4f2d 46%,#553d26 66%,#2c1d13 88%,#150f0a 100%)}
+.bg-photo{
+  background-image:url("../../img/swordmagic/bg_panel.jpg");
+  background-size:cover;background-position:center top;background-repeat:no-repeat;
+}
+/* 丁达尔光柱 */
+.bg-rays{overflow:hidden;mix-blend-mode:screen;opacity:.5;filter:blur(18px)}
+.bg-rays i{position:absolute;top:-160px;width:130px;height:1400px;transform:rotate(17deg);
+  background:linear-gradient(180deg,rgba(255,214,140,.55),rgba(255,214,140,.10) 60%,transparent)}
+.bg-rays i:nth-child(1){left:180px;width:100px;opacity:.85}
+.bg-rays i:nth-child(2){left:392px;width:74px;opacity:.6}
+.bg-rays i:nth-child(3){left:566px;width:118px;opacity:.75}
+.bg-rays i:nth-child(4){left:760px;width:64px;opacity:.5}
+/* 尘埃 */
+.bg-dust{
+  background-image:
+    radial-gradient(2.5px 2.5px at 20% 32%, rgba(255,232,180,.85), transparent),
+    radial-gradient(2px 2px at 33% 44%, rgba(255,232,180,.7), transparent),
+    radial-gradient(3px 3px at 47% 28%, rgba(255,232,180,.8), transparent),
+    radial-gradient(2px 2px at 61% 51%, rgba(255,232,180,.65), transparent),
+    radial-gradient(2.5px 2.5px at 74% 37%, rgba(255,232,180,.75), transparent),
+    radial-gradient(2px 2px at 86% 56%, rgba(255,232,180,.55), transparent);
+  opacity:.85;
+}
+/* 暖色环境光 */
+.bg-ambient{background:
+  radial-gradient(ellipse 62% 30% at 50% 20%, rgba(255,198,116,.30), transparent 70%),
+  radial-gradient(ellipse 80% 22% at 50% 46%, rgba(255,176,92,.16), transparent 72%);
+  mix-blend-mode:screen}
+/* 暗角 + 颗粒 */
+.bg-vignette{background:radial-gradient(ellipse 86% 68% at 50% 40%, transparent 52%, rgba(8,5,3,.66) 100%)}
+.bg-grain{opacity:.16;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E")}
+/* 底部压暗：正式背景最亮最碎的是前景桌面，而底部要放资源图标与指令小字 */
+.bg-scrim{background:linear-gradient(180deg,transparent 82%,rgba(10,6,4,.48) 90%,rgba(8,5,3,.88) 100%)}
+
+/* ---------- 顶部标题带 ---------- */
+.head{position:absolute;left:64px;right:64px;top:36px;height:160px;display:flex;align-items:center;gap:26px}
+.crest{width:128px;height:128px;flex:0 0 128px;position:relative;filter:drop-shadow(0 6px 14px rgba(0,0,0,.7))}
+.crest svg{width:100%;height:100%;display:block}
+.title-block{flex:1;min-width:0}
+.kicker{font-size:15px;letter-spacing:.42em;color:var(--gold-lt);opacity:.82;text-shadow:0 2px 6px #000;margin-bottom:6px}
+.title-cn{font-family:"Aetheran Serif","Microsoft YaHei",serif;font-size:56px;font-weight:700;line-height:1.06;
+  letter-spacing:.06em;color:#fff3d6;text-shadow:0 3px 0 #4a2f10,0 6px 22px rgba(0,0,0,.85),0 0 40px rgba(217,164,65,.45)}
+.title-sub{margin-top:8px;font-size:19px;letter-spacing:.16em;color:#e8cfa0;opacity:.92;text-shadow:0 2px 8px #000}
+.rule{height:3px;margin-top:12px;border-radius:2px;
+  background:linear-gradient(90deg,var(--gold) 0%,var(--gold-lt) 34%,transparent 100%);
+  box-shadow:0 0 12px rgba(217,164,65,.6)}
+.name-block{flex:0 0 auto;text-align:right}
+.name-cn{font-family:"Aetheran Serif","Microsoft YaHei",serif;font-size:34px;font-weight:700;color:#fff3d6;
+  text-shadow:0 3px 0 #4a2f10,0 5px 16px #000}
+.name-tag{font-size:16px;color:#e8cfa0;letter-spacing:.14em;margin-top:6px;opacity:.9}
+.lv-badge{margin-top:12px;display:inline-flex;align-items:center;gap:10px;padding:8px 20px;border-radius:999px;
+  background:linear-gradient(180deg,#3b2a19,#20150d);border:2px solid var(--gold);
+  box-shadow:0 0 18px rgba(217,164,65,.4),inset 0 1px 0 rgba(255,255,255,.18)}
+.lv-badge b{font-size:15px;letter-spacing:.2em;color:var(--gold-lt)}
+.lv-badge span{font-size:22px;font-weight:700;color:#fff;font-family:Georgia,serif}
+
+/* ---------- 场景带：地区卡 + 职业立绘 ---------- */
+.scene{position:absolute;left:64px;right:64px;top:206px;height:520px}
+.region-card{position:absolute;left:0;top:24px;width:400px;padding:22px 24px;border-radius:12px;
+  background:linear-gradient(180deg,rgba(28,18,11,.86),rgba(14,9,6,.9));
+  border:1px solid rgba(217,164,65,.42);
+  box-shadow:0 12px 34px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,215,140,.14);backdrop-filter:blur(2px)}
+.region-label{font-size:14px;letter-spacing:.3em;color:var(--gold);opacity:.9}
+.region-name{font-family:"Aetheran Serif","Microsoft YaHei",serif;font-size:40px;font-weight:700;color:#fff3d6;
+  margin:6px 0 4px;text-shadow:0 3px 0 #40280f,0 5px 16px #000}
+.region-meta{font-size:16px;color:#d8c197;letter-spacing:.06em}
+.region-desc{margin-top:12px;font-size:16px;line-height:1.7;color:#c9b28c;text-align:justify}
+.chapter-track{display:flex;gap:7px;margin-top:16px}
+.chapter-track i{width:44px;height:9px;border-radius:5px;background:rgba(255,255,255,.14);border:1px solid rgba(217,164,65,.3)}
+.chapter-track i.on{background:linear-gradient(90deg,var(--gold),var(--gold-lt));box-shadow:0 0 12px rgba(217,164,65,.7)}
+.chapter-track i.cur{background:linear-gradient(90deg,var(--lapis-lt),var(--lapis));box-shadow:0 0 12px rgba(116,189,240,.7);
+  border-color:var(--lapis-lt)}
+.chapter-cap{margin-top:8px;font-size:15px;color:#b09a75;letter-spacing:.1em}
+
+/* 职业立绘（2:3）。白底图不抠图：放进浅色羊皮纸卡槽 + multiply 去白，发丝不留白边。
+   isolation:isolate 让混合只发生在卡槽内部，不把后面偏暗的背景吃进来。 */
+.portrait{position:absolute;right:0;top:0;width:336px;height:504px;border-radius:10px;overflow:hidden;
+  isolation:isolate;
+  border:2px solid rgba(217,164,65,.5);
+  background:linear-gradient(180deg,#f7efdc 0%,#e9dbb8 55%,#cbb68b 100%);
+  box-shadow:0 18px 48px rgba(0,0,0,.7),0 0 0 6px rgba(36,23,16,.7)}
+.portrait-art{position:absolute;inset:0;background-position:center top;background-size:100% 100%;
+  background-repeat:no-repeat;mix-blend-mode:multiply}
+.portrait .glow-ring{position:absolute;inset:-40% -40% auto -40%;height:120%;
+  background:radial-gradient(ellipse at 50% 78%, rgba(255,205,130,.34), transparent 62%)}
+.portrait.empty .portrait-art{display:none}
+.portrait.empty{background:linear-gradient(180deg,rgba(36,23,16,.92),rgba(20,13,8,.96))}
+.portrait .name-plate{position:absolute;left:0;right:0;bottom:0;padding:14px 18px 16px;
+  background:linear-gradient(180deg,transparent,rgba(16,10,6,.94) 42%)}
+.portrait .p-name{font-family:"Aetheran Serif","Microsoft YaHei",serif;font-size:28px;font-weight:700;color:#fff3d6;
+  text-shadow:0 3px 0 #40280f,0 4px 14px #000}
+.portrait .p-role{font-size:14px;color:var(--gold-lt);letter-spacing:.24em;margin-top:5px}
+.portrait .p-desc{font-size:14px;color:#c9b28c;line-height:1.65;margin-top:7px;text-align:justify}
+
+/* 职业一览缩略 */
+.job-row{position:absolute;left:0;top:392px;display:flex;gap:12px}
+.job-thumb{width:78px;height:106px;border-radius:8px;overflow:hidden;position:relative;
+  border:2px solid rgba(217,164,65,.32);background:linear-gradient(180deg,#f2e7cf,#cbb68b)}
+.job-thumb.on{border-color:var(--gold);box-shadow:0 0 16px rgba(217,164,65,.6)}
+.job-thumb .jt-art{position:absolute;inset:0;background-position:center top;background-size:100% 100%;
+  background-repeat:no-repeat;mix-blend-mode:multiply;filter:grayscale(.6) brightness(.86)}
+.job-thumb.on .jt-art{filter:none}
+.job-thumb em{position:absolute;left:0;right:0;bottom:0;font-style:normal;font-size:13px;text-align:center;
+  padding:3px 0 5px;color:#ffeecd;background:linear-gradient(180deg,transparent,rgba(16,10,6,.92) 55%)}
+.job-thumb.on em{color:#fff3d6;font-weight:700}
+
+/* ---------- 羊皮纸状态面板 ----------
+   边框是宽装饰带：内羊皮纸约 87% x 84%，四角卷草另占 x<15.6% / y<17.2% 的角区。
+   故内边距取 178 / 80 / 176，让内容整个落在「羊皮纸内 + 避开四角卷草」的安全区。 */
+.panel{position:absolute;left:16px;right:16px;top:736px;height:1004px;border-radius:16px;
+  background:url("../../img/swordmagic/ui_frame.jpg") center/100% 100% no-repeat;
+  padding:178px 88px 176px;
+  box-shadow:0 24px 60px rgba(0,0,0,.66)}
+
+.panel-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;padding-bottom:12px;
+  border-bottom:2px solid rgba(78,54,37,.3)}
+.panel-title{font-family:"Aetheran Serif","Microsoft YaHei",serif;font-size:27px;font-weight:700;color:var(--ink);letter-spacing:.16em}
+.panel-title span{font-size:15px;font-weight:400;letter-spacing:.24em;color:var(--ink-soft);margin-left:14px}
+.panel-chip{font-size:15px;letter-spacing:.14em;color:#f4e7c8;padding:5px 16px;border-radius:999px;
+  background:linear-gradient(180deg,#5d4227,#3b2a19);border:1px solid var(--gold-dp)}
+
+/* 生命 / 魔力：真素材条身 + 独立徽记；空槽=压暗版整条，填充=按比例裁亮图 */
+.vitals{display:flex;gap:22px}
+.vital{flex:1}
+.vital .row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+.vital .k{font-family:"Aetheran Serif","Microsoft YaHei",serif;font-size:20px;font-weight:700;letter-spacing:.14em}
+.vital .k.hp{color:var(--hp)}
+.vital .k.mp{color:var(--mp)}
+.vital .v{font-family:Georgia,serif;font-size:21px;font-weight:700;color:var(--ink);letter-spacing:.02em}
+.vital .v small{font-size:14px;color:var(--ink-soft);font-weight:400}
+.bar{position:relative;width:var(--bar-w);height:var(--bar-h);margin-left:36px;
+  background-position:left center;background-repeat:no-repeat;background-size:var(--bar-w) 100%}
+.bar.hp{background-image:url("../../img/swordmagic/bars/hp_body_dim.png")}
+.bar.mp{background-image:url("../../img/swordmagic/bars/mp_body_dim.png")}
+/* 填充段：窄窗口 + 固定宽底图 → 只露出左侧按比例的亮色，且永不拉伸 */
+.bar i{position:absolute;left:0;top:0;height:100%;background-position:left center;
+  background-repeat:no-repeat;background-size:var(--bar-w) 100%}
+.bar.hp i{background-image:url("../../img/swordmagic/bars/hp_body.png")}
+.bar.mp i{background-image:url("../../img/swordmagic/bars/mp_body.png")}
+.bar .emblem{position:absolute;left:-36px;top:50%;transform:translateY(-50%);
+  width:58px;height:58px;background-position:center;background-size:contain;background-repeat:no-repeat;z-index:2}
+.bar.hp .emblem{background-image:url("../../img/swordmagic/bars/hp_emblem.png")}
+.bar.mp .emblem{background-image:url("../../img/swordmagic/bars/mp_emblem.png")}
+
+/* 资源小卡 */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:16px}
+.stat{padding:12px 16px;border-radius:10px;background:rgba(78,54,37,.10);border:1px solid rgba(78,54,37,.26)}
+.stat .sk{font-size:14px;letter-spacing:.2em;color:var(--ink-soft)}
+.stat .sv{font-family:Georgia,serif;font-size:26px;font-weight:700;color:var(--ink);margin-top:4px;
+  display:flex;align-items:baseline;gap:6px}
+.stat .sv small{font-size:13px;color:var(--ink-soft);font-weight:400;font-family:"Aetheran Text",sans-serif}
+.stat .sv .ok{color:#2f7040;font-family:"Aetheran Text",sans-serif;font-size:20px}
+.stat .sv .no{color:#9a4a22;font-family:"Aetheran Text",sans-serif;font-size:20px}
+
+/* 天赋 / 熟练度 */
+.sec{margin-top:16px}
+.sec-title{font-size:15px;letter-spacing:.28em;color:var(--ink-soft);margin-bottom:10px;display:flex;align-items:center;gap:12px}
+.sec-title::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,rgba(78,54,37,.36),transparent)}
+.traits{display:flex;gap:12px;flex-wrap:wrap}
+.trait{display:inline-flex;align-items:center;gap:9px;padding:8px 16px;border-radius:8px;
+  background:linear-gradient(180deg,#fff8e6,#ecdcb6);border:1px solid rgba(138,101,32,.55);
+  box-shadow:0 2px 6px rgba(78,54,37,.18),inset 0 1px 0 #fff;
+  font-size:16px;font-weight:700;color:#5b3f1c;letter-spacing:.06em}
+.trait::before{content:"";width:12px;height:12px;transform:rotate(45deg);
+  background:linear-gradient(135deg,var(--gold-lt),var(--gold-dp));border-radius:2px;
+  box-shadow:0 0 6px rgba(217,164,65,.7)}
+.trait.empty{font-weight:400;color:var(--ink-soft);background:rgba(78,54,37,.07);border-style:dashed}
+.trait.empty::before{background:none;box-shadow:none;border:1px dashed var(--ink-soft)}
+
+.skills{display:grid;grid-template-columns:repeat(2,1fr);gap:12px 30px}
+.skill .sl{display:flex;justify-content:space-between;font-size:16px;color:#4b3823;margin-bottom:5px;letter-spacing:.1em}
+.skill .sl b{font-family:Georgia,serif;font-size:16px;color:var(--ink)}
+.skill .track{height:12px;border-radius:6px;background:rgba(78,54,37,.18);overflow:hidden;
+  box-shadow:inset 0 1px 3px rgba(78,54,37,.4)}
+.skill .track i{display:block;height:100%;border-radius:6px;
+  background:linear-gradient(90deg,var(--gold-dp),var(--gold),var(--gold-lt));box-shadow:0 0 8px rgba(217,164,65,.55)}
+.skill.main .track i{background:linear-gradient(90deg,#2f7040,#6fbf7c,#c8f0cf);box-shadow:0 0 8px rgba(111,191,124,.6)}
+
+/* 行动状态条 */
+.action{margin-top:18px;padding:18px 22px;border-radius:12px;
+  background:linear-gradient(180deg,#3b2a19,#241710);
+  box-shadow:inset 0 0 0 2px rgba(217,164,65,.5),0 8px 22px rgba(0,0,0,.35);
+  display:flex;align-items:center;gap:20px}
+.action .pulse{width:16px;height:16px;border-radius:50%;flex:0 0 16px;
+  background:radial-gradient(circle at 35% 30%,#fff2c4,var(--gold) 45%,#8a6520);
+  box-shadow:0 0 14px 4px rgba(217,164,65,.75);animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.78)}}
+.action .a-main{flex:1;min-width:0}
+.action .a-t{font-size:19px;color:#fff3d6;font-weight:700;letter-spacing:.08em}
+.action .a-t small{font-size:15px;font-weight:400;color:#d8c197;letter-spacing:.06em;margin-left:10px}
+.action .a-track{margin-top:10px;height:10px;border-radius:5px;background:rgba(255,255,255,.12);overflow:hidden}
+.action .a-track i{display:block;height:100%;border-radius:5px;
+  background:linear-gradient(90deg,var(--lapis),var(--lapis-lt));box-shadow:0 0 12px rgba(116,189,240,.7)}
+.action .a-time{font-family:Georgia,serif;font-size:30px;font-weight:700;color:var(--gold-lt);
+  letter-spacing:.04em;text-shadow:0 0 18px rgba(217,164,65,.55)}
+.action.idle .pulse{background:radial-gradient(circle at 35% 30%,#dfe8f0,#8fa2b4 45%,#4d5b68);box-shadow:none;animation:none}
+.action.idle .a-t{color:#e3d6bb;font-weight:400}
+
+/* 羁绊行 */
+.bonds{display:flex;gap:14px;margin-top:12px;flex-wrap:wrap}
+.bond{display:inline-flex;align-items:center;gap:10px;padding:7px 16px;border-radius:999px;font-size:15px;
+  color:#4b3823;background:rgba(255,248,230,.75);border:1px solid rgba(138,101,32,.4)}
+.bond.off{color:#9c8869;background:rgba(78,54,37,.06);border-style:dashed}
+.bond::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px rgba(217,164,65,.8)}
+.bond.off::before{background:#b8a58a;box-shadow:none}
+
+/* ---------- 底部资源栏 ---------- */
+.footer{position:absolute;left:64px;right:64px;top:1750px}
+.icons{display:flex;justify-content:center;gap:22px}
+.icon{width:96px;text-align:center;position:relative}
+.icon .disc{width:68px;height:68px;margin:0 auto;border-radius:50%;position:relative;
+  background:linear-gradient(180deg,rgba(28,18,11,.9),rgba(12,8,5,.95));
+  border:2px solid rgba(217,164,65,.45);
+  box-shadow:0 8px 20px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,215,140,.15);
+  display:flex;align-items:center;justify-content:center}
+.icon .disc img{width:46px;height:46px;display:block}
+.icon .cnt{position:absolute;right:8px;top:42px;min-width:30px;padding:1px 7px;border-radius:999px;
+  font-family:Georgia,serif;font-size:14px;font-weight:700;color:#fff3d6;
+  background:linear-gradient(180deg,#5d1512,#3a0d0b);border:1px solid var(--gold-dp);
+  box-shadow:0 3px 8px rgba(0,0,0,.6)}
+.icon .lb{margin-top:8px;font-size:13px;color:#c9b28c;letter-spacing:.06em}
+.icon.empty .disc{opacity:.34}
+.icon.empty .disc img{filter:grayscale(1)}
+.icon.empty .cnt{display:none}
+.icon.empty .lb{color:#8d7c62}
+
+.hintbar{margin-top:16px;text-align:center;font-size:15px;color:#b8a382;letter-spacing:.08em;text-shadow:0 2px 6px #000}
+.hintbar b{color:var(--gold-lt);font-weight:700;letter-spacing:.02em}
+.flourish{display:flex;align-items:center;gap:14px;justify-content:center;margin-top:10px}
+.flourish::before,.flourish::after{content:"";height:1px;width:170px;
+  background:linear-gradient(90deg,transparent,rgba(217,164,65,.6))}
+.flourish::after{background:linear-gradient(90deg,rgba(217,164,65,.6),transparent)}
+.flourish span{font-size:12px;letter-spacing:.34em;color:rgba(217,164,65,.85)}

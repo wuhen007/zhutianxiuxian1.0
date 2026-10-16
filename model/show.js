@@ -248,6 +248,15 @@ async get_jindi_placeData(myData) {
       ...myData,
     };
   }
+  // 剑与魔法·艾瑟兰 状态面板：saveId 由调用方给出（含玩家与状态版本号），避免并发复用旧渲染
+  async get_swordMagicPanelData(myData) {
+    this.model = 'sword_magic';
+    return {
+      ...this.screenData,
+      saveId: myData?.saveId || 'sword_magic',
+      ...myData,
+    };
+  }
     async get_duihuanData(myData) {
     this.model = 'duihuan';
     return {

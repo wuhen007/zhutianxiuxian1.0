@@ -235,13 +235,17 @@ resources/img/swordmagic/
   icons/ration.png           野营口粮   同规格
   icons/potion_hp.png        疗伤药     同规格
   icons/potion_mp.png        魔力药     同规格
-  icons/letter.png           旧契约信   同规格
+  icons/letter.png           旧契约信   同规格（图标已备，本面板暂未用到，留给契约类道具）
   bars/hp_body.png           生命条身   1613×166（约 9.7:1，满血亮色）
   bars/hp_body_dim.png       生命条身   同规格（×0.42 压暗 = 空槽）
   bars/hp_emblem.png         生命徽记   335×313（红色水晶，透明底）
   bars/mp_body.png           魔力条身   同规格（蓝色）
   bars/mp_body_dim.png       魔力条身   同规格（暗蓝空槽）
   bars/mp_emblem.png         魔力徽记   346×313（蓝色菱形，透明底）
+  portraits/swordsman.jpg    剑士立绘   591×887（2:3，保留纯白底，CSS multiply 去白）
+  portraits/mage.jpg         魔法师立绘 同规格
+  portraits/cleric.jpg       僧侣立绘   同规格
+  portraits/ranger.jpg       游侠立绘   同规格（左半=女版；取右半即男版）
   ══ 待出图 ══
   region_01_fengming.png  风鸣林（1920×1080）
   region_02_greybell.png  灰钟地窟
@@ -255,14 +259,19 @@ resources/img/swordmagic/
   ascension.png           飞升
 ```
 
-## 9. 现实提醒（重要）
+## 9. 落地状态（已完成）
 
-目前 `#剑与魔法 状态` 面板是**纯文本回复**（`e.reply`），图片不会自动显示。要用上这批立绘，还需要：
+`#剑与魔法 状态` / `#剑与魔法 结算`（含别名 `#我的练气`、`#我`）现在会**直接回图**，走插件既有的 puppeteer 截图管线：
 
-1. 一套 HTML/CSS 模板（背景图 + 羊皮纸框 + 绝对定位的文字层 + 职业立绘）
-2. 走插件已有的 **puppeteer 截图管线**（`zd_battle` 战报用的就是这条），把 HTML 渲染成图片再回复
+```
+apps/User/SwordMagic.js        # 指令层：状态/结算先试图像，渲染不可用无缝回退纯文本
+model/swordMagicPanel.js       # 视图模型（纯函数，12 条单测覆盖）
+model/show.js                  # #get_swordMagicPanelData：拼 pluResPath / tplFile / saveId
+resources/html/sword_magic/    # sword_magic.html + sword_magic.css（1080x1920）
+resources/img/swordmagic/portraits/   # 四职业 2:3 立绘（由 job_*.jpg 左半裁出）
+```
 
-这套渲染管线是独立的工程量，先出图、后接管线，顺序不冲突。
+渲染失败（缺模板、Chromium 不可用等）时**自动回退**为原来的纯文本，不会吞掉玩家查询；飞升后的「档案封存」态仍走文本。工程细节见 §11。
 
 ---
 
@@ -317,3 +326,66 @@ resources/img/swordmagic/
 2. **风格锚卡当参考前先裁掉右下角法阵格**：它是深底 + 六七个光效元素的堆叠，会教坏 §3.2 / §3.3 这两条要求**纯白底**的提示词（素材会被画成深底，直接影响抠图）。
 3. **别让两张参考图性别打架**：若主角定为男版，风格锚卡里的少年与角色锚卡性别自洽、无需裁剪；若定为女版，须把风格锚卡裁成「只剩边城 + UI」两格。
 4. **色温小提醒**：`ui_frame` 的青色发光与血/蓝条的蓝，比背景里沉稳的青金石蓝**更亮更饱和**。作为 UI 元素这样是对的（要跳出来）；若想让整套更「沉稳史诗」，把发光整体调暗一档即可。
+
+---
+
+## 11. 工程落地记录（2026-10-16）
+
+画布 **1080 × 1920**（9:16），截图目标 `#container`。所有素材经 `{{pluResPath}}` 绝对路径引用；
+CSS 内的静态素材走 `../../img/swordmagic/` 相对路径（CSS 文件本身在 `resources/html/sword_magic/`）。
+
+### 11.1 版式骨架（绝对定位）
+
+| 区块 | 位置 | 说明 |
+|---|---|---|
+| `.head` 标题带 | y 36，高 160 | 断冠纹章 SVG + 中英双标题 + 玩家名与 LV 徽章 |
+| `.scene` 场景带 | y 206，高 520 | 左「地区卡」（400 宽）+ 右「职业立绘」（336×504）；下方职业四缩略 |
+| `.panel` 状态面板 | y 736，**1048×1004** | 九宫格边框 + 数据块 |
+| `.footer` 资源栏 | y 1750 | 5 枚圆形资源位 + 指令小字 + ATHERAN 花饰，底部 1908 收尾 |
+
+### 11.2 关键约束：边框装饰带比想象的厚得多
+
+`ui_frame` 是**宽装饰带**边框，内羊皮纸只占整个面板的约 **87% × 84%**，且四角卷草额外吃掉
+`x < 15.6% / y < 17.2%` 的角区。直接用 `background-size:100% 100%` 拉伸时，这两件事会同时发生：
+
+- 内容贴着外框 → 标题被左上角饰压掉一截；
+- 想在四角放东西（比如右上角的职业武装小标）→ 正好落在卷草上。
+
+→ 内边距必须按「**羊皮纸内 + 避开四角卷草**」取：最终 `padding: 178px 88px 176px`，
+内容区 872 × 650，实测内容底 788（安全区下界约 831），余量 40px。
+**注意**：这个余量是给数据浮动留的 —— 后来把各段 `margin-top` 从 22 收到 16 才腾出来，
+否则区域描述或抉择提示多一行就会顶到角饰。
+
+### 11.3 状态条的「空槽 + 填充」实现
+
+条身 `1613×166`（约 9.7:1），徽记单独裁出。
+
+```css
+.bar      { width:380px; height:39px; background:url(hp_body_dim.png) left/380px 100% no-repeat }
+.bar i    { position:absolute; left:0; height:100%; width:<pct>%; background:url(hp_body.png) left/380px 100% no-repeat }
+.bar .emblem{ left:-36px; width:58px; height:58px; background:url(hp_emblem.png) center/contain }
+```
+
+要点：**填充段的底图宽度写死成条身宽度（380px）**，于是元素变窄时底图不会被压扁，
+只是被自己裁掉右边 —— 比例永远正确，不需要按百分比动态算 `background-size`。
+徽记用负 `left` 让条身整体右移 36px 让位（`.bar{margin-left:36px}`），左端与内容区对齐。
+
+### 11.4 职业立绘
+
+`job_*.jpg` 是 `1774×887` 的**女左男右**双人图。取左半（887 宽）再切中央 `591×887`（2:3），
+存为 `portraits/*.jpg`，**保留纯白底**，HTML 侧放进浅色羊皮纸卡槽 + `mix-blend-mode:multiply` 去白。
+卡槽加 `isolation:isolate`，让混合只发生在卡槽内部，不把后面偏暗的背景吃进来。
+`place/theme` 一变只需要换 URL，四职业缩略同理（未激活的用 `grayscale(.6)` 压一档）。
+
+### 11.5 回退链
+
+`状态 / 结算` → 先试 `puppeteer.screenshot('sword_magic', …)`；返回空或抛错 →
+`console.warn` 记录后回退纯文本（原 `status()` 输出）。`status === 'ascended'` 的封存档案不进图像分支。
+`saveId` 取 `sword_magic_<纯数字玩家id>_<revision>`，既避免并发复用旧渲染，也不让昵称里的非法字符进文件名。
+
+### 11.6 自检清单
+
+- `model/swordMagicPanel.js` 12 条单测（上限公式 / pct 钳制 / 三种行动态 / 地区卡三态 / 未就职 / 资源栏空槽 / 负载 / 熟练度封顶）。
+- 全量 `npm test`：新增失败 0。现存 5 条失败与本模块无依赖关系（2 条缺「修仙主配置」、1 条由别的在改模块引起、2 条法身/永恒镇守）。
+- 渲染实测三态（中局探索 / 刚入界未就职 / 裂月王庭遭遇抉择）均无溢出，素材全部加载。
+

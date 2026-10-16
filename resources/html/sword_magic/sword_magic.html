@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>剑与魔法 · 艾瑟兰</title>
+<link rel="stylesheet" type="text/css" href="{{pluResPath}}/html/sword_magic/sword_magic.css" />
+</head>
+<body>
+<div id="container">
+
+  <!-- 背景：真图 + 气氛层（光柱 / 尘埃 / 环境光 / 暗角 / 颗粒 / 底部压暗） -->
+  <div class="layer bg-base"></div>
+  <div class="layer bg-photo"></div>
+  <div class="layer bg-ambient"></div>
+  <div class="layer bg-rays"><i></i><i></i><i></i><i></i></div>
+  <div class="layer bg-dust"></div>
+  <div class="layer bg-vignette"></div>
+  <div class="layer bg-grain"></div>
+  <div class="layer bg-scrim"></div>
+
+  <!-- 顶部标题带 -->
+  <div class="head">
+    <div class="crest">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <defs>
+          <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#f4d68d" /><stop offset=".55" stop-color="#d9a441" />
+            <stop offset="1" stop-color="#8a6520" />
+          </linearGradient>
+        </defs>
+        <circle cx="50" cy="50" r="46" fill="#1d1410" stroke="url(#g1)" stroke-width="4" />
+        <circle cx="50" cy="50" r="38" fill="none" stroke="#d9a441" stroke-width="1.4" opacity=".55" />
+        <path d="M20 58 L27 34 L36 48 L46 28 L56 48 L65 34 L72 58 Z" fill="url(#g1)" />
+        <rect x="20" y="58" width="52" height="8" rx="2" fill="url(#g1)" />
+        <path d="M46 28 L50 20 L56 28" fill="none" stroke="#1d1410" stroke-width="3" />
+        <path d="M22 84 L78 66" stroke="#d9a441" stroke-width="2.4" opacity=".8" />
+        <path d="M22 66 L78 84" stroke="#74bdf0" stroke-width="2.4" opacity=".8" />
+      </svg>
+    </div>
+    <div class="title-block">
+      <div class="kicker">ISEKAI CHRONICLE</div>
+      <div class="title-cn">剑与魔法 · 艾瑟兰</div>
+      <div class="title-sub">断冠纪元 417 年 · 白桦镇公会登记</div>
+      <div class="rule"></div>
+    </div>
+    <div class="name-block">
+      <div class="name-cn">{{panel.name}}</div>
+      <div class="name-tag">{{panel.nameTag}}</div>
+      <div class="lv-badge"><b>LV</b><span>{{panel.level}}</span></div>
+    </div>
+  </div>
+
+  <!-- 场景带：地区卡 + 职业立绘 + 职业一览 -->
+  <div class="scene">
+    <div class="region-card">
+      <div class="region-label">{{panel.region.label}}</div>
+      <div class="region-name">{{panel.region.name}}</div>
+      <div class="region-meta">{{panel.region.meta}}</div>
+      <div class="region-desc">{{panel.region.desc}}</div>
+      <div class="chapter-track">{{each panel.chapterTrack cls}}<i class="{{cls}}"></i>{{/each}}</div>
+      <div class="chapter-cap">{{panel.caption}}</div>
+    </div>
+
+    <div class="portrait{{if !panel.portrait}} empty{{/if}}">
+      <div class="portrait-art"{{if panel.portrait}} style="background-image:url('{{pluResPath}}/img/swordmagic/portraits/{{panel.portrait.key}}.jpg')"{{/if}}></div>
+      <div class="glow-ring"></div>
+      <div class="name-plate">
+        <div class="p-name">{{panel.profession}}</div>
+        <div class="p-role">{{panel.professionEn}}</div>
+        <div class="p-desc">{{if panel.portrait}}{{panel.portrait.desc}}{{else}}尚未在白桦镇公会登记职业；发送 #剑与魔法 就职 剑士|魔法师|僧侣|游侠。{{/if}}</div>
+      </div>
+    </div>
+
+    <div class="job-row">{{each panel.professions p}}
+      <div class="job-thumb{{if p.on}} on{{/if}}">
+        <span class="jt-art" style="background-image:url('{{pluResPath}}/img/swordmagic/portraits/{{p.key}}.jpg')"></span>
+        <em>{{p.name}}</em>
+      </div>{{/each}}
+    </div>
+  </div>
+
+  <!-- 羊皮纸状态面板 -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">冒险者状态<span>ADVENTURER</span></div>
+      <div class="panel-chip">职业武装 · {{panel.weapon.text}}</div>
+    </div>
+
+    <div class="vitals">
+      <div class="vital">
+        <div class="row"><span class="k hp">生命</span><span class="v">{{panel.hp.cur}} <small>/ {{panel.hp.max}}</small></span></div>
+        <div class="bar hp"><i style="width:{{panel.hp.pct}}%"></i><span class="emblem"></span></div>
+      </div>
+      <div class="vital">
+        <div class="row"><span class="k mp">魔力</span><span class="v">{{panel.mp.cur}} <small>/ {{panel.mp.max}}</small></span></div>
+        <div class="bar mp"><i style="width:{{panel.mp.pct}}%"></i><span class="emblem"></span></div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="sk">COIN</div><div class="sv">{{panel.coins}} <small>铜币</small></div></div>
+      <div class="stat"><div class="sk">EXP</div><div class="sv">{{panel.exp.cur}} <small>/ {{panel.exp.max}}</small></div></div>
+      <div class="stat"><div class="sk">LOAD</div><div class="sv">{{panel.load.cur}} <small>/ {{panel.load.max}} 格</small></div></div>
+      <div class="stat"><div class="sk">WEAPON</div><div class="sv"><span class="{{if panel.weapon.on}}ok{{else}}no{{/if}}">{{panel.weapon.text}}</span></div></div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">异界天赋 / TRAITS</div>
+      <div class="traits">{{if panel.traits.length}}{{each panel.traits t}}<span class="trait">{{t.name}}</span>{{/each}}{{else}}<span class="trait empty">尚未抽取 · 发送 #抽取异界词条</span>{{/if}}</div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">熟练度 / PROFICIENCY</div>
+      <div class="skills">{{each panel.skills s}}
+        <div class="skill{{if s.primary}} main{{/if}}">
+          <div class="sl"><span>{{s.name}}{{if s.primary}} <small>（本职）</small>{{/if}}</span><b>{{s.value}} / {{s.max}}</b></div>
+          <div class="track"><i style="width:{{s.pct}}%"></i></div>
+        </div>{{/each}}
+      </div>
+    </div>
+
+    <div class="action{{if panel.action.idle}} idle{{/if}}">
+      <span class="pulse"></span>
+      <div class="a-main">
+        <div class="a-t">{{panel.action.title}} <small>{{panel.action.hint}}</small></div>
+        <div class="a-track"><i style="width:{{panel.action.pct}}%"></i></div>
+      </div>
+      <div class="a-time">{{panel.action.remain}}</div>
+    </div>
+
+    <div class="bonds">{{each panel.bonds b}}<span class="bond{{if !b.on}} off{{/if}}">{{b.text}}</span>{{/each}}</div>
+  </div>
+
+  <!-- 底部资源栏 -->
+  <div class="footer">
+    <div class="icons">{{each panel.footer.items it}}
+      <div class="icon{{if it.empty}} empty{{/if}}">
+        <div class="disc"><img src="{{pluResPath}}/img/swordmagic/icons/{{it.icon}}.png" alt="{{it.label}}" /></div>
+        <div class="cnt">{{it.count}}</div>
+        <div class="lb">{{it.label}}</div>
+      </div>{{/each}}
+    </div>
+    <div class="hintbar">{{@panel.footer.hint}}</div>
+    <div class="flourish"><span>ATHERAN</span></div>
+  </div>
+
+</div>
+</body>
+</html>
