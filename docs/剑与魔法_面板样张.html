@@ -55,6 +55,24 @@ body{
 /* 通用层 */
 .layer{position:absolute;inset:0;pointer-events:none}
 
+/* 正式背景图：存在时自动接管（.board.photo 由脚本探测图片可达性后挂上）。
+   无图时下面所有 CSS 占位背景照常生效，样张永远能独立打开。 */
+.bg-photo{
+  display:none;
+  background-image:url("../resources/img/swordmagic/bg_panel.jpg");
+  background-size:cover;background-position:center top;background-repeat:no-repeat;
+}
+.board.photo .bg-photo{display:block}
+/* 有正式背景图时只保留气氛层（尘埃/暖光/暗角/颗粒），
+   隐藏 CSS 占位骨架，避免与真图里的拱窗、旗帜、提灯、木台面重复叠影。 */
+.board.photo .bg-window,
+.board.photo .bg-arches,
+.board.photo .bg-beams,
+.board.photo .bg-banner,
+.board.photo .bg-lantern,
+.board.photo .bg-desk,
+.board.photo .bg-rays{display:none}
+
 /* ---------- 1. 背景：公会大厅黄昏 ---------- */
 .bg-base{background:
   linear-gradient(180deg,#2b1e14 0%,#4a3220 24%,#6d4f2d 46%,#553d26 66%,#2c1d13 88%,#150f0a 100%);}
@@ -181,6 +199,11 @@ body{
   opacity:.16;mix-blend-mode:overlay;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
 }
+
+/* 底部压暗：真实背景图（§2 立绘）最亮最碎的是前景桌面，
+   而底部正好要放资源图标与指令小字，故在背景层顶部加一道渐变，
+   只吃底部 22%，不影响上方画面。放置在内容层之前 → 羊皮纸面板不受影响。 */
+.bg-scrim{background:linear-gradient(180deg,transparent 78%,rgba(10,6,4,.42) 88%,rgba(8,5,3,.85) 100%)}
 
 /* 中央偏下留白保护区（真接入时删除本块，仅作占位示意） */
 .safe-zone{
@@ -505,6 +528,7 @@ body{
 
       <!-- 背景 -->
       <div class="layer bg-base"></div>
+      <div class="layer bg-photo"></div>
       <div class="layer bg-window"></div>
       <div class="layer bg-arches"></div>
       <div class="layer bg-beams"></div>
@@ -517,6 +541,7 @@ body{
       <div class="layer safe-zone"></div>
       <div class="layer bg-vignette"></div>
       <div class="layer bg-grain"></div>
+      <div class="layer bg-scrim"></div>
 
       <!-- 标题带 -->
       <div class="head">
@@ -741,6 +766,12 @@ body{
 (function () {
   var frame = document.getElementById('frame');
   var board = document.getElementById('board');
+
+  /* 探测正式背景图是否可达：可达则切换到真图，否则保持 CSS 占位背景 */
+  var probe = new Image();
+  probe.onload = function () { board.classList.add('photo'); };
+  probe.src = '../resources/img/swordmagic/bg_panel.jpg';
+
   function fit() {
     var availW = Math.min(window.innerWidth - 36, 1080);
     var availH = window.innerHeight - 150;
