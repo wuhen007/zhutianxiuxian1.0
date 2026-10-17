@@ -7,6 +7,36 @@ import data from './XiuxianData.js';
 import { Write_player } from './xiuxian.js';
 import { getActiveZhutianAvatarName } from './zhutianMirror.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
+import { writeJsonAtomically } from '../utils/atomicJson.js';
+import { ensureSuiyunState, getSuiyunStage } from './suiyun.js';
+
+// 传承炉直接安装，不生成可转让道具；不清空已有材料、时间或炼制状态。
+export async function grantSuiyunForge(qq, player) {
+  if (!getSuiyunStage(player) || player.occupation !== '炼器师' || getActiveZhutianAvatarName(player)) return false;
+  const state = ensureSuiyunState(player);
+  if (state.月华仙炉已领取) return false;
+  let tripods;
+  try { tripods = await Read_tripod(); }
+  catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    tripods = [];
+  }
+  let tripod = tripods.find(item => String(item.qq) === String(qq));
+  if (!tripod) {
+    tripod = { qq, 煅炉: 0, 材料: [], 数量: [], TIME: 0, 时长: 30000, 状态: 0, 预计时长: 0 };
+    tripods.push(tripod);
+  }
+  Object.assign(tripod, { 炉阶: '月华仙炉', 容纳量: 34 });
+  await Write_duanlu(tripods);
+  player.锻造天赋 ||= Math.floor(40 * Math.random() + 80);
+  if (!player.隐藏灵根) {
+    const roots = await readall('隐藏灵根');
+    player.隐藏灵根 = roots[Math.floor(Math.random() * roots.length)];
+  }
+  player.炉火 = '大空火种';
+  state.月华仙炉已领取 = true;
+  return true;
+}
 
 export async function settripod(qq) {
   return withPlayerMutationLock(String(qq), () => settripodLocked(qq));
@@ -50,6 +80,7 @@ async function settripodLocked(qq) {
   const newa = Math.floor(Math.random() * a.length);
   player.隐藏灵根 = a[newa];
   await Write_player(qq, player);
+  if (await grantSuiyunForge(qq, player)) await Write_player(qq, player);
   const B = `获得煅炉，天赋[${player.锻造天赋}],隐藏灵根为[${player.隐藏灵根.name}]`;
   return B;
 }
@@ -96,8 +127,7 @@ export async function Read_tripod() {
 }
 export async function Write_duanlu(duanlu) {
   let dir = path.join(__PATH.duanlu, `duanlu.json`);
-  let new_ARR = JSON.stringify(duanlu, '', '\t');
-  fs.writeFileSync(dir, new_ARR, 'utf8', err => {});
+  writeJsonAtomically(dir, duanlu);
   return;
 }
 //保存文件夹

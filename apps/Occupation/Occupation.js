@@ -40,6 +40,8 @@ import {
   takeOccupation,
 } from '../../model/occupationCollection.js';
 import { getFlowerPollenAuthorityLevel, getRealmAuthorityPath } from '../../model/realmAuthority.js';
+import { grantSuiyunForge } from '../../model/duanzaofu.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 
 // 材料稀有度
 const MATERIAL_RARITY = {
@@ -2719,7 +2721,8 @@ async shoulie_back(e) {
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) return false;
 
-    let occupation = e.msg.replace('#转职', '');
+    return withPlayerMutationLock(usr_qq, async () => {
+    let occupation = e.msg.replace('#转职', '').trim();
     let player = await Read_player(usr_qq);
     let player_occupation = player.occupation;
     let x = data.occupation_list.find(item => item.name == occupation);
@@ -2740,6 +2743,10 @@ async shoulie_back(e) {
             return
         }
     if (player_occupation == occupation) {
+      if (await grantSuiyunForge(usr_qq, player)) {
+        await Write_player(usr_qq, player);
+        return e.reply('已补领【月华仙炉】并点燃【大空火种】；#一键完美开炉 每次消耗10000点月华值。');
+      }
       e.reply(`你当前已经是[${player_occupation}]`);
       return false;
     }
@@ -2768,8 +2775,9 @@ async shoulie_back(e) {
       player.occupation = occupation;
       player.occupation_level = 1;
       player.occupation_exp = 0;
+      const furnaceGranted = await grantSuiyunForge(usr_qq, player);
       await Write_player(usr_qq, player);
-      e.reply(`恭喜${player.名号}转职为[${occupation}]`);
+      e.reply(`恭喜${player.名号}转职为[${occupation}]${furnaceGranted ? '\n已获得【月华仙炉】与【大空火种】，每次10000点月华值可 #一键完美开炉。' : ''}`);
       return false;
     }
     const occupations = saveOccupation(stored, snapshotOccupation(player));
@@ -2780,9 +2788,11 @@ async shoulie_back(e) {
     player.occupation = occupation;
     player.occupation_level = 1;
     player.occupation_exp = 0;
+    const furnaceGranted = await grantSuiyunForge(usr_qq, player);
     await Write_player(usr_qq, player);
-    e.reply(`恭喜${player.名号}转职为[${occupation}]，已拥有${occupations.length + 1}个职业`);
+    e.reply(`恭喜${player.名号}转职为[${occupation}]，已拥有${occupations.length + 1}个职业${furnaceGranted ? '\n已获得【月华仙炉】与【大空火种】，每次10000点月华值可 #一键完美开炉。' : ''}`);
     return false;
+    });
   }
   async chose_occupation2(e) {
     if (!verc({ e })) return false;
@@ -2795,6 +2805,7 @@ async shoulie_back(e) {
     let ifexistplay = await existplayer(usr_qq);
     if (!ifexistplay) return false;
 
+    return withPlayerMutationLock(usr_qq, async () => {
     let player = await Read_player(usr_qq);
     const stored = normalizeOccupationCollection(
       await redis.get('xiuxian:player:' + usr_qq + ':fuzhi')
@@ -2818,6 +2829,7 @@ async shoulie_back(e) {
     player.occupation = target.职业名;
     player.occupation_exp = target.职业经验;
     player.occupation_level = target.职业等级;
+    await grantSuiyunForge(usr_qq, player);
     await redis.set(
       'xiuxian:player:' + usr_qq + ':fuzhi',
       JSON.stringify(occupations)
@@ -2825,6 +2837,7 @@ async shoulie_back(e) {
     await Write_player(usr_qq, player);
     e.reply(`恭喜${player.名号}切换为[${player.occupation}]，该职业为${player.occupation_level}级`);
     return false;
+    });
   }
 
   async plant(e) {

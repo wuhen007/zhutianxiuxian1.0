@@ -21,9 +21,14 @@ import {
   Writeit,
   Read_it,
   alluser,
-  dataall
+  dataall,
+  grantSuiyunForge,
 
 } from '../../model/duanzaofu.js';
+import { getSuiyunStage, spendMoonlight } from '../../model/suiyun.js';
+import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
+import path from 'node:path';
 import {
   existplayer,
   Write_player,
@@ -57,7 +62,7 @@ import {
 async function resolveForgeFire(user_qq, player) {
   const selectedName = player.炉火 || '凡火';
   const selected = await readthat(selectedName, '炼器火');
-  if (selected && (selectedName === '凡火' || Number(await exist_najie_thing(user_qq, selectedName, '道具')) > 0)) {
+  if (selected && (selectedName === '凡火' || (selectedName === '大空火种' && getSuiyunStage(player) && player.岁云?.月华仙炉已领取) || Number(await exist_najie_thing(user_qq, selectedName, '道具')) > 0)) {
     return { name: selectedName, fire: selected, unavailable: false };
   }
   return {
@@ -327,6 +332,15 @@ export class duanzao extends plugin {
       e.reply(`你还不是炼器师哦,宝贝`);
       return false;
     }
+    if (await withPlayerMutationLock(user_qq, async () => {
+      const latest = await data.getData('player', user_qq);
+      if (!await grantSuiyunForge(user_qq, latest)) return false;
+      await Write_player(user_qq, latest);
+      return true;
+    })) {
+      e.reply('已获得【月华仙炉】并点燃【大空火种】；#一键完美开炉 每次消耗10000点月华值。');
+      return false;
+    }
     if (player.锻造天赋) {
       e.reply(`您已经测评过了`);
       return false;
@@ -520,7 +534,11 @@ export class duanzao extends plugin {
       }
     }
   }
-  async doForge(e, user_qq, timeMode) {
+  async doForge(e, user_qq, timeMode, options = {}) {
+    return withPlayerMutationLock(user_qq, () => this.doForgeLocked(e, user_qq, timeMode, options));
+  }
+
+  async doForgeLocked(e, user_qq, timeMode, { moonlightCost = false } = {}) {
     if (!verc({ e })) return false;
     user_qq = user_qq.toString().replace('qg_', '');
     user_qq = await channel(user_qq);
@@ -753,7 +771,12 @@ export class duanzao extends plugin {
           稀有度: Math.max(1, Math.min(10, Number(newwupin[new1].稀有度) || 1)),
         };
 
-        await Add_najie_thing(user_qq, zhuangbei, '装备', 1);
+        if (moonlightCost) {
+          if (!getSuiyunStage(player) || !spendMoonlight(player, 10000)) return e.reply('月华值不足，本次完美开炉需要10000点月华值。');
+          await Write_player(user_qq, player);
+        }
+        const granted = await Add_najie_thing(user_qq, zhuangbei, '装备', 1);
+        if (granted === false) throw new Error('装备入库中断，请解锁纳戒后重新开炉');
 
         let robberyMessage = '';
         try {
@@ -831,6 +854,7 @@ export class duanzao extends plugin {
         );
         const modeText = timeMode === 'perfect' ? '一键完美开炉' : timeMode === 'oneclick' ? '一键开炉' : '开炉';
         const extNote = [];
+        if (moonlightCost) extNote.push('月华仙炉消耗10000点月华值');
         if (fireName && fireRate > 0) extNote.push(`炉火【${fireName}】提速 ${Math.round(fireRate * 100)}%`);
         if (gongfaName) extNote.push(`功法【${gongfaName}】xishu+${gfXishu.toFixed(2)}`);
         const extStr = extNote.length ? '\n' + extNote.join('，') : '';
@@ -900,6 +924,10 @@ export class duanzao extends plugin {
     let user_qq = e.user_id.toString().replace('qg_', '');
     user_qq = await channel(user_qq);
     if (!(await existplayer(user_qq))) return false;
+    return withPlayerMutationLock(user_qq, () => this.perfectOpenLocked(e, user_qq));
+  }
+
+  async perfectOpenLocked(e, user_qq) {
     const A = await looktripod(user_qq);
     if (A != 1) {
       e.reply(`请先去#炼器师能力评测,再来锻造吧`);
@@ -927,6 +955,31 @@ export class duanzao extends plugin {
     if (!hasMat) {
       e.reply(`煅炉里面空空如也,先放入材料再来一键完美开炉吧`);
       return false;
+    }
+    if (getSuiyunStage(player)) {
+      if (Number(player.月华值) < 10000 || !Number.isFinite(Number(player.月华值))) return e.reply('月华值不足，本次完美开炉需要10000点月华值。');
+      const transaction = new FileRollbackTransaction();
+      transaction.capture(path.join(__PATH.player_path, `${user_qq}.json`));
+      transaction.capture(path.join(__PATH.najie_path, `${user_qq}.json`));
+      const tripodSnapshot = structuredClone(newtripod.find(item => String(item.qq) === String(user_qq)));
+      const actionKey = `zhutianxiuxian1.0:${user_qq}:action10`;
+      const previousAction = await redis.get(actionKey);
+      try {
+        const result = await this.doForge(e, user_qq, 'perfect', { moonlightCost: true });
+        transaction.commit();
+        return result;
+      } catch (error) {
+        transaction.rollback();
+        // 锻炉共用一个文件，只回滚本人的炉，保留其他玩家已完成的开炉。
+        const tripods = await Read_tripod();
+        const index = tripods.findIndex(item => String(item.qq) === String(user_qq));
+        if (index >= 0) tripods[index] = tripodSnapshot;
+        else tripods.push(tripodSnapshot);
+        await Write_duanlu(tripods);
+        if (previousAction == null) await redis.del(actionKey);
+        else await redis.set(actionKey, previousAction);
+        throw error;
+      }
     }
     // 管理员无需条件；普通玩家需要[时光令]+[造化本源]
     if (!this.isMaster(e, user_qq)) {
@@ -1138,9 +1191,10 @@ export class duanzao extends plugin {
     const furnaceName = a.炉阶 || '凡铁炉';
     const furnace = await readthat(furnaceName, '炼器炉');
     const allFurnace = await readall('炼器炉');
+    const player = await data.getData('player', user_qq);
     const owned = [];
     for (const candidate of allFurnace) {
-      if (candidate.name === '凡铁炉' || candidate.name === furnaceName || Number(await exist_najie_thing(user_qq, candidate.name, '道具')) > 0) {
+      if (candidate.name === '凡铁炉' || candidate.name === furnaceName || (candidate.name === '月华仙炉' && getSuiyunStage(player) && player.岁云?.月华仙炉已领取) || Number(await exist_najie_thing(user_qq, candidate.name, '道具')) > 0) {
         owned.push(candidate.name);
       }
     }
@@ -1163,7 +1217,10 @@ export class duanzao extends plugin {
     if (!name) { e.reply(`请指定锻炉名，如 #安装锻炉 玄铁炉`); return false; }
     const furnace = await readthat(name, '炼器炉');
     if (!furnace) { e.reply(`没有名为【${name}】的锻炉`); return false; }
-    if (name !== '凡铁炉' && Number(await exist_najie_thing(user_qq, name, '道具')) < 1) {
+    const player = await data.getData('player', user_qq);
+    const moonFurnace = name === '月华仙炉' && getSuiyunStage(player) && player.岁云?.月华仙炉已领取;
+    if (name === '月华仙炉' && !moonFurnace) return e.reply('月华仙炉由岁云一脉炼器师传承，请先 #炼器师能力评测。');
+    if (name !== '凡铁炉' && !moonFurnace && Number(await exist_najie_thing(user_qq, name, '道具')) < 1) {
       e.reply(`你尚未拥有【${name}】，请先前往 #战功商店 兑换`);
       return false;
     }
@@ -1190,7 +1247,7 @@ export class duanzao extends plugin {
     const allFire = await readall('炼器火');
     const owned = ['凡火'];
     for (const candidate of allFire) {
-      if (candidate.name !== '凡火' && Number(await exist_najie_thing(user_qq, candidate.name, '道具')) > 0) {
+      if (candidate.name !== '凡火' && ((candidate.name === '大空火种' && getSuiyunStage(player) && player.岁云?.月华仙炉已领取) || Number(await exist_najie_thing(user_qq, candidate.name, '道具')) > 0)) {
         owned.push(candidate.name);
       }
     }
@@ -1220,11 +1277,12 @@ export class duanzao extends plugin {
     if (!name) { e.reply(`请指定火种名，如 #点燃炉火 灵火`); return false; }
     const fire = await readthat(name, '炼器火');
     if (!fire) { e.reply(`没有名为【${name}】的火种`); return false; }
-    if (name !== '凡火' && Number(await exist_najie_thing(user_qq, name, '道具')) < 1) {
+    const player = await data.getData('player', user_qq);
+    const moonFire = name === '大空火种' && getSuiyunStage(player) && player.岁云?.月华仙炉已领取;
+    if (name !== '凡火' && !moonFire && Number(await exist_najie_thing(user_qq, name, '道具')) < 1) {
       e.reply(`你尚未拥有【${name}】，可前往 #战功商店 搜寻兑换`);
       return false;
     }
-    const player = await data.getData('player', user_qq);
     player.炉火 = name;
     await Write_player(user_qq, player);
     e.reply(`已点燃炉火【${name}】（炼器提速 ${Math.round(fire.缩短比例 * 100)}%，开始炼制到最佳开炉时间更短）`);
