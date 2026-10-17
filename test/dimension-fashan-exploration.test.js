@@ -18,7 +18,7 @@ import { awardDungeonGongfaProficiency } from '../model/gongfaProficiency.js';
 import { getSuiyunDungeonEntryPlace, hasSuiyunFreeDungeonEntry } from '../model/suiyun.js';
 import { getMemoryEffects, getMemoryStage, recordMemoryDungeon } from '../model/memoryPath.js';
 
-const source = file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+const source = file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const copy = value => JSON.parse(JSON.stringify(value));
 const bodyKey = 'xiuxian:player:42:action';
 const proxyKey = fashan.getFashanActionKey('42');

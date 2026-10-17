@@ -15,7 +15,7 @@ import { writeJsonAtomically } from '../utils/atomicJson.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 import { runTaskOnce } from '../utils/taskGuard.js';
 
-const source = file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+const source = file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const copy = value => JSON.parse(JSON.stringify(value));
 const bodyKey = 'xiuxian:player:42:action';
 const proxyKey = fashan.getFashanActionKey('42');
