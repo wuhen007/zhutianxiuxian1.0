@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { plugin, verc, data, config } from '../../api/api.js';
+import { plugin, verc, data, config, puppeteer } from '../../api/api.js';
+import Show from '../../model/show.js';
 import {
   Add_najie_thing, ForwardMsg, Read_equipment, Read_najie, Read_player,
   Write_equipment, Write_najie, Write_player, __PATH, channel, existplayer,
-  invalidateBattleEquipmentCache, player_efficiency, zd_battle, foundthing, GetPower,
+  invalidateBattleEquipmentCache, player_efficiency, zd_battle, foundthing, GetPower, bigNumberTransform,
 } from '../../model/xiuxian.js';
 import {
   activateSuiyun, advanceSuiyun, applySuiyunTrialResult, ascendSuiyunPalace,
@@ -102,11 +103,13 @@ export class Suiyun extends plugin {
         { reg: '^#化霜入剑$', fnc: 'frostTrial' },
         { reg: '^#月之见证$', fnc: 'witnessTrial' },
         { reg: '^#月华炼化.*$', fnc: 'refine' },
+        { reg: '^#月华锁魂$', fnc: 'lockSoul' },
         { reg: '^#云月修炼$', fnc: 'cultivate' },
         { reg: '^#岁岁年年.*$', fnc: 'yearGift' },
         { reg: '^#刻舟求剑$', fnc: 'palaceExplore' },
         { reg: '^#朝花夕拾.*$', fnc: 'palaceAddiction' },
         { reg: '^#月华垂钓$', fnc: 'moonFishing' },
+        { reg: '^#(?:岁云剑宫商店|剑宫商店)$', fnc: 'showPalaceShop' },
         { reg: '^#云月之莲$', fnc: 'showLotus' },
         { reg: '^#赐予月华.*$', fnc: 'gift' },
         { reg: '^#岁云之力$', fnc: 'power' },
@@ -134,6 +137,35 @@ export class Suiyun extends plugin {
   async refreshAttributes(qq) {
     await Write_equipment(qq, await Read_equipment(qq));
     await player_efficiency(qq);
+  }
+
+  async showPalaceShop(e) {
+    const ctx = await this.context(e);
+    if (!ctx) return false;
+    const player = await Read_player(ctx.qq);
+    if (player.势力 !== SUIYUN_PALACE_FACTION) return e.reply('岁云剑宫宝库只向本宫宫主开放。');
+    const shop = Array.isArray(data.suiyunjianGongshangdian) ? data.suiyunjianGongshangdian : [];
+    const balance = Math.max(0, Number(player.源石) || 0);
+    const panel = {
+      nickname: player.名号 || ctx.qq,
+      position: player.势力职位 || SUIYUN_PALACE_POSITION,
+      balance: balance.toLocaleString('zh-CN'),
+      items: shop.map(item => ({
+        name: item.name, category: item.class, rarity: item.稀有度,
+        price: (Number(item.出售价) || 0).toLocaleString('zh-CN'),
+        affordable: balance >= (Number(item.出售价) || 0),
+      })),
+    };
+    try {
+      const view = await new Show(e).get_suiyunShopData({ panel });
+      const image = await puppeteer.screenshot('suiyun_shop', view);
+      if (image) return e.reply(image);
+    } catch (error) { console.error('[岁云剑宫商店] 图片生成失败:', error?.message); }
+    return e.reply([
+      `【岁云剑宫商店】宫主：${panel.nickname}｜源石：${panel.balance}`,
+      ...panel.items.map(item => `${item.name}（${item.category}）｜${item.price}源石`),
+      '用法：#剑宫兑换 物品名*数量，例如 #剑宫兑换 龙髓*1。',
+    ].join('\n'));
   }
 
   async yearGift(e) {
@@ -413,7 +445,7 @@ export class Suiyun extends plugin {
         `获得《月华炼天功》x1，请发送 #学习月华炼天功。`,
         `月华映照宗庭，你自动入主【${SUIYUN_PALACE_FACTION}】，位登【${SUIYUN_PALACE_POSITION}】；并得宫主帝经《${SUIYUN_PALACE_TECHNIQUE}》x1。`,
         '宫主权限：#剑宫兑换 物品名（岁云剑宫宝库）；#开启剑宫宝库（每日供奉）。',
-        world ? '小世界升华为【月华天宫】，每现实小时产出0.5点岁云之力与50点仙道潜力。' : '开辟小世界后将自动升华为月华天宫。',
+        world ? '小世界升华为【月华天宫】，每现实小时产出50点仙道潜力；岁云化身起另产0.1点岁云之力。' : '开辟小世界后将自动升华为月华天宫，岁云化身起每现实小时产0.1岁云之力。',
         '发送 #岁云之力 查看传承；依次完成 #引月入体、#化霜入剑、#月之见证 后，以 #岁云见证 晋升。',
       ].join('\n'));
     });
@@ -616,7 +648,7 @@ export class Suiyun extends plugin {
     try {
       const changed = ascendSuiyunPalace(world);
       const result = settleSuiyunPalace(player, world, { now: Date.now() });
-      if (changed || result.hours > 0) {
+      if (changed || result.changed) {
         await Write_player(qq, player);
         saveWorlds();
       }
@@ -648,7 +680,7 @@ export class Suiyun extends plugin {
       const effects = getSuiyunEffects(player);
       return e.reply([
         `【岁云之力】${getSuiyunPower(player).toFixed(2)}点`, this.status(player),
-        palace.hours > 0 ? `本次月华天宫结算${palace.hours}小时：岁云之力+${palace.power}、仙道潜力+${palace.potentialGain}。` : '',
+        palace.hours > 0 || palace.power > 0 ? `本次月华天宫结算：岁云之力+${palace.power}、仙道潜力+${palace.potentialGain}。` : '',
         frostGranted ? '已补领霜月三件套，使用原装备指令穿戴，齐套全属性10倍。' : '',
         petGranted ? `已补领【${SUIYUN_PET_NAME}】x1；#出战仙宠${SUIYUN_PET_NAME}。`
           : getSuiyunStage(player) >= SUIYUN_PET_STAGE ? `传承仙宠：${SUIYUN_PET_NAME}已领取；#出战仙宠${SUIYUN_PET_NAME}（战斗三维＋炼器成长${SUIYUN_PET_FORGING_GROWTH}）。`
@@ -663,9 +695,12 @@ export class Suiyun extends plugin {
         'PVP同境裁决：对手额外体系等效境界高于自己时，本场强制压到同境；PVE不生效，双方存档境界不变。',
         '#岁岁年年 祈愿 临字秘/九秘：指定九秘之一或随机一本；祈愿 真龙宝术/十凶宝术 可取十凶一族宝术；与原奖励共用一小时冷却。',
         '#月华救赎：100点月华恢复满生命本源，可对他人；目标被关押时200点即可从大牢捞人。',
+        '#月华锁魂：搜魂已镇压的天骄，必定成功；无需搜魂大法，不受神魂自爆反噬。',
+        '转职炼器师获月华仙炉与大空火种；#一键完美开炉 每次消耗10000点月华值。',
         '#月华垂钓：群内消耗3点岁云之力，必出鱼王并自动成为垂钓者；无需鱼钩或饵料。',
         '#朝花夕拾*1：沉迷岁云殿堂，每组10轮，可填1～12组，免入场资源消耗。',
-        '月华天宫每现实小时产出0.5点岁云之力与50点仙道潜力。月华值只用于月华救赎，不再兑换潜力。',
+        '月华天宫每现实小时产出50点仙道潜力；岁云化身及后续阶段另产0.1点岁云之力。#剑宫兑换 查看商店图片。',
+        '月华值只用于月华救赎，不再兑换潜力。',
         '#赐予月华 @目标：传授三项专属战技，全服限定三名；不带@查看名额。',
         `#岁云造物 物品名：霜月剑尊起开放，每次10点岁云之力造1件，稀有度不限，唯一归属规则保留。`,
         '#岁云更改（霜月剑尊起开放）时代 时代名：5点；#岁云更改 至宝线索：10点。',
@@ -758,6 +793,51 @@ export class Suiyun extends plugin {
   refineReward(player, options) { return refineSuiyun(player, options); }
   afterRefinement(qq, player) { return this.refreshLotusAttributes(qq, player); }
 
+  async lockSoul(e) {
+    const ctx = await this.context(e);
+    if (!ctx) return false;
+    return withPlayerMutationLock(ctx.qq, async () => {
+      const player = await Read_player(ctx.qq);
+      const error = this.holderError(player);
+      if (error) return e.reply(error);
+      const boss = new BOSS4();
+      const pending = await boss.readPendingEncounter(ctx.qq);
+      if (!pending || !['offered', 'execution', 'suiyun-settlement'].includes(pending.stage)) return e.reply('当前没有被你镇压、等待处置的天骄。');
+      if (pending.suiyunDisposition && pending.suiyunDisposition !== 'lock-soul') return e.reply('这份本源正在月华炼化结算，请继续 #月华炼化 天骄。');
+      if (pending.stage === 'suiyun-settlement' && !pending.suiyunDisposition) return e.reply('这份本源正在月华炼化结算，请继续 #月华炼化 天骄。');
+      if (!await boss.claimPendingEncounter(pending)) return e.reply('这份天骄本源正在结算，请稍候。');
+      try {
+        const target = data.weimiantianjiao_list.find(item => item.名号 === pending.tianjiaoName);
+        if (!target) return e.reply('该天骄已离开当前世界。');
+        pending.suiyunDisposition = 'lock-soul';
+        const death = await boss.finalizePendingTianjiaoDeath(e, pending, ctx.qq, true, { suiyun: true });
+        if (!death?.settlementId) return e.reply('该天骄本世已结束或死亡结算正被占用，请稍后再试。');
+        const latest = await Read_player(ctx.qq);
+        const claimKey = `suiyun:lock-soul:${pending.token}`;
+        let reward = '此前搜魂收益已入账，本次继续完成结算。';
+        if (!latest._rewardClaims?.[claimKey]) {
+          const learnable = [...new Set(target.学习的功法 || [])].filter(name => typeof name === 'string' && name && !latest.学习的功法?.includes(name));
+          if (learnable.length) {
+            const learned = learnable[Math.floor(Math.random() * learnable.length)];
+            latest.学习的功法 ||= [];
+            latest.学习的功法.push(learned);
+            reward = `搜得功法记忆：【${learned}】。`;
+          } else {
+            const gain = Math.max(1, Math.floor((Number(latest.元神上限) || 100) * .05));
+            latest.元神 = (Number(latest.元神) || 0) + gain;
+            reward = `其功法皆已掌握，炼得元神+${bigNumberTransform(gain)}。`;
+          }
+          latest._rewardClaims ||= {};
+          latest._rewardClaims[claimKey] = Date.now();
+          await Write_player(ctx.qq, latest);
+        }
+        await redis.del(boss.getPendingEncounterKey(ctx.qq));
+        await redis.set(`tianjiao:pending:resolved:${pending.token}`, 'suiyun-lock-soul', { EX: 24 * 3600 });
+        return e.reply(`【月华锁魂】已锁定${pending.tianjiaoName}本源，搜魂必定成功，未触发自爆反噬。\n${reward}\n其本世道身已灭，真灵坠入轮回。`);
+      } finally { await boss.releasePendingEncounterClaim(pending); }
+    });
+  }
+
   async refineTianjiao(e, qq) {
     return withPlayerMutationLock(qq, async () => {
       const player = await Read_player(qq);
@@ -767,11 +847,13 @@ export class Suiyun extends plugin {
       const pending = await boss.readPendingEncounter(qq);
       const { prefix, command, label } = this.refinementConfig();
       if (!pending || !['offered', 'execution', `${prefix}-settlement`].includes(pending.stage)) return e.reply('当前没有被你镇压、等待处置的天骄。');
+      if (pending.suiyunDisposition === 'lock-soul') return e.reply('这份本源已由月华锁魂锁定，请继续 #月华锁魂 完成搜魂。');
       if (!await boss.claimPendingEncounter(pending)) return e.reply('这份天骄本源正在结算，请稍候。');
       try {
         const target = data.weimiantianjiao_list.find(item => item.名号 === pending.tianjiaoName);
         if (!target) return e.reply('该天骄已离开当前世界。');
         const claimKey = `${prefix}:tianjiao:${pending.token}`;
+        if (prefix === 'suiyun') pending.suiyunDisposition = 'refine';
         const death = await boss.finalizePendingTianjiaoDeath(e, pending, qq, true, { suiyun: true, namespace: prefix });
         if (!death?.settlementId) return e.reply(`该天骄本世已结束或死亡结算正被占用，本次未获得${label}。`);
         // 死亡结算可能重建装备/属性，重新读取避免覆盖其持久化副作用。
@@ -823,10 +905,10 @@ export class Suiyun extends plugin {
   }
 
   refinementMessage(result, player) {
-    const base = result.message || `月华值+${result.gain}，当前${player.月华值}；生命本源+${result.lifeSourceGain || 0}，当前${player.生命本源}。`;
+    const base = result.message || `月华值+${bigNumberTransform(result.gain)}，当前${bigNumberTransform(player.月华值)}；生命本源+${bigNumberTransform(result.lifeSourceGain || 0)}，当前${bigNumberTransform(player.生命本源)}。`;
     const gains = result.resourceGains;
-    const cultivation = gains ? `\n修为+${gains.cultivation}｜血气+${gains.blood}｜元神+${gains.soul}｜仙道潜力+${gains.potential}；魔道值不变。` : '';
-    return `${base}${cultivation}\n云月之莲累计炼化月华：${getSuiyunLotusBonus(player).moonlight}点，成长随法宝装备生效。`;
+    const cultivation = gains ? `\n修为+${bigNumberTransform(gains.cultivation)}｜血气+${bigNumberTransform(gains.blood)}｜元神+${bigNumberTransform(gains.soul)}｜仙道潜力+${bigNumberTransform(gains.potential)}；魔道值不变。` : '';
+    return `${base}${cultivation}\n云月之莲累计炼化月华：${bigNumberTransform(getSuiyunLotusBonus(player).moonlight)}点，成长随法宝装备生效。`;
   }
 
   async refinePlayer(e, qq, targetQQ) {

@@ -63,6 +63,10 @@ export default class Game extends base {
       ...myData,
     };
   }
+  async get_suiyunShopData(myData) {
+    this.model = 'suiyun_shop';
+    return { ...this.screenData, saveId: 'suiyun_shop', ...myData };
+  }
   async get_player_pindao_Data(myData) {
     this.model = 'player_pindao';
     return {

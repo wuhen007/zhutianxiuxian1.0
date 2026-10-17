@@ -12,6 +12,9 @@ import { recordFactionJoin } from '../model/factionSystem.js';
 
 const source = fs.readFileSync(new URL('../apps/User/Suiyun.js', import.meta.url), 'utf8');
 const bossSource = fs.readFileSync(new URL('../apps/Boss/BOSS4.js', import.meta.url), 'utf8');
+const numberSource = fs.readFileSync(new URL('../model/xiuxian.js', import.meta.url), 'utf8');
+// 执行现有格式化函数，避免为消息验证装载机器人或复制一套数字转换规则。
+const bigNumberTransform = new Function(`return ${numberSource.match(/export (function bigNumberTransform[\s\S]*?\r?\n})/)[1]}`)();
 const copy = value => structuredClone(value);
 
 // 执行真实命令类并替换存档、消息和战斗 IO，不装载机器人、不读写真实玩家数据。
@@ -25,7 +28,7 @@ function fixture() {
   core.activateSuiyun(state.players.owner);
   const dependencies = {
     ...core, fs, path, withPlayerMutationLock, swapEquipmentState,
-    getLifeSourceRepairMaximum, recordFactionJoin,
+    getLifeSourceRepairMaximum, recordFactionJoin, bigNumberTransform,
     __PATH: { player_path: '/fixture/player', najie_path: '/fixture/najie', equipment_path: '/fixture/equipment' },
     FileRollbackTransaction: class {
       constructor() {
@@ -176,6 +179,42 @@ test('炼化真实灾厄消费凭证，与天魔炼化共用去重记录', async
   assert.equal(f.players.owner.月华值, firstGain);
 });
 
+test('灾厄月华炼化按原比例入账大数值，回复统一使用万亿兆京单位', async () => {
+  const f = fixture();
+  Object.assign(f.players.owner, {
+    修为: '100000000000000', 血气: '2e16', 元神: 3e18, 仙道潜力: 10.125,
+    月华值: 1e8, 魔道值: 7,
+  });
+  f.players.owner.岁云.累计炼化月华 = 2e8;
+  f.values.set('xiuxian:foreign-calamity:refine:owner', JSON.stringify({
+    entityId: 'large-refinement', name: '测试灾厄', lifeSource: 200,
+  }));
+  const reply = await f.app.refine(f.event('#月华炼化 灾厄'));
+  assert.match(reply, /修为\+2兆｜血气\+400兆｜元神\+3京｜仙道潜力\+3\.9；魔道值不变/);
+  assert.match(reply, /月华值\+\d+，当前1亿；生命本源\+3\.9，当前203\.9/);
+  assert.match(reply, /累计炼化月华：2亿点/);
+  assert.equal(f.players.owner.修为, 1.02e14);
+  assert.equal(f.players.owner.血气, 2.04e16);
+  assert.equal(f.players.owner.元神, 3.03e18);
+  assert.equal(f.players.owner.仙道潜力, 14.025);
+  assert.equal(f.players.owner.魔道值, 7);
+});
+
+test('月华炼化小数值及小数本源照常显示，超大收益沿用现有单位体系', () => {
+  const f = fixture();
+  const player = f.players.owner;
+  player.月华值 = 300;
+  player.生命本源 = 201.9;
+  player.岁云.累计炼化月华 = 300;
+  assert.equal(f.app.refinementMessage({ gain: 100, lifeSourceGain: 1.9 }, player),
+    '月华值+100，当前300；生命本源+1.9，当前201.9。\n云月之莲累计炼化月华：300点，成长随法宝装备生效。');
+  const reply = f.app.refinementMessage({
+    gain: 100, resourceGains: { cultivation: 1e44, blood: '1e32', soul: 1e24, potential: 1e4 },
+  }, player);
+  assert.match(reply, /修为\+1载｜血气\+1沟｜元神\+1秭｜仙道潜力\+1万/);
+  assert.doesNotMatch(reply, /NaN|Infinity|e\+\d+/);
+});
+
 test('灾厄月华写盘失败时保留原凭证供重试', async () => {
   const f = fixture();
   const key = 'xiuxian:foreign-calamity:refine:owner';
@@ -186,6 +225,69 @@ test('灾厄月华写盘失败时保留原凭证供重试', async () => {
   assert.ok(f.values.has(key));
   await f.app.refine(f.event('#月华炼化 灾厄'));
   assert.ok(f.players.owner.月华值 >= 100);
+});
+
+test('岁云五阶段自带月华锁魂，无搜魂功法和魔道值也必定获得天骄记忆', async () => {
+  for (let stage = 1; stage <= 5; stage++) {
+    const f = fixture();
+    const p = f.players.owner;
+    p.灵根 = core.createSuiyunRoot(stage);
+    p.学习的功法 = [];
+    p.元神 = 50;
+    f.data.weimiantianjiao_list[0].学习的功法 = ['测试天骄传承'];
+    f.values.set('tianjiao:pending:owner', JSON.stringify({
+      token: `lock-soul-${stage}`, stage: stage % 2 ? 'offered' : 'execution', tianjiaoName: '测试天骄', expiresAt: Date.now() + 300000,
+    }));
+    assert.ok(f.app.rule.some(rule => rule.fnc === 'lockSoul' && new RegExp(rule.reg).test('#月华锁魂')));
+    const reply = await f.app.lockSoul(f.event('#月华锁魂'));
+    assert.match(reply, /必定成功/);
+    assert.ok(f.players.owner.学习的功法.includes('测试天骄传承'));
+    assert.equal(f.players.owner.当前血量, 1000);
+    assert.equal(f.players.owner.元神, 50);
+    assert.equal(f.players.owner.魔道值, undefined);
+    assert.equal(f.players.owner.月华值, 0);
+    assert.equal(f.finalized, 1);
+    assert.equal(f.values.has('tianjiao:pending:owner'), false);
+  }
+});
+
+test('月华锁魂全学转元神；并发、死亡回执重放和玩家写失败都只入账一次', async () => {
+  const f = fixture();
+  f.players.owner.元神 = 0;
+  f.players.owner.元神上限 = 200;
+  const key = 'tianjiao:pending:owner';
+  const pending = JSON.stringify({ token: 'lock-soul-retry', stage: 'offered', tianjiaoName: '测试天骄', expiresAt: Date.now() + 300000 });
+  f.values.set(key, pending);
+  f.failWrite = true;
+  await assert.rejects(f.app.lockSoul(f.event('#月华锁魂')), /injected-write-error/);
+  assert.equal(f.players.owner.元神, 0);
+  assert.equal(JSON.parse(f.values.get(key)).suiyunDisposition, 'lock-soul');
+  assert.match(await f.app.refineTianjiao(f.event('#月华炼化 天骄'), 'owner'), /继续 #月华锁魂/);
+  await Promise.all([f.app.lockSoul(f.event('#月华锁魂')), f.app.lockSoul(f.event('#月华锁魂'))]);
+  assert.equal(f.players.owner.元神, 10);
+  assert.equal(f.finalized, 1);
+  f.values.set(key, pending);
+  await f.app.lockSoul(f.event('#月华锁魂'));
+  assert.equal(f.players.owner.元神, 10);
+  assert.equal(f.finalized, 1);
+});
+
+test('月华锁魂拒绝无凭证、非岁云、已死亡或旧轮回目标及正在炼化的本源', async () => {
+  for (const scenario of ['missing', 'ordinary', 'dead', 'reincarnated', 'refining', 'legacy-refining', 'avatar']) {
+    const f = fixture();
+    if (scenario !== 'missing') f.values.set('tianjiao:pending:owner', JSON.stringify({
+      token: 'invalid-soul', stage: scenario.includes('refining') ? 'suiyun-settlement' : 'offered',
+      suiyunDisposition: scenario === 'refining' ? 'refine' : undefined,
+      tianjiaoName: '测试天骄', tianjiaoLife: 0, expiresAt: Date.now() + 300000,
+    }));
+    if (scenario === 'ordinary') f.players.owner.灵根 = { name: '凡体' };
+    if (scenario === 'avatar') f.players.owner.诸天镜系统 = { 当前化身: '凡体' };
+    if (scenario === 'dead') f.values.set('tianjiao:global:revive:测试天骄', String(Date.now() + 300000));
+    if (scenario === 'reincarnated') f.data.weimiantianjiao_list[0].轮回世数 = 1;
+    await f.app.lockSoul(f.event('#月华锁魂'));
+    assert.equal(f.writes, 0, scenario);
+    assert.equal(f.finalized, 0, scenario);
+  }
 });
 
 test('天骄炼化消费既有求饶俘虏并走真实死亡结算，同令牌不重复获利', async () => {
@@ -349,7 +451,7 @@ test('灾厄来源和小世界的生产接线均覆盖岁云传承', () => {
   assert.match(foreign, /if \(evil \|\| suiyun(?: \|\| memory)?\)/);
   assert.match(world, /getSuiyunStage\(player\)\) ascendSuiyunPalace\(newWorld\)/);
   assert.match(world, /settleSuiyunPalace\(holder, world/);
-  assert.match(world, /superdimensionalRewards\.hours > 0 \|\| suiyunRewards\.hours > 0/);
+  assert.match(world, /superdimensionalRewards\.hours > 0 \|\| suiyunRewards\.hours > 0 \|\| suiyunRewards\.power > 0/);
 });
 
 test('最终奖励幂等，自动装备无上天阙枝并保留原至宝、重建属性', async () => {

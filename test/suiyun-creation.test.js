@@ -183,7 +183,7 @@ test('并发造物重新核验10点余额，只有一次成功且回复失败不
 });
 
 test('先结算天宫收益，后续造物中断不回滚已领取的小时产出', async t => {
-  const f = fixture(t, { 岁云之力: 9 });
+  const f = fixture(t, { 岁云之力: 9.8 });
   const anchor = Date.now() - 2 * core.SUIYUN_HOUR_MS;
   f.worlds.push({ player_qq: 'owner', 月华天宫: true, 月华天宫上次结算时间: anchor });
   f.failure = 'before-item';

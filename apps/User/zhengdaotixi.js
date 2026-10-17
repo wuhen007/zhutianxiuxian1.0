@@ -1,4 +1,5 @@
 import { getMemoryEffects } from '../../model/memoryPath.js';
+import { getSuiyunStage } from '../../model/suiyun.js';
 import { plugin, verc, config, data } from '../../api/api.js';
 import fs from 'fs';
 import path from 'path';
@@ -4933,6 +4934,9 @@ async reshapeLinggen(e) {
 
    return withPlayerMutationLock(targetQQ, async () => {
    const targetPlayer = await Read_player(targetQQ);
+   if (getSuiyunStage(targetPlayer) || getSuiyunStage({ 灵根: { name: linggenName } })) {
+     return e.reply('岁云系列灵根受唯一传承护持，仙帝重塑不覆盖现有岁云灵根，也不赋予任一岁云阶段。');
+   }
    const avatarName = getActiveZhutianAvatarName(targetPlayer);
    if (avatarName) {
      return e.reply(`目标当前正装载化身【${avatarName}】，请先让其发送 #装载化身 本源，再重塑灵根。`);

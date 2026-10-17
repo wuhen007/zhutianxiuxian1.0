@@ -50,7 +50,7 @@ test('仙古渡劫真实减伤逐阶结算，终阶保留圆神特殊异象', ()
     const result = handler.call({
       _applySpecial(_player, value, damage) { special = value; return damage; },
     }, player(name), 1000);
-    assert.ok(Math.abs(result.damage - [800, 700, 500, 400, 150][index]) < 1e-8);
+    assert.ok(Math.abs(result.damage - [800, 700, 500, 250, 150][index]) < 1e-8);
     assert.equal(special, index === 4 ? '圆环之理' : undefined);
   }
   assert.match(read('apps/User/zhetiandujie.js'), /reduction: suiyunEffects\.tribulationReduction/);

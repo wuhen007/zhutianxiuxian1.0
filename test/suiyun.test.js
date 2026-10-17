@@ -79,7 +79,7 @@ test('五阶被动精确对应需求，无关灵根没有被动', () => {
   for (let i = 0; i < 5; i++) {
     const effects = getSuiyunEffects({ 灵根: createSuiyunRoot(i + 1) });
     assert.equal(effects.enlightenmentBonus, [.2, .2, .2, .45, .45][i]);
-    assert.equal(effects.tribulationReduction, [.2, .3, .5, .6, .85][i]);
+    assert.equal(effects.tribulationReduction, [.2, .3, .5, .75, .85][i]);
     assert.equal(effects.lootMultiplier, [1, 5, 10, 10, 10][i]);
     assert.equal(effects.madoka, i === 4);
     assert.equal(effects.noDemonicValue, true);
@@ -137,15 +137,16 @@ test('月华不再兑换潜力，只按救赎扣减并保留透支保护，岁�
 
 test('月华天宫只结算已存在世界、保留不足一小时、重复读取无重复收益', () => {
   const p = player();
+  p.灵根 = createSuiyunRoot(4);
   assert.deepEqual(settleSuiyunPalace(p, null), { hours: 0, power: 0, potentialGain: 0 });
   const world = { world_name: '旧世界' };
   assert.equal(ascendSuiyunPalace(world, 0), true);
   assert.equal(ascendSuiyunPalace(world, 999), false);
   assert.equal(settleSuiyunPalace(p, world, { now: SUIYUN_HOUR_MS - 1 }).power, 0);
-  assert.equal(settleSuiyunPalace(p, world, { now: 2.5 * SUIYUN_HOUR_MS }).power, 1);
+  assert.equal(settleSuiyunPalace(p, world, { now: 2.5 * SUIYUN_HOUR_MS }).power, .2);
   assert.equal(settleSuiyunPalace(p, world, { now: 2.5 * SUIYUN_HOUR_MS }).power, 0);
-  assert.equal(settleSuiyunPalace(p, world, { now: 3 * SUIYUN_HOUR_MS }).power, .5);
-  assert.equal(p.岁云之力, 1.5);
+  assert.equal(settleSuiyunPalace(p, world, { now: 3 * SUIYUN_HOUR_MS }).power, .1);
+  assert.equal(p.岁云之力, .3);
 });
 
 test('唯一归属在同时间线互斥、至宝跨时间线互斥且可持久重读', t => {
@@ -217,6 +218,7 @@ test('天宫写入失败只回滚本世界，保留并发玩家已完成的小�
   const end = source.indexOf('\n  async power(', start);
   const worlds = ['a', 'b'].map(id => ({ player_qq: id, world_name: '月华天宫', 月华天宫: true, 月华天宫上次结算时间: 0 }));
   const players = { a: player(), b: player() };
+  for (const p of Object.values(players)) p.灵根 = createSuiyunRoot(4);
   let rejectA;
   let persistedWorlds;
   const deps = {
@@ -240,7 +242,7 @@ test('天宫写入失败只回滚本世界，保留并发玩家已完成的小�
   rejectA(new Error('write-interrupted'));
   await rejected;
   assert.equal(players.a.岁云之力, 0);
-  assert.equal(players.b.岁云之力, 1);
+  assert.equal(players.b.岁云之力, .2);
   assert.equal(persistedWorlds[0].月华天宫上次结算时间, 0);
   assert.equal(persistedWorlds[1].月华天宫上次结算时间, 2 * SUIYUN_HOUR_MS);
 });

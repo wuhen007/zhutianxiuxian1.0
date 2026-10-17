@@ -18,6 +18,8 @@ export const SUIYUN_PET_LEGACY_NAME = '霜月剑灵';
 export const SUIYUN_PET_FORGING_GROWTH = 0.4;
 export const SUIYUN_PET_STAGE = 3;
 export const SUIYUN_PALACE_POTENTIAL_PER_HOUR = 50;
+export const SUIYUN_PALACE_POWER_STAGE = 4;
+export const SUIYUN_PALACE_POWER_PER_HOUR = .1;
 export const SUIYUN_EXCLUSIVE_SKILLS = Object.freeze(['霜剑入月', '岁云归一', '白云苍狗']);
 export const SUIYUN_GIFT_LIMIT = 3;
 export const SUIYUN_PALACE_DUNGEON = '岁云殿堂';
@@ -45,7 +47,7 @@ export const SUIYUN_STAGES = Object.freeze([
   { name: '月华之体', realm: 0, realmName: '无', life: 200, cap: 600, enlightenmentBonus: .2, tribulationReduction: .2, lootMultiplier: 1, eff: 20, orb: 1.5, stats: 2 },
   { name: '月华似剑', realm: 10, realmName: '神火境', life: 600, cap: 1800, enlightenmentBonus: .2, tribulationReduction: .3, lootMultiplier: 5, eff: 100, orb: 3, stats: 10 },
   { name: '霜月剑尊', realm: 12, realmName: '天神境', life: 1800, cap: 5400, enlightenmentBonus: .2, tribulationReduction: .5, lootMultiplier: 10, eff: 300, orb: 10, stats: 50 },
-  { name: '岁云化身', realm: 16, realmName: '至尊境', life: 5400, cap: 15000, enlightenmentBonus: .45, tribulationReduction: .6, lootMultiplier: 10, eff: 3000, orb: 100, stats: 500 },
+  { name: '岁云化身', realm: 16, realmName: '至尊境', life: 5400, cap: 15000, enlightenmentBonus: .45, tribulationReduction: .75, lootMultiplier: 10, eff: 3000, orb: 100, stats: 500 },
   { name: '岁云剑尊', realm: 20, realmName: '准仙帝', life: 15000, cap: 15000, enlightenmentBonus: .45, tribulationReduction: .85, lootMultiplier: 10, eff: 30000, orb: 1000, stats: 5000 },
 ].map(Object.freeze));
 
@@ -173,7 +175,7 @@ export function activateSuiyun(player, { now = Date.now() } = {}) {
   return { ok: true, stage: 1, name: '月华之体', faction: SUIYUN_PALACE_FACTION, position: SUIYUN_PALACE_POSITION };
 }
 
-export function advanceSuiyun(player) {
+export function advanceSuiyun(player, { now = Date.now() } = {}) {
   const current = getSuiyunStage(player);
   if (!current) return fail('先消耗岁云的残念，唤醒月华之体。');
   if (current === 5) return fail('岁云剑尊已经圆满。');
@@ -188,6 +190,7 @@ export function advanceSuiyun(player) {
   player.灵根 = createSuiyunRoot(current + 1);
   state.炼化本源 = 0;
   player.生命本源 = next.life;
+  if (current + 1 === SUIYUN_PALACE_POWER_STAGE) state.岁云之力启用时间 = now;
   if (current + 1 >= 4) {
     player.岁云法则 = true;
     player.已领悟法则 = Array.isArray(player.已领悟法则) ? player.已领悟法则 : [];
@@ -340,18 +343,27 @@ export function ascendSuiyunPalace(world, now = Date.now()) {
 
 export function settleSuiyunPalace(player, world, { now = Date.now() } = {}) {
   if (!getSuiyunStage(player) || !world?.月华天宫) return { hours: 0, power: 0, potentialGain: 0 };
+  const previousPotentialTime = world.月华天宫上次结算时间;
+  const previousPowerTime = world.月华天宫岁云结算时间;
   if (world.月华天宫上次结算时间 == null || !Number.isFinite(Number(world.月华天宫上次结算时间))) {
     world.月华天宫上次结算时间 = now;
-    return { hours: 0, power: 0, potentialGain: 0 };
   }
   const last = Number(world.月华天宫上次结算时间);
   const hours = Math.floor(Math.max(0, now - last) / SUIYUN_HOUR_MS);
-  const power = hours * .5;
   const potentialGain = hours * SUIYUN_PALACE_POTENTIAL_PER_HOUR;
+  const powerEnabled = getSuiyunStage(player) >= SUIYUN_PALACE_POWER_STAGE;
+  const savedPowerTime = world.月华天宫岁云结算时间 == null ? last : finite(world.月华天宫岁云结算时间, last);
+  const unlockedAt = finite(player.岁云?.岁云之力启用时间, savedPowerTime);
+  const powerStart = Math.max(savedPowerTime, unlockedAt);
+  const powerHours = powerEnabled ? Math.floor(Math.max(0, now - powerStart) / SUIYUN_HOUR_MS) : 0;
+  const power = Math.round(powerHours * SUIYUN_PALACE_POWER_PER_HOUR * 1000) / 1000;
+  // 与潜力独立计时，前三阶停产期及晋升前时间不补发岁云之力。
+  world.月华天宫岁云结算时间 = powerEnabled ? powerStart + powerHours * SUIYUN_HOUR_MS : now;
   if (hours) {
-    player.岁云之力 = Math.round((getSuiyunPower(player) + power) * 1000) / 1000;
     player.仙道潜力 = positive(player.仙道潜力) + potentialGain;
     world.月华天宫上次结算时间 = last + hours * SUIYUN_HOUR_MS;
   }
-  return { hours, power, potentialGain };
+  if (power) player.岁云之力 = Math.round((getSuiyunPower(player) + power) * 1000) / 1000;
+  return { hours, power, potentialGain, powerHours,
+    changed: previousPotentialTime !== world.月华天宫上次结算时间 || previousPowerTime !== world.月华天宫岁云结算时间 };
 }

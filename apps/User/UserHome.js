@@ -7639,11 +7639,8 @@ async Buy_suiyunjianGong(e) {
     const shop = Array.isArray(data.suiyunjianGongshangdian) ? data.suiyunjianGongshangdian : [];
     const body = e.msg.replace('#剑宫兑换', '').trim();
     if (!body) {
-        return e.reply([
-            "【岁云剑宫宝库】",
-            ...shop.map(item => `${item.name}（${item.class}）｜${(Number(item.出售价) || 0).toLocaleString()}源石`),
-            "用法：#剑宫兑换 物品名[*数量]",
-        ].join("\n"));
+        const { Suiyun } = await import('./Suiyun.js');
+        return new Suiyun().showPalaceShop(e);
     }
 
     const code = body.split('*');
