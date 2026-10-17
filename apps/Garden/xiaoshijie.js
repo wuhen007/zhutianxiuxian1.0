@@ -2064,7 +2064,6 @@ async showEnvironmentHelp(e) {
       const transaction = new FileRollbackTransaction();
       transaction.capture(path.join(__PATH.player_path, `${player_qq}.json`));
       transaction.capture(path.join(__PATH.najie_path, `${player_qq}.json`));
-      transaction.capture(worldFile);
       try {
         const result = await this.harvestResourcesLocked(e, player_qq);
         transaction.commit();
@@ -2077,6 +2076,8 @@ async showEnvironmentHelp(e) {
           rollbackError = caught;
         }
         if (worldSnapshot) data.xiaoshijie[worldIndex] = worldSnapshot;
+        // 世界列表共用文件；失败仅恢复本人，避免抹掉其他玩家同期领取的岁云之力时钟。
+        fs.writeFileSync(worldFile, JSON.stringify(data.xiaoshijie, null, 2));
         if (rollbackError) throw new AggregateError([error, rollbackError], '小世界收获失败且回滚不完整');
         throw error;
       }
@@ -2121,7 +2122,7 @@ async showEnvironmentHelp(e) {
       try {
         const changed = ascendSuiyunPalace(world, now.getTime());
         const reward = settleSuiyunPalace(holder, world, { now: now.getTime() });
-        if (changed || reward.hours > 0) {
+        if (changed || reward.changed) {
           await Write_player(player_qq, holder);
           fs.writeFileSync(path.join(data.lib_path, '小世界列表.json'), JSON.stringify(data.xiaoshijie, null, 2));
         }
@@ -2136,9 +2137,9 @@ async showEnvironmentHelp(e) {
         throw error;
       }
     });
-    if (suiyunRewards.hours > 0) {
+    if (suiyunRewards.hours > 0 || suiyunRewards.power > 0) {
       superdimensionalLine = [superdimensionalLine,
-        `【月华天宫】${suiyunRewards.hours}现实小时：岁云之力+${suiyunRewards.power.toFixed(2)}、仙道潜力+${suiyunRewards.potentialGain}`,
+        `【月华天宫】岁云之力+${suiyunRewards.power.toFixed(2)}、仙道潜力+${suiyunRewards.potentialGain}`,
       ].filter(Boolean).join('\n');
     }
 
@@ -2484,7 +2485,7 @@ async showEnvironmentHelp(e) {
       `成功收获分身收集的资源：${resourceList}`,
       timeFlowInfo
     ];
-    if (superdimensionalRewards.hours > 0 || suiyunRewards.hours > 0) {
+    if (superdimensionalRewards.hours > 0 || suiyunRewards.hours > 0 || suiyunRewards.power > 0) {
       replyMsg.push(superdimensionalLine);
     }
     
