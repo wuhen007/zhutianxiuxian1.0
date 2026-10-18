@@ -8,6 +8,7 @@ export const SUIYUN_COMBAT = Object.freeze({
   defenseReduction: .5, reflectionRatio: 1,
   revives: 3, reviveMultiplier: 1.5,
   executionThreshold: .15,
+  evergreenSpeed: 200,
 });
 
 /** 岁云常青的杀伐延伸：讨伐天骄与诛仙四剑被动同级，单次至多斩落 40% 气血。 */
@@ -25,6 +26,11 @@ export function hasSuiyunEvergreen(unit) {
   return getSuiyunStage(unit) > 0 && !unit?._高境界镇杀 && !unit?._高境界压制
     && !unit?._tahua_type && !unit?._yiqihua_entity && !unit?._万灵魔幡主魂
     && !unit?._帝骑分身 && !unit?._圆神分身 && unit?.分身 !== true;
+}
+
+/** 基础遁速加成只参与本场计算，不回写速度字段，避免重复初始化或重算叠加。 */
+export function getSuiyunEvergreenSpeed(unit) {
+  return hasSuiyunEvergreen(unit) ? SUIYUN_COMBAT.evergreenSpeed : 0;
 }
 
 /**
@@ -53,7 +59,7 @@ export function getSuiyunHealingMultiplier(unit) {
 export function canExecuteCombatTarget(unit, messages, source = '斩杀') {
   if (!unit || !living(unit)) return false;
   if (hasSuiyunEvergreen(unit)) {
-    messages?.push(`【岁云常青】${label(unit)}免疫${source}的即死裁决。`);
+    messages?.push(`【岁云常青】青枝垂月，生机长明。${label(unit)}的真灵隐入月华，免疫${source}的即死裁决。`);
     return false;
   }
   return true;
@@ -73,7 +79,7 @@ export function executeSuiyunMoonTarget(unit, messages) {
   unit.不可复活 = true;
   unit._suiyunExecutionBlocked = true;
   unit.当前血量 = 0;
-  messages?.push(`【霜剑入月·斩月】${label(unit)}生命低于15%，直接斩杀并封禁复活。`);
+  messages?.push(`【霜剑入月·斩月】${label(unit)}生命低于15%，一线月芒截断残存生机——斩杀生效，并封禁复活。`);
   return true;
 }
 
@@ -100,7 +106,7 @@ export function tickSuiyunFrost(unit, turnToken) {
   if (unit._speed != null) unit._speed = scaled(unit._speed, multiplier, 1);
   return {
     active: true, hpLost: before - unit.当前血量, speedMultiplier: multiplier,
-    messages: [`【霜寒】${label(unit)}本回合当前生命、攻击、防御、速度各减少20%。`],
+    messages: [`【霜寒】月霜浸透${label(unit)}的气血与剑意，本回合当前生命、攻击、防御、速度各减少20%；寒意未散，霜痕仍随身。`],
   };
 }
 
@@ -126,7 +132,7 @@ export function reflectSuiyunDamage(defender, attacker, actualLost) {
   attacker.当前血量 = Math.max(0, value(attacker.当前血量) - damage);
   return {
     reflected: damage > 0, damage,
-    messages: damage > 0 ? [`【岁云归一】${label(defender)}归一护体，向${label(attacker)}反还${damage}点伤害。`] : [],
+    messages: damage > 0 ? [`【岁云归一】${label(defender)}身前岁云回卷，承来的杀机沿月光逆流，向${label(attacker)}反还${damage}点伤害。`] : [],
   };
 }
 
@@ -144,9 +150,14 @@ export function trySuiyunRevival(unit) {
   if (unit._speed != null) unit._speed = scaled(unit._speed, multiplier, 1);
   unit.当前血量 = unit.血量上限;
   unit.已死亡 = false;
+  const revivalScene = [
+    '白云散作月尘，破碎的身影在清辉中重聚。',
+    '沧海一息化桑田，旧身褪尽，新我踏月而归。',
+    '三度月圆，最后一线岁云托起不灭真灵。',
+  ][used];
   return {
     revived: true, speedMultiplier: multiplier, remaining: SUIYUN_COMBAT.revives - used - 1,
-    message: `【白云苍狗】${label(unit)}第${used + 1}/3次重归世间，攻、防、生命上限与速度提升50%，气血回满！`,
+    message: `【白云苍狗】${revivalScene}${label(unit)}第${used + 1}/3次重归世间，攻、防、生命上限与速度提升50%，气血回满！剩余复活${SUIYUN_COMBAT.revives - used - 1}次。`,
   };
 }
 
@@ -178,7 +189,15 @@ export function castSuiyunMoonSword(attacker, enemies, { applyDamage, revive, pu
     return actual;
   });
   result.active = true;
-  result.messages.push(`【霜剑入月】${label(attacker)}凝月成霜，对至多九名敌人各斩九剑，每剑25倍攻击且群攻不衰减！`);
+  const swordScene = [
+    '引动受赐月华，一缕清辉沿剑锋凝成寒霜',
+    '掌心托起一轮初月，薄霜沿剑锋悄然铺开',
+    '抬手摘下长夜月华，清辉尽化森白剑芒',
+    '身后九重霜月并起，剑意横压万里寒天',
+    '踏过流转岁云，满天月色一并落入剑锋',
+    '一剑映照岁月长河，万古月华随锋而落',
+  ][getSuiyunStage(attacker)];
+  result.messages.push(`【霜剑入月】${label(attacker)}${swordScene}，剑光笼罩${targets.length}名敌手。每名至多九剑，每剑25倍攻击，群攻不衰减、不可防御！`);
   for (const target of targets) {
     if (!living(attacker)) break;
     if (!living(target)) continue;
@@ -188,7 +207,7 @@ export function castSuiyunMoonSword(attacker, enemies, { applyDamage, revive, pu
     if (pushActionBar) pushActionBar(target, SUIYUN_COMBAT.pushback);
     else target._actionBar = Math.max(0, value(target._actionBar) - SUIYUN_COMBAT.pushback);
     result.targets++;
-    result.messages.push(`【霜寒绝控】${label(target)}下一次行动被封禁，行动条降低2500点，霜寒持续本场战斗。`);
+    result.messages.push(`【霜寒绝控】月霜沿${label(target)}周身凝结，下一次行动被封禁，行动条降低2500点；霜寒持续本场战斗。`);
     let damage = 0;
     let hits = 0;
     if (executeSuiyunMoonTarget(target, result.messages)) continue;
@@ -205,7 +224,7 @@ export function castSuiyunMoonSword(attacker, enemies, { applyDamage, revive, pu
     }
     result.totalDamage += damage;
     result.hits += hits;
-    result.messages.push(`霜剑击中${label(target)}${hits}次，实际伤害合计${damage}。`);
+    result.messages.push(`霜剑击中${label(target)}${hits}次，实际伤害合计${damage}。月光收束，剑痕未散。`);
   }
   return result;
 }

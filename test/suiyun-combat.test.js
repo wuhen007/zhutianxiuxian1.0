@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   SUIYUN_COMBAT, resetSuiyunCombat, tickSuiyunFrost, consumeSuiyunControl,
   castSuiyunMoonSword, reduceSuiyunDamage, reflectSuiyunDamage, trySuiyunRevival,
+  canExecuteCombatTarget, executeSuiyunMoonTarget,
 } from '../model/suiyunCombat.js';
 import { SUIYUN_STAGES } from '../model/suiyun.js';
 
@@ -48,6 +49,35 @@ test('单人敌方不虚构九个单位，死亡单位与自身不占群攻目�
   assert.equal(result.hits, 9);
   assert.equal(target.当前血量, 77500);
   assert.equal(castSuiyunMoonSword(enemy(), [target]).active, false);
+});
+
+test('五阶段霜剑各有出手意境，文案只报真实目标、命中与伤害，复生次数仍逐次准确', () => {
+  const openings = new Set();
+  for (const stage of SUIYUN_STAGES) {
+    const attacker = unit({ 名号: '月下剑修', 灵根: { name: stage.name } });
+    const result = castSuiyunMoonSword(attacker, [enemy()]);
+    openings.add(result.messages[0]);
+    assert.match(result.messages[0], /剑光笼罩1名敌手/);
+    assert.match(result.messages[0], /每剑25倍攻击.*不衰减.*不可防御/);
+    assert.ok(result.messages.includes('霜剑击中对手9次，实际伤害合计22500。月光收束，剑痕未散。'));
+    assert.match(result.messages[1], /下一次行动被封禁.*2500/);
+  }
+  assert.equal(openings.size, 5);
+  const unitToRevive = unit();
+  const revivals = new Set();
+  for (let used = 0; used < 3; used++) {
+    unitToRevive.当前血量 = 0;
+    const revival = trySuiyunRevival(unitToRevive);
+    assert.ok(revival.message.includes(`第${used + 1}/3次`));
+    assert.ok(revival.message.includes(`剩余复活${2 - used}次`));
+    revivals.add(revival.message.split('岁云第')[0]);
+  }
+  assert.equal(revivals.size, 3);
+  const messages = [];
+  assert.equal(canExecuteCombatTarget(unit(), messages, '测试斩杀'), false);
+  assert.match(messages[0], /青枝垂月.*免疫测试斩杀的即死裁决/);
+  assert.equal(executeSuiyunMoonTarget(enemy({ 当前血量: 1 }), messages), true);
+  assert.match(messages.at(-1), /生命低于15%.*斩杀生效.*封禁复活/);
 });
 
 test('绝控不消耗普通免控，半条推退每次施法一次而非九次', () => {

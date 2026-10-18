@@ -96,6 +96,13 @@ test('团本真实伤害入口岁云归一减伤50%，按实际掉血反弹而�
   assert.equal(player.攻击, 150);
 });
 
+test('独立团本行动条初始化也计岁云常青+200，原速度存档不回写', async () => {
+  const original = owner({ 速度: 1 });
+  const run = await runBattle(original, enemy({ 速度: 10000, 攻击: 1e10 }), { bossDamage: 1e12 });
+  assert.equal(original.速度, 1);
+  assert.equal(original._speed, undefined);
+  assert.equal(run.observed.players[0]._speed, (1 + 200) * 1.5 ** 3);
+});
 test('团本霜剑保留护盾与一次性免疫，不调用防御公式或防御技能', () => {
   const { applyRaidMoonHit } = loadRaid();
   const player = owner();

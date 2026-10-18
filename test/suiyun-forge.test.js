@@ -145,25 +145,38 @@ test('转职与已有职业入口实际调用发炉，初次转职无炉档也�
   assert.equal(measured.tripods[0].炉阶, '月华仙炉');
 });
 
-test('月华完美开炉执行真实炼制，扣费一次、保持累计成长且不消耗旧道具', async () => {
+test('月华完美开炉执行真实炼制，只扣1000月华一次、保持累计成长且不消耗旧道具', async () => {
   const f = fixture();
   await f.grant();
   await Promise.all([f.app.perfectOpen(f.event()), f.app.perfectOpen(f.event())]);
-  assert.equal(f.player.月华值, 10000);
+  assert.equal(f.player.月华值, 19000);
   assert.equal(f.player.岁云.累计炼化月华, 123);
   assert.equal(f.grants, 1);
   assert.deepEqual(f.tokens, { 时光令: 1, 造化本源: 1, 炼器师转职凭证: 1 });
   assert.equal(f.inventory[0].atk, 1.8); // 基础1 + 仙炉0.35 + 完美0.1 + 无五行0.35
   assert.equal(f.tripods[0].状态, 0);
   assert.deepEqual(f.tripods[0].材料, []);
-  assert.ok(f.replies.some(text => text.includes('消耗10000点月华值')));
+  assert.ok(f.replies.some(text => text.includes('消耗1000点月华值')));
+});
+
+test('岁云五阶段恰好1000月华可完美开炉，扣至0且不消耗道具', async () => {
+  for (let stage = 1; stage <= 5; stage++) {
+    const f = fixture(stage);
+    await f.grant();
+    f.player.月华值 = 1000;
+    await f.app.perfectOpen(f.event());
+    assert.equal(f.player.月华值, 0);
+    assert.equal(f.grants, 1);
+    assert.equal(f.tokens.时光令, 1);
+    assert.equal(f.tokens.造化本源, 1);
+  }
 });
 
 test('月华余额不足、空炉、非炼器师均不扣费，纳戒与经验写入失败回滚并保留他人锻炉', async () => {
   for (const scenario of ['poor', 'empty', 'wrong-job', 'grant', 'experience', 'locked-bag']) {
     const f = fixture();
     await f.grant();
-    if (scenario === 'poor') f.player.月华值 = 9999;
+    if (scenario === 'poor') f.player.月华值 = 999;
     if (scenario === 'empty') f.tripods[0].材料 = [];
     if (scenario === 'wrong-job') f.player.occupation = '炼丹师';
     if (scenario === 'grant') f.failGrant = true;
@@ -176,6 +189,7 @@ test('月华余额不足、空炉、非炼器师均不扣费，纳戒与经验�
     assert.deepEqual(f.player, before, scenario);
     assert.deepEqual(f.tripods[0], tripod, scenario);
     assert.equal(f.grants, 0, scenario);
+    if (scenario === 'poor') assert.match(f.replies.at(-1), /需要1000点月华值/);
     if (scenario === 'experience') assert.equal(f.tripods[1].qq, 'other');
   }
 });

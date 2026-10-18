@@ -6,7 +6,7 @@ import {
 import {
   castSuiyunMoonSword, consumeSuiyunControl, reduceSuiyunDamage,
   reflectSuiyunDamage, resetSuiyunCombat, tickSuiyunFrost, trySuiyunRevival,
-  clearSuiyunBattleRestrictions, canExecuteCombatTarget, executeSuiyunMoonTarget, getSuiyunHealingMultiplier,
+  clearSuiyunBattleRestrictions, canExecuteCombatTarget, executeSuiyunMoonTarget, getSuiyunHealingMultiplier, getSuiyunEvergreenSpeed,
 } from '../../model/suiyunCombat.js';
 import { multiplySuiyunLoot } from '../../model/suiyunLoot.js';
 import { plugin, config ,data} from '../../api/api.js';
@@ -97,7 +97,7 @@ function applyRaidSuiyunDamage(defender, attacker, rawDamage, messages) {
   const damage = reduceSuiyunDamage(defender, incoming);
   const lost = Math.min(before, damage);
   defender.当前血量 = Math.max(0, before - damage);
-  if (damage < incoming) messages.push(`【岁云归一】${defender.名号}化去${bigNumberTransform(incoming - damage)}点伤害。`);
+  if (damage < incoming) messages.push(`【岁云归一】${defender.名号}拂袖展开云月道环，来袭杀机没入岁云，化去${bigNumberTransform(incoming - damage)}点伤害。`);
   const reflected = reflectSuiyunDamage(defender, attacker, lost);
   messages.push(...(reflected.messages || []));
   if (defender._suiyunMoonHit) executeSuiyunMoonTarget(defender, messages);
@@ -111,13 +111,13 @@ function applyRaidMoonHit(defender, attacker, rawDamage, messages) {
   if (defender._荒无看破攻击 || defender.法力免疫) {
     defender._荒无看破攻击 = false;
     defender.法力免疫 = null;
-    messages.push(`${defender.名号}的一次性免疫抵消了一道霜剑。`);
+    messages.push(`月芒临身，${defender.名号}的一次性免疫随之碎散，抵消了一道霜剑。`);
     return 0;
   }
   const shield = Math.max(0, Number(defender.护盾值) || 0);
   const absorbed = Math.min(shield, rawDamage);
   defender.护盾值 = shield - absorbed;
-  if (absorbed > 0) messages.push(`${defender.名号}的护盾抵消${bigNumberTransform(absorbed)}点霜剑伤害。`);
+  if (absorbed > 0) messages.push(`霜剑斩入护盾，寒光四溅；${defender.名号}的护盾抵消${bigNumberTransform(absorbed)}点霜剑伤害。`);
   return applyRaidSuiyunDamage(defender, attacker, rawDamage - absorbed, messages);
 }
 
@@ -2607,7 +2607,7 @@ const addBattleLog = (...lines) => {
   for (const u of allUnits) {
     resetSuiyunCombat(u);
     resetMemoryCombat(u);
-    const baseSpeed = (u.速度 ?? 100) + (u.mijinglevel_id ?? 0) * 50 + (u.xiangulevel_id ?? 0) * 50
+    const baseSpeed = (u.速度 ?? 100) + getSuiyunEvergreenSpeed(u) + (u.mijinglevel_id ?? 0) * 50 + (u.xiangulevel_id ?? 0) * 50
       + Math.max(0, (u.huafenlevel_id ?? 1) - 1) * 50;
     initActionBar(u, { speed: baseSpeed });
   }
@@ -2883,7 +2883,7 @@ if (bossCopy.名号 === '帝尊') {
       activeUnit._actionBar -= ACTION_BAR_MAX;
 
       if (consumeSuiyunControl(activeUnit)) {
-        await addBattleLog(`【霜剑入月·绝对控制】${activeUnit.名号}被月霜封锁，本次行动中断。`);
+        await addBattleLog(`【霜剑入月·绝对控制】${activeUnit.名号}足下月影结霜，一念难动，本次行动中断。`);
         continue;
       }
 

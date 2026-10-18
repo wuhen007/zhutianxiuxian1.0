@@ -4,6 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { calculateEquippedStats, calculateEquipmentSetBonuses } from '../model/equipmentStats.js';
 import { getSuiyunLotusBonus } from '../model/suiyun.js';
+import { createDaoTreasureItem, isDaoTreasureItem } from '../model/daoTreasure.js';
 
 const copy = value => structuredClone(value);
 const statFields = ['攻击', '防御', '血量上限'];
@@ -38,7 +39,7 @@ function fixture(initialEquipment = equipment, initialRoot = root) {
       name: '', atk: 0, def: 0, HP: 0, bao: 0, 全属性: 0, ...copy(value[slot] || {}),
     }])),
     getInnateTreasureProjectionName: () => '', isInnateTreasureName: () => false,
-    isDaoTreasureItem: () => false, createOtherShoreDaoTreasureRuntime: () => null,
+    isDaoTreasureItem, createOtherShoreDaoTreasureRuntime: () => null,
     updateEquippedInnateTreasure() {}, ensureExtraCultivationState() {}, ensureFlowerPollenState() {},
     calculateExtraAttributeLimit: () => ({ total: 1e15 }),
     calculateXianguExtremeBonus: () => zero, calculateFlowerExtremeBonus: () => zero,
@@ -75,6 +76,24 @@ test('完整装备重算在所有乘区之后最终加算莲成长，不改器�
   f.player.月华值 = 0;
   await f.rebuild();
   for (const field of statFields) assert.equal(f.player[field], grown[field], '兑换可用余额不缩减已成长属性');
+});
+
+test('真实装备重算同步器名但保留大道真名、主权柄与全部属性，卸下后清理器名缓存', async () => {
+  const item = createDaoTreasureItem({ name: '诸天文明炉', ownerId: 'lotus-fixture', integrity: 100 });
+  const f = fixture({ ...equipment, 至宝: item });
+  await f.rebuild();
+  const before = copy(f.player);
+  f.player.大道主权柄 = '世界';
+  f.equipment.至宝.自定义名称 = '岁月青枝';
+  await f.rebuild();
+  assert.equal(f.player.当前大道至宝, '诸天文明炉');
+  assert.equal(f.player.大道至宝器名, '岁月青枝');
+  assert.equal(f.player.大道主权柄, '世界');
+  for (const field of statFields) assert.equal(f.player[field], before[field]);
+  f.equipment.至宝 = {};
+  await f.rebuild();
+  assert.equal(f.player.大道至宝器名, '');
+  assert.equal(f.player.当前大道至宝, '');
 });
 
 test('余额、未装备与其他灵根不提供莲成长，卸下之后重算移除增幅', async () => {

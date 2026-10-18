@@ -87,12 +87,21 @@ test('岁云全阶段免时代与因果绝灵，旧寿元压制解除且护身�
   assert.ok(computeJuelingErasure(inventory, 1000, { player: ordinary, random: () => 0 }).items.length > 0);
 });
 
-test('岁岁年年一小时精确边界、九大仙金与三类道具合法，非法选择不占冷却', () => {
+test('岁岁年年一小时精确边界、九大仙金与封灵符心神丹祈愿合法，移除悟道丹茶不占冷却', () => {
   const player = unit();
   assert.equal(core.receiveSuiyunYears(player, '不存在', { now: 0 }).ok, false);
-  assert.equal(core.receiveSuiyunYears(player, '悟道古茶', { now: 0 }).item.name, '悟道古茶叶');
+  for (const removed of ['大衍悟道丹', '悟道古茶', '悟道古茶叶', '祈愿 大衍悟道丹', '祈愿 悟道古茶']) {
+    assert.equal(core.receiveSuiyunYears(player, removed, { now: 0 }).ok, false);
+  }
+  assert.equal(player.岁云?.上次岁岁年年, undefined);
+  assert.deepEqual(core.receiveSuiyunYears(player, '祈愿 封灵符', { now: 0 }).item, { name: '普通封灵符', class: '道具' });
   assert.equal(core.receiveSuiyunYears(player, '潜力丹', { now: core.SUIYUN_HOUR_MS - 1 }).ok, false);
   assert.equal(core.receiveSuiyunYears(player, '潜力丹', { now: core.SUIYUN_HOUR_MS }).item.name, '潜力丹');
+  assert.deepEqual(core.receiveSuiyunYears(unit(), '祈愿 心神丹', { now: 0 }).item, { name: '心神丹', class: '丹药' });
+  const pool = new Set(Array.from({ length: core.SUIYUN_YEAR_REWARDS.length }, (_, index) =>
+    core.receiveSuiyunYears(unit(), '', { now: 0, random: () => index / core.SUIYUN_YEAR_REWARDS.length }).item.name));
+  assert.ok(pool.has('心神丹') && pool.has('普通封灵符'));
+  assert.ok(!pool.has('大衍悟道丹') && !pool.has('悟道古茶叶'));
   const metals = new Set(Array.from({ length: 9 }, (_, index) =>
     core.receiveSuiyunYears(unit(), '材料', { now: 0, random: () => index / 9 }).item.name));
   assert.equal(metals.size, 9);
@@ -116,13 +125,17 @@ test('岁岁年年真实指令并发只发一件，保存中断整批回滚冷�
   const transactionFrom = source.indexOf('function transactionFor('), transactionTo = source.indexOf('async function savePlayers(', transactionFrom);
   const method = new Function(...Object.keys(deps), `${source.slice(transactionFrom, transactionTo)};return ({${source.slice(from, to)}}).yearGift;`)(...Object.values(deps));
   const app = { context: async () => ({ qq: 'owner' }), holderError: () => '', yearGift: method };
-  const e = { msg: '#岁岁年年 潜力丹', reply: async message => message };
+  const e = { msg: '#岁岁年年 祈愿 封灵符', reply: async message => message };
   state.fail = true;
   await assert.rejects(app.yearGift(e), /write-failed/);
   assert.equal(state.items.length, 0);
   assert.equal(state.player.岁云?.上次岁岁年年, undefined);
   await Promise.all([app.yearGift(e), app.yearGift(e)]);
-  assert.deepEqual(state.items, [{ name: '潜力丹', category: '丹药', amount: 1 }]);
+  assert.deepEqual(state.items, [{ name: '普通封灵符', category: '道具', amount: 1 }]);
+  state.player.岁云.上次岁岁年年 = Date.now() - core.SUIYUN_HOUR_MS;
+  e.msg = '#岁岁年年 祈愿 心神丹';
+  await app.yearGift(e);
+  assert.deepEqual(state.items.at(-1), { name: '心神丹', category: '丹药', amount: 1 });
 });
 
 test('岁云殿堂实际入场允许低境界非仙界本人、阻止普通灵根与重复忙碌入场', async () => {

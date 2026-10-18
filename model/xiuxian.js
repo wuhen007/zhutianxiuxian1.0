@@ -40,7 +40,7 @@ import {
 import {
   castSuiyunMoonSword, consumeSuiyunControl, reduceSuiyunDamage,
   reflectSuiyunDamage, resetSuiyunCombat, tickSuiyunFrost, trySuiyunRevival,
-  clearSuiyunBattleRestrictions, canExecuteCombatTarget, executeSuiyunMoonTarget, getSuiyunHealingMultiplier,
+  clearSuiyunBattleRestrictions, canExecuteCombatTarget, executeSuiyunMoonTarget, getSuiyunHealingMultiplier, getSuiyunEvergreenSpeed,
 } from './suiyunCombat.js';
 
 // Final HP loss is shared by ordinary hits and unavoidable root techniques.
@@ -50,7 +50,7 @@ function applySuiyunBattleDamage(attacker, defender, damage, messages, { reflect
   const before = Math.max(0, Number(defender.当前血量) || 0);
   defender.当前血量 = Math.max(0, before - reduced);
   const lost = before - defender.当前血量;
-  if (reduced < damage) messages.push(`【岁云归一】${defender.名号}化去五成来袭伤害。`);
+  if (reduced < damage) messages.push(`【岁云归一】${defender.名号}拂袖展开云月道环，来袭杀机没入岁云，伤害削减50%。`);
   if (reflection && attacker && lost > 0) {
     const reflected = reflectSuiyunDamage(defender, attacker, lost);
     messages.push(...reflected.messages);
@@ -267,7 +267,7 @@ import {
   tickDecadeCombatState,
 } from './decadeCombat.js';
 import { getCompanionAttackAction } from './companionCombat.js';
-import { getGodDemonStealRule, getRealmAuthorityLevel } from './realmAuthority.js';
+import { getGodDemonStealRule, getRealmAuthorityLevel, rememberImmortalEmperorHistory } from './realmAuthority.js';
 import {
   getHighRealmBarrier,
   mergeHighRealmRaidResult,
@@ -1349,6 +1349,7 @@ export async function Write_player(usr_qq, player, options = {}) {
   }
   releaseJuelingLifespanForAuthority(player);
   syncSuiyunLuckyBonus(player);
+  rememberImmortalEmperorHistory(player, previousPlayer);
   writeJsonAtomically(dir, player);
   markZhutianMirrorSnapshot(player);
   if (heavenSlash) queueHeavenWillSlashNotice(usr_qq, heavenSlash, data, options.event);
@@ -1541,6 +1542,7 @@ export async function Write_equipment(usr_qq, equipment, previewPlayer = null) {
   const previousDaoTreasure = String(player.当前大道至宝 || '');
   player.当前先天至宝 = innateTreasureName;
   player.当前大道至宝 = daoTreasureEquipped ? equipment.至宝.name : '';
+  player.大道至宝器名 = daoTreasureEquipped ? equipment.至宝.自定义名称 || equipment.至宝.name : '';
   if (!daoTreasureEquipped
     || equipment.至宝?.永恒仙图本体
     || previousDaoTreasure !== String(player.当前大道至宝 || '')) {
@@ -4104,6 +4106,7 @@ export async function get_equipment_img(e) {
     player_nowHP: player.当前血量,
     pifu: Number(player.装备皮肤),
   };
+  player_data.daoTreasure = equipment.至宝;
   const data1 = await new Show(e).get_equipmnetData(player_data);
   return await puppeteer.screenshot('equipment', {
     ...data1,
@@ -10415,6 +10418,7 @@ let b玩家仙古加成 = B_player._忽略境界速度加成 ? 0 : B_player.xian
 
 // A 玩家速度文案
 let aSpeedMsg = `${A_player.名号} 遁光速度：${A_speed}`;
+if (getSuiyunEvergreenSpeed(A_player)) aSpeedMsg += '，岁云常青加成：200';
 if (a玩家秘境加成 > 0) {
   aSpeedMsg += `，秘境体系加成：${a玩家秘境加成}`;
 }
@@ -10425,6 +10429,7 @@ msg.push(aSpeedMsg);
 
 // B 玩家速度文案
 let bSpeedMsg = `${B_player.名号} 遁光速度：${B_speed}`;
+if (getSuiyunEvergreenSpeed(B_player)) bSpeedMsg += '，岁云常青加成：200';
 if (b玩家秘境加成 > 0) {
   bSpeedMsg += `，秘境体系加成：${b玩家秘境加成}`;
 }
@@ -10503,7 +10508,7 @@ msg.push(bSpeedMsg);
     resetActionBar(attackerBar);
 
     if (consumeSuiyunControl(attacker)) {
-      msg.push(`【霜剑入月·绝对封锁】${attacker.名号}本次行动被封锁，免控之力亦难挪移。`);
+      msg.push(`【霜剑入月·绝对封锁】月霜凝住${attacker.名号}的身与神，本次行动被封锁，免控之力亦难挪移。`);
       cnt++;
       continue;
     }
@@ -11455,6 +11460,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
   // 展示速度
   for (let p of allUnits) {
     let speedMsg = `${p.名号} 遁光速度：${p._speed}`;
+    if (getSuiyunEvergreenSpeed(p)) speedMsg += '，岁云常青加成：200';
     let mijing = p._忽略境界速度加成 ? 0 : (p.mijinglevel_id ?? 0) * 50;
     let xiangu = p._忽略境界速度加成 ? 0 : (p.xiangulevel_id ?? 0) * 50;
     let huafen = p._忽略境界速度加成 ? 0 : Math.max(0, (p.huafenlevel_id ?? 1) - 1) * 50;
@@ -12603,7 +12609,7 @@ async function zd_battle_team(A_team, B_team, options = {}) {
     const roundIndex = consumeBattleActionIndex(readyUnit);
 
     if (consumeSuiyunControl(readyUnit)) {
-      msg.push(`【霜剑入月·绝对封锁】${readyUnit.名号}本次行动被封锁，免控之力亦难挪移。`);
+      msg.push(`【霜剑入月·绝对封锁】月霜凝住${readyUnit.名号}的身与神，本次行动被封锁，免控之力亦难挪移。`);
       continue;
     }
 
@@ -12923,7 +12929,7 @@ export async function tb_battle(players, boss, team) {
       }
 
       if (consumeSuiyunControl(player)) {
-        msg.push(`【霜剑入月·绝对封锁】${player.名号}本回合行动被封锁。`);
+        msg.push(`【霜剑入月·绝对封锁】${player.名号}足下月影结霜，一念难动，本回合行动被封锁。`);
         continue;
       }
 
@@ -13005,7 +13011,7 @@ export async function tb_battle(players, boss, team) {
 
     if (!teamData.some(unit => unit.当前血量 > 0)) break;
     if (consumeSuiyunControl(bossCopy)) {
-      msg.push(`【霜剑入月·绝对封锁】${bossCopy.名号}本回合行动被封锁。`);
+      msg.push(`【霜剑入月·绝对封锁】${bossCopy.名号}足下月影结霜，一念难动，本回合行动被封锁。`);
       continue;
     }
     
@@ -15185,10 +15191,11 @@ export const ACTION_BAR_MAX = 5000;
 
 export function getBattleUnitSpeed(unit) {
   const base = Number((unit?._高境界压制 ? unit._高境界压制前速度 : unit?.速度) ?? 100) || 100;
+  const evergreen = getSuiyunEvergreenSpeed(unit);
   const realmMultiplier = unit?._高境界压制 ? 0.1 : 1;
-  if (unit?._忽略境界速度加成) return Math.max(1, Math.floor(base * getInnateSpeedMultiplier(unit) * realmMultiplier));
+  if (unit?._忽略境界速度加成) return Math.max(1, Math.floor((base + evergreen) * getInnateSpeedMultiplier(unit) * realmMultiplier));
   return Math.max(1, Math.floor(
-    (base
+    (base + evergreen
     + (Number(unit?.mijinglevel_id) || 0) * 50
     + (Number(unit?.xiangulevel_id) || 0) * 50
     + Math.max(0, (Number(unit?.huafenlevel_id) || 1) - 1) * 50)

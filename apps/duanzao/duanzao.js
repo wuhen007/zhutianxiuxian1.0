@@ -338,7 +338,7 @@ export class duanzao extends plugin {
       await Write_player(user_qq, latest);
       return true;
     })) {
-      e.reply('已获得【月华仙炉】并点燃【大空火种】；#一键完美开炉 每次消耗10000点月华值。');
+      e.reply('已获得【月华仙炉】并点燃【大空火种】；#一键完美开炉 每次消耗1000点月华值。');
       return false;
     }
     if (player.锻造天赋) {
@@ -772,7 +772,7 @@ export class duanzao extends plugin {
         };
 
         if (moonlightCost) {
-          if (!getSuiyunStage(player) || !spendMoonlight(player, 10000)) return e.reply('月华值不足，本次完美开炉需要10000点月华值。');
+          if (!getSuiyunStage(player) || !spendMoonlight(player, 1000)) return e.reply('月华值不足，本次完美开炉需要1000点月华值。');
           await Write_player(user_qq, player);
         }
         const granted = await Add_najie_thing(user_qq, zhuangbei, '装备', 1);
@@ -854,7 +854,7 @@ export class duanzao extends plugin {
         );
         const modeText = timeMode === 'perfect' ? '一键完美开炉' : timeMode === 'oneclick' ? '一键开炉' : '开炉';
         const extNote = [];
-        if (moonlightCost) extNote.push('月华仙炉消耗10000点月华值');
+        if (moonlightCost) extNote.push('月华仙炉消耗1000点月华值');
         if (fireName && fireRate > 0) extNote.push(`炉火【${fireName}】提速 ${Math.round(fireRate * 100)}%`);
         if (gongfaName) extNote.push(`功法【${gongfaName}】xishu+${gfXishu.toFixed(2)}`);
         const extStr = extNote.length ? '\n' + extNote.join('，') : '';
@@ -957,7 +957,7 @@ export class duanzao extends plugin {
       return false;
     }
     if (getSuiyunStage(player)) {
-      if (Number(player.月华值) < 10000 || !Number.isFinite(Number(player.月华值))) return e.reply('月华值不足，本次完美开炉需要10000点月华值。');
+      if (Number(player.月华值) < 1000 || !Number.isFinite(Number(player.月华值))) return e.reply('月华值不足，本次完美开炉需要1000点月华值。');
       const transaction = new FileRollbackTransaction();
       transaction.capture(path.join(__PATH.player_path, `${user_qq}.json`));
       transaction.capture(path.join(__PATH.najie_path, `${user_qq}.json`));

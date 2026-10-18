@@ -1471,7 +1471,7 @@ async showEnvironmentHelp(e) {
     
     const usr_qq = e.user_id;
     const player_qq = await channel(usr_qq);
-    
+    return withPlayerMutationLock(player_qq, async () => {
     // 获取玩家小世界
     const world = data.xiaoshijie.find(w => w.player_qq === player_qq);
     if (!world) {
@@ -1510,6 +1510,11 @@ async showEnvironmentHelp(e) {
         }
     }
     
+    // 升速前按原时间流速领取已有整小时，避免旧时段追套新等级倍率。
+    if (getSuiyunStage(player)) {
+      const { Suiyun } = await import('../User/Suiyun.js');
+      await new Suiyun().settlePalace(String(player_qq), player);
+    }
     // 扣除材料
     for (const [item, amount] of Object.entries(materials)) {
         await Add_najie_thing(player_qq, item, "材料", -amount);
@@ -1578,6 +1583,7 @@ async showEnvironmentHelp(e) {
     ].join("\n"));
     
     return true;
+    });
 }
   
   // 创建分身

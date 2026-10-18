@@ -16,10 +16,11 @@ export const SUIYUN_LOTUS_STAT_PER_MOONLIGHT = 200_000;
 export const SUIYUN_PET_NAME = '岁云剑灵';
 export const SUIYUN_PET_LEGACY_NAME = '霜月剑灵';
 export const SUIYUN_PET_FORGING_GROWTH = 0.4;
+export const SUIYUN_PET_ALCHEMY_GROWTH = 0.4;
 export const SUIYUN_PET_STAGE = 3;
 export const SUIYUN_PALACE_POTENTIAL_PER_HOUR = 50;
 export const SUIYUN_PALACE_POWER_STAGE = 4;
-export const SUIYUN_PALACE_POWER_PER_HOUR = .1;
+export const SUIYUN_PALACE_POWER_PER_HOUR = .5;
 export const SUIYUN_EXCLUSIVE_SKILLS = Object.freeze(['霜剑入月', '岁云归一', '白云苍狗']);
 export const SUIYUN_GIFT_LIMIT = 3;
 export const SUIYUN_PALACE_DUNGEON = '岁云殿堂';
@@ -39,8 +40,8 @@ export const SUIYUN_METALS = Object.freeze(['仙泪绿金', '凰血赤金', '龙
 export const SUIYUN_YEAR_REWARDS = Object.freeze([
   ...SUIYUN_METALS.map(name => Object.freeze({ name, class: '材料' })),
   Object.freeze({ name: '潜力丹', class: '丹药' }),
-  Object.freeze({ name: '大衍悟道丹', class: '丹药' }),
-  Object.freeze({ name: '悟道古茶叶', class: '道具' }),
+  Object.freeze({ name: '普通封灵符', class: '道具' }),
+  Object.freeze({ name: '心神丹', class: '丹药' }),
 ]);
 
 export const SUIYUN_STAGES = Object.freeze([
@@ -260,7 +261,7 @@ export function cultivateSuiyun(player, { now = Date.now(), random = Math.random
 /** 每小时领取一份；可指定类别或物品，不叠秘境掉落倍率。 */
 export function receiveSuiyunYears(player, selection = '', { now = Date.now(), random = Math.random } = {}) {
   if (!getSuiyunStage(player)) return fail('请先开启岁云月华传承。');
-  const name = String(selection || '').trim().replace(/^祈愿\s*/, '').replace(/^九大仙金材料$/, '材料').replace(/^悟道古茶$/, '悟道古茶叶');
+  const name = String(selection || '').trim().replace(/^祈愿\s*/, '').replace(/^九大仙金材料$/, '材料').replace(/^封灵符$/, '普通封灵符');
   const secrets = name === '九秘' ? SUIYUN_NINE_SECRETS : SUIYUN_NINE_SECRETS.includes(name) ? [name] : null;
   const tenXiong = name === '十凶宝术' || name === '十凶' ? SUIYUN_TEN_XIONG
     : SUIYUN_TEN_XIONG.includes(name) ? [name] : null;
@@ -268,7 +269,7 @@ export function receiveSuiyunYears(player, selection = '', { now = Date.now(), r
     : tenXiong ? tenXiong.map(name => ({ name, class: '功法' }))
     : name === '材料' || name === '仙金' ? SUIYUN_YEAR_REWARDS.slice(0, 9)
     : name ? SUIYUN_YEAR_REWARDS.filter(item => item.name === name) : SUIYUN_YEAR_REWARDS;
-  if (!pool.length) return fail('用法：#岁岁年年 [材料/潜力丹/大衍悟道丹/悟道古茶]，或 #岁岁年年 祈愿 九秘/十凶宝术/临字秘/真龙宝术等；不填时随机领取原奖池。');
+  if (!pool.length) return fail('用法：#岁岁年年 [材料/潜力丹/封灵符/心神丹]，或 #岁岁年年 祈愿 封灵符/心神丹/九秘/十凶宝术等；封灵符对应普通封灵符，不填时随机领取现行奖池。');
   const state = ensureSuiyunState(player);
   if (state.上次岁岁年年 != null && now < finite(state.上次岁岁年年) + SUIYUN_HOUR_MS) {
     return { ...fail('岁岁年年每现实小时可领取一次。'), retryAt: finite(state.上次岁岁年年) + SUIYUN_HOUR_MS };
@@ -287,11 +288,12 @@ export function refineSuiyun(player, { targetId, kind = '天骄', sourceLifeEsse
   if (state.炼化记录.includes(record)) return fail('这一份本源已经炼化。');
   const spec = SUIYUN_STAGES[getSuiyunStage(player) - 1];
   const gain = randomInteger(100, 300, random);
+  const lifeMaximumBefore = getSuiyunLifeMaximum(player);
   // 灾厄沿用天魔本源抽取与权重公式，但仍保留岁云五阶自己的本源上限。
   const rawLifeGain = kind === '灾厄'
     ? calculateCalamityLifeSourceGain(sourceLifeEssence, weight)
     : kind === '玩家' ? 0 : Math.max(1, Math.floor(positive(sourceLifeEssence) * .1));
-  const lifeGain = roundOrigin(Math.max(0, Math.min(spec.cap - getSuiyunLifeMaximum(player), rawLifeGain)));
+  const lifeGain = roundOrigin(Math.max(0, Math.min(spec.cap - lifeMaximumBefore, rawLifeGain)));
   const resourceGains = kind === '灾厄' ? getCalamityRefinementResourceGains(player) : null;
   state.炼化本源 = roundOrigin(state.炼化本源 + lifeGain);
   state.炼化记录.push(record);
@@ -305,9 +307,9 @@ export function refineSuiyun(player, { targetId, kind = '天骄', sourceLifeEsse
     player.修为 = positive(player.修为) + resourceGains.cultivation;
     player.血气 = positive(player.血气) + resourceGains.blood;
     player.元神 = positive(player.元神) + resourceGains.soul;
-    resourceGains.potential = actualLifeGain;
-    // 与本源实增精确等量，不叠命格/物品倍率，不触碰元神上限或魔道值。
-    player.仙道潜力 = roundOrigin(positive(player.仙道潜力) + actualLifeGain);
+    resourceGains.potential = roundOrigin(lifeMaximumBefore * .05);
+    // 按炼化前本源上限的5%独立发放，封顶仍有潜力收益；不叠物品倍率或灾厄权重。
+    player.仙道潜力 = roundOrigin(positive(player.仙道潜力) + resourceGains.potential);
   }
   return { ok: true, gain, moonlight: gain, lifeGain: actualLifeGain, lifeSourceGain: actualLifeGain, lifeMaximum: getSuiyunLifeMaximum(player), resourceGains };
 }
@@ -356,7 +358,10 @@ export function settleSuiyunPalace(player, world, { now = Date.now() } = {}) {
   const unlockedAt = finite(player.岁云?.岁云之力启用时间, savedPowerTime);
   const powerStart = Math.max(savedPowerTime, unlockedAt);
   const powerHours = powerEnabled ? Math.floor(Math.max(0, now - powerStart) / SUIYUN_HOUR_MS) : 0;
-  const power = Math.round(powerHours * SUIYUN_PALACE_POWER_PER_HOUR * 1000) / 1000;
+  const [outside, inside] = String(world.attributes?.时间流速 || '1:1').split(':').map(Number);
+  const ratio = inside / outside;
+  const timeMultiplier = outside > 0 && inside > 0 && Number.isFinite(ratio) ? ratio : 1;
+  const power = Math.round(powerHours * SUIYUN_PALACE_POWER_PER_HOUR * timeMultiplier * 1000) / 1000;
   // 与潜力独立计时，前三阶停产期及晋升前时间不补发岁云之力。
   world.月华天宫岁云结算时间 = powerEnabled ? powerStart + powerHours * SUIYUN_HOUR_MS : now;
   if (hours) {

@@ -3,7 +3,28 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { reduceSuiyunDamage, reflectSuiyunDamage } from '../model/suiyunCombat.js';
+import { reduceSuiyunDamage, reflectSuiyunDamage, getSuiyunEvergreenSpeed } from '../model/suiyunCombat.js';
+import { createSuiyunRoot } from '../model/suiyun.js';
+
+test('岁云常青五阶本人基础遁速固定+200，重复求值不叠加且不授予分身或受赐者', () => {
+  const source = readFileSync(new URL('../model/xiuxian.js', import.meta.url), 'utf8');
+  const fn = source.match(/export function getBattleUnitSpeed\([\s\S]*?\r?\n}/)[0].replace('export ', '');
+  const speed = new Function('getSuiyunEvergreenSpeed', 'getInnateSpeedMultiplier',
+    `${fn}; return getBattleUnitSpeed;`)(getSuiyunEvergreenSpeed, () => 1);
+  for (let stage = 1; stage <= 5; stage++) {
+    const unit = { 灵根: createSuiyunRoot(stage), 速度: 100, mijinglevel_id: 10, xiangulevel_id: 1 };
+    const original = structuredClone(unit);
+    assert.equal(speed(unit), 850);
+    assert.equal(speed(unit), 850);
+    assert.deepEqual(unit, original);
+    assert.equal(speed({ ...unit, _忽略境界速度加成: true }), 300);
+    for (const extra of [{ _tahua_type: 'mirror_self' }, { _yiqihua_entity: true }, { _万灵魔幡主魂: true },
+      { _帝骑分身: true }, { _圆神分身: true }, { 分身: true }, { _高境界镇杀: true }, { _高境界压制: true }]) {
+      assert.equal(getSuiyunEvergreenSpeed({ ...unit, ...extra }), 0);
+    }
+  }
+  assert.equal(getSuiyunEvergreenSpeed({ 灵根: { name: '凡体' }, 月华传承: { 技能: ['霜剑入月', '岁云归一', '白云苍狗'] } }), 0);
+});
 
 test('归一50%仅在实际扣血处应用一次，反伤排除过量伤害且不递归', () => {
   const source = readFileSync(new URL('../model/xiuxian.js', import.meta.url), 'utf8');
@@ -39,6 +60,7 @@ test('岁云三技在真实单挑、队战与旧团本执行且不污染输入�
     const wall = unit('高防御敌手', { 攻击: 1, 防御: 1e12, 速度: 1 });
     const originals = structuredClone([owner, wall]);
     const duel = await zd_battle(owner, wall, { maxRound: 1, preserveHpOnTimeout: true });
+    assert.ok(duel.msg.some(line => /月华持有者 遁光速度：5200.*岁云常青加成：200/.test(line)));
     assert.ok(duel.msg.some(line => /霜剑击中高防御敌手9次，实际伤害合计22500/.test(line)));
     assert.deepEqual([owner, wall], originals);
 
@@ -63,6 +85,7 @@ test('岁云三技在真实单挑、队战与旧团本执行且不污染输入�
     const enemies = Array.from({ length: 10 }, (_, i) => unit('群敌' + i, { 攻击: 1, 防御: 1e12, 速度: 1 }));
     const teamOriginal = structuredClone(enemies);
     const team = await zd_battle([owner], enemies);
+    assert.ok(team.msg.some(line => /月华持有者 遁光速度：5200.*岁云常青加成：200/.test(line)));
     const first = team.msg.findIndex(line => String(line).includes('【霜剑入月】'));
     const next = team.msg.findIndex((line, index) => index > first && String(line).includes('【霜剑入月】'));
     const initialCast = team.msg.slice(first, next < 0 ? undefined : next);
@@ -73,8 +96,8 @@ test('岁云三技在真实单挑、队战与旧团本执行且不污染输入�
     assert.deepEqual(enemies, teamOriginal);
 
     const controlOwner = unit('快速岁云', { ...owner, 速度: 500 });
-    const immune = unit('免控敌手', { 攻击: 1, 防御: 1e12, 当前血量: 1e8, 血量上限: 1e8, 速度: 499, _immune_control: 999 });
-    const controlled = await zd_battle(controlOwner, immune, { maxRound: 2, preserveHpOnTimeout: true });
+    const immune = unit('免控敌手', { 攻击: 1, 防御: 1e12, 当前血量: 1e8, 血量上限: 1e8, 速度: 699, _immune_control: 999 });
+    const controlled = await zd_battle(controlOwner, immune, { maxRound: 3, preserveHpOnTimeout: true });
     assert.ok(controlled.msg.some(line => String(line).includes('霜剑入月·绝对封锁')));
     assert.ok(controlled.msg.some(line => String(line).includes('【霜寒】')));
 

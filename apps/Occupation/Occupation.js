@@ -2745,7 +2745,7 @@ async shoulie_back(e) {
     if (player_occupation == occupation) {
       if (await grantSuiyunForge(usr_qq, player)) {
         await Write_player(usr_qq, player);
-        return e.reply('已补领【月华仙炉】并点燃【大空火种】；#一键完美开炉 每次消耗10000点月华值。');
+        return e.reply('已补领【月华仙炉】并点燃【大空火种】；#一键完美开炉 每次消耗1000点月华值。');
       }
       e.reply(`你当前已经是[${player_occupation}]`);
       return false;
@@ -2777,7 +2777,7 @@ async shoulie_back(e) {
       player.occupation_exp = 0;
       const furnaceGranted = await grantSuiyunForge(usr_qq, player);
       await Write_player(usr_qq, player);
-      e.reply(`恭喜${player.名号}转职为[${occupation}]${furnaceGranted ? '\n已获得【月华仙炉】与【大空火种】，每次10000点月华值可 #一键完美开炉。' : ''}`);
+      e.reply(`恭喜${player.名号}转职为[${occupation}]${furnaceGranted ? '\n已获得【月华仙炉】与【大空火种】，每次1000点月华值可 #一键完美开炉。' : ''}`);
       return false;
     }
     const occupations = saveOccupation(stored, snapshotOccupation(player));
@@ -2790,7 +2790,7 @@ async shoulie_back(e) {
     player.occupation_exp = 0;
     const furnaceGranted = await grantSuiyunForge(usr_qq, player);
     await Write_player(usr_qq, player);
-    e.reply(`恭喜${player.名号}转职为[${occupation}]，已拥有${occupations.length + 1}个职业${furnaceGranted ? '\n已获得【月华仙炉】与【大空火种】，每次10000点月华值可 #一键完美开炉。' : ''}`);
+    e.reply(`恭喜${player.名号}转职为[${occupation}]，已拥有${occupations.length + 1}个职业${furnaceGranted ? '\n已获得【月华仙炉】与【大空火种】，每次1000点月华值可 #一键完美开炉。' : ''}`);
     return false;
     });
   }

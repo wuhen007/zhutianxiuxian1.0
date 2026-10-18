@@ -17,22 +17,22 @@ const player = stage => ({
   岁云: {}, 岁云之力: 3, 仙道潜力: 100, 势力: core.SUIYUN_PALACE_FACTION, 势力职位: '宫主',
 });
 
-test('小世界前三阶只产50潜力，岁云化身起每现实小时另产0.1岁云之力，离线与世界流速不改变倍率', () => {
+test('小世界前三阶只产50潜力，岁云化身起每小时0.5岁云之力乘世界时间流速，潜力不翻倍', () => {
   for (let stage = 1; stage <= 5; stage++) {
     const p = player(stage), world = { world_name: '测试世界', attributes: { 时间流速: '1:1000' } };
     core.ascendSuiyunPalace(world, 0);
     const result = core.settleSuiyunPalace(p, world, { now: 2.5 * hour });
     assert.equal(result.hours, 2);
     assert.equal(result.potentialGain, 100);
-    assert.equal(result.power, stage >= 4 ? .2 : 0);
-    assert.equal(p.岁云之力, stage >= 4 ? 3.2 : 3);
+    assert.equal(result.power, stage >= 4 ? 1000 : 0);
+    assert.equal(p.岁云之力, stage >= 4 ? 1003 : 3);
     assert.equal(p.仙道潜力, 200);
     assert.equal(core.settleSuiyunPalace(p, world, { now: 2.5 * hour }).power, 0);
     assert.equal(p.仙道潜力, 200);
     const resumed = JSON.parse(JSON.stringify({ p, world }));
     const next = core.settleSuiyunPalace(resumed.p, resumed.world, { now: 3 * hour });
     assert.equal(next.potentialGain, 50);
-    assert.equal(next.power, stage >= 4 ? .1 : 0);
+    assert.equal(next.power, stage >= 4 ? 500 : 0);
   }
 });
 
@@ -49,20 +49,20 @@ test('晋升岁云化身从晋升时刻计岁云之力，两种产出错峰满�
   const firstPower = core.settleSuiyunPalace(p, world, { now: 3.5 * hour });
   assert.equal(firstPower.hours, 0);
   assert.equal(firstPower.powerHours, 1);
-  assert.equal(firstPower.power, .1);
+  assert.equal(firstPower.power, .5);
   assert.equal(firstPower.changed, true);
-  assert.equal(p.岁云之力, 3.1);
+  assert.equal(p.岁云之力, 3.5);
   assert.equal(core.settleSuiyunPalace(p, world, { now: 3.5 * hour }).changed, false);
-  assert.equal(core.settleSuiyunPalace(p, world, { now: 4.5 * hour }).power, .1);
+  assert.equal(core.settleSuiyunPalace(p, world, { now: 4.5 * hour }).power, .5);
 });
 
 test('已有高阶段旧档按原未结算小时使用新倍率，字符串时间规范为数值且不重发已有余额', () => {
   const p = player(5);
   const world = { 月华天宫: true, 月华天宫上次结算时间: String(hour), 月华天宫岁云结算时间: String(hour) };
   const first = core.settleSuiyunPalace(p, world, { now: 4 * hour });
-  assert.equal(first.power, .3);
+  assert.equal(first.power, 1.5);
   assert.equal(first.potentialGain, 150);
-  assert.equal(p.岁云之力, 3.3);
+  assert.equal(p.岁云之力, 4.5);
   assert.equal(typeof world.月华天宫岁云结算时间, 'number');
   assert.equal(core.settleSuiyunPalace(p, world, { now: 4 * hour }).power, 0);
 });
@@ -79,11 +79,55 @@ test('真实天宫结算方法保存潜力零小时但岁云之力满一小时�
   };
   const settle = new Function(...Object.keys(deps), `return ({${source.slice(from, to)}}).settlePalace;`)(...Object.values(deps));
   await settle(stored.id, clone(stored));
-  assert.equal(stored.岁云之力, 3.1);
+  assert.equal(stored.岁云之力, 3.5);
   assert.equal(stored.仙道潜力, 100);
   await settle(stored.id, clone(stored));
   assert.equal(writes, 1);
-  assert.equal(stored.岁云之力, 3.1);
+  assert.equal(stored.岁云之力, 3.5);
+});
+
+test('世界1到5级时间流速为1/2/3/4/8倍，非法时间流速回退1倍，余量不提前发放', () => {
+  for (const [flow, expected] of [['1:1', .5], ['1:2', 1], ['1:3', 1.5], ['1:4', 2], ['1:8', 4],
+    ['2:1', .25], ['bad', .5], ['0:8', .5], ['1:Infinity', .5], ['-1:8', .5]]) {
+    const p = player(4), world = { attributes: { 时间流速: flow } };
+    core.ascendSuiyunPalace(world, 0);
+    assert.equal(core.settleSuiyunPalace(p, world, { now: hour - 1 }).power, 0);
+    assert.equal(core.settleSuiyunPalace(p, world, { now: 1.5 * hour }).power, expected, flow);
+    assert.equal(core.settleSuiyunPalace(p, world, { now: 2 * hour }).power, expected, flow);
+    assert.equal(core.settleSuiyunPalace(p, world, { now: 2 * hour }).power, 0);
+  }
+});
+
+test('真实小世界升级先按原流速结清历史小时，之后才用新等级流速产岁云之力', async () => {
+  const source = read('apps/Garden/xiaoshijie.js');
+  const start = source.indexOf('  async upgradeSmallWorld('), end = source.indexOf('  // 创建分身', start);
+  const settingsFrom = source.indexOf('const WORLD_LEVELS ='), settingsEnd = source.indexOf('// 品级产出倍率', settingsFrom);
+  const world = { player_qq: 'owner', level: 1, 月华天宫: true, 月华天宫上次结算时间: 0,
+    月华天宫岁云结算时间: 0, attributes: { 时间流速: '1:1', 特殊资源: [] } };
+  const p = { ...player(4), level_id: 47 };
+  let oldFlow, saves = 0;
+  const deps = {
+    ...core, withPlayerMutationLock,
+    data: { xiaoshijie: [world], lib_path: '/fixture/world' },
+    channel: async id => id, Read_player: async () => p,
+    exist_najie_thing: async () => 100, Add_najie_thing: async () => {},
+    SPECIAL_RESOURCES: [], fs: { writeFileSync: () => { saves++; } },
+    loadSuiyun: async () => ({ Suiyun: class {
+      async settlePalace(_id, holder) {
+        oldFlow = world.attributes.时间流速;
+        core.settleSuiyunPalace(holder, world, { now: 2 * hour });
+      }
+    } }),
+  };
+  const method = new Function(...Object.keys(deps),
+    `${source.slice(settingsFrom, settingsEnd)}; return ({${source.slice(start, end).replace("await import('../User/Suiyun.js')", 'await loadSuiyun()')}}).upgradeSmallWorld;`)(...Object.values(deps));
+  await method({ user_id: 'owner', isGroup: true, reply: async () => {} });
+  assert.equal(oldFlow, '1:1');
+  assert.equal(p.岁云之力, 4); // 原余额3 + 原流速2小时×0.5
+  assert.equal(world.level, 2);
+  assert.equal(world.attributes.时间流速, '1:2');
+  assert.equal(core.settleSuiyunPalace(p, world, { now: 3 * hour }).power, 1);
+  assert.equal(saves, 1);
 });
 
 test('两名玩家交错收获时，失败者回滚不覆盖他人岁云之力结算时钟', async () => {

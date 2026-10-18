@@ -13,7 +13,7 @@ import {
   buildSuiyunTrialBattle, cultivateSuiyun, ensureSuiyunState,
   getSuiyunEffects, getSuiyunLifeMaximum, getSuiyunLotusBonus, getSuiyunPower, getSuiyunStage, refineSuiyun,
   settleSuiyunPalace, spendSuiyunPower, spendMoonlight, SUIYUN_PET_NAME, SUIYUN_PET_LEGACY_NAME,
-  SUIYUN_PET_STAGE, SUIYUN_PET_FORGING_GROWTH,
+  SUIYUN_PET_STAGE, SUIYUN_PET_FORGING_GROWTH, SUIYUN_PET_ALCHEMY_GROWTH,
   receiveSuiyunYears, SUIYUN_PALACE_DUNGEON,
   SUIYUN_FROST_EQUIPMENT, SUIYUN_PALACE_FACTION, SUIYUN_PALACE_POSITION, SUIYUN_PALACE_TECHNIQUE,
   SUIYUN_REDEEM_LIFE_COST, SUIYUN_REDEEM_RESCUE_COST,
@@ -445,56 +445,73 @@ export class Suiyun extends plugin {
         `获得《月华炼天功》x1，请发送 #学习月华炼天功。`,
         `月华映照宗庭，你自动入主【${SUIYUN_PALACE_FACTION}】，位登【${SUIYUN_PALACE_POSITION}】；并得宫主帝经《${SUIYUN_PALACE_TECHNIQUE}》x1。`,
         '宫主权限：#剑宫兑换 物品名（岁云剑宫宝库）；#开启剑宫宝库（每日供奉）。',
-        world ? '小世界升华为【月华天宫】，每现实小时产出50点仙道潜力；岁云化身起另产0.1点岁云之力。' : '开辟小世界后将自动升华为月华天宫，岁云化身起每现实小时产0.1岁云之力。',
+        world ? '小世界升华为【月华天宫】，每现实小时产出50点仙道潜力；岁云化身起另产0.5点岁云之力，岁云之力受小世界时间流速加成。' : '开辟小世界后将自动升华为月华天宫，岁云化身起每现实小时产0.5岁云之力×世界时间流速。',
         '发送 #岁云之力 查看传承；依次完成 #引月入体、#化霜入剑、#月之见证 后，以 #岁云见证 晋升。',
       ].join('\n'));
     });
   }
 
   /**
-   * 旧档剑灵改名与双能力补写：把「霜月剑灵」统一为【岁云剑灵】，并补齐炼器成长，
+   * 旧档剑灵改名与三能力补写：把「霜月剑灵」统一为【岁云剑灵】，并补齐炼器、炼丹，
    * 避免改名后被判定为未持有、重复发放第二只。
    */
   async migrateSuiyunPet(qq, najie, player, world) {
     let changed = false;
+    const worldSnapshot = world ? structuredClone(world) : null;
     const patch = pet => {
-      if (!pet || typeof pet !== 'object') return;
+      if (!pet || typeof pet !== 'object') return false;
+      let patched = false;
       if (pet.name === SUIYUN_PET_LEGACY_NAME) {
         pet.name = SUIYUN_PET_NAME;
-        changed = true;
+        patched = true;
       }
-      if (pet.name !== SUIYUN_PET_NAME) return;
-      if (pet.来源 === '岁云传承·霜月剑尊') { pet.来源 = '岁云传承·岁云剑宫'; changed = true; }
-      if (!Array.isArray(pet.附加能力) || !pet.附加能力.some(entry => entry?.type === '炼器')) {
-        pet.附加能力 = [{ type: '炼器', 成长值: SUIYUN_PET_FORGING_GROWTH }];
-        changed = true;
+      if (pet.name !== SUIYUN_PET_NAME) return false;
+      if (pet.来源 === '岁云传承·霜月剑尊') { pet.来源 = '岁云传承·岁云剑宫'; patched = true; }
+      for (const [type, growth] of [['炼器', SUIYUN_PET_FORGING_GROWTH], ['炼丹', SUIYUN_PET_ALCHEMY_GROWTH]]) {
+        if (!Array.isArray(pet.附加能力)) pet.附加能力 = [];
+        if (!pet.附加能力.some(entry => entry?.type === type)) {
+          pet.附加能力.push({ type, 成长值: growth });
+          patched = true;
+        }
       }
+      changed ||= patched;
+      return patched;
     };
     for (const pet of najie?.仙宠 || []) patch(pet);
     let worldChanged = false;
     for (const slot of world?.栖息地 || []) {
-      const before = changed;
-      patch(slot?.仙宠 || slot?.pet || slot);
-      if (changed !== before) worldChanged = true;
+      if (patch(slot?.仙宠 || slot?.pet || slot)) worldChanged = true;
     }
     patch(player?.仙宠);
     if (changed) {
-      if (await Write_najie(qq, najie) === false) throw new Error('纳戒当前被封锁，请解锁后再次发送 #岁云见证');
-      // 出战仙宠改名同样落盘，否则后续重读会把它当成未持有并二次发放。
-      await Write_player(qq, player);
-      if (worldChanged) saveWorlds();
+      const transaction = transactionFor([qq], true);
+      try {
+        if (await Write_najie(qq, najie) === false) throw new Error('纳戒当前被封锁，请解锁后再次发送 #岁云见证');
+        await Write_player(qq, player);
+        if (worldChanged) saveWorlds();
+        transaction.commit();
+      } catch (error) {
+        if (worldSnapshot) {
+          for (const key of Object.keys(world)) delete world[key];
+          Object.assign(world, worldSnapshot);
+        }
+        try { transaction.rollback(); }
+        finally { if (worldChanged) saveWorlds(); }
+        throw error;
+      }
     }
     return changed;
   }
 
   async grantStagePet(qq, player) {
-    if (getSuiyunStage(player) < SUIYUN_PET_STAGE || player.岁云?.仙宠已领取) return false;
+    if (getSuiyunStage(player) < SUIYUN_PET_STAGE) return false;
     const najie = await Read_najie(qq);
-    if (najie.时间线封锁?.locked) throw new Error('纳戒当前被封锁，请解锁后再次发送 #岁云见证 领取仙宠');
+    if (!player.岁云?.仙宠已领取 && najie.时间线封锁?.locked) throw new Error('纳戒当前被封锁，请解锁后再次发送 #岁云见证 领取仙宠');
     // 已有奖励在出战、纳戒或栖息地时只补领取标记，避免旧档补领产生第二只。
     const world = data.xiaoshijie.find(item => String(item.player_qq) === String(qq));
     const migrated = await this.migrateSuiyunPet(qq, najie, player, world);
     if (migrated) Object.assign(player, await Read_player(qq));
+    if (player.岁云?.仙宠已领取) return false;
     const alreadyPresent = player.仙宠?.name === SUIYUN_PET_NAME
       || najie.仙宠?.some(item => item.name === SUIYUN_PET_NAME && Number(item.数量) > 0)
       || world?.栖息地?.some(item => (item.仙宠?.name || item.pet?.name || item.name) === SUIYUN_PET_NAME);
@@ -683,23 +700,24 @@ export class Suiyun extends plugin {
         palace.hours > 0 || palace.power > 0 ? `本次月华天宫结算：岁云之力+${palace.power}、仙道潜力+${palace.potentialGain}。` : '',
         frostGranted ? '已补领霜月三件套，使用原装备指令穿戴，齐套全属性10倍。' : '',
         petGranted ? `已补领【${SUIYUN_PET_NAME}】x1；#出战仙宠${SUIYUN_PET_NAME}。`
-          : getSuiyunStage(player) >= SUIYUN_PET_STAGE ? `传承仙宠：${SUIYUN_PET_NAME}已领取；#出战仙宠${SUIYUN_PET_NAME}（战斗三维＋炼器成长${SUIYUN_PET_FORGING_GROWTH}）。`
-            : `晋升霜月剑尊时赠送仙宠【${SUIYUN_PET_NAME}】，兼具战斗与炼器成长。`,
+          : getSuiyunStage(player) >= SUIYUN_PET_STAGE ? `传承仙宠：${SUIYUN_PET_NAME}已领取；#出战仙宠${SUIYUN_PET_NAME}（战斗三维＋炼器成长${SUIYUN_PET_FORGING_GROWTH}＋炼丹成长${SUIYUN_PET_ALCHEMY_GROWTH}）。`
+            : `晋升霜月剑尊时赠送仙宠【${SUIYUN_PET_NAME}】，兼具战斗、炼器与炼丹能力。`,
         `云月之莲累计炼化：${lotus.moonlight}月华｜${lotus.active ? '成长已生效' : '装备后生效'}；#云月之莲 查看成长。`,
         `悟道加成${Math.round(effects.enlightenmentBonus * 100)}%｜渡劫减伤${Math.round(effects.tribulationReduction * 100)}%｜物品获取${effects.lootMultiplier}倍`,
         `灵根幸运+${Math.round(effects.luckBonus * 100)}%｜秘境通行：${effects.freeDungeonEntry ? '免入场资源消耗' : '霜月剑尊起免入场资源消耗'}`,
-        '自带战技：霜剑入月（至多9敌各9剑、每剑25倍、绝控霜寒，低于15%斩杀禁复活）；岁云归一（防御反伤）；白云苍狗（每战3次复活）；岁云常青（免疫即死、禁复活、禁疗，讨伐天骄单次至多斩落40%气血）；如月长存（渡劫濒死自保复活）。#战斗技能 查看详情。',
+        '自带战技：霜剑入月（至多9敌各9剑、每剑25倍、绝控霜寒，低于15%斩杀禁复活）；岁云归一（防御反伤）；白云苍狗（每战3次复活）；岁云常青（常驻基础速度+200，免疫即死、禁复活、禁疗，讨伐天骄单次至多斩落40%气血）；如月长存（渡劫濒死自保复活）。#战斗技能 查看详情。',
         `宫主权柄：#剑宫兑换 物品名（岁云剑宫宝库）、#开启剑宫宝库（每日一次供奉）；宫主帝经《${SUIYUN_PALACE_TECHNIQUE}》。`,
-        '全系列被动：免疫绝灵侵蚀与寿元压制。#岁岁年年 [材料/潜力丹/大衍悟道丹/悟道古茶]：每现实小时领取1件；#刻舟求剑：探索岁云殿堂。',
+        '全系列被动：免疫绝灵侵蚀与寿元压制。#岁岁年年 [材料/潜力丹/封灵符/心神丹]：每现实小时领取1件；封灵符默认为普通封灵符；#刻舟求剑：探索岁云殿堂。',
         '岁云剑尊齐套（岁云剑＋岁云袍＋云月之莲）：位面穿梭只耗修为与血气，不耗寿元、无需等待、不必先记坐标。',
         'PVP同境裁决：对手额外体系等效境界高于自己时，本场强制压到同境；PVE不生效，双方存档境界不变。',
         '#岁岁年年 祈愿 临字秘/九秘：指定九秘之一或随机一本；祈愿 真龙宝术/十凶宝术 可取十凶一族宝术；与原奖励共用一小时冷却。',
+        '#岁岁年年 祈愿 封灵符/心神丹：定向领取1件，与仙金、潜力丹和功法祈愿共用一小时冷却。',
         '#月华救赎：100点月华恢复满生命本源，可对他人；目标被关押时200点即可从大牢捞人。',
         '#月华锁魂：搜魂已镇压的天骄，必定成功；无需搜魂大法，不受神魂自爆反噬。',
-        '转职炼器师获月华仙炉与大空火种；#一键完美开炉 每次消耗10000点月华值。',
+        '转职炼器师获月华仙炉与大空火种；#一键完美开炉 每次消耗1000点月华值。',
         '#月华垂钓：群内消耗3点岁云之力，必出鱼王并自动成为垂钓者；无需鱼钩或饵料。',
         '#朝花夕拾*1：沉迷岁云殿堂，每组10轮，可填1～12组，免入场资源消耗。',
-        '月华天宫每现实小时产出50点仙道潜力；岁云化身及后续阶段另产0.1点岁云之力。#剑宫兑换 查看商店图片。',
+        '月华天宫每现实小时产出50点仙道潜力；岁云化身起另产0.5岁云之力×小世界时间流速（1:8时每小时4点）。#剑宫兑换 查看商店图片。',
         '月华值只用于月华救赎，不再兑换潜力。',
         '#赐予月华 @目标：传授三项专属战技，全服限定三名；不带@查看名额。',
         `#岁云造物 物品名：霜月剑尊起开放，每次10点岁云之力造1件，稀有度不限，唯一归属规则保留。`,

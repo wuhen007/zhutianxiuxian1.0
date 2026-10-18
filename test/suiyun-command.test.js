@@ -9,6 +9,7 @@ import { swapEquipmentState } from '../model/equipmentSwap.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 import { getLifeSourceRepairMaximum } from '../model/lifeSourceRepair.js';
 import { recordFactionJoin } from '../model/factionSystem.js';
+import { getPetAbilityBonus } from '../model/innateTreasure.js';
 
 const source = fs.readFileSync(new URL('../apps/User/Suiyun.js', import.meta.url), 'utf8');
 const bossSource = fs.readFileSync(new URL('../apps/Boss/BOSS4.js', import.meta.url), 'utf8');
@@ -190,13 +191,13 @@ test('灾厄月华炼化按原比例入账大数值，回复统一使用万亿�
     entityId: 'large-refinement', name: '测试灾厄', lifeSource: 200,
   }));
   const reply = await f.app.refine(f.event('#月华炼化 灾厄'));
-  assert.match(reply, /修为\+2兆｜血气\+400兆｜元神\+3京｜仙道潜力\+3\.9；魔道值不变/);
+  assert.match(reply, /修为\+2兆｜血气\+400兆｜元神\+3京｜仙道潜力\+10；魔道值不变/);
   assert.match(reply, /月华值\+\d+，当前1亿；生命本源\+3\.9，当前203\.9/);
   assert.match(reply, /累计炼化月华：2亿点/);
   assert.equal(f.players.owner.修为, 1.02e14);
   assert.equal(f.players.owner.血气, 2.04e16);
   assert.equal(f.players.owner.元神, 3.03e18);
-  assert.equal(f.players.owner.仙道潜力, 14.025);
+  assert.equal(f.players.owner.仙道潜力, 20.125);
   assert.equal(f.players.owner.魔道值, 7);
 });
 
@@ -225,6 +226,25 @@ test('灾厄月华写盘失败时保留原凭证供重试', async () => {
   assert.ok(f.values.has(key));
   await f.app.refine(f.event('#月华炼化 灾厄'));
   assert.ok(f.players.owner.月华值 >= 100);
+});
+
+test('岁云剑尊本源封顶仍得750潜力，写盘失败、并发炼化和重复凭证不多领', async () => {
+  const f = fixture();
+  Object.assign(f.players.owner, { 灵根: core.createSuiyunRoot(5), 生命本源: 15000, 仙道潜力: 10 });
+  const key = 'xiuxian:foreign-calamity:refine:owner';
+  const proof = JSON.stringify({ entityId: 'capped-potential', name: '测试灾厄', lifeSource: 100 });
+  f.values.set(key, proof);
+  f.failWrite = true;
+  await assert.rejects(f.app.refine(f.event('#月华炼化 灾厄')), /injected-write-error/);
+  assert.equal(f.players.owner.仙道潜力, 10);
+  assert.ok(f.values.has(key));
+  const replies = await Promise.all([f.app.refine(f.event('#月华炼化 灾厄')), f.app.refine(f.event('#月华炼化 灾厄'))]);
+  assert.equal(f.players.owner.仙道潜力, 760);
+  assert.equal(f.players.owner.生命本源, 15000);
+  assert.ok(replies.some(reply => reply.includes('仙道潜力+750')));
+  f.values.set(key, proof);
+  await f.app.refine(f.event('#月华炼化 灾厄'));
+  assert.equal(f.players.owner.仙道潜力, 760);
 });
 
 test('岁云五阶段自带月华锁魂，无搜魂功法和魔道值也必定获得天骄记忆', async () => {
@@ -573,4 +593,65 @@ test('云月之莲状态及岁云面板可补刷新，未装备仅显示已保�
   await f.app.power(f.event('#岁云之力'));
   assert.equal(f.equipmentWrites, 2);
   assert.equal(f.players.owner.岁云.累计炼化月华, 250);
+});
+
+test('已领取旧剑灵在纳戒、出战和栖息地均补齐炼丹，保留战斗炼器与其他附加能力且不再发宠', async () => {
+  const f = fixture();
+  f.players.owner.灵根 = core.createSuiyunRoot(3);
+  f.players.owner.岁云.仙宠已领取 = true;
+  const oldPet = { name: '岁云剑灵', type: '战斗', 加成: 5, 等级: 20, 数量: 1,
+    附加能力: [{ type: '炼器', 成长值: .4 }, { type: '幸运', 成长值: .1 }], 炼妖继承能力: { type: '修炼', 加成: .2 } };
+  f.inventories.owner.仙宠 = [copy(oldPet)];
+  f.players.owner.仙宠 = { ...copy(oldPet), name: '霜月剑灵' };
+  const world = { player_qq: 'owner', 栖息地: [{ 仙宠: copy(oldPet) }] };
+  f.data.xiaoshijie.push(world);
+  const originalMigration = f.app.migrateSuiyunPet;
+  // 迁移方法里的世界写入替换成内存回执，测试不触碰真实小世界存档。
+  const start = source.indexOf('  async migrateSuiyunPet('), end = source.indexOf('  async grantStagePet(', start);
+  const deps = { ...core, saveWorlds: () => { f.worldSaved = copy(world); },
+    transactionFor: () => ({ commit() {}, rollback() {} }),
+    Write_najie: async (_id, value) => { f.inventories.owner = copy(value); return true; },
+    Write_player: async (_id, value) => { f.players.owner = copy(value); } };
+  f.app.migrateSuiyunPet = new Function(...Object.keys(deps),
+    `return ({${source.slice(start, end)}}).migrateSuiyunPet;`)(...Object.values(deps));
+  await f.app.grantStagePet('owner', copy(f.players.owner));
+  for (const pet of [f.players.owner.仙宠, f.inventories.owner.仙宠[0], f.worldSaved.栖息地[0].仙宠]) {
+    assert.equal(pet.name, '岁云剑灵');
+    assert.equal(pet.等级, 20);
+    assert.equal(getPetAbilityBonus(pet, '战斗'), 5);
+    assert.equal(getPetAbilityBonus(pet, '炼器'), .4);
+    assert.equal(getPetAbilityBonus(pet, '炼丹'), .4);
+    assert.equal(getPetAbilityBonus(pet, '幸运'), .1);
+    assert.equal(getPetAbilityBonus(pet, '修炼'), .2);
+  }
+  await f.app.grantStagePet('owner', copy(f.players.owner));
+  assert.equal(f.inventories.owner.仙宠[0].附加能力.filter(item => item.type === '炼丹').length, 1);
+  assert.equal(f.grants, 0);
+  f.app.migrateSuiyunPet = originalMigration;
+});
+
+test('旧宠能力补齐中途失败回滚玩家、纳戒和当前世界，重试不吞掉栖息地迁移', async () => {
+  let stored = { 灵根: core.createSuiyunRoot(3), 岁云: { 仙宠已领取: true }, 仙宠: { name: '岁云剑灵' } };
+  let inventory = { 仙宠: [{ name: '岁云剑灵' }] };
+  const world = { player_qq: 'owner', 栖息地: [{ name: '岁云剑灵' }] };
+  let savedWorld = copy(world), fail = true;
+  const deps = {
+    ...core, saveWorlds: () => { savedWorld = copy(world); },
+    Write_najie: async (_id, value) => { inventory = copy(value); return true; },
+    Write_player: async (_id, value) => { stored = copy(value); if (fail) throw new Error('migration-write-failed'); },
+    transactionFor: () => {
+      const before = copy({ stored, inventory });
+      return { commit() {}, rollback() { stored = before.stored; inventory = before.inventory; } };
+    },
+  };
+  const start = source.indexOf('  async migrateSuiyunPet('), end = source.indexOf('  async grantStagePet(', start);
+  const method = new Function(...Object.keys(deps), `return ({${source.slice(start, end)}}).migrateSuiyunPet;`)(...Object.values(deps));
+  const before = copy({ stored, inventory, world });
+  await assert.rejects(method('owner', copy(inventory), copy(stored), world), /migration-write-failed/);
+  assert.deepEqual({ stored, inventory, world }, before);
+  fail = false;
+  await method('owner', copy(inventory), copy(stored), world);
+  assert.equal(getPetAbilityBonus(stored.仙宠, '炼丹'), .4);
+  assert.equal(getPetAbilityBonus(inventory.仙宠[0], '炼丹'), .4);
+  assert.equal(getPetAbilityBonus(savedWorld.栖息地[0], '炼丹'), .4);
 });

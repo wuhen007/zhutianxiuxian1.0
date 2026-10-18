@@ -115,6 +115,40 @@ test('炼化须学功法、真实目标ID防重复，奖励100到300，本源封
   assert.equal(p.生命本源, 15000);
 });
 
+test('灾厄与魔主潜力按炼化前本源上限5%发放，五阶封顶和受伤均保留收益且不乘权重', () => {
+  for (const [index, spec] of SUIYUN_STAGES.entries()) {
+    for (const capped of [false, true]) {
+      for (const weight of [.1, .5]) {
+        const p = player();
+        p.灵根 = createSuiyunRoot(index + 1);
+        p.岁云.炼化本源 = capped ? spec.cap - spec.life : 0;
+        const maximum = getSuiyunLifeMaximum(p);
+        p.生命本源 = maximum / 2;
+        p.仙道潜力 = 7.125;
+        p.魔道值 = 9;
+        const result = refineSuiyun(p, { targetId: 'potential', kind: '灾厄', sourceLifeEssence: 100, weight });
+        assert.equal(result.resourceGains.potential, maximum * .05, `${spec.name}/${capped}/${weight}`);
+        assert.equal(p.仙道潜力, 7.125 + maximum * .05);
+        assert.equal(p.魔道值, 9);
+        assert.equal(refineSuiyun(p, { targetId: 'potential', kind: '灾厄' }).ok, false);
+        assert.equal(p.仙道潜力, 7.125 + maximum * .05);
+      }
+    }
+  }
+  const growing = player();
+  growing.岁云.炼化本源 = 350;
+  growing.生命本源 = 550;
+  const result = refineSuiyun(growing, { targetId: 'before-growth', kind: '灾厄', sourceLifeEssence: 100000 });
+  assert.equal(growing.生命本源, 600);
+  assert.equal(result.resourceGains.potential, 27.5, '本次增长前上限550，不取本次增长后的600');
+  const ordinary = player();
+  ordinary.仙道潜力 = 1;
+  refineSuiyun(ordinary, { targetId: 'tianjiao', kind: '天骄' });
+  refineSuiyun(ordinary, { targetId: 'player', kind: '玩家' });
+  cultivateSuiyun(ordinary, { now: 0 });
+  assert.equal(ordinary.仙道潜力, 1, '新增百分比潜力仅适用于灾厄与魔主');
+});
+
 test('月华不再兑换潜力，只按救赎扣减并保留透支保护，岁云之力独立保留', () => {
   const p = player();
   p.月华值 = 300;
@@ -143,10 +177,10 @@ test('月华天宫只结算已存在世界、保留不足一小时、重复读�
   assert.equal(ascendSuiyunPalace(world, 0), true);
   assert.equal(ascendSuiyunPalace(world, 999), false);
   assert.equal(settleSuiyunPalace(p, world, { now: SUIYUN_HOUR_MS - 1 }).power, 0);
-  assert.equal(settleSuiyunPalace(p, world, { now: 2.5 * SUIYUN_HOUR_MS }).power, .2);
+  assert.equal(settleSuiyunPalace(p, world, { now: 2.5 * SUIYUN_HOUR_MS }).power, 1);
   assert.equal(settleSuiyunPalace(p, world, { now: 2.5 * SUIYUN_HOUR_MS }).power, 0);
-  assert.equal(settleSuiyunPalace(p, world, { now: 3 * SUIYUN_HOUR_MS }).power, .1);
-  assert.equal(p.岁云之力, .3);
+  assert.equal(settleSuiyunPalace(p, world, { now: 3 * SUIYUN_HOUR_MS }).power, .5);
+  assert.equal(p.岁云之力, 1.5);
 });
 
 test('唯一归属在同时间线互斥、至宝跨时间线互斥且可持久重读', t => {
@@ -242,7 +276,7 @@ test('天宫写入失败只回滚本世界，保留并发玩家已完成的小�
   rejectA(new Error('write-interrupted'));
   await rejected;
   assert.equal(players.a.岁云之力, 0);
-  assert.equal(players.b.岁云之力, .2);
+  assert.equal(players.b.岁云之力, 1);
   assert.equal(persistedWorlds[0].月华天宫上次结算时间, 0);
   assert.equal(persistedWorlds[1].月华天宫上次结算时间, 2 * SUIYUN_HOUR_MS);
 });
