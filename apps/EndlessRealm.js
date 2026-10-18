@@ -49,6 +49,7 @@ import {
   WEEKEND_FREE_FIELD,
   getWeekendFreeWeekKey,
   isWeekendNow,
+  hasSuiyunFreeEndlessEntry,
 } from '../model/endlessAccess.js';
 import {
   ENDLESS_TREASURE_UNLOCK_LAYER,
@@ -825,7 +826,7 @@ export class EndlessRealm extends plugin {
       status: '第一纪元 · 劫境已开启',
       heroStats: [
         { label: '远征人数', value: `1—${MAX_TEAM_SIZE}`, note: '支持单人或组队投影' },
-        { label: '入境代价', value: '秘钥 × 1', note: `基础心神 ${ENDLESS_SPIRIT_HEART_COST}｜周末免费一次` },
+        { label: '入境代价', value: '秘钥 × 1', note: `基础心神 ${ENDLESS_SPIRIT_HEART_COST}｜岁云五阶免秘钥心神` },
         { label: '天关循环', value: '10 层', note: '第5层精英 · 第10层Boss' },
         { label: '至宝解锁', value: `第${ENDLESS_TREASURE_UNLOCK_LAYER}关`, note: '每趟解锁一件随机至宝' },
       ],
@@ -844,7 +845,7 @@ export class EndlessRealm extends plugin {
             { command: '#创建无尽队伍', description: '在当前群建立一支远征队伍' },
             { command: '#加入无尽队伍 123456', description: '凭六位队伍编号加入同行者' },
             { command: '#无尽队伍', description: '查看成员、层数、命火与待选能力' },
-            { command: '#开启无尽劫境', description: '队长消耗全队秘钥与心神并开启远征' },
+            { command: '#开启无尽劫境', description: '普通成员消耗秘钥心神；岁云五阶免入场代价' },
             { command: '#离开无尽队伍', description: '离开尚未开启的远征队伍' },
             { command: '#解散无尽队伍', description: '由队长解散尚未开启的远征队伍' },
             { command: '#无尽网页', description: '打开无尽劫境网页面板' },
@@ -902,7 +903,7 @@ export class EndlessRealm extends plugin {
           title: '撤离与扫荡',
           items: [
             { command: '#退出无尽劫境', description: '由队长主动结算并保留全部所得' },
-            { command: '#扫荡无尽劫境', description: `消耗扫荡券、秘钥与${ENDLESS_SPIRIT_HEART_COST}心神` },
+            { command: '#扫荡无尽劫境', description: `消耗扫荡券；普通成员另需秘钥与${ENDLESS_SPIRIT_HEART_COST}心神，岁云免除后二项` },
             { command: '#无尽战斗模版1/2/3/4', description: '切换战斗图片的叙事风格' },
             { command: '#参悟无尽秘钥配方', description: '解锁无尽秘钥制作资格' },
           ],
@@ -946,7 +947,7 @@ export class EndlessRealm extends plugin {
           ]
         : [
             { tone: 'gold', title: formatEndlessDifficulty(team.difficultyTier), text: `本阶打穿${ENDLESS_TIER_MAX_LAYER}层后完成首通，并解锁下一难度。` },
-            { tone: 'jade', title: '入境准备', text: `每名成员需要【${ENDLESS_ENTRY_ITEM}】×1与基础心神${ENDLESS_SPIRIT_HEART_COST}点。` },
+            { tone: 'jade', title: '入境准备', text: `每名普通成员需要【${ENDLESS_ENTRY_ITEM}】×1与基础心神${ENDLESS_SPIRIT_HEART_COST}点；岁云五阶段本人免除两项入场代价。` },
           ],
       team: { id: team.id },
       members: this.panelMembers(team, run, userId),
@@ -1239,7 +1240,7 @@ export class EndlessRealm extends plugin {
     }
     const lines = [
         '【诸天无尽劫境·第一版】',
-        `1～${MAX_TEAM_SIZE}人组队，每名成员入场消耗【${ENDLESS_ENTRY_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点`,
+        `1～${MAX_TEAM_SIZE}人组队，普通成员入场消耗【${ENDLESS_ENTRY_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点；岁云五阶段本人免秘钥心神`,
         '每层击退怪潮后独立三选一；每5层精英，每10层位面Boss并开启劫后问道。',
         '他化自在法仅在Boss后的诸天垂青中以极低概率显化。',
         '',
@@ -1283,7 +1284,7 @@ export class EndlessRealm extends plugin {
         '#万象归一 武器/护具/法宝*百分比装备名',
         '',
         '主动撤离保留全部奖励；团灭保留已封存奖励和30%未封存奖励。',
-        `扫荡消耗【${ENDLESS_ENTRY_ITEM}】×1、【${ENDLESS_SWEEP_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点，结算最高层向前最多10层。`,
+        `扫荡消耗【${ENDLESS_SWEEP_ITEM}】×1；普通成员另需秘钥×1与心神${ENDLESS_SPIRIT_HEART_COST}点，岁云免除后二项，结算最高层向前最多10层。`,
       ];
     return this.replyEndlessPanel(e, this.helpPanelView(), lines);
   }
@@ -1637,11 +1638,12 @@ export class EndlessRealm extends plugin {
   async consumeCrossEndlessEntry(userId) {
     const player = await Read_player(userId);
     const original = structuredClone(player);
+    const suiyunFree = hasSuiyunFreeEndlessEntry(player);
     const freeWeekKey = getWeekendFreeWeekKey();
-    const freeAvailable = isWeekendNow() && player[WEEKEND_FREE_FIELD] !== freeWeekKey;
+    const freeAvailable = !suiyunFree && isWeekendNow() && player[WEEKEND_FREE_FIELD] !== freeWeekKey;
     let heartCost = 0;
     let keyDeducted = false;
-    if (!freeAvailable) {
+    if (!suiyunFree && !freeAvailable) {
       const amount = Number(await exist_najie_thing(userId, ENDLESS_ENTRY_ITEM, '道具')) || 0;
       if (amount < 1) return { ok: false, reason: `缺少【${ENDLESS_ENTRY_ITEM}】` };
       const heart = refreshSpiritHeart(player);
@@ -1654,7 +1656,7 @@ export class EndlessRealm extends plugin {
     }
     try {
       if (freeAvailable) player[WEEKEND_FREE_FIELD] = freeWeekKey;
-      else {
+      else if (!suiyunFree) {
         await Add_najie_thing(userId, ENDLESS_ENTRY_ITEM, '道具', -1);
         keyDeducted = true;
         const consumed = consumeSpiritHeart(player, heartCost);
@@ -1664,7 +1666,7 @@ export class EndlessRealm extends plugin {
       return {
         ok: true,
         player,
-        charge: { freeAvailable, freeWeekKey, heartCost, keyDeducted, refunded: false },
+        charge: { freeAvailable, freeWeekKey, heartCost, keyDeducted, suiyunFree, refunded: false },
       };
     } catch (error) {
       if (keyDeducted) await Add_najie_thing(userId, ENDLESS_ENTRY_ITEM, '道具', 1).catch(() => {});
@@ -1675,6 +1677,12 @@ export class EndlessRealm extends plugin {
 
   async refundCrossEndlessEntry(ledger) {
     if (!ledger?.charge || ledger.charge.refunded) return true;
+    if (ledger.charge.suiyunFree) {
+      ledger.charge.refunded = true;
+      ledger.status = 'left';
+      await this.writeCrossJson(this.crossRaidMemberKey(ledger.userId), ledger);
+      return true;
+    }
     const player = await Read_player(ledger.userId);
     refreshSpiritHeart(player);
     if (ledger.charge.freeAvailable && player[WEEKEND_FREE_FIELD] === ledger.charge.freeWeekKey)
@@ -2140,7 +2148,7 @@ export class EndlessRealm extends plugin {
           `成员：1/${MAX_TEAM_SIZE}`,
           `挑战难度：${formatEndlessDifficulty(team.difficultyTier)}`,
           `其他玩家发送 #加入无尽队伍 ${id}`,
-          `开局时每人消耗【${ENDLESS_ENTRY_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点`,
+          `开局时普通成员消耗【${ENDLESS_ENTRY_ITEM}】×1、心神${ENDLESS_SPIRIT_HEART_COST}点；岁云五阶段本人免除`,
         ].join('\n')
       );
     });
@@ -2423,10 +2431,11 @@ export class EndlessRealm extends plugin {
         if (!canEnterEndlessDifficulty(player, difficultyTier))
           missing.push(`${team.memberNames[id]}（尚未解锁${formatEndlessDifficulty(difficultyTier)}）`);
         // 周末免费入场：每周末一次，无需秘钥与心神
+        const suiyunFree = hasSuiyunFreeEndlessEntry(player);
         const freeAvailable =
-          weekendFree && player[WEEKEND_FREE_FIELD] !== freeWeekKey;
+          !suiyunFree && weekendFree && player[WEEKEND_FREE_FIELD] !== freeWeekKey;
         let heartCost = 0;
-        if (!freeAvailable) {
+        if (!suiyunFree && !freeAvailable) {
           const amount =
             Number(await exist_najie_thing(id, ENDLESS_ENTRY_ITEM, '道具')) || 0;
           if (amount < 1)
@@ -2442,7 +2451,7 @@ export class EndlessRealm extends plugin {
             );
           }
         }
-        players.push({ id, player, heartCost, freeAvailable });
+        players.push({ id, player, heartCost, freeAvailable, suiyunFree });
       }
       if (missing.length)
         return e.reply(['【无法开启无尽劫境】', ...missing].join('\n'));
@@ -2461,14 +2470,18 @@ export class EndlessRealm extends plugin {
       const deducted = [];
       const voucherActive = [];
       const freeMembers = [];
+      const suiyunFreeMembers = [];
       try {
         for (const entry of players) {
-          const { id, player, heartCost, freeAvailable, cross } = entry;
+          const { id, player, heartCost, freeAvailable, suiyunFree, cross } = entry;
           if (cross) continue;
-          if (freeAvailable) {
+          if (freeAvailable || suiyunFree) {
             // 周末免费：不扣秘钥与心神，仅标记本周额度已用
-            player[WEEKEND_FREE_FIELD] = freeWeekKey;
-            freeMembers.push(id);
+            if (suiyunFree) suiyunFreeMembers.push(id);
+            else {
+              player[WEEKEND_FREE_FIELD] = freeWeekKey;
+              freeMembers.push(id);
+            }
             if (Number(player.无尽劫境_他化自在体验) > 0) {
               voucherActive.push(id);
               player.无尽劫境_他化自在体验 = 0;
@@ -2546,7 +2559,9 @@ export class EndlessRealm extends plugin {
           '【诸天无尽劫境开启】',
           `挑战难度：${formatEndlessDifficulty(run.difficultyTier)}（共${ENDLESS_TIER_MAX_LAYER}层）`,
           `今日天象：${run.celestialPhenomenon.name}｜${run.celestialPhenomenon.description}`,
-          `全队消耗【${ENDLESS_ENTRY_ITEM}】×1、心神按各自命格结算`,
+          `普通成员每人消耗【${ENDLESS_ENTRY_ITEM}】×1、心神按命格结算；周末额度及岁云免票成员除外`,
+          ...(suiyunFreeMembers.length
+            ? [`【月华通行】${suiyunFreeMembers.map(id => team.memberNames[id] || id).join('、')}免秘钥、免心神，不占周末免费额度。`] : []),
           ...(freeMembers.length
             ? [
                 '',
@@ -3743,6 +3758,7 @@ export class EndlessRealm extends plugin {
 
     return this.withLock(e, `sweep:${userId}`, async () => {
       const player = await Read_player(userId);
+      const suiyunFree = hasSuiyunFreeEndlessEntry(player);
       const highestLayer = Math.max(
         0,
         Math.floor(Number(player.无尽劫境最高层) || 0)
@@ -3756,11 +3772,11 @@ export class EndlessRealm extends plugin {
       const ticketAmount = Number(
         await exist_najie_thing(userId, ENDLESS_SWEEP_ITEM, '道具')
       ) || 0;
-      const heart = refreshSpiritHeart(player);
+      const heart = suiyunFree ? { current: Number(player.心神) || 0, max: getSpiritHeartMax(player) } : refreshSpiritHeart(player);
       const minggeEffects = getMinggeEffects(player, data.minggeList);
-      const heartCost = getSpiritHeartCost(ENDLESS_SPIRIT_HEART_COST, minggeEffects);
+      const heartCost = suiyunFree ? 0 : getSpiritHeartCost(ENDLESS_SPIRIT_HEART_COST, minggeEffects);
       const missing = [];
-      if (keyAmount < 1) missing.push(`【${ENDLESS_ENTRY_ITEM}】×1`);
+      if (!suiyunFree && keyAmount < 1) missing.push(`【${ENDLESS_ENTRY_ITEM}】×1`);
       if (ticketAmount < 1) missing.push(`【${ENDLESS_SWEEP_ITEM}】×1`);
       if (heart.current < heartCost) {
         missing.push(
@@ -3776,11 +3792,13 @@ export class EndlessRealm extends plugin {
       let consumed;
       let sourceStoneGain = 0;
       try {
-        await Add_najie_thing(userId, ENDLESS_ENTRY_ITEM, '道具', -1);
-        deducted.push(ENDLESS_ENTRY_ITEM);
+        if (!suiyunFree) {
+          await Add_najie_thing(userId, ENDLESS_ENTRY_ITEM, '道具', -1);
+          deducted.push(ENDLESS_ENTRY_ITEM);
+        }
         await Add_najie_thing(userId, ENDLESS_SWEEP_ITEM, '道具', -1);
         deducted.push(ENDLESS_SWEEP_ITEM);
-        consumed = consumeSpiritHeart(
+        consumed = suiyunFree ? { ok: true, cost: 0 } : consumeSpiritHeart(
           player,
           ENDLESS_SPIRIT_HEART_COST,
           Date.now(),
@@ -3827,7 +3845,9 @@ export class EndlessRealm extends plugin {
         [
           '【无尽劫境扫荡完成】',
           `扫荡层数：第${reward.startLayer}～${reward.endLayer}层（共${reward.layers}层）`,
-          `消耗：【${ENDLESS_ENTRY_ITEM}】×1、【${ENDLESS_SWEEP_ITEM}】×1、心神${consumed.cost}点`,
+          suiyunFree
+            ? `【月华通行】免秘钥、免心神；本次仅消耗【${ENDLESS_SWEEP_ITEM}】×1`
+            : `消耗：【${ENDLESS_ENTRY_ITEM}】×1、【${ENDLESS_SWEEP_ITEM}】×1、心神${consumed.cost}点`,
           `修为：+${this.formatAmount(reward.cultivation)}`,
           `血气：+${this.formatAmount(reward.blood)}`,
           `灵石：+${this.formatAmount(reward.lingshi)}`,
@@ -4079,6 +4099,7 @@ export class EndlessRealm extends plugin {
     const userId = await this.checkPlayer(e);
     if (!userId) return false;
     const player = await Read_player(userId);
+    if (hasSuiyunFreeEndlessEntry(player)) return e.reply('【月华通行】岁云五阶段进入无尽劫境免秘钥、免心神，不占周末免费额度；扫荡仍需无尽扫荡券。');
     const today = new Date();
     const isWeekend = isWeekendNow(today);
     const weekKey = getWeekendFreeWeekKey(today);

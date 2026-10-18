@@ -7,6 +7,7 @@ import { hasRealmAuthority } from '../model/realmAuthority.js';
 import { isTimeRiverLocation, PLACE_LOCATION_MAP } from '../model/weimianTravel.js';
 import * as fashan from '../model/fashanProxy.js';
 import { TIME_RIVER_PHASE_DURATION_MS } from '../model/timeRiverAdversary.js';
+import { hasSuiyunFreeEndlessEntry } from '../model/endlessAccess.js';
 
 const read = file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 const copy = value => structuredClone(value);
@@ -132,7 +133,7 @@ function endlessFixture() {
   const f = { players, failRun: false, failPlayer: false, savedRun: null, charges: [] };
   const team = { id: '123', leader: 'owner', members: ['owner', 'other'], memberNames: { owner: 'owner', other: 'other' }, status: 'lobby' };
   const deps = {
-    recordMemoryDungeon, data: { minggeList: [] }, existplayer: async id => players.has(id),
+    recordMemoryDungeon, hasSuiyunFreeEndlessEntry, data: { minggeList: [] }, existplayer: async id => players.has(id),
     Read_player: async id => copy(players.get(id)),
     Write_player: async (id, player) => { if (f.failPlayer) { f.failPlayer = false; throw new Error('write-failed'); } players.set(id, copy(player)); },
     normalizeEndlessDifficultyTier: () => 1, isWeekendNow: () => false, getWeekendFreeWeekKey: () => 'week',

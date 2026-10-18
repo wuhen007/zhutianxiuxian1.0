@@ -1,3 +1,5 @@
+import { getSuiyunStage } from './suiyun.js';
+
 export const ENDLESS_ENTRY_ITEM = '无尽秘钥';
 export const ENDLESS_SWEEP_ITEM = '无尽扫荡券';
 export const ENDLESS_KEY_RECIPE_ITEM = '无尽秘钥配方';
@@ -6,6 +8,11 @@ export const ENDLESS_SPIRIT_HEART_COST = 30;
 export const ENDLESS_SWEEP_MAX_LAYERS = 10;
 /** 周末免费入场标记字段：记录已使用免费额度的周末周键 */
 export const WEEKEND_FREE_FIELD = '无尽劫境免费周';
+
+/** 岁云五阶本人免秘钥与心神，受赐三战技不获得该入境特权。 */
+export function hasSuiyunFreeEndlessEntry(player) {
+  return getSuiyunStage(player) > 0;
+}
 
 /**
  * 判断当前是否为周末（周六/周日）。
