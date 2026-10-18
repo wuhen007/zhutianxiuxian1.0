@@ -16,6 +16,7 @@ import {
 import { mergeBattleSkillLists } from './battleSkillRegistry.js';
 import { assertTrialWriteCurrent } from './trialUniverse.js';
 import { assertSwordMagicWriteCurrent } from './swordMagic.js';
+import { rememberImmortalEmperorHistory } from './realmAuthority.js';
 
 /*
   数据封装
@@ -678,6 +679,7 @@ this.gongfa_list = JSON.parse(
         if (previousPlayer.试炼宇宙) assertTrialWriteCurrent(previousPlayer, data);
         assertZhutianMirrorWriteCurrent(previousPlayer, data);
         assertZhutianAvatarRootWriteAllowed(previousPlayer, data);
+        rememberImmortalEmperorHistory(data, previousPlayer);
       }
       writeJsonAtomically(dir, data);
     }
