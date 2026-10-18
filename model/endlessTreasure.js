@@ -1,4 +1,5 @@
 import { getEndlessDifficulty } from './endlessDifficulty.js';
+import { getSuiyunStage } from './suiyun.js';
 
 /**
  * 无尽至宝系统
@@ -21,6 +22,24 @@ export const ENDLESS_TREASURE_EFFECT_RATE = 0.5;
 export const ENDLESS_TREASURE_EFFECT_PER_LEVEL = 0.15;
 export const ENDLESS_TREASURE_UPGRADE_BASE_COST = 1000;
 export const ENDLESS_TREASURE_UPGRADE_COST_STEP = 750;
+export const SUIYUN_ENDLESS_TREASURE_ID = 'treasure_suiyun_sword_sovereign';
+export const SUIYUN_ENDLESS_COMBAT = Object.freeze({
+  type: 'suiyunSword',
+  label: '岁云剑尊·霜月裁天',
+  damagePct: 24,
+  comboChance: 0.85,
+  continuationChance: 0.9,
+  maxHits: 15,
+  overlimitChance: 0.55,
+  overlimitRounds: 3,
+  overlimitMultiplier: 2.5,
+  futureSightChance: 0.65,
+  reflectMultiplier: 2,
+  causalAfterHits: 7,
+  causalExecuteChance: 0.35,
+  lifestealPct: 1,
+  trueDefenseIgnore: true,
+});
 
 /* 至宝专属合成能力名（用于面板展示；这些能力不会进入选择池） */
 export const SYNTHETIC_ABILITY_NAMES = Object.freeze({
@@ -49,6 +68,7 @@ export const SYNTHETIC_ABILITY_NAMES = Object.freeze({
   treasure_body_seed: '以身为种',
   treasure_sorcerer_supreme: '至尊法师传承',
   treasure_frieren_grimoire: '芙莉莲的千年魔导书',
+  treasure_suiyun_sword: '霜月剑意',
   myth_great_sage_art: '大品天仙诀',
   myth_seventy_two_transformations: '七十二变',
   anime_fiery_eyes: '火眼金睛',
@@ -108,7 +128,7 @@ const REGULAR_ENDLESS_TREASURES = Object.freeze([
     icon: '📱',
     rarity: '神话',
     source: '无尽劫境·第25关',
-    desc: '品红骑士的驱动器。帝骑腰带练至3级后化作神主形态，首回合召齐旧平成十位骑士的最终形态；每三回合全员释放专属终极技，兼具破盾、无视防御、恢复与护阵，理论持续输出位居全部至宝之首。',
+    desc: '品红骑士的驱动器。帝骑腰带练至3级后化作神主形态，首回合召齐旧平成十位骑士的最终形态；每三回合全员释放专属终极技，兼具破盾、无视防御、恢复与护阵，理论持续输出位居常规至宝之首。',
     baseAbility: 'anime_decade_driver',
     baseLevel: 1,
     baseEffect: { attackPct: 0.08, hpPct: 0.08, defensePct: 0.08 },
@@ -1018,6 +1038,24 @@ export const ENDLESS_SPECIAL_TREASURES = Object.freeze([
 export const ENDLESS_TREASURES = Object.freeze([
   ...REGULAR_ENDLESS_TREASURES,
   ...ENDLESS_SPECIAL_TREASURES,
+  Object.freeze({
+    id: SUIYUN_ENDLESS_TREASURE_ID,
+    name: '岁云剑尊',
+    icon: '🌙',
+    rarity: '无上',
+    boundRoot: 'suiyun',
+    intrinsic: true,
+    source: '岁云系列灵根·本命至宝（每次入境按灵根投影重验资格）',
+    desc: '一剑照霜月，诸因尽归云。岁云系列五阶段灵根专属，随灵根自动拥有、开局觉醒，独立专属位。霜月领域无效化敌方施于本人的封法、沉默、禁疗、破盾、破甲、处决与反射反噬，不受黯星封宝；剑伤完全无视防御，按实际扣除敌方生命100%吸血，护盾与溢出伤害不计。每斩对每个存活目标造成攻击力24倍伤害，65%未来视闪避或化解来袭；每次出手55%进入3回合超限，剑伤提升至2.5倍，化解来袭并以2倍威力反弹。85%进入至少两斩的连续斩击，此后每斩90%续斩，至多15斩；超限第8至15斩各有35%预取杀生因果，无视血线与Boss身份，直接斩断生机并封绝复生。自愿献祭与技能自身代价照常结算。',
+    baseAbility: 'treasure_suiyun_sword',
+    baseLevel: 1,
+    baseEffect: { attackPct: 6, hpPct: 4, defensePct: 4 },
+    awaken: {
+      name: '岁云剑尊·霜月无上',
+      effect: { attackPct: 12, hpPct: 8, defensePct: 8, damageReduction: 0.6, critChance: 0.3, regenPct: 0.1 },
+      combat: [SUIYUN_ENDLESS_COMBAT],
+    },
+  }),
 ]);
 
 const TREASURE_MAP = new Map(ENDLESS_TREASURES.map((treasure) => [treasure.id, treasure]));
@@ -1062,13 +1100,27 @@ export function getTreasureIcon(id) {
 export function normalizePlayerTreasures(player) {
   if (!player) return [];
   if (!Array.isArray(player[ENDLESS_TREASURE_FIELD])) player[ENDLESS_TREASURE_FIELD] = [];
+  const hasSuiyunRoot = getSuiyunStage(player) > 0;
+  if (hasSuiyunRoot && !player[ENDLESS_TREASURE_FIELD].some(item => item?.id === SUIYUN_ENDLESS_TREASURE_ID)) {
+    player[ENDLESS_TREASURE_FIELD].push({ id: SUIYUN_ENDLESS_TREASURE_ID, name: '岁云剑尊', level: 1 });
+  }
   return player[ENDLESS_TREASURE_FIELD]
     .filter((item) => item && item.id && TREASURE_MAP.has(item.id))
+    .filter((item) => TREASURE_MAP.get(item.id).boundRoot !== 'suiyun' || hasSuiyunRoot)
     .map((item) => ({
       id: item.id,
       name: TREASURE_MAP.get(item.id).name,
       level: clamp(asNumber(item.level, 1), 1, ENDLESS_TREASURE_LEVEL_CAP),
     }));
+}
+
+/** 失去灵根只停用本命至宝；其他至宝写回时仍保留其升级记录。 */
+function savePlayerTreasures(player, owned) {
+  const ids = new Set(owned.map(item => item.id));
+  const inactiveBound = (player[ENDLESS_TREASURE_FIELD] || []).filter(item =>
+    TREASURE_MAP.get(item?.id)?.boundRoot && !ids.has(item.id)
+  );
+  player[ENDLESS_TREASURE_FIELD] = [...owned, ...inactiveBound];
 }
 
 export function getEndlessTreasureSlotGate(slot) {
@@ -1092,7 +1144,10 @@ export function getEndlessTreasureSlotCount(player) {
   const highestLayer = Math.max(0, Math.floor(asNumber(player?.无尽劫境最高层)));
   // 旧存档没有最高层字段时，以已持有至宝反推第一槽资格。
   const legacyFirstSlot = Array.isArray(player?.[ENDLESS_TREASURE_FIELD]) &&
-    player[ENDLESS_TREASURE_FIELD].length > 0 ? 1 : 0;
+    player[ENDLESS_TREASURE_FIELD].some(item => {
+      const treasure = TREASURE_MAP.get(item?.id);
+      return treasure && !treasure.boundRoot;
+    }) ? 1 : 0;
   const eligible = Math.max(legacyFirstSlot, Math.floor(highestLayer / 25));
   if (!eligible) return 0;
   return Math.min(eligible, Math.max(1, Math.floor(asNumber(player?.[ENDLESS_TREASURE_SLOT_FIELD]))));
@@ -1101,13 +1156,14 @@ export function getEndlessTreasureSlotCount(player) {
 /** 旧存档首次读取时自动装配第一件，后续只让装配中的至宝进入战斗。 */
 export function normalizeEndlessTreasureLoadout(player) {
   const owned = normalizePlayerTreasures(player);
-  const ownedIds = new Set(owned.map(item => item.id));
+  const slotted = owned.filter(item => !TREASURE_MAP.get(item.id).intrinsic);
+  const ownedIds = new Set(slotted.map(item => item.id));
   const slots = getEndlessTreasureSlotCount(player);
   const hasSavedLoadout = Array.isArray(player?.[ENDLESS_TREASURE_EQUIPPED_FIELD]);
   const equipped = [...new Set(player?.[ENDLESS_TREASURE_EQUIPPED_FIELD] || [])]
     .filter(id => ownedIds.has(id))
     .slice(0, slots);
-  if (!hasSavedLoadout && slots > 0 && owned.length) equipped.push(owned[0].id);
+  if (!hasSavedLoadout && slots > 0 && slotted.length) equipped.push(slotted[0].id);
   if (player) {
     player[ENDLESS_TREASURE_SLOT_FIELD] = slots;
     player[ENDLESS_TREASURE_EQUIPPED_FIELD] = equipped;
@@ -1118,7 +1174,7 @@ export function normalizeEndlessTreasureLoadout(player) {
 export function getEquippedEndlessTreasures(player) {
   const { owned, equipped } = normalizeEndlessTreasureLoadout(player);
   const equippedSet = new Set(equipped);
-  return owned.filter(item => equippedSet.has(item.id));
+  return owned.filter(item => TREASURE_MAP.get(item.id).intrinsic || equippedSet.has(item.id));
 }
 
 function findOwnedTreasure(player, input) {
@@ -1132,6 +1188,8 @@ function findOwnedTreasure(player, input) {
 export function equipEndlessTreasure(player, input) {
   const target = findOwnedTreasure(player, input);
   if (!target) throw new Error('未找到这件无尽至宝');
+  if (TREASURE_MAP.get(target.id).intrinsic)
+    throw new Error(`【${target.name}】随岁云灵根自动生效，使用独立专属位`);
   const loadout = normalizeEndlessTreasureLoadout(player);
   if (!loadout.slots) throw new Error('通关第25层后才能装配无尽至宝');
   if (loadout.equipped.includes(target.id)) throw new Error(`【${target.name}】已经装配`);
@@ -1145,6 +1203,8 @@ export function equipEndlessTreasure(player, input) {
 export function unequipEndlessTreasure(player, input) {
   const target = findOwnedTreasure(player, input);
   if (!target) throw new Error('未找到这件无尽至宝');
+  if (TREASURE_MAP.get(target.id).intrinsic)
+    throw new Error(`【${target.name}】与岁云灵根绑定，专属位始终生效`);
   const loadout = normalizeEndlessTreasureLoadout(player);
   const index = loadout.equipped.indexOf(target.id);
   if (index < 0) throw new Error(`【${target.name}】尚未装配`);
@@ -1178,9 +1238,9 @@ export function upgradeEndlessTreasure(player, input) {
     throw new Error(`升级【${target.name}】需要${cost}劫境道痕，当前${balance}`);
   const level = target.level + 1;
   player.劫境道痕 = balance - cost;
-  player[ENDLESS_TREASURE_FIELD] = normalizePlayerTreasures(player).map(item =>
+  savePlayerTreasures(player, normalizePlayerTreasures(player).map(item =>
     item.id === target.id ? { ...item, level } : item
-  );
+  ));
   return {
     treasure: TREASURE_MAP.get(target.id),
     level,
@@ -1203,7 +1263,7 @@ export function grantRandomEndlessTreasure(player, randomizer = Math.random) {
   );
   const upgradable = owned.filter(item => {
     const treasure = TREASURE_MAP.get(item.id);
-    return !treasure?.dropTier && item.level < ENDLESS_TREASURE_LEVEL_CAP;
+    return !treasure?.dropTier && !treasure?.boundRoot && item.level < ENDLESS_TREASURE_LEVEL_CAP;
   });
   const pool = missing.length
     ? missing
@@ -1260,15 +1320,15 @@ function grantSelectedTreasure(player, owned, treasure) {
   if (current) {
     const level = Math.min(ENDLESS_TREASURE_LEVEL_CAP, current.level + 1);
     if (level <= current.level) return null;
-    player[ENDLESS_TREASURE_FIELD] = owned.map(item =>
+    savePlayerTreasures(player, owned.map(item =>
       item.id === treasure.id ? { ...item, level } : item
-    );
+    ));
     return { treasure, level, upgraded: true, name: treasure.name };
   }
-  player[ENDLESS_TREASURE_FIELD] = [
+  savePlayerTreasures(player, [
     ...owned,
     { id: treasure.id, name: treasure.name, level: 1, gainedAt: Date.now() },
-  ];
+  ]);
   return { treasure, level: 1, upgraded: false, name: treasure.name };
 }
 
@@ -1331,9 +1391,10 @@ export function getTreasureStates(member, run) {
     ENDLESS_TREASURE_EFFECT_RATE + ENDLESS_TREASURE_EFFECT_PER_LEVEL * (level - 1);
   return member.treasureIds
     .map(({ id, level }) => {
-      if (disabledTreasureIds.has(id)) return null;
       const treasure = TREASURE_MAP.get(id);
       if (!treasure) return null;
+      if (treasure.boundRoot === 'suiyun' && getSuiyunStage(member) <= 0) return null;
+      if (disabledTreasureIds.has(id) && !treasure.intrinsic) return null;
       const baseEffect = {};
       mergeEffect(baseEffect, treasure.baseEffect, effectScale(level));
       const stageEffect = {};
@@ -1370,6 +1431,13 @@ export function getTreasureStates(member, run) {
       };
     })
     .filter(Boolean);
+}
+
+/** 仅真实岁云灵根投影的本命至宝可开启霜月领域及剑尊战技。 */
+export function getSuiyunTreasureCombat(member, run) {
+  if (getSuiyunStage(member) <= 0) return null;
+  const state = getTreasureStates(member, run).find(item => item.treasure.id === SUIYUN_ENDLESS_TREASURE_ID);
+  return state?.awaken.active ? SUIYUN_ENDLESS_COMBAT : null;
 }
 
 /** 汇总至宝全属性加成（基础 + 中间形态 + 觉醒形态） */
@@ -1443,7 +1511,9 @@ export function getPlayerTreasureViews(player) {
       level: item.level,
       effectRate: ENDLESS_TREASURE_EFFECT_RATE + ENDLESS_TREASURE_EFFECT_PER_LEVEL * (item.level - 1),
       nextCost: getEndlessTreasureUpgradeCost(item.level),
-      equipped: equipped.has(item.id),
+      equipped: Boolean(treasure.intrinsic || equipped.has(item.id)),
+      boundRoot: treasure.boundRoot || null,
+      intrinsic: Boolean(treasure.intrinsic),
       desc: treasure.desc,
       source: treasure.source,
       dropTier: treasure.dropTier || null,
@@ -1452,7 +1522,9 @@ export function getPlayerTreasureViews(player) {
         condition: formatAwakenCondition(stage),
       })),
       awakenName: treasure.awaken?.name || null,
-      awakenCondition: formatAwakenCondition(treasure.awaken),
+      awakenCondition: treasure.boundRoot === 'suiyun'
+        ? '持有岁云系列任一阶段灵根，开局自动觉醒'
+        : formatAwakenCondition(treasure.awaken),
     };
   });
 }

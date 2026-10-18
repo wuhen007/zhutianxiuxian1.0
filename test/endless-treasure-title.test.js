@@ -35,11 +35,13 @@ import {
   recoverEarnedTitles,
 } from '../model/titleSystem.js';
 
-const NORMAL_ENDLESS_TREASURES = ENDLESS_TREASURES.filter(treasure => !treasure.dropTier);
+const NORMAL_ENDLESS_TREASURES = ENDLESS_TREASURES.filter(treasure => !treasure.dropTier && !treasure.boundRoot);
 
-test('普通至宝池保持19件，A3至A10特殊至宝共10件', () => {
+test('至宝共30件：普通池19件、A3至A10特殊池10件、灵根绑定1件', () => {
+  assert.equal(ENDLESS_TREASURES.length, 30);
   assert.equal(NORMAL_ENDLESS_TREASURES.length, 19);
   assert.equal(ENDLESS_SPECIAL_TREASURES.length, 10);
+  assert.equal(ENDLESS_TREASURES.filter(treasure => treasure.boundRoot).length, 1);
   assert.ok(NORMAL_ENDLESS_TREASURES.some(item => item.id === 'treasure_strongest_qi'));
   assert.deepEqual(
     ENDLESS_SPECIAL_TREASURES.map(treasure => treasure.id).sort(),

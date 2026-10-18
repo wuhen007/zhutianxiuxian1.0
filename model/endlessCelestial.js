@@ -1,6 +1,8 @@
 import { ENDLESS_TREASURES } from './endlessTreasure.js';
 
 const ABILITY_TAGS = Object.freeze(['爆发', '生存', '速度', '召唤', '火焰', '规则']);
+// 本命专属的霜月领域免疫封宝，天象仍从原有至宝中准确封禁两件。
+const SEALABLE_TREASURES = ENDLESS_TREASURES.filter(treasure => !treasure.intrinsic);
 
 const PHENOMENA = Object.freeze([
   Object.freeze({
@@ -82,9 +84,9 @@ export function getDailyEndlessCelestial(now = new Date()) {
     result.description = `所有带有【${result.abilityTag}】标签的能力效果与战技伤害${verb}。`;
   }
   if (phenomenon.id === 'sealed_treasures') {
-    const first = seed % ENDLESS_TREASURES.length;
-    const second = (first + 1 + ((seed >>> 8) % (ENDLESS_TREASURES.length - 1))) % ENDLESS_TREASURES.length;
-    const disabled = [ENDLESS_TREASURES[first], ENDLESS_TREASURES[second]];
+    const first = seed % SEALABLE_TREASURES.length;
+    const second = (first + 1 + ((seed >>> 8) % (SEALABLE_TREASURES.length - 1))) % SEALABLE_TREASURES.length;
+    const disabled = [SEALABLE_TREASURES[first], SEALABLE_TREASURES[second]];
     result.disabledTreasureIds = disabled.map(item => item.id);
     result.disabledTreasureNames = disabled.map(item => item.name);
     result.description = `【${result.disabledTreasureNames.join('】、【')}】本日失效，不提供属性、形态与战斗技能。`;

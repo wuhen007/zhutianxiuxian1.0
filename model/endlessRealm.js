@@ -13,6 +13,7 @@ import {
   getTreasureEffects,
   getTreasureRunSummary,
   getEquippedEndlessTreasures,
+  getSuiyunTreasureCombat,
   HEISEI_RIDERS,
 } from './endlessTreasure.js';
 import { getTitleEffects } from './titleSystem.js';
@@ -353,8 +354,8 @@ function createProjection(id, player, celestialPhenomenon = null) {
     celestialPhenomenon?.disabledTreasureIds || []
   );
   for (const { id } of treasureIds) {
-    if (disabledTreasureIds.has(id)) continue;
     const treasure = getTreasureById(id);
+    if (disabledTreasureIds.has(id) && !treasure?.boundRoot) continue;
     if (!treasure?.baseAbility) continue;
     abilities[treasure.baseAbility] = Math.max(
       asNumber(abilities[treasure.baseAbility]),
@@ -370,6 +371,8 @@ function createProjection(id, player, celestialPhenomenon = null) {
   return {
     id,
     name: player.名号 || `无名修士${String(id).slice(-4)}`,
+    // 绑定资格随本次本源投影保存，受赐战技或伪造至宝记录均不代替灵根。
+    灵根: { name: String(player.灵根?.name || '') },
     titleId: player.当前称号 || null,
     titleBuffs,
     titleTokenPct: asNumber(titleEffects.tokenPct),
@@ -1180,23 +1183,24 @@ function addBattleAction(run, action) {
   });
 }
 
-function damageEnemy(enemy, amount) {
+function damageEnemy(enemy, amount, run = null, member = null, logs = []) {
   const incoming = Math.max(1, Math.round(asNumber(amount)));
   const absorbed = Math.min(Math.max(0, enemy.shield || 0), incoming);
   enemy.shield = Math.max(0, (enemy.shield || 0) - absorbed);
   const damage = Math.min(enemy.hp, incoming - absorbed);
   enemy.hp = Math.max(0, enemy.hp - damage);
+  if (run && member) healSuiyunLifesteal(run, member, damage, logs);
   return { damage, absorbed, dealt: damage + absorbed };
 }
 
-function damageEnemyWithShieldMultiplier(enemy, amount, multiplier = 1) {
+function damageEnemyWithShieldMultiplier(enemy, amount, multiplier = 1, run = null, member = null, logs = []) {
   const incoming = Math.max(1, Math.round(asNumber(amount)));
   const bonus = Math.min(
     Math.max(0, enemy.shield || 0),
     Math.max(0, Math.round(incoming * (asNumber(multiplier, 1) - 1)))
   );
   enemy.shield = Math.max(0, (enemy.shield || 0) - bonus);
-  const result = damageEnemy(enemy, incoming);
+  const result = damageEnemy(enemy, incoming, run, member, logs);
   return {
     damage: result.damage,
     absorbed: result.absorbed + bonus,
@@ -1245,6 +1249,7 @@ function healEnemy(run, enemy, amount, logs, skill, note = '') {
 }
 
 function tryBossRevive(run, enemy, logs) {
+  if (enemy.suiyunCausalitySevered) return false;
   if (enemy.stage !== 'boss' || enemy.hp > 0 || enemy.revivesLeft <= 0)
     return false;
   const coffinOwner = Object.values(run.members).find(
@@ -1631,11 +1636,11 @@ function attackWithFreeTransformationBodies(
 ) {
   for (const body of member.freeTransformationBodies || []) {
     if (body.hp <= 0 || enemy.hp <= 0) continue;
-    let damage = Math.max(1, body.attack - enemy.defense * 0.62);
+    let damage = Math.max(1, body.attack - (getSuiyunTreasureCombat(member, run) ? 0 : enemy.defense * 0.62));
     const critical = random(run) < body.critChance;
     if (critical) damage *= 1.7;
     damage *= body.damageMultiplier;
-    const result = damageEnemy(enemy, damage);
+    const result = damageEnemy(enemy, damage, run, member, logs);
     damageByMember[member.id] += result.dealt;
     const skill = body.skills[Math.floor(random(run) * body.skills.length)];
     const note = body.kind === 'future'
@@ -1877,6 +1882,11 @@ function handleLethal(run, member, logs) {
 
 function damageMember(run, member, amount, logs, source = {}) {
   if (!member.alive || amount <= 0) return false;
+  if (
+    source.side !== 'system' &&
+    source.negativeEffect &&
+    nullifySuiyunDebuff(run, member, logs, source.skill)
+  ) return false;
   if (interceptWithFreeTransformationBody(run, member, amount, logs, source))
     return false;
   let remaining = Math.max(1, Math.round(amount));
@@ -1906,6 +1916,104 @@ function damageMember(run, member, amount, logs, source = {}) {
 
 /* ================= 无尽至宝·战斗技能 ================= */
 
+/** 领域只护持灵根本人；自愿献祭、技能反噬与队友的负面照常结算。 */
+function nullifySuiyunDebuff(run, member, logs, label) {
+  if (!member.alive || !getSuiyunTreasureCombat(member, run)) return false;
+  member.suiyunNullifiedEffects ||= [];
+  if (!member.suiyunNullifiedEffects.includes(label)) {
+    member.suiyunNullifiedEffects.push(label);
+    addBattleAction(run, {
+      side: 'player', kind: 'status', actor: member.name,
+      skill: '霜月领域·万厄不侵', target: member.name,
+      note: `无效化敌方负面：${label}`,
+      narration: '一轮霜月悬于剑上，恶意尚未写入命数，便已消融为无声的雪',
+    });
+    addBattleLog(logs, `${member.name}展开霜月领域，《${label}》落入月色，未曾成为真实。`);
+  }
+  return true;
+}
+
+function healSuiyunLifesteal(run, member, damage, logs) {
+  if (!member.alive || damage <= 0) return 0;
+  const entry = getSuiyunTreasureCombat(member, run);
+  if (!entry) return 0;
+  const before = member.hp;
+  const maxHp = calculateMemberStats(member, run).maxHp;
+  // 只吸实际扣除的敌方生命；护盾、过量伤害、反弹递归均不额外产血。
+  member.hp = Math.min(maxHp, before + Math.round(damage * entry.lifestealPct));
+  const healed = Math.max(0, member.hp - before);
+  if (healed > 0) {
+    addBattleAction(run, {
+      side: 'player', kind: 'recover', actor: member.name,
+      skill: '岁云饮月·全额吸血', target: member.name, healing: healed,
+      note: `实际生命伤害${damage}，按100%汲取；霜月领域豁免禁疗`,
+    });
+    addBattleLog(logs, `${member.name}引剑上月华归身，汲回${healed}点生命。`);
+  }
+  return healed;
+}
+
+function runSuiyunSword(run, member, enemy, round, logs, damageByMember, entry, stats) {
+  if (!member.alive || enemy.hp <= 0) return;
+  if (random(run) < entry.overlimitChance) {
+    member.suiyunOverlimitRounds = entry.overlimitRounds;
+    addBattleAction(run, {
+      side: 'player', kind: 'status', actor: member.name,
+      skill: '岁云超限·此身越万古', target: member.name,
+      note: `持续${entry.overlimitRounds}回合｜剑伤×${entry.overlimitMultiplier}｜来袭化解并${entry.reflectMultiplier}倍反弹`,
+      narration: '云海倒卷，岁月在剑锋两侧分流；此刻的他，已站在所有极限之外',
+    });
+    addBattleLog(logs, `${member.name}踏入岁云超限，未来三回合剑意越界，来袭皆还。`);
+  }
+  const overlimit = member.suiyunOverlimitRounds > 0;
+  const combo = random(run) < entry.comboChance;
+  const maxHits = combo ? entry.maxHits : 1;
+  member.suiyunLastComboHits = 0;
+  for (let hit = 1; hit <= maxHits && enemy.hp > 0; hit++) {
+    // 怪潮与Boss阵容共用血池，每一剑按当前存活目标数结算群伤。
+    const targets = Math.min(
+      Math.max(1, asNumber(enemy.monsterCount, 1)),
+      Math.max(1, Math.ceil(enemy.hp / Math.max(1, asNumber(enemy.unitMaxHp, enemy.maxHp))))
+    );
+    const amount = stats.attack * entry.damagePct * targets *
+      (overlimit ? entry.overlimitMultiplier : 1);
+    const result = damageEnemy(enemy, amount, run, member, logs);
+    damageByMember[member.id] += result.dealt;
+    member.suiyunLastComboHits = hit;
+    addBattleAction(run, {
+      side: 'player', actor: member.name, target: enemy.name,
+      skill: combo ? '霜月剑潮·连续斩击' : '霜月一剑', verb: '斩落',
+      damage: result.damage, absorbed: result.absorbed,
+      narration: hit === 1
+        ? '霜月不问甲胄厚薄，剑光同时落在每一道敌影的命门'
+        : `第${hit}道剑光追上前一瞬的月色，整片战场再落一场白霜`,
+      note: `第${hit}斩/${entry.maxHits}｜群攻${targets}个目标｜完全无视防御${overlimit ? '｜超限' : ''}`,
+    });
+    addBattleLog(logs, `${member.name}斩出${combo ? '霜月剑潮' : '霜月一剑'}·第${hit}斩，横扫${targets}个目标，造成${result.dealt}点伤害！`);
+    if (overlimit && hit > entry.causalAfterHits && enemy.hp > 0 &&
+      random(run) < entry.causalExecuteChance) {
+      const causal = damageEnemy(enemy, enemy.hp + asNumber(enemy.shield), run, member, logs);
+      enemy.revivesLeft = 0;
+      enemy.maxShield = 0;
+      enemy.cloneCount = 0;
+      enemy.suiyunCausalitySevered = true;
+      damageByMember[member.id] += causal.dealt;
+      addBattleAction(run, {
+        side: 'player', actor: member.name, target: enemy.name,
+        skill: '岁云终式·预取杀生因果', verb: '裁定',
+        damage: causal.damage, absorbed: causal.absorbed, execute: true,
+        narration: '第八剑之后，剑尊不再斩向此刻。他从未来取回敌人已死的结局，轻轻覆在眼前',
+        note: `第${hit}斩触发｜无视血线与Boss身份｜斩断复活因果`,
+      });
+      addBattleLog(logs, `${member.name}预取杀生因果——${enemy.name}尚未走到死亡的那一刻，却已失去所有生还的未来。`);
+      break;
+    }
+    // 入连斩至少两剑，此后逐剑判定续斩；硬上限十五剑。
+    if (hit >= 2 && hit < maxHits && enemy.hp > 0 &&
+      random(run) >= entry.continuationChance) break;
+  }
+}
+
 function treasureApplyBurn(run, member, enemy, burn, logs) {
   member.treasureBurns ||= [];
   member.treasureBurns.push({
@@ -1920,9 +2028,10 @@ function treasureApplyBurn(run, member, enemy, burn, logs) {
   );
 }
 
-function treasureHitDamage(stats, entry, enemy) {
+function treasureHitDamage(stats, entry, enemy, member = null, run = null) {
   const defense =
-    entry.ignoreDefense ? enemy.defense * 0.15 : enemy.defense * 0.62;
+    member && getSuiyunTreasureCombat(member, run) ? 0 :
+      entry.ignoreDefense ? enemy.defense * 0.15 : enemy.defense * 0.62;
   return Math.max(1, Math.round(stats.attack * asNumber(entry.damagePct, 1) - defense));
 }
 
@@ -1938,7 +2047,7 @@ function runTreasureMultiHit(run, member, enemy, round, logs, damageByMember, en
   let dealt = 0;
   for (let index = 0; index < hits; index++) {
     if (enemy.hp <= 0) break;
-    const result = damageEnemy(enemy, treasureHitDamage(stats, entry, enemy));
+    const result = damageEnemy(enemy, treasureHitDamage(stats, entry, enemy, member, run), run, member, logs);
     dealt += result.dealt;
     damageByMember[member.id] += result.dealt;
   }
@@ -1964,8 +2073,9 @@ function runTreasureBigProc(run, member, enemy, round, logs, damageByMember, ent
   if (round % asNumber(entry.every, 4) !== 0) return;
   const result = damageEnemyWithShieldMultiplier(
     enemy,
-    treasureHitDamage(stats, entry, enemy),
-    entry.shieldMultiplier
+    treasureHitDamage(stats, entry, enemy, member, run),
+    entry.shieldMultiplier,
+    run, member, logs
   );
   const purged = entry.clearEnemyBuffs
     ? purgeEnemyBuffs(enemy)
@@ -2007,6 +2117,7 @@ function runTreasureExecute(run, member, enemy, round, logs, damageByMember, ent
     return;
   const absorbed = enemy.shield || 0;
   const killDamage = Math.max(1, Math.round(enemy.hp + absorbed));
+  healSuiyunLifesteal(run, member, enemy.hp, logs);
   enemy.hp = 0;
   enemy.shield = 0;
   damageByMember[member.id] += killDamage;
@@ -2038,7 +2149,8 @@ function runTreasureOnePunch(run, member, enemy, round, logs, damageByMember, en
   if (isBoss) {
     const result = damageEnemy(
       enemy,
-      Math.max(1, Math.round(stats.attack * asNumber(entry.bossMultiplier, 3)))
+      Math.max(1, Math.round(stats.attack * asNumber(entry.bossMultiplier, 3))),
+      run, member, logs
     );
     dealt = result.dealt;
     absorbed = result.absorbed;
@@ -2050,6 +2162,7 @@ function runTreasureOnePunch(run, member, enemy, round, logs, damageByMember, en
   } else {
     absorbed = enemy.shield || 0;
     dealt = Math.max(1, Math.round(enemy.hp + absorbed));
+    healSuiyunLifesteal(run, member, enemy.hp, logs);
     enemy.hp = 0;
     enemy.shield = 0;
     damageByMember[member.id] += dealt;
@@ -2140,7 +2253,7 @@ function attackWithDecadeRiders(run, member, enemy, round, logs, damageByMember)
     let absorbed = 0;
     for (let index = 0; index < hits; index++) {
       if (enemy.hp <= 0) break;
-      const defenseRate = ultimate?.ignoreDefense ? 0.08 : 0.62;
+      const defenseRate = getSuiyunTreasureCombat(member, run) ? 0 : ultimate?.ignoreDefense ? 0.08 : 0.62;
       const lowHpBoost = ultimate?.lowHpThreshold &&
         member.hp / Math.max(1, calculateMemberStats(member, run).maxHp) <= ultimate.lowHpThreshold
         ? asNumber(ultimate.lowHpMultiplier, 1)
@@ -2157,7 +2270,8 @@ function attackWithDecadeRiders(run, member, enemy, round, logs, damageByMember)
       const result = damageEnemyWithShieldMultiplier(
         enemy,
         damage,
-        ultimate?.shieldMultiplier
+        ultimate?.shieldMultiplier,
+        run, member, logs
       );
       if (result.damage > 0 && enemy.hp <= 0) riderKilled = true;
       dealt += result.dealt;
@@ -2167,7 +2281,7 @@ function attackWithDecadeRiders(run, member, enemy, round, logs, damageByMember)
     if (ultimate?.burnPct && enemy.hp > 0) {
       const stacks = Math.max(1, Math.floor(asNumber(ultimate.burnStacks, 1)));
       for (let index = 0; index < stacks && enemy.hp > 0; index++) {
-        const burn = damageEnemy(enemy, enemy.maxHp * ultimate.burnPct);
+        const burn = damageEnemy(enemy, enemy.maxHp * ultimate.burnPct, run, member, logs);
         dealt += burn.dealt;
         absorbed += burn.absorbed;
         damageByMember[member.id] += burn.dealt;
@@ -2271,9 +2385,9 @@ function runTreasureTransformRider(run, member, enemy, round, logs, damageByMemb
   const rider = HEISEI_RIDERS[Math.floor(random(run) * HEISEI_RIDERS.length)];
   const damage = Math.max(
     1,
-    Math.round(stats.attack * asNumber(rider.attack, 1.3) - enemy.defense * 0.5)
+    Math.round(stats.attack * asNumber(rider.attack, 1.3) - (getSuiyunTreasureCombat(member, run) ? 0 : enemy.defense * 0.5))
   );
-  const result = damageEnemy(enemy, damage);
+  const result = damageEnemy(enemy, damage, run, member, logs);
   damageByMember[member.id] += result.dealt;
   addBattleAction(run, {
     side: 'player',
@@ -2337,7 +2451,8 @@ function runTreasureEndRound(run, enemy, round, logs, damageByMember) {
       if (entry.type !== 'domain') continue;
       const result = damageEnemy(
         enemy,
-        Math.max(1, Math.round(enemy.maxHp * asNumber(entry.damagePct, 0.02)))
+        Math.max(1, Math.round(enemy.maxHp * asNumber(entry.damagePct, 0.02))),
+        run, member, logs
       );
       damageByMember[member.id] += result.dealt;
       const narration = treasureNarration(entry, member, enemy);
@@ -2362,7 +2477,8 @@ function runTreasureEndRound(run, enemy, round, logs, damageByMember) {
       const burn = burns[index];
       const result = damageEnemy(
         enemy,
-        Math.max(1, Math.round(enemy.maxHp * asNumber(burn.pct, 0.02)))
+        Math.max(1, Math.round(enemy.maxHp * asNumber(burn.pct, 0.02))),
+        run, member, logs
       );
       damageByMember[member.id] += result.dealt;
       burn.remaining -= 1;
@@ -2399,7 +2515,7 @@ function triggerGhostWish(run, member, enemy, logs, damageByMember, stats, domai
   if (wish === 'execute') {
     const enemyHpPct = clamp(enemy.hp / Math.max(1, enemy.maxHp), 0, 1);
     const recoilRate = 0.25 + enemyHpPct * 0.5;
-    const result = damageEnemy(enemy, enemy.hp + enemy.shield);
+    const result = damageEnemy(enemy, enemy.hp + enemy.shield, run, member, logs);
     damageByMember[member.id] += result.dealt;
     addBattleAction(run, {
       side: 'player',
@@ -2481,7 +2597,7 @@ function runGhostResonance(run, member, enemy, round, logs, damageByMember, stat
       Math.round(stats.attack * 12),
       Math.round(enemy.maxHp * 0.22)
     );
-    const result = damageEnemy(enemy, damage);
+    const result = damageEnemy(enemy, damage, run, member, logs);
     damageByMember[member.id] += result.dealt;
     const freeDismember = resonance.tier >= 3;
     addBattleAction(run, {
@@ -2515,17 +2631,29 @@ function runGhostResonance(run, member, enemy, round, logs, damageByMember, stat
 
 function playerAttack(run, member, enemy, round, logs, damageByMember) {
   if (!member.alive || enemy.hp <= 0) return;
+  const suiyun = getSuiyunTreasureCombat(member, run);
+  if (suiyun) {
+    if (member.battleSealedAbilityIds?.length)
+      nullifySuiyunDebuff(run, member, logs, '封法');
+    if (member.silencedUntilRound)
+      nullifySuiyunDebuff(run, member, logs, '大道沉寂');
+    delete member.battleSealedAbilityIds;
+    delete member.silencedUntilRound;
+  }
   const stats = calculateMemberStats(member, run, round);
+  // 专属剑式先于普通攻击，低层小怪也能展示真实的岁云出手。
+  if (suiyun) runSuiyunSword(run, member, enemy, round, logs, damageByMember, suiyun, stats);
+  if (enemy.hp <= 0) return;
   runGhostResonance(run, member, enemy, round, logs, damageByMember, stats);
   if (!member.alive || enemy.hp <= 0) return;
-  let damage = Math.max(1, stats.attack - enemy.defense * 0.62);
+  let damage = Math.max(1, stats.attack - (suiyun ? 0 : enemy.defense * 0.62));
   const isCrit = random(run) < stats.critChance;
   if (isCrit) damage *= 1.7;
   const isExecute = stats.executePct > 0 && enemy.hp / enemy.maxHp <= 0.15;
   if (isExecute) damage *= 1 + stats.executePct;
   const summonDamage = stats.attack * stats.summonPct;
   const directDamage = Math.max(1, Math.round(damage));
-  const directResult = damageEnemy(enemy, directDamage);
+  const directResult = damageEnemy(enemy, directDamage, run, member, logs);
   let dealt = directResult.dealt;
   damageByMember[member.id] += directResult.dealt;
   addBattleAction(run, {
@@ -2541,7 +2669,7 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
   if (summonDamage > 0 && enemy.hp > 0)
     {
       const assist = summonAssist(member, run);
-      const summonResult = damageEnemy(enemy, summonDamage);
+      const summonResult = damageEnemy(enemy, summonDamage, run, member, logs);
       dealt += summonResult.dealt;
       damageByMember[member.id] += summonResult.dealt;
       addBattleAction(run, {
@@ -2580,7 +2708,7 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
 
   if (!isSilenced && random(run) < stats.extraActionChance && enemy.hp > 0) {
     const echoDamage = Math.max(1, Math.round(damage * 0.55));
-    const echoResult = damageEnemy(enemy, echoDamage);
+    const echoResult = damageEnemy(enemy, echoDamage, run, member, logs);
     dealt += echoResult.dealt;
     damageByMember[member.id] += echoResult.dealt;
     addBattleAction(run, {
@@ -2605,6 +2733,7 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
   ) {
     const kickDamage = Math.max(1, Math.round(enemy.hp));
     const brokenShield = enemy.shield || 0;
+    healSuiyunLifesteal(run, member, enemy.hp, logs);
     enemy.hp = 0;
     enemy.shield = 0;
     dealt += kickDamage + brokenShield;
@@ -2647,7 +2776,7 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
     const skill = resolved.label;
     const note = '';
     const narrative = procNarrative(resolved, member, enemy);
-    const procResult = damageEnemy(enemy, procDamage);
+    const procResult = damageEnemy(enemy, procDamage, run, member, logs);
     dealt += procResult.dealt;
     damageByMember[member.id] += procResult.dealt;
     addBattleAction(run, {
@@ -2687,7 +2816,7 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
       0.5
     );
     if (member.alive && enemy.hp > 0 && random(run) < replayChance) {
-      const replayResult = damageEnemy(enemy, procDamage);
+      const replayResult = damageEnemy(enemy, procDamage, run, member, logs);
       dealt += replayResult.dealt;
       damageByMember[member.id] += replayResult.dealt;
       addBattleAction(run, {
@@ -2725,14 +2854,14 @@ function playerAttack(run, member, enemy, round, logs, damageByMember) {
       member,
       Math.min(stats.maxHp * 0.08, dealt * 0.08),
       logs,
-      { side: 'enemy', actor: enemy.name, skill: '反射反噬' }
+      { side: 'enemy', actor: enemy.name, skill: '反射反噬', negativeEffect: true }
     );
   }
   enemy.hp = Math.max(0, Math.round(enemy.hp));
 }
 
 function enemyHit(run, enemy, member, multiplier, logs, skill = '普通攻击') {
-  if (!member.alive) return;
+  if (!member.alive || enemy.hp <= 0) return;
   if (enemy.ghostAttackInvalidPending) {
     if (!enemy.__ghostAttackInvalidLogged) {
       enemy.__ghostAttackInvalidLogged = true;
@@ -2747,6 +2876,39 @@ function enemyHit(run, enemy, member, multiplier, logs, skill = '普通攻击') 
       addBattleLog(logs, `${enemy.name}施展《${skill}》，但攻击尚未落下便被许愿鬼判定为无效！`);
     }
     return;
+  }
+  const suiyun = getSuiyunTreasureCombat(member, run);
+  if (suiyun) {
+    const foreseen = random(run) < suiyun.futureSightChance;
+    if (foreseen) {
+      const evade = random(run) < 0.5;
+      addBattleAction(run, {
+        side: 'player', kind: evade ? 'dodge' : 'guard', actor: member.name,
+        skill: evade ? '未来视·踏出此刻' : '未来视·化解杀机', target: enemy.name,
+        note: `预见《${skill}》，本次攻击伤害归零`,
+        narration: evade
+          ? '剑尊望见下一瞬的落点，身影已在那条未来之外'
+          : '剑锋轻点尚未发生的破绽，整道攻势自行散作月尘',
+      });
+      addBattleLog(logs, `${member.name}以未来视看见《${skill}》的终点，${evade ? '提前避开' : '从因果起处化解'}这一击。`);
+    }
+    if (member.suiyunOverlimitRounds > 0) {
+      const frenzy = enemy.trait === '狂暴' && enemy.hp / enemy.maxHp <= 0.3 ? 1.28 : 1;
+      const reflected = enemy.attack * multiplier * frenzy *
+        asNumber(enemy.ghostHandAttackRate, 1) * suiyun.reflectMultiplier;
+      const result = damageEnemy(enemy, reflected, run, member, logs);
+      if (run.__damageByMember)
+        run.__damageByMember[member.id] = asNumber(run.__damageByMember[member.id]) + result.dealt;
+      addBattleAction(run, {
+        side: 'player', actor: member.name, skill: '岁云超限·万象反照',
+        target: enemy.name, damage: result.damage, absorbed: result.absorbed,
+        note: `化解《${skill}》｜按来袭攻势${suiyun.reflectMultiplier}倍反弹`,
+        narration: '月面映出敌人自己的杀意，剑尊尚未受伤，那道攻势已倍返其身',
+      });
+      addBattleLog(logs, `${member.name}以岁云超限反照《${skill}》，来袭化解，${result.dealt}点伤害原路奉还！`);
+      return;
+    }
+    if (foreseen) return;
   }
   const stats = calculateMemberStats(member, run);
   if (random(run) < stats.dodgeChance) {
@@ -2763,7 +2925,9 @@ function enemyHit(run, enemy, member, multiplier, logs, skill = '普通攻击') 
   }
   const frenzy =
     enemy.trait === '狂暴' && enemy.hp / enemy.maxHp <= 0.3 ? 1.28 : 1;
-  const defenseRate = enemy.trait === '破甲' ? 0.25 : 0.65;
+  const armorBreak = enemy.trait === '破甲' &&
+    !nullifySuiyunDebuff(run, member, logs, '破甲');
+  const defenseRate = armorBreak ? 0.25 : 0.65;
   let damage = Math.max(
     1,
     enemy.attack * multiplier * frenzy - stats.defense * defenseRate
@@ -2772,7 +2936,9 @@ function enemyHit(run, enemy, member, multiplier, logs, skill = '普通攻击') 
   damage *= 1 - stats.damageReduction;
   if (random(run) < stats.reflectChance) {
     const reflected = Math.max(1, Math.round(damage * stats.reflectPct));
-    const reflectResult = damageEnemy(enemy, reflected);
+    const reflectResult = damageEnemy(enemy, reflected, run, member, logs);
+    if (run.__damageByMember)
+      run.__damageByMember[member.id] = asNumber(run.__damageByMember[member.id]) + reflectResult.dealt;
     damage *= 0.35;
     addBattleLog(logs, `${member.name}逆转矢量，反射${reflectResult.dealt}伤害！`);
     addBattleAction(run, {
@@ -2872,36 +3038,40 @@ function triggerBossMechanisms(run, enemy, round, logs) {
     const alive = living();
     if (alive.length) {
       const target = alive[Math.floor(random(run) * alive.length)];
-      target.silencedUntilRound = Math.max(
-        asNumber(target.silencedUntilRound),
-        round + 1
-      );
-      addBattleAction(run, {
-        side: 'enemy',
-        kind: 'status',
-        actor: enemy.name,
-        skill: '大道沉寂',
-        target: target.name,
-        note: '下回合无法触发能力追击',
-      });
-      addBattleLog(logs, `${enemy.name}施展大道沉寂，封禁${target.name}的能力追击！`);
+      if (!nullifySuiyunDebuff(run, target, logs, '大道沉寂')) {
+        target.silencedUntilRound = Math.max(
+          asNumber(target.silencedUntilRound),
+          round + 1
+        );
+        addBattleAction(run, {
+          side: 'enemy',
+          kind: 'status',
+          actor: enemy.name,
+          skill: '大道沉寂',
+          target: target.name,
+          note: '下回合无法触发能力追击',
+        });
+        addBattleLog(logs, `${enemy.name}施展大道沉寂，封禁${target.name}的能力追击！`);
+      }
     }
   }
 
   if (has('破盾') && round % 3 === 0 && enemy.hp > 0) {
     const target = [...living()].sort((a, b) => b.shield - a.shield)[0];
     if (target) {
-      const broken = target.shield;
-      target.shield = 0;
-      addBattleAction(run, {
-        side: 'enemy',
-        kind: 'status',
-        actor: enemy.name,
-        skill: '破界碎盾',
-        target: target.name,
-        absorbed: broken,
-        note: broken ? `粉碎${broken}点护盾` : '无视护盾直击本体',
-      });
+      if (!nullifySuiyunDebuff(run, target, logs, '破界碎盾')) {
+        const broken = target.shield;
+        target.shield = 0;
+        addBattleAction(run, {
+          side: 'enemy',
+          kind: 'status',
+          actor: enemy.name,
+          skill: '破界碎盾',
+          target: target.name,
+          absorbed: broken,
+          note: broken ? `粉碎${broken}点护盾` : '无视护盾直击本体',
+        });
+      }
       enemyHit(run, enemy, target, 1.28, logs, '破界碎盾');
     }
   }
@@ -2921,6 +3091,7 @@ function triggerBossMechanisms(run, enemy, round, logs) {
           side: 'enemy',
           actor: enemy.name,
           skill: '天命斩杀',
+          negativeEffect: true,
           note: '生命低于25%，触发处决',
         });
       else enemyHit(run, enemy, target, 1.6, logs, '天命斩杀');
@@ -3249,7 +3420,8 @@ function endRound(run, enemy, round, logs, damageByMember) {
   for (const member of Object.values(run.members)) {
     if (!member.alive) continue;
     const stats = calculateMemberStats(member, run);
-    const healingPenalty = enemy.mechanisms?.includes('禁疗')
+    const healingPenalty = (enemy.mechanisms?.includes('禁疗') || enemy.trait === '禁疗') &&
+      nullifySuiyunDebuff(run, member, logs, '禁疗') ? 1 : enemy.mechanisms?.includes('禁疗')
       ? 0.35
       : enemy.trait === '禁疗'
         ? 0.5
@@ -3274,6 +3446,9 @@ function endRound(run, enemy, round, logs, damageByMember) {
     addBattleLog(logs, `${enemy.name}不断再生，必须尽快结束战斗。`);
   // 无尽至宝回合末效果：领域侵蚀 + 灼烧
   runTreasureEndRound(run, enemy, round, logs, damageByMember);
+  for (const member of Object.values(run.members)) {
+    if (member.suiyunOverlimitRounds > 0) member.suiyunOverlimitRounds -= 1;
+  }
   if (enemy.__ghostOriginalDefense !== undefined) {
     enemy.defense = enemy.__ghostOriginalDefense;
     delete enemy.__ghostOriginalDefense;
@@ -3299,13 +3474,16 @@ function prepareBattle(run, enemy, encounter, logs) {
     // 至宝战斗状态：每场战斗重置灼烧/召唤/斩杀标记
     member.treasureBurns = [];
     member.decadeRiders = [];
+    member.suiyunOverlimitRounds = 0;
+    member.suiyunLastComboHits = 0;
+    member.suiyunNullifiedEffects = [];
     delete member.__treasureExecuteUsed;
     const sealCount = Math.max(
       0,
       Math.floor(asNumber(encounter?.sealedAbilityCount)) +
         (enemy?.trait === '封法' ? (enemy.layer >= 50 ? 2 : 1) : 0)
     );
-    if (sealCount > 0 && member.alive) {
+    if (sealCount > 0 && member.alive && !nullifySuiyunDebuff(run, member, logs, '封法')) {
       const candidates = Object.entries(member.abilities || {})
         .filter(([id, level]) => asNumber(level) > 0 && ABILITIES.has(id))
         .map(([id]) => id);
@@ -3324,6 +3502,8 @@ function prepareBattle(run, enemy, encounter, logs) {
     member.shield = member.alive
       ? Math.round(stats.maxHp * stats.teamShieldPct)
       : 0;
+    if (member.alive && getSuiyunTreasureCombat(member, run))
+      addBattleLog(logs, `${member.name}携灵根专属至宝【岁云剑尊】入境：霜月高悬，万厄不侵；剑锋不问甲胄，饮尽敌血归身。`);
     const resonance = getGhostResonance(member);
     if (resonance)
       addBattleLog(
@@ -3671,6 +3851,7 @@ export function resolveEndlessLayer(run) {
     assistHits: 0,
   };
   run.__damageTakenByMember = damageTakenByMember;
+  run.__damageByMember = damageByMember;
   run.__counters = counters;
   if (encounter) {
     addBattleLog(
@@ -3954,6 +4135,7 @@ export function resolveEndlessLayer(run) {
     at: Date.now(),
   };
   delete run.__damageTakenByMember;
+  delete run.__damageByMember;
   delete run.__counters;
   delete run.__roundActions;
   return clone(run.lastBattle);
