@@ -130,7 +130,7 @@ function formatSlot(slotName, slot) {
     if (value.fixed) parts.push(signedInteger(value.fixed));
     return `${label}${parts.join('') || '0'}`;
   };
-  return `${slotName}【${slot.name}】${stat(attack, '攻')}｜${stat(defense, '防')}｜${stat(health, '血')}｜暴击${percent(slot.bao, true)}`;
+  return `${slotName}【${slot.自定义名称 || slot.name}】${stat(attack, '攻')}｜${stat(defense, '防')}｜${stat(health, '血')}｜暴击${percent(slot.bao, true)}`;
 }
 
 export function calculateAllAttributeSlotBonuses(player, equipment, levels) {
@@ -456,7 +456,7 @@ function equipmentSlotView(slotName, slot) {
   const health = getSlotStat(slot, 'HP');
   return {
     slot: slotName,
-    name: slot?.name || '未装备',
+    name: slot?.自定义名称 || slot?.name || '未装备',
     primary: `攻击 ${formatSlotValue(attack)}`,
     secondary: `防御 ${formatSlotValue(defense)}`,
     note: `气血 ${formatSlotValue(health)} · 暴击 ${percent(slot?.bao, true)}`,
@@ -558,7 +558,7 @@ export function buildPlayerAttributeView({ player, equipment, data, eraIndex = 2
 
   const artifactView = (kind, slot, calculated, status) => ({
     kind,
-    name: slot?.name || '未装备',
+    name: slot?.自定义名称 || slot?.name || '未装备',
     subtitle: slot?.品阶 || slot?.pinji || (slot?.name ? '已装备' : '当前槽位为空'),
     status,
     stats: [

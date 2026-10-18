@@ -473,7 +473,7 @@ export class InnateTreasureAuthorities extends plugin {
       .filter(([, remaining]) => remaining > 0)
       .map(([key, remaining]) => `${key}：${formatCooldown(remaining)}`);
     return e.reply([
-      `当前执掌：【${name}】${player.先天至宝失效时间 ? `（投影剩余${formatCooldown(player.先天至宝失效时间 - Date.now())}）` : ''}`,
+      `当前执掌：【${name === player.当前大道至宝 ? player.大道至宝器名 || name : name}】${player.先天至宝失效时间 ? `（投影剩余${formatCooldown(player.先天至宝失效时间 - Date.now())}）` : ''}`,
       cooldowns.length ? cooldowns.join('\n') : '主动权柄：均可使用',
     ].join('\n'));
   }

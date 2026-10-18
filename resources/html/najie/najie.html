@@ -71,8 +71,9 @@
           {{each najie.装备 item}}
           <div class="item rarity-{{item.稀有度 || 1}}">
             <div class="item_title">
-              【{{item.type}}】{{item.name}}({{['劣','普','优','精','极','绝','顶'][item.pinji]}})({{['未锁定','已锁定'][item.islockd]}})
+              【{{item.type}}】{{item.自定义名称 || item.name}}({{['劣','普','优','精','极','绝','顶'][item.pinji]}})({{['未锁定','已锁定'][item.islockd]}})
             </div>
+            {{if item.自定义名称}}<div class="item_int">本名：{{item.name}}</div>{{/if}}
             {{if item.atk>499 || item.def>499 || item.HP>499}}
             <div class="item_int">属性:无</div>
             <div class="item_int">攻击：{{(item.atk || 0).toFixed(0)}}{{if item.归一属性 && item.归一属性.百分比 && item.归一属性.百分比.atk}}（+{{(item.归一属性.百分比.atk*100).toFixed(0)}}%）{{/if}}</div>

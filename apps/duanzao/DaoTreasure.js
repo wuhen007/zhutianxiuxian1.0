@@ -6,12 +6,14 @@ import {
   Read_equipment,
   Read_player,
   Write_player,
+  Write_equipment,
   __PATH,
   channel,
   exist_najie_thing,
   existplayer,
   foundthing,
   player_efficiency,
+  invalidateBattleEquipmentCache,
   ForwardMsg,
   zd_battle,
 } from '../../model/xiuxian.js';
@@ -34,6 +36,7 @@ import {
   getPendingDaoTreasureDelivery,
   guardDaoTreasureStage,
   isDaoTreasureOwner,
+  isDaoTreasureItem,
   markDaoTreasureDelivered,
   readDaoTreasureState,
   repairDaoTreasureAuthority,
@@ -42,6 +45,7 @@ import {
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
 import { FileRollbackTransaction, writeJsonAtomically } from '../SecretPlace/rebirthTransaction.js';
 import { findYongJiByNameOrQQ, reviveFromYongJi } from '../Boss/YongJiList.js';
+import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
 
 const APTITUDE_EVALUATIONS = Object.freeze({
   无演无尽: '亘古绝今从未有，演尽诸天万界，已超脱天道束缚',
@@ -98,6 +102,7 @@ export class DaoTreasure extends plugin {
         { reg: '^#镇守大道炉$', fnc: 'guardForge' },
         { reg: '^#渡大道器劫$', fnc: 'faceFinalTribulation' },
         { reg: '^#大道至宝$', fnc: 'showTreasure' },
+        { reg: '^#大道至宝改名(?:\\s+.*)?$', fnc: 'renameTreasure' },
         { reg: '^#敕令大道\\s+(生死|命运|万法|世界)$', fnc: 'selectAuthority' },
         { reg: '^#修复大道权柄\\s+(本体|生死|命运|万法|世界)$', fnc: 'repairAuthority' },
         { reg: '^#改写生死(?:\\s+.+)?$', fnc: 'rewriteLife' },
@@ -342,11 +347,24 @@ export class DaoTreasure extends plugin {
   async showTreasure(e) {
     if (!verc({ e })) return false;
     await this.deliverTreasure();
+    const qq = await this.qq(e);
+    if (!await existplayer(qq)) return false;
+    const item = (await Read_equipment(qq)).至宝;
+    const owned = isDaoTreasureItem(item) && String(item.绑定者 || item.author_name || item.ownerId) === qq;
+    if (owned && item.name !== readDaoTreasureState().treasure?.name) {
+      return e.reply([
+        `【大道至宝·${item.自定义名称 || item.name}】`,
+        `本名：${item.name}｜器主：${(await Read_player(qq)).名号 || qq}`,
+        `固定全属性：${Number(item.固定全属性) || 0}｜全属性倍率加成：${Number(item.全属性倍率加成) || 0}`,
+        '改名：#大道至宝改名 新名称（1至10字，仅改器名，不改变权柄与绑定）。',
+      ].join('\n'));
+    }
     const ctx = await this.requireOwner(e);
     if (!ctx) return false;
     const treasure = readDaoTreasureState().treasure;
     return e.reply([
-      `【大道至宝·${treasure.name}】`,
+      `【大道至宝·${owned && item.name === treasure.name ? item.自定义名称 || treasure.name : treasure.name}】`,
+      `本名：${treasure.name}｜改名：#大道至宝改名 新名称（需装备本人至宝）`,
       `器主：${treasure.ownerName}｜完整度：${treasure.integrity}%`,
       '固定全属性：攻击、防御、生命各+1兆（最终加算）',
       '全属性倍率：+300（与其他倍率加法叠加）',
@@ -359,6 +377,45 @@ export class DaoTreasure extends plugin {
       `当前战斗主权柄：${ctx.player.大道主权柄 || '未选择'}`,
       '使用 #敕令大道 生死/命运/万法/世界 切换。',
     ].join('\n'));
+  }
+
+  async renameTreasure(e) {
+    if (!verc({ e })) return false;
+    const qq = await this.qq(e);
+    if (!await existplayer(qq)) return false;
+    const raw = String(e.msg || '').replace(/^#大道至宝改名\s*/, '').trim();
+    const name = cleanName(raw, 10);
+    if (!name || /[\s#*\u0000-\u001f\u007f]/.test(name)) {
+      return e.reply('用法：#大道至宝改名 新名称；器名限1至10字，避开空白、换行、尖括号、#与*。');
+    }
+    const message = await withPlayerMutationLock(qq, async () => {
+      const player = await Read_player(qq);
+      if (getActiveZhutianAvatarName(player)) return '请先发送 #装载化身 本源，再为大道至宝改名。';
+      const equipment = await Read_equipment(qq);
+      const item = equipment.至宝;
+      if (!isDaoTreasureItem(item) || item.先天投影截止) return '请先装备已认主的大道至宝，再使用改名指令。';
+      const owners = [item.绑定者, item.author_name, item.ownerId].filter(value => value != null && value !== '').map(String);
+      if (!owners.length || owners.some(owner => owner !== qq)) return '这件大道至宝尚未认你为主。';
+      const previous = item.自定义名称 || item.name;
+      if (name === previous) return `当前器名已是【${name}】，无需重复修改。`;
+      if (name !== item.name && await foundthing(name, { readOnly: true })) return `诸天已有【${name}】，请另择器名。`;
+      const transaction = new FileRollbackTransaction();
+      transaction.capture(path.join(__PATH.player_path, `${qq}.json`));
+      transaction.capture(path.join(__PATH.equipment_path, `${qq}.json`));
+      try {
+        // 真名是权柄和唯一归属的标识；器名随实体换装保留，不改全局目录或认主记录。
+        if (name === item.name) delete item.自定义名称;
+        else item.自定义名称 = name;
+        await Write_equipment(qq, equipment);
+        transaction.commit();
+      } catch (error) {
+        try { transaction.rollback(); }
+        finally { invalidateBattleEquipmentCache(qq); }
+        throw error;
+      }
+      return `【大道铭名】${previous}的器名已改为【${name}】。\n本名【${item.name}】、绑定、唯一归属、属性和权柄保留；换装仍使用本名或纳戒代号。`;
+    });
+    return e.reply(message);
   }
 
   async selectAuthority(e) {

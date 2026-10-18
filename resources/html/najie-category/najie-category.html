@@ -463,7 +463,8 @@
           {{each najie_装备 item}}
           <div class="item-card rarity-{{item.稀有度 || 1}}">
             <div class="item-header">
-              <div class="item-name">【{{item.type}}】{{item.name}}</div>
+              <div class="item-name">【{{item.type}}】{{item.自定义名称 || item.name}}</div>
+              {{if item.自定义名称}}<div class="item-name">本名：{{item.name}}</div>{{/if}}
               <div class="item-status {{item.islockd ? 'status-locked' : 'status-unlocked'}}">
                 {{item.islockd ? '已锁定' : '未锁定'}}
               </div>

@@ -93,6 +93,11 @@
           <div class="user_font2">攻击:{{(player_atk).toFixed(0)}}</div>
           <div class="user_font2">防御:{{(player_def).toFixed(0)}}</div>
           <div class="user_font2">暴击率:{{(player_bao).toFixed(0)}}%</div>
+          {{if daoTreasure && daoTreasure.name}}
+          <div class="user_font_title">[至宝]</div>
+          <div class="user_font2">{{daoTreasure.自定义名称 || daoTreasure.name}}</div>
+          {{if daoTreasure.自定义名称}}<div class="user_font2">本名：{{daoTreasure.name}}</div>{{/if}}
+          {{/if}}
         </div>
       </div>
       <style></style>

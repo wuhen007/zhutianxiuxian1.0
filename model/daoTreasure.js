@@ -167,7 +167,7 @@ export function applyDaoTreasureBattleOpening(holder, opponent, options = {}) {
   }
   const authority = holder.大道主权柄;
   if (getDaoTreasureAuthorityStatus(authority, state) !== '完整') {
-    messages.push(`【大道残缺】${holder.当前大道至宝}的${authority}权柄尚未修复，本战无法敕令。`);
+    messages.push(`【大道残缺】${holder.大道至宝器名 || holder.当前大道至宝}的${authority}权柄尚未修复，本战无法敕令。`);
     return { active: false, holderSpeedMultiplier: 1, opponentSpeedMultiplier: 1, messages };
   }
 
@@ -188,7 +188,7 @@ export function applyDaoTreasureBattleOpening(holder, opponent, options = {}) {
   if (authority === '世界') {
     holder._大道世界领域回合 = 5;
     holder._大道世界减伤 = 0.35;
-    messages.push(`【一界镇压】${holder.当前大道至宝}展开大道界，五次行动内减伤35%、遁速提升30%，敌方遁速降低20%。`);
+    messages.push(`【一界镇压】${holder.大道至宝器名 || holder.当前大道至宝}展开大道界，五次行动内减伤35%、遁速提升30%，敌方遁速降低20%。`);
   }
   return {
     active: true,
