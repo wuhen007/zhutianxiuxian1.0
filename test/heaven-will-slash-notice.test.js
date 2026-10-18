@@ -20,6 +20,7 @@ import * as heart from '../model/daoHeart.js';
 import * as dust from '../model/redDustPath.js';
 import * as tribulationRules from '../apps/User/zhetianTribulationRules.js';
 import { completeDaoByNineLives } from '../apps/User/wudaoRules.js';
+import { rememberImmortalEmperorHistory } from '../model/realmAuthority.js';
 
 const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 const data = {
@@ -177,7 +178,7 @@ function reverseLifeFixture(active, failWrite = false) {
     completeDaoByNineLives, applyHeavenWillSlashOnAdvancement, assertSacrificeBubbleWrite,
     ensureStrangeSacrificeState, formatHeavenWillSlashImpact,
     queueHeavenWillSlashNotice, flushHeavenWillSlashNotice,
-    data, path, syncSuiyunLuckyBonus,
+    data, path, syncSuiyunLuckyBonus, rememberImmortalEmperorHistory,
     __PATH: { player_path: 'memory/players', data_path: 'memory/data' },
     fs: {
       existsSync: () => true,

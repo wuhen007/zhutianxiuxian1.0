@@ -7,6 +7,7 @@ import * as trial from '../model/trialUniverse.js';
 import { getArrivalEntryBlock } from '../model/openingArrival.js';
 import { withPlayerMutationLock } from '../utils/playerMutationLock.js';
 import { syncSuiyunLuckyBonus } from '../model/petLuckyCalc.js';
+import { rememberImmortalEmperorHistory } from '../model/realmAuthority.js';
 import {
   getLocationName, getLocationId, getCoordinateLocations, getLocationThreshold,
   hasCoordinate, rememberCoordinate, purchaseCoordinateClue, canImmortalEmperorFreeTravel,
@@ -210,7 +211,8 @@ test('实际Write_player拒绝试炼旧快照与路线删除，但保留派生�
   let writes = 0;
   const noop = () => {};
   const Write_player = vm.runInNewContext(`${fn}\nWrite_player`, {
-    path, withPlayerMutationLock, syncSuiyunLuckyBonus, __PATH: { player_path: 'players', data_path: 'data' },
+    path, withPlayerMutationLock, syncSuiyunLuckyBonus, rememberImmortalEmperorHistory,
+    __PATH: { player_path: 'players', data_path: 'data' },
     fs: { existsSync: file => file === path.join('players', 'trial.json'), readFileSync: () => JSON.stringify(disk) },
     assertGlobalInitIdle: noop, assertTribulationWriteAllowed: noop,
     assertZhutianMirrorWriteCurrent: noop, assertZhutianAvatarRootWriteAllowed: noop,
@@ -248,7 +250,7 @@ test('直接XiuxianData.setData同样拒绝过期试炼快照、删档和常规�
   let writes = 0;
   const noop = () => {};
   const setData = vm.runInNewContext(`({${source.slice(start, end)}}).setData`, {
-    path, fs: { existsSync: () => true, readFileSync: () => JSON.stringify(disk) },
+    path, rememberImmortalEmperorHistory, fs: { existsSync: () => true, readFileSync: () => JSON.stringify(disk) },
     assertGlobalInitIdle: noop, assertTribulationSnapshotCurrentSync: noop,
     assertZhutianMirrorWriteCurrent: noop, assertZhutianAvatarRootWriteAllowed: noop,
     assertTrialWriteCurrent: trial.assertTrialWriteCurrent,

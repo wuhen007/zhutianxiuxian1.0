@@ -61,6 +61,25 @@ export function getRealmAuthorityLevel(player) {
   );
 }
 
+/** 只认可实境或已完成道果记录；半步仙帝、神胎与推演次数不代表曾经成帝。 */
+export function hasReachedImmortalEmperor(player) {
+  if (!player || player.诸天镜系统?.当前化身) return false;
+  return player.曾达路尽级仙帝 === true
+    || getRealmAuthorityLevel(player) >= 21
+    || player.己道推演?.completed === true
+    || Number(player.己道推演?.completedAt) > 0
+    || Number(player.自创修炼体系?.emperorAt) > 0
+    || (Array.isArray(player.时间线权能?.facts) && player.时间线权能.facts.some(fact =>
+      fact?.type === '证道' && fact.name === '仙帝道果'));
+}
+
+export function rememberImmortalEmperorHistory(player, previousPlayer = null) {
+  if (!player || player.诸天镜系统?.当前化身) return false;
+  if (!hasReachedImmortalEmperor(player) && !hasReachedImmortalEmperor(previousPlayer)) return false;
+  player.曾达路尽级仙帝 = true;
+  return true;
+}
+
 /** 仅作用战斗副本；按等效权柄压低三体系，保留各自编号映射。 */
 export function capRealmAuthorityForBattle(player, authorityLevel) {
   const limit = levelId(authorityLevel);
@@ -178,6 +197,7 @@ export function resetSelfDaoAfterImmortalEmperorFall(player, now = Date.now()) {
   if (!state.completed && !String(player.自身之道境界 || '').includes('仙帝')) {
     return { ok: false, reason: 'not-immortal-emperor', state };
   }
+  rememberImmortalEmperorHistory(player);
 
   state.attempts = 0;
   state.sacrificeAttempts = 0;
@@ -214,6 +234,7 @@ export function resetSelfDaoAfterImmortalEmperorFall(player, now = Date.now()) {
 
 export function lowerRealmAuthority(player, amount = 1) {
   const previousAuthority = getRealmAuthorityLevel(player);
+  rememberImmortalEmperorHistory(player);
   const path = getRealmAuthorityPath(player);
   const field = path === 'xiangu' ? 'xiangulevel_id'
     : path === 'huafen' ? 'huafenlevel_id' : 'mijinglevel_id';

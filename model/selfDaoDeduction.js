@@ -1,4 +1,4 @@
-import { getRealmAuthorityLevel, getRealmAuthorityPath } from './realmAuthority.js';
+import { getRealmAuthorityLevel, getRealmAuthorityPath, hasReachedImmortalEmperor, rememberImmortalEmperorHistory } from './realmAuthority.js';
 import { synchronizeCausalFacts } from './worldlineAuthority.js';
 import { tryEternalFateRewrite } from './innateTreasure.js';
 
@@ -302,9 +302,8 @@ export function setCultivationSystemRealms(player, names, now = Date.now()) {
   return { ok: true, state, realms };
 }
 
-export function promoteSelfDaoToImmortalEmperor(player, now = Date.now()) {
+export function promoteSelfDaoToImmortalEmperor(player, now = Date.now(), route = player?.自创修炼体系?.route || getRealmAuthorityPath(player)) {
   const state = ensureSelfDaoDeduction(player);
-  const route = player?.自创修炼体系?.route || getRealmAuthorityPath(player);
   if (route === 'xiangu') player.xiangulevel_id = Math.max(22, number(player.xiangulevel_id));
   else if (route === 'huafen') player.huafenlevel_id = Math.max(22, number(player.huafenlevel_id));
   else player.mijinglevel_id = Math.max(21, number(player.mijinglevel_id));
@@ -326,8 +325,30 @@ export function promoteSelfDaoToImmortalEmperor(player, now = Date.now()) {
   state.battlePending = false;
   state.completedAt = now;
   state.recovery = null;
+  rememberImmortalEmperorHistory(player);
   synchronizeCausalFacts(player, now);
   return { ok: true, route, state };
+}
+
+export function canReproveImmortalEmperor(player) {
+  const route = getRealmAuthorityPath(player);
+  const field = route === 'xiangu' ? 'xiangulevel_id' : route === 'huafen' ? 'huafenlevel_id' : 'mijinglevel_id';
+  return getRealmAuthorityLevel(player) === 20
+    && number(player?.[field]) === (route === 'mijing' ? 20 : 21)
+    && hasReachedImmortalEmperor(player);
+}
+
+export function reproveImmortalEmperor(player, now = Date.now()) {
+  if (!canReproveImmortalEmperor(player)) return { ok: false, reason: 'ineligible' };
+  if (['形神俱灭', '身灭道消'].includes(player.修仙状态)
+    || player.始祖永祭?.status === 'bubble' || !(number(player.当前血量) > 0)) {
+    return { ok: false, reason: 'unavailable' };
+  }
+  const result = promoteSelfDaoToImmortalEmperor(player, now, getRealmAuthorityPath(player));
+  player.修为 = 0;
+  player.血气 = 0;
+  result.state.reprovedAt = now;
+  return result;
 }
 
 export function startCorpseEmperorRecovery(player, now = Date.now()) {

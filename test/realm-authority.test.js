@@ -68,15 +68,15 @@ test('显式选择的额外体系优先于伴生体系和其他残留境界', ()
 test('realm loss applies to the path providing the authority', () => {
   const xianguPlayer = { mijinglevel_id: 1, xiangulevel_id: 22 };
   assert.equal(lowerRealmAuthority(xianguPlayer), 'xiangu');
-  assert.deepEqual(xianguPlayer, { mijinglevel_id: 1, xiangulevel_id: 21 });
+  assert.deepEqual(xianguPlayer, { mijinglevel_id: 1, xiangulevel_id: 21, 曾达路尽级仙帝: true });
 
   const mijingPlayer = { mijinglevel_id: 21, xiangulevel_id: 1 };
   assert.equal(lowerRealmAuthority(mijingPlayer), 'mijing');
-  assert.deepEqual(mijingPlayer, { mijinglevel_id: 20, xiangulevel_id: 1 });
+  assert.deepEqual(mijingPlayer, { mijinglevel_id: 20, xiangulevel_id: 1, 曾达路尽级仙帝: true });
 
   const huafenPlayer = { mijinglevel_id: 1, xiangulevel_id: 1, huafenlevel_id: 22 };
   assert.equal(lowerRealmAuthority(huafenPlayer), 'huafen');
-  assert.deepEqual(huafenPlayer, { mijinglevel_id: 1, xiangulevel_id: 1, huafenlevel_id: 21 });
+  assert.deepEqual(huafenPlayer, { mijinglevel_id: 1, xiangulevel_id: 1, huafenlevel_id: 21, 曾达路尽级仙帝: true });
 });
 
 test('元神凝练按境界表前进并在最高阶停止', () => {

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 
-import { config, data, plugin } from '../../api/api.js';
+import { config, data, plugin, verc } from '../../api/api.js';
 import {
   Read_player,
   Write_player,
@@ -9,6 +9,7 @@ import {
   channel,
   existplayer,
   zd_battle,
+  Go, Read_equipment, Write_equipment, player_efficiency, invalidateBattleEquipmentCache,
 } from '../../model/xiuxian.js';
 import { damagePlanes, PLANE_DESTRUCTION_SOURCES } from '../../model/planeDestruction.js';
 import {
@@ -27,9 +28,14 @@ import {
   promoteSelfDaoToImmortalEmperor,
   setCultivationSystemRealms,
   startCorpseEmperorRecovery,
+  canReproveImmortalEmperor, reproveImmortalEmperor,
 } from '../../model/selfDaoDeduction.js';
 import { buildTimeRiverAdversary, ensureTimeRiverSkills } from '../../model/timeRiverAdversary.js';
 import { withPlayerMutationLock } from '../../utils/playerMutationLock.js';
+import { FileRollbackTransaction } from '../SecretPlace/rebirthTransaction.js';
+import path from 'node:path';
+import { isShapeSpiritDestroyed } from '../../model/worldlineAuthority.js';
+import { getActiveZhutianAvatarName } from '../../model/zhutianMirror.js';
 
 const ACTION_NAME = '身灭道消·真血重聚';
 const RESOURCE_NAMES = Object.freeze({
@@ -85,6 +91,7 @@ export class SelfDaoDeduction extends plugin {
       event: 'message',
       priority: 520,
       rule: [
+        { reg: '^#证道$', fnc: 'reproveEmperor' },
         { reg: '^#推演己道$', fnc: 'deduceOwnDao' },
         { reg: '^#设立体系境界(?:\\s+.+)?$', fnc: 'nameSystemRealms' },
       ],
@@ -100,6 +107,46 @@ export class SelfDaoDeduction extends plugin {
 
   async playerId(e) {
     return String(await channel(String(e.user_id).replace('qg_', '')));
+  }
+
+  async reproveEmperor(e) {
+    if (!verc({ e })) return false;
+    const id = await this.playerId(e);
+    if (!await existplayer(id)) return false;
+    return withPlayerMutationLock(id, async () => {
+      const player = await Read_player(id);
+      // 普通证道仍交回原指令；仅处理确有路尽经历且当前跌至准仙帝的玩家。
+      if (!canReproveImmortalEmperor(player)) return false;
+      if (getActiveZhutianAvatarName(player)) return e.reply('请先发送 #装载化身 本源，再重证路尽级仙帝。');
+      if (!e.isGroup) return e.reply('请在群聊中发送 #证道 重证路尽级仙帝。');
+      if (isShapeSpiritDestroyed(player) || player.修仙状态 === '身灭道消'
+        || player.始祖永祭?.status === 'bubble' || !(Number(player.当前血量) > 0)) {
+        return e.reply('请先恢复真身与气血，再重证路尽级仙帝。');
+      }
+      if (!await Go(e)) return true;
+      const transaction = new FileRollbackTransaction();
+      for (const directory of [__PATH.player_path, __PATH.equipment_path]) {
+        transaction.capture(path.join(directory, `${id}.json`));
+      }
+      try {
+        const result = reproveImmortalEmperor(player);
+        if (!result.ok) return e.reply('当前尚未满足重证条件。');
+        await Write_player(id, player, { trackDailyTask: false, event: e });
+        await Write_equipment(id, await Read_equipment(id));
+        await player_efficiency(id);
+        const latest = await Read_player(id);
+        const field = result.route === 'xiangu' ? 'xiangulevel_id' : result.route === 'huafen' ? 'huafenlevel_id' : 'mijinglevel_id';
+        const restored = Number(latest[field]) >= (result.route === 'mijing' ? 21 : 22);
+        transaction.commit();
+        return e.reply(restored
+          ? '【路尽重证】昔日仙帝道果再现，已重登路尽级仙帝；修为、血气已清空，其他资源保留。'
+          : '【路尽重证】重证遭遇现世规则压制，当前境界已按实际结算；修为、血气已清空。');
+      } catch (error) {
+        try { transaction.rollback(); }
+        finally { invalidateBattleEquipmentCache(id); }
+        throw error;
+      }
+    });
   }
 
   gateMessage(gate) {
