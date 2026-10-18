@@ -41,6 +41,7 @@ const FLAT_SOURCES = [
   ['yaochishangdian', '瑶池商店'],
   ['yaoguangshangdian', '摇光商店'],
   ['jianyunhaishangdian', '剑云海商店'],
+  ['suiyunjianGongshangdian', '岁云剑宫商店'],
   ['xingge', '星阁拍卖行'],
   ['xingge2', '星阁内场拍卖行'],
   ['xianchonxunbao', '仙宠探索'],
