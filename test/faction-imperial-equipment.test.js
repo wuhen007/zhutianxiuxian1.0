@@ -125,7 +125,11 @@ test('摇光黑金鼎真品和剑宫月华帝剑从兑换到装备均使用正�
     assert.equal(f.equipment.帝兵.name, name);
     assert.equal(f.bag.装备.length, 0);
     for (const [field, itemField, extraBase] of [['攻击', 'atk', 300], ['防御', 'def', 600], ['血量上限', 'HP', 900]]) {
-      assert.equal(f.player[field] - before[field], owned[itemField] + entry.全属性 * extraBase);
+      // 入纳戒时按随机品级缩放属性，缩放系数带浮点尾巴（如 33000000.000000004），
+      // 而玩家侧属性按整数入账，这里按容差比较，避免随机品级让断言偶发失败。
+      const gain = f.player[field] - before[field];
+      const expected = owned[itemField] + entry.全属性 * extraBase;
+      assert.ok(Math.abs(gain - expected) < 1e-6, `${name}/${field}实际增加${gain}，应约${expected}`);
     }
     assert.ok(f.replies.includes('equipment-image'));
     const equipped = copy(f.player);
